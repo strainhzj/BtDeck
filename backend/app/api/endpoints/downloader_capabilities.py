@@ -18,6 +18,7 @@ from app.services.downloader_capabilities_manager import DownloaderCapabilitiesM
 from app.downloader.models import BtDownloaders
 from app.models.downloader_capabilities_vo import DownloaderCapabilitiesVO
 from app.models.downloader_capabilities import DownloaderCapabilities as DownloaderCapabilitiesModel
+from app.models.setting_templates import DownloaderTypeEnum
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -37,7 +38,9 @@ def _get_default_capabilities(downloader_type: int) -> dict:
     Returns:
         dict: 默认能力配置
     """
-    if downloader_type == 0:  # qBittorrent
+    # 使用枚举类规范化类型
+    normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+    if normalized_type == DownloaderTypeEnum.QBITTORRENT:  # qBittorrent
         return {
             "schedule_speed": True,
             "transfer_speed": True,
@@ -46,7 +49,7 @@ def _get_default_capabilities(downloader_type: int) -> dict:
             "download_paths": True,
             "advanced_settings": True
         }
-    elif downloader_type == 1:  # Transmission
+    elif normalized_type == DownloaderTypeEnum.TRANSMISSION:  # Transmission
         return {
             "schedule_speed": True,  # ✅ Transmission支持(应用层定时任务实现)
             "transfer_speed": True,

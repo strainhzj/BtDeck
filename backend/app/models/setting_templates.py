@@ -67,6 +67,56 @@ class DownloaderTypeEnum(enum.IntEnum):
         """
         return "qbittorrent" if self == DownloaderTypeEnum.QBITTORRENT else "transmission"
 
+    @classmethod
+    def normalize(cls, value) -> int:
+        """
+        将多种格式统一转换为整数类型
+
+        支持输入：
+        - 整数：0, 1
+        - 字符串数字："0", "1"
+        - 名称："qbittorrent", "transmission"（不区分大小写）
+
+        Args:
+            value: 下载器类型值（多种格式）
+
+        Returns:
+            int: 标准化的整数类型（0=qBittorrent, 1=Transmission）
+
+        Examples:
+            >>> DownloaderTypeEnum.normalize(0)
+            0
+            >>> DownloaderTypeEnum.normalize("1")
+            1
+            >>> DownloaderTypeEnum.normalize("qbittorrent")
+            0
+            >>> DownloaderTypeEnum.normalize("TRANSMISSION")
+            1
+        """
+        # 整数类型直接返回
+        if isinstance(value, int):
+            if value in [0, 1]:
+                return value
+            # 无效整数，默认返回 qBittorrent
+            logger.warning(f"无效的下载器类型整数值: {value}，默认使用 qBittorrent (0)")
+            return 0
+
+        # 字符串类型处理
+        elif isinstance(value, str):
+            value_lower = value.lower().strip()
+            if value_lower in ['0', 'qbittorrent']:
+                return 0
+            elif value_lower in ['1', 'transmission']:
+                return 1
+            else:
+                # 无效字符串，默认返回 qBittorrent
+                logger.warning(f"无效的下载器类型字符串: {value}，默认使用 qBittorrent (0)")
+                return 0
+
+        # 其他类型，默认返回 qBittorrent
+        logger.warning(f"不支持的下载器类型: {type(value)}={value}，默认使用 qBittorrent (0)")
+        return 0
+
 
 class SettingTemplate(Base):
     """

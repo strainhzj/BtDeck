@@ -6,6 +6,7 @@
 """
 from typing import Any, Optional, Dict
 from pydantic import BaseModel, Field, ConfigDict
+from app.models.setting_templates import DownloaderTypeEnum
 
 
 class DownloaderCapabilitiesVO(BaseModel):
@@ -37,16 +38,11 @@ class DownloaderCapabilitiesVO(BaseModel):
             downloader_type: 下载器类型枚举值(0/1)
             capabilities: 能力列表字典（蛇形命名，将自动转换为驼峰命名）
         """
-        # 转换枚举值为字符串名称
+        # 使用统一的类型转换方法
         downloader_type_name = None
         if downloader_type is not None:
-            if downloader_type == 0 or downloader_type == "0":
-                downloader_type_name = "qbittorrent"
-            elif downloader_type == 1 or downloader_type == "1":
-                downloader_type_name = "transmission"
-            else:
-                # 如果已经是字符串，直接使用
-                downloader_type_name = downloader_type if isinstance(downloader_type, str) else str(downloader_type)
+            downloader_type_int = DownloaderTypeEnum.normalize(downloader_type)
+            downloader_type_name = DownloaderTypeEnum(downloader_type_int).to_name()
 
         # 转换 capabilities 字段的键名（蛇形命名 -> 驼峰命名）
         converted_capabilities = None

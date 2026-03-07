@@ -9,6 +9,7 @@ Tracker 状态枚举类
 """
 
 from enum import Enum
+from app.models.setting_templates import DownloaderTypeEnum
 
 
 class QBittorrentTrackerStatus(Enum):
@@ -116,9 +117,13 @@ def get_tracker_status_text(status_value: int, downloader_type: str = "qbittorre
         >>> get_tracker_status_text(2, "transmission")
         '工作中'
     """
-    if downloader_type == "qbittorrent":
+    # 使用统一的枚举类方法进行类型判断
+    normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+    type_name = DownloaderTypeEnum(normalized_type).to_name()
+
+    if type_name == "qbittorrent":
         return QBittorrentTrackerStatus.get_display_text(status_value)
-    elif downloader_type == "transmission":
+    elif type_name == "transmission":
         return TransmissionTrackerStatus.get_display_text(status_value)
     else:
         # 未知类型，尝试 qBittorrent 作为默认

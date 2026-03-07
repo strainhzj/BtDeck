@@ -30,6 +30,7 @@ from app.schemas.tag_schemas import (
 from app.services.tag_service import TagService
 from app.auth import utils
 from app.models.torrent_tags import TorrentTag
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -850,14 +851,11 @@ async def check_category_support(
             downloader_type = downloader_vo.downloader_type
 
         # 4. 判断分类支持
-        # downloader_type为字符串，需要转换为整数比较
-        try:
-            downloader_type_int = int(downloader_type) if downloader_type else 0
-        except (ValueError, TypeError):
-            downloader_type_int = 0
+        # 使用统一的枚举类方法进行类型转换
+        downloader_type_int = DownloaderTypeEnum.normalize(downloader_type)
 
-        supports_category = downloader_type_int == DOWNLOADER_TYPE_QBITTORRENT
-        require_fallback = downloader_type_int == DOWNLOADER_TYPE_TRANSMISSION
+        supports_category = downloader_type_int == DownloaderTypeEnum.QBITTORRENT.value
+        require_fallback = downloader_type_int == DownloaderTypeEnum.TRANSMISSION.value
 
         # 5. 构建响应
         response_data = {

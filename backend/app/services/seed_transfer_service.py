@@ -26,6 +26,7 @@ from sqlalchemy.orm import Session
 from app.database import AsyncSessionLocal
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
+from app.models.setting_templates import DownloaderTypeEnum
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
@@ -312,7 +313,9 @@ class SeedTransferService:
             # 3. 添加种子到目标下载器
             logger.info(f"添加种子到目标下载器 {target_downloader_id}，路径: {target_path}")
 
-            if target_downloader.downloader_type == 0:  # qBittorrent
+            normalized_type = DownloaderTypeEnum.normalize(target_downloader.downloader_type)
+
+            if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                 from qbittorrentapi import LoginFailed
                 try:
                     from io import BytesIO
@@ -329,7 +332,7 @@ class SeedTransferService:
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
                     return result
 
-            elif target_downloader.downloader_type == 1:  # Transmission
+            elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 try:
                     from io import BytesIO
                     target_client.add_torrent(BytesIO(torrent_content), download_dir=target_path)
@@ -518,11 +521,13 @@ class SeedTransferService:
         """
         logger.info(f"开始验证种子 {info_hash}，最多重试 {max_retries} 次，间隔 {retry_interval} 秒")
 
+        normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+
         for i in range(max_retries):
             await asyncio.sleep(retry_interval)
 
             try:
-                if downloader_type == 0:  # qBittorrent
+                if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                     # 获取种子信息
                     torrents = target_client.torrents_info(torrent_hashes=info_hash)
 
@@ -543,7 +548,7 @@ class SeedTransferService:
                         logger.info(f"验证成功：种子状态为 {converted_state}")
                         return True
 
-                elif downloader_type == 1:  # Transmission
+                elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                     # 获取种子信息
                     torrents = target_client.get_torrents(info_hash)
 
@@ -591,7 +596,9 @@ class SeedTransferService:
             是否删除成功
         """
         try:
-            if downloader_type == 0:  # qBittorrent
+            normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+
+            if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                 source_client.torrents_delete(
                     delete_files=delete_files,
                     torrent_hashes=info_hash
@@ -599,7 +606,7 @@ class SeedTransferService:
                 logger.info(f"已从qBittorrent删除种子 {info_hash}，删除文件: {delete_files}")
                 return True
 
-            elif downloader_type == 1:  # Transmission
+            elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 source_client.remove_torrent(
                     delete_data=delete_files,
                     ids=info_hash

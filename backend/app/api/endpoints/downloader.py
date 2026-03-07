@@ -17,6 +17,7 @@ from app.downloader.request import ListDownloader, RequestDownloader, UpdateDown
 from typing import Annotated, List, Optional, Any
 from app.downloader.responseVO import DownloaderListVO, DownloaderVO, DownloaderStatusVO, DownloaderSimpleVO
 from app.utils.encryption import encrypt_password, decrypt_password
+from app.models.setting_templates import DownloaderTypeEnum
 from qbittorrentapi import Client as qbClient
 from transmission_rpc import Client as trClient, TransmissionAuthError
 from requests.exceptions import SSLError, ConnectionError
@@ -702,11 +703,11 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
         )
 
         delay = await get_delay_async(downloader)
-        # 修复类型不匹配问题：数据库中存储为整数(0/1)，代码中比较的是字符串
-        # 支持整数和字符串两种类型，确保兼容性
-        if downloader.downloader_type in ["qbittorrent", 0, "0"]:
+        # 使用统一的类型转换方法
+        normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
+        if normalized_type == DownloaderTypeEnum.QBITTORRENT:
             result = get_qbittorrent_detail(delay, downloader)
-        elif downloader.downloader_type in ["transmission", 1, "1"]:
+        elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
             result = get_transmission_detail(delay, downloader)
         else:
             result = DownloaderStatusVO(

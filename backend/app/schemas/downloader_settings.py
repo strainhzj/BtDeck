@@ -9,6 +9,9 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 from enum import IntEnum
 
+# 从 models 模块导入枚举，避免重复定义
+from app.models.setting_templates import DownloaderTypeEnum
+
 
 # ========== 枚举定义 ==========
 
@@ -16,12 +19,6 @@ class SpeedUnitEnum(IntEnum):
     """速度单位枚举"""
     KB_PER_SEC = 0  # KB/s
     MB_PER_SEC = 1  # MB/s
-
-
-class DownloaderTypeEnum(IntEnum):
-    """下载器类型枚举"""
-    QBITTORRENT = 0  # qBittorrent
-    TRANSMISSION = 1  # Transmission
 
 
 # ========== DownloaderSetting Schema ==========

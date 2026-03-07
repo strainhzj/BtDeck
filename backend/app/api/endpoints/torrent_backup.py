@@ -38,6 +38,7 @@ from app.schemas.torrent_backup import (
     TorrentFileBackupBatchResponse
 )
 from app.models.torrent_file_backup import TorrentFileBackup
+from app.models.setting_templates import DownloaderTypeEnum
 
 # 禁用 urllib3 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -838,14 +839,15 @@ async def import_backups(
                     torrent_name = torrent_data[b'info'].get(b'name', b'').decode('utf-8', errors='ignore')
 
                     # 添加到下载器（使用SDK）
-                    if downloader.downloader_type == 0:  # qBittorrent
+                    normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
+                    if normalized_type == DownloaderTypeEnum.QBITTORRENT:  # qBittorrent
                         from app.services.downloader_adapters.qbittorrent_adapter import QBittorrentAdapter
                         adapter = QBittorrentAdapter(downloader_config)
                         adapter.add_torrent_file(
                             torrent_file=torrent_content,
                             save_path=downloader.save_path
                         )
-                    elif downloader.downloader_type == 1:  # Transmission
+                    elif normalized_type == DownloaderTypeEnum.TRANSMISSION:  # Transmission
                         from app.services.downloader_adapters.transmission_adapter import TransmissionAdapter
                         adapter = TransmissionAdapter(downloader_config)
                         adapter.add_torrent_file(

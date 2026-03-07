@@ -1,8 +1,8 @@
-"""init_complete_base_schema_from_all_models
+"""fix_downloader_type_to_integer
 
-Revision ID: 3a270de6fefe
+Revision ID: e2a02abcf912
 Revises: 
-Create Date: 2026-03-06 15:17:34.623419
+Create Date: 2026-03-07 18:59:32.611061
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '3a270de6fefe'
+revision: str = 'e2a02abcf912'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -30,7 +30,7 @@ def upgrade() -> None:
     sa.Column('is_search', sa.Boolean(), nullable=True),
     sa.Column('status', sa.String(), nullable=True),
     sa.Column('enabled', sa.Boolean(), nullable=True),
-    sa.Column('downloader_type', sa.String(), nullable=True),
+    sa.Column('downloader_type', sa.Integer(), nullable=False, comment='下载器类型：0=qBittorrent, 1=Transmission'),
     sa.Column('port', sa.String(), nullable=True),
     sa.Column('is_ssl', sa.Boolean(), nullable=True),
     sa.Column('dr', sa.Integer(), nullable=True),
@@ -240,7 +240,7 @@ def upgrade() -> None:
     sa.Column('has_tracker_error', sa.Boolean(), nullable=False, comment='种子是否处于tracker错误状态（所有tracker都失败）'),
     sa.PrimaryKeyConstraint('info_id', 'downloader_id', 'downloader_name')
     )
-    op.create_index('idx_torrent_hash_unique', 'torrent_info', ['hash', 'downloader_id'], unique=True)
+    op.create_index('idx_torrent_hash_unique', 'torrent_info', ['hash', 'downloader_id'], unique=True, sqlite_where=sa.text('dr = 0'))
     op.create_index(op.f('ix_torrent_info_category'), 'torrent_info', ['category'], unique=False)
     op.create_index(op.f('ix_torrent_info_downloader_id'), 'torrent_info', ['downloader_id'], unique=False)
     op.create_index(op.f('ix_torrent_info_downloader_name'), 'torrent_info', ['downloader_name'], unique=False)
@@ -292,7 +292,7 @@ def upgrade() -> None:
     sa.Column('version', sa.Integer(), nullable=True, comment='乐观锁版本号'),
     sa.PrimaryKeyConstraint('tracker_id')
     )
-    op.create_index('idx_tracker_unique_url', 'tracker_info', ['torrent_info_id', 'tracker_url'], unique=True)
+    op.create_index('idx_tracker_unique_url', 'tracker_info', ['torrent_info_id', 'tracker_url'], unique=True, sqlite_where=sa.text('dr = 0'))
     op.create_index(op.f('ix_tracker_info_last_announce_msg'), 'tracker_info', ['last_announce_msg'], unique=False)
     op.create_index(op.f('ix_tracker_info_last_scrape_msg'), 'tracker_info', ['last_scrape_msg'], unique=False)
     op.create_index(op.f('ix_tracker_info_torrent_info_id'), 'tracker_info', ['torrent_info_id'], unique=False)
@@ -519,7 +519,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_tracker_info_torrent_info_id'), table_name='tracker_info')
     op.drop_index(op.f('ix_tracker_info_last_scrape_msg'), table_name='tracker_info')
     op.drop_index(op.f('ix_tracker_info_last_announce_msg'), table_name='tracker_info')
-    op.drop_index('idx_tracker_unique_url', table_name='tracker_info')
+    op.drop_index('idx_tracker_unique_url', table_name='tracker_info', sqlite_where=sa.text('dr = 0'))
     op.drop_table('tracker_info')
     op.drop_index(op.f('ix_torrent_tags_tag_type'), table_name='torrent_tags')
     op.drop_index(op.f('ix_torrent_tags_tag_id'), table_name='torrent_tags')
@@ -539,7 +539,7 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_torrent_info_downloader_name'), table_name='torrent_info')
     op.drop_index(op.f('ix_torrent_info_downloader_id'), table_name='torrent_info')
     op.drop_index(op.f('ix_torrent_info_category'), table_name='torrent_info')
-    op.drop_index('idx_torrent_hash_unique', table_name='torrent_info')
+    op.drop_index('idx_torrent_hash_unique', table_name='torrent_info', sqlite_where=sa.text('dr = 0'))
     op.drop_table('torrent_info')
     op.drop_index(op.f('ix_torrent_deletion_audit_log_torrent_hash'), table_name='torrent_deletion_audit_log')
     op.drop_index(op.f('ix_torrent_deletion_audit_log_task_id'), table_name='torrent_deletion_audit_log')
