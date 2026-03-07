@@ -1,0 +1,56 @@
+# Pre-commit 配置文件
+# 用于强制代码规范，禁止直接调用 SDK 删除方法
+#
+# Task 6: 移除旧代码 - 添加 pre-commit 规则
+#
+# 使用说明:
+# 1. 安装 pre-commit: pip install pre-commit
+# 2. 安装钩子: pre-commit install
+# 3. 手动运行: pre-commit run --all-files
+
+repos:
+  # 本地钩子：禁止直接调用 SDK 删除方法
+  - repo: local
+    hooks:
+      # 禁止直接调用 qBittorrent SDK 删除方法
+      - id: forbid-qbittorrent-direct-delete
+        name: forbid-direct-qbittorrent-delete
+        entry: '(torrents_delete\(|\.torrents\.delete\()'
+        language: pygrep
+        files: ^(app/|tests/).*\.py$
+        exclude: ^app/services/downloader_adapters/
+
+      # 禁止直接调用 Transmission SDK 删除方法
+      - id: forbid-transmission-direct-delete
+        name: forbid-direct-transmission-delete
+        entry: '(remove_torrent\(|\.remove_torrent\()'
+        language: pygrep
+        files: ^(app/|tests/).*\.py$
+        exclude: ^app/services/downloader_adapters/
+
+      # 禁止直接调用通用删除方法（可能的直接 SDK 调用）
+      - id: forbid-generic-direct-delete
+        name: forbid-direct-client-delete
+        entry: '(client\.delete_torrents\(|qbClient.*\.torrents_delete\(|trClient.*\.remove_torrent\()'
+        language: pygrep
+        files: ^(app/|tests/).*\.py$
+
+  # 使用 pre-commit 内置的 Python 钩子进行代码检查
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: check-yaml
+        args: ['--unsafe']
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-added-large-files
+        args: ['--maxkb=1000']
+      - id: check-merge-conflict
+      - id: check-json
+      - id: check-toml
+      - id: check-ast
+        files: ^(app/|tests/).*\.py$
+
+# 全局配置
+default_language_version:
+  python: python3
