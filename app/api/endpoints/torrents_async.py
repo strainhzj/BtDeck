@@ -43,6 +43,7 @@ from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.models.torrent_file_backup import TorrentFileBackup
+from app.models.setting_templates import DownloaderTypeEnum
 import json
 
 logger = logging.getLogger(__name__)
@@ -650,11 +651,9 @@ async def sync_add_tracker_async(
     """
     Sync tracker info with batch upsert and batch updates (async).
     """
-    # Normalize downloader_type to string (handles cached int/str values)
-    if downloader_type in (1, "1", "transmission"):
-        downloader_type = "transmission"
-    elif downloader_type in (0, "0", "qbittorrent"):
-        downloader_type = "qbittorrent"
+    # 使用统一的枚举类方法进行类型标准化
+    normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+    downloader_type = DownloaderTypeEnum(normalized_type).to_name()
 
     current_time = datetime.now()
     current_tracker_urls = set()

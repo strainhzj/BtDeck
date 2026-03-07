@@ -86,64 +86,18 @@ class DownloaderSettingsManager:
     def _normalize_downloader_type(self) -> int:
         """规范化下载器类型为整数
 
-        ⚠️ 方案1修复：支持多种输入格式，解决数据库VARCHAR存储导致的类型不匹配问题
-
-        支持的输入格式：
+        使用统一的枚举类方法进行类型转换，支持多种输入格式：
         - 整数：0, 1
         - 字符串数字："0", "1"
-        - 英文名称："qbittorrent", "transmission"
-        - 中文名称："qBittorrent", "Transmission"
+        - 名称："qbittorrent", "transmission"（不区分大小写）
 
         Returns:
             int: 规范化后的下载器类型 (0=qBittorrent, 1=Transmission)
-
-        Raises:
-            ConfigurationError: 无法识别的下载器类型
         """
         raw_type = self.downloader.downloader_type
-
-        # 如果已经是整数，直接验证并返回
-        if isinstance(raw_type, int):
-            if raw_type in [0, 1]:
-                logger.debug(f"下载器类型为整数: {raw_type}")
-                return raw_type
-            raise ConfigurationError(
-                message=f"无效的下载器类型(整数): {raw_type}",
-                parameter_name="downloader_type",
-                parameter_value=raw_type
-            )
-
-        # 如果是字符串，进行转换
-        if isinstance(raw_type, str):
-            # 支持字符串数字
-            if raw_type in ["0", "1"]:
-                normalized = int(raw_type)
-                logger.debug(f"下载器类型从字符串数字转换: '{raw_type}' -> {normalized}")
-                return normalized
-
-            # 支持英文名称（不区分大小写）
-            lower_type = raw_type.lower()
-            if lower_type in ["qbittorrent", "qbt"]:
-                logger.debug(f"下载器类型从英文名称转换: '{raw_type}' -> 0")
-                return 0
-            if lower_type in ["transmission", "tr"]:
-                logger.debug(f"下载器类型从英文名称转换: '{raw_type}' -> 1")
-                return 1
-
-            # 支持中文名称（不区分大小写，支持部分匹配）
-            if "qbittorrent" in lower_type or "qbit" in lower_type:
-                logger.debug(f"下载器类型从中文名称转换: '{raw_type}' -> 0")
-                return 0
-            if "transmission" in lower_type or "trans" in lower_type:
-                logger.debug(f"下载器类型从中文名称转换: '{raw_type}' -> 1")
-                return 1
-
-        # 无法识别的类型
-        raise ConfigurationError(
-            message=f"不支持的下载器类型: '{raw_type}' (类型: {type(raw_type).__name__})",
-            parameter_name="downloader_type",
-            parameter_value=raw_type
-        )
+        normalized = DownloaderTypeEnum.normalize(raw_type)
+        logger.debug(f"下载器类型规范化: {raw_type} (类型: {type(raw_type).__name__}) -> {normalized}")
+        return normalized
 
     def _create_settings_wrapper(self) -> Any:
         """

@@ -27,6 +27,7 @@ from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +97,11 @@ class TorrentDeletionByLevelService:
             raise ValueError(f"下载器客户端连接不存在 [downloader_id={downloader.downloader_id}]")
 
         # 确定下载器类型
-        if downloader.downloader_type == 0 or downloader.downloader_type == '0':
+        normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
+
+        if normalized_type == DownloaderTypeEnum.QBITTORRENT:
             downloader_type_str = 'qbittorrent'
-        elif downloader.downloader_type == 1 or downloader.downloader_type == '1':
+        elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
             downloader_type_str = 'transmission'
         else:
             raise ValueError(f"不支持的下载器类型: {downloader.downloader_type}")

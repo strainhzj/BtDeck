@@ -11,6 +11,7 @@ import logging
 from .base import TorrentTagAdapter
 from .qbittorrent_adapter import QBittorrentTagAdapter
 from .transmission_adapter import TransmissionTagAdapter
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 
@@ -119,89 +120,28 @@ class TagAdapterFactory:
     @classmethod
     def _normalize_downloader_type(cls, downloader_type: str) -> str:
         """
-        标准化下载器类型（增强版）
+        标准化下载器类型标识
 
-        将各种可能的下载器类型值标准化为统一的类型标识。
-        兼容Integer/String/Enum等多种格式。
-
-        优化点：
-        - ✅ 优先尝试int()转换，提升数值类型识别成功率
-        - ✅ 增加调试日志，方便问题排查
+        使用统一的枚举类方法进行类型转换，支持多种输入格式：
+        - 整数：0, 1
+        - 字符串数字："0", "1"
+        - 名称："qbittorrent", "transmission"（不区分大小写）
 
         Args:
             downloader_type: 原始下载器类型
 
         Returns:
-            标准化后的类型标识 ('qbittorrent' | 'transmission' | 'unknown')
-
-        Examples:
-            >>> TagAdapterFactory._normalize_downloader_type('0')
-            'qbittorrent'
-            >>> TagAdapterFactory._normalize_downloader_type('1')
-            'transmission'
-            >>> rpc_url = "http://localhost:9091/transmission/rpc"  # noqa: E501
-            >>> adapter = TagAdapterFactory.create_adapter(  # noqa: E501
-            ...     downloader, session=rpc_session, rpc_url=rpc_url
-            ... )
+            标准化后的类型标识 ('qbittorrent' | 'transmission')
         """
-        # ✅ 修复：明确检查 None，避免拦截数字 0
         if downloader_type is None:
-            logger.debug(f"下载器类型为 None，返回unknown")
-            return 'unknown'
-
-        # ✅ 优化：优先尝试直接数值转换（兼容Integer类型）
-        try:
-            type_int = int(downloader_type)
-            if type_int == 0:
-                logger.debug(f"类型标准化: {downloader_type} (type: {type(downloader_type).__name__}) -> qbittorrent")
-                return 'qbittorrent'
-            elif type_int == 1:
-                logger.debug(f"类型标准化: {downloader_type} (type: {type(downloader_type).__name__}) -> transmission")
-                return 'transmission'
-        except (ValueError, TypeError):
-            # 不是数值类型，继续后续字符串处理
-            pass
-
-        # 转换为字符串并转小写
-        type_str = str(downloader_type).strip().lower()
-
-        # 数字类型映射（字符串形式）
-        type_mappings = {
-            '0': 'qbittorrent',
-            '1': 'transmission',
-            # 兼容更多可能的值
-            'qbit': 'qbittorrent',
-            'qb': 'qbittorrent',
-            'tr': 'transmission',
-            'trans': 'transmission',
-        }
-
-        # 直接匹配
-        if type_str in type_mappings:
-            result = type_mappings[type_str]
-            logger.debug(f"类型标准化: {downloader_type} -> {result}")
-            return result
-
-        # 数值匹配（字符串形式的数字）
-        if type_str.isdigit():
-            type_int = int(type_str)
-            if type_int == 0:
-                logger.debug(f"类型标准化: {downloader_type} -> qbittorrent")
-                return 'qbittorrent'
-            elif type_int == 1:
-                logger.debug(f"类型标准化: {downloader_type} -> transmission")
-                return 'transmission'
-
-        # 模糊匹配
-        if 'qbittorrent' in type_str or 'qbittorrent' in type_str:
-            logger.debug(f"类型标准化: {downloader_type} -> qbittorrent")
+            logger.debug(f"下载器类型为 None，返回 qbittorrent（默认值）")
             return 'qbittorrent'
-        if 'transmission' in type_str or 'trans' in type_str:
-            logger.debug(f"类型标准化: {downloader_type} -> transmission")
-            return 'transmission'
 
-        logger.warning(f"无法识别的下载器类型: {downloader_type} (type: {type(downloader_type).__name__})")
-        return 'unknown'
+        # 使用枚举类规范化并转换为名称
+        normalized_int = DownloaderTypeEnum.normalize(downloader_type)
+        type_name = DownloaderTypeEnum(normalized_int).to_name()
+        logger.debug(f"类型标准化: {downloader_type} (type: {type(downloader_type).__name__}) -> {type_name}")
+        return type_name
 
     @classmethod
     def get_supported_types(cls) -> list:
