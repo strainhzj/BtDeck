@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.database import AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
+from app.models.setting_templates import DownloaderTypeEnum
 from app.services.downloader_adapters.qbittorrent_location import QBittorrentLocationAdapter
 from app.services.downloader_adapters.transmission_location import TransmissionLocationAdapter
 
@@ -243,9 +244,11 @@ class TorrentLocationService:
             client = downloader_vo.client
 
             # 根据下载器类型创建适配器
-            if downloader.downloader_type == 0:  # qBittorrent
+            normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
+
+            if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                 return QBittorrentLocationAdapter(client=client)
-            elif downloader.downloader_type == 1:  # Transmission
+            elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 return TransmissionLocationAdapter(client=client)
             else:
                 logger.error(f"不支持的下载器类型: {downloader.downloader_type}")

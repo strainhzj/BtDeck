@@ -45,6 +45,7 @@ from app.services.torrent_deletion_service import (
     SafetyCheckLevel
 )
 from app.schemas.torrent_location import SetLocationRequest
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -162,12 +163,9 @@ def _register_downloader_adapters(
                 logger.error(f"下载器 {downloader.nickname} (ID={downloader.downloader_id}) 客户端连接不存在")
                 continue
 
-            # 🔧 关键修复：统一下载器类型字符串（用于适配器创建）
-            downloader_type_str = None
-            if downloader.downloader_type == 'qbittorrent' or downloader.downloader_type == 0 or downloader.downloader_type == '0':
-                downloader_type_str = 'qbittorrent'
-            elif downloader.downloader_type == 'transmission' or downloader.downloader_type == 1 or downloader.downloader_type == '1':
-                downloader_type_str = 'transmission'
+            # 🔧 使用统一的枚举类方法进行类型转换
+            normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
+            downloader_type_str = DownloaderTypeEnum(normalized_type).to_name()
 
             if downloader_type_str:
                 # 使用缓存的客户端连接创建适配器
@@ -1927,7 +1925,9 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
     current_tracker_urls = set()
     tracker_rows = []
 
-    if downloader_type == "qbittorrent":
+    # 使用统一的枚举类方法进行类型判断
+    type_name = DownloaderTypeEnum(downloader_type).to_name()
+    if type_name == "qbittorrent":
         trackers_data = getattr(torrent_info, 'trackers', None)
         if callable(trackers_data):
             trackers_data = trackers_data()
@@ -1957,7 +1957,7 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
                 'dr': 0
             })
 
-    elif downloader_type == "transmission":
+    elif type_name == "transmission":
         tracker_stats = getattr(torrent_info, 'tracker_stats', None) or []
         for tracker_status in tracker_stats:
             tracker_url = tracker_status.fields.get('announce')
@@ -3373,11 +3373,9 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
         ).first()
         if downloader:
             downloader_type_raw = downloader[0] if isinstance(downloader, tuple) else downloader
-            # 转换下载器类型：0/qbittorrent -> qbittorrent, 1/transmission -> transmission
-            if downloader_type_raw in (0, '0', 'qbittorrent'):
-                downloader_type = "qbittorrent"
-            elif downloader_type_raw in (1, '1', 'transmission'):
-                downloader_type = "transmission"
+            # 使用统一的枚举类方法进行类型转换
+            downloader_type_int = DownloaderTypeEnum.normalize(downloader_type_raw)
+            downloader_type = DownloaderTypeEnum(downloader_type_int).to_name()
     except Exception as e:
         logger.warning(f"无法查询下载器类型，使用默认值 qBittorrent: {e}")
 

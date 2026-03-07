@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.services.tag_service import TagService
 from app.services.tag_adapters.tag_adapter_factory import TagAdapterFactory
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 
@@ -305,11 +306,9 @@ class TagSyncService:
                 }
 
             # 标准化下载器类型
-            client_type = TagAdapterFactory._normalize_downloader_type(
-                downloader.downloader_type
-            )
+            normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
 
-            if client_type == 'unknown':
+            if normalized_type == DownloaderTypeEnum.UNKNOWN:
                 return {
                     "success": False,
                     "data": [],
@@ -317,8 +316,10 @@ class TagSyncService:
                     "total_count": 0
                 }
 
+            client_type = 'qbittorrent' if normalized_type == DownloaderTypeEnum.QBITTORRENT else 'transmission'
+
             # ✅ 优化：根据类型使用不同的获取策略
-            if client_type == 'qbittorrent':
+            if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                 # qBittorrent：使用SDK方法（已实现）
                 adapter = TagAdapterFactory.create_adapter(
                     downloader=downloader,
@@ -326,7 +327,7 @@ class TagSyncService:
                     session=None,
                     rpc_url=None
                 )
-            elif client_type == 'transmission':
+            elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 # Transmission：动态构建RPC URL
                 # ✅ 修复：兼容is_ssl和isSsl两种属性名
                 has_ssl = getattr(downloader, 'is_ssl', None)

@@ -18,7 +18,7 @@ class BtDownloaders(Base):
     is_search = Column(Boolean, default=True)  # 是否启用种子搜索
     status = Column(String, default=True)  #  下载器状态
     enabled = Column(Boolean, default=True)  #  下载器启用状态
-    downloader_type = Column(String, default=True)  # 下载器类型
+    downloader_type = Column(Integer, nullable=False, default=0, comment='下载器类型：0=qBittorrent, 1=Transmission')  # 下载器类型
     port = Column(String, index=True)  # 端口
     is_ssl = Column(Boolean, default=True)  # 是否https
     dr = Column(Integer, default=0)   #   删除状态，0是未删除，1是逻辑删除

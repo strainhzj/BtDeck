@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Any, List
 from app.utils.encryption import encrypt_password, decrypt_password
+from app.models.setting_templates import DownloaderTypeEnum
 
 
 class DownloaderSimpleVO(BaseModel):
@@ -43,24 +44,13 @@ class DownloaderListVO(BaseModel):
         else:
             host_field = None
 
-        # 转换枚举值：字符串 -> 数字
+        # 使用统一的类型转换方法
         downloader_type_int = None
         downloader_type_name = None
         if downloader_type is not None:
-            # 转换为数字枚举
-            if downloader_type == "qbittorrent" or downloader_type == 0 or downloader_type == "0":
-                downloader_type_int = 0
-                downloader_type_name = "qbittorrent"
-            elif downloader_type == "transmission" or downloader_type == 1 or downloader_type == "1":
-                downloader_type_int = 1
-                downloader_type_name = "transmission"
-            else:
-                # 未知类型，记录警告并使用默认值
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"未知的下载器类型: {downloader_type}，使用默认值0(qBittorrent)")
-                downloader_type_int = 0
-                downloader_type_name = "unknown"
+            # 使用枚举类的 normalize 方法统一转换
+            downloader_type_int = DownloaderTypeEnum.normalize(downloader_type)
+            downloader_type_name = DownloaderTypeEnum(downloader_type_int).to_name()
 
         # 将整数 0/1 转换为字符串 "0"/"1"（修复 Pydantic 验证错误）
         # 修复P1问题：使用精确的枚举值检查，避免将0误判
@@ -106,24 +96,13 @@ class DownloaderVO(BaseModel):
 
     def __init__(self, downloader_id, nickname, host, username, password, is_search, status, enabled, downloader_type,port,is_ssl,
                  path_mapping_rules=None, torrent_save_path=None, **kw: Any):
-        # 转换枚举值：字符串 -> 数字
+        # 使用统一的类型转换方法
         downloader_type_int = None
         downloader_type_name = None
         if downloader_type is not None:
-            # 转换为数字枚举
-            if downloader_type == "qbittorrent" or downloader_type == 0 or downloader_type == "0":
-                downloader_type_int = 0
-                downloader_type_name = "qbittorrent"
-            elif downloader_type == "transmission" or downloader_type == 1 or downloader_type == "1":
-                downloader_type_int = 1
-                downloader_type_name = "transmission"
-            else:
-                # 未知类型，记录警告并使用默认值
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.warning(f"未知的下载器类型: {downloader_type}，使用默认值0(qBittorrent)")
-                downloader_type_int = 0
-                downloader_type_name = "unknown"
+            # 使用枚举类的 normalize 方法统一转换
+            downloader_type_int = DownloaderTypeEnum.normalize(downloader_type)
+            downloader_type_name = DownloaderTypeEnum(downloader_type_int).to_name()
 
         # 将整数 0/1 转换为字符串 "0"/"1"（修复 Pydantic 验证错误）
         # 修复P1问题：使用精确的枚举值检查，避免将0误判

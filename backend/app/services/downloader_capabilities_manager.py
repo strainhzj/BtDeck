@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.models.downloader_capabilities import DownloaderCapabilities
+from app.models.setting_templates import DownloaderTypeEnum
 from app.downloader.models import BtDownloaders
 from app.downloader.exceptions import (
     DownloaderSettingsError,
@@ -114,7 +115,9 @@ class DownloaderCapabilitiesManager:
         """
         try:
             # 根据下载器类型设置默认能力
-            if downloader_type == 0:  # qBittorrent
+            normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+
+            if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                 capabilities = DownloaderCapabilities(
                     downloader_id=downloader_id,
                     supports_speed_scheduling=True,  # 应用层实现
@@ -128,7 +131,7 @@ class DownloaderCapabilitiesManager:
                     synced_from_downloader=False,
                     manual_override=False
                 )
-            elif downloader_type == 1:  # Transmission
+            elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 capabilities = DownloaderCapabilities(
                     downloader_id=downloader_id,
                     supports_speed_scheduling=False,  # Transmission暂不支持（可通过alt_speed实现）

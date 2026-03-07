@@ -8,6 +8,7 @@
 
 from typing import Dict, Any, Optional, List
 import logging
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 
@@ -344,12 +345,14 @@ class FallbackHandler:
             return None
 
         # 根据类型创建适配器
-        if downloader_vo.downloader_type == 0:  # qBittorrent
+        normalized_type = DownloaderTypeEnum.normalize(downloader_vo.downloader_type)
+
+        if normalized_type == DownloaderTypeEnum.QBITTORRENT:
             return QBittorrentTagAdapter(
                 downloader_id=downloader_id,
                 client=downloader_vo.client
             )
-        elif downloader_vo.downloader_type == 1:  # Transmission
+        elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
             return TransmissionTagAdapter(
                 downloader_id=downloader_id,
                 session=downloader_vo.session,
@@ -371,8 +374,11 @@ class FallbackHandler:
         Returns:
             str: 下载器类型字符串
         """
-        type_mapping = {
-            0: FallbackHandler.DOWNLOADER_QBITTORRENT,
-            1: FallbackHandler.DOWNLOADER_TRANSMISSION
-        }
-        return type_mapping.get(downloader_type_int, "unknown")
+        normalized_type = DownloaderTypeEnum.normalize(downloader_type_int)
+
+        if normalized_type == DownloaderTypeEnum.QBITTORRENT:
+            return FallbackHandler.DOWNLOADER_QBITTORRENT
+        elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
+            return FallbackHandler.DOWNLOADER_TRANSMISSION
+
+        return "unknown"

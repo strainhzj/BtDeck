@@ -26,6 +26,7 @@ from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
 from app.downloader.models import BtDownloaders
 from app.utils.encryption import encrypt_password, decrypt_password
+from app.models.setting_templates import DownloaderTypeEnum
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1519,7 +1520,7 @@ async def test_downloader_settings(
             start_time = time.time()
 
             # 根据下载器类型创建对应的客户端
-            if int(test_downloader_type) == 0:  # qBittorrent
+            if DownloaderTypeEnum.normalize(test_downloader_type) == DownloaderTypeEnum.QBITTORRENT:  # qBittorrent
                 from qbittorrentapi import Client as QBClient
                 from qbittorrentapi import LoginFailed
 
@@ -1590,7 +1591,7 @@ async def test_downloader_settings(
                         }
                     )
 
-            elif int(test_downloader_type) == 1:  # Transmission
+            elif DownloaderTypeEnum.normalize(test_downloader_type) == DownloaderTypeEnum.TRANSMISSION:  # Transmission
                 from transmission_rpc import Client as TrClient
                 from transmission_rpc.error import TransmissionError
 

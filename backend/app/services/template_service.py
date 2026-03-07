@@ -484,19 +484,15 @@ class TemplateService:
             raise ValueError("下载器不存在")
 
         # 检查模板类型与下载器类型是否匹配
-        downloader_type_map = {
-            "0": 0, "qbittorrent": 0,
-            "1": 1, "transmission": 1
-        }
+        normalized_downloader_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
 
-        normalized_downloader_type = downloader_type_map.get(
-            downloader.downloader_type,
-            int(downloader.downloader_type) if downloader.downloader_type.isdigit() else downloader.downloader_type
-        )
+        # 将 DownloaderTypeEnum 转换为整数进行比较
+        template_type_int = template.downloader_type
+        downloader_type_int = normalized_downloader_type.value
 
-        if template.downloader_type != normalized_downloader_type:
+        if template_type_int != downloader_type_int:
             raise ValueError(
-                f"模板类型（{template.downloader_type}）与下载器类型（{downloader.downloader_type}）不匹配"
+                f"模板类型（{template_type_int}）与下载器类型（{downloader_type_int}）不匹配"
             )
 
         # 解析模板配置

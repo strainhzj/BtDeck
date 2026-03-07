@@ -7,6 +7,7 @@
 from typing import Any, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
+from app.models.setting_templates import DownloaderTypeEnum
 
 
 class SettingTemplateVO(BaseModel):
@@ -53,16 +54,11 @@ class SettingTemplateVO(BaseModel):
             updated_at: 更新时间
             path_mapping: 路径映射配置
         """
-        # 转换枚举值为字符串名称
+        # 使用统一的类型转换方法
         downloader_type_name = None
         if downloader_type is not None:
-            if downloader_type == 0 or downloader_type == "0":
-                downloader_type_name = "qbittorrent"
-            elif downloader_type == 1 or downloader_type == "1":
-                downloader_type_name = "transmission"
-            else:
-                # 如果已经是字符串，直接使用
-                downloader_type_name = downloader_type if isinstance(downloader_type, str) else str(downloader_type)
+            downloader_type_int = DownloaderTypeEnum.normalize(downloader_type)
+            downloader_type_name = DownloaderTypeEnum(downloader_type_int).to_name()
 
         # 格式化时间
         created_at_str = created_at.isoformat() if created_at else None
