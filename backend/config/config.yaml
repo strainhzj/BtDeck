@@ -1,0 +1,34 @@
+app:
+  name: MyApplication
+  version: 1.0.0
+  debug: false
+  log_level: INFO
+database:
+  host: localhost
+  port: 3306
+  username: user
+  password: password
+  database: mydb
+  charset: utf8mb4
+  pool_size: 5
+server:
+  host: 0.0.0.0
+  port: 8000
+  workers: 4
+  timeout: 60
+security:
+  secret_key: a01d02501e6f837e
+  token_expire_minutes: 60
+  algorithm: HS256
+  login_status_secret: cf076b6d9acc0800
+cors:
+  allowed_origins:
+  - '*'
+  allowed_methods:
+  - '*'
+  allowed_headers:
+  - '*'
+logging:
+  file: app.log
+  max_size_mb: 10
+  backup_count: 5
