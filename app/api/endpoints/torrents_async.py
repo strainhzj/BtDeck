@@ -1003,7 +1003,8 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             TorrentInfo.info_id,
             TorrentInfo.create_time,
             TorrentInfo.progress,
-            TorrentInfo.backup_file_path
+            TorrentInfo.backup_file_path,
+            TorrentInfo.downloader_name  # ✅ 添加：保存原始的 downloader_name
         ).filter(
             TorrentInfo.downloader_id == bt_downloader.downloader_id
         ).filter(
@@ -1012,9 +1013,9 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     )
     existing_torrents_rows = result.all()
 
-    # 构建内存字典：{hash: (info_id, create_time, progress, backup_file_path)}
+    # 构建内存字典：{hash: (info_id, create_time, progress, backup_file_path, downloader_name)}
     existing_torrents_cache = {
-        row.hash: (row.info_id, row.create_time, row.progress, row.backup_file_path)
+        row.hash: (row.info_id, row.create_time, row.progress, row.backup_file_path, row.downloader_name)
         for row in existing_torrents_rows
     }
 
@@ -1064,10 +1065,12 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             update_time = current_time
             progress_value = new_progress
             backup_file_path = None
+            cached_downloader_name = None  # ✅ 新增：缓存中没有 downloader_name
         else:
             mode = "update"
             stats['update_count'] += 1
-            torrent_info_id, create_time, old_progress_cached, backup_file_path = cached_data
+            # ✅ 修复：解包时包含 downloader_name（保持复合主键一致性）
+            torrent_info_id, create_time, old_progress_cached, backup_file_path, cached_downloader_name = cached_data
 
             if create_time is None:
                 create_time = current_time
@@ -1083,10 +1086,14 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                 logger.debug(f"进度更新: {torrent_info.name}, {old_progress:.2f}% → {new_progress:.2f}%")
 
         # 构建种子数据字典
+        # ✅ 修复：使用数据库中的原始 downloader_name，避免复合主键不匹配
+        # 对于新插入的记录，使用当前的 nickname；对于更新的记录，使用数据库中的原始值
+        downloader_name_to_use = cached_downloader_name if cached_downloader_name else bt_downloader.nickname
+
         torrent_data = {
             'info_id': torrent_info_id,
             'downloader_id': bt_downloader.downloader_id,
-            'downloader_name': bt_downloader.nickname,
+            'downloader_name': downloader_name_to_use,  # ✅ 使用原始值保持主键一致
             'torrent_id': torrent_info.id,
             'hash': torrent_info.hashString,
             'name': torrent_info.name,
@@ -1374,6 +1381,19 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         f"错误 {stats['error_count']} 个"
     )
 
+    # ✅ 关键修复：提交tracker数据的修改
+    # 原因：sync_add_tracker_async中执行的tracker插入/更新操作需要在函数结束前commit
+    # 问题：类似于 qb_add_torrents_async，tracker操作在新事务中，但函数结束时未commit
+    # 影响：不提交会导致所有 tracker 数据丢失
+    try:
+        await db.commit()
+        logger.info(f"[{bt_downloader.nickname}] ✅ Tracker数据批量提交成功（包括 {len(torrent_info_map)} 个种子的tracker信息）")
+        logger.debug(f"[TRACKER_FIX] Transmission Tracker数据批量提交成功")
+    except Exception as tracker_commit_err:
+        logger.error(f"[{bt_downloader.nickname}] ❌ Tracker数据提交失败: {str(tracker_commit_err)}")
+        logger.error(f"[TRACKER_FIX] Transmission Tracker数据提交失败: {str(tracker_commit_err)}")
+        await db.rollback()
+
 
 # ==============================================================================
 # qBittorrent 种子同步（优化版本）
@@ -1543,7 +1563,8 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             TorrentInfo.info_id,
             TorrentInfo.create_time,
             TorrentInfo.progress,
-            TorrentInfo.backup_file_path
+            TorrentInfo.backup_file_path,
+            TorrentInfo.downloader_name  # ✅ 添加：保存原始的 downloader_name
         ).filter(
             TorrentInfo.downloader_id == bt_downloader.downloader_id
         ).filter(
@@ -1552,9 +1573,9 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     )
     existing_torrents_rows = result.all()
 
-    # 构建内存字典：{hash: (info_id, create_time, progress, backup_file_path)}
+    # 构建内存字典：{hash: (info_id, create_time, progress, backup_file_path, downloader_name)}
     existing_torrents_cache = {
-        row.hash: (row.info_id, row.create_time, row.progress, row.backup_file_path)
+        row.hash: (row.info_id, row.create_time, row.progress, row.backup_file_path, row.downloader_name)
         for row in existing_torrents_rows
     }
 
