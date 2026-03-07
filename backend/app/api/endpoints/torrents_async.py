@@ -792,9 +792,12 @@ async def sync_add_tracker_async(
                 )
 
             # 插入新记录或更新现有记录
+            # 使用 index_where 参数指定部分索引的WHERE条件（SQLAlchemy 2.0语法）
+            from sqlalchemy import text as sa_text
             stmt = sqlite_insert(trackerInfoModel).values(tracker_rows)
             stmt = stmt.on_conflict_do_update(
                 index_elements=['torrent_info_id', 'tracker_url'],
+                index_where=sa_text('dr = 0'),  # 指定部分索引的WHERE条件
                 set_={
                     'tracker_name': stmt.excluded.tracker_name,
                     'last_announce_succeeded': stmt.excluded.last_announce_succeeded,
@@ -2001,7 +2004,7 @@ TR_BATCH_SIZE = int(os.getenv('TR_BATCH_SIZE', '1000'))
 QB_USE_INCREMENTAL_SYNC = os.getenv('QB_USE_INCREMENTAL_SYNC', 'true').lower() == 'true'
 QB_API_TIMEOUT = int(os.getenv('QB_API_TIMEOUT', '60'))
 TR_API_TIMEOUT = int(os.getenv('TR_API_TIMEOUT', '60'))
-TR_ACTIVE_WINDOW_SECONDS = int(os.getenv('TR_ACTIVE_WINDOW_SECONDS', '300'))
+TR_ACTIVE_WINDOW_SECONDS = int(os.getenv('TR_ACTIVE_WINDOW_SECONDS', '43200'))  # 默认12小时（覆盖静种）
 QB_FULL_SYNC_INTERVAL_SECONDS = int(os.getenv('QB_FULL_SYNC_INTERVAL_SECONDS', '43200'))
 TR_FULL_SYNC_INTERVAL_SECONDS = int(os.getenv('TR_FULL_SYNC_INTERVAL_SECONDS', '43200'))
 TR_BASE_FIELDS = [
