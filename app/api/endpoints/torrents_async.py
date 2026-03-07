@@ -1641,11 +1641,13 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             update_time = current_time
             progress_value = new_progress
             backup_file_path = None
+            cached_downloader_name = None  # ✅ 添加：新种子没有缓存的 downloader_name
         else:
             # 已存在种子：更新
             mode = "update"
             stats['update_count'] += 1
-            torrent_info_id, create_time, old_progress_cached, backup_file_path = cached_data
+            # ✅ 修复：解包时包含 downloader_name（与 Transmission 保持一致）
+            torrent_info_id, create_time, old_progress_cached, backup_file_path, cached_downloader_name = cached_data
 
             if create_time is None:
                 create_time = current_time
@@ -1660,11 +1662,15 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                 progress_value = new_progress
                 logger.debug(f"进度更新: {torrent_info.name}, {old_progress:.2f}% → {new_progress:.2f}%")
 
+        # ✅ 修复：使用数据库中的原始 downloader_name，避免复合主键不匹配
+        # 对于新插入的记录，使用当前的 nickname；对于更新的记录，使用数据库中的原始值
+        downloader_name_to_use = cached_downloader_name if cached_downloader_name else bt_downloader.nickname
+
         # 构建种子数据字典
         torrent_data = {
             'info_id': torrent_info_id,
             'downloader_id': bt_downloader.downloader_id,
-            'downloader_name': bt_downloader.nickname,
+            'downloader_name': downloader_name_to_use,  # ✅ 使用原始值保持主键一致
             'torrent_id': torrent_hash,
             'hash': torrent_hash,
             'name': _qb_get_attr(torrent_info, 'name', ''),
@@ -2103,10 +2109,17 @@ def _qb_get_attr(obj: Any, key: str, default: Any = None) -> Any:
 async def _enrich_qb_torrents_with_trackers(
     client: qbClient,
     torrent_info_list: List[Any],
-    batch_size: int = 100
+    concurrency_limit: int = 10
 ) -> None:
     """
     Enrich qBittorrent torrents with tracker info after sync/maindata.
+
+    使用并发单次调用优化性能，避免批量 API 不支持的问题。
+
+    Args:
+        client: qBittorrent 客户端实例
+        torrent_info_list: 种子信息列表
+        concurrency_limit: 并发限制，默认 10，避免对服务器造成过大压力
     """
     if not torrent_info_list:
         return
@@ -2125,47 +2138,71 @@ async def _enrich_qb_torrents_with_trackers(
 
     enrich_start = datetime.now()
     logger.info(
-        f"[QB_TRACKER_ENRICH] Enriching {len(torrent_hashes)} torrents with tracker info"
+        f"[QB_TRACKER_ENRICH] Enriching {len(torrent_hashes)} torrents with tracker info "
+        f"(concurrency: {concurrency_limit})"
     )
 
-    for i in range(0, len(torrent_hashes), batch_size):
-        batch_hashes = torrent_hashes[i:i + batch_size]
-        try:
-            trackers_map = await asyncio.to_thread(
-                client.torrents_trackers,
-                hashes=batch_hashes
-            )
-            if isinstance(trackers_map, dict) and trackers_map:
-                for torrent_hash, trackers in trackers_map.items():
-                    torrent_info = info_by_hash.get(torrent_hash)
-                    if torrent_info:
-                        torrent_info.trackers = trackers
-                logger.debug(
-                    f"[QB_TRACKER_ENRICH] Batch {i // batch_size + 1} completed: "
-                    f"{len(batch_hashes)} torrents"
-                )
-                continue
-        except Exception as e:
-            logger.warning(
-                f"[QB_TRACKER_ENRICH] Batch fetch failed, fallback to single calls: {e}"
-            )
+    async def _fetch_single_trackers(torrent_hash: str) -> tuple[str, Any] | None:
+        """
+        获取单个种子的 tracker 信息
 
-        for torrent_hash in batch_hashes:
-            try:
-                trackers = await asyncio.to_thread(client.torrents_trackers, torrent_hash)
-                torrent_info = info_by_hash.get(torrent_hash)
-                if torrent_info:
-                    torrent_info.trackers = trackers
-            except Exception as e:
-                logger.error(
-                    f"[QB_TRACKER_ENRICH] Failed to fetch trackers for {torrent_hash}: {e}"
+        Returns:
+            (torrent_hash, trackers) 元组，失败时返回 None
+        """
+        try:
+            trackers = await asyncio.to_thread(
+                client.torrents_trackers,
+                torrent_hash
+            )
+            return torrent_hash, trackers
+        except Exception as e:
+            logger.error(
+                f"[QB_TRACKER_ENRICH] Failed to fetch trackers for {torrent_hash[:16]}...: {e}"
+            )
+            return None
+
+    # 使用信号量限制并发数
+    semaphore = asyncio.Semaphore(concurrency_limit)
+
+    async def _fetch_with_semaphore(torrent_hash: str) -> tuple[str, Any] | None:
+        """带并发限制的获取函数"""
+        async with semaphore:
+            return await _fetch_single_trackers(torrent_hash)
+
+    # 并发执行所有获取任务
+    tasks = [_fetch_with_semaphore(h) for h in torrent_hashes]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    # 处理结果
+    success_count = 0
+    failed_count = 0
+
+    for result in results:
+        # 处理异常情况
+        if isinstance(result, Exception):
+            logger.error(f"[QB_TRACKER_ENRICH] Task failed with exception: {result}")
+            failed_count += 1
+            continue
+
+        # 处理正常返回结果
+        if result is not None:
+            torrent_hash, trackers = result
+            torrent_info = info_by_hash.get(torrent_hash)
+            if torrent_info:
+                torrent_info.trackers = trackers
+                success_count += 1
+            else:
+                logger.warning(
+                    f"[QB_TRACKER_ENRICH] Torrent info not found for hash {torrent_hash[:16]}..."
                 )
-                continue
+                failed_count += 1
+        else:
+            failed_count += 1
 
     enrich_duration = (datetime.now() - enrich_start).total_seconds()
     logger.info(
-        f"[QB_TRACKER_ENRICH] Completed enrichment for {len(torrent_hashes)} torrents "
-        f"in {enrich_duration:.3f}s"
+        f"[QB_TRACKER_ENRICH] Completed enrichment: {success_count} succeeded, "
+        f"{failed_count} failed, {len(torrent_hashes)} total in {enrich_duration:.3f}s"
     )
 
 
