@@ -12,6 +12,7 @@ from app.models.downloader_settings import SpeedUnitEnum
 import enum
 import logging
 import json
+import traceback
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,12 @@ class DownloaderTypeEnum(enum.IntEnum):
                 return 0
 
         # 其他类型，默认返回 qBittorrent
-        logger.warning(f"不支持的下载器类型: {type(value)}={value}，默认使用 qBittorrent (0)")
+        # 添加完整调用栈以便定位问题来源
+        stack_trace = ''.join(traceback.format_stack())
+        logger.warning(
+            f"不支持的下载器类型: {type(value)}={value}，默认使用 qBittorrent (0)\n"
+            f"完整调用栈:\n{stack_trace}"
+        )
         return 0
 
 
