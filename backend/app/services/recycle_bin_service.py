@@ -695,20 +695,40 @@ class RecycleBinService:
                             failed_files = []
 
                             for file_rel_path in original_file_list:
-                                # 构建完整路径（在.pending_delete文件夹中）
-                                if torrent.original_filename:
-                                    # 多文件种子: /save_path/name.pending_delete/relpath
+                                # 🔥 修复1：移除种子名称前缀（针对多文件种子）
+                                # qBittorrent 返回格式: "[种子名]/vol01.cbz"
+                                # 实际需要格式: "vol01.cbz"
+                                if torrent.original_filename and file_rel_path.startswith(f"{torrent.original_filename}/"):
+                                    file_rel_path = file_rel_path[len(f"{torrent.original_filename}/"):]
+                                    logger.debug(f"[路径前缀移除] 原路径包含种子名，已移除前缀: {file_rel_path}")
+
+                                # 🔥 修复2：区分单文件和多文件种子的路径构建
+                                # 判断是否为单文件种子（file_rel_path 已包含 .pending_delete）
+                                is_single_file_with_pending = file_rel_path.endswith('.pending_delete')
+
+                                if is_single_file_with_pending:
+                                    # 单文件种子: /save_path/relpath（已经是完整路径，如 xxx.epub.pending_delete）
                                     file_full_path = os.path.join(
                                         external_save_path,
-                                        f"{torrent.original_filename}.pending_delete",
                                         file_rel_path
                                     )
+                                    logger.debug(f"[单文件清理] 路径: {file_full_path}")
                                 else:
-                                    # 单文件种子: /save_path/name.pending_delete.ext
-                                    file_full_path = os.path.join(
-                                        external_save_path,
-                                        file_rel_path
-                                    )
+                                    # 多文件种子: /save_path/name.pending_delete/relpath
+                                    if torrent.original_filename:
+                                        file_full_path = os.path.join(
+                                            external_save_path,
+                                            f"{torrent.original_filename}.pending_delete",
+                                            file_rel_path
+                                        )
+                                        logger.debug(f"[多文件清理] 路径: {file_full_path}")
+                                    else:
+                                        # 回退方案：直接使用相对路径
+                                        file_full_path = os.path.join(
+                                            external_save_path,
+                                            file_rel_path
+                                        )
+                                        logger.debug(f"[回退清理] 路径: {file_full_path}")
 
                                 try:
                                     if os.path.exists(file_full_path):
@@ -716,7 +736,7 @@ class RecycleBinService:
                                         deleted_files.append(file_rel_path)
                                         logger.debug(f"删除文件成功: {file_rel_path}")
                                     else:
-                                        logger.debug(f"文件不存在，跳过: {file_rel_path}")
+                                        logger.debug(f"文件不存在，跳过: {file_full_path}")
                                 except Exception as e:
                                     failed_files.append(f"{file_rel_path}: {str(e)}")
                                     logger.warning(f"删除文件失败: {file_rel_path}, {e}")
@@ -725,6 +745,14 @@ class RecycleBinService:
                                 f"精确删除完成: 成功 {len(deleted_files)} 个, "
                                 f"失败 {len(failed_files)} 个"
                             )
+
+                            # 🔥 如果所有文件都删除失败，记录警告
+                            if len(deleted_files) == 0 and len(original_file_list) > 0:
+                                logger.warning(
+                                    f"[文件删除异常] 预期删除 {len(original_file_list)} 个文件，"
+                                    f"但实际删除 0 个。可能原因：路径格式不匹配。"
+                                    f"original_file_list 示例: {original_file_list[0] if original_file_list else 'N/A'}"
+                                )
 
                         # ========== 1.4 清理空文件夹 ==========
                         if torrent.original_filename:

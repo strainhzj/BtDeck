@@ -688,11 +688,13 @@ class TorrentDeletionByLevelService:
         """
         等级3删除: 移到回收站
 
-        步骤:
+        🔥 优化后的执行顺序（先数据库后文件）：
         1. 创建标记文件
-        2. 从下载器删除任务
-        3. 更新数据库标记deleted_at
-        4. 记录审计日志
+        2. 备份种子文件
+        3. 获取文件列表
+        4. 更新数据库（提前）
+        5. 从下载器删除任务
+        6. 移动文件到 .pending_delete（移到最后）
 
         Args:
             torrent: 种子信息
@@ -892,7 +894,80 @@ class TorrentDeletionByLevelService:
             except Exception as e:
                 logger.warning(f"获取文件列表异常: {str(e)}，继续删除但不记录文件列表")
 
-            # ========== 步骤1.7: 移动种子文件到回收站 ==========
+            # ========== 步骤3: 更新数据库（🔥 提前到文件移动之前） ==========
+            # 🔥 重要：先更新数据库，后移动文件
+            # 原因：文件移动不可回滚，数据库更新可回滚
+            # 如果文件移动失败，可以回滚数据库状态
+
+            # 保存原始字段值，用于回滚
+            original_deleted_at = torrent.deleted_at
+            original_original_filename = torrent.original_filename
+            original_backup_file_path = torrent.backup_file_path
+            original_original_file_list = torrent.original_file_list
+            original_update_time = torrent.update_time
+            original_update_by = torrent.update_by
+
+            logger.info(f"[保存原始字段值] 用于可能的回滚: deleted_at={original_deleted_at}, "
+                       f"original_filename={original_original_filename}, backup_file_path={original_backup_file_path}")
+
+            # 执行软删除
+            torrent.soft_delete(save_original_filename=True)
+
+            # 更新backup_file_path（如果备份成功）
+            if backup_success and backup_file_path:
+                torrent.backup_file_path = backup_file_path
+
+            # 更新original_file_list（如果获取成功）
+            if original_file_list:
+                torrent.original_file_list = original_file_list
+
+            torrent.update_time = datetime.now()
+            torrent.update_by = operator
+            self.db.commit()
+
+            logger.info(f"[数据库更新成功] 种子 {torrent.info_id} 已标记为删除状态")
+
+            # ========== 步骤2: 从下载器删除任务（不删除数据文件） ==========
+            delete_success, delete_error = await self._delete_from_downloader(
+                downloader, torrent, delete_data=False
+            )
+
+            if not delete_success:
+                # 🔥 删除失败，需要回滚：恢复数据库状态 + 删除标记文件
+                logger.warning(f"从下载器删除失败,回滚数据库状态和标记文件: {delete_error}")
+
+                # 回滚1: 恢复数据库状态
+                try:
+                    torrent.deleted_at = original_deleted_at
+                    torrent.original_filename = original_original_filename
+                    torrent.backup_file_path = original_backup_file_path
+                    torrent.original_file_list = original_original_file_list
+                    torrent.update_time = original_update_time
+                    torrent.update_by = original_update_by
+                    self.db.commit()
+
+                    logger.info(f"[数据库回滚成功] 种子 {torrent.info_id} 状态已恢复")
+                except Exception as db_rollback_error:
+                    logger.error(f"[数据库回滚失败] {str(db_rollback_error)}")
+
+                # 回滚2: 删除标记文件
+                try:
+                    await file_op_service.delete_marker_file(
+                        directory_path=torrent.save_path,
+                        torrent_name=torrent.name
+                    )
+                    logger.info(f"[标记文件删除成功] 已删除标记文件")
+                except Exception as marker_error:
+                    logger.error(f"[标记文件删除失败] {str(marker_error)}")
+
+                return {
+                    "success": False,
+                    "error": f"从下载器删除失败: {delete_error}",
+                    "operation": "delete_from_downloader",
+                    "rolled_back": True
+                }
+
+            # ========== 步骤1.7: 移动种子文件到回收站（🔥 移到最后执行） ==========
             # 自动检测单文件或多文件种子，并执行相应的移动操作
             # - 单文件：movie.mkv -> movie.pending_delete.mkv（直接重命名）
             # - 多文件：创建新文件夹 [文件夹名].pending_delete，移动所有内容
@@ -903,13 +978,28 @@ class TorrentDeletionByLevelService:
             )
 
             if not move_result.get("success"):
-                # 移动失败，回滚操作
+                # 🔥 移动失败，回滚数据库状态和标记文件
                 logger.warning(
                     f"移动种子失败 ({move_result.get('torrent_type', 'unknown')}): "
-                    f"{move_result.get('error')}, 回滚标记文件"
+                    f"{move_result.get('error')}, 回滚数据库状态和标记文件"
                 )
+
+                # 回滚1: 恢复数据库状态
                 try:
-                    # 删除标记文件
+                    torrent.deleted_at = original_deleted_at
+                    torrent.original_filename = original_original_filename
+                    torrent.backup_file_path = original_backup_file_path
+                    torrent.original_file_list = original_original_file_list
+                    torrent.update_time = original_update_time
+                    torrent.update_by = original_update_by
+                    self.db.commit()
+
+                    logger.info(f"[数据库回滚成功] 种子 {torrent.info_id} 状态已恢复")
+                except Exception as db_rollback_error:
+                    logger.error(f"[数据库回滚失败] {str(db_rollback_error)}")
+
+                # 回滚2: 删除标记文件
+                try:
                     await file_op_service.delete_marker_file(
                         directory_path=torrent.save_path,
                         torrent_name=torrent.name
@@ -924,57 +1014,6 @@ class TorrentDeletionByLevelService:
                     "torrent_type": move_result.get("torrent_type"),
                     "rolled_back": True
                 }
-
-            # 步骤2: 从下载器删除任务（不删除数据文件）
-            delete_success, delete_error = await self._delete_from_downloader(
-                downloader, torrent, delete_data=False
-            )
-
-            if not delete_success:
-                # 删除失败，需要回滚：恢复文件位置 + 删除标记文件
-                logger.warning(f"从下载器删除失败,回滚文件移动和标记文件: {delete_error}")
-
-                # 回滚1: 恢复文件移动
-                try:
-                    rollback_result = await self._rollback_file_move(move_result)
-                    if rollback_result.get("success"):
-                        logger.info(f"回滚成功: 文件位置已恢复")
-                    else:
-                        logger.warning(f"回滚文件移动失败: {rollback_result.get('error')}")
-                except Exception as restore_error:
-                    logger.error(f"回滚文件移动异常: {str(restore_error)}")
-
-                # 回滚2: 删除标记文件
-                try:
-                    await file_op_service.delete_marker_file(
-                        directory_path=torrent.save_path,
-                        torrent_name=torrent.name
-                    )
-                except Exception as marker_error:
-                    logger.error(f"回滚标记文件失败: {str(marker_error)}")
-
-                return {
-                    "success": False,
-                    "error": f"从下载器删除失败: {delete_error}",
-                    "operation": "delete_from_downloader",
-                    "rolled_back": True
-                }
-
-            # 步骤3: 更新数据库
-            torrent.soft_delete(save_original_filename=True)
-
-            # 更新backup_file_path（如果备份成功）
-            if backup_success and backup_file_path:
-                torrent.backup_file_path = backup_file_path
-
-            # 更新original_file_list（如果获取成功）
-            if original_file_list:
-                torrent.original_file_list = original_file_list
-
-            torrent.update_time = datetime.now()
-            torrent.update_by = operator
-
-            self.db.commit()
 
             # 记录审计日志
             if audit_service:
@@ -1359,7 +1398,7 @@ class TorrentDeletionByLevelService:
 
 
     # ========== 新增方法：获取种子文件列表 ==========
-    
+
     async def _get_torrent_files_from_qbittorrent(
         self,
         downloader: BtDownloaders,
@@ -1367,62 +1406,62 @@ class TorrentDeletionByLevelService:
     ) -> Tuple[bool, Optional[List[str]], Optional[str]]:
         """
         从 qBittorrent 获取种子文件列表（使用 app.state.store 缓存的客户端连接）
-        
+
         Args:
             downloader: 下载器信息
             torrent_hash: 种子哈希值
-        
+
         Returns:
             (成功标志, 相对路径列表, 错误消息)
         """
         # 步骤1: 获取 app 对象并检查缓存初始化
         if not self.request:
             return False, None, "Request 对象未初始化"
-        
+
         app = self.request.app if hasattr(self.request, 'app') else None
         if not app:
             return False, None, "无法获取 app 对象"
-        
+
         # 检查缓存是否已初始化（避免 AttributeError）
         if not hasattr(app.state, 'store'):
             return False, None, "下载器缓存未初始化"
-        
+
         # 步骤2: 从缓存获取下载器
         cached_downloaders = app.state.store.get_snapshot_sync()
         downloader_vo = next(
             (d for d in cached_downloaders if d.downloader_id == downloader.downloader_id),
             None
         )
-        
+
         # 步骤3: 检查下载器是否在缓存中
         if not downloader_vo:
             return False, None, f"下载器不在缓存中 [downloader_id={downloader.downloader_id}]"
-        
+
         # 步骤4: 检查下载器是否有效（fail_time=0 表示有效）
         if hasattr(downloader_vo, 'fail_time') and downloader_vo.fail_time > 0:
             return False, None, f"下载器已失效 [downloader_id={downloader.downloader_id}, nickname={downloader_vo.nickname}]"
-        
+
         # 步骤5: 获取并验证客户端连接
         client = downloader_vo.client
         if not client:
             return False, None, f"下载器客户端连接不存在 [downloader_id={downloader.downloader_id}]"
-        
+
         try:
             # 调用 qBittorrent API 获取文件列表
             torrent_files = client.torrents.files(torrent_hashes=[torrent_hash])
-            
+
             if not torrent_files or not torrent_files[0]:
                 return False, None, f"种子 {torrent_hash} 没有文件信息"
-            
+
             # 提取相对路径列表
             file_list = [f.name for f in torrent_files[0]]
-            
+
             logger.info(
                 f"qBittorrent种子 {torrent_hash} 文件列表获取成功，"
                 f"共 {len(file_list)} 个文件"
             )
             return True, file_list, None
-            
+
         except Exception as e:
             error_msg = f"qBittorrent获取文件列表失败: {str(e)}"
             logger.error(error_msg)
@@ -1437,6 +1476,9 @@ class TorrentDeletionByLevelService:
     ) -> Dict[str, Any]:
         """
         移动种子文件到回收站（根据类型自动处理）
+
+        🔥 支持幂等性：检测文件是否已移动，避免重复移动错误
+        🔥 智能合并：自动处理历史故障场景
 
         - 单文件：直接重命名 (movie.mkv -> movie.pending_delete.mkv)
         - 多文件：创建新文件夹并移动所有内容
@@ -1455,6 +1497,8 @@ class TorrentDeletionByLevelService:
                 "original_name": str,
                 "new_name": str,
                 "torrent_type": str,  # "single_file" 或 "multi_file"
+                "skipped": bool,  # 🔥 是否跳过移动（幂等性处理）
+                "cleaned": bool,  # 🔥 是否清理了历史故障
                 "error": str (可选)
             }
         """
@@ -1471,8 +1515,9 @@ class TorrentDeletionByLevelService:
                 f"[路径转换] 内部路径已转换为外部路径: {save_path}"
             )
 
-            # 判断种子类型
-            is_single_file = file_op_service.is_single_file_torrent(torrent_name)
+            # ========== 🔥 判断种子类型（使用混合策略） ==========
+            # 传递 save_path 参数，优先使用文件系统检测（更准确）
+            is_single_file = file_op_service.is_single_file_torrent(torrent_name, save_path)
             torrent_type = "single_file" if is_single_file else "multi_file"
 
             logger.info(
@@ -1498,13 +1543,31 @@ class TorrentDeletionByLevelService:
                         "torrent_type": torrent_type
                     }
 
-                # 检查目标是否已存在
+                # 🔥 幂等性检测：检查目标是否已存在
                 if os.path.exists(new_path):
-                    return {
-                        "success": False,
-                        "error": f"目标文件已存在: {new_path}",
-                        "torrent_type": torrent_type
-                    }
+                    # 原文件不存在 → 已移动，跳过
+                    if not os.path.exists(original_path):
+                        logger.warning(
+                            f"[幂等性处理] 检测到单文件已移动到 .pending_delete，"
+                            f"跳过移动操作: {new_name}"
+                        )
+                        return {
+                            "success": True,
+                            "original_path": original_path,
+                            "new_path": new_path,
+                            "is_directory": False,
+                            "original_name": torrent_name,
+                            "new_name": new_name,
+                            "torrent_type": torrent_type,
+                            "skipped": True  # 🔥 标记为跳过
+                        }
+                    else:
+                        # 原文件仍在 → 目标文件冲突
+                        return {
+                            "success": False,
+                            "error": f"目标文件已存在: {new_path}",
+                            "torrent_type": torrent_type
+                        }
 
                 # 执行重命名
                 loop = asyncio.get_event_loop()
@@ -1519,7 +1582,8 @@ class TorrentDeletionByLevelService:
                     "is_directory": False,
                     "original_name": torrent_name,
                     "new_name": new_name,
-                    "torrent_type": torrent_type
+                    "torrent_type": torrent_type,
+                    "skipped": False
                 }
 
             else:
@@ -1538,13 +1602,144 @@ class TorrentDeletionByLevelService:
                         "torrent_type": torrent_type
                     }
 
-                # 检查目标文件夹是否已存在
+                # 🔥 幂等性检测 + 智能合并：检查目标文件夹是否已存在
                 if os.path.exists(new_folder):
-                    return {
-                        "success": False,
-                        "error": f"目标文件夹已存在: {new_folder}",
-                        "torrent_type": torrent_type
-                    }
+                    # 原文件夹不存在 → 已移动，跳过
+                    if not os.path.exists(original_folder):
+                        logger.warning(
+                            f"[幂等性处理] 检测到多文件文件夹已移动到 .pending_delete，"
+                            f"跳过移动操作: {new_folder_name}/"
+                        )
+                        return {
+                            "success": True,
+                            "original_path": original_folder,
+                            "new_path": new_folder,
+                            "is_directory": True,
+                            "original_name": torrent_name,
+                            "new_name": new_folder_name,
+                            "torrent_type": torrent_type,
+                            "skipped": True  # 🔥 标记为跳过
+                        }
+
+                    # 原文件夹仍在 → 智能合并逻辑
+                    try:
+                        new_folder_contents = set(os.listdir(new_folder))
+                        original_folder_contents = set(os.listdir(original_folder))
+                    except Exception as e:
+                        logger.error(f"[检查文件夹内容失败] {str(e)}")
+                        return {
+                            "success": False,
+                            "error": f"无法检查文件夹内容: {str(e)}",
+                            "torrent_type": torrent_type
+                        }
+
+                    if not new_folder_contents:
+                        # .pending_delete 为空 → 删除残留文件夹，继续移动
+                        logger.warning(
+                            f"[清理残留文件夹] 检测到空的 .pending_delete 文件夹，"
+                            f"删除后继续移动: {new_folder}"
+                        )
+                        try:
+                            os.rmdir(new_folder)
+                            logger.info(f"[删除空文件夹成功] {new_folder}")
+                        except Exception as e:
+                            logger.error(f"[删除空文件夹失败] {new_folder}: {str(e)}")
+                            return {
+                                "success": False,
+                                "error": f"无法删除残留的空文件夹: {str(e)}",
+                                "torrent_type": torrent_type
+                            }
+
+                    else:
+                        # 🔥 智能合并：.pending_delete 不为空且原文件夹还在
+                        logger.warning(
+                            f"[智能合并检测] .pending_delete 文件夹存在且不为空，"
+                            f"但原文件夹仍在\n"
+                            f".pending_delete: {len(new_folder_contents)} 个项目\n"
+                            f"原文件夹: {len(original_folder_contents)} 个项目"
+                        )
+
+                        # 情况1：.pending_delete 的内容是原文件夹的子集 → 可能是上次复制失败
+                        if new_folder_contents.issubset(original_folder_contents):
+                            logger.warning(
+                                f"[智能合并: 子集关系] .pending_delete 的内容都在原文件夹中，"
+                                f"可能是上次移动失败的残留。删除 .pending_delete 后重新移动。"
+                            )
+                            try:
+                                import shutil
+                                loop = asyncio.get_event_loop()
+                                await loop.run_in_executor(
+                                    None,
+                                    shutil.rmtree,
+                                    new_folder
+                                )
+                                logger.info(f"[智能合并: 删除残留成功] {new_folder}")
+                            except Exception as e:
+                                logger.error(f"[智能合并: 删除残留失败] {new_folder}: {str(e)}")
+                                return {
+                                    "success": False,
+                                    "error": f"无法删除残留的 .pending_delete 文件夹: {str(e)}",
+                                    "torrent_type": torrent_type
+                                }
+
+                        # 情况2：两个文件夹内容完全不相交 → 数据损坏
+                        elif new_folder_contents.isdisjoint(original_folder_contents):
+                            logger.error(
+                                f"[智能合并: 数据损坏] 两个文件夹包含完全不同的文件\n"
+                                f".pending_delete 独有文件: {new_folder_contents}\n"
+                                f"原文件夹独有文件: {original_folder_contents}\n"
+                                f"这可能是严重的数据不一致，需要人工检查。"
+                            )
+                            return {
+                                "success": False,
+                                "error": (
+                                    f"文件系统状态不一致：两个文件夹包含完全不同的文件。\n"
+                                    f".pending_delete: {len(new_folder_contents)} 个文件\n"
+                                    f"原文件夹: {len(original_folder_contents)} 个文件\n"
+                                    f"请手动检查文件系统状态后重试。\n"
+                                    f"原路径: {original_folder}\n"
+                                    f"目标路径: {new_folder}"
+                                ),
+                                "torrent_type": torrent_type,
+                                "inconsistent_state": True,
+                                "details": {
+                                    "pending_delete_files": list(new_folder_contents),
+                                    "original_folder_files": list(original_folder_contents)
+                                }
+                            }
+
+                        # 情况3：部分重叠 → 需要人工决策
+                        else:
+                            overlap = new_folder_contents & original_folder_contents
+                            pending_only = new_folder_contents - original_folder_contents
+                            original_only = original_folder_contents - new_folder_contents
+
+                            logger.error(
+                                f"[智能合并: 部分重叠] 两个文件夹有部分重叠内容\n"
+                                f"重叠文件 ({len(overlap)} 个): {overlap}\n"
+                                f".pending_delete 独有 ({len(pending_only)} 个): {pending_only}\n"
+                                f"原文件夹独有 ({len(original_only)} 个): {original_only}\n"
+                                f"需要人工决策如何处理。"
+                            )
+                            return {
+                                "success": False,
+                                "error": (
+                                    f"文件系统状态不一致：两个文件夹有部分重叠内容。\n"
+                                    f"重叠文件: {len(overlap)} 个\n"
+                                    f".pending_delete 独有: {len(pending_only)} 个\n"
+                                    f"原文件夹独有: {len(original_only)} 个\n"
+                                    f"请手动检查文件系统状态后重试。\n"
+                                    f"原路径: {original_folder}\n"
+                                    f"目标路径: {new_folder}"
+                                ),
+                                "torrent_type": torrent_type,
+                                "inconsistent_state": True,
+                                "details": {
+                                    "overlap_files": list(overlap),
+                                    "pending_delete_only": list(pending_only),
+                                    "original_folder_only": list(original_only)
+                                }
+                            }
 
                 # 创建新文件夹
                 os.makedirs(new_folder, exist_ok=True)
@@ -1592,7 +1787,9 @@ class TorrentDeletionByLevelService:
                     "original_name": torrent_name,
                     "new_name": new_folder_name,
                     "torrent_type": torrent_type,
-                    "moved_count": moved_count
+                    "moved_count": moved_count,
+                    "skipped": False,
+                    "cleaned": False
                 }
 
         except Exception as e:
