@@ -21,7 +21,7 @@ class TagSyncTask:
     """
 
     # 任务元数据
-    name = "tag_sync"
+    name = "Tag_Data_Sync"
     description = "标签数据同步任务"
     version = "1.0.0"
     author = "btpmanager"

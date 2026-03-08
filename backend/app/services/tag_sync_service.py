@@ -308,14 +308,7 @@ class TagSyncService:
             # 标准化下载器类型
             normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
 
-            if normalized_type == DownloaderTypeEnum.UNKNOWN:
-                return {
-                    "success": False,
-                    "data": [],
-                    "message": f"不支持的下载器类型: {downloader.downloader_type}",
-                    "total_count": 0
-                }
-
+            # ✅ normalize方法已保证返回值只能是0或1，无需额外检查
             client_type = 'qbittorrent' if normalized_type == DownloaderTypeEnum.QBITTORRENT else 'transmission'
 
             # ✅ 优化：根据类型使用不同的获取策略

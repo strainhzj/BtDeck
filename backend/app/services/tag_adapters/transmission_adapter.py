@@ -150,51 +150,6 @@ class TransmissionTagAdapter(TorrentTagAdapter):
 
     async def create_tag(self, tag_name: str, tag_type: str, color: Optional[str] = None) -> Dict[str, Any]:
         """
-        创建标签
-
-        Args:
-            tag_name: 标签名称
-            tag_type: 标签类型（Transmission只支持'tag'）
-            color: 可选，颜色代码（Transmission不支持）
-
-        Returns:
-            Dict[str, Any]: 统一格式的响应
-        """
-        try:
-            if not tag_name or not tag_name.strip():
-                return self._format_error_response(message="标签名称不能为空")
-
-            tag_name = tag_name.strip()
-
-            # Transmission不支持分类类型
-            if tag_type == 'category':
-                return {
-                    "success": False,
-                    "message": "Transmission不支持分类功能",
-                    "require_fallback": True,
-                    "fallback_type": "category_to_tag",
-                    "suggestion": f"是否将分类名'{tag_name}'转换为标签？",
-                    "data": None
-                }
-
-            # 检查是否已存在
-            if tag_name in self._name_id_map:
-                existing_id = self._name_id_map[tag_name]
-                logger.info(f"标签已存在，返回现有ID: {tag_name}")
-                return {
-                    "success": True,
-                    "message": "标签已存在",
-                    "data": {
-                        "tag_id": existing_id,
-                        "name": tag_name,
-                        "type": "tag"
-                    },
-                    "tag_id": existing_id
-                }
-
-
-    async def create_tag(self, tag_name: str, tag_type: str, color: Optional[str] = None) -> Dict[str, Any]:
-        """
         创建标签（Transmission仅在本地注册）
 
         Args:
@@ -250,25 +205,6 @@ class TransmissionTagAdapter(TorrentTagAdapter):
             return {
                 "success": True,
                 "message": f"标签创建成功（将在分配给种子时在Transmission中创建）",
-                "data": {
-                    "tag_id": tag_id,
-                    "name": tag_name,
-                    "type": "tag",
-                    "color": color
-                },
-                "tag_id": tag_id
-            }
-
-        except Exception as e:
-            logger.error(f"创建标签时发生错误: {str(e)}")
-            return self._format_error_response(message=f"创建标签失败: {str(e)}")
-
-
-            logger.info(f"在本地注册Transmission标签: {tag_name} (ID: {tag_id})")
-
-            return {
-                "success": True,
-                "message": "标签已在本地注册（将在分配给种子时自动创建）",
                 "data": {
                     "tag_id": tag_id,
                     "name": tag_name,
