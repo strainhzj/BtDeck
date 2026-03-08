@@ -3372,7 +3372,17 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
             BtDownloaders.downloader_id == torrent.downloader_id
         ).first()
         if downloader:
-            downloader_type_raw = downloader[0] if isinstance(downloader, tuple) else downloader
+            # 从 Row 对象中正确提取整数值
+            # SQLAlchemy 查询单列返回 Row 对象，需要通过列名或索引访问
+            if hasattr(downloader, 'downloader_type'):
+                # Row 对象：通过列名访问
+                downloader_type_raw = downloader.downloader_type
+            elif isinstance(downloader, (tuple, list)) and len(downloader) > 0:
+                # 元组或列表：通过索引访问
+                downloader_type_raw = downloader[0]
+            else:
+                # 其他情况：直接使用（兼容旧代码）
+                downloader_type_raw = downloader
             # 使用统一的枚举类方法进行类型转换
             downloader_type_int = DownloaderTypeEnum.normalize(downloader_type_raw)
             downloader_type = DownloaderTypeEnum(downloader_type_int).to_name()
