@@ -25,7 +25,8 @@ import os
 import asyncio
 import logging
 import shutil
-from typing import Optional, Dict, Any, List
+import platform
+from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
 from pathlib import Path
 
@@ -99,22 +100,193 @@ class FileOperationService:
             logger.warning(f"路径规范化失败: {path} - {str(e)}")
             return path
 
-    def _convert_path(self, path: str) -> str:
+    @staticmethod
+    def _normalize_unc_path(path: str) -> Tuple[str, bool]:
         """
-        转换路径（如果有路径映射服务）
+        根据操作系统类型规范化UNC路径格式
+
+        Windows UNC路径标准格式: \\server\share\path
+        Linux/Unix UNC路径格式: //server/share/path
 
         Args:
             path: 原始路径
 
         Returns:
-            转换后的路径
+            (规范化后的路径, 是否进行了转换)
+        """
+        if not path or not isinstance(path, str):
+            return path, False
+
+        # 检测是否是UNC路径（以//或\\开头）
+        is_unc = path.startswith("//") or path.startswith("\\\\")
+
+        if not is_unc:
+            return path, False
+
+        is_windows = platform.system() == "Windows"
+        converted = False
+
+        if is_windows:
+            # Windows系统：确保使用反斜杠
+            if "/" in path:
+                # 将 // 替换为 \\，将路径中的 / 替换为 \
+                normalized = path.replace("/", "\\")
+                converted = True
+                logger.debug(f"[Windows UNC路径转换] {path} -> {normalized}")
+            else:
+                normalized = path
+        else:
+            # Linux/Unix系统：确保使用正斜杠
+            if "\\" in path:
+                normalized = path.replace("\\", "/")
+                converted = True
+                logger.debug(f"[Unix UNC路径转换] {path} -> {normalized}")
+            else:
+                normalized = path
+
+        return normalized, converted
+
+    @staticmethod
+    def _check_file_exists_with_fallback(path: str) -> Tuple[bool, str]:
+        """
+        检查文件是否存在，支持多种路径格式的降级尝试
+
+        尝试顺序：
+        1. 原始路径
+        2. 系统原生UNC格式
+        3. 混合格式（Windows: 正斜杠 -> 反斜杠）
+        4. 目录列表验证（UNC路径访问诊断）
+
+        Args:
+            path: 原始路径
+
+        Returns:
+            (文件是否存在, 实际使用的路径)
+        """
+        # 🔍 深度诊断：检查文件名编码
+        try:
+            path_encoded = path.encode('utf-8', errors='strict').decode('utf-8')
+            if path != path_encoded:
+                logger.warning(f"[文件名编码问题] 检测到编码不一致，可能存在隐藏字符")
+                logger.warning(f"  原始路径长度: {len(path)}, 编码后长度: {len(path_encoded)}")
+        except Exception as e:
+            logger.warning(f"[文件名编码检查失败] {e}")
+
+        # 尝试1：原始路径
+        if os.path.exists(path):
+            logger.debug(f"[文件存在验证] 原始路径有效")
+            return True, path
+
+        # 尝试2：系统原生UNC格式
+        normalized_path, was_converted = FileOperationService._normalize_unc_path(path)
+        if was_converted and os.path.exists(normalized_path):
+            logger.info(f"[路径格式修复] 使用系统原生格式: {normalized_path}")
+            return True, normalized_path
+
+        # 尝试3：对于Windows，尝试反斜杠版本
+        if platform.system() == "Windows" and "/" in path:
+            backslash_path = path.replace("/", "\\")
+            if os.path.exists(backslash_path):
+                logger.info(f"[路径格式修复] 使用反斜杠格式: {backslash_path}")
+                return True, backslash_path
+
+        # 尝试4：对于Windows，尝试正斜杠版本
+        if platform.system() == "Windows" and "\\" in path:
+            forward_slash_path = path.replace("\\", "/")
+            if os.path.exists(forward_slash_path):
+                logger.info(f"[路径格式修复] 使用正斜杠格式: {forward_slash_path}")
+                return True, forward_slash_path
+
+        # 🔍 深度诊断：尝试列出目录内容，验证UNC访问权限
+        if platform.system() == "Windows":
+            import ctypes
+            import ctypes.wintypes
+
+            try:
+                # 提取目录路径
+                dir_path = os.path.dirname(path)
+                file_name = os.path.basename(path)
+
+                logger.info(f"[UNC访问诊断] 尝试列出目录: {dir_path}")
+                logger.info(f"[UNC访问诊断] 目标文件名: {file_name}")
+
+                # 尝试使用os.listdir列出目录
+                try:
+                    files_in_dir = os.listdir(dir_path)
+                    logger.info(f"[UNC访问诊断] 成功列出目录，文件数: {len(files_in_dir)}")
+
+                    # 查找包含 "waiting-delete" 的文件
+                    matching_files = [f for f in files_in_dir if "waiting-delete" in f]
+
+                    if matching_files:
+                        logger.info(f"[UNC访问诊断] 找到 {len(matching_files)} 个包含 'waiting-delete' 的文件:")
+                        for mf in matching_files[:5]:  # 只显示前5个
+                            logger.info(f"  - {mf}")
+                            logger.info(f"    编码: {mf.encode('utf-8', errors='replace')}")
+
+                            # 检查是否完全匹配
+                            if mf == file_name:
+                                exact_match_path = os.path.join(dir_path, mf)
+                                logger.info(f"[UNC访问诊断] 找到完全匹配的文件: {exact_match_path}")
+                                return True, exact_match_path
+
+                        # 尝试使用第一个匹配的文件
+                        if matching_files:
+                            fallback_path = os.path.join(dir_path, matching_files[0])
+                            logger.warning(f"[UNC访问诊断] 未找到完全匹配，使用第一个匹配文件: {fallback_path}")
+                            return True, fallback_path
+                    else:
+                        logger.warning(f"[UNC访问诊断] 目录中未找到包含 'waiting-delete' 的文件")
+                        logger.info(f"[UNC访问诊断] 目录中的前10个文件: {files_in_dir[:10]}")
+
+                except PermissionError as pe:
+                    logger.error(f"[UNC访问诊断] 权限不足，无法访问目录: {dir_path}")
+                    logger.error(f"[UNC访问诊断] 错误详情: {pe}")
+
+                    # 尝试使用Windows API检查当前用户
+                    try:
+                        import win32api
+                        current_user = win32api.GetUserName()
+                        logger.error(f"[UNC访问诊断] 当前Python进程用户: {current_user}")
+                    except Exception:
+                        pass
+
+                except Exception as list_err:
+                    logger.error(f"[UNC访问诊断] 列出目录失败: {list_err}")
+
+            except Exception as e:
+                logger.warning(f"[UNC访问诊断] 诊断过程出错: {e}")
+
+        # 所有尝试都失败
+        logger.debug(f"[文件不存在] 所有路径格式尝试均失败: {path}")
+        return False, path
+
+    def _convert_path(self, path: str) -> str:
+        """
+        转换路径（如果有路径映射服务）
+
+        转换流程：
+        1. 路径清理和安全检查
+        2. 路径映射（内部路径 -> 外部路径）
+        3. 根据操作系统类型规范化UNC路径格式
+
+        Args:
+            path: 原始路径
+
+        Returns:
+            转换后的路径（符合操作系统原生格式）
         """
         # P2-1: 路径清理
         path = self._sanitize_path(path)
 
+        # 应用路径映射
         if self.path_mapping_service:
-            return self.path_mapping_service.internal_to_external(path)
-        return path
+            path = self.path_mapping_service.internal_to_external(path)
+
+        # 根据操作系统类型规范化UNC路径格式
+        normalized_path, _ = self._normalize_unc_path(path)
+
+        return normalized_path
 
     def convert_to_external_path(self, path: str) -> str:
         """
@@ -302,8 +474,17 @@ class FileOperationService:
                 pending_delete_path = os.path.join(converted_path, pending_delete_name)
                 result["deleted_path"] = pending_delete_path
 
-                # 检查文件/文件夹是否存在
-                if not os.path.exists(pending_delete_path):
+                # 🔍 诊断日志：记录原始路径信息
+                logger.info(
+                    f"{log_context}[路径诊断] pending_delete路径: {pending_delete_path}, "
+                    f"操作系统: {platform.system()}, "
+                    f"路径类型: {'UNC路径' if (pending_delete_path.startswith('//') or pending_delete_path.startswith('\\\\')) else '本地路径'}"
+                )
+
+                # 检查文件/文件夹是否存在（支持多种路径格式降级尝试）
+                file_exists, actual_path = self._check_file_exists_with_fallback(pending_delete_path)
+
+                if not file_exists:
                     # 文件不存在，视为成功（降级处理）
                     result["success"] = True
                     result["file_existed"] = False
@@ -312,26 +493,33 @@ class FileOperationService:
                     )
                     return result
 
+                # 如果使用了修复后的路径，更新删除路径
+                if actual_path != pending_delete_path:
+                    result["deleted_path"] = actual_path
+                    logger.info(
+                        f"{log_context}[路径修复] 使用修复后的路径: {actual_path}"
+                    )
+
                 result["file_existed"] = True
 
-                # 删除文件或文件夹
-                if os.path.isfile(pending_delete_path):
-                    os.remove(pending_delete_path)
+                # 删除文件或文件夹（使用修复后的路径）
+                if os.path.isfile(actual_path):
+                    os.remove(actual_path)
                     logger.info(
-                        f"{log_context}删除pending_delete文件成功: {pending_delete_path}"
+                        f"{log_context}删除pending_delete文件成功: {actual_path}"
                     )
-                elif os.path.isdir(pending_delete_path):
+                elif os.path.isdir(actual_path):
                     import shutil
-                    shutil.rmtree(pending_delete_path)
+                    shutil.rmtree(actual_path)
                     logger.info(
-                        f"{log_context}删除pending_delete文件夹成功: {pending_delete_path}"
+                        f"{log_context}删除pending_delete文件夹成功: {actual_path}"
                     )
                 else:
                     # 既不是文件也不是文件夹，视为不存在（降级处理）
                     result["success"] = True
                     result["file_existed"] = False
                     logger.warning(
-                        f"{log_context}pending_delete路径既非文件也非文件夹（降级）: {pending_delete_path}"
+                        f"{log_context}pending_delete路径既非文件也非文件夹（降级）: {actual_path}"
                     )
                     return result
 
@@ -350,8 +538,17 @@ class FileOperationService:
 
                 result["deleted_path"] = marker_file_path
 
-                # 检查标记文件是否存在
-                if not os.path.exists(marker_file_path):
+                # 🔍 诊断日志：记录原始路径信息
+                logger.info(
+                    f"{log_context}[路径诊断] 原始路径: {marker_file_path}, "
+                    f"操作系统: {platform.system()}, "
+                    f"路径类型: {'UNC路径' if (marker_file_path.startswith('//') or marker_file_path.startswith('\\\\')) else '本地路径'}"
+                )
+
+                # 检查标记文件是否存在（支持多种路径格式降级尝试）
+                file_exists, actual_path = self._check_file_exists_with_fallback(marker_file_path)
+
+                if not file_exists:
                     # 标记文件不存在，视为成功（降级处理）
                     result["success"] = True
                     result["file_existed"] = False
@@ -360,12 +557,19 @@ class FileOperationService:
                     )
                     return result
 
+                # 如果使用了修复后的路径，更新删除路径
+                if actual_path != marker_file_path:
+                    result["deleted_path"] = actual_path
+                    logger.info(
+                        f"{log_context}[路径修复] 使用修复后的路径: {actual_path}"
+                    )
+
                 result["file_existed"] = True
 
-                # 删除标记文件
-                os.remove(marker_file_path)
+                # 删除标记文件（使用修复后的路径）
+                os.remove(actual_path)
                 logger.info(
-                    f"{log_context}删除标记文件成功: {marker_file_path}"
+                    f"{log_context}删除标记文件成功: {actual_path}"
                 )
 
                 result["success"] = True
