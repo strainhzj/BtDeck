@@ -1,0 +1,71 @@
+# BTDeck 后端 .dockerignore
+# 排除不必要的文件和目录，加速构建并避免错误
+
+# 备份文件（包含文件名过长的torrent）
+backup/
+
+# Python 相关
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 虚拟环境
+venv/
+env/
+ENV/
+.venv
+
+# IDE 配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 测试和覆盖率
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# 数据库文件
+config/*.db
+config/*.db-journal
+*.db
+*.db-journal
+
+# 日志文件
+logs/
+*.log
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker 相关
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# 文档
+README.md
+CLAUDE.md
+*.md
+
+# 配置文件（可能包含敏感信息）
+.env
+.env.*
+*.env

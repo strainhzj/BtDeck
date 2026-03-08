@@ -475,10 +475,13 @@ class FileOperationService:
                 result["deleted_path"] = pending_delete_path
 
                 # 🔍 诊断日志：记录原始路径信息
+                # 检查是否为UNC路径
+                is_unc_path = pending_delete_path.startswith("//")
+                path_type = "UNC路径" if is_unc_path else "本地路径"
                 logger.info(
                     f"{log_context}[路径诊断] pending_delete路径: {pending_delete_path}, "
                     f"操作系统: {platform.system()}, "
-                    f"路径类型: {'UNC路径' if (pending_delete_path.startswith('//') or pending_delete_path.startswith('\\\\')) else '本地路径'}"
+                    f"路径类型: {path_type}"
                 )
 
                 # 检查文件/文件夹是否存在（支持多种路径格式降级尝试）
@@ -539,10 +542,13 @@ class FileOperationService:
                 result["deleted_path"] = marker_file_path
 
                 # 🔍 诊断日志：记录原始路径信息
+                # 检查是否为UNC路径
+                is_unc_path = marker_file_path.startswith("//")
+                path_type = "UNC路径" if is_unc_path else "本地路径"
                 logger.info(
                     f"{log_context}[路径诊断] 原始路径: {marker_file_path}, "
                     f"操作系统: {platform.system()}, "
-                    f"路径类型: {'UNC路径' if (marker_file_path.startswith('//') or marker_file_path.startswith('\\\\')) else '本地路径'}"
+                    f"路径类型: {path_type}"
                 )
 
                 # 检查标记文件是否存在（支持多种路径格式降级尝试）
