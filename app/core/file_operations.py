@@ -900,26 +900,78 @@ class FileOperationService:
     # ========== 新增：智能种子重命名方法（支持单文件和多文件） ==========
 
     @staticmethod
-    def is_single_file_torrent(torrent_name: str) -> bool:
+    def is_single_file_torrent(torrent_name: str, save_path: str = None) -> bool:
         """
-        检测种子是否为单文件种子（通过文件扩展名判断）
+        检测种子是否为单文件种子（混合策略）
+
+        优先级：
+        1. 文件系统检测（最准确，需要提供 save_path）
+        2. 扩展名判断（回退方案，覆盖常见文件类型）
 
         Args:
             torrent_name: 种子名称
+            save_path: 种子保存路径（可选，用于文件系统检测）
 
         Returns:
             True: 单文件种子
             False: 多文件种子（文件夹）
         """
-        # 常见的视频文件扩展名
-        video_extensions = [
+        # ========== 优先级1：文件系统检测（最准确） ==========
+        if save_path:
+            try:
+                # 构建完整路径
+                full_path = os.path.join(save_path, torrent_name)
+
+                # 检查路径是否存在
+                if os.path.exists(full_path):
+                    # 文件存在，直接判断是文件还是文件夹
+                    is_file = os.path.isfile(full_path)
+                    logger.debug(
+                        f"[单文件检测: 文件系统] {torrent_name} -> "
+                        f"{'单文件' if is_file else '多文件'}"
+                    )
+                    return is_file
+                else:
+                    logger.debug(
+                        f"[单文件检测: 文件系统] 路径不存在: {full_path}，"
+                        f"回退到扩展名判断"
+                    )
+            except Exception as e:
+                logger.debug(
+                    f"[单文件检测: 文件系统] 检测失败: {e}，"
+                    f"回退到扩展名判断"
+                )
+
+        # ========== 优先级2：扩展名判断（回退方案） ==========
+        # 覆盖常见文件类型
+        all_extensions = [
+            # 视频文件
             '.mkv', '.mp4', '.avi', '.wmv', '.mov', '.flv', '.ts', '.m2ts',
-            '.rmvb', '.rm', '.mpg', '.mpeg', '.3gp', '.webm', '.ogv'
+            '.rmvb', '.rm', '.mpg', '.mpeg', '.3gp', '.webm', '.ogv',
+            # 电子书文件
+            '.epub', '.mobi', '.azw3', '.pdf', '.cbr', '.cbz',
+            # 压缩文件
+            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+            # 音频文件
+            '.mp3', '.flac', '.wav', '.aac', '.ogg', '.wma',
+            # 图片文件
+            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp',
+            # 文档文件
+            '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+            # 其他常见文件
+            '.txt', '.iso', '.dmg', '.exe', '.apk'
         ]
 
-        # 检查种子名称是否以视频扩展名结尾
+        # 检查种子名称是否以已知扩展名结尾
         torrent_name_lower = torrent_name.lower()
-        return any(torrent_name_lower.endswith(ext) for ext in video_extensions)
+        is_single = any(torrent_name_lower.endswith(ext) for ext in all_extensions)
+
+        logger.debug(
+            f"[单文件检测: 扩展名] {torrent_name} -> "
+            f"{'单文件' if is_single else '多文件（未知扩展名）'}"
+        )
+
+        return is_single
 
     async def get_torrent_actual_path(
         self,
