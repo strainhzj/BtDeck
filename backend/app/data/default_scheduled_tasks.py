@@ -85,8 +85,8 @@ DEFAULT_SCHEDULED_TASKS = [
         "update_by": "system",
     },
     {
-        "task_name": "Tag Data Sync",
-        "task_code": "847364f0",
+        "task_name": "标签同步任务",
+        "task_code": "Tag_Data_Sync",
         "task_status": TASK_STATUS_READY,
         "task_type": TASK_TYPE_PYTHON,
         "executor": "app.tasks.scheduler.tag_sync.TagSyncTask",
@@ -94,7 +94,7 @@ DEFAULT_SCHEDULED_TASKS = [
         "last_execute_time": None,
         "last_execute_duration": None,
         "cron_plan": "0 */1 * * *",  # 每小时执行
-        "description": "Periodically sync tags/categories from downloaders to database (interval: 1 hour, auto-delete zombie tags)",
+        "description": "定期从下载器同步标签/分类数据到数据库（执行间隔：1小时，自动清理僵尸标签）",
         "timeout_seconds": 3600,
         "max_retry_count": 0,
         "retry_interval": 300,
@@ -127,8 +127,8 @@ DEFAULT_SCHEDULED_TASKS = [
         "enabled": True,
         "last_execute_time": None,
         "last_execute_duration": None,
-        "cron_plan": "*/10 * * * *",  # 每10分钟执行
-        "description": "高频同步种子基础信息（名称、大小、进度、状态等），不含tracker同步。执行间隔: 10分钟。性能目标: 10万种子场景 <5秒",
+        "cron_plan": "0,15,30,45 * * * *",  # 每15分钟执行（0分、15分、30分、45分）
+        "description": "高频同步种子基础信息（名称、大小、进度、状态等），不含tracker同步。执行间隔: 15分钟。性能目标: 10万种子场景 <5秒",
         "timeout_seconds": 3600,
         "max_retry_count": 0,
         "retry_interval": 300,
@@ -144,8 +144,8 @@ DEFAULT_SCHEDULED_TASKS = [
         "enabled": True,
         "last_execute_time": None,
         "last_execute_duration": None,
-        "cron_plan": "*/5 * * * *",  # 每5分钟执行
-        "description": "高频同步 Tracker 状态信息（announce成功、scrape成功、错误消息等）。执行间隔: 5分钟。性能目标: 10万种子场景 <60秒",
+        "cron_plan": "10,40 * * * *",  # 每30分钟执行（10分、40分）
+        "description": "高频同步 Tracker 状态信息（announce成功、scrape成功、错误消息等）。执行间隔: 30分钟。性能目标: 10万种子场景 <60秒",
         "timeout_seconds": 3600,
         "max_retry_count": 0,
         "retry_interval": 300,
