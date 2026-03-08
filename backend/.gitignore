@@ -45,6 +45,9 @@ env/
 config/*.db
 config/*.sqlite
 
+# qBittorrent RID缓存文件
+config/qb_rid_cache.json
+
 # Logs
 *.log
 logs/
@@ -67,7 +70,11 @@ alembic/versions/*.pyc
 # Backup files
 *.bak
 *.backup
+*.temp
 *~
+
+# Backup directories
+backup/
 
 # OS
 .DS_Store
