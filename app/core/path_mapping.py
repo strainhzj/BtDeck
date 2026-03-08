@@ -29,7 +29,8 @@
 
 import json
 import logging
-from typing import List, Dict, Optional
+import platform
+from typing import List, Dict, Optional, Tuple
 from pathlib import Path, PurePath
 
 logger = logging.getLogger(__name__)
@@ -154,6 +155,45 @@ class PathMappingService:
 
         return path
 
+    @staticmethod
+    def _normalize_for_os(path: str) -> str:
+        """
+        根据操作系统类型规范化UNC路径格式
+
+        Windows UNC路径标准格式: \\server\share\path
+        Linux/Unix UNC路径格式: //server/share/path
+
+        Args:
+            path: 映射后的路径
+
+        Returns:
+            符合操作系统原生格式的路径
+        """
+        if not path or not isinstance(path, str):
+            return path
+
+        # 检测是否是UNC路径（以//开头）
+        is_unc = path.startswith("//")
+
+        if not is_unc:
+            return path
+
+        is_windows = platform.system() == "Windows"
+
+        if is_windows:
+            # Windows系统：确保使用反斜杠
+            if "/" in path:
+                # 将 // 替换为 \\，将路径中的 / 替换为 \
+                normalized = path.replace("/", "\\")
+                logger.debug(f"[Windows UNC路径转换] {path} -> {normalized}")
+                return normalized
+        else:
+            # Linux/Unix系统：确保使用正斜杠（已经是标准格式）
+            logger.debug(f"[Unix UNC路径] 保持标准格式: {path}")
+            return path
+
+        return path
+
     def internal_to_external(self, internal_path: str) -> str:
         """
         将内部路径转换为外部路径
@@ -247,6 +287,9 @@ class PathMappingService:
             external_prefix = best_match["external"]
             relative_path = internal_path[best_match_len:]
             external_path = external_prefix + relative_path
+
+            # 根据操作系统类型规范化UNC路径格式
+            external_path = self._normalize_for_os(external_path)
 
             logger.info(
                 f"[路径映射成功] "

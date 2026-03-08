@@ -703,11 +703,20 @@ class RecycleBinService:
                                     logger.debug(f"[路径前缀移除] 原路径包含种子名，已移除前缀: {file_rel_path}")
 
                                 # 🔥 修复2：区分单文件和多文件种子的路径构建
-                                # 判断是否为单文件种子（file_rel_path 已包含 .pending_delete）
-                                is_single_file_with_pending = file_rel_path.endswith('.pending_delete')
+                                # 判断是否为单文件种子（file_rel_path 包含 .pending_delete 且不是文件夹）
+                                # 单文件种子格式: xxx.pending_delete.ext
+                                # 多文件种子格式: xxx.pending_delete/yyy.ext
+
+                                # 检查是否是单文件种子的 .pending_delete 文件
+                                # 特征：包含 .pending_delete 但后面有扩展名（不是以 / 结尾）
+                                is_single_file_with_pending = (
+                                    '.pending_delete' in file_rel_path and
+                                    not file_rel_path.endswith('/') and
+                                    '.' in os.path.basename(file_rel_path).split('.pending_delete')[-1]
+                                )
 
                                 if is_single_file_with_pending:
-                                    # 单文件种子: /save_path/relpath（已经是完整路径，如 xxx.epub.pending_delete）
+                                    # 单文件种子: /save_path/relpath（已经是完整路径，如 xxx.pending_delete.epub）
                                     file_full_path = os.path.join(
                                         external_save_path,
                                         file_rel_path
@@ -731,10 +740,13 @@ class RecycleBinService:
                                         logger.debug(f"[回退清理] 路径: {file_full_path}")
 
                                 try:
-                                    if os.path.exists(file_full_path):
-                                        os.remove(file_full_path)
+                                    # 🔥 使用智能路径检查，支持UNC路径格式降级
+                                    file_exists, actual_path = FileOperationService._check_file_exists_with_fallback(file_full_path)
+
+                                    if file_exists:
+                                        os.remove(actual_path)
                                         deleted_files.append(file_rel_path)
-                                        logger.debug(f"删除文件成功: {file_rel_path}")
+                                        logger.debug(f"删除文件成功: {file_rel_path}, 实际路径: {actual_path}")
                                     else:
                                         logger.debug(f"文件不存在，跳过: {file_full_path}")
                                 except Exception as e:
@@ -756,12 +768,16 @@ class RecycleBinService:
 
                         # ========== 1.4 清理空文件夹 ==========
                         if torrent.original_filename:
-                            # 递归检查文件夹是否为空
+                            # 递归检查文件夹是否为空（使用智能路径检查）
                             def is_folder_empty(folder_path):
                                 """递归检查文件夹是否为空（没有文件）"""
-                                if not os.path.exists(folder_path):
+                                folder_exists, actual_folder_path = FileOperationService._check_file_exists_with_fallback(folder_path)
+
+                                if not folder_exists:
                                     return True
-                                for root, dirs, files in os.walk(folder_path):
+
+                                # 使用实际存在的路径进行遍历
+                                for root, dirs, files in os.walk(actual_folder_path):
                                     if files:  # 有文件
                                         return False
                                 return True
@@ -775,8 +791,12 @@ class RecycleBinService:
                             if is_folder_empty(pending_delete_folder):
                                 try:
                                     import shutil
-                                    shutil.rmtree(pending_delete_folder)
-                                    logger.info(f"删除空.pending_delete文件夹: {pending_delete_folder}")
+                                    # 使用智能路径检查获取实际路径
+                                    folder_exists, actual_folder_path = FileOperationService._check_file_exists_with_fallback(pending_delete_folder)
+
+                                    if folder_exists:
+                                        shutil.rmtree(actual_folder_path)
+                                        logger.info(f"删除空.pending_delete文件夹: {actual_folder_path}")
                                 except Exception as e:
                                     logger.debug(f"删除空.pending_delete文件夹失败: {pending_delete_folder}, {e}")
                             else:
@@ -789,20 +809,36 @@ class RecycleBinService:
                                 torrent.original_filename
                             )
 
-                            if os.path.exists(original_folder) and is_folder_empty(original_folder):
-                                try:
-                                    os.rmdir(original_folder)
-                                    logger.info(f"删除空原文件夹: {original_folder}")
-                                except Exception as e:
-                                    logger.debug(f"删除空原文件夹失败: {original_folder}, {e}")
+                            # 使用智能路径检查
+                            folder_exists, actual_folder_path = FileOperationService._check_file_exists_with_fallback(original_folder)
 
-                        # ========== 1.5 删除标记文件（只删除标记文件，不删除文件夹）==========
-                        await file_op_service.delete_marker_file(
-                            directory_path=torrent.save_path,
-                            torrent_name=torrent.name,
-                            torrent_original_filename=torrent.original_filename,
-                            delete_pending_delete_folder=False  # 只删除标记文件
-                        )
+                            if folder_exists and is_folder_empty(actual_folder_path):
+                                try:
+                                    os.rmdir(actual_folder_path)
+                                    logger.info(f"删除空原文件夹: {actual_folder_path}")
+                                except Exception as e:
+                                    logger.debug(f"删除空原文件夹失败: {actual_folder_path}, {e}")
+
+                        # ========== 1.5 删除单文件种子的 .pending_delete 文件（防止漏删）==========
+                        if torrent.original_filename:
+                            # 构建单文件种子的 .pending_delete 文件路径
+                            name_without_ext, ext = os.path.splitext(torrent.original_filename)
+                            pending_delete_filename = f"{name_without_ext}.pending_delete{ext}"
+                            pending_delete_file_path = os.path.join(external_save_path, pending_delete_filename)
+
+                            logger.info(f"[清理单文件] 检查并删除: {pending_delete_file_path}")
+
+                            # 使用智能路径检查
+                            file_exists, actual_path = FileOperationService._check_file_exists_with_fallback(pending_delete_file_path)
+
+                            if file_exists:
+                                try:
+                                    os.remove(actual_path)
+                                    logger.info(f"[清理单文件] 删除成功: {actual_path}")
+                                except Exception as e:
+                                    logger.warning(f"[清理单文件] 删除失败: {actual_path}, {e}")
+                            else:
+                                logger.debug(f"[清理单文件] 文件不存在或已删除: {pending_delete_file_path}")
 
                     except Exception as e:
                         logger.warning(f"清理文件失败（降级）: {torrent.name}, {e}")
