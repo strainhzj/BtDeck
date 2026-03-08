@@ -46,8 +46,15 @@ def get_user_info(
             )
             return response
 
-        # verify_access_token 在验证失败时会抛出异常，成功时返回解码后的payload
-        # 不需要再次检查 if not payload，因为如果验证失败，已经在上面的except块中返回了
+        # 🔧 防御性检查：verify_access_token 验证失败时可能返回 None
+        # 例如：verify_secret 不匹配、token 过期等情况
+        if not payload:
+            response = CommonResponse(
+                status="error",
+                msg="Token验证失败或已过期",
+                code="401"
+            )
+            return response
 
         user_name = payload.get("sub")
 
