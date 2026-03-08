@@ -973,6 +973,7 @@ class TorrentDeletionByLevelService:
 
             torrent.update_time = datetime.now()
             torrent.update_by = operator
+
             self.db.commit()
 
             # 记录审计日志
