@@ -1,0 +1,118 @@
+version: '3.8'
+
+# BTDeck - BitTorrent 管理器 Docker Compose 配置
+# 前后端分离部署，支持 IP 直接访问和反向代理
+
+services:
+  # ============================================
+  # 后端服务 - FastAPI 应用
+  # ============================================
+  backend:
+    build:
+      context: ./BtDeck
+      dockerfile: Dockerfile
+
+    image: btdeck-backend:${BUILD_TAG:-latest}
+    container_name: btdeck-backend
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+      - DATABASE_URL=sqlite:///data/btpManager.db
+      - LOG_LEVEL=INFO
+
+    ports:
+      - "5001:5001"  # API 端口
+
+    volumes:
+      # 绑定挂载优先（如果目录存在）
+      - ./data/backend/data:/app/data
+      - ./data/backend/logs:/app/logs
+      - ./data/backend/config:/app/config
+      - ./data/backend/backup:/app/backup
+
+    networks:
+      - btpmanager_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # 前端服务 - Nginx 静态文件服务
+  # ============================================
+  frontend:
+    build:
+      context: ./BtDeck_fronted
+      dockerfile: Dockerfile.prod
+
+    image: btdeck-frontend:${BUILD_TAG:-latest}
+    container_name: btdeck-frontend
+
+    environment:
+      - TZ=Asia/Shanghai
+
+    ports:
+      - "8080:80"  # 前端 Web UI（容器内80端口映射到宿主机8080）
+
+    volumes:
+      # Nginx 缓存和日志（使用命名卷）
+      - frontend_cache:/var/cache/nginx
+      - frontend_logs:/var/log/nginx
+
+    networks:
+      - btpmanager_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+# ============================================
+# 网络配置
+# ============================================
+networks:
+  btpmanager_network:
+    driver: bridge
+
+# ============================================
+# 数据卷配置
+# ============================================
+volumes:
+  # 前端数据卷
+  frontend_cache:
+    driver: local
+
+  frontend_logs:
+    driver: local
