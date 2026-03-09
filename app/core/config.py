@@ -64,10 +64,10 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        # 初始化配置目录及子目录
-        for path in [self.CONFIG_PATH, self.TEMP_PATH, self.LOG_PATH, self.COOKIE_PATH]:
-            if not path.exists():
-                path.mkdir(parents=True, exist_ok=True)
+        # 仅创建主配置目录（必需）
+        # 子目录（temp、logs、cookies）按需创建，不在初始化时创建
+        if not self.CONFIG_PATH.exists():
+            self.CONFIG_PATH.mkdir(parents=True, exist_ok=True)
 
     @property
     def CONFIG_PATH(self):
