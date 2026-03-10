@@ -219,7 +219,11 @@ class TorrentDeletionByLevelService:
         """
         批量按等级删除种子
 
-        等级3特殊处理：如果备份失败，自动降级为等级4删除
+        支持所有4个等级的删除
+        - Level 1: 删除任务和数据
+        - Level 2: 删除任务保留数据
+        - Level 3: 移到回收站（备份失败时自动降级为等级4）
+        - Level 4: 添加"待删除"标签
 
         Args:
             torrent_info_ids: 种子信息ID列表
@@ -231,6 +235,8 @@ class TorrentDeletionByLevelService:
             批量删除结果字典
         """
         total = len(torrent_info_ids)
+        level1_success = []  # 等级1删除成功
+        level2_success = []  # 等级2删除成功
         level3_success = []  # 等级3删除成功
         level4_downgraded = []  # 降级到等级4的种子
         level4_success = []  # 等级4删除成功
@@ -268,7 +274,12 @@ class TorrentDeletionByLevelService:
                     })
 
             elif result.get("success"):
-                if delete_level == 3:
+                # 根据删除等级添加到对应的成功列表
+                if delete_level == 1:
+                    level1_success.append(torrent_id)
+                elif delete_level == 2:
+                    level2_success.append(torrent_id)
+                elif delete_level == 3:
                     level3_success.append(torrent_id)
                 elif delete_level == 4:
                     level4_success.append(torrent_id)
@@ -281,8 +292,8 @@ class TorrentDeletionByLevelService:
         return {
             "success": len(failed) == 0,
             "total": total,
-            "level1_success": [],
-            "level2_success": [],
+            "level1_success": level1_success,
+            "level2_success": level2_success,
             "level3_success": level3_success,
             "level4_downgraded": level4_downgraded,
             "level4_success": level4_success,
@@ -345,8 +356,11 @@ class TorrentDeletionByLevelService:
                 safety_check_level=SafetyCheckLevel.ENHANCED
             )
 
-            if not delete_result.get("success", False):
-                error_msg = delete_result.get("error", "未知错误")
+            # 检查适配器返回的删除结果
+            # 适配器返回格式: {"success_hashes": [...], "failed_hashes": {...}, "warnings": [...], "deleted_files": [...]}
+            failed_hashes = delete_result.get("failed_hashes", {})
+            if torrent.hash in failed_hashes:
+                error_msg = failed_hashes[torrent.hash]
                 return {
                     "success": False,
                     "error": f"适配器删除失败: {error_msg}",
@@ -466,8 +480,11 @@ class TorrentDeletionByLevelService:
                 safety_check_level=SafetyCheckLevel.ENHANCED
             )
 
-            if not delete_result.get("success", False):
-                error_msg = delete_result.get("error", "未知错误")
+            # 检查适配器返回的删除结果
+            # 适配器返回格式: {"success_hashes": [...], "failed_hashes": {...}, "warnings": [...], "deleted_files": [...]}
+            failed_hashes = delete_result.get("failed_hashes", {})
+            if torrent.hash in failed_hashes:
+                error_msg = failed_hashes[torrent.hash]
                 return {
                     "success": False,
                     "error": f"适配器删除失败: {error_msg}",
