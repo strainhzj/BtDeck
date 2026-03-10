@@ -19,6 +19,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, aliased
 from app.database import get_db, AsyncSessionLocal
 from app.auth import utils
+from app.auth.models import User
+from app.auth.dependencies import get_current_user
 import uuid
 import logging
 from app.downloader.models import BtDownloaders
@@ -207,7 +209,6 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
     from app.database import AsyncSessionLocal
     from app.api.endpoints.torrents_async import qb_add_torrents_async, tr_add_torrents_async
 
-    logger.info(f"[TORRENT_SYNC][MARKER] using file={__file__}")
     async with AsyncSessionLocal() as db:
         try:
             # 创建下载器对象
@@ -3879,7 +3880,7 @@ async def bulk_delete_torrents(
 # 辅助函数
 async def _organize_preview_data(torrent_info_ids: List[str], db: Session) -> Dict[str, Any]:
     """组织预览数据"""
-    from app.models.torrents import TorrentInfo
+    from app.torrents.models import TorrentInfo
 
     torrents = db.query(TorrentInfo).filter(
         TorrentInfo.info_id.in_(torrent_info_ids),
@@ -4129,20 +4130,23 @@ class DeleteWithLevelResponse(BaseModel):
 async def delete_torrent_with_level(
         request: Request,
         torrent_info_ids: str = Query(..., description="要删除的种子信息ID列表（逗号分隔）"),
-        delete_level: int = Query(..., description="删除等级 (3=回收站, 4=待删除标签)", ge=3, le=4),
+        delete_level: int = Query(..., description="删除等级 (1=完全删除, 2=删除任务保留数据, 3=回收站, 4=待删除标签)",
+                                  ge=1, le=4),
         operator: str = Query(default="admin", description="操作人"),
         db: Session = Depends(get_db)
 ):
     """
-    按等级删除种子
+    按等级删除种子（同步接口，主要用于单个种子删除）
 
     支持的删除等级:
+    - Level 1: 删除任务和数据（原有功能）
+    - Level 2: 删除任务保留数据（原有功能）
     - Level 3: 移到回收站（创建标记文件+删除下载器任务+数据库标记）
     - Level 4: 添加"待删除"标签
 
     Args:
         torrent_info_ids: 要删除的种子信息ID列表（逗号分隔的字符串）
-        delete_level: 删除等级 (3-4)
+        delete_level: 删除等级 (1-4)
         operator: 操作人
         db: 数据库会话
 
@@ -4199,7 +4203,11 @@ async def delete_torrent_with_level(
         if result.get("success"):
             # 全部成功
             msg_parts = []
-            if delete_level == 3:
+            if delete_level == 1:
+                msg = f"等级1删除完成，成功{len(result.get('level1_success', []))}个"
+            elif delete_level == 2:
+                msg = f"等级2删除完成，成功{len(result.get('level2_success', []))}个"
+            elif delete_level == 3:
                 level3_count = len(result.get("level3_success", []))
                 level4_count = len(result.get("level4_downgraded", []))
                 if level3_count > 0:
@@ -4207,8 +4215,8 @@ async def delete_torrent_with_level(
                 if level4_count > 0:
                     msg_parts.append(f"降级为等级4删除{level4_count}个")
                 msg = "、".join(msg_parts) if msg_parts else "删除完成"
-            else:
-                msg = f"删除完成，成功{len(result.get('level4_success', []))}个"
+            else:  # delete_level == 4
+                msg = f"等级4删除完成，成功{len(result.get('level4_success', []))}个"
 
             return CommonResponse(
                 status="success",
@@ -4216,6 +4224,8 @@ async def delete_torrent_with_level(
                 code="200",
                 data={
                     "total": result["total"],
+                    "level1_success": result.get("level1_success", []),
+                    "level2_success": result.get("level2_success", []),
                     "level3_success": result.get("level3_success", []),
                     "level4_downgraded": result.get("level4_downgraded", []),
                     "level4_success": result.get("level4_success", []),
@@ -4886,6 +4896,175 @@ async def set_torrent_location(
         return CommonResponse(
             status="error",
             msg=f"服务器错误: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+# ==================== 异步批量删除接口 ====================
+
+class BatchDeleteRequest(BaseModel):
+    """批量删除请求"""
+    torrent_info_ids: List[str] = Field(..., description="要删除的种子ID列表")
+    delete_level: int = Field(..., ge=1, le=4, description="删除等级 (1-4)")
+    operator: str = Field(default="admin", description="操作人")
+
+
+@router.post("/delete-batch-async", response_model=CommonResponse)
+async def delete_batch_async(
+        request: Request,
+        delete_request: BatchDeleteRequest,
+        current_user: User = Depends(get_current_user),
+        db: Session = Depends(get_db)
+):
+    """
+    异步批量删除种子（提交任务）
+
+    支持的删除等级:
+    - Level 1: 删除任务和数据
+    - Level 2: 删除任务保留数据
+    - Level 3: 移到回收站
+    - Level 4: 添加"待删除"标签
+
+    Args:
+        delete_request: 删除请求参数
+        current_user: 当前登录用户
+        db: 数据库会话
+
+    Returns:
+        任务ID
+    """
+    try:
+        from app.database import SessionLocal
+        from app.services.deletion_task_manager import get_deletion_task_manager, TaskStatus
+        from app.services.async_deletion_executor import AsyncDeletionExecutor
+
+        # 获取任务管理器
+        task_manager = get_deletion_task_manager()
+
+        # 创建任务
+        task_id = await task_manager.create_task(
+            torrent_info_ids=delete_request.torrent_info_ids,
+            delete_level=delete_request.delete_level,
+            operator=delete_request.operator
+        )
+
+        # 创建执行器并启动异步任务
+        executor = AsyncDeletionExecutor(db_session_factory=SessionLocal, request=request)
+
+        # 在后台执行删除任务（不等待完成）
+        asyncio.create_task(
+            executor.execute_deletion_task(
+                task_id=task_id,
+                torrent_info_ids=delete_request.torrent_info_ids,
+                delete_level=delete_request.delete_level,
+                operator=delete_request.operator,
+                request=request
+            )
+        )
+
+        logger.info(
+            f"提交批量删除任务成功: task_id={task_id}, "
+            f"用户={current_user.username}, "
+            f"种子数量={len(delete_request.torrent_info_ids)}, "
+            f"删除等级={delete_request.delete_level}"
+        )
+
+        return CommonResponse(
+            status="success",
+            msg="批量删除任务已提交，正在后台执行",
+            code="200",
+            data={
+                "task_id": task_id,
+                "total_count": len(delete_request.torrent_info_ids),
+                "delete_level": delete_request.delete_level
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"提交批量删除任务失败: {e}", exc_info=True)
+        return CommonResponse(
+            status="error",
+            msg=f"提交任务失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.get("/delete-batch-status/{task_id}", response_model=CommonResponse)
+async def get_batch_delete_status(
+        task_id: str,
+        current_user: User = Depends(get_current_user)
+):
+    """
+    查询批量删除任务状态
+
+    Args:
+        task_id: 任务ID
+        current_user: 当前登录用户
+
+    Returns:
+        任务状态信息
+    """
+    try:
+        from app.services.deletion_task_manager import get_deletion_task_manager, TaskStatus
+
+        # 获取任务管理器
+        task_manager = get_deletion_task_manager()
+
+        # 查询任务状态
+        task = await task_manager.get_task(task_id)
+
+        if not task:
+            return CommonResponse(
+                status="error",
+                msg=f"任务不存在: {task_id}",
+                code="404",
+                data=None
+            )
+
+        # 构建响应数据
+        data = {
+            "task_id": task.task_id,
+            "status": task.status.value,
+            "total_count": task.total_count,
+            "success_count": task.success_count,
+            "failed_count": task.failed_count,
+            "error_message": task.error_message,
+            "created_time": task.created_at.isoformat() if task.created_at else None,
+            "started_time": task.started_at.isoformat() if task.started_at else None,
+            "completed_time": task.completed_at.isoformat() if task.completed_at else None,
+            "results": task.results,
+            "failed_items": task.failed_items
+        }
+
+        # 根据状态返回不同消息
+        if task.status == TaskStatus.PENDING:
+            msg = "任务待处理"
+        elif task.status == TaskStatus.RUNNING:
+            progress = task.success_count + task.failed_count
+            msg = f"任务执行中... ({progress}/{task.total_count})"
+        elif task.status == TaskStatus.COMPLETED:
+            msg = f"任务完成，成功{task.success_count}个"
+        elif task.status == TaskStatus.PARTIAL:
+            msg = f"任务部分完成，成功{task.success_count}个，失败{task.failed_count}个"
+        elif task.status == TaskStatus.FAILED:
+            msg = f"任务失败：{task.error_message}"
+        else:
+            msg = "未知状态"
+
+        return CommonResponse(
+            status="success",
+            msg=msg,
+            code="200",
+            data=data
+        )
+
+    except Exception as e:
+        logger.error(f"查询任务状态失败: {e}", exc_info=True)
+        return CommonResponse(
+            status="error",
+            msg=f"查询失败: {str(e)}",
             code="500",
             data=None
         )
