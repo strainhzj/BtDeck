@@ -1,32 +1,56 @@
+# BTDeck Docker Compose 配置文件
+# 包含后端和前端服务的完整部署配置
+# 适用于生产环境和开发环境
+
 version: '3.8'
 
 services:
+  # ==================== 后端服务 ====================
+  # FastAPI + Python 3.11
+  # 端口：5001 (API服务)
   backend:
+    # 镜像构建配置
     build:
       context: ./
       dockerfile: Dockerfile
 
+    # 镜像名称和容器名称
     image: strainthomas/btdeck-backend:latest
     container_name: btdeck-backend
 
+    # 环境变量配置
+    # - PYTHONUNBUFFERED: Python输出不缓冲
+    # - TZ: 时区设置
+    # - DATABASE_URL: 数据库连接路径
+    # - LOG_LEVEL: 日志级别
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=Asia/Shanghai
       - DATABASE_URL=sqlite:///data/app.db
       - LOG_LEVEL=INFO
 
-    ports:
-      - "5001:5001"
+    # 端口映射：宿主机5001 -> 容器5001，非调试无必要映射开放
+    #ports:
+    #  - "5001:5001"
 
+    # 数据持久化挂载
+    # - data: 应用数据
+    # - logs: 日志文件
+    # - config: 配置文件
+    # - backup: 种子文件备份数据
     volumes:
       - ./data/backend/data:/app/data
       - ./data/backend/logs:/app/logs
       - ./data/backend/config:/app/config
       - ./data/backend/backup:/app/backup
 
+    # 连接到自定义网络
     networks:
       - btdeck_network
 
+    # 资源限制配置
+    # - 限制：1核CPU / 1GB内存
+    # - 保留：0.25核CPU / 256MB内存
     deploy:
       resources:
         limits:
@@ -36,8 +60,10 @@ services:
           cpus: '0.25'
           memory: 256M
 
+    # 重启策略：除非手动停止，否则自动重启
     restart: unless-stopped
 
+    # 健康检查：每30秒检查API文档页面
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5001/docs"]
       interval: 30s
@@ -45,27 +71,41 @@ services:
       retries: 3
       start_period: 30s
 
+  # ==================== 前端服务 ====================
+  # Nginx + Vue.js 静态文件
+  # 端口：8080 (宿主机) -> 80 (容器)
   frontend:
+    # 镜像构建配置
+    # 上下文：前端项目根目录
     build:
       context: ../BtDeck_fronted
       dockerfile: Dockerfile.prod
 
+    # 镜像名称和容器名称
     image: strainthomas/btdeck-frontend:latest
     container_name: btdeck-frontend
 
     environment:
       - TZ=Asia/Shanghai
 
+    # 端口映射：8080作为web访问端口
     ports:
       - "8080:80"
 
+    # 数据持久化挂载
+    # - Nginx缓存
+    # - Nginx访问日志
     volumes:
       - frontend_cache:/var/cache/nginx
       - frontend_logs:/var/log/nginx
 
+    # 连接到自定义网络
     networks:
       - btdeck_network
 
+    # 资源限制配置
+    # - 限制：0.5核CPU / 256MB内存
+    # - 保留：0.1核CPU / 128MB内存
     deploy:
       resources:
         limits:
@@ -75,8 +115,10 @@ services:
           cpus: '0.1'
           memory: 128M
 
+    # 重启策略：除非手动停止，否则自动重启
     restart: unless-stopped
 
+    # 健康检查：每30秒检查健康接口
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
       interval: 30s
@@ -84,14 +126,19 @@ services:
       retries: 3
       start_period: 10s
 
+    # 依赖后端服务健康检查通过后启动
     depends_on:
       backend:
         condition: service_healthy
 
+# ==================== 网络配置 ====================
+# 自定义桥接网络，用于前后端通信
 networks:
   btdeck_network:
     driver: bridge
 
+# ==================== 数据卷配置 ====================
+# 命名卷：用于前端缓存和日志持久化
 volumes:
   frontend_cache:
     driver: local
