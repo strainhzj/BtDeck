@@ -1,5 +1,5 @@
 #!/bin/bash
-# btpmanager_startup.sh - BTDeck 后端启动脚本（简化版）
+# btdeck_startup.sh - BTDeck 后端启动脚本（简化版）
 # 专为 Docker 容器环境设计
 
 set -e  # 遇到错误立即退出
