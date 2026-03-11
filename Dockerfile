@@ -50,7 +50,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 COPY . .
 
 # 设置启动脚本权限
-RUN chmod +x /app/btpmanager_startup.sh && \
+RUN chmod +x /app/btdeck_startup.sh && \
     chown -R appuser:appgroup /app
 
 # 切换到非特权用户
@@ -64,4 +64,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:5001/docs || exit 1
 
 # 启动命令
-CMD ["/app/btpmanager_startup.sh"]
+CMD ["/app/btdeck_startup.sh"]
