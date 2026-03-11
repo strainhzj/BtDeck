@@ -292,7 +292,7 @@ return CommonResponse(
 
 ```bash
 # 使用启动脚本
-./btpmanager_startup.sh start
+./btdeck_startup.sh start
 
 # 或直接使用 uvicorn
 python -m uvicorn app.main:app --host 0.0.0.0 --port 5001 --workers 4
