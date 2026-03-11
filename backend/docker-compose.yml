@@ -1,0 +1,100 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./
+      dockerfile: Dockerfile
+
+    image: strainthomas/btdeck-backend:latest
+    container_name: btdeck-backend
+
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=Asia/Shanghai
+      - DATABASE_URL=sqlite:///data/app.db
+      - LOG_LEVEL=INFO
+
+    ports:
+      - "5001:5001"
+
+    volumes:
+      - ./data/backend/data:/app/data
+      - ./data/backend/logs:/app/logs
+      - ./data/backend/config:/app/config
+      - ./data/backend/backup:/app/backup
+
+    networks:
+      - btdeck_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.25'
+          memory: 256M
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/docs"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  frontend:
+    build:
+      context: ../BtDeck_fronted
+      dockerfile: Dockerfile.prod
+
+    image: strainthomas/btdeck-frontend:latest
+    container_name: btdeck-frontend
+
+    environment:
+      - TZ=Asia/Shanghai
+
+    ports:
+      - "8080:80"
+
+    volumes:
+      - frontend_cache:/var/cache/nginx
+      - frontend_logs:/var/log/nginx
+
+    networks:
+      - btdeck_network
+
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+        reservations:
+          cpus: '0.1'
+          memory: 128M
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+    depends_on:
+      backend:
+        condition: service_healthy
+
+networks:
+  btdeck_network:
+    driver: bridge
+
+volumes:
+  frontend_cache:
+    driver: local
+
+  frontend_logs:
+    driver: local
