@@ -108,7 +108,7 @@ async def _load_downloader_torrent_save_path(db: AsyncSession, downloader_id: st
 async def _retry_on_db_lock(
     func: Callable,
     max_retries: int = 3,
-    base_delay: float = 1.0,
+    base_delay: float = 10.0,
     error_context: str = "数据库操作",
     rollback: Optional[Callable[[], Awaitable[None]]] = None
 ):
@@ -118,7 +118,7 @@ async def _retry_on_db_lock(
     Args:
         func: 要执行的异步函数
         max_retries: 最大重试次数（默认3次）
-        base_delay: 基础延迟时间（秒，指数增长）
+        base_delay: 基础延迟时间（秒，指数增长，默认10秒）
         error_context: 错误上下文描述
 
     Raises:
@@ -143,7 +143,7 @@ async def _retry_on_db_lock(
                 if attempt < max_retries - 1:  # 不是最后一次尝试
                     if rollback is not None:
                         await rollback()
-                    # 指数退避：1秒, 2秒, 4秒
+                    # 指数退避：10秒, 20秒, 40秒
                     delay = base_delay * (2 ** attempt)
                     logger.warning(
                         f"{error_context}失败（数据库锁定），"
