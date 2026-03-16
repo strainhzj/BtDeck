@@ -924,7 +924,7 @@ def get_torrent(
 
 @router.get("/getList")
 def get_torrents(
-        downloader_id: Optional[str] = Query(None, description="所属下载器主键", examples={"default": ""}),
+        downloader_id: Optional[str] = Query(None, description="所属下载器主键（支持多选，逗号分隔）", examples={"default": ""}),
         downloader_name_like: Optional[str] = Query(None, description="所属下载器名模糊查询"),
         name_like: Optional[str] = Query(None, description="种子名称模糊查询"),
         save_path_like: Optional[str] = Query(None, description="种子文件保存路径模糊查询"),
@@ -938,7 +938,7 @@ def get_torrents(
         category_like: Optional[str] = Query(None, description="分类模糊查询"),
         tracker_like: Optional[str] = Query(None, description="tracker地址模糊查询"),
         status: Optional[str] = Query(None,
-                                      description="种子状态筛选(error状态满足status='error'或has_tracker_error=True之一即可)"),
+                                      description="种子状态筛选(支持多选，逗号分隔；error状态满足status='error'或has_tracker_error=True之一即可)"),
         skip: int = Query(0, ge=0, description="跳过记录数"),
         limit: int = Query(100, ge=1, le=1000, description="限制记录数"),
         sort_by: Optional[str] = Query(None, description="排序字段"),
@@ -3086,8 +3086,16 @@ def get_torrent_infos(
 
     # 添加过滤条件
     if downloader_id:
-        query = query.filter(TorrentInfo.downloader_id == downloader_id)
-        count_query = count_query.filter(TorrentInfo.downloader_id == downloader_id)
+        # 支持多选：逗号分隔的字符串
+        downloader_ids = [id.strip() for id in downloader_id.split(',') if id.strip()]
+        if len(downloader_ids) == 1:
+            # 单个下载器：使用精确匹配
+            query = query.filter(TorrentInfo.downloader_id == downloader_ids[0])
+            count_query = count_query.filter(TorrentInfo.downloader_id == downloader_ids[0])
+        else:
+            # 多个下载器：使用 in_ 查询（或关系）
+            query = query.filter(TorrentInfo.downloader_id.in_(downloader_ids))
+            count_query = count_query.filter(TorrentInfo.downloader_id.in_(downloader_ids))
 
     if downloader_name_like:
         like_pattern = f"%{downloader_name_like}%"
@@ -3158,24 +3166,47 @@ def get_torrent_infos(
             query = query.filter(TorrentInfo.info_id.in_(info_id_list))
             count_query = count_query.filter(TorrentInfo.info_id.in_(info_id_list))
 
-    # 状态筛选：error状态满足 status='error' 或 has_tracker_error=True 之一即可
+    # 状态筛选：支持多选（逗号分隔），error状态满足 status='error' 或 has_tracker_error=True 之一即可
     if status:
-        if status == 'error':
-            query = query.filter(
-                or_(
-                    TorrentInfo.status == 'error',
-                    TorrentInfo.has_tracker_error == True
+        # 支持多选：逗号分隔的字符串
+        statuses = [s.strip() for s in status.split(',') if s.strip()]
+
+        if len(statuses) == 1:
+            # 单个状态：使用原有逻辑
+            if statuses[0] == 'error':
+                query = query.filter(
+                    or_(
+                        TorrentInfo.status == 'error',
+                        TorrentInfo.has_tracker_error == True
+                    )
                 )
-            )
-            count_query = count_query.filter(
-                or_(
-                    TorrentInfo.status == 'error',
-                    TorrentInfo.has_tracker_error == True
+                count_query = count_query.filter(
+                    or_(
+                        TorrentInfo.status == 'error',
+                        TorrentInfo.has_tracker_error == True
+                    )
                 )
-            )
+            else:
+                query = query.filter(TorrentInfo.status == statuses[0])
+                count_query = count_query.filter(TorrentInfo.status == statuses[0])
         else:
-            query = query.filter(TorrentInfo.status == status)
-            count_query = count_query.filter(TorrentInfo.status == status)
+            # 多个状态：使用 or_ 组合多个条件（或关系）
+            status_conditions = []
+            for s in statuses:
+                if s == 'error':
+                    # error 状态特殊处理
+                    status_conditions.append(
+                        or_(
+                            TorrentInfo.status == 'error',
+                            TorrentInfo.has_tracker_error == True
+                        )
+                    )
+                else:
+                    status_conditions.append(TorrentInfo.status == s)
+
+            if status_conditions:
+                query = query.filter(or_(*status_conditions))
+                count_query = count_query.filter(or_(*status_conditions))
 
     # 获取总数
     total = count_query.count()
