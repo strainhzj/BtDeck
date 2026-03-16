@@ -98,7 +98,10 @@ async def get_duplicate_torrents(
         if request.downloader_id:
             # 支持多选：逗号分隔的字符串
             downloader_ids = [id.strip() for id in request.downloader_id.split(',') if id.strip()]
-            if len(downloader_ids) == 1:
+            if len(downloader_ids) == 0:
+                # 空列表：不添加过滤条件（避免SQL语法错误）
+                pass
+            elif len(downloader_ids) == 1:
                 # 单个下载器：使用精确匹配
                 base_conditions.append(TorrentInfo.downloader_id == downloader_ids[0])
             else:
@@ -108,7 +111,10 @@ async def get_duplicate_torrents(
         if request.status:
             # 支持多选：逗号分隔的字符串
             statuses = [s.strip() for s in request.status.split(',') if s.strip()]
-            if len(statuses) == 1:
+            if len(statuses) == 0:
+                # 空列表：不添加过滤条件（避免SQL语法错误）
+                pass
+            elif len(statuses) == 1:
                 # 单个状态：使用精确匹配
                 base_conditions.append(TorrentInfo.status == statuses[0])
             else:

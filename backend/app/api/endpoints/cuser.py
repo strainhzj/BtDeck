@@ -130,7 +130,20 @@ def change_password(
         )
         return response
     old_password = security.sm4_decrypt(str(user.password))
-    if old_password != user_request.oldPassword.encode("utf-8"):
+
+    # 安全地将用户输入的密码转换为bytes，防止类型错误
+    try:
+        input_password_bytes = str(user_request.oldPassword).encode("utf-8")
+    except (AttributeError, UnicodeEncodeError) as e:
+        logger.error(f"密码编码失败: {e}")
+        response = CommonResponse(
+            status="error",
+            msg="密码格式错误",
+            code="400"
+        )
+        return response
+
+    if old_password != input_password_bytes:
         response = CommonResponse(
             status="error",
             msg="密码错误",
