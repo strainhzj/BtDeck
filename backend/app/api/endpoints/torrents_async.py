@@ -1185,10 +1185,11 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             logger.debug(f"[PERF] 批量写入完成，总耗时 {bulk_write_duration:.3f} 秒")
 
         # 执行批量写入（带重试机制）
+        # ✅ 方案3优化：增加重试次数和延迟时间，提高容错性
         await _retry_on_db_lock(
             _bulk_write_with_retry,
-            max_retries=3,
-            base_delay=1.0,
+            max_retries=5,  # 增加重试次数：3次 → 5次
+            base_delay=5.0,  # 增加基础延迟：1秒 → 5秒（指数退避：5秒, 10秒, 20秒, 40秒, 80秒）
             rollback=db.rollback,
             error_context=f"[{bt_downloader.nickname}] 批量写入种子数据"
         )
@@ -1204,7 +1205,11 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         # ✅ 关键修复：抛出异常，让调用方知道失败
         raise Exception(error_msg) from e
 
-    # ✅ 关键优化：批量写入完成后立即释放事务，后续操作使用独立事务
+    # ✅ 方案2关键优化：批量写入完成后立即提交外层事务，释放数据库锁
+    # 目的：避免在后续的 tracker 同步和备份操作期间持有锁，导致其他下载器同步等待超时
+    # 效果：允许其他下载器同步任务立即读取到最新数据，避免"database is locked"错误
+    logger.debug(f"[PERF] 批量写入完成，立即提交外层事务以释放数据库锁...")
+    await db.commit()
 
     # 第三阶段：处理 tracker 同步和备份（独立事务，避免长时间持有锁）
     logger.debug(f"[PERF] 开始处理 tracker 同步和备份...")
@@ -1785,10 +1790,11 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             logger.debug(f"[PERF] 批量写入完成，总耗时 {bulk_write_duration:.3f} 秒")
 
         # 执行批量写入（带重试机制）
+        # ✅ 方案3优化：增加重试次数和延迟时间，提高容错性
         await _retry_on_db_lock(
             _bulk_write_with_retry,
-            max_retries=3,
-            base_delay=1.0,
+            max_retries=5,  # 增加重试次数：3次 → 5次
+            base_delay=5.0,  # 增加基础延迟：1秒 → 5秒（指数退避：5秒, 10秒, 20秒, 40秒, 80秒）
             rollback=db.rollback,
             error_context=f"[{bt_downloader.nickname}] 批量写入种子数据"
         )
@@ -1804,7 +1810,11 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         # ✅ 关键修复：抛出异常，让调用方知道失败
         raise Exception(error_msg) from e
 
-    # ✅ 关键优化：批量写入完成后立即释放事务，后续操作使用独立事务
+    # ✅ 方案2关键优化：批量写入完成后立即提交外层事务，释放数据库锁
+    # 目的：避免在后续的 tracker 同步和备份操作期间持有锁，导致其他下载器同步等待超时
+    # 效果：允许其他下载器同步任务立即读取到最新数据，避免"database is locked"错误
+    logger.debug(f"[PERF] 批量写入完成，立即提交外层事务以释放数据库锁...")
+    await db.commit()
 
     # 第三阶段：处理 tracker 同步和备份（独立事务，避免长时间持有锁）
     logger.debug(f"[PERF] 开始处理 tracker 同步和备份...")
