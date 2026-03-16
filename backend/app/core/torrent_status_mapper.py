@@ -23,17 +23,17 @@ class TorrentStatusMapper:
         "seeding": "seeding",          # 做种中 -> 做种中
         "queuedUP": "seeding",         # 上传队列中 -> 做种中
         "uploading": "seeding",        # 正在上传 -> 做种中
+        "pausedUP": "pausedUP",        # ✅ 上传暂停 -> 保持为 pausedUP（将在统计时归入做种）
 
         # 下载相关状态 -> downloading
         "stalledDL": "downloading",    # 下载停滞 -> 下载中
 
         # 暂停状态统一 -> paused
-        "pausedDL": "paused",          # 下载暂停 -> 已暂停
-        "pausedUP": "paused",          # 上传暂停 -> 已暂停
+        "pausedDL": "pausedDL",        # ✅ 下载暂停 -> 保持为 pausedDL（将在统计时归入暂停）
 
         # 检查状态保持不变
         "checkingDL": "checkingDL",    # 下载检查中 -> 保持不变
-        "checkingUP": "checkingUP",    # 上传检查中 -> 保持不变
+        "checkingUP": "checkingUP",    # 上传检查中 -> 保持不变（将在统计时归入做种）
 
         # 队列下载状态
         "queuedDL": "queuedDL",        # 下载队列中 -> 保持不变
