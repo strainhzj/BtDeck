@@ -130,14 +130,14 @@ def change_password(
         )
         return response
     old_password = security.sm4_decrypt(str(user.password))
-    if old_password != user_request.old_password.encode("utf-8"):
+    if old_password != user_request.oldPassword.encode("utf-8"):
         response = CommonResponse(
             status="error",
             msg="密码错误",
             code="400"
         )
         return response
-    new_password = security.sm4_encrypt(user_request.new_password)
+    new_password = security.sm4_encrypt(user_request.newPassword)
     sql = """update users set password=:password where id=:user_id"""
     try:
         db.execute(text(sql), {"password": new_password, "user_id": user.id})
