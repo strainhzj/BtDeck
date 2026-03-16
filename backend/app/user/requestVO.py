@@ -3,9 +3,9 @@ from pydantic import BaseModel, Field, ConfigDict
 class ChangePasswordRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    oldPassword: str = Field(description="旧密码，用base64编码", example="1")
-    newPassword: str = Field(description="新密码，用base64编码", example="1")
-    userId: str = Field(description="用户id", example="1")
+    oldPassword: str = Field(alias="old_password", description="旧密码，用base64编码", example="YWRtaW4=")
+    newPassword: str = Field(alias="new_password", description="新密码，用base64编码", example="YWRtaW4x")
+    userId: str = Field(alias="user_id", description="用户id", example="1")
 
 class TwofactorVerifyRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
