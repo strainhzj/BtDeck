@@ -1155,6 +1155,12 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             # 原因：一次性更新10000+条记录会导致事务时间过长（>30秒）
             #      SQLite在WAL模式下仍对UPDATE操作使用独占锁
             # 策略：每批500条记录，分批提交，中间释放锁
+            #
+            # ⚠️ 重要限制：分批提交后数据原子性无法保证
+            # - 如果某批更新失败，前面已提交的批次无法回滚
+            # - 这是性能与数据一致性之间的权衡
+            # - 影响：可能出现部分数据更新成功、部分失败的情况
+            # - 建议：定时任务会重新同步，最终达到一致状态
             if to_update:
                 BATCH_SIZE = 500  # 每批500条，平衡性能和锁持有时间（约5秒/批）
                 total_updated = 0
@@ -1175,10 +1181,13 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     )
 
                 batch_duration = (datetime.now() - batch_start).total_seconds()
+                # 避免除零错误：确保至少有1个批次
+                total_batches = max(1, len(to_update) / BATCH_SIZE)
+                avg_time_per_batch = batch_duration / total_batches
                 logger.info(
                     f"[PERF] 分批更新完成：共{len(to_update)}条，"
                     f"耗时{batch_duration:.2f}秒，"
-                    f"平均{batch_duration/(len(to_update)/BATCH_SIZE):.2f}秒/批"
+                    f"平均{avg_time_per_batch:.2f}秒/批"
                 )
 
             bulk_write_duration = (datetime.now() - bulk_write_start).total_seconds()
@@ -1760,6 +1769,12 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             # 原因：一次性更新10000+条记录会导致事务时间过长（>30秒）
             #      SQLite在WAL模式下仍对UPDATE操作使用独占锁
             # 策略：每批500条记录，分批提交，中间释放锁
+            #
+            # ⚠️ 重要限制：分批提交后数据原子性无法保证
+            # - 如果某批更新失败，前面已提交的批次无法回滚
+            # - 这是性能与数据一致性之间的权衡
+            # - 影响：可能出现部分数据更新成功、部分失败的情况
+            # - 建议：定时任务会重新同步，最终达到一致状态
             if to_update:
                 BATCH_SIZE = 500  # 每批500条，平衡性能和锁持有时间（约5秒/批）
                 total_updated = 0
@@ -1780,10 +1795,13 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     )
 
                 batch_duration = (datetime.now() - batch_start).total_seconds()
+                # 避免除零错误：确保至少有1个批次
+                total_batches = max(1, len(to_update) / BATCH_SIZE)
+                avg_time_per_batch = batch_duration / total_batches
                 logger.info(
                     f"[PERF] 分批更新完成：共{len(to_update)}条，"
                     f"耗时{batch_duration:.2f}秒，"
-                    f"平均{batch_duration/(len(to_update)/BATCH_SIZE):.2f}秒/批"
+                    f"平均{avg_time_per_batch:.2f}秒/批"
                 )
 
             bulk_write_duration = (datetime.now() - bulk_write_start).total_seconds()

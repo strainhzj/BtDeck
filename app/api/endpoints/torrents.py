@@ -3088,7 +3088,10 @@ def get_torrent_infos(
     if downloader_id:
         # 支持多选：逗号分隔的字符串
         downloader_ids = [id.strip() for id in downloader_id.split(',') if id.strip()]
-        if len(downloader_ids) == 1:
+        if len(downloader_ids) == 0:
+            # 空列表：不添加过滤条件（避免SQL语法错误）
+            pass
+        elif len(downloader_ids) == 1:
             # 单个下载器：使用精确匹配
             query = query.filter(TorrentInfo.downloader_id == downloader_ids[0])
             count_query = count_query.filter(TorrentInfo.downloader_id == downloader_ids[0])
@@ -3171,7 +3174,10 @@ def get_torrent_infos(
         # 支持多选：逗号分隔的字符串
         statuses = [s.strip() for s in status.split(',') if s.strip()]
 
-        if len(statuses) == 1:
+        if len(statuses) == 0:
+            # 空列表：不添加过滤条件（避免SQL语法错误）
+            pass
+        elif len(statuses) == 1:
             # 单个状态：使用原有逻辑
             if statuses[0] == 'error':
                 query = query.filter(
