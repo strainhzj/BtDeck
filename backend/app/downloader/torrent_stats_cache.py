@@ -147,6 +147,29 @@ class TorrentStatsCache:
                 'other': 其他
             }
         """
+        # 定义精确的状态集合（避免模糊子字符串匹配导致的数据互换）
+        # qBittorrent 状态值参考：https://github.com/qbittorrent/qBittorrent/wiki/WebUI-API-(qBittorrent-4.2+)#get-torrent-list
+        DOWNLOADING_STATES = {
+            'downloading',  # 下载中
+            'stalledDL',    # 下载停滞（无下载速度，有上传速度）
+            'queuedDL',     # 排队等待下载
+            'checkingDL',   # 下载中检查数据
+            'checkingUP'    # 做种中检查数据（某些版本可能使用）
+        }
+
+        SEEDING_STATES = {
+            'uploading',    # 做种中
+            'stalledUP',    # 做种停滞（无上传速度）
+            'queuedUP',     # 排队等待做种
+            'pausedUP'      # 上传暂停（已完成但在做种队列）
+        }
+
+        PAUSED_STATES = {
+            'pausedDL',     # 下载暂停
+            'stoppedDL'     # 停止下载（某些版本可能使用）
+        }
+        # 注意：pausedUP 归入"做种"而非"暂停"（因为种子已完成下载）
+
         downloading = 0
         seeding = 0
         paused = 0
@@ -155,13 +178,17 @@ class TorrentStatsCache:
         for entry in self.cache.values():
             status = entry.status.lower()
 
-            if 'downloading' in status or 'dl' in status:
+            # ✅ 使用精确状态匹配，避免模糊子字符串匹配
+            if status in DOWNLOADING_STATES:
                 downloading += 1
-            elif 'seeding' in status or 'uploading' in status or 'up' in status:
+            elif status in SEEDING_STATES:
                 seeding += 1
-            elif 'paused' in status or 'stopped' in status:
+            elif status in PAUSED_STATES:
                 paused += 1
             else:
+                # 记录未知状态用于调试
+                if status and status not in ('unknown', 'error', 'missingfiles'):
+                    logger.debug(f"未识别的种子状态: {status} (种子: {entry.name})")
                 other += 1
 
         return {
