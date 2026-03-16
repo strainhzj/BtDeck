@@ -1139,32 +1139,50 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     logger.debug(f"[PERF] 开始去重检查：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
     to_insert, to_update = _deduplicate_torrent_lists(to_insert, to_update)
 
-    # 第三阶段：批量执行数据库操作（快速提交，释放锁）
+    # 第三阶段：批量执行数据库操作（分批提交，释放锁）
     logger.debug(f"[PERF] 开始批量写入：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
     bulk_write_start = datetime.now()
 
     try:
         # ✅ 使用重试机制执行批量写入
         async def _bulk_write_with_retry():
-            # 批量插入
+            # 批量插入（一次性完成，通常数据量较小）
             if to_insert:
                 await db.run_sync(lambda session: session.bulk_insert_mappings(TorrentInfo, to_insert))
                 logger.debug(f"[PERF] 批量插入 {len(to_insert)} 个种子完成")
 
-            # 批量更新
+            # ✅ 方案A：分批更新种子数据，避免长时间持有数据库锁
+            # 原因：一次性更新10000+条记录会导致事务时间过长（>30秒）
+            #      SQLite在WAL模式下仍对UPDATE操作使用独占锁
+            # 策略：每批500条记录，分批提交，中间释放锁
             if to_update:
-                await db.run_sync(lambda session: session.bulk_update_mappings(TorrentInfo, to_update))
-                logger.debug(f"[PERF] 批量更新 {len(to_update)} 个种子完成")
+                BATCH_SIZE = 500  # 每批500条，平衡性能和锁持有时间（约5秒/批）
+                total_updated = 0
+                batch_start = datetime.now()
 
-            # ✅ 修复：移除提前提交，统一在最后提交（包括 tracker 数据）
-            # 原因：
-            # 1. commit() 后事务结束，后续 tracker 操作会在无事务状态执行
-            # 2. tracker 数据写入但未提交，最终丢失
-            # 3. 应该在所有操作（包括 tracker 同步）完成后统一提交
-            # await db.commit()  # ❌ 移除此行
+                for i in range(0, len(to_update), BATCH_SIZE):
+                    batch = to_update[i:i + BATCH_SIZE]
+
+                    # 执行当前批次更新
+                    await db.run_sync(lambda session: session.bulk_update_mappings(TorrentInfo, batch))
+                    await db.commit()  # ✅ 每批提交一次，释放数据库锁
+
+                    total_updated += len(batch)
+                    progress_pct = (total_updated / len(to_update)) * 100
+                    logger.debug(
+                        f"[PERF] 批量更新进度: {total_updated}/{len(to_update)} "
+                        f"({progress_pct:.1f}%) - 本批{len(batch)}条"
+                    )
+
+                batch_duration = (datetime.now() - batch_start).total_seconds()
+                logger.info(
+                    f"[PERF] 分批更新完成：共{len(to_update)}条，"
+                    f"耗时{batch_duration:.2f}秒，"
+                    f"平均{batch_duration/(len(to_update)/BATCH_SIZE):.2f}秒/批"
+                )
 
             bulk_write_duration = (datetime.now() - bulk_write_start).total_seconds()
-            logger.debug(f"[PERF] 批量写入完成（待提交），耗时 {bulk_write_duration:.3f} 秒")
+            logger.debug(f"[PERF] 批量写入完成，总耗时 {bulk_write_duration:.3f} 秒")
 
         # 执行批量写入（带重试机制）
         await _retry_on_db_lock(
@@ -1721,32 +1739,50 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     logger.debug(f"[PERF] 开始去重检查：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
     to_insert, to_update = _deduplicate_torrent_lists(to_insert, to_update)
 
-    # 第三阶段：批量执行数据库操作（快速提交，释放锁）
+    # 第三阶段：批量执行数据库操作（分批提交，释放锁）
     logger.debug(f"[PERF] 开始批量写入：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
     bulk_write_start = datetime.now()
 
     try:
         # ✅ 使用重试机制执行批量写入
         async def _bulk_write_with_retry():
-            # 批量插入
+            # 批量插入（一次性完成，通常数据量较小）
             if to_insert:
                 await db.run_sync(lambda session: session.bulk_insert_mappings(TorrentInfo, to_insert))
                 logger.debug(f"[PERF] 批量插入 {len(to_insert)} 个种子完成")
 
-            # 批量更新
+            # ✅ 方案A：分批更新种子数据，避免长时间持有数据库锁
+            # 原因：一次性更新10000+条记录会导致事务时间过长（>30秒）
+            #      SQLite在WAL模式下仍对UPDATE操作使用独占锁
+            # 策略：每批500条记录，分批提交，中间释放锁
             if to_update:
-                await db.run_sync(lambda session: session.bulk_update_mappings(TorrentInfo, to_update))
-                logger.debug(f"[PERF] 批量更新 {len(to_update)} 个种子完成")
+                BATCH_SIZE = 500  # 每批500条，平衡性能和锁持有时间（约5秒/批）
+                total_updated = 0
+                batch_start = datetime.now()
 
-            # ✅ 修复：移除提前提交，统一在最后提交（包括 tracker 数据）
-            # 原因：
-            # 1. commit() 后事务结束，后续 tracker 操作会在无事务状态执行
-            # 2. tracker 数据写入但未提交，最终丢失
-            # 3. 应该在所有操作（包括 tracker 同步）完成后统一提交
-            # await db.commit()  # ❌ 移除此行
+                for i in range(0, len(to_update), BATCH_SIZE):
+                    batch = to_update[i:i + BATCH_SIZE]
+
+                    # 执行当前批次更新
+                    await db.run_sync(lambda session: session.bulk_update_mappings(TorrentInfo, batch))
+                    await db.commit()  # ✅ 每批提交一次，释放数据库锁
+
+                    total_updated += len(batch)
+                    progress_pct = (total_updated / len(to_update)) * 100
+                    logger.debug(
+                        f"[PERF] 批量更新进度: {total_updated}/{len(to_update)} "
+                        f"({progress_pct:.1f}%) - 本批{len(batch)}条"
+                    )
+
+                batch_duration = (datetime.now() - batch_start).total_seconds()
+                logger.info(
+                    f"[PERF] 分批更新完成：共{len(to_update)}条，"
+                    f"耗时{batch_duration:.2f}秒，"
+                    f"平均{batch_duration/(len(to_update)/BATCH_SIZE):.2f}秒/批"
+                )
 
             bulk_write_duration = (datetime.now() - bulk_write_start).total_seconds()
-            logger.debug(f"[PERF] 批量写入完成（待提交），耗时 {bulk_write_duration:.3f} 秒")
+            logger.debug(f"[PERF] 批量写入完成，总耗时 {bulk_write_duration:.3f} 秒")
 
         # 执行批量写入（带重试机制）
         await _retry_on_db_lock(

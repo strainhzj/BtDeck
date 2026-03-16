@@ -22,7 +22,7 @@ class TorrentStatusMapper:
         "stalledUP": "seeding",        # 做种但无连接 -> 做种中
         "seeding": "seeding",          # 做种中 -> 做种中
         "queuedUP": "seeding",         # 上传队列中 -> 做种中
-        "uploading": "uploading",      # 正在上传 -> 上传中（保留此状态以兼容可能的特殊情况）
+        "uploading": "seeding",        # 正在上传 -> 做种中
 
         # 下载相关状态 -> downloading
         "stalledDL": "downloading",    # 下载停滞 -> 下载中
