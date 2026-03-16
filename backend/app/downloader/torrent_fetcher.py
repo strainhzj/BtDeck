@@ -217,6 +217,8 @@ class TorrentFetcher:
             >>> batch1 = TorrentFetcher.get_qbittorrent_torrents_batch(client, offset=0)
             >>> batch2 = TorrentFetcher.get_qbittorrent_torrents_batch(client, offset=100)
         """
+        from app.core.torrent_status_mapper import TorrentStatusMapper
+
         try:
             torrents_info = client.torrents_info(
                 status_filter=status_filter,
@@ -224,11 +226,11 @@ class TorrentFetcher:
                 limit=limit
             )
 
-            # 转换为统一格式
+            # 转换为统一格式（应用状态映射）
             return [
                 {
                     'hash': t.get('hash', ''),
-                    'status': t.get('state', 'unknown'),
+                    'status': TorrentStatusMapper.convert_qbittorrent_status(t.get('state', 'unknown')),
                     'name': t.get('name', '')
                 }
                 for t in torrents_info

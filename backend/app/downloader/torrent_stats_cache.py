@@ -153,15 +153,15 @@ class TorrentStatsCache:
             'downloading',  # 下载中
             'stalledDL',    # 下载停滞（无下载速度，有上传速度）
             'queuedDL',     # 排队等待下载
-            'checkingDL',   # 下载中检查数据
-            'checkingUP'    # 做种中检查数据（某些版本可能使用）
+            'checkingDL'    # 下载中检查数据
         }
 
         SEEDING_STATES = {
             'seeding',      # 做种中
             'stalledUP',    # 做种停滞（无上传速度）
             'queuedUP',     # 排队等待做种
-            'pausedUP'      # 上传暂停（已完成但在做种队列）
+            'pausedUP',     # 上传暂停（已完成但在做种队列）
+            'checkingUP'    # ✅ 做种中检查数据（应归入做种而非下载）
         }
 
         PAUSED_STATES = {
