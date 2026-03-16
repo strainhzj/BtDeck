@@ -186,7 +186,7 @@ class SafetyCheckService:
         warnings = []
 
         # 基础安全检查
-        if torrent_info.status in ["uploading", "checking"]:
+        if torrent_info.status in ["seeding", "checking"]:
             warnings.append(f"种子状态为'{torrent_info.status}'，建议在状态稳定后再删除")
 
         if torrent_info.ratio and float(torrent_info.ratio) < 1.0:

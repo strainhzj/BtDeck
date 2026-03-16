@@ -115,7 +115,7 @@ class DashboardStatsJob:
 
             if "downloading" in state or "stalled" in state or "dl" in state:
                 downloading += 1
-            elif "uploading" in state or "seeding" in state or "queued" in state or "up" in state:
+            elif "seeding" in state or "queued" in state or "up" in state:
                 seeding += 1
             elif "paused" in state or "stopped" in state or "idle" in state:
                 paused += 1

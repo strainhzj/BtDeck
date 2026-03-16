@@ -225,13 +225,13 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
 
             # 转换状态
             status_map = {
-                "stopped": "stopped",
+                "stopped": "paused",
                 "check pending": "checking",
                 "checking": "checking",
                 "download pending": "downloading",
                 "downloading": "downloading",
-                "seed pending": "uploading",
-                "seeding": "uploading"
+                "seed pending": "seeding",
+                "seeding": "seeding"
             }
 
             status_value = (torrent.status or "").lower() if hasattr(torrent, "status") else ""
@@ -280,7 +280,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         if state in ["downloading", "checking"]:
             warnings.append(f"种子状态为'{state}'，正在下载或检查中")
 
-        if state == "uploading" and progress >= 1.0:
+        if state == "seeding" and progress >= 1.0:
             warnings.append("种子已完成且正在做种，删除可能影响分享")
 
         # 检查分享比率

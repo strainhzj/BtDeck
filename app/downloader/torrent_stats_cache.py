@@ -158,7 +158,7 @@ class TorrentStatsCache:
         }
 
         SEEDING_STATES = {
-            'uploading',    # 做种中
+            'seeding',      # 做种中
             'stalledUP',    # 做种停滞（无上传速度）
             'queuedUP',     # 排队等待做种
             'pausedUP'      # 上传暂停（已完成但在做种队列）
