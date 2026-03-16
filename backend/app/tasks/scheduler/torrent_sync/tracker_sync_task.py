@@ -82,13 +82,13 @@ class TrackerSyncTask(BaseSyncTask):
 
             logger.info(f"找到 {len(valid_downloaders)} 个有效下载器")
 
-            # 并发执行 Tracker 同步
-            logger.debug("开始并发执行 Tracker 同步...")
+            # 串行执行 Tracker 同步，避免 SQLite 数据库并发写入冲突
+            logger.debug("开始串行执行 Tracker 同步...")
             result = await self.execute_sync_with_concurrency(
                 downloaders=valid_downloaders,
                 sync_func=self._sync_tracker_only,
                 sync_type="Tracker",
-                max_concurrent=2  # tracker 同步较慢，降低并发数
+                max_concurrent=1  # 串行执行，彻底避免并发写入导致的数据库锁定问题
             )
 
             # 更新统计
