@@ -30,8 +30,8 @@ router = APIRouter()
 class DuplicateQueryRequest(BaseModel):
     """重复种子查询请求参数"""
     name_like: Optional[str] = Field(None, description="种子名称模糊搜索")
-    downloader_id: Optional[str] = Field(None, description="下载器ID")
-    status: Optional[str] = Field(None, description="种子状态")
+    downloader_id: Optional[str] = Field(None, description="下载器ID（支持多选，逗号分隔）")
+    status: Optional[str] = Field(None, description="种子状态（支持多选，逗号分隔）")
     min_size: Optional[int] = Field(None, description="最小文件大小(字节)")
     page: int = Field(1, ge=1, description="页码(从1开始)")
     pageSize: int = Field(20, ge=1, le=200, description="每页记录数")
@@ -96,10 +96,25 @@ async def get_duplicate_torrents(
             base_conditions.append(TorrentInfo.name.like(f'%{request.name_like}%'))
 
         if request.downloader_id:
-            base_conditions.append(TorrentInfo.downloader_id == request.downloader_id)
+            # 支持多选：逗号分隔的字符串
+            downloader_ids = [id.strip() for id in request.downloader_id.split(',') if id.strip()]
+            if len(downloader_ids) == 1:
+                # 单个下载器：使用精确匹配
+                base_conditions.append(TorrentInfo.downloader_id == downloader_ids[0])
+            else:
+                # 多个下载器：使用 in_ 查询（或关系）
+                base_conditions.append(TorrentInfo.downloader_id.in_(downloader_ids))
 
         if request.status:
-            base_conditions.append(TorrentInfo.status == request.status)
+            # 支持多选：逗号分隔的字符串
+            statuses = [s.strip() for s in request.status.split(',') if s.strip()]
+            if len(statuses) == 1:
+                # 单个状态：使用精确匹配
+                base_conditions.append(TorrentInfo.status == statuses[0])
+            else:
+                # 多个状态：使用 or_ 组合多个条件（或关系）
+                status_conditions = [TorrentInfo.status == s for s in statuses]
+                base_conditions.append(or_(*status_conditions))
 
         if request.min_size is not None:
             base_conditions.append(TorrentInfo.size >= request.min_size)
