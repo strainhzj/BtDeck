@@ -372,6 +372,55 @@ chore: 构建/工具链更新
    alembic heads  # 确保只有 1 个 head
    ```
 
+## 📜 更新日志
+
+### v1.0.1 (2026-03-16)
+
+#### 🐛 Bug 修复
+
+**修复 qBittorrent 下载器做种数据统计错误** (关键修复)
+- **问题描述**：qBittorrent 下载器的 `seedingCount` 显示为 0 或错误值，`downloadingCount` 和 `seedingCount` 数据完全相反
+- **根本原因**：
+  - 状态分类错误：`checkingUP` 状态被错误归类为"下载中"而非"做种中"
+  - 状态映射未应用：种子获取时未使用 `TorrentStatusMapper` 进行状态转换
+  - 状态映射不一致：状态映射器与状态分类器的定义不匹配
+- **修复内容**：
+  - `torrent_stats_cache.py`: 将 `checkingUP` 从 `DOWNLOADING_STATES` 移到 `SEEDING_STATES`
+  - `torrent_fetcher.py`: 在获取 qBittorrent 种子时应用状态映射
+  - `torrent_status_mapper.py`: 修正 `pausedUP` 和 `pausedDL` 的映射策略，保持原始状态
+
+**其他修复**
+- 修复修改密码接口参数验证问题
+- 修复多下载器并发同步时的数据库锁定问题
+- 修复多选筛选和批量更新中的潜在 panic 风险
+
+#### ⚡ 性能优化
+
+- 优化数据库重试间隔策略
+- 优化数据库并发性能和状态枚举映射
+
+#### ✨ 新增功能
+
+- 种子列表和重复任务支持下载器/状态多选筛选
+
+#### 📝 技术改进
+
+- 完善种子状态映射和分类逻辑
+- 提高下载器状态统计的准确性
+
+---
+
+### v1.0.0 (2026-03-XX)
+
+#### 🎉 首次发布
+
+- 完整的 BitTorrent 管理器后端服务
+- 支持 qBittorrent 和 Transmission 下载器
+- WebSocket 实时状态推送
+- 后台任务调度系统
+- JWT + TOTP 二次验证
+- SM4 国密算法数据加密
+
 ## 📝 开发规范
 
 - 遵循 [CLAUDE.md](./CLAUDE.md) 中的开发指导
