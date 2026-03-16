@@ -299,7 +299,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         if state in ["downloading", "pausedDL", "stalledDL", "checking", "queuedDL"]:
             warnings.append(f"种子状态为'{state}'，正在下载或检查中")
 
-        if state == "uploading" and progress >= 1.0:
+        if state == "seeding" and progress >= 1.0:
             warnings.append("种子已完成且正在做种，删除可能影响分享")
 
         # 检查分享比率
