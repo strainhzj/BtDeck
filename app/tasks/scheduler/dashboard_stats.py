@@ -49,17 +49,15 @@ class DashboardStatsJob:
 
             for downloader in online_downloaders:
                 try:
-                    torrents = await self._get_downloader_torrents(downloader)
-                    downloading, seeding, paused = self._count_torrent_states(torrents)
+                    # ✅ 修复：从缓存读取统计值，不再重新计算和修改
+                    # 这些值由状态更新任务（initialization.py）维护，使用精确的状态匹配
+                    downloading = getattr(downloader, 'downloading_count', 0) or 0
+                    seeding = getattr(downloader, 'seeding_count', 0) or 0
+                    paused = 0  # 暂不支持从缓存读取paused统计
 
                     total_downloading += downloading
                     total_seeding += seeding
                     total_paused += paused
-
-                    # DownloaderCheckVO is a strict Pydantic model. Persist per-downloader
-                    # stats on existing declared fields instead of adding dynamic attributes.
-                    downloader.downloading_count = downloading
-                    downloader.seeding_count = seeding
 
                 except Exception as exc:
                     logger.warning(f"获取下载器 {getattr(downloader, 'nickname', '')} 种子统计失败: {exc}")
@@ -88,36 +86,6 @@ class DashboardStatsJob:
                 "message": f"统计失败: {str(exc)}",
             }
 
-    async def _get_downloader_torrents(self, downloader: Any) -> List[Any]:
-        client = getattr(downloader, "client", None)
-        if client is None:
-            return []
-
-        downloader_type = int(getattr(downloader, "downloader_type", 0) or 0)
-        if downloader_type == 0:
-            return await asyncio.to_thread(client.torrents_info)
-
-        return await asyncio.to_thread(client.get_torrents)
-
-    def _count_torrent_states(self, torrents: List[Any]) -> tuple[int, int, int]:
-        downloading = 0
-        seeding = 0
-        paused = 0
-
-        for torrent in torrents:
-            state = ""
-            if isinstance(torrent, dict):
-                state = str(torrent.get("state", "")).lower()
-            elif hasattr(torrent, "state"):
-                state = str(getattr(torrent, "state", "")).lower()
-            elif hasattr(torrent, "status"):
-                state = str(getattr(torrent, "status", "")).lower()
-
-            if "downloading" in state or "stalled" in state or "dl" in state:
-                downloading += 1
-            elif "seeding" in state or "queued" in state or "up" in state:
-                seeding += 1
-            elif "paused" in state or "stopped" in state or "idle" in state:
-                paused += 1
-
-        return downloading, seeding, paused
+    # ✅ 移除了 _get_downloader_torrents() 和 _count_torrent_states() 方法
+    # 现在直接从 downloader 对象的缓存属性读取统计值
+    # 这些值由状态更新任务（initialization.py）使用精确的状态匹配逻辑维护
