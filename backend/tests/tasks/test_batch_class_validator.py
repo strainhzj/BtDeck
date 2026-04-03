@@ -471,3 +471,215 @@ class TestBatchClassValidatorHelpers:
         script = batch_validator.generate_repair_script(report)
 
         assert "UPDATE" not in script
+
+
+# ===========================================================================
+# BatchClassValidator - scan_database_for_python_internal_classes
+# ===========================================================================
+
+
+class TestScanDatabaseForPythonInternalClasses:
+    """数据库扫描方法测试"""
+
+    @patch("app.tasks.batch_class_validator.get_db")
+    @patch("app.tasks.batch_class_validator.CronTaskCRUD")
+    def test_成功获取Python内部类任务(self, mock_crud, mock_get_db, batch_validator):
+        """当数据库返回成功且有Python内部类任务时，应正确过滤返回"""
+        mock_db = MagicMock()
+        mock_get_db.return_value = iter([mock_db])
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.data = {
+            "list": [
+                {"task_id": 1, "task_type": 4, "executor": "app.tasks.MyTask"},
+                {"task_id": 2, "task_type": 1, "executor": "other"},
+                {"task_id": 3, "task_type": 4, "executor": "app.tasks.AnotherTask"},
+            ]
+        }
+        mock_crud.get_cron_tasks.return_value = mock_result
+
+        result = batch_validator.scan_database_for_python_internal_classes()
+
+        assert len(result) == 2
+        assert result[0]["task_id"] == 1
+        assert result[1]["task_id"] == 3
+        mock_db.close.assert_called_once()
+
+    @patch("app.tasks.batch_class_validator.get_db")
+    @patch("app.tasks.batch_class_validator.CronTaskCRUD")
+    def test_数据库查询失败时返回空列表(self, mock_crud, mock_get_db, batch_validator):
+        """当 get_cron_tasks 返回失败时，应返回空列表"""
+        mock_db = MagicMock()
+        mock_get_db.return_value = iter([mock_db])
+
+        mock_result = MagicMock()
+        mock_result.success = False
+        mock_result.message = "连接超时"
+        mock_crud.get_cron_tasks.return_value = mock_result
+
+        result = batch_validator.scan_database_for_python_internal_classes()
+
+        assert result == []
+        mock_db.close.assert_called_once()
+
+    @patch("app.tasks.batch_class_validator.get_db")
+    @patch("app.tasks.batch_class_validator.CronTaskCRUD")
+    def test_数据库异常时返回空列表并关闭连接(self, mock_crud, mock_get_db, batch_validator):
+        """当数据库操作抛出异常时，应安全返回空列表并关闭连接"""
+        mock_db = MagicMock()
+        mock_get_db.return_value = iter([mock_db])
+        mock_crud.get_cron_tasks.side_effect = Exception("数据库崩溃")
+
+        result = batch_validator.scan_database_for_python_internal_classes()
+
+        assert result == []
+        mock_db.close.assert_called_once()
+
+    @patch("app.tasks.batch_class_validator.get_db")
+    @patch("app.tasks.batch_class_validator.CronTaskCRUD")
+    def test_没有Python内部类任务时返回空列表(self, mock_crud, mock_get_db, batch_validator):
+        """当所有任务都不是 Python 内部类类型时，应返回空列表"""
+        mock_db = MagicMock()
+        mock_get_db.return_value = iter([mock_db])
+
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.data = {
+            "list": [
+                {"task_id": 1, "task_type": 1},
+                {"task_id": 2, "task_type": 2},
+            ]
+        }
+        mock_crud.get_cron_tasks.return_value = mock_result
+
+        result = batch_validator.scan_database_for_python_internal_classes()
+
+        assert result == []
+
+
+# ===========================================================================
+# BatchClassValidator - validate_all_class_paths
+# ===========================================================================
+
+
+class TestValidateAllClassPaths:
+    """全量类路径验证流程测试"""
+
+    @patch.object(BatchClassValidator, "scan_database_for_python_internal_classes")
+    def test_没有任务时返回no_tasks_found状态(self, mock_scan, batch_validator):
+        """当数据库中没有任何 Python 内部类任务时，应返回 no_tasks_found"""
+        mock_scan.return_value = []
+
+        result = batch_validator.validate_all_class_paths()
+
+        assert result["status"] == "no_tasks_found"
+        assert "没有找到" in result["message"]
+        assert "timestamp" in result
+
+    @patch("app.tasks.batch_class_validator.validate_class_paths_batch")
+    @patch.object(BatchClassValidator, "scan_database_for_python_internal_classes")
+    def test_任务中没有类路径时返回no_class_paths_found(self, mock_scan, mock_batch, batch_validator):
+        """当任务列表中没有有效的类路径格式时，应返回 no_class_paths_found"""
+        mock_scan.return_value = [
+            {"executor": "import os"},
+            {"executor": "def foo(): pass"},
+        ]
+
+        result = batch_validator.validate_all_class_paths()
+
+        assert result["status"] == "no_class_paths_found"
+        assert "没有找到有效" in result["message"]
+        mock_batch.assert_not_called()
+
+    @patch.object(BatchClassValidator, "generate_detailed_report")
+    @patch("app.tasks.batch_class_validator.validate_class_paths_batch")
+    @patch.object(BatchClassValidator, "scan_database_for_python_internal_classes")
+    def test_正常验证流程返回completed状态(self, mock_scan, mock_batch, mock_report, batch_validator):
+        """有任务且有类路径时，应执行完整验证并返回详细报告"""
+        mock_scan.return_value = [
+            {"task_id": 1, "executor": "app.tasks.MyTask"},
+        ]
+        mock_batch.return_value = {
+            "detailed_results": [{"class_path": "app.tasks.MyTask", "is_valid": True}],
+            "summary": {"valid_count": 1, "invalid_count": 0},
+        }
+        mock_report.return_value = {"status": "completed", "summary": mock_batch.return_value["summary"]}
+
+        result = batch_validator.validate_all_class_paths()
+
+        mock_batch.assert_called_once_with(["app.tasks.MyTask"])
+        mock_report.assert_called_once()
+        assert result["status"] == "completed"
+
+
+# ===========================================================================
+# BatchClassValidator - save_reports_to_files
+# ===========================================================================
+
+
+class TestSaveReportsToFiles:
+    """报告文件保存测试"""
+
+    @patch("app.tasks.batch_class_validator.datetime")
+    @patch("app.tasks.batch_class_validator.os.makedirs")
+    @patch("app.tasks.batch_class_validator.os.path.join")
+    @patch("builtins.open", new_callable=MagicMock)
+    def test_成功保存报告和修复脚本(self, mock_open, mock_join, mock_makedirs, mock_dt, batch_validator):
+        """应创建输出目录并保存 JSON 报告和 SQL 脚本两个文件"""
+        mock_dt.now.return_value.strftime.return_value = "20260403_120000"
+        mock_dt.now.return_value.isoformat.return_value = "2026-04-03T12:00:00"
+        # os.path.join 每次调用返回不同路径
+        mock_join.side_effect = lambda d, f: f"{d}/{f}"
+
+        report = {
+            "status": "completed",
+            "detailed_results": [
+                {
+                    "task_id": 1,
+                    "task_name": "测试",
+                    "class_path": "app.Mod.Cls",
+                    "is_valid": False,
+                    "errors": [{"message": "模块不存在"}],
+                    "suggested_fixes": ["检查路径"],
+                }
+            ],
+        }
+
+        report_file, script_file = batch_validator.save_reports_to_files(report, "/tmp/test_reports")
+
+        mock_makedirs.assert_called_once_with("/tmp/test_reports", exist_ok=True)
+        assert mock_open.call_count == 2
+        assert "class_path_validation_report_" in report_file
+        assert "class_path_repair_script_" in script_file
+
+    @patch("app.tasks.batch_class_validator.datetime")
+    @patch("app.tasks.batch_class_validator.os.makedirs")
+    @patch("app.tasks.batch_class_validator.os.path.join")
+    @patch("builtins.open", new_callable=MagicMock)
+    def test_使用默认输出目录(self, mock_open, mock_join, mock_makedirs, mock_dt, batch_validator):
+        """未指定输出目录时应使用默认的 reports 目录"""
+        mock_dt.now.return_value.strftime.return_value = "20260403_120000"
+        mock_dt.now.return_value.isoformat.return_value = "2026-04-03T12:00:00"
+        mock_join.side_effect = lambda d, f: f"{d}/{f}"
+
+        batch_validator.save_reports_to_files({"detailed_results": []})
+
+        mock_makedirs.assert_called_once_with("reports", exist_ok=True)
+
+    @patch("app.tasks.batch_class_validator.datetime")
+    @patch("app.tasks.batch_class_validator.os.makedirs")
+    @patch("app.tasks.batch_class_validator.os.path.join")
+    @patch("builtins.open", new_callable=MagicMock)
+    def test_空报告也能正常保存(self, mock_open, mock_join, mock_makedirs, mock_dt, batch_validator):
+        """空的详细结果列表不应导致保存失败"""
+        mock_dt.now.return_value.strftime.return_value = "20260403_120000"
+        mock_dt.now.return_value.isoformat.return_value = "2026-04-03T12:00:00"
+        mock_join.side_effect = lambda d, f: f"{d}/{f}"
+
+        report = {"status": "completed", "detailed_results": []}
+
+        report_file, script_file = batch_validator.save_reports_to_files(report, "/tmp/empty")
+
+        assert report_file is not None
+        assert script_file is not None
