@@ -7,7 +7,14 @@ SM4Encryption 加密工具单元测试
 - Unicode 和长文本支持
 - is_encrypted 判断
 - 未初始化状态降级
+
+以及模块级便捷函数：
+- get_sm4_encryption（全局单例获取）
+- encrypt_password / decrypt_password（密码加解密）
+- encrypt_tracker_url / decrypt_tracker_url（tracker URL 加解密）
 """
+
+from unittest.mock import patch
 
 
 class TestSM4Encryption:
@@ -105,3 +112,176 @@ class TestSM4Encryption:
         enc1 = sm4_instance.encrypt("same_password")
         enc2 = sm4_instance.encrypt("same_password")
         assert enc1 == enc2
+
+
+class TestGetSm4Encryption:
+    """get_sm4_encryption 全局单例获取函数测试"""
+
+    def test_首次调用创建新实例(self):
+        """首次调用 get_sm4_encryption 应创建并返回 SM4Encryption 实例"""
+        import app.utils.encryption as enc_module
+
+        # 重置全局变量以模拟首次调用
+        original = enc_module._sm4_encryption
+        enc_module._sm4_encryption = None
+        try:
+            with patch.object(enc_module.SM4Encryption, '__init__', return_value=None):
+                instance = enc_module.get_sm4_encryption()
+                assert isinstance(instance, enc_module.SM4Encryption)
+        finally:
+            enc_module._sm4_encryption = original
+
+    def test_重复调用返回同一实例(self):
+        """重复调用 get_sm4_encryption 应返回相同的全局实例（单例模式）"""
+        import app.utils.encryption as enc_module
+
+        fake = object()
+        original = enc_module._sm4_encryption
+        enc_module._sm4_encryption = fake
+        try:
+            result = enc_module.get_sm4_encryption()
+            assert result is fake
+        finally:
+            enc_module._sm4_encryption = original
+
+
+class TestEncryptDecryptPassword:
+    """encrypt_password / decrypt_password 便捷函数测试"""
+
+    def test_encrypt_password_正常加密(self, sm4_instance):
+        """encrypt_password 应返回带 sm4: 前缀的密文"""
+        import app.utils.encryption as enc_module
+
+        with patch.object(enc_module, 'get_sm4_encryption', return_value=sm4_instance):
+            result = enc_module.encrypt_password("my_secret_pass")
+            assert result.startswith("sm4:")
+            assert result != "my_secret_pass"
+
+    def test_decrypt_password_正常解密(self, sm4_instance):
+        """decrypt_password 应将 sm4: 密文还原为明文"""
+        import app.utils.encryption as enc_module
+
+        encrypted = sm4_instance.encrypt("my_secret_pass")
+        with patch.object(enc_module, 'get_sm4_encryption', return_value=sm4_instance):
+            result = enc_module.decrypt_password(encrypted)
+            assert result == "my_secret_pass"
+
+
+class TestEncryptDecryptTrackerUrl:
+    """encrypt_tracker_url / decrypt_tracker_url 便捷函数测试"""
+
+    def test_encrypt_tracker_url_正常加密(self, sm4_instance):
+        """encrypt_tracker_url 应返回带 sm4: 前缀的密文"""
+        import app.utils.encryption as enc_module
+
+        url = "https://tracker.example.com/announce"
+        with patch.object(enc_module, 'get_sm4_encryption', return_value=sm4_instance):
+            result = enc_module.encrypt_tracker_url(url)
+            assert result.startswith("sm4:")
+            assert result != url
+
+    def test_decrypt_tracker_url_正常解密(self, sm4_instance):
+        """decrypt_tracker_url 应将 sm4: 密文还原为原始 URL"""
+        import app.utils.encryption as enc_module
+
+        url = "https://tracker.example.com/announce"
+        encrypted = sm4_instance.encrypt(url)
+        with patch.object(enc_module, 'get_sm4_encryption', return_value=sm4_instance):
+            result = enc_module.decrypt_tracker_url(encrypted)
+            assert result == url
+
+
+class TestSM4EncryptionEdgeCases:
+    """SM4Encryption 边界分支覆盖测试"""
+
+    def test_init_无密钥时不初始化加密器(self):
+        """__init__ 中 _get_sm4_key 返回 None 时不应初始化 crypt"""
+        from app.utils.encryption import SM4Encryption
+
+        with patch.object(SM4Encryption, '_get_sm4_key', return_value=None):
+            instance = SM4Encryption()
+            assert instance.crypt is None
+            assert not hasattr(instance, 'encrypt_crypt') or instance.encrypt_crypt is None
+
+    def test_get_sm4_key_配置文件不存在返回None(self):
+        """配置文件不存在时 _get_sm4_key 应返回 None"""
+        from app.utils.encryption import SM4Encryption
+        from unittest.mock import MagicMock
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = False
+        mock_settings.YAML_PATH = mock_path
+
+        instance = SM4Encryption.__new__(SM4Encryption)
+        with patch('app.utils.encryption.settings', mock_settings):
+            result = instance._get_sm4_key()
+            assert result is None
+
+    def test_get_sm4_key_密钥缺失返回None(self):
+        """配置文件中无 secret_key 时 _get_sm4_key 应返回 None"""
+        import yaml
+        from app.utils.encryption import SM4Encryption
+        from unittest.mock import MagicMock, mock_open
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_settings.YAML_PATH = mock_path
+
+        instance = SM4Encryption.__new__(SM4Encryption)
+        with patch('app.utils.encryption.settings', mock_settings), \
+             patch('builtins.open', mock_open(read_data='security:\n  other: value')), \
+             patch('yaml.safe_load', return_value={'security': {'other': 'value'}}):
+            result = instance._get_sm4_key()
+            assert result is None
+
+    def test_get_sm4_key_正常获取密钥(self):
+        """配置文件中存在 secret_key 时 _get_sm4_key 应返回密钥"""
+        from app.utils.encryption import SM4Encryption
+        from unittest.mock import MagicMock, mock_open
+
+        mock_settings = MagicMock()
+        mock_path = MagicMock()
+        mock_path.exists.return_value = True
+        mock_settings.YAML_PATH = mock_path
+
+        instance = SM4Encryption.__new__(SM4Encryption)
+        with patch('app.utils.encryption.settings', mock_settings), \
+             patch('builtins.open', mock_open(read_data='security:\n  secret_key: testkey12345678')), \
+             patch('yaml.safe_load', return_value={'security': {'secret_key': 'testkey12345678'}}):
+            result = instance._get_sm4_key()
+            assert result == 'testkey12345678'
+
+    def test_initialize_crypt_异常时降级为None(self):
+        """_initialize_crypt 初始化失败时应将 crypt 设置为 None"""
+        from app.utils.encryption import SM4Encryption
+
+        instance = SM4Encryption.__new__(SM4Encryption)
+        instance.sm4_key = "invalid_key_too_short"
+        with patch('app.utils.encryption.sm4.CryptSM4', side_effect=Exception("init error")):
+            instance._initialize_crypt()
+            assert instance.encrypt_crypt is None
+            assert instance.decrypt_crypt is None
+
+    def test_decrypt_未初始化时返回原文(self):
+        """decrypt_crypt 为 None 时 decrypt 应返回原文"""
+        from app.utils.encryption import SM4Encryption
+
+        instance = SM4Encryption.__new__(SM4Encryption)
+        instance.decrypt_crypt = None
+        result = instance.decrypt("sm4:someciphertext")
+        assert result == "sm4:someciphertext"
+
+    def test_encrypt_异常时返回原文(self, sm4_instance):
+        """encrypt 内部异常时应返回原文"""
+        with patch.object(sm4_instance.encrypt_crypt, 'crypt_ecb', side_effect=Exception("boom")):
+            result = sm4_instance.encrypt("trigger_error")
+            assert result == "trigger_error"
+
+    def test_decrypt_异常时返回原文(self, sm4_instance):
+        """decrypt 内部异常时应返回原文"""
+        encrypted = sm4_instance.encrypt("test_data")
+        with patch.object(sm4_instance.decrypt_crypt, 'crypt_ecb', side_effect=Exception("boom")):
+            result = sm4_instance.decrypt(encrypted)
+            assert result == encrypted
