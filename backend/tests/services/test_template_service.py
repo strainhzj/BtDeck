@@ -230,3 +230,453 @@ class TestValidateDaysOfWeek:
     def test_none_value(self, service):
         """None 值应失败"""
         assert service._validate_days_of_week(None) is False
+
+
+# ==================== CRUD 操作测试 ====================
+
+class _FakeTemplate:
+    """轻量级模拟 SettingTemplate ORM 对象"""
+    def __init__(self, **kwargs):
+        self.id = kwargs.get("id", 1)
+        self.name = kwargs.get("name", "测试模板")
+        self.description = kwargs.get("description", "描述")
+        self.downloader_type = kwargs.get("downloader_type", 0)
+        self.template_config = kwargs.get("template_config", '{"dl_speed_limit": 1024, "ul_speed_limit": 512, "speed_unit": 0}')
+        self.path_mapping = kwargs.get("path_mapping", None)
+        self.is_system_default = kwargs.get("is_system_default", False)
+        self.created_by = kwargs.get("created_by", 1)
+        self.created_at = kwargs.get("created_at", None)
+        self.updated_at = kwargs.get("updated_at", None)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "name": self.name,
+            "description": self.description,
+            "downloader_type": self.downloader_type,
+            "template_config": self.template_config,
+            "path_mapping": self.path_mapping,
+            "is_system_default": self.is_system_default,
+            "created_by": self.created_by,
+        }
+
+
+def _make_mock_db(template=None, templates=None):
+    """创建 mock db 和 query 链"""
+    db = MagicMock()
+    mock_query = MagicMock()
+    mock_query.filter_by.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.order_by.return_value = mock_query
+    mock_query.first.return_value = template
+    mock_query.all.return_value = templates or []
+    db.query.return_value = mock_query
+    return db, mock_query
+
+
+def _valid_create_data(**overrides):
+    """生成有效的创建模板数据"""
+    data = {
+        "name": "测试模板",
+        "description": "测试描述",
+        "downloader_type": 0,
+        "template_config": {
+            "dl_speed_limit": 1024,
+            "ul_speed_limit": 512,
+            "speed_unit": 0,
+        },
+    }
+    data.update(overrides)
+    return data
+
+
+class TestCreateTemplate:
+    """TemplateService.create_template 测试"""
+
+    def test_创建成功(self):
+        """正常创建模板应成功"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(name="测试模板")
+        db, mock_query = _make_mock_db(template=None)  # 名称不存在
+
+        # 模拟 db.add/commit/refresh
+        db.add = MagicMock()
+        db.commit = MagicMock()
+        db.refresh = MagicMock()
+
+        # name 查询返回 None（名称不存在）
+        # 但后续需要 query(SettingTemplate).filter_by(name=...).first() 返回 None
+        mock_query.filter_by.return_value.first.return_value = None
+
+        service = TemplateService(db=db)
+        result = service.create_template(user_id=1, data=_valid_create_data())
+
+        db.add.assert_called_once()
+        db.commit.assert_called_once()
+
+    def test_名称为空抛出异常(self):
+        """模板名称为空应抛出 ValueError"""
+        from app.services.template_service import TemplateService
+
+        db = MagicMock()
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="模板名称"):
+            service.create_template(user_id=1, data=_valid_create_data(name=""))
+
+    def test_名称过长抛出异常(self):
+        """模板名称超过100字符应抛出"""
+        from app.services.template_service import TemplateService
+
+        db = MagicMock()
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="模板名称"):
+            service.create_template(user_id=1, data=_valid_create_data(name="x" * 101))
+
+    def test_描述过长抛出异常(self):
+        """模板描述超过500字符应抛出"""
+        from app.services.template_service import TemplateService
+
+        db = MagicMock()
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="模板描述"):
+            service.create_template(user_id=1, data=_valid_create_data(description="x" * 501))
+
+    def test_无效下载器类型抛出异常(self):
+        """无效下载器类型应抛出"""
+        from app.services.template_service import TemplateService
+
+        db = MagicMock()
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="下载器类型"):
+            service.create_template(user_id=1, data=_valid_create_data(downloader_type=2))
+
+    def test_模板配置为空抛出异常(self):
+        """模板配置为空应抛出"""
+        from app.services.template_service import TemplateService
+
+        db = MagicMock()
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="模板配置"):
+            service.create_template(user_id=1, data=_valid_create_data(template_config=None))
+
+    def test_名称已存在抛出异常(self):
+        """模板名称已存在应抛出"""
+        from app.services.template_service import TemplateService
+
+        existing = _FakeTemplate(name="测试模板")
+        db, mock_query = _make_mock_db(template=existing)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="已存在"):
+            service.create_template(user_id=1, data=_valid_create_data())
+
+    def test_模板配置验证失败抛出异常(self):
+        """模板配置验证失败应抛出"""
+        from app.services.template_service import TemplateService
+
+        db, mock_query = _make_mock_db(template=None)
+        mock_query.filter_by.return_value.first.return_value = None
+        service = TemplateService(db=db)
+
+        bad_config = _valid_create_data(
+            template_config={"ul_speed_limit": 512, "speed_unit": 0}  # 缺少 dl_speed_limit
+        )
+        with pytest.raises(ValueError, match="模板配置验证失败"):
+            service.create_template(user_id=1, data=bad_config)
+
+    def test_包含路径映射(self):
+        """包含路径映射时应正确处理"""
+        from app.services.template_service import TemplateService
+
+        db, mock_query = _make_mock_db(template=None)
+        mock_query.filter_by.return_value.first.return_value = None
+        db.add = MagicMock()
+        db.commit = MagicMock()
+        db.refresh = MagicMock()
+
+        service = TemplateService(db=db)
+        data = _valid_create_data(path_mapping={"source": "/downloads", "target": "/media"})
+        result = service.create_template(user_id=1, data=data)
+
+        db.add.assert_called_once()
+
+    def test_路径映射非字典抛出异常(self):
+        """路径映射不是字典应抛出"""
+        from app.services.template_service import TemplateService
+
+        db, mock_query = _make_mock_db(template=None)
+        mock_query.filter_by.return_value.first.return_value = None
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="路径映射"):
+            service.create_template(user_id=1, data=_valid_create_data(path_mapping="not-a-dict"))
+
+
+class TestUpdateTemplate:
+    """TemplateService.update_template 测试"""
+
+    def test_更新名称成功(self):
+        """更新模板名称应成功"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=1)
+        db = MagicMock()
+
+        # 第一次 query().filter_by(id=...).first() → 返回模板
+        # 第二次 query().filter(name=..., id!=...).first() → 返回 None（无重名）
+        mock_filter_query = MagicMock()
+        mock_filter_query.first.return_value = None
+
+        mock_filterby_query = MagicMock()
+        mock_filterby_query.first.return_value = template
+
+        mock_base_query = MagicMock()
+        mock_base_query.filter_by.return_value = mock_filterby_query
+        mock_base_query.filter.return_value = mock_filter_query
+
+        db.query.return_value = mock_base_query
+        db.commit = MagicMock()
+        db.refresh = MagicMock()
+
+        service = TemplateService(db=db)
+        result = service.update_template(template_id=1, user_id=1, data={"name": "新名称"})
+
+        db.commit.assert_called_once()
+
+    def test_模板不存在抛出异常(self):
+        """更新不存在的模板应抛出"""
+        from app.services.template_service import TemplateService
+
+        db, mock_query = _make_mock_db(template=None)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="模板不存在"):
+            service.update_template(template_id=999, user_id=1, data={"name": "新名称"})
+
+    def test_系统模板不可修改(self):
+        """系统默认模板不能修改"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(is_system_default=True, created_by=1)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="系统默认模板"):
+            service.update_template(template_id=1, user_id=1, data={"name": "新名称"})
+
+    def test_无权修改他人模板(self):
+        """修改他人模板应抛出"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=2)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="无权修改"):
+            service.update_template(template_id=1, user_id=1, data={"name": "新名称"})
+
+    def test_没有更新字段抛出异常(self):
+        """空更新数据应抛出"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=1)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="没有要更新的字段"):
+            service.update_template(template_id=1, user_id=1, data={})
+
+    def test_更新描述成功(self):
+        """更新模板描述应成功"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=1)
+        db, mock_query = _make_mock_db(template=template)
+        db.commit = MagicMock()
+        db.refresh = MagicMock()
+
+        service = TemplateService(db=db)
+        result = service.update_template(template_id=1, user_id=1, data={"description": "新描述"})
+
+        db.commit.assert_called_once()
+
+    def test_更新下载器类型成功(self):
+        """更新下载器类型应成功"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=1)
+        db, mock_query = _make_mock_db(template=template)
+        db.commit = MagicMock()
+        db.refresh = MagicMock()
+
+        service = TemplateService(db=db)
+        result = service.update_template(template_id=1, user_id=1, data={"downloader_type": 1})
+
+        db.commit.assert_called_once()
+
+
+class TestDeleteTemplate:
+    """TemplateService.delete_template 测试"""
+
+    def test_删除成功(self):
+        """正常删除模板应成功"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=1)
+        db, mock_query = _make_mock_db(template=template)
+        db.delete = MagicMock()
+        db.commit = MagicMock()
+
+        service = TemplateService(db=db)
+        result = service.delete_template(template_id=1, user_id=1)
+
+        assert result is True
+        db.delete.assert_called_once_with(template)
+
+    def test_模板不存在抛出异常(self):
+        """删除不存在的模板应抛出"""
+        from app.services.template_service import TemplateService
+
+        db, mock_query = _make_mock_db(template=None)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="模板不存在"):
+            service.delete_template(template_id=999, user_id=1)
+
+    def test_系统模板不可删除(self):
+        """系统默认模板不能删除"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(is_system_default=True, created_by=1)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="系统默认模板"):
+            service.delete_template(template_id=1, user_id=1)
+
+    def test_无权删除他人模板(self):
+        """删除他人模板应抛出"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=2)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="无权删除"):
+            service.delete_template(template_id=1, user_id=1)
+
+
+class TestGetTemplate:
+    """TemplateService.get_template 测试"""
+
+    def test_获取成功(self):
+        """获取模板详情应成功"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=1)
+        db, mock_query = _make_mock_db(template=template)
+
+        service = TemplateService(db=db)
+        result = service.get_template(template_id=1, user_id=1)
+
+        assert result["name"] == "测试模板"
+
+    def test_模板不存在抛出异常(self):
+        """获取不存在的模板应抛出"""
+        from app.services.template_service import TemplateService
+
+        db, mock_query = _make_mock_db(template=None)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="模板不存在"):
+            service.get_template(template_id=999)
+
+    def test_无权访问他人模板(self):
+        """访问他人的非系统模板应抛出"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=2, is_system_default=False)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        with pytest.raises(ValueError, match="无权访问"):
+            service.get_template(template_id=1, user_id=1)
+
+    def test_系统模板任何人可访问(self):
+        """系统默认模板任何人可访问"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=0, is_system_default=True)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        result = service.get_template(template_id=1, user_id=999)
+        assert result["name"] == "测试模板"
+
+    def test_无user_id时可访问(self):
+        """不指定 user_id 时不检查权限"""
+        from app.services.template_service import TemplateService
+
+        template = _FakeTemplate(created_by=2)
+        db, mock_query = _make_mock_db(template=template)
+        service = TemplateService(db=db)
+
+        result = service.get_template(template_id=1, user_id=None)
+        assert result is not None
+
+
+class TestListTemplates:
+    """TemplateService.list_templates 测试"""
+
+    def test_无过滤返回全部(self):
+        """无过滤条件应返回全部模板"""
+        from app.services.template_service import TemplateService
+
+        templates = [_FakeTemplate(id=1), _FakeTemplate(id=2)]
+        db, mock_query = _make_mock_db(templates=templates)
+
+        service = TemplateService(db=db)
+        result = service.list_templates()
+
+        assert len(result) == 2
+
+    def test_按下载器类型过滤(self):
+        """按下载器类型过滤"""
+        from app.services.template_service import TemplateService
+
+        templates = [_FakeTemplate(id=1, downloader_type=0)]
+        db, mock_query = _make_mock_db(templates=templates)
+
+        service = TemplateService(db=db)
+        result = service.list_templates(filters={"downloader_type": 0})
+
+        assert len(result) == 1
+
+    def test_按系统默认过滤(self):
+        """按系统默认模板过滤"""
+        from app.services.template_service import TemplateService
+
+        templates = [_FakeTemplate(id=1, is_system_default=True)]
+        db, mock_query = _make_mock_db(templates=templates)
+
+        service = TemplateService(db=db)
+        result = service.list_templates(filters={"is_system_default": True})
+
+        assert len(result) == 1
+
+    def test_空列表(self):
+        """无模板应返回空列表"""
+        from app.services.template_service import TemplateService
+
+        db, mock_query = _make_mock_db(templates=[])
+
+        service = TemplateService(db=db)
+        result = service.list_templates()
+
+        assert result == []
