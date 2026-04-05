@@ -17,7 +17,7 @@
 from datetime import datetime
 from typing import Dict, Any
 
-from app.api.endpoints.torrents import torrent_sync_async
+from app.api.endpoints.torrent_sync import torrent_sync_async
 
 
 class TorrentSyncTask:

@@ -27,7 +27,7 @@ from app.api.models.advanced_search import (
     validate_size_string, validate_date_string
 )
 # 导入种子信息转换函数（包含tracker信息）
-from app.api.endpoints.torrents import convert_to_vo_with_trackers
+from app.api.endpoints.torrent_helpers import convert_to_vo_with_trackers
 
 logger = logging.getLogger(__name__)
 

@@ -54,7 +54,7 @@ class TrackerSyncTask(BaseSyncTask):
             同步结果字典
         """
         from app.main import app as downloader_app
-        from app.api.endpoints.torrents import (
+        from app.api.endpoints.torrent_sync import (
             torrent_sync_db_async,
             update_tracker_status_from_keywords,
         )
@@ -162,7 +162,7 @@ class TrackerSyncTask(BaseSyncTask):
         # 优化: 可以通过设置环境变量或参数，跳过种子基础信息的更新
         # 但考虑到实现复杂度，当前版本保持完整同步
 
-        from app.api.endpoints.torrents import torrent_sync_db_async
+        from app.api.endpoints.torrent_sync import torrent_sync_db_async
 
         # 执行完整的种子同步（包含 tracker）
         result = await torrent_sync_db_async(downloader_info)
