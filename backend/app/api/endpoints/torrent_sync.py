@@ -112,15 +112,6 @@ def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -
         return None
 
 
-def convert_transmission_status(transmission_status: str) -> str:
-    """
-    将Transmission状态转换为通用状态
-
-    注意：此函数保留以向后兼容，建议直接使用 TorrentStatusMapper.convert_transmission_status()
-    """
-    return TorrentStatusMapper.convert_transmission_status(transmission_status)
-
-
 # ==================== 同步核心函数 ====================
 
 async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -482,7 +473,6 @@ def tr_add_torrents(db, downloaders):
         port=bt_downloader.port,
         protocol="http",
         timeout=100.0
-        # 调试日志：验证查询条件    logger.info(f"[getList] 开始查询种子列表，过滤条件: dr=0, downloader_id={downloader_id}")
     )
     torrent_info_list = tr_client.get_torrents()
     current_time = datetime.now()
@@ -505,7 +495,7 @@ def tr_add_torrents(db, downloaders):
             torrent_id=torrent_info.id,
             hash=torrent_info.hashString,
             name=torrent_info.name,
-            status=convert_transmission_status(torrent_info.status),
+            status=TorrentStatusMapper.convert_transmission_status(torrent_info.status),
             save_path=torrent_info.download_dir,
             size=torrent_info.total_size,
             torrent_file=torrent_info.torrent_file,
