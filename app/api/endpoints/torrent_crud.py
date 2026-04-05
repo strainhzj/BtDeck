@@ -34,7 +34,7 @@ from transmission_rpc import Client as trClient, TransmissionError
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.background_task_manager import task_manager, TaskStatus
 from app.models.setting_templates import DownloaderTypeEnum
-from app.services.audit_service import extract_audit_info_from_request
+from app.services.audit_service import extract_audit_info_from_request, get_audit_service
 
 # Import from new split modules
 from app.api.endpoints.torrent_helpers import (
@@ -51,7 +51,12 @@ from app.api.endpoints.torrent_helpers import (
     custom_serializer,
     _safe_write_audit_log
 )
-from app.api.endpoints.torrent_sync import torrent_sync
+from app.api.endpoints.torrent_sync import (
+    torrent_sync,
+    qb_add_torrents,
+    tr_add_torrents
+)
+from app.services.torrent_crud_service import get_torrent_info
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 
 logger = logging.getLogger(__name__)
@@ -326,9 +331,6 @@ async def create_torrent(
                 result.code = "408"
                 result.msg = "获取种子信息超时，请检查Transmission连接"
                 return result
-                result.code = "500"
-                result.msg = "种子添加到Transmission后无法获取信息"
-                return result
 
             # 检查数据库中是否已存在该种子
             existing_torrent = db.query(TorrentInfo.info_id).filter(TorrentInfo.hash == info_hash).filter(
@@ -445,6 +447,13 @@ async def create_torrent(
     # ⚠️ 异步任务异常需要注意：如果任务失败，异常会被静默忽略
     asyncio.create_task(write_audit_log_async())
     # ========== 审计日志记录结束 ==========
+
+    # 清理临时文件
+    if tmp_file_path and os.path.exists(tmp_file_path):
+        try:
+            os.unlink(tmp_file_path)
+        except OSError:
+            pass
 
     return result
 
