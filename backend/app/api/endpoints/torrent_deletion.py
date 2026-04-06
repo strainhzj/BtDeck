@@ -293,43 +293,43 @@ async def delete_torrent(
             else:
                 logger.warning(f"种子{info_id}不存在或已删除")
 
-        # 创建删除请求
-        delete_request = DeleteRequest(
-            torrent_info_ids=[info_id] if info_id else [],
-            delete_option=delete_option,
-            safety_check_level=safety_check_level,
-            force_delete=True,  # 强制删除，因为用户已确认
-            reason=f"用户手动删除，id_recycle={id_recycle}"
-        )
+            # 创建删除请求（在 async with 块内，确保 async_db_session 有效）
+            delete_request = DeleteRequest(
+                torrent_info_ids=[info_id] if info_id else [],
+                delete_option=delete_option,
+                safety_check_level=safety_check_level,
+                force_delete=True,  # 强制删除，因为用户已确认
+                reason=f"用户手动删除，id_recycle={id_recycle}"
+            )
 
-        # 执行删除
-        result = await deletion_service.delete_torrents(delete_request)
+            # 执行删除（在 async with 块内，确保 async_db_session 有效）
+            result = await deletion_service.delete_torrents(delete_request)
 
-        # 检查删除结果
-        if result.failed_count > 0:
+            # 检查删除结果
+            if result.failed_count > 0:
+                return CommonResponse(
+                    code="500",
+                    msg=f"删除失败：{result.failed_count}个",
+                    status="error",
+                    data={
+                        "success_count": result.success_count,
+                        "failed_count": result.failed_count,
+                        "skipped_count": result.skipped_count,
+                        "failed_torrents": result.failed_torrents
+                    }
+                )
+
             return CommonResponse(
-                code="500",
-                msg=f"删除失败：{result.failed_count}个",
-                status="error",
+                code="200",
+                msg=f"删除成功，共删除{result.success_count}个种子",
+                status="success",
                 data={
                     "success_count": result.success_count,
                     "failed_count": result.failed_count,
                     "skipped_count": result.skipped_count,
-                    "failed_torrents": result.failed_torrents
+                    "total_size_freed": result.total_size_freed
                 }
             )
-
-        return CommonResponse(
-            code="200",
-            msg=f"删除成功，共删除{result.success_count}个种子",
-            status="success",
-            data={
-                "success_count": result.success_count,
-                "failed_count": result.failed_count,
-                "skipped_count": result.skipped_count,
-                "total_size_freed": result.total_size_freed
-            }
-        )
 
     except ValueError as e:
         return CommonResponse(code="400", msg=f"参数错误: {str(e)}", status="error", data=None)
@@ -428,7 +428,7 @@ async def preview_bulk_torrent_deletion(
                 async_db_session=async_db
             )
 
-            # 🔧 修复：注册下载器适配器（传入app对象以访问缓存）
+            # 修复：注册下载器适配器（传入app对象以访问缓存）
             await _register_downloader_adapters(
                 deletion_service=deletion_service,
                 torrent_info_ids=request.torrent_info_ids,
@@ -436,34 +436,34 @@ async def preview_bulk_torrent_deletion(
                 app=http_request.app
             )
 
-        # 创建预览请求（dry-run模式）
-        preview_request = DeleteRequest(
-            torrent_info_ids=request.torrent_info_ids,
-            delete_option=DeleteOption.DRY_RUN,
-            safety_check_level=safety_check_level,
-            force_delete=False
-        )
+            # 创建预览请求（dry-run模式，在 async with 块内确保 async_db_session 有效）
+            preview_request = DeleteRequest(
+                torrent_info_ids=request.torrent_info_ids,
+                delete_option=DeleteOption.DRY_RUN,
+                safety_check_level=safety_check_level,
+                force_delete=False
+            )
 
-        # 执行预览
-        result = await deletion_service.delete_torrents(preview_request)
+            # 执行预览（在 async with 块内确保 async_db_session 有效）
+            result = await deletion_service.delete_torrents(preview_request)
 
-        # 组织预览响应数据
-        preview_data = await _organize_preview_data(request.torrent_info_ids, db)
+            # 组织预览响应数据（在 async with 块内，确保 async_db_session 有效）
+            preview_data = await _organize_preview_data(request.torrent_info_ids, db)
 
-        response_data = DeletionPreviewResponse(
-            total_torrents=result.success_count,
-            total_size=result.total_size_freed,
-            torrents_by_downloader=preview_data,
-            safety_warnings=result.safety_warnings,
-            estimated_execution_time=result.execution_time * 1.5
-        )
+            response_data = DeletionPreviewResponse(
+                total_torrents=result.success_count,
+                total_size=result.total_size_freed,
+                torrents_by_downloader=preview_data,
+                safety_warnings=result.safety_warnings,
+                estimated_execution_time=result.execution_time * 1.5
+            )
 
-        return CommonResponse(
-            code="200",
-            msg="删除预览成功",
-            data=response_data.__dict__,
-            status="success"
-        )
+            return CommonResponse(
+                code="200",
+                msg="删除预览成功",
+                data=response_data.__dict__,
+                status="success"
+            )
 
     except ValueError as e:
         return CommonResponse(code="400", msg=f"参数错误: {str(e)}", status="error", data=None)
@@ -520,7 +520,7 @@ async def bulk_delete_torrents(
                 async_db_session=async_db
             )
 
-            # 🔧 修复：注册下载器适配器（传入app对象以访问缓存）
+            # 修复：注册下载器适配器（传入app对象以访问缓存）
             await _register_downloader_adapters(
                 deletion_service=deletion_service,
                 torrent_info_ids=request.torrent_info_ids,
@@ -528,37 +528,37 @@ async def bulk_delete_torrents(
                 app=http_request.app
             )
 
-        # 创建删除请求
-        delete_request = DeleteRequest(
-            torrent_info_ids=request.torrent_info_ids,
-            delete_option=delete_option,
-            safety_check_level=safety_check_level,
-            force_delete=request.force_delete,
-            reason=request.reason
-        )
+            # 创建删除请求（在 async with 块内，确保 async_db_session 有效）
+            delete_request = DeleteRequest(
+                torrent_info_ids=request.torrent_info_ids,
+                delete_option=delete_option,
+                safety_check_level=safety_check_level,
+                force_delete=request.force_delete,
+                reason=request.reason
+            )
 
-        # 执行删除
-        result = await deletion_service.delete_torrents(delete_request)
+            # 执行删除（在 async with 块内，确保 async_db_session 有效）
+            result = await deletion_service.delete_torrents(delete_request)
 
-        # 组织响应数据
-        response_data = DeletionResultResponse(
-            success_count=result.success_count,
-            failed_count=result.failed_count,
-            skipped_count=result.skipped_count,
-            total_size_freed=result.total_size_freed,
-            execution_time=result.execution_time,
-            safety_warnings=result.safety_warnings,
-            deleted_torrents=result.deleted_torrents,
-            failed_torrents=result.failed_torrents,
-            skipped_torrents=result.skipped_torrents
-        )
+            # 组织响应数据
+            response_data = DeletionResultResponse(
+                success_count=result.success_count,
+                failed_count=result.failed_count,
+                skipped_count=result.skipped_count,
+                total_size_freed=result.total_size_freed,
+                execution_time=result.execution_time,
+                safety_warnings=result.safety_warnings,
+                deleted_torrents=result.deleted_torrents,
+                failed_torrents=result.failed_torrents,
+                skipped_torrents=result.skipped_torrents
+            )
 
-        return CommonResponse(
-            code="200",
-            msg=f"种子删除完成，成功删除{result.success_count}个",
-            data=response_data.__dict__,
-            status="success"
-        )
+            return CommonResponse(
+                code="200",
+                msg=f"种子删除完成，成功删除{result.success_count}个",
+                data=response_data.__dict__,
+                status="success"
+            )
 
     except ValueError as e:
         return CommonResponse(code="400", msg=f"参数错误: {str(e)}", status="error", data=None)

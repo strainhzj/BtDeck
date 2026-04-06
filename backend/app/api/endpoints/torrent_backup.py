@@ -134,7 +134,7 @@ async def create_backup(
     try:
         # 获取下载器配置
         downloader = get_downloader_from_store(backup_request.downloader_id, app=request.app)
-        if not downloader or downloader.fail_time > 0:
+        if not downloader or (hasattr(downloader, 'fail_time') and downloader.fail_time > 0):
             return CommonResponse(
                 status="error",
                 msg="下载器不可用",
@@ -152,9 +152,9 @@ async def create_backup(
 
         # 准备路径映射服务
         path_mapping_service = None
-        if downloader.path_mapping:
+        if getattr(downloader, 'path_mapping_rules', None):
             try:
-                path_mapping_service = PathMappingService(downloader.path_mapping)
+                path_mapping_service = PathMappingService(downloader.path_mapping_rules)
             except Exception as e:
                 logger.warning(f"加载路径映射服务失败: {e}")
 
@@ -183,7 +183,7 @@ async def create_backup(
                     torrent_name=backup_request.torrent_name,
                     downloader_type=downloader.downloader_type,  # 0或1
                     downloader_id=backup_request.downloader_id,
-                    save_path=downloader.save_path,
+                    save_path=getattr(downloader, 'torrent_save_path', None),
                     downloader_config=downloader_config,
                     task_name=backup_request.task_name,
                     uploader_id=backup_request.uploader_id
@@ -763,7 +763,7 @@ async def import_backups(
 
     # 获取下载器配置
     downloader = get_downloader_from_store(downloader_id, app=request.app)
-    if not downloader or downloader.fail_time > 0:
+    if not downloader or (hasattr(downloader, 'fail_time') and downloader.fail_time > 0):
         return CommonResponse(
             status="error",
             msg="下载器不可用",
@@ -823,14 +823,14 @@ async def import_backups(
                         adapter = QBittorrentAdapter(downloader_config)
                         adapter.add_torrent_file(
                             torrent_file=torrent_content,
-                            save_path=downloader.save_path
+                            save_path=getattr(downloader, 'torrent_save_path', None)
                         )
                     elif normalized_type == DownloaderTypeEnum.TRANSMISSION:  # Transmission
                         from app.services.downloader_adapters.transmission_adapter import TransmissionAdapter
                         adapter = TransmissionAdapter(downloader_config)
                         adapter.add_torrent_file(
                             torrent_file=torrent_content,
-                            save_path=downloader.save_path
+                            save_path=getattr(downloader, 'torrent_save_path', None)
                         )
 
                     # 备份种子文件
