@@ -49,39 +49,17 @@ router = APIRouter()
 
 # ==================== 辅助函数 ====================
 
-def get_downloader_from_store(downloader_id: int):
+def get_downloader_from_store(downloader_id: int, app):
     """
     从应用状态存储中获取下载器配置
 
     Args:
         downloader_id: 下载器ID
+        app: FastAPI应用实例
 
     Returns:
         DownloaderVO: 下载器值对象，如果未找到则返回 None
     """
-    from fastapi import FastAPI
-    import inspect
-
-    # 获取当前调用栈中的 FastAPI app 实例
-    for frame in inspect.stack():
-        if frame.frame.f_locals.get('app') and isinstance(frame.frame.f_locals.get('app'), FastAPI):
-            app = frame.frame.f_locals['app']
-            break
-    else:
-        # 如果找不到 app，尝试从请求上下文获取
-        try:
-            from fastapi import Request
-            from app.api.endpoints.torrents import router as torrents_router
-            # 使用路由器的 app 属性
-            if hasattr(torrents_router, 'app'):
-                app = torrents_router.app
-            else:
-                logger.error("无法获取 FastAPI app 实例")
-                return None
-        except Exception as e:
-            logger.error(f"获取 app 实例失败: {e}")
-            return None
-
     # 从 store 获取下载器
     if not hasattr(app.state, 'store'):
         logger.error("app.state 未初始化 store")
@@ -155,7 +133,7 @@ async def create_backup(
 
     try:
         # 获取下载器配置
-        downloader = get_downloader_from_store(backup_request.downloader_id)
+        downloader = get_downloader_from_store(backup_request.downloader_id, app=request.app)
         if not downloader or downloader.fail_time > 0:
             return CommonResponse(
                 status="error",
@@ -784,7 +762,7 @@ async def import_backups(
     verify_token(request)
 
     # 获取下载器配置
-    downloader = get_downloader_from_store(downloader_id)
+    downloader = get_downloader_from_store(downloader_id, app=request.app)
     if not downloader or downloader.fail_time > 0:
         return CommonResponse(
             status="error",

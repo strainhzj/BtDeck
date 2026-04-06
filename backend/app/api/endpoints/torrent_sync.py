@@ -384,78 +384,17 @@ async def torrent_sync_async() -> Dict[str, Any]:
         }
 
 
-def torrent_sync(downloader_info: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    后台同步种子数据的函数（不依赖接口请求）
-    用于定时任务调用
-
-    Args:
-        downloader_info: 下载器信息字典
-
-    Returns:
-        同步结果字典
-    """
-    from app.database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        # 创建下载器对象
-        downloader = BtDownloaders()
-        for key, value in downloader_info.items():
-            if hasattr(downloader, key):
-                setattr(downloader, key, value)
-
-        # 处理每种下载器类型
-        if downloader.is_qbittorrent:
-            qb_add_torrents(db, [downloader])
-            logger.info(f"Successfully synced qBittorrent downloader: {downloader.nickname}")
-            return {
-                "status": "success",
-                "message": f"qBittorrent下载器 {downloader.nickname} 同步成功",
-                "downloader_type": "qbittorrent",
-                "nickname": downloader.nickname
-            }
-        elif downloader.is_transmission:
-            tr_add_torrents(db, [downloader])
-            logger.info(f"Successfully synced Transmission downloader: {downloader.nickname}")
-            return {
-                "status": "success",
-                "message": f"Transmission下载器 {downloader.nickname} 同步成功",
-                "downloader_type": "transmission",
-                "nickname": downloader.nickname
-            }
-        else:
-            error_msg = f"不支持的下载器类型: {downloader.downloader_type}"
-            logger.error(error_msg)
-            return {
-                "status": "failed",
-                "message": error_msg,
-                "downloader_type": downloader.downloader_type,
-                "nickname": downloader.nickname
-            }
-
-    except Exception as e:
-        error_msg = f"同步下载器 {downloader_info.get('nickname', 'Unknown')} 失败: {str(e)}"
-        logger.error(error_msg)
-        return {
-            "status": "failed",
-            "message": error_msg,
-            "downloader_type": downloader_info.get('downloader_type', 'unknown'),
-            "nickname": downloader_info.get('nickname', 'unknown')
-        }
-    finally:
-        db.close()
-
 
 # ==================== 下载器种子同步函数 ====================
 
-def tr_add_torrents(db, downloaders):
+def tr_add_torrents(db, downloaders, app=None):
     """
     根据transmission的种子数据结构创建插入数据
 
     Args:
         db: 数据库会话
         downloaders: 下载器列表
+        app: FastAPI应用实例（可选，传入时使用缓存连接）
 
     Raises:
         ValueError: 当下载器列表为空时
@@ -466,14 +405,27 @@ def tr_add_torrents(db, downloaders):
         return
 
     bt_downloader = downloaders[0]
-    tr_client = trClient(
-        host=bt_downloader.host,
-        username=bt_downloader.username,
-        password=bt_downloader.password,
-        port=bt_downloader.port,
-        protocol="http",
-        timeout=100.0
-    )
+
+    # 优先使用缓存连接（约束16）
+    tr_client = None
+    if app and hasattr(app.state, 'store'):
+        cached_downloaders = app.state.store.get_snapshot_sync()
+        downloader_vo = next(
+            (d for d in cached_downloaders if d.downloader_id == bt_downloader.downloader_id),
+            None
+        )
+        if downloader_vo and hasattr(downloader_vo, 'client') and downloader_vo.client:
+            tr_client = downloader_vo.client
+
+    if tr_client is None:
+        tr_client = trClient(
+            host=bt_downloader.host,
+            username=bt_downloader.username,
+            password=bt_downloader.password,
+            port=bt_downloader.port,
+            protocol="http",
+            timeout=100.0
+        )
     torrent_info_list = tr_client.get_torrents()
     current_time = datetime.now()
     for torrent_info in torrent_info_list:
@@ -659,13 +611,14 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
         mark_removed_trackers_batch(db, torrent_info_id, current_tracker_urls, current_time)
 
 
-def qb_add_torrents(db, downloaders):
+def qb_add_torrents(db, downloaders, app=None):
     """
     根据qbittorrent的种子数据结构创建插入数据
 
     Args:
         db: 数据库会话
         downloaders: 下载器列表
+        app: FastAPI应用实例（可选，传入时使用缓存连接）
 
     Raises:
         ValueError: 当下载器列表为空时
@@ -676,15 +629,28 @@ def qb_add_torrents(db, downloaders):
         return
 
     bt_downloader = downloaders[0]
-    # P0-1 修复: 添加30秒超时，避免无限阻塞
-    client = qbClient(
-        host=bt_downloader.host,
-        port=bt_downloader.port,
-        username=bt_downloader.username,
-        password=bt_downloader.password,
-        VERIFY_WEBUI_CERTIFICATE=False,
-        REQUESTS_ARGS={'timeout': 30}  # 30秒超时
-    )
+
+    # 优先使用缓存连接（约束16）
+    client = None
+    if app and hasattr(app.state, 'store'):
+        cached_downloaders = app.state.store.get_snapshot_sync()
+        downloader_vo = next(
+            (d for d in cached_downloaders if d.downloader_id == bt_downloader.downloader_id),
+            None
+        )
+        if downloader_vo and hasattr(downloader_vo, 'client') and downloader_vo.client:
+            client = downloader_vo.client
+
+    if client is None:
+        # P0-1 修复: 添加30秒超时，避免无限阻塞
+        client = qbClient(
+            host=bt_downloader.host,
+            port=bt_downloader.port,
+            username=bt_downloader.username,
+            password=bt_downloader.password,
+            VERIFY_WEBUI_CERTIFICATE=False,
+            REQUESTS_ARGS={'timeout': 30}  # 30秒超时
+        )
     torrent_info_list = client.torrents_info()
     current_time = datetime.now()
     for torrent_info in torrent_info_list:

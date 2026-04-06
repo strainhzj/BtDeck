@@ -31,7 +31,7 @@ router = APIRouter()
 
 # ==================== 辅助函数 ====================
 
-def _register_downloader_adapters(
+async def _register_downloader_adapters(
         deletion_service: 'TorrentDeletionService',
         torrent_info_ids: List[str],
         db: Session,
@@ -83,8 +83,8 @@ def _register_downloader_adapters(
         logger.error("app.state.store 未初始化，跳过适配器注册")
         return 0
 
-    # 获取缓存的下载器列表
-    cached_downloaders = app.state.store.get_snapshot_sync()
+    # 获取缓存的下载器列表（使用异步方法，避免在异步上下文中调用同步方法）
+    cached_downloaders = await app.state.store.get_snapshot()
 
     registered_count = 0
     for downloader in downloaders:
@@ -429,7 +429,7 @@ async def preview_bulk_torrent_deletion(
             )
 
             # 🔧 修复：注册下载器适配器（传入app对象以访问缓存）
-            _register_downloader_adapters(
+            await _register_downloader_adapters(
                 deletion_service=deletion_service,
                 torrent_info_ids=request.torrent_info_ids,
                 db=db,
@@ -521,7 +521,7 @@ async def bulk_delete_torrents(
             )
 
             # 🔧 修复：注册下载器适配器（传入app对象以访问缓存）
-            _register_downloader_adapters(
+            await _register_downloader_adapters(
                 deletion_service=deletion_service,
                 torrent_info_ids=request.torrent_info_ids,
                 db=db,
