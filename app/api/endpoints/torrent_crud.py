@@ -52,7 +52,6 @@ from app.api.endpoints.torrent_helpers import (
     _safe_write_audit_log
 )
 from app.api.endpoints.torrent_sync import (
-    torrent_sync,
     qb_add_torrents,
     tr_add_torrents
 )
@@ -130,11 +129,11 @@ def torrent_list(req: Request, name: str = Query(
         for downloader in downloaders:
             try:
                 if downloader.is_qbittorrent:
-                    qb_add_torrents(db, [downloader])
+                    qb_add_torrents(db, [downloader], app=req.app)
                     synced_count += 1
                     logger.info(f"成功同步qBittorrent下载器: {downloader.nickname}")
                 elif downloader.is_transmission:
-                    tr_add_torrents(db, [downloader])
+                    tr_add_torrents(db, [downloader], app=req.app)
                     synced_count += 1
                     logger.info(f"成功同步Transmission下载器: {downloader.nickname}")
                 else:
