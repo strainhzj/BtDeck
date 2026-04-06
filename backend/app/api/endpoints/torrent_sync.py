@@ -418,15 +418,23 @@ def tr_add_torrents(db, downloaders, app=None):
             tr_client = downloader_vo.client
 
     if tr_client is None:
-        tr_client = trClient(
-            host=bt_downloader.host,
-            username=bt_downloader.username,
-            password=bt_downloader.password,
-            port=bt_downloader.port,
-            protocol="http",
-            timeout=100.0
-        )
-    torrent_info_list = tr_client.get_torrents()
+        try:
+            tr_client = trClient(
+                host=bt_downloader.host,
+                username=bt_downloader.username,
+                password=bt_downloader.password,
+                port=bt_downloader.port,
+                protocol="http",
+                timeout=100.0
+            )
+        except Exception as e:
+            logger.error(f"连接Transmission失败: {str(e)}")
+            return
+    try:
+        torrent_info_list = tr_client.get_torrents()
+    except Exception as e:
+        logger.error(f"获取Transmission种子列表失败: {str(e)}")
+        return
     current_time = datetime.now()
     for torrent_info in torrent_info_list:
         # torrent_query_result = \
@@ -643,15 +651,23 @@ def qb_add_torrents(db, downloaders, app=None):
 
     if client is None:
         # P0-1 修复: 添加30秒超时，避免无限阻塞
-        client = qbClient(
-            host=bt_downloader.host,
-            port=bt_downloader.port,
-            username=bt_downloader.username,
-            password=bt_downloader.password,
-            VERIFY_WEBUI_CERTIFICATE=False,
-            REQUESTS_ARGS={'timeout': 30}  # 30秒超时
-        )
-    torrent_info_list = client.torrents_info()
+        try:
+            client = qbClient(
+                host=bt_downloader.host,
+                port=bt_downloader.port,
+                username=bt_downloader.username,
+                password=bt_downloader.password,
+                VERIFY_WEBUI_CERTIFICATE=False,
+                REQUESTS_ARGS={'timeout': 30}  # 30秒超时
+            )
+        except Exception as e:
+            logger.error(f"连接qBittorrent失败: {str(e)}")
+            return
+    try:
+        torrent_info_list = client.torrents_info()
+    except Exception as e:
+        logger.error(f"获取qBittorrent种子列表失败: {str(e)}")
+        return
     current_time = datetime.now()
     for torrent_info in torrent_info_list:
         torrent_query_result = \
@@ -683,7 +699,11 @@ def qb_add_torrents(db, downloaders, app=None):
             size=torrent_info.total_size,
             torrent_file="/config/qbittorrent/BT_backup/" + torrent_info.hash + ".torrent",
             added_date=datetime.fromtimestamp(torrent_info.added_on),
-            completed_date=datetime.fromtimestamp(torrent_info.completion_on),
+            completed_date=(
+                datetime.fromtimestamp(torrent_info.completion_on)
+                if torrent_info.completion_on and torrent_info.completion_on > 0
+                else None
+            ),
             ratio=torrent_info.ratio,
             ratio_limit=torrent_info.ratio_limit,
             tags=torrent_info.tags,

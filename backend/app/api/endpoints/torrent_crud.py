@@ -770,7 +770,7 @@ def get_torrent(
         db: Session = Depends(get_db)
 ):
     """根据复合主键获取种子信息"""
-    torrent = get_torrent_info(db, info_id, downloader_id, downloader_name)
+    torrent = get_torrent_info(db, info_id, downloader_id)
     if not torrent:
         raise HTTPException(status_code=404, detail="Torrent not found")
     return torrent
