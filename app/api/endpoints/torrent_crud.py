@@ -767,9 +767,18 @@ def get_torrent(
         info_id: str,
         downloader_id: str,
         downloader_name: str,
+        request: Request,
         db: Session = Depends(get_db)
 ):
     """根据复合主键获取种子信息"""
+    # JWT认证
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+
     torrent = get_torrent_info(db, info_id, downloader_id)
     if not torrent:
         raise HTTPException(status_code=404, detail="Torrent not found")
@@ -797,9 +806,18 @@ def get_torrents(
         limit: int = Query(100, ge=1, le=1000, description="限制记录数"),
         sort_by: Optional[str] = Query(None, description="排序字段"),
         sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
+        request: Request = None,
         db: Session = Depends(get_db)
 ):
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
+    # JWT认证
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+
     try:
         # 获取包含总数和数据的查询结果
         result = get_torrent_infos(

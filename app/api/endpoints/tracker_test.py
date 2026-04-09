@@ -35,16 +35,11 @@ def test_match(
     """
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 使用判断引擎
