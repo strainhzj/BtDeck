@@ -142,19 +142,21 @@ async def create_backup(
             )
 
         # 准备下载器配置
+        # 防御性：统一使用getattr()进行属性访问
         downloader_config = {
-            "host": downloader.host,
-            "port": downloader.port,
-            "username": downloader.username,
-            "password": downloader.password,
-            "torrent_save_path": downloader.torrent_save_path
+            "host": getattr(downloader, 'host', ''),
+            "port": getattr(downloader, 'port', 0),
+            "username": getattr(downloader, 'username', ''),
+            "password": getattr(downloader, 'password', ''),
+            "torrent_save_path": getattr(downloader, 'torrent_save_path', '')
         }
 
-        # 准备路径映射服务
+        # 准备路径映射服务（防御性：统一使用getattr）
         path_mapping_service = None
-        if getattr(downloader, 'path_mapping_rules', None):
+        path_mapping_rules = getattr(downloader, 'path_mapping_rules', None)
+        if path_mapping_rules:
             try:
-                path_mapping_service = PathMappingService(downloader.path_mapping_rules)
+                path_mapping_service = PathMappingService(path_mapping_rules)
             except Exception as e:
                 logger.warning(f"加载路径映射服务失败: {e}")
 
