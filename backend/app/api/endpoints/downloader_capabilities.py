@@ -114,12 +114,11 @@ def get_downloader_capabilities(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
