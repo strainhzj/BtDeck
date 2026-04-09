@@ -406,7 +406,7 @@ def tr_add_torrents(db, downloaders, app=None):
 
     bt_downloader = downloaders[0]
 
-    # 优先使用缓存连接（约束16）
+    # 优先使用缓存连接（约束16）+ 健康检查
     tr_client = None
     if app and hasattr(app.state, 'store'):
         cached_downloaders = app.state.store.get_snapshot_sync()
@@ -416,6 +416,13 @@ def tr_add_torrents(db, downloaders, app=None):
         )
         if downloader_vo and hasattr(downloader_vo, 'client') and downloader_vo.client:
             tr_client = downloader_vo.client
+            # 添加连接健康检查
+            try:
+                # 测试连接是否有效
+                tr_client.get_torrents()
+            except Exception as e:
+                logger.warning(f"缓存连接已失效，重新创建: {e}")
+                tr_client = None  # 触发重新创建逻辑
 
     if tr_client is None:
         try:
@@ -429,12 +436,12 @@ def tr_add_torrents(db, downloaders, app=None):
             )
         except Exception as e:
             logger.error(f"连接Transmission失败: {str(e)}")
-            return
+            return {"status": "error", "message": f"连接Transmission失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
     try:
         torrent_info_list = tr_client.get_torrents()
     except Exception as e:
         logger.error(f"获取Transmission种子列表失败: {str(e)}")
-        return
+        return {"status": "error", "message": f"获取种子列表失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
     current_time = datetime.now()
     for torrent_info in torrent_info_list:
         # torrent_query_result = \
@@ -638,7 +645,7 @@ def qb_add_torrents(db, downloaders, app=None):
 
     bt_downloader = downloaders[0]
 
-    # 优先使用缓存连接（约束16）
+    # 优先使用缓存连接（约束16）+ 健康检查
     client = None
     if app and hasattr(app.state, 'store'):
         cached_downloaders = app.state.store.get_snapshot_sync()
@@ -648,6 +655,13 @@ def qb_add_torrents(db, downloaders, app=None):
         )
         if downloader_vo and hasattr(downloader_vo, 'client') and downloader_vo.client:
             client = downloader_vo.client
+            # 添加连接健康检查
+            try:
+                # 测试连接是否有效
+                client.torrents_info()
+            except Exception as e:
+                logger.warning(f"缓存连接已失效，重新创建: {e}")
+                client = None  # 触发重新创建逻辑
 
     if client is None:
         # P0-1 修复: 添加30秒超时，避免无限阻塞
@@ -662,12 +676,12 @@ def qb_add_torrents(db, downloaders, app=None):
             )
         except Exception as e:
             logger.error(f"连接qBittorrent失败: {str(e)}")
-            return
+            return {"status": "error", "message": f"连接qBittorrent失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
     try:
         torrent_info_list = client.torrents_info()
     except Exception as e:
         logger.error(f"获取qBittorrent种子列表失败: {str(e)}")
-        return
+        return {"status": "error", "message": f"获取种子列表失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
     current_time = datetime.now()
     for torrent_info in torrent_info_list:
         torrent_query_result = \
@@ -698,10 +712,12 @@ def qb_add_torrents(db, downloaders, app=None):
             save_path=torrent_info.save_path,
             size=torrent_info.total_size,
             torrent_file="/config/qbittorrent/BT_backup/" + torrent_info.hash + ".torrent",
-            added_date=datetime.fromtimestamp(torrent_info.added_on),
+            # 防御性：添加时间戳范围检查，防止负数和溢出
+            added_date=datetime.fromtimestamp(torrent_info.added_on) if torrent_info.added_on > 0 else None,
             completed_date=(
                 datetime.fromtimestamp(torrent_info.completion_on)
                 if torrent_info.completion_on and torrent_info.completion_on > 0
+                and torrent_info.completion_on <= 2147483647  # 防止Year 2038问题
                 else None
             ),
             ratio=torrent_info.ratio,

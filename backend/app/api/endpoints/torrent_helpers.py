@@ -560,17 +560,18 @@ def create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp
         size=qb_torrent.total_size,
         status=TorrentStatusMapper.convert_qbittorrent_status(qb_torrent.state),
         torrent_file="/config/qbittorrent/BT_backup/" + qb_torrent.hash + ".torrent",
-        added_date=datetime.fromtimestamp(qb_torrent.added_on),
-        completed_date=datetime.fromtimestamp(qb_torrent.completion_on) if qb_torrent.completion_on > 0 else None,
+        # 防御性：添加时间戳范围检查，防止负数和溢出
+        added_date=datetime.fromtimestamp(qb_torrent.added_on) if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647 else None,
+        completed_date=datetime.fromtimestamp(qb_torrent.completion_on) if qb_torrent.completion_on and qb_torrent.completion_on > 0 and qb_torrent.completion_on <= 2147483647 else None,
         ratio=str(qb_torrent.ratio),
         ratio_limit=str(qb_torrent.ratio_limit) if qb_torrent.ratio_limit != -1 else "",
         tags=",".join(qb_torrent.tags) if qb_torrent.tags else "",
         category=qb_torrent.category,
         super_seeding="1" if qb_torrent.super_seeding else "0",
         enabled=1,
-        create_time=datetime.fromtimestamp(qb_torrent.added_on),
+        create_time=datetime.fromtimestamp(qb_torrent.added_on) if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647 else None,
         create_by="admin",
-        update_time=datetime.fromtimestamp(qb_torrent.added_on),
+        update_time=datetime.fromtimestamp(qb_torrent.added_on) if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647 else None,
         update_by="admin",
         dr=0,  # 🔧 修复：添加缺失的 dr 参数
         progress=0  # 🔧 修复：添加缺失的 progress 参数
