@@ -199,12 +199,11 @@ def get_downloader_settings(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -362,12 +361,11 @@ async def update_downloader_settings(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -986,12 +984,11 @@ async def reorder_speed_schedule_rules(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -1092,12 +1089,11 @@ def apply_downloader_settings(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -1336,12 +1332,11 @@ async def test_downloader_settings(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )

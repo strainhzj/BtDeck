@@ -49,17 +49,12 @@ async def add_tracker(req: Request, background_tasks: BackgroundTasks, torrent_i
            trackers: tracker地址
 
        """
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-        return response
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     torrent_info_id_list = torrent_info_ids.split(',')
     tracker_list = trackers.split(';')
@@ -178,17 +173,12 @@ async def replace_tracker(req: Request, background_tasks: BackgroundTasks, repla
            target_tracker_url: 要替换的tracker
 
        """
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-        return response
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     # ========== 记录替换前的信息用于审计日志 ==========
     # 根据被替换的tracker查询相应tracker数据
@@ -334,18 +324,12 @@ async def modify_tracker(req: Request, background_tasks: BackgroundTasks, torren
            trackers: tracker地址
 
        """
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-
-        )
-        return response
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     torrent_info_id_list = torrent_info_ids.split(',')
     tracker_list = trackers.split(';')

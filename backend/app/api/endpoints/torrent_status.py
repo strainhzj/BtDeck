@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
+from app.auth import utils as auth_utils
 from app.database import get_db
 from app.services.audit_service import extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
@@ -70,6 +71,18 @@ async def pause_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
+    # JWT认证
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401")
+    try:
+        user_info = auth_utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401")
+    except Exception as e:
+        logger.warning(f"Token验证失败: {str(e)}")
+        return CommonResponse(status="error", msg="token验证失败", code="401")
+
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
     hashes = req_data.hashes
@@ -283,6 +296,18 @@ async def resume_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
+    # JWT认证
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401")
+    try:
+        user_info = auth_utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401")
+    except Exception as e:
+        logger.warning(f"Token验证失败: {str(e)}")
+        return CommonResponse(status="error", msg="token验证失败", code="401")
+
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
     hashes = req_data.hashes
@@ -501,6 +526,18 @@ async def recheck_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
+    # JWT认证
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401")
+    try:
+        user_info = auth_utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401")
+    except Exception as e:
+        logger.warning(f"Token验证失败: {str(e)}")
+        return CommonResponse(status="error", msg="token验证失败", code="401")
+
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
     hashes = req_data.hashes

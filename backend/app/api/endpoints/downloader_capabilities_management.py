@@ -53,11 +53,10 @@ def verify_token(req: Request) -> tuple[bool, Optional[str]]:
     if not token:
         return False, "未认证"
 
-    try:
-        utils.verify_access_token(token)
-        return True, None
-    except Exception as e:
-        return False, f"token验证失败: {str(e)}"
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return False, "token验证失败"
+    return True, None
 
 
 # ========== API端点 ==========

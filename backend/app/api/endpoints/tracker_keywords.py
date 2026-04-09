@@ -50,16 +50,11 @@ def create_keyword(
     """
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 额外验证参数长度，防止数据库错误
@@ -189,16 +184,11 @@ def get_keywords(
     """
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 构建查询
@@ -246,16 +236,11 @@ def get_keyword(
     """获取指定ID的关键词"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         keyword = db.query(TrackerKeywordConfig).filter(
@@ -293,16 +278,11 @@ def update_keyword(
     """更新指定ID的关键词"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         keyword = db.query(TrackerKeywordConfig).filter(
@@ -403,16 +383,11 @@ def delete_keyword(
     """删除指定ID的关键词(软删除)"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         keyword = db.query(TrackerKeywordConfig).filter(
@@ -458,10 +433,10 @@ def batch_create_keywords(
     """批量创建关键词"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
@@ -586,10 +561,10 @@ def batch_enable_keywords(
     """批量启用关键词"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
@@ -631,10 +606,10 @@ def batch_disable_keywords(
     """批量禁用关键词"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
@@ -676,10 +651,10 @@ def batch_update_status(
     """批量更新关键词的启用状态"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
@@ -732,10 +707,10 @@ def batch_delete_keywords(
     """批量删除关键词(软删除)"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
