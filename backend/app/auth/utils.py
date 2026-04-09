@@ -49,19 +49,59 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
 
 
 def verify_access_token(token: str):
-    """Verify JWT and login secret consistency."""
-    try:
-        decoded_jwt = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.ALGORITHM)
-        login_secret = get_login_secret()
+    """
+    Verify JWT and login secret consistency.
 
+    Returns:
+        dict: Decoded JWT payload with required fields, or None if validation fails.
+
+    Required fields in returned dict:
+        - sub: Username
+        - verify_secret: Login verification secret
+        - exp: Expiration timestamp
+    """
+    try:
+        # 解码JWT
+        decoded_jwt = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.ALGORITHM)
+
+        # 验证返回值是否为字典类型（防御空字典等边界情况）
+        if not decoded_jwt or not isinstance(decoded_jwt, dict):
+            logger.warning('Token验证失败: 解码结果无效')
+            return None
+
+        # 验证必填字段是否存在
+        required_fields = ['sub', 'verify_secret', 'exp']
+        missing_fields = [field for field in required_fields if field not in decoded_jwt]
+        if missing_fields:
+            logger.warning('Token验证失败: 缺少必填字段 %s', missing_fields)
+            return None
+
+        # 验证登录密钥一致性
+        login_secret = get_login_secret()
         if decoded_jwt.get('verify_secret') != login_secret:
             logger.warning('Token验证失败: verify_secret不匹配')
             return None
 
-        dt_from_ts = datetime.fromtimestamp(decoded_jwt['exp'])
-        time_diff = abs(datetime.now() - dt_from_ts)
-        if time_diff.total_seconds() >= settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60:
-            logger.warning('Token验证失败: Token已过期')
+        # 验证Token过期时间（防御性：确保exp是有效的时间戳）
+        exp_timestamp = decoded_jwt['exp']
+        if not isinstance(exp_timestamp, (int, float)) or exp_timestamp <= 0:
+            logger.warning('Token验证失败: exp字段无效')
+            return None
+
+        # 检查时间戳范围（防止溢出和负数）
+        if exp_timestamp > 2147483647:  # Year 2038 problem
+            logger.warning('Token验证失败: exp字段超出有效范围')
+            return None
+
+        # 验证Token是否过期
+        try:
+            dt_from_ts = datetime.fromtimestamp(exp_timestamp)
+            time_diff = abs(datetime.now() - dt_from_ts)
+            if time_diff.total_seconds() >= settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60:
+                logger.warning('Token验证失败: Token已过期')
+                return None
+        except (OSError, ValueError) as e:
+            logger.warning('Token验证失败: exp时间戳转换失败 %s', str(e))
             return None
 
         return decoded_jwt

@@ -1713,13 +1713,14 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             'size': _qb_get_attr(torrent_info, 'total_size', None) or _qb_get_attr(torrent_info, 'size', 0),
             'progress': progress_value,
             'torrent_file': "/config/qbittorrent/BT_backup/" + torrent_hash + ".torrent",
+            # 防御性：添加时间戳范围检查，防止负数和溢出
             'added_date': (
                 datetime.fromtimestamp(_qb_get_attr(torrent_info, 'added_on', 0))
-                if _qb_get_attr(torrent_info, 'added_on', 0) > 0 else None
+                if _qb_get_attr(torrent_info, 'added_on', 0) > 0 and _qb_get_attr(torrent_info, 'added_on', 0) <= 2147483647 else None
             ),
             'completed_date': (
                 datetime.fromtimestamp(_qb_get_attr(torrent_info, 'completion_on', 0))
-                if _qb_get_attr(torrent_info, 'completion_on', 0) > 0 else None
+                if _qb_get_attr(torrent_info, 'completion_on', 0) > 0 and _qb_get_attr(torrent_info, 'completion_on', 0) <= 2147483647 else None
             ),
             'ratio': _qb_get_attr(torrent_info, 'ratio', 0),
             'ratio_limit': _qb_get_attr(torrent_info, 'ratio_limit', 0),
@@ -2422,8 +2423,9 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
             "size": _qb_get_attr(torrent_info, "total_size", None) or _qb_get_attr(torrent_info, "size", 0),
             "progress": progress_value, "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 else None,
-            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 else None,
+            # 防御性：添加时间戳范围检查，防止负数和溢出
+            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 and _qb_get_attr(torrent_info, "added_on", 0) <= 2147483647 else None,
+            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 and _qb_get_attr(torrent_info, "completion_on", 0) <= 2147483647 else None,
             "ratio": _qb_get_attr(torrent_info, "ratio", 0), "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""), "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False), "enabled": 1,
@@ -2693,8 +2695,9 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
             "size": _qb_get_attr(torrent_info, "total_size", None) or _qb_get_attr(torrent_info, "size", 0),
             "progress": progress_value, "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 else None,
-            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 else None,
+            # 防御性：添加时间戳范围检查，防止负数和溢出
+            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 and _qb_get_attr(torrent_info, "added_on", 0) <= 2147483647 else None,
+            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 and _qb_get_attr(torrent_info, "completion_on", 0) <= 2147483647 else None,
             "ratio": _qb_get_attr(torrent_info, "ratio", 0), "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""), "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False), "enabled": 1,
@@ -2960,8 +2963,9 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
             "size": _qb_get_attr(torrent_info, "total_size", None) or _qb_get_attr(torrent_info, "size", 0),
             "progress": progress_value, "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 else None,
-            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 else None,
+            # 防御性：添加时间戳范围检查，防止负数和溢出
+            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 and _qb_get_attr(torrent_info, "added_on", 0) <= 2147483647 else None,
+            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 and _qb_get_attr(torrent_info, "completion_on", 0) <= 2147483647 else None,
             "ratio": _qb_get_attr(torrent_info, "ratio", 0), "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""), "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False), "enabled": 1,
