@@ -6,6 +6,7 @@ Tracker Reannounce 核心服务
 - 支持按下载器分批执行（每批500个）
 - 适配 qBittorrent（hash）和 Transmission（torrent_id）
 - 统一错误处理和结果返回
+- 添加并发控制,防止重复执行
 """
 
 import logging
@@ -14,11 +15,18 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 
 from sqlalchemy.orm import Session
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 
 # 每批最大种子数
 BATCH_SIZE = 500
+
+# 并发锁字典(按下载器ID隔离)
+_reannounce_locks: Dict[str, asyncio.Lock] = {}
+
+# 全局锁字典访问锁
+_locks_lock = asyncio.Lock()
 
 
 async def execute_reannounce(
@@ -51,53 +59,68 @@ async def execute_reannounce(
     if not torrent_records:
         return result
 
-    # ========== 获取下载器 ==========
-    downloader_vo, err = _get_downloader_from_cache(app, downloader_id)
-    if err:
+    # 获取或创建该下载器的锁
+    async with _locks_lock:
+        if downloader_id not in _reannounce_locks:
+            _reannounce_locks[downloader_id] = asyncio.Lock()
+        lock = _reannounce_locks[downloader_id]
+
+    # 尝试获取锁(非阻塞模式)
+    if lock.locked():
+        logger.warning(f"Tracker汇报正在进行中,跳过此次请求 [downloader_id={downloader_id}]")
         result["failed_count"] = len(torrent_records)
-        result["failed_items"] = [{"error": err}]
+        result["failed_items"] = [{"error": "操作正在进行中，请稍后再试"}]
         return result
 
-    client = downloader_vo.client
-    downloader_type = downloader_vo.downloader_type
+    # 使用锁执行汇报
+    async with lock:
+        # ========== 获取下载器 ==========
+        downloader_vo, err = _get_downloader_from_cache(app, downloader_id)
+        if err:
+            result["failed_count"] = len(torrent_records)
+            result["failed_items"] = [{"error": err}]
+            return result
 
-    # ========== 分批执行 ==========
-    for i in range(0, len(torrent_records), BATCH_SIZE):
-        batch = torrent_records[i : i + BATCH_SIZE]
+        client = downloader_vo.client
+        downloader_type = downloader_vo.downloader_type
 
-        try:
-            if downloader_type == 0:
-                # qBittorrent: 使用 hash
-                hashes = [r.hash for r in batch if r.hash]
-                if hashes:
-                    client.torrents_reannounce(torrent_hashes=hashes)
-                result["success_count"] += len(hashes)
+        # ========== 分批执行 ==========
+        for i in range(0, len(torrent_records), BATCH_SIZE):
+            batch = torrent_records[i : i + BATCH_SIZE]
 
-            elif downloader_type == 1:
-                # Transmission: 使用 torrent_id
-                ids = [r.torrent_id for r in batch if r.torrent_id is not None]
-                if ids:
-                    client.reannounce_torrent(ids)
-                result["success_count"] += len(ids)
+            try:
+                if downloader_type == DownloaderTypeEnum.QBITTORRENT:
+                    # qBittorrent: 使用 hash
+                    hashes = [r.hash for r in batch if r.hash]
+                    if hashes:
+                        client.torrents_reannounce(torrent_hashes=hashes)
+                    result["success_count"] += len(hashes)
 
-            else:
-                raise ValueError(f"不支持的下载器类型: {downloader_type}")
+                elif downloader_type == DownloaderTypeEnum.TRANSMISSION:
+                    # Transmission: 使用 torrent_id
+                    ids = [r.torrent_id for r in batch if r.torrent_id is not None]
+                    if ids:
+                        client.reannounce_torrent(ids)
+                    result["success_count"] += len(ids)
 
-        except Exception as e:
-            error_detail = f"{type(e).__name__}: {str(e)}"
-            logger.error(f"Tracker汇报失败 [downloader={downloader_id}, batch={i//BATCH_SIZE+1}]: {error_detail}")
-            result["failed_count"] += len(batch)
-            result["failed_items"].append({
-                "batch": i // BATCH_SIZE + 1,
-                "error": error_detail,
-                "count": len(batch),
-            })
+                else:
+                    raise ValueError(f"不支持的下载器类型: {downloader_type}")
 
-    logger.info(
-        f"Tracker汇报完成 [trigger={trigger_type}, downloader={downloader_id}]: "
-        f"成功 {result['success_count']}, 失败 {result['failed_count']}"
-    )
-    return result
+            except Exception as e:
+                error_detail = f"{type(e).__name__}: {str(e)}"
+                logger.error(f"Tracker汇报失败 [downloader={downloader_id}, batch={i//BATCH_SIZE+1}]: {error_detail}")
+                result["failed_count"] += len(batch)
+                result["failed_items"].append({
+                    "batch": i // BATCH_SIZE + 1,
+                    "error": error_detail,
+                    "count": len(batch),
+                })
+
+        logger.info(
+            f"Tracker汇报完成 [trigger={trigger_type}, downloader={downloader_id}]: "
+            f"成功 {result['success_count']}, 失败 {result['failed_count']}"
+        )
+        return result
 
 
 async def execute_reannounce_all_downloaders(
