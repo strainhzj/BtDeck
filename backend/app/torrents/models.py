@@ -427,6 +427,7 @@ class TrackerReannounceConfig(Base):
 
     def to_dict(self):
         return {
+            "config_id": self.id_,  # 兼容前端字段名
             "id_": self.id_,
             "domain_pattern": self.domain_pattern,
             "domain_display_name": self.domain_display_name,
