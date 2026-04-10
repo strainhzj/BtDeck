@@ -145,6 +145,89 @@ def delete_config(db: Session, config_id: str) -> DatabaseResult:
         return DatabaseResult.database_error_result(message=f"删除失败: {str(e)}")
 
 
+def batch_update_configs(db: Session, items: List[Dict[str, Any]]) -> DatabaseResult:
+    """
+    批量更新配置（支持部分成功）
+
+    Args:
+        items: 配置项列表，每项包含 config_id 和需要更新的字段
+
+    Returns:
+        DatabaseResult 包含批量更新结果
+    """
+    results = []
+    success_count = 0
+    failed_count = 0
+
+    logger.info(f"batch_update_configs 收到 {len(items)} 个项目")
+
+    for item in items:
+        config_id = item.get("config_id")
+        logger.info(f"处理项目 config_id={config_id}, 完整数据={item}")
+        logger.info(f"item 类型: {type(item)}, item.items() 结果: {list(item.items()) if hasattr(item, 'items') else 'N/A'}")
+
+        if not config_id:
+            results.append({"config_id": None, "success": False, "message": "config_id 不能为空"})
+            failed_count += 1
+            continue
+
+        # 提取需要更新的字段（排除 config_id）
+        update_data = {}
+        for k, v in item.items():
+            logger.info(f"  检查字段: k={k}, v={v}, v类型={type(v)}, k!='config_id'={k != 'config_id'}, v is not None={v is not None}")
+            if k != "config_id" and v is not None:
+                update_data[k] = v
+
+        logger.info(f"最终提取的 update_data={update_data}, 长度={len(update_data)}")
+
+        if not update_data:
+            results.append({"config_id": config_id, "success": False, "message": "没有需要更新的字段"})
+            failed_count += 1
+            continue
+
+        try:
+            config = db.query(TrackerReannounceConfig).filter(
+                TrackerReannounceConfig.id_ == config_id,
+                TrackerReannounceConfig.dr == 0,
+            ).first()
+
+            if not config:
+                results.append({"config_id": config_id, "success": False, "message": "配置不存在"})
+                failed_count += 1
+                continue
+
+            # 验证间隔
+            if "interval_minutes" in update_data and not validate_interval(update_data["interval_minutes"]):
+                results.append({"config_id": config_id, "success": False, "message": "interval_minutes 无效"})
+                failed_count += 1
+                continue
+
+            # 更新字段
+            for key, value in update_data.items():
+                if hasattr(config, key):
+                    setattr(config, key, value)
+            config.update_time = datetime.now()
+
+            db.commit()
+            results.append({"config_id": config_id, "success": True, "message": "更新成功"})
+            success_count += 1
+
+        except Exception as e:
+            db.rollback()
+            results.append({"config_id": config_id, "success": False, "message": f"更新失败: {str(e)}"})
+            failed_count += 1
+
+    return DatabaseResult.success_result(
+        data={
+            "success_count": success_count,
+            "failed_count": failed_count,
+            "results": results
+        },
+        message=f"批量更新完成，成功{success_count}条，失败{failed_count}条",
+        total_count=len(items)
+    )
+
+
 # ==================== 工具函数 ====================
 
 def match_domain(domain: str, config) -> bool:
