@@ -6,14 +6,14 @@ Tracker Reannounce 配置管理 API
 """
 
 import logging
-from typing import List
+from typing import List, Dict, Any, Union
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils as auth_utils
+from app.auth.dependencies import verify_token_dependency
 from app.database import get_db
 from app.core import reannounce_config_operations as ops
 
@@ -37,29 +37,16 @@ class UpdateConfigRequest(BaseModel):
     enabled: bool | None = None
 
 
-# ==================== 认证辅助 ====================
-
-def _verify_token(request: Request) -> CommonResponse | None:
-    """验证token，失败时返回错误响应"""
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401")
-    try:
-        user_info = auth_utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401")
-    except Exception:
-        return CommonResponse(status="error", msg="token验证失败", code="401")
-    return None
-
-
 # ==================== API 接口 ====================
 
 @router.get("/configs", description="获取所有站点配置")
-async def list_configs(request: Request, db: Session = Depends(get_db)):
+async def list_configs(
+    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    db: Session = Depends(get_db)
+):
     """获取所有站点汇报配置"""
-    if err := _verify_token(request):
-        return err
+    if auth_error:
+        return auth_error
 
     result = ops.get_configs(db)
     if not result.success:
@@ -74,13 +61,13 @@ async def list_configs(request: Request, db: Session = Depends(get_db)):
 
 @router.post("/configs", description="新增站点配置")
 async def create_config(
-        request: Request,
-        req_data: CreateConfigRequest,
-        db: Session = Depends(get_db),
+    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    req_data: CreateConfigRequest = None,
+    db: Session = Depends(get_db)
 ):
     """新增站点汇报配置"""
-    if err := _verify_token(request):
-        return err
+    if auth_error:
+        return auth_error
 
     config_data = req_data.dict()
     if not config_data.get("domain_display_name"):
@@ -98,14 +85,14 @@ async def create_config(
 
 @router.put("/configs/{config_id}", description="更新站点配置")
 async def update_config(
-        config_id: str,
-        request: Request,
-        req_data: UpdateConfigRequest,
-        db: Session = Depends(get_db),
+    config_id: str,
+    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    req_data: UpdateConfigRequest = None,
+    db: Session = Depends(get_db)
 ):
     """更新站点汇报配置"""
-    if err := _verify_token(request):
-        return err
+    if auth_error:
+        return auth_error
 
     update_data = {k: v for k, v in req_data.dict().items() if v is not None}
     if not update_data:
@@ -124,13 +111,13 @@ async def update_config(
 
 @router.delete("/configs/{config_id}", description="删除站点配置")
 async def delete_config(
-        config_id: str,
-        request: Request,
-        db: Session = Depends(get_db),
+    config_id: str,
+    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    db: Session = Depends(get_db)
 ):
     """删除站点汇报配置"""
-    if err := _verify_token(request):
-        return err
+    if auth_error:
+        return auth_error
 
     result = ops.delete_config(db, config_id)
     if not result.success:
@@ -140,18 +127,34 @@ async def delete_config(
 
 
 @router.post("/configs/auto-detect", description="自动检测tracker域名并生成配置")
-async def auto_detect_domains(request: Request, db: Session = Depends(get_db)):
+async def auto_detect_domains(
+    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    db: Session = Depends(get_db)
+):
     """从现有tracker数据中提取域名，生成默认配置"""
-    if err := _verify_token(request):
-        return err
+    if auth_error:
+        return auth_error
 
     from app.torrents.models import TrackerInfo
+    from sqlalchemy import func
 
-    # 查询所有未删除的 tracker URL
+    # 限制最多处理的tracker数量
+    MAX_TRACKERS = 1000
+
+    # 先查询总数
+    total_count = db.query(func.count(TrackerInfo.tracker_id)).filter(
+        TrackerInfo.dr == 0,
+        TrackerInfo.tracker_url.isnot(None),
+    ).scalar()
+
+    # 查询未删除的 tracker URL(限制数量)
     trackers = db.query(TrackerInfo.tracker_url).filter(
         TrackerInfo.dr == 0,
         TrackerInfo.tracker_url.isnot(None),
-    ).all()
+    ).limit(MAX_TRACKERS).all()
+
+    if total_count > MAX_TRACKERS:
+        logger.warning(f"Tracker数量超过限制，仅处理前{MAX_TRACKERS}个（总计{total_count}个）")
 
     tracker_urls = [t[0] for t in trackers if t[0]]
     domains = ops.extract_domains_from_trackers(tracker_urls)
