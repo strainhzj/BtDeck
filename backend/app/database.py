@@ -195,28 +195,62 @@ def init_db():
         print(f"Error initializing default templates: {str(e)}")
 
 
-    # 初始化系统默认定时任务（基于数据存在性判断）
-    # 修复：改用数据存在性判断，而非文件存在性判断
-    # 原因：ensure_database_initialized()可能已创建数据库文件，导致db_exists判断失效
+    # 初始化系统默认定时任务（增量检查：添加缺失的任务）
     try:
-        from app.data.default_scheduled_tasks import init_default_scheduled_tasks
+        from app.data.default_scheduled_tasks import get_default_scheduled_tasks, init_default_scheduled_tasks
         from app.tasks.cron_models import CronTask
 
         db = SessionLocal()
         try:
-            # 检查是否已有定时任务数据
-            task_count = db.query(CronTask).count()
+            # 获取所有配置的任务代码
+            default_tasks = get_default_scheduled_tasks()
+            default_codes = {t["task_code"] for t in default_tasks}
 
-            if task_count == 0:
-                # 没有定时任务数据，执行初始化
-                logger.info("初始化系统默认定时任务...")
-                print("初始化系统默认定时任务...")
-                init_default_scheduled_tasks(db)
-                logger.info("系统默认定时任务初始化完成")
-                print("系统默认定时任务初始化完成")
+            # 查询数据库中已有的任务代码
+            existing_codes = {t.task_code for t in db.query(CronTask.task_code).all()}
+
+            # 计算缺失的任务
+            missing_codes = default_codes - existing_codes
+
+            if missing_codes:
+                logger.info(f"发现缺失的定时任务: {missing_codes}，执行增量初始化...")
+                print(f"发现缺失的定时任务: {missing_codes}，执行增量初始化...")
+
+                # 重新调用初始化函数，只创建缺失的任务
+                from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
+                from datetime import datetime
+                for task_data in DEFAULT_SCHEDULED_TASKS:
+                    if task_data["task_code"] in missing_codes:
+                        task = CronTask(
+                            task_name=task_data["task_name"],
+                            task_code=task_data["task_code"],
+                            task_status=task_data["task_status"],
+                            task_type=task_data["task_type"],
+                            executor=task_data["executor"],
+                            enabled=task_data["enabled"],
+                            last_execute_time=task_data["last_execute_time"],
+                            last_execute_duration=task_data["last_execute_duration"],
+                            cron_plan=task_data["cron_plan"],
+                            description=task_data["description"],
+                            timeout_seconds=task_data["timeout_seconds"],
+                            max_retry_count=task_data["max_retry_count"],
+                            retry_interval=task_data["retry_interval"],
+                            dr=0,
+                            create_time=datetime.now(),
+                            update_time=datetime.now(),
+                            create_by=task_data["create_by"],
+                            update_by=task_data["update_by"],
+                        )
+                        db.add(task)
+                        logger.info(f"创建定时任务: {task_data['task_name']} ({task_data['task_code']})")
+                        print(f"创建定时任务: {task_data['task_name']} ({task_data['task_code']})")
+
+                db.commit()
+                logger.info(f"增量初始化完成，共添加 {len(missing_codes)} 个任务")
+                print(f"增量初始化完成，共添加 {len(missing_codes)} 个任务")
             else:
-                logger.info(f"定时任务数据已存在（{task_count}条），跳过初始化")
-                print(f"定时任务数据已存在（{task_count}条），跳过初始化")
+                logger.info(f"定时任务数据完整（{len(existing_codes)}条），跳过初始化")
+                print(f"定时任务数据完整（{len(existing_codes)}条），跳过初始化")
 
         finally:
             db.close()
