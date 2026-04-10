@@ -8,7 +8,7 @@ Tracker Reannounce 配置管理 API
 import logging
 from typing import List, Dict, Any, Union
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Body
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,14 @@ class UpdateConfigRequest(BaseModel):
     domain_display_name: str | None = None
     interval_minutes: int | None = None
     enabled: bool | None = None
+
+
+class BatchUpdateItem(BaseModel):
+    config_id: str = Field(..., description="配置ID")
+    domain_pattern: str | None = Field(None, description="域名匹配模式")
+    domain_display_name: str | None = Field(None, description="域名显示名称")
+    interval_minutes: int | None = Field(None, description="汇报间隔（分钟）")
+    enabled: bool | None = Field(None, description="是否启用")
 
 
 # ==================== API 接口 ====================
@@ -80,6 +88,41 @@ async def create_config(
     return CommonResponse(
         status="success", msg="创建成功", code="200",
         data=result.data.to_dict(),
+    )
+
+
+@router.put("/configs/batch", description="批量更新站点配置")
+async def batch_update_configs(
+    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    req_data: dict = Body(...),
+    db: Session = Depends(get_db)
+):
+    """批量更新站点汇报配置（支持部分成功）"""
+    if auth_error:
+        return auth_error
+
+    logger.info(f"批量更新请求数据: {req_data}")
+
+    if not req_data or "items" not in req_data:
+        logger.error(f"请求数据格式错误: {req_data}")
+        return CommonResponse(status="error", msg="请求数据格式错误", code="400")
+
+    items = req_data.get("items", [])
+    logger.info(f"提取的items数量: {len(items)}, 内容: {items}")
+
+    if not items:
+        return CommonResponse(status="error", msg="请求数据不能为空", code="400")
+
+    result = ops.batch_update_configs(db, items)
+
+    if not result.success:
+        return CommonResponse(status="error", msg=result.message, code="500")
+
+    return CommonResponse(
+        status="success",
+        msg=result.message,
+        code="200",
+        data=result.data,
     )
 
 
