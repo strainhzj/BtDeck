@@ -38,6 +38,22 @@ class RecheckTorrentsRequest(BaseModel):
     hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
 
 
+class ReannounceTorrentsRequest(BaseModel):
+    """Tracker汇报请求（选中种子）"""
+    downloader_id: str = Field(..., description="下载器ID")
+    hashes: List[str] = Field(..., description="种子hash列表", min_items=1)
+
+
+class ReannounceByDownloaderRequest(BaseModel):
+    """Tracker汇报请求（按下载器）"""
+    downloader_id: str = Field(..., description="下载器ID")
+
+
+class ReannounceAllRequest(BaseModel):
+    """Tracker汇报请求（全局）"""
+    pass
+
+
 # ==================== 暂停种子 ====================
 
 @router.post("/pause", description="暂停种子接口",
@@ -725,3 +741,208 @@ async def recheck_torrents(
         result.code = "500"
 
     return result
+
+
+# ==================== Tracker汇报 ====================
+
+@router.post("/reannounce", description="Tracker汇报（选中种子）",
+             response_model=CommonResponse)
+async def reannounce_torrents(
+        request: Request,
+        req_data: ReannounceTorrentsRequest,
+        db: Session = Depends(get_db)
+):
+    """对选中的种子执行 Tracker 汇报"""
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401")
+    try:
+        user_info = auth_utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401")
+    except Exception as e:
+        logger.warning(f"Token验证失败: {str(e)}")
+        return CommonResponse(status="error", msg="token验证失败", code="401")
+
+    downloader_id = req_data.downloader_id
+    hashes = req_data.hashes
+
+    if not hashes:
+        return CommonResponse(status="error", msg="参数错误：hashes列表不能为空", code="400")
+
+    try:
+        from app.services.reannounce_service import execute_reannounce
+
+        torrent_records = db.query(torrentInfoModel).filter(
+            torrentInfoModel.hash.in_(hashes),
+            torrentInfoModel.downloader_id == downloader_id,
+            torrentInfoModel.dr == 0,
+        ).all()
+
+        if not torrent_records:
+            return CommonResponse(status="error", msg="未找到任何种子记录", code="404")
+
+        result = await execute_reannounce(
+            app=request.app, db=db,
+            downloader_id=downloader_id,
+            torrent_records=torrent_records,
+            trigger_type="manual",
+        )
+
+        audit_info = extract_audit_info_from_request(request)
+        _safe_write_audit_log(
+            operation_type=AuditOperationType.REANNOUNCE,
+            operator="admin",
+            operation_detail={
+                "trigger_type": "manual",
+                "downloader_id": downloader_id,
+                "torrent_count": len(torrent_records),
+                "success_count": result["success_count"],
+                "failed_count": result["failed_count"],
+            },
+            downloader_id=downloader_id,
+            operation_result=(
+                AuditOperationResult.SUCCESS if result["failed_count"] == 0
+                else AuditOperationResult.PARTIAL if result["success_count"] > 0
+                else AuditOperationResult.FAILED
+            ),
+            audit_info=audit_info,
+        )
+
+        return CommonResponse(
+            status="success",
+            msg=f"Tracker汇报完成：成功 {result['success_count']} 个，失败 {result['failed_count']} 个",
+            code="200",
+            data=result,
+        )
+
+    except Exception as e:
+        error_detail = f"{type(e).__name__}: {str(e)}"
+        logger.error(f"Tracker汇报异常: {error_detail}")
+        return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
+
+
+@router.post("/reannounce-by-downloader", description="Tracker汇报（按下载器）",
+             response_model=CommonResponse)
+async def reannounce_by_downloader(
+        request: Request,
+        req_data: ReannounceByDownloaderRequest,
+        db: Session = Depends(get_db)
+):
+    """对指定下载器下所有种子执行 Tracker 汇报"""
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401")
+    try:
+        user_info = auth_utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401")
+    except Exception as e:
+        logger.warning(f"Token验证失败: {str(e)}")
+        return CommonResponse(status="error", msg="token验证失败", code="401")
+
+    try:
+        from app.services.reannounce_service import execute_reannounce
+
+        torrent_records = db.query(torrentInfoModel).filter(
+            torrentInfoModel.downloader_id == req_data.downloader_id,
+            torrentInfoModel.dr == 0,
+        ).all()
+
+        if not torrent_records:
+            return CommonResponse(status="error", msg="该下载器下没有种子", code="404")
+
+        result = await execute_reannounce(
+            app=request.app, db=db,
+            downloader_id=req_data.downloader_id,
+            torrent_records=torrent_records,
+            trigger_type="manual",
+        )
+
+        audit_info = extract_audit_info_from_request(request)
+        _safe_write_audit_log(
+            operation_type=AuditOperationType.REANNOUNCE,
+            operator="admin",
+            operation_detail={
+                "trigger_type": "manual_by_downloader",
+                "downloader_id": req_data.downloader_id,
+                "torrent_count": len(torrent_records),
+                "success_count": result["success_count"],
+                "failed_count": result["failed_count"],
+            },
+            downloader_id=req_data.downloader_id,
+            operation_result=(
+                AuditOperationResult.SUCCESS if result["failed_count"] == 0
+                else AuditOperationResult.PARTIAL if result["success_count"] > 0
+                else AuditOperationResult.FAILED
+            ),
+            audit_info=audit_info,
+        )
+
+        return CommonResponse(
+            status="success",
+            msg=f"Tracker汇报完成：成功 {result['success_count']} 个，失败 {result['failed_count']} 个",
+            code="200",
+            data=result,
+        )
+
+    except Exception as e:
+        error_detail = f"{type(e).__name__}: {str(e)}"
+        logger.error(f"Tracker汇报（按下载器）异常: {error_detail}")
+        return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
+
+
+@router.post("/reannounce-all", description="Tracker汇报（全局）",
+             response_model=CommonResponse)
+async def reannounce_all(
+        request: Request,
+        db: Session = Depends(get_db)
+):
+    """对所有下载器下所有种子执行 Tracker 汇报"""
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401")
+    try:
+        user_info = auth_utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401")
+    except Exception as e:
+        logger.warning(f"Token验证失败: {str(e)}")
+        return CommonResponse(status="error", msg="token验证失败", code="401")
+
+    try:
+        from app.services.reannounce_service import execute_reannounce_all_downloaders
+
+        result = await execute_reannounce_all_downloaders(
+            app=request.app, db=db, trigger_type="manual",
+        )
+
+        audit_info = extract_audit_info_from_request(request)
+        _safe_write_audit_log(
+            operation_type=AuditOperationType.REANNOUNCE,
+            operator="admin",
+            operation_detail={
+                "trigger_type": "manual_all",
+                "total_downloaders": result["total_downloaders"],
+                "total_success": result["total_success"],
+                "total_failed": result["total_failed"],
+            },
+            operation_result=(
+                AuditOperationResult.SUCCESS if result["total_failed"] == 0
+                else AuditOperationResult.PARTIAL if result["total_success"] > 0
+                else AuditOperationResult.FAILED
+            ),
+            audit_info=audit_info,
+        )
+
+        return CommonResponse(
+            status="success",
+            msg=f"全局Tracker汇报完成：成功 {result['total_success']} 个，失败 {result['total_failed']} 个",
+            code="200",
+            data=result,
+        )
+
+    except Exception as e:
+        error_detail = f"{type(e).__name__}: {str(e)}"
+        logger.error(f"全局Tracker汇报异常: {error_detail}")
+        return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
