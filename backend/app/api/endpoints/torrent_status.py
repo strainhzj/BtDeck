@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import List, Optional
+from typing import List, Optional, Dict, Any, Union
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -8,11 +8,13 @@ from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
 from app.auth import utils as auth_utils
+from app.auth.dependencies import verify_token_dependency
 from app.database import get_db
 from app.services.audit_service import extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.torrents.models import TorrentInfo as torrentInfoModel
 from app.api.endpoints.torrent_helpers import _safe_write_audit_log
+from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -57,10 +59,11 @@ class ReannounceAllRequest(BaseModel):
 # ==================== 暂停种子 ====================
 
 @router.post("/pause", description="暂停种子接口",
-             response_model=CommonResponse)
+             response_model=CommonResponse[Dict[str, Any]])
 async def pause_torrents(
-        request: Request,
-        req_data: PauseTorrentsRequest,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
+        req_data: PauseTorrentsRequest = None,
         db: Session = Depends(get_db)
 ):
     """
@@ -87,17 +90,20 @@ async def pause_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
-    # JWT认证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401")
-    try:
-        user_info = auth_utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401")
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401")
+    # 统一Token验证
+    if auth_error:
+        return auth_error
+
+    # 从请求模型中获取参数
+    downloader_id = req_data.downloader_id
+    hashes = req_data.hashes
+
+    result: CommonResponse[Dict[str, Any]] = CommonResponse(
+        status="success",
+        msg="暂停成功",
+        code="200",
+        data={"success_count": len(hashes), "failed_items": []}
+    )
 
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
@@ -175,14 +181,11 @@ async def pause_torrents(
         # ========== 执行暂停操作 ==========
         try:
             # 使用枚举类型判断下载器类型
-            downloader_type_enum = downloader_vo.type_enum if hasattr(downloader_vo, 'type_enum') else None
-
-            if downloader_vo.downloader_type == 0 or (downloader_type_enum and downloader_type_enum.is_qbittorrent()):
+            if downloader_vo.downloader_type == DownloaderTypeEnum.QBITTORRENT:
                 # qBittorrent 下载器
                 client.torrents_pause(torrent_hashes=group_hashes)
 
-            elif downloader_vo.downloader_type == 1 or (
-                    downloader_type_enum and downloader_type_enum.is_transmission()):
+            elif downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION:
                 # Transmission 下载器
                 client.stop_torrent(group_hashes)
 
@@ -270,7 +273,12 @@ async def pause_torrents(
     except Exception as e:
         db.rollback()
         error_detail = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"暂停种子异常: {error_detail}")
+
+        # 获取用户信息
+        user_info = getattr(request.state, 'user_info', None) if request else None
+        user_id = user_info.get('user_id') if user_info else 'unknown'
+
+        logger.error(f"暂停种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
         result.status = "failed"
         result.msg = f"操作异常：{error_detail}"
@@ -282,10 +290,11 @@ async def pause_torrents(
 # ==================== 恢复/开始种子 ====================
 
 @router.post("/resume", description="恢复/开始种子接口",
-             response_model=CommonResponse)
+             response_model=CommonResponse[Dict[str, Any]])
 async def resume_torrents(
-        request: Request,
-        req_data: ResumeTorrentsRequest,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
+        req_data: ResumeTorrentsRequest = None,
         db: Session = Depends(get_db)
 ):
     """
@@ -312,17 +321,20 @@ async def resume_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
-    # JWT认证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401")
-    try:
-        user_info = auth_utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401")
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401")
+    # 统一Token验证
+    if auth_error:
+        return auth_error
+
+    # 从请求模型中获取参数
+    downloader_id = req_data.downloader_id
+    hashes = req_data.hashes
+
+    result: CommonResponse[Dict[str, Any]] = CommonResponse(
+        status="success",
+        msg="开始成功",
+        code="200",
+        data={"success_count": len(hashes), "failed_items": []}
+    )
 
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
@@ -400,11 +412,11 @@ async def resume_torrents(
         # ========== 执行恢复操作 ==========
         try:
             # 使用枚举类型判断下载器类型
-            if downloader_vo.downloader_type == 0:
+            if downloader_vo.downloader_type == DownloaderTypeEnum.QBITTORRENT:
                 # qBittorrent 下载器
                 client.torrents_resume(torrent_hashes=group_hashes)
 
-            elif downloader_vo.downloader_type == 1:
+            elif downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION:
                 # Transmission 下载器
                 client.start_torrent(group_hashes)
 
@@ -500,7 +512,12 @@ async def resume_torrents(
     except Exception as e:
         db.rollback()
         error_detail = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"恢复种子异常: {error_detail}")
+
+        # 获取用户信息
+        user_info = getattr(request.state, 'user_info', None) if request else None
+        user_id = user_info.get('user_id') if user_info else 'unknown'
+
+        logger.error(f"恢复种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
         result.status = "failed"
         result.msg = f"操作异常：{error_detail}"
@@ -512,10 +529,11 @@ async def resume_torrents(
 # ==================== 重新检查种子 ====================
 
 @router.post("/recheck", description="重新检查种子接口",
-             response_model=CommonResponse)
+             response_model=CommonResponse[Dict[str, Any]])
 async def recheck_torrents(
-        request: Request,
-        req_data: RecheckTorrentsRequest,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
+        req_data: RecheckTorrentsRequest = None,
         db: Session = Depends(get_db)
 ):
     """
@@ -542,17 +560,20 @@ async def recheck_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
-    # JWT认证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401")
-    try:
-        user_info = auth_utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401")
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401")
+    # 统一Token验证
+    if auth_error:
+        return auth_error
+
+    # 从请求模型中获取参数
+    downloader_id = req_data.downloader_id
+    hashes = req_data.hashes
+
+    result: CommonResponse[Dict[str, Any]] = CommonResponse(
+        status="success",
+        msg="重新检查成功",
+        code="200",
+        data={"success_count": len(hashes), "failed_items": []}
+    )
 
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
@@ -628,7 +649,7 @@ async def recheck_torrents(
             return result
 
         # Transmission并发限制检查
-        if downloader_vo.downloader_type == 1 and len(torrent_records) > MAX_CONCURRENT_RECHECK:
+        if downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION and len(torrent_records) > MAX_CONCURRENT_RECHECK:
             error_msg = f"Transmission重检限制：每次最多{MAX_CONCURRENT_RECHECK}个种子，当前{len(torrent_records)}个"
             logger.error(error_msg)
             result.status = "failed"
@@ -642,11 +663,11 @@ async def recheck_torrents(
         # ========== 执行重检操作 ==========
         try:
             # 使用枚举类型判断下载器类型
-            if downloader_vo.downloader_type == 0:
+            if downloader_vo.downloader_type == DownloaderTypeEnum.QBITTORRENT:
                 # qBittorrent 下载器
                 client.torrents_recheck(torrent_hashes=group_hashes)
 
-            elif downloader_vo.downloader_type == 1:
+            elif downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION:
                 # Transmission 下载器
                 client.verify_torrent(group_hashes)
 
@@ -734,7 +755,12 @@ async def recheck_torrents(
     except Exception as e:
         db.rollback()
         error_detail = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"重新检查种子异常: {error_detail}")
+
+        # 获取用户信息
+        user_info = getattr(request.state, 'user_info', None) if request else None
+        user_id = user_info.get('user_id') if user_info else 'unknown'
+
+        logger.error(f"重新检查种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
         result.status = "failed"
         result.msg = f"操作异常：{error_detail}"
@@ -746,23 +772,17 @@ async def recheck_torrents(
 # ==================== Tracker汇报 ====================
 
 @router.post("/reannounce", description="Tracker汇报（选中种子）",
-             response_model=CommonResponse)
+             response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_torrents(
-        request: Request,
-        req_data: ReannounceTorrentsRequest,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
+        req_data: ReannounceTorrentsRequest = None,
         db: Session = Depends(get_db)
 ):
     """对选中的种子执行 Tracker 汇报"""
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401")
-    try:
-        user_info = auth_utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401")
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401")
+    # 统一Token验证
+    if auth_error:
+        return auth_error
 
     downloader_id = req_data.downloader_id
     hashes = req_data.hashes
@@ -818,28 +838,27 @@ async def reannounce_torrents(
 
     except Exception as e:
         error_detail = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"Tracker汇报异常: {error_detail}")
+
+        # 获取用户信息
+        user_info = getattr(request.state, 'user_info', None) if request else None
+        user_id = user_info.get('user_id') if user_info else 'unknown'
+
+        logger.error(f"Tracker汇报异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
 
 
 @router.post("/reannounce-by-downloader", description="Tracker汇报（按下载器）",
-             response_model=CommonResponse)
+             response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_by_downloader(
-        request: Request,
-        req_data: ReannounceByDownloaderRequest,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
+        req_data: ReannounceByDownloaderRequest = None,
         db: Session = Depends(get_db)
 ):
     """对指定下载器下所有种子执行 Tracker 汇报"""
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401")
-    try:
-        user_info = auth_utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401")
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401")
+    # 统一Token验证
+    if auth_error:
+        return auth_error
 
     try:
         from app.services.reannounce_service import execute_reannounce
@@ -888,27 +907,26 @@ async def reannounce_by_downloader(
 
     except Exception as e:
         error_detail = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"Tracker汇报（按下载器）异常: {error_detail}")
+
+        # 获取用户信息
+        user_info = getattr(request.state, 'user_info', None) if request else None
+        user_id = user_info.get('user_id') if user_info else 'unknown'
+
+        logger.error(f"Tracker汇报（按下载器）异常 [user_id={user_id}, downloader_id={req_data.downloader_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
 
 
 @router.post("/reannounce-all", description="Tracker汇报（全局）",
-             response_model=CommonResponse)
+             response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_all(
-        request: Request,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
         db: Session = Depends(get_db)
 ):
     """对所有下载器下所有种子执行 Tracker 汇报"""
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401")
-    try:
-        user_info = auth_utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401")
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401")
+    # 统一Token验证
+    if auth_error:
+        return auth_error
 
     try:
         from app.services.reannounce_service import execute_reannounce_all_downloaders
@@ -944,5 +962,10 @@ async def reannounce_all(
 
     except Exception as e:
         error_detail = f"{type(e).__name__}: {str(e)}"
-        logger.error(f"全局Tracker汇报异常: {error_detail}")
+
+        # 获取用户信息
+        user_info = getattr(request.state, 'user_info', None) if request else None
+        user_id = user_info.get('user_id') if user_info else 'unknown'
+
+        logger.error(f"全局Tracker汇报异常 [user_id={user_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
