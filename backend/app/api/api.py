@@ -14,6 +14,7 @@ from app.api.endpoints import torrent_backup
 from app.api.endpoints import downloader_path_maintenance
 # 导入种子转移API
 from app.api.endpoints import seed_transfer
+from app.api.endpoints import tracker_reannounce
 
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
@@ -54,3 +55,5 @@ api_router.include_router(torrent_backup.router, prefix="/torrents", tags=["种�
 api_router.include_router(downloader_path_maintenance.router, prefix="/downloaders", tags=["下载器路径维护"])
 # 添加种子转移路由
 api_router.include_router(seed_transfer.router, prefix="/torrents", tags=["种子转移"])
+# 添加tracker汇报配置路由
+api_router.include_router(tracker_reannounce.router, prefix="/tracker-reannounce", tags=["tracker-reannounce"])
