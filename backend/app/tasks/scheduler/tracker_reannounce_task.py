@@ -11,6 +11,7 @@ Tracker Reannounce 定时轮询任务
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, Any, List
+from urllib.parse import urlparse
 
 from app.tasks.scheduler.torrent_sync.base import BaseSyncTask
 from app.core import reannounce_config_operations as ops
@@ -58,6 +59,8 @@ class TrackerReannounceTask(BaseSyncTask):
                     return {"status": "no_action", "message": "没有启用的站点配置"}
 
                 configs = ops.filter_enabled_configs(config_result.data)
+                logger.info(f"[DEBUG] 启用的站点配置数={len(configs)}, "
+                             f"配置列表={[(c.domain_pattern, c.interval_minutes) for c in configs]}")
                 total_success = 0
                 total_failed = 0
 
@@ -96,27 +99,42 @@ class TrackerReannounceTask(BaseSyncTask):
         from app.torrents.models import TorrentInfo, TrackerInfo
         from app.services.reannounce_service import execute_reannounce
 
-        # 查询该下载器的所有 tracker（未删除）
+        # 查询该下载器的所有 tracker（未删除），使用 tracker_url 而非 tracker_host
         trackers = db.query(TrackerInfo).filter(
-            TrackerInfo.tracker_host.isnot(None),
+            TrackerInfo.tracker_url.isnot(None),
             TrackerInfo.dr == 0,
         ).all()
+        logger.info(f"[DEBUG] 下载器={dl_vo.nickname}, tracker数量={len(trackers)}")
 
         if not trackers:
             return {"success_count": 0, "failed_count": 0}
 
-        # 按 tracker_host 匹配配置，收集需要汇报的 torrent_info_id
+        # 按 tracker_url 提取域名，匹配配置，收集需要汇报的 torrent_info_id
         torrent_ids_to_announce = set()
         matched_config_ids = set()
 
+        sample_logged = 0
         for tracker in trackers:
+            # 从 tracker_url 提取纯域名（优先用 tracker_host，为空则从 tracker_url 提取）
+            domain = _extract_domain(tracker.tracker_host or tracker.tracker_url)
+            if sample_logged < 3:
+                logger.info(f"[DEBUG] tracker_url={tracker.tracker_url!r}, tracker_host={tracker.tracker_host!r}, 提取域名={domain!r}")
+                sample_logged += 1
+            if not domain:
+                continue
             # 查找该 tracker 匹配的配置
             for config in configs:
-                if ops.match_domain(tracker.tracker_host, config):
+                if ops.match_domain(domain, config):
+                    logger.info(f"[DEBUG] 域名匹配成功: {domain} -> config={config.domain_pattern}, "
+                                f"should_announce={should_announce(config)}, "
+                                f"last_announce_time={config.last_announce_time}")
                     if should_announce(config):
                         torrent_ids_to_announce.add(tracker.torrent_info_id)
                         matched_config_ids.add(config.id_)
                     break
+
+        logger.info(f"[DEBUG] 匹配到需要汇报的种子数={len(torrent_ids_to_announce)}, "
+                     f"匹配到的配置数={len(matched_config_ids)}")
 
         if not torrent_ids_to_announce:
             return {"success_count": 0, "failed_count": 0}
@@ -127,6 +145,7 @@ class TrackerReannounceTask(BaseSyncTask):
             TorrentInfo.downloader_id == dl_vo.downloader_id,
             TorrentInfo.dr == 0,
         ).all()
+        logger.info(f"[DEBUG] 属于当前下载器的种子记录数={len(torrent_records)}")
 
         if not torrent_records:
             return {"success_count": 0, "failed_count": 0}
@@ -152,6 +171,19 @@ class TrackerReannounceTask(BaseSyncTask):
 
 # ==================== 工具函数 ====================
 
+def _extract_domain(tracker_host: str) -> str:
+    """从 tracker URL 中提取纯域名"""
+    if not tracker_host:
+        return ""
+    try:
+        if "://" not in tracker_host:
+            tracker_host = f"http://{tracker_host}"
+        parsed = urlparse(tracker_host)
+        return parsed.hostname or ""
+    except Exception:
+        return ""
+
+
 def should_announce(config) -> bool:
     """判断是否应该执行汇报"""
     if config.last_announce_time is None:
@@ -166,12 +198,14 @@ def group_torrents_by_domain(trackers: list, configs: list) -> Dict[str, list]:
     for tracker in trackers:
         if not getattr(tracker, 'tracker_host', None):
             continue
+        domain = _extract_domain(tracker.tracker_host)
+        if not domain:
+            continue
         for config in configs:
-            if ops.match_domain(tracker.tracker_host, config):
-                host = tracker.tracker_host
-                if host not in groups:
-                    groups[host] = []
-                groups[host].append(tracker)
+            if ops.match_domain(domain, config):
+                if domain not in groups:
+                    groups[domain] = []
+                groups[domain].append(tracker)
                 break
     return groups
 
