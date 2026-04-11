@@ -40,6 +40,7 @@ from transmission_rpc import Client as trClient, TransmissionError
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
 from app.core.torrent_status_mapper import TorrentStatusMapper
+from app.core.tracker_mapper import extract_tracker_host
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.models.torrent_file_backup import TorrentFileBackup
@@ -685,6 +686,7 @@ async def sync_add_tracker_async(
                     'torrent_info_id': torrent_info_id,
                     'tracker_name': url,
                     'tracker_url': url,
+                    'tracker_host': extract_tracker_host(url),
                     'last_announce_succeeded': tracker.get('status'),
                     'last_announce_msg': tracker.get('msg'),
                     'last_scrape_succeeded': tracker.get('status'),
@@ -715,6 +717,7 @@ async def sync_add_tracker_async(
                 'torrent_info_id': torrent_info_id,
                 'tracker_name': tracker_status.site_name,
                 'tracker_url': tracker_url,
+                'tracker_host': tracker_status.fields.get('host') or extract_tracker_host(tracker_url),
                 'last_announce_succeeded': tracker_status.last_announce_succeeded,
                 'last_announce_msg': tracker_status.last_announce_result,
                 'last_scrape_succeeded': tracker_status.last_scrape_succeeded,

@@ -20,6 +20,7 @@ from app.torrents.models import TrackerInfo as trackerInfoModel, TrackerInfo
 from qbittorrentapi import Client as qbClient
 from transmission_rpc import Client as trClient
 from app.core.torrent_status_mapper import TorrentStatusMapper
+from app.core.tracker_mapper import extract_tracker_host
 from app.core.background_task_manager import task_manager, TaskStatus
 from app.models.setting_templates import DownloaderTypeEnum
 # 审计日志相关导入（使用异步版本）
@@ -523,6 +524,7 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
                 'torrent_info_id': torrent_info_id,
                 'tracker_name': url,
                 'tracker_url': url,
+                'tracker_host': extract_tracker_host(url),
                 'last_announce_succeeded': tracker.get('status'),
                 'last_announce_msg': tracker.get('msg'),
                 'last_scrape_succeeded': tracker.get('status'),
@@ -546,6 +548,7 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
                 'torrent_info_id': torrent_info_id,
                 'tracker_name': tracker_status.site_name,
                 'tracker_url': tracker_url,
+                'tracker_host': tracker_status.fields.get('host') or extract_tracker_host(tracker_url),
                 'last_announce_succeeded': tracker_status.last_announce_succeeded,
                 'last_announce_msg': tracker_status.last_announce_result,
                 'last_scrape_succeeded': tracker_status.last_scrape_succeeded,
