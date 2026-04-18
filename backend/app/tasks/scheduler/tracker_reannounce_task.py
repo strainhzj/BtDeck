@@ -99,8 +99,19 @@ class TrackerReannounceTask(BaseSyncTask):
         from app.torrents.models import TorrentInfo, TrackerInfo
         from app.services.reannounce_service import execute_reannounce
 
-        # 查询该下载器的所有 tracker（未删除），使用 tracker_url 而非 tracker_host
+        # 先查出该下载器下所有未删除的种子info_id，用于过滤tracker
+        downloader_torrent_ids = [
+            r.info_id for r in db.query(TorrentInfo.info_id).filter(
+                TorrentInfo.downloader_id == dl_vo.downloader_id,
+                TorrentInfo.dr == 0,
+            ).all()
+        ]
+        if not downloader_torrent_ids:
+            return {"success_count": 0, "failed_count": 0}
+
+        # 只查询属于当前下载器的 tracker，避免全表扫描
         trackers = db.query(TrackerInfo).filter(
+            TrackerInfo.torrent_info_id.in_(downloader_torrent_ids),
             TrackerInfo.tracker_url.isnot(None),
             TrackerInfo.dr == 0,
         ).all()
@@ -109,26 +120,27 @@ class TrackerReannounceTask(BaseSyncTask):
         if not trackers:
             return {"success_count": 0, "failed_count": 0}
 
+        # 预编译配置匹配：按需汇报的config缓存判断结果
+        eligible_config_ids = set()
+        for config in configs:
+            if should_announce(config):
+                eligible_config_ids.add(config.id_)
+
         # 按 tracker_url 提取域名，匹配配置，收集需要汇报的 torrent_info_id
         torrent_ids_to_announce = set()
         matched_config_ids = set()
 
         sample_logged = 0
         for tracker in trackers:
-            # 从 tracker_url 提取纯域名（优先用 tracker_host，为空则从 tracker_url 提取）
             domain = _extract_domain(tracker.tracker_host or tracker.tracker_url)
             if sample_logged < 3:
                 logger.info(f"[DEBUG] tracker_url={tracker.tracker_url!r}, tracker_host={tracker.tracker_host!r}, 提取域名={domain!r}")
                 sample_logged += 1
             if not domain:
                 continue
-            # 查找该 tracker 匹配的配置
             for config in configs:
                 if ops.match_domain(domain, config):
-                    logger.info(f"[DEBUG] 域名匹配成功: {domain} -> config={config.domain_pattern}, "
-                                f"should_announce={should_announce(config)}, "
-                                f"last_announce_time={config.last_announce_time}")
-                    if should_announce(config):
+                    if config.id_ in eligible_config_ids:
                         torrent_ids_to_announce.add(tracker.torrent_info_id)
                         matched_config_ids.add(config.id_)
                     break
@@ -158,9 +170,9 @@ class TrackerReannounceTask(BaseSyncTask):
             trigger_type="scheduled",
         )
 
-        # 更新匹配配置的最后汇报时间
-        for config_id in matched_config_ids:
-            ops.update_last_announce_time(db, config_id)
+        # 批量更新匹配配置的最后汇报时间（单次commit）
+        if matched_config_ids:
+            ops.batch_update_last_announce_time(db, list(matched_config_ids))
 
         return result
 

@@ -585,45 +585,42 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
         # Avoid resurrecting soft-deleted rows during upsert.
         from sqlalchemy import delete, tuple_
 
-        # ✅ P1修复：添加row的None检查，避免AttributeError
+        # P1修复：添加row的None检查，避免AttributeError
         soft_deleted_pairs = {
             (row.get('torrent_info_id'), row.get('tracker_url'))
             for row in tracker_rows
             if row and isinstance(row, dict) and row.get('torrent_info_id') and row.get('tracker_url')
         }
 
-        # ✅ P0修复：使用事务保护，确保删除和插入的原子性
-        if soft_deleted_pairs or tracker_rows:
-            with db.begin():
-                # 删除软删除记录，避免upsert时恢复
-                if soft_deleted_pairs:
-                    db.execute(
-                        delete(trackerInfoModel)
-                        .where(
-                            trackerInfoModel.dr == 1,
-                            tuple_(
-                                trackerInfoModel.torrent_info_id,
-                                trackerInfoModel.tracker_url
-                            ).in_(list(soft_deleted_pairs))
-                        )
-                    )
-
-                # 插入新记录或更新现有记录
-                stmt = sqlite_insert(trackerInfoModel).values(tracker_rows)
-                stmt = stmt.on_conflict_do_update(
-                    index_elements=['torrent_info_id', 'tracker_url'],
-                    set_={
-                        'tracker_name': stmt.excluded.tracker_name,
-                        'last_announce_succeeded': stmt.excluded.last_announce_succeeded,
-                        'last_announce_msg': stmt.excluded.last_announce_msg,
-                        'last_scrape_succeeded': stmt.excluded.last_scrape_succeeded,
-                        'last_scrape_msg': stmt.excluded.last_scrape_msg,
-                        'update_time': current_time,
-                        'update_by': 'admin',
-                        'dr': 0
-                    }
+        # 删除软删除记录，避免upsert时恢复（不使用嵌套事务，由外层commit统一管理）
+        if soft_deleted_pairs:
+            db.execute(
+                delete(trackerInfoModel)
+                .where(
+                    trackerInfoModel.dr == 1,
+                    tuple_(
+                        trackerInfoModel.torrent_info_id,
+                        trackerInfoModel.tracker_url
+                    ).in_(list(soft_deleted_pairs))
                 )
-                db.execute(stmt)
+            )
+
+        # 插入新记录或更新现有记录
+        stmt = sqlite_insert(trackerInfoModel).values(tracker_rows)
+        stmt = stmt.on_conflict_do_update(
+            index_elements=['torrent_info_id', 'tracker_url'],
+            set_={
+                'tracker_name': stmt.excluded.tracker_name,
+                'last_announce_succeeded': stmt.excluded.last_announce_succeeded,
+                'last_announce_msg': stmt.excluded.last_announce_msg,
+                'last_scrape_succeeded': stmt.excluded.last_scrape_succeeded,
+                'last_scrape_msg': stmt.excluded.last_scrape_msg,
+                'update_time': current_time,
+                'update_by': 'admin',
+                'dr': 0
+            }
+        )
+        db.execute(stmt)
 
     if mode == "update":
         mark_removed_trackers_batch(db, torrent_info_id, current_tracker_urls, current_time)
@@ -1513,51 +1510,53 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
 
                 logger.debug(f"Tracker Host: {tracker_host} | 状态: {status} | 消息类型: {msg_types}")
 
-            # Step 5: 批量更新数据库（使用UPDATE语句，保留乐观锁）
-            from sqlalchemy import update
+            # Step 5: 按状态分组批量UPDATE，减少SQL语句数量和锁持有时间
+            from sqlalchemy import update as sa_update
+
+            # 按状态分组: {status: [(tracker_id, status_msg), ...]}
+            status_groups = {}
+            for tracker_id, (status, status_msg) in tracker_status_map.items():
+                if status not in status_groups:
+                    status_groups[status] = []
+                status_groups[status].append((tracker_id, status_msg))
 
             updated_count = 0
-            failed_tracker_ids = []
+            now = datetime.now()
 
-            for tracker_id, (status, status_msg) in tracker_status_map.items():
+            for status, items in status_groups.items():
+                if not items:
+                    continue
+                tracker_ids = [item[0] for item in items]
+                # 同一组状态取第一个的status_msg（同组状态一致）
+                status_msg = items[0][1]
+
                 try:
-                    # 使用UPDATE语句批量更新（带乐观锁）
+                    # 批量UPDATE：同状态的所有tracker_id一次性更新
                     result = await db.execute(
-                        update(TrackerInfo)
-                        .where(TrackerInfo.tracker_id == tracker_id)
+                        sa_update(TrackerInfo)
+                        .where(TrackerInfo.tracker_id.in_(tracker_ids))
                         .values(
                             status=status,
                             msg=status_msg,
-                            update_time=datetime.now(),
-                            version=TrackerInfo.version + 1  # 子查询方式更新version
+                            update_time=now,
                         )
                         .execution_options(synchronize_session=False)
                     )
-
-                    # 检查是否真正更新了数据（乐观锁可能失败）
-                    if result.rowcount > 0:
-                        updated_count += 1
-                    else:
-                        # rowcount=0 表示记录不存在或乐观锁冲突
-                        failed_tracker_ids.append(tracker_id)
-                        logger.debug(f"Tracker更新失败(未找到或乐观锁冲突): tracker_id={tracker_id}")
+                    updated_count += result.rowcount or 0
 
                 except Exception as e:
-                    failed_tracker_ids.append(tracker_id)
-                    logger.debug(f"Tracker更新异常: tracker_id={tracker_id}, 错误={str(e)}")
+                    logger.warning(f"批量更新tracker状态失败 [status={status}]: {e}")
 
             await db.commit()
 
-            logger.debug(f"Tracker状态批量更新完成: 成功{updated_count}条, 失败{len(failed_tracker_ids)}条")
-            if failed_tracker_ids:
-                logger.debug(f"失败的tracker_ids: {failed_tracker_ids}")
+            failed_count = len(tracker_status_map) - updated_count
+            logger.debug(f"Tracker状态批量更新完成: 成功{updated_count}条, 失败{failed_count}条")
 
             return {
                 "status": "success",
-                "message": f"更新完成: {updated_count}条成功, {len(failed_tracker_ids)}条失败",
+                "message": f"更新完成: {updated_count}条成功, {failed_count}条失败",
                 "updated_count": updated_count,
-                "failed_count": len(failed_tracker_ids),
-                "failed_tracker_ids": failed_tracker_ids,
+                "failed_count": failed_count,
                 "total_hosts": len(tracker_host_msgs)
             }
 
