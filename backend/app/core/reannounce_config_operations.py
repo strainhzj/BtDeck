@@ -113,16 +113,24 @@ def update_config(db: Session, config_id: str, update_data: Dict[str, Any]) -> D
 
 
 def update_last_announce_time(db: Session, config_id: str) -> None:
-    """更新配置的最后汇报时间"""
+    """更新配置的最后汇报时间（单条，向后兼容）"""
+    batch_update_last_announce_time(db, [config_id])
+
+
+def batch_update_last_announce_time(db: Session, config_ids: list) -> None:
+    """批量更新配置的最后汇报时间，单次commit减少SQLite锁竞争"""
+    if not config_ids:
+        return
     try:
-        config = db.query(TrackerReannounceConfig).filter(
-            TrackerReannounceConfig.id_ == config_id,
-        ).first()
-        if config:
-            config.last_announce_time = datetime.now()
-            db.commit()
+        now = datetime.now()
+        configs = db.query(TrackerReannounceConfig).filter(
+            TrackerReannounceConfig.id_.in_(config_ids),
+        ).all()
+        for config in configs:
+            config.last_announce_time = now
+        db.commit()
     except Exception as e:
-        logger.warning(f"更新最后汇报时间失败: {e}")
+        logger.warning(f"批量更新最后汇报时间失败: {e}")
         db.rollback()
 
 
