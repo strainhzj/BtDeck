@@ -43,7 +43,8 @@ class RecheckTorrentsRequest(BaseModel):
 class ReannounceTorrentsRequest(BaseModel):
     """Tracker汇报请求（选中种子）"""
     downloader_id: str = Field(..., description="下载器ID")
-    hashes: List[str] = Field(..., description="种子hash列表", min_items=1)
+    hashes: List[str] | None = Field(None, description="种子hash列表")
+    info_ids: List[str] | None = Field(None, description="种子info_id列表")
 
 
 class ReannounceByDownloaderRequest(BaseModel):
@@ -786,18 +787,29 @@ async def reannounce_torrents(
 
     downloader_id = req_data.downloader_id
     hashes = req_data.hashes
+    info_ids = req_data.info_ids
 
-    if not hashes:
-        return CommonResponse(status="error", msg="参数错误：hashes列表不能为空", code="400")
+    # 支持 hashes 或 info_ids 任一方式
+    if not hashes and not info_ids:
+        return CommonResponse(status="error", msg="参数错误：hashes或info_ids列表不能为空", code="400")
 
     try:
         from app.services.reannounce_service import execute_reannounce
 
-        torrent_records = db.query(torrentInfoModel).filter(
-            torrentInfoModel.hash.in_(hashes),
-            torrentInfoModel.downloader_id == downloader_id,
-            torrentInfoModel.dr == 0,
-        ).all()
+        # 根据传入参数查询种子记录
+        if hashes:
+            torrent_records = db.query(torrentInfoModel).filter(
+                torrentInfoModel.hash.in_(hashes),
+                torrentInfoModel.downloader_id == downloader_id,
+                torrentInfoModel.dr == 0,
+            ).all()
+        else:
+            # 通过 info_ids 查询
+            torrent_records = db.query(torrentInfoModel).filter(
+                torrentInfoModel.info_id.in_(info_ids),
+                torrentInfoModel.downloader_id == downloader_id,
+                torrentInfoModel.dr == 0,
+            ).all()
 
         if not torrent_records:
             return CommonResponse(status="error", msg="未找到任何种子记录", code="404")
@@ -809,25 +821,27 @@ async def reannounce_torrents(
             trigger_type="manual",
         )
 
+        # 批量记录审计日志（每个种子单独记录）
         audit_info = extract_audit_info_from_request(request)
-        _safe_write_audit_log(
-            operation_type=AuditOperationType.REANNOUNCE,
-            operator="admin",
-            operation_detail={
-                "trigger_type": "manual",
-                "downloader_id": downloader_id,
-                "torrent_count": len(torrent_records),
-                "success_count": result["success_count"],
-                "failed_count": result["failed_count"],
-            },
-            downloader_id=downloader_id,
-            operation_result=(
-                AuditOperationResult.SUCCESS if result["failed_count"] == 0
-                else AuditOperationResult.PARTIAL if result["success_count"] > 0
-                else AuditOperationResult.FAILED
-            ),
-            audit_info=audit_info,
-        )
+        for record in torrent_records:
+            _safe_write_audit_log(
+                operation_type=AuditOperationType.REANNOUNCE,
+                operator="admin",
+                torrent_info_id=record.info_id,
+                operation_detail={
+                    "trigger_type": "manual",
+                    "downloader_id": downloader_id,
+                },
+                torrent_name=record.name,
+                torrent_hash=record.hash,
+                downloader_id=downloader_id,
+                operation_result=(
+                    AuditOperationResult.SUCCESS if result["failed_count"] == 0
+                    else AuditOperationResult.PARTIAL if result["success_count"] > 0
+                    else AuditOperationResult.FAILED
+                ),
+                audit_info=audit_info,
+            )
 
         return CommonResponse(
             status="success",
