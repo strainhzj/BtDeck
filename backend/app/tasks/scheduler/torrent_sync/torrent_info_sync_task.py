@@ -53,7 +53,7 @@ class TorrentInfoSyncTask(BaseSyncTask):
             同步结果字典
         """
         from app.main import app as downloader_app
-        from app.api.endpoints.torrents import torrent_sync_db_async
+        from app.api.endpoints.torrent_sync import torrent_sync_db_async
 
         self.last_execution_time = self.execution_count
         self.execution_count += 1

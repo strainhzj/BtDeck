@@ -38,6 +38,7 @@ class AuditOperationType(str, Enum):
     UPDATE_TRACKER = "update_tracker"     # 修改tracker
     ADD_TRACKER = "add_tracker"           # 添加tracker
     REMOVE_TRACKER = "remove_tracker"     # 删除tracker
+    REANNOUNCE = "reannounce"             # Tracker汇报（主动/定时触发）
 
     # ========== 标签操作 ==========
     UPDATE_TAG = "update_tag"             # 修改标签
@@ -121,6 +122,7 @@ class AuditOperationType(str, Enum):
             cls.UPDATE_TRACKER.value: "修改Tracker",
             cls.ADD_TRACKER.value: "添加Tracker",
             cls.REMOVE_TRACKER.value: "删除Tracker",
+            cls.REANNOUNCE.value: "Tracker汇报",
             # 标签操作
             cls.UPDATE_TAG.value: "修改标签",
             cls.ADD_TAG.value: "添加标签",
@@ -183,6 +185,7 @@ class AuditOperationType(str, Enum):
             cls.UPDATE_TRACKER.value: "tracker",
             cls.ADD_TRACKER.value: "tracker",
             cls.REMOVE_TRACKER.value: "tracker",
+            cls.REANNOUNCE.value: "tracker",
             # 标签操作
             cls.UPDATE_TAG.value: "tag",
             cls.ADD_TAG.value: "tag",

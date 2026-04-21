@@ -47,16 +47,11 @@ def get_messages(
     """
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 构建查询 - TrackerMessageLog不使用dr字段
@@ -101,16 +96,11 @@ def get_message(
     """获取指定ID的消息"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         message = db.query(TrackerMessageLog).filter(
@@ -150,16 +140,11 @@ def create_message(
     """
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 检查是否已存在相同的消息（按tracker_host和msg组合）
@@ -235,16 +220,11 @@ def update_message(
     """更新消息记录的状态和字段"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         message = db.query(TrackerMessageLog).filter(
@@ -295,16 +275,11 @@ def get_statistics(
     """获取消息记录的统计信息"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 统计总数
@@ -356,16 +331,11 @@ def add_message_to_pool(
     """
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 查询消息 - 不使用dr字段过滤
@@ -473,16 +443,11 @@ def delete_message(
     """删除指定ID的消息(物理删除)"""
     # JWT验证
     token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         message = db.query(TrackerMessageLog).filter(

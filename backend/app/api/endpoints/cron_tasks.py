@@ -196,9 +196,8 @@ def verify_token(req):
     if not token:
         raise HTTPException(status_code=401, detail="Token缺失")
 
-    try:
-        utils.verify_access_token(token)
-    except Exception:
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         raise HTTPException(status_code=401, detail="Token验证失败")
 
 

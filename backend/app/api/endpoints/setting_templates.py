@@ -73,12 +73,11 @@ def get_setting_templates(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -150,12 +149,11 @@ async def create_setting_template(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -251,12 +249,11 @@ async def update_setting_template(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -351,12 +348,11 @@ def delete_setting_template(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )
@@ -443,12 +439,11 @@ async def apply_template_to_downloader(
                 data=None
             )
 
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
+        user_info = utils.verify_access_token(token)
+        if not user_info:
             return CommonResponse(
                 status="error",
-                msg=f"token验证失败: {str(e)}",
+                msg="token验证失败",
                 code="401",
                 data=None
             )

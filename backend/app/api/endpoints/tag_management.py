@@ -55,8 +55,10 @@ def verify_token_and_get_user(request: Request) -> Optional[str]:
     token = request.headers.get("x-access-token")
     if not token:
         return None
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return None
     try:
-        utils.verify_access_token(token)
         return utils.get_username_from_token(token) or "admin"
     except Exception as e:
         logger.warning(f"Token验证失败: {str(e)}")

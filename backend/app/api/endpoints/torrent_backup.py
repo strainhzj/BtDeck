@@ -49,39 +49,17 @@ router = APIRouter()
 
 # ==================== 辅助函数 ====================
 
-def get_downloader_from_store(downloader_id: int):
+def get_downloader_from_store(downloader_id: int, app):
     """
     从应用状态存储中获取下载器配置
 
     Args:
         downloader_id: 下载器ID
+        app: FastAPI应用实例
 
     Returns:
         DownloaderVO: 下载器值对象，如果未找到则返回 None
     """
-    from fastapi import FastAPI
-    import inspect
-
-    # 获取当前调用栈中的 FastAPI app 实例
-    for frame in inspect.stack():
-        if frame.frame.f_locals.get('app') and isinstance(frame.frame.f_locals.get('app'), FastAPI):
-            app = frame.frame.f_locals['app']
-            break
-    else:
-        # 如果找不到 app，尝试从请求上下文获取
-        try:
-            from fastapi import Request
-            from app.api.endpoints.torrents import router as torrents_router
-            # 使用路由器的 app 属性
-            if hasattr(torrents_router, 'app'):
-                app = torrents_router.app
-            else:
-                logger.error("无法获取 FastAPI app 实例")
-                return None
-        except Exception as e:
-            logger.error(f"获取 app 实例失败: {e}")
-            return None
-
     # 从 store 获取下载器
     if not hasattr(app.state, 'store'):
         logger.error("app.state 未初始化 store")
@@ -155,8 +133,8 @@ async def create_backup(
 
     try:
         # 获取下载器配置
-        downloader = get_downloader_from_store(backup_request.downloader_id)
-        if not downloader or downloader.fail_time > 0:
+        downloader = get_downloader_from_store(backup_request.downloader_id, app=request.app)
+        if not downloader or (hasattr(downloader, 'fail_time') and downloader.fail_time > 0):
             return CommonResponse(
                 status="error",
                 msg="下载器不可用",
@@ -164,19 +142,21 @@ async def create_backup(
             )
 
         # 准备下载器配置
+        # 防御性：统一使用getattr()进行属性访问
         downloader_config = {
-            "host": downloader.host,
-            "port": downloader.port,
-            "username": downloader.username,
-            "password": downloader.password,
-            "torrent_save_path": downloader.torrent_save_path
+            "host": getattr(downloader, 'host', ''),
+            "port": getattr(downloader, 'port', 0),
+            "username": getattr(downloader, 'username', ''),
+            "password": getattr(downloader, 'password', ''),
+            "torrent_save_path": getattr(downloader, 'torrent_save_path', '')
         }
 
-        # 准备路径映射服务
+        # 准备路径映射服务（防御性：统一使用getattr）
         path_mapping_service = None
-        if downloader.path_mapping:
+        path_mapping_rules = getattr(downloader, 'path_mapping_rules', None)
+        if path_mapping_rules:
             try:
-                path_mapping_service = PathMappingService(downloader.path_mapping)
+                path_mapping_service = PathMappingService(path_mapping_rules)
             except Exception as e:
                 logger.warning(f"加载路径映射服务失败: {e}")
 
@@ -205,7 +185,7 @@ async def create_backup(
                     torrent_name=backup_request.torrent_name,
                     downloader_type=downloader.downloader_type,  # 0或1
                     downloader_id=backup_request.downloader_id,
-                    save_path=downloader.save_path,
+                    save_path=getattr(downloader, 'torrent_save_path', None),
                     downloader_config=downloader_config,
                     task_name=backup_request.task_name,
                     uploader_id=backup_request.uploader_id
@@ -784,8 +764,8 @@ async def import_backups(
     verify_token(request)
 
     # 获取下载器配置
-    downloader = get_downloader_from_store(downloader_id)
-    if not downloader or downloader.fail_time > 0:
+    downloader = get_downloader_from_store(downloader_id, app=request.app)
+    if not downloader or (hasattr(downloader, 'fail_time') and downloader.fail_time > 0):
         return CommonResponse(
             status="error",
             msg="下载器不可用",
@@ -845,14 +825,14 @@ async def import_backups(
                         adapter = QBittorrentAdapter(downloader_config)
                         adapter.add_torrent_file(
                             torrent_file=torrent_content,
-                            save_path=downloader.save_path
+                            save_path=getattr(downloader, 'torrent_save_path', None)
                         )
                     elif normalized_type == DownloaderTypeEnum.TRANSMISSION:  # Transmission
                         from app.services.downloader_adapters.transmission_adapter import TransmissionAdapter
                         adapter = TransmissionAdapter(downloader_config)
                         adapter.add_torrent_file(
                             torrent_file=torrent_content,
-                            save_path=downloader.save_path
+                            save_path=getattr(downloader, 'torrent_save_path', None)
                         )
 
                     # 备份种子文件
