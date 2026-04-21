@@ -17,10 +17,10 @@ server:
   workers: 4
   timeout: 60
 security:
-  secret_key: 74e029d4ccb22b73
+  secret_key: a01d02501e6f838e
   token_expire_minutes: 60
   algorithm: HS256
-  login_status_secret: dd97b8fb7d593223
+  login_status_secret: cf076b6d9acc0801
 cors:
   allowed_origins:
   - '*'

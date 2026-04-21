@@ -528,11 +528,10 @@ def update_torrent_info(
         db: Session,
         info_id: str,
         downloader_id: str,
-        downloader_name: str,
         update_data: Dict[str, Any]
 ) -> Optional[TorrentInfo]:
     """更新种子信息"""
-    db_torrent = get_torrent_info(db, info_id, downloader_id, downloader_name)
+    db_torrent = get_torrent_info(db, info_id, downloader_id)
     if not db_torrent:
         return None
 
