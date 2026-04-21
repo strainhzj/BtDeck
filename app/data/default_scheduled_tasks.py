@@ -8,6 +8,7 @@
 3. Tag同步任务
 4. Tracker消息记录任务
 5. 下载器路径扫描任务
+6. Tracker汇报轮询任务
 """
 import logging
 
@@ -150,6 +151,23 @@ DEFAULT_SCHEDULED_TASKS = [
         "max_retry_count": 0,
         "retry_interval": 300,
         "create_by": "admin",
+        "update_by": "admin",
+    },
+    {
+        "task_name": "Tracker 汇报轮询任务",
+        "task_code": "tracker_reannounce",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.tracker_reannounce_task.TrackerReannounceTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "*/5 * * * *",  # 每5分钟执行
+        "description": "定期检查Tracker状态，对满足间隔条件的Tracker执行主动汇报。支持域名模式匹配和批量处理。",
+        "timeout_seconds": 300,
+        "max_retry_count": 2,
+        "retry_interval": 300,
+        "create_by": "migration_system",
         "update_by": "admin",
     },
 ]

@@ -64,18 +64,16 @@ def get_pool_keywords(
         db: 数据库会话
     """
     # JWT验证
-    token = request.headers.get("x-access-token") if request else None
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
     try:
-        if token:
-            utils.verify_access_token(token)
+        user_info = utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     except Exception as e:
         logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     # 验证池子类型
     valid_pool_types = ['candidate', 'ignored', 'success', 'failed']
@@ -151,18 +149,16 @@ def move_keyword_to_pool(
         db: 数据库会话
     """
     # JWT验证
-    token = request.headers.get("x-access-token") if request else None
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
     try:
-        if token:
-            utils.verify_access_token(token)
+        user_info = utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     except Exception as e:
         logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     keyword_id = request_data.get("keyword_id")
     target_pool = request_data.get("target_pool")
@@ -242,18 +238,16 @@ def batch_move_keywords(
         db: 数据库会话
     """
     # JWT验证
-    token = request.headers.get("x-access-token") if request else None
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
     try:
-        if token:
-            utils.verify_access_token(token)
+        user_info = utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     except Exception as e:
         logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     keyword_ids = request_data.get("keyword_ids", [])
     target_pool = request_data.get("target_pool")
@@ -338,18 +332,16 @@ def get_pool_statistics(
         db: 数据库会话
     """
     # JWT验证
-    token = request.headers.get("x-access-token") if request else None
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
     try:
-        if token:
-            utils.verify_access_token(token)
+        user_info = utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     except Exception as e:
         logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 查询各池子数量
@@ -426,18 +418,16 @@ def search_all_pools(
         db: 数据库会话
     """
     # JWT验证
-    token = request.headers.get("x-access-token") if request else None
+    token = request.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
     try:
-        if token:
-            utils.verify_access_token(token)
+        user_info = utils.verify_access_token(token)
+        if not user_info:
+            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     except Exception as e:
         logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         from datetime import datetime, timedelta
