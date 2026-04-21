@@ -70,6 +70,38 @@ def _coerce_activity_ts(value: Any) -> Optional[float]:
             return None
     return None
 
+
+def _safe_parse_timestamp(value: Any) -> Optional[int]:
+    """
+    安全地解析时间戳值，返回有效的 int 时间戳或 None。
+
+    处理步骤：
+    1. 处理 None 值
+    2. 尝试将字符串转换为 int
+    3. 确保解析的 int 在有效范围内（>0 且 <=2147483647，防止 Year 2038 问题）
+
+    Args:
+        value: 原始时间戳值（可能是 None、int、float 或 str）
+
+    Returns:
+        Optional[int]: 有效的时间戳 int，或 None（如果验证失败）
+    """
+    # 1. 处理 None 值
+    if value is None:
+        return None
+
+    # 2. 尝试转换为 int（处理字符串、float 等类型）
+    try:
+        timestamp_int = int(value)
+    except (TypeError, ValueError):
+        return None
+
+    # 3. 验证时间戳范围（>0 且 <=2147483647）
+    if timestamp_int <= 0 or timestamp_int > 2147483647:
+        return None
+
+    return timestamp_int
+
 def _resolve_legacy_backup_file_path(info_id: str, torrent_name: str) -> Optional[str]:
     backup_dir = os.environ.get(
         'BACKUP_TORRENT_DIR',
@@ -1716,14 +1748,14 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             'size': _qb_get_attr(torrent_info, 'total_size', None) or _qb_get_attr(torrent_info, 'size', 0),
             'progress': progress_value,
             'torrent_file': "/config/qbittorrent/BT_backup/" + torrent_hash + ".torrent",
-            # 防御性：添加时间戳范围检查，防止负数和溢出
+            # 使用安全的时间戳解析函数，处理 None、字符串和范围验证
             'added_date': (
-                datetime.fromtimestamp(_qb_get_attr(torrent_info, 'added_on', 0))
-                if _qb_get_attr(torrent_info, 'added_on', 0) > 0 and _qb_get_attr(torrent_info, 'added_on', 0) <= 2147483647 else None
+                datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, 'added_on', 0)))
+                if _safe_parse_timestamp(_qb_get_attr(torrent_info, 'added_on', 0)) is not None else None
             ),
             'completed_date': (
-                datetime.fromtimestamp(_qb_get_attr(torrent_info, 'completion_on', 0))
-                if _qb_get_attr(torrent_info, 'completion_on', 0) > 0 and _qb_get_attr(torrent_info, 'completion_on', 0) <= 2147483647 else None
+                datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, 'completion_on', 0)))
+                if _safe_parse_timestamp(_qb_get_attr(torrent_info, 'completion_on', 0)) is not None else None
             ),
             'ratio': _qb_get_attr(torrent_info, 'ratio', 0),
             'ratio_limit': _qb_get_attr(torrent_info, 'ratio_limit', 0),
@@ -2426,9 +2458,9 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
             "size": _qb_get_attr(torrent_info, "total_size", None) or _qb_get_attr(torrent_info, "size", 0),
             "progress": progress_value, "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            # 防御性：添加时间戳范围检查，防止负数和溢出
-            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 and _qb_get_attr(torrent_info, "added_on", 0) <= 2147483647 else None,
-            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 and _qb_get_attr(torrent_info, "completion_on", 0) <= 2147483647 else None,
+            # 使用安全的时间戳解析函数，处理 None、字符串和范围验证
+            "added_date": datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0))) if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None else None,
+            "completed_date": datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0))) if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None else None,
             "ratio": _qb_get_attr(torrent_info, "ratio", 0), "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""), "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False), "enabled": 1,
@@ -2698,9 +2730,9 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
             "size": _qb_get_attr(torrent_info, "total_size", None) or _qb_get_attr(torrent_info, "size", 0),
             "progress": progress_value, "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            # 防御性：添加时间戳范围检查，防止负数和溢出
-            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 and _qb_get_attr(torrent_info, "added_on", 0) <= 2147483647 else None,
-            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 and _qb_get_attr(torrent_info, "completion_on", 0) <= 2147483647 else None,
+            # 使用安全的时间戳解析函数，处理 None、字符串和范围验证
+            "added_date": datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0))) if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None else None,
+            "completed_date": datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0))) if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None else None,
             "ratio": _qb_get_attr(torrent_info, "ratio", 0), "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""), "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False), "enabled": 1,
@@ -2966,9 +2998,9 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
             "size": _qb_get_attr(torrent_info, "total_size", None) or _qb_get_attr(torrent_info, "size", 0),
             "progress": progress_value, "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            # 防御性：添加时间戳范围检查，防止负数和溢出
-            "added_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "added_on", 0)) if _qb_get_attr(torrent_info, "added_on", 0) > 0 and _qb_get_attr(torrent_info, "added_on", 0) <= 2147483647 else None,
-            "completed_date": datetime.fromtimestamp(_qb_get_attr(torrent_info, "completion_on", 0)) if _qb_get_attr(torrent_info, "completion_on", 0) > 0 and _qb_get_attr(torrent_info, "completion_on", 0) <= 2147483647 else None,
+            # 使用安全的时间戳解析函数，处理 None、字符串和范围验证
+            "added_date": datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0))) if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None else None,
+            "completed_date": datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0))) if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None else None,
             "ratio": _qb_get_attr(torrent_info, "ratio", 0), "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""), "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False), "enabled": 1,
