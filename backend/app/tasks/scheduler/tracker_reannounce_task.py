@@ -59,8 +59,8 @@ class TrackerReannounceTask(BaseSyncTask):
                     return {"status": "no_action", "message": "没有启用的站点配置"}
 
                 configs = ops.filter_enabled_configs(config_result.data)
-                logger.info(f"[DEBUG] 启用的站点配置数={len(configs)}, "
-                             f"配置列表={[(c.domain_pattern, c.interval_minutes) for c in configs]}")
+                # logger.info(f"[DEBUG] 启用的站点配置数={len(configs)}, "
+                #              f"配置列表={[(c.domain_pattern, c.interval_minutes) for c in configs]}")
                 total_success = 0
                 total_failed = 0
 
@@ -115,7 +115,7 @@ class TrackerReannounceTask(BaseSyncTask):
             TrackerInfo.tracker_url.isnot(None),
             TrackerInfo.dr == 0,
         ).all()
-        logger.info(f"[DEBUG] 下载器={dl_vo.nickname}, tracker数量={len(trackers)}")
+        # logger.info(f"[DEBUG] 下载器={dl_vo.nickname}, tracker数量={len(trackers)}")
 
         if not trackers:
             return {"success_count": 0, "failed_count": 0}
@@ -133,9 +133,9 @@ class TrackerReannounceTask(BaseSyncTask):
         sample_logged = 0
         for tracker in trackers:
             domain = _extract_domain(tracker.tracker_host or tracker.tracker_url)
-            if sample_logged < 3:
-                logger.info(f"[DEBUG] tracker_url={tracker.tracker_url!r}, tracker_host={tracker.tracker_host!r}, 提取域名={domain!r}")
-                sample_logged += 1
+            # if sample_logged < 3:
+            #     logger.info(f"[DEBUG] tracker_url={tracker.tracker_url!r}, tracker_host={tracker.tracker_host!r}, 提取域名={domain!r}")
+            #     sample_logged += 1
             if not domain:
                 continue
             for config in configs:
@@ -145,8 +145,8 @@ class TrackerReannounceTask(BaseSyncTask):
                         matched_config_ids.add(config.id_)
                     break
 
-        logger.info(f"[DEBUG] 匹配到需要汇报的种子数={len(torrent_ids_to_announce)}, "
-                     f"匹配到的配置数={len(matched_config_ids)}")
+        # logger.info(f"[DEBUG] 匹配到需要汇报的种子数={len(torrent_ids_to_announce)}, "
+        #              f"匹配到的配置数={len(matched_config_ids)}")
 
         if not torrent_ids_to_announce:
             return {"success_count": 0, "failed_count": 0}
@@ -157,7 +157,7 @@ class TrackerReannounceTask(BaseSyncTask):
             TorrentInfo.downloader_id == dl_vo.downloader_id,
             TorrentInfo.dr == 0,
         ).all()
-        logger.info(f"[DEBUG] 属于当前下载器的种子记录数={len(torrent_records)}")
+        # logger.info(f"[DEBUG] 属于当前下载器的种子记录数={len(torrent_records)}")
 
         if not torrent_records:
             return {"success_count": 0, "failed_count": 0}
