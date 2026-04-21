@@ -729,65 +729,10 @@ async def _async_initialization_tasks(app: FastAPI):
         # 初始加载所有启用的下载器（已包含完整同步逻辑）
         await _load_initial_downloaders(app)
 
-        # 服务启动时执行一次下载器缓存同步任务
-        await _perform_initial_downloader_cache_sync(app)
-
         print("=== 异步初始化任务完成 ===")
 
     except Exception as e:
         print(f"异步初始化任务执行出错: {e}")
-        # 不重新抛出异常，避免影响服务器启动
-
-
-async def _perform_initial_downloader_cache_sync(app: FastAPI):
-    """
-    服务启动时执行一次下载器缓存同步任务
-
-    Args:
-        app: FastAPI 应用实例
-    """
-    print("=== 开始初始下载器缓存同步 ===")
-    try:
-        from app.tasks.logger import TaskLogger
-
-        async with TaskLogger("initial_downloader_cache_sync", task_type=4) as logger:
-            logger.add_log("Starting initial downloader cache sync")
-
-            # 获取当前缓存中的下载器列表
-            cached_downloaders = await app.state.store.get_snapshot()
-
-            if not cached_downloaders:
-                logger.add_log("No cached downloaders found during initial sync")
-                return
-
-            logger.add_log(f"Found {len(cached_downloaders)} cached downloaders during initial sync")
-
-            # 统计有效下载器数量
-            valid_downloaders = [
-                d for d in cached_downloaders
-                if hasattr(d, 'fail_time') and d.fail_time == 0
-            ]
-
-            logger.add_log(f"Found {len(valid_downloaders)} valid downloaders (fail_time=0) during initial sync")
-
-            # 执行连通性验证统计
-            verified_count = 0
-            failed_count = 0
-
-            for downloader in cached_downloaders:
-                if hasattr(downloader, 'fail_time'):
-                    if downloader.fail_time == 0:
-                        verified_count += 1
-                    else:
-                        failed_count += 1
-
-            logger.add_log(f"Initial downloader status: {verified_count} verified, {failed_count} failed")
-            logger.add_log("Initial downloader cache sync completed")
-
-        print("=== 初始下载器缓存同步完成 ===")
-
-    except Exception as e:
-        print(f"Error during initial downloader cache sync: {e}")
         # 不重新抛出异常，避免影响服务器启动
 
 

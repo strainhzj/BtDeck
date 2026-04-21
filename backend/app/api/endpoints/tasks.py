@@ -18,11 +18,15 @@ async def get_task_logs_endpoint(
     offset: int = Query(0, ge=0, description="跳过记录数")
 ):
     """获取任务执行日志"""
-    try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
+    # 验证token
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
+    try:
         # 获取任务日志
         result = await get_task_logs(
             task_name=task_name,
@@ -50,11 +54,15 @@ async def get_task_logs_endpoint(
 @router.get("/statistics", response_model=CommonResponse)
 async def get_task_statistics_endpoint(req: Request):
     """获取任务统计信息"""
-    try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
+    # 验证token
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
+    try:
         # 获取统计信息
         stats = await get_task_statistics()
 

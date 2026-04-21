@@ -17,14 +17,15 @@ ENV PYTHONPATH=/app \
     LOG_DIR=/app/logs \
     CONFIG_DIR=/app/config \
     TZ=Asia/Shanghai \
-    # 使用清华镜像源加速pip下载
-    PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn \
+    # 使用官方PyPI源（清华镜像源可能不稳定）
+    # PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
+    # PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn \
     # 增加pip超时时间
     PIP_DEFAULT_TIMEOUT=300
 
-# 安装系统依赖
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 安装系统依赖（使用阿里云镜像源加速）
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
     # 基础工具
     curl \
     # 数据库迁移工具

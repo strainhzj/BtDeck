@@ -380,3 +380,63 @@ class TrackerMessageLog(Base):
             "create_by": self.create_by,
             "update_by": self.update_by,
         }
+
+
+class TrackerReannounceConfig(Base):
+    """Tracker汇报站点配置表
+
+    按tracker域名分组配置汇报间隔，支持按站点独立控制开关。
+    """
+    __tablename__ = "tracker_reannounce_config"
+
+    id_ = Column(String(36), primary_key=True, index=True, comment="主键")
+    domain_pattern = Column(String(256), nullable=False, comment="域名匹配模式（支持%通配符）")
+    domain_display_name = Column(String(100), nullable=False, comment="域名显示名称")
+    interval_minutes = Column(Integer, nullable=False, default=30, comment="汇报间隔（分钟）")
+    enabled = Column(Boolean, nullable=False, default=True, comment="是否启用")
+    last_announce_time = Column(DATETIME, nullable=True, comment="最后一次汇报时间")
+    create_time = Column(DATETIME, nullable=False, comment="创建时间")
+    update_time = Column(DATETIME, nullable=False, comment="更新时间")
+    create_by = Column(String(50), nullable=False, default="admin", comment="创建人")
+    update_by = Column(String(50), nullable=False, default="admin", comment="更新人")
+    dr = Column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
+
+    __table_args__ = (
+        Index('idx_reannounce_domain', 'domain_pattern'),
+        Index('idx_reannounce_enabled', 'enabled'),
+        {'comment': 'Tracker汇报站点配置表'}
+    )
+
+    def __init__(self, domain_pattern: str, domain_display_name: str,
+                 interval_minutes: int = 30, enabled: bool = True,
+                 last_announce_time: Optional[datetime] = None,
+                 create_time: Optional[datetime] = None, update_time: Optional[datetime] = None,
+                 create_by: str = "admin", update_by: str = "admin", dr: int = 0, **kw: Any):
+        super().__init__(**kw)
+        self.id_ = str(uuid.uuid4())
+        self.domain_pattern = domain_pattern
+        self.domain_display_name = domain_display_name
+        self.interval_minutes = interval_minutes
+        self.enabled = enabled
+        self.last_announce_time = last_announce_time
+        self.create_time = create_time or datetime.now()
+        self.update_time = update_time or datetime.now()
+        self.create_by = create_by
+        self.update_by = update_by
+        self.dr = dr
+
+    def to_dict(self):
+        return {
+            "config_id": self.id_,  # 兼容前端字段名
+            "id_": self.id_,
+            "domain_pattern": self.domain_pattern,
+            "domain_display_name": self.domain_display_name,
+            "interval_minutes": self.interval_minutes,
+            "enabled": self.enabled,
+            "last_announce_time": self.last_announce_time,
+            "create_time": self.create_time,
+            "update_time": self.update_time,
+            "create_by": self.create_by,
+            "update_by": self.update_by,
+            "dr": self.dr,
+        }

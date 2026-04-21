@@ -32,17 +32,12 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 @router.get("/detail/{downloader_id}", summary="获取下载器明细信息", response_model=CommonResponse[List[DownloaderVO]])
 def get(downloader_id: Annotated[str, Path(description="下载器id")], req: Request = None,
         db: Session = Depends(get_db)):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-        return response
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     try:
         downloaders = db.execute(
             text(
@@ -87,17 +82,12 @@ async def add(
         req: Request = None,
         db: Session = Depends(get_db)
 ):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-        return response
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     # Pydantic 验证器已将字符串 "0"/"1" 转换为布尔值
     downloader = models.BtDownloaders(
         downloader_id=str(uuid.uuid4()),
@@ -174,17 +164,12 @@ async def update(
         req: Request = None,
         db: Session = Depends(get_db)
 ):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-        return response
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
     try:
         # 读取原始请求数据以检测 path_mapping 是否被明确传递
@@ -360,17 +345,12 @@ async def update(
 @router.delete("/delete/{downloader_id}", summary="下载器删除接口", response_model=CommonResponse)
 def delete(downloader_id: Annotated[str, Path(description="下载器id")], req: Request = None,
            db: Session = Depends(get_db)):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-        return response
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
     try:
         db.execute(text("update bt_downloaders set dr=:dr where downloader_id=:downloader_id"), {"dr": 1, "downloader_id": downloader_id})
         db.commit()
@@ -517,12 +497,11 @@ async def get_all_status(
     - 单次请求获取所有状态
     - 响应时间 < 50ms
     """
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(
             status="error",
-            msg="token验证失败，失败原因：" + str(e),
+            msg="token验证失败",
             code="401",
             data=None
         )
@@ -596,12 +575,11 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
     返回下载器的连接状态、速度信息、任务统计等实时数据。
     优先从缓存获取，缓存未命中时降级到实时连接查询。
     """
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(
             status="error",
-            msg="token验证失败，失败原因：" + str(e),
+            msg="token验证失败",
             code="401",
             data=None
         )
@@ -742,12 +720,11 @@ async def test_connection(downloader_id: Annotated[str, Path(description="下载
                         db: Session = Depends(get_db)):
     """测试下载器连接并返回连接结果和延迟
     """
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(
             status="error",
-            msg="token验证失败，失败原因：" + str(e),
+            msg="token验证失败",
             code="401",
             data=None
         )
@@ -1209,13 +1186,19 @@ def get_downloader_simple_list(
         - nickname: 下载器名称
     """
     # 1. JWT 校验
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
+    token = req.headers.get("x-access-token")
+    if not token:
         return CommonResponse(
             status="error",
-            msg="token验证失败，失败原因：" + str(e),
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
             code="401",
             data=None
         )
@@ -1288,13 +1271,19 @@ async def getlist_from_cache(
     - 按在线优先排序
     """
     # 1. JWT 校验
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
+    token = req.headers.get("x-access-token")
+    if not token:
         return CommonResponse(
             status="error",
-            msg="token验证失败，失败原因：" + str(e),
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+    user_info = utils.verify_access_token(token)
+    if not user_info:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
             code="401",
             data=None
         )
@@ -1448,11 +1437,16 @@ def get_path_mappings(
     Returns:
         CommonResponse: 包含路径映射配置的响应
     """
-    try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(
             status="error",
             msg="token验证失败",
@@ -1528,11 +1522,16 @@ def add_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
-    try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(
             status="error",
             msg="token验证失败",
@@ -1611,11 +1610,16 @@ def remove_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
-    try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(
             status="error",
             msg="token验证失败",
@@ -1702,11 +1706,16 @@ def test_path_mapping(
     Returns:
         CommonResponse: 测试结果
     """
-    try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
+    token = req.headers.get("x-access-token")
+    if not token:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+    user_info = utils.verify_access_token(token)
+    if not user_info:
         return CommonResponse(
             status="error",
             msg="token验证失败",
