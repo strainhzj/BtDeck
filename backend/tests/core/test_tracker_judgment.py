@@ -16,9 +16,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 # 在模块级别 mock 数据库连接，防止 TrackerJudgmentEngine 全局实例化时连接真实数据库
-# 注意：tracker_judgment 模块末尾有 `judgment_engine = TrackerJudgmentEngine()`
-# 必须在 import 该模块之前 mock 掉 SessionLocal
-with patch("app.core.tracker_judgment.SessionLocal"):
+# 注意：tracker_judgment 模块从 app.database 导入 SessionLocal（第28行）
+# 模块末尾有 `judgment_engine = TrackerJudgmentEngine()`（第435行）
+# 必须在 import 该模块之前 mock 掉 app.database.SessionLocal（原始导入源）
+with patch("app.database.SessionLocal"):
     from app.core.tracker_judgment import TrackerJudgmentEngine, TrackerStatus
 
 
@@ -300,7 +301,7 @@ class TestGetCacheStats:
 class TestLoadKeywords:
     """数据库加载关键词测试"""
 
-    @patch("app.core.tracker_judgment.SessionLocal")
+    @patch("app.database.SessionLocal")
     def test_成功加载关键词(self, mock_session_local):
         """从数据库成功加载关键词后缓存正确填充"""
         # 构造 mock 数据库返回
@@ -332,7 +333,7 @@ class TestLoadKeywords:
         assert engine.last_cache_update is not None
         mock_db.close.assert_called_once()
 
-    @patch("app.core.tracker_judgment.SessionLocal")
+    @patch("app.database.SessionLocal")
     def test_数据库异常返回False(self, mock_session_local):
         """数据库查询异常时返回 False"""
         mock_db = MagicMock()
@@ -343,7 +344,7 @@ class TestLoadKeywords:
         result = engine.load_keywords()
         assert result is False
 
-    @patch("app.core.tracker_judgment.SessionLocal")
+    @patch("app.database.SessionLocal")
     def test_空数据库结果(self, mock_session_local):
         """数据库无记录时缓存为空但加载成功"""
         mock_db = MagicMock()

@@ -7,7 +7,7 @@ import tempfile
 import time
 import uuid
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Union
 
 import bencodepy
 import urllib3
@@ -22,6 +22,7 @@ from app.api.responseVO import CommonResponse
 from app.database import get_db, AsyncSessionLocal
 from app.auth import utils
 from app.auth.models import User
+from app.auth.dependencies import verify_token_dependency
 from app.downloader.models import BtDownloaders
 from app.downloader.request import DownloaderCheckVO
 from app.downloader.responseVO import DownloaderVO
@@ -29,7 +30,7 @@ from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
 from app.torrents.models import TrackerInfo as trackerInfoModel, TrackerInfo
 from app.torrents.responseVO import TorrentInfoVO
 from qbittorrentapi import Client as qbClient
-from qbittorrentapi import exceptions as qbExceptions
+from qbittorrentapi.exceptions import APIError
 from transmission_rpc import Client as trClient, TransmissionError
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.background_task_manager import task_manager, TaskStatus
@@ -72,47 +73,29 @@ class TorrentOperationRequest(BaseModel):
 
 
 @router.post("/list", response_model=CommonResponse)
-def torrent_list(req: Request, name: str = Query(
-    default="default",
-    alias="name",
-    description="种子名称"
-), db: Session = Depends(get_db)):
+def torrent_list(
+    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    name: str = Query(
+        default="default",
+        alias="name",
+        description="种子名称"
+    ),
+    db: Session = Depends(get_db)
+):
     """
     同步下载器中的种子数据到数据库
     """
-    try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
+    # Token验证失败时返回错误
+    if auth_error:
+        return auth_error
 
     try:
-        # 查询启用的下载器
-        query = db.query(
-            BtDownloaders.downloader_id,
-            BtDownloaders.nickname,
-            BtDownloaders.host,
-            BtDownloaders.username,
-            BtDownloaders.password,
-            BtDownloaders.is_search,
-            BtDownloaders.status,
-            BtDownloaders.enabled,
-            BtDownloaders.downloader_type,
-            BtDownloaders.port,
-            BtDownloaders.is_ssl
-        ).filter(
+        # 查询启用的下载器（返回完整模型实例，以支持@property属性访问）
+        downloaders = db.query(BtDownloaders).filter(
             BtDownloaders.dr == 0,
             BtDownloaders.enabled == True,
             BtDownloaders.status == '1'
-        )
-
-        downloaders = query.all()
+        ).all()
 
         if not downloaders:
             return CommonResponse(
@@ -183,7 +166,8 @@ def torrent_list(req: Request, name: str = Query(
 
 @router.post("/add", response_model=CommonResponse)
 async def create_torrent(
-        request: Request,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
         downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
         save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
         tags: Optional[str | None] = Form("", description="标签"),
@@ -198,6 +182,9 @@ async def create_torrent(
         torrent_file: Optional[UploadFile] = File(description="种子文件"),
         db: Session = Depends(get_db)
 ):
+    # Token验证失败时返回错误
+    if auth_error:
+        return auth_error
     # """创建新的种子信息"""
     result = CommonResponse(
         status="success",
@@ -383,7 +370,7 @@ async def create_torrent(
                 result.code = "500"
                 result.msg = str("种子添加到qBittorrent后无法获取信息")
                 return result
-        except qbExceptions as e:
+        except APIError as e:
             result.code = "500"
             result.msg = str(e)
             return result
@@ -459,7 +446,8 @@ async def create_torrent(
 
 @router.post("/add-batch", response_model=CommonResponse)
 async def create_torrents_batch(
-        request: Request,
+        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        request: Request = None,
         torrent_files: List[UploadFile] = File(..., description="种子文件列表（最多10个）"),
         downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
         save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
@@ -481,6 +469,9 @@ async def create_torrents_batch(
     - 批量处理，提升性能（10个文件从2秒降低到300ms）
     - 返回详细的批量处理结果
     """
+    # Token验证失败时返回错误
+    if auth_error:
+        return auth_error
     # 验证文件数量限制
     if len(torrent_files) > 10:
         return CommonResponse(
