@@ -95,8 +95,18 @@ git add . && git commit -m "feat: xxx"
 | `feature_list.json` | 功能状态追踪 | 每次会话 |
 | `progress.md` | 会话日志 | 每次会话 |
 | `PLANS/v1.0.4.md` | 功能规范 | 功能开发时 |
-| `BtDeck/CLAUDE.md` | 后端技术约束 | 稳定 |
-| `BtDeck_fronted/CLAUDE.md` | 前端技术约束 | 稳定 |
+| `CLAUDE.md` | 后端技术约束 | 稳定 |
+| `docs/constraints/` | 约束详细规范（见下表） | 稳定 |
+
+### 约束文档清单（`docs/constraints/`）
+
+| 文件 | 约束内容 | 适用场景 |
+|------|----------|----------|
+| `api-response-format.md` | API 统一响应格式、分页字段名强制规范 | 编写/修改任何 API 接口时 |
+| `code-reuse.md` | 代码复用优先原则、扩展判断标准 | 创建新函数/组件前 |
+| `database-migration.md` | Alembic 迁移管理、Schema 变更流程 | 修改数据库模型时 |
+| `database-consistency.md` | 跨环境数据库一致性保障、版本检查 | 部署/切换环境时 |
+| `downloader-connection.md` | 下载器客户端缓存使用规范、禁止新建连接 | 涉及下载器操作的接口 |
 
 ---
 
