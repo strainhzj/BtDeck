@@ -27,8 +27,8 @@ _DOWNLOADER_TIMEOUT = 3.0
 
 
 def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
-    """从 qBittorrent 获取所有种子的实时速度（同步，在线程池中执行）"""
-    torrents = client.torrents_info()
+    """从 qBittorrent 获取活跃种子的实时速度（仅获取活跃种子，减少数据量）"""
+    torrents = client.torrents_info(status_filter="active")
     result = []
     for t in torrents:
         dl_speed = t.get("dlspeed", 0)
