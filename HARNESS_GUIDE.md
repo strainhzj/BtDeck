@@ -59,6 +59,8 @@
 | `progress.md` | 会话日志 | 每次会话 |
 | `init.sh` | 环境验证 | 稳定 |
 | `session-handoff.md` | 交接模板 | 每次会话 |
+| `CLAUDE.md` | 技术约束 | 稳定 |
+| `docs/constraints/` | 约束详细规范 | 稳定 |
 
 ### 支持文件（推荐）
 
