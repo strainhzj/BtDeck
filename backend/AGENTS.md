@@ -2,7 +2,7 @@
 
 > **项目**: BTDeck - BitTorrent 全栈管理器
 > **技术栈**: Vue 2 + FastAPI + Python
-> **更新**: 2025-01-22
+> **更新**: 2026-04-22
 
 ---
 
@@ -146,6 +146,33 @@ git add . && git commit -m "feat: xxx"
 
 ## 🚨 风险与已知问题
 
+### 已有基础设施（v1.0.4 开发前必须了解）
+
+> **重要**: 以下模块已存在。区分"可复用"和"不可复用"，避免重复开发或错误假设。
+
+#### 可复用（必须使用）
+
+1. **下载器客户端缓存** (`app/downloader/initialization.py`)
+   - `app.state.store` 提供 `get_snapshot()` 获取缓存的下载器连接
+   - 所有下载器操作**必须**通过缓存连接，禁止新建客户端
+   - v1.0.4 的速度接口必须通过此缓存调用下载器 API
+
+2. **现有种子列表 API** (`app/api/endpoints/torrent_crud.py`)
+   - `POST /torrents/list` 已返回 `download_speed`、`upload_speed` 字段
+   - 这是**静态数据**（用户手动刷新时从下载器同步到数据库再返回）
+   - v1.0.4 需新增**轻量级动态接口** `GET /torrents/active-torrents`，直接从下载器获取实时速度
+
+3. **应用生命周期** (`app/startup/lifecycle.py`)
+   - 已有 `run_dashboard_stats_loop` 后台任务
+   - v1.0.4 需考虑与现有定时任务的协调
+
+#### 不可复用（与 v1.0.4 无关）
+
+4. **种子状态统计缓存** (`app/downloader/torrent_stats_cache.py`)
+   - 功能：缓存种子的 **status 字段**（downloading/seeding/paused），用于统计计数
+   - **不含速度字段**：不存储 `downloadSpeed` / `uploadSpeed`
+   - **与 v1.0.4 无直接关系**：v1.0.4 需要的是种子级别的实时速度数据，必须从下载器 API 实时获取
+
 ### 当前风险
 
 1. **1秒轮询性能**: 可能导致下载器过载
@@ -211,5 +238,5 @@ cd BtDeck_fronted && npm run serve
 
 ---
 
-**最后更新**: 2025-01-22
+**最后更新**: 2026-04-22
 **维护者**: BTDeck Team

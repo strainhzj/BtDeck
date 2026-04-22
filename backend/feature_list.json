@@ -1,6 +1,6 @@
 {
   "version": "1.0.0",
-  "last_updated": "2025-01-22",
+  "last_updated": "2026-04-22",
   "features": [
     {
       "id": "v1.0.4",
@@ -81,7 +81,18 @@
         "限制并发数量和超时",
         "严格的 beforeDestroy 清理",
         "后端应用相同查询条件"
-      ]
+      ],
+      "existing_infrastructure": {
+        "reusable": {
+          "downloader_cache": "app/downloader/initialization.py - app.state.store 缓存连接，v1.0.4 速度接口必须通过此缓存调用下载器",
+          "existing_torrent_list_api": "POST /torrents/list 已返回 download_speed/upload_speed（静态数据，用户手动刷新时同步）",
+          "lifecycle": "app/startup/lifecycle.py - run_dashboard_stats_loop 后台任务，需协调"
+        },
+        "not_reusable": {
+          "stats_cache": "app/downloader/torrent_stats_cache.py - 仅缓存种子 status 字段用于统计计数，不含速度字段，与 v1.0.4 无直接关系"
+        },
+        "v1.0.4_requirement": "v1.0.4 需要从下载器 API 实时获取种子级 downloadSpeed/uploadSpeed，筛选有速度的种子，这是现有基础设施不提供的功能"
+      }
     },
     {
       "id": "v1.0.5",

@@ -116,11 +116,9 @@ if [ "$TOOLS_AVAILABLE" = false ]; then
     echo "  pip install mypy black flake8"
 fi
 
-# 8. 运行代码检查（可选）
+# 8. 运行代码检查（可选，传入 --check 参数时执行）
 echo -e "${YELLOW}8. 运行代码检查（可选）...${NC}"
-read -p "是否运行代码检查? (y/N) " -n 1 -r
-echo
-if [[ $REPLY =~ ^[Yy]$ ]]; then
+if [[ "${1:-}" == "--check" ]]; then
     echo "运行 mypy..."
     mypy app/ || echo -e "${YELLOW}⚠ mypy 检查发现问题${NC}"
 
@@ -129,6 +127,8 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 
     echo "运行 flake8..."
     flake8 app/ || echo -e "${YELLOW}⚠ flake8 检查发现问题${NC}"
+else
+    echo "跳过代码检查（传入 --check 参数执行检查）"
 fi
 
 # 9. 检查测试
