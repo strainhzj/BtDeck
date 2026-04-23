@@ -6,12 +6,13 @@
 """
 import asyncio
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Request
 from qbittorrentapi import Client as qbClient
-from transmission_rpc import Client as trClient
+from transmission_rpc import Client as trClient, TransmissionError
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import verify_token_dependency
@@ -22,8 +23,8 @@ router = APIRouter()
 # 专用线程池，避免阻塞默认 executor
 _speed_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="speed_poll")
 
-# 单个下载器调用超时（秒）
-_DOWNLOADER_TIMEOUT = 3.0
+# 单个下载器调用超时（秒）- 可通过环境变量配置
+_DOWNLOADER_TIMEOUT = float(os.getenv("SPEED_API_TIMEOUT", "3.0"))
 
 
 def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
@@ -117,8 +118,13 @@ async def get_active_torrents(
             except asyncio.TimeoutError:
                 logger.warning(f"获取下载器 {nickname} 速度超时({_DOWNLOADER_TIMEOUT}s)，跳过")
                 return []
+            except (qbClient.APIError, TransmissionError) as e:
+                # 分类捕获：客户端API异常（网络、认证、协议错误）
+                logger.warning(f"下载器 {nickname} API错误: {e}", exc_info=True)
+                return []
             except Exception as e:
-                logger.warning(f"获取下载器 {nickname} 速度失败: {e}")
+                # 未知异常：记录完整堆栈便于调试
+                logger.error(f"下载器 {nickname} 未知错误: {e}", exc_info=True)
                 return []
 
         # 并发调用所有下载器

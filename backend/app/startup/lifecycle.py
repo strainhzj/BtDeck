@@ -207,6 +207,14 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error stopping cron scheduler: {e}")
 
+        # 清理速度监控线程池（防止资源泄漏）
+        try:
+            from app.api.endpoints.torrent_speed import _speed_executor
+            _speed_executor.shutdown(wait=True)
+            print("✅ 速度监控线程池已关闭")
+        except Exception as e:
+            print(f"⚠️  关闭线程池时出错: {e}")
+
     # # 初始化插件
     # plugin_init_task = asyncio.create_task(init_plugins_async())
     # try:
