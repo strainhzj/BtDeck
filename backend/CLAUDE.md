@@ -39,6 +39,23 @@
 
 → [详细规范](./docs/constraints/code-reuse.md)
 
+## 功能模块
+
+### 通知中心
+
+- **模型**: `app/models/notification.py` — `Notification` (表名 `notification`)
+- **服务**: `app/services/notification_service.py` — `NotificationService`
+- **路由**: `app/api/endpoints/notifications.py` — 前缀 `/notifications`
+- **API端点**:
+  - `GET /notifications` — 分页列表（支持 `type`、`is_read` 过滤）
+  - `GET /notifications/unread-count` — 未读数量
+  - `PUT /notifications/{id}/read` — 标记已读
+  - `PUT /notifications/read-all` — 全部已读
+  - `DELETE /notifications/{id}` — 删除通知
+- **通知类型枚举**: `version_update` / `system`
+- **版本检查**: 启动时通过 `NotificationService.check_version_update()` 查询 GitHub Release API
+- **约束**: 通知是单向信箱模式，仅系统写入，用户只读。新通知通过直接 INSERT 到 `notification` 表并设置 `is_read=False`。
+
 ## 项目结构
 
 ```
