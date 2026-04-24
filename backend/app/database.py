@@ -106,6 +106,7 @@ def init_db():
     from app.tasks.cron_models import CronTask  # 必须导入，TaskLogs有外键引用cron_task表
     from app.models.setting_templates import SettingTemplate
     from app.models.torrent_tags import TorrentTag, TorrentTagRelation
+    from app.models.notification import Notification  # 通知中心
 
     # 创建表（如果不存在）
     Base.metadata.create_all(bind=engine)
