@@ -60,9 +60,24 @@ async def get_unread_count(
         return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
-@router.put("/{notification_id}/read", response_model=CommonResponse, summary="标记通知为已读")
+@router.put("/read-all", response_model=CommonResponse, summary="全部标记为已读")
+async def mark_all_as_read(
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db)
+):
+    """标记所有通知为已读"""
+    try:
+        service = NotificationService(db)
+        count = await service.mark_all_as_read()
+        return CommonResponse(status="success", msg=f"已标记 {count} 条通知为已读", code="200", data={"count": count})
+    except Exception as e:
+        logger.error(f"全部已读失败: {e}")
+        return CommonResponse(status="error", msg=f"操作失败: {str(e)}", code="500", data=None)
+
+
+@router.put("/mark-read", response_model=CommonResponse, summary="标记通知为已读")
 async def mark_as_read(
-    notification_id: int,
+    notification_id: int = Query(..., description="通知ID"),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
@@ -78,18 +93,21 @@ async def mark_as_read(
         return CommonResponse(status="error", msg=f"操作失败: {str(e)}", code="500", data=None)
 
 
-@router.put("/read-all", response_model=CommonResponse, summary="全部标记为已读")
-async def mark_all_as_read(
+@router.put("/mark-unread", response_model=CommonResponse, summary="标记通知为未读")
+async def mark_as_unread(
+    notification_id: int = Query(..., description="通知ID"),
     current_user=Depends(get_current_user),
     db: AsyncSession = Depends(get_async_db)
 ):
-    """标记所有通知为已读"""
+    """标记单条通知为未读"""
     try:
         service = NotificationService(db)
-        count = await service.mark_all_as_read()
-        return CommonResponse(status="success", msg=f"已标记 {count} 条通知为已读", code="200", data={"count": count})
+        success = await service.mark_as_unread(notification_id)
+        if success:
+            return CommonResponse(status="success", msg="标记成功", code="200", data=None)
+        return CommonResponse(status="error", msg="通知不存在", code="404", data=None)
     except Exception as e:
-        logger.error(f"全部已读失败: {e}")
+        logger.error(f"标记未读失败: {e}")
         return CommonResponse(status="error", msg=f"操作失败: {str(e)}", code="500", data=None)
 
 
