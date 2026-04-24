@@ -61,6 +61,28 @@ async def update_cron_task_status():
         traceback.print_exc()
 
 
+async def check_version_update_task(app: FastAPI):
+    """
+    后台版本更新检查任务
+
+    启动时检查 GitHub Release 是否有新版本，如有则创建通知。
+    """
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.notification_service import NotificationService
+        from app.yamlConfig import yaml
+
+        async with AsyncSessionLocal() as db:
+            service = NotificationService(db)
+            # 从配置文件获取当前版本
+            current_version = yaml.get("app.version", "1.0.0")
+            await service.check_version_update(current_version)
+    except Exception as e:
+        print(f"[WARN] 版本更新检查失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 async def init_database_connection():
     """
     初始化数据库连接并验证
@@ -174,6 +196,10 @@ async def lifespan(app: FastAPI):
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
 
+    # 版本更新检查任务
+    version_check_task = asyncio.create_task(check_version_update_task(app))
+    app.state.version_check_task = version_check_task
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
@@ -199,6 +225,16 @@ async def lifespan(app: FastAPI):
                 print("✅ 仪表盘统计任务已取消")
             except Exception as e:
                 print(f"⚠️  取消仪表盘统计任务时出错: {e}")
+
+        if version_check_task and not version_check_task.done():
+            print("取消版本检查任务...")
+            version_check_task.cancel()
+            try:
+                await version_check_task
+            except asyncio.CancelledError:
+                print("✅ 版本检查任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消版本检查任务时出错: {e}")
 
         # 停止定时任务调度器
         print("Shutting down...")

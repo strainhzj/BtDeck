@@ -29,6 +29,9 @@ from app.tasks.models import TaskLogs
 from app.tasks.cron_models import CronTask
 from app.torrents.audit_models import TorrentAuditLog
 
+# 通知中心
+from app.models.notification import Notification
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
