@@ -61,6 +61,121 @@ async def update_cron_task_status():
         traceback.print_exc()
 
 
+async def init_default_notifications():
+    """
+    初始化默认通知（幂等操作，已存在则跳过）
+
+    包括：
+    1. 欢迎通知
+    2. 当前版本更新说明通知
+    """
+    try:
+        from app.database import AsyncSessionLocal
+        from app.models.notification import Notification
+        from sqlalchemy import select
+        from datetime import datetime
+
+        async with AsyncSessionLocal() as db:
+            # 检查是否已存在欢迎通知
+            existing_welcome = await db.execute(
+                select(Notification).where(Notification.title == "欢迎使用 BtDeck")
+            )
+            if existing_welcome.scalar_one_or_none():
+                print("[SKIP] 欢迎通知已存在，跳过创建")
+            else:
+                # 创建欢迎通知
+                welcome_notification = Notification(
+                    type="system",
+                    title="欢迎使用 BtDeck",
+                    content="感谢您使用 BtDeck！这是您的第一条系统通知。通知中心会在这里显示版本更新和系统消息。",
+                    priority="info",
+                    is_read=False,
+                    extra_data=None,
+                    created_at=datetime.now()
+                )
+                db.add(welcome_notification)
+                await db.commit()
+                await db.refresh(welcome_notification)
+                print(f"[OK] 欢迎通知创建成功 (ID: {welcome_notification.id})")
+
+            # 检查是否已存在当前版本更新通知
+            from app.yamlConfig import yaml
+            current_version = yaml.get("app.version", "1.0.4")
+            version_title = f"BtDeck v{current_version} 版本更新"
+
+            existing_version = await db.execute(
+                select(Notification).where(
+                    Notification.type == "version_update",
+                    Notification.title == version_title
+                )
+            )
+            if existing_version.scalar_one_or_none():
+                print(f"[SKIP] 版本更新通知已存在，跳过创建")
+            else:
+                # 创建版本更新通知
+                version_content = f"""
+## 🎉 BtDeck v{current_version} 版本更新
+
+### 新增功能
+
+**🔔 通知中心**
+- 全新的通知中心模块，集中管理系统消息和版本更新
+- 支持通知分页查询、已读/未读状态管理
+- 自动检查 GitHub 版本更新并推送通知
+
+**📊 实时速度监控**
+- 种子列表新增独立的下载/上传速度列
+- 活跃种子自动排序到列表顶部
+- 支持通过专用接口获取活跃种子状态
+
+**🔍 Tracker 关键词池**
+- 新增 Tracker 关键词池功能，自动初始化默认关键词数据
+- 支持关键词的拖拽排序和批量管理
+
+### 优化改进
+
+**⚡ 性能优化**
+- qBittorrent 速度接口使用 status_filter 参数减少数据传输
+- 修复种子速度监控的线程池泄漏问题
+- 改进异常处理机制，提升系统稳定性
+
+**🛠️ 开发基础设施**
+- 新增 Harness 开发基础设施，规范开发流程
+- 完善项目文档和开发指南
+
+### 技术细节
+
+- 新增 API 端点：`GET /api/v1/torrents/active-torrents`
+- 新增通知管理接口：`/api/v1/notifications/*`
+- 数据库迁移：新增 notification 表
+
+---
+查看完整更新内容，请访问 GitHub Release 页面。
+"""
+
+                version_notification = Notification(
+                    type="version_update",
+                    title=version_title,
+                    content=version_content.strip(),
+                    priority="info",
+                    is_read=False,
+                    extra_data={
+                        "version": current_version,
+                        "release_url": "https://github.com/StrainThomas/BtDeck/releases"
+                    },
+                    created_at=datetime.now()
+                )
+                db.add(version_notification)
+                await db.commit()
+                await db.refresh(version_notification)
+                print(f"[OK] 版本更新通知创建成功 (ID: {version_notification.id})")
+
+    except Exception as e:
+        print(f"[WARN] 默认通知初始化失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 async def check_version_update_task(app: FastAPI):
     """
     后台版本更新检查任务
@@ -159,6 +274,16 @@ async def lifespan(app: FastAPI):
         print("[OK] 数据库初始数据创建完成")
     except Exception as e:
         print(f"[ERROR] 数据库初始数据创建失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+    # 1.6 初始化默认通知（欢迎通知、版本更新通知）
+    print("=== 初始化默认通知 ===")
+    try:
+        await init_default_notifications()
+        print("[OK] 默认通知初始化完成")
+    except Exception as e:
+        print(f"[WARN] 默认通知初始化失败: {e}")
         import traceback
         traceback.print_exc()
 
