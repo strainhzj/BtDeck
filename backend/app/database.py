@@ -274,6 +274,92 @@ def init_db():
         logger.error(f"Error initializing default tracker keywords: {str(e)}")
         print(f"Error initializing default tracker keywords: {str(e)}")
 
+    # 初始化默认通知（欢迎通知、版本更新通知，幂等操作）
+    try:
+        from app.models.notification import Notification
+
+        db = SessionLocal()
+        try:
+            # 欢迎通知
+            welcome_exists = db.query(Notification).filter(
+                Notification.title == "欢迎使用 BtDeck"
+            ).first()
+            if not welcome_exists:
+                db.add(Notification(
+                    type="system",
+                    title="欢迎使用 BtDeck",
+                    content="感谢您使用 BtDeck！这是您的第一条系统通知。通知中心会在这里显示版本更新和系统消息。",
+                    priority="info",
+                    is_read=False,
+                ))
+                db.commit()
+                logger.info("欢迎通知创建成功")
+                print("[OK] 欢迎通知创建成功")
+
+            # 版本更新通知
+            from app.yamlConfig import yaml
+            current_version = yaml.get("app.version", "1.0.4")
+            version_title = f"BtDeck v{current_version} 版本更新"
+
+            version_exists = db.query(Notification).filter(
+                Notification.type == "version_update",
+                Notification.title == version_title,
+            ).first()
+            if not version_exists:
+                version_content = f"""## BtDeck v{current_version} 版本更新
+
+### 新增功能
+
+**通知中心**
+- 全新的通知中心模块，集中管理系统消息和版本更新
+- 支持通知分页查询、已读/未读状态管理
+- 自动检查 GitHub 版本更新并推送通知
+
+**实时速度监控**
+- 种子列表新增独立的下载/上传速度列
+- 活跃种子自动排序到列表顶部
+- 支持通过专用接口获取活跃种子状态
+
+**Tracker 关键词池**
+- 新增 Tracker 关键词池功能，自动初始化默认关键词数据
+- 支持关键词的拖拽排序和批量管理
+
+### 优化改进
+
+**性能优化**
+- qBittorrent 速度接口使用 status_filter 参数减少数据传输
+- 修复种子速度监控的线程池泄漏问题
+- 改进异常处理机制，提升系统稳定性
+
+### 技术细节
+
+- 新增 API 端点：GET /api/v1/torrents/active-torrents
+- 新增通知管理接口：/api/v1/notifications/*
+- 数据库迁移：新增 notification 表
+
+---
+查看完整更新内容，请访问 GitHub Release 页面。"""
+                db.add(Notification(
+                    type="version_update",
+                    title=version_title,
+                    content=version_content.strip(),
+                    priority="info",
+                    is_read=False,
+                    extra_data={
+                        "version": current_version,
+                        "release_url": "https://github.com/StrainThomas/BtDeck/releases",
+                    },
+                ))
+                db.commit()
+                logger.info(f"版本更新通知创建成功: {version_title}")
+                print(f"[OK] 版本更新通知创建成功: {version_title}")
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error initializing default notifications: {str(e)}")
+        print(f"Error initializing default notifications: {str(e)}")
+
 
 def init_config_file(
         config_path: str = settings.YAML_PATH,

@@ -45,11 +45,6 @@ def get_default_tracker_keywords() -> List[Dict[str, Any]]:
         },
         {
             "keyword_type": "failed",
-            "keyword": "Invalid PID (private announce): 9ff6b9a23596e919adb38888e196fc25. Please redownload torrent from https://hd-space.org.",
-            "description": "无效的私有announce，需要重新下载种子"
-        },
-        {
-            "keyword_type": "failed",
             "keyword": "Invalid credentials 3! Re-download the .torrent",
             "description": "凭据无效，需要重新下载种子"
         },
