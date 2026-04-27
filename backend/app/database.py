@@ -260,6 +260,20 @@ def init_db():
         logger.error(f"Error initializing default scheduled tasks: {str(e)}")
         print(f"Error initializing default scheduled tasks: {str(e)}")
 
+    # 初始化Tracker关键词池默认数据（增量检查：添加缺失的关键词）
+    try:
+        from app.data.default_tracker_keywords import init_default_tracker_keywords
+
+        db = SessionLocal()
+        try:
+            init_default_tracker_keywords(db)
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error initializing default tracker keywords: {str(e)}")
+        print(f"Error initializing default tracker keywords: {str(e)}")
+
 
 def init_config_file(
         config_path: str = settings.YAML_PATH,
