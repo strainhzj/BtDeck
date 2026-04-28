@@ -306,39 +306,26 @@ def init_db():
                 Notification.title == version_title,
             ).first()
             if not version_exists:
-                version_content = f"""## BtDeck v{current_version} 版本更新
-
-### 新增功能
+                version_content = f"""## 新增功能
 
 **通知中心**
-- 全新的通知中心模块，集中管理系统消息和版本更新
-- 支持通知分页查询、已读/未读状态管理
-- 自动检查 GitHub 版本更新并推送通知
+- 新增通知中心，方便您查看系统消息和版本更新动态
+- 支持按类型筛选通知，一键标记全部已读
+- 有新版本发布时会自动提醒您
 
 **实时速度监控**
-- 种子列表新增独立的下载/上传速度列
-- 活跃种子自动排序到列表顶部
-- 支持通过专用接口获取活跃种子状态
+- 种子列表新增独立的下载和上传速度显示
+- 正在下载的种子会自动排到最前面，方便查看进度
 
 **Tracker 关键词池**
-- 新增 Tracker 关键词池功能，自动初始化默认关键词数据
-- 支持关键词的拖拽排序和批量管理
+- 新增 Tracker 关键词管理功能，帮助您快速识别种子状态异常的原因
+- 支持通过拖拽调整关键词优先级，批量管理更便捷
 
-### 优化改进
+## 优化改进
 
-**性能优化**
-- qBittorrent 速度接口使用 status_filter 参数减少数据传输
-- 修复种子速度监控的线程池泄漏问题
-- 改进异常处理机制，提升系统稳定性
-
-### 技术细节
-
-- 新增 API 端点：GET /api/v1/torrents/active-torrents
-- 新增通知管理接口：/api/v1/notifications/*
-- 数据库迁移：新增 notification 表
-
----
-查看完整更新内容，请访问 GitHub Release 页面。"""
+- 优化了种子列表的数据加载方式，页面响应更快
+- 修复了长时间运行后速度监控可能失效的问题
+- 改进了异常处理，减少意外报错的情况"""
                 db.add(Notification(
                     type="version_update",
                     title=version_title,
