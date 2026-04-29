@@ -54,15 +54,16 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
     torrents = client.get_torrents(arguments=_TR_SPEED_FIELDS)
     result = []
     for t in torrents:
-        dl_speed = getattr(t, "rateDownload", 0) or 0
-        ul_speed = getattr(t, "rateUpload", 0) or 0
+        # transmission_rpc 的 Torrent 属性名是 snake_case（rate_download），不是 camelCase（rateDownload）
+        dl_speed = getattr(t, "rate_download", 0) or 0
+        ul_speed = getattr(t, "rate_upload", 0) or 0
         if dl_speed > 0 or ul_speed > 0:
             result.append({
                 "hash": getattr(t, "hashString", ""),
                 "downloadSpeed": round(dl_speed / 1024, 2),
                 "uploadSpeed": round(ul_speed / 1024, 2),
-                "num_seeds": getattr(t, "peersSendingToUs", 0) or 0,
-                "num_leechs": getattr(t, "peersGettingFromUs", 0) or 0,
+                "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
+                "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
             })
     return result
 
