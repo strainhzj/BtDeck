@@ -37,8 +37,8 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
         if dl_speed > 0 or ul_speed > 0:
             result.append({
                 "hash": t.get("hash", ""),
-                "downloadSpeed": round(dl_speed / 1024, 2),
-                "uploadSpeed": round(ul_speed / 1024, 2),
+                "downloadSpeed": dl_speed,
+                "uploadSpeed": ul_speed,
                 "num_seeds": t.get("num_seeds", 0),
                 "num_leechs": t.get("num_leechs", 0),
             })
@@ -60,8 +60,8 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
         if dl_speed > 0 or ul_speed > 0:
             result.append({
                 "hash": getattr(t, "hashString", ""),
-                "downloadSpeed": round(dl_speed / 1024, 2),
-                "uploadSpeed": round(ul_speed / 1024, 2),
+                "downloadSpeed": dl_speed,
+                "uploadSpeed": ul_speed,
                 "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
                 "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
             })
