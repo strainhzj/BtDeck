@@ -35,10 +35,14 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
         dl_speed = t.get("dlspeed", 0)
         ul_speed = t.get("upspeed", 0)
         if dl_speed > 0 or ul_speed > 0:
+            # qBittorrent的progress字段是0-1的小数，需要转换为百分比
+            progress_raw = t.get("progress", 0)
+            progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
             result.append({
                 "hash": t.get("hash", ""),
                 "downloadSpeed": dl_speed,
                 "uploadSpeed": ul_speed,
+                "progress": progress_percent,
                 "num_seeds": t.get("num_seeds", 0),
                 "num_leechs": t.get("num_leechs", 0),
             })
@@ -46,7 +50,7 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
 
 
 # Transmission 轻量级查询：仅获取速度相关字段，避免拉取全部数据
-_TR_SPEED_FIELDS = ["hashString", "rateDownload", "rateUpload", "peersSendingToUs", "peersGettingFromUs"]
+_TR_SPEED_FIELDS = ["hashString", "rateDownload", "rateUpload", "progress", "peersSendingToUs", "peersGettingFromUs"]
 
 
 def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
@@ -58,10 +62,14 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
         dl_speed = getattr(t, "rate_download", 0) or 0
         ul_speed = getattr(t, "rate_upload", 0) or 0
         if dl_speed > 0 or ul_speed > 0:
+            # Transmission的progress字段是0-1的小数，需要转换为百分比
+            progress_raw = getattr(t, "progress", 0) or 0
+            progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
             result.append({
                 "hash": getattr(t, "hashString", ""),
                 "downloadSpeed": dl_speed,
                 "uploadSpeed": ul_speed,
+                "progress": progress_percent,
                 "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
                 "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
             })
@@ -75,7 +83,7 @@ async def _call_with_timeout(func, *args) -> List[Dict[str, Any]]:
     return await asyncio.wait_for(future, timeout=_DOWNLOADER_TIMEOUT)
 
 
-@router.get("/active-torrents", summary="获取所有活跃种子的实时速度")
+@router.get("/active-torrents", summary="获取所有活跃种子的实时速度和进度")
 async def get_active_torrents(
     request: Request,
     auth_error=Depends(verify_token_dependency),
@@ -83,6 +91,14 @@ async def get_active_torrents(
     """
     轻量级接口：返回所有下载器中有速度的种子实时数据。
     用于前端 1 秒轮询，仅返回 downloadSpeed > 0 或 uploadSpeed > 0 的种子。
+
+    返回字段：
+    - hash: 种子哈希值
+    - downloadSpeed: 下载速度（bytes/s）
+    - uploadSpeed: 上传速度（bytes/s）
+    - progress: 下载进度（百分比，0-100）
+    - num_seeds: 连接的种子数
+    - num_leechs: 连接的下载者数
     """
     if auth_error:
         return auth_error
