@@ -8,14 +8,19 @@ import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from datetime import datetime
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Request
 from qbittorrentapi import Client as qbClient
 from transmission_rpc import Client as trClient, TransmissionError
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import verify_token_dependency
+from app.database import AsyncSessionLocal
+from app.torrents.models import TorrentInfo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -81,6 +86,46 @@ async def _call_with_timeout(func, *args) -> List[Dict[str, Any]]:
     loop = asyncio.get_event_loop()
     future = loop.run_in_executor(_speed_executor, func, *args)
     return await asyncio.wait_for(future, timeout=_DOWNLOADER_TIMEOUT)
+
+
+async def _update_completed_torrents(completed_hashes: List[str]) -> None:
+    """
+    更新已完成的种子到数据库
+
+    检测进度达到100%且当前状态为downloading的种子，更新为completed状态。
+
+    Args:
+        completed_hashes: 进度达到100%的种子hash列表
+    """
+    if not completed_hashes:
+        return
+
+    try:
+        async with AsyncSessionLocal() as db:
+            # 查询当前状态为downloading的种子
+            stmt = select(TorrentInfo).where(
+                TorrentInfo.hash.in_(completed_hashes),
+                TorrentInfo.status == 'downloading',
+                TorrentInfo.dr == 0  # 未删除
+            )
+            result = await db.execute(stmt)
+            torrents_to_update = result.scalars().all()
+
+            if not torrents_to_update:
+                return
+
+            # 批量更新
+            for torrent in torrents_to_update:
+                torrent.progress = 100.0
+                torrent.status = 'completed'
+                torrent.completed_date = datetime.now()
+                torrent.update_time = datetime.now()
+
+            await db.commit()
+            logger.info(f"已更新 {len(torrents_to_update)} 个种子为完成状态")
+
+    except Exception as e:
+        logger.error(f"更新已完成种子到数据库失败: {e}", exc_info=True)
 
 
 @router.get("/active-torrents", summary="获取所有活跃种子的实时速度和进度")
@@ -153,6 +198,14 @@ async def get_active_torrents(
         active_torrents: List[Dict[str, Any]] = []
         for torrent_list in results:
             active_torrents.extend(torrent_list)
+
+        # 检测并更新已完成的种子（异步处理，不阻塞响应）
+        completed_hashes = [
+            t["hash"] for t in active_torrents
+            if t.get("progress", 0) >= 100
+        ]
+        if completed_hashes:
+            asyncio.create_task(_update_completed_torrents(completed_hashes))
 
         return CommonResponse(
             status="success",
