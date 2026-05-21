@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Set, Tuple
 
 from fastapi import APIRouter, Depends, Request
-from qbittorrentapi import Client as qbClient
+from qbittorrentapi import APIError as QbAPIError, Client as qbClient
 from transmission_rpc import Client as trClient, TransmissionError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -383,7 +383,7 @@ async def get_active_torrents(
             except asyncio.TimeoutError:
                 logger.warning(f"获取下载器 {nickname} 速度超时({_DOWNLOADER_TIMEOUT}s)，跳过")
                 return []
-            except (qbClient.APIError, TransmissionError) as e:
+            except (QbAPIError, TransmissionError) as e:
                 # 分类捕获：客户端API异常（网络、认证、协议错误）
                 logger.warning(f"下载器 {nickname} API错误: {e}", exc_info=True)
                 return []
@@ -397,21 +397,25 @@ async def get_active_torrents(
             *[_process_downloader(d) for d in cached_downloaders]
         )
 
-        # 扁平化结果
+        # 扁平化结果，同时标记种子所属下载器
         active_torrents: List[Dict[str, Any]] = []
-        for torrent_list in results:
+        for downloader, torrent_list in zip(cached_downloaders, results):
+            dl_id = getattr(downloader, "downloader_id", "")
+            dl_type = getattr(downloader, "downloader_type", -1)
+            for t in torrent_list:
+                t["downloader_id"] = dl_id
+                t["downloader_type"] = dl_type
             active_torrents.extend(torrent_list)
 
-        # ---- TTL 队列：记录有下载速度的种子 ----
+        # ---- TTL 队列：按种子实际所属下载器记录 ----
         active_keys: Set[Tuple[str, str]] = set()
-        for d in cached_downloaders:
-            dl_id = getattr(d, "downloader_id", "")
-            dl_type = getattr(d, "downloader_type", -1)
-            if dl_id:
-                for t in active_torrents:
-                    if t.get("downloadSpeed", 0) > 0:
-                        active_keys.add((dl_id, t["hash"]))
-                        _ttl_queue.put(dl_id, dl_type, t["hash"])
+        for t in active_torrents:
+            if t.get("downloadSpeed", 0) > 0:
+                dl_id = t.get("downloader_id", "")
+                dl_type = t.get("downloader_type", -1)
+                if dl_id:
+                    active_keys.add((dl_id, t["hash"]))
+                    _ttl_queue.put(dl_id, dl_type, t["hash"])
 
         # ---- 检测消失的种子并补查 ----
         _ttl_queue.cleanup()
