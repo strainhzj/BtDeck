@@ -7,9 +7,10 @@
 import asyncio
 import logging
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set, Tuple
 
 from fastapi import APIRouter, Depends, Request
 from qbittorrentapi import Client as qbClient
@@ -30,6 +31,59 @@ _speed_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="speed_po
 
 # 单个下载器调用超时（秒）- 可通过环境变量配置
 _DOWNLOADER_TIMEOUT = float(os.getenv("SPEED_API_TIMEOUT", "3.0"))
+
+# TTL 队列配置
+_TTL_SECONDS = 60  # 种子从活跃列表消失后保留观察的时长（秒）
+_MAX_SUPPLEMENT_COUNT = 20  # 单次补查的最大种子数
+
+
+class _TTLQueue:
+    """带 TTL 的种子跟踪队列，记录有下载速度的种子"""
+
+    def __init__(self, ttl: int):
+        self._ttl = ttl
+        # key: (downloader_id, hash), value: {last_time, downloader_id, hash, downloader_type}
+        self._store: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    def put(self, downloader_id: str, downloader_type: int, torrent_hash: str) -> None:
+        """添加或刷新种子的 TTL"""
+        key = (downloader_id, torrent_hash)
+        self._store[key] = {
+            "last_time": time.monotonic(),
+            "downloader_id": downloader_id,
+            "downloader_type": downloader_type,
+            "hash": torrent_hash,
+        }
+
+    def cleanup(self) -> None:
+        """清理过期记录"""
+        now = time.monotonic()
+        expired = [k for k, v in self._store.items() if now - v["last_time"] > self._ttl]
+        for k in expired:
+            del self._store[k]
+
+    def get_disappeared(self, active_keys: Set[Tuple[str, str]]) -> Dict[str, List[Dict[str, Any]]]:
+        """
+        获取活跃列表中已消失但仍在 TTL 内的种子，按 downloader_id 分组返回。
+        限制每组最多 _MAX_SUPPLEMENT_COUNT 个，避免对下载器造成过大压力。
+        """
+        now = time.monotonic()
+        result: Dict[str, List[Dict[str, Any]]] = {}
+        for key, entry in self._store.items():
+            if key in active_keys:
+                continue
+            if now - entry["last_time"] > self._ttl:
+                continue
+            dl_id = entry["downloader_id"]
+            if dl_id not in result:
+                result[dl_id] = []
+            if len(result[dl_id]) < _MAX_SUPPLEMENT_COUNT:
+                result[dl_id].append(entry)
+        return result
+
+
+# 全局 TTL 队列实例
+_ttl_queue = _TTLQueue(_TTL_SECONDS)
 
 
 def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
@@ -88,6 +142,100 @@ async def _call_with_timeout(func, *args) -> List[Dict[str, Any]]:
     return await asyncio.wait_for(future, timeout=_DOWNLOADER_TIMEOUT)
 
 
+def _supplement_qb_sync(client: qbClient, hashes: List[str]) -> List[Dict[str, Any]]:
+    """批量补查 qBittorrent 中消失种子的最新状态"""
+    hash_str = "|".join(hashes)
+    torrents = client.torrents_info(hashes=hash_str)
+    result = []
+    for t in torrents:
+        progress_raw = t.get("progress", 0)
+        progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
+        result.append({
+            "hash": t.get("hash", ""),
+            "downloadSpeed": t.get("dlspeed", 0),
+            "uploadSpeed": t.get("upspeed", 0),
+            "progress": progress_percent,
+            "num_seeds": t.get("num_seeds", 0),
+            "num_leechs": t.get("num_leechs", 0),
+            "status": t.get("state", ""),
+        })
+    return result
+
+
+def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, Any]]:
+    """批量补查 Transmission 中消失种子的最新状态"""
+    fields = [
+        "hashString", "rateDownload", "rateUpload", "progress",
+        "peersSendingToUs", "peersGettingFromUs", "status",
+    ]
+    # Transmission 不支持按 hash 批量查询，需要获取所有再过滤
+    hash_set = set(hashes)
+    all_torrents = client.get_torrents(arguments=fields)
+    result = []
+    for t in all_torrents:
+        h = getattr(t, "hashString", "")
+        if h not in hash_set:
+            continue
+        progress_raw = getattr(t, "progress", 0) or 0
+        progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
+        result.append({
+            "hash": h,
+            "downloadSpeed": getattr(t, "rate_download", 0) or 0,
+            "uploadSpeed": getattr(t, "rate_upload", 0) or 0,
+            "progress": progress_percent,
+            "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
+            "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
+            "status": getattr(t, "status", ""),
+        })
+    return result
+
+
+async def _supplement_disappeared(
+    disappeared_by_dl: Dict[str, List[Dict[str, Any]]],
+    cached_downloaders: List[Any],
+) -> List[Dict[str, Any]]:
+    """对消失的种子执行批量补查，返回最新状态列表"""
+    if not disappeared_by_dl:
+        return []
+
+    # 构建 downloader_id -> client 映射
+    dl_map: Dict[str, Dict[str, Any]] = {}
+    for d in cached_downloaders:
+        dl_id = getattr(d, "downloader_id", None)
+        if dl_id and getattr(d, "fail_time", 0) == 0:
+            dl_map[dl_id] = {
+                "client": getattr(d, "client", None),
+                "downloader_type": getattr(d, "downloader_type", -1),
+                "nickname": getattr(d, "nickname", "unknown"),
+            }
+
+    supplement_results: List[Dict[str, Any]] = []
+    for dl_id, entries in disappeared_by_dl.items():
+        dl_info = dl_map.get(dl_id)
+        if not dl_info or not dl_info["client"]:
+            continue
+
+        client = dl_info["client"]
+        dl_type = dl_info["downloader_type"]
+        nickname = dl_info["nickname"]
+        hashes = [e["hash"] for e in entries]
+
+        try:
+            if dl_type == 0 and isinstance(client, qbClient):
+                data = await _call_with_timeout(_supplement_qb_sync, client, hashes)
+            elif dl_type == 1 and isinstance(client, trClient):
+                data = await _call_with_timeout(_supplement_tr_sync, client, hashes)
+            else:
+                continue
+            supplement_results.extend(data)
+        except asyncio.TimeoutError:
+            logger.warning(f"补查下载器 {nickname} 消失种子超时({_DOWNLOADER_TIMEOUT}s)")
+        except Exception as e:
+            logger.warning(f"补查下载器 {nickname} 消失种子失败: {e}")
+
+    return supplement_results
+
+
 async def _update_completed_torrents(completed_hashes: List[str]) -> None:
     """
     更新已完成的种子到数据库
@@ -126,6 +274,61 @@ async def _update_completed_torrents(completed_hashes: List[str]) -> None:
 
     except Exception as e:
         logger.error(f"更新已完成种子到数据库失败: {e}", exc_info=True)
+
+
+async def _sync_torrents_to_db(torrent_data: List[Dict[str, Any]]) -> None:
+    """
+    将补查到的种子最新进度和状态同步到数据库。
+
+    避免搜索按钮查询数据库时出现进度回退。
+    如果进度达到100%，同时更新为completed状态。
+    """
+    if not torrent_data:
+        return
+
+    try:
+        hashes = [t["hash"] for t in torrent_data if t.get("hash")]
+        if not hashes:
+            return
+
+        async with AsyncSessionLocal() as db:
+            stmt = select(TorrentInfo).where(
+                TorrentInfo.hash.in_(hashes),
+                TorrentInfo.dr == 0,
+            )
+            result = await db.execute(stmt)
+            db_torrents = result.scalars().all()
+
+            # 构建 hash -> 补查数据 的映射
+            data_map = {t["hash"]: t for t in torrent_data}
+
+            updated = 0
+            for torrent in db_torrents:
+                new_data = data_map.get(torrent.hash)
+                if not new_data:
+                    continue
+
+                new_progress = new_data.get("progress", 0)
+
+                # 只在进度有变化时更新，减少写操作
+                if torrent.progress == new_progress and torrent.status not in ("downloading",):
+                    continue
+
+                torrent.progress = new_progress
+                torrent.update_time = datetime.now()
+                updated += 1
+
+                # 进度达到100%时更新为completed
+                if new_progress >= 100 and torrent.status == "downloading":
+                    torrent.status = "completed"
+                    torrent.completed_date = datetime.now()
+
+            if updated > 0:
+                await db.commit()
+                logger.info(f"已同步 {updated} 个消失种子的进度到数据库")
+
+    except Exception as e:
+        logger.error(f"同步消失种子进度到数据库失败: {e}", exc_info=True)
 
 
 @router.get("/active-torrents", summary="获取所有活跃种子的实时速度和进度")
@@ -199,7 +402,34 @@ async def get_active_torrents(
         for torrent_list in results:
             active_torrents.extend(torrent_list)
 
-        # 检测并更新已完成的种子（异步处理，不阻塞响应）
+        # ---- TTL 队列：记录有下载速度的种子 ----
+        active_keys: Set[Tuple[str, str]] = set()
+        for d in cached_downloaders:
+            dl_id = getattr(d, "downloader_id", "")
+            dl_type = getattr(d, "downloader_type", -1)
+            if dl_id:
+                for t in active_torrents:
+                    if t.get("downloadSpeed", 0) > 0:
+                        active_keys.add((dl_id, t["hash"]))
+                        _ttl_queue.put(dl_id, dl_type, t["hash"])
+
+        # ---- 检测消失的种子并补查 ----
+        _ttl_queue.cleanup()
+        disappeared_by_dl = _ttl_queue.get_disappeared(active_keys)
+
+        supplement_data: List[Dict[str, Any]] = []
+        if disappeared_by_dl:
+            supplement_data = await _supplement_disappeared(disappeared_by_dl, cached_downloaders)
+
+        # 合并补查结果到返回数据
+        if supplement_data:
+            active_torrents.extend(supplement_data)
+
+        # ---- 异步同步数据库（进度+状态） ----
+        # 1. 补查到的消失种子：同步进度和状态到数据库
+        if supplement_data:
+            asyncio.create_task(_sync_torrents_to_db(supplement_data))
+        # 2. 活跃种子中进度100%的：更新为completed
         completed_hashes = [
             t["hash"] for t in active_torrents
             if t.get("progress", 0) >= 100
