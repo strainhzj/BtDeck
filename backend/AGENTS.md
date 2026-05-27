@@ -1,252 +1,180 @@
-# AGENTS.md - BTDeck 项目指南
+# AGENTS.md - BTDeck 后端项目
 
-> **项目**: BTDeck - BitTorrent 全栈管理器
-> **技术栈**: Vue 2 + FastAPI + Python
-> **更新**: 2026-04-22
-
----
-
-## 🎯 项目定位
-
-BTDeck 是统一管理多种 BitTorrent 客户端（qBittorrent、Transmission）的全栈 Web 应用。
-
-**核心价值**: 提供统一界面管理多下载器，支持种子添加、状态监控、批量操作等功能。
+> **项目**: BTDeck 后端服务
+> **技术栈**: Python 3.11+ | FastAPI 0.115.0 | SQLAlchemy 2.0.15 | SQLite
+> **更新**: 2026-05-27
 
 ---
 
-## 🚀 启动工作流
+## 项目定位
 
-### 开始任何工作前，按顺序执行：
+BTDeck 后端提供统一的 BitTorrent 客户端管理 API，支持 qBittorrent、Transmission 多下载器接入。
+
+---
+
+## 启动工作流
+
+开始任何工作前，按顺序执行：
 
 ```
-1. 阅读 AGENTS.md（本文件） ← 你在这里
-2. 阅读 PLANS/v1.0.4.md（当前功能规范）
-3. 运行 ./init.sh（验证环境）
+1. 阅读 AGENTS.md（本文件）
+2. 阅读 CLAUDE.md（后端技术约束）
+3. 阅读 docs/constraints/（详细规范）
 4. 阅读 feature_list.json（功能状态）
-5. 阅读 progress.md（会话上下文）
-```
-
-### 识别当前任务
-
-```bash
-# 查看当前进行中的功能
-cat feature_list.json | jq '.features[] | select(.status == "in-progress")'
-
-# 查看最近进度
-cat progress.md | tail -20
+5. 阅读 PROGRESS.md（会话上下文）
+6. 运行 ./scripts/init.sh（验证环境）
 ```
 
 ---
 
-## 📋 工作规则
+## 工作规则
 
-### 1. 单一功能原则
+### 1. API 响应格式统一（强制）
 
-**一次只处理一个功能**，从 `feature_list.json` 中选择 `in-progress` 状态的功能。
+所有 API 必须使用统一响应格式，分页字段名严格固定为 `list`/`total`/`pageSize`。
 
-**禁止**: 同时处理多个功能或未经规划的 bug 修复。
+详见 `docs/constraints/api-response-format.md`
 
-### 2. 验证优先
+### 2. 数据库迁移管理（强制）
 
-**完成定义**:
+所有 Schema 变更必须通过 Alembic 管理，应用启动时自动执行迁移。
+
+详见 `docs/constraints/database-migration.md`
+
+### 3. 下载器连接管理（强制）
+
+必须使用 `app.state.store` 缓存中的客户端连接，严禁重复创建。
+
+详见 `docs/constraints/downloader-connection.md`
+
+### 4. 代码复用优先
+
+优先复用现有代码和类，仅在必要时创建新的。检查相似度 >50% 可扩展现有代码。
+
+详见 `docs/constraints/code-reuse.md`
+
+### 5. 跨环境数据库一致性（强制）
+
+确保所有环境数据库结构一致，每次启动前检查版本。
+
+详见 `docs/constraints/database-consistency.md`
+
+### 6. 验证优先
+
+完成定义：
 - [ ] 实现完成
-- [ ] 单元测试通过
-- [ ] 集成测试通过
-- [ ] 性能测试达标
-- [ ] 更新 progress.md
-- [ ] 更新 feature_list.json
-
-### 3. 代码规范
-
-**后端**:
-- 遵循 `BtDeck/CLAUDE.md`
-- API 响应格式统一
-- 使用 `app.state.store` 缓存
-- 添加类型注解
-
-**前端**:
-- 遵循 `BtDeck_fronted/CLAUDE.md`
-- Vue 2 Options API 风格
-- TypeScript 类型完整
-- 定时器必须清理
-
-### 4. Git 提交规范
-
-**前后端分离提交**:
-```bash
-# 后端
-cd BtDeck/
-git add . && git commit -m "feat: xxx"
-
-# 前端
-cd BtDeck_fronted/
-git add . && git commit -m "feat: xxx"
-```
-
-**禁止**: 在项目根目录提交。
+- [ ] 代码检查通过（mypy + black + flake8）
+- [ ] 相关测试通过
+- [ ] API 文档更新（如有新端点）
+- [ ] PROGRESS.md 更新
+- [ ] feature_list.json 更新
 
 ---
 
-## 📁 必需文件
+## 功能模块索引
+
+| 模块 | 模型 | 服务 | 路由端点 |
+|------|------|------|----------|
+| 种子管理 | - | `torrent_crud_service.py` | `torrent_crud.py` |
+| 种子速度 | - | - | `torrent_speed.py` |
+| 种子同步 | - | - | `torrent_sync.py` |
+| 种子删除 | - | `torrent_deletion_service.py` | `torrent_deletion.py` |
+| 种子备份 | `torrent_file_backup.py` | `torrent_file_backup_manager.py` | `torrent_backup.py` |
+| 种子位置 | - | `torrent_location_service.py` | `torrent_location.py` |
+| 种子标签 | `torrent_tags.py` | `tag_service.py`/`tag_sync_service.py` | `tag_management.py` |
+| 下载器管理 | - | - | `downloader.py` |
+| 下载器设置 | - | `downloader_settings_manager.py` | `downloader_settings.py` |
+| 下载器能力 | `downloader_capabilities.py` | `downloader_capabilities_manager.py` | `downloader_capabilities.py` |
+| 路径维护 | - | `path_maintenance_service.py` | `downloader_path_maintenance.py` |
+| Tracker | - | - | `tracker.py`/`tracker_test.py`/`tracker_reannounce.py` |
+| Tracker关键词 | - | - | `tracker_keywords.py`/`tracker_keywords_pools.py` |
+| 回收站 | - | `recycle_bin_service.py` | `recycle_bin.py` |
+| 通知中心 | `notification.py` | `notification_service.py` | `notifications.py` |
+| 种子转移 | - | `seed_transfer_service.py` | `seed_transfer.py` |
+| 仪表盘 | - | `dashboard_service.py` | `dashboard.py` |
+| 审计日志 | `seed_transfer_audit_log.py`/`torrent_deletion_audit_log.py` | `audit_service.py` | `audit_logs.py` |
+| 设置模板 | `setting_templates.py` | `template_service.py` | `setting_templates.py` |
+| 速度调度 | `speed_schedule_rules.py` | `speed_schedule_service.py` | - |
+| 定时任务 | - | - | `cron_tasks.py` |
+| 高级搜索 | - | - | `advanced_search.py` |
+
+---
+
+## 项目结构
+
+```
+BtDeck/
+├── app/
+│   ├── api/endpoints/   # API路由（30+端点文件）
+│   ├── models/          # 数据库模型（10+模型）
+│   ├── schemas/         # Pydantic模型
+│   ├── services/        # 业务逻辑（25+服务）
+│   ├── downloader/      # 下载器适配器
+│   │   └── adapters/    # qBittorrent/Transmission适配
+│   ├── startup/         # 启动生命周期
+│   ├── utils/           # 工具函数
+│   └── main.py          # 应用入口
+├── alembic/             # 数据库迁移
+├── config/              # 配置（app.db SQLite）
+├── tests/               # 测试套件
+├── scripts/             # 工具脚本
+├── pytest.ini           # 测试配置
+└── requirements.txt     # Python依赖
+```
+
+---
+
+## 验证命令
+
+```bash
+# 环境验证
+./scripts/init.sh
+
+# 代码质量（全量）
+mypy app/ && black --check app/ && flake8 app/
+
+# 运行测试
+pytest
+
+# 启动服务
+python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 5001
+```
+
+---
+
+## 必需文件
 
 | 文件 | 用途 | 更新频率 |
 |------|------|----------|
-| `AGENTS.md` | 代理路由层 | 稳定 |
-| `feature_list.json` | 功能状态追踪 | 每次会话 |
-| `progress.md` | 会话日志 | 每次会话 |
-| `PLANS/v1.0.4.md` | 功能规范 | 功能开发时 |
+| `AGENTS.md` | 后端工作流（本文件） | 稳定 |
 | `CLAUDE.md` | 后端技术约束 | 稳定 |
-| `docs/constraints/` | 约束详细规范（见下表） | 稳定 |
+| `feature_list.json` | 功能状态追踪 | 每次会话 |
+| `PROGRESS.md` | 会话进度日志 | 每次会话 |
+| `session-handoff.md` | 会话交接模板 | 每次会话结束 |
+| `scripts/init.sh` | 环境验证脚本 | 稳定 |
 
-### 约束文档清单（`docs/constraints/`）
+### 约束文档（`docs/constraints/`）
 
 | 文件 | 约束内容 | 适用场景 |
 |------|----------|----------|
 | `api-response-format.md` | API 统一响应格式、分页字段名强制规范 | 编写/修改任何 API 接口时 |
-| `code-reuse.md` | 代码复用优先原则、扩展判断标准 | 创建新函数/组件前 |
+| `code-reuse.md` | 代码复用优先原则、扩展判断标准 | 创建新函数/类前 |
 | `database-migration.md` | Alembic 迁移管理、Schema 变更流程 | 修改数据库模型时 |
 | `database-consistency.md` | 跨环境数据库一致性保障、版本检查 | 部署/切换环境时 |
 | `downloader-connection.md` | 下载器客户端缓存使用规范、禁止新建连接 | 涉及下载器操作的接口 |
 
 ---
 
-## ✅ 完成定义
-
-一个功能完成当且仅当：
-
-1. **实现完成**: 代码实现符合 PLANS/v1.0.4.md 规范
-2. **测试通过**: 所有验收场景测试通过
-3. **性能达标**: 满足性能指标（API < 200ms）
-4. **文档更新**: progress.md 记录关键决策
-5. **状态更新**: feature_list.json 标记为 done
-6. **仓库可重启**: 下个会话可直接继续
-
----
-
-## 🔄 会话结束清单
-
-在结束会话前，按顺序执行：
+## 会话结束清单
 
 ```
-1. 更新 progress.md
-   - 记录完成的工作
-   - 记录技术决策
-   - 记录已知问题
-
-2. 更新 feature_list.json
-   - 更新当前功能状态
-   - 添加发现的依赖
-
-3. 验证仓库状态
-   - ./init.sh 通过
-   - 无未提交的敏感文件
-   - 下个会话可继续
-
-4. Git 提交（可选）
-   - 按前后端分离提交
-   - 提交信息清晰
-
-5. 记录交接信息
-   - 当前进度
-   - 下一步行动
-   - 阻塞问题
+1. 更新 PROGRESS.md（记录完成的工作和决策）
+2. 更新 feature_list.json（更新功能状态）
+3. 填写 session-handoff.md（交接信息）
+4. 验证仓库状态（./scripts/init.sh 通过）
+5. Git 提交（仅在用户要求时，在 BtDeck/ 目录内执行）
 ```
 
 ---
 
-## 🚨 风险与已知问题
-
-### 已有基础设施（v1.0.4 开发前必须了解）
-
-> **重要**: 以下模块已存在。区分"可复用"和"不可复用"，避免重复开发或错误假设。
-
-#### 可复用（必须使用）
-
-1. **下载器客户端缓存** (`app/downloader/initialization.py`)
-   - `app.state.store` 提供 `get_snapshot()` 获取缓存的下载器连接
-   - 所有下载器操作**必须**通过缓存连接，禁止新建客户端
-   - v1.0.4 的速度接口必须通过此缓存调用下载器 API
-
-2. **现有种子列表 API** (`app/api/endpoints/torrent_crud.py`)
-   - `POST /torrents/list` 已返回 `download_speed`、`upload_speed` 字段
-   - 这是**静态数据**（用户手动刷新时从下载器同步到数据库再返回）
-   - v1.0.4 需新增**轻量级动态接口** `GET /torrents/active-torrents`，直接从下载器获取实时速度
-
-3. **应用生命周期** (`app/startup/lifecycle.py`)
-   - 已有 `run_dashboard_stats_loop` 后台任务
-   - v1.0.4 需考虑与现有定时任务的协调
-
-#### 不可复用（与 v1.0.4 无关）
-
-4. **种子状态统计缓存** (`app/downloader/torrent_stats_cache.py`)
-   - 功能：缓存种子的 **status 字段**（downloading/seeding/paused），用于统计计数
-   - **不含速度字段**：不存储 `downloadSpeed` / `uploadSpeed`
-   - **与 v1.0.4 无直接关系**：v1.0.4 需要的是种子级别的实时速度数据，必须从下载器 API 实时获取
-
-### 当前风险
-
-1. **1秒轮询性能**: 可能导致下载器过载
-   - 缓解: 限制并发数量，添加超时
-
-2. **内存泄漏**: 前端定时器未清理
-   - 缓解: 严格的 beforeDestroy 清理
-
-3. **数据一致性**: 查询结果与活跃种子不匹配
-   - 缓解: 后端应用相同查询条件
-
-### 已知问题
-
-- 无（新功能）
-
----
-
-## 📚 参考资料
-
-### 架构文档
-- `PLANS/README.md` - 版本计划索引
-- `PLANS/v1.0.4.md` - 当前功能详细规范
-
-### 技术约束
-- `BtDeck/CLAUDE.md` - 后端开发规范
-- `BtDeck_fronted/CLAUDE.md` - 前端开发规范
-- `BtDeck/docs/constraints/` - 详细约束文档
-
-### API 文档
-- 后端: http://localhost:5001/docs
-- 前端: http://localhost:8080
-
----
-
-## 🔍 快速诊断
-
-### 遇到问题时
-
-```bash
-# 1. 检查环境
-./init.sh
-
-# 2. 查看当前功能状态
-cat feature_list.json | jq .
-
-# 3. 查看最近进度
-cat progress.md
-
-# 4. 查看后端日志
-cd BtDeck && tail -f logs/app.log
-
-# 5. 查看前端日志
-cd BtDeck_fronted && npm run serve
-```
-
----
-
-## 📞 支持与反馈
-
-**项目**: https://github.com/your-org/BtDeck
-**问题**: 使用 GitHub Issues
-**文档**: 见 PLANS/ 目录
-
----
-
-**最后更新**: 2026-04-22
-**维护者**: BTDeck Team
+**最后更新**: 2026-05-27

@@ -1,115 +1,175 @@
 {
-  "version": "1.0.0",
-  "last_updated": "2026-04-22",
+  "version": "1.1.0",
+  "last_updated": "2026-05-27",
   "features": [
     {
       "id": "v1.0.4",
       "name": "实时速度监控",
-      "description": "实现种子列表实时速度显示，活跃种子优先排序，支持复合条件查询",
-      "dependencies": [],
+      "description": "实现种子列表实时速度显示，活跃种子优先排序，1秒轮询",
       "status": "in-progress",
-      "priority": "high",
+      "branch": "dev",
+      "plan_file": "PLANS/v1.0.4.md",
       "tasks": [
         {
           "id": "v1.0.4.1",
-          "name": "后端速度接口",
-          "description": "创建 /torrents/active-torrents 接口，支持查询条件和分页",
+          "name": "后端活跃种子速度接口",
+          "description": "GET /torrents/active-torrents 轻量级接口，并发调用所有下载器",
           "status": "done",
-          "file": "BtDeck/app/api/endpoints/torrent_speed.py",
-          "evidence": "并发调用4个下载器，Transmission使用轻量级字段查询(0.09s vs 26s)，qBittorrent直接调用"
+          "file": "app/api/endpoints/torrent_speed.py",
+          "evidence": "qBittorrent用status_filter减少数据量, Transmission仅查速度字段(0.09s)"
         },
         {
           "id": "v1.0.4.2",
           "name": "后端路由注册",
           "description": "在 torrents.py 中注册速度路由",
           "status": "done",
-          "file": "BtDeck/app/api/endpoints/torrents.py",
-          "evidence": "路由路径 /api/v1/torrents/active-torrents 已注册"
+          "file": "app/api/endpoints/torrents.py"
         },
         {
           "id": "v1.0.4.3",
           "name": "前端 API 封装",
-          "description": "在 torrents.ts 中添加速度 API 调用",
+          "description": "torrents.ts 添加速度 API 调用",
           "status": "done",
-          "file": "BtDeck_fronted/src/api/torrents.ts",
-          "evidence": "添加 getActiveTorrents() + ActiveTorrentSpeed 接口定义"
+          "file": "BtDeck_fronted/src/api/torrents.ts"
         },
         {
           "id": "v1.0.4.4",
-          "name": "前端组件改造",
-          "description": "改造 index.vue 实现虚拟分页和1秒轮询",
+          "name": "前端种子列表改造",
+          "description": "虚拟分页 + 1秒轮询 + 活跃种子优先排序",
           "status": "done",
-          "file": "BtDeck_fronted/src/views/torrents/index.vue",
-          "evidence": "1秒轮询 + activeSpeedMap缓存 + beforeDestroy清理 + getTorrentSpeed优先实时数据"
+          "file": "BtDeck_fronted/src/views/torrents/index.vue"
         },
         {
           "id": "v1.0.4.5",
+          "name": "线程池泄漏修复",
+          "description": "修复torrent_speed.py线程池泄漏和异常处理问题",
+          "status": "done",
+          "evidence": "commit 25c59aa"
+        },
+        {
+          "id": "v1.0.4.6",
+          "name": "速度单位转换修复",
+          "description": "修复活跃种子速度单位未转换的问题",
+          "status": "done",
+          "evidence": "commit d79040d"
+        },
+        {
+          "id": "v1.0.4.7",
+          "name": "Transmission空列表修复",
+          "description": "修复 Transmission 活跃种子速度接口返回空列表的问题",
+          "status": "done",
+          "evidence": "commit b4ddde2"
+        },
+        {
+          "id": "v1.0.4.8",
+          "name": "活跃种子进度字段",
+          "description": "活跃种子API新增progress字段，支持实时进度更新",
+          "status": "done",
+          "evidence": "commit a568aa9"
+        },
+        {
+          "id": "v1.0.4.9",
+          "name": "种子完成后自动更新状态",
+          "description": "种子进度达100%时自动更新数据库状态为completed",
+          "status": "done",
+          "evidence": "commit f8b0185"
+        },
+        {
+          "id": "v1.0.4.10",
           "name": "性能测试",
-          "description": "测试 API 响应时间 < 200ms，1秒轮询不卡顿",
+          "description": "测试API响应时间 < 200ms，1秒轮询不卡顿",
           "status": "done",
           "evidence": "4个下载器并发: 平均543ms/次，1秒轮询连续3次均无卡顿"
         },
         {
-          "id": "v1.0.4.6",
+          "id": "v1.0.4.11",
           "name": "场景测试",
-          "description": "测试 8 个验收场景（有查询+有活跃、有查询+无活跃等）",
+          "description": "测试 8 个验收场景",
           "status": "done",
-          "evidence": "Token验证(401)、无Token(401)、响应格式正确、字段完整(hash/downloadSpeed/uploadSpeed/num_seeds/num_leechs)、连续轮询稳定"
+          "evidence": "Token验证(401)、无Token(401)、响应格式正确、字段完整"
         }
       ],
-      "acceptance_criteria": [
-        "1秒轮询更新活跃种子",
-        "活跃种子优先排序",
-        "复合条件查询优先级高于速度",
-        "跨类型分页正确（活跃+非活跃）",
-        "静态数据手动触发",
-        "Vue 2 Options API 风格",
-        "API 响应时间 < 200ms",
-        "定时器正确清理"
-      ],
-      "performance_targets": {
-        "api_response_time": "< 200ms",
-        "frontend_polling": "1 second",
-        "memory_leak": "< 20MB/hour"
-      },
-      "known_risks": [
-        "1秒轮询可能导致下载器过载",
-        "前端定时器未清理导致内存泄漏",
-        "查询结果与活跃种子不匹配"
-      ],
-      "mitigation": [
-        "限制并发数量和超时",
-        "严格的 beforeDestroy 清理",
-        "后端应用相同查询条件"
-      ],
-      "existing_infrastructure": {
-        "reusable": {
-          "downloader_cache": "app/downloader/initialization.py - app.state.store 缓存连接，v1.0.4 速度接口必须通过此缓存调用下载器",
-          "existing_torrent_list_api": "POST /torrents/list 已返回 download_speed/upload_speed（静态数据，用户手动刷新时同步）",
-          "lifecycle": "app/startup/lifecycle.py - run_dashboard_stats_loop 后台任务，需协调"
-        },
-        "not_reusable": {
-          "stats_cache": "app/downloader/torrent_stats_cache.py - 仅缓存种子 status 字段用于统计计数，不含速度字段，与 v1.0.4 无直接关系"
-        },
-        "v1.0.4_requirement": "v1.0.4 需要从下载器 API 实时获取种子级 downloadSpeed/uploadSpeed，筛选有速度的种子，这是现有基础设施不提供的功能"
+      "deviation_from_plan": {
+        "reason": "实际实现偏离原计划，采用更轻量的方案",
+        "changes": [
+          "计划: TorrentStateManager 动静数据分离(10s/10min) → 实际: 轻量级 active-torrents 接口 + 前端1秒轮询",
+          "计划: speed-all API → 实际: active-torrents API（仅返回有速度的种子）",
+          "计划: 前端 setup/Composition API → 实际: Options API + 虚拟分页",
+          "额外: 种子完成后自动更新数据库状态（计划外）",
+          "额外: 活跃种子进度字段（计划外）"
+        ]
       }
+    },
+    {
+      "id": "extra-notification",
+      "name": "通知中心（计划外）",
+      "description": "系统单向信箱通知，版本更新通知，未读计数轮询",
+      "status": "done",
+      "branch": "dev",
+      "evidence": "notification.py + notification_service.py + notifications.py + NotificationDrawer"
+    },
+    {
+      "id": "extra-tracker-keywords",
+      "name": "Tracker关键词池初始化（计划外）",
+      "description": "Tracker关键词管理，默认数据自动初始化",
+      "status": "done",
+      "branch": "dev",
+      "evidence": "tracker_keywords_pools.py + init_db()统一初始化"
+    },
+    {
+      "id": "extra-init-refactor",
+      "name": "统一初始化重构（计划外）",
+      "description": "统一初始数据初始化方式到 init_db()",
+      "status": "done",
+      "branch": "dev",
+      "evidence": "commit 22a89c8"
     },
     {
       "id": "v1.0.5",
       "name": "查询模板系统",
       "description": "支持保存和复用常用查询条件",
-      "dependencies": ["v1.0.4"],
       "status": "pending",
-      "priority": "medium",
+      "plan_file": "PLANS/v1.0.5.md",
       "tasks": []
     },
     {
       "id": "v1.0.6",
       "name": "孤儿文件管理",
-      "description": "扫描和管理无对应种子的文件",
-      "dependencies": [],
+      "description": "自动发现并清理无用文件，inode去重",
       "status": "pending",
-      "priority": "medium",
+      "plan_file": "PLANS/v1.0.6.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.7",
+      "name": "路径扫描增强",
+      "description": "扩展到扫描btdeck配置路径",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.7.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.8",
+      "name": "数据库升级",
+      "description": "PostgreSQL支持 + 下载器连接池管理",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.8.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.9",
+      "name": "一键部署",
+      "description": "Docker + Windows + Linux 三种部署方式",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.9.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.1.0",
+      "name": "自动化运维",
+      "description": "后台自动化任务调度系统",
+      "status": "pending",
+      "plan_file": "PLANS/v1.1.0.md",
       "tasks": []
     }
   ]
