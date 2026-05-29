@@ -562,3 +562,146 @@ class TestBatchAssignTags:
         result = tag_service.batch_assign_tags([{"tag_ids": ["t1"]}])
         assert result["success"] is True
         mock_repo.find_by_id.assert_not_called()
+
+
+# ==================== get_all_tags 测试 ====================
+
+class TestGetAllTags:
+    """get_all_tags 方法测试（新增）"""
+
+    def test_get_all_tags_success(self, tag_service, mock_repo):
+        """成功获取所有标签（跨下载器）"""
+        # 模拟返回多个标签，包含重复
+        mock_tags = [
+            make_tag(tag_id="t1", tag_name="电影", tag_type="category"),
+            make_tag(tag_id="t2", tag_name="PT", tag_type="tag"),
+            make_tag(tag_id="t3", tag_name="电影", tag_type="category"),  # 重复
+            make_tag(tag_id="t4", tag_name="剧集", tag_type="category"),
+        ]
+        mock_repo.find_all_tags.return_value = mock_tags
+
+        result = tag_service.get_all_tags()
+
+        assert result["success"] is True
+        assert result["total_count"] == 3  # 去重后：电影、PT、剧集
+        assert len(result["data"]) == 3
+
+        # 验证去重（电影只出现一次）
+        movie_count = sum(1 for tag in result["data"] if tag["tag_name"] == "电影")
+        assert movie_count == 1
+
+        mock_repo.find_all_tags.assert_called_once_with(include_deleted=False, tag_type=None)
+
+    def test_get_all_tags_with_category_filter(self, tag_service, mock_repo):
+        """按分类类型筛选"""
+        mock_tags = [
+            make_tag(tag_id="t1", tag_name="电影", tag_type="category"),
+            make_tag(tag_id="t2", tag_name="剧集", tag_type="category"),
+        ]
+        mock_repo.find_all_tags.return_value = mock_tags
+
+        result = tag_service.get_all_tags(tag_type="category")
+
+        assert result["success"] is True
+        assert result["total_count"] == 2
+        mock_repo.find_all_tags.assert_called_once_with(include_deleted=False, tag_type="category")
+
+    def test_get_all_tags_with_tag_filter(self, tag_service, mock_repo):
+        """按标签类型筛选"""
+        mock_tags = [
+            make_tag(tag_id="t1", tag_name="PT", tag_type="tag"),
+            make_tag(tag_id="t2", tag_name="BT", tag_type="tag"),
+        ]
+        mock_repo.find_all_tags.return_value = mock_tags
+
+        result = tag_service.get_all_tags(tag_type="tag")
+
+        assert result["success"] is True
+        assert result["total_count"] == 2
+        mock_repo.find_all_tags.assert_called_once_with(include_deleted=False, tag_type="tag")
+
+    def test_get_all_tags_invalid_type(self, tag_service, mock_repo):
+        """无效的标签类型"""
+        result = tag_service.get_all_tags(tag_type="invalid")
+
+        assert result["success"] is False
+        assert "无效的标签类型" in result["message"]
+        mock_repo.find_all_tags.assert_not_called()
+
+    def test_get_all_tags_empty_result(self, tag_service, mock_repo):
+        """空结果"""
+        mock_repo.find_all_tags.return_value = []
+
+        result = tag_service.get_all_tags()
+
+        assert result["success"] is True
+        assert result["total_count"] == 0
+        assert result["data"] == []
+
+    def test_get_all_tags_exception_handling(self, tag_service, mock_repo):
+        """Repository异常处理"""
+        mock_repo.find_all_tags.side_effect = Exception("数据库查询失败")
+
+        result = tag_service.get_all_tags()
+
+        assert result["success"] is False
+        assert "数据库查询失败" in result["message"]
+
+
+# ==================== get_all_tag_names 测试 ====================
+
+class TestGetAllTagNames:
+    """get_all_tag_names 方法测试（新增）"""
+
+    def test_get_all_category_names(self, tag_service, mock_repo):
+        """获取所有分类名称"""
+        mock_repo.find_all_tag_names_by_type.return_value = ["电影", "剧集", "音乐"]
+
+        result = tag_service.get_all_tag_names(tag_type="category")
+
+        assert result["success"] is True
+        assert result["total_count"] == 3
+        assert result["data"] == ["电影", "剧集", "音乐"]
+        mock_repo.find_all_tag_names_by_type.assert_called_once_with(
+            tag_type="category", include_deleted=False
+        )
+
+    def test_get_all_tag_names(self, tag_service, mock_repo):
+        """获取所有标签名称"""
+        mock_repo.find_all_tag_names_by_type.return_value = ["PT", "BT", "HD"]
+
+        result = tag_service.get_all_tag_names(tag_type="tag")
+
+        assert result["success"] is True
+        assert result["total_count"] == 3
+        assert result["data"] == ["PT", "BT", "HD"]
+        mock_repo.find_all_tag_names_by_type.assert_called_once_with(
+            tag_type="tag", include_deleted=False
+        )
+
+    def test_get_all_tag_names_empty_result(self, tag_service, mock_repo):
+        """空结果"""
+        mock_repo.find_all_tag_names_by_type.return_value = []
+
+        result = tag_service.get_all_tag_names(tag_type="category")
+
+        assert result["success"] is True
+        assert result["total_count"] == 0
+        assert result["data"] == []
+
+    def test_get_all_tag_names_invalid_type(self, tag_service, mock_repo):
+        """无效的标签类型"""
+        result = tag_service.get_all_tag_names(tag_type="invalid")
+
+        assert result["success"] is False
+        assert "无效的标签类型" in result["message"]
+        mock_repo.find_all_tag_names_by_type.assert_not_called()
+
+    def test_get_all_tag_names_exception_handling(self, tag_service, mock_repo):
+        """Repository异常处理"""
+        mock_repo.find_all_tag_names_by_type.side_effect = Exception("数据库错误")
+
+        result = tag_service.get_all_tag_names(tag_type="category")
+
+        assert result["success"] is False
+        assert "数据库错误" in result["message"]
