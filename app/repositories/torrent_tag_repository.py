@@ -101,6 +101,68 @@ class TorrentTagRepository:
             logger.error(f"查询下载器标签失败: {str(e)}")
             return []
 
+    def find_all_tags(
+        self,
+        include_deleted: bool = False,
+        tag_type: Optional[str] = None
+    ) -> List[TorrentTag]:
+        """
+        查询所有标签（跨下载器聚合）
+
+        Args:
+            include_deleted: 是否包含已删除的标签
+            tag_type: 可选，筛选标签类型（category/tag）
+
+        Returns:
+            所有标签列表
+        """
+        try:
+            query = self.db.query(TorrentTag)
+
+            # 过滤已删除
+            if not include_deleted:
+                query = query.filter(TorrentTag.dr == 0)
+
+            # 按类型筛选
+            if tag_type:
+                query = query.filter(TorrentTag.tag_type == tag_type)
+
+            return query.order_by(TorrentTag.tag_name.asc()).all()
+        except Exception as e:
+            logger.error(f"查询所有标签失败: {str(e)}")
+            return []
+
+    def find_all_tag_names_by_type(
+        self,
+        tag_type: str,
+        include_deleted: bool = False
+    ) -> List[str]:
+        """
+        查询所有指定类型的标签名称（去重）
+
+        Args:
+            tag_type: 标签类型（category/tag）
+            include_deleted: 是否包含已删除的标签
+
+        Returns:
+            去重后的标签名称列表
+        """
+        try:
+            query = self.db.query(TorrentTag.tag_name).distinct()
+
+            # 过滤已删除
+            if not include_deleted:
+                query = query.filter(TorrentTag.dr == 0)
+
+            # 按类型筛选
+            query = query.filter(TorrentTag.tag_type == tag_type)
+
+            result = query.order_by(TorrentTag.tag_name.asc()).all()
+            return [row[0] for row in result]
+        except Exception as e:
+            logger.error(f"查询标签名称失败: {str(e)}")
+            return []
+
     def find_relations_by_torrent_hash(
         self, torrent_hash: str
     ) -> List[TorrentTagRelation]:
