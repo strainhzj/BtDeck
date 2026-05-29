@@ -149,6 +149,113 @@ class TagService:
                 tag_type=tag_type
             )
 
+            return {
+                "success": True,
+                "data": [self._to_dict(tag) for tag in tags],
+                "message": "获取标签列表成功",
+                "total_count": len(tags)
+            }
+        except Exception as e:
+            logger.error(f"获取标签列表失败: {str(e)}")
+            return {
+                "success": False,
+                "data": [],
+                "message": f"获取标签列表失败: {str(e)}",
+                "total_count": 0
+            }
+
+    def get_all_tags(
+        self,
+        tag_type: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        获取所有标签（跨下载器聚合）
+
+        Args:
+            tag_type: 可选，筛选标签类型（category/tag）
+
+        Returns:
+            统一格式的响应字典，包含去重后的标签数据
+        """
+        try:
+            # 验证tag_type
+            if tag_type and tag_type not in self.VALID_TAG_TYPES:
+                return {
+                    "success": False,
+                    "data": None,
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                }
+
+            tags = self.repository.find_all_tags(
+                include_deleted=False,
+                tag_type=tag_type
+            )
+
+            # 按tag_name去重（保留第一次出现的）
+            seen = set()
+            unique_tags = []
+            for tag in tags:
+                if tag.tag_name not in seen:
+                    seen.add(tag.tag_name)
+                    unique_tags.append(tag)
+
+            return {
+                "success": True,
+                "data": [self._to_dict(tag) for tag in unique_tags],
+                "message": "获取所有标签成功",
+                "total_count": len(unique_tags)
+            }
+        except Exception as e:
+            logger.error(f"获取所有标签失败: {str(e)}")
+            return {
+                "success": False,
+                "data": [],
+                "message": f"获取所有标签失败: {str(e)}",
+                "total_count": 0
+            }
+
+    def get_all_tag_names(
+        self,
+        tag_type: str
+    ) -> Dict[str, Any]:
+        """
+        获取所有指定类型的标签名称（去重）
+
+        Args:
+            tag_type: 标签类型（category/tag）
+
+        Returns:
+            统一格式的响应字典，包含去重后的标签名称列表
+        """
+        try:
+            # 验证tag_type
+            if tag_type not in self.VALID_TAG_TYPES:
+                return {
+                    "success": False,
+                    "data": None,
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                }
+
+            tag_names = self.repository.find_all_tag_names_by_type(
+                tag_type=tag_type,
+                include_deleted=False
+            )
+
+            return {
+                "success": True,
+                "data": tag_names,
+                "message": "获取标签名称成功",
+                "total_count": len(tag_names)
+            }
+        except Exception as e:
+            logger.error(f"获取标签名称失败: {str(e)}")
+            return {
+                "success": False,
+                "data": [],
+                "message": f"获取标签名称失败: {str(e)}",
+                "total_count": 0
+            }
+
             tag_list = [self._to_dict(tag) for tag in tags]
 
             return {
