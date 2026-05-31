@@ -109,7 +109,7 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
 
 
 # Transmission 轻量级查询：仅获取速度相关字段，避免拉取全部数据
-_TR_SPEED_FIELDS = ["hashString", "rateDownload", "rateUpload", "progress", "peersSendingToUs", "peersGettingFromUs"]
+_TR_SPEED_FIELDS = ["hashString", "rateDownload", "rateUpload", "percentDone", "peersSendingToUs", "peersGettingFromUs"]
 
 
 def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
@@ -121,8 +121,8 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
         dl_speed = getattr(t, "rate_download", 0) or 0
         ul_speed = getattr(t, "rate_upload", 0) or 0
         if dl_speed > 0 or ul_speed > 0:
-            # Transmission的progress字段是0-1的小数，需要转换为百分比
-            progress_raw = getattr(t, "progress", 0) or 0
+            # percentDone 返回 0-1 小数，通过 percent_done 属性安全访问
+            progress_raw = getattr(t, "percent_done", 0) or 0
             progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
             result.append({
                 "hash": getattr(t, "hashString", ""),
@@ -165,7 +165,7 @@ def _supplement_qb_sync(client: qbClient, hashes: List[str]) -> List[Dict[str, A
 def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, Any]]:
     """批量补查 Transmission 中消失种子的最新状态"""
     fields = [
-        "hashString", "rateDownload", "rateUpload", "progress",
+        "hashString", "rateDownload", "rateUpload", "percentDone",
         "peersSendingToUs", "peersGettingFromUs", "status",
     ]
     # Transmission 不支持按 hash 批量查询，需要获取所有再过滤
@@ -176,7 +176,7 @@ def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, A
         h = getattr(t, "hashString", "")
         if h not in hash_set:
             continue
-        progress_raw = getattr(t, "progress", 0) or 0
+        progress_raw = getattr(t, "percent_done", 0) or 0
         progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
         result.append({
             "hash": h,
