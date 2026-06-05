@@ -296,50 +296,9 @@ def init_db():
                 logger.info("欢迎通知创建成功")
                 print("[OK] 欢迎通知创建成功")
 
-            # 版本更新通知
-            from app.yamlConfig import yaml
-            current_version = yaml.get("app.version", "1.0.4")
-            version_title = f"BtDeck v{current_version} 版本更新"
+            # 版本更新通知由 lifecycle.py 中的 add_version_update_notification_task 统一处理
+            # 这里不再创建，避免重复
 
-            version_exists = db.query(Notification).filter(
-                Notification.type == "version_update",
-                Notification.title == version_title,
-            ).first()
-            if not version_exists:
-                version_content = f"""## 新增功能
-
-**通知中心**
-- 新增通知中心，方便您查看系统消息和版本更新动态
-- 支持按类型筛选通知，一键标记全部已读
-- 有新版本发布时会自动提醒您
-
-**实时速度监控**
-- 种子列表新增独立的下载和上传速度显示
-- 正在下载的种子会自动排到最前面，方便查看进度
-
-**Tracker 关键词池**
-- 新增 Tracker 关键词管理功能，帮助您快速识别种子状态异常的原因
-- 支持通过拖拽调整关键词优先级，批量管理更便捷
-
-## 优化改进
-
-- 优化了种子列表的数据加载方式，页面响应更快
-- 修复了长时间运行后速度监控可能失效的问题
-- 改进了异常处理，减少意外报错的情况"""
-                db.add(Notification(
-                    type="version_update",
-                    title=version_title,
-                    content=version_content.strip(),
-                    priority="info",
-                    is_read=False,
-                    extra_data={
-                        "version": current_version,
-                        "release_url": "https://github.com/StrainThomas/BtDeck/releases",
-                    },
-                ))
-                db.commit()
-                logger.info(f"版本更新通知创建成功: {version_title}")
-                print(f"[OK] 版本更新通知创建成功: {version_title}")
         finally:
             db.close()
 
