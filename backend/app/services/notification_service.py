@@ -9,6 +9,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Any, Dict, List, Optional
+from packaging import version
 
 from sqlalchemy import select, func, update, delete
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -145,7 +146,10 @@ class NotificationService:
                     headers={"Accept": "application/vnd.github+json"}
                 )
 
-                if resp.status_code != 200:
+                if resp.status_code == 403:
+                    logger.warning("GitHub API rate limit exceeded (403 Forbidden)")
+                    return None
+                elif resp.status_code != 200:
                     logger.debug(f"GitHub API 返回 {resp.status_code}，跳过版本检查")
                     return None
 
@@ -155,9 +159,16 @@ class NotificationService:
                 if not latest_tag:
                     return None
 
-                # 比较版本号（简单字符串比较，适用于语义化版本）
-                if latest_tag <= current_version:
-                    return None
+                # 使用 packaging.version 进行语义化版本比较
+                try:
+                    if version.parse(latest_tag) <= version.parse(current_version):
+                        logger.debug(f"当前版本 {current_version} 已是最新或更新")
+                        return None
+                except Exception as e:
+                    logger.warning(f"版本号解析失败: {e}, 回退到字符串比较")
+                    # 回退到字符串比较（适用于非标准版本号）
+                    if latest_tag <= current_version:
+                        return None
 
                 # 检查是否已存在相同版本的通知（通过 title 去重）
                 existing = await self.db.execute(
