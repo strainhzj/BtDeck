@@ -3229,6 +3229,7 @@ async def qb_sync_trackers_only_async(
     # === 第5步：逐种子写入 tracker_info 表 ===
     tracker_count = 0
     error_count = 0
+    batch_start_count = 0  # 记录每批开始时的计数，用于 commit 失败时回退
     sync_start = datetime.now()
 
     for torrent_info in existing_torrents:
@@ -3242,16 +3243,22 @@ async def qb_sync_trackers_only_async(
         except Exception as e:
             error_count += 1
             logger.error(f"[QB_TRACKER_ONLY] sync_add_tracker_async 失败: hash={torrent_hash}, error={e}")
+            # 子函数内部可能执行了 rollback，需要确保 session 恢复到可用状态
+            if not db.in_transaction():
+                await db.begin()
             continue
 
         # 分批提交，减少单次事务持有写锁的时间
         if tracker_count > 0 and tracker_count % _TRACKER_ONLY_COMMIT_BATCH == 0:
             try:
                 await db.commit()
+                batch_start_count = tracker_count  # commit 成功，更新基准
                 logger.debug(f"[QB_TRACKER_ONLY] 分批提交: 已处理 {tracker_count} 个种子")
             except Exception as commit_err:
                 await db.rollback()
-                error_count += _TRACKER_ONLY_COMMIT_BATCH
+                batch_failed = tracker_count - batch_start_count  # 本批次实际处理数
+                error_count += batch_failed
+                tracker_count = batch_start_count  # 回退到 commit 成功时的计数
                 logger.error(f"[QB_TRACKER_ONLY] 分批提交失败: {commit_err}")
 
     # 最终提交剩余的变更
@@ -3259,6 +3266,9 @@ async def qb_sync_trackers_only_async(
         await db.commit()
     except Exception as commit_err:
         await db.rollback()
+        batch_failed = tracker_count - batch_start_count
+        error_count += batch_failed
+        tracker_count = batch_start_count
         logger.error(f"[QB_TRACKER_ONLY] 最终提交失败: {commit_err}")
 
     sync_duration = (datetime.now() - sync_start).total_seconds()
@@ -3312,6 +3322,7 @@ async def tr_sync_trackers_only_async(
     # === 第3步：过滤已存在种子并同步 tracker ===
     tracker_count = 0
     error_count = 0
+    batch_start_count = 0  # 记录每批开始时的计数，用于 commit 失败时回退
     skipped_new = 0
     sync_start = datetime.now()
 
@@ -3330,16 +3341,22 @@ async def tr_sync_trackers_only_async(
         except Exception as e:
             error_count += 1
             logger.error(f"[TR_TRACKER_ONLY] sync_add_tracker_async 失败: hash={torrent_hash}, error={e}")
+            # 子函数内部可能执行了 rollback，需要确保 session 恢复到可用状态
+            if not db.in_transaction():
+                await db.begin()
             continue
 
         # 分批提交
         if tracker_count > 0 and tracker_count % _TRACKER_ONLY_COMMIT_BATCH == 0:
             try:
                 await db.commit()
+                batch_start_count = tracker_count  # commit 成功，更新基准
                 logger.debug(f"[TR_TRACKER_ONLY] 分批提交: 已处理 {tracker_count} 个种子")
             except Exception as commit_err:
                 await db.rollback()
-                error_count += _TRACKER_ONLY_COMMIT_BATCH
+                batch_failed = tracker_count - batch_start_count  # 本批次实际处理数
+                error_count += batch_failed
+                tracker_count = batch_start_count  # 回退到 commit 成功时的计数
                 logger.error(f"[TR_TRACKER_ONLY] 分批提交失败: {commit_err}")
 
     # 最终提交剩余的变更
@@ -3347,6 +3364,9 @@ async def tr_sync_trackers_only_async(
         await db.commit()
     except Exception as commit_err:
         await db.rollback()
+        batch_failed = tracker_count - batch_start_count
+        error_count += batch_failed
+        tracker_count = batch_start_count
         logger.error(f"[TR_TRACKER_ONLY] 最终提交失败: {commit_err}")
 
     sync_duration = (datetime.now() - sync_start).total_seconds()
