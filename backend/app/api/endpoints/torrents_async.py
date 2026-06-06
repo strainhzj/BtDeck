@@ -3149,7 +3149,7 @@ async def tr_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
 
 
 # 分批 commit 的粒度：每处理多少个种子提交一次事务
-_TRACKER_ONLY_COMMIT_BATCH = 200
+_TRACKER_ONLY_COMMIT_BATCH = 1000
 
 
 async def qb_sync_trackers_only_async(
@@ -3164,13 +3164,23 @@ async def qb_sync_trackers_only_async(
     调用 sync_add_tracker_async 写入 tracker_info 表。
     不修改 torrent_info 表，不执行种子文件备份。
     """
+    # === 输入校验 ===
+    if not downloader:
+        return {"status": "failed", "message": "downloader 参数为空", "tracker_count": 0, "torrent_count": 0}
+    if not client:
+        return {"status": "failed", "message": "client 参数为空", "tracker_count": 0, "torrent_count": 0}
+    downloader_id = getattr(downloader, 'downloader_id', None)
+    if not downloader_id:
+        return {"status": "failed", "message": "downloader_id 为空", "tracker_count": 0, "torrent_count": 0}
+
     nickname = getattr(downloader, 'nickname', 'unknown')
+    task_start = datetime.now()
 
     # === 第1步：从数据库查询 hash -> info_id 映射 ===
     query_start = datetime.now()
     result = await db.execute(
         select(TorrentInfo.hash, TorrentInfo.info_id)
-        .filter(TorrentInfo.downloader_id == downloader.downloader_id)
+        .filter(TorrentInfo.downloader_id == downloader_id)
         .filter(TorrentInfo.dr == 0)
     )
     hash_to_info_id = {row.hash: row.info_id for row in result.all()}
@@ -3187,20 +3197,11 @@ async def qb_sync_trackers_only_async(
             "tracker_count": 0, "torrent_count": 0, "nickname": nickname
         }
 
-    # === 第2步：从下载器获取种子列表 ===
+    # === 第2步：全量获取种子列表（不分批） ===
     fetch_start = datetime.now()
-    torrent_info_list = []
-    offset = 0
-    while True:
-        batch = await asyncio.to_thread(client.torrents_info, limit=QB_BATCH_SIZE, offset=offset)
-        if not batch:
-            break
-        torrent_info_list.extend(batch)
-        if len(batch) < QB_BATCH_SIZE:
-            break
-        offset += QB_BATCH_SIZE
+    torrent_info_list = await asyncio.to_thread(client.torrents_info)
     fetch_duration = (datetime.now() - fetch_start).total_seconds()
-    logger.info(f"[QB_TRACKER_ONLY] 获取到 {len(torrent_info_list)} 个种子，耗时 {fetch_duration:.3f}s")
+    logger.info(f"[QB_TRACKER_ONLY] 全量获取到 {len(torrent_info_list)} 个种子，耗时 {fetch_duration:.3f}s")
 
     if not torrent_info_list:
         return {"status": "success", "message": f"下载器 {nickname} 无在线种子", "tracker_count": 0, "torrent_count": 0, "nickname": nickname}
@@ -3228,18 +3229,31 @@ async def qb_sync_trackers_only_async(
 
     # === 第5步：逐种子写入 tracker_info 表 ===
     tracker_count = 0
+    tracker_total_rows = 0  # 写入的 tracker 记录总条数
     error_count = 0
     batch_start_count = 0  # 记录每批开始时的计数，用于 commit 失败时回退
     sync_start = datetime.now()
 
     for torrent_info in existing_torrents:
         torrent_hash = _qb_get_attr(torrent_info, "hash")
+        if not torrent_hash:
+            continue
         info_id = hash_to_info_id.get(torrent_hash)
         if not info_id:
             continue
         try:
             await sync_add_tracker_async(db, "qbittorrent", "update", torrent_info, info_id)
             tracker_count += 1
+            # 统计本种子的 tracker 条数
+            trackers_data = getattr(torrent_info, 'trackers', None)
+            if callable(trackers_data):
+                trackers_data = trackers_data()
+            if trackers_data:
+                tracker_total_rows += sum(
+                    1 for tr in trackers_data
+                    if tr.get('url') and 'DHT' not in str(tr.get('url', ''))
+                    and 'PeX' not in str(tr.get('url', '')) and 'LSD' not in str(tr.get('url', ''))
+                )
         except Exception as e:
             error_count += 1
             logger.error(f"[QB_TRACKER_ONLY] sync_add_tracker_async 失败: hash={torrent_hash}, error={e}")
@@ -3272,13 +3286,20 @@ async def qb_sync_trackers_only_async(
         logger.error(f"[QB_TRACKER_ONLY] 最终提交失败: {commit_err}")
 
     sync_duration = (datetime.now() - sync_start).total_seconds()
-    total_duration = (datetime.now() - query_start).total_seconds()
-    logger.info(f"[QB_TRACKER_ONLY] {nickname} 完成: {tracker_count} 个种子 tracker 已同步, {error_count} 个失败, 总耗时 {total_duration:.2f}s")
+    total_duration = (datetime.now() - task_start).total_seconds()
+    logger.info(
+        f"[QB_TRACKER_ONLY] {nickname} 完成: "
+        f"{tracker_count}/{len(existing_torrents)} 个种子, "
+        f"{tracker_total_rows} 条 tracker 记录, "
+        f"{error_count} 个失败, "
+        f"总耗时 {total_duration:.2f}s"
+    )
 
     return {
         "status": "success" if error_count == 0 else "partial",
-        "message": f"qBittorrent {nickname} tracker 同步完成: {tracker_count} 个种子",
+        "message": f"qBittorrent {nickname} tracker 同步完成: {tracker_count} 个种子, {tracker_total_rows} 条记录",
         "tracker_count": tracker_count, "error_count": error_count,
+        "tracker_total_rows": tracker_total_rows,
         "torrent_count": len(existing_torrents), "nickname": nickname
     }
 
@@ -3293,14 +3314,30 @@ async def tr_sync_trackers_only_async(
 
     Transmission 的 get_torrents(arguments=TR_BASE_FIELDS) 返回中已包含 trackerStats，
     不需要额外 API 调用来获取 tracker 数据，效率远高于 qBittorrent。
+
+    TR 的 tracker_stats 字段名与 QB 不同，sync_add_tracker_async 内部已做字段映射：
+    - tracker_status.last_announce_succeeded -> last_announce_succeeded
+    - tracker_status.last_announce_result    -> last_announce_msg
+    - tracker_status.last_scrape_succeeded   -> last_scrape_succeeded
+    - tracker_status.last_scrape_result      -> last_scrape_msg
     """
+    # === 输入校验 ===
+    if not downloader:
+        return {"status": "failed", "message": "downloader 参数为空", "tracker_count": 0, "torrent_count": 0}
+    if not client:
+        return {"status": "failed", "message": "client 参数为空", "tracker_count": 0, "torrent_count": 0}
+    downloader_id = getattr(downloader, 'downloader_id', None)
+    if not downloader_id:
+        return {"status": "failed", "message": "downloader_id 为空", "tracker_count": 0, "torrent_count": 0}
+
     nickname = getattr(downloader, 'nickname', 'unknown')
+    task_start = datetime.now()
 
     # === 第1步：从数据库查询 hash -> info_id 映射 ===
     query_start = datetime.now()
     result = await db.execute(
         select(TorrentInfo.hash, TorrentInfo.info_id)
-        .filter(TorrentInfo.downloader_id == downloader.downloader_id)
+        .filter(TorrentInfo.downloader_id == downloader_id)
         .filter(TorrentInfo.dr == 0)
     )
     hash_to_info_id = {row.hash: row.info_id for row in result.all()}
@@ -3321,6 +3358,7 @@ async def tr_sync_trackers_only_async(
 
     # === 第3步：过滤已存在种子并同步 tracker ===
     tracker_count = 0
+    tracker_total_rows = 0  # 写入的 tracker 记录总条数
     error_count = 0
     batch_start_count = 0  # 记录每批开始时的计数，用于 commit 失败时回退
     skipped_new = 0
@@ -3335,9 +3373,19 @@ async def tr_sync_trackers_only_async(
             skipped_new += 1
             continue
 
+        # 预检：确保 tracker_stats 存在且非空，跳过无 tracker 的种子
+        tracker_stats = getattr(torrent_info, 'tracker_stats', None) or []
+        if not tracker_stats:
+            continue
+
         try:
             await sync_add_tracker_async(db, "transmission", "update", torrent_info, info_id)
             tracker_count += 1
+            # 统计本种子的有效 tracker 条数（排除无 announce URL 的）
+            tracker_total_rows += sum(
+                1 for ts in tracker_stats
+                if hasattr(ts, 'fields') and ts.fields.get('announce')
+            )
         except Exception as e:
             error_count += 1
             logger.error(f"[TR_TRACKER_ONLY] sync_add_tracker_async 失败: hash={torrent_hash}, error={e}")
@@ -3370,14 +3418,21 @@ async def tr_sync_trackers_only_async(
         logger.error(f"[TR_TRACKER_ONLY] 最终提交失败: {commit_err}")
 
     sync_duration = (datetime.now() - sync_start).total_seconds()
-    total_duration = (datetime.now() - query_start).total_seconds()
+    total_duration = (datetime.now() - task_start).total_seconds()
     if skipped_new > 0:
         logger.debug(f"[TR_TRACKER_ONLY] 跳过 {skipped_new} 个数据库中不存在的种子")
-    logger.info(f"[TR_TRACKER_ONLY] {nickname} 完成: {tracker_count} 个种子 tracker 已同步, {error_count} 个失败, 总耗时 {total_duration:.2f}s")
+    logger.info(
+        f"[TR_TRACKER_ONLY] {nickname} 完成: "
+        f"{tracker_count}/{tracker_count + skipped_new} 个种子, "
+        f"{tracker_total_rows} 条 tracker 记录, "
+        f"{error_count} 个失败, "
+        f"总耗时 {total_duration:.2f}s"
+    )
 
     return {
         "status": "success" if error_count == 0 else "partial",
-        "message": f"Transmission {nickname} tracker 同步完成: {tracker_count} 个种子",
+        "message": f"Transmission {nickname} tracker 同步完成: {tracker_count} 个种子, {tracker_total_rows} 条记录",
         "tracker_count": tracker_count, "error_count": error_count,
+        "tracker_total_rows": tracker_total_rows,
         "torrent_count": tracker_count + skipped_new, "nickname": nickname
     }
