@@ -168,7 +168,7 @@ if [ -f "../feature_list.json" ]; then
     if command -v jq &> /dev/null; then
         echo ""
         echo "当前进行中的后端任务:"
-        jq -r '.features[].tasks[]? | select(.status == "in-progress") | select(.file | startswith("BtDeck/")) | "  - \(.name) (\(.id))"' ../feature_list.json 2>/dev/null || echo "  无进行中的后端任务"
+        jq -r '.features[].tasks[]? | select(.status == "in-progress") | select(.file | startswith("app/")) | "  - \(.name) (\(.id))"' ../feature_list.json 2>/dev/null || echo "  无进行中的后端任务"
         echo ""
     else
         echo -e "${YELLOW}⚠ jq 未安装，跳过任务显示${NC}"
@@ -198,5 +198,5 @@ echo ""
 echo "下一步:"
 echo "  1. 阅读 AGENTS.md"
 echo "  2. 阅读 CLAUDE.md"
-echo "  3. 查看 ../progress.md"
+echo "  3. 查看 PROGRESS.md"
 echo ""
