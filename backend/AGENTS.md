@@ -16,7 +16,7 @@ BTDeck 后端提供统一的 BitTorrent 客户端管理 API，支持 qBittorrent
 
 开始任何工作前，按顺序执行：
 
-```
+```text
 1. 阅读 AGENTS.md（本文件）
 2. 阅读 CLAUDE.md（后端技术约束）
 3. 阅读 docs/constraints/（详细规范）
@@ -102,7 +102,7 @@ BTDeck 后端提供统一的 BitTorrent 客户端管理 API，支持 qBittorrent
 
 ## 项目结构
 
-```
+```text
 BtDeck/
 ├── app/
 │   ├── api/endpoints/   # API路由（30+端点文件）
@@ -167,7 +167,7 @@ python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 5001
 
 ## 会话结束清单
 
-```
+```text
 1. 更新 PROGRESS.md（记录完成的工作和决策）
 2. 更新 feature_list.json（更新功能状态）
 3. 填写 session-handoff.md（交接信息）
