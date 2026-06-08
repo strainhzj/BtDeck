@@ -112,6 +112,12 @@ VERSION_HISTORY: Dict[str, Dict[str, Any]] = {
 }
 
 
+assert CURRENT_VERSION in VERSION_HISTORY, (
+    f"CURRENT_VERSION '{CURRENT_VERSION}' not found in VERSION_HISTORY. "
+    f"Available versions: {sorted(VERSION_HISTORY.keys())}"
+)
+
+
 def get_version_info(version: Optional[str] = None) -> Dict[str, Any]:
     """
     获取指定版本的信息
