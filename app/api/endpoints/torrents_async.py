@@ -3244,6 +3244,10 @@ async def _ensure_session_active(db: AsyncSession) -> None:
     """确保数据库 session 处于活跃事务状态（子函数 rollback 后恢复）。"""
     if not db.in_transaction():
         await db.begin()
+        return
+    # 事务存在但可能处于失败状态，rollback 后依赖 autobegin 恢复
+    if not db.is_active:
+        await db.rollback()
 
 
 async def qb_sync_trackers_only_async(

@@ -10,6 +10,7 @@ TorrentTagRepository 的单元测试
 """
 
 import pytest
+from unittest.mock import MagicMock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
