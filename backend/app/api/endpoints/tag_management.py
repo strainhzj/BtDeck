@@ -135,6 +135,175 @@ def validate_downloader_access(db: Session, downloader_id: str, username: str) -
 # ==================== 标签CRUD接口 ====================
 
 @router.get(
+    "/all",
+    summary="获取所有标签（跨下载器聚合）",
+    response_model=CommonResponse,
+    tags=["标签管理"]
+)
+def get_all_tags(
+    tag_type: Optional[str] = Query(None, description="筛选标签类型(category/tag)"),
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有下载器的标签列表（去重）
+
+    支持按标签类型筛选，返回所有下载器中不重复的标签
+    """
+    # 1. JWT认证
+    username = verify_token_and_get_user(request)
+    if not username:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+
+    try:
+        # 2. 调用服务层获取所有标签
+        service = TagService(db)
+        result = service.get_all_tags(tag_type=tag_type)
+
+        if not result.get("success"):
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取所有标签失败"),
+                code="400",
+                data=None
+            )
+
+        return CommonResponse(
+            status="success",
+            msg="获取所有标签成功",
+            code="200",
+            data=result.get("data", []),
+            total_count=result.get("total_count", 0)
+        )
+
+    except Exception as e:
+        logger.error(f"获取所有标签失败: {str(e)}")
+        return CommonResponse(
+            status="error",
+            msg=f"获取所有标签失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.get(
+    "/categories",
+    summary="获取所有分类名称",
+    response_model=CommonResponse,
+    tags=["标签管理"]
+)
+def get_all_categories(
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有下载器的分类名称列表（去重）
+
+    仅返回分类名称，用于过滤器选项
+    """
+    # 1. JWT认证
+    username = verify_token_and_get_user(request)
+    if not username:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+
+    try:
+        # 2. 调用服务层获取所有分类名称
+        service = TagService(db)
+        result = service.get_all_tag_names(tag_type="category")
+
+        if not result.get("success"):
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取分类列表失败"),
+                code="400",
+                data=None
+            )
+
+        return CommonResponse(
+            status="success",
+            msg="获取分类列表成功",
+            code="200",
+            data=result.get("data", []),
+            total_count=result.get("total_count", 0)
+        )
+
+    except Exception as e:
+        logger.error(f"获取分类列表失败: {str(e)}")
+        return CommonResponse(
+            status="error",
+            msg=f"获取分类列表失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.get(
+    "/tags",
+    summary="获取所有标签名称",
+    response_model=CommonResponse,
+    tags=["标签管理"]
+)
+def get_all_tag_names(
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    获取所有下载器的标签名称列表（去重）
+
+    仅返回标签名称，用于过滤器选项
+    """
+    # 1. JWT认证
+    username = verify_token_and_get_user(request)
+    if not username:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+
+    try:
+        # 2. 调用服务层获取所有标签名称
+        service = TagService(db)
+        result = service.get_all_tag_names(tag_type="tag")
+
+        if not result.get("success"):
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取标签列表失败"),
+                code="400",
+                data=None
+            )
+
+        return CommonResponse(
+            status="success",
+            msg="获取标签列表成功",
+            code="200",
+            data=result.get("data", []),
+            total_count=result.get("total_count", 0)
+        )
+
+    except Exception as e:
+        logger.error(f"获取标签列表失败: {str(e)}")
+        return CommonResponse(
+            status="error",
+            msg=f"获取标签列表失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.get(
     "/list/{downloader_id}",
     summary="获取标签列表",
     response_model=CommonResponse,

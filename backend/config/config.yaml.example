@@ -1,3 +1,7 @@
+# BTDeck 配置文件模板
+# 复制为 config.yaml 并填入实际值，切勿将 config.yaml 提交到版本控制
+# 密钥生成: python -c "import secrets; print(secrets.token_hex(16))"
+
 app:
   name: BtDeck
   version: 1.0.4
@@ -17,10 +21,10 @@ server:
   workers: 4
   timeout: 60
 security:
-  secret_key: 43e13ca76571e918ed57a9fc3d605e0d
+  secret_key: your-secret-key-here
   token_expire_minutes: 60
   algorithm: HS256
-  login_status_secret: ba771524e5de005a2760d8e04e3bfb07
+  login_status_secret: your-login-secret-here
 cors:
   allowed_origins:
   - '*'
