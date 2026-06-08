@@ -18,6 +18,8 @@ from app.api.endpoints import seed_transfer
 from app.api.endpoints import tracker_reannounce
 # 导入种子状态API
 from app.api.endpoints import torrent_status
+# 导入通知中心API
+from app.api.endpoints import notifications
 
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
@@ -62,3 +64,5 @@ api_router.include_router(seed_transfer.router, prefix="/torrents", tags=["种�
 api_router.include_router(tracker_reannounce.router, prefix="/tracker-reannounce", tags=["tracker-reannounce"])
 # 添加种子状态路由
 api_router.include_router(torrent_status.router, prefix="/torrent-status", tags=["torrent-status"])
+# 添加通知中心路由
+api_router.include_router(notifications.router, prefix="/notifications", tags=["通知中心"])

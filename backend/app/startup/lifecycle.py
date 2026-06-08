@@ -61,6 +61,88 @@ async def update_cron_task_status():
         traceback.print_exc()
 
 
+async def check_version_update_task(app: FastAPI):
+    """
+    后台版本更新检查任务
+
+    启动时检查 GitHub Release 是否有新版本，如有则创建通知。
+    版本信息从 app.version 模块读取，保持版本号统一管理。
+    """
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.notification_service import NotificationService
+        from app.version import CURRENT_VERSION
+
+        async with AsyncSessionLocal() as db:
+            service = NotificationService(db)
+            # 从版本模块获取当前版本
+            await service.check_version_update(CURRENT_VERSION)
+    except Exception as e:
+        print(f"[WARN] 版本更新检查失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
+async def add_version_update_notification_task(app: FastAPI):
+    """
+    启动时自动添加版本更新通知
+
+    检查数据库中是否已有当前版本的通知，如果没有则自动创建。
+    版本信息从 app.version 模块读取，便于集中管理。
+    """
+    try:
+        from app.database import AsyncSessionLocal
+        from app.services.notification_service import NotificationService
+        from app.version import (
+            CURRENT_VERSION,
+            get_version_content,
+            get_version_info
+        )
+
+        # 从版本模块获取信息
+        notification_title = f"BtDeck v{CURRENT_VERSION} 版本更新"
+        version_content = get_version_content(CURRENT_VERSION)
+        version_info = get_version_info(CURRENT_VERSION)
+
+        if not version_content:
+            print(f"[WARN] 未找到 v{CURRENT_VERSION} 的版本更新内容")
+            return
+
+        async with AsyncSessionLocal() as db:
+            service = NotificationService(db)
+
+            # 检查是否已存在该版本通知
+            from sqlalchemy import select
+            from app.models.notification import Notification
+
+            existing = await db.execute(
+                select(Notification).where(Notification.title == notification_title)
+            )
+            if existing.scalar_one_or_none():
+                print(f"[INFO] v{CURRENT_VERSION} 版本更新通知已存在，跳过创建")
+                return
+
+            # 创建版本更新通知
+            notification = await service.create_notification(
+                type="version_update",
+                title=notification_title,
+                content=version_content,
+                priority="info",
+                extra_data={
+                    "version": CURRENT_VERSION,
+                    "previous_version": version_info.get("previous_version", ""),
+                    "release_url": version_info.get("release_url", ""),
+                    "published_at": f"{version_info.get('release_date', '')}T00:00:00Z"
+                }
+            )
+            print(f"[OK] 已自动创建 v{CURRENT_VERSION} 版本更新通知 (ID: {notification.id})")
+
+    except Exception as e:
+        print(f"[WARN] 添加版本更新通知失败: {e}")
+        import traceback
+        traceback.print_exc()
+
+
 async def init_database_connection():
     """
     初始化数据库连接并验证
@@ -174,6 +256,14 @@ async def lifespan(app: FastAPI):
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
 
+    # 版本更新检查任务
+    version_check_task = asyncio.create_task(check_version_update_task(app))
+    app.state.version_check_task = version_check_task
+
+    # 本地版本更新通知任务（自动添加，不依赖 GitHub）
+    version_notification_task = asyncio.create_task(add_version_update_notification_task(app))
+    app.state.version_notification_task = version_notification_task
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
@@ -200,12 +290,40 @@ async def lifespan(app: FastAPI):
             except Exception as e:
                 print(f"⚠️  取消仪表盘统计任务时出错: {e}")
 
+        if version_check_task and not version_check_task.done():
+            print("取消版本检查任务...")
+            version_check_task.cancel()
+            try:
+                await version_check_task
+            except asyncio.CancelledError:
+                print("✅ 版本检查任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消版本检查任务时出错: {e}")
+
+        if version_notification_task and not version_notification_task.done():
+            print("取消版本通知任务...")
+            version_notification_task.cancel()
+            try:
+                await version_notification_task
+            except asyncio.CancelledError:
+                print("✅ 版本通知任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消版本通知任务时出错: {e}")
+
         # 停止定时任务调度器
         print("Shutting down...")
         try:
             await cron_executor.stop()
         except Exception as e:
             print(f"Error stopping cron scheduler: {e}")
+
+        # 清理速度监控线程池（防止资源泄漏）
+        try:
+            from app.api.endpoints.torrent_speed import _speed_executor
+            _speed_executor.shutdown(wait=True)
+            print("✅ 速度监控线程池已关闭")
+        except Exception as e:
+            print(f"⚠️  关闭线程池时出错: {e}")
 
     # # 初始化插件
     # plugin_init_task = asyncio.create_task(init_plugins_async())

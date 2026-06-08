@@ -37,6 +37,8 @@ python-multipart~=0.0.20
 passlib[bcrypt]~=1.7.4
 pydantic-settings~=2.12.0
 croniter~=3.0.4
+httpx~=0.28.0
+packaging~=24.0
 
 # 测试依赖
 pytest~=8.3.0

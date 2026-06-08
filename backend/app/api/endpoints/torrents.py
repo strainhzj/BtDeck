@@ -17,6 +17,7 @@ from app.api.endpoints.torrent_status import router as status_router
 from app.api.endpoints.torrent_deletion import router as deletion_router
 from app.api.endpoints.torrent_sync import router as sync_router
 from app.api.endpoints.torrent_location import router as location_router
+from app.api.endpoints.torrent_speed import router as speed_router
 
 router = APIRouter()
 
@@ -25,3 +26,4 @@ router.include_router(status_router)
 router.include_router(deletion_router)
 router.include_router(sync_router)
 router.include_router(location_router)
+router.include_router(speed_router)

@@ -106,6 +106,7 @@ def init_db():
     from app.tasks.cron_models import CronTask  # 必须导入，TaskLogs有外键引用cron_task表
     from app.models.setting_templates import SettingTemplate
     from app.models.torrent_tags import TorrentTag, TorrentTagRelation
+    from app.models.notification import Notification  # 通知中心
 
     # 创建表（如果不存在）
     Base.metadata.create_all(bind=engine)
@@ -258,6 +259,52 @@ def init_db():
     except Exception as e:
         logger.error(f"Error initializing default scheduled tasks: {str(e)}")
         print(f"Error initializing default scheduled tasks: {str(e)}")
+
+    # 初始化Tracker关键词池默认数据（增量检查：添加缺失的关键词）
+    try:
+        from app.data.default_tracker_keywords import init_default_tracker_keywords
+
+        db = SessionLocal()
+        try:
+            init_default_tracker_keywords(db)
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error initializing default tracker keywords: {str(e)}")
+        print(f"Error initializing default tracker keywords: {str(e)}")
+
+    # 初始化默认通知（欢迎通知、版本更新通知，幂等操作）
+    try:
+        from app.models.notification import Notification
+
+        db = SessionLocal()
+        try:
+            # 欢迎通知
+            welcome_exists = db.query(Notification).filter(
+                Notification.title == "欢迎使用 BtDeck"
+            ).first()
+            if not welcome_exists:
+                db.add(Notification(
+                    type="system",
+                    title="欢迎使用 BtDeck",
+                    content="感谢您使用 BtDeck！这是您的第一条系统通知。通知中心会在这里显示版本更新和系统消息。",
+                    priority="info",
+                    is_read=False,
+                ))
+                db.commit()
+                logger.info("欢迎通知创建成功")
+                print("[OK] 欢迎通知创建成功")
+
+            # 版本更新通知由 lifecycle.py 中的 add_version_update_notification_task 统一处理
+            # 这里不再创建，避免重复
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error initializing default notifications: {str(e)}")
+        print(f"Error initializing default notifications: {str(e)}")
 
 
 def init_config_file(

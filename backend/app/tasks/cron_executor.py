@@ -42,6 +42,7 @@ class CronTaskExecutor:
             self.scheduler.start()
             logger.info("定时任务调度器启动成功")
             self._ensure_speed_schedule_job()
+            self._ensure_version_check_job()
             await self.load_all_tasks()
         except Exception as e:
             logger.error(f"定时任务调度器启动失败: {str(e)}")
@@ -772,6 +773,47 @@ async def _async_exec_func():
                 "success": False,
                 "log_detail": f"导出失败: {str(e)}"
             }
+
+    def _ensure_version_check_job(self):
+        """注册 GitHub 版本检查任务（每天凌晨2点执行）"""
+        job_id = "github_version_check"
+        if self.scheduler.get_job(job_id):
+            logger.debug(f"版本检查任务已存在: {job_id}")
+            return
+
+        # 使用 CronTrigger 设置每天凌晨2点执行
+        self.scheduler.add_job(
+            func=self._check_github_version,
+            trigger=CronTrigger(hour=2, minute=0, timezone='Asia/Shanghai'),
+            id=job_id,
+            name="GitHub版本检查",
+            replace_existing=True,
+            misfire_grace_time=3600  # 错过执行时间后的宽容时间（1小时）
+        )
+        logger.info("已注册 GitHub 版本检查任务，每天凌晨2点执行")
+
+    async def _check_github_version(self):
+        """检查 GitHub Release 是否有新版本"""
+        try:
+            from app.version import CURRENT_VERSION
+            from app.services.notification_service import NotificationService
+
+            logger.info(f"开始检查 GitHub 版本更新，当前版本: {CURRENT_VERSION}")
+
+            async with AsyncSessionLocal() as db:
+                service = NotificationService(db)
+                new_version = await service.check_version_update(
+                    current_version=CURRENT_VERSION,
+                    github_repo="StrainThomas/BtDeck"
+                )
+
+                if new_version:
+                    logger.info(f"发现新版本通知已创建")
+                else:
+                    logger.info(f"当前已是最新版本: {CURRENT_VERSION}")
+
+        except Exception as e:
+            logger.error(f"GitHub 版本检查任务执行失败: {str(e)}", exc_info=True)
 
 
 # 全局定时任务执行器实例
