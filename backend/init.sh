@@ -18,7 +18,13 @@ NC='\033[0m' # No Color
 echo -e "${YELLOW}1. 检查 Python 环境...${NC}"
 if command -v python &> /dev/null; then
     PYTHON_VERSION=$(python --version 2>&1 | awk '{print $2}')
-    echo -e "${GREEN}✓ Python 版本: $PYTHON_VERSION${NC}"
+    PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+    PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+    if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 11 ]; }; then
+        echo -e "${RED}✗ Python 版本 $PYTHON_VERSION 低于要求 (需要 >= 3.11)${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✓ Python 版本: $PYTHON_VERSION (>= 3.11)${NC}"
 else
     echo -e "${RED}✗ Python 未安装${NC}"
     exit 1

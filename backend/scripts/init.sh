@@ -77,7 +77,7 @@ if [ -d "alembic" ]; then
     # 检查待应用的迁移
     if command -v alembic &> /dev/null; then
         echo "检查待应用的迁移..."
-        alembic head 2>/dev/null || echo "  无法获取迁移版本"
+        alembic current 2>/dev/null || echo "  无法获取迁移版本"
     else
         echo -e "${YELLOW}⚠ Alembic 未安装${NC}"
     fi
