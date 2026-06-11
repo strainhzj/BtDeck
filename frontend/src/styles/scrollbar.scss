@@ -1,0 +1,128 @@
+/**
+ * BitTorrent管理器 - 统一滚动条样式系统
+ *
+ * 设计风格：扁平极简 (iOS风格)
+ * - 透明轨道
+ * - 半透明滑块
+ * - 极细宽度（6px）
+ * - 微小圆角（3px）
+ *
+ * 基于 theme-variables.scss 的变量定义
+ * 支持三种主题色切换 + 暗色模式预留
+ * 支持 Firefox 浏览器
+ */
+
+/* ========================================
+   全局滚动条样式 - WebKit内核（Chrome/Edge/Safari）
+   ======================================== */
+
+/* 默认滚动条 */
+::-webkit-scrollbar {
+  width: var(--scrollbar-width);
+  height: var(--scrollbar-height);
+}
+
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track-bg);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb-bg);
+  border-radius: var(--scrollbar-border-radius);
+  transition: background var(--transition-base);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-bg-hover);
+}
+
+::-webkit-scrollbar-corner {
+  background: var(--scrollbar-track-bg);
+}
+
+/* ========================================
+   Firefox 滚动条样式
+   ======================================== */
+
+* {
+  /* Firefox: thin 模式对应约 6-8px 宽度 */
+  scrollbar-width: thin;
+  /* Firefox: 滑块颜色 轨道颜色 */
+  scrollbar-color: var(--scrollbar-thumb-bg) var(--scrollbar-track-bg);
+
+  /* Firefox hover 效果需要通过 CSS 变量实现 */
+  transition: scrollbar-color var(--transition-base);
+}
+
+*:hover {
+  scrollbar-color: var(--scrollbar-thumb-bg-hover) var(--scrollbar-track-bg);
+}
+
+/* ========================================
+   表格区域宽滚动条样式
+   ======================================== */
+
+/* 注：由于 Vue 组件 scoped 样式的限制，
+   无法使用 @extend 跨文件继承。
+   表格组件需要内联定义宽滚动条样式：
+
+   .my-table {
+     &::-webkit-scrollbar {
+       width: var(--scrollbar-width-wide);
+       height: var(--scrollbar-height-wide);
+     }
+   }
+*/
+
+/* ========================================
+   特定场景滚动条样式
+   ======================================== */
+
+/* 表格容器 - 宽滚动条 */
+.torrents-table-wrapper,
+.table-container {
+  &::-webkit-scrollbar {
+    width: var(--scrollbar-width-wide);
+    height: var(--scrollbar-height-wide);
+  }
+}
+
+/* 对话框内容区 - 保持默认细滚动条 */
+.el-dialog__body,
+.modal-body {
+  /* 默认样式，无需覆盖 */
+}
+
+/* 侧边栏菜单 - 保持默认细滚动条 */
+.sidebar-menu {
+  /* 默认样式，无需覆盖 */
+}
+
+/* ========================================
+   隐藏滚动条（特殊场景）
+   ======================================== */
+
+.no-scrollbar {
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Firefox */
+  scrollbar-width: none;
+}
+
+/* ========================================
+   滚动条动画效果（可选）
+   ======================================== */
+
+/* 滚动时显示，停止后淡出 */
+.scrollbar-fade {
+  &::-webkit-scrollbar {
+    opacity: 0;
+    transition: opacity var(--transition-slow);
+  }
+
+  &:hover::-webkit-scrollbar {
+    opacity: 1;
+  }
+}

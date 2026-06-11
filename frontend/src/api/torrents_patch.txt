@@ -1,0 +1,51 @@
+
+/**
+ * 暂停种子
+ * @description 支持批量暂停多个下载器的种子，前端会自动分组调用
+ */
+export interface PauseTorrentsRequest {
+  downloader_id: string
+  hashes: string[]
+}
+
+export function pauseTorrents(params: PauseTorrentsRequest): Promise<ApiResponse<any>> {
+  return request({
+    url: '/torrents/pause',
+    method: 'post',
+    data: params
+  }) as unknown as Promise<ApiResponse<any>>
+}
+
+/**
+ * 恢复种子
+ * @description 支持批量恢复多个下载器的种子，前端会自动分组调用
+ */
+export interface ResumeTorrentsRequest {
+  downloader_id: string
+  hashes: string[]
+}
+
+export function resumeTorrents(params: ResumeTorrentsRequest): Promise<ApiResponse<any>> {
+  return request({
+    url: '/torrents/resume',
+    method: 'post',
+    data: params
+  }) as unknown as Promise<ApiResponse<any>>
+}
+
+/**
+ * 重新检查种子
+ * @description 支持批量重检多个下载器的种子，前端会自动分组调用
+ */
+export interface RecheckTorrentsRequest {
+  downloader_id: string
+  hashes: string[]
+}
+
+export function recheckTorrents(params: RecheckTorrentsRequest) {
+  return request({
+    url: '/torrents/recheck',
+    method: 'post',
+    data: params
+  })
+}
