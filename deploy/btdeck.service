@@ -1,0 +1,25 @@
+[Unit]
+Description=BtDeck - BitTorrent Management Platform
+After=network.target
+
+[Service]
+Type=simple
+User=btdeck
+Group=btdeck
+WorkingDirectory=/opt/btdeck
+ExecStart=/opt/btdeck/btdeck
+Restart=on-failure
+RestartSec=5
+
+# 安全设置
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup
+
+# 环境变量
+Environment=PYTHONUNBUFFERED=1
+Environment=TZ=Asia/Shanghai
+
+[Install]
+WantedBy=multi-user.target
