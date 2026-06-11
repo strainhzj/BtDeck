@@ -1,0 +1,108 @@
+{
+  "version": "1.1.0",
+  "last_updated": "2026-05-27",
+  "features": [
+    {
+      "id": "v1.0.4",
+      "name": "实时速度监控",
+      "description": "种子列表实时速度显示，活跃种子优先排序，1秒轮询",
+      "status": "in-progress",
+      "branch": "dev",
+      "plan_file": "PLANS/v1.0.4.md",
+      "tasks": [
+        {
+          "id": "v1.0.4.3",
+          "name": "前端 API 封装",
+          "description": "torrents.ts 添加速度 API 调用",
+          "status": "done",
+          "file": "src/api/torrents.ts"
+        },
+        {
+          "id": "v1.0.4.4",
+          "name": "前端种子列表改造",
+          "description": "Options API + 虚拟分页 + 1秒轮询 + 活跃种子优先排序 + beforeDestroy清理",
+          "status": "done",
+          "file": "src/views/torrents/index.vue"
+        }
+      ]
+    },
+    {
+      "id": "extra-notification",
+      "name": "通知中心（计划外）",
+      "description": "右侧抽屉通知中心，未读计数轮询，版本更新通知",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "notification.1",
+          "name": "NotificationDrawer组件",
+          "description": "全局右侧抽屉 + NotificationItem",
+          "status": "done",
+          "file": "src/layout/components/NotificationDrawer/"
+        },
+        {
+          "id": "notification.2",
+          "name": "Vuex通知模块",
+          "description": "notification.ts + 60秒未读计数轮询",
+          "status": "done",
+          "file": "src/store/modules/notification.ts"
+        },
+        {
+          "id": "notification.3",
+          "name": "通知API",
+          "description": "notification.ts API封装",
+          "status": "done",
+          "file": "src/api/notification.ts"
+        }
+      ]
+    },
+    {
+      "id": "v1.0.5",
+      "name": "查询模板系统",
+      "description": "支持保存和复用常用查询条件",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.5.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.6",
+      "name": "孤儿文件管理",
+      "description": "自动发现并清理无用文件",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.6.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.7",
+      "name": "路径扫描增强",
+      "description": "扩展到扫描btdeck配置路径",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.7.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.8",
+      "name": "数据库升级",
+      "description": "PostgreSQL支持 + 下载器连接池管理",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.8.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.9",
+      "name": "一键部署",
+      "description": "Docker + Windows + Linux 三种部署方式",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.9.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.1.0",
+      "name": "自动化运维",
+      "description": "后台自动化任务调度系统",
+      "status": "pending",
+      "plan_file": "PLANS/v1.1.0.md",
+      "tasks": []
+    }
+  ]
+}

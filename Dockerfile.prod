@@ -1,0 +1,84 @@
+# BTDeck 前端 Dockerfile（生产环境）
+# 多阶段构建：Node.js 构建 → Nginx 服务
+
+# ====================================
+# 阶段1: 构建阶段
+# ====================================
+FROM node:18.20.1-slim AS builder
+
+LABEL maintainer="BTDeck Team"
+LABEL description="BTDeck 前端构建阶段"
+
+# 设置工作目录
+WORKDIR /app
+
+# 安装构建依赖（使用阿里云镜像源加速）
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    python3 \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# 设置 node-gyp 使用 Python3
+ENV PYTHON=/usr/bin/python3
+
+# 复制 package 文件
+COPY package*.json ./
+
+# 安装依赖（使用 --legacy-peer-deps 解决依赖冲突）
+RUN npm ci --legacy-peer-deps && npm cache clean --force
+
+# 复制项目文件
+COPY . .
+
+# 复制生产环境配置（如果存在）
+COPY .env.production ./
+
+# 构建项目
+RUN npm run build
+
+# ====================================
+# 阶段2: 生产运行阶段
+# ====================================
+FROM nginx:1.25-alpine
+
+LABEL maintainer="BTDeck Team"
+LABEL description="BTDeck 前端生产环境 - Nginx 静态文件服务"
+
+# 安装时区数据和 wget（用于健康检查）
+RUN apk add --no-cache tzdata wget && \
+    # 设置时区
+    cp /usr/share/zoneinfo/Asia/Shanghai /etc/localtime && \
+    echo "Asia/Shanghai" > /etc/timezone && \
+    # 删除默认配置和网站
+    rm -rf /etc/nginx/conf.d/default.conf && \
+    rm -rf /usr/share/nginx/html/*
+
+# 从构建阶段复制构建产物
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# 复制 Nginx 配置
+COPY nginx.conf /etc/nginx/nginx.conf
+
+# 创建非特权用户
+RUN addgroup -g 1001 -S nginx-group && \
+    adduser -S -D -H -u 1001 -h /usr/share/nginx/html -s /sbin/nologin -G nginx-group nginx-user && \
+    chown -R nginx-user:nginx-group /usr/share/nginx/html && \
+    chown -R nginx-user:nginx-group /var/cache/nginx && \
+    chown -R nginx-user:nginx-group /var/log/nginx && \
+    touch /var/run/nginx.pid && \
+    chown -R nginx-user:nginx-group /var/run/nginx.pid
+
+# 切换到非特权用户
+USER nginx-user
+
+# 暴露端口
+EXPOSE 80
+
+# 健康检查
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:80/health || exit 1
+
+# 启动 Nginx（前台模式）
+CMD ["nginx", "-g", "daemon off;"]

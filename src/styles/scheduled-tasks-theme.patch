@@ -1,0 +1,27 @@
+--- a/src/styles/scheduled-tasks-theme.scss
++++ b/src/styles/scheduled-tasks-theme.scss
+@@ -186,8 +186,11 @@
+       border-bottom: 1px solid var(--color-border-primary);
+     }
+
+     ::v-deep .el-tabs__nav {
+       border: none;
++      /* 确保Tab标签不换行 */
++      flex-wrap: nowrap !important;
+     }
+
+     ::v-deep .el-tabs__item {
+       padding: var(--spacing-md) var(--spacing-lg);
+       font-size: var(--font-size-sm);
+       font-weight: 600;
+       color: var(--color-text-secondary);
+       border: none;
+       transition: all var(--transition-base);
+       position: relative;
+-      display: flex;
++      display: inline-flex;
+       align-items: center;
+       gap: var(--spacing-sm);
+       font-family: var(--font-sans);
++      white-space: nowrap;
++      flex-shrink: 0;

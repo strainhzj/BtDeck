@@ -1,0 +1,52 @@
+# BTDeck 前端 .dockerignore
+# 排除不必要的文件和目录，加速构建
+
+# Node 相关
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 构建输出
+dist/
+
+# IDE 配置
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 测试覆盖率
+coverage/
+.nyc_output/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker 相关
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# 文档
+README*.md
+CLAUDE.md
+*.md
+
+# 配置文件（可能包含敏感信息）
+.env
+.env.local
+.env.*.local
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# 日志
+logs/
+*.log
