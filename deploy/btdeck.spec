@@ -63,6 +63,7 @@ hiddenimports = [
     'pyotp',
     'qbittorrentapi',
     'transmissionrpc',
+    'transmission_rpc',
     'apscheduler',
     'yaml',
     'app',

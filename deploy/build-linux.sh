@@ -119,9 +119,9 @@ PREREMOVE
         --before-remove "${PKG_STAGING}/preremove.sh" \
         -C "${PKG_STAGING}" \
         --prefix / \
+        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.deb" \
         etc \
-        opt \
-        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.deb"
+        opt
 
     # 构建 .rpm
     fpm -s dir \
@@ -136,9 +136,9 @@ PREREMOVE
         --before-remove "${PKG_STAGING}/preremove.sh" \
         -C "${PKG_STAGING}" \
         --prefix / \
+        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.rpm" \
         etc \
-        opt \
-        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.rpm"
+        opt
 
     # 清理临时目录
     rm -rf "${PKG_STAGING}"
