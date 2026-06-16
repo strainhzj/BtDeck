@@ -28,7 +28,7 @@ export interface NotificationListData {
 }
 
 /** 通用 API 响应 */
-export interface ApiResponse<T = unknown> {
+export interface ApiResponse<T = any> {
   status: string
   msg: string
   code: string
@@ -64,23 +64,23 @@ export function getUnreadCount(): Promise<ApiResponse<{ count: number }>> {
 /**
  * 标记通知为已读
  */
-export function markAsRead(id: number): Promise<ApiResponse<null>> {
+export function markAsRead(id: number): Promise<ApiResponse<any>> {
   return request({
     url: '/notifications/mark-read',
     method: 'put',
     params: { notification_id: id }
-  }) as unknown as Promise<ApiResponse<null>>
+  }) as unknown as Promise<ApiResponse<any>>
 }
 
 /**
  * 标记通知为未读
  */
-export function markAsUnread(id: number): Promise<ApiResponse<null>> {
+export function markAsUnread(id: number): Promise<ApiResponse<any>> {
   return request({
     url: '/notifications/mark-unread',
     method: 'put',
     params: { notification_id: id }
-  }) as unknown as Promise<ApiResponse<null>>
+  }) as unknown as Promise<ApiResponse<any>>
 }
 
 /**
@@ -96,9 +96,9 @@ export function markAllAsRead(): Promise<ApiResponse<{ count: number }>> {
 /**
  * 删除通知
  */
-export function deleteNotification(id: number): Promise<ApiResponse<null>> {
+export function deleteNotification(id: number): Promise<ApiResponse<any>> {
   return request({
     url: `/notifications/${id}`,
     method: 'delete'
-  }) as unknown as Promise<ApiResponse<null>>
+  }) as unknown as Promise<ApiResponse<any>>
 }

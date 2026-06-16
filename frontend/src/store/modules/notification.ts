@@ -17,8 +17,7 @@ export interface INotificationState {
   total: number
   page: number
   loading: boolean
-  currentFilter: { page?: number, type?: string, is_read?: boolean }
-  unreadTimerId: number | null
+  currentFilter: { page?: number; type?: string; is_read?: boolean }
 }
 
 @Module({ dynamic: true, store, name: 'notification' })
@@ -29,8 +28,7 @@ class Notification extends VuexModule implements INotificationState {
   public total = 0
   public page = 1
   public loading = false
-  public currentFilter: { page?: number, type?: string, is_read?: boolean } = {}
-  public unreadTimerId: number | null = null
+  public currentFilter: { page?: number; type?: string; is_read?: boolean } = {}
 
   @Mutation
   private SET_DRAWER_VISIBLE(visible: boolean) {
@@ -43,14 +41,8 @@ class Notification extends VuexModule implements INotificationState {
   }
 
   @Mutation
-  private SET_NOTIFICATIONS(payload: { list: NotificationItem[], total: number }) {
+  private SET_NOTIFICATIONS(payload: { list: NotificationItem[]; total: number }) {
     this.notifications = payload.list
-    this.total = payload.total
-  }
-
-  @Mutation
-  private APPEND_NOTIFICATIONS(payload: { list: NotificationItem[], total: number }) {
-    this.notifications = [...this.notifications, ...payload.list]
     this.total = payload.total
   }
 
@@ -60,8 +52,8 @@ class Notification extends VuexModule implements INotificationState {
   }
 
   @Mutation
-  private SET_CURRENT_FILTER(filter: { page?: number, type?: string, is_read?: boolean }) {
-    this.currentFilter = { ...this.currentFilter, ...filter }
+  private SET_CURRENT_FILTER(filter: { page?: number; type?: string; is_read?: boolean }) {
+    this.currentFilter = filter
   }
 
   @Action({ rawError: true })
@@ -82,29 +74,21 @@ class Notification extends VuexModule implements INotificationState {
   }
 
   @Action({ rawError: true })
-  public async FetchNotifications(payload?: { page?: number, type?: string, is_read?: boolean }) {
-    // 合并筛选条件，并同步 page 为实际使用的值
-    const page = payload?.page || 1
+  public async FetchNotifications(payload?: { page?: number; type?: string; is_read?: boolean }) {
+    // 保存当前筛选条件
     if (payload) {
       this.SET_CURRENT_FILTER(payload)
     }
-    this.SET_CURRENT_FILTER({ page })
-    const mergedFilter = this.currentFilter
     this.SET_LOADING(true)
     try {
       const res = await getNotificationList({
-        page,
+        page: payload?.page || 1,
         pageSize: 20,
-        type: mergedFilter.type,
-        is_read: mergedFilter.is_read
+        type: payload?.type,
+        is_read: payload?.is_read
       })
       if (res.code === '200') {
-        const data = { list: res.data.list, total: res.data.total }
-        if (page > 1) {
-          this.APPEND_NOTIFICATIONS(data)
-        } else {
-          this.SET_NOTIFICATIONS(data)
-        }
+        this.SET_NOTIFICATIONS({ list: res.data.list, total: res.data.total })
       }
     } catch (e) {
       // 静默失败
@@ -157,30 +141,6 @@ class Notification extends VuexModule implements INotificationState {
     } catch (e) {
       // 静默失败
     }
-  }
-
-  @Action({ rawError: true })
-  public StartUnreadPolling() {
-    this.StopUnreadPolling()
-    this.FetchUnreadCount()
-    const id = setInterval(() => {
-      this.FetchUnreadCount()
-    }, 60000)
-    this.SET_POLLING_TIMER(id)
-  }
-
-  @Action({ rawError: true })
-  public StopUnreadPolling() {
-    const timerId = this.unreadTimerId
-    if (timerId) {
-      clearInterval(timerId)
-      this.SET_POLLING_TIMER(null)
-    }
-  }
-
-  @Mutation
-  private SET_POLLING_TIMER(id: number | null) {
-    this.unreadTimerId = id
   }
 
   @Action({ rawError: true })

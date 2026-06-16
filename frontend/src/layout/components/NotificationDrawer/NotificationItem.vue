@@ -1,5 +1,5 @@
 <template>
-  <div class="notification-item" :class="{'is-unread': !notification.is_read}">
+  <div class="notification-item" :class="{ 'is-unread': !notification.is_read }">
     <!-- 类型图标 -->
     <div class="notification-icon" :class="iconClass">
       <i :class="iconName" />
@@ -22,7 +22,7 @@
         <el-button
           type="text"
           size="mini"
-          :class="{'btn-read': notification.is_read}"
+          :class="{ 'btn-read': notification.is_read }"
           @click.stop="$emit('toggle-read', notification.id)"
         >
           <i :class="notification.is_read ? 'el-icon-refresh-left' : 'el-icon-check'" />

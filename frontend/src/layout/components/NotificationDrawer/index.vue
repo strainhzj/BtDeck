@@ -33,7 +33,7 @@
         v-for="tab in tabs"
         :key="tab.value"
         class="tab-item"
-        :class="{'is-active': activeTab === tab.value}"
+        :class="{ 'is-active': activeTab === tab.value }"
         @click="handleTabChange(tab.value)"
       >
         {{ tab.label }}
@@ -84,7 +84,7 @@
     </div>
     <div class="detail-content" v-html="detailHtml" />
     <div v-if="detailReleaseUrl" class="detail-footer">
-      <a :href="detailReleaseUrl" target="_blank" rel="noopener noreferrer" class="detail-link">
+      <a :href="detailReleaseUrl" target="_blank" class="detail-link">
         <i class="el-icon-link" /> 在 GitHub 上查看完整 Release
       </a>
     </div>
@@ -105,14 +105,15 @@ import NotificationItemComp from './NotificationItem.vue'
   }
 })
 export default class extends Vue {
-  private activeTab = 'all'
+  private activeTab: string = 'all'
+  private pollingTimer: ReturnType<typeof setInterval> | null = null
 
   // 详情弹窗状态
-  private detailVisible = false
-  private detailTitle = ''
-  private detailContent = ''
-  private detailType = ''
-  private detailCreatedAt = ''
+  private detailVisible: boolean = false
+  private detailTitle: string = ''
+  private detailContent: string = ''
+  private detailType: string = ''
+  private detailCreatedAt: string = ''
   private detailExtraData: { release_url?: string } | null = null
 
   private tabs = [
@@ -160,7 +161,7 @@ export default class extends Vue {
   }
 
   private fetchList() {
-    const params: { page?: number, type?: string, is_read?: boolean } = {}
+    const params: { page?: number; type?: string; is_read?: boolean } = {}
     if (this.activeTab === 'unread') {
       params.is_read = false
     } else if (this.activeTab !== 'all') {
@@ -281,9 +282,7 @@ export default class extends Vue {
   }
 
   private get detailReleaseUrl(): string {
-    const url = this.detailExtraData?.release_url || ''
-    if (url && /^https?:\/\//i.test(url)) return url
-    return ''
+    return this.detailExtraData?.release_url || ''
   }
 
   private handleView(notification: NotificationItem) {
@@ -309,12 +308,28 @@ export default class extends Vue {
     this.detailExtraData = null
   }
 
+  private startPolling() {
+    // 60秒轮询未读数
+    this.pollingTimer = setInterval(() => {
+      NotificationModule.FetchUnreadCount()
+    }, 60000)
+  }
+
+  private stopPolling() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer)
+      this.pollingTimer = null
+    }
+  }
+
   mounted() {
-    NotificationModule.StartUnreadPolling()
+    // 首次加载未读数
+    NotificationModule.FetchUnreadCount()
+    this.startPolling()
   }
 
   beforeDestroy() {
-    NotificationModule.StopUnreadPolling()
+    this.stopPolling()
   }
 }
 </script>
@@ -425,18 +440,18 @@ export default class extends Vue {
 
   .detail-time {
     font-size: 12px;
-    color: var(--color-text-tertiary, #9CA3AF);
+    color: #9CA3AF;
   }
 
   .detail-content {
     font-size: 14px;
     line-height: 1.6;
-    color: var(--color-text-secondary, #374151);
+    color: #374151;
     word-break: break-word;
 
-    h2 { font-size: 16px; margin: 12px 0 6px; font-weight: 600; color: var(--color-text-primary, #111827); }
-    h3 { font-size: 15px; margin: 10px 0 4px; font-weight: 600; color: var(--color-text-primary, #1F2937); }
-    h4 { font-size: 14px; margin: 8px 0 4px; font-weight: 600; color: var(--color-text-secondary, #374151); }
+    h2 { font-size: 16px; margin: 12px 0 6px; font-weight: 600; color: #111827; }
+    h3 { font-size: 15px; margin: 10px 0 4px; font-weight: 600; color: #1F2937; }
+    h4 { font-size: 14px; margin: 8px 0 4px; font-weight: 600; color: #374151; }
 
     p { margin: 4px 0; }
 
@@ -451,19 +466,19 @@ export default class extends Vue {
       line-height: 1.5;
     }
 
-    strong { color: var(--color-text-primary, #111827); }
+    strong { color: #111827; }
 
     code {
-      background: var(--color-bg-secondary, #F3F4F6);
+      background: #F3F4F6;
       padding: 1px 4px;
       border-radius: 3px;
       font-size: 13px;
-      color: var(--color-danger, #DC2626);
+      color: #DC2626;
     }
 
     hr {
       border: none;
-      border-top: 1px solid var(--color-border-primary, #E5E7EB);
+      border-top: 1px solid #E5E7EB;
       margin: 8px 0;
     }
   }
@@ -471,7 +486,7 @@ export default class extends Vue {
   .detail-footer {
     margin-top: 20px;
     padding-top: 16px;
-    border-top: 1px solid var(--color-border-primary, #E5E7EB);
+    border-top: 1px solid #E5E7EB;
   }
 
   .detail-link {
@@ -479,7 +494,7 @@ export default class extends Vue {
     align-items: center;
     gap: 4px;
     font-size: 13px;
-    color: var(--color-success, #059669);
+    color: #059669;
     text-decoration: none;
 
     &:hover { text-decoration: underline; }

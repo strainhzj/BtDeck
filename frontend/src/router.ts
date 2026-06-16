@@ -76,11 +76,21 @@ const router = new Router({
       children: [
         {
           path: 'index',
-          component: () => import(/* webpackChunkName: "torrents" */ '@/views/torrents/index.vue'),
+          component: () => import(/* webpackChunkName: "torrents" */ '@/views/torrents/TorrentViewSwitcher.vue'),
           meta: {
             keepAlive: true,
             title: '种子列表',
             icon: 'list'
+          }
+        },
+        {
+          path: 'traditional',
+          component: () => import(/* webpackChunkName: "torrents-traditional" */ '@/views/torrents/TraditionalView.vue'),
+          meta: {
+            keepAlive: true,
+            title: '种子列表（传统模式）',
+            icon: 'list',
+            hidden: true
           }
         },
         {

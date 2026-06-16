@@ -189,6 +189,28 @@
         tooltip="列设置"
         @click="showColumnSettings = true"
       />
+
+      <!-- 视图切换 -->
+      <div class="view-switcher">
+        <el-button
+          type="text"
+          size="small"
+          :class="{ active: viewModeModule.currentMode === 'list' }"
+          @click="switchViewMode('list')"
+          title="列表模式"
+        >
+          <i class="el-icon-s-grid"></i>
+        </el-button>
+        <el-button
+          type="text"
+          size="small"
+          :class="{ active: viewModeModule.currentMode === 'traditional' }"
+          @click="switchViewMode('traditional')"
+          title="传统模式"
+        >
+          <i class="el-icon-menu"></i>
+        </el-button>
+      </div>
     </section>
 
     <!-- 种子列表表格 -->
@@ -573,6 +595,7 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import BatchButton from '@/components/BatchButton/index.vue'
+import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import {
   getTorrentList,
   addTorrent,
@@ -622,6 +645,9 @@ import {
   }
 })
 export default class extends Vue {
+  // 视图模式管理
+  private viewModeModule = ViewModeModule
+
   // 主题相关
   private currentTheme: ThemeType = 'emerald'
   private allThemes = ThemeManager.getAllThemes()
@@ -634,7 +660,6 @@ export default class extends Vue {
 
   // 实时速度轮询
   private speedTimer: number | null = null
-  private _isDestroyed = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
 
   // 分页相关
@@ -881,6 +906,11 @@ export default class extends Vue {
       sort_order: 'desc'
     }
     this.getList()
+  }
+
+  // 切换视图模式
+  private switchViewMode(mode: ViewModeType) {
+    this.viewModeModule.setViewMode(mode)
   }
 
   // 手动刷新（静态数据 + 速度数据同时刷新）
@@ -2074,11 +2104,9 @@ export default class extends Vue {
 
   /** 启动速度轮询（请求完成后等待1秒再发下一次） */
   private startSpeedPolling() {
-    this._isDestroyed = false
     const poll = async() => {
       await this.loadActiveSpeed()
-      // 组件已销毁时不再调度下一次
-      if (this._isDestroyed) return
+      // 请求完成后等待1秒再发下一次
       this.speedTimer = window.setTimeout(poll, 1000)
     }
     poll()
@@ -2086,7 +2114,6 @@ export default class extends Vue {
 
   /** 停止速度轮询 */
   private stopSpeedPolling() {
-    this._isDestroyed = true
     if (this.speedTimer) {
       clearTimeout(this.speedTimer)
       this.speedTimer = null
@@ -2182,6 +2209,37 @@ export default class extends Vue {
 
 <style lang="scss" scoped>
 @import '@/styles/torrent-theme.scss';
+
+// ========================================
+// 视图切换器样式
+// ========================================
+.view-switcher {
+  display: flex;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 1px;
+  margin-left: 8px;
+
+  .el-button--text {
+    padding: 5px 8px;
+    border-radius: var(--radius-xs);
+    transition: all var(--transition-fast);
+
+    &.active {
+      background: var(--color-primary);
+      color: white;
+    }
+
+    &:hover {
+      background: var(--color-bg-hover);
+    }
+
+    &.active:hover {
+      background: var(--color-primary-hover);
+    }
+  }
+}
 
 // ========================================
 // 多选下拉框样式优化

@@ -10,6 +10,7 @@
 [data-theme="emerald"] {
   /* 主色调 - 翡翠绿 */
   --color-primary: #059669;
+  --color-primary-rgb: 5, 150, 105;  /* #059669 */
   --color-primary-hover: #047857;
   --color-primary-active: #065F46;
   --color-primary-light: #10B981;
@@ -168,6 +169,7 @@
 [data-theme="orange"] {
   /* 主色调 - 活力橙 */
   --color-primary: #EA580C;
+  --color-primary-rgb: 234, 88, 12;  /* #EA580C */
   --color-primary-hover: #C2410C;
   --color-primary-active: #9A3412;
   --color-primary-light: #F59E0B;
@@ -218,6 +220,7 @@
 [data-theme="graphite"] {
   /* 主色调 - 石墨灰 */
   --color-primary: #374151;
+  --color-primary-rgb: 55, 65, 81;  /* #374151 */
   --color-primary-hover: #1F2937;
   --color-primary-active: #111827;
   --color-primary-light: #6B7280;

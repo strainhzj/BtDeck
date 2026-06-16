@@ -95,8 +95,7 @@ export default class extends Vue {
   }
 
   private handleFeedback() {
-    const win = window.open('https://github.com/strainhzj/BtDeck/issues', '_blank', 'noopener,noreferrer')
-    if (win) win.opener = null
+    window.open('https://github.com/strainhzj/BtDeck/issues', '_blank')
   }
 
   private handleUserAction(command: string) {

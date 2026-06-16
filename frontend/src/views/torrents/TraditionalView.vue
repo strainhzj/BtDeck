@@ -1,0 +1,1498 @@
+<template>
+  <div class="traditional-page">
+    <!-- 工具栏 -->
+    <div class="traditional-toolbar">
+      <!-- 左侧操作区 -->
+      <div class="toolbar-left">
+        <el-button
+          class="filter-toggle-btn"
+          type="text"
+          icon="el-icon-s-fold"
+          @click="toggleFilterPanel"
+          title="切换过滤面板"
+        />
+        <div class="tool-divider"></div>
+        <el-button
+          type="text"
+          size="small"
+          :disabled="multipleSelection.length === 0"
+          @click="handleBatchStart"
+        >
+          <i class="el-icon-video-play"></i> 开始
+        </el-button>
+        <el-button
+          type="text"
+          size="small"
+          :disabled="multipleSelection.length === 0"
+          @click="handleBatchPause"
+        >
+          <i class="el-icon-video-pause"></i> 暂停
+        </el-button>
+        <el-button
+          type="text"
+          size="small"
+          class="danger"
+          :disabled="multipleSelection.length === 0"
+          @click="handleBatchDelete"
+        >
+          <i class="el-icon-delete"></i> 删除
+        </el-button>
+        <div class="tool-divider"></div>
+        <el-button
+          type="text"
+          size="small"
+          :disabled="multipleSelection.length === 0"
+          @click="handleBatchRecheck"
+        >
+          <i class="el-icon-refresh"></i> 重检
+        </el-button>
+        <div class="selection-info" :class="{ visible: multipleSelection.length > 0 }">
+          已选 <span class="count">{{ multipleSelection.length }}</span> 个
+        </div>
+      </div>
+
+      <!-- 中间搜索区 -->
+      <div class="toolbar-center">
+        <el-input
+          v-model="listQuery.name_like"
+          placeholder="搜索种子名称..."
+          prefix-icon="el-icon-search"
+          size="small"
+          clearable
+          class="search-input"
+          @input="debouncedSearch"
+          @keyup.enter.native="handleFilter"
+        />
+      </div>
+
+      <!-- 右侧操作区 -->
+      <div class="toolbar-right">
+        <el-button
+          type="primary"
+          size="small"
+          icon="el-icon-plus"
+          @click="showAddDialog = true"
+        >
+          添加
+        </el-button>
+        <div class="tool-divider"></div>
+        <div class="view-switcher">
+          <el-button
+            type="text"
+            size="small"
+            :class="{ active: viewModeModule.currentMode === 'list' }"
+            @click="switchViewMode('list')"
+            title="列表模式"
+          >
+            <i class="el-icon-s-grid"></i>
+          </el-button>
+          <el-button
+            type="text"
+            size="small"
+            :class="{ active: viewModeModule.currentMode === 'traditional' }"
+            @click="switchViewMode('traditional')"
+            title="传统模式"
+          >
+            <i class="el-icon-menu"></i>
+          </el-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 页面主体：过滤面板 + 表格 + 详情 -->
+    <div class="page-body">
+      <!-- 左侧过滤面板 -->
+      <aside class="filter-panel" :class="{ collapsed: viewModeModule.filterPanelCollapsed }">
+        <div class="filter-panel-header">
+          <h3>过滤器</h3>
+          <el-button
+            type="text"
+            class="filter-toggle-btn"
+            icon="el-icon-d-arrow-left"
+            @click="toggleFilterPanel"
+            title="收起"
+          />
+        </div>
+
+        <div class="filter-panel-content">
+          <!-- 状态过滤 -->
+          <FilterGroup
+            title="状态"
+            :items="statusFilterItems"
+            :active-value="listQuery.status"
+            @select="handleStatusFilter"
+          />
+
+          <!-- 下载器过滤 -->
+          <FilterGroup
+            title="下载器"
+            :items="downloaderFilterItems"
+            :active-value="listQuery.downloader_id"
+            @select="handleDownloaderFilter"
+          />
+
+          <!-- 分类过滤 -->
+          <FilterGroup
+            title="分类"
+            :items="categoryFilterItems"
+            :active-value="listQuery.category_like"
+            @select="handleCategoryFilter"
+          />
+
+          <!-- 标签过滤 -->
+          <FilterGroup
+            title="标签"
+            :items="tagFilterItems"
+            :active-value="listQuery.tags_like"
+            @select="handleTagFilter"
+          />
+        </div>
+      </aside>
+
+      <!-- 表格区域 -->
+      <div class="table-area">
+        <div class="table-container" v-loading="listLoading">
+          <table class="torrent-table traditional-table">
+            <thead>
+              <tr>
+                <th class="col-checkbox">
+                  <el-checkbox
+                    :indeterminate="isIndeterminate"
+                    v-model="selectAll"
+                    @change="handleSelectAll"
+                  />
+                </th>
+                <th class="col-status-icon"></th>
+                <th class="col-name" @click="handleSort('name')">
+                  名称
+                  <span class="sort-arrow" v-if="listQuery.sort_by === 'name'">
+                    {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+                  </span>
+                </th>
+                <th class="col-size" @click="handleSort('size')">
+                  大小
+                  <span class="sort-arrow" v-if="listQuery.sort_by === 'size'">
+                    {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+                  </span>
+                </th>
+                <th class="col-progress">进度</th>
+                <th class="col-status" @click="handleSort('status')">
+                  状态
+                  <span class="sort-arrow" v-if="listQuery.sort_by === 'status'">
+                    {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+                  </span>
+                </th>
+                <th class="col-downspeed">↓ 下载</th>
+                <th class="col-upspeed">↑ 上传</th>
+                <th class="col-ratio" @click="handleSort('ratio')">
+                  比率
+                  <span class="sort-arrow" v-if="listQuery.sort_by === 'ratio'">
+                    {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+                  </span>
+                </th>
+                <th class="col-downloader">下载器</th>
+                <th class="col-category">分类/标签</th>
+                <th class="col-added" @click="handleSort('addedDate')">
+                  添加时间
+                  <span class="sort-arrow" v-if="listQuery.sort_by === 'addedDate'">
+                    {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+                  </span>
+                </th>
+                <th class="col-actions">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(torrent, index) in sortedList"
+                :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${index}`"
+                :class="{ selected: currentRow?.hash === torrent.hash }"
+                @click="handleRowClick(torrent)"
+              >
+                <td class="col-checkbox">
+                  <el-checkbox v-model="torrent.checked" @change="handleSelectionChange" @click.native.stop />
+                </td>
+                <td class="col-status-icon">
+                  <div
+                    class="status-icon-circle"
+                    :class="torrent.status"
+                    :title="getStatusText(torrent.status)"
+                  >
+                    {{ getStatusIcon(torrent.status) }}
+                  </div>
+                </td>
+                <td class="col-name">
+                  <div class="torrent-name-cell">
+                    <span class="torrent-name-text" :title="torrent.name">{{ torrent.name }}</span>
+                  </div>
+                </td>
+                <td class="col-size">{{ formatFileSize(torrent.size) }}</td>
+                <td class="col-progress">
+                  <div class="progress-cell-compact">
+                    <div class="progress-bar-wrapper">
+                      <div
+                        class="progress-bar-fill"
+                        :class="torrent.status"
+                        :style="{ width: `${torrent.progress || 0}%` }"
+                      ></div>
+                    </div>
+                    <span class="progress-text">{{ torrent.progress || 0 }}%</span>
+                  </div>
+                </td>
+                <td class="col-status">
+                  <span class="status-badge-trad" :class="torrent.status">{{ getStatusText(torrent.status) }}</span>
+                </td>
+                <td class="col-downspeed">
+                  <span
+                    class="speed-value-mono"
+                    :class="getTorrentSpeed(torrent, 'download') ? 'download' : 'zero'"
+                  >
+                    {{ formatSpeed(getTorrentSpeed(torrent, 'download')) }}
+                  </span>
+                </td>
+                <td class="col-upspeed">
+                  <span
+                    class="speed-value-mono"
+                    :class="getTorrentSpeed(torrent, 'upload') ? 'upload' : 'zero'"
+                  >
+                    {{ formatSpeed(getTorrentSpeed(torrent, 'upload')) }}
+                  </span>
+                </td>
+                <td class="col-ratio">
+                  <span
+                    class="ratio-value-graded"
+                    :class="getRatioClass(torrent.ratio)"
+                  >
+                    {{ formatRatio(torrent.ratio) }}
+                  </span>
+                </td>
+                <td class="col-downloader">{{ torrent.downloaderName || '-' }}</td>
+                <td class="col-category">
+                  <span v-if="torrent.category" class="category-tag-mini cat">{{ torrent.category }}</span>
+                  <span v-if="torrent.tags" class="category-tag-mini tag">{{ torrent.tags }}</span>
+                  <span v-if="!torrent.category && !torrent.tags" style="color: var(--color-text-tertiary)">-</span>
+                </td>
+                <td class="col-added">{{ formatDate(torrent.addedDate) }}</td>
+                <td class="col-actions">
+                  <div class="action-buttons-compact">
+                    <button
+                      class="action-btn-mini"
+                      :class="torrent.status === 'paused' ? 'play' : 'pause'"
+                      @click.stop="handleTogglePause(torrent)"
+                      :title="torrent.status === 'paused' ? '开始' : '暂停'"
+                    >
+                      {{ torrent.status === 'paused' ? '▶' : '⏸' }}
+                    </button>
+                    <button
+                      class="action-btn-mini recheck"
+                      @click.stop="handleRecheck(torrent)"
+                      title="重新检查"
+                    >
+                      ↻
+                    </button>
+                    <button
+                      class="action-btn-mini delete"
+                      @click.stop="handleDelete(torrent)"
+                      title="删除"
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 分页 -->
+        <div class="table-pagination">
+          <div class="pagination-info">
+            <el-select v-model="pageSize" size="mini" class="page-size-select" @change="handlePageSizeChange">
+              <el-option
+                v-for="size in pageSizeOptions"
+                :key="size"
+                :label="`${size} 条/页`"
+                :value="size"
+              />
+            </el-select>
+            <span>共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
+          </div>
+          <div class="pagination-controls">
+            <el-button
+              size="mini"
+              :disabled="currentPage <= 1"
+              @click="handlePageChange(currentPage - 1)"
+            >
+              ◀
+            </el-button>
+            <el-button
+              v-for="page in visiblePages"
+              :key="page"
+              size="mini"
+              :class="{ active: page === currentPage }"
+              @click="handlePageChange(page)"
+            >
+              {{ page }}
+            </el-button>
+            <el-button
+              size="mini"
+              :disabled="currentPage >= totalPages"
+              @click="handlePageChange(currentPage + 1)"
+            >
+              ▶
+            </el-button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 右侧详情面板 -->
+      <div class="detail-panel-trad" :class="{ open: !!currentRow }">
+        <div class="detail-panel-content">
+          <div class="detail-header-compact">
+            <h3>{{ currentRow?.name }}</h3>
+            <button class="close-btn" @click="closeDetailPanel">✕</button>
+          </div>
+          <div class="detail-tabs-compact">
+            <button
+              v-for="tab in detailTabs"
+              :key="tab.value"
+              class="tab-btn"
+              :class="{ active: activeDetailTab === tab.value }"
+              @click="activeDetailTab = tab.value"
+            >
+              {{ tab.label }}
+            </button>
+          </div>
+          <div class="detail-content">
+            <!-- 常规信息 -->
+            <template v-if="activeDetailTab === 'general'">
+              <div class="detail-field-row">
+                <span class="field-label">状态</span>
+                <span class="field-value">
+                  <span class="status-badge-trad" :class="currentRow?.status">{{ getStatusText(currentRow?.status) }}</span>
+                </span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">进度</span>
+                <span class="field-value">{{ currentRow?.progress || 0 }}%</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">大小</span>
+                <span class="field-value">{{ formatFileSize(currentRow?.size) }}</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">下载速度</span>
+                <span class="field-value speed-value-mono download">{{ formatSpeed(getTorrentSpeed(currentRow, 'download')) }}</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">上传速度</span>
+                <span class="field-value speed-value-mono upload">{{ formatSpeed(getTorrentSpeed(currentRow, 'upload')) }}</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">分享率</span>
+                <span class="field-value ratio-value-graded" :class="getRatioClass(currentRow?.ratio)">
+                  {{ formatRatio(currentRow?.ratio) }}
+                </span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">所属下载器</span>
+                <span class="field-value">{{ currentRow?.downloaderName }}</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">分类</span>
+                <span class="field-value">{{ currentRow?.category || '-' }}</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">标签</span>
+                <span class="field-value">{{ currentRow?.tags || '-' }}</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">保存路径</span>
+                <span class="field-value" :title="currentRow?.savePath">{{ currentRow?.savePath }}</span>
+              </div>
+              <div class="detail-field-row">
+                <span class="field-label">添加时间</span>
+                <span class="field-value">{{ formatDate(currentRow?.addedDate) }}</span>
+              </div>
+            </template>
+
+            <!-- Tracker 信息 -->
+            <template v-else-if="activeDetailTab === 'tracker'">
+              <table class="tracker-table">
+                <thead>
+                  <tr>
+                    <th>名称</th>
+                    <th>状态</th>
+                    <th>地址</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(tracker, index) in (currentRow?.tracker_info || currentRow?.trackerInfo || [])"
+                    :key="index"
+                  >
+                    <td>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</td>
+                    <td>
+                      <span class="tracker-status">
+                        <span
+                          class="dot"
+                          :class="isTrackerSuccess(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded) ? 'ok' : 'fail'"
+                        ></span>
+                        {{ getTrackerStatusText(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded) }}
+                      </span>
+                    </td>
+                    <td :title="tracker.tracker_url || tracker.trackerUrl || '-'">
+                      {{ (tracker.tracker_url || tracker.trackerUrl || '-').slice(0, 30) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </template>
+
+            <!-- 文件列表（占位） -->
+            <template v-else-if="activeDetailTab === 'files'">
+              <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
+                文件列表功能开发中...
+              </div>
+            </template>
+
+            <!-- Peers（占位） -->
+            <template v-else-if="activeDetailTab === 'peers'">
+              <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
+                Peers 信息功能开发中...
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部全局状态栏 -->
+    <div class="global-statusbar-compact">
+      <div class="statusbar-section">
+        <div class="connection-dot"></div>
+        <span style="color: var(--color-text-secondary);">已连接</span>
+      </div>
+      <div class="statusbar-sep"></div>
+      <div class="statusbar-section">
+        <div class="global-speed">
+          <span class="speed-icon down">↓</span>
+          <span class="speed-val" style="color: #3b82f6;">{{ formatSpeed(globalDownloadSpeed) }}</span>
+        </div>
+        <div class="global-speed">
+          <span class="speed-icon up">↑</span>
+          <span class="speed-val" style="color: var(--color-success);">{{ formatSpeed(globalUploadSpeed) }}</span>
+        </div>
+      </div>
+      <div class="statusbar-sep"></div>
+      <div class="statusbar-section">
+        <span class="label">活动:</span>
+        <span style="color: var(--color-text-primary);">{{ activeTorrentCount }}</span>
+        <span class="label">/ {{ total }}</span>
+      </div>
+      <div class="statusbar-right">
+        <div
+          v-for="downloader in downloaderList"
+          :key="downloader.downloader_id"
+          class="statusbar-section"
+        >
+          <span class="label">{{ downloader.nickname }}</span>
+          <span style="color: var(--color-success);">●</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 复用现有对话框组件 -->
+    <TorrentAddDialog
+      :visible.sync="showAddDialog"
+      :downloaders="downloaderList"
+      @confirm="handleAdd"
+    />
+  </div>
+</template>
+
+<script lang="ts">
+import { Component, Vue, Watch } from 'vue-property-decorator'
+import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
+import TorrentAddDialog from './components/TorrentAddDialog.vue'
+import FilterGroup from '@/components/torrents/FilterGroup.vue'
+// 复用现有 API、工具函数、状态配置
+import {
+  getTorrentList,
+  addTorrent,
+  deleteTorrents,
+  pauseTorrents,
+  resumeTorrents,
+  recheckTorrents,
+  getDownloaderList,
+  type DownloaderSimple
+} from '@/api/torrents'
+import { getAllCategories, getAllTags } from '@/api/tag-management'
+import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status-config'
+import {
+  formatFileSize,
+  formatSpeed,
+  formatDate,
+  formatRatio,
+  truncateText,
+  normalizeTorrent,
+  normalizePaginatedResponse,
+  debounce
+} from '@/utils/formatters'
+
+interface FilterItem {
+  icon: string
+  label: string
+  value: string
+  count?: number
+}
+
+@Component({
+  name: 'TraditionalView',
+  components: {
+    TorrentAddDialog,
+    FilterGroup
+  }
+})
+export default class extends Vue {
+  // ====== 状态管理 ======
+  private viewModeModule = ViewModeModule
+
+  // ====== 数据状态 ======
+  private list: any[] = []
+  private total = 0
+  private listLoading = true
+  private multipleSelection: any[] = []
+
+  // 实时速度轮询
+  private speedTimer: number | null = null
+  private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+
+  // 分类和标签数据
+  private categoryList: string[] = []
+  private tagList: string[] = []
+
+  // 分页
+  private currentPage = 1
+  private pageSize = 20
+  private pageSizeOptions = [10, 20, 50, 100]
+
+  // 复选框
+  private selectAll = false
+  private isIndeterminate = false
+
+  // 弹窗状态
+  private showAddDialog = false
+
+  // 详情面板
+  private currentRow: any = null
+  private activeDetailTab = 'general'
+  private detailTabs = [
+    { label: '常规', value: 'general' },
+    { label: 'Tracker', value: 'tracker' },
+    { label: '文件', value: 'files' },
+    { label: 'Peers', value: 'peers' }
+  ]
+
+  // 查询参数（复用现有结构）
+  private listQuery: any = {
+    skip: 0,
+    limit: 20,
+    name_like: '',
+    downloader_id: [],
+    status: [],
+    category_like: '',
+    tags_like: '',
+    sort_by: 'addedDate',
+    sort_order: 'desc'
+  }
+
+  // 下载器列表
+  private downloaderList: DownloaderSimple[] = []
+
+  // 防抖搜索
+  private debouncedSearch: any = null
+
+  // ====== 计算属性 ======
+  get totalPages() {
+    return Math.ceil(this.total / this.pageSize)
+  }
+
+  get visiblePages() {
+    const pages: number[] = []
+    const showPages = 5
+    let start = Math.max(1, this.currentPage - Math.floor(showPages / 2))
+    let end = Math.min(this.totalPages, start + showPages - 1)
+
+    if (end - start < showPages - 1) {
+      start = Math.max(1, end - showPages + 1)
+    }
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i)
+    }
+
+    return pages
+  }
+
+  get sortedList() {
+    // 过滤掉 null/undefined 值，并排序：活跃种子优先
+    return this.list
+      .filter(item => item && item.hash)
+      .sort((a, b) => {
+        const aActive = !!this.activeSpeedMap[a.hash]
+        const bActive = !!this.activeSpeedMap[b.hash]
+
+        if (aActive && !bActive) return -1
+        if (!aActive && bActive) return 1
+
+        return 0
+      })
+  }
+
+  get globalDownloadSpeed() {
+    return Object.values(this.activeSpeedMap).reduce((sum, s) => sum + s.downloadSpeed, 0)
+  }
+
+  get globalUploadSpeed() {
+    return Object.values(this.activeSpeedMap).reduce((sum, s) => sum + s.uploadSpeed, 0)
+  }
+
+  get activeTorrentCount() {
+    return Object.keys(this.activeSpeedMap).length
+  }
+
+  // ====== 过滤器数据 ======
+  get statusFilterItems(): FilterItem[] {
+    return [
+      { icon: '📥', label: '全部', value: '' },
+      ...STATUS_OPTIONS.map(opt => ({
+        icon: getStatusIcon(opt.value),
+        label: opt.label.replace(/^[^\s]+\s*/, ''),
+        value: opt.value
+      }))
+    ]
+  }
+
+  get downloaderFilterItems(): FilterItem[] {
+    return [
+      { icon: '🖥', label: '全部', value: '' },
+      ...this.downloaderList.map(d => ({
+        icon: '🔵',
+        label: d.nickname,
+        value: d.downloader_id
+      }))
+    ]
+  }
+
+  get categoryFilterItems(): FilterItem[] {
+    const items = [
+      { icon: '📂', label: '全部', value: '' },
+      ...this.categoryList.map(name => ({
+        icon: '📁',
+        label: name,
+        value: name
+      }))
+    ]
+    return items
+  }
+
+  get tagFilterItems(): FilterItem[] {
+    const items = [
+      { icon: '🏷', label: '全部', value: '' },
+      ...this.tagList.map(name => ({
+        icon: '🏷',
+        label: name,
+        value: name
+      }))
+    ]
+    return items
+  }
+
+  // ====== 生命周期 ======
+  public async created() {
+    this.debouncedSearch = debounce(this.handleFilter, 300)
+    await this.fetchDownloaderList()
+    await this.fetchCategoryAndTags()
+    await this.getList()
+    this.startSpeedPolling()
+  }
+
+  public beforeDestroy() {
+    this.stopSpeedPolling()
+  }
+
+  // ====== 数据获取 ======
+  private async getList() {
+    this.listLoading = true
+    try {
+      const params = { ...this.listQuery }
+      params.skip = (this.currentPage - 1) * this.pageSize
+      params.limit = this.pageSize
+
+      // 处理数组参数
+      if (Array.isArray(params.downloader_id) && params.downloader_id.length > 0) {
+        params.downloader_id = params.downloader_id.join(',')
+      } else {
+        delete params.downloader_id
+      }
+
+      if (Array.isArray(params.status) && params.status.length > 0) {
+        params.status = params.status.join(',')
+      } else {
+        delete params.status
+      }
+
+      // 清理空值
+      Object.keys(params).forEach(key => {
+        if (params[key] === '' || params[key] === null || params[key] === undefined) {
+          delete params[key]
+        }
+      })
+
+      const response = await getTorrentList(params)
+      const { list, total } = normalizePaginatedResponse(response)
+
+      this.list = list.map(normalizeTorrent).map(item => ({
+        ...item,
+        checked: false
+      }))
+      this.total = total
+    } catch (error) {
+      console.error('获取种子列表失败:', error)
+      this.$message.error('获取种子列表失败')
+    } finally {
+      this.listLoading = false
+    }
+  }
+
+  private async fetchDownloaderList() {
+    try {
+      const response = await getDownloaderList()
+      this.downloaderList = response.data || []
+    } catch (error) {
+      console.error('获取下载器列表失败:', error)
+    }
+  }
+
+  private async fetchCategoryAndTags() {
+    try {
+      // 并发获取分类和标签
+      const [categoryResponse, tagResponse] = await Promise.all([
+        getAllCategories(),
+        getAllTags()
+      ])
+
+      if (categoryResponse.code === '200' && categoryResponse.data) {
+        this.categoryList = categoryResponse.data
+      }
+
+      if (tagResponse.code === '200' && tagResponse.data) {
+        this.tagList = tagResponse.data
+      }
+    } catch (error) {
+      console.error('获取分类和标签失败:', error)
+    }
+  }
+
+  // ====== 实时速度轮询 ======
+  private startSpeedPolling() {
+    const poll = async () => {
+      await this.loadActiveSpeed()
+      this.speedTimer = window.setTimeout(poll, 1000)
+    }
+    poll()
+  }
+
+  private stopSpeedPolling() {
+    if (this.speedTimer) {
+      window.clearTimeout(this.speedTimer)
+      this.speedTimer = null
+    }
+  }
+
+  private async loadActiveSpeed() {
+    try {
+      const response = await fetch(`${process.env.VUE_APP_BASE_API}/torrents/active-torrents`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+      const data = await response.json()
+
+      if (data.code === '200' && data.data) {
+        this.activeSpeedMap = {}
+        data.data.forEach((t: any) => {
+          this.activeSpeedMap[t.hash] = {
+            downloadSpeed: t.downloadSpeed,
+            uploadSpeed: t.uploadSpeed,
+            progress: t.progress
+          }
+
+          // 直接更新列表
+          const torrentInList = this.list.find(item => item.hash === t.hash)
+          if (torrentInList) {
+            torrentInList.downloadSpeed = t.downloadSpeed
+            torrentInList.uploadSpeed = t.uploadSpeed
+            torrentInList.progress = t.progress
+          }
+        })
+      }
+    } catch (error) {
+      console.error('获取活跃种子速度失败:', error)
+    }
+  }
+
+  private getTorrentSpeed(torrent: any, type: 'download' | 'upload'): number | null {
+    if (!torrent || !torrent.hash) {
+      return null
+    }
+    const active = this.activeSpeedMap[torrent.hash]
+    if (active) {
+      return type === 'download' ? active.downloadSpeed : active.uploadSpeed
+    }
+    return type === 'download' ? torrent.downloadSpeed : torrent.uploadSpeed
+  }
+
+  // ====== 工具方法 ======
+  private formatFileSize = formatFileSize
+  private formatSpeed = formatSpeed
+  private formatDate = formatDate
+  private formatRatio = formatRatio
+  private getStatusIcon = getStatusIcon
+  private getStatusText = getStatusText
+
+  private getRatioClass(ratio: number | string) {
+    const r = typeof ratio === 'string' ? parseFloat(ratio) : ratio
+    if (r < 0.5) return 'low'
+    if (r < 1.0) return 'mid'
+    if (r < 2.0) return 'good'
+    return 'great'
+  }
+
+  private isTrackerSuccess(status: string): boolean {
+    return status === '工作中' || status === 'success' || status === true
+  }
+
+  private getTrackerStatusText(status: string): string {
+    if (this.isTrackerSuccess(status)) return '工作中'
+    return '失败'
+  }
+
+  // ====== 事件处理 ======
+  private handleFilter() {
+    this.currentPage = 1
+    this.getList()
+  }
+
+  private handleSort(field: string) {
+    if (this.listQuery.sort_by === field) {
+      this.listQuery.sort_order = this.listQuery.sort_order === 'asc' ? 'desc' : 'asc'
+    } else {
+      this.listQuery.sort_by = field
+      this.listQuery.sort_order = 'desc'
+    }
+    this.getList()
+  }
+
+  private handlePageChange(page: number) {
+    this.currentPage = page
+    this.getList()
+  }
+
+  private handlePageSizeChange() {
+    this.currentPage = 1
+    this.getList()
+  }
+
+  private handleSelectAll(checked: boolean) {
+    this.list.forEach(item => {
+      item.checked = checked
+    })
+    this.handleSelectionChange()
+  }
+
+  private handleSelectionChange() {
+    this.multipleSelection = this.list.filter(item => item.checked)
+    this.isIndeterminate = this.multipleSelection.length > 0 && this.multipleSelection.length < this.list.length
+    this.selectAll = this.multipleSelection.length === this.list.length
+  }
+
+  private handleRowClick(torrent: any) {
+    if (this.currentRow?.hash === torrent.hash) {
+      this.currentRow = null
+      return
+    }
+    this.currentRow = torrent
+    this.activeDetailTab = 'general'
+  }
+
+  private closeDetailPanel() {
+    this.currentRow = null
+  }
+
+  private toggleFilterPanel() {
+    this.viewModeModule.toggleFilterPanel()
+  }
+
+  private switchViewMode(mode: ViewModeType) {
+    this.viewModeModule.setViewMode(mode)
+  }
+
+  // 过滤器选择
+  private handleStatusFilter(value: string) {
+    if (value === '') {
+      this.listQuery.status = []
+    } else {
+      this.listQuery.status = [value]
+    }
+    this.handleFilter()
+  }
+
+  private handleDownloaderFilter(value: string) {
+    if (value === '') {
+      this.listQuery.downloader_id = []
+    } else {
+      this.listQuery.downloader_id = [value]
+    }
+    this.handleFilter()
+  }
+
+  private handleCategoryFilter(value: string) {
+    this.listQuery.category_like = value
+    this.handleFilter()
+  }
+
+  private handleTagFilter(value: string) {
+    this.listQuery.tags_like = value
+    this.handleFilter()
+  }
+
+  // ====== 辅助方法 ======
+  private groupTorrentsByDownloader(torrents: any[]) {
+    const groups: Record<string, any[]> = {}
+    torrents.forEach(torrent => {
+      if (!torrent) {
+        console.warn('跳过空种子对象')
+        return
+      }
+
+      const downloaderId = torrent?.downloader_id || torrent?.downloaderId
+
+      if (!downloaderId) {
+        console.warn('种子缺少下载器ID，跳过:', torrent)
+        return
+      }
+
+      if (!groups[downloaderId]) {
+        groups[downloaderId] = []
+      }
+      groups[downloaderId].push(torrent)
+    })
+    return groups
+  }
+
+  private async deleteTorrentsInternal(torrents: any[], deleteData: number) {
+    const results = { successCount: 0, failCount: 0 }
+
+    // 按下载器分组
+    const groups = this.groupTorrentsByDownloader(torrents)
+
+    // 并行调用所有下载器的删除操作
+    const promises = Object.entries(groups).map(([downloaderId, groupTorrents]) => {
+      const hashes = groupTorrents.map(t => t.hash)
+      return deleteTorrents({ downloader_id: downloaderId, hashes, deleteData })
+    })
+
+    const responses = await Promise.allSettled(promises)
+
+    responses.forEach((response, index) => {
+      if (response.status === 'fulfilled' && response.value.code === '200') {
+        results.successCount += Object.keys(groups)[index].length
+      } else {
+        results.failCount += Object.keys(groups)[index].length
+      }
+    })
+
+    return results
+  }
+
+  // ====== 批量操作 ======
+  private async handleBatchStart() {
+    if (this.multipleSelection.length === 0) return
+    try {
+      // 按下载器ID分组
+      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
+
+      // 并行调用所有下载器的恢复操作
+      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
+        const hashes = torrents.map(t => t.hash)
+        return resumeTorrents({ downloader_id: downloaderId, hashes })
+      })
+
+      const responses = await Promise.allSettled(promises)
+      let successCount = 0
+      let failCount = 0
+
+      responses.forEach(response => {
+        if (response.status === 'fulfilled' && response.value.code === '200') {
+          successCount++
+        } else {
+          failCount++
+        }
+      })
+
+      if (failCount === 0) {
+        this.$message.success(`成功开始 ${successCount} 个种子`)
+      } else if (successCount === 0) {
+        this.$message.error(`批量开始失败，共 ${failCount} 个种子开始失败`)
+      } else {
+        this.$message.warning(`部分开始成功：成功 ${successCount} 个，失败 ${failCount} 个`)
+      }
+
+      this.getList()
+    } catch (error) {
+      console.error('批量开始失败:', error)
+      this.$message.error('批量开始失败')
+    }
+  }
+
+  private async handleBatchPause() {
+    if (this.multipleSelection.length === 0) return
+    try {
+      // 按下载器ID分组
+      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
+
+      // 并行调用所有下载器的暂停操作
+      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
+        const hashes = torrents.map(t => t.hash)
+        return pauseTorrents({ downloader_id: downloaderId, hashes })
+      })
+
+      const responses = await Promise.allSettled(promises)
+      let successCount = 0
+      let failCount = 0
+
+      responses.forEach(response => {
+        if (response.status === 'fulfilled' && response.value.code === '200') {
+          successCount++
+        } else {
+          failCount++
+        }
+      })
+
+      if (failCount === 0) {
+        this.$message.success(`成功暂停 ${successCount} 个种子`)
+      } else if (successCount === 0) {
+        this.$message.error(`批量暂停失败，共 ${failCount} 个种子暂停失败`)
+      } else {
+        this.$message.warning(`部分暂停成功：成功 ${successCount} 个，失败 ${failCount} 个`)
+      }
+
+      this.getList()
+    } catch (error) {
+      console.error('批量暂停失败:', error)
+      this.$message.error('批量暂停失败')
+    }
+  }
+
+  private async handleBatchDelete() {
+    if (this.multipleSelection.length === 0) return
+    this.$confirm(`确定要删除选中的 ${this.multipleSelection.length} 个种子吗？`, '批量删除确认', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }).then(async() => {
+      this.$confirm('是否同时删除这些种子对应的数据文件？', '删除数据文件', {
+        confirmButtonText: '同时删除种子和数据',
+        cancelButtonText: '仅删除种子，保留数据',
+        distinguishCancelAndClose: true,
+        type: 'warning'
+      }).then(async() => {
+        await this.performBatchDelete(1)
+      }).catch((action) => {
+        if (action === 'cancel') {
+          this.performBatchDelete(0)
+        }
+      })
+    }).catch(() => undefined)
+  }
+
+  private async performBatchDelete(deleteData: number) {
+    const results = await this.deleteTorrentsInternal(this.multipleSelection, deleteData)
+
+    const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
+    if (results.failCount === 0) {
+      this.$message.success(`成功删除 ${results.successCount} 个种子 ${dataFileText}`)
+    } else if (results.successCount === 0) {
+      this.$message.error(`批量删除失败，共 ${results.failCount} 个种子删除失败`)
+    } else {
+      this.$message.warning(`部分删除成功：成功 ${results.successCount} 个，失败 ${results.failCount} 个 ${dataFileText}`)
+    }
+
+    this.getList()
+  }
+
+  private async handleBatchRecheck() {
+    if (this.multipleSelection.length === 0) return
+    try {
+      // 按下载器ID分组
+      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
+
+      // 并行调用所有下载器的重检操作
+      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
+        const hashes = torrents.map(t => t.hash)
+        return recheckTorrents({ downloader_id: downloaderId, hashes })
+      })
+
+      const responses = await Promise.allSettled(promises)
+      let successCount = 0
+      let failCount = 0
+
+      responses.forEach(response => {
+        if (response.status === 'fulfilled' && response.value.code === '200') {
+          successCount++
+        } else {
+          failCount++
+        }
+      })
+
+      if (failCount === 0) {
+        this.$message.success(`成功重检 ${successCount} 个种子`)
+      } else if (successCount === 0) {
+        this.$message.error(`批量重检失败，共 ${failCount} 个种子重检失败`)
+      } else {
+        this.$message.warning(`部分重检成功：成功 ${successCount} 个，失败 ${failCount} 个`)
+      }
+
+      this.getList()
+    } catch (error) {
+      console.error('批量重检失败:', error)
+      this.$message.error('批量重检失败')
+    }
+  }
+
+  // ====== 单个种子操作 ======
+  private async handleTogglePause(torrent: any) {
+    if (!torrent) return
+
+    const downloaderId = torrent.downloader_id || torrent.downloaderId
+    if (!downloaderId) {
+      this.$message.error('种子缺少下载器信息')
+      return
+    }
+
+    try {
+      if (torrent.status === 'paused') {
+        await resumeTorrents({ downloader_id: downloaderId, hashes: [torrent.hash] })
+        this.$message.success('开始任务成功')
+      } else {
+        await pauseTorrents({ downloader_id: downloaderId, hashes: [torrent.hash] })
+        this.$message.success('暂停任务成功')
+      }
+      this.getList()
+    } catch (error) {
+      console.error('切换暂停状态失败:', error)
+      this.$message.error('操作失败')
+    }
+  }
+
+  private async handleRecheck(torrent: any) {
+    if (!torrent) return
+
+    const downloaderId = torrent.downloader_id || torrent.downloaderId
+    if (!downloaderId) {
+      this.$message.error('种子缺少下载器信息')
+      return
+    }
+
+    try {
+      await recheckTorrents({ downloader_id: downloaderId, hashes: [torrent.hash] })
+      this.$message.success('重新检查任务已提交')
+      this.getList()
+    } catch (error) {
+      console.error('重检种子失败:', error)
+      this.$message.error('重检失败')
+    }
+  }
+
+  private async handleDelete(torrent: any) {
+    if (!torrent) return
+
+    this.$confirm(`确定要删除种子"${torrent.name}"吗？`, '删除确认', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning'
+    }).then(async() => {
+      this.$confirm('是否同时删除数据文件？', '删除数据文件', {
+        confirmButtonText: '同时删除种子和数据',
+        cancelButtonText: '仅删除种子，保留数据',
+        distinguishCancelAndClose: true,
+        type: 'warning'
+      }).then(async() => {
+        await this.performSingleDelete(torrent, 1)
+      }).catch((action) => {
+        if (action === 'cancel') {
+          this.performSingleDelete(torrent, 0)
+        }
+      })
+    }).catch(() => undefined)
+  }
+
+  private async performSingleDelete(torrent: any, deleteData: number) {
+    const downloaderId = torrent.downloader_id || torrent.downloaderId
+    if (!downloaderId) {
+      this.$message.error('种子缺少下载器信息')
+      return
+    }
+
+    try {
+      const response = await deleteTorrents({
+        downloader_id: downloaderId,
+        hashes: [torrent.hash],
+        deleteData
+      })
+
+      if (response.code === '200') {
+        const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
+        this.$message.success(`删除种子成功 ${dataFileText}`)
+        this.getList()
+        // 如果删除的是当前详情面板的种子，关闭详情面板
+        if (this.currentRow?.hash === torrent.hash) {
+          this.currentRow = null
+        }
+      } else {
+        this.$message.error('删除种子失败')
+      }
+    } catch (error) {
+      console.error('删除种子失败:', error)
+      this.$message.error('删除种子失败')
+    }
+  }
+
+  private async handleAdd(torrentData: any) {
+    try {
+      const response = await addTorrent(torrentData)
+      if (response.code === '200') {
+        this.$message.success('添加种子成功')
+        this.showAddDialog = false
+        this.getList()
+      } else {
+        this.$message.error(response.msg || '添加种子失败')
+      }
+    } catch (error) {
+      console.error('添加种子失败:', error)
+      this.$message.error('添加种子失败')
+    }
+  }
+}
+</script>
+
+<style lang="scss" scoped>
+// 复用现有样式变量
+@import '@/styles/traditional-view-theme.scss';
+
+.traditional-page {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg-primary);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.page-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.toolbar-left,
+.toolbar-center,
+.toolbar-right {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar-center {
+  flex: 1;
+  justify-content: center;
+  gap: 8px;
+}
+
+.filter-toggle-btn {
+  font-size: 16px;
+}
+
+.tool-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--color-border-primary);
+  margin: 0 3px;
+}
+
+.search-input {
+  width: 220px;
+
+  ::v-deep .el-input__inner {
+    font-size: 12px;
+  }
+}
+
+.selection-info {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  padding: 3px 7px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  display: none;
+
+  &.visible {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .count {
+    color: var(--color-primary);
+    font-weight: var(--font-weight-semibold);
+  }
+}
+
+.view-switcher {
+  display: flex;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 1px;
+
+  .el-button--text {
+    &.active {
+      background: var(--color-primary);
+      color: white;
+    }
+  }
+}
+
+.table-area {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.table-container {
+  flex: 1;
+  overflow: auto;
+  position: relative;
+
+  // 使用项目滚动条样式
+  &::-webkit-scrollbar {
+    width: var(--scrollbar-width);
+    height: var(--scrollbar-height);
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb-bg);
+    border-radius: var(--scrollbar-border-radius);
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-bg-hover);
+  }
+}
+
+// 表格列宽
+.col-checkbox { width: 36px; text-align: center !important; }
+.col-status-icon { width: 32px; text-align: center !important; }
+.col-name { /* auto */ }
+.col-size { width: 80px; }
+.col-progress { width: 130px; }
+.col-status { width: 90px; }
+.col-downspeed { width: 90px; }
+.col-upspeed { width: 90px; }
+.col-ratio { width: 60px; }
+.col-downloader { width: 100px; }
+.col-category { width: 130px; }
+.col-added { width: 120px; }
+.col-actions { width: 100px; }
+
+.table-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--color-bg-primary);
+  border-top: 1px solid var(--color-border-primary);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+
+  .pagination-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pagination-controls {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+
+    .el-button--mini {
+      &.active {
+        background: var(--color-primary);
+        color: white;
+        border-color: var(--color-primary);
+      }
+    }
+  }
+
+  .page-size-select {
+    width: 90px;
+  }
+}
+
+// Tracker 表格样式
+.tracker-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+
+  th {
+    text-align: left;
+    padding: 5px;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border-primary);
+    color: var(--color-text-tertiary);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  td {
+    padding: 5px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .tracker-status {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+
+      &.ok {
+        background: var(--color-success);
+      }
+
+      &.fail {
+        background: var(--color-error);
+      }
+    }
+  }
+}
+</style>

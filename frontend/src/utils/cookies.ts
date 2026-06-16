@@ -15,3 +15,13 @@ const userIdKey = 'vue_typescript_admin_user_id'
 export const getUserId = () => localStorage.getItem(userIdKey) || ''
 export const setUserId = (userId: string) => localStorage.setItem(userIdKey, userId)
 export const removeUserId = () => localStorage.removeItem(userIdKey)
+
+// Generic storage helpers for view mode and other features
+export const getStorage = (key: string): string | null => {
+  const value = localStorage.getItem(key)
+  return value ? value : null
+}
+
+export const setStorage = (key: string, value: string): void => {
+  localStorage.setItem(key, value)
+}
