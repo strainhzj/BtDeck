@@ -2,8 +2,6 @@
 # Usage: docker compose up -d
 # Docs: https://github.com/strainhzj/BtDeck
 
-version: '3.8'
-
 services:
   # ==================== 后端服务 ====================
   # FastAPI + Python 3.11
