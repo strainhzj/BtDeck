@@ -417,6 +417,45 @@ class TagService:
                 "message": f"删除标签失败: {str(e)}"
             }
 
+    def batch_delete_tags(self, tag_ids: List[str]) -> Dict[str, Any]:
+        """
+        批量删除标签（同步，仅数据库软删除）
+
+        对每个标签独立执行软删除，单个失败不影响其余标签。
+        下载器同步由调用方（API层）按需处理。
+
+        Args:
+            tag_ids: 标签ID列表
+
+        Returns:
+            统一格式的响应字典，data 中包含每个标签的删除结果
+        """
+        results: List[Dict[str, Any]] = []
+        success_count = 0
+
+        for tag_id in tag_ids:
+            single = self.delete_tag(tag_id)
+            ok = single.get("success", False)
+            if ok:
+                success_count += 1
+            results.append({
+                "tag_id": tag_id,
+                "success": ok,
+                "message": None if ok else single.get("message", "删除失败"),
+                "data": single.get("data")
+            })
+
+        return {
+            "success": success_count == len(tag_ids),
+            "data": {
+                "results": results,
+                "total": len(tag_ids),
+                "success_count": success_count,
+                "failed_count": len(tag_ids) - success_count
+            },
+            "message": f"批量删除完成：成功 {success_count}/{len(tag_ids)}"
+        }
+
     def get_torrent_tags(self, torrent_hash: str) -> Dict[str, Any]:
         """
         获取种子的所有标签（同步）

@@ -20,6 +20,7 @@ from app.schemas.tag_schemas import (
     BatchAssignTagsRequest,
     RemoveTagsRequest,
     DeleteTagRequest,
+    BatchDeleteTagsRequest,
     TagResponse,
     TagListResponse,
     AssignTagsResponse,
@@ -656,6 +657,93 @@ async def delete_tag(
         return CommonResponse(
             status="error",
             msg=f"删除标签失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.post(
+    "/batch-delete",
+    summary="批量删除标签",
+    response_model=CommonResponse,
+    tags=["标签管理"]
+)
+async def batch_delete_tags(
+    delete_request: BatchDeleteTagsRequest,
+    request: Request = None,
+    db: Session = Depends(get_db)
+):
+    """
+    批量删除标签（软删除）
+
+    对每个标签独立执行软删除，单个失败不影响其余标签。
+    删除成功后会逐个同步到对应的下载器客户端（如果下载器在线）。
+
+    支持种子转移（仅qBittorrent分类）：
+    - target_category: 目标分类名称，空字符串表示未分类
+    """
+    # 1. JWT认证
+    username = verify_token_and_get_user(request)
+    if not username:
+        return CommonResponse(
+            status="error",
+            msg="token验证失败",
+            code="401",
+            data=None
+        )
+
+    try:
+        service = TagService(db)
+
+        # 2. 服务层批量软删除
+        result = service.batch_delete_tags(tag_ids=delete_request.tag_ids)
+        result_items = result.get("data", {}).get("results", [])
+
+        # 3. 逐个同步到下载器（仅对数据库删除成功的标签）
+        target_category = delete_request.target_category
+        for item in result_items:
+            if not item.get("success"):
+                continue
+            deleted_tag_info = item.get("data")
+            if not deleted_tag_info:
+                continue
+
+            downloader_id = deleted_tag_info.get("downloader_id")
+            has_permission, _ = validate_downloader_access(db, downloader_id, username)
+            if not has_permission:
+                logger.warning(
+                    f"标签已删除，但用户无权限访问下载器，跳过同步 "
+                    f"[downloader_id={downloader_id}, tag_id={item.get('tag_id')}]"
+                )
+                continue
+
+            sync_result = await _sync_tag_delete_to_downloader(
+                request,
+                downloader_id=downloader_id,
+                tag_id=item.get("tag_id"),
+                tag_name=deleted_tag_info.get("tag_name"),
+                tag_type=deleted_tag_info.get("tag_type"),
+                color=deleted_tag_info.get("color"),
+                target_category=target_category
+            )
+            if not sync_result["success"]:
+                logger.warning(
+                    f"标签已从数据库删除，但同步到下载器失败: {sync_result['message']} "
+                    f"[tag_id={item.get('tag_id')}]"
+                )
+
+        return CommonResponse(
+            status="success",
+            msg=result.get("message", "批量删除成功"),
+            code="200",
+            data=result.get("data")
+        )
+
+    except Exception as e:
+        logger.error(f"批量删除标签失败: {str(e)}")
+        return CommonResponse(
+            status="error",
+            msg=f"批量删除标签失败: {str(e)}",
             code="500",
             data=None
         )

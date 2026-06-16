@@ -135,6 +135,24 @@ class DeleteTagRequest(BaseModel):
         description="目标分类名称（仅分类删除时使用，空字符串表示未分类）"
     )
 
+class BatchDeleteTagsRequest(BaseModel):
+    """批量删除标签请求（支持种子转移）"""
+    tag_ids: List[str] = Field(
+        ...,
+        min_length=1,
+        description="待删除标签ID列表"
+    )
+    target_category: Optional[str] = Field(
+        None,
+        description="目标分类名称（仅分类删除时使用，空字符串表示未分类）"
+    )
+
+class BatchDeleteTagsResponse(BaseModel):
+    """单个标签批量删除结果项"""
+    tag_id: str = Field(..., description="标签ID")
+    success: bool = Field(..., description="是否删除成功")
+    message: Optional[str] = Field(None, description="失败原因（成功时为空）")
+
 class TagResponse(BaseModel):
     """标签响应"""
     tag_id: str
