@@ -31,7 +31,9 @@ SetupIconFile=..\frontend\public\favicon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 
 [Languages]
-Name: "chinesesimplified"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 简体中文为非官方语言包，需随项目分发（deploy/ChineseSimplified.isl）
+; 用 compiler 前缀加载官方 Default.isl，再用中文包覆盖翻译
+Name: "chinesesimplified"; MessagesFile: "compiler:Default.isl,ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
@@ -95,6 +97,14 @@ procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   ResultCode: Integer;
 begin
+  if CurUninstallStep = usUninstall then
+  begin
+    { 卸载前终止所有 btdeck 进程（含服务进程和手动启动的实例），
+      避免文件被占用导致 exe 无法删除 }
+    Exec('taskkill', '/im btdeck.exe /f /t', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Sleep(2000);
+  end;
+
   if CurUninstallStep = usPostUninstall then
   begin
     { 停止并删除服务 }
