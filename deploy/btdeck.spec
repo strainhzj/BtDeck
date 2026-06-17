@@ -66,6 +66,12 @@ hiddenimports = [
     'transmission_rpc',
     'apscheduler',
     'yaml',
+    # qrcode 延迟导入 PIL 生成二维码图片，PyInstaller 静态分析检测不到，需显式声明
+    'PIL',
+    'PIL.Image',
+    'qrcode',
+    'qrcode.image',
+    'qrcode.image.pil',
     'app',
     'app.api',
     'app.api.endpoints',
@@ -92,7 +98,7 @@ a = Analysis(
         'numpy',
         'pandas',
         'scipy',
-        'PIL',
+        # 注意：PIL (Pillow) 不能排除，qrcode 生成二维码图片时依赖它
         'PyQt5',
         'PyQt6',
         'pytest',

@@ -89,6 +89,9 @@ if [ "$BUILD_PACKAGE" = "1" ]; then
 if ! id -u btdeck &>/dev/null; then
     useradd --system --no-create-home --shell /bin/false btdeck
 fi
+# 预创建 systemd ReadWritePaths 声明的目录
+# (ProtectSystem=strict 下应用需这些目录可写，否则首次启动写入失败)
+mkdir -p /opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup
 # 设置权限
 chown -R btdeck:btdeck /opt/btdeck
 # 启用并启动服务
