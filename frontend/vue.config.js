@@ -6,6 +6,9 @@ const name = 'BtDeck'
 module.exports = {
   // Docker部署使用根路径，如需子路径部署请修改此处
   publicPath: process.env.NODE_ENV === 'production' ? '/' : '/',
+  // 静态资源统一输出到 dist/assets/ 目录（JS/CSS/字体/图片）
+  // 与后端 factory.py 的 mount("/assets", frontend_dist/assets) 对齐
+  assetsDir: 'assets',
   lintOnSave: false,
   pwa: {
     name: name
