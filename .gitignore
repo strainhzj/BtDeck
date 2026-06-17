@@ -39,6 +39,7 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+.venv-win/
 env/
 .pytest_cache/
 .coverage

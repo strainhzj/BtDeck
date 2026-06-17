@@ -40,8 +40,8 @@ Name: "startmenuicon"; Description: "Create Start Menu shortcut"; GroupDescripti
 Name: "startup"; Description: "Run at Windows startup"; GroupDescription: "Auto Start"; Flags: unchecked
 
 [Files]
-; 主可执行文件
-Source: "..\build\btdeck.exe"; DestDir: "{app}"; Flags: ignoreversion
+; 主可执行文件（PyInstaller 输出到 dist/ 目录）
+Source: "..\dist\btdeck.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; 配置文件模板
 Source: "..\backend\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not FileExists('{app}\config\config.yaml')
 
