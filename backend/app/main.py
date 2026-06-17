@@ -90,9 +90,9 @@ if __name__ == '__main__':
     # === 数据库自动初始化逻辑 ===
     # 如果数据库为空（首次部署或数据库被删除），从生产schema自动初始化
     # 并自动标记为最新版本，跳过有问题的迁移链
-    from pathlib import Path
-    import sqlite3
-    db_path = str(Path(__file__).parent.parent / 'config' / settings.DATABASE_NAME)
+    # 复用 settings.DATABASE_PATH，确保与 database.py 的 SQLALCHEMY_DATABASE_URL 一致
+    # （frozen 模式下 CONFIG_PATH 已指向可执行文件同级目录，数据可持久化）
+    db_path = str(settings.DATABASE_PATH)
     logger.info(f"Database path: {db_path}")
 
     # 检查数据库是否需要从生产schema初始化

@@ -40,6 +40,20 @@ except ImportError:
                     setattr(self, key, value)
 
 
+def is_frozen() -> bool:
+    """检测是否运行在 PyInstaller 打包（frozen）模式下。
+
+    onefile 打包后，__file__ 指向临时解压目录 _MEIPASS（退出即销毁），
+    因此数据/配置必须改写到可执行文件同级目录，否则不持久化。
+    """
+    return getattr(sys, "frozen", False)
+
+
+def is_docker() -> bool:
+    """检测是否运行在 Docker 容器中。"""
+    return Path("/.dockerenv").exists()
+
+
 class Settings(BaseSettings):
     """应用配置类"""
     # 项目基本信息
@@ -64,6 +78,7 @@ class Settings(BaseSettings):
     CONFIG_DIR: Optional[str] = None
     ALLOWED_HOSTS: List[str] = ["*"]
     DATABASE_NAME: str = "app.db"
+    TORRENTS_DIR: Optional[str] = None
 
     # 安全配置
     SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-for-jwt")
@@ -81,17 +96,28 @@ class Settings(BaseSettings):
         super().__init__(**kwargs)
         # 仅创建主配置目录（必需）
         # 子目录（temp、logs、cookies）按需创建，不在初始化时创建
+        # 容错：frozen 模式下若可执行文件同级目录属主异常，mkdir 可能无权限，
+        # 此时打印清晰日志而不让进程直接崩溃（部署脚本应预创建并 chown 该目录）
         if not self.CONFIG_PATH.exists():
-            self.CONFIG_PATH.mkdir(parents=True, exist_ok=True)
+            try:
+                self.CONFIG_PATH.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                # frozen 模式下若可执行文件同级目录属主异常，mkdir 可能无权限
+                # 不让进程直接崩溃（部署脚本应预创建并 chown 该目录；后续
+                # init_config_file 有自己的 makedirs 兜底并会记录详细错误）
+                print(f"[WARN] 无法创建配置目录 {self.CONFIG_PATH}: {e}")
+                print(f"[WARN] 请确保运行用户对该目录有写权限")
 
     @property
     def CONFIG_PATH(self):
         if getattr(self, 'CONFIG_DIR', None):
             return Path(self.CONFIG_DIR)
-        # elif SystemUtils.is_docker():
-        #     return Path("/config")
-        # elif SystemUtils.is_frozen():
-        #     return Path(sys.executable).parent / "config"
+        # frozen 模式（PyInstaller onefile）：__file__ 指向临时解压目录 _MEIPASS，
+        # 数据必须写到可执行文件同级目录才能持久化
+        elif is_frozen():
+            return Path(sys.executable).parent / "config"
+        elif is_docker():
+            return Path("/config")
         return self.ROOT_PATH / "config"
 
     @property
@@ -120,12 +146,13 @@ class Settings(BaseSettings):
 
     @property
     def TORRENTS_PATH(self):
-        if self.TORRENTS_PATH:
-            return Path(self.TORRENTS_PATH)
-        # elif SystemUtils.is_docker():
-        #     return Path("/config")
-        # elif SystemUtils.is_frozen():
-        #     return Path(sys.executable).parent / "config"
+        if getattr(self, 'TORRENTS_DIR', None):
+            return Path(self.TORRENTS_DIR)
+        # frozen 模式：torrents 目录与可执行文件同级
+        elif is_frozen():
+            return Path(sys.executable).parent / "torrents"
+        elif is_docker():
+            return Path("/torrents")
         return self.ROOT_PATH / "torrents"
 
 # 实例化配置

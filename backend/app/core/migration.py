@@ -9,7 +9,7 @@ import shutil
 import subprocess
 from typing import Optional
 
-from app.core.config import settings
+from app.core.config import settings, is_frozen
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,14 @@ def run_alembic_migrations() -> bool:
     """
     try:
         logger.info("检查数据库迁移...")
+
+        # frozen 模式（PyInstaller 打包）下系统通常没有独立的 alembic 可执行文件，
+        # 且数据库首次部署已通过 production schema 初始化（见 main.py 的
+        # ensure_database_initialized 分支）。此处跳过 alembic 子进程，避免
+        # RuntimeError 阻塞启动；非首次启动的版本升级迁移需在开发环境用源码方式执行。
+        if is_frozen():
+            logger.info("检测到 frozen（PyInstaller）模式，跳过 alembic 子进程迁移")
+            return True
 
         # 检查alembic命令是否可用
         if not shutil.which("alembic"):
