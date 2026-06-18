@@ -195,6 +195,16 @@ def init_db():
         logger.error(f"Error initializing default templates: {str(e)}")
         print(f"Error initializing default templates: {str(e)}")
 
+    # 初始化系统预设搜索模板（v1.0.5 查询模板系统）
+    try:
+        from app.data.default_search_templates import init_default_search_templates
+        db = SessionLocal()
+        init_default_search_templates(db)
+        db.close()
+    except Exception as e:
+        logger.error(f"Error initializing default search templates: {str(e)}")
+        print(f"Error initializing default search templates: {str(e)}")
+
 
     # 初始化系统默认定时任务（增量检查：添加缺失的任务）
     try:

@@ -55,4 +55,8 @@ node_modules/
 # ================================
 data/
 
+# 例外：backend/app/data/ 是代码目录（预设数据初始化模块），非运行时数据
+!backend/app/data/
+!backend/app/data/*
+
 # 子项目保留各自的 .gitignore 处理细节规则
