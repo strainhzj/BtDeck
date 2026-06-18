@@ -611,7 +611,11 @@ import {
   getDownloaderList,
   DownloaderSimple,
   reannounceTorrents,
-  getActiveTorrents
+  getActiveTorrents,
+  applySearchTemplate,
+  saveSimpleQueryAsTemplate,
+  createSearchTemplate,
+  QueryTemplateConditions
 } from '@/api/torrents'
 import { TorrentStatus } from '@/types/torrent'
 import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status-config'
@@ -1990,8 +1994,86 @@ export default class extends Vue {
     }
   }
 
-  private handleSaveSearchTemplate(template: any) {
-    // 保存搜索模板
+  private async handleSaveSearchTemplate(template: any) {
+    // 接线 v1.0.5：把 AdvancedSearchBuilder 的 conditionGroups 保存为查询模板
+    // template 结构: { id, name, description, isDefault, conditions, createdTime }
+    // conditions 是 builder 的 conditionGroups 数组，包装成 source=advanced 格式
+    const conditions: QueryTemplateConditions = {
+      source: 'advanced',
+      version: 1,
+      condition_groups: template.conditions || [],
+      sort_by: this.listQuery.sort_by,
+      sort_order: this.listQuery.sort_order
+    }
+    try {
+      const response = await createSearchTemplate({
+        name: template.name,
+        description: template.description,
+        conditions,
+        is_public: false
+      })
+      if (response.code === '200') {
+        this.$message.success('模板保存成功')
+      } else {
+        this.$message.error(response.msg || '模板保存失败')
+      }
+    } catch (error) {
+      this.$message.error('模板保存失败：' + (error as Error).message)
+    }
+  }
+
+  /**
+   * v1.0.5 应用查询模板（按 conditions.source 分支）
+   * - source=simple：回填 listQuery 并 getList()
+   * - source=advanced：回填 AdvancedSearchBuilder 的 conditionGroups 并执行高级搜索
+   */
+  private async applyQueryTemplate(conditions: QueryTemplateConditions) {
+    if (!conditions || !conditions.source) {
+      this.$message.error('模板条件格式无效')
+      return
+    }
+
+    try {
+      if (conditions.source === 'simple' && conditions.listQuery) {
+        // 简单查询：回填 listQuery（保留 skip/limit），回到第 1 页
+        const saved = conditions.listQuery
+        this.listQuery = {
+          skip: 0,
+          limit: this.listQuery.limit,
+          name_like: saved.name_like ?? '',
+          downloader_id: saved.downloader_id ? [...saved.downloader_id] : [],
+          status: saved.status ? [...saved.status] : [],
+          showActiveOnly: saved.showActiveOnly ?? false,
+          sort_by: saved.sort_by ?? 'added_date',
+          sort_order: saved.sort_order ?? 'desc'
+        }
+        // 重置分页到第 1 页
+        this.currentPage = 1
+        await this.getList()
+        this.$message.success('已应用查询模板')
+      } else if (conditions.source === 'advanced' && conditions.condition_groups) {
+        // 高级搜索：回填 AdvancedSearchBuilder 的 conditionGroups
+        const builderRef = this.$refs.advancedSearchBuilder as any
+        if (builderRef && typeof builderRef.applyTemplateGroups === 'function') {
+          builderRef.applyTemplateGroups(conditions.condition_groups, {
+            sort_by: conditions.sort_by,
+            sort_order: conditions.sort_order
+          })
+          // 通过 builder 重新构造 searchParams 并执行（与 handleAdvancedSearchFromBuilder 一致）
+          const searchParams = builderRef.buildSearchParams ? builderRef.buildSearchParams() : null
+          if (searchParams) {
+            await this.performAdvancedSearch(searchParams)
+            this.$message.success('已应用高级搜索模板')
+          }
+        } else {
+          this.$message.warning('高级搜索组件未就绪')
+        }
+      } else {
+        this.$message.warning('不支持的模板类型')
+      }
+    } catch (error) {
+      this.$message.error('应用模板失败：' + (error as Error).message)
+    }
   }
 
   // 用户偏好

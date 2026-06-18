@@ -744,6 +744,63 @@ export function applySearchTemplate(templateId: string): Promise<ApiResponse<Adv
   }) as unknown as Promise<ApiResponse<AdvancedSearchResponse>>
 }
 
+// ==================== v1.0.5 查询模板便捷方法 ====================
+
+/**
+ * 查询模板 conditions 结构（前端形态约定）
+ * - source=simple：与 torrents/index.vue 的 listQuery 1:1 对齐
+ * - source=advanced：AdvancedSearchBuilder 的 condition_groups 结构
+ */
+export interface QueryTemplateConditions {
+  source: 'simple' | 'advanced'
+  version: number
+  listQuery?: {
+    name_like?: string
+    downloader_id?: string[]
+    status?: string[]
+    showActiveOnly?: boolean
+    sort_by?: string
+    sort_order?: 'asc' | 'desc'
+  }
+  condition_groups?: any[]
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+}
+
+/**
+ * 保存简单查询为模板（便捷封装）
+ * @description 把 torrents 列表的 listQuery 状态封装为 source=simple 的 conditions，调用 createSearchTemplate
+ * @param name 模板名称
+ * @param listQuery 种子列表查询状态（index.vue 的 listQuery 对象）
+ * @param options.description 模板描述
+ * @param options.isPublic 是否公开
+ * @returns 创建结果
+ */
+export function saveSimpleQueryAsTemplate(
+  name: string,
+  listQuery: QueryTemplateConditions['listQuery'],
+  options?: { description?: string; isPublic?: boolean }
+): Promise<ApiResponse<SearchTemplate>> {
+  const conditions: QueryTemplateConditions = {
+    source: 'simple',
+    version: 1,
+    listQuery: {
+      name_like: listQuery?.name_like ?? '',
+      downloader_id: listQuery?.downloader_id ? [...listQuery.downloader_id] : [],
+      status: listQuery?.status ? [...listQuery.status] : [],
+      showActiveOnly: listQuery?.showActiveOnly ?? false,
+      sort_by: listQuery?.sort_by ?? 'added_date',
+      sort_order: listQuery?.sort_order ?? 'desc'
+    }
+  }
+  return createSearchTemplate({
+    name,
+    description: options?.description,
+    conditions,
+    is_public: options?.isPublic ?? false
+  })
+}
+
 /**
  * 搜索预览
  * @description 预览搜索结果（不执行完整搜索）

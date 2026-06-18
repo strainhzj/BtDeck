@@ -921,7 +921,7 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   // 构建搜索参数
-  private buildSearchParams(): any {
+  buildSearchParams(): any {
     const params: any = {
       // 添加复杂查询标识
       complex_search: true,
@@ -1151,6 +1151,17 @@ export default class AdvancedSearchBuilder extends Vue {
     this.conditionGroups = []
     this.initializeConditions()
     this.$emit('reset')
+  }
+
+  // v1.0.5 应用模板：回填 conditionGroups（供父组件调用）
+  applyTemplateGroups(groups: any[], options?: { sort_by?: string; sort_order?: string }) {
+    if (!Array.isArray(groups) || groups.length === 0) {
+      this.conditionGroups = []
+      this.initializeConditions()
+      return
+    }
+    // 深拷贝避免污染模板源数据
+    this.conditionGroups = JSON.parse(JSON.stringify(groups))
   }
 
   // 保存搜索模板
