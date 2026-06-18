@@ -801,6 +801,35 @@ export default class extends Vue {
     await this.getList()
     this.loadUserPreferences()
     this.startSpeedPolling()
+
+    // v1.0.5：处理从查询模板管理页跳转来的应用请求
+    await this.handleApplyTemplateFromRoute()
+  }
+
+  /**
+   * v1.0.5 处理路由 query 中的 apply_template_id，应用对应查询模板
+   */
+  private async handleApplyTemplateFromRoute() {
+    const templateId = this.$route.query.apply_template_id as string | undefined
+    if (!templateId) return
+
+    try {
+      const response = await applySearchTemplate(templateId)
+      if (response.code === '200' && response.data) {
+        // apply 端点返回 {id, name, description, conditions}
+        const conditions = (response.data as any).conditions as QueryTemplateConditions
+        if (conditions) {
+          await this.applyQueryTemplate(conditions)
+        }
+      } else {
+        this.$message.error(response.msg || '应用模板失败')
+      }
+    } catch (error) {
+      this.$message.error('应用模板失败：' + (error as Error).message)
+    }
+
+    // 清除 query 参数，避免刷新重复应用
+    this.$router.replace({ query: {} })
   }
 
   beforeDestroy() {

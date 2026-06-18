@@ -233,6 +233,21 @@ const router = new Router({
       ]
     },
     {
+      path: '/query-templates',
+      component: Layout,
+      children: [
+        {
+          path: 'index',
+          component: () => import(/* webpackChunkName: "query-templates" */ '@/views/query-templates/index.vue'),
+          meta: {
+            keepAlive: true,
+            title: '查询模板',
+            icon: 'search'
+          }
+        }
+      ]
+    },
+    {
       path: '*',
       redirect: '/404',
       meta: { hidden: true }
