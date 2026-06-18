@@ -46,7 +46,7 @@
         >
           <i class="el-icon-refresh"></i> 重检
         </el-button>
-        <div class="selection-info" :class="{ visible: multipleSelection.length > 0 }">
+        <div class="selection-info" :class="{visible: multipleSelection.length > 0}">
           已选 <span class="count">{{ multipleSelection.length }}</span> 个
         </div>
       </div>
@@ -80,7 +80,7 @@
           <el-button
             type="text"
             size="small"
-            :class="{ active: viewModeModule.currentMode === 'list' }"
+            :class="{active: viewModeModule.currentMode === 'list'}"
             @click="switchViewMode('list')"
             title="列表模式"
           >
@@ -89,7 +89,7 @@
           <el-button
             type="text"
             size="small"
-            :class="{ active: viewModeModule.currentMode === 'traditional' }"
+            :class="{active: viewModeModule.currentMode === 'traditional'}"
             @click="switchViewMode('traditional')"
             title="传统模式"
           >
@@ -102,7 +102,7 @@
     <!-- 页面主体：过滤面板 + 表格 + 详情 -->
     <div class="page-body">
       <!-- 左侧过滤面板 -->
-      <aside class="filter-panel" :class="{ collapsed: viewModeModule.filterPanelCollapsed }">
+      <aside class="filter-panel" :class="{collapsed: viewModeModule.filterPanelCollapsed}">
         <div class="filter-panel-header">
           <h3>过滤器</h3>
           <el-button
@@ -205,7 +205,7 @@
               <tr
                 v-for="(torrent, index) in sortedList"
                 :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${index}`"
-                :class="{ selected: currentRow?.hash === torrent.hash }"
+                :class="{selected: currentRow?.hash === torrent.hash}"
                 @click="handleRowClick(torrent)"
               >
                 <td class="col-checkbox">
@@ -232,7 +232,7 @@
                       <div
                         class="progress-bar-fill"
                         :class="torrent.status"
-                        :style="{ width: `${torrent.progress || 0}%` }"
+                        :style="{width: `${torrent.progress || 0}%`}"
                       ></div>
                     </div>
                     <span class="progress-text">{{ torrent.progress || 0 }}%</span>
@@ -328,7 +328,7 @@
               v-for="page in visiblePages"
               :key="page"
               size="mini"
-              :class="{ active: page === currentPage }"
+              :class="{active: page === currentPage}"
               @click="handlePageChange(page)"
             >
               {{ page }}
@@ -345,7 +345,7 @@
       </div>
 
       <!-- 右侧详情面板 -->
-      <div class="detail-panel-trad" :class="{ open: !!currentRow }">
+      <div class="detail-panel-trad" :class="{open: !!currentRow}">
         <div class="detail-panel-content">
           <div class="detail-header-compact">
             <h3>{{ currentRow?.name }}</h3>
@@ -356,7 +356,7 @@
               v-for="tab in detailTabs"
               :key="tab.value"
               class="tab-btn"
-              :class="{ active: activeDetailTab === tab.value }"
+              :class="{active: activeDetailTab === tab.value}"
               @click="activeDetailTab = tab.value"
             >
               {{ tab.label }}
@@ -796,7 +796,7 @@ export default class extends Vue {
 
   // ====== 实时速度轮询 ======
   private startSpeedPolling() {
-    const poll = async () => {
+    const poll = async() => {
       await this.loadActiveSpeed()
       this.speedTimer = window.setTimeout(poll, 1000)
     }

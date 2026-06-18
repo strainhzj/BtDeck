@@ -33,7 +33,7 @@
         v-for="tab in tabs"
         :key="tab.value"
         class="tab-item"
-        :class="{ 'is-active': activeTab === tab.value }"
+        :class="{'is-active': activeTab === tab.value}"
         @click="handleTabChange(tab.value)"
       >
         {{ tab.label }}
@@ -105,15 +105,15 @@ import NotificationItemComp from './NotificationItem.vue'
   }
 })
 export default class extends Vue {
-  private activeTab: string = 'all'
+  private activeTab = 'all'
   private pollingTimer: ReturnType<typeof setInterval> | null = null
 
   // 详情弹窗状态
-  private detailVisible: boolean = false
-  private detailTitle: string = ''
-  private detailContent: string = ''
-  private detailType: string = ''
-  private detailCreatedAt: string = ''
+  private detailVisible = false
+  private detailTitle = ''
+  private detailContent = ''
+  private detailType = ''
+  private detailCreatedAt = ''
   private detailExtraData: { release_url?: string } | null = null
 
   private tabs = [
@@ -161,7 +161,7 @@ export default class extends Vue {
   }
 
   private fetchList() {
-    const params: { page?: number; type?: string; is_read?: boolean } = {}
+    const params: { page?: number, type?: string, is_read?: boolean } = {}
     if (this.activeTab === 'unread') {
       params.is_read = false
     } else if (this.activeTab !== 'all') {

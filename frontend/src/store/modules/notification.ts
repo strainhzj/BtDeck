@@ -17,7 +17,7 @@ export interface INotificationState {
   total: number
   page: number
   loading: boolean
-  currentFilter: { page?: number; type?: string; is_read?: boolean }
+  currentFilter: { page?: number, type?: string, is_read?: boolean }
 }
 
 @Module({ dynamic: true, store, name: 'notification' })
@@ -28,7 +28,7 @@ class Notification extends VuexModule implements INotificationState {
   public total = 0
   public page = 1
   public loading = false
-  public currentFilter: { page?: number; type?: string; is_read?: boolean } = {}
+  public currentFilter: { page?: number, type?: string, is_read?: boolean } = {}
 
   @Mutation
   private SET_DRAWER_VISIBLE(visible: boolean) {
@@ -41,7 +41,7 @@ class Notification extends VuexModule implements INotificationState {
   }
 
   @Mutation
-  private SET_NOTIFICATIONS(payload: { list: NotificationItem[]; total: number }) {
+  private SET_NOTIFICATIONS(payload: { list: NotificationItem[], total: number }) {
     this.notifications = payload.list
     this.total = payload.total
   }
@@ -52,7 +52,7 @@ class Notification extends VuexModule implements INotificationState {
   }
 
   @Mutation
-  private SET_CURRENT_FILTER(filter: { page?: number; type?: string; is_read?: boolean }) {
+  private SET_CURRENT_FILTER(filter: { page?: number, type?: string, is_read?: boolean }) {
     this.currentFilter = filter
   }
 
@@ -74,7 +74,7 @@ class Notification extends VuexModule implements INotificationState {
   }
 
   @Action({ rawError: true })
-  public async FetchNotifications(payload?: { page?: number; type?: string; is_read?: boolean }) {
+  public async FetchNotifications(payload?: { page?: number, type?: string, is_read?: boolean }) {
     // 保存当前筛选条件
     if (payload) {
       this.SET_CURRENT_FILTER(payload)

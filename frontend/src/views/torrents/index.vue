@@ -195,7 +195,7 @@
         <el-button
           type="text"
           size="small"
-          :class="{ active: viewModeModule.currentMode === 'list' }"
+          :class="{active: viewModeModule.currentMode === 'list'}"
           @click="switchViewMode('list')"
           title="列表模式"
         >
@@ -204,7 +204,7 @@
         <el-button
           type="text"
           size="small"
-          :class="{ active: viewModeModule.currentMode === 'traditional' }"
+          :class="{active: viewModeModule.currentMode === 'traditional'}"
           @click="switchViewMode('traditional')"
           title="传统模式"
         >

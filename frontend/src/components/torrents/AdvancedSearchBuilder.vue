@@ -714,11 +714,6 @@ export default class AdvancedSearchBuilder extends Vue {
     // 模式变更时的特殊处理
   }
 
-  // 组逻辑变更处理
-  onGroupLogicChange(group: ConditionGroup) {
-    // 逻辑变更时的处理
-  }
-
   // 获取字段信息
   private getFieldInfo(fieldKey: string): SearchField | undefined {
     const allFields = [
@@ -1154,7 +1149,7 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   // v1.0.5 应用模板：回填 conditionGroups（供父组件调用）
-  applyTemplateGroups(groups: any[], options?: { sort_by?: string; sort_order?: string }) {
+  applyTemplateGroups(groups: any[], options?: { sort_by?: string, sort_order?: string }) {
     if (!Array.isArray(groups) || groups.length === 0) {
       this.conditionGroups = []
       this.initializeConditions()

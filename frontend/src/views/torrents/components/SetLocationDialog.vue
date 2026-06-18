@@ -135,12 +135,11 @@ export default class SetLocationDialog extends Vue {
   }
 
   async initDialog() {
-    const vm = this
     // 重置表单
-    vm.resetForm()
+    this.resetForm()
 
     // 加载下载器路径列表
-    await vm.loadDownloaderPaths()
+    await this.loadDownloaderPaths()
   }
 
   resetForm() {
@@ -154,8 +153,7 @@ export default class SetLocationDialog extends Vue {
   }
 
   async loadDownloaderPaths() {
-    const vm = this
-    const downloaderId = vm.downloaderId
+    const downloaderId = this.downloaderId
     if (!downloaderId) {
       return
     }
@@ -164,23 +162,23 @@ export default class SetLocationDialog extends Vue {
       const res = await getDownloaderPaths(downloaderId)
       if (res.code === '200' && res.data) {
         // 获取启用的路径
-        vm.downloaderPaths = (res.data.paths || []).filter((p: any) => p.is_enabled)
+        this.downloaderPaths = (res.data.paths || []).filter((p: any) => p.is_enabled)
 
         // 按path_value去重，保留id最大的（最新的记录）
         const pathMap = new Map<string, any>()
-        vm.downloaderPaths.forEach((path: any) => {
+        this.downloaderPaths.forEach((path: any) => {
           const existing = pathMap.get(path.path_value)
           if (!existing || path.id > existing.id) {
             pathMap.set(path.path_value, path)
           }
         })
 
-        vm.downloaderPaths = Array.from(pathMap.values())
+        this.downloaderPaths = Array.from(pathMap.values())
 
         // 如果有默认路径，自动填充
-        const defaultPath = vm.downloaderPaths.find((p: any) => p.path_type === 'default')
-        if (defaultPath && defaultPath.path_value !== vm.currentPath) {
-          vm.formData.target_path = defaultPath.path_value
+        const defaultPath = this.downloaderPaths.find((p: any) => p.path_type === 'default')
+        if (defaultPath && defaultPath.path_value !== this.currentPath) {
+          this.formData.target_path = defaultPath.path_value
         }
       }
     } catch (error) {
@@ -205,9 +203,8 @@ export default class SetLocationDialog extends Vue {
   }
 
   async handleSubmit() {
-    const vm = this
     // 验证表单
-    const form = vm.$refs.locationForm as any
+    const form = this.$refs.locationForm as any
     if (!form) return
 
     try {
@@ -217,32 +214,31 @@ export default class SetLocationDialog extends Vue {
     }
 
     // 二次确认
-    const confirmMsg = vm.formData.move_files
-      ? `确认将 ${vm.torrents.length} 个种子移动到新路径？\n这将移动已下载的文件到: ${vm.formData.target_path}`
-      : `确认修改 ${vm.torrents.length} 个种子的保存路径？\n仅修改路径，不移动文件。`
+    const confirmMsg = this.formData.move_files
+      ? `确认将 ${this.torrents.length} 个种子移动到新路径？\n这将移动已下载的文件到: ${this.formData.target_path}`
+      : `确认修改 ${this.torrents.length} 个种子的保存路径？\n仅修改路径，不移动文件。`
 
     try {
-      await vm.$confirm(confirmMsg, '确认操作', {
+      await this.$confirm(confirmMsg, '确认操作', {
         confirmButtonText: '确定',
         cancelButtonText: '取消',
         type: 'warning'
       })
 
-      await vm.executeSetLocation()
+      await this.executeSetLocation()
     } catch {
       // 用户取消
     }
   }
 
   async executeSetLocation() {
-    const vm = this
-    vm.submitting = true
+    this.submitting = true
 
     const request: SetLocationRequest = {
-      downloader_id: vm.downloaderId,
-      hashes: vm.torrents.map(t => t.hash),
-      target_path: vm.formData.target_path,
-      move_files: vm.formData.move_files
+      downloader_id: this.downloaderId,
+      hashes: this.torrents.map(t => t.hash),
+      target_path: this.formData.target_path,
+      move_files: this.formData.move_files
     }
 
     try {
@@ -253,25 +249,25 @@ export default class SetLocationDialog extends Vue {
 
         // 显示提示消息（不阻塞）
         if (success) {
-          vm.$message.success({
+          this.$message.success({
             message: `成功提交${moved_count}个种子路径修改请求，正在后台处理...`,
             duration: 3000
           })
 
           // 关闭对话框
-          vm.dialogVisible = false
-          vm.$emit('update:visible', false)
+          this.dialogVisible = false
+          this.$emit('update:visible', false)
 
           // 通知父组件刷新列表
-          vm.$emit('success')
+          this.$emit('success')
         } else {
-          vm.$message.error({
+          this.$message.error({
             message: res.data.error_message || '修改路径失败',
             duration: 5000
           })
         }
       } else {
-        vm.$message.error({
+        this.$message.error({
           message: res.msg || '修改路径失败',
           duration: 5000
         })
@@ -279,12 +275,12 @@ export default class SetLocationDialog extends Vue {
     } catch (error: any) {
       console.error('修改路径异常:', error)
       const errorMsg = error.response?.data?.msg || error.message || '修改路径失败，请稍后重试'
-      vm.$message.error({
+      this.$message.error({
         message: errorMsg,
         duration: 5000
       })
     } finally {
-      vm.submitting = false
+      this.submitting = false
     }
   }
 

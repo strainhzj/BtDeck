@@ -779,7 +779,7 @@ export interface QueryTemplateConditions {
 export function saveSimpleQueryAsTemplate(
   name: string,
   listQuery: QueryTemplateConditions['listQuery'],
-  options?: { description?: string; isPublic?: boolean }
+  options?: { description?: string, isPublic?: boolean }
 ): Promise<ApiResponse<SearchTemplate>> {
   const conditions: QueryTemplateConditions = {
     source: 'simple',

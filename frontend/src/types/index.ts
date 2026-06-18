@@ -16,6 +16,7 @@ import * as ComponentsTypes from './components'
 import * as CommonTypes from './common'
 
 // BTDeckTypes命名空间 - 统一的类型管理入口
+// eslint-disable-next-line @typescript-eslint/no-namespace
 export namespace BTDeckTypes {
   // 重新导出API相关类型
   export import ApiResponse = ApiTypes.ApiResponse

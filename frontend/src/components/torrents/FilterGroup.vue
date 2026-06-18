@@ -2,14 +2,14 @@
   <div class="filter-group">
     <div class="filter-group-header" @click="toggleCollapsed">
       <span>{{ title }}</span>
-      <span class="arrow" :class="{ collapsed }">▾</span>
+      <span class="arrow" :class="{collapsed}">▾</span>
     </div>
     <div class="filter-group-items" v-show="!collapsed">
       <div
         v-for="item in items"
         :key="item.value"
         class="filter-item"
-        :class="{ active: isActive(item.value) }"
+        :class="{active: isActive(item.value)}"
         @click="$emit('select', item.value)"
       >
         <span class="filter-icon">{{ item.icon }}</span>

@@ -67,7 +67,8 @@ class User extends VuexModule implements IUserState {
 
   @Action({ rawError: true })
   public async Login(userInfo: ILoginPayload) {
-    let { username, password, twofa_code } = userInfo
+    let { username } = userInfo
+    const { password, twofa_code } = userInfo
     username = username.trim()
     const response = await login({ username, password, twofa_code })
     // response 是 CommonResponse 格式: {code, msg, status, data}

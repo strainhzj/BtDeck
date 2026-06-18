@@ -1,4 +1,5 @@
 <template>
+  <div class="compact-table-wrapper">
   <div class="compact-table-container">
     <!-- 紧凑模式表格 -->
     <el-table
@@ -11,7 +12,7 @@
       highlight-current-row
       @selection-change="handleSelectionChange"
       style="width: 100%; height: 400px;"
-
+    >
       <!-- 移动端优化：隐藏不必要的列 -->
       <el-table-column type="selection" width="55" align="center" :class="{'mobile-hidden': isMobile}"></el-table-column>
       <el-table-column prop="name" label="种子名称" min-width="200" show-overflow-tooltip></el-table-column>
@@ -224,6 +225,7 @@
       </el-button>
     </div>
   </el-dialog>
+  </div>
 </template>
 
 <script lang="ts">
@@ -298,12 +300,6 @@ function getTagsArray(tags: string): string[] {
 
 export default {
   name: 'CompactTable',
-
-  components: {
-    TorrentAddDialog: () => import('./components/TorrentAddDialog.vue'),
-    SearchTemplateDialog: () => import('./components/SearchTemplateDialog.vue'),
-    BatchOperationDialog: () => import('./components/BatchOperationDialog.vue')
-  },
 
   props: {
     torrentList: {
