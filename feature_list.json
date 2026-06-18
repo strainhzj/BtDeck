@@ -1,0 +1,346 @@
+{
+  "schema_version": "1.0",
+  "current_dev_version": "v1.0.5",
+  "last_updated": "2026-06-18",
+  "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
+  "features": [
+    {
+      "id": "v1.0.4",
+      "name": "实时速度监控",
+      "description": "种子列表实时速度显示，活跃种子优先排序，1秒轮询",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/v1.0.4.md",
+      "tasks": [
+        {
+          "id": "v1.0.4.1",
+          "name": "后端活跃种子速度接口",
+          "description": "GET /torrents/active-torrents 轻量级接口，并发调用所有下载器",
+          "status": "done",
+          "file": "backend/app/api/endpoints/torrent_speed.py",
+          "evidence": "qBittorrent用status_filter减少数据量, Transmission仅查速度字段(0.09s)"
+        },
+        {
+          "id": "v1.0.4.2",
+          "name": "后端路由注册",
+          "description": "在 torrents.py 中注册速度路由",
+          "status": "done",
+          "file": "backend/app/api/endpoints/torrents.py"
+        },
+        {
+          "id": "v1.0.4.3",
+          "name": "前端 API 封装",
+          "description": "torrents.ts 添加速度 API 调用 getActiveTorrents()",
+          "status": "done",
+          "file": "frontend/src/api/torrents.ts"
+        },
+        {
+          "id": "v1.0.4.4",
+          "name": "前端种子列表改造",
+          "description": "Options API + 虚拟分页 + 1秒轮询 + 活跃种子优先排序 + beforeDestroy清理",
+          "status": "done",
+          "file": "frontend/src/views/torrents/index.vue"
+        },
+        {
+          "id": "v1.0.4.5",
+          "name": "线程池泄漏修复",
+          "description": "修复torrent_speed.py线程池泄漏和异常处理问题",
+          "status": "done",
+          "evidence": "commit 25c59aa"
+        },
+        {
+          "id": "v1.0.4.6",
+          "name": "速度单位转换修复",
+          "description": "修复活跃种子速度单位未转换的问题",
+          "status": "done",
+          "evidence": "commit d79040d"
+        },
+        {
+          "id": "v1.0.4.7",
+          "name": "Transmission空列表修复",
+          "description": "修复 Transmission 活跃种子速度接口返回空列表的问题",
+          "status": "done",
+          "evidence": "commit b4ddde2"
+        },
+        {
+          "id": "v1.0.4.8",
+          "name": "活跃种子进度字段",
+          "description": "活跃种子API新增progress字段，支持实时进度更新",
+          "status": "done",
+          "evidence": "commit a568aa9"
+        },
+        {
+          "id": "v1.0.4.9",
+          "name": "种子完成后自动更新状态",
+          "description": "种子进度达100%时自动更新数据库状态为completed",
+          "status": "done",
+          "evidence": "commit f8b0185"
+        },
+        {
+          "id": "v1.0.4.10",
+          "name": "性能测试",
+          "description": "测试API响应时间 < 200ms，1秒轮询不卡顿",
+          "status": "done",
+          "evidence": "4个下载器并发: 平均543ms/次，1秒轮询连续3次均无卡顿"
+        },
+        {
+          "id": "v1.0.4.11",
+          "name": "场景测试",
+          "description": "测试 8 个验收场景",
+          "status": "done",
+          "evidence": "Token验证(401)、无Token(401)、响应格式正确、字段完整"
+        }
+      ],
+      "deviation_from_plan": {
+        "reason": "实际实现偏离原计划，采用更轻量的方案",
+        "changes": [
+          "计划: TorrentStateManager 动静数据分离(10s/10min) → 实际: 轻量级 active-torrents 接口 + 前端1秒轮询",
+          "计划: speed-all API → 实际: active-torrents API（仅返回有速度的种子）",
+          "计划: 前端 setup/Composition API → 实际: Options API + 虚拟分页",
+          "额外: 种子完成后自动更新数据库状态（计划外）",
+          "额外: 活跃种子进度字段（计划外）"
+        ]
+      }
+    },
+    {
+      "id": "extra-notification",
+      "name": "通知中心（计划外）",
+      "description": "系统单向信箱通知，版本更新通知，未读计数轮询",
+      "status": "done",
+      "branch": "dev",
+      "evidence": "后端: notification.py + notification_service.py + notifications.py；前端: NotificationDrawer + Vuex notification 模块 + api/notification.ts",
+      "tasks": [
+        {
+          "id": "notification.1",
+          "name": "NotificationDrawer组件",
+          "description": "全局右侧抽屉 + NotificationItem",
+          "status": "done",
+          "file": "frontend/src/layout/components/NotificationDrawer/"
+        },
+        {
+          "id": "notification.2",
+          "name": "Vuex通知模块",
+          "description": "notification.ts + 60秒未读计数轮询",
+          "status": "done",
+          "file": "frontend/src/store/modules/notification.ts"
+        },
+        {
+          "id": "notification.3",
+          "name": "通知API",
+          "description": "notification.ts API封装",
+          "status": "done",
+          "file": "frontend/src/api/notification.ts"
+        }
+      ]
+    },
+    {
+      "id": "extra-tracker-keywords",
+      "name": "Tracker关键词池初始化（计划外）",
+      "description": "Tracker关键词管理，默认数据自动初始化",
+      "status": "done",
+      "branch": "dev",
+      "evidence": "tracker_keywords_pools.py + init_db()统一初始化"
+    },
+    {
+      "id": "extra-init-refactor",
+      "name": "统一初始化重构（计划外）",
+      "description": "统一初始数据初始化方式到 init_db()",
+      "status": "done",
+      "branch": "dev",
+      "evidence": "commit 22a89c8"
+    },
+    {
+      "id": "v1.0.5",
+      "name": "查询模板系统",
+      "description": "支持保存和复用常用查询条件，含系统预设模板",
+      "status": "in-progress",
+      "branch": "dev",
+      "plan_file": "PLANS/v1.0.5.md",
+      "tasks": [
+        {
+          "id": "v1.0.5.1",
+          "name": "数据模型 QueryTemplate + User 关系",
+          "description": "创建 QueryTemplate 模型；在 User(app/auth/models.py) 添加 query_templates relationship（PLANS 中 back_populates 依赖此关系，缺失会致 ORM 配对失败）",
+          "status": "pending",
+          "file": "backend/app/models/query_template.py, backend/app/auth/models.py",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.2",
+          "name": "Pydantic Schema",
+          "description": "QueryTemplateCreate / Update / Response，Response 含 user_id/is_system/use_count 等字段",
+          "status": "pending",
+          "file": "backend/app/schemas/query_template.py",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.3",
+          "name": "Alembic 迁移",
+          "description": "生成 query_templates 表迁移脚本（依据 backend/AGENTS.md 强制要求 Alembic 管理 Schema 变更）",
+          "status": "pending",
+          "file": "backend/alembic/versions/",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.4",
+          "name": "核心服务 QueryTemplateService",
+          "description": "CRUD + apply_template（应用时 use_count+1）+ 权限校验（非创建者不可改删私有模板）",
+          "status": "pending",
+          "file": "backend/app/services/query_template_service.py",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.5",
+          "name": "API 端点 CRUD + apply + 文档",
+          "description": "POST/GET/PUT/DELETE /query-templates + POST /{id}/apply；统一响应格式；同步 FastAPI 自动文档（/docs）",
+          "status": "pending",
+          "file": "backend/app/api/endpoints/query_templates.py",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.5b",
+          "name": "后端路由注册",
+          "description": "在 app/api/api.py 集中式路由表注册 query_templates.router（参考 v1.0.4.2，未注册则端点不生效）",
+          "status": "pending",
+          "file": "backend/app/api/api.py",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.6",
+          "name": "系统预设模板初始化",
+          "description": "新建 app/data/default_query_templates.py，在 init_db() 末尾集成（参考 default_templates/scheduled_tasks 模式）",
+          "status": "pending",
+          "file": "backend/app/data/default_query_templates.py, backend/app/database.py",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.7",
+          "name": "前端 API 封装",
+          "description": "src/api/query-templates.ts 封装 CRUD + apply，遵循统一响应格式解析",
+          "status": "pending",
+          "file": "frontend/src/api/query-templates.ts",
+          "scope": "frontend"
+        },
+        {
+          "id": "v1.0.5.8",
+          "name": "模板管理页面",
+          "description": "src/views/query-templates/index.vue 模板列表 + 分类筛选 + 使用次数展示",
+          "status": "pending",
+          "file": "frontend/src/views/query-templates/index.vue",
+          "scope": "frontend"
+        },
+        {
+          "id": "v1.0.5.8b",
+          "name": "前端路由注册",
+          "description": "在 frontend/src/router.ts 集中式 routes 数组注册 query-templates 路由（单文件，非目录）",
+          "status": "pending",
+          "file": "frontend/src/router.ts",
+          "scope": "frontend"
+        },
+        {
+          "id": "v1.0.5.9",
+          "name": "创建/编辑对话框组件",
+          "description": "src/views/query-templates/components/ 下的创建/编辑表单，支持查询条件 JSON 编辑",
+          "status": "pending",
+          "file": "frontend/src/views/query-templates/components/",
+          "scope": "frontend"
+        },
+        {
+          "id": "v1.0.5.10a",
+          "name": "后端单元测试（含权限用例）",
+          "description": "pytest: test_create_template / test_apply_template / 权限测试（非创建者改删他人模板、is_public 模板可见性），覆盖率 ≥80%",
+          "status": "pending",
+          "file": "backend/tests/",
+          "scope": "backend"
+        },
+        {
+          "id": "v1.0.5.10b",
+          "name": "全栈端到端验证",
+          "description": "模板保存→应用全链路验证，含前后端联调与 8 个验收场景",
+          "status": "pending",
+          "scope": "fullstack"
+        }
+      ]
+    },
+    {
+      "id": "v1.0.6",
+      "name": "孤儿文件管理",
+      "description": "自动发现并清理无用文件，inode去重",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.6.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.7",
+      "name": "路径扫描增强",
+      "description": "扩展到扫描btdeck配置路径",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.7.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.8",
+      "name": "数据库升级",
+      "description": "PostgreSQL支持 + 下载器连接池管理",
+      "status": "pending",
+      "plan_file": "PLANS/v1.0.8.md",
+      "tasks": []
+    },
+    {
+      "id": "v1.0.9",
+      "name": "一键部署",
+      "description": "Docker + Windows + Linux 三种部署方式",
+      "status": "done",
+      "plan_file": "PLANS/v1.0.9.md",
+      "deviation_from_plan": {
+        "reason": "提前完成：全栈仓库整合与一键部署优先落地（早于 v1.0.5~v1.0.8）",
+        "evidence": "commit c7ce2f4 + 后续 fix(deploy) 系列（5e4baf8/6f8e3e0/78033bc/fb380b9/b80a7f6）"
+      },
+      "tasks": [
+        {
+          "id": "v1.0.9.1",
+          "name": "全栈 monorepo 整合",
+          "description": "前后端合并为单一仓库",
+          "status": "done",
+          "evidence": "commit c7ce2f4"
+        },
+        {
+          "id": "v1.0.9.2",
+          "name": "PyInstaller 打包",
+          "description": "前后端合一单可执行文件",
+          "status": "done",
+          "evidence": "deploy/btdeck.spec"
+        },
+        {
+          "id": "v1.0.9.3",
+          "name": "Inno Setup Windows 安装包",
+          "description": ".exe 安装向导",
+          "status": "done",
+          "evidence": "deploy/btdeck.iss"
+        },
+        {
+          "id": "v1.0.9.4",
+          "name": "fpm Linux 安装包",
+          "description": ".deb/.rpm",
+          "status": "done",
+          "evidence": "deploy/build-linux.sh"
+        },
+        {
+          "id": "v1.0.9.5",
+          "name": "Docker Compose 全栈部署",
+          "description": "docker-compose.yml 一键启动",
+          "status": "done",
+          "evidence": "docker-compose.yml"
+        }
+      ]
+    },
+    {
+      "id": "v1.1.0",
+      "name": "自动化运维",
+      "description": "后台自动化任务调度系统",
+      "status": "pending",
+      "plan_file": "PLANS/v1.1.0.md",
+      "tasks": []
+    }
+  ]
+}

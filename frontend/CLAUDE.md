@@ -59,7 +59,7 @@
 ## 项目结构
 
 ```
-BtDeck_fronted/
+frontend/
 ├── src/
 │   ├── api/          # API接口定义
 │   ├── components/   # 通用组件

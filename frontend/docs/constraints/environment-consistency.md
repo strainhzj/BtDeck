@@ -53,10 +53,10 @@ VUE_APP_BASE_API=/api  # ❌ 缺少版本号
 
 ```bash
 # 检查开发环境
-cat BtDeck_fronted/.env | grep VUE_APP_BASE_API
+cat frontend/.env | grep VUE_APP_BASE_API
 
 # 检查生产环境
-cat BtDeck_fronted/.env.production | grep VUE_APP_BASE_API
+cat frontend/.env.production | grep VUE_APP_BASE_API
 ```
 
 ### 2. 构建后验证

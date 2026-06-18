@@ -101,7 +101,7 @@ BTDeck 前端提供统一的 BitTorrent 客户端管理界面，支持种子管�
 ## 项目结构
 
 ```text
-BtDeck_fronted/
+frontend/
 ├── src/
 │   ├── api/                       # API接口定义 (13个模块)
 │   │   ├── torrents.ts            # 种子相关 API
@@ -205,7 +205,7 @@ npm run lint:vuex-action
 2. 更新 feature_list.json（更新功能状态）
 3. 填写 session-handoff.md（交接信息）
 4. 验证仓库状态（./scripts/init.sh 通过）
-5. Git 提交（仅在用户要求时，在 BtDeck_fronted/ 目录内执行）
+5. Git 提交（仅在用户要求时，在 frontend/ 目录内执行）
 ```
 
 ---

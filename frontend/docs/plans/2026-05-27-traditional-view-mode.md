@@ -2291,7 +2291,7 @@ git commit -m "feat(torrents): implement batch operations in TraditionalView"
 **Step 1: 启动开发服务器**
 
 ```bash
-cd /c/software/full_stack/BtDeck/BtDeck_fronted
+cd /c/software/full_stack/BtDeck/frontend
 npm run serve
 ```
 
@@ -2326,7 +2326,7 @@ git commit -m "fix: fix issues found during testing"
 **Step 1: 删除预览文件**
 
 ```bash
-rm /c/software/full_stack/BtDeck/BtDeck_fronted/public/preview-traditional-view.html
+rm /c/software/full_stack/BtDeck/frontend/public/preview-traditional-view.html
 git add public/preview-traditional-view.html
 git commit -m "chore: remove preview HTML file after implementation"
 ```
