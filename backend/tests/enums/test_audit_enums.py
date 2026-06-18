@@ -63,6 +63,8 @@ AUDIT_OPERATION_TYPE_PARAMS = [
     ("batch_operation", "批量操作", "system"),
     # ---- 归档操作 ----
     ("archive_logs", "归档审计日志", "archive"),
+    # ---- Tracker操作 ----
+    ("reannounce", "Tracker汇报", "tracker"),
 ]
 
 INVALID_OPERATION_TYPE_VALUES = [
@@ -103,7 +105,7 @@ class TestAuditOperationTypeMemberCount:
     """验证 AuditOperationType 枚举成员总数正确"""
 
     def test_member_count(self):
-        assert len(AuditOperationType) == 38
+        assert len(AuditOperationType) == 39
 
 
 class TestAuditOperationTypeIsValid:

@@ -43,7 +43,7 @@ class RecheckTorrentsRequest(BaseModel):
 class ReannounceTorrentsRequest(BaseModel):
     """Tracker汇报请求（选中种子）"""
     downloader_id: str = Field(..., description="下载器ID")
-    hashes: List[str] | None = Field(None, description="种子hash列表")
+    hashes: List[str] | None = Field(None, description="种子hash列表", min_items=1)
     info_ids: List[str] | None = Field(None, description="种子info_id列表")
 
 

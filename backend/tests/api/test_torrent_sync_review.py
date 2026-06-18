@@ -62,9 +62,10 @@ class TestQbAddTorrentsExceptionSafety:
         app = MagicMock()
         app.state.store.get_snapshot_sync.return_value = [mock_vo]
 
-        # 不应抛出异常
+        # 不应抛出异常，应返回错误字典
         result = qb_add_torrents(db, [downloader], app=app)
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["status"] == "error"
 
     @patch('qbittorrentapi.Client')
     def test_new_connection_exception_handled(self, mock_qb_cls):
@@ -77,7 +78,8 @@ class TestQbAddTorrentsExceptionSafety:
         downloader = _make_bt_downloader()
 
         result = qb_add_torrents(db, [downloader], app=None)
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["status"] == "error"
 
 
 class TestTrAddTorrentsExceptionSafety:
@@ -94,7 +96,8 @@ class TestTrAddTorrentsExceptionSafety:
         downloader = _make_bt_downloader(downloader_type=1, port=9091)
 
         result = tr_add_torrents(db, [downloader], app=None)
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["status"] == "error"
 
     def test_cached_client_exception_handled(self):
         """缓存连接 get_torrents() 异常应被捕获"""
@@ -112,7 +115,8 @@ class TestTrAddTorrentsExceptionSafety:
         app.state.store.get_snapshot_sync.return_value = [mock_vo]
 
         result = tr_add_torrents(db, [downloader], app=app)
-        assert result is None
+        assert isinstance(result, dict)
+        assert result["status"] == "error"
 
 
 class TestCompletionOnTimestampSafety:

@@ -12,6 +12,7 @@
 
 import asyncio
 import time
+from concurrent.futures import ThreadPoolExecutor
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -185,7 +186,7 @@ class TestSupplementSync:
         t1.hashString = "tr_abc"
         t1.rate_download = 2048
         t1.rate_upload = 1024
-        t1.progress = 0.75
+        t1.percent_done = 0.75
         t1.peers_sending_to_us = 5
         t1.peers_getting_from_us = 2
         t1.status = 4  # ST_SEEDING
@@ -194,7 +195,7 @@ class TestSupplementSync:
         t2.hashString = "tr_other"
         t2.rate_download = 0
         t2.rate_upload = 0
-        t2.progress = 0.1
+        t2.percent_done = 0.1
         t2.peers_sending_to_us = 0
         t2.peers_getting_from_us = 0
         t2.status = 0
@@ -215,7 +216,7 @@ class TestSupplementSync:
         t.hashString = "h1"
         t.rate_download = None
         t.rate_upload = None
-        t.progress = None
+        t.percent_done = None
         t.peers_sending_to_us = None
         t.peers_getting_from_us = None
         t.status = None
@@ -288,6 +289,7 @@ class TestSupplementDisappeared:
         assert result == []
 
     @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed._speed_executor", ThreadPoolExecutor(max_workers=2))
     async def test_qb_supplement_called(self):
         """qBittorrent 下载器应调用 _supplement_qb_sync"""
         from app.api.endpoints.torrent_speed import (
@@ -412,6 +414,7 @@ class TestCallWithTimeout:
     """测试超时保护包装函数"""
 
     @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed._speed_executor", ThreadPoolExecutor(max_workers=2))
     async def test_normal_execution(self):
         """正常函数应正确返回结果"""
         from app.api.endpoints.torrent_speed import _call_with_timeout
@@ -423,6 +426,7 @@ class TestCallWithTimeout:
         assert result == [{"hash": "test", "speed": 100}]
 
     @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed._speed_executor", ThreadPoolExecutor(max_workers=2))
     async def test_with_arguments(self):
         """带参数的函数应正确传递"""
         from app.api.endpoints.torrent_speed import _call_with_timeout
