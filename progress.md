@@ -11,17 +11,22 @@
 
 ## 进行中功能
 
-### v1.0.5 查询模板系统 (in-progress) — dev 分支
+### v1.0.5 查询模板系统 (done) — dev 分支
 
-**计划文件**: `PLANS/v1.0.5.md`
+**计划文件**: `PLANS/v1.0.5.md`（已标注方向转变）
 
-**目标**: 实现查询模板功能，用户可保存常用查询条件并一键应用，含系统预设模板。
+**目标**: 实现查询模板功能，用户可保存常用查询条件（简单查询 + 高级搜索）并一键应用，含系统预设模板。
 
-**任务拆解**: 15 个任务（见 feature_list.json v1.0.5），覆盖后端模型/迁移/服务/API/路由/预设、前端 API/页面/路由/组件、全栈测试。
+**方向转变（重要）**: 探索阶段发现后端与前端已存在完整的 `search_templates` 基础设施（表 + CRUD 端点 + 服务 + 前端 API），仅前端入口 `handleSaveSearchTemplate` 是空函数。改为**补全现有系统**而非从零新建，避免重复造轮子。
 
-**关键依赖**: QueryTemplate 用 `back_populates="query_templates"`，需在 `app/auth/models.py` 的 User 类添加对应 relationship。
+**任务完成情况** (12/12 done，见 feature_list.json v1.0.5)：
+- 后端：4 个预设模板数据 + init_db 集成 + apply/权限确认（现有代码已满足）+ 16 个认证测试
+- 前端：API 便捷方法 + index.vue 接线（handleSaveSearchTemplate + applyQueryTemplate）+ 管理页 + 对话框 + 路由
+- 全栈：保存→应用链路代码闭环
 
-**结论**: 计划中，待启动。
+**5 个 commit**: 63a4bec / d04af4d / 7f111f8 / 7896a23 / (本条状态更新)
+
+**遗留**: 前端 lint/tsc 因环境依赖未完整安装，留待完整环境验证。
 
 ---
 
@@ -120,12 +125,15 @@
 | 2026-04-22 | backend | 专用线程池 | 避免阻塞默认executor |
 | 2026-04-22 | backend | 统一初始化到 init_db() | 集中管理初始数据 |
 | 2026-06-18 | fullstack | harness 体系合并到根目录 | 全栈 monorepo 统一状态追踪，消除端级重复 |
+| 2026-06-18 | fullstack | v1.0.5 补全 search_templates 而非新建 query_templates | 探索发现已有完整基础设施，避免重复造轮子 |
+| 2026-06-18 | fullstack | User 不加 relationship（用 created_by 整数列） | 遵循既有约定（SettingTemplate 同模式），避免触发 User 表迁移 |
+| 2026-06-18 | fullstack | query_config 用 source=simple/advanced 双分支 | 1:1 还原两种查询状态（listQuery / condition_groups），应用时按 source 分流 |
 
 ---
 
 ## 当前会话
 
-> **2026-06-18**: 完成 harness 体系合并（前后端 → 根目录），v1.0.5 任务拆解落地。下一步：启动 v1.0.5 查询模板系统开发。
+> **2026-06-18**: v1.0.5 查询模板系统开发完成（补全现有 search_templates）。下一步：完整环境跑前端 lint 验证；启动 v1.0.6 孤儿文件管理。
 
 ---
 

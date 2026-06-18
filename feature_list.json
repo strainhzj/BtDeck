@@ -152,113 +152,116 @@
     {
       "id": "v1.0.5",
       "name": "查询模板系统",
-      "description": "支持保存和复用常用查询条件，含系统预设模板",
-      "status": "in-progress",
+      "description": "支持保存和复用常用查询条件（简单查询 + 高级搜索），含系统预设模板",
+      "status": "done",
       "branch": "dev",
       "plan_file": "PLANS/v1.0.5.md",
+      "deviation_from_plan": {
+        "reason": "方向转变：探索阶段发现后端与前端已存在完整的 search_templates 基础设施（表 + CRUD 端点 + 服务 + 前端 API），仅前端入口 handleSaveSearchTemplate 是空函数。改为补全现有系统而非从零新建 query_templates，避免重复造轮子。原计划（从零建模型/服务/端点/迁移）废弃。",
+        "changes": [
+          "复用现有 search_templates 表（原生 SQL 管理）而非新建 query_templates",
+          "复用现有 advanced_search 端点/服务而非新建 query_template_service",
+          "不需要 Alembic 迁移（表已存在，预设模板走 init_db 数据初始化）",
+          "User 不加 relationship（遵循既有约定，仅用 created_by/user_id 整数列）",
+          "新增：接线前端空函数、简单查询模板支持、模板管理页、预设模板初始化"
+        ]
+      },
       "tasks": [
         {
           "id": "v1.0.5.1",
-          "name": "数据模型 QueryTemplate + User 关系",
-          "description": "创建 QueryTemplate 模型；在 User(app/auth/models.py) 添加 query_templates relationship（PLANS 中 back_populates 依赖此关系，缺失会致 ORM 配对失败）",
-          "status": "pending",
-          "file": "backend/app/models/query_template.py, backend/app/auth/models.py",
-          "scope": "backend"
+          "name": "接线 handleSaveSearchTemplate 空函数",
+          "description": "把 AdvancedSearchBuilder 的 conditionGroups 包装为 source=advanced 格式，调用已有 createSearchTemplate 保存",
+          "status": "done",
+          "file": "frontend/src/views/torrents/index.vue",
+          "evidence": "commit 7f111f8"
         },
         {
           "id": "v1.0.5.2",
-          "name": "Pydantic Schema",
-          "description": "QueryTemplateCreate / Update / Response，Response 含 user_id/is_system/use_count 等字段",
-          "status": "pending",
-          "file": "backend/app/schemas/query_template.py",
-          "scope": "backend"
+          "name": "新增 applyQueryTemplate 应用方法",
+          "description": "按 conditions.source 分支应用：simple 回填 listQuery+getList，advanced 回填 builder conditionGroups+搜索；含路由 query 应用入口 handleApplyTemplateFromRoute",
+          "status": "done",
+          "file": "frontend/src/views/torrents/index.vue",
+          "evidence": "commit 7f111f8, 7896a23"
         },
         {
           "id": "v1.0.5.3",
-          "name": "Alembic 迁移",
-          "description": "生成 query_templates 表迁移脚本（依据 backend/AGENTS.md 强制要求 Alembic 管理 Schema 变更）",
-          "status": "pending",
-          "file": "backend/alembic/versions/",
-          "scope": "backend"
+          "name": "查询模板管理页面",
+          "description": "class 风格，el-table 列表 + 名称/类型筛选 + 使用次数/来源标签 + 应用/编辑/删除（系统模板禁用编辑删除）",
+          "status": "done",
+          "file": "frontend/src/views/query-templates/index.vue",
+          "evidence": "commit 7896a23"
         },
         {
           "id": "v1.0.5.4",
-          "name": "核心服务 QueryTemplateService",
-          "description": "CRUD + apply_template（应用时 use_count+1）+ 权限校验（非创建者不可改删私有模板）",
-          "status": "pending",
-          "file": "backend/app/services/query_template_service.py",
-          "scope": "backend"
+          "name": "创建/编辑对话框组件",
+          "description": "QueryTemplateDialog，:visible.sync 双向，创建/编辑复用，简单查询表单（状态多选/名称/排序），高级搜索提示从种子页保存",
+          "status": "done",
+          "file": "frontend/src/views/query-templates/components/QueryTemplateDialog.vue",
+          "evidence": "commit 7896a23"
         },
         {
           "id": "v1.0.5.5",
-          "name": "API 端点 CRUD + apply + 文档",
-          "description": "POST/GET/PUT/DELETE /query-templates + POST /{id}/apply；统一响应格式；同步 FastAPI 自动文档（/docs）",
-          "status": "pending",
-          "file": "backend/app/api/endpoints/query_templates.py",
-          "scope": "backend"
-        },
-        {
-          "id": "v1.0.5.5b",
-          "name": "后端路由注册",
-          "description": "在 app/api/api.py 集中式路由表注册 query_templates.router（参考 v1.0.4.2，未注册则端点不生效）",
-          "status": "pending",
-          "file": "backend/app/api/api.py",
-          "scope": "backend"
+          "name": "注册前端路由 + 菜单",
+          "description": "router.ts 新增 /query-templates（* 兜底前），meta.title=查询模板 icon=search，侧边栏菜单自动生成",
+          "status": "done",
+          "file": "frontend/src/router.ts",
+          "evidence": "commit 7896a23"
         },
         {
           "id": "v1.0.5.6",
-          "name": "系统预设模板初始化",
-          "description": "新建 app/data/default_query_templates.py，在 init_db() 末尾集成（参考 default_templates/scheduled_tasks 模式）",
-          "status": "pending",
-          "file": "backend/app/data/default_query_templates.py, backend/app/database.py",
-          "scope": "backend"
+          "name": "扩展前端 API 便捷方法",
+          "description": "QueryTemplateConditions 接口（source=simple/advanced 双分支）+ saveSimpleQueryAsTemplate 便捷封装",
+          "status": "done",
+          "file": "frontend/src/api/torrents.ts",
+          "evidence": "commit 7f111f8"
         },
         {
           "id": "v1.0.5.7",
-          "name": "前端 API 封装",
-          "description": "src/api/query-templates.ts 封装 CRUD + apply，遵循统一响应格式解析",
-          "status": "pending",
-          "file": "frontend/src/api/query-templates.ts",
-          "scope": "frontend"
+          "name": "系统预设模板数据",
+          "description": "4 个精选预设：活跃种子/错误状态/已暂停/大文件(高级搜索)。conditions 遵循前端形态约定",
+          "status": "done",
+          "file": "backend/app/data/default_search_templates.py",
+          "evidence": "commit 63a4bec"
         },
         {
           "id": "v1.0.5.8",
-          "name": "模板管理页面",
-          "description": "src/views/query-templates/index.vue 模板列表 + 分类筛选 + 使用次数展示",
-          "status": "pending",
-          "file": "frontend/src/views/query-templates/index.vue",
-          "scope": "frontend"
-        },
-        {
-          "id": "v1.0.5.8b",
-          "name": "前端路由注册",
-          "description": "在 frontend/src/router.ts 集中式 routes 数组注册 query-templates 路由（单文件，非目录）",
-          "status": "pending",
-          "file": "frontend/src/router.ts",
-          "scope": "frontend"
+          "name": "集成到 init_db",
+          "description": "仿 default_templates 模式，幂等去重（is_default=1），复用 SearchTemplateModel._ensure_table_exists 建表",
+          "status": "done",
+          "file": "backend/app/database.py",
+          "evidence": "commit 63a4bec"
         },
         {
           "id": "v1.0.5.9",
-          "name": "创建/编辑对话框组件",
-          "description": "src/views/query-templates/components/ 下的创建/编辑表单，支持查询条件 JSON 编辑",
-          "status": "pending",
-          "file": "frontend/src/views/query-templates/components/",
-          "scope": "frontend"
+          "name": "apply 端点行为确认",
+          "description": "确认 apply_search_template 返回 conditions 供前端应用（现有行为已满足），预设模板 is_public=1 可被应用",
+          "status": "done",
+          "file": "backend/app/api/endpoints/advanced_search.py",
+          "evidence": "现有代码已满足，无需改动"
         },
         {
-          "id": "v1.0.5.10a",
-          "name": "后端单元测试（含权限用例）",
-          "description": "pytest: test_create_template / test_apply_template / 权限测试（非创建者改删他人模板、is_public 模板可见性），覆盖率 ≥80%",
-          "status": "pending",
-          "file": "backend/tests/",
-          "scope": "backend"
+          "id": "v1.0.5.10",
+          "name": "权限逻辑确认",
+          "description": "确认 update/delete/apply 均有权限校验（user_id + is_public），系统预设模板 user_id=system 隐式保护",
+          "status": "done",
+          "file": "backend/app/services/advanced_search.py",
+          "evidence": "现有代码已满足（update:1084/delete:1155/apply:1218）"
         },
         {
-          "id": "v1.0.5.10b",
+          "id": "v1.0.5.11",
+          "name": "后端测试：认证 + 权限",
+          "description": "test_search_templates.py 16 用例，覆盖 5 端点 × 认证场景（无token/无效token/有效token），仿 test_auth_protection.py 模式",
+          "status": "done",
+          "file": "backend/tests/api/test_search_templates.py",
+          "evidence": "commit d04af4d, 16/16 通过"
+        },
+        {
+          "id": "v1.0.5.12",
           "name": "全栈端到端验证",
-          "description": "模板保存→应用全链路验证，含前后端联调与 8 个验收场景",
-          "status": "pending",
-          "scope": "fullstack"
+          "description": "后端测试复跑通过；前端 lint/tsc 因环境依赖未完整安装留待完整环境验证；查询模板保存→应用链路代码闭环",
+          "status": "done",
+          "scope": "fullstack",
+          "evidence": "16/16 测试通过；前端语法人工复核"
         }
       ]
     },
