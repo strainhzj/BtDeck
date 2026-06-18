@@ -49,15 +49,13 @@ git add deploy/ docker-compose.yml && git commit -m "feat(deploy): xxx"
 
 ## 功能模块索引
 
-### 通知中心
+> 全栈功能模块总览见根 [`AGENTS.md`](./AGENTS.md) 功能模块索引；各模块的前后端实现细节分别见 [`backend/AGENTS.md`](./backend/AGENTS.md)、[`frontend/AGENTS.md`](./frontend/AGENTS.md)。
 
+### 通知中心（跨端模块示例）
+
+- **后端**: 模型/服务/路由前缀 `/api/v1/notifications` → 详见 [`backend/CLAUDE.md`](./backend/CLAUDE.md)
+- **前端**: Layout 层 NotificationDrawer + Vuex `notification` 模块 + 60秒未读轮询 → 详见 [`frontend/CLAUDE.md`](./frontend/CLAUDE.md)
 - **性质**: 系统单向信箱（非实时消息），系统写入通知记录，用户在通知中心查看
-- **触发入口**: 右上角闹钟图标（`el-icon-alarm-clock`）→ 右侧 `el-drawer` 抽屉
-- **通知类型**: `version_update`（版本更新）、`system`（系统通知）
-- **版本检查**: 启动时查询 GitHub Release API，发现新版本自动插入通知记录
-- **未读轮询**: 前端 60 秒轮询 `/api/v1/notifications/unread-count`
-- **后端路由前缀**: `/api/v1/notifications`
-- **前端 Vuex 模块**: `notification`（`src/store/modules/notification.ts`）
 
 ## 项目级文档
 

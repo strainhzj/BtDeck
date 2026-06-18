@@ -2,6 +2,11 @@
 
 # BTDeck 后端初始化脚本
 # 用途: 验证环境、安装依赖、运行测试
+#
+# 用法:
+#   ./init.sh          默认模式：安装依赖 + 环境验证
+#   ./init.sh --ci     轻量模式：仅环境验证（不安装依赖、不 lint），被根 init.sh 调用
+#   ./init.sh --check  等同于默认 + 额外跑 lint（兼容旧参数）
 
 set -e
 
@@ -13,6 +18,17 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
+
+# 参数解析
+MODE="default"
+for arg in "$@"; do
+  case "$arg" in
+    --ci)   MODE="ci" ;;
+    --check) MODE="check" ;;
+  esac
+done
+echo "模式: $MODE"
+echo ""
 
 # 1. 检查 Python 环境
 echo -e "${YELLOW}1. 检查 Python 环境...${NC}"
@@ -49,11 +65,15 @@ else
     exit 1
 fi
 
-# 4. 安装依赖
-echo -e "${YELLOW}4. 安装 Python 依赖...${NC}"
-echo "运行 pip install..."
-pip install -q -r requirements.txt
-echo -e "${GREEN}✓ 依赖安装完成${NC}"
+# 4. 安装依赖（--ci 模式跳过）
+if [ "$MODE" = "ci" ]; then
+    echo -e "${YELLOW}4. 跳过依赖安装（--ci 模式）...${NC}"
+else
+    echo -e "${YELLOW}4. 安装 Python 依赖...${NC}"
+    echo "运行 pip install..."
+    pip install -q -r requirements.txt
+    echo -e "${GREEN}✓ 依赖安装完成${NC}"
+fi
 
 # 5. 检查数据库
 echo -e "${YELLOW}5. 检查数据库...${NC}"
@@ -116,9 +136,9 @@ if [ "$TOOLS_AVAILABLE" = false ]; then
     echo "  pip install mypy black flake8"
 fi
 
-# 8. 运行代码检查（可选，传入 --check 参数时执行）
-echo -e "${YELLOW}8. 运行代码检查（可选）...${NC}"
-if [[ "${1:-}" == "--check" ]]; then
+# 8. 运行代码检查（--check 模式执行）
+echo -e "${YELLOW}8. 运行代码检查...${NC}"
+if [ "$MODE" = "check" ]; then
     echo "运行 mypy..."
     mypy app/ || echo -e "${YELLOW}⚠ mypy 检查发现问题${NC}"
 
@@ -128,7 +148,7 @@ if [[ "${1:-}" == "--check" ]]; then
     echo "运行 flake8..."
     flake8 app/ || echo -e "${YELLOW}⚠ flake8 检查发现问题${NC}"
 else
-    echo "跳过代码检查（传入 --check 参数执行检查）"
+    echo "跳过代码检查（--check 模式执行检查）"
 fi
 
 # 9. 检查测试
@@ -164,11 +184,14 @@ fi
 
 # 11. 显示当前后端任务
 echo -e "${YELLOW}11. 显示当前后端任务...${NC}"
-if [ -f "../feature_list.json" ]; then
+# 定位项目根目录的 feature_list.json（基于脚本自身位置，不依赖 cwd）
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_FEATURE_LIST="$SCRIPT_DIR/../../feature_list.json"
+if [ -f "$ROOT_FEATURE_LIST" ]; then
     if command -v jq &> /dev/null; then
         echo ""
         echo "当前进行中的后端任务:"
-        jq -r '.features[].tasks[]? | select(.status == "in-progress") | select(.file | startswith("app/")) | "  - \(.name) (\(.id))"' ../feature_list.json 2>/dev/null || echo "  无进行中的后端任务"
+        jq -r '.features[].tasks[]? | select(.status == "in-progress") | select(.file | startswith("app/") or startswith("backend/app/")) | "  - \(.name) (\(.id))"' "$ROOT_FEATURE_LIST" 2>/dev/null || echo "  无进行中的后端任务"
         echo ""
     else
         echo -e "${YELLOW}⚠ jq 未安装，跳过任务显示${NC}"
