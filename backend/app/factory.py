@@ -51,6 +51,10 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # 注册全局异常处理器：归一化 HTTPException/422/未捕获异常为 CommonResponse
+    from app.exception_handlers import register_exception_handlers
+    register_exception_handlers(_app)
+
     # 内嵌前端静态文件服务（PyInstaller 打包模式）
     frontend_path = _get_frontend_dist_path()
     if frontend_path:
