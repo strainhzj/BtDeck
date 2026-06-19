@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.responseVO import CommonResponse
 from app.auth import models, security, utils
 from app.auth.request import UserLogin
-from app.config import settings
+from app.core.config import settings
 from app.core.config import settings as app_settings
 from app.database import get_db
 
@@ -86,4 +86,3 @@ def login(
         except Exception:
             pass
         return CommonResponse(code='500', msg=f'系统异常: {str(e)}', status='error', data=[])
-

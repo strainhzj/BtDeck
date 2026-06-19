@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.auth.models import User
-from app.config import settings
+from app.core.config import settings
 from app.auth import utils as auth_utils
 from app.api.responseVO import CommonResponse
 

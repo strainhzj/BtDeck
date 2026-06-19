@@ -11,7 +11,7 @@ from datetime import timedelta
 from app.database import get_db
 from app.auth import models, security, utils
 from app.schemas.auth import UserCreate, TwoFactorResponse, TwoFactorSetup
-from app.config import settings
+from app.core.config import settings
 from app.auth.request import UserLogin
 from jose import jwt
 import qrcode

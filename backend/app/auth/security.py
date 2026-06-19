@@ -4,7 +4,7 @@ import base64
 import logging
 from Cryptodome.Cipher import AES
 from Cryptodome.Util.Padding import pad, unpad
-from app.config import settings
+from app.core.config import settings
 from app.yamlConfig import yaml
 
 logger = logging.getLogger(__name__)

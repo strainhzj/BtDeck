@@ -6,7 +6,7 @@ import jwt
 import pyotp
 import yaml
 
-from app.config import settings
+from app.core.config import settings
 from app.core.config import settings as app_settings
 
 logger = logging.getLogger(__name__)
