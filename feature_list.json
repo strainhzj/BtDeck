@@ -326,18 +326,19 @@
         {
           "id": "v1.0.5-audit.6",
           "name": "P0-2a 后端认证迁移到 require_authenticated_user",
-          "description": "20+ endpoint 文件、~195 处手写 x-access-token 验证替换为 Depends(require_authenticated_user)，按文件粒度分批提交，login.py 豁免",
+          "description": "21 endpoint 文件、~84 处手写 x-access-token 验证替换为 Depends(require_authenticated_user)，按文件粒度分批提交，login.py 豁免。已迁移 torrent_location 作为模板（fc7760b），剩余 20 文件待下个会话。",
           "status": "in_progress",
           "scope": "backend",
-          "file": "backend/app/api/endpoints/ (downloader/setting_templates/cron_tasks/tracker_keywords/tag_management/advanced_search/cuser/torrent_crud 等)"
+          "file": "backend/app/api/endpoints/ (downloader/setting_templates/cron_tasks/tracker_keywords/tag_management/advanced_search/cuser/torrent_crud 等 21 文件)",
+          "evidence": "torrent_location 迁移模板 fc7760b（净减30行，模式验证通过）；session-handoff.md 记录完整文件清单 + 迁移模式 + 回滚阈值"
         },
         {
           "id": "v1.0.5-audit.7",
           "name": "P0-2b 认证测试改造",
-          "description": "~40 处 status_code==200+code=='401' 断言改为 status_code==401；新增 P1-A 端点的认证测试",
+          "description": "5 测试文件 ~102 处 status_code==200+code=='401' 断言改为 status_code==401（test_auth_protection 39处/test_search_templates 33处/test_tag_aggregation 19处等）；新增 P1-A 端点认证测试。必须与 P0-2a 原子配对（parametrize 测试迁移期间会半破损）。",
           "status": "pending",
           "scope": "backend",
-          "file": "backend/tests/api/test_auth_protection.py, test_search_templates.py 等"
+          "file": "backend/tests/api/test_auth_protection.py, test_search_templates.py, test_tag_aggregation_api.py, test_reannounce_api.py, test_auth_protection_extended.py"
         }
       ]
     },
