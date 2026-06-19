@@ -26,6 +26,11 @@ class AuthenticatedUserInfo:
     username: str
     payload: dict
     token: str
+    # 从 JWT payload 解析的业务用户ID（可选）。
+    # 不强制存在：旧 token 可能不含 user_id（verify_access_token 的
+    # required_fields 不含 user_id，保持向后兼容），此时为 None。
+    # endpoint 取用时需兼容 None（与原 get_current_user_id 兜底行为一致）。
+    user_id: Optional[int] = None
 
 
 def _auth_error_response(message: str = "token验证失败") -> CommonResponse:
@@ -56,10 +61,20 @@ def _authenticate_request(request: Request) -> Optional[AuthenticatedUserInfo]:
     if not payload:
         return None
 
+    # 兜底解析 user_id：新 token 含此字段，旧 token 可能缺失，统一兼容 None。
+    raw_user_id = payload.get("user_id")
+    user_id: Optional[int] = None
+    if raw_user_id is not None:
+        try:
+            user_id = int(raw_user_id)
+        except (TypeError, ValueError):
+            user_id = None
+
     user_info = AuthenticatedUserInfo(
         username=str(payload.get("sub")),
         payload=payload,
         token=token,
+        user_id=user_id,
     )
     request.state.user_info = user_info
     return user_info
