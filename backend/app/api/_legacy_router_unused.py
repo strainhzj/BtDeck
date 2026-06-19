@@ -1,3 +1,7 @@
+# 警告：这是未挂载的旧路由归档文件，生产代码不得引用。
+# 保留原因：第一阶段止血先隔离历史认证/SQL 写法，后续确认无依赖后可删除。
+# 当前主路由入口是 app.api.api:api_router。
+
 # app/auth/router.py
 from debugpy.adapter import access_token
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response

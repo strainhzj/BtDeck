@@ -32,6 +32,10 @@ def create_app() -> FastAPI:
     """
     创建并配置 FastAPI 应用实例。
     """
+    # CORS 使用 allow_credentials=True 时不能接受通配来源，避免浏览器凭证跨域策略被误配置。
+    if "*" in settings.ALLOWED_HOSTS:
+        raise RuntimeError("ALLOWED_HOSTS 不允许包含 '*'，请配置明确的前端来源")
+
     _app = FastAPI(
         title=settings.PROJECT_NAME,
         openapi_url=f"{settings.API_V1_STR}/openapi.json",

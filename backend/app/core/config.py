@@ -14,6 +14,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import copy
+import logging
 import os
 import re
 import secrets
@@ -22,7 +23,6 @@ import threading
 
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
-from app import api
 
 from pydantic import BaseModel, Field, validator
 
@@ -40,6 +40,9 @@ except ImportError:
                     setattr(self, key, value)
 
 
+logger = logging.getLogger(__name__)
+
+
 def is_frozen() -> bool:
     """检测是否运行在 PyInstaller 打包（frozen）模式下。
 
@@ -52,6 +55,18 @@ def is_frozen() -> bool:
 def is_docker() -> bool:
     """检测是否运行在 Docker 容器中。"""
     return Path("/.dockerenv").exists()
+
+
+def _default_secret_key() -> str:
+    """开发兜底密钥：优先使用环境变量，未配置时生成临时密钥并记录警告。"""
+    secret_key = os.getenv("SECRET_KEY")
+    if secret_key:
+        return secret_key
+
+    logger.warning(
+        "SECRET_KEY 未配置，已生成临时开发密钥；生产环境必须通过环境变量显式设置。"
+    )
+    return secrets.token_urlsafe(32)
 
 
 class Settings(BaseSettings):
@@ -76,15 +91,16 @@ class Settings(BaseSettings):
 
     # 目录配置
     CONFIG_DIR: Optional[str] = None
-    ALLOWED_HOSTS: List[str] = ["*"]
+    ALLOWED_HOSTS: List[str] = ["http://localhost:8080", "http://127.0.0.1:8080"]
     DATABASE_NAME: str = "app.db"
     TORRENTS_DIR: Optional[str] = None
 
     # 安全配置
-    SECRET_KEY: str = os.getenv("SECRET_KEY", "your-secret-key-for-jwt")
+    SECRET_KEY: str = Field(default_factory=_default_secret_key)
     SM4_KEY: Optional[str] = None  # 将在应用启动时生成
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
     ALGORITHM: str = "HS256"
+    BTDECK_ALLOW_CUSTOM_SCRIPTS: bool = False
 
     model_config = {
         "case_sensitive": True,
@@ -94,6 +110,7 @@ class Settings(BaseSettings):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
+        self._validate_security_config()
         # 仅创建主配置目录（必需）
         # 子目录（temp、logs、cookies）按需创建，不在初始化时创建
         # 容错：frozen 模式下若可执行文件同级目录属主异常，mkdir 可能无权限，
@@ -107,6 +124,29 @@ class Settings(BaseSettings):
                 # init_config_file 有自己的 makedirs 兜底并会记录详细错误）
                 print(f"[WARN] 无法创建配置目录 {self.CONFIG_PATH}: {e}")
                 print(f"[WARN] 请确保运行用户对该目录有写权限")
+
+    @validator("ALLOWED_HOSTS", pre=True)
+    def _parse_allowed_hosts(cls, value):
+        """允许环境变量使用 JSON 数组或逗号分隔字符串配置 CORS 来源。"""
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return []
+            if stripped.startswith("["):
+                return value
+            return [item.strip() for item in stripped.split(",") if item.strip()]
+        return value
+
+    def _validate_security_config(self):
+        """启动期安全校验：生产环境拒绝隐式密钥和通配 CORS。"""
+        if not self.DEV and not os.getenv("SECRET_KEY"):
+            raise RuntimeError("生产环境必须通过 SECRET_KEY 环境变量显式配置 JWT 密钥")
+
+        if not self.DEV and not os.getenv("ALLOWED_HOSTS"):
+            raise RuntimeError("生产环境必须通过 ALLOWED_HOSTS 环境变量显式配置 CORS 来源")
+
+        if "*" in self.ALLOWED_HOSTS:
+            raise RuntimeError("allow_credentials=True 时 ALLOWED_HOSTS 不允许包含通配符 '*'")
 
     @property
     def CONFIG_PATH(self):
@@ -157,4 +197,3 @@ class Settings(BaseSettings):
 
 # 实例化配置
 settings = Settings()
-

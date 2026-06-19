@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
 from app.auth import utils
+from app.core.config import settings
 from app.core.database_result import DatabaseError
 from app.database import get_db
 from app.tasks.cron_crud import CronTaskCRUD, TaskLogsCRUD
@@ -18,7 +19,7 @@ class CronTaskCreate(BaseModel):
     """创建定时任务请求模型"""
     task_name: str = Field(..., description="任务名称", max_length=200)
     task_code: str = Field(..., description="任务编码", max_length=50)
-    task_type: int = Field(..., description="任务类型：0-shell脚本，1-cmd脚本，2-powershell脚本，3-python脚本，4-python内部类")
+    task_type: int = Field(..., description="任务类型：0-shell脚本，1-cmd脚本，2-powershell脚本，3-python脚本，4-python内部类，5-清理任务，6-导出任务")
     executor: str = Field(..., description="执行脚本内容或路径")
     cron_plan: str = Field(..., description="cron表达式，格式：分 时 日 月 周")
     enabled: bool = Field(True, description="是否启用")
@@ -160,6 +161,47 @@ class TaskTypeConfigResponse(BaseModel):
     """任务类型配置响应模型"""
     taskTypes: list[dict] = Field(..., description="任务类型配置列表")
     pythonClasses: list[PythonClassInfo] = Field(default=[], description="可用Python类列表")
+
+
+CUSTOM_SCRIPT_TASK_TYPES = {0, 1, 2, 3}
+BUILTIN_TASK_TYPES = {4, 5, 6}
+
+
+def _custom_script_error() -> CommonResponse:
+    """自定义脚本任务默认关闭，避免通过定时任务入口执行任意命令。"""
+    return CommonResponse(
+        status="error",
+        msg="自定义脚本任务已被安全策略禁用；如确需启用，请设置 BTDECK_ALLOW_CUSTOM_SCRIPTS=True",
+        code="403",
+        data=None
+    )
+
+
+def _validate_task_type_allowed(task_type: int) -> Optional[CommonResponse]:
+    """只允许内置任务；管理员显式开启后才允许 Shell/CMD/PowerShell/Python 脚本。"""
+    if task_type in BUILTIN_TASK_TYPES:
+        return None
+    if task_type in CUSTOM_SCRIPT_TASK_TYPES and settings.BTDECK_ALLOW_CUSTOM_SCRIPTS:
+        return None
+    if task_type in CUSTOM_SCRIPT_TASK_TYPES:
+        return _custom_script_error()
+    return CommonResponse(
+        status="error",
+        msg=f"不支持的任务类型: {task_type}",
+        code="400",
+        data=None
+    )
+
+
+def _validate_update_task_type(db: Session, task_id: int, task_data: CronTaskUpdate) -> Optional[CommonResponse]:
+    """更新时按目标任务类型校验，防止绕过创建接口修改脚本任务。"""
+    if task_data.task_type is not None:
+        return _validate_task_type_allowed(task_data.task_type)
+
+    existing_result = CronTaskCRUD.get_cron_task_by_id(db, task_id)
+    if existing_result.success and existing_result.data:
+        return _validate_task_type_allowed(existing_result.data.get("task_type"))
+    return None
 
 
 # ========== 清理任务相关模型 ==========
@@ -326,6 +368,9 @@ async def create_cron_task(
 ):
     """创建新的定时任务"""
     verify_token(request)
+    task_type_error = _validate_task_type_allowed(task_data.task_type)
+    if task_type_error:
+        return task_type_error
 
     try:
         result = CronTaskCRUD.create_cron_task(db, {
@@ -556,6 +601,9 @@ async def update_cron_task(
 ):
     """更新定时任务"""
     verify_token(request)
+    task_type_error = _validate_update_task_type(db, task_id, task_data)
+    if task_type_error:
+        return task_type_error
 
     try:
         result = CronTaskCRUD.update_cron_task(db, task_id, {
@@ -943,8 +991,8 @@ async def get_task_type_config(request: Request):
     verify_token(request)
 
     try:
-        # 任务类型配置
-        task_types = [
+        # 默认只暴露内置任务类型；显式开启后才展示脚本类型，和创建/更新接口策略一致。
+        script_task_types = [
             {
                 "value": 0,
                 "label": "shell脚本",
@@ -977,6 +1025,8 @@ async def get_task_type_config(request: Request):
                 "language": "python",
                 "fileExtension": ".py"
             },
+        ]
+        builtin_task_types = [
             {
                 "value": 4,
                 "label": "python内部类",
@@ -992,8 +1042,19 @@ async def get_task_type_config(request: Request):
                 "description": "定时清理回收站和待删除数据",
                 "language": None,
                 "fileExtension": None
+            },
+            {
+                "value": 6,
+                "label": "审计日志导出",
+                "icon": "el-icon-download",
+                "description": "定时导出审计日志",
+                "language": None,
+                "fileExtension": None
             }
         ]
+        task_types = builtin_task_types
+        if settings.BTDECK_ALLOW_CUSTOM_SCRIPTS:
+            task_types = script_task_types + builtin_task_types
 
         # 尝试获取可用的Python类列表
         python_classes = []
