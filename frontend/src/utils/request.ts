@@ -1,6 +1,13 @@
 import axios from 'axios'
 import Message from 'element-ui/packages/message'
 import { UserModule } from '@/store/modules/user'
+import {
+  SUCCESS_CODES,
+  isLoginRequest,
+  buildBusinessError,
+  buildNetworkError,
+  buildHttpError
+} from '@/utils/error-normalize'
 
 const service = axios.create({
   baseURL: process.env.VUE_APP_BASE_API,
@@ -30,6 +37,17 @@ function maskToken(token: string): string {
   return `${token.substring(0, 10)}...${token.substring(token.length - 10)}`
 }
 
+/**
+ * 触发登录跳转（带防抖，避免并发 401 重复跳转）。
+ */
+function redirectToLogin(): void {
+  if (!isRedirectingToLogin) {
+    isRedirectingToLogin = true
+    UserModule.ResetToken()
+    window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
+  }
+}
+
 // Request interceptors
 service.interceptors.request.use(
   (config) => {
@@ -42,7 +60,8 @@ service.interceptors.request.use(
     }
 
     if (UserModule.token) {
-      config.headers['x-access-token'] = UserModule.token
+      // 认证契约收敛：只发送 Authorization: Bearer。
+      // 后端 dependencies.py 已兼容读取 Bearer，移除冗余的 x-access-token。
       config.headers['Authorization'] = `Bearer ${UserModule.token}`
       if (DEBUG_MODE) {
         console.log('✅ token已设置到请求头（脱敏）:', maskToken(UserModule.token))
@@ -67,88 +86,62 @@ service.interceptors.request.use(
 // Response interceptors
 service.interceptors.response.use(
   (response) => {
-    // 特殊处理：blob类型响应直接返回，不解析code字段
+    // blob 响应直接返回原始 data，不解析 code 字段
     if (response.config.responseType === 'blob') {
       return response.data
     }
 
     const res = response.data
 
-    // 成功响应
-    if (res.code === '200') {
+    // 成功响应（含业务级部分成功/需确认）
+    if (res && SUCCESS_CODES.has(res.code)) {
+      // 207 保留部分成功的 warning 提示（业务依赖此行为）
+      if (res.code === '207') {
+        Message({
+          message: res.msg || '部分操作成功',
+          type: 'warning',
+          duration: 5 * 1000
+        })
+      }
       return res
     }
 
-    // 处理部分成功的状态 (207 Multi-Status)
-    if (res.code === '207') {
-      // 部分成功的情况，显示警告消息而不是错误
-      Message({
-        message: res.msg || '部分操作成功',
-        type: 'warning',
-        duration: 5 * 1000
-      })
-      return res
+    // 业务错误：HTTP 200 但 code 非 2xx 成功
+    const apiError = buildBusinessError(res, response.status, response)
+
+    // 认证失败：非登录接口触发跳转
+    if (apiError.code === '401' && !isLoginRequest(response.config)) {
+      redirectToLogin()
     }
 
-    // 认证错误 - 判断是否为登录接口
-    if (res.code === '401') {
-      const isLoginRequest = response.config.url?.includes('/login')
-
-      // 登录接口401：仅返回错误，不触发跳转逻辑
-      if (isLoginRequest) {
-        return Promise.reject(new Error(res.msg || '认证失败'))
-      }
-
-      // 非登录接口401：防抖，只处理一次
-      if (!isRedirectingToLogin) {
-        isRedirectingToLogin = true
-        UserModule.ResetToken()
-        // 跳转到登录页，携带当前路径以便登录后返回
-        window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
-      }
-
-      return Promise.reject(new Error(res.msg || '认证失败'))
-    }
-
-    // 🔧 修复：移除其他业务错误的自动弹框，让业务代码统一处理
-    // 包括：403、404、422、500 及其他业务错误
-    return Promise.reject(new Error(res.msg || '操作失败'))
+    return Promise.reject(apiError)
   },
   (error) => {
-    // 处理HTTP层面错误
-    let errorMessage = '网络错误'
-
-    if (error.response) {
-      // 服务器响应了错误状态码
-      switch (error.response.status) {
-        case 401:
-          errorMessage = '认证失败，请重新登录'
-          if (!isRedirectingToLogin) {
-            isRedirectingToLogin = true
-            UserModule.ResetToken()
-            window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
-          }
-          break
-        default:
-          // 🔧 修复：除 401 外的所有 HTTP 错误都不显示弹框，让业务代码统一处理
-          return Promise.reject(error)
-      }
-    } else if (error.request) {
-      // 请求已发出但没有收到响应
-      errorMessage = '网络连接失败，请检查网络连接'
-    } else {
-      // 其他错误
-      errorMessage = error.message || '未知错误'
+    // 无 response：网络层错误（请求未发出/无响应）
+    if (!error.response) {
+      const message = error.request
+        ? '网络连接失败，请检查网络连接'
+        : error.message || '网络错误'
+      // 网络层错误显示统一提示（业务错误不弹框，交给业务代码）
+      Message({ message, type: 'error', duration: 5 * 1000 })
+      return Promise.reject(buildNetworkError(message, error.request))
     }
 
-    // 🔧 修复：只显示网络层面的错误（非业务错误）
-    Message({
-      message: errorMessage,
-      type: 'error',
-      duration: 5 * 1000
-    })
+    // HTTP 错误：服务器返回了 4xx/5xx
+    const httpStatus = error.response.status
+    const apiError = buildHttpError(
+      error.response.data?.detail,
+      httpStatus,
+      error.response,
+      error.request
+    )
 
-    return Promise.reject(error)
+    // 认证失败跳转（登录接口豁免）
+    if (httpStatus === 401 && !isLoginRequest(error.config)) {
+      redirectToLogin()
+    }
+
+    return Promise.reject(apiError)
   }
 )
 
