@@ -201,16 +201,6 @@ export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<
 }
 
 /**
- * 获取种子详情
- */
-export function getTorrentDetail(hash: string): Promise<ApiResponse<Torrent>> {
-  return request({
-    url: `/torrents/detail/${hash}`,
-    method: 'get'
-  }) as unknown as Promise<ApiResponse<Torrent>>
-}
-
-/**
  * 添加种子
  */
 export function addTorrent(data: TorrentAddRequest): Promise<ApiResponse<any>> {

@@ -96,6 +96,20 @@ class User extends VuexModule implements IUserState {
     this.SET_ROLES([])
   }
 
+  /**
+   * 更新双因素认证标记状态。
+   *
+   * SET_TWO_FACTOR_FLAG 是 private Mutation，getModule 实例外部不可直接调用，
+   * 组件必须通过此 Action 修改，避免绕过 Vuex 单向数据流（如原
+   * settings/index.vue:610 的 (UserModule as any).twoFactorFlag = '0' 直改）。
+   *
+   * 审计依据：backend/docs/style-and-contract-audit.md 第4节"组件直接改写模块状态"。
+   */
+  @Action({ rawError: true })
+  public SetTwoFactorFlag(flag: string) {
+    this.SET_TWO_FACTOR_FLAG(flag)
+  }
+
   @Action({ rawError: true })
   public async GetUserInfo() {
     // 🔧 防御性检查：更详细的 token 验证
@@ -168,8 +182,15 @@ class User extends VuexModule implements IUserState {
     if (this.token === '') {
       throw Error('LogOut: token is undefined!')
     }
-    // 未做logout，先注释
-    // await logout()
+    // 通知后端登出（POST /users/logout，require_authenticated_user 保护）。
+    // 即使后端调用失败（如 token 已过期返回 401），仍本地清除 token，
+    // 保证登出 UX 不被服务端错误阻塞。后端当前无 token 黑名单，登出后旧
+    // token 在过期前仍有效是已知安全隐患（见 PLANS/v1.0.5-audit P1-A.3）。
+    try {
+      await logout()
+    } catch (e) {
+      console.warn('后端登出调用失败，仅本地清除 token:', e)
+    }
     removeToken()
     this.SET_TOKEN('')
     this.SET_USER_ID('')

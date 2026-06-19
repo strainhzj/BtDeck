@@ -190,12 +190,22 @@ export const deleteTemplate = (templateId: string) =>
 
 /**
  * 应用模板到下载器
+ *
+ * 对齐后端 POST /setting-templates/{template_id}/apply/{downloader_id}：
+ * - template_id、downloader_id 进 URL path 参数
+ * - body 只传 apply_path_mapping（是否同时应用路径映射）
+ *
+ * 审计依据：backend/docs/style-and-contract-audit.md 第5节 apply 双重不匹配。
  */
-export const applyTemplate = (templateId: string, data: ApplyTemplateRequest) =>
+export const applyTemplate = (
+  templateId: string,
+  downloaderId: string,
+  options?: ApplyTemplateRequest
+) =>
   request({
-    url: `/setting-templates/${templateId}/apply`,
+    url: `/setting-templates/${templateId}/apply/${downloaderId}`,
     method: 'post',
-    data
+    data: options ?? {}
   })
 
 // ============================================================

@@ -606,8 +606,8 @@ export default class extends Vue {
             message: '双因素认证已停用'
           })
 
-          // 更新UserModule中的状态
-          (UserModule as any).twoFactorFlag = '0'
+          // 更新UserModule中的状态（通过 Action，不绕过 mutation）
+          UserModule.SetTwoFactorFlag('0')
         })
       } else {
         throw new Error(response.msg || '验证失败')

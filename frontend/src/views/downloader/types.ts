@@ -276,11 +276,17 @@ export interface TemplateDetailResponse {
 
 /**
  * 应用模板请求
+ *
+ * 对齐后端 POST /setting-templates/{template_id}/apply/{downloader_id}：
+ * - template_id、downloader_id 进 URL path 参数，不在 body
+ * - 后端 override=True 硬编码，不读 override_local（已废弃）
+ * - body 只传 apply_path_mapping（是否同时应用路径映射）
+ *
+ * 审计依据：backend/docs/style-and-contract-audit.md 第5节 apply 双重不匹配。
  */
 export interface ApplyTemplateRequest {
-  template_id: string
-  downloader_id: string
-  override_local?: boolean
+  /** 是否同时应用路径映射（后端 apply_path_mapping 字段） */
+  apply_path_mapping?: boolean | null
 }
 
 // ============================================================

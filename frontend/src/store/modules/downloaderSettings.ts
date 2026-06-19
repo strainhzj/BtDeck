@@ -312,15 +312,16 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
     },
 
     // 应用模板到下载器
+    // 注：overrideLocal 参数已废弃（后端 override=True 硬编码，不读 body），
+    // 保留在 payload 类型中以向后兼容潜在调用方，但不再传递给 API。
     async applyTemplate({ commit }, payload: { templateId: string, downloaderId: string, overrideLocal?: boolean }) {
       commit('SET_LOADING', true)
 
       try {
-        const response = await applyTemplate(payload.templateId, {
-          template_id: payload.templateId,
-          downloader_id: payload.downloaderId,
-          override_local: payload.overrideLocal ?? true
-        })
+        const response = await applyTemplate(
+          payload.templateId,
+          payload.downloaderId
+        )
         if (response.code === '200') {
           // 同时更新设置
           commit('SET_SETTINGS', {

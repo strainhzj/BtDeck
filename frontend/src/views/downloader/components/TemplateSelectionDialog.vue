@@ -197,11 +197,10 @@ export default class TemplateSelectionDialog extends Vue {
         return
       }
 
-      const response = await applyTemplate(this.selectedTemplate.id, {
-        template_id: this.selectedTemplate.id,
-        downloader_id: downloaderId.trim(),
-        override_local: true
-      })
+      const response = await applyTemplate(
+        this.selectedTemplate.id,
+        downloaderId.trim()
+      )
 
       if (response.code === '200') {
         this.$message.success('模板应用成功')
