@@ -1,6 +1,7 @@
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Request
-from typing import Optional
+from fastapi import APIRouter, Depends, Query, HTTPException, Request, Body
+from fastapi.responses import Response
+from typing import Optional, List
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
@@ -241,6 +242,40 @@ def verify_token(req):
     user_info = utils.verify_access_token(token)
     if not user_info:
         raise HTTPException(status_code=401, detail="Token验证失败")
+
+
+def _logs_to_csv(logs: list) -> str:
+    """把任务日志列表序列化为 CSV 字符串。
+
+    表头取自首条记录的字段名；缺失字段补空字符串。
+    值统一转字符串，逗号/换行用双引号包裹（RFC 4180 简化处理）。
+    """
+    import csv
+    import io
+
+    if not logs:
+        return ""
+
+    output = io.StringIO()
+    # 字段顺序固定为常用列在前，其余按字典序补全
+    preferred = ["log_id", "task_id", "task_name", "task_type", "start_time",
+                 "end_time", "duration", "success", "log_detail"]
+    fieldnames = []
+    seen = set()
+    for key in preferred:
+        if key in logs[0]:
+            fieldnames.append(key)
+            seen.add(key)
+    for key in sorted(logs[0].keys()):
+        if key not in seen:
+            fieldnames.append(key)
+
+    writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+    writer.writeheader()
+    for row in logs:
+        writer.writerow({k: ("" if row.get(k) is None else row.get(k)) for k in fieldnames})
+
+    return output.getvalue()
 
 
 def convert_cron_task_to_camel_case(task_data: dict) -> CronTaskResponse:
@@ -539,6 +574,173 @@ async def get_task_logs_statistics(
         return CommonResponse(
             status="error",
             msg=f"获取任务日志统计失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.delete("/logs/delete", response_model=CommonResponse)
+async def delete_task_logs(
+    request: Request,
+    log_ids: Optional[List[int]] = Query(None, description="日志ID列表"),
+    task_id: Optional[int] = Query(None, description="任务ID（删除该任务所有日志）"),
+    before_date: Optional[str] = Query(None, description="删除此日期(YYYY-MM-DD)之前的日志"),
+    db: Session = Depends(get_db)
+):
+    """
+    删除任务日志（软删除）。
+
+    路由顺序注意：此固定路径必须注册在 ``/{task_id}`` 之前，否则
+    ``delete`` 会被当作 task_id 解析（审计第5节补充风险）。
+
+    前端调用点：frontend/src/api/tasks.ts:300 deleteTaskLogs。
+    """
+    verify_token(request)
+
+    try:
+        result = TaskLogsCRUD.delete_task_logs(
+            db, log_ids=log_ids, task_id=task_id, before_date=before_date
+        )
+
+        if result.success:
+            return CommonResponse(
+                status="success",
+                msg=f"删除成功，共 {result.data.get('deleted', 0)} 条",
+                code="200",
+                data=result.data
+            )
+        else:
+            return CommonResponse(
+                status="error",
+                msg=result.message,
+                code="400",
+                data=None
+            )
+
+    except Exception as e:
+        return CommonResponse(
+            status="error",
+            msg=f"删除任务日志失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.get("/logs/export")
+async def export_task_logs(
+    request: Request,
+    format: str = Query("csv", description="导出格式：csv/json"),
+    task_name: Optional[str] = Query(None, description="任务名称模糊查询"),
+    task_id: Optional[int] = Query(None, description="任务ID"),
+    success: Optional[bool] = Query(None, description="执行结果"),
+    db: Session = Depends(get_db)
+):
+    """
+    导出任务日志为 CSV 或 JSON 文件流。
+
+    前端调用点：frontend/src/api/tasks.ts:313 exportTaskLogs（responseType: blob）。
+    """
+    verify_token(request)
+
+    try:
+        # 拉取全部符合条件的日志（导出不分页，上限保护）
+        result = TaskLogsCRUD.get_task_logs(
+            db, skip=0, limit=10000,
+            task_name=task_name, task_id=task_id, success=success
+        )
+
+        if not result.success:
+            return CommonResponse(
+                status="error",
+                msg=result.message,
+                code="500",
+                data=None
+            )
+
+        logs = result.data.get("list", [])
+
+        if format.lower() == "json":
+            import json
+            content = json.dumps(logs, ensure_ascii=False, indent=2)
+            media_type = "application/json"
+            filename = "task_logs.json"
+        else:
+            # CSV：表头取自首条记录的字段，缺失字段补空
+            content = _logs_to_csv(logs)
+            media_type = "text/csv"
+            filename = "task_logs.csv"
+
+        encoded_filename = filename.encode("utf-8").decode("latin-1")
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{encoded_filename}"'
+            }
+        )
+
+    except Exception as e:
+        return CommonResponse(
+            status="error",
+            msg=f"导出任务日志失败: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.post("/logs/cleanup", response_model=CommonResponse)
+async def cleanup_task_logs(
+    request: Request,
+    payload: dict = Body(default={}, description="清理参数"),
+    db: Session = Depends(get_db)
+):
+    """
+    清理过期任务日志（软删除）。
+
+    路由顺序注意：此固定路径必须注册在 ``/{task_id}`` 之前。
+
+    前端调用点：frontend/src/api/tasks.ts:346 cleanupTaskLogs。
+    与现有 ``/cleanup/preview``、``/cleanup/execute``（清理回收站种子）语义不同，
+    本端点专门清理 task_logs 表。
+    """
+    verify_token(request)
+
+    try:
+        days = payload.get("days")
+        days = int(days) if days is not None else None
+        keep_success = bool(payload.get("keep_success", False))
+        keep_error = bool(payload.get("keep_error", False))
+
+        result = TaskLogsCRUD.cleanup_task_logs(
+            db, days=days, keep_success=keep_success, keep_error=keep_error
+        )
+
+        if result.success:
+            return CommonResponse(
+                status="success",
+                msg=f"清理完成，共清理 {result.data.get('cleaned', 0)} 条日志",
+                code="200",
+                data=result.data
+            )
+        else:
+            return CommonResponse(
+                status="error",
+                msg=result.message,
+                code="400",
+                data=None
+            )
+
+    except (TypeError, ValueError) as e:
+        return CommonResponse(
+            status="error",
+            msg=f"参数错误: {str(e)}",
+            code="422",
+            data=None
+        )
+    except Exception as e:
+        return CommonResponse(
+            status="error",
+            msg=f"清理任务日志失败: {str(e)}",
             code="500",
             data=None
         )

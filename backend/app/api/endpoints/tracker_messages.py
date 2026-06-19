@@ -23,6 +23,7 @@ from app.api.schemas.tracker_messages import (
 from app.torrents.models import TrackerMessageLog, TrackerKeywordConfig
 from app.api.schemas.tracker_keywords import TrackerKeywordResponse
 from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -84,6 +85,53 @@ def get_messages(
 
     except Exception as e:
         logger.error(f"查询消息记录列表失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
+@router.get("/statistics", summary="获取消息统计信息", response_model=CommonResponse)
+def get_statistics(
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user)
+):
+    """
+    获取消息记录的统计信息。
+
+    路由顺序注意：此静态路径必须注册在 ``/{log_id}`` 动态路由之前，
+    否则 ``statistics`` 会被当作 ``log_id`` 解析（审计第5节补充风险）。
+    """
+    try:
+        # 统计总数
+        total = db.query(TrackerMessageLog).count()
+
+        # 统计未处理数
+        unprocessed = db.query(TrackerMessageLog).filter(
+            TrackerMessageLog.is_processed == False  # noqa: E712
+        ).count()
+
+        # 统计成功关键词数
+        success = db.query(TrackerMessageLog).filter(
+            TrackerMessageLog.keyword_type == "success"
+        ).count()
+
+        # 统计失败关键词数
+        failure = db.query(TrackerMessageLog).filter(
+            TrackerMessageLog.keyword_type == "failure"
+        ).count()
+
+        return CommonResponse(
+            status="success",
+            msg="查询成功",
+            code="200",
+            data={
+                "total": total,
+                "unprocessed": unprocessed,
+                "success": success,
+                "failure": failure
+            }
+        )
+
+    except Exception as e:
+        logger.error(f"获取统计信息失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
 
 
@@ -266,55 +314,6 @@ def update_message(
         db.rollback()
         logger.error(f"更新消息记录失败: {str(e)}")
         raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
-
-
-def get_statistics(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """获取消息记录的统计信息"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
-    try:
-        # 统计总数
-        total = db.query(TrackerMessageLog).count()
-
-        # 统计未处理数
-        unprocessed = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.is_processed == False
-        ).count()
-
-        # 统计成功关键词数
-        success = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.keyword_type == "success"
-        ).count()
-
-        # 统计失败关键词数
-        failure = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.keyword_type == "failure"
-        ).count()
-
-        return CommonResponse(
-            status="success",
-            msg="查询成功",
-            code="200",
-            data={
-                "total": total,
-                "unprocessed": unprocessed,
-                "success": success,
-                "failure": failure
-            }
-        )
-
-    except Exception as e:
-        logger.error(f"获取统计信息失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
 
 
 @router.post("/{log_id}/add-to-pool", summary="添加消息到关键词池")

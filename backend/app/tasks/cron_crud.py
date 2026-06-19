@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc, asc, func
 from app.core.database_result import DatabaseResult
@@ -388,3 +388,86 @@ class TaskLogsCRUD:
 
         except Exception as e:
             return DatabaseResult.failure_result(f"获取任务日志统计失败: {str(e)}")
+
+    @staticmethod
+    def delete_task_logs(
+        db: Session,
+        log_ids: Optional[List[int]] = None,
+        task_id: Optional[int] = None,
+        before_date: Optional[str] = None
+    ) -> DatabaseResult:
+        """
+        删除任务日志（软删除，dr=1）。
+
+        支持按 log_id 列表、task_id 或指定日期之前三种维度，组合使用。
+        至少要有一个过滤条件，避免误删全部。
+
+        Args:
+            log_ids: 指定日志ID列表
+            task_id: 指定任务ID（删除该任务所有日志）
+            before_date: 删除此日期(YYYY-MM-DD)之前的日志
+        """
+        try:
+            if not log_ids and task_id is None and not before_date:
+                return DatabaseResult.failure_result(
+                    "必须提供 log_ids / task_id / before_date 中的至少一个条件"
+                )
+
+            query = db.query(TaskLogs).filter(TaskLogs.dr == 0)
+            if log_ids:
+                query = query.filter(TaskLogs.log_id.in_(log_ids))
+            if task_id is not None:
+                query = query.filter(TaskLogs.task_id == task_id)
+            if before_date:
+                try:
+                    cutoff = datetime.strptime(before_date, "%Y-%m-%d")
+                except ValueError:
+                    return DatabaseResult.failure_result(
+                        "before_date 格式应为 YYYY-MM-DD"
+                    )
+                query = query.filter(TaskLogs.start_time < cutoff)
+
+            count = query.update({TaskLogs.dr: 1}, synchronize_session=False)
+            db.commit()
+
+            return DatabaseResult.success_result({"deleted": count})
+
+        except Exception as e:
+            db.rollback()
+            return DatabaseResult.failure_result(f"删除任务日志失败: {str(e)}")
+
+    @staticmethod
+    def cleanup_task_logs(
+        db: Session,
+        days: Optional[int] = None,
+        keep_success: bool = False,
+        keep_error: bool = False
+    ) -> DatabaseResult:
+        """
+        清理过期任务日志（软删除，dr=1）。
+
+        Args:
+            days: 清理 N 天前的日志（按 start_time）；不传则不按时间过滤
+            keep_success: 为 True 时保留成功日志（success=True 不删）
+            keep_error: 为 True 时保留失败日志（success=False 不删）
+        """
+        try:
+            query = db.query(TaskLogs).filter(TaskLogs.dr == 0)
+
+            if days is not None and days >= 0:
+                cutoff = datetime.now() - timedelta(days=days)
+                query = query.filter(TaskLogs.start_time < cutoff)
+
+            if keep_success:
+                query = query.filter(TaskLogs.success == False)  # noqa: E712
+            if keep_error:
+                query = query.filter(TaskLogs.success == True)  # noqa: E712
+
+            count = query.update({TaskLogs.dr: 1}, synchronize_session=False)
+            db.commit()
+
+            return DatabaseResult.success_result({"cleaned": count})
+
+        except Exception as e:
+            db.rollback()
+            return DatabaseResult.failure_result(f"清理任务日志失败: {str(e)}")

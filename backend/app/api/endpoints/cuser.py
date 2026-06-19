@@ -7,6 +7,7 @@ from app.database import get_db
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.auth import utils
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 import app.auth.security as security
 from app.auth import models
 from typing import Annotated
@@ -18,6 +19,30 @@ import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+@router.post("/logout", summary="用户登出", response_model=CommonResponse)
+def logout(
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user)
+):
+    """
+    用户登出端点。
+
+    本期最低实现：仅返回成功，由前端清除本地 token。
+    审计依据：backend/docs/style-and-contract-audit.md 第5节"POST /users/logout 不匹配"。
+
+    ⚠️ 已知安全隐患（后续 TODO）：
+        当前无 token 黑名单/撤销机制（JWT 无状态），登出后旧 token 在
+        ACCESS_TOKEN_EXPIRE_MINUTES 内仍有效。完整登出需要引入 Redis/内存
+        token 黑名单（记录 jti + 过期时间），属于独立安全增强任务，不在本次范围。
+    """
+    logger.info("用户登出: %s", user_info.username)
+    return CommonResponse(
+        status="success",
+        msg="登出成功",
+        code="200",
+        data=None
+    )
 
 
 @router.post("/info", summary="获取用户信息", response_model=CommonResponse)

@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
 from app.auth import utils
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db
 from app.services.template_service import TemplateService
 from app.downloader.models import BtDownloaders
@@ -115,6 +116,63 @@ def get_setting_templates(
 
     except Exception as e:
         logger.error(f"获取模板列表失败: {e}")
+        return CommonResponse(
+            status="error",
+            msg=f"服务器内部错误: {str(e)}",
+            code="500",
+            data=None
+        )
+
+
+@router.get(
+    "/{template_id}",
+    summary="获取模板详情",
+    response_model=CommonResponse,
+    tags=["配置模板"]
+)
+def get_setting_template_detail(
+    template_id: int = Path(..., description="模板ID"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db)
+):
+    """
+    获取单个配置模板详情。
+
+    复用 TemplateService.get_template()，已自带权限校验：
+    系统默认模板任何人可读；非系统模板仅创建者可读（is_system_default + created_by）。
+
+    前端调用点：frontend/src/api/downloader.ts:156 getTemplateDetail。
+    审计依据：backend/docs/style-and-contract-audit.md 第5节"GET /setting-templates/{template_id} 不匹配"。
+    """
+    try:
+        # 兜底从 JWT payload 取 user_id（P0-2c 统一字段前的过渡写法）
+        user_id = user_info.payload.get("user_id")
+        if user_id is not None:
+            try:
+                user_id = int(user_id)
+            except (TypeError, ValueError):
+                user_id = None
+
+        service = TemplateService(db)
+        template = service.get_template(template_id, user_id=user_id)
+
+        return CommonResponse(
+            status="success",
+            msg="查询成功",
+            code="200",
+            data=template
+        )
+
+    except ValueError as e:
+        # 模板不存在或无权访问
+        return CommonResponse(
+            status="error",
+            msg=str(e),
+            code="404",
+            data=None
+        )
+    except Exception as e:
+        logger.error(f"获取模板详情失败: {e}")
         return CommonResponse(
             status="error",
             msg=f"服务器内部错误: {str(e)}",
