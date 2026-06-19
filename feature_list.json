@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "current_dev_version": "v1.0.5",
-  "last_updated": "2026-06-18",
+  "current_dev_version": "v1.0.5-audit",
+  "last_updated": "2026-06-19",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -262,6 +262,82 @@
           "status": "done",
           "scope": "fullstack",
           "evidence": "16/16 测试通过；前端语法人工复核"
+        }
+      ]
+    },
+    {
+      "id": "v1.0.5-audit",
+      "name": "契约审计修复（技术债）",
+      "description": "基于 backend/docs/style-and-contract-audit.md 的 P1 确定性 bug + P0 契约归一化。独立分支 fix/contract-audit，不覆盖 P2 REST 路由迁移 / P3 前端类型收敛。",
+      "status": "in_progress",
+      "branch": "fix/contract-audit",
+      "plan_file": "PLANS/v1.0.5-audit.md",
+      "deviation_from_plan": {
+        "reason": "范围聚焦 P0+P1，P2/P3 推迟；3 个独立子代理审查后修正了 10 项 Blocker（版本号撞号、实施顺序反转、测试改造缺失、ApiError 兼容性、回滚策略等）",
+        "audit_corrections": [
+          "/tags/batch-delete 是误报（后端 tag_management.py:665 已有端点），不动",
+          "tag_management 的 {success,message} 字典是私有 helper 返回值非 HTTP 响应，降级不改",
+          "tracker_messages/statistics 是漏挂装饰器的孤立函数，修复成本极低"
+        ]
+      },
+      "tasks": [
+        {
+          "id": "v1.0.5-audit.1",
+          "name": "P0-3 后端全局异常处理器",
+          "description": "归一化 HTTPException/422/未捕获异常为 CommonResponse，消除 detail 三种形态不一致",
+          "status": "done",
+          "file": "backend/app/exception_handlers.py, backend/app/factory.py",
+          "evidence": "commit ac324bc; pytest 1524 passed 无回归"
+        },
+        {
+          "id": "v1.0.5-audit.2",
+          "name": "P0-1 前端 ApiError 归一化",
+          "description": "request.ts 引入统一 ApiError（extends Error + 兼容 msg/response getter），4 分支 detail 解包，成功码白名单 {200,206,207}，blob 短路，登录豁免，双 header 收敛",
+          "status": "done",
+          "scope": "frontend",
+          "file": "frontend/src/types/api.ts, frontend/src/utils/error-normalize.ts, frontend/src/utils/request.ts, frontend/jest.config.js, frontend/tests/unit/error-normalize.spec.ts",
+          "evidence": "commit 0e55469; jest 25/25 passed, eslint 0 error"
+        },
+        {
+          "id": "v1.0.5-audit.3",
+          "name": "P1-A 后端补 4 项缺失端点",
+          "description": "statistics 装饰器 + 模板详情 GET + logout + cronTasks 日志 delete/export/cleanup",
+          "status": "done",
+          "file": "backend/app/api/endpoints/tracker_messages.py, setting_templates.py, cuser.py, cron_tasks.py, backend/app/tasks/cron_crud.py",
+          "evidence": "commit efc6574; auth+cron 测试 189 passed"
+        },
+        {
+          "id": "v1.0.5-audit.4",
+          "name": "P1-B 前端修复 4 项契约不匹配",
+          "description": "apply 对齐后端 Path 参数 + 删 articles/table 死代码链 + 2FA 改 Action 调用 + 删 getTorrentDetail 死代码 + 接通 logout",
+          "status": "done",
+          "scope": "frontend",
+          "file": "frontend/src/api/downloader.ts, torrents.ts, views/downloader/types.ts, store/modules/downloaderSettings.ts, user.ts, views/settings/index.vue, views/downloader/components/TemplateSelectionDialog.vue",
+          "evidence": "commit 0e8f007; jest 25/25, eslint 0 error"
+        },
+        {
+          "id": "v1.0.5-audit.5",
+          "name": "P0-2c 认证基础设施补强",
+          "description": "AuthenticatedUserInfo 新增 user_id 字段（兜底解析，不改 verify_access_token required_fields 避免旧 token 失效）",
+          "status": "done",
+          "file": "backend/app/auth/dependencies.py",
+          "evidence": "commit 9e19822; auth 测试 125 passed"
+        },
+        {
+          "id": "v1.0.5-audit.6",
+          "name": "P0-2a 后端认证迁移到 require_authenticated_user",
+          "description": "20+ endpoint 文件、~195 处手写 x-access-token 验证替换为 Depends(require_authenticated_user)，按文件粒度分批提交，login.py 豁免",
+          "status": "in_progress",
+          "scope": "backend",
+          "file": "backend/app/api/endpoints/ (downloader/setting_templates/cron_tasks/tracker_keywords/tag_management/advanced_search/cuser/torrent_crud 等)"
+        },
+        {
+          "id": "v1.0.5-audit.7",
+          "name": "P0-2b 认证测试改造",
+          "description": "~40 处 status_code==200+code=='401' 断言改为 status_code==401；新增 P1-A 端点的认证测试",
+          "status": "pending",
+          "scope": "backend",
+          "file": "backend/tests/api/test_auth_protection.py, test_search_templates.py 等"
         }
       ]
     },

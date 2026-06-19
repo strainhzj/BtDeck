@@ -11,6 +11,32 @@
 
 ## 进行中功能
 
+### v1.0.5-audit 契约审计修复（技术债）— fix/contract-audit 分支
+
+**计划文件**: `PLANS/v1.0.5-audit.md`
+**审计依据**: `backend/docs/style-and-contract-audit.md`（P1 确定性 bug + P0 契约归一化）
+**范围**: P0 + P1。不覆盖 P2（REST 路由迁移）/ P3（前端类型收敛），推迟。
+
+**已完成（5 commit）**:
+| 任务 | commit | 验证 |
+|------|--------|------|
+| P0-3 后端全局异常处理器 | ac324bc | pytest 1524 passed 无回归 |
+| P0-1 前端 ApiError 归一化 | 0e55469 | jest 25/25, eslint 0 error |
+| P1-A 后端补 4 项端点 | efc6574 | auth+cron 189 passed |
+| P1-B 前端修 4 项契约 | 0e8f007 | jest 25/25, eslint 0 error |
+| P0-2c 认证基础设施补强 | 9e19822 | auth 125 passed |
+
+**进行中**:
+- P0-2a 认证迁移到 `require_authenticated_user`（20+ 文件/~195 处，分批提交）
+- P0-2b 认证测试改造（~40 处断言）
+
+**审计交叉验证结论（3 个独立 Explore agent 核实）**:
+- 9 项契约不匹配中 8 项属实，`/tags/batch-delete` 误报（后端已有端点）
+- tracker statistics 是漏挂装饰器的孤立函数，修复成本极低
+- tag_management 的 `{success,message}` 是私有 helper 返回值，非 HTTP 响应，降级不改
+
+---
+
 ### v1.0.5 查询模板系统 (done) — dev 分支
 
 **计划文件**: `PLANS/v1.0.5.md`（已标注方向转变）
@@ -128,12 +154,20 @@
 | 2026-06-18 | fullstack | v1.0.5 补全 search_templates 而非新建 query_templates | 探索发现已有完整基础设施，避免重复造轮子 |
 | 2026-06-18 | fullstack | User 不加 relationship（用 created_by 整数列） | 遵循既有约定（SettingTemplate 同模式），避免触发 User 表迁移 |
 | 2026-06-18 | fullstack | query_config 用 source=simple/advanced 双分支 | 1:1 还原两种查询状态（listQuery / condition_groups），应用时按 source 分流 |
+| 2026-06-19 | fullstack | 审计修复用独立 feature 块 v1.0.5-audit 而非 v1.0.5.1 | v1.0.5.1 子任务号已被 done 占用，撞号；用 -audit 后缀避开数字子任务号空间 |
+| 2026-06-19 | fullstack | 实施顺序 P0-3→P0-1→P1→P0-2c→P0-2a/b | 异常处理器先做兜底；前端归一化在后端 401 之前避免破损窗口；认证基础设施先于迁移避免 user_id 断链 |
+| 2026-06-19 | backend | 认证统一用 require_authenticated_user（HTTP 401），login.py 豁免 | login 的 code=401 是密码错误业务语义，非认证失效，前端登录页依赖此分支不跳转 |
+| 2026-06-19 | backend | 不把 user_id 加入 verify_access_token required_fields | 避免现有未过期 token 全部失效（强制全员重登），改为 AuthenticatedUserInfo 兜底解析 |
+| 2026-06-19 | frontend | ApiError extends Error + 兼容 msg/response getter | 降低约 33 个存量 catch 块的回归（e.msg / e.response.data.msg 链式读取仍可用） |
+| 2026-06-19 | frontend | 成功码白名单 {200,206,207} | 206(需确认路径映射)/207(Multi-Status 部分成功) 是业务级成功，不归一化为错误 |
+| 2026-06-19 | fullstack | apply 改前端对齐后端 Path 参数 | 后端 Path 更 RESTful，且 override=True 硬编码使 override_local 无效 |
+| 2026-06-19 | fullstack | torrents/detail 不补后端端点，删前端死代码 | getTorrentDetail 从未被调用，补后端会引入语义模糊(hash可能重复)的未用功能 |
 
 ---
 
 ## 当前会话
 
-> **2026-06-18**: v1.0.5 查询模板系统开发完成（补全现有 search_templates）。下一步：完整环境跑前端 lint 验证；启动 v1.0.6 孤儿文件管理。
+> **2026-06-19**: v1.0.5-audit 契约审计修复进行中（fix/contract-audit 分支）。已完成 P0-3/P0-1/P1-A/P1-B/P0-2c 共 5 commit（测试全绿）。进行中：P0-2a 认证迁移（20+文件分批）+ P0-2b 测试改造。下一步：逐文件迁移认证到 require_authenticated_user。
 
 ---
 
