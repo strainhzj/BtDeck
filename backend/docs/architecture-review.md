@@ -93,7 +93,7 @@
 
 ## 三、遗漏问题检查
 
-1. 认证体系也存在“双轨/多轨”问题。部分接口使用 `app.auth.dependencies.get_current_user` / `verify_token_dependency`，部分接口手写读取 `X-Access-Token` 并调用 `utils.verify_access_token()`。Header 大小写、Cookie/Bearer 支持、返回格式和权限信息不一致。
+1. 认证体系也存在“双轨/多轨”问题。部分接口使用 `app.auth.dependencies.get_current_user` / `verify_token_dependency`，部分接口手写读取 `X-Access-Token` 并调用 `utils.verify_access_token()`。Header 大小写、Cookie/Bearer 支持、返回格式和权限信息不一致。（**注**: 该问题已在 v1.0.5-audit P0-2 中解决——所有端点统一到 `require_authenticated_user`，`verify_token_dependency` 已删除，手写验证已全部移除）
 
 2. JWT 库也有双轨。`auth/utils.py` 使用 `jwt` 包，`auth/dependencies.py` 和旧 `api/router.py` 使用 `jose.jwt`。这会增加算法参数、异常类型、payload 处理差异。
 

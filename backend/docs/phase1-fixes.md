@@ -23,7 +23,7 @@
 - `backend/app/auth/dependencies.py` 新增 `AuthenticatedUserInfo` 和 `require_authenticated_user`。
 - 新依赖支持 `X-Access-Token` 与 `Authorization: Bearer <token>`。
 - 认证失败统一使用 `CommonResponse(status="error", code="401")` 结构。
-- 保留并增强现有 `verify_token_dependency`，避免第一阶段批量改动 endpoint。
+- 保留并增强现有 `verify_token_dependency`，避免第一阶段批量改动 endpoint。（**注**: v1.0.5-audit P0-2a/d 已完成全量迁移，`verify_token_dependency` 已删除，所有端点统一使用 `require_authenticated_user`）
 - 迁移方式已写入注释：后续 endpoint 可直接声明 `user_info: AuthenticatedUserInfo = Depends(require_authenticated_user)`。
 
 ## 任务 3：旧路由文件清理

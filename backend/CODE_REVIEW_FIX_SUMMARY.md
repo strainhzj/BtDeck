@@ -39,7 +39,7 @@ result: CommonResponse[Dict[str, Any]] = CommonResponse(
 **状态**: ✅ 已修复
 
 **修复内容**:
-- 创建统一的认证依赖注入函数 `verify_token_dependency`
+- 创建统一的认证依赖注入函数 `verify_token_dependency`（**注**: v1.0.5-audit 起被 `require_authenticated_user` 取代并删除，详见 P0-2a/d）
 - 消除所有接口中重复的 Token 验证代码
 - 将用户信息存储到 `request.state.user_info` 供后续使用
 
@@ -247,7 +247,7 @@ logger.info(f"Token验证失败: {request.url}")
 
 1. **分布式锁**: 当前使用内存锁,多实例部署时建议使用 Redis 分布式锁
 2. **监控指标**: 添加汇报成功率、耗时等监控指标
-3. **单元测试**: 为新增的 `verify_token_dependency` 添加单元测试
+3. **单元测试**: 为 `require_authenticated_user`（取代已删除的 `verify_token_dependency`）添加单元测试
 4. **性能优化**: 考虑使用异步数据库查询进一步提升性能
 
 ---
