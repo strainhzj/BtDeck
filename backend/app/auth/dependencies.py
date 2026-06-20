@@ -138,21 +138,30 @@ def get_current_user(
 
 async def verify_token_dependency(request: Request) -> Union[CommonResponse, None]:
     """
-    统一的Token验证依赖注入函数
+    统一的Token验证依赖注入函数（已弃用）
+
+    .. deprecated:: v1.0.5-audit
+        所有端点已迁移至 :func:`require_authenticated_user`。该依赖保留仅用于过渡兼容，
+        请勿在新代码中使用。
 
     从请求头中获取 X-Access-Token 或 Authorization: Bearer,验证其有效性。
     验证失败时返回错误响应,成功时返回None。
 
-    使用示例:
+    使用示例（已废弃，请改用 require_authenticated_user）:
         @router.post("/endpoint")
         async def endpoint(
-            auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+            _user=Depends(require_authenticated_user),  # 推荐
             db: Session = Depends(get_db)
         ):
-            if auth_error:
-                return auth_error
             # ... 业务逻辑
     """
+    import warnings
+
+    warnings.warn(
+        "verify_token_dependency 已弃用，请改用 require_authenticated_user",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     token = _extract_access_token(request)
     user_info = _authenticate_request(request)
     if not user_info:
