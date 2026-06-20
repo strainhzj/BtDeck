@@ -8,7 +8,7 @@ from app.api.responseVO import CommonResponse
 from sqlalchemy import text, distinct, select, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_async_db, AsyncSessionLocal
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 import uuid
 import logging
 from app.downloader.models import BtDownloaders
@@ -28,7 +28,7 @@ MAX_AUDIT_LOG_ENTRIES = 10  # 批量操作时最多详细记录的条目数
 
 
 @router.post("/addTracker", summary="添加种子tracker地址", response_model=CommonResponse)
-async def add_tracker(req: Request, background_tasks: BackgroundTasks, torrent_info_ids: str = Query(
+async def add_tracker(req: Request, background_tasks: BackgroundTasks, _user=Depends(require_authenticated_user), torrent_info_ids: str = Query(
     default="default",
     alias="torrentInfoIds",
     description="torrent_info_id列表",
@@ -49,13 +49,6 @@ async def add_tracker(req: Request, background_tasks: BackgroundTasks, torrent_i
            trackers: tracker地址
 
        """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
     torrent_info_id_list = torrent_info_ids.split(',')
     tracker_list = trackers.split(';')
     success_count = 0
@@ -152,7 +145,7 @@ async def add_tracker(req: Request, background_tasks: BackgroundTasks, torrent_i
 
 
 @router.post("/replaceTracker", summary="替换种子tracker地址", response_model=CommonResponse)
-async def replace_tracker(req: Request, background_tasks: BackgroundTasks, replace_tracker_url: str = Query(
+async def replace_tracker(req: Request, background_tasks: BackgroundTasks, _user=Depends(require_authenticated_user), replace_tracker_url: str = Query(
     default="default",
     alias="torrentInfoIds",
     description="被替换的tracker地址",
@@ -173,13 +166,6 @@ async def replace_tracker(req: Request, background_tasks: BackgroundTasks, repla
            target_tracker_url: 要替换的tracker
 
        """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
     # ========== 记录替换前的信息用于审计日志 ==========
     # 根据被替换的tracker查询相应tracker数据
     # 修复异步查询: 使用select()替代db.query()
@@ -303,7 +289,7 @@ async def replace_tracker(req: Request, background_tasks: BackgroundTasks, repla
 
 
 @router.post("/modifyTracker", summary="更改种子tracker地址", response_model=CommonResponse)
-async def modify_tracker(req: Request, background_tasks: BackgroundTasks, torrent_info_ids: str = Query(
+async def modify_tracker(req: Request, background_tasks: BackgroundTasks, _user=Depends(require_authenticated_user), torrent_info_ids: str = Query(
     default="default",
     alias="torrentInfoIds",
     description="torrent_info_id列表",
@@ -312,7 +298,7 @@ async def modify_tracker(req: Request, background_tasks: BackgroundTasks, torren
     default="default",
     alias="trackers",
     description="多个tracker以;分隔",
-    examples={"default": "https://ptskit.kqbhek.com/announce.php?passkey=6fa2d880b3666a460f7ed063f7b9818b"}
+    examples={"default": "https://ptskit.kqbhek.com1/announce.php?passkey=6fa2d880b3666a460f7ed063f7b9818b"}
 ), db: AsyncSession = Depends(get_async_db)):
     """
        修改tracker
@@ -324,13 +310,6 @@ async def modify_tracker(req: Request, background_tasks: BackgroundTasks, torren
            trackers: tracker地址
 
        """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
     torrent_info_id_list = torrent_info_ids.split(',')
     tracker_list = trackers.split(';')
     success_count = 0

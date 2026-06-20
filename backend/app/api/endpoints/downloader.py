@@ -3,12 +3,12 @@ from logging import exception
 import ping3
 import time
 import urllib3
-from fastapi import APIRouter, Depends, Request, Path, Header, Query
+from fastapi import APIRouter, Depends, Request, Path, Query
 from app.api.responseVO import CommonResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 import uuid
 import logging
 from app.downloader import models
@@ -30,14 +30,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 @router.get("/detail/{downloader_id}", summary="获取下载器明细信息", response_model=CommonResponse[List[DownloaderVO]])
-def get(downloader_id: Annotated[str, Path(description="下载器id")], req: Request = None,
+def get(downloader_id: Annotated[str, Path(description="下载器id")],
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)):
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
     try:
         downloaders = db.execute(
             text(
@@ -79,15 +75,10 @@ def get(downloader_id: Annotated[str, Path(description="下载器id")], req: Req
 @router.post('/add', summary="增加下载器", response_model=CommonResponse)
 async def add(
         downloader_request: RequestDownloader,
-        req: Request = None,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
     # Pydantic 验证器已将字符串 "0"/"1" 转换为布尔值
     downloader = models.BtDownloaders(
         downloader_id=str(uuid.uuid4()),
@@ -161,15 +152,11 @@ async def add(
 async def update(
         downloader_request: UpdateDownloader,
         downloader_id: Annotated[str, Path(description="下载器id")],
+        _user=Depends(require_authenticated_user),
         req: Request = None,
         db: Session = Depends(get_db)
 ):
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 读取原始请求数据以检测 path_mapping 是否被明确传递
@@ -343,14 +330,10 @@ async def update(
 
 
 @router.delete("/delete/{downloader_id}", summary="下载器删除接口", response_model=CommonResponse)
-def delete(downloader_id: Annotated[str, Path(description="下载器id")], req: Request = None,
+def delete(downloader_id: Annotated[str, Path(description="下载器id")],
+           _user=Depends(require_authenticated_user),
            db: Session = Depends(get_db)):
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
     try:
         db.execute(text("update bt_downloaders set dr=:dr where downloader_id=:downloader_id"), {"dr": 1, "downloader_id": downloader_id})
         db.commit()
@@ -481,7 +464,7 @@ def _is_cache_fresh(cached_downloader: Any, threshold_seconds: int = 60) -> bool
 
 @router.get("/getStatusAll", summary="批量获取所有在线下载器的状态", response_model=CommonResponse[List[DownloaderStatusVO]])
 async def get_all_status(
-        token: str = Header(..., alias="x-access-token")):
+        _user=Depends(require_authenticated_user)):
     """批量获取所有在线下载器的状态
 
     从 app.state.store 缓存中一次性获取所有在线下载器的状态信息。
@@ -497,15 +480,6 @@ async def get_all_status(
     - 单次请求获取所有状态
     - 响应时间 < 50ms
     """
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-
     try:
         from app.factory import app as downloader_app
 
@@ -566,7 +540,7 @@ async def get_all_status(
 
 @router.get("/getStatus/{downloader_id}", summary="[已废弃] 获取单个下载器的状态", response_model=CommonResponse[DownloaderStatusVO], deprecated=True)
 async def get_status(downloader_id: Annotated[str, Path(description="下载器id")],
-               token: str = Header(..., alias="x-access-token"),
+               _user=Depends(require_authenticated_user),
                db: Session = Depends(get_db)):
     """获取单个下载器的实时状态 [已废弃]
 
@@ -575,15 +549,6 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
     返回下载器的连接状态、速度信息、任务统计等实时数据。
     优先从缓存获取，缓存未命中时降级到实时连接查询。
     """
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-
     # 优先从缓存获取状态
     try:
         from app.factory import app as downloader_app
@@ -716,19 +681,10 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
 
 @router.post("/test/{downloader_id}", summary="测试下载器连接", response_model=CommonResponse)
 async def test_connection(downloader_id: Annotated[str, Path(description="下载器id")],
-                        token: str = Header(..., alias="x-access-token"),
+                        _user=Depends(require_authenticated_user),
                         db: Session = Depends(get_db)):
     """测试下载器连接并返回连接结果和延迟
     """
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-
     try:
         # 查询下载器信息
         downloader_result = query_downloader_list(db, [downloader_id])
@@ -1165,7 +1121,7 @@ def query_downloader_list(db, id_list):
 @router.get('/getList', summary="获取下载器简单列表(仅ID和名称)", response_model=CommonResponse[List[DownloaderSimpleVO]])
 def get_downloader_simple_list(
         enabled: Optional[bool] = Query(True, description="是否只返回启用的下载器", examples={"default": True}),
-        req: Request = None,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """
@@ -1185,23 +1141,7 @@ def get_downloader_simple_list(
         - downloader_id: 下载器ID
         - nickname: 下载器名称
     """
-    # 1. JWT 校验
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    # 1. JWT 校验（已迁移至 require_authenticated_user 依赖）
 
     # 2. 构建查询条件
     try:
@@ -1251,7 +1191,7 @@ def get_downloader_simple_list(
 @router.post('/getList', summary="获取下载器列表(支持多条件查询)", response_model=CommonResponse[List[DownloaderListVO]])
 async def getlist_from_cache(
         downloader_request: ListDownloader = None,
-        req: Request = None,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """
@@ -1270,23 +1210,7 @@ async def getlist_from_cache(
     - connectStatus: "1"=在缓存中(在线), "0"=不在缓存中(离线)
     - 按在线优先排序
     """
-    # 1. JWT 校验
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    # 1. JWT 校验（已迁移至 require_authenticated_user 依赖）
 
     # 2. 构建 SQL 查询(支持多条件模糊查询)
     try:
@@ -1423,7 +1347,7 @@ class PathMappingRemove(BaseModel):
 @router.get("/{downloader_id}/path-mapping", summary="获取下载器的路径映射配置")
 def get_path_mappings(
     downloader_id: str,
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1437,22 +1361,7 @@ def get_path_mappings(
     Returns:
         CommonResponse: 包含路径映射配置的响应
     """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询下载器
@@ -1508,7 +1417,7 @@ def get_path_mappings(
 @router.post("/path-mapping/add", summary="添加路径映射")
 def add_path_mapping(
     request_data: PathMappingAdd,
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1522,22 +1431,7 @@ def add_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询下载器
@@ -1596,7 +1490,7 @@ def add_path_mapping(
 @router.post("/path-mapping/remove", summary="删除路径映射")
 def remove_path_mapping(
     request_data: PathMappingRemove,
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1610,22 +1504,7 @@ def remove_path_mapping(
     Returns:
         CommonResponse: 操作结果
     """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询下载器
@@ -1691,7 +1570,7 @@ def remove_path_mapping(
 def test_path_mapping(
     downloader_id: str,
     request_data: PathMappingTestRequest,
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -1706,22 +1585,7 @@ def test_path_mapping(
     Returns:
         CommonResponse: 测试结果
     """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 验证下载器存在

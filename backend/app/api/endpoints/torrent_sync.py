@@ -13,7 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.responseVO import CommonResponse
 from app.database import get_db, AsyncSessionLocal
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
 from app.torrents.models import TrackerInfo as trackerInfoModel, TrackerInfo
@@ -1098,6 +1098,7 @@ def update_or_restore_tracker_with_retry(db, torrent_info_id, tracker_url, track
 async def sync_single_downloader(
         request: Request,
         sync_request: SyncSingleRequest,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """
@@ -1114,18 +1115,6 @@ async def sync_single_downloader(
     Returns:
         任务信息（包含任务ID和查询接口）
     """
-    try:
-        # 验证token
-        token = request.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-
     try:
         downloader_id = sync_request.downloader_id
 
@@ -1288,7 +1277,8 @@ async def sync_single_downloader(
 @router.get("/sync-status/{task_id}", response_model=CommonResponse)
 async def get_sync_task_status(
         request: Request,
-        task_id: str
+        task_id: str,
+        _user=Depends(require_authenticated_user),
 ):
     """
     查询同步任务状态接口
@@ -1302,18 +1292,6 @@ async def get_sync_task_status(
     Returns:
         任务状态和结果信息
     """
-    try:
-        # 验证token
-        token = request.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401",
-            data=None
-        )
-
     try:
         # 从任务管理器获取任务
         task = task_manager.get_task(task_id)

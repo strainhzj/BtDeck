@@ -7,7 +7,7 @@ import tempfile
 import time
 import uuid
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 
 import bencodepy
 import urllib3
@@ -20,9 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
 from app.database import get_db, AsyncSessionLocal
-from app.auth import utils
-from app.auth.models import User
-from app.auth.dependencies import verify_token_dependency
+from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
 from app.downloader.request import DownloaderCheckVO
 from app.downloader.responseVO import DownloaderVO
@@ -74,7 +72,7 @@ class TorrentOperationRequest(BaseModel):
 
 @router.post("/list", response_model=CommonResponse)
 def torrent_list(
-    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
     name: str = Query(
         default="default",
         alias="name",
@@ -85,10 +83,6 @@ def torrent_list(
     """
     同步下载器中的种子数据到数据库
     """
-    # Token验证失败时返回错误
-    if auth_error:
-        return auth_error
-
     try:
         # 查询启用的下载器（返回完整模型实例，以支持@property属性访问）
         downloaders = db.query(BtDownloaders).filter(
@@ -166,7 +160,7 @@ def torrent_list(
 
 @router.post("/add", response_model=CommonResponse)
 async def create_torrent(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
         save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
@@ -182,9 +176,6 @@ async def create_torrent(
         torrent_file: Optional[UploadFile] = File(description="种子文件"),
         db: Session = Depends(get_db)
 ):
-    # Token验证失败时返回错误
-    if auth_error:
-        return auth_error
     # """创建新的种子信息"""
     result = CommonResponse(
         status="success",
@@ -446,7 +437,7 @@ async def create_torrent(
 
 @router.post("/add-batch", response_model=CommonResponse)
 async def create_torrents_batch(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         torrent_files: List[UploadFile] = File(..., description="种子文件列表（最多10个）"),
         downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
@@ -469,9 +460,6 @@ async def create_torrents_batch(
     - 批量处理，提升性能（10个文件从2秒降低到300ms）
     - 返回详细的批量处理结果
     """
-    # Token验证失败时返回错误
-    if auth_error:
-        return auth_error
     # 验证文件数量限制
     if len(torrent_files) > 10:
         return CommonResponse(
@@ -758,18 +746,10 @@ def get_torrent(
         info_id: str,
         downloader_id: str,
         downloader_name: str,
-        request: Request,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """根据复合主键获取种子信息"""
-    # JWT认证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
     torrent = get_torrent_info(db, info_id, downloader_id)
     if not torrent:
         raise HTTPException(status_code=404, detail="Torrent not found")
@@ -797,18 +777,10 @@ def get_torrents(
         limit: int = Query(100, ge=1, le=1000, description="限制记录数"),
         sort_by: Optional[str] = Query(None, description="排序字段"),
         sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
-        request: Request = None,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
-    # JWT认证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
     try:
         # 获取包含总数和数据的查询结果
         result = get_torrent_infos(

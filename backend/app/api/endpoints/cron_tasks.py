@@ -1,12 +1,12 @@
 
-from fastapi import APIRouter, Depends, Query, HTTPException, Request, Body
+from fastapi import APIRouter, Depends, Query, HTTPException, Body
 from fastapi.responses import Response
 from typing import Optional, List
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from app.core.config import settings
 from app.core.database_result import DatabaseError
 from app.database import get_db
@@ -233,17 +233,6 @@ class CleanupExecuteResponse(BaseModel):
     errors: list
 
 
-def verify_token(req):
-    """验证token"""
-    token = req.headers.get("X-Access-Token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Token缺失")
-
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        raise HTTPException(status_code=401, detail="Token验证失败")
-
-
 def _logs_to_csv(logs: list) -> str:
     """把任务日志列表序列化为 CSV 字符串。
 
@@ -397,12 +386,12 @@ def convert_task_log_list_to_camel_case(data: dict) -> TaskLogListResponse:
 
 @router.post("/add", response_model=CommonResponse)
 async def create_cron_task(
-    request: Request,
     task_data: CronTaskCreate,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """创建新的定时任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
     task_type_error = _validate_task_type_allowed(task_data.task_type)
     if task_type_error:
         return task_type_error
@@ -446,7 +435,7 @@ async def create_cron_task(
 
 @router.get("/list", response_model=CommonResponse)
 async def get_cron_tasks(
-    request: Request,
+    _user=Depends(require_authenticated_user),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(20, ge=1, le=200, description="返回记录数"),
     task_name: Optional[str] = Query(None, description="任务名称模糊查询"),
@@ -457,7 +446,7 @@ async def get_cron_tasks(
     db: Session = Depends(get_db)
 ):
     """获取定时任务列表"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         result = CronTaskCRUD.get_cron_tasks(
@@ -493,7 +482,7 @@ async def get_cron_tasks(
 
 @router.get("/logs", response_model=CommonResponse)
 async def get_task_logs(
-    request: Request,
+    _user=Depends(require_authenticated_user),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(20, ge=1, le=1000, description="返回记录数"),
     task_name: Optional[str] = Query(None, description="任务名称模糊查询"),
@@ -502,7 +491,7 @@ async def get_task_logs(
     db: Session = Depends(get_db)
 ):
     """获取任务执行日志"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         result = TaskLogsCRUD.get_task_logs(
@@ -538,11 +527,11 @@ async def get_task_logs(
 
 @router.get("/logs/statistics", response_model=CommonResponse)
 async def get_task_logs_statistics(
-    request: Request,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """获取任务日志统计信息"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         result = TaskLogsCRUD.get_task_logs_statistics(db)
@@ -581,7 +570,7 @@ async def get_task_logs_statistics(
 
 @router.delete("/logs/delete", response_model=CommonResponse)
 async def delete_task_logs(
-    request: Request,
+    _user=Depends(require_authenticated_user),
     log_ids: Optional[List[int]] = Query(None, description="日志ID列表"),
     task_id: Optional[int] = Query(None, description="任务ID（删除该任务所有日志）"),
     before_date: Optional[str] = Query(None, description="删除此日期(YYYY-MM-DD)之前的日志"),
@@ -595,7 +584,7 @@ async def delete_task_logs(
 
     前端调用点：frontend/src/api/tasks.ts:300 deleteTaskLogs。
     """
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         result = TaskLogsCRUD.delete_task_logs(
@@ -628,7 +617,7 @@ async def delete_task_logs(
 
 @router.get("/logs/export")
 async def export_task_logs(
-    request: Request,
+    _user=Depends(require_authenticated_user),
     format: str = Query("csv", description="导出格式：csv/json"),
     task_name: Optional[str] = Query(None, description="任务名称模糊查询"),
     task_id: Optional[int] = Query(None, description="任务ID"),
@@ -640,7 +629,7 @@ async def export_task_logs(
 
     前端调用点：frontend/src/api/tasks.ts:313 exportTaskLogs（responseType: blob）。
     """
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         # 拉取全部符合条件的日志（导出不分页，上限保护）
@@ -690,7 +679,7 @@ async def export_task_logs(
 
 @router.post("/logs/cleanup", response_model=CommonResponse)
 async def cleanup_task_logs(
-    request: Request,
+    _user=Depends(require_authenticated_user),
     payload: dict = Body(default={}, description="清理参数"),
     db: Session = Depends(get_db)
 ):
@@ -703,7 +692,7 @@ async def cleanup_task_logs(
     与现有 ``/cleanup/preview``、``/cleanup/execute``（清理回收站种子）语义不同，
     本端点专门清理 task_logs 表。
     """
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         days = payload.get("days")
@@ -750,12 +739,12 @@ async def cleanup_task_logs(
 
 @router.get("/{task_id}", response_model=CommonResponse)
 async def get_cron_task(
-    request: Request,
     task_id: int,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """获取定时任务详情"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         result = CronTaskCRUD.get_cron_task_by_id(db, task_id)
@@ -796,13 +785,13 @@ async def get_cron_task(
 
 @router.put("/{task_id}", response_model=CommonResponse)
 async def update_cron_task(
-    request: Request,
     task_id: int,
     task_data: CronTaskUpdate,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """更新定时任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
     task_type_error = _validate_update_task_type(db, task_id, task_data)
     if task_type_error:
         return task_type_error
@@ -852,12 +841,12 @@ async def update_cron_task(
 
 @router.delete("/{task_id}", response_model=CommonResponse)
 async def delete_cron_task(
-    request: Request,
     task_id: int,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """删除定时任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         result = CronTaskCRUD.delete_cron_task(db, task_id, "admin")
@@ -898,12 +887,12 @@ async def delete_cron_task(
 
 @router.post("/{task_id}/start", response_model=CommonResponse)
 async def start_task_immediately(
-    request: Request,
     task_id: int,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """立即启动任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         success = await cron_executor.start_task_immediately(task_id)
@@ -942,12 +931,12 @@ async def start_task_immediately(
 
 @router.post("/{task_id}/pause", response_model=CommonResponse)
 async def pause_task(
-    request: Request,
     task_id: int,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """暂停任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         success = await cron_executor.pause_task(task_id)
@@ -978,12 +967,12 @@ async def pause_task(
 
 @router.post("/{task_id}/resume", response_model=CommonResponse)
 async def resume_task(
-    request: Request,
     task_id: int,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """恢复任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         success = await cron_executor.resume_task(task_id)
@@ -1014,12 +1003,12 @@ async def resume_task(
 
 @router.post("/{task_id}/interrupt", response_model=CommonResponse)
 async def interrupt_task(
-    request: Request,
     task_id: int,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """中断任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         success = await cron_executor.interrupt_task(task_id)
@@ -1052,11 +1041,11 @@ async def interrupt_task(
 
 @router.post("/validation/script", response_model=CommonResponse)
 async def validate_script_syntax(
-    request: Request,
-    validation_data: ScriptValidationRequest
+    validation_data: ScriptValidationRequest,
+    _user=Depends(require_authenticated_user),
 ):
     """校验脚本语法"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         # 导入语法校验服务
@@ -1098,11 +1087,11 @@ async def validate_script_syntax(
 
 @router.post("/validation/cron", response_model=CommonResponse)
 async def validate_cron_expression(
-    request: Request,
-    validation_data: CronValidationRequest
+    validation_data: CronValidationRequest,
+    _user=Depends(require_authenticated_user),
 ):
     """校验Cron表达式并获取执行时间"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         # 导入Cron表达式校验服务
@@ -1143,11 +1132,11 @@ async def validate_cron_expression(
 
 @router.post("/validation/python-class", response_model=CommonResponse)
 async def validate_python_class(
-    request: Request,
-    validation_data: PythonClassValidationRequest
+    validation_data: PythonClassValidationRequest,
+    _user=Depends(require_authenticated_user),
 ):
     """验证Python类路径"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         # 导入Python类验证服务
@@ -1188,9 +1177,9 @@ async def validate_python_class(
 
 
 @router.get("/config/task-types", response_model=CommonResponse)
-async def get_task_type_config(request: Request):
+async def get_task_type_config(_user=Depends(require_authenticated_user)):
     """获取任务类型配置数据"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         # 默认只暴露内置任务类型；显式开启后才展示脚本类型，和创建/更新接口策略一致。
@@ -1309,12 +1298,12 @@ async def get_task_type_config(request: Request):
 
 @router.post("/cleanup/preview", response_model=CommonResponse)
 async def preview_cleanup(
-    request: Request,
     cleanup_data: CleanupTaskRequest,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """预览清理任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         from app.tasks.cleanup_executor import CleanupTaskExecutor
@@ -1350,12 +1339,12 @@ async def preview_cleanup(
 
 @router.post("/cleanup/execute", response_model=CommonResponse)
 async def execute_cleanup(
-    request: Request,
     cleanup_data: CleanupTaskRequest,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """手动执行清理任务"""
-    verify_token(request)
+    # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         from app.tasks.cleanup_executor import CleanupTaskExecutor

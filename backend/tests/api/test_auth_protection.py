@@ -215,10 +215,7 @@ class TestTorrentCrudAuth:
     def test_get_list_no_token_returns_401(self):
         """GET /getList 无token应返回401"""
         response = self.client.get("/api/v1/torrents/getList")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
-        assert "token" in data["msg"].lower()
+        assert response.status_code == 401
 
     def test_get_list_invalid_token_returns_401(self):
         """GET /getList 无效token应返回401"""
@@ -226,9 +223,7 @@ class TestTorrentCrudAuth:
             "/api/v1/torrents/getList",
             headers={"x-access-token": "not-a-real-token"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_list_expired_token_returns_401(self):
         """GET /getList 过期token应返回401"""
@@ -237,9 +232,7 @@ class TestTorrentCrudAuth:
             "/api/v1/torrents/getList",
             headers={"x-access-token": token},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_list_valid_token_not_rejected_by_auth(self):
         """GET /getList 有效token应通过认证"""
@@ -256,9 +249,7 @@ class TestTorrentCrudAuth:
         response = self.client.get(
             "/api/v1/torrents/torrents/test-info/test-dl/test-name"
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_torrent_by_id_invalid_token_returns_401(self):
         """GET /torrents/{...} 无效token应返回401"""
@@ -266,9 +257,7 @@ class TestTorrentCrudAuth:
             "/api/v1/torrents/torrents/test-info/test-dl/test-name",
             headers={"x-access-token": "bad-token"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_torrent_by_id_valid_token_not_rejected_by_auth(self):
         """GET /torrents/{...} 有效token应通过认证"""
@@ -439,18 +428,15 @@ class TestAlreadyProtectedEndpoints:
         self.dbp.stop()
         self.stp.stop()
 
-    def test_downloader_get_list_no_token_does_not_crash(self):
-        """GET /downloader/getList 无token应不崩溃（可能绕过认证）"""
+    def test_downloader_get_list_no_token_returns_401(self):
+        """GET /downloader/getList 无token应返回401（已迁移到 require_authenticated_user）"""
         response = self.client.get("/api/v1/downloader/getList")
-        assert response.status_code == 200
-        data = response.json()
-        # 已知问题：现有 try/except 模式无法捕获 verify_access_token 返回 None 的情况
-        # 此测试仅验证接口不会崩溃
+        assert response.status_code == 401
 
-    def test_torrent_list_no_token_does_not_crash(self):
-        """POST /torrents/list 无token应不崩溃"""
+    def test_torrent_list_no_token_returns_401(self):
+        """POST /torrents/list 无token应返回401（已迁移到 require_authenticated_user）"""
         response = self.client.post("/api/v1/torrents/list")
-        assert response.status_code == 200
+        assert response.status_code == 401
 
     def test_tracker_keywords_list_no_token_does_not_crash(self):
         """GET /tracker-keywords 无token应不崩溃"""

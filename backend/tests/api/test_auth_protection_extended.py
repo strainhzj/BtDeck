@@ -490,10 +490,9 @@ class TestDownloaderAuthBypass:
         assert _is_auth_rejected(response)
 
     def test_get_status_all_no_token_returns_401(self):
-        """getStatusAll 需要额外参数触发认证检查（422=参数校验优先）"""
+        """getStatusAll 认证已迁移到 require_authenticated_user，无 token 返回 401"""
         response = self.client.get("/api/v1/downloader/getStatusAll")
-        # 422表示参数校验优先于认证（非认证绕过）
-        assert response.status_code in (200, 422)
+        assert _is_auth_rejected(response)
 
     def test_get_list_invalid_token_should_return_401(self):
         response = self.client.get("/api/v1/downloader/getList", headers={"x-access-token": "bad"})
