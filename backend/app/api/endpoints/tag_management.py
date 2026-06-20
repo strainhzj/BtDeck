@@ -29,7 +29,7 @@ from app.schemas.tag_schemas import (
     CategorySupportResponse
 )
 from app.services.tag_service import TagService
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.models.torrent_tags import TorrentTag
 from app.models.setting_templates import DownloaderTypeEnum
 
@@ -42,29 +42,6 @@ DOWNLOADER_TYPE_TRANSMISSION = 1  # 仅支持标签
 
 
 # ==================== 辅助函数 ====================
-
-def verify_token_and_get_user(request: Request) -> Optional[str]:
-    """
-    验证JWT令牌并返回用户名
-
-    Args:
-        request: FastAPI请求对象
-
-    Returns:
-        用户名，验证失败返回None
-    """
-    token = request.headers.get("x-access-token")
-    if not token:
-        return None
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return None
-    try:
-        return utils.get_username_from_token(token) or "admin"
-    except Exception as e:
-        logger.warning(f"Token验证失败: {str(e)}")
-        return None
-
 
 async def get_downloader_from_cache(app: Any, downloader_id: str) -> Optional[Any]:
     """
@@ -143,6 +120,7 @@ def validate_downloader_access(db: Session, downloader_id: str, username: str) -
 )
 def get_all_tags(
     tag_type: Optional[str] = Query(None, description="筛选标签类型(category/tag)"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -152,14 +130,7 @@ def get_all_tags(
     支持按标签类型筛选，返回所有下载器中不重复的标签
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取所有标签
@@ -199,6 +170,7 @@ def get_all_tags(
     tags=["标签管理"]
 )
 def get_all_categories(
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -208,14 +180,7 @@ def get_all_categories(
     仅返回分类名称，用于过滤器选项
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取所有分类名称
@@ -255,6 +220,7 @@ def get_all_categories(
     tags=["标签管理"]
 )
 def get_all_tag_names(
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -264,14 +230,7 @@ def get_all_tag_names(
     仅返回标签名称，用于过滤器选项
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取所有标签名称
@@ -317,6 +276,7 @@ def get_tag_list(
     sort_order: Optional[str] = Query("desc", description="排序方向(asc/desc)"),
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页记录数"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -326,14 +286,7 @@ def get_tag_list(
     支持按标签类型筛选、排序、分页查询
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     # 2. 验证下载器权限
     has_permission, error_msg = validate_downloader_access(db, downloader_id, username)
@@ -421,6 +374,7 @@ def get_tag_list(
 )
 async def create_tag(
     tag_request: TagCreateRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -430,14 +384,7 @@ async def create_tag(
     创建标签后同步到下载器（如果下载器在线）
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     # 2. 验证下载器权限
     has_permission, error_msg = validate_downloader_access(db, tag_request.downloader_id, username)
@@ -497,6 +444,7 @@ async def create_tag(
 def update_tag(
     tag_id: str = Path(..., description="标签ID"),
     tag_request: TagUpdateRequest = ...,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -506,14 +454,7 @@ def update_tag(
     仅更新提供的字段，未提供的字段保持不变
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         # 2. 调用服务层更新标签
@@ -569,6 +510,7 @@ def update_tag(
 )
 async def delete_tag(
     tag_id: str = Path(..., description="标签ID"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     delete_request: DeleteTagRequest = Body(None),
     db: Session = Depends(get_db)
@@ -585,14 +527,7 @@ async def delete_tag(
     - 数据库中的关联记录会同步更新
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         # 2. 调用服务层删除标签
@@ -670,6 +605,7 @@ async def delete_tag(
 )
 async def batch_delete_tags(
     delete_request: BatchDeleteTagsRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -683,14 +619,7 @@ async def batch_delete_tags(
     - target_category: 目标分类名称，空字符串表示未分类
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         service = TagService(db)
@@ -759,6 +688,7 @@ async def batch_delete_tags(
 )
 def get_torrent_tags(
     torrent_hash: str = Path(..., description="种子哈希值"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -766,14 +696,7 @@ def get_torrent_tags(
     获取指定种子的所有标签
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取种子标签
@@ -813,6 +736,7 @@ def get_torrent_tags(
 )
 async def assign_tags_to_torrent(
     assign_request: AssignTagsRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -822,14 +746,7 @@ async def assign_tags_to_torrent(
     支持同时分配多个标签
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     # 2. 验证下载器权限
     has_permission, error_msg = validate_downloader_access(db, assign_request.downloader_id, username)
@@ -910,6 +827,7 @@ async def assign_tags_to_torrent(
 )
 def batch_assign_tags(
     batch_request: BatchAssignTagsRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -919,14 +837,7 @@ def batch_assign_tags(
     每个种子可以分配不同的标签集合
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     # 2. 验证下载器权限
     has_permission, error_msg = validate_downloader_access(db, batch_request.downloader_id, username)
@@ -978,6 +889,7 @@ def batch_assign_tags(
 )
 def remove_tags_from_torrent(
     remove_request: RemoveTagsRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -987,14 +899,7 @@ def remove_tags_from_torrent(
     支持同时移除多个标签
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     try:
         # 2. 调用服务层移除标签
@@ -1038,6 +943,7 @@ def remove_tags_from_torrent(
 )
 async def check_category_support(
     downloader_id: str = Path(..., description="下载器ID"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -1048,14 +954,7 @@ async def check_category_support(
     Transmission (type=1): 仅支持标签，需要降级策略
     """
     # 1. JWT认证
-    username = verify_token_and_get_user(request)
-    if not username:
-        return CommonResponse(
-            status="error",
-            msg="token验证失败",
-            code="401",
-            data=None
-        )
+    username = user_info.username or "admin"
 
     # 2. 验证下载器权限
     has_permission, error_msg = validate_downloader_access(db, downloader_id, username)

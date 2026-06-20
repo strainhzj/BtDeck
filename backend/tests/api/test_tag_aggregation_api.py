@@ -119,9 +119,18 @@ def client(db_session):
 
 @pytest.fixture
 def mock_auth():
-    """模拟JWT认证"""
-    with patch("app.api.endpoints.tag_management.verify_token_and_get_user", return_value="admin"):
-        yield
+    """模拟JWT认证：覆盖 require_authenticated_user 依赖返回 admin 用户"""
+    from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
+
+    fake_user = AuthenticatedUserInfo(
+        username="admin",
+        payload={"sub": "admin", "user_id": 1},
+        token="valid_token",
+        user_id=1,
+    )
+    app.dependency_overrides[require_authenticated_user] = lambda: fake_user
+    yield
+    app.dependency_overrides.pop(require_authenticated_user, None)
 
 
 # ==================== GET /tags/all 测试 ====================
@@ -187,14 +196,9 @@ class TestGetAllTagsEndpoint:
 
     def test_get_all_tags_no_auth(self, client, sample_tags):
         """无认证token"""
-        with patch("app.api.endpoints.tag_management.verify_token_and_get_user", return_value=None):
-            response = client.get("/api/v1/tags/all")
+        response = client.get("/api/v1/tags/all")
 
-        assert response.status_code == 200
-        data = response.json()
-
-        assert data["status"] == "error"
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_all_tags_invalid_tag_type(self, client, mock_auth, sample_tags):
         """无效的标签类型"""
@@ -238,14 +242,9 @@ class TestGetCategoriesEndpoint:
 
     def test_get_categories_no_auth(self, client, sample_tags):
         """无认证token"""
-        with patch("app.api.endpoints.tag_management.verify_token_and_get_user", return_value=None):
-            response = client.get("/api/v1/tags/categories")
+        response = client.get("/api/v1/tags/categories")
 
-        assert response.status_code == 200
-        data = response.json()
-
-        assert data["status"] == "error"
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_categories_empty_result(self, client, mock_auth, db_session):
         """空分类列表"""
@@ -291,14 +290,9 @@ class TestGetTagNamesEndpoint:
 
     def test_get_tags_no_auth(self, client, sample_tags):
         """无认证token"""
-        with patch("app.api.endpoints.tag_management.verify_token_and_get_user", return_value=None):
-            response = client.get("/api/v1/tags/tags")
+        response = client.get("/api/v1/tags/tags")
 
-        assert response.status_code == 200
-        data = response.json()
-
-        assert data["status"] == "error"
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_tags_empty_result(self, client, mock_auth, db_session):
         """空标签列表"""

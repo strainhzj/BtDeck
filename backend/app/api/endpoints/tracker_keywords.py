@@ -11,7 +11,7 @@ Tracker关键词CRUD API接口
 3. 数据库索引: 确保keyword和keyword_type字段有复合索引
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional
 import uuid
@@ -27,7 +27,7 @@ from app.api.schemas.tracker_keywords import (
     BatchOperationRequest
 )
 from app.torrents.models import TrackerKeywordConfig
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ router = APIRouter()
 @router.post("", summary="创建关键词")
 def create_keyword(
     keyword: TrackerKeywordCreate,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -48,13 +48,7 @@ def create_keyword(
         request: 请求对象(用于JWT验证)
         db: 数据库会话
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 额外验证参数长度，防止数据库错误
@@ -114,7 +108,7 @@ def create_keyword(
                 existing.description = keyword.description
                 existing.dr = 0  # 恢复
                 existing.update_time = datetime.now()
-                existing.update_by = utils.get_username_from_token(token) or "admin"
+                existing.update_by = user_info.username or "admin"
 
                 db.commit()
                 db.refresh(existing)
@@ -140,8 +134,8 @@ def create_keyword(
             description=keyword.description,
             create_time=datetime.now(),
             update_time=datetime.now(),
-            create_by=utils.get_username_from_token(token) or "admin",
-            update_by=utils.get_username_from_token(token) or "admin",
+            create_by=user_info.username or "admin",
+            update_by=user_info.username or "admin",
             dr=0
         )
 
@@ -166,7 +160,7 @@ def create_keyword(
 
 @router.get("", summary="查询关键词列表")
 def get_keywords(
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     keyword_type: Optional[str] = Query(None, description="筛选: 类型"),
@@ -182,13 +176,7 @@ def get_keywords(
     - language: 语言代码
     - enabled: true/false
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 构建查询
@@ -230,17 +218,11 @@ def get_keywords(
 @router.get("/{keyword_id}", summary="获取单个关键词")
 def get_keyword(
     keyword_id: str,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """获取指定ID的关键词"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         keyword = db.query(TrackerKeywordConfig).filter(
@@ -272,17 +254,11 @@ def get_keyword(
 def update_keyword(
     keyword_id: str,
     keyword_update: TrackerKeywordUpdate,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """更新指定ID的关键词"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         keyword = db.query(TrackerKeywordConfig).filter(
@@ -333,7 +309,7 @@ def update_keyword(
                     existing.description = update_data.get("description", keyword.description)
                     existing.dr = 0  # 恢复
                     existing.update_time = datetime.now()
-                    existing.update_by = utils.get_username_from_token(token) or "admin"
+                    existing.update_by = user_info.username or "admin"
 
                     # 删除当前记录
                     keyword.dr = 1
@@ -354,7 +330,7 @@ def update_keyword(
             setattr(keyword, field, value)
 
         keyword.update_time = datetime.now()
-        keyword.update_by = utils.get_username_from_token(token) or "admin"
+        keyword.update_by = user_info.username or "admin"
 
         db.commit()
         db.refresh(keyword)
@@ -377,17 +353,11 @@ def update_keyword(
 @router.delete("/{keyword_id}", summary="删除关键词")
 def delete_keyword(
     keyword_id: str,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """删除指定ID的关键词(软删除)"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         keyword = db.query(TrackerKeywordConfig).filter(
@@ -427,17 +397,11 @@ def delete_keyword(
 @router.post("/batch", summary="批量创建关键词")
 def batch_create_keywords(
     keywords_data: dict,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """批量创建关键词"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         keywords_list = keywords_data.get("keywords", [])
@@ -462,7 +426,7 @@ def batch_create_keywords(
         created_keywords = []
         restored_keywords = []
         skipped_keywords = []
-        username = utils.get_username_from_token(token) or "admin"
+        username = user_info.username or "admin"
 
         for kw_data in keywords_list:
             keyword = kw_data.get("keyword")
@@ -555,17 +519,11 @@ def batch_create_keywords(
 @router.post("/batch/enable", summary="批量启用关键词")
 def batch_enable_keywords(
     batch_req: BatchOperationRequest,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """批量启用关键词"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询并更新
@@ -600,17 +558,11 @@ def batch_enable_keywords(
 @router.post("/batch/disable", summary="批量禁用关键词")
 def batch_disable_keywords(
     batch_req: BatchOperationRequest,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """批量禁用关键词"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询并更新
@@ -645,17 +597,11 @@ def batch_disable_keywords(
 @router.put("/batch/status", summary="批量更新关键词状态")
 def batch_update_status(
     status_data: dict,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """批量更新关键词的启用状态"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         keyword_ids = status_data.get("keyword_ids", [])
@@ -701,17 +647,11 @@ def batch_update_status(
 @router.post("/batch/delete", summary="批量删除关键词")
 def batch_delete_keywords(
     batch_req: BatchOperationRequest,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """批量删除关键词(软删除)"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询并软删除

@@ -7,7 +7,7 @@
 
 import logging
 from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Form, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -18,7 +18,7 @@ from app.api.models.advanced_search import (
     SearchStatisticsResponse, TorrentDeleteRequest
 )
 from app.services.advanced_search import AdvancedSearchService
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.core.json_parser import safe_json_parse_with_validator
 
 logger = logging.getLogger(__name__)
@@ -30,43 +30,32 @@ def get_advanced_search_service(db: Session = Depends(get_db)) -> AdvancedSearch
 
 @router.post("/advanced-search", response_model=CommonResponse)
 async def advanced_search_torrents(
-    req: Request,
     request: EnhancedAdvancedSearchRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     高级搜索种子接口
     支持13字段全字段搜索和多选排除功能
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    # 业务校验：token 有效但 payload 缺 user_id（旧 token）时拒绝
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        # 验证token有效性
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败，失败原因：" + str(user_info),
-                code="401",
-                data=None
-            )
-
-        logger.info(f"User {user_info.get('sub', user_info.get('username'))} performing advanced search")
+        logger.info(f"User {user_info.username} performing advanced search")
 
         # 添加调试日志：记录搜索请求
         logger.info(f"搜索请求参数: name={request.name}, condition_groups={request.condition_groups}")
 
         # 执行高级搜索
-        result = service.search_torrents(request, user_info['user_id'])
+        result = service.search_torrents(request, user_info.user_id)
 
         # 添加调试日志：记录搜索结果
         logger.info(f"搜索结果: total={result.get('total', 0)}, data_count={len(result.get('data', []))}")
@@ -101,38 +90,27 @@ async def advanced_search_torrents(
 
 @router.post("/search-templates", response_model=CommonResponse)
 async def create_search_template(
-    req: Request,
     request: SearchTemplateCreate,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     创建搜索模板接口
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        logger.info(f"User {user_info.get('sub', user_info.get('username', 'unknown'))} creating search template: {request.name}")
+        logger.info(f"User {user_info.username} creating search template: {request.name}")
 
         # 创建搜索模板
-        result = service.create_search_template(request, user_info['user_id'])
+        result = service.create_search_template(request, user_info.user_id)
 
         return CommonResponse(
             status=result.get('status', 'failed'),
@@ -156,37 +134,26 @@ async def create_search_template(
 
 @router.get("/search-templates", response_model=CommonResponse)
 async def get_search_templates(
-    req: Request,
     user_id: str = Query(..., description="用户ID，为空时使用当前用户"),
     is_public: bool = Query(False, description="是否获取公开模板"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     获取搜索模板列表接口
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
         # 如果未指定user_id，使用当前用户
-        target_user_id = user_id if user_id else user_info['user_id']
+        target_user_id = user_id if user_id else user_info.user_id
 
         logger.info(f"Getting search templates for user: {target_user_id}, public: {is_public}")
 
@@ -215,39 +182,28 @@ async def get_search_templates(
 
 @router.put("/search-templates/{template_id}", response_model=CommonResponse)
 async def update_search_template(
-    req: Request,
     template_id: str,
     request: SearchTemplateUpdate,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     更新搜索模板接口
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        logger.info(f"User {user_info.get('sub', user_info.get('username', 'unknown'))} updating search template: {template_id}")
+        logger.info(f"User {user_info.username} updating search template: {template_id}")
 
         # 更新搜索模板
-        result = service.update_search_template(template_id, request, user_info['user_id'])
+        result = service.update_search_template(template_id, request, user_info.user_id)
 
         return CommonResponse(
             status=result.get('status', 'failed'),
@@ -271,38 +227,27 @@ async def update_search_template(
 
 @router.delete("/search-templates/{template_id}", response_model=CommonResponse)
 async def delete_search_template(
-    req: Request,
     template_id: str,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     删除搜索模板接口
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        logger.info(f"User {user_info.get('sub', user_info.get('username', 'unknown'))} deleting search template: {template_id}")
+        logger.info(f"User {user_info.username} deleting search template: {template_id}")
 
         # 删除搜索模板
-        result = service.delete_search_template(template_id, user_info['user_id'])
+        result = service.delete_search_template(template_id, user_info.user_id)
 
         return CommonResponse(
             status=result.get('status', 'failed'),
@@ -326,38 +271,27 @@ async def delete_search_template(
 
 @router.post("/search-templates/{template_id}/apply", response_model=CommonResponse)
 async def apply_search_template(
-    req: Request,
     template_id: str,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     应用搜索模板接口
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        logger.info(f"User {user_info.get('sub', user_info.get('username', 'unknown'))} applying search template: {template_id}")
+        logger.info(f"User {user_info.username} applying search template: {template_id}")
 
         # 应用搜索模板
-        result = service.apply_search_template(template_id, user_info['user_id'])
+        result = service.apply_search_template(template_id, user_info.user_id)
 
         return CommonResponse(
             status=result.get('status', 'failed'),
@@ -381,39 +315,28 @@ async def apply_search_template(
 
 @router.post("/torrents/batch-delete", response_model=CommonResponse)
 async def batch_delete_torrents(
-    req: Request,
     request: TorrentDeleteRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     批量删除种子接口
     支持多下载器类型和删除数据文件选项
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        logger.info(f"User {user_info.get('sub', user_info.get('username', 'unknown'))} batch deleting {len(request.torrent_ids)} torrents")
+        logger.info(f"User {user_info.username} batch deleting {len(request.torrent_ids)} torrents")
 
         # 批量删除种子
-        result = service.delete_torrents_batch(request, user_info['user_id'])
+        result = service.delete_torrents_batch(request, user_info.user_id)
 
         return CommonResponse(
             status=result.get('status', 'failed'),
@@ -437,35 +360,18 @@ async def batch_delete_torrents(
 
 @router.get("/search-statistics", response_model=CommonResponse)
 async def get_search_statistics(
-    req: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     获取搜索统计信息接口
     字段分布统计、操作符使用统计、搜索性能统计
+
+    认证：由 require_authenticated_user 统一处理。
     """
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        logger.info(f"User {user_info.get('sub', user_info.get('username', 'unknown'))} getting search statistics")
+        logger.info(f"User {user_info.username} getting search statistics")
 
         # 获取搜索统计
         result = service.get_search_statistics()
@@ -492,7 +398,6 @@ async def get_search_statistics(
 
 @router.get("/search-preview", response_model=CommonResponse)
 async def preview_advanced_search(
-    req: Request,
     # 基础参数
     name: Optional[str] = Query(None, description="种子名称"),
     tags: Optional[str] = Query(None, description="标签"),
@@ -502,33 +407,23 @@ async def preview_advanced_search(
     # 高级条件（简化版本用于预览）
     conditions_json: Optional[str] = Query(None, description="JSON格式的搜索条件"),
     limit: int = Query(5, ge=1, le=20, description="预览记录数限制"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     service: AdvancedSearchService = Depends(get_advanced_search_service)
 ):
     """
     高级搜索预览接口
     用于在不执行完整搜索的情况下预览搜索结果
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=401,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+        )
+
     try:
-        # 验证token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
         # 构建简化搜索请求
         search_request = EnhancedAdvancedSearchRequest(
             page=1,
@@ -566,9 +461,9 @@ async def preview_advanced_search(
                 logger.warning(f"Invalid conditions format in preview: {conditions_json}")
 
         # 执行预览搜索
-        logger.info(f"User {user_info.get('sub', user_info.get('username', 'unknown'))} previewing advanced search")
+        logger.info(f"User {user_info.username} previewing advanced search")
 
-        result = service.search_torrents(search_request, user_info['user_id'])
+        result = service.search_torrents(search_request, user_info.user_id)
 
         # 只返回预览数据，移除复杂字段以减少响应大小
         preview_data = []

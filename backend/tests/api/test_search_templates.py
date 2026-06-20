@@ -123,9 +123,7 @@ class TestSearchTemplatesAuth:
             "/api/v1/advanced-search/search-templates",
             params={"user_id": "1"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_templates_invalid_token_returns_401(self):
         """GET 列表：无效 token（错误签名）应返回 401"""
@@ -134,9 +132,7 @@ class TestSearchTemplatesAuth:
             params={"user_id": "1"},
             headers={"x-access-token": _create_wrong_secret_token()},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_templates_expired_token_returns_401(self):
         """GET 列表：过期 token 应返回 401"""
@@ -145,9 +141,7 @@ class TestSearchTemplatesAuth:
             params={"user_id": "1"},
             headers={"x-access-token": _create_expired_token()},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_get_templates_valid_token_not_rejected_by_auth(self):
         """GET 列表：有效 token 不应被 401 拒绝（业务错误码可以是 500，但非 401）"""
@@ -173,8 +167,7 @@ class TestSearchTemplatesAuth:
                 "is_public": False,
             },
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_create_template_invalid_token_returns_401(self):
         """POST 创建：无效 token 应返回 401"""
@@ -187,8 +180,7 @@ class TestSearchTemplatesAuth:
             },
             headers={"x-access-token": _create_wrong_secret_token()},
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_create_template_valid_token_not_rejected_by_auth(self):
         """POST 创建：有效 token 不应被 401 拒绝"""
@@ -212,8 +204,7 @@ class TestSearchTemplatesAuth:
             "/api/v1/advanced-search/search-templates/test-template-id",
             json={"id": "test-template-id", "name": "更新后"},
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_update_template_invalid_token_returns_401(self):
         """PUT 更新：无效 token 应返回 401"""
@@ -222,8 +213,7 @@ class TestSearchTemplatesAuth:
             json={"id": "test-template-id", "name": "更新后"},
             headers={"x-access-token": _create_wrong_secret_token()},
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_update_template_valid_token_not_rejected_by_auth(self):
         """PUT 更新：有效 token 不应被 401 拒绝"""
@@ -242,8 +232,7 @@ class TestSearchTemplatesAuth:
         response = self.client.delete(
             "/api/v1/advanced-search/search-templates/test-template-id",
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_delete_template_invalid_token_returns_401(self):
         """DELETE 删除：无效 token 应返回 401"""
@@ -251,8 +240,7 @@ class TestSearchTemplatesAuth:
             "/api/v1/advanced-search/search-templates/test-template-id",
             headers={"x-access-token": _create_wrong_secret_token()},
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_delete_template_valid_token_not_rejected_by_auth(self):
         """DELETE 删除：有效 token 不应被 401 拒绝"""
@@ -270,8 +258,7 @@ class TestSearchTemplatesAuth:
         response = self.client.post(
             "/api/v1/advanced-search/search-templates/test-template-id/apply",
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_apply_template_invalid_token_returns_401(self):
         """POST apply：无效 token 应返回 401"""
@@ -279,8 +266,7 @@ class TestSearchTemplatesAuth:
             "/api/v1/advanced-search/search-templates/test-template-id/apply",
             headers={"x-access-token": _create_wrong_secret_token()},
         )
-        assert response.status_code == 200
-        assert response.json()["code"] == "401"
+        assert response.status_code == 401
 
     def test_apply_template_valid_token_not_rejected_by_auth(self):
         """POST apply：有效 token 不应被 401 拒绝"""

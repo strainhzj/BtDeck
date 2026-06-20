@@ -438,7 +438,7 @@ class TestAlreadyProtectedEndpoints:
         response = self.client.post("/api/v1/torrents/list")
         assert response.status_code == 401
 
-    def test_tracker_keywords_list_no_token_does_not_crash(self):
-        """GET /tracker-keywords 无token应不崩溃"""
+    def test_tracker_keywords_list_no_token_returns_401(self):
+        """GET /tracker-keywords 无token应返回401（已迁移到 require_authenticated_user）"""
         response = self.client.get("/api/v1/tracker-keywords")
-        assert response.status_code == 200
+        assert response.status_code == 401
