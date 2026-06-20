@@ -167,14 +167,23 @@
 
 ## 当前会话
 
-> **2026-06-19**: v1.0.5-audit 契约审计修复——本会话完成 P0-3/P0-1/P1-A/P1-B/P0-2c + torrent_location 迁移模板，共 7 commit（ac324bc/0e55469/efc6574/0e8f007/9e19822/0ff147c/fc7760b），全部测试绿（后端 200 passed 关键测试 + 前端 jest 25/25）。
+> **2026-06-20**: v1.0.5-audit P0-2 认证统一全部完成——本会话完成 P0-2a（24 文件迁移，分 4 批）+ P0-2b（测试断言改造）+ P0-2d（弃用 verify_token_dependency），共 6 commit。
 >
-> **P1 全部确定性 bug 已修 + P0 归一化地基已铺好 + 认证迁移模板已验证**。
+> **调研修正**：交接文档预估 ~21 文件 + ~102 处测试断言。实际调研发现：24 个文件；测试改造仅 32 处 inline 断言（因 test_auth_protection_extended.py 的 62 处走 _is_auth_rejected helper 已兼容 HTTP 401）。这改变了"必须原子配对"的前提，改为按风险分 4 批，每批 commit + 跑针对性 pytest。
 >
-> **关键决策（P0-2a/b 延后）**：深入排查后发现 5 个测试文件用 parametrize 批量断言 status_code==200+code==401（共 ~102 处），P0-2a（21 文件迁移）与 P0-2b（102 处断言改造）必须原子配对完成（迁移期间测试会半破损）。作为独立专注工作单元留下个会话执行。交接信息见 session-handoff.md。
+> **完成清单**：
+> - Batch A（10 token-only）+ Batch B（downloader/cron_tasks/tracker/torrent_crud/sync，最大 cron_tasks 20 endpoint）
+> - Batch C（3 user_id 文件，advanced_search 旧 token 缺 user_id → HTTP 401 兜底，用户确认对齐 torrent_location 模板）
+> - Batch D（4 mixed 部分迁移文件）
+> - P0-2b：5 测试文件断言改造（含 tag_management mock_auth 改用 dependency_overrides）
+> - P0-2d：verify_token_dependency 加 DeprecationWarning，cron_tasks.verify_token 已删除
 >
-> **下一步**：P0-2a 逐文件迁移（21 文件，按 session-handoff 清单分两类）+ P0-2b 同步改造 5 测试文件断言。
+> **附带修复**：多处预存在的"不安全 try/except 认证"（verify_access_token 失败返回 None 而非抛异常，旧代码 try/except 形同虚设，torrent_sync/tracker_messages/cuser 2FA 端点）。
+>
+> **验证**：后端 pytest 1523 passed（2 个预存在失败：test_unified_token_expiry 路径分隔符 bug + test_concurrent_requests flaky，均与本次无关）；init.sh 全栈验证通过。
+>
+> **下一步**：P0-2 全部完成。剩余 P2/P3 均为推迟项（REST 路由迁移、前端 any 治理、OpenAPI schema、分页字段统一、API 对照表 CI）。可选收尾：彻底删除 verify_token_dependency 定义。
 
 ---
 
-**最后更新**: 2026-06-18
+**最后更新**: 2026-06-20

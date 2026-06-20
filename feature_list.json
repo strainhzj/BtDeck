@@ -326,19 +326,29 @@
         {
           "id": "v1.0.5-audit.6",
           "name": "P0-2a 后端认证迁移到 require_authenticated_user",
-          "description": "21 endpoint 文件、~84 处手写 x-access-token 验证替换为 Depends(require_authenticated_user)，按文件粒度分批提交，login.py 豁免。已迁移 torrent_location 作为模板（fc7760b），剩余 20 文件待下个会话。",
-          "status": "in_progress",
+          "description": "24 endpoint 文件手写 x-access-token 验证全部替换为 Depends(require_authenticated_user)，分 4 批提交（Batch A 10 token-only / Batch B downloader簇+cron_tasks / Batch C 3 user_id+401兜底 / Batch D 4 mixed部分迁移），login.py 豁免。",
+          "status": "done",
           "scope": "backend",
-          "file": "backend/app/api/endpoints/ (downloader/setting_templates/cron_tasks/tracker_keywords/tag_management/advanced_search/cuser/torrent_crud 等 21 文件)",
-          "evidence": "torrent_location 迁移模板 fc7760b（净减30行，模式验证通过）；session-handoff.md 记录完整文件清单 + 迁移模式 + 回滚阈值"
+          "file": "backend/app/api/endpoints/ (downloader/setting_templates/cron_tasks/tracker_keywords/tag_management/advanced_search/cuser/torrent_crud/torrent_deletion/tracker_messages/tracker/tracker_keywords/tracker_keywords_pools/tracker_test/tracker_reannounce/torrent_speed/torrent_status/torrent_sync/torrent_backup/tasks/seed_transfer/downloader_capabilities/downloader_capabilities_management/downloader_path_maintenance/downloader_settings 等 24 文件)",
+          "evidence": "Batch A-D 共 5 commit（含 fc7760b 模板）；pytest tests/api/ 218 passed；修复多处预存在不安全 try/except 认证"
         },
         {
           "id": "v1.0.5-audit.7",
           "name": "P0-2b 认证测试改造",
-          "description": "5 测试文件 ~102 处 status_code==200+code=='401' 断言改为 status_code==401（test_auth_protection 39处/test_search_templates 33处/test_tag_aggregation 19处等）；新增 P1-A 端点认证测试。必须与 P0-2a 原子配对（parametrize 测试迁移期间会半破损）。",
-          "status": "pending",
+          "description": "5 测试文件 32 处 inline status_code==200+code=='401' 断言改为 status_code==401（test_auth_protection_extended 的 62 处走 _is_auth_rejected helper 已兼容 HTTP 401 无需改）；tag_management mock_auth 改用 dependency_overrides[require_authenticated_user]。",
+          "status": "done",
           "scope": "backend",
-          "file": "backend/tests/api/test_auth_protection.py, test_search_templates.py, test_tag_aggregation_api.py, test_reannounce_api.py, test_auth_protection_extended.py"
+          "file": "backend/tests/api/test_auth_protection.py, test_search_templates.py, test_tag_aggregation_api.py, test_reannounce_api.py, test_auth_protection_extended.py",
+          "evidence": "随各批 commit 完成；pytest tests/api/ 218 passed"
+        },
+        {
+          "id": "v1.0.5-audit.8",
+          "name": "P0-2d 弃用 verify_token_dependency",
+          "description": "verify_token_dependency 加 DeprecationWarning（保留定义供过渡兼容）；cron_tasks.verify_token 已删除；README 过期描述更新。所有端点已统一到 require_authenticated_user。",
+          "status": "done",
+          "scope": "backend",
+          "file": "backend/app/auth/dependencies.py, backend/README.md",
+          "evidence": "commit 33f2481; pytest 1523 passed"
         }
       ]
     },

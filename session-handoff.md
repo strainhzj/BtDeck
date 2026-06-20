@@ -6,15 +6,15 @@
 
 ## 会话信息
 
-**日期**: 2026-06-19
+**日期**: 2026-06-20
 **版本**: v1.0.5-audit（契约审计修复，技术债版本）
 **功能**: 基于 backend/docs/style-and-contract-audit.md 的 P1 确定性 bug + P0 契约归一化
-**状态**: in-progress（P0-3/P0-1/P1-A/P1-B/P0-2c 已完成；P0-2a/b 进行中）
+**状态**: P0-2 全部完成（P0-2a/b/c/d）。剩余 P2/P3 为推迟项。
 **分支**: fix/contract-audit（基于 dev）
 
 ---
 
-## 完成的工作（5 commit）
+## 完成的工作（10 commit，含本会话 6 commit）
 
 | 任务 | commit | 验证 |
 |------|--------|------|
@@ -23,38 +23,58 @@
 | P1-A 后端补 4 项端点（statistics装饰器/模板详情/logout/cronTasks日志） | efc6574 | auth+cron 189 passed |
 | P1-B 前端修 4 项契约（apply对齐/articles删除/2FA改Action/删getTorrentDetail/接通logout） | 0e8f007 | jest 25/25, eslint 0 error |
 | P0-2c 认证基础设施补强（AuthenticatedUserInfo 加 user_id 字段，兜底解析） | 9e19822 | auth 125 passed |
+| P0-2a Batch A 迁移 10 个 token-only 端点 | fc7760b+ | pytest tests/api/ 218 passed |
+| P0-2a Batch B 迁移 downloader/cron_tasks/tracker/torrent_crud/sync | (Batch B) | 218 passed |
+| P0-2a Batch C 迁移 3 个 user_id 端点（advanced_search/tag_management/tracker_keywords） | (Batch C) | 218 passed |
+| P0-2a Batch D 完成 4 个 mixed 部分迁移文件 | deab3ac | 218 passed |
+| P0-2d 弃用 verify_token_dependency | 33f2481 | 1523 passed |
 
 ---
 
-## 进行中的工作
+## 本会话完成的工作（P0-2a/b/d，6 commit）
 
-### P0-2a 后端认证迁移到 require_authenticated_user（最大块，未完成）
+### P0-2a 后端认证迁移到 require_authenticated_user（24 文件全部完成）
 
-**规模**（3 个独立 Explore agent 核实）：
-- 21 个 endpoint 文件含手写 `x-access-token` 验证（~195 处）
-- ~40 处测试断言需改造（status_code==200+code=='401' → status_code==401）
+**实际调研修正**：交接文档预估 ~21 文件 + ~40 处测试断言。调研发现：
+- 实际 **24 个 endpoint 文件**（多识别 3 个）
+- 测试改造量 **32 处 inline 断言**（非 ~102，因 test_auth_protection_extended.py 的 62 处走 _is_auth_rejected helper，已兼容 HTTP 401 无需改）
 
-**完整文件清单**（需逐文件迁移，按是否消费 user_id 分两类）：
-- 只校验 token 的（删手写验证 + 加 Depends）：downloader.py、tracker_keywords.py、tracker_keywords_pools.py、tasks.py、torrent_location.py、torrent_sync.py
-- 取 user_id 的（同步改 get_current_user_id(token) → user_info.user_id）：setting_templates.py、tag_management.py、advanced_search.py、cuser.py、torrent_crud.py、torrent_deletion.py、downloader_settings.py、downloader_capabilities_management.py、downloader_path_maintenance.py、tracker.py、tracker_messages.py（statistics 已迁移）
+**分 4 批执行（每批 commit + 跑针对性 pytest）**：
+- **Batch A**（10 简单 token-only）：tasks/tracker_test/downloader_capabilities/torrent_speed/tracker_reannounce/downloader_path_maintenance/downloader_capabilities_management/seed_transfer/torrent_backup/torrent_status/tracker_keywords_pools
+- **Batch B**（较大 token-only + downloader 簇）：downloader.py(13)/cron_tasks.py(20)/tracker.py(3)/torrent_sync.py(2)/torrent_crud.py(5)
+- **Batch C**（3 user_id 文件 + 401 兜底）：advanced_search.py(9)/tag_management.py(13)/tracker_keywords.py(10)
+- **Batch D**（4 mixed 部分迁移）：setting_templates.py(5)/tracker_messages.py(8)/cuser.py(6)/torrent_deletion.py(6)
 
-**登录豁免**：login.py:45 保留 HTTP 200 + code="401"（密码错误业务语义），严禁迁移。
-**废弃旧依赖**：verify_token_dependency（dependencies.py:124）和 cron_tasks.verify_token（cron_tasks.py:235）。
+**关键决策**：
+- advanced_search 旧 token 缺 user_id → HTTP 401 拒绝（对齐 torrent_location 模板，用户确认）
+- tag_management/tracker_keywords username = user_info.username or "admin"（保留原 helper 的 admin 兜底）
+- 修复多处预存在的"不安全 try/except 认证"（verify_access_token 失败返回 None 而非抛异常，旧代码 try/except 形同虚设）
 
-### P0-2b 认证测试改造（未完成）
-- test_auth_protection.py、test_search_templates.py、test_tag_aggregation_api.py、test_reannounce_api.py 中 ~40 处断言
-- + 新增 P1-A 端点（statistics/模板详情/logout/cronTasks日志）的认证测试
+### P0-2b 测试断言改造（穿插在各批中完成）
+- test_auth_protection.py：TestTorrentStatusAuth/TestTrackerKeywordsPoolsAuth/TestTorrentCrudAuth + 2 个"不崩溃"测试改 401
+- test_auth_protection_extended.py：test_get_status_all 改用 _is_auth_rejected（helper 本身无需改）
+- test_reannounce_api.py：3 个认证失败测试断言改 401
+- test_search_templates.py：11 个认证失败测试断言改 401
+- test_tag_aggregation_api.py：mock_auth 改用 dependency_overrides[require_authenticated_user]；3 个无认证测试断言改 401
+
+### P0-2d 弃用 verify_token_dependency
+- verify_token_dependency 加 DeprecationWarning（保留定义供过渡兼容）
+- cron_tasks.verify_token 已在 Batch B 删除
+- README 过期描述更新
 
 ---
 
 ## 下一步行动
 
-1. **P0-2a batch1**：迁移"只校验 token"的文件（downloader.py、tracker_keywords.py 等），每文件单独 commit + 跑 pytest
-2. **P0-2a batch2**：迁移"取 user_id"的文件（setting_templates.py、tag_management.py 等）
-3. **P0-2a batch3**：迁移剩余文件 + 废弃 verify_token_dependency/cron_tasks.verify_token
-4. **P0-2b**：改造 ~40 处认证测试断言 + 新端点认证测试
-5. **验证**：全量 pytest + jest + 手动 e2e 清单（见 PLANS/v1.0.5-audit.md）+ init.sh
-6. **回滚阈值**：>5 个 test_auth_protection*.py 用例失败 → 整体回滚 P0-2
+P0-2 全部完成。剩余均为推迟项（非阻塞）：
+
+1. **P2 REST 路由迁移**（推迟）：见 PLANS/v1.0.5-audit.md
+2. **P3 前端 any/as unknown as 治理**（推迟）
+3. **OpenAPI schema 完善**（推迟）
+4. **分页字段统一**（推迟）
+5. **API 对照表 CI**（推迟）
+
+**可选收尾**：若希望彻底移除 verify_token_dependency（当前仅加 DeprecationWarning），确认无外部引用后可删除 dependencies.py:139 定义。
 
 ---
 
@@ -62,18 +82,19 @@
 
 - **计划文档**: `PLANS/v1.0.5-audit.md`（详细任务分解 + 手动 e2e 清单 + 推迟项）
 - **审计文档**: `backend/docs/style-and-contract-audit.md`
-- **依赖基础设施已就绪**: `require_authenticated_user`（dependencies.py:68）返回 HTTP 401；`AuthenticatedUserInfo` 已含 user_id 字段（P0-2c）
+- **认证统一完成**: 所有 24 个 endpoint 文件使用 `require_authenticated_user`（dependencies.py），旧 `verify_token_dependency` 已弃用，cron_tasks.verify_token 已删除
 - **异常处理器已就绪**: P0-3 全局 handler 兜底所有未捕获异常
 - **前端归一化已就绪**: P0-1 ApiError 兼容 HTTP 200+code 和 HTTP 4xx/5xx 两种错误形态
 - **审计修正（不动项）**: /tags/batch-delete 误报；tag_management helper 字典是私有返回值；tracker statistics 已修
-- **推迟项**: P2 REST 路由迁移、P3 前端 any/as unknown as 治理、OpenAPI schema、分页字段统一、API 对照表 CI
-- **已知遗留**: test_unified_token_expiry 在 Windows 全量跑失败（路径分隔符 bug，预存在，与本次无关）
+- **已知遗留（预存在，与本次无关）**:
+  - test_unified_token_expiry 在 Windows 全量跑失败（路径分隔符 bug）
+  - test_concurrent_requests flaky（baseline 同样失败）
 
 ---
 
 ## 阻塞问题
 
-- 无。P0-2a/b 是工作量问题，非技术阻塞。
+- 无。P0-2 已全部完成。
 
 ---
 
@@ -109,4 +130,4 @@ npm run serve
 
 ---
 
-**最后更新**: 2026-06-19
+**最后更新**: 2026-06-20
