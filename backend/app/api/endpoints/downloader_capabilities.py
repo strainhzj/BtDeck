@@ -6,12 +6,12 @@
 """
 import logging
 
-from fastapi import APIRouter, Depends, Request, Path
+from fastapi import APIRouter, Depends, Path
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
 from app.services.downloader_capabilities_manager import DownloaderCapabilitiesManager
@@ -95,7 +95,7 @@ def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
 )
 def get_downloader_capabilities(
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -104,26 +104,7 @@ def get_downloader_capabilities(
     返回下载器支持的功能，如速度控制、分时段限速、路径设置等
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 验证下载器是否存在
+        # 1. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(
                 status="error",

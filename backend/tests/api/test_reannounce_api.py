@@ -97,9 +97,7 @@ class TestReannounceAuthProtection:
             client = TestClient(app, raise_server_exceptions=False)
             resp = client.post(endpoint, json=payload, headers=_make_request_headers())
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["code"] == "401"
+        assert resp.status_code == 401
 
     @pytest.mark.parametrize(
         "endpoint, payload",
@@ -126,9 +124,7 @@ class TestReannounceAuthProtection:
                 headers=_make_request_headers("invalid-token-xxx"),
             )
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["code"] == "401"
+        assert resp.status_code == 401
 
     @pytest.mark.parametrize(
         "endpoint, payload",
@@ -156,9 +152,7 @@ class TestReannounceAuthProtection:
                 headers=_make_request_headers(expired_token),
             )
 
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["code"] == "401"
+        assert resp.status_code == 401
 
 
 # ==================== 测试：选中种子汇报参数校验 ====================

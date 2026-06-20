@@ -6,14 +6,13 @@ Tracker Reannounce 配置管理 API
 """
 
 import logging
-from typing import List, Dict, Any, Union
 
-from fastapi import APIRouter, Depends, Request, Body
+from fastapi import APIRouter, Depends, Body
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth.dependencies import verify_token_dependency
+from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.core import reannounce_config_operations as ops
 
@@ -49,13 +48,10 @@ class BatchUpdateItem(BaseModel):
 
 @router.get("/configs", description="获取所有站点配置")
 async def list_configs(
-    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """获取所有站点汇报配置"""
-    if auth_error:
-        return auth_error
-
     result = ops.get_configs(db)
     if not result.success:
         return CommonResponse(status="error", msg=result.message, code="500")
@@ -69,14 +65,11 @@ async def list_configs(
 
 @router.post("/configs", description="新增站点配置")
 async def create_config(
-    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
     req_data: CreateConfigRequest = None,
     db: Session = Depends(get_db)
 ):
     """新增站点汇报配置"""
-    if auth_error:
-        return auth_error
-
     config_data = req_data.dict()
     if not config_data.get("domain_display_name"):
         config_data["domain_display_name"] = config_data["domain_pattern"]
@@ -93,14 +86,11 @@ async def create_config(
 
 @router.put("/configs/batch", description="批量更新站点配置")
 async def batch_update_configs(
-    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
     req_data: dict = Body(...),
     db: Session = Depends(get_db)
 ):
     """批量更新站点汇报配置（支持部分成功）"""
-    if auth_error:
-        return auth_error
-
     logger.info(f"批量更新请求数据: {req_data}")
 
     if not req_data or "items" not in req_data:
@@ -129,14 +119,11 @@ async def batch_update_configs(
 @router.put("/configs/{config_id}", description="更新站点配置")
 async def update_config(
     config_id: str,
-    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
     req_data: UpdateConfigRequest = None,
     db: Session = Depends(get_db)
 ):
     """更新站点汇报配置"""
-    if auth_error:
-        return auth_error
-
     update_data = {k: v for k, v in req_data.dict().items() if v is not None}
     if not update_data:
         return CommonResponse(status="error", msg="没有需要更新的字段", code="400")
@@ -155,13 +142,10 @@ async def update_config(
 @router.delete("/configs/{config_id}", description="删除站点配置")
 async def delete_config(
     config_id: str,
-    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """删除站点汇报配置"""
-    if auth_error:
-        return auth_error
-
     result = ops.delete_config(db, config_id)
     if not result.success:
         return CommonResponse(status="error", msg=result.message, code="404")
@@ -171,13 +155,10 @@ async def delete_config(
 
 @router.post("/configs/auto-detect", description="自动检测tracker域名并生成配置")
 async def auto_detect_domains(
-    auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """从现有tracker数据中提取域名，生成默认配置"""
-    if auth_error:
-        return auth_error
-
     from app.torrents.models import TrackerInfo
     from sqlalchemy import func
 

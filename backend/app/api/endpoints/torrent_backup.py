@@ -18,7 +18,7 @@ from typing import Optional, List
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
-from fastapi import APIRouter, HTTPException, Request, Query, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, Query, Depends, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
@@ -26,7 +26,7 @@ import io
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
-from app.auth.utils import verify_access_token
+from app.auth.dependencies import require_authenticated_user
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.path_mapping import PathMappingService
 from app.schemas.torrent_backup import (
@@ -77,25 +77,6 @@ def get_downloader_from_store(downloader_id: int, app):
         return None
 
 
-def verify_token(request: Request) -> None:
-    """
-    验证访问令牌
-
-    Args:
-        request: FastAPI请求对象
-
-    Raises:
-        HTTPException: 认证失败
-    """
-    try:
-        token = request.headers.get("x-access-token")
-        if not verify_access_token(token):
-            raise HTTPException(status_code=401, detail="Invalid access token")
-    except Exception as e:
-        logger.error(f"Token验证失败: {e}")
-        raise HTTPException(status_code=401, detail="Authentication failed")
-
-
 def backup_to_dict(backup: TorrentFileBackup) -> dict:
     """将TorrentFileBackup对象转换为字典"""
     return backup.to_dict()
@@ -107,7 +88,8 @@ def backup_to_dict(backup: TorrentFileBackup) -> dict:
 async def create_backup(
     request: Request,
     backup_request: TorrentFileBackupCreate,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
 ):
     """
     手动触发种子文件备份
@@ -122,8 +104,7 @@ async def create_backup(
     Returns:
         CommonResponse: 操作结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     result = {
         "success": False,
@@ -227,6 +208,7 @@ async def create_backup(
 @router.get("/backup", response_model=CommonResponse)
 async def list_backups(
     request: Request,
+    _user=Depends(require_authenticated_user),
     downloader_id: Optional[int] = Query(None, description="下载器ID（可选）"),
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页大小")
@@ -245,8 +227,7 @@ async def list_backups(
     Returns:
         CommonResponse: 备份列表（分页格式）
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         async with AsyncSessionLocal() as db:
@@ -297,7 +278,8 @@ async def list_backups(
 @router.get("/backup/{info_hash}", response_model=CommonResponse)
 async def get_backup(
     request: Request,
-    info_hash: str
+    info_hash: str,
+    _user=Depends(require_authenticated_user),
 ):
     """
     查询单个种子文件备份
@@ -311,8 +293,7 @@ async def get_backup(
     Returns:
         CommonResponse: 备份详细信息
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:
@@ -357,6 +338,7 @@ async def get_backup(
 async def delete_backup(
     request: Request,
     info_hash: str,
+    _user=Depends(require_authenticated_user),
     deletePhysicalFile: bool = Query(False, description="是否删除物理文件")
 ):
     """
@@ -372,8 +354,7 @@ async def delete_backup(
     Returns:
         CommonResponse: 操作结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:
@@ -424,7 +405,8 @@ async def delete_backup(
 async def batch_create_backups(
     request: Request,
     batch_request: TorrentFileBackupBatchCreate,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
 ):
     """
     批量备份种子文件
@@ -439,8 +421,7 @@ async def batch_create_backups(
     Returns:
         CommonResponse: 批量操作结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 准备备份数据
@@ -493,7 +474,8 @@ async def batch_create_backups(
 @router.get("/backup/{info_hash}/validate", response_model=CommonResponse)
 async def validate_backup(
     request: Request,
-    info_hash: str
+    info_hash: str,
+    _user=Depends(require_authenticated_user),
 ):
     """
     验证种子文件备份完整性
@@ -507,8 +489,7 @@ async def validate_backup(
     Returns:
         CommonResponse: 验证结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:
@@ -558,7 +539,10 @@ async def validate_backup(
 
 
 @router.post("/backup/deduplicate", response_model=CommonResponse)
-async def deduplicate_backups(request: Request):
+async def deduplicate_backups(
+    request: Request,
+    _user=Depends(require_authenticated_user),
+):
     """
     去重种子文件备份
 
@@ -571,8 +555,7 @@ async def deduplicate_backups(request: Request):
     Returns:
         CommonResponse: 去重结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         async with AsyncSessionLocal() as db:
@@ -634,6 +617,7 @@ async def deduplicate_backups(request: Request):
 @router.get("/backup/export")
 async def export_backups(
     request: Request,
+    _user=Depends(require_authenticated_user),
     info_hashes: str = Query(..., description="要导出的info_hash列表，逗号分隔")
 ):
     """
@@ -648,8 +632,7 @@ async def export_backups(
     Returns:
         StreamingResponse: ZIP文件流
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 解析info_hash列表
@@ -743,6 +726,7 @@ async def export_backups(
 @router.post("/backup/import")
 async def import_backups(
     request: Request,
+    _user=Depends(require_authenticated_user),
     downloader_id: int = Query(..., description="目标下载器ID"),
     files: List[UploadFile] = File(..., description="种子文件列表")
 ):
@@ -760,8 +744,7 @@ async def import_backups(
     Returns:
         CommonResponse: 导入结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 获取下载器配置
     downloader = get_downloader_from_store(downloader_id, app=request.app)
@@ -895,7 +878,8 @@ async def import_backups(
 @router.get("/backup/download/{info_hash}")
 async def download_backup(
     request: Request,
-    info_hash: str
+    info_hash: str,
+    _user=Depends(require_authenticated_user),
 ):
     """
     下载单个种子文件
@@ -909,8 +893,7 @@ async def download_backup(
     Returns:
         FileResponse: 种子文件
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:

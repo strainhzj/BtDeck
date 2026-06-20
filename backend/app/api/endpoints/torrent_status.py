@@ -1,14 +1,13 @@
 import asyncio
 import logging
-from typing import List, Optional, Dict, Any, Union
+from typing import List, Optional, Dict, Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils as auth_utils
-from app.auth.dependencies import verify_token_dependency
+from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.audit_service import extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
@@ -62,7 +61,7 @@ class ReannounceAllRequest(BaseModel):
 @router.post("/pause", description="暂停种子接口",
              response_model=CommonResponse[Dict[str, Any]])
 async def pause_torrents(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         req_data: PauseTorrentsRequest = None,
         db: Session = Depends(get_db)
@@ -91,9 +90,7 @@ async def pause_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
-    # 统一Token验证
-    if auth_error:
-        return auth_error
+    # 统一Token验证（已迁移至 require_authenticated_user 依赖）
 
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
@@ -277,7 +274,7 @@ async def pause_torrents(
 
         # 获取用户信息
         user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = user_info.get('user_id') if user_info else 'unknown'
+        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
 
         logger.error(f"暂停种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
@@ -293,7 +290,7 @@ async def pause_torrents(
 @router.post("/resume", description="恢复/开始种子接口",
              response_model=CommonResponse[Dict[str, Any]])
 async def resume_torrents(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         req_data: ResumeTorrentsRequest = None,
         db: Session = Depends(get_db)
@@ -322,9 +319,7 @@ async def resume_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
-    # 统一Token验证
-    if auth_error:
-        return auth_error
+    # 统一Token验证（已迁移至 require_authenticated_user 依赖）
 
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
@@ -516,7 +511,7 @@ async def resume_torrents(
 
         # 获取用户信息
         user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = user_info.get('user_id') if user_info else 'unknown'
+        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
 
         logger.error(f"恢复种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
@@ -532,7 +527,7 @@ async def resume_torrents(
 @router.post("/recheck", description="重新检查种子接口",
              response_model=CommonResponse[Dict[str, Any]])
 async def recheck_torrents(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         req_data: RecheckTorrentsRequest = None,
         db: Session = Depends(get_db)
@@ -561,9 +556,7 @@ async def recheck_torrents(
         "hashes": ["hash1", "hash2", ...]
     }
     """
-    # 统一Token验证
-    if auth_error:
-        return auth_error
+    # 统一Token验证（已迁移至 require_authenticated_user 依赖）
 
     # 从请求模型中获取参数
     downloader_id = req_data.downloader_id
@@ -759,7 +752,7 @@ async def recheck_torrents(
 
         # 获取用户信息
         user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = user_info.get('user_id') if user_info else 'unknown'
+        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
 
         logger.error(f"重新检查种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
@@ -775,15 +768,13 @@ async def recheck_torrents(
 @router.post("/reannounce", description="Tracker汇报（选中种子）",
              response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_torrents(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         req_data: ReannounceTorrentsRequest = None,
         db: Session = Depends(get_db)
 ):
     """对选中的种子执行 Tracker 汇报"""
-    # 统一Token验证
-    if auth_error:
-        return auth_error
+    # 统一Token验证（已迁移至 require_authenticated_user 依赖）
 
     downloader_id = req_data.downloader_id
     hashes = req_data.hashes
@@ -855,7 +846,7 @@ async def reannounce_torrents(
 
         # 获取用户信息
         user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = user_info.get('user_id') if user_info else 'unknown'
+        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
 
         logger.error(f"Tracker汇报异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
@@ -864,15 +855,13 @@ async def reannounce_torrents(
 @router.post("/reannounce-by-downloader", description="Tracker汇报（按下载器）",
              response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_by_downloader(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         req_data: ReannounceByDownloaderRequest = None,
         db: Session = Depends(get_db)
 ):
     """对指定下载器下所有种子执行 Tracker 汇报"""
-    # 统一Token验证
-    if auth_error:
-        return auth_error
+    # 统一Token验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         from app.services.reannounce_service import execute_reannounce
@@ -924,7 +913,7 @@ async def reannounce_by_downloader(
 
         # 获取用户信息
         user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = user_info.get('user_id') if user_info else 'unknown'
+        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
 
         logger.error(f"Tracker汇报（按下载器）异常 [user_id={user_id}, downloader_id={req_data.downloader_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
@@ -933,14 +922,12 @@ async def reannounce_by_downloader(
 @router.post("/reannounce-all", description="Tracker汇报（全局）",
              response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_all(
-        auth_error: Union[CommonResponse, None] = Depends(verify_token_dependency),
+        _user=Depends(require_authenticated_user),
         request: Request = None,
         db: Session = Depends(get_db)
 ):
     """对所有下载器下所有种子执行 Tracker 汇报"""
-    # 统一Token验证
-    if auth_error:
-        return auth_error
+    # 统一Token验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         from app.services.reannounce_service import execute_reannounce_all_downloaders
@@ -979,7 +966,7 @@ async def reannounce_all(
 
         # 获取用户信息
         user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = user_info.get('user_id') if user_info else 'unknown'
+        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
 
         logger.error(f"全局Tracker汇报异常 [user_id={user_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")

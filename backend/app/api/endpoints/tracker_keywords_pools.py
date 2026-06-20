@@ -8,7 +8,7 @@ Tracker关键词池管理API接口
 - failed: 失败池
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 from typing import Optional
 import logging
@@ -17,7 +17,7 @@ from sqlalchemy import func
 from app.database import get_db
 from app.api.responseVO import CommonResponse
 from app.torrents.models import TrackerKeywordConfig
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -49,7 +49,7 @@ def get_pool_keywords(
     keyword: Optional[str] = None,
     page: int = 1,
     page_size: int = 20,
-    request: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -63,17 +63,7 @@ def get_pool_keywords(
         request: 请求对象
         db: 数据库会话
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
-    try:
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     # 验证池子类型
     valid_pool_types = ['candidate', 'ignored', 'success', 'failed']
@@ -137,7 +127,7 @@ def get_pool_keywords(
 @router.post("/move", summary="移动关键词到指定池子")
 def move_keyword_to_pool(
     request_data: dict,
-    request: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -148,17 +138,7 @@ def move_keyword_to_pool(
         request: 请求对象
         db: 数据库会话
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
-    try:
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     keyword_id = request_data.get("keyword_id")
     target_pool = request_data.get("target_pool")
@@ -226,7 +206,7 @@ def move_keyword_to_pool(
 @router.post("/batch-move", summary="批量移动关键词到指定池子")
 def batch_move_keywords(
     request_data: dict,
-    request: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -237,17 +217,7 @@ def batch_move_keywords(
         request: 请求对象
         db: 数据库会话
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
-    try:
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     keyword_ids = request_data.get("keyword_ids", [])
     target_pool = request_data.get("target_pool")
@@ -321,7 +291,7 @@ def batch_move_keywords(
 
 @router.get("/pool/statistics", summary="获取所有池子的统计信息")
 def get_pool_statistics(
-    request: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -331,17 +301,7 @@ def get_pool_statistics(
         request: 请求对象
         db: 数据库会话
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
-    try:
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询各池子数量
@@ -396,7 +356,7 @@ def search_all_pools(
     sort_by: Optional[str] = None,  # time_desc/time_asc/name_asc
     page: int = 1,
     page_size: int = 20,
-    request: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -417,17 +377,7 @@ def search_all_pools(
         request: 请求对象
         db: 数据库会话
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="Token缺失", code="401", data=None)
-    try:
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         from datetime import datetime, timedelta

@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responseVO import CommonResponse
-from app.auth.dependencies import verify_token_dependency
+from app.auth.dependencies import require_authenticated_user
 from app.database import AsyncSessionLocal
 from app.torrents.models import TorrentInfo
 
@@ -334,7 +334,7 @@ async def _sync_torrents_to_db(torrent_data: List[Dict[str, Any]]) -> None:
 @router.get("/active-torrents", summary="获取所有活跃种子的实时速度和进度")
 async def get_active_torrents(
     request: Request,
-    auth_error=Depends(verify_token_dependency),
+    _user=Depends(require_authenticated_user),
 ):
     """
     轻量级接口：返回所有下载器中有速度的种子实时数据。
@@ -348,9 +348,6 @@ async def get_active_torrents(
     - num_seeds: 连接的种子数
     - num_leechs: 连接的下载者数
     """
-    if auth_error:
-        return auth_error
-
     try:
         cached_downloaders = await request.app.state.store.get_snapshot()
 

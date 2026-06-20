@@ -7,12 +7,12 @@
 import logging
 from typing import Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, Request, Path, Body
+from fastapi import APIRouter, Depends, Path, Body
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, Field
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_capabilities_manager import DownloaderCapabilitiesManager
 
@@ -38,27 +38,6 @@ class UpdateCapabilitiesRequest(BaseModel):
         populate_by_name = True
 
 
-# ========== 辅助函数 ==========
-
-def verify_token(req: Request) -> tuple[bool, Optional[str]]:
-    """验证JWT令牌
-
-    Args:
-        req: FastAPI请求对象
-
-    Returns:
-        tuple[bool, Optional[str]]: (是否验证成功, 错误消息)
-    """
-    token = req.headers.get("x-access-token")
-    if not token:
-        return False, "未认证"
-
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return False, "token验证失败"
-    return True, None
-
-
 # ========== API端点 ==========
 
 @router.put(
@@ -70,7 +49,7 @@ def verify_token(req: Request) -> tuple[bool, Optional[str]]:
 def update_downloader_capabilities(
     downloader_id: str = Path(..., description="下载器ID"),
     request_data: UpdateCapabilitiesRequest = Body(..., description="能力配置数据"),
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -86,17 +65,7 @@ def update_downloader_capabilities(
     - 用户希望禁用某个功能（即使下载器支持）
     """
     try:
-        # 1. JWT认证
-        is_valid, error_msg = verify_token(req)
-        if not is_valid:
-            return CommonResponse(
-                status="error",
-                msg=error_msg,
-                code="401",
-                data=None
-            )
-
-        # 2. 构建能力字典（只包含非None的字段）
+        # 1. 构建能力字典（只包含非None的字段）
         capabilities_dict = request_data.model_dump(exclude_none=True, exclude={"set_manual_override"})
 
         if not capabilities_dict:
@@ -148,7 +117,7 @@ def update_downloader_capabilities(
 )
 def reset_downloader_capabilities(
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -164,17 +133,7 @@ def reset_downloader_capabilities(
     - 清除手动覆盖，允许系统自动同步
     """
     try:
-        # 1. JWT认证
-        is_valid, error_msg = verify_token(req)
-        if not is_valid:
-            return CommonResponse(
-                status="error",
-                msg=error_msg,
-                code="401",
-                data=None
-            )
-
-        # 2. 重置能力配置
+        # 1. 重置能力配置
         manager = DownloaderCapabilitiesManager(db)
         db_capabilities = manager.reset_to_default(downloader_id=downloader_id)
 
@@ -211,7 +170,7 @@ def reset_downloader_capabilities(
 )
 def delete_downloader_capabilities(
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -226,17 +185,7 @@ def delete_downloader_capabilities(
     - 删除后会自动创建默认配置
     """
     try:
-        # 1. JWT认证
-        is_valid, error_msg = verify_token(req)
-        if not is_valid:
-            return CommonResponse(
-                status="error",
-                msg=error_msg,
-                code="401",
-                data=None
-            )
-
-        # 2. 删除能力配置
+        # 1. 删除能力配置
         manager = DownloaderCapabilitiesManager(db)
         deleted = manager.delete_capabilities(downloader_id=downloader_id)
 
@@ -274,7 +223,7 @@ def delete_downloader_capabilities(
 def sync_downloader_capabilities(
     downloader_id: str = Path(..., description="下载器ID"),
     force: Optional[bool] = False,
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -293,17 +242,7 @@ def sync_downloader_capabilities(
     - 强制覆盖手动配置
     """
     try:
-        # 1. JWT认证
-        is_valid, error_msg = verify_token(req)
-        if not is_valid:
-            return CommonResponse(
-                status="error",
-                msg=error_msg,
-                code="401",
-                data=None
-            )
-
-        # 2. 从下载器获取能力
+        # 1. 从下载器获取能力
         from app.downloader.models import BtDownloaders
         from app.services.downloader_settings_manager import DownloaderSettingsManager
 

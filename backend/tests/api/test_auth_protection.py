@@ -138,10 +138,7 @@ class TestTorrentStatusAuth:
         """无token请求应返回401"""
         request_body = {"downloader_id": "test-id", "hashes": ["abc123"]}
         response = self.client.post(endpoint, json=request_body)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
-        assert "token" in data["msg"].lower()
+        assert response.status_code == 401
 
     @pytest.mark.parametrize("endpoint,method", ENDPOINTS)
     def test_invalid_token_returns_401(self, endpoint, method):
@@ -152,9 +149,7 @@ class TestTorrentStatusAuth:
             json=request_body,
             headers={"x-access-token": "invalid-token-string"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     @pytest.mark.parametrize("endpoint,method", ENDPOINTS)
     def test_expired_token_returns_401(self, endpoint, method):
@@ -166,9 +161,7 @@ class TestTorrentStatusAuth:
             json=request_body,
             headers={"x-access-token": token},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     @pytest.mark.parametrize("endpoint,method", ENDPOINTS)
     def test_wrong_secret_token_returns_401(self, endpoint, method):
@@ -180,9 +173,7 @@ class TestTorrentStatusAuth:
             json=request_body,
             headers={"x-access-token": token},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     @pytest.mark.parametrize("endpoint,method", ENDPOINTS)
     def test_valid_token_not_rejected_by_auth(self, endpoint, method):
@@ -326,9 +317,7 @@ class TestTrackerKeywordsPoolsAuth:
     def test_get_no_token_returns_401(self, endpoint, method):
         """GET端点无token应返回401"""
         response = self.client.get(endpoint)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     @pytest.mark.parametrize("endpoint,method", ENDPOINTS)
     def test_get_invalid_token_returns_401(self, endpoint, method):
@@ -337,9 +326,7 @@ class TestTrackerKeywordsPoolsAuth:
             endpoint,
             headers={"x-access-token": "invalid"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     @pytest.mark.parametrize("endpoint,method", ENDPOINTS)
     def test_get_expired_token_returns_401(self, endpoint, method):
@@ -349,9 +336,7 @@ class TestTrackerKeywordsPoolsAuth:
             endpoint,
             headers={"x-access-token": token},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     @pytest.mark.parametrize("endpoint,method", ENDPOINTS
     )
@@ -371,9 +356,7 @@ class TestTrackerKeywordsPoolsAuth:
             "/api/v1/tracker-keywords/move",
             json={"keyword_id": "test-id", "target_pool": "success"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_move_invalid_token_returns_401(self):
         """POST /move 无效token应返回401"""
@@ -382,9 +365,7 @@ class TestTrackerKeywordsPoolsAuth:
             json={"keyword_id": "test-id", "target_pool": "success"},
             headers={"x-access-token": "bad-token"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_batch_move_no_token_returns_401(self):
         """POST /batch-move 无token应返回401"""
@@ -392,9 +373,7 @@ class TestTrackerKeywordsPoolsAuth:
             "/api/v1/tracker-keywords/batch-move",
             json={"keyword_ids": ["id1", "id2"], "target_pool": "success"},
         )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["code"] == "401"
+        assert response.status_code == 401
 
     def test_batch_move_valid_token_not_rejected_by_auth(self):
         """POST /batch-move 有效token应通过认证"""

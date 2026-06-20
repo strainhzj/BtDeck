@@ -5,15 +5,15 @@
 提供下载器路径信息的CRUD API接口。
 """
 import logging
-from typing import Optional, List, Annotated
+from typing import Optional, Annotated
 
-from fastapi import APIRouter, Depends, Request, Path, Query
+from fastapi import APIRouter, Depends, Path, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
 from app.api.responseVO import CommonResponse
 from app.database import get_db
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from app.models.downloader_path_maintenance import DownloaderPathMaintenance
 from app.services.path_maintenance_service import PathMaintenanceService
 
@@ -22,25 +22,6 @@ logger = logging.getLogger(__name__)
 
 
 # ========== 辅助函数 ==========
-
-def get_current_user_id(token: str) -> Optional[int]:
-    """
-    从JWT token中获取用户ID
-
-    Args:
-        token: JWT访问令牌
-
-    Returns:
-        Optional[int]: 用户ID，失败返回None
-    """
-    try:
-        decoded = utils.verify_access_token(token)
-        user_id = decoded.get("user_id")
-        return int(user_id) if user_id else None
-    except Exception as e:
-        logger.error(f"获取用户ID失败: {e}")
-        return None
-
 
 def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
     """
@@ -95,7 +76,7 @@ def get_paths(
     downloader_id: Annotated[str, Path(description="下载器ID")],
     path_type: Optional[str] = Query(None, description="路径类型过滤"),
     is_enabled: Optional[bool] = Query(None, description="是否启用过滤"),
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -104,26 +85,7 @@ def get_paths(
     支持按路径类型和启用状态过滤
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 验证下载器是否存在
+        # 1. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(
                 status="error",
@@ -198,7 +160,7 @@ def get_paths(
 def create_path(
     downloader_id: Annotated[str, Path(description="下载器ID")],
     request_data: PathCreateRequest,
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -207,26 +169,7 @@ def create_path(
     支持默认路径和活跃路径两种类型
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 验证下载器是否存在
+        # 1. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(
                 status="error",
@@ -293,7 +236,7 @@ def update_path(
     downloader_id: Annotated[str, Path(description="下载器ID")],
     path_id: Annotated[int, Path(description="路径ID")],
     request_data: PathUpdateRequest,
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -302,26 +245,7 @@ def update_path(
     支持更新路径值和启用状态
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 验证下载器是否存在
+        # 1. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(
                 status="error",
@@ -396,7 +320,7 @@ def update_path(
 def delete_path(
     downloader_id: Annotated[str, Path(description="下载器ID")],
     path_id: Annotated[int, Path(description="路径ID")],
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -405,26 +329,7 @@ def delete_path(
     将路径标记为未启用，不从数据库中物理删除
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 验证下载器是否存在
+        # 1. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(
                 status="error",
@@ -473,7 +378,7 @@ def delete_path(
 )
 def get_path_statistics(
     downloader_id: Annotated[str, Path(description="下载器ID")],
-    req: Request = None,
+    _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -482,26 +387,7 @@ def get_path_statistics(
     返回路径总数、默认路径数、活跃路径数等统计信息
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 验证下载器是否存在
+        # 1. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(
                 status="error",

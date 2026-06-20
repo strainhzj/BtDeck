@@ -13,12 +13,12 @@
 import logging
 import urllib3
 from typing import List
-from fastapi import APIRouter, HTTPException, Request, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
-from app.auth.utils import verify_access_token
+from app.auth.dependencies import require_authenticated_user
 from app.services.seed_transfer_service import SeedTransferService
 from app.schemas.seed_transfer import (
     SeedTransferRequest,
@@ -35,34 +35,13 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# ==================== 辅助函数 ====================
-
-def verify_token(request: Request) -> None:
-    """
-    验证访问令牌
-
-    Args:
-        request: FastAPI请求对象
-
-    Raises:
-        HTTPException: 认证失败
-    """
-    try:
-        token = request.headers.get("x-access-token")
-        if not verify_access_token(token):
-            raise HTTPException(status_code=401, detail="Invalid access token")
-    except Exception as e:
-        logger.error(f"Token验证失败: {e}")
-        raise HTTPException(status_code=401, detail="Authentication failed")
-
-
 # ==================== API端点 ====================
 
 @router.post("/transfer", response_model=CommonResponse)
 async def transfer_seed(
-    request: Request,
     transfer_request: SeedTransferRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
 ):
     """
     单个种子转移
@@ -97,9 +76,6 @@ async def transfer_seed(
             }
         }
     """
-    # 验证token
-    verify_token(request)
-
     try:
         # ✅ 修复: 使用全局 app 实例(从 app.factory 导入)
         if not hasattr(app.state, 'store') or app.state.store is None:
@@ -175,9 +151,9 @@ async def transfer_seed(
 
 @router.post("/batch-transfer", response_model=CommonResponse)
 async def batch_transfer_seeds(
-    request: Request,
     batch_request: SeedTransferBatchRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
 ):
     """
     批量种子转移
@@ -216,9 +192,6 @@ async def batch_transfer_seeds(
             }
         }
     """
-    # 验证token
-    verify_token(request)
-
     try:
         # ✅ 修复: 使用全局 app 实例(从 app.factory 导入)
         if not hasattr(app.state, 'store') or app.state.store is None:
