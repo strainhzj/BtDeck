@@ -14,7 +14,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db
 from app.services.template_service import TemplateService
@@ -26,24 +25,6 @@ logger = logging.getLogger(__name__)
 
 # ========== 辅助函数 ==========
 
-def get_current_user_id(token: str) -> Optional[int]:
-    """
-    从JWT token中获取用户ID
-
-    Args:
-        token: JWT访问令牌
-
-    Returns:
-        Optional[int]: 用户ID，失败返回None
-    """
-    try:
-        decoded = utils.verify_access_token(token)
-        user_id = decoded.get("user_id")
-        return int(user_id) if user_id else None
-    except Exception as e:
-        logger.error(f"获取用户ID失败: {e}")
-        return None
-
 @router.get(
     "",
     summary="获取模板列表",
@@ -51,7 +32,7 @@ def get_current_user_id(token: str) -> Optional[int]:
     tags=["配置模板"]
 )
 def get_setting_templates(
-    req: Request = None,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
@@ -62,31 +43,14 @@ def get_setting_templates(
     获取配置模板列表
 
     支持分页、按下载器类型过滤、按是否系统默认过滤
+
+    认证：由 require_authenticated_user 统一处理。
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
+        # 1. 获取用户ID（旧 token 缺 user_id 时为 None，与原 get_current_user_id 行为一致）
+        user_id = user_info.user_id
 
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 获取用户ID
-        user_id = get_current_user_id(token)
-
-        # 3. 调用TemplateService
+        # 2. 调用TemplateService
         service = TemplateService(db)
         filters = {}
         if downloader_type is not None:
@@ -188,6 +152,7 @@ def get_setting_template_detail(
     tags=["配置模板"]
 )
 async def create_setting_template(
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     req: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -195,29 +160,12 @@ async def create_setting_template(
     创建新的配置模板
 
     用户可以创建自定义模板，系统默认模板只能通过系统初始化创建
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 获取用户ID
-        user_id = get_current_user_id(token)
+        # 1. 获取用户ID
+        user_id = user_info.user_id
         if not user_id:
             return CommonResponse(
                 status="error",
@@ -226,7 +174,7 @@ async def create_setting_template(
                 data=None
             )
 
-        # 3. 获取请求体数据
+        # 2. 获取请求体数据
         try:
             body_data = await req.json()
         except Exception as e:
@@ -288,6 +236,7 @@ async def create_setting_template(
 )
 async def update_setting_template(
     template_id: int = Path(..., description="模板ID"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     req: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -295,29 +244,12 @@ async def update_setting_template(
     更新配置模板
 
     系统默认模板不能更新
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 获取用户ID
-        user_id = get_current_user_id(token)
+        # 1. 获取用户ID
+        user_id = user_info.user_id
         if not user_id:
             return CommonResponse(
                 status="error",
@@ -326,7 +258,7 @@ async def update_setting_template(
                 data=None
             )
 
-        # 3. 获取请求体数据
+        # 2. 获取请求体数据
         try:
             body_data = await req.json()
         except Exception as e:
@@ -338,7 +270,7 @@ async def update_setting_template(
                 data=None
             )
 
-        # 4. 调用TemplateService更新模板
+        # 3. 调用TemplateService更新模板
         try:
             service = TemplateService(db)
             template = service.update_template(template_id, user_id, body_data)
@@ -387,36 +319,19 @@ async def update_setting_template(
 )
 def delete_setting_template(
     template_id: int = Path(..., description="模板ID"),
-    req: Request = None,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
     删除配置模板
 
     系统默认模板不能删除
+
+    认证：由 require_authenticated_user 统一处理；旧 token 缺 user_id 时拒绝（HTTP 401）。
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 获取用户ID
-        user_id = get_current_user_id(token)
+        # 1. 获取用户ID
+        user_id = user_info.user_id
         if not user_id:
             return CommonResponse(
                 status="error",
@@ -425,7 +340,7 @@ def delete_setting_template(
                 data=None
             )
 
-        # 3. 调用TemplateService删除模板
+        # 2. 调用TemplateService删除模板
         try:
             service = TemplateService(db)
             service.delete_template(template_id, user_id)
@@ -475,6 +390,7 @@ def delete_setting_template(
 async def apply_template_to_downloader(
     template_id: int = Path(..., description="模板ID"),
     downloader_id: str = Path(..., description="下载器ID"),
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     req: Request = None,
     db: Session = Depends(get_db)
 ):
@@ -485,31 +401,14 @@ async def apply_template_to_downloader(
     2. 应用配置到下载器
     3. 如果模板包含分时段规则，同时创建规则记录
     4. 如果模板包含路径映射配置，询问用户是否应用
+
+    认证：由 require_authenticated_user 统一处理。
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
+        # 1. 获取用户ID（旧 token 缺 user_id 时为 None，与原 get_current_user_id 行为一致）
+        user_id = user_info.user_id
 
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
-        # 2. 获取用户ID
-        user_id = get_current_user_id(token)
-
-        # 3. 获取请求体参数
+        # 2. 获取请求体参数
         try:
             body_data = await req.json()
         except Exception as e:

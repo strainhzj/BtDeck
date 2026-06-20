@@ -5,7 +5,7 @@ Tracker消息记录CRUD API接口
 注意: TrackerMessageLog使用物理删除，不使用dr字段
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime
@@ -22,8 +22,7 @@ from app.api.schemas.tracker_messages import (
 )
 from app.torrents.models import TrackerMessageLog, TrackerKeywordConfig
 from app.api.schemas.tracker_keywords import TrackerKeywordResponse
-from app.auth import utils
-from app.auth.dependencies import require_authenticated_user
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,7 @@ router = APIRouter()
 
 @router.get("", summary="查询消息记录列表")
 def get_messages(
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     tracker_host: str = Query(None, description="筛选: tracker地址"),
@@ -46,13 +45,7 @@ def get_messages(
     - tracker_host: tracker地址(模糊匹配)
     - is_processed: 是否已处理
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 构建查询 - TrackerMessageLog不使用dr字段
@@ -138,17 +131,11 @@ def get_statistics(
 @router.get("/{log_id}", summary="获取单条消息")
 def get_message(
     log_id: str,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """获取指定ID的消息"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         message = db.query(TrackerMessageLog).filter(
@@ -178,7 +165,7 @@ def get_message(
 @router.post("", summary="创建消息记录")
 def create_message(
     message_data: dict,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -186,13 +173,7 @@ def create_message(
 
     注意: 此接口主要用于测试和手动添加，实际使用中消息由定时任务自动记录
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 检查是否已存在相同的消息（按tracker_host和msg组合）
@@ -235,8 +216,8 @@ def create_message(
             occurrence_count=1,
             create_time=datetime.now(),
             update_time=datetime.now(),
-            create_by=utils.get_username_from_token(token) or "admin",
-            update_by=utils.get_username_from_token(token) or "admin"
+            create_by=user_info.username or "admin",
+            update_by=user_info.username or "admin"
         )
 
         db.add(new_message)
@@ -262,17 +243,11 @@ def create_message(
 def update_message(
     log_id: str,
     update_data: dict,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """更新消息记录的状态和字段"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         message = db.query(TrackerMessageLog).filter(
@@ -296,7 +271,7 @@ def update_message(
             message.keyword_type = update_data["keyword_type"]
 
         message.update_time = datetime.now()
-        message.update_by = utils.get_username_from_token(token) or "admin"
+        message.update_by = user_info.username or "admin"
 
         db.commit()
         db.refresh(message)
@@ -320,7 +295,7 @@ def update_message(
 def add_message_to_pool(
     log_id: str,
     pool_request: AddToPoolRequest,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """
@@ -328,13 +303,7 @@ def add_message_to_pool(
 
     自动创建关键词配置,并标记消息为已处理
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询消息 - 不使用dr字段过滤
@@ -376,7 +345,7 @@ def add_message_to_pool(
                 existing.description = pool_request.description
                 existing.dr = 0  # 恢复
                 existing.update_time = datetime.now()
-                existing.update_by = utils.get_username_from_token(token) or "admin"
+                existing.update_by = user_info.username or "admin"
 
                 # 标记消息为已处理
                 message.is_processed = True
@@ -405,8 +374,8 @@ def add_message_to_pool(
             description=pool_request.description,
             create_time=datetime.now(),
             update_time=datetime.now(),
-            create_by=utils.get_username_from_token(token) or "admin",
-            update_by=utils.get_username_from_token(token) or "admin",
+            create_by=user_info.username or "admin",
+            update_by=user_info.username or "admin",
             dr=0
         )
 
@@ -436,17 +405,11 @@ def add_message_to_pool(
 @router.delete("/{log_id}", summary="删除消息")
 def delete_message(
     log_id: str,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """删除指定ID的消息(物理删除)"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         message = db.query(TrackerMessageLog).filter(
@@ -483,17 +446,11 @@ def delete_message(
 @router.post("/batch/add-to-pool", summary="批量添加消息到关键词池")
 def batch_add_to_pool(
     batch_req: BatchAddToPoolRequest,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """批量添加消息到关键词池（接受合并的请求体）"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询消息
@@ -520,7 +477,7 @@ def batch_add_to_pool(
         restored = 0
         skipped = 0
         skipped_details = []
-        username = utils.get_username_from_token(token) or "admin"
+        username = user_info.username or "admin"
 
         for message in messages:
             # 检查关键词是否已存在
@@ -603,17 +560,11 @@ def batch_add_to_pool(
 @router.post("/batch/delete", summary="批量删除消息")
 def batch_delete_messages(
     batch_req: BatchDeleteMessagesRequest,
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     db: Session = Depends(get_db)
 ):
     """批量删除消息(物理删除，使用log_ids字段)"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询并物理删除 - 不使用dr字段

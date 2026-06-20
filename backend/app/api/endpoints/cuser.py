@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Path
+from fastapi import APIRouter, Depends, HTTPException, status, Path
 from fastapi.responses import StreamingResponse
 
 from app.user.requestVO import ChangePasswordRequest, TwofactorVerifyRequest, VerifyPasswordFor2FARequest
@@ -47,41 +47,11 @@ def logout(
 
 @router.post("/info", summary="获取用户信息", response_model=CommonResponse)
 def get_user_info(
-        req: Request,
+        user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     try:
-        token = req.headers.get("x-access-token")
-        if not token:
-            response = CommonResponse(
-                status="error",
-                msg="Token缺失",
-                code="401"
-            )
-            return response
-
-        # 验证token并获取用户信息
-        try:
-            payload = utils.verify_access_token(token)
-        except Exception as e:
-            response = CommonResponse(
-                status="error",
-                msg=f"Token验证失败: {str(e)}",
-                code="401"
-            )
-            return response
-
-        # 🔧 防御性检查：verify_access_token 验证失败时可能返回 None
-        # 例如：verify_secret 不匹配、token 过期等情况
-        if not payload:
-            response = CommonResponse(
-                status="error",
-                msg="Token验证失败或已过期",
-                code="401"
-            )
-            return response
-
-        user_name = payload.get("sub")
+        user_name = user_info.username
 
         if not user_name:
             response = CommonResponse(
@@ -102,7 +72,7 @@ def get_user_info(
             return response
 
         # 构建用户信息响应
-        user_info = {
+        user_data = {
             "user": {
                 "userId": str(user.id),  # 添加用户ID
                 "roles": ["admin"],  # 简化处理，所有用户都是admin
@@ -117,7 +87,7 @@ def get_user_info(
             status="success",
             msg="获取用户信息成功",
             code="200",
-            data=user_info
+            data=user_data
         )
         return response
 
@@ -133,19 +103,9 @@ def get_user_info(
 @router.post("/changePassword", summary="修改用户密码", response_model=CommonResponse)
 def change_password(
         user_request: ChangePasswordRequest,
-        req: Request = None,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="400"
-        )
-        return response
     user = db.query(models.User).filter(models.User.id == user_request.userId).first()
     if not user:
         response = CommonResponse(
@@ -194,19 +154,9 @@ def change_password(
 @router.get("/2faVerifyQrCode/{user_id}", summary="生成用户的2fa关联二维码，已启用2fa验证的用户不用调用此接口，返回文件流，即生成二维码图片")
 def twofa_verify(
         user_id: Annotated[str, Path(description="用户id")],
-        req: Request,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401"
-        )
-        return response
     user = db.query(models.User).filter(models.User.id == user_id).first()
     # 查找不到用户则不返回
     if not user:
@@ -233,19 +183,9 @@ def twofa_verify(
 @router.get("/2faVerifyCode/{user_id}", summary="返回二次验证的关联码，用于让用户手动添加二次验证",response_model=str,response_description="返回字符串")
 def twofa_verify(
         user_id: Annotated[str, Path(description="用户id")],
-        req: Request,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401"
-        )
-        return response
     user = db.query(models.User).filter(models.User.id == user_id).first()
     # 查找不到用户则不返回
     if not user:
@@ -256,19 +196,9 @@ def twofa_verify(
 def update_twofa_flag(
         user_id: Annotated[str, Path(description="用户id")],
         user_request: TwofactorVerifyRequest,
-        req: Request = None,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
-    try:
-        token = req.headers.get("x-access-token")
-        utils.verify_access_token(token)
-    except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg="token验证失败，失败原因：" + str(e),
-            code="401"
-        )
-        return response
     response = ""
     user = db.query(models.User).filter(models.User.id == user_id).first()
     # 查找不到用户则抛出异常
@@ -372,7 +302,7 @@ def update_twofa_flag(
 @router.post("/verifyPasswordFor2FA", summary="验证密码并返回2FA二维码", response_model=CommonResponse)
 def verify_password_for_2fa(
         user_request: VerifyPasswordFor2FARequest,
-        req: Request = None,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """
@@ -389,25 +319,7 @@ def verify_password_for_2fa(
     - 已启用2FA的用户不允许重复绑定
     """
     try:
-        # 1. 验证Token
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="Token缺失",
-                code="401"
-            )
-
-        try:
-            utils.verify_access_token(token)
-        except Exception as e:
-            return CommonResponse(
-                status="error",
-                msg=f"Token验证失败: {str(e)}",
-                code="401"
-            )
-
-        # 2. 查询用户
+        # 1. 查询用户
         user = db.query(models.User).filter(models.User.id == user_request.userId).first()
         if not user:
             return CommonResponse(

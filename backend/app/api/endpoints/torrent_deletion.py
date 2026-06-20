@@ -9,8 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth.models import User
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db, AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.models.setting_templates import DownloaderTypeEnum
@@ -144,6 +143,7 @@ async def _register_downloader_adapters(
                response_model=CommonResponse)
 async def delete_torrent(
         http_request: Request,
+        _user=Depends(require_authenticated_user),
         info_id: Optional[str] = Query(None, description="种子id"),
         downloader_id: Optional[str] = Query(None, description="下载器id"),
         delete_data: Optional[int] = Query(None, description="是否删除数据，1是true,0是false"),
@@ -151,25 +151,6 @@ async def delete_torrent(
         db: Session = Depends(get_db)
 ):
     """删除种子（使用TorrentDeletionService统一入口）"""
-    # 验证token
-    try:
-        from app.auth.utils import verify_access_token
-        token = http_request.headers.get("x-access-token")
-        if not verify_access_token(token):
-            return CommonResponse(
-                code="401",
-                msg="token验证失败或已过期",
-                status="error",
-                data=None
-            )
-    except Exception as e:
-        return CommonResponse(
-            code="401",
-            msg=f"token验证失败：{str(e)}",
-            status="error",
-            data=None
-        )
-
     try:
         # 参数验证
         delete_option = DeleteOption.DELETE_FILES_AND_TORRENT if delete_data else DeleteOption.DELETE_ONLY_TORRENT
@@ -384,30 +365,13 @@ class DeletionResultResponse(BaseModel):
 async def preview_bulk_torrent_deletion(
         request: DeletionPreviewRequest,
         http_request: Request,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """
     预览批量种子删除操作
-    注意：此端点不依赖用户认证，与其他 torrents 端点保持一致
+    认证：由 require_authenticated_user 统一处理。
     """
-    # 验证token
-    try:
-        from app.auth.utils import verify_access_token
-        token = http_request.headers.get("x-access-token")
-        if not verify_access_token(token):
-            return CommonResponse(
-                code="401",
-                msg="token验证失败或已过期",
-                status="error",
-                data=None
-            )
-    except Exception as e:
-        return CommonResponse(
-            code="401",
-            msg=f"token验证失败：{str(e)}",
-            status="error",
-            data=None
-        )
 
     try:
         # 参数验证
@@ -477,29 +441,13 @@ async def bulk_delete_torrents(
         request: BulkDeleteRequest,
         background_tasks: BackgroundTasks,
         http_request: Request,
+        _user=Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """
     批量删除种子
+    认证：由 require_authenticated_user 统一处理。
     """
-    # 验证token
-    try:
-        from app.auth.utils import verify_access_token
-        token = http_request.headers.get("x-access-token")
-        if not verify_access_token(token):
-            return CommonResponse(
-                code="401",
-                msg="token验证失败或已过期",
-                status="error",
-                data=None
-            )
-    except Exception as e:
-        return CommonResponse(
-            code="401",
-            msg=f"token验证失败：{str(e)}",
-            status="error",
-            data=None
-        )
 
     try:
         # 参数验证
@@ -733,7 +681,7 @@ class DeleteWithLevelResponse(BaseModel):
 
 @router.delete("/delete-with-level", response_model=CommonResponse)
 async def delete_torrent_with_level(
-        request: Request,
+        _user=Depends(require_authenticated_user),
         torrent_info_ids: str = Query(..., description="要删除的种子信息ID列表（逗号分隔）"),
         delete_level: int = Query(..., description="删除等级 (1=完全删除, 2=删除任务保留数据, 3=回收站, 4=待删除标签)",
                                   ge=1, le=4),
@@ -758,27 +706,7 @@ async def delete_torrent_with_level(
     Returns:
         删除结果
     """
-    # 将逗号分隔的字符串转换为列表
-    # 验证token
-    try:
-        from app.auth.utils import verify_access_token
-        token = request.headers.get("x-access-token")
-        if not verify_access_token(token):
-            return CommonResponse(
-                code="401",
-                msg="token验证失败或已过期",
-                status="error",
-                data=None
-            )
-    except Exception as e:
-        return CommonResponse(
-            code="401",
-            msg=f"token验证失败：{str(e)}",
-            status="error",
-            data=None
-        )
-
-    # 将逗号分隔的字符串转换为列表
+    # 将逗号分隔的字符串转换为列表（认证已迁移至 require_authenticated_user 依赖）
     torrent_info_id_list = [id.strip() for id in torrent_info_ids.split(',') if id.strip()]
 
     try:
@@ -917,7 +845,7 @@ class BatchDeleteRequest(BaseModel):
 async def delete_batch_async(
         request: Request,
         delete_request: BatchDeleteRequest,
-        current_user: User = Depends(get_current_user),
+        user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
         db: Session = Depends(get_db)
 ):
     """
@@ -968,7 +896,7 @@ async def delete_batch_async(
 
         logger.info(
             f"提交批量删除任务成功: task_id={task_id}, "
-            f"用户={current_user.username}, "
+            f"用户={user_info.username}, "
             f"种子数量={len(delete_request.torrent_info_ids)}, "
             f"删除等级={delete_request.delete_level}"
         )
@@ -997,7 +925,7 @@ async def delete_batch_async(
 @router.get("/delete-batch-status/{task_id}", response_model=CommonResponse)
 async def get_batch_delete_status(
         task_id: str,
-        current_user: User = Depends(get_current_user)
+        user_info: AuthenticatedUserInfo = Depends(require_authenticated_user)
 ):
     """
     查询批量删除任务状态
