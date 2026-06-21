@@ -29,8 +29,53 @@ REPO_ROOT = BACKEND_ROOT.parent
 APP_ROOT = BACKEND_ROOT / "app"
 REPORT_PATH = BACKEND_ROOT / "docs" / "diagnostic-report.md"
 # 历史幽灵版本（production schema 初始化遗留，不在迁移链）。
-# 仅用于诊断报告展示；治理后新库不会再产生此版本（由 migrate_database 救援）。
+# 治理后新库不会再产生此版本（由 migrate_database 的 KNOWN_GHOST_VERSIONS 救援）。
+# 诊断报告仍展示该字段，用于识别存量 frozen 快照库（需救援）。
 PRODUCTION_SCHEMA_VERSION = "9aea25308aff"
+
+
+def detect_alembic_head() -> Optional[str]:
+    """动态读取 alembic 迁移链 head（替代硬编码版本号）。
+
+    优先用 alembic 编程式 API；失败时回退解析 alembic heads 子命令。
+    返回 head revision id，失败返回 None。
+    """
+    # 方式1：编程式 API（与 migrate_database 一致）
+    try:
+        sys.path.insert(0, str(BACKEND_ROOT))
+        from alembic.config import Config
+        from alembic.script import ScriptDirectory
+        cfg = Config(str(BACKEND_ROOT / "alembic.ini"))
+        cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
+        heads = ScriptDirectory.from_config(cfg).get_heads()
+        if heads:
+            return heads[0]
+    except Exception:
+        pass
+    finally:
+        try:
+            sys.path.remove(str(BACKEND_ROOT))
+        except ValueError:
+            pass
+    # 方式2：子命令回退
+    code, out, _ = run_cmd(["python", "-m", "alembic", "heads"], cwd=BACKEND_ROOT)
+    if code == 0 and out:
+        # alembic heads 输出格式如 "(head) 95ef8bd8b47a (head)"
+        match = re.search(r"\b[0-9a-f]{12}\b", out)
+        if match:
+            return match.group(0)
+    return None
+
+
+def detect_alembic_version_inconsistency(db_version: str, head: Optional[str]) -> str:
+    """诊断数据库版本与迁移链 head 的一致性（治理后健康指标）。"""
+    if head is None:
+        return "无法读取迁移链 head"
+    if db_version == head:
+        return "✅ 最新（与 head 一致）"
+    if db_version == PRODUCTION_SCHEMA_VERSION:
+        return "⚠️ 幽灵版本（frozen 快照库，需 migrate_database 救援）"
+    return f"⚠️ 版本不匹配（DB={db_version}, head={head}，可能版本回滚或数据损坏）"
 
 
 def rel(path: Path | str) -> str:
@@ -285,11 +330,19 @@ def database_diagnostics(db_path: Path) -> Tuple[str, List[str]]:
         rows.append(["WAL enabled", str(get_scalar(conn, "PRAGMA journal_mode")).lower() == "wal"])
         if table_exists(conn, "alembic_version"):
             versions = [row[0] for row in conn.execute("SELECT version_num FROM alembic_version").fetchall()]
-            rows.append(["alembic_version", ", ".join(versions) if versions else "(empty)"])
-            rows.append([f"Contains {PRODUCTION_SCHEMA_VERSION}", PRODUCTION_SCHEMA_VERSION in versions])
+            db_version = versions[0] if versions else "(empty)"
+            rows.append(["alembic_version", db_version])
+            # 动态读取 head 并诊断一致性（治理后健康指标）
+            head = detect_alembic_head()
+            rows.append(["迁移链 head", head or "(无法读取)"])
+            rows.append(["版本一致性", detect_alembic_version_inconsistency(db_version, head) if versions else "(空版本表)"])
+            rows.append([f"历史幽灵版本 {PRODUCTION_SCHEMA_VERSION}", PRODUCTION_SCHEMA_VERSION in versions])
         else:
             rows.append(["alembic_version", "table missing"])
-            rows.append([f"Contains {PRODUCTION_SCHEMA_VERSION}", False])
+            rows.append(["迁移链 head", detect_alembic_head() or "(无法读取)"])
+            rows.append(["版本一致性", "(alembic_version 表缺失)"])
+            rows.append([f"历史幽灵版本 {PRODUCTION_SCHEMA_VERSION}", False])
+        # production_complete_schema.sql 状态（frozen 灾备材料）
         rows.append(["production_complete_schema.sql", detect_schema_hash()])
     except Exception as exc:
         notes.append(f"Database metadata query failed: {type(exc).__name__}: {exc}")

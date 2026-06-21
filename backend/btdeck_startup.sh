@@ -49,19 +49,6 @@ ensure_log_dir() {
     fi
 }
 
-# 初始化数据库（配置文件由 lifespan 统一处理，迁移也由 lifespan 的 migrate_database 负责）
-init_database() {
-    log_info "数据库初始化（迁移将由 lifespan 统一执行）..."
-    cd "$PROJECT_DIR"
-
-    # 四轨治理后，shell 层不再执行 alembic upgrade head：
-    # 迁移统一由 FastAPI lifespan 的 migrate_database() 负责（编程式 alembic，
-    # 含幽灵版本救援/迁移前备份）。shell 层重复迁移会与 lifespan 冲突。
-    # 配置文件初始化也由 lifespan 的 init_config_file() 负责（幂等）。
-
-    log_info "数据库初始化准备完成"
-}
-
 # 启动服务
 start_server() {
     log_info "正在启动 BTDeck 后端服务..."
@@ -87,7 +74,9 @@ main() {
     log_info "========================================"
 
     ensure_log_dir
-    init_database
+    # 四轨治理后：shell 层只负责环境准备 + 启动 uvicorn。
+    # 配置初始化(init_config_file)、数据库迁移(migrate_database)、seed(init_db)
+    # 全部由 FastAPI lifespan 统一负责，避免重复执行。
     start_server
 }
 

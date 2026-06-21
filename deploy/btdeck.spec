@@ -31,6 +31,7 @@ else:
 
 # 隐式导入（PyInstaller 可能检测不到的模块）
 hiddenimports = [
+    # === ASGI / 服务器 ===
     'uvicorn.logging',
     'uvicorn.loops',
     'uvicorn.loops.auto',
@@ -42,30 +43,49 @@ hiddenimports = [
     'uvicorn.lifespan',
     'uvicorn.lifespan.on',
     'uvicorn.lifespan.off',
+    # === 数据库 ===
     'sqlalchemy.dialects.sqlite',
     'sqlalchemy.sql.default_comparator',
     'aiosqlite',
+    # === Alembic（frozen 模式 migrate_database 用编程式 API）===
     'alembic',
     'alembic.config',
     'alembic.command',
     'alembic.migration',
     'alembic.operations',
     'alembic.autogenerate',
+    'alembic.runtime.migration',
+    'alembic.script',
+    'alembic.util',
+    # === 配置 / 数据校验 ===
     'pydantic',
     'pydantic.deprecated',
     'pydantic.deprecated.decorator',
     'pydantic_settings',
     'email_validator',
+    # === 安全 / 认证 ===
     'passlib',
     'passlib.handlers',
     'passlib.handlers.bcrypt',
     'jose',
     'pyotp',
+    'gmssl',  # 国密 SM4 加密，app.database 模块级 import，PyInstaller 可能漏追踪
+    'Cryptodome',
+    'Cryptodome.Cipher',
+    'Cryptodome.Cipher.AES',
+    'Cryptodome.Util.Padding',
+    # === 下载器客户端 ===
     'qbittorrentapi',
     'transmissionrpc',
     'transmission_rpc',
+    # === 定时任务 ===
     'apscheduler',
+    'croniter',
+    # === 其他第三方隐式依赖 ===
     'yaml',
+    'bencodepy',  # torrent 解析
+    'ping3',  # 网络探测
+    'requests',
     # qrcode 延迟导入 PIL 生成二维码图片，PyInstaller 静态分析检测不到，需显式声明
     'PIL',
     'PIL.Image',
@@ -74,15 +94,47 @@ hiddenimports = [
     'qrcode.image.pil',
     # 审计日志 Excel 导出用 pandas.to_excel(engine='openpyxl')，openpyxl 为延迟导入
     'openpyxl',
+    # === app 包及其子包（确保 PyInstaller 收集所有子模块）===
     'app',
     'app.api',
     'app.api.endpoints',
+    'app.api.models',
+    'app.api.schemas',
+    'app.auth',
     'app.core',
+    'app.data',
+    'app.downloader',
+    'app.enums',
+    'app.migrations',
     'app.models',
+    'app.models.response',
+    'app.repositories',
     'app.schemas',
     'app.services',
+    'app.services.downloader_adapters',
+    'app.services.tag_adapters',
+    'app.startup',
+    'app.tasks',
+    'app.tasks.scheduler',
+    'app.tasks.scheduler.torrent_sync',
+    'app.torrents',
+    'app.tracker',
+    'app.user',
+    'app.utils',
     'app.database',
     'app.factory',
+    # === app.models 子模块（alembic env.py 和 ORM 依赖，确保 frozen 下可加载）===
+    'app.models.search_template',
+    'app.models.notification',
+    'app.models.setting_templates',
+    'app.models.torrent_tags',
+    'app.models.downloader_capabilities',
+    'app.models.downloader_settings',
+    'app.models.downloader_path_maintenance',
+    'app.models.speed_schedule_rules',
+    'app.models.torrent_deletion_audit_log',
+    'app.models.torrent_file_backup',
+    'app.models.seed_transfer_audit_log',
 ]
 
 a = Analysis(
