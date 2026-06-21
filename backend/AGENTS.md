@@ -121,12 +121,15 @@ mypy app/ && black --check app/ && flake8 app/
 # 测试
 pytest
 
-# 启动
+# 启动（启动时自动 migrate_database + init_db）
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 5001
 
-# 数据库迁移
-alembic revision --autogenerate -m "描述"
+# 数据库迁移（四轨治理后统一流程，详见 docs/constraints/database-migration.md）
+# 改模型后用临时库生成迁移，避免污染开发库 alembic_version
+DATABASE_PATH=/tmp/autogen.db alembic upgrade head
+DATABASE_PATH=/tmp/autogen.db alembic revision --autogenerate -m "描述"
 alembic upgrade head
+alembic heads  # 确认单 head
 ```
 
 ---

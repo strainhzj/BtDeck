@@ -61,16 +61,18 @@
 | 从 Compose 删除 `DATABASE_URL` | 可行 | 如果短期不准备支持通用 DB URL，删除无效变量并保留 `CONFIG_DIR=/app/config` 是最小风险做法。 |
 | 生产强制提供 `SECRET_KEY` | 需调整 | 安全方向正确，但必须先处理现有用户 token 失效预期和部署文档。直接改默认值会让未配置环境变量的部署重启后行为变化。 |
 
-### 2. 迁移统一方案
+### 2. 迁移统一方案（✅ 已于 v1.0.5-db-governance 全部完成）
+
+> 下表结论已从审查时的"需调整/可行"更新为"已完成"。实施细节见 commit `cb45437` / `d6785e4` / `1cd8c03`。
 
 | 方案/问题 | 结论 | 说明 |
 | --- | --- | --- |
-| `init_db()` 拆成只做 seed | 可行 | 方向正确，且 seed 当前是幂等查询后插入。删除 `create_all()` 后，前提是 Alembic 空库迁移能创建所有 seed 依赖表。必须先补一个“空库 alembic upgrade head + seed”测试。 |
-| 删除 `create_all()` 后空库首次启动 seed | 需调整 | 如果 Alembic 链完整，seed 可正常写入；但当前 `init_db()` 导入的模型多于 Alembic env 中导入的模型，需核对是否所有表都有迁移覆盖。另外 seed 依赖默认任务、模板、关键词、通知表；任何迁移遗漏都会变成启动失败，这正是要通过测试暴露的问题。 |
-| 删除 Docker shell 层 `alembic upgrade head` | 可行 | 只保留 lifespan 迁移入口更清晰。但当前 `run_alembic_migrations()` 在开发失败时继续启动；Docker 生产需要确保 `DEV=False` 或迁移失败时强制退出，否则删除 shell 层会降低失败可见性。 |
-| 删除生产 schema 快照自动初始化路径 | 需调整 | 新部署应走 Alembic；但已有基于快照初始化、`alembic_version=9aea25308aff` 的数据库不能简单假设与迁移 head 等价。删除自动路径前需要 baseline/校验脚本。 |
-| Alembic baseline 迁移处理已有数据库 | 需调整 | 需要区分三类库：空库、已有表但无 `alembic_version` 的旧库、已有 `alembic_version=9aea25308aff` 的快照库。对第二类应检测 schema 后 `alembic stamp` 到合适版本或提供一次性迁移；对第三类应校验 schema 与 head 差异，不能盲目升级。 |
-| `production_complete_schema.sql` 仅作为灾备材料 | 需调整 | 可以从自动启动路径移除，但不建议立即删除文件。保留到至少一个版本周期，并在文档中说明不再作为 schema 来源。 |
+| `init_db()` 拆成只做 seed | ✅ 已完成 | `create_all()` 已删除（database.py），init_db 仅保留 seed。空库 alembic upgrade head + seed 测试已补（test_db_migration.py 6 场景 + test_search_template_edge_cases.py seed 测试）。 |
+| 删除 `create_all()` 后空库首次启动 seed | ✅ 已完成 | env.py 已补齐全部模型导入（含 3 个漏导 tracker 模型 + SearchTemplate），23→24 表迁移链完整覆盖所有 seed 依赖表。 |
+| 删除 Docker shell 层 `alembic upgrade head` | ✅ 已完成 | btdeck_startup.sh 已删除 shell 层迁移，统一由 lifespan 的 migrate_database() 负责。DEV 分流保留（向下兼容，不破坏存量）。 |
+| 删除生产 schema 快照自动初始化路径 | ✅ 已完成 | main.py 已删除 ensure_database_initialized 调用。init_schema_from_production.py 保留作 frozen 手动灾备。幽灵版本由 KNOWN_GHOST_VERSIONS 自动救援（stamp purge）。 |
+| Alembic baseline 处理已有数据库 | ✅ 已完成 | migrate_database() 的 _rescue_or_warn_version 区分：幽灵版本（黑名单）→ 自动 stamp；未知版本（回滚场景）→ 只告警不降级。三类库均有测试覆盖（test_db_governance.py + test_db_rollback_scenarios.py）。 |
+| `production_complete_schema.sql` 仅作为灾备材料 | ✅ 已完成 | 文件保留，已加下线注释头（"frozen 灾备兜底材料，非启动路径"）。schema 来源以 Alembic 为准。 |
 
 ### 3. 白名单任务注册表
 

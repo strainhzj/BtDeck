@@ -1,8 +1,17 @@
 # BtDeck 架构深度分析与修复方案
 
+> ⚠️ **更新通知（2026-06-21）**：本文的"数据库迁移双轨/三轨"分析（第二章）描述的是 **治理前** 的历史状态。
+> 这些问题已全部于 **v1.0.5-db-governance** 完成治理（commit cb45437/d6785e4/1cd8c03）。
+> 当前数据库 schema 统一由 Alembic 单轨管理，详见：
+> - [database-migration.md](./constraints/database-migration.md)（最新迁移链 + 操作指南）
+> - [architecture-review.md 第二章](./architecture-review.md)（方案已标记 ✅ 已完成）
+> - [rollback-guide.md](./operations/rollback-guide.md)（回滚策略）
+>
+> 以下内容保留作历史参考，**不代表当前代码状态**。
+
 本文基于当前代码静态分析，覆盖两个关键问题：
 
-1. 配置系统、数据库迁移、旧路由文件的“双轨”问题。
+1. 配置系统、数据库迁移、旧路由文件的"双轨"问题。
 2. 定时任务代码执行的隔离与收敛方案。
 
 ## 一、配置系统双轨
