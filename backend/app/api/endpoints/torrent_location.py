@@ -14,11 +14,12 @@ router = APIRouter()
 
 # ==================== 修改种子保存路径 ====================
 
+
 @router.post("/set-location", response_model=CommonResponse)
 async def set_torrent_location(
-        location_request: SetLocationRequest,
-        user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-        db: Session = Depends(get_db)
+    location_request: SetLocationRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """
     修改种子保存路径
@@ -33,7 +34,7 @@ async def set_torrent_location(
     if not user_info.user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None},
         )
 
     try:
@@ -54,7 +55,7 @@ async def set_torrent_location(
             move_files=location_request.move_files,
             user_id=user_info.user_id,
             username=username,
-            app_state=app.state
+            app_state=app.state,
         )
 
         # 构建响应消息
@@ -71,8 +72,8 @@ async def set_torrent_location(
                     "success": True,
                     "moved_count": result["moved_count"],
                     "failed_count": result["failed_count"],
-                    "error_message": result["error_message"]
-                }
+                    "error_message": result["error_message"],
+                },
             )
         else:
             return CommonResponse(
@@ -83,15 +84,10 @@ async def set_torrent_location(
                     "success": False,
                     "moved_count": 0,
                     "failed_count": len(location_request.hashes),
-                    "error_message": result["error_message"]
-                }
+                    "error_message": result["error_message"],
+                },
             )
 
     except Exception as e:
         logger.error(f"修改种子路径API异常: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"服务器错误: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"服务器错误: {str(e)}", code="500", data=None)

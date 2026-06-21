@@ -8,11 +8,7 @@ import asyncio
 import logging
 import os
 from qbittorrentapi import Client, NotFound404Error, LoginFailed
-from app.services.torrent_deletion_service import (
-    DownloaderDeleteAdapter,
-    DeleteOption,
-    SafetyCheckLevel
-)
+from app.services.torrent_deletion_service import DownloaderDeleteAdapter, DeleteOption, SafetyCheckLevel
 from app.utils.encryption import decrypt_password
 
 logger = logging.getLogger(__name__)
@@ -21,7 +17,15 @@ logger = logging.getLogger(__name__)
 class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
     """qBittorrent删除适配器"""
 
-    def __init__(self, client: Client = None, host: str = None, username: str = None, password: str = None, port: int = 8080, use_ssl: bool = False):
+    def __init__(
+        self,
+        client: Client = None,
+        host: str = None,
+        username: str = None,
+        password: str = None,
+        port: int = 8080,
+        use_ssl: bool = False,
+    ):
         """
         初始化qBittorrent适配器
 
@@ -62,7 +66,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                 host=base_url,
                 username=self.username,
                 password=password,
-                VERIFY_WEBUI_CERTIFICATE=False  # 跳过SSL证书验证
+                VERIFY_WEBUI_CERTIFICATE=False,  # 跳过SSL证书验证
             )
 
             # 测试连接
@@ -83,7 +87,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         self,
         torrent_hashes: List[str],
         delete_option: DeleteOption,
-        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED
+        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED,
     ) -> Dict[str, Any]:
         """
         删除qBittorrent中的种子（公开接口）
@@ -100,15 +104,13 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
             删除结果字典
         """
         # 委托给私有实现方法
-        return await self._delete_torrents_impl(
-            torrent_hashes, delete_option, safety_check_level
-        )
+        return await self._delete_torrents_impl(torrent_hashes, delete_option, safety_check_level)
 
     async def _delete_torrents_impl(
         self,
         torrent_hashes: List[str],
         delete_option: DeleteOption,
-        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED
+        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED,
     ) -> Dict[str, Any]:
         """
         内部实现：删除qBittorrent种子（私有方法）
@@ -124,12 +126,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         Returns:
             删除结果字典
         """
-        result = {
-            "success_hashes": [],
-            "failed_hashes": {},
-            "warnings": [],
-            "deleted_files": []
-        }
+        result = {"success_hashes": [], "failed_hashes": {}, "warnings": [], "deleted_files": []}
 
         if not torrent_hashes:
             return result
@@ -158,16 +155,14 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                     result["warnings"].append(f"种子{hash_value[:8]}...信息获取失败")
 
             # 确定删除参数
-            delete_files = (delete_option == DeleteOption.DELETE_FILES_AND_TORRENT)
-            skip_other_check = (safety_check_level == SafetyCheckLevel.BASIC)
+            delete_files = delete_option == DeleteOption.DELETE_FILES_AND_TORRENT
+            skip_other_check = safety_check_level == SafetyCheckLevel.BASIC
 
             # 批量删除种子
             try:
                 # qBittorrent支持批量删除
                 self.client.torrents.delete(
-                    hashes=valid_hashes,
-                    delete_files=delete_files,
-                    skip_other_check=skip_other_check
+                    hashes=valid_hashes, delete_files=delete_files, skip_other_check=skip_other_check
                 )
 
                 # 记录成功删除的种子
@@ -180,9 +175,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                 logger.error(f"批量删除失败，尝试逐个删除: {str(e)}")
 
                 # 如果批量删除失败，尝试逐个删除
-                await self._delete_torrents_individually(
-                    valid_hashes, delete_option, safety_check_level, result
-                )
+                await self._delete_torrents_individually(valid_hashes, delete_option, safety_check_level, result)
 
         except Exception as e:
             logger.error(f"删除qBittorrent种子时发生错误: {str(e)}")
@@ -198,18 +191,16 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         torrent_hashes: List[str],
         delete_option: DeleteOption,
         safety_check_level: SafetyCheckLevel,
-        result: Dict[str, Any]
+        result: Dict[str, Any],
     ):
         """逐个删除种子（当批量删除失败时使用）"""
-        delete_files = (delete_option == DeleteOption.DELETE_FILES_AND_TORRENT)
-        skip_other_check = (safety_check_level == SafetyCheckLevel.BASIC)
+        delete_files = delete_option == DeleteOption.DELETE_FILES_AND_TORRENT
+        skip_other_check = safety_check_level == SafetyCheckLevel.BASIC
 
         for hash_value in torrent_hashes:
             try:
                 self.client.torrents.delete(
-                    hashes=[hash_value],
-                    delete_files=delete_files,
-                    skip_other_check=skip_other_check
+                    hashes=[hash_value], delete_files=delete_files, skip_other_check=skip_other_check
                 )
 
                 result["success_hashes"].append(hash_value)
@@ -266,7 +257,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                     "completion_date": torrent.completion_on,
                     "addition_date": torrent.added_on,
                     "category": torrent.category,
-                    "tags": torrent.tags
+                    "tags": torrent.tags,
                 }
             else:
                 return None
@@ -280,10 +271,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         return "qbittorrent"
 
     async def _perform_safety_check(
-        self,
-        torrent_info: Dict[str, Any],
-        delete_option: DeleteOption,
-        safety_check_level: SafetyCheckLevel
+        self, torrent_info: Dict[str, Any], delete_option: DeleteOption, safety_check_level: SafetyCheckLevel
     ) -> List[str]:
         """执行安全检查"""
         warnings = []
@@ -341,7 +329,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                 "download_path": info.get("save_path", ""),
                 "temp_path": info.get("temp_path", ""),
                 "max_connections": info.get("max_conn_per_torrent", 0),
-                "max_upload_slots": info.get("max_uploads_per_torrent", 0)
+                "max_upload_slots": info.get("max_uploads_per_torrent", 0),
             }
         except Exception as e:
             logger.error(f"获取下载器信息失败: {str(e)}")
@@ -373,11 +361,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                     logger.warning(f"qBittorrent返回无效hash值: '{raw_hash}'，已跳过")
                     continue
 
-                result.append({
-                    'hash': normalized_hash,
-                    'name': torrent.name,
-                    'size': torrent.size
-                })
+                result.append({"hash": normalized_hash, "name": torrent.name, "size": torrent.size})
 
             logger.info(f"成功从qBittorrent获取{len(result)}个种子")
             return result
@@ -413,13 +397,9 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         if not hash_value:
             return False
         # 验证长度为40位且只包含十六进制字符
-        return len(hash_value) == 40 and all(c in '0123456789abcdef' for c in hash_value)
+        return len(hash_value) == 40 and all(c in "0123456789abcdef" for c in hash_value)
 
-    async def add_tag_to_torrent(
-        self,
-        torrent_hash: str,
-        tag: str
-    ) -> Tuple[bool, Optional[str]]:
+    async def add_tag_to_torrent(self, torrent_hash: str, tag: str) -> Tuple[bool, Optional[str]]:
         """
         为种子添加标签（等级4删除使用）
 
@@ -439,10 +419,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                 logger.debug(f"创建标签可能失败(可能已存在): {str(e)}")
 
             # 为种子添加标签
-            self.client.torrents_add_tags(
-                torrent_hashes=[torrent_hash],
-                tags=[tag]
-            )
+            self.client.torrents_add_tags(torrent_hashes=[torrent_hash], tags=[tag])
 
             logger.info(f"qBittorrent种子 {torrent_hash} 已添加标签: {tag}")
             return True, ""
@@ -453,10 +430,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
             return False, error_msg
 
     async def create_marker_file(
-        self,
-        torrent_hash: str,
-        torrent_name: str,
-        download_path: str
+        self, torrent_hash: str, torrent_name: str, download_path: str
     ) -> Tuple[bool, Optional[str]]:
         """
         创建标记文件（等级3删除使用）
@@ -486,7 +460,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
             marker_file_path = os.path.join(base_dir, f".deleteme_{torrent_hash}")
 
             # 创建标记文件
-            with open(marker_file_path, 'w', encoding='utf-8') as f:
+            with open(marker_file_path, "w", encoding="utf-8") as f:
                 f.write(f"Torrent: {torrent_name}\n")
                 f.write(f"Hash: {torrent_hash}\n")
                 f.write(f"Download Path: {download_path}\n")
@@ -500,10 +474,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
             logger.error(error_msg)
             return False, error_msg
 
-    async def get_torrent_files(
-        self,
-        torrent_hash: str
-    ) -> Tuple[bool, Optional[List[str]], Optional[str]]:
+    async def get_torrent_files(self, torrent_hash: str) -> Tuple[bool, Optional[List[str]], Optional[str]]:
         """
         获取种子文件列表（用于验证和记录）
 
@@ -523,10 +494,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
             # 提取相对路径列表
             file_list = [f.name for f in torrent_files]
 
-            logger.info(
-                f"qBittorrent种子 {torrent_hash} 文件列表获取成功，"
-                f"共 {len(file_list)} 个文件"
-            )
+            logger.info(f"qBittorrent种子 {torrent_hash} 文件列表获取成功，" f"共 {len(file_list)} 个文件")
             return True, file_list, ""
 
         except Exception as e:

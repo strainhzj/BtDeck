@@ -48,12 +48,9 @@ from app.api.endpoints.torrent_helpers import (
     parse_size_string,
     parse_datetime_string,
     custom_serializer,
-    _safe_write_audit_log
+    _safe_write_audit_log,
 )
-from app.api.endpoints.torrent_sync import (
-    qb_add_torrents,
-    tr_add_torrents
-)
+from app.api.endpoints.torrent_sync import qb_add_torrents, tr_add_torrents
 from app.services.torrent_crud_service import get_torrent_info
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 
@@ -64,8 +61,10 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # ==================== 种子操作请求模型 ====================
 
+
 class TorrentOperationRequest(BaseModel):
     """种子操作请求（统一基类）"""
+
     hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
     operator: Optional[str] = Field(default="admin", description="操作人")
 
@@ -73,31 +72,22 @@ class TorrentOperationRequest(BaseModel):
 @router.post("/list", response_model=CommonResponse)
 def torrent_list(
     _user=Depends(require_authenticated_user),
-    name: str = Query(
-        default="default",
-        alias="name",
-        description="种子名称"
-    ),
-    db: Session = Depends(get_db)
+    name: str = Query(default="default", alias="name", description="种子名称"),
+    db: Session = Depends(get_db),
 ):
     """
     同步下载器中的种子数据到数据库
     """
     try:
         # 查询启用的下载器（返回完整模型实例，以支持@property属性访问）
-        downloaders = db.query(BtDownloaders).filter(
-            BtDownloaders.dr == 0,
-            BtDownloaders.enabled == True,
-            BtDownloaders.status == '1'
-        ).all()
+        downloaders = (
+            db.query(BtDownloaders)
+            .filter(BtDownloaders.dr == 0, BtDownloaders.enabled == True, BtDownloaders.status == "1")
+            .all()
+        )
 
         if not downloaders:
-            return CommonResponse(
-                status="success",
-                msg="未找到可用的下载器",
-                code="200",
-                data=[]
-            )
+            return CommonResponse(status="success", msg="未找到可用的下载器", code="200", data=[])
 
         synced_count = 0
         errors = []
@@ -136,59 +126,45 @@ def torrent_list(
             data={
                 "synced_count": synced_count,
                 "total_count": len(downloaders),
-                "errors": errors if len(errors) <= 5 else errors[:5]  # 限制返回的错误数量
-            }
+                "errors": errors if len(errors) <= 5 else errors[:5],  # 限制返回的错误数量
+            },
         )
 
     except SQLAlchemyError as e:
         logger.error(f"数据库操作失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"数据库操作失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"数据库操作失败: {str(e)}", code="500", data=None)
     except Exception as e:
         logger.error(f"同步过程中发生未知错误: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"同步失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"同步失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/add", response_model=CommonResponse)
 async def create_torrent(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
-        save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
-        tags: Optional[str | None] = Form("", description="标签"),
-        category: Optional[str | None] = Form("", description="分类"),
-        paused: Optional[bool] = Form(False, description="是否暂停,0代表false，1代表true"),
-        skip_hash_check: Optional[bool | None] = Form(False, description="是否跳过校验,0代表false，1代表true"),
-        is_sequential_download: Optional[bool | None] = Form(False, description="是否按顺序下载,0代表false，1代表true"),
-        is_first_last_piece_priority: Optional[bool | None] = Form(False,
-                                                                   description="是否先下载首尾文件块,0代表false，1代表true"),
-        upload_limit: Optional[str | int | None] = Form(False, description="上传速度，单位bytes/second"),
-        download_limit: Optional[str | int | None] = Form(False, description="下载速度，单位bytes/second"),
-        torrent_file: Optional[UploadFile] = File(description="种子文件"),
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user),
+    request: Request = None,
+    downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
+    save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
+    tags: Optional[str | None] = Form("", description="标签"),
+    category: Optional[str | None] = Form("", description="分类"),
+    paused: Optional[bool] = Form(False, description="是否暂停,0代表false，1代表true"),
+    skip_hash_check: Optional[bool | None] = Form(False, description="是否跳过校验,0代表false，1代表true"),
+    is_sequential_download: Optional[bool | None] = Form(False, description="是否按顺序下载,0代表false，1代表true"),
+    is_first_last_piece_priority: Optional[bool | None] = Form(
+        False, description="是否先下载首尾文件块,0代表false，1代表true"
+    ),
+    upload_limit: Optional[str | int | None] = Form(False, description="上传速度，单位bytes/second"),
+    download_limit: Optional[str | int | None] = Form(False, description="下载速度，单位bytes/second"),
+    torrent_file: Optional[UploadFile] = File(description="种子文件"),
+    db: Session = Depends(get_db),
 ):
     # """创建新的种子信息"""
-    result = CommonResponse(
-        status="success",
-        msg="种子添加成功",
-        data=None,
-        code="200"
-    )
+    result = CommonResponse(status="success", msg="种子添加成功", data=None, code="200")
 
     # ========== 从 app.state.store 获取缓存的下载器（强制规范） ==========
     # 步骤1：获取 app 对象并检查缓存初始化
     app = request.app
 
-    if not hasattr(app.state, 'store'):
+    if not hasattr(app.state, "store"):
         result.code = "500"
         result.msg = "下载器缓存未初始化"
         result.status = "failed"
@@ -197,10 +173,7 @@ async def create_torrent(
     # 步骤2：从缓存获取下载器
     # 🔧 修复：使用异步版本 get_snapshot() 避免线程问题
     cached_downloaders = await app.state.store.get_snapshot()
-    downloader_vo = next(
-        (d for d in cached_downloaders if d.downloader_id == downloader_id),
-        None
-    )
+    downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
 
     # 步骤3：验证下载器有效性
     if not downloader_vo:
@@ -209,7 +182,7 @@ async def create_torrent(
         result.status = "failed"
         return result
 
-    if hasattr(downloader_vo, 'fail_time') and downloader_vo.fail_time > 0:
+    if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
         result.code = "503"
         result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
         result.status = "failed"
@@ -234,11 +207,7 @@ async def create_torrent(
         def write_temp_file(content):
             """安全地写入临时文件"""
             try:
-                tmp_file = tempfile.NamedTemporaryFile(
-                    mode='wb',
-                    delete=False,
-                    suffix=".torrent"
-                )
+                tmp_file = tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".torrent")
                 tmp_file.write(content)
                 tmp_file.flush()  # 确保数据写入磁盘
                 os.fsync(tmp_file.fileno())  # 强制同步
@@ -246,7 +215,7 @@ async def create_torrent(
                 return tmp_file.name
             except Exception as e:
                 logging.error(f"写入临时文件失败: {str(e)}")
-                if 'tmp_file' in locals():
+                if "tmp_file" in locals():
                     try:
                         tmp_file.close()
                     except OSError as close_err:
@@ -274,10 +243,7 @@ async def create_torrent(
             # 使用缓存的客户端连接（强制规范）
             tr_client = client
             # 准备添加参数
-            add_args = {
-                "paused": paused,
-                "download_dir": save_path if save_path else None
-            }
+            add_args = {"paused": paused, "download_dir": save_path if save_path else None}
 
             # 如果有种子文件，添加文件
             if tmp_file_path:
@@ -289,6 +255,7 @@ async def create_torrent(
                 file_data = await asyncio.to_thread(read_file_data, tmp_file_path)
                 # 将文件数据包装成类似文件对象
                 from io import BytesIO
+
                 tr_client.add_torrent(BytesIO(file_data), **add_args)
             else:
                 result.code = "400"
@@ -310,9 +277,13 @@ async def create_torrent(
                 return result
 
             # 检查数据库中是否已存在该种子
-            existing_torrent = db.query(TorrentInfo.info_id).filter(TorrentInfo.hash == info_hash).filter(
-                TorrentInfo.dr == 0).filter(
-                TorrentInfo.downloader_id == downloader_id).first()
+            existing_torrent = (
+                db.query(TorrentInfo.info_id)
+                .filter(TorrentInfo.hash == info_hash)
+                .filter(TorrentInfo.dr == 0)
+                .filter(TorrentInfo.downloader_id == downloader_id)
+                .first()
+            )
 
             if existing_torrent is None:
                 # 不存在：创建新记录
@@ -342,11 +313,19 @@ async def create_torrent(
 
             file_data = await asyncio.to_thread(read_file_data_qb, tmp_file_path)
             from io import BytesIO
-            qb_client.torrents_add(torrent_files=BytesIO(file_data), save_path=save_path, is_stopped=paused, tags=tags,
-                                   category=category, is_skip_checking=skip_hash_check,
-                                   is_sequential_download=is_sequential_download,
-                                   is_first_last_piece_priority=is_first_last_piece_priority,
-                                   upload_limit=upload_limit, download_limit=download_limit)
+
+            qb_client.torrents_add(
+                torrent_files=BytesIO(file_data),
+                save_path=save_path,
+                is_stopped=paused,
+                tags=tags,
+                category=category,
+                is_skip_checking=skip_hash_check,
+                is_sequential_download=is_sequential_download,
+                is_first_last_piece_priority=is_first_last_piece_priority,
+                upload_limit=upload_limit,
+                download_limit=download_limit,
+            )
 
             # 从qBittorrent获取种子信息（最多30秒）
             torrents = None
@@ -375,14 +354,17 @@ async def create_torrent(
         qb_torrent = torrents[0]
 
         # 检查数据库中是否已存在该种子
-        existing_torrent = db.query(TorrentInfo.info_id).filter(TorrentInfo.hash == info_hash).filter(
-            TorrentInfo.dr == 0).filter(
-            TorrentInfo.downloader_id == downloader_id).first()
+        existing_torrent = (
+            db.query(TorrentInfo.info_id)
+            .filter(TorrentInfo.hash == info_hash)
+            .filter(TorrentInfo.dr == 0)
+            .filter(TorrentInfo.downloader_id == downloader_id)
+            .first()
+        )
 
         if existing_torrent is None:
             # 不存在：创建新记录
-            db_torrent = create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent,
-                                                           tmp_file_path)
+            db_torrent = create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp_file_path)
             db.add(db_torrent)
             db.commit()
             db.refresh(db_torrent)
@@ -409,12 +391,12 @@ async def create_torrent(
                         "tags": tags,
                         "category": category,
                         "paused": paused,
-                        "file_size": db_torrent.size
+                        "file_size": db_torrent.size,
                     },
                     new_value={"status": "added"},
                     operation_result=AuditOperationResult.SUCCESS,
                     downloader_id=downloader_id,
-                    **extract_audit_info_from_request(request)
+                    **extract_audit_info_from_request(request),
                 )
         except Exception as audit_error:
             # 审计日志失败不影响主业务
@@ -437,20 +419,22 @@ async def create_torrent(
 
 @router.post("/add-batch", response_model=CommonResponse)
 async def create_torrents_batch(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        torrent_files: List[UploadFile] = File(..., description="种子文件列表（最多10个）"),
-        downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
-        save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
-        tags: Optional[str | None] = Form("", description="标签"),
-        category: Optional[str | None] = Form("", description="分类"),
-        paused: Optional[bool] = Form(False, description="是否暂停,0代表false，1代表true"),
-        skip_hash_check: Optional[bool | None] = Form(False, description="是否跳过校验,0代表false，1代表true"),
-        is_sequential_download: Optional[bool | None] = Form(False, description="是否按顺序下载,0代表false，1代表true"),
-        is_first_last_piece_priority: Optional[bool | None] = Form(False, description="是否先下载首尾文件块,0代表false，1代表true"),
-        upload_limit: Optional[str | int | None] = Form(False, description="上传速度，单位bytes/second"),
-        download_limit: Optional[str | int | None] = Form(False, description="下载速度，单位bytes/second"),
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user),
+    request: Request = None,
+    torrent_files: List[UploadFile] = File(..., description="种子文件列表（最多10个）"),
+    downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
+    save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
+    tags: Optional[str | None] = Form("", description="标签"),
+    category: Optional[str | None] = Form("", description="分类"),
+    paused: Optional[bool] = Form(False, description="是否暂停,0代表false，1代表true"),
+    skip_hash_check: Optional[bool | None] = Form(False, description="是否跳过校验,0代表false，1代表true"),
+    is_sequential_download: Optional[bool | None] = Form(False, description="是否按顺序下载,0代表false，1代表true"),
+    is_first_last_piece_priority: Optional[bool | None] = Form(
+        False, description="是否先下载首尾文件块,0代表false，1代表true"
+    ),
+    upload_limit: Optional[str | int | None] = Form(False, description="上传速度，单位bytes/second"),
+    download_limit: Optional[str | int | None] = Form(False, description="下载速度，单位bytes/second"),
+    db: Session = Depends(get_db),
 ):
     """
     批量创建种子信息（支持多个种子文件）
@@ -462,54 +446,35 @@ async def create_torrents_batch(
     """
     # 验证文件数量限制
     if len(torrent_files) > 10:
-        return CommonResponse(
-            status="error",
-            msg="最多只能上传10个种子文件",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg="最多只能上传10个种子文件", code="400", data=None)
 
     # ========== 从 app.state.store 获取缓存的下载器（强制规范） ==========
     app = request.app
 
-    if not hasattr(app.state, 'store'):
-        return CommonResponse(
-            status="error",
-            msg="下载器缓存未初始化",
-            code="500",
-            data=None
-        )
+    if not hasattr(app.state, "store"):
+        return CommonResponse(status="error", msg="下载器缓存未初始化", code="500", data=None)
 
     # 从缓存获取下载器
     cached_downloaders = await app.state.store.get_snapshot()
-    downloader_vo = next(
-        (d for d in cached_downloaders if d.downloader_id == downloader_id),
-        None
-    )
+    downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
 
     if not downloader_vo:
         return CommonResponse(
-            status="error",
-            msg=f"下载器不在缓存中 [downloader_id={downloader_id}]",
-            code="404",
-            data=None
+            status="error", msg=f"下载器不在缓存中 [downloader_id={downloader_id}]", code="404", data=None
         )
 
-    if hasattr(downloader_vo, 'fail_time') and downloader_vo.fail_time > 0:
+    if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
         return CommonResponse(
             status="error",
             msg=f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]",
             code="503",
-            data=None
+            data=None,
         )
 
     client = downloader_vo.client
     if not client:
         return CommonResponse(
-            status="error",
-            msg=f"下载器客户端连接不存在 [downloader_id={downloader_id}]",
-            code="500",
-            data=None
+            status="error", msg=f"下载器客户端连接不存在 [downloader_id={downloader_id}]", code="500", data=None
         )
 
     downloader = downloader_vo
@@ -521,12 +486,7 @@ async def create_torrents_batch(
 
     for torrent_file in torrent_files:
         file_name = torrent_file.filename
-        result_item = {
-            "file_name": file_name,
-            "success": False,
-            "info_id": None,
-            "error": None
-        }
+        result_item = {"file_name": file_name, "success": False, "info_id": None, "error": None}
 
         try:
             # 保存文件到临时位置
@@ -535,11 +495,7 @@ async def create_torrents_batch(
             def write_temp_file(content):
                 """安全地写入临时文件"""
                 try:
-                    tmp_file = tempfile.NamedTemporaryFile(
-                        mode='wb',
-                        delete=False,
-                        suffix=".torrent"
-                    )
+                    tmp_file = tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".torrent")
                     tmp_file.write(content)
                     tmp_file.flush()
                     os.fsync(tmp_file.fileno())
@@ -547,7 +503,7 @@ async def create_torrents_batch(
                     return tmp_file.name
                 except Exception as e:
                     logging.error(f"写入临时文件失败: {str(e)}")
-                    if 'tmp_file' in locals():
+                    if "tmp_file" in locals():
                         try:
                             tmp_file.close()
                         except OSError:
@@ -563,10 +519,7 @@ async def create_torrents_batch(
                 # 根据下载器类型添加种子
                 if downloader.downloader_type == 1:  # Transmission
                     tr_client = client
-                    add_args = {
-                        "paused": paused,
-                        "download_dir": save_path if save_path else None
-                    }
+                    add_args = {"paused": paused, "download_dir": save_path if save_path else None}
 
                     def read_file_data(file_path):
                         with open(file_path, "rb") as f:
@@ -574,6 +527,7 @@ async def create_torrents_batch(
 
                     file_data = await asyncio.to_thread(read_file_data, tmp_file_path)
                     from io import BytesIO
+
                     tr_client.add_torrent(BytesIO(file_data), **add_args)
 
                     # 等待Transmission处理种子（最多30秒）
@@ -589,13 +543,13 @@ async def create_torrents_batch(
                         raise Exception("获取种子信息超时")
 
                     # 检查数据库中是否已存在该种子
-                    existing_torrent = db.query(TorrentInfo.info_id).filter(
-                        TorrentInfo.hash == info_hash
-                    ).filter(
-                        TorrentInfo.dr == 0
-                    ).filter(
-                        TorrentInfo.downloader_id == downloader_id
-                    ).first()
+                    existing_torrent = (
+                        db.query(TorrentInfo.info_id)
+                        .filter(TorrentInfo.hash == info_hash)
+                        .filter(TorrentInfo.dr == 0)
+                        .filter(TorrentInfo.downloader_id == downloader_id)
+                        .first()
+                    )
 
                     if existing_torrent is None:
                         db_torrent = create_transmission_torrent_record(downloader, downloader_id, tr_torrent)
@@ -614,6 +568,7 @@ async def create_torrents_batch(
 
                     file_data = await asyncio.to_thread(read_file_data_qb, tmp_file_path)
                     from io import BytesIO
+
                     qb_client.torrents_add(
                         torrent_files=BytesIO(file_data),
                         save_path=save_path,
@@ -624,7 +579,7 @@ async def create_torrents_batch(
                         is_sequential_download=is_sequential_download,
                         is_first_last_piece_priority=is_first_last_piece_priority,
                         upload_limit=upload_limit,
-                        download_limit=download_limit
+                        download_limit=download_limit,
                     )
 
                     # 从qBittorrent获取种子信息（最多30秒）
@@ -642,16 +597,18 @@ async def create_torrents_batch(
                     qb_torrent = torrents[0]
 
                     # 检查数据库中是否已存在该种子
-                    existing_torrent = db.query(TorrentInfo.info_id).filter(
-                        TorrentInfo.hash == info_hash
-                    ).filter(
-                        TorrentInfo.dr == 0
-                    ).filter(
-                        TorrentInfo.downloader_id == downloader_id
-                    ).first()
+                    existing_torrent = (
+                        db.query(TorrentInfo.info_id)
+                        .filter(TorrentInfo.hash == info_hash)
+                        .filter(TorrentInfo.dr == 0)
+                        .filter(TorrentInfo.downloader_id == downloader_id)
+                        .first()
+                    )
 
                     if existing_torrent is None:
-                        db_torrent = create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp_file_path)
+                        db_torrent = create_qbittorrent_torrent_record(
+                            downloader, downloader_id, qb_torrent, tmp_file_path
+                        )
                         db.add(db_torrent)
                         db.commit()
                         db.refresh(db_torrent)
@@ -681,12 +638,12 @@ async def create_torrents_batch(
                                     "tags": tags,
                                     "category": category,
                                     "paused": paused,
-                                    "file_size": db_torrent.size
+                                    "file_size": db_torrent.size,
                                 },
                                 new_value={"status": "added"},
                                 operation_result=AuditOperationResult.SUCCESS,
                                 downloader_id=downloader_id,
-                                **extract_audit_info_from_request(request)
+                                **extract_audit_info_from_request(request),
                             )
                     except Exception as audit_error:
                         logging.error(f"记录审计日志失败: {str(audit_error)}")
@@ -732,22 +689,17 @@ async def create_torrents_batch(
         status=status,
         msg=msg,
         code=code,
-        data={
-            "total": total_count,
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "results": results
-        }
+        data={"total": total_count, "success_count": success_count, "failed_count": failed_count, "results": results},
     )
 
 
 @router.get("/torrents/{info_id}/{downloader_id}/{downloader_name}", response_model=CommonResponse)
 def get_torrent(
-        info_id: str,
-        downloader_id: str,
-        downloader_name: str,
-        _user=Depends(require_authenticated_user),
-        db: Session = Depends(get_db)
+    info_id: str,
+    downloader_id: str,
+    downloader_name: str,
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """根据复合主键获取种子信息"""
     torrent = get_torrent_info(db, info_id, downloader_id)
@@ -758,27 +710,31 @@ def get_torrent(
 
 @router.get("/getList")
 def get_torrents(
-        downloader_id: Optional[str] = Query(None, description="所属下载器主键（支持多选，逗号分隔）", examples={"default": ""}),
-        downloader_name_like: Optional[str] = Query(None, description="所属下载器名模糊查询"),
-        name_like: Optional[str] = Query(None, description="种子名称模糊查询"),
-        save_path_like: Optional[str] = Query(None, description="种子文件保存路径模糊查询"),
-        size_min: Optional[str] = Query(None, description="种子大小最小值"),
-        size_max: Optional[str] = Query(None, description="种子大小最大值"),
-        added_date_min: Optional[str] = Query(None, description="添加时间最小值"),
-        added_date_max: Optional[str] = Query(None, description="添加时间最大值"),
-        completed_date_min: Optional[str] = Query(None, description="完成时间最小值"),
-        completed_date_max: Optional[str] = Query(None, description="完成时间最大值"),
-        tags_like: Optional[str] = Query(None, description="标签模糊查询"),
-        category_like: Optional[str] = Query(None, description="分类模糊查询"),
-        tracker_like: Optional[str] = Query(None, description="tracker地址模糊查询"),
-        status: Optional[str] = Query(None,
-                                      description="种子状态筛选(支持多选，逗号分隔；error状态满足status='error'或has_tracker_error=True之一即可)"),
-        skip: int = Query(0, ge=0, description="跳过记录数"),
-        limit: int = Query(100, ge=1, le=1000, description="限制记录数"),
-        sort_by: Optional[str] = Query(None, description="排序字段"),
-        sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
-        _user=Depends(require_authenticated_user),
-        db: Session = Depends(get_db)
+    downloader_id: Optional[str] = Query(
+        None, description="所属下载器主键（支持多选，逗号分隔）", examples={"default": ""}
+    ),
+    downloader_name_like: Optional[str] = Query(None, description="所属下载器名模糊查询"),
+    name_like: Optional[str] = Query(None, description="种子名称模糊查询"),
+    save_path_like: Optional[str] = Query(None, description="种子文件保存路径模糊查询"),
+    size_min: Optional[str] = Query(None, description="种子大小最小值"),
+    size_max: Optional[str] = Query(None, description="种子大小最大值"),
+    added_date_min: Optional[str] = Query(None, description="添加时间最小值"),
+    added_date_max: Optional[str] = Query(None, description="添加时间最大值"),
+    completed_date_min: Optional[str] = Query(None, description="完成时间最小值"),
+    completed_date_max: Optional[str] = Query(None, description="完成时间最大值"),
+    tags_like: Optional[str] = Query(None, description="标签模糊查询"),
+    category_like: Optional[str] = Query(None, description="分类模糊查询"),
+    tracker_like: Optional[str] = Query(None, description="tracker地址模糊查询"),
+    status: Optional[str] = Query(
+        None,
+        description="种子状态筛选(支持多选，逗号分隔；error状态满足status='error'或has_tracker_error=True之一即可)",
+    ),
+    skip: int = Query(0, ge=0, description="跳过记录数"),
+    limit: int = Query(100, ge=1, le=1000, description="限制记录数"),
+    sort_by: Optional[str] = Query(None, description="排序字段"),
+    sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
     try:
@@ -802,28 +758,15 @@ def get_torrents(
             limit=limit,
             sort_by=sort_by,
             sort_order=sort_order,
-            tracker=tracker_like
+            tracker=tracker_like,
         )
 
         # 构建响应数据，包含总数和列表
-        response_data = {
-            "total": result["total"],
-            "list": result["data"]
-        }
+        response_data = {"total": result["total"], "list": result["data"]}
 
-        response = CommonResponse(
-            status="success",
-            msg="获取列表成功",
-            data=response_data,
-            code="200"
-        )
+        response = CommonResponse(status="success", msg="获取列表成功", data=response_data, code="200")
         return response
 
     except Exception as e:
-        response = CommonResponse(
-            status="failed",
-            msg=f"获取列表失败: {str(e)}",
-            data=None,
-            code="500"
-        )
+        response = CommonResponse(status="failed", msg=f"获取列表失败: {str(e)}", data=None, code="500")
         return response

@@ -35,7 +35,7 @@ def decrypt_tracker_info(encrypted_tracker_url: str) -> Optional[str]:
             return None
 
         # 检查是否已经是明文
-        if not encrypted_tracker_url.startswith(('sm4:', 'encrypted:')):
+        if not encrypted_tracker_url.startswith(("sm4:", "encrypted:")):
             return encrypted_tracker_url
 
         # 使用SM4解密
@@ -48,13 +48,13 @@ def decrypt_tracker_info(encrypted_tracker_url: str) -> Optional[str]:
 
         # 备用解密方法：使用auth模块的解密
         try:
-            if encrypted_tracker_url.startswith('sm4:'):
+            if encrypted_tracker_url.startswith("sm4:"):
                 # 提取加密部分
                 encrypted_part = encrypted_tracker_url[4:]  # 去掉'sm4:'前缀
                 decrypted = sm4_decrypt(encrypted_part)
                 if decrypted:
                     logger.debug(f"备用SM4解密成功: {encrypted_tracker_url[:20]}...")
-                    return decrypted.decode('utf-8') if isinstance(decrypted, bytes) else decrypted
+                    return decrypted.decode("utf-8") if isinstance(decrypted, bytes) else decrypted
         except Exception as e:
             logger.debug(f"备用解密方法失败: {e}")
             pass
@@ -82,7 +82,7 @@ def encrypt_tracker_info(tracker_url: str) -> str:
             return tracker_url
 
         # 检查是否已经加密
-        if tracker_url.startswith(('sm4:', 'encrypted:')):
+        if tracker_url.startswith(("sm4:", "encrypted:")):
             return tracker_url
 
         # 使用SM4加密
@@ -180,12 +180,7 @@ def validate_tracker_security(tracker_url: str) -> Dict[str, Any]:
     Returns:
         安全验证结果
     """
-    result = {
-        "is_secure": True,
-        "risk_level": "low",
-        "warnings": [],
-        "recommendations": []
-    }
+    result = {"is_secure": True, "risk_level": "low", "warnings": [], "recommendations": []}
 
     try:
         if not tracker_url:
@@ -196,11 +191,26 @@ def validate_tracker_security(tracker_url: str) -> Dict[str, Any]:
 
         # 检查私有地址
         private_indicators = [
-            '127.0.0.1', 'localhost', '192.168.', '10.',
-            '172.16.', '172.17.', '172.18.', '172.19.',
-            '172.20.', '172.21.', '172.22.', '172.23.',
-            '172.24.', '172.25.', '172.26.', '172.27.',
-            '172.28.', '172.29.', '172.30.', '172.31.'
+            "127.0.0.1",
+            "localhost",
+            "192.168.",
+            "10.",
+            "172.16.",
+            "172.17.",
+            "172.18.",
+            "172.19.",
+            "172.20.",
+            "172.21.",
+            "172.22.",
+            "172.23.",
+            "172.24.",
+            "172.25.",
+            "172.26.",
+            "172.27.",
+            "172.28.",
+            "172.29.",
+            "172.30.",
+            "172.31.",
         ]
 
         for indicator in private_indicators:
@@ -210,13 +220,13 @@ def validate_tracker_security(tracker_url: str) -> Dict[str, Any]:
                 result["recommendations"].append("确保网络访问权限正确配置")
 
         # 检查协议安全性
-        if tracker_url.startswith('http://'):
+        if tracker_url.startswith("http://"):
             result["risk_level"] = "medium"
             result["warnings"].append("使用HTTP协议")
             result["recommendations"].append("建议使用HTTPS协议")
 
         # 检查异常字符
-        suspicious_chars = ['<', '>', '"', "'", '&', ';', '|']
+        suspicious_chars = ["<", ">", '"', "'", "&", ";", "|"]
         for char in suspicious_chars:
             if char in tracker_url:
                 result["risk_level"] = "high"

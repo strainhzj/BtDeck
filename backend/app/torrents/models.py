@@ -40,23 +40,45 @@ class TorrentInfo(Base):
     original_filename = Column(String(255), nullable=True, comment="原始文件名（等级3还原用）")
     backup_file_path = Column(String(512), nullable=True, comment="种子文件备份路径（用于回收站还原）")
     original_file_list = Column(Text, nullable=True, comment="原始文件列表（JSON格式，存储相对路径，用于回收站清理）")
-    has_tracker_error = Column(Boolean, nullable=False, default=False, comment="种子是否处于tracker错误状态（所有tracker都失败）")
-
-    # 唯一约束：防止同一下载器中出现相同的 hash（仅限未删除记录）
-    __table_args__ = (
-        Index(
-            'idx_torrent_hash_unique',
-            'hash',
-            'downloader_id',
-            unique=True,
-            sqlite_where=dr == 0
-        ),
+    has_tracker_error = Column(
+        Boolean, nullable=False, default=False, comment="种子是否处于tracker错误状态（所有tracker都失败）"
     )
 
-    def __init__(self, id_, downloader_id, downloader_name, torrent_id, hash, name, save_path, size, status,
-                 progress, torrent_file, added_date, completed_date, ratio, ratio_limit, tags, category,
-                 super_seeding, enabled, create_time, create_by, update_time, update_by, dr,
-                 deleted_at=None, original_filename=None, backup_file_path=None, original_file_list=None, **kw: Any):
+    # 唯一约束：防止同一下载器中出现相同的 hash（仅限未删除记录）
+    __table_args__ = (Index("idx_torrent_hash_unique", "hash", "downloader_id", unique=True, sqlite_where=dr == 0),)
+
+    def __init__(
+        self,
+        id_,
+        downloader_id,
+        downloader_name,
+        torrent_id,
+        hash,
+        name,
+        save_path,
+        size,
+        status,
+        progress,
+        torrent_file,
+        added_date,
+        completed_date,
+        ratio,
+        ratio_limit,
+        tags,
+        category,
+        super_seeding,
+        enabled,
+        create_time,
+        create_by,
+        update_time,
+        update_by,
+        dr,
+        deleted_at=None,
+        original_filename=None,
+        backup_file_path=None,
+        original_file_list=None,
+        **kw: Any,
+    ):
         super().__init__(**kw)
         self.info_id = id_
         self.downloader_id = downloader_id
@@ -172,6 +194,7 @@ class TorrentInfo(Base):
             只有手动清理时才会设置dr=1（彻底删除，不可还原）
         """
         from datetime import datetime
+
         self.deleted_at = datetime.now()
         # 🔥 重要：等级3删除保持dr=0，表示"在回收站中，可还原"
         # 只有手动清理时才设置dr=1，表示"彻底删除，不可还原"
@@ -215,8 +238,7 @@ class TrackerInfo(Base):
 
     # 唯一约束：防止同一种子的相同tracker重复（仅限未删除记录）
     __table_args__ = (
-        Index('idx_tracker_unique_url', 'torrent_info_id', 'tracker_url', unique=True,
-              sqlite_where=dr == 0),
+        Index("idx_tracker_unique_url", "torrent_info_id", "tracker_url", unique=True, sqlite_where=dr == 0),
     )
 
     def to_dict(self):
@@ -249,6 +271,7 @@ class TrackerKeywordConfig(Base):
 
     用于存储tracker成功/失败关键词池，支持多语言和优先级管理。
     """
+
     __tablename__ = "tracker_keyword_config"
 
     keyword_id = Column(String(36), primary_key=True, index=True, comment="主键")
@@ -266,18 +289,30 @@ class TrackerKeywordConfig(Base):
     dr = Column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
 
     __table_args__ = (
-        Index('idx_tracker_keyword_type_enabled', 'keyword_type', 'enabled'),
-        Index('idx_tracker_keyword_language', 'language'),
-        Index('idx_tracker_keyword_priority', 'priority'),
+        Index("idx_tracker_keyword_type_enabled", "keyword_type", "enabled"),
+        Index("idx_tracker_keyword_language", "language"),
+        Index("idx_tracker_keyword_priority", "priority"),
         # keyword全局唯一性约束(排除已删除记录)
-        Index('idx_tracker_keyword_unique', 'keyword', unique=True),
-        {'comment': 'Tracker关键词配置表'}
+        Index("idx_tracker_keyword_unique", "keyword", unique=True),
+        {"comment": "Tracker关键词配置表"},
     )
 
-    def __init__(self, keyword_type: str, keyword: str, language: Optional[str] = None, priority: int = 100,
-                 enabled: bool = True, category: Optional[str] = None, description: Optional[str] = None,
-                 create_time: Optional[datetime] = None, update_time: Optional[datetime] = None,
-                 create_by: str = "admin", update_by: str = "admin", dr: int = 0, **kw: Any):
+    def __init__(
+        self,
+        keyword_type: str,
+        keyword: str,
+        language: Optional[str] = None,
+        priority: int = 100,
+        enabled: bool = True,
+        category: Optional[str] = None,
+        description: Optional[str] = None,
+        create_time: Optional[datetime] = None,
+        update_time: Optional[datetime] = None,
+        create_by: str = "admin",
+        update_by: str = "admin",
+        dr: int = 0,
+        **kw: Any,
+    ):
         super().__init__(**kw)
         self.keyword_id = str(uuid.uuid4())
         self.keyword_type = keyword_type
@@ -317,6 +352,7 @@ class TrackerMessageLog(Base):
     记录所有tracker返回的真实消息，支持去重（按tracker_host+msg组合）
     和统计（出现次数、首次/最后出现时间）。
     """
+
     __tablename__ = "tracker_message_log"
 
     log_id = Column(String(36), primary_key=True, index=True, comment="主键")
@@ -335,18 +371,29 @@ class TrackerMessageLog(Base):
     update_by = Column(String(50), nullable=False, default="system", comment="更新人")
 
     __table_args__ = (
-        Index('idx_tracker_msg_unique', 'tracker_host', 'msg', unique=True),
-        Index('idx_tracker_msg_first_seen', 'first_seen'),
-        Index('idx_tracker_msg_is_processed', 'is_processed'),
-        {'comment': 'Tracker消息历史记录表'}
+        Index("idx_tracker_msg_unique", "tracker_host", "msg", unique=True),
+        Index("idx_tracker_msg_first_seen", "first_seen"),
+        Index("idx_tracker_msg_is_processed", "is_processed"),
+        {"comment": "Tracker消息历史记录表"},
     )
 
-    def __init__(self, tracker_host: str, msg: str, first_seen: Optional[datetime] = None,
-                 last_seen: Optional[datetime] = None, occurrence_count: int = 1,
-                 sample_torrents: Optional[str] = None, sample_urls: Optional[str] = None,
-                 is_processed: bool = False, keyword_type: Optional[str] = None,
-                 create_time: Optional[datetime] = None, update_time: Optional[datetime] = None,
-                 create_by: str = "system", update_by: str = "system", **kw: Any):
+    def __init__(
+        self,
+        tracker_host: str,
+        msg: str,
+        first_seen: Optional[datetime] = None,
+        last_seen: Optional[datetime] = None,
+        occurrence_count: int = 1,
+        sample_torrents: Optional[str] = None,
+        sample_urls: Optional[str] = None,
+        is_processed: bool = False,
+        keyword_type: Optional[str] = None,
+        create_time: Optional[datetime] = None,
+        update_time: Optional[datetime] = None,
+        create_by: str = "system",
+        update_by: str = "system",
+        **kw: Any,
+    ):
         super().__init__(**kw)
         self.log_id = str(uuid.uuid4())
         self.tracker_host = tracker_host
@@ -387,6 +434,7 @@ class TrackerReannounceConfig(Base):
 
     按tracker域名分组配置汇报间隔，支持按站点独立控制开关。
     """
+
     __tablename__ = "tracker_reannounce_config"
 
     id_ = Column(String(36), primary_key=True, index=True, comment="主键")
@@ -402,16 +450,25 @@ class TrackerReannounceConfig(Base):
     dr = Column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
 
     __table_args__ = (
-        Index('idx_reannounce_domain', 'domain_pattern'),
-        Index('idx_reannounce_enabled', 'enabled'),
-        {'comment': 'Tracker汇报站点配置表'}
+        Index("idx_reannounce_domain", "domain_pattern"),
+        Index("idx_reannounce_enabled", "enabled"),
+        {"comment": "Tracker汇报站点配置表"},
     )
 
-    def __init__(self, domain_pattern: str, domain_display_name: str,
-                 interval_minutes: int = 30, enabled: bool = True,
-                 last_announce_time: Optional[datetime] = None,
-                 create_time: Optional[datetime] = None, update_time: Optional[datetime] = None,
-                 create_by: str = "admin", update_by: str = "admin", dr: int = 0, **kw: Any):
+    def __init__(
+        self,
+        domain_pattern: str,
+        domain_display_name: str,
+        interval_minutes: int = 30,
+        enabled: bool = True,
+        last_announce_time: Optional[datetime] = None,
+        create_time: Optional[datetime] = None,
+        update_time: Optional[datetime] = None,
+        create_by: str = "admin",
+        update_by: str = "admin",
+        dr: int = 0,
+        **kw: Any,
+    ):
         super().__init__(**kw)
         self.id_ = str(uuid.uuid4())
         self.domain_pattern = domain_pattern

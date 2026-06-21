@@ -4,6 +4,7 @@ Transmission设置封装类
 
 封装Transmission RPC调用，提供统一的设置接口
 """
+
 from typing import Dict, Optional, Tuple, Union, Any
 from transmission_rpc import Client
 from transmission_rpc import (
@@ -39,7 +40,7 @@ class TransmissionSettings:
         port: Optional[int] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
-        timeout: int = 10
+        timeout: int = 10,
     ):
         """
         初始化Transmission设置封装类
@@ -94,9 +95,7 @@ class TransmissionSettings:
             # 验证必需参数
             if port is None:
                 raise ConfigurationError(
-                    message="旧方式初始化必须提供 port 参数",
-                    parameter_name="port",
-                    parameter_value=None
+                    message="旧方式初始化必须提供 port 参数", parameter_name="port", parameter_value=None
                 )
 
             self._client = None
@@ -111,9 +110,7 @@ class TransmissionSettings:
 
         # 参数不完整
         raise ConfigurationError(
-            message="初始化参数不完整: 必须提供 client 或 host+port",
-            parameter_name="client",
-            parameter_value=None
+            message="初始化参数不完整: 必须提供 client 或 host+port", parameter_name="client", parameter_value=None
         )
 
     @property
@@ -130,18 +127,12 @@ class TransmissionSettings:
         # 旧方式: 延迟创建客户端(已废弃)
         if self._init_failed:
             raise DownloaderConnectionError(
-                message="客户端初始化失败,无法重试。请检查配置后重新创建对象。",
-                host=self.host,
-                port=self.port
+                message="客户端初始化失败,无法重试。请检查配置后重新创建对象。", host=self.host, port=self.port
             )
         if self._client is None:
             try:
                 self._client = Client(
-                    host=self.host,
-                    port=self.port,
-                    username=self.username,
-                    password=self.password,
-                    timeout=self.timeout
+                    host=self.host, port=self.port, username=self.username, password=self.password, timeout=self.timeout
                 )
                 if should_sanitize():
                     logger.info(f"Transmission客户端初始化成功(旧方式): {sanitize_ip(self.host)}:{self.port}")
@@ -151,19 +142,11 @@ class TransmissionSettings:
                 self._init_failed = True  # 标记初始化失败
                 logger.error(f"Transmission客户端初始化失败: {e}")
                 raise DownloaderConnectionError(
-                    message=f"初始化Transmission客户端失败: {e}",
-                    host=self.host,
-                    port=self.port,
-                    original_error=e
+                    message=f"初始化Transmission客户端失败: {e}", host=self.host, port=self.port, original_error=e
                 )
         return self._client
 
-    def set_transfer_speed(
-        self,
-        dl_limit: int,
-        ul_limit: int,
-        unit: str = "KB/s"
-    ) -> bool:
+    def set_transfer_speed(self, dl_limit: int, ul_limit: int, unit: str = "KB/s") -> bool:
         """
         设置传输速度限制
 
@@ -183,21 +166,15 @@ class TransmissionSettings:
             # 验证参数
             if dl_limit < 0:
                 raise ConfigurationError(
-                    message="下载速度限制不能为负数",
-                    parameter_name="dl_limit",
-                    parameter_value=dl_limit
+                    message="下载速度限制不能为负数", parameter_name="dl_limit", parameter_value=dl_limit
                 )
             if ul_limit < 0:
                 raise ConfigurationError(
-                    message="上传速度限制不能为负数",
-                    parameter_name="ul_limit",
-                    parameter_value=ul_limit
+                    message="上传速度限制不能为负数", parameter_name="ul_limit", parameter_value=ul_limit
                 )
             if unit not in ["KB/s", "MB/s"]:
                 raise ConfigurationError(
-                    message=f"不支持的速度单位: {unit}",
-                    parameter_name="unit",
-                    parameter_value=unit
+                    message=f"不支持的速度单位: {unit}", parameter_name="unit", parameter_value=unit
                 )
 
             # 转换单位为KB/s (Transmission使用KB/s)
@@ -210,42 +187,24 @@ class TransmissionSettings:
                 speed_limit_down=dl_limit_kb,
                 speed_limit_up=ul_limit_kb,
                 speed_limit_down_enabled=(dl_limit > 0),
-                speed_limit_up_enabled=(ul_limit > 0)
+                speed_limit_up_enabled=(ul_limit > 0),
             )
 
-            logger.info(
-                f"Transmission速度设置成功: "
-                f"dl={dl_limit} {unit}, ul={ul_limit} {unit}"
-            )
+            logger.info(f"Transmission速度设置成功: " f"dl={dl_limit} {unit}, ul={ul_limit} {unit}")
             return True
 
         except ConfigurationError:
             raise
         except TrTimeoutError as e:
-            raise DownloaderTimeoutError(
-                message="Transmission连接超时",
-                timeout=self.timeout,
-                original_error=e
-            )
+            raise DownloaderTimeoutError(message="Transmission连接超时", timeout=self.timeout, original_error=e)
         except TrAuthError as e:
-            raise AuthenticationError(
-                message="Transmission认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="Transmission认证失败", username=self.username, original_error=e)
         except TrConnectError as e:
             raise DownloaderConnectionError(
-                message="Transmission连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="Transmission连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
-            raise APIError(
-                message=f"Transmission速度设置失败: {e}",
-                api_method="set_session",
-                original_error=e
-            )
+            raise APIError(message=f"Transmission速度设置失败: {e}", api_method="set_session", original_error=e)
 
     def set_authentication(self, username: str, password: str) -> bool:
         """
@@ -261,17 +220,10 @@ class TransmissionSettings:
         Returns:
             bool: 暂不支持，返回False
         """
-        logger.warning(
-            "Transmission RPC不支持通过RPC修改认证信息。"
-            "请在配置文件中手动修改。"
-        )
+        logger.warning("Transmission RPC不支持通过RPC修改认证信息。" "请在配置文件中手动修改。")
         return False
 
-    def set_download_paths(
-        self,
-        download_path: str,
-        incomplete_path: Optional[str] = None
-    ) -> bool:
+    def set_download_paths(self, download_path: str, incomplete_path: Optional[str] = None) -> bool:
         """
         设置下载目录
 
@@ -289,15 +241,10 @@ class TransmissionSettings:
         try:
             # 验证参数
             if not download_path:
-                raise ConfigurationError(
-                    message="下载目录不能为空",
-                    parameter_name="download_path"
-                )
+                raise ConfigurationError(message="下载目录不能为空", parameter_name="download_path")
 
             # 调用Transmission RPC
-            kwargs = {
-                "download_dir": download_path
-            }
+            kwargs = {"download_dir": download_path}
 
             if incomplete_path:
                 kwargs["incomplete_dir_enabled"] = True
@@ -307,45 +254,25 @@ class TransmissionSettings:
 
             self.client.set_session(**kwargs)
 
-            logger.info(
-                f"Transmission下载目录设置成功: "
-                f"download={download_path}, incomplete={incomplete_path}"
-            )
+            logger.info(f"Transmission下载目录设置成功: " f"download={download_path}, incomplete={incomplete_path}")
             return True
 
         except ConfigurationError:
             raise
         except TrTimeoutError as e:
             raise DownloaderTimeoutError(
-                message=f"{self.__class__.__name__}连接超时",
-                timeout=self.timeout,
-                original_error=e
+                message=f"{self.__class__.__name__}连接超时", timeout=self.timeout, original_error=e
             )
         except TrAuthError as e:
-            raise AuthenticationError(
-                message="Transmission认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="Transmission认证失败", username=self.username, original_error=e)
         except TrConnectError as e:
             raise DownloaderConnectionError(
-                message="Transmission连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="Transmission连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
-            raise APIError(
-                message=f"Transmission下载目录设置失败: {e}",
-                api_method="set_session",
-                original_error=e
-            )
+            raise APIError(message=f"Transmission下载目录设置失败: {e}", api_method="set_session", original_error=e)
 
-    def set_port_settings(
-        self,
-        peer_port: int,
-        port_forwarding: bool = True
-    ) -> bool:
+    def set_port_settings(self, peer_port: int, port_forwarding: bool = True) -> bool:
         """
         设置端口设置
 
@@ -366,55 +293,33 @@ class TransmissionSettings:
                 raise ConfigurationError(
                     message=f"端口号必须在0-65535之间: {peer_port}",
                     parameter_name="peer_port",
-                    parameter_value=peer_port
+                    parameter_value=peer_port,
                 )
 
             # 调用Transmission RPC
             self.client.set_session(
-                peer_port=peer_port,
-                peer_port_random_on_start=False,
-                port_forwarding_enabled=port_forwarding
+                peer_port=peer_port, peer_port_random_on_start=False, port_forwarding_enabled=port_forwarding
             )
 
-            logger.info(
-                f"Transmission端口设置成功: "
-                f"port={peer_port}, forwarding={port_forwarding}"
-            )
+            logger.info(f"Transmission端口设置成功: " f"port={peer_port}, forwarding={port_forwarding}")
             return True
 
         except ConfigurationError:
             raise
         except TrTimeoutError as e:
             raise DownloaderTimeoutError(
-                message=f"{self.__class__.__name__}连接超时",
-                timeout=self.timeout,
-                original_error=e
+                message=f"{self.__class__.__name__}连接超时", timeout=self.timeout, original_error=e
             )
         except TrAuthError as e:
-            raise AuthenticationError(
-                message="Transmission认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="Transmission认证失败", username=self.username, original_error=e)
         except TrConnectError as e:
             raise DownloaderConnectionError(
-                message="Transmission连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="Transmission连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
-            raise APIError(
-                message=f"Transmission端口设置失败: {e}",
-                api_method="set_session",
-                original_error=e
-            )
+            raise APIError(message=f"Transmission端口设置失败: {e}", api_method="set_session", original_error=e)
 
-    def set_connection_limits(
-        self,
-        global_limit: int,
-        peer_limit: int
-    ) -> bool:
+    def set_connection_limits(self, global_limit: int, peer_limit: int) -> bool:
         """
         设置连接数和Peer限制
 
@@ -433,56 +338,33 @@ class TransmissionSettings:
             # 验证参数
             if global_limit < 0:
                 raise ConfigurationError(
-                    message="全局连接数不能为负数",
-                    parameter_name="global_limit",
-                    parameter_value=global_limit
+                    message="全局连接数不能为负数", parameter_name="global_limit", parameter_value=global_limit
                 )
             if peer_limit < 0:
                 raise ConfigurationError(
-                    message="每任务Peer数不能为负数",
-                    parameter_name="peer_limit",
-                    parameter_value=peer_limit
+                    message="每任务Peer数不能为负数", parameter_name="peer_limit", parameter_value=peer_limit
                 )
 
             # 调用Transmission RPC
-            self.client.set_session(
-                peer_limit_global=global_limit,
-                peer_limit_per_torrent=peer_limit
-            )
+            self.client.set_session(peer_limit_global=global_limit, peer_limit_per_torrent=peer_limit)
 
-            logger.info(
-                f"Transmission连接数设置成功: "
-                f"global={global_limit}, peer={peer_limit}"
-            )
+            logger.info(f"Transmission连接数设置成功: " f"global={global_limit}, peer={peer_limit}")
             return True
 
         except ConfigurationError:
             raise
         except TrTimeoutError as e:
             raise DownloaderTimeoutError(
-                message=f"{self.__class__.__name__}连接超时",
-                timeout=self.timeout,
-                original_error=e
+                message=f"{self.__class__.__name__}连接超时", timeout=self.timeout, original_error=e
             )
         except TrAuthError as e:
-            raise AuthenticationError(
-                message="Transmission认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="Transmission认证失败", username=self.username, original_error=e)
         except TrConnectError as e:
             raise DownloaderConnectionError(
-                message="Transmission连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="Transmission连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
-            raise APIError(
-                message=f"Transmission连接数设置失败: {e}",
-                api_method="set_session",
-                original_error=e
-            )
+            raise APIError(message=f"Transmission连接数设置失败: {e}", api_method="set_session", original_error=e)
 
     def set_speed_schedule(self, schedule_dict: Dict) -> bool:
         """
@@ -498,8 +380,7 @@ class TransmissionSettings:
             bool: 暂不实现，返回False
         """
         logger.info(
-            "Transmission分时段速度设置功能将在T4（模板系统）中实现。"
-            "当前支持通过alt_speed实现日间/夜间模式切换。"
+            "Transmission分时段速度设置功能将在T4（模板系统）中实现。" "当前支持通过alt_speed实现日间/夜间模式切换。"
         )
         return False
 
@@ -527,7 +408,7 @@ class TransmissionSettings:
                 dl_unit = settings.get("dl_speed_unit") or settings.get("speed_unit", "KB/s")
                 dl_limit_kb = self._convert_speed_to_kilobytes(dl_limit, dl_unit)
                 kwargs["speed_limit_down"] = dl_limit_kb
-                kwargs["speed_limit_down_enabled"] = (dl_limit > 0)
+                kwargs["speed_limit_down_enabled"] = dl_limit > 0
 
             if "ul_speed_limit" in settings:
                 ul_limit = settings["ul_speed_limit"]
@@ -535,7 +416,7 @@ class TransmissionSettings:
                 ul_unit = settings.get("ul_speed_unit") or settings.get("speed_unit", "KB/s")
                 ul_limit_kb = self._convert_speed_to_kilobytes(ul_limit, ul_unit)
                 kwargs["speed_limit_up"] = ul_limit_kb
-                kwargs["speed_limit_up_enabled"] = (ul_limit > 0)
+                kwargs["speed_limit_up_enabled"] = ul_limit > 0
 
             # 连接限制
             if "peer_limit_global" in settings:
@@ -575,30 +456,15 @@ class TransmissionSettings:
             return True
 
         except TrAuthError as e:
-            raise AuthenticationError(
-                message="Transmission认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="Transmission认证失败", username=self.username, original_error=e)
         except TrConnectError as e:
             raise DownloaderConnectionError(
-                message="Transmission连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="Transmission连接失败", host=self.host, port=self.port, original_error=e
             )
         except TrTimeoutError as e:
-            raise DownloaderTimeoutError(
-                message="Transmission连接超时",
-                timeout=self.timeout,
-                original_error=e
-            )
+            raise DownloaderTimeoutError(message="Transmission连接超时", timeout=self.timeout, original_error=e)
         except Exception as e:
-            raise APIError(
-                message=f"Transmission批量设置失败: {e}",
-                api_method="set_session",
-                original_error=e
-            )
+            raise APIError(message=f"Transmission批量设置失败: {e}", api_method="set_session", original_error=e)
 
     def get_capabilities(self) -> Dict[str, bool]:
         """
@@ -621,7 +487,7 @@ class TransmissionSettings:
                 "schedule_speed": True,  # ✅ Transmission支持(应用层定时任务实现)
                 "queue_settings": hasattr(session, "download_queue_enabled"),
                 "advanced_settings": True,
-                "version": getattr(session, 'version', 'unknown')
+                "version": getattr(session, "version", "unknown"),
             }
         except Exception as e:
             # 下载器离线时降级为WARNING，避免干扰用户
@@ -681,11 +547,7 @@ class TransmissionSettings:
         elif unit == "KB/s":
             return value
         else:
-            raise ConfigurationError(
-                message=f"不支持的速度单位: {unit}",
-                parameter_name="unit",
-                parameter_value=unit
-            )
+            raise ConfigurationError(message=f"不支持的速度单位: {unit}", parameter_name="unit", parameter_value=unit)
 
 
-__all__ = ['TransmissionSettings']
+__all__ = ["TransmissionSettings"]

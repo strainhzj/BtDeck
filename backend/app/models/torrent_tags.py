@@ -35,6 +35,7 @@ class TorrentTag(Base):
         updated_at: 更新时间
         dr: 软删除标记（0=未删除，1=已删除）
     """
+
     __tablename__ = "torrent_tags"
 
     # 主键：使用String(36)存储UUID
@@ -69,7 +70,7 @@ class TorrentTag(Base):
         tag_type: Optional[str] = None,
         color: Optional[str] = None,
         dr: int = 0,
-        **kw: Any
+        **kw: Any,
     ):
         """
         初始化TorrentTag实例
@@ -137,6 +138,7 @@ class TorrentTagRelation(Base):
         assigned_at: 分配时间
         dr: 软删除标记
     """
+
     __tablename__ = "torrent_tag_relations"
 
     # 主键：使用String(36)存储UUID
@@ -150,11 +152,7 @@ class TorrentTagRelation(Base):
 
     # 外键：关联标签表
     tag_id = Column(
-        String(36),
-        ForeignKey("torrent_tags.tag_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-        comment="标签ID"
+        String(36), ForeignKey("torrent_tags.tag_id", ondelete="CASCADE"), nullable=False, index=True, comment="标签ID"
     )
 
     # 分配时间
@@ -164,9 +162,7 @@ class TorrentTagRelation(Base):
     dr = Column(Integer, default=0, nullable=False, comment="软删除标记")
 
     # UNIQUE约束：防止重复关联（同一种子不能有相同的标签）
-    __table_args__ = (
-        UniqueConstraint("torrent_hash", "tag_id", name="uk_torrent_tag"),
-    )
+    __table_args__ = (UniqueConstraint("torrent_hash", "tag_id", name="uk_torrent_tag"),)
 
     def __init__(
         self,
@@ -175,7 +171,7 @@ class TorrentTagRelation(Base):
         torrent_hash: Optional[str] = None,
         tag_id: Optional[str] = None,
         dr: int = 0,
-        **kw: Any
+        **kw: Any,
     ):
         """
         初始化TorrentTagRelation实例

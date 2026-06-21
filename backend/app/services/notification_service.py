@@ -26,11 +26,7 @@ class NotificationService:
         self.db = db
 
     async def get_notifications(
-        self,
-        page: int = 1,
-        page_size: int = 20,
-        type: Optional[str] = None,
-        is_read: Optional[bool] = None
+        self, page: int = 1, page_size: int = 20, type: Optional[str] = None, is_read: Optional[bool] = None
     ) -> Dict[str, Any]:
         """分页获取通知列表"""
         query = select(Notification).order_by(Notification.created_at.desc())
@@ -52,12 +48,7 @@ class NotificationService:
         result = await self.db.execute(query)
         notifications = result.scalars().all()
 
-        return {
-            "total": total,
-            "page": page,
-            "pageSize": page_size,
-            "list": [n.to_dict() for n in notifications]
-        }
+        return {"total": total, "page": page, "pageSize": page_size, "list": [n.to_dict() for n in notifications]}
 
     async def get_unread_count(self) -> int:
         """获取未读通知数量"""
@@ -78,22 +69,14 @@ class NotificationService:
 
     async def mark_as_unread(self, notification_id: int) -> bool:
         """标记单条通知为未读"""
-        stmt = (
-            update(Notification)
-            .where(Notification.id == notification_id)
-            .values(is_read=False, read_at=None)
-        )
+        stmt = update(Notification).where(Notification.id == notification_id).values(is_read=False, read_at=None)
         result = await self.db.execute(stmt)
         await self.db.commit()
         return result.rowcount > 0
 
     async def mark_all_as_read(self) -> int:
         """标记所有通知为已读"""
-        stmt = (
-            update(Notification)
-            .where(Notification.is_read == False)
-            .values(is_read=True, read_at=datetime.utcnow())
-        )
+        stmt = update(Notification).where(Notification.is_read == False).values(is_read=True, read_at=datetime.utcnow())
         result = await self.db.execute(stmt)
         await self.db.commit()
         return result.rowcount
@@ -110,23 +93,19 @@ class NotificationService:
         type: str,
         title: str,
         content: Optional[str] = None,
-        priority: str = 'info',
-        extra_data: Optional[Dict[str, Any]] = None
+        priority: str = "info",
+        extra_data: Optional[Dict[str, Any]] = None,
     ) -> Notification:
         """创建通知"""
-        notification = Notification(
-            type=type,
-            title=title,
-            content=content,
-            priority=priority,
-            extra_data=extra_data
-        )
+        notification = Notification(type=type, title=title, content=content, priority=priority, extra_data=extra_data)
         self.db.add(notification)
         await self.db.commit()
         await self.db.refresh(notification)
         return notification
 
-    async def check_version_update(self, current_version: str, github_repo: str = "StrainThomas/BtDeck") -> Optional[Notification]:
+    async def check_version_update(
+        self, current_version: str, github_repo: str = "StrainThomas/BtDeck"
+    ) -> Optional[Notification]:
         """
         检查 GitHub Release 是否有新版本，如有则创建通知。
 
@@ -143,7 +122,7 @@ class NotificationService:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
                     f"https://api.github.com/repos/{github_repo}/releases/latest",
-                    headers={"Accept": "application/vnd.github+json"}
+                    headers={"Accept": "application/vnd.github+json"},
                 )
 
                 if resp.status_code == 403:
@@ -173,8 +152,7 @@ class NotificationService:
                 # 检查是否已存在相同版本的通知（通过 title 去重）
                 existing = await self.db.execute(
                     select(Notification).where(
-                        Notification.type == "version_update",
-                        Notification.title == f"BtDeck v{latest_tag} 版本更新"
+                        Notification.type == "version_update", Notification.title == f"BtDeck v{latest_tag} 版本更新"
                     )
                 )
                 if existing.scalar_one_or_none():
@@ -194,8 +172,8 @@ class NotificationService:
                         "version": latest_tag,
                         "current_version": current_version,
                         "release_url": release_url,
-                        "published_at": release.get("published_at", "")
-                    }
+                        "published_at": release.get("published_at", ""),
+                    },
                 )
                 logger.info(f"已创建版本更新通知: v{latest_tag}")
                 return notification

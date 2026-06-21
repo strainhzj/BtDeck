@@ -49,3 +49,10 @@ pytest-asyncio~=0.24.0
 pytest-cov~=5.0.0
 pytest-mock~=3.14.0
 freezegun~=1.5.0
+
+# 代码质量工具（开发依赖，CI 门禁）
+# mypy/black/flake8 版本约束 + pyproject.toml/.flake8 配置
+# 验证命令：mypy app/ && black --check app/ && flake8 app/
+mypy~=1.13.0
+black~=24.10.0
+flake8~=7.1.0

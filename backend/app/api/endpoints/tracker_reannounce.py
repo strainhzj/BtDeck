@@ -22,6 +22,7 @@ router = APIRouter()
 
 # ==================== 请求模型 ====================
 
+
 class CreateConfigRequest(BaseModel):
     domain_pattern: str = Field(..., description="域名匹配模式")
     domain_display_name: str = Field("", description="域名显示名称")
@@ -46,11 +47,9 @@ class BatchUpdateItem(BaseModel):
 
 # ==================== API 接口 ====================
 
+
 @router.get("/configs", description="获取所有站点配置")
-async def list_configs(
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+async def list_configs(_user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """获取所有站点汇报配置"""
     result = ops.get_configs(db)
     if not result.success:
@@ -58,16 +57,16 @@ async def list_configs(
 
     configs = [c.to_dict() for c in result.data]
     return CommonResponse(
-        status="success", msg="查询成功", code="200",
+        status="success",
+        msg="查询成功",
+        code="200",
         data={"total": result.total_count, "list": configs},
     )
 
 
 @router.post("/configs", description="新增站点配置")
 async def create_config(
-    _user=Depends(require_authenticated_user),
-    req_data: CreateConfigRequest = None,
-    db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user), req_data: CreateConfigRequest = None, db: Session = Depends(get_db)
 ):
     """新增站点汇报配置"""
     config_data = req_data.dict()
@@ -79,16 +78,16 @@ async def create_config(
         return CommonResponse(status="error", msg=result.message, code="400")
 
     return CommonResponse(
-        status="success", msg="创建成功", code="200",
+        status="success",
+        msg="创建成功",
+        code="200",
         data=result.data.to_dict(),
     )
 
 
 @router.put("/configs/batch", description="批量更新站点配置")
 async def batch_update_configs(
-    _user=Depends(require_authenticated_user),
-    req_data: dict = Body(...),
-    db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user), req_data: dict = Body(...), db: Session = Depends(get_db)
 ):
     """批量更新站点汇报配置（支持部分成功）"""
     logger.info(f"批量更新请求数据: {req_data}")
@@ -121,7 +120,7 @@ async def update_config(
     config_id: str,
     _user=Depends(require_authenticated_user),
     req_data: UpdateConfigRequest = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """更新站点汇报配置"""
     update_data = {k: v for k, v in req_data.dict().items() if v is not None}
@@ -134,17 +133,15 @@ async def update_config(
         return CommonResponse(status="error", msg=result.message, code=code)
 
     return CommonResponse(
-        status="success", msg="更新成功", code="200",
+        status="success",
+        msg="更新成功",
+        code="200",
         data=result.data.to_dict(),
     )
 
 
 @router.delete("/configs/{config_id}", description="删除站点配置")
-async def delete_config(
-    config_id: str,
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+async def delete_config(config_id: str, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """删除站点汇报配置"""
     result = ops.delete_config(db, config_id)
     if not result.success:
@@ -154,10 +151,7 @@ async def delete_config(
 
 
 @router.post("/configs/auto-detect", description="自动检测tracker域名并生成配置")
-async def auto_detect_domains(
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+async def auto_detect_domains(_user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """从现有tracker数据中提取域名，生成默认配置"""
     from app.torrents.models import TrackerInfo
     from sqlalchemy import func
@@ -166,16 +160,25 @@ async def auto_detect_domains(
     MAX_TRACKERS = 1000
 
     # 先查询总数
-    total_count = db.query(func.count(TrackerInfo.tracker_id)).filter(
-        TrackerInfo.dr == 0,
-        TrackerInfo.tracker_url.isnot(None),
-    ).scalar()
+    total_count = (
+        db.query(func.count(TrackerInfo.tracker_id))
+        .filter(
+            TrackerInfo.dr == 0,
+            TrackerInfo.tracker_url.isnot(None),
+        )
+        .scalar()
+    )
 
     # 查询未删除的 tracker URL(限制数量)
-    trackers = db.query(TrackerInfo.tracker_url).filter(
-        TrackerInfo.dr == 0,
-        TrackerInfo.tracker_url.isnot(None),
-    ).limit(MAX_TRACKERS).all()
+    trackers = (
+        db.query(TrackerInfo.tracker_url)
+        .filter(
+            TrackerInfo.dr == 0,
+            TrackerInfo.tracker_url.isnot(None),
+        )
+        .limit(MAX_TRACKERS)
+        .all()
+    )
 
     if total_count > MAX_TRACKERS:
         logger.warning(f"Tracker数量超过限制，仅处理前{MAX_TRACKERS}个（总计{total_count}个）")
@@ -193,12 +196,15 @@ async def auto_detect_domains(
     # 为新域名创建默认配置
     created = []
     for domain in new_domains:
-        result = ops.create_config(db, {
-            "domain_pattern": domain,
-            "domain_display_name": domain,
-            "interval_minutes": 30,
-            "enabled": True,
-        })
+        result = ops.create_config(
+            db,
+            {
+                "domain_pattern": domain,
+                "domain_display_name": domain,
+                "interval_minutes": 30,
+                "enabled": True,
+            },
+        )
         if result.success:
             created.append(result.data.to_dict())
 

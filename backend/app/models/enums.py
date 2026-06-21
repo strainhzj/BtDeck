@@ -7,6 +7,7 @@
 注意：DownloaderTypeEnum 已迁移到 app.models.setting_templates，使用整数枚举(0/1)
 本文件保留其他枚举定义（速度单位、星期等）
 """
+
 import enum
 import logging
 
@@ -18,11 +19,12 @@ class SpeedUnitEnum(enum.IntEnum):
 
     用于下载器设置中的速度单位
     """
+
     KB_PER_SEC = 0  # KB/s
     MB_PER_SEC = 1  # MB/s
 
     @classmethod
-    def from_value(cls, value: int) -> 'SpeedUnitEnum':
+    def from_value(cls, value: int) -> "SpeedUnitEnum":
         """从整数值获取枚举
 
         Args:
@@ -38,10 +40,7 @@ class SpeedUnitEnum(enum.IntEnum):
             return cls(value)
         except ValueError:
             valid_values = [e.value for e in cls]
-            raise ValueError(
-                f"无效的速度单位: '{value}'. "
-                f"有效值为: {valid_values} (0=KB/s, 1=MB/s)"
-            )
+            raise ValueError(f"无效的速度单位: '{value}'. " f"有效值为: {valid_values} (0=KB/s, 1=MB/s)")
 
     def to_string(self) -> str:
         """转换为字符串表示
@@ -57,6 +56,7 @@ class ScheduleDayOfWeekEnum(enum.IntEnum):
 
     用于分时段速度规则
     """
+
     MONDAY = 0
     TUESDAY = 1
     WEDNESDAY = 2
@@ -67,7 +67,7 @@ class ScheduleDayOfWeekEnum(enum.IntEnum):
     EVERYDAY = 7  # 每天都适用
 
     @classmethod
-    def from_value(cls, value: int) -> 'ScheduleDayOfWeekEnum':
+    def from_value(cls, value: int) -> "ScheduleDayOfWeekEnum":
         """从整数值获取枚举
 
         Args:
@@ -83,10 +83,7 @@ class ScheduleDayOfWeekEnum(enum.IntEnum):
             return cls(value)
         except ValueError:
             valid_values = [e.value for e in cls]
-            raise ValueError(
-                f"无效的星期值: '{value}'. "
-                f"有效值为: {valid_values} (0=周一, 7=每天)"
-            )
+            raise ValueError(f"无效的星期值: '{value}'. " f"有效值为: {valid_values} (0=周一, 7=每天)")
 
     def to_chinese(self) -> str:
         """转换为中文表示
@@ -109,6 +106,6 @@ class ScheduleDayOfWeekEnum(enum.IntEnum):
 
 # 导出所有枚举
 __all__ = [
-    'SpeedUnitEnum',
-    'ScheduleDayOfWeekEnum',
+    "SpeedUnitEnum",
+    "ScheduleDayOfWeekEnum",
 ]

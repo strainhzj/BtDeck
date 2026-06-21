@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 
+
 # 定义请求体模型类
 class UserLogin(BaseModel):
     username: str = Field(description="必填，登录用户名", example="admin")

@@ -3,6 +3,7 @@
 
 提供审计日志的查询、导出、归档、统计等功能。
 """
+
 import os
 import logging
 from typing import Optional, List
@@ -26,8 +27,10 @@ router = APIRouter(tags=["audit-logs"])
 
 # ========== 请求模型 ==========
 
+
 class AuditLogQueryRequest(BaseModel):
     """审计日志查询请求"""
+
     torrent_info_id: Optional[str] = Field(None, description="种子信息ID")
     torrent_name: Optional[str] = Field(None, description="种子名称（支持模糊搜索）")
     operation_type: Optional[str] = Field(None, description="操作类型")
@@ -45,12 +48,14 @@ class AuditLogQueryRequest(BaseModel):
 
 class ArchiveLogsRequest(BaseModel):
     """归档审计日志请求"""
+
     end_time: str = Field(..., description="归档截止时间(ISO 8601格式)")
     archive_path: Optional[str] = Field(None, description="归档文件路径（可选，默认自动生成）")
 
 
 class ExportLogsRequest(BaseModel):
     """导出审计日志请求"""
+
     torrent_info_id: Optional[str] = Field(None, description="种子信息ID")
     torrent_name: Optional[str] = Field(None, description="种子名称（支持模糊搜索）")
     operation_type: Optional[str] = Field(None, description="操作类型")
@@ -65,11 +70,10 @@ class ExportLogsRequest(BaseModel):
 
 # ========== API端点 ==========
 
+
 @router.post("/query", response_model=CommonResponse)
 async def query_audit_logs(
-    request: AuditLogQueryRequest,
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    request: AuditLogQueryRequest, current_user=Depends(get_current_user), db: AsyncSession = Depends(get_async_db)
 ):
     """
     查询审计日志
@@ -98,40 +102,25 @@ async def query_audit_logs(
             request_id=request.request_id,
             session_id=request.session_id,
             page=request.page,
-            page_size=request.page_size
+            page_size=request.page_size,
         )
 
-        return CommonResponse(
-            status="success",
-            msg="查询成功",
-            code="200",
-            data=result
-        )
+        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
 
     except ValueError as e:
         logger.error(f"查询审计日志失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"参数错误: {str(e)}",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
     except Exception as e:
         logger.error(f"查询审计日志失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
 @router.get("/statistics", response_model=CommonResponse)
 async def get_audit_log_statistics(
     start_time: Optional[str] = Query(None, description="开始时间(ISO 8601格式)"),
     end_time: Optional[str] = Query(None, description="结束时间(ISO 8601格式)"),
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     获取审计日志统计信息
@@ -147,42 +136,24 @@ async def get_audit_log_statistics(
         end_dt = datetime.fromisoformat(end_time) if end_time else None
 
         # 获取统计信息
-        stats = await audit_service.get_statistics(
-            start_time=start_dt,
-            end_time=end_dt
-        )
+        stats = await audit_service.get_statistics(start_time=start_dt, end_time=end_dt)
 
-        return CommonResponse(
-            status="success",
-            msg="查询成功",
-            code="200",
-            data=stats
-        )
+        return CommonResponse(status="success", msg="查询成功", code="200", data=stats)
 
     except ValueError as e:
         logger.error(f"获取审计日志统计失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"参数错误: {str(e)}",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
     except Exception as e:
         logger.error(f"获取审计日志统计失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/archive", response_model=CommonResponse)
 async def archive_audit_logs(
     request_data: ArchiveLogsRequest,
     http_request: Request,
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     归档审计日志
@@ -202,50 +173,27 @@ async def archive_audit_logs(
         audit_info = extract_audit_info_from_request(http_request)
 
         # 执行归档
-        result = await audit_service.archive_logs(
-            end_time=end_dt,
-            archive_path=request_data.archive_path
-        )
+        result = await audit_service.archive_logs(end_time=end_dt, archive_path=request_data.archive_path)
 
         if result["success"]:
-            return CommonResponse(
-                status="success",
-                msg=result["message"],
-                code="200",
-                data=result
-            )
+            return CommonResponse(status="success", msg=result["message"], code="200", data=result)
         else:
-            return CommonResponse(
-                status="error",
-                msg=result["message"],
-                code="500",
-                data=result
-            )
+            return CommonResponse(status="error", msg=result["message"], code="500", data=result)
 
     except ValueError as e:
         logger.error(f"归档审计日志失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"参数错误: {str(e)}",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
     except Exception as e:
         logger.error(f"归档审计日志失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"归档失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"归档失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/export", response_model=CommonResponse)
 async def export_audit_logs(
     request_data: ExportLogsRequest,
     http_request: Request,
-    current_user = Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    current_user=Depends(get_current_user),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     导出审计日志
@@ -273,16 +221,11 @@ async def export_audit_logs(
             end_time=end_dt,
             operation_result=request_data.operation_result,
             page=1,
-            page_size=request_data.max_rows
+            page_size=request_data.max_rows,
         )
 
         if not result["list"]:
-            return CommonResponse(
-                status="error",
-                msg="没有符合条件的数据可导出",
-                code="400",
-                data=None
-            )
+            return CommonResponse(status="error", msg="没有符合条件的数据可导出", code="400", data=None)
 
         # 导出目录
         export_dir = Path("data/audit_logs_export")
@@ -310,39 +253,22 @@ async def export_audit_logs(
                     "file_path": str(output_path),
                     "file_name": output_path.name,
                     "record_count": len(result["list"]),
-                    "file_format": request_data.export_format
-                }
+                    "file_format": request_data.export_format,
+                },
             )
         else:
-            return CommonResponse(
-                status="error",
-                msg="导出失败",
-                code="500",
-                data=None
-            )
+            return CommonResponse(status="error", msg="导出失败", code="500", data=None)
 
     except ValueError as e:
         logger.error(f"导出审计日志失败: 参数解析错误 - {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"参数错误: {str(e)}",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"参数错误: {str(e)}", code="400", data=None)
     except Exception as e:
         logger.error(f"导出审计日志失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"导出失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"导出失败: {str(e)}", code="500", data=None)
 
 
 @router.get("/operation-types", response_model=CommonResponse)
-async def get_operation_types(
-    current_user = Depends(get_current_user)
-):
+async def get_operation_types(current_user=Depends(get_current_user)):
     """
     获取所有操作类型列表
 
@@ -352,37 +278,28 @@ async def get_operation_types(
         # 获取所有操作类型
         operation_types = []
         for op_type in AuditOperationType:
-            operation_types.append({
-                "value": op_type.value,
-                "display_name": op_type.get_display_name(op_type.value),
-                "category": op_type.get_category(op_type.value)
-            })
+            operation_types.append(
+                {
+                    "value": op_type.value,
+                    "display_name": op_type.get_display_name(op_type.value),
+                    "category": op_type.get_category(op_type.value),
+                }
+            )
 
         return CommonResponse(
             status="success",
             msg="查询成功",
             code="200",
-            data={
-                "operation_types": operation_types,
-                "total": len(operation_types)
-            }
+            data={"operation_types": operation_types, "total": len(operation_types)},
         )
 
     except Exception as e:
         logger.error(f"获取操作类型失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
 @router.get("/download-export/{file_name}", response_model=None)
-async def download_export_file(
-    file_name: str,
-    current_user = Depends(get_current_user)
-):
+async def download_export_file(file_name: str, current_user=Depends(get_current_user)):
     """
     下载导出的审计日志文件
 
@@ -399,11 +316,7 @@ async def download_export_file(
             raise HTTPException(status_code=404, detail="文件不存在")
 
         # 返回文件
-        return FileResponse(
-            path=str(file_path),
-            filename=file_name,
-            media_type='application/octet-stream'
-        )
+        return FileResponse(path=str(file_path), filename=file_name, media_type="application/octet-stream")
 
     except HTTPException:
         raise

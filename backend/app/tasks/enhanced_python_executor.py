@@ -27,8 +27,8 @@ class PythonCodeAnalyzer:
     """Python代码分析器"""
 
     def __init__(self):
-        self.async_keywords = ['await', 'async def', 'async with', 'async for']
-        self.sync_keywords = ['def ', 'for ', 'while ', 'if ', 'try:', 'except', 'finally']
+        self.async_keywords = ["await", "async def", "async with", "async for"]
+        self.sync_keywords = ["def ", "for ", "while ", "if ", "try:", "except", "finally"]
 
     def is_async_code(self, code: str) -> bool:
         """
@@ -98,7 +98,7 @@ class PythonCodeAnalyzer:
             "function_names": [],
             "class_names": [],
             "import_modules": [],
-            "complexity_score": 0
+            "complexity_score": 0,
         }
 
         try:
@@ -150,33 +150,45 @@ class SafePythonExecutor:
         """
         # 基础安全模块
         safe_modules = {
-            'datetime': datetime,
-            'time': __import__('time'),
-            'json': __import__('json'),
-            'os': __import__('os'),
-            'sys': __import__('sys'),
-            'math': __import__('math'),
-            'random': __import__('random'),
-            'string': __import__('string'),
-            're': __import__('re'),
+            "datetime": datetime,
+            "time": __import__("time"),
+            "json": __import__("json"),
+            "os": __import__("os"),
+            "sys": __import__("sys"),
+            "math": __import__("math"),
+            "random": __import__("random"),
+            "string": __import__("string"),
+            "re": __import__("re"),
         }
 
         # 创建受限的内置函数
         safe_builtins = {}
         dangerous_builtins = [
-            'exec', 'eval', 'compile', '__import__', 'open', 'file',
-            'input', 'raw_input', 'reload', 'vars', 'globals', 'locals',
-            'dir', 'hasattr', 'getattr', 'setattr', 'delattr', 'help'
+            "exec",
+            "eval",
+            "compile",
+            "__import__",
+            "open",
+            "file",
+            "input",
+            "raw_input",
+            "reload",
+            "vars",
+            "globals",
+            "locals",
+            "dir",
+            "hasattr",
+            "getattr",
+            "setattr",
+            "delattr",
+            "help",
         ]
 
         for name, obj in __builtins__.items():
             if name not in dangerous_builtins:
                 safe_builtins[name] = obj
 
-        return {
-            '__builtins__': safe_builtins,
-            **safe_modules
-        }
+        return {"__builtins__": safe_builtins, **safe_modules}
 
     async def execute_async_code(self, code: str) -> Dict[str, Any]:
         """
@@ -194,11 +206,7 @@ class SafePythonExecutor:
             # 语法验证
             syntax_valid, syntax_error = self.analyzer.validate_syntax(code)
             if not syntax_valid:
-                return {
-                    "success": False,
-                    "log_detail": f"异步代码语法错误: {syntax_error}",
-                    "execution_time": 0
-                }
+                return {"success": False, "log_detail": f"异步代码语法错误: {syntax_error}", "execution_time": 0}
 
             # 分析代码结构
             structure = self.analyzer.analyze_code_structure(code)
@@ -214,13 +222,9 @@ class SafePythonExecutor:
             exec(wrapped_code, safe_globals, safe_locals)
 
             # 获取异步函数
-            async_func = safe_locals.get('_async_wrapper')
+            async_func = safe_locals.get("_async_wrapper")
             if not async_func:
-                return {
-                    "success": False,
-                    "log_detail": "异步代码包装失败",
-                    "execution_time": 0
-                }
+                return {"success": False, "log_detail": "异步代码包装失败", "execution_time": 0}
 
             # 执行异步函数（带超时）
             try:
@@ -231,14 +235,14 @@ class SafePythonExecutor:
                     "success": True,
                     "log_detail": f"异步代码执行成功\n执行结果: {result}\n执行时间: {execution_time:.2f}秒",
                     "execution_time": execution_time,
-                    "code_structure": structure
+                    "code_structure": structure,
                 }
 
             except asyncio.TimeoutError:
                 return {
                     "success": False,
                     "log_detail": f"异步代码执行超时（{self.execution_timeout}秒）",
-                    "execution_time": self.execution_timeout
+                    "execution_time": self.execution_timeout,
                 }
 
         except Exception as e:
@@ -248,7 +252,7 @@ class SafePythonExecutor:
             return {
                 "success": False,
                 "log_detail": f"异步代码执行失败: {str(e)}\n错误详情:\n{error_traceback}",
-                "execution_time": execution_time
+                "execution_time": execution_time,
             }
 
     def execute_sync_code(self, code: str) -> Dict[str, Any]:
@@ -267,11 +271,7 @@ class SafePythonExecutor:
             # 语法验证
             syntax_valid, syntax_error = self.analyzer.validate_syntax(code)
             if not syntax_valid:
-                return {
-                    "success": False,
-                    "log_detail": f"同步代码语法错误: {syntax_error}",
-                    "execution_time": 0
-                }
+                return {"success": False, "log_detail": f"同步代码语法错误: {syntax_error}", "execution_time": 0}
 
             # 分析代码结构
             structure = self.analyzer.analyze_code_structure(code)
@@ -286,13 +286,13 @@ class SafePythonExecutor:
             execution_time = (datetime.now() - start_time).total_seconds()
 
             # 检查是否有返回值
-            result = safe_locals.get('result', '代码执行完成')
+            result = safe_locals.get("result", "代码执行完成")
 
             return {
                 "success": True,
                 "log_detail": f"同步代码执行成功\n执行结果: {result}\n执行时间: {execution_time:.2f}秒",
                 "execution_time": execution_time,
-                "code_structure": structure
+                "code_structure": structure,
             }
 
         except Exception as e:
@@ -302,7 +302,7 @@ class SafePythonExecutor:
             return {
                 "success": False,
                 "log_detail": f"同步代码执行失败: {str(e)}\n错误详情:\n{error_traceback}",
-                "execution_time": execution_time
+                "execution_time": execution_time,
             }
 
     def _wrap_async_code(self, code: str) -> str:
@@ -316,7 +316,7 @@ class SafePythonExecutor:
             str: 包装后的代码
         """
         # 缩进原始代码
-        indented_code = '\n'.join('    ' + line for line in code.split('\n'))
+        indented_code = "\n".join("    " + line for line in code.split("\n"))
 
         wrapped_code = f"""
 import asyncio
@@ -370,7 +370,7 @@ class EnhancedPythonExecutor:
                     "success": False,
                     "log_detail": f"代码语法错误: {syntax_error}",
                     "execution_time": 0,
-                    "error_type": "SYNTAX_ERROR"
+                    "error_type": "SYNTAX_ERROR",
                 }
 
             # 3. 检测代码类型（异步/同步）
@@ -390,11 +390,9 @@ class EnhancedPythonExecutor:
             result["executor_code_length"] = len(executor_code)
 
             # 记录执行历史
-            self.execution_history.append({
-                "timestamp": execution_start.isoformat(),
-                "executor_code": executor_code,
-                "result": result
-            })
+            self.execution_history.append(
+                {"timestamp": execution_start.isoformat(), "executor_code": executor_code, "result": result}
+            )
 
             return result
 
@@ -407,7 +405,7 @@ class EnhancedPythonExecutor:
                 "log_detail": f"Python内部类执行严重错误: {str(e)}\n{traceback.format_exc()}",
                 "execution_time": execution_time,
                 "error_type": "EXECUTION_ERROR",
-                "execution_timestamp": execution_start.isoformat()
+                "execution_timestamp": execution_start.isoformat(),
             }
 
     def _is_class_path(self, code: str) -> bool:
@@ -427,18 +425,31 @@ class EnhancedPythonExecutor:
 
         # 排除代码关键字
         code_keywords = [
-            'import', 'def', 'class', 'print', 'await', 'async', 'for', 'while',
-            'if', 'try', 'except', 'with', 'lambda', 'yield', 'return'
+            "import",
+            "def",
+            "class",
+            "print",
+            "await",
+            "async",
+            "for",
+            "while",
+            "if",
+            "try",
+            "except",
+            "with",
+            "lambda",
+            "yield",
+            "return",
         ]
 
-        first_word = code.split('.')[0].split()[0] if '.' in code else code.split()[0]
+        first_word = code.split(".")[0].split()[0] if "." in code else code.split()[0]
 
         return (
-            '.' in code and
-            not any(code.startswith(keyword) for keyword in code_keywords) and
-            first_word not in code_keywords and
-            not code.startswith('#') and
-            not code.startswith('"""')
+            "." in code
+            and not any(code.startswith(keyword) for keyword in code_keywords)
+            and first_word not in code_keywords
+            and not code.startswith("#")
+            and not code.startswith('"""')
         )
 
     async def _execute_class_path(self, class_path: str, execution_start: datetime) -> Dict[str, Any]:
@@ -455,6 +466,7 @@ class EnhancedPythonExecutor:
         try:
             # 使用类路径验证器验证
             from app.tasks.class_path_validator import validate_single_class_path
+
             validation_result = validate_single_class_path(class_path)
 
             if not validation_result["is_valid"]:
@@ -464,7 +476,7 @@ class EnhancedPythonExecutor:
                     "log_detail": f"类路径验证失败: {'; '.join(error_messages)}",
                     "execution_time": 0,
                     "error_type": "CLASS_PATH_VALIDATION_ERROR",
-                    "validation_errors": validation_result["errors"]
+                    "validation_errors": validation_result["errors"],
                 }
 
             # 解析类路径
@@ -477,29 +489,24 @@ class EnhancedPythonExecutor:
             task_instance = task_class()
 
             # 检查execute方法
-            if not hasattr(task_instance, 'execute'):
+            if not hasattr(task_instance, "execute"):
                 return {
                     "success": False,
                     "log_detail": f"类 {class_name} 没有execute方法",
                     "execution_time": 0,
-                    "error_type": "MISSING_EXECUTE_METHOD"
+                    "error_type": "MISSING_EXECUTE_METHOD",
                 }
 
-            execute_method = getattr(task_instance, 'execute')
+            execute_method = getattr(task_instance, "execute")
 
             # 检查execute方法是否是异步的
             if inspect.iscoroutinefunction(execute_method):
                 logger.info(f"执行异步类方法: {class_path}")
-                result = await asyncio.wait_for(
-                    execute_method(),
-                    timeout=self.safe_executor.execution_timeout
-                )
+                result = await asyncio.wait_for(execute_method(), timeout=self.safe_executor.execution_timeout)
             else:
                 logger.info(f"执行同步类方法: {class_path}")
                 # 在线程池中执行同步方法以避免阻塞
-                result = await asyncio.get_event_loop().run_in_executor(
-                    None, execute_method
-                )
+                result = await asyncio.get_event_loop().run_in_executor(None, execute_method)
 
             execution_time = (datetime.now() - execution_start).total_seconds()
 
@@ -509,7 +516,7 @@ class EnhancedPythonExecutor:
                 "execution_time": execution_time,
                 "execution_type": "class_path",
                 "class_path": class_path,
-                "result": result
+                "result": result,
             }
 
         except ImportError as e:
@@ -517,7 +524,7 @@ class EnhancedPythonExecutor:
                 "success": False,
                 "log_detail": f"导入模块失败: {str(e)}",
                 "execution_time": (datetime.now() - execution_start).total_seconds(),
-                "error_type": "IMPORT_ERROR"
+                "error_type": "IMPORT_ERROR",
             }
 
         except AttributeError as e:
@@ -525,7 +532,7 @@ class EnhancedPythonExecutor:
                 "success": False,
                 "log_detail": f"访问类属性失败: {str(e)}",
                 "execution_time": (datetime.now() - execution_start).total_seconds(),
-                "error_type": "ATTRIBUTE_ERROR"
+                "error_type": "ATTRIBUTE_ERROR",
             }
 
         except Exception as e:
@@ -536,7 +543,7 @@ class EnhancedPythonExecutor:
                 "success": False,
                 "log_detail": f"类路径执行失败: {str(e)}\n错误详情:\n{error_traceback}",
                 "execution_time": execution_time,
-                "error_type": "CLASS_EXECUTION_ERROR"
+                "error_type": "CLASS_EXECUTION_ERROR",
             }
 
     def get_execution_statistics(self) -> Dict[str, Any]:
@@ -552,7 +559,7 @@ class EnhancedPythonExecutor:
                 "success_count": 0,
                 "failure_count": 0,
                 "success_rate": 0.0,
-                "average_execution_time": 0.0
+                "average_execution_time": 0.0,
             }
 
         total_executions = len(self.execution_history)
@@ -566,7 +573,7 @@ class EnhancedPythonExecutor:
             "failure_count": failure_count,
             "success_rate": (success_count / total_executions * 100) if total_executions > 0 else 0,
             "average_execution_time": (total_execution_time / total_executions) if total_executions > 0 else 0,
-            "recent_executions": self.execution_history[-5:]  # 最近5次执行
+            "recent_executions": self.execution_history[-5:],  # 最近5次执行
         }
 
 

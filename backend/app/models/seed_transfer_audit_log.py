@@ -16,13 +16,12 @@ from sqlalchemy import Column, String, Integer, BigInteger, Boolean, Text, DateT
 from sqlalchemy.orm import declarative_base
 from app.database import Base
 
-
 # 操作类型常量
-OPERATOR_TYPE_SEED_TRANSFER = 'seed_transfer'
+OPERATOR_TYPE_SEED_TRANSFER = "seed_transfer"
 
 # 转移状态常量
-TRANSFER_STATUS_SUCCESS = 'success'
-TRANSFER_STATUS_FAILED = 'failed'
+TRANSFER_STATUS_SUCCESS = "success"
+TRANSFER_STATUS_FAILED = "failed"
 
 
 class SeedTransferAuditLog(Base):
@@ -52,47 +51,50 @@ class SeedTransferAuditLog(Base):
         transfer_duration: 转移耗时（毫秒）
         created_at: 创建时间
     """
-    __tablename__ = 'seed_transfer_audit_log'
+
+    __tablename__ = "seed_transfer_audit_log"
 
     # 主键
-    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键')
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
 
     # 操作信息
-    operation_type = Column(String(50), nullable=False, default=OPERATOR_TYPE_SEED_TRANSFER, comment='操作类型：seed_transfer')
-    operation_time = Column(DateTime, nullable=False, index=True, comment='操作时间')
+    operation_type = Column(
+        String(50), nullable=False, default=OPERATOR_TYPE_SEED_TRANSFER, comment="操作类型：seed_transfer"
+    )
+    operation_time = Column(DateTime, nullable=False, index=True, comment="操作时间")
 
     # 操作者信息
-    user_id = Column(Integer, nullable=True, index=True, comment='操作用户ID')
-    username = Column(String(100), nullable=True, comment='操作用户名')
+    user_id = Column(Integer, nullable=True, index=True, comment="操作用户ID")
+    username = Column(String(100), nullable=True, comment="操作用户名")
 
     # 源下载器信息
-    source_downloader_id = Column(Integer, nullable=True, comment='源下载器ID')
-    source_downloader_name = Column(String(200), nullable=True, comment='源下载器昵称')
+    source_downloader_id = Column(Integer, nullable=True, comment="源下载器ID")
+    source_downloader_name = Column(String(200), nullable=True, comment="源下载器昵称")
 
     # 目标下载器信息
-    target_downloader_id = Column(Integer, nullable=True, comment='目标下载器ID')
-    target_downloader_name = Column(String(200), nullable=True, comment='目标下载器昵称')
+    target_downloader_id = Column(Integer, nullable=True, comment="目标下载器ID")
+    target_downloader_name = Column(String(200), nullable=True, comment="目标下载器昵称")
 
     # 种子信息
-    torrent_name = Column(String(500), nullable=True, comment='种子名称')
-    info_hash = Column(String(40), nullable=True, index=True, comment='种子的 info_hash')
+    torrent_name = Column(String(500), nullable=True, comment="种子名称")
+    info_hash = Column(String(40), nullable=True, index=True, comment="种子的 info_hash")
 
     # 路径信息
-    source_path = Column(String(500), nullable=True, comment='源路径')
-    target_path = Column(String(500), nullable=True, comment='目标路径')
+    source_path = Column(String(500), nullable=True, comment="源路径")
+    target_path = Column(String(500), nullable=True, comment="目标路径")
 
     # 操作配置
-    delete_source = Column(Boolean, nullable=False, default=False, comment='是否删除原种子')
+    delete_source = Column(Boolean, nullable=False, default=False, comment="是否删除原种子")
 
     # 转移结果
-    transfer_status = Column(String(20), nullable=False, index=True, comment='转移状态：success/failed')
-    error_message = Column(Text, nullable=True, comment='错误信息（如果失败）')
+    transfer_status = Column(String(20), nullable=False, index=True, comment="转移状态：success/failed")
+    error_message = Column(Text, nullable=True, comment="错误信息（如果失败）")
 
     # 性能统计
-    transfer_duration = Column(BigInteger, nullable=True, comment='转移耗时（毫秒）')
+    transfer_duration = Column(BigInteger, nullable=True, comment="转移耗时（毫秒）")
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment='创建时间')
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
 
     def __init__(
         self,
@@ -164,24 +166,24 @@ class SeedTransferAuditLog(Base):
             包含所有模型字段的字典
         """
         return {
-            'id': self.id,
-            'operation_type': self.operation_type,
-            'operation_time': self.operation_time.isoformat() if self.operation_time else None,
-            'user_id': self.user_id,
-            'username': self.username,
-            'source_downloader_id': self.source_downloader_id,
-            'source_downloader_name': self.source_downloader_name,
-            'target_downloader_id': self.target_downloader_id,
-            'target_downloader_name': self.target_downloader_name,
-            'torrent_name': self.torrent_name,
-            'info_hash': self.info_hash,
-            'source_path': self.source_path,
-            'target_path': self.target_path,
-            'delete_source': self.delete_source,
-            'transfer_status': self.transfer_status,
-            'error_message': self.error_message,
-            'transfer_duration': self.transfer_duration,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
+            "id": self.id,
+            "operation_type": self.operation_type,
+            "operation_time": self.operation_time.isoformat() if self.operation_time else None,
+            "user_id": self.user_id,
+            "username": self.username,
+            "source_downloader_id": self.source_downloader_id,
+            "source_downloader_name": self.source_downloader_name,
+            "target_downloader_id": self.target_downloader_id,
+            "target_downloader_name": self.target_downloader_name,
+            "torrent_name": self.torrent_name,
+            "info_hash": self.info_hash,
+            "source_path": self.source_path,
+            "target_path": self.target_path,
+            "delete_source": self.delete_source,
+            "transfer_status": self.transfer_status,
+            "error_message": self.error_message,
+            "transfer_duration": self.transfer_duration,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
     def is_successful(self) -> bool:

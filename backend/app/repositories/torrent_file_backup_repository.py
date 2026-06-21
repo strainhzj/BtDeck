@@ -52,7 +52,7 @@ class TorrentFileBackupRepository:
         uploader_id: Optional[int] = None,
         downloader_id: Optional[int] = None,
         upload_time: Optional[datetime] = None,
-        use_count: int = 0
+        use_count: int = 0,
     ) -> Optional[TorrentFileBackup]:
         """
         创建种子文件备份记录
@@ -97,7 +97,7 @@ class TorrentFileBackupRepository:
                 downloader_id=downloader_id,
                 upload_time=upload_time,
                 use_count=use_count,
-                is_deleted=False
+                is_deleted=False,
             )
 
             self.db.add(torrent_backup)
@@ -113,11 +113,7 @@ class TorrentFileBackupRepository:
             await self.db.rollback()
             raise e
 
-    async def get_by_info_hash(
-        self,
-        info_hash: str,
-        include_deleted: bool = False
-    ) -> Optional[TorrentFileBackup]:
+    async def get_by_info_hash(self, info_hash: str, include_deleted: bool = False) -> Optional[TorrentFileBackup]:
         """
         根据info_hash查询种子文件备份
 
@@ -129,9 +125,7 @@ class TorrentFileBackupRepository:
             TorrentFileBackup对象或None
         """
         try:
-            query = select(TorrentFileBackup).filter(
-                TorrentFileBackup.info_hash == info_hash
-            )
+            query = select(TorrentFileBackup).filter(TorrentFileBackup.info_hash == info_hash)
 
             if not include_deleted:
                 query = query.filter(TorrentFileBackup.is_deleted == False)
@@ -142,10 +136,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError as e:
             return None
 
-    async def get_by_id(
-        self,
-        backup_id: int
-    ) -> Optional[TorrentFileBackup]:
+    async def get_by_id(self, backup_id: int) -> Optional[TorrentFileBackup]:
         """
         根据ID查询种子文件备份
 
@@ -156,10 +147,10 @@ class TorrentFileBackupRepository:
             TorrentFileBackup对象或None
         """
         try:
-            query = select(TorrentFileBackup).filter(
-                TorrentFileBackup.id == backup_id
-            ).filter(
-                TorrentFileBackup.is_deleted == False
+            query = (
+                select(TorrentFileBackup)
+                .filter(TorrentFileBackup.id == backup_id)
+                .filter(TorrentFileBackup.is_deleted == False)
             )
 
             result = await self.db.execute(query)
@@ -168,12 +159,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError as e:
             return None
 
-    async def list_by_downloader(
-        self,
-        downloader_id: int,
-        skip: int = 0,
-        limit: int = 20
-    ) -> List[TorrentFileBackup]:
+    async def list_by_downloader(self, downloader_id: int, skip: int = 0, limit: int = 20) -> List[TorrentFileBackup]:
         """
         按下载器查询种子文件备份列表
 
@@ -186,13 +172,14 @@ class TorrentFileBackupRepository:
             TorrentFileBackup对象列表
         """
         try:
-            query = select(TorrentFileBackup).filter(
-                TorrentFileBackup.downloader_id == downloader_id
-            ).filter(
-                TorrentFileBackup.is_deleted == False
-            ).order_by(
-                TorrentFileBackup.created_at.desc()
-            ).offset(skip).limit(limit)
+            query = (
+                select(TorrentFileBackup)
+                .filter(TorrentFileBackup.downloader_id == downloader_id)
+                .filter(TorrentFileBackup.is_deleted == False)
+                .order_by(TorrentFileBackup.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
 
             result = await self.db.execute(query)
             return list(result.scalars().all())
@@ -200,11 +187,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError as e:
             return []
 
-    async def list_all(
-        self,
-        skip: int = 0,
-        limit: int = 20
-    ) -> List[TorrentFileBackup]:
+    async def list_all(self, skip: int = 0, limit: int = 20) -> List[TorrentFileBackup]:
         """
         查询所有种子文件备份列表
 
@@ -216,11 +199,13 @@ class TorrentFileBackupRepository:
             TorrentFileBackup对象列表
         """
         try:
-            query = select(TorrentFileBackup).filter(
-                TorrentFileBackup.is_deleted == False
-            ).order_by(
-                TorrentFileBackup.created_at.desc()
-            ).offset(skip).limit(limit)
+            query = (
+                select(TorrentFileBackup)
+                .filter(TorrentFileBackup.is_deleted == False)
+                .order_by(TorrentFileBackup.created_at.desc())
+                .offset(skip)
+                .limit(limit)
+            )
 
             result = await self.db.execute(query)
             return list(result.scalars().all())
@@ -228,10 +213,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError as e:
             return []
 
-    async def count_by_downloader(
-        self,
-        downloader_id: int
-    ) -> int:
+    async def count_by_downloader(self, downloader_id: int) -> int:
         """
         统计下载器的备份文件数量
 
@@ -244,10 +226,10 @@ class TorrentFileBackupRepository:
         try:
             from sqlalchemy import func
 
-            query = select(func.count(TorrentFileBackup.id)).filter(
-                TorrentFileBackup.downloader_id == downloader_id
-            ).filter(
-                TorrentFileBackup.is_deleted == False
+            query = (
+                select(func.count(TorrentFileBackup.id))
+                .filter(TorrentFileBackup.downloader_id == downloader_id)
+                .filter(TorrentFileBackup.is_deleted == False)
             )
 
             result = await self.db.execute(query)
@@ -266,9 +248,7 @@ class TorrentFileBackupRepository:
         try:
             from sqlalchemy import func
 
-            query = select(func.count(TorrentFileBackup.id)).filter(
-                TorrentFileBackup.is_deleted == False
-            )
+            query = select(func.count(TorrentFileBackup.id)).filter(TorrentFileBackup.is_deleted == False)
 
             result = await self.db.execute(query)
             return result.scalar_one() or 0
@@ -276,10 +256,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError as e:
             return 0
 
-    async def soft_delete(
-        self,
-        info_hash: str
-    ) -> bool:
+    async def soft_delete(self, info_hash: str) -> bool:
         """
         逻辑删除种子文件备份
 
@@ -305,10 +282,7 @@ class TorrentFileBackupRepository:
             await self.db.rollback()
             return False
 
-    async def physical_delete(
-        self,
-        info_hash: str
-    ) -> bool:
+    async def physical_delete(self, info_hash: str) -> bool:
         """
         物理删除种子文件备份记录
 
@@ -320,9 +294,7 @@ class TorrentFileBackupRepository:
         """
         try:
             # 直接执行DELETE语句
-            stmt = delete(TorrentFileBackup).filter(
-                TorrentFileBackup.info_hash == info_hash
-            )
+            stmt = delete(TorrentFileBackup).filter(TorrentFileBackup.info_hash == info_hash)
 
             result = await self.db.execute(stmt)
             await self.db.commit()
@@ -333,10 +305,7 @@ class TorrentFileBackupRepository:
             await self.db.rollback()
             return False
 
-    async def increment_use_count(
-        self,
-        info_hash: str
-    ) -> bool:
+    async def increment_use_count(self, info_hash: str) -> bool:
         """
         增加种子文件使用次数并更新最后使用时间
 
@@ -362,12 +331,7 @@ class TorrentFileBackupRepository:
             await self.db.rollback()
             return False
 
-    async def update_file_path(
-        self,
-        info_hash: str,
-        file_path: str,
-        file_size: Optional[int] = None
-    ) -> bool:
+    async def update_file_path(self, info_hash: str, file_path: str, file_size: Optional[int] = None) -> bool:
         """
         更新种子文件路径
 
@@ -397,10 +361,7 @@ class TorrentFileBackupRepository:
             await self.db.rollback()
             return False
 
-    async def check_exists(
-        self,
-        info_hash: str
-    ) -> bool:
+    async def check_exists(self, info_hash: str) -> bool:
         """
         检查种子文件备份是否存在
 
@@ -413,10 +374,10 @@ class TorrentFileBackupRepository:
             是否存在
         """
         try:
-            query = select(TorrentFileBackup.id).filter(
-                TorrentFileBackup.info_hash == info_hash
-            ).filter(
-                TorrentFileBackup.is_deleted == False
+            query = (
+                select(TorrentFileBackup.id)
+                .filter(TorrentFileBackup.info_hash == info_hash)
+                .filter(TorrentFileBackup.is_deleted == False)
             )
 
             result = await self.db.execute(query)
@@ -425,10 +386,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError as e:
             return False
 
-    async def get_total_size_by_downloader(
-        self,
-        downloader_id: int
-    ) -> int:
+    async def get_total_size_by_downloader(self, downloader_id: int) -> int:
         """
         统计下载器备份文件总大小
 
@@ -441,12 +399,11 @@ class TorrentFileBackupRepository:
         try:
             from sqlalchemy import func
 
-            query = select(func.sum(TorrentFileBackup.file_size)).filter(
-                TorrentFileBackup.downloader_id == downloader_id
-            ).filter(
-                TorrentFileBackup.file_size.isnot(None)
-            ).filter(
-                TorrentFileBackup.is_deleted == False
+            query = (
+                select(func.sum(TorrentFileBackup.file_size))
+                .filter(TorrentFileBackup.downloader_id == downloader_id)
+                .filter(TorrentFileBackup.file_size.isnot(None))
+                .filter(TorrentFileBackup.is_deleted == False)
             )
 
             result = await self.db.execute(query)

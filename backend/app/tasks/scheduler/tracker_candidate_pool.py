@@ -97,9 +97,7 @@ class TrackerCandidatePoolTask:
 
                     # 查询数据库中已存在的keywords
                     existing_keywords_result = await db.execute(
-                        select(TrackerKeywordConfig.keyword).filter(
-                            TrackerKeywordConfig.dr == 0
-                        )
+                        select(TrackerKeywordConfig.keyword).filter(TrackerKeywordConfig.dr == 0)
                     )
                     existing_keywords = {kw[0] for kw in existing_keywords_result.all()}
 
@@ -118,7 +116,7 @@ class TrackerCandidatePoolTask:
                             duplicate_count += 1
                             # 标记为已处理
                             log.is_processed = True
-                            log.keyword_type = 'candidate'
+                            log.keyword_type = "candidate"
                             log.update_time = datetime.now()
                             continue
 
@@ -130,7 +128,7 @@ class TrackerCandidatePoolTask:
                             logger.debug(f"数据库中已存在，跳过: {keyword[:50]}")
                             # 标记为已处理
                             log.is_processed = True
-                            log.keyword_type = 'candidate'
+                            log.keyword_type = "candidate"
                             log.update_time = datetime.now()
                         else:
                             # 待处理列表
@@ -141,10 +139,10 @@ class TrackerCandidatePoolTask:
                         try:
                             # 创建新的候选关键词
                             new_keyword = TrackerKeywordConfig(
-                                keyword_type='candidate',
+                                keyword_type="candidate",
                                 keyword=log.msg,
                                 language=None,  # NULL表示通用
-                                priority=100,   # 默认优先级
+                                priority=100,  # 默认优先级
                                 enabled=True,
                                 category=None,
                                 description=f"从tracker消息自动生成 (tracker_host={log.tracker_host})",
@@ -152,7 +150,7 @@ class TrackerCandidatePoolTask:
                                 update_time=datetime.now(),
                                 create_by="system",
                                 update_by="system",
-                                dr=0
+                                dr=0,
                             )
 
                             db.add(new_keyword)
@@ -164,7 +162,7 @@ class TrackerCandidatePoolTask:
 
                             # 标记原消息为已处理
                             log.is_processed = True
-                            log.keyword_type = 'candidate'
+                            log.keyword_type = "candidate"
                             log.update_time = datetime.now()
                             processed_log_ids.append(log.log_id)
 
@@ -207,7 +205,7 @@ class TrackerCandidatePoolTask:
             任务执行结果字典
         """
         try:
-            batch_size = kwargs.get('batch_size', self.batch_size)
+            batch_size = kwargs.get("batch_size", self.batch_size)
 
             self.last_execution_time = datetime.now()
             with self._stats_lock:
@@ -220,7 +218,7 @@ class TrackerCandidatePoolTask:
                 "execution_count": self.execution_count,
                 "status": "running",
                 "message": "候选池填充任务开始",
-                "batch_size": batch_size
+                "batch_size": batch_size,
             }
 
             logger.info(f"[{self.name}] 开始执行, 第{self.execution_count}次")
@@ -234,23 +232,25 @@ class TrackerCandidatePoolTask:
                 self.total_new_candidates += new_count
                 self.total_duplicates += duplicate_count
                 self.total_errors += error_count
-                self.total_messages_processed += (new_count + duplicate_count + error_count)
+                self.total_messages_processed += new_count + duplicate_count + error_count
                 self.success_count += 1
 
-            result.update({
-                "status": "success",
-                "message": f"处理完成: 新增{new_count}条候选关键词, 重复{duplicate_count}条, 错误{error_count}条",
-                "new_candidates": new_count,
-                "duplicates": duplicate_count,
-                "errors": error_count,
-                "total_processed": new_count + duplicate_count + error_count,
-                "total_messages_processed": self.total_messages_processed,
-                "total_new_candidates": self.total_new_candidates,
-                "total_duplicates": self.total_duplicates,
-                "total_errors": self.total_errors,
-                "success_count": self.success_count,
-                "failure_count": self.failure_count
-            })
+            result.update(
+                {
+                    "status": "success",
+                    "message": f"处理完成: 新增{new_count}条候选关键词, 重复{duplicate_count}条, 错误{error_count}条",
+                    "new_candidates": new_count,
+                    "duplicates": duplicate_count,
+                    "errors": error_count,
+                    "total_processed": new_count + duplicate_count + error_count,
+                    "total_messages_processed": self.total_messages_processed,
+                    "total_new_candidates": self.total_new_candidates,
+                    "total_duplicates": self.total_duplicates,
+                    "total_errors": self.total_errors,
+                    "success_count": self.success_count,
+                    "failure_count": self.failure_count,
+                }
+            )
 
             logger.info(f"[{self.name}] 执行完成: {result['message']}")
 
@@ -266,7 +266,7 @@ class TrackerCandidatePoolTask:
                 "status": "failed",
                 "message": f"任务执行失败: {str(e)}",
                 "success_count": self.success_count,
-                "failure_count": self.failure_count
+                "failure_count": self.failure_count,
             }
             logger.error(f"[{self.name}] 执行失败: {e}", exc_info=True)
             return error_result
@@ -293,9 +293,12 @@ class TrackerCandidatePoolTask:
 
             while True:
                 # 分批查询
-                query = db.query(TrackerMessageLog).filter(
-                    TrackerMessageLog.is_processed == False
-                ).limit(batch_size).offset(offset)
+                query = (
+                    db.query(TrackerMessageLog)
+                    .filter(TrackerMessageLog.is_processed == False)
+                    .limit(batch_size)
+                    .offset(offset)
+                )
 
                 batch = query.all()
 
@@ -305,9 +308,11 @@ class TrackerCandidatePoolTask:
 
                 # ===== 关键修复：先查询数据库中已存在的keywords =====
                 existing_keywords = set()
-                all_existing = db.query(TrackerKeywordConfig.keyword).filter(
-                    TrackerKeywordConfig.dr == 0  # 只查询未删除的记录
-                ).all()
+                all_existing = (
+                    db.query(TrackerKeywordConfig.keyword)
+                    .filter(TrackerKeywordConfig.dr == 0)  # 只查询未删除的记录
+                    .all()
+                )
                 existing_keywords = {kw[0] for kw in all_existing}
 
                 logger.info(f"数据库中已存在 {len(existing_keywords)} 个关键词（dr=0）")
@@ -325,7 +330,7 @@ class TrackerCandidatePoolTask:
                         duplicate_count += 1
                         # 标记为已处理
                         log.is_processed = True
-                        log.keyword_type = 'candidate'
+                        log.keyword_type = "candidate"
                         log.update_time = datetime.now()
                         continue
 
@@ -337,7 +342,7 @@ class TrackerCandidatePoolTask:
                         logger.debug(f"数据库中已存在，跳过: {keyword[:50]}")
                         # 标记为已处理
                         log.is_processed = True
-                        log.keyword_type = 'candidate'
+                        log.keyword_type = "candidate"
                         log.update_time = datetime.now()
                     else:
                         # 待处理列表
@@ -348,10 +353,10 @@ class TrackerCandidatePoolTask:
                     try:
                         # 创建新的候选关键词
                         new_keyword = TrackerKeywordConfig(
-                            keyword_type='candidate',
+                            keyword_type="candidate",
                             keyword=log.msg,
                             language=None,  # NULL表示通用
-                            priority=100,   # 默认优先级
+                            priority=100,  # 默认优先级
                             enabled=True,
                             category=None,
                             description=f"从tracker消息自动生成 (tracker_host={log.tracker_host})",
@@ -359,7 +364,7 @@ class TrackerCandidatePoolTask:
                             update_time=datetime.now(),
                             create_by="system",
                             update_by="system",
-                            dr=0
+                            dr=0,
                         )
 
                         db.add(new_keyword)
@@ -371,7 +376,7 @@ class TrackerCandidatePoolTask:
 
                         # 标记原消息为已处理
                         log.is_processed = True
-                        log.keyword_type = 'candidate'
+                        log.keyword_type = "candidate"
                         log.update_time = datetime.now()
                         processed_log_ids.append(log.log_id)
 
@@ -420,7 +425,7 @@ class TrackerCandidatePoolTask:
                 "total_duplicates": self.total_duplicates,
                 "total_errors": self.total_errors,
                 "last_execution_time": self.last_execution_time,
-                "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0
+                "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0,
             }
 
     def get_schedule_config(self) -> Dict[str, Any]:
@@ -428,12 +433,12 @@ class TrackerCandidatePoolTask:
         return {
             "cron_expression": "30 */1 * * *",  # 每小时30分执行一次（错峰）
             "timezone": "Asia/Shanghai",
-            "max_instances": 1,     # 防止重叠执行
-            "coalesce": True,       # 合并错过的执行
+            "max_instances": 1,  # 防止重叠执行
+            "coalesce": True,  # 合并错过的执行
             "misfire_grace_time": 300,  # 错过执行的宽限时间（5分钟）
             "default_interval": self.default_interval,
             "batch_size": self.batch_size,
-            "estimated_duration": "1-5 minutes"
+            "estimated_duration": "1-5 minutes",
         }
 
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -444,15 +449,27 @@ class TrackerCandidatePoolTask:
                     "average_new_per_execution": 0,
                     "average_duplicates_per_execution": 0,
                     "average_errors_per_execution": 0,
-                    "total_processing_time": "N/A"
+                    "total_processing_time": "N/A",
                 }
 
             return {
                 "average_new_per_execution": self.total_new_candidates / self.execution_count,
                 "average_duplicates_per_execution": self.total_duplicates / self.execution_count,
                 "average_errors_per_execution": self.total_errors / self.execution_count,
-                "new_rate": (self.total_new_candidates / self.total_messages_processed * 100) if self.total_messages_processed > 0 else 0,
-                "duplicate_rate": (self.total_duplicates / self.total_messages_processed * 100) if self.total_messages_processed > 0 else 0,
-                "error_rate": (self.total_errors / self.total_messages_processed * 100) if self.total_messages_processed > 0 else 0,
-                "task_reliability": (self.success_count / self.execution_count * 100)
+                "new_rate": (
+                    (self.total_new_candidates / self.total_messages_processed * 100)
+                    if self.total_messages_processed > 0
+                    else 0
+                ),
+                "duplicate_rate": (
+                    (self.total_duplicates / self.total_messages_processed * 100)
+                    if self.total_messages_processed > 0
+                    else 0
+                ),
+                "error_rate": (
+                    (self.total_errors / self.total_messages_processed * 100)
+                    if self.total_messages_processed > 0
+                    else 0
+                ),
+                "task_reliability": (self.success_count / self.execution_count * 100),
             }

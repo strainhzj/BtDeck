@@ -2,6 +2,7 @@
 """
 分时段限速服务
 """
+
 from datetime import datetime
 from typing import List, Dict
 import logging
@@ -35,12 +36,15 @@ class SpeedScheduleService:
             ORDER BY sort_order ASC, created_at ASC
         """
 
-        results = db.execute(text(sql), {
-            "setting_id": downloader_setting_id,
-            "weekday_pattern": f"%{current_weekday}%",
-            "legacy_pattern": f"%{legacy_weekday}%",
-            "current_time": current_time_str
-        }).fetchall()
+        results = db.execute(
+            text(sql),
+            {
+                "setting_id": downloader_setting_id,
+                "weekday_pattern": f"%{current_weekday}%",
+                "legacy_pattern": f"%{legacy_weekday}%",
+                "current_time": current_time_str,
+            },
+        ).fetchall()
 
         return [dict(row._mapping) for row in results]
 
@@ -49,12 +53,7 @@ class SpeedScheduleService:
         """
         根据生效规则计算当前应应用的速度
         """
-        result = {
-            "dl_speed": 0,
-            "dl_unit": 0,
-            "ul_speed": 0,
-            "ul_unit": 0
-        }
+        result = {"dl_speed": 0, "dl_unit": 0, "ul_speed": 0, "ul_unit": 0}
 
         # sort_order 数字越小优先级越高，优先级高的先命中并固定
         for rule in rules:
@@ -86,10 +85,7 @@ class SpeedScheduleService:
                 FROM bt_downloaders
                 WHERE downloader_id = :downloader_id
             """
-            downloader_result = db.execute(
-                text(downloader_sql),
-                {"downloader_id": downloader_id}
-            ).fetchone()
+            downloader_result = db.execute(text(downloader_sql), {"downloader_id": downloader_id}).fetchone()
 
             if not downloader_result:
                 return False
@@ -101,7 +97,7 @@ class SpeedScheduleService:
                 port=downloader_result.port,
                 username=downloader_result.username,
                 password=downloader_result.password,
-                downloader_type=downloader_result.downloader_type
+                downloader_type=downloader_result.downloader_type,
             )
 
             manager = DownloaderSettingsManager(downloader)
@@ -112,7 +108,7 @@ class SpeedScheduleService:
                 "dl_speed_unit": unit_map.get(speed_config["dl_unit"], "KB/s"),
                 "ul_speed_limit": speed_config["ul_speed"],
                 "ul_speed_unit": unit_map.get(speed_config["ul_unit"], "KB/s"),
-                "override_local": True
+                "override_local": True,
             }
 
             return manager.apply_settings(settings_dict)

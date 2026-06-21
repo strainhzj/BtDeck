@@ -4,6 +4,7 @@
 
 为配置模板相关接口提供统一的响应格式，包含下载器类型名称转换
 """
+
 from typing import Any, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
@@ -16,13 +17,23 @@ class SettingTemplateVO(BaseModel):
     id: Optional[int] = Field(None, description="模板ID", example=1)
     name: Optional[str] = Field(None, description="模板名称", example="qBittorrent标准模板")
     description: Optional[str] = Field(None, description="模板描述", example="适用于qBittorrent的标准配置模板")
-    downloaderType: Optional[int] = Field(None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0)
-    downloaderTypeName: Optional[str] = Field(None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent")
+    downloaderType: Optional[int] = Field(
+        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0
+    )
+    downloaderTypeName: Optional[str] = Field(
+        None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent"
+    )
     template_config: Optional[dict] = Field(None, alias="templateConfig", description="模板配置(JSON对象)")
-    is_system_default: Optional[bool] = Field(None, alias="isSystemDefault", description="是否系统默认模板", example=False)
+    is_system_default: Optional[bool] = Field(
+        None, alias="isSystemDefault", description="是否系统默认模板", example=False
+    )
     created_by: Optional[int] = Field(None, alias="createdBy", description="创建者用户ID")
-    created_at: Optional[str] = Field(None, alias="createdAt", description="创建时间(ISO格式)", example="2026-02-05T10:30:00")
-    updated_at: Optional[str] = Field(None, alias="updatedAt", description="更新时间(ISO格式)", example="2026-02-05T10:30:00")
+    created_at: Optional[str] = Field(
+        None, alias="createdAt", description="创建时间(ISO格式)", example="2026-02-05T10:30:00"
+    )
+    updated_at: Optional[str] = Field(
+        None, alias="updatedAt", description="更新时间(ISO格式)", example="2026-02-05T10:30:00"
+    )
     path_mapping: Optional[dict] = Field(None, alias="pathMapping", description="路径映射配置")
 
     def __init__(
@@ -37,7 +48,7 @@ class SettingTemplateVO(BaseModel):
         created_at: Optional[datetime] = None,
         updated_at: Optional[datetime] = None,
         path_mapping: Optional[dict] = None,
-        **kw: Any
+        **kw: Any,
     ):
         """
         初始化SettingTemplateVO
@@ -76,5 +87,5 @@ class SettingTemplateVO(BaseModel):
             createdAt=created_at_str,
             updatedAt=updated_at_str,
             pathMapping=path_mapping,
-            **kw
+            **kw,
         )

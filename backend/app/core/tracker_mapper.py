@@ -73,11 +73,11 @@ def map_qbittorrent_tracker_status(status: int) -> str:
         '工作中'
     """
     status_mapping = {
-        0: TrackerStatus.DISABLED,   # 已禁用
+        0: TrackerStatus.DISABLED,  # 已禁用
         1: TrackerStatus.NOT_CONTACTED,  # 未联系
-        2: TrackerStatus.WORKING,     # 工作中
-        3: TrackerStatus.FAILED,      # 工作失败
-        4: TrackerStatus.NOT_CONTACTED  # 超时 -> 未联系
+        2: TrackerStatus.WORKING,  # 工作中
+        3: TrackerStatus.FAILED,  # 工作失败
+        4: TrackerStatus.NOT_CONTACTED,  # 超时 -> 未联系
     }
     return status_mapping.get(status, TrackerStatus.NOT_CONTACTED)
 
@@ -109,10 +109,10 @@ def map_transmission_tracker_status(status: int) -> str:
     status_mapping = {
         0: TrackerStatus.NOT_CONTACTED,  # 未联系
         1: TrackerStatus.NOT_CONTACTED,  # 发送中 -> 未联系
-        2: TrackerStatus.WORKING,        # 工作中
-        3: TrackerStatus.FAILED,         # 工作失败
+        2: TrackerStatus.WORKING,  # 工作中
+        3: TrackerStatus.FAILED,  # 工作失败
         4: TrackerStatus.NOT_CONTACTED,  # 超时 -> 未联系
-        5: TrackerStatus.DISABLED        # 已清除 -> 已禁用
+        5: TrackerStatus.DISABLED,  # 已清除 -> 已禁用
     }
     return status_mapping.get(status, TrackerStatus.NOT_CONTACTED)
 
@@ -165,33 +165,29 @@ def map_qbittorrent_tracker(tracker: Dict) -> Dict:
         '工作中'
     """
     # 提取基本信息
-    tracker_url = tracker.get('url', '')
+    tracker_url = tracker.get("url", "")
     tracker_host = extract_tracker_host(tracker_url)
-    raw_status = tracker.get('status', 1)
-    msg = tracker.get('msg', '')
+    raw_status = tracker.get("status", 1)
+    msg = tracker.get("msg", "")
 
     # 映射基础状态
     base_status = map_qbittorrent_tracker_status(raw_status)
 
     # 使用判断引擎进行智能状态判断
-    final_status = judgment_engine.judge_status(
-        original_status=base_status,
-        msg=msg,
-        language=None  # 可从用户配置获取
-    )
+    final_status = judgment_engine.judge_status(original_status=base_status, msg=msg, language=None)  # 可从用户配置获取
 
     # 构建返回结果
     return {
-        'tracker_host': tracker_host,
-        'tracker_url': tracker_url,
-        'status': final_status,
-        'msg': msg,
-        'tier': tracker.get('tier', 0),
-        'num_peers': tracker.get('num_peers', 0),
-        'num_seeds': tracker.get('num_seeds', 0),
-        'num_leeches': tracker.get('num_leeches', 0),
-        'downloaded': tracker.get('downloaded', 0),
-        'uploaded': tracker.get('uploaded', 0)
+        "tracker_host": tracker_host,
+        "tracker_url": tracker_url,
+        "status": final_status,
+        "msg": msg,
+        "tier": tracker.get("tier", 0),
+        "num_peers": tracker.get("num_peers", 0),
+        "num_seeds": tracker.get("num_seeds", 0),
+        "num_leeches": tracker.get("num_leeches", 0),
+        "downloaded": tracker.get("downloaded", 0),
+        "uploaded": tracker.get("uploaded", 0),
     }
 
 
@@ -241,11 +237,11 @@ def map_transmission_tracker(tracker: Dict) -> Dict:
         '工作中'
     """
     # 提取基本信息
-    tracker_url = tracker.get('announce', '')
-    tracker_host = tracker.get('host', '') or extract_tracker_host(tracker_url)
+    tracker_url = tracker.get("announce", "")
+    tracker_host = tracker.get("host", "") or extract_tracker_host(tracker_url)
 
     # 判断基础状态
-    last_announce_succeeded = tracker.get('last_announce_succeeded', False)
+    last_announce_succeeded = tracker.get("last_announce_succeeded", False)
 
     if last_announce_succeeded:
         base_status = TrackerStatus.WORKING  # 工作中
@@ -253,26 +249,22 @@ def map_transmission_tracker(tracker: Dict) -> Dict:
         base_status = TrackerStatus.NOT_CONTACTED  # 未联系
 
     # 获取消息
-    msg = tracker.get('last_announce_result', '') or tracker.get('last_scrape_result', '')
+    msg = tracker.get("last_announce_result", "") or tracker.get("last_scrape_result", "")
 
     # 使用判断引擎进行智能状态判断
-    final_status = judgment_engine.judge_status(
-        original_status=base_status,
-        msg=msg,
-        language=None  # 可从用户配置获取
-    )
+    final_status = judgment_engine.judge_status(original_status=base_status, msg=msg, language=None)  # 可从用户配置获取
 
     # 构建返回结果
     return {
-        'tracker_host': tracker_host,
-        'tracker_url': tracker_url,
-        'status': final_status,
-        'msg': msg,
-        'tier': tracker.get('tier', 0),
-        'num_peers': tracker.get('last_announce_peer_count', 0),
-        'last_announce_time': tracker.get('last_announce_time', 0),
-        'last_scrape_time': tracker.get('last_scrape_time', 0),
-        'site_name': tracker.get('site_name', '')
+        "tracker_host": tracker_host,
+        "tracker_url": tracker_url,
+        "status": final_status,
+        "msg": msg,
+        "tier": tracker.get("tier", 0),
+        "num_peers": tracker.get("last_announce_peer_count", 0),
+        "last_announce_time": tracker.get("last_announce_time", 0),
+        "last_scrape_time": tracker.get("last_scrape_time", 0),
+        "site_name": tracker.get("site_name", ""),
     }
 
 

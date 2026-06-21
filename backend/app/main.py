@@ -36,9 +36,7 @@ logger = logging.getLogger(__name__)
 # 改进: 添加异常处理,防止日志配置失败导致应用启动失败
 try:
     logging.basicConfig(
-        level=logging.INFO,
-        format='%(levelname)s:%(name)s:%(message)s',
-        force=True  # 强制覆盖已配置的 logger
+        level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s", force=True  # 强制覆盖已配置的 logger
     )
 except Exception as e:
     # 日志配置失败不应阻止应用启动,使用 print 输出警告
@@ -50,30 +48,34 @@ except Exception as e:
 # 改进: 根据环境选择不同的配置,避免生产环境多进程导致的数据库迁移竞态问题
 if settings.DEV:
     # 开发环境: 热重载模式,单进程
-    Server = uvicorn.Server(Config(
-        app,
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=True,  # 开发环境启用热重载
-        workers=1,  # 强制单进程,热重载模式下多进程被忽略
-        timeout_graceful_shutdown=5,
-        loop="asyncio"
-    ))
+    Server = uvicorn.Server(
+        Config(
+            app,
+            host=settings.HOST,
+            port=settings.PORT,
+            reload=True,  # 开发环境启用热重载
+            workers=1,  # 强制单进程,热重载模式下多进程被忽略
+            timeout_graceful_shutdown=5,
+            loop="asyncio",
+        )
+    )
 else:
     # 生产环境: 单进程模式,避免数据库迁移竞态条件
     # 注意: 多进程模式下只有主进程执行迁移,worker可能访问不一致的schema
-    Server = uvicorn.Server(Config(
-        app,
-        host=settings.HOST,
-        port=settings.PORT,
-        reload=False,  # 生产环境关闭热重载
-        workers=1,  # ← 强制单进程,确保所有请求使用一致的数据库schema
-        timeout_graceful_shutdown=5,
-        loop="asyncio"
-    ))
+    Server = uvicorn.Server(
+        Config(
+            app,
+            host=settings.HOST,
+            port=settings.PORT,
+            reload=False,  # 生产环境关闭热重载
+            workers=1,  # ← 强制单进程,确保所有请求使用一致的数据库schema
+            timeout_graceful_shutdown=5,
+            loop="asyncio",
+        )
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # # 启动托盘
     # start_tray()
 
@@ -82,6 +84,7 @@ if __name__ == '__main__':
 
     # ✨ 重新加载配置，确保 yaml 对象读取到刚生成的配置
     from app.yamlConfig import yaml
+
     yaml.reload()
 
     # === 数据库迁移统一入口 ===

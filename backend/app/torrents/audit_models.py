@@ -4,6 +4,7 @@
 用于记录所有种子操作，包括新增、删除、修改tracker、修改标签等。
 审计日志对于安全审计、问题排查、用户行为分析都非常重要。
 """
+
 from typing import Any, Optional, Dict
 from datetime import datetime
 import uuid
@@ -30,6 +31,7 @@ class TorrentAuditLog(Base):
 
     操作详情以JSON格式存储在 operation_detail、old_value、new_value 字段中
     """
+
     __tablename__ = "torrent_audit_log"
 
     # 主键和基本信息
@@ -62,7 +64,6 @@ class TorrentAuditLog(Base):
     request_id = Column(String(36), index=True, comment="请求唯一标识（用于追踪整个请求链路）")
     session_id = Column(String(36), index=True, comment="会话ID（用于关联同一会话的多个操作）")
 
-
     @property
     def id(self) -> str:
         """
@@ -93,7 +94,7 @@ class TorrentAuditLog(Base):
         user_agent: Optional[str] = None,
         request_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        **kw: Any
+        **kw: Any,
     ):
         super().__init__(**kw)
         self.log_id = log_id or str(uuid.uuid4())
@@ -145,7 +146,7 @@ class TorrentAuditLog(Base):
         Returns:
             操作详情字典，解析失败返回空字典
         """
-        return self._parse_json_field(self.operation_detail, 'operation_detail')
+        return self._parse_json_field(self.operation_detail, "operation_detail")
 
     def get_old_value_dict(self) -> Dict[str, Any]:
         """
@@ -154,7 +155,7 @@ class TorrentAuditLog(Base):
         Returns:
             旧值字典，解析失败返回空字典
         """
-        return self._parse_json_field(self.old_value, 'old_value')
+        return self._parse_json_field(self.old_value, "old_value")
 
     def get_new_value_dict(self) -> Dict[str, Any]:
         """
@@ -163,7 +164,7 @@ class TorrentAuditLog(Base):
         Returns:
             新值字典，解析失败返回空字典
         """
-        return self._parse_json_field(self.new_value, 'new_value')
+        return self._parse_json_field(self.new_value, "new_value")
 
     def set_operation_detail(self, detail: Dict[str, Any]) -> bool:
         """
@@ -175,7 +176,7 @@ class TorrentAuditLog(Base):
         Returns:
             设置成功返回True，失败返回False
         """
-        serialized = self._serialize_json_field(detail, 'operation_detail')
+        serialized = self._serialize_json_field(detail, "operation_detail")
         if serialized is not None:
             self.operation_detail = serialized
             return True
@@ -191,7 +192,7 @@ class TorrentAuditLog(Base):
         Returns:
             设置成功返回True，失败返回False
         """
-        serialized = self._serialize_json_field(value, 'old_value')
+        serialized = self._serialize_json_field(value, "old_value")
         if serialized is not None:
             self.old_value = serialized
             return True
@@ -207,7 +208,7 @@ class TorrentAuditLog(Base):
         Returns:
             设置成功返回True，失败返回False
         """
-        serialized = self._serialize_json_field(value, 'new_value')
+        serialized = self._serialize_json_field(value, "new_value")
         if serialized is not None:
             self.new_value = serialized
             return True
@@ -224,16 +225,13 @@ class TorrentAuditLog(Base):
         Returns:
             解析后的字典，失败返回空字典
         """
+
         # 验证函数：确保解析结果是字典类型
         def is_dict(obj: Any) -> bool:
             return isinstance(obj, dict)
 
         return safe_json_parse_with_validator(
-            json_str,
-            is_dict,
-            default={},
-            log_errors=True,
-            error_context=f"(审计日志字段: {field_name})"
+            json_str, is_dict, default={}, log_errors=True, error_context=f"(审计日志字段: {field_name})"
         )
 
     def _serialize_json_field(self, value: Any, field_name: str) -> Optional[str]:

@@ -10,6 +10,7 @@
 - 连接池管理
 - 失败重试机制
 """
+
 import os
 import json
 import uuid
@@ -70,7 +71,7 @@ class AuditLogService:
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
         request_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> Optional[TorrentAuditLog]:
         """记录单个操作日志（调试级别详细程度）
 
@@ -105,14 +106,16 @@ class AuditLogService:
                 extracted_downloader_name = None
 
                 if operation_detail and isinstance(operation_detail, dict):
-                    extracted_torrent_name = operation_detail.get('torrent_name')
-                    extracted_downloader_name = operation_detail.get('downloader_name')
+                    extracted_torrent_name = operation_detail.get("torrent_name")
+                    extracted_downloader_name = operation_detail.get("downloader_name")
 
                 # 创建审计日志对象
                 audit_log = TorrentAuditLog(
                     torrent_info_id=torrent_info_id,
                     operation_type=operation_type,
-                    operation_detail=json.dumps(operation_detail, ensure_ascii=False, default=str) if operation_detail else None,
+                    operation_detail=(
+                        json.dumps(operation_detail, ensure_ascii=False, default=str) if operation_detail else None
+                    ),
                     old_value=json.dumps(old_value, ensure_ascii=False, default=str) if old_value else None,
                     new_value=json.dumps(new_value, ensure_ascii=False, default=str) if new_value else None,
                     operator=operator,
@@ -125,7 +128,7 @@ class AuditLogService:
                     ip_address=ip_address,
                     user_agent=user_agent,
                     request_id=request_id,
-                    session_id=session_id
+                    session_id=session_id,
                 )
 
                 # 写入数据库
@@ -149,11 +152,7 @@ class AuditLogService:
                     # 最后一次尝试失败，返回None
                     return None
 
-    async def log_batch_operations(
-        self,
-        operations: List[Dict[str, Any]],
-        operator: str
-    ) -> int:
+    async def log_batch_operations(self, operations: List[Dict[str, Any]], operator: str) -> int:
         """批量记录操作日志（性能优化版本）
 
         使用批量插入优化，大幅提升性能。
@@ -187,45 +186,54 @@ class AuditLogService:
 
             for op in operations:
                 log_id = str(uuid.uuid4())  # 需要导入 uuid
-                request_id = op.get('request_id') or f"req_{current_time.strftime('%Y%m%d%H%M%S%f')}"
+                request_id = op.get("request_id") or f"req_{current_time.strftime('%Y%m%d%H%M%S%f')}"
 
                 # 🔥 自动提取 torrent_name 和 downloader_name（冗余字段优化）
                 # 从 operation_detail 中提取，避免列表查询时关联数据库
-                operation_detail = op.get('operation_detail')
+                operation_detail = op.get("operation_detail")
                 extracted_torrent_name = None
                 extracted_downloader_name = None
 
                 if operation_detail and isinstance(operation_detail, dict):
-                    extracted_torrent_name = operation_detail.get('torrent_name')
-                    extracted_downloader_name = operation_detail.get('downloader_name')
+                    extracted_torrent_name = operation_detail.get("torrent_name")
+                    extracted_downloader_name = operation_detail.get("downloader_name")
 
                 log_entry = {
                     "log_id": log_id,
-                    "torrent_info_id": op.get('torrent_info_id'),
-                    "operation_type": op.get('operation_type'),
-                    "operation_detail": json.dumps(op.get('operation_detail'), ensure_ascii=False, default=str) if op.get('operation_detail') else None,
-                    "old_value": json.dumps(op.get('old_value'), ensure_ascii=False, default=str) if op.get('old_value') else None,
-                    "new_value": json.dumps(op.get('new_value'), ensure_ascii=False, default=str) if op.get('new_value') else None,
+                    "torrent_info_id": op.get("torrent_info_id"),
+                    "operation_type": op.get("operation_type"),
+                    "operation_detail": (
+                        json.dumps(op.get("operation_detail"), ensure_ascii=False, default=str)
+                        if op.get("operation_detail")
+                        else None
+                    ),
+                    "old_value": (
+                        json.dumps(op.get("old_value"), ensure_ascii=False, default=str)
+                        if op.get("old_value")
+                        else None
+                    ),
+                    "new_value": (
+                        json.dumps(op.get("new_value"), ensure_ascii=False, default=str)
+                        if op.get("new_value")
+                        else None
+                    ),
                     "operator": operator,
                     "operation_time": current_time,
-                    "operation_result": op.get('operation_result', AuditOperationResult.SUCCESS),
-                    "error_message": op.get('error_message'),
-                    "downloader_id": op.get('downloader_id'),
+                    "operation_result": op.get("operation_result", AuditOperationResult.SUCCESS),
+                    "error_message": op.get("error_message"),
+                    "downloader_id": op.get("downloader_id"),
                     "torrent_name": extracted_torrent_name,  # 🔥 冗余字段
                     "downloader_name": extracted_downloader_name,  # 🔥 冗余字段
-                    "ip_address": op.get('ip_address'),
-                    "user_agent": op.get('user_agent'),
+                    "ip_address": op.get("ip_address"),
+                    "user_agent": op.get("user_agent"),
                     "request_id": request_id,
-                    "session_id": op.get('session_id'),
-                    "create_time": current_time
+                    "session_id": op.get("session_id"),
+                    "create_time": current_time,
                 }
                 log_entries.append(log_entry)
 
             # 使用批量插入优化
-            await self.db_session.execute(
-                TorrentAuditLog.__table__.insert(),
-                log_entries
-            )
+            await self.db_session.execute(TorrentAuditLog.__table__.insert(), log_entries)
             await self.db_session.commit()
 
             logger.info(f"批量记录审计日志完成: {len(log_entries)}/{len(operations)}")
@@ -250,7 +258,7 @@ class AuditLogService:
         request_id: Optional[str] = None,
         session_id: Optional[str] = None,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 20,
     ) -> Dict[str, Any]:
         """查询审计日志（支持分页和筛选）
 
@@ -289,7 +297,7 @@ class AuditLogService:
 
             if torrent_name:
                 # 🔥 支持 torrent_name 模糊搜索（使用 LIKE）
-                conditions.append(TorrentAuditLog.torrent_name.like(f'%{torrent_name}%'))
+                conditions.append(TorrentAuditLog.torrent_name.like(f"%{torrent_name}%"))
 
             if operation_type:
                 conditions.append(TorrentAuditLog.operation_type == operation_type)
@@ -338,26 +346,14 @@ class AuditLogService:
             # 转换为字典列表
             log_list = [log.to_dict() for log in logs]
 
-            return {
-                "total": total,
-                "page": page,
-                "pageSize": page_size,
-                "list": log_list
-            }
+            return {"total": total, "page": page, "pageSize": page_size, "list": log_list}
 
         except Exception as e:
             logger.error(f"查询审计日志失败: {str(e)}")
-            return {
-                "total": 0,
-                "page": page,
-                "pageSize": page_size,
-                "list": []
-            }
+            return {"total": 0, "page": page, "pageSize": page_size, "list": []}
 
     async def get_statistics(
-        self,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
+        self, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """获取审计日志统计信息
 
@@ -408,23 +404,14 @@ class AuditLogService:
                 "total_count": total_count,
                 "operation_type_stats": operation_type_stats,
                 "operator_stats": operator_stats,
-                "result_stats": result_stats
+                "result_stats": result_stats,
             }
 
         except Exception as e:
             logger.error(f"获取审计日志统计失败: {str(e)}")
-            return {
-                "total_count": 0,
-                "operation_type_stats": {},
-                "operator_stats": {},
-                "result_stats": {}
-            }
+            return {"total_count": 0, "operation_type_stats": {}, "operator_stats": {}, "result_stats": {}}
 
-    async def archive_logs(
-        self,
-        end_time: datetime,
-        archive_path: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def archive_logs(self, end_time: datetime, archive_path: Optional[str] = None) -> Dict[str, Any]:
         """归档审计日志
 
         将指定时间之前的审计日志导出到归档文件，并从主数据库中删除。
@@ -444,20 +431,13 @@ class AuditLogService:
         """
         try:
             # 查询需要归档的日志
-            query = select(TorrentAuditLog).where(
-                TorrentAuditLog.operation_time < end_time
-            )
+            query = select(TorrentAuditLog).where(TorrentAuditLog.operation_time < end_time)
 
             result = await self.db_session.execute(query)
             logs_to_archive = result.scalars().all()
 
             if not logs_to_archive:
-                return {
-                    "success": True,
-                    "archived_count": 0,
-                    "archive_path": None,
-                    "message": "没有需要归档的日志"
-                }
+                return {"success": True, "archived_count": 0, "archive_path": None, "message": "没有需要归档的日志"}
 
             # 生成归档文件路径
             if not archive_path:
@@ -471,10 +451,10 @@ class AuditLogService:
                 "archive_time": datetime.now().isoformat(),
                 "end_time": end_time.isoformat(),
                 "log_count": len(logs_to_archive),
-                "logs": [log.to_dict() for log in logs_to_archive]
+                "logs": [log.to_dict() for log in logs_to_archive],
             }
 
-            with open(archive_path, 'w', encoding='utf-8') as f:
+            with open(archive_path, "w", encoding="utf-8") as f:
                 json.dump(archive_data, f, ensure_ascii=False, indent=2, default=str)
 
             # 从主数据库删除已归档的日志
@@ -490,8 +470,8 @@ class AuditLogService:
                 operation_detail={
                     "archived_count": len(logs_to_archive),
                     "archive_path": str(archive_path),
-                    "end_time": end_time.isoformat()
-                }
+                    "end_time": end_time.isoformat(),
+                },
             )
 
             logger.info(f"审计日志归档成功: {len(logs_to_archive)} 条日志已归档到 {archive_path}")
@@ -500,25 +480,16 @@ class AuditLogService:
                 "success": True,
                 "archived_count": len(logs_to_archive),
                 "archive_path": str(archive_path),
-                "message": f"成功归档 {len(logs_to_archive)} 条日志"
+                "message": f"成功归档 {len(logs_to_archive)} 条日志",
             }
 
         except Exception as e:
             logger.error(f"归档审计日志失败: {str(e)}")
             await self.db_session.rollback()
 
-            return {
-                "success": False,
-                "archived_count": 0,
-                "archive_path": None,
-                "message": f"归档失败: {str(e)}"
-            }
+            return {"success": False, "archived_count": 0, "archive_path": None, "message": f"归档失败: {str(e)}"}
 
-    async def export_logs_to_csv(
-        self,
-        logs: List[Dict[str, Any]],
-        output_path: str
-    ) -> bool:
+    async def export_logs_to_csv(self, logs: List[Dict[str, Any]], output_path: str) -> bool:
         """导出审计日志为CSV格式
 
         Args:
@@ -531,36 +502,52 @@ class AuditLogService:
         try:
             import csv
 
-            with open(output_path, 'w', newline='', encoding='utf-8-sig') as f:
+            with open(output_path, "w", newline="", encoding="utf-8-sig") as f:
                 writer = csv.writer(f)
 
                 # 写入表头
-                writer.writerow([
-                    '日志ID', '种子ID', '操作类型', '操作人', '操作时间',
-                    '操作结果', '错误信息', '下载器ID', 'IP地址', 'User-Agent',
-                    '请求ID', '会话ID', '操作详情', '旧值', '新值'
-                ])
+                writer.writerow(
+                    [
+                        "日志ID",
+                        "种子ID",
+                        "操作类型",
+                        "操作人",
+                        "操作时间",
+                        "操作结果",
+                        "错误信息",
+                        "下载器ID",
+                        "IP地址",
+                        "User-Agent",
+                        "请求ID",
+                        "会话ID",
+                        "操作详情",
+                        "旧值",
+                        "新值",
+                    ]
+                )
 
                 # 写入数据
                 for log_dict in logs:
                     # 安全的字典访问，确保每个键都有值
-                    writer.writerow([
-                        log_dict.get('log_id', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('torrent_info_id', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('operation_type', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('operator', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('operation_time', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('operation_result', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('error_message', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('downloader_id', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('ip_address', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('user_agent', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('request_id', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('session_id', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('operation_detail', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('old_value', '') if isinstance(log_dict, dict) else '',
-                        log_dict.get('new_value', '') if isinstance(log_dict, dict) else ''
-                    ])
+                    writer.writerow(
+                        [
+                            log_dict.get("log_id", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("torrent_info_id", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("operation_type", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("operator", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("operation_time", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("operation_result", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("error_message", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("downloader_id", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("ip_address", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("user_agent", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("request_id", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("session_id", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("operation_detail", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("old_value", "") if isinstance(log_dict, dict) else "",
+                            log_dict.get("new_value", "") if isinstance(log_dict, dict) else "",
+                        ]
+                    )
 
             logger.info(f"审计日志导出CSV成功: {output_path}")
             return True
@@ -569,11 +556,7 @@ class AuditLogService:
             logger.error(f"导出审计日志CSV失败: {str(e)}")
             return False
 
-    async def export_logs_to_excel(
-        self,
-        logs: List[Dict[str, Any]],
-        output_path: str
-    ) -> bool:
+    async def export_logs_to_excel(self, logs: List[Dict[str, Any]], output_path: str) -> bool:
         """导出审计日志为Excel格式
 
         Args:
@@ -594,28 +577,30 @@ class AuditLogService:
                     logger.warning(f"跳过非字典类型的日志项: {type(log_dict)}")
                     continue
 
-                data.append({
-                    '日志ID': log_dict.get('log_id', ''),
-                    '种子ID': log_dict.get('torrent_info_id', ''),
-                    '操作类型': log_dict.get('operation_type', ''),
-                    '操作人': log_dict.get('operator', ''),
-                    '操作时间': log_dict.get('operation_time', ''),
-                    '操作结果': log_dict.get('operation_result', ''),
-                    '错误信息': log_dict.get('error_message', ''),
-                    '下载器ID': log_dict.get('downloader_id', ''),
-                    'IP地址': log_dict.get('ip_address', ''),
-                    'User-Agent': log_dict.get('user_agent', ''),
-                    '请求ID': log_dict.get('request_id', ''),
-                    '会话ID': log_dict.get('session_id', ''),
-                    '操作详情': log_dict.get('operation_detail', ''),
-                    '旧值': log_dict.get('old_value', ''),
-                    '新值': log_dict.get('new_value', '')
-                })
+                data.append(
+                    {
+                        "日志ID": log_dict.get("log_id", ""),
+                        "种子ID": log_dict.get("torrent_info_id", ""),
+                        "操作类型": log_dict.get("operation_type", ""),
+                        "操作人": log_dict.get("operator", ""),
+                        "操作时间": log_dict.get("operation_time", ""),
+                        "操作结果": log_dict.get("operation_result", ""),
+                        "错误信息": log_dict.get("error_message", ""),
+                        "下载器ID": log_dict.get("downloader_id", ""),
+                        "IP地址": log_dict.get("ip_address", ""),
+                        "User-Agent": log_dict.get("user_agent", ""),
+                        "请求ID": log_dict.get("request_id", ""),
+                        "会话ID": log_dict.get("session_id", ""),
+                        "操作详情": log_dict.get("operation_detail", ""),
+                        "旧值": log_dict.get("old_value", ""),
+                        "新值": log_dict.get("new_value", ""),
+                    }
+                )
 
             df = pd.DataFrame(data)
 
             # 导出为Excel
-            df.to_excel(output_path, index=False, engine='openpyxl')
+            df.to_excel(output_path, index=False, engine="openpyxl")
 
             logger.info(f"审计日志导出Excel成功: {output_path}")
             return True
@@ -629,9 +614,7 @@ class AuditLogService:
 
 
 # 依赖注入函数
-async def get_audit_service(
-    db_session: AsyncSession = Depends(get_async_db)
-) -> AuditLogService:
+async def get_audit_service(db_session: AsyncSession = Depends(get_async_db)) -> AuditLogService:
     """获取审计日志服务（依赖注入）
 
     Args:
@@ -681,9 +664,4 @@ def extract_audit_info_from_request(request: Request) -> Dict[str, str]:
     if session_cookie:
         session_id = session_cookie
 
-    return {
-        "ip_address": ip_address,
-        "user_agent": user_agent,
-        "request_id": request_id,
-        "session_id": session_id
-    }
+    return {"ip_address": ip_address, "user_agent": user_agent, "request_id": request_id, "session_id": session_id}

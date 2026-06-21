@@ -73,7 +73,7 @@ class TrackerSyncTask(BaseSyncTask):
                     "message": "没有有效的下载器可同步",
                     "successful_syncs": 0,
                     "failed_syncs": 0,
-                    "total_downloaders": 0
+                    "total_downloaders": 0,
                 }
 
             logger.info(f"找到 {len(valid_downloaders)} 个有效下载器")
@@ -84,7 +84,7 @@ class TrackerSyncTask(BaseSyncTask):
                 downloaders=valid_downloaders,
                 sync_func=self._sync_tracker_only,
                 sync_type="Tracker",
-                max_concurrent=1  # 串行执行，彻底避免并发写入导致的数据库锁定问题
+                max_concurrent=1,  # 串行执行，彻底避免并发写入导致的数据库锁定问题
             )
 
             # 更新统计
@@ -109,9 +109,7 @@ class TrackerSyncTask(BaseSyncTask):
                 try:
                     logger.debug("使用关键词更新 tracker 状态...")
                     tracker_status_result = await update_tracker_status_from_keywords()
-                    logger.info(
-                        f"Tracker 状态更新结果: {tracker_status_result.get('message', 'N/A')}"
-                    )
+                    logger.info(f"Tracker 状态更新结果: {tracker_status_result.get('message', 'N/A')}")
                     result["tracker_status_update"] = tracker_status_result
                 except Exception as update_error:
                     logger.error(
@@ -131,7 +129,7 @@ class TrackerSyncTask(BaseSyncTask):
                 "message": error_msg,
                 "successful_syncs": 0,
                 "failed_syncs": 1,
-                "total_downloaders": 0
+                "total_downloaders": 0,
             }
 
     async def _sync_tracker_only(self, downloader_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -169,14 +167,14 @@ class TrackerSyncTask(BaseSyncTask):
             if hasattr(downloader, key):
                 setattr(downloader, key, value)
 
-        nickname = downloader_info.get('nickname', 'unknown')
+        nickname = downloader_info.get("nickname", "unknown")
 
         # === 确定下载器类型 ===
         original_type = downloader.downloader_type
-        if original_type == 'qbittorrent' or original_type == 0 or original_type == '0':
-            downloader_type_str = 'qbittorrent'
-        elif original_type == 'transmission' or original_type == 1 or original_type == '1':
-            downloader_type_str = 'transmission'
+        if original_type == "qbittorrent" or original_type == 0 or original_type == "0":
+            downloader_type_str = "qbittorrent"
+        elif original_type == "transmission" or original_type == 1 or original_type == "1":
+            downloader_type_str = "transmission"
         else:
             error_msg = f"不支持的下载器类型: {original_type}"
             logger.error(error_msg)
@@ -186,15 +184,14 @@ class TrackerSyncTask(BaseSyncTask):
         try:
             cached_downloaders = await downloader_app.state.store.get_snapshot()
             downloader_vo = next(
-                (d for d in cached_downloaders
-                 if str(d.downloader_id) == str(downloader_info.get('downloader_id'))),
-                None
+                (d for d in cached_downloaders if str(d.downloader_id) == str(downloader_info.get("downloader_id"))),
+                None,
             )
         except Exception as e:
             logger.error(f"获取缓存下载器失败: {e}")
             downloader_vo = None
 
-        if not downloader_vo or not hasattr(downloader_vo, 'client') or downloader_vo.client is None:
+        if not downloader_vo or not hasattr(downloader_vo, "client") or downloader_vo.client is None:
             error_msg = f"无法获取下载器 {nickname} 的缓存客户端连接"
             logger.error(error_msg)
             return {"status": "failed", "message": error_msg, "nickname": nickname}
@@ -204,7 +201,7 @@ class TrackerSyncTask(BaseSyncTask):
         # === 执行 tracker-only 同步 ===
         async with AsyncSessionLocal() as db:
             try:
-                if downloader_type_str == 'qbittorrent':
+                if downloader_type_str == "qbittorrent":
                     result = await qb_sync_trackers_only_async(db, downloader, client)
                 else:
                     result = await tr_sync_trackers_only_async(db, downloader, client)

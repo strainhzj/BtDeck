@@ -13,23 +13,13 @@ class CronTaskCRUD:
     @staticmethod
     def convert_task_type_to_chinese(task_type: int) -> str:
         """任务类型转换为中文"""
-        type_mapping = {
-            0: "shell脚本",
-            1: "cmd脚本",
-            2: "powershell脚本",
-            3: "python脚本",
-            4: "python内部类"
-        }
+        type_mapping = {0: "shell脚本", 1: "cmd脚本", 2: "powershell脚本", 3: "python脚本", 4: "python内部类"}
         return type_mapping.get(task_type, "未知类型")
 
     @staticmethod
     def convert_task_status_to_chinese(task_status: int) -> str:
         """任务状态转换为中文"""
-        status_mapping = {
-            0: "等待运行",
-            1: "运行中",
-            2: "空闲"
-        }
+        status_mapping = {0: "等待运行", 1: "运行中", 2: "空闲"}
         return status_mapping.get(task_status, "未知状态")
 
     @staticmethod
@@ -37,23 +27,21 @@ class CronTaskCRUD:
         """创建定时任务"""
         try:
             # 检查任务编码是否已存在
-            existing_task = db.query(CronTask).filter(
-                and_(
-                    CronTask.task_code == task_data.get("task_code"),
-                    CronTask.dr == 0
-                )
-            ).first()
+            existing_task = (
+                db.query(CronTask)
+                .filter(and_(CronTask.task_code == task_data.get("task_code"), CronTask.dr == 0))
+                .first()
+            )
 
             if existing_task:
                 return DatabaseResult.failure_result(f"任务编码 '{task_data.get('task_code')}' 已存在，请使用其他编码")
 
             # 检查任务名称是否已存在
-            existing_task_name = db.query(CronTask).filter(
-                and_(
-                    CronTask.task_name == task_data.get("task_name"),
-                    CronTask.dr == 0
-                )
-            ).first()
+            existing_task_name = (
+                db.query(CronTask)
+                .filter(and_(CronTask.task_name == task_data.get("task_name"), CronTask.dr == 0))
+                .first()
+            )
 
             if existing_task_name:
                 return DatabaseResult.failure_result(f"任务名称 '{task_data.get('task_name')}' 已存在，请使用其他名称")
@@ -65,7 +53,7 @@ class CronTaskCRUD:
                 executor=task_data.get("executor"),
                 cron_plan=task_data.get("cron_plan"),
                 enabled=task_data.get("enabled", True),
-                create_by=task_data.get("create_by", "admin")
+                create_by=task_data.get("create_by", "admin"),
             )
 
             db.add(cron_task)
@@ -82,12 +70,7 @@ class CronTaskCRUD:
     def get_cron_task_by_id(db: Session, task_id: int) -> DatabaseResult:
         """根据ID获取定时任务"""
         try:
-            task = db.query(CronTask).filter(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0
-                )
-            ).first()
+            task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
                 return DatabaseResult.not_found("定时任务不存在")
@@ -101,20 +84,12 @@ class CronTaskCRUD:
     def get_cron_task_by_code(db: Session, task_code: str) -> DatabaseResult:
         """根据任务编码获取定时任务"""
         try:
-            task = db.query(CronTask).filter(
-                and_(
-                    CronTask.task_code == task_code,
-                    CronTask.dr == 0
-                )
-            ).first()
+            task = db.query(CronTask).filter(and_(CronTask.task_code == task_code, CronTask.dr == 0)).first()
 
             if not task:
                 return DatabaseResult.success_result({"total": 0, "list": []})
 
-            return DatabaseResult.success_result({
-                "total": 1,
-                "list": [task.to_dict()]
-            })
+            return DatabaseResult.success_result({"total": 1, "list": [task.to_dict()]})
 
         except Exception as e:
             return DatabaseResult.failure_result(f"根据编码获取定时任务失败: {str(e)}")
@@ -128,7 +103,7 @@ class CronTaskCRUD:
         task_code: Optional[str] = None,
         enabled: Optional[bool] = None,
         task_type: Optional[int] = None,
-        task_status: Optional[int] = None
+        task_status: Optional[int] = None,
     ) -> DatabaseResult:
         """获取定时任务列表"""
         try:
@@ -152,16 +127,15 @@ class CronTaskCRUD:
             task_list = []
             for task in tasks:
                 task_data = task.to_dict()
-                task_data.update({
-                    "task_type_name": CronTaskCRUD.convert_task_type_to_chinese(task.task_type),
-                    "task_status_name": CronTaskCRUD.convert_task_status_to_chinese(task.task_status)
-                })
+                task_data.update(
+                    {
+                        "task_type_name": CronTaskCRUD.convert_task_type_to_chinese(task.task_type),
+                        "task_status_name": CronTaskCRUD.convert_task_status_to_chinese(task.task_status),
+                    }
+                )
                 task_list.append(task_data)
 
-            return DatabaseResult.success_result({
-                "total": total,
-                "list": task_list
-            })
+            return DatabaseResult.success_result({"total": total, "list": task_list})
 
         except Exception as e:
             return DatabaseResult.failure_result(f"获取定时任务列表失败: {str(e)}")
@@ -170,47 +144,51 @@ class CronTaskCRUD:
     def update_cron_task(db: Session, task_id: int, task_data: Dict[str, Any]) -> DatabaseResult:
         """更新定时任务"""
         try:
-            task = db.query(CronTask).filter(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0
-                )
-            ).first()
+            task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
                 return DatabaseResult.not_found("定时任务不存在")
 
             # 检查任务编码是否被其他任务使用
             if "task_code" in task_data:
-                existing_task = db.query(CronTask).filter(
-                    and_(
-                        CronTask.task_code == task_data.get("task_code"),
-                        CronTask.task_id != task_id,
-                        CronTask.dr == 0
+                existing_task = (
+                    db.query(CronTask)
+                    .filter(
+                        and_(
+                            CronTask.task_code == task_data.get("task_code"),
+                            CronTask.task_id != task_id,
+                            CronTask.dr == 0,
+                        )
                     )
-                ).first()
+                    .first()
+                )
 
                 if existing_task:
-                    return DatabaseResult.failure_result(f"任务编码 '{task_data.get('task_code')}' 已被其他任务使用，请使用其他编码")
+                    return DatabaseResult.failure_result(
+                        f"任务编码 '{task_data.get('task_code')}' 已被其他任务使用，请使用其他编码"
+                    )
 
             # 检查任务名称是否被其他任务使用
             if "task_name" in task_data:
-                existing_task_name = db.query(CronTask).filter(
-                    and_(
-                        CronTask.task_name == task_data.get("task_name"),
-                        CronTask.task_id != task_id,
-                        CronTask.dr == 0
+                existing_task_name = (
+                    db.query(CronTask)
+                    .filter(
+                        and_(
+                            CronTask.task_name == task_data.get("task_name"),
+                            CronTask.task_id != task_id,
+                            CronTask.dr == 0,
+                        )
                     )
-                ).first()
+                    .first()
+                )
 
                 if existing_task_name:
-                    return DatabaseResult.failure_result(f"任务名称 '{task_data.get('task_name')}' 已被其他任务使用，请使用其他名称")
+                    return DatabaseResult.failure_result(
+                        f"任务名称 '{task_data.get('task_name')}' 已被其他任务使用，请使用其他名称"
+                    )
 
             # 更新字段
-            update_fields = [
-                "task_name", "task_code", "task_type", "executor",
-                "enabled", "cron_plan"
-            ]
+            update_fields = ["task_name", "task_code", "task_type", "executor", "enabled", "cron_plan"]
 
             for field in update_fields:
                 if field in task_data:
@@ -232,12 +210,7 @@ class CronTaskCRUD:
     def delete_cron_task(db: Session, task_id: int, delete_by: str = "admin") -> DatabaseResult:
         """删除定时任务（逻辑删除）"""
         try:
-            task = db.query(CronTask).filter(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0
-                )
-            ).first()
+            task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
                 return DatabaseResult.not_found("定时任务不存在")
@@ -258,12 +231,7 @@ class CronTaskCRUD:
     def update_task_status(db: Session, task_id: int, status: int) -> DatabaseResult:
         """更新任务状态"""
         try:
-            task = db.query(CronTask).filter(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0
-                )
-            ).first()
+            task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
                 return DatabaseResult.not_found("定时任务不存在")
@@ -283,12 +251,7 @@ class CronTaskCRUD:
     def get_enabled_tasks(db: Session) -> DatabaseResult:
         """获取所有启用的定时任务"""
         try:
-            tasks = db.query(CronTask).filter(
-                and_(
-                    CronTask.enabled == True,
-                    CronTask.dr == 0
-                )
-            ).all()
+            tasks = db.query(CronTask).filter(and_(CronTask.enabled == True, CronTask.dr == 0)).all()
 
             return DatabaseResult.success_result([task.to_dict() for task in tasks])
 
@@ -311,7 +274,7 @@ class TaskLogsCRUD:
                 end_time=log_data.get("end_time"),
                 duration=log_data.get("duration"),
                 success=log_data.get("success"),
-                log_detail=log_data.get("log_detail")
+                log_detail=log_data.get("log_detail"),
             )
 
             db.add(task_log)
@@ -331,7 +294,7 @@ class TaskLogsCRUD:
         limit: int = 100,
         task_name: Optional[str] = None,
         task_id: Optional[int] = None,
-        success: Optional[bool] = None
+        success: Optional[bool] = None,
     ) -> DatabaseResult:
         """获取任务日志列表"""
         try:
@@ -347,10 +310,7 @@ class TaskLogsCRUD:
             total = query.count()
             logs = query.order_by(desc(TaskLogs.start_time)).offset(skip).limit(limit).all()
 
-            return DatabaseResult.success_result({
-                "total": total,
-                "list": [log.to_dict() for log in logs]
-            })
+            return DatabaseResult.success_result({"total": total, "list": [log.to_dict() for log in logs]})
 
         except Exception as e:
             return DatabaseResult.failure_result(f"获取任务日志失败: {str(e)}")
@@ -373,15 +333,13 @@ class TaskLogsCRUD:
 
             # 今日日志数
             today = date.today()
-            today_logs = base_query.filter(
-                func.date(TaskLogs.start_time) == today
-            ).count()
+            today_logs = base_query.filter(func.date(TaskLogs.start_time) == today).count()
 
             statistics = {
                 "total_logs": total_logs,
                 "success_logs": success_logs,
                 "failed_logs": failed_logs,
-                "today_logs": today_logs
+                "today_logs": today_logs,
             }
 
             return DatabaseResult.success_result(statistics)
@@ -394,7 +352,7 @@ class TaskLogsCRUD:
         db: Session,
         log_ids: Optional[List[int]] = None,
         task_id: Optional[int] = None,
-        before_date: Optional[str] = None
+        before_date: Optional[str] = None,
     ) -> DatabaseResult:
         """
         删除任务日志（软删除，dr=1）。
@@ -409,9 +367,7 @@ class TaskLogsCRUD:
         """
         try:
             if not log_ids and task_id is None and not before_date:
-                return DatabaseResult.failure_result(
-                    "必须提供 log_ids / task_id / before_date 中的至少一个条件"
-                )
+                return DatabaseResult.failure_result("必须提供 log_ids / task_id / before_date 中的至少一个条件")
 
             query = db.query(TaskLogs).filter(TaskLogs.dr == 0)
             if log_ids:
@@ -422,9 +378,7 @@ class TaskLogsCRUD:
                 try:
                     cutoff = datetime.strptime(before_date, "%Y-%m-%d")
                 except ValueError:
-                    return DatabaseResult.failure_result(
-                        "before_date 格式应为 YYYY-MM-DD"
-                    )
+                    return DatabaseResult.failure_result("before_date 格式应为 YYYY-MM-DD")
                 query = query.filter(TaskLogs.start_time < cutoff)
 
             count = query.update({TaskLogs.dr: 1}, synchronize_session=False)
@@ -438,10 +392,7 @@ class TaskLogsCRUD:
 
     @staticmethod
     def cleanup_task_logs(
-        db: Session,
-        days: Optional[int] = None,
-        keep_success: bool = False,
-        keep_error: bool = False
+        db: Session, days: Optional[int] = None, keep_success: bool = False, keep_error: bool = False
     ) -> DatabaseResult:
         """
         清理过期任务日志（软删除，dr=1）。

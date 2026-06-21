@@ -20,13 +20,15 @@ from app.core.json_parser import safe_json_parse
 from app.torrents.models import TorrentInfo, TrackerInfo
 from app.downloader.models import BtDownloaders
 from app.models.search_template import SearchTemplate
-from app.services.torrent_deletion_service import (
-    TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
-)
+from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.api.models.advanced_search import (
-    EnhancedAdvancedSearchRequest, SearchCondition, MultiSelectCondition,
-    validate_size_string, validate_date_string
+    EnhancedAdvancedSearchRequest,
+    SearchCondition,
+    MultiSelectCondition,
+    validate_size_string,
+    validate_date_string,
 )
+
 # 导入种子信息转换函数（包含tracker信息）
 from app.api.endpoints.torrent_helpers import convert_to_vo_with_trackers
 
@@ -38,45 +40,47 @@ class SearchQueryBuilder:
 
     # 字段到数据库列的映射
     FIELD_MAPPING = {
-        'info_id': TorrentInfo.info_id,
-        'downloader_id': TorrentInfo.downloader_id,
-        'downloader_name': TorrentInfo.downloader_name,
-        'torrent_id': TorrentInfo.torrent_id,
-        'hash': TorrentInfo.hash,
-        'name': TorrentInfo.name,
-        'save_path': TorrentInfo.save_path,
-        'size': TorrentInfo.size,
-        'status': TorrentInfo.status,
-        'torrent_file': TorrentInfo.torrent_file,
-        'added_date': TorrentInfo.added_date,
-        'added_time': TorrentInfo.added_date,  # 别名
-        'completed_date': TorrentInfo.completed_date,
-        'ratio': TorrentInfo.ratio,
-        'ratio_limit': TorrentInfo.ratio_limit,
-        'tags': TorrentInfo.tags,
-        'category': TorrentInfo.category,
-        'super_seeding': TorrentInfo.super_seeding,
-        'enabled': TorrentInfo.enabled,
+        "info_id": TorrentInfo.info_id,
+        "downloader_id": TorrentInfo.downloader_id,
+        "downloader_name": TorrentInfo.downloader_name,
+        "torrent_id": TorrentInfo.torrent_id,
+        "hash": TorrentInfo.hash,
+        "name": TorrentInfo.name,
+        "save_path": TorrentInfo.save_path,
+        "size": TorrentInfo.size,
+        "status": TorrentInfo.status,
+        "torrent_file": TorrentInfo.torrent_file,
+        "added_date": TorrentInfo.added_date,
+        "added_time": TorrentInfo.added_date,  # 别名
+        "completed_date": TorrentInfo.completed_date,
+        "ratio": TorrentInfo.ratio,
+        "ratio_limit": TorrentInfo.ratio_limit,
+        "tags": TorrentInfo.tags,
+        "category": TorrentInfo.category,
+        "super_seeding": TorrentInfo.super_seeding,
+        "enabled": TorrentInfo.enabled,
     }
 
     # 操作符到SQLAlchemy的映射
     OPERATOR_MAPPING = {
-        'eq': lambda column, value: column == value,
-        'ne': lambda column, value: column != value,
-        'gt': lambda column, value: column > value,
-        'gte': lambda column, value: column >= value,
-        'lt': lambda column, value: column < value,
-        'lte': lambda column, value: column <= value,
-        'contains': lambda column, value: column.contains(value) if isinstance(value, str) else column == value,
-        'not_contains': lambda column, value: ~column.contains(value) if isinstance(value, str) else column != value,
-        'starts_with': lambda column, value: column.startswith(value) if isinstance(value, str) else column == value,
-        'ends_with': lambda column, value: column.endswith(value) if isinstance(value, str) else column == value,
-        'not_starts_with': lambda column, value: ~column.startswith(value) if isinstance(value, str) else column != value,
-        'not_ends_with': lambda column, value: ~column.endswith(value) if isinstance(value, str) else column != value,
-        'in': lambda column, value: column.in_(value if isinstance(value, (list, tuple)) else [value]),
-        'not_in': lambda column, value: ~column.in_(value if isinstance(value, (list, tuple)) else [value]),
-        'is_null': lambda column, value: column.is_(None),
-        'is_not_null': lambda column, value: column.isnot(None),
+        "eq": lambda column, value: column == value,
+        "ne": lambda column, value: column != value,
+        "gt": lambda column, value: column > value,
+        "gte": lambda column, value: column >= value,
+        "lt": lambda column, value: column < value,
+        "lte": lambda column, value: column <= value,
+        "contains": lambda column, value: column.contains(value) if isinstance(value, str) else column == value,
+        "not_contains": lambda column, value: ~column.contains(value) if isinstance(value, str) else column != value,
+        "starts_with": lambda column, value: column.startswith(value) if isinstance(value, str) else column == value,
+        "ends_with": lambda column, value: column.endswith(value) if isinstance(value, str) else column == value,
+        "not_starts_with": lambda column, value: (
+            ~column.startswith(value) if isinstance(value, str) else column != value
+        ),
+        "not_ends_with": lambda column, value: ~column.endswith(value) if isinstance(value, str) else column != value,
+        "in": lambda column, value: column.in_(value if isinstance(value, (list, tuple)) else [value]),
+        "not_in": lambda column, value: ~column.in_(value if isinstance(value, (list, tuple)) else [value]),
+        "is_null": lambda column, value: column.is_(None),
+        "is_not_null": lambda column, value: column.isnot(None),
     }
 
     def __init__(self, db: Session):
@@ -89,12 +93,12 @@ class SearchQueryBuilder:
         self.db = db
         self.base_query = db.query(TorrentInfo).filter(TorrentInfo.dr == 0)
 
-    def reset(self) -> 'SearchQueryBuilder':
+    def reset(self) -> "SearchQueryBuilder":
         """重置查询到初始状态"""
         self.base_query = self.db.query(TorrentInfo).filter(TorrentInfo.dr == 0)
         return self
 
-    def apply_basic_filters(self, request: EnhancedAdvancedSearchRequest) -> 'SearchQueryBuilder':
+    def apply_basic_filters(self, request: EnhancedAdvancedSearchRequest) -> "SearchQueryBuilder":
         """
         应用基础过滤条件
 
@@ -159,6 +163,7 @@ class SearchQueryBuilder:
             if added_max is not None:
                 # 包含当天的23:59:59
                 from datetime import timedelta
+
                 added_max = added_max.replace(hour=23, minute=59, second=59)
                 filters.append(TorrentInfo.added_date <= added_max)
 
@@ -179,7 +184,9 @@ class SearchQueryBuilder:
 
         return self
 
-    def apply_condition_groups(self, condition_groups: Optional[List], between_group_logics: Optional[List[str]] = None) -> 'SearchQueryBuilder':
+    def apply_condition_groups(
+        self, condition_groups: Optional[List], between_group_logics: Optional[List[str]] = None
+    ) -> "SearchQueryBuilder":
         """
         应用高级条件组
 
@@ -198,14 +205,14 @@ class SearchQueryBuilder:
         for group in condition_groups:
             try:
                 # ✅ P2-1修复: 更安全的Pydantic对象和字典兼容处理
-                if hasattr(group, 'logic'):
+                if hasattr(group, "logic"):
                     # SearchGroup Pydantic对象 - 使用getattr保护属性访问
-                    logic = getattr(group, 'logic', None)
-                    conditions = getattr(group, 'conditions', None)
+                    logic = getattr(group, "logic", None)
+                    conditions = getattr(group, "conditions", None)
                 else:
                     # 字典格式
-                    logic = group.get('logic') if group else None
-                    conditions = group.get('conditions') if group else None
+                    logic = group.get("logic") if group else None
+                    conditions = group.get("conditions") if group else None
 
                 # 验证必需字段
                 if not logic or not isinstance(logic, str):
@@ -236,7 +243,7 @@ class SearchQueryBuilder:
                     continue
 
             if condition_filters:
-                if logic == 'AND':
+                if logic == "AND":
                     group_filters.append(and_(*condition_filters))
                 else:  # OR
                     group_filters.append(or_(*condition_filters))
@@ -247,8 +254,8 @@ class SearchQueryBuilder:
                 # 根据组间逻辑关系构建查询
                 result_filter = group_filters[0]
                 for i, group_filter in enumerate(group_filters[1:]):
-                    logic = between_group_logics[i].upper() if i < len(between_group_logics) else 'AND'
-                    if logic == 'AND':
+                    logic = between_group_logics[i].upper() if i < len(between_group_logics) else "AND"
+                    if logic == "AND":
                         result_filter = and_(result_filter, group_filter)
                     else:  # OR
                         result_filter = or_(result_filter, group_filter)
@@ -271,20 +278,20 @@ class SearchQueryBuilder:
         """
         try:
             # ✅ P2-1修复: 更安全的Pydantic对象和字典兼容处理
-            if hasattr(condition, 'field'):
+            if hasattr(condition, "field"):
                 # SearchCondition Pydantic对象 - 使用getattr保护属性访问
-                field = getattr(condition, 'field', None)
-                operator = getattr(condition, 'operator', None)
-                value = getattr(condition, 'value', None)
+                field = getattr(condition, "field", None)
+                operator = getattr(condition, "operator", None)
+                value = getattr(condition, "value", None)
             else:
                 # 字典格式
                 if not condition or not isinstance(condition, dict):
                     logger.warning(f"条件对象无效: {condition}")
                     return None
 
-                field = condition.get('field')
-                operator = condition.get('operator')
-                value = condition.get('value')
+                field = condition.get("field")
+                operator = condition.get("operator")
+                value = condition.get("value")
 
             # 验证必需字段
             if not field or not isinstance(field, str):
@@ -295,10 +302,10 @@ class SearchQueryBuilder:
                 logger.warning(f"条件缺少有效的operator字段: {operator}")
                 return None
 
-            if field == 'tracker_url':
+            if field == "tracker_url":
                 return self._build_tracker_url_filter(operator, value)
 
-            if field == 'tracker_msg':
+            if field == "tracker_msg":
                 return self._build_tracker_msg_filter(operator, value)
 
             if field not in self.FIELD_MAPPING:
@@ -315,22 +322,19 @@ class SearchQueryBuilder:
             return None
 
         # 处理特殊字段类型
-        if field in ['size'] and operator in ['gt', 'gte', 'lt', 'lte']:
+        if field in ["size"] and operator in ["gt", "gte", "lt", "lte"]:
             # 大小字段可能包含单位
             if isinstance(value, str):
                 value = validate_size_string(value)
                 if value is None:
                     return None
 
-        if field in ['added_date', 'completed_date', 'added_time'] and operator in ['gt', 'gte', 'lt', 'lte']:
+        if field in ["added_date", "completed_date", "added_time"] and operator in ["gt", "gte", "lt", "lte"]:
             # 日期字段处理
             if isinstance(value, str):
                 value = validate_date_string(value)
                 if value is None:
                     return None
-
-
-
 
         return self.OPERATOR_MAPPING[operator](column, value)
 
@@ -348,11 +352,7 @@ class SearchQueryBuilder:
             return None
 
         return exists().where(
-            and_(
-                TrackerInfo.torrent_info_id == TorrentInfo.info_id,
-                TrackerInfo.dr == 0,
-                tracker_text_filter
-            )
+            and_(TrackerInfo.torrent_info_id == TorrentInfo.info_id, TrackerInfo.dr == 0, tracker_text_filter)
         )
 
     def _build_tracker_msg_text_filter(self, operator: str, value: str) -> Optional[expression.ClauseElement]:
@@ -364,7 +364,6 @@ class SearchQueryBuilder:
             return None
 
         return or_(announce_filter, scrape_filter)
-
 
     def _build_tracker_url_filter(self, operator: str, value: Any) -> Optional[expression.ClauseElement]:
         """
@@ -380,11 +379,7 @@ class SearchQueryBuilder:
             return None
 
         return exists().where(
-            and_(
-                TrackerInfo.torrent_info_id == TorrentInfo.info_id,
-                TrackerInfo.dr == 0,
-                tracker_url_filter
-            )
+            and_(TrackerInfo.torrent_info_id == TorrentInfo.info_id, TrackerInfo.dr == 0, tracker_url_filter)
         )
 
     def _build_text_filter(self, column, operator: str, value: str) -> Optional[expression.ClauseElement]:
@@ -396,35 +391,36 @@ class SearchQueryBuilder:
         - 对于等值比较操作符，可以安全处理None（SQL语义）
         """
         # 字符串操作符：需要先过滤None值，否则会引发SQL错误
-        if operator in ['contains', 'not_contains', 'starts_with', 'ends_with',
-                       'not_starts_with', 'not_ends_with']:
+        if operator in ["contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with"]:
             from sqlalchemy import false as sql_false
+
             # 使用AND确保列值不为None，然后应用文本操作符
-            if operator == 'contains':
+            if operator == "contains":
                 return and_(column.is_not(None), column.contains(value))
-            if operator == 'not_contains':
+            if operator == "not_contains":
                 # 对于not_contains，None值也不包含目标字符串，所以视为匹配
                 return or_(column.is_(None), and_(column.is_not(None), ~column.contains(value)))
-            if operator == 'starts_with':
+            if operator == "starts_with":
                 return and_(column.is_not(None), column.startswith(value))
-            if operator == 'ends_with':
+            if operator == "ends_with":
                 return and_(column.is_not(None), column.endswith(value))
-            if operator == 'not_starts_with':
+            if operator == "not_starts_with":
                 # None不匹配任何前缀，所以视为符合not_starts_with条件
                 return or_(column.is_(None), and_(column.is_not(None), ~column.startswith(value)))
-            if operator == 'not_ends_with':
+            if operator == "not_ends_with":
                 # None不匹配任何后缀，所以视为符合not_ends_with条件
                 return or_(column.is_(None), and_(column.is_not(None), ~column.endswith(value)))
 
         # 等值比较操作符：SQL语义可以安全处理None
-        if operator in ['eq', 'equals']:
+        if operator in ["eq", "equals"]:
             return column == value
-        if operator in ['ne', 'not_equals']:
+        if operator in ["ne", "not_equals"]:
             return column != value
 
         logger.warning(f"tracker_msg unsupported operator {operator}, fallback to contains")
         # 默认安全处理
         from sqlalchemy import false as sql_false
+
         return and_(column.is_not(None), column.contains(value))
 
     def apply_multi_select_conditions(
@@ -432,8 +428,8 @@ class SearchQueryBuilder:
         status_multi: Optional[MultiSelectCondition],
         category_multi: Optional[MultiSelectCondition],
         tags_multi: Optional[MultiSelectCondition],
-        downloader_multi: Optional[MultiSelectCondition]
-    ) -> 'SearchQueryBuilder':
+        downloader_multi: Optional[MultiSelectCondition],
+    ) -> "SearchQueryBuilder":
         """
         应用多选排除条件
 
@@ -447,10 +443,10 @@ class SearchQueryBuilder:
             self 支持链式调用
         """
         multi_conditions = [
-            (status_multi, TorrentInfo.status, 'status'),
-            (category_multi, TorrentInfo.category, 'category'),
-            (tags_multi, TorrentInfo.tags, 'tags'),
-            (downloader_multi, TorrentInfo.downloader_id, 'downloader_id')
+            (status_multi, TorrentInfo.status, "status"),
+            (category_multi, TorrentInfo.category, "category"),
+            (tags_multi, TorrentInfo.tags, "tags"),
+            (downloader_multi, TorrentInfo.downloader_id, "downloader_id"),
         ]
 
         for condition, column, field_name in multi_conditions:
@@ -463,7 +459,7 @@ class SearchQueryBuilder:
 
             # 确保values是列表
             if isinstance(values, str):
-                separator = condition.separator or ','
+                separator = condition.separator or ","
                 values = [v.strip() for v in values.split(separator) if v.strip()]
             elif not isinstance(values, list):
                 values = [values]
@@ -471,7 +467,7 @@ class SearchQueryBuilder:
             if not values:
                 continue
 
-            if condition.mode == 'include':
+            if condition.mode == "include":
                 # 包含模式: field IN (values)
                 self.base_query = self.base_query.filter(column.in_(values))
             else:
@@ -482,7 +478,7 @@ class SearchQueryBuilder:
 
         return self
 
-    def apply_sorting(self, sort_by: str, sort_order: str = 'desc') -> 'SearchQueryBuilder':
+    def apply_sorting(self, sort_by: str, sort_order: str = "desc") -> "SearchQueryBuilder":
         """
         应用排序
 
@@ -495,18 +491,18 @@ class SearchQueryBuilder:
         """
         if sort_by not in self.FIELD_MAPPING:
             logger.warning(f"无效的排序字段: {sort_by}, 使用默认字段 added_date")
-            sort_by = 'added_date'
+            sort_by = "added_date"
 
         column = self.FIELD_MAPPING[sort_by]
 
-        if sort_order and sort_order.lower() == 'asc':
+        if sort_order and sort_order.lower() == "asc":
             self.base_query = self.base_query.order_by(asc(column))
         else:
             self.base_query = self.base_query.order_by(desc(column))
 
         return self
 
-    def apply_pagination(self, page: int = 1, limit: int = 20) -> 'SearchQueryBuilder':
+    def apply_pagination(self, page: int = 1, limit: int = 20) -> "SearchQueryBuilder":
         """
         应用分页
 
@@ -566,12 +562,12 @@ class SearchTemplateModel:
 
             template = SearchTemplate(
                 id=template_id,
-                user_id=template_data['user_id'],
-                name=template_data['name'],
-                description=template_data.get('description', ''),
-                conditions=json.dumps(template_data['conditions'], ensure_ascii=False),
-                is_default=1 if template_data.get('is_default', False) else 0,
-                is_public=1 if template_data.get('is_public', False) else 0,
+                user_id=template_data["user_id"],
+                name=template_data["name"],
+                description=template_data.get("description", ""),
+                conditions=json.dumps(template_data["conditions"], ensure_ascii=False),
+                is_default=1 if template_data.get("is_default", False) else 0,
+                is_public=1 if template_data.get("is_public", False) else 0,
                 usage_count=0,
                 created_time=now,
                 updated_time=now,
@@ -580,11 +576,7 @@ class SearchTemplateModel:
             self.db.commit()
 
             logger.info(f"创建搜索模板成功: {template_id}")
-            return {
-                'id': template_id,
-                'created_time': now,
-                **template_data
-            }
+            return {"id": template_id, "created_time": now, **template_data}
 
         except Exception as e:
             self.db.rollback()
@@ -594,16 +586,16 @@ class SearchTemplateModel:
     def _row_to_dict(self, template: SearchTemplate) -> Dict[str, Any]:
         """ORM 对象转字典（conditions 反序列化为 dict）。"""
         return {
-            'id': template.id,
-            'user_id': template.user_id,
-            'name': template.name,
-            'description': template.description,
-            'conditions': safe_json_parse(template.conditions, {}),
-            'is_default': bool(template.is_default),
-            'is_public': bool(template.is_public),
-            'usage_count': template.usage_count,
-            'created_time': template.created_time,
-            'updated_time': template.updated_time
+            "id": template.id,
+            "user_id": template.user_id,
+            "name": template.name,
+            "description": template.description,
+            "conditions": safe_json_parse(template.conditions, {}),
+            "is_default": bool(template.is_default),
+            "is_public": bool(template.is_public),
+            "usage_count": template.usage_count,
+            "created_time": template.created_time,
+            "updated_time": template.updated_time,
         }
 
     def get_by_user(self, user_id: str, is_public: bool = False) -> List[Dict[str, Any]]:
@@ -620,9 +612,7 @@ class SearchTemplateModel:
         try:
             query = self.db.query(SearchTemplate)
             if is_public:
-                query = query.filter(
-                    or_(SearchTemplate.user_id == user_id, SearchTemplate.is_public == 1)
-                )
+                query = query.filter(or_(SearchTemplate.user_id == user_id, SearchTemplate.is_public == 1))
             else:
                 query = query.filter(SearchTemplate.user_id == user_id)
             query = query.order_by(SearchTemplate.created_time.desc())
@@ -644,9 +634,7 @@ class SearchTemplateModel:
             模板数据或None
         """
         try:
-            template = self.db.query(SearchTemplate).filter(
-                SearchTemplate.id == template_id
-            ).first()
+            template = self.db.query(SearchTemplate).filter(SearchTemplate.id == template_id).first()
             return self._row_to_dict(template) if template else None
 
         except Exception as e:
@@ -665,22 +653,18 @@ class SearchTemplateModel:
             是否成功
         """
         try:
-            template = self.db.query(SearchTemplate).filter(
-                SearchTemplate.id == template_id
-            ).first()
+            template = self.db.query(SearchTemplate).filter(SearchTemplate.id == template_id).first()
             if not template:
                 return False
 
-            if 'name' in update_data:
-                template.name = update_data['name']
-            if 'description' in update_data:
-                template.description = update_data['description']
-            if 'conditions' in update_data:
-                template.conditions = json.dumps(
-                    update_data['conditions'], ensure_ascii=False
-                )
-            if 'is_public' in update_data:
-                template.is_public = 1 if update_data['is_public'] else 0
+            if "name" in update_data:
+                template.name = update_data["name"]
+            if "description" in update_data:
+                template.description = update_data["description"]
+            if "conditions" in update_data:
+                template.conditions = json.dumps(update_data["conditions"], ensure_ascii=False)
+            if "is_public" in update_data:
+                template.is_public = 1 if update_data["is_public"] else 0
 
             template.updated_time = datetime.utcnow()
             self.db.commit()
@@ -704,9 +688,9 @@ class SearchTemplateModel:
             是否成功
         """
         try:
-            deleted = self.db.query(SearchTemplate).filter(
-                SearchTemplate.id == template_id
-            ).delete(synchronize_session=False)
+            deleted = (
+                self.db.query(SearchTemplate).filter(SearchTemplate.id == template_id).delete(synchronize_session=False)
+            )
             self.db.commit()
 
             if deleted:
@@ -731,6 +715,7 @@ class SearchTemplateModel:
         """
         try:
             from sqlalchemy import update
+
             result = self.db.execute(
                 update(SearchTemplate)
                 .where(SearchTemplate.id == template_id)
@@ -764,11 +749,7 @@ class AdvancedSearchService:
         self.template_model = SearchTemplateModel(db)
         self.deletion_service = TorrentDeletionService(db)
 
-    def search_torrents(
-        self,
-        request: EnhancedAdvancedSearchRequest,
-        user_id: str
-    ) -> Dict[str, Any]:
+    def search_torrents(self, request: EnhancedAdvancedSearchRequest, user_id: str) -> Dict[str, Any]:
         """
         执行高级搜索
 
@@ -790,10 +771,12 @@ class AdvancedSearchService:
         try:
             # 添加调试日志：记录搜索请求参数
             logger.info(f"[高级搜索] 用户 {user_id} 发起搜索请求")
-            logger.info(f"[高级搜索] 基础参数: name={request.name}, status={request.status}, category={request.category}")
+            logger.info(
+                f"[高级搜索] 基础参数: name={request.name}, status={request.status}, category={request.category}"
+            )
             logger.info(f"[高级搜索] 条件组数量: {len(request.condition_groups) if request.condition_groups else 0}")
             logger.info(f"[高级搜索] 组间逻辑关系: {request.between_group_logics}")
-            
+
             # 构建查询
             self.query_builder.reset()
 
@@ -805,24 +788,23 @@ class AdvancedSearchService:
             if request.condition_groups:
                 logger.info(f"[高级搜索] 应用条件组，数量: {len(request.condition_groups)}")
                 for idx, group in enumerate(request.condition_groups):
-                    group_logic = group.logic if hasattr(group, 'logic') else group.get('logic', 'AND')
-                    conditions = group.conditions if hasattr(group, 'conditions') else group.get('conditions', [])
+                    group_logic = group.logic if hasattr(group, "logic") else group.get("logic", "AND")
+                    conditions = group.conditions if hasattr(group, "conditions") else group.get("conditions", [])
                     logger.info(f"[高级搜索] 条件组 {idx}: logic={group_logic}, 条件数={len(conditions)}")
                     for cond_idx, cond in enumerate(conditions):
-                        cond_field = cond.field if hasattr(cond, 'field') else cond.get('field')
-                        cond_operator = cond.operator if hasattr(cond, 'operator') else cond.get('operator')
-                        cond_value = cond.value if hasattr(cond, 'value') else cond.get('value')
-                        logger.info(f"[高级搜索]   条件 {cond_idx}: field={cond_field}, operator={cond_operator}, value={cond_value}")
-                
+                        cond_field = cond.field if hasattr(cond, "field") else cond.get("field")
+                        cond_operator = cond.operator if hasattr(cond, "operator") else cond.get("operator")
+                        cond_value = cond.value if hasattr(cond, "value") else cond.get("value")
+                        logger.info(
+                            f"[高级搜索]   条件 {cond_idx}: field={cond_field}, operator={cond_operator}, value={cond_value}"
+                        )
+
                 self.query_builder.apply_condition_groups(request.condition_groups, request.between_group_logics)
                 logger.info(f"[高级搜索] 条件组已应用")
 
             # 应用多选排除条件
             self.query_builder.apply_multi_select_conditions(
-                request.status_multi,
-                request.category_multi,
-                request.tags_multi,
-                request.downloader_multi
+                request.status_multi, request.category_multi, request.tags_multi, request.downloader_multi
             )
 
             # 获取总数（在排序和分页之前）
@@ -839,7 +821,10 @@ class AdvancedSearchService:
 
             # 转换为字典列表（包含tracker信息，与/torrent/getList接口保持一致）
             # 使用 model_dump() 方法让 Pydantic 自动序列化（支持 camelCase 别名和 datetime ISO 格式）
-            data = [convert_to_vo_with_trackers(self.db, torrent).model_dump(by_alias=True, exclude_none=True) for torrent in results]
+            data = [
+                convert_to_vo_with_trackers(self.db, torrent).model_dump(by_alias=True, exclude_none=True)
+                for torrent in results
+            ]
 
             # 计算总页数
             total_pages = (total + request.limit - 1) // request.limit
@@ -847,36 +832,33 @@ class AdvancedSearchService:
             logger.info(f"用户 {user_id} 执行高级搜索，找到 {total} 条结果")
 
             return {
-                'status': 'success',
-                'msg': '搜索成功',
-                'code': '200',
-                'data': data,
-                'total': total,
-                'page': request.page,
-                'limit': request.limit,
-                'total_pages': total_pages
+                "status": "success",
+                "msg": "搜索成功",
+                "code": "200",
+                "data": data,
+                "total": total,
+                "page": request.page,
+                "limit": request.limit,
+                "total_pages": total_pages,
             }
 
         except Exception as e:
             logger.error(f"高级搜索失败: {str(e)}")
             import traceback
+
             logger.error(f"高级搜索异常堆栈: {traceback.format_exc()}")
             return {
-                'status': 'failed',
-                'msg': f'搜索失败: {str(e)}',
-                'code': '500',
-                'data': [],
-                'total': 0,
-                'page': request.page,
-                'limit': request.limit,
-                'total_pages': 0
+                "status": "failed",
+                "msg": f"搜索失败: {str(e)}",
+                "code": "500",
+                "data": [],
+                "total": 0,
+                "page": request.page,
+                "limit": request.limit,
+                "total_pages": 0,
             }
 
-    def create_search_template(
-        self,
-        request,
-        user_id: str
-    ) -> Dict[str, Any]:
+    def create_search_template(self, request, user_id: str) -> Dict[str, Any]:
         """
         创建搜索模板
 
@@ -889,50 +871,36 @@ class AdvancedSearchService:
         """
         try:
             # 兼容Pydantic对象和字典
-            if hasattr(request, 'name'):
+            if hasattr(request, "name"):
                 # SearchTemplateCreate Pydantic对象
                 template_data = {
-                    'user_id': user_id,
-                    'name': request.name,
-                    'description': request.description,
-                    'conditions': request.conditions,
-                    'is_default': False,
-                    'is_public': request.is_public
+                    "user_id": user_id,
+                    "name": request.name,
+                    "description": request.description,
+                    "conditions": request.conditions,
+                    "is_default": False,
+                    "is_public": request.is_public,
                 }
             else:
                 # 字典格式
                 template_data = {
-                    'user_id': user_id,
-                    'name': request.get('name'),
-                    'description': request.get('description'),
-                    'conditions': request.get('conditions'),
-                    'is_default': False,
-                    'is_public': request.get('is_public', False)
+                    "user_id": user_id,
+                    "name": request.get("name"),
+                    "description": request.get("description"),
+                    "conditions": request.get("conditions"),
+                    "is_default": False,
+                    "is_public": request.get("is_public", False),
                 }
 
             result = self.template_model.create(template_data)
 
-            return {
-                'status': 'success',
-                'msg': '创建模板成功',
-                'code': '200',
-                'data': result
-            }
+            return {"status": "success", "msg": "创建模板成功", "code": "200", "data": result}
 
         except Exception as e:
             logger.error(f"创建搜索模板失败: {str(e)}")
-            return {
-                'status': 'failed',
-                'msg': f'创建模板失败: {str(e)}',
-                'code': '500',
-                'data': None
-            }
+            return {"status": "failed", "msg": f"创建模板失败: {str(e)}", "code": "500", "data": None}
 
-    def get_search_templates(
-        self,
-        user_id: str,
-        is_public: bool = False
-    ) -> Dict[str, Any]:
+    def get_search_templates(self, user_id: str, is_public: bool = False) -> Dict[str, Any]:
         """
         获取搜索模板列表
 
@@ -947,29 +915,18 @@ class AdvancedSearchService:
             templates = self.template_model.get_by_user(user_id, is_public)
 
             return {
-                'status': 'success',
-                'msg': '获取模板成功',
-                'code': '200',
-                'data': templates,
-                'total': len(templates)
+                "status": "success",
+                "msg": "获取模板成功",
+                "code": "200",
+                "data": templates,
+                "total": len(templates),
             }
 
         except Exception as e:
             logger.error(f"获取搜索模板失败: {str(e)}")
-            return {
-                'status': 'failed',
-                'msg': f'获取模板失败: {str(e)}',
-                'code': '500',
-                'data': [],
-                'total': 0
-            }
+            return {"status": "failed", "msg": f"获取模板失败: {str(e)}", "code": "500", "data": [], "total": 0}
 
-    def update_search_template(
-        self,
-        template_id: str,
-        request: Dict[str, Any],
-        user_id: str
-    ) -> Dict[str, Any]:
+    def update_search_template(self, template_id: str, request: Dict[str, Any], user_id: str) -> Dict[str, Any]:
         """
         更新搜索模板
 
@@ -985,63 +942,39 @@ class AdvancedSearchService:
             # 验证模板存在且属于当前用户
             template = self.template_model.get_by_id(template_id)
             if not template:
-                return {
-                    'status': 'failed',
-                    'msg': '模板不存在',
-                    'code': '404',
-                    'data': None
-                }
+                return {"status": "failed", "msg": "模板不存在", "code": "404", "data": None}
 
-            if template['user_id'] != user_id:
-                return {
-                    'status': 'failed',
-                    'msg': '无权修改此模板',
-                    'code': '403',
-                    'data': None
-                }
+            if template["user_id"] != user_id:
+                return {"status": "failed", "msg": "无权修改此模板", "code": "403", "data": None}
 
             # 执行更新
             update_data = {}
-            if 'name' in request:
-                update_data['name'] = request['name']
-            if 'description' in request:
-                update_data['description'] = request['description']
-            if 'conditions' in request:
-                update_data['conditions'] = request['conditions']
-            if 'is_public' in request:
-                update_data['is_public'] = request['is_public']
+            if "name" in request:
+                update_data["name"] = request["name"]
+            if "description" in request:
+                update_data["description"] = request["description"]
+            if "conditions" in request:
+                update_data["conditions"] = request["conditions"]
+            if "is_public" in request:
+                update_data["is_public"] = request["is_public"]
 
             success = self.template_model.update(template_id, update_data)
 
             if success:
                 return {
-                    'status': 'success',
-                    'msg': '更新模板成功',
-                    'code': '200',
-                    'data': {'id': template_id, **update_data}
+                    "status": "success",
+                    "msg": "更新模板成功",
+                    "code": "200",
+                    "data": {"id": template_id, **update_data},
                 }
             else:
-                return {
-                    'status': 'failed',
-                    'msg': '更新模板失败',
-                    'code': '500',
-                    'data': None
-                }
+                return {"status": "failed", "msg": "更新模板失败", "code": "500", "data": None}
 
         except Exception as e:
             logger.error(f"更新搜索模板失败: {str(e)}")
-            return {
-                'status': 'failed',
-                'msg': f'更新模板失败: {str(e)}',
-                'code': '500',
-                'data': None
-            }
+            return {"status": "failed", "msg": f"更新模板失败: {str(e)}", "code": "500", "data": None}
 
-    def delete_search_template(
-        self,
-        template_id: str,
-        user_id: str
-    ) -> Dict[str, Any]:
+    def delete_search_template(self, template_id: str, user_id: str) -> Dict[str, Any]:
         """
         删除搜索模板
 
@@ -1056,53 +989,24 @@ class AdvancedSearchService:
             # 验证模板存在且属于当前用户
             template = self.template_model.get_by_id(template_id)
             if not template:
-                return {
-                    'status': 'failed',
-                    'msg': '模板不存在',
-                    'code': '404',
-                    'data': None
-                }
+                return {"status": "failed", "msg": "模板不存在", "code": "404", "data": None}
 
-            if template['user_id'] != user_id:
-                return {
-                    'status': 'failed',
-                    'msg': '无权删除此模板',
-                    'code': '403',
-                    'data': None
-                }
+            if template["user_id"] != user_id:
+                return {"status": "failed", "msg": "无权删除此模板", "code": "403", "data": None}
 
             # 执行删除
             success = self.template_model.delete(template_id)
 
             if success:
-                return {
-                    'status': 'success',
-                    'msg': '删除模板成功',
-                    'code': '200',
-                    'data': {'id': template_id}
-                }
+                return {"status": "success", "msg": "删除模板成功", "code": "200", "data": {"id": template_id}}
             else:
-                return {
-                    'status': 'failed',
-                    'msg': '删除模板失败',
-                    'code': '500',
-                    'data': None
-                }
+                return {"status": "failed", "msg": "删除模板失败", "code": "500", "data": None}
 
         except Exception as e:
             logger.error(f"删除搜索模板失败: {str(e)}")
-            return {
-                'status': 'failed',
-                'msg': f'删除模板失败: {str(e)}',
-                'code': '500',
-                'data': None
-            }
+            return {"status": "failed", "msg": f"删除模板失败: {str(e)}", "code": "500", "data": None}
 
-    def apply_search_template(
-        self,
-        template_id: str,
-        user_id: str
-    ) -> Dict[str, Any]:
+    def apply_search_template(self, template_id: str, user_id: str) -> Dict[str, Any]:
         """
         应用搜索模板
 
@@ -1118,21 +1022,11 @@ class AdvancedSearchService:
             template = self.template_model.get_by_id(template_id)
 
             if not template:
-                return {
-                    'status': 'failed',
-                    'msg': '模板不存在',
-                    'code': '404',
-                    'data': None
-                }
+                return {"status": "failed", "msg": "模板不存在", "code": "404", "data": None}
 
             # 检查权限（公开模板或自己的模板）
-            if template['user_id'] != user_id and not template['is_public']:
-                return {
-                    'status': 'failed',
-                    'msg': '无权使用此模板',
-                    'code': '403',
-                    'data': None
-                }
+            if template["user_id"] != user_id and not template["is_public"]:
+                return {"status": "failed", "msg": "无权使用此模板", "code": "403", "data": None}
 
             # 增加使用次数
             self.template_model.increment_usage(template_id)
@@ -1140,31 +1034,22 @@ class AdvancedSearchService:
             logger.info(f"用户 {user_id} 应用搜索模板: {template_id}")
 
             return {
-                'status': 'success',
-                'msg': '应用模板成功',
-                'code': '200',
-                'data': {
-                    'id': template['id'],
-                    'name': template['name'],
-                    'description': template['description'],
-                    'conditions': template['conditions']
-                }
+                "status": "success",
+                "msg": "应用模板成功",
+                "code": "200",
+                "data": {
+                    "id": template["id"],
+                    "name": template["name"],
+                    "description": template["description"],
+                    "conditions": template["conditions"],
+                },
             }
 
         except Exception as e:
             logger.error(f"应用搜索模板失败: {str(e)}")
-            return {
-                'status': 'failed',
-                'msg': f'应用模板失败: {str(e)}',
-                'code': '500',
-                'data': None
-            }
+            return {"status": "failed", "msg": f"应用模板失败: {str(e)}", "code": "500", "data": None}
 
-    def delete_torrents_batch(
-        self,
-        request,
-        user_id: str
-    ) -> Dict[str, Any]:
+    def delete_torrents_batch(self, request, user_id: str) -> Dict[str, Any]:
         """
         批量删除种子（复用torrent_deletion_service）
 
@@ -1177,24 +1062,19 @@ class AdvancedSearchService:
         """
         try:
             # 兼容Pydantic对象和字典
-            if hasattr(request, 'torrent_ids'):
+            if hasattr(request, "torrent_ids"):
                 # TorrentDeleteRequest Pydantic对象
                 torrent_ids = request.torrent_ids
                 delete_data = request.delete_data
                 id_recycle = request.id_recycle
             else:
                 # 字典格式
-                torrent_ids = request.get('torrent_ids', [])
-                delete_data = request.get('delete_data', True)
-                id_recycle = request.get('id_recycle', False)
+                torrent_ids = request.get("torrent_ids", [])
+                delete_data = request.get("delete_data", True)
+                id_recycle = request.get("id_recycle", False)
 
             if not torrent_ids:
-                return {
-                    'status': 'failed',
-                    'msg': '请选择要删除的种子',
-                    'code': '400',
-                    'data': None
-                }
+                return {"status": "failed", "msg": "请选择要删除的种子", "code": "400", "data": None}
 
             # 构建删除请求
             if delete_data:
@@ -1207,7 +1087,7 @@ class AdvancedSearchService:
                 delete_option=delete_option,
                 safety_check_level=SafetyCheckLevel.ENHANCED,
                 force_delete=False,
-                reason=f"用户 {user_id} 批量删除"
+                reason=f"用户 {user_id} 批量删除",
             )
 
             # 执行删除
@@ -1215,32 +1095,27 @@ class AdvancedSearchService:
 
             # 构建响应数据
             response_data = {
-                'success_count': result.success_count,
-                'failed_count': result.failed_count,
-                'skipped_count': result.skipped_count,
-                'total_size_freed': result.total_size_freed,
-                'deleted_torrents': result.deleted_torrents,
-                'failed_torrents': result.failed_torrents,
-                'safety_warnings': result.safety_warnings
+                "success_count": result.success_count,
+                "failed_count": result.failed_count,
+                "skipped_count": result.skipped_count,
+                "total_size_freed": result.total_size_freed,
+                "deleted_torrents": result.deleted_torrents,
+                "failed_torrents": result.failed_torrents,
+                "safety_warnings": result.safety_warnings,
             }
 
             logger.info(f"用户 {user_id} 批量删除种子: 成功{result.success_count}, 失败{result.failed_count}")
 
             return {
-                'status': 'success',
-                'msg': f'删除完成: 成功{result.success_count}, 失败{result.failed_count}, 跳过{result.skipped_count}',
-                'code': '200',
-                'data': response_data
+                "status": "success",
+                "msg": f"删除完成: 成功{result.success_count}, 失败{result.failed_count}, 跳过{result.skipped_count}",
+                "code": "200",
+                "data": response_data,
             }
 
         except Exception as e:
             logger.error(f"批量删除种子失败: {str(e)}")
-            return {
-                'status': 'failed',
-                'msg': f'批量删除失败: {str(e)}',
-                'code': '500',
-                'data': None
-            }
+            return {"status": "failed", "msg": f"批量删除失败: {str(e)}", "code": "500", "data": None}
 
     def get_search_statistics(self) -> Dict[str, Any]:
         """
@@ -1257,72 +1132,52 @@ class AdvancedSearchService:
             stats = {}
 
             # 状态分布
-            status_stats = self.db.query(
-                TorrentInfo.status,
-                func.count(TorrentInfo.info_id)
-            ).filter(TorrentInfo.dr == 0).group_by(TorrentInfo.status).all()
+            status_stats = (
+                self.db.query(TorrentInfo.status, func.count(TorrentInfo.info_id))
+                .filter(TorrentInfo.dr == 0)
+                .group_by(TorrentInfo.status)
+                .all()
+            )
 
-            stats['status_distribution'] = [
-                {'status': s[0] or 'unknown', 'count': s[1]}
-                for s in status_stats
-            ]
+            stats["status_distribution"] = [{"status": s[0] or "unknown", "count": s[1]} for s in status_stats]
 
             # 分类分布
-            category_stats = self.db.query(
-                TorrentInfo.category,
-                func.count(TorrentInfo.info_id)
-            ).filter(
-                TorrentInfo.dr == 0,
-                TorrentInfo.category.isnot(None)
-            ).group_by(TorrentInfo.category).all()
+            category_stats = (
+                self.db.query(TorrentInfo.category, func.count(TorrentInfo.info_id))
+                .filter(TorrentInfo.dr == 0, TorrentInfo.category.isnot(None))
+                .group_by(TorrentInfo.category)
+                .all()
+            )
 
-            stats['category_distribution'] = [
-                {'category': c[0] or 'uncategorized', 'count': c[1]}
-                for c in category_stats
+            stats["category_distribution"] = [
+                {"category": c[0] or "uncategorized", "count": c[1]} for c in category_stats
             ]
 
             # 下载器分布
-            downloader_stats = self.db.query(
-                TorrentInfo.downloader_name,
-                func.count(TorrentInfo.info_id)
-            ).filter(TorrentInfo.dr == 0).group_by(TorrentInfo.downloader_name).all()
+            downloader_stats = (
+                self.db.query(TorrentInfo.downloader_name, func.count(TorrentInfo.info_id))
+                .filter(TorrentInfo.dr == 0)
+                .group_by(TorrentInfo.downloader_name)
+                .all()
+            )
 
-            stats['downloader_distribution'] = [
-                {'downloader': d[0], 'count': d[1]}
-                for d in downloader_stats
-            ]
+            stats["downloader_distribution"] = [{"downloader": d[0], "count": d[1]} for d in downloader_stats]
 
             # 总体统计
-            total_torrents = self.db.query(func.count(TorrentInfo.info_id)).filter(
-                TorrentInfo.dr == 0
-            ).scalar()
+            total_torrents = self.db.query(func.count(TorrentInfo.info_id)).filter(TorrentInfo.dr == 0).scalar()
 
-            total_size = self.db.query(
-                func.sum(TorrentInfo.size)
-            ).filter(TorrentInfo.dr == 0).scalar() or 0
+            total_size = self.db.query(func.sum(TorrentInfo.size)).filter(TorrentInfo.dr == 0).scalar() or 0
 
-            stats['total_torrents'] = total_torrents
-            stats['total_size'] = total_size
+            stats["total_torrents"] = total_torrents
+            stats["total_size"] = total_size
 
             # 模板统计（表由 Alembic 迁移管理，无需 _ensure_table_exists）
-            template_count = self.db.query(
-                func.count(SearchTemplate.id)
-            ).scalar()
+            template_count = self.db.query(func.count(SearchTemplate.id)).scalar()
 
-            stats['total_templates'] = template_count or 0
+            stats["total_templates"] = template_count or 0
 
-            return {
-                'status': 'success',
-                'msg': '获取统计成功',
-                'code': '200',
-                'data': stats
-            }
+            return {"status": "success", "msg": "获取统计成功", "code": "200", "data": stats}
 
         except Exception as e:
             logger.error(f"获取搜索统计失败: {str(e)}")
-            return {
-                'status': 'failed',
-                'msg': f'获取统计失败: {str(e)}',
-                'code': '500',
-                'data': {}
-            }
+            return {"status": "failed", "msg": f"获取统计失败: {str(e)}", "code": "500", "data": {}}

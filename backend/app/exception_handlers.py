@@ -109,9 +109,7 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
-async def validation_exception_handler(
-    request: Request, exc: RequestValidationError
-) -> JSONResponse:
+async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """422 校验错误：保持 array detail 语义，包进 CommonResponse。
 
     detail 是 [{loc, msg, type, ...}] 数组，前端按 422 分支取 detail[0].msg。
@@ -124,9 +122,7 @@ async def validation_exception_handler(
         "code": str(status.HTTP_422_UNPROCESSABLE_ENTITY),
         "data": {"errors": errors},
     }
-    return JSONResponse(
-        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=body
-    )
+    return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=body)
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -146,9 +142,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         # 开发环境附带异常摘要，便于联调，但不暴露完整堆栈给外部。
         body["data"] = {"error": str(exc)}
 
-    return JSONResponse(
-        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=body
-    )
+    return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=body)
 
 
 def register_exception_handlers(app: FastAPI) -> None:

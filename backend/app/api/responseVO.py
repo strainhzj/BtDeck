@@ -1,7 +1,8 @@
 from pydantic import BaseModel, Field
 from typing import Generic, TypeVar, List, Optional, Union
 
-T = TypeVar('T')
+T = TypeVar("T")
+
 
 class CommonResponse(BaseModel, Generic[T]):
     status: Optional[str] = Field(None, description="返回接口调用结果", example="success")

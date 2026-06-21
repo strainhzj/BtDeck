@@ -4,6 +4,7 @@
 
 用于存储可复用的下载器配置模板
 """
+
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum, UniqueConstraint
 from sqlalchemy.orm import relationship
@@ -19,11 +20,12 @@ logger = logging.getLogger(__name__)
 
 class DownloaderTypeEnum(enum.IntEnum):
     """下载器类型枚举（整数类型）"""
+
     QBITTORRENT = 0  # qBittorrent
     TRANSMISSION = 1  # Transmission
 
     @classmethod
-    def from_value(cls, value: int) -> 'DownloaderTypeEnum':
+    def from_value(cls, value: int) -> "DownloaderTypeEnum":
         """从整数值获取枚举
 
         Args:
@@ -40,8 +42,7 @@ class DownloaderTypeEnum(enum.IntEnum):
         except ValueError:
             valid_values = [e.value for e in cls]
             raise ValueError(
-                f"无效的下载器类型: '{value}'. "
-                f"有效值为: {valid_values} (0=qBittorrent, 1=Transmission)"
+                f"无效的下载器类型: '{value}'. " f"有效值为: {valid_values} (0=qBittorrent, 1=Transmission)"
             )
 
     def is_qbittorrent(self) -> bool:
@@ -105,9 +106,9 @@ class DownloaderTypeEnum(enum.IntEnum):
         # 字符串类型处理
         elif isinstance(value, str):
             value_lower = value.lower().strip()
-            if value_lower in ['0', 'qbittorrent']:
+            if value_lower in ["0", "qbittorrent"]:
                 return 0
-            elif value_lower in ['1', 'transmission']:
+            elif value_lower in ["1", "transmission"]:
                 return 1
             else:
                 # 无效字符串，默认返回 qBittorrent
@@ -116,10 +117,9 @@ class DownloaderTypeEnum(enum.IntEnum):
 
         # 其他类型，默认返回 qBittorrent
         # 添加完整调用栈以便定位问题来源
-        stack_trace = ''.join(traceback.format_stack())
+        stack_trace = "".join(traceback.format_stack())
         logger.warning(
-            f"不支持的下载器类型: {type(value)}={value}，默认使用 qBittorrent (0)\n"
-            f"完整调用栈:\n{stack_trace}"
+            f"不支持的下载器类型: {type(value)}={value}，默认使用 qBittorrent (0)\n" f"完整调用栈:\n{stack_trace}"
         )
         return 0
 
@@ -130,80 +130,41 @@ class SettingTemplate(Base):
 
     存储可复用的下载器配置模板，支持快速应用到多个下载器
     """
+
     __tablename__ = "setting_templates"
 
     # 主键
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
 
     # 模板基本信息
-    name = Column(
-        String(100),
-        nullable=False,
-        unique=True,
-        index=True,
-        comment='模板名称，如"qBittorrent标准模板"'
-    )
+    name = Column(String(100), nullable=False, unique=True, index=True, comment='模板名称，如"qBittorrent标准模板"')
 
-    description = Column(
-        String(500),
-        nullable=True,
-        comment='模板描述'
-    )
+    description = Column(String(500), nullable=True, comment="模板描述")
 
     # 下载器类型（使用Integer存储枚举值）
-    downloader_type = Column(
-        Integer,
-        nullable=False,
-        index=True,
-        comment='下载器类型：0=qBittorrent, 1=Transmission'
-    )
+    downloader_type = Column(Integer, nullable=False, index=True, comment="下载器类型：0=qBittorrent, 1=Transmission")
 
     # 模板配置（JSON格式，结构与downloader_settings相同）
-    template_config = Column(
-        Text,
-        nullable=False,
-        comment='模板配置（JSON格式），包含速度、认证、高级设置等'
-    )
+    template_config = Column(Text, nullable=False, comment="模板配置（JSON格式），包含速度、认证、高级设置等")
 
     # 模板元数据
-    is_system_default = Column(
-        Boolean,
-        nullable=False,
-        default=False,
-        index=True,
-        comment='是否为系统默认模板'
-    )
+    is_system_default = Column(Boolean, nullable=False, default=False, index=True, comment="是否为系统默认模板")
 
     created_by = Column(
         Integer,
-        ForeignKey('users.id', ondelete='SET NULL'),
+        ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
-        comment='创建者用户ID（系统默认模板为NULL）'
+        comment="创建者用户ID（系统默认模板为NULL）",
     )
 
     # 路径映射配置（可选）
-    path_mapping = Column(
-        Text,
-        nullable=True,
-        comment='路径映射配置（JSON格式）'
-    )
+    path_mapping = Column(Text, nullable=True, comment="路径映射配置（JSON格式）")
 
     # 时间戳
-    created_at = Column(
-        DateTime,
-        nullable=False,
-        default=datetime.now,
-        index=True,
-        comment='创建时间'
-    )
+    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True, comment="创建时间")
 
     updated_at = Column(
-        DateTime,
-        nullable=False,
-        default=datetime.now,
-        onupdate=datetime.now,
-        index=True,
-        comment='更新时间'
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, index=True, comment="更新时间"
     )
 
     # 关系定义
@@ -211,9 +172,7 @@ class SettingTemplate(Base):
     # creator = relationship("User", back_populates="templates")
 
     # 唯一约束
-    __table_args__ = (
-        UniqueConstraint('name', name='uq_setting_templates_name'),
-    )
+    __table_args__ = (UniqueConstraint("name", name="uq_setting_templates_name"),)
 
     def __init__(
         self,
@@ -224,7 +183,7 @@ class SettingTemplate(Base):
         is_system_default=False,
         created_by=None,
         path_mapping=None,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         if name is not None:
@@ -247,7 +206,7 @@ class SettingTemplate(Base):
             # 如果传入字典或对象，转换为JSON字符串
             if isinstance(path_mapping, dict):
                 self.path_mapping = json.dumps(path_mapping, ensure_ascii=False)
-            elif hasattr(path_mapping, 'json'):
+            elif hasattr(path_mapping, "json"):
                 # Pydantic模型对象
                 self.path_mapping = path_mapping.json()
             else:

@@ -98,11 +98,7 @@ class TorrentTagAdapter(ABC):
         pass
 
     @abstractmethod
-    async def assign_tags_to_torrent(
-        self,
-        torrent_hash: str,
-        tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    async def assign_tags_to_torrent(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         为种子分配标签
 
@@ -123,11 +119,7 @@ class TorrentTagAdapter(ABC):
         pass
 
     @abstractmethod
-    async def remove_tags_from_torrent(
-        self,
-        torrent_hash: str,
-        tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    async def remove_tags_from_torrent(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         移除种子的标签
 
@@ -167,10 +159,7 @@ class TorrentTagAdapter(ABC):
 
     # ==================== 可选方法（子类可选择性实现）====================
 
-    async def batch_assign_tags(
-        self,
-        assignments: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def batch_assign_tags(self, assignments: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         批量分配标签（可选优化）
 
@@ -197,10 +186,7 @@ class TorrentTagAdapter(ABC):
                 continue
 
             result = await self.assign_tags_to_torrent(torrent_hash, tag_ids)
-            results.append({
-                "torrent_hash": torrent_hash,
-                "result": result
-            })
+            results.append({"torrent_hash": torrent_hash, "result": result})
 
             if result.get("success"):
                 total_success += 1
@@ -213,7 +199,7 @@ class TorrentTagAdapter(ABC):
             "total_assignments": len(assignments),
             "success_count": total_success,
             "failed_count": total_failed,
-            "details": results
+            "details": results,
         }
 
     async def check_connection(self) -> bool:
@@ -236,11 +222,7 @@ class TorrentTagAdapter(ABC):
 
     # ==================== 辅助方法 ====================
 
-    def _format_success_response(
-        self,
-        data: Any,
-        message: str = "操作成功"
-    ) -> Dict[str, Any]:
+    def _format_success_response(self, data: Any, message: str = "操作成功") -> Dict[str, Any]:
         """
         格式化成功响应
 
@@ -251,10 +233,7 @@ class TorrentTagAdapter(ABC):
         Returns:
             统一格式的成功响应
         """
-        response = {
-            "success": True,
-            "message": message
-        }
+        response = {"success": True, "message": message}
 
         if isinstance(data, list):
             response["data"] = data
@@ -266,11 +245,7 @@ class TorrentTagAdapter(ABC):
 
         return response
 
-    def _format_error_response(
-        self,
-        message: str,
-        data: Any = None
-    ) -> Dict[str, Any]:
+    def _format_error_response(self, message: str, data: Any = None) -> Dict[str, Any]:
         """
         格式化错误响应
 
@@ -281,10 +256,7 @@ class TorrentTagAdapter(ABC):
         Returns:
             统一格式的错误响应
         """
-        response = {
-            "success": False,
-            "message": message
-        }
+        response = {"success": False, "message": message}
 
         if data is not None:
             response["data"] = data

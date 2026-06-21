@@ -6,6 +6,7 @@ from app.models.setting_templates import DownloaderTypeEnum
 
 class DownloaderSimpleVO(BaseModel):
     """下载器简单信息VO - 仅包含ID和名称"""
+
     model_config = ConfigDict(populate_by_name=True)
 
     downloader_id: str = Field(..., description="下载器ID", example="550e8400-e29b-41d4-a716-446655440000")
@@ -27,15 +28,33 @@ class DownloaderListVO(BaseModel):
     isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", example="1")
     status: str | None = Field(None, description="下载器状态", example="1")  #
     enabled: str | None = Field(None, description="下载器启用状态", example="1")  #
-    downloaderType: int | None = Field(None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0)
+    downloaderType: int | None = Field(
+        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0
+    )
     downloaderId: str | None = Field(None, alias="downloaderId", description="下载器ID")
     port: str | None = Field(None, description="端口")
-    downloaderTypeName: str | None = Field(None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent")
+    downloaderTypeName: str | None = Field(
+        None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent"
+    )
     connectStatus: str | None = Field(None, alias="connectStatus", description="连接状态(1=在线, 0=离线)", example="1")
     pathMappingRules: str | None = Field(None, alias="pathMappingRules", description="路径映射规则配置")
     torrentSavePath: str | None = Field(None, alias="torrentSavePath", description="种子保存目录路径")
 
-    def __init__(self, downloader_id=None, nickname=None, host=None, is_search=None, status=None, enabled=None, downloader_type=None, port=None, connectStatus=None, path_mapping_rules=None, torrent_save_path=None, **kw: Any):
+    def __init__(
+        self,
+        downloader_id=None,
+        nickname=None,
+        host=None,
+        is_search=None,
+        status=None,
+        enabled=None,
+        downloader_type=None,
+        port=None,
+        connectStatus=None,
+        path_mapping_rules=None,
+        torrent_save_path=None,
+        **kw: Any,
+    ):
         # Set required fields for Pydantic compatibility
         if host is not None and port is not None:
             host_field = host + ":" + port
@@ -57,7 +76,6 @@ class DownloaderListVO(BaseModel):
         is_search_str = str(is_search) if is_search in (0, 1) else None
         enabled_str = str(enabled) if enabled in (0, 1) else None
 
-
         super().__init__(
             id=downloader_id,
             nickname=nickname,
@@ -72,7 +90,7 @@ class DownloaderListVO(BaseModel):
             connectStatus=connectStatus,
             pathMappingRules=path_mapping_rules,
             torrentSavePath=torrent_save_path,
-            **kw
+            **kw,
         )
 
 
@@ -87,15 +105,34 @@ class DownloaderVO(BaseModel):
     isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", example="1")
     status: str | None = Field(None, description="下载器状态", example="1")  #
     enabled: str | None = Field(None, description="下载器启用状态", example="1")  #
-    downloaderType: int | None = Field(None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0)
+    downloaderType: int | None = Field(
+        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0
+    )
     port: int | None = Field(None, description="端口", example="qbittorrent")
     isSsl: str | None = Field(None, alias="isSsl", description="是否https", example="qbittorrent")
-    downloaderTypeName: str | None = Field(None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent")
+    downloaderTypeName: str | None = Field(
+        None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent"
+    )
     pathMappingRules: str | None = Field(None, alias="pathMappingRules", description="路径映射规则配置")
     torrentSavePath: str | None = Field(None, alias="torrentSavePath", description="种子保存目录路径")
 
-    def __init__(self, downloader_id, nickname, host, username, password, is_search, status, enabled, downloader_type,port,is_ssl,
-                 path_mapping_rules=None, torrent_save_path=None, **kw: Any):
+    def __init__(
+        self,
+        downloader_id,
+        nickname,
+        host,
+        username,
+        password,
+        is_search,
+        status,
+        enabled,
+        downloader_type,
+        port,
+        is_ssl,
+        path_mapping_rules=None,
+        torrent_save_path=None,
+        **kw: Any,
+    ):
         # 使用统一的类型转换方法
         downloader_type_int = None
         downloader_type_name = None
@@ -126,7 +163,7 @@ class DownloaderVO(BaseModel):
             downloaderTypeName=downloader_type_name,
             pathMappingRules=path_mapping_rules,
             torrentSavePath=torrent_save_path,
-            **kw
+            **kw,
         )
 
     def get_decrypted_password(self) -> str:

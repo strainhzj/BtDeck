@@ -4,6 +4,7 @@
 
 提供类型安全的路径映射配置验证，支持前端和后端协同验证。
 """
+
 from typing import Optional, List
 from pydantic import BaseModel, Field, field_validator
 
@@ -17,20 +18,20 @@ class PathMappingItem(BaseModel):
     description: Optional[str] = Field(None, description="映射描述", max_length=500)
     mapping_type: str = Field("local", description="映射类型: local/docker/nas/wsl/network")
 
-    @field_validator('internal', 'external')
+    @field_validator("internal", "external")
     @classmethod
     def validate_path_format(cls, v: str, info) -> str:
         """验证路径格式基本规范"""
         if not v or not v.strip():
-            raise ValueError('路径不能为空')
+            raise ValueError("路径不能为空")
         # 路径标准化检查将在PathMappingService中完成
         return v.strip()
 
-    @field_validator('mapping_type')
+    @field_validator("mapping_type")
     @classmethod
     def validate_mapping_type(cls, v: str) -> str:
         """验证映射类型"""
-        allowed_types = ['local', 'docker', 'nas', 'wsl', 'network']
+        allowed_types = ["local", "docker", "nas", "wsl", "network"]
         if v not in allowed_types:
             raise ValueError(f'映射类型必须是以下之一: {", ".join(allowed_types)}')
         return v
@@ -39,36 +40,30 @@ class PathMappingItem(BaseModel):
 class PathMappingConfig(BaseModel):
     """路径映射配置"""
 
-    mappings: List[PathMappingItem] = Field(
-        default_factory=list,
-        description="路径映射列表"
-    )
-    default_mapping: Optional[str] = Field(
-        None,
-        description="默认映射名称"
-    )
+    mappings: List[PathMappingItem] = Field(default_factory=list, description="路径映射列表")
+    default_mapping: Optional[str] = Field(None, description="默认映射名称")
 
-    @field_validator('mappings')
+    @field_validator("mappings")
     @classmethod
     def validate_mappings(cls, v: List[PathMappingItem]) -> List[PathMappingItem]:
         """验证映射列表"""
         if not isinstance(v, list):
-            raise ValueError('mappings必须是数组')
+            raise ValueError("mappings必须是数组")
 
         # 检查映射名称唯一性
         names = [m.name for m in v]
         if len(names) != len(set(names)):
-            raise ValueError('映射名称必须唯一')
+            raise ValueError("映射名称必须唯一")
 
         return v
 
-    @field_validator('default_mapping')
+    @field_validator("default_mapping")
     @classmethod
     def validate_default_mapping(cls, v: Optional[str], info) -> Optional[str]:
         """验证默认映射名称是否存在"""
         if v is not None:
             # 获取mappings列表
-            mappings = info.data.get('mappings', [])
+            mappings = info.data.get("mappings", [])
             if mappings:
                 mapping_names = [m.name for m in mappings]
                 if v not in mapping_names:

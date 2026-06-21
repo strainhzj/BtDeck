@@ -66,9 +66,7 @@ class TrackerReannounceTask(BaseSyncTask):
 
                 for dl_vo in valid_downloaders:
                     try:
-                        result = await self._process_downloader(
-                            downloader_app, db, dl_vo, configs
-                        )
+                        result = await self._process_downloader(downloader_app, db, dl_vo, configs)
                         total_success += result.get("success_count", 0)
                         total_failed += result.get("failed_count", 0)
                     except Exception as e:
@@ -101,20 +99,27 @@ class TrackerReannounceTask(BaseSyncTask):
 
         # 先查出该下载器下所有未删除的种子info_id，用于过滤tracker
         downloader_torrent_ids = [
-            r.info_id for r in db.query(TorrentInfo.info_id).filter(
+            r.info_id
+            for r in db.query(TorrentInfo.info_id)
+            .filter(
                 TorrentInfo.downloader_id == dl_vo.downloader_id,
                 TorrentInfo.dr == 0,
-            ).all()
+            )
+            .all()
         ]
         if not downloader_torrent_ids:
             return {"success_count": 0, "failed_count": 0}
 
         # 只查询属于当前下载器的 tracker，避免全表扫描
-        trackers = db.query(TrackerInfo).filter(
-            TrackerInfo.torrent_info_id.in_(downloader_torrent_ids),
-            TrackerInfo.tracker_url.isnot(None),
-            TrackerInfo.dr == 0,
-        ).all()
+        trackers = (
+            db.query(TrackerInfo)
+            .filter(
+                TrackerInfo.torrent_info_id.in_(downloader_torrent_ids),
+                TrackerInfo.tracker_url.isnot(None),
+                TrackerInfo.dr == 0,
+            )
+            .all()
+        )
         # logger.info(f"[DEBUG] 下载器={dl_vo.nickname}, tracker数量={len(trackers)}")
 
         if not trackers:
@@ -152,11 +157,15 @@ class TrackerReannounceTask(BaseSyncTask):
             return {"success_count": 0, "failed_count": 0}
 
         # 查询对应的种子记录（属于当前下载器且未删除）
-        torrent_records = db.query(TorrentInfo).filter(
-            TorrentInfo.info_id.in_(torrent_ids_to_announce),
-            TorrentInfo.downloader_id == dl_vo.downloader_id,
-            TorrentInfo.dr == 0,
-        ).all()
+        torrent_records = (
+            db.query(TorrentInfo)
+            .filter(
+                TorrentInfo.info_id.in_(torrent_ids_to_announce),
+                TorrentInfo.downloader_id == dl_vo.downloader_id,
+                TorrentInfo.dr == 0,
+            )
+            .all()
+        )
         # logger.info(f"[DEBUG] 属于当前下载器的种子记录数={len(torrent_records)}")
 
         if not torrent_records:
@@ -164,7 +173,8 @@ class TrackerReannounceTask(BaseSyncTask):
 
         # 执行汇报
         result = await execute_reannounce(
-            app=app, db=db,
+            app=app,
+            db=db,
             downloader_id=dl_vo.downloader_id,
             torrent_records=torrent_records,
             trigger_type="scheduled",
@@ -182,6 +192,7 @@ class TrackerReannounceTask(BaseSyncTask):
 
 
 # ==================== 工具函数 ====================
+
 
 def _extract_domain(tracker_host: str) -> str:
     """从 tracker URL 中提取纯域名"""
@@ -208,7 +219,7 @@ def group_torrents_by_domain(trackers: list, configs: list) -> Dict[str, list]:
     """按域名匹配分组 tracker"""
     groups: Dict[str, list] = {}
     for tracker in trackers:
-        if not getattr(tracker, 'tracker_host', None):
+        if not getattr(tracker, "tracker_host", None):
             continue
         domain = _extract_domain(tracker.tracker_host)
         if not domain:
@@ -224,8 +235,4 @@ def group_torrents_by_domain(trackers: list, configs: list) -> Dict[str, list]:
 
 def filter_torrents_by_downloader(torrents: list, downloader_id: str) -> list:
     """过滤属于指定下载器的未删除种子"""
-    return [
-        t for t in torrents
-        if getattr(t, 'downloader_id', None) == downloader_id
-        and getattr(t, 'dr', 0) == 0
-    ]
+    return [t for t in torrents if getattr(t, "downloader_id", None) == downloader_id and getattr(t, "dr", 0) == 0]

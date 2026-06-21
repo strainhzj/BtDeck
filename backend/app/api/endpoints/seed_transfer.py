@@ -24,7 +24,7 @@ from app.schemas.seed_transfer import (
     SeedTransferRequest,
     SeedTransferResponse,
     SeedTransferBatchRequest,
-    SeedTransferBatchResponse
+    SeedTransferBatchResponse,
 )
 from app.factory import app  # ✅ 修复: 直接导入全局app实例
 
@@ -36,6 +36,7 @@ router = APIRouter()
 
 
 # ==================== API端点 ====================
+
 
 @router.post("/transfer", response_model=CommonResponse)
 async def transfer_seed(
@@ -78,12 +79,8 @@ async def transfer_seed(
     """
     try:
         # ✅ 修复: 使用全局 app 实例(从 app.factory 导入)
-        if not hasattr(app.state, 'store') or app.state.store is None:
-            return CommonResponse(
-                status="error",
-                msg="下载器缓存未初始化",
-                code="500"
-            )
+        if not hasattr(app.state, "store") or app.state.store is None:
+            return CommonResponse(status="error", msg="下载器缓存未初始化", code="500")
 
         # 使用固定用户信息（admin和管理员）
         user_id = 1
@@ -101,7 +98,7 @@ async def transfer_seed(
                 delete_source=transfer_request.delete_source,
                 user_id=user_id,
                 username=username,
-                app_state=app.state
+                app_state=app.state,
             )
 
             # 构建响应数据
@@ -118,22 +115,14 @@ async def transfer_seed(
                 "target_path": result["target_path"],
                 "delete_source": result["delete_source"],
                 "transfer_duration": result.get("transfer_duration"),
-                "error_message": result.get("error_message")
+                "error_message": result.get("error_message"),
             }
 
             if result["success"]:
-                return CommonResponse(
-                    status="success",
-                    msg="种子转移成功",
-                    code="200",
-                    data=response_data
-                )
+                return CommonResponse(status="success", msg="种子转移成功", code="200", data=response_data)
             else:
                 return CommonResponse(
-                    status="error",
-                    msg=result.get("error_message", "种子转移失败"),
-                    code="400",
-                    data=response_data
+                    status="error", msg=result.get("error_message", "种子转移失败"), code="400", data=response_data
                 )
 
     except HTTPException:
@@ -141,12 +130,9 @@ async def transfer_seed(
     except Exception as e:
         logger.error(f"种子转移异常: {e}")
         import traceback
+
         traceback.print_exc()
-        return CommonResponse(
-            status="error",
-            msg=f"种子转移失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"种子转移失败: {str(e)}", code="500")
 
 
 @router.post("/batch-transfer", response_model=CommonResponse)
@@ -194,12 +180,8 @@ async def batch_transfer_seeds(
     """
     try:
         # ✅ 修复: 使用全局 app 实例(从 app.factory 导入)
-        if not hasattr(app.state, 'store') or app.state.store is None:
-            return CommonResponse(
-                status="error",
-                msg="下载器缓存未初始化",
-                code="500"
-            )
+        if not hasattr(app.state, "store") or app.state.store is None:
+            return CommonResponse(status="error", msg="下载器缓存未初始化", code="500")
 
         # 使用固定用户信息（admin和管理员）
         user_id = 1
@@ -222,7 +204,7 @@ async def batch_transfer_seeds(
                     delete_source=batch_request.delete_source,
                     user_id=user_id,
                     username=username,
-                    app_state=app.state
+                    app_state=app.state,
                 )
 
                 # 构建单个转移结果
@@ -239,7 +221,7 @@ async def batch_transfer_seeds(
                     "target_path": result["target_path"],
                     "delete_source": result["delete_source"],
                     "transfer_duration": result.get("transfer_duration"),
-                    "error_message": result.get("error_message")
+                    "error_message": result.get("error_message"),
                 }
 
                 results.append(transfer_result)
@@ -254,14 +236,14 @@ async def batch_transfer_seeds(
                 "total_count": len(batch_request.info_hashes),
                 "success_count": success_count,
                 "failed_count": failed_count,
-                "results": results
+                "results": results,
             }
 
             return CommonResponse(
                 status="success",
                 msg=f"批量转移完成：成功{success_count}个，失败{failed_count}个",
                 code="200",
-                data=response_data
+                data=response_data,
             )
 
     except HTTPException:
@@ -269,9 +251,6 @@ async def batch_transfer_seeds(
     except Exception as e:
         logger.error(f"批量种子转移异常: {e}")
         import traceback
+
         traceback.print_exc()
-        return CommonResponse(
-            status="error",
-            msg=f"批量种子转移失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"批量种子转移失败: {str(e)}", code="500")

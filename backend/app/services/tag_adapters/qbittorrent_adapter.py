@@ -75,15 +75,11 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 logger.debug(f"获取到{len(categories)}个分类")
 
                 for cat_name, cat_info in categories.items():
-                    tag_id = self._get_or_create_tag_id(cat_name, 'category')
+                    tag_id = self._get_or_create_tag_id(cat_name, "category")
 
-                    all_tags.append({
-                        "tag_id": tag_id,
-                        "name": cat_name,
-                        "type": "category",
-                        "color": None,
-                        "raw_data": cat_info
-                    })
+                    all_tags.append(
+                        {"tag_id": tag_id, "name": cat_name, "type": "category", "color": None, "raw_data": cat_info}
+                    )
             except Exception as e:
                 logger.error(f"获取qBittorrent分类失败: {str(e)}")
 
@@ -93,29 +89,28 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 logger.debug(f"获取到{len(tags)}个标签")
 
                 for tag_name in tags:
-                    tag_id = self._get_or_create_tag_id(tag_name, 'tag')
+                    tag_id = self._get_or_create_tag_id(tag_name, "tag")
 
-                    all_tags.append({
-                        "tag_id": tag_id,
-                        "name": tag_name,
-                        "type": "tag",
-                        "color": None,
-                        "raw_data": {"name": tag_name}
-                    })
+                    all_tags.append(
+                        {
+                            "tag_id": tag_id,
+                            "name": tag_name,
+                            "type": "tag",
+                            "color": None,
+                            "raw_data": {"name": tag_name},
+                        }
+                    )
             except Exception as e:
                 logger.error(f"获取qBittorrent标签失败: {str(e)}")
 
             return self._format_success_response(
                 data=all_tags,
-                message=f"成功获取{len(all_tags)}个标签（{sum(1 for t in all_tags if t['type']=='category')}个分类，{sum(1 for t in all_tags if t['type']=='tag')}个标签）"
+                message=f"成功获取{len(all_tags)}个标签（{sum(1 for t in all_tags if t['type'] == 'category')}个分类，{sum(1 for t in all_tags if t['type'] == 'tag')}个标签）",
             )
 
         except Exception as e:
             logger.error(f"获取qBittorrent标签列表失败: {str(e)}")
-            return self._format_error_response(
-                message=f"获取标签列表失败: {str(e)}",
-                data=[]
-            )
+            return self._format_error_response(message=f"获取标签列表失败: {str(e)}", data=[])
 
     async def create_tag(self, tag_name: str, tag_type: str, color: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -143,16 +138,12 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 return {
                     "success": True,
                     "message": "标签已存在",
-                    "data": {
-                        "tag_id": existing_id,
-                        "name": tag_name,
-                        "type": tag_type
-                    },
-                    "tag_id": existing_id
+                    "data": {"tag_id": existing_id, "name": tag_name, "type": tag_type},
+                    "tag_id": existing_id,
                 }
 
             # 根据类型创建
-            if tag_type == 'category':
+            if tag_type == "category":
                 # 创建分类
                 try:
                     self.client.torrent_categories.create_category(name=tag_name)
@@ -161,7 +152,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                     logger.error(f"创建qBittorrent分类失败: {str(e)}")
                     return self._format_error_response(message=f"创建分类失败: {str(e)}")
 
-            elif tag_type == 'tag':
+            elif tag_type == "tag":
                 # 创建标签
                 try:
                     self.client.torrent_tags.create_tags(tags=tag_name)
@@ -179,13 +170,8 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             return {
                 "success": True,
                 "message": f"成功创建{tag_type}",
-                "data": {
-                    "tag_id": tag_id,
-                    "name": tag_name,
-                    "type": tag_type,
-                    "color": color
-                },
-                "tag_id": tag_id
+                "data": {"tag_id": tag_id, "name": tag_name, "type": tag_type, "color": color},
+                "tag_id": tag_id,
             }
 
         except Exception as e:
@@ -212,14 +198,11 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             tag_type = tag_info["type"]
 
             # 根据类型删除
-            if tag_type == 'category':
+            if tag_type == "category":
                 try:
                     # 删除分类（需要先移除使用该分类的种子）
                     # ⚠️ 修复API方法名：使用正确的qBittorrent API方法
-                    self.client.torrents_edit_category(
-                        name=tag_name,
-                        savePath=""  # 设置为空路径会删除分类
-                    )
+                    self.client.torrents_edit_category(name=tag_name, savePath="")  # 设置为空路径会删除分类
                     # qBittorrent不支持直接删除分类，需要设置为空
                     # 实际操作是移除所有种子的分类关联
                     logger.info(f"成功移除qBittorrent分类: {tag_name}")
@@ -230,7 +213,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                         message=f"qBittorrent不支持直接删除分类，请确保没有种子使用该分类"
                     )
 
-            elif tag_type == 'tag':
+            elif tag_type == "tag":
                 try:
                     self.client.torrent_tags.delete_tags(tags=tag_name)
                     logger.info(f"成功删除qBittorrent标签: {tag_name}")
@@ -241,21 +224,13 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             # 从映射表中移除
             self._unregister_tag_id(tag_id)
 
-            return {
-                "success": True,
-                "message": f"成功删除{tag_type}: {tag_name}",
-                "data": tag_info
-            }
+            return {"success": True, "message": f"成功删除{tag_type}: {tag_name}", "data": tag_info}
 
         except Exception as e:
             logger.error(f"删除标签时发生错误: {str(e)}")
             return self._format_error_response(message=f"删除标签失败: {str(e)}")
 
-    async def assign_tags_to_torrent(
-        self,
-        torrent_hash: str,
-        tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    async def assign_tags_to_torrent(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         为种子分配标签/分类
 
@@ -278,13 +253,10 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             for tag_id in tag_ids:
                 tag_info = self._get_tag_info_by_id(tag_id)
                 if not tag_info:
-                    failed_tags.append({
-                        "tag_id": tag_id,
-                        "error": "标签不存在"
-                    })
+                    failed_tags.append({"tag_id": tag_id, "error": "标签不存在"})
                     continue
 
-                if tag_info["type"] == 'category':
+                if tag_info["type"] == "category":
                     categories.append(tag_info["name"])
                 else:
                     tags.append(tag_info["name"])
@@ -297,10 +269,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 try:
                     # 取最后一个分类（qBittorrent只支持单个分类）
                     category = categories[-1]
-                    self.client.torrents.set_category(
-                        hashes=torrent_hash,
-                        category=category
-                    )
+                    self.client.torrents.set_category(hashes=torrent_hash, category=category)
                     success_count += 1
                     logger.debug(f"为种子{torrent_hash[:8]}...设置分类: {category}")
                 except Exception as e:
@@ -311,11 +280,8 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             if tags:
                 try:
                     # qBittorrent的标签是逗号分隔的字符串
-                    tags_str = ','.join(tags)
-                    self.client.torrents.add_tags(
-                        hashes=torrent_hash,
-                        tags=tags_str
-                    )
+                    tags_str = ",".join(tags)
+                    self.client.torrents.add_tags(hashes=torrent_hash, tags=tags_str)
                     success_count += len(tags)
                     logger.debug(f"为种子{torrent_hash[:8]}...添加标签: {tags_str}")
                 except Exception as e:
@@ -328,18 +294,14 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 "assigned_count": success_count,
                 "failed_count": len(failed_tags) + len(errors),
                 "failed_tags": failed_tags,
-                "errors": errors
+                "errors": errors,
             }
 
         except Exception as e:
             logger.error(f"分配标签时发生错误: {str(e)}")
             return self._format_error_response(message=f"分配标签失败: {str(e)}")
 
-    async def remove_tags_from_torrent(
-        self,
-        torrent_hash: str,
-        tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    async def remove_tags_from_torrent(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         移除种子的标签
 
@@ -362,13 +324,10 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             for tag_id in tag_ids:
                 tag_info = self._get_tag_info_by_id(tag_id)
                 if not tag_info:
-                    failed_tags.append({
-                        "tag_id": tag_id,
-                        "error": "标签不存在"
-                    })
+                    failed_tags.append({"tag_id": tag_id, "error": "标签不存在"})
                     continue
 
-                if tag_info["type"] == 'category':
+                if tag_info["type"] == "category":
                     categories.append(tag_info["name"])
                 else:
                     tags.append(tag_info["name"])
@@ -380,10 +339,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             if tags:
                 try:
                     for tag_name in tags:
-                        self.client.torrents.remove_tags(
-                            hashes=torrent_hash,
-                            tags=tag_name
-                        )
+                        self.client.torrents.remove_tags(hashes=torrent_hash, tags=tag_name)
                         removed_count += 1
                         logger.debug(f"从种子{torrent_hash[:8]}...移除标签: {tag_name}")
                 except Exception as e:
@@ -397,10 +353,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                         # 获取种子当前分类
                         torrents = self.client.torrents.info(hashes=[torrent_hash])
                         if torrents and torrents[0].category == category_name:
-                            self.client.torrents.set_category(
-                                hashes=torrent_hash,
-                                category=""  # 设置为空
-                            )
+                            self.client.torrents.set_category(hashes=torrent_hash, category="")  # 设置为空
                             removed_count += 1
                             logger.debug(f"从种子{torrent_hash[:8]}...移除分类: {category_name}")
                 except Exception as e:
@@ -413,7 +366,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 "removed_count": removed_count,
                 "failed_count": len(failed_tags) + len(errors),
                 "failed_tags": failed_tags,
-                "errors": errors
+                "errors": errors,
             }
 
         except Exception as e:
@@ -438,62 +391,42 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 torrents = self.client.torrents.info(hashes=[torrent_hash])
 
                 if not torrents:
-                    return self._format_error_response(
-                        message=f"种子不存在: {torrent_hash[:8]}...",
-                        data=[]
-                    )
+                    return self._format_error_response(message=f"种子不存在: {torrent_hash[:8]}...", data=[])
 
                 torrent = torrents[0]
 
                 # 1. 获取分类
                 if torrent.category:
                     cat_name = torrent.category
-                    tag_id = self._get_or_create_tag_id(cat_name, 'category')
+                    tag_id = self._get_or_create_tag_id(cat_name, "category")
 
-                    all_tags.append({
-                        "tag_id": tag_id,
-                        "name": cat_name,
-                        "type": "category",
-                        "color": None,
-                        "assigned": True
-                    })
+                    all_tags.append(
+                        {"tag_id": tag_id, "name": cat_name, "type": "category", "color": None, "assigned": True}
+                    )
 
                 # 2. 获取标签
                 if torrent.tags:
                     # qBittorrent的标签是逗号分隔的字符串
-                    tag_names = torrent.tags.split(',') if torrent.tags else []
+                    tag_names = torrent.tags.split(",") if torrent.tags else []
 
                     for tag_name in tag_names:
                         tag_name = tag_name.strip()
                         if tag_name:
-                            tag_id = self._get_or_create_tag_id(tag_name, 'tag')
+                            tag_id = self._get_or_create_tag_id(tag_name, "tag")
 
-                            all_tags.append({
-                                "tag_id": tag_id,
-                                "name": tag_name,
-                                "type": "tag",
-                                "color": None,
-                                "assigned": True
-                            })
+                            all_tags.append(
+                                {"tag_id": tag_id, "name": tag_name, "type": "tag", "color": None, "assigned": True}
+                            )
 
             except Exception as e:
                 logger.error(f"获取种子{torrent_hash[:8]}...信息失败: {str(e)}")
-                return self._format_error_response(
-                    message=f"获取种子标签失败: {str(e)}",
-                    data=[]
-                )
+                return self._format_error_response(message=f"获取种子标签失败: {str(e)}", data=[])
 
-            return self._format_success_response(
-                data=all_tags,
-                message=f"成功获取{len(all_tags)}个标签"
-            )
+            return self._format_success_response(data=all_tags, message=f"成功获取{len(all_tags)}个标签")
 
         except Exception as e:
             logger.error(f"获取种子标签时发生错误: {str(e)}")
-            return self._format_error_response(
-                message=f"获取种子标签失败: {str(e)}",
-                data=[]
-            )
+            return self._format_error_response(message=f"获取种子标签失败: {str(e)}", data=[])
 
     # ==================== 私有辅助方法 ====================
 
@@ -562,15 +495,11 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
 
         key = self._tag_id_map[tag_id]
         # key格式: "type:name"
-        parts = key.split(':', 1)
+        parts = key.split(":", 1)
         if len(parts) != 2:
             return None
 
-        return {
-            "tag_id": tag_id,
-            "type": parts[0],
-            "name": parts[1]
-        }
+        return {"tag_id": tag_id, "type": parts[0], "name": parts[1]}
 
     def _build_tag_key(self, tag_name: str, tag_type: str) -> str:
         """

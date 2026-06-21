@@ -37,17 +37,17 @@ class TorrentFetcher:
     QB_BATCH_SIZE = 100  # 每批100个种子
 
     # Transmission 最小字段集（仅用于统计）
-    TR_MINIMAL_FIELDS = ['id', 'hashString', 'status', 'name']
+    TR_MINIMAL_FIELDS = ["id", "hashString", "status", "name"]
 
     # Transmission 统计字段集（用于状态统计）
-    TR_STATS_FIELDS = ['hashString', 'status']
+    TR_STATS_FIELDS = ["hashString", "status"]
 
     @staticmethod
     def get_transmission_torrents_batch(
         client: TrClient,
         torrent_hashes: Optional[List[str]] = None,
         batch_size: int = TR_BATCH_SIZE,
-        fields: Optional[List[str]] = None
+        fields: Optional[List[str]] = None,
     ) -> List[Dict[str, Any]]:
         """分片获取 Transmission 种子
 
@@ -76,7 +76,7 @@ class TorrentFetcher:
         """
         if fields is None:
             fields = TorrentFetcher.TR_STATS_FIELDS
-        include_name = 'name' in fields
+        include_name = "name" in fields
 
         def _safe_attr(obj, attr, default):
             try:
@@ -93,9 +93,7 @@ class TorrentFetcher:
                 logger.debug("开始全量获取 Transmission 种子...")
 
                 # 第一次调用：获取所有种子的 hash（轻量级）
-                all_torrents_lite = client.get_torrents(
-                    arguments=['id', 'hashString']
-                )
+                all_torrents_lite = client.get_torrents(arguments=["id", "hashString"])
 
                 torrent_hashes = [t.hashString for t in all_torrents_lite]
                 logger.debug(f"发现 {len(torrent_hashes)} 个种子，开始分片获取...")
@@ -104,21 +102,18 @@ class TorrentFetcher:
             total_batches = (len(torrent_hashes) - 1) // batch_size + 1
 
             for i in range(0, len(torrent_hashes), batch_size):
-                batch = torrent_hashes[i:i + batch_size]
+                batch = torrent_hashes[i : i + batch_size]
                 batch_count += 1
 
                 # 关键：使用 hash 而不是 ID（ID 不持久化）
-                torrents = client.get_torrents(
-                    ids=batch,  # 支持字符串 hash 列表
-                    arguments=fields
-                )
+                torrents = client.get_torrents(ids=batch, arguments=fields)  # 支持字符串 hash 列表
 
                 # 转换为统一格式
                 batch_data = [
                     {
-                        'hash': _safe_attr(t, 'hashString', ''),
-                        'status': _safe_attr(t, 'status', 'unknown'),
-                        'name': _safe_attr(t, 'name', '') if include_name else ''
+                        "hash": _safe_attr(t, "hashString", ""),
+                        "status": _safe_attr(t, "status", "unknown"),
+                        "name": _safe_attr(t, "name", "") if include_name else "",
                     }
                     for t in torrents
                 ]
@@ -138,8 +133,7 @@ class TorrentFetcher:
 
     @staticmethod
     def get_transmission_recently_active(
-        client: TrClient,
-        fields: Optional[List[str]] = None
+        client: TrClient, fields: Optional[List[str]] = None
     ) -> tuple[List[Dict[str, Any]], List[int]]:
         """获取 Transmission 最近活动的种子（增量更新）
 
@@ -156,7 +150,7 @@ class TorrentFetcher:
         """
         if fields is None:
             fields = TorrentFetcher.TR_STATS_FIELDS
-        include_name = 'name' in fields
+        include_name = "name" in fields
 
         def _safe_attr(obj, attr, default):
             try:
@@ -167,16 +161,14 @@ class TorrentFetcher:
         try:
             # Transmission 特性：获取最近活动的种子
             # 返回：(active_torrents, removed_ids)
-            active, removed_ids = client.get_recently_active_torrents(
-                arguments=fields
-            )
+            active, removed_ids = client.get_recently_active_torrents(arguments=fields)
 
             # 转换为统一格式
             active_data = [
                 {
-                    'hash': _safe_attr(t, 'hashString', ''),
-                    'status': _safe_attr(t, 'status', 'unknown'),
-                    'name': _safe_attr(t, 'name', '') if include_name else ''
+                    "hash": _safe_attr(t, "hashString", ""),
+                    "status": _safe_attr(t, "status", "unknown"),
+                    "name": _safe_attr(t, "name", "") if include_name else "",
                 }
                 for t in active
             ]
@@ -190,10 +182,7 @@ class TorrentFetcher:
 
     @staticmethod
     def get_qbittorrent_torrents_batch(
-        client,
-        status_filter: Optional[str] = None,
-        offset: int = 0,
-        limit: int = QB_BATCH_SIZE
+        client, status_filter: Optional[str] = None, offset: int = 0, limit: int = QB_BATCH_SIZE
     ) -> List[Dict[str, Any]]:
         """分片获取 qBittorrent 种子
 
@@ -220,18 +209,14 @@ class TorrentFetcher:
         from app.core.torrent_status_mapper import TorrentStatusMapper
 
         try:
-            torrents_info = client.torrents_info(
-                status_filter=status_filter,
-                offset=offset,
-                limit=limit
-            )
+            torrents_info = client.torrents_info(status_filter=status_filter, offset=offset, limit=limit)
 
             # 转换为统一格式（应用状态映射）
             return [
                 {
-                    'hash': t.get('hash', ''),
-                    'status': TorrentStatusMapper.convert_qbittorrent_status(t.get('state', 'unknown')),
-                    'name': t.get('name', '')
+                    "hash": t.get("hash", ""),
+                    "status": TorrentStatusMapper.convert_qbittorrent_status(t.get("state", "unknown")),
+                    "name": t.get("name", ""),
                 }
                 for t in torrents_info
             ]
@@ -241,10 +226,7 @@ class TorrentFetcher:
             return []
 
     @staticmethod
-    def get_qbittorrent_all_by_status(
-        client,
-        batch_size: int = QB_BATCH_SIZE
-    ) -> Dict[str, List[Dict[str, Any]]]:
+    def get_qbittorrent_all_by_status(client, batch_size: int = QB_BATCH_SIZE) -> Dict[str, List[Dict[str, Any]]]:
         """按状态分批获取所有 qBittorrent 种子（全量更新）
 
         Args:
@@ -255,11 +237,11 @@ class TorrentFetcher:
             按状态分组的种子字典：{status: [torrents...]}
         """
         all_statuses = [
-            'downloading',  # 下载中
-            'seeding',      # 做种中
-            'paused',       # 已暂停
-            'completed',    # 已完成
-            'errored'       # 错误
+            "downloading",  # 下载中
+            "seeding",  # 做种中
+            "paused",  # 已暂停
+            "completed",  # 已完成
+            "errored",  # 错误
         ]
 
         result = {}
@@ -270,10 +252,7 @@ class TorrentFetcher:
 
             while True:
                 batch = TorrentFetcher.get_qbittorrent_torrents_batch(
-                    client,
-                    status_filter=status,
-                    offset=offset,
-                    limit=batch_size
+                    client, status_filter=status, offset=offset, limit=batch_size
                 )
 
                 if not batch:

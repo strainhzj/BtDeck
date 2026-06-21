@@ -92,7 +92,7 @@ class TrackerStatusJudge:
                 "execution_time": self.last_execution_time,
                 "execution_count": self.execution_count,
                 "status": "running",
-                "message": "Tracker status judgment started"
+                "message": "Tracker status judgment started",
             }
 
             logger.info(f"[{self.name}] 开始执行, 第{self.execution_count}次")
@@ -105,18 +105,20 @@ class TrackerStatusJudge:
                 logger.warning(f"[{self.name}] 未加载到任何关键词,跳过执行")
                 with self._stats_lock:
                     self.success_count += 1
-                result.update({
-                    "status": "success",
-                    "message": "未加载到任何关键词",
-                    "total_messages_processed": 0,
-                    "total_matched": 0,
-                    "total_unmatched": 0,
-                    "total_normal": 0,
-                    "total_error": 0,
-                    "total_candidate": 0,
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count
-                })
+                result.update(
+                    {
+                        "status": "success",
+                        "message": "未加载到任何关键词",
+                        "total_messages_processed": 0,
+                        "total_matched": 0,
+                        "total_unmatched": 0,
+                        "total_normal": 0,
+                        "total_error": 0,
+                        "total_candidate": 0,
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                    }
+                )
                 return result
 
             # Step 2: 获取未处理的消息
@@ -127,18 +129,20 @@ class TrackerStatusJudge:
                 logger.warning(f"[{self.name}] 未发现未处理的消息")
                 with self._stats_lock:
                     self.success_count += 1
-                result.update({
-                    "status": "success",
-                    "message": "未发现未处理的消息",
-                    "total_messages_processed": 0,
-                    "total_matched": 0,
-                    "total_unmatched": 0,
-                    "total_normal": 0,
-                    "total_error": 0,
-                    "total_candidate": 0,
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count
-                })
+                result.update(
+                    {
+                        "status": "success",
+                        "message": "未发现未处理的消息",
+                        "total_messages_processed": 0,
+                        "total_matched": 0,
+                        "total_unmatched": 0,
+                        "total_normal": 0,
+                        "total_error": 0,
+                        "total_candidate": 0,
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                    }
+                )
                 return result
 
             # Step 3: 批量判断消息状态
@@ -148,18 +152,20 @@ class TrackerStatusJudge:
             with self._stats_lock:
                 self.success_count += 1
 
-            result.update({
-                "status": "success",
-                "message": f"判断完成: 匹配{self.total_matched}条, 未匹配{self.total_unmatched}条 (正常{self.total_normal}, 错误{self.total_error})",
-                "total_messages_processed": self.total_messages_processed,
-                "total_matched": self.total_matched,
-                "total_unmatched": self.total_unmatched,
-                "total_normal": self.total_normal,
-                "total_error": self.total_error,
-                "total_candidate": self.total_candidate,
-                "success_count": self.success_count,
-                "failure_count": self.failure_count
-            })
+            result.update(
+                {
+                    "status": "success",
+                    "message": f"判断完成: 匹配{self.total_matched}条, 未匹配{self.total_unmatched}条 (正常{self.total_normal}, 错误{self.total_error})",
+                    "total_messages_processed": self.total_messages_processed,
+                    "total_matched": self.total_matched,
+                    "total_unmatched": self.total_unmatched,
+                    "total_normal": self.total_normal,
+                    "total_error": self.total_error,
+                    "total_candidate": self.total_candidate,
+                    "success_count": self.success_count,
+                    "failure_count": self.failure_count,
+                }
+            )
 
             logger.info(f"[{self.name}] 执行完成: {result['message']}")
 
@@ -175,7 +181,7 @@ class TrackerStatusJudge:
                 "status": "failed",
                 "message": f"任务执行失败: {str(e)}",
                 "success_count": self.success_count,
-                "failure_count": self.failure_count
+                "failure_count": self.failure_count,
             }
             logger.error(f"[{self.name}] 执行失败: {e}", exc_info=True)
             return error_result
@@ -197,10 +203,11 @@ class TrackerStatusJudge:
         db = SessionLocal()
         try:
             # 查询所有启用的关键词
-            keywords = db.query(TrackerKeywordConfig).filter(
-                TrackerKeywordConfig.enabled == True,
-                TrackerKeywordConfig.dr == 0
-            ).all()
+            keywords = (
+                db.query(TrackerKeywordConfig)
+                .filter(TrackerKeywordConfig.enabled == True, TrackerKeywordConfig.dr == 0)
+                .all()
+            )
 
             # 构建快速查找字典 (keyword -> info)
             # 如果存在重复keyword(历史数据),保留priority最高的
@@ -210,7 +217,7 @@ class TrackerStatusJudge:
                     keyword_map[kw.keyword] = {
                         "type": kw.keyword_type,
                         "priority": kw.priority,
-                        "keyword_id": kw.keyword_id
+                        "keyword_id": kw.keyword_id,
                     }
                 else:
                     # 如果重复,保留priority更高的
@@ -218,7 +225,7 @@ class TrackerStatusJudge:
                         keyword_map[kw.keyword] = {
                             "type": kw.keyword_type,
                             "priority": kw.priority,
-                            "keyword_id": kw.keyword_id
+                            "keyword_id": kw.keyword_id,
                         }
                         logger.warning(f"发现重复关键词: {kw.keyword}, 保留高优先级记录")
 
@@ -241,11 +248,16 @@ class TrackerStatusJudge:
         db = SessionLocal()
         try:
             # 查询未处理的消息(过滤掉空消息)
-            messages = db.query(TrackerMessageLog).filter(
-                TrackerMessageLog.is_processed == False,
-                TrackerMessageLog.msg.isnot(None),
-                TrackerMessageLog.msg != ''
-            ).limit(self.BATCH_SIZE).all()
+            messages = (
+                db.query(TrackerMessageLog)
+                .filter(
+                    TrackerMessageLog.is_processed == False,
+                    TrackerMessageLog.msg.isnot(None),
+                    TrackerMessageLog.msg != "",
+                )
+                .limit(self.BATCH_SIZE)
+                .all()
+            )
 
             logger.info(f"发现未处理消息: {len(messages)}条")
             return messages
@@ -295,7 +307,9 @@ class TrackerStatusJudge:
                                 self.total_matched += 1
                                 self.total_normal += 1
 
-                            logger.info(f"匹配成功(正常): {message.tracker_host} | {message.msg[:50]} | 池:{keyword_type}")
+                            logger.info(
+                                f"匹配成功(正常): {message.tracker_host} | {message.msg[:50]} | 池:{keyword_type}"
+                            )
 
                         elif keyword_type == "failed":
                             # 错误信息
@@ -363,7 +377,11 @@ class TrackerStatusJudge:
                 "total_candidate": self.total_candidate,
                 "last_execution_time": self.last_execution_time,
                 "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0,
-                "match_rate": (self.total_matched / self.total_messages_processed * 100) if self.total_messages_processed > 0 else 0
+                "match_rate": (
+                    (self.total_matched / self.total_messages_processed * 100)
+                    if self.total_messages_processed > 0
+                    else 0
+                ),
             }
 
     def get_schedule_config(self) -> Dict[str, Any]:
@@ -371,12 +389,12 @@ class TrackerStatusJudge:
         return {
             "cron_expression": "0 */30 * * *",  # 每30分钟执行一次
             "timezone": "Asia/Shanghai",
-            "max_instances": 1,     # 防止重叠执行
-            "coalesce": True,       # 合并错过的执行
+            "max_instances": 1,  # 防止重叠执行
+            "coalesce": True,  # 合并错过的执行
             "misfire_grace_time": 900,  # 错过执行的宽限时间（15分钟）
             "default_interval": self.default_interval,
             "batch_size": self.BATCH_SIZE,
-            "estimated_duration": "2-5 minutes"
+            "estimated_duration": "2-5 minutes",
         }
 
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -387,15 +405,19 @@ class TrackerStatusJudge:
                     "average_messages_per_execution": 0,
                     "average_matched_per_execution": 0,
                     "average_unmatched_per_execution": 0,
-                    "total_processing_time": "N/A"
+                    "total_processing_time": "N/A",
                 }
 
             return {
                 "average_messages_per_execution": self.total_messages_processed / self.execution_count,
                 "average_matched_per_execution": self.total_matched / self.execution_count,
                 "average_unmatched_per_execution": self.total_unmatched / self.execution_count,
-                "match_rate": (self.total_matched / self.total_messages_processed * 100) if self.total_messages_processed > 0 else 0,
+                "match_rate": (
+                    (self.total_matched / self.total_messages_processed * 100)
+                    if self.total_messages_processed > 0
+                    else 0
+                ),
                 "normal_rate": (self.total_normal / self.total_matched * 100) if self.total_matched > 0 else 0,
                 "error_rate": (self.total_error / self.total_matched * 100) if self.total_matched > 0 else 0,
-                "task_reliability": (self.success_count / self.execution_count * 100)
+                "task_reliability": (self.success_count / self.execution_count * 100),
             }

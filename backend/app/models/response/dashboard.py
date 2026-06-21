@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 
 class DownloaderStats(BaseModel):
     """Downloader statistics."""
+
     total: int = Field(..., description="Total downloaders")
     online: int = Field(..., description="Online downloaders")
     offline: int = Field(..., description="Offline downloaders")
@@ -12,6 +13,7 @@ class DownloaderStats(BaseModel):
 
 class TorrentStats(BaseModel):
     """Torrent statistics."""
+
     active: int = Field(0, description="Active torrents")
     downloading: int = Field(0, description="Downloading torrents")
     seeding: int = Field(0, description="Seeding torrents")
@@ -20,6 +22,7 @@ class TorrentStats(BaseModel):
 
 class TaskStats(BaseModel):
     """Task statistics."""
+
     total: int = Field(..., description="Total tasks")
     running: int = Field(..., description="Running tasks")
     stopped: int = Field(..., description="Stopped tasks")
@@ -27,6 +30,7 @@ class TaskStats(BaseModel):
 
 class SystemStats(BaseModel):
     """System statistics."""
+
     uptime: int = Field(..., description="Uptime in seconds")
     uptime_display: str = Field(..., description="Formatted uptime display")
     version: str = Field(..., description="Version")
@@ -34,6 +38,7 @@ class SystemStats(BaseModel):
 
 class DownloaderListItem(BaseModel):
     """Downloader list item."""
+
     downloader_id: str
     nickname: str
     downloader_type: int  # 0=qBittorrent, 1=Transmission
@@ -44,6 +49,7 @@ class DownloaderListItem(BaseModel):
 
 class ActivityItem(BaseModel):
     """Activity record item."""
+
     time: str = Field(..., description="Relative time")
     source: str = Field(..., description="Source")
     action: str = Field(..., description="Action description")
@@ -52,6 +58,7 @@ class ActivityItem(BaseModel):
 
 class DashboardData(BaseModel):
     """Dashboard response payload."""
+
     downloaders: DownloaderStats
     torrents: TorrentStats
     tasks: TaskStats

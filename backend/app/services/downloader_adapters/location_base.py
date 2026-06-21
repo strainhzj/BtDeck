@@ -21,12 +21,7 @@ class TorrentLocationAdapter(ABC):
     """
 
     @abstractmethod
-    async def set_location(
-        self,
-        hashes: List[str],
-        target_path: str,
-        move_files: bool
-    ) -> Dict[str, Any]:
+    async def set_location(self, hashes: List[str], target_path: str, move_files: bool) -> Dict[str, Any]:
         """
         修改种子保存路径
 

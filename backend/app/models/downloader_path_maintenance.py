@@ -35,37 +35,33 @@ class DownloaderPathMaintenance(Base):
         created_at: 创建时间
         updated_at: 更新时间
     """
-    __tablename__ = 'downloader_path_maintenance'
+
+    __tablename__ = "downloader_path_maintenance"
 
     # 主键
-    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键')
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
 
     # 下载器关联（使用字符串类型以匹配 bt_downloaders 的 UUID）
-    downloader_id = Column(
-        String(36),
-        nullable=False,
-        index=True,
-        comment='下载器ID（UUID字符串）'
-    )
+    downloader_id = Column(String(36), nullable=False, index=True, comment="下载器ID（UUID字符串）")
 
     # 路径类型和值
-    path_type = Column(String(20), nullable=False, index=True, comment='路径类型：default=默认路径，active=在用路径')
-    path_value = Column(String(500), nullable=False, comment='路径值（绝对路径）')
+    path_type = Column(String(20), nullable=False, index=True, comment="路径类型：default=默认路径，active=在用路径")
+    path_value = Column(String(500), nullable=False, comment="路径值（绝对路径）")
 
     # 状态
-    is_enabled = Column(Boolean, default=True, nullable=False, comment='是否启用')
+    is_enabled = Column(Boolean, default=True, nullable=False, comment="是否启用")
 
     # 统计信息
-    torrent_count = Column(Integer, default=0, nullable=False, comment='使用该路径的种子数量')
-    last_updated_time = Column(DateTime, nullable=True, comment='最后更新时间')
+    torrent_count = Column(Integer, default=0, nullable=False, comment="使用该路径的种子数量")
+    last_updated_time = Column(DateTime, nullable=True, comment="最后更新时间")
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment='创建时间')
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment='更新时间')
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
 
     # 唯一约束：同一下载器的 path_type + path_value 组合必须唯一
     __table_args__ = (
-        UniqueConstraint('downloader_id', 'path_type', 'path_value', name='uq_downloader_path_type_value'),
+        UniqueConstraint("downloader_id", "path_type", "path_value", name="uq_downloader_path_type_value"),
     )
 
     def __init__(
@@ -113,15 +109,15 @@ class DownloaderPathMaintenance(Base):
             包含所有模型字段的字典
         """
         return {
-            'id': self.id,
-            'downloader_id': self.downloader_id,
-            'path_type': self.path_type,
-            'path_value': self.path_value,
-            'is_enabled': self.is_enabled,
-            'torrent_count': self.torrent_count,
-            'last_updated_time': self.last_updated_time.isoformat() if self.last_updated_time else None,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            "id": self.id,
+            "downloader_id": self.downloader_id,
+            "path_type": self.path_type,
+            "path_value": self.path_value,
+            "is_enabled": self.is_enabled,
+            "torrent_count": self.torrent_count,
+            "last_updated_time": self.last_updated_time.isoformat() if self.last_updated_time else None,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
 
     def is_enabled_path(self) -> bool:
@@ -140,7 +136,7 @@ class DownloaderPathMaintenance(Base):
         Returns:
             True 如果是默认路径
         """
-        return self.path_type == 'default'
+        return self.path_type == "default"
 
     def is_active_path(self) -> bool:
         """
@@ -149,7 +145,7 @@ class DownloaderPathMaintenance(Base):
         Returns:
             True 如果是在用路径
         """
-        return self.path_type == 'active'
+        return self.path_type == "active"
 
     def update_torrent_count(self, count: int) -> None:
         """

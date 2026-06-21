@@ -30,10 +30,10 @@ class SM4Encryption:
                 logger.error(f"配置文件不存在: {config_path}")
                 return None
 
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
-            sm4_key = config.get('security', {}).get('secret_key')
+            sm4_key = config.get("security", {}).get("secret_key")
             if not sm4_key:
                 logger.error("配置文件中未找到 SM4 密钥")
                 return None
@@ -51,7 +51,7 @@ class SM4Encryption:
             self.decrypt_crypt = sm4.CryptSM4()
             # SM4密钥需要是bytes格式
             if isinstance(self.sm4_key, str):
-                key_bytes = self.sm4_key.encode('utf-8')
+                key_bytes = self.sm4_key.encode("utf-8")
             else:
                 key_bytes = self.sm4_key
             self.encrypt_crypt.set_key(key_bytes, sm4.SM4_ENCRYPT)
@@ -81,8 +81,8 @@ class SM4Encryption:
 
         try:
             # 检查是否已经加密
-            if plaintext.startswith(('sm4:', 'encrypted:')):
-                #logger.warning("文本已经加密，跳过加密")
+            if plaintext.startswith(("sm4:", "encrypted:")):
+                # logger.warning("文本已经加密，跳过加密")
                 return plaintext
 
             # 执行加密
@@ -116,7 +116,7 @@ class SM4Encryption:
 
         try:
             # 检查是否是SM4加密格式
-            if not ciphertext.startswith('sm4:'):
+            if not ciphertext.startswith("sm4:"):
                 logger.warning("文本不是SM4加密格式，跳过解密")
                 return ciphertext
 
@@ -126,7 +126,7 @@ class SM4Encryption:
 
             # 执行解密
             decrypted_bytes = self.decrypt_crypt.crypt_ecb(encrypted_bytes)
-            result = decrypted_bytes.decode('utf-8')
+            result = decrypted_bytes.decode("utf-8")
 
             logger.debug(f"解密成功，长度: {len(ciphertext)} -> {len(result)}")
             return result
@@ -137,7 +137,7 @@ class SM4Encryption:
 
     def is_encrypted(self, text: str) -> bool:
         """检查文本是否已加密"""
-        return text and text.startswith('sm4:')
+        return text and text.startswith("sm4:")
 
 
 # 全局加密实例

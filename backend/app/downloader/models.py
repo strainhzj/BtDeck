@@ -7,28 +7,51 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
 class BtDownloaders(Base):
     __tablename__ = "bt_downloaders"
 
     downloader_id = Column(String, primary_key=True, index=True)
-    nickname = Column(String, index=True)  #   自定义名称
-    host = Column(String, index=True)  #  下载器主机
-    username = Column(String, index=True)  #  登录用户名
+    nickname = Column(String, index=True)  # 自定义名称
+    host = Column(String, index=True)  # 下载器主机
+    username = Column(String, index=True)  # 登录用户名
     password = Column(String)  # SM4加密后的密码
     is_search = Column(Boolean, default=True)  # 是否启用种子搜索
-    status = Column(String, default=True)  #  下载器状态
-    enabled = Column(Boolean, default=True)  #  下载器启用状态
-    downloader_type = Column(Integer, nullable=False, default=0, comment='下载器类型：0=qBittorrent, 1=Transmission')  # 下载器类型
+    status = Column(String, default=True)  # 下载器状态
+    enabled = Column(Boolean, default=True)  # 下载器启用状态
+    downloader_type = Column(
+        Integer, nullable=False, default=0, comment="下载器类型：0=qBittorrent, 1=Transmission"
+    )  # 下载器类型
     port = Column(String, index=True)  # 端口
     is_ssl = Column(Boolean, default=True)  # 是否https
-    dr = Column(Integer, default=0)   #   删除状态，0是未删除，1是逻辑删除
-    path_mapping = Column(Text, nullable=True, comment='路径映射配置（JSON格式）')  # 路径映射配置
-    path_mapping_rules = Column(Text, nullable=True, comment='路径映射规则配置（多行文本，格式：源路径{#**#}目标路径）')  # 路径映射规则
-    torrent_save_path = Column(String(500), nullable=True, comment='种子保存目录路径（应用运行环境可直接访问的绝对路径）')  # 种子保存目录
+    dr = Column(Integer, default=0)  # 删除状态，0是未删除，1是逻辑删除
+    path_mapping = Column(Text, nullable=True, comment="路径映射配置（JSON格式）")  # 路径映射配置
+    path_mapping_rules = Column(
+        Text, nullable=True, comment="路径映射规则配置（多行文本，格式：源路径{#**#}目标路径）"
+    )  # 路径映射规则
+    torrent_save_path = Column(
+        String(500), nullable=True, comment="种子保存目录路径（应用运行环境可直接访问的绝对路径）"
+    )  # 种子保存目录
 
-    def __init__(self, downloader_id=None, nickname=None, host=None, username=None, password=None,
-                 is_search=True, status=None, enabled=True, downloader_type=None,
-                 port=None, is_ssl=True, dr=0, path_mapping=None, path_mapping_rules=None, torrent_save_path=None, **kw: Any):
+    def __init__(
+        self,
+        downloader_id=None,
+        nickname=None,
+        host=None,
+        username=None,
+        password=None,
+        is_search=True,
+        status=None,
+        enabled=True,
+        downloader_type=None,
+        port=None,
+        is_ssl=True,
+        dr=0,
+        path_mapping=None,
+        path_mapping_rules=None,
+        torrent_save_path=None,
+        **kw: Any,
+    ):
         super().__init__(**kw)
         if downloader_id is not None:
             self.downloader_id = downloader_id
@@ -92,10 +115,8 @@ class BtDownloaders(Base):
         """
         try:
             from app.core.path_mapping import UnifiedPathMappingService
-            return UnifiedPathMappingService(
-                path_mapping=self.path_mapping,
-                path_mapping_rules=self.path_mapping_rules
-            )
+
+            return UnifiedPathMappingService(path_mapping=self.path_mapping, path_mapping_rules=self.path_mapping_rules)
         except Exception as e:
             logger.error(f"加载统一路径映射服务失败: {str(e)}")
             return None
@@ -105,6 +126,7 @@ class BtDownloaders(Base):
         """获取文件操作服务实例"""
         try:
             from app.core.file_operations import FileOperationService
+
             path_mapping = self.path_mapping_service
             return FileOperationService(path_mapping)
         except Exception as e:

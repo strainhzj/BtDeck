@@ -53,13 +53,13 @@ class TrackerMessageLogger:
 
     # 任务配置(可从配置文件读取)
     default_interval = 3600  # 默认1小时
-    retention_days = 90      # 保留90天
-    max_records = 10000      # 最多保留10000条
+    retention_days = 90  # 保留90天
+    max_records = 10000  # 最多保留10000条
 
     # 性能优化常量
-    MAX_SAMPLE_COUNT = 3           # 每条消息最多保留示例数量
-    BATCH_SIZE = 50                # 批量提交大小
-    QUERY_BATCH_SIZE = 500         # 分页查询大小
+    MAX_SAMPLE_COUNT = 3  # 每条消息最多保留示例数量
+    BATCH_SIZE = 50  # 批量提交大小
+    QUERY_BATCH_SIZE = 500  # 分页查询大小
 
     def __init__(self, retention_days: Optional[int] = None, max_records: Optional[int] = None):
         """初始化任务
@@ -120,18 +120,12 @@ class TrackerMessageLogger:
                             TrackerInfo.tracker_url,
                             TrackerInfo.last_announce_msg,
                             TrackerInfo.last_scrape_msg,
-                            TorrentInfo.name.label('torrent_name'),
-                            TorrentInfo.hash.label('torrent_hash'),
-                            TorrentInfo.torrent_file.label('torrent_file')
+                            TorrentInfo.name.label("torrent_name"),
+                            TorrentInfo.hash.label("torrent_hash"),
+                            TorrentInfo.torrent_file.label("torrent_file"),
                         )
-                        .join(
-                            TorrentInfo,
-                            TrackerInfo.torrent_info_id == TorrentInfo.info_id
-                        )
-                        .filter(
-                            TorrentInfo.dr == 0,
-                            TrackerInfo.dr == 0
-                        )
+                        .join(TorrentInfo, TrackerInfo.torrent_info_id == TorrentInfo.info_id)
+                        .filter(TorrentInfo.dr == 0, TrackerInfo.dr == 0)
                         .limit(self.QUERY_BATCH_SIZE)
                         .offset(offset)
                     )
@@ -164,17 +158,19 @@ class TrackerMessageLogger:
                                 "tracker_host": tracker_host,
                                 "msg": msg.strip(),
                                 "sample_torrents": [],
-                                "sample_urls": []
+                                "sample_urls": [],
                             }
 
                         # 添加示例数据(最多3个)
                         data = tracker_msg_map[key]
                         if len(data["sample_torrents"]) < self.MAX_SAMPLE_COUNT:
-                            data["sample_torrents"].append({
-                                "name": tracker.torrent_name,
-                                "file": tracker.torrent_file,
-                                "hash": tracker.torrent_hash
-                            })
+                            data["sample_torrents"].append(
+                                {
+                                    "name": tracker.torrent_name,
+                                    "file": tracker.torrent_file,
+                                    "hash": tracker.torrent_hash,
+                                }
+                            )
 
                         if len(data["sample_urls"]) < self.MAX_SAMPLE_COUNT and tracker.tracker_url:
                             if tracker.tracker_url not in data["sample_urls"]:
@@ -280,7 +276,7 @@ class TrackerMessageLogger:
                             "create_time": current_time,
                             "update_time": current_time,
                             "create_by": "system",
-                            "update_by": "system"
+                            "update_by": "system",
                         }
 
                         # 执行UPSERT
@@ -297,7 +293,9 @@ class TrackerMessageLogger:
                             batch_count = 0
 
                     except Exception as e:
-                        logger.error(f"处理消息失败: {e}, tracker_host={msg_data.get('tracker_host')}, msg={msg_data.get('msg', '')[:50]}")
+                        logger.error(
+                            f"处理消息失败: {e}, tracker_host={msg_data.get('tracker_host')}, msg={msg_data.get('msg', '')[:50]}"
+                        )
                         with self._stats_lock:
                             self.total_messages_processed += 1
                         continue
@@ -341,11 +339,7 @@ class TrackerMessageLogger:
 
                 # 规则1: 时间限制(物理删除)
                 cutoff_date = datetime.now() - timedelta(days=retention_days)
-                result = await db.execute(
-                    select(TrackerMessageLog).filter(
-                        TrackerMessageLog.first_seen < cutoff_date
-                    )
-                )
+                result = await db.execute(select(TrackerMessageLog).filter(TrackerMessageLog.first_seen < cutoff_date))
                 old_logs = result.scalars().all()
 
                 if old_logs:
@@ -365,9 +359,7 @@ class TrackerMessageLogger:
                     # 查询最旧的记录
                     excess_count = total_count - max_records
                     result = await db.execute(
-                        select(TrackerMessageLog)
-                        .order_by(TrackerMessageLog.first_seen.asc())
-                        .limit(excess_count)
+                        select(TrackerMessageLog).order_by(TrackerMessageLog.first_seen.asc()).limit(excess_count)
                     )
                     oldest_logs = result.scalars().all()
 
@@ -401,8 +393,8 @@ class TrackerMessageLogger:
         """
         try:
             # 支持动态参数覆盖配置
-            retention_days = kwargs.get('retention_days', self.retention_days)
-            max_records = kwargs.get('max_records', self.max_records)
+            retention_days = kwargs.get("retention_days", self.retention_days)
+            max_records = kwargs.get("max_records", self.max_records)
 
             self.last_execution_time = datetime.now()
             with self._stats_lock:
@@ -416,7 +408,7 @@ class TrackerMessageLogger:
                 "status": "running",
                 "message": "Tracker message logging started",
                 "retention_days": retention_days,
-                "max_records": max_records
+                "max_records": max_records,
             }
 
             logger.info(f"[{self.name}] 开始执行, 第{self.execution_count}次")
@@ -430,16 +422,18 @@ class TrackerMessageLogger:
                 logger.warning(f"[{self.name}] 未收集到任何tracker消息")
                 with self._stats_lock:
                     self.success_count += 1
-                result.update({
-                    "status": "success",
-                    "message": "未收集到任何tracker消息",
-                    "total_messages_processed": 0,
-                    "total_new_messages": 0,
-                    "total_duplicates": 0,
-                    "total_cleaned": 0,
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count
-                })
+                result.update(
+                    {
+                        "status": "success",
+                        "message": "未收集到任何tracker消息",
+                        "total_messages_processed": 0,
+                        "total_new_messages": 0,
+                        "total_duplicates": 0,
+                        "total_cleaned": 0,
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                    }
+                )
                 return result
 
             # Step 2: 批量处理消息(优化性能)
@@ -454,22 +448,25 @@ class TrackerMessageLogger:
             with self._stats_lock:
                 self.success_count += 1
 
-            result.update({
-                "status": "success",
-                "message": f"处理完成: 新增{self.total_new_messages}条, 重复{self.total_duplicates}条, 清理{cleaned_count}条",
-                "total_messages_processed": self.total_messages_processed,
-                "total_new_messages": self.total_new_messages,
-                "total_duplicates": self.total_duplicates,
-                "total_cleaned": self.total_cleaned,
-                "success_count": self.success_count,
-                "failure_count": self.failure_count
-            })
+            result.update(
+                {
+                    "status": "success",
+                    "message": f"处理完成: 新增{self.total_new_messages}条, 重复{self.total_duplicates}条, 清理{cleaned_count}条",
+                    "total_messages_processed": self.total_messages_processed,
+                    "total_new_messages": self.total_new_messages,
+                    "total_duplicates": self.total_duplicates,
+                    "total_cleaned": self.total_cleaned,
+                    "success_count": self.success_count,
+                    "failure_count": self.failure_count,
+                }
+            )
 
             logger.info(f"[{self.name}] 执行完成: {result['message']}")
 
             # 任务完成后立即调用候选池填充任务（方案B）
             try:
                 from app.tasks.scheduler.tracker_candidate_pool import TrackerCandidatePoolTask
+
                 candidate_task = TrackerCandidatePoolTask()
                 candidate_result = await candidate_task.execute(batch_size=self.QUERY_BATCH_SIZE)
 
@@ -480,17 +477,14 @@ class TrackerMessageLogger:
                     "new_candidates": candidate_result.get("new_candidates", 0),
                     "duplicates": candidate_result.get("duplicates", 0),
                     "errors": candidate_result.get("errors", 0),
-                    "message": candidate_result.get("message", "")
+                    "message": candidate_result.get("message", ""),
                 }
 
                 logger.info(f"[{self.name}] 候选池填充任务已触发: {candidate_result.get('message')}")
 
             except Exception as e:
                 logger.error(f"[{self.name}] 触发候选池填充任务失败: {e}", exc_info=True)
-                result["candidate_pool_task"] = {
-                    "triggered": False,
-                    "error": str(e)
-                }
+                result["candidate_pool_task"] = {"triggered": False, "error": str(e)}
 
             return result
 
@@ -504,7 +498,7 @@ class TrackerMessageLogger:
                 "status": "failed",
                 "message": f"任务执行失败: {str(e)}",
                 "success_count": self.success_count,
-                "failure_count": self.failure_count
+                "failure_count": self.failure_count,
             }
             logger.error(f"[{self.name}] 执行失败: {e}", exc_info=True)
             return error_result
@@ -534,22 +528,22 @@ class TrackerMessageLogger:
 
             while True:
                 # 分页查询tracker信息
-                query = db.query(
-                    TrackerInfo.tracker_id,
-                    TrackerInfo.tracker_name,
-                    TrackerInfo.tracker_url,
-                    TrackerInfo.last_announce_msg,
-                    TrackerInfo.last_scrape_msg,
-                    TorrentInfo.name.label('torrent_name'),
-                    TorrentInfo.hash.label('torrent_hash'),
-                    TorrentInfo.torrent_file.label('torrent_file')
-                ).join(
-                    TorrentInfo,
-                    TrackerInfo.torrent_info_id == TorrentInfo.info_id
-                ).filter(
-                    TorrentInfo.dr == 0,
-                    TrackerInfo.dr == 0
-                ).limit(self.QUERY_BATCH_SIZE).offset(offset)
+                query = (
+                    db.query(
+                        TrackerInfo.tracker_id,
+                        TrackerInfo.tracker_name,
+                        TrackerInfo.tracker_url,
+                        TrackerInfo.last_announce_msg,
+                        TrackerInfo.last_scrape_msg,
+                        TorrentInfo.name.label("torrent_name"),
+                        TorrentInfo.hash.label("torrent_hash"),
+                        TorrentInfo.torrent_file.label("torrent_file"),
+                    )
+                    .join(TorrentInfo, TrackerInfo.torrent_info_id == TorrentInfo.info_id)
+                    .filter(TorrentInfo.dr == 0, TrackerInfo.dr == 0)
+                    .limit(self.QUERY_BATCH_SIZE)
+                    .offset(offset)
+                )
 
                 batch = query.all()
 
@@ -578,17 +572,15 @@ class TrackerMessageLogger:
                             "tracker_host": tracker_host,
                             "msg": msg.strip(),
                             "sample_torrents": [],
-                            "sample_urls": []
+                            "sample_urls": [],
                         }
 
                     # 添加示例数据(最多3个)
                     data = tracker_msg_map[key]
                     if len(data["sample_torrents"]) < self.MAX_SAMPLE_COUNT:
-                        data["sample_torrents"].append({
-                            "name": tracker.torrent_name,
-                            "file": tracker.torrent_file,
-                            "hash": tracker.torrent_hash
-                        })
+                        data["sample_torrents"].append(
+                            {"name": tracker.torrent_name, "file": tracker.torrent_file, "hash": tracker.torrent_hash}
+                        )
 
                     if len(data["sample_urls"]) < self.MAX_SAMPLE_COUNT and tracker.tracker_url:
                         if tracker.tracker_url not in data["sample_urls"]:
@@ -736,7 +728,7 @@ class TrackerMessageLogger:
                         "create_time": current_time,
                         "update_time": current_time,
                         "create_by": "system",
-                        "update_by": "system"
+                        "update_by": "system",
                     }
 
                     # 执行UPSERT
@@ -746,7 +738,9 @@ class TrackerMessageLogger:
                     new_count += 1
 
                 except Exception as e:
-                    logger.error(f"处理消息失败: {e}, tracker_host={msg_data.get('tracker_host')}, msg={msg_data.get('msg', '')[:50]}")
+                    logger.error(
+                        f"处理消息失败: {e}, tracker_host={msg_data.get('tracker_host')}, msg={msg_data.get('msg', '')[:50]}"
+                    )
                     with self._stats_lock:
                         self.total_messages_processed += 1
                     continue
@@ -791,9 +785,7 @@ class TrackerMessageLogger:
 
             # 规则1: 时间限制(物理删除)
             cutoff_date = datetime.now() - timedelta(days=retention_days)
-            old_logs = db.query(TrackerMessageLog).filter(
-                TrackerMessageLog.first_seen < cutoff_date
-            ).all()
+            old_logs = db.query(TrackerMessageLog).filter(TrackerMessageLog.first_seen < cutoff_date).all()
 
             if old_logs:
                 count = len(old_logs)
@@ -810,9 +802,9 @@ class TrackerMessageLogger:
             if total_count > max_records:
                 # 查询最旧的记录
                 excess_count = total_count - max_records
-                oldest_logs = db.query(TrackerMessageLog).order_by(
-                    TrackerMessageLog.first_seen.asc()
-                ).limit(excess_count).all()
+                oldest_logs = (
+                    db.query(TrackerMessageLog).order_by(TrackerMessageLog.first_seen.asc()).limit(excess_count).all()
+                )
 
                 for log in oldest_logs:
                     db.delete(log)
@@ -848,7 +840,7 @@ class TrackerMessageLogger:
                 "total_duplicates": self.total_duplicates,
                 "total_cleaned": self.total_cleaned,
                 "last_execution_time": self.last_execution_time,
-                "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0
+                "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0,
             }
 
     def get_schedule_config(self) -> Dict[str, Any]:
@@ -856,15 +848,15 @@ class TrackerMessageLogger:
         return {
             "cron_expression": "0 */1 * * *",  # 每小时执行一次
             "timezone": "Asia/Shanghai",
-            "max_instances": 1,     # 防止重叠执行
-            "coalesce": True,       # 合并错过的执行
+            "max_instances": 1,  # 防止重叠执行
+            "coalesce": True,  # 合并错过的执行
             "misfire_grace_time": 900,  # 错过执行的宽限时间（15分钟）
             "default_interval": self.default_interval,
             "retention_days": self.retention_days,
             "max_records": self.max_records,
             "batch_size": self.BATCH_SIZE,
             "query_batch_size": self.QUERY_BATCH_SIZE,
-            "estimated_duration": "5-15 minutes"
+            "estimated_duration": "5-15 minutes",
         }
 
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -876,7 +868,7 @@ class TrackerMessageLogger:
                     "average_new_messages_per_execution": 0,
                     "average_duplicates_per_execution": 0,
                     "average_cleaned_per_execution": 0,
-                    "total_processing_time": "N/A"
+                    "total_processing_time": "N/A",
                 }
 
             return {
@@ -884,7 +876,15 @@ class TrackerMessageLogger:
                 "average_new_messages_per_execution": self.total_new_messages / self.execution_count,
                 "average_duplicates_per_execution": self.total_duplicates / self.execution_count,
                 "average_cleaned_per_execution": self.total_cleaned / self.execution_count,
-                "new_message_rate": (self.total_new_messages / self.total_messages_processed * 100) if self.total_messages_processed > 0 else 0,
-                "duplicate_rate": (self.total_duplicates / self.total_messages_processed * 100) if self.total_messages_processed > 0 else 0,
-                "task_reliability": (self.success_count / self.execution_count * 100)
+                "new_message_rate": (
+                    (self.total_new_messages / self.total_messages_processed * 100)
+                    if self.total_messages_processed > 0
+                    else 0
+                ),
+                "duplicate_rate": (
+                    (self.total_duplicates / self.total_messages_processed * 100)
+                    if self.total_messages_processed > 0
+                    else 0
+                ),
+                "task_reliability": (self.success_count / self.execution_count * 100),
             }

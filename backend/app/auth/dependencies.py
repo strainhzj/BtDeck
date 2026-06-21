@@ -100,9 +100,9 @@ async def require_authenticated_user(request: Request) -> AuthenticatedUserInfo:
 
 
 def get_current_user(
-        db: Session = Depends(get_db),
-        token: Optional[str] = Cookie(None),
-        auth_header: Optional[str] = Depends(oauth2_scheme)
+    db: Session = Depends(get_db),
+    token: Optional[str] = Cookie(None),
+    auth_header: Optional[str] = Depends(oauth2_scheme),
 ):
     """从Cookie或Authorization头中获取当前用户"""
     credentials_exception = HTTPException(

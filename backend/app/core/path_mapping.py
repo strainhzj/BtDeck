@@ -372,12 +372,7 @@ class PathMappingService:
         return self.mappings.copy()
 
     def add_mapping(
-        self,
-        name: str,
-        internal: str,
-        external: str,
-        description: Optional[str] = None,
-        mapping_type: str = "local"
+        self, name: str, internal: str, external: str, description: Optional[str] = None, mapping_type: str = "local"
     ):
         """
         添加新的路径映射
@@ -408,7 +403,7 @@ class PathMappingService:
             "name": name,
             "internal": self._normalize_path(internal),
             "external": self._normalize_path(external),
-            "type": mapping_type
+            "type": mapping_type,
         }
 
         if description:
@@ -443,10 +438,7 @@ class PathMappingService:
         Returns:
             JSON格式的配置
         """
-        config = {
-            "mappings": self.mappings,
-            "default_mapping": self.default_mapping
-        }
+        config = {"mappings": self.mappings, "default_mapping": self.default_mapping}
 
         return json.dumps(config, indent=2, ensure_ascii=False)
 
@@ -496,7 +488,7 @@ class PathMappingConverter:
             logger.info("路径映射规则为空，不进行路径转换")
             return
 
-        lines = rules_text.strip().split('\n')
+        lines = rules_text.strip().split("\n")
         for line_num, line in enumerate(lines, 1):
             line = line.strip()
             if not line:
@@ -522,11 +514,7 @@ class PathMappingConverter:
             # 判断转换类型
             conversion_type = self._detect_conversion_type(source_path, target_path)
 
-            rule = {
-                "source": source_path,
-                "target": target_path,
-                "type": conversion_type
-            }
+            rule = {"source": source_path, "target": target_path, "type": conversion_type}
 
             self.rules.append(rule)
             logger.debug(f"加载路径转换规则: {source_path} -> {target_path} ({conversion_type})")
@@ -637,7 +625,7 @@ class PathMappingConverter:
                 # 检查是否匹配源路径（前缀匹配）
                 if normalized_path.startswith(source):
                     # 获取相对路径（移除源路径前缀）
-                    relative_path = normalized_path[len(source):]
+                    relative_path = normalized_path[len(source) :]
 
                     if conversion_type == "replace":
                         # 替换：目标路径包含源路径，需要保留相对路径
@@ -690,8 +678,9 @@ class PathMappingConverter:
         # Windows不允许: < > : " | ? *
         # Linux允许除null外的所有字符
         import platform
+
         if platform.system() == "Windows":
-            illegal_chars = ['<', '>', ':', '"', '|', '?', '*']
+            illegal_chars = ["<", ">", ":", '"', "|", "?", "*"]
             if any(char in path for char in illegal_chars):
                 logger.warning(f"路径包含非法字符: {path}")
                 return False
@@ -749,7 +738,7 @@ class UnifiedPathMappingService:
         self,
         path_mapping: Optional[str] = None,
         path_mapping_rules: Optional[str] = None,
-        require_json_config: bool = False
+        require_json_config: bool = False,
     ):
         """
         初始化统一路径映射服务
@@ -768,16 +757,13 @@ class UnifiedPathMappingService:
 
         # 验证必需配置
         if require_json_config and not path_mapping:
-            raise ValueError(
-                "等级3删除功能必须配置 path_mapping（JSON格式）。"
-                "请先在下载器设置中配置路径映射。"
-            )
+            raise ValueError("等级3删除功能必须配置 path_mapping（JSON格式）。" "请先在下载器设置中配置路径映射。")
 
         # 优先使用 path_mapping（JSON格式）
         if path_mapping:
             try:
                 self.path_mapping_service = PathMappingService(path_mapping)
-                self.config_type = 'json'
+                self.config_type = "json"
                 logger.info("使用 path_mapping（JSON格式）进行路径映射")
             except Exception as e:
                 logger.error(f"加载 path_mapping 失败: {str(e)}")
@@ -789,7 +775,7 @@ class UnifiedPathMappingService:
             try:
                 self.path_mapping_converter = PathMappingConverter(path_mapping_rules)
                 if self.path_mapping_converter.is_enabled():
-                    self.config_type = 'rules'
+                    self.config_type = "rules"
                     logger.warning(
                         "⚠️ 使用 path_mapping_rules（多行文本格式）进行路径映射。"
                         "建议配置 path_mapping（JSON格式）以获得更好的功能支持。"
@@ -865,9 +851,8 @@ class UnifiedPathMappingService:
         Returns:
             如果配置了 path_mapping 或 path_mapping_rules 则返回True
         """
-        return (
-            self.path_mapping_service is not None or
-            (self.path_mapping_converter is not None and self.path_mapping_converter.is_enabled())
+        return self.path_mapping_service is not None or (
+            self.path_mapping_converter is not None and self.path_mapping_converter.is_enabled()
         )
 
     def get_config_type(self) -> Optional[str]:

@@ -2,6 +2,7 @@
 异步批量删除执行器
 在后台执行批量删除任务，支持超时处理、跳过失败种子、统计成功/失败数量。
 """
+
 import asyncio
 from typing import List, Dict, Any, Optional, Callable
 from datetime import datetime
@@ -33,12 +34,7 @@ class AsyncDeletionExecutor:
         self.request = request
 
     async def execute_deletion_task(
-        self,
-        task_id: str,
-        torrent_info_ids: List[str],
-        delete_level: int,
-        operator: str,
-        request
+        self, task_id: str, torrent_info_ids: List[str], delete_level: int, operator: str, request
     ):
         """
         执行批量删除任务
@@ -53,10 +49,7 @@ class AsyncDeletionExecutor:
         task_manager = get_deletion_task_manager()
 
         # 更新任务状态为运行中
-        await task_manager.update_task_status(
-            task_id=task_id,
-            status=TaskStatus.RUNNING
-        )
+        await task_manager.update_task_status(task_id=task_id, status=TaskStatus.RUNNING)
 
         success_items = []
         failed_items = []
@@ -69,45 +62,32 @@ class AsyncDeletionExecutor:
                     # 使用wait_for实现超时控制
                     result = await asyncio.wait_for(
                         self._delete_single_torrent(
-                            info_id=info_id,
-                            delete_level=delete_level,
-                            operator=operator,
-                            request=self.request
+                            info_id=info_id, delete_level=delete_level, operator=operator, request=self.request
                         ),
-                        timeout=self.SINGLE_TORRENT_TIMEOUT
+                        timeout=self.SINGLE_TORRENT_TIMEOUT,
                     )
 
                     if result.get("success"):
-                        success_items.append({
-                            "info_id": info_id,
-                            "result": result.get("data")
-                        })
+                        success_items.append({"info_id": info_id, "result": result.get("data")})
 
                         # 更新进度
                         await task_manager.update_task_status(
                             task_id=task_id,
                             status=TaskStatus.RUNNING,
                             success_count=len(success_items),
-                            failed_count=len(failed_items)
+                            failed_count=len(failed_items),
                         )
                     else:
-                        failed_items.append({
-                            "info_id": info_id,
-                            "error": result.get("msg", "未知错误")
-                        })
+                        failed_items.append({"info_id": info_id, "error": result.get("msg", "未知错误")})
 
                 except asyncio.TimeoutError:
-                    failed_items.append({
-                        "info_id": info_id,
-                        "error": f"删除超时（超过{self.SINGLE_TORRENT_TIMEOUT}秒）"
-                    })
+                    failed_items.append(
+                        {"info_id": info_id, "error": f"删除超时（超过{self.SINGLE_TORRENT_TIMEOUT}秒）"}
+                    )
                     print(f"种子 {info_id} 删除超时")
 
                 except Exception as e:
-                    failed_items.append({
-                        "info_id": info_id,
-                        "error": str(e)
-                    })
+                    failed_items.append({"info_id": info_id, "error": str(e)})
                     print(f"删除种子 {info_id} 时发生异常: {e}")
 
             # 确定最终状态
@@ -129,24 +109,18 @@ class AsyncDeletionExecutor:
                 failed_count=len(failed_items),
                 error_message=error_message,
                 results=success_items,
-                failed_items=failed_items
+                failed_items=failed_items,
             )
 
         except Exception as e:
             # 任务执行过程中发生严重异常
             await task_manager.update_task_status(
-                task_id=task_id,
-                status=TaskStatus.FAILED,
-                error_message=f"任务执行异常: {str(e)}"
+                task_id=task_id, status=TaskStatus.FAILED, error_message=f"任务执行异常: {str(e)}"
             )
             print(f"任务 {task_id} 执行异常: {e}")
 
     async def _delete_single_torrent(
-        self,
-        info_id: str,
-        delete_level: int,
-        operator: str,
-        request: Request
+        self, info_id: str, delete_level: int, operator: str, request: Request
     ) -> Dict[str, Any]:
         """
         删除单个种子
@@ -167,26 +141,15 @@ class AsyncDeletionExecutor:
 
             # 调用删除方法
             result = await deletion_service.delete_by_level(
-                torrent_info_id=info_id,
-                delete_level=delete_level,
-                operator=operator
+                torrent_info_id=info_id, delete_level=delete_level, operator=operator
             )
 
             if result.get("success"):
-                return {
-                    "success": True,
-                    "data": result
-                }
+                return {"success": True, "data": result}
             else:
-                return {
-                    "success": False,
-                    "msg": result.get("error", "删除失败")
-                }
+                return {"success": False, "msg": result.get("error", "删除失败")}
 
         except Exception as e:
-            return {
-                "success": False,
-                "msg": f"删除异常: {str(e)}"
-            }
+            return {"success": False, "msg": f"删除异常: {str(e)}"}
         finally:
             db.close()

@@ -8,6 +8,7 @@ def init_routers(app: FastAPI):
     初始化路由
     """
     from app.api.api import api_router
+
     # 旧 app.api.router 已归档为 app.api._legacy_router_unused，禁止在生产入口重新挂载。
     # from app.api.servarr import arr_router
     # from app.api.servcookie import cookie_router

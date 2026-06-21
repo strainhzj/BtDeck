@@ -26,8 +26,8 @@ class TagAdapterFactory:
 
     # 支持的下载器类型
     SUPPORTED_TYPES = {
-        'qbittorrent': QBittorrentTagAdapter,
-        'transmission': TransmissionTagAdapter,
+        "qbittorrent": QBittorrentTagAdapter,
+        "transmission": TransmissionTagAdapter,
     }
 
     @classmethod
@@ -39,7 +39,7 @@ class TagAdapterFactory:
         rpc_url: Optional[str] = None,
         session_id: Optional[str] = None,
         username: Optional[str] = None,  # ✅ 新增：用于认证
-        password: Optional[str] = None   # ✅ 新增：用于认证
+        password: Optional[str] = None,  # ✅ 新增：用于认证
     ) -> Optional[TorrentTagAdapter]:
         """
         创建标签适配器实例
@@ -88,18 +88,15 @@ class TagAdapterFactory:
             downloader_id = downloader.downloader_id
 
             # 根据类型创建适配器
-            if downloader_type == 'qbittorrent':
+            if downloader_type == "qbittorrent":
                 if not client:
                     logger.error(f"创建qBittorrent适配器失败: 缺少client参数，下载器ID: {downloader_id}")
                     return None
                 return adapter_class(downloader_id=downloader_id, client=client)
 
-            elif downloader_type == 'transmission':
+            elif downloader_type == "transmission":
                 if not rpc_url:
-                    logger.error(
-                        f"创建Transmission适配器失败: 缺少rpc_url参数，"
-                        f"下载器ID: {downloader_id}"
-                    )
+                    logger.error(f"创建Transmission适配器失败: 缺少rpc_url参数，" f"下载器ID: {downloader_id}")
                     return None
                 # ✅ 修复：传递username和password参数用于认证
                 return adapter_class(
@@ -108,7 +105,7 @@ class TagAdapterFactory:
                     rpc_url=rpc_url,
                     session_id=session_id,
                     username=username,
-                    password=password
+                    password=password,
                 )
 
             return None
@@ -135,7 +132,7 @@ class TagAdapterFactory:
         """
         if downloader_type is None:
             logger.debug(f"下载器类型为 None，返回 qbittorrent（默认值）")
-            return 'qbittorrent'
+            return "qbittorrent"
 
         # 使用枚举类规范化并转换为名称
         normalized_int = DownloaderTypeEnum.normalize(downloader_type)

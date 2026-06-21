@@ -51,8 +51,7 @@ def _read_db_version(db_path: str) -> Optional[str]:
         conn = sqlite3.connect(db_path)
         try:
             has_table = conn.execute(
-                "SELECT name FROM sqlite_master "
-                "WHERE type='table' AND name='alembic_version'"
+                "SELECT name FROM sqlite_master " "WHERE type='table' AND name='alembic_version'"
             ).fetchone()
             if not has_table:
                 return None
@@ -165,8 +164,7 @@ def migrate_database() -> None:
             # 多 head（迁移链分叉）是危险状态，upgrade head 会报错。
             # 显式抛错而非隐式取 heads[0]，避免指向错误目标。
             raise RuntimeError(
-                f"迁移链有 {len(heads)} 个 head（分叉）：{heads}。"
-                f"请先合并分叉（alembic merge）再启动。"
+                f"迁移链有 {len(heads)} 个 head（分叉）：{heads}。" f"请先合并分叉（alembic merge）再启动。"
             )
         head = heads[0]
 

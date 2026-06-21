@@ -1,23 +1,37 @@
 from fastapi import APIRouter
-from app.api.endpoints import login,downloader,cuser,torrents,tracker,tasks,cron_tasks,advanced_search
-from app.api.endpoints import tracker_keywords, tracker_messages, tracker_test, tracker_keywords_pools, tracker_keywords_pools
+from app.api.endpoints import login, downloader, cuser, torrents, tracker, tasks, cron_tasks, advanced_search
+from app.api.endpoints import (
+    tracker_keywords,
+    tracker_messages,
+    tracker_test,
+    tracker_keywords_pools,
+    tracker_keywords_pools,
+)
 from app.api.endpoints import audit_logs, recycle_bin, duplicate_torrents
 from app.api.endpoints import dashboard
+
 # 导入下载器设置相关API
 from app.api.endpoints import downloader_settings, setting_templates, downloader_capabilities
 from app.api.endpoints import downloader_capabilities_management
+
 # 导入标签管理API
 from app.api.endpoints import tag_management
+
 # 导入种子文件备份API
 from app.api.endpoints import torrent_backup
+
 # 导入下载器路径维护API
 from app.api.endpoints import downloader_path_maintenance
+
 # 导入种子转移API
 from app.api.endpoints import seed_transfer
+
 # 导入tracker汇报配置API
 from app.api.endpoints import tracker_reannounce
+
 # 导入种子状态API
 from app.api.endpoints import torrent_status
+
 # 导入通知中心API
 from app.api.endpoints import notifications
 

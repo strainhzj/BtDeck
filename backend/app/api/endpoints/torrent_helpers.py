@@ -10,7 +10,12 @@ import bencodepy
 from sqlalchemy import and_, or_, asc, desc
 from sqlalchemy.orm import Session
 
-from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo, TrackerInfo as trackerInfoModel, TrackerInfo
+from app.torrents.models import (
+    TorrentInfo as torrentInfoModel,
+    TorrentInfo,
+    TrackerInfo as trackerInfoModel,
+    TrackerInfo,
+)
 from app.torrents.responseVO import TorrentInfoVO
 from app.torrents.trackerVO import TrackerInfoVO
 from app.models.setting_templates import DownloaderTypeEnum
@@ -29,54 +34,48 @@ def custom_serializer(obj):
         return obj.isoformat()  # 转换为 ISO 8601 字符串
     if isinstance(obj, set):
         return list(obj)  # 集合转列表
-    if hasattr(obj, '__dict__'):
+    if hasattr(obj, "__dict__"):
         return obj.__dict__  # 自定义对象转字典
     raise TypeError(f"Object of type {type(obj)} is not JSON serializable")
 
 
 # 通用查询方法
 def get_torrent_infos(
-        db: Session,
-        downloader_id: Optional[str] = None,
-        downloader_name_like: Optional[str] = None,
-        name_like: Optional[str] = None,
-        save_path_like: Optional[str] = None,
-        size_min: Optional[str] = None,
-        size_max: Optional[str] = None,
-        added_date_min: Optional[str] = None,
-        added_date_max: Optional[str] = None,
-        completed_date_min: Optional[str] = None,
-        completed_date_max: Optional[str] = None,
-        tags_like: Optional[str] = None,
-        category_like: Optional[str] = None,
-        status: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
-        sort_by: Optional[str] = None,
-        sort_order: Optional[str] = None,
-        tracker: Optional[str] = None,
+    db: Session,
+    downloader_id: Optional[str] = None,
+    downloader_name_like: Optional[str] = None,
+    name_like: Optional[str] = None,
+    save_path_like: Optional[str] = None,
+    size_min: Optional[str] = None,
+    size_max: Optional[str] = None,
+    added_date_min: Optional[str] = None,
+    added_date_max: Optional[str] = None,
+    completed_date_min: Optional[str] = None,
+    completed_date_max: Optional[str] = None,
+    tags_like: Optional[str] = None,
+    category_like: Optional[str] = None,
+    status: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    sort_by: Optional[str] = None,
+    sort_order: Optional[str] = None,
+    tracker: Optional[str] = None,
 ) -> Dict[str, Any]:
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
     # 构建基础查询（排除回收站中的种子：dr=0 且 deleted_at=NULL）
     query = db.query(TorrentInfo).filter(
-        and_(
-            TorrentInfo.dr == 0,
-            TorrentInfo.deleted_at.is_(None)  # 只显示未移入回收站的种子
-        )
+        and_(TorrentInfo.dr == 0, TorrentInfo.deleted_at.is_(None))  # 只显示未移入回收站的种子
     )
 
     # 构建计数查询（相同的过滤条件）
     count_query = db.query(TorrentInfo).filter(
-        and_(
-            TorrentInfo.dr == 0,
-            TorrentInfo.deleted_at.is_(None)  # 只统计未移入回收站的种子
-        )
+        and_(TorrentInfo.dr == 0, TorrentInfo.deleted_at.is_(None))  # 只统计未移入回收站的种子
     )
 
     # 添加过滤条件
     if downloader_id:
         # 支持多选：逗号分隔的字符串
-        downloader_ids = [id.strip() for id in downloader_id.split(',') if id.strip()]
+        downloader_ids = [id.strip() for id in downloader_id.split(",") if id.strip()]
         if len(downloader_ids) == 0:
             # 空列表：不添加过滤条件（避免SQL语法错误）
             pass
@@ -151,8 +150,12 @@ def get_torrent_infos(
         count_query = count_query.filter(TorrentInfo.category.like(like_pattern))
 
     if tracker:
-        tracker_query_result = db.query(TrackerInfo.torrent_info_id).filter(
-            TrackerInfo.tracker_url.like(f"%{tracker}%")).filter(TrackerInfo.dr == 0).all()
+        tracker_query_result = (
+            db.query(TrackerInfo.torrent_info_id)
+            .filter(TrackerInfo.tracker_url.like(f"%{tracker}%"))
+            .filter(TrackerInfo.dr == 0)
+            .all()
+        )
         if tracker_query_result.__len__() > 0:
             info_id_list = [row[0] for row in tracker_query_result]
             query = query.filter(TorrentInfo.info_id.in_(info_id_list))
@@ -161,25 +164,17 @@ def get_torrent_infos(
     # 状态筛选：支持多选（逗号分隔），error状态满足 status='error' 或 has_tracker_error=True 之一即可
     if status:
         # 支持多选：逗号分隔的字符串
-        statuses = [s.strip() for s in status.split(',') if s.strip()]
+        statuses = [s.strip() for s in status.split(",") if s.strip()]
 
         if len(statuses) == 0:
             # 空列表：不添加过滤条件（避免SQL语法错误）
             pass
         elif len(statuses) == 1:
             # 单个状态：使用原有逻辑
-            if statuses[0] == 'error':
-                query = query.filter(
-                    or_(
-                        TorrentInfo.status == 'error',
-                        TorrentInfo.has_tracker_error == True
-                    )
-                )
+            if statuses[0] == "error":
+                query = query.filter(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error == True))
                 count_query = count_query.filter(
-                    or_(
-                        TorrentInfo.status == 'error',
-                        TorrentInfo.has_tracker_error == True
-                    )
+                    or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error == True)
                 )
             else:
                 query = query.filter(TorrentInfo.status == statuses[0])
@@ -188,14 +183,9 @@ def get_torrent_infos(
             # 多个状态：使用 or_ 组合多个条件（或关系）
             status_conditions = []
             for s in statuses:
-                if s == 'error':
+                if s == "error":
                     # error 状态特殊处理
-                    status_conditions.append(
-                        or_(
-                            TorrentInfo.status == 'error',
-                            TorrentInfo.has_tracker_error == True
-                        )
-                    )
+                    status_conditions.append(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error == True))
                 else:
                     status_conditions.append(TorrentInfo.status == s)
 
@@ -222,31 +212,28 @@ def get_torrent_infos(
     query_result_list = query.offset(skip).limit(limit).all()
     data = [convert_to_vo_with_trackers(db, torrent) for torrent in query_result_list]
 
-    return {
-        "total": total,
-        "data": data
-    }
+    return {"total": total, "data": data}
 
 
 def get_torrent_infos_legacy(
-        db: Session,
-        downloader_id: Optional[str] = None,
-        downloader_name_like: Optional[str] = None,
-        name_like: Optional[str] = None,
-        save_path_like: Optional[str] = None,
-        size_min: Optional[str] = None,
-        size_max: Optional[str] = None,
-        added_date_min: Optional[str] = None,
-        added_date_max: Optional[str] = None,
-        completed_date_min: Optional[str] = None,
-        completed_date_max: Optional[str] = None,
-        tags_like: Optional[str] = None,
-        category_like: Optional[str] = None,
-        skip: int = 0,
-        limit: int = 100,
-        sort_by: Optional[str] = None,
-        sort_order: Optional[str] = None,
-        tracker: Optional[str] = None,
+    db: Session,
+    downloader_id: Optional[str] = None,
+    downloader_name_like: Optional[str] = None,
+    name_like: Optional[str] = None,
+    save_path_like: Optional[str] = None,
+    size_min: Optional[str] = None,
+    size_max: Optional[str] = None,
+    added_date_min: Optional[str] = None,
+    added_date_max: Optional[str] = None,
+    completed_date_min: Optional[str] = None,
+    completed_date_max: Optional[str] = None,
+    tags_like: Optional[str] = None,
+    category_like: Optional[str] = None,
+    skip: int = 0,
+    limit: int = 100,
+    sort_by: Optional[str] = None,
+    sort_order: Optional[str] = None,
+    tracker: Optional[str] = None,
 ) -> List[TorrentInfo]:
     """通用查询方法（旧版本，保持兼容性），支持多种过滤条件和排序"""
     result = get_torrent_infos(
@@ -267,7 +254,7 @@ def get_torrent_infos_legacy(
         limit=limit,
         sort_by=sort_by,
         sort_order=sort_order,
-        tracker=tracker
+        tracker=tracker,
     )
     return result["data"]
 
@@ -296,7 +283,7 @@ def convert_to_vo(torrent: torrentInfoModel) -> TorrentInfoVO:
         tags=torrent.tags,
         category=torrent.category,
         super_seeding=torrent.super_seeding,
-        enabled=torrent.enabled
+        enabled=torrent.enabled,
     )
 
 
@@ -309,10 +296,11 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
 
     # 查询关联的tracker信息
     # 🔧 修复：使用 torrent.hash 查询 tracker，因为 tracker 表的 torrent_info_id 字段存储的是 hash
-    trackers = db.query(TrackerInfo).filter(
-        TrackerInfo.torrent_info_id == torrent.info_id,
-        TrackerInfo.dr == 0  # 只查询未逻辑删除的tracker数据
-    ).all()
+    trackers = (
+        db.query(TrackerInfo)
+        .filter(TrackerInfo.torrent_info_id == torrent.info_id, TrackerInfo.dr == 0)  # 只查询未逻辑删除的tracker数据
+        .all()
+    )
 
     # 生成tracker_info数组（新结构）
     tracker_info_list = []
@@ -329,13 +317,14 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
     downloader_type = "qbittorrent"  # 默认为 qBittorrent
     try:
         from app.downloader.models import BtDownloaders
-        downloader = db.query(BtDownloaders.downloader_type).filter(
-            BtDownloaders.downloader_id == torrent.downloader_id
-        ).first()
+
+        downloader = (
+            db.query(BtDownloaders.downloader_type).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
+        )
         if downloader:
             # 从 Row 对象中正确提取整数值
             # SQLAlchemy 查询单列返回 Row 对象，需要通过列名或索引访问
-            if hasattr(downloader, 'downloader_type'):
+            if hasattr(downloader, "downloader_type"):
                 # Row 对象：通过列名访问
                 downloader_type_raw = downloader.downloader_type
             elif isinstance(downloader, (tuple, list)) and len(downloader) > 0:
@@ -391,7 +380,7 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
             last_announce_succeeded=announce_status_text,  # 返回中文状态
             last_announce_msg=tracker.last_announce_msg,
             last_scrape_succeeded=scrape_status_text,  # 返回中文状态
-            last_scrape_msg=tracker.last_scrape_msg
+            last_scrape_msg=tracker.last_scrape_msg,
         )
         tracker_info_list.append(tracker_vo)
 
@@ -434,7 +423,7 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
         last_announce_succeeded=last_announce_succeeded_str,
         last_announce_msg=last_announce_msg_str,
         last_scrape_succeeded=last_scrape_succeeded_str,
-        tracker_info=tracker_info_list
+        tracker_info=tracker_info_list,
     )
 
 
@@ -444,7 +433,7 @@ def parse_size_string(size_str: Optional[str]) -> Optional[int]:
         return None
 
     # 使用正则表达式匹配数字和单位
-    match = re.match(r'^(\d+(?:\.\d+)?)\s*([BKMG]?)B?$', size_str, re.IGNORECASE)
+    match = re.match(r"^(\d+(?:\.\d+)?)\s*([BKMG]?)B?$", size_str, re.IGNORECASE)
     if not match:
         return None
 
@@ -452,13 +441,13 @@ def parse_size_string(size_str: Optional[str]) -> Optional[int]:
     unit = match.group(2).upper()
 
     # 根据单位计算字节数
-    if unit == 'K':  # KB
+    if unit == "K":  # KB
         return int(size_value * 1024)
-    elif unit == 'M':  # MB
+    elif unit == "M":  # MB
         return int(size_value * 1024 * 1024)
-    elif unit == 'G':  # GB
+    elif unit == "G":  # GB
         return int(size_value * 1024 * 1024 * 1024)
-    elif unit == 'T':  # TB
+    elif unit == "T":  # TB
         return int(size_value * 1024 * 1024 * 1024 * 1024)
     else:  # B (无单位或B)
         return int(size_value)
@@ -499,14 +488,14 @@ async def calculate_info_hash(torrent_file_path: str) -> str:
     try:
         # 将文件读取和解析操作放到线程池中执行
         def read_and_decode_file(file_path):
-            with open(file_path, 'rb') as f:
+            with open(file_path, "rb") as f:
                 file_content = f.read()
             return bencodepy.decode(file_content)
 
         torrent_data = await asyncio.to_thread(read_and_decode_file, torrent_file_path)
 
         # 获取info部分并计算SHA1哈希
-        info_data = bencodepy.encode(torrent_data[b'info'])
+        info_data = bencodepy.encode(torrent_data[b"info"])
         info_hash = hashlib.sha1(info_data).hexdigest()
 
         return info_hash
@@ -514,8 +503,9 @@ async def calculate_info_hash(torrent_file_path: str) -> str:
         raise Exception(f"计算info_hash失败: {str(e)}")
 
 
-async def get_transmission_torrent_info(tr_client: trClient, info_hash: str, timeout: int = 10) -> Optional[
-    Dict[str, Any]]:
+async def get_transmission_torrent_info(
+    tr_client: trClient, info_hash: str, timeout: int = 10
+) -> Optional[Dict[str, Any]]:
     """从Transmission获取种子信息"""
     import time
 
@@ -561,20 +551,36 @@ def create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp
         status=TorrentStatusMapper.convert_qbittorrent_status(qb_torrent.state),
         torrent_file="/config/qbittorrent/BT_backup/" + qb_torrent.hash + ".torrent",
         # 防御性：添加时间戳范围检查，防止负数和溢出
-        added_date=datetime.fromtimestamp(qb_torrent.added_on) if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647 else None,
-        completed_date=datetime.fromtimestamp(qb_torrent.completion_on) if qb_torrent.completion_on and qb_torrent.completion_on > 0 and qb_torrent.completion_on <= 2147483647 else None,
+        added_date=(
+            datetime.fromtimestamp(qb_torrent.added_on)
+            if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
+            else None
+        ),
+        completed_date=(
+            datetime.fromtimestamp(qb_torrent.completion_on)
+            if qb_torrent.completion_on and qb_torrent.completion_on > 0 and qb_torrent.completion_on <= 2147483647
+            else None
+        ),
         ratio=str(qb_torrent.ratio),
         ratio_limit=str(qb_torrent.ratio_limit) if qb_torrent.ratio_limit != -1 else "",
         tags=",".join(qb_torrent.tags) if qb_torrent.tags else "",
         category=qb_torrent.category,
         super_seeding="1" if qb_torrent.super_seeding else "0",
         enabled=1,
-        create_time=datetime.fromtimestamp(qb_torrent.added_on) if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647 else None,
+        create_time=(
+            datetime.fromtimestamp(qb_torrent.added_on)
+            if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
+            else None
+        ),
         create_by="admin",
-        update_time=datetime.fromtimestamp(qb_torrent.added_on) if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647 else None,
+        update_time=(
+            datetime.fromtimestamp(qb_torrent.added_on)
+            if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
+            else None
+        ),
         update_by="admin",
         dr=0,  # 🔧 修复：添加缺失的 dr 参数
-        progress=0  # 🔧 修复：添加缺失的 progress 参数
+        progress=0,  # 🔧 修复：添加缺失的 progress 参数
     )
     return db_torrent
 
@@ -595,7 +601,7 @@ def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
         completed_date=tr_torrent.done_date if tr_torrent.done_date else None,
         ratio=str(tr_torrent.seed_ratio_limit),
         ratio_limit="",
-        tags=",".join(tr_torrent.labels) if hasattr(tr_torrent, 'labels') and tr_torrent.labels else "",
+        tags=",".join(tr_torrent.labels) if hasattr(tr_torrent, "labels") and tr_torrent.labels else "",
         category="",
         super_seeding="",
         enabled=1,
@@ -604,26 +610,27 @@ def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
         update_time=tr_torrent.added_date,
         update_by="admin",
         dr=0,  # 🔧 修复：添加缺失的 dr 参数
-        progress=0  # 🔧 修复：添加缺失的 progress 参数
+        progress=0,  # 🔧 修复：添加缺失的 progress 参数
     )
     return db_torrent
 
 
 # ==================== 审计日志辅助函数 ====================
 
+
 async def _write_audit_log_async(
-        operation_type: str,
-        operator: str,
-        torrent_info_id: str,
-        operation_detail: Dict[str, Any],
-        torrent_name: Optional[str],
-        torrent_hash: Optional[str],
-        downloader_id: str,
-        operation_result: str,
-        error_message: Optional[str] = None,
-        new_value: Optional[Dict[str, Any]] = None,
-        old_value: Optional[Dict[str, Any]] = None,
-        audit_info: Optional[Dict[str, str]] = None
+    operation_type: str,
+    operator: str,
+    torrent_info_id: str,
+    operation_detail: Dict[str, Any],
+    torrent_name: Optional[str],
+    torrent_hash: Optional[str],
+    downloader_id: str,
+    operation_result: str,
+    error_message: Optional[str] = None,
+    new_value: Optional[Dict[str, Any]] = None,
+    old_value: Optional[Dict[str, Any]] = None,
+    audit_info: Optional[Dict[str, str]] = None,
 ):
     """异步写入审计日志的辅助函数"""
     try:
@@ -647,25 +654,25 @@ async def _write_audit_log_async(
                 operation_result=operation_result,
                 error_message=error_message,
                 downloader_id=downloader_id,
-                **(audit_info or {})
+                **(audit_info or {}),
             )
     except Exception as audit_error:
         logging.error(f"记录审计日志失败: {str(audit_error)}", exc_info=True)
 
 
 def _safe_write_audit_log(
-        operation_type: str,
-        operator: str,
-        torrent_info_id: str,
-        operation_detail: Dict[str, Any],
-        torrent_name: Optional[str],
-        torrent_hash: Optional[str],
-        downloader_id: str,
-        operation_result: str,
-        error_message: Optional[str] = None,
-        new_value: Optional[Dict[str, Any]] = None,
-        old_value: Optional[Dict[str, Any]] = None,
-        audit_info: Optional[Dict[str, str]] = None
+    operation_type: str,
+    operator: str,
+    torrent_info_id: str,
+    operation_detail: Dict[str, Any],
+    torrent_name: Optional[str],
+    torrent_hash: Optional[str],
+    downloader_id: str,
+    operation_result: str,
+    error_message: Optional[str] = None,
+    new_value: Optional[Dict[str, Any]] = None,
+    old_value: Optional[Dict[str, Any]] = None,
+    audit_info: Optional[Dict[str, str]] = None,
 ):
     """
     安全地写入审计日志（带异常处理和日志记录）
@@ -687,12 +694,12 @@ def _safe_write_audit_log(
                 error_message=error_message,
                 new_value=new_value,
                 old_value=old_value,
-                audit_info=audit_info
+                audit_info=audit_info,
             )
         )
     except Exception as e:
         # 记录创建任务失败（极少发生）
         logging.error(
             f"创建审计日志任务失败 [operation_type={operation_type}, torrent_info_id={torrent_info_id}]: {str(e)}",
-            exc_info=True
+            exc_info=True,
         )

@@ -23,11 +23,7 @@ def getDownloaders(db: Session = Depends(get_db)) -> DatabaseResult[List[models.
         downloader_list = db.query(models.BtDownloaders).all()
 
         return DatabaseResult.success_result(
-            data=downloader_list,
-            message="Downloaders retrieved successfully",
-            total_count=len(downloader_list)
+            data=downloader_list, message="Downloaders retrieved successfully", total_count=len(downloader_list)
         )
     except Exception as e:
-        return DatabaseResult.database_error_result(
-            message=f"Failed to retrieve downloaders: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to retrieve downloaders: {str(e)}")

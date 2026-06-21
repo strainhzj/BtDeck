@@ -10,6 +10,7 @@
 5. 下载器路径扫描任务
 6. Tracker汇报轮询任务
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,17 +19,17 @@ logger = logging.getLogger(__name__)
 # ========== 定时任务配置常量 ==========
 
 # 任务类型枚举
-TASK_TYPE_PYTHON = 4      # Python脚本任务
-TASK_TYPE_SHELL = 0       # Shell脚本任务
-TASK_TYPE_HTTP = 1        # HTTP请求任务
-TASK_TYPE_SQL = 2         # SQL执行任务
-TASK_TYPE_PLUGIN = 3      # 插件任务
+TASK_TYPE_PYTHON = 4  # Python脚本任务
+TASK_TYPE_SHELL = 0  # Shell脚本任务
+TASK_TYPE_HTTP = 1  # HTTP请求任务
+TASK_TYPE_SQL = 2  # SQL执行任务
+TASK_TYPE_PLUGIN = 3  # 插件任务
 
 # 任务状态枚举
-TASK_STATUS_READY = 1     # 就绪
-TASK_STATUS_RUNNING = 2   # 运行中
-TASK_STATUS_PAUSED = 0    # 已暂停
-TASK_STATUS_DISABLED = -1 # 已禁用
+TASK_STATUS_READY = 1  # 就绪
+TASK_STATUS_RUNNING = 2  # 运行中
+TASK_STATUS_PAUSED = 0  # 已暂停
+TASK_STATUS_DISABLED = -1  # 已禁用
 
 
 # ========== 系统默认定时任务定义 ==========
@@ -175,6 +176,7 @@ DEFAULT_SCHEDULED_TASKS = [
 
 # ========== 初始化函数 ==========
 
+
 def init_default_scheduled_tasks(db_session) -> int:
     """
     初始化系统默认定时任务到数据库
@@ -196,9 +198,7 @@ def init_default_scheduled_tasks(db_session) -> int:
 
         for task_data in DEFAULT_SCHEDULED_TASKS:
             # 检查任务是否已存在（通过 task_code 唯一性）
-            existing = db_session.query(CronTask).filter_by(
-                task_code=task_data["task_code"]
-            ).first()
+            existing = db_session.query(CronTask).filter_by(task_code=task_data["task_code"]).first()
 
             if existing:
                 logger.info(f"系统默认任务已存在，跳过: {task_data['task_name']} ({task_data['task_code']})")

@@ -4,6 +4,7 @@
 
 用于存储按时间段和星期几的速度限制规则
 """
+
 from datetime import datetime, time
 from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, CheckConstraint, func
 from sqlalchemy.orm import relationship
@@ -20,6 +21,7 @@ class SpeedScheduleRule(Base):
 
     存储按时间段和星期几的速度限制规则
     """
+
     __tablename__ = "speed_schedule_rules"
 
     # 主键
@@ -28,102 +30,52 @@ class SpeedScheduleRule(Base):
     # 外键：关联到 downloader_settings 表
     downloader_setting_id = Column(
         Integer,
-        ForeignKey('downloader_settings.id', ondelete='CASCADE'),
+        ForeignKey("downloader_settings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
-        comment='下载器配置ID，关联downloader_settings表'
+        comment="下载器配置ID，关联downloader_settings表",
     )
 
     # 时间范围（使用 String 存储，SQLite 不支持 TIME 类型）
-    start_time = Column(
-        String(5),  # 格式: "HH:MM"
-        nullable=False,
-        comment='开始时间，格式"HH:MM"，如"08:00"'
-    )
+    start_time = Column(String(5), nullable=False, comment='开始时间，格式"HH:MM"，如"08:00"')  # 格式: "HH:MM"
 
-    end_time = Column(
-        String(5),  # 格式: "HH:MM"
-        nullable=False,
-        comment='结束时间，格式"HH:MM"，如"18:00"'
-    )
+    end_time = Column(String(5), nullable=False, comment='结束时间，格式"HH:MM"，如"18:00"')  # 格式: "HH:MM"
 
     # 表约束
     __table_args__ = (
-        CheckConstraint('start_time < end_time', name='ck_start_time_before_end_time'),
-        CheckConstraint(
-            "days_of_week >= '0' AND days_of_week <= '6543210'",
-            name='ck_days_of_week_format'
-        ),
+        CheckConstraint("start_time < end_time", name="ck_start_time_before_end_time"),
+        CheckConstraint("days_of_week >= '0' AND days_of_week <= '6543210'", name="ck_days_of_week_format"),
     )
 
     # 速度限制
-    dl_speed_limit = Column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment='下载速度限制（KB/s），0表示不限速'
-    )
+    dl_speed_limit = Column(Integer, nullable=False, default=0, comment="下载速度限制（KB/s），0表示不限速")
 
-    ul_speed_limit = Column(
-        Integer,
-        nullable=False,
-        default=0,
-        comment='上传速度限制（KB/s），0表示不限速'
-    )
+    ul_speed_limit = Column(Integer, nullable=False, default=0, comment="上传速度限制（KB/s），0表示不限速")
 
     # 速度单位（0=KB/s, 1=MB/s）
-    dl_speed_unit = Column(
-        Integer,
-        nullable=False,
-        server_default='0',
-        comment='下载速度单位：0=KB/s, 1=MB/s'
-    )
+    dl_speed_unit = Column(Integer, nullable=False, server_default="0", comment="下载速度单位：0=KB/s, 1=MB/s")
 
-    ul_speed_unit = Column(
-        Integer,
-        nullable=False,
-        server_default='0',
-        comment='上传速度单位：0=KB/s, 1=MB/s'
-    )
+    ul_speed_unit = Column(Integer, nullable=False, server_default="0", comment="上传速度单位：0=KB/s, 1=MB/s")
 
     # 规则排序（同一下载器内）
     sort_order = Column(
-        Integer,
-        nullable=False,
-        server_default='0',
-        comment='规则排序（同一下载器内），数字越小优先级越高'
+        Integer, nullable=False, server_default="0", comment="规则排序（同一下载器内），数字越小优先级越高"
     )
 
     # 生效星期几（字符串，如"0123456"表示每天都生效，"12345"表示周一到周五生效）
     days_of_week = Column(
-        String(7),
-        nullable=False,
-        default="0123456",
-        comment='生效星期几，0=周日，1=周一，...，6=周六'
+        String(7), nullable=False, default="0123456", comment="生效星期几，0=周日，1=周一，...，6=周六"
     )
 
     # 状态
-    enabled = Column(
-        Boolean,
-        nullable=False,
-        default=True,
-        comment='是否启用'
-    )
+    enabled = Column(Boolean, nullable=False, default=True, comment="是否启用")
 
     # 时间戳
-    created_at = Column(
-        DateTime,
-        nullable=False,
-        server_default=func.now(),
-        comment='创建时间'
-    )
+    created_at = Column(DateTime, nullable=False, server_default=func.now(), comment="创建时间")
 
     # 关系定义
     # 关联到下载器配置（多对一）
-    downloader_setting = relationship(
-        "DownloaderSetting",
-        back_populates="speed_schedule_rules"
-    )
+    downloader_setting = relationship("DownloaderSetting", back_populates="speed_schedule_rules")
 
     def __init__(
         self,
@@ -137,7 +89,7 @@ class SpeedScheduleRule(Base):
         sort_order=0,
         days_of_week="0123456",
         enabled=True,
-        **kwargs
+        **kwargs,
     ):
         super().__init__(**kwargs)
         if downloader_setting_id is not None:
@@ -235,7 +187,7 @@ class SpeedScheduleRule(Base):
             return False
 
         # 检查是否只包含0-6的数字
-        pattern = re.compile(r'^[0-6]{1,7}$')
+        pattern = re.compile(r"^[0-6]{1,7}$")
         if not pattern.match(days_str):
             return False
 
@@ -261,14 +213,14 @@ class SpeedScheduleRule(Base):
             "download": {
                 "enabled": self.dl_speed_limit > 0,
                 "speed_limit": self.dl_speed_limit,
-                "speed_unit": self.dl_speed_unit
+                "speed_unit": self.dl_speed_unit,
             },
             "upload": {
                 "enabled": self.ul_speed_limit > 0,
                 "speed_limit": self.ul_speed_limit,
-                "speed_unit": self.ul_speed_unit
+                "speed_unit": self.ul_speed_unit,
             },
-            "enabled": self.enabled
+            "enabled": self.enabled,
         }
 
     def __repr__(self):

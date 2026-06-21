@@ -110,11 +110,13 @@ async def execute_reannounce(
                 error_detail = f"{type(e).__name__}: {str(e)}"
                 logger.error(f"Tracker汇报失败 [downloader={downloader_id}, batch={i//BATCH_SIZE+1}]: {error_detail}")
                 result["failed_count"] += len(batch)
-                result["failed_items"].append({
-                    "batch": i // BATCH_SIZE + 1,
-                    "error": error_detail,
-                    "count": len(batch),
-                })
+                result["failed_items"].append(
+                    {
+                        "batch": i // BATCH_SIZE + 1,
+                        "error": error_detail,
+                        "count": len(batch),
+                    }
+                )
 
         logger.info(
             f"Tracker汇报完成 [trigger={trigger_type}, downloader={downloader_id}]: "
@@ -149,10 +151,14 @@ async def execute_reannounce_all_downloaders(
             continue
 
         # 查询该下载器下所有未删除的种子
-        torrent_records = db.query(torrentInfoModel).filter(
-            torrentInfoModel.downloader_id == dl_vo.downloader_id,
-            torrentInfoModel.dr == 0,
-        ).all()
+        torrent_records = (
+            db.query(torrentInfoModel)
+            .filter(
+                torrentInfoModel.downloader_id == dl_vo.downloader_id,
+                torrentInfoModel.dr == 0,
+            )
+            .all()
+        )
 
         if not torrent_records:
             continue
@@ -164,11 +170,13 @@ async def execute_reannounce_all_downloaders(
             torrent_records=torrent_records,
             trigger_type=trigger_type,
         )
-        results.append({
-            "downloader_id": dl_vo.downloader_id,
-            "downloader_name": dl_vo.nickname,
-            **dl_result,
-        })
+        results.append(
+            {
+                "downloader_id": dl_vo.downloader_id,
+                "downloader_name": dl_vo.nickname,
+                **dl_result,
+            }
+        )
         total_success += dl_result["success_count"]
         total_failed += dl_result["failed_count"]
 
@@ -182,7 +190,7 @@ async def execute_reannounce_all_downloaders(
 
 def _get_downloader_from_cache(app, downloader_id: str):
     """从缓存获取下载器，返回 (downloader_vo, error_msg)"""
-    if not hasattr(app.state, 'store'):
+    if not hasattr(app.state, "store"):
         return None, "下载器缓存未初始化"
 
     cached_downloaders = app.state.store.get_snapshot_sync()
@@ -203,6 +211,6 @@ def _get_downloader_from_cache(app, downloader_id: str):
 
 def _get_all_downloaders(app) -> list:
     """获取所有下载器列表"""
-    if not hasattr(app.state, 'store'):
+    if not hasattr(app.state, "store"):
         return []
     return app.state.store.get_snapshot_sync()

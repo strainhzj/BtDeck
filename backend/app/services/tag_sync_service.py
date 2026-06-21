@@ -49,10 +49,7 @@ class TagSyncService:
 
     # ==================== 核心同步方法（优化版）====================
 
-    async def sync_all_downloaders(
-        self,
-        delete_missing: bool = True
-    ) -> Dict[str, Any]:
+    async def sync_all_downloaders(self, delete_missing: bool = True) -> Dict[str, Any]:
         """
         同步所有下载器的标签数据（优化版）
 
@@ -79,7 +76,7 @@ class TagSyncService:
             from app.main import app
 
             # ✅ 优化1：直接从缓存获取下载器（去掉数据库查询）
-            if not hasattr(app.state, 'store'):
+            if not hasattr(app.state, "store"):
                 logger.warning("下载器缓存未初始化，跳过标签同步")
                 return {
                     "success": True,
@@ -88,7 +85,7 @@ class TagSyncService:
                     "success_count": 0,
                     "failed_count": 0,
                     "total_tags_synced": 0,
-                    "details": []
+                    "details": [],
                 }
 
             # 获取缓存快照
@@ -103,22 +100,21 @@ class TagSyncService:
                     "success_count": 0,
                     "failed_count": 0,
                     "total_tags_synced": 0,
-                    "details": []
+                    "details": [],
                 }
 
             # ✅ 优化2：过滤出连接良好的下载器
             valid_downloaders = []
             for cached in cached_downloaders:
                 # 检查连接状态
-                if not hasattr(cached, 'fail_time') or cached.fail_time > 0:
+                if not hasattr(cached, "fail_time") or cached.fail_time > 0:
                     logger.debug(
-                        f"跳过失效下载器: {cached.nickname} "
-                        f"(fail_time: {getattr(cached, 'fail_time', 'N/A')})"
+                        f"跳过失效下载器: {cached.nickname} " f"(fail_time: {getattr(cached, 'fail_time', 'N/A')})"
                     )
                     continue
 
                 # 检查客户端连接是否存在
-                if not hasattr(cached, 'client') or not cached.client:
+                if not hasattr(cached, "client") or not cached.client:
                     logger.debug(f"跳过无客户端下载器: {cached.nickname}")
                     continue
 
@@ -134,7 +130,7 @@ class TagSyncService:
                     "success_count": 0,
                     "failed_count": 0,
                     "total_tags_synced": 0,
-                    "details": []
+                    "details": [],
                 }
 
             logger.info(f"开始同步{len(valid_downloaders)}个有效下载器的标签")
@@ -148,8 +144,7 @@ class TagSyncService:
             for downloader in valid_downloaders:
                 try:
                     result = await self.sync_downloader_tags(
-                        downloader,  # ✅ 直接传递缓存对象
-                        delete_missing=delete_missing
+                        downloader, delete_missing=delete_missing  # ✅ 直接传递缓存对象
                     )
                     results.append(result)
 
@@ -162,12 +157,14 @@ class TagSyncService:
                 except Exception as e:
                     logger.error(f"同步下载器 {downloader.nickname} 失败: {str(e)}")
                     failed_count += 1
-                    results.append({
-                        "success": False,
-                        "downloader_id": downloader.downloader_id,
-                        "downloader_name": downloader.nickname,
-                        "message": f"同步异常: {str(e)}"
-                    })
+                    results.append(
+                        {
+                            "success": False,
+                            "downloader_id": downloader.downloader_id,
+                            "downloader_name": downloader.nickname,
+                            "message": f"同步异常: {str(e)}",
+                        }
+                    )
 
             return {
                 "success": failed_count == 0,
@@ -176,7 +173,7 @@ class TagSyncService:
                 "success_count": success_count,
                 "failed_count": failed_count,
                 "total_tags_synced": total_tags,
-                "details": results
+                "details": results,
             }
 
         except Exception as e:
@@ -187,13 +184,11 @@ class TagSyncService:
                 "total_downloaders": 0,
                 "success_count": 0,
                 "failed_count": 1,
-                "total_tags_synced": 0
+                "total_tags_synced": 0,
             }
 
     async def sync_downloader_tags(
-        self,
-        downloader: Any,  # ✅ 类型：DownloaderVO（缓存对象）
-        delete_missing: bool = True
+        self, downloader: Any, delete_missing: bool = True  # ✅ 类型：DownloaderVO（缓存对象）
     ) -> Dict[str, Any]:
         """
         同步指定下载器的标签数据（优化版）
@@ -227,13 +222,9 @@ class TagSyncService:
             nickname = downloader.nickname
 
             # 2. 获取客户端连接
-            client = getattr(downloader, 'client', None)
+            client = getattr(downloader, "client", None)
             if not client:
-                return {
-                    "success": False,
-                    "message": f"下载器客户端连接不存在: {nickname}",
-                    "total_tags": 0
-                }
+                return {"success": False, "message": f"下载器客户端连接不存在: {nickname}", "total_tags": 0}
 
             # 3. 从下载器获取标签数据
             fetch_result = await self.fetch_tags_from_downloader(downloader)
@@ -241,40 +232,29 @@ class TagSyncService:
                 return {
                     "success": False,
                     "message": f"获取下载器标签失败: {fetch_result.get('message')}",
-                    "total_tags": 0
+                    "total_tags": 0,
                 }
 
             new_tags = fetch_result.get("data", [])
 
             # 4. 合并到数据库
-            merge_result = await self.merge_with_existing_tags(
-                downloader_id,
-                new_tags,
-                delete_missing=delete_missing
-            )
+            merge_result = await self.merge_with_existing_tags(downloader_id, new_tags, delete_missing=delete_missing)
 
             return {
                 "success": True,
                 "downloader_id": downloader_id,
                 "downloader_name": nickname,
                 "total_tags": len(new_tags),
-                **merge_result
+                **merge_result,
             }
 
         except Exception as e:
             logger.error(f"同步下载器标签失败 ({downloader.downloader_id}): {str(e)}")
-            return {
-                "success": False,
-                "message": f"同步失败: {str(e)}",
-                "total_tags": 0
-            }
+            return {"success": False, "message": f"同步失败: {str(e)}", "total_tags": 0}
 
     # ==================== 数据获取方法（优化版）====================
 
-    async def fetch_tags_from_downloader(
-        self,
-        downloader: Any  # ✅ 类型：DownloaderVO（缓存对象）
-    ) -> Dict[str, Any]:
+    async def fetch_tags_from_downloader(self, downloader: Any) -> Dict[str, Any]:  # ✅ 类型：DownloaderVO（缓存对象）
         """
         从下载器获取标签数据（优化版）
 
@@ -296,53 +276,45 @@ class TagSyncService:
         """
         try:
             # 获取客户端连接
-            client = getattr(downloader, 'client', None)
+            client = getattr(downloader, "client", None)
             if not client:
-                return {
-                    "success": False,
-                    "data": [],
-                    "message": "下载器客户端连接不存在",
-                    "total_count": 0
-                }
+                return {"success": False, "data": [], "message": "下载器客户端连接不存在", "total_count": 0}
 
             # 标准化下载器类型
             normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
 
             # ✅ normalize方法已保证返回值只能是0或1，无需额外检查
-            client_type = 'qbittorrent' if normalized_type == DownloaderTypeEnum.QBITTORRENT else 'transmission'
+            client_type = "qbittorrent" if normalized_type == DownloaderTypeEnum.QBITTORRENT else "transmission"
 
             # ✅ 优化：根据类型使用不同的获取策略
             if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                 # qBittorrent：使用SDK方法（已实现）
                 adapter = TagAdapterFactory.create_adapter(
-                    downloader=downloader,
-                    client=client,
-                    session=None,
-                    rpc_url=None
+                    downloader=downloader, client=client, session=None, rpc_url=None
                 )
             elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 # Transmission：动态构建RPC URL
                 # ✅ 修复：兼容is_ssl和isSsl两种属性名
-                has_ssl = getattr(downloader, 'is_ssl', None)
+                has_ssl = getattr(downloader, "is_ssl", None)
                 if has_ssl is None:
-                    has_ssl = getattr(downloader, 'isSsl', False)
+                    has_ssl = getattr(downloader, "isSsl", False)
 
                 # 处理布尔值和字符串'1'的情况
                 if isinstance(has_ssl, bool):
-                    protocol = 'https' if has_ssl else 'http'
+                    protocol = "https" if has_ssl else "http"
                 elif isinstance(has_ssl, str):
-                    protocol = 'https' if has_ssl == '1' else 'http'
+                    protocol = "https" if has_ssl == "1" else "http"
                 elif isinstance(has_ssl, int):
-                    protocol = 'https' if has_ssl == 1 else 'http'
+                    protocol = "https" if has_ssl == 1 else "http"
                 else:
-                    protocol = 'http'  # 默认HTTP
+                    protocol = "http"  # 默认HTTP
 
-                rpc_url = f'{protocol}://{downloader.host}:{downloader.port}/transmission/rpc'
+                rpc_url = f"{protocol}://{downloader.host}:{downloader.port}/transmission/rpc"
                 logger.debug(f"构建Transmission RPC URL: {rpc_url}")
 
                 # ✅ 修复：获取username和password用于认证
-                username = getattr(downloader, 'username', None)
-                password = getattr(downloader, 'password', None)
+                username = getattr(downloader, "username", None)
+                password = getattr(downloader, "password", None)
 
                 adapter = TagAdapterFactory.create_adapter(
                     downloader=downloader,
@@ -350,23 +322,13 @@ class TagSyncService:
                     session=None,
                     rpc_url=rpc_url,
                     username=username,
-                    password=password
+                    password=password,
                 )
             else:
-                return {
-                    "success": False,
-                    "data": [],
-                    "message": f"不支持的下载器类型: {client_type}",
-                    "total_count": 0
-                }
+                return {"success": False, "data": [], "message": f"不支持的下载器类型: {client_type}", "total_count": 0}
 
             if not adapter:
-                return {
-                    "success": False,
-                    "data": [],
-                    "message": f"创建标签适配器失败: {client_type}",
-                    "total_count": 0
-                }
+                return {"success": False, "data": [], "message": f"创建标签适配器失败: {client_type}", "total_count": 0}
 
             # 调用适配器获取标签
             adapter_result = await adapter.get_tags()
@@ -376,39 +338,27 @@ class TagSyncService:
                     "success": False,
                     "data": [],
                     "message": f"获取标签失败: {adapter_result.get('message')}",
-                    "total_count": 0
+                    "total_count": 0,
                 }
 
             # 转换格式为数据库统一格式
             raw_tags = adapter_result.get("data", [])
-            formatted_tags = self._convert_tags_to_db_format(
-                downloader.downloader_id,
-                raw_tags
-            )
+            formatted_tags = self._convert_tags_to_db_format(downloader.downloader_id, raw_tags)
 
             return {
                 "success": True,
                 "data": formatted_tags,
                 "message": f"成功获取{len(formatted_tags)}个标签",
-                "total_count": len(formatted_tags)
+                "total_count": len(formatted_tags),
             }
 
         except Exception as e:
             logger.error(f"从下载器获取标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": [],
-                "message": f"获取标签失败: {str(e)}",
-                "total_count": 0
-            }
+            return {"success": False, "data": [], "message": f"获取标签失败: {str(e)}", "total_count": 0}
 
     # ==================== 数据保存方法 ====================
 
-    async def save_tags_to_database(
-        self,
-        downloader_id: str,
-        tags: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def save_tags_to_database(self, downloader_id: str, tags: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         将标签数据保存到数据库（直接创建，不合并）
 
@@ -428,7 +378,7 @@ class TagSyncService:
                     downloader_id=downloader_id,
                     tag_name=tag_data["tag_name"],
                     tag_type=tag_data["tag_type"],
-                    color=tag_data.get("color")
+                    color=tag_data.get("color"),
                 )
 
                 if result.get("success"):
@@ -440,25 +390,17 @@ class TagSyncService:
                 "success": failed_count == 0,
                 "created_count": created_count,
                 "failed_count": failed_count,
-                "message": f"保存完成: 创建{created_count}，失败{failed_count}"
+                "message": f"保存完成: 创建{created_count}，失败{failed_count}",
             }
 
         except Exception as e:
             logger.error(f"保存标签到数据库失败: {str(e)}")
-            return {
-                "success": False,
-                "created_count": 0,
-                "failed_count": len(tags),
-                "message": f"保存失败: {str(e)}"
-            }
+            return {"success": False, "created_count": 0, "failed_count": len(tags), "message": f"保存失败: {str(e)}"}
 
     # ==================== 数据合并方法 ====================
 
     async def merge_with_existing_tags(
-        self,
-        downloader_id: str,
-        new_tags: List[Dict[str, Any]],
-        delete_missing: bool = True
+        self, downloader_id: str, new_tags: List[Dict[str, Any]], delete_missing: bool = True
     ) -> Dict[str, Any]:
         """
         合并新标签与现有标签（去重、更新、删除僵尸数据）
@@ -490,10 +432,7 @@ class TagSyncService:
             existing_tags = existing_result.get("data", [])
 
             # 2. 构建现有标签映射 (tag_name + tag_type -> tag_info)
-            existing_map = {
-                (t["tag_name"], t["tag_type"]): t
-                for t in existing_tags
-            }
+            existing_map = {(t["tag_name"], t["tag_type"]): t for t in existing_tags}
 
             # 3. 对比并分类
             to_create = []
@@ -508,10 +447,7 @@ class TagSyncService:
                     # 已存在，检查是否需要更新
                     existing_tag = existing_map[key]
                     if self._should_update_tag(existing_tag, new_tag):
-                        to_update.append({
-                            "tag_id": existing_tag["tag_id"],
-                            **new_tag
-                        })
+                        to_update.append({"tag_id": existing_tag["tag_id"], **new_tag})
                 else:
                     # 不存在，需要创建
                     to_create.append(new_tag)
@@ -528,7 +464,7 @@ class TagSyncService:
                         downloader_id=downloader_id,
                         tag_name=tag_data["tag_name"],
                         tag_type=tag_data["tag_type"],
-                        color=tag_data.get("color")
+                        color=tag_data.get("color"),
                     )
                     if result.get("success"):
                         created_count += 1
@@ -551,17 +487,14 @@ class TagSyncService:
             # 5. 处理僵尸数据（删除下载器中不存在的标签）
             deleted_count = 0
             if delete_missing:
-                deleted_count = await self._delete_zombie_tags(
-                    downloader_id,
-                    new_tag_keys
-                )
+                deleted_count = await self._delete_zombie_tags(downloader_id, new_tag_keys)
 
             return {
                 "created_count": created_count,
                 "updated_count": updated_count,
                 "unchanged_count": unchanged_count,
                 "deleted_count": deleted_count,
-                "message": f"合并完成: 新增{created_count}，更新{updated_count}，未变{unchanged_count}，删除{deleted_count}"
+                "message": f"合并完成: 新增{created_count}，更新{updated_count}，未变{unchanged_count}，删除{deleted_count}",
             }
 
         except Exception as e:
@@ -571,16 +504,12 @@ class TagSyncService:
                 "updated_count": 0,
                 "unchanged_count": 0,
                 "deleted_count": 0,
-                "message": f"合并失败: {str(e)}"
+                "message": f"合并失败: {str(e)}",
             }
 
     # ==================== 私有辅助方法 ====================
 
-    def _convert_tags_to_db_format(
-        self,
-        downloader_id: str,
-        raw_tags: List[Dict]
-    ) -> List[Dict[str, Any]]:
+    def _convert_tags_to_db_format(self, downloader_id: str, raw_tags: List[Dict]) -> List[Dict[str, Any]]:
         """
         将适配器返回的标签转换为数据库格式
 
@@ -593,19 +522,17 @@ class TagSyncService:
         """
         formatted = []
         for tag in raw_tags:
-            formatted.append({
-                'downloader_id': downloader_id,
-                'tag_name': tag.get('name'),
-                'tag_type': tag.get('type'),  # 'category' | 'tag'
-                'color': tag.get('color')
-            })
+            formatted.append(
+                {
+                    "downloader_id": downloader_id,
+                    "tag_name": tag.get("name"),
+                    "tag_type": tag.get("type"),  # 'category' | 'tag'
+                    "color": tag.get("color"),
+                }
+            )
         return formatted
 
-    def _should_update_tag(
-        self,
-        existing: Dict[str, Any],
-        new: Dict[str, Any]
-    ) -> bool:
+    def _should_update_tag(self, existing: Dict[str, Any], new: Dict[str, Any]) -> bool:
         """
         判断标签是否需要更新
 
@@ -626,11 +553,7 @@ class TagSyncService:
         # 其他字段目前不需要更新
         return False
 
-    async def _create_all_tags(
-        self,
-        downloader_id: str,
-        tags: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def _create_all_tags(self, downloader_id: str, tags: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         直接创建所有标签（无法查询现有标签时的降级方案）
 
@@ -647,7 +570,7 @@ class TagSyncService:
                 downloader_id=downloader_id,
                 tag_name=tag_data["tag_name"],
                 tag_type=tag_data["tag_type"],
-                color=tag_data.get("color")
+                color=tag_data.get("color"),
             )
             if result.get("success"):
                 created_count += 1
@@ -657,14 +580,10 @@ class TagSyncService:
             "updated_count": 0,
             "unchanged_count": 0,
             "deleted_count": 0,
-            "message": f"创建完成: {created_count}个标签"
+            "message": f"创建完成: {created_count}个标签",
         }
 
-    async def _delete_zombie_tags(
-        self,
-        downloader_id: str,
-        new_tag_keys: set
-    ) -> int:
+    async def _delete_zombie_tags(self, downloader_id: str, new_tag_keys: set) -> int:
         """
         删除僵尸标签（下载器中不存在的标签）
 
@@ -693,15 +612,9 @@ class TagSyncService:
                     result = await self.tag_service.delete_tag_async(existing_tag["tag_id"])
                     if result.get("success"):
                         deleted_count += 1
-                        logger.debug(
-                            f"删除僵尸标签: {existing_tag['tag_name']} "
-                            f"({existing_tag['tag_type']})"
-                        )
+                        logger.debug(f"删除僵尸标签: {existing_tag['tag_name']} " f"({existing_tag['tag_type']})")
                     else:
-                        logger.warning(
-                            f"删除僵尸标签失败: {existing_tag['tag_name']}, "
-                            f"{result.get('message')}"
-                        )
+                        logger.warning(f"删除僵尸标签失败: {existing_tag['tag_name']}, " f"{result.get('message')}")
 
             if deleted_count > 0:
                 logger.info(f"下载器 {downloader_id} 清理了 {deleted_count} 个僵尸标签")
@@ -721,6 +634,7 @@ class TagSyncService:
         用于同步Service中需要调用异步Repository方法的场景。
         """
         import asyncio
+
         try:
             loop = asyncio.get_event_loop()
         except RuntimeError:
@@ -729,9 +643,7 @@ class TagSyncService:
         return loop.run_until_complete(coro)
 
     def sync_downloader_tags_sync(
-        self,
-        downloader: Any,  # ✅ 类型：DownloaderVO（缓存对象）
-        delete_missing: bool = True
+        self, downloader: Any, delete_missing: bool = True  # ✅ 类型：DownloaderVO（缓存对象）
     ) -> Dict[str, Any]:
         """
         同步指定下载器的标签数据（同步版本）
@@ -743,17 +655,9 @@ class TagSyncService:
         Returns:
             同步结果字典
         """
-        return self._execute_sync(
-            self.sync_downloader_tags(
-                downloader=downloader,
-                delete_missing=delete_missing
-            )
-        )
+        return self._execute_sync(self.sync_downloader_tags(downloader=downloader, delete_missing=delete_missing))
 
-    def sync_all_downloaders_sync(
-        self,
-        delete_missing: bool = True
-    ) -> Dict[str, Any]:
+    def sync_all_downloaders_sync(self, delete_missing: bool = True) -> Dict[str, Any]:
         """
         同步所有下载器的标签数据（同步版本）
 
@@ -763,8 +667,4 @@ class TagSyncService:
         Returns:
             全量同步结果字典
         """
-        return self._execute_sync(
-            self.sync_all_downloaders(
-                delete_missing=delete_missing
-            )
-        )
+        return self._execute_sync(self.sync_all_downloaders(delete_missing=delete_missing))

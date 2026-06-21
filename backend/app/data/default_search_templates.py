@@ -38,8 +38,8 @@ DEFAULT_SEARCH_TEMPLATES: List[Dict[str, Any]] = [
                 "status": ["downloading", "seeding"],
                 "showActiveOnly": False,
                 "sort_by": "added_date",
-                "sort_order": "desc"
-            }
+                "sort_order": "desc",
+            },
         },
     },
     {
@@ -54,8 +54,8 @@ DEFAULT_SEARCH_TEMPLATES: List[Dict[str, Any]] = [
                 "status": ["error"],
                 "showActiveOnly": False,
                 "sort_by": "added_date",
-                "sort_order": "desc"
-            }
+                "sort_order": "desc",
+            },
         },
     },
     {
@@ -70,8 +70,8 @@ DEFAULT_SEARCH_TEMPLATES: List[Dict[str, Any]] = [
                 "status": ["paused"],
                 "showActiveOnly": False,
                 "sort_by": "added_date",
-                "sort_order": "desc"
-            }
+                "sort_order": "desc",
+            },
         },
     },
     {
@@ -91,13 +91,13 @@ DEFAULT_SEARCH_TEMPLATES: List[Dict[str, Any]] = [
                             "field": "size",
                             "operator": "gt",
                             "value": {"min": 10, "minUnit": "GB"},
-                            "mode": "include"
+                            "mode": "include",
                         }
-                    ]
+                    ],
                 }
             ],
             "sort_by": "size",
-            "sort_order": "desc"
+            "sort_order": "desc",
         },
     },
 ]
@@ -120,9 +120,7 @@ def init_default_search_templates(db_session: Session) -> int:
     created_count = 0
     try:
         # 查询已存在的预设模板名（is_default=1 视为系统预设，幂等依据）
-        existing_sql = text(
-            "SELECT name FROM search_templates WHERE is_default = 1"
-        )
+        existing_sql = text("SELECT name FROM search_templates WHERE is_default = 1")
         existing_rows = db_session.execute(existing_sql).fetchall()
         existing_names = {row[0] for row in existing_rows}
 
@@ -142,18 +140,21 @@ def init_default_search_templates(db_session: Session) -> int:
                 VALUES
                     (:id, :user_id, :name, :description, :conditions, :is_default, :is_public, :usage_count, :created_time, :updated_time)
             """)
-            db_session.execute(insert_sql, {
-                "id": template_id,
-                "user_id": "system",  # 系统预设模板 user_id 标记为 system
-                "name": name,
-                "description": tpl.get("description", ""),
-                "conditions": json.dumps(tpl["conditions"], ensure_ascii=False),
-                "is_default": 1,  # 系统预设
-                "is_public": 1,   # 所有人可见
-                "usage_count": 0,
-                "created_time": now,
-                "updated_time": now,
-            })
+            db_session.execute(
+                insert_sql,
+                {
+                    "id": template_id,
+                    "user_id": "system",  # 系统预设模板 user_id 标记为 system
+                    "name": name,
+                    "description": tpl.get("description", ""),
+                    "conditions": json.dumps(tpl["conditions"], ensure_ascii=False),
+                    "is_default": 1,  # 系统预设
+                    "is_public": 1,  # 所有人可见
+                    "usage_count": 0,
+                    "created_time": now,
+                    "updated_time": now,
+                },
+            )
             created_count += 1
             logger.info(f"创建系统预设搜索模板: {name}")
 

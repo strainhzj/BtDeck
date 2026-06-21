@@ -28,27 +28,24 @@ router = APIRouter()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-
 @router.get("/detail/{downloader_id}", summary="获取下载器明细信息", response_model=CommonResponse[List[DownloaderVO]])
-def get(downloader_id: Annotated[str, Path(description="下载器id")],
-        _user=Depends(require_authenticated_user),
-        db: Session = Depends(get_db)):
+def get(
+    downloader_id: Annotated[str, Path(description="下载器id")],
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
     try:
         downloaders = db.execute(
             text(
-                "SELECT downloader_id,nickname,host,username,is_search,status,enabled,downloader_type,port,is_ssl,path_mapping_rules,torrent_save_path FROM bt_downloaders WHERE dr = :dr AND downloader_id = :downloader_id"),
-            {"dr": 0, "downloader_id": downloader_id}
+                "SELECT downloader_id,nickname,host,username,is_search,status,enabled,downloader_type,port,is_ssl,path_mapping_rules,torrent_save_path FROM bt_downloaders WHERE dr = :dr AND downloader_id = :downloader_id"
+            ),
+            {"dr": 0, "downloader_id": downloader_id},
         )
         downloader_list = downloaders.fetchall()
         result_list = []
         if len(downloader_list) < 1:
-            response = CommonResponse(
-                status="success",
-                msg="该下载器已被删除或不存在",
-                code="200",
-            data=None
-            )
+            response = CommonResponse(status="success", msg="该下载器已被删除或不存在", code="200", data=None)
         else:
             for row in downloader_list:
                 # DownloaderVO 需要 password 参数，传入 None 表示不返回密码
@@ -56,27 +53,15 @@ def get(downloader_id: Annotated[str, Path(description="下载器id")],
                 args = list(row)
                 args.insert(4, None)  # 插入 password 参数占位符
                 result_list.append(DownloaderVO(*args))
-            response = CommonResponse(
-                status="success",
-                msg="获取成功",
-                code="200",
-                data=result_list
-            )
+            response = CommonResponse(status="success", msg="获取成功", code="200", data=result_list)
     except Exception as e:
-        response = CommonResponse(
-            status="error",
-            msg=str(e),
-            code="400",
-            data=None
-        )
+        response = CommonResponse(status="error", msg=str(e), code="400", data=None)
     return response
 
 
-@router.post('/add', summary="增加下载器", response_model=CommonResponse)
+@router.post("/add", summary="增加下载器", response_model=CommonResponse)
 async def add(
-        downloader_request: RequestDownloader,
-        _user=Depends(require_authenticated_user),
-        db: Session = Depends(get_db)
+    downloader_request: RequestDownloader, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)
 ):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
     # Pydantic 验证器已将字符串 "0"/"1" 转换为布尔值
@@ -94,7 +79,7 @@ async def add(
         is_ssl=downloader_request.is_ssl,
         dr=0,
         path_mapping_rules=downloader_request.path_mapping_rules,
-        torrent_save_path=downloader_request.torrent_save_path
+        torrent_save_path=downloader_request.torrent_save_path,
     )
 
     # 处理路径映射配置
@@ -118,65 +103,46 @@ async def add(
                 "port": downloader.port,
                 "downloader_type": downloader.downloader_type,
                 "is_ssl": downloader.is_ssl,
-                "torrent_save_path": downloader.torrent_save_path
+                "torrent_save_path": downloader.torrent_save_path,
             }
 
-            await _check_and_add_new_downloader(
-                downloader_app,
-                downloader_data,
-                immediate=True
-            )
+            await _check_and_add_new_downloader(downloader_app, downloader_data, immediate=True)
         except Exception as cache_error:
             logger.warning(f"缓存同步失败（已写入数据库）: {cache_error}")
 
-        response = CommonResponse(
-            status="success",
-            msg="添加成功",
-            code="200",
-            data=None
-        )
+        response = CommonResponse(status="success", msg="添加成功", code="200", data=None)
         return response
     except exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
-        response = CommonResponse(
-            status="error",
-            msg="用户名或密码错误",
-            code="400",
-            data=None
-        )
+        response = CommonResponse(status="error", msg="用户名或密码错误", code="400", data=None)
         return response
 
 
 @router.post("/update/{downloader_id}", summary="更新下载器明细", response_model=CommonResponse)
 async def update(
-        downloader_request: UpdateDownloader,
-        downloader_id: Annotated[str, Path(description="下载器id")],
-        _user=Depends(require_authenticated_user),
-        req: Request = None,
-        db: Session = Depends(get_db)
+    downloader_request: UpdateDownloader,
+    downloader_id: Annotated[str, Path(description="下载器id")],
+    _user=Depends(require_authenticated_user),
+    req: Request = None,
+    db: Session = Depends(get_db),
 ):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 读取原始请求数据以检测 path_mapping 是否被明确传递
         raw_data = await req.json()
-        path_mapping_in_request = 'path_mapping' in raw_data
+        path_mapping_in_request = "path_mapping" in raw_data
 
         # ========== 原密码验证逻辑 ==========
         # 获取当前下载器的信息
         current_downloader = db.execute(
             text("SELECT username, password FROM bt_downloaders WHERE downloader_id = :downloader_id AND dr = 0"),
-            {"downloader_id": downloader_id}
+            {"downloader_id": downloader_id},
         ).fetchone()
 
         if not current_downloader:
-            response = CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            response = CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
             return response
 
         current_username = current_downloader[0]
@@ -193,12 +159,7 @@ async def update(
         if need_verify_old_password:
             # 必须提供原密码
             if not downloader_request.old_password or downloader_request.old_password.strip() == "":
-                response = CommonResponse(
-                    status="error",
-                    msg="修改用户名或密码时必须提供原密码",
-                    code="400",
-                    data=None
-                )
+                response = CommonResponse(status="error", msg="修改用户名或密码时必须提供原密码", code="400", data=None)
                 return response
 
             # 验证原密码是否正确
@@ -206,30 +167,15 @@ async def update(
                 try:
                     decrypted_password = decrypt_password(current_password_encrypted)
                     if decrypted_password != downloader_request.old_password:
-                        response = CommonResponse(
-                            status="error",
-                            msg="原密码错误",
-                            code="400",
-                            data=None
-                        )
+                        response = CommonResponse(status="error", msg="原密码错误", code="400", data=None)
                         return response
                 except Exception as e:
                     logger.error(f"解密密码失败: {str(e)}")
-                    response = CommonResponse(
-                        status="error",
-                        msg="验证原密码失败",
-                        code="500",
-                        data=None
-                    )
+                    response = CommonResponse(status="error", msg="验证原密码失败", code="500", data=None)
                     return response
             else:
                 # 数据库中没有密码记录（异常情况）
-                response = CommonResponse(
-                    status="error",
-                    msg="无法验证原密码",
-                    code="500",
-                    data=None
-                )
+                response = CommonResponse(status="error", msg="无法验证原密码", code="500", data=None)
                 return response
         # ========== 原密码验证逻辑结束 ==========
 
@@ -239,13 +185,17 @@ async def update(
             "nickname": downloader_request.nickname,
             "host": downloader_request.host,
             "username": downloader_request.username,
-            "password": encrypt_password(downloader_request.password) if (downloader_request.password and downloader_request.password.strip()) else None,
+            "password": (
+                encrypt_password(downloader_request.password)
+                if (downloader_request.password and downloader_request.password.strip())
+                else None
+            ),
             "is_search": downloader_request.is_search,
             "enabled": downloader_request.enabled,
             "downloader_type": downloader_request.downloader_type,
             "port": downloader_request.port,
             "is_ssl": downloader_request.is_ssl,
-            "downloader_id": downloader_id
+            "downloader_id": downloader_id,
         }
 
         # 添加标准字段
@@ -257,7 +207,9 @@ async def update(
             update_fields.append("password= :password")
         update_fields.append("is_search= case when :is_search is not null then :is_search else is_search end")
         update_fields.append("enabled= case when :enabled is not null then :enabled else enabled end")
-        update_fields.append("downloader_type= case when :downloader_type is not null then :downloader_type else downloader_type end")
+        update_fields.append(
+            "downloader_type= case when :downloader_type is not null then :downloader_type else downloader_type end"
+        )
         update_fields.append("port= case when :port is not null then :port else port end")
         update_fields.append("is_ssl= case when :is_ssl is not null then :is_ssl else is_ssl end")
 
@@ -280,9 +232,10 @@ async def update(
                     # 获取标准化后的配置JSON
                     normalized_config = {
                         "mappings": temp_service.mappings,
-                        "default_mapping": temp_service.default_mapping
+                        "default_mapping": temp_service.default_mapping,
                     }
                     import json
+
                     params["path_mapping"] = json.dumps(normalized_config, ensure_ascii=False)
                     update_fields.append("path_mapping = :path_mapping")
                     logger.info(f"下载器 {downloader_id} 路径映射已更新（路径已标准化）")
@@ -295,13 +248,13 @@ async def update(
         # 如果 path_mapping 不在请求中,则不更新该字段(保持现有值)
 
         # 处理路径映射规则配置
-        if hasattr(downloader_request, 'path_mapping_rules') and downloader_request.path_mapping_rules is not None:
+        if hasattr(downloader_request, "path_mapping_rules") and downloader_request.path_mapping_rules is not None:
             params["path_mapping_rules"] = downloader_request.path_mapping_rules
             update_fields.append("path_mapping_rules = :path_mapping_rules")
             logger.info(f"下载器 {downloader_id} 路径映射规则已更新")
 
         # 处理种子保存目录配置
-        if hasattr(downloader_request, 'torrent_save_path') and downloader_request.torrent_save_path is not None:
+        if hasattr(downloader_request, "torrent_save_path") and downloader_request.torrent_save_path is not None:
             params["torrent_save_path"] = downloader_request.torrent_save_path
             update_fields.append("torrent_save_path = :torrent_save_path")
             logger.info(f"下载器 {downloader_id} 种子保存目录已更新")
@@ -311,47 +264,32 @@ async def update(
         db.execute(text(sql), params)
         db.commit()
 
-        response = CommonResponse(
-            status="success",
-            msg="修改成功",
-            code="200",
-            data=None
-        )
+        response = CommonResponse(status="success", msg="修改成功", code="200", data=None)
     except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
-        response = CommonResponse(
-            status="error",
-            msg=str(e),
-            code="200",
-            data=None
-        )
+        response = CommonResponse(status="error", msg=str(e), code="200", data=None)
     return response
 
 
 @router.delete("/delete/{downloader_id}", summary="下载器删除接口", response_model=CommonResponse)
-def delete(downloader_id: Annotated[str, Path(description="下载器id")],
-           _user=Depends(require_authenticated_user),
-           db: Session = Depends(get_db)):
+def delete(
+    downloader_id: Annotated[str, Path(description="下载器id")],
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
     try:
-        db.execute(text("update bt_downloaders set dr=:dr where downloader_id=:downloader_id"), {"dr": 1, "downloader_id": downloader_id})
-        db.commit()
-        response = CommonResponse(
-            status="success",
-            msg="删除成功",
-            code="200",
-            data=None
+        db.execute(
+            text("update bt_downloaders set dr=:dr where downloader_id=:downloader_id"),
+            {"dr": 1, "downloader_id": downloader_id},
         )
+        db.commit()
+        response = CommonResponse(status="success", msg="删除成功", code="200", data=None)
     except Exception as e:
         db.rollback()
         logging.error(f"Error deleting database: {str(e)}")
-        response = CommonResponse(
-            status="error",
-            msg=str(e),
-            code="200",
-            data=None
-        )
+        response = CommonResponse(status="error", msg=str(e), code="200", data=None)
     return response
 
 
@@ -380,15 +318,15 @@ def _get_downloader_id_from_cache(obj: Any) -> str | None:
         return None
 
     # 优先尝试 downloader_id 属性（DownloaderCheckVO）
-    if hasattr(obj, 'downloader_id'):
-        did = getattr(obj, 'downloader_id')
+    if hasattr(obj, "downloader_id"):
+        did = getattr(obj, "downloader_id")
         # 明确检查None，空字符串是有效值
         if did is not None:
             return str(did)
 
     # 降级到 id 属性（DownloaderVO）
-    if hasattr(obj, 'id'):
-        did = getattr(obj, 'id')
+    if hasattr(obj, "id"):
+        did = getattr(obj, "id")
         # 明确检查None，空字符串是有效值
         if did is not None:
             return str(did)
@@ -416,11 +354,11 @@ def _is_cache_fresh(cached_downloader: Any, threshold_seconds: int = 60) -> bool
     """
     try:
         # 检查是否有last_update属性
-        if not hasattr(cached_downloader, 'last_update'):
+        if not hasattr(cached_downloader, "last_update"):
             logger.debug("缓存对象缺少last_update属性")
             return False
 
-        last_update = getattr(cached_downloader, 'last_update')
+        last_update = getattr(cached_downloader, "last_update")
 
         # 验证last_update是有效的时间戳
         if last_update is None:
@@ -438,6 +376,7 @@ def _is_cache_fresh(cached_downloader: Any, threshold_seconds: int = 60) -> bool
 
         # 获取当前时间
         import time
+
         current_time = time.time()
 
         # 检查是否是未来时间（时钟被调整）
@@ -452,7 +391,7 @@ def _is_cache_fresh(cached_downloader: Any, threshold_seconds: int = 60) -> bool
         is_fresh = time_since_update <= threshold_seconds
 
         if not is_fresh:
-            nickname = getattr(cached_downloader, 'nickname', 'Unknown')
+            nickname = getattr(cached_downloader, "nickname", "Unknown")
             logger.info(f"下载器 {nickname} 缓存过期: {time_since_update:.1f}秒前 (阈值: {threshold_seconds}秒)")
 
         return is_fresh
@@ -462,9 +401,10 @@ def _is_cache_fresh(cached_downloader: Any, threshold_seconds: int = 60) -> bool
         return False  # 出错时认为不新鲜，降级到实时查询
 
 
-@router.get("/getStatusAll", summary="批量获取所有在线下载器的状态", response_model=CommonResponse[List[DownloaderStatusVO]])
-async def get_all_status(
-        _user=Depends(require_authenticated_user)):
+@router.get(
+    "/getStatusAll", summary="批量获取所有在线下载器的状态", response_model=CommonResponse[List[DownloaderStatusVO]]
+)
+async def get_all_status(_user=Depends(require_authenticated_user)):
     """批量获取所有在线下载器的状态
 
     从 app.state.store 缓存中一次性获取所有在线下载器的状态信息。
@@ -484,32 +424,24 @@ async def get_all_status(
         from app.factory import app as downloader_app
 
         # ✅ P0-2修复: 添加完整的防御性检查，确保缓存已初始化
-        if not hasattr(downloader_app, 'state') or \
-           not hasattr(downloader_app.state, 'store') or \
-           downloader_app.state.store is None:
-            return CommonResponse(
-                status="success",
-                msg="缓存服务未初始化",
-                code="200",
-                data=[]
-            )
+        if (
+            not hasattr(downloader_app, "state")
+            or not hasattr(downloader_app.state, "store")
+            or downloader_app.state.store is None
+        ):
+            return CommonResponse(status="success", msg="缓存服务未初始化", code="200", data=[])
 
         # ✅ 使用异步方法获取缓存（避免 RuntimeWarning）
         cached_downloaders = await downloader_app.state.store.get_snapshot()
 
         if not cached_downloaders:
-            return CommonResponse(
-                status="success",
-                msg="暂无在线下载器",
-                code="200",
-                data=[]
-            )
+            return CommonResponse(status="success", msg="暂无在线下载器", code="200", data=[])
 
         # 构建批量响应数据
         result_list = []
         for cached_downloader in cached_downloaders:
             # 跳过离线下载器（fail_time > 0）
-            if hasattr(cached_downloader, 'fail_time') and cached_downloader.fail_time > 0:
+            if hasattr(cached_downloader, "fail_time") and cached_downloader.fail_time > 0:
                 continue
 
             # 使用 _build_status_from_cache 构建状态响应
@@ -521,27 +453,24 @@ async def get_all_status(
 
             result_list.append(status_vo)
 
-        return CommonResponse(
-            status="success",
-            msg="获取成功",
-            code="200",
-            data=result_list
-        )
+        return CommonResponse(status="success", msg="获取成功", code="200", data=result_list)
 
     except Exception as e:
         logger.error(f"批量获取下载器状态失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"批量获取下载器状态失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"批量获取下载器状态失败: {str(e)}", code="500", data=None)
 
 
-@router.get("/getStatus/{downloader_id}", summary="[已废弃] 获取单个下载器的状态", response_model=CommonResponse[DownloaderStatusVO], deprecated=True)
-async def get_status(downloader_id: Annotated[str, Path(description="下载器id")],
-               _user=Depends(require_authenticated_user),
-               db: Session = Depends(get_db)):
+@router.get(
+    "/getStatus/{downloader_id}",
+    summary="[已废弃] 获取单个下载器的状态",
+    response_model=CommonResponse[DownloaderStatusVO],
+    deprecated=True,
+)
+async def get_status(
+    downloader_id: Annotated[str, Path(description="下载器id")],
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
     """获取单个下载器的实时状态 [已废弃]
 
     ⚠️ 该接口已废弃，请使用 /getStatusAll 批量接口替代。
@@ -553,7 +482,7 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
     try:
         from app.factory import app as downloader_app
 
-        if hasattr(downloader_app.state, 'store'):
+        if hasattr(downloader_app.state, "store"):
             # ✅ 使用异步方法获取缓存（避免 RuntimeWarning）
             cached_downloaders = await downloader_app.state.store.get_snapshot()
 
@@ -569,19 +498,19 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
                         break
 
                 # 找到下载器且状态有效（fail_time=0），检查缓存新鲜度
-                if cached_downloader and hasattr(cached_downloader, 'fail_time') and cached_downloader.fail_time == 0:
+                if cached_downloader and hasattr(cached_downloader, "fail_time") and cached_downloader.fail_time == 0:
                     # 使用增强版新鲜度检查函数（阈值60秒，匹配冷数据更新频率）
                     if _is_cache_fresh(cached_downloader):
                         return CommonResponse(
                             status="success",
                             msg="获取成功",
                             code="200",
-                            data=_build_status_from_cache(cached_downloader)
+                            data=_build_status_from_cache(cached_downloader),
                         )
 
                 # 下载器在缓存中但离线，直接返回离线状态
                 if cached_downloader:
-                    nickname = getattr(cached_downloader, 'nickname', 'Unknown')
+                    nickname = getattr(cached_downloader, "nickname", "Unknown")
                     return CommonResponse(
                         status="success",
                         msg="下载器离线",
@@ -594,8 +523,8 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
                             uploadSpeed="0.00",
                             downloadSpeed="0.00",
                             downloadingCount=0,
-                            seedingCount=0
-                        )
+                            seedingCount=0,
+                        ),
                     )
     except Exception as e:
         logger.warning(f"从缓存获取状态失败，降级到实时查询: {str(e)}")
@@ -605,20 +534,12 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
         downloader_result = query_downloader_list(db, [downloader_id])
         if not downloader_result.success:
             return CommonResponse(
-                status="error",
-                msg=f"数据库查询失败: {downloader_result.message}",
-                code="500",
-                data=None
+                status="error", msg=f"数据库查询失败: {downloader_result.message}", code="500", data=None
             )
 
         downloaders = downloader_result.data
         if not downloaders:
-            return CommonResponse(
-                status="error",
-                msg="该下载器已被删除或不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="该下载器已被删除或不存在", code="404", data=None)
 
         # 只取第一个下载器（单下载器查询）
         row = downloaders[0]
@@ -637,12 +558,12 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
             host=row.host,
             username=row.username,
             password=decrypted_password,  # 使用解密后的密码
-            is_search='1' if row.is_search else '0',
-            status=str(row.status) if row.status is not None else '1',
-            enabled='1' if row.enabled else '0',
+            is_search="1" if row.is_search else "0",
+            status=str(row.status) if row.status is not None else "1",
+            enabled="1" if row.enabled else "0",
             downloader_type=row.downloader_type,
             port=row.port,
-            is_ssl='1' if row.is_ssl else '0'
+            is_ssl="1" if row.is_ssl else "0",
         )
 
         delay = await get_delay_async(downloader)
@@ -661,49 +582,33 @@ async def get_status(downloader_id: Annotated[str, Path(description="下载器id
                 uploadSpeed="0.00",
                 downloadSpeed="0.00",
                 downloadingCount=0,
-                seedingCount=0
+                seedingCount=0,
             )
 
-        return CommonResponse(
-            status="success",
-            msg="获取成功",
-            code="200",
-            data=result
-        )
+        return CommonResponse(status="success", msg="获取成功", code="200", data=result)
     except Exception as e:
         logger.error(f"获取下载器状态失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"获取下载器状态失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"获取下载器状态失败: {str(e)}", code="500", data=None)
+
 
 @router.post("/test/{downloader_id}", summary="测试下载器连接", response_model=CommonResponse)
-async def test_connection(downloader_id: Annotated[str, Path(description="下载器id")],
-                        _user=Depends(require_authenticated_user),
-                        db: Session = Depends(get_db)):
-    """测试下载器连接并返回连接结果和延迟
-    """
+async def test_connection(
+    downloader_id: Annotated[str, Path(description="下载器id")],
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    """测试下载器连接并返回连接结果和延迟"""
     try:
         # 查询下载器信息
         downloader_result = query_downloader_list(db, [downloader_id])
         if not downloader_result.success:
             return CommonResponse(
-                status="error",
-                msg=f"数据库查询失败: {downloader_result.message}",
-                code="500",
-                data=None
+                status="error", msg=f"数据库查询失败: {downloader_result.message}", code="500", data=None
             )
 
         downloaders = downloader_result.data
         if not downloaders:
-            return CommonResponse(
-                status="error",
-                msg="该下载器已被删除或不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="该下载器已被删除或不存在", code="404", data=None)
 
         # 获取下载器信息
         row = downloaders[0]
@@ -713,12 +618,12 @@ async def test_connection(downloader_id: Annotated[str, Path(description="下载
             host=row.host,
             username=row.username,
             password=row.password,
-            is_search='1' if row.is_search else '0',
-            status=str(row.status) if row.status is not None else '1',
-            enabled='1' if row.enabled else '0',
+            is_search="1" if row.is_search else "0",
+            status=str(row.status) if row.status is not None else "1",
+            enabled="1" if row.enabled else "0",
             downloader_type=row.downloader_type,
             port=row.port,
-            is_ssl='1' if row.is_ssl else '0'
+            is_ssl="1" if row.is_ssl else "0",
         )
 
         # 检测延迟
@@ -726,19 +631,15 @@ async def test_connection(downloader_id: Annotated[str, Path(description="下载
 
         # 判断连接状态
         success = delay is not None and delay != False and delay != 0
-        connect_status = 'connected' if success else 'disconnected'
-        message = '连接成功' if success else '连接失败'
+        connect_status = "connected" if success else "disconnected"
+        message = "连接成功" if success else "连接失败"
 
         # 返回测试结果
         return CommonResponse(
             status="success",
             msg=message,
             code="200",
-            data={
-                'success': success,
-                'delay': safe_delay_value(delay),
-                'message': message
-            }
+            data={"success": success, "delay": safe_delay_value(delay), "message": message},
         )
     except Exception as e:
         logger.error(f"测试连接失败: {str(e)}")
@@ -746,11 +647,7 @@ async def test_connection(downloader_id: Annotated[str, Path(description="下载
             status="error",
             msg=f"测试连接失败: {str(e)}",
             code="500",
-            data={
-                'success': False,
-                'delay': None,
-                'message': str(e)
-            }
+            data={"success": False, "delay": None, "message": str(e)},
         )
 
 
@@ -759,15 +656,15 @@ def _build_status_from_cache(cached_downloader) -> DownloaderStatusVO:
     import time
 
     # 获取缓存的实时状态
-    upload_speed_kb = getattr(cached_downloader, 'upload_speed', 0) or 0
-    download_speed_kb = getattr(cached_downloader, 'download_speed', 0) or 0
-    downloading_count = getattr(cached_downloader, 'downloading_count', 0) or 0
-    seeding_count = getattr(cached_downloader, 'seeding_count', 0) or 0
+    upload_speed_kb = getattr(cached_downloader, "upload_speed", 0) or 0
+    download_speed_kb = getattr(cached_downloader, "download_speed", 0) or 0
+    downloading_count = getattr(cached_downloader, "downloading_count", 0) or 0
+    seeding_count = getattr(cached_downloader, "seeding_count", 0) or 0
 
     # 获取延迟和在线状态
-    delay = getattr(cached_downloader, 'delay', None)
+    delay = getattr(cached_downloader, "delay", None)
     # 安全获取在线状态：如果属性不存在，默认为离线（False）
-    is_online = getattr(cached_downloader, 'is_online', False) if hasattr(cached_downloader, 'is_online') else False
+    is_online = getattr(cached_downloader, "is_online", False) if hasattr(cached_downloader, "is_online") else False
 
     # 自动转换速度单位（>= 1024 KB/s 转换为 MB/s），并添加单位后缀
     if upload_speed_kb >= 1024:
@@ -799,13 +696,13 @@ def _build_status_from_cache(cached_downloader) -> DownloaderStatusVO:
 
     return DownloaderStatusVO(
         connectStatus=connect_status,  # 根据is_online判断
-        nickname=getattr(cached_downloader, 'nickname', 'Unknown'),
+        nickname=getattr(cached_downloader, "nickname", "Unknown"),
         delay=delay_value,  # 使用缓存中的延迟值
-        id=downloader_id or '',  # 使用获取的 ID，如果为空则使用空字符串
+        id=downloader_id or "",  # 使用获取的 ID，如果为空则使用空字符串
         uploadSpeed=upload_speed,
         downloadSpeed=download_speed,
         downloadingCount=downloading_count,  # 新增字段
-        seedingCount=seeding_count           # 新增字段
+        seedingCount=seeding_count,  # 新增字段
     )
 
 
@@ -837,24 +734,32 @@ def get_qbittorrent_detail(delay, downloader):
                     username=downloader.username,
                     password=downloader.password,
                     VERIFY_WEBUI_CERTIFICATE=False,  # 禁用SSL证书验证
-                    REQUESTS_ARGS={'timeout': 10}      # 设置连接超时
+                    REQUESTS_ARGS={"timeout": 10},  # 设置连接超时
                 )
 
                 transfer_info = client.transfer_info()
                 # 转换为KB/s，然后自动转换单位
-                upload_speed_kb = transfer_info.get('up_info_speed', 0) / 1024
-                download_speed_kb = transfer_info.get('dl_info_speed', 0) / 1024
+                upload_speed_kb = transfer_info.get("up_info_speed", 0) / 1024
+                download_speed_kb = transfer_info.get("dl_info_speed", 0) / 1024
 
                 # 自动添加单位
-                upload_speed = f"{upload_speed_kb / 1024:.2f} MB/s" if upload_speed_kb >= 1024 else f"{upload_speed_kb:.2f} KB/s"
-                download_speed = f"{download_speed_kb / 1024:.2f} MB/s" if download_speed_kb >= 1024 else f"{download_speed_kb:.2f} KB/s"
+                upload_speed = (
+                    f"{upload_speed_kb / 1024:.2f} MB/s" if upload_speed_kb >= 1024 else f"{upload_speed_kb:.2f} KB/s"
+                )
+                download_speed = (
+                    f"{download_speed_kb / 1024:.2f} MB/s"
+                    if download_speed_kb >= 1024
+                    else f"{download_speed_kb:.2f} KB/s"
+                )
 
                 client_status = "connected"
                 logger.info(f"qBittorrent下载器连接成功: {downloader.nickname} ({protocol})")
                 break  # 连接成功，退出协议尝试循环
 
             except Exception as qb_error:
-                logger.warning(f"qBittorrent下载器连接失败: {downloader.host}:{downloader.port} ({protocol}) - {str(qb_error)}")
+                logger.warning(
+                    f"qBittorrent下载器连接失败: {downloader.host}:{downloader.port} ({protocol}) - {str(qb_error)}"
+                )
 
                 if "SSL" in str(qb_error).upper() or "CERTIFICATE" in str(qb_error).upper():
                     # SSL相关错误，尝试HTTP
@@ -887,7 +792,7 @@ def get_qbittorrent_detail(delay, downloader):
         uploadSpeed=upload_speed,
         downloadSpeed=download_speed,
         downloadingCount=0,
-        seedingCount=0
+        seedingCount=0,
     )
 
 
@@ -918,7 +823,7 @@ def get_transmission_detail(delay, downloader):
                     password=downloader.password,
                     port=downloader.port,
                     protocol=protocol,
-                    timeout=10.0
+                    timeout=10.0,
                 )
 
                 stats = tr_client.session_stats()
@@ -927,18 +832,28 @@ def get_transmission_detail(delay, downloader):
                 download_speed_kb = stats.download_speed / 1024
 
                 # 自动添加单位
-                upload_speed = f"{upload_speed_kb / 1024:.2f} MB/s" if upload_speed_kb >= 1024 else f"{upload_speed_kb:.2f} KB/s"
-                download_speed = f"{download_speed_kb / 1024:.2f} MB/s" if download_speed_kb >= 1024 else f"{download_speed_kb:.2f} KB/s"
+                upload_speed = (
+                    f"{upload_speed_kb / 1024:.2f} MB/s" if upload_speed_kb >= 1024 else f"{upload_speed_kb:.2f} KB/s"
+                )
+                download_speed = (
+                    f"{download_speed_kb / 1024:.2f} MB/s"
+                    if download_speed_kb >= 1024
+                    else f"{download_speed_kb:.2f} KB/s"
+                )
 
-              # 连接成功，根据协议提供详细状态信息
+                # 连接成功，根据协议提供详细状态信息
                 ssl_security = " (SSL加密)" if protocol == "https" else " (非加密)"
                 client_status = f"connected{ssl_security}"
                 logger.info(f"Transmission下载器连接成功: {downloader.nickname} ({protocol})")
                 break  # 连接成功，退出协议尝试循环
 
             except SSLError as ssl_error:
-                logger.warning(f"Transmission下载器SSL连接失败: {downloader.host}:{downloader.port} ({protocol}) - {str(ssl_error)}")
-                if protocol == "https" and ("WRONG_VERSION_NUMBER" in str(ssl_error) or "CERTIFICATE" in str(ssl_error).upper()):
+                logger.warning(
+                    f"Transmission下载器SSL连接失败: {downloader.host}:{downloader.port} ({protocol}) - {str(ssl_error)}"
+                )
+                if protocol == "https" and (
+                    "WRONG_VERSION_NUMBER" in str(ssl_error) or "CERTIFICATE" in str(ssl_error).upper()
+                ):
                     # SSL版本或证书错误，继续尝试HTTP
                     continue
                 else:
@@ -952,7 +867,9 @@ def get_transmission_detail(delay, downloader):
                 break  # 认证错误不需要尝试其他协议
 
             except ConnectionError as conn_error:
-                logger.warning(f"Transmission下载器连接错误: {downloader.host}:{downloader.port} ({protocol}) - {str(conn_error)}")
+                logger.warning(
+                    f"Transmission下载器连接错误: {downloader.host}:{downloader.port} ({protocol}) - {str(conn_error)}"
+                )
                 if protocol == "https":
                     # HTTPS连接失败，尝试HTTP
                     continue
@@ -962,7 +879,9 @@ def get_transmission_detail(delay, downloader):
                     break
 
             except TypeError as param_error:
-                logger.error(f"Transmission下载器参数错误: {downloader.host}:{downloader.port} ({protocol}) - {str(param_error)}")
+                logger.error(
+                    f"Transmission下载器参数错误: {downloader.host}:{downloader.port} ({protocol}) - {str(param_error)}"
+                )
                 if "unexpected keyword argument" in str(param_error):
                     # 参数错误，标记配置问题
                     client_status = "下载器配置错误，请检查参数设置"
@@ -983,11 +902,12 @@ def get_transmission_detail(delay, downloader):
         uploadSpeed=upload_speed,
         downloadSpeed=download_speed,
         downloadingCount=0,
-        seedingCount=0
+        seedingCount=0,
     )
 
 
 import asyncio
+
 
 def safe_delay_value(delay) -> float | None:
     """
@@ -1028,7 +948,7 @@ def safe_delay_value(delay) -> float | None:
     else:
         # 尝试转换字符串或其他类型
         try:
-            if str(delay).replace('.', '').replace('-', '').isdigit():
+            if str(delay).replace(".", "").replace("-", "").isdigit():
                 delay_float = float(delay)
                 # 应用相同的格式化逻辑
                 if delay_float == 0:
@@ -1041,6 +961,7 @@ def safe_delay_value(delay) -> float | None:
         except (ValueError, TypeError):
             pass
         return None
+
 
 async def get_delay_async(downloader):
     """异步版本的延迟检测"""
@@ -1055,6 +976,7 @@ async def get_delay_async(downloader):
         delay = False
     return delay
 
+
 def get_delay(downloader):
     """同步版本的延迟检测（保持兼容性）"""
     try:
@@ -1063,6 +985,7 @@ def get_delay(downloader):
         else:
             # 使用线程池执行ping操作，避免阻塞
             import concurrent.futures
+
             with concurrent.futures.ThreadPoolExecutor() as executor:
                 future = executor.submit(ping3.ping, downloader.host, 3000, "ms", "0.0.0.0", seq=2)
                 delay = future.result(timeout=4)  # 4秒超时
@@ -1096,33 +1019,29 @@ def query_downloader_list(db, id_list):
             BtDownloaders.enabled,
             BtDownloaders.downloader_type,
             BtDownloaders.port,
-            BtDownloaders.is_ssl
-        ).filter(
-            BtDownloaders.dr == 0,
-            BtDownloaders.downloader_id.in_(id_list)
-        )
+            BtDownloaders.is_ssl,
+        ).filter(BtDownloaders.dr == 0, BtDownloaders.downloader_id.in_(id_list))
         downloaders = query.all()
 
         # Import here to avoid circular imports
         from app.core.database_result import DatabaseResult
 
         return DatabaseResult.success_result(
-            data=downloaders,
-            message="Downloaders queried successfully",
-            total_count=len(downloaders)
+            data=downloaders, message="Downloaders queried successfully", total_count=len(downloaders)
         )
     except Exception as e:
         from app.core.database_result import DatabaseResult, DatabaseError
-        return DatabaseResult.database_error_result(
-            message=f"Failed to query downloaders: {str(e)}"
-        )
+
+        return DatabaseResult.database_error_result(message=f"Failed to query downloaders: {str(e)}")
 
 
-@router.get('/getList', summary="获取下载器简单列表(仅ID和名称)", response_model=CommonResponse[List[DownloaderSimpleVO]])
+@router.get(
+    "/getList", summary="获取下载器简单列表(仅ID和名称)", response_model=CommonResponse[List[DownloaderSimpleVO]]
+)
 def get_downloader_simple_list(
-        enabled: Optional[bool] = Query(True, description="是否只返回启用的下载器", examples={"default": True}),
-        _user=Depends(require_authenticated_user),
-        db: Session = Depends(get_db)
+    enabled: Optional[bool] = Query(True, description="是否只返回启用的下载器", examples={"default": True}),
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """
     获取下载器简单列表，仅返回ID和名称
@@ -1163,48 +1082,32 @@ def get_downloader_simple_list(
         """
 
         result = db.execute(text(sql), params)
-        downloaders = [
-            DownloaderSimpleVO(
-                downloader_id=row.downloader_id,
-                nickname=row.nickname
-            )
-            for row in result
-        ]
+        downloaders = [DownloaderSimpleVO(downloader_id=row.downloader_id, nickname=row.nickname) for row in result]
 
-        return CommonResponse(
-            status="success",
-            msg="获取下载器列表成功",
-            code="200",
-            data=downloaders
-        )
+        return CommonResponse(status="success", msg="获取下载器列表成功", code="200", data=downloaders)
 
     except Exception as e:
         logger.error(f"数据库查询失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"数据库查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"数据库查询失败: {str(e)}", code="500", data=None)
 
 
-@router.post('/getList', summary="获取下载器列表(支持多条件查询)", response_model=CommonResponse[List[DownloaderListVO]])
+@router.post(
+    "/getList", summary="获取下载器列表(支持多条件查询)", response_model=CommonResponse[List[DownloaderListVO]]
+)
 async def getlist_from_cache(
-        downloader_request: ListDownloader = None,
-        _user=Depends(require_authenticated_user),
-        db: Session = Depends(get_db)
+    downloader_request: ListDownloader = None, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)
 ):
     """
     获取所有未逻辑删除的下载器列表,并标记连通状态
-    
+
     支持多条件模糊查询:
     - nickname: 下载器别名(模糊)
     - host: 下载器主机地址(模糊)
     - is_search: 是否启用搜索(模糊)
     - enabled: 是否启用(模糊)
-    
+
     不传参数或传空对象: 返回所有 dr=0 的下载器
-    
+
     返回:
     - 所有 dr=0 的下载器(可选条件过滤)
     - connectStatus: "1"=在缓存中(在线), "0"=不在缓存中(离线)
@@ -1221,36 +1124,36 @@ async def getlist_from_cache(
             FROM bt_downloaders
             WHERE dr = 0
         """
-        
+
         # 构建查询条件
         conditions = []
         params = {}
-        
+
         if downloader_request:
             if downloader_request.nickname:
                 conditions.append("nickname LIKE :nickname")
                 params["nickname"] = f"%{downloader_request.nickname}%"
-            
+
             if downloader_request.host:
                 conditions.append("host LIKE :host")
                 params["host"] = f"%{downloader_request.host}%"
-            
+
             if downloader_request.is_search:
                 conditions.append("is_search LIKE :is_search")
                 params["is_search"] = f"%{downloader_request.is_search}%"
-            
+
             if downloader_request.enabled:
                 conditions.append("enabled LIKE :enabled")
                 params["enabled"] = f"%{downloader_request.enabled}%"
-        
+
         # 组装 SQL
         if conditions:
             sql = base_sql + " AND " + " AND ".join(conditions)
         else:
             sql = base_sql
-        
+
         result = db.execute(text(sql), params)
-        
+
         # 构建 DownloaderListVO 列表(暂不设置 connectStatus)
         downloaders = [
             DownloaderListVO(
@@ -1261,18 +1164,13 @@ async def getlist_from_cache(
                 status=row.status,
                 enabled=row.enabled,
                 downloader_type=row.downloader_type,
-                port=str(row.port)
+                port=str(row.port),
             )
             for row in result
         ]
     except Exception as e:
         logger.error(f"数据库查询失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"数据库查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"数据库查询失败: {str(e)}", code="500", data=None)
 
     # 3. 从缓存获取在线下载器 ID 集合
     connected_ids = set()  # 默认为空集合(缓存不可用时,所有下载器都标记为离线)
@@ -1281,10 +1179,10 @@ async def getlist_from_cache(
         # ✅ 修复: 从正确的 FastAPI 实例获取缓存
         from app.factory import app as downloader_app
 
-        if hasattr(downloader_app.state, 'store'):
+        if hasattr(downloader_app.state, "store"):
             # ✅ 使用异步方法获取缓存（避免 RuntimeWarning）
             cached_downloaders = await downloader_app.state.store.get_snapshot()
-            
+
             if cached_downloaders:
                 # 构建在线 ID 集合(统一转换为 str 类型,避免类型不一致)
                 for cached_downloader in cached_downloaders:
@@ -1311,14 +1209,7 @@ async def getlist_from_cache(
     downloaders.sort(key=lambda d: d.connectStatus, reverse=True)
 
     # 6. 返回响应
-    return CommonResponse(
-        status="success",
-        msg="获取下载器列表成功",
-        code="200",
-        data=downloaders
-    )
-
-
+    return CommonResponse(status="success", msg="获取下载器列表成功", code="200", data=downloaders)
 
 
 # ==================== 路径映射相关接口 ====================
@@ -1329,6 +1220,7 @@ from app.api.schemas.path_mapping import PathMappingTestRequest
 
 class PathMappingAdd(BaseModel):
     """添加路径映射请求"""
+
     downloader_id: str
     name: str
     internal: str
@@ -1339,17 +1231,13 @@ class PathMappingAdd(BaseModel):
 
 class PathMappingRemove(BaseModel):
     """删除路径映射请求"""
+
     downloader_id: str
     name: str
 
 
-
 @router.get("/{downloader_id}/path-mapping", summary="获取下载器的路径映射配置")
-def get_path_mappings(
-    downloader_id: str,
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+def get_path_mappings(downloader_id: str, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """
     获取下载器的路径映射配置
 
@@ -1365,21 +1253,15 @@ def get_path_mappings(
 
     try:
         # 查询下载器
-        downloader = db.query(BtDownloaders).filter(
-            BtDownloaders.downloader_id == downloader_id
-        ).first()
+        downloader = db.query(BtDownloaders).filter(BtDownloaders.downloader_id == downloader_id).first()
 
         if not downloader:
-            return CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 获取路径映射
         if downloader.path_mapping:
             from app.core.path_mapping import PathMappingService
+
             path_mapping_service = PathMappingService(downloader.path_mapping)
             mappings = path_mapping_service.get_mappings()
             default_mapping = path_mapping_service.default_mapping
@@ -1388,37 +1270,24 @@ def get_path_mappings(
                 status="success",
                 msg="查询成功",
                 code="200",
-                data={
-                    "mappings": mappings,
-                    "default_mapping": default_mapping  # ✅ 包含默认映射
-                }
+                data={"mappings": mappings, "default_mapping": default_mapping},  # ✅ 包含默认映射
             )
         else:
             return CommonResponse(
                 status="success",
                 msg="未配置路径映射",
                 code="200",
-                data={
-                    "mappings": [],
-                    "default_mapping": None  # ✅ 明确设置为 None
-                }
+                data={"mappings": [], "default_mapping": None},  # ✅ 明确设置为 None
             )
 
     except Exception as e:
         logger.error(f"查询路径映射失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/path-mapping/add", summary="添加路径映射")
 def add_path_mapping(
-    request_data: PathMappingAdd,
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
+    request_data: PathMappingAdd, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)
 ):
     """
     添加路径映射
@@ -1435,17 +1304,10 @@ def add_path_mapping(
 
     try:
         # 查询下载器
-        downloader = db.query(BtDownloaders).filter(
-            BtDownloaders.downloader_id == request_data.downloader_id
-        ).first()
+        downloader = db.query(BtDownloaders).filter(BtDownloaders.downloader_id == request_data.downloader_id).first()
 
         if not downloader:
-            return CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 加载现有配置
         from app.core.path_mapping import PathMappingService
@@ -1462,36 +1324,24 @@ def add_path_mapping(
             internal=request_data.internal,
             external=request_data.external,
             description=request_data.description,
-            mapping_type=request_data.mapping_type
+            mapping_type=request_data.mapping_type,
         )
 
         # 保存配置
         downloader.path_mapping = path_mapping_service.to_json()
         db.commit()
 
-        return CommonResponse(
-            status="success",
-            msg="添加成功",
-            code="200",
-            data=None
-        )
+        return CommonResponse(status="success", msg="添加成功", code="200", data=None)
 
     except Exception as e:
         logger.error(f"添加路径映射失败: {str(e)}")
         db.rollback()
-        return CommonResponse(
-            status="error",
-            msg=f"添加失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"添加失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/path-mapping/remove", summary="删除路径映射")
 def remove_path_mapping(
-    request_data: PathMappingRemove,
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
+    request_data: PathMappingRemove, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)
 ):
     """
     删除路径映射
@@ -1508,62 +1358,36 @@ def remove_path_mapping(
 
     try:
         # 查询下载器
-        downloader = db.query(BtDownloaders).filter(
-            BtDownloaders.downloader_id == request_data.downloader_id
-        ).first()
+        downloader = db.query(BtDownloaders).filter(BtDownloaders.downloader_id == request_data.downloader_id).first()
 
         if not downloader:
-            return CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 检查是否有配置
         if not downloader.path_mapping:
-            return CommonResponse(
-                status="error",
-                msg="未配置路径映射",
-                code="400",
-                data=None
-            )
+            return CommonResponse(status="error", msg="未配置路径映射", code="400", data=None)
 
         # 加载现有配置
         from app.core.path_mapping import PathMappingService
+
         path_mapping_service = PathMappingService(downloader.path_mapping)
 
         # 删除映射
         success = path_mapping_service.remove_mapping(request_data.name)
 
         if not success:
-            return CommonResponse(
-                status="error",
-                msg=f"未找到路径映射: {request_data.name}",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg=f"未找到路径映射: {request_data.name}", code="404", data=None)
 
         # 保存配置
         downloader.path_mapping = path_mapping_service.to_json()
         db.commit()
 
-        return CommonResponse(
-            status="success",
-            msg="删除成功",
-            code="200",
-            data=None
-        )
+        return CommonResponse(status="success", msg="删除成功", code="200", data=None)
 
     except Exception as e:
         logger.error(f"删除路径映射失败: {str(e)}")
         db.rollback()
-        return CommonResponse(
-            status="error",
-            msg=f"删除失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"删除失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/{downloader_id}/path-mapping/test", summary="测试路径映射配置")
@@ -1571,7 +1395,7 @@ def test_path_mapping(
     downloader_id: str,
     request_data: PathMappingTestRequest,
     _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     测试路径映射配置的有效性
@@ -1589,17 +1413,10 @@ def test_path_mapping(
 
     try:
         # 验证下载器存在
-        downloader = db.query(BtDownloaders).filter(
-            BtDownloaders.downloader_id == downloader_id
-        ).first()
+        downloader = db.query(BtDownloaders).filter(BtDownloaders.downloader_id == downloader_id).first()
 
         if not downloader:
-            return CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 后端验证
         backend_validation = {
@@ -1607,7 +1424,7 @@ def test_path_mapping(
             "structure_valid": True,
             "fields_complete": True,
             "no_path_conflicts": True,
-            "errors": []
+            "errors": [],
         }
 
         try:
@@ -1615,7 +1432,7 @@ def test_path_mapping(
             config = request_data.path_mapping
 
             # 2. 结构验证
-            if not hasattr(config, 'mappings') or not isinstance(config.mappings, list):
+            if not hasattr(config, "mappings") or not isinstance(config.mappings, list):
                 backend_validation["structure_valid"] = False
                 backend_validation["errors"].append("缺少mappings数组")
 
@@ -1623,9 +1440,7 @@ def test_path_mapping(
             for idx, mapping in enumerate(config.mappings):
                 if not mapping.name or not mapping.internal or not mapping.external:
                     backend_validation["fields_complete"] = False
-                    backend_validation["errors"].append(
-                        f"映射#{idx+1}缺少必填字段"
-                    )
+                    backend_validation["errors"].append(f"映射#{idx+1}缺少必填字段")
 
             # 4. 路径冲突检测
             internal_paths = [m.internal for m in config.mappings]
@@ -1636,6 +1451,7 @@ def test_path_mapping(
             # 5. 路径标准化验证(尝试创建PathMappingService)
             try:
                 from app.core.path_mapping import PathMappingService
+
                 service = PathMappingService(config.model_dump_json())
                 # 验证路径标准化是否成功
                 for mapping in config.mappings:
@@ -1651,33 +1467,25 @@ def test_path_mapping(
             backend_validation["errors"].append(f"配置解析失败: {str(e)}")
 
         # 判断总体验证结果
-        is_valid = all([
-            backend_validation["json_format_valid"],
-            backend_validation["structure_valid"],
-            backend_validation["fields_complete"],
-            backend_validation["no_path_conflicts"]
-        ])
+        is_valid = all(
+            [
+                backend_validation["json_format_valid"],
+                backend_validation["structure_valid"],
+                backend_validation["fields_complete"],
+                backend_validation["no_path_conflicts"],
+            ]
+        )
 
         # 构建响应
         test_response = {
             "valid": is_valid,
             "message": "配置验证通过" if is_valid else f"验证失败: {', '.join(backend_validation['errors'])}",
             "backend_validation": backend_validation,
-            "frontend_validation": None  # 由前端填充
+            "frontend_validation": None,  # 由前端填充
         }
 
-        return CommonResponse(
-            status="success",
-            msg="测试完成",
-            code="200",
-            data=test_response
-        )
+        return CommonResponse(status="success", msg="测试完成", code="200", data=test_response)
 
     except Exception as e:
         logger.error(f"路径映射测试失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"测试失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"测试失败: {str(e)}", code="500", data=None)

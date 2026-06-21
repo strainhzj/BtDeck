@@ -35,12 +35,7 @@ class AsyncCronTaskCRUD:
             DatabaseResult: 包含任务列表的数据库结果对象
         """
         try:
-            stmt = select(CronTask).where(
-                and_(
-                    CronTask.enabled == True,
-                    CronTask.dr == 0
-                )
-            )
+            stmt = select(CronTask).where(and_(CronTask.enabled == True, CronTask.dr == 0))
             result = await db.execute(stmt)
             tasks = result.scalars().all()
 
@@ -66,12 +61,7 @@ class AsyncCronTaskCRUD:
             DatabaseResult: 包含任务信息的数据库结果对象
         """
         try:
-            stmt = select(CronTask).where(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0
-                )
-            )
+            stmt = select(CronTask).where(and_(CronTask.task_id == task_id, CronTask.dr == 0))
             result = await db.execute(stmt)
             task = result.scalar_one_or_none()
 
@@ -87,11 +77,7 @@ class AsyncCronTaskCRUD:
             return DatabaseResult.failure_result(f"获取定时任务失败: {str(e)}")
 
     @staticmethod
-    async def update_task_status(
-        db: AsyncSession,
-        task_id: int,
-        status: int
-    ) -> DatabaseResult:
+    async def update_task_status(db: AsyncSession, task_id: int, status: int) -> DatabaseResult:
         """
         异步更新任务状态
 
@@ -104,12 +90,7 @@ class AsyncCronTaskCRUD:
             DatabaseResult: 更新结果的数据库结果对象
         """
         try:
-            stmt = select(CronTask).where(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0
-                )
-            )
+            stmt = select(CronTask).where(and_(CronTask.task_id == task_id, CronTask.dr == 0))
             result = await db.execute(stmt)
             task = result.scalar_one_or_none()
 
@@ -131,11 +112,7 @@ class AsyncCronTaskCRUD:
             return DatabaseResult.failure_result(f"更新任务状态失败: {str(e)}")
 
     @staticmethod
-    async def update_task_start_time(
-        db: AsyncSession,
-        task_id: int,
-        start_time: datetime
-    ) -> DatabaseResult:
+    async def update_task_start_time(db: AsyncSession, task_id: int, start_time: datetime) -> DatabaseResult:
         """
         异步更新任务开始执行时间
 
@@ -149,12 +126,7 @@ class AsyncCronTaskCRUD:
         """
         try:
             # ✅ 修复：添加 dr==0 检查，只更新未删除的任务
-            stmt = select(CronTask).where(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0  # 只查询未删除的任务
-                )
-            )
+            stmt = select(CronTask).where(and_(CronTask.task_id == task_id, CronTask.dr == 0))  # 只查询未删除的任务
             result = await db.execute(stmt)
             task = result.scalar_one_or_none()
 
@@ -173,11 +145,7 @@ class AsyncCronTaskCRUD:
             return DatabaseResult.failure_result(f"更新任务开始时间失败: {str(e)}")
 
     @staticmethod
-    async def update_task_execution_duration(
-        db: AsyncSession,
-        task_id: int,
-        duration: int
-    ) -> DatabaseResult:
+    async def update_task_execution_duration(db: AsyncSession, task_id: int, duration: int) -> DatabaseResult:
         """
         异步更新任务执行持续时间
 
@@ -191,12 +159,7 @@ class AsyncCronTaskCRUD:
         """
         try:
             # ✅ 修复：添加 dr==0 检查，只更新未删除的任务
-            stmt = select(CronTask).where(
-                and_(
-                    CronTask.task_id == task_id,
-                    CronTask.dr == 0  # 只查询未删除的任务
-                )
-            )
+            stmt = select(CronTask).where(and_(CronTask.task_id == task_id, CronTask.dr == 0))  # 只查询未删除的任务
             result = await db.execute(stmt)
             task = result.scalar_one_or_none()
 
@@ -239,7 +202,7 @@ class AsyncTaskLogsCRUD:
                 end_time=log_data.get("end_time"),
                 duration=log_data.get("duration"),
                 success=log_data.get("success"),
-                log_detail=log_data.get("log_detail")
+                log_detail=log_data.get("log_detail"),
             )
 
             db.add(task_log)

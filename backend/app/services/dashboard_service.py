@@ -106,14 +106,16 @@ class DashboardService:
                 downloading = int(getattr(downloader, "downloading_count", 0) or 0)
                 seeding = int(getattr(downloader, "seeding_count", 0) or 0)
 
-            downloader_list.append({
-                "downloader_id": str(getattr(downloader, "downloader_id", "")),
-                "nickname": getattr(downloader, "nickname", "") or "Unknown",
-                "downloader_type": int(getattr(downloader, "downloader_type", 0) or 0),
-                "status": "online" if getattr(downloader, "fail_time", 0) == 0 else "offline",
-                "downloading": downloading,
-                "seeding": seeding,
-            })
+            downloader_list.append(
+                {
+                    "downloader_id": str(getattr(downloader, "downloader_id", "")),
+                    "nickname": getattr(downloader, "nickname", "") or "Unknown",
+                    "downloader_type": int(getattr(downloader, "downloader_type", 0) or 0),
+                    "status": "online" if getattr(downloader, "fail_time", 0) == 0 else "offline",
+                    "downloading": downloading,
+                    "seeding": seeding,
+                }
+            )
 
         return downloader_list
 
@@ -162,13 +164,15 @@ class DashboardService:
             torrent_display = torrent_name if torrent_name else "未知种子"
             action_detail = f"{action} {downloader_display} 种子 {torrent_display}"
 
-            activities.append({
-                "time": time_str,
-                "source": "系统",
-                "action": action_detail,
-                "type": category,
-                "torrent_name": torrent_name,
-                "downloader_name": downloader_name,
-            })
+            activities.append(
+                {
+                    "time": time_str,
+                    "source": "系统",
+                    "action": action_detail,
+                    "type": category,
+                    "torrent_name": torrent_name,
+                    "downloader_name": downloader_name,
+                }
+            )
 
         return activities

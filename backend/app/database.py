@@ -15,18 +15,14 @@ from typing import Dict, Any, Optional
 from gmssl import sm4, func
 from app.auth import utils
 
-
 # 创建日志记录器
 logger = logging.getLogger(__name__)
 SQLALCHEMY_DATABASE_URL = f"sqlite:///{settings.DATABASE_PATH}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={
-        "check_same_thread": False,
-        "timeout": 30  # 设置30秒超时，避免"database is locked"错误
-    },
-    poolclass=NullPool
+    connect_args={"check_same_thread": False, "timeout": 30},  # 设置30秒超时，避免"database is locked"错误
+    poolclass=NullPool,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -41,24 +37,18 @@ ASYNC_SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{settings.DATABASE_PATH}"
 # 3. 启用 WAL 模式（Write-Ahead Logging），提升并发性能
 async_engine = create_async_engine(
     ASYNC_SQLALCHEMY_DATABASE_URL,
-    connect_args={
-        "check_same_thread": False,
-        "timeout": 30  # 设置30秒的超时时间，避免"database is locked"错误
-    },
+    connect_args={"check_same_thread": False, "timeout": 30},  # 设置30秒的超时时间，避免"database is locked"错误
     poolclass=NullPool,  # SQLite推荐使用NullPool，因为单个文件数据库不支持真正的连接池
-    echo=False  # 设置为 True 可以查看 SQL 执行日志
+    echo=False,  # 设置为 True 可以查看 SQL 执行日志
 )
 
 # 创建异步会话工厂
 AsyncSessionLocal = async_sessionmaker(
-    async_engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autocommit=False,
-    autoflush=False
+    async_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False
 )
 
 Base = declarative_base()
+
 
 def get_db():
     db = SessionLocal()
@@ -83,6 +73,7 @@ async def get_async_db():
             yield session
         finally:
             await session.close()
+
 
 def init_db():
     """
@@ -121,6 +112,7 @@ def init_db():
     # 3. 更好的崩溃恢复能力
     try:
         import sqlite3
+
         conn = sqlite3.connect(db_file)
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")  # 平衡安全性和性能
@@ -170,9 +162,7 @@ def init_db():
             logger.info("Adding default configuration...")
             print("Adding default configuration...")
             cookie_config = Config(
-                key="cookie_expire_minutes",
-                value="30",
-                description="Cookie expiration time in minutes"
+                key="cookie_expire_minutes", value="30", description="Cookie expiration time in minutes"
             )
             db.add(cookie_config)
             logger.info("Default configuration added")
@@ -191,6 +181,7 @@ def init_db():
     # 初始化系统默认模板（无论数据库是否已存在）
     try:
         from app.data.default_templates import init_default_templates
+
         db = SessionLocal()
         init_default_templates(db)
         db.close()
@@ -201,13 +192,13 @@ def init_db():
     # 初始化系统预设搜索模板（v1.0.5 查询模板系统）
     try:
         from app.data.default_search_templates import init_default_search_templates
+
         db = SessionLocal()
         init_default_search_templates(db)
         db.close()
     except Exception as e:
         logger.error(f"Error initializing default search templates: {str(e)}")
         print(f"Error initializing default search templates: {str(e)}")
-
 
     # 初始化系统默认定时任务（增量检查：添加缺失的任务）
     try:
@@ -233,6 +224,7 @@ def init_db():
                 # 重新调用初始化函数，只创建缺失的任务
                 from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
                 from datetime import datetime
+
                 for task_data in DEFAULT_SCHEDULED_TASKS:
                     if task_data["task_code"] in missing_codes:
                         task = CronTask(
@@ -294,17 +286,17 @@ def init_db():
         db = SessionLocal()
         try:
             # 欢迎通知
-            welcome_exists = db.query(Notification).filter(
-                Notification.title == "欢迎使用 BtDeck"
-            ).first()
+            welcome_exists = db.query(Notification).filter(Notification.title == "欢迎使用 BtDeck").first()
             if not welcome_exists:
-                db.add(Notification(
-                    type="system",
-                    title="欢迎使用 BtDeck",
-                    content="感谢您使用 BtDeck！这是您的第一条系统通知。通知中心会在这里显示版本更新和系统消息。",
-                    priority="info",
-                    is_read=False,
-                ))
+                db.add(
+                    Notification(
+                        type="system",
+                        title="欢迎使用 BtDeck",
+                        content="感谢您使用 BtDeck！这是您的第一条系统通知。通知中心会在这里显示版本更新和系统消息。",
+                        priority="info",
+                        is_read=False,
+                    )
+                )
                 db.commit()
                 logger.info("欢迎通知创建成功")
                 print("[OK] 欢迎通知创建成功")
@@ -321,9 +313,7 @@ def init_db():
 
 
 def init_config_file(
-        config_path: str = settings.YAML_PATH,
-        custom_config: Optional[Dict[str, Any]] = None,
-        overwrite: bool = False
+    config_path: str = settings.YAML_PATH, custom_config: Optional[Dict[str, Any]] = None, overwrite: bool = False
 ) -> bool:
     try:
         # 确保配置文件目录存在
@@ -339,7 +329,7 @@ def init_config_file(
         if os.path.exists(config_path) and not overwrite:
             logging.info(f"配置文件 {config_path} 已存在，仅更新安全密钥。")
             try:
-                with open(config_path, 'r', encoding='utf-8') as f:
+                with open(config_path, "r", encoding="utf-8") as f:
                     new_config = yaml.load(f, Loader=yaml.SafeLoader)
 
                 # 确保security部分存在
@@ -354,7 +344,7 @@ def init_config_file(
                     new_config["security"]["secret_key"] = sm4Key
                     logging.warning("配置文件中缺少secret_key，已添加。")
 
-                with open(config_path, 'w', encoding='utf-8') as f:
+                with open(config_path, "w", encoding="utf-8") as f:
                     yaml.dump(new_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
                 return True
@@ -365,12 +355,7 @@ def init_config_file(
 
         # 默认配置
         default_config = {
-            "app": {
-                "name": "MyApplication",
-                "version": "1.0.0",
-                "debug": False,
-                "log_level": "INFO"
-            },
+            "app": {"name": "MyApplication", "version": "1.0.0", "debug": False, "log_level": "INFO"},
             "database": {
                 "host": "localhost",
                 "port": 3306,
@@ -378,30 +363,17 @@ def init_config_file(
                 "password": "password",
                 "database": "mydb",
                 "charset": "utf8mb4",
-                "pool_size": 5
+                "pool_size": 5,
             },
-            "server": {
-                "host": "0.0.0.0",
-                "port": 8000,
-                "workers": 4,
-                "timeout": 60
-            },
+            "server": {"host": "0.0.0.0", "port": 8000, "workers": 4, "timeout": 60},
             "security": {
                 "secret_key": sm4Key,
                 "token_expire_minutes": 60,
                 "algorithm": "HS256",
-                "login_status_secret": login_status_secret
+                "login_status_secret": login_status_secret,
             },
-            "cors": {
-                "allowed_origins": ["*"],
-                "allowed_methods": ["*"],
-                "allowed_headers": ["*"]
-            },
-            "logging": {
-                "file": "app.log",
-                "max_size_mb": 10,
-                "backup_count": 5
-            }
+            "cors": {"allowed_origins": ["*"], "allowed_methods": ["*"], "allowed_headers": ["*"]},
+            "logging": {"file": "app.log", "max_size_mb": 10, "backup_count": 5},
         }
 
         # 合并自定义配置
@@ -409,7 +381,7 @@ def init_config_file(
             merge_configs(default_config, custom_config)
 
         # 写入配置文件
-        with open(config_path, 'w', encoding='utf-8') as f:
+        with open(config_path, "w", encoding="utf-8") as f:
             yaml.dump(default_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
         # 验证文件是否成功创建
@@ -423,6 +395,7 @@ def init_config_file(
 
     except Exception as e:
         import traceback
+
         error_trace = traceback.format_exc()
         logging.error(f"生成配置文件时出错: {str(e)}\n{error_trace}")
         print(f"生成配置文件时出错: {str(e)}\n{error_trace}")  # 控制台输出更详细的错误

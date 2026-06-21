@@ -4,6 +4,7 @@
 
 用于统一处理下载器设置相关的错误
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -58,7 +59,7 @@ class DownloaderConnectionError(DownloaderSettingsError):
         downloader_id: str = None,
         host: str = None,
         port: int = None,
-        original_error: Exception = None
+        original_error: Exception = None,
     ):
         details = {}
         if host:
@@ -82,7 +83,7 @@ class AuthenticationError(DownloaderSettingsError):
         message: str = "认证失败，用户名或密码错误",
         downloader_id: str = None,
         username: str = None,
-        original_error: Exception = None
+        original_error: Exception = None,
     ):
         details = {}
         if username:
@@ -100,11 +101,7 @@ class ConfigurationError(DownloaderSettingsError):
     """
 
     def __init__(
-        self,
-        message: str,
-        downloader_id: str = None,
-        parameter_name: str = None,
-        parameter_value: any = None
+        self, message: str, downloader_id: str = None, parameter_name: str = None, parameter_value: any = None
     ):
         details = {}
         if parameter_name:
@@ -121,13 +118,7 @@ class CapabilityNotSupportedError(DownloaderSettingsError):
     尝试设置下载器不支持的功能时抛出
     """
 
-    def __init__(
-        self,
-        message: str,
-        downloader_id: str = None,
-        capability: str = None,
-        downloader_type: str = None
-    ):
+    def __init__(self, message: str, downloader_id: str = None, capability: str = None, downloader_type: str = None):
         details = {}
         if capability:
             details["capability"] = capability
@@ -149,7 +140,7 @@ class APIError(DownloaderSettingsError):
         downloader_id: str = None,
         api_method: str = None,
         status_code: int = None,
-        original_error: Exception = None
+        original_error: Exception = None,
     ):
         details = {}
         if api_method:
@@ -173,7 +164,7 @@ class DownloaderTimeoutError(DownloaderSettingsError):
         message: str = "API调用超时",
         downloader_id: str = None,
         timeout: int = None,
-        original_error: Exception = None
+        original_error: Exception = None,
     ):
         details = {}
         if timeout:
@@ -190,12 +181,7 @@ class ValidationError(DownloaderSettingsError):
     设置参数验证失败时抛出
     """
 
-    def __init__(
-        self,
-        message: str,
-        downloader_id: str = None,
-        validation_errors: dict = None
-    ):
+    def __init__(self, message: str, downloader_id: str = None, validation_errors: dict = None):
         details = {}
         if validation_errors:
             details["validation_errors"] = validation_errors
@@ -205,12 +191,12 @@ class ValidationError(DownloaderSettingsError):
 
 # 导出所有异常类
 __all__ = [
-    'DownloaderSettingsError',
-    'DownloaderConnectionError',
-    'AuthenticationError',
-    'ConfigurationError',
-    'CapabilityNotSupportedError',
-    'APIError',
-    'DownloaderTimeoutError',
-    'ValidationError',
+    "DownloaderSettingsError",
+    "DownloaderConnectionError",
+    "AuthenticationError",
+    "ConfigurationError",
+    "CapabilityNotSupportedError",
+    "APIError",
+    "DownloaderTimeoutError",
+    "ValidationError",
 ]

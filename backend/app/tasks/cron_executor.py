@@ -24,7 +24,7 @@ class CronTaskExecutor:
     """定时任务执行器"""
 
     def __init__(self):
-        self.scheduler = AsyncIOScheduler(timezone='Asia/Shanghai')
+        self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
         self.running_tasks: Dict[int, bool] = {}  # 跟踪正在运行的任务
         self.app = None  # ✅ 新增：存储 FastAPI 应用实例
 
@@ -67,12 +67,12 @@ class CronTaskExecutor:
             id=job_id,
             name="speed_schedule_sync",
             replace_existing=True,
-            misfire_grace_time=30
+            misfire_grace_time=30,
         )
 
     def _sync_speed_schedule(self):
         """Sync speed schedule rules."""
-        if not self.app or not hasattr(self.app.state, 'store') or self.app.state.store is None:
+        if not self.app or not hasattr(self.app.state, "store") or self.app.state.store is None:
             logger.warning("Downloader cache not initialized, skip speed schedule sync")
             return
 
@@ -103,9 +103,7 @@ class CronTaskExecutor:
             downloaders = db.execute(text(sql), params).fetchall()
 
             for row in downloaders:
-                SpeedScheduleService.apply_to_downloader(
-                    db, row.downloader_id, row.id
-                )
+                SpeedScheduleService.apply_to_downloader(db, row.downloader_id, row.id)
 
         except Exception as e:
             logger.error(f"同步分时段限速失败: {e}")
@@ -139,7 +137,7 @@ class CronTaskExecutor:
                 self.scheduler.remove_job(job_id)
 
             # 解析cron表达式
-            trigger = self._parse_cron_plan(task['cron_plan'])
+            trigger = self._parse_cron_plan(task["cron_plan"])
             if not trigger:
                 logger.error(f"任务 {task['task_name']} 的cron表达式解析失败: {task['cron_plan']}")
                 return False
@@ -148,11 +146,11 @@ class CronTaskExecutor:
             self.scheduler.add_job(
                 func=self._execute_task,
                 trigger=trigger,
-                args=[task['task_id']],
+                args=[task["task_id"]],
                 id=job_id,
-                name=task['task_name'],
+                name=task["task_name"],
                 replace_existing=True,
-                misfire_grace_time=300  # 允许5分钟的延迟执行
+                misfire_grace_time=300,  # 允许5分钟的延迟执行
             )
 
             logger.info(f"成功添加定时任务到调度器: {task['task_name']}")
@@ -174,12 +172,7 @@ class CronTaskExecutor:
             minute, hour, day, month, day_of_week = parts
 
             return CronTrigger(
-                minute=minute,
-                hour=hour,
-                day=day,
-                month=month,
-                day_of_week=day_of_week,
-                timezone='Asia/Shanghai'
+                minute=minute, hour=hour, day=day, month=month, day_of_week=day_of_week, timezone="Asia/Shanghai"
             )
 
         except Exception as e:
@@ -220,8 +213,8 @@ class CronTaskExecutor:
 
                     # 执行任务
                     result = await self._run_task_script(task)
-                    success = result['success']
-                    log_detail = result['log_detail']
+                    success = result["success"]
+                    log_detail = result["log_detail"]
 
                     logger.info(f"定时任务执行完成: {task['task_name']}, 成功: {success}")
 
@@ -240,13 +233,13 @@ class CronTaskExecutor:
                     # 异步创建任务日志
                     log_data = {
                         "task_id": task_id,
-                        "task_name": task['task_name'],
-                        "task_type": task['task_type'],
+                        "task_name": task["task_name"],
+                        "task_type": task["task_type"],
                         "start_time": start_time,
                         "end_time": end_time,
                         "duration": duration,
                         "success": success,
-                        "log_detail": log_detail
+                        "log_detail": log_detail,
                     }
 
                     await AsyncTaskLogsCRUD.create_task_log(db, log_data)
@@ -262,8 +255,8 @@ class CronTaskExecutor:
 
     async def _run_task_script(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """运行任务脚本"""
-        task_type = task['task_type']
-        executor = task['executor']
+        task_type = task["task_type"]
+        executor = task["executor"]
 
         try:
             if task_type == 0:  # Shell脚本
@@ -290,9 +283,7 @@ class CronTaskExecutor:
         """运行Shell脚本"""
         try:
             process = await asyncio.create_subprocess_shell(
-                script,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                script, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
             stdout, stderr = await process.communicate()
@@ -300,12 +291,12 @@ class CronTaskExecutor:
             if process.returncode == 0:
                 return {
                     "success": True,
-                    "log_detail": f"Shell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"Shell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
                 }
             else:
                 return {
                     "success": False,
-                    "log_detail": f"Shell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"Shell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
                 }
 
         except Exception as e:
@@ -315,9 +306,7 @@ class CronTaskExecutor:
         """运行CMD脚本"""
         try:
             process = await asyncio.create_subprocess_shell(
-                f'cmd /c "{script}"',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                f'cmd /c "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
             stdout, stderr = await process.communicate()
@@ -325,12 +314,12 @@ class CronTaskExecutor:
             if process.returncode == 0:
                 return {
                     "success": True,
-                    "log_detail": f"CMD脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"CMD脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
                 }
             else:
                 return {
                     "success": False,
-                    "log_detail": f"CMD脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"CMD脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
                 }
 
         except Exception as e:
@@ -340,9 +329,7 @@ class CronTaskExecutor:
         """运行PowerShell脚本"""
         try:
             process = await asyncio.create_subprocess_shell(
-                f'powershell -Command "{script}"',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                f'powershell -Command "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
             stdout, stderr = await process.communicate()
@@ -350,12 +337,12 @@ class CronTaskExecutor:
             if process.returncode == 0:
                 return {
                     "success": True,
-                    "log_detail": f"PowerShell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"PowerShell脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
                 }
             else:
                 return {
                     "success": False,
-                    "log_detail": f"PowerShell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"PowerShell脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
                 }
 
         except Exception as e:
@@ -365,9 +352,7 @@ class CronTaskExecutor:
         """运行Python脚本"""
         try:
             process = await asyncio.create_subprocess_shell(
-                f'python -c "{script}"',
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
+                f'python -c "{script}"', stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
             )
 
             stdout, stderr = await process.communicate()
@@ -375,12 +360,12 @@ class CronTaskExecutor:
             if process.returncode == 0:
                 return {
                     "success": True,
-                    "log_detail": f"Python脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"Python脚本执行成功\n输出: {stdout.decode('utf-8', errors='ignore')}",
                 }
             else:
                 return {
                     "success": False,
-                    "log_detail": f"Python脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}"
+                    "log_detail": f"Python脚本执行失败，返回码: {process.returncode}\n错误: {stderr.decode('utf-8', errors='ignore')}",
                 }
 
         except Exception as e:
@@ -390,10 +375,12 @@ class CronTaskExecutor:
         """运行Python内部类或代码"""
         try:
             # 检查是否是类路径格式（包含点号）
-            if '.' in executor_code and not executor_code.strip().startswith(('import', 'def', 'print', 'await', 'time', 'async')):
+            if "." in executor_code and not executor_code.strip().startswith(
+                ("import", "def", "print", "await", "time", "async")
+            ):
                 # 尝试作为类路径执行
                 try:
-                    module_path, class_name = executor_code.rsplit('.', 1)
+                    module_path, class_name = executor_code.rsplit(".", 1)
                     module = __import__(module_path, fromlist=[class_name])
                     task_class = getattr(module, class_name)
 
@@ -405,11 +392,11 @@ class CronTaskExecutor:
                     except TypeError:
                         # 如果 __init__ 不接受 app 参数，使用 set_app 方法
                         task_instance = task_class()
-                        if hasattr(task_instance, 'set_app'):
+                        if hasattr(task_instance, "set_app"):
                             task_instance.set_app(self.app)
 
                     # 检查是否有execute方法
-                    if hasattr(task_instance, 'execute'):
+                    if hasattr(task_instance, "execute"):
                         execute_method = task_instance.execute
 
                         # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
@@ -420,23 +407,17 @@ class CronTaskExecutor:
                             # 同步调用
                             result = execute_method(app=self.app)
 
-                        return {
-                            "success": True,
-                            "log_detail": f"Python内部类执行成功\n结果: {str(result)}"
-                        }
+                        return {"success": True, "log_detail": f"Python内部类执行成功\n结果: {str(result)}"}
                     else:
-                        return {
-                            "success": False,
-                            "log_detail": f"类 {class_name} 没有execute方法"
-                        }
+                        return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}
 
                 except (ImportError, AttributeError) as e:
                     # 如果不是有效的类路径，则作为代码执行
                     logger.debug(f"无法作为类路径执行，转为代码执行: {str(e)}")
 
             # 检查代码是否包含异步语法
-            has_await = 'await' in executor_code
-            has_async_def = 'async def' in executor_code
+            has_await = "await" in executor_code
+            has_async_def = "async def" in executor_code
 
             if has_await or has_async_def:
                 # 处理异步代码
@@ -457,36 +438,30 @@ import asyncio
 async def _async_exec_func():
     try:
 {chr(10).join('        ' + line for line in code.split(chr(10)))}
-        return {{"success": True, "message": "异步代码执行成功"}}
+        return {{"success": True, "message": "异步代码执行成功"}}  # noqa: E272
     except Exception as e:
         return {{"success": False, "message": str(e)}}
 """
 
             # 创建执行环境
             exec_globals = {
-                '__builtins__': __builtins__,
-                'datetime': datetime,
-                'asyncio': asyncio,
-                'time': __import__('time'),
+                "__builtins__": __builtins__,
+                "datetime": datetime,
+                "asyncio": asyncio,
+                "time": __import__("time"),
             }
 
             # 执行包装代码
             exec(wrapped_code, exec_globals)
 
             # 获取并执行异步函数
-            async_func = exec_globals['_async_exec_func']
+            async_func = exec_globals["_async_exec_func"]
             result = await async_func()
 
-            if result['success']:
-                return {
-                    "success": True,
-                    "log_detail": f"异步Python代码执行成功\n执行代码: {code}"
-                }
+            if result["success"]:
+                return {"success": True, "log_detail": f"异步Python代码执行成功\n执行代码: {code}"}
             else:
-                return {
-                    "success": False,
-                    "log_detail": f"异步代码执行失败: {result['message']}"
-                }
+                return {"success": False, "log_detail": f"异步代码执行失败: {result['message']}"}
 
         except Exception as e:
             return {"success": False, "log_detail": f"异步Python代码执行异常: {str(e)}"}
@@ -503,20 +478,17 @@ async def _async_exec_func():
             # 定义在线程池中执行的函数
             def exec_sync_code():
                 exec_globals = {
-                    '__builtins__': __builtins__,
-                    'datetime': datetime,
-                    'asyncio': asyncio,
-                    'time': __import__('time'),
+                    "__builtins__": __builtins__,
+                    "datetime": datetime,
+                    "asyncio": asyncio,
+                    "time": __import__("time"),
                 }
                 exec(code, exec_globals)
 
             # ✅ 在线程池中执行同步代码，避免阻塞事件循环
             await loop.run_in_executor(None, exec_sync_code)
 
-            return {
-                "success": True,
-                "log_detail": f"同步Python代码执行成功\n执行代码: {code}"
-            }
+            return {"success": True, "log_detail": f"同步Python代码执行成功\n执行代码: {code}"}
 
         except Exception as e:
             return {"success": False, "log_detail": f"同步Python代码执行异常: {str(e)}"}
@@ -539,9 +511,11 @@ async def _async_exec_func():
                 if task_result.success:
                     task = task_result.data
                     # 检查任务是否启用
-                    if not task.get('enabled'):
+                    if not task.get("enabled"):
                         error_msg = f"任务 '{task.get('task_name', task_id)}' 处于禁用状态，无法启动。请先启用该任务。"
-                        logger.warning(f"启动任务失败: {error_msg} (任务ID: {task_id}, 状态: enabled={task.get('enabled')})")
+                        logger.warning(
+                            f"启动任务失败: {error_msg} (任务ID: {task_id}, 状态: enabled={task.get('enabled')})"
+                        )
                         raise ValueError(error_msg)
 
                     # 检查任务是否已在运行中
@@ -561,7 +535,9 @@ async def _async_exec_func():
                         try:
                             exception = t.exception()
                             if exception:
-                                logger.error(f"立即执行任务异常: {task.get('task_name', task_id)} (任务ID: {task_id}), 错误: {str(exception)}")
+                                logger.error(
+                                    f"立即执行任务异常: {task.get('task_name', task_id)} (任务ID: {task_id}), 错误: {str(exception)}"
+                                )
                         except asyncio.CancelledError:
                             logger.warning(f"任务被取消: {task.get('task_name', task_id)} (任务ID: {task_id})")
 
@@ -663,7 +639,7 @@ async def _async_exec_func():
     async def _run_cleanup_task(self, executor: str) -> Dict[str, Any]:
         """
         执行清理回收站任务
-        
+
         Args:
             executor: JSON格式的清理任务配置
                 {
@@ -671,24 +647,20 @@ async def _async_exec_func():
                     "cleanup_level_4": bool,
                     "days_threshold": int
                 }
-        
+
         Returns:
             执行结果字典
         """
         try:
             # 解析任务配置
             task_config = json.loads(executor)
-            
+
             # 验证配置
             if not isinstance(task_config, dict):
                 return {"success": False, "log_detail": "任务配置格式错误，必须是JSON对象"}
 
             # 定义必需字段及其类型
-            required_fields = {
-                "cleanup_level_3": bool,
-                "cleanup_level_4": bool,
-                "days_threshold": int
-            }
+            required_fields = {"cleanup_level_3": bool, "cleanup_level_4": bool, "days_threshold": int}
 
             # 验证字段存在性和类型
             for field, expected_type in required_fields.items():
@@ -700,7 +672,7 @@ async def _async_exec_func():
             # 验证 days_threshold 范围
             if not (1 <= task_config["days_threshold"] <= 365):
                 return {"success": False, "log_detail": "days_threshold 必须在 1-365 之间"}
-            
+
             # 获取数据库会话（使用同步Session，因为CleanupTaskExecutor是同步实现）
             with next(get_db()) as db:
                 # 创建清理执行器
@@ -708,11 +680,9 @@ async def _async_exec_func():
 
                 # 执行清理任务
                 result = await cleanup_executor.execute_cleanup_task(
-                    task_config=task_config,
-                    operator="system",
-                    audit_service=None  # 可选：传入审计服务实例
+                    task_config=task_config, operator="system", audit_service=None  # 可选：传入审计服务实例
                 )
-                
+
                 # 生成日志详情
                 log_detail = (
                     f"清理任务完成\n"
@@ -721,26 +691,25 @@ async def _async_exec_func():
                     f"释放空间: {result['total_size_freed'] / (1024**3):.2f} GB"
                 )
 
-                if result['errors']:
+                if result["errors"]:
                     log_detail += f"\n错误: {len(result['errors'])} 个错误\n"
-                    log_detail += "\n".join(result['errors'][:5])  # 最多显示5个错误
-                    if len(result['errors']) > 5:
+                    log_detail += "\n".join(result["errors"][:5])  # 最多显示5个错误
+                    if len(result["errors"]) > 5:
                         log_detail += f"\n... 还有 {len(result['errors']) - 5} 个错误"
-                
+
                 logger.info(log_detail)
-                
+
                 return {"success": True, "log_detail": log_detail}
-        
+
         except json.JSONDecodeError as e:
             error_msg = f"任务配置JSON解析失败: {str(e)}"
             logger.error(error_msg)
             return {"success": False, "log_detail": error_msg}
-        
+
         except Exception as e:
             error_msg = f"清理任务执行失败: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {"success": False, "log_detail": error_msg}
-
 
     async def _run_audit_log_export_task(self, executor: str) -> Dict[str, Any]:
         """运行审计日志导出任务"""
@@ -749,6 +718,7 @@ async def _async_exec_func():
 
             # 解析执行配置
             import json
+
             config = json.loads(executor) if isinstance(executor, str) else {}
 
             # 创建任务实例
@@ -757,22 +727,14 @@ async def _async_exec_func():
             # 执行导出
             async with AsyncSessionLocal() as db:
                 exported_count = await task.execute_manual_export(
-                    db_session=db,
-                    days=config.get('days', 7),
-                    operation_type=config.get('operation_type')
+                    db_session=db, days=config.get("days", 7), operation_type=config.get("operation_type")
                 )
 
-            return {
-                "success": True,
-                "log_detail": f"成功导出{exported_count}条审计日志"
-            }
+            return {"success": True, "log_detail": f"成功导出{exported_count}条审计日志"}
 
         except Exception as e:
             logger.error(f"审计日志导出任务执行失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "log_detail": f"导出失败: {str(e)}"
-            }
+            return {"success": False, "log_detail": f"导出失败: {str(e)}"}
 
     def _ensure_version_check_job(self):
         """注册 GitHub 版本检查任务（每天凌晨2点执行）"""
@@ -784,11 +746,11 @@ async def _async_exec_func():
         # 使用 CronTrigger 设置每天凌晨2点执行
         self.scheduler.add_job(
             func=self._check_github_version,
-            trigger=CronTrigger(hour=2, minute=0, timezone='Asia/Shanghai'),
+            trigger=CronTrigger(hour=2, minute=0, timezone="Asia/Shanghai"),
             id=job_id,
             name="GitHub版本检查",
             replace_existing=True,
-            misfire_grace_time=3600  # 错过执行时间后的宽容时间（1小时）
+            misfire_grace_time=3600,  # 错过执行时间后的宽容时间（1小时）
         )
         logger.info("已注册 GitHub 版本检查任务，每天凌晨2点执行")
 
@@ -803,8 +765,7 @@ async def _async_exec_func():
             async with AsyncSessionLocal() as db:
                 service = NotificationService(db)
                 new_version = await service.check_version_update(
-                    current_version=CURRENT_VERSION,
-                    github_repo="StrainThomas/BtDeck"
+                    current_version=CURRENT_VERSION, github_repo="StrainThomas/BtDeck"
                 )
 
                 if new_version:

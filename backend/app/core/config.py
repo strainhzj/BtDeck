@@ -63,14 +63,13 @@ def _default_secret_key() -> str:
     if secret_key:
         return secret_key
 
-    logger.warning(
-        "SECRET_KEY 未配置，已生成临时开发密钥；生产环境必须通过环境变量显式设置。"
-    )
+    logger.warning("SECRET_KEY 未配置，已生成临时开发密钥；生产环境必须通过环境变量显式设置。")
     return secrets.token_urlsafe(32)
 
 
 class Settings(BaseSettings):
     """应用配置类"""
+
     # 项目基本信息
     PROJECT_NAME: str = "btdeck"
 
@@ -102,11 +101,7 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     BTDECK_ALLOW_CUSTOM_SCRIPTS: bool = False
 
-    model_config = {
-        "case_sensitive": True,
-        "env_file_encoding": "utf-8",
-        "env_file": ".env"
-    }
+    model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -150,7 +145,7 @@ class Settings(BaseSettings):
 
     @property
     def CONFIG_PATH(self):
-        if getattr(self, 'CONFIG_DIR', None):
+        if getattr(self, "CONFIG_DIR", None):
             return Path(self.CONFIG_DIR)
         # frozen 模式（PyInstaller onefile）：__file__ 指向临时解压目录 _MEIPASS，
         # 数据必须写到可执行文件同级目录才能持久化
@@ -191,7 +186,7 @@ class Settings(BaseSettings):
 
     @property
     def TORRENTS_PATH(self):
-        if getattr(self, 'TORRENTS_DIR', None):
+        if getattr(self, "TORRENTS_DIR", None):
             return Path(self.TORRENTS_DIR)
         # frozen 模式：torrents 目录与可执行文件同级
         elif is_frozen():
@@ -199,6 +194,7 @@ class Settings(BaseSettings):
         elif is_docker():
             return Path("/torrents")
         return self.ROOT_PATH / "torrents"
+
 
 # 实例化配置
 settings = Settings()

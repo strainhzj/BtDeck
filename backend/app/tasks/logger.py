@@ -62,7 +62,7 @@ class TaskLogger:
                 end_time=self.end_time,
                 duration=duration,
                 success=success,
-                log_detail=log_detail
+                log_detail=log_detail,
             )
 
             db.add(task_log)
@@ -77,6 +77,7 @@ class TaskLogger:
 
 def log_task_execution(task_name: str):
     """装饰器：记录任务执行日志"""
+
     def decorator(func):
         async def wrapper(*args, **kwargs):
             async with TaskLogger(task_name) as logger:
@@ -88,15 +89,14 @@ def log_task_execution(task_name: str):
                 except Exception as e:
                     logger.add_log(f"Function {func.__name__} failed: {str(e)}")
                     raise
+
         return wrapper
+
     return decorator
 
 
 async def get_task_logs(
-    task_name: Optional[str] = None,
-    success: Optional[bool] = None,
-    limit: int = 100,
-    offset: int = 0
+    task_name: Optional[str] = None, success: Optional[bool] = None, limit: int = 100, offset: int = 0
 ) -> Dict[str, Any]:
     """获取任务日志"""
     db = SessionLocal()
@@ -112,10 +112,7 @@ async def get_task_logs(
         total = query.count()
         logs = query.order_by(TaskLogs.start_time.desc()).offset(offset).limit(limit).all()
 
-        return {
-            "total": total,
-            "logs": [log.to_dict() for log in logs]
-        }
+        return {"total": total, "logs": [log.to_dict() for log in logs]}
 
     finally:
         db.close()
@@ -135,12 +132,16 @@ async def get_task_statistics() -> Dict[str, Any]:
         failed_tasks = db.query(TaskLogs).filter(TaskLogs.success == False).count()
 
         # 按任务名统计
-        task_stats = db.query(
-            TaskLogs.task_name,
-            db.func.count(TaskLogs.log_id).label('total'),
-            db.func.sum(db.func.case([(TaskLogs.success == True, 1)], else_=0)).label('success'),
-            db.func.avg(TaskLogs.duration).label('avg_duration')
-        ).group_by(TaskLogs.task_name).all()
+        task_stats = (
+            db.query(
+                TaskLogs.task_name,
+                db.func.count(TaskLogs.log_id).label("total"),
+                db.func.sum(db.func.case([(TaskLogs.success == True, 1)], else_=0)).label("success"),
+                db.func.avg(TaskLogs.duration).label("avg_duration"),
+            )
+            .group_by(TaskLogs.task_name)
+            .all()
+        )
 
         return {
             "total_tasks": total_tasks,
@@ -153,10 +154,10 @@ async def get_task_statistics() -> Dict[str, Any]:
                     "total": stat.total,
                     "success": stat.success,
                     "success_rate": (stat.success / stat.total * 100) if stat.total > 0 else 0,
-                    "avg_duration": round(stat.avg_duration, 2) if stat.avg_duration else 0
+                    "avg_duration": round(stat.avg_duration, 2) if stat.avg_duration else 0,
                 }
                 for stat in task_stats
-            ]
+            ],
         }
 
     finally:

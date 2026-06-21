@@ -23,14 +23,14 @@ OPERATOR_SYSTEM_SCHEDULER = 0  # 系统定时任务
 OPERATOR_RECYCLE_BIN_CLEANER = -1  # 回收站清理任务
 
 # 删除状态常量
-DELETION_STATUS_SUCCESS = 'success'
-DELETION_STATUS_FAILED = 'failed'
-DELETION_STATUS_PARTIAL = 'partial'
+DELETION_STATUS_SUCCESS = "success"
+DELETION_STATUS_FAILED = "failed"
+DELETION_STATUS_PARTIAL = "partial"
 
 # 调用来源常量
-CALLER_SOURCE_API = 'API删除'
-CALLER_SOURCE_SYSTEM_SCHEDULER = 'SYSTEM_SCHEDULER'
-CALLER_SOURCE_RECYCLE_BIN_CLEANER = 'RECYCLE_BIN_CLEANER'
+CALLER_SOURCE_API = "API删除"
+CALLER_SOURCE_SYSTEM_SCHEDULER = "SYSTEM_SCHEDULER"
+CALLER_SOURCE_RECYCLE_BIN_CLEANER = "RECYCLE_BIN_CLEANER"
 
 # 下载器类型常量（与其他模型一致）
 DOWNLOADER_TYPE_QBITTORRENT = 0
@@ -67,48 +67,51 @@ class TorrentDeletionAuditLog(Base):
         created_at: 创建时间
         deleted_at: 实际删除完成时间（仅成功时设置）
     """
-    __tablename__ = 'torrent_deletion_audit_log'
+
+    __tablename__ = "torrent_deletion_audit_log"
 
     # 主键
-    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键')
+    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
 
     # 任务批次ID
-    task_id = Column(String(64), nullable=False, index=True, comment='任务批次ID')
+    task_id = Column(String(64), nullable=False, index=True, comment="任务批次ID")
 
     # 下载器信息
-    downloader_id = Column(Integer, nullable=False, index=True, comment='下载器ID')
-    downloader_type = Column(Integer, nullable=False, comment='下载器类型：0=qBittorrent, 1=Transmission')
+    downloader_id = Column(Integer, nullable=False, index=True, comment="下载器ID")
+    downloader_type = Column(Integer, nullable=False, comment="下载器类型：0=qBittorrent, 1=Transmission")
 
     # 种子信息
-    torrent_hash = Column(String(64), nullable=False, index=True, comment='种子Hash')
-    torrent_name = Column(String(255), nullable=True, comment='种子名称')
-    torrent_size = Column(BigInteger, nullable=True, comment='种子大小（字节）')
+    torrent_hash = Column(String(64), nullable=False, index=True, comment="种子Hash")
+    torrent_name = Column(String(255), nullable=True, comment="种子名称")
+    torrent_size = Column(BigInteger, nullable=True, comment="种子大小（字节）")
 
     # 删除配置
-    delete_files = Column(Boolean, nullable=False, default=False, comment='是否删除文件')
-    safety_check_level = Column(String(20), nullable=True, comment='安全检查级别：basic/enhanced/strict')
+    delete_files = Column(Boolean, nullable=False, default=False, comment="是否删除文件")
+    safety_check_level = Column(String(20), nullable=True, comment="安全检查级别：basic/enhanced/strict")
 
     # 验证结果（JSON字段）
-    validation_result = Column(Text, nullable=True, comment='验证结果JSON（含seed_status、trackers等）')
+    validation_result = Column(Text, nullable=True, comment="验证结果JSON（含seed_status、trackers等）")
 
     # 操作者信息
-    operator_id = Column(Integer, nullable=True, index=True, comment='操作者ID：0=系统定时任务, -1=回收站清理, >0=真实用户ID')
-    operator_name = Column(String(100), nullable=True, comment='操作者用户名')
-    operator_ip = Column(String(50), nullable=True, comment='操作者IP地址')
-    operator_user_agent = Column(String(255), nullable=True, comment='操作者浏览器/客户端信息')
+    operator_id = Column(
+        Integer, nullable=True, index=True, comment="操作者ID：0=系统定时任务, -1=回收站清理, >0=真实用户ID"
+    )
+    operator_name = Column(String(100), nullable=True, comment="操作者用户名")
+    operator_ip = Column(String(50), nullable=True, comment="操作者IP地址")
+    operator_user_agent = Column(String(255), nullable=True, comment="操作者浏览器/客户端信息")
 
     # 调用来源
-    caller_source = Column(String(100), nullable=False, comment='调用来源：API/SYSTEM_SCHEDULER/RECYCLE_BIN_CLEANER')
-    caller_function = Column(String(255), nullable=True, comment='具体调用的函数')
-    caller_module = Column(String(255), nullable=True, comment='调用模块')
+    caller_source = Column(String(100), nullable=False, comment="调用来源：API/SYSTEM_SCHEDULER/RECYCLE_BIN_CLEANER")
+    caller_function = Column(String(255), nullable=True, comment="具体调用的函数")
+    caller_module = Column(String(255), nullable=True, comment="调用模块")
 
     # 删除状态
-    deletion_status = Column(String(20), nullable=False, comment='删除状态：success/failed/partial')
-    error_message = Column(Text, nullable=True, comment='错误信息')
+    deletion_status = Column(String(20), nullable=False, comment="删除状态：success/failed/partial")
+    error_message = Column(Text, nullable=True, comment="错误信息")
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment='创建时间')
-    deleted_at = Column(DateTime, nullable=True, comment='实际删除完成时间（仅成功时设置）')
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    deleted_at = Column(DateTime, nullable=True, comment="实际删除完成时间（仅成功时设置）")
 
     def __init__(
         self,
@@ -132,7 +135,7 @@ class TorrentDeletionAuditLog(Base):
         error_message: Optional[str] = None,
         created_at: Optional[datetime] = None,
         deleted_at: Optional[datetime] = None,
-        **kw: Any
+        **kw: Any,
     ):
         """
         初始化TorrentDeletionAuditLog实例
@@ -255,33 +258,33 @@ class TorrentDeletionAuditLog(Base):
             包含所有模型字段的字典
         """
         result = {
-            'id': self.id,
-            'task_id': self.task_id,
-            'downloader_id': self.downloader_id,
-            'downloader_type': self.downloader_type,
-            'torrent_hash': self.torrent_hash,
-            'torrent_name': self.torrent_name,
-            'torrent_size': self.torrent_size,
-            'delete_files': self.delete_files,
-            'safety_check_level': self.safety_check_level,
-            'operator_id': self.operator_id,
-            'operator_name': self.operator_name,
-            'operator_ip': self.operator_ip,
-            'operator_user_agent': self.operator_user_agent,
-            'caller_source': self.caller_source,
-            'caller_function': self.caller_function,
-            'caller_module': self.caller_module,
-            'deletion_status': self.deletion_status,
-            'error_message': self.error_message,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'deleted_at': self.deleted_at.isoformat() if self.deleted_at else None,
+            "id": self.id,
+            "task_id": self.task_id,
+            "downloader_id": self.downloader_id,
+            "downloader_type": self.downloader_type,
+            "torrent_hash": self.torrent_hash,
+            "torrent_name": self.torrent_name,
+            "torrent_size": self.torrent_size,
+            "delete_files": self.delete_files,
+            "safety_check_level": self.safety_check_level,
+            "operator_id": self.operator_id,
+            "operator_name": self.operator_name,
+            "operator_ip": self.operator_ip,
+            "operator_user_agent": self.operator_user_agent,
+            "caller_source": self.caller_source,
+            "caller_function": self.caller_function,
+            "caller_module": self.caller_module,
+            "deletion_status": self.deletion_status,
+            "error_message": self.error_message,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
         }
 
         # 可选是否包含完整的validation_result
         if include_validation and self.validation_result:
-            result['validation_result'] = self.get_validation_result()
+            result["validation_result"] = self.get_validation_result()
         elif include_validation:
-            result['validation_result'] = None
+            result["validation_result"] = None
 
         return result
 

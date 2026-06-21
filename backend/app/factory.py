@@ -14,7 +14,7 @@ def _get_frontend_dist_path() -> Path | None:
     """获取前端静态文件目录路径（PyInstaller 打包模式或开发模式）"""
     candidates = [
         # PyInstaller 打包后，frontend_dist 在 _MEIPASS 临时目录中
-        Path(sys._MEIPASS) / "frontend_dist" if hasattr(sys, '_MEIPASS') else None,
+        Path(sys._MEIPASS) / "frontend_dist" if hasattr(sys, "_MEIPASS") else None,
         # 开发模式：项目根目录下的 frontend/dist
         settings.ROOT_PATH / "frontend" / "dist",
         # PyInstaller 打包后可执行文件同级的 frontend_dist
@@ -36,11 +36,7 @@ def create_app() -> FastAPI:
     if "*" in settings.ALLOWED_HOSTS:
         raise RuntimeError("ALLOWED_HOSTS 不允许包含 '*'，请配置明确的前端来源")
 
-    _app = FastAPI(
-        title=settings.PROJECT_NAME,
-        openapi_url=f"{settings.API_V1_STR}/openapi.json",
-        lifespan=lifespan
-    )
+    _app = FastAPI(title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_STR}/openapi.json", lifespan=lifespan)
 
     # 配置 CORS 中间件
     _app.add_middleware(
@@ -53,6 +49,7 @@ def create_app() -> FastAPI:
 
     # 注册全局异常处理器：归一化 HTTPException/422/未捕获异常为 CommonResponse
     from app.exception_handlers import register_exception_handlers
+
     register_exception_handlers(_app)
 
     # 内嵌前端静态文件服务（PyInstaller 打包模式）

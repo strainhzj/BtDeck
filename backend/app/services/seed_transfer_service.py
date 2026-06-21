@@ -33,7 +33,6 @@ from app.services.torrent_file_backup_manager import TorrentFileBackupManagerSer
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from qbittorrentapi import Client as QBittorrentClient
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -49,11 +48,7 @@ class SeedTransferService:
     - 记录审计日志
     """
 
-    def __init__(
-        self,
-        db: Session,
-        async_db: Optional[AsyncSessionLocal] = None
-    ):
+    def __init__(self, db: Session, async_db: Optional[AsyncSessionLocal] = None):
         """
         初始化种子转移服务
 
@@ -65,9 +60,7 @@ class SeedTransferService:
         self.async_db = async_db or AsyncSessionLocal()
 
         # 初始化种子文件备份管理服务
-        self.backup_manager = TorrentFileBackupManagerService(
-            path_mapping_service=None
-        )
+        self.backup_manager = TorrentFileBackupManagerService(path_mapping_service=None)
 
     async def transfer_seed(
         self,
@@ -78,7 +71,7 @@ class SeedTransferService:
         delete_source: bool,
         user_id: int,
         username: str,
-        app_state: Optional[Any] = None
+        app_state: Optional[Any] = None,
     ) -> Dict[str, Any]:
         """
         转移种子
@@ -123,7 +116,7 @@ class SeedTransferService:
             "transfer_duration": None,
             "error_message": None,
             "source_path": None,
-            "target_path": target_path
+            "target_path": target_path,
         }
 
         # 获取源和目标下载器信息
@@ -153,7 +146,7 @@ class SeedTransferService:
                 delete_source=delete_source,
                 transfer_status="failed",
                 error_message=result["error_message"],
-                transfer_duration=int((time.time() - start_time) * 1000)
+                transfer_duration=int((time.time() - start_time) * 1000),
             )
             return result
 
@@ -173,7 +166,7 @@ class SeedTransferService:
                 delete_source=delete_source,
                 transfer_status="failed",
                 error_message=result["error_message"],
-                transfer_duration=int((time.time() - start_time) * 1000)
+                transfer_duration=int((time.time() - start_time) * 1000),
             )
             return result
 
@@ -195,7 +188,7 @@ class SeedTransferService:
             delete_source=delete_source,
             transfer_status="pending",
             error_message=None,
-            transfer_duration=0
+            transfer_duration=0,
         )
 
         try:
@@ -215,7 +208,7 @@ class SeedTransferService:
                 # 读取种子文件内容
                 if Path(torrent_backup.file_path).exists():
                     try:
-                        with open(torrent_backup.file_path, 'rb') as f:
+                        with open(torrent_backup.file_path, "rb") as f:
                             torrent_content = f.read()
                         logger.info(f"从备份目录成功读取种子文件: {torrent_backup.file_path}")
                     except Exception as e:
@@ -242,15 +235,14 @@ class SeedTransferService:
 
                 if not Path(source_torrent_path).exists():
                     result["error_message"] = (
-                        f"种子文件备份不存在，且下载器保存目录也未找到种子文件\n"
-                        f"预期路径: {source_torrent_path}"
+                        f"种子文件备份不存在，且下载器保存目录也未找到种子文件\n" f"预期路径: {source_torrent_path}"
                     )
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
                     return result
 
                 # 从源下载器保存目录读取种子文件
                 try:
-                    with open(source_torrent_path, 'rb') as f:
+                    with open(source_torrent_path, "rb") as f:
                         torrent_content = f.read()
                     used_fallback = True
                     logger.info(f"从源下载器保存目录成功读取种子文件: {source_torrent_path}")
@@ -260,7 +252,7 @@ class SeedTransferService:
                         select(TorrentInfo).where(
                             TorrentInfo.hash == info_hash,
                             TorrentInfo.downloader_id == source_downloader_id,
-                            TorrentInfo.dr == 0
+                            TorrentInfo.dr == 0,
                         )
                     )
                     source_torrent = source_torrent_result.scalar_one_or_none()
@@ -276,7 +268,7 @@ class SeedTransferService:
                 select(TorrentInfo).where(
                     TorrentInfo.hash == info_hash,
                     TorrentInfo.downloader_id == source_downloader_id,
-                    TorrentInfo.dr == 0
+                    TorrentInfo.dr == 0,
                 )
             )
             source_torrent = source_torrent_result.scalar_one_or_none()
@@ -287,15 +279,14 @@ class SeedTransferService:
                 result["source_path"] = "未知"
 
             # 2. 从缓存获取目标下载器客户端
-            if not app_state or not hasattr(app_state, 'store'):
+            if not app_state or not hasattr(app_state, "store"):
                 result["error_message"] = "下载器缓存未初始化"
                 await self._update_transfer_log(info_hash, "failed", result["error_message"])
                 return result
 
             cached_downloaders = await app_state.store.get_snapshot()
             target_downloader_vo = next(
-                (d for d in cached_downloaders if d.downloader_id == target_downloader_id),
-                None
+                (d for d in cached_downloaders if d.downloader_id == target_downloader_id), None
             )
 
             if not target_downloader_vo:
@@ -303,7 +294,7 @@ class SeedTransferService:
                 await self._update_transfer_log(info_hash, "failed", result["error_message"])
                 return result
 
-            if hasattr(target_downloader_vo, 'fail_time') and target_downloader_vo.fail_time > 0:
+            if hasattr(target_downloader_vo, "fail_time") and target_downloader_vo.fail_time > 0:
                 result["error_message"] = "目标下载器当前不可用"
                 await self._update_transfer_log(info_hash, "failed", result["error_message"])
                 return result
@@ -317,12 +308,11 @@ class SeedTransferService:
 
             if normalized_type == DownloaderTypeEnum.QBITTORRENT:
                 from qbittorrentapi import LoginFailed
+
                 try:
                     from io import BytesIO
-                    target_client.torrents_add(
-                        torrent_files=BytesIO(torrent_content),
-                        save_path=target_path
-                    )
+
+                    target_client.torrents_add(torrent_files=BytesIO(torrent_content), save_path=target_path)
                 except LoginFailed as e:
                     result["error_message"] = f"目标下载器登录失败: {str(e)}"
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
@@ -335,6 +325,7 @@ class SeedTransferService:
             elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 try:
                     from io import BytesIO
+
                     target_client.add_torrent(BytesIO(torrent_content), download_dir=target_path)
                 except Exception as e:
                     result["error_message"] = f"添加种子到Transmission失败: {str(e)}"
@@ -348,9 +339,7 @@ class SeedTransferService:
             # 4. 验证种子添加成功（轮询状态）
             logger.info(f"验证种子 {info_hash} 在目标下载器中的状态")
             verified = await self._verify_transfer(
-                target_client=target_client,
-                downloader_type=target_downloader.downloader_type,
-                info_hash=info_hash
+                target_client=target_client, downloader_type=target_downloader.downloader_type, info_hash=info_hash
             )
 
             if not verified:
@@ -377,7 +366,7 @@ class SeedTransferService:
                         select(TorrentFileBackup).filter(
                             TorrentFileBackup.info_hash == info_hash,
                             TorrentFileBackup.downloader_id == source_downloader_id,
-                            TorrentFileBackup.is_deleted == False
+                            TorrentFileBackup.is_deleted == False,
                         )
                     )
                     existing_record = existing_backup.scalar_one_or_none()
@@ -390,17 +379,18 @@ class SeedTransferService:
                         # 生成备份文件名
                         info_id = result.get("torrent_name", info_hash)[:50]  # 使用种子名称作为info_id
                         backup_filename = FilenameUtils.generate_backup_filename(
-                            info_id,
-                            result["torrent_name"] or "unknown"
+                            info_id, result["torrent_name"] or "unknown"
                         )
 
                         # 构建备份文件路径（复制到备份目录）
                         from app.core.config import settings
+
                         backup_dir = os.path.join(settings.BASE_DIR, "backup", "torrents")
                         backup_path = os.path.join(backup_dir, backup_filename)
 
                         # 复制文件到备份目录
                         import shutil
+
                         os.makedirs(backup_dir, exist_ok=True)
                         shutil.copy2(source_torrent_path, backup_path)
 
@@ -412,7 +402,7 @@ class SeedTransferService:
                             task_name=result["torrent_name"] or "unknown",
                             uploader_id=1,
                             downloader_id=source_downloader_id,
-                            upload_time=datetime.now()
+                            upload_time=datetime.now(),
                         )
                         await self.db.commit()
                         logger.info(f"成功创建备份记录并复制文件: {backup_path}")
@@ -437,11 +427,7 @@ class SeedTransferService:
 
             # 更新审计日志为成功
             await self._update_transfer_log(
-                info_hash,
-                "success",
-                None,
-                result["torrent_name"],
-                result["transfer_duration"]
+                info_hash, "success", None, result["torrent_name"], result["transfer_duration"]
             )
 
             logger.info(f"种子转移成功: {info_hash}，耗时 {result['transfer_duration']}ms")
@@ -452,8 +438,7 @@ class SeedTransferService:
 
             # 7. 如果需要删除原种子，从缓存获取源下载器客户端
             source_downloader_vo = next(
-                (d for d in cached_downloaders if d.downloader_id == source_downloader_id),
-                None
+                (d for d in cached_downloaders if d.downloader_id == source_downloader_id), None
             )
 
             if not source_downloader_vo:
@@ -461,7 +446,7 @@ class SeedTransferService:
                 await self._update_transfer_log(info_hash, "partial", result["error_message"])
                 return result
 
-            if hasattr(source_downloader_vo, 'fail_time') and source_downloader_vo.fail_time > 0:
+            if hasattr(source_downloader_vo, "fail_time") and source_downloader_vo.fail_time > 0:
                 result["error_message"] = "源下载器当前不可用，无法删除原种子"
                 await self._update_transfer_log(info_hash, "partial", result["error_message"])
                 return result
@@ -473,7 +458,7 @@ class SeedTransferService:
                 source_client=source_client,
                 downloader_type=source_downloader.downloader_type,
                 info_hash=info_hash,
-                delete_files=False
+                delete_files=False,
             )
 
             if not delete_result:
@@ -483,11 +468,7 @@ class SeedTransferService:
             else:
                 logger.info(f"原种子已删除: {info_hash}")
                 await self._update_transfer_log(
-                    info_hash,
-                    "success",
-                    "原种子已删除",
-                    result["torrent_name"],
-                    result["transfer_duration"]
+                    info_hash, "success", "原种子已删除", result["torrent_name"], result["transfer_duration"]
                 )
 
             return result
@@ -499,12 +480,7 @@ class SeedTransferService:
             return result
 
     async def _verify_transfer(
-        self,
-        target_client: Any,
-        downloader_type: int,
-        info_hash: str,
-        max_retries: int = 5,
-        retry_interval: int = 5
+        self, target_client: Any, downloader_type: int, info_hash: str, max_retries: int = 5, retry_interval: int = 5
     ) -> bool:
         """
         验证种子转移成功
@@ -577,11 +553,7 @@ class SeedTransferService:
         return False
 
     async def _delete_source_torrent(
-        self,
-        source_client: Any,
-        downloader_type: int,
-        info_hash: str,
-        delete_files: bool = False
+        self, source_client: Any, downloader_type: int, info_hash: str, delete_files: bool = False
     ) -> bool:
         """
         删除源下载器的种子
@@ -599,18 +571,12 @@ class SeedTransferService:
             normalized_type = DownloaderTypeEnum.normalize(downloader_type)
 
             if normalized_type == DownloaderTypeEnum.QBITTORRENT:
-                source_client.torrents_delete(
-                    delete_files=delete_files,
-                    torrent_hashes=info_hash
-                )
+                source_client.torrents_delete(delete_files=delete_files, torrent_hashes=info_hash)
                 logger.info(f"已从qBittorrent删除种子 {info_hash}，删除文件: {delete_files}")
                 return True
 
             elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
-                source_client.remove_torrent(
-                    delete_data=delete_files,
-                    ids=info_hash
-                )
+                source_client.remove_torrent(delete_data=delete_files, ids=info_hash)
                 logger.info(f"已从Transmission删除种子 {info_hash}，删除文件: {delete_files}")
                 return True
 
@@ -635,7 +601,7 @@ class SeedTransferService:
         delete_source: bool,
         transfer_status: str,
         error_message: Optional[str] = None,
-        transfer_duration: Optional[int] = None
+        transfer_duration: Optional[int] = None,
     ):
         """
         记录转移审计日志（操作开始时）
@@ -659,7 +625,7 @@ class SeedTransferService:
         try:
             async with AsyncSessionLocal() as async_db:
                 audit_log = SeedTransferAuditLog(
-                    operation_type='seed_transfer',
+                    operation_type="seed_transfer",
                     operation_time=datetime.now(),
                     user_id=user_id,
                     username=username,
@@ -674,7 +640,7 @@ class SeedTransferService:
                     delete_source=delete_source,
                     transfer_status=transfer_status,
                     error_message=error_message,
-                    transfer_duration=transfer_duration
+                    transfer_duration=transfer_duration,
                 )
 
                 async_db.add(audit_log)
@@ -694,7 +660,7 @@ class SeedTransferService:
         transfer_status: str,
         error_message: Optional[str] = None,
         torrent_name: Optional[str] = None,
-        transfer_duration: Optional[int] = None
+        transfer_duration: Optional[int] = None,
     ):
         """
         更新转移审计日志（操作结束时）
@@ -707,7 +673,7 @@ class SeedTransferService:
             transfer_duration: 转移耗时（可选）
         """
         try:
-            if not hasattr(self, '_last_audit_log_id'):
+            if not hasattr(self, "_last_audit_log_id"):
                 logger.warning("没有找到之前的审计日志记录")
                 return
 

@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 
 class TaskLogs(Base):
     """任务日志表"""
+
     __tablename__ = "task_logs"
 
     log_id = Column(Integer, primary_key=True, autoincrement=True)
@@ -41,7 +42,7 @@ class TaskLogs(Base):
             # 尝试解析字符串格式的 datetime
             try:
                 # 如果已经是 ISO 格式，直接返回
-                if '-' in dt and (':' in dt or 'T' in dt):
+                if "-" in dt and (":" in dt or "T" in dt):
                     return dt
             except:
                 pass
@@ -66,5 +67,5 @@ class TaskLogs(Base):
             "duration": self.duration,
             "success": self.success,
             "log_detail": self.log_detail,
-            "dr": self.dr
+            "dr": self.dr,
         }

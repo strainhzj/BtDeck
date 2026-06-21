@@ -23,6 +23,7 @@ from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.tracker_mapper import extract_tracker_host
 from app.core.background_task_manager import task_manager, TaskStatus
 from app.models.setting_templates import DownloaderTypeEnum
+
 # 审计日志相关导入（使用异步版本）
 from app.services.audit_service import AuditLogService, get_audit_service, extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
@@ -37,13 +38,16 @@ MAX_OPTIMISTIC_LOCK_RETRIES = 3
 
 # ==================== 同步请求模型 ====================
 
+
 class SyncSingleRequest(BaseModel):
     """单个下载器同步请求"""
+
     downloader_id: str = Field(..., description="下载器ID", min_length=1)
 
 
 class SyncSingleResponse(BaseModel):
     """单个下载器同步响应"""
+
     downloader_id: str
     nickname: str
     downloader_type: str
@@ -53,11 +57,8 @@ class SyncSingleResponse(BaseModel):
 
 # ==================== 辅助函数 ====================
 
-def get_torrent_by_hash(
-        db: Session,
-        hash_value: str,
-        downloader_id: Optional[str] = None
-) -> Optional[TorrentInfo]:
+
+def get_torrent_by_hash(db: Session, hash_value: str, downloader_id: Optional[str] = None) -> Optional[TorrentInfo]:
     """
     通过哈希值获取种子信息
 
@@ -69,10 +70,7 @@ def get_torrent_by_hash(
     Returns:
         种子信息对象或None
     """
-    query = db.query(TorrentInfo).filter(
-        TorrentInfo.hash == hash_value,
-        TorrentInfo.dr == 0  # 只查询未删除的记录
-    )
+    query = db.query(TorrentInfo).filter(TorrentInfo.hash == hash_value, TorrentInfo.dr == 0)  # 只查询未删除的记录
 
     # 如果提供了 downloader_id，则限定查询范围
     if downloader_id is not None:
@@ -115,6 +113,7 @@ def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -
 
 # ==================== 同步核心函数 ====================
 
+
 async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, Any]:
     """
     异步版本的种子同步数据库函数
@@ -146,10 +145,10 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
             downloader_type_str = None
 
             # 类型转换逻辑
-            if original_type == 'qbittorrent' or original_type == 0 or original_type == '0':
-                downloader_type_str = 'qbittorrent'
-            elif original_type == 'transmission' or original_type == 1 or original_type == '1':
-                downloader_type_str = 'transmission'
+            if original_type == "qbittorrent" or original_type == 0 or original_type == "0":
+                downloader_type_str = "qbittorrent"
+            elif original_type == "transmission" or original_type == 1 or original_type == "1":
+                downloader_type_str = "transmission"
             else:
                 # 未知类型
                 error_msg = f"不支持的下载器类型: {original_type} (类型: {type(original_type).__name__})"
@@ -158,11 +157,11 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
                     "status": "failed",
                     "message": error_msg,
                     "downloader_type": str(original_type),
-                    "nickname": downloader.nickname
+                    "nickname": downloader.nickname,
                 }
 
             # 使用转换后的类型进行判断
-            if downloader_type_str == 'qbittorrent':
+            if downloader_type_str == "qbittorrent":
                 try:
                     await qb_add_torrents_async(db, [downloader])
                     logger.info(f"Successfully synced qBittorrent downloader: {downloader.nickname}")
@@ -170,7 +169,7 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
                         "status": "success",
                         "message": f"qBittorrent下载器 {downloader.nickname} 同步成功",
                         "downloader_type": "qbittorrent",
-                        "nickname": downloader.nickname
+                        "nickname": downloader.nickname,
                     }
                 except Exception as sync_error:
                     # ✅ 关键修复：捕获同步异常，正确标记任务失败
@@ -179,10 +178,10 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
                         "status": "failed",
                         "message": f"同步失败: {str(sync_error)}",
                         "downloader_type": "qbittorrent",
-                        "nickname": downloader.nickname
+                        "nickname": downloader.nickname,
                     }
 
-            elif downloader_type_str == 'transmission':
+            elif downloader_type_str == "transmission":
                 try:
                     await tr_add_torrents_async(db, [downloader])
                     logger.info(f"Successfully synced Transmission downloader: {downloader.nickname}")
@@ -190,7 +189,7 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
                         "status": "success",
                         "message": f"Transmission下载器 {downloader.nickname} 同步成功",
                         "downloader_type": "transmission",
-                        "nickname": downloader.nickname
+                        "nickname": downloader.nickname,
                     }
                 except Exception as sync_error:
                     # ✅ 关键修复：捕获同步异常，正确标记任务失败
@@ -199,7 +198,7 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
                         "status": "failed",
                         "message": f"同步失败: {str(sync_error)}",
                         "downloader_type": "transmission",
-                        "nickname": downloader.nickname
+                        "nickname": downloader.nickname,
                     }
 
         except Exception as e:
@@ -208,8 +207,8 @@ async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, An
             return {
                 "status": "failed",
                 "message": error_msg,
-                "downloader_type": downloader_info.get('downloader_type', 'unknown'),
-                "nickname": downloader_info.get('nickname', 'unknown')
+                "downloader_type": downloader_info.get("downloader_type", "unknown"),
+                "nickname": downloader_info.get("nickname", "unknown"),
             }
 
 
@@ -232,17 +231,17 @@ async def torrent_sync_async() -> Dict[str, Any]:
         logger.info(f"[TORRENT_SYNC] app 类型: {type(downloader_app)}")
 
         # 检查 app.state.store 是否存在
-        if not hasattr(downloader_app, 'state') or not hasattr(downloader_app.state, 'store'):
+        if not hasattr(downloader_app, "state") or not hasattr(downloader_app.state, "store"):
             logger.error(f"[TORRENT_SYNC] app.state.store 不存在！app 类型: {type(downloader_app)}")
             logger.error(f"[TORRENT_SYNC] app.state 属性: {hasattr(downloader_app, 'state')}")
-            if hasattr(downloader_app, 'state'):
+            if hasattr(downloader_app, "state"):
                 logger.error(f"[TORRENT_SYNC] app.state 的属性: {dir(downloader_app.state)}")
             return {
                 "status": "failed",
                 "message": "下载器缓存未初始化 (app.state.store 不存在)",
                 "successful_syncs": 0,
                 "failed_syncs": 0,
-                "total_downloaders": 0
+                "total_downloaders": 0,
             }
 
         # 获取缓存的下载器列表
@@ -257,20 +256,14 @@ async def torrent_sync_async() -> Dict[str, Any]:
                 "message": "下载器缓存为空，无下载器可同步",
                 "successful_syncs": 0,
                 "failed_syncs": 0,
-                "total_downloaders": 0
+                "total_downloaders": 0,
             }
 
         # 只对有效的下载器（fail_time=0）进行种子同步
-        valid_downloaders = [
-            d for d in cached_downloaders
-            if hasattr(d, 'fail_time') and d.fail_time == 0
-        ]
+        valid_downloaders = [d for d in cached_downloaders if hasattr(d, "fail_time") and d.fail_time == 0]
 
         # 记录失效下载器信息
-        failed_downloaders = [
-            d for d in cached_downloaders
-            if hasattr(d, 'fail_time') and d.fail_time > 0
-        ]
+        failed_downloaders = [d for d in cached_downloaders if hasattr(d, "fail_time") and d.fail_time > 0]
 
         logger.info(f"[TORRENT_SYNC] 有效下载器数量: {len(valid_downloaders)}")
         if failed_downloaders:
@@ -285,13 +278,14 @@ async def torrent_sync_async() -> Dict[str, Any]:
                 "successful_syncs": 0,
                 "failed_syncs": 0,
                 "total_downloaders": len(cached_downloaders),
-                "failed_count": len(failed_downloaders)
+                "failed_count": len(failed_downloaders),
             }
 
         # 记录将要同步的下载器列表
         for downloader in valid_downloaders:
             logger.info(
-                f"[TORRENT_SYNC] 准备同步: {downloader.nickname} (type={getattr(downloader, 'downloader_type', 'unknown')})")
+                f"[TORRENT_SYNC] 准备同步: {downloader.nickname} (type={getattr(downloader, 'downloader_type', 'unknown')})"
+            )
 
         # 并发执行同步任务，不设置超时限制
         sync_results = []
@@ -308,16 +302,18 @@ async def torrent_sync_async() -> Dict[str, Any]:
                 try:
                     # 从缓存中获取下载器信息
                     downloader_info = {
-                        'downloader_id': getattr(downloader_check_vo, 'downloader_id', None),
-                        'nickname': downloader_check_vo.nickname,
-                        'host': getattr(downloader_check_vo, 'host', None),
-                        'port': getattr(downloader_check_vo, 'port', None),
-                        'username': getattr(downloader_check_vo, 'username', None),
-                        'password': getattr(downloader_check_vo, 'password', None),
-                        'downloader_type': getattr(downloader_check_vo, 'downloader_type', None),
-                        'torrent_save_path': getattr(downloader_check_vo, 'torrent_save_path', None),  # 🔧 添加种子保存目录
-                        'enabled': '1',
-                        'status': '1'
+                        "downloader_id": getattr(downloader_check_vo, "downloader_id", None),
+                        "nickname": downloader_check_vo.nickname,
+                        "host": getattr(downloader_check_vo, "host", None),
+                        "port": getattr(downloader_check_vo, "port", None),
+                        "username": getattr(downloader_check_vo, "username", None),
+                        "password": getattr(downloader_check_vo, "password", None),
+                        "downloader_type": getattr(downloader_check_vo, "downloader_type", None),
+                        "torrent_save_path": getattr(
+                            downloader_check_vo, "torrent_save_path", None
+                        ),  # 🔧 添加种子保存目录
+                        "enabled": "1",
+                        "status": "1",
                     }
 
                     # 调用异步种子同步函数
@@ -329,7 +325,7 @@ async def torrent_sync_async() -> Dict[str, Any]:
                     error_result = {
                         "status": "failed",
                         "message": f"Torrent sync error for {downloader_check_vo.nickname}: {str(e)}",
-                        "nickname": downloader_check_vo.nickname
+                        "nickname": downloader_check_vo.nickname,
                     }
                     return error_result
 
@@ -346,17 +342,18 @@ async def torrent_sync_async() -> Dict[str, Any]:
                 error_result = {
                     "status": "failed",
                     "message": f"Unexpected error: {str(result)}",
-                    "nickname": "unknown"
+                    "nickname": "unknown",
                 }
                 errors.append(error_result)
                 logger.error(f"[TORRENT_SYNC] 同步异常: {str(result)}")
-            elif result.get('status') == 'success':
+            elif result.get("status") == "success":
                 successful_syncs += 1
                 logger.info(f"[TORRENT_SYNC] 同步成功: {result.get('nickname', 'unknown')}")
             else:
                 failed_syncs += 1
                 logger.warning(
-                    f"[TORRENT_SYNC] 同步失败: {result.get('nickname', 'unknown')} - {result.get('message', 'Unknown error')}")
+                    f"[TORRENT_SYNC] 同步失败: {result.get('nickname', 'unknown')} - {result.get('message', 'Unknown error')}"
+                )
 
         # 种子同步完成后，根据关键词看板更新tracker状态
         logger.info(f"[TORRENT_SYNC] 种子同步完成，成功: {successful_syncs}, 失败: {failed_syncs}")
@@ -372,7 +369,7 @@ async def torrent_sync_async() -> Dict[str, Any]:
             "successful_syncs": successful_syncs,
             "failed_syncs": failed_syncs,
             "total_downloaders": len(valid_downloaders),
-            "tracker_status_update": tracker_status_result
+            "tracker_status_update": tracker_status_result,
         }
 
     except Exception as e:
@@ -381,12 +378,12 @@ async def torrent_sync_async() -> Dict[str, Any]:
             "message": f"Torrent sync task failed: {str(e)}",
             "successful_syncs": 0,
             "failed_syncs": 0,
-            "total_downloaders": 0
+            "total_downloaders": 0,
         }
 
 
-
 # ==================== 下载器种子同步函数 ====================
+
 
 def tr_add_torrents(db, downloaders, app=None):
     """
@@ -409,13 +406,10 @@ def tr_add_torrents(db, downloaders, app=None):
 
     # 优先使用缓存连接（约束16）+ 健康检查
     tr_client = None
-    if app and hasattr(app.state, 'store'):
+    if app and hasattr(app.state, "store"):
         cached_downloaders = app.state.store.get_snapshot_sync()
-        downloader_vo = next(
-            (d for d in cached_downloaders if d.downloader_id == bt_downloader.downloader_id),
-            None
-        )
-        if downloader_vo and hasattr(downloader_vo, 'client') and downloader_vo.client:
+        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == bt_downloader.downloader_id), None)
+        if downloader_vo and hasattr(downloader_vo, "client") and downloader_vo.client:
             tr_client = downloader_vo.client
             # 添加连接健康检查
             try:
@@ -433,16 +427,24 @@ def tr_add_torrents(db, downloaders, app=None):
                 password=bt_downloader.password,
                 port=bt_downloader.port,
                 protocol="http",
-                timeout=100.0
+                timeout=100.0,
             )
         except Exception as e:
             logger.error(f"连接Transmission失败: {str(e)}")
-            return {"status": "error", "message": f"连接Transmission失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
+            return {
+                "status": "error",
+                "message": f"连接Transmission失败: {str(e)}",
+                "downloader_id": bt_downloader.downloader_id,
+            }
     try:
         torrent_info_list = tr_client.get_torrents()
     except Exception as e:
         logger.error(f"获取Transmission种子列表失败: {str(e)}")
-        return {"status": "error", "message": f"获取种子列表失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
+        return {
+            "status": "error",
+            "message": f"获取种子列表失败: {str(e)}",
+            "downloader_id": bt_downloader.downloader_id,
+        }
     current_time = datetime.now()
     for torrent_info in torrent_info_list:
         # torrent_query_result = \
@@ -471,7 +473,7 @@ def tr_add_torrents(db, downloaders, app=None):
             completed_date=torrent_info.done_date if torrent_info.done_date else None,
             ratio=torrent_info.ratio,
             ratio_limit=torrent_info.seed_ratio_limit,
-            tags=",".join(torrent_info.labels) if hasattr(torrent_info, 'labels') and torrent_info.labels else "",
+            tags=",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
             category="",
             super_seeding="",
             enabled=1,
@@ -479,7 +481,7 @@ def tr_add_torrents(db, downloaders, app=None):
             create_by="admin",
             update_time=current_time,
             update_by="admin",
-            dr=0
+            dr=0,
         )
         try:
             if mode == "insert":
@@ -506,59 +508,63 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
     # 使用统一的枚举类方法进行类型判断
     type_name = DownloaderTypeEnum(downloader_type).to_name()
     if type_name == "qbittorrent":
-        trackers_data = getattr(torrent_info, 'trackers', None)
+        trackers_data = getattr(torrent_info, "trackers", None)
         if callable(trackers_data):
             trackers_data = trackers_data()
         trackers_data = trackers_data or []
 
         for tracker in trackers_data:
-            url = tracker.get('url')
+            url = tracker.get("url")
             if not url:
                 continue
             url = str(url)
-            if 'DHT' in url or 'PeX' in url or 'LSD' in url:
+            if "DHT" in url or "PeX" in url or "LSD" in url:
                 continue
             current_tracker_urls.add(url)
-            tracker_rows.append({
-                'tracker_id': str(uuid.uuid4()),
-                'torrent_info_id': torrent_info_id,
-                'tracker_name': url,
-                'tracker_url': url,
-                'tracker_host': extract_tracker_host(url),
-                'last_announce_succeeded': tracker.get('status'),
-                'last_announce_msg': tracker.get('msg'),
-                'last_scrape_succeeded': tracker.get('status'),
-                'last_scrape_msg': tracker.get('msg'),
-                'create_time': current_time,
-                'create_by': 'admin',
-                'update_time': current_time,
-                'update_by': 'admin',
-                'dr': 0
-            })
+            tracker_rows.append(
+                {
+                    "tracker_id": str(uuid.uuid4()),
+                    "torrent_info_id": torrent_info_id,
+                    "tracker_name": url,
+                    "tracker_url": url,
+                    "tracker_host": extract_tracker_host(url),
+                    "last_announce_succeeded": tracker.get("status"),
+                    "last_announce_msg": tracker.get("msg"),
+                    "last_scrape_succeeded": tracker.get("status"),
+                    "last_scrape_msg": tracker.get("msg"),
+                    "create_time": current_time,
+                    "create_by": "admin",
+                    "update_time": current_time,
+                    "update_by": "admin",
+                    "dr": 0,
+                }
+            )
 
     elif type_name == "transmission":
-        tracker_stats = getattr(torrent_info, 'tracker_stats', None) or []
+        tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
         for tracker_status in tracker_stats:
-            tracker_url = tracker_status.fields.get('announce')
+            tracker_url = tracker_status.fields.get("announce")
             if not tracker_url:
                 continue
             current_tracker_urls.add(tracker_url)
-            tracker_rows.append({
-                'tracker_id': str(uuid.uuid4()),
-                'torrent_info_id': torrent_info_id,
-                'tracker_name': tracker_status.site_name,
-                'tracker_url': tracker_url,
-                'tracker_host': tracker_status.fields.get('host') or extract_tracker_host(tracker_url),
-                'last_announce_succeeded': tracker_status.last_announce_succeeded,
-                'last_announce_msg': tracker_status.last_announce_result,
-                'last_scrape_succeeded': tracker_status.last_scrape_succeeded,
-                'last_scrape_msg': tracker_status.last_scrape_result,
-                'create_time': current_time,
-                'create_by': 'admin',
-                'update_time': current_time,
-                'update_by': 'admin',
-                'dr': 0
-            })
+            tracker_rows.append(
+                {
+                    "tracker_id": str(uuid.uuid4()),
+                    "torrent_info_id": torrent_info_id,
+                    "tracker_name": tracker_status.site_name,
+                    "tracker_url": tracker_url,
+                    "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
+                    "last_announce_succeeded": tracker_status.last_announce_succeeded,
+                    "last_announce_msg": tracker_status.last_announce_result,
+                    "last_scrape_succeeded": tracker_status.last_scrape_succeeded,
+                    "last_scrape_msg": tracker_status.last_scrape_result,
+                    "create_time": current_time,
+                    "create_by": "admin",
+                    "update_time": current_time,
+                    "update_by": "admin",
+                    "dr": 0,
+                }
+            )
 
     else:
         logger.error(f"Unknown downloader type: '{downloader_type}'")
@@ -575,10 +581,10 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
                 ~exists().where(
                     active_tracker.torrent_info_id == torrent_info_id,
                     active_tracker.tracker_url == trackerInfoModel.tracker_url,
-                    active_tracker.dr == 0
-                )
+                    active_tracker.dr == 0,
+                ),
             )
-            .values(dr=0, update_time=current_time, update_by='admin')
+            .values(dr=0, update_time=current_time, update_by="admin")
         )
 
     if tracker_rows:
@@ -587,38 +593,36 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
 
         # P1修复：添加row的None检查，避免AttributeError
         soft_deleted_pairs = {
-            (row.get('torrent_info_id'), row.get('tracker_url'))
+            (row.get("torrent_info_id"), row.get("tracker_url"))
             for row in tracker_rows
-            if row and isinstance(row, dict) and row.get('torrent_info_id') and row.get('tracker_url')
+            if row and isinstance(row, dict) and row.get("torrent_info_id") and row.get("tracker_url")
         }
 
         # 删除软删除记录，避免upsert时恢复（不使用嵌套事务，由外层commit统一管理）
         if soft_deleted_pairs:
             db.execute(
-                delete(trackerInfoModel)
-                .where(
+                delete(trackerInfoModel).where(
                     trackerInfoModel.dr == 1,
-                    tuple_(
-                        trackerInfoModel.torrent_info_id,
-                        trackerInfoModel.tracker_url
-                    ).in_(list(soft_deleted_pairs))
+                    tuple_(trackerInfoModel.torrent_info_id, trackerInfoModel.tracker_url).in_(
+                        list(soft_deleted_pairs)
+                    ),
                 )
             )
 
         # 插入新记录或更新现有记录
         stmt = sqlite_insert(trackerInfoModel).values(tracker_rows)
         stmt = stmt.on_conflict_do_update(
-            index_elements=['torrent_info_id', 'tracker_url'],
+            index_elements=["torrent_info_id", "tracker_url"],
             set_={
-                'tracker_name': stmt.excluded.tracker_name,
-                'last_announce_succeeded': stmt.excluded.last_announce_succeeded,
-                'last_announce_msg': stmt.excluded.last_announce_msg,
-                'last_scrape_succeeded': stmt.excluded.last_scrape_succeeded,
-                'last_scrape_msg': stmt.excluded.last_scrape_msg,
-                'update_time': current_time,
-                'update_by': 'admin',
-                'dr': 0
-            }
+                "tracker_name": stmt.excluded.tracker_name,
+                "last_announce_succeeded": stmt.excluded.last_announce_succeeded,
+                "last_announce_msg": stmt.excluded.last_announce_msg,
+                "last_scrape_succeeded": stmt.excluded.last_scrape_succeeded,
+                "last_scrape_msg": stmt.excluded.last_scrape_msg,
+                "update_time": current_time,
+                "update_by": "admin",
+                "dr": 0,
+            },
         )
         db.execute(stmt)
 
@@ -647,13 +651,10 @@ def qb_add_torrents(db, downloaders, app=None):
 
     # 优先使用缓存连接（约束16）+ 健康检查
     client = None
-    if app and hasattr(app.state, 'store'):
+    if app and hasattr(app.state, "store"):
         cached_downloaders = app.state.store.get_snapshot_sync()
-        downloader_vo = next(
-            (d for d in cached_downloaders if d.downloader_id == bt_downloader.downloader_id),
-            None
-        )
-        if downloader_vo and hasattr(downloader_vo, 'client') and downloader_vo.client:
+        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == bt_downloader.downloader_id), None)
+        if downloader_vo and hasattr(downloader_vo, "client") and downloader_vo.client:
             client = downloader_vo.client
             # 添加连接健康检查
             try:
@@ -672,23 +673,33 @@ def qb_add_torrents(db, downloaders, app=None):
                 username=bt_downloader.username,
                 password=bt_downloader.password,
                 VERIFY_WEBUI_CERTIFICATE=False,
-                REQUESTS_ARGS={'timeout': 30}  # 30秒超时
+                REQUESTS_ARGS={"timeout": 30},  # 30秒超时
             )
         except Exception as e:
             logger.error(f"连接qBittorrent失败: {str(e)}")
-            return {"status": "error", "message": f"连接qBittorrent失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
+            return {
+                "status": "error",
+                "message": f"连接qBittorrent失败: {str(e)}",
+                "downloader_id": bt_downloader.downloader_id,
+            }
     try:
         torrent_info_list = client.torrents_info()
     except Exception as e:
         logger.error(f"获取qBittorrent种子列表失败: {str(e)}")
-        return {"status": "error", "message": f"获取种子列表失败: {str(e)}", "downloader_id": bt_downloader.downloader_id}
+        return {
+            "status": "error",
+            "message": f"获取种子列表失败: {str(e)}",
+            "downloader_id": bt_downloader.downloader_id,
+        }
     current_time = datetime.now()
     for torrent_info in torrent_info_list:
-        torrent_query_result = \
-            db.query(torrentInfoModel.info_id, torrentInfoModel.create_time).filter(
-                torrentInfoModel.hash == torrent_info.hash).filter(
-                torrentInfoModel.downloader_id == bt_downloader.downloader_id).filter(
-                torrentInfoModel.dr == 0).all()
+        torrent_query_result = (
+            db.query(torrentInfoModel.info_id, torrentInfoModel.create_time)
+            .filter(torrentInfoModel.hash == torrent_info.hash)
+            .filter(torrentInfoModel.downloader_id == bt_downloader.downloader_id)
+            .filter(torrentInfoModel.dr == 0)
+            .all()
+        )
         if torrent_query_result.__len__() == 0:
             mode = "insert"
             torrent_info_id = str(uuid.uuid4())
@@ -716,7 +727,8 @@ def qb_add_torrents(db, downloaders, app=None):
             added_date=datetime.fromtimestamp(torrent_info.added_on) if torrent_info.added_on > 0 else None,
             completed_date=(
                 datetime.fromtimestamp(torrent_info.completion_on)
-                if torrent_info.completion_on and torrent_info.completion_on > 0
+                if torrent_info.completion_on
+                and torrent_info.completion_on > 0
                 and torrent_info.completion_on <= 2147483647  # 防止Year 2038问题
                 else None
             ),
@@ -730,7 +742,7 @@ def qb_add_torrents(db, downloaders, app=None):
             create_by="admin",
             update_time=update_time,
             update_by="admin",
-            dr=0
+            dr=0,
         )
 
         try:
@@ -795,10 +807,11 @@ def update_tracker_with_optimistic_lock(db, tracker_id, update_data, max_retries
     for attempt in range(max_retries):
         try:
             # 读取当前记录
-            tracker = db.query(trackerInfoModel).filter(
-                trackerInfoModel.tracker_id == tracker_id,
-                trackerInfoModel.dr == 0
-            ).first()
+            tracker = (
+                db.query(trackerInfoModel)
+                .filter(trackerInfoModel.tracker_id == tracker_id, trackerInfoModel.dr == 0)
+                .first()
+            )
 
             if tracker is None:
                 logger.warning(f"乐观锁更新失败: tracker {tracker_id} 不存在或已删除")
@@ -808,14 +821,18 @@ def update_tracker_with_optimistic_lock(db, tracker_id, update_data, max_retries
 
             # 创建新的数据字典副本，避免污染传入的参数
             final_update_data = update_data.copy()
-            final_update_data['version'] = old_version + 1
+            final_update_data["version"] = old_version + 1
 
             # 执行更新（带版本检查）
-            affected_rows = db.query(trackerInfoModel).filter(
-                trackerInfoModel.tracker_id == tracker_id,
-                trackerInfoModel.version == old_version,
-                trackerInfoModel.dr == 0
-            ).update(final_update_data)
+            affected_rows = (
+                db.query(trackerInfoModel)
+                .filter(
+                    trackerInfoModel.tracker_id == tracker_id,
+                    trackerInfoModel.version == old_version,
+                    trackerInfoModel.dr == 0,
+                )
+                .update(final_update_data)
+            )
 
             if affected_rows > 0:
                 return True  # 更新成功
@@ -836,8 +853,9 @@ def update_tracker_with_optimistic_lock(db, tracker_id, update_data, max_retries
     return False
 
 
-def restore_deleted_tracker(db, torrent_info_id, tracker_url, tracker_data, current_time,
-                            max_retries=MAX_OPTIMISTIC_LOCK_RETRIES):
+def restore_deleted_tracker(
+    db, torrent_info_id, tracker_url, tracker_data, current_time, max_retries=MAX_OPTIMISTIC_LOCK_RETRIES
+):
     """
     恢复已删除的 tracker 记录（dr: 1 -> 0）
 
@@ -855,11 +873,15 @@ def restore_deleted_tracker(db, torrent_info_id, tracker_url, tracker_data, curr
     for attempt in range(max_retries):
         try:
             # 查找已删除的记录
-            deleted_tracker = db.query(trackerInfoModel).filter(
-                trackerInfoModel.torrent_info_id == torrent_info_id,
-                trackerInfoModel.tracker_url == tracker_url,
-                trackerInfoModel.dr == 1
-            ).first()
+            deleted_tracker = (
+                db.query(trackerInfoModel)
+                .filter(
+                    trackerInfoModel.torrent_info_id == torrent_info_id,
+                    trackerInfoModel.tracker_url == tracker_url,
+                    trackerInfoModel.dr == 1,
+                )
+                .first()
+            )
 
             if deleted_tracker is None:
                 return False
@@ -867,22 +889,26 @@ def restore_deleted_tracker(db, torrent_info_id, tracker_url, tracker_data, curr
             # 恢复记录（保留 create_time/create_by，更新其他字段）
             # 使用 get() 并提供默认值，防止 None 写入数据库
             update_data = {
-                'dr': 0,
-                'tracker_name': tracker_data.get('tracker_name', deleted_tracker.tracker_name),
-                'last_announce_succeeded': tracker_data.get('last_announce_succeeded', 0),
-                'last_announce_msg': tracker_data.get('last_announce_msg', ''),
-                'last_scrape_succeeded': tracker_data.get('last_scrape_succeeded', 0),
-                'last_scrape_msg': tracker_data.get('last_scrape_msg', ''),
-                'update_time': current_time,
-                'update_by': 'admin',
-                'version': deleted_tracker.version + 1
+                "dr": 0,
+                "tracker_name": tracker_data.get("tracker_name", deleted_tracker.tracker_name),
+                "last_announce_succeeded": tracker_data.get("last_announce_succeeded", 0),
+                "last_announce_msg": tracker_data.get("last_announce_msg", ""),
+                "last_scrape_succeeded": tracker_data.get("last_scrape_succeeded", 0),
+                "last_scrape_msg": tracker_data.get("last_scrape_msg", ""),
+                "update_time": current_time,
+                "update_by": "admin",
+                "version": deleted_tracker.version + 1,
             }
 
-            affected_rows = db.query(trackerInfoModel).filter(
-                trackerInfoModel.tracker_id == deleted_tracker.tracker_id,
-                trackerInfoModel.version == deleted_tracker.version,
-                trackerInfoModel.dr == 1
-            ).update(update_data)
+            affected_rows = (
+                db.query(trackerInfoModel)
+                .filter(
+                    trackerInfoModel.tracker_id == deleted_tracker.tracker_id,
+                    trackerInfoModel.version == deleted_tracker.version,
+                    trackerInfoModel.dr == 1,
+                )
+                .update(update_data)
+            )
 
             if affected_rows > 0:
                 logger.info(f"恢复已删除的 tracker: {tracker_url}")
@@ -916,8 +942,7 @@ def mark_removed_trackers_batch(db, torrent_info_id, current_tracker_urls, curre
             logger.error(f"Invalid current_time type: {type(current_time)}")
             return
         if not current_tracker_urls:
-            logger.warning("current_tracker_urls is empty, skip mark-removed trackers"
-                           )
+            logger.warning("current_tracker_urls is empty, skip mark-removed trackers")
             return
 
         result = db.execute(
@@ -925,9 +950,9 @@ def mark_removed_trackers_batch(db, torrent_info_id, current_tracker_urls, curre
             .where(
                 trackerInfoModel.torrent_info_id == torrent_info_id,
                 trackerInfoModel.dr == 0,
-                ~trackerInfoModel.tracker_url.in_(current_tracker_urls)
+                ~trackerInfoModel.tracker_url.in_(current_tracker_urls),
             )
-            .values(dr=1, update_time=current_time, update_by='system')
+            .values(dr=1, update_time=current_time, update_by="system")
         )
 
         removed_count = result.rowcount or 0
@@ -966,27 +991,32 @@ def mark_removed_trackers(db, torrent_info_id, current_tracker_urls, current_tim
             return
 
         # 查询所有活跃的 tracker
-        existing_trackers = db.query(trackerInfoModel).filter(
-            trackerInfoModel.torrent_info_id == torrent_info_id,
-            trackerInfoModel.dr == 0
-        ).all()
+        existing_trackers = (
+            db.query(trackerInfoModel)
+            .filter(trackerInfoModel.torrent_info_id == torrent_info_id, trackerInfoModel.dr == 0)
+            .all()
+        )
 
         removed_count = 0
         for existing_tracker in existing_trackers:
             if existing_tracker.tracker_url not in current_tracker_urls:
                 # 使用乐观锁标记为删除
                 update_data = {
-                    'dr': 1,
-                    'update_time': current_time,
-                    'update_by': 'system',
-                    'version': existing_tracker.version + 1
+                    "dr": 1,
+                    "update_time": current_time,
+                    "update_by": "system",
+                    "version": existing_tracker.version + 1,
                 }
 
-                affected_rows = db.query(trackerInfoModel).filter(
-                    trackerInfoModel.tracker_id == existing_tracker.tracker_id,
-                    trackerInfoModel.version == existing_tracker.version,
-                    trackerInfoModel.dr == 0
-                ).update(update_data)
+                affected_rows = (
+                    db.query(trackerInfoModel)
+                    .filter(
+                        trackerInfoModel.tracker_id == existing_tracker.tracker_id,
+                        trackerInfoModel.version == existing_tracker.version,
+                        trackerInfoModel.dr == 0,
+                    )
+                    .update(update_data)
+                )
 
                 if affected_rows > 0:
                     removed_count += 1
@@ -1033,29 +1063,31 @@ def update_or_restore_tracker_with_retry(db, torrent_info_id, tracker_url, track
             return False
 
         # 步骤1：查询活跃记录（dr=0）
-        active_tracker = db.query(trackerInfoModel).filter(
-            trackerInfoModel.torrent_info_id == torrent_info_id,
-            trackerInfoModel.tracker_url == tracker_url,
-            trackerInfoModel.dr == 0
-        ).first()
+        active_tracker = (
+            db.query(trackerInfoModel)
+            .filter(
+                trackerInfoModel.torrent_info_id == torrent_info_id,
+                trackerInfoModel.tracker_url == tracker_url,
+                trackerInfoModel.dr == 0,
+            )
+            .first()
+        )
 
         if active_tracker is not None:
             # 准备更新数据（保留 create_time/create_by）
             # 使用 get() 并提供默认值，防止 None 写入数据库
             update_data = {
-                'tracker_name': tracker_data.get('tracker_name', active_tracker.tracker_name),
-                'last_announce_succeeded': tracker_data.get('last_announce_succeeded', 0),
-                'last_announce_msg': tracker_data.get('last_announce_msg', ''),
-                'last_scrape_succeeded': tracker_data.get('last_scrape_succeeded', 0),
-                'last_scrape_msg': tracker_data.get('last_scrape_msg', ''),
-                'update_time': current_time,
-                'update_by': 'admin'
+                "tracker_name": tracker_data.get("tracker_name", active_tracker.tracker_name),
+                "last_announce_succeeded": tracker_data.get("last_announce_succeeded", 0),
+                "last_announce_msg": tracker_data.get("last_announce_msg", ""),
+                "last_scrape_succeeded": tracker_data.get("last_scrape_succeeded", 0),
+                "last_scrape_msg": tracker_data.get("last_scrape_msg", ""),
+                "update_time": current_time,
+                "update_by": "admin",
             }
 
             # 使用乐观锁更新
-            success = update_tracker_with_optimistic_lock(
-                db, active_tracker.tracker_id, update_data
-            )
+            success = update_tracker_with_optimistic_lock(db, active_tracker.tracker_id, update_data)
 
             if success:
                 logger.debug(f"更新 tracker 成功: {tracker_url}")
@@ -1065,17 +1097,19 @@ def update_or_restore_tracker_with_retry(db, torrent_info_id, tracker_url, track
             return True  # 已处理
 
         # 步骤2：查询已删除记录（dr=1）
-        deleted_tracker = db.query(trackerInfoModel).filter(
-            trackerInfoModel.torrent_info_id == torrent_info_id,
-            trackerInfoModel.tracker_url == tracker_url,
-            trackerInfoModel.dr == 1
-        ).first()
+        deleted_tracker = (
+            db.query(trackerInfoModel)
+            .filter(
+                trackerInfoModel.torrent_info_id == torrent_info_id,
+                trackerInfoModel.tracker_url == tracker_url,
+                trackerInfoModel.dr == 1,
+            )
+            .first()
+        )
 
         if deleted_tracker is not None:
             # 恢复已删除的记录
-            success = restore_deleted_tracker(
-                db, torrent_info_id, tracker_url, tracker_data, current_time
-            )
+            success = restore_deleted_tracker(db, torrent_info_id, tracker_url, tracker_data, current_time)
 
             if success:
                 logger.info(f"恢复 tracker 成功: {tracker_url}")
@@ -1094,12 +1128,13 @@ def update_or_restore_tracker_with_retry(db, torrent_info_id, tracker_url, track
 
 # ==================== 同步接口 ====================
 
+
 @router.post("/sync-single", response_model=CommonResponse)
 async def sync_single_downloader(
-        request: Request,
-        sync_request: SyncSingleRequest,
-        _user=Depends(require_authenticated_user),
-        db: Session = Depends(get_db)
+    request: Request,
+    sync_request: SyncSingleRequest,
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """
     单个下载器种子同步接口（异步后台执行）
@@ -1119,26 +1154,17 @@ async def sync_single_downloader(
         downloader_id = sync_request.downloader_id
 
         # 从数据库查询下载器信息
-        downloader = db.query(BtDownloaders).filter(
-            BtDownloaders.downloader_id == downloader_id,
-            BtDownloaders.dr == 0
-        ).first()
+        downloader = (
+            db.query(BtDownloaders).filter(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0).first()
+        )
 
         if not downloader:
-            return CommonResponse(
-                status="error",
-                msg=f"下载器不存在: {downloader_id}",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg=f"下载器不存在: {downloader_id}", code="404", data=None)
 
         # 检查下载器是否启用
-        if downloader.enabled != True or downloader.status != '1':
+        if downloader.enabled != True or downloader.status != "1":
             return CommonResponse(
-                status="error",
-                msg=f"下载器未启用或已停用: {downloader.nickname}",
-                code="400",
-                data=None
+                status="error", msg=f"下载器未启用或已停用: {downloader.nickname}", code="400", data=None
             )
 
         # 检查是否已有正在运行的同步任务
@@ -1148,31 +1174,26 @@ async def sync_single_downloader(
                 status="error",
                 msg=f"该下载器正在同步中，请等待当前任务完成",
                 code="409",
-                data={
-                    "task_id": existing_task.task_id,
-                    "status": existing_task.status.value
-                }
+                data={"task_id": existing_task.task_id, "status": existing_task.status.value},
             )
 
         # 构建下载器信息字典（用于同步）
         downloader_info = {
-            'downloader_id': downloader.downloader_id,
-            'nickname': downloader.nickname,
-            'host': downloader.host,
-            'port': downloader.port,
-            'username': downloader.username,
-            'password': downloader.password,
-            'downloader_type': downloader.downloader_type,
-            'torrent_save_path': downloader.torrent_save_path,
-            'enabled': '1',
-            'status': '1'
+            "downloader_id": downloader.downloader_id,
+            "nickname": downloader.nickname,
+            "host": downloader.host,
+            "port": downloader.port,
+            "username": downloader.username,
+            "password": downloader.password,
+            "downloader_type": downloader.downloader_type,
+            "torrent_save_path": downloader.torrent_save_path,
+            "enabled": "1",
+            "status": "1",
         }
 
         # 创建后台任务
         task = await task_manager.create_task(
-            task_type="sync",
-            downloader_id=downloader.downloader_id,
-            downloader_nickname=downloader.nickname
+            task_type="sync", downloader_id=downloader.downloader_id, downloader_nickname=downloader.nickname
         )
 
         # 定义后台执行函数
@@ -1180,10 +1201,7 @@ async def sync_single_downloader(
             """执行同步任务并更新状态"""
             try:
                 # 执行同步（使用任务管理器的并发控制）
-                await task_manager.execute_task(
-                    task.task_id,
-                    torrent_sync_db_async(downloader_info)
-                )
+                await task_manager.execute_task(task.task_id, torrent_sync_db_async(downloader_info))
 
                 # 获取任务结果
                 completed_task = task_manager.get_task(task.task_id)
@@ -1202,13 +1220,16 @@ async def sync_single_downloader(
                                 "downloader_name": downloader.nickname,
                                 "downloader_type": downloader.downloader_type,
                                 "sync_result": sync_result.get("status", "unknown"),
-                                "task_id": task.task_id
+                                "task_id": task.task_id,
                             },
                             new_value={"last_sync_time": datetime.now().isoformat()},
-                            operation_result=AuditOperationResult.SUCCESS if sync_result.get(
-                                "status") == "success" else AuditOperationResult.FAILED,
+                            operation_result=(
+                                AuditOperationResult.SUCCESS
+                                if sync_result.get("status") == "success"
+                                else AuditOperationResult.FAILED
+                            ),
                             downloader_id=downloader.downloader_id,
-                            **extract_audit_info_from_request(request)
+                            **extract_audit_info_from_request(request),
                         )
                     except Exception as audit_error:
                         logger.error(f"记录审计日志失败: {str(audit_error)}")
@@ -1226,12 +1247,12 @@ async def sync_single_downloader(
                             operation_detail={
                                 "downloader_id": downloader.downloader_id,
                                 "error_message": str(e),
-                                "task_id": task.task_id
+                                "task_id": task.task_id,
                             },
                             operation_result=AuditOperationResult.FAILED,
                             error_message=str(e),
                             downloader_id=downloader.downloader_id,
-                            **extract_audit_info_from_request(request)
+                            **extract_audit_info_from_request(request),
                         )
                 except Exception:
                     pass
@@ -1252,33 +1273,23 @@ async def sync_single_downloader(
                 "nickname": downloader.nickname,
                 "status": task.status.value,
                 "query_url": f"/torrents/sync-status/{task.task_id}",
-                "message": "任务正在后台执行，请使用 task_id 查询进度"
-            }
+                "message": "任务正在后台执行，请使用 task_id 查询进度",
+            },
         )
 
     except SQLAlchemyError as e:
         logger.error(f"数据库操作失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"数据库操作失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"数据库操作失败: {str(e)}", code="500", data=None)
     except Exception as e:
         logger.error(f"启动同步任务失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"启动同步任务失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"启动同步任务失败: {str(e)}", code="500", data=None)
 
 
 @router.get("/sync-status/{task_id}", response_model=CommonResponse)
 async def get_sync_task_status(
-        request: Request,
-        task_id: str,
-        _user=Depends(require_authenticated_user),
+    request: Request,
+    task_id: str,
+    _user=Depends(require_authenticated_user),
 ):
     """
     查询同步任务状态接口
@@ -1297,32 +1308,18 @@ async def get_sync_task_status(
         task = task_manager.get_task(task_id)
 
         if not task:
-            return CommonResponse(
-                status="error",
-                msg=f"任务不存在: {task_id}",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg=f"任务不存在: {task_id}", code="404", data=None)
 
         # 返回任务信息
-        return CommonResponse(
-            status="success",
-            msg="查询成功",
-            code="200",
-            data=task.to_dict()
-        )
+        return CommonResponse(status="success", msg="查询成功", code="200", data=task.to_dict())
 
     except Exception as e:
         logger.error(f"查询任务状态失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"查询任务状态失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询任务状态失败: {str(e)}", code="500", data=None)
 
 
 # ==================== Tracker状态更新 ====================
+
 
 async def update_tracker_status_from_keywords() -> Dict[str, Any]:
     """
@@ -1349,10 +1346,7 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
         async with AsyncSessionLocal() as db:
             # Step 1: 加载所有启用的关键词到内存
             result = await db.execute(
-                select(TrackerKeywordConfig).filter(
-                    TrackerKeywordConfig.enabled == True,
-                    TrackerKeywordConfig.dr == 0
-                )
+                select(TrackerKeywordConfig).filter(TrackerKeywordConfig.enabled == True, TrackerKeywordConfig.dr == 0)
             )
             keywords = result.scalars().all()
 
@@ -1366,11 +1360,7 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
             logger.debug(f"加载关键词: {len(keyword_map)}条")
 
             if not keyword_map:
-                return {
-                    "status": "success",
-                    "message": "未加载到任何关键词",
-                    "updated_count": 0
-                }
+                return {"status": "success", "message": "未加载到任何关键词", "updated_count": 0}
 
             # Step 2: 查询所有tracker信息（只查询需要的字段）
             result = await db.execute(
@@ -1379,19 +1369,13 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
                     TrackerInfo.tracker_url,
                     TrackerInfo.last_announce_msg,
                     TrackerInfo.last_scrape_msg,
-                    TrackerInfo.tracker_host
-                ).filter(
-                    TrackerInfo.dr == 0
-                )
+                    TrackerInfo.tracker_host,
+                ).filter(TrackerInfo.dr == 0)
             )
             trackers = result.all()
 
             if not trackers:
-                return {
-                    "status": "success",
-                    "message": "未发现任何tracker",
-                    "updated_count": 0
-                }
+                return {"status": "success", "message": "未发现任何tracker", "updated_count": 0}
 
             logger.debug(f"发现tracker记录: {len(trackers)}条")
 
@@ -1429,10 +1413,7 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
                 if tracker_host not in tracker_host_msgs:
                     tracker_host_msgs[tracker_host] = []
 
-                tracker_host_msgs[tracker_host].append({
-                    "tracker_id": tracker_id,
-                    "msg": msg.strip()
-                })
+                tracker_host_msgs[tracker_host].append({"tracker_id": tracker_id, "msg": msg.strip()})
 
             logger.debug(f"按tracker_host分组后: {len(tracker_host_msgs)}个host")
 
@@ -1535,13 +1516,9 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
                 "message": f"更新完成: {updated_count}条成功, {failed_count}条失败",
                 "updated_count": updated_count,
                 "failed_count": failed_count,
-                "total_hosts": len(tracker_host_msgs)
+                "total_hosts": len(tracker_host_msgs),
             }
 
     except Exception as e:
         logger.error(f"更新tracker状态失败: {str(e)}", exc_info=True)
-        return {
-            "status": "error",
-            "message": f"更新失败: {str(e)}",
-            "updated_count": 0
-        }
+        return {"status": "error", "message": f"更新失败: {str(e)}", "updated_count": 0}

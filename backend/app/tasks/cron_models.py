@@ -5,13 +5,18 @@ from app.database import Base
 
 class CronTask(Base):
     """定时任务表"""
+
     __tablename__ = "cron_task"
 
     task_id = Column(Integer, primary_key=True, autoincrement=True, comment="主键id")
     task_name = Column(String(200), nullable=False, comment="任务名称")
     task_code = Column(String(50), nullable=False, unique=True, comment="任务编码")
     task_status = Column(Integer, nullable=False, default=0, comment="任务状态，0等待运行，1运行中，2空闲")
-    task_type = Column(Integer, nullable=False, comment="脚本类型，0-shell脚本，1-cmd脚本，2-powershell脚本，3-python脚本，4-python内部类，5-清理回收站任务")
+    task_type = Column(
+        Integer,
+        nullable=False,
+        comment="脚本类型，0-shell脚本，1-cmd脚本，2-powershell脚本，3-python脚本，4-python内部类，5-清理回收站任务",
+    )
     executor = Column(Text, nullable=False, comment="执行脚本内容或路径")
     enabled = Column(Boolean, nullable=False, default=True, comment="启用状态")
     last_execute_time = Column(DateTime, nullable=True, comment="上次运行时间")
@@ -48,7 +53,7 @@ class CronTask(Base):
             "create_time": self.create_time,
             "update_time": self.update_time,
             "create_by": self.create_by,
-            "update_by": self.update_by
+            "update_by": self.update_by,
         }
 
     @property
@@ -66,6 +71,6 @@ class CronTask(Base):
             2: "PowerShell脚本",
             3: "Python脚本",
             4: "Python内部类",
-            5: "清理回收站"
+            5: "清理回收站",
         }
         return type_map.get(self.task_type, "未知")

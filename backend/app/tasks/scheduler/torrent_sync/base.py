@@ -51,7 +51,7 @@ class BaseSyncTask:
         Returns:
             有效的下载器列表
         """
-        if not hasattr(app, 'state') or not hasattr(app.state, 'store'):
+        if not hasattr(app, "state") or not hasattr(app.state, "store"):
             logger.error("下载器缓存未初始化 (app.state.store 不存在)")
             return []
 
@@ -62,16 +62,10 @@ class BaseSyncTask:
             return []
 
         # 只返回有效的下载器（fail_time=0）
-        valid_downloaders = [
-            d for d in cached_downloaders
-            if hasattr(d, 'fail_time') and d.fail_time == 0
-        ]
+        valid_downloaders = [d for d in cached_downloaders if hasattr(d, "fail_time") and d.fail_time == 0]
 
         # 记录失效下载器数量
-        failed_count = len([
-            d for d in cached_downloaders
-            if hasattr(d, 'fail_time') and d.fail_time > 0
-        ])
+        failed_count = len([d for d in cached_downloaders if hasattr(d, "fail_time") and d.fail_time > 0])
 
         if failed_count > 0:
             logger.warning(f"发现 {failed_count} 个失效的下载器（fail_time > 0），已跳过")
@@ -96,12 +90,7 @@ class BaseSyncTask:
                 logger.debug(f"[锁管理] 为下载器 {downloader_id} 创建新锁")
             return self._downloader_locks[downloader_id]
 
-    async def sync_single_downloader(
-        self,
-        downloader: Any,
-        sync_func,
-        sync_type: str
-    ) -> Dict[str, Any]:
+    async def sync_single_downloader(self, downloader: Any, sync_func, sync_type: str) -> Dict[str, Any]:
         """
         同步单个下载器
 
@@ -116,15 +105,13 @@ class BaseSyncTask:
             同步结果字典
         """
         # ✅ 获取下载器ID
-        downloader_id = getattr(downloader, 'downloader_id', None)
-        nickname = getattr(downloader, 'nickname', 'unknown')
+        downloader_id = getattr(downloader, "downloader_id", None)
+        nickname = getattr(downloader, "nickname", "unknown")
 
         # ✅ 获取该下载器的专用锁
         if downloader_id is None:
             lock_key = f"unknown:{id(downloader)}"
-            logger.warning(
-                f"[{sync_type}] downloader_id missing; using lock key {lock_key} for {nickname}"
-            )
+            logger.warning(f"[{sync_type}] downloader_id missing; using lock key {lock_key} for {nickname}")
         else:
             lock_key = str(downloader_id)
         lock = await self._get_downloader_lock(lock_key)
@@ -135,16 +122,16 @@ class BaseSyncTask:
 
             try:
                 downloader_info = {
-                    'downloader_id': downloader_id,
-                    'nickname': nickname,
-                    'host': getattr(downloader, 'host', None),
-                    'port': getattr(downloader, 'port', None),
-                    'username': getattr(downloader, 'username', None),
-                    'password': getattr(downloader, 'password', None),
-                    'downloader_type': getattr(downloader, 'downloader_type', None),
-                    'torrent_save_path': getattr(downloader, 'torrent_save_path', None),
-                    'enabled': '1',
-                    'status': '1'
+                    "downloader_id": downloader_id,
+                    "nickname": nickname,
+                    "host": getattr(downloader, "host", None),
+                    "port": getattr(downloader, "port", None),
+                    "username": getattr(downloader, "username", None),
+                    "password": getattr(downloader, "password", None),
+                    "downloader_type": getattr(downloader, "downloader_type", None),
+                    "torrent_save_path": getattr(downloader, "torrent_save_path", None),
+                    "enabled": "1",
+                    "status": "1",
                 }
 
                 result = await sync_func(downloader_info)
@@ -155,18 +142,14 @@ class BaseSyncTask:
                 error_result = {
                     "status": "failed",
                     "message": f"{sync_type} error for {nickname}: {str(e)}",
-                    "nickname": nickname
+                    "nickname": nickname,
                 }
                 return error_result
             finally:
                 logger.debug(f"[{sync_type}] 释放锁: {nickname} (downloader_id={downloader_id})")
 
     async def execute_sync_with_concurrency(
-        self,
-        downloaders: List[Any],
-        sync_func,
-        sync_type: str,
-        max_concurrent: int = 3
+        self, downloaders: List[Any], sync_func, sync_type: str, max_concurrent: int = 3
     ) -> Dict[str, Any]:
         """
         并发执行同步任务
@@ -186,12 +169,12 @@ class BaseSyncTask:
                 "message": "没有有效的下载器可同步",
                 "successful_syncs": 0,
                 "failed_syncs": 0,
-                "total_downloaders": 0
+                "total_downloaders": 0,
             }
 
         # 记录将要同步的下载器列表
         for downloader in downloaders:
-            nickname = getattr(downloader, 'nickname', 'unknown')
+            nickname = getattr(downloader, "nickname", "unknown")
             logger.info(f"[{sync_type}] 准备同步: {nickname}")
 
         # 创建信号量控制并发
@@ -217,12 +200,14 @@ class BaseSyncTask:
             elif not isinstance(result, dict):
                 failed_syncs += 1
                 logger.warning(f"[{sync_type}] 同步失败: invalid result type {type(result)}")
-            elif result.get('status') == 'success':
+            elif result.get("status") == "success":
                 successful_syncs += 1
                 logger.info(f"[{sync_type}] 同步成功: {result.get('nickname', 'unknown')}")
             else:
                 failed_syncs += 1
-                logger.warning(f"[{sync_type}] 同步失败: {result.get('nickname', 'unknown')} - {result.get('message', 'Unknown error')}")
+                logger.warning(
+                    f"[{sync_type}] 同步失败: {result.get('nickname', 'unknown')} - {result.get('message', 'Unknown error')}"
+                )
 
         # 确定整体状态
         if successful_syncs == 0 and failed_syncs == 0:
@@ -239,7 +224,7 @@ class BaseSyncTask:
             "message": f"{sync_type} 完成",
             "successful_syncs": successful_syncs,
             "failed_syncs": failed_syncs,
-            "total_downloaders": len(downloaders)
+            "total_downloaders": len(downloaders),
         }
 
     def get_task_info(self) -> Dict[str, Any]:
@@ -256,5 +241,5 @@ class BaseSyncTask:
             "total_processed": self.total_processed,
             "total_failed": self.total_failed,
             "last_execution_time": self.last_execution_time,
-            "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0
+            "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0,
         }

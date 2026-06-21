@@ -29,6 +29,7 @@ router = APIRouter()
 
 class DuplicateQueryRequest(BaseModel):
     """重复种子查询请求参数"""
+
     name_like: Optional[str] = Field(None, description="种子名称模糊搜索")
     downloader_id: Optional[str] = Field(None, description="下载器ID（支持多选，逗号分隔）")
     status: Optional[str] = Field(None, description="种子状态（支持多选，逗号分隔）")
@@ -39,9 +40,7 @@ class DuplicateQueryRequest(BaseModel):
 
 @router.post("/duplicates", response_model=CommonResponse)
 async def get_duplicate_torrents(
-    request: DuplicateQueryRequest,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
+    request: DuplicateQueryRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
 ):
     """
     查询重复种子（严格模式）
@@ -88,16 +87,16 @@ async def get_duplicate_torrents(
         base_conditions = [
             TorrentInfo.dr == 0,  # 未删除
             TorrentInfo.hash.isnot(None),
-            TorrentInfo.hash != ''  # hash不为空
+            TorrentInfo.hash != "",  # hash不为空
         ]
 
         # 应用过滤条件
         if request.name_like:
-            base_conditions.append(TorrentInfo.name.like(f'%{request.name_like}%'))
+            base_conditions.append(TorrentInfo.name.like(f"%{request.name_like}%"))
 
         if request.downloader_id:
             # 支持多选：逗号分隔的字符串
-            downloader_ids = [id.strip() for id in request.downloader_id.split(',') if id.strip()]
+            downloader_ids = [id.strip() for id in request.downloader_id.split(",") if id.strip()]
             if len(downloader_ids) == 0:
                 # 空列表：不添加过滤条件（避免SQL语法错误）
                 pass
@@ -110,7 +109,7 @@ async def get_duplicate_torrents(
 
         if request.status:
             # 支持多选：逗号分隔的字符串
-            statuses = [s.strip() for s in request.status.split(',') if s.strip()]
+            statuses = [s.strip() for s in request.status.split(",") if s.strip()]
             if len(statuses) == 0:
                 # 空列表：不添加过滤条件（避免SQL语法错误）
                 pass
@@ -126,18 +125,11 @@ async def get_duplicate_torrents(
             base_conditions.append(TorrentInfo.size >= request.min_size)
 
         # 第一步：构建子查询，找出符合条件的所有种子
-        filtered_torrents = (
-            select(TorrentInfo.hash)
-            .where(and_(*base_conditions))
-            .alias()
-        )
+        filtered_torrents = select(TorrentInfo.hash).where(and_(*base_conditions)).alias()
 
         # 第二步：统计每个hash的出现次数，找出重复的hash（出现次数≥2）
         duplicate_hashes_subquery = (
-            select(
-                filtered_torrents.c.hash,
-                func.count().label('hash_count')
-            )
+            select(filtered_torrents.c.hash, func.count().label("hash_count"))
             .group_by(filtered_torrents.c.hash)
             .having(func.count() >= 2)
             .alias()
@@ -146,10 +138,7 @@ async def get_duplicate_torrents(
         # 第三步：查询所有hash在重复列表中的种子记录
         main_query = (
             select(TorrentInfo)
-            .join(
-                duplicate_hashes_subquery,
-                TorrentInfo.hash == duplicate_hashes_subquery.c.hash
-            )
+            .join(duplicate_hashes_subquery, TorrentInfo.hash == duplicate_hashes_subquery.c.hash)
             .where(and_(*base_conditions))
         )
 
@@ -174,10 +163,13 @@ async def get_duplicate_torrents(
             torrent_info_ids = [t.info_id for t in torrent_records]
 
             # 批量查询tracker信息
-            all_trackers = db.query(TrackerInfo).filter(
-                TrackerInfo.torrent_info_id.in_(torrent_info_ids),
-                TrackerInfo.dr == 0  # 只查询未逻辑删除的tracker
-            ).all()
+            all_trackers = (
+                db.query(TrackerInfo)
+                .filter(
+                    TrackerInfo.torrent_info_id.in_(torrent_info_ids), TrackerInfo.dr == 0  # 只查询未逻辑删除的tracker
+                )
+                .all()
+            )
 
             # 按torrent_info_id分组tracker信息
             tracker_map: Dict[str, List[TrackerInfo]] = {}
@@ -190,12 +182,12 @@ async def get_duplicate_torrents(
             downloader_types = {}
             try:
                 from app.downloader.models import BtDownloaders
-                downloaders = db.query(
-                    BtDownloaders.downloader_id,
-                    BtDownloaders.downloader_type
-                ).filter(
-                    BtDownloaders.downloader_id.in_([t.downloader_id for t in torrent_records])
-                ).all()
+
+                downloaders = (
+                    db.query(BtDownloaders.downloader_id, BtDownloaders.downloader_type)
+                    .filter(BtDownloaders.downloader_id.in_([t.downloader_id for t in torrent_records]))
+                    .all()
+                )
 
                 for dl in downloaders:
                     dl_type_raw = dl.downloader_type
@@ -257,7 +249,7 @@ async def get_duplicate_torrents(
                     last_announce_succeeded=announce_status_text,
                     last_announce_msg=tracker.last_announce_msg,
                     last_scrape_succeeded=scrape_status_text,
-                    last_scrape_msg=tracker.last_scrape_msg
+                    last_scrape_msg=tracker.last_scrape_msg,
                 )
                 tracker_info_list.append(tracker_vo)
 
@@ -301,7 +293,7 @@ async def get_duplicate_torrents(
                 last_announce_succeeded=last_announce_succeeded_str,
                 last_announce_msg=last_announce_msg_str,
                 last_scrape_succeeded=last_scrape_succeeded_str,
-                tracker_info=tracker_info_list
+                tracker_info=tracker_info_list,
             )
 
             torrent_list.append(torrent_vo.model_dump(by_alias=False))
@@ -316,21 +308,11 @@ async def get_duplicate_torrents(
             status="success",
             msg="查询成功",
             code="200",
-            data={
-                "total": total,
-                "page": request.page,
-                "pageSize": request.pageSize,
-                "list": torrent_list
-            }
+            data={"total": total, "page": request.page, "pageSize": request.pageSize, "list": torrent_list},
         )
 
     except Exception as e:
         logger.error(f"查询重复种子失败: {e}", exc_info=True)
 
         # 返回错误信息,但状态码为200
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)

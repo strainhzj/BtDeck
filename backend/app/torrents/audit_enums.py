@@ -3,6 +3,7 @@
 
 定义所有审计日志的操作类型和操作结果枚举。
 """
+
 from enum import Enum
 from typing import Dict, Any, Optional
 
@@ -19,64 +20,65 @@ class AuditOperationType(str, Enum):
     - 关键词规则操作
     - 系统操作
     """
+
     # ========== 种子管理操作 ==========
-    ADD = "add"                           # 新增种子
-    PAUSE = "pause"                       # 暂停种子
-    RESUME = "resume"                     # 恢复/开始种子
-    RECHECK = "recheck"                   # 重新检查种子
-    DELETE_L4 = "delete_l4"               # 等级4删除（待删除标签）
-    DELETE_L3 = "delete_l3"               # 等级3删除（回收站）
-    DELETE_L2 = "delete_l2"               # 等级2删除（删除任务保留数据）
-    DELETE_L1 = "delete_l1"               # 等级1删除（删除任务和数据）
+    ADD = "add"  # 新增种子
+    PAUSE = "pause"  # 暂停种子
+    RESUME = "resume"  # 恢复/开始种子
+    RECHECK = "recheck"  # 重新检查种子
+    DELETE_L4 = "delete_l4"  # 等级4删除（待删除标签）
+    DELETE_L3 = "delete_l3"  # 等级3删除（回收站）
+    DELETE_L2 = "delete_l2"  # 等级2删除（删除任务保留数据）
+    DELETE_L1 = "delete_l1"  # 等级1删除（删除任务和数据）
 
     # ========== 回收站操作 ==========
-    RESTORE = "restore"                   # 从回收站还原
-    CLEANUP_L3 = "cleanup_l3"             # 清理等级3数据
-    CLEANUP_L4 = "cleanup_l4"             # 清理等级4数据
+    RESTORE = "restore"  # 从回收站还原
+    CLEANUP_L3 = "cleanup_l3"  # 清理等级3数据
+    CLEANUP_L4 = "cleanup_l4"  # 清理等级4数据
 
     # ========== Tracker操作 ==========
-    UPDATE_TRACKER = "update_tracker"     # 修改tracker
-    ADD_TRACKER = "add_tracker"           # 添加tracker
-    REMOVE_TRACKER = "remove_tracker"     # 删除tracker
-    REANNOUNCE = "reannounce"             # Tracker汇报（主动/定时触发）
+    UPDATE_TRACKER = "update_tracker"  # 修改tracker
+    ADD_TRACKER = "add_tracker"  # 添加tracker
+    REMOVE_TRACKER = "remove_tracker"  # 删除tracker
+    REANNOUNCE = "reannounce"  # Tracker汇报（主动/定时触发）
 
     # ========== 标签操作 ==========
-    UPDATE_TAG = "update_tag"             # 修改标签
-    ADD_TAG = "add_tag"                   # 添加标签
-    REMOVE_TAG = "remove_tag"             # 删除标签
+    UPDATE_TAG = "update_tag"  # 修改标签
+    ADD_TAG = "add_tag"  # 添加标签
+    REMOVE_TAG = "remove_tag"  # 删除标签
 
     # ========== 分类操作 ==========
-    UPDATE_CATEGORY = "update_category"   # 修改分类
+    UPDATE_CATEGORY = "update_category"  # 修改分类
 
     # ========== 下载器操作 ==========
-    DOWNLOADER_ADD = "downloader_add"     # 添加下载器
+    DOWNLOADER_ADD = "downloader_add"  # 添加下载器
     DOWNLOADER_DELETE = "downloader_delete"  # 删除下载器
     DOWNLOADER_UPDATE = "downloader_update"  # 修改下载器配置
-    DOWNLOADER_TEST = "downloader_test"   # 测试下载器连接
-    SYNC = "sync"                          # 同步下载器种子
+    DOWNLOADER_TEST = "downloader_test"  # 测试下载器连接
+    SYNC = "sync"  # 同步下载器种子
 
     # ========== 定时任务操作 ==========
-    SCHEDULED_TASK_ADD = "scheduled_task_add"       # 添加定时任务
-    SCHEDULED_TASK_DELETE = "scheduled_task_delete" # 删除定时任务
-    SCHEDULED_TASK_UPDATE = "scheduled_task_update" # 修改定时任务
-    SCHEDULED_TASK_ENABLE = "scheduled_task_enable" # 启用定时任务
-    SCHEDULED_TASK_DISABLE = "scheduled_task_disable" # 禁用定时任务
-    SCHEDULED_TASK_EXECUTE = "scheduled_task_execute" # 手动执行定时任务
+    SCHEDULED_TASK_ADD = "scheduled_task_add"  # 添加定时任务
+    SCHEDULED_TASK_DELETE = "scheduled_task_delete"  # 删除定时任务
+    SCHEDULED_TASK_UPDATE = "scheduled_task_update"  # 修改定时任务
+    SCHEDULED_TASK_ENABLE = "scheduled_task_enable"  # 启用定时任务
+    SCHEDULED_TASK_DISABLE = "scheduled_task_disable"  # 禁用定时任务
+    SCHEDULED_TASK_EXECUTE = "scheduled_task_execute"  # 手动执行定时任务
 
     # ========== 关键词规则操作 ==========
-    KEYWORD_RULE_ADD = "keyword_rule_add"           # 添加关键词规则
-    KEYWORD_RULE_DELETE = "keyword_rule_delete"     # 删除关键词规则
-    KEYWORD_RULE_UPDATE = "keyword_rule_update"     # 修改关键词规则
-    KEYWORD_RULE_ENABLE = "keyword_rule_enable"     # 启用关键词规则
-    KEYWORD_RULE_DISABLE = "keyword_rule_disable"   # 禁用关键词规则
+    KEYWORD_RULE_ADD = "keyword_rule_add"  # 添加关键词规则
+    KEYWORD_RULE_DELETE = "keyword_rule_delete"  # 删除关键词规则
+    KEYWORD_RULE_UPDATE = "keyword_rule_update"  # 修改关键词规则
+    KEYWORD_RULE_ENABLE = "keyword_rule_enable"  # 启用关键词规则
+    KEYWORD_RULE_DISABLE = "keyword_rule_disable"  # 禁用关键词规则
 
     # ========== 系统操作 ==========
-    SYNC_STATUS = "sync_status"           # 同步状态
-    CLEANUP_ZOMBIE = "cleanup_zombie"     # 清理僵尸种子
-    BATCH_OPERATION = "batch_operation"   # 批量操作
+    SYNC_STATUS = "sync_status"  # 同步状态
+    CLEANUP_ZOMBIE = "cleanup_zombie"  # 清理僵尸种子
+    BATCH_OPERATION = "batch_operation"  # 批量操作
 
     # ========== 归档操作 ==========
-    ARCHIVE_LOGS = "archive_logs"         # 归档审计日志
+    ARCHIVE_LOGS = "archive_logs"  # 归档审计日志
 
     @classmethod
     def is_valid(cls, value: str) -> bool:
@@ -226,9 +228,10 @@ class AuditOperationResult(str, Enum):
 
     定义操作的执行结果
     """
-    SUCCESS = "success"       # 操作成功
-    FAILED = "failed"         # 操作失败
-    PARTIAL = "partial"       # 部分成功（批量操作时部分成功）
+
+    SUCCESS = "success"  # 操作成功
+    FAILED = "failed"  # 操作失败
+    PARTIAL = "partial"  # 部分成功（批量操作时部分成功）
 
     @classmethod
     def is_valid(cls, value: str) -> bool:

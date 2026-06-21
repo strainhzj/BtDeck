@@ -4,6 +4,7 @@
 通过 app.state.store 缓存获取下载器连接，
 并发调用所有下载器获取种子级实时速度数据。
 """
+
 import asyncio
 import logging
 import os
@@ -97,14 +98,16 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
             # qBittorrent的progress字段是0-1的小数，需要转换为百分比
             progress_raw = t.get("progress", 0)
             progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
-            result.append({
-                "hash": t.get("hash", ""),
-                "downloadSpeed": dl_speed,
-                "uploadSpeed": ul_speed,
-                "progress": progress_percent,
-                "num_seeds": t.get("num_seeds", 0),
-                "num_leechs": t.get("num_leechs", 0),
-            })
+            result.append(
+                {
+                    "hash": t.get("hash", ""),
+                    "downloadSpeed": dl_speed,
+                    "uploadSpeed": ul_speed,
+                    "progress": progress_percent,
+                    "num_seeds": t.get("num_seeds", 0),
+                    "num_leechs": t.get("num_leechs", 0),
+                }
+            )
     return result
 
 
@@ -124,14 +127,16 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
             # percentDone 返回 0-1 小数，通过 percent_done 属性安全访问
             progress_raw = getattr(t, "percent_done", 0) or 0
             progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
-            result.append({
-                "hash": getattr(t, "hashString", ""),
-                "downloadSpeed": dl_speed,
-                "uploadSpeed": ul_speed,
-                "progress": progress_percent,
-                "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
-                "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
-            })
+            result.append(
+                {
+                    "hash": getattr(t, "hashString", ""),
+                    "downloadSpeed": dl_speed,
+                    "uploadSpeed": ul_speed,
+                    "progress": progress_percent,
+                    "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
+                    "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
+                }
+            )
     return result
 
 
@@ -150,23 +155,30 @@ def _supplement_qb_sync(client: qbClient, hashes: List[str]) -> List[Dict[str, A
     for t in torrents:
         progress_raw = t.get("progress", 0)
         progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
-        result.append({
-            "hash": t.get("hash", ""),
-            "downloadSpeed": t.get("dlspeed", 0),
-            "uploadSpeed": t.get("upspeed", 0),
-            "progress": progress_percent,
-            "num_seeds": t.get("num_seeds", 0),
-            "num_leechs": t.get("num_leechs", 0),
-            "status": t.get("state", ""),
-        })
+        result.append(
+            {
+                "hash": t.get("hash", ""),
+                "downloadSpeed": t.get("dlspeed", 0),
+                "uploadSpeed": t.get("upspeed", 0),
+                "progress": progress_percent,
+                "num_seeds": t.get("num_seeds", 0),
+                "num_leechs": t.get("num_leechs", 0),
+                "status": t.get("state", ""),
+            }
+        )
     return result
 
 
 def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, Any]]:
     """批量补查 Transmission 中消失种子的最新状态"""
     fields = [
-        "hashString", "rateDownload", "rateUpload", "percentDone",
-        "peersSendingToUs", "peersGettingFromUs", "status",
+        "hashString",
+        "rateDownload",
+        "rateUpload",
+        "percentDone",
+        "peersSendingToUs",
+        "peersGettingFromUs",
+        "status",
     ]
     # Transmission 不支持按 hash 批量查询，需要获取所有再过滤
     hash_set = set(hashes)
@@ -178,15 +190,17 @@ def _supplement_tr_sync(client: trClient, hashes: List[str]) -> List[Dict[str, A
             continue
         progress_raw = getattr(t, "percent_done", 0) or 0
         progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
-        result.append({
-            "hash": h,
-            "downloadSpeed": getattr(t, "rate_download", 0) or 0,
-            "uploadSpeed": getattr(t, "rate_upload", 0) or 0,
-            "progress": progress_percent,
-            "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
-            "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
-            "status": getattr(t, "status", ""),
-        })
+        result.append(
+            {
+                "hash": h,
+                "downloadSpeed": getattr(t, "rate_download", 0) or 0,
+                "uploadSpeed": getattr(t, "rate_upload", 0) or 0,
+                "progress": progress_percent,
+                "num_seeds": getattr(t, "peers_sending_to_us", 0) or 0,
+                "num_leechs": getattr(t, "peers_getting_from_us", 0) or 0,
+                "status": getattr(t, "status", ""),
+            }
+        )
     return result
 
 
@@ -253,8 +267,8 @@ async def _update_completed_torrents(completed_hashes: List[str]) -> None:
             # 查询当前状态为downloading的种子
             stmt = select(TorrentInfo).where(
                 TorrentInfo.hash.in_(completed_hashes),
-                TorrentInfo.status == 'downloading',
-                TorrentInfo.dr == 0  # 未删除
+                TorrentInfo.status == "downloading",
+                TorrentInfo.dr == 0,  # 未删除
             )
             result = await db.execute(stmt)
             torrents_to_update = result.scalars().all()
@@ -265,7 +279,7 @@ async def _update_completed_torrents(completed_hashes: List[str]) -> None:
             # 批量更新
             for torrent in torrents_to_update:
                 torrent.progress = 100.0
-                torrent.status = 'completed'
+                torrent.status = "completed"
                 torrent.completed_date = datetime.now()
                 torrent.update_time = datetime.now()
 
@@ -352,12 +366,7 @@ async def get_active_torrents(
         cached_downloaders = await request.app.state.store.get_snapshot()
 
         if not cached_downloaders:
-            return CommonResponse(
-                status="success",
-                msg="暂无在线下载器",
-                code="200",
-                data=[]
-            )
+            return CommonResponse(status="success", msg="暂无在线下载器", code="200", data=[])
 
         async def _process_downloader(downloader: Any) -> List[Dict[str, Any]]:
             """处理单个下载器，返回活跃种子速度列表（含超时保护）"""
@@ -390,9 +399,7 @@ async def get_active_torrents(
                 return []
 
         # 并发调用所有下载器
-        results = await asyncio.gather(
-            *[_process_downloader(d) for d in cached_downloaders]
-        )
+        results = await asyncio.gather(*[_process_downloader(d) for d in cached_downloaders])
 
         # 扁平化结果，同时标记种子所属下载器
         active_torrents: List[Dict[str, Any]] = []
@@ -431,25 +438,12 @@ async def get_active_torrents(
         if supplement_data:
             asyncio.create_task(_sync_torrents_to_db(supplement_data))
         # 2. 活跃种子中进度100%的：更新为completed
-        completed_hashes = [
-            t["hash"] for t in active_torrents
-            if t.get("progress", 0) >= 100
-        ]
+        completed_hashes = [t["hash"] for t in active_torrents if t.get("progress", 0) >= 100]
         if completed_hashes:
             asyncio.create_task(_update_completed_torrents(completed_hashes))
 
-        return CommonResponse(
-            status="success",
-            msg="获取速度数据成功",
-            code="200",
-            data=active_torrents
-        )
+        return CommonResponse(status="success", msg="获取速度数据成功", code="200", data=active_torrents)
 
     except Exception as e:
         logger.error(f"获取活跃种子速度失败: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"获取速度数据失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"获取速度数据失败: {str(e)}", code="500", data=None)

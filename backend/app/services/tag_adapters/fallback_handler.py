@@ -66,14 +66,14 @@ class FallbackHandler:
                 "downloader_type": downloader_type,
                 "fallback_type": FallbackHandler.FALLBACK_CATEGORY_TO_TAG,
                 "message": "Transmission不支持分类功能",
-                "suggestion": "您可以将分类名转换为标签，以达到类似的管理效果"
+                "suggestion": "您可以将分类名转换为标签，以达到类似的管理效果",
             }
         elif downloader_type == FallbackHandler.DOWNLOADER_QBITTORRENT:
             return {
                 "supported": True,
                 "require_fallback": False,
                 "downloader_type": downloader_type,
-                "message": "qBittorrent支持分类和标签功能"
+                "message": "qBittorrent支持分类和标签功能",
             }
         else:
             # 未知下载器类型，默认不支持
@@ -83,15 +83,11 @@ class FallbackHandler:
                 "downloader_type": downloader_type,
                 "fallback_type": FallbackHandler.FALLBACK_CATEGORY_TO_TAG,
                 "message": f"未知的下载器类型: {downloader_type}",
-                "suggestion": "请联系管理员确认该下载器的功能支持情况"
+                "suggestion": "请联系管理员确认该下载器的功能支持情况",
             }
 
     @staticmethod
-    def check_batch_category_support(
-        downloader_type: str,
-        tag_ids: List[str],
-        tag_info_getter
-    ) -> Dict[str, Any]:
+    def check_batch_category_support(downloader_type: str, tag_ids: List[str], tag_info_getter) -> Dict[str, Any]:
         """
         批量检查标签中是否包含不支持的分类
 
@@ -120,7 +116,7 @@ class FallbackHandler:
                 "require_fallback": False,
                 "category_tags": [],
                 "tag_tags": tag_ids,
-                "message": "所有标签都可以正常使用"
+                "message": "所有标签都可以正常使用",
             }
 
         # 下载器不支持分类，需要检查标签列表
@@ -133,11 +129,7 @@ class FallbackHandler:
                 continue
 
             if tag_info.get("type") == FallbackHandler.TAG_TYPE_CATEGORY:
-                category_tags.append({
-                    "tag_id": tag_id,
-                    "name": tag_info.get("name", ""),
-                    "type": "category"
-                })
+                category_tags.append({"tag_id": tag_id, "name": tag_info.get("name", ""), "type": "category"})
             else:
                 tag_tags.append(tag_id)
 
@@ -148,7 +140,7 @@ class FallbackHandler:
                 "require_fallback": False,
                 "category_tags": [],
                 "tag_tags": tag_tags,
-                "message": "所有标签都可以正常使用"
+                "message": "所有标签都可以正常使用",
             }
 
         # 有分类标签，需要降级
@@ -161,7 +153,7 @@ class FallbackHandler:
             "tag_tags": tag_tags,
             "fallback_type": FallbackHandler.FALLBACK_CATEGORY_TO_TAG,
             "message": f"检测到{len(category_tags)}个分类标签: {', '.join(category_names)}",
-            "suggestion": f"Transmission不支持分类，是否将以下分类转换为标签？{', '.join(category_names)}"
+            "suggestion": f"Transmission不支持分类，是否将以下分类转换为标签？{', '.join(category_names)}",
         }
 
     @staticmethod
@@ -181,10 +173,7 @@ class FallbackHandler:
         return category_name
 
     @staticmethod
-    def fallback_batch_categories_to_tags(
-        category_names: List[str],
-        add_prefix: bool = True
-    ) -> Dict[str, Any]:
+    def fallback_batch_categories_to_tags(category_names: List[str], add_prefix: bool = True) -> Dict[str, Any]:
         """
         批量将分类名转换为标签名
 
@@ -213,7 +202,7 @@ class FallbackHandler:
             "success": True,
             "mapping": mapping,
             "tag_names": tag_names,
-            "message": f"成功将{len(category_names)}个分类转换为标签"
+            "message": f"成功将{len(category_names)}个分类转换为标签",
         }
 
     @staticmethod
@@ -241,14 +230,11 @@ class FallbackHandler:
             Optional[str]: 原始分类名，如果不是转换标签则返回None
         """
         if FallbackHandler.is_category_tag(tag_name):
-            return tag_name[len(FallbackHandler.CATEGORY_TAG_PREFIX):]
+            return tag_name[len(FallbackHandler.CATEGORY_TAG_PREFIX) :]
         return None
 
     @staticmethod
-    def format_fallback_prompt(
-        downloader_type: str,
-        category_names: List[str]
-    ) -> str:
+    def format_fallback_prompt(downloader_type: str, category_names: List[str]) -> str:
         """
         格式化降级提示信息（用于显示给用户）
 
@@ -275,10 +261,7 @@ class FallbackHandler:
         )
 
     @staticmethod
-    def validate_fallback_decision(
-        user_decision: bool,
-        category_names: List[str]
-    ) -> Dict[str, Any]:
+    def validate_fallback_decision(user_decision: bool, category_names: List[str]) -> Dict[str, Any]:
         """
         验证用户的降级决策
 
@@ -296,11 +279,7 @@ class FallbackHandler:
                 }
         """
         if not user_decision:
-            return {
-                "can_proceed": False,
-                "action": "cancel",
-                "message": "用户取消操作，未进行标签分配"
-            }
+            return {"can_proceed": False, "action": "cancel", "message": "用户取消操作，未进行标签分配"}
 
         # 用户同意降级，执行转换
         result = FallbackHandler.fallback_batch_categories_to_tags(category_names)
@@ -310,15 +289,11 @@ class FallbackHandler:
             "action": "proceed_with_tags",
             "message": result["message"],
             "converted_tags": result["tag_names"],
-            "mapping": result["mapping"]
+            "mapping": result["mapping"],
         }
 
     @staticmethod
-    def get_adapter_by_type(
-        downloader_type: str,
-        downloader_id: str,
-        app_state_store
-    ):
+    def get_adapter_by_type(downloader_type: str, downloader_id: str, app_state_store):
         """
         根据下载器类型获取对应的适配器实例
 
@@ -335,10 +310,7 @@ class FallbackHandler:
 
         # 从缓存获取下载器信息
         cached_downloaders = app_state_store.get_snapshot_sync()
-        downloader_vo = next(
-            (d for d in cached_downloaders if d.downloader_id == downloader_id),
-            None
-        )
+        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
 
         if not downloader_vo or downloader_vo.fail_time > 0:
             logger.error(f"下载器不可用: {downloader_id}")
@@ -348,16 +320,13 @@ class FallbackHandler:
         normalized_type = DownloaderTypeEnum.normalize(downloader_vo.downloader_type)
 
         if normalized_type == DownloaderTypeEnum.QBITTORRENT:
-            return QBittorrentTagAdapter(
-                downloader_id=downloader_id,
-                client=downloader_vo.client
-            )
+            return QBittorrentTagAdapter(downloader_id=downloader_id, client=downloader_vo.client)
         elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
             return TransmissionTagAdapter(
                 downloader_id=downloader_id,
                 session=downloader_vo.session,
                 rpc_url=downloader_vo.rpc_url,
-                session_id=getattr(downloader_vo, 'session_id', None)
+                session_id=getattr(downloader_vo, "session_id", None),
             )
 
         logger.error(f"不支持的下载器类型: {downloader_vo.downloader_type}")

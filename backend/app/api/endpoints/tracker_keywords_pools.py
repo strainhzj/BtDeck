@@ -26,20 +26,16 @@ router = APIRouter()
 # 池子标签映射常量
 class PoolLabels:
     """池子标签常量"""
-    CANDIDATE = '📋 候选池'
-    IGNORED = '⏭️ 忽略池'
-    SUCCESS = '✅ 成功池'
-    FAILED = '❌ 失败池'
+
+    CANDIDATE = "📋 候选池"
+    IGNORED = "⏭️ 忽略池"
+    SUCCESS = "✅ 成功池"
+    FAILED = "❌ 失败池"
 
     @classmethod
     def get_label(cls, pool_type: str) -> str:
         """获取池子标签"""
-        label_map = {
-            'candidate': cls.CANDIDATE,
-            'ignored': cls.IGNORED,
-            'success': cls.SUCCESS,
-            'failed': cls.FAILED
-        }
+        label_map = {"candidate": cls.CANDIDATE, "ignored": cls.IGNORED, "success": cls.SUCCESS, "failed": cls.FAILED}
         return label_map.get(pool_type, pool_type)
 
 
@@ -50,7 +46,7 @@ def get_pool_keywords(
     page: int = 1,
     page_size: int = 20,
     _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     获取指定池子的关键词列表（分页）
@@ -66,20 +62,16 @@ def get_pool_keywords(
     # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     # 验证池子类型
-    valid_pool_types = ['candidate', 'ignored', 'success', 'failed']
+    valid_pool_types = ["candidate", "ignored", "success", "failed"]
     if pool_type not in valid_pool_types:
         return CommonResponse(
-            status="error",
-            msg=f"无效的池子类型，必须是: {', '.join(valid_pool_types)}",
-            code="400",
-            data=None
+            status="error", msg=f"无效的池子类型，必须是: {', '.join(valid_pool_types)}", code="400", data=None
         )
 
     try:
         # 构建查询
         query = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.keyword_type == pool_type,
-            TrackerKeywordConfig.dr == 0
+            TrackerKeywordConfig.keyword_type == pool_type, TrackerKeywordConfig.dr == 0
         )
 
         # 关键词筛选
@@ -96,40 +88,28 @@ def get_pool_keywords(
         # 转换为字典格式
         list_data = []
         for kw in keywords:
-            list_data.append({
-                "keyword_id": kw.keyword_id,
-                "keyword": kw.keyword,
-                "pool_type": kw.keyword_type,
-                "create_time": kw.create_time.strftime('%Y-%m-%d %H:%M:%S') if kw.create_time else None
-            })
+            list_data.append(
+                {
+                    "keyword_id": kw.keyword_id,
+                    "keyword": kw.keyword,
+                    "pool_type": kw.keyword_type,
+                    "create_time": kw.create_time.strftime("%Y-%m-%d %H:%M:%S") if kw.create_time else None,
+                }
+            )
 
         return CommonResponse(
             status="success",
             msg="查询成功",
             code="200",
-            data={
-                "total": total,
-                "page": page,
-                "pageSize": page_size,
-                "list": list_data
-            }
+            data={"total": total, "page": page, "pageSize": page_size, "list": list_data},
         )
     except Exception as e:
         logger.error(f"查询池子关键词失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/move", summary="移动关键词到指定池子")
-def move_keyword_to_pool(
-    request_data: dict,
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+def move_keyword_to_pool(request_data: dict, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """
     移动单个关键词到指定池子
 
@@ -144,37 +124,25 @@ def move_keyword_to_pool(
     target_pool = request_data.get("target_pool")
 
     if not keyword_id or not target_pool:
-        return CommonResponse(
-            status="error",
-            msg="缺少必要参数: keyword_id 和 target_pool",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg="缺少必要参数: keyword_id 和 target_pool", code="400", data=None)
 
     # 验证池子类型
-    valid_pool_types = ['candidate', 'ignored', 'success', 'failed']
+    valid_pool_types = ["candidate", "ignored", "success", "failed"]
     if target_pool not in valid_pool_types:
         return CommonResponse(
-            status="error",
-            msg=f"无效的目标池子类型，必须是: {', '.join(valid_pool_types)}",
-            code="400",
-            data=None
+            status="error", msg=f"无效的目标池子类型，必须是: {', '.join(valid_pool_types)}", code="400", data=None
         )
 
     try:
         # 查找关键词
-        keyword = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.keyword_id == keyword_id,
-            TrackerKeywordConfig.dr == 0
-        ).first()
+        keyword = (
+            db.query(TrackerKeywordConfig)
+            .filter(TrackerKeywordConfig.keyword_id == keyword_id, TrackerKeywordConfig.dr == 0)
+            .first()
+        )
 
         if not keyword:
-            return CommonResponse(
-                status="error",
-                msg="关键词不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="关键词不存在", code="404", data=None)
 
         # 更新池子类型
         old_pool_type = keyword.keyword_type
@@ -186,29 +154,15 @@ def move_keyword_to_pool(
 
         logger.info(f"关键词 '{keyword.keyword}' 已从 {old_pool_type} 移动到 {target_pool}")
 
-        return CommonResponse(
-            status="success",
-            msg=f"关键词已移动到 {target_pool}",
-            code="200",
-            data=None
-        )
+        return CommonResponse(status="success", msg=f"关键词已移动到 {target_pool}", code="200", data=None)
     except Exception as e:
         db.rollback()
         logger.error(f"移动关键词失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"移动失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"移动失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/batch-move", summary="批量移动关键词到指定池子")
-def batch_move_keywords(
-    request_data: dict,
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+def batch_move_keywords(request_data: dict, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """
     批量移动关键词到指定池子
 
@@ -223,45 +177,28 @@ def batch_move_keywords(
     target_pool = request_data.get("target_pool")
 
     if not keyword_ids or not target_pool:
-        return CommonResponse(
-            status="error",
-            msg="缺少必要参数: keyword_ids 和 target_pool",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg="缺少必要参数: keyword_ids 和 target_pool", code="400", data=None)
 
     if not isinstance(keyword_ids, list):
-        return CommonResponse(
-            status="error",
-            msg="keyword_ids 必须是列表",
-            code="400",
-            data=None
-        )
+        return CommonResponse(status="error", msg="keyword_ids 必须是列表", code="400", data=None)
 
     # 验证池子类型
-    valid_pool_types = ['candidate', 'ignored', 'success', 'failed']
+    valid_pool_types = ["candidate", "ignored", "success", "failed"]
     if target_pool not in valid_pool_types:
         return CommonResponse(
-            status="error",
-            msg=f"无效的目标池子类型，必须是: {', '.join(valid_pool_types)}",
-            code="400",
-            data=None
+            status="error", msg=f"无效的目标池子类型，必须是: {', '.join(valid_pool_types)}", code="400", data=None
         )
 
     try:
         # 查找关键词
-        keywords = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.keyword_id.in_(keyword_ids),
-            TrackerKeywordConfig.dr == 0
-        ).all()
+        keywords = (
+            db.query(TrackerKeywordConfig)
+            .filter(TrackerKeywordConfig.keyword_id.in_(keyword_ids), TrackerKeywordConfig.dr == 0)
+            .all()
+        )
 
         if not keywords:
-            return CommonResponse(
-                status="error",
-                msg="未找到有效关键词",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="未找到有效关键词", code="404", data=None)
 
         # 批量更新
         for keyword in keywords:
@@ -276,24 +213,16 @@ def batch_move_keywords(
             status="success",
             msg=f"已移动 {len(keywords)} 个关键词到 {target_pool}",
             code="200",
-            data={"moved_count": len(keywords)}
+            data={"moved_count": len(keywords)},
         )
     except Exception as e:
         db.rollback()
         logger.error(f"批量移动关键词失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"批量移动失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"批量移动失败: {str(e)}", code="500", data=None)
 
 
 @router.get("/pool/statistics", summary="获取所有池子的统计信息")
-def get_pool_statistics(
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+def get_pool_statistics(_user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """
     获取所有池子的关键词统计信息
 
@@ -305,47 +234,30 @@ def get_pool_statistics(
 
     try:
         # 查询各池子数量
-        stats = db.query(
-            TrackerKeywordConfig.keyword_type,
-            func.count(TrackerKeywordConfig.keyword_id)
-        ).filter(
-            TrackerKeywordConfig.dr == 0
-        ).group_by(
-            TrackerKeywordConfig.keyword_type
-        ).all()
+        stats = (
+            db.query(TrackerKeywordConfig.keyword_type, func.count(TrackerKeywordConfig.keyword_id))
+            .filter(TrackerKeywordConfig.dr == 0)
+            .group_by(TrackerKeywordConfig.keyword_type)
+            .all()
+        )
 
         # 构建结果
-        result = {
-            "candidate_count": 0,
-            "ignored_count": 0,
-            "success_count": 0,
-            "failed_count": 0
-        }
+        result = {"candidate_count": 0, "ignored_count": 0, "success_count": 0, "failed_count": 0}
 
         for pool_type, count in stats:
-            if pool_type == 'candidate':
-                result['candidate_count'] = count
-            elif pool_type == 'ignored':
-                result['ignored_count'] = count
-            elif pool_type == 'success':
-                result['success_count'] = count
-            elif pool_type == 'failed':
-                result['failed_count'] = count
+            if pool_type == "candidate":
+                result["candidate_count"] = count
+            elif pool_type == "ignored":
+                result["ignored_count"] = count
+            elif pool_type == "success":
+                result["success_count"] = count
+            elif pool_type == "failed":
+                result["failed_count"] = count
 
-        return CommonResponse(
-            status="success",
-            msg="查询成功",
-            code="200",
-            data=result
-        )
+        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询池子统计信息失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
 @router.get("/pool/search-all", summary="全局搜索所有池子的关键词")
@@ -357,7 +269,7 @@ def search_all_pools(
     page: int = 1,
     page_size: int = 20,
     _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     在所有池子中搜索关键词（支持高级筛选）
@@ -383,25 +295,21 @@ def search_all_pools(
         from datetime import datetime, timedelta
 
         # 解析池子类型筛选
-        valid_pool_types = ['candidate', 'ignored', 'success', 'failed']
+        valid_pool_types = ["candidate", "ignored", "success", "failed"]
         if pool_types:
-            pool_type_list = [pt.strip() for pt in pool_types.split(',') if pt.strip()]
+            pool_type_list = [pt.strip() for pt in pool_types.split(",") if pt.strip()]
             # 验证池子类型
             invalid_types = [pt for pt in pool_type_list if pt not in valid_pool_types]
             if invalid_types:
                 return CommonResponse(
-                    status="error",
-                    msg=f"无效的池子类型: {', '.join(invalid_types)}",
-                    code="400",
-                    data=None
+                    status="error", msg=f"无效的池子类型: {', '.join(invalid_types)}", code="400", data=None
                 )
         else:
             pool_type_list = valid_pool_types  # 默认搜索所有池子
 
         # 构建基础查询
         query = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.keyword_type.in_(pool_type_list),
-            TrackerKeywordConfig.dr == 0
+            TrackerKeywordConfig.keyword_type.in_(pool_type_list), TrackerKeywordConfig.dr == 0
         )
 
         # 关键词筛选（模糊搜索）
@@ -411,28 +319,28 @@ def search_all_pools(
         # 时间范围筛选
         if time_range:
             now = datetime.now()
-            if time_range == 'today':
+            if time_range == "today":
                 # 今天：从00:00:00开始
                 start_time = now.replace(hour=0, minute=0, second=0, microsecond=0)
                 query = query.filter(TrackerKeywordConfig.create_time >= start_time)
-            elif time_range == 'week':
+            elif time_range == "week":
                 # 本周：从本周一00:00:00开始（自然周）
                 days_since_monday = now.weekday()  # 0=周一, 6=周日
                 start_time = (now - timedelta(days=days_since_monday)).replace(
                     hour=0, minute=0, second=0, microsecond=0
                 )
                 query = query.filter(TrackerKeywordConfig.create_time >= start_time)
-            elif time_range == 'month':
+            elif time_range == "month":
                 # 本月：从本月1日00:00:00开始（自然月）
                 start_time = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
                 query = query.filter(TrackerKeywordConfig.create_time >= start_time)
 
         # 排序
-        if sort_by == 'time_desc':
+        if sort_by == "time_desc":
             query = query.order_by(TrackerKeywordConfig.create_time.desc())
-        elif sort_by == 'time_asc':
+        elif sort_by == "time_asc":
             query = query.order_by(TrackerKeywordConfig.create_time.asc())
-        elif sort_by == 'name_asc':
+        elif sort_by == "name_asc":
             query = query.order_by(TrackerKeywordConfig.keyword.asc())
         else:
             # 默认按创建时间倒序
@@ -448,30 +356,22 @@ def search_all_pools(
         # 转换为字典格式（混合显示，标注所属池子）
         list_data = []
         for kw in keywords:
-            list_data.append({
-                "keyword_id": kw.keyword_id,
-                "keyword": kw.keyword,
-                "pool_type": kw.keyword_type,
-                "pool_label": PoolLabels.get_label(kw.keyword_type),
-                "create_time": kw.create_time.strftime('%Y-%m-%d %H:%M:%S') if kw.create_time else None
-            })
+            list_data.append(
+                {
+                    "keyword_id": kw.keyword_id,
+                    "keyword": kw.keyword,
+                    "pool_type": kw.keyword_type,
+                    "pool_label": PoolLabels.get_label(kw.keyword_type),
+                    "create_time": kw.create_time.strftime("%Y-%m-%d %H:%M:%S") if kw.create_time else None,
+                }
+            )
 
         return CommonResponse(
             status="success",
             msg="查询成功",
             code="200",
-            data={
-                "total": total,
-                "page": page,
-                "pageSize": page_size,
-                "list": list_data
-            }
+            data={"total": total, "page": page, "pageSize": page_size, "list": list_data},
         )
     except Exception as e:
         logger.error(f"全局搜索关键词失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"搜索失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"搜索失败: {str(e)}", code="500", data=None)

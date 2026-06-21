@@ -20,17 +20,16 @@ import base64
 
 router = APIRouter(prefix="/user", tags=["authentication"])
 
+
 @router.post("/update")
-def user_update(requestUser: UserLogin,
-                request: Request = None,
-                db: Session = Depends(get_db)):
+def user_update(requestUser: UserLogin, request: Request = None, db: Session = Depends(get_db)):
     access_token = request.cookies
     # 解码token
-    access_token_decode = jwt.decode(access_token[''], "YM4nwx3QBbZ227i5itqf", settings.ALGORITHM)
-    if(utils.verify_totp(access_token)):
+    access_token_decode = jwt.decode(access_token[""], "YM4nwx3QBbZ227i5itqf", settings.ALGORITHM)
+    if utils.verify_totp(access_token):
         user = db.query(models.User).filter(models.User.username == requestUser.username).first()
-        if(requestUser.twofa):
-            user.two_factor_secret = utils.generate_totp_secret();
+        if requestUser.twofa:
+            user.two_factor_secret = utils.generate_totp_secret()
             db.execute("update users set two_factor_secret=0 where username=" + user.username)
     else:
         raise HTTPException(
@@ -40,12 +39,7 @@ def user_update(requestUser: UserLogin,
 
 
 @router.post("/verify-2fa")
-def verify_2fa(
-        two_factor: TwoFactorResponse,
-        response: Response,
-        request: Request,
-        db: Session = Depends(get_db)
-):
+def verify_2fa(two_factor: TwoFactorResponse, response: Response, request: Request, db: Session = Depends(get_db)):
     """验证两因素认证码"""
     user = db.query(models.User).filter(models.User.id == two_factor.user_id).first()
     if not user:
@@ -59,7 +53,7 @@ def verify_2fa(
             ip_address=request.client.host,
             user_agent=request.headers.get("user-agent"),
             user_id=user.id,
-            success=False
+            success=False,
         )
         db.add(login_log)
         db.commit()
@@ -68,8 +62,6 @@ def verify_2fa(
 
     # 创建访问令牌
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = utils.create_access_token(
-        data={"sub": user.username}, expires_delta=access_token_expires
-    )
+    access_token = utils.create_access_token(data={"sub": user.username}, expires_delta=access_token_expires)
 
     #

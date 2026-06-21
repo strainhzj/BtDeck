@@ -45,12 +45,7 @@ class TransmissionLocationAdapter(TorrentLocationAdapter):
         """获取下载器客户端实例"""
         return self.client
 
-    async def set_location(
-        self,
-        hashes: List[str],
-        target_path: str,
-        move_files: bool
-    ) -> Dict[str, Any]:
+    async def set_location(self, hashes: List[str], target_path: str, move_files: bool) -> Dict[str, Any]:
         """
         修改Transmission种子保存路径
 
@@ -62,12 +57,7 @@ class TransmissionLocationAdapter(TorrentLocationAdapter):
         Returns:
             操作结果字典
         """
-        result = {
-            "success": False,
-            "moved_count": 0,
-            "failed_count": 0,
-            "error_message": None
-        }
+        result = {"success": False, "moved_count": 0, "failed_count": 0, "error_message": None}
 
         try:
             logger.info(
@@ -77,11 +67,7 @@ class TransmissionLocationAdapter(TorrentLocationAdapter):
 
             # Transmission的move参数：True=移动文件，False=仅修改路径
             # 调用API（支持批量操作）
-            self.client.move_torrent_data(
-                ids=hashes,  # 支持列表
-                location=target_path,
-                move=move_files
-            )
+            self.client.move_torrent_data(ids=hashes, location=target_path, move=move_files)  # 支持列表
 
             result["success"] = True
             result["moved_count"] = len(hashes)

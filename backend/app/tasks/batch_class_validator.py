@@ -17,10 +17,7 @@ from app.tasks.cron_crud import CronTaskCRUD
 from app.tasks.class_path_validator import validate_single_class_path, validate_class_paths_batch
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -46,11 +43,8 @@ class BatchClassValidator:
                 logger.error(f"获取任务列表失败: {result.message}")
                 return []
 
-            all_tasks = result.data.get('list', [])
-            python_internal_tasks = [
-                task for task in all_tasks
-                if task.get('task_type') == 4  # Python内部类类型
-            ]
+            all_tasks = result.data.get("list", [])
+            python_internal_tasks = [task for task in all_tasks if task.get("task_type") == 4]  # Python内部类类型
 
             logger.info(f"找到 {len(python_internal_tasks)} 个Python内部类任务")
             return python_internal_tasks
@@ -59,7 +53,7 @@ class BatchClassValidator:
             logger.error(f"扫描数据库时发生错误: {str(e)}")
             return []
         finally:
-            if 'db' in locals():
+            if "db" in locals():
                 db.close()
 
     def extract_class_paths_from_tasks(self, tasks: List[Dict[str, Any]]) -> List[str]:
@@ -74,10 +68,12 @@ class BatchClassValidator:
         """
         class_paths = []
         for task in tasks:
-            executor = task.get('executor', '').strip()
+            executor = task.get("executor", "").strip()
             if executor:
                 # 检查是否可能是类路径格式
-                if '.' in executor and not executor.strip().startswith(('import', 'def', 'print', 'await', 'time', 'async', '#')):
+                if "." in executor and not executor.strip().startswith(
+                    ("import", "def", "print", "await", "time", "async", "#")
+                ):
                     class_paths.append(executor)
 
         logger.info(f"从任务中提取到 {len(class_paths)} 个可能的类路径")
@@ -98,7 +94,7 @@ class BatchClassValidator:
             return {
                 "status": "no_tasks_found",
                 "message": "数据库中没有找到Python内部类任务",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         # 2. 提取类路径
@@ -107,7 +103,7 @@ class BatchClassValidator:
             return {
                 "status": "no_class_paths_found",
                 "message": "没有找到有效的类路径格式",
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
             }
 
         # 3. 批量验证
@@ -119,7 +115,9 @@ class BatchClassValidator:
 
         return detailed_report
 
-    def generate_detailed_report(self, tasks: List[Dict[str, Any]], validation_report: Dict[str, Any]) -> Dict[str, Any]:
+    def generate_detailed_report(
+        self, tasks: List[Dict[str, Any]], validation_report: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """
         生成详细的验证报告
 
@@ -135,30 +133,31 @@ class BatchClassValidator:
         # 将验证结果与任务数据关联
         class_path_to_task = {}
         for task in tasks:
-            executor = task.get('executor', '').strip()
-            if executor and '.' in executor:
+            executor = task.get("executor", "").strip()
+            if executor and "." in executor:
                 class_path_to_task[executor] = task
 
-        for validation_result in validation_report['detailed_results']:
-            class_path = validation_result['class_path']
+        for validation_result in validation_report["detailed_results"]:
+            class_path = validation_result["class_path"]
             task = class_path_to_task.get(class_path)
 
             detailed_result = {
-                "task_id": task.get('task_id') if task else None,
-                "task_name": task.get('task_name') if task else None,
-                "task_code": task.get('task_code') if task else None,
+                "task_id": task.get("task_id") if task else None,
+                "task_name": task.get("task_name") if task else None,
+                "task_code": task.get("task_code") if task else None,
                 "class_path": class_path,
-                "is_valid": validation_result['is_valid'],
-                "errors": validation_result['errors'],
-                "module_path": validation_result.get('module_path'),
-                "class_name": validation_result.get('class_name'),
-                "suggested_fixes": []
+                "is_valid": validation_result["is_valid"],
+                "errors": validation_result["errors"],
+                "module_path": validation_result.get("module_path"),
+                "class_name": validation_result.get("class_name"),
+                "suggested_fixes": [],
             }
 
             # 为每个错误生成修复建议
-            for error in validation_result['errors']:
+            for error in validation_result["errors"]:
                 # 使用验证器的建议生成功能
                 from app.tasks.class_path_validator import class_path_validator
+
                 fixes = class_path_validator.suggest_fix_for_error(error)
                 detailed_result["suggested_fixes"].extend(fixes)
 
@@ -170,12 +169,12 @@ class BatchClassValidator:
         return {
             "status": "completed",
             "timestamp": datetime.now().isoformat(),
-            "summary": validation_report['summary'],
-            "error_statistics": validation_report['error_statistics'],
-            "repair_suggestions": validation_report['repair_suggestions'],
+            "summary": validation_report["summary"],
+            "error_statistics": validation_report["error_statistics"],
+            "repair_suggestions": validation_report["repair_suggestions"],
             "detailed_results": detailed_results,
             "total_python_tasks_scanned": len(tasks),
-            "total_class_paths_validated": len(validation_report['detailed_results'])
+            "total_class_paths_validated": len(validation_report["detailed_results"]),
         }
 
     def generate_repair_script(self, validation_report: Dict[str, Any]) -> str:
@@ -195,22 +194,22 @@ class BatchClassValidator:
         repair_sql_lines.append("-- 注意: 执行前请备份数据库!")
         repair_sql_lines.append("")
 
-        for result in validation_report['detailed_results']:
-            if not result['is_valid'] and result['task_id']:
-                task_id = result['task_id']
-                task_name = result['task_name']
-                class_path = result['class_path']
+        for result in validation_report["detailed_results"]:
+            if not result["is_valid"] and result["task_id"]:
+                task_id = result["task_id"]
+                task_name = result["task_name"]
+                class_path = result["class_path"]
 
                 repair_sql_lines.append(f"-- 任务ID: {task_id}, 名称: {task_name}")
                 repair_sql_lines.append(f"-- 类路径: {class_path}")
                 repair_sql_lines.append("-- 错误详情:")
 
-                for error in result['errors']:
-                    error_msg = error.get('message', '')
+                for error in result["errors"]:
+                    error_msg = error.get("message", "")
                     repair_sql_lines.append(f"--   - {error_msg}")
 
                 repair_sql_lines.append("-- 建议修复:")
-                for fix in result['suggested_fixes']:
+                for fix in result["suggested_fixes"]:
                     repair_sql_lines.append(f"--   * {fix}")
 
                 # 生成禁用任务的SQL（临时措施）
@@ -234,16 +233,20 @@ class BatchClassValidator:
         os.makedirs(output_dir, exist_ok=True)
 
         # 保存详细报告（JSON格式）
-        report_file = os.path.join(output_dir, f"class_path_validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json")
-        with open(report_file, 'w', encoding='utf-8') as f:
+        report_file = os.path.join(
+            output_dir, f"class_path_validation_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        )
+        with open(report_file, "w", encoding="utf-8") as f:
             json.dump(report, f, ensure_ascii=False, indent=2)
 
         logger.info(f"详细报告已保存到: {report_file}")
 
         # 保存修复脚本
         repair_script = self.generate_repair_script(report)
-        script_file = os.path.join(output_dir, f"class_path_repair_script_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql")
-        with open(script_file, 'w', encoding='utf-8') as f:
+        script_file = os.path.join(
+            output_dir, f"class_path_repair_script_{datetime.now().strftime('%Y%m%d_%H%M%S')}.sql"
+        )
+        with open(script_file, "w", encoding="utf-8") as f:
             f.write(repair_script)
 
         logger.info(f"修复脚本已保存到: {script_file}")
@@ -267,8 +270,8 @@ def main():
     print(f"\n验证状态: {report['status']}")
     print(f"验证时间: {report['timestamp']}")
 
-    if report['status'] == 'completed':
-        summary = report['summary']
+    if report["status"] == "completed":
+        summary = report["summary"]
         print(f"\n验证结果摘要:")
         print(f"  总任务数: {report['total_python_tasks_scanned']}")
         print(f"  验证类路径数: {report['total_class_paths_validated']}")
@@ -276,9 +279,9 @@ def main():
         print(f"  无效类路径: {summary['invalid_count']}")
         print(f"  成功率: {summary['success_rate']}")
 
-        if report['error_statistics']:
+        if report["error_statistics"]:
             print(f"\n错误统计:")
-            for error_type, count in report['error_statistics'].items():
+            for error_type, count in report["error_statistics"].items():
                 print(f"  {error_type}: {count}")
 
         # 保存报告文件

@@ -40,18 +40,19 @@ class SearchTemplate(Base):
         created_time: 创建时间
         updated_time: 更新时间
     """
-    __tablename__ = 'search_templates'
 
-    id = Column(String(36), primary_key=True, comment='模板唯一标识（UUID）')
-    user_id = Column(String(36), nullable=False, index=True, comment='所属用户 ID')
-    name = Column(String(100), nullable=False, comment='模板名称')
-    description = Column(String(500), nullable=True, comment='模板描述')
-    conditions = Column(Text, nullable=False, comment='查询条件（JSON 字符串）')
-    is_default = Column(Integer, nullable=False, default=0, comment='是否系统预设：1=预设，0=用户自定义')
-    is_public = Column(Integer, nullable=False, default=0, index=True, comment='是否公开可见')
-    usage_count = Column(Integer, nullable=False, default=0, comment='使用次数')
-    created_time = Column(DateTime, default=datetime.utcnow, comment='创建时间')
-    updated_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment='更新时间')
+    __tablename__ = "search_templates"
+
+    id = Column(String(36), primary_key=True, comment="模板唯一标识（UUID）")
+    user_id = Column(String(36), nullable=False, index=True, comment="所属用户 ID")
+    name = Column(String(100), nullable=False, comment="模板名称")
+    description = Column(String(500), nullable=True, comment="模板描述")
+    conditions = Column(Text, nullable=False, comment="查询条件（JSON 字符串）")
+    is_default = Column(Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义")
+    is_public = Column(Integer, nullable=False, default=0, index=True, comment="是否公开可见")
+    usage_count = Column(Integer, nullable=False, default=0, comment="使用次数")
+    created_time = Column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
 
     def __init__(
         self,
@@ -63,7 +64,7 @@ class SearchTemplate(Base):
         is_default: int = 0,
         is_public: int = 0,
         usage_count: int = 0,
-        **kw: Any
+        **kw: Any,
     ):
         super().__init__(**kw)
         if id is not None:
@@ -83,14 +84,14 @@ class SearchTemplate(Base):
     def to_dict(self) -> Dict[str, Any]:
         """将模型转换为字典（conditions 保持字符串形态，由调用方按需解析）。"""
         return {
-            'id': self.id,
-            'user_id': self.user_id,
-            'name': self.name,
-            'description': self.description,
-            'conditions': self.conditions,
-            'is_default': self.is_default,
-            'is_public': self.is_public,
-            'usage_count': self.usage_count,
-            'created_time': self.created_time.isoformat() if self.created_time else None,
-            'updated_time': self.updated_time.isoformat() if self.updated_time else None,
+            "id": self.id,
+            "user_id": self.user_id,
+            "name": self.name,
+            "description": self.description,
+            "conditions": self.conditions,
+            "is_default": self.is_default,
+            "is_public": self.is_public,
+            "usage_count": self.usage_count,
+            "created_time": self.created_time.isoformat() if self.created_time else None,
+            "updated_time": self.updated_time.isoformat() if self.updated_time else None,
         }

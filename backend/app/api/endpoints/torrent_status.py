@@ -21,26 +21,31 @@ router = APIRouter()
 
 # ==================== 状态控制请求模型 ====================
 
+
 class PauseTorrentsRequest(BaseModel):
     """暂停种子请求"""
+
     downloader_id: str = Field(..., description="下载器ID")
     hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
 
 
 class ResumeTorrentsRequest(BaseModel):
     """恢复/开始种子请求"""
+
     downloader_id: str = Field(..., description="下载器ID")
     hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
 
 
 class RecheckTorrentsRequest(BaseModel):
     """重新检查种子请求"""
+
     downloader_id: str = Field(..., description="下载器ID")
     hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
 
 
 class ReannounceTorrentsRequest(BaseModel):
     """Tracker汇报请求（选中种子）"""
+
     downloader_id: str = Field(..., description="下载器ID")
     hashes: List[str] | None = Field(None, description="种子hash列表", min_items=1)
     info_ids: List[str] | None = Field(None, description="种子info_id列表")
@@ -48,23 +53,25 @@ class ReannounceTorrentsRequest(BaseModel):
 
 class ReannounceByDownloaderRequest(BaseModel):
     """Tracker汇报请求（按下载器）"""
+
     downloader_id: str = Field(..., description="下载器ID")
 
 
 class ReannounceAllRequest(BaseModel):
     """Tracker汇报请求（全局）"""
+
     pass
 
 
 # ==================== 暂停种子 ====================
 
-@router.post("/pause", description="暂停种子接口",
-             response_model=CommonResponse[Dict[str, Any]])
+
+@router.post("/pause", description="暂停种子接口", response_model=CommonResponse[Dict[str, Any]])
 async def pause_torrents(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        req_data: PauseTorrentsRequest = None,
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user),
+    request: Request = None,
+    req_data: PauseTorrentsRequest = None,
+    db: Session = Depends(get_db),
 ):
     """
     批量暂停种子
@@ -97,10 +104,7 @@ async def pause_torrents(
     hashes = req_data.hashes
 
     result: CommonResponse[Dict[str, Any]] = CommonResponse(
-        status="success",
-        msg="暂停成功",
-        code="200",
-        data={"success_count": len(hashes), "failed_items": []}
+        status="success", msg="暂停成功", code="200", data={"success_count": len(hashes), "failed_items": []}
     )
 
     # 从请求模型中获取参数
@@ -108,10 +112,7 @@ async def pause_torrents(
     hashes = req_data.hashes
 
     result = CommonResponse(
-        status="success",
-        msg="暂停成功",
-        code="200",
-        data={"success_count": len(hashes), "failed_items": []}
+        status="success", msg="暂停成功", code="200", data={"success_count": len(hashes), "failed_items": []}
     )
 
     # ========== 验证参数 ==========
@@ -124,7 +125,7 @@ async def pause_torrents(
     try:
         # ========== 从缓存中获取下载器 ==========
         app = request.app
-        if not hasattr(app.state, 'store'):
+        if not hasattr(app.state, "store"):
             result.status = "failed"
             result.msg = "下载器缓存未初始化"
             result.code = "500"
@@ -133,10 +134,7 @@ async def pause_torrents(
         cached_downloaders = app.state.store.get_snapshot_sync()
 
         # 根据 downloader_id 查找对应的下载器
-        downloader_vo = next(
-            (d for d in cached_downloaders if d.downloader_id == downloader_id),
-            None
-        )
+        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
 
         if not downloader_vo:
             result.status = "failed"
@@ -145,7 +143,7 @@ async def pause_torrents(
             return result
 
         # 检查下载器是否有效（fail_time=0 表示有效）
-        if hasattr(downloader_vo, 'fail_time') and downloader_vo.fail_time > 0:
+        if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
             result.status = "failed"
             result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
             result.code = "503"
@@ -161,11 +159,15 @@ async def pause_torrents(
 
         # ========== 查询种子信息 ==========
         # 只查询指定下载器且未删除的种子（dr=0）
-        torrent_records = db.query(torrentInfoModel).filter(
-            torrentInfoModel.hash.in_(hashes),
-            torrentInfoModel.downloader_id == downloader_id,
-            torrentInfoModel.dr == 0  # 只操作未删除的种子
-        ).all()
+        torrent_records = (
+            db.query(torrentInfoModel)
+            .filter(
+                torrentInfoModel.hash.in_(hashes),
+                torrentInfoModel.downloader_id == downloader_id,
+                torrentInfoModel.dr == 0,  # 只操作未删除的种子
+            )
+            .all()
+        )
 
         if not torrent_records:
             result.status = "failed"
@@ -207,7 +209,7 @@ async def pause_torrents(
                     operation_detail={
                         "downloader_id": downloader_id,
                         "downloader_name": downloader_vo.nickname,
-                        "downloader_type": downloader_vo.downloader_type
+                        "downloader_type": downloader_vo.downloader_type,
                     },
                     torrent_name=record.name,
                     torrent_hash=record.hash,
@@ -215,17 +217,14 @@ async def pause_torrents(
                     old_value={"status": old_status},
                     new_value={"status": "paused"},
                     operation_result=AuditOperationResult.SUCCESS,
-                    audit_info=audit_info
+                    audit_info=audit_info,
                 )
 
             # 提交数据库事务
             db.commit()
 
             result.msg = f"成功暂停 {len(torrent_records)} 个种子"
-            result.data = {
-                "success_count": len(torrent_records),
-                "failed_items": []
-            }
+            result.data = {"success_count": len(torrent_records), "failed_items": []}
 
         except Exception as e:
             # 严格模式：任何失败都回滚
@@ -238,11 +237,7 @@ async def pause_torrents(
             result.code = "500"
             result.data = {
                 "success_count": 0,
-                "failed_items": [{
-                    "hash": r.hash,
-                    "name": r.name,
-                    "error": error_detail
-                } for r in torrent_records]
+                "failed_items": [{"hash": r.hash, "name": r.name, "error": error_detail} for r in torrent_records],
             }
 
             # 记录失败的审计日志
@@ -255,14 +250,14 @@ async def pause_torrents(
                     operation_detail={
                         "downloader_id": downloader_id,
                         "downloader_type": downloader_vo.downloader_type,
-                        "exception_type": type(e).__name__
+                        "exception_type": type(e).__name__,
                     },
                     torrent_name=record.name,
                     torrent_hash=record.hash,
                     downloader_id=downloader_id,
                     operation_result=AuditOperationResult.FAILED,
                     error_message=error_detail,
-                    audit_info=audit_info
+                    audit_info=audit_info,
                 )
 
             return result
@@ -273,8 +268,8 @@ async def pause_torrents(
         error_detail = f"{type(e).__name__}: {str(e)}"
 
         # 获取用户信息
-        user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
+        user_info = getattr(request.state, "user_info", None) if request else None
+        user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
         logger.error(f"暂停种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
@@ -287,13 +282,13 @@ async def pause_torrents(
 
 # ==================== 恢复/开始种子 ====================
 
-@router.post("/resume", description="恢复/开始种子接口",
-             response_model=CommonResponse[Dict[str, Any]])
+
+@router.post("/resume", description="恢复/开始种子接口", response_model=CommonResponse[Dict[str, Any]])
 async def resume_torrents(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        req_data: ResumeTorrentsRequest = None,
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user),
+    request: Request = None,
+    req_data: ResumeTorrentsRequest = None,
+    db: Session = Depends(get_db),
 ):
     """
     批量恢复/开始种子
@@ -326,10 +321,7 @@ async def resume_torrents(
     hashes = req_data.hashes
 
     result: CommonResponse[Dict[str, Any]] = CommonResponse(
-        status="success",
-        msg="开始成功",
-        code="200",
-        data={"success_count": len(hashes), "failed_items": []}
+        status="success", msg="开始成功", code="200", data={"success_count": len(hashes), "failed_items": []}
     )
 
     # 从请求模型中获取参数
@@ -337,10 +329,7 @@ async def resume_torrents(
     hashes = req_data.hashes
 
     result = CommonResponse(
-        status="success",
-        msg="开始成功",
-        code="200",
-        data={"success_count": len(hashes), "failed_items": []}
+        status="success", msg="开始成功", code="200", data={"success_count": len(hashes), "failed_items": []}
     )
 
     # ========== 验证参数 ==========
@@ -353,7 +342,7 @@ async def resume_torrents(
     try:
         # ========== 从缓存中获取下载器 ==========
         app = request.app
-        if not hasattr(app.state, 'store'):
+        if not hasattr(app.state, "store"):
             result.status = "failed"
             result.msg = "下载器缓存未初始化"
             result.code = "500"
@@ -362,10 +351,7 @@ async def resume_torrents(
         cached_downloaders = app.state.store.get_snapshot_sync()
 
         # 根据 downloader_id 查找对应的下载器
-        downloader_vo = next(
-            (d for d in cached_downloaders if d.downloader_id == downloader_id),
-            None
-        )
+        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
 
         if not downloader_vo:
             result.status = "failed"
@@ -374,7 +360,7 @@ async def resume_torrents(
             return result
 
         # 检查下载器是否有效（fail_time=0 表示有效）
-        if hasattr(downloader_vo, 'fail_time') and downloader_vo.fail_time > 0:
+        if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
             result.status = "failed"
             result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
             result.code = "503"
@@ -390,11 +376,15 @@ async def resume_torrents(
 
         # ========== 查询种子信息 ==========
         # 只查询指定下载器且未删除的种子（dr=0）
-        torrent_records = db.query(torrentInfoModel).filter(
-            torrentInfoModel.hash.in_(hashes),
-            torrentInfoModel.downloader_id == downloader_id,
-            torrentInfoModel.dr == 0  # 只操作未删除的种子
-        ).all()
+        torrent_records = (
+            db.query(torrentInfoModel)
+            .filter(
+                torrentInfoModel.hash.in_(hashes),
+                torrentInfoModel.downloader_id == downloader_id,
+                torrentInfoModel.dr == 0,  # 只操作未删除的种子
+            )
+            .all()
+        )
 
         if not torrent_records:
             result.status = "failed"
@@ -444,7 +434,7 @@ async def resume_torrents(
                         "downloader_id": downloader_id,
                         "downloader_name": downloader_vo.nickname,
                         "downloader_type": downloader_vo.downloader_type,
-                        "progress": record.progress
+                        "progress": record.progress,
                     },
                     torrent_name=record.name,
                     torrent_hash=record.hash,
@@ -452,17 +442,14 @@ async def resume_torrents(
                     old_value={"status": old_status},
                     new_value={"status": new_status},
                     operation_result=AuditOperationResult.SUCCESS,
-                    audit_info=audit_info
+                    audit_info=audit_info,
                 )
 
             # 提交数据库事务
             db.commit()
 
             result.msg = f"成功开始 {len(torrent_records)} 个种子"
-            result.data = {
-                "success_count": len(torrent_records),
-                "failed_items": []
-            }
+            result.data = {"success_count": len(torrent_records), "failed_items": []}
 
         except Exception as e:
             # 严格模式：任何失败都回滚
@@ -475,11 +462,7 @@ async def resume_torrents(
             result.code = "500"
             result.data = {
                 "success_count": 0,
-                "failed_items": [{
-                    "hash": r.hash,
-                    "name": r.name,
-                    "error": error_detail
-                } for r in torrent_records]
+                "failed_items": [{"hash": r.hash, "name": r.name, "error": error_detail} for r in torrent_records],
             }
 
             # 记录失败的审计日志
@@ -492,14 +475,14 @@ async def resume_torrents(
                     operation_detail={
                         "downloader_id": downloader_id,
                         "downloader_type": downloader_vo.downloader_type,
-                        "exception_type": type(e).__name__
+                        "exception_type": type(e).__name__,
                     },
                     torrent_name=record.name,
                     torrent_hash=record.hash,
                     downloader_id=downloader_id,
                     operation_result=AuditOperationResult.FAILED,
                     error_message=error_detail,
-                    audit_info=audit_info
+                    audit_info=audit_info,
                 )
 
             return result
@@ -510,8 +493,8 @@ async def resume_torrents(
         error_detail = f"{type(e).__name__}: {str(e)}"
 
         # 获取用户信息
-        user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
+        user_info = getattr(request.state, "user_info", None) if request else None
+        user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
         logger.error(f"恢复种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
@@ -524,13 +507,13 @@ async def resume_torrents(
 
 # ==================== 重新检查种子 ====================
 
-@router.post("/recheck", description="重新检查种子接口",
-             response_model=CommonResponse[Dict[str, Any]])
+
+@router.post("/recheck", description="重新检查种子接口", response_model=CommonResponse[Dict[str, Any]])
 async def recheck_torrents(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        req_data: RecheckTorrentsRequest = None,
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user),
+    request: Request = None,
+    req_data: RecheckTorrentsRequest = None,
+    db: Session = Depends(get_db),
 ):
     """
     批量重新检查种子
@@ -563,10 +546,7 @@ async def recheck_torrents(
     hashes = req_data.hashes
 
     result: CommonResponse[Dict[str, Any]] = CommonResponse(
-        status="success",
-        msg="重新检查成功",
-        code="200",
-        data={"success_count": len(hashes), "failed_items": []}
+        status="success", msg="重新检查成功", code="200", data={"success_count": len(hashes), "failed_items": []}
     )
 
     # 从请求模型中获取参数
@@ -574,10 +554,7 @@ async def recheck_torrents(
     hashes = req_data.hashes
 
     result = CommonResponse(
-        status="success",
-        msg="重新检查成功",
-        code="200",
-        data={"success_count": len(hashes), "failed_items": []}
+        status="success", msg="重新检查成功", code="200", data={"success_count": len(hashes), "failed_items": []}
     )
 
     # ========== 验证参数 ==========
@@ -593,7 +570,7 @@ async def recheck_torrents(
     try:
         # ========== 从缓存中获取下载器 ==========
         app = request.app
-        if not hasattr(app.state, 'store'):
+        if not hasattr(app.state, "store"):
             result.status = "failed"
             result.msg = "下载器缓存未初始化"
             result.code = "500"
@@ -602,10 +579,7 @@ async def recheck_torrents(
         cached_downloaders = app.state.store.get_snapshot_sync()
 
         # 根据 downloader_id 查找对应的下载器
-        downloader_vo = next(
-            (d for d in cached_downloaders if d.downloader_id == downloader_id),
-            None
-        )
+        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
 
         if not downloader_vo:
             result.status = "failed"
@@ -614,7 +588,7 @@ async def recheck_torrents(
             return result
 
         # 检查下载器是否有效（fail_time=0 表示有效）
-        if hasattr(downloader_vo, 'fail_time') and downloader_vo.fail_time > 0:
+        if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
             result.status = "failed"
             result.msg = f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
             result.code = "503"
@@ -630,11 +604,15 @@ async def recheck_torrents(
 
         # ========== 查询种子信息 ==========
         # 只查询指定下载器且未删除的种子（dr=0）
-        torrent_records = db.query(torrentInfoModel).filter(
-            torrentInfoModel.hash.in_(hashes),
-            torrentInfoModel.downloader_id == downloader_id,
-            torrentInfoModel.dr == 0  # 只操作未删除的种子
-        ).all()
+        torrent_records = (
+            db.query(torrentInfoModel)
+            .filter(
+                torrentInfoModel.hash.in_(hashes),
+                torrentInfoModel.downloader_id == downloader_id,
+                torrentInfoModel.dr == 0,  # 只操作未删除的种子
+            )
+            .all()
+        )
 
         if not torrent_records:
             result.status = "failed"
@@ -643,7 +621,10 @@ async def recheck_torrents(
             return result
 
         # Transmission并发限制检查
-        if downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION and len(torrent_records) > MAX_CONCURRENT_RECHECK:
+        if (
+            downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION
+            and len(torrent_records) > MAX_CONCURRENT_RECHECK
+        ):
             error_msg = f"Transmission重检限制：每次最多{MAX_CONCURRENT_RECHECK}个种子，当前{len(torrent_records)}个"
             logger.error(error_msg)
             result.status = "failed"
@@ -685,7 +666,7 @@ async def recheck_torrents(
                     operation_detail={
                         "downloader_id": downloader_id,
                         "downloader_name": downloader_vo.nickname,
-                        "downloader_type": downloader_vo.downloader_type
+                        "downloader_type": downloader_vo.downloader_type,
                     },
                     torrent_name=record.name,
                     torrent_hash=record.hash,
@@ -693,17 +674,14 @@ async def recheck_torrents(
                     old_value={"status": old_status},
                     new_value={"status": "checking"},
                     operation_result=AuditOperationResult.SUCCESS,
-                    audit_info=audit_info
+                    audit_info=audit_info,
                 )
 
             # 提交数据库事务
             db.commit()
 
             result.msg = f"成功重检 {len(torrent_records)} 个种子"
-            result.data = {
-                "success_count": len(torrent_records),
-                "failed_items": []
-            }
+            result.data = {"success_count": len(torrent_records), "failed_items": []}
 
         except Exception as e:
             # 严格模式：任何失败都回滚
@@ -716,11 +694,7 @@ async def recheck_torrents(
             result.code = "500"
             result.data = {
                 "success_count": 0,
-                "failed_items": [{
-                    "hash": r.hash,
-                    "name": r.name,
-                    "error": error_detail
-                } for r in torrent_records]
+                "failed_items": [{"hash": r.hash, "name": r.name, "error": error_detail} for r in torrent_records],
             }
 
             # 记录失败的审计日志
@@ -733,14 +707,14 @@ async def recheck_torrents(
                     operation_detail={
                         "downloader_id": downloader_id,
                         "downloader_type": downloader_vo.downloader_type,
-                        "exception_type": type(e).__name__
+                        "exception_type": type(e).__name__,
                     },
                     torrent_name=record.name,
                     torrent_hash=record.hash,
                     downloader_id=downloader_id,
                     operation_result=AuditOperationResult.FAILED,
                     error_message=error_detail,
-                    audit_info=audit_info
+                    audit_info=audit_info,
                 )
 
             return result
@@ -751,8 +725,8 @@ async def recheck_torrents(
         error_detail = f"{type(e).__name__}: {str(e)}"
 
         # 获取用户信息
-        user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
+        user_info = getattr(request.state, "user_info", None) if request else None
+        user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
         logger.error(f"重新检查种子异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
 
@@ -765,13 +739,13 @@ async def recheck_torrents(
 
 # ==================== Tracker汇报 ====================
 
-@router.post("/reannounce", description="Tracker汇报（选中种子）",
-             response_model=CommonResponse[Dict[str, Any]])
+
+@router.post("/reannounce", description="Tracker汇报（选中种子）", response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_torrents(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        req_data: ReannounceTorrentsRequest = None,
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user),
+    request: Request = None,
+    req_data: ReannounceTorrentsRequest = None,
+    db: Session = Depends(get_db),
 ):
     """对选中的种子执行 Tracker 汇报"""
     # 统一Token验证（已迁移至 require_authenticated_user 依赖）
@@ -789,24 +763,33 @@ async def reannounce_torrents(
 
         # 根据传入参数查询种子记录
         if hashes:
-            torrent_records = db.query(torrentInfoModel).filter(
-                torrentInfoModel.hash.in_(hashes),
-                torrentInfoModel.downloader_id == downloader_id,
-                torrentInfoModel.dr == 0,
-            ).all()
+            torrent_records = (
+                db.query(torrentInfoModel)
+                .filter(
+                    torrentInfoModel.hash.in_(hashes),
+                    torrentInfoModel.downloader_id == downloader_id,
+                    torrentInfoModel.dr == 0,
+                )
+                .all()
+            )
         else:
             # 通过 info_ids 查询
-            torrent_records = db.query(torrentInfoModel).filter(
-                torrentInfoModel.info_id.in_(info_ids),
-                torrentInfoModel.downloader_id == downloader_id,
-                torrentInfoModel.dr == 0,
-            ).all()
+            torrent_records = (
+                db.query(torrentInfoModel)
+                .filter(
+                    torrentInfoModel.info_id.in_(info_ids),
+                    torrentInfoModel.downloader_id == downloader_id,
+                    torrentInfoModel.dr == 0,
+                )
+                .all()
+            )
 
         if not torrent_records:
             return CommonResponse(status="error", msg="未找到任何种子记录", code="404")
 
         result = await execute_reannounce(
-            app=request.app, db=db,
+            app=request.app,
+            db=db,
             downloader_id=downloader_id,
             torrent_records=torrent_records,
             trigger_type="manual",
@@ -827,9 +810,9 @@ async def reannounce_torrents(
                 torrent_hash=record.hash,
                 downloader_id=downloader_id,
                 operation_result=(
-                    AuditOperationResult.SUCCESS if result["failed_count"] == 0
-                    else AuditOperationResult.PARTIAL if result["success_count"] > 0
-                    else AuditOperationResult.FAILED
+                    AuditOperationResult.SUCCESS
+                    if result["failed_count"] == 0
+                    else AuditOperationResult.PARTIAL if result["success_count"] > 0 else AuditOperationResult.FAILED
                 ),
                 audit_info=audit_info,
             )
@@ -845,20 +828,21 @@ async def reannounce_torrents(
         error_detail = f"{type(e).__name__}: {str(e)}"
 
         # 获取用户信息
-        user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
+        user_info = getattr(request.state, "user_info", None) if request else None
+        user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
         logger.error(f"Tracker汇报异常 [user_id={user_id}, downloader_id={downloader_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
 
 
-@router.post("/reannounce-by-downloader", description="Tracker汇报（按下载器）",
-             response_model=CommonResponse[Dict[str, Any]])
+@router.post(
+    "/reannounce-by-downloader", description="Tracker汇报（按下载器）", response_model=CommonResponse[Dict[str, Any]]
+)
 async def reannounce_by_downloader(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        req_data: ReannounceByDownloaderRequest = None,
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user),
+    request: Request = None,
+    req_data: ReannounceByDownloaderRequest = None,
+    db: Session = Depends(get_db),
 ):
     """对指定下载器下所有种子执行 Tracker 汇报"""
     # 统一Token验证（已迁移至 require_authenticated_user 依赖）
@@ -866,16 +850,21 @@ async def reannounce_by_downloader(
     try:
         from app.services.reannounce_service import execute_reannounce
 
-        torrent_records = db.query(torrentInfoModel).filter(
-            torrentInfoModel.downloader_id == req_data.downloader_id,
-            torrentInfoModel.dr == 0,
-        ).all()
+        torrent_records = (
+            db.query(torrentInfoModel)
+            .filter(
+                torrentInfoModel.downloader_id == req_data.downloader_id,
+                torrentInfoModel.dr == 0,
+            )
+            .all()
+        )
 
         if not torrent_records:
             return CommonResponse(status="error", msg="该下载器下没有种子", code="404")
 
         result = await execute_reannounce(
-            app=request.app, db=db,
+            app=request.app,
+            db=db,
             downloader_id=req_data.downloader_id,
             torrent_records=torrent_records,
             trigger_type="manual",
@@ -894,9 +883,9 @@ async def reannounce_by_downloader(
             },
             downloader_id=req_data.downloader_id,
             operation_result=(
-                AuditOperationResult.SUCCESS if result["failed_count"] == 0
-                else AuditOperationResult.PARTIAL if result["success_count"] > 0
-                else AuditOperationResult.FAILED
+                AuditOperationResult.SUCCESS
+                if result["failed_count"] == 0
+                else AuditOperationResult.PARTIAL if result["success_count"] > 0 else AuditOperationResult.FAILED
             ),
             audit_info=audit_info,
         )
@@ -912,19 +901,18 @@ async def reannounce_by_downloader(
         error_detail = f"{type(e).__name__}: {str(e)}"
 
         # 获取用户信息
-        user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
+        user_info = getattr(request.state, "user_info", None) if request else None
+        user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
-        logger.error(f"Tracker汇报（按下载器）异常 [user_id={user_id}, downloader_id={req_data.downloader_id}]: {error_detail}")
+        logger.error(
+            f"Tracker汇报（按下载器）异常 [user_id={user_id}, downloader_id={req_data.downloader_id}]: {error_detail}"
+        )
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")
 
 
-@router.post("/reannounce-all", description="Tracker汇报（全局）",
-             response_model=CommonResponse[Dict[str, Any]])
+@router.post("/reannounce-all", description="Tracker汇报（全局）", response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_all(
-        _user=Depends(require_authenticated_user),
-        request: Request = None,
-        db: Session = Depends(get_db)
+    _user=Depends(require_authenticated_user), request: Request = None, db: Session = Depends(get_db)
 ):
     """对所有下载器下所有种子执行 Tracker 汇报"""
     # 统一Token验证（已迁移至 require_authenticated_user 依赖）
@@ -933,7 +921,9 @@ async def reannounce_all(
         from app.services.reannounce_service import execute_reannounce_all_downloaders
 
         result = await execute_reannounce_all_downloaders(
-            app=request.app, db=db, trigger_type="manual",
+            app=request.app,
+            db=db,
+            trigger_type="manual",
         )
 
         audit_info = extract_audit_info_from_request(request)
@@ -947,9 +937,9 @@ async def reannounce_all(
                 "total_failed": result["total_failed"],
             },
             operation_result=(
-                AuditOperationResult.SUCCESS if result["total_failed"] == 0
-                else AuditOperationResult.PARTIAL if result["total_success"] > 0
-                else AuditOperationResult.FAILED
+                AuditOperationResult.SUCCESS
+                if result["total_failed"] == 0
+                else AuditOperationResult.PARTIAL if result["total_success"] > 0 else AuditOperationResult.FAILED
             ),
             audit_info=audit_info,
         )
@@ -965,8 +955,8 @@ async def reannounce_all(
         error_detail = f"{type(e).__name__}: {str(e)}"
 
         # 获取用户信息
-        user_info = getattr(request.state, 'user_info', None) if request else None
-        user_id = getattr(user_info, 'user_id', None) if user_info else 'unknown'
+        user_info = getattr(request.state, "user_info", None) if request else None
+        user_id = getattr(user_info, "user_id", None) if user_info else "unknown"
 
         logger.error(f"全局Tracker汇报异常 [user_id={user_id}]: {error_detail}")
         return CommonResponse(status="error", msg=f"操作异常：{error_detail}", code="500")

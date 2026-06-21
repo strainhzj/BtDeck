@@ -73,7 +73,7 @@ class TorrentInfoSyncTask(BaseSyncTask):
                     "message": "没有有效的下载器可同步",
                     "successful_syncs": 0,
                     "failed_syncs": 0,
-                    "total_downloaders": 0
+                    "total_downloaders": 0,
                 }
 
             logger.info(f"找到 {len(valid_downloaders)} 个有效下载器")
@@ -84,7 +84,7 @@ class TorrentInfoSyncTask(BaseSyncTask):
                 downloaders=valid_downloaders,
                 sync_func=self._sync_torrent_info_only,
                 sync_type="TorrentInfo",
-                max_concurrent=3
+                max_concurrent=3,
             )
 
             # 更新统计
@@ -115,7 +115,7 @@ class TorrentInfoSyncTask(BaseSyncTask):
                 "message": error_msg,
                 "successful_syncs": 0,
                 "failed_syncs": 1,
-                "total_downloaders": 0
+                "total_downloaders": 0,
             }
 
     async def _sync_torrent_info_only(self, downloader_info: Dict[str, Any]) -> Dict[str, Any]:
@@ -144,29 +144,25 @@ class TorrentInfoSyncTask(BaseSyncTask):
                 original_type = downloader.downloader_type
                 downloader_type_str = None
 
-                if original_type == 'qbittorrent' or original_type == 0 or original_type == '0':
-                    downloader_type_str = 'qbittorrent'
-                elif original_type == 'transmission' or original_type == 1 or original_type == '1':
-                    downloader_type_str = 'transmission'
+                if original_type == "qbittorrent" or original_type == 0 or original_type == "0":
+                    downloader_type_str = "qbittorrent"
+                elif original_type == "transmission" or original_type == 1 or original_type == "1":
+                    downloader_type_str = "transmission"
 
                 if not downloader_type_str:
                     error_msg = f"不支持的下载器类型: {original_type}"
                     logger.error(error_msg)
-                    return {
-                        "status": "failed",
-                        "message": error_msg,
-                        "nickname": downloader.nickname
-                    }
+                    return {"status": "failed", "message": error_msg, "nickname": downloader.nickname}
 
                 # 调用种子信息同步函数（不含 tracker）
-                if downloader_type_str == 'qbittorrent':
+                if downloader_type_str == "qbittorrent":
                     await qb_add_torrents_info_only_async(db, [downloader])
                     logger.info(f"[TorrentInfoSync] qBittorrent {downloader.nickname} 种子信息同步成功")
                     return {
                         "status": "success",
                         "message": f"qBittorrent下载器 {downloader.nickname} 种子信息同步成功",
                         "downloader_type": "qbittorrent",
-                        "nickname": downloader.nickname
+                        "nickname": downloader.nickname,
                     }
                 else:  # transmission
                     await tr_add_torrents_info_only_async(db, [downloader])
@@ -175,7 +171,7 @@ class TorrentInfoSyncTask(BaseSyncTask):
                         "status": "success",
                         "message": f"Transmission下载器 {downloader.nickname} 种子信息同步成功",
                         "downloader_type": "transmission",
-                        "nickname": downloader.nickname
+                        "nickname": downloader.nickname,
                     }
 
             except Exception as e:
@@ -184,5 +180,5 @@ class TorrentInfoSyncTask(BaseSyncTask):
                 return {
                     "status": "failed",
                     "message": error_msg,
-                    "nickname": downloader_info.get('nickname', 'Unknown')
+                    "nickname": downloader_info.get("nickname", "Unknown"),
                 }

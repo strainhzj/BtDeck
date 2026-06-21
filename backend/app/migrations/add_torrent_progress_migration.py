@@ -23,10 +23,10 @@ class TorrentProgressMigration:
 
         # Status到Progress的映射规则
         self.status_progress_map = {
-            "seeding": 100.00,      # 已完成并做种
-            "stalledUP": 100.00,    # 已完成但无上传速度
-            "paused": 0.00,         # 已暂停，假设未完成
-            "pausedDL": 0.00,       # 下载中暂停
+            "seeding": 100.00,  # 已完成并做种
+            "stalledUP": 100.00,  # 已完成但无上传速度
+            "paused": 0.00,  # 已暂停，假设未完成
+            "pausedDL": 0.00,  # 下载中暂停
         }
 
     def migrate(self) -> bool:
@@ -106,10 +106,13 @@ class TorrentProgressMigration:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT name FROM sqlite_master
                     WHERE type='table' AND name=?
-                """, (self.table_name,))
+                """,
+                    (self.table_name,),
+                )
                 return cursor.fetchone() is not None
         except Exception as e:
             logger.error(f"检查表存在性失败: {e}")
@@ -142,11 +145,14 @@ class TorrentProgressMigration:
             """)
 
             # 复制索引
-            cursor.execute(f"""
+            cursor.execute(
+                f"""
                 SELECT sql FROM sqlite_master
                 WHERE type='index' AND tbl_name=?
                 AND sql IS NOT NULL
-            """, (self.table_name,))
+            """,
+                (self.table_name,),
+            )
 
             indexes = cursor.fetchall()
             for index in indexes:
@@ -182,11 +188,14 @@ class TorrentProgressMigration:
 
             # 遍历status映射规则，批量更新
             for status, progress in self.status_progress_map.items():
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     UPDATE {self.table_name}
                     SET {self.column_name} = ?
                     WHERE status = ?
-                """, (progress, status))
+                """,
+                    (progress, status),
+                )
 
                 affected = cursor.rowcount
                 total_affected += affected

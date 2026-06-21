@@ -29,7 +29,6 @@ from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
 from app.core.filename_utils import FilenameUtils
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -42,9 +41,7 @@ class TorrentFileBackupManagerService:
     """
 
     def __init__(
-        self,
-        db: Optional[AsyncSessionLocal] = None,
-        path_mapping_service: Optional[PathMappingService] = None
+        self, db: Optional[AsyncSessionLocal] = None, path_mapping_service: Optional[PathMappingService] = None
     ):
         """
         初始化管理服务
@@ -58,9 +55,7 @@ class TorrentFileBackupManagerService:
         self.path_mapping_service = path_mapping_service
 
         # 初始化文件备份服务（复用现有代码）
-        self.file_backup_service = TorrentFileBackupService(
-            path_mapping_service=path_mapping_service
-        )
+        self.file_backup_service = TorrentFileBackupService(path_mapping_service=path_mapping_service)
 
     async def backup_torrent_from_downloader(
         self,
@@ -71,7 +66,7 @@ class TorrentFileBackupManagerService:
         save_path: Optional[str] = None,
         downloader_config: Optional[Dict[str, Any]] = None,
         task_name: Optional[str] = None,
-        uploader_id: Optional[int] = None
+        uploader_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         从下载器备份种子文件
@@ -98,13 +93,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "backup": None,
-            "backup_file_path": "",
-            "source_path": "",
-            "error_message": None
-        }
+        result = {"success": False, "backup": None, "backup_file_path": "", "source_path": "", "error_message": None}
 
         try:
             # 生成info_id（用于文件名）
@@ -122,7 +111,7 @@ class TorrentFileBackupManagerService:
                 torrent_name=torrent_name,
                 downloader_type=downloader_type,
                 save_path=save_path,
-                downloader_config=downloader_config
+                downloader_config=downloader_config,
             )
 
             if not backup_result.get("success"):
@@ -137,7 +126,7 @@ class TorrentFileBackupManagerService:
                 task_name=task_name,
                 uploader_id=uploader_id,
                 downloader_id=downloader_id,
-                upload_time=datetime.now()
+                upload_time=datetime.now(),
             )
 
             if torrent_backup:
@@ -146,11 +135,7 @@ class TorrentFileBackupManagerService:
                     file_path = backup_result["backup_file_path"]
                     if os.path.exists(file_path):
                         file_size = os.path.getsize(file_path)
-                        await self.repository.update_file_path(
-                            info_hash,
-                            file_path,
-                            file_size=file_size
-                        )
+                        await self.repository.update_file_path(info_hash, file_path, file_size=file_size)
                         torrent_backup.file_size = file_size
                 except Exception as e:
                     logger.warning(f"获取文件大小失败: {e}")
@@ -178,7 +163,7 @@ class TorrentFileBackupManagerService:
         source_file_path: str,
         downloader_id: int,
         task_name: Optional[str] = None,
-        uploader_id: Optional[int] = None
+        uploader_id: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         从指定路径备份种子文件
@@ -201,7 +186,7 @@ class TorrentFileBackupManagerService:
             "backup": None,
             "backup_file_path": "",
             "source_path": source_file_path,
-            "error_message": None
+            "error_message": None,
         }
 
         try:
@@ -213,7 +198,7 @@ class TorrentFileBackupManagerService:
                 self.file_backup_service.backup_torrent_file_from_path,
                 info_id=info_id,
                 torrent_name=torrent_name,
-                source_file_path=source_file_path
+                source_file_path=source_file_path,
             )
 
             if not backup_result.get("success"):
@@ -228,7 +213,7 @@ class TorrentFileBackupManagerService:
                 task_name=task_name,
                 uploader_id=uploader_id,
                 downloader_id=downloader_id,
-                upload_time=datetime.now()
+                upload_time=datetime.now(),
             )
 
             if torrent_backup:
@@ -237,11 +222,7 @@ class TorrentFileBackupManagerService:
                     file_path = backup_result["backup_file_path"]
                     if os.path.exists(file_path):
                         file_size = os.path.getsize(file_path)
-                        await self.repository.update_file_path(
-                            info_hash,
-                            file_path,
-                            file_size=file_size
-                        )
+                        await self.repository.update_file_path(info_hash, file_path, file_size=file_size)
                         torrent_backup.file_size = file_size
                 except Exception as e:
                     logger.warning(f"获取文件大小失败: {e}")
@@ -261,10 +242,7 @@ class TorrentFileBackupManagerService:
 
         return result
 
-    async def get_backup_info(
-        self,
-        info_hash: str
-    ) -> Dict[str, Any]:
+    async def get_backup_info(self, info_hash: str) -> Dict[str, Any]:
         """
         获取种子文件备份信息
 
@@ -279,11 +257,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "backup": None,
-            "error_message": None
-        }
+        result = {"success": False, "backup": None, "error_message": None}
 
         try:
             torrent_backup = await self.repository.get_by_info_hash(info_hash)
@@ -300,10 +274,7 @@ class TorrentFileBackupManagerService:
         return result
 
     async def list_backups(
-        self,
-        downloader_id: Optional[int] = None,
-        page: int = 1,
-        page_size: int = 20
+        self, downloader_id: Optional[int] = None, page: int = 1, page_size: int = 20
     ) -> Dict[str, Any]:
         """
         列出种子文件备份
@@ -324,14 +295,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "total": 0,
-            "page": page,
-            "pageSize": page_size,
-            "list": [],
-            "error_message": None
-        }
+        result = {"success": False, "total": 0, "page": page, "pageSize": page_size, "list": [], "error_message": None}
 
         try:
             skip = (page - 1) * page_size
@@ -340,9 +304,7 @@ class TorrentFileBackupManagerService:
                 # 统计总数
                 total = await self.repository.count_by_downloader(downloader_id)
                 # 查询列表
-                backups = await self.repository.list_by_downloader(
-                    downloader_id, skip, page_size
-                )
+                backups = await self.repository.list_by_downloader(downloader_id, skip, page_size)
             else:
                 # 统计总数
                 total = await self.repository.count_all()
@@ -359,11 +321,7 @@ class TorrentFileBackupManagerService:
 
         return result
 
-    async def delete_backup(
-        self,
-        info_hash: str,
-        delete_physical_file: bool = False
-    ) -> Dict[str, Any]:
+    async def delete_backup(self, info_hash: str, delete_physical_file: bool = False) -> Dict[str, Any]:
         """
         删除种子文件备份
 
@@ -379,11 +337,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "deleted_file": False,
-            "error_message": None
-        }
+        result = {"success": False, "deleted_file": False, "error_message": None}
 
         try:
             # 获取备份记录
@@ -397,8 +351,7 @@ class TorrentFileBackupManagerService:
                 try:
                     # 在线程池中执行同步删除操作
                     deleted = await asyncio.to_thread(
-                        self.file_backup_service.delete_backup_file,
-                        torrent_backup.file_path
+                        self.file_backup_service.delete_backup_file, torrent_backup.file_path
                     )
                     result["deleted_file"] = deleted
                 except Exception as e:
@@ -417,10 +370,7 @@ class TorrentFileBackupManagerService:
 
         return result
 
-    async def batch_backup(
-        self,
-        backup_requests: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def batch_backup(self, backup_requests: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         批量备份种子文件
 
@@ -442,7 +392,7 @@ class TorrentFileBackupManagerService:
             "success_count": 0,
             "failed_count": 0,
             "success_items": [],
-            "failed_items": []
+            "failed_items": [],
         }
 
         for request in backup_requests:
@@ -456,7 +406,7 @@ class TorrentFileBackupManagerService:
                         source_file_path=request["source_file_path"],
                         downloader_id=request["downloader_id"],
                         task_name=request.get("task_name"),
-                        uploader_id=request.get("uploader_id")
+                        uploader_id=request.get("uploader_id"),
                     )
                 else:
                     # 从下载器备份
@@ -468,7 +418,7 @@ class TorrentFileBackupManagerService:
                         save_path=request.get("save_path"),
                         downloader_config=request.get("downloader_config"),
                         task_name=request.get("task_name"),
-                        uploader_id=request.get("uploader_id")
+                        uploader_id=request.get("uploader_id"),
                     )
 
                 if backup_result["success"]:
@@ -476,24 +426,20 @@ class TorrentFileBackupManagerService:
                     result["success_items"].append(backup_result["backup"])
                 else:
                     result["failed_count"] += 1
-                    result["failed_items"].append({
-                        "info_hash": request["info_hash"],
-                        "error": backup_result.get("error_message", "Unknown error")
-                    })
+                    result["failed_items"].append(
+                        {
+                            "info_hash": request["info_hash"],
+                            "error": backup_result.get("error_message", "Unknown error"),
+                        }
+                    )
 
             except Exception as e:
                 result["failed_count"] += 1
-                result["failed_items"].append({
-                    "info_hash": request.get("info_hash", "unknown"),
-                    "error": str(e)
-                })
+                result["failed_items"].append({"info_hash": request.get("info_hash", "unknown"), "error": str(e)})
 
         return result
 
-    async def validate_backup_file(
-        self,
-        info_hash: str
-    ) -> Dict[str, Any]:
+    async def validate_backup_file(self, info_hash: str) -> Dict[str, Any]:
         """
         验证种子文件完整性
 
@@ -510,13 +456,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "is_valid": False,
-            "file_exists": False,
-            "file_size": None,
-            "error_message": None
-        }
+        result = {"success": False, "is_valid": False, "file_exists": False, "file_size": None, "error_message": None}
 
         try:
             # 获取备份记录
@@ -549,7 +489,7 @@ class TorrentFileBackupManagerService:
 
             # 验证文件可读
             try:
-                with open(file_path, 'rb') as f:
+                with open(file_path, "rb") as f:
                     # 读取前100字节验证
                     f.read(100)
             except Exception as e:
@@ -565,10 +505,7 @@ class TorrentFileBackupManagerService:
 
         return result
 
-    async def increment_use_count(
-        self,
-        info_hash: str
-    ) -> bool:
+    async def increment_use_count(self, info_hash: str) -> bool:
         """
         增加种子文件使用次数
 

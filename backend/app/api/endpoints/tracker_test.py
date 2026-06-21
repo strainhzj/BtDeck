@@ -20,11 +20,7 @@ router = APIRouter()
 
 
 @router.post("/match", summary="测试关键词匹配")
-def test_match(
-    test_req: MatchTestRequest,
-    _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db)
-):
+def test_match(test_req: MatchTestRequest, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """
     测试关键词匹配
 
@@ -37,9 +33,7 @@ def test_match(
         # 使用判断引擎
         judgment_engine = TrackerJudgmentEngine()
         final_status = judgment_engine.judge_status(
-            original_status=test_req.originalStatus,
-            msg=test_req.msg,
-            language=test_req.language
+            original_status=test_req.originalStatus, msg=test_req.msg, language=test_req.language
         )
 
         # 查询匹配到的关键词
@@ -47,10 +41,11 @@ def test_match(
         match_type = "none"
 
         # 查询所有启用的关键词
-        keywords = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.enabled == True,
-            TrackerKeywordConfig.dr == 0
-        ).all()
+        keywords = (
+            db.query(TrackerKeywordConfig)
+            .filter(TrackerKeywordConfig.enabled == True, TrackerKeywordConfig.dr == 0)
+            .all()
+        )
 
         test_msg_lower = test_req.msg.lower()
 
@@ -72,15 +67,10 @@ def test_match(
                 originalStatus=test_req.originalStatus,
                 finalStatus=final_status,
                 matchedKeywords=matched_keywords,
-                matchType=match_type
-            ).model_dump()
+                matchType=match_type,
+            ).model_dump(),
         )
 
     except Exception as e:
         logger.error(f"测试关键词匹配失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"测试失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"测试失败: {str(e)}", code="500", data=None)

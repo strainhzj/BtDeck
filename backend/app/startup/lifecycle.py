@@ -41,12 +41,7 @@ async def update_cron_task_status():
         db = SessionLocal()
         try:
             # 查询所有dr=0且task_status!=2的记录
-            stmt = (
-                update(CronTask)
-                .where(CronTask.dr == 0)
-                .where(CronTask.task_status != 2)
-                .values(task_status=2)
-            )
+            stmt = update(CronTask).where(CronTask.dr == 0).where(CronTask.task_status != 2).values(task_status=2)
 
             result = db.execute(stmt)
             db.commit()
@@ -59,6 +54,7 @@ async def update_cron_task_status():
     except Exception as e:
         print(f"更新定时任务状态失败: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -81,6 +77,7 @@ async def check_version_update_task(app: FastAPI):
     except Exception as e:
         print(f"[WARN] 版本更新检查失败: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -94,11 +91,7 @@ async def add_version_update_notification_task(app: FastAPI):
     try:
         from app.database import AsyncSessionLocal
         from app.services.notification_service import NotificationService
-        from app.version import (
-            CURRENT_VERSION,
-            get_version_content,
-            get_version_info
-        )
+        from app.version import CURRENT_VERSION, get_version_content, get_version_info
 
         # 从版本模块获取信息
         notification_title = f"BtDeck v{CURRENT_VERSION} 版本更新"
@@ -116,9 +109,7 @@ async def add_version_update_notification_task(app: FastAPI):
             from sqlalchemy import select
             from app.models.notification import Notification
 
-            existing = await db.execute(
-                select(Notification).where(Notification.title == notification_title)
-            )
+            existing = await db.execute(select(Notification).where(Notification.title == notification_title))
             if existing.scalar_one_or_none():
                 print(f"[INFO] v{CURRENT_VERSION} 版本更新通知已存在，跳过创建")
                 return
@@ -133,14 +124,15 @@ async def add_version_update_notification_task(app: FastAPI):
                     "version": CURRENT_VERSION,
                     "previous_version": version_info.get("previous_version", ""),
                     "release_url": version_info.get("release_url", ""),
-                    "published_at": f"{version_info.get('release_date', '')}T00:00:00Z"
-                }
+                    "published_at": f"{version_info.get('release_date', '')}T00:00:00Z",
+                },
             )
             print(f"[OK] 已自动创建 v{CURRENT_VERSION} 版本更新通知 (ID: {notification.id})")
 
     except Exception as e:
         print(f"[WARN] 添加版本更新通知失败: {e}")
         import traceback
+
         traceback.print_exc()
 
 
@@ -166,6 +158,7 @@ async def init_database_connection():
     except Exception as e:
         print(f"[ERROR] 数据库连接失败: {e}")
         import traceback
+
         traceback.print_exc()
         raise
 
@@ -193,6 +186,7 @@ async def lifespan(app: FastAPI):
     print("=== 初始化配置文件 ===")
     from app.database import init_config_file
     from app.yamlConfig import yaml
+
     try:
         init_config_file()
         yaml.reload()  # ✨ 重新加载配置，确保 yaml 对象读取到刚生成的配置
@@ -200,6 +194,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[ERROR] 配置文件初始化失败: {e}")
         import traceback
+
         traceback.print_exc()
 
     # 1. 执行数据库迁移（在所有其他初始化之前）
@@ -208,12 +203,14 @@ async def lifespan(app: FastAPI):
     #          DEV=False 失败抛 RuntimeError 终止（生产数据一致性）。
     print("=== 执行数据库迁移 ===")
     from app.core.migration import migrate_database
+
     try:
         migrate_database()
         print("[OK] 数据库迁移完成")
     except Exception as e:
         print(f"[ERROR] 数据库迁移失败: {e}")
         import traceback
+
         traceback.print_exc()
         if not settings.DEV:
             raise  # 生产环境终止启动
@@ -222,12 +219,14 @@ async def lifespan(app: FastAPI):
     # 修复：uvicorn启动时不会执行main.py的if __name__块，所以需要在lifespan中调用
     print("=== 初始化数据库数据 ===")
     from app.database import init_db
+
     try:
         init_db()
         print("[OK] 数据库初始数据创建完成")
     except Exception as e:
         print(f"[ERROR] 数据库初始数据创建失败: {e}")
         import traceback
+
         traceback.print_exc()
 
     # 2. 初始化路由
@@ -248,6 +247,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         print(f"[ERROR] 启动定时任务调度器失败: {e}")
         import traceback
+
         traceback.print_exc()
 
     # 5. 此时 FastAPI 服务已准备好启动
@@ -328,6 +328,7 @@ async def lifespan(app: FastAPI):
         # 清理速度监控线程池（防止资源泄漏）
         try:
             from app.api.endpoints.torrent_speed import _speed_executor
+
             _speed_executor.shutdown(wait=True)
             print("✅ 速度监控线程池已关闭")
         except Exception as e:
@@ -352,4 +353,3 @@ async def lifespan(app: FastAPI):
     #     shutdown_modules(app)
     #     # 关闭工作流
     #     stop_workflow(app)
-

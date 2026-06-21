@@ -60,7 +60,7 @@ class TorrentLocationService:
         move_files: bool,
         user_id: int,
         username: str,
-        app_state: Any = None
+        app_state: Any = None,
     ) -> Dict[str, Any]:
         """
         修改种子保存路径
@@ -83,19 +83,12 @@ class TorrentLocationService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "moved_count": 0,
-            "failed_count": len(hashes),
-            "error_message": None
-        }
+        result = {"success": False, "moved_count": 0, "failed_count": len(hashes), "error_message": None}
 
         downloader = None
         try:
             # 1. 参数验证
-            validation_error = self._validate_request(
-                downloader_id, hashes, target_path
-            )
+            validation_error = self._validate_request(downloader_id, hashes, target_path)
             if validation_error:
                 result["error_message"] = validation_error
                 return result
@@ -129,7 +122,7 @@ class TorrentLocationService:
                 move_files=move_files,
                 success=result["success"],
                 moved_count=result["moved_count"],
-                error_message=result["error_message"]
+                error_message=result["error_message"],
             )
 
         except Exception as e:
@@ -147,17 +140,12 @@ class TorrentLocationService:
                 move_files=move_files,
                 success=False,
                 moved_count=0,
-                error_message=str(e)
+                error_message=str(e),
             )
 
         return result
 
-    def _validate_request(
-        self,
-        downloader_id: str,
-        hashes: list,
-        target_path: str
-    ) -> Optional[str]:
+    def _validate_request(self, downloader_id: str, hashes: list, target_path: str) -> Optional[str]:
         """
         验证请求参数
 
@@ -183,7 +171,7 @@ class TorrentLocationService:
 
         # 验证路径格式（简单检查）
         is_windows_abs = re.match(r"^[A-Za-z]:[\\/]", target_path) is not None
-        if not (target_path.startswith(('/', '\\', '.', '~')) or is_windows_abs):
+        if not (target_path.startswith(("/", "\\", ".", "~")) or is_windows_abs):
             return "目标路径必须是绝对路径"
 
         return None
@@ -200,21 +188,14 @@ class TorrentLocationService:
         """
         try:
             result = self.db.execute(
-                select(BtDownloaders).where(
-                    BtDownloaders.downloader_id == downloader_id,
-                    BtDownloaders.dr == 0
-                )
+                select(BtDownloaders).where(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0)
             )
             return result.scalar_one_or_none()
         except Exception as e:
             logger.error(f"查询下载器失败: {e}")
             return None
 
-    def _get_adapter(
-        self,
-        downloader: BtDownloaders,
-        app_state: Any = None
-    ):
+    def _get_adapter(self, downloader: BtDownloaders, app_state: Any = None):
         """
         获取下载器适配器
 
@@ -227,15 +208,12 @@ class TorrentLocationService:
         """
         try:
             # 从缓存获取下载器客户端
-            if not app_state or not hasattr(app_state, 'store'):
+            if not app_state or not hasattr(app_state, "store"):
                 logger.error("app_state或app.state.store未初始化")
                 return None
 
             cached_downloaders = app_state.store.get_snapshot_sync()
-            downloader_vo = next(
-                (d for d in cached_downloaders if d.downloader_id == downloader.downloader_id),
-                None
-            )
+            downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
             if not downloader_vo or downloader_vo.fail_time > 0:
                 logger.error(f"下载器不可用: {downloader.nickname}")
@@ -269,7 +247,7 @@ class TorrentLocationService:
         move_files: bool,
         success: bool,
         moved_count: int,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ):
         """
         记录审计日志
@@ -290,7 +268,7 @@ class TorrentLocationService:
             audit_log = SeedTransferAuditLog(
                 user_id=user_id,
                 username=username,
-                operation_type='set_location',  # 新增操作类型
+                operation_type="set_location",  # 新增操作类型
                 source_downloader_id=downloader_id,
                 source_downloader_name=downloader_name,
                 target_downloader_id=downloader_id,  # 同一下载器
@@ -298,9 +276,9 @@ class TorrentLocationService:
                 torrent_count=torrent_count,
                 target_path=target_path,
                 move_files=move_files,
-                transfer_status='success' if success else 'failed',
+                transfer_status="success" if success else "failed",
                 error_message=error_message,
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
             )
 
             if self.async_db is not None:

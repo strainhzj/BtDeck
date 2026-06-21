@@ -2,6 +2,7 @@
 内存任务管理器
 用于管理异步批量删除任务，提供任务的创建、查询、更新和状态管理功能。
 """
+
 import asyncio
 import uuid
 from datetime import datetime, timedelta
@@ -12,30 +13,32 @@ from dataclasses import dataclass, field
 
 class TaskStatus(str, Enum):
     """任务状态枚举"""
-    PENDING = "pending"      # 待执行
-    RUNNING = "running"      # 执行中
+
+    PENDING = "pending"  # 待执行
+    RUNNING = "running"  # 执行中
     COMPLETED = "completed"  # 已完成
-    FAILED = "failed"        # 失败
-    PARTIAL = "partial"      # 部分成功（有部分失败）
+    FAILED = "failed"  # 失败
+    PARTIAL = "partial"  # 部分成功（有部分失败）
 
 
 @dataclass
 class DeletionTask:
     """删除任务数据类"""
-    task_id: str                              # 任务ID
-    torrent_info_ids: List[str]               # 要删除的种子ID列表
-    delete_level: int                         # 删除等级
-    operator: str                             # 操作者
-    status: TaskStatus = TaskStatus.PENDING   # 任务状态
-    total_count: int = 0                      # 总数量
-    success_count: int = 0                    # 成功数量
-    failed_count: int = 0                     # 失败数量
-    error_message: Optional[str] = None       # 错误信息
+
+    task_id: str  # 任务ID
+    torrent_info_ids: List[str]  # 要删除的种子ID列表
+    delete_level: int  # 删除等级
+    operator: str  # 操作者
+    status: TaskStatus = TaskStatus.PENDING  # 任务状态
+    total_count: int = 0  # 总数量
+    success_count: int = 0  # 成功数量
+    failed_count: int = 0  # 失败数量
+    error_message: Optional[str] = None  # 错误信息
     results: List[Dict[str, Any]] = field(default_factory=list)  # 删除结果列表
     failed_items: List[Dict[str, Any]] = field(default_factory=list)  # 失败项列表
-    created_at: datetime = field(default_factory=datetime.now)      # 创建时间
-    started_at: Optional[datetime] = None      # 开始时间
-    completed_at: Optional[datetime] = None    # 完成时间
+    created_at: datetime = field(default_factory=datetime.now)  # 创建时间
+    started_at: Optional[datetime] = None  # 开始时间
+    completed_at: Optional[datetime] = None  # 完成时间
 
 
 class DeletionTaskManager:
@@ -43,7 +46,8 @@ class DeletionTaskManager:
     删除任务管理器（单例模式）
     使用内存存储任务，定期清理过期任务
     """
-    _instance: Optional['DeletionTaskManager'] = None
+
+    _instance: Optional["DeletionTaskManager"] = None
     _lock: Optional[asyncio.Lock] = None
 
     def __new__(cls):
@@ -66,6 +70,7 @@ class DeletionTaskManager:
 
     def _start_cleanup_task(self):
         """启动后台清理任务，每60秒清理一次过期任务"""
+
         async def cleanup_loop():
             while True:
                 try:
@@ -83,12 +88,7 @@ class DeletionTaskManager:
             # 如果还没有事件循环，稍后在初始化时创建
             pass
 
-    async def create_task(
-        self,
-        torrent_info_ids: List[str],
-        delete_level: int,
-        operator: str
-    ) -> str:
+    async def create_task(self, torrent_info_ids: List[str], delete_level: int, operator: str) -> str:
         """
         创建新的删除任务
 
@@ -107,7 +107,7 @@ class DeletionTaskManager:
                 torrent_info_ids=torrent_info_ids,
                 delete_level=delete_level,
                 operator=operator,
-                total_count=len(torrent_info_ids)
+                total_count=len(torrent_info_ids),
             )
             self._tasks[task_id] = task
             return task_id
@@ -133,7 +133,7 @@ class DeletionTaskManager:
         failed_count: Optional[int] = None,
         error_message: Optional[str] = None,
         results: Optional[List[Dict[str, Any]]] = None,
-        failed_items: Optional[List[Dict[str, Any]]] = None
+        failed_items: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         """
         更新任务状态
@@ -184,8 +184,9 @@ class DeletionTaskManager:
             expired_tasks = []
             for task_id, task in self._tasks.items():
                 # 如果任务已完成且超过1小时，或者任务创建超过24小时未完成
-                if (task.completed_at and (now - task.completed_at) > timedelta(hours=1)) or \
-                   (now - task.created_at) > timedelta(hours=24):
+                if (task.completed_at and (now - task.completed_at) > timedelta(hours=1)) or (
+                    now - task.created_at
+                ) > timedelta(hours=24):
                     expired_tasks.append(task_id)
 
             for task_id in expired_tasks:

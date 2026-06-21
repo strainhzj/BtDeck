@@ -7,29 +7,34 @@ from app.torrents.trackerVO import TrackerInfoVO
 
 def alias_camel(snake_name: str) -> str:
     """将snake_case转换为camelCase"""
-    parts = snake_name.split('_')
-    return parts[0] + ''.join(word.capitalize() for word in parts[1:])
+    parts = snake_name.split("_")
+    return parts[0] + "".join(word.capitalize() for word in parts[1:])
 
 
 class TorrentInfoVO(BaseModel):
     """种子信息VO，支持前端snake_case命名和后端camelCase序列化"""
+
     model_config = ConfigDict(
-        populate_by_name=True,
-        alias_generator=alias_camel,
-        from_attributes=True  # 支持ORM对象转换
+        populate_by_name=True, alias_generator=alias_camel, from_attributes=True  # 支持ORM对象转换
     )
 
     # 基础字段 - 使用snake_case定义，自动转换为camelCase输出
     info_id: str | None = Field(None, description="主键", example="0573620f-d38f-4aa9-bc6e-cde655282176")
-    downloader_id: str | None = Field(None, description="所属下载器主键", example="d2f6192e-b197-4632-b4eb-bb7604446c07")
+    downloader_id: str | None = Field(
+        None, description="所属下载器主键", example="d2f6192e-b197-4632-b4eb-bb7604446c07"
+    )
     downloader_name: str | None = Field(None, description="所属下载器名称", example="tr1")
     torrent_id: str | None = Field(None, description="下载器中的主键", example="1")
     hash: str | None = Field(None, description="种子哈希值", example="47f130f4ec8cf6685a87d5816fb4a7d4e43bef86")
-    name: str | None = Field(None, description="种子名称", example="The Matrix Trilogy 1999-2003 CEE Blu-ray 1080p VC-1 TrueHD 5.1-DIY@HDSky")
+    name: str | None = Field(
+        None, description="种子名称", example="The Matrix Trilogy 1999-2003 CEE Blu-ray 1080p VC-1 TrueHD 5.1-DIY@HDSky"
+    )
     save_path: str | None = Field(None, description="种子文件保存路径", example="/Downloads/lpan/Downloads")
     size: int | None = Field(None, description="种子大小(字节)", example="134002221056")
     status: str | None = Field(None, description="状态", example="seeding")
-    torrent_file: str | None = Field(None, description="种子文件路径", example="/config/torrents/47f130f4ec8cf6685a87d5816fb4a7d4e43bef86.torrent")
+    torrent_file: str | None = Field(
+        None, description="种子文件路径", example="/config/torrents/47f130f4ec8cf6685a87d5816fb4a7d4e43bef86.torrent"
+    )
     added_date: datetime | None = Field(None, description="添加时间")
     completed_date: datetime | None = Field(None, description="完成时间")
     ratio: str | None = Field(None, description="做种比率", example="0.1048")
@@ -56,6 +61,6 @@ class TorrentInfoVO(BaseModel):
     seeds: int | None = Field(None, description="连接的seed数量", example=5)
 
     @classmethod
-    def from_orm(cls, obj) -> 'TorrentInfoVO':
+    def from_orm(cls, obj) -> "TorrentInfoVO":
         """从ORM对象创建VO实例"""
         return cls.model_validate(obj)

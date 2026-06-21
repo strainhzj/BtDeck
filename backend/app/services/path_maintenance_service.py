@@ -20,7 +20,7 @@ from sqlalchemy import text
 from app.models.downloader_path_maintenance import DownloaderPathMaintenance
 from app.models.downloader_path_maintenance import (
     DownloaderPathMaintenance,
-    DownloaderPathMaintenance as DownloaderPathMaintenanceModel
+    DownloaderPathMaintenance as DownloaderPathMaintenanceModel,
 )
 
 logger = logging.getLogger(__name__)
@@ -49,10 +49,7 @@ class PathMaintenanceService:
     # ========== 查询操作 ==========
 
     def get_paths_by_downloader(
-        self,
-        downloader_id: str,
-        path_type: Optional[str] = None,
-        is_enabled: Optional[bool] = None
+        self, downloader_id: str, path_type: Optional[str] = None, is_enabled: Optional[bool] = None
     ) -> List[DownloaderPathMaintenanceModel]:
         """
         获取下载器的路径列表
@@ -77,8 +74,7 @@ class PathMaintenanceService:
                 query = query.filter(DownloaderPathMaintenanceModel.is_enabled == is_enabled)
 
             paths = query.order_by(
-                DownloaderPathMaintenanceModel.path_type,
-                DownloaderPathMaintenanceModel.created_at.desc()
+                DownloaderPathMaintenanceModel.path_type, DownloaderPathMaintenanceModel.created_at.desc()
             ).all()
 
             logger.info(f"获取下载器 {downloader_id} 的路径列表成功，共 {len(paths)} 条")
@@ -99,9 +95,11 @@ class PathMaintenanceService:
             路径对象，不存在返回None
         """
         try:
-            path = self.db.query(DownloaderPathMaintenanceModel).filter(
-                DownloaderPathMaintenanceModel.id == path_id
-            ).first()
+            path = (
+                self.db.query(DownloaderPathMaintenanceModel)
+                .filter(DownloaderPathMaintenanceModel.id == path_id)
+                .first()
+            )
 
             if not path:
                 logger.warning(f"路径ID {path_id} 不存在")
@@ -124,11 +122,15 @@ class PathMaintenanceService:
             默认路径值，不存在返回None
         """
         try:
-            path = self.db.query(DownloaderPathMaintenanceModel).filter(
-                DownloaderPathMaintenanceModel.downloader_id == downloader_id,
-                DownloaderPathMaintenanceModel.path_type == 'default',
-                DownloaderPathMaintenanceModel.is_enabled == True
-            ).first()
+            path = (
+                self.db.query(DownloaderPathMaintenanceModel)
+                .filter(
+                    DownloaderPathMaintenanceModel.downloader_id == downloader_id,
+                    DownloaderPathMaintenanceModel.path_type == "default",
+                    DownloaderPathMaintenanceModel.is_enabled == True,
+                )
+                .first()
+            )
 
             return path.path_value if path else None
 
@@ -147,11 +149,15 @@ class PathMaintenanceService:
             活跃路径值列表
         """
         try:
-            paths = self.db.query(DownloaderPathMaintenanceModel).filter(
-                DownloaderPathMaintenanceModel.downloader_id == downloader_id,
-                DownloaderPathMaintenanceModel.path_type == 'active',
-                DownloaderPathMaintenanceModel.is_enabled == True
-            ).all()
+            paths = (
+                self.db.query(DownloaderPathMaintenanceModel)
+                .filter(
+                    DownloaderPathMaintenanceModel.downloader_id == downloader_id,
+                    DownloaderPathMaintenanceModel.path_type == "active",
+                    DownloaderPathMaintenanceModel.is_enabled == True,
+                )
+                .all()
+            )
 
             return [p.path_value for p in paths]
 
@@ -162,12 +168,7 @@ class PathMaintenanceService:
     # ========== 创建操作 ==========
 
     def create_path(
-        self,
-        downloader_id: int,
-        path_type: str,
-        path_value: str,
-        is_enabled: bool = True,
-        torrent_count: int = 0
+        self, downloader_id: int, path_type: str, path_value: str, is_enabled: bool = True, torrent_count: int = 0
     ) -> DownloaderPathMaintenanceModel:
         """
         创建新路径
@@ -186,18 +187,24 @@ class PathMaintenanceService:
             ValueError: 路径类型无效或路径已存在
         """
         # 验证路径类型
-        if path_type not in ['default', 'active']:
+        if path_type not in ["default", "active"]:
             raise ValueError(f"无效的路径类型: {path_type}，必须是 'default' 或 'active'")
 
         # 验证路径去重
-        existing = self.db.query(DownloaderPathMaintenanceModel).filter(
-            DownloaderPathMaintenanceModel.downloader_id == downloader_id,
-            DownloaderPathMaintenanceModel.path_type == path_type,
-            DownloaderPathMaintenanceModel.path_value == path_value
-        ).first()
+        existing = (
+            self.db.query(DownloaderPathMaintenanceModel)
+            .filter(
+                DownloaderPathMaintenanceModel.downloader_id == downloader_id,
+                DownloaderPathMaintenanceModel.path_type == path_type,
+                DownloaderPathMaintenanceModel.path_value == path_value,
+            )
+            .first()
+        )
 
         if existing:
-            raise ValueError(f"路径已存在: downloader_id={downloader_id}, path_type={path_type}, path_value={path_value}")
+            raise ValueError(
+                f"路径已存在: downloader_id={downloader_id}, path_type={path_type}, path_value={path_value}"
+            )
 
         try:
             path = DownloaderPathMaintenanceModel(
@@ -206,7 +213,7 @@ class PathMaintenanceService:
                 path_value=path_value,
                 is_enabled=is_enabled,
                 torrent_count=torrent_count,
-                last_updated_time=datetime.utcnow()
+                last_updated_time=datetime.utcnow(),
             )
 
             self.db.add(path)
@@ -227,7 +234,7 @@ class PathMaintenanceService:
         path_id: int,
         path_value: Optional[str] = None,
         is_enabled: Optional[bool] = None,
-        torrent_count: Optional[int] = None
+        torrent_count: Optional[int] = None,
     ) -> bool:
         """
         更新路径信息
@@ -248,12 +255,16 @@ class PathMaintenanceService:
 
             if path_value is not None:
                 # 检查路径值是否与其他路径重复
-                existing = self.db.query(DownloaderPathMaintenanceModel).filter(
-                    DownloaderPathMaintenanceModel.downloader_id == path.downloader_id,
-                    DownloaderPathMaintenanceModel.path_type == path.path_type,
-                    DownloaderPathMaintenanceModel.path_value == path_value,
-                    DownloaderPathMaintenanceModel.id != path_id
-                ).first()
+                existing = (
+                    self.db.query(DownloaderPathMaintenanceModel)
+                    .filter(
+                        DownloaderPathMaintenanceModel.downloader_id == path.downloader_id,
+                        DownloaderPathMaintenanceModel.path_type == path.path_type,
+                        DownloaderPathMaintenanceModel.path_value == path_value,
+                        DownloaderPathMaintenanceModel.id != path_id,
+                    )
+                    .first()
+                )
 
                 if existing:
                     raise ValueError(f"路径值已存在: {path_value}")
@@ -441,37 +452,24 @@ class PathMaintenanceService:
             total = base_query.count()
             enabled = base_query.filter(DownloaderPathMaintenanceModel.is_enabled == True).count()
 
-            default_count = base_query.filter(
-                DownloaderPathMaintenanceModel.path_type == 'default'
-            ).count()
+            default_count = base_query.filter(DownloaderPathMaintenanceModel.path_type == "default").count()
 
-            active_count = base_query.filter(
-                DownloaderPathMaintenanceModel.path_type == 'active'
-            ).count()
+            active_count = base_query.filter(DownloaderPathMaintenanceModel.path_type == "active").count()
 
             return {
-                'total': total,
-                'enabled': enabled,
-                'default': default_count,
-                'active': active_count,
-                'count': total  # 兼容字段
+                "total": total,
+                "enabled": enabled,
+                "default": default_count,
+                "active": active_count,
+                "count": total,  # 兼容字段
             }
 
         except Exception as e:
             logger.error(f"获取路径统计失败: {str(e)}")
-            return {
-                'total': 0,
-                'enabled': 0,
-                'default': 0,
-                'active': 0,
-                'count': 0
-            }
+            return {"total": 0, "enabled": 0, "default": 0, "active": 0, "count": 0}
 
     def sync_paths_from_torrents(
-        self,
-        downloader_id: int,
-        default_path: str,
-        active_paths: List[str]
+        self, downloader_id: int, default_path: str, active_paths: List[str]
     ) -> Dict[str, Any]:
         """
         从种子任务同步路径信息
@@ -485,33 +483,29 @@ class PathMaintenanceService:
             同步结果统计
         """
         try:
-            result = {
-                'created': 0,
-                'updated': 0,
-                'skipped': 0,
-                'errors': []
-            }
+            result = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
 
             # 同步默认路径
-            existing_default = self.db.query(DownloaderPathMaintenanceModel).filter(
-                DownloaderPathMaintenanceModel.downloader_id == downloader_id,
-                DownloaderPathMaintenanceModel.path_type == 'default',
-                DownloaderPathMaintenanceModel.path_value == default_path
-            ).first()
+            existing_default = (
+                self.db.query(DownloaderPathMaintenanceModel)
+                .filter(
+                    DownloaderPathMaintenanceModel.downloader_id == downloader_id,
+                    DownloaderPathMaintenanceModel.path_type == "default",
+                    DownloaderPathMaintenanceModel.path_value == default_path,
+                )
+                .first()
+            )
 
             if existing_default:
                 # 更新最后更新时间
                 existing_default.last_updated_time = datetime.utcnow()
-                result['updated'] += 1
+                result["updated"] += 1
             else:
                 # 创建默认路径
                 self.create_path(
-                    downloader_id=downloader_id,
-                    path_type='default',
-                    path_value=default_path,
-                    is_enabled=True
+                    downloader_id=downloader_id, path_type="default", path_value=default_path, is_enabled=True
                 )
-                result['created'] += 1
+                result["created"] += 1
 
             # 同步活跃路径
             # 统计每个路径的使用次数
@@ -523,35 +517,39 @@ class PathMaintenanceService:
 
             # 更新或创建活跃路径
             for path_value, count in path_count.items():
-                existing = self.db.query(DownloaderPathMaintenanceModel).filter(
-                    DownloaderPathMaintenanceModel.downloader_id == downloader_id,
-                    DownloaderPathMaintenanceModel.path_type == 'active',
-                    DownloaderPathMaintenanceModel.path_value == path_value
-                ).first()
+                existing = (
+                    self.db.query(DownloaderPathMaintenanceModel)
+                    .filter(
+                        DownloaderPathMaintenanceModel.downloader_id == downloader_id,
+                        DownloaderPathMaintenanceModel.path_type == "active",
+                        DownloaderPathMaintenanceModel.path_value == path_value,
+                    )
+                    .first()
+                )
 
                 if existing:
                     # 更新种子数量
                     if existing.torrent_count != count:
                         existing.torrent_count = count
                         existing.last_updated_time = datetime.utcnow()
-                        result['updated'] += 1
+                        result["updated"] += 1
                     else:
-                        result['skipped'] += 1
+                        result["skipped"] += 1
                 else:
                     # 创建新路径
                     self.create_path(
                         downloader_id=downloader_id,
-                        path_type='active',
+                        path_type="active",
                         path_value=path_value,
                         is_enabled=True,
-                        torrent_count=count
+                        torrent_count=count,
                     )
-                    result['created'] += 1
+                    result["created"] += 1
 
             logger.info(f"同步下载器 {downloader_id} 路径完成: {result}")
             return result
 
         except Exception as e:
             logger.error(f"同步路径失败: {str(e)}")
-            result['errors'].append(str(e))
+            result["errors"].append(str(e))
             return result

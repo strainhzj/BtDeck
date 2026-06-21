@@ -16,25 +16,19 @@ class RequestDownloader(BaseModel):
     is_ssl: bool = Field(description="是否https，0表示否，1表示是", example=True)
 
     # 新增: 路径映射配置
-    path_mapping: Optional[PathMappingConfig] = Field(
-        None,
-        description="路径映射配置(JSON对象或已解析的对象)"
-    )
+    path_mapping: Optional[PathMappingConfig] = Field(None, description="路径映射配置(JSON对象或已解析的对象)")
 
     # 新增: 路径映射规则（多行文本格式）
     path_mapping_rules: Optional[str] = Field(
-        None,
-        description="路径映射规则配置（多行文本，格式：源路径{#**#}目标路径）"
+        None, description="路径映射规则配置（多行文本，格式：源路径{#**#}目标路径）"
     )
 
     # 新增: 种子保存目录
     torrent_save_path: Optional[str] = Field(
-        None,
-        description="种子保存目录路径（应用运行环境可直接访问的绝对路径）",
-        max_length=500
+        None, description="种子保存目录路径（应用运行环境可直接访问的绝对路径）", max_length=500
     )
 
-    @field_validator('is_search', 'enabled', 'is_ssl', mode='before')
+    @field_validator("is_search", "enabled", "is_ssl", mode="before")
     @classmethod
     def convert_str_to_bool(cls, v, info):
         """将字符串 "0"/"1" 转换为布尔值
@@ -87,25 +81,19 @@ class UpdateDownloader(BaseModel):
     is_ssl: bool = Field(description="是否https，0表示否，1表示是", example=True)
 
     # 新增: 路径映射配置
-    path_mapping: Optional[PathMappingConfig] = Field(
-        None,
-        description="路径映射配置(更新时可选)"
-    )
+    path_mapping: Optional[PathMappingConfig] = Field(None, description="路径映射配置(更新时可选)")
 
     # 新增: 路径映射规则（多行文本格式）
     path_mapping_rules: Optional[str] = Field(
-        None,
-        description="路径映射规则配置（多行文本，格式：源路径{#**#}目标路径）"
+        None, description="路径映射规则配置（多行文本，格式：源路径{#**#}目标路径）"
     )
 
     # 新增: 种子保存目录
     torrent_save_path: Optional[str] = Field(
-        None,
-        description="种子保存目录路径（应用运行环境可直接访问的绝对路径）",
-        max_length=500
+        None, description="种子保存目录路径（应用运行环境可直接访问的绝对路径）", max_length=500
     )
 
-    @field_validator('is_search', 'enabled', 'is_ssl', mode='before')
+    @field_validator("is_search", "enabled", "is_ssl", mode="before")
     @classmethod
     def convert_str_to_bool(cls, v, info):
         """将字符串 "0"/"1" 转换为布尔值

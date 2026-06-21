@@ -9,34 +9,38 @@ from app.yamlConfig import yaml
 
 logger = logging.getLogger(__name__)
 
+
 def generate_sm4_key():
     """生成16字节的随机SM4密钥"""
     if not settings.SM4_KEY:
-        settings.SM4_KEY = base64.b64encode(os.urandom(16)).decode('utf-8')
+        settings.SM4_KEY = base64.b64encode(os.urandom(16)).decode("utf-8")
     return base64.b64decode(settings.SM4_KEY)
+
 
 def sm4_encrypt(plaintext: str) -> str:
     """使用SM4加密文本"""
-    secret_key = yaml.get('security.secret_key')
+    secret_key = yaml.get("security.secret_key")
     if not secret_key:
         raise ValueError("security.secret_key 配置缺失，无法执行加密操作")
-    key = str(secret_key).encode('utf-8')
+    key = str(secret_key).encode("utf-8")
     cipher = AES.new(key, AES.MODE_ECB)
     padded_data = pad(plaintext.encode("UTF-8"), AES.block_size)
     ciphertext = cipher.encrypt(padded_data)
-    return base64.b64encode(ciphertext).decode('utf-8')
+    return base64.b64encode(ciphertext).decode("utf-8")
+
 
 def sm4_decrypt(ciphertext_b64: str) -> str:
     """使用SM4解密文本"""
-    secret_key = yaml.get('security.secret_key')
+    secret_key = yaml.get("security.secret_key")
     if not secret_key:
         raise ValueError("security.secret_key 配置缺失，无法执行解密操作")
-    key = str(secret_key).encode('utf-8')
+    key = str(secret_key).encode("utf-8")
     cipher = AES.new(key, AES.MODE_ECB)
     ciphertext = base64.b64decode(ciphertext_b64)
     decrypted_data = cipher.decrypt(ciphertext)
     unpadded_data = unpad(decrypted_data, AES.block_size)
     return unpadded_data
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """
@@ -62,7 +66,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         logger.error(f"密码验证失败 - 意外错误: {e}")
         return False
 
+
 def get_password_hash(password: str) -> str:
     """获取密码的哈希值（这里是SM4加密）"""
-    e_password = base64.b64encode(password.encode('utf-8'))
-    return sm4_encrypt(e_password.decode('utf-8'))
+    e_password = base64.b64encode(password.encode("utf-8"))
+    return sm4_encrypt(e_password.decode("utf-8"))

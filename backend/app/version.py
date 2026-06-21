@@ -10,7 +10,6 @@
 
 from typing import Any, Dict, Optional
 
-
 # ============================================================
 # 当前版本（发版时只需修改这里）
 # ============================================================
@@ -99,14 +98,14 @@ VERSION_HISTORY: Dict[str, Dict[str, Any]] = {
 
 ---
 感谢您使用 BtDeck！如有问题或建议，请通过导航栏的反馈按钮提交。
-"""
+""",
     },
     "1.0.3": {
         "previous_version": "1.0.2",
         "release_date": "2026-04-21",
         "release_url": "https://github.com/StrainThomas/BtDeck/releases/tag/v1.0.3",
         "summary": "基础功能稳定版",
-        "content": "基础功能稳定版本发布。"
+        "content": "基础功能稳定版本发布。",
     },
     # 后续版本在此处添加...
 }
