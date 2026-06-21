@@ -400,16 +400,22 @@ class TestEdgeCases:
         assert elapsed_time < 1.0
 
     def test_concurrent_requests(self, client, mock_auth, sample_tags):
-        """测试并发请求"""
+        """测试并发请求
+
+        注意：FastAPI TestClient 基于 httpx，并发线程共享同一个 client 实例。
+        results 列表需加锁保护，避免并发 append 导致元素丢失（flaky 根因）。
+        """
         import threading
         results = []
+        lock = threading.Lock()
 
         def make_request():
             response = client.get(
                 "/api/v1/tags/categories",
                 headers={"x-access-token": "valid_token"}
             )
-            results.append(response.json())
+            with lock:
+                results.append(response.json())
 
         # 模拟10个并发请求
         threads = []

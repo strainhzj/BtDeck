@@ -63,7 +63,8 @@ def test_unified_token_expiry():
             elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
                 target_name = node.target.id
             if target_name == "ACCESS_TOKEN_EXPIRE_MINUTES":
-                definitions.append(f"{path.relative_to(BACKEND_ROOT)}:{node.lineno}")
+                # 用 as_posix() 统一为正斜杠，跨平台一致（Windows 返回反斜杠会误判）
+                definitions.append(f"{path.relative_to(BACKEND_ROOT).as_posix()}:{node.lineno}")
 
     assert len(definitions) == 1 and definitions[0].startswith("app/core/config.py:"), (
         "ACCESS_TOKEN_EXPIRE_MINUTES 只能在 app/core/config.py 中定义一次，当前定义:\n"
