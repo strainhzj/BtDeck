@@ -1,5 +1,4 @@
 from fastapi import Depends
-from sqlalchemy import Boolean, text
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.downloader import models
@@ -18,16 +17,15 @@ def getDownloaders(db: Session = Depends(get_db)) -> DatabaseResult[List[models.
         DatabaseResult containing list of downloaders or error information
     """
     try:
-        s = text("select * from bt_downloaders")
-        downloader_list = db.execute(s)
-        downloader_models = []
-        for row in downloader_list.fetchall():
-            downloader_models.append(models.BtDownloaders(*row))
+        # 用 ORM 查询替代原 "SELECT *" 裸查询 + 位置参数解包。
+        # 原实现 BtDownloaders(*row) 在回滚场景（DB 多列）会 TypeError 崩溃；
+        # ORM 显式映射列，对多余列免疫。
+        downloader_list = db.query(models.BtDownloaders).all()
 
         return DatabaseResult.success_result(
-            data=downloader_models,
+            data=downloader_list,
             message="Downloaders retrieved successfully",
-            total_count=len(downloader_models)
+            total_count=len(downloader_list)
         )
     except Exception as e:
         return DatabaseResult.database_error_result(

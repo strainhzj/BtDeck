@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.5-audit",
-  "last_updated": "2026-06-19",
+  "last_updated": "2026-06-21",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -431,6 +431,88 @@
       "status": "pending",
       "plan_file": "PLANS/v1.1.0.md",
       "tasks": []
+    },
+    {
+      "id": "v1.0.5-db-governance",
+      "name": "数据库四轨治理（单轨化重构）",
+      "description": "消除 schema 管理四轨冗余（Alembic + create_all + schema快照 + 原生SQL），统一为单一 Alembic 轨。修复启动报 table users already exists。存量用户无感升级。",
+      "status": "done",
+      "plan_file": "（实施计划见 progress.md v1.0.5 数据库四轨治理章节）",
+      "tasks": [
+        {
+          "id": "db-gov-0",
+          "name": "迁移链完整性测试",
+          "status": "done",
+          "evidence": "tests/core/test_db_migration.py（6 场景全过：空库建表/seed/幂等/环境变量/幽灵救援/索引补建）",
+          "files": [
+            "tests/core/test_db_migration.py"
+          ]
+        },
+        {
+          "id": "db-gov-1",
+          "name": "search_templates 第四轨归位（ORM + 迁移 + B1 清理 + downloader 裸查询修复）",
+          "status": "done",
+          "evidence": "新建 SearchTemplate ORM 模型 + 迁移 95ef8bd8b47a(inspect 守卫) + SearchTemplateModel 改 ORM + 删除 8 处 _ensure_table_exists + downloader.py 裸查询改 ORM。ORM 集成测试 9 passed",
+          "files": [
+            "app/models/search_template.py",
+            "alembic/versions/95ef8bd8b47a_add_search_templates_table.py",
+            "app/services/advanced_search.py",
+            "app/data/default_search_templates.py",
+            "app/core/downloader.py",
+            "tests/services/test_search_template_model_orm.py"
+          ]
+        },
+        {
+          "id": "db-gov-2",
+          "name": "init_db 删 create_all",
+          "status": "done",
+          "evidence": "删除 database.py 的 Base.metadata.create_all，schema 统一由 Alembic 管理。保留 seed 模型 import",
+          "files": [
+            "app/database.py"
+          ]
+        },
+        {
+          "id": "db-gov-3",
+          "name": "统一迁移入口 migrate_database() + 幽灵版本救援 + 迁移前备份 + DB URL 单源",
+          "status": "done",
+          "evidence": "migrate_database() 编程式 alembic API + KNOWN_GHOST_VERSIONS 黑名单救援(9aea25308aff) + _backup_before_migration(checkpoint+cp 保留3份) + config.py DATABASE_PATH 读环境变量 + env.py URL 统一。实测幽灵救援/未知告警/head no-op 全通过",
+          "files": [
+            "app/core/migration.py",
+            "app/core/db_backup.py",
+            "app/core/config.py",
+            "alembic/env.py",
+            ".gitignore"
+          ]
+        },
+        {
+          "id": "db-gov-4",
+          "name": "废弃 schema 快照启动路径 + main.py 收敛",
+          "status": "done",
+          "evidence": "main.py __main__ 删除 ensure_database_initialized/init_db/initialQb 调用，统一由 lifespan 负责。删除 qbittorrent.py 死代码。保留 init_schema_from_production.py 作 frozen 灾备",
+          "files": [
+            "app/main.py",
+            "app/startup/lifecycle.py",
+            "app/core/init_schema_from_production.py",
+            "config/production_complete_schema.sql"
+          ]
+        },
+        {
+          "id": "db-gov-5",
+          "name": "Docker 收敛 + 回滚策略文档 + 迁移标注规范",
+          "status": "done",
+          "evidence": "btdeck_startup.sh 删 shell 层 alembic + rollback-guide.md(三级回滚) + database-migration.md(可回滚标注规范) + lint_btdeck.py 扩展(BTD401 检测破坏性 upgrade) + 老迁移标注 + docker-compose/.env.example 清理",
+          "files": [
+            "btdeck_startup.sh",
+            "docs/operations/rollback-guide.md",
+            "docs/constraints/database-migration.md",
+            "docs/constraints/database-consistency.md",
+            "scripts/lint_btdeck.py",
+            "scripts/diagnose.py",
+            "../docker-compose.yml",
+            "../.env.example"
+          ]
+        }
+      ]
     }
   ]
 }

@@ -86,17 +86,20 @@ async def get_async_db():
 
 def init_db():
     """
-    初始化数据库：
-    1. 检查数据库文件是否存在
-    2. 如果不存在，创建所有表
-    3. 启用WAL模式提升并发性能
-    4. 添加默认管理员账户（如果不存在）
-    5. 设置默认配置（如果不存在）
+    初始化数据库初始数据（seed）。
+
+    四轨治理后职责收敛：
+    1. 启用 WAL 模式提升并发性能
+    2. 添加默认管理员账户（如果不存在）
+    3. 设置默认配置（如果不存在）
+    4. 初始化默认模板/定时任务/关键词/通知
+
+    注意：表结构创建由 Alembic 迁移负责（migrate_database），本函数不再调用
+    Base.metadata.create_all。调用方必须先完成迁移再调用 init_db。
     """
     db_file = settings.DATABASE_PATH
-    db_exists = os.path.exists(db_file)
 
-    # 导入所有模型，确保它们被注册到Base.metadata
+    # 导入 seed 逻辑依赖的模型（这些 import 也确保模型注册到 Base.metadata）
     from app.auth.models import User, LoginLog, Config
     from app.downloader.models import BtDownloaders
     from app.torrents.models import TorrentInfo
@@ -108,8 +111,8 @@ def init_db():
     from app.models.torrent_tags import TorrentTag, TorrentTagRelation
     from app.models.notification import Notification  # 通知中心
 
-    # 创建表（如果不存在）
-    Base.metadata.create_all(bind=engine)
+    # 表结构由 Alembic 迁移管理（migrate_database），不再用 create_all 兜底。
+    # create_all 无法表达 ALTER（字段变更），且会掩盖迁移遗漏（开发能跑生产崩）。
 
     # 启用 WAL 模式（Write-Ahead Logging）
     # WAL模式优势：

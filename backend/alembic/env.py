@@ -1,8 +1,10 @@
 import sys
-import os
-sys.path.append(".")
 
-from pathlib import Path
+# frozen（PyInstaller）模式下 cwd 不可靠，显式注入 _MEIPASS 确保 app 包可被 import；
+# 非 frozen 模式下 prepend_sys_path=.（alembic.ini 配置）已覆盖，这里冗余但无害。
+if getattr(sys, "_MEIPASS", None):
+    sys.path.insert(0, sys._MEIPASS)
+
 from app.database import Base
 
 # 导入所有模型以确保 Alembic autogenerate 能检测到所有表
@@ -18,7 +20,13 @@ from app.models.setting_templates import SettingTemplate
 from app.models.speed_schedule_rules import SpeedScheduleRule
 
 # 种子管理
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import (
+    TorrentInfo,
+    TrackerInfo,
+    TrackerKeywordConfig,
+    TrackerMessageLog,
+    TrackerReannounceConfig,
+)
 from app.models.torrent_tags import TorrentTag, TorrentTagRelation
 from app.models.torrent_deletion_audit_log import TorrentDeletionAuditLog
 from app.models.torrent_file_backup import TorrentFileBackup
@@ -32,6 +40,9 @@ from app.torrents.audit_models import TorrentAuditLog
 # 通知中心
 from app.models.notification import Notification
 
+# 搜索模板（第四轨归位，原由原生 SQL 自建）
+from app.models.search_template import SearchTemplate
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -44,29 +55,27 @@ from alembic import context
 config = context.config
 
 # ========== 动态设置数据库URL ==========
-# 从环境变量或应用配置中读取数据库路径
-# 支持环境变量 DATABASE_PATH 覆盖默认配置
-database_path = os.getenv('DATABASE_PATH')
-
-if database_path:
-    # 如果设置了环境变量，使用环境变量
-    config.set_main_option('sqlalchemy.url', f'sqlite:///{database_path}')
-else:
-    # 否则，尝试使用应用配置
-    try:
-        from app.core.config import settings
-        db_path = settings.DATABASE_PATH
-        config.set_main_option('sqlalchemy.url', f'sqlite:///{db_path}')
-    except Exception:
-        # 如果应用配置加载失败，使用默认值
-        # 默认使用 config/app.db
-        default_db = Path(__file__).parent.parent / 'config' / 'app.db'
-        config.set_main_option('sqlalchemy.url', f'sqlite:///{default_db}')
+# 统一从应用配置读取数据库路径（B3：双源一致性）。
+# config.py 的 DATABASE_PATH property 已读取 DATABASE_PATH 环境变量，
+# migrate_database() 会在调用 upgrade 前显式设此变量，确保应用与迁移操作同一库。
+# 此处不再独立读取环境变量，避免双源漂移。
+try:
+    from app.core.config import settings
+    db_path = settings.DATABASE_PATH
+    config.set_main_option('sqlalchemy.url', f'sqlite:///{db_path}')
+except Exception:
+    # 应用配置加载失败时的兜底（如 alembic 独立命令行调用）
+    default_db = Path(__file__).parent.parent / 'config' / 'app.db'
+    config.set_main_option('sqlalchemy.url', f'sqlite:///{default_db}')
 
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# 守卫：fileConfig 会按 alembic.ini 重新配置 logging，可能覆盖应用配置。
+# 这里仅在 alembic 独立运行时生效；应用内编程式调用后由应用自行管理 logging。
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    try:
+        fileConfig(config.config_file_name)
+    except Exception:
+        pass
 
 # add your model's MetaData object here
 # for 'autogenerate' support

@@ -15,7 +15,8 @@ services:
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-Asia/Shanghai}
-      - DATABASE_URL=sqlite:///data/app.db
+      # 数据库路径由 CONFIG_DIR=/app/config（Dockerfile 设置）决定，落在持久化卷 config/
+      # 不再设无效的 DATABASE_URL（应用不消费此变量）
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./data/backend/data:/app/data

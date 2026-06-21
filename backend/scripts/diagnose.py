@@ -28,6 +28,8 @@ BACKEND_ROOT = SCRIPT_PATH.parents[1]
 REPO_ROOT = BACKEND_ROOT.parent
 APP_ROOT = BACKEND_ROOT / "app"
 REPORT_PATH = BACKEND_ROOT / "docs" / "diagnostic-report.md"
+# 历史幽灵版本（production schema 初始化遗留，不在迁移链）。
+# 仅用于诊断报告展示；治理后新库不会再产生此版本（由 migrate_database 救援）。
 PRODUCTION_SCHEMA_VERSION = "9aea25308aff"
 
 

@@ -11,6 +11,50 @@
 
 ## 进行中功能
 
+### v1.0.5 数据库四轨治理（单轨化重构）
+
+**触发问题**: 启动报 `table users already exists`（schema 快照与已有库冲突）
+**根因**: 数据库 schema 管理存在四轨冗余：
+1. Alembic 迁移链（唯一正道）
+2. `Base.metadata.create_all()`（init_db 无条件兜底，无法 ALTER）
+3. 生产 schema 快照 `ensure_database_initialized`（写入幽灵版本 9aea25308aff）
+4. search_templates 原生 SQL 自建表（独立第四轨）
+
+**治理目标**: 统一为单一 Alembic 轨，存量数十/数百用户升级无感、非破坏性。
+
+**核心决策（经 5 轮子代理审查 + 4 项用户决策）**:
+- DEV 默认不变（保持 True），不加新配置项，Docker 默认行为不变（向下兼容）
+- seed 保留原生 SQL，仅服务层迁 ORM
+- frozen 保留 init_schema_from_production.py 作灾备兜底（仅移除启动调用）
+- 幽灵版本（9aea25308aff）用 KNOWN_GHOST_VERSIONS 黑名单救援；未知版本只告警不降级
+- 迁移前自动备份（checkpoint+cp，保留 3 份）
+- 回滚策略三级（Level1 代码回滚/Level2 备份还原/Level3 alembic downgrade）
+
+**实施（7 阶段，~28 文件）**:
+| 阶段 | 内容 | 验证 |
+|------|------|------|
+| 0 | test_db_migration.py（6 场景） | 6 passed |
+| 1a | search_template.py ORM + env.py 补 import | 导入链正常 |
+| 1b | search_templates 迁移(95ef8bd8b47a) + ORM 改造 + 清理8处_ensure + downloader裸查询修复 | ORM 测试 9 passed |
+| 2 | init_db 删 create_all | — |
+| 3 | migrate_database() + _rescue_or_warn_version(黑名单) + _backup + config.py + env.py URL 统一 + .gitignore | 幽灵救援/未知告警/head no-op 全实测通过 |
+| 4 | main.py 收敛(删 schema 快照/initialQb/init_db) + 幽灵版本文档清理 | py_compile + import 链通过 |
+| 5 | btdeck_startup.sh(删 shell 迁移) + rollback-guide.md + 迁移标注规范 + lint 扩展 + 老迁移标注 | lint 通过 |
+
+**验证结果**:
+- pytest: 1536 passed, 2 failed（均为既有 Windows 路径分隔符 bug + flaky 测试，与本次无关）
+- lint_btdeck.py: 未发现阻塞性问题
+- 手动 A（空库建 25 表+admin+4 模板）/ B（已有库 no-op 不备份）/ C（环境变量路由）/ D（幽灵救援）全通过
+- `./init.sh --ci` 全栈环境验证通过
+
+**关键设计文档**: `backend/docs/operations/rollback-guide.md`（回滚操作指南）
+
+**运维影响**:
+- 存量用户升级（含幽灵版本库）：自动救援 + 备份，无感
+- 后续字段/表变动：alembic 标准流程
+- 版本回滚：纯增量走 Level1（代码回滚），破坏性走 Level2（备份还原）
+
+
 ### v1.0.5-audit 契约审计修复（技术债）— fix/contract-audit 分支
 
 **计划文件**: `PLANS/v1.0.5-audit.md`

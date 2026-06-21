@@ -17,15 +17,45 @@
 
 ## 应用启动流程要求
 
-后端应用启动脚本（`app/main.py`）必须包含自动迁移执行逻辑，确保数据库结构始终是最新状态。
+四轨治理后，迁移由 `migrate_database()` 统一负责（`app/core/migration.py`）：
+- 空库自动建全表（alembic upgrade head）
+- 已有库增量升级
+- 历史"幽灵版本"库（production schema 初始化遗留）自动救援
+- 迁移前自动备份（支持回滚，见 `docs/operations/rollback-guide.md`）
+- DEV 分流：DEV=true 失败告警继续；DEV=false 失败终止
 
-**启动顺序**：
+**启动顺序**（FastAPI lifespan）：
 ```
-1. 初始化配置文件
-2. 执行数据库迁移（alembic upgrade head）
-3. 初始化数据库连接
-4. 启动 API 服务
+1. init_config_file() + yaml.reload()
+2. migrate_database()   ← 统一迁移入口
+3. init_db()            ← 仅 seed 数据（不再 create_all）
+4. init_routers / 启动后台任务
+5. 服务就绪
 ```
+
+## 迁移可回滚性标注规范（强制）
+
+每个迁移文件的 docstring **必须**标注可回滚性，便于回滚决策（见 rollback-guide.md）：
+
+| 标注 | 含义 | 示例 |
+|------|------|------|
+| 【可回滚】 | 纯增量，downgrade 安全 | 加表/加列/加索引 |
+| 【受限回滚】 | downgrade 可能丢数据，需手工处理 | 数据迁移/默认值变更 |
+| 【不可回滚】 | downgrade 会丢用户数据，禁止自动执行 | 删列/改列类型/删表 |
+
+标注示例（迁移文件头部 docstring）：
+```python
+"""add user_avatar column
+
+【可回滚】纯增量加列，downgrade 安全。
+
+Revision ID: xxxx
+...
+"""
+```
+
+**CI 检查**：含 `op.drop_column`/`op.alter_column`/`op.drop_table` 的迁移，
+docstring 必须含【不可回滚】或【受限回滚】字样，否则 CI 失败（lint_btdeck.py 扩展）。
 
 ## 迁移命令
 

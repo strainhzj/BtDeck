@@ -44,6 +44,8 @@ env/
 *.sqlite3
 config/*.db
 config/*.sqlite
+# 迁移前自动备份（migrate_database 生成，含真实数据快照，严禁入库）
+config/*.pre-migration-*
 
 # Config (敏感密钥，仅保留模板)
 config/config.yaml

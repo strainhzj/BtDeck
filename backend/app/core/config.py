@@ -178,6 +178,11 @@ class Settings(BaseSettings):
 
     @property
     def DATABASE_PATH(self):
+        # 环境变量优先（与 alembic/env.py 对齐）：migrate_database() 会显式设此变量，
+        # 确保应用 engine 与 alembic 迁移操作同一个库（B3：双源一致性）。
+        env_path = os.getenv("DATABASE_PATH")
+        if env_path:
+            return Path(env_path)
         return self.CONFIG_PATH / "app.db"
 
     @property

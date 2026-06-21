@@ -21,6 +21,7 @@ SCRIPT_PATH = Path(__file__).resolve()
 BACKEND_ROOT = SCRIPT_PATH.parents[1]
 APP_ROOT = BACKEND_ROOT / "app"
 ENDPOINT_ROOT = APP_ROOT / "api" / "endpoints"
+ALEMBIC_VERSIONS_ROOT = BACKEND_ROOT / "alembic" / "versions"
 
 EXCLUDED_PARTS = {".git", ".venv", "venv", "__pycache__", ".pytest_cache"}
 SQL_KEYWORDS = re.compile(r"\b(SELECT|INSERT|UPDATE|DELETE|DROP|ALTER)\b", re.IGNORECASE)
@@ -291,6 +292,64 @@ def scan_manual_token_parsing() -> list[Issue]:
     return issues
 
 
+def scan_migration_rollback_annotation() -> list[Issue]:
+    """检查 upgrade() 含破坏性操作的迁移是否标注了可回滚性。
+
+    规则：仅检测 upgrade() 函数体内的 op.drop_column/op.alter_column/op.drop_table。
+    downgrade() 里的 drop 是对应 upgrade create 的清理，属正常，不触发。
+    含破坏性 upgrade 的迁移，docstring 必须含【不可回滚】或【受限回滚】，
+    否则报 BTD401。纯增量迁移（create_table/add_column）不强制标注。
+    """
+    issues: list[Issue] = []
+    if not ALEMBIC_VERSIONS_ROOT.exists():
+        return issues
+
+    destructive_pattern = re.compile(
+        r"\bop\.(drop_column|alter_column|drop_table)\b"
+    )
+    rollback_marker_pattern = re.compile(r"【不可回滚】|【受限回滚】")
+
+    for path in ALEMBIC_VERSIONS_ROOT.rglob("*.py"):
+        tree = parse_ast(path)
+        if tree is None:
+            continue
+        upgrade_has_destructive = False
+        for node in ast.walk(tree):
+            # 仅检查 upgrade() 函数体内的破坏性调用
+            if isinstance(node, ast.FunctionDef) and node.name == "upgrade":
+                for child in ast.walk(node):
+                    if (
+                        isinstance(child, ast.Call)
+                        and isinstance(child.func, ast.Attribute)
+                        and isinstance(child.func.value, ast.Name)
+                        and child.func.value.id == "op"
+                        and child.func.attr
+                        in ("drop_column", "alter_column", "drop_table")
+                    ):
+                        upgrade_has_destructive = True
+                        break
+            if upgrade_has_destructive:
+                break
+        if not upgrade_has_destructive:
+            continue
+        if rollback_marker_pattern.search(read_text(path)):
+            continue
+        issues.append(
+            Issue(
+                code="BTD401",
+                path=rel(path),
+                line=1,
+                message=(
+                    "迁移 upgrade() 含破坏性操作（drop_column/alter_column/drop_table），"
+                    "docstring 必须标注【不可回滚】或【受限回滚】（见 "
+                    "docs/operations/rollback-guide.md）"
+                ),
+                allowed=is_allowed("BTD401", path),
+            )
+        )
+    return issues
+
+
 def collect_auth_stats() -> AuthStats:
     depends_count = 0
     manual_count = 0
@@ -319,6 +378,7 @@ def collect_report() -> LintReport:
             continue
         issues.extend(scan_file(path))
     issues.extend(scan_manual_token_parsing())
+    issues.extend(scan_migration_rollback_annotation())
     issues.sort(key=lambda issue: (issue.allowed, issue.path, issue.line, issue.code))
     return LintReport(issues=issues, auth_stats=collect_auth_stats())
 

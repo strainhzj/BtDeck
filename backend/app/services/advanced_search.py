@@ -19,6 +19,7 @@ from app.core.json_parser import safe_json_parse
 
 from app.torrents.models import TorrentInfo, TrackerInfo
 from app.downloader.models import BtDownloaders
+from app.models.search_template import SearchTemplate
 from app.services.torrent_deletion_service import (
     TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 )
@@ -540,7 +541,11 @@ class SearchQueryBuilder:
 
 
 class SearchTemplateModel:
-    """搜索模板数据模型（用于数据库存储）"""
+    """搜索模板数据模型（ORM 实现）
+
+    第四轨归位：原用原生 SQL 自建表 + 操作，现统一用 ORM。
+    表结构由 Alembic 迁移管理（95ef8bd8b47a），本类不再负责建表。
+    """
 
     def __init__(self, db: Session):
         self.db = db
@@ -556,36 +561,28 @@ class SearchTemplateModel:
             创建的模板信息
         """
         try:
-            # 生成模板ID
             template_id = str(uuid.uuid4())
-            created_time = datetime.now()
+            now = datetime.now()
 
-            # 使用原生SQL创建表（如果不存在）
-            self._ensure_table_exists()
-
-            # 插入模板记录
-            insert_sql = text("""
-                INSERT INTO search_templates (id, user_id, name, description, conditions, is_default, is_public, usage_count, created_time, updated_time)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """)
-            self.db.execute(insert_sql, (
-                template_id,
-                template_data['user_id'],
-                template_data['name'],
-                template_data.get('description', ''),
-                json.dumps(template_data['conditions'], ensure_ascii=False),
-                template_data.get('is_default', False),
-                template_data.get('is_public', False),
-                0,
-                created_time,
-                created_time
-            ))
+            template = SearchTemplate(
+                id=template_id,
+                user_id=template_data['user_id'],
+                name=template_data['name'],
+                description=template_data.get('description', ''),
+                conditions=json.dumps(template_data['conditions'], ensure_ascii=False),
+                is_default=1 if template_data.get('is_default', False) else 0,
+                is_public=1 if template_data.get('is_public', False) else 0,
+                usage_count=0,
+                created_time=now,
+                updated_time=now,
+            )
+            self.db.add(template)
             self.db.commit()
 
             logger.info(f"创建搜索模板成功: {template_id}")
             return {
                 'id': template_id,
-                'created_time': created_time,
+                'created_time': now,
                 **template_data
             }
 
@@ -593,6 +590,21 @@ class SearchTemplateModel:
             self.db.rollback()
             logger.error(f"创建搜索模板失败: {str(e)}")
             raise
+
+    def _row_to_dict(self, template: SearchTemplate) -> Dict[str, Any]:
+        """ORM 对象转字典（conditions 反序列化为 dict）。"""
+        return {
+            'id': template.id,
+            'user_id': template.user_id,
+            'name': template.name,
+            'description': template.description,
+            'conditions': safe_json_parse(template.conditions, {}),
+            'is_default': bool(template.is_default),
+            'is_public': bool(template.is_public),
+            'usage_count': template.usage_count,
+            'created_time': template.created_time,
+            'updated_time': template.updated_time
+        }
 
     def get_by_user(self, user_id: str, is_public: bool = False) -> List[Dict[str, Any]]:
         """
@@ -606,44 +618,16 @@ class SearchTemplateModel:
             模板列表
         """
         try:
-            self._ensure_table_exists()
-
+            query = self.db.query(SearchTemplate)
             if is_public:
-                query_sql = text("""
-                    SELECT id, user_id, name, description, conditions, is_default, is_public, usage_count, created_time, updated_time
-                    FROM search_templates
-                    WHERE user_id = ? OR is_public = 1
-                    ORDER BY created_time DESC
-                """)
-                params = [user_id]
+                query = query.filter(
+                    or_(SearchTemplate.user_id == user_id, SearchTemplate.is_public == 1)
+                )
             else:
-                query_sql = text("""
-                    SELECT id, user_id, name, description, conditions, is_default, is_public, usage_count, created_time, updated_time
-                    FROM search_templates
-                    WHERE user_id = ?
-                    ORDER BY created_time DESC
-                """)
-                params = [user_id]
+                query = query.filter(SearchTemplate.user_id == user_id)
+            query = query.order_by(SearchTemplate.created_time.desc())
 
-            result = self.db.execute(query_sql, params)
-            rows = result.fetchall()
-
-            templates = []
-            for row in rows:
-                templates.append({
-                    'id': row[0],
-                    'user_id': row[1],
-                    'name': row[2],
-                    'description': row[3],
-                    'conditions': safe_json_parse(row[4], {}),
-                    'is_default': bool(row[5]),
-                    'is_public': bool(row[6]),
-                    'usage_count': row[7],
-                    'created_time': row[8],
-                    'updated_time': row[9]
-                })
-
-            return templates
+            return [self._row_to_dict(t) for t in query.all()]
 
         except Exception as e:
             logger.error(f"获取搜索模板失败: {str(e)}")
@@ -660,31 +644,10 @@ class SearchTemplateModel:
             模板数据或None
         """
         try:
-            self._ensure_table_exists()
-
-            query_sql = text("""
-                SELECT id, user_id, name, description, conditions, is_default, is_public, usage_count, created_time, updated_time
-                FROM search_templates
-                WHERE id = ?
-            """)
-            result = self.db.execute(query_sql, [template_id])
-            row = result.fetchone()
-
-            if row:
-                return {
-                    'id': row[0],
-                    'user_id': row[1],
-                    'name': row[2],
-                    'description': row[3],
-                    'conditions': safe_json_parse(row[4], {}),
-                    'is_default': bool(row[5]),
-                    'is_public': bool(row[6]),
-                    'usage_count': row[7],
-                    'created_time': row[8],
-                    'updated_time': row[9]
-                }
-
-            return None
+            template = self.db.query(SearchTemplate).filter(
+                SearchTemplate.id == template_id
+            ).first()
+            return self._row_to_dict(template) if template else None
 
         except Exception as e:
             logger.error(f"获取模板失败: {str(e)}")
@@ -696,47 +659,30 @@ class SearchTemplateModel:
 
         Args:
             template_id: 模板ID
-            update_data: 更新数据
+            update_data: 更新数据（支持 name/description/conditions/is_public）
 
         Returns:
             是否成功
         """
         try:
-            self._ensure_table_exists()
-
-            update_fields = []
-            params = []
-
-            if 'name' in update_data:
-                update_fields.append('name = ?')
-                params.append(update_data['name'])
-
-            if 'description' in update_data:
-                update_fields.append('description = ?')
-                params.append(update_data['description'])
-
-            if 'conditions' in update_data:
-                update_fields.append('conditions = ?')
-                params.append(json.dumps(update_data['conditions'], ensure_ascii=False))
-
-            if 'is_public' in update_data:
-                update_fields.append('is_public = ?')
-                params.append(update_data['is_public'])
-
-            if not update_fields:
+            template = self.db.query(SearchTemplate).filter(
+                SearchTemplate.id == template_id
+            ).first()
+            if not template:
                 return False
 
-            update_fields.append('updated_time = ?')
-            params.append(datetime.now())
-            params.append(template_id)
+            if 'name' in update_data:
+                template.name = update_data['name']
+            if 'description' in update_data:
+                template.description = update_data['description']
+            if 'conditions' in update_data:
+                template.conditions = json.dumps(
+                    update_data['conditions'], ensure_ascii=False
+                )
+            if 'is_public' in update_data:
+                template.is_public = 1 if update_data['is_public'] else 0
 
-            update_sql = text(f"""
-                UPDATE search_templates
-                SET {', '.join(update_fields)}
-                WHERE id = ?
-            """)
-
-            self.db.execute(update_sql, params)
+            template.updated_time = datetime.now()
             self.db.commit()
 
             logger.info(f"更新搜索模板成功: {template_id}")
@@ -758,14 +704,15 @@ class SearchTemplateModel:
             是否成功
         """
         try:
-            self._ensure_table_exists()
-
-            delete_sql = text("DELETE FROM search_templates WHERE id = ?")
-            self.db.execute(delete_sql, [template_id])
+            deleted = self.db.query(SearchTemplate).filter(
+                SearchTemplate.id == template_id
+            ).delete(synchronize_session=False)
             self.db.commit()
 
-            logger.info(f"删除搜索模板成功: {template_id}")
-            return True
+            if deleted:
+                logger.info(f"删除搜索模板成功: {template_id}")
+                return True
+            return False
 
         except Exception as e:
             self.db.rollback()
@@ -783,56 +730,19 @@ class SearchTemplateModel:
             是否成功
         """
         try:
-            self._ensure_table_exists()
-
-            update_sql = text("""
-                UPDATE search_templates
-                SET usage_count = usage_count + 1
-                WHERE id = ?
-            """)
-            self.db.execute(update_sql, [template_id])
+            from sqlalchemy import update
+            self.db.execute(
+                update(SearchTemplate)
+                .where(SearchTemplate.id == template_id)
+                .values(usage_count=SearchTemplate.usage_count + 1)
+            )
             self.db.commit()
-
             return True
 
         except Exception as e:
             self.db.rollback()
             logger.error(f"增加模板使用次数失败: {str(e)}")
             return False
-
-    def _ensure_table_exists(self):
-        """确保search_templates表存在"""
-        check_sql = text("""
-            SELECT name FROM sqlite_master
-            WHERE type='table' AND name='search_templates'
-        """)
-        result = self.db.execute(check_sql).fetchone()
-
-        if not result:
-            create_sql = text("""
-                CREATE TABLE search_templates (
-                    id VARCHAR(36) PRIMARY KEY,
-                    user_id VARCHAR(36) NOT NULL,
-                    name VARCHAR(100) NOT NULL,
-                    description VARCHAR(500),
-                    conditions TEXT NOT NULL,
-                    is_default BOOLEAN DEFAULT 0,
-                    is_public BOOLEAN DEFAULT 0,
-                    usage_count INTEGER DEFAULT 0,
-                    created_time DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_time DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            self.db.execute(create_sql)
-
-            # 创建索引（分开执行，SQLite一次只能执行一条语句）
-            index_sql_1 = text("CREATE INDEX idx_search_templates_user_id ON search_templates(user_id)")
-            index_sql_2 = text("CREATE INDEX idx_search_templates_is_public ON search_templates(is_public)")
-            self.db.execute(index_sql_1)
-            self.db.execute(index_sql_2)
-            self.db.commit()
-
-            logger.info("创建search_templates表成功")
 
 
 class AdvancedSearchService:
@@ -1393,10 +1303,9 @@ class AdvancedSearchService:
             stats['total_torrents'] = total_torrents
             stats['total_size'] = total_size
 
-            # 模板统计
-            self.template_model._ensure_table_exists()
-            template_count = self.db.execute(
-                text("SELECT COUNT(*) FROM search_templates")
+            # 模板统计（表由 Alembic 迁移管理，无需 _ensure_table_exists）
+            template_count = self.db.query(
+                func.count(SearchTemplate.id)
             ).scalar()
 
             stats['total_templates'] = template_count or 0

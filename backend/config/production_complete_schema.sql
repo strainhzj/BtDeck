@@ -1,8 +1,23 @@
+-- =========================================================================
+-- 【已下线·frozen 灾备兜底材料】生产数据库 Schema 快照
+--
+-- 四轨治理后，schema 统一由 Alembic 迁移管理（alembic/versions/）。
+-- 本文件已从启动路径移除（main.py 不再调用 ensure_database_initialized）。
+--
+-- 保留此文件仅作 frozen 模式手动灾备：当 PyInstaller 打包版无法走 alembic
+-- 迁移链时，可手动 sqlite3 执行本文件建库。
+--
+-- ⚠️ 注意：
+--   1. 本快照不含 search_templates 的索引（快照生成时遗漏），完整索引以 Alembic 为准
+--   2. 用本文件建的库 alembic_version 为空，需手动 INSERT 或由 migrate_database 救援
+--   3. schema 来源以 Alembic 迁移链为唯一权威，本快照可能滞后
+-- =========================================================================
+
 CREATE TABLE users (
-	id INTEGER NOT NULL, 
-	username VARCHAR, 
-	password VARCHAR, 
-	two_factor_secret VARCHAR, 
+	id INTEGER NOT NULL,
+	username VARCHAR,
+	password VARCHAR,
+	two_factor_secret VARCHAR,
 	two_factor_flag VARCHAR, 
 	is_active BOOLEAN, 
 	created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 

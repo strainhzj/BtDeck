@@ -24,12 +24,9 @@ import uvicorn as uvicorn
 from uvicorn import Config
 
 from app.core.config import settings
-from app.core.migration import run_alembic_migrations
-from app.core.init_schema_from_production import ensure_database_initialized, init_database_from_production_schema
+from app.core.migration import migrate_database
 from app.factory import app
-from app.database import init_db
 from app.database import init_config_file
-from app.downloader.qbittorrent import initialQb
 
 # 配置日志
 logger = logging.getLogger(__name__)
@@ -87,32 +84,14 @@ if __name__ == '__main__':
     from app.yamlConfig import yaml
     yaml.reload()
 
-    # === 数据库自动初始化逻辑 ===
-    # 如果数据库为空（首次部署或数据库被删除），从生产schema自动初始化
-    # 并自动标记为最新版本，跳过有问题的迁移链
-    # 复用 settings.DATABASE_PATH，确保与 database.py 的 SQLALCHEMY_DATABASE_URL 一致
-    # （frozen 模式下 CONFIG_PATH 已指向可执行文件同级目录，数据可持久化）
+    # === 数据库迁移统一入口 ===
+    # 四轨治理后，迁移由 migrate_database() 统一负责（空库建表/已有库升级/幽灵版本救援）。
+    # 注意：Server.run() 启动 uvicorn 时会触发 FastAPI lifespan，
+    # lifespan 内也会调用 migrate_database() + init_db()。两者均幂等，双执行安全。
+    # 但 frozen/直接运行场景下，先在此迁移可更早暴露错误。
     db_path = str(settings.DATABASE_PATH)
     logger.info(f"Database path: {db_path}")
+    migrate_database()
 
-    # 检查数据库是否需要从生产schema初始化
-    if ensure_database_initialized(db_path):
-        # 数据库刚从生产schema初始化，已经标记为最新版本
-        # 跳过Alembic迁移，避免有问题的迁移链
-        logger.info("Database initialized from production schema, skipping Alembic migration chain")
-    else:
-        # 数据库已存在，执行常规的Alembic迁移
-        logger.info("Database already exists, running Alembic migration chain")
-        run_alembic_migrations()
-
-    # 初始化数据库
-    init_db()
-
-    initialQb()
-
-    # # 更新数据库
-    # update_db()
-    # 注册启动事件
-
-    # 启动API服务
+    # 启动API服务（lifespan 内完成 init_db / 后台任务初始化）
     Server.run()

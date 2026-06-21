@@ -1,9 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-从生产数据库 Schema 自动初始化数据库
+【已下线·frozen 灾备兜底材料】从生产数据库 Schema 自动初始化数据库
 
-确保在任何环境首次启动时，都能得到与生产环境完全一致的数据库结构
+⚠️ 四轨治理后，本模块已从启动路径移除（main.py 不再调用 ensure_database_initialized）。
+   数据库 schema 统一由 Alembic 迁移管理（见 app/core/migration.py::migrate_database）。
+
+保留此文件 + config/production_complete_schema.sql 仅作 frozen 模式手动灾备：
+   当 PyInstaller 打包版无法走 alembic 迁移链时，可手动执行本模块建库。
+
+注意：本模块写入的 alembic_version 是历史幽灵版本 9aea25308aff（不在迁移链），
+      后续正常启动时 migrate_database 的 _rescue_or_warn_version 会自动救援。
 """
 
 import os

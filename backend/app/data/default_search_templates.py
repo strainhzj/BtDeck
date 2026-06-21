@@ -108,7 +108,8 @@ def init_default_search_templates(db_session: Session) -> int:
     初始化系统预设搜索模板到 search_templates 表。
 
     幂等：按 name 去重，已存在的跳过。
-    复用 SearchTemplateModel._ensure_table_exists 的建表逻辑（确保表存在）。
+    注意：search_templates 表由 Alembic 迁移（95ef8bd8b47a）统一管理，
+    本函数不再负责建表（原 _ensure_table_exists 已删除）。
 
     Args:
         db_session: SQLAlchemy 同步会话
@@ -116,14 +117,8 @@ def init_default_search_templates(db_session: Session) -> int:
     Returns:
         int: 本次新建的模板数量
     """
-    from app.services.advanced_search import SearchTemplateModel
-
     created_count = 0
     try:
-        # 复用既有建表逻辑（避免重复实现 CREATE TABLE）
-        template_model = SearchTemplateModel(db_session)
-        template_model._ensure_table_exists()
-
         # 查询已存在的预设模板名（is_default=1 视为系统预设，幂等依据）
         existing_sql = text(
             "SELECT name FROM search_templates WHERE is_default = 1"

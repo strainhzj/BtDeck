@@ -21,14 +21,14 @@
 
 ```bash
 # 检查版本一致性
-alembic current   # 应输出: 9aea25308aff (head)
-alembic heads     # 确认最新版本
+alembic current   # 应与 alembic heads 输出一致
+alembic heads     # 确认最新版本（治理后单 head）
 
 # 版本不一致时立即升级
 alembic upgrade head
 
 # 验证表结构完整性
-sqlite3 config/app.db ".tables" | wc -l  # 应为 27 个表
+sqlite3 config/app.db ".tables" | wc -l  # 应为 25 个表（含 alembic_version）
 ```
 
 ## 备份恢复方案（迁移失败时）
@@ -36,8 +36,11 @@ sqlite3 config/app.db ".tables" | wc -l  # 应为 27 个表
 ```bash
 cd config
 mv app.db app.db.failed_$(date +%Y%m%d_%H%M%S)
-cp app_backup_YYYYMMDD.db app.db
+cp app.db.pre-migration-YYYYMMDD-HHMMSS app.db  # migrate_database 自动生成的备份
 ```
+
+注意：migrate_database() 在每次迁移前自动生成 `app.db.pre-migration-<时间戳>` 备份
+（保留最近 3 份）。详见 `docs/operations/rollback-guide.md`。
 
 ## 预防措施
 
@@ -52,7 +55,7 @@ ALLOW_MIGRATION_FAILURE=0          # 生产环境必须终止启动
 
 ```bash
 #!/bin/bash
-cd btpManager
+cd backend
 python scripts/ensure_database_consistency.py
 ```
 

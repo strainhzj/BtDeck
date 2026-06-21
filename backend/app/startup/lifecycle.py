@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.startup.routers_initializer import init_routers
+from app.core.config import settings
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
 from app.tasks.scheduler.dashboard_stats import DashboardStatsJob
@@ -202,13 +203,20 @@ async def lifespan(app: FastAPI):
         traceback.print_exc()
 
     # 1. 执行数据库迁移（在所有其他初始化之前）
+    # 四轨治理后统一入口：migrate_database()（编程式 alembic，含幽灵版本救援/备份）
+    # DEV 分流：DEV=True 失败告警继续（与历史行为一致，保证存量无感）；
+    #          DEV=False 失败抛 RuntimeError 终止（生产数据一致性）。
     print("=== 执行数据库迁移 ===")
-    from app.core.migration import run_alembic_migrations
-    migration_success = run_alembic_migrations()
-    if migration_success:
+    from app.core.migration import migrate_database
+    try:
+        migrate_database()
         print("[OK] 数据库迁移完成")
-    else:
-        print("[WARN] 数据库迁移失败，继续启动（开发模式）")
+    except Exception as e:
+        print(f"[ERROR] 数据库迁移失败: {e}")
+        import traceback
+        traceback.print_exc()
+        if not settings.DEV:
+            raise  # 生产环境终止启动
 
     # 1.5 初始化数据库初始数据（admin用户、配置、定时任务等）
     # 修复：uvicorn启动时不会执行main.py的if __name__块，所以需要在lifespan中调用

@@ -49,22 +49,17 @@ ensure_log_dir() {
     fi
 }
 
-# 初始化数据库
+# 初始化数据库（配置文件由 lifespan 统一处理，迁移也由 lifespan 的 migrate_database 负责）
 init_database() {
-    log_info "初始化数据库..."
+    log_info "数据库初始化（迁移将由 lifespan 统一执行）..."
     cd "$PROJECT_DIR"
 
-    # 初始化配置文件
-    python -c "from app.database import init_config_file; init_config_file();" 2>/dev/null || true
+    # 四轨治理后，shell 层不再执行 alembic upgrade head：
+    # 迁移统一由 FastAPI lifespan 的 migrate_database() 负责（编程式 alembic，
+    # 含幽灵版本救援/迁移前备份）。shell 层重复迁移会与 lifespan 冲突。
+    # 配置文件初始化也由 lifespan 的 init_config_file() 负责（幂等）。
 
-    # 执行数据库迁移
-    log_info "执行数据库迁移..."
-    alembic upgrade head || {
-        log_error "数据库迁移失败！"
-        exit 1
-    }
-
-    log_info "数据库初始化完成"
+    log_info "数据库初始化准备完成"
 }
 
 # 启动服务
