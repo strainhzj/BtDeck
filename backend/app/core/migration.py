@@ -99,6 +99,15 @@ def _rescue_or_warn_version(cfg: Config, db_path: str, current: Optional[str], h
 
     if current in KNOWN_GHOST_VERSIONS:
         target = KNOWN_GHOST_VERSIONS[current]
+        # 防御：黑名单映射的 target 必须在迁移链中，否则 command.stamp 会抛 CommandError
+        sd = ScriptDirectory.from_config(cfg)
+        valid_revs = {r.revision for r in sd.walk_revisions()}
+        if target not in valid_revs:
+            logger.error(
+                f"幽灵版本 {current} 的映射目标 {target} 不在迁移链中（配置错误），"
+                f"拒绝 stamp。请检查 KNOWN_GHOST_VERSIONS 配置。"
+            )
+            return
         logger.warning(
             f"检测到历史幽灵版本 {current}（production schema 初始化遗留），"
             f"自动 stamp 到对应真实版本 {target}（schema 已匹配，仅应用后续增量迁移）。"
@@ -152,6 +161,13 @@ def migrate_database() -> None:
         heads = sd.get_heads()
         if not heads:
             raise RuntimeError("迁移链无 head revision，请检查 alembic/versions/")
+        if len(heads) > 1:
+            # 多 head（迁移链分叉）是危险状态，upgrade head 会报错。
+            # 显式抛错而非隐式取 heads[0]，避免指向错误目标。
+            raise RuntimeError(
+                f"迁移链有 {len(heads)} 个 head（分叉）：{heads}。"
+                f"请先合并分叉（alembic merge）再启动。"
+            )
         head = heads[0]
 
         # 1. 读当前版本（在备份和救援前）
@@ -176,22 +192,5 @@ def migrate_database() -> None:
         if not settings.DEV:
             # 生产环境必须终止（保证数据一致性）
             raise RuntimeError(f"Database migration failed in production: {e}")
-        # 开发模式：告警后继续（与历史 run_alembic_migrations 行为一致）
+        # 开发模式：告警后继续（保留与历史行为一致的存量用户体验）
         logger.warning(f"开发模式：迁移失败但继续启动（{e}）")
-
-
-def run_alembic_migrations() -> bool:
-    """
-    【已废弃】向后兼容包装。
-
-    历史接口，调用 migrate_database()。返回 bool 仅为兼容旧调用方。
-    新代码应直接调用 migrate_database()。
-
-    Returns:
-        bool: 迁移是否成功（DEV 模式失败也返回 False，不抛异常）
-    """
-    try:
-        migrate_database()
-        return True
-    except Exception:
-        return False

@@ -49,7 +49,8 @@ def backup_before_migration(db_path: str) -> Optional[str]:
         finally:
             conn.close()
 
-        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        # 时间戳含毫秒（3 位），避免同秒多次备份互相覆盖
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S") + f"-{datetime.now().microsecond // 1000:03d}"
         backup_path = f"{db_path}.pre-migration-{ts}"
         shutil.copy2(db_path, backup_path)
 

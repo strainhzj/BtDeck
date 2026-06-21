@@ -562,7 +562,7 @@ class SearchTemplateModel:
         """
         try:
             template_id = str(uuid.uuid4())
-            now = datetime.now()
+            now = datetime.utcnow()
 
             template = SearchTemplate(
                 id=template_id,
@@ -682,7 +682,7 @@ class SearchTemplateModel:
             if 'is_public' in update_data:
                 template.is_public = 1 if update_data['is_public'] else 0
 
-            template.updated_time = datetime.now()
+            template.updated_time = datetime.utcnow()
             self.db.commit()
 
             logger.info(f"更新搜索模板成功: {template_id}")
@@ -727,17 +727,18 @@ class SearchTemplateModel:
             template_id: 模板ID
 
         Returns:
-            是否成功
+            是否成功（模板不存在时返回 False）
         """
         try:
             from sqlalchemy import update
-            self.db.execute(
+            result = self.db.execute(
                 update(SearchTemplate)
                 .where(SearchTemplate.id == template_id)
                 .values(usage_count=SearchTemplate.usage_count + 1)
             )
             self.db.commit()
-            return True
+            # SQLAlchemy update 对不存在的行不抛异常，需检查 rowcount
+            return (result.rowcount or 0) > 0
 
         except Exception as e:
             self.db.rollback()

@@ -26,6 +26,18 @@ from alembic.script import ScriptDirectory
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 
+
+@pytest.fixture(autouse=True)
+def _clean_database_path_env():
+    """自动清理 DATABASE_PATH 环境变量，防止跨测试污染（测试隔离）。"""
+    import os
+    old = os.environ.pop("DATABASE_PATH", None)
+    yield
+    if old is not None:
+        os.environ["DATABASE_PATH"] = old
+    else:
+        os.environ.pop("DATABASE_PATH", None)
+
 # 已知的迁移链 revision（与 alembic/versions/ 保持一致，变更时同步更新）
 # 链：e2a02abcf912(base,21表) → d0e58437af70(+1) → a0ada9774936(+1) → 95ef8bd8b47a(+search_templates)
 EXPECTED_HEAD = "95ef8bd8b47a"

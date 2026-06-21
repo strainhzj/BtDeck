@@ -37,6 +37,17 @@ GHOST_VERSION = "9aea25308aff"
 SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 
 
+@pytest.fixture(autouse=True)
+def _clean_database_path_env():
+    """自动清理 DATABASE_PATH 环境变量，防止跨测试污染（测试隔离）。"""
+    old = os.environ.pop("DATABASE_PATH", None)
+    yield
+    if old is not None:
+        os.environ["DATABASE_PATH"] = old
+    else:
+        os.environ.pop("DATABASE_PATH", None)
+
+
 def _get_heads() -> list:
     cfg = Config(str(ALEMBIC_INI))
     cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))

@@ -131,7 +131,7 @@ def init_db():
 
     # 迁移系统已升级为 Alembic
     # 旧迁移系统（app.migrations.database_migrator）已弃用，所有迁移由 Alembic 管理
-    # Alembic 迁移在 main.py 的 run_alembic_migrations() 中自动执行
+    # Alembic 迁移在 migrate_database() 中自动执行（由 lifespan 调用）
     # 历史迁移记录：
     # - field_types_migration_v1 (字段类型)
     # - delete_logic_migration_v1 (删除逻辑)
