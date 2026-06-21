@@ -6,7 +6,8 @@ import {
   isLoginRequest,
   buildBusinessError,
   buildNetworkError,
-  buildHttpError
+  buildHttpError,
+  pickErrorPayload
 } from '@/utils/error-normalize'
 
 const service = axios.create({
@@ -130,7 +131,7 @@ service.interceptors.response.use(
     // HTTP 错误：服务器返回了 4xx/5xx
     const httpStatus = error.response.status
     const apiError = buildHttpError(
-      error.response.data?.detail,
+      pickErrorPayload(error.response.data),
       httpStatus,
       error.response,
       error.request

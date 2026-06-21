@@ -12,7 +12,8 @@ import {
   isLoginRequest,
   buildBusinessError,
   buildNetworkError,
-  buildHttpError
+  buildHttpError,
+  pickErrorPayload
 } from '@/utils/error-normalize'
 import { ApiError } from '@/types/api'
 
@@ -176,6 +177,86 @@ describe('buildHttpError', () => {
     const err = buildHttpError([{ msg: 'age must be int' }], 422)
     expect(err.code).toBe('422')
     expect(err.message).toBe('age must be int')
+  })
+})
+
+describe('pickErrorPayload', () => {
+  it('平铺 envelope body（P0-3 归一化形态）→ 返回整个 body', () => {
+    // P0-3 异常处理器把 HTTPException 归一化为 {status,msg,code,data}，
+    // body 层没有 detail 包装。pickErrorPayload 必须识别并整体返回。
+    const body = { status: 'error', msg: 'token验证失败', code: '401', data: null }
+    expect(pickErrorPayload(body)).toBe(body)
+  })
+
+  it('带 message 字段的 envelope（FastAPI 默认形态）→ 返回整个 body', () => {
+    const body = { detail: 'Not found', message: '资源不存在' }
+    expect(pickErrorPayload(body)).toBe(body)
+  })
+
+  it('非 envelope dict（无 code/msg/message）→ 回退读 body.detail', () => {
+    // 兼容未走全局处理器的旧式响应：{ detail: "..." }
+    expect(pickErrorPayload({ detail: '纯字符串 detail' })).toBe('纯字符串 detail')
+  })
+
+  it('非 envelope dict 且无 detail → 返回 undefined', () => {
+    expect(pickErrorPayload({ foo: 'bar' })).toBeUndefined()
+  })
+
+  it('422 detail 数组被包在 data.errors（P0-3 形态）→ 整体当 envelope', () => {
+    // P0-3 把 422 数组包成 {status,msg:'field required',code:'422',data:{errors:[...]}}
+    const body = {
+      status: 'error',
+      msg: 'field required',
+      code: '422',
+      data: { errors: [{ loc: ['body', 'x'], msg: 'field required' }] }
+    }
+    expect(pickErrorPayload(body)).toBe(body)
+  })
+
+  it('非对象入参（字符串/null）→ 原样返回', () => {
+    expect(pickErrorPayload('裸字符串')).toBe('裸字符串')
+    expect(pickErrorPayload(null)).toBeNull()
+    expect(pickErrorPayload(undefined)).toBeUndefined()
+  })
+})
+
+describe('Bug-1 集成：P0-3 平铺 401 → 前端 ApiError 保真', () => {
+  // 这是 request.ts 拦截器的真实链路：pickErrorPayload(error.response.data) → buildHttpError。
+  // 早期 request.ts 只读 error.response.data?.detail，但 P0-3 后 401 body 平铺无 detail，
+  // 导致后端真实消息降级为通用「请求错误」。此测试锁死修复后的契约。
+  it('401 平铺 envelope body → ApiError.code/message 保真', () => {
+    const body = { status: 'error', msg: 'token验证失败', code: '401', data: null }
+    const apiError = buildHttpError(
+      pickErrorPayload(body),
+      401,
+      { status: 401, data: body } as any
+    )
+    expect(apiError.code).toBe('401')
+    expect(apiError.httpStatus).toBe(401)
+    expect(apiError.message).toBe('token验证失败') // 关键：不再降级为「请求错误」
+  })
+
+  it('401 旧式 {detail: string} → 仍能解包（向后兼容）', () => {
+    const body = { detail: 'Invalid access token' }
+    const apiError = buildHttpError(
+      pickErrorPayload(body),
+      401,
+      { status: 401, data: body } as any
+    )
+    expect(apiError.code).toBe('401')
+    expect(apiError.message).toBe('Invalid access token')
+  })
+
+  it('500 平铺 envelope body → ApiError 保真', () => {
+    const body = {
+      status: 'error',
+      msg: '服务器内部错误',
+      code: '500',
+      data: null
+    }
+    const apiError = buildHttpError(pickErrorPayload(body), 500)
+    expect(apiError.code).toBe('500')
+    expect(apiError.message).toBe('服务器内部错误')
   })
 })
 

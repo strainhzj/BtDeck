@@ -71,6 +71,30 @@ export function isLoginRequest(config: unknown): boolean {
 }
 
 /**
+ * 从 HTTP 错误响应体中提取交给 extractFromDetail 的载荷。
+ *
+ * 后端 P0-3 全局异常处理器（app/exception_handlers.py）把 HTTPException 归一化
+ * 为「平铺」的 CommonResponse body：
+ *   { status, msg, code, data }          ← 没有 detail 包装
+ * 因此优先把整个 body 当作 envelope 交给 extractFromDetail；只有当 body 本身
+ * 不像 envelope（无 code/msg 字段）时，才回退读取旧式 body.detail（兼容任何
+ * 未走全局处理器的直出错误，如中间件层 4xx）。
+ *
+ * 这修复了 request.ts 早期只读 body.detail 的 bug：P0-3 后 401 body 平铺无 detail，
+ * 导致后端真实消息（如「token验证失败」）被降级为通用「请求错误」。
+ */
+export function pickErrorPayload(data: unknown): unknown {
+  if (data && typeof data === 'object') {
+    const d = data as Record<string, unknown>
+    if ('code' in d || 'msg' in d || 'message' in d) {
+      return d
+    }
+    return d.detail
+  }
+  return data
+}
+
+/**
  * 构造业务码错误（HTTP 200 但 code 非 2xx 成功）的 ApiError。
  */
 export function buildBusinessError(
