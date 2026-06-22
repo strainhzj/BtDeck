@@ -68,7 +68,6 @@ ALLOWLIST: dict[str, set[str]] = {
         "app/tasks/enhanced_python_executor.py",
     },
     "BTD305": {
-        "app/api/_legacy_router_unused.py",
         "app/api/endpoints/downloader.py",
         "app/api/endpoints/downloader_settings.py",
         "app/services/advanced_search.py",

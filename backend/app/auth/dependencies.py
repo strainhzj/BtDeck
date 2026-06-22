@@ -5,7 +5,7 @@ from typing import Optional
 
 from fastapi import Depends, HTTPException, status, Cookie, Request
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
+import jwt
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -127,7 +127,7 @@ def get_current_user(
         if not exp or datetime.fromtimestamp(exp) < datetime.utcnow():
             raise credentials_exception
 
-    except JWTError:
+    except jwt.PyJWTError:
         raise credentials_exception
 
     user = db.query(User).filter(User.username == username).first()

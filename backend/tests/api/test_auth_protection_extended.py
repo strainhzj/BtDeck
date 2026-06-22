@@ -19,6 +19,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.database import get_db
+
 
 # ==================== 共享工具函数 ====================
 
@@ -773,3 +775,91 @@ class TestTokenTamperingBypass:
             headers={"x-access-token": f"Bearer {token}"},
         )
         assert _is_auth_rejected(response)
+
+
+# ============================================================
+# get_current_user 成功路径回归守护（Depends 认证模式）
+# ------------------------------------------------------------
+# 现有 Depends(get_current_user) 端点测试只覆盖拒绝路径（no/invalid/expired token）。
+# 本组测试补成功路径，验证换库/重构后 jwt.decode → payload 解析 → 用户查询链路无回归。
+#
+# 目标端点 operation-types 业务逻辑极简（纯内存枚举遍历），无 service 层副作用，
+# 避免 mock 不充分导致的“非 401 但 500”假阳性。
+#
+# 关键技术点（调试血泪）：
+# 1. get_current_user 用 oauth2_scheme（Authorization: Bearer），不读 x-access-token。
+# 2. patch('app.database.get_db') / patch('app.auth.dependencies.get_db') 对 FastAPI
+#    已绑定的 Depends(get_db) 无效——路由注册时 dependency 函数对象已被固化。
+#    必须用 app.dependency_overrides[get_db] 才能覆盖。
+# 3. 本测试不覆盖 get_current_user 本身（否则等于没测换库），只覆盖 get_db，
+#    让真实 get_current_user 执行 jwt.decode（PyJWT）+ except jwt.PyJWTError。
+# 4. 用独立 app/client，不复用 module-scoped fixture（避免 dependency_overrides 串扰）。
+# ============================================================
+
+
+class TestOperationTypesGetCurrentUserSuccess:
+    """audit_logs.py operation-types - get_current_user 成功路径守护
+
+    验证换库后真实 get_current_user 执行链路（PyJWT decode + PyJWTError 异常映射）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        """独立 app/client + dependency_overrides，隔离 module-scoped fixture。"""
+        app = _create_test_app()
+        # 只覆盖 get_db（返回 mock），让真实 get_current_user 完整执行
+        mock_db = MagicMock()
+        app.dependency_overrides[get_db] = lambda: mock_db
+        # mock app.state.store（operation-types 不用，但 app 初始化可能检查）
+        self._store_patch = patch.object(app.state, "store", create=True)
+        self._store_patch.start()
+        self.client = TestClient(app, raise_server_exceptions=False)
+        yield
+        self._store_patch.stop()
+
+    def test_no_token_returns_401(self):
+        """拒绝路径基线：无 token 必须 401。"""
+        response = self.client.get("/api/v1/audit-logs/operation-types")
+        assert response.status_code == 401
+
+    def test_valid_token_returns_success(self):
+        """
+        成功路径：有效 Bearer token + mock 用户存在 → 返回 code=200 且 total>0。
+
+        真实 get_current_user 执行链路：
+          jwt.decode(token) → payload['sub']='test_user' → exp 校验通过
+          → db.query(User).filter().first() 返回 MagicMock（非 None）→ 认证通过
+        验证换库后 PyJWT decode + except jwt.PyJWTError 映射正确。
+
+        严格断言（非宽松 _is_auth_passed）防假阳性：
+        - 必须是真实业务成功，而非 try/except 吞异常后的 500 误判通过。
+        """
+        token = _create_valid_token()
+        # get_current_user 的 jwt.decode 用 app.auth.dependencies.settings
+        # （from app.core.config import settings），与 utils.settings 是同一对象的
+        # 不同引用路径；必须额外 patch 此处，否则 decode 用真实 SECRET_KEY 签名不匹配。
+        mock_s = _mock_settings()
+        with patch("app.auth.dependencies.settings", mock_s):
+            response = self.client.get(
+                "/api/v1/audit-logs/operation-types",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        assert body.get("code") == "200"
+        assert body.get("data", {}).get("total", 0) > 0
+
+    def test_invalid_token_returns_401(self):
+        """
+        拒绝路径：无效 Bearer token 必须 401。
+
+        验证 jwt.decode 抛 DecodeError（PyJWTError 子类）被 except jwt.PyJWTError
+        正确捕获 → raise credentials_exception → 401。
+        """
+        mock_s = _mock_settings()
+        with patch("app.auth.dependencies.settings", mock_s):
+            response = self.client.get(
+                "/api/v1/audit-logs/operation-types",
+                headers={"Authorization": "Bearer not-a-real-token"},
+            )
+        assert response.status_code == 401

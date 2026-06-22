@@ -71,7 +71,6 @@ repos:
         exclude: |
           (?x)^(
               app/migrations/.*|
-              app/api/_legacy_router_unused\.py|
               tests/.*
           )$
 

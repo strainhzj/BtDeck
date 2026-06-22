@@ -6,7 +6,6 @@
 - `backend/app/core/config.py`
 - `backend/app/auth/dependencies.py`
 - `backend/app/api/endpoints/cron_tasks.py`
-- `backend/app/api/_legacy_router_unused.py`
 - `backend/app/startup/routers_initializer.py`
 - `backend/app/factory.py`
 
@@ -29,9 +28,8 @@
 ## 任务 3：旧路由文件清理
 
 - 已确认生产代码不挂载旧 `app.api.router`，仅剩初始化器中的归档提示注释。
-- `backend/app/api/router.py` 已重命名为 `backend/app/api/_legacy_router_unused.py`。
-- 归档文件顶部新增警告注释，说明不得在生产入口引用。
-- `backend/app/startup/routers_initializer.py` 已删除旧挂载注释，改为明确提示旧路由已归档。
+- `backend/app/api/router.py` 曾重命名为 `backend/app/api/_legacy_router_unused.py`，该归档文件已在后续清理中删除（P2-3）。
+- `backend/app/startup/routers_initializer.py` 已删除旧挂载注释，改为明确提示旧路由归档已删除。
 
 ## 任务 4：定时任务安全加固
 

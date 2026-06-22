@@ -62,7 +62,7 @@ def verify_access_token(token: str):
     """
     try:
         # 解码JWT
-        decoded_jwt = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.ALGORITHM)
+        decoded_jwt = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
 
         # 验证返回值是否为字典类型（防御空字典等边界情况）
         if not decoded_jwt or not isinstance(decoded_jwt, dict):
@@ -146,7 +146,7 @@ def get_totp_uri(secret: str, username: str) -> str:
 def get_username_from_token(token: str) -> Optional[str]:
     """Extract username from JWT token payload."""
     try:
-        decoded_jwt = jwt.decode(token, settings.SECRET_KEY, algorithms=settings.ALGORITHM)
+        decoded_jwt = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
         return decoded_jwt.get("sub")
     except Exception:
         return None

@@ -9,8 +9,7 @@ extend-exclude =
     __pycache__,
     build,
     dist,
-    app/migrations,
-    app/api/_legacy_router_unused.py
+    app/migrations
 
 # 选择性忽略（历史代码清理后逐步移除）
 # E203: 冒号前空格（与 black 冲突，必须忽略——black 官方推荐）

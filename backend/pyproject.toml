@@ -15,7 +15,6 @@ extend-exclude = '''
   | build
   | dist
   | app/migrations          # 旧迁移系统（已弃用），不格式化
-  | app/api/_legacy_router_unused\.py  # 已下线的遗留路由
 )/
 '''
 
@@ -36,7 +35,6 @@ disallow_untyped_defs = false    # 同上
 # 排除历史技术债密集的模块（后续逐步清理后移除）
 exclude = [
     "app/migrations/",           # 旧迁移系统（已弃用）
-    "app/api/_legacy_router_unused\\.py",  # 已下线的遗留路由
 ]
 
 # 对特定模块放宽规则（历史代码，逐步收紧）

@@ -67,7 +67,6 @@ hiddenimports = [
     'passlib',
     'passlib.handlers',
     'passlib.handlers.bcrypt',
-    'jose',
     'pyotp',
     'gmssl',  # 国密 SM4 加密，app.database 模块级 import，PyInstaller 可能漏追踪
     'Cryptodome',
