@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 
 # frozen（PyInstaller）模式下 cwd 不可靠，显式注入 _MEIPASS 确保 app 包可被 import；
 # 非 frozen 模式下 prepend_sys_path=.（alembic.ini 配置）已覆盖，这里冗余但无害。
