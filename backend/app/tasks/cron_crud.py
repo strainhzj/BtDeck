@@ -403,9 +403,14 @@ class TaskLogsCRUD:
             keep_error: 为 True 时保留失败日志（success=False 不删）
         """
         try:
+            if days is None and not keep_success and not keep_error:
+                return DatabaseResult.failure_result("请至少指定一个清理条件")
+            if days is not None and days < 0:
+                return DatabaseResult.failure_result("days 必须大于等于 0")
+
             query = db.query(TaskLogs).filter(TaskLogs.dr == 0)
 
-            if days is not None and days >= 0:
+            if days is not None:
                 cutoff = datetime.now() - timedelta(days=days)
                 query = query.filter(TaskLogs.start_time < cutoff)
 

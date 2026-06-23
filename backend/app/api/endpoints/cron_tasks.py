@@ -635,6 +635,11 @@ async def cleanup_task_logs(
         keep_success = bool(payload.get("keep_success", False))
         keep_error = bool(payload.get("keep_error", False))
 
+        if days is None and not keep_success and not keep_error:
+            return CommonResponse(status="error", msg="请至少指定一个清理条件", code="400", data=None)
+        if days is not None and days < 0:
+            return CommonResponse(status="error", msg="days 必须大于等于 0", code="400", data=None)
+
         result = TaskLogsCRUD.cleanup_task_logs(db, days=days, keep_success=keep_success, keep_error=keep_error)
 
         if result.success:
