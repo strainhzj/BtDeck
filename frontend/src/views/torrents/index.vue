@@ -2007,7 +2007,7 @@ export default class extends Vue {
       const response = await advancedSearch(request)
 
       if (response.code === '200' && response.data) {
-        this.list = response.data.data || []
+        this.list = response.data.list || []
         this.total = response.data.total || 0
         this.listQuery.skip = 0
         this.currentPage = 1

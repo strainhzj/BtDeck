@@ -605,9 +605,8 @@ export interface AdvancedSearchRequest {
 export interface AdvancedSearchResponse {
   total: number
   page: number
-  limit: number
-  total_pages: number
-  data: Torrent[]
+  pageSize: number
+  list: Torrent[]
 }
 
 /**
