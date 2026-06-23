@@ -22,7 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
 from app.downloader.models import BtDownloaders
@@ -34,25 +34,6 @@ logger = logging.getLogger(__name__)
 
 
 # ========== 辅助函数 ==========
-
-
-def get_current_user_id(token: str) -> Optional[int]:
-    """
-    从JWT token中获取用户ID
-
-    Args:
-        token: JWT访问令牌
-
-    Returns:
-        Optional[int]: 用户ID，失败返回None
-    """
-    try:
-        decoded = utils.verify_access_token(token)
-        user_id = decoded.get("user_id")
-        return int(user_id) if user_id else None
-    except Exception as e:
-        logger.error(f"获取用户ID失败: {e}")
-        return None
 
 
 def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
@@ -178,7 +159,10 @@ def parse_days_of_week(days_of_week: str) -> list:
 
 @router.get("/{downloader_id}/settings", summary="获取下载器配置", response_model=CommonResponse, tags=["下载器设置"])
 def get_downloader_settings(
-    downloader_id: str = Path(..., description="下载器ID"), req: Request = None, db: Session = Depends(get_db)
+    downloader_id: str = Path(..., description="下载器ID"),
+    req: Request = None,
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     获取指定下载器的配置信息
@@ -186,15 +170,6 @@ def get_downloader_settings(
     返回下载器的速度限制、认证信息、高级配置等
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(status="error", msg="未认证", code="401", data=None)
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
         # 2. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
@@ -310,7 +285,10 @@ def get_downloader_settings(
 
 @router.put("/{downloader_id}/settings", summary="更新下载器配置", response_model=CommonResponse, tags=["下载器设置"])
 async def update_downloader_settings(
-    downloader_id: str = Path(..., description="下载器ID"), req: Request = None, db: Session = Depends(get_db)
+    downloader_id: str = Path(..., description="下载器ID"),
+    req: Request = None,
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     更新指定下载器的配置信息
@@ -320,15 +298,6 @@ async def update_downloader_settings(
     """
     try:
         response_data = {"schedule_rules": []}
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(status="error", msg="未认证", code="401", data=None)
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
         # 2. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
@@ -841,7 +810,10 @@ async def update_downloader_settings(
     tags=["下载器设置"],
 )
 async def reorder_speed_schedule_rules(
-    downloader_id: str = Path(..., description="下载器ID"), req: Request = None, db: Session = Depends(get_db)
+    downloader_id: str = Path(..., description="下载器ID"),
+    req: Request = None,
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     更新分时段限速规则排序
@@ -852,14 +824,6 @@ async def reorder_speed_schedule_rules(
     }
     """
     try:
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(status="error", msg="未认证", code="401", data=None)
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
         body_data = await req.json()
         rule_ids = body_data.get("rule_ids", [])
 
@@ -904,7 +868,10 @@ async def reorder_speed_schedule_rules(
     "/{downloader_id}/settings/apply", summary="应用配置到下载器", response_model=CommonResponse, tags=["下载器设置"]
 )
 def apply_downloader_settings(
-    downloader_id: str = Path(..., description="下载器ID"), req: Request = None, db: Session = Depends(get_db)
+    downloader_id: str = Path(..., description="下载器ID"),
+    req: Request = None,
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     将保存的配置应用到下载器
@@ -912,15 +879,6 @@ def apply_downloader_settings(
     调用下载器SDK的实际API，将配置推送到下载器
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(status="error", msg="未认证", code="401", data=None)
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
         # 2. 查询下载器信息
         downloader_sql = """
             SELECT downloader_id, nickname, host, port, username, password, downloader_type
@@ -1083,7 +1041,10 @@ def apply_downloader_settings(
     "/{downloader_id}/settings/test", summary="测试配置有效性", response_model=CommonResponse, tags=["下载器设置"]
 )
 async def test_downloader_settings(
-    downloader_id: str = Path(..., description="下载器ID"), req: Request = None, db: Session = Depends(get_db)
+    downloader_id: str = Path(..., description="下载器ID"),
+    req: Request = None,
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     测试下载器配置的有效性
@@ -1094,15 +1055,6 @@ async def test_downloader_settings(
         # ✅ P0-4修复: 验证Request对象
         if req is None:
             return CommonResponse(status="error", msg="请求对象不能为空", code="422", data=None)
-
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(status="error", msg="未认证", code="401", data=None)
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
 
         # 2. 获取请求体数据（页面表单数据）
         try:
