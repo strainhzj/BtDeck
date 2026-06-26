@@ -14,10 +14,10 @@ import re
 class SearchCondition(BaseModel):
     """搜索条件基类"""
 
-    field: str = Field(..., description="搜索字段", example="name")
-    operator: str = Field(..., description="操作符", example="contains")
+    field: str = Field(..., description="搜索字段", examples=["name"])
+    operator: str = Field(..., description="操作符", examples=["contains"])
     value: Union[str, List[str], int, float, bool, List[int], List[float]] = Field(
-        ..., description="搜索值", example="电影"
+        ..., description="搜索值", examples=["电影"]
     )
 
     @validator("operator")
@@ -48,8 +48,8 @@ class SearchCondition(BaseModel):
 class MultiSelectCondition(SearchCondition):
     """多选排除条件"""
 
-    mode: Literal["include", "exclude"] = Field("include", description="模式：包含或排除", example="include")
-    separator: str = Field(",", description="多值分隔符", example=",")
+    mode: Literal["include", "exclude"] = Field("include", description="模式：包含或排除", examples=["include"])
+    separator: str = Field(",", description="多值分隔符", examples=[","])
 
     @validator("value")
     def validate_multi_value(cls, v, values):
@@ -86,30 +86,30 @@ class EnhancedAdvancedSearchRequest(BaseModel):
     """增强高级搜索请求"""
 
     # 基础分页参数
-    page: int = Field(1, ge=1, le=1000, description="页码", example=1)
-    limit: int = Field(20, ge=1, le=100, description="每页数量", example=20)
-    sort_by: str = Field("added_time", description="排序字段", example="added_time")
-    sort_order: Literal["asc", "desc"] = Field("desc", description="排序方向", example="desc")
+    page: int = Field(1, ge=1, le=1000, description="页码", examples=[1])
+    limit: int = Field(20, ge=1, le=100, description="每页数量", examples=[20])
+    sort_by: str = Field("added_time", description="排序字段", examples=["added_time"])
+    sort_order: Literal["asc", "desc"] = Field("desc", description="排序方向", examples=["desc"])
 
     # 基础过滤条件
-    downloader_id: Optional[str] = Field(None, description="下载器ID", example="")
-    downloader_name: Optional[str] = Field(None, description="下载器名称", example="")
-    name: Optional[str] = Field(None, description="种子名称", example="")
-    tags: Optional[str] = Field(None, description="标签", example="")
-    category: Optional[str] = Field(None, description="分类", example="")
-    status: Optional[str] = Field(None, description="状态", example="")
+    downloader_id: Optional[str] = Field(None, description="下载器ID", examples=[""])
+    downloader_name: Optional[str] = Field(None, description="下载器名称", examples=[""])
+    name: Optional[str] = Field(None, description="种子名称", examples=[""])
+    tags: Optional[str] = Field(None, description="标签", examples=[""])
+    category: Optional[str] = Field(None, description="分类", examples=[""])
+    status: Optional[str] = Field(None, description="状态", examples=[""])
 
     # 数值范围过滤
-    size_min: Optional[str] = Field(None, description="种子大小最小值", example="1GB")
-    size_max: Optional[str] = Field(None, description="种子大小最大值", example="10GB")
-    ratio_min: Optional[float] = Field(None, ge=0, description="分享比率最小值", example=0.5)
-    ratio_max: Optional[float] = Field(None, ge=0, description="分享比率最大值", example=2.0)
+    size_min: Optional[str] = Field(None, description="种子大小最小值", examples=["1GB"])
+    size_max: Optional[str] = Field(None, description="种子大小最大值", examples=["10GB"])
+    ratio_min: Optional[float] = Field(None, ge=0, description="分享比率最小值", examples=[0.5])
+    ratio_max: Optional[float] = Field(None, ge=0, description="分享比率最大值", examples=[2.0])
 
     # 日期范围过滤
-    added_date_min: Optional[str] = Field(None, description="添加时间最小值", example="2025-01-01")
-    added_date_max: Optional[str] = Field(None, description="添加时间最大值", example="2025-12-31")
-    completed_date_min: Optional[str] = Field(None, description="完成时间最小值", example="2025-01-01")
-    completed_date_max: Optional[str] = Field(None, description="完成时间最大值", example="2025-12-31")
+    added_date_min: Optional[str] = Field(None, description="添加时间最小值", examples=["2025-01-01"])
+    added_date_max: Optional[str] = Field(None, description="添加时间最大值", examples=["2025-12-31"])
+    completed_date_min: Optional[str] = Field(None, description="完成时间最小值", examples=["2025-01-01"])
+    completed_date_max: Optional[str] = Field(None, description="完成时间最大值", examples=["2025-12-31"])
 
     # 高级搜索条件组
     condition_groups: Optional[List[SearchGroup]] = Field(None, description="条件组列表")
@@ -165,10 +165,10 @@ class SearchTemplateDelete(BaseModel):
 class AdvancedSearchResponse(BaseModel):
     """高级搜索响应"""
 
-    total: int = Field(..., description="总记录数", example=1000)
-    page: int = Field(..., description="当前页码", example=1)
-    limit: int = Field(..., description="每页数量", example=20)
-    total_pages: int = Field(..., description="总页数", example=50)
+    total: int = Field(..., description="总记录数", examples=[1000])
+    page: int = Field(..., description="当前页码", examples=[1])
+    limit: int = Field(..., description="每页数量", examples=[20])
+    total_pages: int = Field(..., description="总页数", examples=[50])
     data: List[Dict[str, Any]] = Field(..., description="搜索结果列表")
 
 
@@ -176,8 +176,8 @@ class TorrentDeleteRequest(BaseModel):
     """批量删除种子请求"""
 
     torrent_ids: List[str] = Field(..., min_items=1, max_items=100, description="种子ID列表")
-    delete_data: bool = Field(True, description="是否删除数据文件", example=True)
-    id_recycle: bool = Field(False, description="是否进入回收箱", example=False)
+    delete_data: bool = Field(True, description="是否删除数据文件", examples=[True])
+    id_recycle: bool = Field(False, description="是否进入回收箱", examples=[False])
 
 
 class SearchStatisticsResponse(BaseModel):

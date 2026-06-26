@@ -7,15 +7,15 @@ class TrackerInfoVO(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    tracker_id: Optional[str] = Field(None, description="tracker数据主键", example="t1")
-    tracker_name: Optional[str] = Field(None, description="tracker名称字符串", example="tracker.example.com")
+    tracker_id: Optional[str] = Field(None, description="tracker数据主键", examples=["t1"])
+    tracker_name: Optional[str] = Field(None, description="tracker名称字符串", examples=["tracker.example.com"])
     tracker_url: Optional[str] = Field(
-        None, description="tracker地址字符串", example="http://tracker.example.com:2710/announce"
+        None, description="tracker地址字符串", examples=["http://tracker.example.com:2710/announce"]
     )
-    last_announce_succeeded: Optional[str] = Field(None, description="announce状态字符串", example="1")
-    last_announce_msg: Optional[str] = Field(None, description="announce消息字符串", example="Success")
-    last_scrape_succeeded: Optional[str] = Field(None, description="scrape状态字符串", example="1")
-    last_scrape_msg: Optional[str] = Field(None, description="scrape消息字符串", example="Success")
+    last_announce_succeeded: Optional[str] = Field(None, description="announce状态字符串", examples=["1"])
+    last_announce_msg: Optional[str] = Field(None, description="announce消息字符串", examples=["Success"])
+    last_scrape_succeeded: Optional[str] = Field(None, description="scrape状态字符串", examples=["1"])
+    last_scrape_msg: Optional[str] = Field(None, description="scrape消息字符串", examples=["Success"])
 
     def __init__(
         self,

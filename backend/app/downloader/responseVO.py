@@ -9,34 +9,34 @@ class DownloaderSimpleVO(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    downloader_id: str = Field(..., description="下载器ID", example="550e8400-e29b-41d4-a716-446655440000")
-    nickname: str = Field(..., description="下载器名称", example="qBittorrent-01")
+    downloader_id: str = Field(..., description="下载器ID", examples=["550e8400-e29b-41d4-a716-446655440000"])
+    nickname: str = Field(..., description="下载器名称", examples=["qBittorrent-01"])
 
 
 class DownloaderResponse(BaseModel):
-    status: str | None = Field(None, description="返回接口调用结果", example="success")
-    message: str | None = Field(None, description="返回接口调用信息", example="接口调用成功")
-    data: list | None = Field(None, description="返回数据集", example=[])
+    status: str | None = Field(None, description="返回接口调用结果", examples=["success"])
+    message: str | None = Field(None, description="返回接口调用信息", examples=["接口调用成功"])
+    data: list | None = Field(None, description="返回数据集", examples=[[]])
 
 
 class DownloaderListVO(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    id: str | None = Field(None, description="主键", example="1")
-    nickname: str | None = Field(None, description="自定义名称", example="qb")
-    host: str | None = Field(None, description="下载器主机", example="1.1.1.1")
-    isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", example="1")
-    status: str | None = Field(None, description="下载器状态", example="1")  #
-    enabled: str | None = Field(None, description="下载器启用状态", example="1")  #
+    id: str | None = Field(None, description="主键", examples=["1"])
+    nickname: str | None = Field(None, description="自定义名称", examples=["qb"])
+    host: str | None = Field(None, description="下载器主机", examples=["1.1.1.1"])
+    isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", examples=["1"])
+    status: str | None = Field(None, description="下载器状态", examples=["1"])  #
+    enabled: str | None = Field(None, description="下载器启用状态", examples=["1"])  #
     downloaderType: int | None = Field(
-        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0
+        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
     )
     downloaderId: str | None = Field(None, alias="downloaderId", description="下载器ID")
     port: str | None = Field(None, description="端口")
     downloaderTypeName: str | None = Field(
-        None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent"
+        None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
     )
-    connectStatus: str | None = Field(None, alias="connectStatus", description="连接状态(1=在线, 0=离线)", example="1")
+    connectStatus: str | None = Field(None, alias="connectStatus", description="连接状态(1=在线, 0=离线)", examples=["1"])
     pathMappingRules: str | None = Field(None, alias="pathMappingRules", description="路径映射规则配置")
     torrentSavePath: str | None = Field(None, alias="torrentSavePath", description="种子保存目录路径")
 
@@ -97,21 +97,21 @@ class DownloaderListVO(BaseModel):
 class DownloaderVO(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    id: str | None = Field(None, description="主键", example="1")
-    nickname: str | None = Field(None, description="自定义名称", example="qb")
-    host: str | None = Field(None, description="下载器主机", example="1.1.1.1")
-    username: str | None = Field(None, description="下载器登录用户名", example="admin")
-    password: str | None = Field(None, description="下载器登录密码", example="admin")
-    isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", example="1")
-    status: str | None = Field(None, description="下载器状态", example="1")  #
-    enabled: str | None = Field(None, description="下载器启用状态", example="1")  #
+    id: str | None = Field(None, description="主键", examples=["1"])
+    nickname: str | None = Field(None, description="自定义名称", examples=["qb"])
+    host: str | None = Field(None, description="下载器主机", examples=["1.1.1.1"])
+    username: str | None = Field(None, description="下载器登录用户名", examples=["admin"])
+    password: str | None = Field(None, description="下载器登录密码", examples=["admin"])
+    isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", examples=["1"])
+    status: str | None = Field(None, description="下载器状态", examples=["1"])  #
+    enabled: str | None = Field(None, description="下载器启用状态", examples=["1"])  #
     downloaderType: int | None = Field(
-        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0
+        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
     )
-    port: int | None = Field(None, description="端口", example="qbittorrent")
-    isSsl: str | None = Field(None, alias="isSsl", description="是否https", example="qbittorrent")
+    port: int | None = Field(None, description="端口", examples=["qbittorrent"])
+    isSsl: str | None = Field(None, alias="isSsl", description="是否https", examples=["qbittorrent"])
     downloaderTypeName: str | None = Field(
-        None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent"
+        None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
     )
     pathMappingRules: str | None = Field(None, alias="pathMappingRules", description="路径映射规则配置")
     torrentSavePath: str | None = Field(None, alias="torrentSavePath", description="种子保存目录路径")
@@ -190,11 +190,11 @@ class DownloaderVO(BaseModel):
 class DownloaderStatusVO(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    connectStatus: str = Field(None, alias="connectStatus", description="连接状态", example="1")
-    nickname: str = Field(None, description="下载器名称", example="1")
-    delay: float | None = Field(None, description="延迟(毫秒)", example="3.64")
-    id: str = Field(None, description="主键", example="1")
-    uploadSpeed: str | None = Field(None, alias="uploadSpeed", description="上传速度(自动单位)", example="1.5")
-    downloadSpeed: str | None = Field(None, alias="downloadSpeed", description="下载速度(自动单位)", example="2.3")
-    downloadingCount: int | None = Field(None, alias="downloadingCount", description="下载中种子数量", example=5)
-    seedingCount: int | None = Field(None, alias="seedingCount", description="做种中种子数量", example=10)
+    connectStatus: str = Field(None, alias="connectStatus", description="连接状态", examples=["1"])
+    nickname: str = Field(None, description="下载器名称", examples=["1"])
+    delay: float | None = Field(None, description="延迟(毫秒)", examples=["3.64"])
+    id: str = Field(None, description="主键", examples=["1"])
+    uploadSpeed: str | None = Field(None, alias="uploadSpeed", description="上传速度(自动单位)", examples=["1.5"])
+    downloadSpeed: str | None = Field(None, alias="downloadSpeed", description="下载速度(自动单位)", examples=["2.3"])
+    downloadingCount: int | None = Field(None, alias="downloadingCount", description="下载中种子数量", examples=[5])
+    seedingCount: int | None = Field(None, alias="seedingCount", description="做种中种子数量", examples=[10])

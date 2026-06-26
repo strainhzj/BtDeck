@@ -7,6 +7,7 @@
 
 | 规则 | 建立时数量 | 当前数量 | 状态 |
 |------|-----------|---------|------|
+| **Pydantic `example=`** | 177 | 0 | ✅ **已全部清理**（app/models/ 11 处 + 全仓 166 处，`example=X`→`examples=[X]`，补全被忽略的 OpenAPI schema 示例值） |
 | **F541** | 74 | 0 | ✅ **已全部清理 + 进门禁**（26 文件 74 处无占位符 f-string，2 处多行拼接手工处理） |
 | **F821/F824** | 17 | 0 | ✅ **已全部修复 + 进门禁**（6 文件 17 处真实 bug，per-file-ignores 已移除） |
 | **F401** | 327 | 9 | ✅ **已清理 + 进门禁**（autoflake 清 310 个，9 个 database.py ORM 注册 import 保留） |
@@ -64,9 +65,9 @@ mypy 1649 个错误（历史类型标注缺失）。当前配置宽松（`check_
 | ORM 描述符 `arg-type`（json.loads(Column)） | 4 | 🔶 ORM 债 | 同上 |
 | ORM 描述符 `var-annotated`（SQLEnum 推断失败） | 2 | 🔶 ORM 债 | 同上，`Column(SQLEnum(...))` 泛型推断失败 |
 
-> **注意**：本次仅清理 `app/models/` 下 VO 文件的 `example=`。全仓另有 **166 处** 同型 v1 `example=` 写法
-> 分布在 `app/downloader/`、`app/torrents/`、`app/tracker/`、`app/user/`、`app/api/models/` 等 10 个文件，
-> 属同源技术债，留待后续统一处理（见清理优先级 P5）。
+> **更新（2026-06-26）**：全仓剩余 166 处 v1 `example=` 已统一清理（正则方案，
+> `app/downloader/`、`app/torrents/`、`app/tracker/`、`app/user/`、`app/api/models/` 等 10 文件），
+> 加上 app/models/ 的 11 处，Pydantic `example=` 技术债全部清零（177→0）。
 
 **ORM 债的根因与解法**：133 个剩余错误 100% 源于 SQLAlchemy 1.4 风格的 `Base = declarative_base()`。
 现代 SQLAlchemy 2.0 写法 `class Base(DeclarativeBase): pass` + 字段改 `Mapped[bool]` / `mapped_column()` 可批量消除，
@@ -82,5 +83,5 @@ mypy 1649 个错误（历史类型标注缺失）。当前配置宽松（`check_
 3. **P2**：F841 未用变量（简单删除，含 autoflake 留下的 ~15 处 dangling expression）
 4. ~~**P3**：F541 f-string（简单替换）~~ ✅ **2026-06-26 已完成（74→0）**
 5. **P4**：E711/E712/E722（风格改进，E711/E712 需区分 Python 比较与 ORM 查询）
-6. **P5**：Pydantic v2 `example=` 全仓统一（app/models/ 已清，剩 166 处在其他模块）
+6. ~~**P5**：Pydantic v2 `example=` 全仓统一~~ ✅ **2026-06-26 已完成（177→0，含 app/models/ 11 处 + 全仓 166 处）**
 7. **长期**：mypy 类型标注补全（app/models/ 真实 bug 已清，剩余 ORM 债待 SQLAlchemy 2.0 迁移）

@@ -594,6 +594,26 @@
             ".flake8"
           ],
           "evidence": "F541 74→0；pytest 1619 passed；flake8 全仓 0 错误；F541 从 extend-ignore 移除"
+        },
+        {
+          "id": "lint-cleanup.6",
+          "name": "P5 Pydantic example= 全仓统一（177→0）",
+          "description": "全仓 10 文件 166 处 Pydantic v1 example=X → v2 examples=[X]（加上 app/models/ 之前清的 11 处，共 177→0）。正则方案精确匹配字符串/数字/bool/None/空列表 5 类字面量。补全被 Pydantic v2 静默忽略的 OpenAPI schema 示例值。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/downloader/request.py",
+            "app/downloader/responseVO.py",
+            "app/api/models/advanced_search.py",
+            "app/torrents/responseVO.py",
+            "app/torrents/request.py",
+            "app/torrents/trackerVO.py",
+            "app/tracker/responseVO.py",
+            "app/user/requestVO.py",
+            "app/auth/request.py",
+            "app/api/responseVO.py"
+          ],
+          "evidence": "example= 177→0；pytest 1619 passed（warnings 865→713）；flake8 全仓 0 错误；schema examples 生成验证通过"
         }
       ]
     }

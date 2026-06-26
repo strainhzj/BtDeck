@@ -211,6 +211,23 @@
 
 ## 当前会话
 
+> **2026-06-26（续2）**: P5 Pydantic example= 全仓统一（177→0）——lint 技术债清理第四轮。
+>
+> **任务：Pydantic v1 `example=` → v2 `examples=[]` 全仓清理** ✅
+> - 10 文件 166 处（含 app/models/ 之前清的 11 处，共 177→0）：`example=X` → `examples=[X]`
+> - 正则方案（字符串/数字/bool/None/空列表 4 类字面量精确匹配），修复后 example= 全清零
+> - 补全被 Pydantic v2 静默忽略的 OpenAPI schema 示例值
+> - **意外收益**：pytest warnings 865→713（`example=` 的 PydanticDeprecationWarning 消失）
+>
+> **过程中的脚本踩坑（已解决）**：
+> - AST 脚本因 col_offset 是 UTF-8 字节偏移（含中文行与字符索引不一致）导致插入位置错误，损坏 api/responseVO.py
+> - 已 `git checkout HEAD` 回滚，改用正则方案（不依赖字节偏移），165 处全清零无误
+> - **教训**：Python ast 的 col_offset 对非 ASCII 行是字节偏移，不能直接用于字符串切片
+>
+> **验证**：pytest 1619 passed（0 失败）；flake8 全仓 0 错误；F541/F821/F824/F401 均无回退；schema examples 生成验证通过。
+>
+> ---
+
 > **2026-06-26（续）**: P3 F541 f-string 清理（74→0）——lint 技术债清理第三轮。
 >
 > **任务：F541 无占位符 f-string 全部清理 + 进门禁** ✅
