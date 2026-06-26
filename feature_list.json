@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.5-audit",
-  "last_updated": "2026-06-21",
+  "last_updated": "2026-06-25",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -511,6 +511,58 @@
             "../docker-compose.yml",
             "../.env.example"
           ]
+        }
+      ]
+    },
+    {
+      "id": "tech-debt-lint-cleanup",
+      "name": "Lint 技术债清理（F401 + mypy 渐进）",
+      "description": "基于 backend/docs/tech-debt-lint-baseline.md 的 P1 F401 一键清理 + mypy app/models/ 真实类型 bug 修复。不覆盖 ORM 描述符债（归 SQLAlchemy 2.0 迁移独立任务）。",
+      "status": "done",
+      "branch": "dev",
+      "deviation_from_plan": {
+        "reason": "调研发现 autoflake 一键清理有陷阱（误删 ORM 模型注册 import）+ mypy app/models/ 错误根因是 SQLAlchemy 1.4 风格 Base 而非缺标注，故缩小 mypy 范围到真实类型 bug",
+        "findings": [
+          "F401 基线 327 实测 321，autoflake 清 310 个保留 9 个 ORM 注册 import",
+          "mypy app/models/ 145 errors 中 12 个是 Pydantic v2 API 误用（真实 bug），133 个是 ORM 描述符债（根因 declarative_base）",
+          "autoflake --ignore-init-module-imports 只保护 __init__.py，不保护函数内 ORM 注册 import，需手工复核"
+        ]
+      },
+      "tasks": [
+        {
+          "id": "lint-cleanup.1",
+          "name": "P1 F401 未用 import 清理",
+          "description": "autoflake 保守参数清理 321→9，手工恢复 database.py 9 个 ORM 注册 import，修 __init__.py 拼写 bug，F401 进门禁",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/ (autoflake 批量，114 文件)",
+            "app/database.py (手工恢复 ORM import)",
+            "app/models/__init__.py (TRANSER→TRANSFER 拼写)",
+            ".flake8 (F401 移出 extend-ignore + database.py per-file-ignore)"
+          ],
+          "evidence": "F401 321→9；pytest 1589 passed；flake8 项目配置 0 错误；init.sh 通过"
+        },
+        {
+          "id": "lint-cleanup.2",
+          "name": "mypy app/models/ 真实类型 bug 修复",
+          "description": "修 12 个 Pydantic v2 API 误用（example→examples 11 + ConfigDict by_alias 死键 1），原 v1 写法被静默忽略导致 OpenAPI schema 无示例值。仅覆盖 app/models/ 的 2 个 vo 文件，全仓另有 166 处同型写法留作 P5",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/models/setting_templates_vo.py",
+            "app/models/downloader_capabilities_vo.py"
+          ],
+          "evidence": "mypy app/models/ 145→133（-12）；pytest 1589 passed；VO schema examples 生效验证通过"
+        },
+        {
+          "id": "lint-cleanup.3",
+          "name": "ORM 描述符债记录（133 个，归 SQLAlchemy 2.0 迁移）",
+          "description": "mypy app/models/ 剩余 133 错误 100% 归因 declarative_base（117 assignment + 10 return-value + 4 arg-type + 2 var-annotated），解法是 DeclarativeBase + Mapped[] 迁移，独立技术债任务不混入 lint",
+          "status": "done",
+          "scope": "backend",
+          "file": "docs/tech-debt-lint-baseline.md",
+          "evidence": "基线文档 mypy 章节更新，记录 ORM 债根因与解法"
         }
       ]
     }
