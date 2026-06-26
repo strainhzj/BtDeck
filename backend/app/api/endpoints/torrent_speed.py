@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Set, Tuple
 
@@ -17,7 +17,6 @@ from fastapi import APIRouter, Depends, Request
 from qbittorrentapi import APIError as QbAPIError, Client as qbClient
 from transmission_rpc import Client as trClient, TransmissionError
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user

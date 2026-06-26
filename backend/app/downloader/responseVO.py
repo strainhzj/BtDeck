@@ -1,6 +1,6 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Any, List
-from app.utils.encryption import encrypt_password, decrypt_password
+from typing import Any
+from app.utils.encryption import decrypt_password
 from app.models.setting_templates import DownloaderTypeEnum
 
 

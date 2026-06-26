@@ -30,8 +30,8 @@
 import json
 import logging
 import platform
-from typing import List, Dict, Optional, Tuple
-from pathlib import Path, PurePath
+from typing import List, Dict, Optional
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

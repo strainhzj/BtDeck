@@ -2,7 +2,7 @@ from typing import Any, Optional
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, BigInteger, Float, DATETIME, Boolean, Text, Index
+from sqlalchemy import Column, Integer, String, Float, DATETIME, Boolean, Text, Index
 from app.database import Base
 import logging
 

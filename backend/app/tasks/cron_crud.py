@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any
 from datetime import datetime, date, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, desc, asc, func
+from sqlalchemy import and_, desc, func
 from app.core.database_result import DatabaseResult
 from app.tasks.cron_models import CronTask
 from app.tasks.models import TaskLogs

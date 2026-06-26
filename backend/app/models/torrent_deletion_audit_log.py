@@ -13,10 +13,8 @@
 from typing import Any, Dict, Optional
 from datetime import datetime
 from sqlalchemy import Column, String, BigInteger, Boolean, Integer, Text, DateTime
-from sqlalchemy.orm import declarative_base
 from app.database import Base
 import json
-import uuid
 
 # 操作者ID常量
 OPERATOR_SYSTEM_SCHEDULER = 0  # 系统定时任务

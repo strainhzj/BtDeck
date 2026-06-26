@@ -9,21 +9,19 @@
 import logging
 import json
 import uuid
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional
 from datetime import datetime
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_, not_, desc, asc, func, extract, text, exists
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_, desc, asc, func, exists
 from sqlalchemy.sql import expression
 
 from app.core.json_parser import safe_json_parse
 
 from app.torrents.models import TorrentInfo, TrackerInfo
-from app.downloader.models import BtDownloaders
 from app.models.search_template import SearchTemplate
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.api.models.advanced_search import (
     EnhancedAdvancedSearchRequest,
-    SearchCondition,
     MultiSelectCondition,
     validate_size_string,
     validate_date_string,
@@ -162,7 +160,7 @@ class SearchQueryBuilder:
             added_max = validate_date_string(request.added_date_max)
             if added_max is not None:
                 # 包含当天的23:59:59
-                from datetime import timedelta
+                pass
 
                 added_max = added_max.replace(hour=23, minute=59, second=59)
                 filters.append(TorrentInfo.added_date <= added_max)
@@ -392,7 +390,7 @@ class SearchQueryBuilder:
         """
         # 字符串操作符：需要先过滤None值，否则会引发SQL错误
         if operator in ["contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with"]:
-            from sqlalchemy import false as sql_false
+            pass
 
             # 使用AND确保列值不为None，然后应用文本操作符
             if operator == "contains":
@@ -419,7 +417,6 @@ class SearchQueryBuilder:
 
         logger.warning(f"tracker_msg unsupported operator {operator}, fallback to contains")
         # 默认安全处理
-        from sqlalchemy import false as sql_false
 
         return and_(column.is_not(None), column.contains(value))
 
@@ -1066,12 +1063,12 @@ class AdvancedSearchService:
                 # TorrentDeleteRequest Pydantic对象
                 torrent_ids = request.torrent_ids
                 delete_data = request.delete_data
-                id_recycle = request.id_recycle
+                request.id_recycle
             else:
                 # 字典格式
                 torrent_ids = request.get("torrent_ids", [])
                 delete_data = request.get("delete_data", True)
-                id_recycle = request.get("id_recycle", False)
+                request.get("id_recycle", False)
 
             if not torrent_ids:
                 return {"status": "failed", "msg": "请选择要删除的种子", "code": "400", "data": None}

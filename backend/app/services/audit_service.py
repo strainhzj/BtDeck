@@ -11,17 +11,15 @@
 - 失败重试机制
 """
 
-import os
 import json
 import uuid
-import shutil
 import logging
 import asyncio
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import and_, or_, desc, func, select
+from sqlalchemy import and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Request, Depends
 

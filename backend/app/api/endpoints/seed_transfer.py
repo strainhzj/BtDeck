@@ -12,9 +12,7 @@
 
 import logging
 import urllib3
-from typing import List
 from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
@@ -22,9 +20,7 @@ from app.auth.dependencies import require_authenticated_user
 from app.services.seed_transfer_service import SeedTransferService
 from app.schemas.seed_transfer import (
     SeedTransferRequest,
-    SeedTransferResponse,
     SeedTransferBatchRequest,
-    SeedTransferBatchResponse,
 )
 from app.factory import app  # ✅ 修复: 直接导入全局app实例
 

@@ -10,18 +10,17 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from io import BytesIO
 
-from app.torrents.models import TorrentInfo, TrackerInfo as trackerInfoModel
+from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from qbittorrentapi import Client as qbClient
-from transmission_rpc import Client as trClient, TransmissionError
+from transmission_rpc import Client as trClient
 
 logger = logging.getLogger(__name__)
 

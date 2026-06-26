@@ -15,7 +15,6 @@ import logging
 from datetime import datetime, timedelta
 from app.database import AsyncSessionLocal
 from app.utils.audit_logger import export_audit_logs_from_db_to_file
-from app.tasks.cron_models import CronTask
 
 logger = logging.getLogger(__name__)
 

@@ -1,17 +1,13 @@
 import asyncio
-import subprocess
 import logging
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.triggers.date import DateTrigger
 from sqlalchemy import text
 
-from app.tasks.cron_crud import CronTaskCRUD, TaskLogsCRUD
 from app.tasks.cron_crud_async import AsyncCronTaskCRUD, AsyncTaskLogsCRUD
-from app.tasks.cron_models import CronTask
 from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
 from app.services.speed_schedule_service import SpeedScheduleService

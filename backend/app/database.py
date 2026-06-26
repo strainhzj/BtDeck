@@ -10,9 +10,8 @@ from app.auth.security import get_password_hash
 import os
 import yaml
 import logging
-import base64
 from typing import Dict, Any, Optional
-from gmssl import sm4, func
+from gmssl import func
 from app.auth import utils
 
 # 创建日志记录器
@@ -131,7 +130,6 @@ def init_db():
     # - keyword_type_pools_migration_v1 (关键词池)
     # - add_torrent_progress_column_v1 (进度字段)
     # 以上迁移已在生产数据库完成，新数据库由 Alembic 处理
-    pass
 
     # 修复：无论数据库是否已存在，都要检查并创建初始数据
     # 原因：Alembic迁移会创建数据库文件，但不会创建初始用户数据
@@ -202,7 +200,7 @@ def init_db():
 
     # 初始化系统默认定时任务（增量检查：添加缺失的任务）
     try:
-        from app.data.default_scheduled_tasks import get_default_scheduled_tasks, init_default_scheduled_tasks
+        from app.data.default_scheduled_tasks import get_default_scheduled_tasks
         from app.tasks.cron_models import CronTask
 
         db = SessionLocal()

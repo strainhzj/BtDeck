@@ -18,7 +18,7 @@ from transmission_rpc import Client as trClient
 from qbittorrentapi import Client as qbClient
 
 # 审计日志相关导入
-from app.services.audit_service import get_audit_service, AuditLogService, extract_audit_info_from_request
+from app.services.audit_service import get_audit_service, extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 
 logger = logging.getLogger(__name__)

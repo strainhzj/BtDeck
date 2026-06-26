@@ -12,8 +12,7 @@
 
 from typing import Optional
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, Text, DateTime, Index
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, String, Integer, BigInteger, Boolean, Text, DateTime
 from app.database import Base
 
 # 操作类型常量

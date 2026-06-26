@@ -15,7 +15,7 @@ Tracker状态映射模块
 """
 
 import logging
-from typing import Dict, Optional
+from typing import Dict
 from urllib.parse import urlparse
 
 from app.core.tracker_judgment import judgment_engine, TrackerStatus

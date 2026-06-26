@@ -25,7 +25,6 @@ from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
-from app.downloader.models import BtDownloaders
 from app.utils.encryption import encrypt_password, decrypt_password
 from app.models.setting_templates import DownloaderTypeEnum
 

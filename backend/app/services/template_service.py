@@ -8,9 +8,8 @@
 import json
 import logging
 from datetime import datetime, time
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.models.setting_templates import SettingTemplate, DownloaderTypeEnum
 from app.models.downloader_settings import DownloaderSetting

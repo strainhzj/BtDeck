@@ -1,6 +1,6 @@
 import yaml as pyyaml  # ✨ 使用别名避免命名冲突
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from app.core.config import settings
 
 

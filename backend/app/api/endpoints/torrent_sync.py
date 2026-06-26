@@ -2,7 +2,7 @@ import asyncio
 import logging
 import uuid
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -16,7 +16,7 @@ from app.database import get_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
-from app.torrents.models import TrackerInfo as trackerInfoModel, TrackerInfo
+from app.torrents.models import TrackerInfo as trackerInfoModel
 from qbittorrentapi import Client as qbClient
 from transmission_rpc import Client as trClient
 from app.core.torrent_status_mapper import TorrentStatusMapper
@@ -25,7 +25,7 @@ from app.core.background_task_manager import task_manager, TaskStatus
 from app.models.setting_templates import DownloaderTypeEnum
 
 # 审计日志相关导入（使用异步版本）
-from app.services.audit_service import AuditLogService, get_audit_service, extract_audit_info_from_request
+from app.services.audit_service import get_audit_service, extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 import urllib3
 
@@ -1338,7 +1338,7 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
     """
     from app.database import AsyncSessionLocal
     from app.torrents.models import TrackerInfo, TrackerKeywordConfig
-    from sqlalchemy import select, func
+    from sqlalchemy import select
     from urllib.parse import urlparse
     from datetime import datetime
 

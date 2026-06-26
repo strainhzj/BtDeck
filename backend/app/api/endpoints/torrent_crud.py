@@ -1,20 +1,13 @@
 import asyncio
-import hashlib
 import logging
 import os
-import re
 import tempfile
-import time
-import uuid
-from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Optional
 
-import bencodepy
 import urllib3
-from fastapi import APIRouter, Depends, Request, Query, UploadFile, File, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, Query, UploadFile, File
 from fastapi import Form, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import text, and_, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -22,33 +15,18 @@ from app.api.responseVO import CommonResponse
 from app.database import get_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
-from app.downloader.request import DownloaderCheckVO
-from app.downloader.responseVO import DownloaderVO
-from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
-from app.torrents.models import TrackerInfo as trackerInfoModel, TrackerInfo
-from app.torrents.responseVO import TorrentInfoVO
-from qbittorrentapi import Client as qbClient
+from app.torrents.models import TorrentInfo
 from qbittorrentapi.exceptions import APIError
-from transmission_rpc import Client as trClient, TransmissionError
-from app.core.torrent_status_mapper import TorrentStatusMapper
-from app.core.background_task_manager import task_manager, TaskStatus
-from app.models.setting_templates import DownloaderTypeEnum
+from transmission_rpc import TransmissionError
 from app.services.audit_service import extract_audit_info_from_request, get_audit_service
 
 # Import from new split modules
 from app.api.endpoints.torrent_helpers import (
-    convert_to_vo,
-    convert_to_vo_with_trackers,
     calculate_info_hash,
     get_transmission_torrent_info,
     create_qbittorrent_torrent_record,
     create_transmission_torrent_record,
     get_torrent_infos,
-    get_torrent_infos_legacy,
-    parse_size_string,
-    parse_datetime_string,
-    custom_serializer,
-    _safe_write_audit_log,
 )
 from app.api.endpoints.torrent_sync import qb_add_torrents, tr_add_torrents
 from app.services.torrent_crud_service import get_torrent_info

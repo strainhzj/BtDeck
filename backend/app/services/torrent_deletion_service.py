@@ -4,13 +4,12 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass
 from sqlalchemy.orm import Session
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
-from app.core.security import decrypt_tracker_info
 import logging
 
 logger = logging.getLogger(__name__)
@@ -79,7 +78,6 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             删除结果字典
         """
-        pass
 
     @abstractmethod
     async def validate_torrents_exist(self, torrent_hashes: List[str]) -> Dict[str, bool]:
@@ -92,7 +90,6 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             种子存在性映射 {hash: exists}
         """
-        pass
 
     @abstractmethod
     async def get_torrent_info(self, torrent_hash: str) -> Optional[Dict[str, Any]]:
@@ -105,12 +102,10 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             种子信息字典，如果不存在返回None
         """
-        pass
 
     @abstractmethod
     def get_downloader_type(self) -> str:
         """获取下载器类型"""
-        pass
 
     @abstractmethod
     async def add_tag_to_torrent(self, torrent_hash: str, tag: str) -> Tuple[bool, Optional[str]]:
@@ -124,7 +119,6 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             (成功标志, 错误信息)
         """
-        pass
 
     @abstractmethod
     async def create_marker_file(
@@ -141,7 +135,6 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             (成功标志, 错误信息)
         """
-        pass
 
     @abstractmethod
     async def get_torrent_files(self, torrent_hash: str) -> Tuple[bool, Optional[List[str]], Optional[str]]:
@@ -154,7 +147,6 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             (成功标志, 文件列表, 错误信息)
         """
-        pass
 
 
 class SafetyCheckService:
@@ -203,7 +195,7 @@ class SafetyCheckService:
                 warnings.append("种子包含'keep'标签，建议保留")
 
             # 检查最近完成的任务（7天内）
-            from datetime import datetime, timedelta
+            from datetime import datetime
 
             if torrent_info.completed_date:
                 if (datetime.now() - torrent_info.completed_date).days < 7:
@@ -499,7 +491,6 @@ class TorrentDeletionService:
         # 使用审计日志服务记录到数据库
         try:
             from app.services.audit_service import AuditOperationType, AuditOperationResult
-            from app.database import AsyncSessionLocal
 
             # 确定操作类型映射
             delete_option_to_operation_type = {

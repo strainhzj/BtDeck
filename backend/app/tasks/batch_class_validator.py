@@ -14,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from app.database import get_db
 from app.tasks.cron_crud import CronTaskCRUD
-from app.tasks.class_path_validator import validate_single_class_path, validate_class_paths_batch
+from app.tasks.class_path_validator import validate_class_paths_batch
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

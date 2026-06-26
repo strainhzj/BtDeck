@@ -8,7 +8,6 @@
 from typing import Any, Optional, Dict
 from datetime import datetime
 from sqlalchemy import Boolean, Column, Integer, String, DateTime, Text, func
-from sqlalchemy.orm import relationship
 from app.database import Base
 import json
 

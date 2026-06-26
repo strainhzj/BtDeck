@@ -4,9 +4,8 @@
 提供审计日志的查询、导出、归档、统计等功能。
 """
 
-import os
 import logging
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
 from pathlib import Path
 
@@ -16,8 +15,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.responseVO import CommonResponse
 from app.database import get_async_db
-from app.services.audit_service import AuditLogService, get_audit_service, extract_audit_info_from_request
-from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
+from app.services.audit_service import get_audit_service, extract_audit_info_from_request
+from app.torrents.audit_enums import AuditOperationType
 from app.auth.dependencies import get_current_user
 
 logger = logging.getLogger(__name__)
@@ -170,7 +169,7 @@ async def archive_audit_logs(
         end_dt = datetime.fromisoformat(request_data.end_time)
 
         # 提取审计信息
-        audit_info = extract_audit_info_from_request(http_request)
+        extract_audit_info_from_request(http_request)
 
         # 执行归档
         result = await audit_service.archive_logs(end_time=end_dt, archive_path=request_data.archive_path)

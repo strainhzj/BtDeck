@@ -1,6 +1,6 @@
-from typing import Any, Optional, Dict
+from typing import Any
 
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, BigInteger, Text
+from sqlalchemy import Boolean, Column, Integer, String, Text
 from app.database import Base
 from app.models.setting_templates import DownloaderTypeEnum
 import logging

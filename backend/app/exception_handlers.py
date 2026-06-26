@@ -22,7 +22,6 @@ from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from app.api.responseVO import CommonResponse
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)

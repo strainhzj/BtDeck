@@ -14,7 +14,6 @@ from app.downloader.models import BtDownloaders
 from app.downloader.exceptions import (
     DownloaderSettingsError,
     ConfigurationError,
-    ValidationError,
 )
 from app.models.setting_templates import DownloaderTypeEnum
 from app.utils.log_sanitizer import format_connection_log, should_sanitize

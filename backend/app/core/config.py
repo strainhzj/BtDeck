@@ -13,18 +13,15 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import copy
 import logging
 import os
-import re
 import secrets
 import sys
-import threading
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import List, Optional
 
-from pydantic import BaseModel, Field, validator
+from pydantic import Field, validator
 
 # 兼容新旧版本pydantic
 try:

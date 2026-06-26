@@ -5,11 +5,10 @@
 遵循项目API响应格式规范，统一使用CommonResponse返回。
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Query, Path, Body
+from fastapi import APIRouter, Depends, Request, Query, Path, Body
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
 import logging
-import uuid
 
 from app.database import get_db
 from app.api.responseVO import CommonResponse
@@ -21,16 +20,9 @@ from app.schemas.tag_schemas import (
     RemoveTagsRequest,
     DeleteTagRequest,
     BatchDeleteTagsRequest,
-    TagResponse,
-    TagListResponse,
-    AssignTagsResponse,
-    BatchAssignResponse,
-    RemoveTagsResponse,
-    CategorySupportResponse,
 )
 from app.services.tag_service import TagService
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
-from app.models.torrent_tags import TorrentTag
 from app.models.setting_templates import DownloaderTypeEnum
 
 logger = logging.getLogger(__name__)
@@ -125,7 +117,7 @@ def get_all_tags(
     支持按标签类型筛选，返回所有下载器中不重复的标签
     """
     # 1. JWT认证
-    username = user_info.username or "admin"
+    user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取所有标签
@@ -160,7 +152,7 @@ def get_all_categories(
     仅返回分类名称，用于过滤器选项
     """
     # 1. JWT认证
-    username = user_info.username or "admin"
+    user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取所有分类名称
@@ -195,7 +187,7 @@ def get_all_tag_names(
     仅返回标签名称，用于过滤器选项
     """
     # 1. JWT认证
-    username = user_info.username or "admin"
+    user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取所有标签名称
@@ -351,7 +343,7 @@ def update_tag(
     仅更新提供的字段，未提供的字段保持不变
     """
     # 1. JWT认证
-    username = user_info.username or "admin"
+    user_info.username or "admin"
 
     try:
         # 2. 调用服务层更新标签
@@ -528,7 +520,7 @@ def get_torrent_tags(
     获取指定种子的所有标签
     """
     # 1. JWT认证
-    username = user_info.username or "admin"
+    user_info.username or "admin"
 
     try:
         # 2. 调用服务层获取种子标签
@@ -660,7 +652,7 @@ def remove_tags_from_torrent(
     支持同时移除多个标签
     """
     # 1. JWT认证
-    username = user_info.username or "admin"
+    user_info.username or "admin"
 
     try:
         # 2. 调用服务层移除标签

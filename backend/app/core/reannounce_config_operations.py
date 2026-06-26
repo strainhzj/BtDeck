@@ -5,9 +5,8 @@ Tracker Reannounce 站点配置数据库操作
 提供 tracker_reannounce_config 表的 CRUD 操作和域名匹配工具函数。
 """
 
-import uuid
 import re
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from urllib.parse import urlparse
 from datetime import datetime
 

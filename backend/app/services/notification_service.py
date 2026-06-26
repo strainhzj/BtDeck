@@ -5,10 +5,9 @@
 提供通知的 CRUD 操作和版本更新检查逻辑。
 """
 
-import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from packaging import version
 
 from sqlalchemy import select, func, update, delete

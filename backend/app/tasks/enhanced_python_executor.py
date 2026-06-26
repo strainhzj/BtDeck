@@ -13,10 +13,9 @@
 import ast
 import asyncio
 import logging
-import sys
 import traceback
 import inspect
-from typing import Dict, Any, Optional, Tuple, List
+from typing import Dict, Any, Optional, Tuple
 from datetime import datetime
 import importlib.util
 

@@ -77,7 +77,7 @@ def prune_old_backups(db_path: str, keep: int = BACKUP_KEEP) -> int:
         清理掉的备份数量
     """
     try:
-        prefix = f"{db_path}.pre-migration-"
+        f"{db_path}.pre-migration-"
         parent = Path(db_path).parent
         backups = sorted(
             [p for p in parent.glob(f"{Path(db_path).name}.pre-migration-*") if p.is_file()],

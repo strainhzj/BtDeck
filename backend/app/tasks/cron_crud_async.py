@@ -8,10 +8,10 @@
 创建时间: 2025-01-31
 """
 
-from typing import Dict, Any, Optional, List
-from datetime import datetime, date
+from typing import Dict, Any
+from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, select
 from app.core.database_result import DatabaseResult
 from app.tasks.cron_models import CronTask
 from app.tasks.models import TaskLogs

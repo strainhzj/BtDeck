@@ -12,8 +12,7 @@
 
 from typing import Optional
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, Boolean, DateTime, Index, UniqueConstraint
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, String, Integer, Boolean, DateTime, UniqueConstraint
 from app.database import Base
 
 

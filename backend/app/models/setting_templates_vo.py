@@ -14,25 +14,25 @@ from app.models.setting_templates import DownloaderTypeEnum
 class SettingTemplateVO(BaseModel):
     """配置模板VO，包含下载器类型名称转换"""
 
-    id: Optional[int] = Field(None, description="模板ID", example=1)
-    name: Optional[str] = Field(None, description="模板名称", example="qBittorrent标准模板")
-    description: Optional[str] = Field(None, description="模板描述", example="适用于qBittorrent的标准配置模板")
+    id: Optional[int] = Field(None, description="模板ID", examples=[1])
+    name: Optional[str] = Field(None, description="模板名称", examples=["qBittorrent标准模板"])
+    description: Optional[str] = Field(None, description="模板描述", examples=["适用于qBittorrent的标准配置模板"])
     downloaderType: Optional[int] = Field(
-        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0
+        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
     )
     downloaderTypeName: Optional[str] = Field(
-        None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent"
+        None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
     )
     template_config: Optional[dict] = Field(None, alias="templateConfig", description="模板配置(JSON对象)")
     is_system_default: Optional[bool] = Field(
-        None, alias="isSystemDefault", description="是否系统默认模板", example=False
+        None, alias="isSystemDefault", description="是否系统默认模板", examples=[False]
     )
     created_by: Optional[int] = Field(None, alias="createdBy", description="创建者用户ID")
     created_at: Optional[str] = Field(
-        None, alias="createdAt", description="创建时间(ISO格式)", example="2026-02-05T10:30:00"
+        None, alias="createdAt", description="创建时间(ISO格式)", examples=["2026-02-05T10:30:00"]
     )
     updated_at: Optional[str] = Field(
-        None, alias="updatedAt", description="更新时间(ISO格式)", example="2026-02-05T10:30:00"
+        None, alias="updatedAt", description="更新时间(ISO格式)", examples=["2026-02-05T10:30:00"]
     )
     path_mapping: Optional[dict] = Field(None, alias="pathMapping", description="路径映射配置")
 

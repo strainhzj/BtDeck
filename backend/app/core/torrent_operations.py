@@ -8,7 +8,7 @@ the standardized DatabaseResult return format.
 import uuid
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo
 from app.core.database_result import DatabaseResult, DatabaseError
 
 

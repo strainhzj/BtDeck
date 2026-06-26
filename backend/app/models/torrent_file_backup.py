@@ -12,8 +12,7 @@
 
 from typing import Optional
 from datetime import datetime
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, DateTime, Index, ForeignKey
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, String, BigInteger, Integer, Boolean, DateTime, ForeignKey
 from app.database import Base
 
 

@@ -13,11 +13,6 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-import multiprocessing
-import os
-import sys
-import threading
-import asyncio
 import logging
 
 import uvicorn as uvicorn

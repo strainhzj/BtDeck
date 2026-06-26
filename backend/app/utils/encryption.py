@@ -6,7 +6,7 @@ SM4加密工具模块
 import logging
 from typing import Optional
 from app.core.config import settings
-from gmssl import sm4, func
+from gmssl import sm4
 
 logger = logging.getLogger(__name__)
 

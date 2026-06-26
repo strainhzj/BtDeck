@@ -19,7 +19,7 @@ Version: 1.0.0
 """
 
 from datetime import datetime
-from typing import Dict, Any, List, Set
+from typing import Dict, Any, List
 import logging
 import threading
 

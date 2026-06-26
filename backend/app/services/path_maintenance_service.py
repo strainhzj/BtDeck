@@ -15,11 +15,8 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
-from app.models.downloader_path_maintenance import DownloaderPathMaintenance
 from app.models.downloader_path_maintenance import (
-    DownloaderPathMaintenance,
     DownloaderPathMaintenance as DownloaderPathMaintenanceModel,
 )
 

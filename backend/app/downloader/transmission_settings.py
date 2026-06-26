@@ -5,13 +5,12 @@ Transmission设置封装类
 封装Transmission RPC调用，提供统一的设置接口
 """
 
-from typing import Dict, Optional, Tuple, Union, Any
+from typing import Dict, Optional
 from transmission_rpc import Client
 from transmission_rpc import (
     TransmissionAuthError as TrAuthError,
     TransmissionConnectError as TrConnectError,
     TransmissionTimeoutError as TrTimeoutError,
-    TransmissionError,
 )
 import logging
 
@@ -510,7 +509,7 @@ class TransmissionSettings:
             logger.info(f"Transmission版本: {getattr(session, 'version', 'unknown')}")
 
             # 2. 测试基本功能
-            torrents = self.client.get_torrents()
+            self.client.get_torrents()
             logger.info(f"Transmission基本功能正常")
 
             return True

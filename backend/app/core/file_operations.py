@@ -28,7 +28,6 @@ import shutil
 import platform
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
-from pathlib import Path
 
 from app.core.path_mapping import PathMappingService
 
@@ -199,8 +198,7 @@ class FileOperationService:
 
         # 🔍 深度诊断：尝试列出目录内容，验证UNC访问权限
         if platform.system() == "Windows":
-            import ctypes
-            import ctypes.wintypes
+            pass
 
             try:
                 # 提取目录路径

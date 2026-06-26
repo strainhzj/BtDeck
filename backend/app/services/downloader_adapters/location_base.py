@@ -39,7 +39,6 @@ class TorrentLocationAdapter(ABC):
                 "error_message": str or None  # 错误信息
             }
         """
-        pass
 
     @abstractmethod
     def get_client(self):
@@ -49,4 +48,3 @@ class TorrentLocationAdapter(ABC):
         Returns:
             下载器客户端对象（qbittorrentapi.Client 或 transmission_rpc.Client）
         """
-        pass

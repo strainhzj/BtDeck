@@ -18,11 +18,10 @@
 
 import logging
 import os
-import re
 import gzip
 import shutil
 from logging.handlers import TimedRotatingFileHandler
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from threading import Lock
 

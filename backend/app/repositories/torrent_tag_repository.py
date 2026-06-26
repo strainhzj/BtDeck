@@ -4,15 +4,15 @@
 提供同步数据库操作接口，用于同步Service层调用。
 """
 
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import uuid
 import logging
 
 from app.models.torrent_tags import TorrentTag, TorrentTagRelation
-from app.core.database_result import DatabaseResult, DatabaseError
+from app.core.database_result import DatabaseResult
 
 logger = logging.getLogger(__name__)
 

@@ -5,7 +5,7 @@
 """
 
 from pydantic import BaseModel, Field
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Optional
 from enum import Enum
 
 
@@ -33,7 +33,6 @@ class DuplicateDetectionStart(BaseModel):
     """启动重复检测请求"""
 
     # 目前不需要参数，后续可以扩展（如指定下载器列表）
-    pass
 
 
 class DuplicateDetectionProgress(BaseModel):

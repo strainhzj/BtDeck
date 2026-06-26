@@ -4,8 +4,7 @@
 """
 
 import asyncio
-from typing import List, Dict, Any, Optional, Callable
-from datetime import datetime
+from typing import List, Dict, Any, Callable
 from sqlalchemy.orm import Session
 from fastapi import Request
 

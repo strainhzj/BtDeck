@@ -13,7 +13,6 @@ from sqlalchemy.orm import Session
 from app.torrents.models import (
     TorrentInfo as torrentInfoModel,
     TorrentInfo,
-    TrackerInfo as trackerInfoModel,
     TrackerInfo,
 )
 from app.torrents.responseVO import TorrentInfoVO

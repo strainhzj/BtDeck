@@ -10,7 +10,7 @@ Tracker Reannounce 定时轮询任务
 
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any, List
+from typing import Dict, Any
 from urllib.parse import urlparse
 
 from app.tasks.scheduler.torrent_sync.base import BaseSyncTask
@@ -135,7 +135,6 @@ class TrackerReannounceTask(BaseSyncTask):
         torrent_ids_to_announce = set()
         matched_config_ids = set()
 
-        sample_logged = 0
         for tracker in trackers:
             domain = _extract_domain(tracker.tracker_host or tracker.tracker_url)
             # if sample_logged < 3:

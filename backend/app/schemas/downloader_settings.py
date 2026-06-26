@@ -7,7 +7,7 @@
 
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, Field, field_validator, ConfigDict
+from pydantic import BaseModel, Field, field_validator
 from enum import IntEnum
 
 # 从 models 模块导入枚举，避免重复定义
@@ -98,8 +98,6 @@ class DownloaderSettingInDB(DownloaderSettingBase):
 class DownloaderSettingResponse(DownloaderSettingInDB):
     """API响应下载器配置Schema"""
 
-    pass
-
 
 # ========== SettingTemplate Schema ==========
 
@@ -119,8 +117,6 @@ class SettingTemplateBase(BaseModel):
 
 class SettingTemplateCreate(SettingTemplateBase):
     """创建配置模板Schema"""
-
-    pass
 
 
 class SettingTemplateUpdate(BaseModel):
@@ -151,8 +147,6 @@ class SettingTemplateInDB(SettingTemplateBase):
 
 class SettingTemplateResponse(SettingTemplateInDB):
     """API响应配置模板Schema"""
-
-    pass
 
 
 # ========== SpeedScheduleRule Schema ==========
@@ -253,8 +247,6 @@ class SpeedScheduleRuleInDB(SpeedScheduleRuleBase):
 
 class SpeedScheduleRuleResponse(SpeedScheduleRuleInDB):
     """API响应分时段速度规则Schema"""
-
-    pass
 
 
 # ========== 组合Schema ==========

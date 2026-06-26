@@ -20,8 +20,6 @@ from pathlib import Path
 from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, Query, Depends, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 import io
 
 from app.database import AsyncSessionLocal
@@ -31,11 +29,7 @@ from app.services.torrent_file_backup_manager import TorrentFileBackupManagerSer
 from app.core.path_mapping import PathMappingService
 from app.schemas.torrent_backup import (
     TorrentFileBackupCreate,
-    TorrentFileBackupResponse,
-    TorrentFileBackupListResponse,
-    TorrentFileBackupDelete,
     TorrentFileBackupBatchCreate,
-    TorrentFileBackupBatchResponse,
 )
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
@@ -474,7 +468,7 @@ async def deduplicate_backups(
     try:
         async with AsyncSessionLocal() as db:
             # 查找重复的备份记录（按info_hash分组）
-            from sqlalchemy import select, and_
+            from sqlalchemy import select
             from app.models.torrent_file_backup import TorrentFileBackup
 
             # 查询所有未删除的备份

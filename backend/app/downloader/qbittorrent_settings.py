@@ -5,14 +5,12 @@ qBittorrent设置封装类
 封装qBittorrent Web API调用，提供统一的设置接口
 """
 
-from typing import Dict, Optional, Tuple, Union, Any
+from typing import Dict, Optional
 from qbittorrentapi import Client
 from qbittorrentapi import (
     APIConnectionError as QBAPIConnectionError,
     LoginFailed as QBLoginFailed,
     HTTP401Error,
-    HTTP403Error,
-    HTTP500Error,
 )
 import logging
 
@@ -20,7 +18,6 @@ from app.downloader.exceptions import (
     DownloaderConnectionError,
     AuthenticationError,
     APIError,
-    DownloaderTimeoutError,
     ConfigurationError,
 )
 from app.utils.log_sanitizer import sanitize_ip, should_sanitize

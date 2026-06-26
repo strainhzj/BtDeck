@@ -12,7 +12,7 @@
 import logging
 import sys
 import os
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 # 添加项目根目录到Python路径
@@ -20,7 +20,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from app.database import get_db
 from app.tasks.cron_crud import CronTaskCRUD
-from app.tasks.class_path_validator import validate_single_class_path, ClassPathValidationError, class_path_validator
+from app.tasks.class_path_validator import validate_single_class_path, class_path_validator
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")

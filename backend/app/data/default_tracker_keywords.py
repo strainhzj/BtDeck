@@ -325,7 +325,6 @@ def init_default_tracker_keywords(db) -> None:
         db: 数据库会话
     """
     from app.torrents.models import TrackerKeywordConfig
-    import uuid
 
     # 获取默认关键词列表
     default_keywords = get_default_tracker_keywords()

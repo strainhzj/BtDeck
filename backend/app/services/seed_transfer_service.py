@@ -24,14 +24,12 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from app.database import AsyncSessionLocal
-from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
 from app.models.setting_templates import DownloaderTypeEnum
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.torrent_status_mapper import TorrentStatusMapper
-from qbittorrentapi import Client as QBittorrentClient
 
 logger = logging.getLogger(__name__)
 

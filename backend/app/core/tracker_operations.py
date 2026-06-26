@@ -9,7 +9,7 @@ import uuid
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from app.torrents.models import TrackerInfo
-from app.core.database_result import DatabaseResult, DatabaseError
+from app.core.database_result import DatabaseResult
 
 
 def create_tracker(db: Session, tracker_data: Dict[str, Any]) -> DatabaseResult[TrackerInfo]:

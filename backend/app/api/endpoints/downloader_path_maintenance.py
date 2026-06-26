@@ -15,7 +15,6 @@ from sqlalchemy import text
 from app.api.responseVO import CommonResponse
 from app.database import get_db
 from app.auth.dependencies import require_authenticated_user
-from app.models.downloader_path_maintenance import DownloaderPathMaintenance
 from app.services.path_maintenance_service import PathMaintenanceService
 
 router = APIRouter()

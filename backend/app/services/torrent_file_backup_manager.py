@@ -21,13 +21,11 @@ import os
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
-from pathlib import Path
 
 from app.database import AsyncSessionLocal
 from app.repositories.torrent_file_backup_repository import TorrentFileBackupRepository
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
-from app.core.filename_utils import FilenameUtils
 
 logger = logging.getLogger(__name__)
 

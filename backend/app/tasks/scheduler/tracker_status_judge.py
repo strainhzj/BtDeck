@@ -19,7 +19,6 @@ from datetime import datetime
 from typing import Dict, Any, List
 import logging
 import threading
-import uuid
 
 from app.database import SessionLocal
 from app.torrents.models import TrackerMessageLog, TrackerKeywordConfig

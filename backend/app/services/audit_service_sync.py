@@ -6,17 +6,15 @@
 使用同步数据库会话，与项目的数据库架构一致。
 """
 
-import os
 import json
-import shutil
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import and_, or_, desc
+from sqlalchemy import and_, desc
 from sqlalchemy.orm import Session
-from fastapi import Request, Depends
+from fastapi import Depends
 
 from app.core.json_parser import safe_json_parse
 from app.torrents.audit_models import TorrentAuditLog

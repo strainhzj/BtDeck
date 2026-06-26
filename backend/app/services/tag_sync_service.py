@@ -11,10 +11,9 @@
 支持手动触发和定时自动同步两种模式。
 """
 
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Union
 import logging
 
-from sqlalchemy import select, and_
 from sqlalchemy.orm import Session
 from sqlalchemy.ext.asyncio import AsyncSession
 

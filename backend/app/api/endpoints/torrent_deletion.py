@@ -13,11 +13,10 @@ from app.auth.dependencies import require_authenticated_user, AuthenticatedUserI
 from app.database import get_db, AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.models.setting_templates import DownloaderTypeEnum
-from app.services.audit_service import get_audit_service, extract_audit_info_from_request
+from app.services.audit_service import get_audit_service
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
-from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
-from app.api.endpoints.torrent_helpers import _safe_write_audit_log, _write_audit_log_async
+from app.torrents.models import TorrentInfo as torrentInfoModel
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -342,7 +341,7 @@ async def preview_bulk_torrent_deletion(
 
     try:
         # 参数验证
-        delete_option = DeleteOption(request.delete_option)
+        DeleteOption(request.delete_option)
         safety_check_level = SafetyCheckLevel(request.safety_check_level)
 
         # 获取异步数据库会话和审计服务
@@ -791,7 +790,7 @@ async def delete_batch_async(
     """
     try:
         from app.database import SessionLocal
-        from app.services.deletion_task_manager import get_deletion_task_manager, TaskStatus
+        from app.services.deletion_task_manager import get_deletion_task_manager
         from app.services.async_deletion_executor import AsyncDeletionExecutor
 
         # 获取任务管理器

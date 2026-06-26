@@ -6,20 +6,16 @@
 """
 
 import logging
-from typing import List, Dict, Any, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, Form
+from typing import Any, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.api.responseVO import CommonResponse
 from app.api.models.advanced_search import (
     EnhancedAdvancedSearchRequest,
-    AdvancedSearchResponse,
     SearchTemplateCreate,
     SearchTemplateUpdate,
-    SearchTemplateResponse,
-    SearchTemplateDelete,
-    SearchStatisticsResponse,
     TorrentDeleteRequest,
 )
 from app.services.advanced_search import AdvancedSearchService

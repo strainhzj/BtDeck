@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, HTTPException, Body
+from fastapi import APIRouter, Depends, Query, Body
 from fastapi.responses import Response
 from typing import Optional, List
 from pydantic import BaseModel, Field

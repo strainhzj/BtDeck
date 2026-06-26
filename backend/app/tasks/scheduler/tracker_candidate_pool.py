@@ -13,13 +13,11 @@ Tracker候选池填充任务类
 """
 
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any
 import logging
 import threading
-import uuid
 
-from sqlalchemy import select, func
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from app.database import SessionLocal, AsyncSessionLocal
 from app.torrents.models import TrackerMessageLog, TrackerKeywordConfig

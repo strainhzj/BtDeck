@@ -5,12 +5,9 @@
 
 import sqlite3
 import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional
 from app.core.config import settings
-from app.database import SessionLocal, Base
-from sqlalchemy import text
-from gmssl import sm4, func
+from gmssl import sm4
 
 # 导入关键词池迁移模块
 from app.migrations.keyword_pools_migration import run_keyword_pools_migration

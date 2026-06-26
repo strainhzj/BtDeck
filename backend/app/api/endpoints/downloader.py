@@ -1,7 +1,6 @@
 from logging import exception
 
 import ping3
-import time
 import urllib3
 from fastapi import APIRouter, Depends, Request, Path, Query
 from app.api.responseVO import CommonResponse
@@ -631,7 +630,7 @@ async def test_connection(
 
         # 判断连接状态
         success = delay is not None and delay != False and delay != 0
-        connect_status = "connected" if success else "disconnected"
+        "connected" if success else "disconnected"
         message = "连接成功" if success else "连接失败"
 
         # 返回测试结果
@@ -653,7 +652,6 @@ async def test_connection(
 
 def _build_status_from_cache(cached_downloader) -> DownloaderStatusVO:
     """从缓存的下载器构建状态响应"""
-    import time
 
     # 获取缓存的实时状态
     upload_speed_kb = getattr(cached_downloader, "upload_speed", 0) or 0
@@ -1030,7 +1028,7 @@ def query_downloader_list(db, id_list):
             data=downloaders, message="Downloaders queried successfully", total_count=len(downloaders)
         )
     except Exception as e:
-        from app.core.database_result import DatabaseResult, DatabaseError
+        from app.core.database_result import DatabaseResult
 
         return DatabaseResult.database_error_result(message=f"Failed to query downloaders: {str(e)}")
 
@@ -1456,7 +1454,7 @@ def test_path_mapping(
                 # 验证路径标准化是否成功
                 for mapping in config.mappings:
                     normalized_internal = service._normalize_path(mapping.internal)
-                    normalized_external = service._normalize_path(mapping.external)
+                    service._normalize_path(mapping.external)
                     logger.debug(f"路径标准化: {mapping.internal} -> {normalized_internal}")
             except Exception as e:
                 backend_validation["no_path_conflicts"] = False

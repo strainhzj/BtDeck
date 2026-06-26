@@ -6,7 +6,6 @@
 import asyncio
 import re
 import ast
-import subprocess
 import tempfile
 import os
 from datetime import datetime

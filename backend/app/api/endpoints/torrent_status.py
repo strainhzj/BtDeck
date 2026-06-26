@@ -1,6 +1,5 @@
-import asyncio
 import logging
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -59,8 +58,6 @@ class ReannounceByDownloaderRequest(BaseModel):
 
 class ReannounceAllRequest(BaseModel):
     """Tracker汇报请求（全局）"""
-
-    pass
 
 
 # ==================== 暂停种子 ====================

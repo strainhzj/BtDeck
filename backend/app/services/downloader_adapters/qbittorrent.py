@@ -4,10 +4,9 @@ qBittorrent删除适配器
 """
 
 from typing import List, Dict, Any, Optional, Tuple
-import asyncio
 import logging
 import os
-from qbittorrentapi import Client, NotFound404Error, LoginFailed
+from qbittorrentapi import Client, LoginFailed
 from app.services.torrent_deletion_service import DownloaderDeleteAdapter, DeleteOption, SafetyCheckLevel
 from app.utils.encryption import decrypt_password
 

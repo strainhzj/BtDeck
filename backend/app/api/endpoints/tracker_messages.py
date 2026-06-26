@@ -16,14 +16,12 @@ from app.api.responseVO import CommonResponse
 from app.api.schemas.tracker_messages import (
     TrackerMessageResponse,
     AddToPoolRequest,
-    BatchOperationRequest,
     BatchAddToPoolRequest,
     BatchDeleteMessagesRequest,
 )
 from app.torrents.models import TrackerMessageLog, TrackerKeywordConfig
 from app.api.schemas.tracker_keywords import TrackerKeywordResponse
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

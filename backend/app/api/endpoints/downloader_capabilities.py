@@ -18,7 +18,6 @@ from app.services.downloader_settings_manager import DownloaderSettingsManager
 from app.services.downloader_capabilities_manager import DownloaderCapabilitiesManager
 from app.downloader.models import BtDownloaders
 from app.models.downloader_capabilities_vo import DownloaderCapabilitiesVO
-from app.models.downloader_capabilities import DownloaderCapabilities as DownloaderCapabilitiesModel
 from app.models.setting_templates import DownloaderTypeEnum
 
 router = APIRouter()

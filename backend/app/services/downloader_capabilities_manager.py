@@ -5,16 +5,14 @@
 提供下载器能力配置的CRUD操作和同步逻辑
 """
 
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.models.downloader_capabilities import DownloaderCapabilities
 from app.models.setting_templates import DownloaderTypeEnum
 from app.downloader.models import BtDownloaders
 from app.downloader.exceptions import (
-    DownloaderSettingsError,
     ConfigurationError,
 )
 import logging

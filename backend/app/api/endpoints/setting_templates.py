@@ -6,19 +6,15 @@
 """
 
 import logging
-import json
 from typing import Optional
-from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request, Path, Query
-from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db
 from app.services.template_service import TemplateService
-from app.downloader.models import BtDownloaders
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

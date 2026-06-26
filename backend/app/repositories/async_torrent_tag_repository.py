@@ -5,15 +5,14 @@
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, and_, or_, update, delete
-from sqlalchemy.orm import joinedload, selectinload
+from sqlalchemy import select, and_, update
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from uuid import uuid4
 import logging
 
 from app.models.torrent_tags import TorrentTag, TorrentTagRelation
-from app.core.database_result import DatabaseResult, DatabaseError
+from app.core.database_result import DatabaseResult
 
 logger = logging.getLogger(__name__)
 

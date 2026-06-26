@@ -72,6 +72,6 @@ __all__ = [
     "DownloaderPathMaintenance",
     "SeedTransferAuditLog",
     "OPERATOR_TYPE_SEED_TRANSFER",
-    "TRANSER_STATUS_SUCCESS",
-    "TRANSER_STATUS_FAILED",
+    "TRANSFER_STATUS_SUCCESS",
+    "TRANSFER_STATUS_FAILED",
 ]

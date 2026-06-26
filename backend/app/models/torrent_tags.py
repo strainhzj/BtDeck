@@ -13,7 +13,6 @@
 from typing import Any, Optional, Dict
 from datetime import datetime
 from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, UniqueConstraint
-from sqlalchemy.orm import relationship
 from app.database import Base
 import uuid
 

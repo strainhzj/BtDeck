@@ -5,7 +5,7 @@
 支持按名称、下载器、状态等条件过滤，并返回分页结果
 """
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import select, func, and_, or_

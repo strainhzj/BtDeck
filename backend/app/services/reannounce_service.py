@@ -11,8 +11,7 @@ Tracker Reannounce 核心服务
 
 import logging
 import asyncio
-from typing import List, Dict, Any, Optional
-from datetime import datetime
+from typing import List, Dict, Any
 
 from sqlalchemy.orm import Session
 from app.models.setting_templates import DownloaderTypeEnum

@@ -11,7 +11,6 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Dict, Optional, Any
-from collections import defaultdict
 import logging
 
 logger = logging.getLogger(__name__)

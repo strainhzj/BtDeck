@@ -31,12 +31,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.database import AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo, TrackerInfo as trackerInfoModel
 from qbittorrentapi import Client as qbClient
 from qbittorrentapi.exceptions import APIConnectionError, LoginFailed, APIError
-from transmission_rpc import Client as trClient, TransmissionError
+from transmission_rpc import Client as trClient
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
 from app.core.torrent_status_mapper import TorrentStatusMapper
@@ -3489,7 +3488,7 @@ async def qb_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     error_count = 0
     batch_start_count = 0
     batch_start_tracker_rows = 0
-    sync_start = datetime.now()
+    datetime.now()
 
     for torrent_info in existing_torrents:
         torrent_hash = _qb_get_attr(torrent_info, "hash")
@@ -3619,7 +3618,7 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     batch_start_count = 0
     batch_start_tracker_rows = 0
     skipped_new = 0
-    sync_start = datetime.now()
+    datetime.now()
 
     for torrent_info in torrent_info_list:
         torrent_hash = getattr(torrent_info, "hashString", None)

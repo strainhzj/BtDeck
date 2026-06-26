@@ -9,8 +9,8 @@ import time
 from typing import Optional, Dict, Any
 from contextlib import contextmanager
 from threading import Lock
-from app.utils.encryption import decrypt_tracker_url, encrypt_tracker_url, get_sm4_encryption
-from app.auth.security import sm4_decrypt, sm4_encrypt
+from app.utils.encryption import get_sm4_encryption
+from app.auth.security import sm4_decrypt
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +57,6 @@ def decrypt_tracker_info(encrypted_tracker_url: str) -> Optional[str]:
                     return decrypted.decode("utf-8") if isinstance(decrypted, bytes) else decrypted
         except Exception as e:
             logger.debug(f"备用解密方法失败: {e}")
-            pass
 
         logger.warning(f"Tracker解密失败: {encrypted_tracker_url[:20]}...")
         return None

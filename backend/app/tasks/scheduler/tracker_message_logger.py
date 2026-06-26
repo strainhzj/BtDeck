@@ -15,15 +15,14 @@ Tracker消息记录任务类
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Dict, Any, List, Optional
 import logging
 import json
 import uuid
 import threading
 from urllib.parse import urlparse
 
-from sqlalchemy import select, update, delete, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, text
 
 from app.database import SessionLocal, AsyncSessionLocal
 from app.torrents.models import TrackerInfo, TorrentInfo, TrackerMessageLog
@@ -251,7 +250,6 @@ class TrackerMessageLogger:
                 current_time = datetime.now()
                 processed_count = 0
                 new_count = 0
-                duplicate_count = 0
 
                 batch_count = 0
                 for msg_data in messages:

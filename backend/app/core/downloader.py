@@ -2,7 +2,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.downloader import models
-from app.core.database_result import DatabaseResult, DatabaseError
+from app.core.database_result import DatabaseResult
 from typing import List
 
 

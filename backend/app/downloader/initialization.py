@@ -9,11 +9,9 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
-from sqlalchemy import text
 from app.database import SessionLocal
 from app.downloader.request import DownloaderCheckVO
 from app.downloader.torrent_stats_cache import TorrentStatsCache
-from app.downloader.responseVO import DownloaderVO
 from qbittorrentapi import Client as qbClient, APIConnectionError, LoginFailed
 from transmission_rpc import (
     Client as trClient,
@@ -556,7 +554,7 @@ async def _check_qbittorrent_connectivity_async(client: qbClient, nickname: str)
 
         # 第二层：测试账号密码登录（通过获取认证信息）
         print(f"Testing authentication for qBittorrent: {nickname}")
-        auth_info = await asyncio.to_thread(client.auth_log_in)
+        await asyncio.to_thread(client.auth_log_in)
         print(f"Authentication successful for {nickname}")
 
         # 第三层：测试基本功能（获取torrent列表）
@@ -590,7 +588,7 @@ def _check_qbittorrent_connectivity(client: qbClient, nickname: str) -> bool:
 
         # 第二层：测试账号密码登录（通过获取认证信息）
         print(f"Testing authentication for qBittorrent: {nickname}")
-        auth_info = client.auth_log_in()
+        client.auth_log_in()
         print(f"Authentication successful for {nickname}")
 
         # 第三层：测试基本功能（获取torrent列表）

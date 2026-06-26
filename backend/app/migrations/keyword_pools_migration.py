@@ -6,7 +6,6 @@ Tracker关键词池迁移模块
 import sqlite3
 import logging
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 

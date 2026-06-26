@@ -16,14 +16,13 @@
 @time: 2026-02-15
 """
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List
 from datetime import datetime
-from sqlalchemy import select, update, delete
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.models.torrent_file_backup import TorrentFileBackup
-from app.database import AsyncSessionLocal
 
 
 class TorrentFileBackupRepository:
