@@ -779,7 +779,7 @@ class AdvancedSearchService:
 
             # 应用基础过滤
             self.query_builder.apply_basic_filters(request)
-            logger.info(f"[高级搜索] 基础过滤已应用")
+            logger.info("[高级搜索] 基础过滤已应用")
 
             # 应用高级条件组
             if request.condition_groups:
@@ -797,7 +797,7 @@ class AdvancedSearchService:
                         )
 
                 self.query_builder.apply_condition_groups(request.condition_groups, request.between_group_logics)
-                logger.info(f"[高级搜索] 条件组已应用")
+                logger.info("[高级搜索] 条件组已应用")
 
             # 应用多选排除条件
             self.query_builder.apply_multi_select_conditions(

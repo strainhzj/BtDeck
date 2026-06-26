@@ -580,6 +580,20 @@
             ".flake8"
           ],
           "evidence": "F821/F824 17→0；pytest 1619 passed；flake8 全仓 0 错误；6 文件 per-file-ignores 移除"
+        },
+        {
+          "id": "lint-cleanup.5",
+          "name": "P3 F541 f-string 无占位符清理（74→0 + 进门禁）",
+          "description": "26 文件 74 处 f\"无占位符\" → 普通字符串（72 处脚本批量 + 2 处多行拼接手工）。修复前 AST 分析确认全部是纯字面量无转义花括号。F541 从 .flake8 extend-ignore 移除进入全仓门禁。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/ (26 文件批量)",
+            "app/core/torrent_file_backup.py (多行拼接手工)",
+            "app/services/torrent_deletion_by_level.py (多行拼接手工)",
+            ".flake8"
+          ],
+          "evidence": "F541 74→0；pytest 1619 passed；flake8 全仓 0 错误；F541 从 extend-ignore 移除"
         }
       ]
     }

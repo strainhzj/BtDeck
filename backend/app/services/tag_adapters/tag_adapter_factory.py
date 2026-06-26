@@ -131,7 +131,7 @@ class TagAdapterFactory:
             标准化后的类型标识 ('qbittorrent' | 'transmission')
         """
         if downloader_type is None:
-            logger.debug(f"下载器类型为 None，返回 qbittorrent（默认值）")
+            logger.debug("下载器类型为 None，返回 qbittorrent（默认值）")
             return "qbittorrent"
 
         # 使用枚举类规范化并转换为名称

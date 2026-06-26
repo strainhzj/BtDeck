@@ -250,7 +250,7 @@ class RecycleBinService:
                     # 构建详细错误信息
                     error_detail = restore_result.get("error", "重新添加到下载器失败")
                     if restore_info["renamed"]:
-                        error_detail += f"（已回滚文件名修改）"
+                        error_detail += "（已回滚文件名修改）"
 
                     result["failed_count"] += 1
                     result["failed_list"].append(

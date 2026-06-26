@@ -166,14 +166,14 @@ class FileOperationService:
         try:
             path_encoded = path.encode("utf-8", errors="strict").decode("utf-8")
             if path != path_encoded:
-                logger.warning(f"[文件名编码问题] 检测到编码不一致，可能存在隐藏字符")
+                logger.warning("[文件名编码问题] 检测到编码不一致，可能存在隐藏字符")
                 logger.warning(f"  原始路径长度: {len(path)}, 编码后长度: {len(path_encoded)}")
         except Exception as e:
             logger.warning(f"[文件名编码检查失败] {e}")
 
         # 尝试1：原始路径
         if os.path.exists(path):
-            logger.debug(f"[文件存在验证] 原始路径有效")
+            logger.debug("[文件存在验证] 原始路径有效")
             return True, path
 
         # 尝试2：系统原生UNC格式
@@ -234,7 +234,7 @@ class FileOperationService:
                             logger.warning(f"[UNC访问诊断] 未找到完全匹配，使用第一个匹配文件: {fallback_path}")
                             return True, fallback_path
                     else:
-                        logger.warning(f"[UNC访问诊断] 目录中未找到包含 'waiting-delete' 的文件")
+                        logger.warning("[UNC访问诊断] 目录中未找到包含 'waiting-delete' 的文件")
                         logger.info(f"[UNC访问诊断] 目录中的前10个文件: {files_in_dir[:10]}")
 
                 except PermissionError as pe:

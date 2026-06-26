@@ -80,10 +80,10 @@ class TorrentProgressMigration:
             logger.info(f"✅ 种子进度字段迁移成功！影响记录数: {affected_rows}")
             logger.info("=" * 60)
             logger.info("迁移摘要:")
-            logger.info(f"  - seeding     → progress = 100.00 (已完成做种)")
-            logger.info(f"  - stalledUP   → progress = 100.00 (已完成停滞)")
-            logger.info(f"  - paused      → progress = 0.00 (已暂停)")
-            logger.info(f"  - pausedDL    → progress = 0.00 (下载暂停)")
+            logger.info("  - seeding     → progress = 100.00 (已完成做种)")
+            logger.info("  - stalledUP   → progress = 100.00 (已完成停滞)")
+            logger.info("  - paused      → progress = 0.00 (已暂停)")
+            logger.info("  - pausedDL    → progress = 0.00 (下载暂停)")
             logger.info(f"  - backup表    → {self.backup_table_name} (可安全删除)")
             logger.info("=" * 60)
 
@@ -144,7 +144,7 @@ class TorrentProgressMigration:
 
             # 复制索引
             cursor.execute(
-                f"""
+                """
                 SELECT sql FROM sqlite_master
                 WHERE type='index' AND tbl_name=?
                 AND sql IS NOT NULL

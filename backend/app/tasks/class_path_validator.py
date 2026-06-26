@@ -462,16 +462,16 @@ if __name__ == "__main__":
     print("=== 类路径验证测试 ===")
     report = validate_class_paths_batch(test_paths)
 
-    print(f"\n验证结果汇总:")
+    print("\n验证结果汇总:")
     print(f"总计: {report['summary']['total_count']}")
     print(f"有效: {report['summary']['valid_count']}")
     print(f"无效: {report['summary']['invalid_count']}")
     print(f"成功率: {report['summary']['success_rate']}")
 
-    print(f"\n错误统计:")
+    print("\n错误统计:")
     for error_type, count in report["error_statistics"].items():
         print(f"  {error_type}: {count}")
 
-    print(f"\n修复建议:")
+    print("\n修复建议:")
     for suggestion in report["repair_suggestions"]:
         print(f"  - {suggestion}")

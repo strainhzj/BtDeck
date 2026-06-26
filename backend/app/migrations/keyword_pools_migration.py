@@ -91,7 +91,7 @@ class KeywordPoolsMigration:
                 for col in columns:
                     if col[1] == "keyword_type":
                         # 检查是否有CHECK约束包含'failure'
-                        sql = f"SELECT sql FROM sqlite_master WHERE type='table' AND name='tracker_keyword_config'"
+                        sql = "SELECT sql FROM sqlite_master WHERE type='table' AND name='tracker_keyword_config'"
                         cursor.execute(sql)
                         table_sql = cursor.fetchone()[0] if cursor.fetchone() else ""
 

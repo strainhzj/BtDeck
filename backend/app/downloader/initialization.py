@@ -339,7 +339,7 @@ async def check_downloader_connectivity_with_retry(
     # ✅ 添加全局超时保护（30秒）
     async def _check_with_timeout():
         # 第一步：端口连通性检查
-        logger.debug(f"[第一步] 检查端口连通性...")
+        logger.debug("[第一步] 检查端口连通性...")
         port_accessible = await check_port_connectivity(host, port, timeout, max_port_retries)
 
         if not port_accessible:
@@ -347,7 +347,7 @@ async def check_downloader_connectivity_with_retry(
             return False
 
         # 第二步：认证检查
-        print(f"[第二步] 检查认证...")
+        print("[第二步] 检查认证...")
 
         for auth_attempt in range(1, max_auth_retries + 1):
             try:
@@ -362,7 +362,7 @@ async def check_downloader_connectivity_with_retry(
             except Exception as e:
                 print(f"❌ 认证检查异常 (尝试 {auth_attempt}/{max_auth_retries}): {e}")
                 if auth_attempt < max_auth_retries:
-                    print(f"等待 1 秒后重试...")
+                    print("等待 1 秒后重试...")
                     await asyncio.sleep(1)
                 else:
                     print(f"❌ 认证检查失败，已重试 {max_auth_retries} 次")
@@ -1241,7 +1241,7 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
             return False
 
         # 第二步：认证检查
-        logger.debug(f"[第二步] 开始认证检查...")
+        logger.debug("[第二步] 开始认证检查...")
 
         # 解密密码
         decrypted_password = decrypt_password(downloader_data["password"]) if downloader_data.get("password") else None
@@ -1294,18 +1294,18 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
                     break
                 else:
                     if auth_attempt < 3:
-                        print(f"等待 1 秒后重试...")
+                        print("等待 1 秒后重试...")
                         await asyncio.sleep(1)
                     else:
-                        print(f"❌ 认证检查失败，已重试 3 次")
+                        print("❌ 认证检查失败，已重试 3 次")
 
             except Exception as e:
                 print(f"❌ 认证检查异常 (尝试 {auth_attempt}/3): {e}")
                 if auth_attempt < 3:
-                    print(f"等待 1 秒后重试...")
+                    print("等待 1 秒后重试...")
                     await asyncio.sleep(1)
                 else:
-                    print(f"❌ 认证检查失败，已重试 3 次")
+                    print("❌ 认证检查失败，已重试 3 次")
                     break
 
         # 根据检查结果决定是否添加到缓存

@@ -510,7 +510,7 @@ class TransmissionSettings:
 
             # 2. 测试基本功能
             self.client.get_torrents()
-            logger.info(f"Transmission基本功能正常")
+            logger.info("Transmission基本功能正常")
 
             return True
 

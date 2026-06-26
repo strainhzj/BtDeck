@@ -36,7 +36,7 @@ try:
 except Exception as e:
     # 日志配置失败不应阻止应用启动,使用 print 输出警告
     print(f"[WARN] Failed to configure logging: {e}")
-    print(f"[WARN] Using default logging configuration")
+    print("[WARN] Using default logging configuration")
 
 
 # uvicorn服务配置

@@ -264,11 +264,11 @@ class TorrentFileBackupService:
                 elif downloader_type == "transmission":
                     # Transmission不支持API下载种子文件，直接返回错误
                     result["error_message"] = (
-                        f"Transmission种子文件路径未找到，且RPC协议不支持API下载。\n"
-                        f"请确保：\n"
-                        f"1. Transmission服务器上的种子文件目录可访问\n"
-                        f"2. 路径映射配置正确（容器路径 → 主机路径）\n"
-                        f"3. 种子文件确实存在于预期位置"
+                        "Transmission种子文件路径未找到，且RPC协议不支持API下载。\n"
+                        "请确保：\n"
+                        "1. Transmission服务器上的种子文件目录可访问\n"
+                        "2. 路径映射配置正确（容器路径 → 主机路径）\n"
+                        "3. 种子文件确实存在于预期位置"
                     )
                     return result
 

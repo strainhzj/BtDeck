@@ -226,7 +226,7 @@ async def torrent_sync_async() -> Dict[str, Any]:
 
     try:
         # 🔍 添加调试日志：记录 app 实例信息
-        logger.info(f"[TORRENT_SYNC] 开始种子同步任务")
+        logger.info("[TORRENT_SYNC] 开始种子同步任务")
         logger.info(f"[TORRENT_SYNC] 使用的 app 实例 id: {id(downloader_app)}")
         logger.info(f"[TORRENT_SYNC] app 类型: {type(downloader_app)}")
 
@@ -357,11 +357,11 @@ async def torrent_sync_async() -> Dict[str, Any]:
 
         # 种子同步完成后，根据关键词看板更新tracker状态
         logger.info(f"[TORRENT_SYNC] 种子同步完成，成功: {successful_syncs}, 失败: {failed_syncs}")
-        logger.info(f"[TORRENT_SYNC] 开始更新 Tracker 状态")
+        logger.info("[TORRENT_SYNC] 开始更新 Tracker 状态")
         tracker_status_result = await update_tracker_status_from_keywords()
 
         logger.info(f"[TORRENT_SYNC] Tracker状态更新完成: {tracker_status_result.get('message', 'N/A')}")
-        logger.info(f"[TORRENT_SYNC] ✅ 种子同步任务全部完成")
+        logger.info("[TORRENT_SYNC] ✅ 种子同步任务全部完成")
 
         return {
             "status": "success" if failed_syncs == 0 else "partial",
@@ -987,7 +987,7 @@ def mark_removed_trackers(db, torrent_info_id, current_tracker_urls, current_tim
 
         # 防御性检查：如果 current_tracker_urls 为空，记录警告并跳过
         if not current_tracker_urls:
-            logger.warning(f"current_tracker_urls 为空集合，跳过标记已移除 tracker 的操作")
+            logger.warning("current_tracker_urls 为空集合，跳过标记已移除 tracker 的操作")
             return
 
         # 查询所有活跃的 tracker
@@ -1172,7 +1172,7 @@ async def sync_single_downloader(
         if existing_task and existing_task.status == TaskStatus.RUNNING:
             return CommonResponse(
                 status="error",
-                msg=f"该下载器正在同步中，请等待当前任务完成",
+                msg="该下载器正在同步中，请等待当前任务完成",
                 code="409",
                 data={"task_id": existing_task.task_id, "status": existing_task.status.value},
             )

@@ -157,7 +157,7 @@ class DownloaderPathScanTask:
                 self.success_count += 1
 
                 # 构建消息
-                message_parts = [f"路径扫描完成"]
+                message_parts = ["路径扫描完成"]
                 if total_new_paths > 0:
                     message_parts.append(f"共发现 {total_new_paths} 个新路径")
                 if total_updated_external > 0:
@@ -640,7 +640,7 @@ class DownloaderPathScanTask:
 
             # 检查 app.state.store 是否可用
             if not hasattr(app.state, "store") or app.state.store is None:
-                logger.warning(f"下载器缓存 store 不可用，跳过从客户端获取默认路径")
+                logger.warning("下载器缓存 store 不可用，跳过从客户端获取默认路径")
                 return None
 
             cached_downloaders = await app.state.store.get_snapshot()

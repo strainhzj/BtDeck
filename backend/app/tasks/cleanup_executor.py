@@ -388,7 +388,7 @@ class CleanupTaskExecutor:
                 delete_option=DeleteOption.DELETE_FILES_AND_TORRENT,
                 safety_check_level=SafetyCheckLevel.BASIC,  # 清理任务使用基础检查
                 force_delete=True,  # 强制删除，跳过安全确认
-                reason=f"等级4清理任务: 待删除标签自动清理",
+                reason="等级4清理任务: 待删除标签自动清理",
             )
 
             # 执行删除

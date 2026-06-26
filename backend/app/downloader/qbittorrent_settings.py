@@ -463,7 +463,7 @@ class QBitTorrentSettings:
 
             # 3. 测试基本功能
             torrents = self.client.torrents_info(limit=1)
-            logger.info(f"qBittorrent基本功能正常")
+            logger.info("qBittorrent基本功能正常")
 
             return True
 

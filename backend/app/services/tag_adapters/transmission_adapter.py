@@ -60,7 +60,7 @@ class TransmissionTagAdapter(TorrentTagAdapter):
         # ✅ 修复：自动创建session（如果未传入）
         if session is None:
             session = requests.Session()
-            logger.debug(f"自动创建Transmission会话对象")
+            logger.debug("自动创建Transmission会话对象")
 
         self.session = session
         self.rpc_url = rpc_url
@@ -187,11 +187,11 @@ class TransmissionTagAdapter(TorrentTagAdapter):
             self._register_tag_id(tag_id, tag_name, "tag")
 
             logger.info(f"✅ 在本地注册Transmission标签: {tag_name} (ID: {tag_id})")
-            logger.info(f"ℹ️️  该标签将在首次分配给种子时在Transmission中自动创建")
+            logger.info("ℹ️️  该标签将在首次分配给种子时在Transmission中自动创建")
 
             return {
                 "success": True,
-                "message": f"标签创建成功（将在分配给种子时在Transmission中创建）",
+                "message": "标签创建成功（将在分配给种子时在Transmission中创建）",
                 "data": {"tag_id": tag_id, "name": tag_name, "type": "tag", "color": color},
                 "tag_id": tag_id,
             }

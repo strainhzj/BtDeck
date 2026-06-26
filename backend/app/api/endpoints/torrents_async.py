@@ -490,7 +490,7 @@ async def mark_removed_trackers_async(
 
         # 防御性检查：如果 current_tracker_urls 为空，记录警告并跳过
         if not current_tracker_urls:
-            logger.warning(f"current_tracker_urls 为空集合，跳过标记已移除 tracker 的操作")
+            logger.warning("current_tracker_urls 为空集合，跳过标记已移除 tracker 的操作")
             return
 
         # 查询所有活跃的 tracker
@@ -1229,11 +1229,11 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     # ✅ 方案2关键优化：批量写入完成后立即提交外层事务，释放数据库锁
     # 目的：避免在后续的 tracker 同步和备份操作期间持有锁，导致其他下载器同步等待超时
     # 效果：允许其他下载器同步任务立即读取到最新数据，避免"database is locked"错误
-    logger.debug(f"[PERF] 批量写入完成，立即提交外层事务以释放数据库锁...")
+    logger.debug("[PERF] 批量写入完成，立即提交外层事务以释放数据库锁...")
     await db.commit()
 
     # 第三阶段：处理 tracker 同步和备份（独立事务，避免长时间持有锁）
-    logger.debug(f"[PERF] 开始处理 tracker 同步和备份...")
+    logger.debug("[PERF] 开始处理 tracker 同步和备份...")
     tracker_backup_start = datetime.now()
 
     # 收集需要更新的 backup_file_path，最后批量更新
@@ -1441,7 +1441,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         logger.info(
             f"[{bt_downloader.nickname}] ✅ Tracker数据批量提交成功（包括 {len(torrent_info_map)} 个种子的tracker信息）"
         )
-        logger.debug(f"[TRACKER_FIX] Transmission Tracker数据批量提交成功")
+        logger.debug("[TRACKER_FIX] Transmission Tracker数据批量提交成功")
     except Exception as tracker_commit_err:
         logger.error(f"[{bt_downloader.nickname}] ❌ Tracker数据提交失败: {str(tracker_commit_err)}")
         logger.error(f"[TRACKER_FIX] Transmission Tracker数据提交失败: {str(tracker_commit_err)}")
@@ -1846,11 +1846,11 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     # ✅ 方案2关键优化：批量写入完成后立即提交外层事务，释放数据库锁
     # 目的：避免在后续的 tracker 同步和备份操作期间持有锁，导致其他下载器同步等待超时
     # 效果：允许其他下载器同步任务立即读取到最新数据，避免"database is locked"错误
-    logger.debug(f"[PERF] 批量写入完成，立即提交外层事务以释放数据库锁...")
+    logger.debug("[PERF] 批量写入完成，立即提交外层事务以释放数据库锁...")
     await db.commit()
 
     # 第三阶段：处理 tracker 同步和备份（独立事务，避免长时间持有锁）
-    logger.debug(f"[PERF] 开始处理 tracker 同步和备份...")
+    logger.debug("[PERF] 开始处理 tracker 同步和备份...")
     tracker_backup_start = datetime.now()
 
     # 收集需要更新的 backup_file_path，最后批量更新
@@ -2044,7 +2044,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         logger.info(
             f"[{bt_downloader.nickname}] ✅ Tracker数据批量提交成功（包括 {len(torrent_info_map)} 个种子的tracker信息）"
         )
-        logger.debug(f"[TRACKER_FIX] Tracker数据批量提交成功")
+        logger.debug("[TRACKER_FIX] Tracker数据批量提交成功")
     except Exception as tracker_commit_err:
         logger.error(f"[{bt_downloader.nickname}] ❌ Tracker数据提交失败: {str(tracker_commit_err)}")
         logger.error(f"[TRACKER_FIX] Tracker数据提交失败: {str(tracker_commit_err)}")

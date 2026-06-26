@@ -765,7 +765,7 @@ async def _async_exec_func():
                 )
 
                 if new_version:
-                    logger.info(f"发现新版本通知已创建")
+                    logger.info("发现新版本通知已创建")
                 else:
                     logger.info(f"当前已是最新版本: {CURRENT_VERSION}")
 

@@ -115,7 +115,7 @@ class Settings(BaseSettings):
                 # 不让进程直接崩溃（部署脚本应预创建并 chown 该目录；后续
                 # init_config_file 有自己的 makedirs 兜底并会记录详细错误）
                 print(f"[WARN] 无法创建配置目录 {self.CONFIG_PATH}: {e}")
-                print(f"[WARN] 请确保运行用户对该目录有写权限")
+                print("[WARN] 请确保运行用户对该目录有写权限")
 
     @validator("ALLOWED_HOSTS", pre=True)
     def _parse_allowed_hosts(cls, value):

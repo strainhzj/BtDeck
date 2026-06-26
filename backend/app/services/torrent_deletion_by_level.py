@@ -842,7 +842,7 @@ class TorrentDeletionByLevelService:
                     await file_op_service.delete_marker_file(
                         directory_path=torrent.save_path, torrent_name=torrent.name
                     )
-                    logger.info(f"[标记文件删除成功] 已删除标记文件")
+                    logger.info("[标记文件删除成功] 已删除标记文件")
                 except Exception as marker_error:
                     logger.error(f"[标记文件删除失败] {str(marker_error)}")
 
@@ -1474,8 +1474,8 @@ class TorrentDeletionByLevelService:
                         # 情况1：.pending_delete 的内容是原文件夹的子集 → 可能是上次复制失败
                         if new_folder_contents.issubset(original_folder_contents):
                             logger.warning(
-                                f"[智能合并: 子集关系] .pending_delete 的内容都在原文件夹中，"
-                                f"可能是上次移动失败的残留。删除 .pending_delete 后重新移动。"
+                                "[智能合并: 子集关系] .pending_delete 的内容都在原文件夹中，"
+                                "可能是上次移动失败的残留。删除 .pending_delete 后重新移动。"
                             )
                             try:
                                 import shutil
@@ -1661,7 +1661,7 @@ class TorrentDeletionByLevelService:
                 loop = asyncio.get_event_loop()
                 await loop.run_in_executor(None, shutil.move, new_path, original_path)
 
-                logger.info(f"[回滚单文件成功]")
+                logger.info("[回滚单文件成功]")
 
             return {"success": True}
 

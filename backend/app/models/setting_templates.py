@@ -275,7 +275,7 @@ class SettingTemplate(Base):
             try:
                 result["path_mapping"] = json.loads(self.path_mapping)
             except json.JSONDecodeError:
-                logger.warning(f"path_mapping JSON解析失败，返回原始字符串")
+                logger.warning("path_mapping JSON解析失败，返回原始字符串")
                 result["path_mapping"] = self.path_mapping
         else:
             result["path_mapping"] = None

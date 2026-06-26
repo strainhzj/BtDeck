@@ -301,14 +301,14 @@ class ClassPathFixer:
 
                     # 生成SQL修复语句模板
                     guide_lines.append("\n**SQL修复模板**:")
-                    guide_lines.append(f"```sql")
-                    guide_lines.append(f"-- 备份当前任务")
+                    guide_lines.append("```sql")
+                    guide_lines.append("-- 备份当前任务")
                     guide_lines.append(f"SELECT * FROM cron_task WHERE task_id = {task_id};")
-                    guide_lines.append(f"-- 修复类路径（请将 NEW_CLASS_PATH 替换为正确值）")
+                    guide_lines.append("-- 修复类路径（请将 NEW_CLASS_PATH 替换为正确值）")
                     guide_lines.append(
                         f"UPDATE cron_task SET executor = 'NEW_CLASS_PATH', update_time = datetime('now') WHERE task_id = {task_id};"
                     )
-                    guide_lines.append(f"```")
+                    guide_lines.append("```")
 
         guide_lines.append("\n## 修复步骤")
         guide_lines.append("1. 查看上述需要修复的任务列表")
@@ -367,7 +367,7 @@ def main():
 
     # 显示分析结果
     summary = analysis["summary"]
-    print(f"\n分析结果摘要:")
+    print("\n分析结果摘要:")
     print(f"  总Python任务数: {summary['total_python_tasks']}")
     print(f"  类路径任务数: {summary['class_path_tasks']}")
     print(f"  有效类路径: {summary['valid_class_paths']}")
@@ -377,7 +377,7 @@ def main():
 
     # 2. 生成修复方案
     if summary["invalid_class_paths"] > 0:
-        print(f"\n2. 生成修复方案...")
+        print("\n2. 生成修复方案...")
 
         # 生成手动修复指南
         guide_file = fixer.save_fix_guide(analysis)
@@ -385,14 +385,14 @@ def main():
 
         # 试运行自动修复（如果可能）
         if summary["auto_fixable"] > 0:
-            print(f"\n3. 试运行自动修复...")
+            print("\n3. 试运行自动修复...")
             auto_fix_result = fixer.apply_auto_fixes(analysis, dry_run=True)
 
             if auto_fix_result["status"] == "completed":
                 print(f"   尝试修复数: {auto_fix_result['fixes_attempted']}")
                 print(f"   预计成功数: {auto_fix_result['fixes_successful']}")
     else:
-        print(f"\n✅ 所有类路径都已验证通过，无需修复！")
+        print("\n✅ 所有类路径都已验证通过，无需修复！")
 
     print("\n" + "=" * 60)
     print("修复工具运行完成")

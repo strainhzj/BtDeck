@@ -210,7 +210,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                     logger.warning(f"移除qBittorrent分类失败: {str(e)}")
                     # qBittorrent的删除分类操作有限制
                     return self._format_error_response(
-                        message=f"qBittorrent不支持直接删除分类，请确保没有种子使用该分类"
+                        message="qBittorrent不支持直接删除分类，请确保没有种子使用该分类"
                     )
 
             elif tag_type == "tag":

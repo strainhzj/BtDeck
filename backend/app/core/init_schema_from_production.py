@@ -111,7 +111,7 @@ def ensure_database_initialized(db_path: str) -> bool:
         bool: 是否成功
     """
     if is_database_empty(db_path):
-        logger.info(f"Database is empty, initializing from production schema...")
+        logger.info("Database is empty, initializing from production schema...")
         return init_database_from_production_schema(db_path)
 
     logger.info(f"Database already exists: {db_path}")

@@ -50,7 +50,7 @@ async def get_downloader_from_cache(app: Any, downloader_id: str) -> Optional[An
     try:
         # 步骤1：检查缓存是否已初始化（避免 AttributeError）
         if not hasattr(app.state, "store"):
-            logger.error(f"下载器缓存未初始化 [app无store属性]")
+            logger.error("下载器缓存未初始化 [app无store属性]")
             return None
 
         # 步骤2：从缓存获取下载器列表
@@ -783,7 +783,7 @@ async def _sync_tag_to_downloader(
 
         # 检查缓存是否已初始化（避免 AttributeError）
         if not hasattr(app.state, "store"):
-            logger.error(f"下载器缓存未初始化 [app无store属性]")
+            logger.error("下载器缓存未初始化 [app无store属性]")
             return {"success": False, "message": "下载器缓存未初始化"}
 
         # ⚠️ 工作约束16：步骤2 - 从缓存获取下载器
@@ -794,7 +794,7 @@ async def _sync_tag_to_downloader(
         # 检查下载器是否在缓存中
         if not downloader_vo:
             logger.error(f"下载器不在缓存中 [downloader_id={downloader_id}]")
-            return {"success": False, "message": f"下载器不在缓存中"}
+            return {"success": False, "message": "下载器不在缓存中"}
 
         # 检查下载器是否有效（fail_time=0 表示有效）
         if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
@@ -860,7 +860,7 @@ async def _sync_tags_to_torrent_downloader(
 
         # 检查缓存是否已初始化（避免 AttributeError）
         if not hasattr(app.state, "store"):
-            logger.error(f"下载器缓存未初始化 [app无store属性]")
+            logger.error("下载器缓存未初始化 [app无store属性]")
             return {"success": False, "message": "下载器缓存未初始化"}
 
         # ⚠️ 工作约束16：步骤2 - 从缓存获取下载器
@@ -871,7 +871,7 @@ async def _sync_tags_to_torrent_downloader(
         # 检查下载器是否在缓存中
         if not downloader_vo:
             logger.error(f"下载器不在缓存中 [downloader_id={downloader_id}]")
-            return {"success": False, "message": f"下载器不在缓存中"}
+            return {"success": False, "message": "下载器不在缓存中"}
 
         # 检查下载器是否有效（fail_time=0 表示有效）
         if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
@@ -967,7 +967,7 @@ async def _sync_tag_delete_to_downloader(
         dict: {"success": bool, "message": str}
     """
     # ⚠️ 调试日志：记录函数入口和所有关键参数
-    logger.info(f"🔍 [删除同步] 开始同步标签删除到下载器")
+    logger.info("🔍 [删除同步] 开始同步标签删除到下载器")
     logger.info(f"  - downloader_id: {downloader_id}")
     logger.info(f"  - tag_id: {tag_id}")
     logger.info(f"  - tag_name: {tag_name}")
@@ -980,7 +980,7 @@ async def _sync_tag_delete_to_downloader(
 
         # 检查缓存是否已初始化（避免 AttributeError）
         if not hasattr(app.state, "store"):
-            logger.error(f"下载器缓存未初始化 [app无store属性]")
+            logger.error("下载器缓存未初始化 [app无store属性]")
             return {"success": False, "message": "下载器缓存未初始化"}
 
         # ⚠️ 工作约束16：步骤2 - 从缓存获取下载器
@@ -991,7 +991,7 @@ async def _sync_tag_delete_to_downloader(
         # 检查下载器是否在缓存中
         if not downloader_vo:
             logger.error(f"下载器不在缓存中 [downloader_id={downloader_id}]")
-            return {"success": False, "message": f"下载器不在缓存中"}
+            return {"success": False, "message": "下载器不在缓存中"}
 
         # 检查下载器是否有效（fail_time=0 表示有效）
         if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:

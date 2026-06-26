@@ -213,7 +213,7 @@ class BatchClassValidator:
                     repair_sql_lines.append(f"--   * {fix}")
 
                 # 生成禁用任务的SQL（临时措施）
-                repair_sql_lines.append(f"-- 临时禁用问题任务（建议手动修复后重新启用）:")
+                repair_sql_lines.append("-- 临时禁用问题任务（建议手动修复后重新启用）:")
                 repair_sql_lines.append(f"UPDATE cron_task SET enabled = 0 WHERE task_id = {task_id};")
                 repair_sql_lines.append("")
 
@@ -272,7 +272,7 @@ def main():
 
     if report["status"] == "completed":
         summary = report["summary"]
-        print(f"\n验证结果摘要:")
+        print("\n验证结果摘要:")
         print(f"  总任务数: {report['total_python_tasks_scanned']}")
         print(f"  验证类路径数: {report['total_class_paths_validated']}")
         print(f"  有效类路径: {summary['valid_count']}")
@@ -280,14 +280,14 @@ def main():
         print(f"  成功率: {summary['success_rate']}")
 
         if report["error_statistics"]:
-            print(f"\n错误统计:")
+            print("\n错误统计:")
             for error_type, count in report["error_statistics"].items():
                 print(f"  {error_type}: {count}")
 
         # 保存报告文件
         try:
             report_file, script_file = validator.save_reports_to_files(report)
-            print(f"\n报告文件已生成:")
+            print("\n报告文件已生成:")
             print(f"  详细报告: {report_file}")
             print(f"  修复脚本: {script_file}")
         except Exception as e:
