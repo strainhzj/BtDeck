@@ -220,13 +220,6 @@ class TagService:
             logger.error(f"获取标签名称失败: {str(e)}")
             return {"success": False, "data": [], "message": f"获取标签名称失败: {str(e)}", "total_count": 0}
 
-            tag_list = [self._to_dict(tag) for tag in tags]
-
-            return {"success": True, "data": tag_list, "message": "获取标签列表成功", "total_count": len(tag_list)}
-        except Exception as e:
-            logger.error(f"获取标签列表失败: {str(e)}")
-            return {"success": False, "data": None, "message": f"获取标签列表失败: {str(e)}"}
-
     def create_tag(
         self, downloader_id: str, tag_name: str, tag_type: str, color: Optional[str] = None
     ) -> Dict[str, Any]:

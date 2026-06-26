@@ -563,6 +563,23 @@
           "scope": "backend",
           "file": "docs/tech-debt-lint-baseline.md",
           "evidence": "基线文档 mypy 章节更新，记录 ORM 债根因与解法"
+        },
+        {
+          "id": "lint-cleanup.4",
+          "name": "P0 真实 bug 修复（F821/F824，17→0 + 进门禁）",
+          "description": "修复 6 文件 17 处 undefined name / global 误用：audit_logger 补 logger/desc，torrent_crud/torrent_deletion 加 request 参数，initialization 加 app 参数+删无用 global，tag_service 删孤儿死代码，security 删无用 global。F821/F824 per-file-ignores 全部移除进入全仓门禁。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/utils/audit_logger.py",
+            "app/api/endpoints/torrent_crud.py",
+            "app/api/endpoints/torrent_deletion.py",
+            "app/downloader/initialization.py",
+            "app/services/tag_service.py",
+            "app/core/security.py",
+            ".flake8"
+          ],
+          "evidence": "F821/F824 17→0；pytest 1619 passed；flake8 全仓 0 错误；6 文件 per-file-ignores 移除"
         }
       ]
     }

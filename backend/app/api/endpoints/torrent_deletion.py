@@ -622,6 +622,7 @@ async def delete_torrent_with_level(
         ..., description="删除等级 (1=完全删除, 2=删除任务保留数据, 3=回收站, 4=待删除标签)", ge=1, le=4
     ),
     operator: str = Query(default="admin", description="操作人"),
+    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """

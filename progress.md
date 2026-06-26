@@ -211,6 +211,24 @@
 
 ## 当前会话
 
+> **2026-06-26**: P0 真实 bug 修复（F821/F824，17→0）——lint 技术债清理第二轮。
+>
+> **任务：F821/F824 真实 bug 全部修复 + 进门禁** ✅
+> - 6 文件 17 处 undefined name / global 误用全部修复：
+>   - audit_logger.py（5 处）：补模块级 `logger` + `desc` import
+>   - torrent_crud.py / torrent_deletion.py（3 处）：函数加 `request: Request` 参数（原 `req.app`/`request` undefined 会 NameError 崩溃）
+>   - initialization.py（7 处）：2 个后台任务函数加 `app: FastAPI` 参数（原调用已注释=死代码）+ 删 4 处纯 dict 操作的无用 `global`
+>   - tag_service.py（1 处）：删除 except return 后的孤儿死代码（含 undefined `tags`）
+>   - security.py（1 处）：删 `_decryption_key_cache.clear()` 的无用 `global`
+> - **门禁收紧**：6 文件的 F821/F824 per-file-ignores 全部移除，F821/F824 现进入全仓门禁
+> - **教训**：torrent_crud.py 加 `request: Request`（无默认值）放在 `_user=Depends()`（有默认值）之后触发 SyntaxError，导致 180 个测试 setup ERROR；pytest 立即捕获，改为 `request: Request = None` 修复
+>
+> **验证**：pytest 1619 passed（0 失败）；flake8 全仓 0 错误；F821/F824 isolated 0 残留；init.sh 通过。
+>
+> **剩余 lint 债**：P2 F841（23）、P3 F541（74）、P4 E711/E712（47，需甄别 ORM 查询）、P5 example=（166）、mypy ORM 债（133，待 SQLAlchemy 2.0 迁移）。
+
+---
+
 > **2026-06-25**: lint 技术债清理（F401 + mypy app/models/ 渐进）——两项独立技术债任务。
 >
 > **任务 1：F401 未用 import 清理（基线 P1，最大单项收益）** ✅
@@ -251,4 +269,4 @@
 
 ---
 
-**最后更新**: 2026-06-25
+**最后更新**: 2026-06-26

@@ -50,6 +50,7 @@ class TorrentOperationRequest(BaseModel):
 @router.post("/list", response_model=CommonResponse)
 def torrent_list(
     _user=Depends(require_authenticated_user),
+    request: Request = None,
     name: str = Query(default="default", alias="name", description="种子名称"),
     db: Session = Depends(get_db),
 ):
@@ -74,11 +75,11 @@ def torrent_list(
         for downloader in downloaders:
             try:
                 if downloader.is_qbittorrent:
-                    qb_add_torrents(db, [downloader], app=req.app)
+                    qb_add_torrents(db, [downloader], app=request.app)
                     synced_count += 1
                     logger.info(f"成功同步qBittorrent下载器: {downloader.nickname}")
                 elif downloader.is_transmission:
-                    tr_add_torrents(db, [downloader], app=req.app)
+                    tr_add_torrents(db, [downloader], app=request.app)
                     synced_count += 1
                     logger.info(f"成功同步Transmission下载器: {downloader.nickname}")
                 else:

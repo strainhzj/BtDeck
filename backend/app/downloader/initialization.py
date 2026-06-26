@@ -912,8 +912,14 @@ async def _perform_initial_full_sync(app: FastAPI, skip_cache_comparison: bool =
         print(f"Error during initial full sync: {e}")
 
 
-async def full_database_sync_task():
-    """定时全量获取数据库下载器列表，与缓存对比并进行连通性校验"""
+async def full_database_sync_task(app: FastAPI):
+    """定时全量获取数据库下载器列表，与缓存对比并进行连通性校验
+
+    Args:
+        app: FastAPI 应用实例（访问 app.state.store 缓存）
+
+    Note: 当前调用点（startup_event 内）已注释，函数保留待后续启用。
+    """
     from sqlalchemy import text
     from app.tasks.logger import TaskLogger
 
@@ -1017,8 +1023,7 @@ def _calculate_sync_interval(default_interval: int, min_interval: int, max_inter
     """根据历史记录计算动态同步间隔（同步函数，避免异步循环问题）"""
     try:
         # 简单的基于内存统计的间隔调整
-        global _sync_stats
-
+        # _sync_stats 是模块级 dict，纯读取（__getitem__）无需 global 声明
         total = _sync_stats["total_additions"] + _sync_stats["total_failures"]
 
         if total == 0:
@@ -1056,8 +1061,7 @@ _torrent_sync_stats = {
 def _calculate_torrent_sync_interval(default_interval: int, min_interval: int, max_interval: int) -> int:
     """根据历史执行时间和成功率计算动态同步间隔"""
     try:
-        global _torrent_sync_stats
-
+        # _torrent_sync_stats 是模块级 dict，纯读取无需 global 声明
         total = _torrent_sync_stats["total_successful"] + _torrent_sync_stats["total_failed"]
 
         if total == 0:
@@ -1087,9 +1091,11 @@ async def _update_torrent_sync_statistics(successful: int, failed: int):
 
 
 async def _update_torrent_sync_statistics_with_duration(successful: int, failed: int, duration: int):
-    """更新种子同步统计信息，包含实际执行时间"""
-    global _torrent_sync_stats
+    """更新种子同步统计信息，包含实际执行时间
 
+    Note: 修改模块级 dict 的键值（dict.__setitem__）无需 global 声明；
+    global 仅在重新绑定名字（`_torrent_sync_stats = {...}`）时需要。
+    """
     _torrent_sync_stats["total_successful"] += successful
     _torrent_sync_stats["total_failed"] += failed
     _torrent_sync_stats["last_duration"] = duration
@@ -1120,9 +1126,10 @@ async def _update_torrent_sync_statistics_with_duration(successful: int, failed:
 
 
 async def _update_sync_statistics(successful: int, failed: int):
-    """更新同步统计信息"""
-    global _sync_stats
+    """更新同步统计信息
 
+    Note: 修改模块级 dict 的键值无需 global 声明。
+    """
     _sync_stats["total_additions"] += successful
     _sync_stats["total_failures"] += failed
     _sync_stats["last_update"] = datetime.now()
@@ -1381,8 +1388,14 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
         return False
 
 
-async def periodic_check():
-    """定时校验任务"""
+async def periodic_check(app: FastAPI):
+    """定时校验任务
+
+    Args:
+        app: FastAPI 应用实例（访问 app.state.store 缓存）
+
+    Note: 当前调用点（startup_event 内）已注释，函数保留待后续启用。
+    """
     while True:
         await asyncio.sleep(10)  # 使用异步睡眠
         await app.state.store.check_and_remove_invalid()

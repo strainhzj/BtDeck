@@ -3,10 +3,11 @@
 > 本文档记录 lint 门禁建立时豁免的历史问题，作为后续逐步清理的清单。
 > 门禁策略：历史问题豁免（见 .flake8 extend-ignore），**新增代码必须通过门禁**。
 
-## 清理进度（2026-06-25 更新）
+## 清理进度（2026-06-26 更新）
 
 | 规则 | 建立时数量 | 当前数量 | 状态 |
 |------|-----------|---------|------|
+| **F821/F824** | 17 | 0 | ✅ **已全部修复 + 进门禁**（6 文件 17 处真实 bug，per-file-ignores 已移除） |
 | **F401** | 327 | 9 | ✅ **已清理 + 进门禁**（autoflake 清 310 个，9 个 database.py ORM 注册 import 保留） |
 | mypy app/models/ | 145 | 133 | 🔶 清了 12 个真实 bug（11 个 Pydantic v2 `example=` + 1 个 `by_alias` 死键），剩 133 个归 ORM 债 |
 
@@ -27,19 +28,19 @@
 | W503/W504 | 二元运算符换行 | — | 永久忽略（与 black 冲突） |
 | W605 | 无效转义序列 | 4 | 改 raw string |
 
-## 真实 bug（F821/F824，per-file-ignores 豁免）
+## ~~真实 bug（F821/F824，per-file-ignores 豁免）~~ ✅ 2026-06-26 已全部修复
 
-这些是 undefined name / global 误用，在异常/边界路径，平时不触发但应修复：
+原 17 处 undefined name / global 误用已全部修复并清零，per-file-ignores 已移除，
+F821/F824 现进入全仓门禁。修复明细：
 
-| 文件 | 行 | 问题 | 修复方向 |
-|------|-----|------|---------|
-| app/utils/audit_logger.py | 437,444,534,537,541 | F821: `desc`/`logger` 未定义 | 补 `from sqlalchemy import desc` + `logger = logging.getLogger(__name__)` |
-| app/api/endpoints/torrent_crud.py | 99,103 | F821: `req` 应为 `request` | 改为 FastAPI 标准的 `request` |
-| app/api/endpoints/torrent_deletion.py | 654 | F821: `request` 未定义 | 确认参数来源 |
-| app/services/tag_service.py | 223 | F821: `tags` 可能未定义 | 初始化默认值 |
-| app/downloader/initialization.py | 960,983,1390 | F821: `app` 未定义 | 补 import 或改引用方式 |
-| app/downloader/initialization.py | 1022,1061,1093,1126 | F824: global 未赋值 | 删除无用的 global 声明 |
-| app/core/security.py | 256 | F824: global 未赋值 | 删除无用的 global 声明 |
+| 文件 | 问题 | 修复方式 |
+|------|------|---------|
+| app/utils/audit_logger.py | F821: `desc`/`logger` 未定义（5 处） | 补 `from sqlalchemy import desc` + 模块级 `logger = logging.getLogger(__name__)` |
+| app/api/endpoints/torrent_crud.py | F821: `req.app` 未定义（2 处） | 函数加 `request: Request = None` 参数，`req.app` → `request.app` |
+| app/api/endpoints/torrent_deletion.py | F821: `request` 未定义 | 函数加 `request: Request = None` 参数 |
+| app/services/tag_service.py | F821: `tags` 未定义 | 删除 except return 后的孤儿死代码（unreachable） |
+| app/downloader/initialization.py | F821: `app` 未定义（3 处）+ F824: 无用 global（4 处） | 2 个后台任务函数加 `app: FastAPI` 参数（原调用已注释=死代码）+ 删除 4 处纯 dict 操作的无用 global |
+| app/core/security.py | F824: 无用 global（1 处） | 删除 `_decryption_key_cache.clear()` 的无用 global |
 
 ## mypy 历史问题
 
@@ -75,10 +76,10 @@ mypy 1649 个错误（历史类型标注缺失）。当前配置宽松（`check_
 
 ## 清理优先级
 
-1. **P0**：F821 真实 bug（运行时潜在崩溃）
+1. ~~**P0**：F821/F824 真实 bug（运行时潜在崩溃）~~ ✅ **2026-06-26 已完成（17→0）**
 2. ~~**P1**：F401 未用 import（autoflake 一键清理，最大收益）~~ ✅ **2026-06-25 已完成**
 3. **P2**：F841 未用变量（简单删除，含 autoflake 留下的 ~15 处 dangling expression）
 4. **P3**：F541 f-string（简单替换）
-5. **P4**：E711/E712/E722（风格改进）
+5. **P4**：E711/E712/E722（风格改进，E711/E712 需区分 Python 比较与 ORM 查询）
 6. **P5**：Pydantic v2 `example=` 全仓统一（app/models/ 已清，剩 166 处在其他模块）
 7. **长期**：mypy 类型标注补全（app/models/ 真实 bug 已清，剩余 ORM 债待 SQLAlchemy 2.0 迁移）

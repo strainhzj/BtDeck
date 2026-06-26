@@ -251,9 +251,11 @@ def get_key_manager() -> TrackerDecryptionKeyManager:
 
 
 def cleanup_sensitive_data():
-    """清理敏感数据缓存"""
-    global _decryption_key_cache
+    """清理敏感数据缓存
 
+    Note: _decryption_key_cache.clear() 是 dict 方法调用（修改内容），
+    非名字重绑定，无需 global 声明。
+    """
     with _key_cache_lock:
         _decryption_key_cache.clear()
 

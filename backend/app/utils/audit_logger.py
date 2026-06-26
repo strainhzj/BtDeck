@@ -25,6 +25,9 @@ from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from threading import Lock
 
+# 模块级 logger，供模块级函数（如审计日志导出）使用
+logger = logging.getLogger(__name__)
+
 
 class _AuditLoggerSingleton:
     """
@@ -410,7 +413,7 @@ async def export_audit_logs_from_db_to_file(
     Returns:
         导出的日志条数
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, desc
     from app.torrents.audit_models import TorrentAuditLog
     from app.torrents.audit_enums import AuditOperationType
 
