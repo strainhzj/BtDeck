@@ -215,7 +215,8 @@
 >
 > **任务 A：F811 高风险残留清理（5→0）** ✅
 > - cuser.py：两个 `twofa_verify` 绑不同路由路径（/2faVerifyQrCode/ 与 /2faVerifyCode/），FastAPI 按路径注册故路由正常工作，仅模块级变量被后者覆盖（无调用点）。改名为 `twofa_verify_qrcode`/`twofa_verify_code` 消除 F811（无害变量重定义，**非 bug**）
-> - torrents_async.py：`qb/tr_add_torrents_info_only_async` 各定义 3 次。经 **AST 对比 + git 历史追溯（73df90c）** 确认：tr 三份 IDENTICAL（copy-paste 死代码）；qb 前两份一致（含 tracker 富集），第三份**有意去掉富集**（tracker 同步已拆分到 `qb_sync_trackers_only_async` 消除功能重叠），第三份才是生效版。删除前两组过期副本（**-678 行**），保留生效版。调用方仅 `torrent_info_sync_task.py`，行为不变
+> - torrents_async.py：`qb/tr_add_torrents_info_only_async` 各定义 3 次。经 **AST 对比 + git 历史追溯（初始 commit 8fe877d）** 确认：tr 三份 IDENTICAL（copy-paste 死代码）；qb 前两份一致（含 tracker 富集），第三份（生效版，Python 后定义覆盖前定义）**从 day 1 起就不含 tracker 富集**（富集只在 tracker-only 同步函数 `qb_sync_trackers_only_async` 里）。三份重复定义自项目诞生即存在，生效版始终是第三份。删除前两组死代码副本（**-678 行**），保留生效版。调用方仅 `torrent_info_sync_task.py`，行为不变
+> - **审查教训（子代理发现）**：首版 commit ba8689b 把"第三份去掉富集"误归因到 73df90c。`git log -S "_enrich_..."` 命中 73df90c 是因为它**新增**的 tracker-only 函数含此调用，而非从 info_only **删除**。`git log -S` 只说明该 commit 涉及该字符串，**不能推断增删方向**，必须看 hunk 的 +/- 行（73df90c 的 hunk `@@ -3142,3 +3142,222 @@` 证明只在文件末尾追加、未动 info_only）。已更正文档
 > - **门禁收紧**：F811 从 .flake8 extend-ignore 移除，进入全仓门禁。commit ba8689b
 >
 > **任务 B：E711/E712 全量清理（47→0，最高风险）** ✅

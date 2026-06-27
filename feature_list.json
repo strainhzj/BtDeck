@@ -653,7 +653,7 @@
         {
           "id": "lint-cleanup.9",
           "name": "F811 高风险残留清理（5→0 + 进门禁）",
-          "description": "第七轮高风险项。cuser.py 两个 twofa_verify 绑不同路由路径（FastAPI 按路径注册故路由正常），改名为 twofa_verify_qrcode/twofa_verify_code 消除 F811（无害变量重定义）。torrents_async.py 的 qb/tr_add_torrents_info_only_async 各定义 3 次：经 AST 对比 + git 历史追溯（73df90c）确认 tr 三份 IDENTICAL、qb 前两份一致含 tracker 富集而第三份有意去掉富集（tracker 同步已拆分到 qb_sync_trackers_only_async），第三份才是生效版。删除前两组过期副本（-678 行）。F811 从 .flake8 extend-ignore 移除进入全仓门禁。",
+          "description": "第七轮高风险项。cuser.py 两个 twofa_verify 绑不同路由路径（FastAPI 按路径注册故路由正常），改名为 twofa_verify_qrcode/twofa_verify_code 消除 F811（无害变量重定义）。torrents_async.py 的 qb/tr_add_torrents_info_only_async 各定义 3 次：经 AST 对比 + git 历史追溯（初始 commit 8fe877d）确认 tr 三份 IDENTICAL、qb 前两份一致含 tracker 富集而生效版（第三份）从 day 1 起就不含富集（富集只在 tracker-only 同步函数 qb_sync_trackers_only_async 里）。三份重复定义自项目诞生即存在（copy-paste 残留），删除前两组死代码副本（-678 行）。F811 从 .flake8 extend-ignore 移除进入全仓门禁。（审查修正：首版误将去掉富集归因到 73df90c，实为 8fe877d 起即如此）",
           "status": "done",
           "scope": "backend",
           "files": [

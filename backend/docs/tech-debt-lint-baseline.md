@@ -96,7 +96,7 @@ mypy 1649 个错误（历史类型标注缺失）。当前配置宽松（`check_
 
 | 项 | 位置 | 问题 | 风险 | 状态 |
 |----|------|------|------|------|
-| ~~F811 重复函数定义~~ | `app/api/endpoints/torrents_async.py` | `qb/tr_add_torrents_info_only_async` 各定义 3 次。经 AST 对比 + git 历史追溯（73df90c）确认：tr 三份完全一致（IDENTICAL），qb 前两份一致（含 tracker 富集）、第三份有意去掉富集（tracker 同步已拆分到 `qb_sync_trackers_only_async`），第三份才是生效版。删除前两组过期副本（-678 行） | 高（删错改变行为） | ✅ **2026-06-27 已完成** |
+| ~~F811 重复函数定义~~ | `app/api/endpoints/torrents_async.py` | `qb/tr_add_torrents_info_only_async` 各定义 3 次。经 AST 对比 + git 历史追溯确认：tr 三份完全一致（IDENTICAL）；qb 前两份一致（含 tracker 富集），第三份（生效版，Python 后定义覆盖前定义）从初始 commit `8fe877d` 起就**不含 tracker 富集**（富集只在 tracker-only 同步函数里，见 `qb_sync_trackers_only_async`）。三份重复定义自项目诞生即存在（copy-paste 残留），生效版始终是第三份。删除前两组死代码副本（-678 行） | 高（删错改变行为） | ✅ **2026-06-27 已完成** |
 | ~~F811 同名函数~~ | `app/api/endpoints/cuser.py` | `twofa_verify` 定义两次（115/150），分别绑不同路由路径。FastAPI 按路径注册故两条都正常工作，仅模块级变量被后者覆盖（无调用点）。改名为 `twofa_verify_qrcode`/`twofa_verify_code` 消除 F811 | 低（无害，改名） | ✅ **2026-06-27 已完成** |
 | ~~E711/E712 ORM 查询~~ | 全仓 47 处 | `== None`/`== True`/`== False` 中 ORM `.filter()` 里是合法表达式（生成 IS 语句），盲改 `is` 会破坏查询。逐个甄别：44 处 ORM 改 `.is_()` + 3 处 Python 条件改 `is`/直接判断；4 处 `delay==False` 因 0==False 真值陷阱 inline noqa 保留==（用户决策） | 高（需逐个甄别） | ✅ **2026-06-27 已完成** |
 
