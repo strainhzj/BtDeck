@@ -112,7 +112,7 @@ def change_password(
     "/2faVerifyQrCode/{user_id}",
     summary="生成用户的2fa关联二维码，已启用2fa验证的用户不用调用此接口，返回文件流，即生成二维码图片",
 )
-def twofa_verify(
+def twofa_verify_qrcode(
     user_id: Annotated[str, Path(description="用户id")],
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
@@ -147,7 +147,7 @@ def twofa_verify(
     response_model=str,
     response_description="返回字符串",
 )
-def twofa_verify(
+def twofa_verify_code(
     user_id: Annotated[str, Path(description="用户id")],
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
