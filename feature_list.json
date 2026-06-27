@@ -649,6 +649,49 @@
             ".flake8"
           ],
           "evidence": "F811 15→5；E722 2→0；E741 2→0；pytest 1619 passed；flake8 全仓 0 错误；E722/E741 进门禁；高风险遗留 5 处记录到基线"
+        },
+        {
+          "id": "lint-cleanup.9",
+          "name": "F811 高风险残留清理（5→0 + 进门禁）",
+          "description": "第七轮高风险项。cuser.py 两个 twofa_verify 绑不同路由路径（FastAPI 按路径注册故路由正常），改名为 twofa_verify_qrcode/twofa_verify_code 消除 F811（无害变量重定义）。torrents_async.py 的 qb/tr_add_torrents_info_only_async 各定义 3 次：经 AST 对比 + git 历史追溯（73df90c）确认 tr 三份 IDENTICAL、qb 前两份一致含 tracker 富集而第三份有意去掉富集（tracker 同步已拆分到 qb_sync_trackers_only_async），第三份才是生效版。删除前两组过期副本（-678 行）。F811 从 .flake8 extend-ignore 移除进入全仓门禁。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/cuser.py (twofa_verify 改名)",
+            "app/api/endpoints/torrents_async.py (删 678 行过期副本)",
+            ".flake8 (F811 移出 extend-ignore)"
+          ],
+          "evidence": "F811 5→0；pytest 1619 passed；flake8 全仓 0 错误；F811 isolated 0；调用方仅 torrent_info_sync_task.py 行为不变。commit ba8689b"
+        },
+        {
+          "id": "lint-cleanup.10",
+          "name": "E711/E712 全量清理（47→0 + 进门禁，最高风险逐个甄别）",
+          "description": "第七轮最高风险项。逐个甄别 47 处 == None / == True / == False，区分 ORM 查询（保留语义）与 Python 条件（改 is），不盲改避免破坏 SQLAlchemy 查询生成。44 处 ORM .filter()/.where()/or_()/case() 内的 == True/False 改 SQLAlchemy 官方推荐的 .is_(True)/.is_(False)（生成 IS true/false，对 NOT NULL boolean 列与 == 语义等价）；3 处 Python 条件改 is None / 直接判断（torrent_sync.py:712 create_time==None→is None，torrent_sync.py:1165 downloader.enabled!=True→not downloader.enabled）；4 处 downloader.py 的 delay==False 因 0==False 真值陷阱（改 is False 会改变 delay=0 真值）用 inline noqa 保留==（用户决策）。子代理 code review 补充修复 3 处历史 ORM noqa 顶替（tracker_messages:90 + cron_crud:418/420 应做 .is_() 而非 noqa）。E711/E712 从 .flake8 extend-ignore 移除进入全仓门禁。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/repositories/torrent_file_backup_repository.py (8 ORM)",
+            "app/api/endpoints/torrents_async.py (4 ORM)",
+            "app/tasks/cron_crud.py (5 ORM), logger.py (3 ORM)",
+            "app/api/endpoints/torrent_helpers.py (3 ORM), torrent_sync.py (1 ORM+2 PY), downloader.py (4 noqa)",
+            "app/services/path_maintenance_service.py (3), notification_service.py (2), seed_transfer_service.py (1)",
+            "app/core/reannounce_config_operations.py, tracker_judgment.py",
+            "app/tasks/scheduler/downloader_path_scan.py (2), torrent_tracker_status_judge.py (2), tracker_candidate_pool.py (2), tracker_status_judge.py (2)",
+            "app/api/endpoints/torrent_crud.py, tracker_test.py, tracker_messages.py, cron_crud_async.py",
+            ".flake8 (E711/E712 移出 extend-ignore)"
+          ],
+          "evidence": "E711/E712 47→0；pytest 1619 passed；flake8 全仓 0 错误；isolated 0；--disable-noqa 仅剩 4 处故意保留 delay。子代理审查发现 3 处历史 ORM noqa 顶替并补充修复。commit 7a21718"
+        },
+        {
+          "id": "lint-cleanup.11",
+          "name": "mypy app/models/ ORM 债评估（133 处，只评估不实施）",
+          "description": "第七轮任务 C。mypy app/models/ 133 errors（117 assignment + 10 return-value + 4 arg-type + 2 var-annotated，9 文件）100% 归因 ORM 描述符类型推断失败（Base=declarative_base() 1.4 风格，mypy 不识别 class X(Base)），非真实 bug。SQLAlchemy 已是 2.0.47 无需升级。评估三方案：A 迁移到 DeclarativeBase+Mapped[]（长期最优，17文件146字段，2-3会话）/ B 启用 mypy 插件（短期过渡降噪）/ C 保持现状。产出评估报告写入基线文档，不实施代码改动，建议作为独立技术债任务单独立项。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "docs/tech-debt-lint-baseline.md (追加 mypy ORM 债评估报告章节)"
+          ],
+          "evidence": "评估报告交付（现状快照+根因分析+三方案对比+工作量评估+结论建议）；无代码改动；建议独立立项"
         }
       ]
     }
