@@ -709,7 +709,7 @@ def qb_add_torrents(db, downloaders, app=None):
             mode = "update"
             torrent_info_id = torrent_query_result[0][0]
             create_time = torrent_query_result[0][1]
-            if create_time == None:
+            if create_time is None:
                 create_time = current_time
             update_time = current_time
         torrent = torrentInfoModel(
@@ -1162,7 +1162,7 @@ async def sync_single_downloader(
             return CommonResponse(status="error", msg=f"下载器不存在: {downloader_id}", code="404", data=None)
 
         # 检查下载器是否启用
-        if downloader.enabled != True or downloader.status != "1":
+        if not downloader.enabled or downloader.status != "1":
             return CommonResponse(
                 status="error", msg=f"下载器未启用或已停用: {downloader.nickname}", code="400", data=None
             )
@@ -1346,7 +1346,7 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
         async with AsyncSessionLocal() as db:
             # Step 1: 加载所有启用的关键词到内存
             result = await db.execute(
-                select(TrackerKeywordConfig).filter(TrackerKeywordConfig.enabled == True, TrackerKeywordConfig.dr == 0)
+                select(TrackerKeywordConfig).filter(TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0)
             )
             keywords = result.scalars().all()
 

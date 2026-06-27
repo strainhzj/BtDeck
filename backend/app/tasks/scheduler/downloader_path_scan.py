@@ -87,7 +87,7 @@ class DownloaderPathScanTask:
             async with AsyncSessionLocal() as db:
                 # 查询所有启用的下载器
                 downloader_result = await db.execute(
-                    select(BtDownloaders).where(BtDownloaders.enabled == True, BtDownloaders.dr == 0)
+                    select(BtDownloaders).where(BtDownloaders.enabled.is_(True), BtDownloaders.dr == 0)
                 )
                 downloaders = downloader_result.scalars().all()
 
@@ -795,7 +795,7 @@ class DownloaderPathScanTask:
                 select(DownloaderPathMaintenance).where(
                     DownloaderPathMaintenance.downloader_id == downloader_id,
                     DownloaderPathMaintenance.path_type == "active",
-                    DownloaderPathMaintenance.is_enabled == True,
+                    DownloaderPathMaintenance.is_enabled.is_(True),
                 )
             )
             all_active_records = all_active.scalars().all()

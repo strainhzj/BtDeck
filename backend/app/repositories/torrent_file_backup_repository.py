@@ -127,7 +127,7 @@ class TorrentFileBackupRepository:
             query = select(TorrentFileBackup).filter(TorrentFileBackup.info_hash == info_hash)
 
             if not include_deleted:
-                query = query.filter(TorrentFileBackup.is_deleted == False)
+                query = query.filter(TorrentFileBackup.is_deleted.is_(False))
 
             result = await self.db.execute(query)
             return result.scalar_one_or_none()
@@ -149,7 +149,7 @@ class TorrentFileBackupRepository:
             query = (
                 select(TorrentFileBackup)
                 .filter(TorrentFileBackup.id == backup_id)
-                .filter(TorrentFileBackup.is_deleted == False)
+                .filter(TorrentFileBackup.is_deleted.is_(False))
             )
 
             result = await self.db.execute(query)
@@ -174,7 +174,7 @@ class TorrentFileBackupRepository:
             query = (
                 select(TorrentFileBackup)
                 .filter(TorrentFileBackup.downloader_id == downloader_id)
-                .filter(TorrentFileBackup.is_deleted == False)
+                .filter(TorrentFileBackup.is_deleted.is_(False))
                 .order_by(TorrentFileBackup.created_at.desc())
                 .offset(skip)
                 .limit(limit)
@@ -200,7 +200,7 @@ class TorrentFileBackupRepository:
         try:
             query = (
                 select(TorrentFileBackup)
-                .filter(TorrentFileBackup.is_deleted == False)
+                .filter(TorrentFileBackup.is_deleted.is_(False))
                 .order_by(TorrentFileBackup.created_at.desc())
                 .offset(skip)
                 .limit(limit)
@@ -228,7 +228,7 @@ class TorrentFileBackupRepository:
             query = (
                 select(func.count(TorrentFileBackup.id))
                 .filter(TorrentFileBackup.downloader_id == downloader_id)
-                .filter(TorrentFileBackup.is_deleted == False)
+                .filter(TorrentFileBackup.is_deleted.is_(False))
             )
 
             result = await self.db.execute(query)
@@ -247,7 +247,7 @@ class TorrentFileBackupRepository:
         try:
             from sqlalchemy import func
 
-            query = select(func.count(TorrentFileBackup.id)).filter(TorrentFileBackup.is_deleted == False)
+            query = select(func.count(TorrentFileBackup.id)).filter(TorrentFileBackup.is_deleted.is_(False))
 
             result = await self.db.execute(query)
             return result.scalar_one() or 0
@@ -376,7 +376,7 @@ class TorrentFileBackupRepository:
             query = (
                 select(TorrentFileBackup.id)
                 .filter(TorrentFileBackup.info_hash == info_hash)
-                .filter(TorrentFileBackup.is_deleted == False)
+                .filter(TorrentFileBackup.is_deleted.is_(False))
             )
 
             result = await self.db.execute(query)
@@ -402,7 +402,7 @@ class TorrentFileBackupRepository:
                 select(func.sum(TorrentFileBackup.file_size))
                 .filter(TorrentFileBackup.downloader_id == downloader_id)
                 .filter(TorrentFileBackup.file_size.isnot(None))
-                .filter(TorrentFileBackup.is_deleted == False)
+                .filter(TorrentFileBackup.is_deleted.is_(False))
             )
 
             result = await self.db.execute(query)

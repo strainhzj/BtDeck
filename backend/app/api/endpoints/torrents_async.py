@@ -1320,7 +1320,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                                 select(TorrentFileBackup).filter(
                                     TorrentFileBackup.info_hash == torrent_info.hashString,
                                     TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
-                                    TorrentFileBackup.is_deleted == False,
+                                    TorrentFileBackup.is_deleted.is_(False),
                                 )
                             )
                             existing_record = existing_backup.scalar_one_or_none()
@@ -1361,7 +1361,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     select(TorrentFileBackup).filter(
                         TorrentFileBackup.info_hash == torrent_info.hashString,
                         TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
-                        TorrentFileBackup.is_deleted == False,
+                        TorrentFileBackup.is_deleted.is_(False),
                     )
                 )
                 existing_record = existing_backup.scalar_one_or_none()
@@ -1936,7 +1936,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                                 select(TorrentFileBackup).filter(
                                     TorrentFileBackup.info_hash == torrent_info.hash,
                                     TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
-                                    TorrentFileBackup.is_deleted == False,
+                                    TorrentFileBackup.is_deleted.is_(False),
                                 )
                             )
                             existing_record = existing_backup.scalar_one_or_none()
@@ -1977,7 +1977,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     select(TorrentFileBackup).filter(
                         TorrentFileBackup.info_hash == torrent_info.hash,
                         TorrentFileBackup.downloader_id == bt_downloader.downloader_id,
-                        TorrentFileBackup.is_deleted == False,
+                        TorrentFileBackup.is_deleted.is_(False),
                     )
                 )
                 existing_record = existing_backup.scalar_one_or_none()

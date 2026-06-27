@@ -251,7 +251,7 @@ class CronTaskCRUD:
     def get_enabled_tasks(db: Session) -> DatabaseResult:
         """获取所有启用的定时任务"""
         try:
-            tasks = db.query(CronTask).filter(and_(CronTask.enabled == True, CronTask.dr == 0)).all()
+            tasks = db.query(CronTask).filter(and_(CronTask.enabled.is_(True), CronTask.dr == 0)).all()
 
             return DatabaseResult.success_result([task.to_dict() for task in tasks])
 
@@ -326,10 +326,10 @@ class TaskLogsCRUD:
             total_logs = base_query.count()
 
             # 成功日志数
-            success_logs = base_query.filter(TaskLogs.success == True).count()
+            success_logs = base_query.filter(TaskLogs.success.is_(True)).count()
 
             # 失败日志数
-            failed_logs = base_query.filter(TaskLogs.success == False).count()
+            failed_logs = base_query.filter(TaskLogs.success.is_(False)).count()
 
             # 今日日志数
             today = date.today()
@@ -415,9 +415,9 @@ class TaskLogsCRUD:
                 query = query.filter(TaskLogs.start_time < cutoff)
 
             if keep_success:
-                query = query.filter(TaskLogs.success == False)  # noqa: E712
+                query = query.filter(TaskLogs.success.is_(False))
             if keep_error:
-                query = query.filter(TaskLogs.success == True)  # noqa: E712
+                query = query.filter(TaskLogs.success.is_(True))
 
             count = query.update({TaskLogs.dr: 1}, synchronize_session=False)
             db.commit()

@@ -204,7 +204,7 @@ class TorrentTrackerStatusJudge:
             keywords = (
                 db.query(TrackerKeywordConfig)
                 .filter(
-                    TrackerKeywordConfig.enabled == True,
+                    TrackerKeywordConfig.enabled.is_(True),
                     TrackerKeywordConfig.dr == 0,
                     TrackerKeywordConfig.keyword_type.in_(["failed", "success", "ignored"]),
                 )
@@ -223,7 +223,7 @@ class TorrentTrackerStatusJudge:
                         db.query(TrackerKeywordConfig)
                         .filter(
                             TrackerKeywordConfig.keyword == kw.keyword,
-                            TrackerKeywordConfig.enabled == True,
+                            TrackerKeywordConfig.enabled.is_(True),
                             TrackerKeywordConfig.dr == 0,
                         )
                         .order_by(TrackerKeywordConfig.priority.desc())

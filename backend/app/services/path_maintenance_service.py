@@ -124,7 +124,7 @@ class PathMaintenanceService:
                 .filter(
                     DownloaderPathMaintenanceModel.downloader_id == downloader_id,
                     DownloaderPathMaintenanceModel.path_type == "default",
-                    DownloaderPathMaintenanceModel.is_enabled == True,
+                    DownloaderPathMaintenanceModel.is_enabled.is_(True),
                 )
                 .first()
             )
@@ -151,7 +151,7 @@ class PathMaintenanceService:
                 .filter(
                     DownloaderPathMaintenanceModel.downloader_id == downloader_id,
                     DownloaderPathMaintenanceModel.path_type == "active",
-                    DownloaderPathMaintenanceModel.is_enabled == True,
+                    DownloaderPathMaintenanceModel.is_enabled.is_(True),
                 )
                 .all()
             )
@@ -447,7 +447,7 @@ class PathMaintenanceService:
                 base_query = base_query.filter(DownloaderPathMaintenanceModel.path_type == path_type)
 
             total = base_query.count()
-            enabled = base_query.filter(DownloaderPathMaintenanceModel.is_enabled == True).count()
+            enabled = base_query.filter(DownloaderPathMaintenanceModel.is_enabled.is_(True)).count()
 
             default_count = base_query.filter(DownloaderPathMaintenanceModel.path_type == "default").count()
 

@@ -204,7 +204,7 @@ class TrackerStatusJudge:
             # 查询所有启用的关键词
             keywords = (
                 db.query(TrackerKeywordConfig)
-                .filter(TrackerKeywordConfig.enabled == True, TrackerKeywordConfig.dr == 0)
+                .filter(TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0)
                 .all()
             )
 
@@ -250,7 +250,7 @@ class TrackerStatusJudge:
             messages = (
                 db.query(TrackerMessageLog)
                 .filter(
-                    TrackerMessageLog.is_processed == False,
+                    TrackerMessageLog.is_processed.is_(False),
                     TrackerMessageLog.msg.isnot(None),
                     TrackerMessageLog.msg != "",
                 )

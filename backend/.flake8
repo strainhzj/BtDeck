@@ -15,7 +15,9 @@ extend-exclude =
 # E203: 冒号前空格（与 black 冲突，必须忽略——black 官方推荐）
 # E402: 模块级 import 不在顶部（历史代码有条件 import，逐步清）
 # E501: 行太长（历史长 SQL/URL 字符串，black 无法拆，逐步清）
-# E711/E712: 与 None/False 比较（历史代码风格，低风险）
+# E711/E712 已于 2026-06-27 全量清理（47→0，41 处 ORM 改 .is_() + 6 处 Python 条件
+# 改 is/直接判断；downloader.py 4 处 delay==False 因 0==False 真值陷阱用 inline noqa 保留==），
+# 从 extend-ignore 移除进入门禁
 # E722/E741 已于 2026-06-26 全量清理（4→0），从 extend-ignore 移除进入门禁
 # F541 已于 2026-06-26 全量清理（74→0），从 extend-ignore 移除进入门禁
 # F811 已于 2026-06-27 全量清理（15→0，cuser 改名 + torrents_async 删过期副本），从 extend-ignore 移除进入门禁
@@ -29,8 +31,6 @@ extend-ignore =
     E203,
     E402,
     E501,
-    E711,
-    E712,
     W503,
     W504,
     W605

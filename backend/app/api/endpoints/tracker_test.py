@@ -43,7 +43,7 @@ def test_match(test_req: MatchTestRequest, _user=Depends(require_authenticated_u
         # 查询所有启用的关键词
         keywords = (
             db.query(TrackerKeywordConfig)
-            .filter(TrackerKeywordConfig.enabled == True, TrackerKeywordConfig.dr == 0)
+            .filter(TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0)
             .all()
         )
 

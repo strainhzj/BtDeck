@@ -87,7 +87,7 @@ def get_statistics(db: Session = Depends(get_db), _user=Depends(require_authenti
         total = db.query(TrackerMessageLog).count()
 
         # 统计未处理数
-        unprocessed = db.query(TrackerMessageLog).filter(TrackerMessageLog.is_processed == False).count()  # noqa: E712
+        unprocessed = db.query(TrackerMessageLog).filter(TrackerMessageLog.is_processed.is_(False)).count()
 
         # 统计成功关键词数
         success = db.query(TrackerMessageLog).filter(TrackerMessageLog.keyword_type == "success").count()

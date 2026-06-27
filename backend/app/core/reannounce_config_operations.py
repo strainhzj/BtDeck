@@ -88,7 +88,7 @@ def get_enabled_configs(db: Session) -> DatabaseResult:
         configs = (
             db.query(TrackerReannounceConfig)
             .filter(
-                TrackerReannounceConfig.enabled == True,
+                TrackerReannounceConfig.enabled.is_(True),
                 TrackerReannounceConfig.dr == 0,
             )
             .all()

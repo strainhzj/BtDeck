@@ -35,7 +35,7 @@ class AsyncCronTaskCRUD:
             DatabaseResult: 包含任务列表的数据库结果对象
         """
         try:
-            stmt = select(CronTask).where(and_(CronTask.enabled == True, CronTask.dr == 0))
+            stmt = select(CronTask).where(and_(CronTask.enabled.is_(True), CronTask.dr == 0))
             result = await db.execute(stmt)
             tasks = result.scalars().all()
 

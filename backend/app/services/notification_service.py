@@ -51,7 +51,7 @@ class NotificationService:
 
     async def get_unread_count(self) -> int:
         """获取未读通知数量"""
-        query = select(func.count(Notification.id)).where(Notification.is_read == False)
+        query = select(func.count(Notification.id)).where(Notification.is_read.is_(False))
         result = await self.db.execute(query)
         return result.scalar() or 0
 
@@ -75,7 +75,7 @@ class NotificationService:
 
     async def mark_all_as_read(self) -> int:
         """标记所有通知为已读"""
-        stmt = update(Notification).where(Notification.is_read == False).values(is_read=True, read_at=datetime.utcnow())
+        stmt = update(Notification).where(Notification.is_read.is_(False)).values(is_read=True, read_at=datetime.utcnow())
         result = await self.db.execute(stmt)
         await self.db.commit()
         return result.rowcount

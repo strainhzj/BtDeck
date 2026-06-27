@@ -83,7 +83,7 @@ class TrackerCandidatePoolTask:
                     # 分批查询
                     result = await db.execute(
                         select(TrackerMessageLog)
-                        .filter(TrackerMessageLog.is_processed == False)
+                        .filter(TrackerMessageLog.is_processed.is_(False))
                         .limit(batch_size)
                         .offset(offset)
                     )
@@ -293,7 +293,7 @@ class TrackerCandidatePoolTask:
                 # 分批查询
                 query = (
                     db.query(TrackerMessageLog)
-                    .filter(TrackerMessageLog.is_processed == False)
+                    .filter(TrackerMessageLog.is_processed.is_(False))
                     .limit(batch_size)
                     .offset(offset)
                 )

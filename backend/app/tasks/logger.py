@@ -123,17 +123,17 @@ async def get_task_statistics() -> Dict[str, Any]:
         total_tasks = db.query(TaskLogs).count()
 
         # 成功任务数
-        successful_tasks = db.query(TaskLogs).filter(TaskLogs.success == True).count()
+        successful_tasks = db.query(TaskLogs).filter(TaskLogs.success.is_(True)).count()
 
         # 失败任务数
-        failed_tasks = db.query(TaskLogs).filter(TaskLogs.success == False).count()
+        failed_tasks = db.query(TaskLogs).filter(TaskLogs.success.is_(False)).count()
 
         # 按任务名统计
         task_stats = (
             db.query(
                 TaskLogs.task_name,
                 db.func.count(TaskLogs.log_id).label("total"),
-                db.func.sum(db.func.case([(TaskLogs.success == True, 1)], else_=0)).label("success"),
+                db.func.sum(db.func.case([(TaskLogs.success.is_(True), 1)], else_=0)).label("success"),
                 db.func.avg(TaskLogs.duration).label("avg_duration"),
             )
             .group_by(TaskLogs.task_name)

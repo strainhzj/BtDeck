@@ -364,7 +364,7 @@ class SeedTransferService:
                         select(TorrentFileBackup).filter(
                             TorrentFileBackup.info_hash == info_hash,
                             TorrentFileBackup.downloader_id == source_downloader_id,
-                            TorrentFileBackup.is_deleted == False,
+                            TorrentFileBackup.is_deleted.is_(False),
                         )
                     )
                     existing_record = existing_backup.scalar_one_or_none()

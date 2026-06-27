@@ -629,7 +629,9 @@ async def test_connection(
         delay = await get_delay_async(downloader)
 
         # 判断连接状态
-        success = delay is not None and delay != False and delay != 0
+        # 保留 ==（行尾已加 noqa: E712）：delay 可能是数值/False/None，需用 == 让
+        # 0==False 为 True，以维持"延迟为0也判为未连接"的历史语义；改 is False 会改变 delay=0 的真值
+        success = delay is not None and delay != False and delay != 0  # noqa: E712
         "connected" if success else "disconnected"
         message = "连接成功" if success else "连接失败"
 
@@ -705,7 +707,8 @@ def _build_status_from_cache(cached_downloader) -> DownloaderStatusVO:
 
 
 def get_qbittorrent_detail(delay, downloader):
-    if delay == 0 or delay == False:
+    # delay 可能为数值/False/None；保留 == 让 0==False 为 True（见 get_delay_async 返回值）
+    if delay == 0 or delay == False:  # noqa: E712
         client_status = "disconnected"
         upload_speed = "0.00 KB/s"
         download_speed = "0.00 KB/s"
@@ -795,7 +798,8 @@ def get_qbittorrent_detail(delay, downloader):
 
 
 def get_transmission_detail(delay, downloader):
-    if delay == 0 or delay == False:
+    # delay 可能为数值/False/None；保留 == 让 0==False 为 True（见 get_delay_async 返回值）
+    if delay == 0 or delay == False:  # noqa: E712
         client_status = "disconnected"
         upload_speed = "0.00 KB/s"
         download_speed = "0.00 KB/s"
@@ -923,7 +927,8 @@ def safe_delay_value(delay) -> float | None:
     Returns:
         float | None: 格式化后的延迟值
     """
-    if delay is None or delay == False:
+    # delay 可能为数值/False/None；保留 == 让 0==False 为 True（见 get_delay_async 返回值）
+    if delay is None or delay == False:  # noqa: E712
         return None  # 未连接或异常
 
     elif isinstance(delay, (int, float)):

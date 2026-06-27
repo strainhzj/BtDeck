@@ -171,9 +171,9 @@ def get_torrent_infos(
         elif len(statuses) == 1:
             # 单个状态：使用原有逻辑
             if statuses[0] == "error":
-                query = query.filter(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error == True))
+                query = query.filter(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True)))
                 count_query = count_query.filter(
-                    or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error == True)
+                    or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
                 )
             else:
                 query = query.filter(TorrentInfo.status == statuses[0])
@@ -184,7 +184,7 @@ def get_torrent_infos(
             for s in statuses:
                 if s == "error":
                     # error 状态特殊处理
-                    status_conditions.append(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error == True))
+                    status_conditions.append(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True)))
                 else:
                     status_conditions.append(TorrentInfo.status == s)
 

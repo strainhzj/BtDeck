@@ -61,7 +61,7 @@ def torrent_list(
         # 查询启用的下载器（返回完整模型实例，以支持@property属性访问）
         downloaders = (
             db.query(BtDownloaders)
-            .filter(BtDownloaders.dr == 0, BtDownloaders.enabled == True, BtDownloaders.status == "1")
+            .filter(BtDownloaders.dr == 0, BtDownloaders.enabled.is_(True), BtDownloaders.status == "1")
             .all()
         )
 
