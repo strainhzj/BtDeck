@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 from app.tasks.scheduler.torrent_sync.base import BaseSyncTask
 from app.core import reannounce_config_operations as ops
+from app.database import SessionLocal
 
 logger = logging.getLogger(__name__)
 
@@ -51,137 +52,142 @@ class TrackerReannounceTask(BaseSyncTask):
             if not valid_downloaders:
                 return {"status": "no_action", "message": "没有有效的下载器"}
 
+            # 读段（短 session）：仅查询启用的站点配置，查完立即释放连接。
+            # 关键：后续对每个下载器的处理涉及大量 HTTP 网络 IO（reannounce），
+            # 不能让 session 在网络 IO 期间一直持有写锁（database is locked 根因）。
             db = SessionLocal()
             try:
-                # 获取启用的站点配置
                 config_result = ops.get_enabled_configs(db)
-                if not config_result.success or not config_result.data:
-                    return {"status": "no_action", "message": "没有启用的站点配置"}
-
-                configs = ops.filter_enabled_configs(config_result.data)
-                # logger.info(f"[DEBUG] 启用的站点配置数={len(configs)}, "
-                #              f"配置列表={[(c.domain_pattern, c.interval_minutes) for c in configs]}")
-                total_success = 0
-                total_failed = 0
-
-                for dl_vo in valid_downloaders:
-                    try:
-                        result = await self._process_downloader(downloader_app, db, dl_vo, configs)
-                        total_success += result.get("success_count", 0)
-                        total_failed += result.get("failed_count", 0)
-                    except Exception as e:
-                        logger.error(f"处理下载器 {dl_vo.nickname} 失败: {e}")
-                        total_failed += 1
-
-                self.total_processed += total_success
-                self.total_failed += total_failed
-                self.success_count += 1
-
-                return {
-                    "status": "success",
-                    "message": f"汇报完成: 成功 {total_success}, 失败 {total_failed}",
-                    "successful_syncs": total_success,
-                    "failed_syncs": total_failed,
-                }
-
             finally:
                 db.close()
+
+            if not config_result.success or not config_result.data:
+                return {"status": "no_action", "message": "没有启用的站点配置"}
+
+            configs = ops.filter_enabled_configs(config_result.data)
+            total_success = 0
+            total_failed = 0
+
+            for dl_vo in valid_downloaders:
+                try:
+                    # _process_downloader 内部自行管理 session 生命周期：
+                    # 读段(查种子/tracker) → 网络段(不持session) → 写段(短session)
+                    result = await self._process_downloader(downloader_app, dl_vo, configs)
+                    total_success += result.get("success_count", 0)
+                    total_failed += result.get("failed_count", 0)
+                except Exception as e:
+                    logger.error(f"处理下载器 {dl_vo.nickname} 失败: {e}")
+                    total_failed += 1
+
+            self.total_processed += total_success
+            self.total_failed += total_failed
+            self.success_count += 1
+
+            return {
+                "status": "success",
+                "message": f"汇报完成: 成功 {total_success}, 失败 {total_failed}",
+                "successful_syncs": total_success,
+                "failed_syncs": total_failed,
+            }
 
         except Exception as e:
             self.failure_count += 1
             logger.error(f"{self.name} 执行失败: {e}", exc_info=True)
             return {"status": "failed", "message": str(e)}
 
-    async def _process_downloader(self, app, db, dl_vo, configs) -> Dict[str, Any]:
-        """处理单个下载器的汇报"""
+    async def _process_downloader(self, app, dl_vo, configs) -> Dict[str, Any]:
+        """处理单个下载器的汇报。
+
+        Session 生命周期拆分为三段（修复 database is locked）：
+        1. 读段：短 session 查询 tracker / 种子记录，expunge 剥离后立即 close。
+        2. 网络段：execute_reannounce 是 HTTP 远程调用，不持有任何 session。
+        3. 写段：batch_update_last_announce_time 内部自开短 session 回写。
+        """
         from app.torrents.models import TorrentInfo, TrackerInfo
         from app.services.reannounce_service import execute_reannounce
 
-        # 先查出该下载器下所有未删除的种子info_id，用于过滤tracker
-        downloader_torrent_ids = [
-            r.info_id
-            for r in db.query(TorrentInfo.info_id)
-            .filter(
-                TorrentInfo.downloader_id == dl_vo.downloader_id,
-                TorrentInfo.dr == 0,
+        # ===== 读段（短 session）=====
+        db = SessionLocal()
+        try:
+            # 先查出该下载器下所有未删除的种子info_id，用于过滤tracker
+            downloader_torrent_ids = [
+                r.info_id
+                for r in db.query(TorrentInfo.info_id)
+                .filter(
+                    TorrentInfo.downloader_id == dl_vo.downloader_id,
+                    TorrentInfo.dr == 0,
+                )
+                .all()
+            ]
+            if not downloader_torrent_ids:
+                return {"success_count": 0, "failed_count": 0}
+
+            # 只查询属于当前下载器的 tracker，避免全表扫描
+            trackers = (
+                db.query(TrackerInfo)
+                .filter(
+                    TrackerInfo.torrent_info_id.in_(downloader_torrent_ids),
+                    TrackerInfo.tracker_url.isnot(None),
+                    TrackerInfo.dr == 0,
+                )
+                .all()
             )
-            .all()
-        ]
-        if not downloader_torrent_ids:
-            return {"success_count": 0, "failed_count": 0}
+            if not trackers:
+                return {"success_count": 0, "failed_count": 0}
 
-        # 只查询属于当前下载器的 tracker，避免全表扫描
-        trackers = (
-            db.query(TrackerInfo)
-            .filter(
-                TrackerInfo.torrent_info_id.in_(downloader_torrent_ids),
-                TrackerInfo.tracker_url.isnot(None),
-                TrackerInfo.dr == 0,
-            )
-            .all()
-        )
-        # logger.info(f"[DEBUG] 下载器={dl_vo.nickname}, tracker数量={len(trackers)}")
-
-        if not trackers:
-            return {"success_count": 0, "failed_count": 0}
-
-        # 预编译配置匹配：按需汇报的config缓存判断结果
-        eligible_config_ids = set()
-        for config in configs:
-            if should_announce(config):
-                eligible_config_ids.add(config.id_)
-
-        # 按 tracker_url 提取域名，匹配配置，收集需要汇报的 torrent_info_id
-        torrent_ids_to_announce = set()
-        matched_config_ids = set()
-
-        for tracker in trackers:
-            domain = _extract_domain(tracker.tracker_host or tracker.tracker_url)
-            # if sample_logged < 3:
-            #     logger.info(f"[DEBUG] tracker_url={tracker.tracker_url!r}, tracker_host={tracker.tracker_host!r}, 提取域名={domain!r}")
-            #     sample_logged += 1
-            if not domain:
-                continue
+            # 预编译配置匹配：按需汇报的config缓存判断结果
+            eligible_config_ids = set()
             for config in configs:
-                if ops.match_domain(domain, config):
-                    if config.id_ in eligible_config_ids:
-                        torrent_ids_to_announce.add(tracker.torrent_info_id)
-                        matched_config_ids.add(config.id_)
-                    break
+                if should_announce(config):
+                    eligible_config_ids.add(config.id_)
 
-        # logger.info(f"[DEBUG] 匹配到需要汇报的种子数={len(torrent_ids_to_announce)}, "
-        #              f"匹配到的配置数={len(matched_config_ids)}")
+            # 按 tracker_url 提取域名，匹配配置，收集需要汇报的 torrent_info_id
+            torrent_ids_to_announce = set()
+            matched_config_ids = set()
 
-        if not torrent_ids_to_announce:
-            return {"success_count": 0, "failed_count": 0}
+            for tracker in trackers:
+                domain = _extract_domain(tracker.tracker_host or tracker.tracker_url)
+                if not domain:
+                    continue
+                for config in configs:
+                    if ops.match_domain(domain, config):
+                        if config.id_ in eligible_config_ids:
+                            torrent_ids_to_announce.add(tracker.torrent_info_id)
+                            matched_config_ids.add(config.id_)
+                        break
 
-        # 查询对应的种子记录（属于当前下载器且未删除）
-        torrent_records = (
-            db.query(TorrentInfo)
-            .filter(
-                TorrentInfo.info_id.in_(torrent_ids_to_announce),
-                TorrentInfo.downloader_id == dl_vo.downloader_id,
-                TorrentInfo.dr == 0,
+            if not torrent_ids_to_announce:
+                return {"success_count": 0, "failed_count": 0}
+
+            # 查询对应的种子记录（属于当前下载器且未删除）
+            torrent_records = (
+                db.query(TorrentInfo)
+                .filter(
+                    TorrentInfo.info_id.in_(torrent_ids_to_announce),
+                    TorrentInfo.downloader_id == dl_vo.downloader_id,
+                    TorrentInfo.dr == 0,
+                )
+                .all()
             )
-            .all()
-        )
-        # logger.info(f"[DEBUG] 属于当前下载器的种子记录数={len(torrent_records)}")
+            # 关键：把 ORM 对象从 session 剥离，使 close 后仍可在网络段使用其字段。
+            db.expunge_all()
+        finally:
+            db.close()
 
         if not torrent_records:
             return {"success_count": 0, "failed_count": 0}
 
-        # 执行汇报
+        # ===== 网络段（不持有任何 session）=====
         result = await execute_reannounce(
             app=app,
-            db=db,
             downloader_id=dl_vo.downloader_id,
             torrent_records=torrent_records,
             trigger_type="scheduled",
         )
 
-        # 批量更新匹配配置的最后汇报时间（单次commit）
+        # ===== 写段（batch_update 内部自开短 session）=====
         if matched_config_ids:
-            ops.batch_update_last_announce_time(db, list(matched_config_ids))
+            ops.batch_update_last_announce_time(list(matched_config_ids))
 
         return result
 

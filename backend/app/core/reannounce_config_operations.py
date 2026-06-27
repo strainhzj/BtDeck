@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.torrents.models import TrackerReannounceConfig
 from app.core.database_result import DatabaseResult
+from app.database import SessionLocal
 
 import logging
 
@@ -130,14 +131,28 @@ def update_config(db: Session, config_id: str, update_data: Dict[str, Any]) -> D
 
 
 def update_last_announce_time(db: Session, config_id: str) -> None:
-    """更新配置的最后汇报时间（单条，向后兼容）"""
-    batch_update_last_announce_time(db, [config_id])
+    """更新配置的最后汇报时间（单条，向后兼容）。
+
+    注意：db 参数保留仅为向后兼容签名，实际由 batch_update_last_announce_time
+    内部自开短 session 写库（不再复用本 session，避免长事务持锁）。
+    """
+    batch_update_last_announce_time([config_id])
 
 
-def batch_update_last_announce_time(db: Session, config_ids: list) -> None:
-    """批量更新配置的最后汇报时间，单次commit减少SQLite锁竞争"""
+def batch_update_last_announce_time(config_ids: list) -> None:
+    """批量更新配置的最后汇报时间，自开短 session 减少 SQLite 写锁占用。
+
+    设计要点（配合 database is locked 修复）：
+    - 不复用调用方贯穿网络 IO 的长 session，避免在他人持锁期间排队等待。
+    - 内部开一个独立的短 session，提交后立即关闭，把写锁持有时间压到最短。
+    - 单次 commit；失败时 rollback 并告警，不抛出（避免阻断 reannounce 主流程）。
+    """
     if not config_ids:
         return
+    db = SessionLocal()
+    if not config_ids:
+        return
+    db = SessionLocal()
     try:
         now = datetime.now()
         configs = (
@@ -153,6 +168,8 @@ def batch_update_last_announce_time(db: Session, config_ids: list) -> None:
     except Exception as e:
         logger.warning(f"批量更新最后汇报时间失败: {e}")
         db.rollback()
+    finally:
+        db.close()
 
 
 def delete_config(db: Session, config_id: str) -> DatabaseResult:

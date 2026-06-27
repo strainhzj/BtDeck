@@ -11,7 +11,7 @@ Tracker Reannounce 核心服务
 
 import logging
 import asyncio
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 from app.models.setting_templates import DownloaderTypeEnum
@@ -28,22 +28,40 @@ _reannounce_locks: Dict[str, asyncio.Lock] = {}
 _locks_lock = asyncio.Lock()
 
 
+def _to_transmission_id(torrent_id) -> Optional[int]:
+    """把 torrent_info.torrent_id（text 形式的数字）转为 int。
+
+    transmission_rpc 的 _parse_torrent_id 规则：int(>=0) 或 str(40 位 hex) 才合法。
+    本库 torrent_id 列存为 text（如 '103'），需转成 int 才能通过校验。
+    非数字脏数据返回 None（跳过该条，不阻断整批）。
+    """
+    if torrent_id is None:
+        return None
+    try:
+        tid = int(torrent_id)
+    except (TypeError, ValueError):
+        logger.warning(f"Transmission torrent_id 无法转为整数，已跳过: {torrent_id!r}")
+        return None
+    return tid if tid >= 0 else None
+
+
 async def execute_reannounce(
     app,
-    db: Session,
     downloader_id: str,
     torrent_records: List,
     trigger_type: str = "manual",
+    db: Optional[Session] = None,
 ) -> Dict[str, Any]:
     """
     执行 tracker 汇报
 
     Args:
         app: FastAPI app 实例（用于获取下载器缓存）
-        db: 数据库 session
         downloader_id: 下载器ID
         torrent_records: 种子记录列表（ORM 对象，需有 hash/torrent_id/downloader_id 属性）
         trigger_type: 触发类型 "manual" | "scheduled"
+        db: 数据库 session（已废弃保留向后兼容，本函数内部不使用 db；
+            调用方应在网络 IO 之外自行管理 session 生命周期）
 
     Returns:
         {"success_count": N, "failed_count": N, "trigger_type": str, "failed_items": [...]}
@@ -96,8 +114,14 @@ async def execute_reannounce(
                     result["success_count"] += len(hashes)
 
                 elif downloader_type == DownloaderTypeEnum.TRANSMISSION:
-                    # Transmission: 使用 torrent_id
-                    ids = [r.torrent_id for r in batch if r.torrent_id is not None]
+                    # Transmission: 使用 torrent_id（transmission_rpc 要求 int 或 40 位 hex；
+                    # torrent_info.torrent_id 在库里存为 text 形式的数字，必须转 int，
+                    # 否则 transmission_rpc 会抛 "is not valid torrent id, should be a hex str for sha1 hash"）
+                    ids = []
+                    for r in batch:
+                        tid = _to_transmission_id(r.torrent_id)
+                        if tid is not None:
+                            ids.append(tid)
                     if ids:
                         client.reannounce_torrent(ids)
                     result["success_count"] += len(ids)

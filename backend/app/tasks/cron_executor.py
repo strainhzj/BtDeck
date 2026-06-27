@@ -147,6 +147,8 @@ class CronTaskExecutor:
                 name=task["task_name"],
                 replace_existing=True,
                 misfire_grace_time=300,  # 允许5分钟的延迟执行
+                max_instances=1,  # 同一任务不重入：避免上一轮未跑完时下一轮并发触发（加剧 SQLite 写锁竞争）
+                coalesce=True,  # 积压的多次触发合并为一次，避免补跑风暴
             )
 
             logger.info(f"成功添加定时任务到调度器: {task['task_name']}")

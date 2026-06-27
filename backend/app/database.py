@@ -1,5 +1,5 @@
 # app/database.py
-from sqlalchemy import create_engine, NullPool
+from sqlalchemy import create_engine, NullPool, event
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -18,10 +18,30 @@ SQLALCHEMY_DATABASE_URL = f"sqlite:///{settings.DATABASE_PATH}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30},  # 设置30秒超时，避免"database is locked"错误
+    # timeout=30 秒(SQLAlchemy 的 SQLite 参数)，换算为 busy_timeout=30000ms
+    connect_args={"check_same_thread": False, "timeout": 30},
+    # NullPool：SQLite 单文件库不支持真正的连接池；多线程并发由 NullPool 给每条调用各开独立连接
     poolclass=NullPool,
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def _apply_sqlite_pragmas(dbapi_conn, conn_record):  # noqa: ANN001 - SQLAlchemy 事件回调签名
+    """对每个新建的 SQLite 连接强制下发并发优化 PRAGMA。
+
+    - journal_mode=WAL：写前日志，读写并发能力远超默认的 rollback journal（WAL 为数据库文件级持久属性，重复设置无害）。
+    - synchronous=NORMAL：WAL 下足够安全且更快（默认 FULL 会每笔事务 fsync）。
+    - busy_timeout=30000ms：遇到写锁时最多等待 30s，缓解多任务并发写时的 "database is locked"。
+    """
+    cursor = dbapi_conn.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")
+    cursor.execute("PRAGMA synchronous=NORMAL")
+    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.close()
+
+
+# 挂到同步引擎：每个新连接建立时执行 PRAGMA
+event.listens_for(engine, "connect")(_apply_sqlite_pragmas)
 
 # ========== 异步数据库引擎配置 ==========
 # 异步数据库URL（使用 aiosqlite 驱动）
@@ -29,15 +49,18 @@ ASYNC_SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{settings.DATABASE_PATH}"
 
 # 创建异步引擎
 # 优化说明：
-# 1. 使用 StaticPool 替代 NullPool，复用单个连接，减少锁竞争
-# 2. 设置 busy_timeout=30，等待锁的最长时间为30秒（默认5秒太短）
-# 3. 启用 WAL 模式（Write-Ahead Logging），提升并发性能
+# 1. 使用 NullPool：SQLite 单文件库不支持真正的连接池，多协程并发靠 NullPool 各开连接（StaticPool 会让多线程共用同一 sqlite3 连接对象，触发 "Recursive use of cursors not allowed"）
+# 2. timeout=30：SQLAlchemy 的 SQLite 参数(秒)，换算为 busy_timeout=30000ms
+# 3. PRAGMA(WAL/synchronous/busy_timeout) 通过下方事件监听挂到 sync_engine 的每个连接上（init_db 只用临时连接设过 WAL，但 busy_timeout 非持久，新连接需重新下发）
 async_engine = create_async_engine(
     ASYNC_SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30},  # 设置30秒的超时时间，避免"database is locked"错误
-    poolclass=NullPool,  # SQLite推荐使用NullPool，因为单个文件数据库不支持真正的连接池
-    echo=False,  # 设置为 True 可以查看 SQL 执行日志
+    connect_args={"check_same_thread": False, "timeout": 30},
+    poolclass=NullPool,
+    echo=False,
 )
+
+# 异步引擎需 listen 到其底层 sync_engine 的 connect 事件（直接 listen async_engine 不生效）
+event.listens_for(async_engine.sync_engine, "connect")(_apply_sqlite_pragmas)
 
 # 创建异步会话工厂
 AsyncSessionLocal = async_sessionmaker(
