@@ -199,7 +199,7 @@ def init_db():
     # 初始化系统默认定时任务（增量检查：添加缺失的任务）
     try:
         from app.data.default_scheduled_tasks import get_default_scheduled_tasks
-        from app.tasks.cron_models import CronTask  # noqa: F811 函数内局部 import，与 init_db 的不冲突
+        from app.tasks.cron_models import CronTask  # noqa: F811 与上方 line 97 冗余，保留以降低本独立 try 块对顶部 import 顺序的耦合
 
         db = SessionLocal()
         try:
@@ -277,7 +277,7 @@ def init_db():
 
     # 初始化默认通知（欢迎通知、版本更新通知，幂等操作）
     try:
-        from app.models.notification import Notification  # noqa: F811 函数内局部 import
+        from app.models.notification import Notification  # noqa: F811 与上方 line 100 冗余，保留以降低本独立 try 块对顶部 import 顺序的耦合
 
         db = SessionLocal()
         try:

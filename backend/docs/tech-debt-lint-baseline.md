@@ -95,5 +95,5 @@ mypy 1649 个错误（历史类型标注缺失）。当前配置宽松（`check_
 | 项 | 位置 | 问题 | 风险 |
 |----|------|------|------|
 | F811 重复函数定义 | `app/api/endpoints/torrents_async.py` | `qb_add_torrents_info_only_async` 定义 3 次（2307/2646/2985），`tr_add_torrents_info_only_async` 3 次（2499/2838/3173）。Python 后定义覆盖前定义，需验证三份内容是否一致 + 谁在引用 | 高（删错改变行为） |
-| F811 同名函数 | `app/api/endpoints/cuser.py` | `twofa_verify` 定义两次（115/150），分别绑不同路由装饰器。第二个覆盖第一个函数对象，可能导致第一个路由执行错误的函数体 | 高（潜在路由 bug） |
+| F811 同名函数 | `app/api/endpoints/cuser.py` | `twofa_verify` 定义两次（115/150），分别绑不同路由装饰器。FastAPI 按路径注册路由故两条都正常工作，仅模块级变量 `twofa_verify` 被后者覆盖（无人通过该名字调用）。是无害的变量重定义，建议改函数名消除 F811 | 低（无害，建议改名） |
 | E711/E712 ORM 查询 | 全仓 47 处 | `== None`/`== True` 中约 9 处在 ORM `.filter()` 里是合法表达式（生成 IS 语句），盲改 `is None` 会破坏查询 | 高（需逐个甄别） |
