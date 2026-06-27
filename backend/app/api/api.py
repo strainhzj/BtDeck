@@ -5,7 +5,6 @@ from app.api.endpoints import (
     tracker_messages,
     tracker_test,
     tracker_keywords_pools,
-    tracker_keywords_pools,
 )
 from app.api.endpoints import audit_logs, recycle_bin, duplicate_torrents
 from app.api.endpoints import dashboard

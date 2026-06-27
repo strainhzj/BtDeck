@@ -211,6 +211,24 @@
 
 ## 当前会话
 
+> **2026-06-26（续4）**: F811 重复 import + E722/E741 风格清理——lint 技术债清理第六轮。
+>
+> **任务：F811 重复 import（部分）+ E722 + E741** ✅
+> - F811：15→5（清 10 处：7 模块级重复 import 删除 + 3 函数内局部 import 加 noqa；剩 5 处是高风险项单独记录）
+> - E722：2→0（裸 except 改 except Exception，避免误捕 KeyboardInterrupt）
+> - E741：2→0（列表推导式变量 l 改 label）
+> - **门禁收紧**：E722/E741 从 `.flake8` extend-ignore 移除（F811 保留豁免，仍有 5 处残留）
+>
+> **F811 调研发现 2 个真实 bug（高风险，单独记录未修）**：
+> - `torrents_async.py`：`qb/tr_add_torrents_info_only_async` 各定义 3 次（copy-paste 残留），需验证内容一致性
+> - `cuser.py`：`twofa_verify` 同名函数定义两次绑不同路由，第二个覆盖第一个函数体，潜在路由执行错误 bug
+>
+> **验证**：pytest 1619 passed（0 失败）；flake8 全仓 0 错误；E722/E741 isolated 0；历史修复全完好。
+>
+> **剩余 lint 债**：F811 高风险 5 处（重复函数/同名 bug）、E711/E712 高风险 47 处（ORM 甄别）、mypy ORM 债 133（SQLAlchemy 2.0 迁移）。
+>
+> ---
+
 > **2026-06-26（续3）**: P2 F841 未用变量清理（23→0）——lint 技术债清理第五轮。
 >
 > **任务：F841 局部变量赋值未用全部清理 + 进门禁** ✅

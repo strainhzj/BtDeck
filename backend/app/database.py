@@ -7,9 +7,7 @@ import os
 import logging
 from app.core.config import settings
 from app.auth.security import get_password_hash
-import os
 import yaml
-import logging
 from typing import Dict, Any, Optional
 from gmssl import func
 from app.auth import utils
@@ -201,7 +199,7 @@ def init_db():
     # 初始化系统默认定时任务（增量检查：添加缺失的任务）
     try:
         from app.data.default_scheduled_tasks import get_default_scheduled_tasks
-        from app.tasks.cron_models import CronTask
+        from app.tasks.cron_models import CronTask  # noqa: F811 函数内局部 import，与 init_db 的不冲突
 
         db = SessionLocal()
         try:
@@ -279,7 +277,7 @@ def init_db():
 
     # 初始化默认通知（欢迎通知、版本更新通知，幂等操作）
     try:
-        from app.models.notification import Notification
+        from app.models.notification import Notification  # noqa: F811 函数内局部 import
 
         db = SessionLocal()
         try:

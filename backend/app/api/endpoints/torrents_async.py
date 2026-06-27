@@ -16,7 +16,6 @@ import asyncio
 import os
 import uuid
 import logging
-import os
 import json
 import threading
 from datetime import datetime, timezone
@@ -44,7 +43,6 @@ from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
-import json
 
 logger = logging.getLogger(__name__)
 

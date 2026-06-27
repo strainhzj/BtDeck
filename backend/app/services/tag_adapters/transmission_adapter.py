@@ -236,7 +236,7 @@ class TransmissionTagAdapter(TorrentTagAdapter):
                         labels = torrent.get("labels", [])
                         if tag_name in labels:
                             # 移除该标签
-                            new_labels = [l for l in labels if l != tag_name]
+                            new_labels = [label for label in labels if label != tag_name]
                             torrent_ids_to_update.append({"id": torrent["id"], "labels": new_labels})
 
                     # 批量更新种子标签
@@ -406,7 +406,7 @@ class TransmissionTagAdapter(TorrentTagAdapter):
                     tags_to_remove.append(tag_info["name"])
 
                 # 移除标签
-                new_labels = [l for l in current_labels if l not in tags_to_remove]
+                new_labels = [label for label in current_labels if label not in tags_to_remove]
 
                 # 设置新标签列表
                 response = self._make_rpc_request(

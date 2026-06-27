@@ -42,7 +42,7 @@ class TaskLogs(Base):
                 # 如果已经是 ISO 格式，直接返回
                 if "-" in dt and (":" in dt or "T" in dt):
                     return dt
-            except:
+            except Exception:
                 pass
         # 非法的 datetime 值，记录警告并返回 None
         logger.warning(f"Invalid datetime value in TaskLogs.log_id={self.log_id}: {dt} (type: {type(dt)})")

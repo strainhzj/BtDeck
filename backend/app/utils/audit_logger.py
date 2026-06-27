@@ -488,7 +488,7 @@ async def export_audit_logs_from_db_to_file(
                                 torrent_info["name"] = detail.get("torrent_name", "")
                                 torrent_info["size"] = detail.get("torrent_size", 0)
                                 validation_result.update(detail.get("validation_result", {}))
-                        except:
+                        except Exception:
                             pass
 
                     # 记录为文件日志

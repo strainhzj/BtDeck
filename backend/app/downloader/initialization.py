@@ -1462,7 +1462,7 @@ async def downloader_status_polling_task(app: FastAPI):
                     update_tasks.append(_update_downloader_status(downloader, update_cold=update_cold))
 
             # 并发执行所有更新任务并记录总耗时
-            import time
+            import time  # noqa: F811 函数内局部 import，与另一函数的不冲突
 
             start_time = time.time()
 

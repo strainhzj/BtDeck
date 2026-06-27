@@ -630,6 +630,25 @@
             ".flake8"
           ],
           "evidence": "F841 23→0；pytest 1619 passed；flake8 全仓 0 错误；F841 从 extend-ignore 移除"
+        },
+        {
+          "id": "lint-cleanup.8",
+          "name": "F811 重复 import（部分）+ E722 + E741 清理",
+          "description": "F811 清 10/15 处（7 模块级重复 import 删除 + 3 函数内局部 import 加 noqa），剩 5 处高风险项（torrents_async 重复函数定义 + cuser 同名 twofa_verify bug）单独记录。E722 裸 except→except Exception（2处），E741 模糊变量名 l→label（2处）。E722/E741 从 extend-ignore 移除进入门禁。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/database.py (os/logging 重复删除 + CronTask/Notification noqa)",
+            "app/api/endpoints/torrents_async.py (os/json 重复删除)",
+            "app/api/endpoints/tracker.py (select 重复)",
+            "app/api/endpoints/tracker_keywords.py (Optional 重复)",
+            "app/api/api.py (tracker_keywords_pools 重复)",
+            "app/downloader/initialization.py (time noqa)",
+            "app/tasks/models.py (E722), app/utils/audit_logger.py (E722)",
+            "app/services/tag_adapters/transmission_adapter.py (E741 l→label)",
+            ".flake8"
+          ],
+          "evidence": "F811 15→5；E722 2→0；E741 2→0；pytest 1619 passed；flake8 全仓 0 错误；E722/E741 进门禁；高风险遗留 5 处记录到基线"
         }
       ]
     }

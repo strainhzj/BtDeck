@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from app.api.responseVO import CommonResponse
-from sqlalchemy import text, distinct, select, select
+from sqlalchemy import text, distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_async_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user

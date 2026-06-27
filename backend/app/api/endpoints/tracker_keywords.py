@@ -28,7 +28,6 @@ from app.api.schemas.tracker_keywords import (
 )
 from app.torrents.models import TrackerKeywordConfig
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
