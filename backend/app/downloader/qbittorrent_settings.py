@@ -462,7 +462,7 @@ class QBitTorrentSettings:
             logger.info(f"qBittorrent认证成功: {self.username}")
 
             # 3. 测试基本功能
-            torrents = self.client.torrents_info(limit=1)
+            self.client.torrents_info(limit=1)
             logger.info("qBittorrent基本功能正常")
 
             return True

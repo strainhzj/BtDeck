@@ -281,7 +281,7 @@ async def check_port_connectivity(host: str, port: int, timeout: float = 3.0, ma
             logger.debug(f"❌ DNS解析失败: {clean_host} (尝试 {attempt}/{max_retries}): {e}")
             # DNS 失败不继续重试
             break
-        except socket.timeout as e:
+        except socket.timeout:
             logger.debug(f"⏱️  连接超时: {clean_host}:{port} (尝试 {attempt}/{max_retries})")
         except Exception as e:
             logger.debug(f"❌ 连接异常: {clean_host}:{port} (尝试 {attempt}/{max_retries}): {e}")
@@ -559,7 +559,7 @@ async def _check_qbittorrent_connectivity_async(client: qbClient, nickname: str)
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for qBittorrent: {nickname}")
-        torrents = await asyncio.to_thread(client.torrents_info, limit=1)  # 只获取1个torrent进行测试
+        await asyncio.to_thread(client.torrents_info, limit=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True
@@ -593,7 +593,7 @@ def _check_qbittorrent_connectivity(client: qbClient, nickname: str) -> bool:
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for qBittorrent: {nickname}")
-        torrents = client.torrents_info(limit=1)  # 只获取1个torrent进行测试
+        client.torrents_info(limit=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True
@@ -625,7 +625,7 @@ async def _check_transmission_connectivity_async(client: trClient, nickname: str
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for Transmission: {nickname}")
-        torrents = await asyncio.to_thread(client.get_torrent, torrent_id=1)  # 只获取1个torrent进行测试
+        await asyncio.to_thread(client.get_torrent, torrent_id=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True
@@ -660,7 +660,7 @@ def _check_transmission_connectivity(client: trClient, nickname: str) -> bool:
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for Transmission: {nickname}")
-        torrents = client.get_torrents(ids=1)  # 只获取1个torrent进行测试
+        client.get_torrents(ids=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True

@@ -139,7 +139,7 @@ class ClassPathValidator:
         """
         try:
             # 尝试导入模块
-            module = importlib.import_module(module_path)
+            importlib.import_module(module_path)
             logger.debug(f"模块 {module_path} 导入成功")
             return True, None
 

@@ -211,6 +211,25 @@
 
 ## 当前会话
 
+> **2026-06-26（续3）**: P2 F841 未用变量清理（23→0）——lint 技术债清理第五轮。
+>
+> **任务：F841 局部变量赋值未用全部清理 + 进门禁** ✅
+> - 8 文件 23 处：
+>   - 16 个 `except ... as e:`（e 未用）→ `except ...:`（保留异常类型去绑定）
+>   - 5 个 `torrents = client.xxx()` 连接健康检查 → `client.xxx()`（**保留调用去赋值**，调用是健康检查不能丢）
+>   - 1 个 `manager = Service(db)` → `Service(db)`（保留调用）
+>   - 1 个 `module = importlib.import_module()` → `importlib.import_module()`（保留导入副作用）
+> - **门禁收紧**：F841 从 `.flake8` extend-ignore 移除，进入全仓门禁
+>
+> **过程中的脚本踩坑（已解决）**：
+> - 首版正则 ` as e:\s*$` 的 `\s*$` 吞了行尾换行符，把 except 行和下一行合并成一行（IndentationError）
+> - 已 `git checkout HEAD` 回滚，修正为 `line.replace(' as e:', ':')` 只替换子串不碰换行
+> - **教训**：处理含换行的文本时，正则的 `$`/`\s*$` 会跨行，应用 `str.replace` 精确替换子串
+>
+> **验证**：pytest 1619 passed（0 失败）；flake8 全仓 0 错误；F541/F821/F824/F401/example= 均无回退；py_compile 全部通过。
+>
+> ---
+
 > **2026-06-26（续2）**: P5 Pydantic example= 全仓统一（177→0）——lint 技术债清理第四轮。
 >
 > **任务：Pydantic v1 `example=` → v2 `examples=[]` 全仓清理** ✅

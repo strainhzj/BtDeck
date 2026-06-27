@@ -27,7 +27,9 @@ class TorrentInfoVO(BaseModel):
     torrent_id: str | None = Field(None, description="下载器中的主键", examples=["1"])
     hash: str | None = Field(None, description="种子哈希值", examples=["47f130f4ec8cf6685a87d5816fb4a7d4e43bef86"])
     name: str | None = Field(
-        None, description="种子名称", examples=["The Matrix Trilogy 1999-2003 CEE Blu-ray 1080p VC-1 TrueHD 5.1-DIY@HDSky"]
+        None,
+        description="种子名称",
+        examples=["The Matrix Trilogy 1999-2003 CEE Blu-ray 1080p VC-1 TrueHD 5.1-DIY@HDSky"],
     )
     save_path: str | None = Field(None, description="种子文件保存路径", examples=["/Downloads/lpan/Downloads"])
     size: int | None = Field(None, description="种子大小(字节)", examples=["134002221056"])

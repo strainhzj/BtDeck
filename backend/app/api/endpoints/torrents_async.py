@@ -187,7 +187,7 @@ async def _retry_on_db_lock(
                     logger.error(f"{error_context}失败：已达最大重试次数（{max_retries}次）")
                 # 不是锁定错误，直接抛出
                 raise
-        except Exception as e:
+        except Exception:
             # 其他类型的错误，直接抛出
             raise
 

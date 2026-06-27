@@ -286,7 +286,7 @@ async def apply_template_to_downloader(
         # 2. 获取请求体参数
         try:
             body_data = await req.json()
-        except Exception as e:
+        except Exception:
             body_data = {}
 
         apply_path_mapping = body_data.get("apply_path_mapping", None)

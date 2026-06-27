@@ -13,9 +13,14 @@ class TrackerInfoVO(BaseModel):
     )
     trackerName: str | None = Field(None, alias="trackerName", description="tracker名称", examples=["springsunday"])
     trackerUrl: str | None = Field(
-        None, alias="trackerUrl", description="tracker地址", examples=["http://on.springsunday.net/announce.php?passkey="]
+        None,
+        alias="trackerUrl",
+        description="tracker地址",
+        examples=["http://on.springsunday.net/announce.php?passkey="],
     )
-    lastAnnounceSucceeded: str | None = Field(None, alias="lastAnnounceSucceeded", description="请求结果", examples=["1"])
+    lastAnnounceSucceeded: str | None = Field(
+        None, alias="lastAnnounceSucceeded", description="请求结果", examples=["1"]
+    )
     lastAnnounceMsg: str | None = Field(
         None, alias="lastAnnounceMsg", description="tracker最后一次请求信息", examples=["Success"]
     )

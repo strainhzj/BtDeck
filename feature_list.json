@@ -614,6 +614,22 @@
             "app/api/responseVO.py"
           ],
           "evidence": "example= 177→0；pytest 1619 passed（warnings 865→713）；flake8 全仓 0 错误；schema examples 生成验证通过"
+        },
+        {
+          "id": "lint-cleanup.7",
+          "name": "P2 F841 未用变量清理（23→0 + 进门禁）",
+          "description": "8 文件 23 处：16 个 except as e（e 未用）去绑定保留异常类型；5 个 torrents 连接健康检查 + manager + module 去赋值保留调用（调用有副作用不能丢）。F841 从 .flake8 extend-ignore 移除进入全仓门禁。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/repositories/torrent_file_backup_repository.py (12 except)",
+            "app/downloader/initialization.py (5: 1 except + 4 torrents 健康检查)",
+            "app/downloader/qbittorrent_settings.py (1 torrents 健康检查)",
+            "app/api/endpoints/setting_templates.py, torrent_helpers.py, torrents_async.py (3 except)",
+            "app/api/endpoints/torrent_backup.py (manager), app/tasks/class_path_validator.py (module)",
+            ".flake8"
+          ],
+          "evidence": "F841 23→0；pytest 1619 passed；flake8 全仓 0 错误；F841 从 extend-ignore 移除"
         }
       ]
     }

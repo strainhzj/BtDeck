@@ -520,7 +520,7 @@ async def get_transmission_torrent_info(
             #         return torrent
             #
             # time.sleep(1)
-        except Exception as e:
+        except Exception:
             # 如果出错，等待一会儿再试
             await asyncio.sleep(1)
 

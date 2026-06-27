@@ -36,7 +36,9 @@ class DownloaderListVO(BaseModel):
     downloaderTypeName: str | None = Field(
         None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
     )
-    connectStatus: str | None = Field(None, alias="connectStatus", description="连接状态(1=在线, 0=离线)", examples=["1"])
+    connectStatus: str | None = Field(
+        None, alias="connectStatus", description="连接状态(1=在线, 0=离线)", examples=["1"]
+    )
     pathMappingRules: str | None = Field(None, alias="pathMappingRules", description="路径映射规则配置")
     torrentSavePath: str | None = Field(None, alias="torrentSavePath", description="种子保存目录路径")
 

@@ -132,7 +132,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return result.scalar_one_or_none()
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return None
 
     async def get_by_id(self, backup_id: int) -> Optional[TorrentFileBackup]:
@@ -155,7 +155,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return result.scalar_one_or_none()
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return None
 
     async def list_by_downloader(self, downloader_id: int, skip: int = 0, limit: int = 20) -> List[TorrentFileBackup]:
@@ -183,7 +183,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return list(result.scalars().all())
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return []
 
     async def list_all(self, skip: int = 0, limit: int = 20) -> List[TorrentFileBackup]:
@@ -209,7 +209,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return list(result.scalars().all())
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return []
 
     async def count_by_downloader(self, downloader_id: int) -> int:
@@ -234,7 +234,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return result.scalar_one() or 0
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return 0
 
     async def count_all(self) -> int:
@@ -252,7 +252,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return result.scalar_one() or 0
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return 0
 
     async def soft_delete(self, info_hash: str) -> bool:
@@ -277,7 +277,7 @@ class TorrentFileBackupRepository:
 
             return True
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             await self.db.rollback()
             return False
 
@@ -300,7 +300,7 @@ class TorrentFileBackupRepository:
 
             return result.rowcount > 0
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             await self.db.rollback()
             return False
 
@@ -326,7 +326,7 @@ class TorrentFileBackupRepository:
 
             return True
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             await self.db.rollback()
             return False
 
@@ -356,7 +356,7 @@ class TorrentFileBackupRepository:
             await self.db.commit()
             return True
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             await self.db.rollback()
             return False
 
@@ -382,7 +382,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return result.scalar_one_or_none() is not None
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return False
 
     async def get_total_size_by_downloader(self, downloader_id: int) -> int:
@@ -408,5 +408,5 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(query)
             return result.scalar_one() or 0
 
-        except SQLAlchemyError as e:
+        except SQLAlchemyError:
             return 0
