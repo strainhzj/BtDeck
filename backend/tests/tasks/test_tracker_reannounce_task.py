@@ -198,3 +198,139 @@ class TestTorrentFiltering:
         torrents = [FakeTorrent("dl-001"), FakeTorrent("dl-002")]
         result = filter_torrents_by_downloader(torrents, "dl-003")
         assert len(result) == 0
+
+
+# ==================== 回归测试：三段 session 拆分 ====================
+
+class _FakeTorrentRecord:
+    """_process_downloader 读段查询返回的种子记录（含 info_id/hash/torrent_id/downloader_id/dr）"""
+
+    def __init__(self, info_id="info-1", hash="a" * 40, torrent_id="103",
+                 downloader_id="dl-1", dr=0):
+        self.info_id = info_id
+        self.hash = hash
+        self.torrent_id = torrent_id
+        self.downloader_id = downloader_id
+        self.dr = dr
+
+
+class _FakeDownloaderVO:
+    """轻量下载器 VO"""
+
+    def __init__(self, downloader_id="dl-1", downloader_type=0, nickname="test"):
+        self.downloader_id = downloader_id
+        self.downloader_type = downloader_type
+        self.nickname = nickname
+
+
+class TestSessionLifecycleRegression:
+    """【回归】问题2-c：_process_downloader 必须拆分读/网络/写三段 session。
+
+    根因：原实现一个 db=SessionLocal() 贯穿"查种子 → 遍历下载器(含HTTP网络IO) → 回写"全程，
+    网络 IO 期间 session 一直占着写锁，触发 "database is locked"。
+    修复后：读段用短 session（expunge 后 close）→ 网络段不持 session → 写段 batch_update 自开短 session。
+
+    收敛锚点：execute_reannounce 被调用时不得传 db（持锁=locked 根因）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_execute_reannounce_called_without_db(self):
+        """_process_downloader 调用 execute_reannounce 时 kwargs 不得含 db（或 db 为 None）。
+
+        若有人改回 execute_reannounce(app=..., db=db, ...)（旧的长 session 风格），
+        此测试立即报红。
+        """
+        from app.tasks.scheduler import tracker_reannounce_task as mod
+
+        task = mod.TrackerReannounceTask()
+
+        # 构造一个有效下载器 + app
+        dl_vo = _FakeDownloaderVO(downloader_id="dl-1")
+        app = MagicMock()
+        configs = [make_config(domain_pattern="tracker.example.com", enabled=True)]
+
+        # patch execute_reannounce 为 AsyncMock（捕获调用参数）
+        mock_exec = AsyncMock(return_value={"success_count": 1, "failed_count": 0})
+
+        # 构造 fake_db：读段 3 次 db.query().filter().all() 按调用顺序返回结果。
+        # 调用顺序：1) TorrentInfo.info_id（种子id列表）2) TrackerInfo（tracker列表）3) TorrentInfo（种子记录）
+        fake_db = MagicMock()
+        torrent = _FakeTorrentRecord(info_id="info-1", torrent_id="103")
+        tracker = _FakeTrackerInfo(
+            tracker_url="http://tracker.example.com/announce",
+            tracker_host="tracker.example.com",
+            torrent_info_id="info-1",
+        )
+
+        query_results = [
+            [MagicMock(info_id="info-1")],  # 第1次：info_id 列表
+            [tracker],                       # 第2次：tracker 列表
+            [torrent],                       # 第3次：种子记录
+        ]
+        query_iter = iter(query_results)
+
+        def _query_chain(*_args, **_kwargs):
+            chain = MagicMock()
+            chain.filter.return_value.all.return_value = next(query_iter)
+            return chain
+
+        fake_db.query.side_effect = _query_chain
+
+        with patch(
+            "app.services.reannounce_service.execute_reannounce", mock_exec
+        ), patch.object(mod, "SessionLocal", return_value=fake_db):
+            await task._process_downloader(app, dl_vo, configs)
+
+        # ★ 收敛锚点：execute_reannounce 调用 kwargs 里 db 必须不存在或为 None
+        call_kwargs = mock_exec.call_args.kwargs
+        assert call_kwargs.get("db", None) is None, (
+            "execute_reannounce 不得传入外部 db："
+            "网络IO期间持有 session 是 database is locked 的根因"
+        )
+
+    @pytest.mark.asyncio
+    async def test_read_session_is_closed_after_query(self):
+        """读段 session 查询后必须 close（释放连接，不持锁做网络 IO）。
+
+        收敛锚点：fake_db.close 必须被调用。
+        """
+        from app.tasks.scheduler import tracker_reannounce_task as mod
+
+        task = mod.TrackerReannounceTask()
+        dl_vo = _FakeDownloaderVO(downloader_id="dl-1")
+        app = MagicMock()
+        configs = [make_config(domain_pattern="tracker.example.com", enabled=True)]
+
+        fake_db = MagicMock()
+        torrent = _FakeTorrentRecord(info_id="info-1")
+        tracker = _FakeTrackerInfo(
+            tracker_url="http://tracker.example.com/announce",
+            tracker_host="tracker.example.com",
+            torrent_info_id="info-1",
+        )
+
+        query_results = [
+            [MagicMock(info_id="info-1")],  # 第1次：info_id 列表
+            [tracker],                       # 第2次：tracker 列表
+            [torrent],                       # 第3次：种子记录
+        ]
+        query_iter = iter(query_results)
+
+        def _query_chain(*_args, **_kwargs):
+            chain = MagicMock()
+            chain.filter.return_value.all.return_value = next(query_iter)
+            return chain
+
+        fake_db.query.side_effect = _query_chain
+
+        mock_exec = AsyncMock(return_value={"success_count": 1, "failed_count": 0})
+        with patch(
+            "app.services.reannounce_service.execute_reannounce", mock_exec
+        ), patch.object(mod, "SessionLocal", return_value=fake_db):
+            await task._process_downloader(app, dl_vo, configs)
+
+        # ★ 收敛锚点：读段 session 必须被 close
+        assert fake_db.close.called, (
+            "读段 session 查询后必须 close："
+            "若 session 未关闭而在网络 IO 期间一直持有，会触发 database is locked"
+        )
