@@ -96,7 +96,7 @@
 
 **5 个 commit**: 63a4bec / d04af4d / 7f111f8 / 7896a23 / (本条状态更新)
 
-**遗留**: 前端 lint/tsc 因环境依赖未完整安装，留待完整环境验证。
+**遗留**: ~~前端 lint/tsc 因环境依赖未完整安装，留待完整环境验证。~~ ✅ **2026-06-27 已补验**（lint 0 error/131 warning、build 成功含 tsc、test:unit 34 passed）。
 
 ---
 
@@ -210,6 +210,22 @@
 ---
 
 ## 当前会话
+
+> **2026-06-27（续）**: 收尾——v1.0.5-audit 标 done + 前端验证补遗 + 残留分支清理。
+>
+> **v1.0.5-audit 契约审计收尾** ✅
+> - feature_list.json 中 v1.0.5-audit 的 8 个子任务（P0-1~P0-3 / P0-2a-d / P1-A/B）全 done，范围明确（P0+P1 完成，P2/P3 推迟有记录）。feature 顶层 status 从 `in_progress` 标为 `done`
+> - **残留分支清理**：原独立分支 `fix/contract-audit` 的所有 commit 已 100% 合并入 dev（`git log dev..fix/contract-audit` 为空，dev 领先 29 commit）。删除本地 + 远端 `fix/contract-audit`（用户决策"删本地+远端"）。远端现仅剩 `origin/dev` + `origin/master`
+>   - 注：`git branch -d` 因本地相对上游 `origin/fix/contract-audit` 的保守判断报"未完全合并"，但相对 dev 实际已无独有 commit，改用 `-D` 强制删除（reflog 可恢复）
+>
+> **前端验证补遗（清除 progress.md 既有遗留）** ✅
+> - 既有遗留"前端 lint/tsc 因环境依赖未完整安装"（progress.md:99）现环境就绪，补跑：
+>   - `npm run lint`：**0 errors**（131 warnings，全是 no-unused-vars 非阻塞）
+>   - `npx vue-cli-service build`：**成功**（含 tsc 类型检查，dist 生成）
+>   - `npm run test:unit`：**34 passed**（含契约审计的 ApiError 归一化测试）
+> - progress.md:99 遗留标记为已补验
+>
+> ---
 
 > **2026-06-27**: 高风险 lint 技术债 3 类清理（F811 + E711/E712 + mypy ORM 债评估）——lint 技术债清理第七轮。
 >

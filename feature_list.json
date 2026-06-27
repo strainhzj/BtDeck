@@ -268,9 +268,9 @@
     {
       "id": "v1.0.5-audit",
       "name": "契约审计修复（技术债）",
-      "description": "基于 backend/docs/style-and-contract-audit.md 的 P1 确定性 bug + P0 契约归一化。独立分支 fix/contract-audit，不覆盖 P2 REST 路由迁移 / P3 前端类型收敛。",
-      "status": "in_progress",
-      "branch": "fix/contract-audit",
+      "description": "基于 backend/docs/style-and-contract-audit.md 的 P1 确定性 bug + P0 契约归一化。原独立分支 fix/contract-audit 已全部合并入 dev 并删除（2026-06-27）。不覆盖 P2 REST 路由迁移 / P3 前端类型收敛（推迟）。",
+      "status": "done",
+      "branch": "dev",
       "plan_file": "PLANS/v1.0.5-audit.md",
       "deviation_from_plan": {
         "reason": "范围聚焦 P0+P1，P2/P3 推迟；3 个独立子代理审查后修正了 10 项 Blocker（版本号撞号、实施顺序反转、测试改造缺失、ApiError 兼容性、回滚策略等）",
