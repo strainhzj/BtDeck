@@ -292,28 +292,64 @@ class TestAddEndpointSecurity:
 
 
 class TestUpdateEndpointSecurity:
-    """PUT /{task_id} 端点：防绕过（创建 type=4 → 更新改 type=0 被拦）。"""
+    """PUT /{task_id} 端点：防绕过（创建 type=4 → 更新改 type=0 被拦）。
+
+    注意：更新成功路径会调 cron_executor.refresh_task（cron_tasks.py:705），
+    该方法用真实 AsyncSessionLocal + 单例 scheduler，有副作用。
+    测试用 patch.object(cron_executor, refresh_task, AsyncMock) 隔离，
+    并补 DB 落库断言（不只断 code='200'，防 no-op 假通过）。
+    """
 
     def test_update_change_to_script_type_blocked(self, db_session, client_factory):
-        """预置 type=4 任务，PUT 改 type=0 → code='403'。"""
+        """预置 type=4 任务，PUT 改 type=0 → code='403'，msg 含启用提示。"""
         task = _make_cron_task(db_session, task_type=4, task_code="to_update")
         with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
             c = client_factory()
             r = c.put(URL_UPDATE.format(task_id=task.task_id), json={"task_type": 0})
-        assert r.json()["code"] == "403"
+        body = r.json()
+        assert body["code"] == "403"
+        assert "BTDECK_ALLOW_CUSTOM_SCRIPTS" in body["msg"]
+
+    def test_update_change_to_unknown_type_returns_400(self, db_session, client_factory):
+        """预置 type=4 任务，PUT 改 type=7（未知）→ code='400'。"""
+        task = _make_cron_task(db_session, task_type=4, task_code="to_unknown")
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
+            c = client_factory()
+            r = c.put(URL_UPDATE.format(task_id=task.task_id), json={"task_type": 7})
+        assert r.json()["code"] == "400"
 
     def test_update_change_to_builtin_allowed(self, db_session, client_factory):
-        """预置 type=0 任务（开关开后创建的），PUT 改 type=4 → 放行（需开关开，因预置是 type=0）。"""
+        """预置 type=0 任务，PUT 改 type=4 → 放行（需开关开），且字段落库。"""
+        from unittest.mock import AsyncMock
+        from app.api.endpoints import cron_tasks as cron_module
+
         task = _make_cron_task(db_session, task_type=0, task_code="to_promote")
-        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", True):
+        with (
+            patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", True),
+            patch.object(cron_module.cron_executor, "refresh_task", AsyncMock(return_value=True)),
+        ):
             c = client_factory()
             r = c.put(URL_UPDATE.format(task_id=task.task_id), json={"task_type": 4})
         assert r.json()["code"] == "200"
+        # 补 DB 落库断言（防 CRUD no-op 假通过）
+        db_session.expire_all()
+        updated = db_session.query(CronTask).get(task.task_id)
+        assert updated.task_type == 4, "更新后 task_type 须真正落库"
 
     def test_update_rename_without_type_change_allowed(self, db_session, client_factory):
-        """预置 type=4 任务，PUT 只改名不带 task_type → 放行（读 DB 现有 type=4 校验通过）。"""
+        """预置 type=4 任务，PUT 只改名不带 task_type → 放行，且名字落库。"""
+        from unittest.mock import AsyncMock
+        from app.api.endpoints import cron_tasks as cron_module
+
         task = _make_cron_task(db_session, task_type=4, task_code="rename_me")
-        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
+        with (
+            patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False),
+            patch.object(cron_module.cron_executor, "refresh_task", AsyncMock(return_value=True)),
+        ):
             c = client_factory()
             r = c.put(URL_UPDATE.format(task_id=task.task_id), json={"task_name": "新名字"})
         assert r.json()["code"] == "200"
+        # 补 DB 落库断言
+        db_session.expire_all()
+        updated = db_session.query(CronTask).get(task.task_id)
+        assert updated.task_name == "新名字", "更新后 task_name 须真正落库"

@@ -118,7 +118,12 @@ class TestSaveAndReadback:
         assert row[2] == 0  # enable_schedule False
 
     def test_schedule_rule_saved_and_readback(self, client, db_session):
-        """含规则的 body 保存后，规则正确落库 speed_schedule_rules 表。"""
+        """含规则的 body 保存后，规则正确落库 speed_schedule_rules 表。
+
+        同时回读 downloader_settings.dl_speed_limit：当前未传全局 dlSpeedLimit（应为 0），
+        但被测代码 L408 规则循环内重赋 dl_speed_limit（变量遮蔽），实际落库为规则的 2048。
+        此测试钉死当前行为（已知变量遮蔽现象），若未来修复须同步更新断言。
+        """
         body = {
             "enableSchedule": True,
             "schedule_rules": [
@@ -142,6 +147,14 @@ class TestSaveAndReadback:
         assert len(rules) == 1
         assert rules[0][0] == "09:00"
         assert rules[0][1] == "18:00"
+        # 回读全局 dl_speed_limit：钉死变量遮蔽现象（规则 2048 遮蔽了全局 0）
+        global_row = db_session.execute(
+            text("SELECT dl_speed_limit FROM downloader_settings WHERE downloader_id='dl-1'")
+        ).fetchone()
+        assert global_row[0] == 2048, (
+            "已知现象：规则循环内 dl_speed_limit 被重赋（downloader_settings.py:408），"
+            "遮蔽了外层全局值 0，实际落库为规则值 2048"
+        )
 
     def test_password_encrypted_on_save(self, client, db_session):
         """password 字段保存时被 SM4 加密（patch 后为 enc_<明文>）。"""
@@ -163,14 +176,18 @@ class TestParamValidation:
         assert "KB/s" in body["msg"] or "MB/s" in body["msg"]
 
     def test_ul_speed_unit_invalid_returns_422(self, client):
-        """ul_speed_unit 非 0/1 → code='422'。"""
+        """ul_speed_unit 非 0/1 → code='422'，msg 含单位提示。"""
         r = client.put(_url(), json={"ulSpeedUnit": 5})
-        assert r.json()["code"] == "422"
+        body = r.json()
+        assert body["code"] == "422"
+        assert "KB/s" in body["msg"] or "MB/s" in body["msg"]
 
     def test_dl_speed_limit_negative_returns_422(self, client):
-        """dl_speed_limit 负数 → code='422'。"""
+        """dl_speed_limit 负数 → code='422'，msg 含非负整数提示。"""
         r = client.put(_url(), json={"dlSpeedLimit": -1})
-        assert r.json()["code"] == "422"
+        body = r.json()
+        assert body["code"] == "422"
+        assert "非负整数" in body["msg"]
 
     def test_start_time_after_end_time_returns_422(self, client):
         """start_time >= end_time → code='422'。"""
@@ -229,6 +246,7 @@ class TestParamValidation:
             },
         )
         assert r.json()["code"] == "422"
+        assert "星期" in r.json()["msg"] or "1-7" in r.json()["msg"]
 
     def test_missing_start_time_returns_422(self, client):
         """规则缺 start_time → code='422'。"""
@@ -250,12 +268,14 @@ class TestParamValidation:
         assert "start_time" in body["msg"]
 
     def test_schedule_rules_not_array_returns_422(self, client):
-        """schedule_rules 非数组 → code='422'。"""
+        """schedule_rules 非数组 → code='422'，msg 含数组提示。"""
         r = client.put(_url(), json={"schedule_rules": "not_array"})
-        assert r.json()["code"] == "422"
+        body = r.json()
+        assert body["code"] == "422"
+        assert "数组" in body["msg"]
 
     def test_invalid_time_format_returns_422(self, client):
-        """start_time 格式非 HH:MM → code='422'。"""
+        """start_time 格式非 HH:MM → code='422'，msg 含时间格式提示。"""
         r = client.put(
             _url(),
             json={
@@ -270,7 +290,9 @@ class TestParamValidation:
                 ]
             },
         )
-        assert r.json()["code"] == "422"
+        body = r.json()
+        assert body["code"] == "422"
+        assert "时间格式" in body["msg"]
 
 
 # ==================== 组3：下载器不存在 + 认证 ====================

@@ -147,12 +147,14 @@ class TestDownloaderNotFound:
 
     @pytest.mark.asyncio
     async def test_source_not_found_writes_failed_audit(self, client, async_engine_factory):
-        """源下载器不存在 → 写一条 failed 审计日志（error_message 含"源下载器不存在"）。"""
+        """源下载器不存在 → 写一条 failed 审计日志（error_message 含"源下载器不存在"+ id 渲染）。"""
         client.post(URL, json=_body(source="99999"))
         engine, _ = async_engine_factory
         logs = await _count_audit(engine, status="failed", error_contains="源下载器不存在")
         assert len(logs) == 1
         assert logs[0].transfer_status == "failed"
+        # 身份锁定：error_message 须含请求的 id（锁定 id 渲染正确）
+        assert "99999" in logs[0].error_message
 
     @pytest.mark.asyncio
     async def test_target_not_found(self, client, async_engine_factory):
@@ -182,12 +184,13 @@ class TestDownloaderNotFound:
 
     @pytest.mark.asyncio
     async def test_audit_records_info_hash_and_user(self, client, async_engine_factory):
-        """审计日志记录 info_hash 和 username（身份锁定）。"""
+        """审计日志记录 info_hash / username / target_path（身份锁定）。"""
         client.post(URL, json=_body(source="99999", info_hash="b" * 40))
         engine, _ = async_engine_factory
         logs = await _count_audit(engine, status="failed")
         assert logs[0].info_hash == "b" * 40
         assert logs[0].username == "admin", "endpoint 硬编码 username=admin"
+        assert logs[0].target_path == "/downloads/movies"
 
 
 # ==================== 组2：schema 校验（422，不打 DB） ====================
