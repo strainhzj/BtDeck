@@ -2,7 +2,7 @@
 """
 仪表盘统计 GET /api/v1/dashboard 的 API 级回归测试
 
-覆盖范围（约 22 个测试）：
+覆盖范围（23 个测试）：
 - 认证拒绝 / 响应结构（6 个顶层键）
 - tasks SQL 聚合（COUNT + SUM(CASE WHEN task_status=1) + dr=0 软删除过滤 + stopped 计算）
 - activities SQL（TOP-10 + operation_time DESC + 类别归一化 + None 字段降级显示 + 相对时间）
@@ -192,7 +192,9 @@ class TestTasksStats:
     @pytest.mark.asyncio
     async def test_empty_tasks(self, client):
         r = client.get(URL)
-        assert r.json()["data"]["tasks"] == {"total": 0, "running": 0, "stopped": 0}
+        body = r.json()
+        assert body["msg"] == "获取成功", "防 service 异常被吞成 data=null 时 KeyError 误报"
+        assert body["data"]["tasks"] == {"total": 0, "running": 0, "stopped": 0}
 
     @pytest.mark.asyncio
     async def test_running_count(self, client, async_db):
@@ -265,15 +267,25 @@ class TestActivities:
 
     @pytest.mark.asyncio
     async def test_activities_category_normalization(self, client, async_db):
-        """recycle_bin/archive 等非白名单类别 → 归一化为 'system'。"""
+        """recycle_bin/archive 等非白名单类别 → 归一化为 'system'。
+
+        用 dict 计数而非 set 比较：set 会丢失计数信息，无法抓"restore 误归 tracker"
+        这类多归类 bug（set 仍相等）。dict 计数能精确锁每个类别的条数。
+        """
         # add=torrent, reannounce=tracker, archive_logs=archive→system, restore=recycle_bin→system
         await _add_audit(async_db, operation_type="add")
         await _add_audit(async_db, operation_type="reannounce")
         await _add_audit(async_db, operation_type="archive_logs")
         await _add_audit(async_db, operation_type="restore")
         r = client.get(URL)
-        cats = {a["type"] for a in r.json()["data"]["activities"]}
-        assert cats == {"torrent", "tracker", "system"}, "archive/recycle_bin 须归一化为 system"
+        cats = {}
+        for a in r.json()["data"]["activities"]:
+            cats[a["type"]] = cats.get(a["type"], 0) + 1
+        assert cats == {
+            "torrent": 1,
+            "tracker": 1,
+            "system": 2,
+        }, "archive_logs/restore 须归一化为 system（共 2 条 system）"
 
     @pytest.mark.asyncio
     async def test_activities_null_fields_show_placeholder(self, client, async_db):
@@ -444,6 +456,10 @@ class TestCacheRead:
 
         覆盖 _get_downloader_list 的前缀分支（之前测试只覆盖了属性回退分支）。
         让两路给不同值（torrent_stats=5 vs downloading_count=99），断言取 5 锁分支选择。
+
+        注：当前生产代码无路径给单个 downloader 对象挂 torrent_stats dict（该属性只在
+        app.state.torrent_stats 聚合级出现）。此测试钉死的是 service 对该字段的读取契约，
+        供未来引入 downloader.torrent_stats 时回归；非生产 hot path。
         """
         _set_store(
             client.app,
