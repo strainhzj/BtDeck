@@ -318,3 +318,94 @@ export function assertSameDownloader(torrents: any[]): SameDownloaderResult {
   return { ok: true, reason: '' }
 }
 
+// ============ 高级搜索请求构造（解析 condition_groups，纯函数） ============
+
+export interface AdvancedSearchRequestResult {
+  /** 构造好的请求体（成功时）；失败时为 null */
+  request: any | null
+  /** 解析失败原因（调用方据此 $message.error）；成功时为 null */
+  error: string | null
+}
+
+/**
+ * 把 AdvancedSearchBuilder 输出的 searchParams 解析为高级搜索 API 请求体。
+ * 防回归 P1-F：列表模式 performAdvancedSearch 含 ~85 行解析逻辑（JSON.parse groups、
+ * between_group_logics 类型校验、条件组回填），复制到传统模式 = 两份要同步维护。
+ * 此处抽为纯函数（无 API、无 UI），两视图各自只保留「调 API + 设 list/total + 提示」。
+ *
+ * @param searchParams AdvancedSearchBuilder emit 的 search 事件参数（含 groups/between_group_logics/name/...）
+ * @param sortByFallback 默认排序字段（蛇形，如 'added_date'）
+ * @param limit 每页条数
+ */
+export function buildAdvancedSearchRequest(
+  searchParams: any,
+  sortByFallback: string,
+  limit: number
+): AdvancedSearchRequestResult {
+  let conditionGroups: any[] = []
+  let betweenGroupLogics: string[] = []
+
+  // 解析条件组（JSON 字符串）
+  if (searchParams.groups) {
+    try {
+      const groupsData = JSON.parse(searchParams.groups)
+      conditionGroups = groupsData.map((group: any) => ({
+        logic: group.logic?.toUpperCase() || 'AND',
+        conditions: group.conditions.map((cond: any) => ({
+          field: cond.field,
+          operator: cond.operator,
+          value: cond.value
+        }))
+      }))
+    } catch (e) {
+      console.error('解析groups参数失败:', e)
+      return { request: null, error: '搜索条件格式错误' }
+    }
+  }
+
+  // 解析组间逻辑关系（类型校验：必须是字符串数组）
+  if (searchParams.between_group_logics) {
+    try {
+      const parsed = JSON.parse(searchParams.between_group_logics)
+      if (Array.isArray(parsed)) {
+        betweenGroupLogics = parsed
+          .filter((item: any) => typeof item === 'string')
+          .map((logic: string) => logic.toUpperCase())
+      } else {
+        console.warn('between_group_logics不是数组类型，使用默认值')
+        betweenGroupLogics = []
+      }
+    } catch (e) {
+      console.error('解析between_group_logics参数失败:', e)
+      betweenGroupLogics = []
+    }
+  }
+
+  const request: any = {
+    page: 1,
+    limit,
+    sort_by: searchParams.sort_by || sortByFallback,
+    sort_order: (searchParams.sort_order || 'desc') as 'asc' | 'desc'
+  }
+
+  // 无条件组时，回退到简单字段
+  if (conditionGroups.length === 0) {
+    if (searchParams.name) request.name = searchParams.name
+    if (searchParams.downloader_id) request.downloader_id = searchParams.downloader_id
+    if (searchParams.status) request.status = searchParams.status
+    if (searchParams.tags) request.tags = searchParams.tags
+    if (searchParams.category) request.category = searchParams.category
+  }
+
+  // 有条件组时，附带组间逻辑
+  if (conditionGroups.length > 0) {
+    request.condition_groups = conditionGroups
+    if (betweenGroupLogics.length > 0) {
+      request.between_group_logics = betweenGroupLogics
+    }
+  }
+
+  return { request, error: null }
+}
+
+

@@ -82,6 +82,23 @@
         >
           刷新
         </el-button>
+        <el-button
+          type="text"
+          size="small"
+          icon="el-icon-search"
+          @click="showAdvancedSearchDialog = true"
+        >
+          高级搜索
+        </el-button>
+        <el-button
+          type="text"
+          size="small"
+          icon="el-icon-copy-document"
+          @click="handleShowDuplicateTorrents"
+          title="查找重复任务"
+        >
+          重复
+        </el-button>
       </div>
 
       <!-- 右侧操作区 -->
@@ -248,9 +265,9 @@
                 </th>
                 <th class="col-downloader">下载器</th>
                 <th class="col-category">分类/标签</th>
-                <th class="col-added" @click="handleSort('addedDate')">
+                <th class="col-added" @click="handleSort('added_date')">
                   添加时间
-                  <span class="sort-arrow" v-if="listQuery.sort_by === 'addedDate'">
+                  <span class="sort-arrow" v-if="listQuery.sort_by === 'added_date'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                 </th>
@@ -627,6 +644,24 @@
       :visible.sync="showGlobalReplaceDialog"
       @success="handleGlobalReplaceSuccess"
     />
+
+    <!-- P1新增：高级搜索 -->
+    <el-dialog
+      title="🔍 高级搜索"
+      :visible.sync="showAdvancedSearchDialog"
+      width="80%"
+      :close-on-click-modal="false"
+      :close-on-press-escape="false"
+      append-to-body
+    >
+      <AdvancedSearchBuilder
+        ref="advancedSearchBuilder"
+        :searching="advancedSearchSearching"
+        @search="handleAdvancedSearchFromBuilder"
+        @reset="handleResetAdvancedSearch"
+        @save-template="handleSaveSearchTemplate"
+      />
+    </el-dialog>
   </div>
 </template>
 
@@ -652,8 +687,13 @@ import {
   reannounceTorrents,
   getDownloaderList,
   getActiveTorrents,
+  advancedSearch,
+  getDuplicateTorrents,
+  applySearchTemplate,
+  createSearchTemplate,
   type DownloaderSimple,
-  type ActiveTorrentSpeed
+  type ActiveTorrentSpeed,
+  type QueryTemplateConditions
 } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status-config'
@@ -669,11 +709,12 @@ import {
   extractErrorMessage,
   debounce
 } from '@/utils/formatters'
-// P0下沉纯函数（防回归，避免复制列表模式逻辑）
+// P0/P1下沉纯函数（防回归，避免复制列表模式逻辑）
 import {
   assertSameDownloader,
   isTrackerAnnounceSuccess,
-  getTrackerStatusClass
+  getTrackerStatusClass,
+  buildAdvancedSearchRequest
 } from './utils/torrentBatch'
 
 interface FilterItem {
@@ -691,7 +732,8 @@ interface FilterItem {
     BatchTransferDialog,
     TrackerOperationDialog,
     GlobalReplaceTrackerDialog,
-    FilterGroup
+    FilterGroup,
+    AdvancedSearchBuilder: () => import('@/components/torrents/AdvancedSearchBuilder.vue')
   }
 })
 export default class extends mixins(TorrentBatchMixin) {
@@ -734,6 +776,10 @@ export default class extends mixins(TorrentBatchMixin) {
   private selectedTorrentsForTracker: any[] = []
   private trackerOperationType: 'add' | 'replace' | 'modify' | '' = ''
 
+  // P1新增：高级搜索 / 查找重复
+  private showAdvancedSearchDialog = false
+  private advancedSearchSearching = false
+
   // 详情面板
   private currentRow: any = null
   private activeDetailTab = 'general'
@@ -754,7 +800,7 @@ export default class extends mixins(TorrentBatchMixin) {
     category_like: '',
     tags_like: '',
     showActiveOnly: false, // P0#1：仅显示活动种子（前端过滤，known-issue：分页total失真）
-    sort_by: 'addedDate',
+    sort_by: 'added_date', // P1前置：统一蛇形，后端用 getattr(TorrentInfo, sort_by) 匹配ORM字段名
     sort_order: 'desc'
   }
 
@@ -858,6 +904,10 @@ export default class extends mixins(TorrentBatchMixin) {
     await this.fetchCategoryAndTags()
     await this.getList()
     this.startSpeedPolling()
+
+    // P1#9：处理从查询模板管理页跳转来的应用请求（traditional 模式下 index.vue 未挂载，
+    // 路由参数需在本视图处理）
+    await this.handleApplyTemplateFromRoute()
   }
 
   public beforeDestroy() {
@@ -1451,6 +1501,179 @@ export default class extends mixins(TorrentBatchMixin) {
   private handleGlobalReplaceSuccess() {
     this.getList()
     this.$message.success('全局替换Tracker成功')
+  }
+
+  // ====== P1#8 高级搜索 ======
+  private handleAdvancedSearchFromBuilder(searchParams: any) {
+    this.performAdvancedSearch(searchParams)
+    this.showAdvancedSearchDialog = false
+  }
+
+  private handleResetAdvancedSearch() {
+    const builder = this.$refs.advancedSearchBuilder as any
+    if (builder && builder.resetConditions) {
+      builder.resetConditions()
+    }
+    this.$message.success('搜索条件已重置')
+  }
+
+  /**
+   * P1#8 执行高级搜索（解析逻辑委托 buildAdvancedSearchRequest 纯函数，防回归 P1-F）
+   * 视图只保留「调 API + 设 list/total + 提示」
+   */
+  private async performAdvancedSearch(searchParams: any) {
+    this.advancedSearchSearching = true
+    try {
+      const { request, error } = buildAdvancedSearchRequest(
+        searchParams,
+        this.listQuery.sort_by || 'added_date',
+        this.listQuery.limit || this.pageSize
+      )
+      if (error || !request) {
+        this.$message.error(error || '搜索条件格式错误')
+        return
+      }
+
+      const response = await advancedSearch(request)
+      if (response.code === '200' && response.data) {
+        this.list = (response.data.list || []).map(normalizeTorrent).map(item => ({ ...item, checked: false }))
+        this.total = response.data.total || 0
+        this.listQuery.skip = 0
+        this.currentPage = 1
+        this.resetBatchSelection()
+        this.$message.success(`高级搜索完成，找到 ${this.total} 条结果`)
+      } else {
+        this.$message.error(response.msg || '搜索失败')
+      }
+    } catch (error) {
+      const errorMessage = extractErrorMessage(error)
+      console.error('高级搜索失败:', error)
+      this.$message.error(errorMessage || '高级搜索失败，请检查搜索条件')
+    } finally {
+      this.advancedSearchSearching = false
+    }
+  }
+
+  /** P1#9 把当前高级搜索条件保存为查询模板 */
+  private async handleSaveSearchTemplate(template: any) {
+    const conditions: QueryTemplateConditions = {
+      source: 'advanced',
+      version: 1,
+      condition_groups: template.conditions || [],
+      sort_by: this.listQuery.sort_by,
+      sort_order: this.listQuery.sort_order
+    }
+    try {
+      const response = await createSearchTemplate({
+        name: template.name,
+        description: template.description,
+        conditions,
+        is_public: false
+      } as any)
+      if (response.code === '200') {
+        this.$message.success('模板保存成功')
+      } else {
+        this.$message.error(response.msg || '模板保存失败')
+      }
+    } catch (error) {
+      this.$message.error('模板保存失败：' + (error as Error).message)
+    }
+  }
+
+  /**
+   * P1#9 应用查询模板（按 conditions.source 分支）
+   * - source=simple：回填 listQuery 并 getList()
+   * - source=advanced：回填 AdvancedSearchBuilder 的 conditionGroups 并执行（依赖#8）
+   */
+  private async applyQueryTemplate(conditions: QueryTemplateConditions) {
+    if (!conditions || !conditions.source) {
+      this.$message.error('模板条件格式无效')
+      return
+    }
+    try {
+      if (conditions.source === 'simple' && conditions.listQuery) {
+        const saved = conditions.listQuery
+        this.listQuery = {
+          skip: 0,
+          limit: this.listQuery.limit,
+          name_like: saved.name_like ?? '',
+          downloader_id: saved.downloader_id ? [...saved.downloader_id] : [],
+          status: saved.status ? [...saved.status] : [],
+          category_like: saved.category_like ?? '',
+          tags_like: saved.tags_like ?? '',
+          showActiveOnly: saved.showActiveOnly ?? false,
+          sort_by: saved.sort_by ?? 'added_date',
+          sort_order: saved.sort_order ?? 'desc'
+        }
+        this.currentPage = 1
+        await this.getList()
+        this.$message.success('已应用查询模板')
+      } else if (conditions.source === 'advanced' && conditions.condition_groups) {
+        const builderRef = this.$refs.advancedSearchBuilder as any
+        if (builderRef && typeof builderRef.applyTemplateGroups === 'function') {
+          builderRef.applyTemplateGroups(conditions.condition_groups, {
+            sort_by: conditions.sort_by,
+            sort_order: conditions.sort_order
+          })
+          const searchParams = builderRef.buildSearchParams ? builderRef.buildSearchParams() : null
+          if (searchParams) {
+            await this.performAdvancedSearch(searchParams)
+            this.$message.success('已应用高级搜索模板')
+          }
+        } else {
+          this.$message.warning('高级搜索组件未就绪')
+        }
+      } else {
+        this.$message.warning('不支持的模板类型')
+      }
+    } catch (error) {
+      this.$message.error('应用模板失败：' + (error as Error).message)
+    }
+  }
+
+  /** P1#9 处理路由 query 中的 apply_template_id（从查询模板管理页跳转来） */
+  private async handleApplyTemplateFromRoute() {
+    const templateId = this.$route.query.apply_template_id as string | undefined
+    if (!templateId) return
+    try {
+      const response = await applySearchTemplate(templateId)
+      if (response.code === '200' && response.data) {
+        const conditions = (response.data as any).conditions as QueryTemplateConditions
+        if (conditions) {
+          await this.applyQueryTemplate(conditions)
+        }
+      } else {
+        this.$message.error(response.msg || '应用模板失败')
+      }
+    } catch (error) {
+      this.$message.error('应用模板失败：' + (error as Error).message)
+    }
+    // 清除 query 参数，避免刷新重复应用
+    this.$router.replace({ query: {} })
+  }
+
+  // ====== P1#10 查找重复任务 ======
+  private async handleShowDuplicateTorrents() {
+    this.listLoading = true
+    try {
+      const response = await getDuplicateTorrents()
+      if (response.code === '200' && response.data) {
+        const dupList = (response.data.list || response.data.torrents || []) as any[]
+        this.list = dupList.map(normalizeTorrent).map(item => ({ ...item, checked: false }))
+        this.total = dupList.length
+        this.currentPage = 1
+        this.resetBatchSelection()
+        this.$message.success(`找到 ${dupList.length} 条重复种子`)
+      } else {
+        this.$message.error(response.msg || '查找重复失败')
+      }
+    } catch (error) {
+      const errorMessage = extractErrorMessage(error)
+      console.error('查找重复失败:', error)
+      this.$message.error(errorMessage || '查找重复失败')
+    } finally {
+      this.listLoading = false
+    }
   }
 }
 </script>
