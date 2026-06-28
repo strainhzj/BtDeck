@@ -211,6 +211,44 @@
 
 ## 当前会话
 
+> **2026-06-28**: 后端回归测试补全（续）——为"纯 DB 操作、业务逻辑零测试覆盖"的接口补充 API 级回归测试，每个接口经"子代理审查 → 实证核实 → 修订 → 反向验证"闭环。共 10 个 commit，+86 个回归测试，全量 tests/api/ 413 passed 无回归。
+>
+> **本次覆盖的 3 个接口 + 1 个基础设施重构**：
+>
+> 1. **审计日志查询接口**（commit 545fad4 + 8197567，41 测试）
+>    - POST /audit-logs/query（11 维过滤 + 子查询 count + LIKE 模糊 + 分页）
+>    - GET /audit-logs/statistics（内存聚合 + unknown 桶）
+>    - GET /audit-logs/operation-types（39 枚举展开）
+>    - 范式：aiosqlite 异步内存库 + AsyncSession + 覆盖 get_async_db
+>    - 子代理审查修订（+7）：排序完整序列断言、count 解耦 offset 验证、msg 排除断言防 service 吞异常假通过、401 body 断言、枚举 value 集合相等、LIKE 通配符已知行为、download-export 约定差异
+>
+> 2. **仪表盘统计接口**（commit 39e4b97 + 1485986 + 399b68b + 1c05d16，23 测试）
+>    - GET /dashboard（裸 SQL 聚合 cron_task/torrent_audit_log + 内存缓存 store/torrent_stats）
+>    - 范式：aiosqlite 异步内存库 + SimpleNamespace FakeStore 注入 app.state
+>    - 经 **4 轮子代理审查**完全收敛：第1轮发现 1 真 flaky（60秒窗口）+ 1 假通过（dr 方向）；第2-4轮逐轮确认上轮到位 + 补覆盖盲区（dict 计数 vs set、keyword_rule 归一化路径、torrent_stats=None 已知行为）
+>    - 关键修复：时间断言用绝对时间/身份标记避免 flaky；降级场景加 msg 断言防假通过
+>
+> 3. **种子删除 L4 接口**（commit 1e9a10f + 4ac69af，22 测试）
+>    - DELETE /torrents/delete-with-level（L4 待删除标签路径）
+>    - **设计转折**：原计划 HTTP e2e 经子代理审查发现 3 个 🔴 致命缺陷（同步/异步库不可共享内存库、响应字段缺失、store 未挂载），**重设计为 service 级测试**绕开三缺陷
+>    - 范式：同步内存库 + mock request（挂 store）+ mock audit（AsyncMock 记录调用）
+>    - 子代理审查修订（+4）：补 delete_batch_by_level 降级编排测试（L3→L4，service 核心复杂度零覆盖）、audit 身份锁定断言、OR 断言收窄、脏数据边界
+>
+> 4. **测试基础设施去重**（commit c881d69，重构）
+>    - 提取 make_torrent 工厂到 tests/api/conftest.py（3 文件去重 → 1 共享工厂，13 业务 kwarg 超集签名）
+>    - 设计决策：普通函数（非 fixture，接 db 参数多次调用）；test_torrent_models 的 MagicMock 工厂不合并（不同关注点）
+>
+> **关键测试质量教训（多轮审查沉淀）**：
+> - **flaky 防护**：时间断言用绝对时间/足够裕度/身份标记，不用"恰好当前时间"
+> - **防假通过**：降级/空数据场景加 msg 排除断言（防 service 吞异常返回空结构仍 code=200）
+> - **身份锁定**：过滤测试断"返回哪条"而非"返回几条"（防方向写反）；audit 断 torrent_info_id
+> - **完整序列 + 计数**：排序用完整顺序断言（非首尾比较）；分类用 dict 计数（set 漏计数）
+> - **service 级 vs HTTP e2e**：当 endpoint 有同步/异步双 session + 响应字段裁剪时，service 级测试绕开共享库与字段缺失问题，且能测到完整返回字典
+>
+> **子代理审查的工作流价值**：每轮审查都实证核实（不盲信），发现真问题（flaky/假通过/盲区）也否决误报（如"len==len 恒真"实际能抓到）。4 轮审查收敛性：第1轮发现最多（质量基线），后续轮次确认到位 + 补越来越细的盲区。
+>
+> ---
+
 > **2026-06-27（续）**: 收尾——v1.0.5-audit 标 done + 前端验证补遗 + 残留分支清理。
 >
 > **v1.0.5-audit 契约审计收尾** ✅
@@ -391,4 +429,4 @@
 
 ---
 
-**最后更新**: 2026-06-27
+**最后更新**: 2026-06-28
