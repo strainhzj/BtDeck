@@ -36,7 +36,7 @@ from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
 from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
-from app.torrents.audit_enums import AuditOperationType
+from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.torrents.models import TorrentInfo, TrackerInfo
 from tests.api.conftest import make_torrent
 
@@ -78,6 +78,14 @@ class TestAddTagToString:
     def test_multiple_tags_appended_at_end(self):
         result = TorrentDeletionByLevelService._add_tag_to_string("a,b,c", LEVEL4_TAG)
         assert result == "a,b,c,pending_delete"
+
+    def test_dirty_tags_only_separators_returns_just_new_tag(self):
+        """脏数据：tags 全是分隔符/空白 → strip 后全空 → 等价于空，返回仅新标签。
+
+        防止历史脏数据（如 ", , ,"）导致新标签前缀一堆空字段。
+        """
+        result = TorrentDeletionByLevelService._add_tag_to_string(" , , ", LEVEL4_TAG)
+        assert result == LEVEL4_TAG
 
 
 # ==================== 组2：端点 HTTP 参数校验 ====================
@@ -142,7 +150,9 @@ class TestDeleteWithLevelParamValidation:
             r = c.delete(URL, params={"torrent_info_ids": "x", "delete_level": 4})
         assert r.status_code == 401
         # require_authenticated_user 抛 HTTPException(401, detail=CommonResponse(code='401').model_dump())
-        assert r.json()["detail"]["code"] == "401"
+        detail = r.json()["detail"]
+        assert detail["code"] == "401"
+        assert detail["status"] == "error", "确认是认证失败响应（非业务错误/路由 404）"
 
     def test_delete_level_zero_returns_422(self, client):
         r = client.delete(URL, params={"torrent_info_ids": "x", "delete_level": 0})
@@ -237,11 +247,14 @@ class TestDeleteLevel4Service:
         db_session.expire_all()
         torrent = db_session.query(TorrentInfo).filter_by(info_id="t1").first()
         assert LEVEL4_TAG in torrent.tags
-        # audit 调用一次，operation_type=DELETE_L4
+        # audit 调用一次，断言关键字段（身份锁定 + operation_type + operation_result + tag）
         audit.log_operation.assert_awaited_once()
         kwargs = audit.log_operation.await_args.kwargs
         assert kwargs["operation_type"] == AuditOperationType.DELETE_L4
         assert kwargs["operator"] == "alice"
+        assert kwargs["torrent_info_id"] == "t1", "身份锁定：审计须关联正确的种子"
+        assert kwargs["operation_result"] == AuditOperationResult.SUCCESS
+        assert kwargs["operation_detail"]["tag"] == LEVEL4_TAG
 
     @pytest.mark.asyncio
     async def test_l4_already_has_tag_no_duplicate(self, db_session):
@@ -291,7 +304,9 @@ class TestDeleteLevel4Service:
         result = await svc.delete_by_level("t1", 4, audit_service=AsyncMock())
 
         assert result["success"] is False
-        assert "适配器" in result.get("error", "") or "缓存" in result.get("error", "")
+        # 精确匹配：_get_adapter 抛 ValueError("下载器不在缓存中") 被 service 包装为 "获取适配器失败: ..."
+        assert result["error"].startswith("获取适配器失败:")
+        assert "下载器不在缓存中" in result["error"]
 
     @pytest.mark.asyncio
     async def test_l4_downloader_invalid_fails(self, db_session):
@@ -346,3 +361,101 @@ class TestDeleteLevel4Service:
         assert result["success"] is True, "下载器标签已加，业务仍 success"
         assert result["db_update_success"] is False, "DB 更新失败标记"
         assert result["db_update_error"] is not None
+
+
+# ==================== 组4：delete_batch_by_level 降级编排（service 自身方法） ====================
+
+
+class TestDeleteBatchByLevel:
+    """批量删除编排：L3 备份失败 → 自动降级 L4（by_level.py:217-239）。
+
+    这条降级链路是 service 核心复杂度，之前零覆盖。delete_batch_by_level 是 service
+    自身方法（不经过 endpoint 的 comma-split），可在现有 service 级框架直接测。
+    触发降级：mock _delete_level3 返回 downgrade_to_level4=True，真实 _delete_level4 执行。
+    """
+
+    @pytest.mark.asyncio
+    async def test_l3_downgrade_to_l4_success(self, db_session, monkeypatch):
+        """L3 降级到 L4 成功：level4_downgraded + level4_success 都记录该种子。"""
+        make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="m")
+        _make_downloader(db_session)
+        mock_request = _make_mock_request([_make_fake_vo()])
+
+        svc = TorrentDeletionByLevelService(db_session, mock_request)
+
+        # mock _delete_level3 返回降级标记（模拟备份失败）
+        async def fake_level3(torrent, operator, audit_service=None):
+            return {
+                "success": False,
+                "downgrade_to_level4": True,
+                "torrent_id": torrent.info_id,
+                "torrent_name": torrent.name,
+                "message": "种子文件备份失败: mock",
+            }
+
+        monkeypatch.setattr(svc, "_delete_level3", fake_level3)
+
+        result = await svc.delete_batch_by_level(
+            torrent_info_ids=["t1"], delete_level=3, operator="alice", audit_service=AsyncMock()
+        )
+
+        assert result["success"] is True, "L4 降级成功，无 failed"
+        assert result["total"] == 1
+        assert result["level4_downgraded"] == [
+            {"torrent_id": "t1", "torrent_name": "m", "reason": "种子文件备份失败: mock"}
+        ]
+        assert result["level4_success"] == ["t1"]
+        assert result["level3_success"] == []
+        assert result["failed"] == []
+        # L4 真实执行了：DB tags 含 pending_delete
+        db_session.expire_all()
+        tags = db_session.query(TorrentInfo).filter_by(info_id="t1").first().tags
+        assert LEVEL4_TAG in tags
+
+    @pytest.mark.asyncio
+    async def test_l3_downgrade_to_l4_also_fails(self, db_session, monkeypatch):
+        """L3 降级到 L4 也失败 → 记入 failed，整体 success=False。"""
+        make_torrent(db_session, info_id="t1", downloader_id="dl-1", hash_="h1", name="m")
+        _make_downloader(db_session)
+        # store 返回空缓存 → _get_adapter 失败 → L4 也失败
+        mock_request = _make_mock_request([])
+
+        svc = TorrentDeletionByLevelService(db_session, mock_request)
+
+        async def fake_level3(torrent, operator, audit_service=None):
+            return {
+                "success": False,
+                "downgrade_to_level4": True,
+                "torrent_id": torrent.info_id,
+                "torrent_name": torrent.name,
+                "message": "备份失败",
+            }
+
+        monkeypatch.setattr(svc, "_delete_level3", fake_level3)
+
+        result = await svc.delete_batch_by_level(
+            torrent_info_ids=["t1"], delete_level=3, operator="alice", audit_service=AsyncMock()
+        )
+
+        assert result["success"] is False, "L4 也失败 → 整体失败"
+        assert len(result["failed"]) == 1
+        assert result["failed"][0]["torrent_id"] == "t1"
+        assert "降级到等级4也失败" in result["failed"][0]["message"]
+
+    @pytest.mark.asyncio
+    async def test_batch_l4_all_success(self, db_session):
+        """批量 L4 全成功：多条种子都加标签，level4_success 收齐。"""
+        for i in range(3):
+            make_torrent(db_session, info_id=f"t{i}", downloader_id="dl-1", hash_=f"h{i}", name=f"m{i}")
+        _make_downloader(db_session)
+        mock_request = _make_mock_request([_make_fake_vo()])
+
+        svc = TorrentDeletionByLevelService(db_session, mock_request)
+        result = await svc.delete_batch_by_level(
+            torrent_info_ids=["t0", "t1", "t2"], delete_level=4, audit_service=AsyncMock()
+        )
+
+        assert result["success"] is True
+        assert result["total"] == 3
+        assert sorted(result["level4_success"]) == ["t0", "t1", "t2"]
+        assert result["failed"] == []
