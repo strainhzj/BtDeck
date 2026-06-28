@@ -260,3 +260,61 @@ export function resetSelection(state: SelectionState): void {
   state.selectAll = false
   state.isIndeterminate = false
 }
+
+// ============ Tracker 状态判断（统一两视图语义分歧） ============
+
+/** Tracker Announce/Scrape 成功状态值（后端 torrent_status.py 枚举的中文值） */
+const TRACKER_SUCCESS_VALUES = new Set(['工作中', 'success', 'true'])
+
+/**
+ * 判断 Tracker 的 Announce/Scrape 是否成功（统一两视图语义）
+ * 防回归 P0-D：列表模式只认 '工作中'，传统模式认 '工作中'|'success'|true，分歧。
+ * 此处统一为：'工作中' | 'success' | true 视为成功。
+ */
+export function isTrackerAnnounceSuccess(status: string | boolean | undefined | null): boolean {
+  if (status === undefined || status === null) return false
+  if (typeof status === 'boolean') return status
+  return TRACKER_SUCCESS_VALUES.has(String(status))
+}
+
+/** Tracker 失败状态值 */
+const TRACKER_FAIL_VALUES = new Set(['工作失败', '已禁用', '超时', '已清除', 'failed', 'false'])
+
+/**
+ * 获取 Tracker 状态样式类名（供模板 :class 使用）
+ * 成功 → working（绿）；失败 → error（红）；其它 → neutral（灰）
+ */
+export function getTrackerStatusClass(status: string | boolean | undefined | null): string {
+  if (isTrackerAnnounceSuccess(status)) return 'tracker-status-working'
+  if (typeof status === 'string' && TRACKER_FAIL_VALUES.has(status)) return 'tracker-status-error'
+  return 'tracker-status-neutral'
+}
+
+// ============ 下载器同源校验（消除转移/改路径的重复校验） ============
+
+export interface SameDownloaderResult {
+  /** 是否通过（所有种子属于同一下载器且都有下载器ID） */
+  ok: boolean
+  /** 失败原因（ok=false 时有值），供 $message 提示 */
+  reason: string
+}
+
+/**
+ * 校验选中的种子是否都属于同一下载器（批量转移/修改路径前置校验）
+ * 防回归 P0-E：列表模式 handleBatchTransfer/handleBatchSetLocation 各有一份
+ * 几乎逐字相同的校验逻辑（~10行），此处统一为单点纯函数。
+ */
+export function assertSameDownloader(torrents: any[]): SameDownloaderResult {
+  const downloaderIds = new Set(
+    torrents.map(t => getDownloaderId(t)).filter(id => id !== '' && id !== undefined && id !== null)
+  )
+
+  if (downloaderIds.has('') || torrents.some(t => !getDownloaderId(t))) {
+    return { ok: false, reason: '选中种子缺少下载器信息，请刷新后重试' }
+  }
+  if (downloaderIds.size > 1) {
+    return { ok: false, reason: '选中的种子必须属于同一下载器' }
+  }
+  return { ok: true, reason: '' }
+}
+

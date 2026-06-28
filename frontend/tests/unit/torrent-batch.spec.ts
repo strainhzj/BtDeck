@@ -12,7 +12,10 @@ import {
   runBatchAction,
   sortByActive,
   resetSelection,
-  getTorrentSpeed
+  getTorrentSpeed,
+  isTrackerAnnounceSuccess,
+  getTrackerStatusClass,
+  assertSameDownloader
 } from '@/views/torrents/utils/torrentBatch'
 
 // ============ Bug#1 / Bug#4：分组与删除计数契约 ============
@@ -269,3 +272,87 @@ describe('Bug#8 - resetSelection 重置契约', () => {
     expect(state.isIndeterminate).toBe(false)
   })
 })
+
+// ============ P0-D：Tracker 状态判断契约（统一两视图语义） ============
+
+describe('P0-D - isTrackerAnnounceSuccess / getTrackerStatusClass', () => {
+  it('识别成功状态：工作中 / success / true', () => {
+    expect(isTrackerAnnounceSuccess('工作中')).toBe(true)
+    expect(isTrackerAnnounceSuccess('success')).toBe(true)
+    expect(isTrackerAnnounceSuccess(true)).toBe(true)
+  })
+
+  it('识别非成功状态', () => {
+    expect(isTrackerAnnounceSuccess('工作失败')).toBe(false)
+    expect(isTrackerAnnounceSuccess('已禁用')).toBe(false)
+    expect(isTrackerAnnounceSuccess('false')).toBe(false)
+    expect(isTrackerAnnounceSuccess(false)).toBe(false)
+    expect(isTrackerAnnounceSuccess(undefined)).toBe(false)
+    expect(isTrackerAnnounceSuccess(null)).toBe(false)
+    expect(isTrackerAnnounceSuccess('')).toBe(false)
+  })
+
+  it('getTrackerStatusClass 返回正确样式类', () => {
+    expect(getTrackerStatusClass('工作中')).toBe('tracker-status-working')
+    expect(getTrackerStatusClass(true)).toBe('tracker-status-working')
+    expect(getTrackerStatusClass('工作失败')).toBe('tracker-status-error')
+    expect(getTrackerStatusClass('已禁用')).toBe('tracker-status-error')
+    expect(getTrackerStatusClass('超时')).toBe('tracker-status-error')
+    expect(getTrackerStatusClass('未知状态')).toBe('tracker-status-neutral')
+    expect(getTrackerStatusClass(undefined)).toBe('tracker-status-neutral')
+  })
+
+  it('防回归：列表模式只认"工作中"的旧分歧已统一（success/true 也算成功）', () => {
+    // 原 index.vue 只认 '工作中'；原 TraditionalView 认 '工作中'|'success'|true
+    // 统一后两者都算成功，避免两视图行为分歧
+    expect(isTrackerAnnounceSuccess('success')).toBe(true)
+    expect(isTrackerAnnounceSuccess(true)).toBe(true)
+  })
+})
+
+// ============ P0-E：下载器同源校验契约 ============
+
+describe('P0-E - assertSameDownloader', () => {
+  it('所有种子同一下载器 → ok', () => {
+    const torrents = [
+      { hash: 'h1', downloader_id: 'dl1' },
+      { hash: 'h2', downloaderId: 'dl1' } // 驼峰变体
+    ]
+    const r = assertSameDownloader(torrents)
+    expect(r.ok).toBe(true)
+    expect(r.reason).toBe('')
+  })
+
+  it('跨多个下载器 → 不通过', () => {
+    const torrents = [
+      { hash: 'h1', downloader_id: 'dl1' },
+      { hash: 'h2', downloader_id: 'dl2' }
+    ]
+    const r = assertSameDownloader(torrents)
+    expect(r.ok).toBe(false)
+    expect(r.reason).toContain('同一')
+  })
+
+  it('存在缺下载器ID的种子 → 不通过', () => {
+    const torrents = [
+      { hash: 'h1', downloader_id: 'dl1' },
+      { hash: 'h2' } // 缺 downloader_id
+    ]
+    const r = assertSameDownloader(torrents)
+    expect(r.ok).toBe(false)
+    expect(r.reason).toContain('缺少下载器信息')
+  })
+
+  it('空列表 → 通过（边界，由调用方决定是否拦截空选）', () => {
+    expect(assertSameDownloader([]).ok).toBe(true)
+  })
+
+  it('兼容 downloader_id 与 downloaderId 两种字段', () => {
+    const torrents = [
+      { hash: 'h1', downloader_id: 'dl1' },
+      { hash: 'h2', downloaderId: 'dl1' }
+    ]
+    expect(assertSameDownloader(torrents).ok).toBe(true)
+  })
+})
+

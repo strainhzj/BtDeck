@@ -63,6 +63,25 @@
           @input="debouncedSearch"
           @keyup.enter.native="handleFilter"
         />
+        <el-checkbox
+          v-model="listQuery.showActiveOnly"
+          class="active-only-checkbox"
+          @change="handleFilter"
+          title="仅显示有速度的活动种子（前端过滤当前页）"
+        >
+          活动
+        </el-checkbox>
+        <el-button
+          type="text"
+          size="small"
+          icon="el-icon-refresh"
+          class="manual-refresh-btn"
+          :loading="listLoading"
+          @click="handleManualRefresh"
+          title="刷新"
+        >
+          刷新
+        </el-button>
       </div>
 
       <!-- 右侧操作区 -->
@@ -99,7 +118,44 @@
       </div>
     </div>
 
-    <!-- 页面主体：过滤面板 + 表格 + 详情 -->
+    <!-- 批量操作行（P0新增，容纳进阶批量操作，避免 toolbar 过挤） -->
+    <div class="traditional-batch-ops">
+      <el-button
+        type="text"
+        size="small"
+        icon="el-icon-link"
+        :disabled="multipleSelection.length === 0"
+        @click="handleBatchTracker"
+      >Tracker操作</el-button>
+      <el-button
+        type="text"
+        size="small"
+        icon="el-icon-share"
+        :disabled="multipleSelection.length === 0"
+        @click="handleBatchReannounce"
+      >Tracker汇报</el-button>
+      <el-button
+        type="text"
+        size="small"
+        icon="el-icon-setting"
+        @click="showGlobalReplaceDialog = true"
+      >全局替换</el-button>
+      <div class="tool-divider"></div>
+      <el-button
+        type="text"
+        size="small"
+        icon="el-icon-sort"
+        :disabled="multipleSelection.length === 0"
+        @click="handleBatchTransfer"
+      >转移</el-button>
+      <el-button
+        type="text"
+        size="small"
+        icon="el-icon-folder-opened"
+        :disabled="multipleSelection.length === 0"
+        @click="handleBatchSetLocation"
+      >修改路径</el-button>
+    </div>
     <div class="page-body">
       <!-- 左侧过滤面板 -->
       <aside class="filter-panel" :class="{collapsed: viewModeModule.filterPanelCollapsed}">
@@ -290,6 +346,13 @@
                       ↻
                     </button>
                     <button
+                      class="action-btn-mini location"
+                      @click.stop="handleSetLocation(torrent)"
+                      title="修改保存路径"
+                    >
+                      📁
+                    </button>
+                    <button
                       class="action-btn-mini delete"
                       @click.stop="handleDelete(torrent)"
                       title="删除"
@@ -417,12 +480,14 @@
 
             <!-- Tracker 信息 -->
             <template v-else-if="activeDetailTab === 'tracker'">
-              <table class="tracker-table">
+              <table class="tracker-table tracker-table-detail">
                 <thead>
                   <tr>
-                    <th>名称</th>
-                    <th>状态</th>
-                    <th>地址</th>
+                    <th>Tracker名称</th>
+                    <th style="width: 80px;">Announce</th>
+                    <th>Announce信息</th>
+                    <th style="width: 80px;">Scrape</th>
+                    <th style="width: 60px;" class="tracker-sticky-col">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -430,18 +495,45 @@
                     v-for="(tracker, index) in (currentRow?.tracker_info || currentRow?.trackerInfo || [])"
                     :key="index"
                   >
-                    <td>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</td>
                     <td>
-                      <span class="tracker-status">
-                        <span
-                          class="dot"
-                          :class="isTrackerSuccess(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded) ? 'ok' : 'fail'"
-                        ></span>
-                        {{ getTrackerStatusText(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded) }}
+                      <div>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</div>
+                      <div
+                        class="tracker-url-mini"
+                        :title="tracker.tracker_url || tracker.trackerUrl || '-'"
+                      >{{ tracker.tracker_url || tracker.trackerUrl || '-' }}</div>
+                    </td>
+                    <td>
+                      <span
+                        :class="trackerStatusClass(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)"
+                      >
+                        <template v-if="trackerAnnounceSuccess(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)">
+                          ✓ 工作
+                        </template>
+                        <template v-else>
+                          ✗ {{ tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded || '失败' }}
+                        </template>
                       </span>
                     </td>
-                    <td :title="tracker.tracker_url || tracker.trackerUrl || '-'">
-                      {{ (tracker.tracker_url || tracker.trackerUrl || '-').slice(0, 30) }}
+                    <td>{{ tracker.last_announce_msg || tracker.lastAnnounceMsg || '-' }}</td>
+                    <td>
+                      <span
+                        :class="trackerStatusClass(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)"
+                      >
+                        <template v-if="trackerAnnounceSuccess(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)">
+                          ✓ 工作
+                        </template>
+                        <template v-else>
+                          ✗ {{ tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded || '失败' }}
+                        </template>
+                      </span>
+                    </td>
+                    <td class="tracker-sticky-col">
+                      <el-button
+                        type="text"
+                        size="mini"
+                        :loading="tracker.reannouncing"
+                        @click="handleTrackerReannounce(tracker, index)"
+                      >汇报</el-button>
                     </td>
                   </tr>
                 </tbody>
@@ -507,6 +599,34 @@
       :downloaders="downloaderList"
       @confirm="handleAdd"
     />
+
+    <!-- P0新增：修改保存路径 -->
+    <SetLocationDialog
+      :visible.sync="showSetLocationDialog"
+      :torrents="selectedTorrentsForLocation"
+      @success="handleSetLocationSuccess"
+    />
+
+    <!-- P0新增：批量转移 -->
+    <BatchTransferDialog
+      :visible.sync="showBatchTransferDialog"
+      :torrents="multipleSelection"
+      @success="handleBatchTransferSuccess"
+    />
+
+    <!-- P0新增：Tracker操作（增/改/替换） -->
+    <TrackerOperationDialog
+      :visible.sync="showTrackerOperationDialog"
+      :selected-torrents="selectedTorrentsForTracker"
+      :operation-type="trackerOperationType"
+      @success="handleTrackerOperationSuccess"
+    />
+
+    <!-- P0新增：全局替换Tracker -->
+    <GlobalReplaceTrackerDialog
+      :visible.sync="showGlobalReplaceDialog"
+      @success="handleGlobalReplaceSuccess"
+    />
   </div>
 </template>
 
@@ -515,6 +635,10 @@ import { Component } from 'vue-property-decorator'
 import { mixins } from 'vue-class-component'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentAddDialog from './components/TorrentAddDialog.vue'
+import SetLocationDialog from './components/SetLocationDialog.vue'
+import BatchTransferDialog from './components/BatchTransferDialog.vue'
+import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
+import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
 // 复用现有 API、工具函数、状态配置
@@ -525,6 +649,7 @@ import {
   pauseTorrents,
   resumeTorrents,
   recheckTorrents,
+  reannounceTorrents,
   getDownloaderList,
   getActiveTorrents,
   type DownloaderSimple,
@@ -544,6 +669,12 @@ import {
   extractErrorMessage,
   debounce
 } from '@/utils/formatters'
+// P0下沉纯函数（防回归，避免复制列表模式逻辑）
+import {
+  assertSameDownloader,
+  isTrackerAnnounceSuccess,
+  getTrackerStatusClass
+} from './utils/torrentBatch'
 
 interface FilterItem {
   icon: string
@@ -556,6 +687,10 @@ interface FilterItem {
   name: 'TraditionalView',
   components: {
     TorrentAddDialog,
+    SetLocationDialog,
+    BatchTransferDialog,
+    TrackerOperationDialog,
+    GlobalReplaceTrackerDialog,
     FilterGroup
   }
 })
@@ -588,6 +723,16 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 弹窗状态
   private showAddDialog = false
+  // P0新增弹窗状态
+  private showSetLocationDialog = false
+  private showBatchTransferDialog = false
+  private showTrackerOperationDialog = false
+  private showGlobalReplaceDialog = false
+
+  // P0新增：修改路径 / Tracker操作 的选中种子载体
+  private selectedTorrentsForLocation: any[] = []
+  private selectedTorrentsForTracker: any[] = []
+  private trackerOperationType: 'add' | 'replace' | 'modify' | '' = ''
 
   // 详情面板
   private currentRow: any = null
@@ -608,6 +753,7 @@ export default class extends mixins(TorrentBatchMixin) {
     status: [],
     category_like: '',
     tags_like: '',
+    showActiveOnly: false, // P0#1：仅显示活动种子（前端过滤，known-issue：分页total失真）
     sort_by: 'addedDate',
     sort_order: 'desc'
   }
@@ -726,6 +872,10 @@ export default class extends mixins(TorrentBatchMixin) {
       params.skip = (this.currentPage - 1) * this.pageSize
       params.limit = this.pageSize
 
+      // P0#1：showActiveOnly 仅前端过滤，不发给后端
+      const showActiveOnly = params.showActiveOnly === true
+      delete params.showActiveOnly
+
       // 处理数组参数
       if (Array.isArray(params.downloader_id) && params.downloader_id.length > 0) {
         params.downloader_id = params.downloader_id.join(',')
@@ -749,11 +899,24 @@ export default class extends mixins(TorrentBatchMixin) {
       const response = await getTorrentList(params)
       const { list, total } = normalizePaginatedResponse<any>(response)
 
-      this.list = list.map(normalizeTorrent).map(item => ({
+      // 规范化并提供默认 checked
+      let normalizedList = list.map(normalizeTorrent).map(item => ({
         ...item,
         checked: false
       }))
-      this.total = total
+
+      // P0#1 前端过滤"仅显示活动种子"：筛选有速度的种子
+      // known-issue（对齐列表模式 index.vue 既有缺陷）：开启后分页 total 变为当前页过滤后的条数，
+      // 翻页时每页独立过滤、页码总数失真。后续可改用 getActiveTorrents 全量拉取彻底解决。
+      if (showActiveOnly) {
+        normalizedList = normalizedList.filter(item => {
+          const speed = this.activeSpeedMap[item.hash]
+          return speed && (speed.downloadSpeed > 0 || speed.uploadSpeed > 0)
+        })
+      }
+
+      this.list = normalizedList
+      this.total = showActiveOnly ? normalizedList.length : total
 
       // 修复 Bug#8：新数据全部 checked:false，必须同步重置批量选中状态，
       // 否则分页/筛选切换后 multipleSelection 仍持有已不在当前视图的旧种子，
@@ -882,14 +1045,8 @@ export default class extends mixins(TorrentBatchMixin) {
     return 'great'
   }
 
-  private isTrackerSuccess(status: string): boolean {
-    return status === '工作中' || status === 'success' || status === true
-  }
-
-  private getTrackerStatusText(status: string): string {
-    if (this.isTrackerSuccess(status)) return '工作中'
-    return '失败'
-  }
+  // 注：isTrackerSuccess/getTrackerStatusText 已删除，统一委托给
+  // 下沉纯函数 trackerAnnounceSuccess/trackerStatusClass（防回归 P0-D，消除两视图语义分歧）
 
   // ====== 事件处理 ======
   private handleFilter() {
@@ -1154,6 +1311,147 @@ export default class extends mixins(TorrentBatchMixin) {
       this.$message.error('添加种子失败')
     }
   }
+
+  // ====== P0#2 手动刷新（对齐列表模式，含静态+速度双刷新） ======
+  private handleManualRefresh() {
+    this.getList()
+    this.loadActiveSpeed()
+  }
+
+  // ====== P0#3/#4 Tracker 状态判断（委托下沉的纯函数） + 单条汇报 ======
+  private trackerAnnounceSuccess(status: string | boolean | undefined | null): boolean {
+    return isTrackerAnnounceSuccess(status)
+  }
+
+  private trackerStatusClass(status: string | boolean | undefined | null): string {
+    return getTrackerStatusClass(status)
+  }
+
+  /** P0#4 单条 Tracker 汇报（在详情面板 Tracker tab 内触发） */
+  private async handleTrackerReannounce(tracker: any, _index: number) {
+    if (!this.currentRow?.hash) {
+      this.$message.error('种子信息不完整，无法汇报')
+      return
+    }
+    const downloaderId = this.currentRow.downloader_id || this.currentRow.downloaderId
+    this.$set(tracker, 'reannouncing', true)
+    try {
+      const response = await reannounceTorrents({
+        hashes: [this.currentRow.hash],
+        downloader_id: downloaderId
+      })
+      if (response.code === '200') {
+        this.$message.success('Tracker汇报成功')
+        await this.getList()
+      } else {
+        this.$message.error(response.msg || 'Tracker汇报失败')
+      }
+    } catch (error) {
+      const errorMessage = extractErrorMessage(error)
+      console.error('Tracker汇报失败:', error)
+      this.$message.error(errorMessage || 'Tracker汇报失败')
+    } finally {
+      this.$set(tracker, 'reannouncing', false)
+    }
+  }
+
+  // ====== P0#5 批量 Tracker 汇报（按下载器分组，复用 mixin groupBy） ======
+  private async handleBatchReannounce() {
+    if (this.multipleSelection.length === 0) {
+      this.$message.warning('请先选择要汇报的种子')
+      return
+    }
+    try {
+      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
+      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
+        const hashes = torrents.map(t => t.hash)
+        return reannounceTorrents({ downloader_id: downloaderId, hashes })
+      })
+      const responses = await Promise.allSettled(promises)
+      const succeeded = responses.filter(r => r.status === 'fulfilled').length
+      const failed = responses.filter(r => r.status === 'rejected').length
+      const total = this.multipleSelection.length
+      const downloaderCount = Object.keys(groups).length
+
+      if (failed > 0) {
+        this.$message.warning(`Tracker汇报部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
+      } else {
+        this.$message.success(`Tracker汇报成功(${total}个种子, ${downloaderCount}个下载器)`)
+      }
+      this.getList()
+    } catch (error) {
+      console.error('Tracker汇报失败:', error)
+      this.$message.error('Tracker汇报失败，请查看控制台')
+    }
+  }
+
+  // ====== P0#6 修改保存路径（单条+批量） ======
+  private handleSetLocation(torrent: any) {
+    this.selectedTorrentsForLocation = [torrent]
+    this.showSetLocationDialog = true
+  }
+
+  private handleBatchSetLocation() {
+    if (this.multipleSelection.length === 0) {
+      this.$message.warning('请先选择种子')
+      return
+    }
+    // 同源校验委托纯函数（防回归 P0-E）
+    const check = assertSameDownloader(this.multipleSelection)
+    if (!check.ok) {
+      this.$message.warning(check.reason)
+      return
+    }
+    this.selectedTorrentsForLocation = this.multipleSelection
+    this.showSetLocationDialog = true
+  }
+
+  private handleSetLocationSuccess() {
+    this.showSetLocationDialog = false
+    this.getList()
+  }
+
+  // ====== P0#7 批量转移 ======
+  private handleBatchTransfer() {
+    if (this.multipleSelection.length === 0) {
+      this.$message.warning('请先选择要转移的种子')
+      return
+    }
+    const check = assertSameDownloader(this.multipleSelection)
+    if (!check.ok) {
+      this.$message.warning(check.reason)
+      return
+    }
+    this.showBatchTransferDialog = true
+  }
+
+  private handleBatchTransferSuccess() {
+    this.showBatchTransferDialog = false
+    this.getList()
+    this.$message.success('批量转移操作完成')
+  }
+
+  // ====== P0#8 Tracker 操作（增/改/替换） ======
+  private handleBatchTracker() {
+    if (this.multipleSelection.length === 0) {
+      this.$message.warning('请先选择要操作的种子')
+      return
+    }
+    this.selectedTorrentsForTracker = [...this.multipleSelection]
+    this.trackerOperationType = ''
+    this.showTrackerOperationDialog = true
+  }
+
+  private handleTrackerOperationSuccess() {
+    this.getList()
+    this.$message.success('Tracker操作成功')
+  }
+
+  // ====== P0#9 全局替换 Tracker ======
+  private handleGlobalReplaceSuccess() {
+    this.getList()
+    this.$message.success('全局替换Tracker成功')
+  }
 }
 </script>
 
@@ -1207,6 +1505,32 @@ export default class extends mixins(TorrentBatchMixin) {
 
   ::v-deep .el-input__inner {
     font-size: 12px;
+  }
+}
+
+// P0新增：活动种子开关 + 手动刷新按钮（在 toolbar-center）
+.active-only-checkbox {
+  margin: 0 4px;
+  ::v-deep .el-checkbox__label { font-size: 12px; padding-left: 4px; }
+}
+
+.manual-refresh-btn {
+  padding: 0 6px;
+}
+
+// P0新增：批量操作行（容纳进阶批量操作，避免主 toolbar 过挤）
+.traditional-batch-ops {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 10px;
+  background: var(--color-bg-secondary);
+  border-bottom: 1px solid var(--color-border-primary);
+  flex-shrink: 0;
+
+  .el-button--text {
+    font-size: 12px;
+    padding: 3px 6px;
   }
 }
 
@@ -1362,6 +1686,29 @@ export default class extends mixins(TorrentBatchMixin) {
       &.fail {
         background: var(--color-error);
       }
+    }
+  }
+
+  // P0#3 Tracker 详情表增强样式
+  &.tracker-table-detail {
+    .tracker-url-mini {
+      font-size: 10px;
+      color: var(--color-text-tertiary);
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    // Announce/Scrape 状态色（复用列表模式 class 名）
+    .tracker-status-working { color: var(--color-success); }
+    .tracker-status-error { color: var(--color-error); }
+    .tracker-status-neutral { color: var(--color-text-tertiary); }
+
+    .tracker-sticky-col {
+      position: sticky;
+      right: 0;
+      background: var(--color-bg-primary);
     }
   }
 }
