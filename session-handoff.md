@@ -6,116 +6,146 @@
 
 ## 会话信息
 
-**日期**: 2026-06-20
-**版本**: v1.0.5-audit（契约审计修复，技术债版本）
-**功能**: 基于 backend/docs/style-and-contract-audit.md 的 P1 确定性 bug + P0 契约归一化
-**状态**: P0-2 全部完成（P0-2a/b/c/d）。剩余 P2/P3 为推迟项。
-**分支**: fix/contract-audit（基于 dev）
+**日期**: 2026-06-28
+**版本**: v1.0.5（查询模板系统）+ 后端回归测试补全专项
+**功能**: 为"纯 DB 操作、业务逻辑零测试覆盖"的接口补充 API 级回归测试，每个接口经"子代理审查 → 实证核实 → 修订 → 反向验证"闭环
+**状态**: 交接文档 3 个优先级全部完成。14 个 commit，+135 个回归测试，全量 tests/api/ 462 passed 无回归。
+**分支**: dev（已与 origin/dev 同步）
 
 ---
 
-## 完成的工作（10 commit，含本会话 6 commit）
+## 完成的工作（14 commit，本会话全部）
 
-| 任务 | commit | 验证 |
-|------|--------|------|
-| P0-3 后端全局异常处理器（归一化 HTTPException/422/未捕获异常为 CommonResponse） | ac324bc | pytest 1524 passed |
-| P0-1 前端 ApiError 归一化（4 分支 detail 解包 + 兼容 getter + 双 header 收敛） | 0e55469 | jest 25/25, eslint 0 error |
-| P1-A 后端补 4 项端点（statistics装饰器/模板详情/logout/cronTasks日志） | efc6574 | auth+cron 189 passed |
-| P1-B 前端修 4 项契约（apply对齐/articles删除/2FA改Action/删getTorrentDetail/接通logout） | 0e8f007 | jest 25/25, eslint 0 error |
-| P0-2c 认证基础设施补强（AuthenticatedUserInfo 加 user_id 字段，兜底解析） | 9e19822 | auth 125 passed |
-| P0-2a Batch A 迁移 10 个 token-only 端点 | fc7760b+ | pytest tests/api/ 218 passed |
-| P0-2a Batch B 迁移 downloader/cron_tasks/tracker/torrent_crud/sync | (Batch B) | 218 passed |
-| P0-2a Batch C 迁移 3 个 user_id 端点（advanced_search/tag_management/tracker_keywords） | (Batch C) | 218 passed |
-| P0-2a Batch D 完成 4 个 mixed 部分迁移文件 | deab3ac | 218 passed |
-| P0-2d 弃用 verify_token_dependency | 33f2481 | 1523 passed |
+| 任务 | commit | 测试数 |
+|------|--------|--------|
+| 审计日志查询接口初始（query/statistics/operation-types） | 545fad4 | 34 |
+| 审计日志 review 修订（排序完整序列/count解耦/msg排除/401 body/枚举集合/LIKE通配符） | 8197567 | →41 |
+| 仪表盘统计接口初始（裸SQL聚合+内存缓存） | 39e4b97 | +21 |
+| 仪表盘 review 修订（修60秒窗口flaky+dr身份锁+msg排除+unknown桶） | 1485986 | →23 |
+| 仪表盘第二轮 review（set→dict计数/C11+M3漏点+B9 docstring） | 399b68b | 23 |
+| 仪表盘第三轮 review（补 keyword_rule 归一化路径） | 1c05d16 | 23 |
+| 提取 make_torrent 工厂到 tests/api/conftest.py（3文件去重） | c881d69 | 重构 |
+| 种子删除 L4 接口测试（service级，绕开同步/异步库共享问题） | 1e9a10f | +18 |
+| 删除测试 review（补降级编排+audit身份锁+OR断言收窄） | 4ac69af | →22 |
+| cron 安全策略测试（防脚本注入绕过，纯函数+端点级） | e57bca2 | +23 |
+| 种子转移下载器不存在场景（patch 3处AsyncSessionLocal+审计验证） | daf4859 | +10 |
+| 下载器设置 PUT 测试（校验+保存回读，patch SM4） | a0d1cef | +15 |
+| 3接口审查修订（修2个假通过+强化弱断言） | 08f9e39 | +1 |
+
+**共 +135 个回归测试**，6 个接口覆盖（审计日志/仪表盘/种子删除/cron安全/种子转移/下载器设置），全量 tests/api/ 462 passed。
 
 ---
 
-## 本会话完成的工作（P0-2a/b/d，6 commit）
+## 各接口的测试范式与关键决策
 
-### P0-2a 后端认证迁移到 require_authenticated_user（24 文件全部完成）
+### 1. 审计日志（41 测试，1 轮审查）
+- **范式**：aiosqlite 异步内存库 + AsyncSession + 覆盖 get_async_db（service 异步+依赖注入式）
+- **覆盖**：POST /audit-logs/query（11维过滤+子查询count+LIKE模糊+分页）+ statistics（内存聚合）+ operation-types（39枚举）+ download-export（约定差异）
+- **关键修复**：排序完整序列断言（非首尾比较）、count 解耦 offset 验证、msg 排除断言防 service 吞异常假通过、401 body 断言、LIKE 通配符已知行为
 
-**实际调研修正**：交接文档预估 ~21 文件 + ~40 处测试断言。调研发现：
-- 实际 **24 个 endpoint 文件**（多识别 3 个）
-- 测试改造量 **32 处 inline 断言**（非 ~102，因 test_auth_protection_extended.py 的 62 处走 _is_auth_rejected helper，已兼容 HTTP 401 无需改）
+### 2. 仪表盘（23 测试，4 轮审查完全收敛）
+- **范式**：aiosqlite 异步内存库 + SimpleNamespace FakeStore 注入 app.state
+- **覆盖**：GET /dashboard（裸SQL聚合 cron_task/torrent_audit_log + 内存缓存 store/torrent_stats）
+- **关键修复**：60秒窗口 flaky（now()-10s留50秒裕度）、dr 身份锁（防方向写反）、torrent_stats=None 已知行为、dict 计数（set 漏计数）、keyword_rule 归一化路径
+- **4 轮审查收敛性**：第1轮发现 1 真 flaky + 1 假通过；第2-4轮逐轮确认到位+补越来越细盲区
 
-**分 4 批执行（每批 commit + 跑针对性 pytest）**：
-- **Batch A**（10 简单 token-only）：tasks/tracker_test/downloader_capabilities/torrent_speed/tracker_reannounce/downloader_path_maintenance/downloader_capabilities_management/seed_transfer/torrent_backup/torrent_status/tracker_keywords_pools
-- **Batch B**（较大 token-only + downloader 簇）：downloader.py(13)/cron_tasks.py(20)/tracker.py(3)/torrent_sync.py(2)/torrent_crud.py(5)
-- **Batch C**（3 user_id 文件 + 401 兜底）：advanced_search.py(9)/tag_management.py(13)/tracker_keywords.py(10)
-- **Batch D**（4 mixed 部分迁移）：setting_templates.py(5)/tracker_messages.py(8)/cuser.py(6)/torrent_deletion.py(6)
+### 3. 种子删除 L4（22 测试，1 轮审查）
+- **范式**：**service 级测试**（非 HTTP e2e）—— 同步内存库 + mock request（挂 store）+ mock audit（AsyncMock）
+- **设计转折**：原 HTTP e2e 经子代理审查发现 3 个 🔴 致命缺陷（同步/异步库不可共享内存库、响应字段缺失、store未挂载），重设计为 service 级绕开
+- **覆盖**：_add_tag_to_string 标签去重 + delete_by_level L4 路径 + delete_batch_by_level L3→L4 降级编排
+- **关键修复**：补降级编排测试（service核心复杂度零覆盖）+ audit 身份锁（torrent_info_id）+ OR断言收窄
 
-**关键决策**：
-- advanced_search 旧 token 缺 user_id → HTTP 401 拒绝（对齐 torrent_location 模板，用户确认）
-- tag_management/tracker_keywords username = user_info.username or "admin"（保留原 helper 的 admin 兜底）
-- 修复多处预存在的"不安全 try/except 认证"（verify_access_token 失败返回 None 而非抛异常，旧代码 try/except 形同虚设）
+### 4. cron 安全策略（23+1 测试，1 轮审查）
+- **范式**：纯函数测试 + 端点级（同步内存库 + override get_db + require_authenticated_user）
+- **覆盖**：_validate_task_type_allowed（内置放行/脚本禁用/未知400）+ _validate_update_task_type（防绕过）+ /add + /{task_id}
+- **关键修复**：PUT 成功路径补 mock refresh_task + 落库断言（防 CRUD no-op 假通过）+ PUT 403 补 msg + 未知类型覆盖
 
-### P0-2b 测试断言改造（穿插在各批中完成）
-- test_auth_protection.py：TestTorrentStatusAuth/TestTrackerKeywordsPoolsAuth/TestTorrentCrudAuth + 2 个"不崩溃"测试改 401
-- test_auth_protection_extended.py：test_get_status_all 改用 _is_auth_rejected（helper 本身无需改）
-- test_reannounce_api.py：3 个认证失败测试断言改 401
-- test_search_templates.py：11 个认证失败测试断言改 401
-- test_tag_aggregation_api.py：mock_auth 改用 dependency_overrides[require_authenticated_user]；3 个无认证测试断言改 401
+### 5. 种子转移（10 测试，1 轮审查）
+- **范式**：patch 3 处 AsyncSessionLocal（app.database/endpoints.seed_transfer/services.seed_transfer_service）+ 全局 app.state.store 占位
+- **覆盖**：下载器不存在场景（源/目标/都不存在→failed审计）+ schema 校验 + 认证
+- **关键修复**：审计补 id 渲染断言 + target_path 锁定
+- **已知**：SeedTransferAuditLog.source/target_downloader_id 是 Integer 列但 schema 传 str（生产严格DB可能500，测试用纯数字字符串规避）
 
-### P0-2d 弃用 verify_token_dependency
-- verify_token_dependency 加 DeprecationWarning（保留定义供过渡兼容）
-- cron_tasks.verify_token 已在 Batch B 删除
-- README 过期描述更新
+### 6. 下载器设置 PUT（15 测试，1 轮审查）
+- **范式**：同步内存库 + override get_db + patch encrypt_password（避SM4 YAML依赖）
+- **覆盖**：空body默认配置 + 全局速度保存 + 规则落库 + 密码加密 + 9个参数校验422 + 404/401
+- **关键修复**：变量遮蔽回读断言（钉死规则循环内 dl_speed_limit 被规则值遮蔽全局值的已知行为）+ 5处弱断言补 msg
+- **发现的真实bug**：downloader_settings.py:408 规则循环内重赋 dl_speed_limit，遮蔽外层全局值（last-rule-wins 污染全局设置）
+
+### 基础设施：conftest.py 去重（c881d69）
+- 提取 make_torrent 工厂到 tests/api/conftest.py（3文件去重→1共享工厂，13业务kwarg超集签名）
+- 设计决策：普通函数（非fixture，接db参数多次调用）；test_torrent_models的MagicMock工厂不合并（不同关注点）
+
+---
+
+## 子代理审查的工作流（本会话核心方法论）
+
+每个新接口测试都经过闭环：
+1. **子代理独立审查**（聚焦假通过/假失败/flaky/mock设计/盲区）
+2. **逐条实证核实**（不盲信子代理，实测每个发现，否决误报）
+3. **修订实施**（采纳真问题，补断言强度/覆盖盲区）
+4. **反向验证**（mutation 测试：改被测代码看测试报红，证明测试有效）
+
+**审查价值**：
+- 仪表盘第1轮发现 1 个真 flaky（60秒窗口）+ 1 个假通过（dr方向写反）—— 高价值
+- 种子删除审查发现 HTTP e2e 方案的 3 个 🔴 致命缺陷 —— 拯救了整个实施
+- cron/种子转移/下载器设置审查各发现 1-2 个假通过（PUT弱断言/变量遮蔽/审计缺身份）—— 中价值
+- 多次否决子代理误报（如"len==len 恒真"实际能抓到）—— 实证核实的重要性
+
+---
+
+## 关键测试质量教训（多轮审查沉淀）
+
+1. **flaky 防护**：时间断言用绝对时间/足够裕度/身份标记，不用"恰好当前时间"
+2. **防假通过**：降级/空数据场景加 msg 排除断言（防 service 吞异常返回空结构仍 code=200）
+3. **身份锁定**：过滤测试断"返回哪条"而非"返回几条"（防方向写反）；audit 断 torrent_info_id
+4. **完整序列 + 计数**：排序用完整顺序断言（非首尾比较）；分类用 dict 计数（set 漏计数）
+5. **service 级 vs HTTP e2e**：当 endpoint 有同步/异步双 session + 响应字段裁剪时，service 级测试绕开共享库与字段缺失问题，且能测到完整返回字典
+6. **mutation 反向验证**：每个测试组至少 1-3 处 mutation，确认测试验证真实逻辑而非 mock 自证
 
 ---
 
 ## 下一步行动
 
-P0-2 全部完成。剩余均为推迟项（非阻塞）：
+交接文档 3 个优先级全部完成。剩余可选方向（按价值排序）：
 
-1. **P2 REST 路由迁移**（推迟）：见 PLANS/v1.0.5-audit.md
-2. **P3 前端 any/as unknown as 治理**（推迟）
-3. **OpenAPI schema 完善**（推迟）
-4. **分页字段统一**（推迟）
-5. **API 对照表 CI**（推迟）
-
-**可选收尾**：若希望彻底移除 verify_token_dependency（当前仅加 DeprecationWarning），确认无外部引用后可删除 dependencies.py:139 定义。
+1. **修复测试中发现的真实代码问题**：
+   - 下载器设置变量遮蔽（downloader_settings.py:408，规则污染全局 dl_speed_limit）
+   - 种子转移 Integer 列存 str（SeedTransferAuditLog.source/target_downloader_id 类型不一致）
+2. **扩展测试覆盖更多接口**：Tracker add/replace、标签管理、下载器CRUD 等零覆盖接口
+3. **P2/P3 推迟项**：REST 路由迁移、前端 any 治理、OpenAPI schema 完善（见 PLANS/v1.0.5-audit.md）
 
 ---
 
 ## 关键上下文
 
-- **计划文档**: `PLANS/v1.0.5-audit.md`（详细任务分解 + 手动 e2e 清单 + 推迟项）
-- **审计文档**: `backend/docs/style-and-contract-audit.md`
-- **认证统一完成**: 所有 24 个 endpoint 文件使用 `require_authenticated_user`（dependencies.py），旧 `verify_token_dependency` 已弃用，cron_tasks.verify_token 已删除
-- **异常处理器已就绪**: P0-3 全局 handler 兜底所有未捕获异常
-- **前端归一化已就绪**: P0-1 ApiError 兼容 HTTP 200+code 和 HTTP 4xx/5xx 两种错误形态
-- **审计修正（不动项）**: /tags/batch-delete 误报；tag_management helper 字典是私有返回值；tracker statistics 已修
-- **已知遗留（预存在，与本次无关）**:
-  - test_unified_token_expiry 在 Windows 全量跑失败（路径分隔符 bug）
-  - test_concurrent_requests flaky（baseline 同样失败）
+- **计划文档**: PLANS/v1.0.5.md（查询模板系统，当前开发版本）
+- **审计修复**: PLANS/v1.0.5-audit.md（上一会话的 P0-2 契约归一化，已完成）
+- **进度日志**: progress.md（已更新 2026-06-28 会话记录）
+- **测试范式**：4 种成熟模式（同步GET/POST+get_db / GET+Query+require_auth / 同步service自建session / 异步service+aiosqlite），见各测试文件 docstring
+- **共享工厂**: tests/api/conftest.py 的 make_torrent（13 业务 kwarg 超集，收口 24 位置参数 + has_tracker_error NOT NULL 陷阱）
+- **认证依赖**: 新接口统一 require_authenticated_user（401 detail 是 dict），旧接口部分用 get_current_user（401 detail 是 str "Could not validate credentials"）
 
 ---
 
 ## 阻塞问题
 
-- 无。P0-2 已全部完成。
+- 无。所有测试通过，无遗留阻塞。
 
 ---
 
 ## 快速恢复
 
 ```bash
-# 切换到审计修复分支
-git checkout fix/contract-audit
+# 后端测试（全量 API 级）
+cd backend
+python -m pytest tests/api/ -q
+
+# 单个测试文件
+python -m pytest tests/api/test_audit_logs_api.py -v
 
 # 全栈环境验证（轻量模式）
 ./init.sh
-
-# 后端测试（注意 deselect 预存在的 Windows 路径失败）
-cd backend
-python -m pytest --deselect tests/test_architecture_constraints.py::test_unified_token_expiry -q
-
-# 前端 jest 单测
-cd frontend
-node_modules/.bin/jest --config jest.config.js
-
-# 前端依赖未安装时先 npm ci
 
 # 启动后端
 cd backend
@@ -130,4 +160,4 @@ npm run serve
 
 ---
 
-**最后更新**: 2026-06-20
+**最后更新**: 2026-06-28
