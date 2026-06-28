@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.5-audit",
-  "last_updated": "2026-06-25",
+  "last_updated": "2026-06-28",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -692,6 +692,56 @@
             "docs/tech-debt-lint-baseline.md (追加 mypy ORM 债评估报告章节)"
           ],
           "evidence": "评估报告交付（现状快照+根因分析+三方案对比+工作量评估+结论建议）；无代码改动；建议独立立项"
+        }
+      ]
+    },
+    {
+      "id": "traditional-view-align",
+      "name": "传统模式 bug 修复 + 防回归基础设施 + 功能对齐",
+      "description": "传统模式(TraditionalView.vue)相对列表模式(index.vue)的全面对齐：修复8个bug、建立三层防回归基础设施、补齐13项缺失功能。经多轮子代理对抗审查+用户决策修订。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "traditional-view-align.1",
+          "name": "Bug修复（8个）",
+          "description": "修复传统模式相对列表模式的8个代码缺陷。子代理精准审查+API签名亲核确认。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/api/torrents.ts (recheckTorrents补返回类型)"
+          ],
+          "evidence": "Bug#4删除参数(hashes→info_id/delete_data/id_recycle)；Bug#3速度轮询(localStorage→Cookie,getActiveTorrents封装)；Bug#1删除计数(Object.keys字符串长度→逐种子)；Bug#2文案语义(下载器组数vs种子数)；Bug#8选中状态重置；Bug#7排序键(!!map→速度>0)；Bug#6单条删除错误收敛；Bug#9未用import清理"
+        },
+        {
+          "id": "traditional-view-align.2",
+          "name": "三层防回归基础设施",
+          "description": "ESLint规则+纯函数/mixin+jest单测三层防护。子代理对抗审查修正3处阻断问题(AST selector静默失效/L3正则对index误报/L2-L3 scope冲突)。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/.eslintrc.js (no-restricted-syntax fetch/token, esquery实测selector)",
+            "frontend/src/views/torrents/utils/torrentBatch.ts (纯函数,API依赖注入)",
+            "frontend/src/views/torrents/mixins/torrentBatch.ts (薄封装mixin)",
+            "frontend/tests/unit/torrent-batch.spec.ts (行为契约单测)"
+          ],
+          "evidence": "L1: fetch/token规则0误伤(全量dry-run验证)；L2: 删除~280行重复实现；L3: 反向验证Bug#7改回原始形态→2测试变红。eslint 0 error, jest 53passed"
+        },
+        {
+          "id": "traditional-view-align.3",
+          "name": "功能对齐（13项，分P0/P1/P2三批）",
+          "description": "补齐传统模式缺失的13项功能。子代理审查修正4处阻断(toolbar布局/4等级删除下沉硬伤/sort_by跨视图bug/下沉边界)。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue (toolbar重构+13功能接线)",
+            "frontend/src/views/torrents/utils/torrentBatch.ts (assertSameDownloader/isTracker/advancedSearch/deleteLevel纯函数)",
+            "frontend/src/views/torrents/mixins/torrentBatch.ts (4等级删除分层+loading管理)",
+            "frontend/tests/unit/torrent-batch.spec.ts (累计81单测)"
+          ],
+          "evidence": "P0(c286b7e): 活动开关/刷新/改路径/转移/Tracker操作·汇报·全局替换/详情Tracker增强9项；P1(c82a321): 高级搜索/查询模板/查找重复+sort_by统一修复；P2(5df3ce8): 4等级删除(分层)+列设置(10列可隐藏)。eslint 0 error, jest 81passed。未做:index.vue 4等级迁移(单独立项)/文件Peers tab(需后端API)"
         }
       ]
     }

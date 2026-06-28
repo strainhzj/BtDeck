@@ -429,4 +429,50 @@
 
 ---
 
+### 传统模式 bug 修复 + 防回归基础设施 + 功能对齐（2026-06-28）
+
+**目标**：传统模式(TraditionalView.vue)相对列表模式(index.vue)全面对齐——先修 bug，再建防回归基础设施，最后补齐缺失功能。
+
+**方法论**：全程「子代理对抗审查 + 用户决策修订」循环——每个方案先用 Explore 子代理独立审查挑毛病，修正阻断项后再实施。
+
+#### 阶段 1：Bug 修复（8 个，commit 含于防回归提交）
+子代理精准审查 + API 签名亲核（deleteTorrents 后端只认 info_id/delete_data/id_recycle；token 存 Cookie 非 localStorage）。
+- Bug#4 删除参数错误（hashes→info_id）、Bug#3 速度轮询（原生fetch+错token→getActiveTorrents封装）
+- Bug#1 删除计数（字符串长度→逐种子）、Bug#2 文案语义（下载器组数vs种子数）
+- Bug#8 选中状态重置、Bug#7 排序键（!!map→速度>0）、Bug#6 单条删除错误收敛、Bug#9 未用import
+
+#### 阶段 2：三层防回归基础设施（commit 52ff81e）
+子代理对抗审查修正 3 处阻断：AST selector 静默失效（firstArgument→arguments.0.value 实测）、L3 正则脚本对 index.vue 误报、L2/L3 scope 冲突。
+- **L1 ESLint**：no-restricted-syntax 禁原生 fetch/token（esquery 1.7.0 实测 selector），no-unused-vars（warn 避免117历史债阻断CI），FileManagement.vue 文件级豁免
+- **L2 纯函数+mixin**：utils/torrentBatch.ts（5纯函数，API依赖注入便于单测）+ mixins/torrentBatch.ts（薄封装），两视图删除~280行重复实现
+- **L3 jest 单测**：行为契约断言（不怕等价重写）。反向验证：改回Bug#7原始形态→2测试变红，fetch规则实测拦截
+
+#### 阶段 3：功能对齐（13项，分 P0/P1/P2 三批）
+子代理审查修正 4 处阻断：toolbar布局缺失、4等级删除下沉硬伤（上帝mixin）、sort_by跨视图bug、下沉边界偏乐观。
+
+| 批次 | commit | 内容 |
+|------|--------|------|
+| P0 | c286b7e | 活动开关/刷新/改路径/转移/Tracker操作·汇报·全局替换/详情Tracker增强（9项，对话框全复用） |
+| P1 | c82a321 | 高级搜索/查询模板/查找重复 + sort_by统一修复（addedDate→added_date对齐后端ORM字段名） |
+| P2 | 5df3ce8 | 4等级删除（纯函数+mixin分层，只做TraditionalView）+ 列设置（10列可隐藏） |
+
+#### 验证
+- eslint: 全程 0 error（123 warning 全为历史债，no-unused-vars 降为 warn）
+- jest: 53 → 81 passed（净增28行为契约单测）
+- mixin/utils 文件 0 TS 错误；两视图 template 噪音是项目既有 vue-tsc 推断问题
+
+#### 关键设计决策
+- **下沉边界清晰**：无副作用→utils纯函数（可单测）；Vue实例方法($loading/$message)→mixin；UI接线→视图。不造上帝mixin
+- **4等级删除分层**：纯函数(构造/解析)+mixin(入口/轮询/loading+beforeDestroy清理)+视图(dropdown)，解决this.$loading/this.tableData/长轮询生命周期三矛盾
+- **列设置独立key**：traditional_columns_visibility 与列表分开（两视图列结构不同）
+- **查询模板路由**：traditional模式下index.vue未挂载，apply_template_id必须在本视图处理
+
+#### 诚实边界（未做）
+- index.vue 的4等级删除迁移（单独立项，P2只做TraditionalView）
+- 详情面板「文件/Peers」占位tab（需后端API，属另一功能）
+- showActiveOnly分页失真（标known-issue，对齐列表既有缺陷未根治）
+- 主题切换不在对齐范围（传统模式用固定scss主题）
+
+---
+
 **最后更新**: 2026-06-28
