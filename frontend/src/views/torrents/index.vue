@@ -594,12 +594,13 @@
 </template>
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
+import { mixins } from 'vue-class-component'
 import BatchButton from '@/components/BatchButton/index.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
+import TorrentBatchMixin from './mixins/torrentBatch'
 import {
   getTorrentList,
   addTorrent,
-  deleteTorrents,
   deleteTorrentsWithLevel,
   deleteBatchAsync,
   getBatchDeleteStatus,
@@ -628,7 +629,6 @@ import {
   formatSpeed,
   formatDate,
   formatRatio,
-  truncateText,
   extractErrorMessage,
   normalizePaginatedResponse,
   debounce
@@ -648,7 +648,7 @@ import {
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
-export default class extends Vue {
+export default class extends mixins(TorrentBatchMixin) {
   // 视图模式管理
   private viewModeModule = ViewModeModule
 
@@ -692,33 +692,8 @@ export default class extends Vue {
   // 重复检测相关（不再需要弹窗）
   // private showDuplicateTorrentsDialog = false
 
-  // 批量操作
-  // 辅助方法：按下载器ID分组种子
-  private groupTorrentsByDownloader(torrents: Torrent[]) {
-    const groups: Record<string, Torrent[]> = {}
-    torrents.forEach(torrent => {
-      // P1-1修复：添加空值检查，防止torrent对象为null/undefined
-      if (!torrent) {
-        console.warn('跳过空种子对象')
-        return
-      }
-
-      // P1-1修复：使用可选链操作符防止属性访问异常
-      const downloaderId = torrent?.downloader_id || torrent?.downloaderId
-
-      // P1-1修复：如果无法获取下载器ID，跳过该种子
-      if (!downloaderId) {
-        console.warn('种子缺少下载器ID，跳过:', torrent)
-        return
-      }
-
-      if (!groups[downloaderId]) {
-        groups[downloaderId] = []
-      }
-      groups[downloaderId].push(torrent)
-    })
-    return groups
-  }
+  // 辅助方法 groupTorrentsByDownloader 已由 TorrentBatchMixin 提供，
+  // 此处删除视图内的重复实现，消除回归风险（防 Bug#1/#4）。
 
   private batchOperation = ''
   private selectedTorrentsForTracker: any[] = []
@@ -1077,114 +1052,10 @@ export default class extends Vue {
     }
   }
 
-  // 批量操作
-  private async handleBatchStart() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-      
-      // 并行调用所有下载器的恢复操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return resumeTorrents({ downloader_id: downloaderId, hashes })
-      })
-      
-      // P2-1修复：使用Promise.allSettled替代Promise.all，提供更精细的错误反馈
-      const results = await Promise.allSettled(promises)
+  // 批量操作：handleBatchStart / handleBatchPause / handleBatchRecheck
+  // 已由 TorrentBatchMixin 提供（统一文案，防回归 Bug#2）。
+  // 模板 @click 直接绑定 mixin 方法。
 
-      // 统计成功和失败的数量
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
-
-      // 汇总结果
-      const total = this.multipleSelection.length
-      const downloaderCount = Object.keys(groups).length
-
-      if (failed > 0) {
-        this.$message.warning(`批量开始部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
-      } else {
-        this.$message.success(`批量开始成功(${total}个种子, ${downloaderCount}个下载器)`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量开始失败:', error)
-      this.$message.error('批量开始失败，请查看控制台')
-    }
-  }
-
-  private async handleBatchPause() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-      
-      // 并行调用所有下载器的暂停操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return pauseTorrents({ downloader_id: downloaderId, hashes })
-      })
-      
-      // P2-1修复：使用Promise.allSettled替代Promise.all，提供更精细的错误反馈
-      const results = await Promise.allSettled(promises)
-
-      // 统计成功和失败的数量
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
-
-      // 汇总结果
-      const total = this.multipleSelection.length
-      const downloaderCount = Object.keys(groups).length
-
-      if (failed > 0) {
-        this.$message.warning(`批量暂停部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
-      } else {
-        this.$message.success(`批量暂停成功(${total}个种子, ${downloaderCount}个下载器)`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量暂停失败:', error)
-      this.$message.error('批量暂停失败，请查看控制台')
-    }
-  }
-
-  private async handleBatchRecheck() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-      
-      // 并行调用所有下载器的重检操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return recheckTorrents({ downloader_id: downloaderId, hashes })
-      })
-      
-      // P2-1修复：使用Promise.allSettled替代Promise.all，提供更精细的错误反馈
-      const results = await Promise.allSettled(promises)
-
-      // 统计成功和失败的数量
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
-
-      // 汇总结果
-      const total = this.multipleSelection.length
-      const downloaderCount = Object.keys(groups).length
-
-      if (failed > 0) {
-        this.$message.warning(`批量重检部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
-      } else {
-        this.$message.success(`批量重检成功(${total}个种子, ${downloaderCount}个下载器)`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量重检失败:', error)
-      this.$message.error('批量重检失败，请查看控制台')
-    }
-  }
 
   private async handleBatchReannounce() {
     if (this.multipleSelection.length === 0) return
@@ -1820,61 +1691,9 @@ export default class extends Vue {
     }
   }
 
-  /**
-   * 内部删除逻辑（DRY原则 - 统一处理单个和批量删除）
-   * 使用Promise.all并行请求提升性能
-   * @param torrents 要删除的种子列表
-   * @param deleteData 是否删除数据文件 (0: 仅删除种子, 1: 同时删除数据文件)
-   * @returns 成功和失败计数 + 错误信息列表 + 成功删除的种子列表
-   */
-  private async deleteTorrentsInternal(
-    torrents: any[],
-    deleteData: number
-  ): Promise<{ successCount: number, failCount: number, errors: string[], deletedTorrents: any[] }> {
-    let successCount = 0
-    let failCount = 0
-    const errors: string[] = []  // 统一收集所有错误消息
-    const deletedTorrents: any[] = []  // 记录成功删除的种子
-
-    // 使用Promise.all并行执行删除操作，提升性能
-    const deletePromises = torrents.map(async(torrent) => {
-      try {
-        const infoId = getTorrentId(torrent)
-        const downloaderId = getDownloaderId(torrent)
-
-        await deleteTorrents({
-          info_id: infoId,
-          downloader_id: downloaderId,
-          delete_data: deleteData,
-          id_recycle: 1
-        })
-        return { success: true, torrent }
-      } catch (error: any) {
-        // 提取并保留详细的错误消息
-        const errorMsg = error?.response?.data?.msg ??
-                         error?.message ??
-                         '删除失败'
-        return { success: false, error: errorMsg }
-      }
-    })
-
-    const results = await Promise.all(deletePromises)
-    results.forEach((result) => {
-      if (result.success) {
-        successCount++
-        if (result.torrent) {
-          deletedTorrents.push(result.torrent)  // 记录成功删除的种子
-        }
-      } else {
-        failCount++
-        if (result.error) {
-          errors.push(result.error)  // 收集所有错误
-        }
-      }
-    })
-
-    return { successCount, failCount, errors, deletedTorrents }
-  }
+  // deleteTorrentsInternal 已由 TorrentBatchMixin 提供（防回归 Bug#1/#4）。
+  // performBatchDelete / performDelete / callDeleteLegacyAPI 仍调用 this.deleteTorrentsInternal，
+  // 由 mixin 注入真实 deleteTorrents，行为不变。
 
   private async handleAdd() {
     this.showAddDialog = false

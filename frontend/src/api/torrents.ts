@@ -435,12 +435,12 @@ export interface RecheckTorrentsRequest {
   hashes: string[]
 }
 
-export function recheckTorrents(params: RecheckTorrentsRequest) {
+export function recheckTorrents(params: RecheckTorrentsRequest): Promise<ApiResponse<any>> {
   return request({
     url: '/torrents/recheck',
     method: 'post',
     data: params
-  })
+  }) as unknown as Promise<ApiResponse<any>>
 }
 
 

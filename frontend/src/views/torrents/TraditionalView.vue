@@ -511,10 +511,12 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue, Watch } from 'vue-property-decorator'
+import { Component } from 'vue-property-decorator'
+import { mixins } from 'vue-class-component'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentAddDialog from './components/TorrentAddDialog.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
+import TorrentBatchMixin from './mixins/torrentBatch'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
@@ -524,7 +526,9 @@ import {
   resumeTorrents,
   recheckTorrents,
   getDownloaderList,
-  type DownloaderSimple
+  getActiveTorrents,
+  type DownloaderSimple,
+  type ActiveTorrentSpeed
 } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status-config'
@@ -533,9 +537,11 @@ import {
   formatSpeed,
   formatDate,
   formatRatio,
-  truncateText,
   normalizeTorrent,
   normalizePaginatedResponse,
+  getTorrentId,
+  getDownloaderId,
+  extractErrorMessage,
   debounce
 } from '@/utils/formatters'
 
@@ -553,7 +559,7 @@ interface FilterItem {
     FilterGroup
   }
 })
-export default class extends Vue {
+export default class extends mixins(TorrentBatchMixin) {
   // ====== 状态管理 ======
   private viewModeModule = ViewModeModule
 
@@ -635,18 +641,9 @@ export default class extends Vue {
   }
 
   get sortedList() {
-    // 过滤掉 null/undefined 值，并排序：活跃种子优先
-    return this.list
-      .filter(item => item && item.hash)
-      .sort((a, b) => {
-        const aActive = !!this.activeSpeedMap[a.hash]
-        const bActive = !!this.activeSpeedMap[b.hash]
-
-        if (aActive && !bActive) return -1
-        if (!aActive && bActive) return 1
-
-        return 0
-      })
+    // 委托给 mixin 的 sortedActiveList（逻辑单点维护，防回归 Bug#7）
+    // 模板通过 sortedList 引用，这里做透传
+    return this.sortedActiveList
   }
 
   get globalDownloadSpeed() {
@@ -750,13 +747,19 @@ export default class extends Vue {
       })
 
       const response = await getTorrentList(params)
-      const { list, total } = normalizePaginatedResponse(response)
+      const { list, total } = normalizePaginatedResponse<any>(response)
 
       this.list = list.map(normalizeTorrent).map(item => ({
         ...item,
         checked: false
       }))
       this.total = total
+
+      // 修复 Bug#8：新数据全部 checked:false，必须同步重置批量选中状态，
+      // 否则分页/筛选切换后 multipleSelection 仍持有已不在当前视图的旧种子，
+      // 用户在加载期间点击批量操作会误伤。
+      // 委托给 mixin 的 resetBatchSelection（逻辑单点维护）
+      this.resetBatchSelection()
     } catch (error) {
       console.error('获取种子列表失败:', error)
       this.$message.error('获取种子列表失败')
@@ -810,35 +813,45 @@ export default class extends Vue {
     }
   }
 
+  /**
+   * 加载活跃种子实时速度和进度（对齐列表模式 index.vue:2177-2214）
+   * 修复 Bug#3：原用原生 fetch + localStorage.getItem('token')，
+   * token 实际存在 Cookie（cookies.ts:10），导致恒为 null → 401 → 速度永远为 0。
+   * 改用封装的 getActiveTorrents()，复用统一 axios 拦截器（token 注入、401 跳登录）。
+   */
   private async loadActiveSpeed() {
+    const requestId = Date.now()
     try {
-      const response = await fetch(`${process.env.VUE_APP_BASE_API}/torrents/active-torrents`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      const data = await response.json()
-
-      if (data.code === '200' && data.data) {
-        this.activeSpeedMap = {}
-        data.data.forEach((t: any) => {
-          this.activeSpeedMap[t.hash] = {
-            downloadSpeed: t.downloadSpeed,
-            uploadSpeed: t.uploadSpeed,
-            progress: t.progress
+      const res = await getActiveTorrents()
+      if (res.code === '200' && res.data) {
+        const map: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+        const torrents = res.data as ActiveTorrentSpeed[]
+        torrents.forEach((t: ActiveTorrentSpeed) => {
+          // 防御性检查：确保 hash 字段存在
+          if (!t.hash) {
+            console.warn('[速度轮询] 跳过无效种子数据:', t)
+            return
+          }
+          map[t.hash] = {
+            downloadSpeed: t.downloadSpeed ?? 0,
+            uploadSpeed: t.uploadSpeed ?? 0,
+            progress: t.progress ?? 0
           }
 
-          // 直接更新列表
+          // 直接更新列表中对应种子的实时数据
           const torrentInList = this.list.find(item => item.hash === t.hash)
           if (torrentInList) {
-            torrentInList.downloadSpeed = t.downloadSpeed
-            torrentInList.uploadSpeed = t.uploadSpeed
-            torrentInList.progress = t.progress
+            torrentInList.downloadSpeed = t.downloadSpeed ?? 0
+            torrentInList.uploadSpeed = t.uploadSpeed ?? 0
+            torrentInList.progress = t.progress ?? 0
           }
         })
+        this.activeSpeedMap = map
+        console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${Object.keys(map).length} 个活跃种子`)
       }
-    } catch (error) {
-      console.error('获取活跃种子速度失败:', error)
+    } catch (e) {
+      // 静默失败，不影响主流程
+      console.debug(`[速度轮询] 请求 ${requestId} 失败:`, e)
     }
   }
 
@@ -968,134 +981,15 @@ export default class extends Vue {
   }
 
   // ====== 辅助方法 ======
-  private groupTorrentsByDownloader(torrents: any[]) {
-    const groups: Record<string, any[]> = {}
-    torrents.forEach(torrent => {
-      if (!torrent) {
-        console.warn('跳过空种子对象')
-        return
-      }
-
-      const downloaderId = torrent?.downloader_id || torrent?.downloaderId
-
-      if (!downloaderId) {
-        console.warn('种子缺少下载器ID，跳过:', torrent)
-        return
-      }
-
-      if (!groups[downloaderId]) {
-        groups[downloaderId] = []
-      }
-      groups[downloaderId].push(torrent)
-    })
-    return groups
-  }
-
-  private async deleteTorrentsInternal(torrents: any[], deleteData: number) {
-    const results = { successCount: 0, failCount: 0 }
-
-    // 按下载器分组
-    const groups = this.groupTorrentsByDownloader(torrents)
-
-    // 并行调用所有下载器的删除操作
-    const promises = Object.entries(groups).map(([downloaderId, groupTorrents]) => {
-      const hashes = groupTorrents.map(t => t.hash)
-      return deleteTorrents({ downloader_id: downloaderId, hashes, deleteData })
-    })
-
-    const responses = await Promise.allSettled(promises)
-
-    responses.forEach((response, index) => {
-      if (response.status === 'fulfilled' && response.value.code === '200') {
-        results.successCount += Object.keys(groups)[index].length
-      } else {
-        results.failCount += Object.keys(groups)[index].length
-      }
-    })
-
-    return results
-  }
+  // groupTorrentsByDownloader / deleteTorrentsInternal / 批量开始/暂停/重检
+  // 已由 TorrentBatchMixin 提供（mixins/torrentBatch.ts + utils/torrentBatch.ts），
+  // 此处不再重复实现，消除「改一处忘一处」的回归风险。
 
   // ====== 批量操作 ======
-  private async handleBatchStart() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
+  // handleBatchStart / handleBatchPause / handleBatchRecheck 由 mixin 提供，
+  // 模板 @click 直接绑定 mixin 的方法（Vue 2 class mixin 合并后可访问）。
 
-      // 并行调用所有下载器的恢复操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return resumeTorrents({ downloader_id: downloaderId, hashes })
-      })
-
-      const responses = await Promise.allSettled(promises)
-      let successCount = 0
-      let failCount = 0
-
-      responses.forEach(response => {
-        if (response.status === 'fulfilled' && response.value.code === '200') {
-          successCount++
-        } else {
-          failCount++
-        }
-      })
-
-      if (failCount === 0) {
-        this.$message.success(`成功开始 ${successCount} 个种子`)
-      } else if (successCount === 0) {
-        this.$message.error(`批量开始失败，共 ${failCount} 个种子开始失败`)
-      } else {
-        this.$message.warning(`部分开始成功：成功 ${successCount} 个，失败 ${failCount} 个`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量开始失败:', error)
-      this.$message.error('批量开始失败')
-    }
-  }
-
-  private async handleBatchPause() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-
-      // 并行调用所有下载器的暂停操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return pauseTorrents({ downloader_id: downloaderId, hashes })
-      })
-
-      const responses = await Promise.allSettled(promises)
-      let successCount = 0
-      let failCount = 0
-
-      responses.forEach(response => {
-        if (response.status === 'fulfilled' && response.value.code === '200') {
-          successCount++
-        } else {
-          failCount++
-        }
-      })
-
-      if (failCount === 0) {
-        this.$message.success(`成功暂停 ${successCount} 个种子`)
-      } else if (successCount === 0) {
-        this.$message.error(`批量暂停失败，共 ${failCount} 个种子暂停失败`)
-      } else {
-        this.$message.warning(`部分暂停成功：成功 ${successCount} 个，失败 ${failCount} 个`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量暂停失败:', error)
-      this.$message.error('批量暂停失败')
-    }
-  }
-
-  private async handleBatchDelete() {
+  private handleBatchDelete() {
     if (this.multipleSelection.length === 0) return
     this.$confirm(`确定要删除选中的 ${this.multipleSelection.length} 个种子吗？`, '批量删除确认', {
       confirmButtonText: '确定',
@@ -1118,57 +1012,32 @@ export default class extends Vue {
   }
 
   private async performBatchDelete(deleteData: number) {
+    // deleteTorrentsInternal 由 mixin 提供（注入真实 deleteTorrents）
     const results = await this.deleteTorrentsInternal(this.multipleSelection, deleteData)
 
     const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
     if (results.failCount === 0) {
       this.$message.success(`成功删除 ${results.successCount} 个种子 ${dataFileText}`)
     } else if (results.successCount === 0) {
-      this.$message.error(`批量删除失败，共 ${results.failCount} 个种子删除失败`)
+      // 汇总错误原因（对齐列表模式 index.vue:1717-1734）
+      const errorCounts = results.errors.reduce((acc, err) => {
+        acc[err] = (acc[err] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+      const errorMsg = Object.keys(errorCounts).length > 0
+        ? Object.entries(errorCounts).map(([err, count]) => `${err}(${count}次)`).join('; ')
+        : `共 ${results.failCount} 个种子删除失败`
+      this.$message.error(`批量删除失败: ${errorMsg}`)
     } else {
-      this.$message.warning(`部分删除成功：成功 ${results.successCount} 个，失败 ${results.failCount} 个 ${dataFileText}`)
+      const errorDetail = results.errors.length > 0
+        ? ` 失败原因: ${results.errors.slice(0, 3).join('; ')}`
+        : ''
+      this.$message.warning(
+        `部分删除成功：成功 ${results.successCount} 个，失败 ${results.failCount} 个 ${dataFileText}${errorDetail}`
+      )
     }
 
     this.getList()
-  }
-
-  private async handleBatchRecheck() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-
-      // 并行调用所有下载器的重检操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return recheckTorrents({ downloader_id: downloaderId, hashes })
-      })
-
-      const responses = await Promise.allSettled(promises)
-      let successCount = 0
-      let failCount = 0
-
-      responses.forEach(response => {
-        if (response.status === 'fulfilled' && response.value.code === '200') {
-          successCount++
-        } else {
-          failCount++
-        }
-      })
-
-      if (failCount === 0) {
-        this.$message.success(`成功重检 ${successCount} 个种子`)
-      } else if (successCount === 0) {
-        this.$message.error(`批量重检失败，共 ${failCount} 个种子重检失败`)
-      } else {
-        this.$message.warning(`部分重检成功：成功 ${successCount} 个，失败 ${failCount} 个`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量重检失败:', error)
-      this.$message.error('批量重检失败')
-    }
   }
 
   // ====== 单个种子操作 ======
@@ -1239,33 +1108,34 @@ export default class extends Vue {
   }
 
   private async performSingleDelete(torrent: any, deleteData: number) {
-    const downloaderId = torrent.downloader_id || torrent.downloaderId
+    // 修复 Bug#4：deleteTorrents 后端只接受 info_id / delete_data / id_recycle，
+    // 不识别 hashes / deleteData。对齐列表模式 index.vue:1808-1821。
+    const infoId = getTorrentId(torrent)
+    const downloaderId = getDownloaderId(torrent)
     if (!downloaderId) {
       this.$message.error('种子缺少下载器信息')
       return
     }
 
     try {
-      const response = await deleteTorrents({
+      await deleteTorrents({
+        info_id: infoId,
         downloader_id: downloaderId,
-        hashes: [torrent.hash],
-        deleteData
+        delete_data: deleteData,
+        id_recycle: 1
       })
 
-      if (response.code === '200') {
-        const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
-        this.$message.success(`删除种子成功 ${dataFileText}`)
-        this.getList()
-        // 如果删除的是当前详情面板的种子，关闭详情面板
-        if (this.currentRow?.hash === torrent.hash) {
-          this.currentRow = null
-        }
-      } else {
-        this.$message.error('删除种子失败')
+      const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
+      this.$message.success(`删除种子成功 ${dataFileText}`)
+      this.getList()
+      // 如果删除的是当前详情面板的种子，关闭详情面板
+      if (this.currentRow?.hash === torrent.hash) {
+        this.currentRow = null
       }
     } catch (error) {
+      const errorMessage = extractErrorMessage(error)
       console.error('删除种子失败:', error)
-      this.$message.error('删除种子失败')
+      this.$message.error(errorMessage || '删除种子失败')
     }
   }
 
