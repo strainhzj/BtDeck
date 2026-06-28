@@ -267,16 +267,19 @@ class TestActivities:
 
     @pytest.mark.asyncio
     async def test_activities_category_normalization(self, client, async_db):
-        """recycle_bin/archive 等非白名单类别 → 归一化为 'system'。
+        """recycle_bin/archive/keyword_rule 等非白名单类别 → 归一化为 'system'。
 
         用 dict 计数而非 set 比较：set 会丢失计数信息，无法抓"restore 误归 tracker"
         这类多归类 bug（set 仍相等）。dict 计数能精确锁每个类别的条数。
+        覆盖三种非白名单 category 路径（archive/recycle_bin/keyword_rule）防白名单误改。
         """
-        # add=torrent, reannounce=tracker, archive_logs=archive→system, restore=recycle_bin→system
+        # add=torrent, reannounce=tracker, archive_logs=archive→system,
+        # restore=recycle_bin→system, keyword_rule_add=keyword_rule→system
         await _add_audit(async_db, operation_type="add")
         await _add_audit(async_db, operation_type="reannounce")
         await _add_audit(async_db, operation_type="archive_logs")
         await _add_audit(async_db, operation_type="restore")
+        await _add_audit(async_db, operation_type="keyword_rule_add")
         r = client.get(URL)
         cats = {}
         for a in r.json()["data"]["activities"]:
@@ -284,8 +287,8 @@ class TestActivities:
         assert cats == {
             "torrent": 1,
             "tracker": 1,
-            "system": 2,
-        }, "archive_logs/restore 须归一化为 system（共 2 条 system）"
+            "system": 3,
+        }, "archive_logs/restore/keyword_rule 须归一化为 system（共 3 条 system）"
 
     @pytest.mark.asyncio
     async def test_activities_null_fields_show_placeholder(self, client, async_db):
