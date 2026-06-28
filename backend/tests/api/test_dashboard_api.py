@@ -147,10 +147,16 @@ class TestAuthAndStructure:
         assert r.json()["detail"] == "Could not validate credentials"
 
     def test_response_has_six_top_keys(self, client):
-        """成功响应 data 含 6 个顶层键。"""
+        """成功响应 data 含 6 个顶层键。
+
+        同时断言 msg=='获取成功'：endpoint 的异常兜底会返回 code='500'+data=None+msg='获取失败:...'，
+        显式断言 msg 可把"正常降级"与"service 异常被吞成 data=None"在断言层区分，
+        避免 KeyError 掩盖真正的降级逻辑回归。
+        """
         r = client.get(URL)
         body = r.json()
         assert body["code"] == "200"
+        assert body["msg"] == "获取成功"
         assert set(body["data"].keys()) == {
             "downloaders",
             "torrents",
@@ -161,9 +167,15 @@ class TestAuthAndStructure:
         }
 
     def test_default_degraded_values_when_no_cache(self, client):
-        """store/torrent_stats 未设 → downloaders/torrents 全零，downloader_list 为空。"""
+        """store/torrent_stats 未设 → downloaders/torrents 全零，downloader_list 为空。
+
+        同时断言 msg=='获取成功'，防 service 异常被 endpoint 吞成 data=null 时
+        断言因 KeyError 误报为"字段缺失"而非"降级逻辑坏了"。
+        """
         r = client.get(URL)
-        data = r.json()["data"]
+        body = r.json()
+        assert body["msg"] == "获取成功"
+        data = body["data"]
         assert data["downloaders"] == {"total": 0, "online": 0, "offline": 0}
         assert data["torrents"] == {"active": 0, "downloading": 0, "seeding": 0, "paused": 0}
         assert data["downloader_list"] == []
@@ -197,13 +209,18 @@ class TestTasksStats:
 
     @pytest.mark.asyncio
     async def test_dr1_excluded(self, client, async_db):
-        """dr=1（软删除）不计入 total。"""
+        """dr=1（软删除）不计入 total。
+
+        身份锁定：alive 行 task_status=1（running），deleted 行 task_status=0（非 running）。
+        若 SQL 方向写反成 WHERE dr=1，会返回 deleted 那条 → running==0 ≠ 1 报红，
+        从而区分"返回了错误的那条"（单纯 total==1 无法区分）。
+        """
         await _add_cron(async_db, task_code="alive", task_status=1, dr=0)
-        await _add_cron(async_db, task_code="deleted", task_status=1, dr=1)
+        await _add_cron(async_db, task_code="deleted", task_status=0, dr=1)
         r = client.get(URL)
         tasks = r.json()["data"]["tasks"]
         assert tasks["total"] == 1, "dr=1 软删除须被 WHERE dr=0 过滤"
-        assert tasks["running"] == 1
+        assert tasks["running"] == 1, "返回的须是 alive(status=1) 而非 deleted(status=0)"
 
 
 # ==================== 组3：activities SQL（TOP-10 + 归一化） ====================
@@ -227,27 +244,24 @@ class TestActivities:
 
     @pytest.mark.asyncio
     async def test_activities_sorted_desc(self, client, async_db):
-        """按 operation_time 倒序（最近在前）。完整序列断言防中间错位。"""
+        """按 operation_time 倒序（最近在前）。
+
+        用 torrent_name 身份标记每条记录，断言完整顺序，而非解析相对时间字符串。
+        这样完全确定性，且能抓"中间元素错位"（如 [d3, d1, d2]），
+        不依赖 datetime.now() 与"天前"格式解析的脆性。
+        """
+        # d1=1月1日(最旧), d2=1月2日, d3=1月3日(最新)；倒序应为 [d3, d2, d1]
         for i in range(3):
             await _add_audit(
                 async_db,
                 operation_type="add",
+                torrent_name=f"d{i + 1}",
                 operation_time=datetime(2026, 1, i + 1, 12, 0, 0),
             )
         r = client.get(URL)
         acts = r.json()["data"]["activities"]
-        # action 含 torrent_name（这里为 None → "未知种子"），用相对时间串断言顺序
-        times = [a["time"] for a in acts]
-        # 倒序：最近的（1月3日）应在前。相对时间随 now 变化，断言"第一个不比后一个更旧"
-        # 用 operation_time 排序的代理：最近的行其 time_str 应是较小天数
-        # 直接比较天数：3日 > 2日 > 1日（距 now 更近的 delta 更小）
-        # 用 action 中 torrent_name 顺序不可靠（都 None），改用时间天数严格递增
-        # 简化：断言第一条比最后一条时间更近（delta 更小 → "天前"数值更小 或 都是"天前"）
-        assert "天前" in times[0] and "天前" in times[-1]
-        # 解析天数比较
-        d0 = int(times[0].split("天前")[0])
-        d_last = int(times[-1].split("天前")[0])
-        assert d0 < d_last, "倒序：最近（小天数）在前"
+        names = [a["torrent_name"] for a in acts]
+        assert names == ["d3", "d2", "d1"], "倒序：最新(1月3日=d3)须在最前"
 
     @pytest.mark.asyncio
     async def test_activities_category_normalization(self, client, async_db):
@@ -290,8 +304,13 @@ class TestActivities:
 
     @pytest.mark.asyncio
     async def test_activities_relative_time_recent(self, client, async_db):
-        """operation_time = now → time 落到'秒前'分支。"""
-        await _add_audit(async_db, operation_time=datetime.now())
+        """operation_time 接近 now → time 落到'秒前'分支。
+
+        用 now()-10s 而非 now()：给 50 秒安全裕度（service 调 datetime.now() 时
+        delta 仍在 < 60s 的"秒前"窗口内），避免慢 CI 下插数到查询耗时 > 60s 落到
+        "分钟前"分支导致 flaky。
+        """
+        await _add_audit(async_db, operation_time=datetime.now() - timedelta(seconds=10))
         r = client.get(URL)
         act = r.json()["data"]["activities"][0]
         assert "秒前" in act["time"]
@@ -409,6 +428,42 @@ class TestCacheRead:
         r = client.get(URL)
         assert r.json()["data"]["downloader_list"][0]["nickname"] == "Unknown"
 
+    def test_torrent_stats_none_returns_null_known_behavior(self, client):
+        """已知行为：app.state.torrent_stats=None 时 service 返回 None（非零值降级）。
+
+        被测 _get_torrents_stats 只判 hasattr 不判 is None，与 _get_downloaders_stats
+        （双重判空）不对称。若某天 service 修了对齐判空（None→零值），本测试需同步更新。
+        此测试钉死当前行为，防止该不对称被无意改动而无测试告警。
+        """
+        client.app.state.torrent_stats = None
+        r = client.get(URL)
+        assert r.json()["data"]["torrents"] is None
+
+    def test_downloader_list_prefers_torrent_stats_dict_over_counts(self, client):
+        """downloader.torrent_stats 是 dict 时优先用它，忽略 downloading_count 属性。
+
+        覆盖 _get_downloader_list 的前缀分支（之前测试只覆盖了属性回退分支）。
+        让两路给不同值（torrent_stats=5 vs downloading_count=99），断言取 5 锁分支选择。
+        """
+        _set_store(
+            client.app,
+            [
+                SimpleNamespace(
+                    fail_time=0,
+                    downloader_id="d1",
+                    nickname="A",
+                    downloader_type=1,
+                    torrent_stats={"downloading": 5, "seeding": 7},
+                    downloading_count=99,  # 应被忽略
+                    seeding_count=88,  # 应被忽略
+                ),
+            ],
+        )
+        r = client.get(URL)
+        item = r.json()["data"]["downloader_list"][0]
+        assert item["downloading"] == 5, "torrent_stats 是 dict 时优先取 dict 值"
+        assert item["seeding"] == 7
+
 
 # ==================== 组5：系统信息 ====================
 
@@ -425,7 +480,8 @@ class TestSystemStats:
         r = client.get(URL)
         sys_stats = r.json()["data"]["system"]
         assert "分钟" in sys_stats["uptime_display"]
-        assert sys_stats["uptime"] >= 0
+        # 双向锁"刚启动"语义：uptime 应很小（< 60s），恒真的 >=0 不足以抓 start_time 算错的回归
+        assert 0 <= sys_stats["uptime"] < 60
         assert isinstance(sys_stats["uptime"], int)
 
     def test_uptime_display_days_when_old_start(self, client):
