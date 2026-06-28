@@ -1,23 +1,31 @@
 # -*- coding: utf-8 -*-
 """
-审计日志查询 POST /api/v1/audit-logs/query + GET /statistics + GET /operation-types 的 API 级回归测试
+审计日志 API 回归测试
 
-覆盖范围（约 24 个测试）：
-- 认证拒绝 / 空数据
-- 11 维过滤（含 torrent_name LIKE 模糊搜索——唯一非精确匹配维度）
-- 时间范围（start_time / end_time）
-- 子查询 count + 排序（operation_time DESC）
-- 分页（page/page_size / 超范围 / page_size 边界 422）
-- statistics 内存聚合（operation_type/operator/result 统计 + unknown 桶）
-- operation-types 枚举展开（39 个成员）
-- 错误降级（坏 ISO 时间 → code='400'，HTTP 仍 200）
+覆盖端点：
+- POST /api/v1/audit-logs/query        查询（11 维过滤 + 子查询 count + 排序 + 分页）
+- GET  /api/v1/audit-logs/statistics    内存聚合统计
+- GET  /api/v1/audit-logs/operation-types  操作类型枚举展开（39 成员）
+- POST /api/v1/audit-logs/export        导出（空数据/坏时间降级）
+- GET  /api/v1/audit-logs/download-export/{file_name}  下载（唯一抛 HTTPException 的端点）
+
+覆盖范围（41 个测试）：
+- 认证拒绝（含 401 来源 body 断言）/ 空数据（含 msg 排除防 service 降级假通过）
+- 11 维过滤（torrent_name 是唯一 LIKE 模糊维度）+ LIKE 通配符注入已知行为 + 无匹配边界
+- 时间范围（start_time / end_time 闭区间）
+- 排序（operation_time DESC，完整序列断言）+ 分页（含 offset 生效/count 解耦双重验证）
+- statistics 内存聚合（含 unknown 桶 + 时间过滤后 stats 字典断言）
+- operation-types 枚举展开（数量 + value 集合精确相等 + 结构 + 已知成员）
+- 错误降级（坏 ISO 时间 → code='400' HTTP 200；download-export 404 是真 HTTPException）
 
 关键架构点（经探索确认）：
 - AuditLogService 是异步的，用传入的 AsyncSession（依赖注入式，非自建 SessionLocal）。
   → 用 aiosqlite 异步内存库 + AsyncSession，覆盖 get_async_db。
-- 所有 JSON 错误返回 HTTP 200，code='400'/'500' 写在 CommonResponse 体里（只 download-export 抛 HTTPException）。
-- 响应 data 分页字段混用大小写：total/page（小写）vs pageSize（驼峰）——这是 load-bearing 断言点。
-- service 不抛异常：query_logs/get_statistics 出错返回空结构，不向上传播。
+- 所有 JSON 业务错误返回 HTTP 200，code='400'/'500' 写在 CommonResponse 体里；
+  唯一例外是 download-export，它抛 HTTPException(404/500)。
+- 响应 data 分页字段混用大小写：total/page（小写）vs pageSize（驼峰）—— load-bearing 断言点。
+- service 不抛异常：query_logs/get_statistics 出错静默返回空结构 → 端点仍 code='200'。
+  因此空表/无匹配场景额外断言 msg 不含"查询失败"，防止 service 异常被吞成假通过。
 - operation_time/create_time 经 to_dict() 是裸 datetime（FastAPI 序列化为 ISO 字符串）。
 """
 
@@ -116,14 +124,22 @@ class TestAuthAndEmpty:
         with TestClient(app, raise_server_exceptions=False) as c:
             r = c.post(URL_QUERY, json={})
         assert r.status_code == 401
+        # 确认 401 来源是认证失败（非路由 404 或端点崩溃 500）
+        assert r.json()["detail"] == "Could not validate credentials"
 
     def test_empty_logs_returns_zero(self, client):
-        """空表 → total=0, list=[]。"""
+        """空表 → total=0, list=[]。
+
+        同时断言 msg 非降级文案：query_logs 出错时静默返回空结构（不抛），
+        端点仍返回 code='200'。为避免"service 坏了却因 total==0 假通过"，
+        显式排除降级 msg（端点异常分支的 msg 带有"查询失败"/"参数错误"前缀）。
+        """
         r = client.post(URL_QUERY, json={})
         body = r.json()
         assert body["code"] == "200"
         assert body["data"]["total"] == 0
         assert body["data"]["list"] == []
+        assert "查询失败" not in body["msg"], "msg 含降级文案说明 service 走了异常分支"
 
     def test_default_page_and_pagesize(self, client):
         """不传 page/page_size → 默认 page=1, pageSize=20。"""
@@ -168,6 +184,34 @@ class TestFilters:
         await _add(async_db, torrent_name="hello world", operator="a")
         r = client.post(URL_QUERY, json={"torrent_name": "hello world"})
         assert r.json()["data"]["total"] == 1
+
+    @pytest.mark.asyncio
+    async def test_filter_by_torrent_name_wildcard_injection(self, client, async_db):
+        """已知行为：torrent_name 直接拼入 LIKE，% 会被当通配符。
+
+        service 用 torrent_name.like(f"%{torrent_name}%")，未对 % / _ 转义。
+        传 "%" 会匹配所有行（非空 torrent_name）。此测试记录该已知行为，
+        若未来 service 加 escape，本测试需同步更新。
+        """
+        await _add(async_db, torrent_name="movie A", operator="a")
+        await _add(async_db, torrent_name="series B", operator="a")
+        await _add(async_db, operator="a")  # torrent_name=None，不应被 % 命中
+        r = client.post(URL_QUERY, json={"torrent_name": "%"})
+        body = r.json()
+        # % 匹配任意非空 torrent_name（2 条）；NULL 不参与 LIKE 匹配
+        assert body["data"]["total"] == 2
+
+    @pytest.mark.asyncio
+    async def test_filter_no_match_returns_empty(self, client, async_db):
+        """传不存在的过滤值 → total=0, list=[]（边界：过滤生效但无匹配）。"""
+        await _add(async_db, operation_type="add", operator="alice")
+        r = client.post(URL_QUERY, json={"operator": "nobody"})
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["data"]["total"] == 0
+        assert body["data"]["list"] == []
+        # 排除 service 降级（吞异常也返回空）的假通过
+        assert "查询失败" not in body["msg"]
 
     @pytest.mark.asyncio
     async def test_filter_by_operation_type(self, client, async_db):
@@ -272,14 +316,18 @@ class TestTimeRange:
 class TestSortAndPaginate:
     @pytest.mark.asyncio
     async def test_sort_by_operation_time_desc(self, client, async_db):
-        """按 operation_time 倒序（最近的在前）。"""
+        """按 operation_time 倒序（最近的在前）。
+
+        用完整序列断言（非仅首尾比较），可抓中间元素错位 bug
+        （例如 [06, 01, 03] 的首尾比较仍为真，会漏检）。
+        """
         await _add(async_db, operation_type="add", operation_time=datetime(2026, 1, 1, 12, 0, 0))
         await _add(async_db, operation_type="add", operation_time=datetime(2026, 6, 1, 12, 0, 0))
         await _add(async_db, operation_type="add", operation_time=datetime(2026, 3, 1, 12, 0, 0))
         r = client.post(URL_QUERY, json={})
         body = r.json()
         times = [item["operation_time"] for item in body["data"]["list"]]
-        assert times[0] > times[-1], "倒序：第一个应在最后之后"
+        assert times == sorted(times, reverse=True), "完整序列须严格倒序"
 
     @pytest.mark.asyncio
     async def test_pagination_first_page(self, client, async_db):
@@ -311,6 +359,28 @@ class TestSortAndPaginate:
         body = r.json()
         assert body["data"]["total"] == 1
         assert body["data"]["list"] == []
+
+    @pytest.mark.asyncio
+    async def test_pagination_offset_takes_effect(self, client, async_db):
+        """翻页 offset 生效：第1页与第2页无重叠，且 total 不受 limit/offset 影响。
+
+        关键正确性点：count 用 select(func.count()).select_from(query.subquery())，
+        必须与 limit/offset 解耦。本测试同时验证：
+        - limit 生效（每页恰 page_size 条，非全量）
+        - offset 生效（相邻页无重叠 id）
+        - count 解耦（total=5 不随 page_size=2 变成 2）
+        """
+        ids = []
+        for i in range(5):
+            log = await _add(async_db, operation_type="add", operation_time=datetime(2026, 1, i + 1, 12, 0, 0))
+            ids.append(log.log_id)
+        page1 = client.post(URL_QUERY, json={"page": 1, "page_size": 2}).json()["data"]
+        page2 = client.post(URL_QUERY, json={"page": 2, "page_size": 2}).json()["data"]
+        assert page1["total"] == 5, "count 须解耦于 page_size"
+        assert len(page1["list"]) == 2 and len(page2["list"]) == 2
+        ids1 = {item["log_id"] for item in page1["list"]}
+        ids2 = {item["log_id"] for item in page2["list"]}
+        assert ids1.isdisjoint(ids2), "相邻页须无重叠（offset 生效）"
 
     def test_page_size_over_limit_returns_422(self, client):
         """page_size=101 → 422（le=100）。"""
@@ -418,12 +488,32 @@ class TestStatistics:
 
     @pytest.mark.asyncio
     async def test_stats_time_range_filter(self, client, async_db):
-        """statistics 也支持 start_time/end_time 过滤（仅时间维度）。"""
-        await _add(async_db, operation_type="add", operation_time=datetime(2026, 1, 1, 12, 0, 0))
-        await _add(async_db, operation_type="add", operation_time=datetime(2026, 6, 1, 12, 0, 0))
+        """statistics 也支持 start_time/end_time 过滤（仅时间维度）。
+
+        除 total_count 外，同时断言 stats 字典在时间过滤后仍正确聚合，
+        避免"过滤失效导致全部数据混入聚合"的假通过。
+        """
+        await _add(
+            async_db,
+            operation_type="add",
+            operator="alice",
+            operation_result="success",
+            operation_time=datetime(2026, 1, 1, 12, 0, 0),
+        )
+        await _add(
+            async_db,
+            operation_type="pause",
+            operator="bob",
+            operation_result="failed",
+            operation_time=datetime(2026, 6, 1, 12, 0, 0),
+        )
         r = client.get(URL_STATS, params={"start_time": "2026-03-01T00:00:00"})
         body = r.json()
         assert body["data"]["total_count"] == 1
+        # 时间过滤后只剩 6 月那条，聚合应精确反映子集（非全量）
+        assert body["data"]["operation_type_stats"] == {"pause": 1}
+        assert body["data"]["operator_stats"] == {"bob": 1}
+        assert body["data"]["result_stats"] == {"failed": 1}
 
 
 # ==================== 组7：operation-types 枚举展开 ====================
@@ -438,6 +528,17 @@ class TestOperationTypes:
         expected = len(list(AuditOperationType))
         assert body["data"]["total"] == expected
         assert len(body["data"]["operation_types"]) == expected
+
+    def test_operation_types_value_set_matches_enum(self, client):
+        """返回的 value 集合必须精确等于枚举全部成员的 value 集合。
+
+        比仅断言 len 更强：可抓"端点循环过滤掉某些成员但 total 与 list 同步减少"
+        的逻辑偏差（此时 len 仍相等但集合不同）。
+        """
+        r = client.get(URL_OP_TYPES)
+        returned = {it["value"] for it in r.json()["data"]["operation_types"]}
+        expected = {op.value for op in AuditOperationType}
+        assert returned == expected
 
     def test_operation_types_structure(self, client):
         """每个元素含 value/display_name/category 三键。"""
@@ -477,6 +578,35 @@ class TestErrorDegradation:
 
     def test_statistics_bad_time_returns_400_body(self, client):
         r = client.get(URL_STATS, params={"start_time": "bad"})
+        body = r.json()
+        assert r.status_code == 200
+        assert body["code"] == "400"
+
+
+# ==================== 组9：download-export / export 约定差异 ====================
+
+
+class TestDownloadAndExport:
+    """download-export 是唯一抛 HTTPException 的端点（404/500），
+    与其他端点"HTTP 200 + code 体"约定不同；export 空数据走 code='400' 降级。"""
+
+    def test_download_nonexistent_returns_404(self, client):
+        """下载不存在的文件 → 真 HTTP 404（非 200+code 体）。"""
+        r = client.get("/api/v1/audit-logs/download-export/no_such_file.csv")
+        assert r.status_code == 404
+        assert r.json()["detail"] == "文件不存在"
+
+    def test_export_empty_returns_400_body(self, client):
+        """export 无匹配数据 → HTTP 200 + code='400'（业务降级，非 HTTPException）。"""
+        r = client.post("/api/v1/audit-logs/export", json={})
+        body = r.json()
+        assert r.status_code == 200
+        assert body["code"] == "400"
+        assert body["msg"] == "没有符合条件的数据可导出"
+
+    def test_export_bad_time_returns_400_body(self, client):
+        """export 坏 ISO 时间 → datetime.fromisoformat 抛 ValueError → code='400'。"""
+        r = client.post("/api/v1/audit-logs/export", json={"start_time": "not-a-date"})
         body = r.json()
         assert r.status_code == 200
         assert body["code"] == "400"
