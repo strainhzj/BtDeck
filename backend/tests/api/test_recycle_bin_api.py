@@ -33,12 +33,14 @@ from app.auth.dependencies import get_current_user
 from app.database import Base, get_async_db
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo, TrackerInfo
+from tests.api.conftest import make_torrent
 
 URL_BIN = "/api/v1/recycle/bin"
 URL_PREVIEW = "/api/v1/recycle/cleanup-preview"
 
 
 # ==================== Fixtures ====================
+
 
 @pytest.fixture
 def sync_engine():
@@ -94,44 +96,12 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 
-def _make_torrent(
-    db,
-    *,
-    info_id,
-    downloader_id,
-    hash_,
-    name,
-    downloader_name="dl",
-    size=0,
-    status="seeding",
-    dr=0,
-    deleted_at=None,
-):
-    """构造 TorrentInfo（按位置传 24 参数）。
-
-    回收站种子：deleted_at 非空 + dr=0。
-    活跃种子：deleted_at=None + dr=0。
-    彻底删除：dr=1。
-    """
-    added = datetime(2026, 1, 1, 12, 0, 0)
-    t = TorrentInfo(
-        info_id, downloader_id, downloader_name, None, hash_, name, "/path", size,
-        status, 0.0, None, added, None, "0", "0", "", "", "否", True,
-        added, "tester", added, "tester", dr,
-    )
-    t.has_tracker_error = False
-    if deleted_at is not None:
-        t.deleted_at = deleted_at
-    db.add(t)
-    db.commit()
-    return t
-
-
 def _info_ids(body):
     return {item["info_id"] for item in body["data"]["list"]}
 
 
 # ==================== 组1：认证与空数据 ====================
+
 
 class TestAuthAndEmpty:
     def test_no_token_returns_401(self, db_session):
@@ -158,6 +128,7 @@ class TestAuthAndEmpty:
 
 # ==================== 组2：软删除双过滤（核心） ====================
 
+
 class TestSoftDeleteFilter:
     """deleted_at IS NOT NULL AND dr=0（只显示可还原的）。
 
@@ -168,14 +139,28 @@ class TestSoftDeleteFilter:
         """只有 deleted_at 非空 + dr=0 的记录出现。"""
         now = datetime(2026, 6, 1, 12, 0, 0)
         # 回收站种子（应显示）
-        _make_torrent(db_session, info_id="r1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="recycled", deleted_at=now)
+        make_torrent(
+            db_session,
+            info_id="r1",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h1",
+            name="recycled",
+            deleted_at=now,
+        )
         # 活跃种子（不应显示）
-        _make_torrent(db_session, info_id="a1", downloader_id="dl-b", downloader_name="B",
-                      hash_="h2", name="active")
+        make_torrent(db_session, info_id="a1", downloader_id="dl-b", downloader_name="B", hash_="h2", name="active")
         # 彻底删除 dr=1（不应显示）
-        _make_torrent(db_session, info_id="d1", downloader_id="dl-c", downloader_name="C",
-                      hash_="h3", name="deleted", dr=1, deleted_at=now)
+        make_torrent(
+            db_session,
+            info_id="d1",
+            downloader_id="dl-c",
+            downloader_name="C",
+            hash_="h3",
+            name="deleted",
+            dr=1,
+            deleted_at=now,
+        )
 
         r = client.get(URL_BIN)
         body = r.json()
@@ -186,10 +171,26 @@ class TestSoftDeleteFilter:
     def test_dr1_excluded(self, client, db_session):
         """dr=1 即使 deleted_at 非空也被排除（只显示可还原 dr=0）。"""
         now = datetime(2026, 6, 1, 12, 0, 0)
-        _make_torrent(db_session, info_id="r1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="restoreable", deleted_at=now, dr=0)
-        _make_torrent(db_session, info_id="d1", downloader_id="dl-b", downloader_name="B",
-                      hash_="h2", name="purged", deleted_at=now, dr=1)
+        make_torrent(
+            db_session,
+            info_id="r1",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h1",
+            name="restoreable",
+            deleted_at=now,
+            dr=0,
+        )
+        make_torrent(
+            db_session,
+            info_id="d1",
+            downloader_id="dl-b",
+            downloader_name="B",
+            hash_="h2",
+            name="purged",
+            deleted_at=now,
+            dr=1,
+        )
 
         r = client.get(URL_BIN)
         body = r.json()
@@ -199,14 +200,29 @@ class TestSoftDeleteFilter:
 
 # ==================== 组3：搜索 + 排序 + 分页 ====================
 
+
 class TestSearchSortPaginate:
     def test_search_by_name(self, client, db_session):
         """search 按名称模糊匹配。"""
         now = datetime(2026, 6, 1, 12, 0, 0)
-        _make_torrent(db_session, info_id="r1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="[movie] film", deleted_at=now)
-        _make_torrent(db_session, info_id="r2", downloader_id="dl-b", downloader_name="B",
-                      hash_="h2", name="other thing", deleted_at=now)
+        make_torrent(
+            db_session,
+            info_id="r1",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h1",
+            name="[movie] film",
+            deleted_at=now,
+        )
+        make_torrent(
+            db_session,
+            info_id="r2",
+            downloader_id="dl-b",
+            downloader_name="B",
+            hash_="h2",
+            name="other thing",
+            deleted_at=now,
+        )
 
         r = client.get(URL_BIN, params={"search": "movie"})
         body = r.json()
@@ -215,10 +231,24 @@ class TestSearchSortPaginate:
 
     def test_sort_by_deleted_at_desc(self, client, db_session):
         """按 deleted_at 倒序（最近删除的在前）。"""
-        _make_torrent(db_session, info_id="old", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1", deleted_at=datetime(2026, 5, 1, 12, 0, 0))
-        _make_torrent(db_session, info_id="new", downloader_id="dl-b", downloader_name="B",
-                      hash_="h2", name="t2", deleted_at=datetime(2026, 6, 1, 12, 0, 0))
+        make_torrent(
+            db_session,
+            info_id="old",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h1",
+            name="t1",
+            deleted_at=datetime(2026, 5, 1, 12, 0, 0),
+        )
+        make_torrent(
+            db_session,
+            info_id="new",
+            downloader_id="dl-b",
+            downloader_name="B",
+            hash_="h2",
+            name="t2",
+            deleted_at=datetime(2026, 6, 1, 12, 0, 0),
+        )
 
         r = client.get(URL_BIN)
         body = r.json()
@@ -228,9 +258,15 @@ class TestSearchSortPaginate:
     def test_pagination_page_size(self, client, db_session):
         """3 条回收站记录，page_size=2 → 第1页 2 条, total=3。"""
         for i in range(3):
-            _make_torrent(db_session, info_id=f"r{i}", downloader_id=f"dl-{i}",
-                          downloader_name=f"D{i}", hash_=f"h{i}", name=f"t{i}",
-                          deleted_at=datetime(2026, 6, i + 1, 12, 0, 0))
+            make_torrent(
+                db_session,
+                info_id=f"r{i}",
+                downloader_id=f"dl-{i}",
+                downloader_name=f"D{i}",
+                hash_=f"h{i}",
+                name=f"t{i}",
+                deleted_at=datetime(2026, 6, i + 1, 12, 0, 0),
+            )
 
         r = client.get(URL_BIN, params={"page": 1, "page_size": 2})
         body = r.json()
@@ -241,8 +277,9 @@ class TestSearchSortPaginate:
     def test_pagination_out_of_range(self, client, db_session):
         """超范围 page → list=[] 但 total 正确。"""
         now = datetime(2026, 6, 1, 12, 0, 0)
-        _make_torrent(db_session, info_id="r1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1", deleted_at=now)
+        make_torrent(
+            db_session, info_id="r1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1", deleted_at=now
+        )
 
         r = client.get(URL_BIN, params={"page": 99, "page_size": 20})
         body = r.json()
@@ -253,18 +290,35 @@ class TestSearchSortPaginate:
 
 # ==================== 组4：清理预览聚合 ====================
 
+
 class TestCleanupPreview:
     """cleanup_preview: deleted_at < cutoff（严格小于）+ dr=0，sum(size)。"""
 
     def test_old_records_previewed(self, client, db_session):
         """days=30 → deleted_at 在 30 天前的记录被预览，最近的不含。"""
         long_ago = datetime.now() - timedelta(days=60)  # 60天前（应命中）
-        recent = datetime.now() - timedelta(days=5)     # 5天前（应排除）
+        recent = datetime.now() - timedelta(days=5)  # 5天前（应排除）
 
-        _make_torrent(db_session, info_id="old", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="old1", size=500, deleted_at=long_ago)
-        _make_torrent(db_session, info_id="new", downloader_id="dl-b", downloader_name="B",
-                      hash_="h2", name="new1", size=300, deleted_at=recent)
+        make_torrent(
+            db_session,
+            info_id="old",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h1",
+            name="old1",
+            size=500,
+            deleted_at=long_ago,
+        )
+        make_torrent(
+            db_session,
+            info_id="new",
+            downloader_id="dl-b",
+            downloader_name="B",
+            hash_="h2",
+            name="new1",
+            size=300,
+            deleted_at=recent,
+        )
 
         r = client.post(URL_PREVIEW, json={"days": 30})
         body = r.json()
@@ -276,10 +330,28 @@ class TestCleanupPreview:
     def test_cleanup_preview_excludes_dr1(self, client, db_session):
         """dr=1 的记录不进预览（即使 deleted_at 很旧）。"""
         long_ago = datetime.now() - timedelta(days=60)
-        _make_torrent(db_session, info_id="r1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="restoreable", size=100, deleted_at=long_ago, dr=0)
-        _make_torrent(db_session, info_id="d1", downloader_id="dl-b", downloader_name="B",
-                      hash_="h2", name="purged", size=200, deleted_at=long_ago, dr=1)
+        make_torrent(
+            db_session,
+            info_id="r1",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h1",
+            name="restoreable",
+            size=100,
+            deleted_at=long_ago,
+            dr=0,
+        )
+        make_torrent(
+            db_session,
+            info_id="d1",
+            downloader_id="dl-b",
+            downloader_name="B",
+            hash_="h2",
+            name="purged",
+            size=200,
+            deleted_at=long_ago,
+            dr=1,
+        )
 
         r = client.post(URL_PREVIEW, json={"days": 30})
         body = r.json()
@@ -292,9 +364,30 @@ class TestCleanupPreview:
         # 构造 size=None 的回收站记录（直接设列，绕过工厂默认 0）
         added = datetime(2026, 1, 1, 12, 0, 0)
         t = TorrentInfo(
-            "s1", "dl-a", "A", None, "h1", "null_size", "/p", None,
-            "seeding", 0.0, None, added, None, "0", "0",
-            "", "", "否", True, added, "tester", added, "tester", 0,
+            "s1",
+            "dl-a",
+            "A",
+            None,
+            "h1",
+            "null_size",
+            "/p",
+            None,
+            "seeding",
+            0.0,
+            None,
+            added,
+            None,
+            "0",
+            "0",
+            "",
+            "",
+            "否",
+            True,
+            added,
+            "tester",
+            added,
+            "tester",
+            0,
         )
         t.has_tracker_error = False
         t.deleted_at = long_ago

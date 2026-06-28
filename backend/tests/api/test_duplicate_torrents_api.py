@@ -14,7 +14,8 @@
 
 测试范式照搬 tests/api/test_cron_task_cleanup.py（独立 FastAPI app + 内存 StaticPool SQLite +
 指定表建表 + 依赖覆盖）。经独立审查修订：
-- _make_torrent 工厂按位置传 24 参数 + 显式设 has_tracker_error=False（NOT NULL，__init__ 未赋值）
+- 种子构造走 tests/api/conftest.py 的 make_torrent 工厂（24 位置参数 + 显式设
+  has_tracker_error=False 已在工厂内收口）
 - client 覆盖 get_current_user（非 require_authenticated_user）
 - 所有断言用 code == "200"（字符串，避免类型假失败）
 """
@@ -34,9 +35,10 @@ from app.auth.dependencies import get_current_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo, TrackerInfo
-
+from tests.api.conftest import make_torrent
 
 # ==================== Fixtures ====================
+
 
 @pytest.fixture
 def db_session():
@@ -80,62 +82,8 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 
-def _make_torrent(
-    db,
-    *,
-    info_id,
-    downloader_id,
-    hash_,
-    name,
-    downloader_name="dl",
-    size=0,
-    status="seeding",
-    dr=0,
-    added_date=None,
-    progress=0.0,
-):
-    """构造真 ORM TorrentInfo（按位置传 24 参数）。
-
-    注意：
-    - hash 与 downloader_name 通过关键字暴露（业务关键字段）。
-    - __init__ 未给 has_tracker_error 赋值，而该列是 nullable=False（无 server_default），
-      必须显式设，否则 commit 时 IntegrityError。
-    """
-    if added_date is None:
-        added_date = datetime(2026, 1, 1, 12, 0, 0)
-    t = TorrentInfo(
-        info_id,            # id_
-        downloader_id,      # downloader_id
-        downloader_name,    # downloader_name
-        None,               # torrent_id
-        hash_,              # hash
-        name,               # name
-        "/path",            # save_path
-        size,               # size
-        status,             # status
-        progress,           # progress
-        None,               # torrent_file
-        added_date,         # added_date
-        None,               # completed_date
-        "0",                # ratio
-        "0",                # ratio_limit
-        "",                 # tags
-        "",                 # category
-        "否",               # super_seeding
-        True,               # enabled
-        added_date,         # create_time
-        "tester",           # create_by
-        added_date,         # update_time
-        "tester",           # update_by
-        dr,                 # dr
-    )
-    t.has_tracker_error = False  # NOT NULL，__init__ 未赋值
-    db.add(t)
-    db.commit()
-    return t
-
-
 # ==================== 组1：认证与空数据 ====================
+
 
 class TestAuthAndEmpty:
     """认证拒绝 + 空数据返回。"""
@@ -166,15 +114,14 @@ class TestAuthAndEmpty:
 
 # ==================== 组2：核心重复检测 ====================
 
+
 class TestDuplicateDetection:
     """HAVING count>=2 / 唯一 hash / dr 过滤。"""
 
     def test_duplicate_hash_across_downloaders(self, client, db_session):
         """同 hash 跨 2 个 downloader → total=2（记录数口径）。"""
-        _make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A",
-                      hash_="aaa", name="t1")
-        _make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B",
-                      hash_="aaa", name="t2")
+        make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="aaa", name="t1")
+        make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B", hash_="aaa", name="t2")
 
         r = client.post("/api/v1/torrents/duplicates", json={})
         body = r.json()
@@ -185,13 +132,10 @@ class TestDuplicateDetection:
     def test_unique_hash_not_returned(self, client, db_session):
         """仅出现 1 次的 hash → 不在结果中（HAVING count>=2）。"""
         # 唯一 hash（只 1 条）
-        _make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A",
-                      hash_="unique1", name="t1")
+        make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="unique1", name="t1")
         # 重复 hash（2 条）
-        _make_torrent(db_session, info_id="i2", downloader_id="dl-a", downloader_name="A",
-                      hash_="dup", name="t2")
-        _make_torrent(db_session, info_id="i3", downloader_id="dl-b", downloader_name="B",
-                      hash_="dup", name="t3")
+        make_torrent(db_session, info_id="i2", downloader_id="dl-a", downloader_name="A", hash_="dup", name="t2")
+        make_torrent(db_session, info_id="i3", downloader_id="dl-b", downloader_name="B", hash_="dup", name="t3")
 
         r = client.post("/api/v1/torrents/duplicates", json={})
         body = r.json()
@@ -203,13 +147,10 @@ class TestDuplicateDetection:
 
     def test_deleted_record_filtered(self, client, db_session):
         """dr=1 的重复记录被排除（base_conditions dr==0）。"""
-        _make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A",
-                      hash_="dup", name="t1", dr=0)
-        _make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B",
-                      hash_="dup", name="t2", dr=0)
+        make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="dup", name="t1", dr=0)
+        make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B", hash_="dup", name="t2", dr=0)
         # 第 3 条 dr=1（已删除），跨 downloader 所以不受唯一索引约束
-        _make_torrent(db_session, info_id="i3", downloader_id="dl-c", downloader_name="C",
-                      hash_="dup", name="t3", dr=1)
+        make_torrent(db_session, info_id="i3", downloader_id="dl-c", downloader_name="C", hash_="dup", name="t3", dr=1)
 
         r = client.post("/api/v1/torrents/duplicates", json={})
         body = r.json()
@@ -219,16 +160,19 @@ class TestDuplicateDetection:
 
 # ==================== 组3：分页 ====================
 
+
 class TestPagination:
     """分页（pageSize / 超范围）。"""
 
     def test_pagination_page_size(self, client, db_session):
         """3 个 hash × 2 条 = 6 条，pageSize=2 → 第1页 list 2 条，total=6。"""
         for idx, h in enumerate(["h1", "h2", "h3"]):
-            _make_torrent(db_session, info_id=f"a{idx}", downloader_id="dl-a", downloader_name="A",
-                          hash_=h, name=f"t{idx}")
-            _make_torrent(db_session, info_id=f"b{idx}", downloader_id="dl-b", downloader_name="B",
-                          hash_=h, name=f"t{idx}")
+            make_torrent(
+                db_session, info_id=f"a{idx}", downloader_id="dl-a", downloader_name="A", hash_=h, name=f"t{idx}"
+            )
+            make_torrent(
+                db_session, info_id=f"b{idx}", downloader_id="dl-b", downloader_name="B", hash_=h, name=f"t{idx}"
+            )
 
         r = client.post("/api/v1/torrents/duplicates", json={"page": 1, "pageSize": 2})
         body = r.json()
@@ -240,10 +184,8 @@ class TestPagination:
 
     def test_pagination_out_of_range(self, client, db_session):
         """超范围 page → list=[] 但 total 正确。"""
-        _make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1")
-        _make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B",
-                      hash_="h1", name="t2")
+        make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1")
+        make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B", hash_="h1", name="t2")
 
         r = client.post("/api/v1/torrents/duplicates", json={"page": 99, "pageSize": 20})
         body = r.json()
@@ -253,6 +195,7 @@ class TestPagination:
 
 
 # ==================== 组4：参数验证 422 ====================
+
 
 class TestParamValidation:
     """pydantic 约束验证（page>=1 / pageSize<=200）。"""
@@ -270,6 +213,7 @@ class TestParamValidation:
 
 # ==================== 组5：空列表 panic 防护 ====================
 
+
 class TestEmptyListPanicGuard:
     """空列表 panic 防护（锚定 commit 0622d53）。
 
@@ -279,10 +223,8 @@ class TestEmptyListPanicGuard:
 
     def test_empty_downloader_id_list_no_panic(self, client, db_session):
         """downloader_id=',' → 不报错，返回 code='200'。"""
-        _make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1")
-        _make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B",
-                      hash_="h1", name="t2")
+        make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1")
+        make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B", hash_="h1", name="t2")
 
         r = client.post("/api/v1/torrents/duplicates", json={"downloader_id": ","})
         body = r.json()
@@ -291,10 +233,8 @@ class TestEmptyListPanicGuard:
 
     def test_empty_status_list_no_panic(self, client, db_session):
         """status=',' → 不报错，返回 code='200'。"""
-        _make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1")
-        _make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B",
-                      hash_="h1", name="t2")
+        make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1")
+        make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B", hash_="h1", name="t2")
 
         r = client.post("/api/v1/torrents/duplicates", json={"status": ","})
         body = r.json()
@@ -304,24 +244,19 @@ class TestEmptyListPanicGuard:
 
 # ==================== 组6：过滤条件 ====================
 
+
 class TestFilters:
     """多选 / 单值 / min_size / hash 空值排除。"""
 
     def test_multi_select_downloader_filter(self, client, db_session):
         """downloader_id='dl-a,dl-b' 多选 → 只返回这两个 downloader 的。"""
-        _make_torrent(db_session, info_id="a1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1")
-        _make_torrent(db_session, info_id="a2", downloader_id="dl-a", downloader_name="A",
-                      hash_="h2", name="t2")
-        _make_torrent(db_session, info_id="b1", downloader_id="dl-b", downloader_name="B",
-                      hash_="h1", name="t3")
-        _make_torrent(db_session, info_id="c1", downloader_id="dl-c", downloader_name="C",
-                      hash_="h3", name="t4")
-        _make_torrent(db_session, info_id="c2", downloader_id="dl-c", downloader_name="C",
-                      hash_="h4", name="t5")
+        make_torrent(db_session, info_id="a1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1")
+        make_torrent(db_session, info_id="a2", downloader_id="dl-a", downloader_name="A", hash_="h2", name="t2")
+        make_torrent(db_session, info_id="b1", downloader_id="dl-b", downloader_name="B", hash_="h1", name="t3")
+        make_torrent(db_session, info_id="c1", downloader_id="dl-c", downloader_name="C", hash_="h3", name="t4")
+        make_torrent(db_session, info_id="c2", downloader_id="dl-c", downloader_name="C", hash_="h4", name="t5")
 
-        r = client.post("/api/v1/torrents/duplicates",
-                        json={"downloader_id": "dl-a,dl-b"})
+        r = client.post("/api/v1/torrents/duplicates", json={"downloader_id": "dl-a,dl-b"})
         body = r.json()
         assert body["code"] == "200"
         dl_ids = {item["downloader_id"] for item in body["data"]["list"]}
@@ -338,10 +273,8 @@ class TestFilters:
         正确验证方式：过滤 dl-a 后，h1 在 dl-a 出现 1 次，count<2，不应返回。
         此测试验证 == 分支正确生效（返回空，而非忽略过滤返回全部）。
         """
-        _make_torrent(db_session, info_id="a1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1")
-        _make_torrent(db_session, info_id="b1", downloader_id="dl-b", downloader_name="B",
-                      hash_="h1", name="t2")
+        make_torrent(db_session, info_id="a1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1")
+        make_torrent(db_session, info_id="b1", downloader_id="dl-b", downloader_name="B", hash_="h1", name="t2")
 
         # 过滤 dl-a：h1 在 dl-a 仅 1 条，过滤后 count=1 < 2，应返回空
         r = client.post("/api/v1/torrents/duplicates", json={"downloader_id": "dl-a"})
@@ -353,15 +286,19 @@ class TestFilters:
     def test_min_size_filter(self, client, db_session):
         """min_size=150 → 只返回 size>=150 的重复。"""
         # size=100 的重复对（应被过滤）
-        _make_torrent(db_session, info_id="a1", downloader_id="dl-a", downloader_name="A",
-                      hash_="small", name="t1", size=100)
-        _make_torrent(db_session, info_id="a2", downloader_id="dl-b", downloader_name="B",
-                      hash_="small", name="t2", size=100)
+        make_torrent(
+            db_session, info_id="a1", downloader_id="dl-a", downloader_name="A", hash_="small", name="t1", size=100
+        )
+        make_torrent(
+            db_session, info_id="a2", downloader_id="dl-b", downloader_name="B", hash_="small", name="t2", size=100
+        )
         # size=200 的重复对（应保留）
-        _make_torrent(db_session, info_id="a3", downloader_id="dl-a", downloader_name="A",
-                      hash_="big", name="t3", size=200)
-        _make_torrent(db_session, info_id="a4", downloader_id="dl-b", downloader_name="B",
-                      hash_="big", name="t4", size=200)
+        make_torrent(
+            db_session, info_id="a3", downloader_id="dl-a", downloader_name="A", hash_="big", name="t3", size=200
+        )
+        make_torrent(
+            db_session, info_id="a4", downloader_id="dl-b", downloader_name="B", hash_="big", name="t4", size=200
+        )
 
         r = client.post("/api/v1/torrents/duplicates", json={"min_size": 150})
         body = r.json()
@@ -372,15 +309,11 @@ class TestFilters:
     def test_empty_hash_excluded(self, client, db_session):
         """hash='' / hash=None 的记录被排除（base_conditions）。"""
         # 空字符串 hash（跨 downloader，绕过唯一索引）
-        _make_torrent(db_session, info_id="e1", downloader_id="dl-a", downloader_name="A",
-                      hash_="", name="empty")
-        _make_torrent(db_session, info_id="e2", downloader_id="dl-b", downloader_name="B",
-                      hash_="", name="empty")
+        make_torrent(db_session, info_id="e1", downloader_id="dl-a", downloader_name="A", hash_="", name="empty")
+        make_torrent(db_session, info_id="e2", downloader_id="dl-b", downloader_name="B", hash_="", name="empty")
         # 正常重复 hash
-        _make_torrent(db_session, info_id="n1", downloader_id="dl-a", downloader_name="A",
-                      hash_="valid", name="valid")
-        _make_torrent(db_session, info_id="n2", downloader_id="dl-b", downloader_name="B",
-                      hash_="valid", name="valid")
+        make_torrent(db_session, info_id="n1", downloader_id="dl-a", downloader_name="A", hash_="valid", name="valid")
+        make_torrent(db_session, info_id="n2", downloader_id="dl-b", downloader_name="B", hash_="valid", name="valid")
 
         r = client.post("/api/v1/torrents/duplicates", json={})
         body = r.json()
@@ -392,6 +325,7 @@ class TestFilters:
 
 # ==================== 组7：排序与 name_like ====================
 
+
 class TestSortingAndNameLike:
     """排序（hash DESC）+ name_like 模糊匹配。"""
 
@@ -400,10 +334,24 @@ class TestSortingAndNameLike:
         # 3 个不同 hash 的重复对，added_date 各差 1 秒
         for idx, h in enumerate(["hash_c", "hash_a", "hash_b"]):
             base_dt = datetime(2026, 1, 1, 12, 0, idx)  # 差 idx 秒
-            _make_torrent(db_session, info_id=f"a{idx}", downloader_id="dl-a", downloader_name="A",
-                          hash_=h, name=f"t{idx}", added_date=base_dt)
-            _make_torrent(db_session, info_id=f"b{idx}", downloader_id="dl-b", downloader_name="B",
-                          hash_=h, name=f"t{idx}", added_date=base_dt)
+            make_torrent(
+                db_session,
+                info_id=f"a{idx}",
+                downloader_id="dl-a",
+                downloader_name="A",
+                hash_=h,
+                name=f"t{idx}",
+                added_date=base_dt,
+            )
+            make_torrent(
+                db_session,
+                info_id=f"b{idx}",
+                downloader_id="dl-b",
+                downloader_name="B",
+                hash_=h,
+                name=f"t{idx}",
+                added_date=base_dt,
+            )
 
         r = client.post("/api/v1/torrents/duplicates", json={"page": 1, "pageSize": 20})
         body = r.json()
@@ -416,15 +364,19 @@ class TestSortingAndNameLike:
 
     def test_name_like_filter(self, client, db_session):
         """name_like='keyword' → 只返回名称含该关键词的。"""
-        _make_torrent(db_session, info_id="a1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="[keyword] movie")
-        _make_torrent(db_session, info_id="a2", downloader_id="dl-b", downloader_name="B",
-                      hash_="h1", name="[keyword] movie")
+        make_torrent(
+            db_session, info_id="a1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="[keyword] movie"
+        )
+        make_torrent(
+            db_session, info_id="a2", downloader_id="dl-b", downloader_name="B", hash_="h1", name="[keyword] movie"
+        )
         # 不含关键词的重复
-        _make_torrent(db_session, info_id="a3", downloader_id="dl-a", downloader_name="A",
-                      hash_="h2", name="other thing")
-        _make_torrent(db_session, info_id="a4", downloader_id="dl-b", downloader_name="B",
-                      hash_="h2", name="other thing")
+        make_torrent(
+            db_session, info_id="a3", downloader_id="dl-a", downloader_name="A", hash_="h2", name="other thing"
+        )
+        make_torrent(
+            db_session, info_id="a4", downloader_id="dl-b", downloader_name="B", hash_="h2", name="other thing"
+        )
 
         r = client.post("/api/v1/torrents/duplicates", json={"name_like": "keyword"})
         body = r.json()
@@ -436,33 +388,34 @@ class TestSortingAndNameLike:
 
 # ==================== 组8：tracker 组装 ====================
 
+
 class TestTrackerAssembly:
     """tracker 批量组装（N+1 防护）+ 默认 downloader_type。"""
 
     def test_tracker_assembled(self, client, db_session):
         """有 tracker 数据时，list 元素 tracker_info 字段被正确组装；无 BtDownloaders 时默认 qbittorrent 不报错。"""
         # 造重复种子
-        _make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A",
-                      hash_="h1", name="t1")
-        _make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B",
-                      hash_="h1", name="t2")
+        make_torrent(db_session, info_id="i1", downloader_id="dl-a", downloader_name="A", hash_="h1", name="t1")
+        make_torrent(db_session, info_id="i2", downloader_id="dl-b", downloader_name="B", hash_="h1", name="t2")
 
         # 为 i1 造 tracker（注意唯一索引：同种子同 tracker_url 唯一，dr=0）
         now = datetime(2026, 1, 1, 12, 0, 0)
-        db_session.add(TrackerInfo(
-            tracker_id="trk1",
-            torrent_info_id="i1",
-            tracker_name="tracker1",
-            tracker_url="http://tracker.example.com/announce",
-            last_announce_succeeded=2,  # qbittorrent 状态码
-            last_announce_msg="ok",
-            last_scrape_succeeded=2,
-            create_time=now,
-            create_by="tester",
-            update_time=now,
-            update_by="tester",
-            dr=0,
-        ))
+        db_session.add(
+            TrackerInfo(
+                tracker_id="trk1",
+                torrent_info_id="i1",
+                tracker_name="tracker1",
+                tracker_url="http://tracker.example.com/announce",
+                last_announce_succeeded=2,  # qbittorrent 状态码
+                last_announce_msg="ok",
+                last_scrape_succeeded=2,
+                create_time=now,
+                create_by="tester",
+                update_time=now,
+                update_by="tester",
+                dr=0,
+            )
+        )
         db_session.commit()
 
         r = client.post("/api/v1/torrents/duplicates", json={})
