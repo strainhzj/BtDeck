@@ -16,7 +16,11 @@ import {
   isTrackerAnnounceSuccess,
   getTrackerStatusClass,
   assertSameDownloader,
-  buildAdvancedSearchRequest
+  buildAdvancedSearchRequest,
+  buildDeleteLevelRequest,
+  buildDeleteConfirmMessage,
+  parseDeleteTaskResult,
+  parseSyncDeleteResponse
 } from '@/views/torrents/utils/torrentBatch'
 
 // ============ Bug#1 / Bug#4：分组与删除计数契约 ============
@@ -429,6 +433,121 @@ describe('P1-F - buildAdvancedSearchRequest', () => {
     const { request, error } = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
     expect(request).toBeNull()
     expect(error).toBe('搜索条件格式错误')
+  })
+})
+
+// ============ P2-I：4 等级删除纯函数契约 ============
+
+describe('P2 - buildDeleteLevelRequest', () => {
+  it('构造请求参数（info_ids + level + operator）', () => {
+    const torrents = [{ info_id: 'i1' }, { info_id: 'i2' }]
+    const req = buildDeleteLevelRequest(torrents, 4)
+    expect(req.torrent_info_ids).toEqual(['i1', 'i2'])
+    expect(req.delete_level).toBe(4)
+    expect(req.operator).toBe('admin')
+  })
+
+  it('支持自定义 operator', () => {
+    const req = buildDeleteLevelRequest([{ info_id: 'i1' }], 1, 'user01')
+    expect(req.operator).toBe('user01')
+  })
+})
+
+describe('P2 - buildDeleteConfirmMessage', () => {
+  it('批量删除带数量', () => {
+    expect(buildDeleteConfirmMessage(4, 5)).toContain('5 个种子')
+  })
+
+  it('等级1/3 单个删除用警告语气', () => {
+    const msg1 = buildDeleteConfirmMessage(1, 1)
+    const msg3 = buildDeleteConfirmMessage(3, 1)
+    expect(msg1).toContain('警告')
+    expect(msg3).toContain('警告')
+  })
+
+  it('等级2/4 单个删除用普通语气', () => {
+    expect(buildDeleteConfirmMessage(2, 1)).not.toContain('警告')
+    expect(buildDeleteConfirmMessage(4, 1)).not.toContain('警告')
+  })
+})
+
+describe('P2 - parseDeleteTaskResult', () => {
+  const list = [
+    { info_id: 'i1', name: '种子A' },
+    { info_id: 'i2', name: '种子B' }
+  ]
+
+  it('completed → success 提示', () => {
+    const r = parseDeleteTaskResult({
+      status: 'completed', success_count: 5, failed_count: 0, failed_items: []
+    }, list)
+    expect(r.type).toBe('success')
+    expect(r.message).toContain('5')
+    expect(r.failedDetail).toBeNull()
+  })
+
+  it('failed → error 提示，带 error_message', () => {
+    const r = parseDeleteTaskResult({
+      status: 'failed', success_count: 0, failed_count: 3, error_message: '下载器离线'
+    }, list)
+    expect(r.type).toBe('error')
+    expect(r.message).toContain('下载器离线')
+  })
+
+  it('partial → warning 提示 + failedDetail（用 list 反查名称）', () => {
+    const r = parseDeleteTaskResult({
+      status: 'partial',
+      success_count: 2,
+      failed_count: 1,
+      failed_items: [{ info_id: 'i1' }]
+    }, list)
+    expect(r.type).toBe('warning')
+    expect(r.failedDetail).toContain('种子A') // 从 list 反查到名称
+  })
+
+  it('partial 失败项超5个 → failedDetail 带"等N个"', () => {
+    const failedItems = Array.from({ length: 7 }, (_, i) => ({ info_id: `i${i}` }))
+    const r = parseDeleteTaskResult({
+      status: 'partial', success_count: 0, failed_count: 7, failed_items: failedItems
+    }, [])
+    expect(r.failedDetail).toContain('等7个')
+  })
+})
+
+describe('P2 - parseSyncDeleteResponse', () => {
+  it('等级3降级 → warning + downgradeDetail', () => {
+    const data = {
+      level4_downgraded: [{ torrent_name: '种子X' }, { torrent_name: '种子Y' }],
+      level3_success: []
+    }
+    const r = parseSyncDeleteResponse(data, 3)
+    expect(r.type).toBe('warning')
+    expect(r.downgradeDetail).toContain('种子X')
+    expect(r.downgradeDetail).toContain('降级为等级4')
+  })
+
+  it('完全成功（等级2）→ success', () => {
+    const data = { level2_success: [{}, {}] }
+    const r = parseSyncDeleteResponse(data, 2)
+    expect(r.type).toBe('success')
+    expect(r.message).toContain('2')
+  })
+
+  it('部分失败 → warning', () => {
+    const data = { level2_success: [{}], failed: [{}, {}] }
+    const r = parseSyncDeleteResponse(data, 2)
+    expect(r.type).toBe('warning')
+    expect(r.message).toContain('失败 2')
+  })
+
+  it('防回归：用 list 反查而非 tableData（parseDeleteTaskResult）', () => {
+    // 子代理整体-N：index.vue 用 this.tableData，传统模式没有该字段。
+    // 纯函数接收 list 参数，不依赖任何视图实例字段。
+    const r = parseDeleteTaskResult({
+      status: 'partial', success_count: 0, failed_count: 1,
+      failed_items: [{ info_id: 'i1' }]
+    }, [{ info_id: 'i1', name: '查到了' }])
+    expect(r.failedDetail).toContain('查到了')
   })
 })
 

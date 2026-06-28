@@ -408,4 +408,168 @@ export function buildAdvancedSearchRequest(
   return { request, error: null }
 }
 
+// ============ 4 等级删除（纯函数层，无副作用，可单测） ============
+// 防回归 P2-I：列表模式 4 等级删除 ~250 行含 API/轮询/loading/UI 提示耦合，
+// 此处把无副作用的「构造请求」与「解析结果」抽为纯函数。
+// API 调用 + $loading 遮罩 + 轮询（带 Vue 实例依赖）留在 mixin 入口层。
+
+/** 4 等级删除的等级名称映射 */
+export const DELETE_LEVEL_NAMES: Record<number, string> = {
+  4: '标记为待删除',
+  3: '移至回收站',
+  2: '删除任务（保留数据）',
+  1: '完全删除'
+}
+
+/**
+ * 构造 4 等级删除请求参数（异步批量接口 + 同步接口共用结构）
+ * @param torrents 要删除的种子列表
+ * @param level 删除等级 (1-4)
+ * @param operator 操作人
+ */
+export function buildDeleteLevelRequest(
+  torrents: any[],
+  level: number,
+  operator = 'admin'
+): { torrent_info_ids: string[], delete_level: number, operator: string } {
+  return {
+    torrent_info_ids: torrents.map(t => getTorrentId(t)),
+    delete_level: level,
+    operator
+  }
+}
+
+/**
+ * 根据等级生成二次确认提示文案
+ */
+export function buildDeleteConfirmMessage(level: number, count: number): string {
+  const levelName = DELETE_LEVEL_NAMES[level] || '删除'
+  if (count > 1) {
+    return `确定要将选中的 ${count} 个种子${levelName}吗？`
+  }
+  return (level === 1 || level === 3)
+    ? `警告：此操作将${levelName}，是否继续？`
+    : `确定要将种子${levelName}吗？`
+}
+
+/** 解析异步批量删除任务结果，返回结构化的提示信息（供调用方 $message/$notify） */
+export interface ParsedDeleteTaskResult {
+  /** 成功数 */
+  successCount: number
+  /** 失败数 */
+  failedCount: number
+  /** 提示类型：success/warning/error */
+  type: 'success' | 'warning' | 'error'
+  /** 主提示文案 */
+  message: string
+  /** 失败项详情（前5个名称），供 $notify 展开；无则 null */
+  failedDetail: string | null
+}
+
+/**
+ * 解析异步批量删除任务结果（completed/failed/partial）
+ * @param taskData 后端返回的任务数据 { status, total_count, success_count, failed_count, failed_items, error_message }
+ * @param list 当前种子列表（用于反查失败项名称，注意用 list 不用 tableData）
+ */
+export function parseDeleteTaskResult(taskData: any, list: any[]): ParsedDeleteTaskResult {
+  const { status, success_count, failed_count, failed_items, error_message } = taskData
+
+  if (status === 'completed') {
+    return {
+      successCount: success_count,
+      failedCount: 0,
+      type: 'success',
+      message: `批量删除完成，成功删除 ${success_count} 个种子`,
+      failedDetail: null
+    }
+  }
+
+  if (status === 'failed') {
+    return {
+      successCount: 0,
+      failedCount: failed_count,
+      type: 'error',
+      message: `批量删除失败：${error_message || '未知错误'}`,
+      failedDetail: null
+    }
+  }
+
+  // partial：部分成功
+  let failedDetail: string | null = null
+  if (failed_items && failed_items.length > 0) {
+    const failedNames = failed_items.slice(0, 5).map((item: any) => {
+      const torrent = list.find((t: any) => getTorrentId(t) === item.info_id)
+      return torrent?.name || item.info_id
+    }).join('、')
+    failedDetail = failed_items.length <= 5
+      ? `以下种子删除失败：${failedNames}`
+      : `以下种子删除失败：${failedNames} 等${failed_items.length}个`
+  }
+
+  return {
+    successCount: success_count,
+    failedCount: failed_count,
+    type: 'warning',
+    message: `批量删除部分完成：成功 ${success_count} 个，失败 ${failed_count} 个`,
+    failedDetail
+  }
+}
+
+/** 解析同步删除响应（处理降级 + 部分成功 + 成功计数） */
+export interface ParsedSyncDeleteResult {
+  type: 'success' | 'warning'
+  message: string
+  /** 降级详情（等级3备份失败降级为等级4），供 $notify；无则 null */
+  downgradeDetail: string | null
+}
+
+/**
+ * 解析同步删除接口响应（deleteTorrentsWithLevel）
+ * 处理等级3降级、部分成功、各等级成功计数。
+ * @param data 响应数据
+ * @param level 删除等级
+ */
+export function parseSyncDeleteResponse(data: any, level: number): ParsedSyncDeleteResult {
+  let downgradeDetail: string | null = null
+
+  // 等级3降级处理
+  if (level === 3 && data?.level4_downgraded && data.level4_downgraded.length > 0) {
+    const downgraded = data.level4_downgraded
+    const names = (downgraded.length <= 5 ? downgraded : downgraded.slice(0, 5))
+      .map((d: any) => d.torrent_name).join('、')
+    downgradeDetail = downgraded.length <= 5
+      ? `以下种子备份失败，已降级为等级4：${names}`
+      : `以下种子备份失败，已降级为等级4：${names} 等${downgraded.length}个`
+  }
+
+  // 统计各等级成功数
+  const successCount =
+    (data?.level1_success?.length || 0) +
+    (data?.level2_success?.length || 0) +
+    (data?.level3_success?.length || 0) +
+    (data?.level4_success?.length || 0)
+
+  // 有降级时不显示成功消息（已在 downgradeDetail 提示）
+  if (downgradeDetail) {
+    return { type: 'warning', message: `已将 ${data.level4_downgraded.length} 个种子降级为等级4删除（备份失败）`, downgradeDetail }
+  }
+
+  // 部分失败
+  if (data?.failed && data.failed.length > 0) {
+    return { type: 'warning', message: `删除完成：失败 ${data.failed.length} 个`, downgradeDetail: null }
+  }
+
+  // 完全成功
+  if (level === 3) {
+    const level3Count = data?.level3_success?.length || 0
+    return {
+      type: 'success',
+      message: level3Count > 0 ? `等级3删除成功 ${level3Count} 个` : `删除完成，成功 ${successCount} 个`,
+      downgradeDetail: null
+    }
+  }
+  return { type: 'success', message: `等级${level}删除完成，成功 ${successCount} 个`, downgradeDetail: null }
+}
+
+
 

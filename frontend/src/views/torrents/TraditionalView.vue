@@ -37,6 +37,35 @@
         >
           <i class="el-icon-delete"></i> 删除
         </el-button>
+        <el-dropdown
+          @command="handleBatchDeleteByLevelCommand"
+          trigger="click"
+          :hide-on-click="true"
+          :append-to-body="true"
+        >
+          <el-button
+            type="text"
+            size="small"
+            class="danger"
+            :disabled="multipleSelection.length === 0"
+          >
+            <i class="el-icon-delete"></i> 按等级删除<i class="el-icon-arrow-down el-icon--right"></i>
+          </el-button>
+          <el-dropdown-menu slot="dropdown">
+            <el-dropdown-item command="4">
+              <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
+            </el-dropdown-item>
+            <el-dropdown-item command="3">
+              <i class="el-icon-folder-delete"></i> 等级3: 移至回收站
+            </el-dropdown-item>
+            <el-dropdown-item command="2">
+              <i class="el-icon-delete"></i> 等级2: 删除任务(保留数据)
+            </el-dropdown-item>
+            <el-dropdown-item command="1" divided>
+              <i class="el-icon-warning"></i> 等级1: 完全删除
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </el-dropdown>
         <div class="tool-divider"></div>
         <el-button
           type="text"
@@ -111,6 +140,13 @@
         >
           添加
         </el-button>
+        <el-button
+          type="text"
+          size="small"
+          icon="el-icon-setting"
+          @click="showColumnSettings = true"
+          title="列设置"
+        ></el-button>
         <div class="tool-divider"></div>
         <div class="view-switcher">
           <el-button
@@ -236,36 +272,36 @@
                   />
                 </th>
                 <th class="col-status-icon"></th>
-                <th class="col-name" @click="handleSort('name')">
+                <th v-if="getColumnSetting('name').visible" class="col-name" @click="handleSort('name')">
                   名称
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'name'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                 </th>
-                <th class="col-size" @click="handleSort('size')">
+                <th v-if="getColumnSetting('size').visible" class="col-size" @click="handleSort('size')">
                   大小
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'size'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                 </th>
-                <th class="col-progress">进度</th>
-                <th class="col-status" @click="handleSort('status')">
+                <th v-if="getColumnSetting('progress').visible" class="col-progress">进度</th>
+                <th v-if="getColumnSetting('status').visible" class="col-status" @click="handleSort('status')">
                   状态
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'status'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                 </th>
-                <th class="col-downspeed">↓ 下载</th>
-                <th class="col-upspeed">↑ 上传</th>
-                <th class="col-ratio" @click="handleSort('ratio')">
+                <th v-if="getColumnSetting('download').visible" class="col-downspeed">↓ 下载</th>
+                <th v-if="getColumnSetting('upload').visible" class="col-upspeed">↑ 上传</th>
+                <th v-if="getColumnSetting('ratio').visible" class="col-ratio" @click="handleSort('ratio')">
                   比率
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'ratio'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                 </th>
-                <th class="col-downloader">下载器</th>
-                <th class="col-category">分类/标签</th>
-                <th class="col-added" @click="handleSort('added_date')">
+                <th v-if="getColumnSetting('downloader').visible" class="col-downloader">下载器</th>
+                <th v-if="getColumnSetting('category').visible" class="col-category">分类/标签</th>
+                <th v-if="getColumnSetting('added').visible" class="col-added" @click="handleSort('added_date')">
                   添加时间
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'added_date'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
@@ -293,13 +329,13 @@
                     {{ getStatusIcon(torrent.status) }}
                   </div>
                 </td>
-                <td class="col-name">
+                <td v-if="getColumnSetting('name').visible" class="col-name">
                   <div class="torrent-name-cell">
                     <span class="torrent-name-text" :title="torrent.name">{{ torrent.name }}</span>
                   </div>
                 </td>
-                <td class="col-size">{{ formatFileSize(torrent.size) }}</td>
-                <td class="col-progress">
+                <td v-if="getColumnSetting('size').visible" class="col-size">{{ formatFileSize(torrent.size) }}</td>
+                <td v-if="getColumnSetting('progress').visible" class="col-progress">
                   <div class="progress-cell-compact">
                     <div class="progress-bar-wrapper">
                       <div
@@ -311,10 +347,10 @@
                     <span class="progress-text">{{ torrent.progress || 0 }}%</span>
                   </div>
                 </td>
-                <td class="col-status">
+                <td v-if="getColumnSetting('status').visible" class="col-status">
                   <span class="status-badge-trad" :class="torrent.status">{{ getStatusText(torrent.status) }}</span>
                 </td>
-                <td class="col-downspeed">
+                <td v-if="getColumnSetting('download').visible" class="col-downspeed">
                   <span
                     class="speed-value-mono"
                     :class="getTorrentSpeed(torrent, 'download') ? 'download' : 'zero'"
@@ -322,7 +358,7 @@
                     {{ formatSpeed(getTorrentSpeed(torrent, 'download')) }}
                   </span>
                 </td>
-                <td class="col-upspeed">
+                <td v-if="getColumnSetting('upload').visible" class="col-upspeed">
                   <span
                     class="speed-value-mono"
                     :class="getTorrentSpeed(torrent, 'upload') ? 'upload' : 'zero'"
@@ -330,7 +366,7 @@
                     {{ formatSpeed(getTorrentSpeed(torrent, 'upload')) }}
                   </span>
                 </td>
-                <td class="col-ratio">
+                <td v-if="getColumnSetting('ratio').visible" class="col-ratio">
                   <span
                     class="ratio-value-graded"
                     :class="getRatioClass(torrent.ratio)"
@@ -338,13 +374,13 @@
                     {{ formatRatio(torrent.ratio) }}
                   </span>
                 </td>
-                <td class="col-downloader">{{ torrent.downloaderName || '-' }}</td>
-                <td class="col-category">
+                <td v-if="getColumnSetting('downloader').visible" class="col-downloader">{{ torrent.downloaderName || '-' }}</td>
+                <td v-if="getColumnSetting('category').visible" class="col-category">
                   <span v-if="torrent.category" class="category-tag-mini cat">{{ torrent.category }}</span>
                   <span v-if="torrent.tags" class="category-tag-mini tag">{{ torrent.tags }}</span>
                   <span v-if="!torrent.category && !torrent.tags" style="color: var(--color-text-tertiary)">-</span>
                 </td>
-                <td class="col-added">{{ formatDate(torrent.addedDate) }}</td>
+                <td v-if="getColumnSetting('added').visible" class="col-added">{{ formatDate(torrent.addedDate) }}</td>
                 <td class="col-actions">
                   <div class="action-buttons-compact">
                     <button
@@ -369,13 +405,29 @@
                     >
                       📁
                     </button>
-                    <button
-                      class="action-btn-mini delete"
-                      @click.stop="handleDelete(torrent)"
-                      title="删除"
+                    <el-dropdown
+                      @command="(cmd) => handleDeleteByLevelCommand(cmd, torrent)"
+                      trigger="click"
+                      :hide-on-click="true"
+                      :append-to-body="true"
+                      @click.native.stop
                     >
-                      🗑
-                    </button>
+                      <button class="action-btn-mini delete" title="删除">🗑</button>
+                      <el-dropdown-menu slot="dropdown">
+                        <el-dropdown-item command="4">
+                          <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
+                        </el-dropdown-item>
+                        <el-dropdown-item command="3">
+                          <i class="el-icon-folder-delete"></i> 等级3: 移至回收站
+                        </el-dropdown-item>
+                        <el-dropdown-item command="2">
+                          <i class="el-icon-delete"></i> 等级2: 删除任务(保留数据)
+                        </el-dropdown-item>
+                        <el-dropdown-item command="1" divided>
+                          <i class="el-icon-warning"></i> 等级1: 完全删除
+                        </el-dropdown-item>
+                      </el-dropdown-menu>
+                    </el-dropdown>
                   </div>
                 </td>
               </tr>
@@ -662,6 +714,30 @@
         @save-template="handleSaveSearchTemplate"
       />
     </el-dialog>
+
+    <!-- P2-2 列设置 -->
+    <el-dialog
+      title="⚙️ 列设置"
+      :visible.sync="showColumnSettings"
+      width="500px"
+      append-to-body
+    >
+      <div class="columns-grid-trad">
+        <label
+          v-for="column in columnSettings"
+          :key="column.key"
+          class="column-checkbox-trad"
+        >
+          <input type="checkbox" v-model="column.visible" />
+          <span>{{ column.label }}</span>
+        </label>
+      </div>
+      <span slot="footer" class="dialog-footer">
+        <el-button size="small" @click="resetColumnSettings">重置</el-button>
+        <el-button size="small" @click="showColumnSettings = false">取消</el-button>
+        <el-button size="small" type="primary" @click="applyColumnSettings">应用</el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -807,6 +883,21 @@ export default class extends mixins(TorrentBatchMixin) {
   // 下载器列表
   private downloaderList: DownloaderSimple[] = []
 
+  // P2-2 列设置（3列固定：checkbox/statusIcon/actions 不在此数组；11列可隐藏）
+  private showColumnSettings = false
+  private columnSettings = [
+    { key: 'name', label: '名称', visible: true },
+    { key: 'size', label: '大小', visible: true },
+    { key: 'progress', label: '进度', visible: true },
+    { key: 'status', label: '状态', visible: true },
+    { key: 'download', label: '下载速度', visible: true },
+    { key: 'upload', label: '上传速度', visible: true },
+    { key: 'ratio', label: '比率', visible: true },
+    { key: 'downloader', label: '下载器', visible: true },
+    { key: 'category', label: '分类/标签', visible: true },
+    { key: 'added', label: '添加时间', visible: true }
+  ]
+
   // 防抖搜索
   private debouncedSearch: any = null
 
@@ -900,6 +991,7 @@ export default class extends mixins(TorrentBatchMixin) {
   // ====== 生命周期 ======
   public async created() {
     this.debouncedSearch = debounce(this.handleFilter, 300)
+    this.loadColumnPreferences() // P2-2：加载列显隐偏好
     await this.fetchDownloaderList()
     await this.fetchCategoryAndTags()
     await this.getList()
@@ -912,6 +1004,8 @@ export default class extends mixins(TorrentBatchMixin) {
 
   public beforeDestroy() {
     this.stopSpeedPolling()
+    // P2-I：调 mixin 的 loading 清理，防 4 等级删除轮询期间销毁残留遮罩
+    ;(this as any).closeDeleteLoading && (this as any).closeDeleteLoading()
   }
 
   // ====== 数据获取 ======
@@ -1675,6 +1769,45 @@ export default class extends mixins(TorrentBatchMixin) {
       this.listLoading = false
     }
   }
+
+  // ====== P2-2 列设置 ======
+  private getColumnSetting(key: string) {
+    return this.columnSettings.find(col => col.key === key) || { visible: true }
+  }
+
+  private resetColumnSettings() {
+    this.columnSettings.forEach(column => { column.visible = true })
+  }
+
+  private applyColumnSettings() {
+    this.showColumnSettings = false
+    this.saveColumnPreferences()
+    this.$message.success('列设置已保存')
+  }
+
+  private saveColumnPreferences() {
+    const visibility = this.columnSettings.reduce((acc, col) => {
+      acc[col.key] = col.visible
+      return acc
+    }, {} as Record<string, boolean>)
+    // P2-J：用独立 key，与列表模式 torrents_columns_visibility 分开（两视图列结构不同）
+    localStorage.setItem('traditional_columns_visibility', JSON.stringify(visibility))
+  }
+
+  private loadColumnPreferences() {
+    const saved = localStorage.getItem('traditional_columns_visibility')
+    if (!saved) return
+    try {
+      const visibilityMap = JSON.parse(saved)
+      this.columnSettings.forEach(col => {
+        if (col.key in visibilityMap) {
+          col.visible = visibilityMap[col.key]
+        }
+      })
+    } catch (e) {
+      console.error('加载列设置失败:', e)
+    }
+  }
 }
 </script>
 
@@ -1932,6 +2065,26 @@ export default class extends mixins(TorrentBatchMixin) {
       position: sticky;
       right: 0;
       background: var(--color-bg-primary);
+    }
+  }
+}
+
+// P2-2 列设置对话框
+.columns-grid-trad {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px 16px;
+
+  .column-checkbox-trad {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--color-text-primary);
+    cursor: pointer;
+
+    input[type='checkbox'] {
+      cursor: pointer;
     }
   }
 }

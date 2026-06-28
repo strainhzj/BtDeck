@@ -18,6 +18,9 @@ import {
   resumeTorrents,
   pauseTorrents,
   recheckTorrents,
+  deleteTorrentsWithLevel,
+  deleteBatchAsync,
+  getBatchDeleteStatus,
   type ApiResponse
 } from '@/api/torrents'
 import {
@@ -26,6 +29,11 @@ import {
   runBatchAction,
   sortByActive,
   resetSelection,
+  buildDeleteLevelRequest,
+  buildDeleteConfirmMessage,
+  parseDeleteTaskResult,
+  parseSyncDeleteResponse,
+  DELETE_LEVEL_NAMES,
   type BatchActionResult,
   type BatchDeleteResult
 } from '@/views/torrents/utils/torrentBatch'
@@ -38,6 +46,9 @@ export default class TorrentBatchMixin extends Vue {
   protected list!: any[]
   protected activeSpeedMap!: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }>
   protected getList!: () => Promise<void>
+
+  // P2-I：4 等级删除的 loading 遮罩引用（组件销毁时需清理，避免遮罩残留）
+  private deleteLoadingInstance: any = null
 
   // ====== 批量操作（文案对齐列表模式） ======
 
@@ -127,5 +138,162 @@ export default class TorrentBatchMixin extends Vue {
 
   protected groupTorrentsByDownloader(torrents: any[]): Record<string, any[]> {
     return groupTorrentsByDownloader(torrents)
+  }
+
+  // ====== 4 等级删除（P2-I 分层：mixin 入口层，含 API + loading + 轮询） ======
+  // 无副作用的「构造请求/解析结果」在 utils 纯函数层（已单测）。
+  // 此处只保留带 Vue 实例依赖的逻辑（$loading/$message/$notify/$confirm + 轮询）。
+
+  /** 单条种子按等级删除命令（el-dropdown command 触发，level 为字符串） */
+  protected async handleDeleteByLevelCommand(level: string | number, torrent: any): Promise<void> {
+    const levelNum = typeof level === 'string' ? parseInt(level, 10) : level
+    const message = buildDeleteConfirmMessage(levelNum, 1)
+    try {
+      await this.$confirm(message, '确认删除', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: levelNum === 1 ? 'error' : 'warning'
+      })
+      await this.executeDeleteByLevel([torrent], levelNum)
+    } catch (error: any) {
+      if (error !== 'cancel') {
+        this.$message.error(error?.message || '删除失败')
+      }
+    }
+  }
+
+  /** 批量种子按等级删除命令 */
+  protected async handleBatchDeleteByLevelCommand(level: string | number): Promise<void> {
+    if (this.multipleSelection.length === 0) {
+      this.$message.warning('请先选择要删除的种子')
+      return
+    }
+    const levelNum = typeof level === 'string' ? parseInt(level, 10) : level
+    const message = buildDeleteConfirmMessage(levelNum, this.multipleSelection.length)
+    try {
+      await this.$confirm(message, '批量删除确认', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: levelNum === 1 ? 'error' : 'warning'
+      })
+      await this.executeDeleteByLevel(this.multipleSelection, levelNum)
+    } catch (error: any) {
+      if (error !== 'cancel') {
+        this.$message.error(error?.message || '批量删除失败')
+      }
+    }
+  }
+
+  /**
+   * 执行 4 等级删除（统一入口）
+   * - ≥2 个种子：走异步批量接口 deleteBatchAsync + 轮询
+   * - 单个种子：走同步接口 deleteTorrentsWithLevel
+   * 请求构造/结果解析委托纯函数，此处只处理 API 调用 + loading + 提示。
+   */
+  protected async executeDeleteByLevel(torrents: any[], level: number): Promise<void> {
+    const req = buildDeleteLevelRequest(torrents, level)
+    try {
+      if (torrents.length >= 2) {
+        const response = await deleteBatchAsync(req)
+        if (response.code !== '200') {
+          throw new Error(response.msg || '提交删除任务失败')
+        }
+        const taskId = response.data?.task_id
+        if (!taskId) {
+          throw new Error('未返回任务ID')
+        }
+        await this.pollDeleteTaskStatus(taskId)
+      } else {
+        const response = await deleteTorrentsWithLevel(req)
+        if (response.code !== '200') {
+          throw new Error(response.msg || '删除失败')
+        }
+        const parsed = parseSyncDeleteResponse(response.data, level)
+        this.$message[parsed.type](parsed.message)
+        if (parsed.downgradeDetail) {
+          this.$notify.warning({ title: '降级详情', message: parsed.downgradeDetail, duration: 5000 })
+        }
+      }
+      await this.getList()
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.msg ?? error?.message ?? '删除失败，请稍后重试'
+      console.error('[删除异常]', { level, error: errorMessage })
+      this.$message.error(errorMessage)
+    }
+  }
+
+  /**
+   * 轮询批量删除任务状态（带 loading 遮罩）
+   * @param taskId 任务ID
+   */
+  private async pollDeleteTaskStatus(taskId: string): Promise<void> {
+    const pollInterval = 5000
+    const maxPollAttempts = 120 // 10 分钟
+    let pollAttempts = 0
+
+    this.deleteLoadingInstance = this.$loading({
+      lock: true,
+      text: '批量删除中，请稍候...',
+      spinner: 'el-icon-loading',
+      background: 'rgba(0, 0, 0, 0.7)'
+    })
+
+    try {
+      while (pollAttempts < maxPollAttempts) {
+        const response = await getBatchDeleteStatus(taskId)
+        if (response.code !== '200') {
+          throw new Error(response.msg || '查询任务状态失败')
+        }
+        const taskData = response.data
+
+        if (taskData.status === 'running' && this.deleteLoadingInstance) {
+          const progress = taskData.success_count + taskData.failed_count
+          this.deleteLoadingInstance.text = `批量删除中... (${progress}/${taskData.total_count})`
+        }
+
+        if (['completed', 'failed', 'partial'].includes(taskData.status)) {
+          const parsed = parseDeleteTaskResult(taskData, this.list)
+          this.$message[parsed.type](parsed.message)
+          if (parsed.failedDetail) {
+            this.$notify.warning({ title: '删除失败详情', message: parsed.failedDetail, duration: 5000 })
+          }
+          break
+        }
+
+        await new Promise(resolve => setTimeout(resolve, pollInterval))
+        pollAttempts++
+      }
+
+      if (pollAttempts >= maxPollAttempts) {
+        this.$message.warning('批量删除任务执行时间过长，请稍后查看任务状态')
+      }
+    } finally {
+      this.closeDeleteLoading()
+    }
+  }
+
+  /** 关闭 loading 遮罩（幂等，防残留） */
+  private closeDeleteLoading(): void {
+    if (this.deleteLoadingInstance) {
+      try {
+        this.deleteLoadingInstance.close()
+      } catch (e) {
+        // 静默：遮罩可能已被关闭
+      }
+      this.deleteLoadingInstance = null
+    }
+  }
+
+  /**
+   * 组件销毁前清理 loading（防回归 P2-I：长轮询期间组件销毁会残留遮罩）
+   * 子类若重写 beforeDestroy，需 super 调用或自行调 closeDeleteLoading。
+   */
+  protected beforeDestroy(): void {
+    this.closeDeleteLoading()
+  }
+
+  /** 等级名称映射（供视图 dropdown 菜单文案） */
+  protected get deleteLevelNames(): Record<number, string> {
+    return DELETE_LEVEL_NAMES
   }
 }
