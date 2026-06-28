@@ -79,15 +79,6 @@ def client(async_db):
     app.dependency_overrides.clear()
 
 
-def _make_notification(async_db, **kwargs):
-    """同步辅助：构造并提交 Notification（在 async fixture 外需用 async_db）。
-
-    由于 pytest 在 asyncio_mode=auto 下同步测试函数无法 await，这里通过
-    测试内的 await 调用本函数。简化为直接在测试内 await add+commit。
-    """
-    return Notification(**kwargs)
-
-
 async def _add(async_db, **kwargs):
     """添加一条通知并提交。"""
     n = Notification(**kwargs)
@@ -211,6 +202,11 @@ class TestMarkReadUnread:
         body = r.json()
         assert body["code"] == "404"
 
+    def test_mark_read_missing_id_returns_422(self, client):
+        """mark-read 不传 notification_id → 422（Query(..., 必填)）。"""
+        r = client.put("/api/v1/notifications/mark-read")
+        assert r.status_code == 422
+
     @pytest.mark.asyncio
     async def test_mark_unread_existing(self, client, async_db):
         """标记未读 → is_read=False, read_at=None。"""
@@ -232,6 +228,13 @@ class TestMarkReadUnread:
         body = r.json()
         assert body["code"] == "200"
         assert body["data"]["count"] == 2, "只更新原本未读的 2 条"
+
+    def test_mark_all_as_read_empty_table_returns_zero(self, client):
+        """空表全部已读 → count=0（无未读记录可更新）。"""
+        r = client.put(URL_READ_ALL)
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["data"]["count"] == 0
 
 
 # ==================== 组5：删除 ====================

@@ -180,7 +180,7 @@ class TestAuthAndEmpty:
 
 class TestBasicAndSoftDelete:
     def test_basic_list_returns_all_active(self, client, db_session):
-        """3 条正常种子 → total=3。"""
+        """3 条正常种子 → total=3, 且返回的 infoId 集合精确匹配（强断言，防弱断言假通过）。"""
         for i in range(3):
             _make_torrent(db_session, info_id=f"i{i}", downloader_id=f"dl-{i}",
                           downloader_name=f"D{i}", hash_=f"h{i}", name=f"t{i}")
@@ -189,6 +189,7 @@ class TestBasicAndSoftDelete:
         assert body["code"] == "200"
         assert body["data"]["total"] == 3
         assert len(body["data"]["list"]) == 3
+        assert _info_ids(body) == {"i0", "i1", "i2"}
 
     def test_recycle_bin_excluded(self, client, db_session):
         """deleted_at 非空的记录被排除（方案B：不同 hash 避免唯一索引冲突）。

@@ -285,3 +285,38 @@ class TestCleanupPreview:
         body = r.json()
         assert body["data"]["total_count"] == 1
         assert body["data"]["total_size"] == 100  # 只有 dr=0 的 r1
+
+    def test_cleanup_preview_size_none_degraded_to_zero(self, client, db_session):
+        """size 为 None 的记录累加降级为 0（sum(t.size or 0)）。"""
+        long_ago = datetime.now() - timedelta(days=60)
+        # 构造 size=None 的回收站记录（直接设列，绕过工厂默认 0）
+        added = datetime(2026, 1, 1, 12, 0, 0)
+        t = TorrentInfo(
+            "s1", "dl-a", "A", None, "h1", "null_size", "/p", None,
+            "seeding", 0.0, None, added, None, "0", "0",
+            "", "", "否", True, added, "tester", added, "tester", 0,
+        )
+        t.has_tracker_error = False
+        t.deleted_at = long_ago
+        db_session.add(t)
+        db_session.commit()
+
+        r = client.post(URL_PREVIEW, json={"days": 30})
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["data"]["total_count"] == 1
+        assert body["data"]["total_size"] == 0, "size=None 应降级为 0 而非报错"
+
+
+class TestParamValidation:
+    """cleanup-preview 的 days 参数 422 边界（Pydantic Field ge=1 le=365）。"""
+
+    def test_days_zero_returns_422(self, client):
+        """days=0 → 422（ge=1）。"""
+        r = client.post(URL_PREVIEW, json={"days": 0})
+        assert r.status_code == 422
+
+    def test_days_over_limit_returns_422(self, client):
+        """days=366 → 422（le=365）。"""
+        r = client.post(URL_PREVIEW, json={"days": 366})
+        assert r.status_code == 422
