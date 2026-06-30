@@ -23,11 +23,16 @@ datas = [
 ]
 
 # 如果前端已构建，包含静态文件
-if os.path.exists(FRONTEND_DIST):
-    datas.append((FRONTEND_DIST, 'frontend_dist'))
-    print(f"[INFO] Including frontend dist: {FRONTEND_DIST}")
-else:
-    print(f"[WARN] Frontend dist not found at {FRONTEND_DIST}, skipping")
+FRONTEND_INDEX = os.path.join(FRONTEND_DIST, 'index.html')
+FRONTEND_ASSETS = os.path.join(FRONTEND_DIST, 'assets')
+
+if not os.path.isfile(FRONTEND_INDEX):
+    raise FileNotFoundError(f"Frontend index.html not found: {FRONTEND_INDEX}")
+if not os.path.isdir(FRONTEND_ASSETS):
+    raise FileNotFoundError(f"Frontend assets directory not found: {FRONTEND_ASSETS}")
+
+datas.append((FRONTEND_DIST, 'frontend_dist'))
+print(f"[INFO] Including frontend dist: {FRONTEND_DIST}")
 
 # 隐式导入（PyInstaller 可能检测不到的模块）
 hiddenimports = [

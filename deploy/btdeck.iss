@@ -44,6 +44,8 @@ Name: "startup"; Description: "Run at Windows startup"; GroupDescription: "Auto 
 [Files]
 ; 主可执行文件（PyInstaller 输出到 dist/ 目录）
 Source: "..\dist\btdeck.exe"; DestDir: "{app}"; Flags: ignoreversion
+; NSSM 服务管理器（用于注册 Windows 服务，解决 SCM 协议问题）
+Source: "nssm.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; 配置文件模板
 Source: "..\backend\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not FileExists('{app}\config\config.yaml')
 
@@ -53,11 +55,16 @@ Name: "{group}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#AppExeName}"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent; Check: ShouldLaunchAppDirectly
 
 [Code]
 var
   CustomPage: TInputOptionWizardPage;
+
+function ShouldLaunchAppDirectly: Boolean;
+begin
+  Result := not CustomPage.Values[0];
+end;
 
 procedure InitializeWizard;
 begin
@@ -85,10 +92,12 @@ begin
     { 如果选择安装为服务 }
     if CustomPage.Values[0] then
     begin
-      { 使用 NSSM 或 WinSW 注册服务 }
-      Exec('sc', 'create BtDeck binPath= "' + ExpandConstant('{app}\{#AppExeName}') + '" start= auto', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-      Exec('sc', 'description BtDeck "BtDeck - BitTorrent Management Platform"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-      Exec('sc', 'start BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      { 使用 NSSM 注册服务（解决 PyInstaller 控制台程序无法满足 SCM 协议的问题） }
+      Exec(ExpandConstant('{app}\nssm.exe'), 'install BtDeck "' + ExpandConstant('{app}\{#AppExeName}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck AppDirectory "' + ExpandConstant('{app}') + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Description "BtDeck - BitTorrent Management Platform"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'set BtDeck Start SERVICE_AUTO_START', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(ExpandConstant('{app}\nssm.exe'), 'start BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
   end;
 end;
@@ -99,6 +108,8 @@ var
 begin
   if CurUninstallStep = usUninstall then
   begin
+    { 使用 NSSM 停止服务 }
+    Exec(ExpandConstant('{app}\nssm.exe'), 'stop BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     { 卸载前终止所有 btdeck 进程（含服务进程和手动启动的实例），
       避免文件被占用导致 exe 无法删除 }
     Exec('taskkill', '/im btdeck.exe /f /t', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
@@ -107,8 +118,7 @@ begin
 
   if CurUninstallStep = usPostUninstall then
   begin
-    { 停止并删除服务 }
-    Exec('sc', 'stop BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Exec('sc', 'delete BtDeck', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    { 使用 NSSM 删除服务 }
+    Exec(ExpandConstant('{app}\nssm.exe'), 'remove BtDeck confirm', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;

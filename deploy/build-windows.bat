@@ -19,6 +19,15 @@ echo   BtDeck Windows Build
 echo ============================================
 echo.
 
+REM 检查 NSSM 服务管理器
+if not exist "%DEPLOY_DIR%\nssm.exe" (
+    echo [ERROR] NSSM not found at %DEPLOY_DIR%\nssm.exe
+    echo        Download from: https://nssm.cc/download (win64 version)
+    echo        Or visit: https://github.com/dkxCE/NSSM/releases
+    exit /b 1
+)
+echo [OK] NSSM found
+
 REM 检查工具
 where pyinstaller >nul 2>&1
 if %ERRORLEVEL% neq 0 (

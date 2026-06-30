@@ -1,13 +1,14 @@
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from app.core.config import settings
 from app.startup.lifecycle import lifespan
+from app.startup.routers_initializer import init_routers
 
 
 def _get_frontend_dist_path() -> Path | None:
@@ -16,6 +17,8 @@ def _get_frontend_dist_path() -> Path | None:
         # PyInstaller 打包后，frontend_dist 在 _MEIPASS 临时目录中
         Path(sys._MEIPASS) / "frontend_dist" if hasattr(sys, "_MEIPASS") else None,
         # 开发模式：项目根目录下的 frontend/dist
+        settings.ROOT_PATH.parent / "frontend" / "dist",
+        # 兼容历史路径：backend/frontend/dist
         settings.ROOT_PATH / "frontend" / "dist",
         # PyInstaller 打包后可执行文件同级的 frontend_dist
         Path(sys.executable).parent / "frontend_dist",
@@ -28,7 +31,46 @@ def _get_frontend_dist_path() -> Path | None:
     return None
 
 
-def create_app() -> FastAPI:
+def _mount_frontend_static(app: FastAPI) -> None:
+    """挂载前端静态文件与 SPA fallback。"""
+    if getattr(app.state, "frontend_static_mounted", False):
+        return
+
+    # 内嵌前端静态文件服务（PyInstaller 打包模式）
+    frontend_path = _get_frontend_dist_path()
+    if frontend_path:
+        # 挂载静态资源目录（JS/CSS/图片等）
+        app.mount("/assets", StaticFiles(directory=str(frontend_path / "assets")), name="static_assets")
+
+        # Vue Router history mode fallback：非 API 路由返回 index.html
+        @app.get("/{path:path}")
+        async def serve_frontend(path: str):
+            """前端路由 fallback"""
+            if path == "api" or path.startswith("api/"):
+                raise HTTPException(status_code=404, detail="API route not found")
+
+            file_path = frontend_path / path
+            if file_path.exists() and file_path.is_file():
+                return FileResponse(str(file_path))
+            return FileResponse(str(frontend_path / "index.html"))
+
+    app.state.frontend_static_mounted = True
+
+
+def configure_routes_and_static(app: FastAPI) -> None:
+    """按 API 路由优先、SPA fallback 最后的顺序完成路由挂载。"""
+    api_module = sys.modules.get("app.api.api")
+    if api_module is not None and not hasattr(api_module, "api_router"):
+        return
+
+    if not getattr(app.state, "api_routers_initialized", False):
+        init_routers(app)
+        app.state.api_routers_initialized = True
+
+    _mount_frontend_static(app)
+
+
+def create_app(configure_routes: bool = True) -> FastAPI:
     """
     创建并配置 FastAPI 应用实例。
     """
@@ -52,23 +94,13 @@ def create_app() -> FastAPI:
 
     register_exception_handlers(_app)
 
-    # 内嵌前端静态文件服务（PyInstaller 打包模式）
-    frontend_path = _get_frontend_dist_path()
-    if frontend_path:
-        # 挂载静态资源目录（JS/CSS/图片等）
-        _app.mount("/assets", StaticFiles(directory=str(frontend_path / "assets")), name="static_assets")
-
-        # Vue Router history mode fallback：非 API 路由返回 index.html
-        @_app.get("/{path:path}")
-        async def serve_frontend(path: str):
-            """前端路由 fallback"""
-            file_path = frontend_path / path
-            if file_path.exists() and file_path.is_file():
-                return FileResponse(str(file_path))
-            return FileResponse(str(frontend_path / "index.html"))
+    if configure_routes:
+        configure_routes_and_static(_app)
 
     return _app
 
 
-# 创建 FastAPI 应用实例
-app = create_app()
+# 创建 FastAPI 应用实例。
+# 先暴露全局 app，再注册 API，可兼容既有端点中 `from app.factory import app` 的导入方式。
+app = create_app(configure_routes=False)
+configure_routes_and_static(app)

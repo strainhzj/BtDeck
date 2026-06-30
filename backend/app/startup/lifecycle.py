@@ -4,7 +4,6 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from app.startup.routers_initializer import init_routers
 from app.core.config import settings
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
@@ -170,12 +169,11 @@ async def lifespan(app: FastAPI):
 
     启动顺序：
     1. 执行数据库迁移（确保schema最新）
-    2. 初始化路由
-    3. 数据库连接初始化
-    4. 更新定时任务状态
-    5. 启动定时任务调度器
-    6. FastAPI 服务启动（yield前完成）
-    7. 下载器数据加载（后台异步，不阻塞启动）
+    2. 数据库连接初始化
+    3. 更新定时任务状态
+    4. 启动定时任务调度器
+    5. FastAPI 服务启动（yield前完成）
+    6. 下载器数据加载（后台异步，不阻塞启动）
     """
     print("Starting up...")
     app.state.start_time = time.time()
@@ -229,16 +227,13 @@ async def lifespan(app: FastAPI):
 
         traceback.print_exc()
 
-    # 2. 初始化路由
-    init_routers(app)
-
-    # 3. 数据库连接初始化
+    # 2. 数据库连接初始化
     await init_database_connection()
 
-    # 4. 更新定时任务表数据：将dr=0的数据状态改为空闲
+    # 3. 更新定时任务表数据：将dr=0的数据状态改为空闲
     await update_cron_task_status()
 
-    # 5. 启动定时任务调度器
+    # 4. 启动定时任务调度器
     try:
         # ✅ 修复：在启动调度器前设置 app 实例
         cron_executor.set_app(app)
@@ -253,7 +248,7 @@ async def lifespan(app: FastAPI):
     # 5. 此时 FastAPI 服务已准备好启动
     print("=== FastAPI 服务准备就绪，即将启动 ===")
 
-    # 7. 在 yield 之前创建后台任务（不等待完成）
+    # 6. 在 yield 之前创建后台任务（不等待完成）
     # 这样 FastAPI 启动后，下载器在后台异步加载
     print("=== 创建后台下载器加载任务（将在 FastAPI 启动后执行）===")
 
