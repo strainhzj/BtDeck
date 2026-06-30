@@ -27,6 +27,22 @@ interface ActiveSpeed {
   progress: number
 }
 
+interface TemplateCondition {
+  field: string
+  operator: string
+  value: any
+  mode?: 'include' | 'exclude'
+  index?: number
+}
+
+interface TemplateConditionGroup {
+  id?: string
+  name?: string
+  logic?: string
+  betweenGroupLogic?: 'and' | 'or'
+  conditions: TemplateCondition[]
+}
+
 interface SelectionState {
   multipleSelection: any[]
   selectAll: boolean
@@ -211,7 +227,8 @@ export async function runBatchAction(
 export function getTorrentSpeed(
   torrent: any,
   type: 'download' | 'upload',
-  activeSpeedMap: Record<string, ActiveSpeed>
+  activeSpeedMap: Record<string, ActiveSpeed>,
+  snapshotReady = false
 ): number | null {
   if (!torrent || !torrent.hash) {
     return null
@@ -219,6 +236,9 @@ export function getTorrentSpeed(
   const active = activeSpeedMap[torrent.hash]
   if (active) {
     return type === 'download' ? active.downloadSpeed : active.uploadSpeed
+  }
+  if (snapshotReady) {
+    return 0
   }
   return type === 'download' ? (torrent.downloadSpeed ?? null) : (torrent.uploadSpeed ?? null)
 }
@@ -231,22 +251,44 @@ export function getTorrentSpeed(
  */
 export function sortByActive(
   list: any[],
-  activeSpeedMap: Record<string, ActiveSpeed>
+  activeSpeedMap: Record<string, ActiveSpeed>,
+  snapshotReady = false
 ): any[] {
   if (!list || list.length === 0) return []
   return [...list]
     .filter(item => item && item.hash)
     .sort((a, b) => {
-      const aSpeed = getTorrentSpeed(a, 'download', activeSpeedMap) ||
-                     getTorrentSpeed(a, 'upload', activeSpeedMap) || 0
-      const bSpeed = getTorrentSpeed(b, 'download', activeSpeedMap) ||
-                     getTorrentSpeed(b, 'upload', activeSpeedMap) || 0
+      const aSpeed = getTorrentSpeed(a, 'download', activeSpeedMap, snapshotReady) ||
+                     getTorrentSpeed(a, 'upload', activeSpeedMap, snapshotReady) || 0
+      const bSpeed = getTorrentSpeed(b, 'download', activeSpeedMap, snapshotReady) ||
+                     getTorrentSpeed(b, 'upload', activeSpeedMap, snapshotReady) || 0
       const aActive = aSpeed > 0 ? 1 : 0
       const bActive = bSpeed > 0 ? 1 : 0
       if (aActive !== bActive) return bActive - aActive
       if (aActive === 1) return bSpeed - aSpeed
       return 0
     })
+}
+
+/**
+ * 根据实时速度快照派生当前可见列表。
+ * snapshotReady=false 时不启用“只看活动”过滤，避免首轮/失败快照把列表清空。
+ */
+export function deriveVisibleTorrentList(
+  sourceList: any[],
+  activeSpeedMap: Record<string, ActiveSpeed>,
+  snapshotReady: boolean,
+  showActiveOnly: boolean
+): any[] {
+  const sorted = sortByActive(sourceList, activeSpeedMap, snapshotReady)
+  if (!showActiveOnly || !snapshotReady) {
+    return sorted
+  }
+  return sorted.filter(item => {
+    const downloadSpeed = getTorrentSpeed(item, 'download', activeSpeedMap, true) || 0
+    const uploadSpeed = getTorrentSpeed(item, 'upload', activeSpeedMap, true) || 0
+    return downloadSpeed > 0 || uploadSpeed > 0
+  })
 }
 
 /**
@@ -325,6 +367,126 @@ export interface AdvancedSearchRequestResult {
   request: any | null
   /** 解析失败原因（调用方据此 $message.error）；成功时为 null */
   error: string | null
+}
+
+const ADVANCED_OPERATOR_MAPPING: Record<string, string> = {
+  contains: 'contains',
+  not_contains: 'not_contains',
+  equals: 'eq',
+  not_equals: 'ne',
+  starts_with: 'starts_with',
+  ends_with: 'ends_with',
+  regex: 'regex',
+  greater_than: 'gt',
+  less_than: 'lt',
+  greater_equal: 'gte',
+  less_equal: 'lte',
+  between: 'between',
+  last_days: 'last_days',
+  date_range: 'date_range',
+  in: 'in',
+  not_in: 'not_in',
+  contains_any: 'contains_any',
+  contains_all: 'contains_all',
+  not_contains_any: 'not_contains_any',
+  not_contains_all: 'not_contains_all'
+}
+
+const ADVANCED_FIELD_TYPES: Record<string, 'text' | 'number' | 'date' | 'select' | 'multiSelect' | 'boolean'> = {
+  name: 'text',
+  save_path: 'text',
+  content_path: 'text',
+  hash: 'text',
+  size: 'number',
+  progress: 'number',
+  download_speed: 'number',
+  upload_speed: 'number',
+  ratio: 'number',
+  ratio_limit: 'number',
+  status: 'select',
+  downloader_id: 'select',
+  category: 'select',
+  tags: 'multiSelect',
+  tracker_url: 'text',
+  tracker_msg: 'text',
+  added_date: 'date',
+  completed_date: 'date',
+  super_seeding: 'boolean'
+}
+
+function convertAdvancedOperatorForBackend(operator: string): string {
+  return ADVANCED_OPERATOR_MAPPING[operator] || operator
+}
+
+function formatAdvancedParamValue(condition: TemplateCondition): any {
+  if (condition.field === 'size' && condition.operator === 'between') {
+    const value = condition.value
+    if (value && typeof value === 'object' && value.min !== undefined && value.max !== undefined) {
+      return {
+        min: value.min !== null ? `${value.min} ${value.minUnit || 'GB'}` : null,
+        max: value.max !== null ? `${value.max} ${value.maxUnit || 'GB'}` : null
+      }
+    }
+    return condition.value
+  }
+
+  if (condition.field === 'size' && condition.operator !== 'between') {
+    const value = condition.value
+    if (value && typeof value === 'object' && value.value !== undefined) {
+      return value.value !== null ? `${value.value} ${value.unit || 'GB'}` : null
+    }
+    return condition.value
+  }
+
+  switch (ADVANCED_FIELD_TYPES[condition.field]) {
+    case 'date':
+      if (condition.value && typeof condition.value === 'object') {
+        return JSON.stringify(condition.value)
+      }
+      return condition.value
+    case 'number':
+      return Number(condition.value)
+    case 'multiSelect':
+      return Array.isArray(condition.value) ? condition.value.join(',') : condition.value
+    case 'boolean':
+      return condition.value ? '1' : '0'
+    default:
+      return condition.value
+  }
+}
+
+function buildAdvancedSearchParamsFromTemplateGroups(groups: TemplateConditionGroup[]): any {
+  const groupsData = groups.map((group, groupIndex) => {
+    const conditions = (group.conditions || [])
+      .filter(condition => condition.field && condition.operator && condition.value !== null)
+      .map((condition, conditionIndex) => ({
+        field: condition.field,
+        operator: convertAdvancedOperatorForBackend(condition.operator),
+        value: formatAdvancedParamValue(condition),
+        mode: condition.mode,
+        index: condition.index ?? conditionIndex
+      }))
+
+    return {
+      id: group.id,
+      name: group.name || `条件组 ${groupIndex + 1}`,
+      logic: group.logic || 'and',
+      conditions,
+      conditions_count: conditions.length
+    }
+  }).filter(group => group.conditions_count > 0)
+
+  const betweenGroupLogics = []
+  for (let i = 0; i < groups.length - 1; i++) {
+    betweenGroupLogics.push(groups[i].betweenGroupLogic || 'and')
+  }
+
+  return {
+    complex_search: true,
+    groups_count: groups.length,
+    groups: JSON.stringify(groupsData),
+    between_group_logics: JSON.stringify(betweenGroupLogics)
+  }
 }
 
 /**
@@ -408,12 +570,25 @@ export function buildAdvancedSearchRequest(
   return { request, error: null }
 }
 
+export function buildAdvancedSearchRequestFromTemplateGroups(
+  groups: TemplateConditionGroup[],
+  sortBy: string,
+  sortOrder: 'asc' | 'desc' = 'desc',
+  limit = 20
+): AdvancedSearchRequestResult {
+  const searchParams = {
+    ...buildAdvancedSearchParamsFromTemplateGroups(groups),
+    sort_by: sortBy,
+    sort_order: sortOrder
+  }
+  return buildAdvancedSearchRequest(searchParams, sortBy, limit)
+}
+
 // ============ 4 等级删除（纯函数层，无副作用，可单测） ============
 // 防回归 P2-I：列表模式 4 等级删除 ~250 行含 API/轮询/loading/UI 提示耦合，
 // 此处把无副作用的「构造请求」与「解析结果」抽为纯函数。
 // API 调用 + $loading 遮罩 + 轮询（带 Vue 实例依赖）留在 mixin 入口层。
 
-/** 4 等级删除的等级名称映射 */
 export const DELETE_LEVEL_NAMES: Record<number, string> = {
   4: '标记为待删除',
   3: '移至回收站',

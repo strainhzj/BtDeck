@@ -11,12 +11,14 @@ import {
   deleteTorrentsBatch,
   runBatchAction,
   sortByActive,
+  deriveVisibleTorrentList,
   resetSelection,
   getTorrentSpeed,
   isTrackerAnnounceSuccess,
   getTrackerStatusClass,
   assertSameDownloader,
   buildAdvancedSearchRequest,
+  buildAdvancedSearchRequestFromTemplateGroups,
   buildDeleteLevelRequest,
   buildDeleteConfirmMessage,
   parseDeleteTaskResult,
@@ -228,6 +230,32 @@ describe('Bug#7 - sortByActive 排序行为契约', () => {
   })
 })
 
+describe('snapshot aware active sorting', () => {
+  it('snapshot ready miss does not fallback to stale static speed', () => {
+    const list = [
+      { hash: 'old-active', downloadSpeed: 999, uploadSpeed: 0 },
+      { hash: 'current-active', downloadSpeed: 0, uploadSpeed: 0 }
+    ]
+    const activeSpeedMap = {
+      'current-active': { downloadSpeed: 10, uploadSpeed: 0, progress: 20 }
+    }
+    const sorted = sortByActive(list, activeSpeedMap, true)
+    expect(sorted.map(t => t.hash)).toEqual(['current-active', 'old-active'])
+  })
+
+  it('previous active torrent does not stay pinned after dropping from next snapshot', () => {
+    const list = [
+      { hash: 'previous-active', downloadSpeed: 500, uploadSpeed: 0 },
+      { hash: 'next-active', downloadSpeed: 0, uploadSpeed: 0 }
+    ]
+    const nextSnapshotMap = {
+      'next-active': { downloadSpeed: 20, uploadSpeed: 0, progress: 30 }
+    }
+    const sorted = sortByActive(list, nextSnapshotMap, true)
+    expect(sorted.map(t => t.hash)).toEqual(['next-active', 'previous-active'])
+  })
+})
+
 describe('getTorrentSpeed', () => {
   it('优先返回轮询数据', () => {
     const torrent = { hash: 'h1', downloadSpeed: 0, uploadSpeed: 0 }
@@ -245,6 +273,50 @@ describe('getTorrentSpeed', () => {
   it('缺 hash 返回 null', () => {
     expect(getTorrentSpeed({ downloadSpeed: 5 }, 'download', {})).toBeNull()
     expect(getTorrentSpeed(null, 'download', {})).toBeNull()
+  })
+})
+
+describe('snapshot aware speed and visible list derivation', () => {
+  it('allows static fallback before snapshot ready and returns 0 after ready miss', () => {
+    const torrent = { hash: 'h1', downloadSpeed: 20, uploadSpeed: 10 }
+    expect(getTorrentSpeed(torrent, 'download', {}, false)).toBe(20)
+    expect(getTorrentSpeed(torrent, 'upload', {}, false)).toBe(10)
+    expect(getTorrentSpeed(torrent, 'download', {}, true)).toBe(0)
+    expect(getTorrentSpeed(torrent, 'upload', {}, true)).toBe(0)
+  })
+
+  it('deriveVisibleTorrentList does not mutate source and returns a sorted copy', () => {
+    const source = [
+      { hash: 'a', downloadSpeed: 0, uploadSpeed: 0 },
+      { hash: 'b', downloadSpeed: 100, uploadSpeed: 0 }
+    ]
+    const original = [...source]
+    const visible = deriveVisibleTorrentList(source, {}, false, false)
+    expect(visible).not.toBe(source)
+    expect(visible.map(t => t.hash)).toEqual(['b', 'a'])
+    expect(source).toEqual(original)
+  })
+
+  it('showActiveOnly does not clear list while snapshot is not ready', () => {
+    const source = [
+      { hash: 'a', downloadSpeed: 0, uploadSpeed: 0 },
+      { hash: 'b', downloadSpeed: 100, uploadSpeed: 0 }
+    ]
+    const visible = deriveVisibleTorrentList(source, {}, false, true)
+    expect(visible.map(t => t.hash)).toEqual(['b', 'a'])
+  })
+
+  it('showActiveOnly keeps only speed greater than 0 after snapshot ready', () => {
+    const source = [
+      { hash: 'old-active', downloadSpeed: 999, uploadSpeed: 0 },
+      { hash: 'active', downloadSpeed: 0, uploadSpeed: 0 },
+      { hash: 'inactive', downloadSpeed: 0, uploadSpeed: 0 }
+    ]
+    const activeSpeedMap = {
+      active: { downloadSpeed: 0, uploadSpeed: 5, progress: 40 }
+    }
+    const visible = deriveVisibleTorrentList(source, activeSpeedMap, true, true)
+    expect(visible.map(t => t.hash)).toEqual(['active'])
   })
 })
 
@@ -433,6 +505,81 @@ describe('P1-F - buildAdvancedSearchRequest', () => {
     const { request, error } = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
     expect(request).toBeNull()
     expect(error).toBe('搜索条件格式错误')
+  })
+})
+
+describe('buildAdvancedSearchRequestFromTemplateGroups', () => {
+  it('converts template groups with AdvancedSearchBuilder operator and value semantics', () => {
+    const groups = [
+      {
+        logic: 'and',
+        betweenGroupLogic: 'or' as const,
+        conditions: [
+          { field: 'name', operator: 'equals', value: 'ubuntu', mode: 'include' as const },
+          { field: 'size', operator: 'greater_than', value: { value: 1.5, unit: 'GB' }, mode: 'include' as const },
+          { field: 'tags', operator: 'contains_any', value: ['linux', 'iso'], mode: 'exclude' as const },
+          { field: 'super_seeding', operator: 'equals', value: true, mode: 'include' as const }
+        ]
+      },
+      {
+        logic: 'or',
+        conditions: [
+          {
+            field: 'added_date',
+            operator: 'date_range',
+            value: { start: '2026-01-01', end: '2026-01-31' },
+            mode: 'include' as const
+          }
+        ]
+      }
+    ]
+
+    const { request, error } = buildAdvancedSearchRequestFromTemplateGroups(groups, 'size', 'asc', 30)
+
+    expect(error).toBeNull()
+    expect(request.sort_by).toBe('size')
+    expect(request.sort_order).toBe('asc')
+    expect(request.limit).toBe(30)
+    expect(request.condition_groups).toHaveLength(2)
+    expect(request.between_group_logics).toEqual(['OR'])
+    expect(request.condition_groups[0].logic).toBe('AND')
+    expect(request.condition_groups[0].conditions).toEqual([
+      { field: 'name', operator: 'eq', value: 'ubuntu' },
+      { field: 'size', operator: 'gt', value: '1.5 GB' },
+      { field: 'tags', operator: 'contains_any', value: 'linux,iso' },
+      { field: 'super_seeding', operator: 'eq', value: '1' }
+    ])
+    expect(request.condition_groups[1].conditions[0]).toEqual({
+      field: 'added_date',
+      operator: 'date_range',
+      value: JSON.stringify({ start: '2026-01-01', end: '2026-01-31' })
+    })
+  })
+
+  it('does not pass raw builder condition_groups directly to backend', () => {
+    const groups = [
+      {
+        logic: 'and',
+        conditions: [
+          {
+            field: 'size',
+            operator: 'between',
+            value: { min: 1, max: 2, minUnit: 'GB', maxUnit: 'TB' },
+            mode: 'include' as const
+          }
+        ]
+      }
+    ]
+
+    const { request } = buildAdvancedSearchRequestFromTemplateGroups(groups, 'added_date', 'desc', 20)
+
+    expect(request.condition_groups[0].conditions[0]).toEqual({
+      field: 'size',
+      operator: 'between',
+      value: { min: '1 GB', max: '2 TB' }
+    })
+    expect(request.condition_groups[0].conditions[0]).not.toHaveProperty('mode')
+    expect(request.condition_groups[0].conditions[0]).not.toHaveProperty('index')
   })
 })
 

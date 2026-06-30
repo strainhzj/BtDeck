@@ -745,6 +745,8 @@ export interface QueryTemplateConditions {
   version: number
   listQuery?: {
     name_like?: string
+    category_like?: string
+    tags_like?: string
     downloader_id?: string[]
     status?: string[]
     showActiveOnly?: boolean
@@ -775,6 +777,8 @@ export function saveSimpleQueryAsTemplate(
     version: 1,
     listQuery: {
       name_like: listQuery?.name_like ?? '',
+      category_like: listQuery?.category_like ?? '',
+      tags_like: listQuery?.tags_like ?? '',
       downloader_id: listQuery?.downloader_id ? [...listQuery.downloader_id] : [],
       status: listQuery?.status ? [...listQuery.status] : [],
       showActiveOnly: listQuery?.showActiveOnly ?? false,

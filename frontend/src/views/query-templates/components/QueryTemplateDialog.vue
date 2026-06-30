@@ -40,6 +40,12 @@
         <el-form-item label="名称关键词">
           <el-input v-model="simpleForm.name_like" placeholder="种子名称模糊匹配（可选）" />
         </el-form-item>
+        <el-form-item label="分类关键词">
+          <el-input v-model="simpleForm.category_like" placeholder="分类模糊匹配（可选）" />
+        </el-form-item>
+        <el-form-item label="标签关键词">
+          <el-input v-model="simpleForm.tags_like" placeholder="标签模糊匹配（可选）" />
+        </el-form-item>
         <el-form-item label="排序字段">
           <el-select v-model="simpleForm.sort_by" style="width: 60%">
             <el-option label="添加时间" value="added_date" />
@@ -110,6 +116,8 @@ export default class QueryTemplateDialog extends Vue {
   private simpleForm = {
     status: [] as string[],
     name_like: '',
+    category_like: '',
+    tags_like: '',
     sort_by: 'added_date',
     sort_order: 'desc' as 'asc' | 'desc'
   }
@@ -151,6 +159,8 @@ export default class QueryTemplateDialog extends Vue {
       if (conditions?.source === 'simple' && conditions.listQuery) {
         this.simpleForm.status = conditions.listQuery.status ? [...conditions.listQuery.status] : []
         this.simpleForm.name_like = conditions.listQuery.name_like || ''
+        this.simpleForm.category_like = conditions.listQuery.category_like || ''
+        this.simpleForm.tags_like = conditions.listQuery.tags_like || ''
         this.simpleForm.sort_by = conditions.listQuery.sort_by || 'added_date'
         this.simpleForm.sort_order = conditions.listQuery.sort_order || 'desc'
       }
@@ -165,6 +175,8 @@ export default class QueryTemplateDialog extends Vue {
       this.simpleForm = {
         status: [],
         name_like: '',
+        category_like: '',
+        tags_like: '',
         sort_by: 'added_date',
         sort_order: 'desc'
       }
@@ -178,6 +190,8 @@ export default class QueryTemplateDialog extends Vue {
         version: 1,
         listQuery: {
           name_like: this.simpleForm.name_like,
+          category_like: this.simpleForm.category_like,
+          tags_like: this.simpleForm.tags_like,
           downloader_id: [],
           status: [...this.simpleForm.status],
           showActiveOnly: false,

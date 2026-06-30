@@ -790,7 +790,10 @@ import {
   assertSameDownloader,
   isTrackerAnnounceSuccess,
   getTrackerStatusClass,
-  buildAdvancedSearchRequest
+  buildAdvancedSearchRequest,
+  getTorrentSpeed as getTorrentSpeedFromSnapshot,
+  deriveVisibleTorrentList,
+  buildAdvancedSearchRequestFromTemplateGroups
 } from './utils/torrentBatch'
 
 interface FilterItem {
@@ -824,6 +827,8 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 实时速度轮询
   private speedTimer: number | null = null
+  private speedPollingActive = false
+  private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
 
   // 分类和标签数据
@@ -926,7 +931,12 @@ export default class extends mixins(TorrentBatchMixin) {
   get sortedList() {
     // 委托给 mixin 的 sortedActiveList（逻辑单点维护，防回归 Bug#7）
     // 模板通过 sortedList 引用，这里做透传
-    return this.sortedActiveList
+    return deriveVisibleTorrentList(
+      this.list,
+      this.activeSpeedMap,
+      this.speedSnapshotReady,
+      this.listQuery.showActiveOnly === true
+    )
   }
 
   get globalDownloadSpeed() {
@@ -1017,7 +1027,6 @@ export default class extends mixins(TorrentBatchMixin) {
       params.limit = this.pageSize
 
       // P0#1：showActiveOnly 仅前端过滤，不发给后端
-      const showActiveOnly = params.showActiveOnly === true
       delete params.showActiveOnly
 
       // 处理数组参数
@@ -1044,7 +1053,7 @@ export default class extends mixins(TorrentBatchMixin) {
       const { list, total } = normalizePaginatedResponse<any>(response)
 
       // 规范化并提供默认 checked
-      let normalizedList = list.map(normalizeTorrent).map(item => ({
+      const normalizedList = list.map(normalizeTorrent).map(item => ({
         ...item,
         checked: false
       }))
@@ -1052,15 +1061,8 @@ export default class extends mixins(TorrentBatchMixin) {
       // P0#1 前端过滤"仅显示活动种子"：筛选有速度的种子
       // known-issue（对齐列表模式 index.vue 既有缺陷）：开启后分页 total 变为当前页过滤后的条数，
       // 翻页时每页独立过滤、页码总数失真。后续可改用 getActiveTorrents 全量拉取彻底解决。
-      if (showActiveOnly) {
-        normalizedList = normalizedList.filter(item => {
-          const speed = this.activeSpeedMap[item.hash]
-          return speed && (speed.downloadSpeed > 0 || speed.uploadSpeed > 0)
-        })
-      }
-
       this.list = normalizedList
-      this.total = showActiveOnly ? normalizedList.length : total
+      this.total = total
 
       // 修复 Bug#8：新数据全部 checked:false，必须同步重置批量选中状态，
       // 否则分页/筛选切换后 multipleSelection 仍持有已不在当前视图的旧种子，
@@ -1106,14 +1108,19 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // ====== 实时速度轮询 ======
   private startSpeedPolling() {
+    if (this.speedPollingActive) return
+    this.speedPollingActive = true
     const poll = async() => {
+      if (!this.speedPollingActive) return
       await this.loadActiveSpeed()
+      if (!this.speedPollingActive) return
       this.speedTimer = window.setTimeout(poll, 1000)
     }
     poll()
   }
 
   private stopSpeedPolling() {
+    this.speedPollingActive = false
     if (this.speedTimer) {
       window.clearTimeout(this.speedTimer)
       this.speedTimer = null
@@ -1154,6 +1161,7 @@ export default class extends mixins(TorrentBatchMixin) {
           }
         })
         this.activeSpeedMap = map
+        this.speedSnapshotReady = true
         console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${Object.keys(map).length} 个活跃种子`)
       }
     } catch (e) {
@@ -1166,11 +1174,7 @@ export default class extends mixins(TorrentBatchMixin) {
     if (!torrent || !torrent.hash) {
       return null
     }
-    const active = this.activeSpeedMap[torrent.hash]
-    if (active) {
-      return type === 'download' ? active.downloadSpeed : active.uploadSpeed
-    }
-    return type === 'download' ? torrent.downloadSpeed : torrent.uploadSpeed
+    return getTorrentSpeedFromSnapshot(torrent, type, this.activeSpeedMap, this.speedSnapshotReady)
   }
 
   // ====== 工具方法 ======
@@ -1679,10 +1683,10 @@ export default class extends mixins(TorrentBatchMixin) {
    * - source=simple：回填 listQuery 并 getList()
    * - source=advanced：回填 AdvancedSearchBuilder 的 conditionGroups 并执行（依赖#8）
    */
-  private async applyQueryTemplate(conditions: QueryTemplateConditions) {
+  private async applyQueryTemplate(conditions: QueryTemplateConditions): Promise<boolean> {
     if (!conditions || !conditions.source) {
       this.$message.error('模板条件格式无效')
-      return
+      return false
     }
     try {
       if (conditions.source === 'simple' && conditions.listQuery) {
@@ -1702,39 +1706,61 @@ export default class extends mixins(TorrentBatchMixin) {
         this.currentPage = 1
         await this.getList()
         this.$message.success('已应用查询模板')
+        return true
       } else if (conditions.source === 'advanced' && conditions.condition_groups) {
+        const sortBy = conditions.sort_by || this.listQuery.sort_by || 'added_date'
+        const sortOrder = conditions.sort_order || this.listQuery.sort_order || 'desc'
+        this.listQuery.sort_by = sortBy
+        this.listQuery.sort_order = sortOrder
         const builderRef = this.$refs.advancedSearchBuilder as any
         if (builderRef && typeof builderRef.applyTemplateGroups === 'function') {
           builderRef.applyTemplateGroups(conditions.condition_groups, {
-            sort_by: conditions.sort_by,
-            sort_order: conditions.sort_order
+            sort_by: sortBy,
+            sort_order: sortOrder
           })
-          const searchParams = builderRef.buildSearchParams ? builderRef.buildSearchParams() : null
-          if (searchParams) {
-            await this.performAdvancedSearch(searchParams)
-            this.$message.success('已应用高级搜索模板')
-          }
-        } else {
-          this.$message.warning('高级搜索组件未就绪')
         }
+        const { request, error } = buildAdvancedSearchRequestFromTemplateGroups(
+          conditions.condition_groups,
+          sortBy,
+          sortOrder,
+          this.listQuery.limit || this.pageSize
+        )
+        if (error || !request) {
+          this.$message.error(error || '搜索条件格式错误')
+          return false
+        }
+        const response = await advancedSearch(request)
+        if (response.code === '200' && response.data) {
+          this.list = (response.data.list || []).map(normalizeTorrent).map(item => ({ ...item, checked: false }))
+          this.total = response.data.total || 0
+          this.listQuery.skip = 0
+          this.currentPage = 1
+          this.resetBatchSelection()
+          this.$message.success('已应用高级搜索模板')
+          return true
+        }
+        this.$message.error(response.msg || '搜索失败')
+        return false
       } else {
         this.$message.warning('不支持的模板类型')
       }
     } catch (error) {
       this.$message.error('应用模板失败：' + (error as Error).message)
     }
+    return false
   }
 
   /** P1#9 处理路由 query 中的 apply_template_id（从查询模板管理页跳转来） */
   private async handleApplyTemplateFromRoute() {
     const templateId = this.$route.query.apply_template_id as string | undefined
     if (!templateId) return
+    let applied = false
     try {
       const response = await applySearchTemplate(templateId)
       if (response.code === '200' && response.data) {
         const conditions = (response.data as any).conditions as QueryTemplateConditions
         if (conditions) {
-          await this.applyQueryTemplate(conditions)
+          applied = await this.applyQueryTemplate(conditions)
         }
       } else {
         this.$message.error(response.msg || '应用模板失败')
@@ -1742,8 +1768,10 @@ export default class extends mixins(TorrentBatchMixin) {
     } catch (error) {
       this.$message.error('应用模板失败：' + (error as Error).message)
     }
-    // 清除 query 参数，避免刷新重复应用
-    this.$router.replace({ query: {} })
+    if (applied) {
+      // 清除 query 参数，避免刷新重复应用
+      this.$router.replace({ query: {} })
+    }
   }
 
   // ====== P1#10 查找重复任务 ======
