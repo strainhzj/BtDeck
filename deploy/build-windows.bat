@@ -14,7 +14,12 @@ set "BACKEND_DIR=%PROJECT_DIR%\backend"
 set "DEPLOY_DIR=%PROJECT_DIR%\deploy"
 set "DIST_DIR=%PROJECT_DIR%\dist"
 set "NSSM_PATH=%DEPLOY_DIR%\nssm.exe"
+set "PACKAGE_REQUIREMENTS=%DEPLOY_DIR%\requirements-windows-package.txt"
+set "PACKAGE_VENV=%PROJECT_DIR%\.venv-packaging"
+set "PACKAGE_PYTHON=%PACKAGE_VENV%\Scripts\python.exe"
+set "PACKAGE_PYINSTALLER=%PACKAGE_VENV%\Scripts\pyinstaller.exe"
 set "NPM_CMD="
+set "PYTHON_CMD="
 
 echo ============================================
 echo   BtDeck Windows Build
@@ -45,11 +50,51 @@ if not defined NPM_CMD (
 )
 echo [OK] npm found: "%NPM_CMD%"
 
-where pyinstaller >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] PyInstaller not found. Install: pip install pyinstaller
+where python >nul 2>&1
+if not errorlevel 1 for /f "delims=" %%I in ('where python') do if not defined PYTHON_CMD set "PYTHON_CMD=%%I"
+if not defined PYTHON_CMD (
+    echo [ERROR] python not found. Install Python or add python.exe to PATH.
     exit /b 1
 )
+echo [OK] python found: "%PYTHON_CMD%"
+
+if "%BTDECK_USE_SYSTEM_PYTHON%"=="1" (
+    where pyinstaller >nul 2>&1
+    if errorlevel 1 (
+        echo [ERROR] PyInstaller not found. Install: pip install pyinstaller
+        exit /b 1
+    )
+    set "PACKAGE_PYINSTALLER="
+    for /f "delims=" %%I in ('where pyinstaller') do if not defined PACKAGE_PYINSTALLER set "PACKAGE_PYINSTALLER=%%I"
+    set "PACKAGE_PYTHON=%PYTHON_CMD%"
+    echo [WARN] Using system Python for packaging because BTDECK_USE_SYSTEM_PYTHON=1
+) else (
+    if not exist "%PACKAGE_REQUIREMENTS%" (
+        echo [ERROR] Packaging requirements not found: "%PACKAGE_REQUIREMENTS%"
+        exit /b 1
+    )
+    if not exist "%PACKAGE_PYTHON%" (
+        echo [SETUP] Creating packaging venv: "%PACKAGE_VENV%"
+        "%PYTHON_CMD%" -m venv "%PACKAGE_VENV%"
+        if errorlevel 1 (
+            echo [ERROR] Failed to create packaging venv
+            exit /b 1
+        )
+    )
+    echo [SETUP] Installing packaging dependencies...
+    "%PACKAGE_PYTHON%" -m pip install --upgrade pip setuptools wheel
+    if errorlevel 1 (
+        echo [ERROR] Failed to upgrade pip tooling
+        exit /b 1
+    )
+    "%PACKAGE_PYTHON%" -m pip install --prefer-binary -r "%PACKAGE_REQUIREMENTS%"
+    if errorlevel 1 (
+        echo [ERROR] Failed to install packaging dependencies
+        exit /b 1
+    )
+)
+echo [OK] packaging python: "%PACKAGE_PYTHON%"
+echo [OK] packaging pyinstaller: "%PACKAGE_PYINSTALLER%"
 
 where ISCC >nul 2>&1
 if errorlevel 1 (
@@ -79,7 +124,7 @@ echo [OK] Frontend built
 REM Step 2: Package backend with PyInstaller
 echo [2/3] Building backend with PyInstaller...
 cd /d "%PROJECT_DIR%"
-pyinstaller --clean --noconfirm "%DEPLOY_DIR%\btdeck.spec"
+"%PACKAGE_PYINSTALLER%" --clean --noconfirm "%DEPLOY_DIR%\btdeck.spec"
 if errorlevel 1 (
     echo [ERROR] PyInstaller build failed
     exit /b 1
@@ -88,12 +133,18 @@ echo [OK] Backend packaged
 
 REM Verify package contents before installer build
 echo [VERIFY] Checking package contents...
-python "%DEPLOY_DIR%\verify-package.py" --project-root "%PROJECT_DIR%"
+"%PACKAGE_PYTHON%" "%DEPLOY_DIR%\verify-package.py" --project-root "%PROJECT_DIR%"
 if errorlevel 1 (
     echo [ERROR] Package verification failed
     exit /b 1
 )
 echo [OK] Package verification passed
+
+echo [ANALYZE] Package size summary...
+"%PACKAGE_PYTHON%" "%DEPLOY_DIR%\analyze-package-size.py" --exe "%DIST_DIR%\btdeck.exe" --top 15
+if errorlevel 1 (
+    echo [WARN] Package size analysis failed
+)
 
 REM Step 3: Build installer with Inno Setup
 if "%BUILD_INSTALLER%"=="1" (
