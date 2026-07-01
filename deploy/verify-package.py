@@ -124,7 +124,8 @@ def main() -> int:
         if args.frontend_dist
         else project_root / "frontend" / "dist"
     )
-    exe_path = args.artifact.resolve() if args.artifact else project_root / "dist" / "btdeck.exe"
+    exe_name = "btdeck.exe" if sys.platform == "win32" else "btdeck"
+    exe_path = args.artifact.resolve() if args.artifact else project_root / "dist" / exe_name
 
     print("BtDeck package verification")
     print(f"Project root: {project_root}")

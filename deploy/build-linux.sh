@@ -19,6 +19,7 @@ PACKAGE_REQUIREMENTS="${DEPLOY_DIR}/requirements-linux-package.txt"
 PACKAGE_VENV="${PROJECT_DIR}/.venv-packaging-linux"
 PACKAGE_PYTHON="${PACKAGE_VENV}/bin/python"
 PACKAGE_PYINSTALLER="${PACKAGE_VENV}/bin/pyinstaller"
+PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.11}"
 
 VERSION="1.0.9"
 ARCH="amd64"
@@ -41,8 +42,8 @@ check_tool() {
     fi
 }
 
-check_tool python3 "https://www.python.org/"
 check_tool npm "https://nodejs.org/"
+check_tool node "https://nodejs.org/"
 
 if [ ! -f "$PACKAGE_REQUIREMENTS" ]; then
     echo -e "${RED}[ERROR] Packaging requirements not found: ${PACKAGE_REQUIREMENTS}${NC}"
@@ -51,7 +52,18 @@ fi
 
 if [ ! -x "$PACKAGE_PYTHON" ]; then
     echo "[SETUP] Creating packaging venv: ${PACKAGE_VENV}"
-    python3 -m venv "$PACKAGE_VENV"
+    if command -v uv &>/dev/null; then
+        UV_LINK_MODE="${UV_LINK_MODE:-copy}" uv venv --seed --python "$PACKAGE_PYTHON_VERSION" "$PACKAGE_VENV"
+    elif command -v python3 &>/dev/null; then
+        python3 -m venv "$PACKAGE_VENV" || {
+            echo -e "${RED}[ERROR] Failed to create venv with python3.${NC}"
+            echo "        Install python3-venv/python3-pip, or install uv and retry."
+            exit 1
+        }
+    else
+        echo -e "${RED}[ERROR] python3 not found. Install Python 3.11+ or uv.${NC}"
+        exit 1
+    fi
 fi
 
 echo "[SETUP] Installing packaging dependencies..."
@@ -59,6 +71,7 @@ echo "[SETUP] Installing packaging dependencies..."
 "$PACKAGE_PYTHON" -m pip install --prefer-binary -r "$PACKAGE_REQUIREMENTS"
 
 echo -e "${GREEN}[OK] packaging python: ${PACKAGE_PYTHON}${NC}"
+"$PACKAGE_PYTHON" --version
 echo -e "${GREEN}[OK] packaging pyinstaller: ${PACKAGE_PYINSTALLER}${NC}"
 
 # 检查 fpm（可选）

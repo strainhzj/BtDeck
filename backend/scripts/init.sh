@@ -33,17 +33,25 @@ echo ""
 # 1. 检查 Python 环境
 echo -e "${YELLOW}1. 检查 Python 环境...${NC}"
 if command -v python &> /dev/null; then
-    PYTHON_VERSION=$(python --version 2>&1 | awk '{print $2}')
+    PYTHON_BIN="python"
+elif command -v python3 &> /dev/null; then
+    PYTHON_BIN="python3"
+else
+    PYTHON_BIN=""
+fi
+
+if [ -n "$PYTHON_BIN" ]; then
+    PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1 | awk '{print $2}')
     PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
     PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
 
     if [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 11 ]; then
-        echo -e "${GREEN}✓ Python 版本: $PYTHON_VERSION (符合要求 >=3.11)${NC}"
+        echo -e "${GREEN}✓ Python 版本: $PYTHON_VERSION (符合要求 >=3.11, 命令: $PYTHON_BIN)${NC}"
     else
-        echo -e "${YELLOW}⚠ Python 版本: $PYTHON_VERSION (建议 >=3.11)${NC}"
+        echo -e "${YELLOW}⚠ Python 版本: $PYTHON_VERSION (建议 >=3.11, 命令: $PYTHON_BIN)${NC}"
     fi
 else
-    echo -e "${RED}✗ Python 未安装${NC}"
+    echo -e "${RED}✗ Python 未安装（未找到 python 或 python3）${NC}"
     exit 1
 fi
 
@@ -70,8 +78,8 @@ if [ "$MODE" = "ci" ]; then
     echo -e "${YELLOW}4. 跳过依赖安装（--ci 模式）...${NC}"
 else
     echo -e "${YELLOW}4. 安装 Python 依赖...${NC}"
-    echo "运行 pip install..."
-    pip install -q -r requirements.txt
+    echo "运行 $PYTHON_BIN -m pip install..."
+    "$PYTHON_BIN" -m pip install -q -r requirements.txt
     echo -e "${GREEN}✓ 依赖安装完成${NC}"
 fi
 
