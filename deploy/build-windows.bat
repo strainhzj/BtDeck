@@ -8,11 +8,12 @@ REM ============================================
 
 setlocal enabledelayedexpansion
 
-set PROJECT_DIR=%~dp0..
+for %%I in ("%~dp0..") do set "PROJECT_DIR=%%~fI"
 set FRONTEND_DIR=%PROJECT_DIR%\frontend
 set BACKEND_DIR=%PROJECT_DIR%\backend
 set DEPLOY_DIR=%PROJECT_DIR%\deploy
 set DIST_DIR=%PROJECT_DIR%\dist
+set NSSM_PATH=%DEPLOY_DIR%\nssm.exe
 
 echo ============================================
 echo   BtDeck Windows Build
@@ -20,13 +21,15 @@ echo ============================================
 echo.
 
 REM 检查 NSSM 服务管理器
-if not exist "%DEPLOY_DIR%\nssm.exe" (
-    echo [ERROR] NSSM not found at %DEPLOY_DIR%\nssm.exe
+if not exist "%NSSM_PATH%" (
+    echo [ERROR] NSSM not found
+    echo        Expected path: "%NSSM_PATH%"
+    echo        Current dir: "%CD%"
     echo        Download from: https://nssm.cc/download (win64 version)
     echo        Or visit: https://github.com/dkxCE/NSSM/releases
     exit /b 1
 )
-echo [OK] NSSM found
+echo [OK] NSSM found: "%NSSM_PATH%"
 
 REM 检查工具
 where pyinstaller >nul 2>&1
