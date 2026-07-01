@@ -70,6 +70,15 @@ if %ERRORLEVEL% neq 0 (
 )
 echo [OK] Backend packaged
 
+REM Verify package contents before installer build
+echo [VERIFY] Checking package contents...
+python "%DEPLOY_DIR%\verify-package.py" --project-root "%PROJECT_DIR%"
+if %ERRORLEVEL% neq 0 (
+    echo [ERROR] Package verification failed
+    exit /b 1
+)
+echo [OK] Package verification passed
+
 REM Step 3: Inno Setup 安装包
 if "%BUILD_INSTALLER%"=="1" (
     echo [3/3] Building Windows installer...
