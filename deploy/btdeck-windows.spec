@@ -142,7 +142,7 @@ hiddenimports = [
 ]
 
 a = Analysis(
-    [os.path.join(BACKEND_DIR, 'app', 'main.py')],
+    [os.path.join(BACKEND_DIR, 'app', 'desktop_main.py')],
     pathex=[BACKEND_DIR],
     binaries=[],
     datas=datas,
@@ -200,7 +200,7 @@ exe = EXE(
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

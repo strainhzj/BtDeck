@@ -124,7 +124,7 @@ echo [OK] Frontend built
 REM Step 2: Package backend with PyInstaller
 echo [2/3] Building backend with PyInstaller...
 cd /d "%PROJECT_DIR%"
-"%PACKAGE_PYINSTALLER%" --clean --noconfirm "%DEPLOY_DIR%\btdeck.spec"
+"%PACKAGE_PYINSTALLER%" --clean --noconfirm "%DEPLOY_DIR%\btdeck-windows.spec"
 if errorlevel 1 (
     echo [ERROR] PyInstaller build failed
     exit /b 1

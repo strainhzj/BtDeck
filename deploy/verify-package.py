@@ -107,10 +107,11 @@ def parse_args() -> argparse.Namespace:
         help="Frontend dist directory. Defaults to <project-root>/frontend/dist",
     )
     parser.add_argument(
+        "--artifact",
         "--exe",
         type=Path,
         default=None,
-        help="PyInstaller exe artifact. Defaults to <project-root>/dist/btdeck.exe",
+        help="PyInstaller packaged artifact. Defaults to <project-root>/dist/btdeck.exe",
     )
     return parser.parse_args()
 
@@ -123,7 +124,7 @@ def main() -> int:
         if args.frontend_dist
         else project_root / "frontend" / "dist"
     )
-    exe_path = args.exe.resolve() if args.exe else project_root / "dist" / "btdeck.exe"
+    exe_path = args.artifact.resolve() if args.artifact else project_root / "dist" / "btdeck.exe"
 
     print("BtDeck package verification")
     print(f"Project root: {project_root}")
@@ -131,7 +132,7 @@ def main() -> int:
     checks = [
         check_path(frontend_dist / "index.html", "frontend/dist/index.html"),
         check_path(frontend_dist / "assets", "frontend/dist/assets", is_dir=True),
-        check_path(exe_path, "dist/btdeck.exe"),
+        check_path(exe_path, "PyInstaller artifact"),
     ]
 
     if checks[-1]:

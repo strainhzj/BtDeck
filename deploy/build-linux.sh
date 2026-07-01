@@ -15,6 +15,10 @@ FRONTEND_DIR="${PROJECT_DIR}/frontend"
 BACKEND_DIR="${PROJECT_DIR}/backend"
 DEPLOY_DIR="${PROJECT_DIR}/deploy"
 DIST_DIR="${PROJECT_DIR}/dist"
+PACKAGE_REQUIREMENTS="${DEPLOY_DIR}/requirements-linux-package.txt"
+PACKAGE_VENV="${PROJECT_DIR}/.venv-packaging-linux"
+PACKAGE_PYTHON="${PACKAGE_VENV}/bin/python"
+PACKAGE_PYINSTALLER="${PACKAGE_VENV}/bin/pyinstaller"
 
 VERSION="1.0.9"
 ARCH="amd64"
@@ -37,8 +41,25 @@ check_tool() {
     fi
 }
 
-check_tool pyinstaller "pip install pyinstaller"
+check_tool python3 "https://www.python.org/"
 check_tool npm "https://nodejs.org/"
+
+if [ ! -f "$PACKAGE_REQUIREMENTS" ]; then
+    echo -e "${RED}[ERROR] Packaging requirements not found: ${PACKAGE_REQUIREMENTS}${NC}"
+    exit 1
+fi
+
+if [ ! -x "$PACKAGE_PYTHON" ]; then
+    echo "[SETUP] Creating packaging venv: ${PACKAGE_VENV}"
+    python3 -m venv "$PACKAGE_VENV"
+fi
+
+echo "[SETUP] Installing packaging dependencies..."
+"$PACKAGE_PYTHON" -m pip install --upgrade pip setuptools wheel
+"$PACKAGE_PYTHON" -m pip install --prefer-binary -r "$PACKAGE_REQUIREMENTS"
+
+echo -e "${GREEN}[OK] packaging python: ${PACKAGE_PYTHON}${NC}"
+echo -e "${GREEN}[OK] packaging pyinstaller: ${PACKAGE_PYINSTALLER}${NC}"
 
 # 检查 fpm（可选）
 if command -v fpm &>/dev/null; then
@@ -59,8 +80,15 @@ echo -e "${GREEN}[OK] Frontend built${NC}"
 # Step 2: PyInstaller 打包
 echo "[2/3] Building backend with PyInstaller..."
 cd "$PROJECT_DIR"
-pyinstaller --clean --noconfirm "${DEPLOY_DIR}/btdeck.spec"
+"$PACKAGE_PYINSTALLER" --clean --noconfirm "${DEPLOY_DIR}/btdeck.spec"
 echo -e "${GREEN}[OK] Backend packaged${NC}"
+
+echo "[VERIFY] Checking package contents..."
+"$PACKAGE_PYTHON" "${DEPLOY_DIR}/verify-package.py" --project-root "$PROJECT_DIR" --exe "${DIST_DIR}/btdeck"
+echo -e "${GREEN}[OK] Package verification passed${NC}"
+
+echo "[ANALYZE] Package size summary..."
+"$PACKAGE_PYTHON" "${DEPLOY_DIR}/analyze-package-size.py" --exe "${DIST_DIR}/btdeck" --top 15 || true
 
 # Step 3: fpm 制作安装包
 if [ "$BUILD_PACKAGE" = "1" ]; then
@@ -91,13 +119,35 @@ if ! id -u btdeck &>/dev/null; then
 fi
 # 预创建 systemd ReadWritePaths 声明的目录
 # (ProtectSystem=strict 下应用需这些目录可写，否则首次启动写入失败)
-mkdir -p /opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup
+mkdir -p /opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup /opt/btdeck/torrents
+if [ ! -f /opt/btdeck/config/btdeck.env ]; then
+    if command -v openssl >/dev/null 2>&1; then
+        SECRET_KEY="$(openssl rand -hex 32)"
+    else
+        SECRET_KEY="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+)"
+    fi
+cat > /opt/btdeck/config/btdeck.env <<EOF
+SECRET_KEY=${SECRET_KEY}
+ALLOWED_HOSTS=http://127.0.0.1:5001,http://localhost:5001
+EOF
+    chmod 600 /opt/btdeck/config/btdeck.env
+fi
 # 设置权限
 chown -R btdeck:btdeck /opt/btdeck
 # 启用并启动服务
-systemctl daemon-reload
-systemctl enable btdeck
-systemctl start btdeck
+if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+    systemctl daemon-reload
+    systemctl enable btdeck
+    systemctl start btdeck
+    echo "BtDeck service started. Visit: http://localhost:5001"
+else
+    echo "BtDeck installed, but systemd is not active. Start manually with: systemctl start btdeck"
+    echo "After start, visit: http://localhost:5001"
+fi
 POSTINSTALL
     chmod +x "${PKG_STAGING}/postinstall.sh"
 

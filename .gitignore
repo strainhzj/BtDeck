@@ -41,6 +41,7 @@ venv/
 .venv/
 .venv-win/
 .venv-packaging/
+.venv-packaging-linux/
 env/
 .pytest_cache/
 .coverage

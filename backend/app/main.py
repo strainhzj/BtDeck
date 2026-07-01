@@ -18,7 +18,7 @@ import logging
 import uvicorn as uvicorn
 from uvicorn import Config
 
-from app.core.config import settings
+from app.core.config import is_frozen, settings
 from app.core.migration import migrate_database
 from app.factory import app
 from app.database import init_config_file
@@ -41,7 +41,7 @@ except Exception as e:
 
 # uvicorn服务配置
 # 改进: 根据环境选择不同的配置,避免生产环境多进程导致的数据库迁移竞态问题
-if settings.DEV:
+if settings.DEV and not is_frozen():
     # 开发环境: 热重载模式,单进程
     Server = uvicorn.Server(
         Config(
