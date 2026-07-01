@@ -25,7 +25,7 @@ if not exist "%NSSM_PATH%" (
     echo [ERROR] NSSM not found
     echo        Expected path: "%NSSM_PATH%"
     echo        Current dir: "%CD%"
-    echo        Download from: https://nssm.cc/download (win64 version)
+    echo        Download from: https://nssm.cc/download - win64 version
     echo        Or visit: https://github.com/dkxCE/NSSM/releases
     exit /b 1
 )
