@@ -34,7 +34,8 @@ echo ""
 echo -e "${YELLOW}1. 检查 Node.js 环境...${NC}"
 if command -v node &> /dev/null; then
     NODE_VERSION=$(node --version)
-    NODE_MAJOR=$(echo $NODE_VERSION | cut -d. -f1 | sed 's/v//')
+    NODE_MAJOR=${NODE_VERSION#v}
+    NODE_MAJOR=${NODE_MAJOR%%.*}
 
     if [ "$NODE_MAJOR" -ge 18 ]; then
         echo -e "${GREEN}✓ Node.js 版本: $NODE_VERSION (符合要求 >=18)${NC}"
@@ -153,7 +154,12 @@ fi
 # 11. 显示当前前端任务
 echo -e "${YELLOW}11. 显示当前前端任务...${NC}"
 # 定位项目根目录的 feature_list.json（基于脚本自身位置，不依赖 cwd）
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_SOURCE=${BASH_SOURCE[0]:-$0}
+SCRIPT_SOURCE_DIR=${SCRIPT_SOURCE%/*}
+if [ "$SCRIPT_SOURCE_DIR" = "$SCRIPT_SOURCE" ]; then
+    SCRIPT_SOURCE_DIR="."
+fi
+SCRIPT_DIR="$(cd "$SCRIPT_SOURCE_DIR" && pwd)"
 ROOT_FEATURE_LIST="$SCRIPT_DIR/../../feature_list.json"
 if [ -f "$ROOT_FEATURE_LIST" ]; then
     if command -v jq &> /dev/null; then

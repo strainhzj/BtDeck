@@ -64,7 +64,8 @@ echo -e "${YELLOW}3. 检查 Git 状态...${NC}"
 if command -v git &> /dev/null; then
     BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
     echo -e "${GREEN}✓ 当前分支: $BRANCH${NC}"
-    DIRTY=$(git status --porcelain 2>/dev/null | wc -l)
+    mapfile -t STATUS_LINES < <(git status --porcelain 2>/dev/null)
+    DIRTY=${#STATUS_LINES[@]}
     if [ "$DIRTY" -gt 0 ]; then
         echo -e "${YELLOW}⚠ 有 $DIRTY 个未提交变更${NC}"
     else
@@ -88,9 +89,9 @@ echo ""
 echo -e "${YELLOW}5. 后端环境验证...${NC}"
 if [ -d "backend/scripts" ] && [ -f "backend/scripts/init.sh" ]; then
     if [ "$MODE" = "full" ]; then
-        ( cd backend && bash scripts/init.sh ) || echo -e "${YELLOW}⚠ 后端 init.sh 有警告${NC}"
+        ( cd backend && "${BASH:-bash}" scripts/init.sh ) || echo -e "${YELLOW}⚠ 后端 init.sh 有警告${NC}"
     else
-        ( cd backend && bash scripts/init.sh --ci ) || echo -e "${YELLOW}⚠ 后端 init.sh --ci 有警告${NC}"
+        ( cd backend && "${BASH:-bash}" scripts/init.sh --ci ) || echo -e "${YELLOW}⚠ 后端 init.sh --ci 有警告${NC}"
     fi
 else
     echo -e "${RED}✗ backend/scripts/init.sh 不存在${NC}"
@@ -101,9 +102,9 @@ echo ""
 echo -e "${YELLOW}6. 前端环境验证...${NC}"
 if [ -d "frontend/scripts" ] && [ -f "frontend/scripts/init.sh" ]; then
     if [ "$MODE" = "full" ]; then
-        ( cd frontend && bash scripts/init.sh ) || echo -e "${YELLOW}⚠ 前端 init.sh 有警告${NC}"
+        ( cd frontend && "${BASH:-bash}" scripts/init.sh ) || echo -e "${YELLOW}⚠ 前端 init.sh 有警告${NC}"
     else
-        ( cd frontend && bash scripts/init.sh --ci ) || echo -e "${YELLOW}⚠ 前端 init.sh --ci 有警告${NC}"
+        ( cd frontend && "${BASH:-bash}" scripts/init.sh --ci ) || echo -e "${YELLOW}⚠ 前端 init.sh --ci 有警告${NC}"
     fi
 else
     echo -e "${RED}✗ frontend/scripts/init.sh 不存在${NC}"

@@ -41,9 +41,10 @@ else
 fi
 
 if [ -n "$PYTHON_BIN" ]; then
-    PYTHON_VERSION=$("$PYTHON_BIN" --version 2>&1 | awk '{print $2}')
-    PYTHON_MAJOR=$(echo $PYTHON_VERSION | cut -d. -f1)
-    PYTHON_MINOR=$(echo $PYTHON_VERSION | cut -d. -f2)
+    PYTHON_VERSION=$("$PYTHON_BIN" -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')
+    PYTHON_MAJOR=${PYTHON_VERSION%%.*}
+    PYTHON_MINOR_PATCH=${PYTHON_VERSION#*.}
+    PYTHON_MINOR=${PYTHON_MINOR_PATCH%%.*}
 
     if [ "$PYTHON_MAJOR" -ge 3 ] && [ "$PYTHON_MINOR" -ge 11 ]; then
         echo -e "${GREEN}✓ Python 版本: $PYTHON_VERSION (符合要求 >=3.11, 命令: $PYTHON_BIN)${NC}"
@@ -193,7 +194,12 @@ fi
 # 11. 显示当前后端任务
 echo -e "${YELLOW}11. 显示当前后端任务...${NC}"
 # 定位项目根目录的 feature_list.json（基于脚本自身位置，不依赖 cwd）
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_SOURCE=${BASH_SOURCE[0]:-$0}
+SCRIPT_SOURCE_DIR=${SCRIPT_SOURCE%/*}
+if [ "$SCRIPT_SOURCE_DIR" = "$SCRIPT_SOURCE" ]; then
+    SCRIPT_SOURCE_DIR="."
+fi
+SCRIPT_DIR="$(cd "$SCRIPT_SOURCE_DIR" && pwd)"
 ROOT_FEATURE_LIST="$SCRIPT_DIR/../../feature_list.json"
 if [ -f "$ROOT_FEATURE_LIST" ]; then
     if command -v jq &> /dev/null; then
