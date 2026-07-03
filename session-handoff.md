@@ -1,5 +1,30 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-03 交接：同步任务资源治理与下载器 API 调度
+
+**当前任务**: `sync-resource-governance`  
+**状态**: planned，已完成 harness 立项与详细计划设计，尚未开始代码实现。  
+**计划文件**: `PLANS/sync-resource-governance.md`  
+**执行顺序**: 方案二（调度器/资源背压） -> 方案三（下载器 API 调用隔离与调度层）。
+
+**下一步入口**:
+1. 阅读 `PLANS/sync-resource-governance.md`。
+2. 进入实现前先请用户确认待决策项。
+3. 优先实现阶段 0 基线观测，然后实现阶段 1 `TaskAdmissionController` 与任务 profile。
+4. 阶段 1 验证稳定后，再推进阶段 2 `downloader_api_runtime` 与 qB tracker 并发治理。
+
+**已确认决策**:
+- 重型 cron 任务采用同类去重：按 `task_code` 检查运行中和排队中任务，已有同类任务则跳过本轮。
+- `downloader_io` 默认并发为 2。
+- qB tracker 明细查询默认并发为 3。
+- 允许新增配置项，包括并发、队列限制、下载器 API timeout、DB 批量提交和磁盘写入节流相关配置。
+- 必须纳入硬盘写入频率治理，避免逐条写库、逐条日志落盘、高频 commit/flush。
+- 暂不实现 `DBWriteQueue`；它只作为后续独立版本候选保留在 harness 中，当前任务不得把它作为完成前置条件。
+
+**关键分析提醒**:
+- 不要把 tracker 富集误归因到 `qb_add_torrents_info_only_async`；该路径当前不调用 `_enrich_qb_torrents_with_trackers`。
+- 重点关注不同重型后台任务之间的全局资源争用，以及 qB tracker-only/full-sync 路径中的批量下载器 API 调用。
+
 > 用途：会话交接模板，确保上下文不丢失。复制本模板，填写当前状态。
 
 ---

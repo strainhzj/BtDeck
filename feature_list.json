@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "current_dev_version": "v1.0.5-audit",
-  "last_updated": "2026-06-28",
+  "current_dev_version": "sync-resource-governance",
+  "last_updated": "2026-07-03",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -742,6 +742,72 @@
             "frontend/tests/unit/torrent-batch.spec.ts (累计81单测)"
           ],
           "evidence": "P0(c286b7e): 活动开关/刷新/改路径/转移/Tracker操作·汇报·全局替换/详情Tracker增强9项；P1(c82a321): 高级搜索/查询模板/查找重复+sort_by统一修复；P2(5df3ce8): 4等级删除(分层)+列设置(10列可隐藏)。eslint 0 error, jest 81passed。未做:index.vue 4等级迁移(单独立项)/文件Peers tab(需后端API)"
+        }
+      ]
+    },
+    {
+      "id": "sync-resource-governance",
+      "name": "同步任务资源治理与下载器 API 调度",
+      "description": "解决 tracker 与种子信息同步期间其它接口请求容易超时的问题。按方案二（调度器/资源背压）优先，方案三（下载器 API 调用隔离与调度层）后续推进。DBWriteQueue 暂不实现，仅作为后续独立版本候选。",
+      "status": "planned",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-resource-governance.md",
+      "tasks": [
+        {
+          "id": "sync-resource-governance.0",
+          "name": "基线观测与回归保护",
+          "description": "为重型同步任务、下载器 API lane、请求探针增加可比较的观测点，建立同步前后的响应基线。",
+          "status": "planned",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/",
+            "backend/app/services/",
+            "backend/tests/"
+          ],
+          "evidence": "待实施"
+        },
+        {
+          "id": "sync-resource-governance.1",
+          "name": "方案二：调度器与资源背压",
+          "description": "新增 TaskAdmissionController、任务资源 profile、heavy_sync/db_writer/downloader_io/per_downloader 等资源控制；按 task_code 维护运行/排队登记，同类重型 cron 已运行或排队则跳过本轮；接入关键重型同步任务。",
+          "status": "planned",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/resource_guard.py",
+            "backend/app/tasks/task_profiles.py",
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/tasks/scheduler/"
+          ],
+          "evidence": "待实施"
+        },
+        {
+          "id": "sync-resource-governance.2",
+          "name": "方案三：下载器 API 调用隔离与调度层",
+          "description": "新增 downloader_api_runtime，隔离 tracker/sync/interactive lane，控制 qB tracker 明细并发，优先复用 app.state.store 客户端。",
+          "status": "planned",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/downloader_api_runtime.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/tasks/scheduler/torrent_info_sync_task.py",
+            "backend/app/tasks/scheduler/tracker_sync_task.py"
+          ],
+          "evidence": "待实施"
+        },
+        {
+          "id": "sync-resource-governance.3",
+          "name": "验证与证据归档",
+          "description": "补充单元测试、集成验证与手动压测矩阵，把同步期间请求响应改善、DB commit/写入频率、磁盘写入节流证据写回 harness。",
+          "status": "planned",
+          "scope": "backend",
+          "files": [
+            "backend/tests/tasks/",
+            "backend/tests/services/",
+            "progress.md",
+            "feature_list.json",
+            "session-handoff.md"
+          ],
+          "evidence": "待实施"
         }
       ]
     }

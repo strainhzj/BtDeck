@@ -1,5 +1,30 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-03 - 下一任务：同步任务资源治理与下载器 API 调度
+
+**任务 ID**: `sync-resource-governance`  
+**计划文件**: `PLANS/sync-resource-governance.md`  
+**状态**: planned，尚未进入代码实现。  
+**用户决策**: 按“方案二 -> 方案三”的顺序修复，即先做调度器/资源背压，再做下载器 API 调用隔离与调度层。
+
+**问题背景**:
+- tracker 与种子信息同步期间，请求其它接口经常超时。
+- 初步判断瓶颈不是单一 API 慢，而是后台重型任务并发争抢 DB 写入、下载器 WebUI/API、默认线程池与调度资源。
+- 已修正一条分析误差：`qb_add_torrents_info_only_async` 当前不调用 `_enrich_qb_torrents_with_trackers`，后续不能把 tracker 富集误归因到 info-only 路径。
+
+**Harness 更新**:
+- 新增 `PLANS/sync-resource-governance.md`，作为下一项目任务的详细执行计划。
+- `feature_list.json` 的 `current_dev_version` 已更新为 `sync-resource-governance`。
+- 新任务拆分为基线观测、方案二资源背压、方案三下载器 API 调度、验证归档四个阶段。
+
+**已确认决策（2026-07-03 补充）**:
+- 重型 cron 任务需要引入“队列长度/排队登记”概念：按 `task_code` 判断是否已有同类重型任务运行中或排队中，若存在则跳过本轮。
+- `downloader_io` 默认并发使用 2。
+- qB tracker 明细并发默认使用 3。
+- 允许新增配置项：`SYNC_HEAVY_CONCURRENCY`、`SYNC_HEAVY_QUEUE_LIMIT`、`DOWNLOADER_IO_CONCURRENCY`、`QB_TRACKER_CONCURRENCY`、`DOWNLOADER_API_TIMEOUT_SECONDS`、`SYNC_DB_COMMIT_BATCH_SIZE`、`SYNC_DISK_FLUSH_INTERVAL_SECONDS`。
+- 必须关注硬盘写入频率，避免逐条写库、逐条日志落盘、高频 commit/flush 击垮硬盘或造成大规模寿命损耗。
+- 暂不实现 `DBWriteQueue`；它作为后续独立版本候选保留在 harness 中，当前任务只做 `db_writer` 短锁、批量提交、变更检测和写入节流。
+
 > **项目**: BtDeck 全栈（backend + frontend）
 > **当前分支**: dev
 > **当前开发版本**: v1.0.5（查询模板系统）
