@@ -1,5 +1,62 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-04 - sync-resource-governance 阶段 2.5 完成（DB 写入治理）
+
+**任务 ID**: `sync-resource-governance`
+**阶段**: 2.5（DB 写入治理）已完成。经 3 个并行子代理独立审查（技术正确性/范围回归/测试策略）+ 5 项关键发现实证核实后修订计划。
+**计划文件**: `PLANS/sync-resource-governance.md`
+**分支**: dev
+
+### 本轮交付
+
+**新增文件（3）**:
+- `backend/app/services/sync_db_write.py` — 变更检测纯函数（has_torrent_info_changes 动态字段对比、has_tracker_changes 6 字段+归一化）+ bulk_upsert_with_retry（db_write_scope+retry base_delay=1.0）
+- `backend/tests/services/test_sync_db_write.py`（21 测试）
+- `backend/tests/api/test_torrents_async_db_governance.py`（7 真实 SQLite 部分索引集成测试）
+
+**修改文件（4）**:
+- `backend/app/api/endpoints/torrents_async.py` — 新增 extract_tracker_rows_from_torrent（纯提取）+ sync_trackers_batch_async（批量 select+变更检测+严格四步顺序+元组语义 mark_removed）；qb/tr_add_torrents_info_only_async 修正 skip 语义 bug+整行变更检测+替换闭包为 bulk_upsert_with_retry；qb/tr_sync_trackers_only_async 主循环改造（累计 rows→batch_size 200→批量 upsert）
+- `backend/app/tasks/resource_guard.py` — db_write_scope 加 SYNC_DB_WRITE_SCOPE_ENABLED 开关
+- `backend/app/core/config.py` — 新增 SYNC_DB_WRITE_SCOPE_ENABLED=True
+
+### 关键设计决策（含审查调整）
+
+1. **范围补全**（审查2-A2）：qb+tr 两个 sync_trackers_only_async 都改（原计划只改 qb 是漏项）。
+2. **mark_removed 元组语义**（审查1-C6 必修2）：禁止扁平化 url 集合，用 `(info_id, url)` 元组 IN 取反，避免跨种子误删。集成测试用"同名 url 跨种子"场景验证。
+3. **变更检测字段**（审查2-D10）：has_torrent_info_changes 只对比实际写入 dict 的 key 集（动态适配），不硬编码 29 字段；has_tracker_changes 只对比 6 业务字段（status/msg/seeder 等是死字段）。
+4. **归一化契约**（审查3-A2）：None==""/strip 后比较，防远程返回微小差异导致每轮都写。
+5. **db_write_scope 开关**（审查2-C9）：SYNC_DB_WRITE_SCOPE_ENABLED=True，3 行代码快速回滚。
+6. **测试分层**（审查3-B4/D10）：纯函数 mock + 真实 SQLite 部分索引集成测试（覆盖 mock 测不到的 on_conflict_do_update(index_where dr=0) 语义）。
+7. **测试防假通过**（审查3-B6）：db_write_scope 测试用真实 admission_controller + spy _state.db_writer.acquire，mutation 删包裹后报红。
+
+### 验证
+
+- **新单测 28 个全 pass**：21 sync_db_write（纯函数+mock）+ 7 db_governance（真实 SQLite）
+- **mutation 反向验证 3 处**：
+  - 删 db_write_scope 包裹 → acquire_spy.assert_awaited 报红 ✓
+  - mark_removed 扁平化 url → "同名 url 跨种子"测试报红 ✓
+  - 变更检测相关 mutation 由 has_*_changes 纯函数测试覆盖 ✓
+- **零回归**：全量 16 failed, 1905 passed，**diff 基线为零**（16 个全是预先存在的 tag_aggregation 顺序依赖 bug，已固化基线）
+- **stats 守恒断言**：insert+update+skip == 总输入行数
+
+### 已知技术债（显式记录，留 P3）
+
+- `qb_add_torrents_async`/`tr_add_torrents_async` 全量同步仍调单种子版 sync_add_tracker_async，不经 db_write_scope。
+- `torrent_sync.py` API 手动触发路径不经 db_write_scope。
+- 这两个路径是写锁竞争的未保护源，本轮不根治（范围控制），留 P3 统一改造。
+
+### 不在本轮范围（明确排除）
+
+- 全量同步的 commit 改造（P3）。
+- DBWriteQueue（后续独立版本）。
+- 前端任何改动。
+
+### 下一步
+
+阶段 3（验证与证据归档）：补充集成验证 + 手动压测矩阵 + 把同步期间请求响应改善、DB commit/写入频率证据写回 harness。
+
+---
+
 ## 2026-07-04 - sync-resource-governance 阶段 2 完成（下载器 API 调用隔离）
 
 **任务 ID**: `sync-resource-governance`

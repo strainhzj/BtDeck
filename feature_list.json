@@ -799,6 +799,22 @@
           "evidence": "DownloaderApiRuntime 三 lane 独立 ThreadPoolExecutor（tracker=5/sync=4/interactive=6 线程，物理隔离互不挤占）+ per-downloader Semaphore（DOWNLOADER_IO_CONCURRENCY=2，限制同下载器跨 lane 总并发）+ call_downloader_api 统一封装（executor 选择+semaphore 限流+timeout+异常透传+lane 结构化日志）；torrents_async.py 16 处 asyncio.to_thread 全量迁移到 call_downloader_api（sync_lane/tracker_lane/interactive_lane 分类）；_enrich_qb_torrents_with_trackers 默认并发 10→3（取 settings.QB_TRACKER_CONCURRENCY）+ 加 downloader_id 参数 + 内部 to_thread 迁移到 tracker_lane；qb_add_torrents_info_only_async/tr_add_torrents_info_only_async 加可选 client 参数 + fallback（优先复用 store 缓存连接）；TorrentInfoSyncTask 调用点从 store 取 client 传入；14 个新单测 + mutation 反向验证（去掉 per-downloader semaphore → 并发超限测试报红）+ 全量 1877 passed 零回归（16 个预先存在的 tag_aggregation 顺序依赖 bug 与本次无关）。"
         },
         {
+          "id": "sync-resource-governance.2.5",
+          "name": "DB 写入治理（变更检测 + 批量 upsert + db_write_scope）",
+          "description": "按 sync-db-write-governance.md 指南改造同步函数 commit 点：变更检测（无变化不写）、批量 upsert（聚合多种子）、db_write_scope 串行化写者、修正 info_only 的 skip 语义 bug。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_db_write.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/tasks/resource_guard.py",
+            "backend/app/core/config.py",
+            "backend/tests/services/test_sync_db_write.py",
+            "backend/tests/api/test_torrents_async_db_governance.py"
+          ],
+          "evidence": "sync_db_write.py 公共工具（has_torrent_info_changes 动态字段对比+忽略 update_time/PK；has_tracker_changes 6 字段+None=='/strip 归一化；bulk_upsert_with_retry 内含 db_write_scope+retry base_delay=1.0）；qb/tr_add_torrents_info_only_async 修正 skip 语义 bug（progress 不变+整行无变化真正跳过写入）+ 替换 4 处重复闭包为 bulk_upsert_with_retry；qb/tr_sync_trackers_only_async 主循环改造（extract_tracker_rows_from_torrent 纯提取 + sync_trackers_batch_async 批量 select 旧值+变更检测+严格四步顺序软删恢复/物理删/upsert/mark_removed 元组语义）+ batch 从 1000 改用 settings.SYNC_DB_COMMIT_BATCH_SIZE=200；SYNC_DB_WRITE_SCOPE_ENABLED 开关支持快速回滚；28 个新单测（21 sync_db_write 纯函数+mock + 7 真实 SQLite 部分索引集成测试覆盖变更检测/软删不复活/mark_removed 元组语义/stats 守恒/db_write_scope 进入）+ 3 处 mutation 反向验证（db_write_scope 包裹/mark_removed 扁平化 url 误删/acquire spy）+ 全量 1905 passed diff 基线为零（16 个预先存在 tag_aggregation failure 不计）。已知技术债：qb/tr_add_torrents_async 全量同步 + torrent_sync.py API 触发路径不经 db_write_scope，留 P3。"
+        },
+        {
           "id": "sync-resource-governance.3",
           "name": "验证与证据归档",
           "description": "补充单元测试、集成验证与手动压测矩阵，把同步期间请求响应改善、DB commit/写入频率、磁盘写入节流证据写回 harness。",
