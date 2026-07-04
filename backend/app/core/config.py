@@ -98,6 +98,23 @@ class Settings(BaseSettings):
     ALGORITHM: str = "HS256"
     BTDECK_ALLOW_CUSTOM_SCRIPTS: bool = False
 
+    # 同步任务资源治理配置（sync-resource-governance）
+    # 详见 PLANS/sync-resource-governance.md
+    # heavy_sync 全局令牌：限制同时运行的重型同步任务数量，避免后台任务挤占请求侧资源
+    SYNC_HEAVY_CONCURRENCY: int = 1
+    # 每类重型任务最多允许排队等待的名额（按 task_code 计）；超过即跳过本轮
+    SYNC_HEAVY_QUEUE_LIMIT: int = 1
+    # 下载器 API 总令牌：阶段 2 downloader_api_runtime 使用，限制并发远程调用
+    DOWNLOADER_IO_CONCURRENCY: int = 2
+    # qB tracker 明细并发上限：阶段 2 tracker lane 使用
+    QB_TRACKER_CONCURRENCY: int = 3
+    # 下载器 API 单次调用超时（秒）：阶段 2 downloader_api_runtime 使用
+    DOWNLOADER_API_TIMEOUT_SECONDS: int = 30
+    # 同步任务 DB 批量提交大小：变更检测/批量 upsert 的批次阈值
+    SYNC_DB_COMMIT_BATCH_SIZE: int = 200
+    # 同步任务磁盘写入节流窗口（秒）：日志/进度类数据合并落盘的最小间隔
+    SYNC_DISK_FLUSH_INTERVAL_SECONDS: float = 5.0
+
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 
     def __init__(self, **kwargs):

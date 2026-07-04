@@ -266,7 +266,7 @@ class CronTaskExecutor:
             elif task_type == 3:  # Python脚本
                 return await self._run_python_script(executor)
             elif task_type == 4:  # Python内部类
-                return await self._run_python_internal_class(executor)
+                return await self._run_python_internal_class(task)
             elif task_type == 5:  # 清理回收站任务
                 return await self._run_cleanup_task(executor)
             elif task_type == 6:  # 审计日志导出任务
@@ -369,8 +369,25 @@ class CronTaskExecutor:
         except Exception as e:
             return {"success": False, "log_detail": f"Python脚本执行异常: {str(e)}"}
 
-    async def _run_python_internal_class(self, executor_code: str) -> Dict[str, Any]:
-        """运行Python内部类或代码"""
+    async def _run_python_internal_class(self, task: Dict[str, Any]) -> Dict[str, Any]:
+        """运行Python内部类或代码
+
+        同步任务资源治理接入点（sync-resource-governance 阶段 0+1）：
+        - task_type=4 的 Python 内部类任务是重型同步任务的唯一入口；
+        - 按 task_code 查 TASK_PROFILES，重型任务进入 TaskAdmissionController 背压，
+          同类已运行/排队满则跳过本轮，避免后台任务挤占请求侧资源；
+        - 未注册的 task_code 视为轻量任务，走原路径不进入背压。
+        详见 PLANS/sync-resource-governance.md。
+        """
+        executor_code = task["executor"]
+        task_code = task.get("task_code")
+
+        # 资源准入：仅对已登记的重型任务生效
+        from app.tasks.resource_guard import admission_controller
+        from app.tasks.task_profiles import get_profile
+
+        profile = get_profile(task_code)
+
         try:
             # 检查是否是类路径格式（包含点号）
             if "." in executor_code and not executor_code.strip().startswith(
@@ -397,15 +414,44 @@ class CronTaskExecutor:
                     if hasattr(task_instance, "execute"):
                         execute_method = task_instance.execute
 
-                        # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
-                        if asyncio.iscoroutinefunction(execute_method):
-                            # ✅ 修复：传递 app 参数到 execute 方法
-                            result = await execute_method(app=self.app)
-                        else:
-                            # 同步调用
-                            result = execute_method(app=self.app)
+                        # ★ 资源治理：重型任务用 task_scope 包裹 execute()，
+                        # admitted=False 时直接返回 skipped，不调 execute。
+                        if profile is not None:
+                            async with admission_controller.task_scope(task_code, profile) as admission_result:
+                                if not admission_result.admitted:
+                                    skip_msg = (
+                                        f"[ADMISSION_SKIP] Python内部类被资源治理跳过: "
+                                        f"task_code={task_code}, "
+                                        f"reason={admission_result.skip_reason}, "
+                                        f"wait={admission_result.wait_seconds:.3f}s, "
+                                        f"running={admission_result.running_count}, "
+                                        f"queued={admission_result.queued_count}"
+                                    )
+                                    logger.info(skip_msg)
+                                    # skipped=True 区分资源治理跳过 vs 真执行失败：
+                                    # _execute_task 据此把 success 记为 True（避免误判故障/告警），
+                                    # log_detail 含 [ADMISSION_SKIP] 机器可解析标记便于运维 grep。
+                                    return {"success": True, "skipped": True, "log_detail": skip_msg}
 
-                        return {"success": True, "log_detail": f"Python内部类执行成功\n结果: {str(result)}"}
+                                # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
+                                if asyncio.iscoroutinefunction(execute_method):
+                                    result = await execute_method(app=self.app)
+                                else:
+                                    result = execute_method(app=self.app)
+                                return {
+                                    "success": True,
+                                    "log_detail": f"Python内部类执行成功\n结果: {str(result)}",
+                                }
+                        else:
+                            # 轻量任务：不进入资源背压，走原路径
+                            if asyncio.iscoroutinefunction(execute_method):
+                                result = await execute_method(app=self.app)
+                            else:
+                                result = execute_method(app=self.app)
+                            return {
+                                "success": True,
+                                "log_detail": f"Python内部类执行成功\n结果: {str(result)}",
+                            }
                     else:
                         return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}
 
