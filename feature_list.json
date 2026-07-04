@@ -757,28 +757,32 @@
           "id": "sync-resource-governance.0",
           "name": "基线观测与回归保护",
           "description": "为重型同步任务、下载器 API lane、请求探针增加可比较的观测点，建立同步前后的响应基线。",
-          "status": "planned",
+          "status": "done",
           "scope": "backend",
           "files": [
-            "backend/app/tasks/",
-            "backend/app/services/",
-            "backend/tests/"
+            "backend/app/tasks/resource_guard.py",
+            "backend/app/tasks/task_profiles.py",
+            "backend/app/tasks/cron_executor.py"
           ],
-          "evidence": "待实施"
+          "evidence": "阶段 0 与阶段 1 合并实施：TaskAdmissionController 在 acquire/release 输出结构化日志（task_code/admitted/skip_reason/wait_seconds/running_count/queued_count/queue_limit），覆盖准入成功与跳过两类决策；test_admitted_log_contains_required_fields + test_skipped_log_at_warning_level 验证日志字段。"
         },
         {
           "id": "sync-resource-governance.1",
           "name": "方案二：调度器与资源背压",
           "description": "新增 TaskAdmissionController、任务资源 profile、heavy_sync/db_writer/downloader_io/per_downloader 等资源控制；按 task_code 维护运行/排队登记，同类重型 cron 已运行或排队则跳过本轮；接入关键重型同步任务。",
-          "status": "planned",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/tasks/resource_guard.py",
             "backend/app/tasks/task_profiles.py",
             "backend/app/tasks/cron_executor.py",
-            "backend/app/tasks/scheduler/"
+            "backend/app/core/config.py",
+            "backend/docs/constraints/sync-db-write-governance.md",
+            "backend/tests/tasks/test_task_profiles.py",
+            "backend/tests/tasks/test_resource_guard.py",
+            "backend/tests/tasks/test_cron_executor_admission.py"
           ],
-          "evidence": "待实施"
+          "evidence": "TaskAdmissionController（heavy_sync 全局令牌 + per-task_code 运行/排队登记 + 同类去重跳过 SKIP_DUPLICATE + 等待超时 SKIP_WAIT_TIMEOUT + task_scope 异常安全释放 + release 幂等 + db_write_scope 骨架 + _build_log_extra 纯函数日志 extra 组装）；task_profiles 注册表登记 6 个重型 task_code；cron_executor._run_python_internal_class 改签名接 task dict 并按 task_code 接入 admission（skip 返回 success=True + skipped=True + [ADMISSION_SKIP] 标记，区分资源治理跳过 vs 真失败）；7 项配置项 SYNC_HEAVY_CONCURRENCY/SYNC_HEAVY_QUEUE_LIMIT/DOWNLOADER_IO_CONCURRENCY/QB_TRACKER_CONCURRENCY/DOWNLOADER_API_TIMEOUT_SECONDS/SYNC_DB_COMMIT_BATCH_SIZE/SYNC_DISK_FLUSH_INTERVAL_SECONDS；sync-db-write-governance.md DB 写入治理指南；39 个新单测（含 3 个子代理审查后的修订：跨 task_code 幂等断言/日志 extra 纯函数测/acquire 异常分支/task_profiles 与 default_scheduled_tasks.py 交叉验证）+ 5 处 mutation 反向验证（A/B/C/D/E 均被抓到）+ tasks/ 全量 203 passed 零回归。"
         },
         {
           "id": "sync-resource-governance.2",

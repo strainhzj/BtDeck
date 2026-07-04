@@ -1,5 +1,70 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-04 - sync-resource-governance 阶段 0+1 完成（调度器资源背压）
+
+**任务 ID**: `sync-resource-governance`
+**阶段**: 0（基线观测）+ 1（方案二：调度器与资源背压）合并实施，已完成。
+**计划文件**: `PLANS/sync-resource-governance.md`
+**分支**: dev
+
+### 本轮交付
+
+**新增文件（4）**:
+- `backend/app/tasks/task_profiles.py` — TaskProfile dataclass + TASK_PROFILES 注册表（6 个重型 task_code）+ get_profile/is_heavy_task 谓词
+- `backend/app/tasks/resource_guard.py` — TaskAdmissionController（heavy_sync 全局令牌 + per-task_code 运行/排队登记 + 同类去重跳过 + 等待超时 + task_scope 异常安全 + release 幂等 + db_write_scope 骨架）+ AdmissionResult + 进程级单例 admission_controller
+- `backend/docs/constraints/sync-db-write-governance.md` — DB 写入治理指南（变更检测/批量 upsert/db_writer 临界区/日志节流，供阶段 2 改造同步函数 commit 点遵循）
+- `backend/tests/tasks/test_task_profiles.py` / `test_resource_guard.py` / `test_cron_executor_admission.py`（3 个测试文件，34 个新单测）
+
+**修改文件（2）**:
+- `backend/app/core/config.py` — 新增 7 项配置：SYNC_HEAVY_CONCURRENCY=1、SYNC_HEAVY_QUEUE_LIMIT=1、DOWNLOADER_IO_CONCURRENCY=2、QB_TRACKER_CONCURRENCY=3、DOWNLOADER_API_TIMEOUT_SECONDS=30、SYNC_DB_COMMIT_BATCH_SIZE=200、SYNC_DISK_FLUSH_INTERVAL_SECONDS=5.0
+- `backend/app/tasks/cron_executor.py` — `_run_python_internal_class` 签名从 `(executor_code: str)` 改为 `(task: Dict)`；在 importlib 加载类后、调 execute() 前按 task_code 查 profile，重型任务用 `admission_controller.task_scope` 包裹，admitted=False 直接返回 skipped 且不调 execute；轻量任务走原路径不进入背压
+
+### 关键设计决策
+
+1. **接入位置**：cron_executor._run_python_internal_class 是 task_type=4（Python 内部类）的唯一执行入口，所有 6 个重型同步任务都经此进入 execute()。统一在此接入，避免改 6 个任务子类，且新任务自动获得背压保护（只要在 task_profiles 登记）。
+
+2. **同类去重维度**：保留现有 `running_tasks: Dict[int, bool]`（task_id 维度，APScheduler 重入保护）+ 新增 task_code 维度（跨任务类型资源竞争）。两者互补不冲突。
+
+3. **db_writer 骨架不强制接入**：本轮只暴露 `db_write_scope()` 信号量（并发 1）+ 写治理指南，不改造 torrents_async.py 现有 commit 点（留给阶段 2 一起做），避免阶段 1 范围爆炸。
+
+4. **测试隔离**：admission_controller 是进程级单例，每个测试 setup 调 `reset_state()` 重建信号量与登记表，避免状态泄漏。
+
+### 验证
+
+- **新单测 39 个全 pass**：task_profiles（19）+ resource_guard（15）+ cron_executor_admission（5）
+- **mutation 反向验证（含审查修订后）**：
+  - Mutation A（去掉 acquire 的 running 去重检查）→ 2 个去重测试报红 ✓
+  - Mutation B（cron_executor 绕过 admission）→ 2 个接入契约测试报红 ✓
+  - Mutation C（删 release idempotency 守卫）→ 修订后的 test_double_release_does_not_overreturn_semaphore 报红 ✓
+  - Mutation D（删 _build_log_extra 字段）→ 修订后的 test_admitted_path_extra_contains_all_required_fields 报红 ✓
+  - Mutation E（删 acquire 异常分支的 queued 归还）→ 修订后的 test_acquire_exception_releases_queue_slot 报红 ✓
+- **零回归**：tests/tasks/ 全量 203 passed（含 test_cron_executor.py 的 coalesce 锚点）
+- **全量套件**：16 failed, 1863 passed — 16 个失败全是预先存在的 test_tag_aggregation_api.py 顺序依赖 bug（已用 git stash 验证基线就是 16 failed，与本次改动无关）
+
+### 子代理 code review 修订（2026-07-04）
+
+3 个并行子代理审查（并发正确性 / 测试质量 / 接入回归），逐条实证核实后修订：
+
+- **🔴 假通过 #1（release 幂等性测试）**：原 test_double_release 只断言"能再次 acquire"，溢出后照样能 acquire。重写为跨 task_code 断言溢出后果（两个不同 task_code 同时 admitted=True 破坏互斥）。Mutation C 验证抓到。
+- **🔴 假通过 #2（StructuredLog 测试）**：原 spy 断言 AdmissionResult 入参字段，删日志 extra 后仍 PASS。拆出 `_build_log_extra` 纯函数，直接断言 extra dict 的 7 个字段。Mutation D 验证抓到。
+- **🔴 skip 与真失败混淆**：原 skip 返回 success=False 与真执行失败结构相同，运维误判故障。改为 success=True + skipped=True 标记 + [ADMISSION_SKIP] 机器可解析前缀。
+- **⚠️ 盲区（acquire 异常分支）**：原测试未覆盖 heavy_sync.acquire 抛非 Timeout 异常时的 queued 归还。补 test_acquire_exception_releases_queue_slot。Mutation E 验证抓到。
+- **⚠️ 漂移（task_profiles 锚点）**：原 EXPECTED_HEAVY_TASK_CODES 硬编码不与 default_scheduled_tasks.py 交叉验证。补 test_all_profile_codes_exist_in_default_scheduled_tasks + test_profile_codes_subset_of_python_class_tasks。
+- **文档化**：task_profiles.py 顶部加"task_code 不可改名 + 配置启动时固化"运维约束；release() docstring 加"禁止体内 await"约束。
+
+### 不在本轮范围（明确排除）
+
+- 阶段 2 `downloader_api_runtime`（tracker/sync/interactive lane、qB tracker 并发治理、to_thread 迁移）— 下一轮
+- 现有 torrents_async.py 同步函数的 db_writer/批量提交改造 — 阶段 2 做
+- DBWriteQueue — 后续独立版本候选
+- 前端任何改动
+
+### 下一步
+
+进入阶段 2（方案三：下载器 API 调用隔离与调度层）：新建 `backend/app/services/downloader_api_runtime.py`，隔离 tracker/sync/interactive lane，控制 qB tracker 明细并发（默认 3），优先复用 app.state.store 客户端，迁移 torrents_async.py 的 `asyncio.to_thread` 散落点到专用 executor。
+
+---
+
 ## 2026-07-03 - 下一任务：同步任务资源治理与下载器 API 调度
 
 **任务 ID**: `sync-resource-governance`  
