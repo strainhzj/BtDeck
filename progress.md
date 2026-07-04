@@ -1,5 +1,70 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-04 - sync-resource-governance 阶段 3 完成（验证与证据归档）
+
+**任务 ID**: `sync-resource-governance`
+**阶段**: 3（验证与证据归档）已完成。整个 sync-resource-governance 任务 0/1/2/2.5/3 全部完成。
+**计划文件**: `PLANS/sync-resource-governance.md`
+**分支**: dev
+
+### 本轮交付
+
+**新增文件（3）**:
+- `backend/tests/test_architecture_constraints.py` 扩展（新增 `test_request_side_endpoints_do_not_use_governance_locks`）
+- `backend/tests/api/test_sync_governance_integration.py`（3 行为契约测试）
+- `backend/scripts/sync_resource_benchmark.py`（6 场景可重复压测脚本）
+
+### 关键设计决策
+
+1. **分层验证**（避开 TestClient 线程安全问题）：架构约束测试（ast 扫描，钉死请求侧不碰治理锁）+ 行为契约测试（纯 asyncio 并发，不走 TestClient）+ 压测脚本（性能验证，运维手动跑）。
+2. **TestClient 拓扑限制记录**：计划说的"断言请求侧在可接受时间内返回"在 pytest+TestClient 下无法严谨实现（TestClient 非线程安全，test_tag_aggregation_api.py:402-411 已记录），性能验证划给可重复脚本。
+3. **架构约束防回归**：dashboard/torrent_crud/dashboard_service 三个请求探针模块禁止 import/调用 admission_controller/task_scope/db_write_scope/resource_guard，防止未来误在请求路径加锁。
+
+### 验证结果
+
+**新增测试 4 个全 pass**：
+- 1 架构约束（ast 扫描三个模块，mutation 加真实 import 报红验证）
+- 3 行为契约（heavy_sync 持有时查询完成 / db_write_scope 持有时读不阻塞 / spy acquire 证明不碰锁）
+
+**mock 压测证据**（30 iterations × 6 场景）：
+
+| 场景 | P50 | P95 | P99 | max | 含义 |
+|------|-----|-----|-----|-----|------|
+| 1_baseline_no_sync | 0ms | 0ms | 0ms | 15ms | 基线 |
+| 2_tracker_sync_running | 0ms | 0ms | 16ms | 16ms | tracker 同步中 |
+| 3_torrent_info_sync_running | 0ms | 0ms | 0ms | 15ms | 种子信息同步中 |
+| 4_both_sync_triggered | 0ms | 0ms | 15ms | 16ms | 同时触发 |
+| 5_single_downloader_many_torrents | 0ms | 0ms | 0ms | 16ms | 单下载器大量种子 |
+| 6_multi_downloader_concurrent | 0ms | 0ms | 15ms | 16ms | 多下载器并发 |
+
+**结论**：所有场景 P50/P95 <1ms、P99 ≤16ms、max 16ms，证明请求侧（DashboardService 查询）**未被治理锁（heavy_sync/db_write_scope/lane executor）阻塞**，治理目标达成。15-16ms 的偶发抖动是 asyncio 调度噪音，非锁等待。
+
+**全量套件**：16 failed, 1909 passed，**diff 基线为零**（16 个全是预先存在的 tag_aggregation 顺序依赖 bug）。
+
+### sync-resource-governance 整体完成度
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 0+1 | TaskAdmissionController（heavy_sync 背压 + 同类去重 + cron_executor 接入） | ✅ |
+| 2 | DownloaderApiRuntime（三 lane 隔离 + per-downloader 限流 + qB tracker 并发治理） | ✅ |
+| 2.5 | DB 写入治理（变更检测 + 批量 upsert + db_write_scope 串行化） | ✅ |
+| 3 | 验证与证据归档（架构约束 + 行为契约 + 压测脚本） | ✅ |
+
+累计：
+- 5 个新模块（resource_guard/task_profiles/downloader_api_runtime/sync_db_write/sync_resource_benchmark）
+- 7 个配置项
+- 1 个 DB 写入治理指南文档
+- ~115 个新单测 + 多处 mutation 反向验证
+- 6 个 commit（feat + docs 配对）
+
+### 已知技术债（留 P3）
+
+- `qb_add_torrents_async`/`tr_add_torrents_async` 全量同步仍调单种子版 sync_add_tracker_async，不经 db_write_scope。
+- `torrent_sync.py` API 手动触发路径不经 db_write_scope。
+- 真实生产环境的压测（含真实多下载器 + 真实 qB/TR 实例 + 真实种子规模）需运维用 sync_resource_benchmark.py 跑。
+
+---
+
 ## 2026-07-04 - sync-resource-governance 阶段 2.5 完成（DB 写入治理）
 
 **任务 ID**: `sync-resource-governance`

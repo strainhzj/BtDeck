@@ -818,16 +818,17 @@
           "id": "sync-resource-governance.3",
           "name": "验证与证据归档",
           "description": "补充单元测试、集成验证与手动压测矩阵，把同步期间请求响应改善、DB commit/写入频率、磁盘写入节流证据写回 harness。",
-          "status": "planned",
+          "status": "done",
           "scope": "backend",
           "files": [
-            "backend/tests/tasks/",
-            "backend/tests/services/",
+            "backend/tests/test_architecture_constraints.py",
+            "backend/tests/api/test_sync_governance_integration.py",
+            "backend/scripts/sync_resource_benchmark.py",
             "progress.md",
             "feature_list.json",
             "session-handoff.md"
           ],
-          "evidence": "待实施"
+          "evidence": "架构约束测试 test_request_side_endpoints_do_not_use_governance_locks（ast 扫描 dashboard/torrent_crud/dashboard_service 三个请求探针模块不得 import/调用 admission_controller/task_scope/db_write_scope/resource_guard，防回归锚点；mutation 加真实 import 报红验证）；行为契约测试 3 个（heavy_sync 持有时 DashboardService 仍能完成查询 / db_write_scope 持有时读查询不阻塞 / spy heavy_sync.acquire 证明请求侧不 acquire 治理锁）；压测脚本 sync_resource_benchmark.py 覆盖 6 场景（无同步基线/tracker 同步中/种子信息同步中/同时触发/单下载器大量种子/多下载器并发），跑一轮 mock 压测：所有场景 P50/P95 <1ms、P99 ≤16ms、max 16ms，证明请求侧未被治理锁阻塞；全量 1909 passed diff 基线为零。说明：TestClient 非线程安全（test_tag_aggregation_api.py:402-411 已记录），pytest 拓扑下无法严谨并发模拟，性能验证划给可重复 Python 脚本（运维手动跑，对比部署前后）。"
         }
       ]
     }

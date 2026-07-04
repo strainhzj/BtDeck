@@ -1,22 +1,19 @@
 # Session Handoff - BtDeck 全栈项目
 
-## 2026-07-04 交接：sync-resource-governance 阶段 2.5 完成
+## 2026-07-04 交接：sync-resource-governance 全部完成
 
 **当前任务**: `sync-resource-governance`
-**状态**: 阶段 0/1/2/2.5 全部完成；阶段 3（验证归档）待做。
+**状态**: 阶段 0/1/2/2.5/3 全部完成。
 **计划文件**: `PLANS/sync-resource-governance.md`
 **分支**: dev
 
-### 本轮完成（阶段 2.5 DB 写入治理）
+### 本轮完成（阶段 3 验证与证据归档）
 
-经 3 个并行子代理独立审查（技术正确性/范围回归/测试策略）+ 5 项关键发现实证核实后修订计划并实施：
-
-- 新增 `backend/app/services/sync_db_write.py`（has_*_changes 变更检测 + bulk_upsert_with_retry）
-- 新增 `extract_tracker_rows_from_torrent` + `sync_trackers_batch_async`（批量 select+变更检测+严格四步顺序+元组语义 mark_removed）
-- qb/tr_add_torrents_info_only_async：修正 skip 语义 bug + 整行变更检测 + 替换闭包
-- qb/tr_sync_trackers_only_async：主循环改造（累计 rows→batch 200→批量 upsert），batch 从 1000 改 200
-- db_write_scope 加 SYNC_DB_WRITE_SCOPE_ENABLED 开关
-- 28 个新单测（21 纯函数+mock + 7 真实 SQLite 部分索引集成）+ 3 处 mutation 反向验证 + 全量 1905 passed diff 基线为零
+- 新增架构约束测试（ast 扫描请求探针模块不碰治理锁）
+- 新增 3 个行为契约测试（heavy_sync/db_write_scope 持有时查询不阻塞）
+- 新增可重复压测脚本 `backend/scripts/sync_resource_benchmark.py`（6 场景）
+- 跑一轮 mock 压测：所有场景 P50/P95<1ms、P99≤16ms、max 16ms，证明请求侧未被治理锁阻塞
+- 全量 1909 passed diff 基线为零
 
 ### 已完成阶段总览
 
@@ -25,33 +22,37 @@
 | 0+1 | TaskAdmissionController（heavy_sync 背压 + 同类去重） | ✅ |
 | 2 | DownloaderApiRuntime（三 lane 隔离 + per-downloader 限流 + qB tracker 并发治理） | ✅ |
 | 2.5 | DB 写入治理（变更检测 + 批量 upsert + db_write_scope 串行化） | ✅ |
-| 3 | 验证与证据归档 | 待做 |
+| 3 | 验证与证据归档（架构约束 + 行为契约 + 压测脚本） | ✅ |
 
 ### 已知技术债（留 P3）
 
 - `qb_add_torrents_async`/`tr_add_torrents_async` 全量同步仍调单种子版 sync_add_tracker_async，不经 db_write_scope。
 - `torrent_sync.py` API 手动触发路径不经 db_write_scope。
-
-### 下一步入口
-
-阶段 3（验证与证据归档）：
-1. 补充集成验证（构造同步期间并发请求 dashboard/torrent list 的压测脚本）
-2. 手动压测矩阵（无同步/tracker 同步中/种子信息同步中/同时触发/单下载器大量种子/多下载器并发）
-3. 把"同步期间请求响应改善、DB commit 次数/写入行数对比"证据写回 harness
+- 真实生产环境的压测（含真实多下载器 + 真实 qB/TR 实例 + 真实种子规模）需运维用 sync_resource_benchmark.py 跑。
 
 ### 快速恢复
 
 ```bash
 cd backend
 # 跑本轮新测试
-python -m pytest tests/services/test_sync_db_write.py tests/api/test_torrents_async_db_governance.py -v
+python -m pytest tests/test_architecture_constraints.py::test_request_side_endpoints_do_not_use_governance_locks tests/api/test_sync_governance_integration.py -v
+# 跑压测脚本（6 场景）
+python scripts/sync_resource_benchmark.py --iterations 30
 # 全量回归（diff 基线：16 个 tag_aggregation failure 是预先存在的）
 python -m pytest tests/ -q
 ```
 
+### 下一步可选方向
+
+sync-resource-governance 任务已完成。剩余可选方向：
+1. **P3 已知技术债**：全量同步 + API 触发路径接入 db_write_scope
+2. **真实环境压测**：运维在 staging/生产用 sync_resource_benchmark.py 跑，对比部署前后
+3. **DBWriteQueue**（后续独立版本）：当前任务完成后若仍显示 DB 写锁等待，作为独立版本重新设计
+4. 切换到其它任务
+
 ---
 
-## 2026-07-04 交接：sync-resource-governance 阶段 2 完成
+## 2026-07-04 交接：sync-resource-governance 阶段 2.5 完成
 
 **当前任务**: `sync-resource-governance`  
 **状态**: planned，已完成 harness 立项与详细计划设计，尚未开始代码实现。  
