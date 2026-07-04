@@ -788,15 +788,15 @@
           "id": "sync-resource-governance.2",
           "name": "方案三：下载器 API 调用隔离与调度层",
           "description": "新增 downloader_api_runtime，隔离 tracker/sync/interactive lane，控制 qB tracker 明细并发，优先复用 app.state.store 客户端。",
-          "status": "planned",
+          "status": "done",
           "scope": "backend",
           "files": [
             "backend/app/services/downloader_api_runtime.py",
             "backend/app/api/endpoints/torrents_async.py",
             "backend/app/tasks/scheduler/torrent_info_sync_task.py",
-            "backend/app/tasks/scheduler/tracker_sync_task.py"
+            "backend/tests/services/test_downloader_api_runtime.py"
           ],
-          "evidence": "待实施"
+          "evidence": "DownloaderApiRuntime 三 lane 独立 ThreadPoolExecutor（tracker=5/sync=4/interactive=6 线程，物理隔离互不挤占）+ per-downloader Semaphore（DOWNLOADER_IO_CONCURRENCY=2，限制同下载器跨 lane 总并发）+ call_downloader_api 统一封装（executor 选择+semaphore 限流+timeout+异常透传+lane 结构化日志）；torrents_async.py 16 处 asyncio.to_thread 全量迁移到 call_downloader_api（sync_lane/tracker_lane/interactive_lane 分类）；_enrich_qb_torrents_with_trackers 默认并发 10→3（取 settings.QB_TRACKER_CONCURRENCY）+ 加 downloader_id 参数 + 内部 to_thread 迁移到 tracker_lane；qb_add_torrents_info_only_async/tr_add_torrents_info_only_async 加可选 client 参数 + fallback（优先复用 store 缓存连接）；TorrentInfoSyncTask 调用点从 store 取 client 传入；14 个新单测 + mutation 反向验证（去掉 per-downloader semaphore → 并发超限测试报红）+ 全量 1877 passed 零回归（16 个预先存在的 tag_aggregation 顺序依赖 bug 与本次无关）。"
         },
         {
           "id": "sync-resource-governance.3",

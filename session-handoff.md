@@ -1,50 +1,50 @@
 # Session Handoff - BtDeck 全栈项目
 
-## 2026-07-04 交接：sync-resource-governance 阶段 0+1 完成
+## 2026-07-04 交接：sync-resource-governance 阶段 2 完成
 
 **当前任务**: `sync-resource-governance`
-**状态**: 阶段 0（基线观测）+ 阶段 1（方案二：调度器资源背压）已完成；阶段 2/3 待做。
+**状态**: 阶段 0/1/2 全部完成；阶段 2.5（DB 写入治理）+ 阶段 3（验证归档）待做。
 **计划文件**: `PLANS/sync-resource-governance.md`
 **分支**: dev
 
-### 本轮完成
+### 本轮完成（阶段 2）
 
-- 新增 `backend/app/tasks/task_profiles.py` + `backend/app/tasks/resource_guard.py`（TaskAdmissionController + 进程级单例 admission_controller）
-- `backend/app/tasks/cron_executor.py::_run_python_internal_class` 改签名接 task dict，按 task_code 接入 admission；重型任务 admitted=False 时返回 skipped 不调 execute
-- `backend/app/core/config.py` 新增 7 项 SYNC_/DOWNLOADER_ 配置
-- `backend/docs/constraints/sync-db-write-governance.md` DB 写入治理指南（供阶段 2 改造同步函数遵循）
-- 3 个测试文件 34 个新单测 + mutation 反向验证（A/B 均被抓到）+ tasks/ 全量 198 passed 零回归
+- 新增 `backend/app/services/downloader_api_runtime.py`（DownloaderApiRuntime 三 lane 独立 executor + per-downloader Semaphore + call_downloader_api 统一封装）
+- `backend/app/api/endpoints/torrents_async.py` 16 处 `asyncio.to_thread` 全量迁移到 call_downloader_api（sync/tracker/interactive lane 分类）；`_enrich_qb_torrents_with_trackers` 并发 10→3 + downloader_id 参数
+- `qb_add_torrents_info_only_async`/`tr_add_torrents_info_only_async` 加可选 client 参数 + fallback；TorrentInfoSyncTask 从 store 取 client 传入
+- 14 个新单测 + mutation 反向验证 + 全量 1877 passed 零回归
 
-### 已确认决策（沿用）
+### 已完成阶段总览
 
-- 重型 cron 任务同类去重：按 task_code 检查 running/queued，已有则跳过本轮。
-- `downloader_io` 默认并发 2（阶段 2 用）。
-- qB tracker 明细并发默认 3（阶段 2 用）。
-- 7 项配置项已落地。
-- DBWriteQueue 暂不实现，仅作为后续独立版本候选。
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| 0+1 | TaskAdmissionController（heavy_sync 背压 + 同类去重） | ✅ |
+| 2 | DownloaderApiRuntime（三 lane 隔离 + per-downloader 限流 + qB tracker 并发治理） | ✅ |
+| 2.5 | DB 写入治理（db_write_scope 接入 + 批量提交 + 变更检测） | 待做 |
+| 3 | 验证与证据归档 | 待做 |
 
 ### 下一步入口
 
-1. 进入阶段 2（方案三）：新建 `backend/app/services/downloader_api_runtime.py`
-2. 实现 tracker/sync/interactive 三 lane 专用 executor + per-downloader semaphore
-3. 控制 qB tracker 明细并发（QB_TRACKER_CONCURRENCY=3）+ 单轮预算（最大 torrent 数/耗时/失败熔断）
-4. 迁移 `torrents_async.py` 的 `asyncio.to_thread` 散落点（≥16 处）到 downloader_api_runtime
-5. 按 sync-db-write-governance.md 把 db_write_scope 接入 qb_add_torrents_info_only_async / qb_sync_trackers_only_async 等同步函数的 commit 点
-6. 优先复用 app.state.store 缓存客户端（tracker_sync_task.py:184-199 已有范式）
+1. 阶段 2.5：按 `backend/docs/constraints/sync-db-write-governance.md` 指南改造同步函数 commit 点
+   - qb_add_torrents_info_only_async / qb_sync_trackers_only_async / tr_*_only_async 的 commit 包进 db_write_scope
+   - 批量 upsert（按 SYNC_DB_COMMIT_BATCH_SIZE=200 分批）
+   - 变更检测（无变化不写库）
+   - 日志节流（按 SYNC_DISK_FLUSH_INTERVAL_SECONDS=5s 合并窗口）
+2. 阶段 3：补充集成验证 + 手动压测矩阵 + 把同步期间请求响应改善证据写回 harness
 
 ### 快速恢复
 
 ```bash
 cd backend
 # 跑本轮新测试
-python -m pytest tests/tasks/test_task_profiles.py tests/tasks/test_resource_guard.py tests/tasks/test_cron_executor_admission.py -v
-# tasks/ 全量回归
-python -m pytest tests/tasks/ -q
+python -m pytest tests/services/test_downloader_api_runtime.py -v
+# tasks + services 回归
+python -m pytest tests/tasks/ tests/services/test_downloader_api_runtime.py -q
 ```
 
 ---
 
-## 2026-07-03 交接：同步任务资源治理与下载器 API 调度
+## 2026-07-04 交接：sync-resource-governance 阶段 0+1 完成
 
 **当前任务**: `sync-resource-governance`  
 **状态**: planned，已完成 harness 立项与详细计划设计，尚未开始代码实现。  

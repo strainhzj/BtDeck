@@ -1,5 +1,49 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-04 - sync-resource-governance 阶段 2 完成（下载器 API 调用隔离）
+
+**任务 ID**: `sync-resource-governance`
+**阶段**: 2（方案三：下载器 API 调用隔离与调度层）已完成。
+**计划文件**: `PLANS/sync-resource-governance.md`
+**分支**: dev
+
+### 本轮交付
+
+**新增文件（2）**:
+- `backend/app/services/downloader_api_runtime.py` — DownloaderApiRuntime（三 lane 独立 ThreadPoolExecutor：tracker=5/sync=4/interactive=6 线程）+ per-downloader Semaphore（DOWNLOADER_IO_CONCURRENCY=2）+ call_downloader_api 统一封装 + LaneLogExtra 结构化日志 + 进程级单例 downloader_api_runtime
+- `backend/tests/services/test_downloader_api_runtime.py`（14 个新单测）
+
+**修改文件（3）**:
+- `backend/app/api/endpoints/torrents_async.py` — 16 处 `asyncio.to_thread` 全量迁移到 `call_downloader_api`（按 sync_lane/tracker_lane/interactive_lane 分类）；`_enrich_qb_torrents_with_trackers` 默认并发 10→3（取 settings.QB_TRACKER_CONCURRENCY）+ 加 downloader_id 参数 + 4 个调用点对齐；`qb_add_torrents_info_only_async`/`tr_add_torrents_info_only_async` 加可选 client 参数 + fallback
+- `backend/app/tasks/scheduler/torrent_sync/torrent_info_sync_task.py` — 调用点从 app.state.store 取缓存 client 传入同步函数（复用连接，遵循 downloader-connection 约束）
+
+### 关键设计决策
+
+1. **三 lane 物理隔离**：每个 lane 独立 ThreadPoolExecutor，tracker 批量查询不挤占 sync 主数据同步、不挤占 interactive 用户操作。线程数根据 QB_TRACKER_CONCURRENCY(3) + 余量设为 5/4/6。
+2. **per-downloader 跨 lane 总并发**：DOWNLOADER_IO_CONCURRENCY=2 限制同一下载器的所有远程调用总并发，防止单个 qB WebUI 被多任务同时打满。这是 lane 之上的第二层限流。
+3. **qB tracker 并发治理**：`_enrich_qb_torrents_with_trackers` 历史默认 10，会打满 qB WebUI；改为取 settings.QB_TRACKER_CONCURRENCY(默认3)，并在 lane executor 之上叠加 asyncio.Semaphore 做批量并发控制。
+4. **client 复用渐进式改造**：给 qb/tr_add_torrents_info_only_async 加可选 client 参数，None 时 fallback 新建；TorrentInfoSyncTask 从 store 取后传入。不破坏现有调用方，向后兼容。
+5. **异常透传不吞**：call_downloader_api 只记录日志 + 重新抛出，不吞任何异常（调用方原有错误处理逻辑保持不变）。
+
+### 验证
+
+- **新单测 14 个全 pass**：参数透传/超时/超时释放 semaphore/异常透传/异常释放 semaphore/三 lane 物理隔离（线程名前缀断言）/per-downloader 并发上限/不同下载器并行/结构化日志 extra/便捷封装委托
+- **mutation 反向验证**：去掉 per-downloader semaphore（换成 Semaphore(10)）→ test_same_downloader_concurrency_capped 报红（max=4 超过 limit=2）✓
+- **零回归**：tasks/ + services/ 全量 217 passed；全量套件 16 failed, 1877 passed — 16 个失败全是预先存在的 test_tag_aggregation_api.py 顺序依赖 bug（已三次验证基线）
+- **to_thread 清零**：torrents_async.py 的 `asyncio.to_thread` 从 16 处降到 0 处
+
+### 不在本轮范围（明确排除）
+
+- DB 写入治理（db_write_scope 接入 + 批量提交 + 变更检测）— 下一轮（阶段 2.5）
+- DBWriteQueue — 后续独立版本候选
+- 前端任何改动
+
+### 下一步
+
+阶段 2.5（DB 写入治理）：按 `backend/docs/constraints/sync-db-write-governance.md` 指南，把 qb_add_torrents_info_only_async / qb_sync_trackers_only_async 等同步函数的 commit 点包进 db_write_scope + 批量 upsert + 变更检测。
+
+---
+
 ## 2026-07-04 - sync-resource-governance 阶段 0+1 完成（调度器资源背压）
 
 **任务 ID**: `sync-resource-governance`
