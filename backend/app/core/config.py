@@ -114,6 +114,9 @@ class Settings(BaseSettings):
     SYNC_DB_COMMIT_BATCH_SIZE: int = 200
     # 同步任务磁盘写入节流窗口（秒）：日志/进度类数据合并落盘的最小间隔
     SYNC_DISK_FLUSH_INTERVAL_SECONDS: float = 5.0
+    # DB 写入临界区开关：True 时同步函数 commit 包裹 db_write_scope 串行化写者；
+    # 上线后若多下载器并发同步 P95 退化 >30% 可临时关闭快速回滚。
+    SYNC_DB_WRITE_SCOPE_ENABLED: bool = True
 
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 

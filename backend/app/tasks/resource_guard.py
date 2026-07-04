@@ -243,7 +243,13 @@ class TaskAdmissionController:
 
         本步只建骨架：暴露并发 1 的 db_writer 信号量，供后续批量 upsert/commit 包裹。
         当前生产路径不强制接入，避免阶段 1 范围爆炸。
+
+        阶段 2.5：SYNC_DB_WRITE_SCOPE_ENABLED 开关控制是否真的串行化。
+        关闭时直接 yield，等价于无锁（用于快速回滚）。
         """
+        if not settings.SYNC_DB_WRITE_SCOPE_ENABLED:
+            yield
+            return
         async with self._state.db_writer:
             yield
 

@@ -42,6 +42,7 @@ from app.core.tracker_mapper import extract_tracker_host
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.services.sync_db_write import bulk_upsert_with_retry, has_torrent_info_changes
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.config import settings
@@ -665,6 +666,256 @@ async def update_or_restore_tracker_with_retry_async(
     except Exception as e:
         logger.error(f"update_or_restore_tracker_async 异常: {e}, tracker_url={tracker_url}")
         return False
+
+
+def extract_tracker_rows_from_torrent(
+    torrent_info: Any, torrent_info_id: str, downloader_type: str, current_time: Any
+) -> tuple[list[dict], set]:
+    """从单个种子的远程数据提取 tracker_rows（纯提取，不写库）。
+
+    阶段 2.5：把 sync_add_tracker_async 内的提取逻辑抽成纯函数，供批量版复用。
+    过滤 DHT/PeX/LSD，做字段映射。
+
+    Args:
+        torrent_info: 远程下载器返回的种子对象（含 trackers/tracker_stats）。
+        torrent_info_id: 关联的 TorrentInfo 主键。
+        downloader_type: 'qbittorrent' / 'transmission'。
+        current_time: 时间戳（datetime）。
+
+    Returns:
+        (tracker_rows, current_tracker_urls)：rows 用于后续 upsert，urls 用于 mark_removed。
+    """
+    normalized = DownloaderTypeEnum.normalize(downloader_type)
+    downloader_type = DownloaderTypeEnum(normalized).to_name()
+
+    current_tracker_urls: set = set()
+    tracker_rows: list[dict] = []
+
+    if downloader_type == "qbittorrent":
+        try:
+            trackers_data = getattr(torrent_info, "trackers", None)
+            if callable(trackers_data):
+                trackers_data = trackers_data()
+            trackers_data = trackers_data or []
+        except Exception as e:
+            logger.error(f"Failed to get qbittorrent trackers: {str(e)}")
+            trackers_data = []
+
+        for tracker in trackers_data:
+            try:
+                url = tracker.get("url")
+                if not url:
+                    continue
+                url = str(url)
+                if "DHT" in url or "PeX" in url or "LSD" in url:
+                    continue
+                current_tracker_urls.add(url)
+                tracker_rows.append(
+                    {
+                        "tracker_id": str(uuid.uuid4()),
+                        "torrent_info_id": torrent_info_id,
+                        "tracker_name": url,
+                        "tracker_url": url,
+                        "tracker_host": extract_tracker_host(url),
+                        "last_announce_succeeded": tracker.get("status"),
+                        "last_announce_msg": tracker.get("msg"),
+                        "last_scrape_succeeded": tracker.get("status"),
+                        "last_scrape_msg": tracker.get("msg"),
+                        "create_time": current_time,
+                        "create_by": "admin",
+                        "update_time": current_time,
+                        "update_by": "admin",
+                        "dr": 0,
+                    }
+                )
+            except Exception as tracker_err:
+                logger.error(f"Failed to process tracker [{tracker}]: {str(tracker_err)}")
+                continue
+
+    elif downloader_type == "transmission":
+        tracker_stats = getattr(torrent_info, "tracker_stats", None) or []
+        for tracker_status in tracker_stats:
+            tracker_url = None
+            try:
+                tracker_url = tracker_status.fields.get("announce")
+            except Exception:
+                tracker_url = None
+            if not tracker_url:
+                continue
+            current_tracker_urls.add(tracker_url)
+            tracker_rows.append(
+                {
+                    "tracker_id": str(uuid.uuid4()),
+                    "torrent_info_id": torrent_info_id,
+                    "tracker_name": tracker_status.site_name,
+                    "tracker_url": tracker_url,
+                    "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
+                    "last_announce_succeeded": tracker_status.last_announce_succeeded,
+                    "last_announce_msg": tracker_status.last_announce_result,
+                    "last_scrape_succeeded": tracker_status.last_announce_succeeded,
+                    "last_scrape_msg": tracker_status.last_announce_result,
+                    "create_time": current_time,
+                    "create_by": "admin",
+                    "update_time": current_time,
+                    "update_by": "admin",
+                    "dr": 0,
+                }
+            )
+    else:
+        logger.error(f"Unknown downloader type: '{downloader_type}'")
+
+    return tracker_rows, current_tracker_urls
+
+
+async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dict], current_time: Any) -> dict:
+    """批量写入 tracker_info（阶段 2.5 P0 核心）。
+
+    与单种子版 sync_add_tracker_async 相比的改进：
+    1. 批量 select 旧值（按 torrent_info_id IN (...) 一次性查）。
+    2. has_tracker_changes 变更检测，无变化的行跳过 upsert。
+    3. 多种子聚合后统一一次 upsert execute（而非每种子一次）。
+    4. db_write_scope 串行化写者。
+    5. mark_removed 严格按 (info_id, url) 元组语义，禁止扁平化 url 集合。
+
+    严格四步顺序（顺序不可调换，审查1-C6）：
+    Step1: 批量软删恢复（dr=1→0）
+    Step2: 批量物理删除软删行（DELETE dr=1，避免 upsert 复活）
+    Step3: 批量 upsert（变更检测后的行，on_conflict_do_update index_where dr=0）
+    Step4: 批量 mark_removed（元组语义取反）
+
+    Args:
+        db: 异步数据库会话。
+        accumulated_rows: 跨多个种子累计的 tracker_rows（每个 row 是 dict）。
+        current_time: 时间戳。
+
+    Returns:
+        stats dict：{insert, update, skip, removed}。
+    """
+    from sqlalchemy import delete, tuple_, text as sa_text
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from sqlalchemy import exists as sa_exists
+    from app.services.sync_db_write import has_tracker_changes
+    from app.tasks.resource_guard import admission_controller
+
+    stats = {"insert": 0, "update": 0, "skip": 0, "removed": 0}
+    if not accumulated_rows:
+        return stats
+
+    # 收集本批次涉及的 info_id 和 (info_id, url) pairs
+    batch_info_ids = list({row["torrent_info_id"] for row in accumulated_rows})
+    batch_pairs = {(row["torrent_info_id"], row["tracker_url"]) for row in accumulated_rows}
+
+    # === 批量 select 旧值（变更检测基础）===
+    existing_rows = await db.execute(
+        select(
+            trackerInfoModel.torrent_info_id,
+            trackerInfoModel.tracker_url,
+            trackerInfoModel.tracker_name,
+            trackerInfoModel.tracker_host,
+            trackerInfoModel.last_announce_succeeded,
+            trackerInfoModel.last_announce_msg,
+            trackerInfoModel.last_scrape_succeeded,
+            trackerInfoModel.last_scrape_msg,
+        )
+        .where(trackerInfoModel.torrent_info_id.in_(batch_info_ids))
+        .where(trackerInfoModel.dr == 0)
+    )
+    existing_map = {
+        (row.torrent_info_id, row.tracker_url): {
+            "tracker_name": row.tracker_name,
+            "tracker_host": row.tracker_host,
+            "last_announce_succeeded": row.last_announce_succeeded,
+            "last_announce_msg": row.last_announce_msg,
+            "last_scrape_succeeded": row.last_scrape_succeeded,
+            "last_scrape_msg": row.last_scrape_msg,
+        }
+        for row in existing_rows.all()
+    }
+
+    # === 变更检测过滤 ===
+    rows_to_upsert = []
+    for row in accumulated_rows:
+        key = (row["torrent_info_id"], row["tracker_url"])
+        existing = existing_map.get(key, {})
+        if has_tracker_changes(existing, row):
+            rows_to_upsert.append(row)
+        else:
+            stats["skip"] += 1
+
+    async with admission_controller.db_write_scope():
+        # === Step 1: 批量软删恢复（dr=1→0，仅当 url 在 current 且无活跃行）===
+        active_tracker = aliased(trackerInfoModel)
+        await db.execute(
+            update(trackerInfoModel)
+            .where(
+                trackerInfoModel.torrent_info_id.in_(batch_info_ids),
+                trackerInfoModel.dr == 1,
+                tuple_(trackerInfoModel.torrent_info_id, trackerInfoModel.tracker_url).in_(list(batch_pairs)),
+                ~sa_exists().where(
+                    active_tracker.torrent_info_id == trackerInfoModel.torrent_info_id,
+                    active_tracker.tracker_url == trackerInfoModel.tracker_url,
+                    active_tracker.dr == 0,
+                ),
+            )
+            .values(dr=0, update_time=current_time, update_by="admin")
+        )
+
+        # === Step 2: 批量物理删除剩余的软删行（避免 upsert 复活）===
+        await db.execute(
+            delete(trackerInfoModel).where(
+                trackerInfoModel.dr == 1,
+                tuple_(trackerInfoModel.torrent_info_id, trackerInfoModel.tracker_url).in_(list(batch_pairs)),
+            )
+        )
+
+        # === Step 3: 批量 upsert（仅变更检测后的行）===
+        if rows_to_upsert:
+            stmt = sqlite_insert(trackerInfoModel).values(rows_to_upsert)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["torrent_info_id", "tracker_url"],
+                index_where=sa_text("dr = 0"),
+                set_={
+                    "tracker_name": stmt.excluded.tracker_name,
+                    "tracker_host": stmt.excluded.tracker_host,
+                    "last_announce_succeeded": stmt.excluded.last_announce_succeeded,
+                    "last_announce_msg": stmt.excluded.last_announce_msg,
+                    "last_scrape_succeeded": stmt.excluded.last_scrape_succeeded,
+                    "last_scrape_msg": stmt.excluded.last_scrape_msg,
+                    "update_time": current_time,
+                    "update_by": "admin",
+                },
+            )
+            await db.execute(stmt)
+
+            # 统计 insert vs update（基于 existing_map）
+            for row in rows_to_upsert:
+                key = (row["torrent_info_id"], row["tracker_url"])
+                if key in existing_map:
+                    stats["update"] += 1
+                else:
+                    stats["insert"] += 1
+
+        # === Step 4: 批量 mark_removed（严格元组语义，禁止扁平化 url）===
+        # 把 db 里有但本批次没有的 (info_id, url) 标记 dr=1。
+        # 关键：必须用元组 IN 而非 url NOT IN，避免跨种子误删（审查1-C6 必修2）。
+        result = await db.execute(
+            update(trackerInfoModel)
+            .where(
+                trackerInfoModel.torrent_info_id.in_(batch_info_ids),
+                trackerInfoModel.dr == 0,
+                ~tuple_(trackerInfoModel.torrent_info_id, trackerInfoModel.tracker_url).in_(list(batch_pairs)),
+            )
+            .values(dr=1, update_time=current_time, update_by="system")
+        )
+        stats["removed"] = result.rowcount or 0
+
+        await db.commit()
+
+    logger.info(
+        f"[TRACKER_BATCH] info_ids={len(batch_info_ids)} upsert={len(rows_to_upsert)} "
+        f"insert={stats['insert']} update={stats['update']} skip={stats['skip']} removed={stats['removed']}"
+    )
+    return stats
 
 
 async def sync_add_tracker_async(
@@ -2470,12 +2721,44 @@ async def qb_add_torrents_info_only_async(
 
     current_time = datetime.now()
 
+    # ✅ 扩大 select 拉全业务字段，供 has_torrent_info_changes 变更检测（阶段 2.5）
     result = await db.execute(
-        select(TorrentInfo.hash, TorrentInfo.info_id, TorrentInfo.create_time, TorrentInfo.progress)
+        select(
+            TorrentInfo.hash,
+            TorrentInfo.info_id,
+            TorrentInfo.create_time,
+            TorrentInfo.progress,
+            TorrentInfo.name,
+            TorrentInfo.size,
+            TorrentInfo.status,
+            TorrentInfo.ratio,
+            TorrentInfo.ratio_limit,
+            TorrentInfo.tags,
+            TorrentInfo.category,
+            TorrentInfo.save_path,
+            TorrentInfo.super_seeding,
+        )
         .filter(TorrentInfo.downloader_id == bt_downloader.downloader_id)
         .filter(TorrentInfo.dr == 0)
     )
-    existing_torrents_cache = {row.hash: (row.info_id, row.create_time, row.progress) for row in result.all()}
+    # cache 改为存完整 dict（key=列名），供 has_torrent_info_changes 对比
+    existing_torrents_cache = {
+        row.hash: {
+            "info_id": row.info_id,
+            "create_time": row.create_time,
+            "progress": row.progress,
+            "name": row.name,
+            "size": row.size,
+            "status": row.status,
+            "ratio": row.ratio,
+            "ratio_limit": row.ratio_limit,
+            "tags": row.tags,
+            "category": row.category,
+            "save_path": row.save_path,
+            "super_seeding": row.super_seeding,
+        }
+        for row in result.all()
+    }
 
     to_insert, to_update = [], []
     stats = {"insert": 0, "update": 0, "skip": 0, "error": 0}
@@ -2486,7 +2769,7 @@ async def qb_add_torrents_info_only_async(
             stats["error"] += 1
             continue
 
-        cached_data = existing_torrents_cache.get(torrent_hash)
+        cached_row = existing_torrents_cache.get(torrent_hash)
         raw_progress = _qb_get_attr(torrent_info, "progress", None)
         new_progress = (
             _normalize_progress_value(
@@ -2502,25 +2785,62 @@ async def qb_add_torrents_info_only_async(
             else 0.0
         )
 
-        if cached_data is None:
+        if cached_row is None:
             stats["insert"] += 1
             torrent_info_id = str(uuid.uuid4())
             create_time = current_time
             progress_value = new_progress
-            mode = "insert"
         else:
-            stats["update"] += 1
-            torrent_info_id, create_time, old_progress_cached = cached_data
-            if create_time is None:
-                create_time = current_time
-            old_progress = _normalize_progress_value(old_progress_cached)
-            if abs(new_progress - old_progress) < 0.5:
-                progress_value = old_progress
-                stats["skip"] += 1
-            else:
-                progress_value = new_progress
-            mode = "update"
+            torrent_info_id = cached_row["info_id"]
+            create_time = cached_row["create_time"] or current_time
+            # ✅ progress 0.5 阈值：微变化保留旧值（保留现有逻辑，不搬进工具）
+            old_progress = _normalize_progress_value(cached_row["progress"])
+            progress_value = old_progress if abs(new_progress - old_progress) < 0.5 else new_progress
 
+            torrent_data = {
+                "info_id": torrent_info_id,
+                "downloader_id": bt_downloader.downloader_id,
+                "downloader_name": bt_downloader.nickname,
+                "torrent_id": torrent_hash,
+                "hash": torrent_hash,
+                "name": _qb_get_attr(torrent_info, "name", ""),
+                "save_path": _qb_get_attr(torrent_info, "save_path", ""),
+                "size": _qb_get_attr(torrent_info, "total_size", None) or _qb_get_attr(torrent_info, "size", 0),
+                "progress": progress_value,
+                "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
+                "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
+                "added_date": (
+                    datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)))
+                    if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None
+                    else None
+                ),
+                "completed_date": (
+                    datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)))
+                    if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None
+                    else None
+                ),
+                "ratio": _qb_get_attr(torrent_info, "ratio", 0),
+                "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
+                "tags": _qb_get_attr(torrent_info, "tags", ""),
+                "category": _qb_get_attr(torrent_info, "category", ""),
+                "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False),
+                "enabled": 1,
+                "create_time": create_time,
+                "create_by": "admin",
+                "update_time": current_time,
+                "update_by": "admin",
+                "dr": 0,
+            }
+
+            # ✅ 阶段 2.5：整行变更检测，无变化真正跳过（修正 skip 语义 bug）
+            if has_torrent_info_changes(cached_row, torrent_data):
+                stats["update"] += 1
+                to_update.append(torrent_data)
+            else:
+                stats["skip"] += 1
+            continue
+
+        # insert 分支
         torrent_data = {
             "info_id": torrent_info_id,
             "downloader_id": bt_downloader.downloader_id,
@@ -2533,7 +2853,6 @@ async def qb_add_torrents_info_only_async(
             "progress": progress_value,
             "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            # 使用安全的时间戳解析函数，处理 None、字符串和范围验证
             "added_date": (
                 datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)))
                 if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None
@@ -2556,29 +2875,24 @@ async def qb_add_torrents_info_only_async(
             "update_by": "admin",
             "dr": 0,
         }
-
-        (to_insert if mode == "insert" else to_update).append(torrent_data)
+        to_insert.append(torrent_data)
 
     # ✅ 去重保护（双重保护机制）
     to_insert, to_update = _deduplicate_torrent_lists(to_insert, to_update)
 
+    # ✅ 阶段 2.5：用公共 bulk_upsert_with_retry（内含 db_write_scope + retry）
     try:
-
-        async def _bulk_write():
-            if to_insert:
-                await db.run_sync(lambda s: s.bulk_insert_mappings(TorrentInfo, to_insert))
-            if to_update:
-                await db.run_sync(lambda s: s.bulk_update_mappings(TorrentInfo, to_update))
-            await db.commit()
-
-        await _retry_on_db_lock(
-            _bulk_write,
-            max_retries=3,
-            base_delay=1.0,
-            rollback=db.rollback,
-            error_context=f"[QB_INFO] {bt_downloader.nickname}",
+        await bulk_upsert_with_retry(
+            db,
+            to_insert,
+            to_update,
+            model=TorrentInfo,
+            label=f"[QB_INFO_SYNC] {bt_downloader.nickname}",
         )
-        logger.info(f"[QB_INFO_SYNC] {bt_downloader.nickname} 成功: 插入 {len(to_insert)}, 更新 {len(to_update)}")
+        logger.info(
+            f"[QB_INFO_SYNC] {bt_downloader.nickname} 成功: 插入 {len(to_insert)}, "
+            f"更新 {len(to_update)}, 跳过 {stats['skip']}"
+        )
     except Exception as e:
         await db.rollback()
         logger.error(f"[QB_INFO_SYNC] {bt_downloader.nickname} 失败: {e}")
@@ -2665,39 +2979,58 @@ async def tr_add_torrents_info_only_async(
         _TR_LAST_FULL_SYNC[downloader_id] = now_ts
 
     current_time = datetime.now()
+    # ✅ 扩大 select 拉全业务字段，供 has_torrent_info_changes 变更检测（阶段 2.5）
     result = await db.execute(
-        select(TorrentInfo.hash, TorrentInfo.info_id, TorrentInfo.create_time, TorrentInfo.progress)
+        select(
+            TorrentInfo.hash,
+            TorrentInfo.info_id,
+            TorrentInfo.create_time,
+            TorrentInfo.progress,
+            TorrentInfo.name,
+            TorrentInfo.size,
+            TorrentInfo.status,
+            TorrentInfo.ratio,
+            TorrentInfo.ratio_limit,
+            TorrentInfo.tags,
+            TorrentInfo.save_path,
+        )
         .filter(TorrentInfo.downloader_id == bt_downloader.downloader_id)
         .filter(TorrentInfo.dr == 0)
     )
-    existing_torrents_cache = {row.hash: (row.info_id, row.create_time, row.progress) for row in result.all()}
+    existing_torrents_cache = {
+        row.hash: {
+            "info_id": row.info_id,
+            "create_time": row.create_time,
+            "progress": row.progress,
+            "name": row.name,
+            "size": row.size,
+            "status": row.status,
+            "ratio": row.ratio,
+            "ratio_limit": row.ratio_limit,
+            "tags": row.tags,
+            "save_path": row.save_path,
+        }
+        for row in result.all()
+    }
 
     to_insert, to_update = [], []
     stats = {"insert": 0, "update": 0, "skip": 0, "error": 0}
 
     for torrent_info in torrent_info_list:
-        cached_data = existing_torrents_cache.get(torrent_info.hashString)
+        cached_row = existing_torrents_cache.get(torrent_info.hashString)
         raw_percent = getattr(torrent_info, "percent_done", None)
         new_progress = _normalize_progress_value(float(raw_percent) * 100.0 if raw_percent else 0.0)
 
-        if cached_data is None:
+        if cached_row is None:
             stats["insert"] += 1
             torrent_info_id = str(uuid.uuid4())
             create_time = current_time
             progress_value = new_progress
-            mode = "insert"
         else:
-            stats["update"] += 1
-            torrent_info_id, create_time, old_progress_cached = cached_data
-            if create_time is None:
-                create_time = current_time
-            old_progress = _normalize_progress_value(old_progress_cached)
-            if abs(new_progress - old_progress) < 0.5:
-                progress_value = old_progress
-                stats["skip"] += 1
-            else:
-                progress_value = new_progress
-            mode = "update"
+            torrent_info_id = cached_row["info_id"]
+            create_time = cached_row["create_time"] or current_time
+            old_progress = _normalize_progress_value(cached_row["progress"])
+            progress_value = old_progress if abs(new_progress - old_progress) < 0.5 else new_progress
 
         torrent_data = {
             "info_id": torrent_info_id,
@@ -2724,28 +3057,32 @@ async def tr_add_torrents_info_only_async(
             "dr": 0,
         }
 
-        (to_insert if mode == "insert" else to_update).append(torrent_data)
+        if cached_row is None:
+            to_insert.append(torrent_data)
+        else:
+            # ✅ 阶段 2.5：整行变更检测，无变化真正跳过（修正 skip 语义 bug）
+            if has_torrent_info_changes(cached_row, torrent_data):
+                stats["update"] += 1
+                to_update.append(torrent_data)
+            else:
+                stats["skip"] += 1
 
     # ✅ 去重保护（双重保护机制）
     to_insert, to_update = _deduplicate_torrent_lists(to_insert, to_update)
 
+    # ✅ 阶段 2.5：用公共 bulk_upsert_with_retry（内含 db_write_scope + retry）
     try:
-
-        async def _bulk_write():
-            if to_insert:
-                await db.run_sync(lambda s: s.bulk_insert_mappings(TorrentInfo, to_insert))
-            if to_update:
-                await db.run_sync(lambda s: s.bulk_update_mappings(TorrentInfo, to_update))
-            await db.commit()
-
-        await _retry_on_db_lock(
-            _bulk_write,
-            max_retries=3,
-            base_delay=1.0,
-            rollback=db.rollback,
-            error_context=f"[TR_INFO] {bt_downloader.nickname}",
+        await bulk_upsert_with_retry(
+            db,
+            to_insert,
+            to_update,
+            model=TorrentInfo,
+            label=f"[TR_INFO_SYNC] {bt_downloader.nickname}",
         )
-        logger.info(f"[TR_INFO_SYNC] {bt_downloader.nickname} 成功: 插入 {len(to_insert)}, 更新 {len(to_update)}")
+        logger.info(
+            f"[TR_INFO_SYNC] {bt_downloader.nickname} 成功: 插入 {len(to_insert)}, "
+            f"更新 {len(to_update)}, 跳过 {stats['skip']}"
+        )
     except Exception as e:
         await db.rollback()
         logger.error(f"[TR_INFO_SYNC] {bt_downloader.nickname} 失败: {e}")
@@ -2926,13 +3263,32 @@ async def qb_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     enrich_duration = (datetime.now() - enrich_start).total_seconds()
     logger.info(f"[{LOG_PREFIX}] 获取 tracker 数据完成，耗时 {enrich_duration:.3f}s")
 
-    # === 第5步：逐种子写入 tracker_info 表 ===
+    # === 第5步：批量写入 tracker_info 表（阶段 2.5 改造）===
+    # 累计多个种子的 tracker_rows，达 batch_size 后统一 upsert + 变更检测 + db_write_scope。
+    batch_size = settings.SYNC_DB_COMMIT_BATCH_SIZE  # 默认 200，对齐治理规范
+    accumulated_rows: list[dict] = []
+    accumulated_info_ids: set = set()
     tracker_count = 0
-    tracker_total_rows = 0  # 写入的 tracker 记录总条数（估算值，不含提交失败的部分）
+    tracker_total_rows = 0
     error_count = 0
-    batch_start_count = 0
-    batch_start_tracker_rows = 0
-    datetime.now()
+    batch_stats_total = {"insert": 0, "update": 0, "skip": 0, "removed": 0}
+    current_time = datetime.now()
+
+    async def _flush_batch() -> None:
+        """提交当前累计的 batch。"""
+        nonlocal accumulated_rows, accumulated_info_ids, error_count
+        if not accumulated_rows:
+            return
+        try:
+            stats = await sync_trackers_batch_async(db, accumulated_rows, current_time)
+            for k in batch_stats_total:
+                batch_stats_total[k] += stats.get(k, 0)
+        except Exception as batch_err:
+            error_count += 1
+            logger.error(f"[{LOG_PREFIX}] sync_trackers_batch_async 失败: {batch_err}")
+            await _ensure_session_active(db)
+        accumulated_rows = []
+        accumulated_info_ids = set()
 
     for torrent_info in existing_torrents:
         torrent_hash = _qb_get_attr(torrent_info, "hash")
@@ -2942,60 +3298,31 @@ async def qb_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
         if not info_id:
             continue
         try:
-            await sync_add_tracker_async(db, "qbittorrent", "update", torrent_info, info_id)
+            rows, _urls = extract_tracker_rows_from_torrent(torrent_info, info_id, "qbittorrent", current_time)
+            accumulated_rows.extend(rows)
+            accumulated_info_ids.add(info_id)
             tracker_count += 1
-            # 统计本种子的 tracker 条数（估算：与 sync_add_tracker_async 内部过滤逻辑可能不完全一致）
-            trackers_data = getattr(torrent_info, "trackers", None)
-            if callable(trackers_data):
-                trackers_data = trackers_data()
-            if trackers_data:
-                tracker_total_rows += sum(
-                    1
-                    for tr in trackers_data
-                    if tr.get("url")
-                    and "DHT" not in str(tr.get("url", ""))
-                    and "PeX" not in str(tr.get("url", ""))
-                    and "LSD" not in str(tr.get("url", ""))
-                )
+            tracker_total_rows += len(rows)
         except Exception as e:
             error_count += 1
-            logger.error(f"[{LOG_PREFIX}] sync_add_tracker_async 失败: hash={torrent_hash}, error={e}")
+            logger.error(f"[{LOG_PREFIX}] extract_tracker_rows 失败: hash={torrent_hash}, error={e}")
             await _ensure_session_active(db)
             continue
 
-        # 分批提交，减少单次事务持有写锁的时间
-        if tracker_count > 0 and tracker_count % _TRACKER_ONLY_COMMIT_BATCH == 0:
-            tracker_count, tracker_total_rows, error_count = await _batch_commit_tracker_sync(
-                db,
-                tracker_count,
-                tracker_total_rows,
-                batch_start_count,
-                batch_start_tracker_rows,
-                error_count,
-                LOG_PREFIX,
-            )
-            # 仅在提交成功时更新基准（提交失败时已回退到旧基准）
-            if tracker_count > batch_start_count:
-                batch_start_count = tracker_count
-                batch_start_tracker_rows = tracker_total_rows
+        # 累计达 batch_size 行后提交（按 tracker 行数控制，非种子数）
+        if len(accumulated_rows) >= batch_size:
+            await _flush_batch()
 
-    # 最终提交剩余的变更
-    tracker_count, tracker_total_rows, error_count = await _batch_commit_tracker_sync(
-        db,
-        tracker_count,
-        tracker_total_rows,
-        batch_start_count,
-        batch_start_tracker_rows,
-        error_count,
-        LOG_PREFIX,
-        is_final=True,
-    )
+    # 最终提交剩余
+    await _flush_batch()
 
     total_duration = (datetime.now() - task_start).total_seconds()
     logger.info(
         f"[{LOG_PREFIX}] {nickname} 完成: "
         f"{tracker_count}/{len(existing_torrents)} 个种子, "
         f"{tracker_total_rows} 条 tracker 记录, "
+        f"insert={batch_stats_total['insert']} update={batch_stats_total['update']} "
+        f"skip={batch_stats_total['skip']} removed={batch_stats_total['removed']}, "
         f"{error_count} 个失败, "
         f"总耗时 {total_duration:.2f}s"
     )
@@ -3065,10 +3392,27 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     tracker_count = 0
     tracker_total_rows = 0  # 写入的 tracker 记录总条数（估算值，不含提交失败的部分）
     error_count = 0
-    batch_start_count = 0
-    batch_start_tracker_rows = 0
     skipped_new = 0
-    datetime.now()
+    batch_size = settings.SYNC_DB_COMMIT_BATCH_SIZE
+    accumulated_rows: list[dict] = []
+    accumulated_info_ids: set = set()
+    batch_stats_total = {"insert": 0, "update": 0, "skip": 0, "removed": 0}
+    current_time = datetime.now()
+
+    async def _flush_batch_tr() -> None:
+        nonlocal accumulated_rows, accumulated_info_ids, error_count
+        if not accumulated_rows:
+            return
+        try:
+            stats = await sync_trackers_batch_async(db, accumulated_rows, current_time)
+            for k in batch_stats_total:
+                batch_stats_total[k] += stats.get(k, 0)
+        except Exception as batch_err:
+            error_count += 1
+            logger.error(f"[{LOG_PREFIX}] sync_trackers_batch_async 失败: {batch_err}")
+            await _ensure_session_active(db)
+        accumulated_rows = []
+        accumulated_info_ids = set()
 
     for torrent_info in torrent_info_list:
         torrent_hash = getattr(torrent_info, "hashString", None)
@@ -3085,42 +3429,21 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
             continue
 
         try:
-            await sync_add_tracker_async(db, "transmission", "update", torrent_info, info_id)
+            rows, _urls = extract_tracker_rows_from_torrent(torrent_info, info_id, "transmission", current_time)
+            accumulated_rows.extend(rows)
+            accumulated_info_ids.add(info_id)
             tracker_count += 1
-            # 统计本种子的有效 tracker 条数（估算：基于 announce URL 过滤）
-            tracker_total_rows += sum(1 for ts in tracker_stats if hasattr(ts, "fields") and ts.fields.get("announce"))
+            tracker_total_rows += len(rows)
         except Exception as e:
             error_count += 1
-            logger.error(f"[{LOG_PREFIX}] sync_add_tracker_async 失败: hash={torrent_hash}, error={e}")
+            logger.error(f"[{LOG_PREFIX}] extract_tracker_rows 失败: hash={torrent_hash}, error={e}")
             await _ensure_session_active(db)
             continue
 
-        # 分批提交
-        if tracker_count > 0 and tracker_count % _TRACKER_ONLY_COMMIT_BATCH == 0:
-            tracker_count, tracker_total_rows, error_count = await _batch_commit_tracker_sync(
-                db,
-                tracker_count,
-                tracker_total_rows,
-                batch_start_count,
-                batch_start_tracker_rows,
-                error_count,
-                LOG_PREFIX,
-            )
-            if tracker_count > batch_start_count:
-                batch_start_count = tracker_count
-                batch_start_tracker_rows = tracker_total_rows
+        if len(accumulated_rows) >= batch_size:
+            await _flush_batch_tr()
 
-    # 最终提交剩余的变更
-    tracker_count, tracker_total_rows, error_count = await _batch_commit_tracker_sync(
-        db,
-        tracker_count,
-        tracker_total_rows,
-        batch_start_count,
-        batch_start_tracker_rows,
-        error_count,
-        LOG_PREFIX,
-        is_final=True,
-    )
+    await _flush_batch_tr()
 
     total_duration = (datetime.now() - task_start).total_seconds()
     if skipped_new > 0:
@@ -3129,6 +3452,8 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
         f"[{LOG_PREFIX}] {nickname} 完成: "
         f"{tracker_count}/{tracker_count + skipped_new} 个种子, "
         f"{tracker_total_rows} 条 tracker 记录, "
+        f"insert={batch_stats_total['insert']} update={batch_stats_total['update']} "
+        f"skip={batch_stats_total['skip']} removed={batch_stats_total['removed']}, "
         f"{error_count} 个失败, "
         f"总耗时 {total_duration:.2f}s"
     )
