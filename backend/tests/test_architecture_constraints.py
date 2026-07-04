@@ -11,7 +11,6 @@ import sys
 import warnings
 from pathlib import Path
 
-
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 LINT_SCRIPT = BACKEND_ROOT / "scripts" / "lint_btdeck.py"
 APP_ROOT = BACKEND_ROOT / "app"
@@ -66,10 +65,9 @@ def test_unified_token_expiry():
                 # 用 as_posix() 统一为正斜杠，跨平台一致（Windows 返回反斜杠会误判）
                 definitions.append(f"{path.relative_to(BACKEND_ROOT).as_posix()}:{node.lineno}")
 
-    assert len(definitions) == 1 and definitions[0].startswith("app/core/config.py:"), (
-        "ACCESS_TOKEN_EXPIRE_MINUTES 只能在 app/core/config.py 中定义一次，当前定义:\n"
-        + "\n".join(definitions)
-    )
+    assert len(definitions) == 1 and definitions[0].startswith(
+        "app/core/config.py:"
+    ), "ACCESS_TOKEN_EXPIRE_MINUTES 只能在 app/core/config.py 中定义一次，当前定义:\n" + "\n".join(definitions)
 
 
 def test_auth_dependency_usage():
@@ -97,6 +95,72 @@ def test_no_exec_calls():
 
 
 def test_no_sql_injection():
-    """确保没有 SQL 字符串拼接"""
+    """确保没有 SQL 注入字符串拼接"""
     issues = _blocking_codes("BTD305")
     assert not issues, "\n".join(issue.format() for issue in issues)
+
+
+# ==============================================================================
+# sync-resource-governance 阶段 3：请求侧路径隔离约束
+# ==============================================================================
+# 请求探针 endpoint（dashboard / torrent list 等）不得直接调用治理锁
+# （admission_controller.task_scope / db_write_scope），否则会让请求侧被
+# 后台同步任务阻塞，违背治理目标"不让后台任务挤占请求侧资源"。
+# 详见 PLANS/sync-resource-governance.md 阶段 3。
+
+# 请求侧路径白名单：这些模块是"请求探针"，禁止 import resource_guard /
+# 调用 admission_controller（read-only 查询路径不需要写锁串行化）。
+_REQUEST_SIDE_MODULES = [
+    "app/api/endpoints/dashboard.py",
+    "app/services/dashboard_service.py",
+    "app/api/endpoints/torrent_crud.py",
+]
+
+# 禁止在请求侧路径出现的名字（import 或调用均算）。
+_FORBIDDEN_GOVERNANCE_NAMES = {
+    "admission_controller",
+    "task_scope",
+    "db_write_scope",
+    "resource_guard",
+}
+
+
+def test_request_side_endpoints_do_not_use_governance_locks():
+    """请求探针 endpoint 不得 import/调用 sync-resource-governance 的治理锁。
+
+    防回归锚点：若未来有人在 dashboard 路径里加 `async with admission_controller.db_write_scope()`
+    把请求侧锁住（导致同步任务持锁时 dashboard 超时），此测试立即报红。
+
+    语义：dashboard / torrent list 是 read-only 查询，不需要写锁串行化；
+    治理锁只应出现在后台同步任务路径（cron_executor / torrents_async 同步函数）。
+    """
+    violations = []
+    for rel_path in _REQUEST_SIDE_MODULES:
+        full_path = BACKEND_ROOT / rel_path
+        if not full_path.exists():
+            violations.append(f"{rel_path}: 文件不存在（路径漂移？）")
+            continue
+        tree = _parse(full_path)
+        for node in ast.walk(tree):
+            # 检测 import 语句中的名字
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name == "app.tasks.resource_guard":
+                        violations.append(f"{rel_path}:{node.lineno} import resource_guard")
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and "resource_guard" in node.module:
+                    violations.append(f"{rel_path}:{node.lineno} from ... import resource_guard")
+                for alias in node.names:
+                    if alias.name in _FORBIDDEN_GOVERNANCE_NAMES:
+                        violations.append(f"{rel_path}:{node.lineno} imports '{alias.name}'")
+            # 检测名字引用（AttributeAccess / Name）
+            elif isinstance(node, ast.Attribute) and node.attr in _FORBIDDEN_GOVERNANCE_NAMES:
+                violations.append(f"{rel_path}:{node.lineno} 引用 '{node.attr}'")
+            elif isinstance(node, ast.Name) and node.id == "admission_controller":
+                violations.append(f"{rel_path}:{node.lineno} 引用 'admission_controller'")
+
+    assert (
+        not violations
+    ), "请求侧路径不应使用治理锁（admission_controller/task_scope/db_write_scope），" "否则后台同步任务持锁时会阻塞请求侧。发现违规:\n" + "\n".join(
+        violations
+    )
