@@ -129,6 +129,7 @@ class TorrentInfoSyncTask(BaseSyncTask):
         """
         from app.database import AsyncSessionLocal
         from app.downloader.models import BtDownloaders
+        from app.main import app as downloader_app
         from app.api.endpoints.torrents_async import qb_add_torrents_info_only_async, tr_add_torrents_info_only_async
 
         async with AsyncSessionLocal() as db:
@@ -153,9 +154,29 @@ class TorrentInfoSyncTask(BaseSyncTask):
                     logger.error(error_msg)
                     return {"status": "failed", "message": error_msg, "nickname": downloader.nickname}
 
-                # 调用种子信息同步函数（不含 tracker）
+                # === 从缓存获取客户端连接（遵循 downloader-connection 约束） ===
+                # 优先复用 app.state.store 中的缓存客户端，避免重复创建连接；
+                # 获取失败时传 None，由同步函数 fallback 新建（保持向后兼容）。
+                cached_client = None
+                try:
+                    cached_downloaders = await downloader_app.state.store.get_snapshot()
+                    downloader_vo = next(
+                        (
+                            d
+                            for d in cached_downloaders
+                            if str(d.downloader_id) == str(downloader_info.get("downloader_id"))
+                        ),
+                        None,
+                    )
+                    if downloader_vo and hasattr(downloader_vo, "client") and downloader_vo.client is not None:
+                        cached_client = downloader_vo.client
+                except Exception as e:
+                    logger.warning(f"[TorrentInfoSync] 获取缓存客户端失败，将新建连接: {e}")
+                    cached_client = None
+
+                # 调用种子信息同步函数（不含 tracker），传入缓存客户端
                 if downloader_type_str == "qbittorrent":
-                    await qb_add_torrents_info_only_async(db, [downloader])
+                    await qb_add_torrents_info_only_async(db, [downloader], client=cached_client)
                     logger.info(f"[TorrentInfoSync] qBittorrent {downloader.nickname} 种子信息同步成功")
                     return {
                         "status": "success",
@@ -164,7 +185,7 @@ class TorrentInfoSyncTask(BaseSyncTask):
                         "nickname": downloader.nickname,
                     }
                 else:  # transmission
-                    await tr_add_torrents_info_only_async(db, [downloader])
+                    await tr_add_torrents_info_only_async(db, [downloader], client=cached_client)
                     logger.info(f"[TorrentInfoSync] Transmission {downloader.nickname} 种子信息同步成功")
                     return {
                         "status": "success",

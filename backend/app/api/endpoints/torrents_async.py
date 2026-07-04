@@ -41,8 +41,10 @@ from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.tracker_mapper import extract_tracker_host
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -953,7 +955,13 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     )
     # 分批获取 Transmission 种子，避免超大响应导致超时
     # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-    base_torrents = await asyncio.to_thread(tr_client.get_torrents, arguments=TR_BASE_FIELDS)
+    base_torrents = await call_downloader_api(
+        str(bt_downloader.downloader_id),
+        DownloadLane.SYNC,
+        tr_client.get_torrents,
+        kwargs={"arguments": TR_BASE_FIELDS},
+        operation="tr_get_torrents_base",
+    )
     torrent_info_list = []
     total = len(base_torrents)
 
@@ -992,7 +1000,13 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             if not batch_ids:
                 continue
             # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-            detailed_batch = await asyncio.to_thread(tr_client.get_torrents, ids=batch_ids, arguments=TR_DETAIL_FIELDS)
+            detailed_batch = await call_downloader_api(
+                downloader_id,
+                DownloadLane.SYNC,
+                tr_client.get_torrents,
+                kwargs={"ids": batch_ids, "arguments": TR_DETAIL_FIELDS},
+                operation="tr_get_torrents_detail",
+            )
             torrent_info_list.extend(detailed_batch)
 
     # 标记已完成首次全量同步
@@ -1286,21 +1300,26 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
 
             if not already_backed_up:
                 try:
-                    backup_result = await asyncio.to_thread(
+                    backup_result = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
                         backup_service.backup_torrent_file,
-                        info_id=torrent_info_id,
-                        torrent_hash=torrent_info.hashString,
-                        torrent_name=torrent_info.name,
-                        downloader_type="transmission",
-                        save_path=torrent_info.download_dir,
-                        downloader_config={
-                            "host": bt_downloader.host,
-                            "port": bt_downloader.port,
-                            "username": bt_downloader.username,
-                            "password": bt_downloader.password,
-                            "torrent_file_path": torrent_info.torrent_file,
-                            "torrent_save_path": bt_downloader.torrent_save_path,
+                        kwargs={
+                            "info_id": torrent_info_id,
+                            "torrent_hash": torrent_info.hashString,
+                            "torrent_name": torrent_info.name,
+                            "downloader_type": "transmission",
+                            "save_path": torrent_info.download_dir,
+                            "downloader_config": {
+                                "host": bt_downloader.host,
+                                "port": bt_downloader.port,
+                                "username": bt_downloader.username,
+                                "password": bt_downloader.password,
+                                "torrent_file_path": torrent_info.torrent_file,
+                                "torrent_save_path": bt_downloader.torrent_save_path,
+                            },
                         },
+                        operation="tr_backup_torrent_file",
                     )
 
                     if backup_result["success"]:
@@ -1501,8 +1520,14 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         try:
             if last_rid is None:
                 # 首次同步：获取全量 + rid
-                # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-                sync_data = await asyncio.to_thread(client.sync_maindata, rid=0)
+                # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用，避免默认线程池挤占
+                sync_data = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.SYNC,
+                    client.sync_maindata,
+                    kwargs={"rid": 0},
+                    operation="sync_maindata_init",
+                )
                 new_rid = int(sync_data.get("rid", 0))
                 with _QB_RID_LOCK:
                     _QB_SYNC_RID_CACHE[downloader_id] = new_rid
@@ -1510,15 +1535,21 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                 torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
                 used_sync_maindata = True
                 if torrent_info_list:
-                    await _enrich_qb_torrents_with_trackers(client, torrent_info_list)
+                    await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
                 logger.info(
                     f"[QB_SYNC] first full sync: downloader_id={downloader_id}, "
                     f"rid={new_rid}, torrents={len(torrent_info_list)}"
                 )
             else:
                 # 增量同步：只获取变化的种子
-                # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-                sync_data = await asyncio.to_thread(client.sync_maindata, rid=last_rid)
+                # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用，避免默认线程池挤占
+                sync_data = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.SYNC,
+                    client.sync_maindata,
+                    kwargs={"rid": last_rid},
+                    operation="sync_maindata_incremental",
+                )
                 new_rid = int(sync_data.get("rid", last_rid))
                 with _QB_RID_LOCK:
                     _QB_SYNC_RID_CACHE[downloader_id] = new_rid
@@ -1532,7 +1563,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                 torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
                 used_sync_maindata = True
                 if torrent_info_list:
-                    await _enrich_qb_torrents_with_trackers(client, torrent_info_list)
+                    await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
                 logger.info(
                     f"[QB_SYNC] incremental: downloader_id={downloader_id}, "
                     f"rid={last_rid}->{new_rid}, changed={len(torrent_info_list)}, "
@@ -1544,8 +1575,14 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             for attempt in range(1, 4):
                 await asyncio.sleep(2 ** (attempt - 1))
                 try:
-                    # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-                    sync_data = await asyncio.to_thread(client.sync_maindata, rid=last_rid or 0)
+                    # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用，避免默认线程池挤占
+                    sync_data = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.SYNC,
+                        client.sync_maindata,
+                        kwargs={"rid": last_rid or 0},
+                        operation="sync_maindata_retry",
+                    )
                     new_rid = int(sync_data.get("rid", last_rid or 0))
                     with _QB_RID_LOCK:
                         _QB_SYNC_RID_CACHE[downloader_id] = new_rid
@@ -1556,7 +1593,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
                     used_sync_maindata = True
                     if torrent_info_list:
-                        await _enrich_qb_torrents_with_trackers(client, torrent_info_list)
+                        await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
                     retry_success = True
                     logger.info(
                         f"[QB_SYNC] retry success: downloader_id={downloader_id}, "
@@ -1583,9 +1620,17 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     if force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed:
         offset = 0
         while True:
-            # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-            batch = await asyncio.to_thread(
-                client.torrents_info, limit=QB_BATCH_SIZE, offset=offset, include_trackers=True
+            # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用
+            batch = await call_downloader_api(
+                downloader_id,
+                DownloadLane.SYNC,
+                client.torrents_info,
+                kwargs={
+                    "limit": QB_BATCH_SIZE,
+                    "offset": offset,
+                    "include_trackers": True,
+                },
+                operation="qb_torrents_info_full_sync",
             )
             if not batch:
                 break
@@ -1903,20 +1948,25 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
 
             if not already_backed_up:
                 try:
-                    backup_result = await asyncio.to_thread(
+                    backup_result = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
                         backup_service.backup_torrent_file,
-                        info_id=torrent_info_id,
-                        torrent_hash=torrent_info.hash,
-                        torrent_name=torrent_info.name,
-                        downloader_type="qbittorrent",
-                        save_path=torrent_info.save_path,
-                        downloader_config={
-                            "host": bt_downloader.host,
-                            "port": bt_downloader.port,
-                            "username": bt_downloader.username,
-                            "password": bt_downloader.password,
-                            "torrent_save_path": bt_downloader.torrent_save_path,
+                        kwargs={
+                            "info_id": torrent_info_id,
+                            "torrent_hash": torrent_info.hash,
+                            "torrent_name": torrent_info.name,
+                            "downloader_type": "qbittorrent",
+                            "save_path": torrent_info.save_path,
+                            "downloader_config": {
+                                "host": bt_downloader.host,
+                                "port": bt_downloader.port,
+                                "username": bt_downloader.username,
+                                "password": bt_downloader.password,
+                                "torrent_save_path": bt_downloader.torrent_save_path,
+                            },
                         },
+                        operation="qb_backup_torrent_file",
                     )
 
                     if backup_result["success"]:
@@ -2187,20 +2237,29 @@ def _qb_get_attr(obj: Any, key: str, default: Any = None) -> Any:
 
 
 async def _enrich_qb_torrents_with_trackers(
-    client: qbClient, torrent_info_list: List[Any], concurrency_limit: int = 10
+    client: qbClient,
+    torrent_info_list: List[Any],
+    downloader_id: str,
+    concurrency_limit: Optional[int] = None,
 ) -> None:
     """
     Enrich qBittorrent torrents with tracker info after sync/maindata.
 
     使用并发单次调用优化性能，避免批量 API 不支持的问题。
+    通过 downloader_api_runtime 在 tracker_lane 专用 executor 调用，避免挤占默认线程池。
 
     Args:
         client: qBittorrent 客户端实例
         torrent_info_list: 种子信息列表
-        concurrency_limit: 并发限制，默认 10，避免对服务器造成过大压力
+        downloader_id: 下载器标识（透传给 downloader_api_runtime 做 per-downloader 限流与日志）
+        concurrency_limit: 并发限制；None 取 settings.QB_TRACKER_CONCURRENCY（默认 3）。
+            历史默认 10 会打满 qB WebUI，已按 sync-resource-governance 计划降至 3。
     """
     if not torrent_info_list:
         return
+
+    # 默认并发取配置（默认 3）；显式传入则覆盖
+    effective_concurrency = concurrency_limit if concurrency_limit is not None else settings.QB_TRACKER_CONCURRENCY
 
     info_by_hash = {}
     torrent_hashes = []
@@ -2217,25 +2276,31 @@ async def _enrich_qb_torrents_with_trackers(
     enrich_start = datetime.now()
     logger.info(
         f"[QB_TRACKER_ENRICH] Enriching {len(torrent_hashes)} torrents with tracker info "
-        f"(concurrency: {concurrency_limit})"
+        f"(concurrency: {effective_concurrency}, downloader: {downloader_id})"
     )
 
     async def _fetch_single_trackers(torrent_hash: str) -> tuple[str, Any] | None:
         """
-        获取单个种子的 tracker 信息
+        获取单个种子的 tracker 信息（通过 tracker_lane executor）
 
         Returns:
             (torrent_hash, trackers) 元组，失败时返回 None
         """
         try:
-            trackers = await asyncio.to_thread(client.torrents_trackers, torrent_hash)
+            trackers = await call_downloader_api(
+                downloader_id,
+                DownloadLane.TRACKER,
+                client.torrents_trackers,
+                args=(torrent_hash,),
+                operation="qb_fetch_trackers",
+            )
             return torrent_hash, trackers
         except Exception as e:
             logger.error(f"[QB_TRACKER_ENRICH] Failed to fetch trackers for {torrent_hash[:16]}...: {e}")
             return None
 
-    # 使用信号量限制并发数
-    semaphore = asyncio.Semaphore(concurrency_limit)
+    # 使用信号量限制并发数（在 lane executor 之上再叠加批量并发控制）
+    semaphore = asyncio.Semaphore(effective_concurrency)
 
     async def _fetch_with_semaphore(torrent_hash: str) -> tuple[str, Any] | None:
         """带并发限制的获取函数"""
@@ -2303,21 +2368,32 @@ async def _mark_qb_removed_torrents(db: AsyncSession, downloader_id: str, remove
 # ==============================================================================
 
 
-async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[Any]) -> None:
-    """qBittorrent 种子信息同步（仅同步种子基础信息，不同步 tracker）"""
+async def qb_add_torrents_info_only_async(
+    db: AsyncSession, downloaders: List[Any], client: Optional[Any] = None
+) -> None:
+    """qBittorrent 种子信息同步（仅同步种子基础信息，不同步 tracker）
+
+    Args:
+        db: 异步数据库会话
+        downloaders: 下载器对象列表（取第一个）
+        client: 可选的已缓存 qBittorrent 客户端（优先复用 app.state.store 中的连接）；
+            None 时 fallback 新建连接。复用连接遵循 downloader-connection 约束。
+    """
     if not downloaders or len(downloaders) == 0:
         logger.error("下载器列表为空，无法同步种子信息")
         return
 
     bt_downloader = downloaders[0]
-    client = qbClient(
-        host=bt_downloader.host,
-        port=bt_downloader.port,
-        username=bt_downloader.username,
-        password=bt_downloader.password,
-        VERIFY_WEBUI_CERTIFICATE=False,
-        REQUESTS_ARGS={"timeout": QB_API_TIMEOUT},
-    )
+    # 优先复用传入的缓存客户端（来自 app.state.store），避免重复创建连接
+    if client is None:
+        client = qbClient(
+            host=bt_downloader.host,
+            port=bt_downloader.port,
+            username=bt_downloader.username,
+            password=bt_downloader.password,
+            VERIFY_WEBUI_CERTIFICATE=False,
+            REQUESTS_ARGS={"timeout": QB_API_TIMEOUT},
+        )
 
     downloader_id = str(bt_downloader.downloader_id)
     torrent_info_list = []
@@ -2333,8 +2409,14 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
         last_rid = _QB_SYNC_RID_CACHE.get(downloader_id)
         try:
             if last_rid is None:
-                # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-                sync_data = await asyncio.to_thread(client.sync_maindata, rid=0)
+                # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用，避免默认线程池挤占
+                sync_data = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.SYNC,
+                    client.sync_maindata,
+                    kwargs={"rid": 0},
+                    operation="sync_maindata_init",
+                )
                 new_rid = int(sync_data.get("rid", 0))
                 with _QB_RID_LOCK:
                     _QB_SYNC_RID_CACHE[downloader_id] = new_rid
@@ -2344,8 +2426,14 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
                     f"[QB_INFO_SYNC] first full sync: downloader_id={downloader_id}, rid={new_rid}, torrents={len(torrent_info_list)}"
                 )
             else:
-                # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-                sync_data = await asyncio.to_thread(client.sync_maindata, rid=last_rid)
+                # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用，避免默认线程池挤占
+                sync_data = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.SYNC,
+                    client.sync_maindata,
+                    kwargs={"rid": last_rid},
+                    operation="sync_maindata_incremental",
+                )
                 new_rid = int(sync_data.get("rid", last_rid))
                 with _QB_RID_LOCK:
                     _QB_SYNC_RID_CACHE[downloader_id] = new_rid
@@ -2364,8 +2452,14 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
     if force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed:
         offset = 0
         while True:
-            # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-            batch = await asyncio.to_thread(client.torrents_info, limit=QB_BATCH_SIZE, offset=offset)
+            # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用
+            batch = await call_downloader_api(
+                downloader_id,
+                DownloadLane.SYNC,
+                client.torrents_info,
+                kwargs={"limit": QB_BATCH_SIZE, "offset": offset},
+                operation="qb_torrents_info_only",
+            )
             if not batch:
                 break
             torrent_info_list.extend(batch)
@@ -2491,24 +2585,43 @@ async def qb_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
         raise
 
 
-async def tr_add_torrents_info_only_async(db: AsyncSession, downloaders: List[Any]) -> None:
-    """Transmission 种子信息同步（仅同步种子基础信息，不同步 tracker）"""
+async def tr_add_torrents_info_only_async(
+    db: AsyncSession, downloaders: List[Any], client: Optional[Any] = None
+) -> None:
+    """Transmission 种子信息同步（仅同步种子基础信息，不同步 tracker）
+
+    Args:
+        db: 异步数据库会话
+        downloaders: 下载器对象列表（取第一个）
+        client: 可选的已缓存 Transmission 客户端（优先复用 app.state.store 中的连接）；
+            None 时 fallback 新建连接。
+    """
     if not downloaders or len(downloaders) == 0:
         logger.error("下载器列表为空，无法同步种子信息")
         return
 
     bt_downloader = downloaders[0]
-    tr_client = trClient(
-        host=bt_downloader.host,
-        username=bt_downloader.username,
-        password=bt_downloader.password,
-        port=bt_downloader.port,
-        protocol="http",
-        timeout=TR_API_TIMEOUT,
-    )
+    # 优先复用传入的缓存客户端，避免重复创建连接
+    if client is None:
+        tr_client = trClient(
+            host=bt_downloader.host,
+            username=bt_downloader.username,
+            password=bt_downloader.password,
+            port=bt_downloader.port,
+            protocol="http",
+            timeout=TR_API_TIMEOUT,
+        )
+    else:
+        tr_client = client
 
     # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
-    base_torrents = await asyncio.to_thread(tr_client.get_torrents, arguments=TR_BASE_FIELDS)
+    base_torrents = await call_downloader_api(
+        str(bt_downloader.downloader_id),
+        DownloadLane.SYNC,
+        tr_client.get_torrents,
+        kwargs={"arguments": TR_BASE_FIELDS},
+        operation="tr_get_torrents_base",
+    )
     torrent_info_list = []
     downloader_id = str(bt_downloader.downloader_id)
     now_ts = datetime.now().timestamp()
@@ -2536,9 +2649,15 @@ async def tr_add_torrents_info_only_async(db: AsyncSession, downloaders: List[An
         batch = base_torrents[i : i + TR_BATCH_SIZE]
         batch_ids = [t.id for t in batch if hasattr(t, "id")]
         if batch_ids:
-            # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
+            # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用
             torrent_info_list.extend(
-                await asyncio.to_thread(tr_client.get_torrents, ids=batch_ids, arguments=TR_DETAIL_FIELDS)
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.SYNC,
+                    tr_client.get_torrents,
+                    kwargs={"ids": batch_ids, "arguments": TR_DETAIL_FIELDS},
+                    operation="tr_get_torrents_detail",
+                )
             )
 
     _TR_FULL_SYNC_DONE[downloader_id] = True
@@ -2762,7 +2881,12 @@ async def qb_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
 
     # === 第2步：全量获取种子列表（不分批，避免分批 offset 导致 tracker 数据不完整） ===
     fetch_start = datetime.now()
-    torrent_info_list = await asyncio.to_thread(client.torrents_info)
+    torrent_info_list = await call_downloader_api(
+        str(downloader.downloader_id),
+        DownloadLane.TRACKER,
+        client.torrents_info,
+        operation="qb_torrents_info_for_tracker_sync",
+    )
     fetch_duration = (datetime.now() - fetch_start).total_seconds()
     logger.info(f"[{LOG_PREFIX}] 全量获取到 {len(torrent_info_list)} 个种子，耗时 {fetch_duration:.3f}s")
 
@@ -2798,7 +2922,7 @@ async def qb_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
 
     # === 第4步：获取 tracker 数据 ===
     enrich_start = datetime.now()
-    await _enrich_qb_torrents_with_trackers(client, existing_torrents, concurrency_limit=10)
+    await _enrich_qb_torrents_with_trackers(client, existing_torrents, str(downloader.downloader_id))
     enrich_duration = (datetime.now() - enrich_start).total_seconds()
     logger.info(f"[{LOG_PREFIX}] 获取 tracker 数据完成，耗时 {enrich_duration:.3f}s")
 
@@ -2918,7 +3042,13 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
 
     # === 第2步：从下载器获取种子列表（含 trackerStats） ===
     fetch_start = datetime.now()
-    torrent_info_list = await asyncio.to_thread(client.get_torrents, arguments=TR_BASE_FIELDS)
+    torrent_info_list = await call_downloader_api(
+        str(downloader.downloader_id),
+        DownloadLane.TRACKER,
+        client.get_torrents,
+        kwargs={"arguments": TR_BASE_FIELDS},
+        operation="tr_get_torrents_for_tracker_sync",
+    )
     fetch_duration = (datetime.now() - fetch_start).total_seconds()
     logger.info(f"[{LOG_PREFIX}] 获取到 {len(torrent_info_list)} 个种子（含 trackerStats），耗时 {fetch_duration:.3f}s")
 
