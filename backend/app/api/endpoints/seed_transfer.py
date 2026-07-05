@@ -22,7 +22,13 @@ from app.schemas.seed_transfer import (
     SeedTransferRequest,
     SeedTransferBatchRequest,
 )
-from app.factory import app  # ✅ 修复: 直接导入全局app实例
+
+# 注意：禁止在此处顶层 `from app.factory import app`。
+# seed_transfer 由 app.api.api 在路由装配时导入；顶层 factory import 会形成
+# 循环依赖：app.api.api(半成品，无 api_router) → app.factory →
+# configure_routes_and_static 命中早退 → 全局 app 无业务路由。
+# 历史 bug：tests/api/test_tag_aggregation_api.py 全量运行时 16 个用例全 404。
+# 改为函数内 lazy import，与 downloader.py / torrent_location.py 的既有模式一致。
 
 # 禁用 urllib3 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -75,6 +81,8 @@ async def transfer_seed(
     """
     try:
         # ✅ 修复: 使用全局 app 实例(从 app.factory 导入)
+        from app.factory import app  # lazy import，避免顶层循环依赖（见模块顶部注释）
+
         if not hasattr(app.state, "store") or app.state.store is None:
             return CommonResponse(status="error", msg="下载器缓存未初始化", code="500")
 
@@ -176,6 +184,8 @@ async def batch_transfer_seeds(
     """
     try:
         # ✅ 修复: 使用全局 app 实例(从 app.factory 导入)
+        from app.factory import app  # lazy import，避免顶层循环依赖（见模块顶部注释）
+
         if not hasattr(app.state, "store") or app.state.store is None:
             return CommonResponse(status="error", msg="下载器缓存未初始化", code="500")
 

@@ -1,3 +1,4 @@
+import logging
 import sys
 from pathlib import Path
 
@@ -9,6 +10,8 @@ from fastapi.responses import FileResponse
 from app.core.config import settings
 from app.startup.lifecycle import lifespan
 from app.startup.routers_initializer import init_routers
+
+logger = logging.getLogger(__name__)
 
 
 def _get_frontend_dist_path() -> Path | None:
@@ -61,6 +64,14 @@ def configure_routes_and_static(app: FastAPI) -> None:
     """按 API 路由优先、SPA fallback 最后的顺序完成路由挂载。"""
     api_module = sys.modules.get("app.api.api")
     if api_module is not None and not hasattr(api_module, "api_router"):
+        # 命中此分支即代表发生循环 import：app.api.api 正在加载（半成品，尚未定义 api_router），
+        # 其内部某个 endpoint 模块顶层 import 了 app.factory，触发本函数提前执行。
+        # 此时业务路由无法挂载，全局 app 只剩默认路由（历史 bug：tag_aggregation 测试 404）。
+        # 端点模块应在函数体内 lazy import app，而非顶层 import。
+        logger.warning(
+            "检测到 app.api.api 循环 import：configure_routes_and_static 早退，"
+            "全局 app 未注册业务路由。请检查 endpoint 模块是否顶层 import 了 app.factory/main。"
+        )
         return
 
     if not getattr(app.state, "api_routers_initialized", False):
