@@ -34,11 +34,23 @@ ENV/
 htmlcov/
 .tox/
 
-# 数据库文件
-config/*.db
-config/*.db-journal
+# 类型/代码检查缓存（体积大，严禁进镜像）
+.mypy_cache/
+.ruff_cache/
+
+# 数据库及一切派生文件
+# - *.db / *.db-* 覆盖根目录下的常规 SQLite 文件与 WAL/SHM 临时文件
+# - config/*.db* 覆盖 config 子目录下的数据库（*.db 不递归匹配子目录，需显式声明）
+# - config/*pre-migration-* 覆盖无 .db 后缀的迁移前自动备份（migrate_database 生成）
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
+config/*.db*
+config/*pre-migration*
+
+# 运行时缓存/状态文件（compose 已挂载卷覆盖）
+config/qb_rid_cache.json
 
 # 日志文件
 logs/

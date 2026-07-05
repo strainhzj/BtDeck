@@ -1,14 +1,43 @@
 # BTDeck 后端 Dockerfile
-# 基于 Python 3.11-slim，多阶段构建优化镜像大小
+# 多阶段构建：builder 编译 wheel，runtime 仅装运行时依赖
+# 设计目标：镜像精简（<550MB），不含 dev/test 工具、不含本地数据库与缓存
 
+# ============================================
+# 阶段1: builder - 编译所有依赖的 wheel
+# ============================================
+FROM python:3.11-slim AS builder
+
+LABEL maintainer="BTDeck Team"
+LABEL description="BTDeck 后端构建阶段 - wheel 编译"
+
+WORKDIR /build
+
+# 安装编译工具链（仅 builder，不进 runtime）
+# gcc/build-essential: 编译 C 扩展；libffi-dev: bcrypt/cryptography 头文件；libssl-dev: SSL 头文件
+RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    build-essential \
+    libffi-dev \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# 复制依赖清单
+COPY requirements.txt .
+
+# 升级打包工具，并将所有依赖编译为 wheel 到 /build/wheels
+# wheel 离线安装可让 runtime 阶段无需 gcc/联网
+ENV PIP_DEFAULT_TIMEOUT=300
+RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
+    pip wheel --no-cache-dir --wheel-dir=/build/wheels -r requirements.txt
+
+# ============================================
+# 阶段2: runtime - 生产运行时
+# ============================================
 FROM python:3.11-slim
 
-# 设置标签
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端服务 - FastAPI + Python 3.11"
-
-# 设置工作目录
-WORKDIR /app
 
 # 设置环境变量
 ENV PYTHONPATH=/app \
@@ -16,43 +45,41 @@ ENV PYTHONPATH=/app \
     PYTHONDONTWRITEBYTECODE=1 \
     LOG_DIR=/app/logs \
     CONFIG_DIR=/app/config \
-    TZ=Asia/Shanghai \
-    # 使用官方PyPI源（清华镜像源可能不稳定）
-    # PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple \
-    # PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn \
-    # 增加pip超时时间
-    PIP_DEFAULT_TIMEOUT=300
+    TZ=Asia/Shanghai
 
-# 安装系统依赖（使用阿里云镜像源加速）
+# 安装运行时系统依赖（最小集）
+# curl: 健康检查；tzdata: 时区数据
+# 创建非特权用户 appuser (uid=1001)
 RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && apt-get install -y --no-install-recommends \
-    # 基础工具
     curl \
-    # 数据库迁移工具
-    alembic \
-    # 清理缓存
+    tzdata \
     && rm -rf /var/lib/apt/lists/* \
-    # 创建非特权用户
+    && ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime \
+    && echo "Asia/Shanghai" > /etc/timezone \
     && groupadd -g 1001 appgroup \
     && useradd -u 1001 -g 1001 -m -d /home/appuser -s /bin/bash appuser
 
+WORKDIR /app
+
+# 离线安装 wheel（不联网，不依赖 builder 镜像）
+# 用 -r requirements.txt 让 pip 自解析依赖与 extras，避免手动构造包名列表的歧义
+COPY requirements.txt /tmp/requirements.txt
+COPY --from=builder /build/wheels /tmp/wheels
+RUN pip install --no-cache-dir --no-index --find-links=/tmp/wheels \
+    -r /tmp/requirements.txt \
+    && rm -rf /tmp/wheels /tmp/requirements.txt
+
 # 创建必要的目录并设置权限
 RUN mkdir -p /app/logs /app/config /app/data && \
-    chown -R appuser:appgroup /app
+    chown -R appuser:appgroup /app/logs /app/config /app/data
 
-# 复制依赖文件
-COPY requirements.txt .
+# 复制应用代码（用 --chown 一步完成拷贝+属主设置，避免后续 chown -R 制造重复层）
+COPY --chown=appuser:appgroup . .
 
-# 安装 Python 依赖
-RUN pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir uvicorn[standard]
-
-# 复制应用代码
-COPY . .
-
-# 设置启动脚本权限
-RUN chmod +x /app/btdeck_startup.sh && \
-    chown -R appuser:appgroup /app
+# 转换启动脚本的 CRLF→LF（防止 Windows 行尾导致 shebang 失效：exec ... no such file）
+# 并设置可执行权限
+RUN sed -i 's/\r$//' /app/btdeck_startup.sh && chmod +x /app/btdeck_startup.sh
 
 # 切换到非特权用户
 USER appuser

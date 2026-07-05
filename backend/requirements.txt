@@ -1,3 +1,7 @@
+# BTDeck 后端生产依赖
+# 仅包含运行时必需的依赖。开发/测试/类型检查工具见 requirements-dev.txt
+# 拆分先例参考 deploy/requirements-{linux,windows}-package.txt
+#
 # uvicorn与pydantic安全版本升级 - 2025-11-13
 # Uvicorn: 0.22.0 → 0.35.0 (+13版本)
 # Pydantic: 2.9.2 → 2.12.4 (+4版本)
@@ -7,7 +11,6 @@ common~=0.1.2
 uvicorn~=0.35.0
 sqlalchemy~=2.0.15
 setuptools~=75.8.0
-cython~=3.0.12
 click~=8.1.8
 requests~=2.32.3
 pydantic~=2.12.4
@@ -21,7 +24,6 @@ gmssl~=3.2.2
 qbittorrent-api~=2025.5.0
 ping3~=4.0.8
 pyjwt~=2.8.0
-debugpy~=1.8.11
 aiosqlite~=0.21.0
 pillow~=11.1.0
 transmission-rpc~=7.0.11
@@ -32,7 +34,6 @@ alembic~=1.13.3
 bencodepy~=0.9.5
 apscheduler~=3.10.0
 python-multipart~=0.0.20
-passlib[bcrypt]~=1.7.4
 pydantic-settings~=2.12.0
 croniter~=3.0.4
 httpx~=0.28.0
@@ -40,17 +41,3 @@ packaging~=24.0
 # 审计日志 Excel 导出依赖（audit_service.to_excel）
 pandas~=2.2.0
 openpyxl~=3.1.0
-
-# 测试依赖
-pytest~=8.3.0
-pytest-asyncio~=0.24.0
-pytest-cov~=5.0.0
-pytest-mock~=3.14.0
-freezegun~=1.5.0
-
-# 代码质量工具（开发依赖，CI 门禁）
-# mypy/black/flake8 版本约束 + pyproject.toml/.flake8 配置
-# 验证命令：mypy app/ && black --check app/ && flake8 app/
-mypy~=1.13.0
-black~=24.10.0
-flake8~=7.1.0
