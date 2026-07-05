@@ -1,5 +1,75 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-05 - 修复 test_tag_aggregation_api.py 全量运行 404（循环 import 根因）
+
+**任务**: 修复 `tests/api/test_tag_aggregation_api.py` 全量 pytest 时 16 个用例全 404（单独跑通过）
+**分支**: dev
+**类型**: 测试隔离 → 实为业务代码循环 import bug
+
+### 根因（非测试隔离，是业务代码 bug）
+
+`tests/api/test_tag_aggregation_api.py` 全量运行时所有 `/api/v1/tags/*` 路由返回 404，根因是**全局 `app` 未注册业务路由**，触发链：
+
+```
+任意测试先 import app.api.api（如 test_recycle_bin_api.py:31 拿 api_router）
+  └─ app.api.api 顶层 import 各 endpoint
+     └─ app/api/endpoints/seed_transfer.py:25 顶层 `from app.factory import app`  ← 唯一源头
+        └─ 触发 app.factory 执行：create_app() + configure_routes_and_static()
+           └─ factory.py:62-64 早退检查命中：
+              sys.modules["app.api.api"] 存在但无 api_router 属性（半成品）
+              → return，跳过 init_routers → 全局 app 仅 4 条默认路由
+```
+
+证据（脚本验证）：
+- 干净 import → `app.routes` = 191（含 13 个 `/tags/*`）
+- 先 `import app.api.api` 再 `from app.main import app` → `app.routes` = **4**（仅默认）
+
+### 为什么前几次修复都没根治
+
+`cfc787b` / `053a390` 都在**测试侧**改（fixture 隔离、并发改串行、Windows 路径），但根因在业务代码（`seed_transfer.py:25` 顶层 import + `factory.py` 早退），测试侧改动无法根治。
+
+### 修复（按子代理审查裁剪到最小根治）
+
+**① `backend/app/api/endpoints/seed_transfer.py`（根因修复）**
+- 删除 line 25 顶层 `from app.factory import app`
+- 在 `transfer_seed` 和 `batch_transfer_seeds` 两函数 `try:` 块开头加 lazy import
+- 与 `downloader.py:93/423/482/1183`、`torrent_location.py:45` 的既有 lazy 模式一致（代码复用优先）
+- 加注释说明循环 import 原因，防止回归
+
+**② `backend/app/factory.py`（可观测性增强，零副作用）**
+- 早退分支加 WARNING 日志（命中即代表循环 import，便于将来定位）
+- 早退逻辑本身保留（防御性），仅观测不改变控制流
+
+### 不动的部分
+
+- ❌ 不动 `test_tag_aggregation_api.py`：lazy 修好后全局 app 路由齐全，16 个用例自然全绿（子代理审查确认测试侧改动非必要）
+- ❌ 不动 `main.py`、`api.py`、其他 endpoint
+
+### 验证结果（DoD 全部达成）
+
+| 验证项 | 结果 |
+|--------|------|
+| 最小复现 `pytest test_recycle_bin_api.py test_tag_aggregation_api.py` | ✅ 29 passed（修复前 16 failed） |
+| seed_transfer 回归 `pytest test_seed_transfer_api.py` | ✅ 10 passed（lazy 改动未破坏 global_app.state.store 注入） |
+| 全量 `pytest tests/` | ✅ **1925 passed, 0 failed**（修复前 16 failed / 1909 passed） |
+| 单文件 `pytest test_tag_aggregation_api.py` | ✅ 16 passed |
+| black --check（两改动文件） | ✅ 通过 |
+| flake8（两改动文件） | ✅ 通过 |
+| mypy（两改动文件） | ✅ 无新增错误（基线 10 个历史错误，行号平移，与本次改动无关） |
+
+### 关键设计决策
+
+1. **范围裁剪**：原计划"两边都修"（业务代码 + 测试侧），子代理独立审查后裁剪为"只修业务代码"。理由：lazy 修复消除循环 import 后，全局 app 路由齐全，测试侧自建 FastAPI 实例非必要条件（治本即可）。
+2. **factory 早退逻辑保留**：删除会更激进但风险大（行为变更）；保留 + WARNING 是零副作用的可观测性增强。
+3. **不引入回归**：seed_transfer lazy 改动有 `test_seed_transfer_api.py` 作为回归基线（子代理提示的关键风险点），已验证通过。
+
+### 改动文件清单
+
+- `backend/app/api/endpoints/seed_transfer.py`（+11/-1）
+- `backend/app/factory.py`（+11）
+
+---
+
 ## 2026-07-04 - sync-resource-governance 阶段 3 完成（验证与证据归档）
 
 **任务 ID**: `sync-resource-governance`
