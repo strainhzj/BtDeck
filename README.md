@@ -115,8 +115,10 @@ chmod +x build-linux.sh
 ### Docker 镜像
 
 ```bash
-./build-and-push.sh
+./build-images.sh
 ```
+
+仅构建本地镜像（`btdeck-backend:latest` / `btdeck-frontend:latest`，版本号从 `feature_list.json` 自动读取），不推送至镜像仓库。完成后执行 `docker compose up -d` 启动。
 
 ## 版本历史
 

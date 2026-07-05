@@ -10,7 +10,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: strainthomas/btdeck-backend:latest
+    image: btdeck-backend:latest
     container_name: btdeck-backend
     environment:
       - PYTHONUNBUFFERED=1
@@ -48,7 +48,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-    image: strainthomas/btdeck-frontend:latest
+    image: btdeck-frontend:latest
     container_name: btdeck-frontend
     environment:
       - TZ=${TZ:-Asia/Shanghai}
