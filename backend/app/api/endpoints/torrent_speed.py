@@ -9,7 +9,6 @@ import asyncio
 import logging
 import os
 import time
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from typing import Any, Dict, List, Set, Tuple
 
@@ -21,15 +20,15 @@ from sqlalchemy import select
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
 from app.database import AsyncSessionLocal
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.torrents.models import TorrentInfo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
-# 专用线程池，避免阻塞默认 executor
-_speed_executor = ThreadPoolExecutor(max_workers=8, thread_name_prefix="speed_poll")
-
 # 单个下载器调用超时（秒）- 可通过环境变量配置
+# 经 DownloaderApiRuntime INTERACTIVE lane 调用，复用 per-downloader 限流与 timeout 语义，
+# 避免 cron 同步期间速度接口成为旁路压力源（sync-resource-governance code review 修复）。
 _DOWNLOADER_TIMEOUT = float(os.getenv("SPEED_API_TIMEOUT", "3.0"))
 
 # TTL 队列配置
@@ -139,11 +138,21 @@ def _fetch_tr_speeds_sync(client: trClient) -> List[Dict[str, Any]]:
     return result
 
 
-async def _call_with_timeout(func, *args) -> List[Dict[str, Any]]:
-    """在线程池中执行同步函数，带超时保护"""
-    loop = asyncio.get_event_loop()
-    future = loop.run_in_executor(_speed_executor, func, *args)
-    return await asyncio.wait_for(future, timeout=_DOWNLOADER_TIMEOUT)
+async def _call_with_timeout(downloader_id: str, operation: str, func, *args) -> List[Dict[str, Any]]:
+    """通过 DownloaderApiRuntime INTERACTIVE lane 执行同步函数，带超时与 per-downloader 限流。
+
+    接入 runtime 的目的（sync-resource-governance code review 修复）：
+    - 复用 per-downloader semaphore，避免前端 1 秒轮询在同步期间绕过限流打满同一下载器。
+    - 复用 timeout 线程级语义（asyncio.wait_for 超时后底层线程仍受 semaphore 约束）。
+    """
+    return await call_downloader_api(
+        downloader_id,
+        DownloadLane.INTERACTIVE,
+        func,
+        args=args,
+        timeout=_DOWNLOADER_TIMEOUT,
+        operation=operation,
+    )
 
 
 def _supplement_qb_sync(client: qbClient, hashes: List[str]) -> List[Dict[str, Any]]:
@@ -235,9 +244,9 @@ async def _supplement_disappeared(
 
         try:
             if dl_type == 0 and isinstance(client, qbClient):
-                data = await _call_with_timeout(_supplement_qb_sync, client, hashes)
+                data = await _call_with_timeout(dl_id, "qb_supplement_speeds", _supplement_qb_sync, client, hashes)
             elif dl_type == 1 and isinstance(client, trClient):
-                data = await _call_with_timeout(_supplement_tr_sync, client, hashes)
+                data = await _call_with_timeout(dl_id, "tr_supplement_speeds", _supplement_tr_sync, client, hashes)
             else:
                 continue
             supplement_results.extend(data)
@@ -377,11 +386,12 @@ async def get_active_torrents(
                 return []
 
             nickname = getattr(downloader, "nickname", "unknown")
+            downloader_id = getattr(downloader, "downloader_id", "")
             try:
                 if isinstance(client, qbClient):
-                    return await _call_with_timeout(_fetch_qb_speeds_sync, client)
+                    return await _call_with_timeout(downloader_id, "qb_active_speeds", _fetch_qb_speeds_sync, client)
                 elif isinstance(client, trClient):
-                    return await _call_with_timeout(_fetch_tr_speeds_sync, client)
+                    return await _call_with_timeout(downloader_id, "tr_active_speeds", _fetch_tr_speeds_sync, client)
                 else:
                     logger.warning(f"不支持的客户端类型: {type(client)}")
                     return []

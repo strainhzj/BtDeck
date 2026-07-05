@@ -320,14 +320,17 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             print(f"Error stopping cron scheduler: {e}")
 
-        # 清理速度监控线程池（防止资源泄漏）
+        # 关闭下载器 API runtime（三 lane executor + flush 残留日志统计）。
+        # 速度接口（torrent_speed）已接入 INTERACTIVE lane，不再有独立 _speed_executor。
+        # sync-resource-governance code review 修复：确保应用退出时关闭 lane executor，
+        # 避免线程池泄漏 + 触发日志聚合器最终 flush。
         try:
-            from app.api.endpoints.torrent_speed import _speed_executor
+            from app.services.downloader_api_runtime import downloader_api_runtime
 
-            _speed_executor.shutdown(wait=True)
-            print("✅ 速度监控线程池已关闭")
+            downloader_api_runtime.shutdown()
+            print("✅ 下载器 API runtime 已关闭")
         except Exception as e:
-            print(f"⚠️  关闭线程池时出错: {e}")
+            print(f"⚠️  关闭下载器 API runtime 时出错: {e}")
 
     # # 初始化插件
     # plugin_init_task = asyncio.create_task(init_plugins_async())

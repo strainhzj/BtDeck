@@ -11,6 +11,8 @@ import sys
 import warnings
 from pathlib import Path
 
+import pytest
+
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 LINT_SCRIPT = BACKEND_ROOT / "scripts" / "lint_btdeck.py"
 APP_ROOT = BACKEND_ROOT / "app"
@@ -164,6 +166,58 @@ def test_request_side_endpoints_do_not_use_governance_locks():
     ), "请求侧路径不应使用治理锁（admission_controller/task_scope/db_write_scope），" "否则后台同步任务持锁时会阻塞请求侧。发现违规:\n" + "\n".join(
         violations
     )
+
+
+# ==============================================================================
+# sync-resource-governance code review 修复：lifespan 必须关闭 downloader_api_runtime
+# ==============================================================================
+# 历史背景：runtime 有 shutdown()（关闭三 lane executor + flush 残留日志统计），但应用
+# 生命周期退出时只停 cron 和（已删除的）_speed_executor，导致 lane executor 线程泄漏 +
+# 日志聚合器窗口内统计丢失。修复后 lifespan finally 必须调用 downloader_api_runtime.shutdown()。
+# 同时 _speed_executor（速度接口旧独立线程池）已删除（速度接口接入 INTERACTIVE lane）。
+
+_LIFECYCLE_PATH = BACKEND_ROOT / "app" / "startup" / "lifecycle.py"
+
+
+def test_lifespan_shutdowns_downloader_api_runtime():
+    """🔴 防回归：lifespan finally 块必须调用 downloader_api_runtime.shutdown()。
+
+    mutation 验证点：删掉 shutdown 调用 / 改回 _speed_executor，此测试报红。
+    """
+    assert _LIFECYCLE_PATH.exists(), "app/startup/lifecycle.py 不存在"
+    tree = _parse(_LIFECYCLE_PATH)
+    found_shutdown = False
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "lifespan":
+            for stmt in node.body:
+                if isinstance(stmt, ast.Try) and stmt.finalbody:
+                    for f in stmt.finalbody:
+                        for sub in ast.walk(f):
+                            if (
+                                isinstance(sub, ast.Attribute)
+                                and sub.attr == "shutdown"
+                                and isinstance(sub.value, ast.Name)
+                                and sub.value.id == "downloader_api_runtime"
+                            ):
+                                found_shutdown = True
+    assert found_shutdown, (
+        "lifespan finally 块必须调用 downloader_api_runtime.shutdown()，"
+        "否则 lane executor 线程泄漏 + 日志聚合器窗口统计丢失。"
+    )
+
+
+def test_lifespan_no_longer_references_speed_executor():
+    """🔴 防回归：lifespan 不应再引用已删除的 _speed_executor。
+
+    速度接口已接入 DownloaderApiRuntime INTERACTIVE lane，独立 _speed_executor 已删除，
+    lifecycle 不应再有对其 shutdown 的引用（残留引用会 AttributeError）。
+    """
+    tree = _parse(_LIFECYCLE_PATH)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id == "_speed_executor":
+            pytest.fail(
+                "lifecycle.py 不应再引用 _speed_executor（速度接口已接入 INTERACTIVE lane，" "独立线程池已删除）。"
+            )
 
 
 # ==============================================================================
