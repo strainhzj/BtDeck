@@ -164,3 +164,53 @@ def test_request_side_endpoints_do_not_use_governance_locks():
     ), "请求侧路径不应使用治理锁（admission_controller/task_scope/db_write_scope），" "否则后台同步任务持锁时会阻塞请求侧。发现违规:\n" + "\n".join(
         violations
     )
+
+
+# ==============================================================================
+# 防回归：endpoint 模块禁止顶层 import app.factory / app.main
+# ==============================================================================
+# 历史背景：seed_transfer.py 曾在顶层 `from app.factory import app`，触发循环 import
+# （app.api.api 半成品 → app.factory → configure_routes_and_static 早退），
+# 导致全局 app 不注册业务路由，tests/api/test_tag_aggregation_api.py 全量运行 16 个 404。
+# 端点需要访问全局 app 时，必须在函数体内 lazy import（既有模式见 downloader.py /
+# torrent_location.py）。该约束仅针对 endpoint 目录：app 入口（main.py / desktop_main.py）
+# 顶层 import app.factory 是正常用法，不在本测试范围。
+
+_ENDPOINTS_DIR = APP_ROOT / "api" / "endpoints"
+
+
+def test_no_top_level_app_factory_import_in_endpoints():
+    """endpoint 模块禁止顶层 import app.factory / app.main（循环 import 防回归）。
+
+    防回归锚点：若未来有人在 endpoint 顶层加 `from app.factory import app` 或
+    `from app.main import app`，会重新触发循环 import，让全局 app 丢失业务路由
+    （历史 bug：tag_aggregation 测试全量运行 404）。此测试立即报红。
+
+    语义：endpoint 需要 app 实例时应在函数体内 lazy import（参照 downloader.py /
+    torrent_location.py 的既有模式）。app 入口文件（main.py / desktop_main.py）
+    不在扫描范围内。
+    """
+    violations = []
+
+    def _is_app_factory_or_main(module_name: str | None) -> bool:
+        return module_name in {"app.factory", "app.main"}
+
+    for path in _ENDPOINTS_DIR.glob("*.py"):
+        rel_path = path.relative_to(BACKEND_ROOT).as_posix()
+        tree = _parse(path)
+        # 只扫模块顶层语句（tree.body 直接子节点），不进函数/类体（lazy import 在那里是合法的）
+        for node in tree.body:
+            if isinstance(node, ast.ImportFrom) and _is_app_factory_or_main(node.module):
+                names = [alias.name for alias in node.names]
+                violations.append(f"{rel_path}:{node.lineno} 顶层 `from {node.module} import {', '.join(names)}`")
+            elif isinstance(node, ast.Import):
+                # 形如 `import app.factory` / `import app.main`
+                for alias in node.names:
+                    if _is_app_factory_or_main(alias.name):
+                        violations.append(f"{rel_path}:{node.lineno} 顶层 `import {alias.name}`")
+
+    assert not violations, (
+        "endpoint 模块禁止顶层 import app.factory / app.main，会触发循环 import 导致全局 app "
+        "丢失业务路由（历史 bug：tag_aggregation 测试 404）。请在函数体内 lazy import。"
+        "发现违规:\n" + "\n".join(violations)
+    )
