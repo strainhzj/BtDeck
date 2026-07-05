@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "sync-resource-governance",
-  "last_updated": "2026-07-03",
+  "last_updated": "2026-07-05",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -749,7 +749,7 @@
       "id": "sync-resource-governance",
       "name": "同步任务资源治理与下载器 API 调度",
       "description": "解决 tracker 与种子信息同步期间其它接口请求容易超时的问题。按方案二（调度器/资源背压）优先，方案三（下载器 API 调用隔离与调度层）后续推进。DBWriteQueue 暂不实现，仅作为后续独立版本候选。",
-      "status": "planned",
+      "status": "done",
       "branch": "dev",
       "plan_file": "PLANS/sync-resource-governance.md",
       "tasks": [
@@ -828,7 +828,23 @@
             "feature_list.json",
             "session-handoff.md"
           ],
-          "evidence": "架构约束测试 test_request_side_endpoints_do_not_use_governance_locks（ast 扫描 dashboard/torrent_crud/dashboard_service 三个请求探针模块不得 import/调用 admission_controller/task_scope/db_write_scope/resource_guard，防回归锚点；mutation 加真实 import 报红验证）；行为契约测试 3 个（heavy_sync 持有时 DashboardService 仍能完成查询 / db_write_scope 持有时读查询不阻塞 / spy heavy_sync.acquire 证明请求侧不 acquire 治理锁）；压测脚本 sync_resource_benchmark.py 覆盖 6 场景（无同步基线/tracker 同步中/种子信息同步中/同时触发/单下载器大量种子/多下载器并发），跑一轮 mock 压测：所有场景 P50/P95 <1ms、P99 ≤16ms、max 16ms，证明请求侧未被治理锁阻塞；全量 1909 passed diff 基线为零。说明：TestClient 非线程安全（test_tag_aggregation_api.py:402-411 已记录），pytest 拓扑下无法严谨并发模拟，性能验证划给可重复 Python 脚本（运维手动跑，对比部署前后）。"
+          "evidence": "架构约束测试 test_request_side_endpoints_do_not_use_governance_locks（ast 扫描 dashboard/torrent_crud/dashboard_service 三个请求探针模块不得 import/调用 admission_controller/task_scope/db_write_scope/resource_guard，防回归锚点；mutation 加真实 import 报红验证）；行为契约测试 3 个（heavy_sync 持有时 DashboardService 仍能完成查询 / db_write_scope 持有时读查询不阻塞 / spy heavy_sync.acquire 证明请求侧不 acquire 治理锁）；压测脚本 sync_resource_benchmark.py 覆盖 6 场景（无同步基线/tracker 同步中/种子信息同步中/同时触发/单下载器大量种子/多下载器并发），跑一轮 mock 压测：所有场景 P50/P95 <1ms、P99 ≤16ms、max 16ms，证明请求侧未被治理锁阻塞。说明：TestClient 非线程安全（test_tag_aggregation_api.py:402-411 已记录），pytest 拓扑下无法严谨并发模拟，性能验证划给可重复 Python 脚本（运维手动跑，对比部署前后）。"
+        },
+        {
+          "id": "sync-resource-governance.4",
+          "name": "code review 修复轮（超时并发突破 + 速度接口旁路 + 日志节流 + 生命周期）",
+          "description": "修复 sync-resource-governance code review 发现的 4 项问题：(1) DownloaderApiRuntime 超时后突破真实 per-downloader 并发上限；(2) 实时速度接口绕过 runtime 的旁路限流；(3) SYNC_DISK_FLUSH_INTERVAL_SECONDS 日志/flush 节流未落地；(4) runtime.shutdown 未接入生命周期。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/downloader_api_runtime.py",
+            "backend/app/api/endpoints/torrent_speed.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/tests/services/test_downloader_api_runtime.py",
+            "backend/tests/api/test_torrent_speed_regression.py",
+            "backend/tests/test_architecture_constraints.py"
+          ],
+          "evidence": "问题1：per-downloader 限流从 asyncio.Semaphore（async with sem 在 wait_for 超时后立即释放）改为 threading.Semaphore（由 executor 内 wrapper 线程自身 acquire/release，确保同步线程实际结束前不释放容量）+ 超时后 future done callback 归档统计；新增 test_timeout_does_not_break_real_concurrency_cap（mutation 反向验证：修复前 buggy asyncio.Semaphore 实现并发达 5 突破 limit=2）。问题2：torrent_speed.py 删除独立 _speed_executor，_call_with_timeout 接入 DownloadLane.INTERACTIVE + timeout=_DOWNLOADER_TIMEOUT，复用 per-downloader 限流避免前端 1s 轮询成为旁路压力源；新增 test_uses_interactive_lane_and_timeout + test_speed_endpoint_does_not_bypass_per_downloader_limit。问题3：新增 _CallStatsAggregator 按 (lane,method,downloader_id) 窗口聚合（成功路径不逐条 info，失败路径 runtime 层降级 debug 避免与业务侧 error 双重放大，shutdown 强制 flush）；落地 settings.SYNC_DISK_FLUSH_INTERVAL_SECONDS（不动 SYNC_DB_COMMIT_BATCH_SIZE 的 DB 写治理）；新增 4 个聚合器测试（spy logger.extra 断言，避免全量 pytest root logger 级别污染）。问题4：lifecycle finally 接入 downloader_api_runtime.shutdown()（关闭三 lane executor + flush 残留统计），删除已废弃的 _speed_executor.shutdown 引用；新增 test_lifespan_shutdowns_downloader_api_runtime + test_lifespan_no_longer_references_speed_executor（AST 扫描，mutation 验证）。验证：全量 1937 passed 0 failed（基线 1926→1937 净增 11 测试）；black/flake8 通过；./init.sh 通过。问题5：父 feature planned→done，last_updated→2026-07-05，evidence 用真实测试数字替换'16 failed'旧叙述。"
         }
       ]
     }

@@ -1,5 +1,106 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-05 - sync-resource-governance code review 修复轮
+
+**任务**: 修复 sync-resource-governance code review 发现的 4 项问题 + 验收/文档状态对齐
+**分支**: dev
+**类型**: code review 修复（治理机制加固）
+
+### 修复前基线核实
+
+`aaa0976`（修复 tag_aggregation 404 循环 import）后全量 pytest 基线已为 **1926 passed, 0 failed**。
+本轮修复前基线干净，无预存 fail（与 `sync-resource-governance.3` 旧 evidence 中"16 failed"叙述不符 ——
+该 16 failed 是 `aaa0976` 之前的 tag_aggregation 顺序依赖 bug，已根治，本轮在 evidence 中据实更正）。
+
+### 本轮修复（4 项问题 + 文档对齐）
+
+**问题 1：DownloaderApiRuntime 超时后突破真实 per-downloader 并发上限**
+- 根因：`async with sem`（asyncio.Semaphore）在 `wait_for` 超时后由 `__aexit__` 释放令牌，但
+  `loop.run_in_executor` 提交的同步线程无法取消，仍在跑 → 新调用立即拿到令牌 → 真实远程并发突破上限。
+- 修复：`_per_downloader_sems` 从 `asyncio.Semaphore` 改为 `threading.Semaphore`，由 executor 内
+  wrapper 线程自身 `acquire/release`（`with sem: func(...)` 包成 wrapper 提交 executor）。
+  超时后底层线程仍持有令牌继续运行，新调用阻塞在 `sem.acquire()` 直到旧线程 release。
+- 超时 future done callback：归档 success/failure 统计（避免窗口聚合丢数据）。
+- 文件：`backend/app/services/downloader_api_runtime.py`
+- 测试：改写 `test_timeout_releases_semaphore`（新语义：超时后新调用最终恢复）+ 新增
+  `test_timeout_does_not_break_real_concurrency_cap`（mutation 反向验证：修复前 buggy
+  asyncio.Semaphore 实现并发达到 5 突破 limit=2）。
+
+**问题 2：实时速度接口绕过 downloader runtime**
+- 根因：`torrent_speed.py` 用独立 `_speed_executor` + `run_in_executor` + `wait_for`，
+  前端 1 秒轮询绕过 per-downloader 限流，且有同样的超时线程残留风险。
+- 修复：删除模块级 `_speed_executor`，`_call_with_timeout` 改为通过 `call_downloader_api`
+  走 `DownloadLane.INTERACTIVE` + `timeout=_DOWNLOADER_TIMEOUT`，复用 per-downloader 限流与
+  timeout 语义。`_process_downloader` / `_supplement_disappeared` 全部调用点传入 `downloader_id`。
+- 文件：`backend/app/api/endpoints/torrent_speed.py`、`backend/app/startup/lifecycle.py`（删 `_speed_executor.shutdown`）
+- 测试：新增 `test_uses_interactive_lane_and_timeout`（断言 lane=INTERACTIVE + timeout=_DOWNLOADER_TIMEOUT）+
+  `test_speed_endpoint_does_not_bypass_per_downloader_limit`（spy 验证 N 次并发调用全经 runtime）。
+  改写 `TestCallWithTimeout` / `test_qb_supplement_called` 适配新签名（patch `call_downloader_api`，
+  避免全量 pytest 时 lifespan 关闭全局单例的污染）。
+
+**问题 3：日志/flush 节流未落地**
+- 根因：`SYNC_DISK_FLUSH_INTERVAL_SECONDS` 只在 config/docs 存在；`_log_call` 对每次 API 调用打
+  info/warning；qB tracker enrich 逐 torrent 调用导致 O(torrent_count) 成功日志 + 失败双重放大。
+- 修复：新增 `_CallStatsAggregator`，按 `(lane, method, downloader_id)` 窗口聚合：
+  - 成功路径：不逐条 info，窗口到期输出一条结构化聚合日志（success_count/avg_duration/max_duration）。
+  - 失败路径：runtime 层降级为 debug（业务侧 `_fetch_single_trackers` 的逐条 error 保留，避免双重放大），
+    窗口聚合仍记录 failure_count + last_error_type。
+  - `shutdown()` 强制 flush 残留统计。
+- 关键：**不动** `SYNC_DB_COMMIT_BATCH_SIZE` 相关的 `bulk_upsert_with_retry` / `db_write_scope`（已落地的 DB 写治理）。
+- 文件：`backend/app/services/downloader_api_runtime.py`
+- 测试：新增 `TestCallStatsAggregator`（4 测试，spy `logger.extra` 断言，避免全量 pytest 时
+  root logger 级别被前序测试抬高导致 caplog 抓不到 INFO 的污染）。
+
+**问题 4：DownloaderApiRuntime.shutdown 未接入生命周期**
+- 根因：runtime 有 `shutdown()` 但应用 shutdown 只停 cron 和（已删除的）`_speed_executor`。
+- 修复：`lifecycle.py` finally 块在 cron_executor.stop() 之后调用
+  `downloader_api_runtime.shutdown()`（关闭三 lane executor + flush 残留日志统计）。
+- 文件：`backend/app/startup/lifecycle.py`
+- 测试：新增 `test_lifespan_shutdowns_downloader_api_runtime` + `test_lifespan_no_longer_references_speed_executor`
+  （AST 扫描 lifespan finally 块，mutation 验证：删 shutdown 调用 / 改回 _speed_executor 报红）+
+  `TestShutdown`（行为测试：shutdown 后 executor._shutdown=True + flush 残留统计）。
+
+**问题 5：验收/文档状态对齐**
+- `feature_list.json`：父 feature `planned` → `done`；`last_updated` → `2026-07-05`；
+  `sync-resource-governance.3` evidence 用真实数字（1937 passed 0 failed）替换"16 failed"旧叙述；
+  新增 `sync-resource-governance.4` 子任务记录本轮修复。
+- `progress.md`：新增本节。
+- `session-handoff.md`：删除残留"阶段 2.5 / 状态: planned"旧块，更新为当前状态。
+
+### 验证结果（DoD 全部达成）
+
+| 验证项 | 结果 |
+|--------|------|
+| 相关测试（runtime + speed + architecture） | ✅ 60 passed |
+| 全量 `pytest tests/` | ✅ **1937 passed, 0 failed**（基线 1926→1937，净增 11 测试） |
+| black（6 改动文件） | ✅ 通过 |
+| flake8（6 改动文件） | ✅ 通过（顺带修了既有 F401 `_ttl_queue` 未用 import + 新增 pytest import） |
+| `./init.sh`（全栈环境验证） | ✅ 通过 |
+| mutation 反向验证 | ✅ 问题1（buggy 并发达 5）、问题4（删 shutdown AST 报红）均验证测试有效 |
+
+### 关键设计决策
+
+1. **threading.Semaphore 而非 asyncio.Semaphore**（问题1）：核心不变量是"同步线程实际结束前不释放容量"，
+   只有让 wrapper 线程自身持有 semaphore 才能保证。asyncio.Semaphore 在协程层释放，与底层线程生命周期解耦。
+2. **失败路径 runtime 层降级 debug**（问题3）：业务侧 `_fetch_single_trackers` 已有逐条 error（失败诊断需要），
+   runtime 层若再 warning 会双重放大。聚合统计仍记录 failure_count + last_error_type，shutdown/窗口 flush 时输出。
+3. **测试用 spy logger 而非 caplog**（问题3测试）：全量 pytest 时某些 API 测试经 TestClient 触发 lifespan，
+   root logger 级别可能被抬高，导致 caplog 抓不到 INFO。spy `logger.info/warning` 的 `extra` dict 断言更可靠。
+4. **速度测试 patch call_downloader_api**（问题2测试）：全量 pytest 时 lifespan 退出会关闭全局 runtime executor，
+   `test_normal_execution` 真实走全局单例会 RuntimeError。统一 patch 避免污染。
+
+### 改动文件清单
+
+- `backend/app/services/downloader_api_runtime.py`（重写：threading.Semaphore + _CallStatsAggregator + future done callback）
+- `backend/app/api/endpoints/torrent_speed.py`（删 _speed_executor，接入 INTERACTIVE lane）
+- `backend/app/startup/lifecycle.py`（finally 接入 runtime.shutdown，删 _speed_executor 段）
+- `backend/tests/services/test_downloader_api_runtime.py`（+8 测试，改写 1 测试）
+- `backend/tests/api/test_torrent_speed_regression.py`（改写 4 测试适配新签名，+2 新测试）
+- `backend/tests/test_architecture_constraints.py`（+2 AST 测试，+ pytest import）
+- `feature_list.json` / `progress.md` / `session-handoff.md`（文档对齐）
+
+---
+
 ## 2026-07-05 - 修复 test_tag_aggregation_api.py 全量运行 404（循环 import 根因）
 
 **任务**: 修复 `tests/api/test_tag_aggregation_api.py` 全量 pytest 时 16 个用例全 404（单独跑通过）
