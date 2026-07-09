@@ -317,6 +317,17 @@ export interface SpeedUpdate {
   progress: number
 }
 
+/** buildSpeedSnapshot 实际读取的种子字段（ActiveTorrentSpeed 的结构子集）。
+ * 仅声明本函数依赖的字段，避免要求调用方/测试提供未使用的 num_seeds/num_leechs，
+ * 同时保留字段级类型安全（downloadSpeed: number 而非 any）。
+ * hash 设为可选：本函数职责之一就是过滤缺 hash 的无效条目，入参须容忍非法输入。 */
+interface ActiveTorrentSpeedInput {
+  hash?: string
+  downloadSpeed?: number
+  uploadSpeed?: number
+  progress?: number
+}
+
 /** buildSpeedSnapshot 的计算结果（视图据此更新 activeSpeedMap / speedSnapshotReady / list） */
 export interface SpeedSnapshotResult {
   /** 是否应把 speedSnapshotReady 置为 true（code='200' 且 data truthy） */
@@ -339,19 +350,24 @@ export interface SpeedSnapshotResult {
  *   「用户真零活动种子」时过滤永远不生效（另一个回归）。
  * - code≠'200' 或 data falsy → ready=false，activeSpeedMap=null（视图不更新）。
  *
+ * 注意：原视图 loadActiveSpeed 对缺 hash 的条目会 console.warn，本纯函数不打 warn
+ *（纯函数无副作用，调试噪声降级为静默跳过）。
+ *
  * @param res getActiveTorrents() 的响应
  * @returns 快照计算结果
  */
-export function buildSpeedSnapshot(res: ApiResponse<any> | null | undefined): SpeedSnapshotResult {
+export function buildSpeedSnapshot(
+  res: ApiResponse<ActiveTorrentSpeedInput[]> | null | undefined
+): SpeedSnapshotResult {
   if (!res || res.code !== '200' || !res.data) {
     return { ready: false, activeSpeedMap: null, updates: [], count: 0 }
   }
   const map: Record<string, SpeedSnapshotEntry> = {}
   const updates: SpeedUpdate[] = []
-  const torrents = (res.data || []) as any[]
+  const torrents = res.data || []
   torrents.forEach((t) => {
     if (!t || !t.hash) {
-      // 防御性检查：跳过无效种子数据（对齐视图内 console.warn 行为）
+      // 防御性检查：跳过缺 hash 的无效种子（原视图会 console.warn，纯函数静默跳过）
       return
     }
     const downloadSpeed = t.downloadSpeed ?? 0

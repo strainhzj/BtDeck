@@ -248,3 +248,45 @@ class TestSpeedFieldContract:
         assert core_fields == EXPECTED_SPEED_FIELDS
         assert data[0]["progress"] == 25.0
         assert data[0]["downloadSpeed"] == 200
+
+
+# ============ runtime 必经守护（sync-resource-governance） ============
+
+
+class TestEndpointMustUseRuntime:
+    """守护速度接口必须经 DownloaderApiRuntime（call_downloader_api）调用下载器。
+
+    sync-resource-governance 治理的核心约束：速度接口不能绕过 per-downloader
+    Semaphore 限流直接 asyncio.to_thread 调用下载器，否则前端 1 秒轮询会在同步
+    期间成为旁路压力源。若有人为“提速”把 _call_with_timeout 改回直接 to_thread，
+    此测试会红（mock 不被调用）。
+    """
+
+    def test_endpoint_invokes_call_downloader_api(self, client):
+        """有在线下载器时，端点必须通过 call_downloader_api 调用下载器。"""
+        dl = _make_qb_downloader(
+            torrents=[
+                {"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}
+            ]
+        )
+        _set_store(client.app, [dl])
+        # 用闭包变量记录调用：若端点绕过 runtime 直接 to_thread，该变量不会被置 True
+        call_records = []
+
+        async def spy_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            call_records.append((downloader_id, lane))
+            return func(*args, **(kwargs or {}))
+
+        with patch(
+            "app.api.endpoints.torrent_speed.call_downloader_api", side_effect=spy_call
+        ):
+            r = client.get(URL)
+        assert r.json()["code"] == "200"
+        # 核心断言：call_downloader_api 必须被调用过（证明走 runtime，非旁路）
+        assert len(call_records) > 0, (
+            "速度接口必须经 call_downloader_api（DownloaderApiRuntime），不能绕过限流"
+        )
+        # 进一步验证 lane 为 INTERACTIVE（与 _real_call_downloader_api 的断言互补）
+        called_lane = call_records[0][1]
+        assert called_lane == DownloadLane.INTERACTIVE
+
