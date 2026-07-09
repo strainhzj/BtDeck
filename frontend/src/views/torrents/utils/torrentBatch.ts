@@ -295,6 +295,74 @@ export function deriveVisibleTorrentList(
   })
 }
 
+// ============ 速度快照构建（loadActiveSpeed 可测纯函数层） ============
+// 防回归：index.vue 与 TraditionalView.vue 的 loadActiveSpeed 逐字重复，
+// 其中「何时置 speedSnapshotReady=true」是 commit 466e18c 修复的 bug 根因所在
+// （后端 code='200' data=[] 时空数组是 truthy，仍置 ready=true）。此纯函数把
+// 状态计算抽出，消除两视图同步维护负担，并提供可单测入口。副作用（更新 this.list
+// 命中项速度 + 写 this.activeSpeedMap/ready）留给视图层应用。
+
+/** 速度快照条目（与视图内联类型一致） */
+export interface SpeedSnapshotEntry {
+  downloadSpeed: number
+  uploadSpeed: number
+  progress: number
+}
+
+/** 列表种子命中快照后的速度更新（供视图层应用到 this.list） */
+export interface SpeedUpdate {
+  hash: string
+  downloadSpeed: number
+  uploadSpeed: number
+  progress: number
+}
+
+/** buildSpeedSnapshot 的计算结果（视图据此更新 activeSpeedMap / speedSnapshotReady / list） */
+export interface SpeedSnapshotResult {
+  /** 是否应把 speedSnapshotReady 置为 true（code='200' 且 data truthy） */
+  ready: boolean
+  /** 新的 activeSpeedMap（ready=false 时为 null，视图应保留旧值） */
+  activeSpeedMap: Record<string, SpeedSnapshotEntry> | null
+  /** 命中列表项的速度更新（视图遍历应用到 this.list） */
+  updates: SpeedUpdate[]
+  /** 有效种子数（调试日志用） */
+  count: number
+}
+
+/**
+ * 从 active-torrents 接口响应计算速度快照状态（纯函数，无副作用）。
+ *
+ * 契约锁定（commit 466e18c）：
+ * - code='200' 且 data truthy（含空数组 []）→ ready=true，activeSpeedMap 可能为空 {}。
+ *   空数组是 truthy，故空 data 仍置 ready=true——这是 deriveVisibleTorrentList
+ *   空快照保护所依赖的前提。若此处改成「data.length>0 才 ready」，会导致
+ *   「用户真零活动种子」时过滤永远不生效（另一个回归）。
+ * - code≠'200' 或 data falsy → ready=false，activeSpeedMap=null（视图不更新）。
+ *
+ * @param res getActiveTorrents() 的响应
+ * @returns 快照计算结果
+ */
+export function buildSpeedSnapshot(res: ApiResponse<any> | null | undefined): SpeedSnapshotResult {
+  if (!res || res.code !== '200' || !res.data) {
+    return { ready: false, activeSpeedMap: null, updates: [], count: 0 }
+  }
+  const map: Record<string, SpeedSnapshotEntry> = {}
+  const updates: SpeedUpdate[] = []
+  const torrents = (res.data || []) as any[]
+  torrents.forEach((t) => {
+    if (!t || !t.hash) {
+      // 防御性检查：跳过无效种子数据（对齐视图内 console.warn 行为）
+      return
+    }
+    const downloadSpeed = t.downloadSpeed ?? 0
+    const uploadSpeed = t.uploadSpeed ?? 0
+    const progress = t.progress ?? 0
+    map[t.hash] = { downloadSpeed, uploadSpeed, progress }
+    updates.push({ hash: t.hash, downloadSpeed, uploadSpeed, progress })
+  })
+  return { ready: true, activeSpeedMap: map, updates, count: Object.keys(map).length }
+}
+
 /**
  * 重置批量选中状态（对齐 TraditionalView.vue getList 后的清理）
  * 防回归 Bug#8：分页/筛选切换后，新数据全部 checked:false，

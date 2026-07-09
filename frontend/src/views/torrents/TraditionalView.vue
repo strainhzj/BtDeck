@@ -768,7 +768,6 @@ import {
   applySearchTemplate,
   createSearchTemplate,
   type DownloaderSimple,
-  type ActiveTorrentSpeed,
   type QueryTemplateConditions
 } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
@@ -793,6 +792,7 @@ import {
   buildAdvancedSearchRequest,
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
+  buildSpeedSnapshot,
   buildAdvancedSearchRequestFromTemplateGroups
 } from './utils/torrentBatch'
 
@@ -1137,32 +1137,20 @@ export default class extends mixins(TorrentBatchMixin) {
     const requestId = Date.now()
     try {
       const res = await getActiveTorrents()
-      if (res.code === '200' && res.data) {
-        const map: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
-        const torrents = res.data as ActiveTorrentSpeed[]
-        torrents.forEach((t: ActiveTorrentSpeed) => {
-          // 防御性检查：确保 hash 字段存在
-          if (!t.hash) {
-            console.warn('[速度轮询] 跳过无效种子数据:', t)
-            return
-          }
-          map[t.hash] = {
-            downloadSpeed: t.downloadSpeed ?? 0,
-            uploadSpeed: t.uploadSpeed ?? 0,
-            progress: t.progress ?? 0
-          }
-
-          // 直接更新列表中对应种子的实时数据
-          const torrentInList = this.list.find(item => item.hash === t.hash)
+      const snapshot = buildSpeedSnapshot(res)
+      if (snapshot.ready && snapshot.activeSpeedMap) {
+        // 直接更新列表中命中种子的实时数据（副作用，留在视图层）
+        snapshot.updates.forEach(u => {
+          const torrentInList = this.list.find(item => item.hash === u.hash)
           if (torrentInList) {
-            torrentInList.downloadSpeed = t.downloadSpeed ?? 0
-            torrentInList.uploadSpeed = t.uploadSpeed ?? 0
-            torrentInList.progress = t.progress ?? 0
+            torrentInList.downloadSpeed = u.downloadSpeed
+            torrentInList.uploadSpeed = u.uploadSpeed
+            torrentInList.progress = u.progress
           }
         })
-        this.activeSpeedMap = map
+        this.activeSpeedMap = snapshot.activeSpeedMap
         this.speedSnapshotReady = true
-        console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${Object.keys(map).length} 个活跃种子`)
+        console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
       }
     } catch (e) {
       // 静默失败，不影响主流程

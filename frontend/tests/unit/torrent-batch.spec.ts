@@ -22,7 +22,8 @@ import {
   buildDeleteLevelRequest,
   buildDeleteConfirmMessage,
   parseDeleteTaskResult,
-  parseSyncDeleteResponse
+  parseSyncDeleteResponse,
+  buildSpeedSnapshot
 } from '@/views/torrents/utils/torrentBatch'
 
 // ============ Bug#1 / Bug#4：分组与删除计数契约 ============
@@ -317,6 +318,22 @@ describe('snapshot aware speed and visible list derivation', () => {
     }
     const visible = deriveVisibleTorrentList(source, activeSpeedMap, true, true)
     expect(visible.map(t => t.hash)).toEqual(['active'])
+  })
+
+  it('showActiveOnly drops seeds not in snapshot even if they have static speed', () => {
+    // 防回归：snapshotReady=true 时 getTorrentSpeed 优先用快照，未命中返回 0，
+    // 即「未命中 + 静态速度>0」的种子也应被过滤剔除（静态速度被忽略）。
+    // 若有人把过滤条件误改成 >= 0 或漏掉 ! 取反，此 case 会假绿之外的回归不被发现。
+    const source = [
+      { hash: 'has-static-speed', downloadSpeed: 999, uploadSpeed: 0 },
+      { hash: 'no-static-speed', downloadSpeed: 0, uploadSpeed: 0 }
+    ]
+    // 快照只含一个无关 hash，source 两个种子都未命中
+    const activeSpeedMap = {
+      'other-hash': { downloadSpeed: 0, uploadSpeed: 5, progress: 40 }
+    }
+    const visible = deriveVisibleTorrentList(source, activeSpeedMap, true, true)
+    expect(visible).toEqual([])
   })
 
   it('showActiveOnly does not clear list when speed snapshot is empty', () => {
@@ -710,6 +727,89 @@ describe('P2 - parseSyncDeleteResponse', () => {
       failed_items: [{ info_id: 'i1' }]
     }, [{ info_id: 'i1', name: '查到了' }])
     expect(r.failedDetail).toContain('查到了')
+  })
+})
+
+// ============ commit 466e18c：速度快照构建契约 ============
+// 锁定 loadActiveSpeed 抽出的 buildSpeedSnapshot 纯函数。
+// 核心：空数组 [] 是 truthy，code='200' + data=[] 时仍 ready=true——这是
+// deriveVisibleTorrentList 空快照保护所依赖的前提。
+
+describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
+  it('code=200 + 非空 data → ready=true，map 按 hash 填充', () => {
+    const res = {
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'h1', downloadSpeed: 100, uploadSpeed: 0, progress: 50, num_seeds: 1, num_leechs: 0 },
+        { hash: 'h2', downloadSpeed: 0, uploadSpeed: 30, progress: 80, num_seeds: 0, num_leechs: 2 }
+      ]
+    }
+    const r = buildSpeedSnapshot(res)
+    expect(r.ready).toBe(true)
+    expect(r.count).toBe(2)
+    expect(r.activeSpeedMap).toEqual({
+      h1: { downloadSpeed: 100, uploadSpeed: 0, progress: 50 },
+      h2: { downloadSpeed: 0, uploadSpeed: 30, progress: 80 }
+    })
+    expect(r.updates.map(u => u.hash)).toEqual(['h1', 'h2'])
+  })
+
+  it('code=200 + 空数组 data → ready=true 但 map 为空（锁定 commit 466e18c 前提）', () => {
+    // 关键：后端返回 code=200 data=[]（无下载器/超时/无活动），空数组是 truthy，
+    // 仍置 ready=true。若此处改成 data.length>0 才 ready，会导致「真零活动种子」
+    // 时过滤永远不生效（另一个回归）。此 case 锁定当前契约。
+    const res = { code: '200', status: 'success', msg: '暂无在线下载器', data: [] }
+    const r = buildSpeedSnapshot(res)
+    expect(r.ready).toBe(true)
+    expect(r.activeSpeedMap).toEqual({})
+    expect(r.updates).toEqual([])
+    expect(r.count).toBe(0)
+  })
+
+  it('code≠200（如 500）→ ready=false，不提供新 map（视图保留旧值）', () => {
+    const res = { code: '500', status: 'error', msg: '失败', data: null }
+    const r = buildSpeedSnapshot(res)
+    expect(r.ready).toBe(false)
+    expect(r.activeSpeedMap).toBeNull()
+    expect(r.updates).toEqual([])
+  })
+
+  it('data 为 null → ready=false', () => {
+    const res = { code: '200', status: 'success', msg: 'ok', data: null }
+    const r = buildSpeedSnapshot(res)
+    expect(r.ready).toBe(false)
+    expect(r.activeSpeedMap).toBeNull()
+  })
+
+  it('响应为 null/undefined → ready=false（不抛异常）', () => {
+    expect(buildSpeedSnapshot(null).ready).toBe(false)
+    expect(buildSpeedSnapshot(undefined).ready).toBe(false)
+  })
+
+  it('跳过缺 hash 的无效种子条目', () => {
+    const res = {
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'h1', downloadSpeed: 100, uploadSpeed: 0, progress: 0 },
+        { downloadSpeed: 50 } // 缺 hash，应跳过
+      ]
+    }
+    const r = buildSpeedSnapshot(res)
+    expect(r.ready).toBe(true)
+    expect(r.count).toBe(1)
+    // ready=true 时 activeSpeedMap 必非空，用断言+索引替代 non-null 断言
+    expect(r.activeSpeedMap).not.toBeNull()
+    expect(Object.keys(r.activeSpeedMap as Record<string, any>)).toEqual(['h1'])
+  })
+
+  it('缺失速度字段用 0 兜底（不产生 undefined）', () => {
+    const res = {
+      code: '200', status: 'success', msg: 'ok', data: [
+        { hash: 'h1' } // 缺所有速度字段
+      ]
+    }
+    const r = buildSpeedSnapshot(res)
+    const map = r.activeSpeedMap as Record<string, any>
+    expect(map['h1']).toEqual({ downloadSpeed: 0, uploadSpeed: 0, progress: 0 })
+    expect(r.updates[0]).toEqual({ hash: 'h1', downloadSpeed: 0, uploadSpeed: 0, progress: 0 })
   })
 })
 
