@@ -318,6 +318,21 @@ describe('snapshot aware speed and visible list derivation', () => {
     const visible = deriveVisibleTorrentList(source, activeSpeedMap, true, true)
     expect(visible.map(t => t.hash)).toEqual(['active'])
   })
+
+  it('showActiveOnly does not clear list when speed snapshot is empty', () => {
+    // 防回归：后端返回 code=200 data=[]（无在线下载器/超时/暂无活动种子）时，
+    // speedSnapshotReady 仍为 true 但 activeSpeedMap 为空。此时不应把列表清空，
+    // 否则用户勾选“仅显示活动种子”后看到列表变空（功能失效）。
+    // 空快照语义是“拿不到速度数据”，应降级为只排序不过滤，保留全部种子。
+    const source = [
+      { hash: 'a', downloadSpeed: 0, uploadSpeed: 0 },
+      { hash: 'b', downloadSpeed: 100, uploadSpeed: 0 }
+    ]
+    const visible = deriveVisibleTorrentList(source, {}, true, true)
+    // 空快照下 sortByActive 无法识别速度（snapshotReady=true 使未命中项返回 0），
+    // 故保持源顺序且不过滤——关键断言是“不空、不丢种子”，顺序不作为契约。
+    expect(visible.map(t => t.hash).sort()).toEqual(['a', 'b'])
+  })
 })
 
 // ============ Bug#8：选中状态重置契约 ============

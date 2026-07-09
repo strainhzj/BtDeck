@@ -273,6 +273,9 @@ export function sortByActive(
 /**
  * 根据实时速度快照派生当前可见列表。
  * snapshotReady=false 时不启用“只看活动”过滤，避免首轮/失败快照把列表清空。
+ * 空快照（activeSpeedMap 为空对象）时同样不过滤：后端在无在线下载器/超时/暂无活动种子时
+ * 返回 code=200 data=[]，此时 snapshotReady 仍为 true，若照常过滤会把列表全部清空
+ * （误判“无活动”）。空快照语义上是“拿不到速度数据”而非“确认所有种子速度为 0”。
  */
 export function deriveVisibleTorrentList(
   sourceList: any[],
@@ -281,7 +284,8 @@ export function deriveVisibleTorrentList(
   showActiveOnly: boolean
 ): any[] {
   const sorted = sortByActive(sourceList, activeSpeedMap, snapshotReady)
-  if (!showActiveOnly || !snapshotReady) {
+  const snapshotHasData = Object.keys(activeSpeedMap).length > 0
+  if (!showActiveOnly || !snapshotReady || !snapshotHasData) {
     return sorted
   }
   return sorted.filter(item => {
