@@ -815,6 +815,24 @@
           "evidence": "sync_db_write.py 公共工具（has_torrent_info_changes 动态字段对比+忽略 update_time/PK；has_tracker_changes 6 字段+None=='/strip 归一化；bulk_upsert_with_retry 内含 db_write_scope+retry base_delay=1.0）；qb/tr_add_torrents_info_only_async 修正 skip 语义 bug（progress 不变+整行无变化真正跳过写入）+ 替换 4 处重复闭包为 bulk_upsert_with_retry；qb/tr_sync_trackers_only_async 主循环改造（extract_tracker_rows_from_torrent 纯提取 + sync_trackers_batch_async 批量 select 旧值+变更检测+严格四步顺序软删恢复/物理删/upsert/mark_removed 元组语义）+ batch 从 1000 改用 settings.SYNC_DB_COMMIT_BATCH_SIZE=200；SYNC_DB_WRITE_SCOPE_ENABLED 开关支持快速回滚；28 个新单测（21 sync_db_write 纯函数+mock + 7 真实 SQLite 部分索引集成测试覆盖变更检测/软删不复活/mark_removed 元组语义/stats 守恒/db_write_scope 进入）+ 3 处 mutation 反向验证（db_write_scope 包裹/mark_removed 扁平化 url 误删/acquire spy）+ 全量 1905 passed diff 基线为零（16 个预先存在 tag_aggregation failure 不计）。已知技术债：qb/tr_add_torrents_async 全量同步 + torrent_sync.py API 触发路径不经 db_write_scope，留 P3。"
         },
         {
+          "id": "sync-resource-governance.2.6",
+          "name": "to_thread 止血 + db_write_scope 收尾（4 个重型任务）",
+          "description": "根因修正：4 个重型任务 execute() 体内含阻塞式同步 SessionLocal/HTTP 调用冻结事件循环（非 SQLite 写锁竞争）。修复策略：阻塞同步工作 asyncio.to_thread 移出循环 + 写 commit admission_controller.db_write_scope 串行化。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
+            "backend/app/tasks/scheduler/tracker_message_logger.py",
+            "backend/app/tasks/scheduler/tracker_reannounce_task.py",
+            "backend/app/tasks/scheduler/downloader_path_scan.py",
+            "backend/app/database.py",
+            "backend/docs/constraints/sync-db-write-governance.md",
+            "backend/tests/core/test_database_pragmas.py",
+            "backend/tests/tasks/test_heavy_task_db_write_governance.py"
+          ],
+          "evidence": "torrent_tracker_status_judge：execute() 3 个同步 helper（_load_keywords/_get_all_torrents）改 to_thread 移出循环；_judge_torrents_batch 拆为 _judge_one_batch 分批（BATCH_SIZE=1000，每批 db_write_scope+to_thread+单次 commit，单批失败即终止）；N+1 优化（逐种子 db.query 改两次 IN 查询：本批 TorrentInfo IN + TrackerInfo IN，内存按 torrent_info_id 分组）。tracker_message_logger：_process_messages_batch_async 2 处 commit + _cleanup_old_logs_async 2 处 commit 各包 db_write_scope；死代码同步方法加 LEGACY 标记。tracker_reannounce_task：读段抽 _read_downloader_data 经 to_thread（保 expunge_all+close+不传 db 给 execute_reannounce）；execute() 读 enabled_configs 经 to_thread；写段 batch_update_last_announce_time 经 to_thread+db_write_scope（不改该函数本体，保 no-db 签名+内部自开 session 回归测试）。downloader_path_scan：6 处 commit（_update_path_mapping/_update_external_paths/_log_task_execution/_sync_default_path/_sync_active_path/_cleanup_obsolete_paths）各包 db_write_scope；同步 HTTP（app_default_save_path/get_session_variables）经 to_thread；远程获取默认路径移出写 session（_scan_downloader_paths 预取 default_path 传入 _sync_to_maintenance_table）。database.py：busy_timeout 30000→15000 + sync/async engine timeout 30→15 + 4 处注释同步（二级兜底，对齐前端 axios timeout=20s，可独立回退 30s）。行为测试 test_heavy_task_db_write_governance.py（5 个：judge db_write_scope 进入/judge to_thread 读 helper/message_logger db_write_scope 进入/reannounce 写段 db_write_scope/reannounce 读段 to_thread）取代不可行的 AST 断言。保留 test_request_side_endpoints_do_not_use_governance_locks 不变。"
+        },
+        {
           "id": "sync-resource-governance.3",
           "name": "验证与证据归档",
           "description": "补充单元测试、集成验证与手动压测矩阵，把同步期间请求响应改善、DB commit/写入频率、磁盘写入节流证据写回 harness。",

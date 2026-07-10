@@ -1,5 +1,54 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-10 - SQLite 写锁治理完善（to_thread 止血 + db_write_scope 收尾）
+
+**任务 ID**: `sync-resource-governance`（新增子任务 `sync-resource-governance.2.6`）
+**分支**: dev
+**类型**: 根因修正 + 治理收尾（4 个重型任务）
+
+### 根因修正
+
+经独立代码审查确认：高强度定时任务期间 WebUI 操作接口超时的根因是 **asyncio 事件循环饥饿**，而非 SQLite 写锁竞争。4 个重型任务的 `execute()` 虽是 `async def`，但任务体内含阻塞式同步 `SessionLocal()` 调用 + 同步 HTTP 调用，直接在共享 uvicorn 循环上跑，冻结整个循环，导致所有 WebUI handler（含读请求）都无法被调度。
+
+修复策略（用户确认）：**to_thread 止血 + db_write_scope 收尾**，范围纳入 4 个重型任务。
+
+### 改动清单（7 项）
+
+1. **torrent_tracker_status_judge.py**（P0）：`execute()` 3 个同步 helper（`_load_keywords`/`_get_all_torrents`）改 `to_thread` 移出循环；`_judge_torrents_batch` 拆为 `_judge_one_batch` 分批（`BATCH_SIZE=1000`，每批 `db_write_scope` + `to_thread` + 单次 commit，单批失败即终止）；**N+1 优化**：逐种子 `db.query` 改两次 IN 查询（本批 TorrentInfo IN + TrackerInfo IN），内存按 `torrent_info_id` 分组。
+
+2. **tracker_message_logger.py**（P0）：`_process_messages_batch_async` 2 处 commit + `_cleanup_old_logs_async` 2 处 commit 各包 `db_write_scope`；死代码同步方法（`_collect_tracker_messages`/`_process_messages_batch`/`_cleanup_old_logs`）加 LEGACY 标记。
+
+3. **tracker_reannounce_task.py**（P0）：读段抽 `_read_downloader_data` 经 `to_thread`（保 `expunge_all`+`close`+不传 `db` 给 `execute_reannounce`）；`execute()` 读 enabled_configs 经 `to_thread`；写段 `batch_update_last_announce_time` 经 `to_thread` + `db_write_scope`（不改该函数本体，保 no-db 签名 + 内部自开 session 回归测试）。
+
+4. **downloader_path_scan.py**（P0）：6 处 commit（`_update_path_mapping`/`_update_external_paths`/`_log_task_execution`/`_sync_default_path`/`_sync_active_path`/`_cleanup_obsolete_paths`）各包 `db_write_scope`；同步 HTTP（`app_default_save_path`/`get_session_variables`）经 `to_thread`；远程获取默认路径移出写 session（`_scan_downloader_paths` 预取 `default_path` 传入 `_sync_to_maintenance_table`）。
+
+5. **database.py + test_database_pragmas.py**（P1）：`busy_timeout` 30000→15000 + sync/async engine `timeout` 30→15 + 4 处注释同步（二级兜底，对齐前端 axios timeout=20s，可独立回退 30s）。
+
+6. **test_heavy_task_db_write_governance.py**（P1）：5 个行为测试取代不可行的 AST 断言（judge db_write_scope 进入 / judge to_thread 读 helper / message_logger db_write_scope 进入 / reannounce 写段 db_write_scope / reannounce 读段 to_thread）。
+
+7. **文档 + DoD**（P2）：重写 `sync-db-write-governance.md` §四（纳入 4 个新任务 + to_thread 止血说明 + busy_timeout 15s 调整说明）；`feature_list.json` 新增 `sync-resource-governance.2.6` 子任务。
+
+### 关键约束保持
+
+- `cron_executor` 已在 `admission_controller.task_scope` 内调 `execute()`（cron_executor.py:417-444）→ 任务文件内只加 `db_write_scope`，不加 `task_scope`。
+- `db_write_scope` 在 async caller 侧（loop 线程）获取/释放，同步工作经 `to_thread` 在工作线程跑，scope 不进工作线程（参考 `sync_db_write.py:163-169`）。
+- 请求侧 endpoints 绝不动，`test_request_side_endpoints_do_not_use_governance_locks` 保持不变（scheduler 模块不在其扫描白名单）。
+- `batch_update_last_announce_time` 不改本体（保 no-db 签名 + 内部自开 session，满足 `test_reannounce_config.py` 回归测试）。
+
+### 明确不做（技术债，本次不纳入）
+
+- `_sync_speed_schedule`（cron_executor.py:54-107）：每分钟持 sync SessionLocal 做 HTTP，P3。
+- `tracker_candidate_pool`（被 message_logger 同步触发，未注册 task_profiles）：P3。
+- `torrent_sync.py` API 触发路径 / `qb_tr_add_torrents_async` 全量同步：feature_list.json 已记 P3。
+
+### 风险与回退
+
+- `to_thread` 用 asyncio 默认线程池，但 `heavy_sync=Semaphore(1)` 限制重型任务不并发，线程池压力可控。
+- `db_write_scope` 串行化若致后台 P95 退化，`SYNC_DB_WRITE_SCOPE_ENABLED=False` 一键回退（config.py:119）。
+- `busy_timeout` 若 15s 误触 SQLITE_BUSY，改回 30s（独立改动无耦合）。
+
+---
+
 ## 2026-07-05 - sync-resource-governance code review 修复轮
 
 **任务**: 修复 sync-resource-governance code review 发现的 4 项问题 + 验收/文档状态对齐
