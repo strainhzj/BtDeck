@@ -5,6 +5,7 @@
 同时同步路径信息到 downloader_path_maintenance 表，支持种子转移功能。
 """
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -16,6 +17,7 @@ from app.database import AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo
 from app.tasks.models import TaskLogs
+from app.tasks.resource_guard import admission_controller
 from app.core.path_mapping import PathMappingService
 from app.core.path_mapping import PathMappingConverter
 from app.models.downloader_path_maintenance import DownloaderPathMaintenance
@@ -278,7 +280,9 @@ class DownloaderPathScanTask:
             logger.info(f"下载器 {downloader.nickname} 更新了 {updated_external_count} 个路径的 external 字段")
 
         # 8. 同步路径信息到 downloader_path_maintenance 表
-        await self._sync_to_maintenance_table(db, downloader, normalized_paths)
+        # 远程调用（获取默认路径）在写 session 之外执行，对齐"远程调用在临界区外"治理规则。
+        default_path = await self._get_default_path_from_downloader(downloader)
+        await self._sync_to_maintenance_table(db, downloader, normalized_paths, default_path)
 
         return {
             "total_paths": len(normalized_paths),
@@ -386,7 +390,8 @@ class DownloaderPathScanTask:
                 .where(BtDownloaders.downloader_id == downloader.downloader_id)
                 .values(path_mapping=json.dumps(new_config, ensure_ascii=False))
             )
-            await db.commit()
+            async with admission_controller.db_write_scope():
+                await db.commit()
 
             logger.info(
                 f"下载器 {downloader.nickname} 路径映射已更新: "
@@ -475,7 +480,8 @@ class DownloaderPathScanTask:
                     .where(BtDownloaders.downloader_id == downloader.downloader_id)
                     .values(path_mapping=json.dumps(new_config, ensure_ascii=False))
                 )
-                await db.commit()
+                async with admission_controller.db_write_scope():
+                    await db.commit()
 
                 logger.info(f"下载器 {downloader.nickname} 更新了 {updated_count} 个路径映射的 external 字段")
 
@@ -515,10 +521,11 @@ class DownloaderPathScanTask:
             )
 
             db.add(task_log)
-            await db.commit()
+            async with admission_controller.db_write_scope():
+                await db.commit()
 
         except Exception as e:
-            logger.error(f"记录任务日志失败: {str(e)}", exc_info=True)
+            logger.error(f"记录任务日志失败: {str(e)}")
             raise
 
     def get_task_info(self) -> Dict[str, Any]:
@@ -566,21 +573,24 @@ class DownloaderPathScanTask:
             "task_reliability": (self.success_count / self.execution_count * 100),
         }
 
-    async def _sync_to_maintenance_table(self, db: AsyncSession, downloader: BtDownloaders, normalized_paths: Set[str]):
+    async def _sync_to_maintenance_table(
+        self, db: AsyncSession, downloader: BtDownloaders, normalized_paths: Set[str], default_path: Optional[str]
+    ):
         """
         同步路径信息到 downloader_path_maintenance 表
 
         支持种子转移功能，提供默认路径和在用路径的维护。
 
+        注意：远程调用（获取默认路径）已由调用方 _scan_downloader_paths 在写 session
+        之外预先完成并经 default_path 传入，本方法仅做 DB 操作（对齐"远程调用在临界区外"）。
+
         Args:
             db: 数据库会话
             downloader: 下载器模型实例
             normalized_paths: 标准化后的路径集合
+            default_path: 由调用方预先获取的默认路径（None 表示未取到）
         """
         try:
-            # 1. 获取下载器客户端以获取默认路径
-            default_path = await self._get_default_path_from_downloader(downloader)
-
             if not default_path and normalized_paths:
                 # 如果无法从下载器获取默认路径，使用出现次数最多的路径
                 path_count_result = await db.execute(
@@ -656,7 +666,8 @@ class DownloaderPathScanTask:
             # 根据下载器类型获取默认路径
             if downloader_vo.downloader_type == 0:  # qBittorrent
                 try:
-                    default_path = client.app_default_save_path()
+                    # to_thread：app_default_save_path 是同步 HTTP 调用，移出事件循环避免阻塞
+                    default_path = await asyncio.to_thread(client.app_default_save_path)
                     logger.debug(f"qBittorrent 默认路径: {default_path}")
                     return default_path
                 except Exception as e:
@@ -665,7 +676,8 @@ class DownloaderPathScanTask:
 
             elif downloader_vo.downloader_type == 1:  # Transmission
                 try:
-                    response = client.get_session_variables()
+                    # to_thread：get_session_variables 是同步 HTTP 调用，移出事件循环避免阻塞
+                    response = await asyncio.to_thread(client.get_session_variables)
                     if response and "download-dir" in response:
                         default_path = response["download-dir"]
                         logger.debug(f"Transmission 默认路径: {default_path}")
@@ -726,7 +738,8 @@ class DownloaderPathScanTask:
                 db.add(new_record)
                 logger.debug(f"创建下载器 {downloader_id} 的默认路径: {default_path}")
 
-            await db.commit()
+            async with admission_controller.db_write_scope():
+                await db.commit()
 
         except Exception as e:
             await db.rollback()
@@ -773,7 +786,8 @@ class DownloaderPathScanTask:
                 db.add(new_record)
                 logger.debug(f"创建下载器 {downloader_id} 的在用路径: {path_value}, " f"种子数量: {torrent_count}")
 
-            await db.commit()
+            async with admission_controller.db_write_scope():
+                await db.commit()
 
         except Exception as e:
             await db.rollback()
@@ -810,7 +824,8 @@ class DownloaderPathScanTask:
                     logger.debug(f"禁用下载器 {downloader_id} 的废弃路径: {record.path_value}")
 
             if disabled_count > 0:
-                await db.commit()
+                async with admission_controller.db_write_scope():
+                    await db.commit()
                 logger.info(f"下载器 {downloader_id} 禁用了 {disabled_count} 个废弃路径")
 
         except Exception as e:

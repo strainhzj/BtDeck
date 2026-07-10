@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 from sqlalchemy import select, text
 
 from app.database import SessionLocal, AsyncSessionLocal
+from app.tasks.resource_guard import admission_controller
 from app.torrents.models import TrackerInfo, TorrentInfo, TrackerMessageLog
 
 logger = logging.getLogger(__name__)
@@ -214,7 +215,8 @@ class TrackerMessageLogger:
             try:
                 # 准备UPSERT语句
                 # 使用 ON CONFLICT (tracker_host, msg) DO UPDATE 实现原子性upsert
-                upsert_sql = text("""
+                upsert_sql = text(
+                    """
                     INSERT INTO tracker_message_log (
                         log_id, tracker_host, msg, first_seen, last_seen,
                         occurrence_count, sample_torrents, sample_urls,
@@ -244,7 +246,8 @@ class TrackerMessageLogger:
                             THEN excluded.sample_urls
                             ELSE tracker_message_log.sample_urls
                         END
-                """)
+                """
+                )
 
                 # 批量执行UPSERT
                 current_time = datetime.now()
@@ -287,7 +290,8 @@ class TrackerMessageLogger:
                         batch_count += 1
 
                         if batch_count >= self.BATCH_SIZE:
-                            await db.commit()
+                            async with admission_controller.db_write_scope():
+                                await db.commit()
                             batch_count = 0
 
                     except Exception as e:
@@ -300,7 +304,8 @@ class TrackerMessageLogger:
 
                 # 提交剩余更改
                 if batch_count > 0:
-                    await db.commit()
+                    async with admission_controller.db_write_scope():
+                        await db.commit()
 
                 # 更新统计信息
                 with self._stats_lock:
@@ -345,7 +350,8 @@ class TrackerMessageLogger:
                     for log in old_logs:
                         await db.delete(log)
 
-                    await db.commit()
+                    async with admission_controller.db_write_scope():
+                        await db.commit()
                     total_deleted += count
                     logger.info(f"清理过期记录: {count}条(超过{retention_days}天)")
 
@@ -364,7 +370,8 @@ class TrackerMessageLogger:
                     for log in oldest_logs:
                         await db.delete(log)
 
-                    await db.commit()
+                    async with admission_controller.db_write_scope():
+                        await db.commit()
                     total_deleted += len(oldest_logs)
                     logger.info(f"清理最旧记录: {len(oldest_logs)}条(总数超过{max_records})")
 
@@ -375,7 +382,9 @@ class TrackerMessageLogger:
                 logger.error(f"清理记录失败: {e}", exc_info=True)
                 return 0
 
-    # ==================== 同步版本的核心方法（保留兼容）====================
+    # ==================== 同步版本的核心方法（LEGACY 死代码，保留备查）====================
+    # 注意：以下 _collect_tracker_messages / _process_messages_batch / _cleanup_old_logs
+    # 是同步版本，已被上方 async 版本取代，无任何调用方。保留以备未来回溯排查。
 
     async def execute(self, **kwargs) -> Dict[str, Any]:
         """
@@ -502,7 +511,7 @@ class TrackerMessageLogger:
             return error_result
 
     def _collect_tracker_messages(self) -> List[Dict]:
-        """
+        """【LEGACY 死代码，无调用方，保留备查】
         收集所有tracker消息(分页查询优化内存)
 
         从数据库查询所有活跃种子的tracker信息,
@@ -645,7 +654,7 @@ class TrackerMessageLogger:
             return None
 
     def _process_messages_batch(self, messages: List[Dict]) -> None:
-        """
+        """【LEGACY 死代码，无调用方，保留备查】
         批量处理消息(使用原生SQL UPSERT,原子操作避免并发冲突)
 
         使用 ON CONFLICT DO UPDATE 语法实现原子性upsert操作:
@@ -667,7 +676,8 @@ class TrackerMessageLogger:
         try:
             # 准备UPSERT语句
             # 使用 ON CONFLICT (tracker_host, msg) DO UPDATE 实现原子性upsert
-            upsert_sql = text("""
+            upsert_sql = text(
+                """
                 INSERT INTO tracker_message_log (
                     log_id, tracker_host, msg, first_seen, last_seen,
                     occurrence_count, sample_torrents, sample_urls,
@@ -697,7 +707,8 @@ class TrackerMessageLogger:
                         THEN excluded.sample_urls
                         ELSE tracker_message_log.sample_urls
                     END
-            """)
+            """
+            )
 
             # 批量执行UPSERT
             current_time = datetime.now()
@@ -761,7 +772,7 @@ class TrackerMessageLogger:
             db.close()
 
     def _cleanup_old_logs(self, retention_days: int, max_records: int) -> int:
-        """
+        """【LEGACY 死代码，无调用方，保留备查】
         清理过期记录
 
         清理策略(混合策略):

@@ -8,14 +8,16 @@ Tracker Reannounce 定时轮询任务
 - 按下载器分批限流执行
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from app.tasks.scheduler.torrent_sync.base import BaseSyncTask
 from app.core import reannounce_config_operations as ops
 from app.database import SessionLocal
+from app.tasks.resource_guard import admission_controller
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +55,15 @@ class TrackerReannounceTask(BaseSyncTask):
                 return {"status": "no_action", "message": "没有有效的下载器"}
 
             # 读段（短 session）：仅查询启用的站点配置，查完立即释放连接。
-            # 关键：后续对每个下载器的处理涉及大量 HTTP 网络 IO（reannounce），
-            # 不能让 session 在网络 IO 期间一直持有写锁（database is locked 根因）。
-            db = SessionLocal()
-            try:
-                config_result = ops.get_enabled_configs(db)
-            finally:
-                db.close()
+            # 同步 SessionLocal 读经 to_thread 移出事件循环，避免阻塞循环。
+            def _read_enabled_configs():
+                db = SessionLocal()
+                try:
+                    return ops.get_enabled_configs(db)
+                finally:
+                    db.close()
+
+            config_result = await asyncio.to_thread(_read_enabled_configs)
 
             if not config_result.success or not config_result.data:
                 return {"status": "no_action", "message": "没有启用的站点配置"}
@@ -98,15 +102,53 @@ class TrackerReannounceTask(BaseSyncTask):
     async def _process_downloader(self, app, dl_vo, configs) -> Dict[str, Any]:
         """处理单个下载器的汇报。
 
-        Session 生命周期拆分为三段（修复 database is locked）：
-        1. 读段：短 session 查询 tracker / 种子记录，expunge 剥离后立即 close。
+        Session 生命周期拆分为三段（修复 database is locked / 事件循环饥饿）：
+        1. 读段：同步 _read_downloader_data 经 to_thread 在线程池执行，短 session 查询
+           tracker / 种子记录，expunge 剥离后立即 close（不阻塞事件循环）。
         2. 网络段：execute_reannounce 是 HTTP 远程调用，不持有任何 session。
-        3. 写段：batch_update_last_announce_time 内部自开短 session 回写。
+        3. 写段：batch_update_last_announce_time 经 to_thread + db_write_scope 串行化写者。
         """
-        from app.torrents.models import TorrentInfo, TrackerInfo
         from app.services.reannounce_service import execute_reannounce
 
-        # ===== 读段（短 session）=====
+        # ===== 读段（同步查询经 to_thread 移出事件循环）=====
+        read_result = await asyncio.to_thread(self._read_downloader_data, dl_vo, configs)
+        if read_result is None:
+            return {"success_count": 0, "failed_count": 0}
+
+        torrent_records, matched_config_ids = read_result
+        if not torrent_records:
+            return {"success_count": 0, "failed_count": 0}
+
+        # ===== 网络段（不持有任何 session）=====
+        result = await execute_reannounce(
+            app=app,
+            downloader_id=dl_vo.downloader_id,
+            torrent_records=torrent_records,
+            trigger_type="scheduled",
+        )
+
+        # ===== 写段（batch_update 内部自开短 session，to_thread + db_write_scope 串行化）=====
+        if matched_config_ids:
+            async with admission_controller.db_write_scope():
+                await asyncio.to_thread(ops.batch_update_last_announce_time, list(matched_config_ids))
+
+        return result
+
+    def _read_downloader_data(self, dl_vo, configs) -> Optional[Tuple[List, set]]:
+        """读段：短 session 查询 tracker / 种子记录，expunge 剥离后立即 close。
+
+        同步方法，由 _process_downloader 经 asyncio.to_thread 调用，避免阻塞事件循环。
+        Session 生命周期自管：查完 expunge_all + close，使返回的 ORM 对象脱离 session。
+
+        Args:
+            dl_vo: 下载器视图对象（需有 downloader_id）。
+            configs: 站点配置列表。
+
+        Returns:
+            (torrent_records, matched_config_ids)：无数据时返回 None。
+        """
+        from app.torrents.models import TorrentInfo, TrackerInfo
+
         db = SessionLocal()
         try:
             # 先查出该下载器下所有未删除的种子info_id，用于过滤tracker
@@ -120,7 +162,7 @@ class TrackerReannounceTask(BaseSyncTask):
                 .all()
             ]
             if not downloader_torrent_ids:
-                return {"success_count": 0, "failed_count": 0}
+                return None
 
             # 只查询属于当前下载器的 tracker，避免全表扫描
             trackers = (
@@ -133,7 +175,7 @@ class TrackerReannounceTask(BaseSyncTask):
                 .all()
             )
             if not trackers:
-                return {"success_count": 0, "failed_count": 0}
+                return None
 
             # 预编译配置匹配：按需汇报的config缓存判断结果
             eligible_config_ids = set()
@@ -157,7 +199,7 @@ class TrackerReannounceTask(BaseSyncTask):
                         break
 
             if not torrent_ids_to_announce:
-                return {"success_count": 0, "failed_count": 0}
+                return None
 
             # 查询对应的种子记录（属于当前下载器且未删除）
             torrent_records = (
@@ -175,21 +217,9 @@ class TrackerReannounceTask(BaseSyncTask):
             db.close()
 
         if not torrent_records:
-            return {"success_count": 0, "failed_count": 0}
+            return None
 
-        # ===== 网络段（不持有任何 session）=====
-        result = await execute_reannounce(
-            app=app,
-            downloader_id=dl_vo.downloader_id,
-            torrent_records=torrent_records,
-            trigger_type="scheduled",
-        )
-
-        # ===== 写段（batch_update 内部自开短 session）=====
-        if matched_config_ids:
-            ops.batch_update_last_announce_time(list(matched_config_ids))
-
-        return result
+        return torrent_records, matched_config_ids
 
     async def execute_with_app(self, app, db) -> Dict[str, Any]:
         """提供给测试使用的简化入口"""
