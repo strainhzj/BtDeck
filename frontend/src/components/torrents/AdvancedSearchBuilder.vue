@@ -340,7 +340,7 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue, Prop, Watch, Emit } from 'vue-property-decorator'
+import { Component, Vue, Prop } from 'vue-property-decorator'
 import ConditionValueInput from './ConditionValueInput.vue'
 import { STATUS_OPTIONS } from '@/constants/status-config'
 
@@ -354,7 +354,7 @@ interface SearchField {
 }
 
 // 操作符定义接口
-interface SearchOperator {
+interface _OperatorConfig {
   value: string           // 前端使用的标识符
   label: string           // UI显示文本
   backendValue?: string   // 后端API格式（可选，默认与value相同）
@@ -710,7 +710,7 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   // 条件模式变更处理
-  onConditionModeChange(condition: SearchCondition) {
+  onConditionModeChange(_condition: SearchCondition) {
     // 模式变更时的特殊处理
   }
 
@@ -957,7 +957,7 @@ export default class AdvancedSearchBuilder extends Vue {
     this.conditionGroups.forEach((group, groupIndex) => {
       const groupPrefix = groupIndex > 0 ? `group_${groupIndex}_` : ''
 
-      group.conditions.forEach((condition, conditionIndex) => {
+      group.conditions.forEach((condition) => {
         if (!condition.field || !condition.operator || condition.value === null) {
           return
         }
@@ -1149,7 +1149,7 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   // v1.0.5 应用模板：回填 conditionGroups（供父组件调用）
-  applyTemplateGroups(groups: any[], options?: { sort_by?: string, sort_order?: string }) {
+  applyTemplateGroups(groups: any[], _options?: { sort_by?: string, sort_order?: string }) {
     if (!Array.isArray(groups) || groups.length === 0) {
       this.conditionGroups = []
       this.initializeConditions()

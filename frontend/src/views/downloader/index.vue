@@ -79,9 +79,7 @@ import DownloaderCard from './components/DownloaderCard.vue'
 import DownloaderSettingsDialog from './components/DownloaderSettingsDialog.vue'
 import {
   getList,
-  getStatus,
   getStatusAll,
-  addDownloader,
   upDownloader,
   deleteDownloader,
   testConnection,
@@ -90,9 +88,7 @@ import {
 import {
   Downloader,
   DownloaderStatus,
-  DownloaderFormData,
-  DownloaderCardData,
-  OnlineStatus
+  DownloaderCardData
 } from './types'
 
 @Component({
@@ -633,7 +629,7 @@ export default class DownloaderManager extends Vue {
         throw new Error('响应数据格式异常')
       }
 
-      const { data, msg, code } = response
+      const { code } = response
 
       if (code === '200') {
         Message.success('执行成功')

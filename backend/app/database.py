@@ -111,15 +111,15 @@ def init_db():
     db_file = settings.DATABASE_PATH
 
     # 导入 seed 逻辑依赖的模型（这些 import 也确保模型注册到 Base.metadata）
-    from app.auth.models import User, LoginLog, Config
-    from app.downloader.models import BtDownloaders
-    from app.torrents.models import TorrentInfo
-    from app.torrents.models import TrackerInfo
-    from app.torrents.audit_models import TorrentAuditLog
-    from app.tasks.models import TaskLogs
+    from app.auth.models import User, LoginLog, Config  # noqa: F401 - 导入即注册 ORM 模型
+    from app.downloader.models import BtDownloaders  # noqa: F401 - 导入即注册 ORM 模型
+    from app.torrents.models import TorrentInfo  # noqa: F401 - 导入即注册 ORM 模型
+    from app.torrents.models import TrackerInfo  # noqa: F401 - 导入即注册 ORM 模型
+    from app.torrents.audit_models import TorrentAuditLog  # noqa: F401 - 导入即注册 ORM 模型
+    from app.tasks.models import TaskLogs  # noqa: F401 - 导入即注册 ORM 模型
     from app.tasks.cron_models import CronTask  # 必须导入，TaskLogs有外键引用cron_task表
-    from app.models.setting_templates import SettingTemplate
-    from app.models.torrent_tags import TorrentTag, TorrentTagRelation
+    from app.models.setting_templates import SettingTemplate  # noqa: F401 - 导入即注册 ORM 模型
+    from app.models.torrent_tags import TorrentTag, TorrentTagRelation  # noqa: F401 - 导入即注册 ORM 模型
     from app.models.notification import Notification  # 通知中心
 
     # 表结构由 Alembic 迁移管理（migrate_database），不再用 create_all 兜底。
@@ -222,7 +222,6 @@ def init_db():
     # 初始化系统默认定时任务（增量检查：添加缺失的任务）
     try:
         from app.data.default_scheduled_tasks import get_default_scheduled_tasks
-        from app.tasks.cron_models import CronTask  # noqa: F811 与上方 line 97 冗余，保留以降低本独立 try 块对顶部 import 顺序的耦合
 
         db = SessionLocal()
         try:
@@ -300,8 +299,6 @@ def init_db():
 
     # 初始化默认通知（欢迎通知、版本更新通知，幂等操作）
     try:
-        from app.models.notification import Notification  # noqa: F811 与上方 line 100 冗余，保留以降低本独立 try 块对顶部 import 顺序的耦合
-
         db = SessionLocal()
         try:
             # 欢迎通知

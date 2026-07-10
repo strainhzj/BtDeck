@@ -75,7 +75,9 @@ class NotificationService:
 
     async def mark_all_as_read(self) -> int:
         """标记所有通知为已读"""
-        stmt = update(Notification).where(Notification.is_read.is_(False)).values(is_read=True, read_at=datetime.utcnow())
+        stmt = (
+            update(Notification).where(Notification.is_read.is_(False)).values(is_read=True, read_at=datetime.utcnow())
+        )
         result = await self.db.execute(stmt)
         await self.db.commit()
         return result.rowcount

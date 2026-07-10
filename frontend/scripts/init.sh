@@ -118,7 +118,7 @@ fi
 echo -e "${YELLOW}7. 运行代码检查...${NC}"
 if [ "$MODE" = "check" ]; then
     echo "运行 ESLint..."
-    npm run lint || echo -e "${YELLOW}⚠ ESLint 检查发现问题，运行 npm run lint -- --fix 自动修复${NC}"
+    npm run lint
 else
     echo "跳过代码检查（--check 模式执行检查）"
 fi

@@ -51,10 +51,12 @@ def init_database_from_production_schema(db_path: str) -> bool:
         cursor.executescript(schema_sql)
 
         # 标记数据库为最新版本（跳过有问题的迁移链）
-        cursor.execute("""
+        cursor.execute(
+            """
             INSERT OR IGNORE INTO alembic_version (version_num)
             VALUES ('9aea25308aff')
-        """)
+        """
+        )
 
         conn.commit()
         conn.close()

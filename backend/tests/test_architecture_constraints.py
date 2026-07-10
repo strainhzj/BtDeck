@@ -36,6 +36,65 @@ def _blocking_codes(*codes: str):
     return [issue for issue in report.blocking_issues if issue.code in codes]
 
 
+@pytest.mark.parametrize(
+    ("source", "code"),
+    [
+        ("from app.config import settings", "BTD101"),
+        ('SECRET_KEY = "production-secret"', "BTD102"),
+        ('password = "production-secret"', "BTD103"),
+        ("exec('payload')", "BTD301"),
+        ("eval('payload')", "BTD302"),
+        ("import os\nos.system('payload')", "BTD303"),
+        ("import subprocess\nsubprocess.call('payload', shell=True)", "BTD304"),
+        ('query = "SELECT " + table\ndb.execute(query)', "BTD305"),
+    ],
+)
+def test_custom_linter_rejects_forbidden_source_patterns(source: str, code: str):
+    """每条 AST 规则必须拒绝独立反例，避免规则失效后仅靠扫描当前源码而假通过。"""
+    linter = _load_linter()
+    visitor = linter.BtDeckVisitor(BACKEND_ROOT / "app" / "_lint_fixture.py")
+    visitor.visit(ast.parse(source))
+    assert any(issue.code == code and not issue.allowed for issue in visitor.issues)
+
+
+def test_custom_linter_allows_registered_exception():
+    """白名单仅允许登记的历史位置，不能把同一规则整体关闭。"""
+    linter = _load_linter()
+    visitor = linter.BtDeckVisitor(BACKEND_ROOT / "app" / "auth" / "utils.py")
+    visitor.visit(ast.parse('password = "production-secret"'))
+    assert any(issue.code == "BTD103" and issue.allowed for issue in visitor.issues)
+
+
+def test_custom_linter_rejects_manual_token_parsing(tmp_path: Path, monkeypatch):
+    """端点 token 扫描规则也必须有独立反例，不能只依赖当前仓库恰好无违规。"""
+    linter = _load_linter()
+    endpoint = tmp_path / "endpoint.py"
+    endpoint.write_text('token = request.headers["X-Access-Token"]\n', encoding="utf-8")
+    monkeypatch.setattr(linter, "BACKEND_ROOT", tmp_path)
+    monkeypatch.setattr(linter, "ENDPOINT_ROOT", tmp_path)
+
+    issues = linter.scan_manual_token_parsing()
+
+    assert any(issue.code == "BTD201" and not issue.allowed for issue in issues)
+
+
+def test_custom_linter_rejects_unannotated_destructive_migration(tmp_path: Path, monkeypatch):
+    """迁移回滚规则缺失时必须被负向样例捕获。"""
+    linter = _load_linter()
+    versions = tmp_path / "versions"
+    versions.mkdir()
+    (versions / "migration.py").write_text(
+        "def upgrade():\n    op.drop_column('torrent', 'legacy_field')\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(linter, "BACKEND_ROOT", tmp_path)
+    monkeypatch.setattr(linter, "ALEMBIC_VERSIONS_ROOT", versions)
+
+    issues = linter.scan_migration_rollback_annotation()
+
+    assert any(issue.code == "BTD401" and not issue.allowed for issue in issues)
+
+
 def _parse(path: Path) -> ast.AST:
     with warnings.catch_warnings():
         warnings.simplefilter("ignore", SyntaxWarning)

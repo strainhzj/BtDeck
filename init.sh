@@ -89,7 +89,7 @@ echo ""
 echo -e "${YELLOW}5. 后端环境验证...${NC}"
 if [ -d "backend/scripts" ] && [ -f "backend/scripts/init.sh" ]; then
     if [ "$MODE" = "full" ]; then
-        ( cd backend && "${BASH:-bash}" scripts/init.sh ) || echo -e "${YELLOW}⚠ 后端 init.sh 有警告${NC}"
+        ( cd backend && "${BASH:-bash}" scripts/init.sh --check )
     else
         ( cd backend && "${BASH:-bash}" scripts/init.sh --ci ) || echo -e "${YELLOW}⚠ 后端 init.sh --ci 有警告${NC}"
     fi
@@ -102,7 +102,7 @@ echo ""
 echo -e "${YELLOW}6. 前端环境验证...${NC}"
 if [ -d "frontend/scripts" ] && [ -f "frontend/scripts/init.sh" ]; then
     if [ "$MODE" = "full" ]; then
-        ( cd frontend && "${BASH:-bash}" scripts/init.sh ) || echo -e "${YELLOW}⚠ 前端 init.sh 有警告${NC}"
+        ( cd frontend && "${BASH:-bash}" scripts/init.sh --check )
     else
         ( cd frontend && "${BASH:-bash}" scripts/init.sh --ci ) || echo -e "${YELLOW}⚠ 前端 init.sh --ci 有警告${NC}"
     fi

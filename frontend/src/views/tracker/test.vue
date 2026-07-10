@@ -227,7 +227,6 @@ import { Component, Vue } from 'vue-property-decorator'
 import { testMatch, createKeyword } from '@/api/tracker'
 import { TestMatchRequest, TestMatchResponse } from '@/api/tracker'
 import {
-  getLanguageLabel,
   extractErrorMessage,
   parseJSON
 } from '@/utils/tracker'

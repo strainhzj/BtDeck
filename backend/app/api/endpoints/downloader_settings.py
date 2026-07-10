@@ -635,11 +635,13 @@ async def update_downloader_settings(
                     params = {"setting_id": setting_id}
                     params.update({f"rule_id_{idx}": rule_id for idx, rule_id in enumerate(incoming_ids)})
                     db.execute(
-                        text(f"""
+                        text(
+                            f"""
                             DELETE FROM speed_schedule_rules
                             WHERE downloader_setting_id = :setting_id
                               AND id NOT IN ({placeholders})
-                            """),
+                            """
+                        ),
                         params,
                     )
                 else:

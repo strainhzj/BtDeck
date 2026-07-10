@@ -214,7 +214,8 @@ class TrackerMessageLogger:
             try:
                 # 准备UPSERT语句
                 # 使用 ON CONFLICT (tracker_host, msg) DO UPDATE 实现原子性upsert
-                upsert_sql = text("""
+                upsert_sql = text(
+                    """
                     INSERT INTO tracker_message_log (
                         log_id, tracker_host, msg, first_seen, last_seen,
                         occurrence_count, sample_torrents, sample_urls,
@@ -244,7 +245,8 @@ class TrackerMessageLogger:
                             THEN excluded.sample_urls
                             ELSE tracker_message_log.sample_urls
                         END
-                """)
+                """
+                )
 
                 # 批量执行UPSERT
                 current_time = datetime.now()
@@ -667,7 +669,8 @@ class TrackerMessageLogger:
         try:
             # 准备UPSERT语句
             # 使用 ON CONFLICT (tracker_host, msg) DO UPDATE 实现原子性upsert
-            upsert_sql = text("""
+            upsert_sql = text(
+                """
                 INSERT INTO tracker_message_log (
                     log_id, tracker_host, msg, first_seen, last_seen,
                     occurrence_count, sample_torrents, sample_urls,
@@ -697,7 +700,8 @@ class TrackerMessageLogger:
                         THEN excluded.sample_urls
                         ELSE tracker_message_log.sample_urls
                     END
-            """)
+            """
+            )
 
             # 批量执行UPSERT
             current_time = datetime.now()

@@ -1,5 +1,13 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-10 - 质量门禁可信化（进行中）
+
+- 根 `init.sh --full` 改为调用两端 `--check` 并传播失败退出码；端侧不再用 `|| echo` 吞掉 lint 失败。
+- 后端统一接入 Black、Flake8、Mypy、Ruff 和 `lint_btdeck.py`；Black 格式化 8 个遗留文件，修复 Ruff 19 项与 Flake8 2 处重复导入，现 Black/Flake8/Ruff 通过。
+- 为自定义架构扫描器增加 8 条负向样例及白名单样例，防止规则失效时仅扫描当前源码而假通过；`test_architecture_constraints.py` 19 passed。
+- 前端 `npm run lint` 现要求零 warning 并串联 Vuex 专项扫描；Vuex 扫描器新增可注入入口及正反例 Jest 测试。
+- 剩余真实阻断项：全仓 Mypy 类型错误；前端 ESLint 129 条 warning。两者均不再被入口掩盖，待专项清理。
+
 ## 2026-07-05 - sync-resource-governance code review 修复轮
 
 **任务**: 修复 sync-resource-governance code review 发现的 4 项问题 + 验收/文档状态对齐
@@ -903,3 +911,18 @@
 ---
 
 **最后更新**: 2026-06-28
+---
+
+### 质量门禁可信化（2026-07-10 续）
+
+本轮继续修复前后端 lint/测试“假通过”问题：根 `init.sh --full` 与前后端 `scripts/init.sh --check` 已改为真实传播失败退出码；后端严格入口接入 Black、Flake8、Ruff、Mypy 与自定义架构 lint；前端 `npm run lint` 改为 `vue-cli-service lint --max-warnings 0 && node scripts/lint-vuex-action.js`。
+
+已完成验证：
+- 后端自定义架构 lint 的独立负向样例补齐，`pytest backend/tests/test_architecture_constraints.py` 为 21 passed。
+- 后端 Black/Flake8/Ruff 基线通过；自定义 lint 已纳入 init/Makefile。
+- 前端历史 129 条 ESLint warning 已清零，`npm run lint` 通过，并实际执行 Vuex `@Action({ rawError: true })` 自定义检查。
+- Vuex lint 脚本新增可测试导出与正反例单测，`npm run test:unit -- lint-vuex-action.spec.ts` 为 2 passed。
+
+仍保持真实阻断：`mypy app` 存在历史类型债务，严格入口会失败，不做吞错、不做“赋值通过”。后续应作为独立类型治理任务处理。
+
+**最后更新**: 2026-07-10

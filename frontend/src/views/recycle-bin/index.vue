@@ -498,7 +498,7 @@ export default {
       this.isIndeterminate = selectedItems.length > 0 && selectedItems.length < this.list.length
     },
 
-    handleRowClick(row) {
+    handleRowClick(_row) {
       // 行点击暂不处理，可扩展显示详情
     },
 

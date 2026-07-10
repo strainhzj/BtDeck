@@ -593,14 +593,13 @@
   </div>
 </template>
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component } from 'vue-property-decorator'
 import { mixins } from 'vue-class-component'
 import BatchButton from '@/components/BatchButton/index.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import {
   getTorrentList,
-  addTorrent,
   deleteTorrentsWithLevel,
   deleteBatchAsync,
   getBatchDeleteStatus,
@@ -614,7 +613,6 @@ import {
   reannounceTorrents,
   getActiveTorrents,
   applySearchTemplate,
-  saveSimpleQueryAsTemplate,
   createSearchTemplate,
   type QueryTemplateConditions
 } from '@/api/torrents'
@@ -1022,7 +1020,7 @@ export default class extends mixins(TorrentBatchMixin) {
   /**
    * 处理单个Tracker的汇报操作
    */
-  private async handleTrackerReannounce(tracker: any, index: number) {
+  private async handleTrackerReannounce(tracker: any, _index: number) {
     if (!this.currentRow?.hash) {
       this.$message.error('种子信息不完整，无法汇报')
       return  // ✅ 修复：添加hash检查
@@ -1472,8 +1470,8 @@ export default class extends mixins(TorrentBatchMixin) {
    * @param taskData 任务数据
    * @param level 删除等级
    */
-  private handleDeleteTaskResult(taskData: any, level: number) {
-    const { status, total_count, success_count, failed_count, failed_items } = taskData
+  private handleDeleteTaskResult(taskData: any, _level: number) {
+    const { status, success_count, failed_count, failed_items } = taskData
 
     if (status === 'completed') {
       // 全部成功
@@ -2074,7 +2072,7 @@ export default class extends mixins(TorrentBatchMixin) {
     return getStatusText(String(status))
   }
 
-  private handleBatchConfirm(operation: string, selectedItems: any[]) {
+  private handleBatchConfirm(_operation: string, _selectedItems: any[]) {
     this.showBatchDialog = false
     // 批量操作确认处理
   }

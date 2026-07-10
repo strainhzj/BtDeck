@@ -1,5 +1,16 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-10 交接：质量门禁可信化（进行中）
+
+**当前任务**：`quality-gate-hardening`
+
+- 已完成：严格入口接入、Black/Flake8/Ruff 基线修复、后端 AST lint 与前端 Vuex lint 的正反例测试。
+- 已验证：`pytest backend/tests/test_architecture_constraints.py -q` 为 19 passed；Black、Flake8、Ruff 均通过；Vuex lint 的 Jest 正反例测试通过。
+- 未完成且必须保持阻断：全仓 Mypy 存在历史类型错误；前端 `npm run lint` 报 129 条 warning，现因 `--max-warnings 0` 正确返回非零。
+- 下一步：按 ESLint 输出逐项删除未使用符号、收敛非空断言，再规划 Mypy 类型债专项；不要恢复 `|| echo`、降低 warning 阈值或将规则整体关闭。
+
+---
+
 ## 2026-07-05 交接：sync-resource-governance code review 修复轮完成
 
 **当前任务**: `sync-resource-governance`
@@ -104,3 +115,12 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 **当前分支**: dev
 **当前开发版本**: sync-resource-governance（已 done）
 **最后更新**: 2026-07-05
+---
+
+## 2026-07-10 交接：质量门禁可信化（前端 warning 已清零）
+**当前任务**：`quality-gate-hardening`
+
+- 已完成：根/后端/前端 init 的 lint 吞错修复；后端 Black/Flake8/Ruff/custom lint 接入；自定义架构 lint 全规则负向样例；前端 Vuex action lint 可测试化；前端 129 条 ESLint warning 清零。
+- 已验证：`backend/tests/test_architecture_constraints.py` 21 passed；后端 Black/Flake8/Ruff 通过；`frontend npm run lint` 通过且执行 `lint-vuex-action`；`npm run test:unit -- lint-vuex-action.spec.ts` 2 passed。
+- 仍需独立处理：`python -m mypy app` 暴露历史类型债务，当前严格入口会真实失败；不要恢复 `|| echo`、不要降低 warning 阈值、不要关闭自定义规则。
+- 下一步建议：把 Mypy 债务拆成独立 SQLAlchemy/Pydantic 类型治理任务，避免混进 lint 可信化修复。

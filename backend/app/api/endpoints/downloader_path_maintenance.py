@@ -9,6 +9,7 @@ import logging
 from typing import Optional, Annotated
 
 from fastapi import APIRouter, Depends, Path, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 
@@ -48,8 +49,6 @@ def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
 
 
 # ========== 模型定义 ==========
-
-from pydantic import BaseModel, Field
 
 
 class PathCreateRequest(BaseModel):

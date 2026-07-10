@@ -184,7 +184,9 @@ def get_torrent_infos(
             for s in statuses:
                 if s == "error":
                     # error 状态特殊处理
-                    status_conditions.append(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True)))
+                    status_conditions.append(
+                        or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+                    )
                 else:
                     status_conditions.append(TorrentInfo.status == s)
 

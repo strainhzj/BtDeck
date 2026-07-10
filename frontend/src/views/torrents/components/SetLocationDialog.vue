@@ -245,7 +245,7 @@ export default class SetLocationDialog extends Vue {
       const res = await setTorrentLocation(request)
 
       if (res.code === '200' && res.data) {
-        const { success, moved_count, failed_count } = res.data
+        const { success, moved_count } = res.data
 
         // 显示提示消息（不阻塞）
         if (success) {

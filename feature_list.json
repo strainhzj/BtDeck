@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "current_dev_version": "sync-resource-governance",
-  "last_updated": "2026-07-05",
+  "current_dev_version": "quality-gate-hardening",
+  "last_updated": "2026-07-10",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -845,6 +845,31 @@
             "backend/tests/test_architecture_constraints.py"
           ],
           "evidence": "问题1：per-downloader 限流从 asyncio.Semaphore（async with sem 在 wait_for 超时后立即释放）改为 threading.Semaphore（由 executor 内 wrapper 线程自身 acquire/release，确保同步线程实际结束前不释放容量）+ 超时后 future done callback 归档统计；新增 test_timeout_does_not_break_real_concurrency_cap（mutation 反向验证：修复前 buggy asyncio.Semaphore 实现并发达 5 突破 limit=2）。问题2：torrent_speed.py 删除独立 _speed_executor，_call_with_timeout 接入 DownloadLane.INTERACTIVE + timeout=_DOWNLOADER_TIMEOUT，复用 per-downloader 限流避免前端 1s 轮询成为旁路压力源；新增 test_uses_interactive_lane_and_timeout + test_speed_endpoint_does_not_bypass_per_downloader_limit。问题3：新增 _CallStatsAggregator 按 (lane,method,downloader_id) 窗口聚合（成功路径不逐条 info，失败路径 runtime 层降级 debug 避免与业务侧 error 双重放大，shutdown 强制 flush）；落地 settings.SYNC_DISK_FLUSH_INTERVAL_SECONDS（不动 SYNC_DB_COMMIT_BATCH_SIZE 的 DB 写治理）；新增 4 个聚合器测试（spy logger.extra 断言，避免全量 pytest root logger 级别污染）。问题4：lifecycle finally 接入 downloader_api_runtime.shutdown()（关闭三 lane executor + flush 残留统计），删除已废弃的 _speed_executor.shutdown 引用；新增 test_lifespan_shutdowns_downloader_api_runtime + test_lifespan_no_longer_references_speed_executor（AST 扫描，mutation 验证）。验证：全量 1937 passed 0 failed（基线 1926→1937 净增 11 测试）；black/flake8 通过；./init.sh 通过。问题5：父 feature planned→done，last_updated→2026-07-05，evidence 用真实测试数字替换'16 failed'旧叙述。"
+        }
+      ]
+    },
+    {
+      "id": "quality-gate-hardening",
+      "name": "质量门禁可信化",
+      "description": "消除 init/lint 吞错、规则自证通过和前后端门禁不一致；严格命令必须传播失败退出码，并以负向样例验证自定义扫描规则。",
+      "status": "in-progress",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "quality-gate-hardening.1",
+          "name": "统一严格质量入口与后端基线修复",
+          "status": "done",
+          "scope": "fullstack",
+          "files": ["init.sh", "backend/scripts/init.sh", "backend/Makefile", "backend/requirements-dev.txt", "backend/app/", "frontend/package.json", "frontend/scripts/init.sh"],
+          "evidence": "根 init --full 改为传 --check 且传播退出码；后端接入 Black/Flake8/Mypy/Ruff/自定义架构 lint。Black、Flake8、Ruff 已通过；Mypy 保持真实阻断。"
+        },
+        {
+          "id": "quality-gate-hardening.2",
+          "name": "扫描器反向样例与前端告警清理",
+          "status": "done",
+          "scope": "fullstack",
+          "files": ["backend/tests/test_architecture_constraints.py", "frontend/scripts/lint-vuex-action.js", "frontend/tests/unit/lint-vuex-action.spec.ts", "frontend/src/"],
+          "evidence": "后端自定义 lint 全规则负向样例通过，pytest backend/tests/test_architecture_constraints.py 21 passed；Vuex 扫描器新增正反例 Jest 测试 2 passed；前端 npm run lint 以 --max-warnings 0 + lint-vuex-action 实执通过，原 129 warning 已清零。"
         }
       ]
     }

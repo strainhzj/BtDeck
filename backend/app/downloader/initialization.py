@@ -7,8 +7,6 @@ from collections import defaultdict
 import time
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
-
 from app.database import SessionLocal
 from app.downloader.request import DownloaderCheckVO
 from app.downloader.torrent_stats_cache import TorrentStatsCache
@@ -19,6 +17,8 @@ from transmission_rpc import (
     TransmissionTimeoutError,
     TransmissionConnectError,
 )
+
+logger = logging.getLogger(__name__)
 
 # ❌ 删除全局 app 变量，避免与真正的 FastAPI 实例混淆
 # 原代码: app = FastAPI()  # 这会导致缓存初始化在错误的实例上

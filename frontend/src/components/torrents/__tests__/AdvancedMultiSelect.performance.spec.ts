@@ -1,5 +1,4 @@
 import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
 import ElementUI from 'element-ui'
 import AdvancedMultiSelect from '../AdvancedMultiSelect.vue'
 

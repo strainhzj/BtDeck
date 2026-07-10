@@ -1,25 +1,28 @@
+import asyncio
+import logging
+import uuid
 from logging import exception
+from typing import Annotated, Any, List, Optional
 
 import ping3
 import urllib3
 from fastapi import APIRouter, Depends, Request, Path, Query
+from pydantic import BaseModel
 from app.api.responseVO import CommonResponse
-from sqlalchemy import text
-from sqlalchemy.orm import Session
-from app.database import get_db
+from app.api.schemas.path_mapping import PathMappingTestRequest
 from app.auth.dependencies import require_authenticated_user
-import uuid
-import logging
+from app.database import get_db
 from app.downloader import models
 from app.downloader.models import BtDownloaders
 from app.downloader.request import ListDownloader, RequestDownloader, UpdateDownloader
-from typing import Annotated, List, Optional, Any
 from app.downloader.responseVO import DownloaderListVO, DownloaderVO, DownloaderStatusVO, DownloaderSimpleVO
-from app.utils.encryption import encrypt_password, decrypt_password
 from app.models.setting_templates import DownloaderTypeEnum
+from app.utils.encryption import encrypt_password, decrypt_password
 from qbittorrentapi import Client as qbClient
-from transmission_rpc import Client as trClient, TransmissionAuthError
 from requests.exceptions import SSLError, ConnectionError
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+from transmission_rpc import Client as trClient, TransmissionAuthError
 
 # 创建日志记录器
 logger = logging.getLogger(__name__)  # Fixed for proper response handling
@@ -908,9 +911,6 @@ def get_transmission_detail(delay, downloader):
     )
 
 
-import asyncio
-
-
 def safe_delay_value(delay) -> float | None:
     """
     安全的延迟值处理函数
@@ -1216,9 +1216,6 @@ async def getlist_from_cache(
 
 
 # ==================== 路径映射相关接口 ====================
-
-from pydantic import BaseModel
-from app.api.schemas.path_mapping import PathMappingTestRequest
 
 
 class PathMappingAdd(BaseModel):

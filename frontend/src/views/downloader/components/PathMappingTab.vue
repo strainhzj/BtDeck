@@ -413,7 +413,7 @@ export default class PathMappingTab extends Vue {
   }
 
   // 获取路径输入框占位符
-  private getPathPlaceholder(mappingType: MappingType, pathType: 'internal' | 'external'): string {
+  private getPathPlaceholder(mappingType: MappingType, _pathType: 'internal' | 'external'): string {
     const option = this.mappingTypeOptions.find(opt => opt.value === mappingType)
     return option?.placeholder || '输入路径'
   }

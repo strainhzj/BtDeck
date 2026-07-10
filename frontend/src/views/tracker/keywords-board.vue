@@ -111,7 +111,7 @@ import KeywordTagCard from './components/KeywordTagCard.vue'
 import KeywordListModal from './components/KeywordListModal.vue'
 import AddKeywordDialog from './components/AddKeywordDialog.vue'
 import ImportKeywordsDialog from './components/ImportKeywordsDialog.vue'
-import { getPoolKeywords, deleteKeyword, moveKeywordToPool, createKeyword, PoolType } from '@/api/tracker'
+import { getPoolKeywords, deleteKeyword, moveKeywordToPool, PoolType } from '@/api/tracker'
 import { extractErrorMessage } from '@/utils/tracker'
 
 interface PoolKeyword {

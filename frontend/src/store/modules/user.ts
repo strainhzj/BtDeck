@@ -91,6 +91,7 @@ class User extends VuexModule implements IUserState {
   @Action({ rawError: true })
   public ResetToken() {
     removeToken()
+    removeUserId()
     this.SET_TOKEN('')
     this.SET_USER_ID('')
     this.SET_ROLES([])
@@ -192,6 +193,7 @@ class User extends VuexModule implements IUserState {
       console.warn('后端登出调用失败，仅本地清除 token:', e)
     }
     removeToken()
+    removeUserId()
     this.SET_TOKEN('')
     this.SET_USER_ID('')
     this.SET_ROLES([])

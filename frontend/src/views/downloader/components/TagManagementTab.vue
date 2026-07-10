@@ -280,9 +280,7 @@ import {
   updateTag,
   deleteTag,
   batchDeleteTags,
-  checkCategorySupport,
   TorrentTag,
-  TagType,
   CreateTagRequest,
   UpdateTagRequest
 } from '@/api/tag-management'
@@ -440,7 +438,7 @@ export default class TagManagementTab extends Vue {
    * 搜索输入处理（防抖）
    */
   private searchTimer: number | null = null
-  private handleSearchInput(value: string) {
+  private handleSearchInput(_value: string) {
     if (this.searchTimer) {
       clearTimeout(this.searchTimer)
     }
@@ -619,7 +617,10 @@ export default class TagManagementTab extends Vue {
           tag_name: this.tagForm.tag_name,
           color: this.tagForm.color
         }
-        await updateTag(this.tagForm.tag_id!, updateData)
+        if (this.tagForm.tag_id === undefined) {
+          throw new Error('Missing tag_id for tag update')
+        }
+        await updateTag(this.tagForm.tag_id, updateData)
         Message.success('更新成功')
       } else {
         // 创建模式

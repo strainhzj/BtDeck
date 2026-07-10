@@ -652,11 +652,11 @@ export default class PythonClassSelector extends Vue {
     }
   }
 
-  private handleNodeExpand(data: ClassNode) {
+  private handleNodeExpand(_data: ClassNode) {
     // 节点展开时的处理
   }
 
-  private handleNodeCollapse(data: ClassNode) {
+  private handleNodeCollapse(_data: ClassNode) {
     // 节点折叠时的处理
   }
 

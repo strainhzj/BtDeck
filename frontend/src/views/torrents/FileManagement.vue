@@ -544,7 +544,11 @@ export default class FileManagement extends Vue {
         this.$message.error('请选择有效文件')
         return
       }
-      const res = await importTorrentBackup(this.importForm.downloader_id!, files)
+      if (this.importForm.downloader_id === undefined) {
+        this.$message.error('请选择下载器')
+        return
+      }
+      const res = await importTorrentBackup(this.importForm.downloader_id, files)
 
       if (res.code === '200') {
         this.$message.success(res.msg)
@@ -573,7 +577,7 @@ export default class FileManagement extends Vue {
   }
 
   // 上传成功（未使用，使用手动上传）
-  handleUploadSuccess(response: any, file: any, fileList: any[]) {
+  handleUploadSuccess(response: any, _file: any, _fileList: any[]) {
     console.log('Upload success:', response)
   }
 

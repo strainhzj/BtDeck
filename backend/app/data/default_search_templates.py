@@ -134,12 +134,14 @@ def init_default_search_templates(db_session: Session) -> int:
                 continue
 
             template_id = str(uuid.uuid4())
-            insert_sql = text("""
+            insert_sql = text(
+                """
                 INSERT INTO search_templates
                     (id, user_id, name, description, conditions, is_default, is_public, usage_count, created_time, updated_time)
                 VALUES
                     (:id, :user_id, :name, :description, :conditions, :is_default, :is_public, :usage_count, :created_time, :updated_time)
-            """)
+            """
+            )
             db_session.execute(
                 insert_sql,
                 {

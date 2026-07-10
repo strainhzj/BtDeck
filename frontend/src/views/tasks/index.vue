@@ -890,9 +890,7 @@ import {
   getTaskLogs,
   getTaskLogStatistics,
   ScheduledTask,
-  TaskCreateRequest,
-  TaskLog,
-  TaskLogQueryParams
+  TaskCreateRequest
 } from '@/api/tasks'
 import request from '@/utils/request'
 
@@ -1574,7 +1572,7 @@ export default class TaskManage extends Vue {
   // ========== 新增的组件事件处理方法 ==========
 
   // 任务类型变化处理
-  private handleTaskTypeChange(taskType: number) {
+  private handleTaskTypeChange(_taskType: number) {
     // 清空执行内容
     this.taskForm.executor = ''
     // 重置语法验证状态

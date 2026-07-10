@@ -80,7 +80,7 @@ if [ "$MODE" = "ci" ]; then
 else
     echo -e "${YELLOW}4. 安装 Python 依赖...${NC}"
     echo "运行 $PYTHON_BIN -m pip install..."
-    "$PYTHON_BIN" -m pip install -q -r requirements.txt
+    "$PYTHON_BIN" -m pip install -q -r requirements.txt -r requirements-dev.txt
     echo -e "${GREEN}✓ 依赖安装完成${NC}"
 fi
 
@@ -149,13 +149,19 @@ fi
 echo -e "${YELLOW}8. 运行代码检查...${NC}"
 if [ "$MODE" = "check" ]; then
     echo "运行 mypy..."
-    mypy app/ || echo -e "${YELLOW}⚠ mypy 检查发现问题${NC}"
+    "$PYTHON_BIN" -m mypy app/
 
     echo "运行 black --check..."
-    black --check app/ || echo -e "${YELLOW}⚠ black 检查发现问题，运行 black app/ 自动修复${NC}"
+    "$PYTHON_BIN" -m black --check app/
 
     echo "运行 flake8..."
-    flake8 app/ || echo -e "${YELLOW}⚠ flake8 检查发现问题${NC}"
+    "$PYTHON_BIN" -m flake8 app/
+
+    echo "运行 Ruff..."
+    "$PYTHON_BIN" -m ruff check app/
+
+    echo "运行 BtDeck 架构门禁..."
+    "$PYTHON_BIN" scripts/lint_btdeck.py
 else
     echo "跳过代码检查（--check 模式执行检查）"
 fi

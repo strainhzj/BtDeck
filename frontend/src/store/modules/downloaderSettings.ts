@@ -5,8 +5,7 @@ import { Module } from 'vuex'
 import {
   DownloaderSettings,
   DownloaderCapabilities,
-  SettingTemplate,
-  SpeedScheduleRule
+  SettingTemplate
 } from '@/views/downloader/types'
 import {
   getDownloaderSettings,
@@ -204,7 +203,7 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
     },
 
     // 测试下载器设置连接
-    async testSettings({ commit }, downloaderId: string) {
+    async testSettings({ commit: _commit }, downloaderId: string) {
       try {
         const response = await testDownloaderSettings(downloaderId)
         return response
@@ -235,7 +234,7 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
     },
 
     // 获取模板详情
-    async fetchTemplateDetail({ commit }, templateId: string) {
+    async fetchTemplateDetail({ commit: _commit }, templateId: string) {
       try {
         const response = await getTemplateDetail(templateId)
         if (response.code === '200') {

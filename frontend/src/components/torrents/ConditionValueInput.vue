@@ -289,19 +289,19 @@ interface FieldOption {
 }
 
 // 正则表达式值接口
-interface RegexValue {
+interface _RegexValue {
   pattern: string
   caseSensitive: boolean
 }
 
 // 日期范围值接口
-interface DateRangeValue {
+interface _DateRangeValue {
   start: string
   end: string
 }
 
 // 最近N天值接口
-interface LastDaysValue {
+interface _LastDaysValue {
   days: number
 }
 

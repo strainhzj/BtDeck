@@ -229,7 +229,7 @@
 </template>
 
 <script lang="ts">
-import { getTorrentList, pauseTorrents, resumeTorrents, deleteTorrents } from '@/api/torrents'
+import { pauseTorrents, resumeTorrents, deleteTorrents } from '@/api/torrents'
 
 // 工具函数
 function formatSize(bytes: number): string {
@@ -554,7 +554,7 @@ export default {
     },
 
     // 批量操作
-    async handleBatchOperation(operation: string, selectedItems?: any[]) {
+    async handleBatchOperation(operation: string, _selectedItems?: any[]) {
       if (operation === 'delete' && this.multipleSelection.length === 0) {
         this.$message.warning('请先选择要删除的种子')
         return

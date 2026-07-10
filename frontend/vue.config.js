@@ -77,13 +77,13 @@ module.exports = {
         pathRewrite: {
           '^/api': '/api'
         },
-        onProxyReq: (proxyReq, req, res) => {
+        onProxyReq: (proxyReq, req, _res) => {
           console.log('[Proxy]', req.method, req.url, '→ http://127.0.0.1:5001')
         },
-        onError: (err, req, res) => {
+        onError: (err, _req, _res) => {
           console.error('[Proxy Error]', err.message)
         },
-        onProxyReqWs: (proxyReq, req, socket, options, head) => {
+        onProxyReqWs: (proxyReq, req, _socket, _options, _head) => {
           console.log('[Proxy WS]', req.url, '→ http://127.0.0.1:5001')
         }
       }

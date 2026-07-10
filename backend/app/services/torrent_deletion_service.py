@@ -7,6 +7,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass
+from datetime import datetime
 from sqlalchemy.orm import Session
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
@@ -618,7 +619,3 @@ class DownloaderAdapterFactory:
 
         # 强制使用传入的client对象（从缓存获取）
         return adapter_class(client=client)
-
-
-# 延迟导入避免循环依赖
-from datetime import datetime

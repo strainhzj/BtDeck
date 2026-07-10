@@ -1039,6 +1039,9 @@ export default class DownloaderSettingsDialog extends Vue {
 
       // 处理密码和原密码字段
       if (this.isEdit) {
+        if (!this.downloader) {
+          throw new Error('Missing downloader for edit mode')
+        }
         // 编辑模式：只有在密码字段有输入时才包含密码
         if (!basicData.password || basicData.password.trim() === '') {
           delete basicData.password
@@ -1060,7 +1063,11 @@ export default class DownloaderSettingsDialog extends Vue {
 
       if (this.isEdit) {
         // 编辑模式：更新下载器基本信息（只包含基本信息字段）
-        await upDownloader({ ...basicData, id: this.downloader!.id })
+        if (!this.downloader) {
+          throw new Error('Missing downloader for edit mode')
+        }
+        const downloaderId = this.downloader.id
+        await upDownloader({ ...basicData, id: downloaderId })
 
         // 如果有设置变更，同时更新设置并应用到下载器
         console.log('🔍 [DEBUG] settingsData:', settingsData)
@@ -1070,7 +1077,7 @@ export default class DownloaderSettingsDialog extends Vue {
 
         if (Object.keys(settingsData).length > 0 || Object.keys(speedData).length > 0 || Object.keys(advancedData).length > 0) {
           // 1. 保存设置到数据库
-          const updateResponse = await updateDownloaderSettings(this.downloader!.id, {
+          const updateResponse = await updateDownloaderSettings(downloaderId, {
             ...settingsData,
             ...speedData,
             ...advancedData
@@ -1090,7 +1097,7 @@ export default class DownloaderSettingsDialog extends Vue {
           })
 
           try {
-            await applyDownloaderSettings(this.downloader!.id)
+            await applyDownloaderSettings(downloaderId)
             loadingMessage.close()
             this.$message.success('保存成功，配置已应用到下载器')
           } catch (applyError: any) {

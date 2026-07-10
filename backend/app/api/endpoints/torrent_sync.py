@@ -1346,7 +1346,9 @@ async def update_tracker_status_from_keywords() -> Dict[str, Any]:
         async with AsyncSessionLocal() as db:
             # Step 1: 加载所有启用的关键词到内存
             result = await db.execute(
-                select(TrackerKeywordConfig).filter(TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0)
+                select(TrackerKeywordConfig).filter(
+                    TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0
+                )
             )
             keywords = result.scalars().all()
 
