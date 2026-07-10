@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "current_dev_version": "sync-resource-governance",
-  "last_updated": "2026-07-05",
+  "current_dev_version": "v1.0.6",
+  "last_updated": "2026-07-10",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -353,25 +353,9 @@
       ]
     },
     {
-      "id": "v1.0.6",
-      "name": "孤儿文件管理",
-      "description": "自动发现并清理无用文件，inode去重",
-      "status": "pending",
-      "plan_file": "PLANS/v1.0.6.md",
-      "tasks": []
-    },
-    {
-      "id": "v1.0.7",
-      "name": "路径扫描增强",
-      "description": "扩展到扫描btdeck配置路径",
-      "status": "pending",
-      "plan_file": "PLANS/v1.0.7.md",
-      "tasks": []
-    },
-    {
       "id": "v1.0.8",
       "name": "数据库升级",
-      "description": "PostgreSQL支持 + 下载器连接池管理",
+      "description": "PostgreSQL 支持。推迟中：sync-resource-governance 治理后先验证 DB 写锁瓶颈是否缓解。原计划的下载器连接池已废弃（违反 downloader-connection 约束，app.state.store 已管理客户端连接）。",
       "status": "pending",
       "plan_file": "PLANS/v1.0.8.md",
       "tasks": []
@@ -423,14 +407,6 @@
           "evidence": "docker-compose.yml"
         }
       ]
-    },
-    {
-      "id": "v1.1.0",
-      "name": "自动化运维",
-      "description": "后台自动化任务调度系统",
-      "status": "pending",
-      "plan_file": "PLANS/v1.1.0.md",
-      "tasks": []
     },
     {
       "id": "v1.0.5-db-governance",
@@ -863,6 +839,111 @@
             "backend/tests/test_architecture_constraints.py"
           ],
           "evidence": "问题1：per-downloader 限流从 asyncio.Semaphore（async with sem 在 wait_for 超时后立即释放）改为 threading.Semaphore（由 executor 内 wrapper 线程自身 acquire/release，确保同步线程实际结束前不释放容量）+ 超时后 future done callback 归档统计；新增 test_timeout_does_not_break_real_concurrency_cap（mutation 反向验证：修复前 buggy asyncio.Semaphore 实现并发达 5 突破 limit=2）。问题2：torrent_speed.py 删除独立 _speed_executor，_call_with_timeout 接入 DownloadLane.INTERACTIVE + timeout=_DOWNLOADER_TIMEOUT，复用 per-downloader 限流避免前端 1s 轮询成为旁路压力源；新增 test_uses_interactive_lane_and_timeout + test_speed_endpoint_does_not_bypass_per_downloader_limit。问题3：新增 _CallStatsAggregator 按 (lane,method,downloader_id) 窗口聚合（成功路径不逐条 info，失败路径 runtime 层降级 debug 避免与业务侧 error 双重放大，shutdown 强制 flush）；落地 settings.SYNC_DISK_FLUSH_INTERVAL_SECONDS（不动 SYNC_DB_COMMIT_BATCH_SIZE 的 DB 写治理）；新增 4 个聚合器测试（spy logger.extra 断言，避免全量 pytest root logger 级别污染）。问题4：lifecycle finally 接入 downloader_api_runtime.shutdown()（关闭三 lane executor + flush 残留统计），删除已废弃的 _speed_executor.shutdown 引用；新增 test_lifespan_shutdowns_downloader_api_runtime + test_lifespan_no_longer_references_speed_executor（AST 扫描，mutation 验证）。验证：全量 1937 passed 0 failed（基线 1926→1937 净增 11 测试）；black/flake8 通过；./init.sh 通过。问题5：父 feature planned→done，last_updated→2026-07-05，evidence 用真实测试数字替换'16 failed'旧叙述。"
+        }
+      ]
+    },
+    {
+      "id": "v1.0.6",
+      "name": "孤儿文件管理与路径维护",
+      "description": "合并原 v1.0.6孤儿文件 + v1.0.7路径扫描增强 + v1.1.0自动清理。自动发现不在任何种子文件清单中的磁盘文件，支持手动清理和定时自动清理超期文件。复用现有 cron_executor 调度（不新建 AutomationService），接入 sync-resource-governance 治理体系。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/v1.0.6.md",
+      "deviation_from_plan": {
+        "reason": "旧计划（2024-04-22）全部过时：前端用 Composition API 违反 Options API 约束、AutomationService 与 cron_executor 重复、引用不存在的 PathMapping ORM 模型、未考虑 sync-resource-governance 治理体系。基于代码现状重写计划，合并三版本为一个功能集群。",
+        "changes": [
+          "合并 v1.0.6+v1.0.7+v1.1.0 为单一版本（功能集群：发现→清理→自动化）",
+          "复用现有 cron_executor 调度框架（不新建 AutomationService）",
+          "复用现有 QBittorrentDeleteAdapter/TransmissionDeleteAdapter 的 get_torrent_files 获取文件清单",
+          "经 call_downloader_api(INTERACTIVE lane) 调用受 per-downloader 限流",
+          "扫描路径来源：种子 save_path distinct + 下载器 path_mapping JSON external（不从不存在的 PathTransferHistory 取）",
+          "接入 db_write_scope + to_thread + task_profiles 三处同步治理体系",
+          "一并修复 CleanupTaskExecutor 预存 bug（_query_level3/4_torrents 未定义，task_type=5 触发会崩）"
+        ]
+      },
+      "tasks": [
+        {
+          "id": "v1.0.6.1",
+          "name": "后端数据模型与迁移",
+          "description": "OrphanScanResult + OrphanFile 两表模型 + Alembic 迁移（含 inspect 守卫）+ 4 项配置项",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/models/orphan_file.py",
+            "backend/alembic/versions/c3f1a8b7d902_add_orphan_file_tables.py",
+            "backend/alembic/env.py",
+            "backend/app/core/config.py"
+          ],
+          "evidence": "OrphanScanResult(scan_id PK) + OrphanFile(id PK, scan_id FK) 两表；迁移 c3f1a8b7d902 含 inspect 守卫（表已存在时 no-op）；env.py 补模型 import；config.py 新增 ORPHAN_AUTO_CLEANUP_DAYS=30/ORPHAN_SCAN_ENABLED=True/ORPHAN_SCAN_BATCH_SIZE=200/ORPHAN_EXCLUDE_PATTERNS。迁移链 head 95ef8bd8b47a→c3f1a8b7d902，空库建 26 表。"
+        },
+        {
+          "id": "v1.0.6.2",
+          "name": "后端扫描引擎与服务",
+          "description": "OrphanScanner（路径收集+文件清单构建+inode去重+遍历判定）+ OrphanFileService（查询/预览/手动清理/自动清理）+ 审计枚举扩展",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/torrents/audit_enums.py"
+          ],
+          "evidence": "OrphanScanner.scan() 主入口（to_thread 路径收集+文件系统遍历，call_downloader_api INTERACTIVE 获取文件清单，db_write_scope 批量写入）；OrphanFileService（分页查询 total/page/pageSize/list + cleanup_preview + cleanup_orphans 物理删除+审计 + auto_cleanup_expired）；audit_enums 新增 ORPHAN_SCAN/ORPHAN_CLEANUP/ORPHAN_AUTO_CLEANUP 三枚举归入 orphan_files 分类。复用 UnifiedPathMappingService 路径转换 + FileOperationService._check_file_exists_with_fallback UNC 兼容。"
+        },
+        {
+          "id": "v1.0.6.3",
+          "name": "后端 API 端点",
+          "description": "5 端点（latest/list/scan/cleanup-preview/cleanup）+ 路由注册，require_authenticated_user 认证 + CommonResponse 响应",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/api/api.py"
+          ],
+          "evidence": "GET /orphan-files/latest + GET /orphan-files/list（分页 page/page_size/downloader_id/min_size）+ POST /orphan-files/scan + POST /orphan-files/cleanup-preview + POST /orphan-files/cleanup；api.py 注册 prefix=/orphan-files。认证用 require_authenticated_user，响应 CommonResponse。"
+        },
+        {
+          "id": "v1.0.6.4",
+          "name": "定时任务与资源治理",
+          "description": "OrphanScanTask 每周扫描+清理合一 + task_profiles 三处同步 + CleanupTaskExecutor bug 修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/scheduler/orphan_scan_task.py",
+            "backend/app/data/default_scheduled_tasks.py",
+            "backend/app/tasks/task_profiles.py",
+            "backend/app/tasks/cleanup_executor.py"
+          ],
+          "evidence": "OrphanScanTask.execute() 扫描+自动清理超期；task_code=orphan_scan_cleanup cron=0 2 * * 0（每周日2点）登记到 default_scheduled_tasks + task_profiles（heavy_sync=True, wait_timeout=60.0）；CleanupTaskExecutor 补全 _query_level3_torrents/_query_level4_torrents 两未定义方法（task_type=5 触发路径原会 AttributeError）。"
+        },
+        {
+          "id": "v1.0.6.5",
+          "name": "前端页面与 API",
+          "description": "orphan-files.ts API 封装 + index.vue 管理页面（class 风格 Options API）+ 路由注册",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/router.ts"
+          ],
+          "evidence": "api/orphan-files.ts（5 函数 + 类型定义，pageSize 驼峰）；views/orphan-files/index.vue（@Component class 风格 + 统计卡片 + el-table 后端分页 + el-pagination + 清理预览-确认两步对话框，复用 formatFileSize/extractErrorMessage）；router.ts 注册 /orphan-files/index icon=folder。eslint 0 error + build 成功（tsc 通过）。"
+        },
+        {
+          "id": "v1.0.6.6",
+          "name": "测试与验证",
+          "description": "46 新测试（扫描器纯函数 19 + API 认证 14 + 任务治理 13）+ 全量回归 + lint/build/init.sh",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/services/test_orphan_scanner.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/tasks/test_orphan_scan_task.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/enums/test_audit_enums.py",
+            "backend/tests/tasks/test_task_profiles.py"
+          ],
+          "evidence": "46 新测试全 pass（扫描器 inode去重/排除模式/路径收集/孤儿判定 19 + API 5端点×认证场景 14 + 任务治理一致性/结构/bug修复 13）；全量 pytest 1997 passed 0 failed（基线 1937→1997 净增 60）；black/flake8 通过；./init.sh 通过；前端 eslint 0 error + build 成功。"
         }
       ]
     }

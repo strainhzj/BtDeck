@@ -23,6 +23,7 @@ EXPECTED_HEAVY_TASK_CODES = {
     "TRACKER_MESSAGE_LOGGER",
     "downloader_path_scan",
     "tracker_reannounce",
+    "orphan_scan_cleanup",
 }
 
 

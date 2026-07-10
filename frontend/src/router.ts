@@ -218,6 +218,21 @@ const router = new Router({
       ]
     },
     {
+      path: '/orphan-files',
+      component: Layout,
+      children: [
+        {
+          path: 'index',
+          component: () => import(/* webpackChunkName: "orphan-files" */ '@/views/orphan-files/index.vue'),
+          meta: {
+            keepAlive: true,
+            title: '孤儿文件',
+            icon: 'folder'
+          }
+        }
+      ]
+    },
+    {
       path: '/settings',
       component: Layout,
       children: [

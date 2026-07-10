@@ -118,6 +118,16 @@ class Settings(BaseSettings):
     # 上线后若多下载器并发同步 P95 退化 >30% 可临时关闭快速回滚。
     SYNC_DB_WRITE_SCOPE_ENABLED: bool = True
 
+    # 孤儿文件管理配置（v1.0.6）
+    # 自动清理超期天数：mtime 早于该天数的孤儿文件由定时任务自动清理
+    ORPHAN_AUTO_CLEANUP_DAYS: int = 30
+    # 定时扫描开关：False 时定时任务跳过扫描（手动扫描不受影响）
+    ORPHAN_SCAN_ENABLED: bool = True
+    # 文件清单批量获取批次大小（按种子数分批调下载器 API）
+    ORPHAN_SCAN_BATCH_SIZE: int = 200
+    # 排除的文件模式（分号分隔，fnmatch 语法）：匹配的文件不判定为孤儿
+    ORPHAN_EXCLUDE_PATTERNS: str = "*.torrent;*.pending_delete"
+
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 
     def __init__(self, **kwargs):

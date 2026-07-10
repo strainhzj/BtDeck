@@ -1,5 +1,80 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-10 - v1.0.6 孤儿文件管理与路径维护（合并三版本）
+
+**任务 ID**: `v1.0.6`（合并原 v1.0.6 孤儿文件 + v1.0.7 路径扫描增强 + v1.1.0 自动清理）
+**分支**: dev
+**计划文件**: PLANS/v1.0.6.md（基于代码现状重写，废弃 2024-04-22 旧计划）
+
+### 合并理由
+
+原 v1.0.6 + v1.0.7 + v1.1.0 本质是一个功能集群（孤儿文件发现→路径扩展→自动清理），拆三版本导致接口割裂和重复工作。合并为单一版本一次性交付完整链路。
+
+### 旧计划废弃原因（4 个计划文件全部过时）
+
+1. 前端用 Composition API（`defineComponent`+`setup()`），违反项目强制 Options API 约束
+2. v1.1.0 的 AutomationService 与现有 cron_executor（APScheduler + task_profiles）功能完全重叠
+3. v1.0.7 引用不存在的 PathMapping/PathMappingRule ORM 模型（实际是 BtDownloaders 表的 Text 字段）
+4. 所有计划未考虑 sync-resource-governance 治理体系（db_write_scope + task_profiles 三处同步）
+
+### 关键设计决策（用户确认）
+
+- 扫描路径来源：种子 save_path + 下载器路径映射配置（path_mapping JSON external）
+- 清理策略：自动清理超期（物理删除 + 审计日志）+ 手动清理（用户勾选）
+- 文件清单来源：实时调下载器 API（复用 get_torrent_files 适配器，经 INTERACTIVE lane）
+- 定时任务：每周扫描+清理合一（task_type=4 + task_profiles heavy_sync）
+- 一并修复 CleanupTaskExecutor 预存 bug（_query_level3/4_torrents 未定义）
+
+### 交付清单（6 阶段）
+
+**Phase 1: 后端数据模型与迁移**
+- `app/models/orphan_file.py` — OrphanScanResult + OrphanFile 两表
+- `alembic/versions/c3f1a8b7d902_add_orphan_file_tables.py` — 迁移（含 inspect 守卫）
+- `alembic/env.py` — 补模型 import
+- `app/core/config.py` — 新增 4 项配置（ORPHAN_AUTO_CLEANUP_DAYS=30 等）
+
+**Phase 2: 后端扫描引擎与服务**
+- `app/services/orphan_scanner.py` — OrphanScanner（路径收集+文件清单+inode去重+遍历判定）
+  - to_thread 移出文件系统遍历；call_downloader_api(INTERACTIVE) 获取文件清单
+  - db_write_scope 串行化 DB commit；复用 UnifiedPathMappingService 路径转换
+- `app/services/orphan_file_service.py` — OrphanFileService（查询/预览/手动清理/自动清理）
+  - 文件删除参考 recycle_bin_service.py（UNC 兼容 + os.remove + 审计日志）
+- `app/torrents/audit_enums.py` — 新增 3 个审计枚举（ORPHAN_SCAN/CLEANUP/AUTO_CLEANUP）
+
+**Phase 3: 后端 API 端点**
+- `app/api/endpoints/orphan_files.py` — 5 端点（latest/list/scan/cleanup-preview/cleanup）
+- `app/api/api.py` — 路由注册 prefix=/orphan-files
+
+**Phase 4: 定时任务与资源治理**
+- `app/tasks/scheduler/orphan_scan_task.py` — OrphanScanTask（每周扫描+清理合一）
+- 治理三处同步：default_scheduled_tasks（task_code=orphan_scan_cleanup, cron=0 2 * * 0）+ task_profiles（heavy_sync, wait_timeout=60）+ 任务类
+- `app/tasks/cleanup_executor.py` — 修复 _query_level3/4_torrents 未定义 bug
+
+**Phase 5: 前端页面与 API**
+- `frontend/src/api/orphan-files.ts` — API 封装（5 函数 + 类型定义）
+- `frontend/src/views/orphan-files/index.vue` — 管理页面（class 风格 Options API + 统计卡片 + el-table + el-pagination + 清理两步确认）
+- `frontend/src/router.ts` — 路由注册 /orphan-files/index icon=folder
+
+**Phase 6: 测试与验证**
+- 3 个新测试文件（扫描器纯函数 19 + API 认证 14 + 任务治理 13 = 46 新测试）
+- 更新 4 个现有测试（db_migration head/表数 + db_rollback 版本号 + audit_enums 成员数 39→42 + task_profiles 期望集）
+- 全量 pytest **1997 passed, 0 failed**（基线 1937→1997 净增 60）
+- black/flake8 通过；./init.sh 通过；前端 eslint 0 error + build 成功
+
+### 验证结果（DoD 全部达成）
+
+| 验证项 | 结果 |
+|--------|------|
+| 新增后端测试（46 个） | ✅ 全 pass |
+| 全量 pytest tests/ | ✅ **1997 passed, 0 failed**（基线 1937→1997，净增 60） |
+| black（改动文件） | ✅ 通过 |
+| flake8（改动文件） | ✅ 通过 |
+| ./init.sh（全栈环境验证） | ✅ 通过 |
+| 前端 eslint | ✅ 0 error |
+| 前端 build（含 tsc） | ✅ 成功（orphan-files chunk 生成） |
+
+---
+
 ## 2026-07-10 - SQLite 写锁治理完善（to_thread 止血 + db_write_scope 收尾）
 
 **任务 ID**: `sync-resource-governance`（新增子任务 `sync-resource-governance.2.6`）

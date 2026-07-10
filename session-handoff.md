@@ -1,13 +1,71 @@
 # Session Handoff - BtDeck 全栈项目
 
-## 2026-07-05 交接：sync-resource-governance code review 修复轮完成
+## 2026-07-10 交接：v1.0.6 孤儿文件管理与路径维护完成
 
-**当前任务**: `sync-resource-governance`
-**状态**: code review 修复轮（阶段 4）完成。父 feature 已从 `planned` 标为 `done`。
-**计划文件**: `PLANS/sync-resource-governance.md`
+**当前任务**: `v1.0.6`（合并原 v1.0.6 孤儿文件 + v1.0.7 路径扫描增强 + v1.1.0 自动清理）
+**状态**: done。6 阶段全部完成。
+**计划文件**: `PLANS/v1.0.6.md`（基于代码现状重写，废弃 2024-04-22 旧计划）
 **分支**: dev
 
-### 本轮完成（code review 4 项问题修复 + 验收文档对齐）
+### 本轮完成
+
+合并三版本为一个功能集群，实现孤儿文件发现→清理→自动化完整链路：
+
+1. **后端数据模型**：OrphanScanResult + OrphanFile 两表 + Alembic 迁移 c3f1a8b7d902（含 inspect 守卫）+ 4 项配置
+2. **扫描引擎**：OrphanScanner（路径收集 to_thread + 文件清单 call_downloader_api INTERACTIVE + inode 去重 + 遍历判定 + db_write_scope 批量写入）
+3. **清理服务**：OrphanFileService（分页查询/预览/手动清理/自动清理超期，文件删除参考 recycle_bin_service UNC 兼容 + 审计日志）
+4. **API 端点**：5 端点（latest/list/scan/cleanup-preview/cleanup），require_authenticated_user 认证 + CommonResponse 响应
+5. **定时任务**：OrphanScanTask 每周日 2 点扫描+清理合一，task_profiles 三处同步（orphan_scan_cleanup heavy_sync wait_timeout=60）
+6. **bug 修复**：CleanupTaskExecutor _query_level3/4_torrents 未定义方法补全（task_type=5 触发路径原会 AttributeError）
+7. **前端**：orphan-files.ts API + index.vue 管理页（class 风格 Options API + 统计卡片 + el-table + el-pagination + 清理两步确认）+ 路由注册
+
+### 验证结果
+
+- 新增 46 测试全 pass（扫描器 19 + API 认证 14 + 任务治理 13）
+- 全量 pytest **1997 passed, 0 failed**（基线 1937→1997 净增 60，零回归）
+- black/flake8 通过；./init.sh 通过
+- 前端 eslint 0 error + build 成功（tsc 通过，orphan-files chunk 生成）
+
+### 关键设计决策
+
+1. **合并三版本**：v1.0.6+v1.0.7+v1.1.0 本质一个功能集群，拆三版本导致接口割裂
+2. **复用 cron_executor**：不新建 AutomationService（与现有调度框架重复）
+3. **实时调下载器 API**：复用 QBittorrentDeleteAdapter/TransmissionDeleteAdapter 的 get_torrent_files，经 INTERACTIVE lane 受 per-downloader 限流
+4. **治理合规**：to_thread 移出同步操作 + db_write_scope 串行化 + task_profiles 三处同步
+5. **迁移 inspect 守卫**：orphan_file_tables 迁移加 inspect 守卫（表已存在时 no-op），与 search_templates 迁移风格一致
+
+### 快速恢复
+
+```bash
+cd backend
+# 跑本轮新测试
+python -m pytest tests/services/test_orphan_scanner.py tests/api/test_orphan_files_api.py tests/tasks/test_orphan_scan_task.py -v
+# 全量回归
+python -m pytest tests/ -q
+# 前端验证
+cd ../frontend && npx eslint src/api/orphan-files.ts src/views/orphan-files/index.vue && npx vue-cli-service build
+```
+
+### 下一步可选方向
+
+1. **v1.0.8 数据库升级（PostgreSQL）**：推迟中，先验证 sync-resource-governance 治理效果。若治理后无 DB 瓶颈可无限期推迟
+2. **真实环境压测**：孤儿文件扫描在真实多下载器 + 大量种子场景的性能验证（文件清单获取是瓶颈，受 per-downloader 并发限制）
+3. **P3 已知技术债**：全量同步 + API 触发路径接入 db_write_scope（sync-resource-governance 遗留）
+4. **前端 index.vue 4 等级删除迁移**（traditional-view-align 遗留技术债）
+
+---
+
+## 历史交接（按时间倒序，精简归档）
+
+### 2026-07-10 - SQLite 写锁治理完善（to_thread 止血 + db_write_scope 收尾）
+
+- 4 个重型任务（judge/message_logger/reannounce/path_scan）的 execute() 体内阻塞式 SessionLocal/HTTP 调用改 to_thread 移出循环 + db_write_scope 串行化。
+- busy_timeout 30000→15000 + sync/async engine timeout 30→15。
+
+### 2026-07-05 - sync-resource-governance code review 修复轮完成
+
+- 4 项治理机制缺陷修复（threading.Semaphore + 速度接口接入 INTERACTIVE lane + 日志聚合 + lifecycle shutdown）。
+- 全量 1937 passed 0 failed。
 
 修复 sync-resource-governance code review 发现的 4 项治理机制缺陷：
 

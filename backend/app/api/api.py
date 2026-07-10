@@ -34,6 +34,9 @@ from app.api.endpoints import torrent_status
 # 导入通知中心API
 from app.api.endpoints import notifications
 
+# 导入孤儿文件管理API
+from app.api.endpoints import orphan_files
+
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
 api_router.include_router(downloader.router, prefix="/downloader", tags=["downloader"])
@@ -79,3 +82,5 @@ api_router.include_router(tracker_reannounce.router, prefix="/tracker-reannounce
 api_router.include_router(torrent_status.router, prefix="/torrent-status", tags=["torrent-status"])
 # 添加通知中心路由
 api_router.include_router(notifications.router, prefix="/notifications", tags=["通知中心"])
+# 添加孤儿文件管理路由
+api_router.include_router(orphan_files.router, prefix="/orphan-files", tags=["孤儿文件管理"])

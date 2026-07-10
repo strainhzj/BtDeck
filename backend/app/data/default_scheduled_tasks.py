@@ -171,6 +171,23 @@ DEFAULT_SCHEDULED_TASKS = [
         "create_by": "migration_system",
         "update_by": "admin",
     },
+    {
+        "task_name": "孤儿文件扫描清理任务",
+        "task_code": "orphan_scan_cleanup",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_scan_task.OrphanScanTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "0 2 * * 0",  # 每周日凌晨2点执行
+        "description": "每周扫描孤儿文件（不在任何种子文件清单中的磁盘文件），自动清理超过 30 天的孤儿文件。",
+        "timeout_seconds": 7200,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
 ]
 
 
