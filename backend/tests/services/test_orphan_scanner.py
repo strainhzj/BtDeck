@@ -159,6 +159,8 @@ class TestOrphanDetection:
 
     def test_walk_scan_root_finds_orphan(self, tmp_path):
         """不在 expected_files 中的文件被判定为孤儿"""
+        from app.services.orphan_scanner import _normalize_path
+
         # 创建两个文件：一个在期望清单中，一个不在
         expected_file = tmp_path / "expected.txt"
         expected_file.write_text("expected")
@@ -166,8 +168,8 @@ class TestOrphanDetection:
         orphan_file.write_text("orphan")
 
         scanner = OrphanScanner()
-        # 将 expected_file 的绝对路径加入期望集合
-        scanner._expected_files[str(tmp_path)] = {os.path.abspath(str(expected_file))}
+        # 将 expected_file 的规范化路径加入期望集合（规范化 key 匹配）
+        scanner._expected_files[_normalize_path(str(tmp_path))] = {_normalize_path(os.path.abspath(str(expected_file)))}
 
         orphans = scanner._walk_scan_root(str(tmp_path), "dl_001", [])
 
@@ -516,12 +518,14 @@ class TestPathAndFileSet:
 
     def test_legal_files_not_false_positive(self, tmp_path):
         """在文件清单中的文件不应被误报为孤儿。"""
+        from app.services.orphan_scanner import _normalize_path
+
         scanner = OrphanScanner()
         legal = tmp_path / "legal.txt"
         legal.write_text("legal")
         orphan = tmp_path / "orphan.txt"
         orphan.write_text("orphan")
-        scanner._expected_files = {str(tmp_path): {os.path.abspath(str(legal))}}
+        scanner._expected_files = {_normalize_path(str(tmp_path)): {_normalize_path(os.path.abspath(str(legal)))}}
         orphans = scanner._walk_scan_root(str(tmp_path), None, [])
         paths = [os.path.basename(o.file_path) for o in orphans]
         assert "orphan.txt" in paths
