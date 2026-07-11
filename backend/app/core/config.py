@@ -119,7 +119,8 @@ class Settings(BaseSettings):
     SYNC_DB_WRITE_SCOPE_ENABLED: bool = True
 
     # 孤儿文件管理配置（v1.0.6）
-    # 自动清理超期天数：mtime 早于该天数的孤儿文件由定时任务自动清理
+    # 自动清理超期天数：连续成为孤儿超过该天数的候选由定时任务移入隔离区
+    # 语义重做：依据「连续成为孤儿的时间」，不再依据文件 mtime
     ORPHAN_AUTO_CLEANUP_DAYS: int = 30
     # 定时扫描开关：False 时定时任务跳过扫描（手动扫描不受影响）
     ORPHAN_SCAN_ENABLED: bool = True
@@ -127,6 +128,14 @@ class Settings(BaseSettings):
     ORPHAN_SCAN_BATCH_SIZE: int = 200
     # 排除的文件模式（分号分隔，fnmatch 语法）：匹配的文件不判定为孤儿
     ORPHAN_EXCLUDE_PATTERNS: str = "*.torrent;*.pending_delete"
+    # 孤儿候选清理天数阈值（连续成为孤儿的持续时间超过此值才可清理，取代 mtime 阈值）
+    ORPHAN_CANDIDATE_PURGE_DAYS: int = 30
+    # 隔离区保留期（天）：移入隔离区后保留该天数再允许物理删除
+    ORPHAN_QUARANTINE_RETENTION_DAYS: int = 7
+    # 隔离区目录名（在每个扫描根下创建，同文件系统保证 os.rename 原子）
+    ORPHAN_QUARANTINE_DIR_NAME: str = ".btdeck_quarantine"
+    # 跨进程操作 lease TTL（秒）：扫描/预览/清理互斥租约的过期时间
+    ORPHAN_LEASE_TTL_SECONDS: int = 3600
 
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 

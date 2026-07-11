@@ -75,7 +75,9 @@ class NotificationService:
 
     async def mark_all_as_read(self) -> int:
         """标记所有通知为已读"""
-        stmt = update(Notification).where(Notification.is_read.is_(False)).values(is_read=True, read_at=datetime.utcnow())
+        stmt = (
+            update(Notification).where(Notification.is_read.is_(False)).values(is_read=True, read_at=datetime.utcnow())
+        )
         result = await self.db.execute(stmt)
         await self.db.commit()
         return result.rowcount
@@ -94,13 +96,45 @@ class NotificationService:
         content: Optional[str] = None,
         priority: str = "info",
         extra_data: Optional[Dict[str, Any]] = None,
+        dedupe_key: Optional[str] = None,
     ) -> Notification:
-        """创建通知"""
-        notification = Notification(type=type, title=title, content=content, priority=priority, extra_data=extra_data)
+        """创建通知（支持 dedupe_key 幂等去重）。
+
+        Args:
+            dedupe_key: 去重键（可空）。非空时数据库部分唯一索引兜底：
+                        重复 dedupe_key 触发 IntegrityError → 查询已存在记录返回（幂等）。
+
+        Returns:
+            新建或已存在的通知
+        """
+        notification = Notification(
+            type=type,
+            title=title,
+            content=content,
+            priority=priority,
+            extra_data=extra_data,
+            dedupe_key=dedupe_key,
+        )
         self.db.add(notification)
-        await self.db.commit()
-        await self.db.refresh(notification)
-        return notification
+        try:
+            await self.db.commit()
+            await self.db.refresh(notification)
+            return notification
+        except Exception as e:
+            await self.db.rollback()
+            # dedupe_key 冲突 → 幂等返回已存在记录
+            if dedupe_key and self._is_unique_violation(e):
+                existing = await self.db.execute(select(Notification).where(Notification.dedupe_key == dedupe_key))
+                found = existing.scalar_one_or_none()
+                if found:
+                    return found
+            raise
+
+    @staticmethod
+    def _is_unique_violation(exc: Exception) -> bool:
+        """判断异常是否为唯一约束冲突（跨 SQLite/PostgreSQL）。"""
+        exc_str = str(exc).lower()
+        return "unique" in exc_str or "integrity" in exc_str
 
     async def check_version_update(
         self, current_version: str, github_repo: str = "StrainThomas/BtDeck"

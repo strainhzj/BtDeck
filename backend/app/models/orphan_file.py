@@ -10,9 +10,9 @@
 """
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, DateTime, Text, ForeignKey
+from sqlalchemy import Column, String, Integer, BigInteger, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
 
 from app.database import Base
 
@@ -146,4 +146,98 @@ class OrphanFile(Base):
             "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "deleted_by": self.deleted_by,
             "created_at": self.created_at.isoformat() if self.created_at else None,
+        }
+
+
+class OrphanCurrentCandidate(Base):
+    """孤儿文件当前候选（语义重做 v1.0.6+）
+
+    独立的当前候选表，取代把历史 OrphanFile 明细当作当前状态的做法。
+    按「连续成为孤儿的时间」管理生命周期，自动清理依据此表的持续时间而非文件 mtime。
+
+    只有完整成功扫描才能推进状态（reconcile_candidates）。
+    未出现在新清单中的旧候选标记 resolved。failed 扫描不修改候选生命周期。
+
+    Attributes:
+        canonical_path: 规范化路径（normcase+normpath，主键）
+        downloader_id: 关联下载器 ID
+        first_seen_at: 首次发现为孤儿的时间
+        last_seen_at: 最后一次在完整成功扫描中确认为孤儿的时间
+        last_seen_scan_id: 最后一次确认的扫描批次 ID
+        consecutive_scan_count: 连续确认为孤儿的完整成功扫描次数
+        status: candidate/resolved/quarantined/purged
+        file_size: 文件大小（字节）
+        mtime_ns: 文件修改时间（纳秒）
+        device_id: 设备 ID（st_dev）
+        inode: inode（st_ino）
+        quarantine_path: 隔离区路径
+        quarantined_at: 移入隔离区时间
+        purge_after: 允许物理删除时间（quarantined_at + 保留期）
+    """
+
+    __tablename__ = "orphan_current_candidate"
+    __table_args__ = (UniqueConstraint("downloader_id", "canonical_path", name="uq_orphan_candidate_dl_path"),)
+
+    canonical_path = Column(String(600), primary_key=True, comment="规范化路径（normcase+normpath）")
+    downloader_id = Column(String(36), nullable=False, comment="关联下载器ID")
+    first_seen_at = Column(DateTime, nullable=False, comment="首次发现时间")
+    last_seen_at = Column(DateTime, nullable=False, comment="最后一次确认时间")
+    last_seen_scan_id = Column(String(36), nullable=True, comment="最后一次确认的扫描批次ID")
+    consecutive_scan_count = Column(Integer, default=1, nullable=False, comment="连续确认扫描次数")
+    status = Column(String(20), nullable=False, default="candidate", comment="candidate/resolved/quarantined/purged")
+    file_size = Column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
+    mtime_ns = Column(BigInteger, nullable=True, comment="文件修改时间（纳秒）")
+    device_id = Column(BigInteger, nullable=True, comment="设备ID（st_dev）")
+    inode = Column(BigInteger, nullable=True, comment="inode（st_ino）")
+    quarantine_path = Column(String(600), nullable=True, comment="隔离区路径")
+    quarantined_at = Column(DateTime, nullable=True, comment="移入隔离区时间")
+    purge_after = Column(DateTime, nullable=True, index=True, comment="允许物理删除时间")
+
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+
+    def __init__(
+        self,
+        canonical_path: str,
+        downloader_id: str,
+        first_seen_at: Optional[datetime] = None,
+        last_seen_at: Optional[datetime] = None,
+        last_seen_scan_id: Optional[str] = None,
+        consecutive_scan_count: int = 1,
+        status: str = "candidate",
+        file_size: int = 0,
+        mtime_ns: Optional[int] = None,
+        device_id: Optional[int] = None,
+        inode: Optional[int] = None,
+    ):
+        now = datetime.utcnow()
+        self.canonical_path = canonical_path
+        self.downloader_id = downloader_id
+        self.first_seen_at = first_seen_at or now
+        self.last_seen_at = last_seen_at or now
+        self.last_seen_scan_id = last_seen_scan_id
+        self.consecutive_scan_count = consecutive_scan_count
+        self.status = status
+        self.file_size = file_size
+        self.mtime_ns = mtime_ns
+        self.device_id = device_id
+        self.inode = inode
+
+    def to_dict(self) -> Dict[str, Any]:
+        """转换为字典"""
+        return {
+            "canonical_path": self.canonical_path,
+            "downloader_id": self.downloader_id,
+            "first_seen_at": self.first_seen_at.isoformat() if self.first_seen_at else None,
+            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+            "last_seen_scan_id": self.last_seen_scan_id,
+            "consecutive_scan_count": self.consecutive_scan_count,
+            "status": self.status,
+            "file_size": self.file_size,
+            "mtime_ns": self.mtime_ns,
+            "device_id": self.device_id,
+            "inode": self.inode,
+            "quarantine_path": self.quarantine_path,
+            "quarantined_at": self.quarantined_at.isoformat() if self.quarantined_at else None,
+            "purge_after": self.purge_after.isoformat() if self.purge_after else None,
         }
