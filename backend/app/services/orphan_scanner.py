@@ -145,6 +145,12 @@ class OrphanScanner:
                 total_orphan_size,
             )
 
+            # 7. 生命周期对账（只有完整成功扫描才推进候选状态）
+            await self._reconcile_lifecycle(scan_id, scan_time, orphans)
+
+            # 8. 通知（total_orphans > 0 时创建，失败不回滚成功扫描）
+            await self._notify_scan_completed(scan_id, scan_type, len(orphans), total_orphan_size)
+
             return {
                 "scan_id": scan_id,
                 "scan_time": scan_time.isoformat(),
@@ -570,6 +576,48 @@ class OrphanScanner:
     def _matches_patterns(filename: str, patterns: List[str]) -> bool:
         """检查文件名是否匹配任一排除模式（fnmatch 语法）"""
         return any(fnmatch.fnmatch(filename, pat) for pat in patterns)
+
+    # ==================== 生命周期对账 + 通知 ====================
+
+    async def _reconcile_lifecycle(self, scan_id: str, scan_time: datetime, orphans: List[OrphanFileItem]) -> None:
+        """生命周期对账：只有完整成功扫描才推进候选状态。
+
+        将本次发现的孤儿转为候选 dict，调 OrphanLifecycleService.reconcile_candidates。
+        failed 扫描不会走到这里（scan() 异常分支直接 _fail_scan）。
+        """
+        try:
+            from app.services.orphan_lifecycle_service import OrphanLifecycleService
+
+            orphan_dicts = [
+                {
+                    "canonical_path": _normalize_path(o.file_path),
+                    "downloader_id": o.downloader_id or "",
+                    "file_size": o.file_size,
+                    "mtime_ns": int(o.mtime.timestamp() * 1e9) if o.mtime else None,
+                }
+                for o in orphans
+            ]
+            async with AsyncSessionLocal() as db:
+                service = OrphanLifecycleService(db)
+                await service.reconcile_candidates(scan_id, scan_time, orphan_dicts)
+        except Exception as e:
+            logger.warning(f"[孤儿扫描 {scan_id}] 生命周期对账失败（不影响扫描结果）: {e}", exc_info=True)
+
+    async def _notify_scan_completed(self, scan_id: str, scan_type: str, orphan_count: int, orphan_size: int) -> None:
+        """扫描完成通知（total_orphans > 0 时创建，失败不回滚成功扫描）。"""
+        try:
+            from app.services.orphan_notification import notify_scan_completed
+
+            async with AsyncSessionLocal() as db:
+                await notify_scan_completed(
+                    db=db,
+                    scan_id=scan_id,
+                    scan_type=scan_type,
+                    orphan_count=orphan_count,
+                    orphan_size=orphan_size,
+                )
+        except Exception as e:
+            logger.warning(f"[孤儿扫描 {scan_id}] 通知创建失败（不影响扫描结果）: {e}", exc_info=True)
 
     # ==================== DB 操作 ====================
 

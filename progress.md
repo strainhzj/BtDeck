@@ -1,5 +1,67 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-11 - v1.0.6 孤儿文件管理语义重做（严格 TDD 5 阶段）
+
+**任务 ID**: `v1.0.6.7`~`v1.0.6.10`（语义重做，5 阶段严格 TDD）
+**分支**: dev
+**方法**: 严格遵循「先提交回归测试、确认旧代码失败，再修改生产代码」，每阶段独立 commit
+
+### 语义重做背景
+
+基于代码审查发现的缺陷：旧 v1.0.6 扫描器在下载器清单/路径映射/扫描根不完整时**静默返回 completed**（fail-open），导致真实文件被误报为孤儿；自动清理依据文件 mtime（可被篡改）；无跨进程互斥；无扫描完成通知。
+
+### 5 阶段交付（每阶段独立 commit）
+
+**Phase 1: 失败回归测试（commit c9e048a）**
+- 新增 7 文件：conftest.py（async_orphan_db fixture）+ 5 测试文件 + 扩展 scanner 测试
+- A/B/C/D/E/F/G/H 共 8 组 53 例，全部在旧代码上失败（34 failed / 34 passed / 1 skipped）
+- 失败证据：fail-closed 缺失（5 例）+ 模块不存在（ImportError）+ API 签名不匹配（TypeError）
+
+**Phase 2: 扫描器最小修复（commit e54f616）**
+- A/B/C 组 36 测试转绿（19 旧 + 17 新）
+- 修复：状态重置 + 绕开 DeleteAdapter + SYNC lane + 逐种子转换 save_path + 规范化路径（normcase+normpath）+ fail-closed（OrphanScanIncompleteError）+ 隔离区排除
+
+**Phase 3: 生命周期 + 迁移（commit 207af69）**
+- 迁移 b075727f7182：orphan_current_candidate 表 + orphan_operation_lease 表 + notification.dedupe_key 列
+- OrphanLifecycleService：reconcile_candidates（只有 completed 推进）+ get_purgeable_candidates（连续孤儿时间）
+- D 组生命周期推进 5 测试转绿；表数 26→28
+
+**Phase 4: 清理安全 + 隔离区 + lease（commit 2243e4c）**
+- orphan_lease.py（跨进程 lease，db 参数注入）+ orphan_quarantine.py（隔离区 + verify_file_identity）
+- orphan_file_service.py 重构：新鲜度门禁 + 实时 manifest fail-closed + scan_id 参数 + 隔离区工作流
+- E/F/H 组 17 测试转绿
+
+**Phase 5: 通知接入 + 全量门禁（commit 本次）**
+- orphan_notification.py：notify_scan_completed（dedupe_key 幂等 + 失败不回滚）
+- create_notification 双层去重（查询层 + DB 层 IntegrityError）
+- 迁移 b075727f7182 notification 表存在守卫（修复 frozen schema 快照旧库）
+- G 组 6 测试转绿；test_db_rollback_scenarios.py REV_HEAD 更新
+
+### 最终语义（全部达成）
+
+| 语义 | 实现 |
+|------|------|
+| 自动清理依据「连续成为孤儿的时间」 | OrphanCurrentCandidate.last_seen_at - first_seen_at >= 30 天 |
+| 任一清单不完整整批失败 | OrphanScanIncompleteError → status=failed |
+| 自动清理先移隔离区保留 7 天 | quarantine_file → purge_after = now + 7d |
+| 手动清理不绕过实时复核 | verify_file_identity + manifest fail-closed |
+| 最新扫描 running/failed 禁止清理 | _check_cleanup_allowed |
+| 跨进程 lease 保护 | orphan_operation_lease 表 + acquire/release |
+| 成功扫描 >0 创建通知 | notify_scan_completed + dedupe_key 幂等 |
+| 通知失败不改扫描结果 | try/except 只记 error |
+
+### 验证结果
+
+| 验证项 | 结果 |
+|--------|------|
+| 全量 pytest tests/ | ✅ **2043 passed, 0 failed, 1 skipped** |
+| mypy app/ | ✅ 无新增错误（预存在 ORM 描述符债） |
+| black --check app/ tests/ | ✅ 通过 |
+| flake8 app/ tests/ | ✅ 通过 |
+| ./init.sh | ✅ 通过 |
+
+---
+
 ## 2026-07-10 - v1.0.6 孤儿文件管理与路径维护（合并三版本）
 
 **任务 ID**: `v1.0.6`（合并原 v1.0.6 孤儿文件 + v1.0.7 路径扫描增强 + v1.1.0 自动清理）

@@ -100,13 +100,23 @@ class NotificationService:
     ) -> Notification:
         """创建通知（支持 dedupe_key 幂等去重）。
 
+        去重双层保护：
+        1. 查询层：dedupe_key 非空时先查是否已存在（捕获无 DB 唯一索引的场景）
+        2. DB 层：部分唯一索引 uq_notification_dedupe_key 兜底（触发 IntegrityError）
+
         Args:
-            dedupe_key: 去重键（可空）。非空时数据库部分唯一索引兜底：
-                        重复 dedupe_key 触发 IntegrityError → 查询已存在记录返回（幂等）。
+            dedupe_key: 去重键（可空）。非空时双层去重保证幂等。
 
         Returns:
             新建或已存在的通知
         """
+        # 查询层去重：dedupe_key 非空时先查已存在记录
+        if dedupe_key:
+            existing = await self.db.execute(select(Notification).where(Notification.dedupe_key == dedupe_key))
+            found = existing.scalar_one_or_none()
+            if found:
+                return found
+
         notification = Notification(
             type=type,
             title=title,
@@ -122,7 +132,7 @@ class NotificationService:
             return notification
         except Exception as e:
             await self.db.rollback()
-            # dedupe_key 冲突 → 幂等返回已存在记录
+            # DB 层去重：dedupe_key 冲突 → 幂等返回已存在记录
             if dedupe_key and self._is_unique_violation(e):
                 existing = await self.db.execute(select(Notification).where(Notification.dedupe_key == dedupe_key))
                 found = existing.scalar_one_or_none()

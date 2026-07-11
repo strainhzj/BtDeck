@@ -944,6 +944,64 @@
             "backend/tests/tasks/test_task_profiles.py"
           ],
           "evidence": "46 新测试全 pass（扫描器 inode去重/排除模式/路径收集/孤儿判定 19 + API 5端点×认证场景 14 + 任务治理一致性/结构/bug修复 13）；全量 pytest 1997 passed 0 failed（基线 1937→1997 净增 60）；black/flake8 通过；./init.sh 通过；前端 eslint 0 error + build 成功。"
+        },
+        {
+          "id": "v1.0.6.7",
+          "name": "语义重做 Phase1-2：fail-closed 扫描器 + 回归测试",
+          "description": "严格 TDD：先写 A/B/C 组失败回归测试（53 例），再修复扫描器 fail-closed + 状态重置 + 规范化路径 + SYNC lane + 绕开 DeleteAdapter + 逐种子转换 save_path",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/services/conftest.py",
+            "backend/tests/services/test_orphan_scanner.py",
+            "backend/app/services/orphan_scanner.py"
+          ],
+          "evidence": "Phase1 34 failed/34 passed（旧代码失败证据）；Phase2 A/B/C 组 36 测试全转绿（19旧+17新）；现有 API/task 27 测试无回归。fail-closed：缺store/空snapshot/缺client/fail_time>0/扫描根不存在 → 整批 failed（不再静默返回 completed）"
+        },
+        {
+          "id": "v1.0.6.8",
+          "name": "语义重做 Phase3：生命周期对账 + 当前候选表 + lease 表 + dedupe_key",
+          "description": "新增 OrphanCurrentCandidate 表（连续孤儿时间管理）+ orphan_operation_lease 表（跨进程 lease）+ notification.dedupe_key 列 + OrphanLifecycleService + 4 配置项",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/alembic/versions/b075727f7182_orphan_lifecycle.py",
+            "backend/app/models/orphan_file.py",
+            "backend/app/models/notification.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/services/notification_service.py",
+            "backend/app/core/config.py"
+          ],
+          "evidence": "迁移 b075727f7182（inspect 守卫 + notification 表存在守卫）；D 组生命周期推进 5 测试全 pass（首次不满足30天/连续累计/重新合法resolved/失败不推进/重复单候选）；表数 26→28；4 配置项 ORPHAN_CANDIDATE_PURGE_DAYS=30/ORPHAN_QUARANTINE_RETENTION_DAYS=7/ORPHAN_QUARANTINE_DIR_NAME/ORPHAN_LEASE_TTL_SECONDS=3600"
+        },
+        {
+          "id": "v1.0.6.9",
+          "name": "语义重做 Phase4：清理安全 + 隔离区 + 跨进程 lease",
+          "description": "清理前实时复核文件身份 + 隔离区工作流（移入隔离区不直接删）+ 跨进程 lease（扫描/预览/清理互斥）+ 新鲜度门禁（最新扫描 running/failed 禁止清理 + stale scan_id 拒绝）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_lease.py",
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/tasks/scheduler/orphan_scan_task.py"
+          ],
+          "evidence": "E 组 7 测试全 pass（身份复核/符号链接/路径逃逸/manifest fail-closed/隔离区工作流）+ F 组 4 测试全 pass（两扫描争抢/扫描vs清理/过期接管/崩溃恢复）+ H 组 6 测试全 pass（completed门禁/scan_id传递/stale拒绝/preview+cleanup同规则）。隔离区策略：默认扫描根下 .btdeck_quarantine/<scan_id>/（os.rename 原子）+ path_mapping JSON quarantine_root 可覆盖"
+        },
+        {
+          "id": "v1.0.6.10",
+          "name": "语义重做 Phase5：扫描完成通知 + 幂等 + 全量门禁",
+          "description": "扫描完成 total_orphans>0 时创建通知（dedupe_key=orphan_scan:{scan_id} 幂等）+ 通知失败不回滚扫描 + 全量门禁（pytest/mypy/black/flake8/init.sh）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_notification.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/notification_service.py",
+            "backend/alembic/versions/b075727f7182_orphan_lifecycle.py",
+            "backend/tests/core/test_db_rollback_scenarios.py"
+          ],
+          "evidence": "G 组 6 测试全 pass（completed>0创建/==0不通知/同scan_id幂等/通知失败不改failed/未读+1/内容含GB大小）；create_notification 双层去重（查询层+DB层IntegrityError）；全量 2043 passed 0 failed；mypy 无新增错误；black/flake8 通过；init.sh 通过"
         }
       ]
     }

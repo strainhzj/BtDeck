@@ -104,23 +104,28 @@ def upgrade() -> None:
         )
 
     # ==================== notification.dedupe_key 列 + 部分唯一索引 ====================
-    existing_columns = {col["name"] for col in insp.get_columns("notification")}
-    if "dedupe_key" not in existing_columns:
-        op.add_column(
-            "notification",
-            sa.Column("dedupe_key", sa.String(length=100), nullable=True, comment="去重键（如 orphan_scan:{scan_id}）"),
-        )
+    # 守卫：notification 表可能不存在（frozen schema 快照不含此表的旧库），
+    # 此时跳过 dedupe_key 列/索引（该库的 notification 表由更早的迁移负责创建）。
+    if insp.has_table("notification"):
+        existing_columns = {col["name"] for col in insp.get_columns("notification")}
+        if "dedupe_key" not in existing_columns:
+            op.add_column(
+                "notification",
+                sa.Column(
+                    "dedupe_key", sa.String(length=100), nullable=True, comment="去重键（如 orphan_scan:{scan_id}）"
+                ),
+            )
 
-    existing_indexes = {idx["name"] for idx in insp.get_indexes("notification")}
-    if "uq_notification_dedupe_key" not in existing_indexes:
-        # SQLite 支持部分唯一索引（WHERE dedupe_key IS NOT NULL），允许多个 NULL 值
-        op.create_index(
-            "uq_notification_dedupe_key",
-            "notification",
-            ["dedupe_key"],
-            unique=True,
-            sqlite_where=sa.text("dedupe_key IS NOT NULL"),
-        )
+        existing_indexes = {idx["name"] for idx in insp.get_indexes("notification")}
+        if "uq_notification_dedupe_key" not in existing_indexes:
+            # SQLite 支持部分唯一索引（WHERE dedupe_key IS NOT NULL），允许多个 NULL 值
+            op.create_index(
+                "uq_notification_dedupe_key",
+                "notification",
+                ["dedupe_key"],
+                unique=True,
+                sqlite_where=sa.text("dedupe_key IS NOT NULL"),
+            )
 
 
 def downgrade() -> None:
@@ -128,13 +133,14 @@ def downgrade() -> None:
     bind = op.get_bind()
     insp = sa.inspect(bind)
 
-    # notification.dedupe_key
-    existing_indexes = {idx["name"] for idx in insp.get_indexes("notification")}
-    if "uq_notification_dedupe_key" in existing_indexes:
-        op.drop_index("uq_notification_dedupe_key", table_name="notification")
-    existing_columns = {col["name"] for col in insp.get_columns("notification")}
-    if "dedupe_key" in existing_columns:
-        op.drop_column("notification", "dedupe_key")
+    # notification.dedupe_key（守卫：notification 表可能不存在）
+    if insp.has_table("notification"):
+        existing_indexes = {idx["name"] for idx in insp.get_indexes("notification")}
+        if "uq_notification_dedupe_key" in existing_indexes:
+            op.drop_index("uq_notification_dedupe_key", table_name="notification")
+        existing_columns = {col["name"] for col in insp.get_columns("notification")}
+        if "dedupe_key" in existing_columns:
+            op.drop_column("notification", "dedupe_key")
 
     # orphan_operation_lease
     if insp.has_table("orphan_operation_lease"):
