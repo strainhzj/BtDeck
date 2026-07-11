@@ -70,15 +70,15 @@ class OrphanScanTask:
             scan_result = await scanner.scan(scan_type="scheduled", operator="system")
             result["scan_result"] = scan_result
 
-            # 2. 自动清理超期孤儿文件
+            # 2. 自动清理超期孤儿文件（只有 completed + scan_id 才进入）
             if scan_result.get("status") == "completed":
                 logger.info(f"[{self.name}] 扫描完成，开始自动清理超期文件")
-                cleanup_result = await self._auto_cleanup_expired()
+                cleanup_result = await self._auto_cleanup_expired(scan_id=scan_result.get("scan_id"))
                 result["cleanup_result"] = cleanup_result
                 result["status"] = "success"
                 result["message"] = (
                     f"扫描发现 {scan_result.get('total_orphans', 0)} 个孤儿文件，"
-                    f"自动清理超期文件成功 {cleanup_result.get('success_count', 0)} 个"
+                    f"自动清理超期文件成功 {cleanup_result.get('quarantined_count', cleanup_result.get('success_count', 0))} 个"
                 )
             else:
                 result["status"] = scan_result.get("status", "failed")
@@ -92,8 +92,12 @@ class OrphanScanTask:
 
         return result
 
-    async def _auto_cleanup_expired(self) -> Dict[str, Any]:
-        """自动清理超期孤儿文件（独立 session）"""
+    async def _auto_cleanup_expired(self, scan_id: str = None) -> Dict[str, Any]:
+        """自动清理超期孤儿文件（独立 session）
+
+        Args:
+            scan_id: 本次扫描 ID（必须传入，用于隔离区子目录命名）
+        """
         from app.services.orphan_file_service import OrphanFileService
 
         async with AsyncSessionLocal() as db:
@@ -101,4 +105,5 @@ class OrphanScanTask:
             return await service.auto_cleanup_expired(
                 days_threshold=settings.ORPHAN_AUTO_CLEANUP_DAYS,
                 operator="system",
+                scan_id=scan_id,
             )

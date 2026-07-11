@@ -209,6 +209,9 @@ class OrphanCurrentCandidate(Base):
         mtime_ns: Optional[int] = None,
         device_id: Optional[int] = None,
         inode: Optional[int] = None,
+        quarantine_path: Optional[str] = None,
+        quarantined_at: Optional[datetime] = None,
+        purge_after: Optional[datetime] = None,
     ):
         now = datetime.utcnow()
         self.canonical_path = canonical_path
@@ -222,6 +225,9 @@ class OrphanCurrentCandidate(Base):
         self.mtime_ns = mtime_ns
         self.device_id = device_id
         self.inode = inode
+        self.quarantine_path = quarantine_path
+        self.quarantined_at = quarantined_at
+        self.purge_after = purge_after
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -240,4 +246,44 @@ class OrphanCurrentCandidate(Base):
             "quarantine_path": self.quarantine_path,
             "quarantined_at": self.quarantined_at.isoformat() if self.quarantined_at else None,
             "purge_after": self.purge_after.isoformat() if self.purge_after else None,
+        }
+
+
+class OrphanOperationLease(Base):
+    """孤儿文件操作跨进程 lease（v1.0.6+）
+
+    保护扫描/预览/清理互斥。lease 表由迁移 b075727f7182 创建。
+
+    Attributes:
+        lease_key: PK（如 orphan_scan / orphan_cleanup）
+        owner: 持有者标识（进程ID+UUID）
+        acquired_at: 获取时间
+        expires_at: 过期时间
+    """
+
+    __tablename__ = "orphan_operation_lease"
+
+    lease_key = Column(String(60), primary_key=True, comment="租约键")
+    owner = Column(String(100), nullable=False, comment="持有者标识")
+    acquired_at = Column(DateTime, nullable=False, comment="获取时间")
+    expires_at = Column(DateTime, nullable=False, comment="过期时间")
+
+    def __init__(
+        self,
+        lease_key: str,
+        owner: str,
+        acquired_at: Optional[datetime] = None,
+        expires_at: Optional[datetime] = None,
+    ):
+        self.lease_key = lease_key
+        self.owner = owner
+        self.acquired_at = acquired_at or datetime.utcnow()
+        self.expires_at = expires_at or datetime.utcnow()
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "lease_key": self.lease_key,
+            "owner": self.owner,
+            "acquired_at": self.acquired_at.isoformat() if self.acquired_at else None,
+            "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }

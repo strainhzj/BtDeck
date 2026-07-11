@@ -284,55 +284,55 @@ class TestConcurrentLease:
         from app.services.orphan_lease import acquire_lease, release_lease
 
         # 第一个获取成功
-        acquired1 = await acquire_lease("orphan_scan", owner="proc_1", ttl=3600)
+        acquired1 = await acquire_lease("orphan_scan", owner="proc_1", ttl=3600, db=async_orphan_db)
         assert acquired1, "第一个扫描应获取 lease"
 
         # 第二个应失败
-        acquired2 = await acquire_lease("orphan_scan", owner="proc_2", ttl=3600)
+        acquired2 = await acquire_lease("orphan_scan", owner="proc_2", ttl=3600, db=async_orphan_db)
         assert not acquired2, "第二个扫描不应获取 lease（已被持有）"
 
-        await release_lease("orphan_scan", owner="proc_1")
+        await release_lease("orphan_scan", owner="proc_1", db=async_orphan_db)
 
     async def test_scan_vs_cleanup_contention(self, async_orphan_db):
         """扫描与手动清理竞争 —— 不同操作用不同 lease key 但互斥保护各自流程。"""
         from app.services.orphan_lease import acquire_lease, release_lease
 
-        scan_acquired = await acquire_lease("orphan_scan", owner="proc_1", ttl=3600)
+        scan_acquired = await acquire_lease("orphan_scan", owner="proc_1", ttl=3600, db=async_orphan_db)
         assert scan_acquired
 
         # cleanup 有独立 lease key
-        cleanup_acquired = await acquire_lease("orphan_cleanup", owner="proc_2", ttl=3600)
+        cleanup_acquired = await acquire_lease("orphan_cleanup", owner="proc_2", ttl=3600, db=async_orphan_db)
         assert cleanup_acquired
 
-        await release_lease("orphan_scan", owner="proc_1")
-        await release_lease("orphan_cleanup", owner="proc_2")
+        await release_lease("orphan_scan", owner="proc_1", db=async_orphan_db)
+        await release_lease("orphan_cleanup", owner="proc_2", db=async_orphan_db)
 
     async def test_expired_lease_takeover(self, async_orphan_db):
         """lease 过期后允许接管。"""
         from app.services.orphan_lease import acquire_lease, release_lease
 
         # 用极短 TTL 模拟过期
-        await acquire_lease("orphan_scan", owner="proc_old", ttl=0)
+        await acquire_lease("orphan_scan", owner="proc_old", ttl=0, db=async_orphan_db)
         import asyncio
 
         await asyncio.sleep(0.05)  # 等 TTL 过期
 
         # 新进程应能接管
-        acquired = await acquire_lease("orphan_scan", owner="proc_new", ttl=3600)
+        acquired = await acquire_lease("orphan_scan", owner="proc_new", ttl=3600, db=async_orphan_db)
         assert acquired, "lease 过期后应允许接管"
 
-        await release_lease("orphan_scan", owner="proc_new")
+        await release_lease("orphan_scan", owner="proc_new", db=async_orphan_db)
 
     async def test_process_crash_recovery(self, async_orphan_db):
         """持有 lease 的进程异常退出后，lease 过期可恢复。"""
         from app.services.orphan_lease import acquire_lease
 
         # 进程获取 lease 后崩溃（不 release）
-        await acquire_lease("orphan_scan", owner="crashed_proc", ttl=0)
+        await acquire_lease("orphan_scan", owner="crashed_proc", ttl=0, db=async_orphan_db)
         import asyncio
 
         await asyncio.sleep(0.05)
 
         # 新进程接管
-        acquired = await acquire_lease("orphan_scan", owner="recovery_proc", ttl=3600)
+        acquired = await acquire_lease("orphan_scan", owner="recovery_proc", ttl=3600, db=async_orphan_db)
         assert acquired, "崩溃进程的 lease 过期后应能恢复"

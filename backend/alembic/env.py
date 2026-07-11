@@ -45,7 +45,7 @@ from app.models.notification import Notification
 from app.models.search_template import SearchTemplate
 
 # 孤儿文件管理
-from app.models.orphan_file import OrphanScanResult, OrphanFile, OrphanCurrentCandidate
+from app.models.orphan_file import OrphanScanResult, OrphanFile, OrphanCurrentCandidate, OrphanOperationLease
 
 from logging.config import fileConfig
 
