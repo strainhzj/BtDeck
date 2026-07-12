@@ -208,6 +208,7 @@ export default class OrphanFiles extends Vue {
   private cleanupExecuting = false
   private cleanupPreviewData: CleanupPreviewResult | null = null
   private cleanupResult: CleanupResult | null = null
+  private previewScanId: string | null = null
 
   mounted() {
     this.getList()
@@ -311,10 +312,20 @@ export default class OrphanFiles extends Vue {
     this.cleanupDialogVisible = true
     this.cleanupPreviewData = null
     this.cleanupResult = null
+    this.previewScanId = null
     this.cleanupLoading = true
 
     try {
-      const response = await cleanupPreview({ orphan_ids: this.selectedIds })
+      if (!this.latestScan || !this.latestScan.scan_id) {
+        this.$message.warning('没有可用的最新扫描批次，请先刷新或重新扫描')
+        this.cleanupDialogVisible = false
+        return
+      }
+      this.previewScanId = this.latestScan.scan_id
+      const response = await cleanupPreview({
+        scan_id: this.previewScanId,
+        orphan_ids: this.selectedIds
+      })
       if (response.code === '200' && response.data) {
         this.cleanupPreviewData = response.data
       } else {
@@ -332,7 +343,14 @@ export default class OrphanFiles extends Vue {
   private async handleCleanupConfirm() {
     this.cleanupExecuting = true
     try {
-      const response = await cleanupOrphans({ orphan_ids: this.selectedIds })
+      if (!this.previewScanId) {
+        this.$message.warning('扫描批次已失效，请刷新后重试')
+        return
+      }
+      const response = await cleanupOrphans({
+        scan_id: this.previewScanId,
+        orphan_ids: this.selectedIds
+      })
       if (response.code === '200' && response.data) {
         this.cleanupResult = response.data
         // 刷新列表
@@ -352,6 +370,7 @@ export default class OrphanFiles extends Vue {
     this.cleanupDialogVisible = false
     this.cleanupPreviewData = null
     this.cleanupResult = null
+    this.previewScanId = null
   }
 
   // ========== 工具方法 ==========

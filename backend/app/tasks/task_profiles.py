@@ -95,6 +95,11 @@ TASK_PROFILES: Dict[str, TaskProfile] = {
         "孤儿文件扫描清理任务（每周，含文件系统遍历 + 下载器 API 文件清单获取）",
         wait_timeout=60.0,  # 低频周任务，允许较长等待避免跳过
     ),
+    "orphan_quarantine_purge": _heavy(
+        "orphan_quarantine_purge",
+        "孤儿文件隔离区到期清理任务（每日，含实时 manifest 与文件系统删除）",
+        wait_timeout=60.0,
+    ),
 }
 
 

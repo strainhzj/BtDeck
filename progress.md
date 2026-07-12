@@ -1,5 +1,36 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-12 - v1.0.6 孤儿文件清理安全闭环修复
+
+**任务 ID**: `v1.0.6.11`
+**方法**: 先补 RED 回归，再修生产链；完成后由 3 个子代理分别复核架构、安全和测试有效性。
+
+### 完成内容
+
+- 共享 `TorrentManifestBuilder` 直接枚举 qBittorrent/Transmission 实时 torrent inventory；任何下载器缺失、不可用或部分响应均 fail-closed，权威空 inventory 保持合法。
+- API、前端 preview/confirm、手动与自动清理全部绑定最新 `scan_id`；列表不再回退展示旧 completed 批次。
+- 父子扫描根使用全局 expected 集合；单文件 stat 失败整批失败；扫描明细、候选对账和 completed 状态在同一事务提交。
+- 手动与自动清理统一进入隔离区；候选必须属于实时授权扫描根，并完整匹配 size/mtime_ns/device/inode。
+- 隔离目标使用同文件系统私有 UUID 目录和无覆盖 rename；操作 journal 预写 pending 状态并支持 rename/remove 后崩溃恢复。
+- purge 每个文件重新构建 manifest，先原子移动为 tombstone、复核身份后才 unlink；新增每日 purge 任务。
+- 统一 `orphan_maintenance` lease 使用独立 session、原子抢占、心跳续租和危险操作前所有权检查。
+- 新增通知补偿任务，每小时补发 completed 且缺少 dedupe 通知的扫描结果。
+- 前端冻结 previewScanId，确认清理必须使用同一预览批次。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 安全/迁移/生产接线回归 | ✅ 152 passed, 1 skipped |
+| 后端全量 pytest | ✅ 2068 passed, 1 skipped |
+| 后端 flake8 + git diff --check | ✅ 通过 |
+| Alembic upgrade/downgrade/upgrade | ✅ 通过 |
+| 前端目标 eslint | ✅ 通过 |
+| 前端生产 build | ✅ 通过（48 个既有 Sass/体积 warning） |
+| 根 init.sh | ⚠️ 当前 Windows 环境无 Git Bash/WSL，未执行 |
+
+---
+
 ## 2026-07-11 - v1.0.6 孤儿文件管理语义重做（严格 TDD 5 阶段）
 
 **任务 ID**: `v1.0.6.7`~`v1.0.6.10`（语义重做，5 阶段严格 TDD）

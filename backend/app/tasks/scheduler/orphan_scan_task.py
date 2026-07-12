@@ -18,7 +18,7 @@
 
 import logging
 from datetime import datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from app.core.config import settings
 from app.database import AsyncSessionLocal
@@ -58,22 +58,31 @@ class OrphanScanTask:
 
         try:
             # 1. 扫描孤儿文件
-            from app.services.orphan_scanner import OrphanScanner
+            from app.services.orphan_file_service import OrphanFileService
 
             if not settings.ORPHAN_SCAN_ENABLED:
-                logger.info(f"[{self.name}] 定时扫描已关闭（ORPHAN_SCAN_ENABLED=False），跳过")
+                logger.info(
+                    f"[{self.name}] 定时扫描已关闭（ORPHAN_SCAN_ENABLED=False），跳过"
+                )
                 result.update({"status": "skipped", "message": "定时扫描已关闭"})
                 return result
 
             logger.info(f"[{self.name}] 开始扫描孤儿文件")
-            scanner = OrphanScanner(app=app)
-            scan_result = await scanner.scan(scan_type="scheduled", operator="system")
+            async with AsyncSessionLocal() as scan_db:
+                scan_service = OrphanFileService(scan_db)
+                scan_result = await scan_service.trigger_scan(
+                    scan_type="scheduled", operator="system", app=app
+                )
             result["scan_result"] = scan_result
 
             # 2. 自动清理超期孤儿文件（只有 completed + scan_id 才进入）
-            if scan_result.get("status") == "completed":
+            completed_scan_id = scan_result.get("scan_id")
+            if scan_result.get("status") == "completed" and isinstance(completed_scan_id, str):
                 logger.info(f"[{self.name}] 扫描完成，开始自动清理超期文件")
-                cleanup_result = await self._auto_cleanup_expired(scan_id=scan_result.get("scan_id"))
+                cleanup_result = await self._auto_cleanup_expired(
+                    scan_id=completed_scan_id,
+                    store=getattr(getattr(app, "state", None), "store", None),
+                )
                 result["cleanup_result"] = cleanup_result
                 result["status"] = "success"
                 result["message"] = (
@@ -92,7 +101,9 @@ class OrphanScanTask:
 
         return result
 
-    async def _auto_cleanup_expired(self, scan_id: str = None) -> Dict[str, Any]:
+    async def _auto_cleanup_expired(
+        self, scan_id: Optional[str] = None, store: Any = None
+    ) -> Dict[str, Any]:
         """自动清理超期孤儿文件（独立 session）
 
         Args:
@@ -106,4 +117,5 @@ class OrphanScanTask:
                 days_threshold=settings.ORPHAN_AUTO_CLEANUP_DAYS,
                 operator="system",
                 scan_id=scan_id,
+                store=store,
             )

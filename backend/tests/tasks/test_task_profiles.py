@@ -11,7 +11,12 @@ task_profiles 注册表回归测试
 
 import pytest
 
-from app.tasks.task_profiles import TASK_PROFILES, TaskProfile, get_profile, is_heavy_task
+from app.tasks.task_profiles import (
+    TASK_PROFILES,
+    TaskProfile,
+    get_profile,
+    is_heavy_task,
+)
 
 # 与 app/data/default_scheduled_tasks.py 严格对齐的重型 task_code 集合
 # 若 default_scheduled_tasks.py 新增/改名重型任务而忘了同步 task_profiles.py，
@@ -24,6 +29,7 @@ EXPECTED_HEAVY_TASK_CODES = {
     "downloader_path_scan",
     "tracker_reannounce",
     "orphan_scan_cleanup",
+    "orphan_quarantine_purge",
 }
 
 
@@ -37,9 +43,9 @@ class TestTaskProfilesRegistry:
         - 新增重型任务忘了登记 → 注册表少 key，断言报红。
         - 改了 task_code 但没更新注册表 → key 不匹配，断言报红。
         """
-        assert (
-            set(TASK_PROFILES.keys()) == EXPECTED_HEAVY_TASK_CODES
-        ), f"TASK_PROFILES 漂移：期望 {EXPECTED_HEAVY_TASK_CODES}，实际 {set(TASK_PROFILES.keys())}"
+        assert set(TASK_PROFILES.keys()) == EXPECTED_HEAVY_TASK_CODES, (
+            f"TASK_PROFILES 漂移：期望 {EXPECTED_HEAVY_TASK_CODES}，实际 {set(TASK_PROFILES.keys())}"
+        )
 
     @pytest.mark.parametrize("task_code", sorted(EXPECTED_HEAVY_TASK_CODES))
     def test_heavy_profile_flag(self, task_code):
@@ -59,9 +65,9 @@ class TestTaskProfilesRegistry:
         收敛锚点：若有人把它改成默认 30s，此测试报红提醒评估补跑影响。
         """
         profile = TASK_PROFILES["tracker_reannounce"]
-        assert (
-            profile.wait_timeout <= 15.0
-        ), f"tracker_reannounce 高频任务 wait_timeout={profile.wait_timeout} 过大，会加剧补跑"
+        assert profile.wait_timeout <= 15.0, (
+            f"tracker_reannounce 高频任务 wait_timeout={profile.wait_timeout} 过大，会加剧补跑"
+        )
 
 
 class TestGetProfile:

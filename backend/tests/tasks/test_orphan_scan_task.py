@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.tasks.task_profiles import TASK_PROFILES, get_profile, is_heavy_task
+from app.tasks.scheduler.orphan_quarantine_purge_task import OrphanQuarantinePurgeTask
 from app.tasks.scheduler.orphan_scan_task import OrphanScanTask
 
 # ==================== task_profiles 一致性 ====================
@@ -48,7 +49,11 @@ class TestOrphanTaskProfileAlignment:
         """executor 路径指向 OrphanScanTask"""
         from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
 
-        task = next(t for t in DEFAULT_SCHEDULED_TASKS if t["task_code"] == "orphan_scan_cleanup")
+        task = next(
+            t
+            for t in DEFAULT_SCHEDULED_TASKS
+            if t["task_code"] == "orphan_scan_cleanup"
+        )
         assert "OrphanScanTask" in task["executor"]
         assert task["executor"].startswith("app.tasks.scheduler.orphan_scan_task")
 
@@ -56,8 +61,39 @@ class TestOrphanTaskProfileAlignment:
         """cron 表达式为每周一次（0 2 * * 0 = 每周日 2 点）"""
         from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
 
-        task = next(t for t in DEFAULT_SCHEDULED_TASKS if t["task_code"] == "orphan_scan_cleanup")
+        task = next(
+            t
+            for t in DEFAULT_SCHEDULED_TASKS
+            if t["task_code"] == "orphan_scan_cleanup"
+        )
         assert task["cron_plan"] == "0 2 * * 0"
+
+    def test_quarantine_purge_is_registered_daily(self):
+        from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
+
+        task = next(
+            t
+            for t in DEFAULT_SCHEDULED_TASKS
+            if t["task_code"] == "orphan_quarantine_purge"
+        )
+        assert task["executor"].endswith("OrphanQuarantinePurgeTask")
+        assert task["cron_plan"] == "0 3 * * *"
+
+
+class TestOrphanQuarantinePurgeTask:
+    @pytest.mark.asyncio
+    async def test_execute_passes_application_store(self):
+        task = OrphanQuarantinePurgeTask()
+        app = MagicMock()
+        store = app.state.store
+        with patch(
+            "app.tasks.scheduler.orphan_quarantine_purge_task.OrphanFileService.purge_expired_quarantine",
+            AsyncMock(return_value={"purged_count": 2, "failed_count": 0}),
+        ) as purge:
+            result = await task.execute(app=app)
+
+        purge.assert_awaited_once_with(store=store)
+        assert result["status"] == "success"
 
 
 # ==================== OrphanScanTask 结构 ====================
@@ -94,14 +130,21 @@ class TestOrphanScanTaskStructure:
         task = OrphanScanTask()
         mock_scanner = MagicMock()
         mock_scanner.scan = AsyncMock(
-            return_value={"status": "completed", "total_orphans": 5, "total_orphan_size": 1024}
+            return_value={
+                "status": "completed",
+                "scan_id": "scan_task_test",
+                "total_orphans": 5,
+                "total_orphan_size": 1024,
+            }
         )
 
         # OrphanScanner 在 execute() 内部延迟导入，patch 源模块
         with (
             patch("app.services.orphan_scanner.OrphanScanner") as mock_scanner_cls,
             patch.object(
-                task, "_auto_cleanup_expired", AsyncMock(return_value={"success_count": 2, "failed_count": 0})
+                task,
+                "_auto_cleanup_expired",
+                AsyncMock(return_value={"success_count": 2, "failed_count": 0}),
             ),
         ):
             mock_scanner_cls.return_value = mock_scanner

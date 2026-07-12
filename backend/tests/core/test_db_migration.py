@@ -41,9 +41,9 @@ def _clean_database_path_env():
 
 
 # 已知的迁移链 revision（与 alembic/versions/ 保持一致，变更时同步更新）
-# 链：e2a02abcf912(base,21表) → d0e58437af70(+1) → a0ada9774936(+1) → 95ef8bd8b47a(+search_templates) → c3f1a8b7d902(+orphan_file_tables) → b075727f7182(+orphan_lifecycle: candidate+lease+dedupe_key)
-EXPECTED_HEAD = "b075727f7182"
-PREV_HEAD = "c3f1a8b7d902"  # orphan_lifecycle 归位前的 head（v1.0.6 孤儿文件表）
+# 链尾：b075727f7182(orphan lifecycle) → e6d8a20c41f3(operation journal)
+EXPECTED_HEAD = "e6d8a20c41f3"
+PREV_HEAD = "b075727f7182"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
 
@@ -110,7 +110,9 @@ class TestMigrationChainIntegrity:
         cfg.set_main_option("script_location", str(BACKEND_ROOT / "alembic"))
         sd = ScriptDirectory.from_config(cfg)
         valid_revs = {r.revision for r in sd.walk_revisions()}
-        assert GHOST_VERSION not in valid_revs, f"幽灵版本 {GHOST_VERSION} 不应在迁移链中，否则它就不是幽灵了"
+        assert GHOST_VERSION not in valid_revs, (
+            f"幽灵版本 {GHOST_VERSION} 不应在迁移链中，否则它就不是幽灵了"
+        )
 
     def test_empty_db_upgrade_head_builds_full_schema(self, tmp_path):
         """空库 alembic upgrade head 应建起完整 schema（26 张业务表）。
@@ -127,7 +129,9 @@ class TestMigrationChainIntegrity:
         # base(e2a02abcf912) 建 21 表 + d0e58437af70 加 1 + a0ada9774936 加 1 + 95ef8bd8b47a 加 search_templates = 24
         # + c3f1a8b7d902 加 orphan_scan_result + orphan_file = 26
         # + b075727f7182 加 orphan_current_candidate + orphan_operation_lease = 28
-        assert count == 28, f"空库 upgrade 应建 28 张业务表（含 orphan_lifecycle），实际 {count}"
+        assert count == 28, (
+            f"空库 upgrade 应建 28 张业务表（含 orphan_lifecycle），实际 {count}"
+        )
 
     def test_upgrade_head_is_idempotent(self, tmp_path):
         """已有 head 库再次 upgrade 应幂等（version 不变、表数不变）。"""

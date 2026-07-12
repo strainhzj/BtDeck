@@ -12,7 +12,17 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy import (
+    Column,
+    String,
+    Integer,
+    BigInteger,
+    Boolean,
+    DateTime,
+    Text,
+    ForeignKey,
+    UniqueConstraint,
+)
 
 from app.database import Base
 
@@ -41,17 +51,40 @@ class OrphanScanResult(Base):
 
     scan_id = Column(String(36), primary_key=True, comment="扫描批次ID（UUID）")
     scan_time = Column(DateTime, nullable=False, index=True, comment="扫描开始时间")
-    scan_type = Column(String(20), nullable=False, comment="扫描类型：manual=手动，scheduled=定时")
-    total_paths_scanned = Column(Integer, default=0, nullable=False, comment="扫描的路径数量")
-    total_files_scanned = Column(Integer, default=0, nullable=False, comment="扫描的文件总数")
-    total_orphans = Column(Integer, default=0, nullable=False, comment="发现的孤儿文件数量")
-    total_orphan_size = Column(BigInteger, default=0, nullable=False, comment="孤儿文件总大小（字节）")
-    status = Column(String(20), nullable=False, default="running", comment="扫描状态：running/completed/failed")
+    scan_type = Column(
+        String(20), nullable=False, comment="扫描类型：manual=手动，scheduled=定时"
+    )
+    total_paths_scanned = Column(
+        Integer, default=0, nullable=False, comment="扫描的路径数量"
+    )
+    total_files_scanned = Column(
+        Integer, default=0, nullable=False, comment="扫描的文件总数"
+    )
+    total_orphans = Column(
+        Integer, default=0, nullable=False, comment="发现的孤儿文件数量"
+    )
+    total_orphan_size = Column(
+        BigInteger, default=0, nullable=False, comment="孤儿文件总大小（字节）"
+    )
+    status = Column(
+        String(20),
+        nullable=False,
+        default="running",
+        comment="扫描状态：running/completed/failed",
+    )
     error_message = Column(Text, nullable=True, comment="失败时的错误信息")
     operator = Column(String(100), nullable=True, comment="触发者（用户名或system）")
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+    created_at = Column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        comment="更新时间",
+    )
 
     def __init__(
         self,
@@ -106,18 +139,28 @@ class OrphanFile(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
     scan_id = Column(
-        String(36), ForeignKey("orphan_scan_result.scan_id"), nullable=False, index=True, comment="所属扫描批次ID"
+        String(36),
+        ForeignKey("orphan_scan_result.scan_id"),
+        nullable=False,
+        index=True,
+        comment="所属扫描批次ID",
     )
     file_path = Column(String(500), nullable=False, comment="文件绝对路径（外部路径）")
-    file_size = Column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
+    file_size = Column(
+        BigInteger, default=0, nullable=False, comment="文件大小（字节）"
+    )
     mtime = Column(DateTime, nullable=True, comment="文件修改时间")
-    downloader_id = Column(String(36), nullable=True, index=True, comment="关联下载器ID")
+    downloader_id = Column(
+        String(36), nullable=True, index=True, comment="关联下载器ID"
+    )
 
     is_deleted = Column(Boolean, default=False, nullable=False, comment="是否已清理")
     deleted_at = Column(DateTime, nullable=True, comment="清理时间")
     deleted_by = Column(String(100), nullable=True, comment="清理操作者")
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    created_at = Column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
 
     def __init__(
         self,
@@ -176,25 +219,67 @@ class OrphanCurrentCandidate(Base):
     """
 
     __tablename__ = "orphan_current_candidate"
-    __table_args__ = (UniqueConstraint("downloader_id", "canonical_path", name="uq_orphan_candidate_dl_path"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "downloader_id", "canonical_path", name="uq_orphan_candidate_dl_path"
+        ),
+    )
 
-    canonical_path = Column(String(600), primary_key=True, comment="规范化路径（normcase+normpath）")
+    canonical_path = Column(
+        String(600), primary_key=True, comment="规范化路径（normcase+normpath）"
+    )
     downloader_id = Column(String(36), nullable=False, comment="关联下载器ID")
     first_seen_at = Column(DateTime, nullable=False, comment="首次发现时间")
     last_seen_at = Column(DateTime, nullable=False, comment="最后一次确认时间")
-    last_seen_scan_id = Column(String(36), nullable=True, comment="最后一次确认的扫描批次ID")
-    consecutive_scan_count = Column(Integer, default=1, nullable=False, comment="连续确认扫描次数")
-    status = Column(String(20), nullable=False, default="candidate", comment="candidate/resolved/quarantined/purged")
-    file_size = Column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
+    last_seen_scan_id = Column(
+        String(36), nullable=True, comment="最后一次确认的扫描批次ID"
+    )
+    consecutive_scan_count = Column(
+        Integer, default=1, nullable=False, comment="连续确认扫描次数"
+    )
+    status = Column(
+        String(20),
+        nullable=False,
+        default="candidate",
+        comment="candidate/resolved/quarantined/purged",
+    )
+    file_size = Column(
+        BigInteger, default=0, nullable=False, comment="文件大小（字节）"
+    )
     mtime_ns = Column(BigInteger, nullable=True, comment="文件修改时间（纳秒）")
-    device_id = Column(BigInteger, nullable=True, comment="设备ID（st_dev）")
-    inode = Column(BigInteger, nullable=True, comment="inode（st_ino）")
+    device_id = Column(
+        String(32), nullable=True, comment="设备ID（st_dev，字符串避免无符号溢出）"
+    )
+    inode = Column(
+        String(32), nullable=True, comment="inode（st_ino，字符串避免无符号溢出）"
+    )
     quarantine_path = Column(String(600), nullable=True, comment="隔离区路径")
+    quarantine_root = Column(String(600), nullable=True, comment="隔离区根目录")
     quarantined_at = Column(DateTime, nullable=True, comment="移入隔离区时间")
-    purge_after = Column(DateTime, nullable=True, index=True, comment="允许物理删除时间")
+    purge_after = Column(
+        DateTime, nullable=True, index=True, comment="允许物理删除时间"
+    )
+    operation_state = Column(
+        String(30),
+        nullable=False,
+        default="stable",
+        comment="stable/quarantine_pending/purge_pending/error",
+    )
+    operation_target_path = Column(
+        String(600), nullable=True, comment="文件操作预写目标路径"
+    )
+    operation_error = Column(Text, nullable=True, comment="文件操作恢复失败原因")
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+    created_at = Column(
+        DateTime, default=datetime.utcnow, nullable=False, comment="创建时间"
+    )
+    updated_at = Column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+        comment="更新时间",
+    )
 
     def __init__(
         self,
@@ -207,11 +292,15 @@ class OrphanCurrentCandidate(Base):
         status: str = "candidate",
         file_size: int = 0,
         mtime_ns: Optional[int] = None,
-        device_id: Optional[int] = None,
-        inode: Optional[int] = None,
+        device_id: Optional[int | str] = None,
+        inode: Optional[int | str] = None,
         quarantine_path: Optional[str] = None,
+        quarantine_root: Optional[str] = None,
         quarantined_at: Optional[datetime] = None,
         purge_after: Optional[datetime] = None,
+        operation_state: str = "stable",
+        operation_target_path: Optional[str] = None,
+        operation_error: Optional[str] = None,
     ):
         now = datetime.utcnow()
         self.canonical_path = canonical_path
@@ -223,19 +312,27 @@ class OrphanCurrentCandidate(Base):
         self.status = status
         self.file_size = file_size
         self.mtime_ns = mtime_ns
-        self.device_id = device_id
-        self.inode = inode
+        self.device_id = str(device_id) if device_id is not None else None
+        self.inode = str(inode) if inode is not None else None
         self.quarantine_path = quarantine_path
+        self.quarantine_root = quarantine_root
         self.quarantined_at = quarantined_at
         self.purge_after = purge_after
+        self.operation_state = operation_state
+        self.operation_target_path = operation_target_path
+        self.operation_error = operation_error
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
             "canonical_path": self.canonical_path,
             "downloader_id": self.downloader_id,
-            "first_seen_at": self.first_seen_at.isoformat() if self.first_seen_at else None,
-            "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,
+            "first_seen_at": self.first_seen_at.isoformat()
+            if self.first_seen_at
+            else None,
+            "last_seen_at": self.last_seen_at.isoformat()
+            if self.last_seen_at
+            else None,
             "last_seen_scan_id": self.last_seen_scan_id,
             "consecutive_scan_count": self.consecutive_scan_count,
             "status": self.status,
@@ -244,8 +341,14 @@ class OrphanCurrentCandidate(Base):
             "device_id": self.device_id,
             "inode": self.inode,
             "quarantine_path": self.quarantine_path,
-            "quarantined_at": self.quarantined_at.isoformat() if self.quarantined_at else None,
+            "quarantine_root": self.quarantine_root,
+            "quarantined_at": self.quarantined_at.isoformat()
+            if self.quarantined_at
+            else None,
             "purge_after": self.purge_after.isoformat() if self.purge_after else None,
+            "operation_state": self.operation_state,
+            "operation_target_path": self.operation_target_path,
+            "operation_error": self.operation_error,
         }
 
 

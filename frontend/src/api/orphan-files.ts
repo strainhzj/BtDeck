@@ -109,6 +109,7 @@ export interface OrphanListParams {
 }
 
 export interface CleanupRequest {
+  scan_id: string
   orphan_ids: number[]
 }
 

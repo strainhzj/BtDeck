@@ -14,9 +14,17 @@
 import json
 import os
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from app.services.orphan_scanner import OrphanFileItem, OrphanScanner
+import pytest
+
+from app.services.orphan_scanner import (
+    OrphanFileItem,
+    OrphanScanIncompleteError,
+    OrphanScanner,
+    _normalize_path,
+)
 
 # ==================== inode 去重 ====================
 
@@ -80,15 +88,21 @@ class TestExcludePatterns:
 
     def test_matches_patterns_torrent(self):
         """*.torrent 模式匹配 .torrent 文件"""
-        assert OrphanScanner._matches_patterns("movie.torrent", ["*.torrent", "*.pending_delete"])
+        assert OrphanScanner._matches_patterns(
+            "movie.torrent", ["*.torrent", "*.pending_delete"]
+        )
 
     def test_matches_patterns_pending_delete(self):
         """*.pending_delete 模式匹配"""
-        assert OrphanScanner._matches_patterns("data.pending_delete", ["*.torrent", "*.pending_delete"])
+        assert OrphanScanner._matches_patterns(
+            "data.pending_delete", ["*.torrent", "*.pending_delete"]
+        )
 
     def test_matches_patterns_no_match(self):
         """普通文件不匹配排除模式"""
-        assert not OrphanScanner._matches_patterns("movie.mkv", ["*.torrent", "*.pending_delete"])
+        assert not OrphanScanner._matches_patterns(
+            "movie.mkv", ["*.torrent", "*.pending_delete"]
+        )
 
     def test_matches_patterns_empty_list(self):
         """空模式列表不匹配任何文件"""
@@ -107,7 +121,11 @@ class TestPathCollection:
         dl.path_mapping = json.dumps(
             {
                 "mappings": [
-                    {"name": "map1", "internal": "/downloads", "external": "D:/Downloads"},
+                    {
+                        "name": "map1",
+                        "internal": "/downloads",
+                        "external": "D:/Downloads",
+                    },
                     {"name": "map2", "internal": "/data", "external": "E:/Data"},
                 ]
             }
@@ -169,7 +187,9 @@ class TestOrphanDetection:
 
         scanner = OrphanScanner()
         # 将 expected_file 的规范化路径加入期望集合（规范化 key 匹配）
-        scanner._expected_files[_normalize_path(str(tmp_path))] = {_normalize_path(os.path.abspath(str(expected_file)))}
+        scanner._expected_files[_normalize_path(str(tmp_path))] = {
+            _normalize_path(os.path.abspath(str(expected_file)))
+        }
 
         orphans = scanner._walk_scan_root(str(tmp_path), "dl_001", [])
 
@@ -210,10 +230,10 @@ class TestOrphanDetection:
         assert len(orphans) == 1
 
     def test_walk_scan_root_nonexistent_path(self):
-        """不存在的路径返回空列表（不抛异常）"""
+        """不存在的路径必须 fail-closed。"""
         scanner = OrphanScanner()
-        orphans = scanner._walk_scan_root("/nonexistent/path", None, [])
-        assert orphans == []
+        with pytest.raises(OrphanScanIncompleteError):
+            scanner._walk_scan_root("/nonexistent/path", None, [])
 
     def test_orphan_file_item_attributes(self):
         """OrphanFileItem 正确保存属性"""
@@ -256,7 +276,9 @@ class TestScannerRuntimeContract:
         # scan 本身不应返回 coroutine（scan 是 async，已 await）
         assert not inspect.iscoroutine(result)
 
-    def test_qb_shared_client_not_logged_out(self, tmp_path, fake_app, fake_qb_client, monkeypatch):
+    def test_qb_shared_client_not_logged_out(
+        self, tmp_path, fake_app, fake_qb_client, monkeypatch
+    ):
         """扫描全程不得对共享 qB 客户端执行 auth.log_out()。"""
         # 让扫描至少走到文件清单构建阶段
         monkeypatch.setattr(
@@ -274,7 +296,9 @@ class TestScannerRuntimeContract:
             "_walk_all_roots",
             lambda self, paths: [],
         )
-        asyncio_run(scanner.scan() if (scanner := OrphanScanner(app=fake_app)) else None)
+        asyncio_run(
+            scanner.scan() if (scanner := OrphanScanner(app=fake_app)) else None
+        )
         fake_qb_client.auth.log_out.assert_not_called()
 
     def test_scan_uses_sync_lane(self, tmp_path, fake_app, monkeypatch):
@@ -295,7 +319,9 @@ class TestScannerRuntimeContract:
         asyncio_run(scanner.scan(scan_type="manual", operator="test"))
         # 如果有任何下载器 API 调用，lane 必须是 SYNC
         for lane in captured_lanes:
-            assert lane == DownloadLane.SYNC, f"扫描器应使用 DownloadLane.SYNC，实际用了 {lane}"
+            assert lane == DownloadLane.SYNC, (
+                f"扫描器应使用 DownloadLane.SYNC，实际用了 {lane}"
+            )
 
 
 # ==================== B 组：fail-closed（整批不完整即失败） ====================
@@ -314,7 +340,9 @@ class TestFailClosed:
 
     def _assert_failed(self, result, scan_id=None):
         """统一断言：扫描结果为 failed。"""
-        assert result["status"] == "failed", f"不完整场景应 fail-closed，实际 {result.get('status')}"
+        assert result["status"] == "failed", (
+            f"不完整场景应 fail-closed，实际 {result.get('status')}"
+        )
 
     def test_missing_app_store(self, monkeypatch):
         """app 或 app.state.store 缺失 → 失败。"""
@@ -330,7 +358,9 @@ class TestFailClosed:
         # 当前代码在空 snapshot 时静默返回 0 孤儿（非 fail-closed）→ 此测试应失败
         self._assert_failed(result)
 
-    def test_client_missing(self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch):
+    def test_client_missing(
+        self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch
+    ):
         """下载器 VO 缺 client → 失败（不可静默跳过）。"""
         from tests.services.conftest import make_downloader_vo
 
@@ -345,11 +375,15 @@ class TestFailClosed:
         result = asyncio_run(scanner.scan(scan_type="manual", operator="test"))
         self._assert_failed(result)
 
-    def test_client_fail_time_positive(self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch):
+    def test_client_fail_time_positive(
+        self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch
+    ):
         """fail_time > 0（下载器不可用）→ 失败。"""
         from tests.services.conftest import make_downloader_vo
 
-        vo = make_downloader_vo(downloader_id="dl_001", client=fake_qb_client, fail_time=1)
+        vo = make_downloader_vo(
+            downloader_id="dl_001", client=fake_qb_client, fail_time=1
+        )
         fake_store.get_snapshot = AsyncMock(return_value=[vo])
         monkeypatch.setattr(
             OrphanScanner,
@@ -360,7 +394,9 @@ class TestFailClosed:
         result = asyncio_run(scanner.scan(scan_type="manual", operator="test"))
         self._assert_failed(result)
 
-    def test_api_timeout(self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch):
+    def test_api_timeout(
+        self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch
+    ):
         """下载器 API 超时 → 整批失败（不静默 continue）。"""
         import asyncio as _asyncio
         from tests.services.conftest import make_downloader_vo
@@ -381,7 +417,9 @@ class TestFailClosed:
         result = asyncio_run(scanner.scan(scan_type="manual", operator="test"))
         self._assert_failed(result)
 
-    def test_api_exception(self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch):
+    def test_api_exception(
+        self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch
+    ):
         """下载器 API 抛异常 → 整批失败。"""
 
         async def raising_build(self):
@@ -397,7 +435,9 @@ class TestFailClosed:
         result = asyncio_run(scanner.scan(scan_type="manual", operator="test"))
         self._assert_failed(result)
 
-    def test_partial_torrent_failure(self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch):
+    def test_partial_torrent_failure(
+        self, fake_app, fake_store, fake_qb_client, tmp_path, monkeypatch
+    ):
         """部分种子清单成功、后续种子失败 → 整批失败（不允许部分清单）。
 
         模拟 _build_torrent_file_map 内部处理了部分种子后抛异常：
@@ -407,7 +447,9 @@ class TestFailClosed:
         async def partial_then_fail(self):
             # 模拟：先处理部分种子（成功），随后遇到失败种子 → 整批失败
             # _build_torrent_file_map 是整批原子操作，内部任一失败即抛
-            raise RuntimeError("第 3 个种子清单获取失败（部分种子已成功但整批必须失败）")
+            raise RuntimeError(
+                "第 3 个种子清单获取失败（部分种子已成功但整批必须失败）"
+            )
 
         monkeypatch.setattr(
             OrphanScanner,
@@ -452,6 +494,72 @@ class TestFailClosed:
         result = asyncio_run(scanner.scan(scan_type="manual", operator="test"))
         assert result["status"] == "failed"
         assert cleanup_calls == [], "扫描失败时不应调用自动清理"
+
+    def test_lifecycle_failure_rolls_back_details_and_completed_status(
+        self, fake_app, tmp_path, monkeypatch
+    ):
+        """生命周期写入失败时，明细与 completed 状态必须随同一事务回滚。"""
+        from sqlalchemy import func, select
+
+        from app.database import SessionLocal
+        from app.models.orphan_file import OrphanFile, OrphanScanResult
+        from app.services.orphan_lifecycle_service import OrphanLifecycleService
+
+        orphan_path = tmp_path / "transaction.bin"
+        orphan_path.write_bytes(b"x")
+
+        monkeypatch.setattr(
+            OrphanScanner,
+            "_collect_scan_paths",
+            lambda self: [(str(tmp_path), "dl_001")],
+        )
+
+        async def build_manifest(self):
+            self._expected_files = {"__global__": set()}
+
+        monkeypatch.setattr(OrphanScanner, "_build_torrent_file_map", build_manifest)
+        monkeypatch.setattr(
+            OrphanLifecycleService,
+            "reconcile_candidates",
+            AsyncMock(side_effect=RuntimeError("lifecycle commit failed")),
+        )
+
+        result = asyncio_run(
+            OrphanScanner(app=fake_app).scan(scan_type="manual", operator="test")
+        )
+
+        assert result["status"] == "failed"
+        with SessionLocal() as db:
+            scan = db.execute(
+                select(OrphanScanResult).where(
+                    OrphanScanResult.scan_id == result["scan_id"]
+                )
+            ).scalar_one()
+            detail_count = db.execute(
+                select(func.count(OrphanFile.id)).where(
+                    OrphanFile.scan_id == result["scan_id"]
+                )
+            ).scalar_one()
+        assert scan.status == "failed"
+        assert detail_count == 0
+
+    def test_single_file_stat_failure_is_fail_closed(self, tmp_path, monkeypatch):
+        """任一目录项无法 stat 时不得用部分磁盘视图完成扫描。"""
+        target = tmp_path / "unreadable.bin"
+        target.write_bytes(b"x")
+        original_scandir = os.scandir
+
+        def failing_scandir(path):
+            if os.path.abspath(path) == os.path.abspath(tmp_path):
+                raise PermissionError("simulated directory enumeration denial")
+            return original_scandir(path)
+
+        monkeypatch.setattr("app.services.orphan_scanner.os.scandir", failing_scandir)
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+
+        with pytest.raises(OrphanScanIncompleteError):
+            scanner._walk_scan_root(str(tmp_path), "dl_001", [])
 
 
 # ==================== C 组：路径与文件集合稳定性 ====================
@@ -525,7 +633,11 @@ class TestPathAndFileSet:
         legal.write_text("legal")
         orphan = tmp_path / "orphan.txt"
         orphan.write_text("orphan")
-        scanner._expected_files = {_normalize_path(str(tmp_path)): {_normalize_path(os.path.abspath(str(legal)))}}
+        scanner._expected_files = {
+            _normalize_path(str(tmp_path)): {
+                _normalize_path(os.path.abspath(str(legal)))
+            }
+        }
         orphans = scanner._walk_scan_root(str(tmp_path), None, [])
         paths = [os.path.basename(o.file_path) for o in orphans]
         assert "orphan.txt" in paths
@@ -541,6 +653,60 @@ class TestPathAndFileSet:
         scanner._expected_files = {str(tmp_path): set()}
         orphans = scanner._walk_scan_root(str(tmp_path), None, [])
         assert len(orphans) == 1, "硬链接去重后应只有 1 个候选"
+
+    def test_parent_child_roots_share_global_expected_set(self, tmp_path):
+        """父根先扫描时也必须识别仅登记在子 save_path 下的合法文件。"""
+        parent = tmp_path / "downloads"
+        child = parent / "movies"
+        child.mkdir(parents=True)
+        legal = child / "legal.mkv"
+        legal.write_bytes(b"legal")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {
+            _normalize_path(str(child)): {_normalize_path(str(legal))},
+        }
+        parent_first = scanner._walk_all_roots(
+            [(str(parent), "dl_001"), (str(child), "dl_001")]
+        )
+
+        scanner._seen_inodes = set()
+        child_first = scanner._walk_all_roots(
+            [(str(child), "dl_001"), (str(parent), "dl_001")]
+        )
+
+        assert parent_first == []
+        assert child_first == []
+
+
+@pytest.mark.asyncio
+async def test_transmission_fetch_uses_files_argument_and_object_shape(
+    fake_tr_client, monkeypatch
+):
+    """Transmission 生产客户端返回 Torrent 对象，文件列表来自 .files。"""
+    fake_tr_client.get_torrent.return_value = SimpleNamespace(
+        files=[SimpleNamespace(name="folder/video.mkv")]
+    )
+    scanner = OrphanScanner()
+
+    async def direct_call(
+        downloader_id, lane, method, args=None, kwargs=None, **unused
+    ):
+        from app.services.downloader_api_runtime import DownloadLane
+
+        assert lane == DownloadLane.SYNC
+        return method(*(args or ()), **(kwargs or {}))
+
+    monkeypatch.setattr(
+        "app.services.downloader_api_runtime.call_downloader_api", direct_call
+    )
+
+    result = await scanner._fetch_torrent_files(
+        "dl-tr", "transmission", fake_tr_client, "hash-tr"
+    )
+
+    assert result == ["folder/video.mkv"]
+    fake_tr_client.get_torrent.assert_called_once_with("hash-tr", arguments=["files"])
 
 
 # ==================== 辅助函数 ====================

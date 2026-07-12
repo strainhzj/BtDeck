@@ -51,7 +51,9 @@ class TestOrphanScanNotification:
         from app.models.notification import Notification
 
         result = await async_orphan_db.execute(
-            select(Notification).where(Notification.dedupe_key == "orphan_scan:scan_with_orphans")
+            select(Notification).where(
+                Notification.dedupe_key == "orphan_scan:scan_with_orphans"
+            )
         )
         notif = result.scalar_one_or_none()
         assert notif is not None, "应创建通知"
@@ -69,14 +71,20 @@ class TestOrphanScanNotification:
         from app.services.orphan_notification import notify_scan_completed
 
         await notify_scan_completed(
-            db=async_orphan_db, scan_id="scan_zero", scan_type="manual", orphan_count=0, orphan_size=0
+            db=async_orphan_db,
+            scan_id="scan_zero",
+            scan_type="manual",
+            orphan_count=0,
+            orphan_size=0,
         )
         await async_orphan_db.commit()
 
         from app.models.notification import Notification
 
         result = await async_orphan_db.execute(
-            select(Notification).where(Notification.dedupe_key == "orphan_scan:scan_zero")
+            select(Notification).where(
+                Notification.dedupe_key == "orphan_scan:scan_zero"
+            )
         )
         assert result.scalar_one_or_none() is None, "孤儿数为 0 不应创建通知"
 
@@ -86,14 +94,20 @@ class TestOrphanScanNotification:
 
         for _ in range(3):
             await notify_scan_completed(
-                db=async_orphan_db, scan_id="scan_dedup", scan_type="scheduled", orphan_count=5, orphan_size=1024
+                db=async_orphan_db,
+                scan_id="scan_dedup",
+                scan_type="scheduled",
+                orphan_count=5,
+                orphan_size=1024,
             )
             await async_orphan_db.commit()
 
         from app.models.notification import Notification
 
         result = await async_orphan_db.execute(
-            select(Notification).where(Notification.dedupe_key == "orphan_scan:scan_dedup")
+            select(Notification).where(
+                Notification.dedupe_key == "orphan_scan:scan_dedup"
+            )
         )
         notifs = result.scalars().all()
         assert len(notifs) == 1, "同一 scan_id 应只有 1 条通知（dedupe_key 幂等）"
@@ -106,7 +120,10 @@ class TestOrphanScanNotification:
         # 先创建一个 completed 扫描
         async_orphan_db.add(
             OrphanScanResult(
-                scan_id="scan_notif_fail", scan_time=datetime.utcnow(), scan_type="manual", status="completed"
+                scan_id="scan_notif_fail",
+                scan_time=datetime.utcnow(),
+                scan_type="manual",
+                status="completed",
             )
         )
         await async_orphan_db.commit()
@@ -119,12 +136,18 @@ class TestOrphanScanNotification:
         ):
             # 通知失败不应抛异常
             await notify_scan_completed(
-                db=async_orphan_db, scan_id="scan_notif_fail", scan_type="manual", orphan_count=10, orphan_size=5000
+                db=async_orphan_db,
+                scan_id="scan_notif_fail",
+                scan_type="manual",
+                orphan_count=10,
+                orphan_size=5000,
             )
 
         # 扫描状态应仍为 completed
         result = await async_orphan_db.execute(
-            select(OrphanScanResult).where(OrphanScanResult.scan_id == "scan_notif_fail")
+            select(OrphanScanResult).where(
+                OrphanScanResult.scan_id == "scan_notif_fail"
+            )
         )
         scan = result.scalar_one_or_none()
         assert scan is not None
@@ -139,7 +162,11 @@ class TestOrphanScanNotification:
         before = await service.get_unread_count()
 
         await notify_scan_completed(
-            db=async_orphan_db, scan_id="scan_unread", scan_type="manual", orphan_count=3, orphan_size=1000
+            db=async_orphan_db,
+            scan_id="scan_unread",
+            scan_type="manual",
+            orphan_count=3,
+            orphan_size=1000,
         )
         await async_orphan_db.commit()
 
@@ -153,16 +180,64 @@ class TestOrphanScanNotification:
         # 128.5 GB
         size_bytes = int(128.5 * 1024**3)
         await notify_scan_completed(
-            db=async_orphan_db, scan_id="scan_size", scan_type="manual", orphan_count=36, orphan_size=size_bytes
+            db=async_orphan_db,
+            scan_id="scan_size",
+            scan_type="manual",
+            orphan_count=36,
+            orphan_size=size_bytes,
         )
         await async_orphan_db.commit()
 
         from app.models.notification import Notification
 
         result = await async_orphan_db.execute(
-            select(Notification).where(Notification.dedupe_key == "orphan_scan:scan_size")
+            select(Notification).where(
+                Notification.dedupe_key == "orphan_scan:scan_size"
+            )
         )
         notif = result.scalar_one_or_none()
         assert notif is not None
         assert notif.title == "孤儿文件扫描完成"
         assert "128" in (notif.content or ""), "通知内容应包含 GB 级大小"
+
+    async def test_retry_task_compensates_missing_notification(
+        self, async_orphan_db, monkeypatch
+    ):
+        """completed 扫描首次通知失败后，补偿任务应按 dedupe_key 补发。"""
+        from app.models.notification import Notification
+        from app.models.orphan_file import OrphanScanResult
+        from app.tasks.scheduler.orphan_notification_retry_task import (
+            OrphanNotificationRetryTask,
+        )
+
+        scan = OrphanScanResult(
+            scan_id="scan_retry",
+            scan_time=datetime.utcnow(),
+            scan_type="scheduled",
+            status="completed",
+        )
+        scan.total_orphans = 4
+        scan.total_orphan_size = 4096
+        async_orphan_db.add(scan)
+        await async_orphan_db.commit()
+
+        class SessionContext:
+            async def __aenter__(self):
+                return async_orphan_db
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        monkeypatch.setattr(
+            "app.tasks.scheduler.orphan_notification_retry_task.AsyncSessionLocal",
+            lambda: SessionContext(),
+        )
+        result = await OrphanNotificationRetryTask().execute()
+
+        notification = await async_orphan_db.execute(
+            select(Notification).where(
+                Notification.dedupe_key == "orphan_scan:scan_retry"
+            )
+        )
+        assert notification.scalar_one_or_none() is not None
+        assert result["retried_count"] == 1

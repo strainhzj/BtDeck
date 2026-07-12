@@ -1002,6 +1002,26 @@
             "backend/tests/core/test_db_rollback_scenarios.py"
           ],
           "evidence": "G 组 6 测试全 pass（completed>0创建/==0不通知/同scan_id幂等/通知失败不改failed/未读+1/内容含GB大小）；create_notification 双层去重（查询层+DB层IntegrityError）；全量 2043 passed 0 failed；mypy 无新增错误；black/flake8 通过；init.sh 通过"
+        },
+        {
+          "id": "v1.0.6.11",
+          "name": "孤儿文件清理安全闭环修复",
+          "description": "按最近提交 code review 结果，以回归测试驱动修复实时 manifest、批次绑定、事务原子性、维护 lease、可恢复隔离、到期 purge 和通知补偿。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/orphan_manifest.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/services/orphan_lease.py",
+            "backend/app/services/orphan_quarantine.py",
+            "backend/alembic/versions/e6d8a20c41f3_orphan_operation_journal.py",
+            "backend/app/tasks/scheduler/orphan_quarantine_purge_task.py",
+            "backend/app/tasks/scheduler/orphan_notification_retry_task.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue"
+          ],
+          "evidence": "真实下载器 inventory 成为权威 manifest；手动/自动清理均绑定最新 scan_id、授权扫描根和完整 size/mtime/dev/inode 身份；同文件系统私有 UUID 目录原子隔离，purge 先原子 tombstone 后复核删除；扫描明细+候选对账+completed 单事务；统一维护 lease 含心跳和逐文件所有权检查；操作 journal 支持崩溃恢复；每日 purge + 每小时通知补偿任务。相关回归 152 passed/1 skipped；全量后端 2068 passed/1 skipped；flake8、git diff --check、前端 eslint 和生产 build 通过。"
         }
       ]
     }

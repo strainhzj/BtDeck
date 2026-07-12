@@ -1,5 +1,33 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-12 交接：v1.0.6 孤儿文件安全闭环修复完成
+
+**当前任务**: `v1.0.6.11`
+**状态**: 实现与验证完成，尚未提交（用户未要求 commit）。
+
+### 关键结果
+
+- 实时下载器 inventory 是扫描与清理的唯一权威 manifest；不完整即拒绝。
+- 手动/自动清理都只做可恢复隔离，不直接删除源文件；到期 purge 采用 tombstone 二次复核。
+- scan_id、授权扫描根、完整文件身份、统一维护 lease 和操作 journal 构成清理门禁。
+- 扫描最终 DB 写入已事务化；通知失败由每小时补偿任务重试；隔离区由每日任务清除。
+- 新迁移：`e6d8a20c41f3_orphan_operation_journal.py`，接在已发布的 `b075727f7182` 后。
+
+### 验证
+
+- 后端相关：152 passed, 1 skipped
+- 后端全量：2068 passed, 1 skipped
+- flake8 / git diff --check：通过
+- 前端目标 eslint / 生产 build：通过（仅既有 warning）
+- 根 `init.sh`：当前 Windows 环境缺少 Git Bash/WSL，未执行
+
+### 注意
+
+- 未触碰用户文件：`.zcode/`、`btdeck-backend.latest.tar`、`btdeck-frontend.latest.tar`。
+- 工作区内遗留若干 pytest 临时目录因 Windows ACL 无法普通删除；均为未跟踪测试产物，不应提交。
+
+---
+
 ## 2026-07-10 交接：v1.0.6 孤儿文件管理与路径维护完成
 
 **当前任务**: `v1.0.6`（合并原 v1.0.6 孤儿文件 + v1.0.7 路径扫描增强 + v1.1.0 自动清理）

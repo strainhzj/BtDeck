@@ -15,7 +15,6 @@
 import json
 import logging
 import os
-import shutil
 import uuid
 from pathlib import Path
 from typing import Optional, Tuple
@@ -23,6 +22,39 @@ from typing import Optional, Tuple
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _rename_no_replace(src_path: str, dest_path: str) -> None:
+    """同文件系统移动且绝不覆盖目标；不支持 renameat2 时用 link+unlink 安全退化。"""
+    if os.name == "nt":
+        os.rename(src_path, dest_path)
+        return
+
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = libc.renameat2
+        renameat2.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        renameat2.restype = ctypes.c_int
+        result = renameat2(-100, os.fsencode(src_path), -100, os.fsencode(dest_path), 1)
+        if result == 0:
+            return
+        error = ctypes.get_errno()
+        if error not in (38, 95):  # ENOSYS / EOPNOTSUPP 才允许安全退化
+            raise OSError(error, os.strerror(error), dest_path)
+    except AttributeError:
+        pass
+
+    # hard-link 创建本身具备 no-replace 语义；崩溃时 journal 会处理双路径状态。
+    os.link(src_path, dest_path, follow_symlinks=False)
+    os.unlink(src_path)
 
 
 def resolve_quarantine_root(
@@ -67,7 +99,22 @@ def _extract_quarantine_root(path_mapping_json: Optional[str]) -> Optional[str]:
         return None
 
 
-def quarantine_file(src_path: str, quarantine_root: str) -> str:
+def build_quarantine_path(src_path: str, quarantine_root: str) -> str:
+    """原子创建私有操作目录并返回唯一目标，避免 rename 覆盖已有文件。"""
+    os.makedirs(quarantine_root, exist_ok=True)
+    operation_dir = os.path.join(quarantine_root, uuid.uuid4().hex)
+    os.mkdir(operation_dir)
+    return os.path.join(operation_dir, os.path.basename(src_path))
+
+
+def quarantine_file(
+    src_path: str,
+    quarantine_root: str,
+    dest_path: Optional[str] = None,
+    expected_size: Optional[int] = None,
+    expected_mtime_ns: Optional[int] = None,
+    expected_inode: Optional[Tuple[int, int]] = None,
+) -> str:
     """将文件移入隔离区（原子优先，跨文件系统退化 copy+delete）。
 
     Args:
@@ -84,27 +131,31 @@ def quarantine_file(src_path: str, quarantine_root: str) -> str:
     os.makedirs(quarantine_root, exist_ok=True)
 
     # 生成隔离后的文件名（用 uuid 防冲突）
-    src_name = os.path.basename(src_path)
-    dest_name = f"{uuid.uuid4().hex[:8]}_{src_name}"
-    dest_path = os.path.join(quarantine_root, dest_name)
+    dest_path = dest_path or build_quarantine_path(src_path, quarantine_root)
+    if os.path.commonpath(
+        [os.path.realpath(dest_path), os.path.realpath(quarantine_root)]
+    ) != os.path.realpath(quarantine_root):
+        raise OSError("隔离目标路径逃逸隔离根")
 
     src_stat = os.stat(src_path)
+    expected_identity = expected_inode or (src_stat.st_dev, src_stat.st_ino)
 
-    try:
-        # 优先 os.rename（同文件系统原子操作）
-        os.rename(src_path, dest_path)
-        logger.info(f"[隔离区] 原子移动: {src_path} → {dest_path}")
-    except OSError as rename_err:
-        # 跨文件系统（errno.EXDEV）→ 退化 copy + 校验 + delete
-        logger.warning(f"[隔离区] os.rename 失败({rename_err})，退化 copy+delete: {src_path} → {dest_path}")
-        shutil.copy2(src_path, dest_path)
-        # 校验 size 一致后删源
-        dest_stat = os.stat(dest_path)
-        if dest_stat.st_size != src_stat.st_size:
-            os.remove(dest_path)
-            raise OSError(f"隔离 copy 后 size 校验失败: {src_path} (期望 {src_stat.st_size}, 实际 {dest_stat.st_size})")
-        os.remove(src_path)
-        logger.info(f"[隔离区] copy+delete 完成: {src_path} → {dest_path}")
+    root_stat = os.stat(quarantine_root)
+    if root_stat.st_dev != src_stat.st_dev:
+        raise OSError("隔离区与源文件不在同一文件系统，拒绝非原子 copy+delete")
+
+    _rename_no_replace(src_path, dest_path)
+    moved_stat = os.stat(dest_path)
+    identity_ok = (
+        (moved_stat.st_dev, moved_stat.st_ino) == expected_identity
+        and (expected_size is None or moved_stat.st_size == expected_size)
+        and (expected_mtime_ns is None or moved_stat.st_mtime_ns == expected_mtime_ns)
+    )
+    if not identity_ok:
+        if not os.path.exists(src_path):
+            _rename_no_replace(dest_path, src_path)
+        raise OSError(f"隔离后文件身份不一致: {dest_path}")
+    logger.info(f"[隔离区] 原子移动: {src_path} → {dest_path}")
 
     return dest_path
 
@@ -130,7 +181,11 @@ def compute_purge_after(quarantined_at, retention_days: Optional[int] = None):
     """计算允许物理删除的时间（quarantined_at + 保留期）。"""
     from datetime import timedelta
 
-    days = retention_days if retention_days is not None else settings.ORPHAN_QUARANTINE_RETENTION_DAYS
+    days = (
+        retention_days
+        if retention_days is not None
+        else settings.ORPHAN_QUARANTINE_RETENTION_DAYS
+    )
     return quarantined_at + timedelta(days=days)
 
 
@@ -173,14 +228,23 @@ def verify_file_identity(
         return False, f"stat 失败: {file_path} ({e})"
 
     if expected_size is not None and stat_info.st_size != expected_size:
-        return False, f"size 不匹配: {file_path} (期望 {expected_size}, 实际 {stat_info.st_size})"
+        return (
+            False,
+            f"size 不匹配: {file_path} (期望 {expected_size}, 实际 {stat_info.st_size})",
+        )
 
     if expected_mtime_ns is not None and stat_info.st_mtime_ns != expected_mtime_ns:
-        return False, f"mtime_ns 不匹配: {file_path} (期望 {expected_mtime_ns}, 实际 {stat_info.st_mtime_ns})"
+        return (
+            False,
+            f"mtime_ns 不匹配: {file_path} (期望 {expected_mtime_ns}, 实际 {stat_info.st_mtime_ns})",
+        )
 
     if expected_inode is not None:
         actual_inode = (stat_info.st_dev, stat_info.st_ino)
         if actual_inode != expected_inode:
-            return False, f"inode 不匹配: {file_path} (期望 {expected_inode}, 实际 {actual_inode})"
+            return (
+                False,
+                f"inode 不匹配: {file_path} (期望 {expected_inode}, 实际 {actual_inode})",
+            )
 
     return True, ""

@@ -20,7 +20,7 @@
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import jwt
 import pytest
@@ -28,6 +28,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.api.api import api_router
+from app.database import get_async_db
 
 # ==================== 共享常量和工具 ====================
 
@@ -51,13 +52,20 @@ def _create_valid_token() -> str:
 
     mock_s = _mock_settings()
     with patch("app.auth.utils.settings", mock_s):
-        return create_access_token({"sub": "test_user", "user_id": "1", "verify_secret": _TEST_LOGIN_SECRET})
+        return create_access_token(
+            {"sub": "test_user", "user_id": "1", "verify_secret": _TEST_LOGIN_SECRET}
+        )
 
 
 def _create_expired_token() -> str:
     """创建过期 JWT token"""
     return jwt.encode(
-        {"sub": "test_user", "user_id": "1", "verify_secret": _TEST_LOGIN_SECRET, "exp": 0},
+        {
+            "sub": "test_user",
+            "user_id": "1",
+            "verify_secret": _TEST_LOGIN_SECRET,
+            "exp": 0,
+        },
         _TEST_SECRET,
         algorithm=_TEST_ALGORITHM,
     )
@@ -95,7 +103,9 @@ class TestOrphanFilesAuth:
         self.client = TestClient(self.app, raise_server_exceptions=False)
         mock_settings = _mock_settings()
         self.settings_patch = patch("app.auth.utils.settings", mock_settings)
-        self.secret_patch = patch("app.auth.utils.get_login_secret", return_value=_TEST_LOGIN_SECRET)
+        self.secret_patch = patch(
+            "app.auth.utils.get_login_secret", return_value=_TEST_LOGIN_SECRET
+        )
         self.settings_patch.start()
         self.secret_patch.start()
         yield
@@ -186,7 +196,9 @@ class TestOrphanFilesWithValidToken:
     def setup(self):
         self.app = _create_test_app()
         # 覆盖认证依赖（仿 test_active_torrents_endpoint.py）
-        self.app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
+        self.app.dependency_overrides[require_authenticated_user] = lambda: (
+            SimpleNamespace(username="tester")
+        )
         self.client = TestClient(self.app, raise_server_exceptions=False)
 
         # mock AsyncSession
@@ -210,6 +222,66 @@ class TestOrphanFilesWithValidToken:
         data = response.json()
         assert data["code"] != "401"
 
+
+class TestOrphanFilesCleanupWiring:
+    """验证真实 HTTP 入口把快照 ID 与共享下载器 store 传入服务层。"""
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.app = _create_test_app()
+        self.app.state.store = MagicMock(name="shared_downloader_store")
+        self.app.dependency_overrides[require_authenticated_user] = lambda: (
+            SimpleNamespace(username="tester")
+        )
+        self.mock_db = MagicMock(name="async_db")
+
+        async def override_db():
+            yield self.mock_db
+
+        self.app.dependency_overrides[get_async_db] = override_db
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+        yield
+        self.app.dependency_overrides.clear()
+
+    def test_cleanup_preview_passes_scan_id(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(
+            return_value={"total_count": 1, "total_size": 10, "items": []}
+        )
+        with patch.object(OrphanFileService, "cleanup_preview", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/cleanup-preview",
+                json={"scan_id": "scan-latest", "orphan_ids": [1]},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == "200"
+        mocked.assert_awaited_once_with([1], scan_id="scan-latest")
+
+    def test_cleanup_passes_scan_id_and_shared_store(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(
+            return_value={
+                "success_count": 0,
+                "failed_count": 0,
+                "failed_list": [],
+                "total_size": 0,
+            }
+        )
+        with patch.object(OrphanFileService, "cleanup_orphans", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/cleanup",
+                json={"scan_id": "scan-latest", "orphan_ids": [1]},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == "200"
+        kwargs = mocked.await_args.kwargs
+        assert kwargs["scan_id"] == "scan-latest"
+        assert kwargs["store"] is self.app.state.store
+
     def test_get_list_valid_token_not_rejected_by_auth(self):
         """GET /list：有效 token 不应被 401 拒绝"""
         response = self.client.get(
@@ -224,7 +296,7 @@ class TestOrphanFilesWithValidToken:
         """POST /cleanup-preview：有效 token + 有效 body 不被 401 拒绝"""
         response = self.client.post(
             "/api/v1/orphan-files/cleanup-preview",
-            json={"orphan_ids": [1, 2]},
+            json={"scan_id": "scan-latest", "orphan_ids": [1, 2]},
             headers={"x-access-token": _create_valid_token()},
         )
         assert response.status_code == 200

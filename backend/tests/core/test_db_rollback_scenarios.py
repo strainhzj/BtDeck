@@ -29,7 +29,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "b075727f7182"  # 当前 head（含 orphan_lifecycle: candidate+lease+dedupe_key）
+REV_HEAD = "e6d8a20c41f3"  # 当前 head（含 orphan filesystem operation journal）
 
 
 def _make_cfg(db_path: str) -> Config:
@@ -44,7 +44,10 @@ def _table_exists(db_path: str, table: str) -> bool:
     conn = sqlite3.connect(db_path)
     try:
         return (
-            conn.execute(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'").fetchone() is not None
+            conn.execute(
+                f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table}'"
+            ).fetchone()
+            is not None
         )
     finally:
         conn.close()
@@ -102,11 +105,13 @@ class TestLevel1CodeRollbackDbUntouched:
                 migrate_database()  # DEV 模式，告警继续
 
         # 关键断言：版本未被降级（保持高版本）
-        assert (
-            _get_all_versions(db_path) == REV_HEAD
-        ), "回滚场景下版本不应被自动降级（B1 黑名单），避免 version/schema 不一致"
+        assert _get_all_versions(db_path) == REV_HEAD, (
+            "回滚场景下版本不应被自动降级（B1 黑名单），避免 version/schema 不一致"
+        )
 
-    def test_search_templates_data_preserved_after_code_rollback(self, tmp_path, monkeypatch):
+    def test_search_templates_data_preserved_after_code_rollback(
+        self, tmp_path, monkeypatch
+    ):
         """Level 1 回滚后，search_templates 表数据应完整保留。"""
         db_path = str(tmp_path / "level1_data.db")
         monkeypatch.setenv("DATABASE_PATH", db_path)
@@ -134,9 +139,13 @@ class TestLevel1CodeRollbackDbUntouched:
 
         # 数据应完整
         conn = sqlite3.connect(db_path)
-        row = conn.execute("SELECT name FROM search_templates WHERE id='test-1'").fetchone()
+        row = conn.execute(
+            "SELECT name FROM search_templates WHERE id='test-1'"
+        ).fetchone()
         conn.close()
-        assert row is not None and row[0] == "回滚测试", "Level 1 回滚后 search_templates 数据应保留"
+        assert row is not None and row[0] == "回滚测试", (
+            "Level 1 回滚后 search_templates 数据应保留"
+        )
 
 
 # ==================== Level 2：备份还原 ====================
@@ -160,7 +169,9 @@ class TestLevel2BackupRestore:
 
         # 插入升级前的业务数据
         conn = sqlite3.connect(db_path)
-        conn.execute("INSERT INTO users (username, password) VALUES ('user_v105', 'hash')")
+        conn.execute(
+            "INSERT INTO users (username, password) VALUES ('user_v105', 'hash')"
+        )
         conn.commit()
         conn.close()
 
@@ -173,7 +184,9 @@ class TestLevel2BackupRestore:
         assert len(backups) >= 1
 
         backup_conn = sqlite3.connect(str(backups[0]))
-        backup_version = backup_conn.execute("SELECT version_num FROM alembic_version").fetchone()[0]
+        backup_version = backup_conn.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone()[0]
         backup_conn.close()
         assert backup_version == REV_PRE_ORPHAN, "备份应是升级前的版本"
 
@@ -188,7 +201,9 @@ class TestLevel2BackupRestore:
         # 4. 还原后验证：版本回到 95ef8bd8b47a，业务数据保留
         assert _get_all_versions(db_path) == REV_PRE_ORPHAN
         conn = sqlite3.connect(db_path)
-        user = conn.execute("SELECT username FROM users WHERE username='user_v105'").fetchone()
+        user = conn.execute(
+            "SELECT username FROM users WHERE username='user_v105'"
+        ).fetchone()
         conn.close()
         assert user is not None, "还原后升级前的业务数据应保留"
 
@@ -216,7 +231,9 @@ class TestLevel2BackupRestore:
         shutil.copy2(str(backups[0]), db_path)
 
         # 验证还原成功：版本回到升级前
-        assert _get_all_versions(db_path) == REV_PRE_ORPHAN, "还原备份后版本应回到升级前"
+        assert _get_all_versions(db_path) == REV_PRE_ORPHAN, (
+            "还原备份后版本应回到升级前"
+        )
 
         # 真实回滚场景：旧代码不含 c3f1a8b7d902 迁移文件，migrate 会 no-op。
         # 本测试环境磁盘上有该文件，所以会重新升级——这验证了"代码与迁移文件一致"约束。
@@ -251,7 +268,9 @@ class TestLevel3AlembicDowngrade:
         # 2. downgrade 到 95ef8bd8b47a（撤 orphan_file_tables）
         command.downgrade(cfg, REV_PRE_ORPHAN)
         assert _get_all_versions(db_path) == REV_PRE_ORPHAN
-        assert not _table_exists(db_path, "orphan_file"), "downgrade 后 orphan_file 表应被删除"
+        assert not _table_exists(db_path, "orphan_file"), (
+            "downgrade 后 orphan_file 表应被删除"
+        )
 
         # 3. 真实回滚场景：旧代码不含 c3f1a8b7d902 → migrate no-op，版本保持。
         #    本测试环境含该迁移文件 → migrate 会重新 upgrade 到 head。
@@ -311,9 +330,9 @@ class TestRollbackSafetyInvariants:
         migrate_database()  # DEV 模式
 
         # 不变量：未知版本绝不被自动 stamp
-        assert (
-            _get_all_versions(db_path) == "any_future_v999"
-        ), "安全不变量：未知版本绝不被自动 stamp（B1 黑名单核心保证）"
+        assert _get_all_versions(db_path) == "any_future_v999", (
+            "安全不变量：未知版本绝不被自动 stamp（B1 黑名单核心保证）"
+        )
 
     def test_ghost_version_always_rescued(self, tmp_path, monkeypatch):
         """幽灵版本（9aea25308aff）总是被救援（另一个核心不变量）。
@@ -336,5 +355,7 @@ class TestRollbackSafetyInvariants:
 
         # 不变量：幽灵版本总是被救援到真实版本
         final = _get_all_versions(db_path)
-        assert final != "9aea25308aff", "安全不变量：幽灵版本总是被救援（KNOWN_GHOST_VERSIONS）"
+        assert final != "9aea25308aff", (
+            "安全不变量：幽灵版本总是被救援（KNOWN_GHOST_VERSIONS）"
+        )
         assert final == REV_HEAD, f"救援后应为 head，实际 {final}"
