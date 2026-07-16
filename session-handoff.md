@@ -1,5 +1,38 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-16 交接：全栈回归测试质量 P0 整改完成
+
+**当前任务**: `v1.0.6.12`
+**分支**: dev
+**状态**: 实现与验证完成；本次会话提交并推送。
+
+### 关键结果
+
+- pytest 进程级独立数据库 + 真实 Alembic，禁止访问开发业务库；`OrphanScanner` session factory 可注入。
+- 活动种子快照采用五态语义；非权威快照返回 206，权威空快照返回 200；前端保留列表、刷新后受控重试。
+- 大活动集合通过 SQLite TEMP 表复合键联接；600 键在变量限制降到 50 时仍通过且无临时表泄漏。
+- Jest 组件测试恢复收集，TypeScript 请求契约补齐；根级 GitHub Actions 统一前后端回归门禁。
+
+### 验证
+
+- 后端：2089 passed, 1 skipped；coverage 40.58%；架构检查通过。
+- 前端：4 suites / 142 tests；`tsc --noEmit`；生产 build 通过。
+- 变更文件 black/flake8 与 `git diff --check` 通过。
+- `backend/config/app.db` 测试前后 SHA256 `FBC031EF2CC021D34AE86218A0F6482CC60E917F8EB0A1D3B1627BF93A081A94`、大小与 mtime 均不变。
+- 根 `init.sh` 在 Git Bash 下退出 0；Git Bash PATH 的 Node 警告由独立 Node 门禁覆盖。
+
+### 已知技术债
+
+- 全仓 mypy 基线：1534 errors / 123 files。
+- 全量测试目录 flake8 仍有既有债务；本次变更文件为 0 错误。
+- Vue SFC 历史语义类型债务未纳入本次 P0；`.ts/.tsx` 严格门禁、SFC 编译与组件测试均已启用。
+
+### 未纳入提交
+
+- `.zcode/`、镜像 tar、旧 pytest 输出目录、个人 `tools/`、`.docker_temp_482561487` 等用户未跟踪文件。
+
+---
+
 ## 2026-07-12 交接：v1.0.6 孤儿文件安全闭环修复完成
 
 **当前任务**: `v1.0.6.11`

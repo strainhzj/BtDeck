@@ -637,6 +637,7 @@ import {
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
+  needsActiveSnapshotRefresh,
   buildAdvancedSearchRequestFromTemplateGroups
 } from './utils/torrentBatch'
 
@@ -673,6 +674,8 @@ export default class extends mixins(TorrentBatchMixin) {
   private speedPollingActive = false
   private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+  private activeListRetryPending = false
+  private activeListRetryInFlight = false
 
   // 分页相关
   private currentPage = 1
@@ -718,7 +721,7 @@ export default class extends mixins(TorrentBatchMixin) {
     name_like: '',
     downloader_id: [] as string[],  // 支持多选
     status: [] as string[],         // 支持多选
-    showActiveOnly: false,          // 仅显示活动种子（有速度的种子）
+    showActiveOnly: false,          // 仅显示活动种子（UI 开关，映射为后端 active_only 过滤）
     sort_by: 'added_date',
     sort_order: 'desc'
   }
@@ -833,15 +836,18 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   // 获取种子列表
-  private async getList() {
+  private async getList(activeSnapshotRetry = false) {
     this.listLoading = true
     try {
       const params = { ...this.listQuery }
 
-      // 检查是否需要前端过滤"活动"种子
-
-      // 移除 showActiveOnly 属性，不发送给后端
+      // "仅显示活动种子"下沉为后端 active_only 过滤（解决前端过滤导致 total 失真）。
+      // showActiveOnly 仅作 UI 开关状态，映射成 active_only 传给后端。
+      const showActive = params.showActiveOnly === true
       delete params.showActiveOnly
+      if (showActive) {
+        params.active_only = true
+      }
 
       // 处理数组参数：转换为逗号分隔的字符串
       if (params.downloader_id && Array.isArray(params.downloader_id)) {
@@ -861,6 +867,17 @@ export default class extends mixins(TorrentBatchMixin) {
 
       const response = await getTorrentList(params)
 
+      if (needsActiveSnapshotRefresh(response, showActive)) {
+        // 206 表示后端尚无权威活动快照。保留现有 list/total，先刷新速度；完整快照
+        // 到达后由 loadActiveSpeed 触发一次受控重试，避免冷启动瞬间把列表清空。
+        this.activeListRetryPending = true
+        if (!activeSnapshotRetry) {
+          await this.loadActiveSpeed()
+        }
+        return
+      }
+      this.activeListRetryPending = false
+
       // 使用统一的响应处理工具
       const { list, total } = normalizePaginatedResponse<any>(response)
 
@@ -870,7 +887,8 @@ export default class extends mixins(TorrentBatchMixin) {
         checked: false
       }))
 
-      // 前端过滤"仅显示活动种子"：筛选出有速度的种子
+      // "仅显示活动种子"过滤已下沉到后端（active_only），此处直接使用后端返回的 list 与 total，
+      // 二者口径天然一致。sortedList 仅做"活动优先"排序，不再做客户端过滤。
       this.list = normalizedList
       this.total = total
     } catch (error) {
@@ -913,6 +931,7 @@ export default class extends mixins(TorrentBatchMixin) {
       name_like: '',
       downloader_id: [],  // 清空为空数组
       status: [],         // 清空为空数组
+      showActiveOnly: false,  // 活动种子开关一并重置（原重建 listQuery 漏掉此字段）
       sort_by: 'added_date',
       sort_order: 'desc'
     }
@@ -1995,11 +2014,13 @@ export default class extends mixins(TorrentBatchMixin) {
 
   /** 排序后的列表（活跃种子优先，始终生效） */
   private get sortedList(): any[] {
+    // 第4参数固定 false：活动种子过滤已下沉到后端 active_only，此处仅保留"活跃优先排序"，
+    // 关闭客户端二次过滤，避免与后端过滤叠加。
     return deriveVisibleTorrentList(
       this.list,
       this.activeSpeedMap,
       this.speedSnapshotReady,
-      this.listQuery.showActiveOnly === true
+      false
     )
   }
 
@@ -2009,7 +2030,7 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   /** 加载活跃种子实时速度和进度 */
-  private async loadActiveSpeed() {
+  private async loadActiveSpeed(): Promise<boolean> {
     const requestId = Date.now()
 
     try {
@@ -2028,10 +2049,26 @@ export default class extends mixins(TorrentBatchMixin) {
         this.activeSpeedMap = snapshot.activeSpeedMap
         this.speedSnapshotReady = true
         console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
+
+        if (
+          this.activeListRetryPending &&
+          this.listQuery.showActiveOnly &&
+          !this.activeListRetryInFlight
+        ) {
+          this.activeListRetryInFlight = true
+          try {
+            await this.getList(true)
+          } finally {
+            this.activeListRetryInFlight = false
+          }
+        }
+        return true
       }
+      return false
     } catch (e) {
       // 静默失败，不影响主流程
       console.debug(`[速度轮询] 请求 ${requestId} 失败:`, e)
+      return false
     }
   }
 

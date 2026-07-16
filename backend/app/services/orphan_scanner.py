@@ -109,18 +109,26 @@ class OrphanScanner:
         result = await scanner.scan(scan_type="manual", operator="admin")
     """
 
-    def __init__(self, app: Any = None, lease_handle: Any = None):
+    def __init__(
+        self,
+        app: Any = None,
+        lease_handle: Any = None,
+        sync_session_factory: Any = None,
+        async_session_factory: Any = None,
+    ):
         self.app = app
         self.lease_handle = lease_handle
+        # 生产默认使用全局工厂；测试可显式注入临时 session factory，避免触碰
+        # config/app.db。工厂在实例创建时固定，便于行为测试和后台任务复用。
+        self._sync_session_factory = sync_session_factory or SessionLocal
+        self._async_session_factory = async_session_factory or AsyncSessionLocal
         # {normalized_external_save_path: {normalized_abs_file_path, ...}}  期望文件集合
         self._expected_files: Dict[str, Set[str]] = {}
         self._manifest_scan_paths: List[Tuple[str, Optional[str]]] = []
         # inode 去重集合（跨平台 (st_dev, st_ino)）
         self._seen_inodes: Set[Tuple[int, int]] = set()
 
-    async def scan(
-        self, scan_type: str = "manual", operator: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def scan(self, scan_type: str = "manual", operator: Optional[str] = None) -> Dict[str, Any]:
         """主扫描入口（异步）。
 
         Args:
@@ -151,25 +159,19 @@ class OrphanScanner:
 
             # fail-closed：无扫描路径不是「0 孤儿」，而是失败
             if not scan_paths:
-                raise OrphanScanIncompleteError(
-                    "未收集到任何扫描路径（无下载器清单或路径映射）"
-                )
+                raise OrphanScanIncompleteError("未收集到任何扫描路径（无下载器清单或路径映射）")
 
             # 3. 构建种子文件清单（call_downloader_api SYNC lane）
             await self._build_torrent_file_map()
             if self._manifest_scan_paths:
                 scan_paths = self._manifest_scan_paths
             total_expected = sum(len(v) for v in self._expected_files.values())
-            logger.info(
-                f"[孤儿扫描 {scan_id}] 种子文件清单构建完成，共 {total_expected} 个期望文件"
-            )
+            logger.info(f"[孤儿扫描 {scan_id}] 种子文件清单构建完成，共 {total_expected} 个期望文件")
 
             # 4. 遍历扫描路径（to_thread，文件系统遍历是同步阻塞操作）
             orphans = await asyncio.to_thread(self._walk_all_roots, scan_paths)
             total_orphan_size = sum(o.file_size for o in orphans)
-            logger.info(
-                f"[孤儿扫描 {scan_id}] 扫描完成，发现 {len(orphans)} 个孤儿文件"
-            )
+            logger.info(f"[孤儿扫描 {scan_id}] 扫描完成，发现 {len(orphans)} 个孤儿文件")
 
             # 5. 明细、生命周期与 completed 状态在同一事务中落地。
             total_files_scanned = total_expected + len(orphans)
@@ -186,9 +188,7 @@ class OrphanScanner:
             )
 
             # 6. 通知（total_orphans > 0 时创建，失败不回滚成功扫描）
-            await self._notify_scan_completed(
-                scan_id, scan_type, len(orphans), total_orphan_size
-            )
+            await self._notify_scan_completed(scan_id, scan_type, len(orphans), total_orphan_size)
 
             return {
                 "scan_id": scan_id,
@@ -208,14 +208,8 @@ class OrphanScanner:
 
     def _assert_store_available(self) -> None:
         """fail-closed：app.state.store 必须存在且非 None。"""
-        if (
-            not self.app
-            or not hasattr(self.app.state, "store")
-            or self.app.state.store is None
-        ):
-            raise OrphanScanIncompleteError(
-                "app.state.store 未初始化，无法获取下载器清单"
-            )
+        if not self.app or not hasattr(self.app.state, "store") or self.app.state.store is None:
+            raise OrphanScanIncompleteError("app.state.store 未初始化，无法获取下载器清单")
 
     # ==================== 路径收集 ====================
 
@@ -231,11 +225,9 @@ class OrphanScanner:
         Returns:
             [(external_path, downloader_id), ...] 去重后的列表（稳定排序）
         """
-        db = SessionLocal()
+        db = self._sync_session_factory()
         try:
-            path_set: Dict[
-                str, Optional[str]
-            ] = {}  # {normalized_external_path: downloader_id}
+            path_set: Dict[str, Optional[str]] = {}  # {normalized_external_path: downloader_id}
 
             # 来源 1: 种子 save_path
             torrents = db.execute(
@@ -253,9 +245,7 @@ class OrphanScanner:
                 # 获取下载器配置（缓存）
                 if downloader_id not in downloader_cache:
                     dl = db.execute(
-                        select(BtDownloaders).where(
-                            BtDownloaders.downloader_id == downloader_id
-                        )
+                        select(BtDownloaders).where(BtDownloaders.downloader_id == downloader_id)
                     ).scalar_one_or_none()
                     downloader_cache[downloader_id] = dl
 
@@ -266,11 +256,7 @@ class OrphanScanner:
 
             # 来源 2: 下载器 path_mapping JSON 的 external 字段
             downloaders = (
-                db.execute(
-                    select(BtDownloaders).where(
-                        BtDownloaders.enabled.is_(True), BtDownloaders.dr == 0
-                    )
-                )
+                db.execute(select(BtDownloaders).where(BtDownloaders.enabled.is_(True), BtDownloaders.dr == 0))
                 .scalars()
                 .all()
             )
@@ -282,16 +268,12 @@ class OrphanScanner:
                         path_set[_normalize_path(ep)] = dl.downloader_id
 
             # 稳定排序（结果与输入顺序无关）
-            return sorted(
-                [(path, did) for path, did in path_set.items()], key=lambda x: x[0]
-            )
+            return sorted([(path, did) for path, did in path_set.items()], key=lambda x: x[0])
 
         finally:
             db.close()
 
-    def _convert_to_external(
-        self, internal_path: str, downloader: Optional[BtDownloaders]
-    ) -> str:
+    def _convert_to_external(self, internal_path: str, downloader: Optional[BtDownloaders]) -> str:
         """内部路径转外部路径（使用下载器的路径映射服务）。
 
         fail-closed：路径映射服务存在但转换抛异常时，向上抛出（不静默返回原路径）。
@@ -305,9 +287,7 @@ class OrphanScanner:
                 return mapping_service.internal_to_external(internal_path)
         return internal_path
 
-    def _extract_external_paths_from_mapping(
-        self, downloader: BtDownloaders
-    ) -> List[str]:
+    def _extract_external_paths_from_mapping(self, downloader: BtDownloaders) -> List[str]:
         """从下载器 path_mapping JSON 解析 external 路径列表。
 
         注意：JSON 解析失败返回空列表（path_mapping 为空/无效是合法状态，不触发 fail-closed）。
@@ -319,9 +299,7 @@ class OrphanScanner:
             mappings = config.get("mappings", [])
             return [m.get("external", "") for m in mappings if m.get("external")]
         except (json.JSONDecodeError, AttributeError) as e:
-            logger.warning(
-                f"解析 path_mapping JSON 失败 downloader={downloader.downloader_id}: {e}"
-            )
+            logger.warning(f"解析 path_mapping JSON 失败 downloader={downloader.downloader_id}: {e}")
             return []
 
     # ==================== 种子文件清单构建 ====================
@@ -343,9 +321,7 @@ class OrphanScanner:
         except ManifestBuildError as exc:
             raise OrphanScanIncompleteError(str(exc)) from exc
         self._expected_files = {"__global__": set(snapshot.expected_paths)}
-        self._manifest_scan_paths = [
-            (path, downloader_id) for path, downloader_id in snapshot.scan_roots
-        ]
+        self._manifest_scan_paths = [(path, downloader_id) for path, downloader_id in snapshot.scan_roots]
 
     async def _fetch_torrent_files(
         self, downloader_id: str, downloader_type: str, client: Any, torrent_hash: str
@@ -400,9 +376,7 @@ class OrphanScanner:
         # 解析返回（qB/TR 客户端返回格式不同）
         file_list = self._parse_torrent_files_result(downloader_type, result)
         if not file_list:
-            raise OrphanScanIncompleteError(
-                f"种子 {torrent_hash[:8]} 文件清单为空（下载器 {downloader_id}）"
-            )
+            raise OrphanScanIncompleteError(f"种子 {torrent_hash[:8]} 文件清单为空（下载器 {downloader_id}）")
         return file_list
 
     @staticmethod
@@ -453,9 +427,7 @@ class OrphanScanner:
 
     # ==================== 文件系统遍历 ====================
 
-    def _walk_all_roots(
-        self, scan_paths: List[Tuple[str, Optional[str]]]
-    ) -> List[OrphanFileItem]:
+    def _walk_all_roots(self, scan_paths: List[Tuple[str, Optional[str]]]) -> List[OrphanFileItem]:
         """遍历所有扫描根目录（同步方法，由 to_thread 调用）。
 
         fail-closed：扫描根不存在 → 抛 OrphanScanIncompleteError（不静默跳过返回空）。
@@ -468,9 +440,7 @@ class OrphanScanner:
             if not os.path.isdir(root_path):
                 raise OrphanScanIncompleteError(f"扫描根不存在或非目录: {root_path}")
 
-            orphans.extend(
-                self._walk_scan_root(root_path, downloader_id, exclude_patterns)
-            )
+            orphans.extend(self._walk_scan_root(root_path, downloader_id, exclude_patterns))
 
         return orphans
 
@@ -492,9 +462,7 @@ class OrphanScanner:
         for values in self._expected_files.values():
             expected.update(values)
 
-        quarantine_dir_name = getattr(
-            settings, "ORPHAN_QUARANTINE_DIR_NAME", ".btdeck_quarantine"
-        )
+        quarantine_dir_name = getattr(settings, "ORPHAN_QUARANTINE_DIR_NAME", ".btdeck_quarantine")
 
         try:
             for file_path, stat_info in self._iter_regular_files(root, quarantine_dir_name):
@@ -521,9 +489,7 @@ class OrphanScanner:
                 # 路径逃逸保护：文件必须在扫描根目录下
                 try:
                     if os.path.commonpath([root_path, abs_path]) != root_path:
-                        logger.warning(
-                            f"[孤儿扫描] 路径逃逸授权扫描根，跳过: {abs_path}"
-                        )
+                        logger.warning(f"[孤儿扫描] 路径逃逸授权扫描根，跳过: {abs_path}")
                         continue
                 except ValueError:
                     # 不同驱动器（Windows）commonpath 抛 ValueError
@@ -568,9 +534,7 @@ class OrphanScanner:
                         try:
                             stat_info = os.lstat(entry.path)
                         except OSError as exc:
-                            raise OrphanScanIncompleteError(
-                                f"获取目录项信息失败 {entry.path}: {exc}"
-                            ) from exc
+                            raise OrphanScanIncompleteError(f"获取目录项信息失败 {entry.path}: {exc}") from exc
                         if stat.S_ISDIR(stat_info.st_mode):
                             if entry.name != excluded_dir_name:
                                 stack.append(entry.path)
@@ -633,23 +597,17 @@ class OrphanScanner:
             for o in orphans
         ]
         if db is not None:
-            await OrphanLifecycleService(db).reconcile_candidates(
-                scan_id, scan_time, orphan_dicts, commit=False
-            )
+            await OrphanLifecycleService(db).reconcile_candidates(scan_id, scan_time, orphan_dicts, commit=False)
         else:
-            async with AsyncSessionLocal() as db:
-                await OrphanLifecycleService(db).reconcile_candidates(
-                    scan_id, scan_time, orphan_dicts
-                )
+            async with self._async_session_factory() as db:
+                await OrphanLifecycleService(db).reconcile_candidates(scan_id, scan_time, orphan_dicts)
 
-    async def _notify_scan_completed(
-        self, scan_id: str, scan_type: str, orphan_count: int, orphan_size: int
-    ) -> None:
+    async def _notify_scan_completed(self, scan_id: str, scan_type: str, orphan_count: int, orphan_size: int) -> None:
         """扫描完成通知（total_orphans > 0 时创建，失败不回滚成功扫描）。"""
         try:
             from app.services.orphan_notification import notify_scan_completed
 
-            async with AsyncSessionLocal() as db:
+            async with self._async_session_factory() as db:
                 await notify_scan_completed(
                     db=db,
                     scan_id=scan_id,
@@ -676,7 +634,7 @@ class OrphanScanner:
         total_orphan_size: int,
     ) -> None:
         """原子写入明细、候选生命周期和 completed 批次状态。"""
-        async with AsyncSessionLocal() as db:
+        async with self._async_session_factory() as db:
             records = [
                 OrphanFile(
                     scan_id=scan_id,
@@ -707,7 +665,7 @@ class OrphanScanner:
         self, scan_id: str, scan_time: datetime, scan_type: str, operator: Optional[str]
     ) -> None:
         """创建扫描批次记录（status=running）"""
-        async with AsyncSessionLocal() as db:
+        async with self._async_session_factory() as db:
             record = OrphanScanResult(
                 scan_id=scan_id,
                 scan_time=scan_time,
@@ -719,9 +677,7 @@ class OrphanScanner:
             async with admission_controller.db_write_scope():
                 await db.commit()
 
-    async def _save_orphan_files(
-        self, scan_id: str, orphans: List[OrphanFileItem]
-    ) -> None:
+    async def _save_orphan_files(self, scan_id: str, orphans: List[OrphanFileItem]) -> None:
         """批量写入孤儿文件记录（db_write_scope 串行化 + 分批提交）
 
         只有完整成功的扫描才调用此方法（scan() 在无异常时才走到这里）。
@@ -730,7 +686,7 @@ class OrphanScanner:
             return
 
         batch_size = settings.SYNC_DB_COMMIT_BATCH_SIZE
-        async with AsyncSessionLocal() as db:
+        async with self._async_session_factory() as db:
             for i in range(0, len(orphans), batch_size):
                 batch = orphans[i : i + batch_size]
                 records = [
@@ -756,7 +712,7 @@ class OrphanScanner:
         total_orphan_size: int,
     ) -> None:
         """更新批次状态为 completed"""
-        async with AsyncSessionLocal() as db:
+        async with self._async_session_factory() as db:
             await db.execute(
                 update(OrphanScanResult)
                 .where(OrphanScanResult.scan_id == scan_id)
@@ -773,7 +729,7 @@ class OrphanScanner:
 
     async def _fail_scan(self, scan_id: str, error_msg: str) -> None:
         """更新批次状态为 failed"""
-        async with AsyncSessionLocal() as db:
+        async with self._async_session_factory() as db:
             await db.execute(
                 update(OrphanScanResult)
                 .where(OrphanScanResult.scan_id == scan_id)

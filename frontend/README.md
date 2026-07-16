@@ -65,23 +65,20 @@ npm run build
 # ESLint 检查
 npm run lint
 
-# ESLint 自动修复
-npm run lint:fix
+# TypeScript 严格检查
+npm run typecheck
 ```
 
 ### 运行测试
 
 ```bash
-# 单元测试
+# 全部 Jest 回归（纯函数 + Vue 组件 + 性能契约）
 npm run test:unit
 
-# 集成测试
-npm run test:integration
+# 仅组件测试
+npm run test:components
 
-# 端到端测试 (Playwright)
-npm run test:playwright
-
-# 运行所有测试
+# 类型检查 + 全部 Jest 回归
 npm run test:all
 ```
 

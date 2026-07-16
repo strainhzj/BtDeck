@@ -62,6 +62,7 @@ logs/
 
 # Testing
 .pytest_cache/
+.pytest-runtime/
 .coverage
 htmlcov/
 .tox/

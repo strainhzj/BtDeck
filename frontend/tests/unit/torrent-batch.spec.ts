@@ -23,7 +23,8 @@ import {
   buildDeleteConfirmMessage,
   parseDeleteTaskResult,
   parseSyncDeleteResponse,
-  buildSpeedSnapshot
+  buildSpeedSnapshot,
+  needsActiveSnapshotRefresh
 } from '@/views/torrents/utils/torrentBatch'
 
 // ============ Bug#1 / Bug#4：分组与删除计数契约 ============
@@ -773,6 +774,19 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     expect(r.updates).toEqual([])
   })
 
+  it('code=206（部分下载器失败）→ ready=false，视图保留旧速度快照', () => {
+    const res = {
+      code: '206',
+      status: 'partial',
+      msg: '部分失败',
+      data: [{ hash: 'partial', downloadSpeed: 10, uploadSpeed: 0, progress: 5 }]
+    }
+    const r = buildSpeedSnapshot(res)
+    expect(r.ready).toBe(false)
+    expect(r.activeSpeedMap).toBeNull()
+    expect(r.updates).toEqual([])
+  })
+
   it('data 为 null → ready=false', () => {
     const res = { code: '200', status: 'success', msg: 'ok', data: null }
     const r = buildSpeedSnapshot(res)
@@ -810,6 +824,32 @@ describe('commit 466e18c - buildSpeedSnapshot 速度快照构建', () => {
     const map = r.activeSpeedMap as Record<string, any>
     expect(map['h1']).toEqual({ downloadSpeed: 0, uploadSpeed: 0, progress: 0 })
     expect(r.updates[0]).toEqual({ hash: 'h1', downloadSpeed: 0, uploadSpeed: 0, progress: 0 })
+  })
+})
+
+describe('active_only 206 前端握手', () => {
+  const partialResponse = {
+    code: '206',
+    status: 'partial',
+    msg: 'snapshot not ready',
+    data: { activeSnapshotReady: false }
+  }
+
+  it('活动筛选收到显式 206/ready=false 时要求刷新并重试', () => {
+    expect(needsActiveSnapshotRefresh(partialResponse, true)).toBe(true)
+  })
+
+  it('非活动列表不会被同一响应误触发', () => {
+    expect(needsActiveSnapshotRefresh(partialResponse, false)).toBe(false)
+  })
+
+  it('200 权威空集和无 ready 标志的 206 都不触发', () => {
+    expect(needsActiveSnapshotRefresh({
+      code: '200', status: 'success', msg: 'ok', data: { activeSnapshotReady: true }
+    }, true)).toBe(false)
+    expect(needsActiveSnapshotRefresh({
+      code: '206', status: 'partial', msg: 'other partial', data: {}
+    }, true)).toBe(false)
   })
 })
 

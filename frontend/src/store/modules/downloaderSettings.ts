@@ -355,10 +355,11 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
 
     // 根据类型过滤模板
     getTemplatesByType: (state) => (downloaderType: 'qbittorrent' | 'transmission') => {
+      const downloaderTypeValue = downloaderType === 'qbittorrent' ? 0 : 1
       return state.templates.filter(template => {
         return (
-          template.downloader_type === downloaderType ||
-          template.downloader_type === 'both'
+          template.downloader_type === downloaderTypeValue ||
+          template.downloader_type === 2
         )
       })
     },

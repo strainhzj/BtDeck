@@ -1,5 +1,5 @@
 import Vue from 'vue'
-import Router from 'vue-router'
+import Router, { RawLocation, Route } from 'vue-router'
 import Layout from '@/layout/index.vue'
 
 Vue.use(Router)
@@ -274,32 +274,29 @@ const router = new Router({
 // 修复Vue Router 3.x中router.push的Promise返回值问题
 // 参考：https://github.com/vuejs/vue-router/issues/2881
 const originalPush = router.push
-router.push = function push(location: any, onComplete?: Function, onAbort?: Function) {
-  // 当提供回调参数时，Vue Router 3.x返回undefined（非Promise模式）
-  // 这种情况下直接调用原方法，不期望返回值
-  if (typeof onComplete === 'function' || typeof onAbort === 'function') {
-    return originalPush.call(this, location, onComplete, onAbort)
+const pushWithCallbacks = originalPush.bind(router) as (
+  location: RawLocation,
+  onComplete?: (route: Route) => void,
+  onAbort?: (error: Error) => void
+) => void
+const pushAsPromise = originalPush.bind(router) as (location: RawLocation) => Promise<Route>
+
+router.push = ((
+  location: RawLocation,
+  onComplete?: (route: Route) => void,
+  onAbort?: (error: Error) => void
+) => {
+  if (onComplete || onAbort) {
+    pushWithCallbacks(location, onComplete, onAbort)
+    return
   }
 
-  // 只在没有回调参数时才期望返回Promise（Promise模式）
-  const result = originalPush.call(this, location)
-
-  // 防御性检查：确保返回的是Promise
-  // 在某些边缘情况下，即使没有回调也可能返回undefined
-  if (!result || typeof result.then !== 'function') {
-    console.warn('[Router.push] Expected Promise but got:', result, 'Location:', location)
-    return Promise.resolve()
-  }
-
-  // 正常的Promise链处理
-  return result.catch((err: Error) => {
-    // 忽略 NavigationDuplicated 错误（用户点击相同路由）
+  return pushAsPromise(location).catch((err: Error) => {
     if (err.name === 'NavigationDuplicated') {
-      return Promise.resolve()
+      return router.currentRoute
     }
-    // 其他错误正常抛出
-    return Promise.reject(err)
+    throw err
   })
-}
+}) as Router['push']
 
 export default router

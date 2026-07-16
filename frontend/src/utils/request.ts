@@ -1,5 +1,5 @@
-import axios from 'axios'
-import Message from 'element-ui/packages/message'
+import axios, { AxiosRequestConfig } from 'axios'
+import { Message } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
 import {
   SUCCESS_CODES,
@@ -14,6 +14,18 @@ const service = axios.create({
   baseURL: process.env.VUE_APP_BASE_API,
   timeout: 20000
 })
+
+/** Axios 响应拦截器已解包 response.data；此类型让调用方看到真实业务响应。 */
+export interface ApiEnvelope<T = unknown> {
+  status: string
+  msg: string
+  code: string
+  data: T
+}
+
+export interface RequestClient {
+  <T = ApiEnvelope<unknown>>(config: AxiosRequestConfig): Promise<T>
+}
 
 /** 防止并发401重复弹窗/跳转 */
 let isRedirectingToLogin = false
@@ -146,4 +158,4 @@ service.interceptors.response.use(
   }
 )
 
-export default service
+export default service as unknown as RequestClient

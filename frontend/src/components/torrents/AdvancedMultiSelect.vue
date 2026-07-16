@@ -250,8 +250,10 @@ export default class AdvancedMultiSelect extends Vue {
   @Prop({ default: 200 }) listHeight!: number
 
   // Data
-  activeMode: 'selector' | 'input' = this.defaultMode
-  selectedMode: 'include' | 'exclude' = this.defaultSelectedMode
+  // 不在字段初始化阶段读取 props；此时 vue-class-component 尚未完成 props 代理，
+  // undefined 字段不会进入 Vue 2 响应式 data，模板因此会持续告警。
+  activeMode: 'selector' | 'input' = 'selector'
+  selectedMode: 'include' | 'exclude' = 'include'
   selectedItems: SelectOption[] = []
   searchKeyword = ''
   inputText = ''
@@ -304,7 +306,10 @@ export default class AdvancedMultiSelect extends Vue {
     const keyword = this.searchKeyword.toLowerCase().trim()
     const result = this.options.filter(option => {
       const label = this.getOptionLabel(option).toLowerCase()
-      return label.includes(keyword)
+      const searchableMetadata = [option.value, option.type, option.category]
+        .filter(value => value !== undefined && value !== null)
+        .map(value => String(value).toLowerCase())
+      return label.includes(keyword) || searchableMetadata.some(value => value.includes(keyword))
     }).slice(0, this.maxVisibleItems)
 
     // 更新缓存
@@ -341,6 +346,11 @@ export default class AdvancedMultiSelect extends Vue {
   }
 
   // Lifecycle
+  created() {
+    this.activeMode = this.defaultMode
+    this.selectedMode = this.defaultSelectedMode
+  }
+
   mounted() {
     this.updateSelectedItems(this.value)
     this.updateVirtualScrollStatus()
@@ -366,7 +376,7 @@ export default class AdvancedMultiSelect extends Vue {
   }
 
   private updateVirtualScrollStatus() {
-    this.useVirtualScroll = this.options.length > this.virtualScrollThreshold
+    this.useVirtualScroll = this.options.length >= this.virtualScrollThreshold
   }
 
   private getAllSeparators(): string[] {

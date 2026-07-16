@@ -4,10 +4,10 @@ import re
 import uuid
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set, Tuple
 
 import bencodepy
-from sqlalchemy import and_, or_, asc, desc
+from sqlalchemy import Column, MetaData, String, Table, and_, or_, asc, desc
 from sqlalchemy.orm import Session
 
 from app.torrents.models import (
@@ -59,6 +59,7 @@ def get_torrent_infos(
     sort_by: Optional[str] = None,
     sort_order: Optional[str] = None,
     tracker: Optional[str] = None,
+    active_keys: Optional[Set[Tuple[str, str]]] = None,
 ) -> Dict[str, Any]:
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
     # 构建基础查询（排除回收站中的种子：dr=0 且 deleted_at=NULL）
@@ -184,7 +185,9 @@ def get_torrent_infos(
             for s in statuses:
                 if s == "error":
                     # error 状态特殊处理
-                    status_conditions.append(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True)))
+                    status_conditions.append(
+                        or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+                    )
                 else:
                     status_conditions.append(TorrentInfo.status == s)
 
@@ -192,26 +195,64 @@ def get_torrent_infos(
                 query = query.filter(or_(*status_conditions))
                 count_query = count_query.filter(or_(*status_conditions))
 
-    # 获取总数
-    total = count_query.count()
+    active_table = None
+    active_connection = None
+    try:
+        # 活动集合可能远超 SQLite 绑定参数上限。将键通过 executemany 写入连接级 TEMP 表，
+        # 再让列表与计数查询联接同一张表；每次 INSERT 只使用两个绑定参数。
+        if active_keys is not None:
+            if not active_keys:
+                return {"total": 0, "data": []}
 
-    # 处理排序
-    if sort_by:
-        sort_column = getattr(TorrentInfo, sort_by, None)
-        if sort_column is not None:
-            if sort_order and sort_order.lower() == "asc":
-                query = query.order_by(asc(sort_column))
-            else:
-                query = query.order_by(desc(sort_column))
-    else:
-        # 默认按添加时间倒序排序
-        query = query.order_by(desc(TorrentInfo.added_date))
+            active_connection = db.connection()
+            active_table = Table(
+                f"active_torrent_keys_{uuid.uuid4().hex}",
+                MetaData(),
+                Column("downloader_id", String, primary_key=True),
+                Column("torrent_hash", String, primary_key=True),
+                prefixes=["TEMPORARY"],
+            )
+            active_table.create(bind=active_connection)
+            active_connection.execute(
+                active_table.insert(),
+                [
+                    {"downloader_id": downloader_id, "torrent_hash": torrent_hash}
+                    for downloader_id, torrent_hash in active_keys
+                ],
+            )
+            join_condition = and_(
+                TorrentInfo.downloader_id == active_table.c.downloader_id,
+                TorrentInfo.hash == active_table.c.torrent_hash,
+            )
+            query = query.join(active_table, join_condition)
+            count_query = count_query.join(active_table, join_condition)
 
-    # 分页查询
-    query_result_list = query.offset(skip).limit(limit).all()
-    data = [convert_to_vo_with_trackers(db, torrent) for torrent in query_result_list]
+        # 获取总数
+        total = count_query.count()
 
-    return {"total": total, "data": data}
+        # 处理排序
+        if sort_by:
+            sort_column = getattr(TorrentInfo, sort_by, None)
+            if sort_column is not None:
+                if sort_order and sort_order.lower() == "asc":
+                    query = query.order_by(asc(sort_column))
+                else:
+                    query = query.order_by(desc(sort_column))
+        else:
+            # 默认按添加时间倒序排序
+            query = query.order_by(desc(TorrentInfo.added_date))
+
+        # 分页查询
+        query_result_list = query.offset(skip).limit(limit).all()
+        data = [convert_to_vo_with_trackers(db, torrent) for torrent in query_result_list]
+
+        return {"total": total, "data": data}
+    finally:
+        if active_table is not None and active_connection is not None:
+            try:
+                active_table.drop(bind=active_connection)
+            except Exception:
+                logger.exception("清理活动种子临时表失败: %s", active_table.name)
 
 
 def get_torrent_infos_legacy(
@@ -233,6 +274,7 @@ def get_torrent_infos_legacy(
     sort_by: Optional[str] = None,
     sort_order: Optional[str] = None,
     tracker: Optional[str] = None,
+    active_keys: Optional[Set[Tuple[str, str]]] = None,
 ) -> List[TorrentInfo]:
     """通用查询方法（旧版本，保持兼容性），支持多种过滤条件和排序"""
     result = get_torrent_infos(
@@ -254,6 +296,7 @@ def get_torrent_infos_legacy(
         sort_by=sort_by,
         sort_order=sort_order,
         tracker=tracker,
+        active_keys=active_keys,
     )
     return result["data"]
 

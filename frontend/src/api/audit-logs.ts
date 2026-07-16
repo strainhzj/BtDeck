@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { ApiEnvelope } from '@/utils/request'
 
 /**
  * 审计日志查询请求
@@ -124,7 +125,7 @@ export interface AuditLogArchiveResponse {
  * 查询审计日志
  */
 export function queryAuditLogs(params: AuditLogQueryRequest) {
-  return request<AuditLogQueryResponse>({
+  return request<ApiEnvelope<AuditLogQueryResponse>>({
     url: '/audit-logs/query',
     method: 'post',
     data: params
@@ -135,7 +136,7 @@ export function queryAuditLogs(params: AuditLogQueryRequest) {
  * 获取审计日志统计
  */
 export function getAuditLogStatistics(params?: { start_time?: string, end_time?: string }) {
-  return request<AuditLogStatisticsResponse>({
+  return request<ApiEnvelope<AuditLogStatisticsResponse>>({
     url: '/audit-logs/statistics',
     method: 'get',
     params
@@ -146,7 +147,7 @@ export function getAuditLogStatistics(params?: { start_time?: string, end_time?:
  * 获取操作类型列表
  */
 export function getOperationTypes() {
-  return request<OperationTypesResponse>({
+  return request<ApiEnvelope<OperationTypesResponse>>({
     url: '/audit-logs/operation-types',
     method: 'get'
   })
@@ -156,7 +157,7 @@ export function getOperationTypes() {
  * 导出审计日志
  */
 export function exportAuditLogs(data: AuditLogExportRequest) {
-  return request<AuditLogExportResponse>({
+  return request<ApiEnvelope<AuditLogExportResponse>>({
     url: '/audit-logs/export',
     method: 'post',
     data
@@ -167,7 +168,7 @@ export function exportAuditLogs(data: AuditLogExportRequest) {
  * 归档审计日志
  */
 export function archiveAuditLogs(data: AuditLogArchiveRequest) {
-  return request<AuditLogArchiveResponse>({
+  return request<ApiEnvelope<AuditLogArchiveResponse>>({
     url: '/audit-logs/archive',
     method: 'post',
     data

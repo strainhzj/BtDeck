@@ -1,5 +1,42 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-16 - 全栈回归测试质量整改（P0）
+
+**任务 ID**: `v1.0.6.12`
+**分支**: dev
+**方法**: 分别审查前后端回归质量，按用户要求由子代理复核审查结论与整改方案，再按“数据库隔离 → 活动快照语义 → 前后端接线测试 → Jest/TypeScript → 根 CI”实施。
+
+### 完成内容
+
+- pytest 在导入应用前强制切换到 `.pytest-runtime/process-<pid>/app.db`，执行真实 Alembic；拒绝指向 `backend/config/app.db`，退出时释放 engine 并清理运行目录。
+- `OrphanScanner` 支持注入同步/异步 session factory，测试不再隐式使用生产全局 Session。
+- 活动种子缓存显式区分 `not_ready/expired/partial/ready_empty/ready`；冷启动、过期或部分下载器失败返回 `206`，权威空集仍返回 `200`。
+- `active_only` 只消费完整快照；大集合使用每请求 SQLite TEMP 表联接列表与计数查询，避免绑定参数上限和 OR-IN 膨胀。
+- 两个种子视图收到 `206` 时保留现有列表，刷新完整速度快照后受控重试；后端统一返回 `list/total/pageSize` 和快照元数据。
+- Jest 恢复 Vue 组件与性能测试收集，修复 `AdvancedMultiSelect` 属性初始化/虚拟滚动边界/搜索行为；TypeScript 请求响应模型补齐。
+- 新增根 `.github/workflows/regression.yml`，统一执行后端架构检查、pytest+覆盖率，以及前端 typecheck、完整 Jest 和生产构建。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 后端全量 pytest + coverage | ✅ 2089 passed, 1 skipped；40.58%（阈值 40%） |
+| 活动筛选专项 | ✅ 21 passed（含 600 键低变量限制与 206 握手） |
+| 真实业务数据库隔离 | ✅ 两轮全量测试前后 SHA256/mtime 完全不变 |
+| 后端格式/静态门禁 | ✅ 变更文件 black/flake8；架构检查；git diff --check |
+| 前端 Jest | ✅ 4 suites / 142 tests |
+| 前端 TypeScript | ✅ `tsc --noEmit` |
+| 前端生产构建 | ✅ 通过（仅既有 Sass/资源 warning） |
+| 根 init.sh | ✅ Git Bash 下退出 0（其 PATH 无 Node 的警告由独立前端门禁覆盖） |
+
+### 已知基线债务（未扩大本次范围）
+
+- `mypy app` 当前仍有 1534 个跨 123 个既有文件的错误，根 CI 暂未启用该全量门禁。
+- 全量 `flake8 app tests` 仍会命中多个既有测试文件；本次修改文件为 0 错误。
+- 约 248 个历史 Vue SFC 语义类型错误仍待专项治理；当前严格 `tsc` 覆盖 `.ts/.tsx`，SFC 由 webpack 与 vue-jest 编译/行为测试覆盖。
+
+---
+
 ## 2026-07-12 - v1.0.6 孤儿文件清理安全闭环修复
 
 **任务 ID**: `v1.0.6.11`

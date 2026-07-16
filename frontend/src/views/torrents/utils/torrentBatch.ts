@@ -272,10 +272,13 @@ export function sortByActive(
 
 /**
  * 根据实时速度快照派生当前可见列表。
- * snapshotReady=false 时不启用“只看活动”过滤，避免首轮/失败快照把列表清空。
- * 空快照（activeSpeedMap 为空对象）时同样不过滤：后端在无在线下载器/超时/暂无活动种子时
- * 返回 code=200 data=[]，此时 snapshotReady 仍为 true，若照常过滤会把列表全部清空
- * （误判“无活动”）。空快照语义上是“拿不到速度数据”而非“确认所有种子速度为 0”。
+ *
+ * 注意：本函数历史上承担两个职责——
+ *   1. sortByActive：活跃种子优先排序（始终生效）。
+ *   2. showActiveOnly 客户端过滤（按 dl>0 || ul>0 筛选）。
+ * "仅显示活动种子"已下沉为后端 active_only 原生过滤（list/total 口径一致），
+ * 调用方现在统一传 showActiveOnly=false，关闭第 2 项职责，仅保留排序。
+ * 下方过滤分支作为能力保留（不删除），以防未来需要前端兜底时复用。
  */
 export function deriveVisibleTorrentList(
   sourceList: any[],
@@ -340,6 +343,27 @@ export interface SpeedSnapshotResult {
   count: number
 }
 
+interface ActiveSnapshotResponseData {
+  activeSnapshotReady?: boolean
+}
+
+/**
+ * 判断活动列表响应是否要求先刷新速度快照。只有显式的 206 + ready=false 才触发，
+ * 避免把其他业务 206 或普通列表请求误判为重试信号。
+ */
+export function needsActiveSnapshotRefresh(
+  res: ApiResponse<ActiveSnapshotResponseData> | null | undefined,
+  activeOnly: boolean
+): boolean {
+  return Boolean(
+    activeOnly &&
+    res &&
+    res.code === '206' &&
+    res.data &&
+    res.data.activeSnapshotReady === false
+  )
+}
+
 /**
  * 从 active-torrents 接口响应计算速度快照状态（纯函数，无副作用）。
  *
@@ -357,7 +381,7 @@ export interface SpeedSnapshotResult {
  * @returns 快照计算结果
  */
 export function buildSpeedSnapshot(
-  res: ApiResponse<ActiveTorrentSpeedInput[]> | null | undefined
+  res: ApiResponse<ActiveTorrentSpeedInput[] | null> | null | undefined
 ): SpeedSnapshotResult {
   if (!res || res.code !== '200' || !res.data) {
     return { ready: false, activeSpeedMap: null, updates: [], count: 0 }

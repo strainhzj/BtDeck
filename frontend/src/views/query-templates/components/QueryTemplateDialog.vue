@@ -118,6 +118,7 @@ export default class QueryTemplateDialog extends Vue {
     name_like: '',
     category_like: '',
     tags_like: '',
+    showActiveOnly: false,  // 活动种子开关（H2修复：编辑保存不覆写，保持存取对称）
     sort_by: 'added_date',
     sort_order: 'desc' as 'asc' | 'desc'
   }
@@ -161,6 +162,8 @@ export default class QueryTemplateDialog extends Vue {
         this.simpleForm.name_like = conditions.listQuery.name_like || ''
         this.simpleForm.category_like = conditions.listQuery.category_like || ''
         this.simpleForm.tags_like = conditions.listQuery.tags_like || ''
+        // H2修复：回填活动种子开关，避免编辑保存时被 buildConditions 覆写为 false
+        this.simpleForm.showActiveOnly = conditions.listQuery.showActiveOnly ?? false
         this.simpleForm.sort_by = conditions.listQuery.sort_by || 'added_date'
         this.simpleForm.sort_order = conditions.listQuery.sort_order || 'desc'
       }
@@ -177,6 +180,7 @@ export default class QueryTemplateDialog extends Vue {
         name_like: '',
         category_like: '',
         tags_like: '',
+        showActiveOnly: false,
         sort_by: 'added_date',
         sort_order: 'desc'
       }
@@ -194,7 +198,7 @@ export default class QueryTemplateDialog extends Vue {
           tags_like: this.simpleForm.tags_like,
           downloader_id: [],
           status: [...this.simpleForm.status],
-          showActiveOnly: false,
+          showActiveOnly: this.simpleForm.showActiveOnly,
           sort_by: this.simpleForm.sort_by,
           sort_order: this.simpleForm.sort_order
         }

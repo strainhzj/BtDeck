@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-10",
+  "last_updated": "2026-07-16",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -1022,6 +1022,30 @@
             "frontend/src/views/orphan-files/index.vue"
           ],
           "evidence": "真实下载器 inventory 成为权威 manifest；手动/自动清理均绑定最新 scan_id、授权扫描根和完整 size/mtime/dev/inode 身份；同文件系统私有 UUID 目录原子隔离，purge 先原子 tombstone 后复核删除；扫描明细+候选对账+completed 单事务；统一维护 lease 含心跳和逐文件所有权检查；操作 journal 支持崩溃恢复；每日 purge + 每小时通知补偿任务。相关回归 152 passed/1 skipped；全量后端 2068 passed/1 skipped；flake8、git diff --check、前端 eslint 和生产 build 通过。"
+        },
+        {
+          "id": "v1.0.6.12",
+          "name": "全栈回归测试质量整改（P0）",
+          "description": "隔离 pytest 业务数据库、修复活动种子快照完整性与大集合查询、恢复前端组件测试和 TypeScript 门禁，并将前后端回归统一接入根级 CI。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/conftest.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/api/endpoints/torrent_speed.py",
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/endpoints/test_active_only_filter.py",
+            "backend/tests/api/test_active_torrents_endpoint.py",
+            "frontend/jest.config.js",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/utils/torrentBatch.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts",
+            ".github/workflows/regression.yml"
+          ],
+          "evidence": "按子代理复核后的 P0 顺序完成整改：pytest 每进程独立数据库并执行真实 Alembic，真实 backend/config/app.db 在两轮全量测试前后 SHA256/mtime 不变；活动快照区分 not_ready/expired/partial/ready_empty/ready，非权威状态返回 206，600 键在低 SQLite 变量限制下经 TEMP 表联接通过；后端全量 2089 passed/1 skipped，覆盖率 40.58%，架构检查、变更文件 black/flake8、git diff --check 通过；前端 4 suites/142 tests、tsc、生产 build 通过；根 init.sh 退出 0；根 GitHub Actions 覆盖 Python 3.12 pytest+coverage 与 Node 20 typecheck+Jest+build。"
         }
       ]
     }
