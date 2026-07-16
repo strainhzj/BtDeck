@@ -1046,6 +1046,25 @@
             ".github/workflows/regression.yml"
           ],
           "evidence": "按子代理复核后的 P0 顺序完成整改：pytest 每进程独立数据库并执行真实 Alembic，真实 backend/config/app.db 在两轮全量测试前后 SHA256/mtime 不变；活动快照区分 not_ready/expired/partial/ready_empty/ready，非权威状态返回 206，600 键在低 SQLite 变量限制下经 TEMP 表联接通过；后端全量 2089 passed/1 skipped，覆盖率 40.58%，架构检查、变更文件 black/flake8、git diff --check 通过；前端 4 suites/142 tests、tsc、生产 build 通过；根 init.sh 退出 0；根 GitHub Actions 覆盖 Python 3.12 pytest+coverage 与 Node 20 typecheck+Jest+build。"
+        },
+        {
+          "id": "v1.0.6.13",
+          "name": "前端覆盖率与关键契约测试整改",
+          "description": "建立可信的 Jest/Istanbul 覆盖率口径，补齐共享工具、API 请求、Vuex 与高级搜索组件回归，并在根 CI 设置四项 40% 不回退门禁。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/jest.config.js",
+            "frontend/package.json",
+            "frontend/tests/unit/api-contracts.spec.ts",
+            "frontend/tests/unit/shared-utils.spec.ts",
+            "frontend/tests/unit/store-modules.spec.ts",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/utils/formatters.ts",
+            ".github/workflows/regression.yml"
+          ],
+          "evidence": "Jest roots 从局部 components 扩到全 src；覆盖率采集全量业务 TS + AdvancedMultiSelect/AdvancedSearchBuilder 两个关键 SFC，排除声明和生成图标；测试从 4 suites/142 tests 增至 8 suites/222 tests。有效覆盖率 Statements 50.03%、Branches 42.01%、Functions 43.04%、Lines 49.47%，四项 CI 阈值均为 40%，生成 HTML/LCOV 并由 Actions 上传 artifact。新增测试发现并修复 normalizeTorrent 原始值反向覆盖规范结果、queuedDL 未识别两个缺陷；tsc、目标 ESLint（0 error）、生产 build、git diff --check 通过。"
         }
       ]
     }

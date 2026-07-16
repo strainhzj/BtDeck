@@ -1,5 +1,35 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-16 交接：前端覆盖率门禁与关键测试整改完成
+
+**当前任务**: `v1.0.6.13`
+**分支**: dev
+**状态**: 实现与验证完成，尚未提交。
+
+### 关键结果
+
+- 测试从 4 suites / 142 tests 提升到 8 suites / 222 tests。
+- 有效覆盖率：Statements 50.03%、Branches 42.01%、Functions 43.04%、Lines 49.47%。
+- Jest 四项全局阈值均为 40%；CI 运行 `test:coverage` 并上传 HTML/LCOV artifact。
+- 覆盖率口径覆盖全部业务 TS 和两个已测试关键 SFC，排除声明、生成图标和启动入口。
+- 新增 API 契约、共享工具、Vuex、高级搜索组件回归；修复规范化覆盖顺序和 `queuedDL` 两个真实缺陷。
+
+### 验证
+
+- `vue-cli-service test:unit --runInBand --coverage --silent`：222 passed，覆盖率门禁通过。
+- `tsc --noEmit`：通过。
+- 目标 ESLint：0 error（6 条既有 warning）。
+- 生产 build：通过（48 条既有 warning）。
+- `git diff --check`：通过。
+
+### 后续边界
+
+- 其余历史 Vue SFC 尚未全部进入覆盖率分母；应按关键页面组件测试逐步纳入，不能直接全量采集后忽略 Vue 2 模板编译失败。
+- 浏览器 E2E、真实前后端集成链路仍待后续专项。
+- `.zcode/`、镜像 tar、旧 pytest 目录、个人 `tools/` 等无关未跟踪文件继续保持不动。
+
+---
+
 ## 2026-07-16 交接：全栈回归测试质量 P0 整改完成
 
 **当前任务**: `v1.0.6.12`

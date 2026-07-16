@@ -24,6 +24,10 @@ export function normalizeTorrent(torrent: any): any {
   }
 
   return {
+    // 先保留未知扩展字段，再由下方规范字段覆盖，避免原始 null/旧字段值
+    // 反向覆盖规范化结果。
+    ...torrent,
+
     // 确保必需字段存在（保持原始hash不变）
     hash: torrent.hash || '',
     infoId: torrent.infoId || torrent.info_id || torrent.hash || '',
@@ -54,10 +58,7 @@ export function normalizeTorrent(torrent: any): any {
     savePath: torrent.savePath || torrent.save_path || '',
     save_path: torrent.savePath || torrent.save_path || '',
     addedDate: torrent.addedDate || torrent.added_date || null,
-    added_date: torrent.addedDate || torrent.added_date || null,
-    
-    // 保留原始其他字段
-    ...torrent
+    added_date: torrent.addedDate || torrent.added_date || null
   }
 }
 
@@ -79,6 +80,8 @@ export function normalizeTorrentStatus(
       return TorrentStatus.COMPLETED
     case TorrentStatus.PAUSED:
       return TorrentStatus.PAUSED
+    case TorrentStatus.QUEUEDDL.toLowerCase():
+      return TorrentStatus.QUEUEDDL
     case TorrentStatus.SEEDING:
       return TorrentStatus.SEEDING
     case TorrentStatus.CHECKING:

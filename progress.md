@@ -1,5 +1,43 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-16 - 前端覆盖率与关键契约测试整改
+
+**任务 ID**: `v1.0.6.13`
+**分支**: dev
+**范围**: 建立可信覆盖率门禁并补高风险回归；不以生成图标、声明文件或纯展示代码抬高数字。
+
+### 完成内容
+
+- Jest `roots` 从 `tests/unit + src/components` 扩展为 `tests/unit + src`，避免新测试在 API、Store、页面目录被静默漏收集。
+- 覆盖率口径为全量业务 TypeScript，加已纳入组件回归的 `AdvancedMultiSelect.vue`、`AdvancedSearchBuilder.vue`；排除 `.d.ts`、生成图标和启动入口。
+- 新增 `test:coverage`，输出 text-summary、HTML、LCOV；Statements/Branches/Functions/Lines 全局阈值均为 40%。
+- 根 CI 改为执行覆盖率门禁，并始终上传 `frontend-coverage` artifact（保留 7 天）。
+- 新增 API 请求契约测试：种子、孤儿文件、通知、认证、审计、标签、回收站、定时任务、Tracker、下载器。
+- 新增共享工具测试：分页/对象规范化、错误消息、格式化、防抖/节流、状态、下载器类型、校验与主题事件。
+- 新增 Vuex 测试：视图模式、筛选面板、侧边栏和设备状态及持久化。
+- 新增高级搜索组件测试：条件组生命周期、操作符和值转换、分组/扁平参数、模板深拷贝、事件与保存流程。
+- 测试驱动修复两个真实缺陷：`normalizeTorrent` 原对象展开顺序会覆盖规范化状态和空值默认值；`queuedDL` 未进入状态规范化分支。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| Jest | ✅ 8 suites / 222 tests（原 4 / 142） |
+| Statements | ✅ 50.03%（门禁 40%） |
+| Branches | ✅ 42.01%（门禁 40%） |
+| Functions | ✅ 43.04%（门禁 40%） |
+| Lines | ✅ 49.47%（门禁 40%） |
+| TypeScript | ✅ `tsc --noEmit` |
+| 目标 ESLint | ✅ 0 error（高级搜索组件 6 条既有 warning） |
+| 生产构建 | ✅ 通过（48 条既有 Sass/资源 warning） |
+
+### 边界
+
+- Vue 2 的 Jest 模板编译器无法采集含模板可选链的历史 SFC；本轮先对全量业务 TS 和两个已测试关键 SFC 建立可执行门禁，其余 SFC 随组件测试补齐逐步纳入，避免静默漏采导致虚高。
+- 浏览器 E2E 与真实前后端集成测试仍未进入 CI，本轮已在 README 明确标记，不再宣称现有覆盖。
+
+---
+
 ## 2026-07-16 - 全栈回归测试质量整改（P0）
 
 **任务 ID**: `v1.0.6.12`

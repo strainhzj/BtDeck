@@ -7,8 +7,27 @@
 module.exports = {
   preset: '@vue/cli-plugin-unit-jest/presets/typescript-and-babel',
   testEnvironment: 'jsdom',
-  roots: ['<rootDir>/tests/unit', '<rootDir>/src/components'],
+  roots: ['<rootDir>/tests/unit', '<rootDir>/src'],
   testMatch: ['**/*.spec.ts'],
+  collectCoverageFrom: [
+    '<rootDir>/src/**/*.ts',
+    '<rootDir>/src/components/torrents/AdvancedMultiSelect.vue',
+    '<rootDir>/src/components/torrents/AdvancedSearchBuilder.vue',
+    '!<rootDir>/src/**/*.d.ts',
+    '!<rootDir>/src/icons/**',
+    '!<rootDir>/src/main.ts',
+    '!<rootDir>/src/registerServiceWorker.ts'
+  ],
+  coverageDirectory: '<rootDir>/coverage',
+  coverageReporters: ['text-summary', 'html', 'lcov'],
+  coverageThreshold: {
+    global: {
+      branches: 40,
+      functions: 40,
+      lines: 40,
+      statements: 40
+    }
+  },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'
   },

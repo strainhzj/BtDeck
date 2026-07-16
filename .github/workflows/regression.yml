@@ -68,8 +68,17 @@ jobs:
       - name: TypeScript gate
         run: npm run typecheck
 
-      - name: Frontend regression suite
-        run: npm run test:unit -- --silent
+      - name: Frontend regression suite and coverage gate
+        run: npm run test:coverage -- --silent
+
+      - name: Upload frontend coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend/coverage
+          if-no-files-found: error
+          retention-days: 7
 
       - name: Production build
         run: npm run build
