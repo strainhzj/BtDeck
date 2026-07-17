@@ -186,18 +186,29 @@ export interface TorrentListParams {
   category_like?: string
   tracker_like?: string
   status?: string | string[]  // 支持单个状态或状态数组
+  active_only?: boolean  // 仅显示活动种子（实时速度>0，后端按活动集合缓存过滤）
   skip?: number
   limit?: number
   sort_by?: string
   sort_order?: string
 }
 
-export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<Torrent[]>> {
+export type ActiveSnapshotStatus = 'not_ready' | 'expired' | 'partial' | 'ready_empty' | 'ready'
+
+export interface TorrentListResponseData {
+  list: Torrent[]
+  total: number
+  pageSize: number
+  activeSnapshotReady?: boolean
+  activeSnapshotStatus?: ActiveSnapshotStatus
+}
+
+export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<TorrentListResponseData>> {
   return request({
     url: '/torrents/getList',
     method: 'get',
     params: params
-  }) as unknown as Promise<ApiResponse<Torrent[]>>
+  }) as unknown as Promise<ApiResponse<TorrentListResponseData>>
 }
 
 /**

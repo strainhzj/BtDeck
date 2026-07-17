@@ -53,7 +53,12 @@ module.exports = {
     config.resolve.alias.set('path', require.resolve('path-browserify'))
 
     if (config.plugins.has('fork-ts-checker')) {
-      config.plugins.delete('fork-ts-checker')
+      config.plugin('fork-ts-checker').tap(args => {
+        // 保留生产构建中的 TypeScript 门禁。历史 Vue SFC 尚有独立类型债务，当前先由
+        // tsc 严格覆盖全部 .ts/.tsx；SFC 通过 Jest 的 vue-jest 与 webpack 编译验证。
+        args[0].typescript.extensions.vue.enabled = false
+        return args
+      })
     }
 
     // provide the app's title in html-webpack-plugin's options list so that

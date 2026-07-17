@@ -10,6 +10,7 @@
 export enum TorrentStatus {
   SEEDING = 'seeding',           // 做种中（包含stalledUP, seeding, queuedUP）
   DOWNLOADING = 'downloading',   // 下载中（包含downloading, stalledDL）
+  COMPLETED = 'completed',       // 已完成（后端统一状态）
   PAUSED = 'paused',             // 已暂停（包含pausedDL, pausedUP, paused）
   QUEUEDDL = 'queuedDL',         // 下载队列
   ERROR = 'error',               // 错误

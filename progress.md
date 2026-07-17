@@ -1,12 +1,296 @@
 # Progress Log - BtDeck 全栈项目
 
-## 2026-07-10 - 质量门禁可信化（进行中）
+## 2026-07-16 - 前端覆盖率与关键契约测试整改
 
-- 根 `init.sh --full` 改为调用两端 `--check` 并传播失败退出码；端侧不再用 `|| echo` 吞掉 lint 失败。
-- 后端统一接入 Black、Flake8、Mypy、Ruff 和 `lint_btdeck.py`；Black 格式化 8 个遗留文件，修复 Ruff 19 项与 Flake8 2 处重复导入，现 Black/Flake8/Ruff 通过。
-- 为自定义架构扫描器增加 8 条负向样例及白名单样例，防止规则失效时仅扫描当前源码而假通过；`test_architecture_constraints.py` 19 passed。
-- 前端 `npm run lint` 现要求零 warning 并串联 Vuex 专项扫描；Vuex 扫描器新增可注入入口及正反例 Jest 测试。
-- 剩余真实阻断项：全仓 Mypy 类型错误；前端 ESLint 129 条 warning。两者均不再被入口掩盖，待专项清理。
+**任务 ID**: `v1.0.6.13`
+**分支**: dev
+**范围**: 建立可信覆盖率门禁并补高风险回归；不以生成图标、声明文件或纯展示代码抬高数字。
+
+### 完成内容
+
+- Jest `roots` 从 `tests/unit + src/components` 扩展为 `tests/unit + src`，避免新测试在 API、Store、页面目录被静默漏收集。
+- 覆盖率口径为全量业务 TypeScript，加已纳入组件回归的 `AdvancedMultiSelect.vue`、`AdvancedSearchBuilder.vue`；排除 `.d.ts`、生成图标和启动入口。
+- 新增 `test:coverage`，输出 text-summary、HTML、LCOV；Statements/Branches/Functions/Lines 全局阈值均为 40%。
+- 根 CI 改为执行覆盖率门禁，并始终上传 `frontend-coverage` artifact（保留 7 天）。
+- 新增 API 请求契约测试：种子、孤儿文件、通知、认证、审计、标签、回收站、定时任务、Tracker、下载器。
+- 新增共享工具测试：分页/对象规范化、错误消息、格式化、防抖/节流、状态、下载器类型、校验与主题事件。
+- 新增 Vuex 测试：视图模式、筛选面板、侧边栏和设备状态及持久化。
+- 新增高级搜索组件测试：条件组生命周期、操作符和值转换、分组/扁平参数、模板深拷贝、事件与保存流程。
+- 测试驱动修复两个真实缺陷：`normalizeTorrent` 原对象展开顺序会覆盖规范化状态和空值默认值；`queuedDL` 未进入状态规范化分支。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| Jest | ✅ 8 suites / 222 tests（原 4 / 142） |
+| Statements | ✅ 50.03%（门禁 40%） |
+| Branches | ✅ 42.01%（门禁 40%） |
+| Functions | ✅ 43.04%（门禁 40%） |
+| Lines | ✅ 49.47%（门禁 40%） |
+| TypeScript | ✅ `tsc --noEmit` |
+| 目标 ESLint | ✅ 0 error（高级搜索组件 6 条既有 warning） |
+| 生产构建 | ✅ 通过（48 条既有 Sass/资源 warning） |
+
+### 边界
+
+- Vue 2 的 Jest 模板编译器无法采集含模板可选链的历史 SFC；本轮先对全量业务 TS 和两个已测试关键 SFC 建立可执行门禁，其余 SFC 随组件测试补齐逐步纳入，避免静默漏采导致虚高。
+- 浏览器 E2E 与真实前后端集成测试仍未进入 CI，本轮已在 README 明确标记，不再宣称现有覆盖。
+
+---
+
+## 2026-07-16 - 全栈回归测试质量整改（P0）
+
+**任务 ID**: `v1.0.6.12`
+**分支**: dev
+**方法**: 分别审查前后端回归质量，按用户要求由子代理复核审查结论与整改方案，再按“数据库隔离 → 活动快照语义 → 前后端接线测试 → Jest/TypeScript → 根 CI”实施。
+
+### 完成内容
+
+- pytest 在导入应用前强制切换到 `.pytest-runtime/process-<pid>/app.db`，执行真实 Alembic；拒绝指向 `backend/config/app.db`，退出时释放 engine 并清理运行目录。
+- `OrphanScanner` 支持注入同步/异步 session factory，测试不再隐式使用生产全局 Session。
+- 活动种子缓存显式区分 `not_ready/expired/partial/ready_empty/ready`；冷启动、过期或部分下载器失败返回 `206`，权威空集仍返回 `200`。
+- `active_only` 只消费完整快照；大集合使用每请求 SQLite TEMP 表联接列表与计数查询，避免绑定参数上限和 OR-IN 膨胀。
+- 两个种子视图收到 `206` 时保留现有列表，刷新完整速度快照后受控重试；后端统一返回 `list/total/pageSize` 和快照元数据。
+- Jest 恢复 Vue 组件与性能测试收集，修复 `AdvancedMultiSelect` 属性初始化/虚拟滚动边界/搜索行为；TypeScript 请求响应模型补齐。
+- 新增根 `.github/workflows/regression.yml`，统一执行后端架构检查、pytest+覆盖率，以及前端 typecheck、完整 Jest 和生产构建。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 后端全量 pytest + coverage | ✅ 2089 passed, 1 skipped；40.58%（阈值 40%） |
+| 活动筛选专项 | ✅ 21 passed（含 600 键低变量限制与 206 握手） |
+| 真实业务数据库隔离 | ✅ 两轮全量测试前后 SHA256/mtime 完全不变 |
+| 后端格式/静态门禁 | ✅ 变更文件 black/flake8；架构检查；git diff --check |
+| 前端 Jest | ✅ 4 suites / 142 tests |
+| 前端 TypeScript | ✅ `tsc --noEmit` |
+| 前端生产构建 | ✅ 通过（仅既有 Sass/资源 warning） |
+| 根 init.sh | ✅ Git Bash 下退出 0（其 PATH 无 Node 的警告由独立前端门禁覆盖） |
+
+### 已知基线债务（未扩大本次范围）
+
+- `mypy app` 当前仍有 1534 个跨 123 个既有文件的错误，根 CI 暂未启用该全量门禁。
+- 全量 `flake8 app tests` 仍会命中多个既有测试文件；本次修改文件为 0 错误。
+- 约 248 个历史 Vue SFC 语义类型错误仍待专项治理；当前严格 `tsc` 覆盖 `.ts/.tsx`，SFC 由 webpack 与 vue-jest 编译/行为测试覆盖。
+
+---
+
+## 2026-07-12 - v1.0.6 孤儿文件清理安全闭环修复
+
+**任务 ID**: `v1.0.6.11`
+**方法**: 先补 RED 回归，再修生产链；完成后由 3 个子代理分别复核架构、安全和测试有效性。
+
+### 完成内容
+
+- 共享 `TorrentManifestBuilder` 直接枚举 qBittorrent/Transmission 实时 torrent inventory；任何下载器缺失、不可用或部分响应均 fail-closed，权威空 inventory 保持合法。
+- API、前端 preview/confirm、手动与自动清理全部绑定最新 `scan_id`；列表不再回退展示旧 completed 批次。
+- 父子扫描根使用全局 expected 集合；单文件 stat 失败整批失败；扫描明细、候选对账和 completed 状态在同一事务提交。
+- 手动与自动清理统一进入隔离区；候选必须属于实时授权扫描根，并完整匹配 size/mtime_ns/device/inode。
+- 隔离目标使用同文件系统私有 UUID 目录和无覆盖 rename；操作 journal 预写 pending 状态并支持 rename/remove 后崩溃恢复。
+- purge 每个文件重新构建 manifest，先原子移动为 tombstone、复核身份后才 unlink；新增每日 purge 任务。
+- 统一 `orphan_maintenance` lease 使用独立 session、原子抢占、心跳续租和危险操作前所有权检查。
+- 新增通知补偿任务，每小时补发 completed 且缺少 dedupe 通知的扫描结果。
+- 前端冻结 previewScanId，确认清理必须使用同一预览批次。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 安全/迁移/生产接线回归 | ✅ 152 passed, 1 skipped |
+| 后端全量 pytest | ✅ 2068 passed, 1 skipped |
+| 后端 flake8 + git diff --check | ✅ 通过 |
+| Alembic upgrade/downgrade/upgrade | ✅ 通过 |
+| 前端目标 eslint | ✅ 通过 |
+| 前端生产 build | ✅ 通过（48 个既有 Sass/体积 warning） |
+| 根 init.sh | ⚠️ 当前 Windows 环境无 Git Bash/WSL，未执行 |
+
+---
+
+## 2026-07-11 - v1.0.6 孤儿文件管理语义重做（严格 TDD 5 阶段）
+
+**任务 ID**: `v1.0.6.7`~`v1.0.6.10`（语义重做，5 阶段严格 TDD）
+**分支**: dev
+**方法**: 严格遵循「先提交回归测试、确认旧代码失败，再修改生产代码」，每阶段独立 commit
+
+### 语义重做背景
+
+基于代码审查发现的缺陷：旧 v1.0.6 扫描器在下载器清单/路径映射/扫描根不完整时**静默返回 completed**（fail-open），导致真实文件被误报为孤儿；自动清理依据文件 mtime（可被篡改）；无跨进程互斥；无扫描完成通知。
+
+### 5 阶段交付（每阶段独立 commit）
+
+**Phase 1: 失败回归测试（commit c9e048a）**
+- 新增 7 文件：conftest.py（async_orphan_db fixture）+ 5 测试文件 + 扩展 scanner 测试
+- A/B/C/D/E/F/G/H 共 8 组 53 例，全部在旧代码上失败（34 failed / 34 passed / 1 skipped）
+- 失败证据：fail-closed 缺失（5 例）+ 模块不存在（ImportError）+ API 签名不匹配（TypeError）
+
+**Phase 2: 扫描器最小修复（commit e54f616）**
+- A/B/C 组 36 测试转绿（19 旧 + 17 新）
+- 修复：状态重置 + 绕开 DeleteAdapter + SYNC lane + 逐种子转换 save_path + 规范化路径（normcase+normpath）+ fail-closed（OrphanScanIncompleteError）+ 隔离区排除
+
+**Phase 3: 生命周期 + 迁移（commit 207af69）**
+- 迁移 b075727f7182：orphan_current_candidate 表 + orphan_operation_lease 表 + notification.dedupe_key 列
+- OrphanLifecycleService：reconcile_candidates（只有 completed 推进）+ get_purgeable_candidates（连续孤儿时间）
+- D 组生命周期推进 5 测试转绿；表数 26→28
+
+**Phase 4: 清理安全 + 隔离区 + lease（commit 2243e4c）**
+- orphan_lease.py（跨进程 lease，db 参数注入）+ orphan_quarantine.py（隔离区 + verify_file_identity）
+- orphan_file_service.py 重构：新鲜度门禁 + 实时 manifest fail-closed + scan_id 参数 + 隔离区工作流
+- E/F/H 组 17 测试转绿
+
+**Phase 5: 通知接入 + 全量门禁（commit 本次）**
+- orphan_notification.py：notify_scan_completed（dedupe_key 幂等 + 失败不回滚）
+- create_notification 双层去重（查询层 + DB 层 IntegrityError）
+- 迁移 b075727f7182 notification 表存在守卫（修复 frozen schema 快照旧库）
+- G 组 6 测试转绿；test_db_rollback_scenarios.py REV_HEAD 更新
+
+### 最终语义（全部达成）
+
+| 语义 | 实现 |
+|------|------|
+| 自动清理依据「连续成为孤儿的时间」 | OrphanCurrentCandidate.last_seen_at - first_seen_at >= 30 天 |
+| 任一清单不完整整批失败 | OrphanScanIncompleteError → status=failed |
+| 自动清理先移隔离区保留 7 天 | quarantine_file → purge_after = now + 7d |
+| 手动清理不绕过实时复核 | verify_file_identity + manifest fail-closed |
+| 最新扫描 running/failed 禁止清理 | _check_cleanup_allowed |
+| 跨进程 lease 保护 | orphan_operation_lease 表 + acquire/release |
+| 成功扫描 >0 创建通知 | notify_scan_completed + dedupe_key 幂等 |
+| 通知失败不改扫描结果 | try/except 只记 error |
+
+### 验证结果
+
+| 验证项 | 结果 |
+|--------|------|
+| 全量 pytest tests/ | ✅ **2043 passed, 0 failed, 1 skipped** |
+| mypy app/ | ✅ 无新增错误（预存在 ORM 描述符债） |
+| black --check app/ tests/ | ✅ 通过 |
+| flake8 app/ tests/ | ✅ 通过 |
+| ./init.sh | ✅ 通过 |
+
+---
+
+## 2026-07-10 - v1.0.6 孤儿文件管理与路径维护（合并三版本）
+
+**任务 ID**: `v1.0.6`（合并原 v1.0.6 孤儿文件 + v1.0.7 路径扫描增强 + v1.1.0 自动清理）
+**分支**: dev
+**计划文件**: PLANS/v1.0.6.md（基于代码现状重写，废弃 2024-04-22 旧计划）
+
+### 合并理由
+
+原 v1.0.6 + v1.0.7 + v1.1.0 本质是一个功能集群（孤儿文件发现→路径扩展→自动清理），拆三版本导致接口割裂和重复工作。合并为单一版本一次性交付完整链路。
+
+### 旧计划废弃原因（4 个计划文件全部过时）
+
+1. 前端用 Composition API（`defineComponent`+`setup()`），违反项目强制 Options API 约束
+2. v1.1.0 的 AutomationService 与现有 cron_executor（APScheduler + task_profiles）功能完全重叠
+3. v1.0.7 引用不存在的 PathMapping/PathMappingRule ORM 模型（实际是 BtDownloaders 表的 Text 字段）
+4. 所有计划未考虑 sync-resource-governance 治理体系（db_write_scope + task_profiles 三处同步）
+
+### 关键设计决策（用户确认）
+
+- 扫描路径来源：种子 save_path + 下载器路径映射配置（path_mapping JSON external）
+- 清理策略：自动清理超期（物理删除 + 审计日志）+ 手动清理（用户勾选）
+- 文件清单来源：实时调下载器 API（复用 get_torrent_files 适配器，经 INTERACTIVE lane）
+- 定时任务：每周扫描+清理合一（task_type=4 + task_profiles heavy_sync）
+- 一并修复 CleanupTaskExecutor 预存 bug（_query_level3/4_torrents 未定义）
+
+### 交付清单（6 阶段）
+
+**Phase 1: 后端数据模型与迁移**
+- `app/models/orphan_file.py` — OrphanScanResult + OrphanFile 两表
+- `alembic/versions/c3f1a8b7d902_add_orphan_file_tables.py` — 迁移（含 inspect 守卫）
+- `alembic/env.py` — 补模型 import
+- `app/core/config.py` — 新增 4 项配置（ORPHAN_AUTO_CLEANUP_DAYS=30 等）
+
+**Phase 2: 后端扫描引擎与服务**
+- `app/services/orphan_scanner.py` — OrphanScanner（路径收集+文件清单+inode去重+遍历判定）
+  - to_thread 移出文件系统遍历；call_downloader_api(INTERACTIVE) 获取文件清单
+  - db_write_scope 串行化 DB commit；复用 UnifiedPathMappingService 路径转换
+- `app/services/orphan_file_service.py` — OrphanFileService（查询/预览/手动清理/自动清理）
+  - 文件删除参考 recycle_bin_service.py（UNC 兼容 + os.remove + 审计日志）
+- `app/torrents/audit_enums.py` — 新增 3 个审计枚举（ORPHAN_SCAN/CLEANUP/AUTO_CLEANUP）
+
+**Phase 3: 后端 API 端点**
+- `app/api/endpoints/orphan_files.py` — 5 端点（latest/list/scan/cleanup-preview/cleanup）
+- `app/api/api.py` — 路由注册 prefix=/orphan-files
+
+**Phase 4: 定时任务与资源治理**
+- `app/tasks/scheduler/orphan_scan_task.py` — OrphanScanTask（每周扫描+清理合一）
+- 治理三处同步：default_scheduled_tasks（task_code=orphan_scan_cleanup, cron=0 2 * * 0）+ task_profiles（heavy_sync, wait_timeout=60）+ 任务类
+- `app/tasks/cleanup_executor.py` — 修复 _query_level3/4_torrents 未定义 bug
+
+**Phase 5: 前端页面与 API**
+- `frontend/src/api/orphan-files.ts` — API 封装（5 函数 + 类型定义）
+- `frontend/src/views/orphan-files/index.vue` — 管理页面（class 风格 Options API + 统计卡片 + el-table + el-pagination + 清理两步确认）
+- `frontend/src/router.ts` — 路由注册 /orphan-files/index icon=folder
+
+**Phase 6: 测试与验证**
+- 3 个新测试文件（扫描器纯函数 19 + API 认证 14 + 任务治理 13 = 46 新测试）
+- 更新 4 个现有测试（db_migration head/表数 + db_rollback 版本号 + audit_enums 成员数 39→42 + task_profiles 期望集）
+- 全量 pytest **1997 passed, 0 failed**（基线 1937→1997 净增 60）
+- black/flake8 通过；./init.sh 通过；前端 eslint 0 error + build 成功
+
+### 验证结果（DoD 全部达成）
+
+| 验证项 | 结果 |
+|--------|------|
+| 新增后端测试（46 个） | ✅ 全 pass |
+| 全量 pytest tests/ | ✅ **1997 passed, 0 failed**（基线 1937→1997，净增 60） |
+| black（改动文件） | ✅ 通过 |
+| flake8（改动文件） | ✅ 通过 |
+| ./init.sh（全栈环境验证） | ✅ 通过 |
+| 前端 eslint | ✅ 0 error |
+| 前端 build（含 tsc） | ✅ 成功（orphan-files chunk 生成） |
+
+---
+
+## 2026-07-10 - SQLite 写锁治理完善（to_thread 止血 + db_write_scope 收尾）
+
+**任务 ID**: `sync-resource-governance`（新增子任务 `sync-resource-governance.2.6`）
+**分支**: dev
+**类型**: 根因修正 + 治理收尾（4 个重型任务）
+
+### 根因修正
+
+经独立代码审查确认：高强度定时任务期间 WebUI 操作接口超时的根因是 **asyncio 事件循环饥饿**，而非 SQLite 写锁竞争。4 个重型任务的 `execute()` 虽是 `async def`，但任务体内含阻塞式同步 `SessionLocal()` 调用 + 同步 HTTP 调用，直接在共享 uvicorn 循环上跑，冻结整个循环，导致所有 WebUI handler（含读请求）都无法被调度。
+
+修复策略（用户确认）：**to_thread 止血 + db_write_scope 收尾**，范围纳入 4 个重型任务。
+
+### 改动清单（7 项）
+
+1. **torrent_tracker_status_judge.py**（P0）：`execute()` 3 个同步 helper（`_load_keywords`/`_get_all_torrents`）改 `to_thread` 移出循环；`_judge_torrents_batch` 拆为 `_judge_one_batch` 分批（`BATCH_SIZE=1000`，每批 `db_write_scope` + `to_thread` + 单次 commit，单批失败即终止）；**N+1 优化**：逐种子 `db.query` 改两次 IN 查询（本批 TorrentInfo IN + TrackerInfo IN），内存按 `torrent_info_id` 分组。
+
+2. **tracker_message_logger.py**（P0）：`_process_messages_batch_async` 2 处 commit + `_cleanup_old_logs_async` 2 处 commit 各包 `db_write_scope`；死代码同步方法（`_collect_tracker_messages`/`_process_messages_batch`/`_cleanup_old_logs`）加 LEGACY 标记。
+
+3. **tracker_reannounce_task.py**（P0）：读段抽 `_read_downloader_data` 经 `to_thread`（保 `expunge_all`+`close`+不传 `db` 给 `execute_reannounce`）；`execute()` 读 enabled_configs 经 `to_thread`；写段 `batch_update_last_announce_time` 经 `to_thread` + `db_write_scope`（不改该函数本体，保 no-db 签名 + 内部自开 session 回归测试）。
+
+4. **downloader_path_scan.py**（P0）：6 处 commit（`_update_path_mapping`/`_update_external_paths`/`_log_task_execution`/`_sync_default_path`/`_sync_active_path`/`_cleanup_obsolete_paths`）各包 `db_write_scope`；同步 HTTP（`app_default_save_path`/`get_session_variables`）经 `to_thread`；远程获取默认路径移出写 session（`_scan_downloader_paths` 预取 `default_path` 传入 `_sync_to_maintenance_table`）。
+
+5. **database.py + test_database_pragmas.py**（P1）：`busy_timeout` 30000→15000 + sync/async engine `timeout` 30→15 + 4 处注释同步（二级兜底，对齐前端 axios timeout=20s，可独立回退 30s）。
+
+6. **test_heavy_task_db_write_governance.py**（P1）：5 个行为测试取代不可行的 AST 断言（judge db_write_scope 进入 / judge to_thread 读 helper / message_logger db_write_scope 进入 / reannounce 写段 db_write_scope / reannounce 读段 to_thread）。
+
+7. **文档 + DoD**（P2）：重写 `sync-db-write-governance.md` §四（纳入 4 个新任务 + to_thread 止血说明 + busy_timeout 15s 调整说明）；`feature_list.json` 新增 `sync-resource-governance.2.6` 子任务。
+
+### 关键约束保持
+
+- `cron_executor` 已在 `admission_controller.task_scope` 内调 `execute()`（cron_executor.py:417-444）→ 任务文件内只加 `db_write_scope`，不加 `task_scope`。
+- `db_write_scope` 在 async caller 侧（loop 线程）获取/释放，同步工作经 `to_thread` 在工作线程跑，scope 不进工作线程（参考 `sync_db_write.py:163-169`）。
+- 请求侧 endpoints 绝不动，`test_request_side_endpoints_do_not_use_governance_locks` 保持不变（scheduler 模块不在其扫描白名单）。
+- `batch_update_last_announce_time` 不改本体（保 no-db 签名 + 内部自开 session，满足 `test_reannounce_config.py` 回归测试）。
+
+### 明确不做（技术债，本次不纳入）
+
+- `_sync_speed_schedule`（cron_executor.py:54-107）：每分钟持 sync SessionLocal 做 HTTP，P3。
+- `tracker_candidate_pool`（被 message_logger 同步触发，未注册 task_profiles）：P3。
+- `torrent_sync.py` API 触发路径 / `qb_tr_add_torrents_async` 全量同步：feature_list.json 已记 P3。
+
+### 风险与回退
+
+- `to_thread` 用 asyncio 默认线程池，但 `heavy_sync=Semaphore(1)` 限制重型任务不并发，线程池压力可控。
+- `db_write_scope` 串行化若致后台 P95 退化，`SYNC_DB_WRITE_SCOPE_ENABLED=False` 一键回退（config.py:119）。
+- `busy_timeout` 若 15s 误触 SQLITE_BUSY，改回 30s（独立改动无耦合）。
+
+---
 
 ## 2026-07-05 - sync-resource-governance code review 修复轮
 

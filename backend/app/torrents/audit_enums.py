@@ -80,6 +80,11 @@ class AuditOperationType(str, Enum):
     # ========== 归档操作 ==========
     ARCHIVE_LOGS = "archive_logs"  # 归档审计日志
 
+    # ========== 孤儿文件操作 ==========
+    ORPHAN_SCAN = "orphan_scan"  # 孤儿文件扫描
+    ORPHAN_CLEANUP = "orphan_cleanup"  # 孤儿文件清理（手动）
+    ORPHAN_AUTO_CLEANUP = "orphan_auto_cleanup"  # 孤儿文件自动清理（定时）
+
     @classmethod
     def is_valid(cls, value: str) -> bool:
         """验证操作类型是否有效
@@ -156,6 +161,10 @@ class AuditOperationType(str, Enum):
             cls.BATCH_OPERATION.value: "批量操作",
             # 归档操作
             cls.ARCHIVE_LOGS.value: "归档审计日志",
+            # 孤儿文件操作
+            cls.ORPHAN_SCAN.value: "孤儿文件扫描",
+            cls.ORPHAN_CLEANUP.value: "孤儿文件清理",
+            cls.ORPHAN_AUTO_CLEANUP.value: "孤儿文件自动清理",
         }
         return display_names.get(value, value)
 
@@ -219,6 +228,10 @@ class AuditOperationType(str, Enum):
             cls.BATCH_OPERATION.value: "system",
             # 归档操作
             cls.ARCHIVE_LOGS.value: "archive",
+            # 孤儿文件操作
+            cls.ORPHAN_SCAN.value: "orphan_files",
+            cls.ORPHAN_CLEANUP.value: "orphan_files",
+            cls.ORPHAN_AUTO_CLEANUP.value: "orphan_files",
         }
         return categories.get(value)
 

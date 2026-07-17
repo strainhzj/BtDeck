@@ -171,6 +171,57 @@ DEFAULT_SCHEDULED_TASKS = [
         "create_by": "migration_system",
         "update_by": "admin",
     },
+    {
+        "task_name": "孤儿文件扫描清理任务",
+        "task_code": "orphan_scan_cleanup",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_scan_task.OrphanScanTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "0 2 * * 0",  # 每周日凌晨2点执行
+        "description": "每周扫描孤儿文件（不在任何种子文件清单中的磁盘文件），自动清理超过 30 天的孤儿文件。",
+        "timeout_seconds": 7200,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
+    {
+        "task_name": "孤儿文件隔离区到期清理任务",
+        "task_code": "orphan_quarantine_purge",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_quarantine_purge_task.OrphanQuarantinePurgeTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "0 3 * * *",
+        "description": "每日清理超过隔离保留期且仍未被任何种子引用的文件。",
+        "timeout_seconds": 7200,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
+    {
+        "task_name": "孤儿扫描通知补偿任务",
+        "task_code": "orphan_notification_retry",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_notification_retry_task.OrphanNotificationRetryTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "10 * * * *",
+        "description": "每小时补发已完成但通知创建失败的孤儿扫描结果通知。",
+        "timeout_seconds": 300,
+        "max_retry_count": 1,
+        "retry_interval": 60,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
 ]
 
 
@@ -198,10 +249,16 @@ def init_default_scheduled_tasks(db_session) -> int:
 
         for task_data in DEFAULT_SCHEDULED_TASKS:
             # 检查任务是否已存在（通过 task_code 唯一性）
-            existing = db_session.query(CronTask).filter_by(task_code=task_data["task_code"]).first()
+            existing = (
+                db_session.query(CronTask)
+                .filter_by(task_code=task_data["task_code"])
+                .first()
+            )
 
             if existing:
-                logger.info(f"系统默认任务已存在，跳过: {task_data['task_name']} ({task_data['task_code']})")
+                logger.info(
+                    f"系统默认任务已存在，跳过: {task_data['task_name']} ({task_data['task_code']})"
+                )
                 continue
 
             # 创建新任务
@@ -228,7 +285,9 @@ def init_default_scheduled_tasks(db_session) -> int:
 
             db_session.add(task)
             created_count += 1
-            logger.info(f"创建系统默认定时任务: {task_data['task_name']} ({task_data['task_code']})")
+            logger.info(
+                f"创建系统默认定时任务: {task_data['task_name']} ({task_data['task_code']})"
+            )
 
         # 提交所有更改
         db_session.commit()

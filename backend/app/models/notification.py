@@ -28,6 +28,7 @@ class Notification(Base):
         priority: 优先级（info / warning / error）
         is_read: 是否已读
         extra_data: JSON扩展数据（如版本号、下载链接等）
+        dedupe_key: 去重键（可空，唯一。如 orphan_scan:{scan_id}，数据库部分唯一索引兜底幂等）
         created_at: 创建时间
         read_at: 已读时间（可选）
     """
@@ -41,6 +42,7 @@ class Notification(Base):
     priority = Column(String(10), nullable=False, default="info", comment="优先级：info / warning / error")
     is_read = Column(Boolean, nullable=False, default=False, index=True, comment="是否已读")
     extra_data = Column(Text, nullable=True, comment="JSON扩展数据")
+    dedupe_key = Column(String(100), nullable=True, comment="去重键（如 orphan_scan:{scan_id}）")
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     read_at = Column(DateTime, nullable=True, comment="已读时间")
 
@@ -52,6 +54,7 @@ class Notification(Base):
         priority: str = "info",
         is_read: bool = False,
         extra_data: Optional[Dict[str, Any]] = None,
+        dedupe_key: Optional[str] = None,
         **kw: Any,
     ):
         super().__init__(**kw)
@@ -67,6 +70,8 @@ class Notification(Base):
             import json
 
             self.extra_data = json.dumps(extra_data, ensure_ascii=False)
+        if dedupe_key is not None:
+            self.dedupe_key = dedupe_key
 
     def to_dict(self) -> Dict[str, Any]:
         """将模型转换为字典"""
@@ -81,6 +86,7 @@ class Notification(Base):
             "is_read": self.is_read,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "read_at": self.read_at.isoformat() if self.read_at else None,
+            "dedupe_key": self.dedupe_key,
         }
         if self.extra_data:
             try:

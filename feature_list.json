@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
-  "current_dev_version": "quality-gate-hardening",
-  "last_updated": "2026-07-10",
+  "current_dev_version": "v1.0.6",
+  "last_updated": "2026-07-16",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -353,25 +353,9 @@
       ]
     },
     {
-      "id": "v1.0.6",
-      "name": "孤儿文件管理",
-      "description": "自动发现并清理无用文件，inode去重",
-      "status": "pending",
-      "plan_file": "PLANS/v1.0.6.md",
-      "tasks": []
-    },
-    {
-      "id": "v1.0.7",
-      "name": "路径扫描增强",
-      "description": "扩展到扫描btdeck配置路径",
-      "status": "pending",
-      "plan_file": "PLANS/v1.0.7.md",
-      "tasks": []
-    },
-    {
       "id": "v1.0.8",
       "name": "数据库升级",
-      "description": "PostgreSQL支持 + 下载器连接池管理",
+      "description": "PostgreSQL 支持。推迟中：sync-resource-governance 治理后先验证 DB 写锁瓶颈是否缓解。原计划的下载器连接池已废弃（违反 downloader-connection 约束，app.state.store 已管理客户端连接）。",
       "status": "pending",
       "plan_file": "PLANS/v1.0.8.md",
       "tasks": []
@@ -423,14 +407,6 @@
           "evidence": "docker-compose.yml"
         }
       ]
-    },
-    {
-      "id": "v1.1.0",
-      "name": "自动化运维",
-      "description": "后台自动化任务调度系统",
-      "status": "pending",
-      "plan_file": "PLANS/v1.1.0.md",
-      "tasks": []
     },
     {
       "id": "v1.0.5-db-governance",
@@ -815,6 +791,24 @@
           "evidence": "sync_db_write.py 公共工具（has_torrent_info_changes 动态字段对比+忽略 update_time/PK；has_tracker_changes 6 字段+None=='/strip 归一化；bulk_upsert_with_retry 内含 db_write_scope+retry base_delay=1.0）；qb/tr_add_torrents_info_only_async 修正 skip 语义 bug（progress 不变+整行无变化真正跳过写入）+ 替换 4 处重复闭包为 bulk_upsert_with_retry；qb/tr_sync_trackers_only_async 主循环改造（extract_tracker_rows_from_torrent 纯提取 + sync_trackers_batch_async 批量 select 旧值+变更检测+严格四步顺序软删恢复/物理删/upsert/mark_removed 元组语义）+ batch 从 1000 改用 settings.SYNC_DB_COMMIT_BATCH_SIZE=200；SYNC_DB_WRITE_SCOPE_ENABLED 开关支持快速回滚；28 个新单测（21 sync_db_write 纯函数+mock + 7 真实 SQLite 部分索引集成测试覆盖变更检测/软删不复活/mark_removed 元组语义/stats 守恒/db_write_scope 进入）+ 3 处 mutation 反向验证（db_write_scope 包裹/mark_removed 扁平化 url 误删/acquire spy）+ 全量 1905 passed diff 基线为零（16 个预先存在 tag_aggregation failure 不计）。已知技术债：qb/tr_add_torrents_async 全量同步 + torrent_sync.py API 触发路径不经 db_write_scope，留 P3。"
         },
         {
+          "id": "sync-resource-governance.2.6",
+          "name": "to_thread 止血 + db_write_scope 收尾（4 个重型任务）",
+          "description": "根因修正：4 个重型任务 execute() 体内含阻塞式同步 SessionLocal/HTTP 调用冻结事件循环（非 SQLite 写锁竞争）。修复策略：阻塞同步工作 asyncio.to_thread 移出循环 + 写 commit admission_controller.db_write_scope 串行化。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
+            "backend/app/tasks/scheduler/tracker_message_logger.py",
+            "backend/app/tasks/scheduler/tracker_reannounce_task.py",
+            "backend/app/tasks/scheduler/downloader_path_scan.py",
+            "backend/app/database.py",
+            "backend/docs/constraints/sync-db-write-governance.md",
+            "backend/tests/core/test_database_pragmas.py",
+            "backend/tests/tasks/test_heavy_task_db_write_governance.py"
+          ],
+          "evidence": "torrent_tracker_status_judge：execute() 3 个同步 helper（_load_keywords/_get_all_torrents）改 to_thread 移出循环；_judge_torrents_batch 拆为 _judge_one_batch 分批（BATCH_SIZE=1000，每批 db_write_scope+to_thread+单次 commit，单批失败即终止）；N+1 优化（逐种子 db.query 改两次 IN 查询：本批 TorrentInfo IN + TrackerInfo IN，内存按 torrent_info_id 分组）。tracker_message_logger：_process_messages_batch_async 2 处 commit + _cleanup_old_logs_async 2 处 commit 各包 db_write_scope；死代码同步方法加 LEGACY 标记。tracker_reannounce_task：读段抽 _read_downloader_data 经 to_thread（保 expunge_all+close+不传 db 给 execute_reannounce）；execute() 读 enabled_configs 经 to_thread；写段 batch_update_last_announce_time 经 to_thread+db_write_scope（不改该函数本体，保 no-db 签名+内部自开 session 回归测试）。downloader_path_scan：6 处 commit（_update_path_mapping/_update_external_paths/_log_task_execution/_sync_default_path/_sync_active_path/_cleanup_obsolete_paths）各包 db_write_scope；同步 HTTP（app_default_save_path/get_session_variables）经 to_thread；远程获取默认路径移出写 session（_scan_downloader_paths 预取 default_path 传入 _sync_to_maintenance_table）。database.py：busy_timeout 30000→15000 + sync/async engine timeout 30→15 + 4 处注释同步（二级兜底，对齐前端 axios timeout=20s，可独立回退 30s）。行为测试 test_heavy_task_db_write_governance.py（5 个：judge db_write_scope 进入/judge to_thread 读 helper/message_logger db_write_scope 进入/reannounce 写段 db_write_scope/reannounce 读段 to_thread）取代不可行的 AST 断言。保留 test_request_side_endpoints_do_not_use_governance_locks 不变。"
+        },
+        {
           "id": "sync-resource-governance.3",
           "name": "验证与证据归档",
           "description": "补充单元测试、集成验证与手动压测矩阵，把同步期间请求响应改善、DB commit/写入频率、磁盘写入节流证据写回 harness。",
@@ -870,6 +864,232 @@
           "scope": "fullstack",
           "files": ["backend/tests/test_architecture_constraints.py", "frontend/scripts/lint-vuex-action.js", "frontend/tests/unit/lint-vuex-action.spec.ts", "frontend/src/"],
           "evidence": "后端自定义 lint 全规则负向样例通过，pytest backend/tests/test_architecture_constraints.py 21 passed；Vuex 扫描器新增正反例 Jest 测试 2 passed；前端 npm run lint 以 --max-warnings 0 + lint-vuex-action 实执通过，原 129 warning 已清零。"
+        }
+      ]
+    },
+    {
+      "id": "v1.0.6",
+      "name": "孤儿文件管理与路径维护",
+      "description": "合并原 v1.0.6孤儿文件 + v1.0.7路径扫描增强 + v1.1.0自动清理。自动发现不在任何种子文件清单中的磁盘文件，支持手动清理和定时自动清理超期文件。复用现有 cron_executor 调度（不新建 AutomationService），接入 sync-resource-governance 治理体系。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/v1.0.6.md",
+      "deviation_from_plan": {
+        "reason": "旧计划（2024-04-22）全部过时：前端用 Composition API 违反 Options API 约束、AutomationService 与 cron_executor 重复、引用不存在的 PathMapping ORM 模型、未考虑 sync-resource-governance 治理体系。基于代码现状重写计划，合并三版本为一个功能集群。",
+        "changes": [
+          "合并 v1.0.6+v1.0.7+v1.1.0 为单一版本（功能集群：发现→清理→自动化）",
+          "复用现有 cron_executor 调度框架（不新建 AutomationService）",
+          "复用现有 QBittorrentDeleteAdapter/TransmissionDeleteAdapter 的 get_torrent_files 获取文件清单",
+          "经 call_downloader_api(INTERACTIVE lane) 调用受 per-downloader 限流",
+          "扫描路径来源：种子 save_path distinct + 下载器 path_mapping JSON external（不从不存在的 PathTransferHistory 取）",
+          "接入 db_write_scope + to_thread + task_profiles 三处同步治理体系",
+          "一并修复 CleanupTaskExecutor 预存 bug（_query_level3/4_torrents 未定义，task_type=5 触发会崩）"
+        ]
+      },
+      "tasks": [
+        {
+          "id": "v1.0.6.1",
+          "name": "后端数据模型与迁移",
+          "description": "OrphanScanResult + OrphanFile 两表模型 + Alembic 迁移（含 inspect 守卫）+ 4 项配置项",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/models/orphan_file.py",
+            "backend/alembic/versions/c3f1a8b7d902_add_orphan_file_tables.py",
+            "backend/alembic/env.py",
+            "backend/app/core/config.py"
+          ],
+          "evidence": "OrphanScanResult(scan_id PK) + OrphanFile(id PK, scan_id FK) 两表；迁移 c3f1a8b7d902 含 inspect 守卫（表已存在时 no-op）；env.py 补模型 import；config.py 新增 ORPHAN_AUTO_CLEANUP_DAYS=30/ORPHAN_SCAN_ENABLED=True/ORPHAN_SCAN_BATCH_SIZE=200/ORPHAN_EXCLUDE_PATTERNS。迁移链 head 95ef8bd8b47a→c3f1a8b7d902，空库建 26 表。"
+        },
+        {
+          "id": "v1.0.6.2",
+          "name": "后端扫描引擎与服务",
+          "description": "OrphanScanner（路径收集+文件清单构建+inode去重+遍历判定）+ OrphanFileService（查询/预览/手动清理/自动清理）+ 审计枚举扩展",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/torrents/audit_enums.py"
+          ],
+          "evidence": "OrphanScanner.scan() 主入口（to_thread 路径收集+文件系统遍历，call_downloader_api INTERACTIVE 获取文件清单，db_write_scope 批量写入）；OrphanFileService（分页查询 total/page/pageSize/list + cleanup_preview + cleanup_orphans 物理删除+审计 + auto_cleanup_expired）；audit_enums 新增 ORPHAN_SCAN/ORPHAN_CLEANUP/ORPHAN_AUTO_CLEANUP 三枚举归入 orphan_files 分类。复用 UnifiedPathMappingService 路径转换 + FileOperationService._check_file_exists_with_fallback UNC 兼容。"
+        },
+        {
+          "id": "v1.0.6.3",
+          "name": "后端 API 端点",
+          "description": "5 端点（latest/list/scan/cleanup-preview/cleanup）+ 路由注册，require_authenticated_user 认证 + CommonResponse 响应",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/api/api.py"
+          ],
+          "evidence": "GET /orphan-files/latest + GET /orphan-files/list（分页 page/page_size/downloader_id/min_size）+ POST /orphan-files/scan + POST /orphan-files/cleanup-preview + POST /orphan-files/cleanup；api.py 注册 prefix=/orphan-files。认证用 require_authenticated_user，响应 CommonResponse。"
+        },
+        {
+          "id": "v1.0.6.4",
+          "name": "定时任务与资源治理",
+          "description": "OrphanScanTask 每周扫描+清理合一 + task_profiles 三处同步 + CleanupTaskExecutor bug 修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/scheduler/orphan_scan_task.py",
+            "backend/app/data/default_scheduled_tasks.py",
+            "backend/app/tasks/task_profiles.py",
+            "backend/app/tasks/cleanup_executor.py"
+          ],
+          "evidence": "OrphanScanTask.execute() 扫描+自动清理超期；task_code=orphan_scan_cleanup cron=0 2 * * 0（每周日2点）登记到 default_scheduled_tasks + task_profiles（heavy_sync=True, wait_timeout=60.0）；CleanupTaskExecutor 补全 _query_level3_torrents/_query_level4_torrents 两未定义方法（task_type=5 触发路径原会 AttributeError）。"
+        },
+        {
+          "id": "v1.0.6.5",
+          "name": "前端页面与 API",
+          "description": "orphan-files.ts API 封装 + index.vue 管理页面（class 风格 Options API）+ 路由注册",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/router.ts"
+          ],
+          "evidence": "api/orphan-files.ts（5 函数 + 类型定义，pageSize 驼峰）；views/orphan-files/index.vue（@Component class 风格 + 统计卡片 + el-table 后端分页 + el-pagination + 清理预览-确认两步对话框，复用 formatFileSize/extractErrorMessage）；router.ts 注册 /orphan-files/index icon=folder。eslint 0 error + build 成功（tsc 通过）。"
+        },
+        {
+          "id": "v1.0.6.6",
+          "name": "测试与验证",
+          "description": "46 新测试（扫描器纯函数 19 + API 认证 14 + 任务治理 13）+ 全量回归 + lint/build/init.sh",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/services/test_orphan_scanner.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/tasks/test_orphan_scan_task.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/enums/test_audit_enums.py",
+            "backend/tests/tasks/test_task_profiles.py"
+          ],
+          "evidence": "46 新测试全 pass（扫描器 inode去重/排除模式/路径收集/孤儿判定 19 + API 5端点×认证场景 14 + 任务治理一致性/结构/bug修复 13）；全量 pytest 1997 passed 0 failed（基线 1937→1997 净增 60）；black/flake8 通过；./init.sh 通过；前端 eslint 0 error + build 成功。"
+        },
+        {
+          "id": "v1.0.6.7",
+          "name": "语义重做 Phase1-2：fail-closed 扫描器 + 回归测试",
+          "description": "严格 TDD：先写 A/B/C 组失败回归测试（53 例），再修复扫描器 fail-closed + 状态重置 + 规范化路径 + SYNC lane + 绕开 DeleteAdapter + 逐种子转换 save_path",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/services/conftest.py",
+            "backend/tests/services/test_orphan_scanner.py",
+            "backend/app/services/orphan_scanner.py"
+          ],
+          "evidence": "Phase1 34 failed/34 passed（旧代码失败证据）；Phase2 A/B/C 组 36 测试全转绿（19旧+17新）；现有 API/task 27 测试无回归。fail-closed：缺store/空snapshot/缺client/fail_time>0/扫描根不存在 → 整批 failed（不再静默返回 completed）"
+        },
+        {
+          "id": "v1.0.6.8",
+          "name": "语义重做 Phase3：生命周期对账 + 当前候选表 + lease 表 + dedupe_key",
+          "description": "新增 OrphanCurrentCandidate 表（连续孤儿时间管理）+ orphan_operation_lease 表（跨进程 lease）+ notification.dedupe_key 列 + OrphanLifecycleService + 4 配置项",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/alembic/versions/b075727f7182_orphan_lifecycle.py",
+            "backend/app/models/orphan_file.py",
+            "backend/app/models/notification.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/services/notification_service.py",
+            "backend/app/core/config.py"
+          ],
+          "evidence": "迁移 b075727f7182（inspect 守卫 + notification 表存在守卫）；D 组生命周期推进 5 测试全 pass（首次不满足30天/连续累计/重新合法resolved/失败不推进/重复单候选）；表数 26→28；4 配置项 ORPHAN_CANDIDATE_PURGE_DAYS=30/ORPHAN_QUARANTINE_RETENTION_DAYS=7/ORPHAN_QUARANTINE_DIR_NAME/ORPHAN_LEASE_TTL_SECONDS=3600"
+        },
+        {
+          "id": "v1.0.6.9",
+          "name": "语义重做 Phase4：清理安全 + 隔离区 + 跨进程 lease",
+          "description": "清理前实时复核文件身份 + 隔离区工作流（移入隔离区不直接删）+ 跨进程 lease（扫描/预览/清理互斥）+ 新鲜度门禁（最新扫描 running/failed 禁止清理 + stale scan_id 拒绝）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_lease.py",
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/tasks/scheduler/orphan_scan_task.py"
+          ],
+          "evidence": "E 组 7 测试全 pass（身份复核/符号链接/路径逃逸/manifest fail-closed/隔离区工作流）+ F 组 4 测试全 pass（两扫描争抢/扫描vs清理/过期接管/崩溃恢复）+ H 组 6 测试全 pass（completed门禁/scan_id传递/stale拒绝/preview+cleanup同规则）。隔离区策略：默认扫描根下 .btdeck_quarantine/<scan_id>/（os.rename 原子）+ path_mapping JSON quarantine_root 可覆盖"
+        },
+        {
+          "id": "v1.0.6.10",
+          "name": "语义重做 Phase5：扫描完成通知 + 幂等 + 全量门禁",
+          "description": "扫描完成 total_orphans>0 时创建通知（dedupe_key=orphan_scan:{scan_id} 幂等）+ 通知失败不回滚扫描 + 全量门禁（pytest/mypy/black/flake8/init.sh）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_notification.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/notification_service.py",
+            "backend/alembic/versions/b075727f7182_orphan_lifecycle.py",
+            "backend/tests/core/test_db_rollback_scenarios.py"
+          ],
+          "evidence": "G 组 6 测试全 pass（completed>0创建/==0不通知/同scan_id幂等/通知失败不改failed/未读+1/内容含GB大小）；create_notification 双层去重（查询层+DB层IntegrityError）；全量 2043 passed 0 failed；mypy 无新增错误；black/flake8 通过；init.sh 通过"
+        },
+        {
+          "id": "v1.0.6.11",
+          "name": "孤儿文件清理安全闭环修复",
+          "description": "按最近提交 code review 结果，以回归测试驱动修复实时 manifest、批次绑定、事务原子性、维护 lease、可恢复隔离、到期 purge 和通知补偿。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/orphan_manifest.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/services/orphan_lease.py",
+            "backend/app/services/orphan_quarantine.py",
+            "backend/alembic/versions/e6d8a20c41f3_orphan_operation_journal.py",
+            "backend/app/tasks/scheduler/orphan_quarantine_purge_task.py",
+            "backend/app/tasks/scheduler/orphan_notification_retry_task.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue"
+          ],
+          "evidence": "真实下载器 inventory 成为权威 manifest；手动/自动清理均绑定最新 scan_id、授权扫描根和完整 size/mtime/dev/inode 身份；同文件系统私有 UUID 目录原子隔离，purge 先原子 tombstone 后复核删除；扫描明细+候选对账+completed 单事务；统一维护 lease 含心跳和逐文件所有权检查；操作 journal 支持崩溃恢复；每日 purge + 每小时通知补偿任务。相关回归 152 passed/1 skipped；全量后端 2068 passed/1 skipped；flake8、git diff --check、前端 eslint 和生产 build 通过。"
+        },
+        {
+          "id": "v1.0.6.12",
+          "name": "全栈回归测试质量整改（P0）",
+          "description": "隔离 pytest 业务数据库、修复活动种子快照完整性与大集合查询、恢复前端组件测试和 TypeScript 门禁，并将前后端回归统一接入根级 CI。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/conftest.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/api/endpoints/torrent_speed.py",
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/endpoints/test_active_only_filter.py",
+            "backend/tests/api/test_active_torrents_endpoint.py",
+            "frontend/jest.config.js",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/utils/torrentBatch.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts",
+            ".github/workflows/regression.yml"
+          ],
+          "evidence": "按子代理复核后的 P0 顺序完成整改：pytest 每进程独立数据库并执行真实 Alembic，真实 backend/config/app.db 在两轮全量测试前后 SHA256/mtime 不变；活动快照区分 not_ready/expired/partial/ready_empty/ready，非权威状态返回 206，600 键在低 SQLite 变量限制下经 TEMP 表联接通过；后端全量 2089 passed/1 skipped，覆盖率 40.58%，架构检查、变更文件 black/flake8、git diff --check 通过；前端 4 suites/142 tests、tsc、生产 build 通过；根 init.sh 退出 0；根 GitHub Actions 覆盖 Python 3.12 pytest+coverage 与 Node 20 typecheck+Jest+build。"
+        },
+        {
+          "id": "v1.0.6.13",
+          "name": "前端覆盖率与关键契约测试整改",
+          "description": "建立可信的 Jest/Istanbul 覆盖率口径，补齐共享工具、API 请求、Vuex 与高级搜索组件回归，并在根 CI 设置四项 40% 不回退门禁。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/jest.config.js",
+            "frontend/package.json",
+            "frontend/tests/unit/api-contracts.spec.ts",
+            "frontend/tests/unit/shared-utils.spec.ts",
+            "frontend/tests/unit/store-modules.spec.ts",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/utils/formatters.ts",
+            ".github/workflows/regression.yml"
+          ],
+          "evidence": "Jest roots 从局部 components 扩到全 src；覆盖率采集全量业务 TS + AdvancedMultiSelect/AdvancedSearchBuilder 两个关键 SFC，排除声明和生成图标；测试从 4 suites/142 tests 增至 8 suites/222 tests。有效覆盖率 Statements 50.03%、Branches 42.01%、Functions 43.04%、Lines 49.47%，四项 CI 阈值均为 40%，生成 HTML/LCOV 并由 Actions 上传 artifact。新增测试发现并修复 normalizeTorrent 原始值反向覆盖规范结果、queuedDL 未识别两个缺陷；tsc、目标 ESLint（0 error）、生产 build、git diff --check 通过。"
         }
       ]
     }

@@ -90,6 +90,16 @@ TASK_PROFILES: Dict[str, TaskProfile] = {
         "Tracker 汇报轮询任务（5min）",
         wait_timeout=10.0,  # 高频任务，等待过久会加剧补跑，缩短超时
     ),
+    "orphan_scan_cleanup": _heavy(
+        "orphan_scan_cleanup",
+        "孤儿文件扫描清理任务（每周，含文件系统遍历 + 下载器 API 文件清单获取）",
+        wait_timeout=60.0,  # 低频周任务，允许较长等待避免跳过
+    ),
+    "orphan_quarantine_purge": _heavy(
+        "orphan_quarantine_purge",
+        "孤儿文件隔离区到期清理任务（每日，含实时 manifest 与文件系统删除）",
+        wait_timeout=60.0,
+    ),
 }
 
 

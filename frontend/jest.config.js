@@ -1,26 +1,40 @@
 /**
- * Jest 单元测试配置。
+ * 统一的 Vue 2 + TypeScript Jest 配置。
  *
- * 仅用于纯逻辑模块（如 utils/error-normalize.ts）的归一化行为验证，
- * 不覆盖 Vue 组件 / Vuex store（那些依赖完整运行时，留给手动端到端清单）。
- *
- * 详见审计修复 PLANS/v1.0.5-audit.md P0-1.4。
+ * 同时收集 tests/unit 的纯函数测试与 src 组件目录中的组件/性能回归，
+ * 防止组件测试因 roots、Node 环境或缺少 .vue transform 被静默排除。
  */
 module.exports = {
-  preset: 'ts-jest',
-  testEnvironment: 'node',
-  roots: ['<rootDir>/tests/unit'],
+  preset: '@vue/cli-plugin-unit-jest/presets/typescript-and-babel',
+  testEnvironment: 'jsdom',
+  roots: ['<rootDir>/tests/unit', '<rootDir>/src'],
   testMatch: ['**/*.spec.ts'],
+  collectCoverageFrom: [
+    '<rootDir>/src/**/*.ts',
+    '<rootDir>/src/components/torrents/AdvancedMultiSelect.vue',
+    '<rootDir>/src/components/torrents/AdvancedSearchBuilder.vue',
+    '!<rootDir>/src/**/*.d.ts',
+    '!<rootDir>/src/icons/**',
+    '!<rootDir>/src/main.ts',
+    '!<rootDir>/src/registerServiceWorker.ts'
+  ],
+  coverageDirectory: '<rootDir>/coverage',
+  coverageReporters: ['text-summary', 'html', 'lcov'],
+  coverageThreshold: {
+    global: {
+      branches: 40,
+      functions: 40,
+      lines: 40,
+      statements: 40
+    }
+  },
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1'
   },
-  transform: {
-    '^.+\\.tsx?$': 'ts-jest'
-  },
   globals: {
     'ts-jest': {
+      babelConfig: true,
       tsconfig: {
-        // 测试允许 any 断言，避免与业务代码的 strict 设置冲突
         strict: false,
         esModuleInterop: true,
         experimentalDecorators: true

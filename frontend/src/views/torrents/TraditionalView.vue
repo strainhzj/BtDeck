@@ -793,6 +793,7 @@ import {
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
+  needsActiveSnapshotRefresh,
   buildAdvancedSearchRequestFromTemplateGroups
 } from './utils/torrentBatch'
 
@@ -830,6 +831,8 @@ export default class extends mixins(TorrentBatchMixin) {
   private speedPollingActive = false
   private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+  private activeListRetryPending = false
+  private activeListRetryInFlight = false
 
   // 分类和标签数据
   private categoryList: string[] = []
@@ -880,7 +883,7 @@ export default class extends mixins(TorrentBatchMixin) {
     status: [],
     category_like: '',
     tags_like: '',
-    showActiveOnly: false, // P0#1：仅显示活动种子（前端过滤，known-issue：分页total失真）
+    showActiveOnly: false, // P0#1：仅显示活动种子（UI 开关，映射为后端 active_only 过滤，total 口径一致）
     sort_by: 'added_date', // P1前置：统一蛇形，后端用 getattr(TorrentInfo, sort_by) 匹配ORM字段名
     sort_order: 'desc'
   }
@@ -930,12 +933,14 @@ export default class extends mixins(TorrentBatchMixin) {
 
   get sortedList() {
     // 委托给 mixin 的 sortedActiveList（逻辑单点维护，防回归 Bug#7）
-    // 模板通过 sortedList 引用，这里做透传
+    // 模板通过 sortedList 引用，这里做透传。
+    // 第4参数固定 false：活动种子过滤已下沉到后端 active_only，此处仅保留"活跃优先排序"，
+    // 关闭客户端二次过滤，避免与后端过滤叠加。
     return deriveVisibleTorrentList(
       this.list,
       this.activeSpeedMap,
       this.speedSnapshotReady,
-      this.listQuery.showActiveOnly === true
+      false
     )
   }
 
@@ -1019,15 +1024,20 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   // ====== 数据获取 ======
-  private async getList() {
+  private async getList(activeSnapshotRetry = false) {
     this.listLoading = true
     try {
       const params = { ...this.listQuery }
       params.skip = (this.currentPage - 1) * this.pageSize
       params.limit = this.pageSize
 
-      // P0#1：showActiveOnly 仅前端过滤，不发给后端
+      // "仅显示活动种子"下沉为后端 active_only 过滤（解决前端过滤导致 total 失真）。
+      // showActiveOnly 仅作 UI 开关状态，映射成 active_only 传给后端。
+      const showActive = params.showActiveOnly === true
       delete params.showActiveOnly
+      if (showActive) {
+        params.active_only = true
+      }
 
       // 处理数组参数
       if (Array.isArray(params.downloader_id) && params.downloader_id.length > 0) {
@@ -1050,6 +1060,17 @@ export default class extends mixins(TorrentBatchMixin) {
       })
 
       const response = await getTorrentList(params)
+      if (needsActiveSnapshotRefresh(response, showActive)) {
+        // 后端尚无完整活动快照时保留当前列表。速度轮询拿到 code=200 的完整快照后，
+        // loadActiveSpeed 会触发一次受控重试。
+        this.activeListRetryPending = true
+        if (!activeSnapshotRetry) {
+          await this.loadActiveSpeed()
+        }
+        return
+      }
+      this.activeListRetryPending = false
+
       const { list, total } = normalizePaginatedResponse<any>(response)
 
       // 规范化并提供默认 checked
@@ -1058,9 +1079,8 @@ export default class extends mixins(TorrentBatchMixin) {
         checked: false
       }))
 
-      // P0#1 前端过滤"仅显示活动种子"：筛选有速度的种子
-      // known-issue（对齐列表模式 index.vue 既有缺陷）：开启后分页 total 变为当前页过滤后的条数，
-      // 翻页时每页独立过滤、页码总数失真。后续可改用 getActiveTorrents 全量拉取彻底解决。
+      // "仅显示活动种子"过滤已下沉到后端（active_only），此处直接使用后端返回的 list 与 total，
+      // 二者口径天然一致。sortedList 仅做"活动优先"排序，不再做客户端过滤。
       this.list = normalizedList
       this.total = total
 
@@ -1133,7 +1153,7 @@ export default class extends mixins(TorrentBatchMixin) {
    * token 实际存在 Cookie（cookies.ts:10），导致恒为 null → 401 → 速度永远为 0。
    * 改用封装的 getActiveTorrents()，复用统一 axios 拦截器（token 注入、401 跳登录）。
    */
-  private async loadActiveSpeed() {
+  private async loadActiveSpeed(): Promise<boolean> {
     const requestId = Date.now()
     try {
       const res = await getActiveTorrents()
@@ -1151,10 +1171,26 @@ export default class extends mixins(TorrentBatchMixin) {
         this.activeSpeedMap = snapshot.activeSpeedMap
         this.speedSnapshotReady = true
         console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
+
+        if (
+          this.activeListRetryPending &&
+          this.listQuery.showActiveOnly &&
+          !this.activeListRetryInFlight
+        ) {
+          this.activeListRetryInFlight = true
+          try {
+            await this.getList(true)
+          } finally {
+            this.activeListRetryInFlight = false
+          }
+        }
+        return true
       }
+      return false
     } catch (e) {
       // 静默失败，不影响主流程
       console.debug(`[速度轮询] 请求 ${requestId} 失败:`, e)
+      return false
     }
   }
 

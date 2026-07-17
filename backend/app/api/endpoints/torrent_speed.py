@@ -9,8 +9,11 @@ import asyncio
 import logging
 import os
 import time
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Set, Tuple
+from enum import Enum
+from threading import Lock
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
 from fastapi import APIRouter, Depends, Request
 from qbittorrentapi import APIError as QbAPIError, Client as qbClient
@@ -83,6 +86,94 @@ class _TTLQueue:
 
 # 全局 TTL 队列实例
 _ttl_queue = _TTLQueue(_TTL_SECONDS)
+
+
+# 活动种子集合缓存的有效期（秒）。略大于前端 1 秒轮询间隔，容忍偶尔漏轮询。
+_ACTIVE_KEYS_TTL = 5.0
+
+
+class ActiveSnapshotStatus(str, Enum):
+    """活动集合是否可作为列表过滤的权威快照。"""
+
+    NOT_READY = "not_ready"
+    EXPIRED = "expired"
+    PARTIAL = "partial"
+    READY_EMPTY = "ready_empty"
+    READY = "ready"
+
+
+@dataclass(frozen=True)
+class ActiveKeysSnapshot:
+    """活动集合缓存的一次原子读取结果。"""
+
+    keys: FrozenSet[Tuple[str, str]]
+    status: ActiveSnapshotStatus
+
+    @property
+    def ready(self) -> bool:
+        return self.status in (ActiveSnapshotStatus.READY, ActiveSnapshotStatus.READY_EMPTY)
+
+
+class _ActiveKeysCache:
+    """活动种子 (downloader_id, hash) 集合缓存。
+
+    由 active-torrents 端点（前端每秒轮询）写入，供 getList 的 active_only 过滤读取，
+    使列表查询接口无需为每次翻页实时遍历下载器（避免与轮询争抢 per-downloader 限流）。
+
+    写入口径：downloadSpeed>0 OR uploadSpeed>0（与 _fetch_*_speeds_sync、前端
+    deriveVisibleTorrentList 一致），源数据不含 supplement 补查结果（其速度可能为0）。
+    """
+
+    def __init__(self, ttl: float) -> None:
+        self._ttl = ttl
+        self._keys: Set[Tuple[str, str]] = set()
+        self._updated_at: float = 0.0
+        self._last_refresh_complete: Optional[bool] = None
+        self._lock = Lock()
+
+    def update_complete(self, keys: Set[Tuple[str, str]]) -> None:
+        """写入一次覆盖全部下载器的权威快照；空集也是有效快照。"""
+        with self._lock:
+            self._keys = set(keys)
+            self._updated_at = time.monotonic()
+            self._last_refresh_complete = True
+
+    def mark_partial(self) -> None:
+        """标记最近一次刷新不完整，保留旧值但禁止其参与活动过滤。"""
+        with self._lock:
+            self._last_refresh_complete = False
+
+    def reset(self) -> None:
+        """清空状态，供测试与进程生命周期管理使用。"""
+        with self._lock:
+            self._keys = set()
+            self._updated_at = 0.0
+            self._last_refresh_complete = None
+
+    def snapshot(self) -> ActiveKeysSnapshot:
+        """原子读取快照；未就绪、过期和部分刷新都不会伪装成权威空集。"""
+        with self._lock:
+            keys = frozenset(self._keys)
+            updated_at = self._updated_at
+            last_refresh_complete = self._last_refresh_complete
+
+        if last_refresh_complete is False:
+            return ActiveKeysSnapshot(frozenset(), ActiveSnapshotStatus.PARTIAL)
+        if last_refresh_complete is None or updated_at == 0.0:
+            return ActiveKeysSnapshot(frozenset(), ActiveSnapshotStatus.NOT_READY)
+        if (time.monotonic() - updated_at) > self._ttl:
+            return ActiveKeysSnapshot(frozenset(), ActiveSnapshotStatus.EXPIRED)
+        status = ActiveSnapshotStatus.READY if keys else ActiveSnapshotStatus.READY_EMPTY
+        return ActiveKeysSnapshot(keys, status)
+
+
+# 全局活动集合缓存实例
+_active_keys_cache = _ActiveKeysCache(_ACTIVE_KEYS_TTL)
+
+
+def get_active_keys_snapshot() -> ActiveKeysSnapshot:
+    """供 getList 同步读取活动种子集合（getList 保持同步端点，故此入口为同步）。"""
+    return _active_keys_cache.snapshot()
 
 
 def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
@@ -353,6 +444,78 @@ async def _sync_torrents_to_db(torrent_data: List[Dict[str, Any]]) -> None:
         logger.error(f"同步消失种子进度到数据库失败: {e}", exc_info=True)
 
 
+@dataclass
+class _DownloaderSpeedResult:
+    torrents: List[Dict[str, Any]]
+    complete: bool
+
+
+@dataclass
+class _ActiveSpeedGatherResult:
+    torrents: List[Dict[str, Any]]
+    complete: bool
+
+
+async def _process_downloader_speeds(downloader: Any) -> _DownloaderSpeedResult:
+    """处理单个下载器，返回活跃种子速度列表（含超时保护）。
+
+    抽自 get_active_torrents 端点，供 _gather_active_speeds 复用。
+    """
+    if getattr(downloader, "fail_time", 0) > 0:
+        return _DownloaderSpeedResult([], False)
+
+    client = getattr(downloader, "client", None)
+    if client is None:
+        return _DownloaderSpeedResult([], False)
+
+    nickname = getattr(downloader, "nickname", "unknown")
+    downloader_id = getattr(downloader, "downloader_id", "")
+    try:
+        if isinstance(client, qbClient):
+            torrents = await _call_with_timeout(downloader_id, "qb_active_speeds", _fetch_qb_speeds_sync, client)
+            return _DownloaderSpeedResult(torrents, True)
+        elif isinstance(client, trClient):
+            torrents = await _call_with_timeout(downloader_id, "tr_active_speeds", _fetch_tr_speeds_sync, client)
+            return _DownloaderSpeedResult(torrents, True)
+        else:
+            logger.warning(f"不支持的客户端类型: {type(client)}")
+            return _DownloaderSpeedResult([], False)
+    except asyncio.TimeoutError:
+        logger.warning(f"获取下载器 {nickname} 速度超时({_DOWNLOADER_TIMEOUT}s)，跳过")
+        return _DownloaderSpeedResult([], False)
+    except (QbAPIError, TransmissionError) as e:
+        # 分类捕获：客户端API异常（网络、认证、协议错误）
+        logger.warning(f"下载器 {nickname} API错误: {e}", exc_info=True)
+        return _DownloaderSpeedResult([], False)
+    except Exception as e:
+        # 未知异常：记录完整堆栈便于调试
+        logger.error(f"下载器 {nickname} 未知错误: {e}", exc_info=True)
+        return _DownloaderSpeedResult([], False)
+
+
+async def _gather_active_speeds(cached_downloaders: List[Any]) -> _ActiveSpeedGatherResult:
+    """并发收集所有在线下载器的活跃种子速度，扁平化并标记所属下载器。
+
+    抽自 get_active_torrents 端点，仅负责"snapshot → 并发取速 → 扁平化打标签"，
+    不含 TTL 队列 / supplement 补查 / 异步写 DB 等副作用（这些仍由端点处理）。
+    返回的每个条目口径为 downloadSpeed>0 OR uploadSpeed>0（来自 _fetch_*_speeds_sync）。
+    """
+    results = await asyncio.gather(*[_process_downloader_speeds(d) for d in cached_downloaders])
+
+    active_torrents: List[Dict[str, Any]] = []
+    for downloader, result in zip(cached_downloaders, results):
+        dl_id = getattr(downloader, "downloader_id", "")
+        dl_type = getattr(downloader, "downloader_type", -1)
+        for t in result.torrents:
+            t["downloader_id"] = dl_id
+            t["downloader_type"] = dl_type
+        active_torrents.extend(result.torrents)
+    return _ActiveSpeedGatherResult(
+        torrents=active_torrents,
+        complete=all(result.complete for result in results),
+    )
+
+
 @router.get("/active-torrents", summary="获取所有活跃种子的实时速度和进度")
 async def get_active_torrents(
     request: Request,
@@ -374,51 +537,26 @@ async def get_active_torrents(
         cached_downloaders = await request.app.state.store.get_snapshot()
 
         if not cached_downloaders:
+            _active_keys_cache.update_complete(set())
             return CommonResponse(status="success", msg="暂无在线下载器", code="200", data=[])
 
-        async def _process_downloader(downloader: Any) -> List[Dict[str, Any]]:
-            """处理单个下载器，返回活跃种子速度列表（含超时保护）"""
-            if getattr(downloader, "fail_time", 0) > 0:
-                return []
+        # 扁平化收集所有下载器的活跃种子速度（含 downloader_id/downloader_type 标签）
+        gathered = await _gather_active_speeds(cached_downloaders)
+        active_torrents = gathered.torrents
 
-            client = getattr(downloader, "client", None)
-            if client is None:
-                return []
-
-            nickname = getattr(downloader, "nickname", "unknown")
-            downloader_id = getattr(downloader, "downloader_id", "")
-            try:
-                if isinstance(client, qbClient):
-                    return await _call_with_timeout(downloader_id, "qb_active_speeds", _fetch_qb_speeds_sync, client)
-                elif isinstance(client, trClient):
-                    return await _call_with_timeout(downloader_id, "tr_active_speeds", _fetch_tr_speeds_sync, client)
-                else:
-                    logger.warning(f"不支持的客户端类型: {type(client)}")
-                    return []
-            except asyncio.TimeoutError:
-                logger.warning(f"获取下载器 {nickname} 速度超时({_DOWNLOADER_TIMEOUT}s)，跳过")
-                return []
-            except (QbAPIError, TransmissionError) as e:
-                # 分类捕获：客户端API异常（网络、认证、协议错误）
-                logger.warning(f"下载器 {nickname} API错误: {e}", exc_info=True)
-                return []
-            except Exception as e:
-                # 未知异常：记录完整堆栈便于调试
-                logger.error(f"下载器 {nickname} 未知错误: {e}", exc_info=True)
-                return []
-
-        # 并发调用所有下载器
-        results = await asyncio.gather(*[_process_downloader(d) for d in cached_downloaders])
-
-        # 扁平化结果，同时标记种子所属下载器
-        active_torrents: List[Dict[str, Any]] = []
-        for downloader, torrent_list in zip(cached_downloaders, results):
-            dl_id = getattr(downloader, "downloader_id", "")
-            dl_type = getattr(downloader, "downloader_type", -1)
-            for t in torrent_list:
-                t["downloader_id"] = dl_id
-                t["downloader_type"] = dl_type
-            active_torrents.extend(torrent_list)
+        # ---- 活动集合缓存：供 getList 的 active_only 过滤读取 ----
+        # 口径 downloadSpeed>0 OR uploadSpeed>0（与 _fetch_*_speeds_sync、前端
+        # deriveVisibleTorrentList 一致）。仅用扁平化结果，不含后续 supplement 补查数据
+        # （其速度可能为0，会污染过滤集合）。列顺序固定 (downloader_id, hash)。
+        refreshed_keys = {
+            (t.get("downloader_id", ""), t["hash"])
+            for t in active_torrents
+            if t.get("downloader_id", "") and (t.get("downloadSpeed", 0) > 0 or t.get("uploadSpeed", 0) > 0)
+        }
+        if gathered.complete:
+            _active_keys_cache.update_complete(refreshed_keys)
+        else:
+            _active_keys_cache.mark_partial()
 
         # ---- TTL 队列：按种子实际所属下载器记录 ----
         active_keys: Set[Tuple[str, str]] = set()
@@ -451,8 +589,16 @@ async def get_active_torrents(
         if completed_hashes:
             asyncio.create_task(_update_completed_torrents(completed_hashes))
 
-        return CommonResponse(status="success", msg="获取速度数据成功", code="200", data=active_torrents)
+        if gathered.complete:
+            return CommonResponse(status="success", msg="获取速度数据成功", code="200", data=active_torrents)
+        return CommonResponse(
+            status="partial",
+            msg="部分下载器速度获取失败，活动快照尚未就绪",
+            code="206",
+            data=active_torrents,
+        )
 
     except Exception as e:
+        _active_keys_cache.mark_partial()
         logger.error(f"获取活跃种子速度失败: {e}")
         return CommonResponse(status="error", msg=f"获取速度数据失败: {str(e)}", code="500", data=None)

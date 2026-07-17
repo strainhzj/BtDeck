@@ -12,14 +12,15 @@
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Dict, Any, Optional
+from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
 
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
+from app.torrents.models import TorrentInfo
 
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 
@@ -435,3 +436,43 @@ class CleanupTaskExecutor:
             except Exception as e:
                 logger.warning(f"加载路径映射服务失败: {e}")
         return None
+
+    def _query_level3_torrents(self, days_threshold: int = 30) -> List[TorrentInfo]:
+        """查询回收站中超期的等级3种子。
+
+        等级3种子特征：deleted_at IS NOT NULL AND dr=0（在回收站中但未彻底删除）。
+        超期判定：deleted_at < (now - days_threshold)。
+
+        Args:
+            days_threshold: 超期天数阈值
+
+        Returns:
+            符合条件的种子列表
+        """
+        threshold = datetime.utcnow() - timedelta(days=days_threshold)
+        return (
+            self.db.query(TorrentInfo)
+            .filter(
+                TorrentInfo.deleted_at.isnot(None),
+                TorrentInfo.deleted_at < threshold,
+                TorrentInfo.dr == 0,
+            )
+            .all()
+        )
+
+    def _query_level4_torrents(self) -> List[TorrentInfo]:
+        """查询带 pending_delete 标签的等级4种子。
+
+        等级4种子特征：tags 包含 pending_delete 标签且 dr=0（未删除）。
+
+        Returns:
+            符合条件的种子列表
+        """
+        return (
+            self.db.query(TorrentInfo)
+            .filter(
+                TorrentInfo.tags.like("%pending_delete%"),
+                TorrentInfo.dr == 0,
+            )
+            .all()
+        )

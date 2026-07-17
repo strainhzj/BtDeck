@@ -44,6 +44,9 @@ from app.models.notification import Notification
 # 搜索模板（第四轨归位，原由原生 SQL 自建）
 from app.models.search_template import SearchTemplate
 
+# 孤儿文件管理
+from app.models.orphan_file import OrphanScanResult, OrphanFile, OrphanCurrentCandidate, OrphanOperationLease
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
@@ -62,12 +65,13 @@ config = context.config
 # 此处不再独立读取环境变量，避免双源漂移。
 try:
     from app.core.config import settings
+
     db_path = settings.DATABASE_PATH
-    config.set_main_option('sqlalchemy.url', f'sqlite:///{db_path}')
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 except Exception:
     # 应用配置加载失败时的兜底（如 alembic 独立命令行调用）
-    default_db = Path(__file__).parent.parent / 'config' / 'app.db'
-    config.set_main_option('sqlalchemy.url', f'sqlite:///{default_db}')
+    default_db = Path(__file__).parent.parent / "config" / "app.db"
+    config.set_main_option("sqlalchemy.url", f"sqlite:///{default_db}")
 
 # Interpret the config file for Python logging.
 # 守卫：fileConfig 会按 alembic.ini 重新配置 logging，可能覆盖应用配置。
@@ -128,9 +132,7 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()

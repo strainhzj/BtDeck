@@ -28,6 +28,7 @@ from app.api.endpoints.torrent_helpers import (
     create_transmission_torrent_record,
     get_torrent_infos,
 )
+from app.api.endpoints.torrent_speed import get_active_keys_snapshot
 from app.api.endpoints.torrent_sync import qb_add_torrents, tr_add_torrents
 from app.services.torrent_crud_service import get_torrent_info
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
@@ -712,11 +713,34 @@ def get_torrents(
     limit: int = Query(100, ge=1, le=1000, description="限制记录数"),
     sort_by: Optional[str] = Query(None, description="排序字段"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
+    active_only: bool = Query(False, description="仅显示活动种子（实时速度>0，由活动集合缓存驱动）"),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
     try:
+        # 仅显示活动种子：只有完整且未过期的快照可以参与过滤。冷启动、过期或部分下载器
+        # 失败都返回 206，前端保留现有列表并先刷新速度快照；权威空集则正常返回 200 空列表。
+        active_keys = None
+        active_snapshot = None
+        if active_only:
+            active_snapshot = get_active_keys_snapshot()
+            if not active_snapshot.ready:
+                response_data = {
+                    "total": 0,
+                    "list": [],
+                    "pageSize": limit,
+                    "activeSnapshotReady": False,
+                    "activeSnapshotStatus": active_snapshot.status.value,
+                }
+                return CommonResponse(
+                    status="partial",
+                    msg="活动种子快照尚未就绪，请刷新速度快照后重试",
+                    data=response_data,
+                    code="206",
+                )
+            active_keys = set(active_snapshot.keys)
+
         # 获取包含总数和数据的查询结果
         result = get_torrent_infos(
             db=db,
@@ -738,10 +762,18 @@ def get_torrents(
             sort_by=sort_by,
             sort_order=sort_order,
             tracker=tracker_like,
+            active_keys=active_keys,
         )
 
         # 构建响应数据，包含总数和列表
-        response_data = {"total": result["total"], "list": result["data"]}
+        response_data = {"total": result["total"], "list": result["data"], "pageSize": limit}
+        if active_snapshot is not None:
+            response_data.update(
+                {
+                    "activeSnapshotReady": True,
+                    "activeSnapshotStatus": active_snapshot.status.value,
+                }
+            )
 
         response = CommonResponse(status="success", msg="获取列表成功", data=response_data, code="200")
         return response

@@ -18,8 +18,8 @@ SQLALCHEMY_DATABASE_URL = f"sqlite:///{settings.DATABASE_PATH}"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
-    # timeout=30 秒(SQLAlchemy 的 SQLite 参数)，换算为 busy_timeout=30000ms
-    connect_args={"check_same_thread": False, "timeout": 30},
+    # timeout=15 秒(SQLAlchemy 的 SQLite 参数)，换算为 busy_timeout=15000ms
+    connect_args={"check_same_thread": False, "timeout": 15},
     # NullPool：SQLite 单文件库不支持真正的连接池；多线程并发由 NullPool 给每条调用各开独立连接
     poolclass=NullPool,
 )
@@ -31,12 +31,14 @@ def _apply_sqlite_pragmas(dbapi_conn, conn_record):  # noqa: ANN001 - SQLAlchemy
 
     - journal_mode=WAL：写前日志，读写并发能力远超默认的 rollback journal（WAL 为数据库文件级持久属性，重复设置无害）。
     - synchronous=NORMAL：WAL 下足够安全且更快（默认 FULL 会每笔事务 fsync）。
-    - busy_timeout=30000ms：遇到写锁时最多等待 30s，缓解多任务并发写时的 "database is locked"。
+    - busy_timeout=15000ms：遇到写锁时最多等待 15s，缓解多任务并发写时的 "database is locked"。
+      （主修复后锁竞争窗口已极短：db_write_scope 串行化写者，二级兜底 15s 对齐前端 axios timeout=20s；
+       若压测显示误触 SQLITE_BUSY 可回退 30s。）
     """
     cursor = dbapi_conn.cursor()
     cursor.execute("PRAGMA journal_mode=WAL")
     cursor.execute("PRAGMA synchronous=NORMAL")
-    cursor.execute("PRAGMA busy_timeout=30000")
+    cursor.execute("PRAGMA busy_timeout=15000")
     cursor.close()
 
 
@@ -50,11 +52,11 @@ ASYNC_SQLALCHEMY_DATABASE_URL = f"sqlite+aiosqlite:///{settings.DATABASE_PATH}"
 # 创建异步引擎
 # 优化说明：
 # 1. 使用 NullPool：SQLite 单文件库不支持真正的连接池，多协程并发靠 NullPool 各开连接（StaticPool 会让多线程共用同一 sqlite3 连接对象，触发 "Recursive use of cursors not allowed"）
-# 2. timeout=30：SQLAlchemy 的 SQLite 参数(秒)，换算为 busy_timeout=30000ms
+# 2. timeout=15：SQLAlchemy 的 SQLite 参数(秒)，换算为 busy_timeout=15000ms
 # 3. PRAGMA(WAL/synchronous/busy_timeout) 通过下方事件监听挂到 sync_engine 的每个连接上（init_db 只用临时连接设过 WAL，但 busy_timeout 非持久，新连接需重新下发）
 async_engine = create_async_engine(
     ASYNC_SQLALCHEMY_DATABASE_URL,
-    connect_args={"check_same_thread": False, "timeout": 30},
+    connect_args={"check_same_thread": False, "timeout": 15},
     poolclass=NullPool,
     echo=False,
 )

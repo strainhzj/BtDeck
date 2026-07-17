@@ -15,6 +15,7 @@ GET /api/v1/torrents/active-torrents 端点级回归测试。
   - test_torrent_list_api.py（require_authenticated_user dependency_overrides）
   - test_torrent_speed_regression.py（patch call_downloader_api 避免 lifespan 污染）
 """
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -41,6 +42,7 @@ EXPECTED_SPEED_FIELDS = {
 
 
 # ============ 辅助构造 ============
+
 
 def _set_store(app, downloaders):
     """注入异步 get_snapshot 伪 store（仿 test_dashboard_api._set_store）。"""
@@ -88,9 +90,7 @@ def client():
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
     # 同步 lambda 覆盖 async 依赖即可（FastAPI dependency_overrides 不区分 async/sync）。
-    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(
-        username="tester"
-    )
+    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
     yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
 
@@ -114,14 +114,14 @@ def _real_call_downloader_api():
     )
 
 
-# ============ P0-1：空响应契约（三场景） ============
+# ============ P0-1：活动快照响应契约（三场景） ============
 
 
 class TestEmptyResponseContract:
-    """守护前端 loadActiveSpeed 依赖的 code='200' data=[] 契约。
+    """守护前端 loadActiveSpeed 依赖的活动快照完整性契约。
 
-    任意一场景偏离都会让前端 speedSnapshotReady 永久 false，
-    导致「仅显示活动种子」过滤失效（commit 466e18c 修复的 bug 被绕过）。
+    权威空快照返回 200；下载器失败导致的不完整快照返回 206，
+    防止前端把未知状态误判为「没有活动种子」。
     """
 
     def test_no_online_downloader_returns_200_empty(self, client):
@@ -133,8 +133,8 @@ class TestEmptyResponseContract:
         assert body["data"] == []
         assert body["status"] == "success"
 
-    def test_downloader_timeout_returns_200_empty(self, client):
-        """场景2：下载器调用超时（:398-400 捕获 TimeoutError 返回 []）→ code='200' data=[]。"""
+    def test_downloader_timeout_returns_206_partial(self, client):
+        """场景2：下载器调用超时会返回 206，标记快照不完整。"""
         import asyncio
 
         dl = _make_qb_downloader(torrents=[{"hash": "h1"}])
@@ -149,11 +149,12 @@ class TestEmptyResponseContract:
         ):
             r = client.get(URL)
         body = r.json()
-        assert body["code"] == "200"
+        assert body["code"] == "206"
         assert body["data"] == []
+        assert body["status"] == "partial"
 
-    def test_downloader_api_error_returns_200_empty(self, client):
-        """场景2b：下载器 API 异常（:401-403 捕获 QbAPIError/TransmissionError）→ code='200' data=[]。"""
+    def test_downloader_api_error_returns_206_partial(self, client):
+        """场景2b：下载器 API 异常会返回 206，标记快照不完整。"""
         from qbittorrentapi import APIError as QbAPIError
 
         dl = _make_qb_downloader()
@@ -168,8 +169,9 @@ class TestEmptyResponseContract:
         ):
             r = client.get(URL)
         body = r.json()
-        assert body["code"] == "200"
+        assert body["code"] == "206"
         assert body["data"] == []
+        assert body["status"] == "partial"
 
     def test_no_active_seeds_returns_200_empty(self, client):
         """场景3：有在线下载器但全部速度为0（:95/124 过滤后 active_torrents 空，:454）→ code='200' data=[]。"""
@@ -264,11 +266,7 @@ class TestEndpointMustUseRuntime:
 
     def test_endpoint_invokes_call_downloader_api(self, client):
         """有在线下载器时，端点必须通过 call_downloader_api 调用下载器。"""
-        dl = _make_qb_downloader(
-            torrents=[
-                {"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}
-            ]
-        )
+        dl = _make_qb_downloader(torrents=[{"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}])
         _set_store(client.app, [dl])
         # 用闭包变量记录调用：若端点绕过 runtime 直接 to_thread，该变量不会被置 True
         call_records = []
@@ -277,16 +275,11 @@ class TestEndpointMustUseRuntime:
             call_records.append((downloader_id, lane))
             return func(*args, **(kwargs or {}))
 
-        with patch(
-            "app.api.endpoints.torrent_speed.call_downloader_api", side_effect=spy_call
-        ):
+        with patch("app.api.endpoints.torrent_speed.call_downloader_api", side_effect=spy_call):
             r = client.get(URL)
         assert r.json()["code"] == "200"
         # 核心断言：call_downloader_api 必须被调用过（证明走 runtime，非旁路）
-        assert len(call_records) > 0, (
-            "速度接口必须经 call_downloader_api（DownloaderApiRuntime），不能绕过限流"
-        )
+        assert len(call_records) > 0, "速度接口必须经 call_downloader_api（DownloaderApiRuntime），不能绕过限流"
         # 进一步验证 lane 为 INTERACTIVE（与 _real_call_downloader_api 的断言互补）
         called_lane = call_records[0][1]
         assert called_lane == DownloadLane.INTERACTIVE
-

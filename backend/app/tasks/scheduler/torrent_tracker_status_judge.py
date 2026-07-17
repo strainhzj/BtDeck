@@ -18,12 +18,14 @@ Author: btpmanager
 Version: 1.0.0
 """
 
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, List
 import logging
 import threading
 
 from app.database import SessionLocal
+from app.tasks.resource_guard import admission_controller
 from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 
 logger = logging.getLogger(__name__)
@@ -103,7 +105,8 @@ class TorrentTrackerStatusJudge:
             logger.info(f"[{self.name}] 开始执行，第{self.execution_count}次")
 
             # Step 1: 加载所有启用的关键词到内存
-            keyword_map = self._load_keywords()
+            # to_thread：_load_keywords 是同步 SessionLocal 读，移出事件循环避免冻结
+            keyword_map = await asyncio.to_thread(self._load_keywords)
             result["total_keywords_loaded"] = len(keyword_map)
 
             if not keyword_map:
@@ -123,7 +126,8 @@ class TorrentTrackerStatusJudge:
                 return result
 
             # Step 2: 获取所有未删除的种子
-            torrents = self._get_all_torrents()
+            # to_thread：_get_all_torrents 是同步 SessionLocal 读，移出事件循环避免冻结
+            torrents = await asyncio.to_thread(self._get_all_torrents)
             result["total_torrents_found"] = len(torrents)
 
             if not torrents:
@@ -142,8 +146,13 @@ class TorrentTrackerStatusJudge:
                 )
                 return result
 
-            # Step 3: 批量判断种子状态
-            self._judge_torrents_batch(torrents, keyword_map)
+            # Step 3: 分批判断种子状态
+            # 按 BATCH_SIZE 切分，每批独立 commit（毫秒级），db_write_scope 串行化写者。
+            # 单批失败即终止（前面已提交批次保留——has_tracker_error 幂等可重算，下次执行覆盖）。
+            for i in range(0, len(torrents), self.BATCH_SIZE):
+                batch = torrents[i : i + self.BATCH_SIZE]
+                async with admission_controller.db_write_scope():
+                    await asyncio.to_thread(self._judge_one_batch, batch, keyword_map)
 
             # 更新统计信息
             with self._stats_lock:
@@ -242,7 +251,7 @@ class TorrentTrackerStatusJudge:
         finally:
             db.close()
 
-    def _get_all_torrents(self) -> List[TorrentInfo]:
+    def _get_all_torrents(self) -> List[str]:
         """
         获取所有未删除的种子
 
@@ -266,9 +275,12 @@ class TorrentTrackerStatusJudge:
         finally:
             db.close()
 
-    def _judge_torrents_batch(self, torrent_ids: List[str], keyword_map: Dict[str, str]) -> None:
+    def _judge_one_batch(self, torrent_ids: List[str], keyword_map: Dict[str, str]) -> None:
         """
-        批量判断种子状态
+        判断单个批次的种子状态（同步方法，由 execute 经 to_thread 调用）。
+
+        N+1 优化：批次内改用两次 IN 查询取本批种子+tracker，内存按 torrent_info_id
+        分组后遍历判断，消除逐种子 db.query。
 
         判断规则:
         - 检查每个种子的所有dr=0的tracker
@@ -279,27 +291,43 @@ class TorrentTrackerStatusJudge:
         - 没有任何tracker → 保持原状态不变
 
         Args:
-            torrent_ids: 种子ID列表
+            torrent_ids: 本批种子ID列表
             keyword_map: 关键词字典
+
+        Raises:
+            Exception: 单批 commit 失败时抛出（execute 侧终止，已提交批次保留）
         """
         if not torrent_ids:
             return
 
         db = SessionLocal()
         try:
+            # 一次 IN 查询取本批种子（消除 N+1）
+            torrents = db.query(TorrentInfo).filter(TorrentInfo.info_id.in_(torrent_ids)).all()
+            # 按 info_id 索引，便于与 tracker 分组对齐
+            torrent_map: Dict[str, TorrentInfo] = {str(t.info_id): t for t in torrents}
+
+            # 一次 IN 查询取本批种子的 tracker（消除 N+1）
+            batch_trackers = (
+                db.query(TrackerInfo)
+                .filter(
+                    TrackerInfo.torrent_info_id.in_(torrent_ids),
+                    TrackerInfo.dr == 0,
+                )
+                .all()
+            )
+            # 按 torrent_info_id 分组 tracker
+            trackers_by_torrent: Dict[str, List[TrackerInfo]] = {}
+            for tracker in batch_trackers:
+                trackers_by_torrent.setdefault(str(tracker.torrent_info_id), []).append(tracker)
+
             for torrent_id in torrent_ids:
                 try:
-                    # 在当前会话中重新查询种子对象（确保对象在会话中）
-                    torrent = db.query(TorrentInfo).filter(TorrentInfo.info_id == torrent_id).first()
-
+                    torrent = torrent_map.get(torrent_id)
                     if not torrent:
                         continue
-                    # 获取该种子的所有未删除的tracker
-                    trackers = (
-                        db.query(TrackerInfo)
-                        .filter(TrackerInfo.torrent_info_id == torrent.info_id, TrackerInfo.dr == 0)
-                        .all()
-                    )
+
+                    trackers = trackers_by_torrent.get(str(torrent.info_id), [])
 
                     # 判断是否有tracker
                     if not trackers:
@@ -376,7 +404,7 @@ class TorrentTrackerStatusJudge:
                     logger.error(f"判断种子失败: {e}")
                     continue
 
-            # 一次性提交所有更改
+            # 提交本批更改（单批 commit，毫秒级）
             try:
                 db.commit()
                 logger.info(f"批量判断完成: 处理{len(torrent_ids)}个种子")

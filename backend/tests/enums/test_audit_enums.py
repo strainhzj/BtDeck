@@ -4,10 +4,10 @@
 测试目标模块: app.torrents.audit_enums
 覆盖 AuditOperationType / AuditOperationResult 的所有枚举值和方法。
 """
+
 import pytest
 
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
-
 
 # ===========================================================================
 # AuditOperationType 测试数据
@@ -69,10 +69,10 @@ AUDIT_OPERATION_TYPE_PARAMS = [
 
 INVALID_OPERATION_TYPE_VALUES = [
     "unknown",
-    "ADD",           # 大写不应匹配（枚举值是小写）
+    "ADD",  # 大写不应匹配（枚举值是小写）
     "delete_l5",
     "",
-    "pause_seed",    # 部分匹配但不存在的值
+    "pause_seed",  # 部分匹配但不存在的值
     "sync_downloader",
 ]
 
@@ -89,7 +89,7 @@ AUDIT_OPERATION_RESULT_PARAMS = [
 
 INVALID_OPERATION_RESULT_VALUES = [
     "unknown",
-    "SUCCESS",   # 大写不应匹配
+    "SUCCESS",  # 大写不应匹配
     "error",
     "",
     "pending",
@@ -105,7 +105,7 @@ class TestAuditOperationTypeMemberCount:
     """验证 AuditOperationType 枚举成员总数正确"""
 
     def test_member_count(self):
-        assert len(AuditOperationType) == 39
+        assert len(AuditOperationType) == 42
 
 
 class TestAuditOperationTypeIsValid:

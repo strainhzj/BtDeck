@@ -65,23 +65,23 @@ npm run build
 # ESLint 检查
 npm run lint
 
-# ESLint 自动修复
-npm run lint:fix
+# TypeScript 严格检查
+npm run typecheck
 ```
 
 ### 运行测试
 
 ```bash
-# 单元测试
+# 全部 Jest 回归（纯函数 + Vue 组件 + 性能契约）
 npm run test:unit
 
-# 集成测试
-npm run test:integration
+# 全量回归 + 覆盖率门禁（四项全局阈值 40%，生成 HTML/LCOV）
+npm run test:coverage
 
-# 端到端测试 (Playwright)
-npm run test:playwright
+# 仅组件测试
+npm run test:components
 
-# 运行所有测试
+# 类型检查 + 覆盖率门禁
 npm run test:all
 ```
 
@@ -215,9 +215,10 @@ export interface PaginatedResponse<T> {
 
 ## 🧪 测试策略
 
-- **单元测试**: 组件逻辑、工具函数
-- **集成测试**: 完整的前后端交互链路
-- **端到端测试**: 使用 Playwright 进行 E2E 测试
+- **单元与契约测试**: 工具函数、API 请求配置、Vuex 状态与关键业务分支
+- **组件测试**: 使用 Vue Test Utils 验证关键组件交互和性能边界
+- **覆盖率门禁**: Jest/Istanbul 采集业务 TypeScript 与已纳入测试的关键 SFC，Statements/Branches/Functions/Lines 均不得低于 40%
+- **集成与端到端测试**: 尚未进入自动化 CI 门禁，后续按高风险用户旅程逐步补齐
 
 ## 📦 部署
 

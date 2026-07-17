@@ -74,8 +74,10 @@ describe('AdvancedMultiSelect组件', () => {
       expect(searchInput.attributes('placeholder')).toBe('搜索选项...')
     })
 
-    it('应该正确显示虚拟滚动列表', () => {
-      expect(wrapper.find('virtual-scroll-list-stub').exists()).toBe(true)
+    it('小数据量应该使用普通列表', () => {
+      expect(wrapper.vm.useVirtualScroll).toBe(false)
+      expect(wrapper.find('.normal-list').exists()).toBe(true)
+      expect(wrapper.find('virtual-scroll-list-stub').exists()).toBe(false)
     })
   })
 
@@ -121,7 +123,7 @@ describe('AdvancedMultiSelect组件', () => {
       await wrapper.vm.$nextTick()
 
       const filteredOptions = wrapper.vm.filteredOptions
-      expect(filteredOptions).toHaveLength(2) // 选项1 和 选项2
+      expect(filteredOptions).toHaveLength(3) // 选项1、选项2 和选项3
       expect(filteredOptions.every((opt: SelectOption) =>
         opt.label.includes('选项')
       )).toBe(true)
@@ -136,12 +138,14 @@ describe('AdvancedMultiSelect组件', () => {
       expect(filteredOptions[0].label).toBe('Test Option')
     })
 
-    it('搜索功能应该区分大小写', async() => {
+    it('搜索功能应该不区分大小写且不重复同一选项', async() => {
       wrapper.setData({ searchKeyword: 'test' })
       await wrapper.vm.$nextTick()
 
       const filteredOptions = wrapper.vm.filteredOptions
-      expect(filteredOptions).toHaveLength(2) // 'test' 在 'Test Option' 和 'test' category中
+      // 同一选项的 label 与 category 都命中时仍只返回一次
+      expect(filteredOptions).toHaveLength(1)
+      expect(filteredOptions[0].label).toBe('Test Option')
     })
   })
 

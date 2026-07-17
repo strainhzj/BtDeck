@@ -32,7 +32,7 @@
               size="mini"
               style="margin-left: 8px;"
             >
-              {{ group.logic?.toUpperCase() || 'AND' }}
+              {{ (group.logic || 'and').toUpperCase() }}
             </el-tag>
           </div>
           <div class="group-actions">
@@ -99,7 +99,7 @@
                 size="mini"
                 class="logic-tag"
               >
-                {{ group.logic?.toUpperCase() }}
+                {{ (group.logic || 'and').toUpperCase() }}
               </el-tag>
             </div>
 
