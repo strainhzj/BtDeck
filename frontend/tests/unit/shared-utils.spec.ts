@@ -166,6 +166,28 @@ describe('共享格式化与规范化工具', () => {
     expect(formatDate('invalid')).toBe('-')
   })
 
+  it('正确格式化同步接口返回的本地 ISO 日期字符串', () => {
+    expect(formatDate('2026-07-17T10:20:30')).toBe('2026-07-17 10:20:30')
+  })
+
+  it.each([
+    ['UTC Z 格式', '2026-07-17T02:20:30.123Z'],
+    ['显式时区偏移格式', '2026-07-17T10:20:30.123+08:00']
+  ])('正确格式化包含小数秒的%s ISO 日期字符串', (_label, isoTimestamp) => {
+    const equivalentTimestamp = Date.UTC(2026, 6, 17, 2, 20, 30, 123)
+    expect(formatDate(isoTimestamp)).toBe(formatDate(equivalentTimestamp))
+  })
+
+  it('保持秒级数值时间戳字符串兼容性', () => {
+    const timestamp = new Date(2026, 6, 17, 10, 20, 30).getTime()
+    expect(formatDate(String(timestamp / 1000))).toBe('2026-07-17 10:20:30')
+  })
+
+  it('保持毫秒级数值时间戳字符串兼容性', () => {
+    const timestamp = new Date(2026, 6, 17, 10, 20, 30).getTime()
+    expect(formatDate(String(timestamp))).toBe('2026-07-17 10:20:30')
+  })
+
   it('截断文本并提取扩展名', () => {
     expect(truncateText('abcdef', 3)).toBe('abc...')
     expect(truncateText('abc', 3)).toBe('abc')

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-16",
+  "last_updated": "2026-07-17",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -1090,6 +1090,18 @@
             ".github/workflows/regression.yml"
           ],
           "evidence": "Jest roots 从局部 components 扩到全 src；覆盖率采集全量业务 TS + AdvancedMultiSelect/AdvancedSearchBuilder 两个关键 SFC，排除声明和生成图标；测试从 4 suites/142 tests 增至 8 suites/222 tests。有效覆盖率 Statements 50.03%、Branches 42.01%、Functions 43.04%、Lines 49.47%，四项 CI 阈值均为 40%，生成 HTML/LCOV 并由 Actions 上传 artifact。新增测试发现并修复 normalizeTorrent 原始值反向覆盖规范结果、queuedDL 未识别两个缺陷；tsc、目标 ESLint（0 error）、生产 build、git diff --check 通过。"
+        },
+        {
+          "id": "v1.0.6.14",
+          "name": "种子同步添加时间显示 1970 回归修复",
+          "description": "修复前端 formatDate 将同步接口返回的 ISO 8601 添加时间误判为 Unix 秒时间戳的问题，并补充回归测试。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/utils/formatters.ts",
+            "frontend/tests/unit/shared-utils.spec.ts"
+          ],
+          "evidence": "根因：parseInt('2026-07-17T10:20:30') 仅得到 2026，随后按 Unix 秒格式化为 1970-01-01 08:33:46；失败回归用例稳定复现。修复为仅在字符串完全匹配数字格式时按时间戳处理，ISO 字符串整体交给 Date 解析，同时保留数字字符串兼容。回归测试已拆分并覆盖本地 ISO、带 Z/显式偏移的小数秒 ISO、秒级及毫秒级数值字符串；Asia/Shanghai、UTC、America/New_York 三时区目标测试均为 42/42。全量 Jest + coverage 9 suites/229 tests；Statements 50.15%、Branches 42.01%、Functions 43.04%、Lines 49.60%；tsc、ESLint、Vuex lint、生产 build、git diff --check 通过。"
         }
       ]
     }

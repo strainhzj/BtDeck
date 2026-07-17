@@ -364,17 +364,19 @@ export function formatDate(
     }
     // 处理字符串时间戳
     else if (typeof timestamp === 'string') {
-      const parsedTimestamp = parseInt(timestamp, 10)
-      if (isNaN(parsedTimestamp)) {
-        // 不是数字,尝试直接解析
-        date = new Date(timestamp)
-      } else {
-        // 是数字字符串
+      const normalizedTimestamp = timestamp.trim()
+      const isNumericTimestamp = /^[+-]?\d+(?:\.\d+)?$/.test(normalizedTimestamp)
+
+      if (isNumericTimestamp) {
+        const parsedTimestamp = Number(normalizedTimestamp)
         if (parsedTimestamp < 10000000000) {
           date = new Date(parsedTimestamp * 1000)
         } else {
           date = new Date(parsedTimestamp)
         }
+      } else {
+        // ISO 8601 等日期字符串必须整体解析，不能用 parseInt 截成开头的年份
+        date = new Date(normalizedTimestamp)
       }
     } else {
       return '-'
