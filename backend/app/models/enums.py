@@ -24,11 +24,11 @@ class SpeedUnitEnum(enum.IntEnum):
     MB_PER_SEC = 1  # MB/s
 
     @classmethod
-    def from_value(cls, value: int) -> "SpeedUnitEnum":
-        """从整数值获取枚举
+    def from_value(cls, value: object) -> "SpeedUnitEnum":
+        """从整数值或数据库/适配器使用的字符串获取枚举
 
         Args:
-            value: 单位整数值 (0, 1)
+            value: 单位值（整数、数字字符串、枚举名或 KB/s、MB/s）
 
         Returns:
             SpeedUnitEnum: 对应的枚举值
@@ -36,8 +36,22 @@ class SpeedUnitEnum(enum.IntEnum):
         Raises:
             ValueError: 如果值无效
         """
+        normalized_value = value
+        if isinstance(value, str):
+            aliases = {
+                "0": cls.KB_PER_SEC.value,
+                "1": cls.MB_PER_SEC.value,
+                "KB_PER_SEC": cls.KB_PER_SEC.value,
+                "MB_PER_SEC": cls.MB_PER_SEC.value,
+                "KB/S": cls.KB_PER_SEC.value,
+                "MB/S": cls.MB_PER_SEC.value,
+            }
+            normalized_value = aliases.get(value.strip().upper(), value)
+
         try:
-            return cls(value)
+            if isinstance(normalized_value, bool) or not isinstance(normalized_value, int):
+                raise ValueError
+            return cls(normalized_value)
         except ValueError:
             valid_values = [e.value for e in cls]
             raise ValueError(f"无效的速度单位: '{value}'. " f"有效值为: {valid_values} (0=KB/s, 1=MB/s)")

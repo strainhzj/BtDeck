@@ -15,7 +15,7 @@
 - 下载器不存在 → code='404'（verify_downloader_exists 查 bt_downloaders dr=0）。
 """
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -118,13 +118,12 @@ class TestSaveAndReadback:
         assert row[2] == 0  # enable_schedule False
 
     def test_schedule_rule_saved_and_readback(self, client, db_session):
-        """含规则的 body 保存后，规则正确落库 speed_schedule_rules 表。
-
-        同时回读 downloader_settings.dl_speed_limit：当前未传全局 dlSpeedLimit（应为 0），
-        但被测代码 L408 规则循环内重赋 dl_speed_limit（变量遮蔽），实际落库为规则的 2048。
-        此测试钉死当前行为（已知变量遮蔽现象），若未来修复须同步更新断言。
-        """
+        """含规则时，规则正确落库且不得覆盖全局速度限制。"""
         body = {
+            "dlSpeedLimit": 1024,
+            "dlSpeedUnit": 0,
+            "ulSpeedLimit": 512,
+            "ulSpeedUnit": 1,
             "enableSchedule": True,
             "schedule_rules": [
                 {
@@ -132,7 +131,7 @@ class TestSaveAndReadback:
                     "end_time": "18:00",
                     "weekdays": [0, 1, 2, 3, 4],
                     "download": {"enabled": True, "speed_limit": 2048, "speed_unit": 0},
-                    "upload": {"enabled": False, "speed_limit": 0, "speed_unit": 0},
+                    "upload": {"enabled": True, "speed_limit": 256, "speed_unit": 0},
                 }
             ],
         }
@@ -147,14 +146,71 @@ class TestSaveAndReadback:
         assert len(rules) == 1
         assert rules[0][0] == "09:00"
         assert rules[0][1] == "18:00"
-        # 回读全局 dl_speed_limit：钉死变量遮蔽现象（规则 2048 遮蔽了全局 0）
+        # 规则使用独立变量解析，不能污染全局限速字段。
         global_row = db_session.execute(
-            text("SELECT dl_speed_limit FROM downloader_settings WHERE downloader_id='dl-1'")
+            text(
+                "SELECT dl_speed_limit, ul_speed_limit, dl_speed_unit, ul_speed_unit "
+                "FROM downloader_settings WHERE downloader_id='dl-1'"
+            )
         ).fetchone()
-        assert global_row[0] == 2048, (
-            "已知现象：规则循环内 dl_speed_limit 被重赋（downloader_settings.py:408），"
-            "遮蔽了外层全局值 0，实际落库为规则值 2048"
+        assert (global_row[0], global_row[1], int(global_row[2]), int(global_row[3])) == (1024, 512, 0, 1)
+
+    @pytest.mark.parametrize("downloader_type", [0, 1])
+    def test_schedule_save_then_apply_uses_global_speed(self, client, db_session, downloader_type):
+        """保存分时段规则后，立即应用仍应使用全局限速（qBittorrent/Transmission）。"""
+        db_session.execute(
+            text("UPDATE bt_downloaders SET downloader_type=:type WHERE downloader_id='dl-1'"),
+            {"type": downloader_type},
         )
+        db_session.commit()
+
+        body = {
+            "dlSpeedLimit": 100,
+            "dlSpeedUnit": 1,
+            "ulSpeedLimit": 200,
+            "ulSpeedUnit": 0,
+            "enableSchedule": True,
+            "schedule_rules": [
+                {
+                    "start_time": "09:00",
+                    "end_time": "18:00",
+                    "weekdays": [0, 1, 2, 3, 4],
+                    "download": {"enabled": True, "speed_limit": 900, "speed_unit": 0},
+                    "upload": {"enabled": True, "speed_limit": 800, "speed_unit": 0},
+                }
+            ],
+        }
+        assert client.put(_url(), json=body).json()["code"] == "200"
+
+        cached_client = MagicMock()
+        cached_downloader = SimpleNamespace(downloader_id="dl-1", fail_time=0, client=cached_client)
+        from app.main import app as runtime_app
+
+        previous_store = getattr(runtime_app.state, "store", None)
+        runtime_app.state.store = SimpleNamespace(get_snapshot_sync=lambda: [cached_downloader])
+        try:
+            response = client.post(f"{_url()}/apply")
+        finally:
+            runtime_app.state.store = previous_store
+
+        assert response.json()["code"] == "200"
+        if downloader_type == 0:
+            cached_client.app_set_preferences.assert_called_once_with(
+                prefs={
+                    "dl_limit": 100 * 1024 * 1024,
+                    "up_limit": 200 * 1024,
+                    "queueing_enabled": True,
+                    "dl_queue_track": True,
+                    "ul_queue_track": True,
+                }
+            )
+        else:
+            cached_client.set_session.assert_called_once_with(
+                speed_limit_down=100 * 1024,
+                speed_limit_down_enabled=True,
+                speed_limit_up=200,
+                speed_limit_up_enabled=True,
+            )
 
     def test_password_encrypted_on_save(self, client, db_session):
         """password 字段保存时被 SM4 加密（patch 后为 enc_<明文>）。"""

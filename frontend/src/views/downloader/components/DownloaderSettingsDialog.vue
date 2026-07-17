@@ -512,6 +512,7 @@ import AdvancedSettingsTab from './AdvancedSettingsTab.vue'
 import PathManagementTab from './PathManagementTab.vue'
 import TagManagementTab from './TagManagementTab.vue'
 import TemplateSelectionDialog from './TemplateSelectionDialog.vue'
+import { resolveEnableSchedule } from '../settings'
 
 @Component({
   name: 'DownloaderSettingsDialog',
@@ -763,6 +764,7 @@ export default class DownloaderSettingsDialog extends Vue {
 
         const ulSpeedUnitValue = responseData.ul_speed_unit ?? responseData.ulSpeedUnit ?? responseData.speed_unit ?? 0
         const ulSpeedUnitNumber = typeof ulSpeedUnitValue === 'number' ? ulSpeedUnitValue : parseInt(ulSpeedUnitValue, 10)
+        const enableSchedule = resolveEnableSchedule(responseData)
 
         this.currentSettings = {
           downloader_id: responseData.downloader_id || this.downloader.id,
@@ -772,6 +774,8 @@ export default class DownloaderSettingsDialog extends Vue {
           ulSpeedLimit: responseData.ul_speed_limit ?? responseData.ulSpeedLimit ?? 0,
           dlSpeedUnit: dlSpeedUnitNumber,
           ulSpeedUnit: ulSpeedUnitNumber,
+          enableSchedule,
+          enable_schedule: enableSchedule,
           // 兼容旧字段名
           download_speed_limit: responseData.dl_speed_limit ?? responseData.dlSpeedLimit ?? 0,
           upload_speed_limit: responseData.ul_speed_limit ?? responseData.ulSpeedLimit ?? 0,

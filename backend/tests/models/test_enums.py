@@ -17,6 +17,21 @@ class TestSpeedUnitEnum:
         """整数值 1 应返回 MB_PER_SEC"""
         assert SpeedUnitEnum.from_value(1) == SpeedUnitEnum.MB_PER_SEC
 
+    @pytest.mark.parametrize(
+        ("stored_value", "expected"),
+        [
+            ("0", SpeedUnitEnum.KB_PER_SEC),
+            ("1", SpeedUnitEnum.MB_PER_SEC),
+            ("KB_PER_SEC", SpeedUnitEnum.KB_PER_SEC),
+            ("MB_PER_SEC", SpeedUnitEnum.MB_PER_SEC),
+            ("KB/s", SpeedUnitEnum.KB_PER_SEC),
+            ("MB/s", SpeedUnitEnum.MB_PER_SEC),
+        ],
+    )
+    def test_from_value_accepts_storage_representations(self, stored_value, expected):
+        """原始 SQL 与 SQLAlchemy Enum 的历史存储表示均应正确转换。"""
+        assert SpeedUnitEnum.from_value(stored_value) == expected
+
     def test_from_value_invalid_raises(self):
         """无效整数值应抛出 ValueError"""
         with pytest.raises(ValueError, match="无效的速度单位"):

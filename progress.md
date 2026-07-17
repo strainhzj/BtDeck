@@ -1,5 +1,39 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-17 - 下载器全局限速同步应用修复
+
+**任务 ID**: `v1.0.6.15`
+**分支**: dev
+**范围**: 修复下载器管理页保存上传/下载限速后未同步应用的问题，同时覆盖 qBittorrent、Transmission、分时段调度回退与前端状态恢复。
+
+### 根因与修复
+
+- 后端保存接口在解析 `schedule_rules` 时复用了全局 `dl/ul_speed_limit` 与单位变量，导致最后一条规则覆盖 `downloader_settings` 的全局值；现已将全局与规则变量完全隔离，并用 `is None` 保留合法的 0 值。
+- SQLite 原始 SQL 对 `SQLEnum(IntEnum)` 可能返回字符串 `"0"/"1"`，SQLAlchemy 历史记录也可能使用枚举名；旧整数映射会把 MB/s 静默当成 KB/s。现由 `SpeedUnitEnum.from_value()` 统一兼容数字、数字字符串、枚举名及 KB/s/MB/s 后再传给两个下载器适配器。
+- 定时调度在没有生效规则时计算出全 0 并应用为不限速；现以下载器全局限速为基线，规则只覆盖自身启用且大于 0 的方向，空窗期自动恢复全局值。
+- 前端加载设置时丢弃 `enable_schedule`，随后按“存在历史规则”推断为启用；现显式保存并恢复后端开关，缺失字段默认关闭。
+- 修正原 15 项调度测试中钉死变量遮蔽错误行为的预期，并补充 qBittorrent/Transmission、单位字符串、调度回退及前端开关契约回归。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 下载器设置 API | ✅ 17/17 passed（含 qBittorrent/Transmission） |
+| 最终后端专项回归 | ✅ 48/48 passed（API 17、枚举 16、调度 15） |
+| 后端全量 pytest | ✅ 2111 passed / 1 skipped |
+| 前端全量 Jest | ✅ 10 suites / 232 tests |
+| TypeScript / ESLint / Vuex lint | ✅ 全部通过 |
+| 生产构建 | ✅ 通过（仅既有 Sass/资源体积 warning） |
+| 变更文件 flake8 / git diff --check | ✅ 通过 |
+| 根 `init.sh` | ✅ 退出 0（Git Bash PATH 无 Node 的既有警告由独立前端门禁覆盖） |
+
+### 已知工具基线
+
+- `black 24.10.0` 在当前 Python 3.13 环境中连 `--version` 都会卡住并超时，故本轮无法执行 black 门禁；不是代码格式错误信号。
+- 针对三个后端生产文件运行 mypy 时，仅 `downloader_settings.py` 报 11 项既有类型债务；本次新增枚举与调度服务代码没有 mypy 报错。
+
+---
+
 ## 2026-07-17 - 种子同步添加时间显示 1970 回归修复
 
 **任务 ID**: `v1.0.6.14`

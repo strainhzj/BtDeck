@@ -26,6 +26,7 @@ from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
 from app.utils.encryption import encrypt_password, decrypt_password
+from app.models.enums import SpeedUnitEnum
 from app.models.setting_templates import DownloaderTypeEnum
 
 router = APIRouter()
@@ -309,35 +310,45 @@ async def update_downloader_settings(
             return CommonResponse(status="error", msg=f"请求体格式错误: {str(e)}", code="422", data=None)
 
         # 4. 参数验证（同时支持驼峰命名和蛇形命名，优先使用驼峰命名）
-        dl_speed_limit = body_data.get("dlSpeedLimit") or body_data.get("download_speed_limit", 0)
-        ul_speed_limit = body_data.get("ulSpeedLimit") or body_data.get("upload_speed_limit", 0)
+        global_dl_speed_limit = body_data.get("dlSpeedLimit")
+        if global_dl_speed_limit is None:
+            global_dl_speed_limit = body_data.get("download_speed_limit", 0)
+        global_ul_speed_limit = body_data.get("ulSpeedLimit")
+        if global_ul_speed_limit is None:
+            global_ul_speed_limit = body_data.get("upload_speed_limit", 0)
 
         # 速度单位参数处理（支持新旧两种格式）
         # 新格式：dlSpeedUnit/ulSpeedUnit（分别指定）
         # 旧格式：speedUnit（统一指定，向后兼容）
-        dl_speed_unit = body_data.get("dlSpeedUnit") or body_data.get("dl_speed_unit")
-        ul_speed_unit = body_data.get("ulSpeedUnit") or body_data.get("ul_speed_unit")
-        speed_unit_legacy = body_data.get("speedUnit") or body_data.get("speed_unit")
+        global_dl_speed_unit = body_data.get("dlSpeedUnit")
+        if global_dl_speed_unit is None:
+            global_dl_speed_unit = body_data.get("dl_speed_unit")
+        global_ul_speed_unit = body_data.get("ulSpeedUnit")
+        if global_ul_speed_unit is None:
+            global_ul_speed_unit = body_data.get("ul_speed_unit")
+        speed_unit_legacy = body_data.get("speedUnit")
+        if speed_unit_legacy is None:
+            speed_unit_legacy = body_data.get("speed_unit")
 
         # 如果使用旧格式，则两个速度单位相同
-        if dl_speed_unit is None and speed_unit_legacy is not None:
-            dl_speed_unit = speed_unit_legacy
-            ul_speed_unit = speed_unit_legacy
-        elif dl_speed_unit is None:
-            dl_speed_unit = 0  # 默认 KB/s
-        if ul_speed_unit is None:
-            ul_speed_unit = 0  # 默认 KB/s
+        if global_dl_speed_unit is None and speed_unit_legacy is not None:
+            global_dl_speed_unit = speed_unit_legacy
+            global_ul_speed_unit = speed_unit_legacy
+        elif global_dl_speed_unit is None:
+            global_dl_speed_unit = 0  # 默认 KB/s
+        if global_ul_speed_unit is None:
+            global_ul_speed_unit = 0  # 默认 KB/s
 
-        if not isinstance(dl_speed_limit, int) or dl_speed_limit < 0:
+        if not isinstance(global_dl_speed_limit, int) or global_dl_speed_limit < 0:
             return CommonResponse(status="error", msg="下载速度限制必须是非负整数", code="422", data=None)
 
-        if not isinstance(ul_speed_limit, int) or ul_speed_limit < 0:
+        if not isinstance(global_ul_speed_limit, int) or global_ul_speed_limit < 0:
             return CommonResponse(status="error", msg="上传速度限制必须是非负整数", code="422", data=None)
 
-        if not isinstance(dl_speed_unit, int) or dl_speed_unit not in [0, 1]:
+        if not isinstance(global_dl_speed_unit, int) or global_dl_speed_unit not in [0, 1]:
             return CommonResponse(status="error", msg="下载速度单位必须是0(KB/s)或1(MB/s)", code="422", data=None)
 
-        if not isinstance(ul_speed_unit, int) or ul_speed_unit not in [0, 1]:
+        if not isinstance(global_ul_speed_unit, int) or global_ul_speed_unit not in [0, 1]:
             return CommonResponse(status="error", msg="上传速度单位必须是0(KB/s)或1(MB/s)", code="422", data=None)
 
         # 5. 提取并验证 schedule_rules 参数
@@ -405,30 +416,30 @@ async def update_downloader_settings(
                 ul_enabled = bool(upload_config.get("enabled", True)) if upload_config else True
 
                 if download_config:
-                    dl_speed_limit = download_config.get("speed_limit", 0) if dl_enabled else 0
-                    dl_speed_unit = download_config.get("speed_unit", 0)
+                    rule_dl_speed_limit = download_config.get("speed_limit", 0) if dl_enabled else 0
+                    rule_dl_speed_unit = download_config.get("speed_unit", 0)
                 else:
-                    dl_speed_limit = rule.get("speed_limit", 0)
-                    dl_speed_unit = rule.get("speed_unit", 0)
+                    rule_dl_speed_limit = rule.get("speed_limit", 0)
+                    rule_dl_speed_unit = rule.get("speed_unit", 0)
 
                 if upload_config:
-                    ul_speed_limit = upload_config.get("speed_limit", 0) if ul_enabled else 0
-                    ul_speed_unit = upload_config.get("speed_unit", 0)
+                    rule_ul_speed_limit = upload_config.get("speed_limit", 0) if ul_enabled else 0
+                    rule_ul_speed_unit = upload_config.get("speed_unit", 0)
                 else:
-                    ul_speed_limit = rule.get("ul_speed_limit", dl_speed_limit)
-                    ul_speed_unit = rule.get("ul_speed_unit", dl_speed_unit)
+                    rule_ul_speed_limit = rule.get("ul_speed_limit", rule_dl_speed_limit)
+                    rule_ul_speed_unit = rule.get("ul_speed_unit", rule_dl_speed_unit)
 
-                if not isinstance(dl_speed_limit, int) or dl_speed_limit < 0:
+                if not isinstance(rule_dl_speed_limit, int) or rule_dl_speed_limit < 0:
                     return CommonResponse(
                         status="error", msg=f"规则 {idx + 1} 的下载速度限制必须是非负整数", code="422", data=None
                     )
 
-                if not isinstance(ul_speed_limit, int) or ul_speed_limit < 0:
+                if not isinstance(rule_ul_speed_limit, int) or rule_ul_speed_limit < 0:
                     return CommonResponse(
                         status="error", msg=f"规则 {idx + 1} 的上传速度限制必须是非负整数", code="422", data=None
                     )
 
-                if not isinstance(dl_speed_unit, int) or dl_speed_unit not in [0, 1]:
+                if not isinstance(rule_dl_speed_unit, int) or rule_dl_speed_unit not in [0, 1]:
                     return CommonResponse(
                         status="error",
                         msg=f"规则 {idx + 1} 的下载速度单位必须是 0(KB/s) 或 1(MB/s)",
@@ -436,7 +447,7 @@ async def update_downloader_settings(
                         data=None,
                     )
 
-                if not isinstance(ul_speed_unit, int) or ul_speed_unit not in [0, 1]:
+                if not isinstance(rule_ul_speed_unit, int) or rule_ul_speed_unit not in [0, 1]:
                     return CommonResponse(
                         status="error",
                         msg=f"规则 {idx + 1} 的上传速度单位必须是 0(KB/s) 或 1(MB/s)",
@@ -462,10 +473,10 @@ async def update_downloader_settings(
                         "sort_order": sort_order,
                         "start_time": rule["start_time"],
                         "end_time": rule["end_time"],
-                        "dl_speed_limit": dl_speed_limit if dl_enabled else 0,
-                        "dl_speed_unit": dl_speed_unit,
-                        "ul_speed_limit": ul_speed_limit if ul_enabled else 0,
-                        "ul_speed_unit": ul_speed_unit,
+                        "dl_speed_limit": rule_dl_speed_limit if dl_enabled else 0,
+                        "dl_speed_unit": rule_dl_speed_unit,
+                        "ul_speed_limit": rule_ul_speed_limit if ul_enabled else 0,
+                        "ul_speed_unit": rule_ul_speed_unit,
                         "days_of_week": days_of_week_str,
                         "enabled": rule.get("enabled", True),
                     }
@@ -573,10 +584,10 @@ async def update_downloader_settings(
                 text(update_sql),
                 {
                     "downloader_id": downloader_id,
-                    "dl_speed_limit": dl_speed_limit,
-                    "ul_speed_limit": ul_speed_limit,
-                    "dl_speed_unit": dl_speed_unit,
-                    "ul_speed_unit": ul_speed_unit,
+                    "dl_speed_limit": global_dl_speed_limit,
+                    "ul_speed_limit": global_ul_speed_limit,
+                    "dl_speed_unit": global_dl_speed_unit,
+                    "ul_speed_unit": global_ul_speed_unit,
                     "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
                     "username": body_data.get("username"),
                     "password": encrypted_password,
@@ -604,10 +615,10 @@ async def update_downloader_settings(
                 text(insert_sql),
                 {
                     "downloader_id": downloader_id,
-                    "dl_speed_limit": dl_speed_limit,
-                    "ul_speed_limit": ul_speed_limit,
-                    "dl_speed_unit": dl_speed_unit,
-                    "ul_speed_unit": ul_speed_unit,
+                    "dl_speed_limit": global_dl_speed_limit,
+                    "ul_speed_limit": global_ul_speed_limit,
+                    "dl_speed_unit": global_dl_speed_unit,
+                    "ul_speed_unit": global_ul_speed_unit,
                     "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
                     "username": body_data.get("username"),
                     "password": encrypted_password,
@@ -971,10 +982,9 @@ def apply_downloader_settings(
             return CommonResponse(status="error", msg=f"初始化下载器管理器失败: {str(e)}", code="500", data=None)
 
         # 6. 构建配置字典
-        # 转换speed_unit：整数0->"KB/s", 1->"MB/s"
-        speed_unit_map = {0: "KB/s", 1: "MB/s"}
-        dl_speed_unit_str = speed_unit_map.get(settings_result.dl_speed_unit, "KB/s")
-        ul_speed_unit_str = speed_unit_map.get(settings_result.ul_speed_unit, "KB/s")
+        # 原始 SQL 对 SQLEnum(IntEnum) 可能返回 "0"/"1"，统一归一化后再应用。
+        dl_speed_unit_str = SpeedUnitEnum.from_value(settings_result.dl_speed_unit).to_string()
+        ul_speed_unit_str = SpeedUnitEnum.from_value(settings_result.ul_speed_unit).to_string()
 
         settings_dict = {
             "dl_speed_limit": settings_result.dl_speed_limit,

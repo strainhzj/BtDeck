@@ -203,6 +203,7 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { Downloader, DownloaderSettings, DownloaderCapabilities, SpeedScheduleRule } from '../types'
+import { resolveEnableSchedule } from '../settings'
 
 @Component({
   name: 'SpeedSettingsTab'
@@ -275,7 +276,7 @@ export default class SpeedSettingsTab extends Vue {
       })
 
       // 处理分时段规则（确保正确清空或加载）
-      const scheduleEnabled = (val as any).enableSchedule ?? (val as any).enable_schedule
+      const scheduleEnabled = resolveEnableSchedule(val)
 
       if (val.schedule_rules && val.schedule_rules.length > 0) {
         // 后端返回了规则数据，加载规则
@@ -313,12 +314,12 @@ export default class SpeedSettingsTab extends Vue {
             enabled: rule.enabled !== false
           }
         })
-        this.enableScheduling = scheduleEnabled !== undefined ? Boolean(scheduleEnabled) : true
+        this.enableScheduling = scheduleEnabled
         console.log(`✅ [SpeedSettingsTab] 加载了 ${this.scheduleRules.length} 条分时段规则`)
       } else {
         // 后端返回空数组或 undefined，清空规则
         this.scheduleRules = []
-        this.enableScheduling = scheduleEnabled !== undefined ? Boolean(scheduleEnabled) : false
+        this.enableScheduling = scheduleEnabled
         console.log('✅ [SpeedSettingsTab] 清空了分时段规则（后端未返回规则数据）')
       }
     } else {

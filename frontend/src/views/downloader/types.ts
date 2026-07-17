@@ -145,6 +145,8 @@ export interface DownloaderSettings {
   ulSpeedLimit?: number      // 上传速度限制 (数值含义取决于 ulSpeedUnit)
   dlSpeedUnit?: 0 | 1       // 下载速度单位: 0: KB/s, 1: MB/s
   ulSpeedUnit?: 0 | 1       // 上传速度单位: 0: KB/s, 1: MB/s
+  enableSchedule?: boolean   // 是否启用分时段限速
+  enable_schedule?: boolean  // 后端响应字段，兼容蛇形命名
 
   // 兼容旧字段名(保留用于向后兼容)
   download_speed_limit?: number  // @deprecated 使用 dlSpeedLimit

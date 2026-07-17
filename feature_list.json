@@ -1102,6 +1102,27 @@
             "frontend/tests/unit/shared-utils.spec.ts"
           ],
           "evidence": "根因：parseInt('2026-07-17T10:20:30') 仅得到 2026，随后按 Unix 秒格式化为 1970-01-01 08:33:46；失败回归用例稳定复现。修复为仅在字符串完全匹配数字格式时按时间戳处理，ISO 字符串整体交给 Date 解析，同时保留数字字符串兼容。回归测试已拆分并覆盖本地 ISO、带 Z/显式偏移的小数秒 ISO、秒级及毫秒级数值字符串；Asia/Shanghai、UTC、America/New_York 三时区目标测试均为 42/42。全量 Jest + coverage 9 suites/229 tests；Statements 50.15%、Branches 42.01%、Functions 43.04%、Lines 49.60%；tsc、ESLint、Vuex lint、生产 build、git diff --check 通过。"
+        },
+        {
+          "id": "v1.0.6.15",
+          "name": "下载器全局限速同步应用修复",
+          "description": "修复保存分时段规则时覆盖全局限速、限速单位误判、调度空窗切换为不限速，以及前端分时段开关状态丢失的问题，覆盖 qBittorrent 与 Transmission。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/downloader_settings.py",
+            "backend/app/models/enums.py",
+            "backend/app/services/speed_schedule_service.py",
+            "backend/tests/api/test_downloader_settings_api.py",
+            "backend/tests/models/test_enums.py",
+            "backend/tests/services/test_speed_schedule_service.py",
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/src/views/downloader/components/SpeedSettingsTab.vue",
+            "frontend/src/views/downloader/settings.ts",
+            "frontend/src/views/downloader/types.ts",
+            "frontend/tests/unit/downloader-settings.spec.ts"
+          ],
+          "evidence": "严格回归先复现：原 15 项调度测试扩展后暴露无规则时应用 0（不限速），下载器 API 套件暴露规则值覆盖全局值；进一步以 MB/s 用例发现 SQLite 原始 SQL 返回字符串 '0'/'1' 时单位被错误回退为 KB/s。修复后全局/规则变量完全隔离，0 值不再被 or 吞掉；立即应用与定时调度统一使用 SpeedUnitEnum 归一化，兼容数字、数字字符串、SQLAlchemy Enum 名与 KB/s/MB/s；调度以全局限速为基线，仅由生效规则按方向覆盖；前端持久化 enable_schedule，不再按历史规则推断开关。最终专项回归 48/48，其中 qBittorrent/Transmission 应用回归 17/17、调度服务原 15 项测试 15/15、枚举 16/16；最终后端全量 pytest 2111 passed/1 skipped。前端契约 3/3、全量 Jest 10 suites/232 tests、tsc、完整 ESLint、Vuex lint、生产 build、根 init.sh 与 git diff --check 通过。变更文件 flake8 通过；本机 black 24.10.0 连 --version 均卡住超时，未能执行格式门禁；mypy 仅报告 downloader_settings.py 内 11 项既有类型债务。"
         }
       ]
     }

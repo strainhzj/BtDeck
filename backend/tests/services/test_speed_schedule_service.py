@@ -5,8 +5,8 @@ SpeedScheduleService 的单元测试
 测试 calculate_effective_speed 和 get_active_rules 方法。
 get_active_rules 通过 mock DB 来隔离数据库依赖。
 """
-import pytest
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from app.services.speed_schedule_service import SpeedScheduleService
@@ -95,6 +95,19 @@ class TestCalculateEffectiveSpeed:
         assert result["dl_unit"] == 1
         assert result["ul_unit"] == 1
 
+    def test_empty_rules_preserve_global_speed(self):
+        """没有生效规则时应恢复全局限速，而不是应用 0（不限速）。"""
+        base_speed = {"dl_speed": 700, "dl_unit": 1, "ul_speed": 300, "ul_unit": 0}
+        result = SpeedScheduleService.calculate_effective_speed([], base_speed=base_speed)
+        assert result == base_speed
+
+    def test_active_rule_overrides_only_enabled_direction(self):
+        """规则中为 0 的方向表示不覆盖，应继续使用对应全局限速。"""
+        base_speed = {"dl_speed": 700, "dl_unit": 1, "ul_speed": 300, "ul_unit": 0}
+        rules = [{"dl_speed_limit": 500, "dl_speed_unit": 0, "ul_speed_limit": 0, "ul_speed_unit": 1}]
+        result = SpeedScheduleService.calculate_effective_speed(rules, base_speed=base_speed)
+        assert result == {"dl_speed": 500, "dl_unit": 0, "ul_speed": 300, "ul_unit": 0}
+
 
 class TestGetActiveRules:
     """SpeedScheduleService.get_active_rules 测试"""
@@ -142,3 +155,49 @@ class TestGetActiveRules:
         call_args = mock_db.execute.call_args
         params = call_args[0][1]  # 第二个位置参数是 params dict
         assert params["weekday_pattern"] == "%0%"
+
+
+class TestApplyToDownloader:
+    """分时段任务应用到下载器的回退语义。"""
+
+    def test_no_active_rule_applies_global_speed(self):
+        mock_db = MagicMock()
+        mock_db.execute.return_value.fetchone.return_value = SimpleNamespace(
+            downloader_id="dl-1",
+            nickname="qbt",
+            host="localhost",
+            port="8080",
+            username="user",
+            password="encrypted",
+            downloader_type=0,
+        )
+        manager = MagicMock()
+        manager.apply_settings.return_value = True
+        # SQLite 原始 SQL 对 SQLEnum(IntEnum) 返回数字字符串，而非整数。
+        base_speed = {"dl_speed": 700, "dl_unit": "1", "ul_speed": 300, "ul_unit": "0"}
+
+        with (
+            patch.object(SpeedScheduleService, "get_active_rules", return_value=[]),
+            patch.object(
+                SpeedScheduleService,
+                "get_global_speed_settings",
+                return_value=base_speed,
+                create=True,
+            ),
+            patch(
+                "app.services.downloader_settings_manager.DownloaderSettingsManager",
+                return_value=manager,
+            ),
+        ):
+            result = SpeedScheduleService.apply_to_downloader(mock_db, "dl-1", 1)
+
+        assert result is True
+        manager.apply_settings.assert_called_once_with(
+            {
+                "dl_speed_limit": 700,
+                "dl_speed_unit": "MB/s",
+                "ul_speed_limit": 300,
+                "ul_speed_unit": "KB/s",
+                "override_local": True,
+            }
+        )
