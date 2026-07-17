@@ -14,11 +14,12 @@
 
 import logging
 import json
-from typing import Optional
+from typing import Any, Optional, cast
 from datetime import datetime, time as dt_time
 
 from fastapi import APIRouter, Depends, Request, Path
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
@@ -52,8 +53,8 @@ def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
             SELECT COUNT(*) as count FROM bt_downloaders
             WHERE downloader_id = :downloader_id AND dr = 0
         """
-        result = db.execute(text(sql), {"downloader_id": downloader_id}).fetchone()
-        return result.count > 0 if result else False
+        count = db.execute(text(sql), {"downloader_id": downloader_id}).scalar_one()
+        return int(count) > 0
     except Exception as e:
         logger.error(f"验证下载器存在性失败: {e}")
         return False
@@ -160,7 +161,6 @@ def parse_days_of_week(days_of_week: str) -> list:
 @router.get("/{downloader_id}/settings", summary="获取下载器配置", response_model=CommonResponse, tags=["下载器设置"])
 def get_downloader_settings(
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
     db: Session = Depends(get_db),
     _user=Depends(require_authenticated_user),
 ):
@@ -285,8 +285,8 @@ def get_downloader_settings(
 
 @router.put("/{downloader_id}/settings", summary="更新下载器配置", response_model=CommonResponse, tags=["下载器设置"])
 async def update_downloader_settings(
+    req: Request,
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
     db: Session = Depends(get_db),
     _user=Depends(require_authenticated_user),
 ):
@@ -297,7 +297,7 @@ async def update_downloader_settings(
     如果配置不存在则创建，如果存在则更新
     """
     try:
-        response_data = {"schedule_rules": []}
+        response_data: dict[str, Any] = {"schedule_rules": []}
         # 2. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
             return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
@@ -611,26 +611,31 @@ async def update_downloader_settings(
                  :enable_schedule, :username, :password, :advanced_settings, :override_local,
                  :created_at, :updated_at)
             """
-            result = db.execute(
-                text(insert_sql),
-                {
-                    "downloader_id": downloader_id,
-                    "dl_speed_limit": global_dl_speed_limit,
-                    "ul_speed_limit": global_ul_speed_limit,
-                    "dl_speed_unit": global_dl_speed_unit,
-                    "ul_speed_unit": global_ul_speed_unit,
-                    "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
-                    "username": body_data.get("username"),
-                    "password": encrypted_password,
-                    "advanced_settings": advanced_settings_json,
-                    "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
-                    "created_at": current_time,
-                    "updated_at": current_time,
-                },
+            insert_result = cast(
+                CursorResult[Any],
+                db.execute(
+                    text(insert_sql),
+                    {
+                        "downloader_id": downloader_id,
+                        "dl_speed_limit": global_dl_speed_limit,
+                        "ul_speed_limit": global_ul_speed_limit,
+                        "dl_speed_unit": global_dl_speed_unit,
+                        "ul_speed_unit": global_ul_speed_unit,
+                        "enable_schedule": body_data.get("enableSchedule")
+                        or body_data.get("enable_schedule", False),
+                        "username": body_data.get("username"),
+                        "password": encrypted_password,
+                        "advanced_settings": advanced_settings_json,
+                        "override_local": body_data.get("overrideLocal")
+                        or body_data.get("override_local", False),
+                        "created_at": current_time,
+                        "updated_at": current_time,
+                    },
+                ),
             )
 
             # 获取新创建记录的 ID
-            setting_id = result.lastrowid
+            setting_id = insert_result.lastrowid
 
         # 保存分时段规则
         if parsed_schedule_rules is not None:
@@ -694,23 +699,26 @@ async def update_downloader_settings(
                                 enabled = :enabled
                             WHERE id = :id AND downloader_setting_id = :downloader_setting_id
                         """
-                        result = db.execute(
-                            text(update_rule_sql),
-                            {
-                                "id": rule["id"],
-                                "downloader_setting_id": setting_id,
-                                "sort_order": rule["sort_order"],
-                                "start_time": start_db_value,
-                                "end_time": end_db_value,
-                                "dl_speed_limit": rule["dl_speed_limit"],
-                                "dl_speed_unit": rule["dl_speed_unit"],
-                                "ul_speed_limit": rule["ul_speed_limit"],
-                                "ul_speed_unit": rule["ul_speed_unit"],
-                                "days_of_week": rule["days_of_week"],
-                                "enabled": rule["enabled"],
-                            },
+                        update_result = cast(
+                            CursorResult[Any],
+                            db.execute(
+                                text(update_rule_sql),
+                                {
+                                    "id": rule["id"],
+                                    "downloader_setting_id": setting_id,
+                                    "sort_order": rule["sort_order"],
+                                    "start_time": start_db_value,
+                                    "end_time": end_db_value,
+                                    "dl_speed_limit": rule["dl_speed_limit"],
+                                    "dl_speed_unit": rule["dl_speed_unit"],
+                                    "ul_speed_limit": rule["ul_speed_limit"],
+                                    "ul_speed_unit": rule["ul_speed_unit"],
+                                    "days_of_week": rule["days_of_week"],
+                                    "enabled": rule["enabled"],
+                                },
+                            ),
                         )
-                        if result.rowcount == 0:
+                        if update_result.rowcount == 0:
                             logger.warning(
                                 "[schedule_rule_sync] update affected 0 rows, id=%s setting_id=%s",
                                 rule["id"],
@@ -822,8 +830,8 @@ async def update_downloader_settings(
     tags=["下载器设置"],
 )
 async def reorder_speed_schedule_rules(
+    req: Request,
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
     db: Session = Depends(get_db),
     _user=Depends(require_authenticated_user),
 ):
@@ -881,7 +889,6 @@ async def reorder_speed_schedule_rules(
 )
 def apply_downloader_settings(
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
     db: Session = Depends(get_db),
     _user=Depends(require_authenticated_user),
 ):
@@ -1052,8 +1059,8 @@ def apply_downloader_settings(
     "/{downloader_id}/settings/test", summary="测试配置有效性", response_model=CommonResponse, tags=["下载器设置"]
 )
 async def test_downloader_settings(
+    req: Request,
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
     db: Session = Depends(get_db),
     _user=Depends(require_authenticated_user),
 ):
@@ -1176,7 +1183,7 @@ async def test_downloader_settings(
                     url = f"{protocol}://{test_host}:{int(test_port)}"
 
                     # 创建客户端并测试连接
-                    client = QBClient(
+                    qb_client = QBClient(
                         host=url,
                         username=test_username,
                         password=final_password,
@@ -1185,7 +1192,7 @@ async def test_downloader_settings(
                     )
 
                     # 尝试登录并获取版本信息
-                    version = client.app_version()
+                    version = qb_client.app_version()
                     if not version:
                         return CommonResponse(
                             status="success",
@@ -1232,7 +1239,7 @@ async def test_downloader_settings(
                 try:
                     # 创建客户端并测试连接
                     # ✅ 修正：Transmission 使用 host 和 port 参数，而不是 url
-                    client = TrClient(
+                    tr_client = TrClient(
                         host=test_host,
                         port=int(test_port),
                         username=test_username,
@@ -1241,7 +1248,7 @@ async def test_downloader_settings(
                     )
 
                     # 尝试获取会话信息
-                    session = client.get_session()
+                    session = tr_client.get_session()
                     if not session:
                         return CommonResponse(
                             status="success",

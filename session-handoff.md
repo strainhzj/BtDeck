@@ -1,5 +1,32 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-17 交接：下载器设置端点 mypy 11 项债务清零
+
+**当前任务**: `v1.0.6.16`
+**分支**: dev
+**状态**: 类型修复与全量验证完成，待本地提交；网络推送受安全策略阻止。
+
+### 关键结果
+
+- `downloader_settings.py` 目标 mypy 从 11 errors 降至 0。
+- 11 项按四类收敛：SQLAlchemy 标量/游标结果、FastAPI Request 注入、响应字典注解、两种下载器 SDK 客户端变量隔离。
+- API 路径、CommonResponse 结构、下载器连接与测试连接业务流程均未改变。
+
+### 验证
+
+- `mypy app/api/endpoints/downloader_settings.py`：Success，无错误。
+- 下载器设置与认证专项：33/33 passed。
+- 后端全量：2111 passed / 1 skipped。
+- 变更文件 flake8、`git diff --check` 通过。
+
+### Git 与推送
+
+- 限速修复已提交为 `2e03ce4`。
+- 自动推送 `origin/dev` 被安全策略硬性拒绝；用户已知情确认，但审核明确说明确认不能覆盖，未进行任何绕过。
+- 完成本轮提交后，用户可在本机执行 `git push origin dev` 一次性推送两个提交。
+
+---
+
 ## 2026-07-17 交接：下载器全局限速同步应用修复完成
 
 **当前任务**: `v1.0.6.15`

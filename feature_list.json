@@ -1122,7 +1122,18 @@
             "frontend/src/views/downloader/types.ts",
             "frontend/tests/unit/downloader-settings.spec.ts"
           ],
-          "evidence": "严格回归先复现：原 15 项调度测试扩展后暴露无规则时应用 0（不限速），下载器 API 套件暴露规则值覆盖全局值；进一步以 MB/s 用例发现 SQLite 原始 SQL 返回字符串 '0'/'1' 时单位被错误回退为 KB/s。修复后全局/规则变量完全隔离，0 值不再被 or 吞掉；立即应用与定时调度统一使用 SpeedUnitEnum 归一化，兼容数字、数字字符串、SQLAlchemy Enum 名与 KB/s/MB/s；调度以全局限速为基线，仅由生效规则按方向覆盖；前端持久化 enable_schedule，不再按历史规则推断开关。最终专项回归 48/48，其中 qBittorrent/Transmission 应用回归 17/17、调度服务原 15 项测试 15/15、枚举 16/16；最终后端全量 pytest 2111 passed/1 skipped。前端契约 3/3、全量 Jest 10 suites/232 tests、tsc、完整 ESLint、Vuex lint、生产 build、根 init.sh 与 git diff --check 通过。变更文件 flake8 通过；本机 black 24.10.0 连 --version 均卡住超时，未能执行格式门禁；mypy 仅报告 downloader_settings.py 内 11 项既有类型债务。"
+          "evidence": "严格回归先复现：原 15 项调度测试扩展后暴露无规则时应用 0（不限速），下载器 API 套件暴露规则值覆盖全局值；进一步以 MB/s 用例发现 SQLite 原始 SQL 返回字符串 '0'/'1' 时单位被错误回退为 KB/s。修复后全局/规则变量完全隔离，0 值不再被 or 吞掉；立即应用与定时调度统一使用 SpeedUnitEnum 归一化，兼容数字、数字字符串、SQLAlchemy Enum 名与 KB/s/MB/s；调度以全局限速为基线，仅由生效规则按方向覆盖；前端持久化 enable_schedule，不再按历史规则推断开关。最终专项回归 48/48，其中 qBittorrent/Transmission 应用回归 17/17、调度服务原 15 项测试 15/15、枚举 16/16；最终后端全量 pytest 2111 passed/1 skipped。前端契约 3/3、全量 Jest 10 suites/232 tests、tsc、完整 ESLint、Vuex lint、生产 build、根 init.sh 与 git diff --check 通过。变更文件 flake8 通过；本机 black 24.10.0 连 --version 均卡住超时，未能执行格式门禁；当时发现的 downloader_settings.py 11 项 mypy 债务已在 v1.0.6.16 清零。"
+        },
+        {
+          "id": "v1.0.6.16",
+          "name": "下载器设置端点 mypy 类型债务清理",
+          "description": "清理 downloader_settings.py 的 11 项 mypy 错误，收紧 SQLAlchemy 查询结果、FastAPI Request 与下载器客户端类型，保持 API 行为不变。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/downloader_settings.py"
+          ],
+          "evidence": "mypy RED 基线为 11 errors：Row.count 名称冲突 1、Request 隐式 Optional 5、response_data 缺注解 1、Result.lastrowid/rowcount 2、qBittorrent/Transmission Client 变量类型冲突 2。修复为 COUNT 查询 scalar_one、只保留实际使用的必需 Request 注入、response_data 显式 dict[str, Any]、DML 结果收紧为 CursorResult[Any]、两类客户端使用独立局部变量。目标 mypy 由 11 errors 降至 Success: no issues found；下载器设置/API 认证专项 33/33，后端全量 2111 passed/1 skipped，变更文件 flake8 与 git diff --check 通过。"
         }
       ]
     }

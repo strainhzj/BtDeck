@@ -1,5 +1,35 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-17 - 下载器设置端点 mypy 类型债务清理
+
+**任务 ID**: `v1.0.6.16`
+**分支**: dev
+**范围**: 在不改变下载器设置 API 路径、响应和业务流程的前提下，清理 `downloader_settings.py` 的 11 项 mypy 错误。
+
+### 完成内容
+
+- `verify_downloader_exists` 使用 `scalar_one()` 读取 COUNT 标量，消除 SQLAlchemy Row 的 `count` 方法与 SQL 别名冲突。
+- 删除两个未使用的 `Request` 参数；其余三个读取请求体的端点改为 FastAPI 必需 Request 注入，消除 5 项隐式 Optional。
+- 为 `response_data` 增加 `dict[str, Any]` 注解。
+- 将 INSERT/UPDATE 的执行结果收紧为 `CursorResult[Any]`，合法访问 `lastrowid` 和 `rowcount`。
+- qBittorrent 与 Transmission 分别使用 `qb_client`/`tr_client` 局部变量，避免两种 SDK Client 类型互相污染。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 目标 mypy | ✅ 11 errors → `Success: no issues found` |
+| 下载器设置 + 认证专项 | ✅ 33/33 passed |
+| 后端全量 pytest | ✅ 2111 passed / 1 skipped |
+| 变更文件 flake8 / git diff --check | ✅ 通过 |
+
+### Git 状态
+
+- 限速修复已本地提交：`2e03ce4 fix(fullstack): 修复下载器限速同步应用`。
+- `origin/dev` 指向外部 GitHub；即使用户知情确认，当前安全策略仍硬性拒绝网络推送，未尝试绕过。需用户在本机手动执行 `git push origin dev`。
+
+---
+
 ## 2026-07-17 - 下载器全局限速同步应用修复
 
 **任务 ID**: `v1.0.6.15`
