@@ -314,9 +314,9 @@
               </tr>
               <tr
                 v-for="(torrent, index) in virtualizedList"
-                :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${virtualWindow.startIndex + index}`"
+                :key="getTorrentRowKey(torrent)"
                 class="torrent-row"
-                :class="{selected: currentRow && currentRow.hash === torrent.hash}"
+                :class="{selected: isCurrentRow(torrent)}"
                 :aria-rowindex="virtualWindow.startIndex + index + 2"
                 @click="handleRowClick(torrent)"
               >
@@ -451,35 +451,56 @@
         <!-- 分页 -->
         <div class="table-pagination">
           <div class="pagination-info">
-            <el-autocomplete
-              ref="pageSizeAutocomplete"
-              v-model="pageSizeInput"
-              size="mini"
+            <div
               class="page-size-combobox"
-              placeholder="每页数量"
-              aria-label="每页数量"
-              title="选择预设值或输入 1 至 100000，按 Enter 或失焦生效"
-              :fetch-suggestions="queryPageSizeSuggestions"
-              :trigger-on-focus="true"
-              @focus="handlePageSizeFocus"
-              @select="handlePageSizeSelect"
-              @keyup.enter.native="applyPageSizeSelection(pageSizeInput)"
-              @blur="handlePageSizeBlur"
+              role="combobox"
+              aria-haspopup="listbox"
+              aria-controls="traditional-page-size-options"
+              :aria-expanded="String(pageSizeDropdownExpanded)"
             >
-              <i
-                slot="suffix"
+              <input
+                ref="pageSizeInput"
+                v-model="pageSizeInput"
+                class="page-size-input"
+                type="text"
+                inputmode="numeric"
+                aria-label="每页数量"
+                title="选择预设值或输入 1 至 100000，按 Enter 或失焦生效"
+                @focus="handlePageSizeFocus"
+                @keyup.enter="applyPageSizeSelection(pageSizeInput)"
+                @blur="handlePageSizeBlur"
+              />
+              <button
+                type="button"
                 class="page-size-toggle"
                 :class="pageSizeDropdownExpanded ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"
-                role="button"
-                tabindex="0"
                 :aria-label="pageSizeDropdownExpanded ? '收起分页大小选项' : '展开分页大小选项'"
-                :aria-expanded="pageSizeDropdownExpanded"
+                :aria-expanded="String(pageSizeDropdownExpanded)"
                 @mousedown.prevent.stop
                 @click.stop="togglePageSizeDropdown"
-                @keydown.enter.prevent.stop="togglePageSizeDropdown"
-                @keydown.space.prevent.stop="togglePageSizeDropdown"
-              ></i>
-            </el-autocomplete>
+              ></button>
+              <ul
+                v-show="pageSizeDropdownExpanded"
+                id="traditional-page-size-options"
+                class="page-size-options"
+                role="listbox"
+                aria-label="分页大小预设"
+              >
+                <li
+                  v-for="size in pageSizeOptions"
+                  :key="size"
+                  role="none"
+                >
+                  <button
+                    type="button"
+                    role="option"
+                    :aria-selected="String(size === pageSize)"
+                    @mousedown.prevent
+                    @click="handlePageSizeSelect({value: String(size)})"
+                  >{{ size }}</button>
+                </li>
+              </ul>
+            </div>
             <span>共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
           </div>
           <div class="pagination-controls">
@@ -749,7 +770,8 @@ import {
   applySearchTemplate,
   createSearchTemplate,
   type DownloaderSimple,
-  type QueryTemplateConditions
+  type QueryTemplateConditions,
+  type AdvancedSearchRequest
 } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status-config'
@@ -791,16 +813,24 @@ import {
   TRADITIONAL_VIRTUAL_VIEWPORT_FALLBACK
 } from './utils/traditionalVirtualList'
 import type { TraditionalVirtualWindow } from './utils/traditionalVirtualList'
+import {
+  buildTorrentSpeedTargetIndex,
+  getTraditionalTorrentRowKey,
+  resolveTorrentSpeedTargets
+} from './utils/traditionalTorrentIdentity'
+import type {
+  TorrentIdentityLike,
+  TorrentSpeedTargetIndex
+} from './utils/traditionalTorrentIdentity'
 
 interface PageSizeSuggestion {
   value: string
 }
 
-interface PageSizeAutocompleteRef {
-  activated: boolean
-  focus(): void
-  close(): void
-  getData(queryString: string): void
+interface TraditionalSpeedTarget extends TorrentIdentityLike {
+  downloadSpeed?: number | null
+  uploadSpeed?: number | null
+  progress?: number | null
 }
 
 @Component({
@@ -830,6 +860,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private speedPollingActive = false
   private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+  private torrentSpeedTargetIndex: TorrentSpeedTargetIndex<TraditionalSpeedTarget> = buildTorrentSpeedTargetIndex([])
   private activeListRetryPending = false
   private activeListRetryInFlight = false
 
@@ -850,6 +881,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private tableViewportHeight = TRADITIONAL_VIRTUAL_VIEWPORT_FALLBACK
   private tableScrollFrame: number | null = null
   private tableResizeObserver: ResizeObserver | null = null
+  private listRequestSequence = 0
 
   // 复选框
   private selectAll = false
@@ -883,6 +915,7 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 重复任务查询使用独立分页，避免翻页后意外回到普通列表
   private showingDuplicates = false
+  private activeAdvancedSearchRequest: AdvancedSearchRequest | null = null
 
   // 查询参数（复用现有结构）
   private listQuery: any = {
@@ -1092,6 +1125,8 @@ export default class extends mixins(TorrentBatchMixin) {
   // ====== 数据获取 ======
   private async getList(activeSnapshotRetry = false) {
     this.showingDuplicates = false
+    this.activeAdvancedSearchRequest = null
+    const requestSequence = this.prepareForListReplacement()
     this.listLoading = true
     try {
       const params = { ...this.listQuery }
@@ -1127,6 +1162,7 @@ export default class extends mixins(TorrentBatchMixin) {
       })
 
       const response = await getTorrentList(params)
+      if (requestSequence !== this.listRequestSequence) return
       if (needsActiveSnapshotRefresh(response, showActive)) {
         // 后端尚无完整活动快照时保留当前列表。速度轮询拿到 code=200 的完整快照后，
         // loadActiveSpeed 会触发一次受控重试。
@@ -1148,19 +1184,15 @@ export default class extends mixins(TorrentBatchMixin) {
 
       // "仅显示活动种子"过滤已下沉到后端（active_only），此处直接使用后端返回的 list 与 total，
       // 二者口径天然一致。sortedList 仅做"活动优先"排序，不再做客户端过滤。
-      this.list = normalizedList
-      this.total = total
-
-      // 修复 Bug#8：新数据全部 checked:false，必须同步重置批量选中状态，
-      // 否则分页/筛选切换后 multipleSelection 仍持有已不在当前视图的旧种子，
-      // 用户在加载期间点击批量操作会误伤。
-      // 委托给 mixin 的 resetBatchSelection（逻辑单点维护）
-      this.resetBatchSelection()
+      this.replaceTorrentList(normalizedList, total)
     } catch (error) {
+      if (requestSequence !== this.listRequestSequence) return
       console.error('获取种子列表失败:', error)
       this.$message.error('获取种子列表失败')
     } finally {
-      this.listLoading = false
+      if (requestSequence === this.listRequestSequence) {
+        this.listLoading = false
+      }
     }
   }
 
@@ -1225,17 +1257,18 @@ export default class extends mixins(TorrentBatchMixin) {
     try {
       const res = await getActiveTorrents()
       const snapshot = buildSpeedSnapshot(res)
-      if (snapshot.ready && snapshot.activeSpeedMap) {
-        // 直接更新列表中命中种子的实时数据（副作用，留在视图层）
+      if (snapshot.ready && snapshot.activeSpeedMap && snapshot.torrentSpeedMap) {
+        // 列表替换时已建立 downloader_id + hash 索引；轮询只按键命中活动任务，
+        // 避免 10 万行场景为每条更新重复执行 Array.find。
         snapshot.updates.forEach(u => {
-          const torrentInList = this.list.find(item => item.hash === u.hash)
-          if (torrentInList) {
-            torrentInList.downloadSpeed = u.downloadSpeed
-            torrentInList.uploadSpeed = u.uploadSpeed
-            torrentInList.progress = u.progress
-          }
+          const targets = resolveTorrentSpeedTargets(this.torrentSpeedTargetIndex, u)
+          targets.forEach(torrent => {
+            torrent.downloadSpeed = u.downloadSpeed
+            torrent.uploadSpeed = u.uploadSpeed
+            torrent.progress = u.progress
+          })
         })
-        this.activeSpeedMap = snapshot.activeSpeedMap
+        this.activeSpeedMap = snapshot.torrentSpeedMap
         this.speedSnapshotReady = true
         console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
 
@@ -1308,7 +1341,9 @@ export default class extends mixins(TorrentBatchMixin) {
   private handlePageChange(page: number) {
     this.currentPage = page
     this.resetTableViewport()
-    if (this.showingDuplicates) {
+    if (this.activeAdvancedSearchRequest) {
+      this.fetchAdvancedSearchPage()
+    } else if (this.showingDuplicates) {
       this.fetchDuplicateTorrents()
     } else {
       this.getList()
@@ -1339,24 +1374,18 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   private togglePageSizeDropdown() {
-    const autocomplete = this.$refs.pageSizeAutocomplete as unknown as PageSizeAutocompleteRef | undefined
-    if (!autocomplete) return
-
-    if (this.pageSizeDropdownExpanded) {
-      autocomplete.close()
-      this.pageSizeDropdownExpanded = false
-      return
-    }
-
-    autocomplete.activated = true
-    autocomplete.getData('')
-    autocomplete.focus()
-    this.pageSizeDropdownExpanded = true
+    this.pageSizeDropdownExpanded = !this.pageSizeDropdownExpanded
+    if (!this.pageSizeDropdownExpanded) return
+    this.$nextTick(() => {
+      const input = this.$refs.pageSizeInput as HTMLInputElement | undefined
+      input?.focus()
+    })
   }
 
   private applyPageSizeSelection(value: string | number) {
     const normalizedPageSize = normalizeTraditionalPageSize(value, this.pageSize)
     this.pageSizeInput = String(normalizedPageSize)
+    this.pageSizeDropdownExpanded = false
     if (normalizedPageSize === this.pageSize) return
 
     this.pageSize = normalizedPageSize
@@ -1366,7 +1395,9 @@ export default class extends mixins(TorrentBatchMixin) {
   private handlePageSizeChange() {
     this.currentPage = 1
     this.resetTableViewport()
-    if (this.showingDuplicates) {
+    if (this.activeAdvancedSearchRequest) {
+      this.fetchAdvancedSearchPage()
+    } else if (this.showingDuplicates) {
       this.fetchDuplicateTorrents()
     } else {
       this.getList()
@@ -1420,8 +1451,19 @@ export default class extends mixins(TorrentBatchMixin) {
     this.selectAll = this.multipleSelection.length === this.list.length
   }
 
+  private getTorrentRowKey(torrent: TorrentIdentityLike | null | undefined): string {
+    return getTraditionalTorrentRowKey(torrent)
+  }
+
+  private isCurrentRow(torrent: TorrentIdentityLike | null | undefined): boolean {
+    return Boolean(
+      this.currentRow &&
+      this.getTorrentRowKey(this.currentRow) === this.getTorrentRowKey(torrent)
+    )
+  }
+
   private handleRowClick(torrent: any) {
-    if (this.currentRow?.hash === torrent.hash) {
+    if (this.isCurrentRow(torrent)) {
       this.currentRow = null
       return
     }
@@ -1431,6 +1473,22 @@ export default class extends mixins(TorrentBatchMixin) {
 
   private closeDetailPanel() {
     this.currentRow = null
+  }
+
+  private prepareForListReplacement(): number {
+    // 切页、筛选或切换数据源后旧行已不属于当前列表，立即关闭以阻止误操作。
+    this.closeDetailPanel()
+    this.listRequestSequence += 1
+    return this.listRequestSequence
+  }
+
+  private replaceTorrentList(nextList: TraditionalSpeedTarget[], total: number) {
+    this.closeDetailPanel()
+    this.list = nextList
+    this.total = total
+    this.torrentSpeedTargetIndex = buildTorrentSpeedTargetIndex(nextList)
+    // 新数据全部 checked:false，需同步清空批量选择，避免旧页任务被误操作。
+    this.resetBatchSelection()
   }
 
   private toggleFilterPanel() {
@@ -1566,7 +1624,7 @@ export default class extends mixins(TorrentBatchMixin) {
       this.$message.success(`删除种子成功 ${dataFileText}`)
       this.getList()
       // 如果删除的是当前详情面板的种子，关闭详情面板
-      if (this.currentRow?.hash === torrent.hash) {
+      if (this.isCurrentRow(torrent)) {
         this.currentRow = null
       }
     } catch (error) {
@@ -1594,7 +1652,9 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // ====== P0#2 手动刷新（对齐列表模式，含静态+速度双刷新） ======
   private handleManualRefresh() {
-    if (this.showingDuplicates) {
+    if (this.activeAdvancedSearchRequest) {
+      this.fetchAdvancedSearchPage()
+    } else if (this.showingDuplicates) {
       this.fetchDuplicateTorrents()
     } else {
       this.getList()
@@ -1761,31 +1821,71 @@ export default class extends mixins(TorrentBatchMixin) {
       const { request, error } = buildAdvancedSearchRequest(
         searchParams,
         this.listQuery.sort_by || 'added_date',
-        this.listQuery.limit || this.pageSize
+        this.pageSize
       )
       if (error || !request) {
         this.$message.error(error || '搜索条件格式错误')
         return
       }
 
-      const response = await advancedSearch(request)
-      if (response.code === '200' && response.data) {
-        this.list = (response.data.list || []).map(normalizeTorrent).map(item => ({ ...item, checked: false }))
-        this.total = response.data.total || 0
-        this.listQuery.skip = 0
-        this.currentPage = 1
-        this.resetTableViewport()
-        this.resetBatchSelection()
-        this.$message.success(`高级搜索完成，找到 ${this.total} 条结果`)
-      } else {
-        this.$message.error(response.msg || '搜索失败')
-      }
+      this.showingDuplicates = false
+      this.currentPage = 1
+      this.listQuery.skip = 0
+      this.activeAdvancedSearchRequest = request as AdvancedSearchRequest
+      this.resetTableViewport()
+      await this.fetchAdvancedSearchPage('search')
     } catch (error) {
       const errorMessage = extractErrorMessage(error)
       console.error('高级搜索失败:', error)
       this.$message.error(errorMessage || '高级搜索失败，请检查搜索条件')
     } finally {
       this.advancedSearchSearching = false
+    }
+  }
+
+  /** 当前高级搜索的统一分页入口，分页大小始终取组合框的实时值。 */
+  private async fetchAdvancedSearchPage(successContext?: 'search' | 'template'): Promise<boolean> {
+    const baseRequest = this.activeAdvancedSearchRequest
+    if (!baseRequest) return false
+
+    const requestSequence = this.prepareForListReplacement()
+    const request: AdvancedSearchRequest = {
+      ...baseRequest,
+      page: this.currentPage,
+      limit: this.pageSize
+    }
+    this.listLoading = true
+    try {
+      const response = await advancedSearch(request)
+      if (
+        requestSequence !== this.listRequestSequence ||
+        baseRequest !== this.activeAdvancedSearchRequest
+      ) return false
+
+      if (response.code === '200' && response.data) {
+        const nextList = (response.data.list || [])
+          .map(normalizeTorrent)
+          .map(item => ({ ...item, checked: false }))
+        this.replaceTorrentList(nextList, response.data.total || 0)
+        if (successContext === 'search') {
+          this.$message.success(`高级搜索完成，找到 ${this.total} 条结果`)
+        } else if (successContext === 'template') {
+          this.$message.success('已应用高级搜索模板')
+        }
+        return true
+      }
+      this.$message.error(response.msg || '搜索失败')
+      return false
+    } catch (error) {
+      if (requestSequence !== this.listRequestSequence) return false
+      const errorMessage = extractErrorMessage(error)
+      console.error('高级搜索失败:', error)
+      this.$message.error(errorMessage || '搜索失败')
+      return false
+    } finally {
+      if (requestSequence === this.listRequestSequence) {
+        this.listLoading = false
+      }
     }
   }
 
@@ -1861,25 +1961,18 @@ export default class extends mixins(TorrentBatchMixin) {
           conditions.condition_groups,
           sortBy,
           sortOrder,
-          this.listQuery.limit || this.pageSize
+          this.pageSize
         )
         if (error || !request) {
           this.$message.error(error || '搜索条件格式错误')
           return false
         }
-        const response = await advancedSearch(request)
-        if (response.code === '200' && response.data) {
-          this.list = (response.data.list || []).map(normalizeTorrent).map(item => ({ ...item, checked: false }))
-          this.total = response.data.total || 0
-          this.listQuery.skip = 0
-          this.currentPage = 1
-          this.resetTableViewport()
-          this.resetBatchSelection()
-          this.$message.success('已应用高级搜索模板')
-          return true
-        }
-        this.$message.error(response.msg || '搜索失败')
-        return false
+        this.showingDuplicates = false
+        this.currentPage = 1
+        this.listQuery.skip = 0
+        this.activeAdvancedSearchRequest = request as AdvancedSearchRequest
+        this.resetTableViewport()
+        return await this.fetchAdvancedSearchPage('template')
       } else {
         this.$message.warning('不支持的模板类型')
       }
@@ -1916,12 +2009,15 @@ export default class extends mixins(TorrentBatchMixin) {
   // ====== P1#10 查找重复任务 ======
   private async handleShowDuplicateTorrents() {
     this.showingDuplicates = true
+    this.activeAdvancedSearchRequest = null
     this.currentPage = 1
     this.resetTableViewport()
     await this.fetchDuplicateTorrents(true)
   }
 
   private async fetchDuplicateTorrents(showResultMessage = false) {
+    this.activeAdvancedSearchRequest = null
+    const requestSequence = this.prepareForListReplacement()
     this.listLoading = true
     try {
       const downloaderId = this.listQuery.downloader_id.length > 0
@@ -1937,20 +2033,23 @@ export default class extends mixins(TorrentBatchMixin) {
         page: this.currentPage,
         pageSize: this.pageSize
       })
+      if (requestSequence !== this.listRequestSequence) return
       const { list, total } = normalizePaginatedResponse<any>(response)
-      this.list = list.map(normalizeTorrent).map(item => ({ ...item, checked: false }))
-      this.total = total
-      this.resetBatchSelection()
+      const nextList = list.map(normalizeTorrent).map(item => ({ ...item, checked: false }))
+      this.replaceTorrentList(nextList, total)
       if (showResultMessage) {
         this.$message.success(`查找完成，共找到 ${total} 条重复种子`)
       }
     } catch (error) {
+      if (requestSequence !== this.listRequestSequence) return
       const errorMessage = extractErrorMessage(error)
       console.error('查找重复失败:', error)
       this.$message.error(errorMessage || '查找重复失败')
       this.showingDuplicates = false
     } finally {
-      this.listLoading = false
+      if (requestSequence === this.listRequestSequence) {
+        this.listLoading = false
+      }
     }
   }
 
@@ -2290,15 +2389,36 @@ export default class extends mixins(TorrentBatchMixin) {
 
   .page-size-combobox {
     width: 108px;
+    height: 24px;
+    position: relative;
+    display: flex;
+    align-items: stretch;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-primary);
 
-    ::v-deep .el-input__inner {
-      height: 24px;
-      line-height: 24px;
-      padding: 0 24px 0 8px;
+    &:focus-within {
+      border-color: var(--color-primary);
+    }
+
+    .page-size-input {
+      width: 100%;
+      min-width: 0;
+      padding: 0 2px 0 8px;
+      border: 0;
+      outline: 0;
+      background: transparent;
+      color: var(--color-text-primary);
+      font-size: 12px;
+      line-height: 22px;
       text-align: center;
     }
 
     .page-size-toggle {
+      width: 24px;
+      padding: 0;
+      border: 0;
+      background: transparent;
       display: inline-flex;
       align-items: center;
       justify-content: center;
@@ -2311,6 +2431,38 @@ export default class extends mixins(TorrentBatchMixin) {
       &:focus {
         color: var(--color-primary);
         outline: none;
+      }
+    }
+
+    .page-size-options {
+      position: absolute;
+      left: -1px;
+      bottom: calc(100% + 4px);
+      z-index: 50;
+      width: 108px;
+      margin: 0;
+      padding: 4px 0;
+      list-style: none;
+      border: 1px solid var(--color-border-primary);
+      border-radius: var(--radius-sm);
+      background: var(--color-bg-primary);
+      box-shadow: var(--shadow-md);
+
+      button {
+        width: 100%;
+        padding: 4px 8px;
+        border: 0;
+        background: transparent;
+        color: var(--color-text-primary);
+        text-align: center;
+        cursor: pointer;
+
+        &:hover,
+        &:focus-visible {
+          background: var(--color-bg-hover);
+          color: var(--color-primary);
+          outline: none;
+        }
       }
     }
   }

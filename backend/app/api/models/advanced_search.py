@@ -87,7 +87,7 @@ class EnhancedAdvancedSearchRequest(BaseModel):
 
     # 基础分页参数
     page: int = Field(1, ge=1, le=1000, description="页码", examples=[1])
-    limit: int = Field(20, ge=1, le=100, description="每页数量", examples=[20])
+    limit: int = Field(20, ge=1, le=100000, description="每页数量", examples=[20])
     sort_by: str = Field("added_time", description="排序字段", examples=["added_time"])
     sort_order: Literal["asc", "desc"] = Field("desc", description="排序方向", examples=["desc"])
 
@@ -175,7 +175,7 @@ class AdvancedSearchResponse(BaseModel):
 class TorrentDeleteRequest(BaseModel):
     """批量删除种子请求"""
 
-    torrent_ids: List[str] = Field(..., min_items=1, max_items=100, description="种子ID列表")
+    torrent_ids: List[str] = Field(..., min_length=1, max_length=100, description="种子ID列表")
     delete_data: bool = Field(True, description="是否删除数据文件", examples=[True])
     id_recycle: bool = Field(False, description="是否进入回收箱", examples=[False])
 

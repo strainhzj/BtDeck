@@ -1224,6 +1224,35 @@
             "frontend/tests/unit/traditional-view-component.spec.ts"
           ],
           "evidence": "分页候选不再按组合框当前值过滤，聚焦或点击箭头均展示 20/50/100/500/1000 五个预设，同时继续支持 1–100000 手动输入；箭头随展开/收起切换方向，并支持鼠标、Enter 与 Space 操作。组件回归直接以当前值 20 查询并断言完整预设及双向箭头状态；目标 3 suites/18 tests、前端全量 14 suites/253 tests、tsc、完整 ESLint、Vuex lint、生产 build 与 git diff --check 均通过；build 仅有既有 48 条 Sass/资源体积 warning。根 init.sh 因当前 Windows 无 WSL 无法执行。"
+        },
+        {
+          "id": "v1.0.6.23",
+          "name": "传统大分页、元数据与行身份可靠性修复",
+          "description": "修复 code review 发现的 qB RID 提前推进、元数据批量补全失效、十万级分页查询放大、同 hash 多下载器行身份冲突、活动排序性能及分页组合框可访问性问题，并补齐跨端回归测试。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/duplicate_torrents.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/api/models/advanced_search.py",
+            "backend/app/services/advanced_search.py",
+            "backend/app/services/torrent_metadata.py",
+            "backend/tests/api/test_advanced_search_pagination.py",
+            "backend/tests/api/test_duplicate_torrents_api.py",
+            "backend/tests/services/test_advanced_search_batching.py",
+            "backend/tests/services/test_torrent_metadata.py",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/components/torrents/FilterGroup.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/utils/torrentBatch.ts",
+            "frontend/src/views/torrents/utils/traditionalTorrentIdentity.ts",
+            "frontend/tests/unit/filter-group-accessibility.spec.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts",
+            "frontend/tests/unit/traditional-torrent-identity.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "qB 增量 RID 仅在关联删除、主记录写入及事务提交全部持久化后推进，空结果、部分结果、API 异常和写库失败均保留旧 RID 以便重试；qB/Transmission 元数据按下载器分批补全，批次失败相互隔离，并以有界正负缓存和轮转游标避免大集合饥饿。重复任务分页改用分页子查询联接并增加稳定次序，高级搜索及普通列表的 Tracker/下载器数据改为受 SQLite 变量上限约束的批量预取；筛选输入限制为每项 8192 字符、最多 500 项，分页上限保持 100000。前端以 downloader_id+hash 区分同 hash 行，速度索引和活动排序降为 O(N + A log A)，请求序列隔离普通/重复/高级/模板分页并丢弃过期响应；分页组合框、过滤按钮、虚拟列表生命周期和 100000 条性能均有组件级回归。后端全量 2154 passed/1 skipped（含架构约束），前端全量 16 suites/265 tests；tsc、严格 ESLint、Vuex lint、生产 build、变更文件 Flake8/Ruff、Black API 格式校验和 git diff --check 通过。根 init.sh 因当前 Windows 无可用 WSL 无法执行；Mypy 仍报告既有 SQLAlchemy/VO 类型债务，本次新增的独立元数据模块目标检查无错误。"
         }
       ]
     }

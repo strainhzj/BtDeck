@@ -5,12 +5,13 @@ import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import TraditionalView from '@/views/torrents/TraditionalView.vue'
 import {
+  advancedSearch,
   getActiveTorrents,
   getDownloaderList,
   getDuplicateTorrents,
   getTorrentList
 } from '@/api/torrents'
-import type { Torrent } from '@/api/torrents'
+import type { ApiResponse, Torrent, TorrentListResponseData } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 
 jest.mock('@/store/modules/viewMode', () => ({
@@ -72,6 +73,7 @@ jest.mock('@/components/torrents/FilterGroup.vue', () => ({
 }))
 
 const localVue = createLocalVue()
+const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
@@ -80,10 +82,13 @@ const mockGetAllCategories = getAllCategories as jest.Mock
 const mockGetAllTags = getAllTags as jest.Mock
 
 interface TorrentRow {
+  infoId?: string
+  downloaderId?: string
   hash: string
   name: string
   checked?: boolean
   status?: string
+  progress?: number | null
 }
 
 interface PageSizeSuggestion {
@@ -96,6 +101,7 @@ interface TraditionalViewVm extends Vue {
   pageSize: number
   pageSizeDropdownExpanded: boolean
   currentPage: number
+  listLoading: boolean
   tableScrollTop: number
   tableViewportHeight: number
   showingDuplicates: boolean
@@ -105,6 +111,7 @@ interface TraditionalViewVm extends Vue {
   categoryFilterItems: Array<{ label: string, value: string }>
   tagFilterItems: Array<{ label: string, value: string }>
   virtualizedList: TorrentRow[]
+  sortedList: TorrentRow[]
   virtualTopSpacerHeight: number
   virtualBottomSpacerHeight: number
   handleRowClick(row: TorrentRow): void
@@ -116,6 +123,10 @@ interface TraditionalViewVm extends Vue {
   handleShowDuplicateTorrents(): Promise<void>
   handlePageChange(page: number): void
   handleManualRefresh(): void
+  performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
+  applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
+  loadActiveSpeed(): Promise<boolean>
+  getTorrentSpeed(row: TorrentRow, type: 'download' | 'upload'): number | null
 }
 
 const message = {
@@ -141,63 +152,6 @@ const InputStub = localVue.extend({
       @input="$emit('input', $event.target.value)"
       @blur="$emit('blur', $event)"
     />
-  `
-})
-
-const AutocompleteStub = localVue.extend({
-  name: 'ElAutocompleteStub',
-  inheritAttrs: false,
-  props: {
-    value: {
-      type: [String, Number],
-      default: ''
-    },
-    fetchSuggestions: {
-      type: Function,
-      default: undefined
-    },
-    triggerOnFocus: {
-      type: Boolean,
-      default: true
-    }
-  },
-  data() {
-    return {
-      activated: false,
-      suggestions: [] as PageSizeSuggestion[]
-    }
-  },
-  methods: {
-    getData(queryString: string) {
-      if (!this.fetchSuggestions) return
-      this.fetchSuggestions(queryString, (suggestions: PageSizeSuggestion[]) => {
-        this.suggestions = suggestions
-      })
-    },
-    focus() {
-      const input = this.$refs.input as HTMLInputElement
-      input.focus()
-    },
-    close() {
-      this.activated = false
-    },
-    handleFocus(event: FocusEvent) {
-      this.activated = true
-      this.$emit('focus', event)
-      if (this.triggerOnFocus) this.getData(String(this.value))
-    }
-  },
-  template: `
-    <div v-bind="$attrs">
-      <input
-        ref="input"
-        :value="value"
-        @input="$emit('input', $event.target.value)"
-        @focus="handleFocus"
-        @blur="$emit('blur', $event)"
-      />
-      <slot name="suffix" />
-    </div>
   `
 })
 
@@ -239,10 +193,55 @@ function successListResponse(pageSize = 20) {
   }
 }
 
+function torrentFixture(index: number, overrides: Partial<Torrent> = {}): Torrent {
+  return {
+    infoId: `info-${index}`,
+    downloaderId: 'dl-1',
+    downloaderName: 'qb',
+    torrentId: `torrent-${index}`,
+    hash: `hash-${index}`,
+    name: `种子-${index}`,
+    savePath: '/downloads',
+    size: 0,
+    status: 'paused',
+    torrentFile: '',
+    addedDate: '',
+    completedDate: null,
+    ratio: '0',
+    ratioLimit: '0',
+    tags: '',
+    category: '',
+    superSeeding: false,
+    enabled: true,
+    ...overrides
+  }
+}
+
+function createDeferred<T>(): {
+  promise: Promise<T>
+  resolve: (value: T) => void
+} {
+  let resolvePromise!: (value: T) => void
+  const promise = new Promise<T>(resolve => {
+    resolvePromise = resolve
+  })
+  return { promise, resolve: resolvePromise }
+}
+
+function torrentListResponse(list: Torrent[], total = list.length): ApiResponse<TorrentListResponseData> {
+  return {
+    status: 'success',
+    msg: 'ok',
+    code: '200',
+    data: { list, total, pageSize: 20 }
+  }
+}
+
 async function flushLifecycle(): Promise<void> {
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 16; index += 1) {
     await Promise.resolve()
   }
+  await new Promise(resolve => setTimeout(resolve, 0))
   await localVue.nextTick()
 }
 
@@ -267,7 +266,6 @@ function mountTraditionalView(): Wrapper<Vue> {
     stubs: {
       'el-button': ButtonStub,
       'el-input': InputStub,
-      'el-autocomplete': AutocompleteStub,
       'el-dropdown': DropdownStub,
       'el-dropdown-menu': {
         template: '<div class="el-dropdown-menu-stub"><slot /></div>'
@@ -313,6 +311,17 @@ describe('TraditionalView component regressions', () => {
       msg: 'ok',
       code: '200',
       data: []
+    })
+    mockAdvancedSearch.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [],
+        total: 0,
+        page: 1,
+        pageSize: 20
+      }
     })
     mockGetDuplicateTorrents.mockResolvedValue({
       status: 'success',
@@ -382,6 +391,45 @@ describe('TraditionalView component regressions', () => {
     expect(wrapper.find('.detail-tabs-compact').text()).not.toContain('常规')
   })
 
+  it('同 hash 不同下载器使用任务身份切换详情且只高亮当前行', async() => {
+    const first = torrentFixture(1, {
+      infoId: 'info-a',
+      downloaderId: 'dl-a',
+      hash: 'same-hash',
+      name: '下载器 A'
+    })
+    const second = torrentFixture(2, {
+      infoId: 'info-b',
+      downloaderId: 'dl-b',
+      hash: 'same-hash',
+      name: '下载器 B'
+    })
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: { list: [first, second], total: 2, pageSize: 20 }
+    })
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    const rows = wrapper.findAll('.torrent-row')
+
+    await rows.at(0).trigger('click')
+    expect(vm.currentRow?.infoId).toBe('info-a')
+    expect(wrapper.findAll('.torrent-row.selected')).toHaveLength(1)
+    expect(rows.at(0).classes()).toContain('selected')
+
+    await rows.at(1).trigger('click')
+    expect(vm.currentRow?.infoId).toBe('info-b')
+    expect(wrapper.findAll('.torrent-row.selected')).toHaveLength(1)
+    expect(rows.at(1).classes()).toContain('selected')
+
+    await rows.at(1).trigger('click')
+    expect(vm.currentRow).toBeNull()
+  })
+
   it('完整映射接口返回的全部分类与标签', async() => {
     const categories = Array.from({ length: 120 }, (_, index) => `分类${index}`)
     const tags = Array.from({ length: 130 }, (_, index) => `标签${index}`)
@@ -410,24 +458,27 @@ describe('TraditionalView component regressions', () => {
     expect(wrapper.find('.custom-page-size').exists()).toBe(false)
     expect(suggestions.map(item => item.value)).toEqual(['20', '50', '100', '500', '1000'])
 
-    const combobox = wrapper.findComponent(AutocompleteStub)
     const toggle = wrapper.find('.page-size-toggle')
     expect(toggle.classes()).toContain('el-icon-arrow-down')
+    expect(toggle.element.tagName).toBe('BUTTON')
 
-    combobox.vm.$emit('focus')
+    await toggle.trigger('click')
     await localVue.nextTick()
     expect(vm.pageSizeDropdownExpanded).toBe(true)
     expect(toggle.classes()).toContain('el-icon-arrow-up')
+    expect(wrapper.findAll('.page-size-options button').wrappers.map(option => option.text()))
+      .toEqual(['20', '50', '100', '500', '1000'])
 
     await toggle.trigger('click')
     expect(vm.pageSizeDropdownExpanded).toBe(false)
     expect(toggle.classes()).toContain('el-icon-arrow-down')
 
     await toggle.trigger('click')
+    await localVue.nextTick()
     expect(vm.pageSizeDropdownExpanded).toBe(true)
     expect(toggle.classes()).toContain('el-icon-arrow-up')
 
-    vm.handlePageSizeSelect({ value: '50' })
+    await wrapper.findAll('.page-size-options button').at(1).trigger('click')
     await flushLifecycle()
 
     expect(vm.pageSize).toBe(50)
@@ -505,6 +556,193 @@ describe('TraditionalView component regressions', () => {
     expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
   })
 
+  it('切页开始加载时立即关闭上一页详情', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: { list: [torrentFixture(1)], total: 2, pageSize: 20 }
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    await wrapper.find('.torrent-row').trigger('click')
+    expect(vm.currentRow).not.toBeNull()
+
+    vm.handlePageChange(2)
+    expect(vm.currentRow).toBeNull()
+    await flushLifecycle()
+  })
+
+  it('忽略过期分页响应且旧请求结束不会提前关闭新请求 loading', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    const pageTwo = createDeferred<ApiResponse<TorrentListResponseData>>()
+    const pageThree = createDeferred<ApiResponse<TorrentListResponseData>>()
+    mockGetTorrentList
+      .mockImplementationOnce(() => pageTwo.promise)
+      .mockImplementationOnce(() => pageThree.promise)
+
+    vm.handlePageChange(2)
+    vm.handlePageChange(3)
+    expect(vm.listLoading).toBe(true)
+
+    pageTwo.resolve(torrentListResponse([
+      torrentFixture(2, { name: '过期第 2 页' })
+    ]))
+    await flushLifecycle()
+    expect(vm.list).toEqual([])
+    expect(vm.listLoading).toBe(true)
+
+    pageThree.resolve(torrentListResponse([
+      torrentFixture(3, { name: '当前第 3 页' })
+    ]))
+    await flushLifecycle()
+    expect(vm.list.map(row => row.name)).toEqual(['当前第 3 页'])
+    expect(vm.listLoading).toBe(false)
+  })
+
+  it('高级搜索翻页、改分页大小及模板均使用当前分页大小', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    const input = wrapper.find('.page-size-input')
+
+    await input.setValue('500')
+    await input.trigger('keyup.enter')
+    await flushLifecycle()
+    mockGetTorrentList.mockClear()
+    mockAdvancedSearch.mockClear()
+
+    await vm.performAdvancedSearch({ name: 'needle' })
+    expect(mockAdvancedSearch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, limit: 500, name: 'needle' })
+    )
+
+    mockAdvancedSearch.mockClear()
+    vm.handlePageChange(2)
+    await flushLifecycle()
+    expect(mockAdvancedSearch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2, limit: 500, name: 'needle' })
+    )
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+
+    await input.setValue('1000')
+    await input.trigger('keyup.enter')
+    await flushLifecycle()
+    expect(mockAdvancedSearch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, limit: 1000, name: 'needle' })
+    )
+
+    mockAdvancedSearch.mockClear()
+    const applied = await vm.applyQueryTemplate({
+      source: 'advanced',
+      version: 1,
+      condition_groups: [{
+        logic: 'and',
+        conditions: [{ field: 'name', operator: 'contains', value: 'template' }]
+      }],
+      sort_by: 'name',
+      sort_order: 'asc'
+    })
+    expect(applied).toBe(true)
+    expect(mockAdvancedSearch).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, limit: 1000, sort_by: 'name', sort_order: 'asc' })
+    )
+  })
+
+  it('速度轮询用下载器与 hash 精确更新同 hash 的不同任务', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [
+          torrentFixture(1, { infoId: 'info-a', downloaderId: 'dl-a', hash: 'same-hash' }),
+          torrentFixture(2, { infoId: 'info-b', downloaderId: 'dl-b', hash: 'same-hash' })
+        ],
+        total: 2,
+        pageSize: 20
+      }
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: [
+        {
+          hash: 'same-hash',
+          downloader_id: 'dl-a',
+          downloadSpeed: 100,
+          uploadSpeed: 0,
+          progress: 25,
+          num_seeds: 0,
+          num_leechs: 0
+        },
+        {
+          hash: 'same-hash',
+          downloader_id: 'dl-b',
+          downloadSpeed: 200,
+          uploadSpeed: 0,
+          progress: 75,
+          num_seeds: 0,
+          num_leechs: 0
+        }
+      ]
+    })
+
+    await vm.loadActiveSpeed()
+
+    expect(vm.getTorrentSpeed(vm.list[0], 'download')).toBe(100)
+    expect(vm.getTorrentSpeed(vm.list[1], 'download')).toBe(200)
+    expect(vm.list[0].progress).toBe(25)
+    expect(vm.list[1].progress).toBe(75)
+    expect(vm.sortedList.map(row => row.infoId)).toEqual(['info-b', 'info-a'])
+  })
+
+  it('兼容未返回下载器 ID 的旧速度响应并更新同 hash 桶', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [
+          torrentFixture(1, { infoId: 'info-a', downloaderId: 'dl-a', hash: 'same-hash' }),
+          torrentFixture(2, { infoId: 'info-b', downloaderId: 'dl-b', hash: 'same-hash' })
+        ],
+        total: 2,
+        pageSize: 20
+      }
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    mockGetActiveTorrents.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: [{
+        hash: 'same-hash',
+        downloadSpeed: 300,
+        uploadSpeed: 0,
+        progress: 60,
+        num_seeds: 0,
+        num_leechs: 0
+      }]
+    })
+
+    await vm.loadActiveSpeed()
+
+    expect(vm.list.map(row => row.progress)).toEqual([60, 60])
+    expect(vm.list.map(row => vm.getTorrentSpeed(row, 'download'))).toEqual([300, 300])
+  })
+
   it('长列表仅渲染当前虚拟窗口和上下缓冲行', async() => {
     const longList: Torrent[] = Array.from({ length: 1000 }, (_, index) => ({
       infoId: `info-${index}`,
@@ -548,6 +786,80 @@ describe('TraditionalView component regressions', () => {
     expect(vm.virtualizedList).toHaveLength(26)
     expect(vm.virtualTopSpacerHeight).toBeGreaterThan(0)
     expect(vm.virtualBottomSpacerHeight).toBeGreaterThan(0)
+  })
+
+  it('真实 scroll 经 RAF 更新窗口，ResizeObserver 更新高度且销毁时清理资源', async() => {
+    let resizeCallback: ResizeObserverCallback | null = null
+    const observe = jest.fn()
+    const disconnect = jest.fn()
+    const OriginalResizeObserver = global.ResizeObserver
+    const OriginalRequestAnimationFrame = window.requestAnimationFrame
+    const OriginalCancelAnimationFrame = window.cancelAnimationFrame
+    const frames = new Map<number, FrameRequestCallback>()
+    let frameId = 0
+
+    class ResizeObserverStub {
+      constructor(callback: ResizeObserverCallback) {
+        resizeCallback = callback
+      }
+
+      observe = observe
+      disconnect = disconnect
+      unobserve = jest.fn()
+    }
+
+    global.ResizeObserver = ResizeObserverStub as unknown as typeof ResizeObserver
+    window.requestAnimationFrame = jest.fn((callback: FrameRequestCallback) => {
+      frameId += 1
+      frames.set(frameId, callback)
+      return frameId
+    })
+    window.cancelAnimationFrame = jest.fn((id: number) => {
+      frames.delete(id)
+    })
+
+    try {
+      wrapper = mountTraditionalView()
+      const container = wrapper.find('.table-container').element as HTMLElement
+      let viewportHeight = 360
+      Object.defineProperty(container, 'clientHeight', {
+        configurable: true,
+        get: () => viewportHeight
+      })
+      await flushLifecycle()
+      const vm = wrapper.vm as unknown as TraditionalViewVm
+
+      expect(observe).toHaveBeenCalledWith(container)
+      expect(resizeCallback).not.toBeNull()
+      const invokeResize = resizeCallback as unknown as ResizeObserverCallback
+      invokeResize([], {} as ResizeObserver)
+      expect(vm.tableViewportHeight).toBe(360)
+
+      container.scrollTop = 640
+      await wrapper.find('.table-container').trigger('scroll')
+      expect(vm.tableScrollTop).toBe(0)
+      const firstFrame = frames.get(1)
+      expect(firstFrame).toBeDefined()
+      firstFrame?.(0)
+      await localVue.nextTick()
+      expect(vm.tableScrollTop).toBe(640)
+
+      viewportHeight = 480
+      invokeResize([], {} as ResizeObserver)
+      expect(vm.tableViewportHeight).toBe(480)
+
+      container.scrollTop = 960
+      await wrapper.find('.table-container').trigger('scroll')
+      expect(frames.has(2)).toBe(true)
+      wrapper.destroy()
+
+      expect(window.cancelAnimationFrame).toHaveBeenCalledWith(2)
+      expect(disconnect).toHaveBeenCalledTimes(1)
+    } finally {
+      global.ResizeObserver = OriginalResizeObserver
+      window.requestAnimationFrame = OriginalRequestAnimationFrame
+      window.cancelAnimationFrame = OriginalCancelAnimationFrame
+    }
   })
 })
 

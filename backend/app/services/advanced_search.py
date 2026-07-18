@@ -28,7 +28,7 @@ from app.api.models.advanced_search import (
 )
 
 # 导入种子信息转换函数（包含tracker信息）
-from app.api.endpoints.torrent_helpers import convert_to_vo_with_trackers
+from app.api.endpoints.torrent_helpers import convert_to_vos_with_trackers
 
 logger = logging.getLogger(__name__)
 
@@ -819,8 +819,8 @@ class AdvancedSearchService:
             # 转换为字典列表（包含tracker信息，与/torrent/getList接口保持一致）
             # 使用 model_dump() 方法让 Pydantic 自动序列化（支持 camelCase 别名和 datetime ISO 格式）
             data = [
-                convert_to_vo_with_trackers(self.db, torrent).model_dump(by_alias=True, exclude_none=True)
-                for torrent in results
+                torrent.model_dump(by_alias=True, exclude_none=True)
+                for torrent in convert_to_vos_with_trackers(self.db, results)
             ]
 
             # 计算总页数

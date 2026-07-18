@@ -1758,6 +1758,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     torrent_info_list = []
     incremental_failed = False
     force_full_sync = False
+    pending_rid: Optional[int] = None
     used_sync_maindata = False
 
     # 周期性全量同步（避免长期只做增量导致数据过期）
@@ -1781,13 +1782,11 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     operation="sync_maindata_init",
                 )
                 new_rid = int(sync_data.get("rid", 0))
-                with _QB_RID_LOCK:
-                    _QB_SYNC_RID_CACHE[downloader_id] = new_rid
-                    _save_qb_rid_cache(_QB_SYNC_RID_CACHE)
                 torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
                 used_sync_maindata = True
                 if torrent_info_list:
                     await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
+                pending_rid = new_rid
                 logger.info(
                     f"[QB_SYNC] first full sync: downloader_id={downloader_id}, "
                     f"rid={new_rid}, torrents={len(torrent_info_list)}"
@@ -1803,9 +1802,6 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     operation="sync_maindata_incremental",
                 )
                 new_rid = int(sync_data.get("rid", last_rid))
-                with _QB_RID_LOCK:
-                    _QB_SYNC_RID_CACHE[downloader_id] = new_rid
-                    _save_qb_rid_cache(_QB_SYNC_RID_CACHE)
 
                 # 处理删除的种子
                 removed = sync_data.get("torrents_removed", []) or []
@@ -1822,6 +1818,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                         "qb_sync_incremental_details",
                     )
                     await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
+                pending_rid = new_rid
                 logger.info(
                     f"[QB_SYNC] incremental: downloader_id={downloader_id}, "
                     f"rid={last_rid}->{new_rid}, changed={len(torrent_info_list)}, "
@@ -1830,6 +1827,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         except APIConnectionError as e:
             # 连接异常：重试后失败再降级
             retry_success = False
+            retry_error: Optional[Exception] = None
             for attempt in range(1, 4):
                 await asyncio.sleep(2 ** (attempt - 1))
                 try:
@@ -1842,9 +1840,6 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                         operation="sync_maindata_retry",
                     )
                     new_rid = int(sync_data.get("rid", last_rid or 0))
-                    with _QB_RID_LOCK:
-                        _QB_SYNC_RID_CACHE[downloader_id] = new_rid
-                        _save_qb_rid_cache(_QB_SYNC_RID_CACHE)
                     removed = sync_data.get("torrents_removed", []) or []
                     if removed:
                         await _mark_qb_removed_torrents(db, bt_downloader.downloader_id, removed)
@@ -1859,6 +1854,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                                 "qb_sync_retry_incremental_details",
                             )
                         await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
+                    pending_rid = new_rid
                     retry_success = True
                     logger.info(
                         f"[QB_SYNC] retry success: downloader_id={downloader_id}, "
@@ -1866,23 +1862,37 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                         f"removed={len(removed)}"
                     )
                     break
-                except APIConnectionError:
+                except APIConnectionError as retry_connection_error:
+                    retry_error = retry_connection_error
                     continue
+                except LoginFailed:
+                    raise
+                except Exception as retry_attempt_error:
+                    retry_error = retry_attempt_error
+                    break
             if not retry_success:
+                pending_rid = None
                 incremental_failed = True
-                logger.error(f"[QB_SYNC] connection failed, fallback to batch full sync: {e}")
+                logger.error(
+                    "[QB_SYNC] retry failed, fallback to batch full sync: %s",
+                    retry_error or e,
+                )
         except LoginFailed as e:
             logger.error(f"[QB_SYNC] auth failed, abort: {e}")
             raise
         except APIError as e:
+            pending_rid = None
             incremental_failed = True
             logger.warning(f"[QB_SYNC] api error, fallback to batch full sync: {e}")
         except Exception as e:
+            pending_rid = None
             incremental_failed = True
             logger.warning(f"[QB_SYNC] incremental failed, fallback to batch full sync: {e}")
 
     # 兜底：分批全量同步，避免单次超大响应
     if force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed:
+        # 降级时丢弃任何未完整水合的 delta，只写入全量快照。
+        torrent_info_list = []
         offset = 0
         while True:
             # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用
@@ -2156,6 +2166,8 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     # 效果：允许其他下载器同步任务立即读取到最新数据，避免"database is locked"错误
     logger.debug("[PERF] 批量写入完成，立即提交外层事务以释放数据库锁...")
     await db.commit()
+    if pending_rid is not None:
+        _confirm_qb_sync_rid(downloader_id, pending_rid)
 
     # 第三阶段：处理 tracker 同步和备份（独立事务，避免长时间持有锁）
     logger.debug("[PERF] 开始处理 tracker 同步和备份...")
@@ -2471,6 +2483,13 @@ def _save_qb_rid_cache(cache: Dict[str, int]) -> None:
         pass
 
 
+def _confirm_qb_sync_rid(downloader_id: str, rid: int) -> None:
+    """Confirm a qB sync RID only after its torrent data is durably written."""
+    with _QB_RID_LOCK:
+        _QB_SYNC_RID_CACHE[downloader_id] = rid
+        _save_qb_rid_cache(_QB_SYNC_RID_CACHE)
+
+
 # 初始化缓存
 _QB_SYNC_RID_CACHE = _load_qb_rid_cache()
 
@@ -2505,14 +2524,32 @@ async def _hydrate_qb_incremental_torrents(
     client: Any, torrent_info_list: List[Any], downloader_id: str, operation: str
 ) -> List[Any]:
     """Replace partial sync/maindata deltas with complete torrent detail rows."""
-    torrent_hashes = [_qb_get_attr(torrent, "hash") for torrent in torrent_info_list]
-    return await fetch_qb_torrent_details(
+    requested_hashes: List[str] = []
+    for torrent in torrent_info_list:
+        torrent_hash = str(_qb_get_attr(torrent, "hash") or "").strip().lower()
+        if not torrent_hash:
+            raise RuntimeError("qB incremental delta contains a torrent without hash")
+        requested_hashes.append(torrent_hash)
+
+    details = await fetch_qb_torrent_details(
         client,
         downloader_id,
-        [torrent_hash for torrent_hash in torrent_hashes if torrent_hash],
+        requested_hashes,
         lane=DownloadLane.SYNC,
         operation=operation,
     )
+    details_by_hash = {
+        str(_qb_get_attr(torrent, "hash") or "").strip().lower(): torrent
+        for torrent in details
+        if _qb_get_attr(torrent, "hash")
+    }
+    missing_hashes = sorted(set(requested_hashes) - details_by_hash.keys())
+    if missing_hashes:
+        preview = ", ".join(missing_hashes[:5])
+        raise RuntimeError(f"qB incremental detail hydration was incomplete ({len(missing_hashes)} missing: {preview})")
+
+    # Preserve sync/maindata order and cardinality while replacing every delta row.
+    return [details_by_hash[torrent_hash] for torrent_hash in requested_hashes]
 
 
 async def _enrich_qb_torrents_with_trackers(
@@ -2640,6 +2677,7 @@ async def _mark_qb_removed_torrents(db: AsyncSession, downloader_id: str, remove
     except Exception as e:
         logger.warning(f"[QB_SYNC] mark removed torrents failed: {e}")
         await db.rollback()
+        raise
 
 
 # ==============================================================================
@@ -2678,6 +2716,7 @@ async def qb_add_torrents_info_only_async(
     torrent_info_list = []
     incremental_failed = False
     force_full_sync = False
+    pending_rid: Optional[int] = None
 
     now_ts = datetime.now().timestamp()
     last_full_ts = _QB_LAST_FULL_SYNC.get(downloader_id, 0)
@@ -2697,10 +2736,8 @@ async def qb_add_torrents_info_only_async(
                     operation="sync_maindata_init",
                 )
                 new_rid = int(sync_data.get("rid", 0))
-                with _QB_RID_LOCK:
-                    _QB_SYNC_RID_CACHE[downloader_id] = new_rid
-                    _save_qb_rid_cache(_QB_SYNC_RID_CACHE)
                 torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
+                pending_rid = new_rid
                 logger.info(
                     f"[QB_INFO_SYNC] first full sync: downloader_id={downloader_id}, rid={new_rid}, torrents={len(torrent_info_list)}"
                 )
@@ -2714,9 +2751,6 @@ async def qb_add_torrents_info_only_async(
                     operation="sync_maindata_incremental",
                 )
                 new_rid = int(sync_data.get("rid", last_rid))
-                with _QB_RID_LOCK:
-                    _QB_SYNC_RID_CACHE[downloader_id] = new_rid
-                    _save_qb_rid_cache(_QB_SYNC_RID_CACHE)
                 removed = sync_data.get("torrents_removed", []) or []
                 if removed:
                     await _mark_qb_removed_torrents(db, bt_downloader.downloader_id, removed)
@@ -2728,14 +2762,18 @@ async def qb_add_torrents_info_only_async(
                         downloader_id,
                         "qb_info_incremental_details",
                     )
+                pending_rid = new_rid
                 logger.info(
                     f"[QB_INFO_SYNC] incremental: downloader_id={downloader_id}, changed={len(torrent_info_list)}, removed={len(removed)}"
                 )
-        except (APIConnectionError, Exception) as e:
+        except Exception as e:
+            pending_rid = None
             incremental_failed = True
             logger.warning(f"[QB_INFO_SYNC] incremental failed, fallback to batch: {e}")
 
     if force_full_sync or (not QB_USE_INCREMENTAL_SYNC) or incremental_failed:
+        # 降级时丢弃任何未完整水合的 delta，只写入全量快照。
+        torrent_info_list = []
         offset = 0
         while True:
             # ✅ 通过 downloader_api_runtime 在 sync_lane 专用 executor 调用
@@ -2924,6 +2962,8 @@ async def qb_add_torrents_info_only_async(
             model=TorrentInfo,
             label=f"[QB_INFO_SYNC] {bt_downloader.nickname}",
         )
+        if pending_rid is not None:
+            _confirm_qb_sync_rid(downloader_id, pending_rid)
         logger.info(
             f"[QB_INFO_SYNC] {bt_downloader.nickname} 成功: 插入 {len(to_insert)}, "
             f"更新 {len(to_update)}, 跳过 {stats['skip']}"

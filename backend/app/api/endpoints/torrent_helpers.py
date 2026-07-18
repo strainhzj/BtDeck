@@ -1,10 +1,11 @@
 import asyncio
 import hashlib
 import re
+import sqlite3
 import uuid
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Set, Tuple
+from typing import List, Dict, Any, Optional, Sequence, Set, Tuple
 
 import bencodepy
 from sqlalchemy import Column, MetaData, String, Table, and_, or_, asc, desc
@@ -244,7 +245,7 @@ def get_torrent_infos(
 
         # 分页查询
         query_result_list = query.offset(skip).limit(limit).all()
-        data = [convert_to_vo_with_trackers(db, torrent) for torrent in query_result_list]
+        data = convert_to_vos_with_trackers(db, query_result_list)
 
         return {"total": total, "data": data}
     finally:
@@ -329,8 +330,15 @@ def convert_to_vo(torrent: torrentInfoModel) -> TorrentInfoVO:
     )
 
 
-def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> TorrentInfoVO:
+def convert_to_vo_with_trackers(
+    db: Session,
+    torrent: torrentInfoModel,
+    *,
+    trackers: Optional[List[TrackerInfo]] = None,
+    downloader_type: Optional[str] = None,
+) -> TorrentInfoVO:
     """将数据库模型转换为VO对象，包含tracker信息"""
+    prefetched_downloader_type = downloader_type
     # 保持datetime对象不变，让 Pydantic 序列化时自动转换为 ISO 8601 格式
 
     # 导入枚举类
@@ -338,11 +346,14 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
 
     # 查询关联的tracker信息
     # 🔧 修复：使用 torrent.hash 查询 tracker，因为 tracker 表的 torrent_info_id 字段存储的是 hash
-    trackers = (
-        db.query(TrackerInfo)
-        .filter(TrackerInfo.torrent_info_id == torrent.info_id, TrackerInfo.dr == 0)  # 只查询未逻辑删除的tracker数据
-        .all()
-    )
+    if trackers is None:
+        trackers = (
+            db.query(TrackerInfo)
+            .filter(
+                TrackerInfo.torrent_info_id == torrent.info_id, TrackerInfo.dr == 0
+            )  # 只查询未逻辑删除的tracker数据
+            .all()
+        )
 
     # 生成tracker_info数组（新结构）
     tracker_info_list = []
@@ -357,11 +368,14 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
     # 确定下载器类型（用于状态映射）
     # 根据 downloader_id 查询下载器类型
     downloader_type = "qbittorrent"  # 默认为 qBittorrent
+    downloader_type = prefetched_downloader_type or downloader_type
     try:
         from app.downloader.models import BtDownloaders
 
         downloader = (
             db.query(BtDownloaders.downloader_type).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
+            if prefetched_downloader_type is None
+            else None
         )
         if downloader:
             # 从 Row 对象中正确提取整数值
@@ -467,6 +481,97 @@ def convert_to_vo_with_trackers(db: Session, torrent: torrentInfoModel) -> Torre
         last_scrape_succeeded=last_scrape_succeeded_str,
         tracker_info=tracker_info_list,
     )
+
+
+_RELATED_PREFETCH_BATCH_SIZE = 500
+
+
+def _safe_related_prefetch_batch_size(db: Session, requested: int) -> int:
+    """Honor a lowered SQLite bind limit while retaining the normal batch size."""
+    if requested <= 0:
+        raise ValueError("batch_size must be greater than zero")
+    try:
+        if db.get_bind().dialect.name != "sqlite":
+            return requested
+        connection_fairy = db.connection().connection
+        driver_connection = getattr(connection_fairy, "driver_connection", connection_fairy)
+        variable_limit = driver_connection.getlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER)
+        # Tracker queries also bind ``dr == 0``; reserve one variable for it.
+        return min(requested, max(1, variable_limit - 1))
+    except (AttributeError, TypeError, ValueError, sqlite3.Error):
+        return requested
+
+
+def convert_to_vos_with_trackers(
+    db: Session,
+    torrents: Sequence[torrentInfoModel],
+    *,
+    batch_size: Optional[int] = None,
+) -> List[TorrentInfoVO]:
+    """Convert torrent rows with bounded batched related-data prefetching."""
+    torrent_list = list(torrents)
+    if not torrent_list:
+        return []
+
+    requested_batch_size = batch_size if batch_size is not None else _RELATED_PREFETCH_BATCH_SIZE
+    effective_batch_size = _safe_related_prefetch_batch_size(db, requested_batch_size)
+
+    tracker_map: Dict[str, List[TrackerInfo]] = {}
+    info_ids = list(dict.fromkeys(str(torrent.info_id) for torrent in torrent_list if torrent.info_id is not None))
+    for start in range(0, len(info_ids), effective_batch_size):
+        info_id_batch = info_ids[start : start + effective_batch_size]
+        trackers = (
+            db.query(TrackerInfo)
+            .filter(
+                TrackerInfo.torrent_info_id.in_(info_id_batch),
+                TrackerInfo.dr == 0,
+            )
+            .all()
+        )
+        for tracker in trackers:
+            tracker_map.setdefault(str(tracker.torrent_info_id), []).append(tracker)
+
+    from app.downloader.models import BtDownloaders
+
+    downloader_type_map: Dict[str, str] = {}
+    downloader_ids = list(
+        dict.fromkeys(str(torrent.downloader_id) for torrent in torrent_list if torrent.downloader_id is not None)
+    )
+    try:
+        for start in range(0, len(downloader_ids), effective_batch_size):
+            downloader_id_batch = downloader_ids[start : start + effective_batch_size]
+            rows = (
+                db.query(
+                    BtDownloaders.downloader_id,
+                    BtDownloaders.downloader_type,
+                )
+                .filter(BtDownloaders.downloader_id.in_(downloader_id_batch))
+                .all()
+            )
+            for row in rows:
+                downloader_id = str(row.downloader_id)
+                try:
+                    downloader_type_int = DownloaderTypeEnum.normalize(row.downloader_type)
+                    downloader_type_map[downloader_id] = DownloaderTypeEnum(downloader_type_int).to_name()
+                except (TypeError, ValueError) as exc:
+                    logger.warning(
+                        "无法转换下载器 %s 的类型，使用 qBittorrent: %s",
+                        downloader_id,
+                        exc,
+                    )
+    except Exception as exc:
+        # Preserve the legacy fallback when the downloader table is unavailable.
+        logger.warning("批量查询下载器类型失败，使用 qBittorrent: %s", exc)
+
+    return [
+        convert_to_vo_with_trackers(
+            db,
+            torrent,
+            trackers=tracker_map.get(str(torrent.info_id), []),
+            downloader_type=downloader_type_map.get(str(torrent.downloader_id), "qbittorrent"),
+        )
+        for torrent in torrent_list
+    ]
 
 
 def parse_size_string(size_str: Optional[str]) -> Optional[int]:

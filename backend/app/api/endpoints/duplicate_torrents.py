@@ -6,9 +6,9 @@
 """
 
 from fastapi import APIRouter, Depends, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_
 from typing import Any, Optional, Dict, List
 import logging
 
@@ -47,12 +47,28 @@ class DuplicateQueryRequest(BaseModel):
 
     name_like: Optional[str] = Field(None, description="种子名称模糊搜索")
     downloader_id: Optional[str] = Field(
-        None, description="下载器ID（支持多选，逗号分隔）"
+        None,
+        max_length=8192,
+        description="下载器ID（支持多选，逗号分隔）",
     )
-    status: Optional[str] = Field(None, description="种子状态（支持多选，逗号分隔）")
+    status: Optional[str] = Field(
+        None,
+        max_length=8192,
+        description="种子状态（支持多选，逗号分隔）",
+    )
     min_size: Optional[int] = Field(None, description="最小文件大小(字节)")
     page: int = Field(1, ge=1, description="页码(从1开始)")
     pageSize: int = Field(20, ge=1, le=100000, description="每页记录数")
+
+    @field_validator("downloader_id", "status")
+    @classmethod
+    def validate_multi_select_size(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        entries = [item.strip() for item in value.split(",") if item.strip()]
+        if len(entries) > 500:
+            raise ValueError("多选过滤项不能超过500个")
+        return value
 
 
 @router.post("/duplicates", response_model=CommonResponse)
@@ -116,9 +132,11 @@ async def get_duplicate_torrents(
 
         if query.downloader_id:
             # 支持多选：逗号分隔的字符串
-            downloader_ids = [
-                id.strip() for id in query.downloader_id.split(",") if id.strip()
-            ]
+            downloader_ids = list(
+                dict.fromkeys(
+                    downloader_id.strip() for downloader_id in query.downloader_id.split(",") if downloader_id.strip()
+                )
+            )
             if len(downloader_ids) == 0:
                 # 空列表：不添加过滤条件（避免SQL语法错误）
                 pass
@@ -131,7 +149,7 @@ async def get_duplicate_torrents(
 
         if query.status:
             # 支持多选：逗号分隔的字符串
-            statuses = [s.strip() for s in query.status.split(",") if s.strip()]
+            statuses = list(dict.fromkeys(status.strip() for status in query.status.split(",") if status.strip()))
             if len(statuses) == 0:
                 # 空列表：不添加过滤条件（避免SQL语法错误）
                 pass
@@ -139,17 +157,14 @@ async def get_duplicate_torrents(
                 # 单个状态：使用精确匹配
                 base_conditions.append(TorrentInfo.status == statuses[0])
             else:
-                # 多个状态：使用 or_ 组合多个条件（或关系）
-                status_conditions = [TorrentInfo.status == s for s in statuses]
-                base_conditions.append(or_(*status_conditions))
+                # 多个状态：使用 in_ 查询（或关系）
+                base_conditions.append(TorrentInfo.status.in_(statuses))
 
         if query.min_size is not None:
             base_conditions.append(TorrentInfo.size >= query.min_size)
 
         # 第一步：构建子查询，找出符合条件的所有种子
-        filtered_torrents = (
-            select(TorrentInfo.hash).where(and_(*base_conditions)).alias()
-        )
+        filtered_torrents = select(TorrentInfo.hash).where(and_(*base_conditions)).alias()
 
         # 第二步：统计每个hash的出现次数，找出重复的hash（出现次数≥2）
         duplicate_hashes_subquery = (
@@ -171,7 +186,9 @@ async def get_duplicate_torrents(
 
         # 排序：先按hash倒序，再按添加时间倒序
         main_query = main_query.order_by(
-            TorrentInfo.hash.desc(), TorrentInfo.added_date.desc()
+            TorrentInfo.hash.desc(),
+            TorrentInfo.added_date.desc(),
+            TorrentInfo.info_id.desc(),
         )
 
         # 查询有重复的种子总数
@@ -182,20 +199,30 @@ async def get_duplicate_torrents(
         # 应用分页
         main_query = main_query.offset(offset).limit(query.pageSize)
 
+        # Reuse the paginated selector for every related lookup.  Passing a page of
+        # up to 100,000 ids/hashes through ``IN (...)`` exceeds SQLite's 32,766
+        # bind-variable limit in the Windows build.  Joining this selector keeps
+        # the number of bind parameters independent from the requested page size.
+        page_identity_subquery = main_query.with_only_columns(
+            TorrentInfo.info_id,
+            TorrentInfo.hash,
+            TorrentInfo.downloader_id,
+        ).subquery()
+
         # 执行查询
         result = db.execute(main_query)
         torrent_records = result.scalars().all()
 
         # ✅ 新增：批量查询tracker信息（避免N+1查询问题）
         if torrent_records:
-            # 提取所有种子的info_id
-            torrent_info_ids = [str(t.info_id) for t in torrent_records]
-
             # 批量查询tracker信息
             all_trackers = (
                 db.query(TrackerInfo)
+                .join(
+                    page_identity_subquery,
+                    TrackerInfo.torrent_info_id == page_identity_subquery.c.info_id,
+                )
                 .filter(
-                    TrackerInfo.torrent_info_id.in_(torrent_info_ids),
                     TrackerInfo.dr == 0,  # 只查询未逻辑删除的tracker
                 )
                 .all()
@@ -216,20 +243,18 @@ async def get_duplicate_torrents(
 
                 downloaders = (
                     db.query(BtDownloaders.downloader_id, BtDownloaders.downloader_type)
-                    .filter(
-                        BtDownloaders.downloader_id.in_(
-                            [str(t.downloader_id) for t in torrent_records]
-                        )
+                    .join(
+                        page_identity_subquery,
+                        BtDownloaders.downloader_id == page_identity_subquery.c.downloader_id,
                     )
+                    .distinct()
                     .all()
                 )
 
                 for dl in downloaders:
                     dl_type_raw = dl.downloader_type
                     dl_type_int = DownloaderTypeEnum.normalize(dl_type_raw)
-                    downloader_types[str(dl.downloader_id)] = DownloaderTypeEnum(
-                        dl_type_int
-                    ).to_name()
+                    downloader_types[str(dl.downloader_id)] = DownloaderTypeEnum(dl_type_int).to_name()
             except Exception as e:
                 logger.warning(f"查询下载器类型失败，使用默认值: {e}")
         else:
@@ -240,12 +265,24 @@ async def get_duplicate_torrents(
         # 也可先从同组的完整数据库记录回填，再尝试从在线下载器获取其专属元数据。
         shared_metadata: Dict[str, Dict[str, Any]] = {}
         if torrent_records:
-            page_hashes = list(
-                {str(torrent.hash) for torrent in torrent_records if torrent.hash}
+            page_hashes_subquery = (
+                select(page_identity_subquery.c.hash)
+                .where(page_identity_subquery.c.hash.isnot(None))
+                .distinct()
+                .subquery()
             )
             intrinsic_rows = (
-                db.query(TorrentInfo.hash, TorrentInfo.name, TorrentInfo.size)
-                .filter(TorrentInfo.hash.in_(page_hashes), TorrentInfo.dr == 0)
+                db.query(
+                    TorrentInfo.hash,
+                    func.max(func.nullif(TorrentInfo.name, "")).label("name"),
+                    func.max(TorrentInfo.size).label("size"),
+                )
+                .join(
+                    page_hashes_subquery,
+                    TorrentInfo.hash == page_hashes_subquery.c.hash,
+                )
+                .filter(TorrentInfo.dr == 0)
+                .group_by(TorrentInfo.hash)
                 .all()
             )
             for row in intrinsic_rows:
@@ -256,9 +293,7 @@ async def get_duplicate_torrents(
                 if row.size and not shared.get("size"):
                     shared["size"] = int(row.size)
 
-        live_metadata = await fetch_live_torrent_metadata(
-            http_request.app, torrent_records, downloader_types
-        )
+        live_metadata = await fetch_live_torrent_metadata(http_request.app, torrent_records, downloader_types)
 
         # 转换为VO格式并填充tracker信息
         torrent_list = []
@@ -275,9 +310,7 @@ async def get_duplicate_torrents(
             last_scrape_succeededs = []
 
             # 获取下载器类型
-            downloader_type = downloader_types.get(
-                str(torrent.downloader_id), "qbittorrent"
-            )
+            downloader_type = downloader_types.get(str(torrent.downloader_id), "qbittorrent")
 
             for tracker in trackers:
                 # 映射 announce 状态
@@ -286,17 +319,9 @@ async def get_duplicate_torrents(
                     try:
                         announce_status_int = int(tracker.last_announce_succeeded)
                         if downloader_type == "qbittorrent":
-                            announce_status_text = (
-                                QBittorrentTrackerStatus.get_display_text(
-                                    announce_status_int
-                                )
-                            )
+                            announce_status_text = QBittorrentTrackerStatus.get_display_text(announce_status_int)
                         else:
-                            announce_status_text = (
-                                TransmissionTrackerStatus.get_display_text(
-                                    announce_status_int
-                                )
-                            )
+                            announce_status_text = TransmissionTrackerStatus.get_display_text(announce_status_int)
                     except (ValueError, TypeError):
                         announce_status_text = str(tracker.last_announce_succeeded)
 
@@ -306,37 +331,21 @@ async def get_duplicate_torrents(
                     try:
                         scrape_status_int = int(tracker.last_scrape_succeeded)
                         if downloader_type == "qbittorrent":
-                            scrape_status_text = (
-                                QBittorrentTrackerStatus.get_display_text(
-                                    scrape_status_int
-                                )
-                            )
+                            scrape_status_text = QBittorrentTrackerStatus.get_display_text(scrape_status_int)
                         else:
-                            scrape_status_text = (
-                                TransmissionTrackerStatus.get_display_text(
-                                    scrape_status_int
-                                )
-                            )
+                            scrape_status_text = TransmissionTrackerStatus.get_display_text(scrape_status_int)
                     except (ValueError, TypeError):
                         scrape_status_text = str(tracker.last_scrape_succeeded)
 
                 # 构建tracker_info对象
                 tracker_vo = TrackerInfoVO(
                     tracker_id=str(tracker.tracker_id) if tracker.tracker_id else None,
-                    tracker_name=str(tracker.tracker_name)
-                    if tracker.tracker_name
-                    else None,
-                    tracker_url=str(tracker.tracker_url)
-                    if tracker.tracker_url
-                    else None,
+                    tracker_name=str(tracker.tracker_name) if tracker.tracker_name else None,
+                    tracker_url=str(tracker.tracker_url) if tracker.tracker_url else None,
                     last_announce_succeeded=announce_status_text,
-                    last_announce_msg=str(tracker.last_announce_msg)
-                    if tracker.last_announce_msg
-                    else None,
+                    last_announce_msg=str(tracker.last_announce_msg) if tracker.last_announce_msg else None,
                     last_scrape_succeeded=scrape_status_text,
-                    last_scrape_msg=str(tracker.last_scrape_msg)
-                    if tracker.last_scrape_msg
-                    else None,
+                    last_scrape_msg=str(tracker.last_scrape_msg) if tracker.last_scrape_msg else None,
                 )
                 tracker_info_list.append(tracker_vo)
 
@@ -350,15 +359,9 @@ async def get_duplicate_torrents(
             # 将数组转换为分号分隔的字符串
             tracker_name_str = ";".join(tracker_names) if tracker_names else ""
             tracker_url_str = ";".join(tracker_urls) if tracker_urls else ""
-            last_announce_succeeded_str = (
-                ";".join(last_announce_succeededs) if last_announce_succeededs else ""
-            )
-            last_announce_msg_str = (
-                ";".join(last_announce_msgs) if last_announce_msgs else ""
-            )
-            last_scrape_succeeded_str = (
-                ";".join(last_scrape_succeededs) if last_scrape_succeededs else ""
-            )
+            last_announce_succeeded_str = ";".join(last_announce_succeededs) if last_announce_succeededs else ""
+            last_announce_msg_str = ";".join(last_announce_msgs) if last_announce_msgs else ""
+            last_scrape_succeeded_str = ";".join(last_scrape_succeededs) if last_scrape_succeededs else ""
 
             # 构建完整的 TorrentInfoVO。先用 ORM 的 to_dict 收口 SQLAlchemy
             # Column 类型，再覆盖本接口组装的 tracker 字段。
@@ -410,6 +413,4 @@ async def get_duplicate_torrents(
         logger.error(f"查询重复种子失败: {e}", exc_info=True)
 
         # 返回错误信息,但状态码为200
-        return CommonResponse(
-            status="error", msg=f"查询失败: {str(e)}", code="500", data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)

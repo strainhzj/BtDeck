@@ -80,3 +80,38 @@ def test_advanced_search_empty_results_return_empty_list_and_total_zero():
     assert body["data"]["list"] == []
     assert body["data"]["total"] == 0
     assert body["data"]["pageSize"] == 20
+
+
+def test_advanced_search_accepts_limit_100000():
+    result = {
+        "status": "success",
+        "msg": "search complete",
+        "code": "200",
+        "data": [],
+        "total": 0,
+        "page": 1,
+        "limit": 100000,
+        "total_pages": 0,
+    }
+    client, app = _create_client(result)
+
+    response = client.post(
+        "/api/v1/advanced-search/advanced-search",
+        json={"page": 1, "limit": 100000},
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["data"]["pageSize"] == 100000
+
+
+def test_advanced_search_rejects_limit_above_100000():
+    client, app = _create_client({})
+
+    response = client.post(
+        "/api/v1/advanced-search/advanced-search",
+        json={"page": 1, "limit": 100001},
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422

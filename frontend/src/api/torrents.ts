@@ -1198,6 +1198,8 @@ export function reannounceAll(): Promise<ApiResponse<ReannounceResponse>> {
  */
 export interface ActiveTorrentSpeed {
   hash: string
+  downloaderId?: string
+  downloader_id?: string
   downloadSpeed: number  // bytes/s
   uploadSpeed: number    // bytes/s
   progress: number       // 下载进度（百分比，0-100）

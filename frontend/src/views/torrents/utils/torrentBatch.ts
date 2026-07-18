@@ -18,6 +18,11 @@
  * 否则会因 formatters.ts 既存的 TorrentStatus.COMPLETED TS 错误阻塞 ts-jest 编译。
  */
 import type { ApiResponse } from '@/api/torrents'
+import {
+  getTorrentDownloaderId,
+  getTorrentHashIdentity,
+  getTorrentSpeedIdentity
+} from './traditionalTorrentIdentity'
 
 // ============ 类型定义 ============
 
@@ -233,7 +238,10 @@ export function getTorrentSpeed(
   if (!torrent || !torrent.hash) {
     return null
   }
-  const active = activeSpeedMap[torrent.hash]
+  const hash = getTorrentHashIdentity(torrent)
+  const active = activeSpeedMap[getTorrentSpeedIdentity(torrent)] ||
+                 activeSpeedMap[`hash:${hash}`] ||
+                 activeSpeedMap[torrent.hash]
   if (active) {
     return type === 'download' ? active.downloadSpeed : active.uploadSpeed
   }
@@ -255,19 +263,24 @@ export function sortByActive(
   snapshotReady = false
 ): any[] {
   if (!list || list.length === 0) return []
-  return [...list]
-    .filter(item => item && item.hash)
-    .sort((a, b) => {
-      const aSpeed = getTorrentSpeed(a, 'download', activeSpeedMap, snapshotReady) ||
-                     getTorrentSpeed(a, 'upload', activeSpeedMap, snapshotReady) || 0
-      const bSpeed = getTorrentSpeed(b, 'download', activeSpeedMap, snapshotReady) ||
-                     getTorrentSpeed(b, 'upload', activeSpeedMap, snapshotReady) || 0
-      const aActive = aSpeed > 0 ? 1 : 0
-      const bActive = bSpeed > 0 ? 1 : 0
-      if (aActive !== bActive) return bActive - aActive
-      if (aActive === 1) return bSpeed - aSpeed
-      return 0
-    })
+  const active: Array<{ torrent: (typeof list)[number], speed: number }> = []
+  const inactive: typeof list = []
+
+  // 一次线性分桶，非活动任务保持服务端顺序；只对通常很小的活动子集排序。
+  // 大分页下复杂度由 O(N log N) 降为 O(N + A log A)。
+  list.forEach(torrent => {
+    if (!torrent || !torrent.hash) return
+    const speed = getTorrentSpeed(torrent, 'download', activeSpeedMap, snapshotReady) ||
+                  getTorrentSpeed(torrent, 'upload', activeSpeedMap, snapshotReady) || 0
+    if (speed > 0) {
+      active.push({ torrent, speed })
+    } else {
+      inactive.push(torrent)
+    }
+  })
+
+  active.sort((a, b) => b.speed - a.speed)
+  return active.map(entry => entry.torrent).concat(inactive)
 }
 
 /**
@@ -315,6 +328,7 @@ export interface SpeedSnapshotEntry {
 /** 列表种子命中快照后的速度更新（供视图层应用到 this.list） */
 export interface SpeedUpdate {
   hash: string
+  downloaderId?: string
   downloadSpeed: number
   uploadSpeed: number
   progress: number
@@ -326,6 +340,8 @@ export interface SpeedUpdate {
  * hash 设为可选：本函数职责之一就是过滤缺 hash 的无效条目，入参须容忍非法输入。 */
 interface ActiveTorrentSpeedInput {
   hash?: string
+  downloaderId?: string
+  downloader_id?: string
   downloadSpeed?: number
   uploadSpeed?: number
   progress?: number
@@ -337,6 +353,8 @@ export interface SpeedSnapshotResult {
   ready: boolean
   /** 新的 activeSpeedMap（ready=false 时为 null，视图应保留旧值） */
   activeSpeedMap: Record<string, SpeedSnapshotEntry> | null
+  /** 按 downloader_id + hash 建立的精确映射，供可能出现同 hash 的传统列表使用。 */
+  torrentSpeedMap: Record<string, SpeedSnapshotEntry> | null
   /** 命中列表项的速度更新（视图遍历应用到 this.list） */
   updates: SpeedUpdate[]
   /** 有效种子数（调试日志用） */
@@ -384,9 +402,10 @@ export function buildSpeedSnapshot(
   res: ApiResponse<ActiveTorrentSpeedInput[] | null> | null | undefined
 ): SpeedSnapshotResult {
   if (!res || res.code !== '200' || !res.data) {
-    return { ready: false, activeSpeedMap: null, updates: [], count: 0 }
+    return { ready: false, activeSpeedMap: null, torrentSpeedMap: null, updates: [], count: 0 }
   }
   const map: Record<string, SpeedSnapshotEntry> = {}
+  const torrentSpeedMap: Record<string, SpeedSnapshotEntry> = {}
   const updates: SpeedUpdate[] = []
   const torrents = res.data || []
   torrents.forEach((t) => {
@@ -397,10 +416,25 @@ export function buildSpeedSnapshot(
     const downloadSpeed = t.downloadSpeed ?? 0
     const uploadSpeed = t.uploadSpeed ?? 0
     const progress = t.progress ?? 0
-    map[t.hash] = { downloadSpeed, uploadSpeed, progress }
-    updates.push({ hash: t.hash, downloadSpeed, uploadSpeed, progress })
+    const speed = { downloadSpeed, uploadSpeed, progress }
+    const downloaderId = getTorrentDownloaderId(t)
+    map[t.hash] = speed
+    torrentSpeedMap[getTorrentSpeedIdentity(t)] = speed
+    updates.push({
+      hash: t.hash,
+      ...(downloaderId ? { downloaderId } : {}),
+      downloadSpeed,
+      uploadSpeed,
+      progress
+    })
   })
-  return { ready: true, activeSpeedMap: map, updates, count: Object.keys(map).length }
+  return {
+    ready: true,
+    activeSpeedMap: map,
+    torrentSpeedMap,
+    updates,
+    count: Object.keys(torrentSpeedMap).length
+  }
 }
 
 /**

@@ -495,3 +495,34 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - 已验证：`backend/tests/test_architecture_constraints.py` 21 passed；后端 Black/Flake8/Ruff 通过；`frontend npm run lint` 通过且执行 `lint-vuex-action`；`npm run test:unit -- lint-vuex-action.spec.ts` 2 passed。
 - 仍需独立处理：`python -m mypy app` 暴露历史类型债务，当前严格入口会真实失败；不要恢复 `|| echo`、不要降低 warning 阈值、不要关闭自定义规则。
 - 下一步建议：把 Mypy 债务拆成独立 SQLAlchemy/Pydantic 类型治理任务，避免混进 lint 可信化修复。
+
+---
+
+## 2026-07-18 交接：传统模式 code review 修复完成
+
+**当前分支**：`dev`
+
+**当前任务**：传统模式十万分页、元数据补全、qB RID 原子性及同 hash 跨下载器行身份修复
+
+**状态**：实现与回归完成，尚未提交或推送
+
+### 已完成
+
+- qB 首次/增量/重试同步只在持久化成功后推进 RID，失败时保留差量重试机会。
+- qB/Transmission 元数据批处理、批次故障隔离、有界缓存及轮转补全已落地。
+- 重复任务与高级搜索支持 100000 分页而不产生超大 `IN` 或 N+1 查询，排序具有稳定唯一键。
+- 传统模式同 hash 不同下载器的选择、详情、删除、速度及高亮完全隔离；活动排序覆盖 100000 条性能场景。
+- 分页组合框、过滤按钮、请求竞争和虚拟列表生命周期的组件回归已补齐。
+
+### 验证
+
+- 后端全量：`2154 passed, 1 skipped`。
+- 前端全量：`16 suites, 265 tests`；TypeScript、严格 ESLint、Vuex lint、生产 build 通过。
+- 变更文件 Flake8、Ruff、Black API 格式校验和 `git diff --check` 通过。
+- 根 `init.sh`：当前 Windows 环境无可用 WSL，无法直接执行。
+- Mypy：元数据独立模块目标检查通过；`torrent_helpers.py`、`torrents_async.py` 与高级搜索服务仍暴露项目既有 SQLAlchemy/VO 类型债务。
+
+### 工作区注意事项
+
+- 本轮未执行 Git 提交或推送。
+- `.pnpm-store/` 是本轮前端验证产生的 8 KB 未跟踪缓存；清理操作因工具审批额度限制未执行。其余既有未跟踪文件均未改动。
