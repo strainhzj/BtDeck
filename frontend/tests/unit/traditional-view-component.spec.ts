@@ -94,6 +94,7 @@ interface TraditionalViewVm extends Vue {
   list: TorrentRow[]
   pageSizeInput: string
   pageSize: number
+  pageSizeDropdownExpanded: boolean
   currentPage: number
   tableScrollTop: number
   tableViewportHeight: number
@@ -150,15 +151,53 @@ const AutocompleteStub = localVue.extend({
     value: {
       type: [String, Number],
       default: ''
+    },
+    fetchSuggestions: {
+      type: Function,
+      default: undefined
+    },
+    triggerOnFocus: {
+      type: Boolean,
+      default: true
+    }
+  },
+  data() {
+    return {
+      activated: false,
+      suggestions: [] as PageSizeSuggestion[]
+    }
+  },
+  methods: {
+    getData(queryString: string) {
+      if (!this.fetchSuggestions) return
+      this.fetchSuggestions(queryString, (suggestions: PageSizeSuggestion[]) => {
+        this.suggestions = suggestions
+      })
+    },
+    focus() {
+      const input = this.$refs.input as HTMLInputElement
+      input.focus()
+    },
+    close() {
+      this.activated = false
+    },
+    handleFocus(event: FocusEvent) {
+      this.activated = true
+      this.$emit('focus', event)
+      if (this.triggerOnFocus) this.getData(String(this.value))
     }
   },
   template: `
-    <input
-      v-bind="$attrs"
-      :value="value"
-      @input="$emit('input', $event.target.value)"
-      @blur="$emit('blur', $event)"
-    />
+    <div v-bind="$attrs">
+      <input
+        ref="input"
+        :value="value"
+        @input="$emit('input', $event.target.value)"
+        @focus="handleFocus"
+        @blur="$emit('blur', $event)"
+      />
+      <slot name="suffix" />
+    </div>
   `
 })
 
@@ -357,19 +396,36 @@ describe('TraditionalView component regressions', () => {
     expect(vm.tagFilterItems.map(item => item.value)).toEqual(['', ...tags])
   })
 
-  it('预设分页和手动分页合并为一个可输入组合框', async() => {
+  it('分页组合框完整展示预设并用箭头切换展开与收起', async() => {
     wrapper = mountTraditionalView()
     await flushLifecycle()
     mockGetTorrentList.mockClear()
     const vm = wrapper.vm as unknown as TraditionalViewVm
     let suggestions: PageSizeSuggestion[] = []
 
-    vm.queryPageSizeSuggestions('', result => { suggestions = result })
+    vm.queryPageSizeSuggestions('20', result => { suggestions = result })
 
     expect(wrapper.findAll('.page-size-combobox')).toHaveLength(1)
     expect(wrapper.find('.page-size-select').exists()).toBe(false)
     expect(wrapper.find('.custom-page-size').exists()).toBe(false)
-    expect(suggestions.map(item => item.value)).toEqual(['10', '20', '50', '100'])
+    expect(suggestions.map(item => item.value)).toEqual(['20', '50', '100', '500', '1000'])
+
+    const combobox = wrapper.findComponent(AutocompleteStub)
+    const toggle = wrapper.find('.page-size-toggle')
+    expect(toggle.classes()).toContain('el-icon-arrow-down')
+
+    combobox.vm.$emit('focus')
+    await localVue.nextTick()
+    expect(vm.pageSizeDropdownExpanded).toBe(true)
+    expect(toggle.classes()).toContain('el-icon-arrow-up')
+
+    await toggle.trigger('click')
+    expect(vm.pageSizeDropdownExpanded).toBe(false)
+    expect(toggle.classes()).toContain('el-icon-arrow-down')
+
+    await toggle.trigger('click')
+    expect(vm.pageSizeDropdownExpanded).toBe(true)
+    expect(toggle.classes()).toContain('el-icon-arrow-up')
 
     vm.handlePageSizeSelect({ value: '50' })
     await flushLifecycle()
@@ -386,7 +442,7 @@ describe('TraditionalView component regressions', () => {
     await flushLifecycle()
     mockGetTorrentList.mockClear()
     const vm = wrapper.vm as unknown as TraditionalViewVm
-    const input = wrapper.find('.page-size-combobox')
+    const input = wrapper.find('.page-size-combobox input')
 
     vm.currentPage = 4
     await input.setValue('100001')
@@ -433,7 +489,7 @@ describe('TraditionalView component regressions', () => {
       expect.objectContaining({ page: 2, pageSize: 20 })
     )
 
-    const input = wrapper.find('.page-size-combobox')
+    const input = wrapper.find('.page-size-combobox input')
     await input.setValue('100000')
     await input.trigger('keyup.enter')
     await flushLifecycle()

@@ -452,6 +452,7 @@
         <div class="table-pagination">
           <div class="pagination-info">
             <el-autocomplete
+              ref="pageSizeAutocomplete"
               v-model="pageSizeInput"
               size="mini"
               class="page-size-combobox"
@@ -460,10 +461,25 @@
               title="选择预设值或输入 1 至 100000，按 Enter 或失焦生效"
               :fetch-suggestions="queryPageSizeSuggestions"
               :trigger-on-focus="true"
+              @focus="handlePageSizeFocus"
               @select="handlePageSizeSelect"
               @keyup.enter.native="applyPageSizeSelection(pageSizeInput)"
-              @blur="applyPageSizeSelection(pageSizeInput)"
-            />
+              @blur="handlePageSizeBlur"
+            >
+              <i
+                slot="suffix"
+                class="page-size-toggle"
+                :class="pageSizeDropdownExpanded ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"
+                role="button"
+                tabindex="0"
+                :aria-label="pageSizeDropdownExpanded ? '收起分页大小选项' : '展开分页大小选项'"
+                :aria-expanded="pageSizeDropdownExpanded"
+                @mousedown.prevent.stop
+                @click.stop="togglePageSizeDropdown"
+                @keydown.enter.prevent.stop="togglePageSizeDropdown"
+                @keydown.space.prevent.stop="togglePageSizeDropdown"
+              ></i>
+            </el-autocomplete>
             <span>共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
           </div>
           <div class="pagination-controls">
@@ -780,6 +796,13 @@ interface PageSizeSuggestion {
   value: string
 }
 
+interface PageSizeAutocompleteRef {
+  activated: boolean
+  focus(): void
+  close(): void
+  getData(queryString: string): void
+}
+
 @Component({
   name: 'TraditionalView',
   components: {
@@ -818,7 +841,8 @@ export default class extends mixins(TorrentBatchMixin) {
   private currentPage = 1
   private pageSize = 20
   private pageSizeInput = '20'
-  private pageSizeOptions = [10, 20, 50, 100]
+  private pageSizeOptions = [20, 50, 100, 500, 1000]
+  private pageSizeDropdownExpanded = false
 
   // 固定高度表格使用虚拟窗口，只渲染可视行和少量缓冲行
   private tableScrollTop = 0
@@ -1292,18 +1316,42 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   private queryPageSizeSuggestions(
-    queryString: string,
+    _queryString: string,
     callback: (suggestions: PageSizeSuggestion[]) => void
   ) {
-    const normalizedQuery = queryString.trim()
     const suggestions = this.pageSizeOptions
       .map(size => ({ value: String(size) }))
-      .filter(option => !normalizedQuery || option.value.startsWith(normalizedQuery))
     callback(suggestions)
   }
 
   private handlePageSizeSelect(suggestion: PageSizeSuggestion) {
+    this.pageSizeDropdownExpanded = false
     this.applyPageSizeSelection(suggestion.value)
+  }
+
+  private handlePageSizeFocus() {
+    this.pageSizeDropdownExpanded = true
+  }
+
+  private handlePageSizeBlur() {
+    this.pageSizeDropdownExpanded = false
+    this.applyPageSizeSelection(this.pageSizeInput)
+  }
+
+  private togglePageSizeDropdown() {
+    const autocomplete = this.$refs.pageSizeAutocomplete as unknown as PageSizeAutocompleteRef | undefined
+    if (!autocomplete) return
+
+    if (this.pageSizeDropdownExpanded) {
+      autocomplete.close()
+      this.pageSizeDropdownExpanded = false
+      return
+    }
+
+    autocomplete.activated = true
+    autocomplete.getData('')
+    autocomplete.focus()
+    this.pageSizeDropdownExpanded = true
   }
 
   private applyPageSizeSelection(value: string | number) {
@@ -2248,6 +2296,22 @@ export default class extends mixins(TorrentBatchMixin) {
       line-height: 24px;
       padding: 0 24px 0 8px;
       text-align: center;
+    }
+
+    .page-size-toggle {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--color-text-tertiary);
+      cursor: pointer;
+      transition: color 0.2s ease;
+
+      &:hover,
+      &:focus {
+        color: var(--color-primary);
+        outline: none;
+      }
     }
   }
 }

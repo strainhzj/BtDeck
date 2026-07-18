@@ -1212,6 +1212,18 @@
             "frontend/tests/unit/traditional-view-virtual-list.spec.ts"
           ],
           "evidence": "分页栏改用单个 el-autocomplete，聚合 10/20/50/100 预设和 1–100000 自定义输入，选择、Enter 或失焦统一归一化并回到第 1 页；普通与重复任务分页数据源语义不变。传统页高度锁定为 calc(100vh - 84px)，表格容器占据固定剩余高度并独立滚动；32px 固定行高、8 行 overscan、上下语义化占位行、ResizeObserver 视口测量和 requestAnimationFrame 滚动更新组成虚拟窗口，分页/筛选/排序切换会重置滚动位置。目标回归 18/18，1000 条/320px 视口仅渲染 26 条；全量 Jest 14 suites/253 tests，Statements 52.48%、Branches 44.34%、Functions 44.75%、Lines 51.89%。tsc、完整 ESLint、Vuex lint、生产 build 与 git diff --check 通过；build 仅有既有 48 条 Sass/资源体积 warning。根 init.sh 因当前 Windows 无 WSL 无法运行；浏览器可加载生产构建，但未登录环境被路由守卫停在登录页。"
+        },
+        {
+          "id": "v1.0.6.22",
+          "name": "传统分页预设与展开箭头修正",
+          "description": "修复分页组合框因当前值过滤而只显示 20 的问题，预设补充为 20/50/100/500/1000，并增加可交互的展开与收起箭头。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "分页候选不再按组合框当前值过滤，聚焦或点击箭头均展示 20/50/100/500/1000 五个预设，同时继续支持 1–100000 手动输入；箭头随展开/收起切换方向，并支持鼠标、Enter 与 Space 操作。组件回归直接以当前值 20 查询并断言完整预设及双向箭头状态；目标 3 suites/18 tests、前端全量 14 suites/253 tests、tsc、完整 ESLint、Vuex lint、生产 build 与 git diff --check 均通过；build 仅有既有 48 条 Sass/资源体积 warning。根 init.sh 因当前 Windows 无 WSL 无法执行。"
         }
       ]
     }
