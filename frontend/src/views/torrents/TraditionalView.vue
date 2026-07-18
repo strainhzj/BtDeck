@@ -92,14 +92,6 @@
           @input="debouncedSearch"
           @keyup.enter.native="handleFilter"
         />
-        <el-checkbox
-          v-model="listQuery.showActiveOnly"
-          class="active-only-checkbox"
-          @change="handleFilter"
-          title="仅显示有速度的活动种子（前端过滤当前页）"
-        >
-          活动
-        </el-checkbox>
         <el-button
           type="text"
           size="small"
@@ -228,7 +220,7 @@
           <FilterGroup
             title="状态"
             :items="statusFilterItems"
-            :active-value="listQuery.status"
+            :active-value="activeStatusFilterValue"
             @select="handleStatusFilter"
           />
 
@@ -796,13 +788,12 @@ import {
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequestFromTemplateGroups
 } from './utils/torrentBatch'
-
-interface FilterItem {
-  icon: string
-  label: string
-  value: string
-  count?: number
-}
+import {
+  buildTraditionalStatusFilterItems,
+  getTraditionalStatusFilterValue,
+  resolveTraditionalStatusFilterSelection
+} from './utils/traditionalStatusFilter'
+import type { StatusFilterItem } from './utils/traditionalStatusFilter'
 
 @Component({
   name: 'TraditionalView',
@@ -957,18 +948,24 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   // ====== 过滤器数据 ======
-  get statusFilterItems(): FilterItem[] {
-    return [
-      { icon: '📥', label: '全部', value: '' },
-      ...STATUS_OPTIONS.map(opt => ({
+  get activeStatusFilterValue(): string {
+    return getTraditionalStatusFilterValue(
+      this.listQuery.status,
+      this.listQuery.showActiveOnly
+    )
+  }
+
+  get statusFilterItems(): StatusFilterItem[] {
+    return buildTraditionalStatusFilterItems(
+      STATUS_OPTIONS.map(opt => ({
         icon: getStatusIcon(opt.value),
         label: opt.label.replace(/^[^\s]+\s*/, ''),
         value: opt.value
       }))
-    ]
+    )
   }
 
-  get downloaderFilterItems(): FilterItem[] {
+  get downloaderFilterItems(): StatusFilterItem[] {
     return [
       { icon: '🖥', label: '全部', value: '' },
       ...this.downloaderList.map(d => ({
@@ -979,7 +976,7 @@ export default class extends mixins(TorrentBatchMixin) {
     ]
   }
 
-  get categoryFilterItems(): FilterItem[] {
+  get categoryFilterItems(): StatusFilterItem[] {
     const items = [
       { icon: '📂', label: '全部', value: '' },
       ...this.categoryList.map(name => ({
@@ -991,7 +988,7 @@ export default class extends mixins(TorrentBatchMixin) {
     return items
   }
 
-  get tagFilterItems(): FilterItem[] {
+  get tagFilterItems(): StatusFilterItem[] {
     const items = [
       { icon: '🏷', label: '全部', value: '' },
       ...this.tagList.map(name => ({
@@ -1282,11 +1279,9 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 过滤器选择
   private handleStatusFilter(value: string) {
-    if (value === '') {
-      this.listQuery.status = []
-    } else {
-      this.listQuery.status = [value]
-    }
+    const selection = resolveTraditionalStatusFilterSelection(value)
+    this.listQuery.showActiveOnly = selection.showActiveOnly
+    this.listQuery.status = selection.status
     this.handleFilter()
   }
 
@@ -1914,12 +1909,6 @@ export default class extends mixins(TorrentBatchMixin) {
   ::v-deep .el-input__inner {
     font-size: 12px;
   }
-}
-
-// P0新增：活动种子开关 + 手动刷新按钮（在 toolbar-center）
-.active-only-checkbox {
-  margin: 0 4px;
-  ::v-deep .el-checkbox__label { font-size: 12px; padding-left: 4px; }
 }
 
 .manual-refresh-btn {

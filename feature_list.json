@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-17",
+  "last_updated": "2026-07-18",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -1134,6 +1134,19 @@
             "backend/app/api/endpoints/downloader_settings.py"
           ],
           "evidence": "mypy RED 基线为 11 errors：Row.count 名称冲突 1、Request 隐式 Optional 5、response_data 缺注解 1、Result.lastrowid/rowcount 2、qBittorrent/Transmission Client 变量类型冲突 2。修复为 COUNT 查询 scalar_one、只保留实际使用的必需 Request 注入、response_data 显式 dict[str, Any]、DML 结果收紧为 CursorResult[Any]、两类客户端使用独立局部变量。目标 mypy 由 11 errors 降至 Success: no issues found；下载器设置/API 认证专项 33/33，后端全量 2111 passed/1 skipped，变更文件 flake8 与 git diff --check 通过。"
+        },
+        {
+          "id": "v1.0.6.17",
+          "name": "传统模式活动筛选迁移至左侧状态",
+          "description": "移除传统模式工具栏顶部的活动复选框，在左侧状态过滤器中新增“活动中”，固定置于“全部”下方、“做种中”上方，并继续复用后端 active_only 筛选。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/utils/traditionalStatusFilter.ts",
+            "frontend/tests/unit/traditional-view-status-filter.spec.ts"
+          ],
+          "evidence": "传统模式顶部活动复选框及其样式已移除；左侧状态顺序锁定为 全部→活动中→做种中，活动中通过虚拟状态值继续映射 listQuery.showActiveOnly/后端 active_only，选择普通状态或全部时互斥关闭活动筛选。新增 3 项纯函数契约测试；前端全量 Jest 11 suites/235 tests、tsc、完整 ESLint、Vuex lint、生产 build 与 git diff --check 均通过。根 init.sh 已尝试，但当前 Windows 环境未安装 WSL，bash.exe 无法执行；以上前端门禁均使用项目现有 CLI 直接完成。"
         }
       ]
     }
