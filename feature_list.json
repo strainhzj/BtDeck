@@ -1198,6 +1198,20 @@
             "backend/tests/api/test_tag_aggregation_api.py"
           ],
           "evidence": "新增 TraditionalView 组件级 7 项回归，直接覆盖唯一删除下拉及文案、Tracker 默认页签与无常规页签、完整分类/标签映射、Enter/失焦自定义分页与 100000 钳制、重复任务翻页/改页大小/刷新保持，以及悬浮层和侧栏滚动布局契约；TraditionalView 纳入 Jest 覆盖率采集。后端新增 qB 详情分批/去重、正常与重试增量水合、Transmission 缓存客户端实时元数据、缓存/API 异常降级和已删除数据不参与分类标签聚合等回归。前端全量 Jest 13 suites/246 tests，后端受影响专项 78/78；torrents_async.py 本次新增可执行行 9/9，torrent_metadata.py 本次新增可执行行 157/199（78.9%）。tsc、完整 ESLint、Vuex lint、后端目标 flake8/Ruff 格式及生产 build 通过；build 仅有既有 Sass/资源体积 warning。浏览器确认本地生产构建可加载，但无登录环境被路由守卫停在登录页。"
+        },
+        {
+          "id": "v1.0.6.21",
+          "name": "传统种子页分页组合框与虚拟滚动",
+          "description": "将预设分页和手动分页合并为一个可输入组合框，并锁定传统模式列表视口高度；当前页数据超出视口后仅渲染可视行及缓冲行。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/utils/traditionalVirtualList.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-virtual-list.spec.ts"
+          ],
+          "evidence": "分页栏改用单个 el-autocomplete，聚合 10/20/50/100 预设和 1–100000 自定义输入，选择、Enter 或失焦统一归一化并回到第 1 页；普通与重复任务分页数据源语义不变。传统页高度锁定为 calc(100vh - 84px)，表格容器占据固定剩余高度并独立滚动；32px 固定行高、8 行 overscan、上下语义化占位行、ResizeObserver 视口测量和 requestAnimationFrame 滚动更新组成虚拟窗口，分页/筛选/排序切换会重置滚动位置。目标回归 18/18，1000 条/320px 视口仅渲染 26 条；全量 Jest 14 suites/253 tests，Statements 52.48%、Branches 44.34%、Functions 44.75%、Lines 51.89%。tsc、完整 ESLint、Vuex lint、生产 build 与 git diff --check 通过；build 仅有既有 48 条 Sass/资源体积 warning。根 init.sh 因当前 Windows 无 WSL 无法运行；浏览器可加载生产构建，但未登录环境被路由守卫停在登录页。"
         }
       ]
     }

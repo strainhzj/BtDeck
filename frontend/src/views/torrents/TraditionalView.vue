@@ -243,8 +243,16 @@
 
       <!-- 表格区域 -->
       <div class="table-area">
-        <div class="table-container" v-loading="listLoading">
-          <table class="torrent-table traditional-table">
+        <div
+          ref="tableContainer"
+          class="table-container"
+          v-loading="listLoading"
+          @scroll="handleTableScroll"
+        >
+          <table
+            class="torrent-table traditional-table"
+            :aria-rowcount="sortedList.length + 1"
+          >
             <thead>
               <tr>
                 <th class="col-checkbox">
@@ -295,9 +303,21 @@
             </thead>
             <tbody>
               <tr
-                v-for="(torrent, index) in sortedList"
-                :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${index}`"
+                v-if="virtualTopSpacerHeight > 0"
+                class="virtual-spacer-row"
+                aria-hidden="true"
+              >
+                <td
+                  :colspan="visibleTableColumnCount"
+                  :style="{height: `${virtualTopSpacerHeight}px`}"
+                ></td>
+              </tr>
+              <tr
+                v-for="(torrent, index) in virtualizedList"
+                :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${virtualWindow.startIndex + index}`"
+                class="torrent-row"
                 :class="{selected: currentRow && currentRow.hash === torrent.hash}"
+                :aria-rowindex="virtualWindow.startIndex + index + 2"
                 @click="handleRowClick(torrent)"
               >
                 <td class="col-checkbox">
@@ -414,6 +434,16 @@
                   </div>
                 </td>
               </tr>
+              <tr
+                v-if="virtualBottomSpacerHeight > 0"
+                class="virtual-spacer-row"
+                aria-hidden="true"
+              >
+                <td
+                  :colspan="visibleTableColumnCount"
+                  :style="{height: `${virtualBottomSpacerHeight}px`}"
+                ></td>
+              </tr>
             </tbody>
           </table>
         </div>
@@ -421,37 +451,19 @@
         <!-- 分页 -->
         <div class="table-pagination">
           <div class="pagination-info">
-            <el-select
-              :value="presetPageSize"
+            <el-autocomplete
+              v-model="pageSizeInput"
               size="mini"
-              class="page-size-select"
-              placeholder="预设"
-              @change="handlePresetPageSizeChange"
-            >
-              <el-option
-                v-for="size in pageSizeOptions"
-                :key="size"
-                :label="`${size} 条/页`"
-                :value="size"
-              />
-            </el-select>
-            <div class="custom-page-size">
-              <span>每页</span>
-              <el-input
-                v-model="pageSizeInput"
-                type="number"
-                size="mini"
-                class="page-size-input"
-                :min="1"
-                :max="pageSizeMax"
-                :step="1"
-                aria-label="自定义每页数量"
-                title="输入 1 至 100000，按 Enter 或失焦生效"
-                @keyup.enter.native="applyCustomPageSize"
-                @blur="applyCustomPageSize"
-              />
-              <span>条</span>
-            </div>
+              class="page-size-combobox"
+              placeholder="每页数量"
+              aria-label="每页数量"
+              title="选择预设值或输入 1 至 100000，按 Enter 或失焦生效"
+              :fetch-suggestions="queryPageSizeSuggestions"
+              :trigger-on-focus="true"
+              @select="handlePageSizeSelect"
+              @keyup.enter.native="applyPageSizeSelection(pageSizeInput)"
+              @blur="applyPageSizeSelection(pageSizeInput)"
+            />
             <span>共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
           </div>
           <div class="pagination-controls">
@@ -755,10 +767,18 @@ import {
   resolveTraditionalStatusFilterSelection
 } from './utils/traditionalStatusFilter'
 import type { StatusFilterItem } from './utils/traditionalStatusFilter'
+import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
 import {
-  TRADITIONAL_PAGE_SIZE_MAX,
-  normalizeTraditionalPageSize
-} from './utils/traditionalPagination'
+  calculateTraditionalVirtualWindow,
+  TRADITIONAL_VIRTUAL_OVERSCAN,
+  TRADITIONAL_VIRTUAL_ROW_HEIGHT,
+  TRADITIONAL_VIRTUAL_VIEWPORT_FALLBACK
+} from './utils/traditionalVirtualList'
+import type { TraditionalVirtualWindow } from './utils/traditionalVirtualList'
+
+interface PageSizeSuggestion {
+  value: string
+}
 
 @Component({
   name: 'TraditionalView',
@@ -798,8 +818,14 @@ export default class extends mixins(TorrentBatchMixin) {
   private currentPage = 1
   private pageSize = 20
   private pageSizeInput = '20'
-  private pageSizeMax = TRADITIONAL_PAGE_SIZE_MAX
   private pageSizeOptions = [10, 20, 50, 100]
+
+  // 固定高度表格使用虚拟窗口，只渲染可视行和少量缓冲行
+  private tableScrollTop = 0
+  private pendingTableScrollTop = 0
+  private tableViewportHeight = TRADITIONAL_VIRTUAL_VIEWPORT_FALLBACK
+  private tableScrollFrame: number | null = null
+  private tableResizeObserver: ResizeObserver | null = null
 
   // 复选框
   private selectAll = false
@@ -870,10 +896,6 @@ export default class extends mixins(TorrentBatchMixin) {
   private debouncedSearch: any = null
 
   // ====== 计算属性 ======
-  get presetPageSize(): number | null {
-    return this.pageSizeOptions.includes(this.pageSize) ? this.pageSize : null
-  }
-
   get totalPages() {
     return Math.ceil(this.total / this.pageSize)
   }
@@ -926,6 +948,35 @@ export default class extends mixins(TorrentBatchMixin) {
       this.listQuery.status,
       this.listQuery.showActiveOnly
     )
+  }
+
+  get virtualWindow(): TraditionalVirtualWindow {
+    return calculateTraditionalVirtualWindow(
+      this.sortedList.length,
+      this.tableScrollTop,
+      this.tableViewportHeight,
+      TRADITIONAL_VIRTUAL_ROW_HEIGHT,
+      TRADITIONAL_VIRTUAL_OVERSCAN
+    )
+  }
+
+  get virtualizedList() {
+    return this.sortedList.slice(
+      this.virtualWindow.startIndex,
+      this.virtualWindow.endIndex
+    )
+  }
+
+  get virtualTopSpacerHeight(): number {
+    return this.virtualWindow.topSpacerHeight
+  }
+
+  get virtualBottomSpacerHeight(): number {
+    return this.virtualWindow.bottomSpacerHeight
+  }
+
+  get visibleTableColumnCount(): number {
+    return 3 + this.columnSettings.filter(column => column.visible).length
   }
 
   get statusFilterItems(): StatusFilterItem[] {
@@ -987,10 +1038,31 @@ export default class extends mixins(TorrentBatchMixin) {
     await this.handleApplyTemplateFromRoute()
   }
 
+  public mounted() {
+    this.$nextTick(() => {
+      this.updateTableViewportHeight()
+      const tableContainer = this.$refs.tableContainer as HTMLElement | undefined
+      if (tableContainer && typeof ResizeObserver !== 'undefined') {
+        this.tableResizeObserver = new ResizeObserver(() => {
+          this.updateTableViewportHeight()
+        })
+        this.tableResizeObserver.observe(tableContainer)
+      }
+    })
+  }
+
   public beforeDestroy() {
     this.stopSpeedPolling()
+    if (this.tableScrollFrame !== null) {
+      window.cancelAnimationFrame(this.tableScrollFrame)
+      this.tableScrollFrame = null
+    }
+    if (this.tableResizeObserver) {
+      this.tableResizeObserver.disconnect()
+      this.tableResizeObserver = null
+    }
     // P2-I：调 mixin 的 loading 清理，防 4 等级删除轮询期间销毁残留遮罩
-    ;(this as any).closeDeleteLoading && (this as any).closeDeleteLoading()
+    (this as any).closeDeleteLoading && (this as any).closeDeleteLoading()
   }
 
   // ====== 数据获取 ======
@@ -1194,6 +1266,7 @@ export default class extends mixins(TorrentBatchMixin) {
   // ====== 事件处理 ======
   private handleFilter() {
     this.currentPage = 1
+    this.resetTableViewport()
     this.getList()
   }
 
@@ -1204,11 +1277,13 @@ export default class extends mixins(TorrentBatchMixin) {
       this.listQuery.sort_by = field
       this.listQuery.sort_order = 'desc'
     }
+    this.resetTableViewport()
     this.getList()
   }
 
   private handlePageChange(page: number) {
     this.currentPage = page
+    this.resetTableViewport()
     if (this.showingDuplicates) {
       this.fetchDuplicateTorrents()
     } else {
@@ -1216,14 +1291,23 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  private handlePresetPageSizeChange(pageSize: number) {
-    this.pageSize = pageSize
-    this.pageSizeInput = String(pageSize)
-    this.handlePageSizeChange()
+  private queryPageSizeSuggestions(
+    queryString: string,
+    callback: (suggestions: PageSizeSuggestion[]) => void
+  ) {
+    const normalizedQuery = queryString.trim()
+    const suggestions = this.pageSizeOptions
+      .map(size => ({ value: String(size) }))
+      .filter(option => !normalizedQuery || option.value.startsWith(normalizedQuery))
+    callback(suggestions)
   }
 
-  private applyCustomPageSize() {
-    const normalizedPageSize = normalizeTraditionalPageSize(this.pageSizeInput, this.pageSize)
+  private handlePageSizeSelect(suggestion: PageSizeSuggestion) {
+    this.applyPageSizeSelection(suggestion.value)
+  }
+
+  private applyPageSizeSelection(value: string | number) {
+    const normalizedPageSize = normalizeTraditionalPageSize(value, this.pageSize)
     this.pageSizeInput = String(normalizedPageSize)
     if (normalizedPageSize === this.pageSize) return
 
@@ -1233,11 +1317,46 @@ export default class extends mixins(TorrentBatchMixin) {
 
   private handlePageSizeChange() {
     this.currentPage = 1
+    this.resetTableViewport()
     if (this.showingDuplicates) {
       this.fetchDuplicateTorrents()
     } else {
       this.getList()
     }
+  }
+
+  private handleTableScroll(event: Event) {
+    const target = event.currentTarget as HTMLElement
+    this.pendingTableScrollTop = target.scrollTop
+    if (this.tableScrollFrame !== null) return
+
+    this.tableScrollFrame = window.requestAnimationFrame(() => {
+      this.tableScrollTop = this.pendingTableScrollTop
+      this.tableScrollFrame = null
+    })
+  }
+
+  private updateTableViewportHeight() {
+    const tableContainer = this.$refs.tableContainer as HTMLElement | undefined
+    if (tableContainer && tableContainer.clientHeight > 0) {
+      this.tableViewportHeight = tableContainer.clientHeight
+    }
+  }
+
+  private resetTableViewport() {
+    this.tableScrollTop = 0
+    this.pendingTableScrollTop = 0
+    if (this.tableScrollFrame !== null) {
+      window.cancelAnimationFrame(this.tableScrollFrame)
+      this.tableScrollFrame = null
+    }
+    this.$nextTick(() => {
+      const tableContainer = this.$refs.tableContainer as HTMLElement | undefined
+      if (tableContainer) {
+        tableContainer.scrollTop = 0
+      }
+      this.updateTableViewportHeight()
+    })
   }
 
   private handleSelectAll(checked: boolean) {
@@ -1607,6 +1726,7 @@ export default class extends mixins(TorrentBatchMixin) {
         this.total = response.data.total || 0
         this.listQuery.skip = 0
         this.currentPage = 1
+        this.resetTableViewport()
         this.resetBatchSelection()
         this.$message.success(`高级搜索完成，找到 ${this.total} 条结果`)
       } else {
@@ -1673,6 +1793,7 @@ export default class extends mixins(TorrentBatchMixin) {
           sort_order: saved.sort_order ?? 'desc'
         }
         this.currentPage = 1
+        this.resetTableViewport()
         await this.getList()
         this.$message.success('已应用查询模板')
         return true
@@ -1704,6 +1825,7 @@ export default class extends mixins(TorrentBatchMixin) {
           this.total = response.data.total || 0
           this.listQuery.skip = 0
           this.currentPage = 1
+          this.resetTableViewport()
           this.resetBatchSelection()
           this.$message.success('已应用高级搜索模板')
           return true
@@ -1747,6 +1869,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private async handleShowDuplicateTorrents() {
     this.showingDuplicates = true
     this.currentPage = 1
+    this.resetTableViewport()
     await this.fetchDuplicateTorrents(true)
   }
 
@@ -1829,7 +1952,8 @@ export default class extends mixins(TorrentBatchMixin) {
 @import '@/styles/traditional-view-theme.scss';
 
 .traditional-page {
-  height: 100%;
+  // 与列表模式一致锁定到当前视口，避免表格高度随种子数量变化
+  height: calc(100vh - 84px);
   display: flex;
   flex-direction: column;
   background: var(--color-bg-primary);
@@ -1944,6 +2068,7 @@ export default class extends mixins(TorrentBatchMixin) {
 
 .table-area {
   --trad-pagination-height: 38px;
+  --trad-row-height: 32px;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -2011,9 +2136,14 @@ export default class extends mixins(TorrentBatchMixin) {
 }
 
 .table-container {
-  flex: 1;
+  // height: 0 配合 flex 固定为剩余可视高度，内容只在容器内部滚动
+  flex: 1 1 0;
+  height: 0;
+  min-height: 0;
   overflow: auto;
   position: relative;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 
   // 使用项目滚动条样式
   &::-webkit-scrollbar {
@@ -2028,6 +2158,34 @@ export default class extends mixins(TorrentBatchMixin) {
 
   &::-webkit-scrollbar-thumb:hover {
     background: var(--scrollbar-thumb-bg-hover);
+  }
+}
+
+.traditional-table {
+  tbody .torrent-row {
+    height: var(--trad-row-height);
+
+    > td {
+      height: var(--trad-row-height);
+      box-sizing: border-box;
+    }
+  }
+
+  tbody .virtual-spacer-row {
+    border: 0;
+    cursor: default;
+    pointer-events: none;
+    transition: none;
+
+    &:hover {
+      background: transparent;
+    }
+
+    > td {
+      padding: 0;
+      border: 0;
+      line-height: 0;
+    }
   }
 }
 
@@ -2082,24 +2240,13 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  .page-size-select {
-    width: 90px;
-  }
-
-  .custom-page-size {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    white-space: nowrap;
-  }
-
-  .page-size-input {
-    width: 82px;
+  .page-size-combobox {
+    width: 108px;
 
     ::v-deep .el-input__inner {
       height: 24px;
       line-height: 24px;
-      padding: 0 6px;
+      padding: 0 24px 0 8px;
       text-align: center;
     }
   }

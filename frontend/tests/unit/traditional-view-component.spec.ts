@@ -10,6 +10,7 @@ import {
   getDuplicateTorrents,
   getTorrentList
 } from '@/api/torrents'
+import type { Torrent } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
 
 jest.mock('@/store/modules/viewMode', () => ({
@@ -81,19 +82,36 @@ const mockGetAllTags = getAllTags as jest.Mock
 interface TorrentRow {
   hash: string
   name: string
+  checked?: boolean
+  status?: string
+}
+
+interface PageSizeSuggestion {
+  value: string
 }
 
 interface TraditionalViewVm extends Vue {
+  list: TorrentRow[]
   pageSizeInput: string
   pageSize: number
   currentPage: number
+  tableScrollTop: number
+  tableViewportHeight: number
   showingDuplicates: boolean
   currentRow: TorrentRow | null
   activeDetailTab: string
   detailTabs: Array<{ label: string, value: string }>
   categoryFilterItems: Array<{ label: string, value: string }>
   tagFilterItems: Array<{ label: string, value: string }>
+  virtualizedList: TorrentRow[]
+  virtualTopSpacerHeight: number
+  virtualBottomSpacerHeight: number
   handleRowClick(row: TorrentRow): void
+  handlePageSizeSelect(suggestion: PageSizeSuggestion): void
+  queryPageSizeSuggestions(
+    queryString: string,
+    callback: (suggestions: PageSizeSuggestion[]) => void
+  ): void
   handleShowDuplicateTorrents(): Promise<void>
   handlePageChange(page: number): void
   handleManualRefresh(): void
@@ -108,6 +126,25 @@ const message = {
 
 const InputStub = localVue.extend({
   name: 'ElInputStub',
+  inheritAttrs: false,
+  props: {
+    value: {
+      type: [String, Number],
+      default: ''
+    }
+  },
+  template: `
+    <input
+      v-bind="$attrs"
+      :value="value"
+      @input="$emit('input', $event.target.value)"
+      @blur="$emit('blur', $event)"
+    />
+  `
+})
+
+const AutocompleteStub = localVue.extend({
+  name: 'ElAutocompleteStub',
   inheritAttrs: false,
   props: {
     value: {
@@ -191,6 +228,7 @@ function mountTraditionalView(): Wrapper<Vue> {
     stubs: {
       'el-button': ButtonStub,
       'el-input': InputStub,
+      'el-autocomplete': AutocompleteStub,
       'el-dropdown': DropdownStub,
       'el-dropdown-menu': {
         template: '<div class="el-dropdown-menu-stub"><slot /></div>'
@@ -319,12 +357,36 @@ describe('TraditionalView component regressions', () => {
     expect(vm.tagFilterItems.map(item => item.value)).toEqual(['', ...tags])
   })
 
-  it('自定义分页在 Enter 和失焦时生效、钳制到 100000 并回到第 1 页', async() => {
+  it('预设分页和手动分页合并为一个可输入组合框', async() => {
     wrapper = mountTraditionalView()
     await flushLifecycle()
     mockGetTorrentList.mockClear()
     const vm = wrapper.vm as unknown as TraditionalViewVm
-    const input = wrapper.find('.page-size-input')
+    let suggestions: PageSizeSuggestion[] = []
+
+    vm.queryPageSizeSuggestions('', result => { suggestions = result })
+
+    expect(wrapper.findAll('.page-size-combobox')).toHaveLength(1)
+    expect(wrapper.find('.page-size-select').exists()).toBe(false)
+    expect(wrapper.find('.custom-page-size').exists()).toBe(false)
+    expect(suggestions.map(item => item.value)).toEqual(['10', '20', '50', '100'])
+
+    vm.handlePageSizeSelect({ value: '50' })
+    await flushLifecycle()
+
+    expect(vm.pageSize).toBe(50)
+    expect(vm.pageSizeInput).toBe('50')
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 0, limit: 50 })
+    )
+  })
+
+  it('分页组合框在 Enter 和失焦时生效、钳制到 100000 并回到第 1 页', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    mockGetTorrentList.mockClear()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    const input = wrapper.find('.page-size-combobox')
 
     vm.currentPage = 4
     await input.setValue('100001')
@@ -371,7 +433,7 @@ describe('TraditionalView component regressions', () => {
       expect.objectContaining({ page: 2, pageSize: 20 })
     )
 
-    const input = wrapper.find('.page-size-input')
+    const input = wrapper.find('.page-size-combobox')
     await input.setValue('100000')
     await input.trigger('keyup.enter')
     await flushLifecycle()
@@ -385,6 +447,51 @@ describe('TraditionalView component regressions', () => {
     expect(mockGetDuplicateTorrents).toHaveBeenCalledTimes(1)
     expect(mockGetTorrentList).not.toHaveBeenCalled()
     expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
+  })
+
+  it('长列表仅渲染当前虚拟窗口和上下缓冲行', async() => {
+    const longList: Torrent[] = Array.from({ length: 1000 }, (_, index) => ({
+      infoId: `info-${index}`,
+      downloaderId: 'dl-1',
+      downloaderName: 'qb',
+      torrentId: `torrent-${index}`,
+      hash: `hash-${index}`,
+      name: `种子-${index}`,
+      savePath: '/downloads',
+      size: 0,
+      status: 'paused',
+      torrentFile: '',
+      addedDate: '',
+      completedDate: null,
+      ratio: '0',
+      ratioLimit: '0',
+      tags: '',
+      category: '',
+      superSeeding: false,
+      enabled: true
+    }))
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: longList,
+        total: longList.length,
+        pageSize: 1000
+      }
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    await wrapper.setData({
+      tableViewportHeight: 320,
+      tableScrollTop: 640
+    })
+
+    expect(vm.virtualizedList).toHaveLength(26)
+    expect(vm.virtualTopSpacerHeight).toBeGreaterThan(0)
+    expect(vm.virtualBottomSpacerHeight).toBeGreaterThan(0)
   })
 })
 
@@ -400,6 +507,14 @@ describe('TraditionalView layout contracts', () => {
     expect(source).toContain('bottom: calc(var(--trad-pagination-height) + 8px);')
     expect(source).toContain('pointer-events: none;')
     expect(source).toMatch(/&\.open\s*\{[\s\S]*?pointer-events:\s*auto;/)
+  })
+
+  it('传统列表锁定视口高度并使用表格虚拟窗口', () => {
+    expect(source).toMatch(/\.traditional-page\s*\{[\s\S]*?height:\s*calc\(100vh - 84px\);/)
+    expect(source).toMatch(/\.table-container\s*\{[\s\S]*?flex:\s*1 1 0;[\s\S]*?height:\s*0;[\s\S]*?overflow:\s*auto;/)
+    expect(source).toContain('v-for="(torrent, index) in virtualizedList"')
+    expect(source).toContain('class="virtual-spacer-row"')
+    expect(source).toContain('--trad-row-height: 32px;')
   })
 
   it('左侧过滤内容保留独立滚动所需的 flex 最小高度和滚动条空间', () => {
