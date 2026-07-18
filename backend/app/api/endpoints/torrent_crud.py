@@ -710,7 +710,7 @@ def get_torrents(
         description="种子状态筛选(支持多选，逗号分隔；error状态满足status='error'或has_tracker_error=True之一即可)",
     ),
     skip: int = Query(0, ge=0, description="跳过记录数"),
-    limit: int = Query(100, ge=1, le=1000, description="限制记录数"),
+    limit: int = Query(100, ge=1, le=100000, description="限制记录数"),
     sort_by: Optional[str] = Query(None, description="排序字段"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     active_only: bool = Query(False, description="仅显示活动种子（实时速度>0，由活动集合缓存驱动）"),

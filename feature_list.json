@@ -1147,6 +1147,41 @@
             "frontend/tests/unit/traditional-view-status-filter.spec.ts"
           ],
           "evidence": "传统模式顶部活动复选框及其样式已移除；左侧状态顺序锁定为 全部→活动中→做种中，活动中通过虚拟状态值继续映射 listQuery.showActiveOnly/后端 active_only，选择普通状态或全部时互斥关闭活动筛选。新增 3 项纯函数契约测试；前端全量 Jest 11 suites/235 tests、tsc、完整 ESLint、Vuex lint、生产 build 与 git diff --check 均通过。根 init.sh 已尝试，但当前 Windows 环境未安装 WSL，bash.exe 无法执行；以上前端门禁均使用项目现有 CLI 直接完成。"
+        },
+        {
+          "id": "v1.0.6.18",
+          "name": "传统种子页删除入口、侧栏、重复元数据与下方详情调整",
+          "description": "传统模式仅保留等级删除入口并改名为删除；补全并滚动展示分类/标签；修复重复任务空元数据及 qB 增量同步覆盖完整字段；将无常规页签的元数据面板移至列表下方。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "backend/app/api/endpoints/duplicate_torrents.py",
+            "backend/app/api/endpoints/tag_management.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/services/torrent_metadata.py",
+            "backend/tests/api/test_duplicate_torrents_api.py",
+            "backend/tests/api/test_tag_aggregation_api.py",
+            "backend/tests/services/test_torrent_metadata.py"
+          ],
+          "evidence": "传统模式删除工具栏只保留四级删除下拉并将触发器改名为“删除”；左侧过滤内容允许纵向滚动，分类/标签接口合并管理项与仍在使用的 TorrentInfo 实际值；重复任务接口先按同 hash 数据库记录回填固有字段，再通过 app.state.store 中的缓存客户端按下载器补齐实时元数据，且 qB sync/maindata 增量记录写库前改为批量获取完整详情，避免后续再次写空；详情面板移至表格区域下方，仅保留 Tracker/文件/Peers，默认 Tracker。后端专项 40/40、目标 flake8、mypy 与 ruff format --check 通过；前端状态契约 3/3、tsc、完整 ESLint、Vuex lint及生产 build 通过；git diff --check 通过。浏览器已加载本地生产构建，但未登录环境被路由守卫停在登录页，无法执行真实种子页交互；根 init.sh 受当前 Windows 无 WSL 限制无法运行。"
+        },
+        {
+          "id": "v1.0.6.19",
+          "name": "传统种子页悬浮元数据与自定义分页大小",
+          "description": "纠正传统模式元数据面板位置，使其以悬浮窗覆盖在分页栏上方且不挤压列表；分页栏增加可填写的每页数量，支持 1 至 100000。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/utils/traditionalPagination.ts",
+            "frontend/tests/unit/traditional-view-pagination.spec.ts",
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/duplicate_torrents.py",
+            "backend/tests/api/test_torrent_list_api.py",
+            "backend/tests/api/test_duplicate_torrents_api.py"
+          ],
+          "evidence": "元数据面板改为绝对定位悬浮层，固定覆盖在 38px 分页栏上方，关闭时不可见且不占布局，打开时保留 Tracker/文件/Peers；分页保留 10/20/50/100 预设并增加自定义输入，Enter 或失焦应用、重置到第 1 页，空值/非法值保持当前值，越界钳制到 1–100000；普通列表 limit 与重复任务 pageSize 后端上限同步放宽到 100000。后端受影响专项 71/71，前端全量 Jest 12 suites/239 tests，tsc、完整 ESLint、Vuex lint、生产 build、flake8、目标 Ruff 格式及 git diff --check 通过；新增重复元数据端点/服务 mypy 无错误，其他既有端点仍有历史 mypy 债务。浏览器生产构建可加载，但未登录环境被路由守卫停在登录页。"
         }
       ]
     }

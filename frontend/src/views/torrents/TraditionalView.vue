@@ -28,15 +28,6 @@
         >
           <i class="el-icon-video-pause"></i> 暂停
         </el-button>
-        <el-button
-          type="text"
-          size="small"
-          class="danger"
-          :disabled="multipleSelection.length === 0"
-          @click="handleBatchDelete"
-        >
-          <i class="el-icon-delete"></i> 删除
-        </el-button>
         <el-dropdown
           @command="handleBatchDeleteByLevelCommand"
           trigger="click"
@@ -49,7 +40,7 @@
             class="danger"
             :disabled="multipleSelection.length === 0"
           >
-            <i class="el-icon-delete"></i> 按等级删除<i class="el-icon-arrow-down el-icon--right"></i>
+            <i class="el-icon-delete"></i> 删除<i class="el-icon-arrow-down el-icon--right"></i>
           </el-button>
           <el-dropdown-menu slot="dropdown">
             <el-dropdown-item command="4">
@@ -430,7 +421,13 @@
         <!-- 分页 -->
         <div class="table-pagination">
           <div class="pagination-info">
-            <el-select v-model="pageSize" size="mini" class="page-size-select" @change="handlePageSizeChange">
+            <el-select
+              :value="presetPageSize"
+              size="mini"
+              class="page-size-select"
+              placeholder="预设"
+              @change="handlePresetPageSizeChange"
+            >
               <el-option
                 v-for="size in pageSizeOptions"
                 :key="size"
@@ -438,6 +435,23 @@
                 :value="size"
               />
             </el-select>
+            <div class="custom-page-size">
+              <span>每页</span>
+              <el-input
+                v-model="pageSizeInput"
+                type="number"
+                size="mini"
+                class="page-size-input"
+                :min="1"
+                :max="pageSizeMax"
+                :step="1"
+                aria-label="自定义每页数量"
+                title="输入 1 至 100000，按 Enter 或失焦生效"
+                @keyup.enter.native="applyCustomPageSize"
+                @blur="applyCustomPageSize"
+              />
+              <span>条</span>
+            </div>
             <span>共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
           </div>
           <div class="pagination-controls">
@@ -466,154 +480,101 @@
             </el-button>
           </div>
         </div>
-      </div>
+        <!-- 分页上方悬浮元数据面板 -->
+        <div class="detail-panel-trad" :class="{open: !!currentRow}">
+          <div class="detail-panel-content">
+            <div class="detail-header-compact">
+              <h3>{{ currentRow?.name }}</h3>
+              <button class="close-btn" @click="closeDetailPanel">✕</button>
+            </div>
+            <div class="detail-tabs-compact">
+              <button
+                v-for="tab in detailTabs"
+                :key="tab.value"
+                class="tab-btn"
+                :class="{active: activeDetailTab === tab.value}"
+                @click="activeDetailTab = tab.value"
+              >
+                {{ tab.label }}
+              </button>
+            </div>
+            <div class="detail-content">
+              <!-- Tracker 信息 -->
+              <template v-if="activeDetailTab === 'tracker'">
+                <table class="tracker-table tracker-table-detail">
+                  <thead>
+                    <tr>
+                      <th>Tracker名称</th>
+                      <th style="width: 80px;">Announce</th>
+                      <th>Announce信息</th>
+                      <th style="width: 80px;">Scrape</th>
+                      <th style="width: 60px;" class="tracker-sticky-col">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(tracker, index) in (currentRow?.tracker_info || currentRow?.trackerInfo || [])"
+                      :key="index"
+                    >
+                      <td>
+                        <div>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</div>
+                        <div
+                          class="tracker-url-mini"
+                          :title="tracker.tracker_url || tracker.trackerUrl || '-'"
+                        >{{ tracker.tracker_url || tracker.trackerUrl || '-' }}</div>
+                      </td>
+                      <td>
+                        <span
+                          :class="trackerStatusClass(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)"
+                        >
+                          <template v-if="trackerAnnounceSuccess(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)">
+                            ✓ 工作
+                          </template>
+                          <template v-else>
+                            ✗ {{ tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded || '失败' }}
+                          </template>
+                        </span>
+                      </td>
+                      <td>{{ tracker.last_announce_msg || tracker.lastAnnounceMsg || '-' }}</td>
+                      <td>
+                        <span
+                          :class="trackerStatusClass(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)"
+                        >
+                          <template v-if="trackerAnnounceSuccess(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)">
+                            ✓ 工作
+                          </template>
+                          <template v-else>
+                            ✗ {{ tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded || '失败' }}
+                          </template>
+                        </span>
+                      </td>
+                      <td class="tracker-sticky-col">
+                        <el-button
+                          type="text"
+                          size="mini"
+                          :loading="tracker.reannouncing"
+                          @click="handleTrackerReannounce(tracker, index)"
+                        >汇报</el-button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </template>
 
-      <!-- 右侧详情面板 -->
-      <div class="detail-panel-trad" :class="{open: !!currentRow}">
-        <div class="detail-panel-content">
-          <div class="detail-header-compact">
-            <h3>{{ currentRow?.name }}</h3>
-            <button class="close-btn" @click="closeDetailPanel">✕</button>
-          </div>
-          <div class="detail-tabs-compact">
-            <button
-              v-for="tab in detailTabs"
-              :key="tab.value"
-              class="tab-btn"
-              :class="{active: activeDetailTab === tab.value}"
-              @click="activeDetailTab = tab.value"
-            >
-              {{ tab.label }}
-            </button>
-          </div>
-          <div class="detail-content">
-            <!-- 常规信息 -->
-            <template v-if="activeDetailTab === 'general'">
-              <div class="detail-field-row">
-                <span class="field-label">状态</span>
-                <span class="field-value">
-                  <span class="status-badge-trad" :class="currentRow?.status">{{ getStatusText(currentRow?.status) }}</span>
-                </span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">进度</span>
-                <span class="field-value">{{ currentRow?.progress || 0 }}%</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">大小</span>
-                <span class="field-value">{{ formatFileSize(currentRow?.size) }}</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">下载速度</span>
-                <span class="field-value speed-value-mono download">{{ formatSpeed(getTorrentSpeed(currentRow, 'download')) }}</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">上传速度</span>
-                <span class="field-value speed-value-mono upload">{{ formatSpeed(getTorrentSpeed(currentRow, 'upload')) }}</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">分享率</span>
-                <span class="field-value ratio-value-graded" :class="getRatioClass(currentRow?.ratio)">
-                  {{ formatRatio(currentRow?.ratio) }}
-                </span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">所属下载器</span>
-                <span class="field-value">{{ currentRow?.downloaderName }}</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">分类</span>
-                <span class="field-value">{{ currentRow?.category || '-' }}</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">标签</span>
-                <span class="field-value">{{ currentRow?.tags || '-' }}</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">保存路径</span>
-                <span class="field-value" :title="currentRow?.savePath">{{ currentRow?.savePath }}</span>
-              </div>
-              <div class="detail-field-row">
-                <span class="field-label">添加时间</span>
-                <span class="field-value">{{ formatDate(currentRow?.addedDate) }}</span>
-              </div>
-            </template>
+              <!-- 文件列表（占位） -->
+              <template v-else-if="activeDetailTab === 'files'">
+                <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
+                  文件列表功能开发中...
+                </div>
+              </template>
 
-            <!-- Tracker 信息 -->
-            <template v-else-if="activeDetailTab === 'tracker'">
-              <table class="tracker-table tracker-table-detail">
-                <thead>
-                  <tr>
-                    <th>Tracker名称</th>
-                    <th style="width: 80px;">Announce</th>
-                    <th>Announce信息</th>
-                    <th style="width: 80px;">Scrape</th>
-                    <th style="width: 60px;" class="tracker-sticky-col">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr
-                    v-for="(tracker, index) in (currentRow?.tracker_info || currentRow?.trackerInfo || [])"
-                    :key="index"
-                  >
-                    <td>
-                      <div>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</div>
-                      <div
-                        class="tracker-url-mini"
-                        :title="tracker.tracker_url || tracker.trackerUrl || '-'"
-                      >{{ tracker.tracker_url || tracker.trackerUrl || '-' }}</div>
-                    </td>
-                    <td>
-                      <span
-                        :class="trackerStatusClass(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)"
-                      >
-                        <template v-if="trackerAnnounceSuccess(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)">
-                          ✓ 工作
-                        </template>
-                        <template v-else>
-                          ✗ {{ tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded || '失败' }}
-                        </template>
-                      </span>
-                    </td>
-                    <td>{{ tracker.last_announce_msg || tracker.lastAnnounceMsg || '-' }}</td>
-                    <td>
-                      <span
-                        :class="trackerStatusClass(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)"
-                      >
-                        <template v-if="trackerAnnounceSuccess(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)">
-                          ✓ 工作
-                        </template>
-                        <template v-else>
-                          ✗ {{ tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded || '失败' }}
-                        </template>
-                      </span>
-                    </td>
-                    <td class="tracker-sticky-col">
-                      <el-button
-                        type="text"
-                        size="mini"
-                        :loading="tracker.reannouncing"
-                        @click="handleTrackerReannounce(tracker, index)"
-                      >汇报</el-button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </template>
-
-            <!-- 文件列表（占位） -->
-            <template v-else-if="activeDetailTab === 'files'">
-              <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
-                文件列表功能开发中...
-              </div>
-            </template>
-
-            <!-- Peers（占位） -->
-            <template v-else-if="activeDetailTab === 'peers'">
-              <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
-                Peers 信息功能开发中...
-              </div>
-            </template>
+              <!-- Peers（占位） -->
+              <template v-else-if="activeDetailTab === 'peers'">
+                <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
+                  Peers 信息功能开发中...
+                </div>
+              </template>
+            </div>
           </div>
         </div>
       </div>
@@ -794,6 +755,10 @@ import {
   resolveTraditionalStatusFilterSelection
 } from './utils/traditionalStatusFilter'
 import type { StatusFilterItem } from './utils/traditionalStatusFilter'
+import {
+  TRADITIONAL_PAGE_SIZE_MAX,
+  normalizeTraditionalPageSize
+} from './utils/traditionalPagination'
 
 @Component({
   name: 'TraditionalView',
@@ -832,6 +797,8 @@ export default class extends mixins(TorrentBatchMixin) {
   // 分页
   private currentPage = 1
   private pageSize = 20
+  private pageSizeInput = '20'
+  private pageSizeMax = TRADITIONAL_PAGE_SIZE_MAX
   private pageSizeOptions = [10, 20, 50, 100]
 
   // 复选框
@@ -857,13 +824,15 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 详情面板
   private currentRow: any = null
-  private activeDetailTab = 'general'
+  private activeDetailTab = 'tracker'
   private detailTabs = [
-    { label: '常规', value: 'general' },
     { label: 'Tracker', value: 'tracker' },
     { label: '文件', value: 'files' },
     { label: 'Peers', value: 'peers' }
   ]
+
+  // 重复任务查询使用独立分页，避免翻页后意外回到普通列表
+  private showingDuplicates = false
 
   // 查询参数（复用现有结构）
   private listQuery: any = {
@@ -901,6 +870,10 @@ export default class extends mixins(TorrentBatchMixin) {
   private debouncedSearch: any = null
 
   // ====== 计算属性 ======
+  get presetPageSize(): number | null {
+    return this.pageSizeOptions.includes(this.pageSize) ? this.pageSize : null
+  }
+
   get totalPages() {
     return Math.ceil(this.total / this.pageSize)
   }
@@ -1022,6 +995,7 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // ====== 数据获取 ======
   private async getList(activeSnapshotRetry = false) {
+    this.showingDuplicates = false
     this.listLoading = true
     try {
       const params = { ...this.listQuery }
@@ -1235,12 +1209,35 @@ export default class extends mixins(TorrentBatchMixin) {
 
   private handlePageChange(page: number) {
     this.currentPage = page
-    this.getList()
+    if (this.showingDuplicates) {
+      this.fetchDuplicateTorrents()
+    } else {
+      this.getList()
+    }
+  }
+
+  private handlePresetPageSizeChange(pageSize: number) {
+    this.pageSize = pageSize
+    this.pageSizeInput = String(pageSize)
+    this.handlePageSizeChange()
+  }
+
+  private applyCustomPageSize() {
+    const normalizedPageSize = normalizeTraditionalPageSize(this.pageSizeInput, this.pageSize)
+    this.pageSizeInput = String(normalizedPageSize)
+    if (normalizedPageSize === this.pageSize) return
+
+    this.pageSize = normalizedPageSize
+    this.handlePageSizeChange()
   }
 
   private handlePageSizeChange() {
     this.currentPage = 1
-    this.getList()
+    if (this.showingDuplicates) {
+      this.fetchDuplicateTorrents()
+    } else {
+      this.getList()
+    }
   }
 
   private handleSelectAll(checked: boolean) {
@@ -1262,7 +1259,7 @@ export default class extends mixins(TorrentBatchMixin) {
       return
     }
     this.currentRow = torrent
-    this.activeDetailTab = 'general'
+    this.activeDetailTab = 'tracker'
   }
 
   private closeDetailPanel() {
@@ -1312,57 +1309,6 @@ export default class extends mixins(TorrentBatchMixin) {
   // ====== 批量操作 ======
   // handleBatchStart / handleBatchPause / handleBatchRecheck 由 mixin 提供，
   // 模板 @click 直接绑定 mixin 的方法（Vue 2 class mixin 合并后可访问）。
-
-  private handleBatchDelete() {
-    if (this.multipleSelection.length === 0) return
-    this.$confirm(`确定要删除选中的 ${this.multipleSelection.length} 个种子吗？`, '批量删除确认', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(async() => {
-      this.$confirm('是否同时删除这些种子对应的数据文件？', '删除数据文件', {
-        confirmButtonText: '同时删除种子和数据',
-        cancelButtonText: '仅删除种子，保留数据',
-        distinguishCancelAndClose: true,
-        type: 'warning'
-      }).then(async() => {
-        await this.performBatchDelete(1)
-      }).catch((action) => {
-        if (action === 'cancel') {
-          this.performBatchDelete(0)
-        }
-      })
-    }).catch(() => undefined)
-  }
-
-  private async performBatchDelete(deleteData: number) {
-    // deleteTorrentsInternal 由 mixin 提供（注入真实 deleteTorrents）
-    const results = await this.deleteTorrentsInternal(this.multipleSelection, deleteData)
-
-    const dataFileText = deleteData === 1 ? '（已删除数据文件）' : '（已保留数据文件）'
-    if (results.failCount === 0) {
-      this.$message.success(`成功删除 ${results.successCount} 个种子 ${dataFileText}`)
-    } else if (results.successCount === 0) {
-      // 汇总错误原因（对齐列表模式 index.vue:1717-1734）
-      const errorCounts = results.errors.reduce((acc, err) => {
-        acc[err] = (acc[err] || 0) + 1
-        return acc
-      }, {} as Record<string, number>)
-      const errorMsg = Object.keys(errorCounts).length > 0
-        ? Object.entries(errorCounts).map(([err, count]) => `${err}(${count}次)`).join('; ')
-        : `共 ${results.failCount} 个种子删除失败`
-      this.$message.error(`批量删除失败: ${errorMsg}`)
-    } else {
-      const errorDetail = results.errors.length > 0
-        ? ` 失败原因: ${results.errors.slice(0, 3).join('; ')}`
-        : ''
-      this.$message.warning(
-        `部分删除成功：成功 ${results.successCount} 个，失败 ${results.failCount} 个 ${dataFileText}${errorDetail}`
-      )
-    }
-
-    this.getList()
-  }
 
   // ====== 单个种子操作 ======
   private async handleTogglePause(torrent: any) {
@@ -1481,7 +1427,11 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // ====== P0#2 手动刷新（对齐列表模式，含静态+速度双刷新） ======
   private handleManualRefresh() {
-    this.getList()
+    if (this.showingDuplicates) {
+      this.fetchDuplicateTorrents()
+    } else {
+      this.getList()
+    }
     this.loadActiveSpeed()
   }
 
@@ -1795,23 +1745,39 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // ====== P1#10 查找重复任务 ======
   private async handleShowDuplicateTorrents() {
+    this.showingDuplicates = true
+    this.currentPage = 1
+    await this.fetchDuplicateTorrents(true)
+  }
+
+  private async fetchDuplicateTorrents(showResultMessage = false) {
     this.listLoading = true
     try {
-      const response = await getDuplicateTorrents()
-      if (response.code === '200' && response.data) {
-        const dupList = (response.data.list || response.data.torrents || []) as any[]
-        this.list = dupList.map(normalizeTorrent).map(item => ({ ...item, checked: false }))
-        this.total = dupList.length
-        this.currentPage = 1
-        this.resetBatchSelection()
-        this.$message.success(`找到 ${dupList.length} 条重复种子`)
-      } else {
-        this.$message.error(response.msg || '查找重复失败')
+      const downloaderId = this.listQuery.downloader_id.length > 0
+        ? this.listQuery.downloader_id.join(',')
+        : undefined
+      const status = this.listQuery.status.length > 0
+        ? this.listQuery.status.join(',')
+        : undefined
+      const response = await getDuplicateTorrents({
+        name_like: this.listQuery.name_like || undefined,
+        downloader_id: downloaderId,
+        status,
+        page: this.currentPage,
+        pageSize: this.pageSize
+      })
+      const { list, total } = normalizePaginatedResponse<any>(response)
+      this.list = list.map(normalizeTorrent).map(item => ({ ...item, checked: false }))
+      this.total = total
+      this.resetBatchSelection()
+      if (showResultMessage) {
+        this.$message.success(`查找完成，共找到 ${total} 条重复种子`)
       }
     } catch (error) {
       const errorMessage = extractErrorMessage(error)
       console.error('查找重复失败:', error)
       this.$message.error(errorMessage || '查找重复失败')
+      this.showingDuplicates = false
     } finally {
       this.listLoading = false
     }
@@ -1877,6 +1843,16 @@ export default class extends mixins(TorrentBatchMixin) {
   display: flex;
   min-height: 0;
   overflow: hidden;
+}
+
+.filter-panel,
+.filter-panel-content {
+  min-height: 0;
+}
+
+.filter-panel-content {
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .toolbar-left,
@@ -1967,11 +1943,71 @@ export default class extends mixins(TorrentBatchMixin) {
 }
 
 .table-area {
+  --trad-pagination-height: 38px;
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+
+// 元数据以悬浮窗覆盖表格底部，始终位于分页栏上方且不挤压列表
+.detail-panel-trad {
+  position: absolute;
+  z-index: 20;
+  left: 8px;
+  right: 8px;
+  bottom: calc(var(--trad-pagination-height) + 8px);
+  width: auto;
+  height: 0;
+  max-height: calc(100% - var(--trad-pagination-height) - 24px);
+  min-height: 0;
+  background: var(--trad-detail-panel-bg);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  box-shadow: none;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition:
+    height 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    visibility 0s linear 0.2s;
+
+  &.open {
+    width: auto;
+    height: 240px;
+    border-color: var(--color-border-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    transform: translateY(0);
+    transition-delay: 0s;
+  }
+}
+
+.detail-panel-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail-header-compact,
+.detail-tabs-compact {
+  flex-shrink: 0;
+}
+
+.detail-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .table-container {
@@ -2014,12 +2050,17 @@ export default class extends mixins(TorrentBatchMixin) {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  height: var(--trad-pagination-height);
+  min-height: var(--trad-pagination-height);
+  box-sizing: border-box;
   padding: 4px 10px;
   background: var(--color-bg-primary);
   border-top: 1px solid var(--color-border-primary);
   font-size: 11px;
   color: var(--color-text-tertiary);
   flex-shrink: 0;
+  position: relative;
+  z-index: 30;
 
   .pagination-info {
     display: flex;
@@ -2043,6 +2084,24 @@ export default class extends mixins(TorrentBatchMixin) {
 
   .page-size-select {
     width: 90px;
+  }
+
+  .custom-page-size {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+  }
+
+  .page-size-input {
+    width: 82px;
+
+    ::v-deep .el-input__inner {
+      height: 24px;
+      line-height: 24px;
+      padding: 0 6px;
+      text-align: center;
+    }
   }
 }
 

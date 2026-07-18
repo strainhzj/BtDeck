@@ -12,8 +12,8 @@
 
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
-from sqlalchemy import create_engine, event
+from unittest.mock import patch
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -21,10 +21,11 @@ from app.main import app
 from app.database import Base
 from app.models.torrent_tags import TorrentTag
 from app.auth.models import User  # noqa: F401 — setting_templates.created_by 外键依赖
-from app.services.tag_service import TagService
+from tests.api.conftest import make_torrent
 
 
 # ==================== 测试夹具 ====================
+
 
 @pytest.fixture
 def in_memory_db():
@@ -58,7 +59,7 @@ def sample_tags(db_session):
             tag_name="电影",
             tag_type="category",
             color="#FF5733",
-            dr=0
+            dr=0,
         ),
         TorrentTag(
             tag_id="tag-002",
@@ -66,7 +67,7 @@ def sample_tags(db_session):
             tag_name="剧集",
             tag_type="category",
             color="#33FF57",
-            dr=0
+            dr=0,
         ),
         # 下载器1的标签
         TorrentTag(
@@ -75,7 +76,7 @@ def sample_tags(db_session):
             tag_name="PT",
             tag_type="tag",
             color="#3357FF",
-            dr=0
+            dr=0,
         ),
         # 下载器2的分类（包含重复）
         TorrentTag(
@@ -84,7 +85,7 @@ def sample_tags(db_session):
             tag_name="电影",
             tag_type="category",
             color="#FF5733",
-            dr=0
+            dr=0,
         ),
         # 已删除的标签
         TorrentTag(
@@ -93,7 +94,7 @@ def sample_tags(db_session):
             tag_name="已删除",
             tag_type="tag",
             color="#CCCCCC",
-            dr=1
+            dr=1,
         ),
     ]
 
@@ -105,10 +106,12 @@ def sample_tags(db_session):
 @pytest.fixture
 def client(db_session):
     """创建测试客户端，注入真实数据库会话"""
+
     def override_get_db():
         yield db_session
 
     from app.api.endpoints.tag_management import get_db
+
     app.dependency_overrides[get_db] = override_get_db
 
     with TestClient(app) as test_client:
@@ -135,14 +138,14 @@ def mock_auth():
 
 # ==================== GET /tags/all 测试 ====================
 
+
 class TestGetAllTagsEndpoint:
     """测试 GET /tags/all 端点"""
 
     def test_get_all_tags_success(self, client, mock_auth, sample_tags):
         """成功获取所有标签（去重）"""
         response = client.get(
-            "/api/v1/tags/all",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/all", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -164,7 +167,7 @@ class TestGetAllTagsEndpoint:
         """按分类类型筛选"""
         response = client.get(
             "/api/v1/tags/all?tag_type=category",
-            headers={"x-access-token": "valid_token"}
+            headers={"x-access-token": "valid_token"},
         )
 
         assert response.status_code == 200
@@ -180,8 +183,7 @@ class TestGetAllTagsEndpoint:
     def test_get_all_tags_with_tag_filter(self, client, mock_auth, sample_tags):
         """按标签类型筛选"""
         response = client.get(
-            "/api/v1/tags/all?tag_type=tag",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/all?tag_type=tag", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -204,7 +206,7 @@ class TestGetAllTagsEndpoint:
         """无效的标签类型"""
         response = client.get(
             "/api/v1/tags/all?tag_type=invalid",
-            headers={"x-access-token": "valid_token"}
+            headers={"x-access-token": "valid_token"},
         )
 
         assert response.status_code == 200
@@ -216,14 +218,14 @@ class TestGetAllTagsEndpoint:
 
 # ==================== GET /tags/categories 测试 ====================
 
+
 class TestGetCategoriesEndpoint:
     """测试 GET /tags/categories 端点"""
 
     def test_get_categories_success(self, client, mock_auth, sample_tags):
         """成功获取所有分类名称"""
         response = client.get(
-            "/api/v1/tags/categories",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -253,8 +255,7 @@ class TestGetCategoriesEndpoint:
         db_session.commit()
 
         response = client.get(
-            "/api/v1/tags/categories",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -267,14 +268,14 @@ class TestGetCategoriesEndpoint:
 
 # ==================== GET /tags/tags 测试 ====================
 
+
 class TestGetTagNamesEndpoint:
     """测试 GET /tags/tags 端点"""
 
     def test_get_tags_success(self, client, mock_auth, sample_tags):
         """成功获取所有标签名称"""
         response = client.get(
-            "/api/v1/tags/tags",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/tags", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -301,8 +302,7 @@ class TestGetTagNamesEndpoint:
         db_session.commit()
 
         response = client.get(
-            "/api/v1/tags/tags",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/tags", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -313,7 +313,39 @@ class TestGetTagNamesEndpoint:
         assert data["data"] == []
 
 
+class TestAssignedTorrentFilterNames:
+    """过滤器选项还应包含已分配但尚未登记到标签管理表的值。"""
+
+    def test_categories_and_tags_include_active_torrent_values(
+        self, client, mock_auth, sample_tags, db_session
+    ):
+        torrent = make_torrent(
+            db_session,
+            info_id="torrent-filter-options",
+            downloader_id="dl-001",
+            downloader_name="qb",
+            hash_="filter-options-hash",
+            name="filter options",
+        )
+        torrent.category = "纪录片"
+        torrent.tags = "4K; 收藏,PT"
+        db_session.commit()
+
+        categories = client.get(
+            "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
+        ).json()
+        tags = client.get(
+            "/api/v1/tags/tags", headers={"x-access-token": "valid_token"}
+        ).json()
+
+        assert "纪录片" in categories["data"]
+        assert "4K" in tags["data"]
+        assert "收藏" in tags["data"]
+        assert tags["data"].count("PT") == 1
+
+
 # ==================== 边界条件测试 ====================
+
 
 class TestEdgeCases:
     """测试边界条件"""
@@ -327,7 +359,7 @@ class TestEdgeCases:
                 tag_name="日语タグ",
                 tag_type="category",
                 color="#FF5733",
-                dr=0
+                dr=0,
             ),
             TorrentTag(
                 tag_id="tag-002",
@@ -335,7 +367,7 @@ class TestEdgeCases:
                 tag_name="Emoji😀标签",
                 tag_type="tag",
                 color="#33FF57",
-                dr=0
+                dr=0,
             ),
         ]
 
@@ -344,8 +376,7 @@ class TestEdgeCases:
 
         # 测试分类接口
         response = client.get(
-            "/api/v1/tags/categories",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -355,8 +386,7 @@ class TestEdgeCases:
 
         # 测试标签接口
         response = client.get(
-            "/api/v1/tags/tags",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/tags", headers={"x-access-token": "valid_token"}
         )
 
         assert response.status_code == 200
@@ -369,25 +399,27 @@ class TestEdgeCases:
         # 创建100个标签
         tags = []
         for i in range(100):
-            tags.append(TorrentTag(
-                tag_id=f"tag-{i:03d}",
-                downloader_id="dl-001",
-                tag_name=f"标签{i}",
-                tag_type="category" if i % 2 == 0 else "tag",
-                color="#FF5733",
-                dr=0
-            ))
+            tags.append(
+                TorrentTag(
+                    tag_id=f"tag-{i:03d}",
+                    downloader_id="dl-001",
+                    tag_name=f"标签{i}",
+                    tag_type="category" if i % 2 == 0 else "tag",
+                    color="#FF5733",
+                    dr=0,
+                )
+            )
 
         db_session.add_all(tags)
         db_session.commit()
 
         # 测试查询性能
         import time
+
         start_time = time.time()
 
         response = client.get(
-            "/api/v1/tags/all",
-            headers={"x-access-token": "valid_token"}
+            "/api/v1/tags/all", headers={"x-access-token": "valid_token"}
         )
 
         elapsed_time = time.time() - start_time
@@ -412,8 +444,7 @@ class TestEdgeCases:
         results = []
         for _ in range(10):
             response = client.get(
-                "/api/v1/tags/categories",
-                headers={"x-access-token": "valid_token"}
+                "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
             )
             results.append(response.json())
 
@@ -426,18 +457,20 @@ class TestEdgeCases:
 
 # ==================== 错误处理测试 ====================
 
+
 class TestErrorHandling:
     """测试错误处理"""
 
     def test_database_error_handling(self, client, mock_auth):
         """测试数据库错误处理"""
         # 模拟数据库错误
-        with patch("app.services.tag_service.TagService.get_all_tag_names") as mock_service:
+        with patch(
+            "app.services.tag_service.TagService.get_all_tag_names"
+        ) as mock_service:
             mock_service.side_effect = Exception("数据库连接失败")
 
             response = client.get(
-                "/api/v1/tags/categories",
-                headers={"x-access-token": "valid_token"}
+                "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
             )
 
             # 端点捕获异常后返回 HTTP 200 + body code="500"
@@ -450,17 +483,18 @@ class TestErrorHandling:
 
     def test_service_error_handling(self, client, mock_auth):
         """测试服务层错误处理"""
-        with patch("app.services.tag_service.TagService.get_all_tag_names") as mock_service:
+        with patch(
+            "app.services.tag_service.TagService.get_all_tag_names"
+        ) as mock_service:
             # 模拟服务层返回失败
             mock_service.return_value = {
                 "success": False,
                 "message": "服务层错误",
-                "data": None
+                "data": None,
             }
 
             response = client.get(
-                "/api/v1/tags/categories",
-                headers={"x-access-token": "valid_token"}
+                "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
             )
 
             assert response.status_code == 200

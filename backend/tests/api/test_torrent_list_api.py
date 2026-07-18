@@ -590,8 +590,14 @@ class TestParamValidation:
         assert r.status_code == 422
 
     def test_limit_over_max_returns_422(self, client):
-        r = client.get(URL, params={"limit": 1001})
+        r = client.get(URL, params={"limit": 100001})
         assert r.status_code == 422
+
+    def test_limit_max_boundary_is_allowed(self, client):
+        r = client.get(URL, params={"limit": 100000})
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["data"]["pageSize"] == 100000
 
     def test_invalid_sort_order_returns_422(self, client):
         r = client.get(URL, params={"sort_order": "invalid"})

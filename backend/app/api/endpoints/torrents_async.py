@@ -43,6 +43,7 @@ from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.sync_db_write import bulk_upsert_with_retry, has_torrent_info_changes
+from app.services.torrent_metadata import fetch_qb_torrent_details
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.config import settings
@@ -1814,6 +1815,12 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                 torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
                 used_sync_maindata = True
                 if torrent_info_list:
+                    torrent_info_list = await _hydrate_qb_incremental_torrents(
+                        client,
+                        torrent_info_list,
+                        downloader_id,
+                        "qb_sync_incremental_details",
+                    )
                     await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
                 logger.info(
                     f"[QB_SYNC] incremental: downloader_id={downloader_id}, "
@@ -1844,6 +1851,13 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                     torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
                     used_sync_maindata = True
                     if torrent_info_list:
+                        if last_rid is not None:
+                            torrent_info_list = await _hydrate_qb_incremental_torrents(
+                                client,
+                                torrent_info_list,
+                                downloader_id,
+                                "qb_sync_retry_incremental_details",
+                            )
                         await _enrich_qb_torrents_with_trackers(client, torrent_info_list, downloader_id)
                     retry_success = True
                     logger.info(
@@ -2487,6 +2501,20 @@ def _qb_get_attr(obj: Any, key: str, default: Any = None) -> Any:
     return default
 
 
+async def _hydrate_qb_incremental_torrents(
+    client: Any, torrent_info_list: List[Any], downloader_id: str, operation: str
+) -> List[Any]:
+    """Replace partial sync/maindata deltas with complete torrent detail rows."""
+    torrent_hashes = [_qb_get_attr(torrent, "hash") for torrent in torrent_info_list]
+    return await fetch_qb_torrent_details(
+        client,
+        downloader_id,
+        [torrent_hash for torrent_hash in torrent_hashes if torrent_hash],
+        lane=DownloadLane.SYNC,
+        operation=operation,
+    )
+
+
 async def _enrich_qb_torrents_with_trackers(
     client: qbClient,
     torrent_info_list: List[Any],
@@ -2693,6 +2721,13 @@ async def qb_add_torrents_info_only_async(
                 if removed:
                     await _mark_qb_removed_torrents(db, bt_downloader.downloader_id, removed)
                 torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
+                if torrent_info_list:
+                    torrent_info_list = await _hydrate_qb_incremental_torrents(
+                        client,
+                        torrent_info_list,
+                        downloader_id,
+                        "qb_info_incremental_details",
+                    )
                 logger.info(
                     f"[QB_INFO_SYNC] incremental: downloader_id={downloader_id}, changed={len(torrent_info_list)}, removed={len(removed)}"
                 )

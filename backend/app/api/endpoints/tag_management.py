@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, Request, Query, Path, Body
 from sqlalchemy.orm import Session
 from typing import Optional, List, Dict, Any
 import logging
+import re
 
 from app.database import get_db
 from app.api.responseVO import CommonResponse
@@ -24,6 +25,7 @@ from app.schemas.tag_schemas import (
 from app.services.tag_service import TagService
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.models.setting_templates import DownloaderTypeEnum
+from app.torrents.models import TorrentInfo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -34,6 +36,49 @@ DOWNLOADER_TYPE_TRANSMISSION = 1  # 仅支持标签
 
 
 # ==================== 辅助函数 ====================
+
+
+def _merge_assigned_filter_names(
+    db: Session, registered_names: List[str], tag_type: str
+) -> List[str]:
+    """Merge managed tags with values that are actually assigned to active torrents."""
+    result: List[str] = []
+    seen = set()
+
+    def _append(value: Any) -> None:
+        normalized = str(value or "").strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+
+    for name in registered_names:
+        _append(name)
+
+    column = TorrentInfo.category if tag_type == "category" else TorrentInfo.tags
+    rows = (
+        db.query(column)
+        .filter(
+            TorrentInfo.dr == 0,
+            TorrentInfo.deleted_at.is_(None),
+            column.isnot(None),
+            column != "",
+        )
+        .distinct()
+        .all()
+    )
+    assigned_names: set[str] = set()
+    for (raw_value,) in rows:
+        values = (
+            [raw_value]
+            if tag_type == "category"
+            else re.split(r"[,;]", raw_value or "")
+        )
+        assigned_names.update(
+            str(value).strip() for value in values if str(value).strip()
+        )
+    for name in sorted(assigned_names, key=str.casefold):
+        _append(name)
+    return result
 
 
 async def get_downloader_from_cache(app: Any, downloader_id: str) -> Optional[Any]:
@@ -60,7 +105,9 @@ async def get_downloader_from_cache(app: Any, downloader_id: str) -> Optional[An
             return None
 
         # 步骤3：查找目标下载器
-        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
+        downloader_vo = next(
+            (d for d in cached_downloaders if d.downloader_id == downloader_id), None
+        )
 
         # 步骤4：检查下载器是否在缓存中
         if not downloader_vo:
@@ -74,7 +121,9 @@ async def get_downloader_from_cache(app: Any, downloader_id: str) -> Optional[An
         return None
 
 
-def validate_downloader_access(db: Session, downloader_id: str, username: str) -> tuple[bool, str]:
+def validate_downloader_access(
+    db: Session, downloader_id: str, username: str
+) -> tuple[bool, str]:
     """
     验证用户是否有权访问指定下载器
 
@@ -90,7 +139,9 @@ def validate_downloader_access(db: Session, downloader_id: str, username: str) -
         from sqlalchemy import text
 
         result = db.execute(
-            text("SELECT COUNT(*) as count FROM bt_downloaders WHERE downloader_id = :downloader_id AND dr = 0"),
+            text(
+                "SELECT COUNT(*) as count FROM bt_downloaders WHERE downloader_id = :downloader_id AND dr = 0"
+            ),
             {"downloader_id": downloader_id},
         ).fetchone()
         if result.count == 0:
@@ -104,7 +155,12 @@ def validate_downloader_access(db: Session, downloader_id: str, username: str) -
 # ==================== 标签CRUD接口 ====================
 
 
-@router.get("/all", summary="获取所有标签（跨下载器聚合）", response_model=CommonResponse, tags=["标签管理"])
+@router.get(
+    "/all",
+    summary="获取所有标签（跨下载器聚合）",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def get_all_tags(
     tag_type: Optional[str] = Query(None, description="筛选标签类型(category/tag)"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -125,7 +181,12 @@ def get_all_tags(
         result = service.get_all_tags(tag_type=tag_type)
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "获取所有标签失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取所有标签失败"),
+                code="400",
+                data=None,
+            )
 
         return CommonResponse(
             status="success",
@@ -137,10 +198,17 @@ def get_all_tags(
 
     except Exception as e:
         logger.error(f"获取所有标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"获取所有标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"获取所有标签失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.get("/categories", summary="获取所有分类名称", response_model=CommonResponse, tags=["标签管理"])
+@router.get(
+    "/categories",
+    summary="获取所有分类名称",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def get_all_categories(
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
@@ -160,22 +228,37 @@ def get_all_categories(
         result = service.get_all_tag_names(tag_type="category")
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "获取分类列表失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取分类列表失败"),
+                code="400",
+                data=None,
+            )
 
+        category_names = _merge_assigned_filter_names(
+            db, result.get("data", []), "category"
+        )
         return CommonResponse(
             status="success",
             msg="获取分类列表成功",
             code="200",
-            data=result.get("data", []),
-            total_count=result.get("total_count", 0),
+            data=category_names,
+            total_count=len(category_names),
         )
 
     except Exception as e:
         logger.error(f"获取分类列表失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"获取分类列表失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"获取分类列表失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.get("/tags", summary="获取所有标签名称", response_model=CommonResponse, tags=["标签管理"])
+@router.get(
+    "/tags",
+    summary="获取所有标签名称",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def get_all_tag_names(
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     request: Request = None,
@@ -195,26 +278,41 @@ def get_all_tag_names(
         result = service.get_all_tag_names(tag_type="tag")
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "获取标签列表失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取标签列表失败"),
+                code="400",
+                data=None,
+            )
 
+        tag_names = _merge_assigned_filter_names(db, result.get("data", []), "tag")
         return CommonResponse(
             status="success",
             msg="获取标签列表成功",
             code="200",
-            data=result.get("data", []),
-            total_count=result.get("total_count", 0),
+            data=tag_names,
+            total_count=len(tag_names),
         )
 
     except Exception as e:
         logger.error(f"获取标签列表失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"获取标签列表失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"获取标签列表失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.get("/list/{downloader_id}", summary="获取标签列表", response_model=CommonResponse, tags=["标签管理"])
+@router.get(
+    "/list/{downloader_id}",
+    summary="获取标签列表",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def get_tag_list(
     downloader_id: str = Path(..., description="下载器ID"),
     tag_type: Optional[str] = Query(None, description="筛选标签类型(category/tag)"),
-    sort_by: Optional[str] = Query("created_at", description="排序字段(created_at/tag_name)"),
+    sort_by: Optional[str] = Query(
+        "created_at", description="排序字段(created_at/tag_name)"
+    ),
     sort_order: Optional[str] = Query("desc", description="排序方向(asc/desc)"),
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页记录数"),
@@ -237,7 +335,9 @@ def get_tag_list(
 
     try:
         # 🐛 调试日志：记录接收到的参数
-        logger.info(f"🔍 [调试] 接收到标签列表请求 - downloader_id: {downloader_id}, tag_type: {tag_type}")
+        logger.info(
+            f"🔍 [调试] 接收到标签列表请求 - downloader_id: {downloader_id}, tag_type: {tag_type}"
+        )
 
         # 3. 调用服务层获取标签列表
         service = TagService(db)
@@ -249,7 +349,12 @@ def get_tag_list(
         )
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "获取标签列表失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取标签列表失败"),
+                code="400",
+                data=None,
+            )
 
         # 4. 排序处理
         all_tags = result.get("data", [])
@@ -276,16 +381,27 @@ def get_tag_list(
         paged_tags = all_tags[start_idx:end_idx]
 
         # 5. 构建分页响应
-        paginated_data = {"total": total, "page": page, "pageSize": pageSize, "list": paged_tags}
+        paginated_data = {
+            "total": total,
+            "page": page,
+            "pageSize": pageSize,
+            "list": paged_tags,
+        }
 
-        return CommonResponse(status="success", msg="获取标签列表成功", code="200", data=paginated_data)
+        return CommonResponse(
+            status="success", msg="获取标签列表成功", code="200", data=paginated_data
+        )
 
     except Exception as e:
         logger.error(f"获取标签列表失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"获取标签列表失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"获取标签列表失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.post("/create", summary="创建标签", response_model=CommonResponse, tags=["标签管理"])
+@router.post(
+    "/create", summary="创建标签", response_model=CommonResponse, tags=["标签管理"]
+)
 async def create_tag(
     tag_request: TagCreateRequest,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -301,7 +417,9 @@ async def create_tag(
     username = user_info.username or "admin"
 
     # 2. 验证下载器权限
-    has_permission, error_msg = validate_downloader_access(db, tag_request.downloader_id, username)
+    has_permission, error_msg = validate_downloader_access(
+        db, tag_request.downloader_id, username
+    )
     if not has_permission:
         return CommonResponse(status="error", msg=error_msg, code="403", data=None)
 
@@ -316,20 +434,34 @@ async def create_tag(
         )
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "创建标签失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "创建标签失败"),
+                code="400",
+                data=None,
+            )
 
         # ⚠️ 架构调整：创建标签时不同步到下载器
         # 标签同步逻辑移至"分配标签给种子"功能（种子管理页面）
         # 这样更符合Transmission的设计理念：标签在使用时才被创建
 
-        return CommonResponse(status="success", msg="标签创建成功", code="200", data=result.get("data"))
+        return CommonResponse(
+            status="success", msg="标签创建成功", code="200", data=result.get("data")
+        )
 
     except Exception as e:
         logger.error(f"创建标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"创建标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"创建标签失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.put("/update/{tag_id}", summary="更新标签", response_model=CommonResponse, tags=["标签管理"])
+@router.put(
+    "/update/{tag_id}",
+    summary="更新标签",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def update_tag(
     tag_id: str = Path(..., description="标签ID"),
     tag_request: TagUpdateRequest = ...,
@@ -357,21 +489,37 @@ def update_tag(
             update_kwargs["color"] = tag_request.color
 
         if not update_kwargs:
-            return CommonResponse(status="error", msg="没有提供要更新的字段", code="400", data=None)
+            return CommonResponse(
+                status="error", msg="没有提供要更新的字段", code="400", data=None
+            )
 
         result = service.update_tag(tag_id=tag_id, **update_kwargs)
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "更新标签失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "更新标签失败"),
+                code="400",
+                data=None,
+            )
 
-        return CommonResponse(status="success", msg="标签更新成功", code="200", data=result.get("data"))
+        return CommonResponse(
+            status="success", msg="标签更新成功", code="200", data=result.get("data")
+        )
 
     except Exception as e:
         logger.error(f"更新标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"更新标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"更新标签失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.delete("/delete/{tag_id}", summary="删除标签", response_model=CommonResponse, tags=["标签管理"])
+@router.delete(
+    "/delete/{tag_id}",
+    summary="删除标签",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 async def delete_tag(
     tag_id: str = Path(..., description="标签ID"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -399,22 +547,36 @@ async def delete_tag(
         result = service.delete_tag(tag_id=tag_id)
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "删除标签失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "删除标签失败"),
+                code="400",
+                data=None,
+            )
 
         # ⚠️ 修复：获取被删除的标签信息，用于同步到下载器
         deleted_tag_info = result.get("data")
 
         if not deleted_tag_info:
             logger.warning(f"标签已从数据库删除，但未返回标签详情 [tag_id={tag_id}]")
-            return CommonResponse(status="success", msg="标签删除成功", code="200", data=None)
+            return CommonResponse(
+                status="success", msg="标签删除成功", code="200", data=None
+            )
 
         # 3. 验证下载器权限
         downloader_id = deleted_tag_info.get("downloader_id")
-        has_permission, error_msg = validate_downloader_access(db, downloader_id, username)
+        has_permission, error_msg = validate_downloader_access(
+            db, downloader_id, username
+        )
         if not has_permission:
-            logger.warning(f"标签已删除，但用户无权限访问下载器 [downloader_id={downloader_id}]")
+            logger.warning(
+                f"标签已删除，但用户无权限访问下载器 [downloader_id={downloader_id}]"
+            )
             return CommonResponse(
-                status="success", msg="标签删除成功（但未同步到下载器：无权限）", code="200", data=None
+                status="success",
+                msg="标签删除成功（但未同步到下载器：无权限）",
+                code="200",
+                data=None,
             )
 
         # 4. 同步到下载器（如果在线）
@@ -429,16 +591,27 @@ async def delete_tag(
         )
 
         if not sync_result["success"]:
-            logger.warning(f"标签已从数据库删除，但同步到下载器失败: {sync_result['message']}")
+            logger.warning(
+                f"标签已从数据库删除，但同步到下载器失败: {sync_result['message']}"
+            )
 
-        return CommonResponse(status="success", msg="标签删除成功", code="200", data=None)
+        return CommonResponse(
+            status="success", msg="标签删除成功", code="200", data=None
+        )
 
     except Exception as e:
         logger.error(f"删除标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"删除标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"删除标签失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.post("/batch-delete", summary="批量删除标签", response_model=CommonResponse, tags=["标签管理"])
+@router.post(
+    "/batch-delete",
+    summary="批量删除标签",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 async def batch_delete_tags(
     delete_request: BatchDeleteTagsRequest,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -498,18 +671,28 @@ async def batch_delete_tags(
                 )
 
         return CommonResponse(
-            status="success", msg=result.get("message", "批量删除成功"), code="200", data=result.get("data")
+            status="success",
+            msg=result.get("message", "批量删除成功"),
+            code="200",
+            data=result.get("data"),
         )
 
     except Exception as e:
         logger.error(f"批量删除标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"批量删除标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"批量删除标签失败: {str(e)}", code="500", data=None
+        )
 
 
 # ==================== 种子标签分配接口 ====================
 
 
-@router.get("/torrent/{torrent_hash}/tags", summary="获取种子标签", response_model=CommonResponse, tags=["标签管理"])
+@router.get(
+    "/torrent/{torrent_hash}/tags",
+    summary="获取种子标签",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def get_torrent_tags(
     torrent_hash: str = Path(..., description="种子哈希值"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -528,16 +711,33 @@ def get_torrent_tags(
         result = service.get_torrent_tags(torrent_hash=torrent_hash)
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "获取种子标签失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "获取种子标签失败"),
+                code="400",
+                data=None,
+            )
 
-        return CommonResponse(status="success", msg="获取种子标签成功", code="200", data=result.get("data", []))
+        return CommonResponse(
+            status="success",
+            msg="获取种子标签成功",
+            code="200",
+            data=result.get("data", []),
+        )
 
     except Exception as e:
         logger.error(f"获取种子标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"获取种子标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"获取种子标签失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.post("/torrent/assign", summary="为种子分配标签", response_model=CommonResponse, tags=["标签管理"])
+@router.post(
+    "/torrent/assign",
+    summary="为种子分配标签",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 async def assign_tags_to_torrent(
     assign_request: AssignTagsRequest,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -553,7 +753,9 @@ async def assign_tags_to_torrent(
     username = user_info.username or "admin"
 
     # 2. 验证下载器权限
-    has_permission, error_msg = validate_downloader_access(db, assign_request.downloader_id, username)
+    has_permission, error_msg = validate_downloader_access(
+        db, assign_request.downloader_id, username
+    )
     if not has_permission:
         return CommonResponse(status="error", msg=error_msg, code="403", data=None)
 
@@ -565,7 +767,12 @@ async def assign_tags_to_torrent(
         )
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "分配标签失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "分配标签失败"),
+                code="400",
+                data=None,
+            )
 
         # 4. 获取标签详情用于同步（使用依赖注入的db会话）
         category_tags = []
@@ -595,14 +802,23 @@ async def assign_tags_to_torrent(
             "total_count": len(assign_request.tag_ids),
         }
 
-        return CommonResponse(status="success", msg="标签分配成功", code="200", data=response_data)
+        return CommonResponse(
+            status="success", msg="标签分配成功", code="200", data=response_data
+        )
 
     except Exception as e:
         logger.error(f"分配标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"分配标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"分配标签失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.post("/torrent/batch-assign", summary="批量分配标签", response_model=CommonResponse, tags=["标签管理"])
+@router.post(
+    "/torrent/batch-assign",
+    summary="批量分配标签",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def batch_assign_tags(
     batch_request: BatchAssignTagsRequest,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -618,7 +834,9 @@ def batch_assign_tags(
     username = user_info.username or "admin"
 
     # 2. 验证下载器权限
-    has_permission, error_msg = validate_downloader_access(db, batch_request.downloader_id, username)
+    has_permission, error_msg = validate_downloader_access(
+        db, batch_request.downloader_id, username
+    )
     if not has_permission:
         return CommonResponse(status="error", msg=error_msg, code="403", data=None)
 
@@ -628,18 +846,32 @@ def batch_assign_tags(
         result = service.batch_assign_tags(assignments=batch_request.assignments)
 
         if not result.get("success"):
-            return CommonResponse(status="error", msg=result.get("message", "批量分配失败"), code="400", data=None)
+            return CommonResponse(
+                status="error",
+                msg=result.get("message", "批量分配失败"),
+                code="400",
+                data=None,
+            )
 
         # 4. 构建响应数据
         response_data = result.get("data", {})
-        return CommonResponse(status="success", msg="批量分配成功", code="200", data=response_data)
+        return CommonResponse(
+            status="success", msg="批量分配成功", code="200", data=response_data
+        )
 
     except Exception as e:
         logger.error(f"批量分配失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"批量分配失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"批量分配失败: {str(e)}", code="500", data=None
+        )
 
 
-@router.post("/torrent/remove", summary="移除种子标签", response_model=CommonResponse, tags=["标签管理"])
+@router.post(
+    "/torrent/remove",
+    summary="移除种子标签",
+    response_model=CommonResponse,
+    tags=["标签管理"],
+)
 def remove_tags_from_torrent(
     remove_request: RemoveTagsRequest,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
@@ -662,7 +894,9 @@ def remove_tags_from_torrent(
         )
 
         # 即使部分失败也返回成功，响应中包含详情
-        response_data = result.get("data", {"removed_count": 0, "failed_count": 0, "failed_tags": []})
+        response_data = result.get(
+            "data", {"removed_count": 0, "failed_count": 0, "failed_tags": []}
+        )
 
         return CommonResponse(
             status="success" if response_data["failed_count"] == 0 else "partial",
@@ -673,7 +907,9 @@ def remove_tags_from_torrent(
 
     except Exception as e:
         logger.error(f"移除标签失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"移除标签失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"移除标签失败: {str(e)}", code="500", data=None
+        )
 
 
 # ==================== 下载器能力检查接口 ====================
@@ -711,11 +947,15 @@ async def check_category_support(
 
         # 检查缓存是否已初始化（避免 AttributeError）
         if not hasattr(app.state, "store"):
-            return CommonResponse(status="error", msg="下载器缓存未初始化", code="500", data=None)
+            return CommonResponse(
+                status="error", msg="下载器缓存未初始化", code="500", data=None
+            )
 
         # ⚠️ 工作约束16：步骤2 - 从缓存获取下载器
         cached_downloaders = await app.state.store.get_snapshot()
-        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
+        downloader_vo = next(
+            (d for d in cached_downloaders if d.downloader_id == downloader_id), None
+        )
 
         # ⚠️ 工作约束16：步骤3 - 验证下载器有效性
         # 检查下载器是否在缓存中
@@ -724,12 +964,16 @@ async def check_category_support(
             from sqlalchemy import text
 
             result = db.execute(
-                text("SELECT downloader_type FROM bt_downloaders WHERE downloader_id = :downloader_id AND dr = 0"),
+                text(
+                    "SELECT downloader_type FROM bt_downloaders WHERE downloader_id = :downloader_id AND dr = 0"
+                ),
                 {"downloader_id": downloader_id},
             ).fetchone()
 
             if not result:
-                return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
+                return CommonResponse(
+                    status="error", msg="下载器不存在", code="404", data=None
+                )
             downloader_type = result.downloader_type
         else:
             # 从缓存读取下载器类型
@@ -747,21 +991,34 @@ async def check_category_support(
             "supported": supports_category,
             "require_fallback": require_fallback,
             "downloader_type": downloader_type_int,
-            "message": ("支持分类功能" if supports_category else "Transmission不支持分类，建议使用标签功能"),
+            "message": (
+                "支持分类功能"
+                if supports_category
+                else "Transmission不支持分类，建议使用标签功能"
+            ),
         }
 
-        return CommonResponse(status="success", msg="检查成功", code="200", data=response_data)
+        return CommonResponse(
+            status="success", msg="检查成功", code="200", data=response_data
+        )
 
     except Exception as e:
         logger.error(f"检查分类支持失败: {str(e)}")
-        return CommonResponse(status="error", msg=f"检查分类支持失败: {str(e)}", code="500", data=None)
+        return CommonResponse(
+            status="error", msg=f"检查分类支持失败: {str(e)}", code="500", data=None
+        )
 
 
 # ==================== 私有辅助函数 ====================
 
 
 async def _sync_tag_to_downloader(
-    request: Request, downloader_id: str, tag_id: str, tag_name: str, tag_type: str, color: Optional[str]
+    request: Request,
+    downloader_id: str,
+    tag_id: str,
+    tag_name: str,
+    tag_type: str,
+    color: Optional[str],
 ) -> Dict[str, Any]:
     """
     同步标签到下载器
@@ -788,7 +1045,9 @@ async def _sync_tag_to_downloader(
 
         # ⚠️ 工作约束16：步骤2 - 从缓存获取下载器
         cached_downloaders = await app.state.store.get_snapshot()
-        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
+        downloader_vo = next(
+            (d for d in cached_downloaders if d.downloader_id == downloader_id), None
+        )
 
         # ⚠️ 工作约束16：步骤3 - 验证下载器有效性
         # 检查下载器是否在缓存中
@@ -798,7 +1057,9 @@ async def _sync_tag_to_downloader(
 
         # 检查下载器是否有效（fail_time=0 表示有效）
         if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
-            logger.error(f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]")
+            logger.error(
+                f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
+            )
             return {"success": False, "message": "下载器已失效"}
 
         # ⚠️ 工作约束16：步骤4 - 获取并验证客户端连接
@@ -828,7 +1089,9 @@ async def _sync_tag_to_downloader(
         elif downloader_type == DOWNLOADER_TYPE_TRANSMISSION:
             # Transmission: 标签在首次分配给种子时自动创建
             # 这里只需返回成功（标签已在数据库中创建）
-            logger.info(f"Transmission标签已在本地注册: {tag_name} (将在分配给种子时自动创建)")
+            logger.info(
+                f"Transmission标签已在本地注册: {tag_name} (将在分配给种子时自动创建)"
+            )
             return {"success": True, "message": "同步成功"}
 
         return {"success": False, "message": "未知下载器类型"}
@@ -839,7 +1102,11 @@ async def _sync_tag_to_downloader(
 
 
 async def _sync_tags_to_torrent_downloader(
-    request: Request, downloader_id: str, torrent_hash: str, category_tags: List[str], tag_names: List[str]
+    request: Request,
+    downloader_id: str,
+    torrent_hash: str,
+    category_tags: List[str],
+    tag_names: List[str],
 ) -> Dict[str, Any]:
     """
     同步标签关联到下载器的种子
@@ -865,7 +1132,9 @@ async def _sync_tags_to_torrent_downloader(
 
         # ⚠️ 工作约束16：步骤2 - 从缓存获取下载器
         cached_downloaders = await app.state.store.get_snapshot()
-        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
+        downloader_vo = next(
+            (d for d in cached_downloaders if d.downloader_id == downloader_id), None
+        )
 
         # ⚠️ 工作约束16：步骤3 - 验证下载器有效性
         # 检查下载器是否在缓存中
@@ -875,7 +1144,9 @@ async def _sync_tags_to_torrent_downloader(
 
         # 检查下载器是否有效（fail_time=0 表示有效）
         if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
-            logger.error(f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]")
+            logger.error(
+                f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
+            )
             return {"success": False, "message": "下载器已失效"}
 
         # ⚠️ 工作约束16：步骤4 - 获取并验证客户端连接
@@ -906,7 +1177,11 @@ async def _sync_tags_to_torrent_downloader(
                         save_path = first_torrent.get("save_path", "")
                     else:
                         save_path = getattr(first_torrent, "save_path", "") or ""
-                    client.torrents_set_category(category=category, save_path=save_path, torrent_hashes=[torrent_hash])
+                    client.torrents_set_category(
+                        category=category,
+                        save_path=save_path,
+                        torrent_hashes=[torrent_hash],
+                    )
 
             if tag_names:
                 client.torrents_add_tags(tags=tag_names, torrent_hashes=[torrent_hash])
@@ -925,7 +1200,9 @@ async def _sync_tags_to_torrent_downloader(
                         processed_tags.append(tag[1:])  # 去掉@前缀
                     else:
                         processed_tags.append(tag)
-                client.torrents_set_tags(tags=processed_tags, torrent_hashes=[torrent_hash])
+                client.torrents_set_tags(
+                    tags=processed_tags, torrent_hashes=[torrent_hash]
+                )
 
             logger.info(f"成功同步标签到Transmission种子 {torrent_hash[:8]}...")
             return {"success": True, "message": "同步成功"}
@@ -972,7 +1249,9 @@ async def _sync_tag_delete_to_downloader(
     logger.info(f"  - tag_id: {tag_id}")
     logger.info(f"  - tag_name: {tag_name}")
     logger.info(f"  - tag_type: {tag_type}")
-    logger.info(f"  - target_category: {repr(target_category)} (None=未指定, ''=未分类)")
+    logger.info(
+        f"  - target_category: {repr(target_category)} (None=未指定, ''=未分类)"
+    )
 
     try:
         # ⚠️ 工作约束16：步骤1 - 获取 app 对象并检查缓存初始化
@@ -985,7 +1264,9 @@ async def _sync_tag_delete_to_downloader(
 
         # ⚠️ 工作约束16：步骤2 - 从缓存获取下载器
         cached_downloaders = await app.state.store.get_snapshot()
-        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
+        downloader_vo = next(
+            (d for d in cached_downloaders if d.downloader_id == downloader_id), None
+        )
 
         # ⚠️ 工作约束16：步骤3 - 验证下载器有效性
         # 检查下载器是否在缓存中
@@ -995,7 +1276,9 @@ async def _sync_tag_delete_to_downloader(
 
         # 检查下载器是否有效（fail_time=0 表示有效）
         if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
-            logger.error(f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]")
+            logger.error(
+                f"下载器已失效 [downloader_id={downloader_id}, nickname={downloader_vo.nickname}]"
+            )
             return {"success": False, "message": "下载器已失效"}
 
         # ⚠️ 工作约束16：步骤4 - 获取并验证客户端连接
@@ -1029,7 +1312,9 @@ async def _sync_tag_delete_to_downloader(
                     # 3. target_category为其他值：用户选择的具体分类
                     if target_category is not None and torrent_count > 0:
                         target_cat_display = target_category or "未分类"
-                        logger.info(f"开始转移 {torrent_count} 个种子从分类 '{tag_name}' 到 '{target_cat_display}'")
+                        logger.info(
+                            f"开始转移 {torrent_count} 个种子从分类 '{tag_name}' 到 '{target_cat_display}'"
+                        )
 
                         # 批量转移种子
                         transferred_count = 0
@@ -1037,7 +1322,9 @@ async def _sync_tag_delete_to_downloader(
 
                         # ⚠️ 调试日志：记录种子转移开始
                         logger.info(f"🔍 [种子转移] 开始转移 {torrent_count} 个种子")
-                        logger.debug(f"目标分类: '{target_category}' (空字符串表示未分类）")
+                        logger.debug(
+                            f"目标分类: '{target_category}' (空字符串表示未分类）"
+                        )
 
                         for idx, torrent in enumerate(category_torrents, 1):
                             try:
@@ -1045,25 +1332,41 @@ async def _sync_tag_delete_to_downloader(
                                 torrent_name = torrent.get("name", "unknown")
 
                                 if not torrent_hash:
-                                    logger.warning(f"[{idx}/{torrent_count}] 种子缺少hash字段，跳过：{torrent_name}")
+                                    logger.warning(
+                                        f"[{idx}/{torrent_count}] 种子缺少hash字段，跳过：{torrent_name}"
+                                    )
                                     failed_count += 1
                                     continue
 
                                 # 设置新分类（空字符串表示未分类）
-                                new_category = target_category if target_category else ""
-                                logger.debug(f"[{idx}/{torrent_count}] 转移种子：{torrent_name[:50]}...")
+                                new_category = (
+                                    target_category if target_category else ""
+                                )
+                                logger.debug(
+                                    f"[{idx}/{torrent_count}] 转移种子：{torrent_name[:50]}..."
+                                )
                                 logger.debug(f"  - hash: {torrent_hash[:16]}...")
-                                logger.debug(f"  - 新分类: '{new_category or '未分类'}'")
+                                logger.debug(
+                                    f"  - 新分类: '{new_category or '未分类'}'"
+                                )
 
-                                client.torrents.set_category(category=new_category, torrent_hashes=[torrent_hash])
+                                client.torrents.set_category(
+                                    category=new_category, torrent_hashes=[torrent_hash]
+                                )
                                 transferred_count += 1
-                                logger.debug(f"[{idx}/{torrent_count}] ✅ 转移成功：{torrent_name[:30]}...")
+                                logger.debug(
+                                    f"[{idx}/{torrent_count}] ✅ 转移成功：{torrent_name[:30]}..."
+                                )
 
                             except Exception as e:
-                                logger.error(f"[{idx}/{torrent_count}] ❌ 转移种子失败：{str(e)}")
+                                logger.error(
+                                    f"[{idx}/{torrent_count}] ❌ 转移种子失败：{str(e)}"
+                                )
                                 failed_count += 1
 
-                        logger.info(f"种子转移完成：成功 {transferred_count} 个，失败 {failed_count} 个")
+                        logger.info(
+                            f"种子转移完成：成功 {transferred_count} 个，失败 {failed_count} 个"
+                        )
 
                         # 如果全部失败，中止删除操作
                         if transferred_count == 0:
@@ -1075,7 +1378,8 @@ async def _sync_tag_delete_to_downloader(
                         # 如果部分失败，记录警告但继续删除
                         if failed_count > 0:
                             logger.warning(
-                                f"部分种子转移失败（{failed_count}/{torrent_count}），" f"但继续删除分类 '{tag_name}'"
+                                f"部分种子转移失败（{failed_count}/{torrent_count}），"
+                                f"但继续删除分类 '{tag_name}'"
                             )
 
                     elif torrent_count > 0:
@@ -1099,7 +1403,8 @@ async def _sync_tag_delete_to_downloader(
                     if remaining_count > 0:
                         # 分类下仍有种子，删除操作可能失败
                         logger.warning(
-                            f"分类 '{tag_name}' 下仍有 {remaining_count} 个种子，" f"qBittorrent可能无法删除非空分类"
+                            f"分类 '{tag_name}' 下仍有 {remaining_count} 个种子，"
+                            f"qBittorrent可能无法删除非空分类"
                         )
                         return {
                             "success": False,
@@ -1119,7 +1424,10 @@ async def _sync_tag_delete_to_downloader(
 
                     except Exception as e:
                         logger.error(f"使用SDK删除qBittorrent分类失败: {str(e)}")
-                        return {"success": False, "message": f"删除分类失败（分类下无种子但SDK调用失败）: {str(e)}"}
+                        return {
+                            "success": False,
+                            "message": f"删除分类失败（分类下无种子但SDK调用失败）: {str(e)}",
+                        }
                     except Exception as e:
                         logger.error(f"删除qBittorrent分类时发生错误: {str(e)}")
                         return {"success": False, "message": f"删除分类失败: {str(e)}"}
