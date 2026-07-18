@@ -10,6 +10,8 @@
 使用 FastAPI TestClient 进行完整的HTTP请求测试。
 """
 
+from datetime import datetime
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch
@@ -342,6 +344,46 @@ class TestAssignedTorrentFilterNames:
         assert "4K" in tags["data"]
         assert "收藏" in tags["data"]
         assert tags["data"].count("PT") == 1
+
+    def test_categories_and_tags_exclude_deleted_torrent_values(
+        self, client, mock_auth, db_session
+    ):
+        dr_deleted = make_torrent(
+            db_session,
+            info_id="torrent-filter-dr-deleted",
+            downloader_id="dl-001",
+            downloader_name="qb",
+            hash_="filter-dr-deleted-hash",
+            name="deleted by dr",
+        )
+        dr_deleted.category = "已删除分类"
+        dr_deleted.tags = "已删除标签"
+        dr_deleted.dr = 1
+
+        timestamp_deleted = make_torrent(
+            db_session,
+            info_id="torrent-filter-timestamp-deleted",
+            downloader_id="dl-001",
+            downloader_name="qb",
+            hash_="filter-timestamp-deleted-hash",
+            name="deleted by timestamp",
+        )
+        timestamp_deleted.category = "回收分类"
+        timestamp_deleted.tags = "回收标签"
+        timestamp_deleted.deleted_at = datetime.now()
+        db_session.commit()
+
+        categories = client.get(
+            "/api/v1/tags/categories", headers={"x-access-token": "valid_token"}
+        ).json()
+        tags = client.get(
+            "/api/v1/tags/tags", headers={"x-access-token": "valid_token"}
+        ).json()
+
+        assert "已删除分类" not in categories["data"]
+        assert "回收分类" not in categories["data"]
+        assert "已删除标签" not in tags["data"]
+        assert "回收标签" not in tags["data"]
 
 
 # ==================== 边界条件测试 ====================

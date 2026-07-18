@@ -1182,6 +1182,22 @@
             "backend/tests/api/test_duplicate_torrents_api.py"
           ],
           "evidence": "元数据面板改为绝对定位悬浮层，固定覆盖在 38px 分页栏上方，关闭时不可见且不占布局，打开时保留 Tracker/文件/Peers；分页保留 10/20/50/100 预设并增加自定义输入，Enter 或失焦应用、重置到第 1 页，空值/非法值保持当前值，越界钳制到 1–100000；普通列表 limit 与重复任务 pageSize 后端上限同步放宽到 100000。后端受影响专项 71/71，前端全量 Jest 12 suites/239 tests，tsc、完整 ESLint、Vuex lint、生产 build、flake8、目标 Ruff 格式及 git diff --check 通过；新增重复元数据端点/服务 mypy 无错误，其他既有端点仍有历史 mypy 债务。浏览器生产构建可加载，但未登录环境被路由守卫停在登录页。"
+        },
+        {
+          "id": "v1.0.6.20",
+          "name": "传统种子页回归覆盖补强",
+          "description": "为传统模式删除入口、完整分类标签、悬浮元数据、自定义分页、重复任务状态保持，以及 qB/Transmission 元数据补全与异常降级补充组件级和后端分支回归。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/jest.config.js",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/tests/unit/traditional-view-component.spec.ts",
+            "backend/tests/services/test_torrent_metadata.py",
+            "backend/tests/api/test_duplicate_torrents_api.py",
+            "backend/tests/api/test_tag_aggregation_api.py"
+          ],
+          "evidence": "新增 TraditionalView 组件级 7 项回归，直接覆盖唯一删除下拉及文案、Tracker 默认页签与无常规页签、完整分类/标签映射、Enter/失焦自定义分页与 100000 钳制、重复任务翻页/改页大小/刷新保持，以及悬浮层和侧栏滚动布局契约；TraditionalView 纳入 Jest 覆盖率采集。后端新增 qB 详情分批/去重、正常与重试增量水合、Transmission 缓存客户端实时元数据、缓存/API 异常降级和已删除数据不参与分类标签聚合等回归。前端全量 Jest 13 suites/246 tests，后端受影响专项 78/78；torrents_async.py 本次新增可执行行 9/9，torrent_metadata.py 本次新增可执行行 157/199（78.9%）。tsc、完整 ESLint、Vuex lint、后端目标 flake8/Ruff 格式及生产 build 通过；build 仅有既有 Sass/资源体积 warning。浏览器确认本地生产构建可加载，但无登录环境被路由守卫停在登录页。"
         }
       ]
     }

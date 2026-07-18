@@ -297,7 +297,7 @@
               <tr
                 v-for="(torrent, index) in sortedList"
                 :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${index}`"
-                :class="{selected: currentRow?.hash === torrent.hash}"
+                :class="{selected: currentRow && currentRow.hash === torrent.hash}"
                 @click="handleRowClick(torrent)"
               >
                 <td class="col-checkbox">
@@ -484,7 +484,7 @@
         <div class="detail-panel-trad" :class="{open: !!currentRow}">
           <div class="detail-panel-content">
             <div class="detail-header-compact">
-              <h3>{{ currentRow?.name }}</h3>
+              <h3>{{ currentRow && currentRow.name }}</h3>
               <button class="close-btn" @click="closeDetailPanel">✕</button>
             </div>
             <div class="detail-tabs-compact">
@@ -513,7 +513,7 @@
                   </thead>
                   <tbody>
                     <tr
-                      v-for="(tracker, index) in (currentRow?.tracker_info || currentRow?.trackerInfo || [])"
+                      v-for="(tracker, index) in ((currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || [])"
                       :key="index"
                     >
                       <td>

@@ -13,6 +13,7 @@ module.exports = {
     '<rootDir>/src/**/*.ts',
     '<rootDir>/src/components/torrents/AdvancedMultiSelect.vue',
     '<rootDir>/src/components/torrents/AdvancedSearchBuilder.vue',
+    '<rootDir>/src/views/torrents/TraditionalView.vue',
     '!<rootDir>/src/**/*.d.ts',
     '!<rootDir>/src/icons/**',
     '!<rootDir>/src/main.ts',

@@ -826,3 +826,100 @@ class TestMetadataHydration:
             qb_client.requested_hashes == [["live-hash"]]
             for qb_client in clients.values()
         )
+
+    def test_cached_transmission_client_fills_complete_metadata(
+        self, client, db_session
+    ):
+        for suffix in ("a", "b"):
+            record = make_torrent(
+                db_session,
+                info_id=f"tr-{suffix}",
+                downloader_id=f"dl-tr-{suffix}",
+                downloader_name="Transmission",
+                hash_="tr-live-hash",
+                name="",
+                size=0,
+                status="",
+            )
+            record.save_path = ""
+            record.added_date = None
+        db_session.commit()
+
+        class FakeTransmissionClient:
+            def __init__(self, save_path):
+                self.save_path = save_path
+                self.requests = []
+
+            def get_torrents(self, ids, arguments):
+                self.requests.append({"ids": ids, "arguments": arguments})
+                return [
+                    SimpleNamespace(
+                        id=7,
+                        hash_string="tr-live-hash",
+                        name="Transmission 实时名称",
+                        download_dir=self.save_path,
+                        total_size=16384,
+                        status="downloading",
+                        percent_done=0.5,
+                        added_date=datetime(2026, 7, 18, 12, 0, 0),
+                        done_date=None,
+                        upload_ratio=0.25,
+                        seed_ratio_limit=2,
+                        labels=["TV", "4K"],
+                        rate_download=512,
+                        rate_upload=64,
+                        peers_connected=5,
+                        peers_sending_to_us=2,
+                    )
+                ]
+
+        class StaticStore:
+            def __init__(self, downloaders):
+                self.downloaders = downloaders
+
+            async def get_snapshot(self):
+                return self.downloaders
+
+        tr_clients = {
+            downloader_id: FakeTransmissionClient(
+                f"/transmission/downloads/{downloader_id}"
+            )
+            for downloader_id in ("dl-tr-a", "dl-tr-b")
+        }
+        client.app.state.store = StaticStore(
+            [
+                SimpleNamespace(
+                    downloader_id=downloader_id,
+                    downloader_type=1,
+                    client=tr_client,
+                    fail_time=0,
+                )
+                for downloader_id, tr_client in tr_clients.items()
+            ]
+        )
+
+        body = client.post("/api/v1/torrents/duplicates", json={}).json()
+
+        assert body["code"] == "200"
+        assert body["data"]["total"] == 2
+        for item in body["data"]["list"]:
+            assert item["name"] == "Transmission 实时名称"
+            assert item["save_path"] == (
+                f"/transmission/downloads/{item['downloader_id']}"
+            )
+            assert item["size"] == 16384
+            assert item["status"] == "downloading"
+            assert item["progress"] == 50.0
+            assert item["tags"] == "TV,4K"
+            assert item["download_speed"] == 512
+            assert item["upload_speed"] == 64
+            assert item["peers"] == 5
+            assert item["seeds"] == 2
+        assert all(
+            tr_client.requests[0]["ids"] == ["tr-live-hash"]
+            for tr_client in tr_clients.values()
+        )
+        assert all(
+            "name" in tr_client.requests[0]["arguments"]
+            for tr_client in tr_clients.values()
+        )
