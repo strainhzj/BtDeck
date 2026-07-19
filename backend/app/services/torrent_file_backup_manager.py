@@ -45,15 +45,39 @@ class TorrentFileBackupManagerService:
         初始化管理服务
 
         Args:
-            db: 异步数据库会话（可选，默认创建新会话）
+            db: 异步数据库会话（可选，默认创建新会话；自建会话由本实例负责关闭）
             path_mapping_service: 路径映射服务（可选）
         """
-        self.db = db or AsyncSessionLocal()
+        # 跟踪是否拥有自建会话的所有权：仅当由本实例创建时，aclose() 才负责关闭，
+        # 避免误关闭外部传入的会话（外部会话由其所有者负责生命周期）。
+        if db is None:
+            self.db = AsyncSessionLocal()
+            self._owns_db = True
+        else:
+            self.db = db
+            self._owns_db = False
+        self._closed = False  # 跟踪 aclose() 是否已调用，保证幂等
+
         self.repository = TorrentFileBackupRepository(self.db)
         self.path_mapping_service = path_mapping_service
 
         # 初始化文件备份服务（复用现有代码）
         self.file_backup_service = TorrentFileBackupService(path_mapping_service=path_mapping_service)
+
+    async def aclose(self) -> None:
+        """
+        异步关闭自建数据库会话。
+
+        仅当 db 由本实例自建时才关闭，避免关闭外部传入的共享会话。
+        多次调用安全（幂等）。
+        """
+        if not self._owns_db or self._closed:
+            return
+        self._closed = True
+        try:
+            await self.db.close()
+        except Exception as e:
+            logger.warning(f"关闭 TorrentFileBackupManagerService 数据库会话失败: {e}", exc_info=True)
 
     async def backup_torrent_from_downloader(
         self,

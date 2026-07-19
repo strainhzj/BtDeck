@@ -89,9 +89,13 @@ async def get_recycle_bin_list(
     """
     try:
         service = RecycleBinService(db)
-        result = service.get_recycle_bin_list(page=page, page_size=page_size, search=search)
+        try:
+            result = service.get_recycle_bin_list(page=page, page_size=page_size, search=search)
 
-        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+            return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"查询回收站列表失败: {str(e)}", exc_info=True)
@@ -138,20 +142,26 @@ async def restore_torrents(
     """
     try:
         service = RecycleBinService(db)
+        try:
+            result = await service.restore_torrents(
+                torrent_ids=req.torrent_ids,
+                operator=current_user.username,
+                audit_service=audit_service,
+                request=request,
+            )
 
-        result = await service.restore_torrents(
-            torrent_ids=req.torrent_ids, operator=current_user.username, audit_service=audit_service, request=request
-        )
+            # 根据结果确定消息
+            if result["failed_count"] == 0:
+                msg = f"还原成功：共{result['success_count']}个种子"
+            elif result["success_count"] == 0:
+                msg = f"还原失败：共{result['failed_count']}个种子"
+            else:
+                msg = f"还原部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
 
-        # 根据结果确定消息
-        if result["failed_count"] == 0:
-            msg = f"还原成功：共{result['success_count']}个种子"
-        elif result["success_count"] == 0:
-            msg = f"还原失败：共{result['failed_count']}个种子"
-        else:
-            msg = f"还原部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
-
-        return CommonResponse(status="success", msg=msg, code="200", data=result)
+            return CommonResponse(status="success", msg=msg, code="200", data=result)
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"还原种子失败: {str(e)}", exc_info=True)
@@ -223,14 +233,18 @@ async def cleanup_preview(
     """
     try:
         service = RecycleBinService(db)
-        result = service.cleanup_preview(days=request.days)
+        try:
+            result = service.cleanup_preview(days=request.days)
 
-        return CommonResponse(
-            status="success",
-            msg=f"预览成功：共{result['total_count']}个种子，总大小{result['total_size']}字节",
-            code="200",
-            data=result,
-        )
+            return CommonResponse(
+                status="success",
+                msg=f"预览成功：共{result['total_count']}个种子，总大小{result['total_size']}字节",
+                code="200",
+                data=result,
+            )
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"清理预览失败: {str(e)}", exc_info=True)
@@ -274,20 +288,23 @@ async def manual_cleanup(
     """
     try:
         service = RecycleBinService(db)
+        try:
+            result = await service.manual_cleanup(
+                torrent_ids=request.torrent_ids, operator=current_user.username, audit_service=audit_service
+            )
 
-        result = await service.manual_cleanup(
-            torrent_ids=request.torrent_ids, operator=current_user.username, audit_service=audit_service
-        )
+            # 根据结果确定消息
+            if result["failed_count"] == 0:
+                msg = f"清理成功：共{result['success_count']}个种子"
+            elif result["success_count"] == 0:
+                msg = f"清理失败：共{result['failed_count']}个种子"
+            else:
+                msg = f"清理部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
 
-        # 根据结果确定消息
-        if result["failed_count"] == 0:
-            msg = f"清理成功：共{result['success_count']}个种子"
-        elif result["success_count"] == 0:
-            msg = f"清理失败：共{result['failed_count']}个种子"
-        else:
-            msg = f"清理部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
-
-        return CommonResponse(status="success", msg=msg, code="200", data=result)
+            return CommonResponse(status="success", msg=msg, code="200", data=result)
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"清理回收站失败: {str(e)}", exc_info=True)

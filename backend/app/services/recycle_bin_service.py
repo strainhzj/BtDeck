@@ -33,13 +33,37 @@ class RecycleBinService:
         初始化回收站服务
 
         内部创建同步 Session，保持所有方法使用同步模式。
+        该自建会话由本实例持有并负责关闭——调用方必须在 try/finally 中调用 close()，
+        否则会因 NullPool 配置导致 SQLite 同步连接泄漏（可能引发 database is locked）。
 
         Args:
-            db_async: 异步数据库会话（用于获取同步会话）
+            db_async: 异步数据库会话（历史兼容参数；当前实现未使用，所有方法走同步 Session）
         """
         from app.database import SessionLocal
 
         self.db = SessionLocal()  # 创建同步会话
+        self._owns_db = True  # 标记由本实例所有，close() 时负责关闭
+        self._closed = False  # 跟踪 close() 是否已调用，保证幂等
+
+    def close(self) -> None:
+        """
+        关闭内部同步会话。
+
+        多次调用安全（幂等）。调用方应在 try/finally 中调用：
+
+            service = RecycleBinService(db)
+            try:
+                ...
+            finally:
+                service.close()
+        """
+        if not self._owns_db or self._closed:
+            return
+        self._closed = True
+        try:
+            self.db.close()
+        except Exception as e:
+            logger.warning(f"关闭 RecycleBinService 同步会话失败: {e}", exc_info=True)
 
     def get_recycle_bin_list(self, page: int = 1, page_size: int = 20, search: Optional[str] = None) -> Dict[str, Any]:
         """

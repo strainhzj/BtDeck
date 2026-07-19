@@ -93,41 +93,44 @@ async def transfer_seed(
         # 执行种子转移
         async with AsyncSessionLocal() as db:
             service = SeedTransferService(db=db)
-
-            result = await service.transfer_seed(
-                source_downloader_id=transfer_request.source_downloader_id,
-                target_downloader_id=transfer_request.target_downloader_id,
-                info_hash=transfer_request.info_hash,
-                target_path=transfer_request.target_path,
-                delete_source=transfer_request.delete_source,
-                user_id=user_id,
-                username=username,
-                app_state=app.state,
-            )
-
-            # 构建响应数据
-            response_data = {
-                "success": result["success"],
-                "transfer_status": result["transfer_status"],
-                "torrent_name": result.get("torrent_name"),
-                "source_downloader_id": transfer_request.source_downloader_id,
-                "source_downloader_name": result.get("source_downloader_name"),
-                "target_downloader_id": transfer_request.target_downloader_id,
-                "target_downloader_name": result.get("target_downloader_name"),
-                "info_hash": transfer_request.info_hash,
-                "source_path": result.get("source_path"),
-                "target_path": result["target_path"],
-                "delete_source": result["delete_source"],
-                "transfer_duration": result.get("transfer_duration"),
-                "error_message": result.get("error_message"),
-            }
-
-            if result["success"]:
-                return CommonResponse(status="success", msg="种子转移成功", code="200", data=response_data)
-            else:
-                return CommonResponse(
-                    status="error", msg=result.get("error_message", "种子转移失败"), code="400", data=response_data
+            try:
+                result = await service.transfer_seed(
+                    source_downloader_id=transfer_request.source_downloader_id,
+                    target_downloader_id=transfer_request.target_downloader_id,
+                    info_hash=transfer_request.info_hash,
+                    target_path=transfer_request.target_path,
+                    delete_source=transfer_request.delete_source,
+                    user_id=user_id,
+                    username=username,
+                    app_state=app.state,
                 )
+
+                # 构建响应数据
+                response_data = {
+                    "success": result["success"],
+                    "transfer_status": result["transfer_status"],
+                    "torrent_name": result.get("torrent_name"),
+                    "source_downloader_id": transfer_request.source_downloader_id,
+                    "source_downloader_name": result.get("source_downloader_name"),
+                    "target_downloader_id": transfer_request.target_downloader_id,
+                    "target_downloader_name": result.get("target_downloader_name"),
+                    "info_hash": transfer_request.info_hash,
+                    "source_path": result.get("source_path"),
+                    "target_path": result["target_path"],
+                    "delete_source": result["delete_source"],
+                    "transfer_duration": result.get("transfer_duration"),
+                    "error_message": result.get("error_message"),
+                }
+
+                if result["success"]:
+                    return CommonResponse(status="success", msg="种子转移成功", code="200", data=response_data)
+                else:
+                    return CommonResponse(
+                        status="error", msg=result.get("error_message", "种子转移失败"), code="400", data=response_data
+                    )
+            finally:
+                # 确保 backup_manager 自建的异步会话被归还，避免连接泄漏触发 SAWarning
+                await service.aclose()
 
     except HTTPException:
         raise
@@ -200,57 +203,60 @@ async def batch_transfer_seeds(
         # 批量执行种子转移
         async with AsyncSessionLocal() as db:
             service = SeedTransferService(db=db)
+            try:
+                for info_hash in batch_request.info_hashes:
+                    result = await service.transfer_seed(
+                        source_downloader_id=batch_request.source_downloader_id,
+                        target_downloader_id=batch_request.target_downloader_id,
+                        info_hash=info_hash,
+                        target_path=batch_request.target_path,
+                        delete_source=batch_request.delete_source,
+                        user_id=user_id,
+                        username=username,
+                        app_state=app.state,
+                    )
 
-            for info_hash in batch_request.info_hashes:
-                result = await service.transfer_seed(
-                    source_downloader_id=batch_request.source_downloader_id,
-                    target_downloader_id=batch_request.target_downloader_id,
-                    info_hash=info_hash,
-                    target_path=batch_request.target_path,
-                    delete_source=batch_request.delete_source,
-                    user_id=user_id,
-                    username=username,
-                    app_state=app.state,
-                )
+                    # 构建单个转移结果
+                    transfer_result = {
+                        "success": result["success"],
+                        "transfer_status": result["transfer_status"],
+                        "torrent_name": result.get("torrent_name"),
+                        "source_downloader_id": batch_request.source_downloader_id,
+                        "source_downloader_name": result.get("source_downloader_name"),
+                        "target_downloader_id": batch_request.target_downloader_id,
+                        "target_downloader_name": result.get("target_downloader_name"),
+                        "info_hash": info_hash,
+                        "source_path": result.get("source_path"),
+                        "target_path": result["target_path"],
+                        "delete_source": result["delete_source"],
+                        "transfer_duration": result.get("transfer_duration"),
+                        "error_message": result.get("error_message"),
+                    }
 
-                # 构建单个转移结果
-                transfer_result = {
-                    "success": result["success"],
-                    "transfer_status": result["transfer_status"],
-                    "torrent_name": result.get("torrent_name"),
-                    "source_downloader_id": batch_request.source_downloader_id,
-                    "source_downloader_name": result.get("source_downloader_name"),
-                    "target_downloader_id": batch_request.target_downloader_id,
-                    "target_downloader_name": result.get("target_downloader_name"),
-                    "info_hash": info_hash,
-                    "source_path": result.get("source_path"),
-                    "target_path": result["target_path"],
-                    "delete_source": result["delete_source"],
-                    "transfer_duration": result.get("transfer_duration"),
-                    "error_message": result.get("error_message"),
+                    results.append(transfer_result)
+
+                    if result["success"]:
+                        success_count += 1
+                    else:
+                        failed_count += 1
+
+                # 构建响应数据
+                response_data = {
+                    "total_count": len(batch_request.info_hashes),
+                    "success_count": success_count,
+                    "failed_count": failed_count,
+                    "results": results,
                 }
 
-                results.append(transfer_result)
-
-                if result["success"]:
-                    success_count += 1
-                else:
-                    failed_count += 1
-
-            # 构建响应数据
-            response_data = {
-                "total_count": len(batch_request.info_hashes),
-                "success_count": success_count,
-                "failed_count": failed_count,
-                "results": results,
-            }
-
-            return CommonResponse(
-                status="success",
-                msg=f"批量转移完成：成功{success_count}个，失败{failed_count}个",
-                code="200",
-                data=response_data,
-            )
+                return CommonResponse(
+                    status="success",
+                    msg=f"批量转移完成：成功{success_count}个，失败{failed_count}个",
+                    code="200",
+                    data=response_data,
+                )
+            finally:
+                # 确保 backup_manager 自建的异步会话被归还，避免连接泄漏触发 SAWarning
+                await service.aclose()
 
     except HTTPException:
         raise
