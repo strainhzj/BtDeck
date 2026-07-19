@@ -257,8 +257,11 @@ async def create_torrent(
                 return result
 
             # 检查数据库中是否已存在该种子
+            # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
+            # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
+            # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
             existing_torrent = (
-                db.query(TorrentInfo.info_id)
+                db.query(TorrentInfo)
                 .filter(TorrentInfo.hash == info_hash)
                 .filter(TorrentInfo.dr == 0)
                 .filter(TorrentInfo.downloader_id == downloader_id)
@@ -334,8 +337,11 @@ async def create_torrent(
         qb_torrent = torrents[0]
 
         # 检查数据库中是否已存在该种子
+        # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
+        # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
+        # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
         existing_torrent = (
-            db.query(TorrentInfo.info_id)
+            db.query(TorrentInfo)
             .filter(TorrentInfo.hash == info_hash)
             .filter(TorrentInfo.dr == 0)
             .filter(TorrentInfo.downloader_id == downloader_id)
@@ -523,8 +529,11 @@ async def create_torrents_batch(
                         raise Exception("获取种子信息超时")
 
                     # 检查数据库中是否已存在该种子
+                    # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
+                    # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
+                    # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
                     existing_torrent = (
-                        db.query(TorrentInfo.info_id)
+                        db.query(TorrentInfo)
                         .filter(TorrentInfo.hash == info_hash)
                         .filter(TorrentInfo.dr == 0)
                         .filter(TorrentInfo.downloader_id == downloader_id)
@@ -577,8 +586,11 @@ async def create_torrents_batch(
                     qb_torrent = torrents[0]
 
                     # 检查数据库中是否已存在该种子
+                    # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
+                    # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
+                    # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
                     existing_torrent = (
-                        db.query(TorrentInfo.info_id)
+                        db.query(TorrentInfo)
                         .filter(TorrentInfo.hash == info_hash)
                         .filter(TorrentInfo.dr == 0)
                         .filter(TorrentInfo.downloader_id == downloader_id)
