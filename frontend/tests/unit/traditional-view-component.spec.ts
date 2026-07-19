@@ -9,7 +9,8 @@ import {
   getActiveTorrents,
   getDownloaderList,
   getDuplicateTorrents,
-  getTorrentList
+  getTorrentList,
+  addTorrent
 } from '@/api/torrents'
 import type { ApiResponse, Torrent, TorrentListResponseData } from '@/api/torrents'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
@@ -26,6 +27,7 @@ jest.mock('@/store/modules/viewMode', () => ({
 jest.mock('@/api/torrents', () => ({
   getTorrentList: jest.fn(),
   addTorrent: jest.fn(),
+  addTorrentsBatch: jest.fn(),
   deleteTorrents: jest.fn(),
   pauseTorrents: jest.fn(),
   resumeTorrents: jest.fn(),
@@ -78,6 +80,7 @@ const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorre
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
+const mockAddTorrent = addTorrent as jest.MockedFunction<typeof addTorrent>
 const mockGetAllCategories = getAllCategories as jest.Mock
 const mockGetAllTags = getAllTags as jest.Mock
 
@@ -115,6 +118,8 @@ interface TraditionalViewVm extends Vue {
   virtualTopSpacerHeight: number
   virtualBottomSpacerHeight: number
   handleRowClick(row: TorrentRow): void
+  showAddDialog: boolean
+  handleAdd(): Promise<void>
   handlePageSizeSelect(suggestion: PageSizeSuggestion): void
   queryPageSizeSuggestions(
     queryString: string,
@@ -860,6 +865,33 @@ describe('TraditionalView component regressions', () => {
       window.requestAnimationFrame = OriginalRequestAnimationFrame
       window.cancelAnimationFrame = OriginalCancelAnimationFrame
     }
+  })
+
+  it('handleAdd 只刷新列表与关闭对话框，不重复调用 addTorrent', async() => {
+    // prod-hotfix-2026-07-19 回归锚点：
+    // TorrentAddDialog 内部已通过 addTorrentsBatch 完成种子添加，成功后
+    // emit('confirm', this.form)。本视图 handleAdd 不应再调用单条 addTorrent——
+    // this.form 不含 torrent_file（File 对象），重复调用会触发 422
+    // ("Expected UploadFile, received: <class 'str'>")。
+    // 与 index.vue 的 handleAdd 行为对齐：只关闭对话框 + 刷新列表。
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    mockGetTorrentList.mockClear()
+    mockAddTorrent.mockClear()
+    vm.showAddDialog = true
+    await localVue.nextTick()
+    expect(vm.showAddDialog).toBe(true)
+
+    await vm.handleAdd()
+
+    // 关闭对话框
+    expect(vm.showAddDialog).toBe(false)
+    // 刷新列表（getTorrentList 被调用）
+    expect(mockGetTorrentList).toHaveBeenCalled()
+    // 关键契约：不再调用单条 addTorrent
+    expect(mockAddTorrent).not.toHaveBeenCalled()
   })
 })
 

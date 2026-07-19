@@ -757,7 +757,6 @@ import TorrentBatchMixin from './mixins/torrentBatch'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
-  addTorrent,
   deleteTorrents,
   pauseTorrents,
   resumeTorrents,
@@ -1634,20 +1633,14 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  private async handleAdd(torrentData: any) {
-    try {
-      const response = await addTorrent(torrentData)
-      if (response.code === '200') {
-        this.$message.success('添加种子成功')
-        this.showAddDialog = false
-        this.getList()
-      } else {
-        this.$message.error(response.msg || '添加种子失败')
-      }
-    } catch (error) {
-      console.error('添加种子失败:', error)
-      this.$message.error('添加种子失败')
-    }
+  private async handleAdd() {
+    // TorrentAddDialog 内部已通过 addTorrentsBatch 完成种子添加，
+    // 并在有成功项时才 emit('confirm', this.form)。本回调只需关闭对话框 + 刷新列表，
+    // 不应再调用 addTorrent —— this.form 不含 torrent_file（File 对象），
+    // 重复调用会触发 422（"Expected UploadFile, received: <class 'str'>"）。
+    // 与 index.vue:1718 handleAdd 行为对齐。
+    this.showAddDialog = false
+    this.getList()
   }
 
   // ====== P0#2 手动刷新（对齐列表模式，含静态+速度双刷新） ======
