@@ -282,6 +282,21 @@ async def create_torrent(
             result.code = "500"
             result.msg = str(e)
             return result
+        except Exception as e:
+            # 兜底：捕获非领域异常（ValueError/TypeError/requests 内部异常等）。
+            # 修复 prod-hotfix-2026-07-19：transmission_rpc→requests.post(json=query)
+            # 在 RPC 请求体序列化阶段会抛 TypeError("Object of type ValueError is not
+            # JSON serializable")，原 except 只认 TransmissionError，会冒泡到全局 500
+            # handler 暴露内部堆栈信息。与 batch add 端点（本文件 line 645）对齐。
+            logging.exception(
+                "添加种子失败 [Transmission downloader_id=%s info_hash=%s]",
+                downloader_id,
+                info_hash if "info_hash" in locals() else "<unknown>",
+            )
+            result.status = "failed"
+            result.code = "500"
+            result.msg = f"添加种子失败: {type(e).__name__}: {e}"
+            return result
     # 🔧 修复：使用 downloader_type 字段判断下载器类型
     # downloader_type: 0=qBittorrent, 1=Transmission
     if downloader.downloader_type == 0:  # qBittorrent
@@ -319,44 +334,62 @@ async def create_torrent(
                 torrents = qb_client.torrents_info(torrent_hashes=info_hash)
                 retry_count += 1
 
-            if not torrents:
+            # 双重检查：确保torrents列表不为空
+            if not torrents or len(torrents) == 0:
                 result.code = "500"
-                result.msg = str("种子添加到qBittorrent后无法获取信息")
+                result.msg = "种子添加到qBittorrent后无法获取信息"
                 return result
+
+            qb_torrent = torrents[0]
+
+            # 检查数据库中是否已存在该种子
+            # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
+            # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
+            # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
+            existing_torrent = (
+                db.query(TorrentInfo)
+                .filter(TorrentInfo.hash == info_hash)
+                .filter(TorrentInfo.dr == 0)
+                .filter(TorrentInfo.downloader_id == downloader_id)
+                .first()
+            )
+
+            if existing_torrent is None:
+                # 不存在：创建新记录
+                db_torrent = create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp_file_path)
+                db.add(db_torrent)
+                db.commit()
+                db.refresh(db_torrent)
+            else:
+                # 已存在：使用现有记录
+                db_torrent = existing_torrent
         except APIError as e:
             result.code = "500"
             result.msg = str(e)
             return result
-
-        # 双重检查：确保torrents列表不为空
-        if not torrents or len(torrents) == 0:
+        except Exception as e:
+            # 兜底：捕获非 APIError 异常（ValueError/TypeError/SQLAlchemy StatementError/
+            # 网络层异常等），避免冒泡到全局 500 handler 暴露内部堆栈。
+            #
+            # ⚠️ prod-hotfix-2026-07-19 真实根因（已复现）：
+            # 早期版本 try 块只覆盖 torrents_add/torrents_info 轮询，把
+            # create_qbittorrent_torrent_record + db.commit() 留在 try 之外。
+            # 当 qBittorrent 返回的种子字段是异常对象（如 added_on/total_size 为
+            # ValueError 实例）时，create_qbittorrent_torrent_record 内部的
+            # `qb_torrent.added_on > 0` 或 SQLAlchemy Column 类型转换会抛 TypeError，
+            # 直接冒泡到 unhandled_exception_handler，前端看到
+            # "Object of type ValueError is not JSON serializable"。
+            # 本修复把整个分支（含 ORM 写入）纳入 try，与 Transmission 分支（line 221）
+            # 及 batch add 端点（本文件 line 505）结构对齐。
+            logging.exception(
+                "添加种子失败 [qBittorrent downloader_id=%s info_hash=%s]",
+                downloader_id,
+                info_hash if "info_hash" in locals() else "<unknown>",
+            )
+            result.status = "failed"
             result.code = "500"
-            result.msg = "种子信息列表为空"
+            result.msg = f"添加种子失败: {type(e).__name__}: {e}"
             return result
-
-        qb_torrent = torrents[0]
-
-        # 检查数据库中是否已存在该种子
-        # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
-        # 若只 select info_id 返回 Row 对象，访问未选中列会触发 AttributeError("name")
-        # （SQLAlchemy 2.0 Row.__getattr__ 行为），表现为日志 "记录审计日志失败: name"。
-        existing_torrent = (
-            db.query(TorrentInfo)
-            .filter(TorrentInfo.hash == info_hash)
-            .filter(TorrentInfo.dr == 0)
-            .filter(TorrentInfo.downloader_id == downloader_id)
-            .first()
-        )
-
-        if existing_torrent is None:
-            # 不存在：创建新记录
-            db_torrent = create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp_file_path)
-            db.add(db_torrent)
-            db.commit()
-            db.refresh(db_torrent)
-        else:
-            # 已存在：使用现有记录
-            db_torrent = existing_torrent
 
     # ========== 记录审计日志（异步） ==========
     async def write_audit_log_async():

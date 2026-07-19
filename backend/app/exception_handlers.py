@@ -15,6 +15,7 @@
   ``CommonResponse``，便于前端归一化层按统一约定读取。
 """
 
+import json
 import logging
 from typing import Any
 
@@ -108,12 +109,63 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     )
 
 
+def _json_safe(value: Any) -> Any:
+    """递归把任意值转为 JSON 安全结构。
+
+    策略：先尝试整体 ``json.dumps(value)``，成功则原样返回（保留 tuple 等
+    JSON 兼容容器类型）；失败时按容器类型递归处理，对不可序列化的叶子值
+    （如异常对象）降级为 ``str(value)``。
+
+    示例：
+        {'ctx': {'error': ValueError('x')}}  →
+        {'ctx': {'error': "ValueError('x')" 字符串}}   # ctx 仍是 dict
+        ('body', 'torrent_file')             →  原样 tuple（JSON 序列化为数组）
+    """
+    try:
+        json.dumps(value)
+        return value
+    except (TypeError, ValueError):
+        pass
+    # 整体不可序列化：递归处理容器，逐元素降级
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    # 叶子值且不可序列化（典型：异常对象），降级为字符串
+    return str(value)
+
+
+def _sanitize_validation_errors(errors: list[Any]) -> list[dict[str, Any]]:
+    """把 RequestValidationError.errors() 安全化为可 JSON 序列化的列表。
+
+    FastAPI/Pydantic 在某些校验失败路径下，会把原始异常对象（如 ``ValueError``）
+    放进 error dict 的 ``ctx`` 字段::
+
+        {'type': 'value_error', 'loc': ('body', 'torrent_file'),
+         'msg': '...', 'input': 'undefined',
+         'ctx': {'error': ValueError("Expected UploadFile, ...")}}  # ← 不可序列化
+
+    若原样塞进 ``JSONResponse``，``json.dumps`` 会在序列化阶段抛
+    ``TypeError: Object of type ValueError is not JSON serializable``，
+    这个 TypeError 会冒泡到 ``unhandled_exception_handler``，使原本应
+    返回 422 的校验错误变成 500（prod-hotfix-2026-07-19 真实根因）。
+
+    本函数用 ``_json_safe`` 递归处理每个 error，保留容器结构，只把
+    不可序列化的叶子值（如 ``ctx.error``）降级为字符串。
+    """
+    return [_json_safe(err) if isinstance(err, dict) else {"error": str(err)} for err in errors]
+
+
 async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
     """422 校验错误：保持 array detail 语义，包进 CommonResponse。
 
     detail 是 [{loc, msg, type, ...}] 数组，前端按 422 分支取 detail[0].msg。
+
+    ⚠️ prod-hotfix-2026-07-19 修复：原始 errors() 的 ctx 字段可能含异常对象
+    （如 ValueError），直接 JSONResponse 会触发 TypeError 冒泡到 500。
+    改用 _sanitize_validation_errors 先做 JSON 安全化。
     """
-    errors = exc.errors()
+    errors = _sanitize_validation_errors(exc.errors())
     first_msg = errors[0].get("msg") if errors else "参数校验失败"
     body = {
         "status": "error",
@@ -127,9 +179,34 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     """未捕获异常兜底：HTTP 500 + CommonResponse(code=500)。
 
-    堆栈写入日志；DEBUG 模式下附带 trace 信息，生产环境不泄露内部细节。
+    堆栈写入日志；DEBUG 模式下附带异常类型、消息与完整 traceback，生产环境不泄露内部细节。
+
+    返回结构（DEBUG 模式）::
+
+        data = {
+            "exception_type": "TypeError",   # 异常类名，便于前端/运维快速定位
+            "message": "Object of type ...", # str(exc)，安全字符串
+            "traceback": "...",              # 完整堆栈字符串，精确定位抛出点
+        }
+
+    注意：早期版本 data 为 ``{"error": str(exc)}``，已迁移为上述结构。
+    前端 ``error-normalize.ts`` 的 ``pickErrorPayload`` 只读 body.msg 不依赖 data.error，
+    故字段重命名对前端无影响。原 ``error`` 字段保留为同义别名以向后兼容旧调用方。
+
+    traceback 字段仅 DEBUG 模式输出，用于定位"异常为何绕过端点 except 冒泡到此处"
+    这类难以复现的问题（如 prod-hotfix-2026-07-19 添加种子接口的 TypeError）。
     """
-    logger.exception("Unhandled exception on %s %s", request.method, request.url.path)
+    import traceback as _traceback
+
+    # 完整堆栈写入日志（含 logger.exception 的等价信息）
+    tb_str = _traceback.format_exception(type(exc), exc, exc.__traceback__)
+    tb_text = "".join(tb_str)
+    logger.error(
+        "Unhandled exception on %s %s\n%s",
+        request.method,
+        request.url.path,
+        tb_text,
+    )
 
     body: dict[str, Any] = {
         "status": "error",
@@ -138,8 +215,17 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
         "data": None,
     }
     if settings.DEBUG:
-        # 开发环境附带异常摘要，便于联调，但不暴露完整堆栈给外部。
-        body["data"] = {"error": str(exc)}
+        # 开发环境附带异常类型、消息与完整堆栈，便于联调定位。
+        # 显式 str() 化，杜绝任何异常对象本身进入响应体被 JSON 序列化时
+        # 再抛 TypeError（例如原 exc 是 ValueError 实例时）。
+        exc_message = str(exc) if exc is not None else ""
+        body["data"] = {
+            "exception_type": type(exc).__name__ if exc is not None else "",
+            "message": exc_message,
+            "traceback": tb_text,
+            # 向后兼容：旧调用方若读 data.error 仍可拿到字符串
+            "error": exc_message,
+        }
 
     return JSONResponse(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, content=body)
 
