@@ -676,13 +676,16 @@ class DownloaderPathScanTask:
 
             elif downloader_vo.downloader_type == 1:  # Transmission
                 try:
-                    # to_thread：get_session_variables 是同步 HTTP 调用，移出事件循环避免阻塞
-                    response = await asyncio.to_thread(client.get_session_variables)
-                    if response and "download-dir" in response:
-                        default_path = response["download-dir"]
+                    # to_thread：get_session 是同步 HTTP 调用，移出事件循环避免阻塞
+                    # 注意：transmission-rpc v7.x 已移除 legacy 方法 get_session_variables()，
+                    # 替代为 get_session()，返回 Session 对象，字段用 snake_case 属性访问（download_dir）
+                    # 而非旧版 dict key "download-dir"。
+                    session = await asyncio.to_thread(client.get_session)
+                    default_path = getattr(session, "download_dir", None) if session else None
+                    if default_path:
                         logger.debug(f"Transmission 默认路径: {default_path}")
                         return default_path
-                    logger.warning("Transmission 响应中未找到 download-dir 字段")
+                    logger.warning("Transmission 响应中未找到 download_dir 字段")
                     return None
                 except Exception as e:
                     logger.warning(f"从 Transmission 获取默认路径失败: {str(e)}")
