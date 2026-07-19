@@ -67,8 +67,59 @@
 ### 遗留技术债（本次不动）
 
 - 约 92 个 mypy 历史错误（项目预存在，与本次修改无关）。
-- `cron_executor.py:80` 的 `db = SessionLocal()` 是否 finally close 需独立排查（审查提示的同类风险点）。
+  - **订正（2026-07-19 code review 后）**：92 是 3 个 service 文件局部口径；实测同口径已降到 **81**，全量 `mypy app` 实为 **1484 错误 / 120 文件**（约 60% 是 SQLAlchemy typed Column 噪声，非真 bug）。后续 hotfix 沿用"修改文件 mypy 数 ≤ baseline"局部守则即可，**不引入**全量 mypy CI 门禁。
+- ~~`cron_executor.py:80` 的 `db = SessionLocal()` 是否 finally close 需独立排查~~ **已核实（2026-07-19）**：第 80-107 行有完整 `try/finally: db.close()`，结构安全无泄漏。该审查项是预防性提示，已闭环。
 - 真实环境压测（连接泄漏消除验证）需运维监控 SAWarning 在长时间运行后是否复现。
+
+---
+
+## 2026-07-19 - prod-hotfix code review 后续 issue 跟踪清单
+
+**任务 ID**: `prod-hotfix-2026-07-19-followup`
+**分支**: dev
+**范围**: 3 个独立子代理对 prod-hotfix 完成 code review 后，再派 2 个独立评估代理对剩余 11 项（A-K）做 ROI 分级，挑选值得作为后续 issue 跟踪的项；低成本闭环项立即执行。
+
+### 方法
+
+- **评估代理 1**（代码层）：评估 A-E 五项，实证（grep + 读源码）后给出"建议跟踪 / 不跟踪 / 调研后再定"分级 + 工作量估算
+- **评估代理 2**（测试/技术债层）：评估 F-K 六项，实证（实跑 pytest + mypy）后给出同分级
+- 两个代理结论高度趋同，未出现矛盾判断
+
+### 立即执行的低成本闭环（本次会话已做）
+
+| 项 | 处理 | commit |
+|----|------|--------|
+| **C** seed_transfer_service.py:384 变量名遮蔽 | 改名为 `local_backup_manager` | 本次 |
+| **B** torrent_backup.py:549 死代码（构造即丢弃） | 删除 | 本次 |
+| **I** mypy 历史债务 | progress.md 订正度量口径（92 → 81 局部 / 1484 全量） | 本次 |
+| **E/K** cron_executor.py:80 排查 | 实证已正确 close，progress.md 标记闭环 | 本次 |
+
+### 推荐立项跟踪（按优先级）
+
+| 优先级 | Issue 标题 | 工作量 | 价值 |
+|--------|-----------|--------|------|
+| **P1** | `[test] 启用 test_torrent_sync_review.py 5 个 skip 测试` | 0.5-1 天 | ROI 最高；patch `qbClient/trClient` fallback 路径让 ConnectionError 立即 raise，根治 hang；启用后多 5 个真实回归锚点（fallback 建连异常处理） |
+| **P2** | `[torrent-crud] hash 冲突分支审计语义 + 下载器重复调用` | 半天 | 真实业务影响：用户上传已存在 hash 种子时仍调 `add_torrent`（网络/认证开销）+ 审计写 `{"status":"added"}` 但实际可能未新增；运维审计会反复质问 |
+| **P2** | `[test] 补 DownloaderPathScanTask.execute() 主流程测试` | 0.5-1 天 | 841 行任务类除 `_get_default_path_from_downloader` 外零覆盖；`_update_path_mapping`/`_sync_default_path` 已接入 `db_write_scope`（sync-resource-governance.2.6）但无锚点；目标：happy path + db_write_scope 行为 + 1-2 个 fallback 分支，不做端到端真实 RPC |
+| **P3** | `[backup-manager] aclose 后访问 repository 加防御` | 1-2 小时 | 治理闭环：当前 `aclose()` 关 self.db 但不清 self.repository，close 后访问会触发 SAWarning（SQLAlchemy 自动重开无归属连接）；生产路径不触发但 API 不安全；建议方案 A：`aclose` 中 `self.repository = None` |
+| **P3** | `[test] recycle_bin fixture 加真实 Session 守卫` | 0.5 天 | 防御性：当前 `patch("app.database.SessionLocal", return_value=db_session)` 若被改成 MagicMock，9 个测试会"全绿但什么都没测"；加 1 个断言 fixture 注入真实 Session 的守卫测试 |
+
+### 明确不立项（含理由）
+
+| 项 | 不立项理由 |
+|----|-----------|
+| **B** torrent_backup/torrents_async 12 处统一 close | `torrent_backup.py` 用 `async with AsyncSessionLocal()`（自动关），`torrents_async.py` 4 处 `_owns_db=False`（aclose 本就是 no-op）；**当下不泄漏**，"未来风险"建议转文档约定而非改 12 处代码 |
+| **F** torrent_crud /add /add-batch 端点 e2e | 核心 bug 已被 `test_torrent_crud_query.py` 5 用例 + mutation 反向锚定直接覆盖；端点 e2e 需 mock 5 个外部依赖 + 跑 30 秒重试循环，1.5-2 周换不到新回归类型；备注：待 TestClient 基础设施沉淀后再做 |
+| **I（治理）** mypy 全量治理 | 1484 错误 60% 是 SQLAlchemy typed Column 噪声非真 bug；消除需 declarative → Mapped 全量重构（数周-数月），收益不抵成本；仅订正 progress.md 口径 |
+| **K（排查）** cron_executor.py:80 | 已实证第 80-107 行有完整 `try/finally: db.close()`，无泄漏；审查提示是预防性，已闭环 |
+
+### 评估方法学说明
+
+两个评估代理的关键反证（避免后续审查踩坑）：
+- **J 的 skip 数量**：实测 5 个（class 级 skip 覆盖 2 个 method + 3 个 method 级 skip），不是 4 个。
+- **I 的 mypy 口径**：progress.md 的"92"是 **3 service 文件局部口径**（实测现 81），全量是 1484——评估时必须区分。
+- **K 的代码现状**：第 80 行 `db = SessionLocal()` 配套第 107 行 `finally: db.close()`，结构安全。
+- **H 的真实风险**：本次新增 `test_service_close_endpoint.py` 已用 `wraps=` spy 范式绕开脆弱性；残留风险是"fixture 被改成 MagicMock"，加守卫测试即可，无需重写 fixture。
 
 ---
 

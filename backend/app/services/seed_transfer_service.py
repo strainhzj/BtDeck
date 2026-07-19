@@ -381,7 +381,7 @@ class SeedTransferService:
                     from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
                     from app.models.torrent_file_backup import TorrentFileBackup
 
-                    backup_manager = TorrentFileBackupManagerService(db=self.db)
+                    local_backup_manager = TorrentFileBackupManagerService(db=self.db)
 
                     # 检查是否已存在备份记录
                     existing_backup = await self.db.execute(
@@ -417,7 +417,7 @@ class SeedTransferService:
                         shutil.copy2(source_torrent_path, backup_path)
 
                         # 创建数据库记录
-                        await backup_manager.repository.create(
+                        await local_backup_manager.repository.create(
                             info_hash=info_hash,
                             file_path=backup_path,
                             file_size=os.path.getsize(backup_path),

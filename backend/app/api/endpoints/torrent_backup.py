@@ -546,8 +546,6 @@ async def export_backups(
             raise HTTPException(status_code=400, detail="未指定要导出的种子文件")
 
         async with AsyncSessionLocal() as db:
-            TorrentFileBackupManagerService(db=db)
-
             # 查询备份记录
             from sqlalchemy import select, and_
             from app.models.torrent_file_backup import TorrentFileBackup
