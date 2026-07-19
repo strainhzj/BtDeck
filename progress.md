@@ -1,5 +1,77 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-19 - 生产环境三连报错根因修复
+
+**任务 ID**: `prod-hotfix-2026-07-19`
+**分支**: dev
+**范围**: 针对生产环境日志中的三类报错（连接泄漏 SAWarning / 审计日志 AttributeError / transmission-rpc v7 API）做根因分析 + 独立审查 + 修复 + 提交推送。
+
+### 方法
+
+3 个并行子代理对**同一份报错日志**独立做"形成结论 → 证伪/证实原假设"审查，每个假设都附反证排查清单。审查结束后再派 3 个独立 general-purpose 子代理对**我的分析结论**做独立证伪测试，重点寻找被遗漏的反证。
+
+### 三连报错与根因（含审查修正）
+
+**报错 1：`'Client' object has no attribute 'get_session_variables'`（WARNI 循环）**
+- 根因：transmission-rpc v7.0 intentional major breaking 移除 `Client.get_session_variables()`，替代为 `client.get_session()` 返回 Session 对象，字段用 snake_case 属性（`session.download_dir`）而非旧版 dict key `"download-dir"`。
+- 项目 pin `transmission-rpc~=7.0.11`，`downloader_path_scan.py:680` 是唯一遗留旧 API 调用点（其它 7 处 Transmission 调用均已用新 API）。
+- 审查代理运行时验证：`hasattr(Client, 'get_session_variables')==False`、`hasattr(Client, 'get_session')==True`，结论坐实。
+
+**报错 2：`记录审计日志失败: name`（ERROR 偶发）**
+- 根因：`torrent_crud.py` 四处种子存在性查询用 `db.query(TorrentInfo.info_id).first()` 返回只含单列的 Row；hash 冲突分支 `db_torrent` 被赋值为该 Row，审计日志构造时访问 `.name/.hash/.size` 触发 SQLAlchemy 2.0 `Row.__getattr__`，`str(AttributeError)` 恰为裸名 `'name'`。
+- 偶发原因：仅 hash 冲突分支触发；`.info_id` 因是选中列不报错，`.name` 是首个失败点。
+- 独立审查代理用 SQLAlchemy 2.0.47 实测端到端复现：`str(Row.__getattr__('name'))=='name'`，并排除普通 NameError/AttributeError/KeyError（str 格式都不匹配）。
+
+**报错 3：`SAWarning: garbage collector cleaning up non-checked-in connection`（traceback 误指 transmission_rpc/torrent.py:259）**
+- 根因：三个 Service 类自建 `SessionLocal/AsyncSessionLocal` 从不 close；`NullPool+aiosqlite` 下连接由 GC 周期性回收，恰好命中 Transmission RPC JSON 解析循环栈帧 → traceback 误指 `super().__init__(fields=fields)`。
+- **审查关键修正**：原分析把三个 Service 并列为"本次报错的根因"，但 `recycle_bin_service` 是**同步** `SessionLocal`（同步 sqlite 方言 `is_async=False`），按 `pool/base.py:952` 不进入该 SAWarning 分支；**直接元凶是 `SeedTransferService` 内嵌 `TorrentFileBackupManagerService` 自建的 async session**。`recycle_bin_service` 的同步泄漏是另一类问题（`database is locked` 风险），需单独修。
+- **NullPool 不豁免该警告**：审查代理读 `sqlalchemy/pool/base.py:951-952` 源码确认判定只看方言 `is_async`，与 pool 类型无关。
+
+### 修复（7 文件）
+
+| 修复点 | 文件 | 设计 |
+|--------|------|------|
+| P0-1 `TorrentFileBackupManagerService.aclose()` | `services/torrent_file_backup_manager.py` | `_owns_db`（仅自建才关）+ `_closed`（幂等）双标志 |
+| P0-2 `SeedTransferService.aclose()` | `services/seed_transfer_service.py` | 删除死代码 `self.async_db`（无任何方法读取）+ `aclose()` 级联关闭 backup_manager |
+| P0-3 seed_transfer 2 端点 try/finally | `api/endpoints/seed_transfer.py` | 调用 `service.aclose()` |
+| P0-4 `RecycleBinService.close()` | `services/recycle_bin_service.py` | 同步版双标志 close() |
+| P0-5 recycle_bin 4 端点 try/finally | `api/endpoints/recycle_bin.py` | 调用 `service.close()` |
+| P1 torrent_crud 4 处 query | `api/endpoints/torrent_crud.py` | `db.query(TorrentInfo.info_id)` → `db.query(TorrentInfo)` |
+| P2 transmission-rpc v7 API | `tasks/scheduler/downloader_path_scan.py` | `get_session_variables()+['download-dir']` → `get_session()+.download_dir` |
+
+**为何用 `_owns_db`/`_closed` 标志而非 `self.db = None`**：避免误关闭外部传入的共享 session + 保证幂等；同时 `self.db = None` 会触发 mypy `None → Session` 类型错误（`_closed: bool` 无此问题）。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| flake8（7 文件） | ✅ 通过 |
+| black（7 文件） | ✅ 通过 |
+| mypy（3 service 文件） | ✅ **92 errors，与 baseline 完全一致（0 新增）** |
+| 相关 pytest（5 套件 / 55 用例） | ✅ 55 全通过 |
+| 全量 pytest（排除 master 同样 hang 的文件） | ✅ **2146 passed, 1 skipped, 0 failed**（189s） |
+| `test_torrent_sync_review.py::test_cached_client_exception_handled` | ⚠️ 已 git stash 验证 master baseline 同样 hang，与本次修改无关 |
+
+### Git 状态
+
+- 3 个独立 commit 已推送至 `origin/dev`（`3348016..7c4caee`）：
+  - `62404e7` P0 连接泄漏修复（5 文件，+217/-124）
+  - `fc04ab8` P1 审计日志 AttributeError（1 文件，+16/-4）
+  - `7c4caee` P2 transmission-rpc v7 API 升级（1 文件，+8/-5）
+- 本轮文档（progress.md + feature_list.json + .gitignore）将单独成 1 个 commit。
+
+### 副带修复
+
+- `backend/.gitignore` 补 `.pytest-*/` 规则：pytest 中断留下的临时目录（`.pytest-final-all-*` / `.pytest-p1-close-*`）此前未被忽略，且因 Docker Desktop WSL2 挂载锁无法物理删除；通过 gitignore 规则避免污染 git status 与误纳提交。
+
+### 遗留技术债（本次不动）
+
+- 约 92 个 mypy 历史错误（项目预存在，与本次修改无关）。
+- `cron_executor.py:80` 的 `db = SessionLocal()` 是否 finally close 需独立排查（审查提示的同类风险点）。
+- 真实环境压测（连接泄漏消除验证）需运维监控 SAWarning 在长时间运行后是否复现。
+
+---
+
 ## 2026-07-18 - 传统分页预设与展开箭头修正
 
 **任务 ID**: `v1.0.6.22`

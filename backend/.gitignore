@@ -63,6 +63,8 @@ logs/
 # Testing
 .pytest_cache/
 .pytest-runtime/
+# pytest fixture 在 CI/中断时可能留下的临时目录（.pytest-final-* / .pytest-p1-* 等）
+.pytest-*/
 .coverage
 htmlcov/
 .tox/
