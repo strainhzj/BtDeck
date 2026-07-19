@@ -88,7 +88,7 @@ async def get_recycle_bin_list(
         }
     """
     try:
-        service = RecycleBinService(db)
+        service = RecycleBinService()
         try:
             result = service.get_recycle_bin_list(page=page, page_size=page_size, search=search)
 
@@ -141,7 +141,7 @@ async def restore_torrents(
         }
     """
     try:
-        service = RecycleBinService(db)
+        service = RecycleBinService()
         try:
             result = await service.restore_torrents(
                 torrent_ids=req.torrent_ids,
@@ -232,7 +232,7 @@ async def cleanup_preview(
         }
     """
     try:
-        service = RecycleBinService(db)
+        service = RecycleBinService()
         try:
             result = service.cleanup_preview(days=request.days)
 
@@ -287,7 +287,7 @@ async def manual_cleanup(
         }
     """
     try:
-        service = RecycleBinService(db)
+        service = RecycleBinService()
         try:
             result = await service.manual_cleanup(
                 torrent_ids=request.torrent_ids, operator=current_user.username, audit_service=audit_service

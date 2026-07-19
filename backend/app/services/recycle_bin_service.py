@@ -11,7 +11,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
 from sqlalchemy import and_
-from sqlalchemy.ext.asyncio import AsyncSession
 from io import BytesIO
 
 from app.torrents.models import TorrentInfo
@@ -28,30 +27,34 @@ logger = logging.getLogger(__name__)
 class RecycleBinService:
     """回收站服务"""
 
-    def __init__(self, db_async: AsyncSession):
+    def __init__(self):
         """
-        初始化回收站服务
+        初始化回收站服务。
 
         内部创建同步 Session，保持所有方法使用同步模式。
         该自建会话由本实例持有并负责关闭——调用方必须在 try/finally 中调用 close()，
         否则会因 NullPool 配置导致 SQLite 同步连接泄漏（可能引发 database is locked）。
 
-        Args:
-            db_async: 异步数据库会话（历史兼容参数；当前实现未使用，所有方法走同步 Session）
+        历史兼容性：原签名 `__init__(self, db_async: AsyncSession)` 接收一个异步会话但完全忽略；
+        该必填死参数强迫调用方传入一个无人 close 的 session，反而成为新的泄漏源，故删除。
+        所有 4 个端点的调用方传入的 AsyncSession（来自 Depends(get_async_db)）从未被使用。
         """
         from app.database import SessionLocal
 
         self.db = SessionLocal()  # 创建同步会话
         self._owns_db = True  # 标记由本实例所有，close() 时负责关闭
-        self._closed = False  # 跟踪 close() 是否已调用，保证幂等
+        # 跟踪 close() 是否已调用，保证幂等。
+        # 注意：该标志仅保证"串行"重复调用幂等。RecycleBinService 是同步类，
+        # 每个 HTTP 请求 new 一个实例（不跨请求共享），故无需加锁。
+        self._closed = False
 
     def close(self) -> None:
         """
         关闭内部同步会话。
 
-        多次调用安全（幂等）。调用方应在 try/finally 中调用：
+        多次调用安全（串行幂等）。调用方应在 try/finally 中调用：
 
-            service = RecycleBinService(db)
+            service = RecycleBinService()
             try:
                 ...
             finally:

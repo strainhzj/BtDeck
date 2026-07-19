@@ -46,30 +46,32 @@ class SeedTransferService:
     - 记录审计日志
     """
 
-    def __init__(self, db: Session, async_db: Optional[AsyncSessionLocal] = None):
+    def __init__(self, db: Session):
         """
         初始化种子转移服务
 
         Args:
             db: 同步数据库会话（用于查询下载器信息等）
-            async_db: 异步数据库会话（保留参数以兼容调用方签名；
-                历史上 self.async_db 是死代码——审计日志方法内部均自建会话——故这里不再持久化）。
         """
         self.db = db
-        # 注意：历史上的 self.async_db 在本类的所有方法中都未被读取（审计日志方法内部均
+        # 注意：历史上 self.async_db 在本类的所有方法中都未被读取（审计日志方法内部均
         # 使用 `async with AsyncSessionLocal()`），属于死代码且会泄漏未归还的 aiosqlite 连接，
-        # 故不再保留该实例属性。参数签名保留以兼容现有调用方 SeedTransferService(db=db)。
+        # 故不再保留。原 async_db 参数也已删除（两个调用方均未传入，不存在兼容性问题）。
 
         # 初始化种子文件备份管理服务（自建会话，由本实例在 aclose() 中负责关闭）
         self.backup_manager = TorrentFileBackupManagerService(path_mapping_service=None)
-        self._closed = False  # 跟踪 aclose() 是否已调用，保证幂等
+        # 跟踪 aclose() 是否已调用，保证幂等。
+        # 注意：该标志仅保证"串行"重复调用幂等，不保证并发安全。
+        # 生产路径每个 HTTP 请求 new 一个 SeedTransferService 实例（不跨请求共享），
+        # 故无需 asyncio.Lock；若将来改为跨协程共享，需引入锁保护。
+        self._closed = False
 
     async def aclose(self) -> None:
         """
         异步释放本实例持有的资源（主要是自建的 backup_manager 数据库会话）。
 
         调用方应在 try/finally 中调用，避免连接泄漏触发 GC 回收时的 SAWarning。
-        多次调用安全（幂等）。
+        多次调用安全（串行幂等，非并发安全）。
         """
         if self._closed:
             return
