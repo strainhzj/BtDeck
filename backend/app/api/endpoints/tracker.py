@@ -222,6 +222,9 @@ async def replace_tracker(
         )
     )
     downloader_id_list = result.all()
+    # 成功/失败计数（与 modify_tracker:321-322 对齐）
+    success_count = 0
+    failed_count = 0
     # 根据下载器id循环修改
     for row in downloader_id_list:
         downloader_id = row[0]
@@ -232,6 +235,8 @@ async def replace_tracker(
 
         if not downloader:
             logging.error(f"下载器不存在: downloader_id={downloader_id}")
+            # 与 modify_tracker:343-344 对齐：下载器缺失计为失败
+            failed_count += 1
             continue
         # 修复异步查询: 查询torrent_id列表
         result = await db.execute(
@@ -248,10 +253,42 @@ async def replace_tracker(
                 torrent_id_list.append(torrent_id[0])
             if downloader.is_transmission:
                 torrent_id_list.append(int(torrent_id[0]))
-        if downloader.is_qbittorrent:
-            qb_replace_tracker(downloader, replace_tracker_url, target_tracker_url, torrent_id_list)
-        if downloader.is_transmission:
-            tr_replace_tracker(downloader, replace_tracker_url, target_tracker_url, torrent_id_list)
+        # RPC 调用兜底（修复 prod-hotfix-2026-07-19 同类风险）：
+        # qb_replace_tracker/tr_replace_tracker 内部无 try/except，transmission_rpc
+        # 序列化阶段抛 TypeError 或 qbittorrentapi 内部抛 ValueError 时会直接冒泡到
+        # 全局 500。与 add_tracker:119 / modify_tracker:325 模式对齐，单个下载器失败
+        # 不影响其它下载器处理，返回部分成功结果。
+        # 注：try 只覆盖 RPC 调用，不覆盖 db 查询（保持原有查询语义）。
+        try:
+            if downloader.is_qbittorrent:
+                qb_replace_tracker(downloader, replace_tracker_url, target_tracker_url, torrent_id_list)
+            if downloader.is_transmission:
+                tr_replace_tracker(downloader, replace_tracker_url, target_tracker_url, torrent_id_list)
+            success_count += 1
+        except Exception as e:
+            failed_count += 1
+            logging.error(f"替换下载器 {downloader_id} 的 tracker 失败: {str(e)}")
+
+            # ========== 记录失败的审计日志（后台任务，对齐 modify_tracker:390-407）==========
+            audit_info = extract_audit_info_from_request(req) or {}
+            background_tasks.add_task(
+                _write_tracker_audit_log_async,
+                operation_type=AuditOperationType.UPDATE_TRACKER,
+                operator="admin",
+                torrent_info_id=None,  # 下载器维度失败，无具体种子
+                operation_detail={
+                    "operation": "replace",
+                    "downloader_id": downloader_id,
+                    "old_tracker_url": replace_tracker_url,
+                    "new_tracker_url": target_tracker_url,
+                    "torrent_count": len(torrent_id_list),
+                },
+                error_message=str(e),
+                operation_result=AuditOperationResult.FAILED,
+                downloader_id=downloader_id,
+                audit_info=audit_info,
+            )
+            # ========== 审计日志记录结束 ==========
     await db.commit()
 
     # ========== 记录审计日志（后台任务） ==========
@@ -281,9 +318,13 @@ async def replace_tracker(
 
     return CommonResponse(
         status="success",
-        msg=f"替换Tracker成功，影响了{len(affected_torrents)}个种子",
+        msg=f"替换Tracker完成，成功: {success_count}，失败: {failed_count}",
         code="200",
-        data={"affected_count": len(affected_torrents)},
+        data={
+            "affected_count": len(affected_torrents),  # 向后兼容
+            "success_count": success_count,
+            "failed_count": failed_count,
+        },
     )
 
 

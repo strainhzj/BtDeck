@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import uuid
-from logging import exception
 from typing import Annotated, Any, List, Optional
 
 import ping3
@@ -114,7 +113,7 @@ async def add(
 
         response = CommonResponse(status="success", msg="添加成功", code="200", data=None)
         return response
-    except exception as e:
+    except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
         response = CommonResponse(status="error", msg="用户名或密码错误", code="400", data=None)
