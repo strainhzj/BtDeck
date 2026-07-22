@@ -1,124 +1,170 @@
 <template>
-  <div class="orphan-files-container">
-    <!-- 统计卡片 -->
-    <el-row :gutter="20" class="stats-row">
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-item">
-            <div class="stat-label">孤儿文件数</div>
-            <div class="stat-value">{{ latestScan ? latestScan.total_orphans : 0 }}</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-item">
-            <div class="stat-label">总大小</div>
-            <div class="stat-value">{{ formatSize(latestScan ? latestScan.total_orphan_size : 0) }}</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-item">
-            <div class="stat-label">扫描路径数</div>
-            <div class="stat-value">{{ latestScan ? latestScan.total_paths_scanned : 0 }}</div>
-          </div>
-        </el-card>
-      </el-col>
-      <el-col :span="6">
-        <el-card shadow="hover">
-          <div class="stat-item">
-            <div class="stat-label">最近扫描</div>
-            <div class="stat-value stat-time">{{ latestScan ? formatTime(latestScan.scan_time) : '未扫描' }}</div>
-          </div>
-        </el-card>
-      </el-col>
-    </el-row>
+  <div class="app-container management-page orphan-files-page">
+    <header class="management-page__header" aria-labelledby="orphan-files-title">
+      <div class="management-page__heading">
+        <h1 id="orphan-files-title" class="management-page__title">孤儿文件</h1>
+        <p class="management-page__subtitle">扫描未被种子引用的文件，并在清理前进行安全复核</p>
+      </div>
+      <div class="management-page__actions">
+        <el-button
+          icon="el-icon-refresh"
+          :loading="listLoading"
+          @click="getList"
+        >
+          刷新
+        </el-button>
+        <el-button
+          type="primary"
+          icon="el-icon-magic-stick"
+          :loading="scanLoading"
+          @click="handleScan"
+        >
+          立即扫描
+        </el-button>
+      </div>
+    </header>
 
-    <!-- 工具栏 -->
-    <div class="filter-container">
-      <el-input
-        v-model="listQuery.downloader_id"
-        placeholder="下载器ID筛选"
-        style="width: 200px"
-        class="filter-item"
-        clearable
-        @keyup.enter.native="handleFilter"
-        @clear="handleFilter"
-      />
-      <el-button class="filter-item" type="primary" icon="el-icon-search" @click="handleFilter">
-        搜索
-      </el-button>
-      <el-button class="filter-item" icon="el-icon-refresh" @click="getList">
-        刷新
-      </el-button>
-      <el-button
-        class="filter-item"
-        type="success"
-        icon="el-icon-magic-stick"
-        :loading="scanLoading"
-        @click="handleScan"
-      >
-        立即扫描
-      </el-button>
-      <el-button
-        class="filter-item"
-        type="danger"
-        icon="el-icon-delete"
-        :disabled="selectedIds.length === 0"
-        @click="handleCleanupPreview"
-      >
-        清理选中 ({{ selectedIds.length }})
-      </el-button>
-    </div>
+    <!-- 统计摘要 -->
+    <section class="management-stats-grid" aria-label="最近一次孤儿文件扫描摘要">
+      <div class="management-stat-card">
+        <span class="management-stat-card__icon" aria-hidden="true">
+          <i class="el-icon-document" />
+        </span>
+        <div class="management-stat-card__content">
+          <div class="management-stat-card__label">孤儿文件数</div>
+          <div class="management-stat-card__value">{{ latestScan ? latestScan.total_orphans : 0 }}</div>
+        </div>
+      </div>
+      <div class="management-stat-card">
+        <span class="management-stat-card__icon management-stat-card__icon--success" aria-hidden="true">
+          <i class="el-icon-coin" />
+        </span>
+        <div class="management-stat-card__content">
+          <div class="management-stat-card__label">占用空间</div>
+          <div class="management-stat-card__value">{{ formatSize(latestScan ? latestScan.total_orphan_size : 0) }}</div>
+        </div>
+      </div>
+      <div class="management-stat-card">
+        <span class="management-stat-card__icon management-stat-card__icon--info" aria-hidden="true">
+          <i class="el-icon-folder-opened" />
+        </span>
+        <div class="management-stat-card__content">
+          <div class="management-stat-card__label">扫描路径数</div>
+          <div class="management-stat-card__value">{{ latestScan ? latestScan.total_paths_scanned : 0 }}</div>
+        </div>
+      </div>
+      <div class="management-stat-card">
+        <span class="management-stat-card__icon management-stat-card__icon--warning" aria-hidden="true">
+          <i class="el-icon-time" />
+        </span>
+        <div class="management-stat-card__content">
+          <div class="management-stat-card__label">最近扫描</div>
+          <div class="management-stat-card__value management-stat-card__value--compact">
+            {{ latestScan ? formatTime(latestScan.scan_time) : '尚未扫描' }}
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 筛选条件 -->
+    <section class="management-panel" aria-label="孤儿文件筛选条件">
+      <div class="management-filter">
+        <div class="management-filter__field management-filter__field--wide">
+          <label class="management-filter__label" for="orphan-downloader-id">下载器 ID</label>
+          <el-input
+            id="orphan-downloader-id"
+            v-model="listQuery.downloader_id"
+            class="management-filter__control"
+            placeholder="输入下载器 ID"
+            prefix-icon="el-icon-search"
+            clearable
+            @keyup.enter.native="handleFilter"
+            @clear="handleFilter"
+          />
+        </div>
+        <div class="management-filter__actions">
+          <el-button type="primary" icon="el-icon-search" @click="handleFilter">
+            搜索
+          </el-button>
+        </div>
+      </div>
+    </section>
 
     <!-- 孤儿文件列表 -->
-    <el-table
-      v-loading="listLoading"
-      :data="list"
-      border
-      fit
-      highlight-current-row
-      style="width: 100%"
-      @selection-change="handleSelectionChange"
-    >
-      <el-table-column type="selection" width="55" />
-      <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip />
-      <el-table-column label="大小" width="120" align="center">
-        <template slot-scope="scope">
-          {{ formatSize(scope.row.file_size) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="修改时间" width="170" align="center">
-        <template slot-scope="scope">
-          {{ scope.row.mtime ? formatTime(scope.row.mtime) : '-' }}
-        </template>
-      </el-table-column>
-      <el-table-column label="下载器" width="120" align="center">
-        <template slot-scope="scope">
-          <span>{{ scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-' }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="80" align="center">
-        <template slot-scope="scope">
-          <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
-          <el-tag v-else type="danger" size="small">待清理</el-tag>
-        </template>
-      </el-table-column>
-    </el-table>
+    <section class="management-panel" aria-labelledby="orphan-file-list-title">
+      <div class="management-panel__header">
+        <div class="management-panel__heading">
+          <h2 id="orphan-file-list-title" class="management-panel__title">文件列表</h2>
+          <p class="management-panel__description">
+            {{ latestScan ? `最近扫描于 ${formatTime(latestScan.scan_time)}` : '完成首次扫描后将在此显示结果' }}
+          </p>
+        </div>
+        <div class="management-panel__meta">
+          <el-tag v-if="selectedIds.length > 0" type="info" effect="plain">
+            已选择 {{ selectedIds.length }} 项
+          </el-tag>
+          <el-button
+            type="danger"
+            icon="el-icon-delete"
+            :disabled="selectedIds.length === 0"
+            @click="handleCleanupPreview"
+          >
+            清理选中
+          </el-button>
+        </div>
+      </div>
+      <div class="management-table-scroll">
+        <el-table
+          v-loading="listLoading"
+          :data="list"
+          class="management-table"
+          border
+          fit
+          highlight-current-row
+          empty-text="暂无孤儿文件，点击“立即扫描”开始检测"
+          style="width: 100%"
+          @selection-change="handleSelectionChange"
+        >
+          <el-table-column type="selection" width="55" />
+          <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip />
+          <el-table-column label="大小" width="120" align="center">
+            <template slot-scope="scope">
+              {{ formatSize(scope.row.file_size) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="修改时间" width="170" align="center">
+            <template slot-scope="scope">
+              {{ scope.row.mtime ? formatTime(scope.row.mtime) : '-' }}
+            </template>
+          </el-table-column>
+          <el-table-column label="下载器" width="120" align="center">
+            <template slot-scope="scope">
+              <span>{{ scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-' }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="80" align="center">
+            <template slot-scope="scope">
+              <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
+              <el-tag v-else type="danger" size="small">待清理</el-tag>
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
 
-    <!-- 分页 -->
-    <el-pagination
-      class="pagination-container"
-      :current-page="listQuery.page"
-      :page-size="listQuery.page_size"
-      :total="total"
-      :page-sizes="[10, 20, 50, 100]"
-      layout="total, sizes, prev, pager, next, jumper"
-      @size-change="handleSizeChange"
-      @current-change="handleCurrentChange"
-    />
+      <!-- 分页 -->
+      <div class="management-pagination">
+        <el-pagination
+          background
+          :current-page="listQuery.page"
+          :page-size="listQuery.page_size"
+          :total="total"
+          :page-sizes="[10, 20, 50, 100]"
+          layout="total, sizes, prev, pager, next, jumper"
+          @size-change="handleSizeChange"
+          @current-change="handleCurrentChange"
+        />
+      </div>
+    </section>
 
     <!-- 清理确认对话框 -->
     <el-dialog
@@ -126,6 +172,7 @@
       :visible.sync="cleanupDialogVisible"
       width="500px"
       :close-on-click-modal="false"
+      custom-class="management-dialog"
     >
       <div v-loading="cleanupLoading">
         <el-alert
@@ -392,49 +439,37 @@ export default class OrphanFiles extends Vue {
 </script>
 
 <style lang="scss" scoped>
-.orphan-files-container {
-  padding: 20px;
-
-  .stats-row {
-    margin-bottom: 20px;
-
-    .stat-item {
-      text-align: center;
-
-      .stat-label {
-        font-size: 14px;
-        color: #909399;
-        margin-bottom: 8px;
-      }
-
-      .stat-value {
-        font-size: 24px;
-        font-weight: bold;
-        color: #303133;
-      }
-
-      .stat-time {
-        font-size: 14px;
-        font-weight: normal;
-      }
-    }
-  }
-
-  .filter-container {
-    margin-bottom: 20px;
-
-    .filter-item {
-      margin-right: 10px;
-    }
-  }
-
-  .pagination-container {
-    margin-top: 20px;
-    text-align: right;
-  }
-
+.orphan-files-page {
   .cleanup-result {
-    margin-top: 15px;
+    margin-top: var(--spacing-md);
+  }
+}
+
+::v-deep .management-dialog {
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xl);
+
+  .el-dialog__header,
+  .el-dialog__footer {
+    padding: var(--spacing-lg);
+  }
+
+  .el-dialog__header {
+    border-bottom: 1px solid var(--color-border-primary);
+  }
+
+  .el-dialog__body {
+    padding: var(--spacing-lg);
+  }
+
+  .el-dialog__footer {
+    border-top: 1px solid var(--color-border-primary);
+  }
+}
+
+@media (max-width: 600px) {
+  ::v-deep .management-dialog {
+    width: calc(100% - 32px) !important;
   }
 }
 </style>

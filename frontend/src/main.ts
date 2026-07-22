@@ -23,6 +23,7 @@ import SvgIcon from 'vue-svgicon'
 
 import '@/styles/element-variables.scss'
 import '@/styles/index.scss'
+import '@/styles/management-list-page.scss'
 
 import { initTheme } from '@/utils/theme'
 
