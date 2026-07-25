@@ -98,7 +98,7 @@
           type="text"
           size="small"
           icon="el-icon-search"
-          @click="showAdvancedSearchDialog = true"
+          @click="openAdvancedSearch"
         >
           高级搜索
         </el-button>
@@ -1791,6 +1791,16 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   // ====== P1#8 高级搜索 ======
+  private openAdvancedSearch() {
+    this.showAdvancedSearchDialog = true
+    // 对话框首次打开时组件才挂载；nextTick 后再调用，确保 $refs 就绪。
+    // 每次打开都刷新分类/标签/下载器选项，保证下拉反映最新数据。
+    this.$nextTick(() => {
+      const builder = this.$refs.advancedSearchBuilder as { refreshFieldOptions?: () => void } | undefined
+      builder?.refreshFieldOptions?.()
+    })
+  }
+
   private handleAdvancedSearchFromBuilder(searchParams: any) {
     this.performAdvancedSearch(searchParams)
     this.showAdvancedSearchDialog = false

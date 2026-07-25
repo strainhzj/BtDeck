@@ -320,6 +320,21 @@
           "status": "done",
           "scope": "fullstack",
           "evidence": "16/16 测试通过；前端语法人工复核"
+        },
+        {
+          "id": "v1.0.5.13",
+          "name": "高级搜索：分类/标签/下载器字段 options 注入补全",
+          "description": "根因修复：AdvancedSearchBuilder 对 category/tags/downloader_name 三字段仅声明空 options 占位（注释\"将通过API动态获取\"），从未接入数据源，导致下拉无选项、标签下拉无候选。补全 options 异步加载链路（构建器自拉），每次打开对话框刷新；downloader value 用 nickname（与 TorrentInfo.downloader_name 入库值一致）。不新增后端端点（现有 getAllCategories/getAllTags/getDownloaderList 语义已正确，后端 _merge_assigned_filter_names 已合并配置表与种子实际值）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/src/components/torrents/__tests__/ConditionValueInput.spec.ts"
+          ],
+          "evidence": "前端 lint/tsc 通过；18 suites/283 tests 全绿（含新增 10 用例）；coverage Branches 44.46%（>40% 门禁）；npm run build 通过。回归测试抓到并修复了实现缺陷（loadFieldOptions 失败时未清空旧 options 导致残留）。"
         }
       ]
     },

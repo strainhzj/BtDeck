@@ -1,5 +1,72 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-25 - 高级搜索分类/标签/下载器字段 options 注入补全
+
+**任务 ID**: `v1.0.5.13`（v1.0.5 高级搜索功能的遗漏补丁；当前 dev 版本 v1.0.6）
+**分支**: dev
+**范围**: 仅前端。不新增后端端点。
+
+### 现象与根因
+
+用户报告种子列表高级搜索对话框中：① 分类、标签、下载器下拉框没有选项；② 标签用的组件不是下拉框。
+
+经溯源（前端 + 后端源码坐实），两个现象是**同一根因**：`AdvancedSearchBuilder.vue` 对 `category / tags / downloader_name` 三字段只声明了空 `options: []` 占位（注释"将通过API动态获取"），但从未接入数据源——`getFieldOptions()` 对三字段返回 `[]`、`created()` 没调任何接口、顶部 imports 无 `@/api/*`。分类/下载器（原生 `el-select`）下拉因此为空；标签（`AdvancedMultiSelect`，本就允许自由输入）options 为空，只剩"手敲创建"一种交互，让用户感觉"不是下拉框"。
+
+### 关键决策与证据
+
+- **字段口径**（后端源码坐实）：`downloader_name` 匹配 `TorrentInfo.downloader_name` 列，入库点（`torrent_sync.py:1220` 等）全部写 `downloader.nickname`，故前端 value 取 `nickname`（非 `downloader_id`）；`category` 匹配 `TorrentInfo.category`（`==` 精确）；`tags` 匹配 `TorrentInfo.tags`（`LIKE`）。
+- **数据源语义**：后端 `tag_management.py:_merge_assigned_filter_names` 已把"配置表 ∪ 种子实际 distinct 值"合并去重，选项必然命中至少一条种子，无"选了搜不到"的语义错配。
+- **方案选型**：采用"构建器自拉接口"。经审查验证不违反复用原则——全仓无 options provider/mixin/composable/vuex 模块可复用；`index.vue` 根本没有 category/tag 数据；`ConditionValueInput` 的 `fieldOptions` prop 机制表明数据流设计意图就是"builder 维护 options"。
+- **刷新策略**：用户决策为"每次打开对话框重新拉取"。新增公开方法 `refreshFieldOptions()`，由两父视图在打开对话框时经 `$nextTick` + `$refs` 调用（el-dialog 默认 `destroy-on-close=false`，组件常驻，`created()` 只触发一次）。
+
+### 三代理独立审查（证伪优先）
+
+计划经 3 个独立 general-purpose 子代理审查（技术正确性 / 测试有效性 / 根因与方案选型），采纳全部 5 个阻断性修正：
+1. `extractErrorMessage` import 来源 `@/utils/formatters`（非 `error-normalize`）；
+2. API 返回 `ApiResponse` envelope，必须解 `.data` + 校验 `code === '200'`；
+3. spec mock 改为显式列举 exports（不用 `requireActual`，全仓零先例）；
+4. 项目无 `flushPromises`，复用 `traditional-view-component.spec.ts` 的 `flushLifecycle` 三段式；
+5. B2 用例明确 mount/shallowMount 策略。
+驳回 3 个不成立的质疑（响应式需 `$set`、Promise.allSettled 兼容性、构建器自拉违反复用原则——经验证均不成立）。原 B3 源码字符串契约 spec 因过度耦合实现细节、与行为测试 100% 重叠而删除。
+
+### 改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `frontend/src/components/torrents/AdvancedSearchBuilder.vue` | 加 import + 三 options 状态字段 + `loadFieldOptions`（`Promise.allSettled` 并发，解 envelope，部分失败静默/全失败告警，销毁防护）+ 公开 `refreshFieldOptions` + `getFieldOptions` switch 三 case |
+| `frontend/src/views/torrents/index.vue` | `@click` 改 `openAdvancedSearch`，nextTick 调 `refreshFieldOptions` |
+| `frontend/src/views/torrents/TraditionalView.vue` | 同上 |
+| `frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts` | 扩展：mock 三 api + `flushLifecycle` + 6 用例（首次加载/部分失败/全失败/refresh/value 透传/dialog 复用语义） |
+| `frontend/src/components/torrents/__tests__/ConditionValueInput.spec.ts` | 新建：4 用例（select 渲染 el-option / multiSelect options 透传 / 空选项不崩 / emit input+change） |
+
+### 回归测试抓到的实现缺陷
+
+B1「部分失败降级」「全失败」用例失败，暴露真实缺陷：`loadFieldOptions` 失败时未清空旧 options，导致"上次成功 + 本次失败"时残留旧数据误导用户。修正为每次刷新前重置三数组为空，语义更清晰。
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| ESLint（6 变更文件） | ✅ 通过（自动修复 9 条格式问题后 0 error） |
+| `tsc --noEmit` | ✅ 通过 |
+| `test:coverage`（全量） | ✅ 18 suites / 283 tests 全绿（含新增 10 用例）；Branches 44.46%（>40% 门禁） |
+| `npm run build` | ✅ 通过（仅项目既有 Sass/资源体积 warning） |
+| `feature_list.json` JSON 合法性 | ✅ node 解析通过 |
+
+### 明确不修的边界（已记入 evidence）
+
+- 下载器改名导致的历史种子 `downloader_name` 漂移 → 单独立项。
+- 抽 `torrentFieldOptions` composable 做跨组件缓存 → 后续优化。
+- `category` 的 `==` 精确匹配对大小写/空格敏感 → 后端既有语义，本次不动。
+- select 字段 `in/not_in` 操作符当前传单值字符串 → 既有行为，非本次引入，仅注释说明。
+
+### 工作区说明
+
+- 本轮未执行 Git 提交。
+- 浏览器手测待用户在本地环境完成（CI 已覆盖 lint/typecheck/test/build 全门禁）。
+
+---
+
 ## 2026-07-22 - 查询模板与孤儿文件页面 UI 对齐
 
 **任务 ID**: `v1.0.6.24`

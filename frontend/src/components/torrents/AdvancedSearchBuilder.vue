@@ -343,6 +343,10 @@
 import { Component, Vue, Prop } from 'vue-property-decorator'
 import ConditionValueInput from './ConditionValueInput.vue'
 import { STATUS_OPTIONS } from '@/constants/status-config'
+import { getAllCategories, getAllTags } from '@/api/tag-management'
+import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
+import { extractErrorMessage } from '@/utils/formatters'
+import { ApiResponse } from '@/types/api'
 
 // 字段定义接口
 interface SearchField {
@@ -407,6 +411,13 @@ export default class AdvancedSearchBuilder extends Vue {
     description: '',
     isDefault: false
   }
+
+  // 动态字段选项（由 loadFieldOptions 异步填充）
+  // 注：TS readonly 仅约束编译期；这三个数组在运行时可整体替换引用以触发响应式更新。
+  private categoryOptions: Array<{ label: string, value: string }> = []
+  private tagOptions: Array<{ label: string, value: string }> = []
+  private downloaderOptions: Array<{ label: string, value: string }> = []
+  private fieldOptionsLoading = false
 
   // 基本信息字段
   readonly basicFields: SearchField[] = [
@@ -554,6 +565,89 @@ export default class AdvancedSearchBuilder extends Vue {
     // 开发环境验证操作符配置
     this.validateOperatorConfig()
     this.initializeConditions()
+    // 首次挂载拉取一次动态字段选项；后续每次打开对话框由父组件调用 refreshFieldOptions() 刷新
+    this.loadFieldOptions()
+  }
+
+  /**
+   * 重新拉取动态字段选项（分类/标签/下载器）。
+   * 供父组件在每次打开高级搜索对话框时通过 $refs 调用，确保下拉反映最新数据。
+   */
+  refreshFieldOptions() {
+    this.loadFieldOptions()
+  }
+
+  /**
+   * 并发拉取分类/标签/下载器三个字段的候选选项。
+   * - 使用 Promise.allSettled：单个失败不影响其它两个填充（部分失败仅 console.error 静默降级）。
+   * - 仅当三个请求全部失败时才弹出 $message.error，避免一连三条红条打扰用户。
+   * - 异步回调写 data 前判 _isDestroyed，规避组件销毁后的响应式警告。
+   */
+  private async loadFieldOptions() {
+    if (this._isDestroyed) return
+    this.fieldOptionsLoading = true
+    // 每次刷新都从空开始：避免"上次成功 + 本次失败"时残留旧数据误导用户
+    this.categoryOptions = []
+    this.tagOptions = []
+    this.downloaderOptions = []
+
+    const results = await Promise.allSettled([
+      getAllCategories(),
+      getAllTags(),
+      getDownloaderList()
+    ])
+
+    if (this._isDestroyed) return
+
+    const [categoryRes, tagRes, downloaderRes] = results
+    let failedCount = 0
+
+    // 分类
+    if (categoryRes.status === 'fulfilled') {
+      const body = categoryRes.value as ApiResponse<string[]>
+      if (body.code === '200' && Array.isArray(body.data)) {
+        this.categoryOptions = body.data.map(name => ({ label: name, value: name }))
+      } else {
+        failedCount += 1
+      }
+    } else {
+      failedCount += 1
+      console.error('获取分类失败:', categoryRes.reason)
+    }
+
+    // 标签
+    if (tagRes.status === 'fulfilled') {
+      const body = tagRes.value as ApiResponse<string[]>
+      if (body.code === '200' && Array.isArray(body.data)) {
+        this.tagOptions = body.data.map(name => ({ label: name, value: name }))
+      } else {
+        failedCount += 1
+      }
+    } else {
+      failedCount += 1
+      console.error('获取标签失败:', tagRes.reason)
+    }
+
+    // 下载器（value 用 nickname：TorrentInfo.downloader_name 存的就是 downloader.nickname）
+    if (downloaderRes.status === 'fulfilled') {
+      const body = downloaderRes.value as ApiResponse<DownloaderSimple[]>
+      if (body.code === '200' && Array.isArray(body.data)) {
+        this.downloaderOptions = body.data.map(d => ({ label: d.nickname, value: d.nickname }))
+      } else {
+        failedCount += 1
+      }
+    } else {
+      failedCount += 1
+      console.error('获取下载器失败:', downloaderRes.reason)
+    }
+
+    // 全部失败才告警；部分失败保持已成功项的填充，静默降级
+    if (failedCount === 3) {
+      const firstReason = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+      this.$message.error(extractErrorMessage(firstReason?.reason) || '加载搜索字段选项失败')
+    }
+
+    this.fieldOptionsLoading = false
   }
 
   private initializeConditions() {
@@ -742,6 +836,15 @@ export default class AdvancedSearchBuilder extends Vue {
           { label: '是', value: 'true' },
           { label: '否', value: 'false' }
         ]
+
+      case 'category':
+        return this.categoryOptions
+
+      case 'tags':
+        return this.tagOptions
+
+      case 'downloader_name':
+        return this.downloaderOptions
 
       default:
         return []
