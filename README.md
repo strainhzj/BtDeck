@@ -57,6 +57,15 @@ npm run serve
 | API 文档 | http://localhost:5001/docs |
 | WebSocket | ws://localhost:5002 |
 
+## 代码路线图
+
+本项目的代码结构有**渐进式披露的多文件路线图**（三层：模块路由 → 分支文件清单 → 源文件方法签名详情），用于快速定位模块职责、调用关系与架构约定。
+
+👉 入口：[docs/roadmap/README.md](./docs/roadmap/README.md)
+
+- 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）：[docs/roadmap/perspectives/](./docs/roadmap/perspectives/)
+- 已完成的第三层样例：[torrent_crud.py 路线图](./docs/roadmap/backend/api/endpoints/torrent_crud.md)
+
 ## 项目结构
 
 ```

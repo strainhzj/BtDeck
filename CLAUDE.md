@@ -50,6 +50,8 @@ git add deploy/ docker-compose.yml && git commit -m "feat(deploy): xxx"
 ## 功能模块索引
 
 > 全栈功能模块总览见根 [`AGENTS.md`](./AGENTS.md) 功能模块索引；各模块的前后端实现细节分别见 [`backend/AGENTS.md`](./backend/AGENTS.md)、[`frontend/AGENTS.md`](./frontend/AGENTS.md)。
+>
+> 🔍 **查阅代码细节时**，可进入[代码路线图](./docs/roadmap/README.md)（三层渐进式披露：模块路由 → 分支文件清单 → 源文件方法签名）。跨切主题（调用链 / 约定 / 风险 / 测试覆盖）见 [docs/roadmap/perspectives/](./docs/roadmap/perspectives/)。
 
 ### 通知中心（跨端模块示例）
 

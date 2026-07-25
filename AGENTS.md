@@ -21,7 +21,8 @@
    - 后端工作: backend/AGENTS.md → backend/CLAUDE.md → backend/docs/constraints/
    - 前端工作: frontend/AGENTS.md → frontend/CLAUDE.md → frontend/docs/constraints/
 5. 阅读 PLANS/<当前版本>.md（如 PLANS/v1.0.5.md）
-6. 运行 ./init.sh（全栈环境验证，默认 --ci 轻量模式）
+6. 查阅代码细节时进入 docs/roadmap/（三层渐进式路线图：模块路由 → 分支文件清单 → 源文件方法签名）
+7. 运行 ./init.sh（全栈环境验证，默认 --ci 轻量模式）
 ```
 
 ---
