@@ -335,6 +335,26 @@
             "frontend/src/components/torrents/__tests__/ConditionValueInput.spec.ts"
           ],
           "evidence": "前端 lint/tsc 通过；18 suites/283 tests 全绿（含新增 10 用例）；coverage Branches 44.46%（>40% 门禁）；npm run build 通过。回归测试抓到并修复了实现缺陷（loadFieldOptions 失败时未清空旧 options 导致残留）。"
+        },
+        {
+          "id": "v1.0.5.14",
+          "name": "高级搜索：分类/标签/下载器统一多选 + 操作符语义修正（全栈）",
+          "description": "v1.0.5.13 的延续：三字段（category/tags/downloader_name）统一改为 AdvancedMultiSelect 多选，修正多选操作符语义。根因经第二轮 3 子代理审查坐实两个致命缺陷：(1) tags 是逗号分隔字符串列，IN 整串匹配语义错（必须用 contains_any 做 OR(LIKE) 子串匹配）；(2) 后端 Pydantic 白名单拒绝 contains_any 等旧操作符（旧模板 422）。改为：后端白名单+OPERATOR_MAPPING 扩展 contains_any/all/not_contains_any/all（挂 or_/and_/not_），category/downloader_name 单值列用 in/not_in，tags 逗号串列用 contains_any/not_contains_any；前端三份字段表同步（AdvancedSearchBuilder/ConditionValueInput/torrentBatch）改 multiSelect；两份 formatParamValue 同步数组化；getOperatorGroups 按 matchMode 过滤操作符；applyTemplateGroups 加载旧模板时归一化 operator+value；buildSearchParams 扁平 fallback 对 multiSelect 不生成参数。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/models/advanced_search.py",
+            "backend/app/services/advanced_search.py",
+            "backend/tests/services/test_advanced_search.py",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/components/torrents/ConditionValueInput.vue",
+            "frontend/src/views/torrents/utils/torrentBatch.ts",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/src/components/torrents/__tests__/ConditionValueInput.spec.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts",
+            "frontend/tests/unit/field-types-consistency.spec.ts"
+          ],
+          "evidence": "后端：pytest 73/73 通过（新增 _normalize_multi_value/白名单/真实DB语义测试 33 用例）；mypy 与 baseline 一致（29 errors，0 新增）；black/flake8 通过（PropertyMock F401 为既有 baseline）。前端：lint/tsc 通过；19 suites/298 tests 全绿（新增含真实DB语义验证、三表一致性守卫）；coverage Branches 44.46%（>40% 门禁）；build 通过。后端真实DB测试验证：tags='movie,4k' 被 contains_any(['movie']) 命中（IN 做不到）；category in(['电影']) 精确匹配。"
         }
       ]
     },

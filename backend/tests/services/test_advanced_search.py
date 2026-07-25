@@ -28,23 +28,23 @@ from app.services.advanced_search import (
     AdvancedSearchService,
 )
 
-
 # ==================== validate_size_string 测试 ====================
+
 
 class TestValidateSizeString:
     """validate_size_string 纯函数测试"""
 
     def test_gb(self):
         """1GB → 1 * 1024^3 字节"""
-        assert validate_size_string("1GB") == 1024 ** 3
+        assert validate_size_string("1GB") == 1024**3
 
     def test_mb(self):
         """500MB → 500 * 1024^2 字节"""
-        assert validate_size_string("500MB") == 500 * 1024 ** 2
+        assert validate_size_string("500MB") == 500 * 1024**2
 
     def test_tb(self):
         """1.5TB → 1.5 * 1024^4 字节"""
-        assert validate_size_string("1.5TB") == int(1.5 * 1024 ** 4)
+        assert validate_size_string("1.5TB") == int(1.5 * 1024**4)
 
     def test_kb(self):
         """1024KB → 1024 * 1024 字节"""
@@ -62,7 +62,7 @@ class TestValidateSizeString:
     def test_decimal_value(self):
         """小数值 + GB"""
         result = validate_size_string("2.5GB")
-        assert result == int(2.5 * 1024 ** 3)
+        assert result == int(2.5 * 1024**3)
 
     def test_case_insensitive(self):
         """大小写不敏感：1gb == 1GB"""
@@ -71,7 +71,7 @@ class TestValidateSizeString:
     def test_with_spaces(self):
         """数字和单位之间有空格"""
         result = validate_size_string("10 GB")
-        assert result == 10 * 1024 ** 3
+        assert result == 10 * 1024**3
 
     def test_invalid_string(self):
         """无效字符串 → 返回 None"""
@@ -103,6 +103,7 @@ class TestValidateSizeString:
 
 
 # ==================== validate_date_string 测试 ====================
+
 
 class TestValidateDateString:
     """validate_date_string 纯函数测试"""
@@ -146,6 +147,7 @@ class TestValidateDateString:
 
 
 # ==================== SearchQueryBuilder 测试 ====================
+
 
 class TestSearchQueryBuilder:
     """SearchQueryBuilder 查询构建器测试"""
@@ -214,10 +216,7 @@ class TestSearchQueryBuilder:
     def test_apply_basic_filters_with_date_range(self, builder, mock_db):
         """日期范围过滤 → filter 被调用"""
         _, mock_query = mock_db
-        request = EnhancedAdvancedSearchRequest(
-            added_date_min="2025-01-01",
-            added_date_max="2025-12-31"
-        )
+        request = EnhancedAdvancedSearchRequest(added_date_min="2025-01-01", added_date_max="2025-12-31")
 
         builder.apply_basic_filters(request)
         mock_query.filter.assert_called()
@@ -267,6 +266,7 @@ class TestSearchQueryBuilder:
 
 # ==================== apply_condition_groups 测试 ====================
 
+
 class TestApplyConditionGroups:
     """apply_condition_groups 条件组逻辑测试"""
 
@@ -297,9 +297,7 @@ class TestApplyConditionGroups:
         """单个 AND 条件组 → filter 被调用"""
         builder, mock_query = builder_with_mock
         groups = [
-            SearchGroup(logic="AND", conditions=[
-                SearchCondition(field="name", operator="contains", value="测试")
-            ])
+            SearchGroup(logic="AND", conditions=[SearchCondition(field="name", operator="contains", value="测试")])
         ]
 
         builder.apply_condition_groups(groups)
@@ -316,6 +314,7 @@ class TestApplyConditionGroups:
 
 
 # ==================== apply_multi_select_conditions 测试 ====================
+
 
 class TestApplyMultiSelectConditions:
     """apply_multi_select_conditions 多选条件测试"""
@@ -335,10 +334,7 @@ class TestApplyMultiSelectConditions:
     def test_include_mode(self, builder_with_mock):
         """include 模式 → 使用 IN 过滤"""
         builder, mock_query = builder_with_mock
-        cond = MultiSelectCondition(
-            field="status", operator="in", value=["downloading", "seeding"],
-            mode="include"
-        )
+        cond = MultiSelectCondition(field="status", operator="in", value=["downloading", "seeding"], mode="include")
 
         builder.apply_multi_select_conditions(cond, None, None, None)
         assert mock_query.filter.call_count > 1
@@ -346,10 +342,7 @@ class TestApplyMultiSelectConditions:
     def test_exclude_mode(self, builder_with_mock):
         """exclude 模式 → 使用 NOT IN 过滤"""
         builder, mock_query = builder_with_mock
-        cond = MultiSelectCondition(
-            field="status", operator="in", value=["error"],
-            mode="exclude"
-        )
+        cond = MultiSelectCondition(field="status", operator="in", value=["error"], mode="exclude")
 
         builder.apply_multi_select_conditions(cond, None, None, None)
         assert mock_query.filter.call_count > 1
@@ -366,16 +359,14 @@ class TestApplyMultiSelectConditions:
         """value 为空列表 → 跳过"""
         builder, mock_query = builder_with_mock
         init_count = mock_query.filter.call_count
-        cond = MultiSelectCondition(
-            field="status", operator="in", value=[],
-            mode="include"
-        )
+        cond = MultiSelectCondition(field="status", operator="in", value=[], mode="include")
 
         builder.apply_multi_select_conditions(cond, None, None, None)
         assert mock_query.filter.call_count == init_count
 
 
 # ==================== AdvancedSearchService 模板管理测试 ====================
+
 
 class TestAdvancedSearchServiceTemplates:
     """AdvancedSearchService 模板 CRUD 和权限测试"""
@@ -385,8 +376,10 @@ class TestAdvancedSearchServiceTemplates:
         """创建 AdvancedSearchService，内部组件全部 mock"""
         mock_db = MagicMock()
 
-        with patch.object(SearchQueryBuilder, "__init__", lambda self, db: None), \
-             patch.object(SearchTemplateModel, "__init__", lambda self, db: None):
+        with (
+            patch.object(SearchQueryBuilder, "__init__", lambda self, db: None),
+            patch.object(SearchTemplateModel, "__init__", lambda self, db: None),
+        ):
             with patch("app.services.advanced_search.TorrentDeletionService"):
                 svc = AdvancedSearchService(db=mock_db)
 
@@ -396,9 +389,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_get_templates_success(self, service):
         """获取模板列表成功"""
-        service.template_model.get_by_user.return_value = [
-            {"id": "tpl-1", "name": "测试模板"}
-        ]
+        service.template_model.get_by_user.return_value = [{"id": "tpl-1", "name": "测试模板"}]
 
         result = service.get_search_templates("user-001")
         assert result["status"] == "success"
@@ -422,9 +413,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_delete_template_no_permission(self, service):
         """删除他人模板 → 403"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "other-user"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "other-user"}
 
         result = service.delete_search_template("tpl-1", "user-001")
         assert result["status"] == "failed"
@@ -432,9 +421,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_delete_template_success(self, service):
         """删除自己的模板 → 成功"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "user-001"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "user-001"}
         service.template_model.delete.return_value = True
 
         result = service.delete_search_template("tpl-1", "user-001")
@@ -451,11 +438,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_apply_template_no_permission(self, service):
         """应用他人私有模板 → 403"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1",
-            "user_id": "other-user",
-            "is_public": False
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "other-user", "is_public": False}
 
         result = service.apply_search_template("tpl-1", "user-001")
         assert result["status"] == "failed"
@@ -469,7 +452,7 @@ class TestAdvancedSearchServiceTemplates:
             "is_public": True,
             "name": "公开模板",
             "description": "描述",
-            "conditions": {}
+            "conditions": {},
         }
 
         result = service.apply_search_template("tpl-1", "user-001")
@@ -478,24 +461,239 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_update_template_success(self, service):
         """更新自己的模板 → 成功"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "user-001"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "user-001"}
         service.template_model.update.return_value = True
 
-        result = service.update_search_template(
-            "tpl-1", {"name": "新名称", "conditions": {}}, "user-001"
-        )
+        result = service.update_search_template("tpl-1", {"name": "新名称", "conditions": {}}, "user-001")
         assert result["status"] == "success"
 
     def test_update_template_no_permission(self, service):
         """更新他人模板 → 403"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "other-user"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "other-user"}
 
-        result = service.update_search_template(
-            "tpl-1", {"name": "新名称"}, "user-001"
-        )
+        result = service.update_search_template("tpl-1", {"name": "新名称"}, "user-001")
         assert result["status"] == "failed"
         assert result["code"] == "403"
+
+
+# ==================== 多值操作符（contains_any/all 等）测试 ====================
+# 本轮新增（v1.0.5.14）：覆盖后端为多选字段扩展的 contains_any/all/not_contains_any/all
+# 操作符、_normalize_multi_value 归一化函数、以及白名单接受新操作符。
+
+
+class TestNormalizeMultiValue:
+    """_normalize_multi_value 纯函数测试"""
+
+    def test_list_input(self):
+        """list 输入 → 元素转 str，过滤空值"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(["movie", "4k", ""]) == ["movie", "4k"]
+
+    def test_tuple_input(self):
+        """tuple 输入 → 同 list"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(("a", "b")) == ["a", "b"]
+
+    def test_string_input_splits_comma(self):
+        """逗号串 → 拆分（兼容历史 value 形态）"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value("linux,iso, ubuntu ") == ["linux", "iso", "ubuntu"]
+
+    def test_single_value_wrapped(self):
+        """单值（非 str/list）→ 包装成单元素列表"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(42) == ["42"]
+
+    def test_none_returns_empty(self):
+        """None → 空列表（lambda 生成 or_() 空参数，安全）"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(None) == []
+
+    def test_empty_string_returns_empty(self):
+        """空字符串 → 空列表"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value("") == []
+
+    def test_list_with_non_string_elements(self):
+        """list 含非字符串元素 → 转 str"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value([1, 2, "x"]) == ["1", "2", "x"]
+
+
+class TestOperatorWhitelistAcceptsMultiValue:
+    """SearchCondition.validate_operator 白名单接受新多值操作符"""
+
+    @pytest.mark.parametrize("operator", ["contains_any", "contains_all", "not_contains_any", "not_contains_all"])
+    def test_accepts_new_multi_value_operators(self, operator):
+        """新操作符应被白名单接受（不抛 ValidationError）"""
+        cond = SearchCondition(field="tags", operator=operator, value=["a"])
+        assert cond.operator == operator
+
+    def test_rejects_unknown_operator(self):
+        """非法操作符仍被拒绝"""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            SearchCondition(field="tags", operator="unknown_op", value=["a"])
+
+    def test_existing_operators_still_accepted(self):
+        """既有操作符不受影响"""
+        for op in ["eq", "ne", "contains", "in", "not_in"]:
+            cond = SearchCondition(field="name", operator=op, value="x")
+            assert cond.operator == op
+
+
+class TestMultiValueOperatorsAgainstRealDb:
+    """
+    用真实内存 SQLite 验证多值操作符对单值列/逗号串列的实际命中语义。
+
+    这是本轮最重要的回归保护：
+    - contains_any 对 tags 逗号串列：'movie,4k' 命中 value=['movie']（子串匹配，IN 无法做到）
+    - in 对 category 单值列：精确匹配列表中的某一项
+    """
+
+    @pytest.fixture
+    def db_session(self):
+        """同步内存 SQLite，建 torrent_info 表并插入测试种子"""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+        from app.torrents.models import TorrentInfo
+        from app.database import Base
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(engine, tables=[TorrentInfo.__table__])
+        Session = sessionmaker(bind=engine)
+        session = Session()
+
+        # 插入覆盖三种列形态的种子
+        seeds = [
+            # info_id, downloader_id, downloader_name, category, tags
+            ("t1", "d1", "qbit-主", "电影", "movie,4k"),
+            ("t2", "d1", "qbit-主", "音乐", "flac"),
+            ("t3", "d2", "tr-辅", "电影", "movie,1080p"),
+            ("t4", "d2", "tr-辅", "游戏", None),
+        ]
+        for info_id, dl_id, dl_name, cat, tags in seeds:
+            session.add(
+                TorrentInfo(
+                    id_=info_id,
+                    downloader_id=dl_id,
+                    downloader_name=dl_name,
+                    torrent_id=info_id,
+                    hash=info_id,
+                    name=info_id,
+                    save_path="/x",
+                    size=100,
+                    status="downloading",
+                    torrent_file="",
+                    added_date=datetime.now(),
+                    completed_date=None,
+                    ratio="0.0",
+                    ratio_limit="",
+                    category=cat,
+                    tags=tags,
+                    super_seeding="0",
+                    enabled=1,
+                    dr=0,
+                    progress=0.0,
+                    create_time=datetime.now(),
+                    create_by="test",
+                    update_time=datetime.now(),
+                    update_by="test",
+                )
+            )
+        session.commit()
+        yield session
+        session.close()
+        engine.dispose()
+
+    def test_contains_any_matches_substring_in_comma_separated_tags(self, db_session):
+        """tags='movie,4k' 应被 contains_any(['movie']) 命中（IN 做不到）"""
+        from app.services.advanced_search import SearchQueryBuilder
+
+        builder = SearchQueryBuilder(db_session)
+        cond = SearchCondition(field="tags", operator="contains_any", value=["movie"])
+        filter_expr = builder._build_condition_filter(cond)
+        builder.base_query = builder.base_query.filter(filter_expr)
+
+        info_ids = [r.info_id for r in builder.base_query.all()]
+        # t1 (movie,4k) 和 t3 (movie,1080p) 都含子串 'movie'；t2(flac)、t4(None) 不含
+        assert sorted(info_ids) == ["t1", "t3"]
+
+    def test_contains_any_multiple_values_or_semantics(self, db_session):
+        """contains_any(['flac','4k']) → OR(LIKE)：命中含任一子串的行"""
+        from app.services.advanced_search import SearchQueryBuilder
+
+        builder = SearchQueryBuilder(db_session)
+        cond = SearchCondition(field="tags", operator="contains_any", value=["flac", "4k"])
+        builder.base_query = builder.base_query.filter(builder._build_condition_filter(cond))
+
+        info_ids = [r.info_id for r in builder.base_query.all()]
+        # t1 含 4k，t2 含 flac
+        assert sorted(info_ids) == ["t1", "t2"]
+
+    def test_in_matches_exact_single_value_column(self, db_session):
+        """category 单值列：in(['电影']) 精确匹配 category='电影' 的行"""
+        from app.services.advanced_search import SearchQueryBuilder
+
+        builder = SearchQueryBuilder(db_session)
+        cond = SearchCondition(field="category", operator="in", value=["电影"])
+        builder.base_query = builder.base_query.filter(builder._build_condition_filter(cond))
+
+        info_ids = [r.info_id for r in builder.base_query.all()]
+        assert sorted(info_ids) == ["t1", "t3"]  # 都是"电影"分类
+
+    def test_in_does_not_substring_match(self, db_session):
+        """category in(['电']) 不应命中（单值列 in 是精确匹配，非子串）"""
+        from app.services.advanced_search import SearchQueryBuilder
+
+        builder = SearchQueryBuilder(db_session)
+        cond = SearchCondition(field="category", operator="in", value=["电"])
+        builder.base_query = builder.base_query.filter(builder._build_condition_filter(cond))
+
+        info_ids = [r.info_id for r in builder.base_query.all()]
+        assert info_ids == []  # 没有种子的 category 恰好等于"电"
+
+    def test_in_on_downloader_name_with_multiple_values(self, db_session):
+        """downloader_name in(['qbit-主','tr-辅']) → 命中两个下载器的种子"""
+        from app.services.advanced_search import SearchQueryBuilder
+
+        builder = SearchQueryBuilder(db_session)
+        cond = SearchCondition(field="downloader_name", operator="in", value=["qbit-主", "tr-辅"])
+        builder.base_query = builder.base_query.filter(builder._build_condition_filter(cond))
+
+        info_ids = [r.info_id for r in builder.base_query.all()]
+        assert sorted(info_ids) == ["t1", "t2", "t3", "t4"]
+
+    def test_not_contains_any_excludes_matching_tags(self, db_session):
+        """not_contains_any(['movie']) → 排除含 movie 的行"""
+        from app.services.advanced_search import SearchQueryBuilder
+
+        builder = SearchQueryBuilder(db_session)
+        cond = SearchCondition(field="tags", operator="not_contains_any", value=["movie"])
+        builder.base_query = builder.base_query.filter(builder._build_condition_filter(cond))
+
+        info_ids = [r.info_id for r in builder.base_query.all()]
+        # t1/t3 含 movie 被排除；t2(flac) 不含 movie 命中；
+        # 注意 t4(tags=NULL)：SQL 语义下 NOT (NULL LIKE '%movie%') 为 unknown，不参与匹配，故被排除
+        assert sorted(info_ids) == ["t2"]
+
+    def test_normalize_multi_value_string_value_works_with_contains_any(self, db_session):
+        """contains_any 收到逗号串 value（历史形态）→ _normalize_multi_value 拆分后匹配"""
+        from app.services.advanced_search import SearchQueryBuilder
+
+        builder = SearchQueryBuilder(db_session)
+        # 传逗号串而非数组，验证 _normalize_multi_value 兜底
+        cond = SearchCondition(field="tags", operator="contains_any", value="movie,flac")
+        builder.base_query = builder.base_query.filter(builder._build_condition_filter(cond))
+
+        info_ids = [r.info_id for r in builder.base_query.all()]
+        # movie 命中 t1/t3，flac 命中 t2
+        assert sorted(info_ids) == ["t1", "t2", "t3"]

@@ -327,14 +327,14 @@ export default class ConditionValueInput extends Vue {
     name: 'text',
     size: 'number',
     status: 'select',
-    downloader_name: 'select',
+    downloader_name: 'multiSelect',
     save_path: 'text',
     added_date: 'date',
     completed_date: 'date',
     ratio: 'number',
     ratio_limit: 'number',
     tags: 'multiSelect',
-    category: 'select',
+    category: 'multiSelect',
     super_seeding: 'boolean',
     tracker_url: 'text'
   }

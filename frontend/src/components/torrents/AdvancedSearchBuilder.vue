@@ -355,6 +355,13 @@ interface SearchField {
   type: 'text' | 'number' | 'date' | 'select' | 'multiSelect' | 'boolean'
   options?: Array<{ label: string, value: string }>
   supportsExclude?: boolean
+  /**
+   * multiSelect 字段的匹配模式，决定 UI 暴露哪些操作符：
+   * - 'exact'     单值精确列（category/downloader_name）→ in/not_in
+   * - 'substring' 逗号分隔字符串列（tags）→ contains_any/not_contains_any
+   * 仅对 multiSelect 类型生效；其它类型忽略。
+   */
+  matchMode?: 'exact' | 'substring'
 }
 
 // 操作符定义接口
@@ -438,15 +445,17 @@ export default class AdvancedSearchBuilder extends Vue {
     {
       key: 'downloader_name',
       label: '下载器',
-      type: 'select',
+      type: 'multiSelect',
       supportsExclude: true,
+      matchMode: 'exact', // 单值精确列：用 in/not_in
       options: [] // 将通过API动态获取
     },
     {
       key: 'category',
       label: '分类',
-      type: 'select',
+      type: 'multiSelect',
       supportsExclude: true,
+      matchMode: 'exact', // 单值精确列：用 in/not_in
       options: [] // 将通过API动态获取
     },
     {
@@ -465,7 +474,7 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 高级信息字段
   readonly advancedFields: SearchField[] = [
-    { key: 'tags', label: '标签', type: 'multiSelect', supportsExclude: true },
+    { key: 'tags', label: '标签', type: 'multiSelect', supportsExclude: true, matchMode: 'substring' }, // 逗号串列：用 contains_any/not_contains_any
     { key: 'tracker_url', label: 'Tracker URL', type: 'text', supportsExclude: true },
     { key: 'tracker_msg', label: 'Tracker 信息', type: 'text', supportsExclude: true }
   ]
@@ -513,10 +522,12 @@ export default class AdvancedSearchBuilder extends Vue {
       { value: 'not_in', label: '不在列表中', backendValue: 'not_in' }
     ],
     multiSelect: [
-      { value: 'contains_any', label: '包含任意', backendValue: 'contains_any', fallback: 'contains' },
-      { value: 'contains_all', label: '包含全部', backendValue: 'contains_all', fallback: 'contains' },
-      { value: 'not_contains_any', label: '不包含任意', backendValue: 'not_contains_any', fallback: 'not_contains' },
-      { value: 'not_contains_all', label: '不包含全部', backendValue: 'not_contains_all', fallback: 'not_contains' }
+      // 单值精确列（category/downloader_name，matchMode='exact'）使用
+      { value: 'in', label: '包含任意', backendValue: 'in' },
+      { value: 'not_in', label: '不包含任意', backendValue: 'not_in' },
+      // 逗号分隔字符串列（tags，matchMode='substring'）使用：OR/AND(LIKE) 子串匹配
+      { value: 'contains_any', label: '包含任意', backendValue: 'contains_any' },
+      { value: 'not_contains_any', label: '不包含任意', backendValue: 'not_contains_any' }
     ],
     boolean: [
       { value: 'equals', label: '等于', backendValue: 'eq' },
@@ -780,7 +791,9 @@ export default class AdvancedSearchBuilder extends Vue {
   onFieldChange(condition: SearchCondition) {
     // 清空操作符和值
     condition.operator = ''
-    condition.value = null
+    // multiSelect 字段空值语义是空数组（AdvancedMultiSelect 期望数组，虽有 normalize 兜底但显式更稳）
+    const field = this.getFieldInfo(condition.field)
+    condition.value = field?.type === 'multiSelect' ? [] : null
   }
 
   // 操作符变更处理
@@ -861,10 +874,22 @@ export default class AdvancedSearchBuilder extends Vue {
 
     // 基本操作符
     if (this.operatorGroups[fieldType]) {
+      let operators = this.operatorGroups[fieldType as keyof typeof this.operatorGroups]
+      // multiSelect 字段按 matchMode 过滤：
+      // - exact（category/downloader_name 单值列）只暴露 in/not_in
+      // - substring（tags 逗号串列）只暴露 contains_any/not_contains_any
+      // 避免对单值列暴露 contains_*（语义错：LIKE 对精确列多余），
+      // 也避免对逗号串列暴露 in（语义错：整串相等而非子串）。
+      if (fieldType === 'multiSelect') {
+        const exactOps = ['in', 'not_in']
+        operators = field.matchMode === 'exact'
+          ? operators.filter(op => exactOps.includes(op.value))
+          : operators.filter(op => !exactOps.includes(op.value))
+      }
       groups.push({
         type: 'basic',
         label: '基本操作',
-        operators: this.operatorGroups[fieldType as keyof typeof this.operatorGroups]
+        operators
       })
     }
 
@@ -1065,6 +1090,14 @@ export default class AdvancedSearchBuilder extends Vue {
           return
         }
 
+        // multiSelect 字段（category/tags/downloader_name）只走 condition_groups 语义，
+        // 不生成扁平参数——扁平参数会被 simple fallback 的 apply_basic_filters 用 == 精确匹配，
+        // 对数组 value 语义错误（IN 多值才是正确语义，只在 condition_groups 侧实现）。
+        const field = this.getFieldInfo(condition.field)
+        if (field?.type === 'multiSelect') {
+          return
+        }
+
         const paramKey = `${groupPrefix}${condition.field}`
         const paramValue = this.formatParamValue(condition)
 
@@ -1219,7 +1252,8 @@ export default class AdvancedSearchBuilder extends Vue {
         return Number(condition.value)
 
       case 'multiSelect':
-        return Array.isArray(condition.value) ? condition.value.join(',') : condition.value
+        // 返回数组：后端 in/not_in/contains_any 等多值操作符的 lambda 期望 list（_normalize_multi_value 会兜底）
+        return Array.isArray(condition.value) ? condition.value : [condition.value]
 
       case 'boolean':
         return condition.value ? '1' : '0'
@@ -1260,6 +1294,43 @@ export default class AdvancedSearchBuilder extends Vue {
     }
     // 深拷贝避免污染模板源数据
     this.conditionGroups = JSON.parse(JSON.stringify(groups))
+    // 归一化历史模板：旧 multiSelect 操作符在单值精确列上转为 in/not_in，
+    // value 统一为数组形态（兼容旧逗号串/单值存储）。
+    this.normalizeLoadedConditions()
+  }
+
+  /**
+   * 归一化从模板加载的 conditions，兼容历史数据：
+   * 1. value：multiSelect 字段若为逗号串/单值，拆成数组。
+   * 2. operator：旧 contains_any/all/not_contains_any/not_contains_all
+   *    若作用在单值精确列（category/downloader_name，matchMode='exact'），
+   *    需转为 in/not_in（后端 IN 才对单值列正确）；substring 列（tags）保留。
+   */
+  private normalizeLoadedConditions() {
+    for (const group of this.conditionGroups) {
+      if (!group || !Array.isArray(group.conditions)) continue
+      for (const condition of group.conditions) {
+        const field = this.getFieldInfo(condition.field)
+        if (!field || field.type !== 'multiSelect') continue
+
+        // value 数组化
+        if (typeof condition.value === 'string' && condition.value) {
+          condition.value = condition.value.split(',').map((s: string) => s.trim()).filter((s: string) => s)
+        } else if (!Array.isArray(condition.value)) {
+          condition.value = condition.value == null || condition.value === '' ? [] : [condition.value]
+        }
+
+        // operator 归一化：单值精确列不允许 contains_*（语义错，后端 LIKE 对精确列多余）
+        if (field.matchMode === 'exact') {
+          const op = condition.operator
+          if (op === 'contains_any' || op === 'contains_all') {
+            condition.operator = 'in'
+          } else if (op === 'not_contains_any' || op === 'not_contains_all') {
+            condition.operator = 'not_in'
+          }
+        }
+      }
+    }
   }
 
   // 保存搜索模板

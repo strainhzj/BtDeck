@@ -71,7 +71,7 @@ interface AdvancedSearchBuilderVm extends Vue {
   onFieldChange(condition: SearchConditionVm): void
   onOperatorChange(condition: SearchConditionVm): void
   getFieldOptions(fieldKey: string): Array<{ label: string, value: string }>
-  getOperatorGroups(fieldKey: string): Array<{ type: string, label: string }>
+  getOperatorGroups(fieldKey: string): Array<{ type: string, label: string, operators?: Array<{ value: string, label: string }> }>
   fieldSupportsExclude(fieldKey: string): boolean
   addConditionGroup(): void
   buildSearchParams(): SearchParams
@@ -473,20 +473,103 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(vm.getFieldOptions('downloader_name')).toEqual([{ label: '新下载器', value: '新下载器' }])
   })
 
-  it('value 形态与 buildSearchParams 兼容：select 字段 value 原样字符串透传', async() => {
+  it('multiSelect 字段：value 以数组形态进 condition_groups，且不生成扁平参数', async() => {
     await flushLifecycle()
 
-    // 用一个分类选项的 value 作为 condition.value，验证它原样出现在 buildSearchParams 输出里
-    const categoryValue = vm.getFieldOptions('category')[0].value // '电影'
+    // category 现在是 multiSelect（matchMode=exact），用 in 操作符 + 数组 value
+    const categoryValues = vm.getFieldOptions('category').map(o => o.value) // ['电影','音乐']
     const condition = vm.conditionGroups[0].conditions[0]
     condition.field = 'category'
-    condition.operator = 'equals'
-    condition.value = categoryValue
+    condition.operator = 'in'
+    condition.value = categoryValues
 
     const params = vm.buildSearchParams()
-    // select 类型走 formatParamValue 的 default 分支，原样返回字符串
-    // （注：select + in/not_in 操作符当前也是传单值字符串，是既有行为，非本次引入）
-    expect(params).toMatchObject({ category: categoryValue, category_op: 'eq' })
+    // 1) groups JSON 侧：value 是数组（不再 join 逗号串），operator 转 'in'
+    const groups = JSON.parse(params.groups) as Array<{ conditions: Array<{ field: string, operator: string, value: unknown }> }>
+    const catCond = groups[0].conditions.find(c => c.field === 'category')
+    expect(catCond).toBeDefined()
+    expect(catCond?.operator).toBe('in')
+    expect(catCond?.value).toEqual(categoryValues) // 数组原样
+    expect(Array.isArray(catCond?.value)).toBe(true)
+
+    // 2) 扁平参数侧：multiSelect 字段不生成扁平参数（避免 apply_basic_filters 的 == 误用数组）
+    expect(params.category).toBeUndefined()
+    expect(params.category_op).toBeUndefined()
+  })
+
+  it('multiSelect 字段单值 value 被包装成数组（formatParamValue 兜底分支）', async() => {
+    await flushLifecycle()
+    const condition = vm.conditionGroups[0].conditions[0]
+    condition.field = 'category'
+    condition.operator = 'in'
+    condition.value = '电影' // 单值字符串（旧模板可能存过）
+
+    const params = vm.buildSearchParams()
+    const groups = JSON.parse(params.groups) as Array<{ conditions: Array<{ field: string, value: unknown }> }>
+    const catCond = groups[0].conditions.find(c => c.field === 'category')
+    expect(catCond).toBeDefined()
+    // Array.isArray=false 时走 [condition.value] 包装分支
+    expect(catCond?.value).toEqual(['电影'])
+  })
+
+  it('onFieldChange：multiSelect 字段初始化 value 为 []，其它字段为 null', () => {
+    const condition = vm.conditionGroups[0].conditions[0]
+
+    // multiSelect 字段（category）
+    condition.field = 'category'
+    vm.onFieldChange(condition)
+    expect(condition.operator).toBe('')
+    expect(condition.value).toEqual([])
+
+    // multiSelect 字段（tags）
+    condition.field = 'tags'
+    vm.onFieldChange(condition)
+    expect(condition.value).toEqual([])
+
+    // 非 multiSelect 字段（name，text 类型）→ null
+    condition.field = 'name'
+    vm.onFieldChange(condition)
+    expect(condition.value).toBeNull()
+  })
+
+  it('getOperatorGroups 按 matchMode 过滤：单值列只暴露 in/not_in，逗号串列只暴露 contains_*', () => {
+    // category（单值精确列，matchMode=exact）→ 只 in/not_in
+    const catOps = (vm.getOperatorGroups('category')[0].operators || []).map((o: { value: string }) => o.value)
+    expect(catOps).toEqual(['in', 'not_in'])
+    expect(catOps).not.toContain('contains_any')
+
+    // downloader_name（单值精确列）→ 只 in/not_in
+    const dlOps = (vm.getOperatorGroups('downloader_name')[0].operators || []).map((o: { value: string }) => o.value)
+    expect(dlOps).toEqual(['in', 'not_in'])
+
+    // tags（逗号串列，matchMode=substring）→ 只 contains_any/not_contains_any
+    const tagOps = (vm.getOperatorGroups('tags')[0].operators || []).map((o: { value: string }) => o.value)
+    expect(tagOps).toEqual(['contains_any', 'not_contains_any'])
+    expect(tagOps).not.toContain('in')
+  })
+
+  it('applyTemplateGroups 归一化：旧 contains_any 在单值列转 in，逗号串 value 拆数组', () => {
+    const source = [{
+      id: 'g1', name: '组1', logic: 'and' as const, betweenGroupLogic: 'and' as const,
+      conditions: [
+        // 旧格式：category（单值列）用了 contains_any + 逗号串 value
+        { id: 'c1', field: 'category', operator: 'contains_any', value: '电影,音乐', mode: 'include' as const },
+        // tags（逗号串列）保留 contains_any + 单值 value
+        { id: 'c2', field: 'tags', operator: 'contains_any', value: 'movie', mode: 'include' as const }
+      ]
+    }]
+    vm.applyTemplateGroups(source)
+
+    const conds = vm.conditionGroups[0].conditions
+    // category：operator 转为 in（单值精确列不允许 contains_*），value 拆数组
+    expect(conds[0].field).toBe('category')
+    expect(conds[0].operator).toBe('in')
+    expect(conds[0].value).toEqual(['电影', '音乐'])
+
+    // tags：operator 保留 contains_any（逗号串列），value 包装为数组
+    expect(conds[1].field).toBe('tags')
+    expect(conds[1].operator).toBe('contains_any')
+    expect(conds[1].value).toEqual(['movie'])
   })
 
   it('dialog 复用语义：组件不销毁时再次调用 refreshFieldOptions 会再次拉取', async() => {

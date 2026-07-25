@@ -39,6 +39,12 @@ class SearchCondition(BaseModel):
             "not_in",
             "is_null",
             "is_not_null",
+            # 多值子串匹配（针对逗号分隔的字符串列，如 tags）：
+            # contains_any = OR(LIKE)，contains_all = AND(LIKE)
+            "contains_any",
+            "contains_all",
+            "not_contains_any",
+            "not_contains_all",
         }
         if v not in allowed_operators:
             raise ValueError(f"Invalid operator: {v}. Allowed: {allowed_operators}")

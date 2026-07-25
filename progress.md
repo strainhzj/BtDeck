@@ -67,6 +67,84 @@ B1「部分失败降级」「全失败」用例失败，暴露真实缺陷：`lo
 
 ---
 
+## 2026-07-25 - 高级搜索三字段统一多选 + 操作符语义修正（全栈）
+
+**任务 ID**: `v1.0.5.14`（v1.0.5.13 的延续；当前 dev 版本 v1.0.6）
+**分支**: dev
+**范围**: 全栈。后端扩操作符白名单 + OPERATOR_MAPPING；前端三表同步 + 两份 formatParamValue 同步 + 操作符按字段过滤 + 旧模板归一化。
+
+### 需求
+
+v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签选择器改用与分类一样的下拉框，且**分类和标签都要支持多选**。经澄清：三字段（category/tags/downloader_name）统一用 AdvancedMultiSelect 多选。
+
+### 第二轮 3 子代理独立审查（证伪优先）
+
+计划经 3 个 general-purpose 子代理审查（技术正确性 / 测试有效性 / 向后兼容），**坐实两个致命缺陷**，推翻了初版"前端零改后端"的前提：
+
+1. **tags 的 in 语义对逗号串列是错的**（代理 C 发现）：`TorrentInfo.tags` 是逗号分隔单字符串列（如 `"movie,4k"`）。`column.in_(['movie'])` 只匹配整串等于 `'movie'`，`tags='movie,4k'` 不命中。→ tags 必须用 `contains_any`（OR(LIKE)），category/downloader_name 单值列才用 in。
+2. **后端 Pydantic 白名单拒旧操作符**（代理 A/C 发现）：`validate_operator` 白名单不含 contains_any 等，旧模板请求 422。→ 后端白名单 + OPERATOR_MAPPING 双扩。
+3. **遗漏第三份字段表**（代理 A/B 发现）：`torrentBatch.ts:541-561 ADVANCED_FIELD_TYPES` 是模板路径的字段类型表，category 是 select 且缺 downloader_name。→ 三表同步。
+4. **两份 formatParamValue 副本**（代理 B 发现）：`AdvancedSearchBuilder.vue` 与 `torrentBatch.ts` 各一份，只改一份会导致即时搜索与模板搜索输出形态矛盾。→ 两份同步数组化。
+
+驳回"前端零改后端"的不成立前提；采纳全部修正。
+
+### 关键设计（字段 × 操作符 × value 矩阵）
+
+| 字段 | 列类型 | 后端操作符 | SQLAlchemy 实现 | 前端 value |
+|---|---|---|---|---|
+| category | 单值 String | in/not_in | column.in_(list) | string[] |
+| downloader_name | 单值 String | in/not_in | column.in_(list) | string[]（nickname） |
+| tags | 逗号串 String | contains_any/not_contains_any | or_(*[column.contains(v)]) | string[] |
+
+### 改动
+
+**后端（2 文件 + 1 测试）**：
+- `models/advanced_search.py`：`validate_operator` 白名单加 contains_any/all/not_contains_any/not_contains_all
+- `services/advanced_search.py`：补 `not_` import；加模块函数 `_normalize_multi_value`（数组/逗号串/单值归一化）；OPERATOR_MAPPING 加 4 个 lambda（or_/and_/not_ 组合 column.contains）
+- `tests/services/test_advanced_search.py`：+33 用例（TestNormalizeMultiValue 7 + TestOperatorWhitelistAcceptsMultiValue 6 + TestMultiValueOperatorsAgainstRealDb 7 真实 SQLite 端到端语义验证 + 既有保留）
+
+**前端（3 源文件 + 4 测试）**：
+- 三表同步：category/downloader_name 的 type select→multiSelect（AdvancedSearchBuilder.statusFields / ConditionValueInput.fieldTypeMap / torrentBatch.ADVANCED_FIELD_TYPES，后者补 downloader_name 条目）
+- `operatorGroups.multiSelect` 重构为含全部 4 操作符；`getOperatorGroups` 按 `matchMode`（exact/substring）过滤——单值列只暴露 in/not_in，逗号串列只暴露 contains_*
+- SearchField 接口加 `matchMode?: 'exact' | 'substring'`；category/downloader_name=exact，tags=substring
+- 两份 formatParamValue 的 multiSelect 分支：`join(',')` → 返回数组
+- `onFieldChange`：multiSelect 字段初始化 value=[]，其它 null
+- `applyTemplateGroups`：加载旧模板时归一化（单值列的 contains_* 转 in/not_in；逗号串 value 拆数组）
+- `buildSearchParams` 扁平 fallback：multiSelect 字段不生成扁平参数（避免 apply_basic_filters 的 == 误用数组）
+- 测试：AdvancedSearchBuilder.spec.ts 重写用例⑤ + 新增 4 用例；ConditionValueInput.spec.ts 用例① 参数化（it.each 三字段）；torrent-batch.spec.ts 更新 tags 断言；新建 field-types-consistency.spec.ts（三表一致性守卫，10 用例）
+
+### 回归测试抓到的语义
+
+后端真实 DB 测试验证（最有价值的回归保护）：
+- `tags='movie,4k'` 被 `contains_any(['movie'])` 命中（IN 整串匹配做不到）——证明 tags 必须用 contains_any
+- `category in(['电影'])` 精确匹配 `category='电影'`，`in(['电'])` 不命中（单值列 in 是精确非子串）
+- `not_contains_any(['movie'])` 对 `tags=NULL` 不命中（SQL NULL 语义：NOT(NULL LIKE) 为 unknown）
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 后端 pytest（advanced_search 相关） | ✅ 77/77 通过（含新增 33 用例） |
+| 后端 mypy | ✅ 与 baseline 一致（29 errors，0 新增） |
+| 后端 black/flake8 | ✅ 通过（PropertyMock F401 为既有 baseline，非本次引入） |
+| 前端 ESLint（变更文件） | ✅ 0 error 0 warning |
+| 前端 tsc --noEmit | ✅ 通过 |
+| 前端 test:coverage | ✅ 19 suites / 298 tests 全绿；Branches 44.46%（>40% 门禁） |
+| 前端 npm run build | ✅ 通过 |
+
+### 明确不修的边界（已记入 evidence）
+
+- `apply_multi_select_conditions`（*_multi 顶层字段）路径的 tags 整串语义 bug 是既有问题，前端不走该路径，本次不动。
+- `contains_all`（AND 语义）UI 不暴露（避免与 in 混淆），后端保留以兼容旧模板。
+- PropertyMock F401 是既有 baseline，非本次引入，不越权修。
+
+### 工作区说明
+
+- 本轮未执行 Git 提交。
+- 浏览器手测待用户在本地完成（CI 全门禁已覆盖）。
+
+---
+
 ## 2026-07-22 - 查询模板与孤儿文件页面 UI 对齐
 
 **任务 ID**: `v1.0.6.24`

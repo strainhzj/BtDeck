@@ -579,7 +579,7 @@ describe('buildAdvancedSearchRequestFromTemplateGroups', () => {
     expect(request.condition_groups[0].conditions).toEqual([
       { field: 'name', operator: 'eq', value: 'ubuntu' },
       { field: 'size', operator: 'gt', value: '1.5 GB' },
-      { field: 'tags', operator: 'contains_any', value: 'linux,iso' },
+      { field: 'tags', operator: 'contains_any', value: ['linux', 'iso'] },
       { field: 'super_seeding', operator: 'eq', value: '1' }
     ])
     expect(request.condition_groups[1].conditions[0]).toEqual({

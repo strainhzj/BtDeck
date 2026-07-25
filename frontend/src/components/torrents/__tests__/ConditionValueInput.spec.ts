@@ -54,40 +54,20 @@ describe('ConditionValueInput 字段选项透传', () => {
     errorSpy.mockRestore()
   })
 
-  it('select 分支：field=category 时用 mount 渲染出与 fieldOptions 数量一致的 el-option', () => {
-    const wrapper = mount(ConditionValueInput, {
-      localVue,
-      propsData: {
-        field: 'category',
-        operator: 'equals',
-        value: null,
-        fieldOptions: categoryOptions
-      },
-      // stub 掉 multiSelect 子树，避免不走该分支时被深渲染
-      stubs: {
-        'advanced-multi-select': true
-      }
-    })
-
-    // 模板里 select 分支：v-for="option in fieldOptions" 直接渲染 el-option
-    // 用 findAll({ name: 'ElOption' }) 数组件实例（不受下拉是否展开影响）
-    const optionComponents = wrapper.findAll({ name: 'ElOption' })
-    expect(optionComponents.length).toBe(categoryOptions.length)
-    // 第一个 option 的 label/value 与 fieldOptions 对齐
-    expect(optionComponents.at(0).props('label')).toBe('电影')
-    expect(optionComponents.at(0).props('value')).toBe('movie')
-
-    wrapper.destroy()
-  })
-
-  it('multiSelect 分支：field=tags 时把 fieldOptions 透传给 AdvancedMultiSelect 的 options prop', () => {
+  // category/downloader_name 现在也是 multiSelect（与 tags 同分支），
+  // 用 it.each 参数化覆盖三个字段，避免重复用例
+  it.each([
+    ['category', categoryOptions],
+    ['downloader_name', categoryOptions],
+    ['tags', tagOptions]
+  ] as const)('multiSelect 分支：field=%s 把 fieldOptions 透传给 AdvancedMultiSelect', (field, options) => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
       propsData: {
-        field: 'tags',
-        operator: 'contains_any',
+        field,
+        operator: field === 'tags' ? 'contains_any' : 'in',
         value: [],
-        fieldOptions: tagOptions
+        fieldOptions: options
       },
       stubs: {
         // 浅渲染下用 stub 占位，但 props 仍会传递，可断言透传
@@ -95,20 +75,19 @@ describe('ConditionValueInput 字段选项透传', () => {
       }
     })
 
-    // 直接断言子组件收到的 options prop 与传入一致（不依赖渲染产物）
     const multi = wrapper.findComponent(AdvancedMultiSelect)
     expect(multi.exists()).toBe(true)
-    expect(multi.props('options')).toEqual(tagOptions)
+    expect(multi.props('options')).toEqual(options)
 
     wrapper.destroy()
   })
 
   it('空 fieldOptions 时 select 与 multiSelect 分支均不崩溃', () => {
-    // select 空选项
+    // select 空选项（用 status 字段——它仍是 select 类型）
     const selectWrapper = mount(ConditionValueInput, {
       localVue,
       propsData: {
-        field: 'category',
+        field: 'status',
         operator: 'equals',
         value: null,
         fieldOptions: []
@@ -118,12 +97,12 @@ describe('ConditionValueInput 字段选项透传', () => {
     expect(selectWrapper.findAll({ name: 'ElOption' }).length).toBe(0)
     selectWrapper.destroy()
 
-    // multiSelect 空选项
+    // multiSelect 空选项（category 现在是 multiSelect）
     const multiWrapper = shallowMount(ConditionValueInput, {
       localVue,
       propsData: {
-        field: 'tags',
-        operator: 'contains_any',
+        field: 'category',
+        operator: 'in',
         value: [],
         fieldOptions: []
       },
@@ -137,9 +116,9 @@ describe('ConditionValueInput 字段选项透传', () => {
     const wrapper = shallowMount(ConditionValueInput, {
       localVue,
       propsData: {
-        field: 'category',
+        field: 'status',
         operator: 'equals',
-        value: 'movie',
+        value: 'downloading',
         fieldOptions: categoryOptions
       },
       stubs: {
@@ -156,8 +135,8 @@ describe('ConditionValueInput 字段选项透传', () => {
     const changeEvents = wrapper.emitted('change')
     expect(inputEvents).toHaveLength(1)
     expect(changeEvents).toHaveLength(1)
-    // emit 的载荷应等于当前 inputValue（来自 value='movie' 经 normalize 后）
-    expect(inputEvents?.[0][0]).toBe('movie')
+    // emit 的载荷应等于当前 inputValue（来自 value='downloading' 经 normalize 后）
+    expect(inputEvents?.[0][0]).toBe('downloading')
 
     wrapper.destroy()
   })

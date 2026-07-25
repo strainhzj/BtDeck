@@ -551,7 +551,8 @@ const ADVANCED_FIELD_TYPES: Record<string, 'text' | 'number' | 'date' | 'select'
   ratio_limit: 'number',
   status: 'select',
   downloader_id: 'select',
-  category: 'select',
+  downloader_name: 'multiSelect',
+  category: 'multiSelect',
   tags: 'multiSelect',
   tracker_url: 'text',
   tracker_msg: 'text',
@@ -593,7 +594,8 @@ function formatAdvancedParamValue(condition: TemplateCondition): any {
     case 'number':
       return Number(condition.value)
     case 'multiSelect':
-      return Array.isArray(condition.value) ? condition.value.join(',') : condition.value
+      // 返回数组：后端 in/not_in/contains_any 等多值操作符的 lambda 期望 list（_normalize_multi_value 会兜底）
+      return Array.isArray(condition.value) ? condition.value : [condition.value]
     case 'boolean':
       return condition.value ? '1' : '0'
     default:

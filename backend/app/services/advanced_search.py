@@ -12,7 +12,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, asc, func, exists
+from sqlalchemy import and_, or_, not_, desc, asc, func, exists
 from sqlalchemy.sql import expression
 
 from app.core.json_parser import safe_json_parse
@@ -31,6 +31,29 @@ from app.api.models.advanced_search import (
 from app.api.endpoints.torrent_helpers import convert_to_vos_with_trackers
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_multi_value(value: Any) -> List[str]:
+    """
+    将多值搜索条件归一化为字符串列表。
+
+    用于 contains_any / contains_all 等多值子串匹配操作符：
+    - list/tuple → 元素转 str 后返回（过滤空值）
+    - str        → 按逗号拆分（兼容历史逗号串 value）
+    - 其它       → 包装成单元素列表
+
+    空值统一返回空列表，使上层 lambda 生成空参数的 or_()/and_()
+    （SQLAlchemy 对空列表 or_() 会返回 False 字面量，安全）。
+    """
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple)):
+        items = [str(v) for v in value]
+    elif isinstance(value, str):
+        items = [part.strip() for part in value.split(",")]
+    else:
+        items = [str(value)]
+    return [item for item in items if item]
 
 
 class SearchQueryBuilder:
@@ -79,6 +102,16 @@ class SearchQueryBuilder:
         "not_in": lambda column, value: ~column.in_(value if isinstance(value, (list, tuple)) else [value]),
         "is_null": lambda column, value: column.is_(None),
         "is_not_null": lambda column, value: column.isnot(None),
+        # 多值子串匹配：针对逗号分隔字符串列（如 tags="movie,4k"）
+        # value 经 _normalize_multi_value 归一化为字符串列表后，逐个做 LIKE 子串匹配
+        "contains_any": lambda column, value: or_(*[column.contains(v) for v in _normalize_multi_value(value)]),
+        "contains_all": lambda column, value: and_(*[column.contains(v) for v in _normalize_multi_value(value)]),
+        "not_contains_any": lambda column, value: not_(
+            or_(*[column.contains(v) for v in _normalize_multi_value(value)])
+        ),
+        "not_contains_all": lambda column, value: not_(
+            and_(*[column.contains(v) for v in _normalize_multi_value(value)])
+        ),
     }
 
     def __init__(self, db: Session):
