@@ -59,12 +59,13 @@ npm run serve
 
 ## 代码路线图
 
-本项目的代码结构有**渐进式披露的多文件路线图**（三层：模块路由 → 分支文件清单 → 源文件方法签名详情），用于快速定位模块职责、调用关系与架构约定。
+本项目在 `docs/roadmap/` 下维护一份**渐进式披露的多文件代码路线图**，用于快速定位模块职责、调用关系与架构约定（不修改源码，纯只读索引）。
 
-👉 入口：[docs/roadmap/README.md](./docs/roadmap/README.md)
-
-- 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）：[docs/roadmap/perspectives/](./docs/roadmap/perspectives/)
-- 已完成的第三层样例：[torrent_crud.py 路线图](./docs/roadmap/backend/api/endpoints/torrent_crud.md)
+- **入口**：[docs/roadmap/README.md](./docs/roadmap/README.md) ⇄ [CLAUDE.md](./CLAUDE.md) / [AGENTS.md](./AGENTS.md)
+- **三层结构**：① 模块路由（根 README）→ ② 分支文件清单（各分支 README）→ ③ 源文件方法签名详情（单文件 .md）
+- **跨切专题**（调用链 / 约定 / 风险 / 测试覆盖）：[docs/roadmap/perspectives/](./docs/roadmap/perspectives/)
+- **覆盖范围**：backend（api/services/core/models/tasks 等 8 分支）+ frontend（entry/api/views/store 等 6 分支）+ deploy + tests
+- **第三层样例**：[torrent_crud.py 路线图](./docs/roadmap/backend/api/endpoints/torrent_crud.md)（其余源文件待后续按"模式 B"增量补齐）
 
 ## 项目结构
 
@@ -97,7 +98,9 @@ BtDeck/
 │   └── btdeck.service       # systemd 服务
 ├── docker-compose.yml        # 全栈 Docker 部署
 ├── CLAUDE.md                 # 开发指导
-└── ROADMAP.md                # 开发路线图
+├── AGENTS.md                 # 全栈工作流路由
+└── docs/
+    └── roadmap/              # 代码路线图（三层渐进式披露）
 ```
 
 ## 安装包构建

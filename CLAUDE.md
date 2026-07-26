@@ -51,7 +51,9 @@ git add deploy/ docker-compose.yml && git commit -m "feat(deploy): xxx"
 
 > 全栈功能模块总览见根 [`AGENTS.md`](./AGENTS.md) 功能模块索引；各模块的前后端实现细节分别见 [`backend/AGENTS.md`](./backend/AGENTS.md)、[`frontend/AGENTS.md`](./frontend/AGENTS.md)。
 >
-> 🔍 **查阅代码细节时**，可进入[代码路线图](./docs/roadmap/README.md)（三层渐进式披露：模块路由 → 分支文件清单 → 源文件方法签名）。跨切主题（调用链 / 约定 / 风险 / 测试覆盖）见 [docs/roadmap/perspectives/](./docs/roadmap/perspectives/)。
+> 🔍 **查阅代码细节时**，进入 [`docs/roadmap/`](./docs/roadmap/README.md)（代码路线图，与 [`README.md`](./README.md) / [`AGENTS.md`](./AGENTS.md) 双向链接）：
+> - **三层渐进式披露**：① 模块路由（[根 README](./docs/roadmap/README.md)）→ ② 分支文件清单（各分支 README）→ ③ 源文件方法签名详情
+> - **跨切专题**：[调用链](./docs/roadmap/perspectives/architecture.md) / [约定](./docs/roadmap/perspectives/conventions.md) / [风险](./docs/roadmap/perspectives/risks.md) / [测试覆盖](./docs/roadmap/perspectives/test-coverage.md)
 
 ### 通知中心（跨端模块示例）
 
