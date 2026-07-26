@@ -10,11 +10,24 @@ FROM python:3.11-slim AS builder
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端构建阶段 - wheel 编译"
 
+# 镜像源参数化（默认空串 = 走官方源，与改造前行为一致）
+# 由 build-and-export-images.bat 通过 --build-arg 注入，构建失败可切换备用源重试
+ARG APT_MIRROR=
+ARG PIP_INDEX_URL=
+ARG PIP_TRUSTED_HOST=
+# 通过 ENV 让本阶段所有 pip 命令（含 pip install --upgrade）自动读取镜像源
+ENV PIP_DEFAULT_TIMEOUT=300
+ENV PIP_INDEX_URL=${PIP_INDEX_URL}
+ENV PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST}
+
 WORKDIR /build
 
 # 安装编译工具链（仅 builder，不进 runtime）
 # gcc/build-essential: 编译 C 扩展；libffi-dev: bcrypt/cryptography 头文件；libssl-dev: SSL 头文件
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+# 同时替换 deb.debian.org 和 security.debian.org（Bookworm deb822 格式）；APT_MIRROR 为空则跳过
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
     apt-get update && apt-get install -y --no-install-recommends \
     gcc \
     build-essential \
@@ -27,7 +40,7 @@ COPY requirements.txt .
 
 # 升级打包工具，并将所有依赖编译为 wheel 到 /build/wheels
 # wheel 离线安装可让 runtime 阶段无需 gcc/联网
-ENV PIP_DEFAULT_TIMEOUT=300
+# pip 镜像源由上面的 ENV 自动生效（PIP_INDEX_URL 为空时走官方 PyPI）
 RUN pip install --no-cache-dir --upgrade pip wheel setuptools && \
     pip wheel --no-cache-dir --wheel-dir=/build/wheels -r requirements.txt
 
@@ -38,6 +51,10 @@ FROM python:3.11-slim
 
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 后端服务 - FastAPI + Python 3.11"
+
+# runtime 阶段只重新声明 APT_MIRROR（离线装 wheel 不需要 PIP_*）
+# 注意：ARG 不能跨 FROM 继承，必须在本阶段重新声明才能在 sed 中使用
+ARG APT_MIRROR=
 
 # 设置环境变量
 ENV PYTHONPATH=/app \
@@ -50,7 +67,9 @@ ENV PYTHONPATH=/app \
 # 安装运行时系统依赖（最小集）
 # curl: 健康检查；tzdata: 时区数据
 # 创建非特权用户 appuser (uid=1001)
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
     apt-get update && apt-get install -y --no-install-recommends \
     curl \
     tzdata \
