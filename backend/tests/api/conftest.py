@@ -37,6 +37,14 @@ def make_torrent(
     completed_date=None,
     has_tracker_error=False,
     deleted_at=None,
+    torrent_id=None,
+    ratio="0",
+    ratio_limit="0",
+    tags="",
+    category="",
+    super_seeding="否",
+    enabled=True,
+    save_path="/path",
 ):
     """构造真 ORM TorrentInfo 并写入 db（按位置传 24 个业务字段）。
 
@@ -57,6 +65,14 @@ def make_torrent(
             ⚠ 该列 NOT NULL 但 __init__ 未赋值，必须显式设，否则 commit 时 IntegrityError。
         deleted_at: 软删除时间（回收站种子用），默认 None。
             非空 + dr=0 表示回收站种子；为空表示活跃种子。
+        torrent_id: 下载器内部 torrent id，默认 None。
+        ratio: 分享比率（字符串列），默认 "0"。
+        ratio_limit: 比率限制（字符串列），默认 "0"。
+        tags: 标签（逗号分隔字符串列），默认 ""。
+        category: 分类（单值字符串列），默认 ""。
+        super_seeding: 超级做种，默认 "否"。
+        enabled: 启用状态，默认 True。
+        save_path: 保存路径，默认 "/path"。
 
     Returns:
         已 commit 的 TorrentInfo 实例（可继续读其属性）。
@@ -67,22 +83,22 @@ def make_torrent(
         info_id,  # id_
         downloader_id,  # downloader_id
         downloader_name,  # downloader_name
-        None,  # torrent_id
+        torrent_id,  # torrent_id
         hash_,  # hash
         name,  # name
-        "/path",  # save_path
+        save_path,  # save_path
         size,  # size
         status,  # status
         progress,  # progress
         None,  # torrent_file
         added_date,  # added_date
         completed_date,  # completed_date
-        "0",  # ratio
-        "0",  # ratio_limit
-        "",  # tags
-        "",  # category
-        "否",  # super_seeding
-        True,  # enabled
+        ratio,  # ratio
+        ratio_limit,  # ratio_limit
+        tags,  # tags
+        category,  # category
+        super_seeding,  # super_seeding
+        enabled,  # enabled
         added_date,  # create_time
         "tester",  # create_by
         added_date,  # update_time

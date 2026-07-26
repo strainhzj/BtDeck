@@ -227,12 +227,6 @@ export interface AdvancedSearchParams {
 
   // 高级搜索条件组
   condition_groups?: ConditionGroup[]
-
-  // 多选排除字段
-  status_multi?: MultiSelectField
-  category_multi?: MultiSelectField
-  tags_multi?: MultiSelectField
-  downloader_multi?: MultiSelectField
 }
 
 /**
@@ -250,15 +244,6 @@ export interface Condition {
   field: string
   operator: string
   value: any
-}
-
-/**
- * 多选字段
- */
-export interface MultiSelectField {
-  mode: 'include' | 'exclude'
-  value: string | string[]
-  separator?: string
 }
 
 /**

@@ -587,27 +587,7 @@ export interface AdvancedSearchRequest {
     }>
   }>
 
-  // 多选排除字段
-  status_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
-  category_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
-  tags_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
-  downloader_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
+  // 多选排除字段已废弃：前端 multiSelect 字段统一走 condition_groups + contains_any/contains_all
 }
 
 /**

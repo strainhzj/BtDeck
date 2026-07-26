@@ -1,5 +1,81 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-26 - 高级搜索完备回归测试 + ratio 字典序 bug 修复 + *_multi 死代码清理
+
+**任务 ID**: `v1.0.5.15`（v1.0.5 高级搜索功能回归保护与缺陷修复；当前 dev 版本 v1.0.6）
+**分支**: dev
+**范围**: 全栈。后端 ratio 双路径字典序 bug 修复 + apply_multi_select_conditions 死代码删除 + 完备回归测试；前端同步删除 *_multi 类型声明。
+
+### 现象与根因
+
+用户要求"为高级搜索功能增加完备的回归测试，测试各种组合下的查询是否能达到预期结果"。在用 3 个独立子代理对实施计划做证伪审查时，发现 3 项阻断性问题：
+
+1. **ratio 字符串字典序比较 bug（双路径）**：`TorrentInfo.ratio` 是 String 列，但 `apply_basic_filters:180-184` 用 `TorrentInfo.ratio >= str(value)` 做字符串字典序比较，导致 `ratio_min=2` 让 `ratio="10.0"` 漏匹配（"10.0" < "2"）。同一 bug 在 condition_groups 路径也存在：`_build_condition_filter` 走 `OPERATOR_MAPPING` 的 `gt/gte/lt/lte` 对 ratio 也做字符串比较。
+2. **修复计划误改死代码路径**：原计划"修复 tags_multi 整串匹配 bug"目标错误——`apply_multi_select_conditions` 及 `EnhancedAdvancedSearchRequest` 的 4 个 `*_multi` 字段是前端从不调用的死代码路径（前端 `AdvancedSearchBuilder.vue:1093-1098` 明确将 multiSelect 字段走 condition_groups + contains_any）。tags 子串语义已在 v1.0.5.14 通过 condition_groups 的 contains_any 正确修复。
+3. **测试设计多处假绿风险**：种子数据日期用非 ISO 格式、NULL 排序盲区、category NULL 三值逻辑污染、xfail 无法对照两路径。
+
+### 关键决策与证据
+
+- **ratio 修复用 `cast(col, Float)`**：经技术正确性子代理实证，`sqlalchemy.cast(TorrentInfo.ratio, Float)` 在 SQLite 生成标准 `CAST(... AS FLOAT)`。NULL→NULL（WHERE 过滤，不误命中）；"" /"abc"→0.0（入库点 `torrents_async.py` 不会写这些异常值）；"2.5"→2.5。比"列改 Float 类型"（破坏性，需 Alembic 迁移）和"Python 层过滤"（性能差）都更优。
+- **双路径统一修复**：`apply_basic_filters` 用 cast 替换 str 比较；`_build_condition_filter` 在 size/date 特殊处理块后加 ratio 分支（`column = cast(column, Float)`），保证两路径语义一致。
+- **死代码路径整段删除**：删除 `apply_multi_select_conditions` 方法 + `search_torrents` 中的调用 + `MultiSelectCondition` 类 + `EnhancedAdvancedSearchRequest` 的 4 个 `*_multi` 字段 + 前端 `torrents.ts`/`torrent.ts` 的对应类型声明。前端 grep 实证无任何 `.vue` 业务代码赋值这些字段。
+- **回归测试用真实内存 SQLite + StaticPool**：复刻 `test_advanced_search_batching.py` 范式，建 3 表（TorrentInfo/TrackerInfo/BtDownloaders），6 颗种子覆盖所有边界（status/category/tags/size/ratio/date/dr/tracker 全维度差异化）。
+
+### 三代理独立审查（证伪优先）
+
+计划经 3 个 general-purpose 子代理审查（技术正确性 / 测试有效性 / 范围回归），**坐实 3 项阻断性问题**，全部采纳修正：
+1. 修复 1 漏 condition_groups 路径（三代理一致发现）→ 双路径都修
+2. 修复 2 改死代码（范围代理硬证据：前端 `*.vue` 从不赋值 `*_multi`）→ 改为删除死代码
+3. 测试设计 3 处假绿风险（种子日期非 ISO / NULL 排序盲区 / category NULL 三值逻辑）→ 修复种子数据 + 精确集合断言
+
+驳回 1 项不成立的初版质疑（xfail NULL 对照），重新设计为独立 characterization test。
+
+### 改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `backend/app/services/advanced_search.py` | import 加 `cast, Float`；ratio 基础过滤改数值比较；_build_condition_filter 加 ratio cast 分支；删除 apply_multi_select_conditions 方法 + search_torrents 调用 + MultiSelectCondition import；清理 added_date_max 死代码 pass |
+| `backend/app/api/models/advanced_search.py` | 删除 MultiSelectCondition 类 + EnhancedAdvancedSearchRequest 的 4 个 *_multi 字段 |
+| `backend/tests/services/test_advanced_search.py` | 删除 MultiSelectCondition import + TestApplyMultiSelectConditions 类（4 mock 测试）+ TestMultiValueOperatorsAgainstRealDb 类（7 真实 DB 测试，迁入新文件 B 类）+ 清理未用 PropertyMock import |
+| `backend/tests/api/conftest.py` | 扩展 make_torrent 支持 tags/category/ratio/ratio_limit/torrent_id/super_seeding/enabled/save_path 关键字参数 |
+| `backend/tests/services/test_advanced_search_regression.py` | **新建**：82 用例 8 类完备回归测试（A 基础过滤 / B 全22操作符 / C 条件组组合 / D *_multi 删除守卫 / E tracker 子查询 / F 排序分页 / G 端到端 / H NULL 边界） |
+| `frontend/src/api/torrents.ts` | 删除 4 个 *_multi 字段声明 |
+| `frontend/src/types/torrent.ts` | 删除 4 个 *_multi 字段 + MultiSelectField 接口 |
+
+### 回归测试抓到的实现缺陷
+
+TDD 红阶段验证 bug 存在（2 用例失败）→ 修复后转绿（2 用例通过）。关键证据：
+- `ratio_min=2` 基础过滤：修复前只命中 t1(2.5)，t3(10.0) 因 "10.0" < "2" 字典序漏匹配；修复后命中 t1+t3
+- 条件组 `ratio >= 2`：修复前同样漏 t3；修复后命中 t1+t3
+- `ratio_max=999` 不误命中 ratio=NULL 的 t4（CAST(NULL AS FLOAT) <= 999 → NULL → WHERE 排除）
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| 新增回归测试 `test_advanced_search_regression.py` | ✅ 82/82 通过 |
+| advanced_search 全量相关测试（8 文件） | ✅ 188 passed |
+| 含 auth_protection 扩展回归 | ✅ 269 passed |
+| flake8（5 改动文件） | ✅ 0 error |
+| black --check（5 改动文件） | ✅ 通过（新测试文件已 reformat） |
+| mypy（2 源文件） | ✅ 与 baseline 一致（29 errors 全在既有 delete_torrents_batch/get_search_statistics 方法，本次 cast/ratio 改动行 0 新增） |
+| 前端 typecheck（tsc --noEmit） | ✅ 通过 |
+| 前端 lint（eslint --max-warnings 0） | ✅ 0 error |
+
+### 明确不修的边界（已记入 evidence）
+
+- NULL 安全语义差异（顶层 OPERATOR_MAPPING vs `_build_text_filter`）：作用于不同列集合（前者 name/tags/category，后者仅 tracker_url/tracker_msg），是 SQL 实现必需的安全处理而非语义 bug。本任务用 H 类 characterization test 钉死现状，独立技术债任务统一。
+- `ratio_limit` 也是 String 列，理论上有同类字典序 bug 但前端无 API 暴露，本次不动。
+- search-preview 端点 conditions_json 永远是单 AND 组：既有设计。
+- `_build_text_filter` 对非文本操作符 fallback to contains：既有行为，仅测试覆盖。
+
+### 工作区说明
+
+- 本轮未执行 Git 提交。
+- 浏览器手测待用户在本地环境完成（CI 已覆盖 pytest + flake8 + black + mypy + typecheck + lint 全门禁）。
+
+---
+
 ## 2026-07-25 - 高级搜索分类/标签/下载器字段 options 注入补全
 
 **任务 ID**: `v1.0.5.13`（v1.0.5 高级搜索功能的遗漏补丁；当前 dev 版本 v1.0.6）

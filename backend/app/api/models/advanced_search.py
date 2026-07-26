@@ -51,21 +51,6 @@ class SearchCondition(BaseModel):
         return v
 
 
-class MultiSelectCondition(SearchCondition):
-    """多选排除条件"""
-
-    mode: Literal["include", "exclude"] = Field("include", description="模式：包含或排除", examples=["include"])
-    separator: str = Field(",", description="多值分隔符", examples=[","])
-
-    @validator("value")
-    def validate_multi_value(cls, v, values):
-        if values.get("mode") == "exclude" and not isinstance(v, list):
-            # 对于排除模式，确保值是列表
-            if isinstance(v, str):
-                return [item.strip() for item in v.split(values.get("separator", ","))]
-        return v
-
-
 class SearchTemplate(BaseModel):
     """搜索模板"""
 
@@ -120,12 +105,6 @@ class EnhancedAdvancedSearchRequest(BaseModel):
     # 高级搜索条件组
     condition_groups: Optional[List[SearchGroup]] = Field(None, description="条件组列表")
     between_group_logics: Optional[List[Literal["AND", "OR"]]] = Field(None, description="条件组之间的逻辑关系列表")
-
-    # 多选排除字段
-    status_multi: Optional[MultiSelectCondition] = Field(None, description="状态多选条件")
-    category_multi: Optional[MultiSelectCondition] = Field(None, description="分类多选条件")
-    tags_multi: Optional[MultiSelectCondition] = Field(None, description="标签多选条件")
-    downloader_multi: Optional[MultiSelectCondition] = Field(None, description="下载器多选条件")
 
 
 class SearchTemplateCreate(BaseModel):

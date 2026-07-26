@@ -12,7 +12,7 @@ import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, not_, desc, asc, func, exists
+from sqlalchemy import and_, or_, not_, desc, asc, func, exists, cast, Float
 from sqlalchemy.sql import expression
 
 from app.core.json_parser import safe_json_parse
@@ -22,7 +22,6 @@ from app.models.search_template import SearchTemplate
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.api.models.advanced_search import (
     EnhancedAdvancedSearchRequest,
-    MultiSelectCondition,
     validate_size_string,
     validate_date_string,
 )
@@ -177,11 +176,13 @@ class SearchQueryBuilder:
                 filters.append(TorrentInfo.size <= size_max_bytes)
 
         # 分享比率范围过滤
+        # ratio 列是 String 类型但语义是数值；用 cast 转为 Float 做数值比较，
+        # 否则字符串字典序会让 ratio_min=2 漏匹配 ratio="10.0" 的种子（"10.0" < "2"）
         if request.ratio_min is not None:
-            filters.append(TorrentInfo.ratio >= str(request.ratio_min))
+            filters.append(cast(TorrentInfo.ratio, Float) >= request.ratio_min)
 
         if request.ratio_max is not None:
-            filters.append(TorrentInfo.ratio <= str(request.ratio_max))
+            filters.append(cast(TorrentInfo.ratio, Float) <= request.ratio_max)
 
         # 添加日期范围过滤
         if request.added_date_min:
@@ -192,9 +193,7 @@ class SearchQueryBuilder:
         if request.added_date_max:
             added_max = validate_date_string(request.added_date_max)
             if added_max is not None:
-                # 包含当天的23:59:59
-                pass
-
+                # 包含当天的23:59:59（用户传 '2026-01-15' 应包含当天所有种子）
                 added_max = added_max.replace(hour=23, minute=59, second=59)
                 filters.append(TorrentInfo.added_date <= added_max)
 
@@ -367,6 +366,12 @@ class SearchQueryBuilder:
                 if value is None:
                     return None
 
+        if field == "ratio" and operator in ["gt", "gte", "lt", "lte"]:
+            # ratio 是 String 列但语义是数值；cast 为 Float 做数值比较，
+            # 与 apply_basic_filters 的 ratio_min/max 保持一致。
+            # value 不做转换（Pydantic SearchCondition.value 已是 Union[int, float]）
+            column = cast(column, Float)
+
         return self.OPERATOR_MAPPING[operator](column, value)
 
     def _build_tracker_msg_filter(self, operator: str, value: Any) -> Optional[expression.ClauseElement]:
@@ -452,61 +457,6 @@ class SearchQueryBuilder:
         # 默认安全处理
 
         return and_(column.is_not(None), column.contains(value))
-
-    def apply_multi_select_conditions(
-        self,
-        status_multi: Optional[MultiSelectCondition],
-        category_multi: Optional[MultiSelectCondition],
-        tags_multi: Optional[MultiSelectCondition],
-        downloader_multi: Optional[MultiSelectCondition],
-    ) -> "SearchQueryBuilder":
-        """
-        应用多选排除条件
-
-        Args:
-            status_multi: 状态多选条件
-            category_multi: 分类多选条件
-            tags_multi: 标签多选条件
-            downloader_multi: 下载器多选条件
-
-        Returns:
-            self 支持链式调用
-        """
-        multi_conditions = [
-            (status_multi, TorrentInfo.status, "status"),
-            (category_multi, TorrentInfo.category, "category"),
-            (tags_multi, TorrentInfo.tags, "tags"),
-            (downloader_multi, TorrentInfo.downloader_id, "downloader_id"),
-        ]
-
-        for condition, column, field_name in multi_conditions:
-            if condition is None:
-                continue
-
-            values = condition.value
-            if not values:
-                continue
-
-            # 确保values是列表
-            if isinstance(values, str):
-                separator = condition.separator or ","
-                values = [v.strip() for v in values.split(separator) if v.strip()]
-            elif not isinstance(values, list):
-                values = [values]
-
-            if not values:
-                continue
-
-            if condition.mode == "include":
-                # 包含模式: field IN (values)
-                self.base_query = self.base_query.filter(column.in_(values))
-            else:
-                # 排除模式: field NOT IN (values)
-                self.base_query = self.base_query.filter(~column.in_(values))
-
-            logger.debug(f"应用多选条件 {field_name}: mode={condition.mode}, values={values}")
-
-        return self
 
     def apply_sorting(self, sort_by: str, sort_order: str = "desc") -> "SearchQueryBuilder":
         """
@@ -831,11 +781,6 @@ class AdvancedSearchService:
 
                 self.query_builder.apply_condition_groups(request.condition_groups, request.between_group_logics)
                 logger.info("[高级搜索] 条件组已应用")
-
-            # 应用多选排除条件
-            self.query_builder.apply_multi_select_conditions(
-                request.status_multi, request.category_multi, request.tags_multi, request.downloader_multi
-            )
 
             # 获取总数（在排序和分页之前）
             total = self.query_builder.count()

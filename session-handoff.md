@@ -1,5 +1,34 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-26 交接：高级搜索完备回归测试 + ratio bug 修复 + 死代码清理
+
+**当前任务**: `v1.0.5.15`
+**分支**: dev
+**状态**: 全部实现、测试、静态门禁完成；尚未提交。
+
+### 关键结果
+
+- 修复 ratio 字符串字典序 bug（双路径：基础过滤 ratio_min/max + 条件组 ratio + gt/gte/lt/lte），用 `cast(col, Float)` 做真实数值比较。修复前 `ratio_min=2` 让 `ratio="10.0"` 漏匹配（"10.0" < "2" 字典序）。
+- 删除 `apply_multi_select_conditions` 死代码路径：后端方法+类+字段+前端类型声明全删。前端 grep 实证无任何 `.vue` 业务代码赋值 `*_multi` 字段（tags 子串语义已在 v1.0.5.14 通过 condition_groups 的 contains_any 修复）。
+- 清理 `added_date_max` 死代码 pass。
+- 新增 `test_advanced_search_regression.py`：82 用例 8 类完备真实 SQLite 回归测试（A 基础过滤 / B 全22操作符 / C 条件组组合 / D *_multi 删除守卫 / E tracker 子查询 / F 排序分页 / G 端到端 / H NULL 边界）。
+- 扩展 `make_torrent` 支持 tags/category/ratio 等关键字参数，避免 24 参数手写。
+
+### 验证
+
+- TDD 红绿：2 个 ratio bug 用例修复前失败、修复后通过。
+- 回归测试 82/82 通过；advanced_search 全量相关测试 188 passed；含 auth 扩展 269 passed。
+- 后端 flake8 0 error、black 通过、mypy 与 baseline 一致（29 errors 全在既有方法，本次改动行 0 新增）。
+- 前端 typecheck + lint（--max-warnings 0）通过。
+
+### 后续与工作区
+
+- 本轮未提交；如需提交，应在仓库根目录纳入本任务 7 个文件（5 后端 + 2 前端）+ 3 个项目记录文件（progress.md / feature_list.json / session-handoff.md）。
+- 明确不修的边界（独立技术债）：NULL 安全语义差异（顶层 OPERATOR_MAPPING vs `_build_text_filter`）、`ratio_limit` 同类潜在 bug（前端无 API 暴露）、search-preview 单 AND 组限制。
+- 浏览器手测待用户在本地完成。
+
+---
+
 ## 2026-07-22 交接：查询模板与孤儿文件页面 UI 对齐完成
 
 **当前任务**: `v1.0.6.24`

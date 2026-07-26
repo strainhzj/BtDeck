@@ -355,6 +355,23 @@
             "frontend/tests/unit/field-types-consistency.spec.ts"
           ],
           "evidence": "后端：pytest 73/73 通过（新增 _normalize_multi_value/白名单/真实DB语义测试 33 用例）；mypy 与 baseline 一致（29 errors，0 新增）；black/flake8 通过（PropertyMock F401 为既有 baseline）。前端：lint/tsc 通过；19 suites/298 tests 全绿（新增含真实DB语义验证、三表一致性守卫）；coverage Branches 44.46%（>40% 门禁）；build 通过。后端真实DB测试验证：tags='movie,4k' 被 contains_any(['movie']) 命中（IN 做不到）；category in(['电影']) 精确匹配。"
+        },
+        {
+          "id": "v1.0.5.15",
+          "name": "高级搜索完备回归测试 + ratio 字典序 bug 修复 + *_multi 死代码清理",
+          "description": "为高级搜索功能建立完备的真实 SQLite 回归测试（取代既有 mock-only 脆弱测试），同时修复 3 代理独立审查坐实的 2 项缺陷 + 清理 1 项死代码。(1) ratio 字符串字典序 bug 双路径修复：TorrentInfo.ratio 是 String 列，apply_basic_filters 和 _build_condition_filter 都直接做字符串比较，导致 ratio_min=2 让 ratio='10.0' 漏匹配（'10.0' < '2' 字典序）。改为 cast(col, Float) 数值比较。(2) apply_multi_select_conditions 死代码删除：该方法及 EnhancedAdvancedSearchRequest 的 4 个 *_multi 字段是前端从不调用的死代码路径（前端 multiSelect 字段统一走 condition_groups + contains_any，tags 子串语义已在 v1.0.5.14 修复）。删除后端方法+类+字段+前端类型声明。(3) added_date_max 死代码 pass 清理。新增 test_advanced_search_regression.py 82 用例 8 类完备回归测试。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/advanced_search.py",
+            "backend/app/api/models/advanced_search.py",
+            "backend/tests/services/test_advanced_search.py",
+            "backend/tests/services/test_advanced_search_regression.py",
+            "backend/tests/api/conftest.py",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/types/torrent.ts"
+          ],
+          "evidence": "TDD 红绿：2 个 ratio bug 用例修复前失败（t3 ratio='10.0' 漏匹配）、修复后通过。回归测试 82/82 通过（A 基础过滤16/B 全22操作符22/C 条件组组合10/D *_multi 删除守卫3/E tracker 子查询8/F 排序分页7/G 端到端5/H NULL 边界3，含原 TDD 红2）。advanced_search 全量相关测试 188 passed；含 auth 扩展 269 passed。flake8 0 error；black 通过；mypy 与 baseline 一致（29 errors 全在既有 delete_torrents_batch/get_search_statistics 方法，本次 cast/ratio 改动行 0 新增）。前端 typecheck + lint（--max-warnings 0）通过。CAST(NULL AS FLOAT) <= 999 → NULL → WHERE 排除，ratio=NULL 行不被误命中（实证）。"
         }
       ]
     },
