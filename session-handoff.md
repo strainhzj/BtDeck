@@ -1,5 +1,41 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-26 交接：高级搜索操作符前后端契约守卫测试（v1.0.6.26）
+
+**当前任务**: `v1.0.6.26`
+**分支**: dev
+**状态**: 前端契约测试实现、lint、全量 unit test 完成；尚未提交。
+
+### 起因
+
+v1.0.6.25 后端补了 TestOperatorContractGuard，但前端无对偶守卫。本次补齐前端 Jest 契约测试，确保前端 operatorGroups 与后端 allowed_operators 双向对齐。
+
+### 关键改动
+
+- 新建 `frontend/tests/unit/operator-contract.spec.ts`（16 用例 4 类）
+- 用源码字符串解析范式（不 mount Vue），与 field-types-consistency.spec.ts 一致
+- 三层契约：backendValue 集合（含后端源码同步校验）+ value 结构对齐 + formatParamValue 输出类型
+- 含降级策略 fallback 一致性检查
+
+### 关键技术坑
+
+- ts-jest 顶层 `/g` 正则 lastIndex 残留 → 改逐行 split + 单行 match
+- 后端注释含 `{}` 字符 → 改 `indexOf` 定位结束边界
+- 注释里的字符串字面量被误读 → 剔除 `#` 注释行后再提取
+
+### 验证
+
+- 前端 `npm run test:unit` 全量 **314 passed**（含新增 16）
+- 前端 `npm run lint --max-warnings 0` 通过
+
+### 后续与工作区
+
+- 本轮未提交；如需提交，纳入 4 个文件（operator-contract.spec.ts + feature_list.json + progress.md + session-handoff.md）
+- 防回归价值：若后端误删 allowed_operators 的 between/regex/last_days/date_range，或前端新增操作符未登记，本 spec 立即失败
+- 浏览器手测待用户本地完成
+
+---
+
 ## 2026-07-26 交接：ratio/ratio_limit 列治本（String→Float）+ 4 操作符后端实现（v1.0.6.25）
 
 **当前任务**: `v1.0.6.25`

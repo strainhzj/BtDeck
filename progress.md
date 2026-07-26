@@ -1,5 +1,37 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-26 - 高级搜索操作符前后端契约守卫测试（前端 Jest，v1.0.6.26）
+
+**任务 ID**: `v1.0.6.26`
+**分支**: dev
+**范围**: 前端。补齐 v1.0.6.25 后端 TestOperatorContractGuard 的前端对偶，确保前端输入与后端期望一致。
+
+### 起因
+
+v1.0.6.25 在后端补了 `TestOperatorContractGuard` 冻结契约，但前端侧无对应守卫——前端独立修改 operatorGroups 时不会被后端测试拦住。本次补齐前端 Jest 契约测试。
+
+### 实现
+
+新建 `frontend/tests/unit/operator-contract.spec.ts`（16 用例 4 类），用源码字符串解析范式（与 field-types-consistency.spec.ts 一致，不 mount Vue 组件）：
+
+1. **契约 1 - backendValue 集合**：解析 operatorGroups 全部 backendValue，断言在后端 allowed_operators 集合内（防 422）。**额外读后端源码**（剔除 # 注释后）做双向同步校验，防止 BACKEND_ALLOWED_OPERATORS 常量与后端源码漂移。
+2. **契约 2 - value 结构对齐**：between/regex/last_days/date_range 的 value 形态与后端 `_build_between_filter` / `_build_regex_filter` / `_build_date_window_filter` 解构逻辑一致。
+3. **契约 3 - formatParamValue 输出类型**：size 带单位串 / date 走 JSON.stringify / number 走 Number() / multiSelect 走数组 / boolean 走 '1'/'0'，与后端 value 字段期望一致。
+4. **降级策略 fallback 一致性**：带 fallback 的操作符其 fallback 目标也必须在后端 allowed_operators 内（否则降级后仍 422）。
+
+### 关键技术坑
+
+- ts-jest 转译 module-top-level 的 `/g` 正则字面量时 lastIndex 残留，导致 `[^']+` 连吃尾引号（解析出 `contains'`）。改用**逐行 split + 单行 match（非 /g）**规避。
+- 后端 allowed_operators 集合内的中文注释含 `{` `}` 字符（如 `# between={min,max}`），非贪婪正则 `\{([\s\S]*?)\}` 会在注释的 `}` 处提前结束。改用 `indexOf` 定位 `if v not in allowed_operators` 作为结束边界。
+- 注释里的字符串字面量（`"days":N`、`{"start","end"}`）会被 `"([^"]+)"` 误读为操作符。剔除 `#` 注释行后再提取。
+
+### 验证
+
+- 前端 `npm run test:unit` 全量 **314 passed**（含新增 16）
+- 前端 `npm run lint --max-warnings 0` 通过（修了 3 处 non-null assertion，改三元表达式）
+
+---
+
 ## 2026-07-26 - ratio/ratio_limit 列治本（String→Float）+ 4 操作符后端实现（v1.0.6.25）
 
 **任务 ID**: `v1.0.6.25`（v1.0.6 task 25；当前 dev 版本 v1.0.6）

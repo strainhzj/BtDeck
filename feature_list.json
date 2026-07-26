@@ -1417,6 +1417,17 @@
             "frontend/tests/unit/traditional-view-component.spec.ts"
           ],
           "evidence": "Alembic 迁移 6132b66d14a7 已实证：脏数据 \"\"/-1/-2/\"None\"/\"none\" 全部转 NULL（不被 SQLite CAST 静默转 0.0）、partial unique index WHERE dr=0 子句保真、upgrade/downgrade 对称。后端全量 pytest 2315 passed（基线 2286 + 新增 29）；flake8 0；black 通过；mypy 改动区域 0 新增。前端 npm run lint + npm run build 通过，vue-tsc type error 从 2472→2473（基线本身抖动，新增仅 1 且已修 traditional-view-component.spec.ts）。手动验证：PRAGMA table_info(torrent_info) ratio 列 FLOAT、idx_torrent_hash_unique 含 WHERE dr=0。"
+        },
+        {
+          "id": "v1.0.6.26",
+          "name": "高级搜索操作符前后端契约守卫测试（前端 Jest）",
+          "description": "v1.0.6.25 后端已补 TestOperatorContractGuard 冻结契约，但前端侧无对应守卫。本次新增 frontend/tests/unit/operator-contract.spec.ts（16 用例 4 类），用源码字符串解析范式（不 mount Vue 组件，与 field-types-consistency.spec.ts 一致）三层契约：(1) 前端 operatorGroups 暴露的全部 backendValue 必须在后端 allowed_operators 集合内（防 422 硬失败），并读后端源码剔除 # 注释后做双向同步校验（防常量与后端源码漂移）；(2) 特殊操作符 between/regex/last_days/date_range 的 value 结构与后端 _build_between_filter/_build_regex_filter/_build_date_window_filter 解构逻辑对齐；(3) formatParamValue 各类型路径输出（size 带单位串/date 走 JSON.stringify/number 走 Number()/multiSelect 走数组/boolean 走 '1'/'0'）与后端 value 字段期望类型一致。含降级策略 fallback 一致性（fallback 目标也必须在后端 allowed_operators 内，否则降级后仍会 422）。解析正则用 [a-z_]+ 而非 [^']+（操作符值都是 snake_case），且逐行 split + 注释剔除避免跨行贪婪污染。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/unit/operator-contract.spec.ts"
+          ],
+          "evidence": "前端 npm run test:unit 全量 314 passed（含新增 16）；npm run lint --max-warnings 0 通过（修了 3 处 non-null assertion warning，改用三元表达式）。16 用例覆盖：契约1（4）+ 契约2 value 结构（5）+ 契约3 formatParamValue 输出（5）+ 降级策略（3）-1 重复 = 16。关键防回归：若后端误删 allowed_operators 中的 between/regex/last_days/date_range，或前端新增操作符未在后端登记，本 spec 会立即失败。"
         }
       ]
     }
