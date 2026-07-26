@@ -1,8 +1,8 @@
 # tests — 测试
 
-> 后端 pytest（96 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件 16 个，全 .py 共 112）+ 前端 jest unit。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（101 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 jest unit。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 
-## backend/tests/（96 个 test_*.py + 16 个支持文件）
+## backend/tests/（101 个 test_*.py + 支持文件）
 
 ### 顶层
 
@@ -47,11 +47,13 @@ cd backend && pytest tests/api/               # API 层（34 个测试）
 ### 组件内嵌测试
 
 部分组件有内嵌 `__tests__/`：
-- `frontend/src/components/torrents/__tests__/`（4 个 spec，1484 行）
+- `frontend/src/components/torrents/__tests__/`（4 个 spec，1604 行）
   - `AdvancedMultiSelect.performance.spec.ts`（466 行，性能测试）
-  - `AdvancedMultiSelect.spec.ts`（348 行）
-  - `AdvancedSearchBuilder.spec.ts`（506 行）
-  - `ConditionValueInput.spec.ts`（164 行）
+  - `AdvancedMultiSelect.spec.ts`（386 行）
+  - `AdvancedSearchBuilder.spec.ts`（609 行）
+  - `ConditionValueInput.spec.ts`（143 行）
+- `frontend/src/components/common/__tests__/` ✨v1.0.6.28
+  - `LucideIcon.spec.ts`（70 行）
 
 ### 运行命令
 
@@ -63,7 +65,9 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：112 个测试文件按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
+- **后端测试组织良好**：117 个 .py（其中 101 个 test_*.py + 16 个支持文件）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
+- **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是本次新增覆盖的重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（1591 行）/ `test_advanced_search_models_strict.py` / `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
+- **前端契约守卫测试**：`operator-contract.spec.ts`（v1.0.6.26，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制
 - **前端测试集中在核心组件**：`components/torrents/` 的搜索/多选组件有完整单测（含性能测试），其他组件测试覆盖较薄
 - **架构约束测试**：`test_architecture_constraints.py` 是防退化机制（自动检测反模式）
 - 详细覆盖矩阵（源文件 ↔ 测试文件对应）见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)

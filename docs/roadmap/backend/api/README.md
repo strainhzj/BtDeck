@@ -41,7 +41,7 @@
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
-| `advanced_search.py` | 378 | 0 class, 10 def | 高级搜索 API（13 字段全字段搜索 + 多选排除） |
+| `advanced_search.py` | 436 | 0 class, 10 def | 高级搜索 API（13 字段全字段搜索 + 多选排除）；v1.0.6.27 起接入 `sqlite_search_runtime`（正则执行熔断）与 `app.contracts`（操作符契约校验），防 ReDoS 与前后端漂移 |
 | `audit_logs.py` | 324 | 3 class, 6 def | 审计日志异步 API：查询/导出/归档/统计 |
 | `cron_tasks.py` | 1073 | 19 class, 29 def | 定时任务（cron）配置与日志 CRUD/启停 |
 | `cuser.py` | 309 | 0 class, 7 def | 用户中心：登出/改信息/改密/2FA（挂 `/user` 与 `/users`） |
@@ -63,13 +63,13 @@
 | `torrent_backup.py` | 824 | 0 class, 12 def | 种子文件备份：备份/还原/列表/管理 |
 | `torrent_crud.py` | 828 | 1 class, 5 def | 种子 CRUD（列表/添加/查询/上传 .torrent）★ [详情](./endpoints/torrent_crud.md) |
 | `torrent_deletion.py` | 902 | 7 class, 9 def | 种子删除（多等级删除） |
-| `torrent_helpers.py` | 852 | 0 class, 16 def | 种子端点共享工具（哈希/序列化/bencode/DB 辅助） |
+| `torrent_helpers.py` | 866 | 0 class, 16 def | 种子端点共享工具（哈希/序列化/bencode/DB 辅助）；v1.0.6.25 起写入路径经 `torrent_ratio_values` 规范化 ratio |
 | `torrent_location.py` | 93 | 0 class, 1 def | 修改种子保存路径 |
 | `torrent_speed.py` | 604 | 6 class, 12 def | 种子级实时速度查询（走 `app.state.store` 缓存） |
 | `torrent_status.py` | 959 | 6 class, 6 def | 种子状态控制（暂停/恢复/重检） |
-| `torrent_sync.py` | 1526 | 2 class, 16 def | 种子同步端点 + 同步辅助函数 |
+| `torrent_sync.py` | 1526 | 2 class, 16 def | 种子同步端点 + 同步辅助函数；v1.0.6.25 起同步写入用 `torrent_ratio_values` |
 | `torrents.py` | 30 | 0 class, 0 def | 种子聚合路由器（include_router 合并 6 个子路由） |
-| `torrents_async.py` | 3538 | 0 class, 38 def | 异步版种子 DB 操作（供定时任务用） |
+| `torrents_async.py` | 3604 | 0 class, 38 def | 异步版种子 DB 操作（供定时任务用）；v1.0.6.25 起写入经 `torrent_ratio_values` |
 | `tracker.py` | 920 | 0 class, 11 def | Tracker 信息查询/同步（异步会话） |
 | `tracker_keywords.py` | 612 | 0 class, 10 def | Tracker 关键词 CRUD + 批量 |
 | `tracker_keywords_pools.py` | 377 | 1 class, 5 def | Tracker 关键词池（candidate/ignored/success/failed 四池） |
@@ -83,7 +83,7 @@
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
-| `advanced_search.py` | 294 | 12 class, 2 def | 高级搜索 13 字段请求/响应模型 + 排除字段模型 |
+| `advanced_search.py` | 692 | 12 class, 2 def | 高级搜索 13 字段请求/响应模型 + 排除字段模型；v1.0.6.25 起新增 ratio 4 操作符（`eq`/`ne`/`gt`/`lt`）+ `is_null`/`is_not_null`；v1.0.6.27 起 Pydantic 校验器引用 `app.contracts.advanced_search`（`SUPPORTED_SEARCH_OPERATORS` / `allowed_operators_for_field`），请求期即拒绝非法操作符 |
 
 ## schemas/ 子目录（领域 Pydantic 模型）
 

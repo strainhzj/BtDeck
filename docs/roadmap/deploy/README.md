@@ -57,7 +57,22 @@
 
 - `deploy/start.sh`：宿主机一键 `docker compose up -d --build`（L47），**不是应用启动入口**
 - `build-images.sh`（根目录）：构建并导出镜像 tar
-- `build-and-export-images.bat`（根目录，Windows）
+- `build-and-export-images.bat`（根目录，Windows）：构建 + 导出 + 可选 SSH 部署到远端（含镜像源 profile 重试链，见下节）
+
+### Dockerfile 镜像源参数化（v1.0.6.28，commit `48bbcf7`）
+
+三个 Dockerfile（`backend/Dockerfile`、`frontend/Dockerfile`、`frontend/Dockerfile.prod`）把原本硬编码的 `mirrors.aliyun.com` 改为 **build-arg 注入**，默认空串 = 走官方源（向后兼容）：
+
+| build-arg | 作用 | 注入方式 |
+|-----------|------|---------|
+| `APT_MIRROR` | apt 源（替换 `deb.debian.org` + `security.debian.org`，Bookworm deb822 格式） | builder + runtime 两阶段都需重新 `ARG APT_MIRROR=`（ARG 不跨 `FROM` 继承） |
+| `PIP_INDEX_URL` / `PIP_TRUSTED_HOST` | pip 源 | `ENV PIP_INDEX_URL=${PIP_INDEX_URL}` 让本阶段所有 pip 命令自动读取 |
+| `NPM_REGISTRY` | npm registry | `ENV NPM_CONFIG_REGISTRY=${NPM_REGISTRY}` 让所有 npm 命令自动读取 |
+
+**关键设计**：
+- `APT_MIRROR` 为空时跳过 `sed`（`if [ -n "$APT_MIRROR" ]`），与改造前"硬编码阿里云"不同 —— 默认现在是官方源，需镜像源才显式注入
+- `build-and-export-images.bat` 内置 3 个 profile（官方 / 阿里云 / 华为云）的重试链：profile 2（阿里云）失败自动切 profile 3（华为云），最后回退 profile 1（官方）
+- 注：tencent apt 镜像被排除（强制 HTTPS，builder 阶段无 ca-certificates 会证书校验失败）；阿里云/华为云走 HTTP 可在裸 builder 阶段工作
 
 ---
 

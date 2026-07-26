@@ -8,12 +8,13 @@
 |--------|------|--------|------|
 | app-root | `backend/app/` 包根 10 文件（应用工厂、DB 引擎、异常处理、版本、入口） | 10 | [app-root.md](./app-root.md) |
 | api | HTTP 路由层（endpoints 35 + models 1 + schemas 3 + api.py + responseVO.py） | 41 | [api/README.md](./api/README.md) |
-| services | 业务服务层 33 + downloader_adapters 6 + tag_adapters 6 | 45 | [services/README.md](./services/README.md) |
-| core | 基础设施 20 文件（⚠ 含 5 个 0 引用孤儿） | 20 | [core/README.md](./core/README.md) |
+| services | 业务服务层 35 + downloader_adapters 6 + tag_adapters 6 | 47 | [services/README.md](./services/README.md) |
+| core | 基础设施 21 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） | 21 | [core/README.md](./core/README.md) |
+| **contracts** ✨v1.0.6.27 | 前后端共享机器可读契约（advanced_search JSON + 加载器） | 3 | [contracts/README.md](./contracts/README.md) |
 | data-models | ORM 16 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2 | 35 | [data-models/README.md](./data-models/README.md) |
 | tasks | 定时任务 14 + scheduler 14 + scheduler/torrent_sync 4 | 32 | [tasks/README.md](./tasks/README.md) |
 | domain | downloader 9 + torrents 9 + tracker 1 + auth 5 + user 1 | 25 | [domain/README.md](./domain/README.md) |
-| infra | utils 3 + startup 2 + migrations 3 + alembic 1+7 | 16 | [infra/README.md](./infra/README.md) |
+| infra | utils 3 + startup 2 + migrations 3 + alembic 1+9 | 18 | [infra/README.md](./infra/README.md) |
 
 ---
 
@@ -32,9 +33,9 @@
 核心层    app/core/{config,path_mapping,database_result,migration}.py   ← 基础设施
                       ↓
 数据层    app/models/*.py (ORM) ← app/repositories/*.py ← app/database.py (引擎)
-                      ↑
-                      │
-领域层    app/{downloader,torrents,tracker,auth,user}/*.py（领域 ORM + VO + 适配）
+                      ↑                                  ↑
+                      │                                  │ 前后端共享契约
+领域层    app/{downloader,torrents,tracker,auth,user}/*.py  app/contracts/*.json（advanced_search 等）
                       ↑
                       │
 迁移层    app/migrations/database_migrator.py  ⚡ 应用层数据/字段迁移（运行时）

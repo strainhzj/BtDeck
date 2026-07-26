@@ -10,7 +10,7 @@
 |------|------|--------|------|
 | [core/security.py](../../backend/app/core/security.py) | 263 | **0** | Tracker 解密模块（`TrackerDecryptionKeyManager`、`decrypt_tracker_info` 等）完全未接入。与 [auth/security.py](../../backend/app/auth/security.py) 和 [utils/encryption.py](../../backend/app/utils/encryption.py) 功能重叠，疑似旧实现残留 |
 | [core/downloader.py](../../backend/app/core/downloader.py) | 29 | **0** | 自身 `from app.downloader import models` 指向不存在的包路径，已失效 |
-| [core/torrent_operations.py](../../backend/app/core/torrent_operations.py) | 235 | **0** | DatabaseResult 重构产物，被 services 层（`torrent_metadata.py` 等）取代 |
+| [core/torrent_operations.py](../../backend/app/core/torrent_operations.py) | 250 | **0** | ⚠ v1.0.6.27 内容已重写为 ratio/ratio_limit 工具（与 [services/torrent_ratio_values.py](../../backend/app/services/torrent_ratio_values.py) 功能重叠），但**生产路径未 import** —— 实际生效的是 services 版。存在"两份 ratio 规范化逻辑"风险（见 R10） |
 | [core/tracker_operations.py](../../backend/app/core/tracker_operations.py) | 292 | **0** | DatabaseResult 重构产物，被 services 层取代 |
 | [core/init_schema_from_production.py](../../backend/app/core/init_schema_from_production.py) | 146 | **0** | 文件头自述"已下线"，`main.py` 不再调用 |
 
@@ -60,9 +60,9 @@
 | 迁移类型 | 位置 | 职责 |
 |---------|------|------|
 | 应用层数据/字段迁移 | [app/migrations/database_migrator.py](../../backend/app/migrations/database_migrator.py)（764 行） | 运行时执行，含 SM4 加密字段升级 |
-| Schema 版本迁移 | [backend/alembic/](../../backend/alembic/)（7 个 revision） | 版本管理 |
+| Schema 版本迁移 | [backend/alembic/](../../backend/alembic/)（**9 个** revision；v1.0.6.25/27 新增 `6132b66d14a7_ratio_columns_to_float`、`8f4c2d1a9b7e_ratio_value_constraints`） | 版本管理 |
 
-**风险**：两套迁移并存，边界不清（何时用哪个）。完整论述见 [../../backend/docs/architecture-deep-dive.md](../../backend/docs/architecture-deep-dive.md) "二、数据库迁移双轨"。
+**风险**：两套迁移并存，边界不清（何时用哪个）。v1.0.6.25~27 的 ratio 列治本迁移（String→Float + CHECK 约束）走的是 alembic schema 通道，配套的数据清洗/诊断在 `app/core/ratio_data_diagnostics.py` + `scripts/ratio_migration_report.py`，三层（schema 迁移 / 运行时数据清洗 / 诊断报告）边界需注意。完整论述见 [../../backend/docs/architecture-deep-dive.md](../../backend/docs/architecture-deep-dive.md) "二、数据库迁移双轨"与 [../../backend/docs/operations/rollback-guide.md](../../backend/docs/operations/rollback-guide.md)。
 
 ## R6：代码重复（违反复用约束）
 
@@ -87,6 +87,17 @@
 ## R9：构建产物入库
 
 `deploy/dist/btdeck.exe`、`deploy/build/`、根目录 `btdeck-backend.latest.tar`、`btdeck-frontend.latest.tar` 已提交到仓库（体积数百 MB），可能是误提交。建议加入 `.gitignore`。
+
+## R10：ratio 规范化逻辑双份（v1.0.6.27 引入）
+
+| 位置 | 状态 | 说明 |
+|------|------|------|
+| [services/torrent_ratio_values.py](../../backend/app/services/torrent_ratio_values.py)（150 行） | ✅ **生产生效** | 被 `api/endpoints/{torrent_helpers,torrent_sync,torrents_async}.py` + `services/torrent_crud_service.py` 引用 |
+| [core/torrent_operations.py](../../backend/app/core/torrent_operations.py)（250 行） | ⚠️ **0 引用孤儿**（内容已重写为 ratio 工具） | v1.0.6.27 重写但未接线 |
+
+**风险**：两份 ratio/ratio_limit 规范化逻辑并存，未来修改易只改其一导致行为分叉。**建议**：删除 `core/torrent_operations.py`，或将其逻辑并入 `services/torrent_ratio_values.py` 后归档。详见 R1 与 [../backend/core/README.md](../backend/core/README.md)。
+
+> 注：v1.0.6.27 的 `app/contracts/` 是"单一真相"的正向实践（advanced_search 操作符契约收敛为一份 JSON），可作为 ratio 逻辑收敛的参照模式。
 
 ---
 

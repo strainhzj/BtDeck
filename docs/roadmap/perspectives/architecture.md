@@ -115,6 +115,33 @@ APScheduler job（注册）
                  └─ app/services/orphan_notification.py  (129 行) 幂等通知
 ```
 
+## 链 6：高级搜索（HTTP → 契约校验 → 有界正则 → ORM 执行）✨v1.0.6.25~28
+
+```
+HTTP POST /api/v1/advanced-search
+  └─ app/api/endpoints/advanced_search.py  (436 行)
+       │
+       ├─ [请求期契约校验]
+       │    app/api/models/advanced_search.py  (692 行, Pydantic)
+       │      └─ import app/contracts/advanced_search.py
+       │            └─ ADVANCED_SEARCH_CONTRACT ← advanced_search_contract.json
+       │                 （SUPPORTED_SEARCH_OPERATORS / allowed_operators_for_field / FRONTEND_TO_BACKEND_OPERATOR）
+       │      → 拒绝"前端可选但契约未声明"的操作符
+       │
+       ├─ [正则执行熔断]（仅 regex 类条件）
+       │    app/services/sqlite_search_runtime.py  (100 行)
+       │      ├─ validate_regex_pattern  (请求期编译 + lru_cache 256)
+       │      └─ _sqlite_bt_regexp       (单次 match 10ms 超时 + 查询总预算 2s 双重熔断，防 ReDoS)
+       │
+       └─ [ORM 查询执行]
+            app/services/advanced_search.py  AdvancedSearchService (1311 行)
+              ├─ 13 字段查询引擎（v1.0.6.25 起 ratio 4 操作符 eq/ne/gt/lt + is_null/is_not_null）
+              ├─ ratio/ratio_limit 值经 app/services/torrent_ratio_values.py 三态规范化（value/explicit_null/unavailable）
+              └─ CHECK 约束 ck_torrent_info_ratio_finite_nonnegative（alembic 8f4c2d1a9b7e）兜底
+```
+
+> **前后端契约守卫**：前端 `frontend/tests/unit/operator-contract.spec.ts`（v1.0.6.26）镜像同一份操作符语义，与后端 `app/contracts/advanced_search_contract.json` 形成 dual-source 守卫（任一端改动另一端测试即失败）。
+
 ---
 
 ## 跨层依赖骨架型模块（被高频 import）

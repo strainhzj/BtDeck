@@ -1,8 +1,17 @@
 # frontend/components-layout — 通用组件与布局骨架
 
-> 通用可复用组件（17 个 .vue）+ 布局骨架（layout/ 下 8 个 .vue + 1 mixin）。全部 class-component。
+> 通用可复用组件（18 个 .vue）+ 布局骨架（layout/ 下 8 个 .vue + 1 mixin）。全部 class-component。
 
 ## components/ — 通用组件
+
+### components/common/（1 个 .vue + 1 测试）✨v1.0.6.28
+
+| 文件 | 行数 | class name | 一句话职责 |
+|------|------|-----------|-----------|
+| `LucideIcon.vue` | 152 | `LucideIcon extends Vue`（`@Component` + `vue-property-decorator`） | 轻量 Vue 2 包装器，统一渲染 Lucide 图标；静态具名 import 用到的图标（webpack 5 + sideEffects tree-shake，只打包所用图标，避免 ~2000 图标集入包）；stroke 跟随 `currentColor`，`size`/`strokeWidth` 通过 prop 透传。在 `main.ts:44` 全局注册 `Vue.component('LucideIcon', ...)` |
+| `__tests__/LucideIcon.spec.ts` | 70 | — | LucideIcon 单测 |
+
+> v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG。
 
 ### 顶层 + 单件目录
 
@@ -23,19 +32,20 @@
 | `PythonClassSelector.vue` | 1357 | `PythonClassSelector` | Python 类/方法选择器 |
 | `MonacoEditor.vue` | 658 | class | 任务专用 Monaco 编辑器（含 Python 高亮） |
 
-### components/torrents/（8 个 .vue + 4 个测试）
+### components/torrents/（8 个 .vue + 1 个 .ts + 4 个测试）
 
 | 文件 | 行数 | 范式 | 一句话职责 |
 |------|------|------|-----------|
-| `AdvancedSearchBuilder.vue` | 1533 | class（`AdvancedSearchBuilder`） | 高级搜索条件构建器 |
-| `ConditionValueInput.vue` | 1007 | class（`ConditionValueInput`） | 搜索条件值输入（按字段类型切换控件） |
-| `AdvancedMultiSelect.vue` | 908 | class（`AdvancedMultiSelect`） | 高级多选下拉（搜索/分组） |
+| `AdvancedSearchBuilder.vue` | 1356 | class（`AdvancedSearchBuilder`） | 高级搜索条件构建器；v1.0.6.28 起标签选择器重塑（用 `AdvancedMultiSelect` + `LucideIcon`）；状态逻辑抽取到 `advancedSearchState.ts`（行数 1533→1356） |
+| `ConditionValueInput.vue` | 837 | class（`ConditionValueInput`） | 搜索条件值输入（按字段类型切换控件）；v1.0.6.28 起接入新的多选/标签控件（行数 1007→837） |
+| `AdvancedMultiSelect.vue` | 1222 | class（`AdvancedMultiSelect`） | 高级多选下拉（搜索/分组）；v1.0.6.28 起全面重塑：虚拟滚动 + 分组 + 高亮 + Lucide 图标（行数 908→1222） |
+| `advancedSearchState.ts` ✨v1.0.6.28 | 674 | class-based store（无 .vue） | 高级搜索可复用状态/纯逻辑（从组件抽取的可单测模块，减少组件体积、便于复用到传统视图） |
 | `CompactTable.vue` | 838 | ⚠ **Options API**（L301 `export default {`，`CompactTable`） | 紧凑表格视图 |
 | `DuplicateTorrentsDialog.vue` | 404 | class | 重复种子检测对话框 |
 | `SizeRangeFilter.vue` | 358 | class（`SizeRangeFilter`） | 种子大小范围过滤器 |
 | `VirtualScrollList.vue` | 242 | class（`VirtualScrollList`） | 虚拟滚动列表 |
 | `FilterGroup.vue` | 90 | class（`FilterGroup`） | 过滤条件组容器 |
-| `__tests__/*.spec.ts`（4 个） | 1484 总 | 测试 | AdvancedMultiSelect（性能+单元）/ AdvancedSearchBuilder / ConditionValueInput 单测 |
+| `__tests__/*.spec.ts`（4 个） | 1604 总 | 测试 | AdvancedMultiSelect（性能 466 + 单元 386）/ AdvancedSearchBuilder（609）/ ConditionValueInput（143）单测 |
 
 > ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。
 

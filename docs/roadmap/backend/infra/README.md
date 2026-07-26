@@ -58,14 +58,16 @@
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
 | `env.py` | 144 | 2 | Alembic 迁移环境：`run_migrations_offline`(L97) + `run_migrations_online`(L121)，处理 PyInstaller `_MEIPASS` + 集中 import 所有 ORM 模型 |
-| `versions/` | — | — | **7 个** revision 文件（见下表） |
+| `versions/` | — | — | **9 个** revision 文件（见下表） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（7 个迁移文件）
+### alembic/versions/（9 个迁移文件）
 
 | 文件名 | 内容（从命名推断） |
 |--------|-------------------|
+| `6132b66d14a7_ratio_columns_to_float.py` ✨v1.0.6.25/27 | ratio/ratio_limit 列从 String 迁移到 Float（治本）；v1.0.6.27 加固为"迁移前 `db_backup` 自动备份 + 历史值清洗 + CHECK 约束" |
+| `8f4c2d1a9b7e_ratio_value_constraints.py` ✨v1.0.6.27 | 为 ratio/ratio_limit 加 CHECK 约束 `ck_torrent_info_ratio_finite_nonnegative`（有限且非负），拒绝脏值再次入库 |
 | `95ef8bd8b47a_add_search_templates_table.py` | 新增搜索模板表 |
 | `a0ada9774936_add_notification_table.py` | 新增通知表 |
 | `b075727f7182_orphan_lifecycle.py` | 孤儿文件生命周期 |
@@ -73,6 +75,8 @@
 | `d0e58437af70_add_tracker_reannounce_config_table.py` | 新增 Tracker 重新宣告配置表 |
 | `e2a02abcf912_fix_downloader_type_to_integer.py` | 修正 downloader.type 为整型 |
 | `e6d8a20c41f3_orphan_operation_journal.py` | 孤儿文件操作日志表 |
+
+> v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 
 ---
 
