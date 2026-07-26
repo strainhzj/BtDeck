@@ -1391,6 +1391,32 @@
             "frontend/tests/unit/management-pages-ui.spec.ts"
           ],
           "evidence": "新增基于现有主题变量的共享管理列表页样式，统一最大内容宽度、语义化页头、筛选面板、数据面板、操作区、表格滚动与分页；查询模板页将刷新/新建移至页头并补充列表元信息，孤儿文件页统一四项统计卡、扫描/刷新操作、已选清理状态与最近扫描信息。业务方法、API、权限和弹窗流程保持不变。新增 UI 结构契约 7/7 通过；TypeScript、完整 ESLint、生产构建和根 init.sh 通过，构建仅保留既有 48 条 Sass/资源体积 warning，init.sh 仅报告 Git 工作区、jq、虚拟环境及 Git Bash Node 探测等环境提示。浏览器在 1440×900 与 390×844 下实测，两页均无文档级横向溢出，宽表仅在内部滚动，孤儿文件统计卡在移动端自动改单列。"
+        },
+        {
+          "id": "v1.0.6.25",
+          "name": "ratio/ratio_limit 列治本（String→Float）+ 4 操作符后端实现",
+          "description": "经 3 子代理独立红队审查坐实 v1.0.5.15 的 cast 修复属「治标不治本」：只覆盖 ratio 的 filter 路径，遗漏 ratio_limit filter、ratio sort、ratio_limit sort 三处同根 bug；且前端 AdvancedSearchBuilder 暴露的 between/regex/last_days/date_range 四个操作符后端 allowed_operators 不含，导致 Pydantic 直接 422 拒整个请求。本次从 schema 根因治本：(1) ratio/ratio_limit 列改 Float + Alembic batch_alter 迁移（含脏数据 \"\"/-1/-2/\"None\" 清洗 + partial unique index 显式 drop+recreate 兜底）；(2) 服务层移除 cast 简化、新增 NUMERIC_FIELDS 集中常量、补 sort 路径注释；(3) Pydantic allowed_operators + value 类型（接受 dict）扩展 + service 层 4 操作符实现（between 拆区间/regex 用 LIKE 兜底/last_days 日期偏移/date_range 区间）；(4) 前端 numberRange UI 模板 + handler + watcher + formatParamValue number+between 对象分支；ContractValueInput inputType 分支扩展（date between 走 dateRange，number between 走 numberRange）；(5) 写入侧清理（torrent_helpers QB+TR 错位修复、torrent_sync QB 哨兵、torrent_crud_service 默认值），新增 _safe_float 防御性 helper 兜底下载器返回的 ValueError 实例；(6) 类型契约同步（VO schema、前端两份 Torrent 接口、TorrentDetailDialog 0 值回归修复用 formatRatio）。测试：fixture 补差异化 ratio_limit 值（让新测试有 TDD 区分力），新增 7 sort + 3 ratio_limit filter + 8 new operators + 1 contract guard + 4 migration = 23 用例；全量 2315 passed。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/torrents/models.py",
+            "backend/alembic/versions/6132b66d14a7_ratio_columns_to_float.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/services/torrent_crud_service.py",
+            "backend/app/services/advanced_search.py",
+            "backend/app/api/models/advanced_search.py",
+            "backend/app/torrents/responseVO.py",
+            "backend/tests/services/test_advanced_search_regression.py",
+            "backend/tests/core/test_db_migration.py",
+            "frontend/src/types/torrent.ts",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/components/torrents/ConditionValueInput.vue",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/views/torrents/components/TorrentDetailDialog.vue",
+            "frontend/tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "Alembic 迁移 6132b66d14a7 已实证：脏数据 \"\"/-1/-2/\"None\"/\"none\" 全部转 NULL（不被 SQLite CAST 静默转 0.0）、partial unique index WHERE dr=0 子句保真、upgrade/downgrade 对称。后端全量 pytest 2315 passed（基线 2286 + 新增 29）；flake8 0；black 通过；mypy 改动区域 0 新增。前端 npm run lint + npm run build 通过，vue-tsc type error 从 2472→2473（基线本身抖动，新增仅 1 且已修 traditional-view-component.spec.ts）。手动验证：PRAGMA table_info(torrent_info) ratio 列 FLOAT、idx_torrent_hash_unique 含 WHERE dr=0。"
         }
       ]
     }

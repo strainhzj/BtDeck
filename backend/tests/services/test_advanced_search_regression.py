@@ -71,7 +71,8 @@ def _seed_torrents(session):
       - category: 电影/音乐/游戏/软件（t4=NULL 用于 is_null 测试）
       - tags: 逗号串列（"movie,4k"）/ 单值 / None（NULL 用于 is_null）
       - size: 0 / 100MB / 200MB / 500MB / 1GB / 5GB
-      - ratio: "0.5"/"1.0"/"1.5"/"2.5"/"10.0"/NULL（String 列，验证 cast 数值比较）
+      - ratio: 0.5/1.0/1.5/2.5/10.0/NULL（Float 列，v1.0.6.1 后天然数值比较）
+      - ratio_limit: 10.0/2.0/1.5/0.0/NULL/NULL（差异化值，验证 ratio_limit filter+sort 的 TDD 区分力）
       - added_date: ISO 标准格式（validate_date_string 可解析）
       - completed_date: 部分有值（验证范围过滤 + NULL 排序）
       - tracker: 部分 active(dr=0) / 部分已删除(dr=1)
@@ -96,7 +97,8 @@ def _seed_torrents(session):
         name="Avatar 4K BluRay",
         size=100 * 1024 * 1024,  # 100MB
         status="downloading",
-        ratio="2.5",
+        ratio=2.5,
+        ratio_limit=10.0,  # 双位数 ratio_limit（验证数值排序/过滤，避免字典序 bug）
         tags="movie,4k",
         category="电影",
         added_date=datetime(2026, 1, 15, 10, 0, 0),
@@ -127,7 +129,8 @@ def _seed_torrents(session):
         name="Pink Floyd FLAC",
         size=500 * 1024 * 1024,  # 500MB
         status="seeding",
-        ratio="0.5",
+        ratio=0.5,
+        ratio_limit=2.0,
         tags="flac",
         category="音乐",
         added_date=datetime(2026, 2, 20, 14, 30, 0),
@@ -149,7 +152,7 @@ def _seed_torrents(session):
         )
     )
 
-    # t3: 电影 + 多标签 + ratio=10.0（关键：字符串 "10.0" < "2" 字典序，验证 cast 修复）
+    # t3: 电影 + 多标签 + ratio=10.0（关键：数值 10.0 > 2.5，验证 Float 列数值比较/排序）
     make_torrent(
         session,
         info_id="t3",
@@ -159,7 +162,8 @@ def _seed_torrents(session):
         name="Inception 1080p",
         size=1024 * 1024 * 1024,  # 1GB
         status="paused",
-        ratio="10.0",
+        ratio=10.0,
+        ratio_limit=1.5,
         tags="movie,1080p",
         category="电影",
         added_date=datetime(2026, 3, 10, 9, 15, 0),
@@ -176,6 +180,7 @@ def _seed_torrents(session):
         size=5 * 1024 * 1024 * 1024,  # 5GB
         status="error",
         ratio=None,  # NULL
+        ratio_limit=None,  # NULL（无限制）
         tags=None,  # NULL，验证 is_null
         category="游戏",
         added_date=datetime(2026, 4, 5, 16, 45, 0),
@@ -206,7 +211,8 @@ def _seed_torrents(session):
         name="VSCode Installer",
         size=0,
         status="completed",
-        ratio="1.0",
+        ratio=1.0,
+        ratio_limit=0.0,
         tags="",
         category="软件",
         added_date=datetime(2026, 5, 25, 8, 0, 0),
@@ -223,7 +229,8 @@ def _seed_torrents(session):
         name="Deleted Movie",
         size=200 * 1024 * 1024,  # 200MB
         status="seeding",
-        ratio="1.5",
+        ratio=1.5,
+        ratio_limit=None,  # 无限制
         tags="movie",
         category="电影",
         added_date=datetime(2026, 1, 1, 0, 0, 0),
@@ -245,25 +252,24 @@ def _info_ids(result):
     return {item["infoId"] for item in result["data"]}
 
 
-# ==================== 第二步：TDD 红——验证 ratio 字符串字典序 bug ====================
+# ==================== ratio 数值比较回归（v1.0.6.1：String 列已迁移为 Float）====================
 
 
-class TestRatioStringCompareBug:
-    """验证 ratio 字符串字典序比较 bug（修复前应失败，修复后应通过）。
+class TestRatioNumericCompare:
+    """验证 ratio Float 列的数值比较（v1.0.6.1 列类型迁移后）。
 
-    根因：TorrentInfo.ratio 是 String 列，但 apply_basic_filters 和 _build_condition_filter
-    都直接做字符串比较，导致 "10.0" < "2"（字典序），ratio_min=2 漏匹配 ratio="10.0" 的种子。
+    历史 bug：TorrentInfo.ratio 原是 String 列，apply_basic_filters 和 _build_condition_filter
+    都做字符串比较，导致 "10.0" < "2"（字典序），ratio_min=2 漏匹配 ratio="10.0" 的种子。
+    v1.0.6.1 把 ratio/ratio_limit 列改为 Float，从根因上消除字典序 bug。
 
-    两路径都有 bug：
-      - 基础过滤路径：apply_basic_filters:180-184 用 str(value)
-      - 条件组路径：_build_condition_filter 走 OPERATOR_MAPPING 的 gt/gte/lt/lte
+    本类锚定迁移后的正确数值语义，防止列类型被误改回 String。
     """
 
     def test_basic_filter_ratio_min_should_match_double_digit(self, db_session):
-        """基础过滤：ratio_min=2 应同时命中 ratio='2.5' 和 ratio='10.0'。
+        """基础过滤：ratio_min=2 应同时命中 ratio=2.5 和 ratio=10.0。
 
-        修复前（字符串字典序）：'10.0' < '2' 为真，故 ratio='10.0' 漏匹配 → 只返回 {'t1'}
-        修复后（数值比较）：2.5 >= 2 且 10.0 >= 2 → 返回 {'t1', 't3'}
+        若列被改回 String：'10.0' < '2' 字典序 → t3 漏匹配，本测试失败。
+        Float 列：2.5 >= 2 且 10.0 >= 2 → 返回 {'t1', 't3'}。
         """
         _seed_torrents(db_session)
         # 注意：t4 ratio=NULL 在 SQL 三值逻辑下被排除，符合预期
@@ -275,13 +281,13 @@ class TestRatioStringCompareBug:
         assert _info_ids(result) == {
             "t1",
             "t3",
-        }, f"修复前 bug：'10.0' < '2' 字典序导致 t3 漏匹配。实际 {_info_ids(result)}"
+        }, f"列若被改回 String：'10.0' < '2' 字典序导致 t3 漏匹配。实际 {_info_ids(result)}"
 
     def test_condition_group_ratio_gte_should_match_double_digit(self, db_session):
-        """条件组：ratio >= 2 应同时命中 ratio='2.5' 和 ratio='10.0'。
+        """条件组：ratio >= 2 应同时命中 ratio=2.5 和 ratio=10.0。
 
-        修复前：condition_groups 路径走 OPERATOR_MAPPING 的字符串比较 → 同样漏 t3
-        修复后：_build_condition_filter 对 ratio 字段 cast 为 Float 做数值比较
+        若列被改回 String：condition_groups 路径走字符串比较 → 漏 t3。
+        Float 列：_build_condition_filter 直接数值比较（无需 cast）。
         """
         _seed_torrents(db_session)
         group = SearchGroup(
@@ -1083,6 +1089,68 @@ class TestSortingAndPaginationRealDb:
         assert result["total"] == 5
         assert [item["infoId"] for item in result["data"]] == ["t1"]
 
+    # ---------- v1.0.6.1 新增：ratio/ratio_limit 数值排序回归 ----------
+
+    def test_sort_by_ratio_desc_numeric(self, db_session):
+        """sort_by=ratio desc：Float 列数值排序 → [t3(10.0), t1(2.5), t6(1.5), t5(1.0), t2(0.5)]。
+
+        历史 bug：ratio 原是 String 列，apply_sorting 直接 order_by(String 列) 走字典序，
+        desc 返回 [t1(2.5), t6(1.5), t5(1.0), t2(0.5), t3(10.0)]（"2">"1">"0"）。
+        v1.0.6.1 列改 Float 后排序自动正确。
+        mutation：若列被改回 String → 本测试应失败。
+        """
+        _seed_torrents(db_session)
+        # t6 dr=1 软删除自动排除；t4 ratio=NULL 在 SQLite desc 排末尾
+        result = _search(db_session, sort_by="ratio", sort_order="desc", limit=100000)
+        ids = [item["infoId"] for item in result["data"]]
+        # 非空 ratio 的种子按数值 desc：t3(10.0) > t1(2.5) > t5(1.0) > t2(0.5)；t4(NULL) 排末尾
+        assert ids[:4] == ["t3", "t1", "t5", "t2"], f"Float 数值 desc 应为 t3,t1,t5,t2，实际 {ids}"
+
+    def test_sort_by_ratio_asc_numeric(self, db_session):
+        """sort_by=ratio asc：Float 列数值升序 → [t2(0.5), t5(1.0), t1(2.5), t3(10.0)]。"""
+        _seed_torrents(db_session)
+        result = _search(db_session, sort_by="ratio", sort_order="asc", limit=100000)
+        ids = [item["infoId"] for item in result["data"]]
+        # SQLite asc 时 NULL（t4）排首位，其后数值升序（t6 软删除已排除，只剩 5 行）
+        assert ids[1:5] == ["t2", "t5", "t1", "t3"], f"Float 数值 asc 应为 t2,t5,t1,t3，实际 {ids}"
+
+    def test_sort_by_ratio_null_position_desc(self, db_session):
+        """ratio=NULL 的 t4 在 desc 时排末尾（SQLite 三值逻辑）。"""
+        _seed_torrents(db_session)
+        result = _search(db_session, sort_by="ratio", sort_order="desc", limit=100000)
+        ids = [item["infoId"] for item in result["data"]]
+        # t4 ratio=NULL 应在所有非 NULL 行之后
+        assert ids[-1] == "t4", f"NULL 在 desc 应排末尾，实际末位 {ids[-1]}"
+
+    def test_sort_by_ratio_limit_desc_numeric(self, db_session):
+        """sort_by=ratio_limit desc：Float 列数值排序 → [t1(10.0), t2(2.0), t3(1.5), t5(0.0)]。
+
+        历史 bug：ratio_limit 同样是 String 列，sort 路径无 cast → 字典序错误。
+        v1.0.6.1 列改 Float 后排序自动正确。
+        """
+        _seed_torrents(db_session)
+        result = _search(db_session, sort_by="ratio_limit", sort_order="desc", limit=100000)
+        ids = [item["infoId"] for item in result["data"]]
+        # 非 NULL ratio_limit 按 desc：t1(10.0) > t2(2.0) > t3(1.5) > t5(0.0)
+        # NULL（t4, t6）在 desc 时排末尾
+        assert ids[:4] == ["t1", "t2", "t3", "t5"], f"ratio_limit 数值 desc 应为 t1,t2,t3,t5，实际 {ids}"
+
+    def test_sort_by_ratio_limit_asc_numeric(self, db_session):
+        """sort_by=ratio_limit asc：Float 列数值升序 → [t5(0.0), t3(1.5), t2(2.0), t1(10.0)]。"""
+        _seed_torrents(db_session)
+        result = _search(db_session, sort_by="ratio_limit", sort_order="asc", limit=100000)
+        ids = [item["infoId"] for item in result["data"]]
+        # NULL（t4）排首位，其后数值升序（t6 软删除已排除，只剩 5 行）
+        assert ids[1:5] == ["t5", "t3", "t2", "t1"], f"ratio_limit 数值 asc 应为 t5,t3,t2,t1，实际 {ids}"
+
+    def test_sort_by_ratio_with_filter_combined(self, db_session):
+        """组合：ratio_min=1 + sort_by=ratio desc → 命中 t3(10.0),t1(2.5),t5(1.0)，按数值降序。"""
+        _seed_torrents(db_session)
+        result = _search(db_session, ratio_min=1, sort_by="ratio", sort_order="desc", limit=100000)
+        ids = [item["infoId"] for item in result["data"]]
+        # t2(0.5)<1 排除；t4 NULL 排除；剩余 t3(10.0),t1(2.5),t5(1.0) 数值 desc
+        assert ids == ["t3", "t1", "t5"], f"filter+sort 组合，实际 {ids}"
+
 
 # ==================== G. TestEndToEndSearchTorrents ====================
 
@@ -1227,3 +1295,270 @@ class TestNullSafetyBoundary:
         )
         # t1(movie,4k)+t3(movie,1080p) 含 movie；t4(NULL) 排除；t2(flac)+t5("") 不含
         assert {r.info_id for r in builder.base_query.all()} == {"t1", "t3"}
+
+
+# ==================== I. v1.0.6.1 ratio_limit filter 回归（红队漏洞 #1）====================
+
+
+class TestRatioLimitFilterRegression:
+    """验证 ratio_limit 字段在 condition_groups 路径下的数值比较。
+
+    红队漏洞 #1：v1.0.5.15 的 cast 修复只点名 field=="ratio"，遗漏 ratio_limit。
+    ratio_limit 列与 ratio 同类型（String）、同前端入口（number 类型，gt/gte/lt/lte），
+    但 cast 修复未覆盖。v1.0.6.1 把 ratio_limit 列改为 Float，从根因上消除 bug。
+    """
+
+    def test_ratio_limit_gte_should_match_double_digit(self, db_session):
+        """ratio_limit >= 2 应命中 t1(10.0) + t2(2.0)，不漏 t1。
+
+        历史 bug：String 列字典序下 '10.0' < '2' → t1 漏匹配，只返回 {'t2'}。
+        Float 列：10.0 >= 2 且 2.0 >= 2 → 返回 {'t1', 't2'}。
+        mutation：列被改回 String → 本测试应失败（红队漏洞 #1 复现）。
+        """
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[SearchCondition(field="ratio_limit", operator="gte", value=2)],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert result["code"] == "200"
+        assert _info_ids(result) == {"t1", "t2"}, f"ratio_limit>=2 应命中 t1(10.0)+t2(2.0)。实际 {_info_ids(result)}"
+
+    def test_ratio_limit_lte_excludes_double_digit(self, db_session):
+        """ratio_limit <= 5 应命中 t2(2.0)+t3(1.5)+t5(0.0)，排除 t1(10.0)。
+
+        历史 bug：String 列字典序 '10.0' < '5' → t1 被误命中。
+        """
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[SearchCondition(field="ratio_limit", operator="lte", value=5)],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert _info_ids(result) == {"t2", "t3", "t5"}, f"ratio_limit<=5 应排除 t1(10.0)。实际 {_info_ids(result)}"
+
+    def test_ratio_limit_null_excluded_by_filter(self, db_session):
+        """ratio_limit=NULL（t4, t6）在 gte 比较下被 SQL 三值逻辑排除。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[SearchCondition(field="ratio_limit", operator="gte", value=0)],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        # t6 已软删除；t4 ratio_limit=NULL 被排除
+        assert "t4" not in _info_ids(result), "NULL 行不应被 gte 命中"
+
+
+# ==================== J. v1.0.6.1 新增 4 操作符回归（between/regex/last_days/date_range）====================
+
+
+class TestNewOperatorsRegression:
+    """验证 v1.0.6.1 新增的 between/regex/last_days/date_range 操作符。
+
+    前端 AdvancedSearchBuilder 暴露这 4 个操作符但后端 OPERATOR_MAPPING 不支持，
+    Pydantic allowed_operators 也不含 → 历史是 422 硬失败。v1.0.6.1 后端补齐实现。
+    """
+
+    def test_between_on_size_with_units(self, db_session):
+        """between on size：value={min:'1 GB', max:'10 GB', minUnit, maxUnit} → 命中 t3(1GB),t4(5GB)。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="size",
+                    operator="between",
+                    value={"min": "1 GB", "max": "10 GB", "minUnit": "GB", "maxUnit": "GB"},
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert _info_ids(result) == {"t3", "t4"}, f"size between [1GB,10GB] 实际 {_info_ids(result)}"
+
+    def test_between_on_ratio_numeric(self, db_session):
+        """between on ratio：value={min:1, max:3} → 命中 t1(2.5),t5(1.0)（t3=10.0 超上限）。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="ratio",
+                    operator="between",
+                    value={"min": 1, "max": 3},
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert _info_ids(result) == {"t1", "t5"}, f"ratio between [1,3] 实际 {_info_ids(result)}"
+
+    def test_between_on_added_date_range(self, db_session):
+        """between on added_date：value={start, end} → 命中 t2(2026-02-20) 在 [2026-02-01, 2026-03-01] 内。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="added_date",
+                    operator="between",
+                    value={"start": "2026-02-01", "end": "2026-03-01"},
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert _info_ids(result) == {"t2"}, f"added_date between 实际 {_info_ids(result)}"
+
+    def test_regex_on_name_case_insensitive(self, db_session):
+        """regex on name：value={pattern:'avatar', caseSensitive:false} → 命中 t1(Avatar 4K)。
+
+        SQLite 无原生 REGEXP，后端用 LIKE 兜底（pattern 转 %pattern% 子串匹配）。
+        caseSensitive=false 时大小写不敏感。
+        """
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="name",
+                    operator="regex",
+                    value={"pattern": "avatar", "caseSensitive": False},
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert _info_ids(result) == {"t1"}, f"regex 'avatar' 应命中 t1(Avatar)。实际 {_info_ids(result)}"
+
+    def test_regex_on_name_case_sensitive_excludes_mismatch(self, db_session):
+        """regex on name caseSensitive=true：pattern='Avatar' 只匹配大写 A 开头。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="name",
+                    operator="regex",
+                    value={"pattern": "Avatar", "caseSensitive": True},
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert _info_ids(result) == {"t1"}, f"regex 'Avatar' 大小写敏感。实际 {_info_ids(result)}"
+
+    def test_last_days_on_added_date(self, db_session):
+        """last_days on added_date：value='{"days": N}'（JSON 字符串）→ 命中最近 N 天添加的种子。
+
+        由于种子数据 added_date 是固定历史日期（2026-01-15 等），用一个极大天数确保全部命中。
+        """
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="added_date",
+                    operator="last_days",
+                    value='{"days": 36500}',
+                )
+            ],  # 100 年，确保所有 2026 年种子都被命中
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        # 5 个活跃种子（t6 软删除排除）都应在最近 100 年内
+        assert result["total"] == 5, f"last_days=36500 应命中全部活跃种子。实际 {result['total']}"
+
+    def test_last_days_excludes_old_dates(self, db_session):
+        """last_days=1 只命中最近 1 天（种子都是历史日期，应返回空）。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="added_date",
+                    operator="last_days",
+                    value='{"days": 1}',
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert result["total"] == 0, f"last_days=1 不应命中 2026 年历史种子。实际 {result['total']}"
+
+    def test_date_range_on_added_date(self, db_session):
+        """date_range on added_date：value='{"start","end"}'（JSON 字符串）→ 命中区间内种子。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="added_date",
+                    operator="date_range",
+                    value='{"start": "2026-03-01", "end": "2026-05-01"}',
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        # t3(2026-03-10), t4(2026-04-05) 在 [03-01, 05-01] 内
+        assert _info_ids(result) == {"t3", "t4"}, f"date_range 实际 {_info_ids(result)}"
+
+
+# ==================== K. v1.0.6.1 前后端操作符契约守卫 ====================
+
+
+class TestOperatorContractGuard:
+    """冻结前端暴露的操作符集合，防止后端 silently 不支持导致 422 或语义降级。
+
+    红队发现：前端 AdvancedSearchBuilder 暴露 between/regex/last_days/date_range，
+    但后端 allowed_operators 不含 → Pydantic 直接 422 拒整个请求。
+    v1.0.6.1 已在后端补齐这 4 个操作符，本测试冻结契约，强制任何新增前端操作符
+    必须同步在后端 allowed_operators 登记。
+    """
+
+    def test_all_frontend_operators_are_backend_supported(self):
+        """前端 operatorGroups 里全部 backendValue 必须在后端 allowed_operators 集合内。"""
+        from app.api.models.advanced_search import SearchCondition
+
+        # 后端 allowed_operators 集合（从 validator 提取）
+        # 通过反射 validate_operator 的 allowed_operators 定义
+        import inspect
+
+        src = inspect.getsource(SearchCondition.validate_operator)
+        # 简化：直接构造一个 SearchCondition 试每个 operator，被拒的会抛 ValueError
+        # 前端 AdvancedSearchBuilder.vue operatorGroups 暴露的全部 backendValue
+        frontend_operators = {
+            # text 组
+            "contains",
+            "not_contains",
+            "eq",
+            "ne",
+            "starts_with",
+            "ends_with",
+            "not_starts_with",
+            "not_ends_with",
+            "regex",
+            # number 组
+            "between",
+            # date 组
+            "last_days",
+            "date_range",
+            # select/multiSelect 组
+            "in",
+            "not_in",
+            # 其他（contains_any 等多值操作符）
+            "contains_any",
+            "contains_all",
+            "not_contains_any",
+            "not_contains_all",
+            "is_null",
+            "is_not_null",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+        }
+        unsupported = []
+        for op in frontend_operators:
+            try:
+                SearchCondition(field="name", operator=op, value="x")
+            except Exception:
+                unsupported.append(op)
+        assert not unsupported, (
+            f"前端暴露的操作符后端不支持（会 422）：{unsupported}。"
+            "必须在 backend/app/api/models/advanced_search.py 的 allowed_operators 登记，"
+            "或在 service 层实现。"
+        )

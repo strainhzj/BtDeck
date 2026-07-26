@@ -574,6 +574,22 @@ def convert_to_vos_with_trackers(
     ]
 
 
+def _safe_float(value: Any) -> Optional[float]:
+    """把下载器返回的 ratio/ratio_limit 安全转为 float 或 None。
+
+    下载器客户端（qBittorrent/transmission_rpc）在异常状态下可能返回非数值
+    （如 ValueError 实例、None、哨兵 -1/-2）。Float 列不接受非数值字符串，
+    此 helper 统一兜底，避免生产偶发 500。
+    """
+    if value is None:
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f
+
+
 def parse_size_string(size_str: Optional[str]) -> Optional[int]:
     """将大小字符串转换为字节数"""
     if not size_str:
@@ -708,8 +724,9 @@ def create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp
             if qb_torrent.completion_on and qb_torrent.completion_on > 0 and qb_torrent.completion_on <= 2147483647
             else None
         ),
-        ratio=str(qb_torrent.ratio),
-        ratio_limit=str(qb_torrent.ratio_limit) if qb_torrent.ratio_limit != -1 else "",
+        ratio=_safe_float(qb_torrent.ratio),
+        # ratio_limit 列已是 Float；qBittorrent 的 -1 哨兵表示"无限制"，统一映射 None
+        ratio_limit=(_safe_float(qb_torrent.ratio_limit) if qb_torrent.ratio_limit != -1 else None),
         tags=",".join(qb_torrent.tags) if qb_torrent.tags else "",
         category=qb_torrent.category,
         super_seeding="1" if qb_torrent.super_seeding else "0",
@@ -746,8 +763,11 @@ def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
         torrent_file=tr_torrent.torrent_file,
         added_date=tr_torrent.added_date,
         completed_date=tr_torrent.done_date if tr_torrent.done_date else None,
-        ratio=str(tr_torrent.seed_ratio_limit),
-        ratio_limit="",
+        # 修复历史错位：原代码把 seed_ratio_limit（比率限制）赋给了 ratio（实际比率）字段。
+        # ratio = 实际上传比率（uploadRatio 的 snake_case），ratio_limit = 种子比率限制；
+        # seed_ratio_limit 为 None 表示 TR "无限制"，正好映射 Float 列的 NULL。
+        ratio=_safe_float(tr_torrent.ratio),
+        ratio_limit=_safe_float(tr_torrent.seed_ratio_limit),
         tags=",".join(tr_torrent.labels) if hasattr(tr_torrent, "labels") and tr_torrent.labels else "",
         category="",
         super_seeding="",

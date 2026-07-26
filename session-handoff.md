@@ -1,35 +1,45 @@
 # Session Handoff - BtDeck 全栈项目
 
-## 2026-07-26 交接：高级搜索完备回归测试 + ratio bug 修复 + 死代码清理
+## 2026-07-26 交接：ratio/ratio_limit 列治本（String→Float）+ 4 操作符后端实现（v1.0.6.25）
 
-**当前任务**: `v1.0.5.15`
+**当前任务**: `v1.0.6.25`
 **分支**: dev
 **状态**: 全部实现、测试、静态门禁完成；尚未提交。
 
-### 关键结果
+### 起因
 
-- 修复 ratio 字符串字典序 bug（双路径：基础过滤 ratio_min/max + 条件组 ratio + gt/gte/lt/lte），用 `cast(col, Float)` 做真实数值比较。修复前 `ratio_min=2` 让 `ratio="10.0"` 漏匹配（"10.0" < "2" 字典序）。
-- 删除 `apply_multi_select_conditions` 死代码路径：后端方法+类+字段+前端类型声明全删。前端 grep 实证无任何 `.vue` 业务代码赋值 `*_multi` 字段（tags 子串语义已在 v1.0.5.14 通过 condition_groups 的 contains_any 修复）。
-- 清理 `added_date_max` 死代码 pass。
-- 新增 `test_advanced_search_regression.py`：82 用例 8 类完备真实 SQLite 回归测试（A 基础过滤 / B 全22操作符 / C 条件组组合 / D *_multi 删除守卫 / E tracker 子查询 / F 排序分页 / G 端到端 / H NULL 边界）。
-- 扩展 `make_torrent` 支持 tags/category/ratio 等关键字参数，避免 24 参数手写。
+用户要求红队审查 v1.0.5.15 提交是否治标不治本。红队坐实 3 处同根 bug 未修（ratio_limit filter、ratio sort、ratio_limit sort）+ between/regex/last_days/date_range 是 422 硬失败。3 子代理独立审查方案 v1 又坐实 6 处阻断项，修订为 v2 后用户两轮决策确认范围。
+
+### 关键改动
+
+- **Schema 治本**：ratio/ratio_limit 列 String→Float；Alembic 迁移 `6132b66d14a7`（脏数据清洗 + batch_alter + partial unique index drop/recreate + WHERE 子句断言）
+- **服务层简化**：移除 cast、新增 `NUMERIC_FIELDS = {"ratio","ratio_limit"}`、显式 `float(value)` 兜底
+- **4 操作符后端实现**：between/regex/last_days/date_range（Pydantic allowed_operators 扩展 + value 接受 dict + service 层 4 套解构）
+- **写入侧清理 8 处**：torrent_helpers QB/TR（含 TR 错位修复）/ torrent_sync QB 哨兵 / torrent_crud_service 默认值；新增 `_safe_float` helper 兜底 ValueError
+- **前端 numberRange UI**：ConditionValueInput 模板+handler+watcher+normalizeValue+getDefaultValue；AdvancedSearchBuilder formatParamValue number+between 对象分支
+- **类型契约同步**：VO schema、两份 Torrent 接口、TorrentDetailDialog 0 值修复用 formatRatio
 
 ### 验证
 
-- TDD 红绿：2 个 ratio bug 用例修复前失败、修复后通过。
-- 回归测试 82/82 通过；advanced_search 全量相关测试 188 passed；含 auth 扩展 269 passed。
-- 后端 flake8 0 error、black 通过、mypy 与 baseline 一致（29 errors 全在既有方法，本次改动行 0 新增）。
-- 前端 typecheck + lint（--max-warnings 0）通过。
+- Alembic 迁移实证：脏数据（""/-1/-2/"None"/"none"）全部转 NULL、partial index WHERE dr=0 保真、upgrade/downgrade 对称
+- 后端全量 pytest **2315 passed**（基线 2286 + 新增 29：7 sort + 3 ratio_limit filter + 8 new operators + 1 contract guard + 4 migration + 既有断言更新）
+- 后端 flake8 0；black 通过；mypy 改动区域 0 新增
+- 前端 npm run lint + npm run build 通过；vue-tsc type error 2472→2473（基线抖动）
+- 手动：PRAGMA table_info(torrent_info) ratio 列 FLOAT、idx_torrent_hash_unique 含 WHERE dr=0
 
 ### 后续与工作区
 
-- 本轮未提交；如需提交，应在仓库根目录纳入本任务 7 个文件（5 后端 + 2 前端）+ 3 个项目记录文件（progress.md / feature_list.json / session-handoff.md）。
-- 明确不修的边界（独立技术债）：NULL 安全语义差异（顶层 OPERATOR_MAPPING vs `_build_text_filter`）、`ratio_limit` 同类潜在 bug（前端无 API 暴露）、search-preview 单 AND 组限制。
-- 浏览器手测待用户在本地完成。
+- 本轮未提交；如需提交，应在仓库根目录纳入本任务 16 个文件（10 后端含迁移 + 5 前端 + feature_list.json）+ progress.md + session-handoff.md
+- **明确不修的边界**（独立技术债）：
+  - env.py 未开 `render_as_batch`（offline SQL 生成场景，不在本次范围）
+  - 前端 ratio/date 的 between UI 仅复用 sizeRange 范式补 numberRange，完整 UX 优化另议
+  - torrents_async.py:1387/3125 把 `seed_ratio_limit` 映到响应 dict `ratio_limit` 键的命名习惯（与 DB 列无关）
+  - CompactTable.vue 是 dead component，未删
+- 浏览器手测待用户在本地完成（重点验证：种子列表按"比率"列排序、高级搜索选"比率限制"between 范围、TorrentDetailDialog ratio=0 显示）
 
 ---
 
-## 2026-07-22 交接：查询模板与孤儿文件页面 UI 对齐完成
+## 2026-07-26 交接：高级搜索完备回归测试 + ratio bug 修复 + 死代码清理
 
 **当前任务**: `v1.0.6.24`
 **分支**: dev

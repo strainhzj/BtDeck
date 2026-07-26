@@ -48,9 +48,9 @@ export interface Torrent {
 
   // 进度信息(可能为null)
   progress?: number | null
-  ratio: string
-  ratioLimit: string
-  ratio_limit?: string
+  ratio: number | null
+  ratioLimit: number | null
+  ratio_limit?: number | null
 
   // 时间信息
   addedDate: number | string

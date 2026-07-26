@@ -27,6 +27,7 @@ from app.models.setting_templates import DownloaderTypeEnum
 # 审计日志相关导入（使用异步版本）
 from app.services.audit_service import get_audit_service, extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
+from app.api.endpoints.torrent_helpers import _safe_float
 import urllib3
 
 logger = logging.getLogger(__name__)
@@ -471,8 +472,8 @@ def tr_add_torrents(db, downloaders, app=None):
             torrent_file=torrent_info.torrent_file,
             added_date=torrent_info.added_date,
             completed_date=torrent_info.done_date if torrent_info.done_date else None,
-            ratio=torrent_info.ratio,
-            ratio_limit=torrent_info.seed_ratio_limit,
+            ratio=_safe_float(torrent_info.ratio),
+            ratio_limit=_safe_float(torrent_info.seed_ratio_limit),
             tags=",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
             category="",
             super_seeding="",
@@ -732,8 +733,9 @@ def qb_add_torrents(db, downloaders, app=None):
                 and torrent_info.completion_on <= 2147483647  # 防止Year 2038问题
                 else None
             ),
-            ratio=torrent_info.ratio,
-            ratio_limit=torrent_info.ratio_limit,
+            ratio=_safe_float(torrent_info.ratio),
+            # ratio_limit 列已是 Float；qBittorrent 的 -1 哨兵表示"无限制"，统一映射 None
+            ratio_limit=(_safe_float(torrent_info.ratio_limit) if torrent_info.ratio_limit != -1 else None),
             tags=torrent_info.tags,
             category=torrent_info.category,
             super_seeding=torrent_info.super_seeding,

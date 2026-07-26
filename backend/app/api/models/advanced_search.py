@@ -16,7 +16,7 @@ class SearchCondition(BaseModel):
 
     field: str = Field(..., description="搜索字段", examples=["name"])
     operator: str = Field(..., description="操作符", examples=["contains"])
-    value: Union[str, List[str], int, float, bool, List[int], List[float]] = Field(
+    value: Union[str, List[str], int, float, bool, List[int], List[float], Dict[str, Any]] = Field(
         ..., description="搜索值", examples=["电影"]
     )
 
@@ -45,6 +45,14 @@ class SearchCondition(BaseModel):
             "contains_all",
             "not_contains_any",
             "not_contains_all",
+            # 区间/窗口操作符（v1.0.6.1 补齐，前端 AdvancedSearchBuilder 已暴露）：
+            # between={min,max}（size 带 minUnit/maxUnit，date 带 start/end）
+            "between",
+            # regex={pattern,caseSensitive}（SQLite 无原生 REGEXP，用 LIKE 兜底）
+            "regex",
+            # last_days={"days":N}（JSON 字符串）、date_range={"start","end"}
+            "last_days",
+            "date_range",
         }
         if v not in allowed_operators:
             raise ValueError(f"Invalid operator: {v}. Allowed: {allowed_operators}")

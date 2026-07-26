@@ -10,9 +10,9 @@ import logging
 import json
 import uuid
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, not_, desc, asc, func, exists, cast, Float
+from sqlalchemy import and_, or_, not_, desc, asc, func, exists
 from sqlalchemy.sql import expression
 
 from app.core.json_parser import safe_json_parse
@@ -113,6 +113,10 @@ class SearchQueryBuilder:
         ),
     }
 
+    # 数值语义列：ORM 列已是 Float（v1.0.6.1 迁移后），常量保留供未来扩展守卫。
+    # 不含 size（size 走 validate_size_string 单位解析独立路径）。
+    NUMERIC_FIELDS = {"ratio", "ratio_limit"}
+
     def __init__(self, db: Session):
         """
         初始化查询构建器
@@ -175,14 +179,12 @@ class SearchQueryBuilder:
             if size_max_bytes is not None:
                 filters.append(TorrentInfo.size <= size_max_bytes)
 
-        # 分享比率范围过滤
-        # ratio 列是 String 类型但语义是数值；用 cast 转为 Float 做数值比较，
-        # 否则字符串字典序会让 ratio_min=2 漏匹配 ratio="10.0" 的种子（"10.0" < "2"）
+        # 分享比率范围过滤（ratio 列已是 Float，天然数值比较）
         if request.ratio_min is not None:
-            filters.append(cast(TorrentInfo.ratio, Float) >= request.ratio_min)
+            filters.append(TorrentInfo.ratio >= request.ratio_min)
 
         if request.ratio_max is not None:
-            filters.append(cast(TorrentInfo.ratio, Float) <= request.ratio_max)
+            filters.append(TorrentInfo.ratio <= request.ratio_max)
 
         # 添加日期范围过滤
         if request.added_date_min:
@@ -344,7 +346,10 @@ class SearchQueryBuilder:
 
             column = self.FIELD_MAPPING[field]
 
-            if operator not in self.OPERATOR_MAPPING:
+            # between/regex/last_days/date_range 不在 OPERATOR_MAPPING（需要 value 解构），
+            # 在下方单独 dispatch，这里不视为未知操作符。
+            _dispatched_operators = {"between", "regex", "last_days", "date_range"}
+            if operator not in self.OPERATOR_MAPPING and operator not in _dispatched_operators:
                 logger.warning(f"未知的操作符: {operator}")
                 return None
         except Exception as e:
@@ -366,13 +371,158 @@ class SearchQueryBuilder:
                 if value is None:
                     return None
 
-        if field == "ratio" and operator in ["gt", "gte", "lt", "lte"]:
-            # ratio 是 String 列但语义是数值；cast 为 Float 做数值比较，
-            # 与 apply_basic_filters 的 ratio_min/max 保持一致。
-            # value 不做转换（Pydantic SearchCondition.value 已是 Union[int, float]）
-            column = cast(column, Float)
+        if field in self.NUMERIC_FIELDS and operator in ["gt", "gte", "lt", "lte"]:
+            # Float 列天然数值比较；value 显式转 float 兜底
+            # （SearchCondition.value 是 Union[str,...,int,float]，Pydantic smart-union 下
+            # JSON 字符串 "2.5" 会匹配 str 而非 float，故需显式转换）
+            try:
+                value = float(value)
+            except (TypeError, ValueError):
+                logger.warning(f"数值字段 {field} 的值无法转为 float: {value}")
+                return None
+
+        # between / regex / last_days / date_range 需要先解构 value，单独 dispatch
+        if operator == "between":
+            return self._build_between_filter(column, field, value)
+        if operator == "regex":
+            return self._build_regex_filter(column, value)
+        if operator in ("last_days", "date_range"):
+            return self._build_date_window_filter(column, operator, value)
 
         return self.OPERATOR_MAPPING[operator](column, value)
+
+    def _build_between_filter(self, column, field: str, value: Any) -> Optional[expression.ClauseElement]:
+        """between 操作符：value = {min, max}（size 带 minUnit/maxUnit；date 带 start/end）。
+
+        前端实测 value 形态：
+          - size: {"min": "1 GB", "max": "10 GB", "minUnit": "GB", "maxUnit": "GB"}
+          - 数值字段（ratio/ratio_limit）: {"min": 1, "max": 10}
+          - 日期字段（added_date/completed_date）: {"start": "...", "end": "..."}
+        """
+        if not isinstance(value, dict):
+            logger.warning(f"between 操作符要求 value 是对象，实际: {value}")
+            return None
+
+        if field in ["added_date", "completed_date", "added_time"]:
+            # 日期区间：min/max 或 start/end 任一命名都接受
+            start_raw = value.get("start", value.get("min"))
+            end_raw = value.get("end", value.get("max"))
+            conditions = []
+            if start_raw is not None:
+                start = validate_date_string(start_raw) if isinstance(start_raw, str) else start_raw
+                if start is not None:
+                    conditions.append(column >= start)
+            if end_raw is not None:
+                end = validate_date_string(end_raw) if isinstance(end_raw, str) else end_raw
+                if end is not None:
+                    conditions.append(column <= end)
+            if not conditions:
+                return None
+            return and_(*conditions)
+
+        if field == "size":
+            # size 带 "1 GB" 单位串
+            min_raw = value.get("min")
+            max_raw = value.get("max")
+            conditions = []
+            if min_raw is not None:
+                min_bytes = validate_size_string(min_raw) if isinstance(min_raw, str) else min_raw
+                if min_bytes is not None:
+                    conditions.append(column >= min_bytes)
+            if max_raw is not None:
+                max_bytes = validate_size_string(max_raw) if isinstance(max_raw, str) else max_raw
+                if max_bytes is not None:
+                    conditions.append(column <= max_bytes)
+            if not conditions:
+                return None
+            return and_(*conditions)
+
+        # 默认数值字段（ratio/ratio_limit 等）
+        min_raw = value.get("min")
+        max_raw = value.get("max")
+        conditions = []
+        try:
+            if min_raw is not None:
+                conditions.append(column >= float(min_raw))
+            if max_raw is not None:
+                conditions.append(column <= float(max_raw))
+        except (TypeError, ValueError):
+            logger.warning(f"between 数值字段 {field} 的 min/max 无法转为 float: {value}")
+            return None
+        if not conditions:
+            return None
+        return and_(*conditions)
+
+    def _build_regex_filter(self, column, value: Any) -> Optional[expression.ClauseElement]:
+        """regex 操作符：value = {pattern, caseSensitive}。
+
+        SQLite 无原生 REGEXP，用 LIKE 兜底（pattern 转 %pattern% 子串匹配）。
+        caseSensitive=False 时两边 LOWER（SQLite LIKE 默认大小写不敏感，但显式更稳）。
+        """
+        if isinstance(value, dict):
+            pattern = value.get("pattern")
+            case_sensitive = value.get("caseSensitive", False)
+        elif isinstance(value, str):
+            pattern = value
+            case_sensitive = True
+        else:
+            logger.warning(f"regex 操作符要求 value 是对象或字符串，实际: {value}")
+            return None
+
+        if not pattern:
+            return None
+
+        like_pattern = f"%{pattern}%"
+        if case_sensitive:
+            return column.like(like_pattern)
+        return func.lower(column).like(func.lower(like_pattern))
+
+    def _build_date_window_filter(self, column, operator: str, value: Any) -> Optional[expression.ClauseElement]:
+        """last_days / date_range 操作符（仅用于日期字段）。
+
+        前端实测 value 形态（formatParamValue 对 date 字段 JSON.stringify 后）：
+          - last_days: '{"days": 7}'
+          - date_range: '{"start": "...", "end": "..."}'
+        """
+        # value 可能是 JSON 字符串或已解构的 dict
+        if isinstance(value, str):
+            try:
+                value = json.loads(value)
+            except (ValueError, TypeError):
+                logger.warning(f"{operator} 的 value 不是合法 JSON: {value}")
+                return None
+        if not isinstance(value, dict):
+            logger.warning(f"{operator} 操作符要求 value 是对象，实际: {value}")
+            return None
+
+        if operator == "last_days":
+            days = value.get("days")
+            if days is None:
+                return None
+            try:
+                days = int(days)
+            except (TypeError, ValueError):
+                return None
+            if days < 0:
+                return None
+            threshold = datetime.now() - timedelta(days=days)
+            return column >= threshold
+
+        # date_range
+        start_raw = value.get("start")
+        end_raw = value.get("end")
+        conditions = []
+        if start_raw is not None:
+            start = validate_date_string(start_raw) if isinstance(start_raw, str) else start_raw
+            if start is not None:
+                conditions.append(column >= start)
+        if end_raw is not None:
+            end = validate_date_string(end_raw) if isinstance(end_raw, str) else end_raw
+            if end is not None:
+                conditions.append(column <= end)
+        if not conditions:
+            return None
+        return and_(*conditions)
 
     def _build_tracker_msg_filter(self, operator: str, value: Any) -> Optional[expression.ClauseElement]:
         """
@@ -474,6 +624,8 @@ class SearchQueryBuilder:
             sort_by = "added_date"
 
         column = self.FIELD_MAPPING[sort_by]
+        # ratio / ratio_limit / size 已是 Float 列，order_by 天然数值排序（无需 cast）；
+        # 历史 String 列字典序 bug（"10.0" < "2"）随 v1.0.6.1 列类型迁移根治。
 
         if sort_order and sort_order.lower() == "asc":
             self.base_query = self.base_query.order_by(asc(column))

@@ -35,7 +35,7 @@
       </el-descriptions-item>
 
       <el-descriptions-item label="分享比率">
-        {{ torrent.ratio || '-' }}
+        {{ formatRatio(torrent.ratio) }}
       </el-descriptions-item>
 
       <el-descriptions-item label="保存路径" :span="2">
@@ -122,6 +122,14 @@ export default class TorrentDetailDialog extends Vue {
   formatDate(dateStr: string): string {
     if (!dateStr) return '-'
     return new Date(dateStr).toLocaleString('zh-CN')
+  }
+
+  formatRatio(ratio: number | null | undefined): string {
+    // ratio 列已是 number；0 应显示 "0.00" 而非 "-"（原 torrent.ratio || '-' 在 0 时显示 -）
+    if (ratio === null || ratio === undefined) return '-'
+    const n = typeof ratio === 'string' ? parseFloat(ratio) : ratio
+    if (isNaN(n as number)) return '-'
+    return (n as number).toFixed(2)
   }
 
   getProgress(torrent: any): number {

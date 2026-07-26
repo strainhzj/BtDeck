@@ -85,6 +85,38 @@
       />
     </div>
 
+    <!-- 数值范围输入（ratio/ratio_limit 的 between） -->
+    <div
+      v-else-if="inputType === 'numberRange'"
+      class="number-range-input"
+    >
+      <span class="size-label">最小:</span>
+      <el-input-number
+        :value="inputValue && inputValue.min !== undefined ? inputValue.min : null"
+        :min="0"
+        :precision="2"
+        :controls="true"
+        :step="0.1"
+        placeholder="最小值"
+        size="small"
+        class="size-number-input"
+        @change="handleNumberRangeMinChange"
+      />
+      <span class="range-separator">至</span>
+      <span class="size-label">最大:</span>
+      <el-input-number
+        :value="inputValue && inputValue.max !== undefined ? inputValue.max : null"
+        :min="0"
+        :precision="2"
+        :controls="true"
+        :step="0.1"
+        placeholder="最大值"
+        size="small"
+        class="size-number-input"
+        @change="handleNumberRangeMaxChange"
+      />
+    </div>
+
     <!-- 种子大小范围输入 -->
     <div
       v-else-if="inputType === 'sizeRange'"
@@ -369,9 +401,17 @@ export default class ConditionValueInput extends Vue {
       case 'regex':
         return 'regex'
       case 'between':
-        // 种子大小范围查询
+        // 种子大小范围查询（带单位）
         if (this.field === 'size') {
           return 'sizeRange'
+        }
+        // 日期字段 between 复用 dateRange 模板（与 date_range 操作符同 UI）
+        if (fieldType === 'date') {
+          return 'dateRange'
+        }
+        // 数值字段（ratio/ratio_limit 等）between 走 numberRange 模板
+        if (fieldType === 'number') {
+          return 'numberRange'
         }
         return fieldType
       default:
@@ -528,6 +568,12 @@ export default class ConditionValueInput extends Vue {
           this.inputValue = { value: null, unit: 'GB' }
         }
       }
+    } else if (newType === 'numberRange') {
+      // 数值范围（ratio/ratio_limit 的 between）：{min, max} 结构
+      if (!this.inputValue || typeof this.inputValue !== 'object'
+          || this.inputValue.min === undefined) {
+        this.inputValue = { min: null, max: null }
+      }
     }
   }
 
@@ -662,6 +708,13 @@ export default class ConditionValueInput extends Vue {
         }
         return { pattern: '', caseSensitive: false }
 
+      case 'numberRange':
+        // 数值范围（ratio/ratio_limit 的 between）：{min, max} 无单位
+        if (typeof value === 'object' && value?.min !== undefined) {
+          return { min: value.min, max: value.max }
+        }
+        return { min: null, max: null }
+
       case 'sizeRange':
         if (typeof value === 'object' && value?.min !== undefined) {
           return {
@@ -707,6 +760,9 @@ export default class ConditionValueInput extends Vue {
 
       case 'regex':
         return { pattern: '', caseSensitive: false }
+
+      case 'numberRange':
+        return { min: null, max: null }
 
       case 'sizeRange':
         return { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
@@ -789,6 +845,23 @@ export default class ConditionValueInput extends Vue {
       this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
     }
     this.inputValue.maxUnit = unit
+    this.emitChange()
+  }
+
+  // 数值范围（ratio/ratio_limit 的 between）：value 结构 {min, max}，无单位
+  handleNumberRangeMinChange(value: number) {
+    if (!this.inputValue || typeof this.inputValue !== 'object') {
+      this.inputValue = { min: null, max: null }
+    }
+    this.inputValue.min = value
+    this.emitChange()
+  }
+
+  handleNumberRangeMaxChange(value: number) {
+    if (!this.inputValue || typeof this.inputValue !== 'object') {
+      this.inputValue = { min: null, max: null }
+    }
+    this.inputValue.max = value
     this.emitChange()
   }
 

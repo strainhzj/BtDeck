@@ -1249,6 +1249,14 @@ export default class AdvancedSearchBuilder extends Vue {
         return condition.value
 
       case 'number':
+        // 数值字段 between：返回 {min, max} 对象（后端 _build_between_filter 解构）
+        if (condition.operator === 'between' && condition.value
+            && typeof condition.value === 'object' && condition.value.min !== undefined) {
+          return {
+            min: condition.value.min !== null ? Number(condition.value.min) : null,
+            max: condition.value.max !== null ? Number(condition.value.max) : null
+          }
+        }
         return Number(condition.value)
 
       case 'multiSelect':

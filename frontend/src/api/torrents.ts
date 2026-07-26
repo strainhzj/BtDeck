@@ -23,9 +23,9 @@ export interface Torrent {
   added_date?: string // 蛇形命名兼容
   completedDate: string | null
   completed_date?: string | null // 蛇形命名兼容
-  ratio: string
-  ratioLimit: string
-  ratio_limit?: string // 蛇形命名兼容
+  ratio: number | null
+  ratioLimit: number | null
+  ratio_limit?: number | null // 蛇形命名兼容
   tags: string
   category: string
   superSeeding: string | boolean

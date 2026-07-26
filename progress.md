@@ -1,5 +1,50 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-26 - ratio/ratio_limit 列治本（String→Float）+ 4 操作符后端实现（v1.0.6.25）
+
+**任务 ID**: `v1.0.6.25`（v1.0.6 task 25；当前 dev 版本 v1.0.6）
+**分支**: dev
+**范围**: 全栈。后端 schema 治本 + 服务层简化 + 4 操作符实现 + 类型契约；前端 numberRange UI + 类型同步。
+
+### 起因：v1.0.5.15 的 cast 修复属「治标不治本」
+
+用户要求"作为红队，严格验证 v1.0.5.15 提交是否治标不治本"。红队审查坐实 3 处同根 bug 未修：
+1. **ratio_limit filter**：cast 修复只点名 `field=="ratio"`，遗漏同类型同入口的 ratio_limit
+2. **ratio sort**：apply_sorting 直接 order_by(String 列) 走字典序，filter 修了 sort 没修
+3. **ratio_limit sort**：同上
+
+且发现 between/regex/last_days/date_range 四个前端暴露的操作符后端 `allowed_operators` 不含，Pydantic 直接 422 拒整个请求。
+
+### 治本方案
+
+**Schema 根因**：ratio/ratio_limit 用 `Column(String)` 存数值是建模错误。改为：
+1. **列类型 String→Float** + Alembic batch_alter 迁移（含脏数据 `""`/`-1`/`-2`/`"None"` 清洗、partial unique index 显式 drop+recreate、迁移末尾断言 WHERE 子句保真）
+2. **服务层简化**：移除 cast、新增 `NUMERIC_FIELDS = {"ratio","ratio_limit"}` 集中常量、显式 `float(value)` 兜底 Pydantic smart-union
+3. **4 操作符后端实现**：between（拆 gte AND lte）、regex（LIKE 兜底）、last_days（datetime 偏移）、date_range（区间）
+4. **前端 numberRange UI**：ConditionValueInput 模板 + handler + watcher + formatParamValue number+between 对象分支
+5. **写入侧清理 8 处**：torrent_helpers QB+TR 错位修复、torrent_sync QB 哨兵、torrent_crud_service 默认值；新增 `_safe_float` helper 兜底 ValueError 实例
+6. **类型契约同步**：VO schema、两份 Torrent 接口、TorrentDetailDialog 0 值修复用 formatRatio
+
+### 红队审查迭代
+
+方案 v1 经 3 子代理独立审查坐实 6 处阻断项（写入侧漏 50%、脏数据漏 `"None"`、batch_alter 范式错误类比、between 是 422 不是静默丢弃、版本号违规、前端 0 值回归），修订为 v2 后用户两次确认范围（4 操作符全纳入、迁移末尾加断言）。
+
+### 验证
+
+- Alembic 迁移 6132b66d14a7 实证：脏数据全部转 NULL、partial index WHERE 保真、upgrade/downgrade 对称
+- 后端全量 pytest **2315 passed**（基线 2286 + 新增 29：7 sort + 3 ratio_limit filter + 8 new operators + 1 contract guard + 4 migration + 其他）
+- flake8 0；black 通过；mypy 改动区域 0 新增
+- 前端 npm run lint + npm run build 通过；vue-tsc type error 2472→2473（基线本身抖动）
+- 手动：PRAGMA table_info(torrent_info) ratio 列 FLOAT、idx_torrent_hash_unique 含 WHERE dr=0
+
+### 关键决策
+
+- **哨兵值**：qB -1 / TR None / 历史 "" 全部统一映射 NULL（与 commit message "CAST(NULL AS FLOAT) 不误命中" 一致）
+- **TR 赋值错位**：torrent_helpers.py:749 原 `ratio=str(tr_torrent.seed_ratio_limit)`（比率限制误赋给实际比率字段）一并修复
+- **batch_alter 断言**：只断言 partial unique index 存在 + WHERE 子句，不强行断言全部 ix_torrent_info_* 索引名（ghost 库用不同索引设计）
+
+---
+
 ## 2026-07-26 - 高级搜索完备回归测试 + ratio 字典序 bug 修复 + *_multi 死代码清理
 
 **任务 ID**: `v1.0.5.15`（v1.0.5 高级搜索功能回归保护与缺陷修复；当前 dev 版本 v1.0.6）
