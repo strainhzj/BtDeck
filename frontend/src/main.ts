@@ -36,8 +36,12 @@ import router from '@/router'
 import '@/icons/components/index'
 import '@/permission'
 import waves from '@/directive/waves' // waves directive
+import LucideIcon from '@/components/common/LucideIcon.vue'
 
 Vue.use(ElementUI)
+
+// 全局注册 Lucide 图标组件，统一替换界面中的 emoji / el-icon-* / 自绘 SVG。
+Vue.component('LucideIcon', LucideIcon)
 Vue.use(SvgIcon, {
   tagName: 'svg-icon',
   defaultWidth: '1em',

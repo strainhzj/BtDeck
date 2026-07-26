@@ -345,4 +345,42 @@ describe('AdvancedMultiSelect组件', () => {
       })
     })
   })
+
+  describe('重塑后 UI 行为测试', () => {
+    it('已选区应前置渲染（在选项列表之前）', () => {
+      // 已选区与选项列表都应存在；且已选区在 DOM 序中先于选项列表
+      const selected = wrapper.find('.ams__selected')
+      const options = wrapper.find('.ams__options')
+      expect(selected.exists()).toBe(true)
+      expect(options.exists()).toBe(true)
+      const html = wrapper.html()
+      const selectedPos = html.indexOf('ams__selected')
+      const optionsPos = html.indexOf('ams__options')
+      expect(selectedPos).toBeGreaterThanOrEqual(0)
+      expect(optionsPos).toBeGreaterThanOrEqual(0)
+      expect(selectedPos).toBeLessThan(optionsPos)
+    })
+
+    it('含/排除胶囊切换应改变 selectedMode 并发射 selected-mode-change', async() => {
+      expect(wrapper.vm.selectedMode).toBe('include')
+
+      wrapper.vm.setSelectedMode('exclude')
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.vm.selectedMode).toBe('exclude')
+      const emitted = wrapper.emitted('selected-mode-change')
+      expect(emitted).toBeTruthy()
+      expect(emitted[0][0]).toBe('exclude')
+    })
+
+    it('排除模式 chip 应使用排除态样式', async() => {
+      wrapper.setData({ selectedMode: 'exclude' })
+      wrapper.vm.toggleOption(mockOptions[0])
+      await wrapper.vm.$nextTick()
+
+      const chip = wrapper.find('.ams__chip')
+      expect(chip.exists()).toBe(true)
+      expect(chip.classes()).toContain('is-exclude')
+    })
+  })
 })

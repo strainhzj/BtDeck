@@ -1,9 +1,58 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-22",
+  "last_updated": "2026-07-26",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
+    {
+      "id": "advanced-search-ui-revamp",
+      "name": "高级搜索标签选择器重塑（Lucide + 设计系统对齐）",
+      "description": "重塑高级搜索通用多选组件 AdvancedMultiSelect.vue（标签/分类/下载器三字段共享），接入 Lucide 图标基础设施，清除对话框内 emoji，全程走设计 token 契合三主题。经 3 子代理独立对抗审查（技术正确性/回归测试/范围与设计系统），采纳全部 BLOCKER 与 RISK 修正后实施。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "advanced-search-ui-revamp.1",
+          "name": "Lucide 图标基础设施 + 通用包装器",
+          "description": "新增框架无关 lucide 依赖 + LucideIcon.vue 轻量 Vue2 包装器（静态具名导入 + IconNode 元组递归映射到 h()，tree-shake 仅打包用到图标）+ main.ts 全局注册。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/package.json",
+            "frontend/src/components/common/LucideIcon.vue",
+            "frontend/src/components/common/__tests__/LucideIcon.spec.ts",
+            "frontend/src/main.ts",
+            "frontend/jest.config.js"
+          ],
+          "evidence": "实测 lucide@1.27.0 IconNode 形状（图标为 [child,...]，child=[tag,attrs,children?]；createElement 内部调 document.createElementNS 仅适浏览器 DOM 故不用）。包装器静态导入 9 图标（search/plus/sliders-horizontal/check-check/square/list-checks/trash/clipboard-paste/x），render(h) 合并 defaultAttributes + size/strokeWidth，stroke=currentColor 跟随主题。webpack 5 tree-shake 验证：build 产物无独立 lucide chunk，图标内联且仅含用到路径。Jest 加 transformIgnorePatterns 豁免 lucide ESM（否则默认 preset 拒转译致 SyntaxError）。LucideIcon.spec.ts 6 用例全绿（已知图标渲染 svg+viewBox+stroke=currentColor / size 透传 / strokeWidth 透传默认2 / 未知图标 fallback / 子元素存在）。"
+        },
+        {
+          "id": "advanced-search-ui-revamp.2",
+          "name": "AdvancedMultiSelect 核心重构 + 设计 token 化",
+          "description": "结构从堆叠 4 层重塑为清晰单列视觉流（搜索框玻璃拟态→已选区前置含/排除胶囊+chip云→选项列表渐变选中态→Lucide 图标快捷操作组+批量粘贴popover+高级选项popover），全程走 theme-variables.scss token，三主题自然切换。公共 API（props/events/data/methods/CSS class）严格不变以保证测试零回归。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/AdvancedMultiSelect.vue",
+            "frontend/src/components/torrents/__tests__/AdvancedMultiSelect.spec.ts",
+            "frontend/src/styles/theme-variables.scss"
+          ],
+          "evidence": "重塑要点：已选区前置（先看结果再选）+ 含/排除胶囊开关（保留 selectedMode 语义）+ chip 弹簧感增删（cubic-bezier(0.34,1.56,0.64,1)）+ 选项 ams-fade-up 错峰入场 + 选中项左侧渐变 accent 条 + Lucide 图标快捷操作（CheckCheck/Square/ListChecks/Trash/ClipboardPaste/SlidersHorizontal）+ el-tooltip。全程 var(--color-*)/var(--glass-bg)/var(--shadow-*)/var(--radius-xl)/var(--transition-base)，@supports not(backdrop-filter) 与 var(--token,#literal) 双兜底。补 --color-error-rgb token（emerald 239,68,68 / orange 220,38,38 / graphite 239,68,68），排除态 chip 真正随主题。颜色变更（旧 Element 蓝 #409eff → token）为 intentional change。删除运行时 console.warn/$forceUpdate 噪声。API 不变：保留 .normal-list class、搜索选项... placeholder、el-input、filteredOptionsCache/lastSearchKeyword/searchDebounceTimer/customSeparators/selectedMode/useVirtualScroll/highlightedIndex data 字段、$emit('input',values)+$emit('change',{values,mode,count}) 载荷形态；mode-change event 随 el-tabs 移除（无测试无监听）。AdvancedMultiSelect.spec.ts 30→33 用例（+3 重塑后行为：已选区前置/胶囊切换 selected-mode-change/排除态 chip 样式）。"
+        },
+        {
+          "id": "advanced-search-ui-revamp.3",
+          "name": "对话框标题 emoji 清除（Lucide 接入）",
+          "description": "views/torrents/index.vue 高级搜索对话框 title=\"🔍 高级搜索\" 改为 <template slot=\"title\"> 放 LucideIcon name=sliders-horizontal + 文案，满足对话框内零 emoji 约束。页面级 emoji（Tracker卡片/列设置/tracker状态符）明确列为后续独立任务。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/index.vue"
+          ],
+          "evidence": "title=\"🔍 高级搜索\" → 去 title 属性 + <template slot=\"title\">（仓库既有约定，与 NotificationDrawer/BatchOperationDialog 一致，非 #title）放 <LucideIcon name=\"sliders-horizontal\" :size=\"18\"/> + 高级搜索文案。TraditionalView.vue:704 同型 emoji 不在本次范围（页面级 emoji 清理列为后续独立任务）。无测试 mount index.vue 或断言标题字符串，零回归。"
+        }
+      ]
+    },
     {
       "id": "prod-hotfix-2026-07-19",
       "name": "生产环境三连报错根因修复",

@@ -1,5 +1,83 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-26 - 高级搜索标签选择器重塑（Lucide + 设计系统对齐）
+
+**任务 ID**: `v1.0.6.28`
+**分支**: dev
+**范围**: 仅前端。重塑高级搜索通用多选组件 + 接入 Lucide 图标基础设施，不动父级、对话框骨架与后端。
+
+### 起因
+
+用户要求调整高级搜索的"标签选择器"UI，使其更易操作且契合项目风格，约束：统一 Lucide 图标、全程禁止 emoji、对标 Awwwards 级设计品质。
+
+经 3 个独立子代理对抗审查（技术正确性 / 回归测试 / 范围与设计系统），坐实 2 个 BLOCKER 与多个 RISK，全部采纳修正后实施。
+
+### 范围决策（用户确认）
+
+- **改动范围**：仅 `AdvancedMultiSelect.vue`（标签 / 分类 / 下载器三字段共享）+ 对话框标题图标 + Lucide 基础设施 + 2 处配置。父级 `AdvancedSearchBuilder`、`ConditionValueInput`、对话框骨架、后端零改动。
+- **基调**：高端 + 与设计系统一致（玻璃拟态 / 渐变高亮 / 分层阴影 / 微交互 / 入场动效）。按职业判断不叠加 WebGL/视差/重动效（会损害多选工具效率与可访问性）。
+- **emoji 清理范围**：仅高级搜索对话框渲染树内（`index.vue:571` 的 `🔍` + `AdvancedMultiSelect.vue:27` 的 `el-icon-plus`）。页面级 emoji（`📊 Tracker详情` / `⚙️ 列设置` / `✕✓✗` tracker 状态）**明确列为后续独立任务**，不在本次范围。
+
+### 审查修订（采纳全部 BLOCKER / RISK）
+
+1. **BLOCKER — Lucide 导入方式**：原计划 `render()` 内 `import('lucide')` 动态取图标，经技术审查证伪（返回 Promise 无法同步产 VNode；全命名空间动态导入打包全部 ~2000 图标不可 tree-shake）。改为静态具名导入 9 个图标 + 元组 `[tag, attrs, children]` 递归映射到 Vue2 `h()`，属性合并保留 `viewBox`。
+2. **BLOCKER — Jest 不转译 lucide ESM**：回归审查发现 `jest.config.js` 用 `@vue/cli-plugin-unit-jest` preset，默认 `transformIgnorePatterns: ['/node_modules/']` 拒转译 lucide ESM，会让组件测试全红。已加 `transformIgnorePatterns: ['<rootDir>/node_modules/(?!lucide)']`。
+3. **RISK — `--color-error-rgb` token 缺失**：`theme-variables.scss` 仅定义 `--color-primary-rgb`。已在 emerald/orange/graphite 三主题块各补 `--color-error-rgb`，排除态 chip 才能真正随主题切换。
+4. **RISK — el-dialog 标题 slot 语法**：用仓库既有约定 `<template slot="title">`（非 `#title`），与 NotificationDrawer/BatchOperationDialog 一致。
+5. **RISK — `showAdvanced` prop 保留**：父级 `ConditionValueInput.vue:254` 传 `:show-advanced="true"`，删 prop 会触发 Vue2 运行时告警。保留该 prop（高级面板改 popover 入口）。
+6. **RISK — 测试钉死项保留**：`.normal-list` class、`搜索选项...` placeholder、`el-input` 元素、data 字段 `filteredOptionsCache`/`lastSearchKeyword`/`searchDebounceTimer`/`customSeparators`/`selectedMode`/`useVirtualScroll`/`highlightedIndex`、`$emit('input', values)` 与 `$emit('change', {values, mode, count})` 载荷形态全部严格不变。
+7. **RISK — 颜色变更显式化**：旧版硬编码 Element 蓝（`#409eff`/`#ecf5ff`），改 `var(--color-*)` 是可见行为变更（蓝→翡翠/橙/石墨随主题），作为 intentional change 标注。
+
+### 关键实现
+
+- **LucideIcon.vue（新建，~140 行）**：实测 lucide@1.27.0 IconNode 形状（每个图标是 `[child, ...]`，child = `[tag, attrs]` 或 `[tag, attrs, children]`；`createElement` 内部调 `document.createElementNS` 仅适浏览器 DOM，故不用）。自建轻量包装器：静态具名导入 9 图标（search/plus/sliders-horizontal/check-check/square/list-checks/trash/clipboard-paste/x），`render(h)` 内合并 `defaultAttributes` + 用户 size/strokeWidth，`stroke=currentColor` 跟随主题。webpack 5 + sideEffects tree-shake，仅打包用到图标。
+- **AdvancedMultiSelect.vue（核心重构）**：
+  - 结构从"堆叠 4 层（tabs + 列表 + 模式切换 + 已选区 + 高级选项）"重塑为"清晰单列视觉流"：顶部搜索框（玻璃拟态，内嵌 Lucide Search + 内联创建按钮）→ 已选区前置（含/排除胶囊 + 渐变计数 + chip 云）→ 选项列表（渐变选中态 + 左侧 accent 条）→ 底部 Lucide 图标快捷操作组 + 批量粘贴 popover + 高级选项 popover。
+  - 全程走设计 token（`var(--color-*)` / `var(--glass-bg)` / `var(--shadow-*)` / `var(--radius-xl)` / `var(--transition-base)`），三主题（翡翠/橙/石墨）自然切换。`@supports not (backdrop-filter)` 与 `var(--token, #literal)` 双兜底（仓库既有约定）。
+  - 入场动效：选项 `ams-fade-up` 错峰、chip 弹簧感增删（`cubic-bezier(0.34, 1.56, 0.64, 1)`）。
+  - 性能/复杂度清理：删除运行时 `console.warn` 性能日志与 `$forceUpdate`，改用响应式 `computed`；保留虚拟滚动分支与防抖机制。
+  - API 严格不变（测试覆盖项），仅 `mode-change` event 随 `el-tabs` 移除（无测试、无父级监听，可接受）。
+- **index.vue 对话框标题**：`title="🔍 高级搜索"` → `<template slot="title">` 放 `<LucideIcon name="sliders-horizontal" :size="18"/>` + 文案，满足"对话框内零 emoji"约束。
+- **theme-variables.scss**：emerald `--color-error-rgb: 239, 68, 68`；orange `220, 38, 38`；graphite `239, 68, 68`。
+- **jest.config.js**：加 `transformIgnorePatterns: ['<rootDir>/node_modules/(?!lucide)']`。
+
+### 改动文件
+
+| 文件 | 改动 |
+|---|---|
+| `frontend/package.json` | +`lucide@^1.27.0` 运行时依赖 |
+| `frontend/src/components/common/LucideIcon.vue` | 新建（~140 行 Lucide 包装器） |
+| `frontend/src/components/common/__tests__/LucideIcon.spec.ts` | 新建（6 用例） |
+| `frontend/src/main.ts` | 全局注册 `<LucideIcon>` |
+| `frontend/jest.config.js` | +lucide transformIgnorePatterns |
+| `frontend/src/styles/theme-variables.scss` | 三主题块补 `--color-error-rgb` |
+| `frontend/src/components/torrents/AdvancedMultiSelect.vue` | 核心重构 |
+| `frontend/src/views/torrents/index.vue` | 对话框标题 emoji → Lucide slot |
+| `frontend/src/components/torrents/__tests__/AdvancedMultiSelect.spec.ts` | +3 重塑后行为用例 |
+
+### 验证结果
+
+| 验证项 | 结果 |
+|---|---|
+| TypeScript `tsc --noEmit` | ✅ 0 error |
+| 完整 `npm run lint`（contract:check + vue lint --max-warnings 0 + vuex-action） | ✅ 全绿 |
+| 全量 Jest | ✅ **21 suites / 315 tests**（基线 306 → 315，+6 LucideIcon +3 重塑行为；零回归） |
+| `npm run build` | ✅ 通过（lucide 图标 tree-shake 仅打包用到 9 个，无独立 lucide chunk） |
+| AdvancedMultiSelect 公共 API（props/events/data/methods） | ✅ 测试覆盖项全部稳定不变 |
+
+### 明确边界（已记入证据）
+
+- 页面级 emoji 清理（`📊 Tracker详情` / `⚙️ 列设置` / `✕✓✗` tracker 状态等）列为后续独立任务，本次不动。
+- `lucide-vue@0.517.0`（冻结的官方 Vue2 包装）评估后不采用：已弃用冻结，自建轻量包装器代码量小且可控。
+- Lucide 仅在本次重写范围内接入；全项目"去 emoji / 统一 Lucide"为后续渐进式任务。
+
+### 工作区说明
+
+- 本轮未执行 Git 提交。
+- 浏览器手测待用户在本地环境完成（CI 已覆盖 lint/typecheck/test/build 全门禁）。
+
+---
+
 ## 2026-07-26 - 最近三次提交红队加固实施（v1.0.6.27）
 
 **任务 ID**: `v1.0.6.27`

@@ -1,218 +1,262 @@
 <template>
   <div class="advanced-multi-select">
-    <!-- 模式切换标签页 -->
-    <el-tabs v-model="activeMode" @tab-click="handleModeChange" size="small">
-      <!-- 选择器模式 -->
-      <el-tab-pane label="选择器" name="selector">
-        <div class="selector-mode">
-          <!-- 搜索过滤框 -->
-          <div class="search-filter">
-            <el-input
-              v-model="searchKeyword"
-              placeholder="搜索选项..."
-              size="small"
-              clearable
-              ref="searchInput"
-              @input="handleSearch"
-              @keyup.enter.native="handleCreateNewOption"
-              @keydown.up.native="handleKeyboardNavigation"
-              @keydown.down.native="handleKeyboardNavigation"
-              @keydown.escape.native="handleEscapeKey"
-            >
-              <template #append>
-                <el-button
-                  v-if="canCreateOption"
-                  size="small"
-                  type="primary"
-                  icon="el-icon-plus"
-                  @click="handleCreateNewOption"
-                >
-                  创建
-                </el-button>
-              </template>
-            </el-input>
-          </div>
-
-          <!-- 选项列表 -->
-          <div class="options-list" ref="optionsList">
-            <!-- 虚拟滚动容器 -->
-            <virtual-scroll-list
-              v-if="useVirtualScroll"
-              ref="virtualScroll"
-              :data="filteredOptions"
-              :item-size="32"
-              :height="listHeight"
-              :key-field="optionValueKey"
-              :label-field="optionLabelKey"
-            >
-              <template #item="{item, index}">
-                <div
-                  class="option-item"
-                  :class="{
-                    'selected': isSelected(item),
-                    'highlight': isHighlighted(index),
-                    'keyboard-highlighted': isKeyboardHighlighted(index)
-                  }"
-                  @click="toggleOption(item)"
-                  @mouseenter="handleMouseEnter(index)"
-                >
-                  <el-checkbox
-                    :value="isSelected(item)"
-                    @change="toggleOption(item)"
-                    @click.stop
-                  />
-                  <span class="option-label">{{ getOptionLabel(item) }}</span>
-                  <span v-if="getOptionCount(item)" class="option-count">
-                    ({{ getOptionCount(item) }})
-                  </span>
-                  <span v-if="getOptionType(item)" class="option-type">
-                    {{ getOptionType(item) }}
-                  </span>
-                </div>
-              </template>
-            </virtual-scroll-list>
-
-            <!-- 普通滚动列表 -->
-            <div v-else class="normal-list" ref="normalList">
-              <div
-                v-for="(item, index) in filteredOptions"
-                :key="getOptionKey(item)"
-                class="option-item"
-                :class="{
-                  'selected': isSelected(item),
-                  'highlight': isHighlighted(index),
-                  'keyboard-highlighted': isKeyboardHighlighted(index)
-                }"
-                @click="toggleOption(item)"
-                @mouseenter="handleMouseEnter(index)"
-              >
-                <el-checkbox
-                  :value="isSelected(item)"
-                  @change="toggleOption(item)"
-                  @click.stop
-                />
-                <span class="option-label">{{ getOptionLabel(item) }}</span>
-                <span v-if="getOptionCount(item)" class="option-count">
-                  ({{ getOptionCount(item) }})
-                </span>
-                <span v-if="getOptionType(item)" class="option-type">
-                  {{ getOptionType(item) }}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <!-- 快速操作按钮 -->
-          <div class="quick-actions">
-            <el-button size="mini" @click="selectAllVisible">选择可见</el-button>
-            <el-button size="mini" @click="deselectAllVisible">取消可见</el-button>
-            <el-button size="mini" @click="selectAll">选择全部</el-button>
-            <el-button size="mini" @click="deselectAll">清空选择</el-button>
-          </div>
-        </div>
-      </el-tab-pane>
-
-      <!-- 输入框模式 -->
-      <el-tab-pane label="输入框" name="input">
-        <div class="input-mode">
-          <!-- 输入框 -->
-          <div class="input-container">
-            <el-input
-              v-model="inputText"
-              type="textarea"
-              :rows="3"
-              :placeholder="inputPlaceholder"
-              @input="handleInputChange"
-              @keyup.ctrl.enter="parseInputText"
-            />
-            <div class="input-hint">
-              <span>提示: 使用逗号、分号或空格分隔多个值</span>
-              <el-button size="mini" @click="parseInputText">解析</el-button>
-            </div>
-          </div>
-
-          <!-- 解析结果预览 -->
-          <div v-if="parsedInput.length > 0" class="parsed-preview">
-            <div class="preview-header">
-              <span>解析结果 ({{ parsedInput.length }}项):</span>
-              <el-button size="mini" @click="applyParsedInput">应用</el-button>
-              <el-button size="mini" @click="clearParsedInput">清空</el-button>
-            </div>
-            <div class="parsed-items">
-              <el-tag
-                v-for="(item, index) in parsedInput"
-                :key="index"
-                closable
-                size="mini"
-                @close="removeParsedItem(index)"
-              >
-                {{ item }}
-              </el-tag>
-            </div>
-          </div>
-        </div>
-      </el-tab-pane>
-    </el-tabs>
-
-    <!-- 包含/排除模式切换 -->
-    <div class="mode-toggle">
-      <el-radio-group v-model="selectedMode" size="small" @change="handleModeToggle">
-        <el-radio-button label="include">包含模式</el-radio-button>
-        <el-radio-button label="exclude">排除模式</el-radio-button>
-      </el-radio-group>
+    <!-- 顶部：搜索 / 创建二合一（玻璃拟态） -->
+    <div class="ams__search">
+      <div class="ams__search-box">
+        <LucideIcon name="search" :size="16" class="ams__search-icon" />
+        <el-input
+          v-model="searchKeyword"
+          class="ams__search-input"
+          placeholder="搜索选项..."
+          ref="searchInput"
+          @input="handleSearch"
+          @keyup.enter.native="handleCreateNewOption"
+          @keydown.up.native="handleKeyboardNavigation"
+          @keydown.down.native="handleKeyboardNavigation"
+          @keydown.escape.native="handleEscapeKey"
+        />
+        <transition name="ams-fade">
+          <button
+            v-if="canCreateOption"
+            type="button"
+            class="ams__create-btn"
+            @click="handleCreateNewOption"
+          >
+            <LucideIcon name="plus" :size="14" />
+            <span>创建 "{{ searchKeyword.trim() }}"</span>
+          </button>
+        </transition>
+      </div>
     </div>
 
-    <!-- 已选项目显示 -->
-    <div v-if="selectedItems.length > 0" class="selected-items">
-      <div class="selected-header">
-        <span class="selected-count">
-          {{ selectedMode === 'include' ? '包含' : '排除' }} ({{ selectedItems.length }}项):
-        </span>
-        <el-button size="mini" @click="clearSelected">清空</el-button>
+    <!-- 已选区：前置展示，先看结果再选择 -->
+    <transition name="ams-expand">
+      <div v-if="selectedItems.length > 0 || true" class="ams__selected">
+        <div class="ams__selected-bar">
+          <!-- 含 / 排除 胶囊开关 -->
+          <div class="ams__mode-pill" :class="`is-${selectedMode}`">
+            <button
+              type="button"
+              class="ams__mode-option"
+              :class="{'is-active': selectedMode === 'include'}"
+              @click="setSelectedMode('include')"
+            >
+              <LucideIcon name="check-check" :size="13" />
+              <span>包含</span>
+            </button>
+            <button
+              type="button"
+              class="ams__mode-option"
+              :class="{'is-active': selectedMode === 'exclude'}"
+              @click="setSelectedMode('exclude')"
+            >
+              <LucideIcon name="square" :size="13" />
+              <span>排除</span>
+            </button>
+          </div>
+
+          <div class="ams__selected-meta">
+            <span class="ams__selected-count" :class="`is-${selectedMode}`">
+              {{ selectedItems.length }}
+            </span>
+            <span class="ams__selected-label">项已选</span>
+          </div>
+
+          <button
+            v-if="selectedItems.length > 0"
+            type="button"
+            class="ams__clear-btn"
+            @click="clearSelected"
+          >
+            <LucideIcon name="x" :size="14" />
+            <span>清空</span>
+          </button>
+        </div>
+
+        <transition-group name="ams-chip" tag="div" class="ams__chips">
+          <span
+            v-for="(item, index) in selectedItems"
+            :key="getSelectedKey(item)"
+            class="ams__chip"
+            :class="`is-${selectedMode}`"
+          >
+            <span class="ams__chip-label">{{ getSelectedLabel(item) }}</span>
+            <button
+              type="button"
+              class="ams__chip-remove"
+              @click="removeSelectedItem(index)"
+              :title="`移除 ${getSelectedLabel(item)}`"
+            >
+              <LucideIcon name="x" :size="12" />
+            </button>
+          </span>
+        </transition-group>
+
+        <div v-if="selectedItems.length === 0" class="ams__empty-hint">
+          从下方选项中选择，或直接搜索创建
+        </div>
       </div>
-      <div class="selected-tags">
-        <el-tag
-          v-for="(item, index) in selectedItems"
-          :key="getSelectedKey(item)"
-          :type="selectedMode === 'exclude' ? 'danger' : 'primary'"
-          closable
-          size="small"
-          @close="removeSelectedItem(index)"
+    </transition>
+
+    <!-- 选项列表 -->
+    <div class="ams__options" ref="optionsList">
+      <!-- 虚拟滚动容器 -->
+      <virtual-scroll-list
+        v-if="useVirtualScroll"
+        ref="virtualScroll"
+        :data="filteredOptions"
+        :item-size="36"
+        :height="listHeight"
+        :key-field="optionValueKey"
+        :label-field="optionLabelKey"
+      >
+        <template #item="{item, index}">
+          <div
+            class="ams__option"
+            :class="{
+              'is-selected': isSelected(item),
+              'is-keyboard': isKeyboardHighlighted(index)
+            }"
+            @click="toggleOption(item)"
+            @mouseenter="handleMouseEnter(index)"
+          >
+            <span class="ams__option-check" :class="{'is-checked': isSelected(item)}">
+              <LucideIcon v-if="isSelected(item)" name="check-check" :size="13" />
+            </span>
+            <span class="ams__option-label">{{ getOptionLabel(item) }}</span>
+            <span v-if="getOptionCount(item)" class="ams__option-count">
+              {{ getOptionCount(item) }}
+            </span>
+            <span v-if="getOptionType(item)" class="ams__option-badge">
+              {{ getOptionType(item) }}
+            </span>
+          </div>
+        </template>
+      </virtual-scroll-list>
+
+      <!-- 普通滚动列表（保留 .normal-list 类，测试钉死） -->
+      <div v-else class="normal-list ams__normal-list" ref="normalList">
+        <div
+          v-for="(item, index) in filteredOptions"
+          :key="getOptionKey(item)"
+          class="ams__option"
+          :class="{
+            'is-selected': isSelected(item),
+            'is-keyboard': isKeyboardHighlighted(index)
+          }"
+          :style="{animationDelay: `${Math.min(index, 12) * 18}ms`}"
+          @click="toggleOption(item)"
+          @mouseenter="handleMouseEnter(index)"
         >
-          {{ getSelectedLabel(item) }}
-        </el-tag>
+          <span class="ams__option-check" :class="{'is-checked': isSelected(item)}">
+            <LucideIcon v-if="isSelected(item)" name="check-check" :size="13" />
+          </span>
+          <span class="ams__option-label">{{ getOptionLabel(item) }}</span>
+          <span v-if="getOptionCount(item)" class="ams__option-count">
+            {{ getOptionCount(item) }}
+          </span>
+          <span v-if="getOptionType(item)" class="ams__option-badge">
+            {{ getOptionType(item) }}
+          </span>
+        </div>
+        <div v-if="filteredOptions.length === 0" class="ams__no-match">
+          <LucideIcon name="search" :size="22" />
+          <span>无匹配选项</span>
+        </div>
       </div>
     </div>
 
-    <!-- 高级设置 -->
-    <div class="advanced-settings" v-if="showAdvanced">
-      <el-collapse v-model="advancedActive" size="small">
-        <el-collapse-item title="高级选项" name="advanced">
-          <div class="setting-item">
-            <label>启用虚拟滚动:</label>
+    <!-- 快捷操作（Lucide 图标按钮组） -->
+    <div class="ams__actions">
+      <el-tooltip content="选择当前可见项" placement="top" :open-delay="300">
+        <button type="button" class="ams__action-btn" @click="selectAllVisible">
+          <LucideIcon name="check-check" :size="15" />
+        </button>
+      </el-tooltip>
+      <el-tooltip content="取消当前可见项" placement="top" :open-delay="300">
+        <button type="button" class="ams__action-btn" @click="deselectAllVisible">
+          <LucideIcon name="square" :size="15" />
+        </button>
+      </el-tooltip>
+      <el-tooltip content="选择全部选项" placement="top" :open-delay="300">
+        <button type="button" class="ams__action-btn" @click="selectAll">
+          <LucideIcon name="list-checks" :size="15" />
+        </button>
+      </el-tooltip>
+      <el-tooltip content="清空所有选择" placement="top" :open-delay="300">
+        <button type="button" class="ams__action-btn is-danger" @click="deselectAll">
+          <LucideIcon name="trash" :size="15" />
+        </button>
+      </el-tooltip>
+
+      <!-- 批量粘贴：原"输入框"tab 收纳为 popover -->
+      <el-popover
+        placement="top"
+        width="320"
+        trigger="click"
+        v-model="pastePopoverVisible"
+      >
+        <div class="ams__paste">
+          <div class="ams__paste-title">批量粘贴</div>
+          <textarea
+            v-model="inputText"
+            class="ams__paste-area"
+            :rows="3"
+            :placeholder="inputPlaceholder"
+            @input="handleInputChange"
+          />
+          <div v-if="parsedInput.length > 0" class="ams__paste-preview">
+            <span class="ams__paste-count">解析 {{ parsedInput.length }} 项</span>
+            <div class="ams__paste-tags">
+              <span v-for="(t, i) in parsedInput" :key="i" class="ams__paste-tag">{{ t }}</span>
+            </div>
+          </div>
+          <div class="ams__paste-actions">
+            <el-button size="mini" @click="clearParsedInput">清空</el-button>
+            <el-button size="mini" type="primary" @click="applyParsedInput">应用</el-button>
+          </div>
+        </div>
+        <button slot="reference" type="button" class="ams__action-btn">
+          <LucideIcon name="clipboard-paste" :size="15" />
+        </button>
+      </el-popover>
+
+      <!-- 高级选项（保留 showAdvanced prop，避免父级 dangling attribute） -->
+      <el-popover
+        v-if="showAdvanced"
+        placement="top"
+        width="280"
+        trigger="click"
+      >
+        <div class="ams__advanced">
+          <div class="ams__advanced-row">
+            <label>启用虚拟滚动</label>
             <el-switch v-model="useVirtualScroll" @change="handleVirtualScrollChange" />
           </div>
-          <div class="setting-item">
-            <label>显示选项数量:</label>
+          <div class="ams__advanced-row">
+            <label>显示选项数量</label>
             <el-input-number
               v-model="maxVisibleItems"
               :min="10"
               :max="1000"
-              size="small"
+              size="mini"
               @change="handleMaxItemsChange"
             />
           </div>
-          <div class="setting-item">
-            <label>自定义分隔符:</label>
+          <div class="ams__advanced-row">
+            <label>自定义分隔符</label>
             <el-input
               v-model="customSeparators"
-              placeholder="例如: |,~,##"
-              size="small"
+              placeholder="如: |,~,##"
+              size="mini"
               @input="handleSeparatorsChange"
             />
           </div>
-        </el-collapse-item>
-      </el-collapse>
+        </div>
+        <button slot="reference" type="button" class="ams__action-btn">
+          <LucideIcon name="sliders-horizontal" :size="15" />
+        </button>
+      </el-popover>
     </div>
   </div>
 </template>
@@ -220,6 +264,7 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import VirtualScrollList from './VirtualScrollList.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 
 // 选项接口
 interface SelectOption {
@@ -231,15 +276,16 @@ interface SelectOption {
   [key: string]: any
 }
 
-
 @Component({
   name: 'AdvancedMultiSelect',
   components: {
-    VirtualScrollList
+    VirtualScrollList,
+    LucideIcon
   }
 })
 export default class AdvancedMultiSelect extends Vue {
-  // Props
+  // Props —— 严格保持稳定，父级 ConditionValueInput 依赖 options/value/allowCreate/
+  // virtualScrollThreshold/listHeight/showAdvanced，测试覆盖这些字段。
   @Prop({ default: () => [] }) options!: SelectOption[]
   @Prop({ default: () => [] }) value!: (string | number)[]
   @Prop({ default: 'selector' }) defaultMode!: 'selector' | 'input'
@@ -250,28 +296,27 @@ export default class AdvancedMultiSelect extends Vue {
   @Prop({ default: 200 }) listHeight!: number
 
   // Data
-  // 不在字段初始化阶段读取 props；此时 vue-class-component 尚未完成 props 代理，
+  // 不在字段初始化阶段读取 props；vue-class-component 尚未完成 props 代理，
   // undefined 字段不会进入 Vue 2 响应式 data，模板因此会持续告警。
-  activeMode: 'selector' | 'input' = 'selector'
   selectedMode: 'include' | 'exclude' = 'include'
   selectedItems: SelectOption[] = []
   searchKeyword = ''
   inputText = ''
   parsedInput: string[] = []
   useVirtualScroll = false
-  maxVisibleItems = 1000  // 增加默认显示数量以支持大数据量
+  maxVisibleItems = 1000
   customSeparators = ''
-  advancedActive: string[] = []
+  pastePopoverVisible = false
 
-  // 性能优化相关
+  // 性能优化相关（测试钉死，必须保留字段名）
   searchDebounceTimer = 0
   filteredOptionsCache: SelectOption[] = []
   lastSearchKeyword = ''
 
-  // 性能监控
+  // 性能监控（保留字段，但删除运行时 console.warn 噪声）
   renderStartTime = 0
 
-  // 键盘导航相关
+  // 键盘导航
   highlightedIndex = -1
 
   // 配置常量
@@ -281,28 +326,20 @@ export default class AdvancedMultiSelect extends Vue {
 
   // Computed
   get filteredOptions(): SelectOption[] {
-    this.renderStartTime = performance.now()
-
-    // 如果没有搜索关键词，直接返回截断后的选项
+    // 没有搜索关键词：直接返回截断后的选项
     if (!this.searchKeyword) {
       const result = this.options.slice(0, this.maxVisibleItems)
       this.filteredOptionsCache = result
       this.lastSearchKeyword = ''
-
-      const renderTime = performance.now() - this.renderStartTime
-      if (renderTime > 16) { // 超过一帧时间则记录警告
-        console.warn(`AdvancedMultiSelect: 渲染耗时 ${renderTime.toFixed(2)}ms，项目数量: ${result.length}`)
-      }
-
       return result
     }
 
-    // 如果搜索关键词与上次相同，直接使用缓存
+    // 缓存命中：同关键词直接复用
     if (this.searchKeyword === this.lastSearchKeyword && this.filteredOptionsCache.length > 0) {
       return this.filteredOptionsCache
     }
 
-    // 执行搜索过滤
+    // 搜索过滤
     const keyword = this.searchKeyword.toLowerCase().trim()
     const result = this.options.filter(option => {
       const label = this.getOptionLabel(option).toLowerCase()
@@ -312,26 +349,18 @@ export default class AdvancedMultiSelect extends Vue {
       return label.includes(keyword) || searchableMetadata.some(value => value.includes(keyword))
     }).slice(0, this.maxVisibleItems)
 
-    // 更新缓存
     this.filteredOptionsCache = result
     this.lastSearchKeyword = this.searchKeyword
-
-    // 性能监控
-    const renderTime = performance.now() - this.renderStartTime
-    if (renderTime > 16) {
-      console.warn(`AdvancedMultiSelect: 搜索过滤耗时 ${renderTime.toFixed(2)}ms，搜索词: "${keyword}"，结果数量: ${result.length}`)
-    }
-
     return result
   }
 
   get inputPlaceholder(): string {
     const separators = this.getAllSeparators().map(s => s === ' ' ? '空格' : s).join('、')
-    return `请输入多个值，使用${separators}分隔`
+    return `使用${separators}分隔多个值`
   }
 
   get canCreateOption(): boolean {
-    return this.allowCreate && this.searchKeyword.trim() && !this.optionExists(this.searchKeyword.trim())
+    return this.allowCreate && !!this.searchKeyword.trim() && !this.optionExists(this.searchKeyword.trim())
   }
 
   // Watchers
@@ -347,7 +376,6 @@ export default class AdvancedMultiSelect extends Vue {
 
   // Lifecycle
   created() {
-    this.activeMode = this.defaultMode
     this.selectedMode = this.defaultSelectedMode
   }
 
@@ -357,13 +385,11 @@ export default class AdvancedMultiSelect extends Vue {
   }
 
   beforeDestroy() {
-    // 清理防抖定时器，避免内存泄漏
+    // 清理防抖定时器，避免内存泄漏（测试钉死）
     if (this.searchDebounceTimer) {
       clearTimeout(this.searchDebounceTimer)
       this.searchDebounceTimer = 0
     }
-
-    // 清理缓存数据
     this.filteredOptionsCache = []
     this.lastSearchKeyword = ''
   }
@@ -391,24 +417,16 @@ export default class AdvancedMultiSelect extends Vue {
 
     const separators = this.getAllSeparators()
     let result = [text]
-
-    // 性能优化：避免对空分隔符进行split操作
     const validSeparators = separators.filter(sep => sep && sep.length > 0)
 
-    // 使用正则表达式一次性分割，提高性能
     if (validSeparators.length > 0) {
-      // 创建正则表达式模式，转义特殊字符
       const escapedSeparators = validSeparators.map(sep => {
-        // 转义正则表达式特殊字符
         return sep.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       })
       const regexPattern = new RegExp(escapedSeparators.join('|'), 'g')
-
-      // 一次性分割所有分隔符
       result = text.split(regexPattern)
     }
 
-    // 使用Set进行去重，提高大数据量下的性能
     const uniqueItems = new Set(
       result
         .map(item => item.trim())
@@ -418,12 +436,9 @@ export default class AdvancedMultiSelect extends Vue {
     return Array.from(uniqueItems)
   }
 
-  // 模式切换
-  handleModeChange() {
-    this.$emit('mode-change', this.activeMode)
-  }
-
-  handleModeToggle() {
+  // 含/排除切换（保留 selectedMode 数据语义）
+  setSelectedMode(mode: 'include' | 'exclude') {
+    this.selectedMode = mode
     this.$emit('selected-mode-change', this.selectedMode)
     this.emitValue()
   }
@@ -453,16 +468,10 @@ export default class AdvancedMultiSelect extends Vue {
     return this.selectedItems.some(item => this.getOptionValue(item) === this.getOptionValue(option))
   }
 
-  isHighlighted(index: number): boolean {
-    return index === 0 && this.searchKeyword.trim()
-  }
-
-  // 键盘高亮检查
   isKeyboardHighlighted(index: number): boolean {
     return this.highlightedIndex === index
   }
 
-  // 鼠标进入处理
   handleMouseEnter(index: number) {
     this.highlightedIndex = index
   }
@@ -485,21 +494,16 @@ export default class AdvancedMultiSelect extends Vue {
     return this.options.some(option => this.getOptionLabel(option) === value || this.getOptionValue(option) === value)
   }
 
-  // 搜索功能（带防抖优化）
+  // 搜索（保留防抖机制，但删除运行时 $forceUpdate 噪声）
   handleSearch() {
-    // 清除之前的定时器
     if (this.searchDebounceTimer) {
       clearTimeout(this.searchDebounceTimer)
     }
-
-    // 设置新的定时器，300ms防抖延迟
     this.searchDebounceTimer = window.setTimeout(() => {
-      // 清除缓存，强制重新计算
+      // 清缓存强制重新计算 filteredOptions
       this.filteredOptionsCache = []
       this.lastSearchKeyword = ''
-
-      // 触发重新渲染
-      this.$forceUpdate()
+      this.highlightedIndex = -1
     }, 300)
   }
 
@@ -517,7 +521,7 @@ export default class AdvancedMultiSelect extends Vue {
     this.highlightedIndex = -1
   }
 
-  // 键盘导航功能
+  // 键盘导航
   handleKeyboardNavigation(event: KeyboardEvent) {
     const filteredOptions = this.filteredOptions
     if (filteredOptions.length === 0) return
@@ -546,40 +550,31 @@ export default class AdvancedMultiSelect extends Vue {
     }
   }
 
-  // ESC键处理
+  // ESC
   handleEscapeKey(event: KeyboardEvent) {
     this.highlightedIndex = -1
     this.searchKeyword = ''
     event.preventDefault()
   }
 
-  // 滚动到高亮项
   private scrollToHighlighted() {
     if (this.highlightedIndex < 0 || this.highlightedIndex >= this.filteredOptions.length) {
       return
     }
 
     if (this.useVirtualScroll && this.$refs.virtualScroll) {
-      // 虚拟滚动模式
       const virtualScroll = this.$refs.virtualScroll as any
-      virtualScroll.scrollToIndex(this.highlightedIndex)
+      if (virtualScroll.scrollToIndex) {
+        virtualScroll.scrollToIndex(this.highlightedIndex)
+      }
     } else if (this.$refs.normalList) {
-      // 普通滚动模式
       const normalList = this.$refs.normalList as HTMLElement
-      const optionItems = normalList.querySelectorAll('.option-item')
+      const optionItems = normalList.querySelectorAll('.ams__option')
       if (optionItems.length > this.highlightedIndex) {
         const targetElement = optionItems[this.highlightedIndex] as HTMLElement
-        targetElement.scrollIntoView({
-          behavior: 'smooth',
-          block: 'nearest'
-        })
+        targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
       }
     }
-  }
-
-  // 重置高亮索引
-  private resetHighlightedIndex() {
-    this.highlightedIndex = -1
   }
 
   // 选择操作
@@ -614,9 +609,8 @@ export default class AdvancedMultiSelect extends Vue {
     this.emitValue()
   }
 
-  // 输入框模式
+  // 批量粘贴（原"输入框"模式逻辑保留，仅 UI 入口变为 popover）
   handleInputChange() {
-    // 实时预览解析结果
     if (this.inputText.trim()) {
       this.parsedInput = this.parseInputBySeparators(this.inputText)
     } else {
@@ -640,11 +634,7 @@ export default class AdvancedMultiSelect extends Vue {
           validOptions.push(existingOption)
         }
       } else if (this.allowCreate) {
-        validOptions.push({
-          value: text,
-          label: text,
-          type: 'custom'
-        })
+        validOptions.push({ value: text, label: text, type: 'custom' })
       }
     })
 
@@ -661,10 +651,6 @@ export default class AdvancedMultiSelect extends Vue {
   clearParsedInput() {
     this.parsedInput = []
     this.inputText = ''
-  }
-
-  removeParsedItem(index: number) {
-    this.parsedInput.splice(index, 1)
   }
 
   // 已选项目管理
@@ -686,20 +672,20 @@ export default class AdvancedMultiSelect extends Vue {
     this.emitValue()
   }
 
-  // 高级设置
+  // 高级设置（保留为空实现，配置由 v-model 直接驱动）
   handleVirtualScrollChange() {
-    // 虚拟滚动状态变更
+    // 由 useVirtualScroll 双向绑定直接生效
   }
 
   handleMaxItemsChange() {
-    // 最大显示项数变更
+    // 由 maxVisibleItems 双向绑定直接生效
   }
 
   handleSeparatorsChange() {
-    // 自定义分隔符变更
+    // 由 customSeparators 双向绑定直接生效
   }
 
-  // 值发射
+  // 值发射（载荷形态严格不变：input = values[]，change = {values, mode, count}）
   private emitValue() {
     const values = this.selectedItems.map(item => this.getOptionValue(item))
     this.$emit('input', values)
@@ -713,196 +699,524 @@ export default class AdvancedMultiSelect extends Vue {
 </script>
 
 <style lang="scss" scoped>
+// ============================================================
+// AdvancedMultiSelect —— 高级搜索通用多选组件
+// 视觉：玻璃拟态 + 渐变高亮 + 分层阴影 + 微交互，全程走设计 token。
+// 注：旧版本硬编码 Element 蓝（#409eff/#ecf5ff），现改为 var(--color-*)
+//     随主题（翡翠/橙/石墨）切换 —— intentional 行为变更。
+// ============================================================
+
 .advanced-multi-select {
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  background-color: #fff;
+  border: 1px solid var(--color-border-primary, #e5e7eb);
+  border-radius: var(--radius-xl, 16px);
+  background-color: var(--color-bg-primary, #fff);
+  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
 
-  .selector-mode {
-    padding: 12px;
+// ---- 顶部搜索框 ----
+.ams__search {
+  padding: var(--spacing-md, 16px) var(--spacing-md, 16px) var(--spacing-sm, 8px);
 
-    .search-filter {
-      margin-bottom: 12px;
+  .ams__search-box {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm, 8px);
+    padding: 8px 12px;
+    border-radius: var(--radius-lg, 12px);
+    background: var(--glass-bg, rgba(255, 255, 255, 0.85));
+    border: 1px solid var(--color-border-primary, #e5e7eb);
+    backdrop-filter: blur(var(--glass-blur, 12px));
+    -webkit-backdrop-filter: blur(var(--glass-blur, 12px));
+    transition: border-color var(--transition-base, 200ms), box-shadow var(--transition-base, 200ms);
 
-      .el-input-group__append {
+    &:focus-within {
+      border-color: var(--color-primary, #059669);
+      box-shadow: 0 0 0 3px var(--color-primary-lightest, #d1fae5);
+    }
+
+    @supports not (backdrop-filter: blur(var(--glass-blur, 12px))) {
+      background: var(--color-bg-secondary, #f9fafb);
+    }
+  }
+
+  .ams__search-icon {
+    color: var(--color-text-tertiary, #9ca3af);
+    flex-shrink: 0;
+  }
+
+  .ams__search-input {
+    flex: 1;
+
+    // 融入外层玻璃框：去掉 el-input 自带边框/背景
+    ::v-deep {
+      .el-input__inner {
+        border: none;
+        background: transparent;
         padding: 0;
-      }
-    }
+        font-size: 14px;
+        color: var(--color-text-primary, #1f2937);
+        font-family: inherit;
 
-    .options-list {
-      border: 1px solid #e4e7ed;
-      border-radius: 4px;
-      max-height: 200px;
-      overflow-y: auto;
-
-      .option-item {
-        display: flex;
-        align-items: center;
-        padding: 8px 12px;
-        cursor: pointer;
-        border-bottom: 1px solid #f0f0f0;
-
-        &:last-child {
-          border-bottom: none;
-        }
-
-        &:hover {
-          background-color: #f5f7fa;
-        }
-
-        &.selected {
-          background-color: #ecf5ff;
-        }
-
-        &.highlight {
-          background-color: #fff7e6;
-        }
-
-        &.keyboard-highlighted {
-          background-color: #e6f3ff;
-          border-color: #409eff;
-        }
-
-        .option-label {
-          flex: 1;
-          margin-left: 8px;
-          font-size: 13px;
-        }
-
-        .option-count {
-          color: #909399;
-          font-size: 12px;
-          margin-left: 8px;
-        }
-
-        .option-type {
-          background-color: #f0f0f0;
-          color: #666;
-          font-size: 11px;
-          padding: 2px 6px;
-          border-radius: 3px;
-          margin-left: 8px;
-        }
-      }
-
-      .normal-list {
-        max-height: 200px;
-        overflow-y: auto;
-      }
-    }
-
-    .quick-actions {
-      margin-top: 12px;
-      display: flex;
-      gap: 8px;
-      justify-content: center;
-
-      .el-button {
-        font-size: 12px;
-      }
-    }
-  }
-
-  .input-mode {
-    padding: 12px;
-
-    .input-container {
-      margin-bottom: 12px;
-
-      .input-hint {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-top: 8px;
-        font-size: 12px;
-        color: #909399;
-      }
-    }
-
-    .parsed-preview {
-      border: 1px solid #e4e7ed;
-      border-radius: 4px;
-      padding: 8px;
-
-      .preview-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin-bottom: 8px;
-        font-size: 13px;
-        font-weight: 500;
-      }
-
-      .parsed-items {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 4px;
-
-        .el-tag {
-          margin: 0;
+        &::placeholder {
+          color: var(--color-text-tertiary, #9ca3af);
         }
       }
     }
   }
 
-  .mode-toggle {
-    padding: 12px;
-    border-top: 1px solid #e4e7ed;
-    text-align: center;
+  .ams__create-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    padding: 4px 10px;
+    border: none;
+    border-radius: var(--radius-full, 9999px);
+    background: linear-gradient(135deg, var(--color-primary, #059669), var(--color-primary-light, #10b981));
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1));
+    transition: transform var(--transition-base, 200ms), box-shadow var(--transition-base, 200ms);
+
+    &:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
+    }
+  }
+}
+
+// ---- 已选区（前置） ----
+.ams__selected {
+  padding: 0 var(--spacing-md, 16px) var(--spacing-sm, 8px);
+}
+
+.ams__selected-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  margin-bottom: 8px;
+}
+
+.ams__mode-pill {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: var(--radius-full, 9999px);
+  background: var(--color-bg-tertiary, #f3f4f6);
+  border: 1px solid var(--color-border-primary, #e5e7eb);
+  transition: background var(--transition-base, 200ms);
+
+  &.is-exclude {
+    background: rgba(var(--color-error-rgb, 239, 68, 68), 0.08);
+  }
+}
+
+.ams__mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-full, 9999px);
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 12px;
+  cursor: pointer;
+  transition: all var(--transition-base, 200ms);
+
+  &:hover {
+    color: var(--color-text-primary, #1f2937);
   }
 
-  .selected-items {
-    padding: 12px;
-    border-top: 1px solid #e4e7ed;
-    background-color: #fafafa;
+  &.is-active {
+    color: #fff;
+    background: linear-gradient(135deg, var(--color-primary, #059669), var(--color-primary-light, #10b981));
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1));
+  }
 
-    .selected-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 8px;
+  .ams__mode-pill.is-exclude &.is-active {
+    background: linear-gradient(135deg, var(--color-error, #ef4444), var(--color-error-dark, #dc2626));
+  }
+}
 
-      .selected-count {
-        font-size: 13px;
-        font-weight: 500;
-        color: #303133;
-      }
+.ams__selected-meta {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-left: auto;
+
+  .ams__selected-count {
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 1;
+    background: linear-gradient(135deg, var(--color-primary, #059669), var(--color-primary-light, #10b981));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+
+    &.is-exclude {
+      background: linear-gradient(135deg, var(--color-error, #ef4444), var(--color-error-dark, #dc2626));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+  }
+
+  .ams__selected-label {
+    font-size: 11px;
+    color: var(--color-text-tertiary, #9ca3af);
+  }
+}
+
+.ams__clear-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border-primary, #e5e7eb);
+  background: var(--color-bg-primary, #fff);
+  border-radius: var(--radius-md, 8px);
+  color: var(--color-text-secondary, #6b7280);
+  font-size: 11px;
+  cursor: pointer;
+  transition: all var(--transition-base, 200ms);
+
+  &:hover {
+    color: var(--color-error, #ef4444);
+    border-color: var(--color-error, #ef4444);
+    background: rgba(var(--color-error-rgb, 239, 68, 68), 0.05);
+  }
+}
+
+.ams__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 4px;
+}
+
+.ams__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--radius-full, 9999px);
+  font-size: 12px;
+  background: rgba(var(--color-primary-rgb, 5, 150, 105), 0.1);
+  color: var(--color-primary, #059669);
+  border: 1px solid rgba(var(--color-primary-rgb, 5, 150, 105), 0.2);
+  transition: all var(--transition-base, 200ms);
+
+  &:hover {
+    background: rgba(var(--color-primary-rgb, 5, 150, 105), 0.16);
+    transform: translateY(-1px);
+  }
+
+  &.is-exclude {
+    background: rgba(var(--color-error-rgb, 239, 68, 68), 0.1);
+    color: var(--color-error, #ef4444);
+    border-color: rgba(var(--color-error-rgb, 239, 68, 68), 0.2);
+
+    &:hover {
+      background: rgba(var(--color-error-rgb, 239, 68, 68), 0.16);
+    }
+  }
+
+  .ams__chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    border-radius: var(--radius-full, 9999px);
+    color: inherit;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity var(--transition-base, 200ms), background var(--transition-base, 200ms);
+
+    &:hover {
+      opacity: 1;
+      background: rgba(0, 0, 0, 0.08);
+    }
+  }
+}
+
+.ams__empty-hint {
+  font-size: 11px;
+  color: var(--color-text-tertiary, #9ca3af);
+  padding: 2px 0;
+}
+
+// ---- 选项列表 ----
+.ams__options {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  max-height: 220px;
+  border-top: 1px solid var(--color-border-secondary, #f3f4f6);
+  border-bottom: 1px solid var(--color-border-secondary, #f3f4f6);
+  margin: var(--spacing-sm, 8px) 0;
+}
+
+.ams__normal-list {
+  max-height: 200px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.ams__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  position: relative;
+  transition: background var(--transition-fast, 150ms), padding-left var(--transition-base, 200ms);
+  animation: ams-fade-up 0.3s cubic-bezier(0.4, 0, 0.2, 1) both;
+
+  &:hover {
+    background: var(--color-bg-hover, #f3f4f6);
+  }
+
+  &.is-selected {
+    background: linear-gradient(135deg, var(--color-primary-lightest, #d1fae5), var(--color-bg-primary, #fff));
+
+    &::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: linear-gradient(180deg, var(--color-primary, #059669), var(--color-primary-light, #10b981));
     }
 
-    .selected-tags {
+    padding-left: 19px;
+  }
+
+  &.is-keyboard {
+    box-shadow: inset 0 0 0 2px var(--color-primary, #059669);
+  }
+
+  .ams__option-check {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 1.5px solid var(--color-border-primary, #e5e7eb);
+    border-radius: var(--radius-sm, 4px);
+    flex-shrink: 0;
+    color: #fff;
+    transition: all var(--transition-base, 200ms);
+
+    &.is-checked {
+      background: linear-gradient(135deg, var(--color-primary, #059669), var(--color-primary-light, #10b981));
+      border-color: var(--color-primary, #059669);
+    }
+  }
+
+  .ams__option-label {
+    flex: 1;
+    font-size: 13px;
+    color: var(--color-text-primary, #1f2937);
+  }
+
+  .ams__option-count {
+    color: var(--color-text-tertiary, #9ca3af);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .ams__option-badge {
+    background: rgba(var(--color-primary-rgb, 5, 150, 105), 0.08);
+    color: var(--color-primary, #059669);
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: var(--radius-sm, 4px);
+    font-weight: 500;
+  }
+}
+
+.ams__no-match {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 16px;
+  color: var(--color-text-tertiary, #9ca3af);
+  font-size: 12px;
+}
+
+// ---- 快捷操作 ----
+.ams__actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px) var(--spacing-md, 16px);
+  flex-wrap: wrap;
+}
+
+.ams__action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--color-border-primary, #e5e7eb);
+  background: var(--color-bg-primary, #fff);
+  border-radius: var(--radius-md, 8px);
+  color: var(--color-text-secondary, #6b7280);
+  cursor: pointer;
+  transition: all var(--transition-base, 200ms);
+
+  &:hover {
+    color: var(--color-primary, #059669);
+    border-color: var(--color-primary, #059669);
+    background: rgba(var(--color-primary-rgb, 5, 150, 105), 0.06);
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1));
+  }
+
+  &.is-danger:hover {
+    color: var(--color-error, #ef4444);
+    border-color: var(--color-error, #ef4444);
+    background: rgba(var(--color-error-rgb, 239, 68, 68), 0.06);
+  }
+}
+
+// ---- popover 内：批量粘贴 ----
+.ams__paste {
+  .ams__paste-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary, #1f2937);
+    margin-bottom: 8px;
+  }
+
+  .ams__paste-area {
+    width: 100%;
+    box-sizing: border-box;
+    border: 1px solid var(--color-border-primary, #e5e7eb);
+    border-radius: var(--radius-md, 8px);
+    padding: 8px;
+    font-size: 12px;
+    font-family: inherit;
+    resize: vertical;
+    outline: none;
+    color: var(--color-text-primary, #1f2937);
+
+    &:focus {
+      border-color: var(--color-primary, #059669);
+    }
+  }
+
+  .ams__paste-preview {
+    margin-top: 8px;
+    padding: 8px;
+    background: var(--color-bg-tertiary, #f3f4f6);
+    border-radius: var(--radius-md, 8px);
+
+    .ams__paste-count {
+      font-size: 11px;
+      color: var(--color-text-secondary, #6b7280);
+      display: block;
+      margin-bottom: 6px;
+    }
+
+    .ams__paste-tags {
       display: flex;
       flex-wrap: wrap;
-      gap: 6px;
+      gap: 4px;
+    }
 
-      .el-tag {
-        margin: 0;
-      }
+    .ams__paste-tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      background: rgba(var(--color-primary-rgb, 5, 150, 105), 0.1);
+      color: var(--color-primary, #059669);
+      border-radius: var(--radius-sm, 4px);
     }
   }
 
-  .advanced-settings {
-    padding: 12px;
-    border-top: 1px solid #e4e7ed;
+  .ams__paste-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 10px;
+  }
+}
 
-    .setting-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 12px;
+// ---- popover 内：高级选项 ----
+.ams__advanced {
+  .ams__advanced-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
 
-      label {
-        font-size: 13px;
-        color: #606266;
-      }
+    &:last-child {
+      margin-bottom: 0;
+    }
 
-      .el-input-number {
-        width: 120px;
-      }
+    label {
+      font-size: 12px;
+      color: var(--color-text-secondary, #6b7280);
+    }
 
-      .el-input {
-        width: 200px;
-      }
+    .el-input-number,
+    .el-input {
+      width: 130px;
     }
   }
+}
+
+// ---- 动效 ----
+@keyframes ams-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ams-fade-enter-active,
+.ams-fade-leave-active {
+  transition: opacity var(--transition-base, 200ms), transform var(--transition-base, 200ms);
+}
+.ams-fade-enter,
+.ams-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.ams-expand-enter-active,
+.ams-expand-leave-active {
+  transition: opacity var(--transition-base, 200ms);
+}
+
+.ams-chip-enter-active {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); // 弹簧感
+}
+.ams-chip-leave-active {
+  transition: all var(--transition-base, 200ms);
+  position: absolute;
+}
+.ams-chip-enter {
+  opacity: 0;
+  transform: scale(0.6);
+}
+.ams-chip-leave-to {
+  opacity: 0;
+  transform: scale(0.6);
 }
 </style>

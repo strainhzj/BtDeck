@@ -9,6 +9,9 @@ module.exports = {
   testEnvironment: 'jsdom',
   roots: ['<rootDir>/tests/unit', '<rootDir>/src'],
   testMatch: ['**/*.spec.ts'],
+  // lucide 发 ESM，默认 preset 的 transformIgnorePatterns: ['/node_modules/'] 会拒转译，
+  // 导致 SyntaxError: Unexpected token 'export'。显式豁免 lucide 子目录。
+  transformIgnorePatterns: ['<rootDir>/node_modules/(?!lucide)'],
   collectCoverageFrom: [
     '<rootDir>/src/**/*.ts',
     '<rootDir>/src/components/torrents/AdvancedMultiSelect.vue',

@@ -568,13 +568,18 @@
 
     <!-- 高级搜索对话框 -->
     <el-dialog
-      title="🔍 高级搜索"
       :visible.sync="showAdvancedSearchDialog"
       width="80%"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       class="advanced-search-dialog"
     >
+      <template slot="title">
+        <span class="advanced-search-dialog__title">
+          <LucideIcon name="sliders-horizontal" :size="18" />
+          <span>高级搜索</span>
+        </span>
+      </template>
       <AdvancedSearchBuilder
         ref="advancedSearchBuilder"
         :searching="advancedSearchSearching"
