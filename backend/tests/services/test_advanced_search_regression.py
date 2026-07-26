@@ -719,21 +719,17 @@ class TestOperatorMappingRealDb:
         # movie 命中 t1/t3，flac 命中 t2
         assert {r.info_id for r in builder.base_query.all()} == {"t1", "t2", "t3"}
 
-    # --- 边界：未知字段/操作符降级 ---
+    # --- 边界：未知字段/非法值必须拒绝 ---
 
-    def test_unknown_field_dropped(self, db_session):
-        """未知 field（如 'foobar'）→ 条件被静默丢弃，返回所有 dr=0 种子"""
-        _seed_torrents(db_session)
-        builder = SearchQueryBuilder(db_session)
-        result_filter = builder._build_condition_filter(SearchCondition(field="foobar", operator="eq", value="x"))
-        assert result_filter is None  # _build_condition_filter 对未知字段返回 None
+    def test_unknown_field_rejected(self, db_session):
+        """未知 field 不能被静默丢弃，否则会扩大结果集。"""
+        with pytest.raises(ValueError, match="unknown search field"):
+            SearchCondition(field="foobar", operator="eq", value="x")
 
-    def test_size_gt_invalid_string_dropped(self, db_session):
-        """size gt 'abc' → validate_size_string 返回 None → 条件丢弃"""
-        _seed_torrents(db_session)
-        builder = SearchQueryBuilder(db_session)
-        result_filter = builder._build_condition_filter(SearchCondition(field="size", operator="gt", value="abc"))
-        assert result_filter is None  # validate 失败 → None
+    def test_size_gt_invalid_string_rejected(self, db_session):
+        """非法大小值必须拒绝，不能丢弃条件后返回未过滤数据。"""
+        with pytest.raises(ValueError, match="invalid size value"):
+            SearchCondition(field="size", operator="gt", value="abc")
 
 
 # ==================== C. TestConditionGroupsRealDb ====================
@@ -769,8 +765,8 @@ class TestConditionGroupsRealDb:
         result = _search(db_session, condition_groups=[group], limit=100000)
         assert _info_ids(result) == {"t3", "t4"}
 
-    def test_multiple_groups_default_and(self, db_session):
-        """多组无 between_group_logics → 默认 AND 连接"""
+    def test_multiple_groups_explicit_and(self, db_session):
+        """多组必须显式声明组间 AND，且按 AND 连接。"""
         _seed_torrents(db_session)
         groups = [
             SearchGroup(
@@ -782,7 +778,12 @@ class TestConditionGroupsRealDb:
                 conditions=[SearchCondition(field="downloader_id", operator="eq", value="d2")],
             ),
         ]
-        result = _search(db_session, condition_groups=groups, limit=100000)
+        result = _search(
+            db_session,
+            condition_groups=groups,
+            between_group_logics=["AND"],
+            limit=100000,
+        )
         # 电影 ∩ d2 → t3（t1 是电影+d1，t4 是 d2+游戏）
         assert _info_ids(result) == {"t3"}
 
@@ -803,9 +804,8 @@ class TestConditionGroupsRealDb:
         # 音乐(t2) OR 游戏(t4)
         assert _info_ids(result) == {"t2", "t4"}
 
-    def test_between_group_logics_length_insufficient_fallback_and(self, db_session):
-        """between_group_logics 长度不足 → 兜底 AND 连接"""
-        _seed_torrents(db_session)
+    def test_between_group_logics_length_insufficient_rejected(self, db_session):
+        """组间逻辑数量不足必须拒绝，不能猜测为 AND。"""
         groups = [
             SearchGroup(
                 logic="AND",
@@ -816,39 +816,38 @@ class TestConditionGroupsRealDb:
                 conditions=[SearchCondition(field="category", operator="eq", value="游戏")],
             ),
         ]
-        # between_group_logics=[] 空列表，长度 0 < (2-1)=1，走兜底 AND
-        result = _search(db_session, condition_groups=groups, between_group_logics=[], limit=100000)
-        # 音乐 AND 游戏 → 空集（无种子同时是音乐和游戏）
-        assert result["total"] == 0
+        with pytest.raises(ValueError, match="between_group_logics length"):
+            EnhancedAdvancedSearchRequest(
+                condition_groups=groups,
+                between_group_logics=[],
+                limit=100000,
+            )
 
-    def test_invalid_condition_in_group_dropped(self, db_session):
-        """组内含未知 field 的条件 → 该条件丢弃，其它条件仍生效"""
-        _seed_torrents(db_session)
-        group = SearchGroup(
-            logic="AND",
-            conditions=[
-                SearchCondition(field="foobar", operator="eq", value="x"),  # 被丢弃
-                SearchCondition(field="status", operator="eq", value="error"),  # 生效
-            ],
-        )
-        result = _search(db_session, condition_groups=[group], limit=100000)
-        # 只剩 status=error → t4
-        assert _info_ids(result) == {"t4"}
+    def test_invalid_condition_in_group_rejected(self, db_session):
+        """组内任一未知字段都必须使整个请求失败。"""
+        with pytest.raises(ValueError, match="unknown search field"):
+            SearchGroup.model_validate(
+                {
+                    "logic": "AND",
+                    "conditions": [
+                        {"field": "foobar", "operator": "eq", "value": "x"},
+                        {"field": "status", "operator": "eq", "value": "error"},
+                    ],
+                }
+            )
 
-    def test_or_group_all_invalid_conditions_skipped(self, db_session):
-        """OR 组所有条件都被丢弃 → 组内 condition_filters 为空 → 整组跳过 → 返回全部 dr=0"""
-        _seed_torrents(db_session)
-        group = SearchGroup(
-            logic="OR",
-            conditions=[
-                SearchCondition(field="foobar1", operator="eq", value="x"),
-                SearchCondition(field="foobar2", operator="eq", value="y"),
-            ],
-        )
-        result = _search(db_session, condition_groups=[group], limit=100000)
-        # 整组跳过 → 无额外过滤 → 5 颗活跃种子（t6 dr=1 排除）
-        assert result["total"] == 5
-        assert _info_ids(result) == {"t1", "t2", "t3", "t4", "t5"}
+    def test_or_group_all_invalid_conditions_rejected(self, db_session):
+        """全非法 OR 组不能退化成“无过滤”。"""
+        with pytest.raises(ValueError, match="unknown search field"):
+            SearchGroup.model_validate(
+                {
+                    "logic": "OR",
+                    "conditions": [
+                        {"field": "foobar1", "operator": "eq", "value": "x"},
+                        {"field": "foobar2", "operator": "eq", "value": "y"},
+                    ],
+                }
+            )
 
     def test_dict_format_group_compatible(self, db_session):
         """dict 格式条件组（search-preview 路径）兼容"""
@@ -1005,6 +1004,42 @@ class TestTrackerSubqueryRealDb:
         )
         assert {r.info_id for r in builder.base_query.all()} == {"t4"}
 
+    def test_tracker_url_uses_real_regex_semantics(self, db_session):
+        """tracker_url regex honors anchors and character classes."""
+        _seed_torrents(db_session)
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(
+                SearchCondition(
+                    field="tracker_url",
+                    operator="regex",
+                    value={
+                        "pattern": r"^https://tracker[14]\.example\.com/announce$",
+                        "caseSensitive": True,
+                    },
+                )
+            )
+        )
+        assert {row.info_id for row in builder.base_query.all()} == {"t1", "t4"}
+
+    def test_tracker_msg_uses_real_regex_semantics(self, db_session):
+        """tracker_msg regex is evaluated against announce and scrape messages."""
+        _seed_torrents(db_session)
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(
+                SearchCondition(
+                    field="tracker_msg",
+                    operator="regex",
+                    value={
+                        "pattern": r"^(connection\s+timeout|error:\s+invalid)$",
+                        "caseSensitive": True,
+                    },
+                )
+            )
+        )
+        assert {row.info_id for row in builder.base_query.all()} == {"t4"}
+
     def test_deleted_tracker_excluded(self, db_session):
         """dr=1 的 tracker 不参与匹配：t2 的 tk2 dr=1，搜 tracker2 不应命中 t2"""
         _seed_torrents(db_session)
@@ -1067,12 +1102,14 @@ class TestSortingAndPaginationRealDb:
         # Avatar < Inception < Pink Floyd < VSCode < Witcher
         assert ids == ["t1", "t3", "t2", "t5", "t4"]
 
-    def test_sort_by_invalid_field_falls_back_to_added_date(self, db_session):
-        """无效 sort_by → 回退 added_date（默认 desc）"""
-        _seed_torrents(db_session)
-        result = _search(db_session, sort_by="nonexistent_field", sort_order="desc", limit=100000)
-        ids = [item["infoId"] for item in result["data"]]
-        assert ids == ["t5", "t4", "t3", "t2", "t1"]
+    def test_sort_by_invalid_field_rejected(self, db_session):
+        """无效 sort_by 必须明确失败，不能静默更改排序语义。"""
+        with pytest.raises(ValueError, match="unknown sort field"):
+            EnhancedAdvancedSearchRequest(
+                sort_by="nonexistent_field",
+                sort_order="desc",
+                limit=100000,
+            )
 
     def test_pagination_first_page(self, db_session):
         """分页第 1 页（limit=2）：返回 t5+t4（按 added_date desc）"""
@@ -1410,8 +1447,7 @@ class TestNewOperatorsRegression:
     def test_regex_on_name_case_insensitive(self, db_session):
         """regex on name：value={pattern:'avatar', caseSensitive:false} → 命中 t1(Avatar 4K)。
 
-        SQLite 无原生 REGEXP，后端用 LIKE 兜底（pattern 转 %pattern% 子串匹配）。
-        caseSensitive=false 时大小写不敏感。
+        SQLite 连接注册受限时长的真实正则函数；caseSensitive=false 时忽略大小写。
         """
         _seed_torrents(db_session)
         group = SearchGroup(
@@ -1428,7 +1464,7 @@ class TestNewOperatorsRegression:
         assert _info_ids(result) == {"t1"}, f"regex 'avatar' 应命中 t1(Avatar)。实际 {_info_ids(result)}"
 
     def test_regex_on_name_case_sensitive_excludes_mismatch(self, db_session):
-        """regex on name caseSensitive=true：pattern='Avatar' 只匹配大写 A 开头。"""
+        """regex on name caseSensitive=true：小写 pattern 不应命中大写 A。"""
         _seed_torrents(db_session)
         group = SearchGroup(
             logic="AND",
@@ -1436,12 +1472,31 @@ class TestNewOperatorsRegression:
                 SearchCondition(
                     field="name",
                     operator="regex",
-                    value={"pattern": "Avatar", "caseSensitive": True},
+                    value={"pattern": "avatar", "caseSensitive": True},
                 )
             ],
         )
         result = _search(db_session, condition_groups=[group], limit=100000)
-        assert _info_ids(result) == {"t1"}, f"regex 'Avatar' 大小写敏感。实际 {_info_ids(result)}"
+        assert result["total"] == 0
+
+    def test_regex_on_name_honors_anchors_and_quantifiers(self, db_session):
+        """正则不是 LIKE：锚点、空白类和量词必须按正则语义执行。"""
+        _seed_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[
+                SearchCondition(
+                    field="name",
+                    operator="regex",
+                    value={
+                        "pattern": r"^Avatar\s+\dK\s+BluRay$",
+                        "caseSensitive": True,
+                    },
+                )
+            ],
+        )
+        result = _search(db_session, condition_groups=[group], limit=100000)
+        assert _info_ids(result) == {"t1"}
 
     def test_last_days_on_added_date(self, db_session):
         """last_days on added_date：value='{"days": N}'（JSON 字符串）→ 命中最近 N 天添加的种子。
@@ -1511,54 +1566,26 @@ class TestOperatorContractGuard:
 
     def test_all_frontend_operators_are_backend_supported(self):
         """前端 operatorGroups 里全部 backendValue 必须在后端 allowed_operators 集合内。"""
-        from app.api.models.advanced_search import SearchCondition
-
-        # 后端 allowed_operators 集合（从 validator 提取）
-        # 通过反射 validate_operator 的 allowed_operators 定义
-        import inspect
-
-        src = inspect.getsource(SearchCondition.validate_operator)
-        # 简化：直接构造一个 SearchCondition 试每个 operator，被拒的会抛 ValueError
-        # 前端 AdvancedSearchBuilder.vue operatorGroups 暴露的全部 backendValue
-        frontend_operators = {
-            # text 组
-            "contains",
-            "not_contains",
-            "eq",
-            "ne",
-            "starts_with",
-            "ends_with",
-            "not_starts_with",
-            "not_ends_with",
-            "regex",
-            # number 组
-            "between",
-            # date 组
-            "last_days",
-            "date_range",
-            # select/multiSelect 组
-            "in",
-            "not_in",
-            # 其他（contains_any 等多值操作符）
-            "contains_any",
-            "contains_all",
-            "not_contains_any",
-            "not_contains_all",
-            "is_null",
-            "is_not_null",
-            "gt",
-            "gte",
-            "lt",
-            "lte",
-        }
-        unsupported = []
-        for op in frontend_operators:
-            try:
-                SearchCondition(field="name", operator=op, value="x")
-            except Exception:
-                unsupported.append(op)
-        assert not unsupported, (
-            f"前端暴露的操作符后端不支持（会 422）：{unsupported}。"
-            "必须在 backend/app/api/models/advanced_search.py 的 allowed_operators 登记，"
-            "或在 service 层实现。"
+        from app.contracts.advanced_search import (
+            ADVANCED_SEARCH_CONTRACT,
+            NEGATED_SEARCH_OPERATORS,
+            SEARCH_FIELD_CONTRACT,
+            SUPPORTED_SEARCH_OPERATORS,
         )
+
+        frontend_operators = {
+            item["backendValue"]
+            for group in ADVANCED_SEARCH_CONTRACT["operatorGroups"].values()
+            for item in group
+        }
+        assert frontend_operators <= SUPPORTED_SEARCH_OPERATORS
+        for operator in frontend_operators:
+            assert any(
+                operator in field["operators"]
+                for field in SEARCH_FIELD_CONTRACT.values()
+            ), f"{operator} is exposed by the UI but allowed by no field"
+        for operator, negated in NEGATED_SEARCH_OPERATORS.items():
+            assert NEGATED_SEARCH_OPERATORS[negated] == operator
+            for field in SEARCH_FIELD_CONTRACT.values():
+                if operator in field["operators"]:
+                    assert negated in field["operators"]

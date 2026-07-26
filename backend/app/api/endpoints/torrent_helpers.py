@@ -23,6 +23,7 @@ from app.core.torrent_status_mapper import TorrentStatusMapper
 from transmission_rpc import Client as trClient
 from app.database import AsyncSessionLocal
 from app.services.audit_service import get_audit_service
+from app.services.torrent_ratio_values import normalize_ratio, normalize_ratio_limit
 
 logger = logging.getLogger(__name__)
 
@@ -575,19 +576,12 @@ def convert_to_vos_with_trackers(
 
 
 def _safe_float(value: Any) -> Optional[float]:
-    """把下载器返回的 ratio/ratio_limit 安全转为 float 或 None。
+    """Backward-compatible ratio parser used by legacy call sites.
 
-    下载器客户端（qBittorrent/transmission_rpc）在异常状态下可能返回非数值
-    （如 ValueError 实例、None、哨兵 -1/-2）。Float 列不接受非数值字符串，
-    此 helper 统一兜底，避免生产偶发 500。
+    New update paths must use ``apply_normalized_ratio_fields`` so malformed or
+    missing downloader data does not erase an existing good value.
     """
-    if value is None:
-        return None
-    try:
-        f = float(value)
-    except (TypeError, ValueError):
-        return None
-    return f
+    return normalize_ratio(value).value_for_insert()
 
 
 def parse_size_string(size_str: Optional[str]) -> Optional[int]:
@@ -724,9 +718,9 @@ def create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp
             if qb_torrent.completion_on and qb_torrent.completion_on > 0 and qb_torrent.completion_on <= 2147483647
             else None
         ),
-        ratio=_safe_float(qb_torrent.ratio),
-        # ratio_limit 列已是 Float；qBittorrent 的 -1 哨兵表示"无限制"，统一映射 None
-        ratio_limit=(_safe_float(qb_torrent.ratio_limit) if qb_torrent.ratio_limit != -1 else None),
+        ratio=normalize_ratio(getattr(qb_torrent, "ratio", None)).value_for_insert(),
+        # NULL 表示“无显式单种数值限制”，不能用于向下载器回写设置。
+        ratio_limit=normalize_ratio_limit(getattr(qb_torrent, "ratio_limit", None)).value_for_insert(),
         tags=",".join(qb_torrent.tags) if qb_torrent.tags else "",
         category=qb_torrent.category,
         super_seeding="1" if qb_torrent.super_seeding else "0",
@@ -766,8 +760,8 @@ def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
         # 修复历史错位：原代码把 seed_ratio_limit（比率限制）赋给了 ratio（实际比率）字段。
         # ratio = 实际上传比率（uploadRatio 的 snake_case），ratio_limit = 种子比率限制；
         # seed_ratio_limit 为 None 表示 TR "无限制"，正好映射 Float 列的 NULL。
-        ratio=_safe_float(tr_torrent.ratio),
-        ratio_limit=_safe_float(tr_torrent.seed_ratio_limit),
+        ratio=normalize_ratio(getattr(tr_torrent, "ratio", None)).value_for_insert(),
+        ratio_limit=normalize_ratio_limit(getattr(tr_torrent, "seed_ratio_limit", None)).value_for_insert(),
         tags=",".join(tr_torrent.labels) if hasattr(tr_torrent, "labels") and tr_torrent.labels else "",
         category="",
         super_seeding="",

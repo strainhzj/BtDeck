@@ -1,10 +1,9 @@
 /**
- * 字段类型三表一致性守卫（v1.0.5.14）
+ * 字段类型与生成契约一致性守卫
  *
- * 背景：前端存在三份独立的"字段类型映射表"，分别服务不同链路：
- *   1. AdvancedSearchBuilder.statusFields/advancedFields —— UI 字段定义 + 操作符路由
- *   2. ConditionValueInput.fieldTypeMap —— 输入控件渲染分支（select vs multiSelect）
- *   3. torrentBatch.ADVANCED_FIELD_TYPES —— 模板搜索的请求构造
+ * 后端 JSON 是字段与操作符的唯一协议源，前端生成
+ * ADVANCED_SEARCH_FIELDS。Builder 和输入控件仍包含 UI 展示元数据，但模板搜索
+ * 必须读取生成契约，不能再维护 ADVANCED_FIELD_TYPES 副本。
  *
  * 历史上三表曾出现分歧（如 category 在 #1#2 是 select、#3 缺 downloader_name），
  * 导致即时搜索与模板搜索语义不一致。本 spec 锁定三表对关键字段的一致性，
@@ -15,6 +14,7 @@
  */
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
+import { ADVANCED_SEARCH_FIELDS } from '@/contracts/advancedSearch.generated'
 
 const builderSource = readFileSync(
   resolve(__dirname, '../../src/components/torrents/AdvancedSearchBuilder.vue'),
@@ -58,11 +58,14 @@ describe('字段类型三表一致性（category / downloader_name / tags）', (
       expect(m ? m[1] : null).toBe(expected)
     })
 
-    it(`torrentBatch.ADVANCED_FIELD_TYPES 声明为 ${expected}`, () => {
-      const re = new RegExp(`${field}\\s*:\\s*'(\\w+)'`)
-      const m = torrentBatchSource.match(re)
-      expect(m ? m[1] : null).toBe(expected)
+    it(`生成契约声明为 ${expected}`, () => {
+      expect(ADVANCED_SEARCH_FIELDS[field].kind).toBe(expected)
     })
+  })
+
+  it('模板搜索直接读取生成契约且不维护字段类型副本', () => {
+    expect(torrentBatchSource).toContain('ADVANCED_SEARCH_FIELDS')
+    expect(torrentBatchSource).not.toContain('ADVANCED_FIELD_TYPES')
   })
 
   it('AdvancedSearchBuilder 对 category/downloader_name 标注 matchMode=exact，tags 标注 substring', () => {

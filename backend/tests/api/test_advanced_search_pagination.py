@@ -12,6 +12,8 @@ class FakeAdvancedSearchService:
         self.result = result
 
     def search_torrents(self, request, user_id):
+        if isinstance(self.result, BaseException):
+            raise self.result
         return self.result
 
 
@@ -115,3 +117,140 @@ def test_advanced_search_rejects_limit_above_100000():
 
     app.dependency_overrides.clear()
     assert response.status_code == 422
+
+
+def test_advanced_search_rejects_unknown_condition_instead_of_dropping_it():
+    client, app = _create_client({})
+
+    response = client.post(
+        "/api/v1/advanced-search/advanced-search",
+        json={
+            "condition_groups": [
+                {
+                    "logic": "AND",
+                    "conditions": [
+                        {"field": "unknown", "operator": "eq", "value": "x"}
+                    ],
+                }
+            ],
+            "between_group_logics": [],
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+def test_advanced_search_rejects_ambiguous_between_group_logic():
+    client, app = _create_client({})
+    condition = {"field": "status", "operator": "eq", "value": "error"}
+
+    response = client.post(
+        "/api/v1/advanced-search/advanced-search",
+        json={
+            "condition_groups": [
+                {"logic": "AND", "conditions": [condition]},
+                {"logic": "AND", "conditions": [condition]},
+            ],
+            "between_group_logics": [],
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+def test_advanced_search_accepts_one_sided_between():
+    result = {
+        "status": "success",
+        "msg": "search complete",
+        "code": "200",
+        "data": [],
+        "total": 0,
+        "page": 1,
+        "limit": 20,
+    }
+    client, app = _create_client(result)
+
+    response = client.post(
+        "/api/v1/advanced-search/advanced-search",
+        json={
+            "condition_groups": [
+                {
+                    "logic": "AND",
+                    "conditions": [
+                        {
+                            "field": "ratio",
+                            "operator": "between",
+                            "value": {"min": 1},
+                        }
+                    ],
+                }
+            ],
+            "between_group_logics": [],
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 200
+
+
+def test_advanced_search_rejects_invalid_regex_syntax():
+    client, app = _create_client({})
+
+    response = client.post(
+        "/api/v1/advanced-search/advanced-search",
+        json={
+            "condition_groups": [
+                {
+                    "logic": "AND",
+                    "conditions": [
+                        {
+                            "field": "name",
+                            "operator": "regex",
+                            "value": {"pattern": "(", "caseSensitive": True},
+                        }
+                    ],
+                }
+            ],
+            "between_group_logics": [],
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+
+
+def test_regex_runtime_timeout_is_returned_as_http_422():
+    from app.services.sqlite_search_runtime import RegexSearchTimeout
+
+    client, app = _create_client(RegexSearchTimeout("regex budget exceeded"))
+
+    response = client.post(
+        "/api/v1/advanced-search/advanced-search",
+        json={"page": 1, "limit": 20},
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "422"
+
+
+def test_preview_regex_runtime_timeout_is_returned_as_http_422():
+    from app.services.sqlite_search_runtime import RegexSearchTimeout
+
+    client, app = _create_client(RegexSearchTimeout("regex budget exceeded"))
+
+    response = client.get(
+        "/api/v1/advanced-search/search-preview",
+        params={
+            "conditions_json": (
+                '[{"field":"name","operator":"regex",'
+                '"value":{"pattern":"^x$","caseSensitive":true}}]'
+            )
+        },
+    )
+
+    app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "422"

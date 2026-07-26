@@ -18,10 +18,12 @@
 - 空库自动建全表 / 已有库增量升级
 - 幽灵版本（`KNOWN_GHOST_VERSIONS`）自动 stamp 救援
 - 未知版本（回滚场景）只告警不降级
-- 迁移前自动备份（`config/app.db.pre-migration-*`，保留 3 份）
+- 迁移前自动备份（`config/app.db.pre-migration-*`，保留 3 个主备份文件）
+- 备份须通过 integrity_check、Alembic 版本和 SHA-256 验证；失败在
+  DEV/生产环境均无条件阻止迁移
 - DEV 分流：DEV=true 失败告警继续；DEV=false 失败终止
 
-## 当前迁移链（2026-06-21）
+## 当前迁移链（2026-07-26）
 
 ```
 e2a02abcf912 (base, down_revision=None)
@@ -33,13 +35,25 @@ d0e58437af70 (down_revision: e2a02abcf912)
 a0ada9774936 (down_revision: d0e58437af70)
     └─ 新增 notification 表
 
-95ef8bd8b47a (down_revision: a0ada9774936) ← 当前 HEAD
+95ef8bd8b47a (down_revision: a0ada9774936)
     └─ 新增 search_templates 表（第四轨归位，inspect 守卫）
+
+c3f1a8b7d902 → b075727f7182 → e6d8a20c41f3
+    └─ orphan file / lifecycle / operation journal 增量迁移
+
+6132b66d14a7 (down_revision: e6d8a20c41f3)
+    └─ ratio/ratio_limit String→Float，严格清洗并保全 partial index
+
+8f4c2d1a9b7e (down_revision: 6132b66d14a7) ← 当前 HEAD
+    └─ 为已执行旧 6132 的数据库补清洗和有限非负 CHECK
 ```
 
-- **24 张业务表**（+ alembic_version）= 25 张表
 - 单 head，无分叉
-- 全部 ORM 模型已在 `alembic/env.py` 导入（含 3 个 tracker 模型 + SearchTemplate）
+- `alembic heads` 必须输出且只输出 `8f4c2d1a9b7e`
+
+`6132` 与 follower 采用混合兼容策略：尚未执行 `6132` 的数据库直接获得修正后的
+严格迁移；已执行旧版 `6132` 的数据库由 `8f4c2d1a9b7e` 幂等补齐约束。旧版曾
+折叠成 0 的值无法可靠反推，必须通过备份/下载器对账。
 
 ## 严格禁止
 
@@ -67,6 +81,22 @@ a0ada9774936 (down_revision: d0e58437af70)
 4. init_routers / 启动后台任务
 5. 服务就绪
 ```
+
+其中备份失败是独立硬门禁，不受 DEV 容错分流影响。一般 migration 异常仍沿用
+DEV=true 告警、DEV=false 终止的历史策略。
+
+## 发布后只读验证
+
+```bash
+cd backend
+python scripts/ratio_migration_report.py \
+  --database config/app.db \
+  --fail-on-findings
+```
+
+报告核对当前 revision、SQLite 完整性、ratio 列类型、CHECK、非法值样本、
+零值对账提示和可恢复备份。工具以 immutable 只读模式打开 SQLite，不生成备份
+侧车文件。完整两阶段发布与恢复步骤见 rollback-guide。
 
 ## 表/字段增删改操作指南（详细）
 

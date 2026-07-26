@@ -804,6 +804,10 @@ import {
   resolveTraditionalStatusFilterSelection
 } from './utils/traditionalStatusFilter'
 import type { StatusFilterItem } from './utils/traditionalStatusFilter'
+import type {
+  AdvancedSearchBuilderParams,
+  AdvancedSearchTemplateDraft
+} from '@/components/torrents/advancedSearchState'
 import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
 import {
   calculateTraditionalVirtualWindow,
@@ -1801,7 +1805,7 @@ export default class extends mixins(TorrentBatchMixin) {
     })
   }
 
-  private handleAdvancedSearchFromBuilder(searchParams: any) {
+  private handleAdvancedSearchFromBuilder(searchParams: AdvancedSearchBuilderParams) {
     this.performAdvancedSearch(searchParams)
     this.showAdvancedSearchDialog = false
   }
@@ -1818,7 +1822,7 @@ export default class extends mixins(TorrentBatchMixin) {
    * P1#8 执行高级搜索（解析逻辑委托 buildAdvancedSearchRequest 纯函数，防回归 P1-F）
    * 视图只保留「调 API + 设 list/total + 提示」
    */
-  private async performAdvancedSearch(searchParams: any) {
+  private async performAdvancedSearch(searchParams: AdvancedSearchBuilderParams) {
     this.advancedSearchSearching = true
     try {
       const { request, error } = buildAdvancedSearchRequest(
@@ -1893,7 +1897,7 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   /** P1#9 把当前高级搜索条件保存为查询模板 */
-  private async handleSaveSearchTemplate(template: any) {
+  private async handleSaveSearchTemplate(template: AdvancedSearchTemplateDraft) {
     const conditions: QueryTemplateConditions = {
       source: 'advanced',
       version: 1,
@@ -1993,7 +1997,7 @@ export default class extends mixins(TorrentBatchMixin) {
     try {
       const response = await applySearchTemplate(templateId)
       if (response.code === '200' && response.data) {
-        const conditions = (response.data as any).conditions as QueryTemplateConditions
+        const conditions = response.data.conditions
         if (conditions) {
           applied = await this.applyQueryTemplate(conditions)
         }

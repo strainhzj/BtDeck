@@ -17,7 +17,20 @@
  * 注意：getTorrentId/getDownloaderId 内联实现，不依赖 @/utils/formatters，
  * 否则会因 formatters.ts 既存的 TorrentStatus.COMPLETED TS 错误阻塞 ts-jest 编译。
  */
-import type { ApiResponse } from '@/api/torrents'
+import type {
+  AdvancedSearchRequest,
+  ApiResponse,
+  QueryTemplateConditionGroup
+} from '@/api/torrents'
+import {
+  AdvancedSearchConditionValue,
+  AdvancedSearchGroupState,
+  AdvancedSearchValidationError,
+  buildAdvancedSearchParams,
+  normalizeLoadedConditionValue,
+  normalizeLoadedOperator
+} from '@/components/torrents/advancedSearchState'
+import { ADVANCED_SEARCH_FIELDS } from '@/contracts/advancedSearch.generated'
 import {
   getTorrentDownloaderId,
   getTorrentHashIdentity,
@@ -30,22 +43,6 @@ interface ActiveSpeed {
   downloadSpeed: number
   uploadSpeed: number
   progress: number
-}
-
-interface TemplateCondition {
-  field: string
-  operator: string
-  value: any
-  mode?: 'include' | 'exclude'
-  index?: number
-}
-
-interface TemplateConditionGroup {
-  id?: string
-  name?: string
-  logic?: string
-  betweenGroupLogic?: 'and' | 'or'
-  conditions: TemplateCondition[]
 }
 
 interface SelectionState {
@@ -510,131 +507,107 @@ export function assertSameDownloader(torrents: any[]): SameDownloaderResult {
 
 export interface AdvancedSearchRequestResult {
   /** 构造好的请求体（成功时）；失败时为 null */
-  request: any | null
+  request: AdvancedSearchRequest | null
   /** 解析失败原因（调用方据此 $message.error）；成功时为 null */
   error: string | null
 }
 
-const ADVANCED_OPERATOR_MAPPING: Record<string, string> = {
-  contains: 'contains',
-  not_contains: 'not_contains',
-  equals: 'eq',
-  not_equals: 'ne',
-  starts_with: 'starts_with',
-  ends_with: 'ends_with',
-  regex: 'regex',
-  greater_than: 'gt',
-  less_than: 'lt',
-  greater_equal: 'gte',
-  less_equal: 'lte',
-  between: 'between',
-  last_days: 'last_days',
-  date_range: 'date_range',
-  in: 'in',
-  not_in: 'not_in',
-  contains_any: 'contains_any',
-  contains_all: 'contains_all',
-  not_contains_any: 'not_contains_any',
-  not_contains_all: 'not_contains_all'
+interface AdvancedSearchParamsInput {
+  groups?: unknown
+  between_group_logics?: unknown
+  sort_by?: unknown
+  sort_order?: unknown
 }
 
-const ADVANCED_FIELD_TYPES: Record<string, 'text' | 'number' | 'date' | 'select' | 'multiSelect' | 'boolean'> = {
-  name: 'text',
-  save_path: 'text',
-  content_path: 'text',
-  hash: 'text',
-  size: 'number',
-  progress: 'number',
-  download_speed: 'number',
-  upload_speed: 'number',
-  ratio: 'number',
-  ratio_limit: 'number',
-  status: 'select',
-  downloader_id: 'select',
-  downloader_name: 'multiSelect',
-  category: 'multiSelect',
-  tags: 'multiSelect',
-  tracker_url: 'text',
-  tracker_msg: 'text',
-  added_date: 'date',
-  completed_date: 'date',
-  super_seeding: 'boolean'
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
-function convertAdvancedOperatorForBackend(operator: string): string {
-  return ADVANCED_OPERATOR_MAPPING[operator] || operator
+function parseJsonString(value: unknown, label: string): unknown {
+  if (typeof value !== 'string') {
+    throw new AdvancedSearchValidationError(`${label}必须是JSON字符串`)
+  }
+  try {
+    return JSON.parse(value) as unknown
+  } catch (_error) {
+    throw new AdvancedSearchValidationError(`${label}不是有效JSON`)
+  }
 }
 
-function formatAdvancedParamValue(condition: TemplateCondition): any {
-  if (condition.field === 'size' && condition.operator === 'between') {
-    const value = condition.value
-    if (value && typeof value === 'object' && value.min !== undefined && value.max !== undefined) {
-      return {
-        min: value.min !== null ? `${value.min} ${value.minUnit || 'GB'}` : null,
-        max: value.max !== null ? `${value.max} ${value.maxUnit || 'GB'}` : null
+function parseConditionGroups(value: unknown): NonNullable<
+  AdvancedSearchRequest['condition_groups']
+> {
+  const parsed = parseJsonString(value, '搜索条件')
+  if (!Array.isArray(parsed) || parsed.length === 0) {
+    throw new AdvancedSearchValidationError('至少需要一个条件组')
+  }
+  return parsed.map((rawGroup, groupIndex) => {
+    if (!isRecord(rawGroup)) {
+      throw new AdvancedSearchValidationError(
+        `条件组${groupIndex + 1}结构无效`
+      )
+    }
+    const logic = String(rawGroup.logic).toUpperCase()
+    if (logic !== 'AND' && logic !== 'OR') {
+      throw new AdvancedSearchValidationError(
+        `条件组${groupIndex + 1}逻辑无效`
+      )
+    }
+    if (!Array.isArray(rawGroup.conditions) || rawGroup.conditions.length === 0) {
+      throw new AdvancedSearchValidationError(
+        `条件组${groupIndex + 1}至少需要一个条件`
+      )
+    }
+    const conditions = rawGroup.conditions.map(
+      (rawCondition, conditionIndex) => {
+        if (!isRecord(rawCondition)) {
+          throw new AdvancedSearchValidationError(
+            `条件组${groupIndex + 1}第${conditionIndex + 1}项结构无效`
+          )
+        }
+        const field = rawCondition.field
+        const operator = rawCondition.operator
+        if (
+          typeof field !== 'string' ||
+          !ADVANCED_SEARCH_FIELDS[field] ||
+          typeof operator !== 'string' ||
+          !ADVANCED_SEARCH_FIELDS[field].operators.includes(operator)
+        ) {
+          throw new AdvancedSearchValidationError(
+            `条件组${groupIndex + 1}第${conditionIndex + 1}项契约无效`
+          )
+        }
+        if (!Object.prototype.hasOwnProperty.call(rawCondition, 'value')) {
+          throw new AdvancedSearchValidationError(
+            `条件组${groupIndex + 1}第${conditionIndex + 1}项缺少值`
+          )
+        }
+        return { field, operator, value: rawCondition.value }
       }
-    }
-    return condition.value
-  }
-
-  if (condition.field === 'size' && condition.operator !== 'between') {
-    const value = condition.value
-    if (value && typeof value === 'object' && value.value !== undefined) {
-      return value.value !== null ? `${value.value} ${value.unit || 'GB'}` : null
-    }
-    return condition.value
-  }
-
-  switch (ADVANCED_FIELD_TYPES[condition.field]) {
-    case 'date':
-      if (condition.value && typeof condition.value === 'object') {
-        return JSON.stringify(condition.value)
-      }
-      return condition.value
-    case 'number':
-      return Number(condition.value)
-    case 'multiSelect':
-      // 返回数组：后端 in/not_in/contains_any 等多值操作符的 lambda 期望 list（_normalize_multi_value 会兜底）
-      return Array.isArray(condition.value) ? condition.value : [condition.value]
-    case 'boolean':
-      return condition.value ? '1' : '0'
-    default:
-      return condition.value
-  }
+    )
+    return { logic, conditions }
+  })
 }
 
-function buildAdvancedSearchParamsFromTemplateGroups(groups: TemplateConditionGroup[]): any {
-  const groupsData = groups.map((group, groupIndex) => {
-    const conditions = (group.conditions || [])
-      .filter(condition => condition.field && condition.operator && condition.value !== null)
-      .map((condition, conditionIndex) => ({
-        field: condition.field,
-        operator: convertAdvancedOperatorForBackend(condition.operator),
-        value: formatAdvancedParamValue(condition),
-        mode: condition.mode,
-        index: condition.index ?? conditionIndex
-      }))
-
-    return {
-      id: group.id,
-      name: group.name || `条件组 ${groupIndex + 1}`,
-      logic: group.logic || 'and',
-      conditions,
-      conditions_count: conditions.length
+function parseBetweenGroupLogics(
+  value: unknown,
+  groupCount: number
+): Array<'AND' | 'OR'> {
+  const parsed = parseJsonString(value, '组间逻辑')
+  if (!Array.isArray(parsed) || parsed.length !== groupCount - 1) {
+    throw new AdvancedSearchValidationError(
+      '组间逻辑数量必须等于条件组数量减一'
+    )
+  }
+  return parsed.map((item, index) => {
+    const logic = typeof item === 'string' ? item.toUpperCase() : ''
+    if (logic !== 'AND' && logic !== 'OR') {
+      throw new AdvancedSearchValidationError(
+        `第${index + 1}个组间逻辑无效`
+      )
     }
-  }).filter(group => group.conditions_count > 0)
-
-  const betweenGroupLogics = []
-  for (let i = 0; i < groups.length - 1; i++) {
-    betweenGroupLogics.push(groups[i].betweenGroupLogic || 'and')
-  }
-
-  return {
-    complex_search: true,
-    groups_count: groups.length,
-    groups: JSON.stringify(groupsData),
-    between_group_logics: JSON.stringify(betweenGroupLogics)
-  }
+    return logic
+  })
 }
 
 /**
@@ -648,88 +621,122 @@ function buildAdvancedSearchParamsFromTemplateGroups(groups: TemplateConditionGr
  * @param limit 每页条数
  */
 export function buildAdvancedSearchRequest(
-  searchParams: any,
+  searchParams: AdvancedSearchParamsInput,
   sortByFallback: string,
   limit: number
 ): AdvancedSearchRequestResult {
-  let conditionGroups: any[] = []
-  let betweenGroupLogics: string[] = []
-
-  // 解析条件组（JSON 字符串）
-  if (searchParams.groups) {
-    try {
-      const groupsData = JSON.parse(searchParams.groups)
-      conditionGroups = groupsData.map((group: any) => ({
-        logic: group.logic?.toUpperCase() || 'AND',
-        conditions: group.conditions.map((cond: any) => ({
-          field: cond.field,
-          operator: cond.operator,
-          value: cond.value
-        }))
-      }))
-    } catch (e) {
-      console.error('解析groups参数失败:', e)
-      return { request: null, error: '搜索条件格式错误' }
+  try {
+    if (!Number.isInteger(limit) || limit < 1 || limit > 100000) {
+      throw new AdvancedSearchValidationError('分页大小无效')
     }
-  }
-
-  // 解析组间逻辑关系（类型校验：必须是字符串数组）
-  if (searchParams.between_group_logics) {
-    try {
-      const parsed = JSON.parse(searchParams.between_group_logics)
-      if (Array.isArray(parsed)) {
-        betweenGroupLogics = parsed
-          .filter((item: any) => typeof item === 'string')
-          .map((logic: string) => logic.toUpperCase())
-      } else {
-        console.warn('between_group_logics不是数组类型，使用默认值')
-        betweenGroupLogics = []
-      }
-    } catch (e) {
-      console.error('解析between_group_logics参数失败:', e)
-      betweenGroupLogics = []
+    const conditionGroups = parseConditionGroups(searchParams.groups)
+    const betweenGroupLogics = parseBetweenGroupLogics(
+      searchParams.between_group_logics,
+      conditionGroups.length
+    )
+    const sortBy =
+      typeof searchParams.sort_by === 'string' && searchParams.sort_by
+        ? searchParams.sort_by
+        : sortByFallback
+    const sortOrder = searchParams.sort_order === undefined
+      ? 'desc'
+      : searchParams.sort_order
+    if (sortOrder !== 'asc' && sortOrder !== 'desc') {
+      throw new AdvancedSearchValidationError('排序方向无效')
     }
-  }
-
-  const request: any = {
-    page: 1,
-    limit,
-    sort_by: searchParams.sort_by || sortByFallback,
-    sort_order: (searchParams.sort_order || 'desc') as 'asc' | 'desc'
-  }
-
-  // 无条件组时，回退到简单字段
-  if (conditionGroups.length === 0) {
-    if (searchParams.name) request.name = searchParams.name
-    if (searchParams.downloader_id) request.downloader_id = searchParams.downloader_id
-    if (searchParams.status) request.status = searchParams.status
-    if (searchParams.tags) request.tags = searchParams.tags
-    if (searchParams.category) request.category = searchParams.category
-  }
-
-  // 有条件组时，附带组间逻辑
-  if (conditionGroups.length > 0) {
-    request.condition_groups = conditionGroups
-    if (betweenGroupLogics.length > 0) {
-      request.between_group_logics = betweenGroupLogics
+    return {
+      request: {
+        page: 1,
+        limit,
+        sort_by: sortBy,
+        sort_order: sortOrder,
+        condition_groups: conditionGroups,
+        between_group_logics: betweenGroupLogics
+      },
+      error: null
     }
+  } catch (error) {
+    const message = error instanceof AdvancedSearchValidationError
+      ? error.message
+      : '搜索条件格式错误'
+    return { request: null, error: message }
   }
-
-  return { request, error: null }
 }
 
 export function buildAdvancedSearchRequestFromTemplateGroups(
-  groups: TemplateConditionGroup[],
+  groups: QueryTemplateConditionGroup[],
   sortBy: string,
   sortOrder: 'asc' | 'desc' = 'desc',
   limit = 20
 ): AdvancedSearchRequestResult {
-  const searchParams = {
-    ...buildAdvancedSearchParamsFromTemplateGroups(groups),
-    sort_by: sortBy,
-    sort_order: sortOrder
+  try {
+    const normalizedGroups: AdvancedSearchGroupState[] = groups.map(
+      (group, groupIndex) => {
+        const logic = String(group.logic).toLowerCase()
+        if (logic !== 'and' && logic !== 'or') {
+          throw new AdvancedSearchValidationError(
+            `模板条件组${groupIndex + 1}逻辑无效`
+          )
+        }
+        if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
+          throw new AdvancedSearchValidationError(
+            `模板条件组${groupIndex + 1}没有条件`
+          )
+        }
+        const betweenGroupLogic = group.betweenGroupLogic
+        if (
+          groupIndex < groups.length - 1 &&
+          betweenGroupLogic !== 'and' &&
+          betweenGroupLogic !== 'or'
+        ) {
+          throw new AdvancedSearchValidationError(
+            `模板条件组${groupIndex + 1}缺少组间逻辑`
+          )
+        }
+        return {
+          id: group.id || `template-group-${groupIndex + 1}`,
+          name: group.name,
+          logic,
+          betweenGroupLogic,
+          conditions: group.conditions.map((condition, conditionIndex) => {
+            const field = ADVANCED_SEARCH_FIELDS[condition.field]
+            if (!field) {
+              throw new AdvancedSearchValidationError(
+                `模板包含未知字段：${condition.field}`
+              )
+            }
+            const operator = normalizeLoadedOperator(
+              condition.field,
+              condition.operator
+            )
+            return {
+              id: `template-condition-${groupIndex + 1}-${conditionIndex + 1}`,
+              field: condition.field,
+              operator,
+              value: normalizeLoadedConditionValue(
+                condition.field,
+                field.kind,
+                operator,
+                condition.value
+              ) as AdvancedSearchConditionValue,
+              mode: condition.mode === 'exclude' ? 'exclude' : 'include'
+            }
+          })
+        }
+      }
+    )
+    const searchParams = {
+      ...buildAdvancedSearchParams(normalizedGroups),
+      sort_by: sortBy,
+      sort_order: sortOrder
+    }
+    return buildAdvancedSearchRequest(searchParams, sortBy, limit)
+  } catch (error) {
+    const message = error instanceof AdvancedSearchValidationError
+      ? error.message
+      : '模板搜索条件格式错误'
+    return { request: null, error: message }
   }
-  return buildAdvancedSearchRequest(searchParams, sortBy, limit)
 }
 
 // ============ 4 等级删除（纯函数层，无副作用，可单测） ============

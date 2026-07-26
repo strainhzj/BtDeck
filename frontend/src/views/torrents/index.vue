@@ -636,8 +636,13 @@ import {
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
   needsActiveSnapshotRefresh,
+  buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups
 } from './utils/torrentBatch'
+import type {
+  AdvancedSearchBuilderParams,
+  AdvancedSearchTemplateDraft
+} from '@/components/torrents/advancedSearchState'
 
 @Component({
   name: 'TorrentsManagement',
@@ -802,7 +807,7 @@ export default class extends mixins(TorrentBatchMixin) {
       const response = await applySearchTemplate(templateId)
       if (response.code === '200' && response.data) {
         // apply 端点返回 {id, name, description, conditions}
-        const conditions = (response.data as any).conditions as QueryTemplateConditions
+        const conditions = response.data.conditions
         if (conditions) {
           applied = await this.applyQueryTemplate(conditions)
         }
@@ -1765,7 +1770,7 @@ export default class extends mixins(TorrentBatchMixin) {
     })
   }
 
-  private handleAdvancedSearchFromBuilder(searchParams: any) {
+  private handleAdvancedSearchFromBuilder(searchParams: AdvancedSearchBuilderParams) {
     this.performAdvancedSearch(searchParams)
     this.showAdvancedSearchDialog = false
   }
@@ -1785,74 +1790,19 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  private async performAdvancedSearch(searchParams: any) {
+  private async performAdvancedSearch(searchParams: AdvancedSearchBuilderParams) {
+    const { request, error } = buildAdvancedSearchRequest(
+      searchParams,
+      this.listQuery.sort_by || 'added_date',
+      this.listQuery.limit || this.pageSize
+    )
+    if (!request || error) {
+      this.$message.error(error || '搜索条件格式错误')
+      return
+    }
+
     this.advancedSearchSearching = true
     try {
-      let conditionGroups: any[] = []
-      let betweenGroupLogics: string[] = []
-
-      if (searchParams.groups) {
-        try {
-          const groupsData = JSON.parse(searchParams.groups)
-          conditionGroups = groupsData.map((group: any) => ({
-            logic: group.logic?.toUpperCase() || 'AND',
-            conditions: group.conditions.map((cond: any) => ({
-              field: cond.field,
-              operator: cond.operator,
-              value: cond.value
-            }))
-          }))
-        } catch (e) {
-          console.error('解析groups参数失败:', e)
-          this.$message.error('搜索条件格式错误')
-          return
-        }
-      }
-
-      // 解析组间逻辑关系
-      if (searchParams.between_group_logics) {
-        try {
-          const parsed = JSON.parse(searchParams.between_group_logics)
-          // P2-2修复：添加类型验证，确保解析结果是数组且元素为字符串
-          if (Array.isArray(parsed)) {
-            betweenGroupLogics = parsed
-              .filter((item: any) => typeof item === 'string')  // 过滤非字符串元素
-              .map((logic: string) => logic.toUpperCase())      // 转换为大写
-            console.log('解析的组间逻辑关系:', betweenGroupLogics)
-          } else {
-            console.warn('between_group_logics不是数组类型，使用默认值')
-            betweenGroupLogics = []
-          }
-        } catch (e) {
-          console.error('解析between_group_logics参数失败:', e)
-          // 如果解析失败，默认使用 AND
-          betweenGroupLogics = []
-        }
-      }
-
-      const request: any = {
-        page: 1,
-        limit: this.listQuery.limit || this.pageSize,  // 🔥 修复：使用 pageSize 作为后备值
-        sort_by: searchParams.sort_by || this.listQuery.sort_by || 'added_date',
-        sort_order: (searchParams.sort_order || this.listQuery.sort_order || 'desc') as 'asc' | 'desc'
-      }
-
-      if (conditionGroups.length === 0) {
-        if (searchParams.name) request.name = searchParams.name
-        if (searchParams.downloader_id) request.downloader_id = searchParams.downloader_id
-        if (searchParams.status) request.status = searchParams.status
-        if (searchParams.tags) request.tags = searchParams.tags
-        if (searchParams.category) request.category = searchParams.category
-      }
-
-      if (conditionGroups.length > 0) {
-        request.condition_groups = conditionGroups
-        // 添加组间逻辑关系（如果有多个条件组）
-        if (betweenGroupLogics.length > 0) {
-          request.between_group_logics = betweenGroupLogics
-        }
-      }
-
       const response = await advancedSearch(request)
 
       if (response.code === '200' && response.data) {
@@ -1872,7 +1822,7 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  private async handleSaveSearchTemplate(template: any) {
+  private async handleSaveSearchTemplate(template: AdvancedSearchTemplateDraft) {
     // 接线 v1.0.5：把 AdvancedSearchBuilder 的 conditionGroups 保存为查询模板
     // template 结构: { id, name, description, isDefault, conditions, createdTime }
     // conditions 是 builder 的 conditionGroups 数组，包装成 source=advanced 格式

@@ -44,6 +44,11 @@ from app.services.torrent_file_backup_manager import TorrentFileBackupManagerSer
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.sync_db_write import bulk_upsert_with_retry, has_torrent_info_changes
 from app.services.torrent_metadata import fetch_qb_torrent_details
+from app.services.torrent_ratio_values import (
+    MISSING_RATIO_VALUE,
+    RatioNormalizationStats,
+    apply_normalized_ratio_fields,
+)
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.config import settings
@@ -252,8 +257,15 @@ async def update_torrent_async(
         return None
 
     try:
+        normalized_data = dict(torrent_data)
+        apply_normalized_ratio_fields(
+            normalized_data,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=False,
+        )
         # 更新对象属性
-        for key, value in torrent_data.items():
+        for key, value in normalized_data.items():
             if hasattr(db_torrent, key):
                 setattr(db_torrent, key, value)
         if commit:
@@ -1313,6 +1325,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     torrent_info_map = {}
 
     stats = {"insert_count": 0, "update_count": 0, "skip_count": 0, "error_count": 0}
+    ratio_stats = RatioNormalizationStats()
 
     # 第一阶段：收集数据
     tracker_source = "tr_detailed"
@@ -1383,8 +1396,6 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             "torrent_file": torrent_info.torrent_file,
             "added_date": torrent_info.added_date,
             "completed_date": torrent_info.done_date if torrent_info.done_date else None,
-            "ratio": torrent_info.ratio,
-            "ratio_limit": torrent_info.seed_ratio_limit,
             "tags": ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
             "category": "",
             "super_seeding": "",
@@ -1396,6 +1407,14 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             "backup_file_path": backup_file_path,
             "dr": 0,
         }
+        ratio_stats.observe(
+            apply_normalized_ratio_fields(
+                torrent_data,
+                raw_ratio=getattr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                raw_ratio_limit=getattr(torrent_info, "seed_ratio_limit", MISSING_RATIO_VALUE),
+                is_insert=mode == "insert",
+            )
+        )
 
         # 收集数据
         if mode == "insert":
@@ -1410,6 +1429,11 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             "backup_file_path": backup_file_path,
             "torrent_data": torrent_data,
         }
+
+    ratio_stats.log_summary(
+        logger,
+        context=f"transmission-full:{bt_downloader.downloader_id}",
+    )
 
     # ✅ 第二阶段预处理：去重保护（双重保护机制）
     logger.debug(f"[PERF] 开始去重检查：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
@@ -1963,6 +1987,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     torrent_info_map = {}  # {info_id: torrent_info} 用于后续处理
 
     stats = {"insert_count": 0, "update_count": 0, "skip_count": 0, "error_count": 0}
+    ratio_stats = RatioNormalizationStats()
 
     # 第一阶段：收集数据
     tracker_source = "qb_sync_maindata" if used_sync_maindata else "qb_torrents_info"
@@ -2054,8 +2079,6 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
                 if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None
                 else None
             ),
-            "ratio": _qb_get_attr(torrent_info, "ratio", 0),
-            "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""),
             "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False),
@@ -2067,6 +2090,14 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             "backup_file_path": backup_file_path,
             "dr": 0,
         }
+        ratio_stats.observe(
+            apply_normalized_ratio_fields(
+                torrent_data,
+                raw_ratio=_qb_get_attr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                raw_ratio_limit=_qb_get_attr(torrent_info, "ratio_limit", MISSING_RATIO_VALUE),
+                is_insert=mode == "insert",
+            )
+        )
 
         # 收集数据
         if mode == "insert":
@@ -2081,6 +2112,11 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             "backup_file_path": backup_file_path,
             "torrent_data": torrent_data,
         }
+
+    ratio_stats.log_summary(
+        logger,
+        context=f"qbittorrent-full:{bt_downloader.downloader_id}",
+    )
 
     # ✅ 第二阶段预处理：去重保护（双重保护机制）
     logger.debug(f"[PERF] 开始去重检查：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
@@ -2835,6 +2871,7 @@ async def qb_add_torrents_info_only_async(
 
     to_insert, to_update = [], []
     stats = {"insert": 0, "update": 0, "skip": 0, "error": 0}
+    ratio_stats = RatioNormalizationStats()
 
     for torrent_info in torrent_info_list:
         torrent_hash = _qb_get_attr(torrent_info, "hash")
@@ -2892,8 +2929,6 @@ async def qb_add_torrents_info_only_async(
                     if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None
                     else None
                 ),
-                "ratio": _qb_get_attr(torrent_info, "ratio", 0),
-                "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
                 "tags": _qb_get_attr(torrent_info, "tags", ""),
                 "category": _qb_get_attr(torrent_info, "category", ""),
                 "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False),
@@ -2904,6 +2939,14 @@ async def qb_add_torrents_info_only_async(
                 "update_by": "admin",
                 "dr": 0,
             }
+            ratio_stats.observe(
+                apply_normalized_ratio_fields(
+                    torrent_data,
+                    raw_ratio=_qb_get_attr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                    raw_ratio_limit=_qb_get_attr(torrent_info, "ratio_limit", MISSING_RATIO_VALUE),
+                    is_insert=False,
+                )
+            )
 
             # ✅ 阶段 2.5：整行变更检测，无变化真正跳过（修正 skip 语义 bug）
             if has_torrent_info_changes(cached_row, torrent_data):
@@ -2936,8 +2979,6 @@ async def qb_add_torrents_info_only_async(
                 if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None
                 else None
             ),
-            "ratio": _qb_get_attr(torrent_info, "ratio", 0),
-            "ratio_limit": _qb_get_attr(torrent_info, "ratio_limit", 0),
             "tags": _qb_get_attr(torrent_info, "tags", ""),
             "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False),
@@ -2948,7 +2989,20 @@ async def qb_add_torrents_info_only_async(
             "update_by": "admin",
             "dr": 0,
         }
+        ratio_stats.observe(
+            apply_normalized_ratio_fields(
+                torrent_data,
+                raw_ratio=_qb_get_attr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                raw_ratio_limit=_qb_get_attr(torrent_info, "ratio_limit", MISSING_RATIO_VALUE),
+                is_insert=True,
+            )
+        )
         to_insert.append(torrent_data)
+
+    ratio_stats.log_summary(
+        logger,
+        context=f"qbittorrent-info:{bt_downloader.downloader_id}",
+    )
 
     # ✅ 去重保护（双重保护机制）
     to_insert, to_update = _deduplicate_torrent_lists(to_insert, to_update)
@@ -3090,6 +3144,7 @@ async def tr_add_torrents_info_only_async(
 
     to_insert, to_update = [], []
     stats = {"insert": 0, "update": 0, "skip": 0, "error": 0}
+    ratio_stats = RatioNormalizationStats()
 
     for torrent_info in torrent_info_list:
         cached_row = existing_torrents_cache.get(torrent_info.hashString)
@@ -3121,8 +3176,6 @@ async def tr_add_torrents_info_only_async(
             "torrent_file": torrent_info.torrent_file,
             "added_date": torrent_info.added_date,
             "completed_date": torrent_info.done_date if torrent_info.done_date else None,
-            "ratio": torrent_info.ratio,
-            "ratio_limit": torrent_info.seed_ratio_limit,
             "tags": ",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
             "enabled": 1,
             "create_time": create_time,
@@ -3131,6 +3184,14 @@ async def tr_add_torrents_info_only_async(
             "update_by": "admin",
             "dr": 0,
         }
+        ratio_stats.observe(
+            apply_normalized_ratio_fields(
+                torrent_data,
+                raw_ratio=getattr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                raw_ratio_limit=getattr(torrent_info, "seed_ratio_limit", MISSING_RATIO_VALUE),
+                is_insert=cached_row is None,
+            )
+        )
 
         if cached_row is None:
             to_insert.append(torrent_data)
@@ -3141,6 +3202,11 @@ async def tr_add_torrents_info_only_async(
                 to_update.append(torrent_data)
             else:
                 stats["skip"] += 1
+
+    ratio_stats.log_summary(
+        logger,
+        context=f"transmission-info:{bt_downloader.downloader_id}",
+    )
 
     # ✅ 去重保护（双重保护机制）
     to_insert, to_update = _deduplicate_torrent_lists(to_insert, to_update)

@@ -303,13 +303,12 @@ class TestApplyConditionGroups:
         # 应该追加了 filter
         assert mock_query.filter.call_count > 1
 
-    def test_invalid_logic_skipped(self, builder_with_mock):
-        """无效 logic 的条件组 → 跳过"""
-        builder, mock_query = builder_with_mock
-        init_count = mock_query.filter.call_count
+    def test_invalid_group_is_rejected(self, builder_with_mock):
+        """无效条件组必须明确失败，不能静默扩大结果集。"""
+        builder, _ = builder_with_mock
 
-        builder.apply_condition_groups([{"logic": "", "conditions": []}])
-        assert mock_query.filter.call_count == init_count
+        with pytest.raises(ValueError):
+            builder.apply_condition_groups([{"logic": "", "conditions": []}])
 
 
 # ==================== AdvancedSearchService 模板管理测试 ====================
@@ -399,7 +398,7 @@ class TestAdvancedSearchServiceTemplates:
             "is_public": True,
             "name": "公开模板",
             "description": "描述",
-            "conditions": {},
+            "conditions": {"source": "simple", "listQuery": {}},
         }
 
         result = service.apply_search_template("tpl-1", "user-001")
@@ -411,7 +410,14 @@ class TestAdvancedSearchServiceTemplates:
         service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "user-001"}
         service.template_model.update.return_value = True
 
-        result = service.update_search_template("tpl-1", {"name": "新名称", "conditions": {}}, "user-001")
+        result = service.update_search_template(
+            "tpl-1",
+            {
+                "name": "新名称",
+                "conditions": {"source": "simple", "listQuery": {}},
+            },
+            "user-001",
+        )
         assert result["status"] == "success"
 
     def test_update_template_no_permission(self, service):

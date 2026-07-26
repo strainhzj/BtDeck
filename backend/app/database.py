@@ -11,6 +11,7 @@ import yaml
 from typing import Dict, Any, Optional
 from gmssl import func
 from app.auth import utils
+from app.services.sqlite_search_runtime import install_sqlite_search_functions
 
 # 创建日志记录器
 logger = logging.getLogger(__name__)
@@ -40,6 +41,7 @@ def _apply_sqlite_pragmas(dbapi_conn, conn_record):  # noqa: ANN001 - SQLAlchemy
     cursor.execute("PRAGMA synchronous=NORMAL")
     cursor.execute("PRAGMA busy_timeout=15000")
     cursor.close()
+    install_sqlite_search_functions(dbapi_conn)
 
 
 # 挂到同步引擎：每个新连接建立时执行 PRAGMA

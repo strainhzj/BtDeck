@@ -87,7 +87,7 @@ def _insert_template(
         user_id=user_id,
         name=name,
         description="",
-        conditions='{"source":"simple"}',
+        conditions='{"source":"simple","listQuery":{}}',
         is_default=0,
         is_public=is_public,
         usage_count=0,
@@ -99,7 +99,7 @@ def _insert_template(
     return template
 
 
-def test_create_template_uses_token_user_id_not_request_body(client):
+def test_create_template_rejects_user_id_in_request_body(client):
     response = client.post(
         "/api/v1/advanced-search/search-templates",
         json={
@@ -111,11 +111,24 @@ def test_create_template_uses_token_user_id_not_request_body(client):
         headers=_auth(1),
     )
 
+    assert response.status_code == 422
+
+
+def test_create_template_uses_authenticated_user_id(client):
+    response = client.post(
+        "/api/v1/advanced-search/search-templates",
+        json={
+            "name": "用户1模板",
+            "conditions": {"source": "simple", "listQuery": {}},
+            "is_public": False,
+        },
+        headers=_auth(1),
+    )
+
     assert response.status_code == 200
     body = response.json()
     assert body["code"] == "200"
     assert body["data"]["user_id"] == "1"
-    assert body["data"]["user_id"] != "999"
 
 
 def test_list_templates_ignores_client_supplied_user_id(client, db_session):
@@ -165,3 +178,36 @@ def test_user_id_int_from_jwt_matches_string_user_id_in_db(client, db_session):
     assert response.status_code == 200
     assert response.json()["code"] == "200"
     assert db_session.query(SearchTemplate).filter(SearchTemplate.id == "t-user-1").first() is None
+
+
+def test_update_template_rejects_invalid_conditions_with_http_422(
+    client, db_session
+):
+    _insert_template(db_session, "t-user-1", "1", "用户1模板")
+
+    response = client.put(
+        "/api/v1/advanced-search/search-templates/t-user-1",
+        json={
+            "id": "t-user-1",
+            "conditions": {"source": "advanced", "condition_groups": []},
+        },
+        headers=_auth(1),
+    )
+
+    assert response.status_code == 422
+
+
+def test_apply_template_rejects_legacy_invalid_conditions_with_http_422(
+    client, db_session
+):
+    template = _insert_template(db_session, "t-invalid", "1", "损坏模板")
+    template.conditions = "{}"
+    db_session.commit()
+
+    response = client.post(
+        "/api/v1/advanced-search/search-templates/t-invalid/apply",
+        headers=_auth(1),
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "422"

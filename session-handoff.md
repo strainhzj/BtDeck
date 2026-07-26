@@ -1,5 +1,52 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-26 交接：最近三次提交红队加固实施（v1.0.6.27）
+
+**当前任务**: `v1.0.6.27`
+**分支**: dev
+**状态**: 实现、自动化验证和运维文档完成；尚未提交，也未迁移真实本地数据库。
+
+### 审查范围与结论
+
+审查对象为 `0b83ac8`、`b894ca2`、`0b447df`。红队验证确认原修改仍可能在写入路径、已执行迁移、备份恢复和前后端协议漂移场景下失效，因此按 3 个子代理的独立方案审查结果完成根因加固，而非仅增加局部断言。
+
+### 关键改动
+
+- ratio 三态归一化覆盖同步、异步详情、CRUD 和遗留写路径；更新时区分明确 `NULL` 与暂不可用保留旧值。
+- 严格修正 6132，并增加 follower revision `8f4c2d1a9b7e`、数据库 CHECK、旧 schema 入口同步。
+- 迁移前备份升级为完整性、版本、SHA-256 硬门禁；新增只读数据库/备份诊断 CLI。
+- 修复诊断生成 SQLite sidecar 以及保留策略误计 sidecar 的红队实跑缺陷。
+- 高级搜索改为后端 JSON 单一契约、严格 422、无静默 fallback、有界真实 regex 和查询预算。
+- 前端生成契约、集中状态与共用严格请求构造器覆盖模板、即时搜索和两种列表视图。
+- 运维文档补充两阶段发布、零值对账和确定性恢复步骤。
+
+### 验证结果
+
+- 后端全量：2378 passed、6 skipped、0 failed（2384 collected）。
+- 前端全量：20 suites、306 tests；lint、typecheck、contract check、build 通过。
+- Flake8、BtDeck 架构门禁、Black、目标 mypy、`git diff --check` 通过。
+- 全量 mypy 的 1481 个错误为既有类型债务，未纳入本轮，也未掩盖。
+- 根 `init.sh` 因 Windows 仅有不可用 WSL bash 无法运行；后端与前端关键子验证均已单独完成。
+
+### 受控发布顺序
+
+1. 在目标环境运行：
+   `python backend/scripts/ratio_migration_report.py --database <db> --expected-version 8f4c2d1a9b7e --json`
+2. 对历史 `0` 做业务数据源对账；不要自动把所有 `0` 改成 `NULL`。
+3. 先发布后端并允许硬门禁备份与 Alembic migration 完成，再复跑诊断确认 schema、约束和 revision。
+4. 后端稳定后发布前端；观察 422、regex timeout、ratio unavailable 和备份验证指标。
+5. 需要恢复时，先停写并保留故障库，再校验指定主备份：
+   `python backend/scripts/ratio_migration_report.py --database <db> --backup <backup> --file-only --expected-backup-version <revision> --json`
+   按 `backend/docs/operations/rollback-guide.md` 恢复，禁止直接跨 6132 downgrade。
+
+### 当前工作区
+
+- 真实 `backend/config/app.db` 仅做只读诊断，仍处于旧 revision `e6d8a20c41f3`，没有被迁移。
+- 最新已验证主备份为 `app.db.pre-migration-20260711-194949-098`，SHA-256 为 `9db1a367892825ef296d0717d5fd806048186c1bdbd2fa4133a23a26839b7ae0`。
+- 本轮没有 Git commit；用户原有未跟踪文件/目录未修改或清理。
+
+---
+
 ## 2026-07-26 交接：高级搜索操作符前后端契约守卫测试（v1.0.6.26）
 
 **当前任务**: `v1.0.6.26`

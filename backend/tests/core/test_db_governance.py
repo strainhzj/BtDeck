@@ -15,6 +15,7 @@ import os
 import sqlite3
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from alembic import command
@@ -244,6 +245,8 @@ class TestBackupLogic:
         ).fetchone()[0]
         conn.close()
         assert table_count > 20, "备份应包含全部表"
+        assert not Path(f"{backup_path}-wal").exists()
+        assert not Path(f"{backup_path}-shm").exists()
 
     def test_backup_prune_keeps_only_n(self, tmp_path):
         """备份清理应只保留最近 BACKUP_KEEP 份。"""
@@ -255,18 +258,57 @@ class TestBackupLogic:
             # 每次用不同时间戳（手动造文件）
             fake = f"{db_path}.pre-migration-2026010{i}-000000"
             shutil.copy2(db_path, fake)
+        sidecar = Path(f"{db_path}.pre-migration-20260109-000000-wal")
+        sidecar.write_bytes(b"sidecar")
 
         removed = prune_old_backups(db_path, keep=BACKUP_KEEP)
-        remaining = list(tmp_path.glob("*.pre-migration-*"))
+        remaining = [
+            path
+            for path in tmp_path.glob("*.pre-migration-*")
+            if not path.name.endswith(("-wal", "-shm"))
+        ]
         assert len(remaining) == BACKUP_KEEP, (
             f"应保留 {BACKUP_KEEP} 份，实际 {len(remaining)}"
         )
+        assert removed == 3
+        assert sidecar.read_bytes() == b"sidecar"
 
-    def test_backup_failure_does_not_crash(self, tmp_path):
-        """备份失败不应阻塞（只告警）。"""
-        # 指向不存在的路径触发备份失败
+    def test_nonexistent_database_needs_no_backup(self, tmp_path):
+        """尚未创建的空库没有可备份内容。"""
         result = backup_before_migration(str(tmp_path / "nonexistent.db"))
-        assert result is None  # 失败返回 None
+        assert result is None
+
+    def test_existing_database_backup_failure_blocks_migration(self, tmp_path):
+        """已有数据库无法复制时必须失败，不能继续破坏性迁移。"""
+        from app.core.db_backup import MigrationBackupError
+
+        db_path = str(tmp_path / "blocked.db")
+        _build_ghost_db(db_path)
+        with patch("app.core.db_backup.shutil.copy2", side_effect=OSError("disk full")):
+            with pytest.raises(MigrationBackupError, match="disk full"):
+                backup_before_migration(db_path)
+
+    def test_backup_failure_blocks_migration_even_in_dev_mode(
+        self, tmp_path, monkeypatch
+    ):
+        """DEV 仅可容忍一般迁移错误，不能绕过恢复点硬门禁。"""
+        from app.core.db_backup import MigrationBackupError
+
+        db_path = str(tmp_path / "blocked-dev.db")
+        _build_ghost_db(db_path)
+        monkeypatch.setenv("DATABASE_PATH", db_path)
+        monkeypatch.setattr(settings, "DEV", True)
+
+        with (
+            patch(
+                "app.core.migration.backup_before_migration",
+                side_effect=MigrationBackupError("disk full"),
+            ),
+            patch("app.core.migration.command.upgrade") as upgrade,
+        ):
+            with pytest.raises(MigrationBackupError, match="disk full"):
+                migrate_database()
+        upgrade.assert_not_called()
 
 
 # ==================== 配置一致性 ====================

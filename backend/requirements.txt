@@ -13,6 +13,7 @@ sqlalchemy~=2.0.15
 setuptools~=75.8.0
 click~=8.1.8
 requests~=2.32.3
+regex>=2024.11.6,<2027.0.0
 pydantic~=2.12.4
 fastapi~=0.115.0
 pyotp~=2.9.0

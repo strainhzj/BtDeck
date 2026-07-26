@@ -26,6 +26,7 @@ import {
   buildSpeedSnapshot,
   needsActiveSnapshotRefresh
 } from '@/views/torrents/utils/torrentBatch'
+import type { AdvancedSearchRequest } from '@/api/torrents'
 
 // ============ Bug#1 / Bug#4：分组与删除计数契约 ============
 
@@ -468,76 +469,91 @@ describe('P0-E - assertSameDownloader', () => {
 
 // ============ P1-F：高级搜索请求构造契约 ============
 
+function requireAdvancedRequest(
+  request: AdvancedSearchRequest | null
+): AdvancedSearchRequest {
+  expect(request).not.toBeNull()
+  if (!request) throw new Error('expected a valid advanced-search request')
+  return request
+}
+
 describe('P1-F - buildAdvancedSearchRequest', () => {
   it('解析 condition_groups（JSON字符串）并构造请求体', () => {
     const searchParams = {
       groups: JSON.stringify([
-        { logic: 'and', conditions: [{ field: 'name', operator: 'like', value: 'test' }] }
+        { logic: 'and', conditions: [{ field: 'name', operator: 'contains', value: 'test' }] }
       ]),
+      between_group_logics: JSON.stringify([]),
       sort_by: 'size',
       sort_order: 'asc'
     }
-    const { request, error } = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
-    expect(error).toBeNull()
-    expect(request).not.toBeNull()
-    expect(request.condition_groups).toHaveLength(1)
-    expect(request.condition_groups[0].logic).toBe('AND') // logic 转大写
-    expect(request.condition_groups[0].conditions[0]).toEqual({ field: 'name', operator: 'like', value: 'test' })
+    const result = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
+    const request = requireAdvancedRequest(result.request)
+    const conditionGroups = request.condition_groups || []
+    expect(result.error).toBeNull()
+    expect(conditionGroups).toHaveLength(1)
+    expect(conditionGroups[0].logic).toBe('AND')
+    expect(conditionGroups[0].conditions[0]).toEqual({
+      field: 'name',
+      operator: 'contains',
+      value: 'test'
+    })
     expect(request.sort_by).toBe('size')
     expect(request.sort_order).toBe('asc')
     expect(request.limit).toBe(20)
     expect(request.page).toBe(1)
   })
 
-  it('解析 between_group_logics（过滤非字符串、转大写）', () => {
+  it('解析精确数量的 between_group_logics 并转大写', () => {
     const searchParams = {
       groups: JSON.stringify([
-        { logic: 'and', conditions: [{ field: 'a', operator: 'eq', value: '1' }] },
-        { logic: 'or', conditions: [{ field: 'b', operator: 'eq', value: '2' }] }
+        { logic: 'and', conditions: [{ field: 'name', operator: 'eq', value: 'one' }] },
+        { logic: 'or', conditions: [{ field: 'status', operator: 'eq', value: 'paused' }] }
       ]),
-      between_group_logics: JSON.stringify(['and', 123, 'or', null, 'AND'])
+      between_group_logics: JSON.stringify(['and'])
     }
-    const { request } = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
-    // 过滤掉 123/null，保留字符串，转大写
-    expect(request.between_group_logics).toEqual(['AND', 'OR', 'AND'])
+    const result = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
+    const request = requireAdvancedRequest(result.request)
+    expect(request.between_group_logics).toEqual(['AND'])
   })
 
-  it('between_group_logics 非数组时使用默认空数组', () => {
+  it('between_group_logics 非数组时明确拒绝', () => {
     const searchParams = {
-      groups: JSON.stringify([{ logic: 'and', conditions: [{ field: 'a', operator: 'eq', value: '1' }] }]),
+      groups: JSON.stringify([{ logic: 'and', conditions: [{ field: 'name', operator: 'eq', value: 'one' }] }]),
       between_group_logics: JSON.stringify('not-an-array')
     }
-    const { request } = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
-    // 单元素字符串解析后是 'not-an-array'（字符串），不是数组，走默认 []
-    // 但 'not-an-array' JSON.parse 后是字符串本身，isArray=false → 不附 between_group_logics
-    expect(request.between_group_logics).toBeUndefined()
+    const { request, error } = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
+    expect(request).toBeNull()
+    expect(error).toContain('组间逻辑数量')
   })
 
-  it('无条件组时回退到简单字段', () => {
-    const searchParams = {
-      name: 'ubuntu',
-      status: 'downloading',
-      category: 'iso'
-    }
-    const { request } = buildAdvancedSearchRequest(searchParams, 'added_date', 50)
-    expect(request.condition_groups).toBeUndefined()
-    expect(request.name).toBe('ubuntu')
-    expect(request.status).toBe('downloading')
-    expect(request.category).toBe('iso')
-    expect(request.limit).toBe(50)
+  it('无条件组时不回退为另一种查询语义', () => {
+    const { request, error } = buildAdvancedSearchRequest(
+      {},
+      'added_date',
+      50
+    )
+    expect(request).toBeNull()
+    expect(error).toContain('搜索条件必须是JSON字符串')
   })
 
   it('sort_by 缺失时用 fallback', () => {
-    const { request } = buildAdvancedSearchRequest({}, 'added_date', 20)
+    const result = buildAdvancedSearchRequest({
+      groups: JSON.stringify([
+        { logic: 'and', conditions: [{ field: 'name', operator: 'eq', value: 'one' }] }
+      ]),
+      between_group_logics: JSON.stringify([])
+    }, 'added_date', 20)
+    const request = requireAdvancedRequest(result.request)
     expect(request.sort_by).toBe('added_date')
-    expect(request.sort_order).toBe('desc') // 默认
+    expect(request.sort_order).toBe('desc')
   })
 
   it('groups JSON 格式错误 → 返回 error', () => {
     const searchParams = { groups: '{invalid json' }
     const { request, error } = buildAdvancedSearchRequest(searchParams, 'added_date', 20)
     expect(request).toBeNull()
-    expect(error).toBe('搜索条件格式错误')
+    expect(error).toBe('搜索条件不是有效JSON')
   })
 })
 
@@ -567,25 +583,27 @@ describe('buildAdvancedSearchRequestFromTemplateGroups', () => {
       }
     ]
 
-    const { request, error } = buildAdvancedSearchRequestFromTemplateGroups(groups, 'size', 'asc', 30)
+    const result = buildAdvancedSearchRequestFromTemplateGroups(groups, 'size', 'asc', 30)
+    const request = requireAdvancedRequest(result.request)
+    const conditionGroups = request.condition_groups || []
 
-    expect(error).toBeNull()
+    expect(result.error).toBeNull()
     expect(request.sort_by).toBe('size')
     expect(request.sort_order).toBe('asc')
     expect(request.limit).toBe(30)
-    expect(request.condition_groups).toHaveLength(2)
+    expect(conditionGroups).toHaveLength(2)
     expect(request.between_group_logics).toEqual(['OR'])
-    expect(request.condition_groups[0].logic).toBe('AND')
-    expect(request.condition_groups[0].conditions).toEqual([
+    expect(conditionGroups[0].logic).toBe('AND')
+    expect(conditionGroups[0].conditions).toEqual([
       { field: 'name', operator: 'eq', value: 'ubuntu' },
       { field: 'size', operator: 'gt', value: '1.5 GB' },
-      { field: 'tags', operator: 'contains_any', value: ['linux', 'iso'] },
+      { field: 'tags', operator: 'not_contains_any', value: ['linux', 'iso'] },
       { field: 'super_seeding', operator: 'eq', value: '1' }
     ])
-    expect(request.condition_groups[1].conditions[0]).toEqual({
+    expect(conditionGroups[1].conditions[0]).toEqual({
       field: 'added_date',
       operator: 'date_range',
-      value: JSON.stringify({ start: '2026-01-01', end: '2026-01-31' })
+      value: { start: '2026-01-01', end: '2026-01-31' }
     })
   })
 
@@ -604,15 +622,17 @@ describe('buildAdvancedSearchRequestFromTemplateGroups', () => {
       }
     ]
 
-    const { request } = buildAdvancedSearchRequestFromTemplateGroups(groups, 'added_date', 'desc', 20)
+    const result = buildAdvancedSearchRequestFromTemplateGroups(groups, 'added_date', 'desc', 20)
+    const request = requireAdvancedRequest(result.request)
+    const conditionGroups = request.condition_groups || []
 
-    expect(request.condition_groups[0].conditions[0]).toEqual({
+    expect(conditionGroups[0].conditions[0]).toEqual({
       field: 'size',
       operator: 'between',
       value: { min: '1 GB', max: '2 TB' }
     })
-    expect(request.condition_groups[0].conditions[0]).not.toHaveProperty('mode')
-    expect(request.condition_groups[0].conditions[0]).not.toHaveProperty('index')
+    expect(conditionGroups[0].conditions[0]).not.toHaveProperty('mode')
+    expect(conditionGroups[0].conditions[0]).not.toHaveProperty('index')
   })
 })
 

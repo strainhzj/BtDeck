@@ -27,7 +27,11 @@ from app.models.setting_templates import DownloaderTypeEnum
 # 审计日志相关导入（使用异步版本）
 from app.services.audit_service import get_audit_service, extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
-from app.api.endpoints.torrent_helpers import _safe_float
+from app.services.torrent_ratio_values import (
+    MISSING_RATIO_VALUE,
+    RatioNormalizationStats,
+    apply_normalized_ratio_fields,
+)
 import urllib3
 
 logger = logging.getLogger(__name__)
@@ -447,6 +451,7 @@ def tr_add_torrents(db, downloaders, app=None):
             "downloader_id": bt_downloader.downloader_id,
         }
     current_time = datetime.now()
+    ratio_stats = RatioNormalizationStats()
     for torrent_info in torrent_info_list:
         # torrent_query_result = \
         #     db.query(torrent_info_model.info_id).filter(torrent_info_model.hash == torrent_info.hashString).filter(
@@ -459,6 +464,15 @@ def tr_add_torrents(db, downloaders, app=None):
         else:
             mode = "update"
             torrent_info_id = result_info.info_id
+        ratio_fields: Dict[str, Any] = {}
+        ratio_stats.observe(
+            apply_normalized_ratio_fields(
+                ratio_fields,
+                raw_ratio=getattr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                raw_ratio_limit=getattr(torrent_info, "seed_ratio_limit", MISSING_RATIO_VALUE),
+                is_insert=mode == "insert",
+            )
+        )
         torrent = torrentInfoModel(
             id_=torrent_info_id,
             downloader_id=bt_downloader.downloader_id,
@@ -472,8 +486,8 @@ def tr_add_torrents(db, downloaders, app=None):
             torrent_file=torrent_info.torrent_file,
             added_date=torrent_info.added_date,
             completed_date=torrent_info.done_date if torrent_info.done_date else None,
-            ratio=_safe_float(torrent_info.ratio),
-            ratio_limit=_safe_float(torrent_info.seed_ratio_limit),
+            ratio=ratio_fields.get("ratio"),
+            ratio_limit=ratio_fields.get("ratio_limit"),
             tags=",".join(torrent_info.labels) if hasattr(torrent_info, "labels") and torrent_info.labels else "",
             category="",
             super_seeding="",
@@ -489,6 +503,9 @@ def tr_add_torrents(db, downloaders, app=None):
                 db.add(torrent)
             if mode == "update":
                 torrent_dict = torrent.to_dict()
+                for ratio_field in ("ratio", "ratio_limit"):
+                    if ratio_field not in ratio_fields:
+                        torrent_dict.pop(ratio_field, None)
                 update_torrent(db, result_info.info_id, torrent_dict)
                 # db.query(torrent_info_model).filter(torrent_info_model.info_id == torrent_info_id).update
             sync_add_tracker(db, bt_downloader.downloader_type, mode, torrent_info, torrent_info_id)
@@ -496,6 +513,10 @@ def tr_add_torrents(db, downloaders, app=None):
         except Exception as e:
             db.rollback()
             logger.error(f"Error updating database: {str(e)}")
+    ratio_stats.log_summary(
+        logger,
+        context=f"transmission-legacy:{bt_downloader.downloader_id}",
+    )
 
 
 def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
@@ -693,6 +714,7 @@ def qb_add_torrents(db, downloaders, app=None):
             "downloader_id": bt_downloader.downloader_id,
         }
     current_time = datetime.now()
+    ratio_stats = RatioNormalizationStats()
     for torrent_info in torrent_info_list:
         torrent_query_result = (
             db.query(torrentInfoModel.info_id, torrentInfoModel.create_time)
@@ -713,6 +735,15 @@ def qb_add_torrents(db, downloaders, app=None):
             if create_time is None:
                 create_time = current_time
             update_time = current_time
+        ratio_fields: Dict[str, Any] = {}
+        ratio_stats.observe(
+            apply_normalized_ratio_fields(
+                ratio_fields,
+                raw_ratio=getattr(torrent_info, "ratio", MISSING_RATIO_VALUE),
+                raw_ratio_limit=getattr(torrent_info, "ratio_limit", MISSING_RATIO_VALUE),
+                is_insert=mode == "insert",
+            )
+        )
         torrent = torrentInfoModel(
             id_=torrent_info_id,
             downloader_id=bt_downloader.downloader_id,
@@ -733,9 +764,9 @@ def qb_add_torrents(db, downloaders, app=None):
                 and torrent_info.completion_on <= 2147483647  # 防止Year 2038问题
                 else None
             ),
-            ratio=_safe_float(torrent_info.ratio),
-            # ratio_limit 列已是 Float；qBittorrent 的 -1 哨兵表示"无限制"，统一映射 None
-            ratio_limit=(_safe_float(torrent_info.ratio_limit) if torrent_info.ratio_limit != -1 else None),
+            ratio=ratio_fields.get("ratio"),
+            # NULL 表示“无显式单种数值限制”，不能用于向下载器回写设置。
+            ratio_limit=ratio_fields.get("ratio_limit"),
             tags=torrent_info.tags,
             category=torrent_info.category,
             super_seeding=torrent_info.super_seeding,
@@ -751,6 +782,9 @@ def qb_add_torrents(db, downloaders, app=None):
             result_info = get_torrent_by_hash(db, torrent_info.hash, bt_downloader.downloader_id)
             if result_info:
                 torrent_dict = torrent.to_dict()
+                for ratio_field in ("ratio", "ratio_limit"):
+                    if ratio_field not in ratio_fields:
+                        torrent_dict.pop(ratio_field, None)
                 update_torrent(db, result_info.info_id, torrent_dict)
             else:
                 db.add(torrent)
@@ -759,6 +793,10 @@ def qb_add_torrents(db, downloaders, app=None):
         except Exception as e:
             db.rollback()
             logger.error(f"Error updating database: {str(e)}")
+    ratio_stats.log_summary(
+        logger,
+        context=f"qbittorrent-legacy:{bt_downloader.downloader_id}",
+    )
 
 
 # ==============================================================================

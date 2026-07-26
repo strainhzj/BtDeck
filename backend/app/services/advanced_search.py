@@ -9,10 +9,12 @@
 import logging
 import json
 import uuid
+from contextlib import nullcontext
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, not_, desc, asc, func, exists
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.sql import expression
 
 from app.core.json_parser import safe_json_parse
@@ -22,12 +24,19 @@ from app.models.search_template import SearchTemplate
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.api.models.advanced_search import (
     EnhancedAdvancedSearchRequest,
+    validate_template_conditions_payload,
     validate_size_string,
     validate_date_string,
 )
 
 # 导入种子信息转换函数（包含tracker信息）
 from app.api.endpoints.torrent_helpers import convert_to_vos_with_trackers
+from app.services.sqlite_search_runtime import (
+    RegexSearchTimeout,
+    consume_regex_runtime_error,
+    ensure_search_runtime,
+    regex_query_budget,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +134,7 @@ class SearchQueryBuilder:
             db: 数据库会话
         """
         self.db = db
+        ensure_search_runtime(db)
         self.base_query = db.query(TorrentInfo).filter(TorrentInfo.dr == 0)
 
     def reset(self) -> "SearchQueryBuilder":
@@ -235,70 +245,39 @@ class SearchQueryBuilder:
         group_filters = []
 
         for group in condition_groups:
-            try:
-                # ✅ P2-1修复: 更安全的Pydantic对象和字典兼容处理
-                if hasattr(group, "logic"):
-                    # SearchGroup Pydantic对象 - 使用getattr保护属性访问
-                    logic = getattr(group, "logic", None)
-                    conditions = getattr(group, "conditions", None)
-                else:
-                    # 字典格式
-                    logic = group.get("logic") if group else None
-                    conditions = group.get("conditions") if group else None
+            if hasattr(group, "logic"):
+                logic = group.logic
+                conditions = group.conditions
+            elif isinstance(group, dict):
+                from app.api.models.advanced_search import SearchGroup
 
-                # 验证必需字段
-                if not logic or not isinstance(logic, str):
-                    logger.warning(f"条件组缺少有效的logic字段: {logic}")
-                    continue
+                validated_group = SearchGroup.model_validate(group)
+                logic = validated_group.logic
+                conditions = validated_group.conditions
+            else:
+                raise ValueError("condition group must be a validated object")
 
-                if not conditions or not isinstance(conditions, list):
-                    logger.warning(f"条件组缺少有效的conditions字段: {conditions}")
-                    continue
-
-                # 转换为大写
-                logic = logic.upper()
-
-                if not conditions:
-                    continue
-            except Exception as e:
-                logger.warning(f"解析条件组异常: {e}, group: {group}")
-                continue
-
-            condition_filters = []
-            for condition in conditions:
-                try:
-                    condition_filter = self._build_condition_filter(condition)
-                    if condition_filter is not None:
-                        condition_filters.append(condition_filter)
-                except Exception as e:
-                    logger.warning(f"跳过无效条件 {condition}: {str(e)}")
-                    continue
-
-            if condition_filters:
-                if logic == "AND":
-                    group_filters.append(and_(*condition_filters))
-                else:  # OR
-                    group_filters.append(or_(*condition_filters))
+            condition_filters = [self._build_condition_filter(condition) for condition in conditions]
+            if logic == "AND":
+                group_filters.append(and_(*condition_filters))
+            else:
+                group_filters.append(or_(*condition_filters))
 
         if group_filters:
-            # 使用组间逻辑关系连接条件组
-            if between_group_logics and len(between_group_logics) >= len(group_filters) - 1:
-                # 根据组间逻辑关系构建查询
-                result_filter = group_filters[0]
-                for i, group_filter in enumerate(group_filters[1:]):
-                    logic = between_group_logics[i].upper() if i < len(between_group_logics) else "AND"
-                    if logic == "AND":
-                        result_filter = and_(result_filter, group_filter)
-                    else:  # OR
-                        result_filter = or_(result_filter, group_filter)
-                self.base_query = self.base_query.filter(result_filter)
-            else:
-                # 默认组间使用AND逻辑
-                self.base_query = self.base_query.filter(and_(*group_filters))
+            logics = between_group_logics or []
+            if len(logics) != len(group_filters) - 1:
+                raise ValueError("between_group_logics length must equal group count - 1")
+            result_filter = group_filters[0]
+            for logic, group_filter in zip(logics, group_filters[1:]):
+                if logic.upper() == "AND":
+                    result_filter = and_(result_filter, group_filter)
+                else:
+                    result_filter = or_(result_filter, group_filter)
+            self.base_query = self.base_query.filter(result_filter)
 
         return self
 
-    def _build_condition_filter(self, condition) -> Optional:
+    def _build_condition_filter(self, condition):
         """
         构建单个条件的过滤
 
@@ -308,68 +287,48 @@ class SearchQueryBuilder:
         Returns:
             SQLAlchemy 过滤表达式
         """
-        try:
-            # ✅ P2-1修复: 更安全的Pydantic对象和字典兼容处理
-            if hasattr(condition, "field"):
-                # SearchCondition Pydantic对象 - 使用getattr保护属性访问
-                field = getattr(condition, "field", None)
-                operator = getattr(condition, "operator", None)
-                value = getattr(condition, "value", None)
-            else:
-                # 字典格式
-                if not condition or not isinstance(condition, dict):
-                    logger.warning(f"条件对象无效: {condition}")
-                    return None
+        if not hasattr(condition, "field"):
+            from app.api.models.advanced_search import SearchCondition
 
-                field = condition.get("field")
-                operator = condition.get("operator")
-                value = condition.get("value")
+            condition = SearchCondition.model_validate(condition)
+        field = condition.field
+        operator = condition.operator
+        value = condition.value
 
-            # 验证必需字段
-            if not field or not isinstance(field, str):
-                logger.warning(f"条件缺少有效的field字段: {field}")
-                return None
-
-            if not operator or not isinstance(operator, str):
-                logger.warning(f"条件缺少有效的operator字段: {operator}")
-                return None
-
-            if field == "tracker_url":
-                return self._build_tracker_url_filter(operator, value)
-
-            if field == "tracker_msg":
-                return self._build_tracker_msg_filter(operator, value)
-
-            if field not in self.FIELD_MAPPING:
-                logger.warning(f"未知的搜索字段: {field}")
-                return None
-
-            column = self.FIELD_MAPPING[field]
-
-            # between/regex/last_days/date_range 不在 OPERATOR_MAPPING（需要 value 解构），
-            # 在下方单独 dispatch，这里不视为未知操作符。
-            _dispatched_operators = {"between", "regex", "last_days", "date_range"}
-            if operator not in self.OPERATOR_MAPPING and operator not in _dispatched_operators:
-                logger.warning(f"未知的操作符: {operator}")
-                return None
-        except Exception as e:
-            logger.error(f"解析条件异常: {e}, condition: {condition}")
-            return None
+        if field == "tracker_url":
+            return self._build_tracker_url_filter(operator, value)
+        if field == "tracker_msg":
+            return self._build_tracker_msg_filter(operator, value)
+        if field not in self.FIELD_MAPPING:
+            raise ValueError(f"search field has no query mapping: {field}")
+        column = self.FIELD_MAPPING[field]
 
         # 处理特殊字段类型
-        if field in ["size"] and operator in ["gt", "gte", "lt", "lte"]:
+        if field == "size" and operator in ["eq", "ne", "gt", "gte", "lt", "lte"]:
             # 大小字段可能包含单位
             if isinstance(value, str):
                 value = validate_size_string(value)
                 if value is None:
-                    return None
+                    raise ValueError(f"invalid size value for {operator}")
 
-        if field in ["added_date", "completed_date", "added_time"] and operator in ["gt", "gte", "lt", "lte"]:
+        if field in ["added_date", "completed_date", "added_time"] and operator in [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+        ]:
             # 日期字段处理
             if isinstance(value, str):
-                value = validate_date_string(value)
-                if value is None:
-                    return None
+                parsed_date = validate_date_string(value)
+                if parsed_date is None:
+                    raise ValueError(f"invalid date value for {operator}")
+                if operator in {"eq", "ne"} and len(value.strip()) == 10:
+                    day_end = parsed_date.replace(hour=23, minute=59, second=59)
+                    day_filter = and_(column >= parsed_date, column <= day_end)
+                    return day_filter if operator == "eq" else not_(day_filter)
+                value = parsed_date
 
         if field in self.NUMERIC_FIELDS and operator in ["gt", "gte", "lt", "lte"]:
             # Float 列天然数值比较；value 显式转 float 兜底
@@ -377,9 +336,8 @@ class SearchQueryBuilder:
             # JSON 字符串 "2.5" 会匹配 str 而非 float，故需显式转换）
             try:
                 value = float(value)
-            except (TypeError, ValueError):
-                logger.warning(f"数值字段 {field} 的值无法转为 float: {value}")
-                return None
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"numeric field {field} cannot be converted to float") from exc
 
         # between / regex / last_days / date_range 需要先解构 value，单独 dispatch
         if operator == "between":
@@ -389,9 +347,13 @@ class SearchQueryBuilder:
         if operator in ("last_days", "date_range"):
             return self._build_date_window_filter(column, operator, value)
 
-        return self.OPERATOR_MAPPING[operator](column, value)
+        try:
+            operator_factory = self.OPERATOR_MAPPING[operator]
+        except KeyError as exc:
+            raise ValueError(f"operator has no query implementation: {operator}") from exc
+        return operator_factory(column, value)
 
-    def _build_between_filter(self, column, field: str, value: Any) -> Optional[expression.ClauseElement]:
+    def _build_between_filter(self, column, field: str, value: Any) -> expression.ClauseElement:
         """between 操作符：value = {min, max}（size 带 minUnit/maxUnit；date 带 start/end）。
 
         前端实测 value 形态：
@@ -400,8 +362,7 @@ class SearchQueryBuilder:
           - 日期字段（added_date/completed_date）: {"start": "...", "end": "..."}
         """
         if not isinstance(value, dict):
-            logger.warning(f"between 操作符要求 value 是对象，实际: {value}")
-            return None
+            raise ValueError("between requires an object value")
 
         if field in ["added_date", "completed_date", "added_time"]:
             # 日期区间：min/max 或 start/end 任一命名都接受
@@ -410,14 +371,18 @@ class SearchQueryBuilder:
             conditions = []
             if start_raw is not None:
                 start = validate_date_string(start_raw) if isinstance(start_raw, str) else start_raw
-                if start is not None:
-                    conditions.append(column >= start)
+                if start is None:
+                    raise ValueError("invalid between start date")
+                conditions.append(column >= start)
             if end_raw is not None:
                 end = validate_date_string(end_raw) if isinstance(end_raw, str) else end_raw
-                if end is not None:
-                    conditions.append(column <= end)
+                if end is None:
+                    raise ValueError("invalid between end date")
+                if isinstance(end_raw, str) and len(end_raw.strip()) == 10:
+                    end = end.replace(hour=23, minute=59, second=59)
+                conditions.append(column <= end)
             if not conditions:
-                return None
+                raise ValueError("between requires at least one date boundary")
             return and_(*conditions)
 
         if field == "size":
@@ -427,14 +392,16 @@ class SearchQueryBuilder:
             conditions = []
             if min_raw is not None:
                 min_bytes = validate_size_string(min_raw) if isinstance(min_raw, str) else min_raw
-                if min_bytes is not None:
-                    conditions.append(column >= min_bytes)
+                if min_bytes is None:
+                    raise ValueError("invalid between minimum size")
+                conditions.append(column >= min_bytes)
             if max_raw is not None:
                 max_bytes = validate_size_string(max_raw) if isinstance(max_raw, str) else max_raw
-                if max_bytes is not None:
-                    conditions.append(column <= max_bytes)
+                if max_bytes is None:
+                    raise ValueError("invalid between maximum size")
+                conditions.append(column <= max_bytes)
             if not conditions:
-                return None
+                raise ValueError("between requires at least one size boundary")
             return and_(*conditions)
 
         # 默认数值字段（ratio/ratio_limit 等）
@@ -446,18 +413,18 @@ class SearchQueryBuilder:
                 conditions.append(column >= float(min_raw))
             if max_raw is not None:
                 conditions.append(column <= float(max_raw))
-        except (TypeError, ValueError):
-            logger.warning(f"between 数值字段 {field} 的 min/max 无法转为 float: {value}")
-            return None
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"between numeric boundaries are invalid for {field}") from exc
         if not conditions:
-            return None
+            raise ValueError("between requires at least one numeric boundary")
         return and_(*conditions)
 
-    def _build_regex_filter(self, column, value: Any) -> Optional[expression.ClauseElement]:
+    def _build_regex_filter(self, column, value: Any) -> expression.ClauseElement:
         """regex 操作符：value = {pattern, caseSensitive}。
 
-        SQLite 无原生 REGEXP，用 LIKE 兜底（pattern 转 %pattern% 子串匹配）。
-        caseSensitive=False 时两边 LOWER（SQLite LIKE 默认大小写不敏感，但显式更稳）。
+        ``bt_regexp`` is installed on every SQLite connection and uses a
+        timeout-capable regex engine. Request validation compiles the pattern
+        before any query is executed.
         """
         if isinstance(value, dict):
             pattern = value.get("pattern")
@@ -466,18 +433,16 @@ class SearchQueryBuilder:
             pattern = value
             case_sensitive = True
         else:
-            logger.warning(f"regex 操作符要求 value 是对象或字符串，实际: {value}")
-            return None
+            raise ValueError("regex requires an object or string value")
 
         if not pattern:
-            return None
+            raise ValueError("regex pattern must not be empty")
+        return and_(
+            column.is_not(None),
+            func.bt_regexp(pattern, column, int(bool(case_sensitive))) == 1,
+        )
 
-        like_pattern = f"%{pattern}%"
-        if case_sensitive:
-            return column.like(like_pattern)
-        return func.lower(column).like(func.lower(like_pattern))
-
-    def _build_date_window_filter(self, column, operator: str, value: Any) -> Optional[expression.ClauseElement]:
+    def _build_date_window_filter(self, column, operator: str, value: Any) -> expression.ClauseElement:
         """last_days / date_range 操作符（仅用于日期字段）。
 
         前端实测 value 形态（formatParamValue 对 date 字段 JSON.stringify 后）：
@@ -488,23 +453,21 @@ class SearchQueryBuilder:
         if isinstance(value, str):
             try:
                 value = json.loads(value)
-            except (ValueError, TypeError):
-                logger.warning(f"{operator} 的 value 不是合法 JSON: {value}")
-                return None
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"{operator} requires valid JSON") from exc
         if not isinstance(value, dict):
-            logger.warning(f"{operator} 操作符要求 value 是对象，实际: {value}")
-            return None
+            raise ValueError(f"{operator} requires an object value")
 
         if operator == "last_days":
             days = value.get("days")
             if days is None:
-                return None
+                raise ValueError("last_days requires days")
             try:
                 days = int(days)
-            except (TypeError, ValueError):
-                return None
-            if days < 0:
-                return None
+            except (TypeError, ValueError) as exc:
+                raise ValueError("last_days requires integer days") from exc
+            if days < 1:
+                raise ValueError("last_days requires a positive day count")
             threshold = datetime.now() - timedelta(days=days)
             return column >= threshold
 
@@ -514,61 +477,50 @@ class SearchQueryBuilder:
         conditions = []
         if start_raw is not None:
             start = validate_date_string(start_raw) if isinstance(start_raw, str) else start_raw
-            if start is not None:
-                conditions.append(column >= start)
+            if start is None:
+                raise ValueError("invalid date_range start")
+            conditions.append(column >= start)
         if end_raw is not None:
             end = validate_date_string(end_raw) if isinstance(end_raw, str) else end_raw
-            if end is not None:
-                conditions.append(column <= end)
+            if end is None:
+                raise ValueError("invalid date_range end")
+            if isinstance(end_raw, str) and len(end_raw.strip()) == 10:
+                end = end.replace(hour=23, minute=59, second=59)
+            conditions.append(column <= end)
         if not conditions:
-            return None
+            raise ValueError("date_range requires at least one boundary")
         return and_(*conditions)
 
-    def _build_tracker_msg_filter(self, operator: str, value: Any) -> Optional[expression.ClauseElement]:
+    def _build_tracker_msg_filter(self, operator: str, value: Any) -> expression.ClauseElement:
         """
         Build tracker_msg filter using tracker_info table.
         Match last_announce_msg OR last_scrape_msg on active trackers (dr == 0).
         """
-        if not isinstance(value, str):
-            logger.warning(f"tracker_msg search value must be string: {value}")
-            return None
-
         tracker_text_filter = self._build_tracker_msg_text_filter(operator, value)
-        if tracker_text_filter is None:
-            return None
 
         return exists().where(
             and_(TrackerInfo.torrent_info_id == TorrentInfo.info_id, TrackerInfo.dr == 0, tracker_text_filter)
         )
 
-    def _build_tracker_msg_text_filter(self, operator: str, value: str) -> Optional[expression.ClauseElement]:
+    def _build_tracker_msg_text_filter(self, operator: str, value: Any) -> expression.ClauseElement:
         """Build OR text filter for tracker announce/scrape message fields."""
         announce_filter = self._build_text_filter(TrackerInfo.last_announce_msg, operator, value)
         scrape_filter = self._build_text_filter(TrackerInfo.last_scrape_msg, operator, value)
 
-        if announce_filter is None or scrape_filter is None:
-            return None
-
         return or_(announce_filter, scrape_filter)
 
-    def _build_tracker_url_filter(self, operator: str, value: Any) -> Optional[expression.ClauseElement]:
+    def _build_tracker_url_filter(self, operator: str, value: Any) -> expression.ClauseElement:
         """
         Build tracker_url filter using tracker_info table.
         Match tracker_url field on active trackers (dr == 0).
         """
-        if not isinstance(value, str):
-            logger.warning(f"tracker_url search value must be string: {value}")
-            return None
-
         tracker_url_filter = self._build_text_filter(TrackerInfo.tracker_url, operator, value)
-        if tracker_url_filter is None:
-            return None
 
         return exists().where(
             and_(TrackerInfo.torrent_info_id == TorrentInfo.info_id, TrackerInfo.dr == 0, tracker_url_filter)
         )
 
-    def _build_text_filter(self, column, operator: str, value: str) -> Optional[expression.ClauseElement]:
+    def _build_text_filter(self, column, operator: str, value: Any) -> expression.ClauseElement:
         """
         Build text filter for a single column with None safety.
 
@@ -576,10 +528,19 @@ class SearchQueryBuilder:
         - 对于字符串操作符，先过滤掉None值
         - 对于等值比较操作符，可以安全处理None（SQL语义）
         """
+        if operator == "regex":
+            return self._build_regex_filter(column, value)
+        if operator == "in":
+            return and_(column.is_not(None), column.in_(value))
+        if operator == "not_in":
+            return or_(column.is_(None), ~column.in_(value))
+        if operator == "is_null":
+            return column.is_(None)
+        if operator == "is_not_null":
+            return column.is_not(None)
+
         # 字符串操作符：需要先过滤None值，否则会引发SQL错误
         if operator in ["contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with"]:
-            pass
-
             # 使用AND确保列值不为None，然后应用文本操作符
             if operator == "contains":
                 return and_(column.is_not(None), column.contains(value))
@@ -603,10 +564,7 @@ class SearchQueryBuilder:
         if operator in ["ne", "not_equals"]:
             return column != value
 
-        logger.warning(f"tracker_msg unsupported operator {operator}, fallback to contains")
-        # 默认安全处理
-
-        return and_(column.is_not(None), column.contains(value))
+        raise ValueError(f"tracker text operator has no implementation: {operator}")
 
     def apply_sorting(self, sort_by: str, sort_order: str = "desc") -> "SearchQueryBuilder":
         """
@@ -901,6 +859,12 @@ class AdvancedSearchService:
             - total_pages: 总页数
         """
         try:
+            # Revalidate at the service boundary as callers may mutate a Pydantic
+            # instance after construction or invoke the service without FastAPI.
+            request = EnhancedAdvancedSearchRequest.model_validate(
+                request.model_dump() if hasattr(request, "model_dump") else request
+            )
+
             # 添加调试日志：记录搜索请求参数
             logger.info(f"[高级搜索] 用户 {user_id} 发起搜索请求")
             logger.info(
@@ -934,17 +898,25 @@ class AdvancedSearchService:
                 self.query_builder.apply_condition_groups(request.condition_groups, request.between_group_logics)
                 logger.info("[高级搜索] 条件组已应用")
 
-            # 获取总数（在排序和分页之前）
-            total = self.query_builder.count()
-            logger.info(f"[高级搜索] 查询总数: {total}")
+            has_regex = any(
+                condition.operator == "regex"
+                for group in (request.condition_groups or [])
+                for condition in group.conditions
+            )
+            consume_regex_runtime_error()
+            query_scope = regex_query_budget(self.db) if has_regex else nullcontext()
+            with query_scope:
+                # 获取总数（在排序和分页之前）
+                total = self.query_builder.count()
+                logger.info(f"[高级搜索] 查询总数: {total}")
 
-            # 应用排序和分页
-            self.query_builder.apply_sorting(request.sort_by, request.sort_order)
-            self.query_builder.apply_pagination(request.page, request.limit)
+                # 应用排序和分页
+                self.query_builder.apply_sorting(request.sort_by, request.sort_order)
+                self.query_builder.apply_pagination(request.page, request.limit)
 
-            # 执行查询
-            results = self.query_builder.get_query().all()
-            logger.info(f"[高级搜索] 实际返回结果数: {len(results)}")
+                # 执行查询
+                results = self.query_builder.get_query().all()
+                logger.info(f"[高级搜索] 实际返回结果数: {len(results)}")
 
             # 转换为字典列表（包含tracker信息，与/torrent/getList接口保持一致）
             # 使用 model_dump() 方法让 Pydantic 自动序列化（支持 camelCase 别名和 datetime ISO 格式）
@@ -969,21 +941,23 @@ class AdvancedSearchService:
                 "total_pages": total_pages,
             }
 
+        except OperationalError as e:
+            runtime_error = consume_regex_runtime_error()
+            if runtime_error:
+                logger.warning(
+                    "高级搜索正则执行被中止: reason=%s user=%s",
+                    runtime_error,
+                    user_id,
+                )
+                raise RegexSearchTimeout("regular expression search exceeded its execution budget") from e
+            logger.exception("高级搜索数据库执行失败")
+            raise
         except Exception as e:
             logger.error(f"高级搜索失败: {str(e)}")
             import traceback
 
             logger.error(f"高级搜索异常堆栈: {traceback.format_exc()}")
-            return {
-                "status": "failed",
-                "msg": f"搜索失败: {str(e)}",
-                "code": "500",
-                "data": [],
-                "total": 0,
-                "page": request.page,
-                "limit": request.limit,
-                "total_pages": 0,
-            }
+            raise
 
     def create_search_template(self, request, user_id: str) -> Dict[str, Any]:
         """
@@ -1019,10 +993,19 @@ class AdvancedSearchService:
                     "is_public": request.get("is_public", False),
                 }
 
+            validate_template_conditions_payload(template_data["conditions"])
             result = self.template_model.create(template_data)
 
             return {"status": "success", "msg": "创建模板成功", "code": "200", "data": result}
 
+        except ValueError as e:
+            logger.warning("拒绝无效搜索模板: %s", e)
+            return {
+                "status": "failed",
+                "msg": f"模板条件无效: {e}",
+                "code": "422",
+                "data": None,
+            }
         except Exception as e:
             logger.error(f"创建搜索模板失败: {str(e)}")
             return {"status": "failed", "msg": f"创建模板失败: {str(e)}", "code": "500", "data": None}
@@ -1081,7 +1064,7 @@ class AdvancedSearchService:
             if "description" in request:
                 update_data["description"] = request["description"]
             if "conditions" in request:
-                update_data["conditions"] = request["conditions"]
+                update_data["conditions"] = validate_template_conditions_payload(request["conditions"])
             if "is_public" in request:
                 update_data["is_public"] = request["is_public"]
 
@@ -1097,6 +1080,14 @@ class AdvancedSearchService:
             else:
                 return {"status": "failed", "msg": "更新模板失败", "code": "500", "data": None}
 
+        except ValueError as e:
+            logger.warning("拒绝无效搜索模板更新: %s", e)
+            return {
+                "status": "failed",
+                "msg": f"模板条件无效: {e}",
+                "code": "422",
+                "data": None,
+            }
         except Exception as e:
             logger.error(f"更新搜索模板失败: {str(e)}")
             return {"status": "failed", "msg": f"更新模板失败: {str(e)}", "code": "500", "data": None}
@@ -1155,6 +1146,8 @@ class AdvancedSearchService:
             if template["user_id"] != user_id and not template["is_public"]:
                 return {"status": "failed", "msg": "无权使用此模板", "code": "403", "data": None}
 
+            validate_template_conditions_payload(template["conditions"])
+
             # 增加使用次数
             self.template_model.increment_usage(template_id)
 
@@ -1172,6 +1165,14 @@ class AdvancedSearchService:
                 },
             }
 
+        except ValueError as e:
+            logger.warning("拒绝应用无效搜索模板: %s", e)
+            return {
+                "status": "failed",
+                "msg": f"模板条件无效: {e}",
+                "code": "422",
+                "data": None,
+            }
         except Exception as e:
             logger.error(f"应用搜索模板失败: {str(e)}")
             return {"status": "failed", "msg": f"应用模板失败: {str(e)}", "code": "500", "data": None}

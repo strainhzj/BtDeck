@@ -10,6 +10,7 @@ from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
 from app.torrents.models import TorrentInfo
 from app.core.database_result import DatabaseResult, DatabaseError
+from app.services.torrent_ratio_values import MISSING_RATIO_VALUE, apply_normalized_ratio_fields
 
 
 def create_torrent(db: Session, torrent_data: Dict[str, Any]) -> DatabaseResult[TorrentInfo]:
@@ -35,11 +36,18 @@ def create_torrent(db: Session, torrent_data: Dict[str, Any]) -> DatabaseResult[
                 message="Torrent with this hash already exists", error_code=DatabaseError.DUPLICATE_KEY
             )
 
+        normalized_data = dict(torrent_data)
         # Generate ID if not provided
-        if "id_" not in torrent_data:
-            torrent_data["id_"] = str(uuid.uuid4())
+        if "id_" not in normalized_data:
+            normalized_data["id_"] = str(uuid.uuid4())
+        apply_normalized_ratio_fields(
+            normalized_data,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=True,
+        )
 
-        db_torrent = TorrentInfo(**torrent_data)
+        db_torrent = TorrentInfo(**normalized_data)
         db.add(db_torrent)
         db.commit()
         db.refresh(db_torrent)
@@ -137,8 +145,15 @@ def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -
         if not torrent:
             return DatabaseResult.not_found_result(message=f"Torrent with ID {torrent_id} not found")
 
+        normalized_data = dict(torrent_data)
+        apply_normalized_ratio_fields(
+            normalized_data,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=False,
+        )
         # Update fields
-        for key, value in torrent_data.items():
+        for key, value in normalized_data.items():
             if hasattr(torrent, key):
                 setattr(torrent, key, value)
 

@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.torrents.models import TorrentInfo, TrackerInfo as TrackerInfoModel
+from app.services.torrent_ratio_values import MISSING_RATIO_VALUE, apply_normalized_ratio_fields
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +39,18 @@ def create_torrent(db: Session, torrent_data: Dict[str, Any]) -> TorrentInfo:
     Returns:
         新创建的种子信息对象
     """
+    normalized_data = dict(torrent_data)
     # 如果没有提供ID，则生成一个UUID
-    if "id_" not in torrent_data:
-        torrent_data["id_"] = str(uuid.uuid4())
+    if "id_" not in normalized_data:
+        normalized_data["id_"] = str(uuid.uuid4())
+    apply_normalized_ratio_fields(
+        normalized_data,
+        raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+        raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+        is_insert=True,
+    )
 
-    db_torrent = TorrentInfo(**torrent_data)
+    db_torrent = TorrentInfo(**normalized_data)
     db.add(db_torrent)
     db.commit()
     db.refresh(db_torrent)
@@ -152,8 +160,15 @@ def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -
         return None
 
     try:
+        normalized_data = dict(torrent_data)
+        apply_normalized_ratio_fields(
+            normalized_data,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=False,
+        )
         # 更新对象属性
-        for key, value in torrent_data.items():
+        for key, value in normalized_data.items():
             if hasattr(db_torrent, key):
                 setattr(db_torrent, key, value)
 
@@ -478,6 +493,13 @@ def create_torrent_info(
     dr: int = 0,
 ) -> TorrentInfo:
     """创建新的种子信息记录"""
+    ratio_fields: Dict[str, Any] = {}
+    apply_normalized_ratio_fields(
+        ratio_fields,
+        raw_ratio=ratio,
+        raw_ratio_limit=ratio_limit,
+        is_insert=True,
+    )
     db_torrent = TorrentInfo(
         id_=info_id,
         downloader_id=downloader_id,
@@ -491,8 +513,8 @@ def create_torrent_info(
         torrent_file=torrent_file,
         added_date=added_date,
         completed_date=completed_date,
-        ratio=ratio,
-        ratio_limit=ratio_limit,
+        ratio=ratio_fields["ratio"],
+        ratio_limit=ratio_fields["ratio_limit"],
         tags=tags,
         category=category,
         super_seeding=super_seeding,
@@ -546,7 +568,14 @@ def update_torrent_info(
         "dr",
     }
 
-    for field, value in update_data.items():
+    normalized_data = dict(update_data)
+    apply_normalized_ratio_fields(
+        normalized_data,
+        raw_ratio=update_data.get("ratio", MISSING_RATIO_VALUE),
+        raw_ratio_limit=update_data.get("ratio_limit", MISSING_RATIO_VALUE),
+        is_insert=False,
+    )
+    for field, value in normalized_data.items():
         if field in allowed_fields and hasattr(db_torrent, field):
             setattr(db_torrent, field, value)
 
@@ -601,6 +630,13 @@ def bulk_create_torrent_infos(db: Session, torrents_data: List[Dict[str, Any]]) 
         if not all(field in torrent_data for field in required_fields):
             continue
 
+        ratio_fields: Dict[str, Any] = {}
+        apply_normalized_ratio_fields(
+            ratio_fields,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=True,
+        )
         db_torrent = TorrentInfo(
             id_=torrent_data["info_id"],
             downloader_id=torrent_data["downloader_id"],
@@ -614,8 +650,8 @@ def bulk_create_torrent_infos(db: Session, torrents_data: List[Dict[str, Any]]) 
             torrent_file=torrent_data["torrent_file"],
             added_date=torrent_data["added_date"],
             completed_date=torrent_data.get("completed_date"),
-            ratio=torrent_data.get("ratio", 0.0),
-            ratio_limit=torrent_data.get("ratio_limit"),
+            ratio=ratio_fields["ratio"],
+            ratio_limit=ratio_fields["ratio_limit"],
             tags=torrent_data.get("tags", ""),
             category=torrent_data.get("category", ""),
             super_seeding=torrent_data.get("super_seeding", "0"),

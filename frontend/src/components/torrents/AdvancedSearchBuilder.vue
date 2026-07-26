@@ -201,12 +201,12 @@
                   v-model="condition.mode"
                   size="small"
                   @change="onConditionModeChange(condition)"
-                  :disabled="!fieldSupportsExclude(condition.field)"
+                  :disabled="!conditionSupportsExclude(condition)"
                 >
                   <el-radio-button label="include">包含</el-radio-button>
                   <el-radio-button
                     label="exclude"
-                    :disabled="!fieldSupportsExclude(condition.field)"
+                    :disabled="!conditionSupportsExclude(condition)"
                   >
                     排除
                   </el-radio-button>
@@ -347,12 +347,29 @@ import { getAllCategories, getAllTags } from '@/api/tag-management'
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { extractErrorMessage } from '@/utils/formatters'
 import { ApiResponse } from '@/types/api'
+import {
+  ADVANCED_SEARCH_OPERATOR_GROUPS,
+  AdvancedSearchFieldKind,
+  AdvancedSearchOperatorConfig
+} from '@/contracts/advancedSearch.generated'
+import {
+  AdvancedSearchConditionValue,
+  AdvancedSearchConditionState,
+  AdvancedSearchBuilderParams,
+  AdvancedSearchGroupState,
+  AdvancedSearchValidationError,
+  buildAdvancedSearchParams,
+  normalizeLoadedConditionValue,
+  normalizeLoadedOperator,
+  operatorSupportsExclude,
+  transitionConditionValue
+} from './advancedSearchState'
 
 // 字段定义接口
 interface SearchField {
   key: string
   label: string
-  type: 'text' | 'number' | 'date' | 'select' | 'multiSelect' | 'boolean'
+  type: AdvancedSearchFieldKind
   options?: Array<{ label: string, value: string }>
   supportsExclude?: boolean
   /**
@@ -364,39 +381,23 @@ interface SearchField {
   matchMode?: 'exact' | 'substring'
 }
 
-// 操作符定义接口
-interface _OperatorConfig {
-  value: string           // 前端使用的标识符
-  label: string           // UI显示文本
-  backendValue?: string   // 后端API格式（可选，默认与value相同）
-  fallback?: string       // 降级操作符（当后端不支持时使用的前端value）
-  supportedTypes?: string[] // 支持的字段类型（可选，兼容旧代码）
-}
-
 // 搜索条件接口
-interface SearchCondition {
-  id: string
-  field: string
-  operator: string
-  value: any
-  mode: 'include' | 'exclude'
-}
+type SearchCondition = AdvancedSearchConditionState
 
 // 条件组接口
-interface ConditionGroup {
-  id: string
-  name?: string
-  logic: 'and' | 'or'
-  betweenGroupLogic?: 'and' | 'or'
-  editing?: boolean
-  conditions: SearchCondition[]
-}
+type ConditionGroup = AdvancedSearchGroupState
 
 // 搜索模板表单接口
 interface TemplateForm {
   name: string
   description: string
   isDefault: boolean
+}
+
+interface OperatorDisplayGroup {
+  type: string
+  label: string
+  operators: readonly AdvancedSearchOperatorConfig[]
 }
 
 @Component({
@@ -485,86 +486,8 @@ export default class AdvancedSearchBuilder extends Vue {
     { key: 'ratio_limit', label: '比率限制', type: 'number', supportsExclude: true }
   ]
 
-  // 操作符定义（统一配置：包含前端标识、后端格式、降级策略）
-  readonly operatorGroups = {
-    text: [
-      { value: 'contains', label: '包含', backendValue: 'contains' },
-      { value: 'not_contains', label: '不包含', backendValue: 'not_contains' },
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'starts_with', label: '开头是', backendValue: 'starts_with' },
-      { value: 'ends_with', label: '结尾是', backendValue: 'ends_with' },
-      { value: 'regex', label: '正则匹配', backendValue: 'regex', fallback: 'contains' }
-    ],
-    number: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'greater_than', label: '大于', backendValue: 'gt' },
-      { value: 'less_than', label: '小于', backendValue: 'lt' },
-      { value: 'greater_equal', label: '大于等于', backendValue: 'gte', fallback: 'greater_than' },
-      { value: 'less_equal', label: '小于等于', backendValue: 'lte', fallback: 'less_than' },
-      { value: 'between', label: '介于', backendValue: 'between', fallback: 'greater_than' }
-    ],
-    date: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'greater_than', label: '晚于', backendValue: 'gt' },
-      { value: 'less_than', label: '早于', backendValue: 'lt' },
-      { value: 'greater_equal', label: '不早于', backendValue: 'gte', fallback: 'greater_than' },
-      { value: 'less_equal', label: '不晚于', backendValue: 'lte', fallback: 'less_than' },
-      { value: 'last_days', label: '最近N天', backendValue: 'last_days' },
-      { value: 'date_range', label: '日期范围', backendValue: 'date_range' }
-    ],
-    select: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'in', label: '在列表中', backendValue: 'in' },
-      { value: 'not_in', label: '不在列表中', backendValue: 'not_in' }
-    ],
-    multiSelect: [
-      // 单值精确列（category/downloader_name，matchMode='exact'）使用
-      { value: 'in', label: '包含任意', backendValue: 'in' },
-      { value: 'not_in', label: '不包含任意', backendValue: 'not_in' },
-      // 逗号分隔字符串列（tags，matchMode='substring'）使用：OR/AND(LIKE) 子串匹配
-      { value: 'contains_any', label: '包含任意', backendValue: 'contains_any' },
-      { value: 'not_contains_any', label: '不包含任意', backendValue: 'not_contains_any' }
-    ],
-    boolean: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' }
-    ]
-  }
-
-  // 自动生成的前后端操作符映射（从operatorGroups自动生成）
-  get operatorMapping(): Record<string, string> {
-    const mapping: Record<string, string> = {}
-
-    Object.values(this.operatorGroups).flat().forEach(op => {
-      const backendValue = op.backendValue || op.value
-      mapping[op.value] = backendValue
-    })
-
-    return mapping
-  }
-
-  // 自动生成的反向映射（从operatorGroups自动生成）
-  get reverseOperatorMapping(): Record<string, string> {
-    const mapping: Record<string, string> = {}
-
-    Object.values(this.operatorGroups).flat().forEach(op => {
-      const backendValue = op.backendValue || op.value
-      mapping[backendValue] = op.value
-    })
-
-    return mapping
-  }
-
-  // 操作符降级策略配置
-  private getOperatorFallback(frontendOp: string): string | null {
-    const allOperators = Object.values(this.operatorGroups).flat()
-    const operator = allOperators.find(op => op.value === frontendOp)
-    return operator?.fallback || null
-  }
+  // 运行时配置由后端机器契约生成，禁止在组件内维护语义副本。
+  readonly operatorGroups = ADVANCED_SEARCH_OPERATOR_GROUPS
 
   // Computed
   get formattedQuery(): string {
@@ -573,8 +496,6 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // Methods
   created() {
-    // 开发环境验证操作符配置
-    this.validateOperatorConfig()
     this.initializeConditions()
     // 首次挂载拉取一次动态字段选项；后续每次打开对话框由父组件调用 refreshFieldOptions() 刷新
     this.loadFieldOptions()
@@ -789,30 +710,34 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 字段变更处理
   onFieldChange(condition: SearchCondition) {
-    // 清空操作符和值
     condition.operator = ''
-    // multiSelect 字段空值语义是空数组（AdvancedMultiSelect 期望数组，虽有 normalize 兜底但显式更稳）
     const field = this.getFieldInfo(condition.field)
-    condition.value = field?.type === 'multiSelect' ? [] : null
+    condition.value = transitionConditionValue(
+      condition.field,
+      field?.type,
+      condition.operator
+    )
+    condition.mode = 'include'
   }
 
   // 操作符变更处理
   onOperatorChange(condition: SearchCondition) {
-    // 特殊处理：种子大小字段不应该被简单重置为null
-    // 因为种子大小需要特定的对象结构 { value: number, unit: string } 或 { min: number, max: number, minUnit: string, maxUnit: string }
-    if (condition.field === 'size') {
-      // 不做任何处理，让ConditionValueInput组件自己处理值结构
-      return
-    }
-
-    // 根据操作符设置默认值（非种子大小字段）
-    if (this.needsValueReset(condition.operator)) {
-      condition.value = null
+    const field = this.getFieldInfo(condition.field)
+    condition.value = transitionConditionValue(
+      condition.field,
+      field?.type,
+      condition.operator
+    )
+    if (!operatorSupportsExclude(condition.operator)) {
+      condition.mode = 'include'
     }
   }
 
   // 条件值变更处理
-  onConditionValueChange(condition: SearchCondition, value: any) {
+  onConditionValueChange(
+    condition: SearchCondition,
+    value: AdvancedSearchConditionValue
+  ) {
     condition.value = value
   }
 
@@ -865,16 +790,16 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   // 获取操作符组
-  getOperatorGroups(fieldKey: string) {
+  getOperatorGroups(fieldKey: string): OperatorDisplayGroup[] {
     const field = this.getFieldInfo(fieldKey)
     if (!field) return []
 
-    const groups = []
+    const groups: OperatorDisplayGroup[] = []
     const fieldType = field.type
 
     // 基本操作符
     if (this.operatorGroups[fieldType]) {
-      let operators = this.operatorGroups[fieldType as keyof typeof this.operatorGroups]
+      let operators = this.operatorGroups[fieldType]
       // multiSelect 字段按 matchMode 过滤：
       // - exact（category/downloader_name 单值列）只暴露 in/not_in
       // - substring（tags 逗号串列）只暴露 contains_any/not_contains_any
@@ -893,19 +818,6 @@ export default class AdvancedSearchBuilder extends Vue {
       })
     }
 
-    // 排除操作符（如果支持）
-    if (field.supportsExclude && fieldType === 'text') {
-      groups.push({
-        type: 'exclude',
-        label: '排除操作',
-        operators: [
-          { value: 'not_equals', label: '不等于' },
-          { value: 'not_contains', label: '不包含' },
-          { value: 'not_in', label: '不在列表中' }
-        ]
-      })
-    }
-
     return groups
   }
 
@@ -915,10 +827,11 @@ export default class AdvancedSearchBuilder extends Vue {
     return field?.supportsExclude || false
   }
 
-  // 是否需要重置值
-  private needsValueReset(operator: string): boolean {
-    const resetOperators = ['equals', 'not_equals', 'in', 'not_in']
-    return resetOperators.includes(operator)
+  conditionSupportsExclude(condition: SearchCondition): boolean {
+    return (
+      this.fieldSupportsExclude(condition.field) &&
+      operatorSupportsExclude(condition.operator)
+    )
   }
 
   // 获取逻辑标签类型
@@ -1039,241 +952,35 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 搜索事件
   onSearch() {
-    const searchParams = this.buildSearchParams()
-    this.$emit('search', searchParams)
-  }
-
-  // 构建搜索参数
-  buildSearchParams(): any {
-    const params: any = {
-      // 添加复杂查询标识
-      complex_search: true,
-      groups_count: this.conditionGroups.length
-    }
-
-    // 构建组数据结构
-    const groupsData = this.conditionGroups.map((group, groupIndex) => {
-      const conditions = group.conditions
-        .filter(condition => condition.field && condition.operator && condition.value !== null)
-        .map((condition, conditionIndex) => ({
-          field: condition.field,
-          operator: this.convertOperatorForBackend(condition.operator),  // 转换为后端格式
-          value: this.formatParamValue(condition),
-          mode: condition.mode,
-          index: conditionIndex
-        }))
-
-      return {
-        id: group.id,
-        name: group.name || `条件组${groupIndex + 1}`,
-        logic: group.logic,
-        conditions: conditions,
-        conditions_count: conditions.length
+    try {
+      const searchParams = this.buildSearchParams()
+      this.$emit('search', searchParams)
+    } catch (error) {
+      if (error instanceof AdvancedSearchValidationError) {
+        this.$message.warning(error.message)
+        return
       }
-    }).filter(group => group.conditions_count > 0)
-
-    // 添加组间逻辑关系
-    const betweenGroupLogics = []
-    for (let i = 0; i < this.conditionGroups.length - 1; i++) {
-      betweenGroupLogics.push(this.conditionGroups[i].betweenGroupLogic || 'and')
-    }
-
-    params.groups = JSON.stringify(groupsData)
-    params.between_group_logics = JSON.stringify(betweenGroupLogics)
-
-    // 为了兼容性，也生成扁平化的参数
-    this.conditionGroups.forEach((group, groupIndex) => {
-      const groupPrefix = groupIndex > 0 ? `group_${groupIndex}_` : ''
-
-      group.conditions.forEach((condition) => {
-        if (!condition.field || !condition.operator || condition.value === null) {
-          return
-        }
-
-        // multiSelect 字段（category/tags/downloader_name）只走 condition_groups 语义，
-        // 不生成扁平参数——扁平参数会被 simple fallback 的 apply_basic_filters 用 == 精确匹配，
-        // 对数组 value 语义错误（IN 多值才是正确语义，只在 condition_groups 侧实现）。
-        const field = this.getFieldInfo(condition.field)
-        if (field?.type === 'multiSelect') {
-          return
-        }
-
-        const paramKey = `${groupPrefix}${condition.field}`
-        const paramValue = this.formatParamValue(condition)
-
-        if (condition.mode === 'exclude') {
-          params[`${paramKey}_exclude`] = paramValue
-        } else {
-          params[paramKey] = paramValue
-        }
-
-        // 添加操作符信息（转换为后端格式）
-        params[`${paramKey}_op`] = this.convertOperatorForBackend(condition.operator)
-      })
-
-      // 添加组逻辑
-      if (groupIndex > 0) {
-        params[`group_${groupIndex}_logic`] = group.logic
-      }
-    })
-
-    return params
-  }
-
-  // 转换前端操作符为后端格式（支持智能降级）
-  private convertOperatorForBackend(frontendOperator: string): string {
-    // 查找映射
-    const backendOperator = this.operatorMapping[frontendOperator]
-
-    if (backendOperator) {
-      return backendOperator
-    }
-
-    // 未找到映射，尝试降级策略
-    const fallbackOp = this.getOperatorFallback(frontendOperator)
-
-    if (fallbackOp) {
-      const fallbackBackendOp = this.operatorMapping[fallbackOp]
-      if (fallbackBackendOp) {
-        console.warn(
-          `[AdvancedSearchBuilder] 操作符 "${frontendOperator}" 后端不支持，` +
-          `自动降级为 "${fallbackOp}" (${fallbackBackendOp})`
-        )
-        return fallbackBackendOp
-      }
-    }
-
-    // 降级失败，返回原值并记录错误
-    console.error(
-      `[AdvancedSearchBuilder] 操作符 "${frontendOperator}" 无法转换且无降级策略，` +
-      `这可能导致API调用失败！请检查后端API文档。`
-    )
-    return frontendOperator
-  }
-
-  // 转换后端操作符为前端格式（用于编辑已保存的搜索条件）
-  private convertOperatorForFrontend(backendOperator: string): string {
-    const frontendOperator = this.reverseOperatorMapping[backendOperator]
-    if (!frontendOperator) {
-      console.warn(`[AdvancedSearchBuilder] 未找到反向操作符映射: ${backendOperator}，使用原值`)
-      return backendOperator
-    }
-    return frontendOperator
-  }
-
-  // 验证操作符配置的完整性（开发环境调用）
-  private validateOperatorConfig(): void {
-    if (process.env.NODE_ENV !== 'production') {
-      const allOperators = Object.values(this.operatorGroups).flat()
-      const backendValues = new Set<string>()
-      const duplicates: string[] = []
-
-      // 检查重复的后端值
-      allOperators.forEach(op => {
-        const backendValue = op.backendValue || op.value
-        if (backendValues.has(backendValue)) {
-          duplicates.push(backendValue)
-        }
-        backendValues.add(backendValue)
-      })
-
-      if (duplicates.length > 0) {
-        console.warn(
-          `[AdvancedSearchBuilder] 发现重复的后端操作符值: ${duplicates.join(', ')}` +
-          `这可能导致反向映射失败！`
-        )
-      }
-
-      // 检查降级循环依赖
-      allOperators.forEach(op => {
-        if (op.fallback) {
-          const fallbackOp = allOperators.find(o => o.value === op.fallback)
-          if (!fallbackOp) {
-            console.error(
-              `[AdvancedSearchBuilder] 操作符 "${op.value}" 的降级目标 "${op.fallback}" 不存在！`
-            )
-          } else if (fallbackOp.fallback === op.value) {
-            console.warn(
-              `[AdvancedSearchBuilder] 发现循环降级依赖: "${op.value}" <-> "${fallbackOp.value}"`
-            )
-          }
-        }
-      })
-
-      console.log(
-        `[AdvancedSearchBuilder] 操作符配置验证完成\n` +
-        `- 前端操作符数量: ${allOperators.length}\n` +
-        `- 后端操作符数量: ${backendValues.size}\n` +
-        `- 支持降级的操作符: ${allOperators.filter(op => op.fallback).length}`
-      )
+      throw error
     }
   }
 
-  // 获取所有支持的后端操作符列表（用于与后端API文档对照）
-  private getSupportedBackendOperators(): string[] {
-    return Object.values(this.operatorMapping)
-  }
-
-  // 格式化参数值
-  private formatParamValue(condition: SearchCondition): any {
-    const field = this.getFieldInfo(condition.field)
-
-    // 特殊处理种子大小范围的 "介于" 操作符
-    if (condition.field === 'size' && condition.operator === 'between') {
-      const value = condition.value
-      if (value && typeof value === 'object' && value.min !== undefined && value.max !== undefined) {
-        // 返回对象格式，后端需要处理 min 和 max
-        return {
-          min: value.min !== null ? `${value.min} ${value.minUnit || 'GB'}` : null,
-          max: value.max !== null ? `${value.max} ${value.maxUnit || 'GB'}` : null
-        }
-      }
-      return condition.value
-    }
-
-    // 特殊处理种子大小其他操作符（带单位）
-    if (condition.field === 'size' && condition.operator !== 'between') {
-      const value = condition.value
-      if (value && typeof value === 'object' && value.value !== undefined) {
-        // 转换为 "数字 单位" 格式，如 "1.5 GB"
-        return value.value !== null ? `${value.value} ${value.unit || 'GB'}` : null
-      }
-      return condition.value
-    }
-
-    switch (field?.type) {
-      case 'date':
-        if (condition.value && typeof condition.value === 'object') {
-          return JSON.stringify(condition.value)
-        }
-        return condition.value
-
-      case 'number':
-        // 数值字段 between：返回 {min, max} 对象（后端 _build_between_filter 解构）
-        if (condition.operator === 'between' && condition.value
-            && typeof condition.value === 'object' && condition.value.min !== undefined) {
-          return {
-            min: condition.value.min !== null ? Number(condition.value.min) : null,
-            max: condition.value.max !== null ? Number(condition.value.max) : null
-          }
-        }
-        return Number(condition.value)
-
-      case 'multiSelect':
-        // 返回数组：后端 in/not_in/contains_any 等多值操作符的 lambda 期望 list（_normalize_multi_value 会兜底）
-        return Array.isArray(condition.value) ? condition.value : [condition.value]
-
-      case 'boolean':
-        return condition.value ? '1' : '0'
-
-      default:
-        return condition.value
-    }
+  // 构建搜索参数。任何无效条件都会整体失败，禁止静默丢弃或降级。
+  buildSearchParams(): AdvancedSearchBuilderParams {
+    return buildAdvancedSearchParams(this.conditionGroups)
   }
 
   // 预览查询
   previewSearchQuery() {
-    this.previewVisible = true
+    try {
+      this.buildSearchParams()
+      this.previewVisible = true
+    } catch (error) {
+      if (error instanceof AdvancedSearchValidationError) {
+        this.$message.warning(error.message)
+        return
+      }
+      throw error
+    }
   }
 
   // 复制查询到剪贴板
@@ -1294,14 +1001,17 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   // v1.0.5 应用模板：回填 conditionGroups（供父组件调用）
-  applyTemplateGroups(groups: any[], _options?: { sort_by?: string, sort_order?: string }) {
+  applyTemplateGroups(
+    groups: ConditionGroup[],
+    _options?: { sort_by?: string, sort_order?: string }
+  ) {
     if (!Array.isArray(groups) || groups.length === 0) {
       this.conditionGroups = []
       this.initializeConditions()
       return
     }
     // 深拷贝避免污染模板源数据
-    this.conditionGroups = JSON.parse(JSON.stringify(groups))
+    this.conditionGroups = JSON.parse(JSON.stringify(groups)) as ConditionGroup[]
     // 归一化历史模板：旧 multiSelect 操作符在单值精确列上转为 in/not_in，
     // value 统一为数组形态（兼容旧逗号串/单值存储）。
     this.normalizeLoadedConditions()
@@ -1315,27 +1025,52 @@ export default class AdvancedSearchBuilder extends Vue {
    *    需转为 in/not_in（后端 IN 才对单值列正确）；substring 列（tags）保留。
    */
   private normalizeLoadedConditions() {
-    for (const group of this.conditionGroups) {
-      if (!group || !Array.isArray(group.conditions)) continue
+    for (let groupIndex = 0; groupIndex < this.conditionGroups.length; groupIndex++) {
+      const group = this.conditionGroups[groupIndex]
+      group.id = group.id || this.generateId()
+      group.logic = String(group.logic).toLowerCase() === 'or' ? 'or' : 'and'
+      group.betweenGroupLogic =
+        String(group.betweenGroupLogic).toLowerCase() === 'or' ? 'or' : 'and'
+      group.editing = false
+      if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
+        throw new AdvancedSearchValidationError(
+          `模板条件组${groupIndex + 1}没有有效条件`
+        )
+      }
       for (const condition of group.conditions) {
         const field = this.getFieldInfo(condition.field)
-        if (!field || field.type !== 'multiSelect') continue
-
-        // value 数组化
-        if (typeof condition.value === 'string' && condition.value) {
-          condition.value = condition.value.split(',').map((s: string) => s.trim()).filter((s: string) => s)
-        } else if (!Array.isArray(condition.value)) {
-          condition.value = condition.value == null || condition.value === '' ? [] : [condition.value]
+        if (!field) {
+          throw new AdvancedSearchValidationError(
+            `模板包含未知字段：${condition.field}`
+          )
         }
-
-        // operator 归一化：单值精确列不允许 contains_*（语义错，后端 LIKE 对精确列多余）
-        if (field.matchMode === 'exact') {
-          const op = condition.operator
-          if (op === 'contains_any' || op === 'contains_all') {
-            condition.operator = 'in'
-          } else if (op === 'not_contains_any' || op === 'not_contains_all') {
-            condition.operator = 'not_in'
-          }
+        condition.id = condition.id || this.generateId()
+        condition.mode = condition.mode === 'exclude' ? 'exclude' : 'include'
+        if (!Object.prototype.hasOwnProperty.call(
+          ADVANCED_SEARCH_OPERATOR_GROUPS,
+          field.type
+        )) {
+          throw new AdvancedSearchValidationError(
+            `模板字段类型无效：${field.type}`
+          )
+        }
+        condition.operator = normalizeLoadedOperator(
+          condition.field,
+          condition.operator
+        )
+        condition.value = normalizeLoadedConditionValue(
+          condition.field,
+          field.type,
+          condition.operator,
+          condition.value
+        )
+        if (
+          condition.mode === 'exclude' &&
+          !operatorSupportsExclude(condition.operator)
+        ) {
+          throw new AdvancedSearchValidationError(
+            `模板操作符“${condition.operator}”不支持排除模式`
+          )
         }
       }
     }
@@ -1356,6 +1091,15 @@ export default class AdvancedSearchBuilder extends Vue {
     if (!this.templateForm.name.trim()) {
       this.$message.warning('请输入模板名称')
       return
+    }
+    try {
+      this.buildSearchParams()
+    } catch (error) {
+      if (error instanceof AdvancedSearchValidationError) {
+        this.$message.warning(error.message)
+        return
+      }
+      throw error
     }
 
     const template = {

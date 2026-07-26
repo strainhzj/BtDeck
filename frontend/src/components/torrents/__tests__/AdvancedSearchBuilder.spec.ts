@@ -214,7 +214,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(group.name).toBe('')
   })
 
-  it('字段和操作符变化只重置应重置的值', () => {
+  it('父组件统一负责字段和操作符的值结构转换', () => {
     const condition = vm.conditionGroups[0].conditions[0]
     condition.field = 'name'
     condition.operator = 'equals'
@@ -233,7 +233,11 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     condition.operator = 'between'
     condition.value = { min: 1, max: 2, minUnit: 'GB', maxUnit: 'GB' }
     vm.onOperatorChange(condition)
-    expect(condition.value).toEqual({ min: 1, max: 2, minUnit: 'GB', maxUnit: 'GB' })
+    expect(condition.value).toEqual({ min: null, max: null, minUnit: 'GB', maxUnit: 'GB' })
+
+    condition.operator = 'equals'
+    vm.onOperatorChange(condition)
+    expect(condition.value).toEqual({ value: null, unit: 'GB' })
   })
 
   it('根据字段返回操作符、选项和排除能力', () => {
@@ -247,7 +251,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(vm.fieldSupportsExclude('missing')).toBe(false)
   })
 
-  it('构建分组与兼容扁平参数并转换后端操作符和值', () => {
+  it('仅构建规范分组协议并精确转换操作符和值', () => {
     const firstGroup = vm.conditionGroups[0]
     firstGroup.name = '大小条件'
     firstGroup.conditions[0].field = 'size'
@@ -259,7 +263,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     secondGroup.logic = 'or'
     firstGroup.betweenGroupLogic = 'or'
     secondGroup.conditions[0].field = 'status'
-    secondGroup.conditions[0].operator = 'not_equals'
+    secondGroup.conditions[0].operator = 'equals'
     secondGroup.conditions[0].value = 'paused'
     secondGroup.conditions[0].mode = 'exclude'
 
@@ -268,11 +272,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
 
     expect(params).toMatchObject({
       complex_search: true,
-      groups_count: 2,
-      size_op: 'between',
-      group_1_status_exclude: 'paused',
-      group_1_status_op: 'ne',
-      group_1_logic: 'or'
+      groups_count: 2
     })
     expect(JSON.parse(params.between_group_logics)).toEqual(['or'])
     expect(groups).toHaveLength(2)
@@ -281,7 +281,20 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
       operator: 'between',
       value: { min: '1 GB', max: '2 TB' }
     })
-    expect(groups[1]).toMatchObject({ logic: 'or', conditions_count: 1 })
+    expect(groups[1]).toMatchObject({
+      logic: 'or',
+      conditions_count: 1,
+      conditions: [
+        expect.objectContaining({
+          field: 'status',
+          operator: 'ne',
+          value: 'paused',
+          mode: 'exclude'
+        })
+      ]
+    })
+    expect(params).not.toHaveProperty('size_op')
+    expect(params).not.toHaveProperty('group_1_status_exclude')
   })
 
   it('搜索事件携带当前构建参数', () => {
@@ -294,7 +307,13 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
 
     const emitted = wrapper.emitted('search')
     expect(emitted).toHaveLength(1)
-    expect(emitted?.[0][0]).toMatchObject({ name: 'linux', name_op: 'contains' })
+    const params = emitted?.[0][0] as SearchParams
+    const groups = JSON.parse(params.groups) as GroupPayload[]
+    expect(groups[0].conditions[0]).toMatchObject({
+      field: 'name',
+      operator: 'contains',
+      value: 'linux'
+    })
   })
 
   it('组内和组间逻辑变化发出可追踪事件', () => {
@@ -343,6 +362,10 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
 
     vm.templateForm.name = '常用查询'
     vm.templateForm.description = '回归测试模板'
+    const condition = vm.conditionGroups[0].conditions[0]
+    condition.field = 'name'
+    condition.operator = 'contains'
+    condition.value = 'linux'
     vm.confirmSaveTemplate()
     expect(wrapper.emitted('save-template')).toHaveLength(1)
     expect(wrapper.emitted('save-template')?.[0][0]).toMatchObject({
@@ -497,19 +520,16 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(params.category_op).toBeUndefined()
   })
 
-  it('multiSelect 字段单值 value 被包装成数组（formatParamValue 兜底分支）', async() => {
+  it('multiSelect 字段单值不会被静默包装而是明确拒绝', async() => {
     await flushLifecycle()
     const condition = vm.conditionGroups[0].conditions[0]
     condition.field = 'category'
     condition.operator = 'in'
     condition.value = '电影' // 单值字符串（旧模板可能存过）
 
-    const params = vm.buildSearchParams()
-    const groups = JSON.parse(params.groups) as Array<{ conditions: Array<{ field: string, value: unknown }> }>
-    const catCond = groups[0].conditions.find(c => c.field === 'category')
-    expect(catCond).toBeDefined()
-    // Array.isArray=false 时走 [condition.value] 包装分支
-    expect(catCond?.value).toEqual(['电影'])
+    expect(() => vm.buildSearchParams()).toThrow(
+      '多选条件至少选择一个有效值'
+    )
   })
 
   it('onFieldChange：multiSelect 字段初始化 value 为 []，其它字段为 null', () => {

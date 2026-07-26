@@ -8,6 +8,7 @@
 import logging
 from typing import Any, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -19,11 +20,26 @@ from app.api.models.advanced_search import (
     TorrentDeleteRequest,
 )
 from app.services.advanced_search import AdvancedSearchService
+from app.services.sqlite_search_runtime import RegexSearchTimeout
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.core.json_parser import safe_json_parse_with_validator
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+
+def _raise_if_unprocessable(result: dict[str, Any]) -> None:
+    """Keep condition-validation failures at the HTTP boundary."""
+    if str(result.get("code")) == "422":
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": result.get("status", "failed"),
+                "msg": result.get("msg", "Invalid search conditions"),
+                "code": "422",
+                "data": result.get("data"),
+            },
+        )
 
 
 # 实例化高级搜索服务
@@ -56,7 +72,18 @@ async def advanced_search_torrents(
     logger.info(f"搜索请求参数: name={request.name}, condition_groups={request.condition_groups}")
 
     # 执行高级搜索
-    result = service.search_torrents(request, user_info.user_id)
+    try:
+        result = service.search_torrents(request, user_info.user_id)
+    except RegexSearchTimeout as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "error",
+                "msg": str(exc),
+                "code": "422",
+                "data": None,
+            },
+        ) from exc
 
     # 添加调试日志：记录搜索结果
     logger.info(f"搜索结果: total={result.get('total', 0)}, data_count={len(result.get('data', []))}")
@@ -95,6 +122,7 @@ async def create_search_template(
 
     # 创建搜索模板
     result = service.create_search_template(request, str(user_info.user_id))
+    _raise_if_unprocessable(result)
 
     return CommonResponse(
         status=result.get("status", "failed"),
@@ -164,7 +192,12 @@ async def update_search_template(
     logger.info(f"User {user_info.username} updating search template: {template_id}")
 
     # 更新搜索模板
-    result = service.update_search_template(template_id, request, str(user_info.user_id))
+    result = service.update_search_template(
+        template_id,
+        request.model_dump(exclude_unset=True),
+        str(user_info.user_id),
+    )
+    _raise_if_unprocessable(result)
 
     return CommonResponse(
         status=result.get("status", "failed"),
@@ -225,6 +258,7 @@ async def apply_search_template(
 
     # 应用搜索模板
     result = service.apply_search_template(template_id, str(user_info.user_id))
+    _raise_if_unprocessable(result)
 
     return CommonResponse(
         status=result.get("status", "failed"),
@@ -316,8 +350,7 @@ async def preview_advanced_search(
             status_code=401, detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None}
         )
 
-    # 构建简化搜索请求
-    search_request = EnhancedAdvancedSearchRequest(
+    request_data = dict(
         page=1,
         limit=limit,
         sort_by="added_time",
@@ -329,9 +362,8 @@ async def preview_advanced_search(
         downloader_name=downloader_name,
     )
 
-    # 如果提供了JSON条件，尝试解析
     if conditions_json:
-        # 使用安全解析函数
+
         def is_list(obj: Any) -> bool:
             return isinstance(obj, list)
 
@@ -339,21 +371,47 @@ async def preview_advanced_search(
             conditions_json, is_list, default=None, log_errors=True, error_context="(预览搜索条件)"
         )
 
-        if conditions:
-            # 简化条件为单个条件组
-            search_request.condition_groups = [
-                {
-                    "logic": "AND",
-                    "conditions": [condition for condition in conditions if isinstance(condition, dict)],
-                }
-            ]
-        else:
-            logger.warning(f"Invalid conditions format in preview: {conditions_json}")
+        if not conditions:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "status": "error",
+                    "msg": "预览搜索条件不是有效的非空数组",
+                    "code": "422",
+                    "data": None,
+                },
+            )
+        request_data["condition_groups"] = [{"logic": "AND", "conditions": conditions}]
+        request_data["between_group_logics"] = []
+
+    try:
+        search_request = EnhancedAdvancedSearchRequest.model_validate(request_data)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "error",
+                "msg": "预览搜索条件无效",
+                "code": "422",
+                "data": exc.errors(include_url=False),
+            },
+        ) from exc
 
     # 执行预览搜索
     logger.info(f"User {user_info.username} previewing advanced search")
 
-    result = service.search_torrents(search_request, user_info.user_id)
+    try:
+        result = service.search_torrents(search_request, user_info.user_id)
+    except RegexSearchTimeout as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "status": "error",
+                "msg": str(exc),
+                "code": "422",
+                "data": None,
+            },
+        ) from exc
 
     # 只返回预览数据，移除复杂字段以减少响应大小
     preview_data = []

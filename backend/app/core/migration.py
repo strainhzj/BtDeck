@@ -26,7 +26,7 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 
 from app.core.config import settings
-from app.core.db_backup import backup_before_migration
+from app.core.db_backup import MigrationBackupError, backup_before_migration
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +146,7 @@ def migrate_database() -> None:
     4. alembic upgrade head
 
     失败处理（DEV 分流，与历史行为一致，保证存量用户无感）：
+    - 迁移前备份失败：所有环境无条件终止，禁止绕过恢复点
     - DEV=True：捕获异常，记 warning，不终止（便于开发调试）
     - DEV=False：向上抛出（生产终止）
 
@@ -172,8 +173,10 @@ def migrate_database() -> None:
         current = _read_db_version(db_path)
 
         # 2. 迁移前备份（current != head 时，含幽灵版本 9aea... != head）
-        if current != head:
-            backup_before_migration(db_path)
+        if current != head and Path(db_path).exists():
+            backup_path = backup_before_migration(db_path)
+            if not backup_path:
+                raise RuntimeError("existing database has no validated pre-migration backup")
 
         # 3. 版本救援/告警
         _rescue_or_warn_version(cfg, db_path, current, heads)
@@ -184,6 +187,11 @@ def migrate_database() -> None:
 
         logger.info("数据库迁移完成")
 
+    except MigrationBackupError:
+        # A destructive migration must never continue when its recovery point
+        # cannot be trusted, including in DEV mode.
+        logger.exception("迁移前备份未通过验证，已无条件阻止迁移")
+        raise
     except Exception as e:
         error_msg = f"数据库迁移失败: {e}"
         logger.error(error_msg)

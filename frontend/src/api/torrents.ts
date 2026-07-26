@@ -583,9 +583,10 @@ export interface AdvancedSearchRequest {
     conditions: Array<{
       field: string
       operator: string
-      value: any
+      value: unknown
     }>
   }>
+  between_group_logics?: Array<'AND' | 'OR'>
 
   // 多选排除字段已废弃：前端 multiSelect 字段统一走 condition_groups + contains_any/contains_all
 }
@@ -622,7 +623,7 @@ export function advancedSearch(searchParams: AdvancedSearchRequest): Promise<Api
 export interface CreateSearchTemplateRequest {
   name: string
   description?: string
-  conditions: any // 搜索条件JSON
+  conditions: QueryTemplateConditions
   is_public?: boolean
 }
 
@@ -633,7 +634,7 @@ export interface UpdateSearchTemplateRequest {
   id: string
   name?: string
   description?: string
-  conditions?: any
+  conditions?: QueryTemplateConditions
   is_public?: boolean
 }
 
@@ -645,7 +646,7 @@ export interface SearchTemplate {
   user_id: string
   name: string
   description: string | null
-  conditions: any
+  conditions: QueryTemplateConditions
   is_default: boolean
   is_public: boolean
   usage_count: number
@@ -717,11 +718,18 @@ export function deleteSearchTemplate(templateId: string): Promise<ApiResponse<an
  * @param templateId 模板ID
  * @returns 搜索结果
  */
-export function applySearchTemplate(templateId: string): Promise<ApiResponse<AdvancedSearchResponse>> {
+export interface AppliedSearchTemplate {
+  id: string
+  name: string
+  description: string | null
+  conditions: QueryTemplateConditions
+}
+
+export function applySearchTemplate(templateId: string): Promise<ApiResponse<AppliedSearchTemplate>> {
   return request({
     url: `/advanced-search/search-templates/${templateId}/apply`,
     method: 'post'
-  }) as unknown as Promise<ApiResponse<AdvancedSearchResponse>>
+  }) as unknown as Promise<ApiResponse<AppliedSearchTemplate>>
 }
 
 // ==================== v1.0.5 查询模板便捷方法 ====================
@@ -744,9 +752,26 @@ export interface QueryTemplateConditions {
     sort_by?: string
     sort_order?: 'asc' | 'desc'
   }
-  condition_groups?: any[]
+  condition_groups?: QueryTemplateConditionGroup[]
   sort_by?: string
   sort_order?: 'asc' | 'desc'
+}
+
+export interface QueryTemplateCondition {
+  id?: string
+  field: string
+  operator: string
+  value: unknown
+  mode?: 'include' | 'exclude'
+  index?: number
+}
+
+export interface QueryTemplateConditionGroup {
+  id?: string
+  name?: string
+  logic?: string
+  betweenGroupLogic?: 'and' | 'or'
+  conditions: QueryTemplateCondition[]
 }
 
 /**

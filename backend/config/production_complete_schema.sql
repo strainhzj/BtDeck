@@ -70,8 +70,20 @@ CREATE TABLE IF NOT EXISTS "torrent_info" (
                 torrent_file TEXT,
                 added_date DATETIME,
                 completed_date DATETIME,
-                ratio TEXT,
-                ratio_limit TEXT,
+                ratio REAL CHECK (
+                    ratio IS NULL OR (
+                        typeof(ratio) IN ('integer', 'real')
+                        AND ratio >= 0
+                        AND ratio <= 1.7976931348623157e308
+                    )
+                ),
+                ratio_limit REAL CHECK (
+                    ratio_limit IS NULL OR (
+                        typeof(ratio_limit) IN ('integer', 'real')
+                        AND ratio_limit >= 0
+                        AND ratio_limit <= 1.7976931348623157e308
+                    )
+                ),
                 tags TEXT,
                 category TEXT,
                 super_seeding TEXT,

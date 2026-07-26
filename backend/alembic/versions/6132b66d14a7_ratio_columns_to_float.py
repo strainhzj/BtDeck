@@ -12,7 +12,8 @@ Create Date: 2026-07-26 13:00:00.000000
   - 迁移末尾断言 16+1 个索引完整 + partial WHERE 子句仍在
 """
 
-from typing import Sequence, Union
+import math
+from typing import Any, Dict, List, Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
@@ -23,14 +24,74 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
-# 历史写入侧产生的脏值：str(None)→"None"、空串、qBittorrent 哨兵 -1/-2
-# 注意 SQLite 的 CAST("None" AS REAL) 不报错而返回 0.0，必须显式 UPDATE 清洗，
-# 否则脏值会被静默篡改为 0.0（无法被 WHERE ratio IS NULL 捕获）。
-_DIRTY_RATIO_VALUES_SQL = "ratio IS NULL OR ratio = '' OR ratio = '-1' OR ratio = '-2' " "OR lower(ratio) = 'none'"
+_RATIO_CHECK = (
+    "ratio IS NULL OR ("
+    "typeof(ratio) IN ('integer', 'real') "
+    "AND ratio >= 0 "
+    "AND ratio <= 1.7976931348623157e308"
+    ")"
+)
+_RATIO_LIMIT_CHECK = (
+    "ratio_limit IS NULL OR ("
+    "typeof(ratio_limit) IN ('integer', 'real') "
+    "AND ratio_limit >= 0 "
+    "AND ratio_limit <= 1.7976931348623157e308"
+    ")"
+)
+_RATIO_CHECK_NAME = "ck_torrent_info_ratio_finite_nonnegative"
+_RATIO_LIMIT_CHECK_NAME = "ck_torrent_info_ratio_limit_finite_nonnegative"
 
 
 def _table_exists(inspector, table_name: str) -> bool:
     return inspector.has_table(table_name)
+
+
+def _strict_optional_ratio(value: Any) -> float | None:
+    """Parse legacy text without SQLite's lossy CAST-to-zero behavior."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if not math.isfinite(numeric) or numeric < 0:
+        return None
+    return numeric
+
+
+def _clean_ratio_columns(bind) -> None:
+    rows = bind.execute(
+        sa.text("SELECT info_id, downloader_id, downloader_name, ratio, ratio_limit " "FROM torrent_info")
+    ).mappings()
+    updates: List[Dict[str, Any]] = []
+    for row in rows:
+        updates.append(
+            {
+                "info_id": row["info_id"],
+                "downloader_id": row["downloader_id"],
+                "downloader_name": row["downloader_name"],
+                "ratio": _strict_optional_ratio(row["ratio"]),
+                "ratio_limit": _strict_optional_ratio(row["ratio_limit"]),
+            }
+        )
+    if updates:
+        bind.execute(
+            sa.text(
+                "UPDATE torrent_info SET ratio=:ratio, ratio_limit=:ratio_limit "
+                "WHERE info_id=:info_id AND downloader_id=:downloader_id "
+                "AND downloader_name=:downloader_name"
+            ),
+            updates,
+        )
+
+
+def _require(condition: bool, message: str) -> None:
+    if not condition:
+        raise RuntimeError(message)
 
 
 def upgrade() -> None:
@@ -41,14 +102,9 @@ def upgrade() -> None:
         # 干净库首次 upgrade 时该表由 base 迁移建立；此分支仅防御性兜底
         return
 
-    # ---------- 1. 脏数据清洗（在 batch_alter 之前）----------
-    # 用显式 UPDATE 把脏值转 NULL，避免后续 CAST 静默转 0.0
-    op.execute(f"UPDATE torrent_info SET ratio = NULL WHERE {_DIRTY_RATIO_VALUES_SQL}")
-    op.execute(
-        "UPDATE torrent_info SET ratio_limit = NULL WHERE "
-        "ratio_limit IS NULL OR ratio_limit = '' OR ratio_limit = '-1' OR ratio_limit = '-2' "
-        "OR lower(ratio_limit) = 'none'"
-    )
+    # ---------- 1. 严格清洗（在 batch_alter 之前）----------
+    # 任意不可解析、非有限或负值都转 NULL，禁止依赖 SQLite CAST。
+    _clean_ratio_columns(bind)
 
     # ---------- 2. drop partial unique index（batch 重建不保证保留 WHERE 子句）----------
     existing_idx = {i["name"] for i in inspector.get_indexes("torrent_info")}
@@ -63,6 +119,8 @@ def upgrade() -> None:
     with op.batch_alter_table("torrent_info") as batch_op:
         batch_op.alter_column("ratio", existing_type=sa.String(), type_=sa.Float())
         batch_op.alter_column("ratio_limit", existing_type=sa.String(), type_=sa.Float(), nullable=True)
+        batch_op.create_check_constraint(_RATIO_CHECK_NAME, _RATIO_CHECK)
+        batch_op.create_check_constraint(_RATIO_LIMIT_CHECK_NAME, _RATIO_LIMIT_CHECK)
 
     # ---------- 4. recreate partial unique index ----------
     op.create_index(
@@ -81,14 +139,20 @@ def upgrade() -> None:
     post_inspector = sa.inspect(bind)
     post_idx_names = {i["name"] for i in post_inspector.get_indexes("torrent_info")}
 
-    assert "idx_torrent_hash_unique" in post_idx_names, f"partial unique index 丢失，当前索引: {post_idx_names}"
+    _require(
+        "idx_torrent_hash_unique" in post_idx_names,
+        f"partial unique index 丢失，当前索引: {post_idx_names}",
+    )
 
     # partial unique index 的 WHERE 子句仍在
     idx_sql = bind.execute(
         sa.text("SELECT sql FROM sqlite_master WHERE type = 'index' " "AND name = 'idx_torrent_hash_unique'")
     ).scalar()
-    assert idx_sql, "idx_torrent_hash_unique 不存在"
-    assert "dr = 0" in idx_sql or "dr=0" in idx_sql, f"partial unique index 丢失 WHERE 子句: {idx_sql}"
+    _require(bool(idx_sql), "idx_torrent_hash_unique 不存在")
+    _require(
+        "dr = 0" in idx_sql or "dr=0" in idx_sql,
+        f"partial unique index 丢失 WHERE 子句: {idx_sql}",
+    )
 
 
 def downgrade() -> None:
@@ -116,7 +180,12 @@ def downgrade() -> None:
             sqlite_where=sa.text("dr = 0"),
         )
 
+    check_names = {item["name"] for item in inspector.get_check_constraints("torrent_info") if item.get("name")}
     with op.batch_alter_table("torrent_info") as batch_op:
+        if _RATIO_CHECK_NAME in check_names:
+            batch_op.drop_constraint(_RATIO_CHECK_NAME, type_="check")
+        if _RATIO_LIMIT_CHECK_NAME in check_names:
+            batch_op.drop_constraint(_RATIO_LIMIT_CHECK_NAME, type_="check")
         batch_op.alter_column("ratio", existing_type=sa.Float(), type_=sa.String())
         batch_op.alter_column("ratio_limit", existing_type=sa.Float(), type_=sa.String(), nullable=True)
 

@@ -621,16 +621,45 @@ describe('TraditionalView component regressions', () => {
     mockGetTorrentList.mockClear()
     mockAdvancedSearch.mockClear()
 
-    await vm.performAdvancedSearch({ name: 'needle' })
+    const strictSearchParams = {
+      complex_search: true,
+      groups_count: 1,
+      groups: JSON.stringify([{
+        logic: 'AND',
+        conditions: [{
+          field: 'name',
+          operator: 'contains',
+          value: 'needle'
+        }]
+      }]),
+      between_group_logics: JSON.stringify([])
+    }
+    await vm.performAdvancedSearch(strictSearchParams)
     expect(mockAdvancedSearch).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 1, limit: 500, name: 'needle' })
+      expect.objectContaining({
+        page: 1,
+        limit: 500,
+        condition_groups: [{
+          logic: 'AND',
+          conditions: [{
+            field: 'name',
+            operator: 'contains',
+            value: 'needle'
+          }]
+        }],
+        between_group_logics: []
+      })
     )
 
     mockAdvancedSearch.mockClear()
     vm.handlePageChange(2)
     await flushLifecycle()
     expect(mockAdvancedSearch).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 2, limit: 500, name: 'needle' })
+      expect.objectContaining({
+        page: 2,
+        limit: 500,
+        condition_groups: expect.any(Array)
+      })
     )
     expect(mockGetTorrentList).not.toHaveBeenCalled()
 
@@ -638,7 +667,11 @@ describe('TraditionalView component regressions', () => {
     await input.trigger('keyup.enter')
     await flushLifecycle()
     expect(mockAdvancedSearch).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 1, limit: 1000, name: 'needle' })
+      expect.objectContaining({
+        page: 1,
+        limit: 1000,
+        condition_groups: expect.any(Array)
+      })
     )
 
     mockAdvancedSearch.mockClear()

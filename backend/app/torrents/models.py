@@ -2,7 +2,7 @@ from typing import Any, Optional
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Column, Integer, String, Float, DATETIME, Boolean, Text, Index
+from sqlalchemy import Boolean, CheckConstraint, Column, DATETIME, Float, Index, Integer, String, Text
 from app.database import Base
 import logging
 
@@ -26,7 +26,12 @@ class TorrentInfo(Base):
     added_date = Column(DATETIME, comment="添加时间")
     completed_date = Column(DATETIME, comment="完成时间")
     ratio = Column(Float, index=True, comment="比率（数值列，避免 String 字典序 bug）")
-    ratio_limit = Column(Float, nullable=True, index=True, comment="比率限制；NULL 表示无限制")
+    ratio_limit = Column(
+        Float,
+        nullable=True,
+        index=True,
+        comment="比率限制；NULL 表示没有显式的单种数值限制，不可用于回写下载器",
+    )
     tags = Column(String, index=True, comment="标签")
     category = Column(String, index=True, comment="分类")
     super_seeding = Column(String, index=True, comment="超级做种模式")
@@ -45,7 +50,23 @@ class TorrentInfo(Base):
     )
 
     # 唯一约束：防止同一下载器中出现相同的 hash（仅限未删除记录）
-    __table_args__ = (Index("idx_torrent_hash_unique", "hash", "downloader_id", unique=True, sqlite_where=dr == 0),)
+    __table_args__ = (
+        Index("idx_torrent_hash_unique", "hash", "downloader_id", unique=True, sqlite_where=dr == 0),
+        CheckConstraint(
+            "ratio IS NULL OR ("
+            "typeof(ratio) IN ('integer', 'real') AND ratio >= 0 "
+            "AND ratio <= 1.7976931348623157e308"
+            ")",
+            name="ck_torrent_info_ratio_finite_nonnegative",
+        ),
+        CheckConstraint(
+            "ratio_limit IS NULL OR ("
+            "typeof(ratio_limit) IN ('integer', 'real') AND ratio_limit >= 0 "
+            "AND ratio_limit <= 1.7976931348623157e308"
+            ")",
+            name="ck_torrent_info_ratio_limit_finite_nonnegative",
+        ),
+    )
 
     def __init__(
         self,

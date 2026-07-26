@@ -730,6 +730,106 @@ async def test_qb_info_db_write_failure_does_not_advance_initial_or_incremental_
 
 
 @pytest.mark.asyncio
+async def test_qb_info_update_does_not_erase_good_ratio_when_payload_is_unavailable():
+    """A transient client parse failure must omit ratio columns from UPDATE."""
+    from app.api.endpoints import torrents_async
+
+    downloader = _qb_downloader()
+    torrent = _complete_qb_torrent()
+    torrent.ratio = ValueError("temporary client parse failure")
+    torrent.ratio_limit = None
+    existing = SimpleNamespace(
+        hash="abc",
+        info_id="info-1",
+        create_time=datetime(2026, 1, 1),
+        progress=75.0,
+        name="完整名称",
+        size=4096,
+        status="seeding",
+        ratio=2.5,
+        ratio_limit=3.0,
+        tags="PT",
+        category="电影",
+        save_path="/downloads",
+        super_seeding=False,
+    )
+    db = AsyncMock()
+    query_result = MagicMock()
+    query_result.all.return_value = [existing]
+    db.execute.return_value = query_result
+    bulk_mock = AsyncMock()
+
+    with (
+        patch.object(torrents_async, "QB_USE_INCREMENTAL_SYNC", False),
+        patch.object(
+            torrents_async,
+            "call_downloader_api",
+            new=AsyncMock(return_value=[torrent]),
+        ),
+        patch.object(torrents_async, "bulk_upsert_with_retry", new=bulk_mock),
+    ):
+        await torrents_async.qb_add_torrents_info_only_async(
+            db,
+            [downloader],
+            client=SimpleNamespace(torrents_info=lambda **_kwargs: None),
+        )
+
+    updates = bulk_mock.await_args.args[2]
+    assert len(updates) == 1
+    assert "ratio" not in updates[0]
+    assert "ratio_limit" not in updates[0]
+
+
+@pytest.mark.asyncio
+async def test_qb_info_update_clears_explicit_ratio_limit_sentinel():
+    """qB -2 means no explicit per-torrent numeric limit and must become NULL."""
+    from app.api.endpoints import torrents_async
+
+    downloader = _qb_downloader()
+    torrent = _complete_qb_torrent()
+    torrent.ratio_limit = -2
+    existing = SimpleNamespace(
+        hash="abc",
+        info_id="info-1",
+        create_time=datetime(2026, 1, 1),
+        progress=75.0,
+        name="完整名称",
+        size=4096,
+        status="seeding",
+        ratio=1.5,
+        ratio_limit=3.0,
+        tags="PT",
+        category="电影",
+        save_path="/downloads",
+        super_seeding=False,
+    )
+    db = AsyncMock()
+    query_result = MagicMock()
+    query_result.all.return_value = [existing]
+    db.execute.return_value = query_result
+    bulk_mock = AsyncMock()
+
+    with (
+        patch.object(torrents_async, "QB_USE_INCREMENTAL_SYNC", False),
+        patch.object(
+            torrents_async,
+            "call_downloader_api",
+            new=AsyncMock(return_value=[torrent]),
+        ),
+        patch.object(torrents_async, "bulk_upsert_with_retry", new=bulk_mock),
+    ):
+        await torrents_async.qb_add_torrents_info_only_async(
+            db,
+            [downloader],
+            client=SimpleNamespace(torrents_info=lambda **_kwargs: None),
+        )
+
+    updates = bulk_mock.await_args.args[2]
+    assert len(updates) == 1
+    assert updates[0]["ratio_limit"] is None
+
+
+@pytest.mark.asyncio
 async def test_qb_full_sync_incremental_branch_hydrates_changed_rows():
     from app.api.endpoints import torrents_async
 

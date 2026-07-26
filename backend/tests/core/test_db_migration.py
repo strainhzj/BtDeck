@@ -41,8 +41,8 @@ def _clean_database_path_env():
 
 
 # 已知的迁移链 revision（与 alembic/versions/ 保持一致，变更时同步更新）
-# 链尾：e6d8a20c41f3(operation journal) → 6132b66d14a7(ratio/ratio_limit String→Float)
-EXPECTED_HEAD = "6132b66d14a7"
+# 链尾：6132b66d14a7(String→Float) → 8f4c2d1a9b7e(数值约束/兼容修复)
+EXPECTED_HEAD = "8f4c2d1a9b7e"
 PREV_HEAD = "e6d8a20c41f3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
@@ -263,6 +263,85 @@ class TestRatioColumnMigration:
             assert rows[dirty_id] is None, f"脏值 {dirty_id} 应转 NULL，实际 {rows[dirty_id]!r}（CAST 静默转 0.0 bug）"
         assert rows["i1"] == 2.5, f"i1 正常值应保留，实际 {rows['i1']}"
         assert rows["i7"] == 10.0, f"i7 正常值应保留，实际 {rows['i7']}"
+
+    def test_upgrade_does_not_cast_arbitrary_invalid_text_to_zero(self, tmp_path):
+        """任意非法文本/非有限数必须转 NULL，不能被 SQLite CAST 成 0.0。"""
+        db_path = str(tmp_path / "strict_dirty.db")
+        cfg = _make_alembic_config(db_path)
+        command.upgrade(cfg, PREV_HEAD)
+
+        cases = {
+            "valid-space": (" 2.5 ", " 3.5 "),
+            "valid-exp": ("1e3", "2e2"),
+            "garbage": ("downloader parse failure", "garbage"),
+            "null-word": ("null", "NULL"),
+            "nan": ("NaN", "nan"),
+            "infinity": ("Infinity", "-Infinity"),
+            "overflow": ("1e309", "1e309"),
+            "negative": ("-0.1", "-3"),
+        }
+        conn = sqlite3.connect(db_path)
+        for info_id, (ratio, ratio_limit) in cases.items():
+            conn.execute(
+                "INSERT INTO torrent_info "
+                "(info_id, downloader_id, downloader_name, hash, dr, ratio, ratio_limit, has_tracker_error) "
+                "VALUES (?,?,?,?,0,?,?,0)",
+                (info_id, "d1", "q1", info_id, ratio, ratio_limit),
+            )
+        conn.commit()
+        conn.close()
+
+        command.upgrade(cfg, "head")
+
+        conn = sqlite3.connect(db_path)
+        rows = {
+            row[0]: row[1:]
+            for row in conn.execute(
+                "SELECT info_id, ratio, ratio_limit, typeof(ratio), typeof(ratio_limit) "
+                "FROM torrent_info"
+            ).fetchall()
+        }
+        conn.close()
+
+        assert rows["valid-space"] == (2.5, 3.5, "real", "real")
+        assert rows["valid-exp"] == (1000.0, 200.0, "real", "real")
+        for info_id in (
+            "garbage",
+            "null-word",
+            "nan",
+            "infinity",
+            "overflow",
+            "negative",
+        ):
+            assert rows[info_id] == (None, None, "null", "null")
+
+    def test_ratio_check_constraints_reject_raw_invalid_writes(self, tmp_path):
+        """绕过 ORM 的原始 SQL 也不能落入文本、负数或正无穷。"""
+        db_path = str(tmp_path / "ratio_checks.db")
+        cfg = _make_alembic_config(db_path)
+        command.upgrade(cfg, "head")
+
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO torrent_info "
+            "(info_id, downloader_id, downloader_name, hash, dr, ratio, ratio_limit, has_tracker_error) "
+            "VALUES ('ok','d1','q1','ok',0,0,2.5,0)"
+        )
+        conn.commit()
+        for column, invalid_sql in (
+            ("ratio", "'garbage'"),
+            ("ratio", "-1"),
+            ("ratio", "1e999"),
+            ("ratio_limit", "'garbage'"),
+            ("ratio_limit", "-2"),
+            ("ratio_limit", "1e999"),
+        ):
+            with pytest.raises(sqlite3.IntegrityError):
+                conn.execute(
+                    f"UPDATE torrent_info SET {column}={invalid_sql} WHERE info_id='ok'"
+                )
+            conn.rollback()
+        conn.close()
 
     def test_upgrade_preserves_partial_unique_index(self, tmp_path):
         """batch_alter 重建表后 partial unique index（含 WHERE dr=0）应保留。"""
