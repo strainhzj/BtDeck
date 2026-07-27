@@ -294,6 +294,19 @@
           {{ selectedItems.length }}
         </span>
         <LucideIcon name="sliders-horizontal" :size="14" class="ams__trigger-icon" />
+        <span
+          v-if="selectedItems.length > 0"
+          role="button"
+          tabindex="0"
+          class="ams__trigger-clear"
+          aria-label="清空已选条件值"
+          title="清空"
+          @click.stop.prevent="clearSelected"
+          @keypress.enter.prevent="clearSelected"
+          @keypress.space.prevent="clearSelected"
+        >
+          <LucideIcon name="x" :size="14" />
+        </span>
       </button>
     </el-popover>
   </div>
@@ -846,6 +859,33 @@ export default class AdvancedMultiSelect extends Vue {
   flex-shrink: 0;
   margin-left: 7px;
   color: var(--color-text-tertiary, #9ca3af);
+}
+
+// trigger 内常驻清空按钮:仅在有选中项时渲染(v-if),无需点开浮层即可清空。
+// 用 span+role="button" 而非 <button>,避免与 trigger(<button>)形成 button 嵌套(违反 HTML 规范)。
+// @click.stop 阻断冒泡到外层 el-popover 的 trigger="click",防止清空时误开浮层。
+.ams__trigger-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-full, 9999px);
+  background: transparent;
+  color: var(--color-text-tertiary, #9ca3af);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all var(--transition-base, 200ms);
+
+  &:hover,
+  &:focus {
+    color: var(--color-error, #ef4444);
+    background: rgba(var(--color-error-rgb, 239, 68, 68), 0.08);
+    outline: none;
+  }
 }
 
 .ams__panel {

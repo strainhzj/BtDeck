@@ -364,6 +364,38 @@ describe('AdvancedMultiSelect组件', () => {
       expect(wrapper.find('.ams__trigger-count').text()).toBe('2')
     })
 
+    it('trigger 常驻清空按钮:有值时可清空、不打开浮层、无值时不渲染', async() => {
+      // 无选中项时不渲染清空按钮
+      expect(wrapper.find('.ams__trigger-clear').exists()).toBe(false)
+
+      // 选中两项
+      wrapper.vm.toggleOption(mockOptions[0])
+      wrapper.vm.toggleOption(mockOptions[1])
+      await wrapper.vm.$nextTick()
+
+      const clearBtn = wrapper.find('.ams__trigger-clear')
+      expect(clearBtn.exists()).toBe(true)
+      expect(clearBtn.attributes('aria-label')).toBe('清空已选条件值')
+
+      // 确保浮层处于关闭态,验证 .stop 是否真能阻止 popover toggle
+      wrapper.setData({ panelVisible: false })
+
+      await clearBtn.trigger('click')
+
+      // 清空生效
+      expect(wrapper.vm.selectedItems).toHaveLength(0)
+      // @click.stop 阻断了外层 el-popover 的 trigger="click",浮层未被打开
+      expect(wrapper.vm.panelVisible).toBe(false)
+      // 向上 emit 的载荷正确清空
+      const inputEvents = wrapper.emitted('input')
+      expect(inputEvents?.[inputEvents.length - 1][0]).toEqual([])
+      const changeEvents = wrapper.emitted('change')
+      expect(changeEvents?.[changeEvents.length - 1][0]).toMatchObject({
+        values: [],
+        count: 0
+      })
+    })
+
     it('已选区应前置渲染（在选项列表之前）', () => {
       // 已选区与选项列表都应存在；且已选区在 DOM 序中先于选项列表
       const selected = wrapper.find('.ams__selected')
