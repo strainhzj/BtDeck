@@ -82,6 +82,52 @@ describe('ConditionValueInput 字段选项透传', () => {
     wrapper.destroy()
   })
 
+  // tags / category / downloader_name 三个字段共用同一段 multiSelect 模板，
+  // 同一个回写 bug 也同时影响它们，故参数化覆盖三者。
+  it.each([
+    ['tags', 'contains_any', tagOptions, 'tag1'],
+    ['category', 'in', categoryOptions, 'movie'],
+    ['downloader_name', 'in', categoryOptions, 'movie']
+  ] as const)(
+    'multiSelect 选择后 inputValue 被正确回写并向上 emit（field=%s）',
+    async(field, operator, options, pickValue) => {
+      // 回归保护：原先 multiSelect 分支用 :value + @input 绑定，而 handleInput()
+      // 丢弃子组件 emit 的 input 载荷，直接 emitChange() 把旧的空数组往上抛，
+      // 导致下一 tick watcher 把 selectedItems 重置为空（点击无反应、不报错）。
+      // 改用 v-model 后，子组件 input 载荷会自动回写 inputValue，链条修复。
+      const wrapper = shallowMount(ConditionValueInput, {
+        localVue,
+        propsData: {
+          field,
+          operator,
+          value: [],
+          fieldOptions: options
+        },
+        stubs: {
+          'advanced-multi-select': AdvancedMultiSelect
+        }
+      })
+      const vm = wrapper.vm as unknown as ConditionValueInputVm
+      const multi = wrapper.findComponent(AdvancedMultiSelect)
+
+      // 模拟真实点击：AdvancedMultiSelect 选中某项后 emitValue 会先 emit('input', values)
+      // 再 emit('change', {...})。v-model 借 input 载荷回写 inputValue，change 触发向上 emit。
+      multi.vm.$emit('input', [pickValue])
+      multi.vm.$emit('change', { values: [pickValue], mode: 'include', count: 1 })
+      await wrapper.vm.$nextTick()
+
+      // inputValue 应被回写为新值（而非被旧空数组覆盖重置）——这是 bug 的核心回归点
+      expect(vm.inputValue).toEqual([pickValue])
+      // 向父级 emit 的最后一个 input / change 事件载荷应携带选中的值
+      const inputEvents = wrapper.emitted('input')
+      const changeEvents = wrapper.emitted('change')
+      expect(inputEvents?.[inputEvents.length - 1][0]).toEqual([pickValue])
+      expect(changeEvents?.[changeEvents.length - 1][0]).toEqual([pickValue])
+
+      wrapper.destroy()
+    }
+  )
+
   it('空 fieldOptions 时 select 与 multiSelect 分支均不崩溃', () => {
     // select 空选项（用 status 字段——它仍是 select 类型）
     const selectWrapper = mount(ConditionValueInput, {

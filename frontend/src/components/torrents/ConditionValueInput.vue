@@ -246,13 +246,12 @@
       class="multi-select-input"
     >
       <AdvancedMultiSelect
+        v-model="inputValue"
         :options="fieldOptions"
-        :value="inputValue"
         :allow-create="true"
         :virtual-scroll-threshold="100"
         :list-height="200"
         :show-advanced="true"
-        @input="handleInput"
         @change="handleChange"
       />
     </div>
