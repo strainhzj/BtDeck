@@ -6,7 +6,7 @@
 
 | 模块 | 文件数 | 总行数 | 主入口 | 范式 |
 |------|--------|--------|--------|------|
-| torrents | 20 | 11,143 | `index.vue`（2,539 行） | class-component（全部） |
+| torrents | 20 | 11,135 | `index.vue`（2,504 行） | class-component（全部） |
 | downloader | 14 | 8,409 | `index.vue`（824 行） | class-component（全部） |
 | tracker | 12 | 5,357 | 4 个并列页面 | class-component（11）+ ⚠ 1 Options API |
 | tasks | 1 | 2,419 | `index.vue` | class-component |
@@ -25,8 +25,8 @@
 
 | 文件 | 行数 | 范式 | 一句话职责 |
 |------|------|------|-----------|
-| `index.vue` | 2539 | class（`TorrentsManagement`，L642 `@Component`，L656 `extends mixins(TorrentBatchMixin)`） | 种子管理主入口（列表模式） |
-| `TraditionalView.vue` | 2557 | class（L847 `extends mixins(TorrentBatchMixin)`） | 传统表格视图 |
+| `index.vue` | 2504 | class（`TorrentsManagement`，L652 `@Component`，L666 `extends mixins(TorrentBatchMixin)`） | 种子管理主入口（列表模式）；高级搜索标题在 v1.0.6.29 收紧为 16px 图标 + 15px 文字 |
+| `TraditionalView.vue` | 2561 | class（L847 `extends mixins(TorrentBatchMixin)`） | 传统表格视图 |
 | `TorrentViewSwitcher.vue` | 106 | class | 视图模式切换器（列表/传统） |
 | `FileManagement.vue` | 812 | class（L312 `extends Vue`） | 种子文件管理（选择/优先级） |
 | `components/TorrentAddDialog.vue` | 801 | class | 添加种子对话框 |
@@ -113,4 +113,4 @@
 
 ## 第三层详情
 
-- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2539 行主入口、`TraditionalView.vue` 2557 行）
+- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2504 行主入口、`TraditionalView.vue` 2561 行）

@@ -347,6 +347,23 @@ describe('AdvancedMultiSelect组件', () => {
   })
 
   describe('重塑后 UI 行为测试', () => {
+    it('默认应渲染紧凑触发器而不是把选择面板撑开条件行', () => {
+      const trigger = wrapper.find('.ams__trigger')
+
+      expect(trigger.exists()).toBe(true)
+      expect(trigger.attributes('aria-haspopup')).toBe('listbox')
+      expect(trigger.find('.ams__trigger-label').text()).toBe('请选择')
+      expect(wrapper.vm.panelVisible).toBe(false)
+    })
+
+    it('紧凑触发器应展示首个选项与选中数量', async() => {
+      wrapper.setProps({ value: [1, 2] })
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('.ams__trigger-label').text()).toBe('选项1 等 2 项')
+      expect(wrapper.find('.ams__trigger-count').text()).toBe('2')
+    })
+
     it('已选区应前置渲染（在选项列表之前）', () => {
       // 已选区与选项列表都应存在；且已选区在 DOM 序中先于选项列表
       const selected = wrapper.find('.ams__selected')

@@ -1,5 +1,16 @@
 <template>
   <div class="advanced-multi-select">
+    <el-popover
+      v-model="panelVisible"
+      class="ams__popover"
+      placement="bottom-start"
+      trigger="click"
+      :width="420"
+      :visible-arrow="false"
+      popper-class="ams__dropdown-popper"
+      @show="handlePanelShow"
+    >
+      <div class="ams__panel">
     <!-- 顶部：搜索 / 创建二合一（玻璃拟态） -->
     <div class="ams__search">
       <div class="ams__search-box">
@@ -8,6 +19,7 @@
           v-model="searchKeyword"
           class="ams__search-input"
           placeholder="搜索选项..."
+          size="small"
           ref="searchInput"
           @input="handleSearch"
           @keyup.enter.native="handleCreateNewOption"
@@ -195,6 +207,7 @@
         width="320"
         trigger="click"
         v-model="pastePopoverVisible"
+        :append-to-body="false"
       >
         <div class="ams__paste">
           <div class="ams__paste-title">批量粘贴</div>
@@ -227,6 +240,7 @@
         placement="top"
         width="280"
         trigger="click"
+        :append-to-body="false"
       >
         <div class="ams__advanced">
           <div class="ams__advanced-row">
@@ -258,6 +272,30 @@
         </button>
       </el-popover>
     </div>
+      </div>
+
+      <button
+        slot="reference"
+        type="button"
+        class="ams__trigger"
+        :class="{'is-open': panelVisible, 'has-value': selectedItems.length > 0}"
+        :aria-expanded="panelVisible ? 'true' : 'false'"
+        aria-haspopup="listbox"
+        aria-label="选择多个条件值"
+        :title="triggerLabel"
+      >
+        <span
+          class="ams__trigger-label"
+          :class="{'is-placeholder': selectedItems.length === 0}"
+        >
+          {{ triggerLabel }}
+        </span>
+        <span v-if="selectedItems.length > 0" class="ams__trigger-count">
+          {{ selectedItems.length }}
+        </span>
+        <LucideIcon name="sliders-horizontal" :size="14" class="ams__trigger-icon" />
+      </button>
+    </el-popover>
   </div>
 </template>
 
@@ -307,6 +345,7 @@ export default class AdvancedMultiSelect extends Vue {
   maxVisibleItems = 1000
   customSeparators = ''
   pastePopoverVisible = false
+  panelVisible = false
 
   // 性能优化相关（测试钉死，必须保留字段名）
   searchDebounceTimer = 0
@@ -363,6 +402,17 @@ export default class AdvancedMultiSelect extends Vue {
     return this.allowCreate && !!this.searchKeyword.trim() && !this.optionExists(this.searchKeyword.trim())
   }
 
+  get triggerLabel(): string {
+    if (this.selectedItems.length === 0) {
+      return '请选择'
+    }
+
+    const firstLabel = this.getSelectedLabel(this.selectedItems[0])
+    return this.selectedItems.length === 1
+      ? firstLabel
+      : `${firstLabel} 等 ${this.selectedItems.length} 项`
+  }
+
   // Watchers
   @Watch('value', { immediate: true, deep: true })
   onValueChange(newVal: (string | number)[]) {
@@ -403,6 +453,15 @@ export default class AdvancedMultiSelect extends Vue {
 
   private updateVirtualScrollStatus() {
     this.useVirtualScroll = this.options.length >= this.virtualScrollThreshold
+  }
+
+  handlePanelShow() {
+    this.$nextTick(() => {
+      const searchInput = this.$refs.searchInput as Vue & { focus?: () => void }
+      if (searchInput && typeof searchInput.focus === 'function') {
+        searchInput.focus()
+      }
+    })
   }
 
   private getAllSeparators(): string[] {
@@ -554,6 +613,7 @@ export default class AdvancedMultiSelect extends Vue {
   handleEscapeKey(event: KeyboardEvent) {
     this.highlightedIndex = -1
     this.searchKeyword = ''
+    this.panelVisible = false
     event.preventDefault()
   }
 
@@ -707,10 +767,90 @@ export default class AdvancedMultiSelect extends Vue {
 // ============================================================
 
 .advanced-multi-select {
-  border: 1px solid var(--color-border-primary, #e5e7eb);
-  border-radius: var(--radius-xl, 16px);
+  width: 100%;
+  min-width: 0;
+}
+
+.ams__popover {
+  display: block;
+  width: 100%;
+
+  ::v-deep .el-popover__reference-wrapper {
+    display: block;
+    width: 100%;
+  }
+}
+
+// 默认态与 Element UI small 控件同高，完整选择能力收纳到浮层中。
+.ams__trigger {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--color-border-primary, #dcdfe6);
+  border-radius: var(--radius-sm, 4px);
+  background: var(--color-bg-primary, #fff);
+  color: var(--color-text-primary, #1f2937);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1;
+  box-sizing: border-box;
+  cursor: pointer;
+  transition: border-color var(--transition-fast, 150ms), box-shadow var(--transition-fast, 150ms);
+
+  &:hover {
+    border-color: var(--color-primary-light, #10b981);
+  }
+
+  &:focus-visible,
+  &.is-open {
+    outline: none;
+    border-color: var(--color-primary, #059669);
+    box-shadow: 0 0 0 2px var(--color-primary-lightest, #d1fae5);
+  }
+}
+
+.ams__trigger-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &.is-placeholder {
+    color: var(--color-text-tertiary, #9ca3af);
+  }
+}
+
+.ams__trigger-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: var(--radius-full, 9999px);
+  background: rgba(var(--color-primary-rgb, 5, 150, 105), 0.1);
+  color: var(--color-primary, #059669);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  box-sizing: border-box;
+}
+
+.ams__trigger-icon {
+  flex-shrink: 0;
+  margin-left: 7px;
+  color: var(--color-text-tertiary, #9ca3af);
+}
+
+.ams__panel {
+  border-radius: var(--radius-lg, 12px);
   background-color: var(--color-bg-primary, #fff);
-  box-shadow: var(--shadow-md, 0 4px 6px -1px rgba(0, 0, 0, 0.1));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -718,15 +858,15 @@ export default class AdvancedMultiSelect extends Vue {
 
 // ---- 顶部搜索框 ----
 .ams__search {
-  padding: var(--spacing-md, 16px) var(--spacing-md, 16px) var(--spacing-sm, 8px);
+  padding: 10px 10px 6px;
 
   .ams__search-box {
     position: relative;
     display: flex;
     align-items: center;
-    gap: var(--spacing-sm, 8px);
-    padding: 8px 12px;
-    border-radius: var(--radius-lg, 12px);
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: var(--radius-md, 8px);
     background: var(--glass-bg, rgba(255, 255, 255, 0.85));
     border: 1px solid var(--color-border-primary, #e5e7eb);
     backdrop-filter: blur(var(--glass-blur, 12px));
@@ -754,10 +894,12 @@ export default class AdvancedMultiSelect extends Vue {
     // 融入外层玻璃框：去掉 el-input 自带边框/背景
     ::v-deep {
       .el-input__inner {
+        height: 26px;
+        line-height: 26px;
         border: none;
         background: transparent;
         padding: 0;
-        font-size: 14px;
+        font-size: 13px;
         color: var(--color-text-primary, #1f2937);
         font-family: inherit;
 
@@ -773,12 +915,12 @@ export default class AdvancedMultiSelect extends Vue {
     align-items: center;
     gap: 4px;
     flex-shrink: 0;
-    padding: 4px 10px;
+    padding: 3px 8px;
     border: none;
     border-radius: var(--radius-full, 9999px);
     background: linear-gradient(135deg, var(--color-primary, #059669), var(--color-primary-light, #10b981));
     color: #fff;
-    font-size: 12px;
+    font-size: 11px;
     cursor: pointer;
     box-shadow: var(--shadow-sm, 0 1px 3px rgba(0, 0, 0, 0.1));
     transition: transform var(--transition-base, 200ms), box-shadow var(--transition-base, 200ms);
@@ -792,19 +934,19 @@ export default class AdvancedMultiSelect extends Vue {
 
 // ---- 已选区（前置） ----
 .ams__selected {
-  padding: 0 var(--spacing-md, 16px) var(--spacing-sm, 8px);
+  padding: 0 10px 6px;
 }
 
 .ams__selected-bar {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
-  margin-bottom: 8px;
+  gap: 6px;
+  margin-bottom: 6px;
 }
 
 .ams__mode-pill {
   display: inline-flex;
-  padding: 3px;
+  padding: 2px;
   border-radius: var(--radius-full, 9999px);
   background: var(--color-bg-tertiary, #f3f4f6);
   border: 1px solid var(--color-border-primary, #e5e7eb);
@@ -818,13 +960,13 @@ export default class AdvancedMultiSelect extends Vue {
 .ams__mode-option {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
+  gap: 3px;
+  padding: 3px 8px;
   border: none;
   background: transparent;
   border-radius: var(--radius-full, 9999px);
   color: var(--color-text-secondary, #6b7280);
-  font-size: 12px;
+  font-size: 11px;
   cursor: pointer;
   transition: all var(--transition-base, 200ms);
 
@@ -850,7 +992,7 @@ export default class AdvancedMultiSelect extends Vue {
   margin-left: auto;
 
   .ams__selected-count {
-    font-size: 18px;
+    font-size: 14px;
     font-weight: 600;
     line-height: 1;
     background: linear-gradient(135deg, var(--color-primary, #059669), var(--color-primary-light, #10b981));
@@ -903,9 +1045,9 @@ export default class AdvancedMultiSelect extends Vue {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 4px 4px 10px;
+  padding: 3px 3px 3px 8px;
   border-radius: var(--radius-full, 9999px);
-  font-size: 12px;
+  font-size: 11px;
   background: rgba(var(--color-primary-rgb, 5, 150, 105), 0.1);
   color: var(--color-primary, #059669);
   border: 1px solid rgba(var(--color-primary-rgb, 5, 150, 105), 0.2);
@@ -958,14 +1100,14 @@ export default class AdvancedMultiSelect extends Vue {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  max-height: 220px;
+  max-height: 190px;
   border-top: 1px solid var(--color-border-secondary, #f3f4f6);
   border-bottom: 1px solid var(--color-border-secondary, #f3f4f6);
-  margin: var(--spacing-sm, 8px) 0;
+  margin: 6px 0;
 }
 
 .ams__normal-list {
-  max-height: 200px;
+  max-height: 184px;
   overflow-y: auto;
   padding: 4px 0;
 }
@@ -973,8 +1115,8 @@ export default class AdvancedMultiSelect extends Vue {
 .ams__option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
+  gap: 7px;
+  padding: 6px 12px;
   cursor: pointer;
   position: relative;
   transition: background var(--transition-fast, 150ms), padding-left var(--transition-base, 200ms);
@@ -1008,8 +1150,8 @@ export default class AdvancedMultiSelect extends Vue {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     border: 1.5px solid var(--color-border-primary, #e5e7eb);
     border-radius: var(--radius-sm, 4px);
     flex-shrink: 0;
@@ -1024,7 +1166,7 @@ export default class AdvancedMultiSelect extends Vue {
 
   .ams__option-label {
     flex: 1;
-    font-size: 13px;
+    font-size: 12px;
     color: var(--color-text-primary, #1f2937);
   }
 
@@ -1049,7 +1191,7 @@ export default class AdvancedMultiSelect extends Vue {
   flex-direction: column;
   align-items: center;
   gap: 8px;
-  padding: 32px 16px;
+  padding: 24px 12px;
   color: var(--color-text-tertiary, #9ca3af);
   font-size: 12px;
 }
@@ -1059,7 +1201,7 @@ export default class AdvancedMultiSelect extends Vue {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: var(--spacing-sm, 8px) var(--spacing-md, 16px) var(--spacing-md, 16px);
+  padding: 6px 10px 10px;
   flex-wrap: wrap;
 }
 
@@ -1067,8 +1209,8 @@ export default class AdvancedMultiSelect extends Vue {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 28px;
+  height: 28px;
   border: 1px solid var(--color-border-primary, #e5e7eb);
   background: var(--color-bg-primary, #fff);
   border-radius: var(--radius-md, 8px);
@@ -1218,5 +1360,18 @@ export default class AdvancedMultiSelect extends Vue {
 .ams-chip-leave-to {
   opacity: 0;
   transform: scale(0.6);
+}
+</style>
+
+<style lang="scss">
+// el-popover 会挂载到 body；使用唯一 popper class 控制浮层外壳，避免影响其他弹层。
+.ams__dropdown-popper.el-popover {
+  max-width: calc(100vw - 32px);
+  padding: 0;
+  border: 1px solid var(--color-border-primary, #e5e7eb);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--color-bg-primary, #fff);
+  box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
+  box-sizing: border-box;
 }
 </style>

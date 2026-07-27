@@ -253,6 +253,7 @@
     <div class="add-group">
       <el-button
         type="primary"
+        size="small"
         icon="el-icon-plus"
         @click="addConditionGroup"
       >
@@ -264,6 +265,7 @@
     <div class="search-actions">
       <el-button
         type="success"
+        size="small"
         icon="el-icon-search"
         @click="onSearch"
         :loading="searching"
@@ -271,18 +273,21 @@
         执行搜索
       </el-button>
       <el-button
+        size="small"
         icon="el-icon-document"
         @click="saveSearchTemplate"
       >
         保存为模板
       </el-button>
       <el-button
+        size="small"
         icon="el-icon-refresh-left"
         @click="resetConditions"
       >
         重置条件
       </el-button>
       <el-button
+        size="small"
         icon="el-icon-view"
         @click="previewSearchQuery"
       >
@@ -1120,13 +1125,24 @@ export default class AdvancedSearchBuilder extends Vue {
 
 <style lang="scss" scoped>
 .advanced-search-builder {
+  font-size: 13px;
+
+  ::v-deep {
+    .el-input__inner,
+    .el-radio-button__inner,
+    .el-button,
+    .el-tag {
+      font-size: 12px;
+    }
+  }
+
   .condition-groups {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
 
   .condition-group {
-    margin-bottom: 16px;
-    padding: 16px;
+    margin-bottom: 12px;
+    padding: 12px;
     border: 1px solid #e4e7ed;
     border-radius: 8px;
     background-color: #fafafa;
@@ -1136,12 +1152,13 @@ export default class AdvancedSearchBuilder extends Vue {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
       border-bottom: 1px solid #ebeef5;
 
       .group-title {
         font-weight: 600;
+        font-size: 13px;
         color: #303133;
         display: flex;
         align-items: center;
@@ -1167,8 +1184,8 @@ export default class AdvancedSearchBuilder extends Vue {
     .group-logic-settings {
       display: flex;
       align-items: center;
-      margin-bottom: 12px;
-      padding: 8px 12px;
+      margin-bottom: 10px;
+      padding: 6px 10px;
       background-color: #f0f9ff;
       border: 1px solid #bfdbfe;
       border-radius: 6px;
@@ -1184,9 +1201,9 @@ export default class AdvancedSearchBuilder extends Vue {
       .condition-item {
         display: flex;
         align-items: flex-start;
-        gap: 12px;
-        margin-bottom: 12px;
-        padding: 12px;
+        gap: 8px;
+        margin-bottom: 8px;
+        padding: 8px;
         background-color: #fff;
         border: 1px solid #ebeef5;
         border-radius: 6px;
@@ -1214,7 +1231,7 @@ export default class AdvancedSearchBuilder extends Vue {
           display: flex;
           align-items: center;
           width: 100%;
-          gap: 12px;
+          gap: 8px;
         }
 
         .condition-field,
@@ -1263,21 +1280,21 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   .add-group {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     text-align: center;
 
     .el-button {
-      padding: 12px 24px;
-      border-radius: 8px;
+      padding: 9px 18px;
+      border-radius: 6px;
       font-weight: 500;
     }
   }
 
   .search-actions {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     justify-content: flex-end;
-    padding-top: 16px;
+    padding-top: 12px;
     border-top: 1px solid #e4e7ed;
 
     .el-button {

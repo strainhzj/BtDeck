@@ -90,10 +90,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-26（增量更新：v1.0.6.25~28） |
-| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；本次为对 v1.0.6.25~28 五次提交（ratio 治本迁移、高级搜索契约化、Lucide 图标基础设施、Dockerfile 镜像源参数化）的增量同步 |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-27（增量更新：v1.0.6.25~29） |
+| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~29 增量同步（含高级搜索契约化、Lucide 基础设施与视觉密度修正） |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层样例（1 个：torrent_crud.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | `backend/contracts/README.md`（新分支）；更新 services/core/api/infra/tests/deploy/risks/architecture 共 11 个文件 |
+| 本次新增 | v1.0.6.29 更新前端 views/components 路线图：高级多选改为 32px 紧凑触发器 + 浮层，相关行数与测试统计同步 |

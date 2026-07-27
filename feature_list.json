@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-26",
+  "last_updated": "2026-07-27",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -50,6 +50,20 @@
             "frontend/src/views/torrents/index.vue"
           ],
           "evidence": "title=\"🔍 高级搜索\" → 去 title 属性 + <template slot=\"title\">（仓库既有约定，与 NotificationDrawer/BatchOperationDialog 一致，非 #title）放 <LucideIcon name=\"sliders-horizontal\" :size=\"18\"/> + 高级搜索文案。TraditionalView.vue:704 同型 emoji 不在本次范围（页面级 emoji 清理列为后续独立任务）。无测试 mount index.vue 或断言标题字符串，零回归。"
+        },
+        {
+          "id": "advanced-search-ui-revamp.4",
+          "name": "高级搜索视觉密度与多选条件行高修正",
+          "description": "将 AdvancedMultiSelect 从条件行内常驻的大型面板改为与 Element UI small 控件一致的 32px 紧凑触发器，完整搜索/已选/选项/快捷操作收纳到点击浮层；同步缩小高级搜索标题、表单控件文字和组/条件间距，不改搜索协议、数据状态或事件载荷。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/AdvancedMultiSelect.vue",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/components/torrents/__tests__/AdvancedMultiSelect.spec.ts",
+            "frontend/src/views/torrents/index.vue"
+          ],
+          "evidence": "AdvancedMultiSelect 默认态固定 32px，高级面板由 el-popover 按需显示；触发器提供首项摘要、选中数量、aria-haspopup/expanded，打开后自动聚焦搜索，Esc 关闭。新增 2 个紧凑触发器回归用例，目标组件测试 4 suites/70 tests 全绿；全量 Vue ESLint 0 error、tsc --noEmit、Vuex action lint、生产 build 通过（48 条既有 Sass/体积 warning）。npm run lint 的 contract:check 因本次开始前已存在的 advancedSearch.generated.ts 漂移在 ESLint 前失败，本任务未改契约文件。"
         }
       ]
     },

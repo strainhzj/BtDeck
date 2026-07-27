@@ -576,7 +576,7 @@
     >
       <template slot="title">
         <span class="advanced-search-dialog__title">
-          <LucideIcon name="sliders-horizontal" :size="18" />
+          <LucideIcon name="sliders-horizontal" :size="16" />
           <span>高级搜索</span>
         </span>
       </template>
@@ -2147,6 +2147,16 @@ export default class extends mixins(TorrentBatchMixin) {
 
 <style lang="scss" scoped>
 @import '@/styles/torrent-theme.scss';
+
+.advanced-search-dialog__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+}
 
 // ========================================
 // 视图切换器样式

@@ -36,16 +36,16 @@
 
 | 文件 | 行数 | 范式 | 一句话职责 |
 |------|------|------|-----------|
-| `AdvancedSearchBuilder.vue` | 1356 | class（`AdvancedSearchBuilder`） | 高级搜索条件构建器；v1.0.6.28 起标签选择器重塑（用 `AdvancedMultiSelect` + `LucideIcon`）；状态逻辑抽取到 `advancedSearchState.ts`（行数 1533→1356） |
+| `AdvancedSearchBuilder.vue` | 1373 | class（`AdvancedSearchBuilder`） | 高级搜索条件构建器；v1.0.6.29 收紧正文/控件字号、组与条件间距，底部动作统一 small；状态逻辑位于 `advancedSearchState.ts` |
 | `ConditionValueInput.vue` | 837 | class（`ConditionValueInput`） | 搜索条件值输入（按字段类型切换控件）；v1.0.6.28 起接入新的多选/标签控件（行数 1007→837） |
-| `AdvancedMultiSelect.vue` | 1222 | class（`AdvancedMultiSelect`） | 高级多选下拉（搜索/分组）；v1.0.6.28 起全面重塑：虚拟滚动 + 分组 + 高亮 + Lucide 图标（行数 908→1222） |
+| `AdvancedMultiSelect.vue` | 1377 | class（`AdvancedMultiSelect`） | 高级多选下拉；v1.0.6.29 改为 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标 |
 | `advancedSearchState.ts` ✨v1.0.6.28 | 674 | class-based store（无 .vue） | 高级搜索可复用状态/纯逻辑（从组件抽取的可单测模块，减少组件体积、便于复用到传统视图） |
 | `CompactTable.vue` | 838 | ⚠ **Options API**（L301 `export default {`，`CompactTable`） | 紧凑表格视图 |
 | `DuplicateTorrentsDialog.vue` | 404 | class | 重复种子检测对话框 |
 | `SizeRangeFilter.vue` | 358 | class（`SizeRangeFilter`） | 种子大小范围过滤器 |
 | `VirtualScrollList.vue` | 242 | class（`VirtualScrollList`） | 虚拟滚动列表 |
 | `FilterGroup.vue` | 90 | class（`FilterGroup`） | 过滤条件组容器 |
-| `__tests__/*.spec.ts`（4 个） | 1604 总 | 测试 | AdvancedMultiSelect（性能 466 + 单元 386）/ AdvancedSearchBuilder（609）/ ConditionValueInput（143）单测 |
+| `__tests__/*.spec.ts`（4 个） | 1621 总 | 测试 | AdvancedMultiSelect（性能 466 + 单元 403）/ AdvancedSearchBuilder（609）/ ConditionValueInput（143）单测 |
 
 > ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。
 
@@ -86,8 +86,8 @@
 
 - **范式分布**：本分支 27 个文件中，26 个为 class-component；`components/torrents/CompactTable.vue` 是唯一的 Options API（全仓库 3 处之一）
 - **Monaco Editor 双版本**：`components/MonacoEditor.vue`（通用）与 `components/tasks/MonacoEditor.vue`（任务专用，含 Python 高亮）
-- **测试覆盖**：`components/torrents/__tests__/` 有 4 个测试文件（1484 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / ConditionValueInput
+- **测试覆盖**：`components/torrents/__tests__/` 有 4 个测试文件（1621 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / ConditionValueInput
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`CronEditor.vue` 1269 行、`AdvancedSearchBuilder.vue` 1533 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`CronEditor.vue` 1269 行、`AdvancedSearchBuilder.vue` 1373 行）

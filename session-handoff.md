@@ -1,5 +1,35 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-27 交接：高级搜索视觉密度与多选条件行高修正
+
+**当前任务**: `advanced-search-ui-revamp.4`
+**版本记录**: `v1.0.6.29`
+**分支**: dev
+**状态**: 实现、组件回归、静态检查和生产构建完成；尚未提交。
+
+### 关键结果
+
+- 高级多选默认态由常驻大型面板改为 32px 紧凑触发器，与字段/操作符的 `size="small"` 控件等高；完整多选功能在点击浮层中保留。
+- 触发器显示首项摘要与选中数量，并补齐焦点、ARIA、自动聚焦搜索及 Esc 关闭行为。
+- 高级搜索构建器正文/控件字号与组、条件、操作区间距整体收紧；种子列表高级搜索标题改为 16px 图标 + 15px 文字。
+- 搜索协议、状态结构、公共 props、虚拟滚动及 `input/change` 事件载荷均未改变。
+
+### 验证
+
+- 高级搜索组件集：4 suites / 70 tests 全绿（新增 2 个紧凑触发器用例）。
+- 全量 Vue ESLint 0 error、`tsc --noEmit`、Vuex action lint、生产 build 通过。
+- build 保留 48 条既有 Sass/体积 warning；`git diff --check` 通过。
+- 根 `init.sh` 在 Git Bash 下退出 0，识别 Node v18.20.8 / npm 10.8.2。
+- 完整 `npm run lint` 的 `contract:check` 命中任务开始前已有的生成契约漂移；本任务不涉及协议，未更新该无关文件。
+
+### 当前工作区
+
+- 本轮共修改 10 个文件：4 个前端实现/测试文件、3 个项目记录文件、3 个 roadmap 文件。
+- 未执行 Git commit/push；既有 6 个未跟踪工具目录保持不动。
+- `package.json` 与 `package-lock.json` 无变更；仅在 `node_modules` 补齐 lockfile 已声明的 lucide。
+
+---
+
 ## 2026-07-26 交接：最近三次提交红队加固实施（v1.0.6.27）
 
 **当前任务**: `v1.0.6.27`

@@ -1,5 +1,49 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-27 - 高级搜索视觉密度与多选条件行高修正
+
+**任务 ID**: `advanced-search-ui-revamp.4`
+**版本记录**: `v1.0.6.29`
+**分支**: dev
+**范围**: 仅前端。调整种子列表高级搜索对话框的文字比例、间距和多选控件呈现，不改搜索逻辑与前后端协议。
+
+### 起因与根因
+
+- 用户反馈高级搜索对话框文字比例偏大，标签控件高度显著高于同一条件行，破坏视觉对齐。
+- 通过 `docs/roadmap/` 定位调用链：`views/torrents/index.vue` → `AdvancedSearchBuilder.vue` → `ConditionValueInput.vue` → `AdvancedMultiSelect.vue`。
+- 根因是 v1.0.6.28 重塑后的 `AdvancedMultiSelect` 把搜索框、已选区、选项列表和快捷操作整块常驻在条件值区域，其他 `size="small"` 控件为 32px，而多选条件会把整行撑到数百像素。
+
+### 实现
+
+- `AdvancedMultiSelect.vue`：默认态改为固定 32px 的紧凑触发器，与 Element UI small 控件等高；完整选择面板收纳进 `el-popover`，点击后浮出。
+- 触发器显示首个选项摘要与选中数量，保留主题 token、悬停/焦点反馈，并补 `aria-haspopup`、`aria-expanded`、可见标题；打开面板自动聚焦搜索，Esc 清空搜索并关闭。
+- 内层批量粘贴/高级设置 popover 禁止挂载到 body，避免点击嵌套浮层时误关闭外层选择面板。
+- 面板字号按 10/11/12/13/14 的层级收紧，缩小搜索框、胶囊、chip、选项、计数和快捷按钮间距；所有选择、创建、虚拟滚动和事件载荷保持不变。
+- `AdvancedSearchBuilder.vue`：表单正文统一 13px，Element 控件文字 12px；组、条件和操作区间距收紧，底部动作按钮统一 `size="small"`。
+- `views/torrents/index.vue`：高级搜索标题图标 18→16px、标题文字 15px。
+- `AdvancedMultiSelect.spec.ts`：新增 2 个回归用例，锁定紧凑触发器默认态及首项/数量摘要。
+
+### 验证
+
+| 验证项 | 结果 |
+|---|---|
+| 目标组件测试 | ✅ 4 suites / 70 tests |
+| 新增紧凑触发器用例 | ✅ 2/2 |
+| 全量 Vue ESLint | ✅ 0 error / 0 warning |
+| TypeScript `tsc --noEmit` | ✅ 通过 |
+| Vuex action lint | ✅ 通过 |
+| 生产构建 | ✅ 通过；48 条既有 Sass/资源体积 warning |
+| 根 `init.sh`（Git Bash） | ✅ 退出 0；识别 Node v18.20.8 / npm 10.8.2 |
+| `git diff --check` | ✅ 通过 |
+
+### 已知基线与边界
+
+- 完整 `npm run lint` 在第一步 `contract:check` 被本次开始前已存在的 `advancedSearch.generated.ts` 漂移拦截；本任务未修改高级搜索协议或生成契约，因此没有把无关生成结果混入 UI 变更。其后的 Vue ESLint、TypeScript 和 Vuex 门禁均已分别通过。
+- `npm install --ignore-scripts` 仅按现有 lockfile 补齐缺失的 `lucide` 包，`package.json`/`package-lock.json` 无变更；审计输出的 72 项依赖漏洞为现有依赖树状态，未执行越界的 `npm audit fix`。
+- 本轮未执行 Git 提交；会话开始前已有的 `.agents/`、`.claude/`、`.code-graph/`、`.codex/`、`.spec-workflow/`、`.zcode/` 未跟踪目录保持不动。
+
+---
+
 ## 2026-07-26 - 高级搜索标签选择器重塑（Lucide + 设计系统对齐）
 
 **任务 ID**: `v1.0.6.28`
