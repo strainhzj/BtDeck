@@ -396,6 +396,48 @@ describe('AdvancedMultiSelect组件', () => {
       })
     })
 
+    it('清空按钮支持键盘 Enter/Space 触发并具备 a11y 属性', async() => {
+      wrapper.vm.toggleOption(mockOptions[0])
+      await wrapper.vm.$nextTick()
+
+      const clearBtn = wrapper.find('.ams__trigger-clear')
+      // 用 span+role 模拟 button,必须显式提供 role 与 tabindex 才能被键盘/读屏识别
+      expect(clearBtn.attributes('role')).toBe('button')
+      expect(clearBtn.attributes('tabindex')).toBe('0')
+
+      // Enter 触发清空
+      wrapper.setData({ panelVisible: false })
+      await clearBtn.trigger('keypress', { key: 'Enter' })
+      expect(wrapper.vm.selectedItems).toHaveLength(0)
+      expect(wrapper.vm.panelVisible).toBe(false)
+
+      // Space 同样触发清空
+      wrapper.vm.toggleOption(mockOptions[1])
+      await wrapper.vm.$nextTick()
+      const clearBtnAgain = wrapper.find('.ams__trigger-clear')
+      wrapper.setData({ panelVisible: false })
+      await clearBtnAgain.trigger('keypress', { key: ' ' })
+      expect(wrapper.vm.selectedItems).toHaveLength(0)
+    })
+
+    it('浮层已打开时点击清空:清空生效但浮层保持打开(.stop 仅阻断 toggle)', async() => {
+      wrapper.vm.toggleOption(mockOptions[0])
+      wrapper.vm.toggleOption(mockOptions[2])
+      await wrapper.vm.$nextTick()
+
+      const clearBtn = wrapper.find('.ams__trigger-clear')
+      // 模拟浮层已经打开的状态(用户先点开了 trigger,再点 trigger 上的 ✕)
+      wrapper.setData({ panelVisible: true })
+
+      await clearBtn.trigger('click')
+
+      // 清空生效
+      expect(wrapper.vm.selectedItems).toHaveLength(0)
+      // .stop 阻断的是 popover 的 doToggle(切换),而非强制关闭:
+      // 浮层保持打开,符合"清空后继续在浮层里选择"的语义
+      expect(wrapper.vm.panelVisible).toBe(true)
+    })
+
     it('已选区应前置渲染（在选项列表之前）', () => {
       // 已选区与选项列表都应存在；且已选区在 DOM 序中先于选项列表
       const selected = wrapper.find('.ams__selected')
