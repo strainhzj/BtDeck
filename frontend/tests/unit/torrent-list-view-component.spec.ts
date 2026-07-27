@@ -231,4 +231,34 @@ describe('torrent list view pagination and sorting', () => {
       expect.objectContaining({ sort_by: 'name', sort_order: 'asc' })
     )
   })
+
+  it('uses Space to switch Lucide direction without falling back to triangle characters', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetTorrentList.mockClear()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    const sortableHeaders = wrapper.findAll('th.sortable-column')
+    const sizeHeader = wrapper.find('th[data-sort-field="size"]')
+
+    expect(sortableHeaders.wrappers.map(header => header.text()).join('')).not.toMatch(/[▲▼]/)
+    expect(sizeHeader.find('.sort-icon').attributes('name')).toBe('arrow-up-down')
+
+    await sizeHeader.trigger('keydown', { key: ' ', code: 'Space', keyCode: 32 })
+    await flushLifecycle()
+
+    expect(vm.listQuery.sort_by).toBe('size')
+    expect(vm.listQuery.sort_order).toBe('desc')
+    expect(sizeHeader.attributes('aria-sort')).toBe('descending')
+    expect(sizeHeader.find('.sort-icon').attributes('name')).toBe('arrow-down')
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'size', sort_order: 'desc' })
+    )
+
+    await sizeHeader.trigger('keydown', { key: ' ', code: 'Space', keyCode: 32 })
+    await flushLifecycle()
+
+    expect(vm.listQuery.sort_order).toBe('asc')
+    expect(sizeHeader.attributes('aria-sort')).toBe('ascending')
+    expect(sizeHeader.find('.sort-icon').attributes('name')).toBe('arrow-up')
+  })
 })

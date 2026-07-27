@@ -118,6 +118,7 @@ interface TraditionalViewVm extends Vue {
   sortedList: TorrentRow[]
   virtualTopSpacerHeight: number
   virtualBottomSpacerHeight: number
+  visibleTableColumnCount: number
   handleRowClick(row: TorrentRow): void
   showAddDialog: boolean
   handleAdd(): Promise<void>
@@ -474,6 +475,37 @@ describe('TraditionalView component regressions', () => {
     expect(savePathCell.attributes('title')).toBe(savePath)
     expect(wrapper.findAll('.column-checkbox-trad').wrappers.map(label => label.text()))
       .toContain('保存路径')
+  })
+
+  it('旧版列偏好缺少 savePath 时仍默认显示新增路径列', async() => {
+    localStorage.setItem('traditional_columns_visibility', JSON.stringify({ name: false }))
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { savePath: '/downloads/legacy-compatible' })
+    ]))
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    expect(wrapper.find('thead th.col-name').exists()).toBe(false)
+    expect(wrapper.find('thead th.col-save-path').exists()).toBe(true)
+    expect(wrapper.find('tbody td.col-save-path').text()).toBe('/downloads/legacy-compatible')
+    expect(vm.visibleTableColumnCount).toBe(13)
+  })
+
+  it('显式隐藏保存路径时同步移除表头、数据列和虚拟占位列计数', async() => {
+    localStorage.setItem('traditional_columns_visibility', JSON.stringify({ savePath: false }))
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { savePath: '/downloads/hidden' })
+    ]))
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    expect(wrapper.find('thead th.col-save-path').exists()).toBe(false)
+    expect(wrapper.find('tbody td.col-save-path').exists()).toBe(false)
+    expect(vm.visibleTableColumnCount).toBe(13)
   })
 
   it('分页组合框完整展示预设并用箭头切换展开与收起', async() => {

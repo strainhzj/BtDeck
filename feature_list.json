@@ -1574,7 +1574,7 @@
             "frontend/tests/unit/torrent-list-view-component.spec.ts",
             "frontend/tests/unit/traditional-view-component.spec.ts"
           ],
-          "evidence": "传统模式在分类/标签与添加时间之间新增保存路径列，加入独立列设置并默认可见，兼容 savePath/save_path，空值显示 '-'、完整路径通过 title 提示；表格最小宽度由内部滚动容器承接，避免路径列挤压名称列。列表模式名称/大小/状态/比率/添加时间五个排序列均常驻 Lucide 图标，未排序为 arrow-up-down，降序为 arrow-down，升序为 arrow-up；图标 aria-hidden，排序语义仍由 th 的 aria-sort 提供。Lucide 包装器新增三图标静态注册并保持 tree-shaking。目标回归 3 suites/30 tests、前端全量 Jest 23 suites/327 tests、TypeScript、严格 Vue ESLint、Vuex action lint、生产 build、根 init.sh 与 git diff --check 均通过，build 仅保留既有 48 条 Sass/资源体积 warning。完整 npm run lint 的 contract:check 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截，本任务未修改该无关生成契约。"
+          "evidence": "传统模式在分类/标签与添加时间之间新增保存路径列，加入独立列设置并默认可见，兼容 savePath/save_path，空值显示 '-'、完整路径通过 title 提示；表格最小宽度由内部滚动容器承接，避免路径列挤压名称列。列表模式名称/大小/状态/比率/添加时间五个排序列均常驻 Lucide 图标，未排序为 arrow-up-down，降序为 arrow-down，升序为 arrow-up；图标 aria-hidden，排序语义仍由 th 的 aria-sort 提供。Lucide 包装器新增三图标静态注册并保持 tree-shaking。追加回归锁定旧版列偏好缺少 savePath 时默认显示、显式隐藏时表头/数据列/虚拟占位列计数同步，以及 Space 键三态切换且不回退到 ▲/▼ 字符。追加目标回归 2 suites/24 tests、前端全量 Jest 23 suites/330 tests、TypeScript、严格 Vue ESLint、Vuex action lint、生产 build、根 init.sh 与 git diff --check 均通过，build 仅保留既有 48 条 Sass/资源体积 warning。完整 npm run lint 的 contract:check 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截，本任务未修改该无关生成契约。"
         }
       ]
     }
