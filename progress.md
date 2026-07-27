@@ -14,13 +14,15 @@
 - 列表模式为名称、大小、状态、比率和添加时间五个列头增加服务端排序入口：首次选择字段默认降序，同字段再次操作切换升/降序。
 - 排序列头补齐 `aria-sort`、Enter/Space 键盘操作、可见焦点与当前方向箭头；移动端分页保留每页数量组件，仅隐藏摘要文字。
 - 新增列表视图组件测试，并让传统视图组件测试挂载真实共享组合框，锁定分页和排序请求参数。
+- 新增 `page-size-combobox.spec.ts` 独立组件回归，锁定五项默认预设、受控输入及全部公共事件、展开/选中 ARIA 状态、箭头状态和 `focusInput()` 聚焦行为。
 
 ### 验证
 
 | 验证项 | 结果 |
 |---|---|
 | 列表视图新增回归 | ✅ 1 suite / 2 tests |
-| 前端全量 Jest | ✅ 22 suites / 319 tests |
+| 分页组件独立回归 | ✅ 1 suite / 4 tests |
+| 前端全量 Jest | ✅ 23 suites / 323 tests |
 | TypeScript `typecheck` | ✅ 通过 |
 | 严格 Vue ESLint | ✅ 0 error / 0 warning |
 | Vuex action lint | ✅ 通过 |
@@ -32,7 +34,7 @@
 
 - 完整 `npm run lint` 在首步 `contract:check` 命中任务开始前已存在的 `frontend/src/contracts/advancedSearch.generated.ts` 生成契约漂移；本次不涉及高级搜索协议，因此未修改该无关文件。其后的 Vue ESLint、TypeScript 与 Vuex 门禁已分别通过。
 - 未新增或修改 API，排序继续使用既有 `sort_by/sort_order` 参数。
-- 本轮未执行 Git 提交；会话开始前已有的 `.agents/`、`.claude/`、`.code-graph/`、`.codex/`、`.spec-workflow/`、`.zcode/` 未跟踪目录保持不动。
+- 本轮按功能实现与独立回归保护拆分为两个 Git 提交，均未推送；会话开始前已有的 `.agents/`、`.claude/`、`.code-graph/`、`.codex/`、`.spec-workflow/`、`.zcode/` 未跟踪目录保持不动。
 
 ---
 

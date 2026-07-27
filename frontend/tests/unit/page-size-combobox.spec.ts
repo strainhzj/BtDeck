@@ -1,0 +1,129 @@
+import Vue from 'vue'
+import { createLocalVue, mount, Wrapper } from '@vue/test-utils'
+
+import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
+
+const localVue = createLocalVue()
+
+interface PageSizeComboboxProps {
+  value?: string
+  pageSize?: number
+  expanded?: boolean
+  options?: number[]
+  controlsId?: string
+}
+
+interface PageSizeComboboxVm extends Vue {
+  focusInput(): void
+}
+
+function mountCombobox(
+  propsData: PageSizeComboboxProps = {},
+  attachTo?: HTMLElement
+): Wrapper<Vue> {
+  return mount(PageSizeCombobox, {
+    localVue,
+    attachTo,
+    propsData: {
+      value: '20',
+      pageSize: 20,
+      ...propsData
+    }
+  })
+}
+
+describe('PageSizeCombobox regressions', () => {
+  let wrapper: Wrapper<Vue> | undefined
+  let host: HTMLElement | undefined
+
+  afterEach(() => {
+    wrapper?.destroy()
+    host?.remove()
+    wrapper = undefined
+    host = undefined
+  })
+
+  it('keeps the shared presets and collapsed combobox accessibility contract', () => {
+    wrapper = mountCombobox({ controlsId: 'page-size-regression-options' })
+
+    const combobox = wrapper.find('.page-size-combobox')
+    const input = wrapper.find('.page-size-input')
+    const toggle = wrapper.find('.page-size-toggle')
+    const options = wrapper.find('.page-size-options')
+
+    expect(combobox.attributes()).toEqual(expect.objectContaining({
+      role: 'combobox',
+      'aria-haspopup': 'listbox',
+      'aria-controls': 'page-size-regression-options',
+      'aria-expanded': 'false'
+    }))
+    expect(input.attributes()).toEqual(expect.objectContaining({
+      type: 'text',
+      inputmode: 'numeric',
+      'aria-label': '每页数量'
+    }))
+    expect(toggle.classes()).toContain('el-icon-arrow-down')
+    expect(toggle.attributes('aria-label')).toBe('展开分页大小选项')
+    expect(options.attributes('id')).toBe('page-size-regression-options')
+    expect((options.element as HTMLElement).style.display).toBe('none')
+    expect(wrapper.findAll('.page-size-options button').wrappers.map(option => option.text()))
+      .toEqual(['20', '50', '100', '500', '1000'])
+  })
+
+  it('emits controlled input, focus, blur, apply, toggle and preset selection events', async() => {
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    wrapper = mountCombobox({}, host)
+    const input = wrapper.find('.page-size-input')
+
+    await input.setValue('500')
+    await input.trigger('focus')
+    await wrapper.setProps({ value: '500' })
+    await input.trigger('keyup', { key: 'Enter', keyCode: 13 })
+    await input.trigger('blur')
+    await wrapper.find('.page-size-toggle').trigger('click')
+    await wrapper.findAll('.page-size-options button').at(4).trigger('click')
+
+    expect(wrapper.emitted().input).toEqual([['500']])
+    expect(wrapper.emitted().focus).toEqual([[]])
+    expect(wrapper.emitted().apply).toEqual([['500']])
+    expect(wrapper.emitted().blur).toEqual([[]])
+    expect(wrapper.emitted().toggle).toEqual([[]])
+    expect(wrapper.emitted().select).toEqual([[{ value: '1000' }]])
+  })
+
+  it('reflects expanded and selected state through classes and ARIA', () => {
+    wrapper = mountCombobox({
+      value: '500',
+      pageSize: 500,
+      expanded: true,
+      controlsId: 'expanded-page-size-options'
+    })
+
+    const combobox = wrapper.find('.page-size-combobox')
+    const toggle = wrapper.find('.page-size-toggle')
+    const options = wrapper.find('.page-size-options')
+    const selectedOption = wrapper.find('.page-size-options button[aria-selected="true"]')
+
+    expect(combobox.attributes('aria-expanded')).toBe('true')
+    expect(toggle.classes()).toContain('el-icon-arrow-up')
+    expect(toggle.attributes()).toEqual(expect.objectContaining({
+      'aria-label': '收起分页大小选项',
+      'aria-expanded': 'true'
+    }))
+    expect((options.element as HTMLElement).style.display).not.toBe('none')
+    expect(selectedOption.text()).toBe('500')
+  })
+
+  it('focusInput moves keyboard focus to the numeric input', () => {
+    host = document.createElement('div')
+    document.body.appendChild(host)
+    wrapper = mountCombobox({}, host)
+
+    const vm = wrapper.vm as PageSizeComboboxVm
+    const input = wrapper.find('.page-size-input')
+    vm.focusInput()
+
+    expect(document.activeElement).toBe(input.element)
+  })
+})
