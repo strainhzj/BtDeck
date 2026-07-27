@@ -382,9 +382,16 @@
         }
       }
 
-      .sort-arrow {
-        margin-left: 3px;
-        font-size: 9px;
+      .sort-icon {
+        margin-left: 4px;
+        opacity: 0.68;
+        transition: opacity var(--transition-fast);
+      }
+
+      &.sortable-column:hover .sort-icon,
+      &.sortable-column:focus-visible .sort-icon,
+      &.sortable-column.sorted .sort-icon {
+        opacity: 1;
       }
     }
 

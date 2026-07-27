@@ -203,6 +203,11 @@ describe('torrent list view pagination and sorting', () => {
     expect(sortableHeaders.wrappers.map(header => header.attributes('data-sort-field')))
       .toEqual(['name', 'size', 'status', 'ratio', 'added_date'])
     expect(wrapper.find('th[data-sort-field="added_date"]').attributes('aria-sort')).toBe('descending')
+    expect(sortableHeaders.wrappers.every(header => header.find('.sort-icon').exists())).toBe(true)
+    expect(wrapper.find('th[data-sort-field="name"] .sort-icon').attributes('name'))
+      .toBe('arrow-up-down')
+    expect(wrapper.find('th[data-sort-field="added_date"] .sort-icon').attributes('name'))
+      .toBe('arrow-down')
 
     const nameHeader = wrapper.find('th[data-sort-field="name"]')
     await nameHeader.trigger('click')
@@ -211,6 +216,7 @@ describe('torrent list view pagination and sorting', () => {
     expect(vm.listQuery.sort_by).toBe('name')
     expect(vm.listQuery.sort_order).toBe('desc')
     expect(nameHeader.attributes('aria-sort')).toBe('descending')
+    expect(nameHeader.find('.sort-icon').attributes('name')).toBe('arrow-down')
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.objectContaining({ sort_by: 'name', sort_order: 'desc' })
     )
@@ -220,6 +226,7 @@ describe('torrent list view pagination and sorting', () => {
 
     expect(vm.listQuery.sort_order).toBe('asc')
     expect(nameHeader.attributes('aria-sort')).toBe('ascending')
+    expect(nameHeader.find('.sort-icon').attributes('name')).toBe('arrow-up')
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.objectContaining({ sort_by: 'name', sort_order: 'asc' })
     )

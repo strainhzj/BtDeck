@@ -21,6 +21,9 @@ import {
   ListChecks,
   Trash2,
   ClipboardPaste,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   X
 } from 'lucide'
 
@@ -47,6 +50,9 @@ const ICONS: Record<string, unknown> = {
   'list-checks': ListChecks,
   trash: Trash2,
   'clipboard-paste': ClipboardPaste,
+  'arrow-up-down': ArrowUpDown,
+  'arrow-up': ArrowUp,
+  'arrow-down': ArrowDown,
   x: X
 }
 

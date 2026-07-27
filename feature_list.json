@@ -1558,6 +1558,23 @@
             "frontend/tests/unit/traditional-view-component.spec.ts"
           ],
           "evidence": "两种种子视图共用 PageSizeCombobox，统一提供 20/50/100/500/1000 预设与 1–100000 自定义输入，选择、Enter、失焦应用后回到第 1 页；列表模式新增名称/大小/状态/比率/添加时间五个可排序列头，首次降序、再次升降序切换，并支持鼠标、Enter、Space、aria-sort 和可见焦点。新增列表视图集成回归 2/2，以及共享分页组件预设、受控事件、展开/选中 ARIA 状态和程序化聚焦回归 4/4；传统视图既有回归保持通过。前端全量 Jest 23 suites/323 tests、TypeScript、严格 Vue ESLint、Vuex action lint、生产 build、根 init.sh 与 git diff --check 均通过，build 仅保留既有 48 条 Sass/资源体积 warning。完整 npm run lint 的 contract:check 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截，本任务未修改该无关生成契约。"
+        },
+        {
+          "id": "v1.0.6.31",
+          "name": "传统保存路径列与列表排序图标",
+          "description": "为传统种子模式补充可配置的保存路径列，并为列表模式五个可排序列增加常驻 Lucide 图标：未排序显示双向箭头，活动排序按方向显示向上或向下箭头，继续保留键盘和 aria-sort 语义。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/common/LucideIcon.vue",
+            "frontend/src/components/common/__tests__/LucideIcon.spec.ts",
+            "frontend/src/styles/torrent-theme.scss",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "传统模式在分类/标签与添加时间之间新增保存路径列，加入独立列设置并默认可见，兼容 savePath/save_path，空值显示 '-'、完整路径通过 title 提示；表格最小宽度由内部滚动容器承接，避免路径列挤压名称列。列表模式名称/大小/状态/比率/添加时间五个排序列均常驻 Lucide 图标，未排序为 arrow-up-down，降序为 arrow-down，升序为 arrow-up；图标 aria-hidden，排序语义仍由 th 的 aria-sort 提供。Lucide 包装器新增三图标静态注册并保持 tree-shaking。目标回归 3 suites/30 tests、前端全量 Jest 23 suites/327 tests、TypeScript、严格 Vue ESLint、Vuex action lint、生产 build、根 init.sh 与 git diff --check 均通过，build 仅保留既有 48 条 Sass/资源体积 warning。完整 npm run lint 的 contract:check 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截，本任务未修改该无关生成契约。"
         }
       ]
     }

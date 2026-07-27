@@ -67,4 +67,17 @@ describe('LucideIcon 组件', () => {
     expect(children.length).toBeGreaterThan(0)
     wrapper.destroy()
   })
+
+  it.each(['arrow-up-down', 'arrow-up', 'arrow-down'])(
+    '排序图标 %s 应注册并渲染 SVG',
+    (name) => {
+      const wrapper = mount(LucideIcon, {
+        localVue,
+        propsData: { name, size: 13 }
+      })
+      expect(wrapper.find('svg').exists()).toBe(true)
+      expect(wrapper.find('.lucide-icon--missing').exists()).toBe(false)
+      wrapper.destroy()
+    }
+  )
 })

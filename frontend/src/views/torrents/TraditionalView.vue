@@ -292,6 +292,7 @@
                 </th>
                 <th v-if="getColumnSetting('downloader').visible" class="col-downloader">下载器</th>
                 <th v-if="getColumnSetting('category').visible" class="col-category">分类/标签</th>
+                <th v-if="getColumnSetting('savePath').visible" class="col-save-path">保存路径</th>
                 <th v-if="getColumnSetting('added').visible" class="col-added" @click="handleSort('added_date')">
                   添加时间
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'added_date'">
@@ -383,6 +384,11 @@
                   <span v-if="torrent.tags" class="category-tag-mini tag">{{ torrent.tags }}</span>
                   <span v-if="!torrent.category && !torrent.tags" style="color: var(--color-text-tertiary)">-</span>
                 </td>
+                <td
+                  v-if="getColumnSetting('savePath').visible"
+                  class="col-save-path"
+                  :title="torrent.savePath || torrent.save_path || ''"
+                >{{ torrent.savePath || torrent.save_path || '-' }}</td>
                 <td v-if="getColumnSetting('added').visible" class="col-added">{{ formatDate(torrent.addedDate) }}</td>
                 <td class="col-actions">
                   <div class="action-buttons-compact">
@@ -914,6 +920,7 @@ export default class extends mixins(TorrentBatchMixin) {
     { key: 'ratio', label: '比率', visible: true },
     { key: 'downloader', label: '下载器', visible: true },
     { key: 'category', label: '分类/标签', visible: true },
+    { key: 'savePath', label: '保存路径', visible: true },
     { key: 'added', label: '添加时间', visible: true }
   ]
 
@@ -2281,6 +2288,9 @@ export default class extends mixins(TorrentBatchMixin) {
 }
 
 .traditional-table {
+  // 新增保存路径列后保持名称列可读；窄视口由既有 table-container 内部滚动承接。
+  min-width: 1380px;
+
   tbody .torrent-row {
     height: var(--trad-row-height);
 
@@ -2320,6 +2330,7 @@ export default class extends mixins(TorrentBatchMixin) {
 .col-ratio { width: 60px; }
 .col-downloader { width: 100px; }
 .col-category { width: 130px; }
+.col-save-path { width: 180px; }
 .col-added { width: 120px; }
 .col-actions { width: 100px; }
 

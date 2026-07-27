@@ -451,6 +451,31 @@ describe('TraditionalView component regressions', () => {
     expect(vm.tagFilterItems.map(item => item.value)).toEqual(['', ...tags])
   })
 
+  it('在分类标签与添加时间之间显示可配置的保存路径列', async() => {
+    const savePath = '/downloads/library/linux.iso'
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { savePath: '', save_path: savePath })
+    ]))
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+
+    const headers = wrapper.findAll('thead th').wrappers
+    const categoryIndex = headers.findIndex(header => header.classes().includes('col-category'))
+    const savePathIndex = headers.findIndex(header => header.classes().includes('col-save-path'))
+    const addedIndex = headers.findIndex(header => header.classes().includes('col-added'))
+    const savePathCell = wrapper.find('tbody td.col-save-path')
+
+    expect(categoryIndex).toBeGreaterThan(-1)
+    expect(savePathIndex).toBe(categoryIndex + 1)
+    expect(addedIndex).toBe(savePathIndex + 1)
+    expect(headers[savePathIndex].text()).toBe('保存路径')
+    expect(savePathCell.text()).toBe(savePath)
+    expect(savePathCell.attributes('title')).toBe(savePath)
+    expect(wrapper.findAll('.column-checkbox-trad').wrappers.map(label => label.text()))
+      .toContain('保存路径')
+  })
+
   it('分页组合框完整展示预设并用箭头切换展开与收起', async() => {
     wrapper = mountTraditionalView()
     await flushLifecycle()

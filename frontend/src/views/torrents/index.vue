@@ -244,9 +244,12 @@
               @keydown.space.prevent="handleSort('name')"
             >
               种子名称
-              <span v-if="listQuery.sort_by === 'name'" class="sort-arrow">
-                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
-              </span>
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('name')"
+                :size="13"
+                :stroke-width="2"
+              />
             </th>
             <th v-if="getColumnSetting('downloadSpeed').visible" style="width: 100px;">下载速度</th>
             <th v-if="getColumnSetting('uploadSpeed').visible" style="width: 100px;">上传速度</th>
@@ -264,9 +267,12 @@
               @keydown.space.prevent="handleSort('size')"
             >
               大小
-              <span v-if="listQuery.sort_by === 'size'" class="sort-arrow">
-                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
-              </span>
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('size')"
+                :size="13"
+                :stroke-width="2"
+              />
             </th>
             <th v-if="getColumnSetting('progress').visible" style="width: 140px;">进度</th>
             <th
@@ -283,9 +289,12 @@
               @keydown.space.prevent="handleSort('status')"
             >
               状态
-              <span v-if="listQuery.sort_by === 'status'" class="sort-arrow">
-                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
-              </span>
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('status')"
+                :size="13"
+                :stroke-width="2"
+              />
             </th>
             <th v-if="getColumnSetting('downloader').visible" style="width: 110px;">所属下载器</th>
             <th
@@ -302,9 +311,12 @@
               @keydown.space.prevent="handleSort('ratio')"
             >
               比率
-              <span v-if="listQuery.sort_by === 'ratio'" class="sort-arrow">
-                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
-              </span>
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('ratio')"
+                :size="13"
+                :stroke-width="2"
+              />
             </th>
             <th v-if="getColumnSetting('category').visible" style="width: 180px;">分类/标签</th>
             <th v-if="getColumnSetting('savePath').visible" style="width: 200px;">保存路径</th>
@@ -322,9 +334,12 @@
               @keydown.space.prevent="handleSort('added_date')"
             >
               添加时间
-              <span v-if="listQuery.sort_by === 'added_date'" class="sort-arrow">
-                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
-              </span>
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('added_date')"
+                :size="13"
+                :stroke-width="2"
+              />
             </th>
             <th v-if="getColumnSetting('actions').visible" class="action-column" style="width: 140px;">操作</th>
           </tr>
@@ -741,6 +756,7 @@ interface PageSizeSuggestion {
 }
 
 type TorrentSortField = 'name' | 'size' | 'status' | 'ratio' | 'added_date'
+type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
 
 @Component({
   name: 'TorrentsManagement',
@@ -1037,6 +1053,11 @@ export default class extends mixins(TorrentBatchMixin) {
   private getSortAriaValue(field: TorrentSortField): 'ascending' | 'descending' | 'none' {
     if (this.listQuery.sort_by !== field) return 'none'
     return this.listQuery.sort_order === 'asc' ? 'ascending' : 'descending'
+  }
+
+  private getSortIconName(field: TorrentSortField): TorrentSortIconName {
+    if (this.listQuery.sort_by !== field) return 'arrow-up-down'
+    return this.listQuery.sort_order === 'asc' ? 'arrow-up' : 'arrow-down'
   }
 
   // 防抖搜索（300ms延迟）

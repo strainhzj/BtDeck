@@ -1,5 +1,42 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-27 - 传统保存路径列与列表排序图标
+
+**任务 ID**: `v1.0.6.31`
+**分支**: dev
+**范围**: 仅前端。为传统模式补保存路径列，为列表模式可排序列增加 Lucide 状态图标，不改 API 与排序参数。
+
+### 实现
+
+- `TraditionalView.vue` 在“分类/标签”与“添加时间”之间新增“保存路径”，兼容 `savePath/save_path`，空值显示 `-`，单元格 `title` 保留完整路径。
+- 保存路径加入传统模式独立列设置，默认可见；既有 `visibleTableColumnCount` 自动计入该列，虚拟滚动占位行 colspan 保持正确。
+- 传统表格增加 1380px 最小宽度，由现有 `.table-container` 内部滚动承接窄视口，避免新增 180px 路径列压缩名称列。
+- `LucideIcon.vue` 静态注册 `arrow-up-down`、`arrow-up`、`arrow-down`，继续只打包实际使用图标。
+- 列表模式五个排序表头常驻 13px Lucide 图标：未排序双向、降序向下、升序向上；移除原 ▲/▼ 文本字符。
+- 图标沿用 `currentColor`，默认低强调，悬停、焦点和当前排序态提高不透明度；图标保持 `aria-hidden`，表头原有 `aria-sort`、Enter/Space 与可见焦点不变。
+- 回归测试覆盖传统列顺序、列设置、蛇形路径兼容与完整路径提示，以及五个表头的图标常驻和三态切换；Lucide 包装器验证三个新图标均能渲染 SVG。
+
+### 验证
+
+| 验证项 | 结果 |
+|---|---|
+| 目标回归 | ✅ 3 suites / 30 tests |
+| 前端全量 Jest | ✅ 23 suites / 327 tests |
+| TypeScript `typecheck` | ✅ 通过 |
+| 严格 Vue ESLint | ✅ 0 error / 0 warning |
+| Vuex action lint | ✅ 通过 |
+| 生产构建 | ✅ 通过；48 条既有 Sass/资源体积 warning |
+| 根 `init.sh`（Git Bash） | ✅ 退出 0；识别 Node v18.20.8 / npm 10.8.2 |
+| `git diff --check` | ✅ 通过 |
+
+### 已知基线与边界
+
+- 完整 `npm run lint` 在首步 `contract:check` 命中任务开始前已存在的 `frontend/src/contracts/advancedSearch.generated.ts` 生成契约漂移；本任务不涉及高级搜索协议，未修改该无关生成文件。其后的 Vue ESLint、TypeScript 与 Vuex 门禁已分别通过。
+- 保存路径列按确认范围不参与排序；现有 `sort_by/sort_order` 协议未变。
+- 本轮修改已作为独立 Git 提交，尚未 push；会话开始前已有的 6 个未跟踪工具目录保持不动。
+
+---
+
 ## 2026-07-27 - 种子列表分页组件与列头排序对齐
 
 **任务 ID**: `v1.0.6.30`
