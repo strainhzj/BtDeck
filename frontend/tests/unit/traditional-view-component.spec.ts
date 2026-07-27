@@ -4,6 +4,7 @@ import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import TraditionalView from '@/views/torrents/TraditionalView.vue'
+import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import {
   advancedSearch,
   getActiveTorrents,
@@ -293,6 +294,7 @@ function mountTraditionalView(): Wrapper<Vue> {
       BatchTransferDialog: true,
       TrackerOperationDialog: true,
       GlobalReplaceTrackerDialog: true,
+      PageSizeCombobox,
       AdvancedSearchBuilder: true
     }
   })

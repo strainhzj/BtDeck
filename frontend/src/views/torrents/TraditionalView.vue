@@ -451,56 +451,19 @@
         <!-- 分页 -->
         <div class="table-pagination">
           <div class="pagination-info">
-            <div
-              class="page-size-combobox"
-              role="combobox"
-              aria-haspopup="listbox"
-              aria-controls="traditional-page-size-options"
-              :aria-expanded="String(pageSizeDropdownExpanded)"
-            >
-              <input
-                ref="pageSizeInput"
-                v-model="pageSizeInput"
-                class="page-size-input"
-                type="text"
-                inputmode="numeric"
-                aria-label="每页数量"
-                title="选择预设值或输入 1 至 100000，按 Enter 或失焦生效"
-                @focus="handlePageSizeFocus"
-                @keyup.enter="applyPageSizeSelection(pageSizeInput)"
-                @blur="handlePageSizeBlur"
-              />
-              <button
-                type="button"
-                class="page-size-toggle"
-                :class="pageSizeDropdownExpanded ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"
-                :aria-label="pageSizeDropdownExpanded ? '收起分页大小选项' : '展开分页大小选项'"
-                :aria-expanded="String(pageSizeDropdownExpanded)"
-                @mousedown.prevent.stop
-                @click.stop="togglePageSizeDropdown"
-              ></button>
-              <ul
-                v-show="pageSizeDropdownExpanded"
-                id="traditional-page-size-options"
-                class="page-size-options"
-                role="listbox"
-                aria-label="分页大小预设"
-              >
-                <li
-                  v-for="size in pageSizeOptions"
-                  :key="size"
-                  role="none"
-                >
-                  <button
-                    type="button"
-                    role="option"
-                    :aria-selected="String(size === pageSize)"
-                    @mousedown.prevent
-                    @click="handlePageSizeSelect({value: String(size)})"
-                  >{{ size }}</button>
-                </li>
-              </ul>
-            </div>
+            <PageSizeCombobox
+              ref="pageSizeCombobox"
+              v-model="pageSizeInput"
+              :page-size="pageSize"
+              :options="pageSizeOptions"
+              :expanded="pageSizeDropdownExpanded"
+              controls-id="traditional-page-size-options"
+              @focus="handlePageSizeFocus"
+              @blur="handlePageSizeBlur"
+              @toggle="togglePageSizeDropdown"
+              @apply="applyPageSizeSelection"
+              @select="handlePageSizeSelect"
+            />
             <span>共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
           </div>
           <div class="pagination-controls">
@@ -753,6 +716,7 @@ import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
+import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
 // 复用现有 API、工具函数、状态配置
 import {
@@ -845,6 +809,7 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     TrackerOperationDialog,
     GlobalReplaceTrackerDialog,
     FilterGroup,
+    PageSizeCombobox,
     AdvancedSearchBuilder: () => import('@/components/torrents/AdvancedSearchBuilder.vue')
   }
 })
@@ -1380,8 +1345,8 @@ export default class extends mixins(TorrentBatchMixin) {
     this.pageSizeDropdownExpanded = !this.pageSizeDropdownExpanded
     if (!this.pageSizeDropdownExpanded) return
     this.$nextTick(() => {
-      const input = this.$refs.pageSizeInput as HTMLInputElement | undefined
-      input?.focus()
+      const combobox = this.$refs.pageSizeCombobox as PageSizeCombobox | undefined
+      combobox?.focusInput()
     })
   }
 
@@ -2394,85 +2359,6 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  .page-size-combobox {
-    width: 108px;
-    height: 24px;
-    position: relative;
-    display: flex;
-    align-items: stretch;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg-primary);
-
-    &:focus-within {
-      border-color: var(--color-primary);
-    }
-
-    .page-size-input {
-      width: 100%;
-      min-width: 0;
-      padding: 0 2px 0 8px;
-      border: 0;
-      outline: 0;
-      background: transparent;
-      color: var(--color-text-primary);
-      font-size: 12px;
-      line-height: 22px;
-      text-align: center;
-    }
-
-    .page-size-toggle {
-      width: 24px;
-      padding: 0;
-      border: 0;
-      background: transparent;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      color: var(--color-text-tertiary);
-      cursor: pointer;
-      transition: color 0.2s ease;
-
-      &:hover,
-      &:focus {
-        color: var(--color-primary);
-        outline: none;
-      }
-    }
-
-    .page-size-options {
-      position: absolute;
-      left: -1px;
-      bottom: calc(100% + 4px);
-      z-index: 50;
-      width: 108px;
-      margin: 0;
-      padding: 4px 0;
-      list-style: none;
-      border: 1px solid var(--color-border-primary);
-      border-radius: var(--radius-sm);
-      background: var(--color-bg-primary);
-      box-shadow: var(--shadow-md);
-
-      button {
-        width: 100%;
-        padding: 4px 8px;
-        border: 0;
-        background: transparent;
-        color: var(--color-text-primary);
-        text-align: center;
-        cursor: pointer;
-
-        &:hover,
-        &:focus-visible {
-          background: var(--color-bg-hover);
-          color: var(--color-primary);
-          outline: none;
-        }
-      }
-    }
-  }
 }
 
 // Tracker 表格样式

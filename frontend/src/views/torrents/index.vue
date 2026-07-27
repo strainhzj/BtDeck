@@ -231,17 +231,101 @@
                 @change="handleSelectAll"
               />
             </th>
-            <th v-if="getColumnSetting('name').visible">种子名称</th>
+            <th
+              v-if="getColumnSetting('name').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'name'}"
+              data-sort-field="name"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('name')"
+              title="按种子名称排序"
+              @click="handleSort('name')"
+              @keydown.enter.prevent="handleSort('name')"
+              @keydown.space.prevent="handleSort('name')"
+            >
+              种子名称
+              <span v-if="listQuery.sort_by === 'name'" class="sort-arrow">
+                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+              </span>
+            </th>
             <th v-if="getColumnSetting('downloadSpeed').visible" style="width: 100px;">下载速度</th>
             <th v-if="getColumnSetting('uploadSpeed').visible" style="width: 100px;">上传速度</th>
-            <th v-if="getColumnSetting('size').visible" style="width: 100px;">大小</th>
+            <th
+              v-if="getColumnSetting('size').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'size'}"
+              data-sort-field="size"
+              style="width: 100px;"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('size')"
+              title="按大小排序"
+              @click="handleSort('size')"
+              @keydown.enter.prevent="handleSort('size')"
+              @keydown.space.prevent="handleSort('size')"
+            >
+              大小
+              <span v-if="listQuery.sort_by === 'size'" class="sort-arrow">
+                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+              </span>
+            </th>
             <th v-if="getColumnSetting('progress').visible" style="width: 140px;">进度</th>
-            <th v-if="getColumnSetting('status').visible" style="width: 90px;">状态</th>
+            <th
+              v-if="getColumnSetting('status').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'status'}"
+              data-sort-field="status"
+              style="width: 90px;"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('status')"
+              title="按状态排序"
+              @click="handleSort('status')"
+              @keydown.enter.prevent="handleSort('status')"
+              @keydown.space.prevent="handleSort('status')"
+            >
+              状态
+              <span v-if="listQuery.sort_by === 'status'" class="sort-arrow">
+                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+              </span>
+            </th>
             <th v-if="getColumnSetting('downloader').visible" style="width: 110px;">所属下载器</th>
-            <th v-if="getColumnSetting('ratio').visible" style="width: 70px;">比率</th>
+            <th
+              v-if="getColumnSetting('ratio').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'ratio'}"
+              data-sort-field="ratio"
+              style="width: 70px;"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('ratio')"
+              title="按比率排序"
+              @click="handleSort('ratio')"
+              @keydown.enter.prevent="handleSort('ratio')"
+              @keydown.space.prevent="handleSort('ratio')"
+            >
+              比率
+              <span v-if="listQuery.sort_by === 'ratio'" class="sort-arrow">
+                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+              </span>
+            </th>
             <th v-if="getColumnSetting('category').visible" style="width: 180px;">分类/标签</th>
             <th v-if="getColumnSetting('savePath').visible" style="width: 200px;">保存路径</th>
-            <th v-if="getColumnSetting('addedDate').visible" style="width: 130px;">添加时间</th>
+            <th
+              v-if="getColumnSetting('addedDate').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'added_date'}"
+              data-sort-field="added_date"
+              style="width: 130px;"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('added_date')"
+              title="按添加时间排序"
+              @click="handleSort('added_date')"
+              @keydown.enter.prevent="handleSort('added_date')"
+              @keydown.space.prevent="handleSort('added_date')"
+            >
+              添加时间
+              <span v-if="listQuery.sort_by === 'added_date'" class="sort-arrow">
+                {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
+              </span>
+            </th>
             <th v-if="getColumnSetting('actions').visible" class="action-column" style="width: 140px;">操作</th>
           </tr>
         </thead>
@@ -249,7 +333,7 @@
           <tr
             v-for="(torrent, index) in sortedList"
             :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${index}`"
-            :class="{selected: currentRow?.hash === torrent.hash}"
+            :class="{selected: currentRow && currentRow.hash === torrent.hash}"
             @click="handleRowClick(torrent)"
           >
             <td>
@@ -374,7 +458,7 @@
     >
       <div class="tracker-header">
         <h3 class="tracker-title">
-          📊 Tracker详情 - {{ currentRow?.name }}
+          📊 Tracker详情 - {{ currentRow && currentRow.name }}
         </h3>
         <button class="tracker-close" @click="handleCloseTrackerDetail">
           ✕
@@ -395,7 +479,7 @@
           </thead>
           <tbody>
             <tr
-              v-for="(tracker, index) in (currentRow?.tracker_info || currentRow?.trackerInfo || [])"
+              v-for="(tracker, index) in ((currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || [])"
               :key="index"
             >
               <td>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</td>
@@ -444,22 +528,23 @@
 
     <!-- 分页 -->
     <nav class="torrent-pagination">
-      <span class="pagination-info">共 {{ total }} 条，第 {{ currentPage }}/{{ totalPages }} 页</span>
+      <div class="pagination-info">
+        <PageSizeCombobox
+          ref="pageSizeCombobox"
+          v-model="pageSizeInput"
+          :page-size="pageSize"
+          :options="pageSizeOptions"
+          :expanded="pageSizeDropdownExpanded"
+          controls-id="list-page-size-options"
+          @focus="handlePageSizeFocus"
+          @blur="handlePageSizeBlur"
+          @toggle="togglePageSizeDropdown"
+          @apply="applyPageSizeSelection"
+          @select="handlePageSizeSelect"
+        />
+        <span class="pagination-summary">共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
+      </div>
       <div class="pagination-controls">
-        <!-- 每页条数选择器 -->
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            v-for="size in pageSizeOptions"
-            :key="size"
-            :label="`${size} 条/页`"
-            :value="size"
-          />
-        </el-select>
-
         <button
           class="pagination-btn"
           :disabled="currentPage <= 1"
@@ -601,6 +686,7 @@
 import { Component } from 'vue-property-decorator'
 import { mixins } from 'vue-class-component'
 import BatchButton from '@/components/BatchButton/index.vue'
+import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import {
@@ -648,11 +734,19 @@ import type {
   AdvancedSearchBuilderParams,
   AdvancedSearchTemplateDraft
 } from '@/components/torrents/advancedSearchState'
+import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
+
+interface PageSizeSuggestion {
+  value: string
+}
+
+type TorrentSortField = 'name' | 'size' | 'status' | 'ratio' | 'added_date'
 
 @Component({
   name: 'TorrentsManagement',
   components: {
     BatchButton,
+    PageSizeCombobox,
     BatchOperationDialog: () => import('./components/BatchOperationDialog.vue'),
     AdvancedSearchBuilder: () => import('@/components/torrents/AdvancedSearchBuilder.vue'),
     TorrentAddDialog: () => import('./components/TorrentAddDialog.vue'),
@@ -688,7 +782,9 @@ export default class extends mixins(TorrentBatchMixin) {
   // 分页相关
   private currentPage = 1
   private pageSize = 20
-  private pageSizeOptions = [10, 20, 50, 100, 200]
+  private pageSizeInput = '20'
+  private pageSizeOptions = [20, 50, 100, 500, 1000]
+  private pageSizeDropdownExpanded = false
 
   // 复选框相关
   private selectAll = false
@@ -927,6 +1023,22 @@ export default class extends mixins(TorrentBatchMixin) {
     this.getList()
   }
 
+  // 列头排序与传统模式保持一致：首次选择字段默认降序，再次点击切换升/降序。
+  private handleSort(field: TorrentSortField) {
+    if (this.listQuery.sort_by === field) {
+      this.listQuery.sort_order = this.listQuery.sort_order === 'asc' ? 'desc' : 'asc'
+    } else {
+      this.listQuery.sort_by = field
+      this.listQuery.sort_order = 'desc'
+    }
+    this.getList()
+  }
+
+  private getSortAriaValue(field: TorrentSortField): 'ascending' | 'descending' | 'none' {
+    if (this.listQuery.sort_by !== field) return 'none'
+    return this.listQuery.sort_order === 'asc' ? 'ascending' : 'descending'
+  }
+
   // 防抖搜索（300ms延迟）
   private debouncedSearch = debounce(this.handleFilter, 300)
 
@@ -964,20 +1076,45 @@ export default class extends mixins(TorrentBatchMixin) {
     this.getList()
   }
 
-  // 每页条数变更
-  private handlePageSizeChange(newSize: number) {
-    this.pageSize = newSize
-    // 🔥 修复：同步更新 listQuery.limit，确保 API 请求使用正确的分页大小
-    this.listQuery.limit = newSize
-    // 重新计算当前页码，确保不会超出总页数
-    const newTotalPages = Math.ceil(this.total / this.pageSize)
-    if (this.currentPage > newTotalPages && newTotalPages > 0) {
-      this.currentPage = newTotalPages
-    }
-    // 重置到第一页或重新计算 skip
-    this.listQuery.skip = (this.currentPage - 1) * this.pageSize
+  private handlePageSizeSelect(suggestion: PageSizeSuggestion) {
+    this.pageSizeDropdownExpanded = false
+    this.applyPageSizeSelection(suggestion.value)
+  }
+
+  private handlePageSizeFocus() {
+    this.pageSizeDropdownExpanded = true
+  }
+
+  private handlePageSizeBlur() {
+    this.pageSizeDropdownExpanded = false
+    this.applyPageSizeSelection(this.pageSizeInput)
+  }
+
+  private togglePageSizeDropdown() {
+    this.pageSizeDropdownExpanded = !this.pageSizeDropdownExpanded
+    if (!this.pageSizeDropdownExpanded) return
+    this.$nextTick(() => {
+      const combobox = this.$refs.pageSizeCombobox as PageSizeCombobox | undefined
+      combobox?.focusInput()
+    })
+  }
+
+  private applyPageSizeSelection(value: string | number) {
+    const normalizedPageSize = normalizeTraditionalPageSize(value, this.pageSize)
+    this.pageSizeInput = String(normalizedPageSize)
+    this.pageSizeDropdownExpanded = false
+    if (normalizedPageSize === this.pageSize) return
+
+    this.pageSize = normalizedPageSize
+    this.handlePageSizeChange()
+  }
+
+  // 每页条数变更：与传统模式一致，应用后回到第一页。
+  private handlePageSizeChange() {
+    this.currentPage = 1
+    this.listQuery.limit = this.pageSize
+    this.listQuery.skip = 0
     this.getList()
-    this.$message.success(`每页显示 ${newSize} 条数据`)
   }
 
   // 全选/取消全选

@@ -230,6 +230,7 @@
     box-shadow: var(--shadow-lg);
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
     flex-shrink: 0; /* 固定高度，不参与 flex 缩放 */
     margin-top: 12px; /* 16px → 12px，紧凑布局 */
@@ -359,6 +360,32 @@
       letter-spacing: 0.5px;
       white-space: nowrap;
       border-bottom: 1px solid var(--color-border-primary);
+
+      &.sortable-column {
+        cursor: pointer;
+        user-select: none;
+        transition:
+          background-color var(--transition-fast),
+          box-shadow var(--transition-fast);
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.12);
+        }
+
+        &:focus-visible {
+          outline: 2px solid rgba(255, 255, 255, 0.9);
+          outline-offset: -3px;
+        }
+
+        &.sorted {
+          box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.9);
+        }
+      }
+
+      .sort-arrow {
+        margin-left: 3px;
+        font-size: 9px;
+      }
     }
 
     /* 只有操作列冻结 */
@@ -730,6 +757,9 @@
    ======================================== */
 .torrent-pagination {
   .pagination-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 13px;
     color: var(--color-text-secondary);
   }
@@ -738,31 +768,6 @@
     display: flex;
     gap: 6px;
     align-items: center;
-
-    .page-size-select {
-      width: 110px;
-
-      ::v-deep .el-input__inner {
-        height: 32px;
-        font-size: 13px;
-        border-radius: var(--radius-sm);
-        border-color: var(--color-border-primary);
-        background: var(--color-bg-secondary);
-        color: var(--color-text-primary);
-      }
-
-      ::v-deep .el-input__inner:hover {
-        border-color: var(--color-primary);
-      }
-
-      ::v-deep .el-input__inner:focus {
-        border-color: var(--color-primary);
-      }
-
-      ::v-deep .el-input__icon {
-        line-height: 32px;
-      }
-    }
 
     .pagination-btn {
       width: 32px;
@@ -1366,13 +1371,15 @@
       padding: 6px 12px; /* 移动端更紧凑 */
       flex-shrink: 0;
       margin-top: 8px; /* 16px → 8px，更紧凑 */
+      flex-wrap: wrap;
+      justify-content: center;
 
       .pagination-controls {
         justify-content: center;
       }
 
-      .pagination-info {
-        display: none; /* 移动端隐藏分页信息 */
+      .pagination-summary {
+        display: none; /* 移动端隐藏统计文案，保留每页数量组件 */
       }
     }
 

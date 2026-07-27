@@ -1,5 +1,34 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-27 交接：种子列表分页组件与列头排序对齐
+
+**当前任务**: `v1.0.6.30`
+**分支**: dev
+**状态**: 实现、组件回归、静态检查、生产构建与根初始化检查完成；尚未提交。
+
+### 关键结果
+
+- 列表模式和传统模式现在共用 `PageSizeCombobox.vue`：预设均为 20/50/100/500/1000，支持 1–100000 自定义输入，选择、Enter 或失焦应用后回到第 1 页。
+- 列表模式的名称、大小、状态、比率、添加时间五个列头支持排序；首次默认降序，同字段再次操作切换方向。
+- 排序列头支持鼠标、Enter、Space、`aria-sort` 和可见焦点；分页组件在移动端仍可用。
+- 后端接口及 `sort_by/sort_order` 契约未变，传统模式的分页、虚拟滚动和重复任务逻辑未变。
+
+### 验证
+
+- 列表视图新增回归 1 suite / 2 tests；前端全量 Jest 22 suites / 319 tests 全绿。
+- TypeScript、严格 Vue ESLint、Vuex action lint、生产 build 通过。
+- build 保留 48 条既有 Sass/资源体积 warning；`git diff --check` 通过。
+- 根 `init.sh` 在 Git Bash 下退出 0，识别 Node v18.20.8 / npm 10.8.2。
+- 完整 `npm run lint` 的 `contract:check` 命中任务开始前已有的生成契约漂移；本任务不涉及高级搜索协议，未更新该无关文件。
+
+### 当前工作区
+
+- 本轮共涉及 10 个文件：5 个前端实现/样式文件、2 个测试文件、3 个项目记录文件。
+- 未执行 Git commit/push；既有 6 个未跟踪工具目录保持不动。
+- `package.json` 与 `package-lock.json` 无变更。
+
+---
+
 ## 2026-07-27 交接：高级搜索视觉密度与多选条件行高修正
 
 **当前任务**: `advanced-search-ui-revamp.4`

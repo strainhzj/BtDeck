@@ -1540,6 +1540,23 @@
             "frontend/tests/unit/traditional-view-component.spec.ts"
           ],
           "evidence": "3 个子代理分别从数据迁移/发布恢复、搜索协议、对抗性发布角度独立审查并收敛方案。后端全量 2384 collected：2378 passed、6 skipped、0 failed；严格搜索/迁移/ratio 重点回归 341 passed。前端全量 20 suites/306 tests 通过，contract:check、tsc、严格 ESLint、Vuex lint、生产 build 通过（仅既有 48 条 Sass/资源体积 warning）。Flake8 app、BtDeck 架构门禁、git diff --check 通过；22 个变更 Python 文件 Black --check 通过；6 个新增严格契约/诊断模块 mypy 通过。全量 mypy 仍有仓库已登记的 1481 个 SQLAlchemy/历史类型债务，未降级或掩盖。实际 config/app.db 只读报告：integrity=ok、旧 revision=e6d8a20c41f3、3 个有效主备份，工具正确阻止把未迁移 VARCHAR 库视为完成；未擅自迁移真实本地库。根 init.sh 因当前 Windows 仅有不可用 WSL bash 无法执行。"
+        },
+        {
+          "id": "v1.0.6.30",
+          "name": "种子列表分页组件与列头排序对齐",
+          "description": "将种子列表模式的每页数量控件改为与传统模式相同的可输入组合框，并抽取共享组件避免两种视图继续分叉；同时为列表模式补齐传统模式已有的名称、大小、状态、比率和添加时间列头排序，以及键盘与 ARIA 交互。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/PageSizeCombobox.vue",
+            "frontend/src/styles/index.scss",
+            "frontend/src/styles/torrent-theme.scss",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "两种种子视图共用 PageSizeCombobox，统一提供 20/50/100/500/1000 预设与 1–100000 自定义输入，选择、Enter、失焦应用后回到第 1 页；列表模式新增名称/大小/状态/比率/添加时间五个可排序列头，首次降序、再次升降序切换，并支持鼠标、Enter、Space、aria-sort 和可见焦点。新增列表视图组件回归 2/2，传统视图既有回归保持通过；前端全量 Jest 22 suites/319 tests、TypeScript、严格 Vue ESLint、Vuex action lint、生产 build、根 init.sh 与 git diff --check 均通过，build 仅保留既有 48 条 Sass/资源体积 warning。完整 npm run lint 的 contract:check 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截，本任务未修改该无关生成契约。"
         }
       ]
     }

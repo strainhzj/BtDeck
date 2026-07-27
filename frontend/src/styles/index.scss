@@ -48,3 +48,95 @@ div:focus {
 .app-container {
   padding: 20px;
 }
+
+/* 种子列表两种视图共用的每页数量组合框 */
+.page-size-combobox {
+  width: 108px;
+  height: 24px;
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+
+  &:focus-within {
+    border-color: var(--color-primary);
+    box-shadow: 0 0 0 1px rgba(var(--color-primary-rgb), 0.16);
+  }
+
+  .page-size-input {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    padding: 0 2px 0 8px;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-size: 12px;
+    line-height: 22px;
+    text-align: center;
+  }
+
+  .page-size-toggle {
+    width: 24px;
+    height: 100%;
+    flex: 0 0 24px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    transition: color 0.2s ease;
+
+    &:hover,
+    &:focus-visible {
+      color: var(--color-primary);
+      outline: 2px solid var(--color-primary);
+      outline-offset: -2px;
+    }
+  }
+
+  .page-size-options {
+    position: absolute;
+    left: -1px;
+    bottom: calc(100% + 4px);
+    z-index: 50;
+    width: 108px;
+    margin: 0;
+    padding: 4px 0;
+    list-style: none;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-primary);
+    box-shadow: var(--shadow-md);
+
+    button {
+      width: 100%;
+      padding: 4px 8px;
+      border: 0;
+      background: transparent;
+      color: var(--color-text-primary);
+      text-align: center;
+      cursor: pointer;
+
+      &[aria-selected='true'] {
+        background: var(--color-bg-hover);
+        color: var(--color-primary);
+        font-weight: var(--font-weight-semibold);
+      }
+
+      &:hover,
+      &:focus-visible {
+        background: var(--color-bg-hover);
+        color: var(--color-primary);
+        outline: none;
+      }
+    }
+  }
+}

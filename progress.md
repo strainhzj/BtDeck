@@ -1,5 +1,41 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-27 - 种子列表分页组件与列头排序对齐
+
+**任务 ID**: `v1.0.6.30`
+**分支**: dev
+**范围**: 仅前端。统一种子列表与传统模式的每页数量交互，并为列表模式补齐传统模式中的列头排序，不改后端 API。
+
+### 实现
+
+- 新增共享 `PageSizeCombobox.vue`，两种视图统一使用 20/50/100/500/1000 预设，并继续支持 1–100000 自定义输入；选择预设、Enter 或失焦均归一化应用并回到第 1 页。
+- `TraditionalView.vue` 改为复用共享组件，保留原分页状态、虚拟滚动和重复任务行为；组合框样式集中到全局主题样式，避免两个视图出现视觉与交互分叉。
+- `views/torrents/index.vue` 移除原 Element `el-select`，接入同一组合框并同步 `limit/skip`。
+- 列表模式为名称、大小、状态、比率和添加时间五个列头增加服务端排序入口：首次选择字段默认降序，同字段再次操作切换升/降序。
+- 排序列头补齐 `aria-sort`、Enter/Space 键盘操作、可见焦点与当前方向箭头；移动端分页保留每页数量组件，仅隐藏摘要文字。
+- 新增列表视图组件测试，并让传统视图组件测试挂载真实共享组合框，锁定分页和排序请求参数。
+
+### 验证
+
+| 验证项 | 结果 |
+|---|---|
+| 列表视图新增回归 | ✅ 1 suite / 2 tests |
+| 前端全量 Jest | ✅ 22 suites / 319 tests |
+| TypeScript `typecheck` | ✅ 通过 |
+| 严格 Vue ESLint | ✅ 0 error / 0 warning |
+| Vuex action lint | ✅ 通过 |
+| 生产构建 | ✅ 通过；48 条既有 Sass/资源体积 warning |
+| 根 `init.sh`（Git Bash） | ✅ 退出 0；识别 Node v18.20.8 / npm 10.8.2 |
+| `git diff --check` | ✅ 通过 |
+
+### 已知基线与边界
+
+- 完整 `npm run lint` 在首步 `contract:check` 命中任务开始前已存在的 `frontend/src/contracts/advancedSearch.generated.ts` 生成契约漂移；本次不涉及高级搜索协议，因此未修改该无关文件。其后的 Vue ESLint、TypeScript 与 Vuex 门禁已分别通过。
+- 未新增或修改 API，排序继续使用既有 `sort_by/sort_order` 参数。
+- 本轮未执行 Git 提交；会话开始前已有的 `.agents/`、`.claude/`、`.code-graph/`、`.codex/`、`.spec-workflow/`、`.zcode/` 未跟踪目录保持不动。
+
+---
+
 ## 2026-07-27 - 高级搜索视觉密度与多选条件行高修正
 
 **任务 ID**: `advanced-search-ui-revamp.4`
