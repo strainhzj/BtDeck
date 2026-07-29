@@ -47,13 +47,13 @@ cd backend && pytest tests/api/               # API 层（34 个测试）
 ### 组件内嵌测试
 
 部分组件有内嵌 `__tests__/`：
-- `frontend/src/components/torrents/__tests__/`（4 个 spec，1604 行）
+- `frontend/src/components/torrents/__tests__/`（4 个 spec，1741 行）
   - `AdvancedMultiSelect.performance.spec.ts`（466 行，性能测试）
-  - `AdvancedMultiSelect.spec.ts`（386 行）
+  - `AdvancedMultiSelect.spec.ts`（477 行）
   - `AdvancedSearchBuilder.spec.ts`（609 行）
-  - `ConditionValueInput.spec.ts`（143 行）
+  - `ConditionValueInput.spec.ts`（189 行）
 - `frontend/src/components/common/__tests__/` ✨v1.0.6.28
-  - `LucideIcon.spec.ts`（70 行）
+  - `LucideIcon.spec.ts`（83 行）
 
 ### 运行命令
 

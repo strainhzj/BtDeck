@@ -1,6 +1,6 @@
 # frontend/components-layout — 通用组件与布局骨架
 
-> 通用可复用组件（18 个 .vue）+ 布局骨架（layout/ 下 8 个 .vue + 1 mixin）。全部 class-component。
+> 通用可复用组件（19 个 .vue）+ 布局骨架（layout/ 下 8 个 .vue + 1 mixin）。全部 class-component。
 
 ## components/ — 通用组件
 
@@ -8,10 +8,10 @@
 
 | 文件 | 行数 | class name | 一句话职责 |
 |------|------|-----------|-----------|
-| `LucideIcon.vue` | 152 | `LucideIcon extends Vue`（`@Component` + `vue-property-decorator`） | 轻量 Vue 2 包装器，统一渲染 Lucide 图标；静态具名 import 用到的图标（webpack 5 + sideEffects tree-shake，只打包所用图标，避免 ~2000 图标集入包）；stroke 跟随 `currentColor`，`size`/`strokeWidth` 通过 prop 透传。在 `main.ts:44` 全局注册 `Vue.component('LucideIcon', ...)` |
-| `__tests__/LucideIcon.spec.ts` | 70 | — | LucideIcon 单测 |
+| `LucideIcon.vue` | 158 | `LucideIcon extends Vue`（`@Component` + `vue-property-decorator`） | 轻量 Vue 2 包装器，统一渲染 Lucide 图标；静态具名 import 用到的图标（webpack 5 + sideEffects tree-shake，只打包所用图标，避免 ~2000 图标集入包）；stroke 跟随 `currentColor`，`size`/`strokeWidth` 通过 prop 透传。在 `main.ts:44` 全局注册 `Vue.component('LucideIcon', ...)`；v1.0.6.31 新增 `arrow-up-down/arrow-up/arrow-down` 三个排序状态图标 |
+| `__tests__/LucideIcon.spec.ts` | 83 | — | LucideIcon 单测（覆盖注册图标渲染，含 v1.0.6.31 新增排序图标） |
 
-> v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG。
+> v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG；v1.0.6.31 起列头排序图标亦复用同一包装器。
 
 ### 顶层 + 单件目录
 
@@ -32,20 +32,21 @@
 | `PythonClassSelector.vue` | 1357 | `PythonClassSelector` | Python 类/方法选择器 |
 | `MonacoEditor.vue` | 658 | class | 任务专用 Monaco 编辑器（含 Python 高亮） |
 
-### components/torrents/（8 个 .vue + 1 个 .ts + 4 个测试）
+### components/torrents/（9 个 .vue + 1 个 .ts + 4 个测试）
 
 | 文件 | 行数 | 范式 | 一句话职责 |
 |------|------|------|-----------|
 | `AdvancedSearchBuilder.vue` | 1373 | class（`AdvancedSearchBuilder`） | 高级搜索条件构建器；v1.0.6.29 收紧正文/控件字号、组与条件间距，底部动作统一 small；状态逻辑位于 `advancedSearchState.ts` |
-| `ConditionValueInput.vue` | 837 | class（`ConditionValueInput`） | 搜索条件值输入（按字段类型切换控件）；v1.0.6.28 起接入新的多选/标签控件（行数 1007→837） |
-| `AdvancedMultiSelect.vue` | 1377 | class（`AdvancedMultiSelect`） | 高级多选下拉；v1.0.6.29 改为 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标 |
+| `ConditionValueInput.vue` | 836 | class（`ConditionValueInput`） | 搜索条件值输入（按字段类型切换控件）；v1.0.6.28 起接入新的多选/标签控件 |
+| `AdvancedMultiSelect.vue` | 1417 | class（`AdvancedMultiSelect`） | 高级多选下拉；v1.0.6.29 改为 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应 |
 | `advancedSearchState.ts` ✨v1.0.6.28 | 674 | class-based store（无 .vue） | 高级搜索可复用状态/纯逻辑（从组件抽取的可单测模块，减少组件体积、便于复用到传统视图） |
 | `CompactTable.vue` | 838 | ⚠ **Options API**（L301 `export default {`，`CompactTable`） | 紧凑表格视图 |
 | `DuplicateTorrentsDialog.vue` | 404 | class | 重复种子检测对话框 |
 | `SizeRangeFilter.vue` | 358 | class（`SizeRangeFilter`） | 种子大小范围过滤器 |
 | `VirtualScrollList.vue` | 242 | class（`VirtualScrollList`） | 虚拟滚动列表 |
 | `FilterGroup.vue` | 90 | class（`FilterGroup`） | 过滤条件组容器 |
-| `__tests__/*.spec.ts`（4 个） | 1621 总 | 测试 | AdvancedMultiSelect（性能 466 + 单元 403）/ AdvancedSearchBuilder（609）/ ConditionValueInput（143）单测 |
+| `PageSizeCombobox.vue` ✨v1.0.6.30 | 91 | class | 共享分页组合框（20/50/100/500/1000 预设 + 1–100000 自定义输入；被 `views/torrents/index.vue` 与 `TraditionalView.vue` 复用，统一列表/传统两视图的每页数量交互） |
+| `__tests__/*.spec.ts`（4 个） | 1741 总 | 测试 | AdvancedMultiSelect（性能 466 + 单元 477）/ AdvancedSearchBuilder（609）/ ConditionValueInput（189）单测 |
 
 > ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。
 
@@ -84,9 +85,9 @@
 
 ## 关键观察
 
-- **范式分布**：本分支 27 个文件中，26 个为 class-component；`components/torrents/CompactTable.vue` 是唯一的 Options API（全仓库 3 处之一）
+- **范式分布**：本分支 28 个文件中，27 个为 class-component；`components/torrents/CompactTable.vue` 是唯一的 Options API（全仓库 3 处之一）
 - **Monaco Editor 双版本**：`components/MonacoEditor.vue`（通用）与 `components/tasks/MonacoEditor.vue`（任务专用，含 Python 高亮）
-- **测试覆盖**：`components/torrents/__tests__/` 有 4 个测试文件（1621 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / ConditionValueInput
+- **测试覆盖**：`components/torrents/__tests__/` 有 4 个测试文件（1741 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / ConditionValueInput
 
 ## 第三层详情
 

@@ -24,7 +24,7 @@ BtDeck/
 │   ├── api/             axios API 封装（13 个领域模块）
 │   ├── views/           页面视图（13 个 view 模块，Options API + class-component 并存）
 │   ├── store/           Vuex（index.ts 空壳 + 5 个 getModule 自注册 module）
-│   ├── components-layout/  通用组件（v1.0.6.28 新增 LucideIcon）+ 布局骨架
+│   ├── components-layout/  通用组件（v1.0.6.28 LucideIcon / v1.0.6.30 PageSizeCombobox）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
 ├── tests/            ← 测试（backend pytest 101 个 test_*.py + frontend jest unit）
@@ -50,7 +50,7 @@ BtDeck/
 | ↳ api | axios 封装的 13 个领域 API 模块 | [frontend/api/README.md](./frontend/api/README.md) |
 | ↳ views | 13 个页面视图模块（⚠ class-component 与 Options API 并存） | [frontend/views/README.md](./frontend/views/README.md) |
 | ↳ store | Vuex store（空壳 index + 5 个自注册 module） | [frontend/store/README.md](./frontend/store/README.md) |
-| ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
+| ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
 | **tests** | 后端 pytest（101 个 test_*.py，按子目录组织）+ 前端 jest unit | [tests/README.md](./tests/README.md) |
@@ -90,10 +90,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-27（增量更新：v1.0.6.25~29） |
-| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~29 增量同步（含高级搜索契约化、Lucide 基础设施与视觉密度修正） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-29（增量更新：v1.0.6.25~31） |
+| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~31 增量同步（含高级搜索契约化、Lucide 基础设施、视觉密度修正、列表分页/排序对齐与保存路径列） |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层样例（1 个：torrent_crud.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | v1.0.6.29 更新前端 views/components 路线图：高级多选改为 32px 紧凑触发器 + 浮层，相关行数与测试统计同步 |
+| 本次新增 | v1.0.6.30~31 更新前端 views/components 路线图：新增共享 `PageSizeCombobox`（列表/传统分页统一 + 列头排序对齐）、传统视图补保存路径列、列表模式可排序列头常驻 Lucide 排序图标；相关行数与测试统计同步 |

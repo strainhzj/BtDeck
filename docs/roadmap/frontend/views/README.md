@@ -6,7 +6,7 @@
 
 | 模块 | 文件数 | 总行数 | 主入口 | 范式 |
 |------|--------|--------|--------|------|
-| torrents | 20 | 11,135 | `index.vue`（2,504 行） | class-component（全部） |
+| torrents | 20 | 11,189 | `index.vue`（2,662 行） | class-component（全部） |
 | downloader | 14 | 8,409 | `index.vue`（824 行） | class-component（全部） |
 | tracker | 12 | 5,357 | 4 个并列页面 | class-component（11）+ ⚠ 1 Options API |
 | tasks | 1 | 2,419 | `index.vue` | class-component |
@@ -25,8 +25,8 @@
 
 | 文件 | 行数 | 范式 | 一句话职责 |
 |------|------|------|-----------|
-| `index.vue` | 2504 | class（`TorrentsManagement`，L652 `@Component`，L666 `extends mixins(TorrentBatchMixin)`） | 种子管理主入口（列表模式）；高级搜索标题在 v1.0.6.29 收紧为 16px 图标 + 15px 文字 |
-| `TraditionalView.vue` | 2561 | class（L847 `extends mixins(TorrentBatchMixin)`） | 传统表格视图 |
+| `index.vue` | 2662 | class（`TorrentsManagement`，L652 `@Component`，L666 `extends mixins(TorrentBatchMixin)`） | 种子管理主入口（列表模式）；v1.0.6.30 接入共享 `PageSizeCombobox` + 5 列头服务端排序（首次降序/同字段切换升降序），高级搜索标题在 v1.0.6.29 收紧为 16px 图标 + 15px 文字 |
+| `TraditionalView.vue` | 2458 | class（L847 `extends mixins(TorrentBatchMixin)`） | 传统表格视图；v1.0.6.30 复用共享 `PageSizeCombobox`（保留原分页状态/虚拟滚动/重复任务），v1.0.6.31 在“分类/标签”与“添加时间”之间新增保存路径列（兼容 `savePath/save_path`） |
 | `TorrentViewSwitcher.vue` | 106 | class | 视图模式切换器（列表/传统） |
 | `FileManagement.vue` | 812 | class（L312 `extends Vue`） | 种子文件管理（选择/优先级） |
 | `components/TorrentAddDialog.vue` | 801 | class | 添加种子对话框 |
@@ -36,11 +36,11 @@
 | `components/TrackerDetailCard.vue` | 394 | class | Tracker 详情卡片 |
 | `components/SetLocationDialog.vue` | 342 | class | 设置保存位置对话框 |
 | `components/GlobalReplaceTrackerDialog.vue` | 254 | class | 全局替换 Tracker 对话框 |
-| `components/TorrentDetailDialog.vue` | 163 | class | 种子详情对话框 |
+| `components/TorrentDetailDialog.vue` | 171 | class | 种子详情对话框 |
 | `components/BatchOperationDialog.vue` | 148 | class | 批量操作对话框 |
 | `components/SearchTemplateDialog.vue` | 93 | class | 搜索模板选择对话框 |
 | `mixins/torrentBatch.ts` | 299 | class-based Mixin | 批量操作薄封装层（注入 API/绑定 this/统一文案） |
-| `utils/torrentBatch.ts` | 896 | util（纯函数） | 批量操作纯函数集合（可单测） |
+| `utils/torrentBatch.ts` | 905 | util（纯函数） | 批量操作纯函数集合（可单测） |
 | `utils/traditionalTorrentIdentity.ts` | 107 | util | 任务行标识（infoId + downloaderId + hash） |
 | `utils/traditionalStatusFilter.ts` | 46 | util | 传统视图状态筛选 |
 | `utils/traditionalVirtualList.ts` | 57 | util | 传统视图虚拟滚动窗口计算 |

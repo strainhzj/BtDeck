@@ -54,7 +54,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（16 个 spec）
+### `frontend/tests/unit/`（18 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -66,29 +66,31 @@
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI |
 | `operator-contract.spec.ts` ✨v1.0.6.26 | 高级搜索操作符前后端契约守卫（与 `app/contracts/advanced_search_contract.json` 镜像） |
+| `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |
 | `torrent-batch.spec.ts` | `views/torrents/utils/torrentBatch.ts` |
+| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图分页/列头排序参数与共享分页组件接入 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` | 传统视图组件 |
+| `traditional-view-component.spec.ts` | 传统视图组件（含 v1.0.6.31 保存路径列/列设置回归） |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（4 个 spec，1604 行）
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（4 个 spec，1741 行）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
 | `AdvancedMultiSelect.performance.spec.ts` | 466 | `AdvancedMultiSelect.vue`（性能测试） |
-| `AdvancedMultiSelect.spec.ts` | 386 | `AdvancedMultiSelect.vue` |
+| `AdvancedMultiSelect.spec.ts` | 477 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
 | `AdvancedSearchBuilder.spec.ts` | 609 | `AdvancedSearchBuilder.vue` |
-| `ConditionValueInput.spec.ts` | 143 | `ConditionValueInput.vue` |
+| `ConditionValueInput.spec.ts` | 189 | `ConditionValueInput.vue` |
 
 ### 组件内嵌测试 `frontend/src/components/common/__tests__/`（1 个 spec，v1.0.6.28）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
-| `LucideIcon.spec.ts` | 70 | `LucideIcon.vue` |
+| `LucideIcon.spec.ts` | 83 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
 
 ---
 
