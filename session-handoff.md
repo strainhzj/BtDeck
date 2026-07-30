@@ -1,5 +1,36 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-30 交接：孤儿扫描 Transmission Torrent 文件清单解析修复
+
+**当前任务**: `orphan-transmission-torrent-files-fix`
+**分支**: dev
+**状态**: 修复、真实 SDK 回归、后端全量回归与项目记录均已完成，尚未提交。
+
+### 关键结论
+
+- 根因位于共享 `TorrentManifestBuilder`，不是定时器、数据库或扫描目录本身：`transmission-rpc 7.0.11` 的 `Torrent` 不可迭代，文件清单存放在 `fields["files"]`；旧逻辑漏判后错误地迭代整个 Torrent。
+- `orphan_manifest.py` 现统一解析真实 `Torrent` 与兼容形态，并在库存内已有文件时跳过逐种子 `get_torrent`；详情回退路径仍保留。
+- `orphan_scanner.py` 的旧 Transmission 解析入口改为复用共享实现；错误形态现在返回带下载器/种子上下文的 `ManifestBuildError`。
+- 回归测试已换用真实 `transmission_rpc.Torrent`，覆盖内嵌文件、详情回退和错误库存形态。
+
+### 验证
+
+- manifest/scanner 专项：46 passed。
+- 全部 orphan 回归：130 passed / 1 skipped。
+- 后端全量：2393 passed / 6 skipped。
+- Flake8、Ruff、py_compile、`git diff --check` 通过。
+- 目标 mypy 的 3 条错误均为修改前已有、且不在本次修改行的 SQLAlchemy `Column` 类型问题。
+- Black 在 HEAD 与当前版本上对同一目标文件均报告既有格式差异，未为本热修复重排整份文件。
+- 根 `init.sh` 在当前 Windows 环境因 WSL `E_ACCESSDENIED` 无法执行。
+
+### 当前工作区
+
+- 本轮修改 7 个文件：2 个后端服务、2 个后端测试、3 个根项目记录。
+- 未新增依赖、迁移或 API；未执行 Git stage、commit 或 push。
+- 会话开始前已有的 `.docker_temp_482561487`、`.pnpm-store/`、`.zcode/`、两个镜像归档、`build-and-export-images.bat` 与 `tools/` 均保持不动。
+
+---
+
 ## 2026-07-30 交接：孤儿文件扫描、统计与刷新状态一致性修复
 
 **当前任务**: `orphan-files-state-consistency-fix`

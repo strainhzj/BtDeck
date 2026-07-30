@@ -5,6 +5,43 @@
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
+      "id": "orphan-transmission-torrent-files-fix",
+      "name": "孤儿扫描 Transmission Torrent 文件清单解析修复",
+      "description": "修复 transmission-rpc Torrent 对象被误当作可迭代文件集合导致的孤儿扫描失败，统一真实 SDK 对象与兼容形态的文件清单提取，并补充真实 Torrent 回归测试及错误上下文。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-transmission-torrent-files-fix.1",
+          "name": "修复 Torrent 文件清单解析并补充回归",
+          "description": "从 Torrent.fields/get('files') 读取 transmission-rpc 原始文件清单；库存已携带 files 时直接复用，缺失时回退 get_torrent；统一旧扫描解析入口，并为异常库存形态补充可定位错误。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_manifest.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/tests/services/test_orphan_manifest.py",
+            "backend/tests/services/test_orphan_scanner.py"
+          ],
+          "evidence": "使用 transmission-rpc 7.0.11 的真实 Torrent 对象覆盖库存内嵌 files、详情回退与单 Torrent 错误形态；manifest/scanner 专项 46 passed，全部 orphan 回归 130 passed / 1 skipped，后端全量 2393 passed / 6 skipped。Flake8、Ruff、py_compile 与 git diff --check 通过。目标 mypy 仅保留 3 条修改前已存在且位于本次修改行之外的 SQLAlchemy Column 类型错误。"
+        },
+        {
+          "id": "orphan-transmission-torrent-files-fix.2",
+          "name": "验证与交付记录",
+          "description": "完成全量后端回归、静态检查、差异审查并同步功能、进度与会话交接记录。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "确认本次不变更 API、数据库 Schema、Alembic 迁移或前端。Black 对 HEAD 与当前版本的同一批目标文件均报告既有格式差异，未为热修复扩大无关格式化范围；根 init.sh 因当前 Windows 环境无法启动 WSL（E_ACCESSDENIED）未完成。"
+        }
+      ]
+    },
+    {
       "id": "orphan-files-state-consistency-fix",
       "name": "孤儿文件页面状态一致性修复",
       "description": "修复最近扫描失败后列表变空、清理后统计仍显示扫描原始量、顶部刷新不刷新统计三类问题；统一后端扫描上下文与前端原子刷新，并补齐隔离候选与扫描明细的一致性。",

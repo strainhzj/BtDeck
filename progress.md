@@ -1,5 +1,38 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-30 - 孤儿扫描 Transmission Torrent 文件清单解析修复
+
+**任务 ID**: `orphan-transmission-torrent-files-fix`
+**分支**: dev
+**范围**: 后端解析与回归测试；不修改 API、数据库 Schema、Alembic 迁移或前端。
+
+### 根因与修复
+
+- `transmission-rpc 7.0.11` 的 `Torrent` 是字段容器而不是文件集合：对象本身不可迭代，也没有稳定的 `.files` 属性；原始文件清单位于 `Torrent.fields["files"]`，并可通过 `Torrent.get("files")` 读取。
+- 共享 `TorrentManifestBuilder` 先用 `.files` 判断库存是否内嵌文件，因而漏判真实 `Torrent`；详情查询随后返回单个 `Torrent`，旧提取逻辑把该对象当作文件集合执行迭代，最终抛出 `'Torrent' object is not iterable`。
+- 新增统一原始文件提取逻辑，按字典、`get("files")`、`fields["files"]`、兼容 `.files` 的顺序识别；库存已携带文件时直接解析，避免不必要的逐种子详情查询，缺失时仍回退 `get_torrent`。
+- 文件集合支持列表、元组、生成器和按文件编号映射的字典；字符串、单个 Torrent 或其他不可迭代错误形态改为抛出包含下载器与种子上下文的 `ManifestBuildError`。
+- 旧 `OrphanScanner` 的 Transmission 解析入口复用共享提取逻辑，避免两套实现再次漂移。
+
+### 回归与检查
+
+| 验证项 | 结果 |
+|---|---|
+| manifest + scanner 专项 | ✅ 46 passed |
+| 全部 orphan 相关测试 | ✅ 130 passed / 1 skipped |
+| 后端全量 pytest | ✅ 2393 passed / 6 skipped |
+| Flake8 / Ruff / py_compile / `git diff --check` | ✅ 通过 |
+| 目标 mypy | ⚠️ 3 条既有 SQLAlchemy `Column` 类型错误，均不在本次修改行 |
+| Black 基线对比 | ⚠️ HEAD 与当前版本的同一批目标文件均会被现有 Black 版本重排；未扩大无关格式化差异 |
+| 根 `init.sh` | ⚠️ 当前 Windows 环境启动 WSL 返回 `E_ACCESSDENIED`，未能执行 |
+
+### 交付边界
+
+- 回归测试使用真实 `transmission_rpc.Torrent`，覆盖库存内嵌文件、详情查询回退、单 Torrent 错误库存三条路径；不再依赖会掩盖 SDK 结构差异的 `SimpleNamespace(files=...)`。
+- 本轮未执行 Git stage、commit 或 push；会话开始前已有的未跟踪工具目录、镜像归档与批处理文件保持不动。
+
+---
+
 ## 2026-07-30 - 孤儿文件扫描、统计与刷新状态一致性修复
 
 **任务 ID**: `orphan-files-state-consistency-fix`

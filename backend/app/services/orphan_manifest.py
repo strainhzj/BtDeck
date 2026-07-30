@@ -15,6 +15,8 @@ from app.downloader.models import BtDownloaders
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
+_MISSING_FILES = object()
+
 
 class ManifestBuildError(RuntimeError):
     """实时下载器清单不完整；调用方必须 fail-closed。"""
@@ -179,7 +181,18 @@ class TorrentManifestBuilder:
             ) from exc
         if result is None:
             raise ManifestBuildError(f"下载器 {downloader_id} inventory 返回 None")
-        return list(result)
+        if isinstance(result, (str, bytes, bytearray, dict)):
+            raise ManifestBuildError(
+                f"下载器 {downloader_id} inventory 返回不可迭代对象: "
+                f"{type(result).__name__}"
+            )
+        try:
+            return list(result)
+        except TypeError as exc:
+            raise ManifestBuildError(
+                f"下载器 {downloader_id} inventory 返回不可迭代对象: "
+                f"{type(result).__name__}"
+            ) from exc
 
     async def _fetch_files(
         self, downloader_id: str, downloader_type: str, client: Any, torrent_hash: str
@@ -206,19 +219,68 @@ class TorrentManifestBuilder:
             raise ManifestBuildError(
                 f"种子 {torrent_hash[:8]} 文件清单获取失败: {exc}"
             ) from exc
-        return self._extract_files(result)
+        try:
+            return self._extract_files(result)
+        except ManifestBuildError as exc:
+            raise ManifestBuildError(
+                f"种子 {torrent_hash[:8]} 文件清单解析失败: {exc}"
+            ) from exc
 
     @staticmethod
-    def _extract_files(value: Any) -> List[str]:
-        raw = (
-            value.get("files", [])
-            if isinstance(value, dict)
-            else getattr(value, "files", value)
-        )
+    def _raw_files(value: Any) -> Any:
+        """读取不同客户端对象中携带的原始 files 字段。
+
+        transmission-rpc 7.x 的 Torrent 不暴露 ``.files`` 属性；RPC 原始
+        字段保存在 Container.fields 中，并通过 ``get("files")`` 读取。
+        旧客户端/测试替身可能仍以 ``.files`` 属性或方法暴露该字段。
+        """
+        if isinstance(value, dict):
+            return value["files"] if "files" in value else _MISSING_FILES
+
+        getter = getattr(value, "get", None)
+        if callable(getter):
+            try:
+                raw = getter("files", _MISSING_FILES)
+            except TypeError:
+                try:
+                    raw = getter("files")
+                except (AttributeError, KeyError):
+                    raw = _MISSING_FILES
+            except (AttributeError, KeyError):
+                raw = _MISSING_FILES
+            if raw is not _MISSING_FILES:
+                return raw
+
+        fields = getattr(value, "fields", None)
+        if isinstance(fields, dict) and "files" in fields:
+            return fields["files"]
+
+        return getattr(value, "files", _MISSING_FILES)
+
+    @classmethod
+    def _extract_files(cls, value: Any) -> List[str]:
+        raw = cls._raw_files(value)
+        if raw is _MISSING_FILES:
+            raw = value
         if callable(raw):
             raw = raw()
+        if raw is None:
+            return []
+        if isinstance(raw, (str, bytes, bytearray)):
+            raise ManifestBuildError(
+                f"文件清单返回不可迭代对象: {type(raw).__name__}"
+            )
+        if isinstance(raw, dict):
+            items = raw.values()
+        else:
+            try:
+                items = iter(raw)
+            except TypeError as exc:
+                raise ManifestBuildError(
+                    f"文件清单返回不可迭代对象: {type(raw).__name__}"
+                ) from exc
         result: List[str] = []
-        for item in raw or []:
+        for item in items:
             name = (
                 item.get("name")
                 if isinstance(item, dict)
@@ -239,7 +301,6 @@ class TorrentManifestBuilder:
                 or torrent.get("downloadDir")
                 or torrent.get("download_dir")
             )
-            files = cls._extract_files(torrent) if "files" in torrent else None
         else:
             torrent_hash = getattr(torrent, "hash", None) or getattr(
                 torrent, "hashString", None
@@ -249,8 +310,12 @@ class TorrentManifestBuilder:
                 or getattr(torrent, "download_dir", None)
                 or getattr(torrent, "downloadDir", None)
             )
-            files_attr = getattr(torrent, "files", None)
-            files = cls._extract_files(torrent) if files_attr is not None else None
+        raw_files = cls._raw_files(torrent)
+        files = (
+            cls._extract_files(raw_files)
+            if raw_files is not _MISSING_FILES
+            else None
+        )
         return str(torrent_hash or ""), str(save_path or ""), files
 
     @staticmethod

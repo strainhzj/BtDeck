@@ -384,27 +384,10 @@ class OrphanScanner:
         """解析下载器 API 返回的文件列表（qB/TR 格式不同）。
 
         qBittorrent: client.torrents.files(hash) → [FileEntry(name=...), ...]
-        Transmission: client.get_torrent(hash) → {"files": [{"name": ...}, ...]}
+        Transmission: client.get_torrent(hash) → Torrent，其原始 files 字段
+        通过 Torrent.get("files") / Torrent.fields 读取。
         """
-        if result is None:
-            return []
-        if downloader_type == "qbittorrent":
-            # qB 返回文件对象列表，每个有 .name 属性
-            files = []
-            for f in result:
-                name = getattr(f, "name", None)
-                if name:
-                    files.append(name)
-            return files
-        else:  # transmission
-            # TR 返回 Torrent 对象（.files）或兼容 dict
-            if isinstance(result, dict):
-                raw_files = result.get("files", [])
-                return [f.get("name", "") for f in raw_files if f.get("name")]
-            raw_files = getattr(result, "files", [])
-            if callable(raw_files):
-                raw_files = raw_files()
-            return [getattr(f, "name", "") for f in raw_files if getattr(f, "name", "")]
+        return TorrentManifestBuilder._extract_files(result)
 
     @staticmethod
     def _resolve_downloader_type(dl_config: BtDownloaders) -> Optional[str]:

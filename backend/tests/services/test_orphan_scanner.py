@@ -14,10 +14,10 @@
 import json
 import os
 from datetime import datetime
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from transmission_rpc import Torrent
 
 from app.services.orphan_scanner import (
     OrphanFileItem,
@@ -683,9 +683,19 @@ class TestPathAndFileSet:
 async def test_transmission_fetch_uses_files_argument_and_object_shape(
     fake_tr_client, monkeypatch
 ):
-    """Transmission 生产客户端返回 Torrent 对象，文件列表来自 .files。"""
-    fake_tr_client.get_torrent.return_value = SimpleNamespace(
-        files=[SimpleNamespace(name="folder/video.mkv")]
+    """Transmission 生产客户端返回真实 Torrent，文件列表来自原始 fields。"""
+    fake_tr_client.get_torrent.return_value = Torrent(
+        fields={
+            "id": 1,
+            "hashString": "hash-tr",
+            "files": [
+                {
+                    "name": "folder/video.mkv",
+                    "length": 1024,
+                    "bytesCompleted": 1024,
+                }
+            ],
+        }
     )
     scanner = OrphanScanner()
 

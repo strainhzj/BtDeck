@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from transmission_rpc import Torrent
 
 from app.services.orphan_manifest import (
     ManifestBuildError,
@@ -66,10 +67,20 @@ async def test_qb_inventory_is_authoritative(tmp_path):
 async def test_transmission_inventory_uses_object_files(tmp_path):
     root = tmp_path / "tr"
     root.mkdir()
-    torrent = SimpleNamespace(
-        hashString="hash-tr",
-        download_dir=str(root),
-        files=[SimpleNamespace(name="show/episode.mkv")],
+    torrent = Torrent(
+        fields={
+            "id": 1,
+            "hashString": "hash-tr",
+            "downloadDir": str(root),
+            "name": "show",
+            "files": [
+                {
+                    "name": "show/episode.mkv",
+                    "length": 1024,
+                    "bytesCompleted": 1024,
+                }
+            ],
+        }
     )
     client = MagicMock()
     client.get_torrents.return_value = [torrent]
@@ -91,6 +102,85 @@ async def test_transmission_inventory_uses_object_files(tmp_path):
     client.get_torrents.assert_called_once_with(
         arguments=["hashString", "downloadDir", "name", "files"]
     )
+    client.get_torrent.assert_not_called()
+
+
+async def test_transmission_detail_fallback_uses_real_torrent_raw_files(tmp_path):
+    root = tmp_path / "tr-fallback"
+    root.mkdir()
+    inventory_torrent = Torrent(
+        fields={
+            "id": 2,
+            "hashString": "hash-tr-fallback",
+            "downloadDir": str(root),
+            "name": "fallback",
+        }
+    )
+    detail_torrent = Torrent(
+        fields={
+            "id": 2,
+            "hashString": "hash-tr-fallback",
+            "files": [
+                {
+                    "name": "fallback/video.mkv",
+                    "length": 2048,
+                    "bytesCompleted": 2048,
+                }
+            ],
+        }
+    )
+    client = MagicMock()
+    client.get_torrents.return_value = [inventory_torrent]
+    client.get_torrent.return_value = detail_torrent
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="tr", client=client, fail_time=0)
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(store)
+    builder._load_configs = lambda: [_config("tr", 1)]
+
+    snapshot = await builder.build()
+
+    assert snapshot.expected_paths == {
+        normalize_path(str(root / "fallback" / "video.mkv"))
+    }
+    client.get_torrent.assert_called_once_with(
+        "hash-tr-fallback", arguments=["files"]
+    )
+
+
+async def test_transmission_scalar_inventory_fails_with_context(tmp_path):
+    root = tmp_path / "tr-scalar"
+    root.mkdir()
+    torrent = Torrent(
+        fields={
+            "id": 3,
+            "hashString": "hash-tr-scalar",
+            "downloadDir": str(root),
+            "name": "scalar",
+            "files": [],
+        }
+    )
+    client = MagicMock()
+    client.get_torrents.return_value = torrent
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="tr", client=client, fail_time=0)
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(store)
+    builder._load_configs = lambda: [_config("tr", 1)]
+
+    with pytest.raises(
+        ManifestBuildError,
+        match=r"下载器 tr inventory 返回不可迭代对象: Torrent",
+    ):
+        await builder.build()
 
 
 async def test_partial_inventory_failure_is_fail_closed(tmp_path):
