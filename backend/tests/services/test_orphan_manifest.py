@@ -12,6 +12,7 @@ from app.services.orphan_manifest import (
     ScanPathSelection,
     TorrentManifestBuilder,
     normalize_path,
+    resolve_external_path,
 )
 
 pytestmark = pytest.mark.asyncio
@@ -280,3 +281,57 @@ async def test_missing_mapping_is_warned_and_skipped(tmp_path):
     assert len(snapshot.warnings) == 1
     assert snapshot.warnings[0].internal_path == internal_root
     client.torrents.files.assert_not_called()
+
+
+def test_resolve_external_path_treats_passthrough_as_missing():
+    """external 全空（service 原样返回输入）时视为映射缺失。
+
+    复现 tr 自动发现映射 external="" 的场景：PathMappingService 未命中分支
+    会原样返回输入路径，resolve_external_path 不得把它当成有效扫描根。
+    """
+
+    config = SimpleNamespace(
+        downloader_id="tr",
+        path_mapping_service=SimpleNamespace(
+            get_mappings=lambda: [{"internal": "/Downloads/bangumi", "external": ""}],
+            get_rules=lambda: [],
+            # 模拟 PathMappingService 未命中分支：external 为空 → 原样返回
+            internal_to_external=lambda path: path,
+        ),
+    )
+
+    assert resolve_external_path("/Downloads/bangumi", config) is None
+
+
+def test_resolve_external_path_treats_passthrough_trailing_slash_as_missing():
+    """service 把目录规范化加尾斜杠后原样返回，仍应判定为缺失。"""
+
+    config = SimpleNamespace(
+        downloader_id="tr",
+        path_mapping_service=SimpleNamespace(
+            get_mappings=lambda: [{"internal": "/Downloads/bangumi/", "external": ""}],
+            get_rules=lambda: [],
+            internal_to_external=lambda path: path.rstrip("/") + "/",
+        ),
+    )
+
+    assert resolve_external_path("/Downloads/bangumi", config) is None
+
+
+def test_resolve_external_path_returns_mapped_external_when_resolved():
+    """命中真实 external 的映射正常返回，新判定不得误伤正例。"""
+
+    config = SimpleNamespace(
+        downloader_id="tr",
+        path_mapping_service=SimpleNamespace(
+            get_mappings=lambda: [
+                {"internal": "/Downloads/bangumi", "external": "/mnt/bangumi"}
+            ],
+            get_rules=lambda: [],
+            internal_to_external=lambda path: path.replace(
+                "/Downloads/bangumi", "/mnt/bangumi"
+            ),
+        ),
+    )
+
+    assert resolve_external_path("/Downloads/bangumi", config) == "/mnt/bangumi"

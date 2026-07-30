@@ -1,5 +1,31 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-30 交接：孤儿扫描空 external 映射绕过严格校验修复
+
+**当前任务**: `orphan-scan-path-scope-mapping-fix`（回归补丁）
+**分支**: dev
+**状态**: 已修复、回归与静态检查通过；尚未提交。
+
+### 关键结论
+
+- 现象：重建镜像后 `orphan_scan_cleanup` 报「扫描根不存在或非目录: /Downloads/bangumi」，整批 failed。
+- 根因：tr/tr_lpan/tr_kpan 的自动发现映射 `external` 全为空；`PathMappingService` 未命中时原样返回输入路径，旧 `resolve_external_path` 只校验前缀命中 + isabs，把它误判为有效映射选成扫描根，而该路径在 BtDeck 容器内不存在 → `_walk_all_roots` fail-closed。
+- 修复：`resolve_external_path` 前缀初筛改为只纳入 `external`/`target` 非空的显式映射；external 全空 → 返回 None → 走既有 `path_mapping_not_found` 软跳过。不误伤 `internal==external` 的合法恒等映射。
+- 不新增数据库结构、不修改下载器路径映射配置；历史 failed 批次保留不动。下次扫描会把 tr 系未回填 external 的路径计入 `total_paths_skipped`/`warnings`，任务以 completed 结束。
+
+### 验证
+
+- orphan 专项回归：70 passed；Ruff / Flake8 / py_compile / `scripts/lint_btdeck.py` 通过。
+- 真实 app.db 复跑：`/Downloads/bangumi` 及子路径返回 None；`external=/mnt/bangumi` 正例仍正常解析。
+
+### 当前工作区
+
+- 改动 2 个文件：`backend/app/services/orphan_manifest.py`、`backend/tests/services/test_orphan_manifest.py`。
+- 待补：progress.md / session-handoff.md 已更新，feature_list.json 待补 evidence。
+- 未执行 Git stage / commit / push。
+
+---
+
 ## 2026-07-30 交接：孤儿扫描有效路径筛选与严格映射修复
 
 **当前任务**: `orphan-scan-path-scope-mapping-fix`

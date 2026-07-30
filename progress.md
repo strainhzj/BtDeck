@@ -1,5 +1,29 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-30 - 孤儿扫描空 external 映射绕过严格校验修复
+
+**任务 ID**: `orphan-scan-path-scope-mapping-fix`（回归补丁）
+**分支**: dev
+**范围**: `resolve_external_path` 前缀初筛只认 `internal`/`source`，未要求 `external`/`target` 非空，导致系统自动发现后未回填 external 的映射（tr/tr_lpan/tr_kpan 全空）让下载器内部绝对路径原样通过、被选成扫描根，最终在 `_walk_all_roots` 触发 fail-closed 把整批扫描标为 failed。
+
+### 根因与修复
+
+- `PathMappingService.internal_to_external` 对 `external=""` 的映射逐条跳过 → 无 best_match → 原样返回输入路径（如 `/Downloads/bangumi/`）。
+- 旧 `resolve_external_path` 仅校验「前缀命中 + os.path.isabs」：原样返回的内部绝对路径两项都过 → 误判为有效映射 → 选成扫描根。
+- 修复：前缀初筛只纳入带有效 `external`/`target` 的显式映射，external 全空时不再命中 → 返回 None → 走既有 `path_mapping_not_found` 软跳过，与上一版「映射缺失」语义对齐；不再误伤 `internal==external` 的合法恒等映射。
+- 不新增数据库结构、不修改任何下载器路径映射配置；历史 failed 扫描批次保留不动。
+
+### 回归与检查
+
+| 验证项 | 结果 |
+|---|---|
+| orphan 专项回归 | ✅ 70 passed |
+| Ruff / Flake8 / py_compile | ✅ 通过 |
+| `scripts/lint_btdeck.py` | ✅ 无阻塞 |
+| 真实 app.db 复跑 | ✅ `/Downloads/bangumi*` 返回 None，`external=/mnt/bangumi` 正例仍解析 |
+
+---
+
 ## 2026-07-30 - 孤儿扫描有效路径筛选与严格映射修复
 
 **任务 ID**: `orphan-scan-path-scope-mapping-fix`

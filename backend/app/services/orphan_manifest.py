@@ -105,6 +105,10 @@ def resolve_external_path(
         if service is None:
             return None
 
+        # 仅把「带有效 external/target」的显式映射纳入前缀匹配初筛。
+        # external 为空（如系统自动发现后未回填）的映射既不能真正转换路径，
+        # 也会让 PathMappingService 未命中分支原样返回输入路径；若放它通过，
+        # 下游会把下载器内部绝对路径误当成 BtDeck 可访问的扫描根。
         sources: List[str] = []
         get_mappings = getattr(service, "get_mappings", None)
         if callable(get_mappings):
@@ -112,7 +116,9 @@ def resolve_external_path(
             sources.extend(
                 str(item.get("internal"))
                 for item in mappings
-                if isinstance(item, dict) and item.get("internal")
+                if isinstance(item, dict)
+                and item.get("internal")
+                and item.get("external")
             )
 
         get_rules = getattr(service, "get_rules", None)
@@ -121,7 +127,9 @@ def resolve_external_path(
             sources.extend(
                 str(item.get("source"))
                 for item in rules
-                if isinstance(item, dict) and item.get("source")
+                if isinstance(item, dict)
+                and item.get("source")
+                and item.get("target")
             )
 
         if not any(

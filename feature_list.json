@@ -44,7 +44,8 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "全部 orphan 回归 133 passed / 1 skipped，后端全量 2406 passed / 6 skipped；Ruff、Flake8、py_compile、scripts/lint_btdeck.py、git diff --check 与 Git Bash 根 init.sh --ci 通过。orphan_manifest.py 与 orphan_scan_task.py 目标 mypy 通过；较大服务组合仍报告既有 SQLAlchemy Column 类型债。当前及 HEAD 的同组 9 文件均被现有 Black 配置重排，未扩大无关格式化差异。"
+          "evidence": "全部 orphan 回归 133 passed / 1 skipped，后端全量 2406 passed / 6 skipped；Ruff、Flake8、py_compile、scripts/lint_btdeck.py、git diff --check 与 Git Bash 根 init.sh --ci 通过。orphan_manifest.py 与 orphan_scan_task.py 目标 mypy 通过；较大服务组合仍报告既有 SQLAlchemy Column 类型债。当前及 HEAD 的同组 9 文件均被现有 Black 配置重排，未扩大无关格式化差异。",
+          "followup": "回归补丁（2026-07-30）：resolve_external_path 前缀初筛只纳入 external/target 非空的显式映射，修复系统自动发现后 external 全空（tr/tr_lpan/tr_kpan）的映射让下载器内部绝对路径原样通过、被误选成不存在扫描根并触发整批 fail-closed。orphan 专项回归 70 passed；Ruff/Flake8/py_compile/lint_btdeck 通过；真实 app.db 复跑 /Downloads/bangumi* 返回 None、external 非空正例仍解析。"
         }
       ]
     },
