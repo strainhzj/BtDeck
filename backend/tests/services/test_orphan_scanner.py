@@ -365,6 +365,94 @@ class TestPathCollection:
         finally:
             engine.dispose()
 
+    def test_collect_scan_paths_skips_empty_external_mapping(self):
+        """internal 前缀命中但 external 为空的映射不得把内部绝对路径当成扫描根。
+
+        回归：tr 自动发现映射 external 未回填（全空字符串）时，
+        PathMappingService.internal_to_external 未命中分支会原样返回输入路径，
+        旧 resolve_external_path 仅校验前缀命中 + isabs，于是把
+        ``/Downloads/bangumi`` 这类容器内不存在的下载器内部路径误选成扫描根，
+        在 _walk_all_roots 触发 fail-closed 把整批扫描标为 failed。
+        """
+
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from app.database import Base
+        from app.downloader.models import BtDownloaders
+        from app.models.downloader_path_maintenance import (
+            DownloaderPathMaintenance,
+        )
+        from app.torrents.models import TorrentInfo
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                BtDownloaders.__table__,
+                TorrentInfo.__table__,
+                DownloaderPathMaintenance.__table__,
+            ],
+        )
+        Session = sessionmaker(bind=engine)
+        try:
+            with Session() as db:
+                db.execute(
+                    BtDownloaders.__table__.insert(),
+                    {
+                        "downloader_id": "tr",
+                        "downloader_type": 1,
+                        "enabled": True,
+                        "dr": 0,
+                        # 模拟系统自动发现：internal 命中但 external 全空
+                        "path_mapping": json.dumps(
+                            {
+                                "mappings": [
+                                    {
+                                        "name": "tr-自动发现-路径001",
+                                        "internal": "/Downloads/bangumi",
+                                        "external": "",
+                                        "mapping_type": "local",
+                                    },
+                                    {
+                                        "name": "tr-自动发现-路径002",
+                                        "internal": "/Downloads/bangumi/eva",
+                                        "external": "",
+                                        "mapping_type": "local",
+                                    },
+                                ]
+                            }
+                        ),
+                    },
+                )
+                db.execute(
+                    TorrentInfo.__table__.insert(),
+                    {
+                        "info_id": "torrent-bangumi",
+                        "downloader_id": "tr",
+                        "downloader_name": "tr",
+                        "save_path": "/Downloads/bangumi",
+                        "enabled": True,
+                        "dr": 0,
+                        "deleted_at": None,
+                        "has_tracker_error": False,
+                    },
+                )
+                db.commit()
+
+            scanner = OrphanScanner(sync_session_factory=Session)
+            paths = scanner._collect_scan_paths()
+
+            # /Downloads/bangumi 不能进入扫描根：它在 BtDeck 容器内不存在，
+            # 一旦被选成根会触发 _walk_all_roots fail-closed。
+            assert paths == []
+            assert len(scanner._scan_warnings) == 1
+            warning = scanner._scan_warnings[0]
+            assert warning.code == "path_mapping_not_found"
+            assert warning.internal_path == "/Downloads/bangumi"
+        finally:
+            engine.dispose()
+
 
 # ==================== 孤儿判定逻辑 ====================
 
