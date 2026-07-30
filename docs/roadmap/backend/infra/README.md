@@ -16,23 +16,23 @@
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
-| `lifecycle.py` | 353 | 6 | 🔵 FastAPI `lifespan`(L166)：管理启动/关闭流程 |
+| `lifecycle.py` | 380 | 7 | 🔵 FastAPI `lifespan`(L175)：管理启动/关闭流程，并在调度器启动前对账孤儿文件隔离状态 |
 | `routers_initializer.py` | 20 | 1 | `init_routers(app)`(L6) 注册全部路由 |
 | `__init__.py` | 0 | — | 空文件（跳过） |
 
 ### lifecycle.py 管理的流程
 
-**启动阶段**（`lifespan` L166 起，行号实测）：
-- L20-24：`init_config_file()`（首次启动写配置）
-- L54-57：`init_db()`（建库）
-- L66：`await init_database_connection()`
-- L69：`await update_cron_task_status()`
-- L75：`await cron_executor.start()`（启动定时调度器）
-- L91-92：`asyncio.create_task(startup_event(app))` → 下载器初始化（来自 `downloader.initialization`）
-- L94-99：`run_dashboard_stats_loop` + `check_version_update_task`
-- L102-103：`add_version_update_notification_task`
+**启动阶段**（`lifespan` L175 起，行号实测）：
+- L198-200：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载）
+- L214-223：`migrate_database()`（生产环境迁移失败即终止）
+- L230-232：`init_db()`（初始数据）
+- L240：`await init_database_connection()`
+- L245：`await reconcile_orphan_file_state()`（启动调度器前幂等对账历史隔离候选）
+- L261：`await update_cron_task_status()`
+- L267：`await cron_executor.start()`（启动定时调度器）
+- L283-295：创建下载器、仪表盘、版本检查与版本通知后台任务
 
-**关闭阶段**（`yield` 之后 L111-165）：逐个 `cancel()` + `await` 四个任务、`cron_executor.stop()`、`downloader_api_runtime.shutdown()`。
+**关闭阶段**（`yield` 之后 L300-360）：逐个 `cancel()` + `await` 四个任务、`cron_executor.stop()`、`downloader_api_runtime.shutdown()`。
 
 ## migrations/ — 应用层数据迁移（3 个文件，1271 行）
 

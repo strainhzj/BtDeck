@@ -1,5 +1,37 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-30 交接：孤儿文件扫描、统计与刷新状态一致性修复
+
+**当前任务**: `orphan-files-state-consistency-fix`
+**分支**: dev
+**状态**: 三项问题及配套清理事务/恢复一致性已实施；专项与全量回归通过，仓库既有门禁例外已记录，尚未提交。
+
+### 关键结果
+
+- 失败扫描不再清空页面：展示最近成功批次的剩余数据，同时明确提示最近失败原因并禁止清理；运行中扫描仍按确认契约显示空列表和零统计。
+- 列表响应新增统一 `scan_context`，区分 `latest_attempt`、`display_scan` 与动态 `remaining_count/remaining_size`；扫描原始统计不被清理流程改写。
+- 顶部刷新与全部页面刷新路径统一为一次分页请求，原子更新列表、统计、扫描状态和清理门禁；并发旧响应不能覆盖新状态。
+- 手动/自动隔离和恢复成功会同步标记对应扫描明细；候选最终化与明细更新同事务提交，pending journal、lease 复核及 fail-closed manifest 安全规则保持生效。
+- 应用启动在调度器前幂等对账历史稳定隔离候选，严格匹配批次、下载器和规范化路径，不新增 Schema 或迁移。
+
+### 验证
+
+- 后端专项：77 passed / 1 skipped；全量：2391 passed / 6 skipped。
+- 前端专项：3 suites / 48 tests；全量：24 suites / 348 tests。
+- TypeScript、严格 Vue ESLint、Vuex action lint、生产 build、Flake8、Ruff、BtDeck 架构检查及变更文件 Black 均通过。
+- 变更应用文件 Mypy 为 89 条，修改前同口径 90 条，零新增；全量 Mypy 1468 条为既有类型债。
+- 根 `init.sh` 退出 0；Git Bash 前端子脚本未发现 Node，但通过指定 Node 18 独立完成全部前端测试、类型检查、lint 与构建。
+- 完整 `npm run lint` 仍被既有高级搜索生成契约漂移拦截；全量 Black 仍命中 10 个未修改文件。两项均未伪报通过，也未越界修改无关文件。
+
+### 当前工作区
+
+- 本轮修改孤儿文件后端 API/服务/启动流程、前端 API/页面、专项测试、任务计划、代码路线图及项目记录。
+- 没有新增 Alembic 迁移，没有修改 `package.json`/lockfile，没有执行 Git commit、stage 或 push。
+- `.agents/`、`.claude/`、`.code-graph/`、`.codex/`、`.spec-workflow/`、`.zcode/` 为会话前已有未跟踪工具目录，保持不动。
+- 当前无剩余的孤儿文件修复代码事项；若要求仓库所有全量门禁全绿，应另开范围处理高级搜索生成契约漂移与 10 个既有 Black 格式文件。
+
+---
+
 ## 2026-07-27 交接：传统保存路径列与列表排序图标
 
 **当前任务**: `v1.0.6.31`

@@ -1,5 +1,46 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-30 - 孤儿文件扫描、统计与刷新状态一致性修复
+
+**任务 ID**: `orphan-files-state-consistency-fix`
+**分支**: dev
+**范围**: 前后端与回归测试；不修改数据库结构，不新增 Alembic 迁移。
+
+### 修复结果
+
+- 最近扫描失败时，分页接口同时返回 `latest_attempt` 与最近成功的 `display_scan`；页面只读展示后者的剩余结果和失败原因，预览与清理继续由最新扫描门禁拒绝。
+- 最近扫描仍为 `running` 时保持空列表、零统计、`display_scan=null`，不回退旧成功批次，清理不可用。
+- 顶部数量和空间改为服务端聚合展示批次中 `is_deleted=false` 的全量剩余值；下载器/大小筛选和分页不改变该聚合，扫描批次原始发现量保持审计快照不变。
+- `/orphan-files/list` 的同一响应统一携带分页列表、扫描上下文、剩余统计和清理门禁；前端首次加载、顶部刷新、筛选、翻页、扫描后刷新及清理后刷新均收敛到同一入口。
+- 前端刷新复制并冻结查询快照，使用递增请求序号丢弃过期成功/失败响应；仅最新成功响应更新列表、统计和上下文并清空选择，超出末页最多修正一次。
+- 清理候选先在 `db_write_scope` 中提交 pending，再执行文件移动、复核 lease，最后将候选稳定化与对应 `OrphanFile` 明细标记放入同一事务；失败显式回滚并由后续恢复流程继续处理。
+- 中断恢复一次构建覆盖全部 pending 下载器的 manifest，逐项重新取候选避免 rollback/commit 后 ORM 过期；成功恢复使用 `system:recovery`，resolved/失败路径不误标明细。
+- 启动时在调度器之前幂等对账历史 `quarantined/purged + stable` 候选，严格按批次、下载器和规范化路径补齐明细，操作者记录为 `system:reconciliation`。
+
+### 验证
+
+| 验证项 | 结果 |
+|---|---|
+| 后端专项回归 | ✅ 77 passed / 1 skipped |
+| 后端全量 pytest | ✅ 2391 passed / 6 skipped |
+| 变更 Python 文件 Black | ✅ 通过 |
+| Flake8 app / Ruff 变更范围 / BtDeck 架构检查 | ✅ 通过 |
+| Mypy 变更应用文件 | ✅ 89 errors；修改前同口径 90，零新增 |
+| Mypy 全量基线 | ⚠️ 1468 errors / 122 files，既有 SQLAlchemy 与历史类型债 |
+| 前端专项回归 | ✅ 3 suites / 48 tests |
+| 前端全量 Jest | ✅ 24 suites / 348 tests |
+| TypeScript / 严格 Vue ESLint / Vuex action lint | ✅ 通过 |
+| 前端生产构建 | ✅ 通过 |
+| 根 `init.sh` | ✅ 退出 0；Git Bash 子脚本未识别 Node，但指定 Node 18 的全部前端门禁已通过 |
+
+### 已知仓库基线
+
+- 完整 `npm run lint` 仍在任务开始前已存在的 `frontend/src/contracts/advancedSearch.generated.ts` 契约漂移处失败；本任务不涉及高级搜索契约，未混入无关生成文件。其后的 Vue ESLint、TypeScript 与 Vuex 门禁已独立执行并通过。
+- 全量 `black --check app/` 命中 10 个本任务未修改文件的既有格式差异；本次所有变更 Python 文件均通过 Black，未为通过门禁而格式化无关文件。
+- 本轮没有执行 Git commit/push；既有 6 个未跟踪工具目录保持不动。
+
+---
+
 ## 2026-07-27 - 传统保存路径列与列表排序图标
 
 **任务 ID**: `v1.0.6.31`

@@ -28,28 +28,15 @@ export interface OrphanListResponse {
   page: number
   pageSize: number
   list: OrphanFileItem[]
+  scan_context: OrphanScanContext
 }
 
 /**
- * 扫描结果摘要
+ * 数据库中持久化的扫描状态；busy 只属于触发响应，不在此联合中。
  */
-export interface ScanResult {
-  scan_id: string
-  scan_time?: string
-  scan_type?: string
-  total_paths_scanned?: number
-  total_files_scanned?: number
-  total_orphans?: number
-  total_orphan_size?: number
-  status: string
-  error?: string
-  message?: string
-}
+export type OrphanScanRecordStatus = 'running' | 'completed' | 'failed'
 
-/**
- * 最新扫描批次结果
- */
-export interface LatestScanResult {
+export interface OrphanScanRecord {
   scan_id: string
   scan_time: string
   scan_type: string
@@ -57,15 +44,57 @@ export interface LatestScanResult {
   total_files_scanned: number
   total_orphans: number
   total_orphan_size: number
-  status: string
+  status: OrphanScanRecordStatus
   error_message: string | null
   operator: string | null
+  created_at: string | null
 }
 
 /**
- * 清理预览结果
+ * 分页接口返回的页面权威扫描上下文。
+ * running 时 display_scan 为 null；failed 时可只读回退最近成功批次。
  */
-export interface CleanupPreviewResult {
+export interface OrphanScanContext {
+  latest_attempt: OrphanScanRecord | null
+  display_scan: OrphanScanRecord | null
+  remaining_count: number
+  remaining_size: number
+  cleanup_allowed: boolean
+  cleanup_block_reason: string | null
+}
+
+export interface OrphanScanCompletedResult {
+  scan_id: string
+  scan_time: string
+  scan_type: string
+  total_paths_scanned: number
+  total_files_scanned: number
+  total_orphans: number
+  total_orphan_size: number
+  status: 'completed'
+}
+
+export interface OrphanScanFailedResult {
+  scan_id: string
+  status: 'failed'
+  error: string
+}
+
+export interface OrphanScanBusyResult {
+  status: 'busy'
+  error: string
+}
+
+export type OrphanScanTriggerResult =
+  | OrphanScanCompletedResult
+  | OrphanScanFailedResult
+  | OrphanScanBusyResult
+
+/**
+ * 清理预览结果。后端仍会在执行时重新校验 scan_id 与安全门禁。
+ */
+export interface CleanupPreviewSuccess {
+  rejected?: false
   total_count: number
   total_size: number
   items: Array<{
@@ -75,24 +104,53 @@ export interface CleanupPreviewResult {
   }>
 }
 
+export interface CleanupPreviewRejected {
+  rejected: true
+  reason: string
+  error: string
+  total_count: 0
+  total_size: 0
+  items: []
+}
+
+export type CleanupPreviewResult = CleanupPreviewSuccess | CleanupPreviewRejected
+
 /**
  * 清理执行结果
  */
-export interface CleanupResult {
+export interface CleanupFailedItem {
+  id: number
+  file_path?: string
+  reason: string
+}
+
+export interface CleanupSuccessResult {
+  rejected?: false
   success_count: number
   failed_count: number
-  failed_list: Array<{
-    id: number
-    file_path: string
-    reason: string
-  }>
+  failed_list: CleanupFailedItem[]
   total_size: number
 }
+
+export interface CleanupRejectedResult {
+  rejected: true
+  error: string
+  success_count: 0
+  failed_count: number
+  failed_list: CleanupFailedItem[]
+  total_size: 0
+}
+
+export type CleanupResult = CleanupSuccessResult | CleanupRejectedResult
+
+// 兼容既有调用方的公开类型名。
+export type LatestScanResult = OrphanScanRecord
+export type ScanResult = OrphanScanTriggerResult
 
 /**
  * 标准API响应格式
  */
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   code: string
   msg: string
   data: T
@@ -139,11 +197,11 @@ export function getOrphanList(params: OrphanListParams): Promise<ApiResponse<Orp
 /**
  * 手动触发扫描
  */
-export function triggerScan(): Promise<ApiResponse<ScanResult>> {
+export function triggerScan(): Promise<ApiResponse<OrphanScanTriggerResult>> {
   return request({
     url: '/orphan-files/scan',
     method: 'post'
-  }) as unknown as Promise<ApiResponse<ScanResult>>
+  }) as unknown as Promise<ApiResponse<OrphanScanTriggerResult>>
 }
 
 /**

@@ -1,9 +1,77 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-27",
+  "last_updated": "2026-07-30",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
+    {
+      "id": "orphan-files-state-consistency-fix",
+      "name": "孤儿文件页面状态一致性修复",
+      "description": "修复最近扫描失败后列表变空、清理后统计仍显示扫描原始量、顶部刷新不刷新统计三类问题；统一后端扫描上下文与前端原子刷新，并补齐隔离候选与扫描明细的一致性。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/orphan-files-state-consistency-fix/README.md",
+      "tasks": [
+        {
+          "id": "orphan-files-state-consistency-fix.1",
+          "name": "后端扫描上下文与清理状态一致化",
+          "description": "新增 latest_attempt/display_scan/remaining 读模型，统一清理最终事务、pending 恢复与启动存量对账。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_query_state.py",
+            "backend/tests/services/test_orphan_cleanup_safety.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/tasks/test_orphan_scan_task_lifecycle.py"
+          ],
+          "evidence": "后端目标回归 77 passed / 1 skipped，全量回归 2391 passed / 6 skipped；变更文件 Black、Flake8 app、Ruff、scripts/lint_btdeck.py 通过；变更应用文件 mypy 89 errors，修改前同口径 90 errors（零新增）。全量 mypy 1468 errors 为既有类型债。"
+        },
+        {
+          "id": "orphan-files-state-consistency-fix.2",
+          "name": "前端统一刷新与失败只读降级",
+          "description": "以分页接口 scan_context 为单一事实来源，原子更新列表、统计和状态，并处理并发请求与清理门禁。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "前端目标回归 3 suites / 48 tests、全量 Jest 24 suites / 348 tests 通过；TypeScript、严格 Vue ESLint、Vuex action lint 和生产 build 通过。完整 npm run lint 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截，本任务未修改无关生成契约。"
+        },
+        {
+          "id": "orphan-files-state-consistency-fix.3",
+          "name": "全链路回归与交付收口",
+          "description": "执行后端、前端和根仓库质量门禁，更新证据、进度与会话交接。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "PLANS/orphan-files-state-consistency-fix/implementation_master.md",
+            "PLANS/orphan-files-state-consistency-fix/README.md",
+            "PLANS/orphan-files-state-consistency-fix/task_01_backend_scan_context/acceptance_criteria.md",
+            "PLANS/orphan-files-state-consistency-fix/task_01_backend_scan_context/README.md",
+            "PLANS/orphan-files-state-consistency-fix/task_02_frontend_refresh/acceptance_criteria.md",
+            "PLANS/orphan-files-state-consistency-fix/task_02_frontend_refresh/README.md",
+            "PLANS/orphan-files-state-consistency-fix/task_03_regression_and_delivery/acceptance_criteria.md",
+            "PLANS/orphan-files-state-consistency-fix/task_03_regression_and_delivery/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/perspectives/architecture.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "根 init.sh 退出 0，git diff --check 与 feature_list JSON 校验通过；API/类型注释、代码路线图、进度和会话交接已同步。全量 Black 命中 10 个未修改文件的既有格式差异，未越界格式化无关文件；完整 npm run lint 的既有生成契约漂移已如实记录。"
+        }
+      ]
+    },
     {
       "id": "advanced-search-ui-revamp",
       "name": "高级搜索标签选择器重塑（Lucide + 设计系统对齐）",

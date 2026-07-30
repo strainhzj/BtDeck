@@ -52,9 +52,7 @@ def _create_valid_token() -> str:
 
     mock_s = _mock_settings()
     with patch("app.auth.utils.settings", mock_s):
-        return create_access_token(
-            {"sub": "test_user", "user_id": "1", "verify_secret": _TEST_LOGIN_SECRET}
-        )
+        return create_access_token({"sub": "test_user", "user_id": "1", "verify_secret": _TEST_LOGIN_SECRET})
 
 
 def _create_expired_token() -> str:
@@ -103,9 +101,7 @@ class TestOrphanFilesAuth:
         self.client = TestClient(self.app, raise_server_exceptions=False)
         mock_settings = _mock_settings()
         self.settings_patch = patch("app.auth.utils.settings", mock_settings)
-        self.secret_patch = patch(
-            "app.auth.utils.get_login_secret", return_value=_TEST_LOGIN_SECRET
-        )
+        self.secret_patch = patch("app.auth.utils.get_login_secret", return_value=_TEST_LOGIN_SECRET)
         self.settings_patch.start()
         self.secret_patch.start()
         yield
@@ -196,9 +192,7 @@ class TestOrphanFilesWithValidToken:
     def setup(self):
         self.app = _create_test_app()
         # 覆盖认证依赖（仿 test_active_torrents_endpoint.py）
-        self.app.dependency_overrides[require_authenticated_user] = lambda: (
-            SimpleNamespace(username="tester")
-        )
+        self.app.dependency_overrides[require_authenticated_user] = lambda: (SimpleNamespace(username="tester"))
         self.client = TestClient(self.app, raise_server_exceptions=False)
 
         # mock AsyncSession
@@ -230,9 +224,7 @@ class TestOrphanFilesCleanupWiring:
     def setup(self):
         self.app = _create_test_app()
         self.app.state.store = MagicMock(name="shared_downloader_store")
-        self.app.dependency_overrides[require_authenticated_user] = lambda: (
-            SimpleNamespace(username="tester")
-        )
+        self.app.dependency_overrides[require_authenticated_user] = lambda: (SimpleNamespace(username="tester"))
         self.mock_db = MagicMock(name="async_db")
 
         async def override_db():
@@ -246,9 +238,7 @@ class TestOrphanFilesCleanupWiring:
     def test_cleanup_preview_passes_scan_id(self):
         from app.services.orphan_file_service import OrphanFileService
 
-        mocked = AsyncMock(
-            return_value={"total_count": 1, "total_size": 10, "items": []}
-        )
+        mocked = AsyncMock(return_value={"total_count": 1, "total_size": 10, "items": []})
         with patch.object(OrphanFileService, "cleanup_preview", mocked):
             response = self.client.post(
                 "/api/v1/orphan-files/cleanup-preview",
@@ -258,6 +248,37 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 200
         assert response.json()["code"] == "200"
         mocked.assert_awaited_once_with([1], scan_id="scan-latest")
+
+    def test_list_returns_atomic_scan_context(self):
+        """分页端点应原样返回列表、统计与扫描上下文的一致快照。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "total": 1,
+            "page": 1,
+            "pageSize": 20,
+            "list": [{"id": 1, "scan_id": "scan-ok"}],
+            "scan_context": {
+                "latest_attempt": {"scan_id": "scan-failed", "status": "failed"},
+                "display_scan": {"scan_id": "scan-ok", "status": "completed"},
+                "remaining_count": 1,
+                "remaining_size": 10,
+                "cleanup_allowed": False,
+                "cleanup_block_reason": "最新扫描失败",
+            },
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_list", mocked):
+            response = self.client.get("/api/v1/orphan-files/list")
+
+        assert response.status_code == 200
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with(
+            page=1,
+            page_size=20,
+            downloader_id=None,
+            min_size=None,
+        )
 
     def test_cleanup_passes_scan_id_and_shared_store(self):
         from app.services.orphan_file_service import OrphanFileService

@@ -17,9 +17,9 @@
 | `downloader_capabilities_manager.py` | 359 | 1 class, 0 def | 下载器能力配置 CRUD 与同步 |
 | `downloader_settings_manager.py` | 369 | 1 class, 1 def | 下载器设置统一管理器（封装 qB/Transmission 设置包装类） |
 | `notification_service.py` | 226 | 1 class, 0 def | 通知服务（CRUD + 版本更新检查） |
-| `orphan_file_service.py` | 1088 | 1 class, 0 def | 孤儿文件管理（查询/清理预览/手动自动清理/超期清理） |
+| `orphan_file_service.py` | 1339 | 1 class, 0 def | 孤儿文件管理（失败扫描回退读模型/剩余量统计/清理预览/手动自动清理/中断恢复/超期清理） |
 | `orphan_lease.py` | 259 | 2 class, 8 def | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
-| `orphan_lifecycle_service.py` | 238 | 1 class, 0 def | `OrphanCurrentCandidate` 表生命周期推进 |
+| `orphan_lifecycle_service.py` | 227 | 1 class, 0 def | `OrphanCurrentCandidate` 表生命周期推进（仅稳定候选可清理，支持事务化状态落库） |
 | `orphan_manifest.py` | 284 | 3 class, 1 def | 孤儿文件扫描/清理共用 manifest 构建器 |
 | `orphan_notification.py` | 129 | 0 class, 3 def | 孤儿扫描完成通知（幂等 dedupe_key） |
 | `orphan_quarantine.py` | 250 | 0 class, 8 def | 孤儿隔离区管理（移入 → 保留期 → 物理删除） |
@@ -80,4 +80,4 @@
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrent_deletion_by_level.py` 1670 行、`advanced_search.py` 1311 行、`orphan_file_service.py` 1088 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrent_deletion_by_level.py` 1670 行、`orphan_file_service.py` 1339 行、`advanced_search.py` 1311 行）

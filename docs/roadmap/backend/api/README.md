@@ -54,7 +54,7 @@
 | `duplicate_torrents.py` | 416 | 1 class, 3 def | 重复种子查询 |
 | `login.py` | 88 | 0 class, 2 def | 登录（`/login`，校验密码并签发 token） |
 | `notifications.py` | 116 | 0 class, 6 def | 通知中心：列表/未读计数/标记已读 |
-| `orphan_files.py` | 153 | 1 class, 5 def | 孤儿文件管理：扫描/列表/清理预览/手动清理 |
+| `orphan_files.py` | 146 | 1 class, 5 def | 孤儿文件管理：扫描/列表（含统一扫描上下文与剩余量统计）/清理预览/手动清理 |
 | `recycle_bin.py` | 311 | 4 class, 5 def | 回收站：列表/还原/清理预览/手动清理 |
 | `seed_transfer.py` | 268 | 0 class, 2 def | 种子转移，对接 `seed_transfer_service` |
 | `setting_templates.py` | 338 | 0 class, 6 def | 配置模板管理：CRUD + 应用 |

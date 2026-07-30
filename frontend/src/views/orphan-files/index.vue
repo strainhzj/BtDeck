@@ -9,7 +9,7 @@
         <el-button
           icon="el-icon-refresh"
           :loading="listLoading"
-          @click="getList"
+          @click="refreshPageData()"
         >
           刷新
         </el-button>
@@ -31,8 +31,8 @@
           <i class="el-icon-document" />
         </span>
         <div class="management-stat-card__content">
-          <div class="management-stat-card__label">孤儿文件数</div>
-          <div class="management-stat-card__value">{{ latestScan ? latestScan.total_orphans : 0 }}</div>
+          <div class="management-stat-card__label">待清理文件数</div>
+          <div class="management-stat-card__value">{{ scanContext.remaining_count }}</div>
         </div>
       </div>
       <div class="management-stat-card">
@@ -40,8 +40,8 @@
           <i class="el-icon-coin" />
         </span>
         <div class="management-stat-card__content">
-          <div class="management-stat-card__label">占用空间</div>
-          <div class="management-stat-card__value">{{ formatSize(latestScan ? latestScan.total_orphan_size : 0) }}</div>
+          <div class="management-stat-card__label">待清理空间</div>
+          <div class="management-stat-card__value">{{ formatSize(scanContext.remaining_size) }}</div>
         </div>
       </div>
       <div class="management-stat-card">
@@ -50,7 +50,7 @@
         </span>
         <div class="management-stat-card__content">
           <div class="management-stat-card__label">扫描路径数</div>
-          <div class="management-stat-card__value">{{ latestScan ? latestScan.total_paths_scanned : 0 }}</div>
+          <div class="management-stat-card__value">{{ displayScan ? displayScan.total_paths_scanned : 0 }}</div>
         </div>
       </div>
       <div class="management-stat-card">
@@ -58,13 +58,32 @@
           <i class="el-icon-time" />
         </span>
         <div class="management-stat-card__content">
-          <div class="management-stat-card__label">最近扫描</div>
+          <div class="management-stat-card__label">最近成功扫描</div>
           <div class="management-stat-card__value management-stat-card__value--compact">
-            {{ latestScan ? formatTime(latestScan.scan_time) : '尚未扫描' }}
+            {{ displayScan ? formatTime(displayScan.scan_time) : '尚无成功扫描' }}
           </div>
         </div>
       </div>
     </section>
+
+    <el-alert
+      v-if="latestAttempt && latestAttempt.status === 'failed'"
+      class="orphan-scan-state-alert"
+      title="最近一次扫描失败"
+      :description="scanStatusMessage"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
+    <el-alert
+      v-else-if="latestAttempt && latestAttempt.status === 'running'"
+      class="orphan-scan-state-alert"
+      title="孤儿文件扫描进行中"
+      :description="scanStatusMessage"
+      type="info"
+      :closable="false"
+      show-icon
+    />
 
     <!-- 筛选条件 -->
     <section class="management-panel" aria-label="孤儿文件筛选条件">
@@ -96,7 +115,7 @@
         <div class="management-panel__heading">
           <h2 id="orphan-file-list-title" class="management-panel__title">文件列表</h2>
           <p class="management-panel__description">
-            {{ latestScan ? `最近扫描于 ${formatTime(latestScan.scan_time)}` : '完成首次扫描后将在此显示结果' }}
+            {{ displayScan ? `展示成功扫描 ${formatTime(displayScan.scan_time)} 的剩余结果` : '完成首次成功扫描后将在此显示结果' }}
           </p>
         </div>
         <div class="management-panel__meta">
@@ -106,7 +125,8 @@
           <el-button
             type="danger"
             icon="el-icon-delete"
-            :disabled="selectedIds.length === 0"
+            :disabled="selectedIds.length === 0 || !cleanupAllowed"
+            :title="cleanupAllowed ? '' : cleanupBlockReason"
             @click="handleCleanupPreview"
           >
             清理选中
@@ -115,6 +135,7 @@
       </div>
       <div class="management-table-scroll">
         <el-table
+          ref="orphanTable"
           v-loading="listLoading"
           :data="list"
           class="management-table"
@@ -219,17 +240,28 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import {
-  getLatestScan,
   getOrphanList,
   triggerScan,
   cleanupPreview,
   cleanupOrphans,
   OrphanFileItem,
-  LatestScanResult,
-  CleanupPreviewResult,
-  CleanupResult
+  OrphanListParams,
+  OrphanScanContext,
+  OrphanScanRecord,
+  CleanupPreviewSuccess,
+  CleanupSuccessResult
 } from '@/api/orphan-files'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
+
+interface OrphanListQuery {
+  page: number
+  page_size: number
+  downloader_id: string
+}
+
+interface OrphanTableRef extends Vue {
+  clearSelection: () => void
+}
 
 @Component({ name: 'OrphanFiles' })
 export default class OrphanFiles extends Vue {
@@ -237,78 +269,145 @@ export default class OrphanFiles extends Vue {
   private total = 0
   private listLoading = false
   private scanLoading = false
-  private listQuery = {
+  private listQuery: OrphanListQuery = {
     page: 1,
     page_size: 20,
     downloader_id: ''
   }
+  private refreshRequestSeq = 0
 
   // 选中状态
   private selectedIds: number[] = []
 
-  // 最新扫描结果
-  private latestScan: LatestScanResult | null = null
+  // 页面列表、统计和清理门禁共用的后端权威快照
+  private scanContext: OrphanScanContext = {
+    latest_attempt: null,
+    display_scan: null,
+    remaining_count: 0,
+    remaining_size: 0,
+    cleanup_allowed: false,
+    cleanup_block_reason: '尚无可清理的成功扫描'
+  }
 
   // 清理对话框
   private cleanupDialogVisible = false
   private cleanupLoading = false
   private cleanupExecuting = false
-  private cleanupPreviewData: CleanupPreviewResult | null = null
-  private cleanupResult: CleanupResult | null = null
+  private cleanupPreviewData: CleanupPreviewSuccess | null = null
+  private cleanupResult: CleanupSuccessResult | null = null
   private previewScanId: string | null = null
+  private previewOrphanIds: number[] = []
 
   mounted() {
-    this.getList()
-    this.getLatestScan()
+    void this.refreshPageData()
   }
 
-  private async getList() {
+  beforeDestroy() {
+    this.refreshRequestSeq += 1
+  }
+
+  private get latestAttempt(): OrphanScanRecord | null {
+    return this.scanContext.latest_attempt
+  }
+
+  private get displayScan(): OrphanScanRecord | null {
+    return this.scanContext.display_scan
+  }
+
+  private get cleanupAllowed(): boolean {
+    return Boolean(
+      this.scanContext.cleanup_allowed &&
+      this.scanContext.display_scan &&
+      this.scanContext.display_scan.scan_id
+    )
+  }
+
+  private get cleanupBlockReason(): string {
+    return this.scanContext.cleanup_block_reason || '当前扫描快照不允许清理'
+  }
+
+  private get scanStatusMessage(): string {
+    const latest = this.latestAttempt
+    if (!latest) return ''
+    if (latest.status === 'running') {
+      return '扫描正在进行中，完成前列表与统计保持为空，清理功能暂不可用。'
+    }
+    if (latest.status === 'failed') {
+      const reason = latest.error_message || '未知错误'
+      if (this.displayScan) {
+        return `失败原因：${reason}。当前只读展示最近一次成功扫描的剩余结果，重新扫描成功前不可清理。`
+      }
+      return `失败原因：${reason}。当前尚无可展示的成功扫描结果。`
+    }
+    return ''
+  }
+
+  private async refreshPageData(allowPageCorrection = true): Promise<void> {
+    const requestId = ++this.refreshRequestSeq
+    const querySnapshot: Readonly<OrphanListQuery> = Object.freeze({
+      page: this.listQuery.page,
+      page_size: this.listQuery.page_size,
+      downloader_id: this.listQuery.downloader_id
+    })
     this.listLoading = true
     try {
-      const response = await getOrphanList({
-        page: this.listQuery.page,
-        page_size: this.listQuery.page_size,
-        downloader_id: this.listQuery.downloader_id || undefined
-      })
+      const params: OrphanListParams = {
+        page: querySnapshot.page,
+        page_size: querySnapshot.page_size,
+        downloader_id: querySnapshot.downloader_id || undefined
+      }
+      const response = await getOrphanList(params)
+      if (requestId !== this.refreshRequestSeq) return
+
       if (response.code === '200' && response.data) {
-        this.list = response.data.list || []
-        this.total = response.data.total || 0
+        const maxPage = Math.max(
+          1,
+          Math.ceil(response.data.total / querySnapshot.page_size)
+        )
+        if (
+          allowPageCorrection &&
+          querySnapshot.page > maxPage
+        ) {
+          this.listQuery.page = maxPage
+          await this.refreshPageData(false)
+          return
+        }
+
+        this.list = response.data.list
+        this.total = response.data.total
+        this.scanContext = response.data.scan_context
+        this.selectedIds = []
+        const table = this.$refs.orphanTable as OrphanTableRef | undefined
+        if (table && typeof table.clearSelection === 'function') {
+          table.clearSelection()
+        }
       } else {
         this.$message.error(response.msg || '获取列表失败')
       }
     } catch (error) {
+      if (requestId !== this.refreshRequestSeq) return
       this.$message.error('获取孤儿文件列表失败：' + extractErrorMessage(error, '网络错误'))
     } finally {
-      this.listLoading = false
-    }
-  }
-
-  private async getLatestScan() {
-    try {
-      const response = await getLatestScan()
-      if (response.code === '200' && response.data) {
-        this.latestScan = response.data
+      if (requestId === this.refreshRequestSeq) {
+        this.listLoading = false
       }
-    } catch (error) {
-      // 静默失败，不影响列表展示
-      console.warn('获取最新扫描结果失败:', error)
     }
   }
 
   private handleFilter() {
     this.listQuery.page = 1
-    this.getList()
+    void this.refreshPageData()
   }
 
   private handleSizeChange(size: number) {
     this.listQuery.page_size = size
     this.listQuery.page = 1
-    this.getList()
+    void this.refreshPageData()
   }
 
   private handleCurrentChange(page: number) {
     this.listQuery.page = page
-    this.getList()
+    void this.refreshPageData()
   }
 
   private handleSelectionChange(rows: OrphanFileItem[]) {
@@ -332,20 +431,19 @@ export default class OrphanFiles extends Vue {
       if (response.code === '200' && response.data) {
         const data = response.data
         if (data.status === 'completed') {
-          this.$message.success(
-            `扫描完成: 发现 ${data.total_orphans || 0} 个孤儿文件`
-          )
+          this.$message.success(`扫描完成: 发现 ${data.total_orphans} 个孤儿文件`)
+        } else if (data.status === 'busy') {
+          this.$message.warning(data.error || '孤儿文件维护任务正在进行')
         } else {
-          this.$message.warning(`扫描状态: ${data.status}, ${data.error || data.message || ''}`)
+          this.$message.warning(`扫描失败: ${data.error}`)
         }
-        await this.getLatestScan()
-        await this.getList()
       } else {
         this.$message.error(response.msg || '扫描失败')
       }
     } catch (error) {
       this.$message.error('扫描失败：' + extractErrorMessage(error, '网络错误'))
     } finally {
+      await this.refreshPageData()
       this.scanLoading = false
     }
   }
@@ -355,26 +453,32 @@ export default class OrphanFiles extends Vue {
       this.$message.warning('请先选择要清理的文件')
       return
     }
+    const displayScan = this.displayScan
+    if (!this.cleanupAllowed || !displayScan) {
+      this.$message.warning(this.cleanupBlockReason)
+      return
+    }
 
     this.cleanupDialogVisible = true
     this.cleanupPreviewData = null
     this.cleanupResult = null
-    this.previewScanId = null
+    this.previewScanId = displayScan.scan_id
+    this.previewOrphanIds = [...this.selectedIds]
     this.cleanupLoading = true
 
     try {
-      if (!this.latestScan || !this.latestScan.scan_id) {
-        this.$message.warning('没有可用的最新扫描批次，请先刷新或重新扫描')
-        this.cleanupDialogVisible = false
-        return
-      }
-      this.previewScanId = this.latestScan.scan_id
       const response = await cleanupPreview({
         scan_id: this.previewScanId,
-        orphan_ids: this.selectedIds
+        orphan_ids: this.previewOrphanIds
       })
       if (response.code === '200' && response.data) {
-        this.cleanupPreviewData = response.data
+        if (response.data.rejected === true) {
+          this.$message.error(response.data.error || response.data.reason)
+          this.cleanupDialogVisible = false
+          await this.refreshPageData()
+        } else {
+          this.cleanupPreviewData = response.data
+        }
       } else {
         this.$message.error(response.msg || '预览失败')
         this.cleanupDialogVisible = false
@@ -396,13 +500,16 @@ export default class OrphanFiles extends Vue {
       }
       const response = await cleanupOrphans({
         scan_id: this.previewScanId,
-        orphan_ids: this.selectedIds
+        orphan_ids: this.previewOrphanIds
       })
       if (response.code === '200' && response.data) {
-        this.cleanupResult = response.data
-        // 刷新列表
-        await this.getList()
-        await this.getLatestScan()
+        if (response.data.rejected === true) {
+          this.$message.error(response.data.error || this.cleanupBlockReason)
+          this.cleanupDialogVisible = false
+        } else {
+          this.cleanupResult = response.data
+        }
+        await this.refreshPageData()
       } else {
         this.$message.error(response.msg || '清理失败')
       }
@@ -418,6 +525,7 @@ export default class OrphanFiles extends Vue {
     this.cleanupPreviewData = null
     this.cleanupResult = null
     this.previewScanId = null
+    this.previewOrphanIds = []
   }
 
   // ========== 工具方法 ==========
@@ -440,6 +548,10 @@ export default class OrphanFiles extends Vue {
 
 <style lang="scss" scoped>
 .orphan-files-page {
+  .orphan-scan-state-alert {
+    margin-bottom: var(--spacing-lg);
+  }
+
   .cleanup-result {
     margin-top: var(--spacing-md);
   }

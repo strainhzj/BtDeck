@@ -66,9 +66,7 @@ class OrphanLifecycleService:
 
         # 查询所有当前 candidate/resolved 状态的候选（非 quarantined/purged）
         result = await self.db.execute(
-            select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.status.in_(["candidate", "resolved"])
-            )
+            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.status.in_(["candidate", "resolved"]))
         )
         existing = {c.canonical_path: c for c in result.scalars().all()}
 
@@ -92,12 +90,8 @@ class OrphanLifecycleService:
                     status="candidate",
                     file_size=orphan.get("file_size", 0),
                     mtime_ns=orphan.get("mtime_ns"),
-                    device_id=str(orphan["device_id"])
-                    if orphan.get("device_id") is not None
-                    else None,
-                    inode=str(orphan["inode"])
-                    if orphan.get("inode") is not None
-                    else None,
+                    device_id=str(orphan["device_id"]) if orphan.get("device_id") is not None else None,
+                    inode=str(orphan["inode"]) if orphan.get("inode") is not None else None,
                 )
                 self.db.add(candidate)
                 inserted += 1
@@ -107,15 +101,11 @@ class OrphanLifecycleService:
                     existing_cand.first_seen_at = scan_time
                     existing_cand.consecutive_scan_count = 1
                 else:
-                    existing_cand.consecutive_scan_count = (
-                        existing_cand.consecutive_scan_count + 1
-                    )
+                    existing_cand.consecutive_scan_count = existing_cand.consecutive_scan_count + 1
                 existing_cand.last_seen_at = scan_time
                 existing_cand.last_seen_scan_id = scan_id
                 existing_cand.status = "candidate"
-                existing_cand.file_size = orphan.get(
-                    "file_size", existing_cand.file_size
-                )
+                existing_cand.file_size = orphan.get("file_size", existing_cand.file_size)
                 if orphan.get("mtime_ns") is not None:
                     existing_cand.mtime_ns = orphan["mtime_ns"]
                 if orphan.get("device_id") is not None:
@@ -134,14 +124,11 @@ class OrphanLifecycleService:
             await self.db.commit()
 
         logger.info(
-            f"[孤儿生命周期] scan_id={scan_id} 对账完成: "
-            f"新增 {inserted}，更新 {updated}，标记 resolved {resolved}"
+            f"[孤儿生命周期] scan_id={scan_id} 对账完成: " f"新增 {inserted}，更新 {updated}，标记 resolved {resolved}"
         )
         return {"inserted": inserted, "updated": updated, "resolved": resolved}
 
-    async def get_purgeable_candidates(
-        self, days_threshold: int
-    ) -> List[OrphanCurrentCandidate]:
+    async def get_purgeable_candidates(self, days_threshold: int) -> List[OrphanCurrentCandidate]:
         """获取满足清理条件的候选（连续成为孤儿的时间 > days_threshold 天）。
 
         清理依据「连续成为孤儿的时间」（last_seen_at - first_seen_at），不再依据 mtime。
@@ -157,6 +144,7 @@ class OrphanLifecycleService:
         result = await self.db.execute(
             select(OrphanCurrentCandidate).where(
                 OrphanCurrentCandidate.status == "candidate",
+                OrphanCurrentCandidate.operation_state == "stable",
                 OrphanCurrentCandidate.first_seen_at < cutoff,
             )
         )
@@ -175,6 +163,9 @@ class OrphanLifecycleService:
         quarantine_path: str,
         purge_after: datetime,
         quarantine_root: Optional[str] = None,
+        *,
+        quarantined_at: Optional[datetime] = None,
+        commit: bool = True,
     ) -> bool:
         """标记候选为已隔离。
 
@@ -186,7 +177,7 @@ class OrphanLifecycleService:
         Returns:
             是否成功更新
         """
-        now = datetime.utcnow()
+        now = quarantined_at or datetime.utcnow()
         result = await self.db.execute(
             update(OrphanCurrentCandidate)
             .where(OrphanCurrentCandidate.canonical_path == canonical_path)
@@ -201,10 +192,11 @@ class OrphanLifecycleService:
                 operation_error=None,
             )
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         return result.rowcount > 0
 
-    async def mark_purged(self, canonical_path: str) -> bool:
+    async def mark_purged(self, canonical_path: str, *, commit: bool = True) -> bool:
         """标记候选为已物理删除。"""
         result = await self.db.execute(
             update(OrphanCurrentCandidate)
@@ -216,18 +208,15 @@ class OrphanLifecycleService:
                 operation_error=None,
             )
         )
-        await self.db.commit()
+        if commit:
+            await self.db.commit()
         return result.rowcount > 0
 
     async def get_latest_scan_status(self) -> Optional[Dict[str, Any]]:
         """获取最新扫描批次的状态（用于清理门禁判断）。"""
         from app.models.orphan_file import OrphanScanResult
 
-        result = await self.db.execute(
-            select(OrphanScanResult)
-            .order_by(OrphanScanResult.scan_time.desc())
-            .limit(1)
-        )
+        result = await self.db.execute(select(OrphanScanResult).order_by(OrphanScanResult.scan_time.desc()).limit(1))
         record = result.scalar_one_or_none()
         if not record:
             return None

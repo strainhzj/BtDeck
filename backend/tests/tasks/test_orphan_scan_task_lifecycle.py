@@ -45,7 +45,11 @@ class TestOrphanTaskLifecycle:
         task = OrphanScanTask()
         # mock OrphanScanner.scan 返回 failed（patch 类的 scan 方法）
         with patch.object(OrphanScanner, "scan", new_callable=AsyncMock) as mock_scan:
-            mock_scan.return_value = {"scan_id": "scan_x", "status": "failed", "error": "err"}
+            mock_scan.return_value = {
+                "scan_id": "scan_x",
+                "status": "failed",
+                "error": "err",
+            }
 
             # spy reconcile_candidates（模块尚未实现时会 ImportError，这里兼容）
             if hasattr(orphan_lifecycle_service, "OrphanLifecycleService"):
@@ -96,10 +100,45 @@ class TestOrphanTaskLifecycle:
             }
 
             with patch.object(
-                task, "_auto_cleanup_expired", new_callable=AsyncMock, side_effect=RuntimeError("cleanup 崩溃")
+                task,
+                "_auto_cleanup_expired",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("cleanup 崩溃"),
             ):
                 result = await task.execute(app=fake_app)
                 assert result.get("status") != "success", "cleanup 异常不应报告任务成功"
+
+    async def test_startup_reconciliation_uses_dedicated_session(self):
+        """启动对账应在调度器前通过独立异步 session 调用服务。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.startup.lifecycle import reconcile_orphan_file_state
+
+        db = MagicMock(name="startup_reconciliation_db")
+        session_context = AsyncMock()
+        session_context.__aenter__.return_value = db
+        session_context.__aexit__.return_value = None
+        expected = {
+            "candidate_count": 2,
+            "updated_count": 1,
+            "unmatched_count": 1,
+        }
+        with (
+            patch(
+                "app.database.AsyncSessionLocal",
+                return_value=session_context,
+            ),
+            patch.object(
+                OrphanFileService,
+                "reconcile_stable_candidate_details",
+                new_callable=AsyncMock,
+                return_value=expected,
+            ) as reconcile,
+        ):
+            result = await reconcile_orphan_file_state()
+
+        assert result == expected
+        reconcile.assert_awaited_once()
+        assert reconcile.await_args.args == ()
 
 
 class TestOrphanAPIContract:
@@ -133,7 +172,12 @@ class TestOrphanAPIContract:
             )
         )
         async_orphan_db.add(
-            OrphanScanResult(scan_id="scan_new", scan_time=datetime.utcnow(), scan_type="manual", status="completed")
+            OrphanScanResult(
+                scan_id="scan_new",
+                scan_time=datetime.utcnow(),
+                scan_type="manual",
+                status="completed",
+            )
         )
         await async_orphan_db.commit()
 
@@ -152,7 +196,12 @@ class TestOrphanAPIContract:
 
         # 最新扫描 running
         async_orphan_db.add(
-            OrphanScanResult(scan_id="scan_running", scan_time=datetime.utcnow(), scan_type="manual", status="running")
+            OrphanScanResult(
+                scan_id="scan_running",
+                scan_time=datetime.utcnow(),
+                scan_type="manual",
+                status="running",
+            )
         )
         await async_orphan_db.commit()
 

@@ -28,20 +28,22 @@
         └─ app/main.py:92  migrate_database()  → app/core/migration.py
 
 FastAPI lifespan（请求进入前）
-  app/startup/lifecycle.py:166  lifespan(app)
-    ├─ L54-57   init_db()
-    ├─ L66      await init_database_connection()
-    ├─ L69      await update_cron_task_status()
-    ├─ L75      await cron_executor.start()         # 启动 APScheduler
+  app/startup/lifecycle.py:175  lifespan(app)
+    ├─ L214-223 migrate_database()
+    ├─ L230-232 init_db()
+    ├─ L240     await init_database_connection()
+    ├─ L245     await reconcile_orphan_file_state() # 对账历史隔离候选
+    ├─ L261     await update_cron_task_status()
+    ├─ L267     await cron_executor.start()         # 启动 APScheduler
     │             └─ app/tasks/cron_executor.py  AsyncIOScheduler.add_job (L60/L142/L791)
-    ├─ L91-92   asyncio.create_task(startup_event(app))
+    ├─ L283-284 asyncio.create_task(startup_event(app))
     │             └─ app/downloader/initialization.py:682  startup_event(app)
     │                  ├─ L709  _async_initialization_tasks
     │                  ├─ L729  _load_initial_downloaders
     │                  └─ L795  _perform_initial_full_sync
-    ├─ L94-95   run_dashboard_stats_loop
-    ├─ L98-99   check_version_update_task
-    └─ L102-103 add_version_update_notification_task
+    ├─ L286-287 run_dashboard_stats_loop
+    ├─ L290-291 check_version_update_task
+    └─ L294-295 add_version_update_notification_task
 ```
 
 ## 链 2：种子添加流程（HTTP → SDK → DB → 审计）
@@ -104,12 +106,12 @@ APScheduler job（注册）
 ```
 触发：定时任务 or HTTP /api/v1/orphan-files/scan
   ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (121 行, 每周日凌晨 2 点)
-  └─ [HTTP]  app/api/endpoints/orphan_files.py  (153 行)
+  └─ [HTTP]  app/api/endpoints/orphan_files.py  (146 行)
        └─ app/services/orphan_scanner.py  OrphanScanner (739 行)
             ├─ app/services/orphan_manifest.py  (284 行) 构建实时下载器 manifest
             ├─ 对比 torrent_info 清单 → 找出孤儿文件
             │
-            └─ [清理] app/services/orphan_file_service.py  (1088 行)
+            └─ [清理] app/services/orphan_file_service.py  (1339 行)
                  ├─ app/services/orphan_lease.py  (259 行) 跨进程 lease 互斥
                  ├─ app/services/orphan_quarantine.py  (250 行) 隔离区管理
                  └─ app/services/orphan_notification.py  (129 行) 幂等通知

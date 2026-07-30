@@ -50,9 +50,7 @@ async def get_latest_scan(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"获取最新扫描结果失败: {e}", exc_info=True)
-        return CommonResponse(
-            status="error", msg=f"查询失败: {e}", code="500", data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
 
 
 @router.get("/list", response_model=CommonResponse)
@@ -60,13 +58,16 @@ async def get_orphan_list(
     page: int = Query(default=1, ge=1, description="页码"),
     page_size: int = Query(default=20, ge=1, le=100, description="每页数量"),
     downloader_id: Optional[str] = Query(default=None, description="下载器ID筛选"),
-    min_size: Optional[int] = Query(
-        default=None, ge=0, description="最小文件大小（字节）"
-    ),
+    min_size: Optional[int] = Query(default=None, ge=0, description="最小文件大小（字节）"),
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
-    """分页查询孤儿文件列表"""
+    """分页查询孤儿文件列表及同一响应快照中的扫描上下文。
+
+    scan_context 区分最新扫描尝试、页面展示的成功批次、扫描原始统计与
+    尚未清理的动态统计；最新 running 不回退，最新 failed 仅只读展示
+    最近成功批次。
+    """
     try:
         service = OrphanFileService(db)
         result = await service.get_orphan_list(
@@ -78,9 +79,7 @@ async def get_orphan_list(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询孤儿文件列表失败: {e}", exc_info=True)
-        return CommonResponse(
-            status="error", msg=f"查询失败: {e}", code="500", data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
 
 
 @router.post("/scan", response_model=CommonResponse)
@@ -100,9 +99,7 @@ async def trigger_manual_scan(
         return CommonResponse(status="success", msg="扫描完成", code="200", data=result)
     except Exception as e:
         logger.error(f"手动扫描失败: {e}", exc_info=True)
-        return CommonResponse(
-            status="error", msg=f"扫描失败: {e}", code="500", data=None
-        )
+        return CommonResponse(status="error", msg=f"扫描失败: {e}", code="500", data=None)
 
 
 @router.post("/cleanup-preview", response_model=CommonResponse)
@@ -119,9 +116,7 @@ async def cleanup_preview(
         return CommonResponse(status="success", msg="预览成功", code="200", data=result)
     except Exception as e:
         logger.error(f"清理预览失败: {e}", exc_info=True)
-        return CommonResponse(
-            status="error", msg=f"预览失败: {e}", code="500", data=None
-        )
+        return CommonResponse(status="error", msg=f"预览失败: {e}", code="500", data=None)
 
 
 @router.post("/cleanup", response_model=CommonResponse)
@@ -132,7 +127,7 @@ async def cleanup_orphans(
     current_user=Depends(require_authenticated_user),
     audit_service: AuditLogService = Depends(get_audit_service),
 ):
-    """手动清理选中的孤儿文件（物理删除 + 审计日志）"""
+    """手动清理选中的孤儿文件（安全隔离 + 审计日志）"""
     try:
         service = OrphanFileService(db)
         result = await service.cleanup_orphans(
@@ -148,6 +143,4 @@ async def cleanup_orphans(
         return CommonResponse(status="success", msg=msg, code="200", data=result)
     except Exception as e:
         logger.error(f"手动清理孤儿文件失败: {e}", exc_info=True)
-        return CommonResponse(
-            status="error", msg=f"清理失败: {e}", code="500", data=None
-        )
+        return CommonResponse(status="error", msg=f"清理失败: {e}", code="500", data=None)

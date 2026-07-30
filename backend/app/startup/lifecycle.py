@@ -162,6 +162,15 @@ async def init_database_connection():
         raise
 
 
+async def reconcile_orphan_file_state() -> dict[str, int]:
+    """在调度器启动前幂等补齐历史隔离候选对应的扫描明细。"""
+    from app.database import AsyncSessionLocal
+    from app.services.orphan_file_service import OrphanFileService
+
+    async with AsyncSessionLocal() as db:
+        return await OrphanFileService(db).reconcile_stable_candidate_details()
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -229,6 +238,24 @@ async def lifespan(app: FastAPI):
 
     # 2. 数据库连接初始化
     await init_database_connection()
+
+    # 2.5 对账历史隔离候选，避免新读模型重新展示已移走文件。
+    print("=== 对账孤儿文件隔离状态 ===")
+    try:
+        reconciliation = await reconcile_orphan_file_state()
+        print(
+            "[OK] 孤儿文件隔离状态对账完成: "
+            f"更新 {reconciliation['updated_count']} 条，"
+            f"未匹配 {reconciliation['unmatched_count']} 条"
+        )
+    except Exception as e:
+        print(f"[ERROR] 孤儿文件隔离状态对账失败: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if not settings.DEV:
+            raise
+        print("[WARN] DEV 模式继续启动；本次孤儿文件对账不得视为通过")
 
     # 3. 更新定时任务表数据：将dr=0的数据状态改为空闲
     await update_cron_task_status()

@@ -45,9 +45,7 @@ def _empty_manifest(root, downloader_id="dl_001"):
 class TestCleanupSafetyManifest:
     """清理时实时复核文件身份。"""
 
-    async def test_file_referenced_by_new_torrent_blocked(
-        self, async_orphan_db, tmp_path
-    ):
+    async def test_file_referenced_by_new_torrent_blocked(self, async_orphan_db, tmp_path):
         """扫描后文件被新种子引用 → 清理时复核身份，阻止删除。"""
         from app.services.orphan_file_service import OrphanFileService
         from app.models.orphan_file import OrphanFile, OrphanScanResult
@@ -114,9 +112,7 @@ class TestCleanupSafetyManifest:
         await async_orphan_db.commit()
 
         service = OrphanFileService(async_orphan_db)
-        result = await service.cleanup_orphans(
-            orphan_ids=[1], operator="admin", store=MagicMock()
-        )
+        result = await service.cleanup_orphans(orphan_ids=[1], operator="admin", store=MagicMock())
         assert result["success_count"] == 0, "size 变化的文件不应被删除"
 
     async def test_symlink_not_deleted(self, async_orphan_db, tmp_path):
@@ -152,9 +148,7 @@ class TestCleanupSafetyManifest:
         await async_orphan_db.commit()
 
         service = OrphanFileService(async_orphan_db)
-        result = await service.cleanup_orphans(
-            orphan_ids=[1], operator="admin", store=MagicMock()
-        )
+        result = await service.cleanup_orphans(orphan_ids=[1], operator="admin", store=MagicMock())
         assert result["success_count"] == 0, "符号链接不应被清理"
         assert link.exists(), "符号链接不应被删除"
 
@@ -186,14 +180,10 @@ class TestCleanupSafetyManifest:
         await async_orphan_db.commit()
 
         service = OrphanFileService(async_orphan_db)
-        result = await service.cleanup_orphans(
-            orphan_ids=[1], operator="admin", store=MagicMock()
-        )
+        result = await service.cleanup_orphans(orphan_ids=[1], operator="admin", store=MagicMock())
         assert result["success_count"] == 0, "逃逸路径不应被清理"
 
-    async def test_manifest_build_failure_blocks_cleanup(
-        self, async_orphan_db, tmp_path
-    ):
+    async def test_manifest_build_failure_blocks_cleanup(self, async_orphan_db, tmp_path):
         """实时 manifest 构建失败 → 阻止清理。"""
         from app.services.orphan_file_service import OrphanFileService
         from app.models.orphan_file import OrphanFile, OrphanScanResult
@@ -225,14 +215,10 @@ class TestCleanupSafetyManifest:
         bad_store.get_snapshot = AsyncMock(side_effect=RuntimeError("store 不可用"))
 
         service = OrphanFileService(async_orphan_db)
-        result = await service.cleanup_orphans(
-            orphan_ids=[1], operator="admin", store=bad_store
-        )
+        result = await service.cleanup_orphans(orphan_ids=[1], operator="admin", store=bad_store)
         assert result["success_count"] == 0, "manifest 构建失败时不应清理"
 
-    async def test_cleanup_rejects_candidate_outside_authorized_root(
-        self, async_orphan_db, tmp_path
-    ):
+    async def test_cleanup_rejects_candidate_outside_authorized_root(self, async_orphan_db, tmp_path):
         """即使 DB 候选身份完整，路径不属于实时扫描根也必须拒绝。"""
         from app.models.orphan_file import (
             OrphanCurrentCandidate,
@@ -347,12 +333,14 @@ class TestCleanupSafetyManifest:
 class TestQuarantineWorkflow:
     """自动清理移动到隔离区，不直接删除。"""
 
-    async def test_auto_cleanup_moves_to_quarantine_not_delete(
-        self, async_orphan_db, tmp_path
-    ):
+    async def test_auto_cleanup_moves_to_quarantine_not_delete(self, async_orphan_db, tmp_path):
         """自动清理应移动到隔离区，不直接物理删除。"""
         from app.services.orphan_file_service import OrphanFileService
-        from app.models.orphan_file import OrphanCurrentCandidate, OrphanScanResult
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanFile,
+            OrphanScanResult,
+        )
 
         src = tmp_path / "to_quarantine.mkv"
         src.write_bytes(b"x" * 100)
@@ -383,7 +371,18 @@ class TestQuarantineWorkflow:
             device_id=src_stat.st_dev,
             inode=src_stat.st_ino,
         )
-        async_orphan_db.add(candidate)
+        async_orphan_db.add_all(
+            [
+                candidate,
+                OrphanFile(
+                    scan_id="scan_1",
+                    file_path=str(src),
+                    file_size=100,
+                    mtime=datetime.fromtimestamp(src_stat.st_mtime),
+                    downloader_id="dl_001",
+                ),
+            ]
+        )
         await async_orphan_db.commit()
 
         service = OrphanFileService(async_orphan_db)
@@ -400,20 +399,18 @@ class TestQuarantineWorkflow:
             )
 
         # 候选应被移动到隔离区，status=quarantined
-        assert (
-            result.get("quarantined_count", 0) > 0 or result.get("success_count", 0) > 0
-        )
+        assert result.get("quarantined_count", 0) > 0 or result.get("success_count", 0) > 0
         # 原文件不应存在于原路径
         assert not src.exists(), "文件不应留在原路径（应被移到隔离区）"
         # 候选 status 应为 quarantined（而非直接 deleted）
         await async_orphan_db.refresh(candidate)
-        assert candidate.status == "quarantined", (
-            "候选应标记为 quarantined 而非直接删除"
-        )
+        assert candidate.status == "quarantined", "候选应标记为 quarantined 而非直接删除"
+        detail = await async_orphan_db.get(OrphanFile, 1)
+        assert detail.is_deleted is True
+        assert detail.deleted_by == "system"
+        assert detail.deleted_at == candidate.quarantined_at
 
-    async def test_quarantine_not_purged_before_retention(
-        self, async_orphan_db, tmp_path
-    ):
+    async def test_quarantine_not_purged_before_retention(self, async_orphan_db, tmp_path):
         """隔离保留期未到不得物理删除。"""
         from app.services.orphan_file_service import OrphanFileService
         from app.models.orphan_file import OrphanCurrentCandidate
@@ -495,7 +492,11 @@ class TestQuarantineWorkflow:
 
     async def test_recovers_crash_after_atomic_move(self, async_orphan_db, tmp_path):
         """rename 已完成但最终 DB 提交前崩溃时，下次维护应完成候选状态。"""
-        from app.models.orphan_file import OrphanCurrentCandidate
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanFile,
+            OrphanScanResult,
+        )
         from app.services.orphan_file_service import OrphanFileService
 
         root = tmp_path / ".btdeck_quarantine" / "scan_1"
@@ -506,6 +507,7 @@ class TestQuarantineWorkflow:
         candidate = OrphanCurrentCandidate(
             canonical_path=str(tmp_path / "original.bin"),
             downloader_id="dl_001",
+            last_seen_scan_id="scan_1",
             status="candidate",
             file_size=7,
             mtime_ns=target_stat.st_mtime_ns,
@@ -516,18 +518,35 @@ class TestQuarantineWorkflow:
             operation_state="quarantine_pending",
             operation_target_path=str(target),
         )
-        async_orphan_db.add(candidate)
+        async_orphan_db.add_all(
+            [
+                OrphanScanResult(
+                    scan_id="scan_1",
+                    scan_time=datetime.utcnow(),
+                    scan_type="manual",
+                    status="completed",
+                ),
+                OrphanFile(
+                    scan_id="scan_1",
+                    file_path=str(tmp_path / "original.bin"),
+                    file_size=7,
+                    downloader_id="dl_001",
+                ),
+                candidate,
+            ]
+        )
         await async_orphan_db.commit()
 
-        result = await OrphanFileService(
-            async_orphan_db
-        )._recover_interrupted_operations(_empty_manifest(tmp_path))
+        result = await OrphanFileService(async_orphan_db)._recover_interrupted_operations(_empty_manifest(tmp_path))
 
         await async_orphan_db.refresh(candidate)
         assert result == {"recovered": 1, "failed": 0}
         assert candidate.status == "quarantined"
         assert candidate.quarantine_path == str(target)
         assert candidate.operation_state == "stable"
+        detail = await async_orphan_db.get(OrphanFile, 1)
+        assert detail.is_deleted is True
+        assert detail.deleted_by == "system:recovery"
 
     async def test_recovers_crash_after_physical_purge(self, async_orphan_db, tmp_path):
         """remove 已完成但最终 DB 提交前崩溃时，下次维护应标记 purged。"""
@@ -547,14 +566,299 @@ class TestQuarantineWorkflow:
         async_orphan_db.add(candidate)
         await async_orphan_db.commit()
 
-        result = await OrphanFileService(
-            async_orphan_db
-        )._recover_interrupted_operations(_empty_manifest(tmp_path))
+        result = await OrphanFileService(async_orphan_db)._recover_interrupted_operations(_empty_manifest(tmp_path))
 
         await async_orphan_db.refresh(candidate)
         assert result == {"recovered": 1, "failed": 0}
         assert candidate.status == "purged"
         assert candidate.operation_state == "stable"
+
+    async def test_final_commit_failure_keeps_recoverable_pending(self, async_orphan_db, tmp_path):
+        """文件已移动但最终提交失败时，候选保持 pending 且明细未删除。"""
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanFile,
+            OrphanScanResult,
+        )
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import normalize_path
+
+        source = tmp_path / "commit-failure.bin"
+        source.write_bytes(b"payload")
+        stat = source.stat()
+        root = tmp_path / ".btdeck_quarantine" / "scan_commit"
+        candidate = OrphanCurrentCandidate(
+            canonical_path=normalize_path(str(source)),
+            downloader_id="dl_001",
+            last_seen_scan_id="scan_commit",
+            file_size=stat.st_size,
+            mtime_ns=stat.st_mtime_ns,
+            device_id=stat.st_dev,
+            inode=stat.st_ino,
+        )
+        detail = OrphanFile(
+            scan_id="scan_commit",
+            file_path=str(source),
+            file_size=stat.st_size,
+            downloader_id="dl_001",
+        )
+        async_orphan_db.add_all(
+            [
+                OrphanScanResult(
+                    scan_id="scan_commit",
+                    scan_time=datetime.utcnow(),
+                    status="completed",
+                ),
+                detail,
+                candidate,
+            ]
+        )
+        await async_orphan_db.commit()
+        candidate_path = candidate.canonical_path
+        detail_id = detail.id
+
+        original_commit = async_orphan_db.commit
+        commit_count = 0
+
+        async def commit_pending_then_fail():
+            nonlocal commit_count
+            commit_count += 1
+            if commit_count == 1:
+                await original_commit()
+                return
+            raise RuntimeError("final commit failed")
+
+        lease = MagicMock()
+        lease.assert_owned = AsyncMock()
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(
+            async_orphan_db,
+            "commit",
+            side_effect=commit_pending_then_fail,
+        ):
+            with pytest.raises(RuntimeError, match="final commit failed"):
+                await service._quarantine_candidate(
+                    candidate,
+                    str(source),
+                    str(root),
+                    scan_id="scan_commit",
+                    operator="admin",
+                    lease_handle=lease,
+                )
+
+        session_factory = async_sessionmaker(
+            async_orphan_db.bind,
+            expire_on_commit=False,
+        )
+        async with session_factory() as verification_db:
+            persisted_candidate = (
+                await verification_db.execute(
+                    select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path == candidate_path)
+                )
+            ).scalar_one()
+            persisted_detail = await verification_db.get(OrphanFile, detail_id)
+
+        assert persisted_candidate.operation_state == "quarantine_pending"
+        assert persisted_candidate.status == "candidate"
+        assert persisted_detail.is_deleted is False
+        assert not source.exists()
+        assert os.path.exists(persisted_candidate.operation_target_path)
+
+    async def test_lease_loss_after_move_keeps_pending(self, async_orphan_db, tmp_path):
+        """rename 后失去 lease 时不得最终化候选或扫描明细。"""
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanFile,
+            OrphanScanResult,
+        )
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import normalize_path
+
+        source = tmp_path / "lease-loss.bin"
+        source.write_bytes(b"payload")
+        stat = source.stat()
+        candidate = OrphanCurrentCandidate(
+            canonical_path=normalize_path(str(source)),
+            downloader_id="dl_001",
+            last_seen_scan_id="scan_lease",
+            file_size=stat.st_size,
+            mtime_ns=stat.st_mtime_ns,
+            device_id=stat.st_dev,
+            inode=stat.st_ino,
+        )
+        detail = OrphanFile(
+            scan_id="scan_lease",
+            file_path=str(source),
+            file_size=stat.st_size,
+            downloader_id="dl_001",
+        )
+        async_orphan_db.add_all(
+            [
+                OrphanScanResult(
+                    scan_id="scan_lease",
+                    scan_time=datetime.utcnow(),
+                    status="completed",
+                ),
+                detail,
+                candidate,
+            ]
+        )
+        await async_orphan_db.commit()
+
+        lease = MagicMock()
+        lease.assert_owned = AsyncMock(side_effect=[None, RuntimeError("lease lost after move")])
+        with pytest.raises(RuntimeError, match="lease lost"):
+            await OrphanFileService(async_orphan_db)._quarantine_candidate(
+                candidate,
+                str(source),
+                str(tmp_path / ".btdeck_quarantine" / "scan_lease"),
+                scan_id="scan_lease",
+                operator="admin",
+                lease_handle=lease,
+            )
+
+        await async_orphan_db.refresh(candidate)
+        await async_orphan_db.refresh(detail)
+        assert candidate.operation_state == "quarantine_pending"
+        assert candidate.status == "candidate"
+        assert detail.is_deleted is False
+        assert not source.exists()
+        assert os.path.exists(candidate.operation_target_path)
+
+    async def test_resolved_recovery_does_not_mark_detail_deleted(self, async_orphan_db, tmp_path):
+        """pending 源文件重新被种子引用时只 resolved，不标记扫描明细。"""
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanFile,
+            OrphanScanResult,
+        )
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import normalize_path
+
+        source = tmp_path / "referenced-again.bin"
+        source.write_bytes(b"payload")
+        stat = source.stat()
+        target = tmp_path / ".btdeck_quarantine" / "scan_resolved" / source.name
+        candidate = OrphanCurrentCandidate(
+            canonical_path=normalize_path(str(source)),
+            downloader_id="dl_001",
+            last_seen_scan_id="scan_resolved",
+            file_size=stat.st_size,
+            mtime_ns=stat.st_mtime_ns,
+            device_id=stat.st_dev,
+            inode=stat.st_ino,
+            quarantine_root=str(target.parent),
+            operation_state="quarantine_pending",
+            operation_target_path=str(target),
+        )
+        detail = OrphanFile(
+            scan_id="scan_resolved",
+            file_path=str(source),
+            file_size=stat.st_size,
+            downloader_id="dl_001",
+        )
+        async_orphan_db.add_all(
+            [
+                OrphanScanResult(
+                    scan_id="scan_resolved",
+                    scan_time=datetime.utcnow(),
+                    status="completed",
+                ),
+                detail,
+                candidate,
+            ]
+        )
+        await async_orphan_db.commit()
+        manifest = _empty_manifest(tmp_path)
+        manifest.expected_paths.add(normalize_path(str(source)))
+
+        result = await OrphanFileService(async_orphan_db)._recover_interrupted_operations(manifest)
+
+        await async_orphan_db.refresh(candidate)
+        await async_orphan_db.refresh(detail)
+        assert result == {"recovered": 1, "failed": 0}
+        assert candidate.status == "resolved"
+        assert candidate.operation_state == "stable"
+        assert detail.is_deleted is False
+
+    async def test_recovery_rebuilds_manifest_for_all_pending_downloaders(self, async_orphan_db, tmp_path):
+        """窄 manifest 不覆盖 pending 下载器时必须按全部下载器重建。"""
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanFile,
+            OrphanScanResult,
+        )
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot, normalize_path
+
+        scan = OrphanScanResult(
+            scan_id="scan_multi",
+            scan_time=datetime.utcnow(),
+            status="completed",
+        )
+        async_orphan_db.add(scan)
+        for downloader_id in ("dl_a", "dl_b"):
+            source = tmp_path / downloader_id / "source.bin"
+            target = tmp_path / "quarantine" / downloader_id / "source.bin"
+            target.parent.mkdir(parents=True)
+            target.write_bytes(downloader_id.encode())
+            stat = target.stat()
+            async_orphan_db.add_all(
+                [
+                    OrphanFile(
+                        scan_id="scan_multi",
+                        file_path=str(source),
+                        file_size=stat.st_size,
+                        downloader_id=downloader_id,
+                    ),
+                    OrphanCurrentCandidate(
+                        canonical_path=normalize_path(str(source)),
+                        downloader_id=downloader_id,
+                        last_seen_scan_id="scan_multi",
+                        file_size=stat.st_size,
+                        mtime_ns=stat.st_mtime_ns,
+                        device_id=stat.st_dev,
+                        inode=stat.st_ino,
+                        quarantine_root=str(target.parent),
+                        purge_after=datetime.utcnow() + timedelta(days=7),
+                        operation_state="quarantine_pending",
+                        operation_target_path=str(target),
+                    ),
+                ]
+            )
+        await async_orphan_db.commit()
+
+        complete_manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[
+                (str(tmp_path / "dl_a"), "dl_a"),
+                (str(tmp_path / "dl_b"), "dl_b"),
+            ],
+            downloader_ids={"dl_a", "dl_b"},
+        )
+        narrow_manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[(str(tmp_path / "dl_a"), "dl_a")],
+            downloader_ids={"dl_a"},
+        )
+        service = OrphanFileService(async_orphan_db)
+        manifest_builder = AsyncMock(return_value=complete_manifest)
+        with patch.object(
+            service,
+            "_build_realtime_manifest",
+            manifest_builder,
+        ):
+            result = await service._recover_interrupted_operations(
+                narrow_manifest,
+                store=MagicMock(),
+            )
+
+        assert result == {"recovered": 2, "failed": 0}
+        manifest_builder.assert_awaited_once()
+        assert manifest_builder.await_args.args[1] == {"dl_a", "dl_b"}
 
 
 # ==================== F 组：并发 lease ====================
@@ -568,15 +872,11 @@ class TestConcurrentLease:
         from app.services.orphan_lease import acquire_lease, release_lease
 
         # 第一个获取成功
-        acquired1 = await acquire_lease(
-            "orphan_scan", owner="proc_1", ttl=3600, db=async_orphan_db
-        )
+        acquired1 = await acquire_lease("orphan_scan", owner="proc_1", ttl=3600, db=async_orphan_db)
         assert acquired1, "第一个扫描应获取 lease"
 
         # 第二个应失败
-        acquired2 = await acquire_lease(
-            "orphan_scan", owner="proc_2", ttl=3600, db=async_orphan_db
-        )
+        acquired2 = await acquire_lease("orphan_scan", owner="proc_2", ttl=3600, db=async_orphan_db)
         assert not acquired2, "第二个扫描不应获取 lease（已被持有）"
 
         await release_lease("orphan_scan", owner="proc_1", db=async_orphan_db)
@@ -589,19 +889,13 @@ class TestConcurrentLease:
             release_lease,
         )
 
-        scan_acquired = await acquire_lease(
-            ORPHAN_MAINTENANCE_LEASE, owner="proc_1", ttl=3600, db=async_orphan_db
-        )
+        scan_acquired = await acquire_lease(ORPHAN_MAINTENANCE_LEASE, owner="proc_1", ttl=3600, db=async_orphan_db)
         assert scan_acquired
 
-        cleanup_acquired = await acquire_lease(
-            ORPHAN_MAINTENANCE_LEASE, owner="proc_2", ttl=3600, db=async_orphan_db
-        )
+        cleanup_acquired = await acquire_lease(ORPHAN_MAINTENANCE_LEASE, owner="proc_2", ttl=3600, db=async_orphan_db)
         assert not cleanup_acquired
 
-        await release_lease(
-            ORPHAN_MAINTENANCE_LEASE, owner="proc_1", db=async_orphan_db
-        )
+        await release_lease(ORPHAN_MAINTENANCE_LEASE, owner="proc_1", db=async_orphan_db)
 
     async def test_atomic_contention_across_two_sqlite_sessions(self, tmp_path):
         """两个独立 DB session 同时争抢同一 lease，恰好一个成功。"""
@@ -619,12 +913,8 @@ class TestConcurrentLease:
         session_factory = async_sessionmaker(engine, expire_on_commit=False)
         async with session_factory() as first, session_factory() as second:
             acquired = await asyncio.gather(
-                acquire_lease(
-                    ORPHAN_MAINTENANCE_LEASE, owner="proc_1", ttl=3600, db=first
-                ),
-                acquire_lease(
-                    ORPHAN_MAINTENANCE_LEASE, owner="proc_2", ttl=3600, db=second
-                ),
+                acquire_lease(ORPHAN_MAINTENANCE_LEASE, owner="proc_1", ttl=3600, db=first),
+                acquire_lease(ORPHAN_MAINTENANCE_LEASE, owner="proc_2", ttl=3600, db=second),
             )
 
         await engine.dispose()
@@ -641,9 +931,7 @@ class TestConcurrentLease:
         await asyncio.sleep(0.05)  # 等 TTL 过期
 
         # 新进程应能接管
-        acquired = await acquire_lease(
-            "orphan_scan", owner="proc_new", ttl=3600, db=async_orphan_db
-        )
+        acquired = await acquire_lease("orphan_scan", owner="proc_new", ttl=3600, db=async_orphan_db)
         assert acquired, "lease 过期后应允许接管"
 
         await release_lease("orphan_scan", owner="proc_new", db=async_orphan_db)
@@ -653,15 +941,11 @@ class TestConcurrentLease:
         from app.services.orphan_lease import acquire_lease
 
         # 进程获取 lease 后崩溃（不 release）
-        await acquire_lease(
-            "orphan_scan", owner="crashed_proc", ttl=0, db=async_orphan_db
-        )
+        await acquire_lease("orphan_scan", owner="crashed_proc", ttl=0, db=async_orphan_db)
         import asyncio
 
         await asyncio.sleep(0.05)
 
         # 新进程接管
-        acquired = await acquire_lease(
-            "orphan_scan", owner="recovery_proc", ttl=3600, db=async_orphan_db
-        )
+        acquired = await acquire_lease("orphan_scan", owner="recovery_proc", ttl=3600, db=async_orphan_db)
         assert acquired, "崩溃进程的 lease 过期后应能恢复"
