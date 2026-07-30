@@ -4,6 +4,8 @@ import type {
   ApplyTemplateRequest,
   DownloaderCapabilities,
   DownloaderSettings,
+  PathMappingConfig,
+  PathMappingTestResponse,
   SettingTemplate,
   TemplateDetailResponse,
   TemplateListResponse
@@ -233,8 +235,8 @@ export const getPathMappings = (downloaderId: string) =>
 /**
  * 测试路径映射配置
  */
-export const testPathMapping = (downloaderId: string, pathMapping: any) =>
-  request({
+export const testPathMapping = (downloaderId: string, pathMapping: PathMappingConfig) =>
+  request<ApiEnvelope<PathMappingTestResponse>>({
     url: `/downloader/${downloaderId}/path-mapping/test`,
     method: 'post',
     data: { path_mapping: pathMapping }

@@ -1,5 +1,39 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-30 - 下载器路径映射真实目录验证修复
+
+**任务 ID**: `v1.0.6.32`
+**分支**: dev
+**范围**: 下载器路径映射验证 API、缓存客户端探测服务、前端响应类型与回归测试；不修改保存逻辑、数据库 Schema 或 Alembic 迁移。
+
+### 根因与修复
+
+- 旧 `/downloader/{downloader_id}/path-mapping/test` 只做 Pydantic、必填字段、重复 internal 路径和标准化检查，完全没有访问 internal/external 目录，因此格式合法的错误路径必然返回“配置验证通过”。
+- 新增逐映射真实目录验证：external 在 BtDeck 运行环境中执行 5 秒有界 `stat`、目录类型和读写权限检查；internal 严格复用 `app.state.store` 缓存客户端，经 `call_downloader_api(INTERACTIVE)` 探测，未创建第二套下载器连接。
+- Transmission 使用 `free_space(path)` 验证任意内部目录；qBittorrent 没有等价的任意路径只读探测，改用默认保存路径 + `free_space_on_disk` 或状态可用的现有种子保存路径作为存在性证据，无法取证时 fail-closed。
+- 响应新增 `downloader_available`、`internal_paths_valid`、`external_paths_valid` 与逐条 `path_checks`；任一映射任一侧失败即整体失败，错误列表带映射名称、路径侧和原因。前端 API/响应类型同步收紧，既有错误详情区域直接展示这些原因。
+- 空映射配置现在失败；internal 冲突在标准化后判断，避免不同分隔符表达绕过重复检查。
+
+### 回归与检查
+
+| 验证项 | 结果 |
+|---|---|
+| 新增路径映射回归 | ✅ 10 passed；旧实现对同组测试暴露 5 failed |
+| 受影响下载器 API 回归 | ✅ 47 passed |
+| 后端全量 pytest | ✅ 2403 passed / 6 skipped |
+| 前端全量 Jest | ✅ 24 suites / 348 tests |
+| Ruff / Flake8 / py_compile / 新增 service/schema 目标 mypy | ✅ 通过；`downloader.py` 的 18 条报告为既有类型债务，未落在修改行 |
+| `npm run lint` / typecheck / production build | ✅ 通过；build 保留既有 48 条 Sass/资源体积 warning |
+| 根 `init.sh` | ✅ 使用 Git Bash 执行，退出码 0 |
+| Black | ✅ 新增 Python 文件已用单 worker 格式化，formatter 复核均为 `NothingChanged`；⚠️ Windows 下 CLI 完成后进程退出仍会挂起 |
+
+### 交付边界
+
+- qBittorrent 对未作为默认路径、且当前没有可用种子引用的目录会返回“无法确认目录存在”，这是 API 能力限制下的保守失败，不会再把未经验证的目录判为成功。
+- 本轮按用户要求仅提交本任务文件，未执行 push；会话开始前已有的未跟踪工具目录、镜像归档与批处理文件保持不动。
+
+---
+
 ## 2026-07-30 - 孤儿扫描 Transmission Torrent 文件清单解析修复
 
 **任务 ID**: `orphan-transmission-torrent-files-fix`

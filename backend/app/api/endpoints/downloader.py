@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import uuid
-from typing import Annotated, Any, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 import ping3
 import urllib3
@@ -16,6 +16,7 @@ from app.downloader.models import BtDownloaders
 from app.downloader.request import ListDownloader, RequestDownloader, UpdateDownloader
 from app.downloader.responseVO import DownloaderListVO, DownloaderVO, DownloaderStatusVO, DownloaderSimpleVO
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.path_mapping_validation import validate_path_mapping_directories
 from app.utils.encryption import encrypt_password, decrypt_password
 from qbittorrentapi import Client as qbClient
 from requests.exceptions import SSLError, ConnectionError
@@ -1390,14 +1391,21 @@ def remove_path_mapping(
 
 
 @router.post("/{downloader_id}/path-mapping/test", summary="测试路径映射配置")
-def test_path_mapping(
+async def test_path_mapping(
     downloader_id: str,
     request_data: PathMappingTestRequest,
+    request: Request,
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
     """
-    测试路径映射配置的有效性
+    测试路径映射配置的有效性。
+
+    除结构、字段和冲突检查外，还会验证每条映射的真实目录可用性：
+    - internal：通过 app.state.store 中的缓存下载器客户端探测；
+    - external：在 BtDeck 当前运行环境中执行目录 stat。
+
+    任一映射任一侧无法确认时均 fail-closed，不返回“配置验证通过”。
 
     权限: 需要登录
 
@@ -1418,11 +1426,15 @@ def test_path_mapping(
             return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 后端验证
-        backend_validation = {
+        backend_validation: Dict[str, Any] = {
             "json_format_valid": True,
             "structure_valid": True,
             "fields_complete": True,
             "no_path_conflicts": True,
+            "downloader_available": False,
+            "internal_paths_valid": False,
+            "external_paths_valid": False,
+            "path_checks": [],
             "errors": [],
         }
 
@@ -1434,6 +1446,9 @@ def test_path_mapping(
             if not hasattr(config, "mappings") or not isinstance(config.mappings, list):
                 backend_validation["structure_valid"] = False
                 backend_validation["errors"].append("缺少mappings数组")
+            elif not config.mappings:
+                backend_validation["structure_valid"] = False
+                backend_validation["errors"].append("至少需要一条路径映射")
 
             # 3. 字段完整性验证
             for idx, mapping in enumerate(config.mappings):
@@ -1441,25 +1456,47 @@ def test_path_mapping(
                     backend_validation["fields_complete"] = False
                     backend_validation["errors"].append(f"映射#{idx+1}缺少必填字段")
 
-            # 4. 路径冲突检测
-            internal_paths = [m.internal for m in config.mappings]
-            if len(internal_paths) != len(set(internal_paths)):
-                backend_validation["no_path_conflicts"] = False
-                backend_validation["errors"].append("存在重复的internal路径")
-
-            # 5. 路径标准化验证(尝试创建PathMappingService)
+            # 4. 路径标准化和冲突检测
             try:
                 from app.core.path_mapping import PathMappingService
 
                 service = PathMappingService(config.model_dump_json())
-                # 验证路径标准化是否成功
+                normalized_internal_paths = []
                 for mapping in config.mappings:
                     normalized_internal = service._normalize_path(mapping.internal)
                     service._normalize_path(mapping.external)
+                    normalized_internal_paths.append(normalized_internal)
                     logger.debug(f"路径标准化: {mapping.internal} -> {normalized_internal}")
+                if len(normalized_internal_paths) != len(set(normalized_internal_paths)):
+                    backend_validation["no_path_conflicts"] = False
+                    backend_validation["errors"].append("存在重复的internal路径")
             except Exception as e:
                 backend_validation["no_path_conflicts"] = False
                 backend_validation["errors"].append(f"路径标准化失败: {str(e)}")
+
+            # 5. 真实目录验证：任一侧无法确认即失败
+            if all(
+                [
+                    backend_validation["structure_valid"],
+                    backend_validation["fields_complete"],
+                    backend_validation["no_path_conflicts"],
+                ]
+            ):
+                try:
+                    path_validation = await validate_path_mapping_directories(
+                        request.app.state,
+                        downloader_id,
+                        int(downloader.downloader_type),
+                        config.mappings,
+                    )
+                    backend_validation["downloader_available"] = path_validation["downloader_available"]
+                    backend_validation["internal_paths_valid"] = path_validation["internal_paths_valid"]
+                    backend_validation["external_paths_valid"] = path_validation["external_paths_valid"]
+                    backend_validation["path_checks"] = path_validation["path_checks"]
+                    backend_validation["errors"].extend(path_validation["errors"])
+                except Exception as path_error:
+                    logger.exception("路径映射目录验证异常: downloader_id=%s", downloader_id)
+                    backend_validation["errors"].append(f"路径可用性验证失败: {str(path_error)}")
 
         except Exception as e:
             backend_validation["json_format_valid"] = False
@@ -1472,6 +1509,9 @@ def test_path_mapping(
                 backend_validation["structure_valid"],
                 backend_validation["fields_complete"],
                 backend_validation["no_path_conflicts"],
+                backend_validation["downloader_available"],
+                backend_validation["internal_paths_valid"],
+                backend_validation["external_paths_valid"],
             ]
         )
 

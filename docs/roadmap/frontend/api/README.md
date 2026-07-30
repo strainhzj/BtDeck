@@ -9,7 +9,7 @@
 | `torrents.ts` | 1219 | 37 func / 45 iface | L2 | 🔵 种子管理核心：列表/添加/批量/删除（多级别+异步）/暂停恢复/校验/tracker 操作/高级搜索/搜索模板/重复检测/辅种迁移/路径/备份/reannounce/活跃种子 |
 | `tracker.ts` | 598 | 26 func / 29 iface | L2 | Tracker：关键词 CRUD+批量/消息日志 CRUD+批量/统计/测试匹配/关键词池/汇报配置 CRUD+自动检测域名+批量更新 |
 | `tasks.ts` | 499 | 18 func / 24 iface | L2 | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
-| `downloader.ts` | 315 | 24 const | L1 | 下载器 CRUD、状态/连接测试、设置/模板、路径映射 |
+| `downloader.ts` | 317 | 24 const | L1 | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
 | `recycle-bin.ts` | 196 | 5 func / 11 iface | L2 | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |
 | `audit-logs.ts` | 183 | 6 func / 10 iface | L1 | 审计日志：查询/统计/操作类型/导出/归档/下载 |
 | `tag-management.ts` | 175 | 9 func / 5 iface / 1 enum | L6 | 标签管理：分类/标签 CRUD/批量删除/分类支持检查 |

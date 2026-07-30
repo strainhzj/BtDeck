@@ -329,6 +329,19 @@ export interface PathMappingConfig {
   default_mapping?: string         // 默认映射名称（可选，自动使用第一个）
 }
 
+export interface PathDirectoryValidation {
+  path: string
+  valid: boolean
+  message: string
+}
+
+export interface PathMappingCheck {
+  name: string
+  valid: boolean
+  internal: PathDirectoryValidation
+  external: PathDirectoryValidation
+}
+
 /**
  * 路径映射测试响应
  */
@@ -340,6 +353,10 @@ export interface PathMappingTestResponse {
     structure_valid: boolean
     fields_complete: boolean
     no_path_conflicts: boolean
+    downloader_available: boolean
+    internal_paths_valid: boolean
+    external_paths_valid: boolean
+    path_checks: PathMappingCheck[]
     errors: string[]
   }
   frontend_validation?: null

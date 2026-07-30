@@ -1,5 +1,33 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-30 交接：下载器路径映射真实目录验证修复
+
+**当前任务**: `v1.0.6.32`
+**分支**: dev
+**状态**: 实现、回归、全量验证和项目记录均已完成；本轮按用户要求提交，不推送。
+
+### 关键结论
+
+- 误判根因是测试端点只验证 JSON/字段/路径格式，从未访问实际目录。
+- 新服务对每条映射同时验证两侧：BtDeck 侧 external 做有界本地目录/权限检查；下载器侧 internal 只复用 `app.state.store` 缓存客户端。
+- Transmission 通过 `free_space(path)` 直接探测；qBittorrent 通过默认保存路径磁盘空间或状态可用的现有种子路径取证，无法确认时明确失败。
+- 任一侧失败即整体 `valid=false`，`path_checks` 和 `errors` 可定位到具体映射与原因；保存流程和数据库结构未改变。
+
+### 验证
+
+- 新增回归：10 passed；受影响 API：47 passed；后端全量：2403 passed / 6 skipped。
+- 前端全量：24 suites / 348 tests；完整 lint、TypeScript typecheck、生产 build 通过。
+- Ruff、Flake8、py_compile、新增 service/schema 目标 mypy、`git diff --check` 与 Git Bash 根 `init.sh` 通过；`downloader.py` 的 18 条 mypy 报告为既有类型债务，未落在修改行。
+- 新增 Python 文件已由 Black 单 worker 格式化，formatter 复核均返回 `NothingChanged`；当前 Windows 环境仍存在 Black CLI 完成后进程退出挂起。
+
+### 当前工作区
+
+- 本轮新增 2 个后端文件，修改后端端点/schema、前端 API/类型及项目记录/路线图；无依赖、迁移或 Schema 变更。
+- 仅提交本任务文件，未执行 push。
+- 会话开始前已有的 `.docker_temp_482561487`、`.pnpm-store/`、`.zcode/`、两个镜像归档、`build-and-export-images.bat` 与 `tools/` 均保持不动。
+
+---
+
 ## 2026-07-30 交接：孤儿扫描 Transmission Torrent 文件清单解析修复
 
 **当前任务**: `orphan-transmission-torrent-files-fix`

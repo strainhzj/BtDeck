@@ -2,7 +2,7 @@
 
 > 业务逻辑层，承接 endpoint 调用，向下依赖 core 基础设施与 ORM 模型。包含两个适配器子包（下载器适配器、标签适配器）。
 
-## services/ 根（35 个文件）
+## services/ 根（36 个文件）
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
@@ -24,6 +24,7 @@
 | `orphan_notification.py` | 129 | 0 class, 3 def | 孤儿扫描完成通知（幂等 dedupe_key） |
 | `orphan_quarantine.py` | 250 | 0 class, 8 def | 孤儿隔离区管理（移入 → 保留期 → 物理删除） |
 | `orphan_scanner.py` | 739 | 3 class, 1 def | 孤儿文件扫描器（扫描下载器磁盘找不在种子清单中的文件） |
+| `path_mapping_validation.py` | 431 | 2 class, 16 def | 路径映射目录验证：复用 `app.state.store` 缓存连接，Transmission 以 `free_space` 探测，qB 以默认目录磁盘空间/现有种子路径取证；外部目录执行有界本地 stat/权限检查 |
 | `path_maintenance_service.py` | 552 | 1 class, 0 def | 下载器路径维护服务（默认/活跃路径） |
 | `reannounce_service.py` | 239 | 0 class, 5 def | Tracker Reannounce 核心服务（API 与定时任务共用） |
 | `recycle_bin_service.py` | 783 | 1 class, 0 def | 回收站服务（列表/还原/清理/批量/记录） |

@@ -1680,6 +1680,28 @@
             "frontend/tests/unit/traditional-view-component.spec.ts"
           ],
           "evidence": "传统模式在分类/标签与添加时间之间新增保存路径列，加入独立列设置并默认可见，兼容 savePath/save_path，空值显示 '-'、完整路径通过 title 提示；表格最小宽度由内部滚动容器承接，避免路径列挤压名称列。列表模式名称/大小/状态/比率/添加时间五个排序列均常驻 Lucide 图标，未排序为 arrow-up-down，降序为 arrow-down，升序为 arrow-up；图标 aria-hidden，排序语义仍由 th 的 aria-sort 提供。Lucide 包装器新增三图标静态注册并保持 tree-shaking。追加回归锁定旧版列偏好缺少 savePath 时默认显示、显式隐藏时表头/数据列/虚拟占位列计数同步，以及 Space 键三态切换且不回退到 ▲/▼ 字符。追加目标回归 2 suites/24 tests、前端全量 Jest 23 suites/330 tests、TypeScript、严格 Vue ESLint、Vuex action lint、生产 build、根 init.sh 与 git diff --check 均通过，build 仅保留既有 48 条 Sass/资源体积 warning。完整 npm run lint 的 contract:check 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截，本任务未修改该无关生成契约。"
+        },
+        {
+          "id": "v1.0.6.32",
+          "name": "下载器路径映射真实目录验证",
+          "description": "修复下载器设置对话框中路径映射“配置验证”只检查字段和格式、错误路径仍会通过的问题；逐条验证下载器内部目录与 BtDeck 外部目录，任一侧无法确认即整体失败并返回可定位的逐项原因。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/downloader.py",
+            "backend/app/api/schemas/path_mapping.py",
+            "backend/app/services/path_mapping_validation.py",
+            "backend/tests/api/test_path_mapping_validation.py",
+            "frontend/src/api/downloader.ts",
+            "frontend/src/views/downloader/types.ts",
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md"
+          ],
+          "evidence": "旧端点仅执行 Pydantic、字段完整性、internal 路径重复和路径标准化检查；新验证复用 app.state.store 缓存客户端，不新建连接：Transmission 通过 free_space 探测每条 internal，qBittorrent 以默认保存路径/磁盘空间和可用状态的现有种子路径提供存在性证据，无法取证时 fail-closed；external 在 BtDeck 运行环境执行 5 秒有界 stat 与读写权限检查。响应新增下载器可用性、内外路径汇总和逐映射 path_checks，前端 API/响应类型同步收紧，既有错误明细 UI 可直接展示具体映射与原因。新增回归 10/10，通过旧实现时曾稳定暴露 5 个失败；受影响 API 回归 47 passed；后端全量 2403 passed / 6 skipped；前端全量 24 suites / 348 tests，npm run lint、typecheck、生产 build 均通过；Ruff、Flake8、py_compile、新增 service/schema 目标 mypy 与 Git Bash 根 init.sh 通过。downloader.py 的 18 条 mypy 报告均为该历史大文件既有类型债务，未落在本次修改行。新增 Python 文件已由 Black 单 worker 格式化，formatter 复核均返回 NothingChanged；当前 Windows 环境仍存在 Black CLI 完成后进程退出挂起。"
         }
       ]
     }

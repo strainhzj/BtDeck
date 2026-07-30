@@ -46,7 +46,7 @@
 | `cron_tasks.py` | 1073 | 19 class, 29 def | 定时任务（cron）配置与日志 CRUD/启停 |
 | `cuser.py` | 309 | 0 class, 7 def | 用户中心：登出/改信息/改密/2FA（挂 `/user` 与 `/users`） |
 | `dashboard.py` | 40 | 0 class, 1 def | 仪表盘聚合数据，委托 `DashboardService` |
-| `downloader.py` | 1490 | 2 class, 22 def | 下载器核心 API（连通性测试/添加管理/路径映射测试） |
+| `downloader.py` | 1530 | 2 class, 22 def | 下载器核心 API（连通性测试/添加管理；路径映射测试会通过缓存下载器验证内部目录，并在 BtDeck 环境验证外部目录，任一失败即 fail-closed） |
 | `downloader_capabilities.py` | 243 | 0 class, 3 def | 下载器能力探测 |
 | `downloader_capabilities_management.py` | 267 | 1 class, 4 def | 下载器能力配置管理（更新/重置/删除） |
 | `downloader_path_maintenance.py` | 317 | 2 class, 6 def | 下载器路径维护 CRUD（默认/活跃路径） |
@@ -89,7 +89,7 @@
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
-| `path_mapping.py` | 93 | 4 class | 路径映射 Pydantic 模型（前后端协同验证） |
+| `path_mapping.py` | 127 | 7 class | 路径映射 Pydantic 模型（前后端协同验证，含逐条内外目录检查结果） |
 | `tracker_keywords.py` | 73 | 4 class | Tracker 关键词 CRUD 请求/响应 |
 | `tracker_messages.py` | 92 | 7 class | Tracker 消息记录请求/响应 |
 

@@ -12,7 +12,7 @@ BtDeck/
 ├── backend/          ← FastAPI 后端（Python 3.11+）
 │   ├── app-root/        包根入口（main/factory/database/exception_handlers …）
 │   ├── api/             HTTP 路由层（35 endpoints + schemas + models + responseVO）
-│   ├── services/        业务服务层 + 下载器/标签适配器（含 v1.0.6.25 新增 torrent_ratio_values / sqlite_search_runtime）
+│   ├── services/        业务服务层 + 下载器/标签适配器（含 ratio/search 运行时与路径映射真实目录验证）
 │   ├── core/            基础设施（config / path_mapping / file_ops …）+ ⚠ 含 4 个孤儿文件（torrent_operations 已重写为 ratio 工具但仍 0 引用）
 │   ├── contracts/ ✨    前后端共享机器可读契约（v1.0.6.27 新增：advanced_search JSON + 加载器）
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
@@ -27,7 +27,7 @@ BtDeck/
 │   ├── components-layout/  通用组件（v1.0.6.28 LucideIcon / v1.0.6.30 PageSizeCombobox）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 101 个 test_*.py + frontend jest unit）
+├── tests/            ← 测试（backend pytest 103 个 test_*.py + frontend jest unit）
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -37,7 +37,7 @@ BtDeck/
 |------|-----------|------|
 | **backend** | FastAPI 后端总览与跨分支依赖骨架 | [backend/README.md](./backend/README.md) |
 | ↳ app-root | `backend/app/` 包根 8 文件：应用工厂、DB 引擎、异常处理、配置入口、版本、桌面/WebSocket main | [backend/app-root.md](./backend/app-root.md) |
-| ↳ api | HTTP 路由层（34 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
+| ↳ api | HTTP 路由层（35 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
 | ↳ services | 业务服务层 + downloader_adapters + tag_adapters | [backend/services/README.md](./backend/services/README.md) |
 | ↳ core | 基础设施（config/path_mapping/file_ops/tracker_*），⚠ 含 4 个 0 引用孤儿文件 | [backend/core/README.md](./backend/core/README.md) |
 | ↳ contracts ✨v1.0.6.27 | 前后端共享机器可读契约（advanced_search JSON + Python 加载器，单一真相源） | [backend/contracts/README.md](./backend/contracts/README.md) |
@@ -53,7 +53,7 @@ BtDeck/
 | ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（101 个 test_*.py，按子目录组织）+ 前端 jest unit | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（103 个 test_*.py，按子目录组织）+ 前端 jest unit | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -90,10 +90,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-29（增量更新：v1.0.6.25~31） |
-| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~31 增量同步（含高级搜索契约化、Lucide 基础设施、视觉密度修正、列表分页/排序对齐与保存路径列） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32） |
+| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~32 增量同步（含高级搜索契约化、Lucide 基础设施、视觉密度修正、列表分页/排序对齐、保存路径列与路径映射真实目录验证） |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层样例（1 个：torrent_crud.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | v1.0.6.30~31 更新前端 views/components 路线图：新增共享 `PageSizeCombobox`（列表/传统分页统一 + 列头排序对齐）、传统视图补保存路径列、列表模式可排序列头常驻 Lucide 排序图标；相关行数与测试统计同步 |
+| 本次新增 | v1.0.6.32 增加路径映射真实目录验证索引：内部目录复用缓存下载器 RPC，外部目录在 BtDeck 运行环境有界探测，任一映射失败即整体 fail-closed；同步更新 API 类型与测试统计 |
