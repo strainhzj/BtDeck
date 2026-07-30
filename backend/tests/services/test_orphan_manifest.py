@@ -253,8 +253,12 @@ async def test_authoritative_empty_inventory_is_valid(tmp_path):
     assert snapshot.downloader_ids == {"qb"}
 
 
-async def test_missing_mapping_is_warned_and_skipped(tmp_path):
-    """未映射的 inventory 路径不进入清单，也不会中断其他任务步骤。"""
+async def test_missing_mapping_is_fail_closed(tmp_path):
+    """白名单阶段 save_path 映射缺失必须整批失败（fail-closed），不可静默跳过。
+
+    回归保护：旧实现记 warning 后 continue，导致该种子文件不进白名单，
+    若其文件落在其它扫描根下会被误判孤儿。fail-closed 杜绝此误判。
+    """
     internal_root = "/downloads/unmapped"
     client = MagicMock()
     client.torrents_info.return_value = [
@@ -274,13 +278,127 @@ async def test_missing_mapping_is_warned_and_skipped(tmp_path):
     )
     builder._load_configs = lambda: [_config("qb", 0)]
 
-    snapshot = await builder.build()
-
-    assert snapshot.expected_paths == set()
-    assert snapshot.scan_roots == []
-    assert len(snapshot.warnings) == 1
-    assert snapshot.warnings[0].internal_path == internal_root
+    with pytest.raises(ManifestBuildError, match="未找到有效路径映射"):
+        await builder.build()
+    # 映射缺失在外部路径解析阶段即 raise，不应继续拉取文件清单
     client.torrents.files.assert_not_called()
+
+
+async def test_build_scopes_to_required_downloader_ids(tmp_path):
+    """清理路径传 required_downloader_ids 时只遍历这些下载器，A 不受 B 缺映射影响。
+
+    回归：清理下载器 A 的孤儿候选时，不应因无关下载器 B 的 save_path 缺映射
+    而拒绝整个清理。
+    """
+    mapped_root_a = tmp_path / "a"
+    mapped_root_a.mkdir()
+    client_a = MagicMock()
+    client_a.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-a", save_path=str(mapped_root_a))
+    ]
+    client_a.torrents.files.return_value = [SimpleNamespace(name="a.mkv")]
+    # B 缺映射（path_mapping_service=None）
+    client_b = MagicMock()
+    client_b.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-b", save_path="/downloads/unmapped-b")
+    ]
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="dl-a", client=client_a, fail_time=0),
+                SimpleNamespace(downloader_id="dl-b", client=client_b, fail_time=0),
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(store, scan_path_selection=ScanPathSelection())
+    builder._load_configs = lambda: [
+        _config("dl-a", 0, str(mapped_root_a)),
+        _config("dl-b", 0),
+    ]
+
+    # 只限定 A → 不遍历 B，B 的缺映射不影响
+    snapshot = await builder.build(required_downloader_ids={"dl-a"})
+
+    assert snapshot.downloader_ids == {"dl-a"}
+    assert normalize_path(str(mapped_root_a / "a.mkv")) in snapshot.expected_paths
+    # B 的 client 不应被触碰
+    client_b.torrents_info.assert_not_called()
+    client_b.torrents.files.assert_not_called()
+
+
+async def test_fail_closed_only_within_scope(tmp_path):
+    """required=None 时遍历全部，作用域内（A、B）任一缺映射即整批 fail-closed。
+
+    与上一测试互补：当 A、B 都在作用域内时，B 缺映射必须 raise（这正是扫描路径
+    的全量语义——任何在扫描范围内的下载器缺映射都会导致其文件被误判孤儿）。
+    """
+    mapped_root_a = tmp_path / "a"
+    mapped_root_a.mkdir()
+    client_a = MagicMock()
+    client_a.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-a", save_path=str(mapped_root_a))
+    ]
+    client_a.torrents.files.return_value = [SimpleNamespace(name="a.mkv")]
+    client_b = MagicMock()
+    client_b.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-b", save_path="/downloads/unmapped-b")
+    ]
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="dl-a", client=client_a, fail_time=0),
+                SimpleNamespace(downloader_id="dl-b", client=client_b, fail_time=0),
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(store, scan_path_selection=ScanPathSelection())
+    builder._load_configs = lambda: [
+        _config("dl-a", 0, str(mapped_root_a)),
+        _config("dl-b", 0),
+    ]
+
+    # 不传 required → 遍历全部 → B 缺映射即 raise
+    with pytest.raises(ManifestBuildError, match="dl-b"):
+        await builder.build()
+
+
+async def test_warning_from_collect_phase_preserved_on_success(tmp_path):
+    """build 成功时，collect 阶段（scan_path_selection.warnings）的 warning
+    仍透传到 snapshot.warnings（成功路径 warning 链路完整）。
+
+    回归：build 阶段映射缺失改为 raise 后，ManifestSnapshot.warnings 不再承载
+    build 阶段 warning；但 collect 阶段（扫描根缺映射）的 warning 仍需透传，
+    供 scan() 在成功路径返回给前端。
+    """
+    from app.services.orphan_manifest import PathMappingWarning
+
+    mapped_root = tmp_path / "ok"
+    mapped_root.mkdir()
+    client = MagicMock()
+    client.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-ok", save_path=str(mapped_root))
+    ]
+    client.torrents.files.return_value = [SimpleNamespace(name="ok.mkv")]
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="dl-ok", client=client, fail_time=0)
+            ]
+        )
+    )
+    collect_warning = PathMappingWarning(
+        downloader_id="dl-other",
+        internal_path="/downloads/collect-unmapped",
+    )
+    builder = TorrentManifestBuilder(
+        store,
+        scan_path_selection=ScanPathSelection(warnings=(collect_warning,)),
+    )
+    builder._load_configs = lambda: [_config("dl-ok", 0, str(mapped_root))]
+
+    snapshot = await builder.build(required_downloader_ids={"dl-ok"})
+
+    assert snapshot.warnings == (collect_warning,)
 
 
 def test_resolve_external_path_treats_passthrough_as_missing():

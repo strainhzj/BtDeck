@@ -14,6 +14,7 @@
 import json
 import os
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -905,6 +906,97 @@ class TestFailClosed:
 
         with pytest.raises(OrphanScanIncompleteError):
             scanner._walk_scan_root(str(tmp_path), "dl_001", [])
+
+    def test_scan_fails_when_scoped_downloader_missing_mapping(
+        self, tmp_path, fake_app, fake_qb_client, monkeypatch
+    ):
+        """端到端：扫描根涉及的下载器 inventory 含缺映射 save_path → scan() fail-closed。
+
+        覆盖审查缺口：验证 ManifestBuildError 从真实 build() 穿透到 scan() 结果。
+        - collect 阶段：dl-a 的 /downloads/mapped 有映射 → 进 scan_roots（scoped_ids 含 dl-a）
+        - build 阶段：dl-a 的 inventory 含另一个缺映射 save_path → raise ManifestBuildError
+        - scan() 异常分支返回 status=failed + error 含定位信息 + warnings 字段存在
+        """
+        from tests.services.conftest import make_downloader_vo
+
+        # dl-a 的 inventory：一个有映射（/downloads/mapped），一个缺映射（/downloads/unmapped）
+        fake_qb_client.torrents_info.return_value = [
+            SimpleNamespace(hash="hash-mapped", save_path="/downloads/mapped"),
+            SimpleNamespace(hash="hash-unmapped", save_path="/downloads/unmapped"),
+        ]
+        # 有映射种子的文件清单
+        fake_qb_client.torrents.files.return_value = [
+            SimpleNamespace(name="mapped.mkv")
+        ]
+        vo = make_downloader_vo(
+            downloader_id="dl-a", client=fake_qb_client, downloader_type=0
+        )
+        fake_app.state.store.get_snapshot = AsyncMock(return_value=[vo])
+
+        # 构造带映射的 BtDownloaders 配置（/downloads/mapped → /downloads/mapped）
+        mapped_config = SimpleNamespace(
+            downloader_id="dl-a",
+            downloader_type=0,
+            path_mapping=None,
+            path_mapping_service=SimpleNamespace(
+                get_mappings=lambda: [
+                    {"internal": "/downloads/mapped", "external": "/downloads/mapped"}
+                ],
+                get_rules=lambda: [],
+                internal_to_external=lambda path: path,
+            ),
+        )
+
+        from app.services.orphan_manifest import (
+            PathMappingWarning,
+            ScanPathSelection,
+        )
+
+        def collect_paths(scanner):
+            # collect 阶段：/downloads/mapped 成功映射进 scan_roots（涉及 dl-a）
+            scanner._scan_path_selection = ScanPathSelection(
+                scan_roots=(("/downloads/mapped", "dl-a"),),
+                warnings=(
+                    PathMappingWarning(
+                        downloader_id="dl-other",
+                        internal_path="/downloads/collect-unmapped",
+                    ),
+                ),
+            )
+            scanner._scan_warnings = list(scanner._scan_path_selection.warnings)
+            return list(scanner._scan_path_selection.scan_roots)
+
+        # 让真实 build() 走 dl-a（patch _load_configs 返回带映射配置）
+        import app.services.orphan_manifest as manifest_mod
+
+        monkeypatch.setattr(
+            manifest_mod.TorrentManifestBuilder,
+            "_load_configs",
+            lambda self: [mapped_config],
+        )
+        monkeypatch.setattr(OrphanScanner, "_collect_scan_paths", collect_paths)
+        # 跳过 finalize/notify（扫描会在 build 阶段失败，走不到这步）
+        monkeypatch.setattr(
+            OrphanScanner, "_finalize_successful_scan", _async_noop
+        )
+        monkeypatch.setattr(
+            OrphanScanner, "_notify_scan_completed", _async_noop
+        )
+
+        result = asyncio_run(
+            OrphanScanner(app=fake_app).scan(
+                scan_type="manual", operator="test"
+            )
+        )
+
+        assert result["status"] == "failed"
+        # error 含定位信息：下载器 id + hash + save_path
+        assert "dl-a" in result["error"]
+        assert "未找到有效路径映射" in result["error"]
+        assert "/downloads/unmapped" in result["error"]
+        # collect 阶段 warning 仍透传（raise 前已写入 _scan_warnings）
+        assert result["total_paths_skipped"] == 1
+        assert result["warnings"][0]["code"] == "path_mapping_not_found"
 
 
 # ==================== C 组：路径与文件集合稳定性 ====================

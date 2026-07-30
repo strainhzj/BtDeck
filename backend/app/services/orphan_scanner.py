@@ -272,14 +272,28 @@ class OrphanScanner:
         - 使用规范化的全局 expected path 集合（normcase+normpath）
         - fail-closed：任一种子清单获取失败 → 抛 OrphanScanIncompleteError（不 continue）
         - fail-closed：任一可用下载器缺 client / fail_time>0 → 抛异常（不静默跳过）
+        - fail-closed 范围 = 扫描根涉及的下载器集合：只对这些下载器的 save_path
+          缺映射 fail-closed；作用域外下载器（路径不落任何扫描根）不受影响，
+          避免破坏性变更
         """
         # 统一以下载器实时 inventory 为权威；DB 仅用于下载器配置和路径映射。
+        # 作用域 = 本次扫描根涉及的下载器；build 内只对这些下载器做映射完整性
+        # fail-closed。scan_roots 由 collect_scan_path_selection 选出，缺映射的
+        # 路径已在 collect 阶段被跳过（不进 scan_roots），故这里的下载器集合必然
+        # 是已配映射的；若其 inventory 出现另一个缺映射 save_path，正是其文件
+        # 可能落到本扫描范围下被误判孤儿的真实风险源，必须 fail-closed。
+        scan_roots = self._scan_path_selection.scan_roots if self._scan_path_selection else ()
+        scoped_downloader_ids = {
+            downloader_id for _, downloader_id in scan_roots if downloader_id
+        }
         try:
             snapshot = await TorrentManifestBuilder(
                 self.app.state.store,
                 scan_path_selection=self._scan_path_selection,
                 session_factory=self._sync_session_factory,
-            ).build()
+            ).build(
+                required_downloader_ids=scoped_downloader_ids or None,
+            )
         except ManifestBuildError as exc:
             raise OrphanScanIncompleteError(str(exc)) from exc
         self._expected_files = {"__global__": set(snapshot.expected_paths)}

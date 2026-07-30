@@ -45,7 +45,8 @@
             "session-handoff.md"
           ],
           "evidence": "全部 orphan 回归 133 passed / 1 skipped，后端全量 2406 passed / 6 skipped；Ruff、Flake8、py_compile、scripts/lint_btdeck.py、git diff --check 与 Git Bash 根 init.sh --ci 通过。orphan_manifest.py 与 orphan_scan_task.py 目标 mypy 通过；较大服务组合仍报告既有 SQLAlchemy Column 类型债。当前及 HEAD 的同组 9 文件均被现有 Black 配置重排，未扩大无关格式化差异。",
-          "followup": "回归补丁（2026-07-30）：resolve_external_path 前缀初筛只纳入 external/target 非空的显式映射，修复系统自动发现后 external 全空（tr/tr_lpan/tr_kpan）的映射让下载器内部绝对路径原样通过、被误选成不存在扫描根并触发整批 fail-closed。orphan 专项回归 70 passed；Ruff/Flake8/py_compile/lint_btdeck 通过；真实 app.db 复跑 /Downloads/bangumi* 返回 None、external 非空正例仍解析。"
+          "followup": "回归补丁（2026-07-30）：resolve_external_path 前缀初筛只纳入 external/target 非空的显式映射，修复系统自动发现后 external 全空（tr/tr_lpan/tr_kpan）的映射让下载器内部绝对路径原样通过、被误选成不存在扫描根并触发整批 fail-closed。orphan 专项回归 70 passed；Ruff/Flake8/py_compile/lint_btdeck 通过；真实 app.db 复跑 /Downloads/bangumi* 返回 None、external 非空正例仍解析。",
+          "followup_whitelist_fail_closed": "白名单阶段 fail-closed（2026-07-30）：TorrentManifestBuilder.build() 内层循环中种子 save_path 缺映射时由 continue+warning（fail-open，会误判孤儿）改为 raise ManifestBuildError（fail-closed，整批失败）。作用域按下载器粒度：build() 新增 scoped_configs 让 required_downloader_ids 非空时只遍历这些下载器；扫描路径 _build_torrent_file_map 传「扫描根涉及的下载器集合」，清理路径已传候选所属下载器集合——故清理下载器 A 不受无关下载器 B 缺映射影响（隔离爆炸半径），扫描仅对「扫描范围内的下载器」缺映射 fail-closed（作用域外未配映射的新下载器不受影响，避免破坏性变更）。被误判的 candidate 在下次完整扫描自动 resolve 移出。重写 test_missing_mapping_is_warned_and_skipped→fail_closed；新增 test_build_scopes_to_required_downloader_ids（清理隔离核心）、test_fail_closed_only_within_scope、test_warning_from_collect_phase_preserved_on_success、test_scan_fails_when_scoped_downloader_missing_mapping（端到端 ManifestBuildError 穿透）。orphan 专项回归 134 passed / 1 skipped；mypy/flake8 通过；既有 Black 基线未扩大。"
         }
       ]
     },

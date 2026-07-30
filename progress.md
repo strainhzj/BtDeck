@@ -1,5 +1,51 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-30 - 孤儿白名单阶段映射缺失 fail-closed 修复
+
+**任务 ID**: `orphan-scan-path-scope-mapping-fix`（白名单 fail-closed 强化）
+**分支**: dev
+**范围**: 孤儿白名单构建（`TorrentManifestBuilder.build()`）中种子 `save_path` 缺映射时，由 fail-open（continue + warning，会误判孤儿）改为 fail-closed（整批失败）。作用域按「下载器粒度」限定，既消除误判又不波及作用域外下载器。
+
+### 背景（独立审查发现的关键问题）
+
+- 原始修复计划曾提议全局 fail-closed，经独立子代理审查发现两个严重问题：
+  1. **清理路径爆炸半径跨下载器**：`build()` 内层循环遍历全部启用下载器，`required_downloader_ids` 仅校验存在性、不限定遍历。清理下载器 A 的候选时，无关下载器 B 缺映射会拒绝整个清理。
+  2. **破坏性变更**：全局 fail-closed 会让依赖「映射缺失跳过」才能完成的用户每次定时扫描都失败。
+- 用户决策：①清理路径限定范围（A 不受 B 影响）；②不接受破坏性变更。两者统一为「fail-closed 只作用于本次构建作用域内的下载器」。
+
+### 根因与修复
+
+- 白名单阶段映射缺失 continue → 该种子文件不进白名单；若其文件物理落在其它扫描根子树下 → 误判孤儿 → 可能被清理物理删除。
+- 修复：`build()` 内层循环 `resolve_external_path(save_path)` 返回 None 时 `raise ManifestBuildError`，错误消息含 downloader_id / torrent_hash[:8] / save_path 定位信息。
+- **作用域限定**（同时满足两个决策）：
+  - `build()` 新增 `scoped_configs`：`required_downloader_ids` 非空时只遍历这些下载器；None/空集合时遍历全部（保持扫描全量语义与既有行为不变）。
+  - 扫描路径 `_build_torrent_file_map` 传「扫描根涉及的下载器集合」（从 `scan_path_selection.scan_roots` 第二列提取）：仅对正在被扫描的下载器做映射完整性 fail-closed；作用域外下载器（路径不落任何扫描根）不受影响。
+  - 清理路径 8 处调用已传候选 `required_downloader_ids` → 改后真正限定遍历，A 的清理不受 B 影响。
+- `ManifestSnapshot.warnings` 字段保留：collect 阶段（扫描根缺映射）warning 仍透传，build 成功时 `_build_torrent_file_map` 照常写入 `self._scan_warnings`；失败路径定位信息在 error 消息。
+- 不新增数据库结构、不修改路径映射配置；被误判的 `candidate` 在下次完整扫描自动 `resolve` 移出活跃列表（沿用现有生命周期语义）。
+
+### 条件性破坏说明（Release Note）
+
+本次变更为条件性破坏：仅当「扫描根涉及的下载器（其路径已配映射并成为扫描根）的 inventory 中存在另一个未配映射的 save_path」时扫描才失败——这正是要阻断的误判场景，属预期行为。刚添加、未配映射且路径不在任何扫描根下的下载器不受影响。引导用户在扫描根涉及的下载器上补全所有 save_path 映射。
+
+### 回归与检查
+
+| 验证项 | 结果 |
+|---|---|
+| orphan 专项回归（8 文件） | ✅ 134 passed / 1 skipped |
+| mypy（orphan_manifest.py + orphan_scanner.py） | ✅ 通过 |
+| flake8（改动文件） | ✅ 通过 |
+| Black 基线 | ⚠️ 改动前同文件即 non-compliant（历史遗留），本次未扩大无关格式化范围 |
+| 新增测试 | 1 重写（fail_closed）+ 4 新增（作用域隔离/全局fail/warning透传/端到端穿透） |
+
+### 交付边界
+
+- 没有新增数据库表、字段或 Alembic 迁移；不改 API 返回结构（仍为 `data.status=failed + error + warnings`）。
+- 不修改任何下载器路径映射配置；映射不完整由 error 消息引导用户在下载器设置中处理。
+- 仅改 `orphan_manifest.py` / `orphan_scanner.py` 两个源文件 + 两个测试文件。
+
+---
+
 ## 2026-07-30 - 孤儿扫描空 external 映射绕过严格校验修复
 
 **任务 ID**: `orphan-scan-path-scope-mapping-fix`（回归补丁）

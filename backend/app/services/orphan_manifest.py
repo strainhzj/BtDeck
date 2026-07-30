@@ -264,6 +264,19 @@ class TorrentManifestBuilder:
     async def build(
         self, required_downloader_ids: Optional[Set[str]] = None
     ) -> ManifestSnapshot:
+        """构建实时下载器文件清单。
+
+        Args:
+            required_downloader_ids: 作用域下载器集合。
+                - 清理路径传入候选所属下载器：只遍历这些下载器的白名单，
+                  A 的清理不受 B 配置缺失影响。
+                - 扫描路径传入扫描根涉及的下载器：fail-closed 只作用于这些下载器。
+                - None/空集合：遍历全部启用下载器（扫描全量语义）。
+
+        fail-closed 语义：作用域内任一缺少有效路径映射的种子 save_path → 抛
+        ManifestBuildError（整批失败），避免该种子文件被误判孤儿。作用域外下载器
+        （如刚添加、路径未配映射且不落任何扫描根）不受影响，避免破坏性变更。
+        """
         if self.store is None or not hasattr(self.store, "get_snapshot"):
             raise ManifestBuildError("app.state.store 未初始化")
         cached = await self.store.get_snapshot()
@@ -281,6 +294,14 @@ class TorrentManifestBuilder:
             raise ManifestBuildError(
                 f"候选所属下载器未启用或不存在: {sorted(missing_required)}"
             )
+        # 作用域过滤：required 非空时只遍历这些下载器（清理路径：只复核候选所属
+        # 下载器的白名单，A 的清理不受 B 配置缺失影响）。required 为空（None 或空
+        # 集合）时遍历全部启用下载器，保持扫描路径「扫全部」语义与既有行为不变。
+        scoped_configs = [
+            config
+            for config in configs
+            if not required or str(config.downloader_id) in required
+        ]
         unknown_cached = {value for value in cached_ids - config_ids if value}
         if unknown_cached:
             raise ManifestBuildError(
@@ -302,7 +323,7 @@ class TorrentManifestBuilder:
         }
         protected_ids: Set[str] = set()
 
-        for config in configs:
+        for config in scoped_configs:
             downloader_id = str(config.downloader_id)
             vo = next(
                 (
@@ -336,20 +357,17 @@ class TorrentManifestBuilder:
                     )
                 external_root = resolve_external_path(save_path, config)
                 if external_root is None:
-                    warning = PathMappingWarning(
-                        downloader_id=downloader_id,
-                        internal_path=save_path,
+                    # fail-closed：作用域内下载器的种子 save_path 缺映射时，其文件
+                    # 不进白名单；若这些文件物理落在其它扫描根子树下会被误判孤儿。
+                    # 作用域已由 required_downloader_ids 限定（清理路径只覆盖候选
+                    # 所属下载器，扫描路径覆盖扫描根涉及的下载器），整批失败而非
+                    # 静默跳过。错误消息含定位信息，引导用户补全 internal→external
+                    # 映射后重试。
+                    raise ManifestBuildError(
+                        f"下载器 {downloader_id} 的种子 {torrent_hash[:8]} "
+                        f"save_path={save_path} 未找到有效路径映射，"
+                        "请在该下载器设置中补全 internal→external 映射后重试"
                     )
-                    warning_key = (
-                        downloader_id,
-                        _normalize_internal_path(save_path),
-                    )
-                    if warning_key not in warnings:
-                        warnings[warning_key] = warning
-                        logger.warning(
-                            "[孤儿扫描][%s] %s", warning.code, warning.message
-                        )
-                    continue
 
                 files = embedded_files
                 if files is None:
