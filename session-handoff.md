@@ -1,5 +1,34 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-30 交接：孤儿扫描有效路径筛选与严格映射修复
+
+**当前任务**: `orphan-scan-path-scope-mapping-fix`
+**分支**: dev
+**状态**: 实现、专项/全量回归、静态检查和项目记录已完成；尚未提交。
+
+### 关键结论
+
+- 扫描目录不再来自所有 `dr=0` torrent 或所有 path_mapping external：查询现同时过滤种子 `enabled=true/deleted_at IS NULL/dr=0`、下载器 `enabled=true/dr=0`，并排除维护表中明确停用的路径。
+- `torrent_info.save_path` 被视为下载器内部路径；只有显式映射规则真实命中且结果为 BtDeck 可访问的绝对路径时，才会进入扫描根。
+- 缺少映射不会让整批任务失败：路径按 `path_mapping_not_found` 记录、跳过，任务继续；全部未映射时也以 completed + 零扫描根结束。
+- warnings 和 `total_paths_skipped` 会进入扫描响应、审计详情和定时任务结果/日志；内容明确提醒补全下载器映射，并声明任务不会自动修复。
+- 生命周期 resolved 对账和实时清理授权限定在成功扫描根内；空范围和跳过目录下的历史候选保持原状态。
+
+### 验证
+
+- 全部 orphan 回归：133 passed / 1 skipped；后端全量：2406 passed / 6 skipped。
+- Ruff、Flake8、py_compile、`scripts/lint_btdeck.py`、`git diff --check` 和 Git Bash 根 `init.sh --ci` 通过。
+- `orphan_manifest.py`、`orphan_scan_task.py` 目标 mypy 通过；组合 mypy 的报告为既有 SQLAlchemy Column 类型债。
+- HEAD 与当前版本的同组 9 个 Python 文件均被现有 Black 配置判定需重排，本轮未扩大无关格式化差异。
+
+### 当前工作区
+
+- 本轮修改 5 个后端实现文件、4 个回归测试文件、2 个代码路线图和 3 个根项目记录；无前端、依赖、Schema 或迁移变更。
+- 未执行 Git stage、commit 或 push。
+- 会话开始前已有的路径映射校验改动未被覆盖；路线图只同步本轮孤儿模块条目，工具目录、镜像归档与批处理文件保持不动。
+
+---
+
 ## 2026-07-30 交接：下载器路径映射真实目录验证修复
 
 **当前任务**: `v1.0.6.32`

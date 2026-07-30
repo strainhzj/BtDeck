@@ -216,6 +216,64 @@ class TestOrphanLifecycleProgression:
         candidates = result.scalars().all()
         assert len(candidates) == 1, "同一路径重复扫描应只有 1 个当前候选"
 
+    async def test_only_successfully_scanned_roots_can_resolve_candidates(
+        self, async_orphan_db, tmp_path
+    ):
+        """被跳过的未映射目录不推进旧候选生命周期。"""
+        from app.models.orphan_file import OrphanCurrentCandidate
+        from app.services.orphan_lifecycle_service import (
+            OrphanLifecycleService,
+        )
+
+        scanned_root = tmp_path / "scanned"
+        skipped_root = tmp_path / "skipped"
+        scanned_root.mkdir()
+        skipped_root.mkdir()
+        scanned_file = str(scanned_root / "old.bin")
+        skipped_file = str(skipped_root / "old.bin")
+        initial_time = datetime.utcnow() - timedelta(days=1)
+        service = OrphanLifecycleService(async_orphan_db)
+
+        await service.reconcile_candidates(
+            "scan_initial",
+            initial_time,
+            [
+                {
+                    "canonical_path": scanned_file,
+                    "downloader_id": "dl_001",
+                    "file_size": 1,
+                },
+                {
+                    "canonical_path": skipped_file,
+                    "downloader_id": "dl_001",
+                    "file_size": 1,
+                },
+            ],
+        )
+        result = await service.reconcile_candidates(
+            "scan_scoped",
+            datetime.utcnow(),
+            [],
+            scan_roots=[str(scanned_root)],
+        )
+
+        rows = await async_orphan_db.execute(
+            select(OrphanCurrentCandidate).where(
+                OrphanCurrentCandidate.canonical_path.in_(
+                    [scanned_file, skipped_file]
+                )
+            )
+        )
+        candidates = {
+            candidate.canonical_path: candidate
+            for candidate in rows.scalars().all()
+        }
+
+        assert result["resolved"] == 1
+        assert candidates[scanned_file].status == "resolved"
+        assert candidates[skipped_file].status == "candidate"
+        assert candidates[skipped_file].last_seen_scan_id == "scan_initial"
+
 
 # ==================== D 组：清理门禁 ====================
 

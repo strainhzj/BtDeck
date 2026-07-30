@@ -2,20 +2,23 @@
 """孤儿文件扫描/清理共用的实时下载器 manifest 构建器。"""
 
 import asyncio
-import json
+import logging
 import os
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.database import SessionLocal
 from app.downloader.models import BtDownloaders
+from app.models.downloader_path_maintenance import DownloaderPathMaintenance
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.torrents.models import TorrentInfo
 
 _MISSING_FILES = object()
+logger = logging.getLogger(__name__)
 
 
 class ManifestBuildError(RuntimeError):
@@ -27,17 +30,228 @@ def normalize_path(path: str) -> str:
 
 
 @dataclass(frozen=True)
+class PathMappingWarning:
+    """运行时路径映射缺失告警；仅随任务结果返回，不新增持久化结构。"""
+
+    downloader_id: str
+    internal_path: str
+    code: str = "path_mapping_not_found"
+
+    @property
+    def message(self) -> str:
+        return (
+            f"下载器 {self.downloader_id} 的内部路径 {self.internal_path} "
+            "未找到 BtDeck 可访问的有效映射，已跳过；请在下载器设置中补全路径映射，"
+            "本任务不会自动修复"
+        )
+
+    def to_dict(self) -> Dict[str, str]:
+        return {
+            "code": self.code,
+            "downloader_id": self.downloader_id,
+            "internal_path": self.internal_path,
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True)
+class ScanPathSelection:
+    """从数据库筛选并成功映射后的本次扫描范围。"""
+
+    scan_roots: Tuple[Tuple[str, str], ...] = ()
+    warnings: Tuple[PathMappingWarning, ...] = ()
+
+
+@dataclass(frozen=True)
 class ManifestSnapshot:
     expected_paths: Set[str]
     scan_roots: List[Tuple[str, str]]
     downloader_ids: Set[str]
+    warnings: Tuple[PathMappingWarning, ...] = ()
+
+
+def _normalize_internal_path(path: str) -> str:
+    normalized = str(path).strip().replace("\\", "/")
+    if normalized == "/":
+        return normalized
+    if len(normalized) == 3 and normalized[1] == ":" and normalized.endswith("/"):
+        return normalized
+    return normalized.rstrip("/")
+
+
+def _mapping_prefix_matches(path: str, prefix: str) -> bool:
+    normalized_path = _normalize_internal_path(path)
+    normalized_prefix = _normalize_internal_path(prefix)
+    if not normalized_path or not normalized_prefix:
+        return False
+    if normalized_prefix == "/":
+        return normalized_path.startswith("/")
+    if normalized_prefix.endswith("/"):
+        return normalized_path.startswith(normalized_prefix)
+    return normalized_path == normalized_prefix or normalized_path.startswith(
+        normalized_prefix + "/"
+    )
+
+
+def resolve_external_path(
+    internal_path: str, config: Optional[BtDownloaders]
+) -> Optional[str]:
+    """严格解析下载器内部路径；没有命中显式规则时返回 None。"""
+
+    if not internal_path or config is None:
+        return None
+    try:
+        service = config.path_mapping_service
+        if service is None:
+            return None
+
+        sources: List[str] = []
+        get_mappings = getattr(service, "get_mappings", None)
+        if callable(get_mappings):
+            mappings = get_mappings() or []
+            sources.extend(
+                str(item.get("internal"))
+                for item in mappings
+                if isinstance(item, dict) and item.get("internal")
+            )
+
+        get_rules = getattr(service, "get_rules", None)
+        if callable(get_rules):
+            rules = get_rules() or []
+            sources.extend(
+                str(item.get("source"))
+                for item in rules
+                if isinstance(item, dict) and item.get("source")
+            )
+
+        if not any(
+            _mapping_prefix_matches(internal_path, source) for source in sources
+        ):
+            return None
+
+        mapped = service.internal_to_external(internal_path)
+        if not mapped or not os.path.isabs(mapped):
+            return None
+        return str(mapped)
+    except Exception as exc:
+        logger.warning(
+            "[孤儿扫描] 路径映射解析失败 downloader=%s path=%s: %s",
+            getattr(config, "downloader_id", ""),
+            internal_path,
+            exc,
+        )
+        return None
+
+
+def collect_scan_path_selection(
+    session_factory: Any = SessionLocal,
+) -> ScanPathSelection:
+    """筛选有效 torrent_info 路径并转换成 BtDeck 可访问的扫描根。"""
+
+    db = session_factory()
+    try:
+        rows = db.execute(
+            select(
+                TorrentInfo.save_path,
+                TorrentInfo.downloader_id,
+                BtDownloaders,
+            )
+            .join(
+                BtDownloaders,
+                BtDownloaders.downloader_id == TorrentInfo.downloader_id,
+            )
+            .where(
+                TorrentInfo.dr == 0,
+                TorrentInfo.enabled.is_(True),
+                TorrentInfo.deleted_at.is_(None),
+                TorrentInfo.save_path.isnot(None),
+                BtDownloaders.enabled.is_(True),
+                BtDownloaders.dr == 0,
+            )
+            .distinct()
+        ).all()
+
+        downloader_ids = {str(row[1]) for row in rows if row[1]}
+        maintained_paths: Dict[Tuple[str, str], bool] = {}
+        if downloader_ids:
+            maintenance_rows = db.execute(
+                select(
+                    DownloaderPathMaintenance.downloader_id,
+                    DownloaderPathMaintenance.path_value,
+                    DownloaderPathMaintenance.is_enabled,
+                ).where(
+                    DownloaderPathMaintenance.downloader_id.in_(downloader_ids)
+                )
+            ).all()
+            for downloader_id, path_value, is_enabled in maintenance_rows:
+                if not path_value:
+                    continue
+                key = (
+                    str(downloader_id),
+                    _normalize_internal_path(str(path_value)),
+                )
+                maintained_paths[key] = maintained_paths.get(key, False) or bool(
+                    is_enabled
+                )
+
+        candidates: Dict[Tuple[str, str], Tuple[str, BtDownloaders]] = {}
+        for save_path, downloader_id, config in rows:
+            if not save_path or not downloader_id:
+                continue
+            key = (
+                str(downloader_id),
+                _normalize_internal_path(str(save_path)),
+            )
+            if key in maintained_paths and not maintained_paths[key]:
+                logger.info(
+                    "[孤儿扫描] 跳过已停用维护路径 downloader=%s path=%s",
+                    downloader_id,
+                    save_path,
+                )
+                continue
+            candidates[key] = (str(save_path), config)
+
+        roots: Dict[str, str] = {}
+        warnings: Dict[Tuple[str, str], PathMappingWarning] = {}
+        for (downloader_id, _), (internal_path, config) in sorted(
+            candidates.items(), key=lambda item: item[0]
+        ):
+            external_path = resolve_external_path(internal_path, config)
+            if external_path is None:
+                warning = PathMappingWarning(
+                    downloader_id=downloader_id,
+                    internal_path=internal_path,
+                )
+                warnings[(downloader_id, internal_path)] = warning
+                logger.warning(
+                    "[孤儿扫描][%s] %s", warning.code, warning.message
+                )
+                continue
+            roots.setdefault(normalize_path(external_path), downloader_id)
+
+        return ScanPathSelection(
+            scan_roots=tuple(sorted(roots.items(), key=lambda item: item[0])),
+            warnings=tuple(
+                warnings[key]
+                for key in sorted(warnings, key=lambda item: (item[0], item[1]))
+            ),
+        )
+    finally:
+        db.close()
 
 
 class TorrentManifestBuilder:
     """以下载器实时 inventory 为权威构建文件清单。"""
 
-    def __init__(self, store: Any):
+    def __init__(
+        self,
+        store: Any,
+        scan_path_selection: Optional[ScanPathSelection] = None,
+        session_factory: Any = SessionLocal,
+    ):
         self.store = store
+        self.scan_path_selection = scan_path_selection
+        self.session_factory = session_factory
 
     async def build(
         self, required_downloader_ids: Optional[Set[str]] = None
@@ -49,6 +263,8 @@ class TorrentManifestBuilder:
             raise ManifestBuildError("store.get_snapshot() 未返回列表")
 
         configs = await asyncio.to_thread(self._load_configs)
+        if not configs:
+            raise ManifestBuildError("未找到启用且未删除的下载器配置")
         config_ids = {str(config.downloader_id) for config in configs}
         cached_ids = {str(getattr(item, "downloader_id", "")) for item in cached}
         required = {str(value) for value in (required_downloader_ids or set())}
@@ -63,7 +279,19 @@ class TorrentManifestBuilder:
                 f"共享缓存含无启用配置的下载器: {sorted(unknown_cached)}"
             )
         expected: Set[str] = set()
-        roots: Dict[str, str] = {}
+        selection = self.scan_path_selection
+        if selection is None:
+            selection = await asyncio.to_thread(
+                collect_scan_path_selection, self.session_factory
+            )
+        roots: Dict[str, str] = dict(selection.scan_roots)
+        warnings: Dict[Tuple[str, str], PathMappingWarning] = {
+            (
+                warning.downloader_id,
+                _normalize_internal_path(warning.internal_path),
+            ): warning
+            for warning in selection.warnings
+        }
         protected_ids: Set[str] = set()
 
         for config in configs:
@@ -90,9 +318,6 @@ class TorrentManifestBuilder:
             )
             protected_ids.add(downloader_id)
 
-            for mapped_root in self._mapping_roots(config):
-                roots[normalize_path(mapped_root)] = downloader_id
-
             for torrent in inventory:
                 torrent_hash, save_path, embedded_files = self._torrent_identity(
                     downloader_type, torrent
@@ -101,9 +326,22 @@ class TorrentManifestBuilder:
                     raise ManifestBuildError(
                         f"下载器 {downloader_id} 返回缺少 hash/save_path 的种子"
                     )
-                external_root = self._to_external(save_path, config)
-                normalized_root = normalize_path(external_root)
-                roots[normalized_root] = downloader_id
+                external_root = resolve_external_path(save_path, config)
+                if external_root is None:
+                    warning = PathMappingWarning(
+                        downloader_id=downloader_id,
+                        internal_path=save_path,
+                    )
+                    warning_key = (
+                        downloader_id,
+                        _normalize_internal_path(save_path),
+                    )
+                    if warning_key not in warnings:
+                        warnings[warning_key] = warning
+                        logger.warning(
+                            "[孤儿扫描][%s] %s", warning.code, warning.message
+                        )
+                    continue
 
                 files = embedded_files
                 if files is None:
@@ -119,11 +357,14 @@ class TorrentManifestBuilder:
             expected_paths=expected,
             scan_roots=sorted(roots.items(), key=lambda item: item[0]),
             downloader_ids=protected_ids,
+            warnings=tuple(
+                warnings[key]
+                for key in sorted(warnings, key=lambda item: (item[0], item[1]))
+            ),
         )
 
-    @staticmethod
-    def _load_configs() -> List[BtDownloaders]:
-        db = SessionLocal()
+    def _load_configs(self) -> List[BtDownloaders]:
+        db = self.session_factory()
         try:
             return list(
                 db.execute(
@@ -317,33 +558,3 @@ class TorrentManifestBuilder:
             else None
         )
         return str(torrent_hash or ""), str(save_path or ""), files
-
-    @staticmethod
-    def _to_external(path: str, config: BtDownloaders) -> str:
-        service = config.path_mapping_service
-        mapped = service.internal_to_external(path) if service else path
-        if not mapped or not os.path.isabs(mapped):
-            raise ManifestBuildError(f"路径无法映射为绝对路径: {path}")
-        return mapped
-
-    @staticmethod
-    def _mapping_roots(config: BtDownloaders) -> Iterable[str]:
-        if not config.path_mapping:
-            return []
-        try:
-            data = json.loads(config.path_mapping)
-        except (TypeError, json.JSONDecodeError) as exc:
-            raise ManifestBuildError(
-                f"下载器 {config.downloader_id} path_mapping 无效"
-            ) from exc
-        roots = [
-            item.get("external")
-            for item in data.get("mappings", [])
-            if item.get("external")
-        ]
-        for root in roots:
-            if not os.path.isabs(root):
-                raise ManifestBuildError(
-                    f"下载器 {config.downloader_id} external root 非绝对路径: {root}"
-                )
-        return roots

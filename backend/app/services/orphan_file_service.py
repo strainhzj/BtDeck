@@ -1327,6 +1327,13 @@ class OrphanFileService:
                     "scan_id": result.get("scan_id"),
                     "scan_type": scan_type,
                     "total_orphans": result.get("total_orphans", 0),
+                    "total_paths_scanned": result.get(
+                        "total_paths_scanned", 0
+                    ),
+                    "total_paths_skipped": result.get(
+                        "total_paths_skipped", 0
+                    ),
+                    "warnings": result.get("warnings", []),
                     "status": result.get("status"),
                 },
                 operation_result=(

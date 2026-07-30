@@ -76,14 +76,27 @@ class TestOrphanTaskLifecycle:
                 "status": "completed",
                 "total_orphans": 5,
                 "total_orphan_size": 1000,
+                "total_paths_skipped": 1,
+                "warnings": [
+                    {
+                        "code": "path_mapping_not_found",
+                        "downloader_id": "dl_001",
+                        "internal_path": "/downloads/unmapped",
+                        "message": "path mapping missing",
+                    }
+                ],
             }
 
             with patch.object(task, "_auto_cleanup_expired", new_callable=AsyncMock) as spy_cleanup:
-                await task.execute(app=fake_app)
+                result = await task.execute(app=fake_app)
                 spy_cleanup.assert_called_once()
                 # 自动清理应接收本次 scan_id
                 call_kwargs = spy_cleanup.call_args.kwargs
                 assert call_kwargs.get("scan_id") == "scan_fresh", "自动清理必须接收本次 scan ID"
+                assert "1 个路径因映射不完整已记录并跳过" in result["message"]
+                assert result["scan_result"]["warnings"][0]["code"] == (
+                    "path_mapping_not_found"
+                )
 
     async def test_cleanup_exception_not_reported_success(self, fake_app):
         """cleanup 异常不能报告任务成功。"""

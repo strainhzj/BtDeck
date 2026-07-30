@@ -1,5 +1,39 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-30 - 孤儿扫描有效路径筛选与严格映射修复
+
+**任务 ID**: `orphan-scan-path-scope-mapping-fix`
+**分支**: dev
+**范围**: 孤儿扫描根筛选、下载器路径映射、manifest/生命周期安全范围、任务提醒及回归；不新增数据库结构，不修改或自动补全路径映射。
+
+### 根因与修复
+
+- 原扫描根 SQL 只过滤 `torrent_info.dr=0`，没有过滤种子 `enabled/deleted_at`，也没有联结过滤下载器 `enabled/dr`；下载器 `path_mapping` 中每个 external 根还会被无条件加入，导致已删除或停用数据重新进入扫描范围。
+- `UnifiedPathMappingService` 未命中规则时会返回原路径；旧扫描器因此可能把下载器内部绝对路径误认为 BtDeck 可访问路径。现在必须命中显式 JSON 映射或规则，并校验转换结果为本机绝对路径。
+- 扫描根改为仅来自启用、未删除的种子与下载器，并尊重 `downloader_path_maintenance.is_enabled`；配置中的 external 根不再绕过有效数据筛选。
+- 找不到映射时生成 `path_mapping_not_found` 结构化提醒并跳过该路径，不中断其他目录；即使全部路径均未映射，任务仍以 `completed` 返回零扫描根、`total_paths_skipped` 与 `warnings`，提醒用户自行补全映射，本任务不会修复配置。
+- manifest 只把成功筛选并映射的目录作为扫描/清理授权根；生命周期对账新增成功扫描根范围，空范围或被跳过目录下的历史候选不会被误标为 `resolved`。
+- 扫描触发审计记录保留扫描/跳过数量及 warnings；定时任务结果与完成日志追加映射不完整提醒。
+
+### 回归与检查
+
+| 验证项 | 结果 |
+|---|---|
+| 全部 orphan 回归 | ✅ 133 passed / 1 skipped |
+| 后端全量 pytest | ✅ 2406 passed / 6 skipped |
+| Ruff / Flake8 / py_compile / BtDeck 架构检查 | ✅ 通过 |
+| 目标 mypy | ✅ `orphan_manifest.py` 与 `orphan_scan_task.py` 通过；组合检查仅剩既有 SQLAlchemy Column 类型债 |
+| `git diff --check` / 根 `init.sh --ci` | ✅ 通过 |
+| Black 基线对比 | ⚠️ HEAD 与当前版本的同组 9 文件均会被现有 Black 配置重排，未扩大无关格式化范围 |
+
+### 交付边界
+
+- 没有新增数据库表、字段或 Alembic 迁移；warnings 仅进入本次扫描响应、审计详情、定时任务结果和运行日志。
+- 不新增、删除或修改任何下载器路径映射；路径映射不完整由提醒引导用户在下载器设置中处理。
+- 会话开始前已有的路径映射真实目录验证改动均未覆盖；路线图仅同步本轮孤儿模块条目，工具目录、镜像归档与批处理文件保持不动。
+
+---
+
 ## 2026-07-30 - 下载器路径映射真实目录验证修复
 
 **任务 ID**: `v1.0.6.32`

@@ -8,7 +8,7 @@
 
 治理合规：
 - 任务经 task_profiles 登记 heavy_sync，受 TaskAdmissionController 背压
-- 扫描器内部：文件系统遍历经 to_thread，下载器 API 经 call_downloader_api(INTERACTIVE)
+- 扫描器内部：文件系统遍历经 to_thread，下载器 API 经 call_downloader_api(SYNC)
 - 自动清理的 DB commit 经 db_write_scope 串行化
 - 审计日志记录每次自动清理
 
@@ -85,9 +85,16 @@ class OrphanScanTask:
                 )
                 result["cleanup_result"] = cleanup_result
                 result["status"] = "success"
+                skipped_path_count = scan_result.get("total_paths_skipped", 0)
+                skipped_message = (
+                    f"，另有 {skipped_path_count} 个路径因映射不完整已记录并跳过"
+                    if skipped_path_count
+                    else ""
+                )
                 result["message"] = (
                     f"扫描发现 {scan_result.get('total_orphans', 0)} 个孤儿文件，"
                     f"自动清理超期文件成功 {cleanup_result.get('quarantined_count', cleanup_result.get('success_count', 0))} 个"
+                    f"{skipped_message}"
                 )
             else:
                 result["status"] = scan_result.get("status", "failed")

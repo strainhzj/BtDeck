@@ -9,6 +9,7 @@ from transmission_rpc import Torrent
 
 from app.services.orphan_manifest import (
     ManifestBuildError,
+    ScanPathSelection,
     TorrentManifestBuilder,
     normalize_path,
 )
@@ -30,12 +31,23 @@ def _direct_runtime(monkeypatch):
     monkeypatch.setattr("app.services.orphan_manifest.call_downloader_api", direct_call)
 
 
-def _config(downloader_id: str, downloader_type: int):
+def _config(
+    downloader_id: str, downloader_type: int, mapped_root: str = ""
+):
+    mapping_service = None
+    if mapped_root:
+        mapping_service = SimpleNamespace(
+            get_mappings=lambda: [
+                {"internal": mapped_root, "external": mapped_root}
+            ],
+            get_rules=lambda: [],
+            internal_to_external=lambda path: path,
+        )
     return SimpleNamespace(
         downloader_id=downloader_id,
         downloader_type=downloader_type,
         path_mapping=None,
-        path_mapping_service=None,
+        path_mapping_service=mapping_service,
     )
 
 
@@ -54,8 +66,10 @@ async def test_qb_inventory_is_authoritative(tmp_path):
             ]
         )
     )
-    builder = TorrentManifestBuilder(store)
-    builder._load_configs = lambda: [_config("qb", 0)]
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("qb", 0, str(root))]
 
     snapshot = await builder.build()
 
@@ -91,8 +105,10 @@ async def test_transmission_inventory_uses_object_files(tmp_path):
             ]
         )
     )
-    builder = TorrentManifestBuilder(store)
-    builder._load_configs = lambda: [_config("tr", 1)]
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("tr", 1, str(root))]
 
     snapshot = await builder.build()
 
@@ -139,8 +155,10 @@ async def test_transmission_detail_fallback_uses_real_torrent_raw_files(tmp_path
             ]
         )
     )
-    builder = TorrentManifestBuilder(store)
-    builder._load_configs = lambda: [_config("tr", 1)]
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("tr", 1, str(root))]
 
     snapshot = await builder.build()
 
@@ -173,7 +191,9 @@ async def test_transmission_scalar_inventory_fails_with_context(tmp_path):
             ]
         )
     )
-    builder = TorrentManifestBuilder(store)
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
     builder._load_configs = lambda: [_config("tr", 1)]
 
     with pytest.raises(
@@ -202,8 +222,10 @@ async def test_partial_inventory_failure_is_fail_closed(tmp_path):
             ]
         )
     )
-    builder = TorrentManifestBuilder(store)
-    builder._load_configs = lambda: [_config("qb", 0)]
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("qb", 0, str(root))]
 
     with pytest.raises(ManifestBuildError):
         await builder.build()
@@ -219,10 +241,42 @@ async def test_authoritative_empty_inventory_is_valid(tmp_path):
             ]
         )
     )
-    builder = TorrentManifestBuilder(store)
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
     builder._load_configs = lambda: [_config("qb", 0)]
 
     snapshot = await builder.build()
 
     assert snapshot.expected_paths == set()
     assert snapshot.downloader_ids == {"qb"}
+
+
+async def test_missing_mapping_is_warned_and_skipped(tmp_path):
+    """未映射的 inventory 路径不进入清单，也不会中断其他任务步骤。"""
+    internal_root = "/downloads/unmapped"
+    client = MagicMock()
+    client.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-unmapped", save_path=internal_root)
+    ]
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(
+                    downloader_id="qb", client=client, fail_time=0
+                )
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("qb", 0)]
+
+    snapshot = await builder.build()
+
+    assert snapshot.expected_paths == set()
+    assert snapshot.scan_roots == []
+    assert len(snapshot.warnings) == 1
+    assert snapshot.warnings[0].internal_path == internal_root
+    client.torrents.files.assert_not_called()

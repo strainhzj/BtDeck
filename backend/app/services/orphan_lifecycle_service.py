@@ -17,8 +17,9 @@
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Sequence
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +27,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.orphan_file import OrphanCurrentCandidate
 
 logger = logging.getLogger(__name__)
+
+
+def _path_in_scan_roots(path: str, scan_roots: Sequence[str]) -> bool:
+    candidate_path = os.path.normcase(os.path.realpath(os.path.abspath(path)))
+    for root in scan_roots:
+        normalized_root = os.path.normcase(
+            os.path.realpath(os.path.abspath(root))
+        )
+        try:
+            if os.path.commonpath([candidate_path, normalized_root]) == normalized_root:
+                return True
+        except ValueError:
+            continue
+    return False
 
 
 class OrphanLifecycleService:
@@ -45,6 +60,7 @@ class OrphanLifecycleService:
         scan_time: datetime,
         orphans: List[Dict[str, Any]],
         *,
+        scan_roots: Optional[Sequence[str]] = None,
         commit: bool = True,
     ) -> Dict[str, int]:
         """对账候选状态（仅在完整成功扫描后调用）。
@@ -58,6 +74,8 @@ class OrphanLifecycleService:
             scan_id: 本次扫描批次 ID
             scan_time: 本次扫描时间
             orphans: 本次扫描发现的孤儿列表，每项含 canonical_path/downloader_id/file_size/mtime_ns
+            scan_roots: 本次成功扫描的根目录；未传保持全量对账兼容语义，
+                空列表表示没有目录成功扫描，不推进任何旧候选
 
         Returns:
             {"inserted": int, "updated": int, "resolved": int}
@@ -116,7 +134,14 @@ class OrphanLifecycleService:
 
         # 处理未出现在本次清单中的旧 candidate → resolved
         for path, cand in existing.items():
-            if path not in seen_paths and cand.status == "candidate":
+            in_successful_scope = scan_roots is None or _path_in_scan_roots(
+                path, scan_roots
+            )
+            if (
+                path not in seen_paths
+                and cand.status == "candidate"
+                and in_successful_scope
+            ):
                 cand.status = "resolved"
                 resolved += 1
 

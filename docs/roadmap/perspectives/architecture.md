@@ -105,13 +105,13 @@ APScheduler job（注册）
 
 ```
 触发：定时任务 or HTTP /api/v1/orphan-files/scan
-  ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (121 行, 每周日凌晨 2 点)
+  ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (128 行, 每周日凌晨 2 点)
   └─ [HTTP]  app/api/endpoints/orphan_files.py  (146 行)
-       └─ app/services/orphan_scanner.py  OrphanScanner (739 行)
-            ├─ app/services/orphan_manifest.py  (284 行) 构建实时下载器 manifest
-            ├─ 对比 torrent_info 清单 → 找出孤儿文件
+       └─ app/services/orphan_scanner.py  OrphanScanner (708 行)
+            ├─ app/services/orphan_manifest.py  (560 行) 筛选有效路径、严格映射并构建实时 manifest
+            ├─ 对比成功映射扫描根与实时种子清单 → 找出孤儿文件
             │
-            └─ [清理] app/services/orphan_file_service.py  (1339 行)
+            └─ [清理] app/services/orphan_file_service.py  (1346 行)
                  ├─ app/services/orphan_lease.py  (259 行) 跨进程 lease 互斥
                  ├─ app/services/orphan_quarantine.py  (250 行) 隔离区管理
                  └─ app/services/orphan_notification.py  (129 行) 幂等通知

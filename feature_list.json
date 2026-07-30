@@ -5,6 +5,50 @@
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
+      "id": "orphan-scan-path-scope-mapping-fix",
+      "name": "孤儿扫描有效路径筛选与严格映射修复",
+      "description": "修复孤儿扫描把已删除/停用数据及未命中映射的下载器内部路径当作 BtDeck 扫描根的问题；缺少映射时记录提醒并跳过，成功扫描范围之外的历史候选不推进生命周期。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-scan-path-scope-mapping-fix.1",
+          "name": "收紧扫描根、映射与生命周期范围",
+          "description": "扫描根仅来自启用且未删除的种子和下载器，并过滤路径维护表中的停用路径；save_path 必须命中显式路径映射，缺失时以结构化 warning 跳过；manifest、生命周期及自动清理授权仅使用成功映射的扫描根。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_manifest.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/tasks/scheduler/orphan_scan_task.py"
+          ],
+          "evidence": "未新增数据库表、字段或迁移，也未修改路径映射配置。扫描结果新增运行时 total_paths_skipped/warnings，审计记录与定时任务结果同步保留提醒；全部路径未映射时任务仍 completed，零路径扫描且不推进旧候选。"
+        },
+        {
+          "id": "orphan-scan-path-scope-mapping-fix.2",
+          "name": "回归与交付记录",
+          "description": "覆盖数据状态过滤、严格映射、全未映射完成语义、生命周期范围与任务结果提醒，并执行后端全量回归及仓库门禁。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/services/test_orphan_manifest.py",
+            "backend/tests/services/test_orphan_scanner.py",
+            "backend/tests/services/test_orphan_lifecycle.py",
+            "backend/tests/tasks/test_orphan_scan_task_lifecycle.py",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/perspectives/architecture.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "全部 orphan 回归 133 passed / 1 skipped，后端全量 2406 passed / 6 skipped；Ruff、Flake8、py_compile、scripts/lint_btdeck.py、git diff --check 与 Git Bash 根 init.sh --ci 通过。orphan_manifest.py 与 orphan_scan_task.py 目标 mypy 通过；较大服务组合仍报告既有 SQLAlchemy Column 类型债。当前及 HEAD 的同组 9 文件均被现有 Black 配置重排，未扩大无关格式化差异。"
+        }
+      ]
+    },
+    {
       "id": "orphan-transmission-torrent-files-fix",
       "name": "孤儿扫描 Transmission Torrent 文件清单解析修复",
       "description": "修复 transmission-rpc Torrent 对象被误当作可迭代文件集合导致的孤儿扫描失败，统一真实 SDK 对象与兼容形态的文件清单提取，并补充真实 Torrent 回归测试及错误上下文。",

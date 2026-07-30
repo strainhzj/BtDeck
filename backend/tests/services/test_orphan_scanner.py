@@ -5,7 +5,7 @@
 覆盖 OrphanScanner 的核心纯函数逻辑：
 - inode 去重（_get_file_identifier）
 - 排除模式匹配（_matches_patterns / _parse_exclude_patterns）
-- 路径收集逻辑（_convert_to_external / _extract_external_paths_from_mapping）
+- 路径收集逻辑（有效数据筛选 + 严格路径映射）
 - 孤儿判定（_walk_scan_root 的文件比对逻辑）
 
 不依赖真实 DB / 文件系统，全部用 mock + 临时目录。
@@ -115,46 +115,18 @@ class TestExcludePatterns:
 class TestPathCollection:
     """路径收集辅助方法测试"""
 
-    def test_extract_external_paths_from_mapping_valid_json(self):
-        """从有效 path_mapping JSON 提取 external 路径"""
-        dl = MagicMock()
-        dl.path_mapping = json.dumps(
-            {
-                "mappings": [
-                    {
-                        "name": "map1",
-                        "internal": "/downloads",
-                        "external": "D:/Downloads",
-                    },
-                    {"name": "map2", "internal": "/data", "external": "E:/Data"},
-                ]
-            }
-        )
-        scanner = OrphanScanner()
-        paths = scanner._extract_external_paths_from_mapping(dl)
-        assert paths == ["D:/Downloads", "E:/Data"]
-
-    def test_extract_external_paths_from_mapping_empty(self):
-        """空 path_mapping 返回空列表"""
-        dl = MagicMock()
-        dl.path_mapping = None
-        scanner = OrphanScanner()
-        paths = scanner._extract_external_paths_from_mapping(dl)
-        assert paths == []
-
-    def test_extract_external_paths_from_mapping_invalid_json(self):
-        """无效 JSON 返回空列表（不抛异常）"""
-        dl = MagicMock()
-        dl.path_mapping = "not a json"
-        scanner = OrphanScanner()
-        paths = scanner._extract_external_paths_from_mapping(dl)
-        assert paths == []
-
     def test_convert_to_external_with_mapping_service(self):
         """有路径映射服务时调用 internal_to_external"""
         dl = MagicMock()
         mapping_service = MagicMock()
         mapping_service.internal_to_external.return_value = "D:/Downloads/movie"
+        mapping_service.get_mappings.return_value = [
+            {
+                "internal": "/downloads",
+                "external": "D:/Downloads",
+            }
+        ]
+        mapping_service.get_rules.return_value = []
         dl.path_mapping_service = mapping_service
 
         scanner = OrphanScanner()
@@ -163,10 +135,235 @@ class TestPathCollection:
         mapping_service.internal_to_external.assert_called_once_with("/downloads/movie")
 
     def test_convert_to_external_no_downloader(self):
-        """无下载器配置时原样返回"""
+        """无下载器配置时不得把内部绝对路径当作外部路径"""
         scanner = OrphanScanner()
         result = scanner._convert_to_external("/downloads/movie", None)
-        assert result == "/downloads/movie"
+        assert result is None
+
+    def test_convert_to_external_requires_path_boundary_match(self):
+        """相似字符串前缀不能被误认为有效目录映射。"""
+        dl = MagicMock()
+        mapping_service = MagicMock()
+        mapping_service.get_mappings.return_value = [
+            {
+                "internal": "/downloads",
+                "external": "/mnt/downloads",
+            }
+        ]
+        mapping_service.get_rules.return_value = []
+        dl.path_mapping_service = mapping_service
+
+        result = OrphanScanner()._convert_to_external(
+            "/downloads-old/movie", dl
+        )
+
+        assert result is None
+        mapping_service.internal_to_external.assert_not_called()
+
+    def test_collect_scan_paths_filters_inactive_records_and_paths(
+        self, tmp_path
+    ):
+        """扫描根只来自有效种子、有效下载器及未停用维护路径。"""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from app.database import Base
+        from app.downloader.models import BtDownloaders
+        from app.models.downloader_path_maintenance import (
+            DownloaderPathMaintenance,
+        )
+        from app.torrents.models import TorrentInfo
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                BtDownloaders.__table__,
+                TorrentInfo.__table__,
+                DownloaderPathMaintenance.__table__,
+            ],
+        )
+        Session = sessionmaker(bind=engine)
+        external_root = tmp_path / "mounted"
+        mapping = json.dumps(
+            {
+                "mappings": [
+                    {
+                        "name": "downloads",
+                        "internal": "/downloads",
+                        "external": str(external_root),
+                    }
+                ]
+            }
+        )
+
+        try:
+            with Session() as db:
+                db.execute(
+                    BtDownloaders.__table__.insert(),
+                    [
+                        {
+                            "downloader_id": "active",
+                            "downloader_type": 0,
+                            "enabled": True,
+                            "dr": 0,
+                            "path_mapping": mapping,
+                        },
+                        {
+                            "downloader_id": "disabled",
+                            "downloader_type": 0,
+                            "enabled": False,
+                            "dr": 0,
+                            "path_mapping": mapping,
+                        },
+                        {
+                            "downloader_id": "deleted",
+                            "downloader_type": 0,
+                            "enabled": True,
+                            "dr": 1,
+                            "path_mapping": mapping,
+                        },
+                    ],
+                )
+                torrent_rows = [
+                    ("active", "/downloads/active", True, 0, None),
+                    (
+                        "active",
+                        "/downloads/recycle-bin",
+                        True,
+                        0,
+                        datetime.utcnow(),
+                    ),
+                    ("active", "/downloads/torrent-disabled", False, 0, None),
+                    ("active", "/downloads/torrent-deleted", True, 1, None),
+                    (
+                        "active",
+                        "/downloads/maintenance-disabled",
+                        True,
+                        0,
+                        None,
+                    ),
+                    ("disabled", "/downloads/downloader-disabled", True, 0, None),
+                    ("deleted", "/downloads/downloader-deleted", True, 0, None),
+                ]
+                db.execute(
+                    TorrentInfo.__table__.insert(),
+                    [
+                        {
+                            "info_id": f"torrent-{index}",
+                            "downloader_id": downloader_id,
+                            "downloader_name": downloader_id,
+                            "save_path": save_path,
+                            "enabled": enabled,
+                            "dr": dr,
+                            "deleted_at": deleted_at,
+                            "has_tracker_error": False,
+                        }
+                        for index, (
+                            downloader_id,
+                            save_path,
+                            enabled,
+                            dr,
+                            deleted_at,
+                        ) in enumerate(torrent_rows)
+                    ],
+                )
+                db.add(
+                    DownloaderPathMaintenance(
+                        downloader_id="active",
+                        path_type="active",
+                        path_value="/downloads/maintenance-disabled",
+                        is_enabled=False,
+                    )
+                )
+                db.commit()
+
+            scanner = OrphanScanner(sync_session_factory=Session)
+            paths = scanner._collect_scan_paths()
+
+            assert paths == [
+                (
+                    _normalize_path(str(external_root / "active")),
+                    "active",
+                )
+            ]
+            assert scanner._scan_warnings == []
+            assert (
+                _normalize_path(str(external_root)),
+                "active",
+            ) not in paths
+        finally:
+            engine.dispose()
+
+    def test_collect_scan_paths_warns_and_skips_unmapped_path(self):
+        """缺少映射只记录告警，内部绝对路径不能进入扫描根。"""
+        from sqlalchemy import create_engine
+        from sqlalchemy.orm import sessionmaker
+
+        from app.database import Base
+        from app.downloader.models import BtDownloaders
+        from app.models.downloader_path_maintenance import (
+            DownloaderPathMaintenance,
+        )
+        from app.torrents.models import TorrentInfo
+
+        engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(
+            engine,
+            tables=[
+                BtDownloaders.__table__,
+                TorrentInfo.__table__,
+                DownloaderPathMaintenance.__table__,
+            ],
+        )
+        Session = sessionmaker(bind=engine)
+        try:
+            with Session() as db:
+                db.execute(
+                    BtDownloaders.__table__.insert(),
+                    {
+                        "downloader_id": "dl-unmapped",
+                        "downloader_type": 0,
+                        "enabled": True,
+                        "dr": 0,
+                        "path_mapping": json.dumps(
+                            {
+                                "mappings": [
+                                    {
+                                        "name": "other",
+                                        "internal": "/other",
+                                        "external": "/mnt/other",
+                                    }
+                                ]
+                            }
+                        ),
+                    },
+                )
+                db.execute(
+                    TorrentInfo.__table__.insert(),
+                    {
+                        "info_id": "torrent-unmapped",
+                        "downloader_id": "dl-unmapped",
+                        "downloader_name": "unmapped",
+                        "save_path": "/downloads/unmapped",
+                        "enabled": True,
+                        "dr": 0,
+                        "deleted_at": None,
+                        "has_tracker_error": False,
+                    },
+                )
+                db.commit()
+
+            scanner = OrphanScanner(sync_session_factory=Session)
+            paths = scanner._collect_scan_paths()
+
+            assert paths == []
+            assert len(scanner._scan_warnings) == 1
+            warning = scanner._scan_warnings[0]
+            assert warning.code == "path_mapping_not_found"
+            assert warning.internal_path == "/downloads/unmapped"
+        finally:
+            engine.dispose()
 
 
 # ==================== 孤儿判定逻辑 ====================
@@ -322,6 +519,66 @@ class TestScannerRuntimeContract:
             assert lane == DownloadLane.SYNC, (
                 f"扫描器应使用 DownloadLane.SYNC，实际用了 {lane}"
             )
+
+    def test_all_unmapped_paths_complete_with_warning(
+        self, fake_app, monkeypatch
+    ):
+        """全部路径均无映射时任务完成为零扫描，并返回提醒。"""
+        from app.services.orphan_manifest import (
+            PathMappingWarning,
+            ScanPathSelection,
+        )
+
+        warning = PathMappingWarning(
+            downloader_id="dl_001",
+            internal_path="/downloads/unmapped",
+        )
+
+        def collect_paths(scanner):
+            scanner._scan_path_selection = ScanPathSelection(
+                warnings=(warning,)
+            )
+            scanner._scan_warnings = [warning]
+            return []
+
+        async def build_manifest(scanner):
+            scanner._expected_files = {"__global__": set()}
+            scanner._manifest_scan_paths = []
+
+        walked_paths = []
+
+        def walk_roots(scanner, paths):
+            walked_paths.extend(paths)
+            return []
+
+        monkeypatch.setattr(
+            OrphanScanner, "_collect_scan_paths", collect_paths
+        )
+        monkeypatch.setattr(
+            OrphanScanner, "_build_torrent_file_map", build_manifest
+        )
+        monkeypatch.setattr(OrphanScanner, "_walk_all_roots", walk_roots)
+        monkeypatch.setattr(
+            OrphanScanner, "_create_scan_record", _async_noop
+        )
+        monkeypatch.setattr(
+            OrphanScanner, "_finalize_successful_scan", _async_noop
+        )
+        monkeypatch.setattr(
+            OrphanScanner, "_notify_scan_completed", _async_noop
+        )
+
+        result = asyncio_run(
+            OrphanScanner(app=fake_app).scan(
+                scan_type="scheduled", operator="system"
+            )
+        )
+
+        assert result["status"] == "completed"
+        assert result["total_paths_scanned"] == 0
+        assert result["total_paths_skipped"] == 1
+        assert result["warnings"][0]["code"] == "path_mapping_not_found"
+        assert walked_paths == []
 
 
 # ==================== B 组：fail-closed（整批不完整即失败） ====================
