@@ -11,39 +11,28 @@
           @input="debouncedSearch"
           @keyup.enter.native="handleFilter"
         />
-        <el-select
+        <AdvancedMultiSelect
           v-model="listQuery.downloader_id"
-          placeholder="全部下载器"
-          clearable
-          multiple
-          collapse-tags
+          :options="downloaderOptions"
+          :allow-create="false"
+          :show-mode-toggle="false"
+          :virtual-scroll-threshold="100"
+          :list-height="240"
           style="width: 200px;"
           class="search-select"
-          filterable
-        >
-          <el-option
-            v-for="downloader in downloaderList"
-            :key="downloader.downloader_id"
-            :label="downloader.nickname"
-            :value="downloader.downloader_id"
-          />
-        </el-select>
-        <el-select
+          @change="handleFilter"
+        />
+        <AdvancedMultiSelect
           v-model="listQuery.status"
-          placeholder="全部状态"
-          clearable
-          multiple
-          collapse-tags
+          :options="statusOptions"
+          :allow-create="false"
+          :show-mode-toggle="false"
+          :virtual-scroll-threshold="100"
+          :list-height="240"
           style="width: 180px;"
           class="search-select"
-        >
-        <el-option
-          v-for="option in statusOptions"
-          :key="option.value"
-          :label="option.label"
-          :value="option.value"
+          @change="handleFilter"
         />
-        </el-select>
         <el-checkbox
           v-model="listQuery.showActiveOnly"
           class="active-only-checkbox"
@@ -702,6 +691,7 @@ import { Component } from 'vue-property-decorator'
 import { mixins } from 'vue-class-component'
 import BatchButton from '@/components/BatchButton/index.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
+import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import {
@@ -763,6 +753,7 @@ type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
   components: {
     BatchButton,
     PageSizeCombobox,
+    AdvancedMultiSelect,
     BatchOperationDialog: () => import('./components/BatchOperationDialog.vue'),
     AdvancedSearchBuilder: () => import('@/components/torrents/AdvancedSearchBuilder.vue'),
     TorrentAddDialog: () => import('./components/TorrentAddDialog.vue'),
@@ -872,6 +863,15 @@ export default class extends mixins(TorrentBatchMixin) {
    */
   get statusOptions() {
     return STATUS_OPTIONS
+  }
+  /**
+   * 下载器选项列表（映射为 AdvancedMultiSelect 所需的 {value,label} 结构）
+   */
+  get downloaderOptions() {
+    return this.downloaderList.map(downloader => ({
+      value: downloader.downloader_id,
+      label: downloader.nickname
+    }))
   }
   /**
    * 计算总页数（修复边界情况：total=0时返回0）

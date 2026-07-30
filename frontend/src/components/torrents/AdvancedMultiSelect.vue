@@ -45,8 +45,8 @@
     <transition name="ams-expand">
       <div v-if="selectedItems.length > 0 || true" class="ams__selected">
         <div class="ams__selected-bar">
-          <!-- 含 / 排除 胶囊开关 -->
-          <div class="ams__mode-pill" :class="`is-${selectedMode}`">
+          <!-- 含 / 排除 胶囊开关（简单筛选场景可由 showModeToggle 隐藏） -->
+          <div v-if="showModeToggle" class="ams__mode-pill" :class="`is-${selectedMode}`">
             <button
               type="button"
               class="ams__mode-option"
@@ -343,6 +343,9 @@ export default class AdvancedMultiSelect extends Vue {
   @Prop({ default: 'include' }) defaultSelectedMode!: 'include' | 'exclude'
   @Prop({ default: false }) showAdvanced!: boolean
   @Prop({ default: true }) allowCreate!: boolean
+  // 是否展示「包含/排除」模式切换胶囊。默认 true（高级搜索场景需要）；
+  // 简单列表筛选（如种子页下载器/状态过滤）传 false 以隐藏无语义的排除开关。
+  @Prop({ default: true }) showModeToggle!: boolean
   @Prop({ default: 10000 }) virtualScrollThreshold!: number
   @Prop({ default: 200 }) listHeight!: number
 
