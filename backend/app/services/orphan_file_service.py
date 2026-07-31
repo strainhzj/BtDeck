@@ -992,6 +992,13 @@ class OrphanFileService:
 
         for candidate in purgeable:
             try:
+                # 忽视态保护（防御纵深）：即使因 SQL 过滤被旁路（如 is_ignored 子句被
+                # 误删或候选被直接注入），被忽视的孤儿也绝不能进入隔离/删除流水线。
+                # 这是数据安全底线：忽视=保护，定时任务不得删除被忽视的文件。
+                if getattr(candidate, "is_ignored", False):
+                    logger.warning(f"[孤儿自动清理] 候选被忽视受保护，跳过: {candidate.canonical_path}")
+                    failed_count += 1
+                    continue
                 if normalize_path(candidate.canonical_path) in manifest.expected_paths:
                     logger.warning(f"[孤儿自动清理] 文件已被种子引用，跳过: {candidate.canonical_path}")
                     failed_count += 1

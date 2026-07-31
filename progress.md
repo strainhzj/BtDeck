@@ -1,5 +1,40 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-31 - 孤儿文件自动清理忽视态边界回归与防御纵深加固
+
+**任务 ID**: `orphan-files-management-enhancement`（回归补丁）
+**分支**: dev
+**范围**: 为本次孤儿文件增强生成回归测试，重点保证「被忽视的孤儿文件在任何情况下都不被定时自动清理任务删除/隔离」——100% 边界覆盖。
+
+### 关键发现与加固（独立审查暴露的防御纵深缺口）
+
+- 审查发现：`cleanup_orphans`（手动清理）循环内有 `is_ignored` 守卫（`:687`），但 **`auto_cleanup_expired`（定时自动清理）循环内没有**——它完全依赖 `get_purgeable_candidates` 的 SQL `is_ignored==False` 子句。这意味着若 SQL 子句被误删/旁路，被忽视文件会被静默隔离。这是数据安全底线的单点失效。
+- **加固**：给 `auto_cleanup_expired` 循环开头加 `is_ignored` 守卫（与手动清理对称），成为第二道防线。
+- **变异测试验证有效性**：临时删除该守卫后，`test_injected_ignored_candidate_blocked_in_loop` 立即失败（被忽视候选被隔离）；恢复后通过——证明测试真正守住底线。
+
+### 三层防御纵深回归测试（test_orphan_auto_cleanup_ignore_safety.py，11 用例）
+
+| 层 | 测试 | 断言 |
+|---|---|---|
+| SQL 过滤层 | `get_purgeable_candidates` 排除/全部忽视/取消忽视后恢复可清理 | is_ignored 候选不入可清理集 |
+| 服务 E2E 层 | `auto_cleanup_expired` 端到端：单忽视候选不隔离+文件保留；混合批次只清理非忽视；全忽视走空分支 | quarantined_count==0、文件 exists()、候选 status 不变 |
+| 防御纵深层 | 绕过 SQL（直接注入已忽视候选到工作集），循环守卫仍拒绝隔离 | failed_count==1、文件保留、status 不变 |
+| 生命周期 | resolved→candidate 重新出现重置 is_ignored（不粘住）；持续孤儿保留忽视标记 | is_ignored 重置为 False / 保留 True |
+| purge 任务 | `purge_expired_quarantine` 不误伤已忽视候选（始终 candidate 态，永不 quarantined） | purged_count==0、文件保留 |
+| 手动清理 | `cleanup_orphans` 循环守卫拒绝已忽视项（补齐与 preview 对称的 E2E） | failed_list 含「忽视」原因、文件保留 |
+
+### 回归与检查
+
+| 验证项 | 结果 |
+|---|---|
+| 新增测试（11） | ✅ 全过 |
+| 变异测试（删守卫→失败） | ✅ 证明测试有效 |
+| 孤儿专项回归 | ✅ 203 passed / 1 skipped（原 192 + 新 11） |
+| 全量后端 | ✅ 2472 passed / 6 skipped |
+| flake8 + black | ✅ 干净 |
+
+---
+
 ## 2026-07-31 - 孤儿文件管理增强（别名/置信度/忽视/多条件搜索）
 
 **任务 ID**: `orphan-files-management-enhancement`
