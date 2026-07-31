@@ -143,6 +143,12 @@ class OrphanFile(Base):
         default="high",
         comment="置信度：high=在线精筛判定，low=离线降级目录粗筛判定",
     )
+    canonical_path = Column(
+        String(600),
+        nullable=True,
+        index=True,
+        comment="规范化路径（normcase+normpath，用于忽略态 SQL 联表过滤）",
+    )
 
     is_deleted = Column(Boolean, default=False, nullable=False, comment="是否已清理")
     deleted_at = Column(DateTime, nullable=True, comment="清理时间")
@@ -158,6 +164,7 @@ class OrphanFile(Base):
         mtime: Optional[datetime] = None,
         downloader_id: Optional[str] = None,
         confidence: str = "high",
+        canonical_path: Optional[str] = None,
     ):
         self.scan_id = scan_id
         self.file_path = file_path
@@ -165,6 +172,7 @@ class OrphanFile(Base):
         self.mtime = mtime
         self.downloader_id = downloader_id
         self.confidence = confidence
+        self.canonical_path = canonical_path
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -176,6 +184,7 @@ class OrphanFile(Base):
             "mtime": self.mtime.isoformat() if self.mtime else None,
             "downloader_id": self.downloader_id,
             "confidence": self.confidence,
+            "canonical_path": self.canonical_path,
             "is_deleted": self.is_deleted,
             "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "deleted_by": self.deleted_by,
@@ -247,6 +256,17 @@ class OrphanCurrentCandidate(Base):
     operation_target_path = Column(String(600), nullable=True, comment="文件操作预写目标路径")
     operation_error = Column(Text, nullable=True, comment="文件操作恢复失败原因")
 
+    # 忽视态：被忽视的孤儿受保护，定时任务不自动删除，但仍可在列表查询。
+    # resolved→candidate 重新出现时由 reconcile_candidates 重置（避免粘住）。
+    is_ignored = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="是否被用户忽视（受保护，定时任务不自动删除）",
+    )
+    ignored_at = Column(DateTime, nullable=True, comment="忽视时间")
+    ignored_by = Column(String(100), nullable=True, comment="忽视操作者")
+
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(
         DateTime,
@@ -277,6 +297,9 @@ class OrphanCurrentCandidate(Base):
         operation_state: str = "stable",
         operation_target_path: Optional[str] = None,
         operation_error: Optional[str] = None,
+        is_ignored: bool = False,
+        ignored_at: Optional[datetime] = None,
+        ignored_by: Optional[str] = None,
     ):
         now = datetime.utcnow()
         self.canonical_path = canonical_path
@@ -298,6 +321,9 @@ class OrphanCurrentCandidate(Base):
         self.operation_state = operation_state
         self.operation_target_path = operation_target_path
         self.operation_error = operation_error
+        self.is_ignored = is_ignored
+        self.ignored_at = ignored_at
+        self.ignored_by = ignored_by
 
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
@@ -321,6 +347,9 @@ class OrphanCurrentCandidate(Base):
             "operation_state": self.operation_state,
             "operation_target_path": self.operation_target_path,
             "operation_error": self.operation_error,
+            "is_ignored": self.is_ignored,
+            "ignored_at": self.ignored_at.isoformat() if self.ignored_at else None,
+            "ignored_by": self.ignored_by,
         }
 
 

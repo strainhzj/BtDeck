@@ -278,6 +278,8 @@ class TestOrphanFilesCleanupWiring:
             page_size=20,
             downloader_id=None,
             min_size=None,
+            path_like=None,
+            status=None,
         )
 
     def test_cleanup_passes_scan_id_and_shared_store(self):

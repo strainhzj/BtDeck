@@ -720,6 +720,7 @@ class OrphanScanner:
                     mtime=o.mtime,
                     downloader_id=o.downloader_id,
                     confidence=o.confidence,
+                    canonical_path=_normalize_path(o.file_path),
                 )
                 for o in orphans
             ]
@@ -781,6 +782,7 @@ class OrphanScanner:
                         mtime=o.mtime,
                         downloader_id=o.downloader_id,
                         confidence=o.confidence,
+                        canonical_path=_normalize_path(o.file_path),
                     )
                     for o in batch
                 ]

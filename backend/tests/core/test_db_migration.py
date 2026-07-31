@@ -42,7 +42,8 @@ def _clean_database_path_env():
 
 # 已知的迁移链 revision（与 alembic/versions/ 保持一致，变更时同步更新）
 # 链尾：6132b66d14a7(String→Float) → 8f4c2d1a9b7e(数值约束/兼容修复) → f2a7c91b4d6e(orphan confidence)
-EXPECTED_HEAD = "f2a7c91b4d6e"
+#       → a1b2c3d4e5f6(orphan ignore + canonical_path)
+EXPECTED_HEAD = "a1b2c3d4e5f6"
 PREV_HEAD = "e6d8a20c41f3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 

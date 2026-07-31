@@ -65,6 +65,11 @@ AUDIT_OPERATION_TYPE_PARAMS = [
     ("archive_logs", "归档审计日志", "archive"),
     # ---- Tracker操作 ----
     ("reannounce", "Tracker汇报", "tracker"),
+    # ---- 孤儿文件操作 ----
+    ("orphan_scan", "孤儿文件扫描", "orphan_files"),
+    ("orphan_cleanup", "孤儿文件清理", "orphan_files"),
+    ("orphan_auto_cleanup", "孤儿文件自动清理", "orphan_files"),
+    ("orphan_ignore", "孤儿文件忽视", "orphan_files"),
 ]
 
 INVALID_OPERATION_TYPE_VALUES = [
@@ -105,7 +110,7 @@ class TestAuditOperationTypeMemberCount:
     """验证 AuditOperationType 枚举成员总数正确"""
 
     def test_member_count(self):
-        assert len(AuditOperationType) == 42
+        assert len(AuditOperationType) == 43
 
 
 class TestAuditOperationTypeIsValid:

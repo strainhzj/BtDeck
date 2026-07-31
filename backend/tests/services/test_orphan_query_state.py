@@ -50,6 +50,7 @@ def _detail(
         file_path=path,
         file_size=size,
         downloader_id=downloader_id,
+        canonical_path=normalize_path(path),
     )
     item.is_deleted = deleted
     return item
@@ -131,6 +132,7 @@ async def test_no_scan_returns_explicit_empty_context(async_orphan_db):
             "display_scan": None,
             "remaining_count": 0,
             "remaining_size": 0,
+            "ignored_count": 0,
             "cleanup_allowed": False,
             "cleanup_block_reason": "无任何扫描记录",
         },

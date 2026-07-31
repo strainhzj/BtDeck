@@ -84,6 +84,7 @@ class AuditOperationType(str, Enum):
     ORPHAN_SCAN = "orphan_scan"  # 孤儿文件扫描
     ORPHAN_CLEANUP = "orphan_cleanup"  # 孤儿文件清理（手动）
     ORPHAN_AUTO_CLEANUP = "orphan_auto_cleanup"  # 孤儿文件自动清理（定时）
+    ORPHAN_IGNORE = "orphan_ignore"  # 孤儿文件忽视/取消忽视
 
     @classmethod
     def is_valid(cls, value: str) -> bool:
@@ -165,6 +166,7 @@ class AuditOperationType(str, Enum):
             cls.ORPHAN_SCAN.value: "孤儿文件扫描",
             cls.ORPHAN_CLEANUP.value: "孤儿文件清理",
             cls.ORPHAN_AUTO_CLEANUP.value: "孤儿文件自动清理",
+            cls.ORPHAN_IGNORE.value: "孤儿文件忽视",
         }
         return display_names.get(value, value)
 
@@ -232,6 +234,7 @@ class AuditOperationType(str, Enum):
             cls.ORPHAN_SCAN.value: "orphan_files",
             cls.ORPHAN_CLEANUP.value: "orphan_files",
             cls.ORPHAN_AUTO_CLEANUP.value: "orphan_files",
+            cls.ORPHAN_IGNORE.value: "orphan_files",
         }
         return categories.get(value)
 

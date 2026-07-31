@@ -117,6 +117,11 @@ class OrphanLifecycleService:
                 if existing_cand.status == "resolved":
                     existing_cand.first_seen_at = scan_time
                     existing_cand.consecutive_scan_count = 1
+                    # 文件曾被种子引用（resolved）后又重新成为孤儿，
+                    # 旧的忽视标记已失效——重新评估，避免忽视态永久"粘住"。
+                    existing_cand.is_ignored = False
+                    existing_cand.ignored_at = None
+                    existing_cand.ignored_by = None
                 else:
                     existing_cand.consecutive_scan_count = existing_cand.consecutive_scan_count + 1
                 existing_cand.last_seen_at = scan_time
@@ -166,6 +171,8 @@ class OrphanLifecycleService:
                 OrphanCurrentCandidate.status == "candidate",
                 OrphanCurrentCandidate.operation_state == "stable",
                 OrphanCurrentCandidate.confidence == "high",
+                # 被用户忽视的候选受保护，定时任务不自动删除。
+                OrphanCurrentCandidate.is_ignored == False,  # noqa: E712
                 OrphanCurrentCandidate.first_seen_at < cutoff,
             )
         )
