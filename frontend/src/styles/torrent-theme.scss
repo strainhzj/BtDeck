@@ -508,8 +508,20 @@
       background: var(--color-success);
     }
 
+    &.seeding {
+      background: var(--color-success);
+    }
+
     &.paused {
       background: var(--color-warning);
+    }
+
+    &.checking {
+      background: var(--color-warning);
+    }
+
+    &.queuedDL {
+      background: var(--color-primary);
     }
 
     &.error {
@@ -683,6 +695,9 @@
       cursor: pointer;
       font-size: 16px;
       color: var(--color-text-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       transition: transform var(--transition-base) ease, box-shadow var(--transition-base) ease, opacity var(--transition-base) ease;
 
       &:hover {

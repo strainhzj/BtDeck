@@ -15,6 +15,7 @@ import AdvancedMultiSelect from '../AdvancedMultiSelect.vue'
 interface FieldOption {
   label: string
   value: string
+  icon?: string
 }
 
 interface ConditionValueInputVm extends Vue {
@@ -183,6 +184,42 @@ describe('ConditionValueInput 字段选项透传', () => {
     expect(changeEvents).toHaveLength(1)
     // emit 的载荷应等于当前 inputValue（来自 value='downloading' 经 normalize 后）
     expect(inputEvents?.[0][0]).toBe('downloading')
+
+    wrapper.destroy()
+  })
+
+  // ============================================================
+  // 回归：emoji→Lucide 改造——select 分支 el-option 内渲染图标
+  // 背景：本次改造给 FieldOption 加了可选 icon，并在 el-option 默认 slot 内放
+  // <LucideIcon v-if="option.icon">。:label 仍是纯文本（el-select 触发器/过滤用）。
+  // 不变量：带 icon 的 option 下拉项内出现真实 svg；无 icon 时不出现。
+  // ============================================================
+  it('select 分支：带 icon 的 fieldOptions 在 el-option 内渲染 LucideIcon', () => {
+    const iconOptions = [
+      { label: '做种中', value: 'seeding', icon: 'trending-up' },
+      { label: '错误', value: 'error', icon: 'alert-triangle' },
+      { label: '无图标', value: 'none' }
+    ]
+    const wrapper = mount(ConditionValueInput, {
+      localVue,
+      propsData: {
+        field: 'status',
+        operator: 'equals',
+        value: null,
+        fieldOptions: iconOptions
+      },
+      stubs: { 'advanced-multi-select': true }
+    })
+
+    const options = wrapper.findAll({ name: 'ElOption' })
+    expect(options).toHaveLength(3)
+    // 前两项 el-option 内应渲染真实 LucideIcon svg（el-option 用默认 slot）
+    const svgs = wrapper.findAll('.el-select-dropdown__item svg, .ams__option-label svg, option svg, svg')
+    expect(svgs.length).toBeGreaterThanOrEqual(2)
+    // 不应有 missing 占位
+    expect(wrapper.find('.lucide-icon--missing').exists()).toBe(false)
+    // 各 option 的 :label 仍是纯文本（不被图标污染）
+    expect(options.at(0).props('label')).toBe('做种中')
 
     wrapper.destroy()
   })

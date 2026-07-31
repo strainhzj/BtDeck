@@ -20,7 +20,9 @@
         :aria-pressed="String(isActive(item.value))"
         @click="selectItem(item.value)"
       >
-        <span class="filter-icon">{{ item.icon }}</span>
+        <span class="filter-icon">
+          <LucideIcon v-if="item.icon" :name="item.icon" :size="13" />
+        </span>
         <span class="filter-label" :title="item.label">{{ item.label }}</span>
         <span v-if="item.count !== undefined" class="filter-count">{{ item.count }}</span>
       </button>

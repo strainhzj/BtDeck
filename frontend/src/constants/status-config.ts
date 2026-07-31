@@ -7,10 +7,12 @@
  * 状态选项接口
  */
 export interface StatusOption {
-  /** 显示标签（带emoji） */
+  /** 显示标签（纯文本，图标由 icon 字段提供） */
   label: string
   /** 状态值（映射后的统一值） */
   value: string
+  /** Lucide 图标名（供 <LucideIcon :name> 渲染） */
+  icon: string
   /** 对应的qBittorrent原始状态（用于参考） */
   originalStates?: string[]
 }
@@ -21,33 +23,39 @@ export interface StatusOption {
  */
 export const STATUS_OPTIONS: StatusOption[] = [
   {
-    label: '⬆️ 做种中',
+    label: '做种中',
     value: 'seeding',
+    icon: 'trending-up',
     originalStates: ['stalledUP', 'seeding', 'queuedUP']
   },
   {
-    label: '⬇️ 下载中',
+    label: '下载中',
     value: 'downloading',
+    icon: 'trending-down',
     originalStates: ['downloading', 'stalledDL']
   },
   {
-    label: '⏸️ 已暂停',
+    label: '已暂停',
     value: 'paused',
+    icon: 'pause',
     originalStates: ['pausedDL', 'pausedUP', 'paused']
   },
   {
-    label: '⏳ 下载队列',
+    label: '下载队列',
     value: 'queuedDL',
+    icon: 'clock',
     originalStates: ['queuedDL']
   },
   {
-    label: '⚠️ 错误',
+    label: '错误',
     value: 'error',
+    icon: 'alert-triangle',
     originalStates: ['error']
   },
   {
-    label: '🔄 检查中',
+    label: '检查中',
     value: 'checking',
+    icon: 'refresh-cw',
     originalStates: ['checkingDL', 'checkingUP']
   }
 ]
@@ -65,15 +73,15 @@ export const STATUS_TEXT_MAP: Record<string, string> = {
 }
 
 /**
- * 状态值到图标的映射
+ * 状态值到图标的映射（Lucide 图标名，供 <LucideIcon :name> 渲染）
  */
 export const STATUS_ICON_MAP: Record<string, string> = {
-  seeding: '⬆️',
-  downloading: '⬇️',
-  paused: '⏸️',
-  queuedDL: '⏳',
-  error: '⚠️',
-  checking: '🔄'
+  seeding: 'trending-up',
+  downloading: 'trending-down',
+  paused: 'pause',
+  queuedDL: 'clock',
+  error: 'alert-triangle',
+  checking: 'refresh-cw'
 }
 
 /**
@@ -91,7 +99,7 @@ export function getStatusText(status: string): string {
  * @returns 状态图标
  */
 export function getStatusIcon(status: string): string {
-  return STATUS_ICON_MAP[status] || '❓'
+  return STATUS_ICON_MAP[status] || 'help-circle'
 }
 
 /**

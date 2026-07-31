@@ -92,6 +92,12 @@
             class="ams__chip"
             :class="`is-${selectedMode}`"
           >
+            <LucideIcon
+              v-if="getOptionIcon(item)"
+              :name="getOptionIcon(item)"
+              :size="12"
+              class="ams__chip-icon"
+            />
             <span class="ams__chip-label">{{ getSelectedLabel(item) }}</span>
             <button
               type="button"
@@ -135,7 +141,15 @@
             <span class="ams__option-check" :class="{'is-checked': isSelected(item)}">
               <LucideIcon v-if="isSelected(item)" name="check-check" :size="13" />
             </span>
-            <span class="ams__option-label">{{ getOptionLabel(item) }}</span>
+            <span class="ams__option-label">
+              <LucideIcon
+                v-if="getOptionIcon(item)"
+                :name="getOptionIcon(item)"
+                :size="13"
+                class="ams__option-label-icon"
+              />
+              <span class="ams__option-label-text">{{ getOptionLabel(item) }}</span>
+            </span>
             <span v-if="getOptionCount(item)" class="ams__option-count">
               {{ getOptionCount(item) }}
             </span>
@@ -163,7 +177,15 @@
           <span class="ams__option-check" :class="{'is-checked': isSelected(item)}">
             <LucideIcon v-if="isSelected(item)" name="check-check" :size="13" />
           </span>
-          <span class="ams__option-label">{{ getOptionLabel(item) }}</span>
+          <span class="ams__option-label">
+            <LucideIcon
+              v-if="getOptionIcon(item)"
+              :name="getOptionIcon(item)"
+              :size="13"
+              class="ams__option-label-icon"
+            />
+            <span class="ams__option-label-text">{{ getOptionLabel(item) }}</span>
+          </span>
           <span v-if="getOptionCount(item)" class="ams__option-count">
             {{ getOptionCount(item) }}
           </span>
@@ -321,6 +343,7 @@ import LucideIcon from '@/components/common/LucideIcon.vue'
 interface SelectOption {
   value: string | number
   label: string
+  icon?: string
   count?: number
   type?: string
   category?: string
@@ -529,6 +552,10 @@ export default class AdvancedMultiSelect extends Vue {
 
   getOptionLabel(option: SelectOption): string {
     return option[this.optionLabelKey] || option.label || String(this.getOptionValue(option))
+  }
+
+  getOptionIcon(option: SelectOption): string | undefined {
+    return option.icon
   }
 
   getOptionCount(option: SelectOption): number | undefined {
@@ -1416,5 +1443,17 @@ export default class AdvancedMultiSelect extends Vue {
   background: var(--color-bg-primary, #fff);
   box-shadow: var(--shadow-lg, 0 10px 15px -3px rgba(0, 0, 0, 0.1));
   box-sizing: border-box;
+
+  // 下拉项内的图标 + 文本对齐（teleport 到 body，scoped 样式不生效，故放此非 scoped 块）
+  .ams__option-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ams__option-label-icon {
+    color: var(--color-text-tertiary, #9ca3af);
+    flex-shrink: 0;
+  }
 }
 </style>

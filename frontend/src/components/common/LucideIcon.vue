@@ -24,7 +24,27 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  X
+  X,
+  Play,
+  Pause,
+  RefreshCw,
+  FolderOpen,
+  Settings,
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  Clock,
+  AlertTriangle,
+  HelpCircle,
+  Activity,
+  Inbox,
+  Server,
+  Folder,
+  Tag,
+  Tags,
+  Circle
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -53,7 +73,27 @@ const ICONS: Record<string, unknown> = {
   'arrow-up-down': ArrowUpDown,
   'arrow-up': ArrowUp,
   'arrow-down': ArrowDown,
-  x: X
+  x: X,
+  play: Play,
+  pause: Pause,
+  'refresh-cw': RefreshCw,
+  'folder-open': FolderOpen,
+  settings: Settings,
+  'bar-chart-3': BarChart3,
+  'chevron-left': ChevronLeft,
+  'chevron-right': ChevronRight,
+  'trending-up': TrendingUp,
+  'trending-down': TrendingDown,
+  clock: Clock,
+  'alert-triangle': AlertTriangle,
+  'help-circle': HelpCircle,
+  activity: Activity,
+  inbox: Inbox,
+  server: Server,
+  folder: Folder,
+  tag: Tag,
+  tags: Tags,
+  circle: Circle
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]

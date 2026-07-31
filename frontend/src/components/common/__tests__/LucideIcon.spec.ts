@@ -80,4 +80,47 @@ describe('LucideIcon 组件', () => {
       wrapper.destroy()
     }
   )
+
+  // ============================================================
+  // 回归：emoji→Lucide 改造新注册的图标必须全部可渲染
+  // 背景：status-config / AdvancedMultiSelect / FilterGroup / index.vue /
+  // TraditionalView 直接用 <LucideIcon :name="..."> 消费这些图标名。
+  // 任一漏注册或拼错会静默渲染 .lucide-icon--missing 空占位（图标列空白），
+  // 故在此钉死「name → 渲染真实 svg」的契约。
+  // ============================================================
+  it.each([
+    // 状态图标（STATUS_ICON_MAP）
+    'trending-up',
+    'trending-down',
+    'pause',
+    'clock',
+    'alert-triangle',
+    'refresh-cw',
+    'help-circle',
+    // 行操作 & 按钮 & 标题图标
+    'play',
+    'folder-open',
+    'settings',
+    'bar-chart-3',
+    // 分页 / 关闭
+    'chevron-left',
+    'chevron-right',
+    'x',
+    // 传统视图过滤器（traditionalStatusFilter / FilterGroup）
+    'inbox',
+    'activity',
+    'server',
+    'folder',
+    'tag',
+    'tags',
+    'circle'
+  ])('改造新注册的图标 %s 应注册并渲染真实 SVG（非 missing 占位）', (name) => {
+    const wrapper = mount(LucideIcon, {
+      localVue,
+      propsData: { name, size: 14 }
+    })
+    expect(wrapper.find('svg').exists()).toBe(true)
+    expect(wrapper.find('.lucide-icon--missing').exists()).toBe(false)
+    wrapper.destroy()
+  })
 })

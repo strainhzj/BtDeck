@@ -237,7 +237,15 @@
         :key="option.value"
         :label="option.label"
         :value="option.value"
-      />
+      >
+        <LucideIcon
+          v-if="option.icon"
+          :name="option.icon"
+          :size="13"
+          style="margin-right: 6px; vertical-align: middle; color: var(--color-text-tertiary, #9ca3af);"
+        />
+        <span>{{ option.label }}</span>
+      </el-option>
     </el-select>
 
     <!-- 多选输入器 -->
@@ -312,6 +320,7 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import AdvancedMultiSelect from './AdvancedMultiSelect.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
   AdvancedSearchConditionValue,
   AdvancedSearchValidationError,
@@ -324,12 +333,14 @@ import {
 interface FieldOption {
   label: string
   value: string
+  icon?: string
 }
 
 @Component({
   name: 'ConditionValueInput',
   components: {
-    AdvancedMultiSelect
+    AdvancedMultiSelect,
+    LucideIcon
   }
 })
 export default class ConditionValueInput extends Vue {

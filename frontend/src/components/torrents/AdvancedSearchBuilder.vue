@@ -375,7 +375,7 @@ interface SearchField {
   key: string
   label: string
   type: AdvancedSearchFieldKind
-  options?: Array<{ label: string, value: string }>
+  options?: Array<{ label: string, value: string, icon?: string }>
   supportsExclude?: boolean
   /**
    * multiSelect 字段的匹配模式，决定 UI 暴露哪些操作符：

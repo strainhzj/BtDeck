@@ -465,6 +465,9 @@
     font-size: 13px;
     transition: all var(--transition-fast);
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 
     &:hover {
       background: var(--color-bg-tertiary);
@@ -527,6 +530,9 @@
     padding: 2px 4px;
     border-radius: var(--radius-sm);
     transition: all var(--transition-fast);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 
     &:hover {
       background: var(--color-bg-tertiary);

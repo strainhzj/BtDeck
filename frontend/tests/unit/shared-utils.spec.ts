@@ -264,8 +264,9 @@ describe('状态、下载器与校验工具', () => {
   it('查询状态文本、图标和有效性', () => {
     expect(getStatusText('downloading')).toBe('下载中')
     expect(getStatusText('custom')).toBe('custom')
-    expect(getStatusIcon('error')).toBe('⚠️')
-    expect(getStatusIcon('custom')).toBe('❓')
+    // emoji→Lucide 改造：getStatusIcon 现返回 Lucide 图标名（非 emoji）
+    expect(getStatusIcon('error')).toBe('alert-triangle')
+    expect(getStatusIcon('custom')).toBe('help-circle')
     expect(isValidStatus('seeding')).toBe(true)
     expect(isValidStatus('custom')).toBe(false)
   })

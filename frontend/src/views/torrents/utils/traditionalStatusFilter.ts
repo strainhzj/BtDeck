@@ -17,8 +17,8 @@ export const TRADITIONAL_ACTIVE_STATUS_FILTER_VALUE = '__active__'
  */
 export function buildTraditionalStatusFilterItems(statusItems: StatusFilterItem[]): StatusFilterItem[] {
   return [
-    { icon: '📥', label: '全部', value: '' },
-    { icon: '⚡', label: '活动中', value: TRADITIONAL_ACTIVE_STATUS_FILTER_VALUE },
+    { icon: 'inbox', label: '全部', value: '' },
+    { icon: 'activity', label: '活动中', value: TRADITIONAL_ACTIVE_STATUS_FILTER_VALUE },
     ...statusItems
   ]
 }

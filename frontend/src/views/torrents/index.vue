@@ -47,7 +47,8 @@
           高级搜索
         </el-button>
         <el-button class="duplicate-detection-btn" @click="handleShowDuplicateTorrents" >
-          🔍 查找重复任务
+          <LucideIcon name="search" :size="14" style="margin-right: 4px; vertical-align: middle;" />
+          查找重复任务
         </el-button>
         <el-button class="clear-btn" @click="handleClearFilter">
           清空
@@ -353,7 +354,11 @@
                   class="torrent-status-icon"
                   :class="torrent.status"
                 >
-                  {{ getStatusIcon(torrent.status) }}
+                  <LucideIcon
+                    :name="getStatusIcon(torrent.status)"
+                    :size="10"
+                    :stroke-width="2.5"
+                  />
                 </div>
                 <div class="torrent-name-text" :title="torrent.name">
                   {{ torrent.name }}
@@ -408,20 +413,24 @@
                   :class="torrent.status === 'paused' ? 'play' : 'pause'"
                   @click.stop="handleTogglePause(torrent)"
                 >
-                  {{ torrent.status === 'paused' ? '▶️' : '⏸️' }}
+                  <LucideIcon
+                    :name="torrent.status === 'paused' ? 'play' : 'pause'"
+                    :size="14"
+                  />
                 </button>
                 <button
                   class="action-btn refresh"
                   @click.stop="handleRecheck(torrent)"
+                  title="重新检查"
                 >
-                  🔄
+                  <LucideIcon name="refresh-cw" :size="14" />
                 </button>
                 <button
                   class="action-btn location"
                   @click.stop="handleSetLocation(torrent)"
                   title="修改保存路径"
                 >
-                  📁
+                  <LucideIcon name="folder-open" :size="14" />
                 </button>
                 <el-dropdown
                   @command="(cmd) => handleDeleteCommand(cmd, torrent)"
@@ -431,7 +440,7 @@
                   @click.native.stop
                 >
                   <button class="action-btn delete">
-                    🗑️
+                    <LucideIcon name="trash" :size="14" />
                   </button>
                   <el-dropdown-menu slot="dropdown">
                     <el-dropdown-item command="4">
@@ -462,10 +471,11 @@
     >
       <div class="tracker-header">
         <h3 class="tracker-title">
-          📊 Tracker详情 - {{ currentRow && currentRow.name }}
+          <LucideIcon name="bar-chart-3" :size="16" style="margin-right: 6px; vertical-align: middle;" />
+          Tracker详情 - {{ currentRow && currentRow.name }}
         </h3>
         <button class="tracker-close" @click="handleCloseTrackerDetail">
-          ✕
+          <LucideIcon name="x" :size="16" />
         </button>
       </div>
       <div class="tracker-table-wrapper">
@@ -554,7 +564,7 @@
           :disabled="currentPage <= 1"
           @click="handlePageChange(currentPage - 1)"
         >
-          ◀
+          <LucideIcon name="chevron-left" :size="14" />
         </button>
         <button
           v-for="page in visiblePages"
@@ -570,7 +580,7 @@
           :disabled="currentPage >= totalPages"
           @click="handlePageChange(currentPage + 1)"
         >
-          ▶
+          <LucideIcon name="chevron-right" :size="14" />
         </button>
       </div>
     </nav>
@@ -583,8 +593,13 @@
     >
       <div class="modal-dialog" style="max-width: 700px;">
         <div class="modal-header">
-          <h3 class="modal-title">⚙️ 列设置</h3>
-          <button class="modal-close" @click="showColumnSettings = false">✕</button>
+          <h3 class="modal-title">
+            <LucideIcon name="settings" :size="18" style="margin-right: 6px; vertical-align: middle;" />
+            列设置
+          </h3>
+          <button class="modal-close" @click="showColumnSettings = false">
+            <LucideIcon name="x" :size="16" />
+          </button>
         </div>
         <div class="modal-body">
           <div class="columns-grid">
@@ -2317,6 +2332,36 @@ export default class extends mixins(TorrentBatchMixin) {
 }
 
 // ========================================
+// 搜索框样式：与相邻 AdvancedMultiSelect 折叠态 trigger 对齐
+// （height:32px / padding:0 10px / font-size:12px / token border + radius / primary focus）
+// ========================================
+.simple-search {
+  ::v-deep .search-input {
+    .el-input__inner {
+      height: 32px;
+      line-height: 32px;
+      padding: 0 10px;
+      font-size: 12px;
+      border: 1px solid var(--color-border-primary, #dcdfe6);
+      border-radius: var(--radius-sm, 4px);
+      background: var(--color-bg-primary, #fff);
+      color: var(--color-text-primary, #1f2937);
+      transition: border-color var(--transition-fast, 150ms),
+                  box-shadow var(--transition-fast, 150ms);
+
+      &:focus {
+        border-color: var(--color-primary, #059669);
+        box-shadow: 0 0 0 2px var(--color-primary-lightest, #d1fae5);
+      }
+
+      &::placeholder {
+        color: var(--color-text-tertiary, #9ca3af);
+      }
+    }
+  }
+}
+
+// ========================================
 // 视图切换器样式
 // ========================================
 .view-switcher {
@@ -2456,6 +2501,9 @@ export default class extends mixins(TorrentBatchMixin) {
   cursor: pointer;
   font-size: 18px;
   color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.2s ease;
 
   &:hover {

@@ -330,7 +330,7 @@
                     :class="torrent.status"
                     :title="getStatusText(torrent.status)"
                   >
-                    {{ getStatusIcon(torrent.status) }}
+                    <LucideIcon :name="getStatusIcon(torrent.status)" :size="14" />
                   </div>
                 </td>
                 <td v-if="getColumnSetting('name').visible" class="col-name">
@@ -398,21 +398,21 @@
                       @click.stop="handleTogglePause(torrent)"
                       :title="torrent.status === 'paused' ? '开始' : '暂停'"
                     >
-                      {{ torrent.status === 'paused' ? '▶' : '⏸' }}
+                      <LucideIcon :name="torrent.status === 'paused' ? 'play' : 'pause'" :size="14" />
                     </button>
                     <button
                       class="action-btn-mini recheck"
                       @click.stop="handleRecheck(torrent)"
                       title="重新检查"
                     >
-                      ↻
+                      <LucideIcon name="refresh-cw" :size="14" />
                     </button>
                     <button
                       class="action-btn-mini location"
                       @click.stop="handleSetLocation(torrent)"
                       title="修改保存路径"
                     >
-                      📁
+                      <LucideIcon name="folder-open" :size="14" />
                     </button>
                     <el-dropdown
                       @command="(cmd) => handleDeleteByLevelCommand(cmd, torrent)"
@@ -421,7 +421,9 @@
                       :append-to-body="true"
                       @click.native.stop
                     >
-                      <button class="action-btn-mini delete" title="删除">🗑</button>
+                      <button class="action-btn-mini delete" title="删除">
+                        <LucideIcon name="trash" :size="14" />
+                      </button>
                       <el-dropdown-menu slot="dropdown">
                         <el-dropdown-item command="4">
                           <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
@@ -478,7 +480,7 @@
               :disabled="currentPage <= 1"
               @click="handlePageChange(currentPage - 1)"
             >
-              ◀
+              <LucideIcon name="chevron-left" :size="14" />
             </el-button>
             <el-button
               v-for="page in visiblePages"
@@ -494,7 +496,7 @@
               :disabled="currentPage >= totalPages"
               @click="handlePageChange(currentPage + 1)"
             >
-              ▶
+              <LucideIcon name="chevron-right" :size="14" />
             </el-button>
           </div>
         </div>
@@ -503,7 +505,9 @@
           <div class="detail-panel-content">
             <div class="detail-header-compact">
               <h3>{{ currentRow && currentRow.name }}</h3>
-              <button class="close-btn" @click="closeDetailPanel">✕</button>
+              <button class="close-btn" @click="closeDetailPanel">
+                <LucideIcon name="x" :size="16" />
+              </button>
             </div>
             <div class="detail-tabs-compact">
               <button
@@ -670,13 +674,18 @@
 
     <!-- P1新增：高级搜索 -->
     <el-dialog
-      title="🔍 高级搜索"
       :visible.sync="showAdvancedSearchDialog"
       width="80%"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       append-to-body
     >
+      <template slot="title">
+        <span class="dialog-title-with-icon">
+          <LucideIcon name="sliders-horizontal" :size="16" />
+          <span>高级搜索</span>
+        </span>
+      </template>
       <AdvancedSearchBuilder
         ref="advancedSearchBuilder"
         :searching="advancedSearchSearching"
@@ -688,11 +697,16 @@
 
     <!-- P2-2 列设置 -->
     <el-dialog
-      title="⚙️ 列设置"
       :visible.sync="showColumnSettings"
       width="500px"
       append-to-body
     >
+      <template slot="title">
+        <span class="dialog-title-with-icon">
+          <LucideIcon name="settings" :size="16" />
+          <span>列设置</span>
+        </span>
+      </template>
       <div class="columns-grid-trad">
         <label
           v-for="column in columnSettings"
@@ -1015,7 +1029,7 @@ export default class extends mixins(TorrentBatchMixin) {
     return buildTraditionalStatusFilterItems(
       STATUS_OPTIONS.map(opt => ({
         icon: getStatusIcon(opt.value),
-        label: opt.label.replace(/^[^\s]+\s*/, ''),
+        label: opt.label,
         value: opt.value
       }))
     )
@@ -1023,9 +1037,9 @@ export default class extends mixins(TorrentBatchMixin) {
 
   get downloaderFilterItems(): StatusFilterItem[] {
     return [
-      { icon: '🖥', label: '全部', value: '' },
+      { icon: 'server', label: '全部', value: '' },
       ...this.downloaderList.map(d => ({
-        icon: '🔵',
+        icon: 'circle',
         label: d.nickname,
         value: d.downloader_id
       }))
@@ -1034,9 +1048,9 @@ export default class extends mixins(TorrentBatchMixin) {
 
   get categoryFilterItems(): StatusFilterItem[] {
     const items = [
-      { icon: '📂', label: '全部', value: '' },
+      { icon: 'folder', label: '全部', value: '' },
       ...this.categoryList.map(name => ({
-        icon: '📁',
+        icon: 'folder-open',
         label: name,
         value: name
       }))
@@ -1046,9 +1060,9 @@ export default class extends mixins(TorrentBatchMixin) {
 
   get tagFilterItems(): StatusFilterItem[] {
     const items = [
-      { icon: '🏷', label: '全部', value: '' },
+      { icon: 'tag', label: '全部', value: '' },
       ...this.tagList.map(name => ({
-        icon: '🏷',
+        icon: 'tag',
         label: name,
         value: name
       }))
@@ -2076,6 +2090,17 @@ export default class extends mixins(TorrentBatchMixin) {
 <style lang="scss" scoped>
 // 复用现有样式变量
 @import '@/styles/traditional-view-theme.scss';
+
+// 对话框标题：图标 + 文本对齐（el-dialog #title slot）
+.dialog-title-with-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+}
 
 .traditional-page {
   // 与列表模式一致锁定到当前视口，避免表格高度随种子数量变化

@@ -1,4 +1,4 @@
-import { shallowMount, createLocalVue } from '@vue/test-utils'
+import { shallowMount, mount, createLocalVue } from '@vue/test-utils'
 import ElementUI from 'element-ui'
 import AdvancedMultiSelect from '../AdvancedMultiSelect.vue'
 
@@ -472,6 +472,100 @@ describe('AdvancedMultiSelect组件', () => {
       const chip = wrapper.find('.ams__chip')
       expect(chip.exists()).toBe(true)
       expect(chip.classes()).toContain('is-exclude')
+    })
+  })
+
+  // ============================================================
+  // 回归：emoji→Lucide 改造——选项/已选 chip 装饰图标契约
+  // 背景：本次改造给 SelectOption 加了可选 icon 字段，并在 option-label / chip-label
+  // 前渲染 <LucideIcon>。关键不变量：icon 仅作装饰，
+  //   ① 不应污染搜索匹配（optionExists 仍走纯文本 label）；
+  //   ② 不应污染 triggerLabel 拼接（"X 等 N 项"）；
+  //   ③ 有 icon 时 chip/option 内出现 LucideIcon 真实 svg，无 icon 时不出现。
+  // 任一被破坏都会导致下拉项图标丢失或搜索/选中行为错乱。
+  // ============================================================
+  describe('选项装饰图标（icon 字段）', () => {
+    const iconOptions: SelectOption[] = [
+      { value: 'a', label: '做种中', icon: 'trending-up' },
+      { value: 'b', label: '下载中', icon: 'trending-down' },
+      { value: 'c', label: '无图标项' }
+    ]
+
+    const buildWrapper = (props: Record<string, unknown> = {}) =>
+      mount(AdvancedMultiSelect, {
+        localVue,
+        propsData: { options: iconOptions, value: [], ...props },
+        stubs: {
+          'virtual-scroll-list': true,
+          'el-popover': true,
+          'el-input': true,
+          'el-tooltip': true
+        }
+      })
+
+    it('getOptionIcon 应返回 option.icon；无该字段时返回 undefined', () => {
+      const w = buildWrapper()
+      const vm = w.vm as any
+      expect(vm.getOptionIcon(iconOptions[0])).toBe('trending-up')
+      expect(vm.getOptionIcon(iconOptions[2])).toBeUndefined()
+      w.destroy()
+    })
+
+    it('带 icon 的普通列表选项应渲染 LucideIcon 真实 svg（非 missing 占位）', () => {
+      const w = buildWrapper()
+      const labels = w.findAll('.ams__option-label')
+      // 小数据量走普通列表，iconOptions 3 项全部渲染
+      expect(labels.length).toBeGreaterThanOrEqual(2)
+      // 前两项有 icon → 各含一个真实 svg
+      const firstSvg = labels.at(0).find('svg')
+      expect(firstSvg.exists()).toBe(true)
+      expect(labels.at(0).find('.lucide-icon--missing').exists()).toBe(false)
+      // 第三项无 icon → 不渲染 svg
+      const allLabels = w.findAll('.ams__option-label')
+      let noIconSvgFound = false
+      for (let i = 0; i < allLabels.length; i++) {
+        if (allLabels.at(i).text().includes('无图标项') && allLabels.at(i).find('svg').exists()) {
+          noIconSvgFound = true
+        }
+      }
+      expect(noIconSvgFound).toBe(false)
+      w.destroy()
+    })
+
+    it('选中带 icon 的选项后，chip 内应渲染 LucideIcon svg', async() => {
+      const w = buildWrapper()
+      const vm = w.vm as any
+      vm.toggleOption(iconOptions[0])
+      await w.vm.$nextTick()
+
+      const chip = w.find('.ams__chip')
+      expect(chip.exists()).toBe(true)
+      expect(chip.find('svg').exists()).toBe(true)
+      expect(chip.text()).toContain('做种中')
+      w.destroy()
+    })
+
+    it('triggerLabel 拼接仍走纯文本 label，不被 icon 干扰（"X 等 N 项"）', async() => {
+      const w = buildWrapper()
+      const vm = w.vm as any
+      vm.toggleOption(iconOptions[0])
+      vm.toggleOption(iconOptions[1])
+      await w.vm.$nextTick()
+      // triggerLabel 形如 "做种中 等 2 项"，不含图标名
+      const trigger = vm.triggerLabel as string
+      expect(trigger).toBe('做种中 等 2 项')
+      expect(trigger).not.toContain('trending')
+      w.destroy()
+    })
+
+    it('搜索匹配仍走纯文本 label（optionExists 不因 icon 失效）', () => {
+      const w = buildWrapper()
+      const vm = w.vm as any
+      // label 命中
+      expect(vm.optionExists('做种中')).toBe(true)
+      // 图标名不是 label，不应被误判为已存在
+      expect(vm.optionExists('trending-up')).toBe(false)
+      w.destroy()
     })
   })
 })
