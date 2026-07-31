@@ -116,15 +116,23 @@ class TestExcludePatterns:
 class TestPathCollection:
     """路径收集辅助方法测试"""
 
-    def test_convert_to_external_with_mapping_service(self):
-        """有路径映射服务时调用 internal_to_external"""
+    def test_convert_to_external_with_mapping_service(self, tmp_path):
+        """有路径映射服务时调用 internal_to_external。
+
+        使用宿主无关的绝对路径（tmp_path）作为 external 映射结果：
+        resolve_external_path 要求映射后的 external 路径在宿主机上为绝对路径
+        （os.path.isabs，宿主平台相关），硬编码 Windows 盘符路径会在 Linux CI
+        上 isabs 为 False 而误返回 None。
+        """
+        external_root = tmp_path / "Downloads"
+        external_movie = external_root / "movie"
         dl = MagicMock()
         mapping_service = MagicMock()
-        mapping_service.internal_to_external.return_value = "D:/Downloads/movie"
+        mapping_service.internal_to_external.return_value = str(external_movie)
         mapping_service.get_mappings.return_value = [
             {
                 "internal": "/downloads",
-                "external": "D:/Downloads",
+                "external": str(external_root),
             }
         ]
         mapping_service.get_rules.return_value = []
@@ -132,7 +140,7 @@ class TestPathCollection:
 
         scanner = OrphanScanner()
         result = scanner._convert_to_external("/downloads/movie", dl)
-        assert result == "D:/Downloads/movie"
+        assert result == str(external_movie)
         mapping_service.internal_to_external.assert_called_once_with("/downloads/movie")
 
     def test_convert_to_external_no_downloader(self):
