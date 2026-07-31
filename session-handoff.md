@@ -1,5 +1,38 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-07-31 交接：孤儿文件管理增强（别名/置信度/忽视/多条件搜索）
+
+**当前任务**: `orphan-files-management-enhancement`
+**分支**: dev
+**状态**: 前后端实现、回归与静态检查、项目记录均已完成；尚未提交。
+
+### 本次交付四项需求
+
+1. 日志/界面显示下载器所属时使用**别名**（复用 `BtDownloaders.nickname`，后端批量 JOIN 注入 `downloader_name`，nickname 空则回退掩码 ID）。
+2. 孤儿列表增加**置信度列**（high=在线精筛/绿 tag，low=离线降级粗筛/灰 tag，含 tooltip 语义说明）。
+3. 增加**忽视功能**：被忽视的孤儿受保护——定时任务（`get_purgeable_candidates`）不自动删除、手动清理（`cleanup_preview`/`cleanup_orphans`）也拒绝，但仍可在列表查询（status=ignored）。存 `OrphanCurrentCandidate`（跨扫描持久），resolved→candidate 重新出现时重置。
+4. 增加路径/下载器/状态/**多条件搜索与分页**（`/list` 加 path_like/status/min_size/downloader_id；前端四字段搜索栏 + 重置 + 分页）。
+
+### 关键技术决策（经子代理独立审查）
+
+- **status=ignored 联表问题**：`normalize_path` 是 Python 函数无法下推 SQL。解决方案：给 `orphan_file` 加冗余列 `canonical_path`（+索引+存量回填，落库时已可得），使 ignored 过滤变成纯 SQL `WHERE canonical_path IN (...)`。迁移 `a1b2c3d4e5f6`。
+- 前端交互采用**统一选中矩阵**：pending+ignored 均可勾选、deleted 禁勾，批量按钮按选中主导状态动态启停，混选禁用——替代原计划自相矛盾的"禁勾+预拦截"。
+
+### 验证
+
+- 后端：alembic 单 head（无分叉）；新增 11 测试全过；孤儿专项 192 passed/1 skipped；全量 2461 passed/6 skipped；black+flake8 干净。
+- 前端：typecheck/eslint/build 干净；orphan-files.spec 16 passed（新增 4）；全量 Jest 24 suites/352 passed。
+- 根 `init.sh --ci` 退出 0，无 error/warn。
+
+### 当前工作区
+
+- 后端改动：迁移 1 个、模型 1 个、服务 3 个（scanner/lifecycle/file_service）、API 1 个、审计枚举 1 个、测试 6 个。
+- 前端改动：`api/orphan-files.ts`、`views/orphan-files/index.vue`、`tests/unit/orphan-files.spec.ts`。
+- 项目记录：feature_list.json（新 feature + last_updated）、progress.md、session-handoff.md 已更新。
+- 未执行 Git stage / commit / push。
+
+---
+
 ## 2026-07-30 交接：孤儿扫描空 external 映射绕过严格校验修复
 
 **当前任务**: `orphan-scan-path-scope-mapping-fix`（回归补丁）

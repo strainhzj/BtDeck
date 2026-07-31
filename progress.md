@@ -1,5 +1,41 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-07-31 - 孤儿文件管理增强（别名/置信度/忽视/多条件搜索）
+
+**任务 ID**: `orphan-files-management-enhancement`
+**分支**: dev
+**范围**: 孤儿文件列表四项增强——①日志/界面显示下载器所属时使用别名（nickname）；②列表增加置信度显示列；③增加忽视功能（被忽视的孤儿受保护，定时任务不自动删除、手动清理也拒绝，但仍可查询）；④增加路径/下载器/状态多条件搜索与分页。
+
+### 关键设计（经 3 轮子代理独立代码审查修订）
+
+- **status=ignored 联表的阻断性技术问题**：审查发现 `normalize_path`（normcase+normpath+abspath）是 Python 函数无法下推 SQL，原"联表候选 is_ignored"在分页查询层不可表达。修订为给 `orphan_file` 明细表加冗余列 `canonical_path`（落库时已可得，`orphan_scanner._finalize_successful_scan` 直接复用 `_normalize_path(o.file_path)`）+ 索引，使 status=ignored 变成纯 SQL 的 `WHERE canonical_path IN (SELECT ... WHERE is_ignored=1)`。
+- **忽视态存储**：存 `OrphanCurrentCandidate`（按 canonical_path 跨扫描持久），不存每次扫描重建的 `OrphanFile` 明细。
+- **忽视态跨扫描语义**：`reconcile_candidates` 的 resolved→candidate 分支重置 is_ignored，避免忽视标记永久"粘住"曾被种子引用后又重新成为孤儿的文件。
+- **别名**：复用 `BtDownloaders.nickname`（与 recycle-bin/torrents 一致），零下载器表迁移；后端批量 JOIN 注入 `downloader_name`，nickname 为空回退掩码 ID。
+- **清理门禁**：忽视=保护态，手动（cleanup_preview/cleanup_orphans）+ 自动（get_purgeable_candidates）双重拒绝已忽视项。
+- **前端交互**：采用统一选中矩阵（pending+ignored 均可勾、deleted 禁勾，按选中主导状态动态启停批量按钮，混选禁用），弃用原计划中自相矛盾的"禁勾+预拦截"。
+
+### 落地清单
+
+- 迁移 `a1b2c3d4e5f6`（down_revision `f2a7c91b4d6e`，单 head 无分叉，【可回滚】，纯加列+索引+存量回填）。
+- 后端：模型加列（OrphanFile.canonical_path；OrphanCurrentCandidate.is_ignored/ignored_at/ignored_by）；扫描器填 canonical_path；`get_orphan_list` 加 status/path_like 参数 + `_enrich_items`（别名+忽视态批量注入）；`set_ignored`（db_write_scope + 候选 candidate/stable 状态校验 + 独立 session 审计 ORPHAN_IGNORE）；清理三处门禁；`POST /orphan-files/ignore` 端点。
+- 前端：类型扩展（OrphanFileItem/OrphanListParams/OrphanScanContext + setIgnored）；视图别名列、置信度列、忽视操作、多条件搜索、已忽视统计卡。
+
+### 回归与检查
+
+| 验证项 | 结果 |
+|---|---|
+| alembic heads | ✅ 单 head `a1b2c3d4e5f6`（无分叉） |
+| 迁移 upgrade/downgrade | ✅ 可逆，空库建 28 表，回填幂等 |
+| 新增后端测试（11） | ✅ status 过滤/path_like 转义/别名/置信度/set_ignored/cleanup_preview 拒绝 |
+| 孤儿专项回归 | ✅ 192 passed / 1 skipped |
+| 全量后端 | ✅ 2461 passed / 6 skipped |
+| 后端 black + flake8 | ✅ 干净 |
+| 前端 typecheck / eslint / build | ✅ 干净 |
+| 前端 Jest（全量） | ✅ 24 suites / 352 tests |
+| 前端 orphan-files.spec（新增 4 用例） | ✅ 16 passed |
+| 根 init.sh | ✅ 退出 0，无 error/warn |
+
 ## 2026-07-30 - 孤儿白名单阶段映射缺失 fail-closed 修复
 
 **任务 ID**: `orphan-scan-path-scope-mapping-fix`（白名单 fail-closed 强化）

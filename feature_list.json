@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-30",
+  "last_updated": "2026-07-31",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -152,6 +152,52 @@
             "session-handoff.md"
           ],
           "evidence": "根 init.sh 退出 0，git diff --check 与 feature_list JSON 校验通过；API/类型注释、代码路线图、进度和会话交接已同步。全量 Black 命中 10 个未修改文件的既有格式差异，未越界格式化无关文件；完整 npm run lint 的既有生成契约漂移已如实记录。"
+        }
+      ]
+    },
+    {
+      "id": "orphan-files-management-enhancement",
+      "name": "孤儿文件管理增强（别名/置信度/忽视/多条件搜索）",
+      "description": "1.列表与日志显示下载器所属时使用别名（nickname）。2.孤儿列表增加置信度列。3.增加忽视功能：被忽视的孤儿文件受保护，定时任务不自动删除、手动清理也被拒绝，但仍可在列表查询。4.增加路径/下载器/状态多条件搜索与分页。经 3 轮子代理独立代码审查修订核心方案（status=ignored 联表通过 orphan_file.canonical_path 冗余列下推到 SQL）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-files-management-enhancement.1",
+          "name": "后端迁移+模型+服务+API+枚举",
+          "description": "新增 Alembic 迁移（orphan_current_candidate 加 is_ignored/ignored_at/ignored_by；orphan_file 加 canonical_path 冗余列+索引+存量回填，解决 status=ignored SQL 联表）；模型加列；扫描器落库处填 canonical_path；get_orphan_list 加 status/path_like 参数+下载器别名解析+忽视态注入；set_ignored（db_write_scope+候选状态校验+审计独立 session）；cleanup_preview/cleanup_orphans/get_purgeable_candidates 拒绝已忽视；reconcile resolved→candidate 重置 is_ignored；/list 与 /ignore 端点；AuditOperationType 加 ORPHAN_IGNORE。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/alembic/versions/a1b2c3d4e5f6_add_orphan_ignore_and_canonical_path.py",
+            "backend/app/models/orphan_file.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/services/test_orphan_query_state.py",
+            "backend/tests/services/test_orphan_ignore_and_filters.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/enums/test_audit_enums.py"
+          ],
+          "evidence": "迁移链单 head a1b2c3d4e5f6（无分叉），upgrade/downgrade 可逆，【可回滚】标注通过 BTD401；新增 11 个后端测试（status 过滤 pending/ignored/deleted、path_like 模糊+通配符转义、别名/置信度注入、set_ignored 生命周期、cleanup_preview 拒绝已忽视）全过；孤儿相关回归 192 passed/1 skipped；迁移/枚举/回滚专项 306 passed；全量后端 2461 passed/6 skipped；black+flake8 干净。"
+        },
+        {
+          "id": "orphan-files-management-enhancement.2",
+          "name": "前端类型+视图+测试",
+          "description": "OrphanFileItem 加 confidence/canonical_path/is_ignored/downloader_name；OrphanListParams 加 status/path_like/min_size；OrphanScanContext 加 ignored_count；新增 setIgnored()。视图（Vue2 class-style）：下载器别名列（getDownloaderList 建 nickname 映射）、置信度列（high/low tag+tooltip）、忽视操作（行内+批量，按选中主导状态动态启停按钮，deleted 禁勾，混选禁用）、多条件搜索（路径/下载器 el-select/状态/大小）、已忽视统计卡。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "typecheck 干净；orphan-files.spec 16 passed（含别名/置信度渲染、搜索重置、批量忽视、混选禁用 4 个新增用例）；全量 Jest 24 suites/352 tests 通过；eslint 干净；生产 build 成功。"
         }
       ]
     },
