@@ -907,24 +907,32 @@ class TestFailClosed:
         with pytest.raises(OrphanScanIncompleteError):
             scanner._walk_scan_root(str(tmp_path), "dl_001", [])
 
-    def test_scan_fails_when_scoped_downloader_missing_mapping(
+    def test_scan_completes_when_scoped_downloader_missing_mapping(
         self, tmp_path, fake_app, fake_qb_client, monkeypatch
     ):
-        """端到端：扫描根涉及的下载器 inventory 含缺映射 save_path → scan() fail-closed。
+        """端到端：下载器 inventory 含缺映射 save_path → 该下载器降级，scan() 仍 completed。
 
-        覆盖审查缺口：验证 ManifestBuildError 从真实 build() 穿透到 scan() 结果。
-        - collect 阶段：dl-a 的 /downloads/mapped 有映射 → 进 scan_roots（scoped_ids 含 dl-a）
-        - build 阶段：dl-a 的 inventory 含另一个缺映射 save_path → raise ManifestBuildError
-        - scan() 异常分支返回 status=failed + error 含定位信息 + warnings 字段存在
+        语义重做（v1.0.7+ 跨下载器共享目录修复）：缺映射从整批 fail-closed 改为单下载器
+        降级。验证：
+        - collect 阶段：dl-a 的 /downloads/mapped 有映射 → 进 scan_roots
+        - build 阶段：dl-a inventory 含缺映射 save_path → dl-a 降级（不 raise）
+        - scan() 返回 status=completed（不再 failed）+ degraded_downloader_ids 含 dl-a
         """
         from tests.services.conftest import make_downloader_vo
 
-        # dl-a 的 inventory：一个有映射（/downloads/mapped），一个缺映射（/downloads/unmapped）
+        # 建一个真实存在的映射目录，作为有效扫描根
+        mapped_root = tmp_path / "mapped"
+        mapped_root.mkdir()
+        # 映射根下一个非孤儿的孤儿文件（dl-a 降级后走目录粗筛；此文件不在任何种子目录
+        # 下，应被判 low confidence 孤儿）
+        orphan_file = mapped_root / "stranger.mkv"
+        orphan_file.write_bytes(b"x")
+
+        # dl-a 的 inventory：一个有映射，一个缺映射 → 整个 dl-a 降级
         fake_qb_client.torrents_info.return_value = [
-            SimpleNamespace(hash="hash-mapped", save_path="/downloads/mapped"),
+            SimpleNamespace(hash="hash-mapped", save_path=str(mapped_root)),
             SimpleNamespace(hash="hash-unmapped", save_path="/downloads/unmapped"),
         ]
-        # 有映射种子的文件清单
         fake_qb_client.torrents.files.return_value = [
             SimpleNamespace(name="mapped.mkv")
         ]
@@ -933,14 +941,14 @@ class TestFailClosed:
         )
         fake_app.state.store.get_snapshot = AsyncMock(return_value=[vo])
 
-        # 构造带映射的 BtDownloaders 配置（/downloads/mapped → /downloads/mapped）
+        # 构造带映射的 BtDownloaders 配置（mapped_root → mapped_root，真实存在的目录）
         mapped_config = SimpleNamespace(
             downloader_id="dl-a",
             downloader_type=0,
             path_mapping=None,
             path_mapping_service=SimpleNamespace(
                 get_mappings=lambda: [
-                    {"internal": "/downloads/mapped", "external": "/downloads/mapped"}
+                    {"internal": str(mapped_root), "external": str(mapped_root)}
                 ],
                 get_rules=lambda: [],
                 internal_to_external=lambda path: path,
@@ -953,9 +961,9 @@ class TestFailClosed:
         )
 
         def collect_paths(scanner):
-            # collect 阶段：/downloads/mapped 成功映射进 scan_roots（涉及 dl-a）
+            # collect 阶段：mapped_root 成功映射进 scan_roots（涉及 dl-a）
             scanner._scan_path_selection = ScanPathSelection(
-                scan_roots=(("/downloads/mapped", "dl-a"),),
+                scan_roots=((str(mapped_root), frozenset({"dl-a"})),),
                 warnings=(
                     PathMappingWarning(
                         downloader_id="dl-other",
@@ -975,7 +983,7 @@ class TestFailClosed:
             lambda self: [mapped_config],
         )
         monkeypatch.setattr(OrphanScanner, "_collect_scan_paths", collect_paths)
-        # 跳过 finalize/notify（扫描会在 build 阶段失败，走不到这步）
+        # 跳过 finalize/notify（仅验证 scan() 主流程的降级语义）
         monkeypatch.setattr(
             OrphanScanner, "_finalize_successful_scan", _async_noop
         )
@@ -989,12 +997,11 @@ class TestFailClosed:
             )
         )
 
-        assert result["status"] == "failed"
-        # error 含定位信息：下载器 id + hash + save_path
-        assert "dl-a" in result["error"]
-        assert "未找到有效路径映射" in result["error"]
-        assert "/downloads/unmapped" in result["error"]
-        # collect 阶段 warning 仍透传（raise 前已写入 _scan_warnings）
+        # 缺映射降级 → scan() 仍 completed（不再 failed）
+        assert result["status"] == "completed"
+        # dl-a 被标记为降级
+        assert "dl-a" in result["degraded_downloader_ids"]
+        # collect 阶段 warning 仍透传
         assert result["total_paths_skipped"] == 1
         assert result["warnings"][0]["code"] == "path_mapping_not_found"
 

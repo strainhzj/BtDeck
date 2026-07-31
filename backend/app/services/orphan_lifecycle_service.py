@@ -32,9 +32,7 @@ logger = logging.getLogger(__name__)
 def _path_in_scan_roots(path: str, scan_roots: Sequence[str]) -> bool:
     candidate_path = os.path.normcase(os.path.realpath(os.path.abspath(path)))
     for root in scan_roots:
-        normalized_root = os.path.normcase(
-            os.path.realpath(os.path.abspath(root))
-        )
+        normalized_root = os.path.normcase(os.path.realpath(os.path.abspath(root)))
         try:
             if os.path.commonpath([candidate_path, normalized_root]) == normalized_root:
                 return True
@@ -107,6 +105,7 @@ class OrphanLifecycleService:
                     consecutive_scan_count=1,
                     status="candidate",
                     file_size=orphan.get("file_size", 0),
+                    confidence=orphan.get("confidence", "high"),
                     mtime_ns=orphan.get("mtime_ns"),
                     device_id=str(orphan["device_id"]) if orphan.get("device_id") is not None else None,
                     inode=str(orphan["inode"]) if orphan.get("inode") is not None else None,
@@ -124,6 +123,7 @@ class OrphanLifecycleService:
                 existing_cand.last_seen_scan_id = scan_id
                 existing_cand.status = "candidate"
                 existing_cand.file_size = orphan.get("file_size", existing_cand.file_size)
+                existing_cand.confidence = orphan.get("confidence", "high")
                 if orphan.get("mtime_ns") is not None:
                     existing_cand.mtime_ns = orphan["mtime_ns"]
                 if orphan.get("device_id") is not None:
@@ -134,14 +134,8 @@ class OrphanLifecycleService:
 
         # 处理未出现在本次清单中的旧 candidate → resolved
         for path, cand in existing.items():
-            in_successful_scope = scan_roots is None or _path_in_scan_roots(
-                path, scan_roots
-            )
-            if (
-                path not in seen_paths
-                and cand.status == "candidate"
-                and in_successful_scope
-            ):
+            in_successful_scope = scan_roots is None or _path_in_scan_roots(path, scan_roots)
+            if path not in seen_paths and cand.status == "candidate" and in_successful_scope:
                 cand.status = "resolved"
                 resolved += 1
 
@@ -157,7 +151,8 @@ class OrphanLifecycleService:
         """获取满足清理条件的候选（连续成为孤儿的时间 > days_threshold 天）。
 
         清理依据「连续成为孤儿的时间」（last_seen_at - first_seen_at），不再依据 mtime。
-        只返回 status=candidate 的候选。
+        只返回 status=candidate 且 confidence='high' 的候选——low confidence（离线降级
+        目录粗筛产出）仅展示不清理，需等下载器上线经精筛复核提升为 high 后才可清理。
 
         Args:
             days_threshold: 连续孤儿天数阈值
@@ -170,6 +165,7 @@ class OrphanLifecycleService:
             select(OrphanCurrentCandidate).where(
                 OrphanCurrentCandidate.status == "candidate",
                 OrphanCurrentCandidate.operation_state == "stable",
+                OrphanCurrentCandidate.confidence == "high",
                 OrphanCurrentCandidate.first_seen_at < cutoff,
             )
         )

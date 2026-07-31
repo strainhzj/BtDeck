@@ -949,3 +949,82 @@ class TestConcurrentLease:
         # 新进程接管
         acquired = await acquire_lease("orphan_scan", owner="recovery_proc", ttl=3600, db=async_orphan_db)
         assert acquired, "崩溃进程的 lease 过期后应能恢复"
+
+    # ==================== v1.0.7+ confidence 门槛 ====================
+
+    async def test_cleanup_rejects_low_confidence_candidate(self, async_orphan_db, tmp_path):
+        """low confidence 候选（离线降级目录粗筛产出）不允许清理，需等下载器上线
+        经精筛复核提升为 high 后才可清理。
+
+        回归本案：tr_lpan/tr 映射缺失产出的孤儿是误判，必须阻止其进入清理流程。
+        """
+        from app.services.orphan_file_service import OrphanFileService
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanFile,
+            OrphanScanResult,
+        )
+        from app.services.orphan_manifest import ManifestSnapshot, normalize_path
+
+        f = tmp_path / "low_confidence_orphan.bin"
+        f.write_bytes(b"x" * 100)
+        canonical = normalize_path(str(f))
+
+        async_orphan_db.add(
+            OrphanScanResult(
+                scan_id="scan_low",
+                scan_time=datetime.utcnow(),
+                scan_type="manual",
+                status="completed",
+            )
+        )
+        async_orphan_db.add(
+            OrphanFile(
+                scan_id="scan_low",
+                file_path=str(f),
+                file_size=100,
+                mtime=datetime.utcnow(),
+                downloader_id="dl_001",
+                confidence="low",
+            )
+        )
+        # low confidence 候选：离线降级目录粗筛产出
+        async_orphan_db.add(
+            OrphanCurrentCandidate(
+                canonical_path=canonical,
+                downloader_id="dl_001",
+                first_seen_at=datetime.utcnow(),
+                last_seen_at=datetime.utcnow(),
+                last_seen_scan_id="scan_low",
+                status="candidate",
+                operation_state="stable",
+                file_size=100,
+                confidence="low",
+            )
+        )
+        await async_orphan_db.commit()
+
+        # mock manifest：文件不在 expected，路径授权通过（隔离场景），但 confidence=low
+        service = OrphanFileService(async_orphan_db)
+        manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[(str(tmp_path), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        with patch.object(
+            OrphanFileService, "_build_realtime_manifest", return_value=manifest
+        ):
+            result = await service.cleanup_orphans(
+                orphan_ids=[1],
+                operator="admin",
+                store=MagicMock(),
+                scan_id="scan_low",
+                _lease_acquired=True,
+            )
+
+        assert result["success_count"] == 0, "low confidence 候选不应被清理"
+        assert any(
+            "低置信度" in (item.get("reason") or "")
+            for item in result.get("failed_list", [])
+        ), "应返回低置信度拒绝原因"
+        assert f.exists(), "文件不应被删除"

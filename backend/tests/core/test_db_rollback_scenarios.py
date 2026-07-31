@@ -29,7 +29,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "8f4c2d1a9b7e"  # 当前 head（ratio 数值约束/兼容修复）
+REV_HEAD = "f2a7c91b4d6e"  # 当前 head（orphan confidence + 存量 candidate resolved）
 
 
 def _make_cfg(db_path: str) -> Config:

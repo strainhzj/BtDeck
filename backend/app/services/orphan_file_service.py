@@ -157,8 +157,9 @@ class OrphanFileService:
         if candidate.downloader_id not in manifest.downloader_ids:
             return False
         candidate_path = os.path.realpath(candidate.canonical_path)
-        for root, downloader_id in manifest.scan_roots:
-            if downloader_id != candidate.downloader_id:
+        for root, owners in manifest.scan_roots:
+            # 共享根场景：候选 downloader_id 是该根任一 owner 即授权
+            if candidate.downloader_id not in owners:
                 continue
             try:
                 if os.path.commonpath([candidate_path, os.path.realpath(root)]) == os.path.realpath(root):
@@ -171,8 +172,8 @@ class OrphanFileService:
     def _owning_root(candidate: OrphanCurrentCandidate, manifest: ManifestSnapshot) -> Optional[str]:
         matches = []
         candidate_path = os.path.realpath(candidate.canonical_path)
-        for root, downloader_id in manifest.scan_roots:
-            if downloader_id != candidate.downloader_id:
+        for root, owners in manifest.scan_roots:
+            if candidate.downloader_id not in owners:
                 continue
             try:
                 if os.path.commonpath([candidate_path, os.path.realpath(root)]) == os.path.realpath(root):
@@ -385,6 +386,8 @@ class OrphanFileService:
                 OrphanFile.id.in_(orphan_ids),
                 OrphanFile.scan_id == scan_id,
                 OrphanFile.is_deleted == False,  # noqa: E712
+                # 清理门槛：仅 high confidence 可进入清理流程，low confidence 不进预览。
+                OrphanFile.confidence == "high",
             )
         )
         items = result.scalars().all()
@@ -398,6 +401,7 @@ class OrphanFileService:
                     "id": item.id,
                     "file_path": item.file_path,
                     "file_size": item.file_size,
+                    "confidence": item.confidence,
                 }
                 for item in items
             ],
@@ -546,6 +550,17 @@ class OrphanFileService:
                             "id": item.id,
                             "file_path": item.file_path,
                             "reason": "文件不属于实时 manifest 授权扫描根",
+                        }
+                    )
+                    continue
+                # 清理门槛：仅 high confidence（在线精筛判定）允许清理；
+                # low confidence（离线降级目录粗筛）仅展示，需等下载器上线经精筛复核提升后清理。
+                if (candidate.confidence or "high") != "high":
+                    failed_list.append(
+                        {
+                            "id": item.id,
+                            "file_path": item.file_path,
+                            "reason": "低置信度孤儿（离线降级粗筛），需等下载器上线重新精筛后清理",
                         }
                     )
                     continue
@@ -1327,12 +1342,8 @@ class OrphanFileService:
                     "scan_id": result.get("scan_id"),
                     "scan_type": scan_type,
                     "total_orphans": result.get("total_orphans", 0),
-                    "total_paths_scanned": result.get(
-                        "total_paths_scanned", 0
-                    ),
-                    "total_paths_skipped": result.get(
-                        "total_paths_skipped", 0
-                    ),
+                    "total_paths_scanned": result.get("total_paths_scanned", 0),
+                    "total_paths_skipped": result.get("total_paths_skipped", 0),
                     "warnings": result.get("warnings", []),
                     "status": result.get("status"),
                 },

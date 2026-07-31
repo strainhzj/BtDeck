@@ -78,6 +78,7 @@ class OrphanFileItem:
         "device_id",
         "inode",
         "downloader_id",
+        "confidence",
     )
 
     def __init__(
@@ -89,6 +90,7 @@ class OrphanFileItem:
         mtime_ns: Optional[int] = None,
         device_id: Optional[int] = None,
         inode: Optional[int] = None,
+        confidence: str = "high",
     ):
         self.file_path = file_path
         self.file_size = file_size
@@ -97,6 +99,8 @@ class OrphanFileItem:
         self.device_id = device_id
         self.inode = inode
         self.downloader_id = downloader_id
+        # high: 在线下载器精筛判定的孤儿；low: 离线/降级下载器经目录粗筛兜底后的孤儿
+        self.confidence = confidence
 
 
 def _normalize_path(path: str) -> str:
@@ -132,6 +136,10 @@ class OrphanScanner:
         self._scan_warnings: List[PathMappingWarning] = []
         # inode 去重集合（跨平台 (st_dev, st_ino)）
         self._seen_inodes: Set[Tuple[int, int]] = set()
+        # 目录级粗筛白名单（离线降级兜底）：normalize_path 后的种子根目录集合
+        self._directory_whitelist: Set[str] = set()
+        # 精筛不可用、降级为目录粗筛的下载器集合（其范围孤儿标 low confidence）
+        self._degraded_downloader_ids: Set[str] = set()
 
     async def scan(self, scan_type: str = "manual", operator: Optional[str] = None) -> Dict[str, Any]:
         """主扫描入口（异步）。
@@ -152,6 +160,8 @@ class OrphanScanner:
         self._scan_path_selection = None
         self._scan_warnings = []
         self._seen_inodes = set()
+        self._directory_whitelist = set()
+        self._degraded_downloader_ids = set()
 
         # 1. 创建扫描批次记录（status=running）
         await self._create_scan_record(scan_id, scan_time, scan_type, operator)
@@ -171,8 +181,7 @@ class OrphanScanner:
             skipped_path_count = len(self._scan_warnings)
             if skipped_path_count:
                 logger.warning(
-                    "[孤儿扫描 %s] %s 个路径因缺少有效映射已记录并跳过；"
-                    "任务继续处理其余路径",
+                    "[孤儿扫描 %s] %s 个路径因缺少有效映射已记录并跳过；" "任务继续处理其余路径",
                     scan_id,
                     skipped_path_count,
                 )
@@ -211,9 +220,8 @@ class OrphanScanner:
                 "total_orphans": len(orphans),
                 "total_orphan_size": total_orphan_size,
                 "total_paths_skipped": skipped_path_count,
-                "warnings": [
-                    warning.to_dict() for warning in self._scan_warnings
-                ],
+                "degraded_downloader_ids": sorted(self._degraded_downloader_ids),
+                "warnings": [warning.to_dict() for warning in self._scan_warnings],
                 "status": "completed",
             }
 
@@ -225,9 +233,7 @@ class OrphanScanner:
                 "status": "failed",
                 "error": str(e),
                 "total_paths_skipped": len(self._scan_warnings),
-                "warnings": [
-                    warning.to_dict() for warning in self._scan_warnings
-                ],
+                "warnings": [warning.to_dict() for warning in self._scan_warnings],
             }
 
     def _assert_store_available(self) -> None:
@@ -244,61 +250,53 @@ class OrphanScanner:
         也会被排除。内部路径必须命中显式映射，否则记录告警并跳过。
 
         Returns:
-            [(external_path, downloader_id), ...] 去重后的列表（稳定排序）
+            [(external_path, downloader_id), ...] 去重后的列表（稳定排序）。
+            scan_roots 现为多 owner（共享根），这里取 owners 的代表 id 用于
+            孤儿归属标记；完整 owner 集合保留在 self._scan_path_selection。
         """
         selection = collect_scan_path_selection(self._sync_session_factory)
         self._scan_path_selection = selection
         self._scan_warnings = list(selection.warnings)
-        return [
-            (path, downloader_id)
-            for path, downloader_id in selection.scan_roots
-        ]
+        return [(path, next(iter(owners)) if owners else None) for path, owners in selection.scan_roots]
 
-    def _convert_to_external(
-        self, internal_path: str, downloader: Optional[BtDownloaders]
-    ) -> Optional[str]:
+    def _convert_to_external(self, internal_path: str, downloader: Optional[BtDownloaders]) -> Optional[str]:
         """严格转换内部路径；未命中显式映射时返回 None。"""
         return resolve_external_path(internal_path, downloader)
 
     # ==================== 种子文件清单构建 ====================
 
     async def _build_torrent_file_map(self) -> None:
-        """构建种子文件清单（expected_files 集合）。
+        """构建种子文件清单（精筛 expected + 目录粗筛白名单 + 降级标记）。
 
-        语义重做：
-        - 使用 DownloadLane.SYNC（重型周期任务走 sync lane）
-        - 不强制走 DownloaderDeleteAdapter：允许正确实现直接调用共享客户端
-        - 每个种子独立转换 save_path（修复「同一下载器两个 save_path」bug）
-        - 使用规范化的全局 expected path 集合（normcase+normpath）
-        - fail-closed：任一种子清单获取失败 → 抛 OrphanScanIncompleteError（不 continue）
-        - fail-closed：任一可用下载器缺 client / fail_time>0 → 抛异常（不静默跳过）
-        - fail-closed 范围 = 扫描根涉及的下载器集合：只对这些下载器的 save_path
-          缺映射 fail-closed；作用域外下载器（路径不落任何扫描根）不受影响，
-          避免破坏性变更
+        语义重做（v1.0.7+ 跨下载器共享目录修复）：
+        - 精筛作用域 = 全部启用下载器（不再从去重后 scan_roots 推导，消除共享根
+          first-writer-wins 导致其他下载器文件漏入 expected 的盲区）。
+        - 在线下载器：拉文件级清单进 expected（精筛）。
+        - 离线/映射缺失/清单失败下载器：不 fail-closed 整批失败，记入降级集合，
+          其文件由 directory_whitelist 在 _walk_scan_root 做目录粗筛兜底，
+          产出的孤儿标 low confidence。
+        - 仍 fail-closed 的硬错误（store 未初始化、无启用配置等）由 build 抛出。
         """
-        # 统一以下载器实时 inventory 为权威；DB 仅用于下载器配置和路径映射。
-        # 作用域 = 本次扫描根涉及的下载器；build 内只对这些下载器做映射完整性
-        # fail-closed。scan_roots 由 collect_scan_path_selection 选出，缺映射的
-        # 路径已在 collect 阶段被跳过（不进 scan_roots），故这里的下载器集合必然
-        # 是已配映射的；若其 inventory 出现另一个缺映射 save_path，正是其文件
-        # 可能落到本扫描范围下被误判孤儿的真实风险源，必须 fail-closed。
-        scan_roots = self._scan_path_selection.scan_roots if self._scan_path_selection else ()
-        scoped_downloader_ids = {
-            downloader_id for _, downloader_id in scan_roots if downloader_id
-        }
+        # 扫描路径全量语义：required_downloader_ids=None 遍历全部启用下载器。
         try:
             snapshot = await TorrentManifestBuilder(
                 self.app.state.store,
                 scan_path_selection=self._scan_path_selection,
                 session_factory=self._sync_session_factory,
             ).build(
-                required_downloader_ids=scoped_downloader_ids or None,
+                required_downloader_ids=None,
             )
         except ManifestBuildError as exc:
             raise OrphanScanIncompleteError(str(exc)) from exc
         self._expected_files = {"__global__": set(snapshot.expected_paths)}
-        self._manifest_scan_paths = [(path, downloader_id) for path, downloader_id in snapshot.scan_roots]
+        # scan_roots 现为 (path, owners_set)；_walk_all_roots 需要扁平化为
+        # (path, downloader_id) 用于孤儿归属标记（取 owners 的任一代表）。
+        self._manifest_scan_paths = [
+            (path, next(iter(owners)) if owners else None) for path, owners in snapshot.scan_roots
+        ]
         self._scan_warnings = list(snapshot.warnings)
+        self._directory_whitelist = set(snapshot.directory_whitelist)
+        self._degraded_downloader_ids = set(snapshot.degraded_downloader_ids)
         self._scan_path_selection = ScanPathSelection(
             scan_roots=tuple(snapshot.scan_roots),
             warnings=snapshot.warnings,
@@ -460,9 +458,20 @@ class OrphanScanner:
                     logger.warning(f"[孤儿扫描] 跨驱动器路径，跳过: {abs_path}")
                     continue
 
-                # 检查是否在种子文件清单中（规范化 key 匹配）
+                # 第一层（精筛）：文件级清单命中 → 非孤儿
                 if normalized_abs in expected:
                     continue
+
+                # 第二层（离线降级目录粗筛）：仅当该文件所属下载器处于降级范围时启用。
+                # 降级下载器无法做文件级精筛，改用目录级粗筛兜底——文件若落在任一种子
+                # 根目录下则保护（不判孤儿），避免误删；否则标 low confidence 孤儿。
+                downloader_id_str = downloader_id if downloader_id else ""
+                if downloader_id_str in self._degraded_downloader_ids:
+                    if self._in_directory_whitelist(abs_path, normalized_abs):
+                        continue
+                    confidence = "low"
+                else:
+                    confidence = "high"
 
                 # 孤儿文件
                 orphans.append(
@@ -474,6 +483,7 @@ class OrphanScanner:
                         mtime_ns=stat_info.st_mtime_ns,
                         device_id=stat_info.st_dev,
                         inode=stat_info.st_ino,
+                        confidence=confidence,
                     )
                 )
 
@@ -533,6 +543,23 @@ class OrphanScanner:
         """检查文件名是否匹配任一排除模式（fnmatch 语法）"""
         return any(fnmatch.fnmatch(filename, pat) for pat in patterns)
 
+    def _in_directory_whitelist(self, abs_path: str, normalized_abs: str) -> bool:
+        """判断文件是否落在目录粗筛白名单任一种子根目录下（离线降级兜底）。
+
+        用 os.path.commonpath 校验：文件的规范化路径若以某白名单目录为前缀
+        （commonpath == 该目录）即视为命中。白名单目录按长度倒序匹配，命中即返回。
+        """
+        if not self._directory_whitelist:
+            return False
+        for dir_path in self._directory_whitelist:
+            try:
+                if os.path.commonpath([dir_path, normalized_abs]) == dir_path:
+                    return True
+            except ValueError:
+                # 跨驱动器（Windows）commonpath 抛 ValueError，直接跳过该目录
+                continue
+        return False
+
     # ==================== 生命周期对账 + 通知 ====================
 
     async def _reconcile_lifecycle(
@@ -558,6 +585,7 @@ class OrphanScanner:
                 "mtime_ns": o.mtime_ns,
                 "device_id": o.device_id,
                 "inode": o.inode,
+                "confidence": o.confidence,
             }
             for o in orphans
         ]
@@ -619,6 +647,7 @@ class OrphanScanner:
                     file_size=o.file_size,
                     mtime=o.mtime,
                     downloader_id=o.downloader_id,
+                    confidence=o.confidence,
                 )
                 for o in orphans
             ]
@@ -679,6 +708,7 @@ class OrphanScanner:
                         file_size=o.file_size,
                         mtime=o.mtime,
                         downloader_id=o.downloader_id,
+                        confidence=o.confidence,
                     )
                     for o in batch
                 ]
