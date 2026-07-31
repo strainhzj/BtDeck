@@ -28,8 +28,13 @@ ENV/
 *.swo
 *~
 
-# 测试和覆盖率
+# 测试和覆盖率（含 pytest 运行时残留目录，部分可能权限损坏无法读取，
+# 一律排除以防 Docker 加载上下文时遍历失败导致整个构建中断）
 .pytest_cache/
+.pytest*
+.pytest-final-*/
+.pytest-p1-close-*/
+.pytest-runtime/
 .coverage
 htmlcov/
 .tox/

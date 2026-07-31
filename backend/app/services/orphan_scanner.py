@@ -392,17 +392,38 @@ class OrphanScanner:
     def _walk_all_roots(self, scan_paths: List[Tuple[str, Optional[str]]]) -> List[OrphanFileItem]:
         """遍历所有扫描根目录（同步方法，由 to_thread 调用）。
 
-        fail-closed：扫描根不存在 → 抛 OrphanScanIncompleteError（不静默跳过返回空）。
+        单根降级语义：单个扫描根不存在/非目录时记 warning 并跳过该根，继续扫其余根，
+        不让整个扫描失败。扫描根来自 DB 的种子 save_path 映射，单文件种子/已删种子
+        的 save_path 在磁盘上可能不是目录，这是正常运维现象（非配置错误），不应让
+        一个异常路径瘫痪整个扫描。该根下文件不被扫到 = 保守地不会误判孤儿，安全。
+
+        兜底 fail-closed：若全部扫描根都不存在（扫描范围完全失效），仍抛异常，避免
+        基于"什么都没扫到"误判为"无孤儿"。
         """
         orphans: List[OrphanFileItem] = []
         exclude_patterns = self._parse_exclude_patterns()
+        skipped_roots: List[str] = []
 
         for root_path, downloader_id in scan_paths:
-            # fail-closed：扫描根必须存在且是目录
             if not os.path.isdir(root_path):
-                raise OrphanScanIncompleteError(f"扫描根不存在或非目录: {root_path}")
+                # 单根降级：记 warning 跳过，不 raise（可能是单文件种子/已删种子的
+                # save_path 形态，磁盘上非目录）。
+                logger.warning(
+                    "[孤儿扫描] 扫描根不存在或非目录，跳过该根: %s (downloader=%s)",
+                    root_path,
+                    downloader_id,
+                )
+                skipped_roots.append(root_path)
+                continue
 
             orphans.extend(self._walk_scan_root(root_path, downloader_id, exclude_patterns))
+
+        # 兜底：所有扫描根都不存在 → 扫描范围完全失效，fail-closed 避免空扫描被
+        # 误判为"无孤儿"。
+        if scan_paths and len(skipped_roots) == len(scan_paths):
+            raise OrphanScanIncompleteError(
+                f"全部 {len(scan_paths)} 个扫描根均不存在或非目录，扫描范围完全失效: {skipped_roots[:3]}"
+            )
 
         return orphans
 

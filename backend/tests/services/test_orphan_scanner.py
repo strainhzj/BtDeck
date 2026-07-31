@@ -823,6 +823,40 @@ class TestFailClosed:
         result = asyncio_run(scanner.scan(scan_type="manual", operator="test"))
         self._assert_failed(result)
 
+    def test_single_nonexistent_root_degraded_others_scanned(self, fake_app, tmp_path, monkeypatch):
+        """单个扫描根不存在/非目录时降级跳过该根，继续扫其余根，扫描仍 completed。
+
+        回归本案：单文件种子/已删种子的 save_path 在磁盘上不是目录，这是正常运维
+        现象，不应让一个异常路径瘫痪整个扫描。该根下文件不被扫到（保守不误判孤儿）。
+        """
+        # 根1：真实存在的目录，含一个孤儿文件
+        good_root = tmp_path / "exists"
+        good_root.mkdir()
+        orphan_file = good_root / "orphan.bin"
+        orphan_file.write_bytes(b"x")
+        # 根2：不存在的路径（模拟单文件种子/已删种子的 save_path）
+        bad_root = str(tmp_path / "nonexistent_seed_dir")
+
+        monkeypatch.setattr(
+            OrphanScanner,
+            "_collect_scan_paths",
+            lambda self: [(str(good_root), "dl_good"), (bad_root, "dl_bad")],
+        )
+
+        async def noop_build(self):
+            self._expected_files = {"__global__": set()}
+            self._directory_whitelist = set()
+            self._degraded_downloader_ids = set()
+
+        monkeypatch.setattr(OrphanScanner, "_build_torrent_file_map", noop_build)
+        scanner = OrphanScanner(app=fake_app)
+        result = asyncio_run(scanner.scan(scan_type="manual", operator="test"))
+
+        # 单根不存在 → 降级跳过，不整批失败
+        assert result["status"] == "completed", "单根不存在应降级跳过，扫描仍 completed"
+        # 存在的根下的孤儿仍被扫到
+        assert result["total_orphans"] >= 1, "存在的根下孤儿应被扫到"
+
     def test_no_auto_cleanup_on_failure(self, fake_app, monkeypatch):
         """扫描失败时不调用自动清理。"""
         cleanup_calls = []
