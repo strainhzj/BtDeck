@@ -806,3 +806,138 @@ async def test_directory_whitelist_filters_by_downloader(tmp_path):
     assert normalize_path(str(root_a / "TorrentA")) in whitelist.dirs
     assert normalize_path(str(root_b)) not in whitelist.dirs
     assert normalize_path(str(root_b / "TorrentB")) not in whitelist.dirs
+
+
+async def test_partial_seed_degrade_downloader_excluded_from_cleanup_ids(tmp_path):
+    """下载器有任一 per-seed 降级种子 → 整体退出 downloader_ids（清理授权不可靠）。
+
+    回归修复 1 的清理授权语义：orphan_file_service._path_authorized 依赖
+    downloader_ids 判断候选所属下载器的文件级判定是否可靠。per-seed 语义下，
+    即使部分种子精筛进 expected，只要有一个种子缺映射/清单失败，该下载器整体
+    退出 downloader_ids —— 否则缺映射种子的文件若被误判孤儿，清理授权会误删
+    不可靠判定的文件。
+    """
+    mapped_root = tmp_path / "mapped"
+    mapped_root.mkdir()
+    client = MagicMock()
+    client.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-mapped", save_path=str(mapped_root)),
+        SimpleNamespace(hash="hash-unmapped", save_path="/downloads/unmapped"),
+    ]
+    client.torrents.files.return_value = [SimpleNamespace(name="mapped.mkv")]
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="tr", client=client, fail_time=0)
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("tr", 0, str(mapped_root))]
+
+    snapshot = await builder.build()
+
+    # 可映射种子仍精筛进 expected（per-seed 不整体降级）
+    assert normalize_path(str(mapped_root / "mapped.mkv")) in snapshot.expected_paths
+    # 但下载器有降级种子 → 退出 downloader_ids（清理授权不可靠，不得清理其候选）
+    assert "tr" not in snapshot.downloader_ids
+    assert "tr" in snapshot.degraded_downloader_ids
+
+
+async def test_inventory_failure_downloader_db_seed_dirs_in_whitelist(tmp_path):
+    """inventory 拉取失败（下载器级）→ 该下载器的 DB 种子目录进粗筛白名单。
+
+    完整链路回归（不 monkeypatch）：inventory 失败 → inventory_failed_ids →
+    build 用 collect_torrent_directory_whitelist(downloader_ids={dl-x}) 从 DB
+    收集该下载器的种子目录 → 白名单包含它们，供扫描阶段粗筛兜底保护（其文件
+    不被共享目录在线下载器扫描根误判孤儿）。
+    """
+    from app.services.orphan_manifest import (
+        collect_torrent_directory_whitelist,  # noqa: F401  # 确保导入不误用 monkeypatch
+    )
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.database import Base
+    from app.downloader.models import BtDownloaders
+    from app.models.downloader_path_maintenance import DownloaderPathMaintenance
+    from app.torrents.models import TorrentInfo
+
+    external_root = tmp_path / "dlx-root"
+    external_root.mkdir()
+
+    # StaticPool 共享单连接：build 内 collect_torrent_directory_whitelist 在
+    # asyncio.to_thread 的新线程执行，:memory: 默认每连接独立库会丢表。
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            BtDownloaders.__table__,
+            TorrentInfo.__table__,
+            DownloaderPathMaintenance.__table__,
+        ],
+    )
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    db.execute(
+        BtDownloaders.__table__.insert(),
+        {
+            "downloader_id": "dl-x",
+            "nickname": "x",
+            "host": "h",
+            "username": "u",
+            "password": "p",
+            "downloader_type": 0,
+            "enabled": True,
+            "dr": 0,
+        },
+    )
+    db.execute(
+        TorrentInfo.__table__.insert(),
+        {
+            "info_id": "i-x",
+            "downloader_id": "dl-x",
+            "downloader_name": "x",
+            "hash": "h-x",
+            "name": "MyTorrent",
+            "save_path": str(external_root),
+            "enabled": True,
+            "dr": 0,
+        },
+    )
+    db.commit()
+    db.close()
+
+    # dl-x 的 inventory 拉取抛异常 → 下载器级降级（不是 per-seed）
+    client_x = MagicMock()
+    client_x.torrents_info.side_effect = RuntimeError("connection lost")
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="dl-x", client=client_x, fail_time=0)
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(
+        store,
+        scan_path_selection=ScanPathSelection(),
+        session_factory=Session,
+    )
+    builder._load_configs = lambda: [_config("dl-x", 0, str(external_root))]
+
+    snapshot = await builder.build()
+
+    # inventory 失败 → 下载器整体降级 + 退出 downloader_ids
+    assert "dl-x" in snapshot.degraded_downloader_ids
+    assert "dl-x" not in snapshot.downloader_ids
+    # 其 DB 种子目录经真实 collect_torrent_directory_whitelist 进粗筛白名单
+    assert normalize_path(str(external_root)) in snapshot.directory_whitelist
+    assert normalize_path(str(external_root / "MyTorrent")) in snapshot.directory_whitelist
