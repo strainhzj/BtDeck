@@ -73,13 +73,19 @@ class ManifestSnapshot:
     """实时下载器清单快照。
 
     Attributes:
-        expected_paths: 在线下载器种子的「文件级」精确白名单（精筛）。
-        directory_whitelist: 全部有效种子「目录级」粗筛白名单（离线降级兜底）。
-            由 save_path + name 构造，每个种子保守加入两个候选目录。
+        expected_paths: 在线下载器可精筛种子的「文件级」精确白名单（per-seed 精筛）。
+            单个种子缺映射/清单失败只让该种子降级，其余种子文件仍并入 expected。
+        directory_whitelist: 「降级种子」目录级粗筛白名单（离线降级兜底）。
+            只含精筛失败的种子目录（per-seed 缺映射/清单失败种子 + inventory 级
+            失败下载器的 DB 种子目录），由 save_path + name 构造。精筛成功种子的
+            目录不在白名单——其文件已被 expected 文件级覆盖，避免粗筛误保护在线
+            下载器的真孤儿。
         scan_roots: 与 ScanPathSelection.scan_roots 同结构（多 owner）。
-        downloader_ids: 本次成功拉到文件清单的在线下载器集合（精筛来源）。
-        degraded_downloader_ids: 离线/映射缺失/清单拉取失败的下载器集合
-            （其文件走粗筛降级判定，产出的孤儿标 low confidence）。
+        downloader_ids: 「文件级判定可靠」的在线下载器集合（允许清理授权依据）。
+            下载器有任一 per-seed 降级种子即退出此集合（其文件无法完整精筛，
+            清理授权不可靠）。
+        degraded_downloader_ids: 有降级种子的下载器集合（离线/inventory 失败/
+            部分种子缺映射/清单失败），产出的孤儿标 low confidence 不可清理。
         warnings: 路径映射缺失告警。
     """
 
@@ -93,10 +99,10 @@ class ManifestSnapshot:
 
 @dataclass(frozen=True)
 class DirectoryWhitelist:
-    """全部有效种子的「目录级」粗筛白名单（离线降级兜底专用）。
+    """「降级种子」目录级粗筛白名单（离线降级兜底专用）。
 
-    磁盘文件规范化路径若 commonpath 命中任一目录，即视为落在某个种子目录下，
-    在下载器离线/映射缺失时保护其不被误判孤儿。
+    磁盘文件规范化路径若 commonpath 命中任一目录，即视为落在某个降级种子目录下，
+    在下载器离线/映射缺失时保护其不被误判孤儿（无条件粗筛判定，不依赖扫描根 owner）。
     """
 
     dirs: Set[str] = frozenset()  # type: ignore[assignment]
@@ -315,10 +321,11 @@ def collect_scan_path_selection(
 
 def collect_torrent_directory_whitelist(
     session_factory: Any = SessionLocal,
+    downloader_ids: Optional[Set[str]] = None,
 ) -> DirectoryWhitelist:
-    """构建全部有效种子的「目录级」粗筛白名单（离线降级兜底专用）。
+    """构建「降级下载器」种子的「目录级」粗筛白名单（离线降级兜底专用）。
 
-    对每个有效种子的 save_path：
+    对指定下载器集合内每个有效种子的 save_path：
     1. 优先经 resolve_external_path 转 external_root；映射缺失时用原 save_path 兜底
        （离线下载器的文件物理上仍可能落在别的在线下载器扫描根子树下，需保护）。
     2. 保守加入两个候选目录，覆盖单文件/多文件两种种子形态：
@@ -326,12 +333,19 @@ def collect_torrent_directory_whitelist(
        - join(external_root, name)（多文件种子的种子子目录）
        多加入只会让更多文件被保护（不误删），符合粗筛「宁可放过」语义。
 
+    Args:
+        downloader_ids: 仅收集这些下载器的种子目录；None = 全部下载器。
+            精筛成功下载器的种子目录不进白名单（其文件已被 expected 文件级覆盖），
+            避免目录粗筛把在线下载器的真孤儿误保护。
+
     Returns:
         DirectoryWhitelist(dirs)：规范化目录路径集合。
     """
     candidates = _load_torrent_path_candidates(session_factory)
     dirs: Set[str] = set()
     for cand in candidates:
+        if downloader_ids is not None and cand.downloader_id not in downloader_ids:
+            continue
         external_root = resolve_external_path(cand.save_path, cand.config)
         if external_root is None:
             # 映射缺失兜底：用原 save_path 作为目录根，避免离线下载器文件被误判。
@@ -368,12 +382,14 @@ class TorrentManifestBuilder:
                 精筛复核范围（A 的清理不受 B 离线影响）。None/空 = 扫描路径全量语义，
                 遍历全部启用下载器。
 
-        精筛/降级语义：
-        - 在线下载器（有 client + fail_time=0 + inventory 成功）：拉文件级清单加入
-          expected_paths（精筛）。
-        - 离线/无 client/映射缺失/inventory 失败：不抛 ManifestBuildError，记入
-          degraded_downloader_ids；其文件由 directory_whitelist 在扫描阶段做目录级
-          粗筛兜底，产出的孤儿标 low confidence。
+        精筛/降级语义（per-seed）：
+        - 在线下载器（有 client + fail_time=0 + inventory 成功）：逐种子精筛，可映射且
+          文件清单成功的种子文件并入 expected_paths（精筛）。
+        - 单个种子缺映射/清单失败/清单为空：仅该种子降级，其目录进 directory_whitelist
+          （粗筛保护），不影响其余种子——不再因个别种子故障整体降级（回归 tr 缺映射
+          2164 个种子拖垮 7792 个可映射种子的误判）。
+        - 离线/无 client/inventory 拉取失败：该下载器整体降级，其文件由 DB 种子目录
+          （directory_whitelist）在扫描阶段做目录级粗筛兜底，产出的孤儿标 low confidence。
         - 仍 fail-closed 的硬错误（store 未初始化、无任何启用配置、required 含未知
           下载器、共享缓存含无配置下载器）：整批 raise。
         """
@@ -415,30 +431,56 @@ class TorrentManifestBuilder:
         }
         protected_ids: Set[str] = set()
         degraded_downloader_ids: Set[str] = set()
+        # inventory 级失败（离线/无 client/fail_time/inventory 拉取失败）的下载器：
+        # 其文件完全没有文件级清单，只能靠 DB 种子目录粗筛兜底。
+        inventory_failed_ids: Set[str] = set()
+        # per-seed 降级（缺映射/文件清单失败/清单为空）的种子目录：粗筛白名单组成部分，
+        # 用于保护这些种子不被共享目录在线下载器扫描根误判孤儿。
+        degraded_seed_dirs: Set[str] = set()
 
         for config in scoped_configs:
             downloader_id = str(config.downloader_id)
             degraded = self._try_precise_filter(config, cached, expected, protected_ids)
             if degraded is not None:
                 degraded_downloader_ids.add(downloader_id)
+                inventory_failed_ids.add(downloader_id)
                 logger.warning(
                     "[孤儿清单] 下载器 %s 精筛不可用，降级为目录粗筛: %s",
                     downloader_id,
                     degraded,
                 )
                 continue
-            # 同步预检通过 → 异步拉取文件级清单（精筛）。拉取过程中任一环节失败
-            # 也会在该方法内把下载器记入 degraded_downloader_ids（不 raise）。
-            await self._build_precise_expected(config, cached, expected, protected_ids, degraded_downloader_ids)
+            # 同步预检通过 → 异步拉取文件级清单（精筛）。per-seed 语义：单个种子
+            # 缺映射/清单失败只让该种子降级（目录进 degraded_seed_dirs），其余种子
+            # 仍精筛进 expected，不再因个别种子拖垮整个下载器。
+            await self._build_precise_expected(
+                config,
+                cached,
+                expected,
+                protected_ids,
+                degraded_downloader_ids,
+                degraded_seed_dirs,
+                inventory_failed_ids,
+            )
 
-        # 目录粗筛白名单（离线降级兜底）：覆盖全部有效种子，不受下载器在线状态影响。
-        directory_whitelist = await asyncio.to_thread(collect_torrent_directory_whitelist, self.session_factory)
+        # 目录粗筛白名单（离线降级兜底）= per-seed 降级种子目录 ∪ inventory 级失败
+        # 下载器的 DB 种子目录。精筛成功下载器的种子目录不进白名单（其文件已被
+        # expected 文件级覆盖），避免目录粗筛把在线下载器的真孤儿误保护。
+        if inventory_failed_ids:
+            db_whitelist = await asyncio.to_thread(
+                collect_torrent_directory_whitelist,
+                self.session_factory,
+                downloader_ids=inventory_failed_ids,
+            )
+        else:
+            db_whitelist = DirectoryWhitelist()
+        directory_whitelist = set(db_whitelist.dirs) | degraded_seed_dirs
 
         return ManifestSnapshot(
             expected_paths=expected,
             scan_roots=[(path, frozenset(owners)) for path, owners in sorted(roots.items(), key=lambda item: item[0])],
             downloader_ids=protected_ids,
-            directory_whitelist=set(directory_whitelist.dirs),
+            directory_whitelist=directory_whitelist,
             degraded_downloader_ids=degraded_downloader_ids,
             warnings=tuple(warnings[key] for key in sorted(warnings, key=lambda item: (item[0], item[1]))),
         )
@@ -485,13 +527,18 @@ class TorrentManifestBuilder:
         expected: Set[str],
         protected_ids: Set[str],
         degraded_downloader_ids: Set[str],
+        degraded_seed_dirs: Set[str],
+        inventory_failed_ids: Set[str],
     ) -> None:
-        """对一个在线下载器拉取文件级清单并入 expected（精筛）。
+        """对一个在线下载器拉取文件级清单并入 expected（per-seed 精筛）。
 
         同步预检已由 _try_precise_filter 完成；本方法继续执行异步 inventory 拉取。
-        采用「全部成功才合并」策略：先收集到本地缓冲集合，任一环节失败则整体降级
-        （本地缓冲丢弃，不污染 expected），保证降级状态一致性——降级下载器的文件
-        全部交由 directory_whitelist 兜底，不会出现「部分进 expected、部分降级」。
+        per-seed 语义：每个种子独立判定——
+        - 映射成功 + 文件清单成功：文件并入 expected（精筛保护）。
+        - 缺映射/文件清单失败/清单为空：仅该种子降级，其目录（save_path 兜底或
+          external_root）加入 degraded_seed_dirs 由目录粗筛白名单保护，不影响其余种子。
+        - inventory 拉取失败（下载器级）：整体降级，下载器记入 inventory_failed_ids，
+          其文件由 DB 种子目录粗筛兜底。
         """
         downloader_id = str(config.downloader_id)
         vo = next(
@@ -508,41 +555,66 @@ class TorrentManifestBuilder:
                 reason,
             )
 
+        def _seed_degrade(directory: str, reason: str) -> None:
+            """单个种子降级：目录加入粗筛白名单，下载器标记有降级种子。"""
+            nonlocal seed_degraded
+            seed_degraded = True
+            if directory:
+                degraded_seed_dirs.add(normalize_path(directory))
+            degraded_downloader_ids.add(downloader_id)
+            logger.warning(
+                "[孤儿清单] 下载器 %s 种子降级为目录粗筛: %s",
+                downloader_id,
+                reason,
+            )
+
         try:
             downloader_type = self._resolve_type(config)
             inventory = await self._fetch_inventory(downloader_id, downloader_type, client)
         except ManifestBuildError as exc:
             _degrade(f"inventory 拉取失败: {exc}")
+            inventory_failed_ids.add(downloader_id)
             return
 
-        # 本地缓冲：全部种子文件清单成功才合并到 expected，保证降级一致性。
+        # 本地缓冲：成功种子的文件清单并入 expected；任一种子降级则该下载器整体
+        # 退出 downloader_ids（文件级判定不完整，清理授权不可靠）。
         local_expected: Set[str] = set()
+        seed_degraded = False
         for torrent in inventory:
             torrent_hash, save_path, embedded_files = self._torrent_identity(downloader_type, torrent)
             if not torrent_hash or not save_path:
-                _degrade("返回缺少 hash/save_path 的种子")
-                return
+                seed_degraded = True
+                degraded_downloader_ids.add(downloader_id)
+                logger.warning(
+                    "[孤儿清单] 下载器 %s 种子缺 hash/save_path，无法精筛: %s",
+                    downloader_id,
+                    torrent_hash,
+                )
+                continue
             external_root = resolve_external_path(save_path, config)
             if external_root is None:
-                # 在线但 save_path 缺映射：整体降级（文件走目录粗筛兜底），不 fail-closed。
-                _degrade(f"种子 {torrent_hash[:8]} save_path={save_path} 缺映射")
-                return
+                # 缺映射：用内部 save_path 兜底进粗筛白名单（与
+                # collect_torrent_directory_whitelist 的映射缺失兜底一致）。
+                _seed_degrade(save_path, f"种子 {torrent_hash[:8]} save_path={save_path} 缺映射")
+                continue
 
             files = embedded_files
             if files is None:
                 try:
                     files = await self._fetch_files(downloader_id, downloader_type, client, torrent_hash)
                 except ManifestBuildError as exc:
-                    _degrade(f"种子 {torrent_hash[:8]} 文件清单拉取失败: {exc}")
-                    return
+                    _seed_degrade(external_root, f"种子 {torrent_hash[:8]} 文件清单拉取失败: {exc}")
+                    continue
             if not files:
-                _degrade(f"种子 {torrent_hash[:8]} 文件清单为空")
-                return
+                _seed_degrade(external_root, f"种子 {torrent_hash[:8]} 文件清单为空")
+                continue
             for rel_path in files:
                 local_expected.add(normalize_path(os.path.join(external_root, rel_path)))
-        # 全部种子成功 → 合并到全局 expected，标记该下载器为精筛覆盖。
         expected.update(local_expected)
-        protected_ids.add(downloader_id)
+        # 仅当该下载器所有种子都成功精筛（无 per-seed 降级）时才记录为精筛覆盖
+        # downloader_id：清理授权依赖此集合判断候选所属下载器文件级判定是否可靠。
+        if not seed_degraded:
+            protected_ids.add(downloader_id)
 
     def _load_configs(self) -> List[BtDownloaders]:
         db = self.session_factory()

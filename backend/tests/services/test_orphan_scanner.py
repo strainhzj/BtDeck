@@ -543,6 +543,137 @@ class TestOrphanDetection:
         assert item.mtime == mtime
         assert item.downloader_id == "dl_001"
 
+    # ==================== 共享根 + 降级下载器（根因 1 回归） ====================
+
+    def test_shared_root_file_of_degraded_downloader_protected_by_whitelist(self, tmp_path):
+        """降级下载器（tr）的种子文件被在线下载器（qb）共享扫描根扫到 → 目录粗筛无条件保护。
+
+        回归本案根因 1：Final.Fantasy.VII（tr 种子）物理在 /Downloads/jpan/Downloads 下，
+        被 qb 扫描根扫到。旧代码粗筛仅在「扫描根 owner ∈ degraded」时启用，owner=qb 不在
+        degraded → 跳过目录粗筛 → 误判 high 孤儿（本案 qb 37992 个孤儿的直接来源）。
+        修复后：文件落在任一降级种子目录下即无条件保护，不受扫描根 owner 影响。
+        """
+        shared_root = tmp_path / "shared"
+        seed_dir = shared_root / "Final.Fantasy.VII.Remake.Intergrade-CODEX"
+        seed_dir.mkdir(parents=True)
+        (seed_dir / "codex.iso").write_bytes(b"x")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+        # 降级种子目录（tr 的 Final.Fantasy.VII 目录）在粗筛白名单
+        scanner._directory_whitelist = {_normalize_path(str(seed_dir))}
+        # tr 降级；但扫描根 owner 是 qb（在线）
+        scanner._degraded_downloader_ids = {"tr"}
+
+        orphans = scanner._walk_scan_root(str(shared_root), "qb", [])
+
+        # 文件落在降级种子目录下 → 无条件保护，不得判为孤儿
+        assert orphans == []
+
+    def test_degraded_downloader_orphan_outside_whitelist_gets_low(self, tmp_path):
+        """降级下载器范围内、不在粗筛白名单的真孤儿 → low confidence（不可清理）。"""
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "stranger.txt").write_bytes(b"x")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+        scanner._directory_whitelist = set()
+        scanner._degraded_downloader_ids = {"tr"}
+
+        orphans = scanner._walk_scan_root(str(root), "tr", [])
+
+        assert len(orphans) == 1
+        assert orphans[0].confidence == "low"
+
+    def test_true_orphan_outside_whitelist_still_reported_high(self, tmp_path):
+        """在线下载器范围、不在任何降级种子目录的真孤儿 → high confidence（可清理）。
+
+        粗筛从「条件启用」改为「无条件启用」后，白名单只含降级种子目录，在线下载器
+        精筛成功种子的目录不在白名单 → 真孤儿仍应判 high，不被目录粗筛误保护。
+        """
+        root = tmp_path / "root"
+        root.mkdir()
+        (root / "stranger.txt").write_bytes(b"x")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+        scanner._directory_whitelist = set()
+        scanner._degraded_downloader_ids = {"tr"}
+
+        orphans = scanner._walk_scan_root(str(root), "qb", [])
+
+        assert len(orphans) == 1
+        assert orphans[0].confidence == "high"
+
+    # ==================== 硬链接副本识别（共享存储块，不额外占空间） ====================
+
+    def test_hardlink_copy_protected_when_scanned_before_original(self, tmp_path):
+        """硬链接副本先于原文件被扫描 → 仍不判孤儿。
+
+        回归本案：用户用硬链接把种子文件整理到媒体库（如 /Downloads/jpan/Downloads →
+        /Downloads/jpan/Book），副本与种子文件共享同一存储块（同 inode），不额外占用
+        磁盘空间，不应判为孤儿。旧 inode 去重依赖扫描顺序——副本先扫时其 inode 首次
+        出现、又不在 expected，被误判孤儿；修复为预收集种子文件 inode 后顺序无关。
+        """
+        root_b = tmp_path / "b"  # 副本根（先扫）
+        root_b.mkdir()
+        root_a = tmp_path / "a"  # 原文件根（后扫）
+        root_a.mkdir()
+        seed = root_a / "movie.mkv"
+        seed.write_bytes(b"data")
+        hardlink = root_b / "movie_copy.mkv"
+        os.link(str(seed), str(hardlink))
+        standalone = root_b / "standalone.mkv"
+        standalone.write_bytes(b"other")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": {_normalize_path(str(seed))}}
+
+        orphans = scanner._walk_all_roots([(str(root_b), "dl"), (str(root_a), "dl")])
+        paths = [o.file_path for o in orphans]
+        # 硬链接副本（共享存储块）不判孤儿
+        assert os.path.abspath(str(hardlink)) not in paths, (
+            "与种子文件共享存储块的硬链接副本不应判孤儿"
+        )
+        # 独立文件（占用额外存储空间）仍判孤儿
+        assert os.path.abspath(str(standalone)) in paths
+
+    def test_hardlink_copy_protected_when_original_scanned_first(self, tmp_path):
+        """原文件先扫时硬链接副本被去重（回归现有行为）。"""
+        root_a = tmp_path / "a"
+        root_a.mkdir()
+        root_b = tmp_path / "b"
+        root_b.mkdir()
+        seed = root_a / "movie.mkv"
+        seed.write_bytes(b"data")
+        hardlink = root_b / "movie_copy.mkv"
+        os.link(str(seed), str(hardlink))
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": {_normalize_path(str(seed))}}
+
+        orphans = scanner._walk_all_roots([(str(root_a), "dl"), (str(root_b), "dl")])
+
+        assert os.path.abspath(str(hardlink)) not in [o.file_path for o in orphans]
+
+    def test_independent_copy_not_seed_file_is_orphan(self, tmp_path):
+        """非硬链接的独立文件（不同 inode，占用额外存储空间）→ 判孤儿。
+
+        硬链接识别不得误伤独立副本：只有与种子文件共享存储块（同 inode）的文件才被
+        排除，其余不在任何种子清单中的文件仍是孤儿（提示占用额外空间）。
+        """
+        root = tmp_path / "b"
+        root.mkdir()
+        (root / "standalone.mkv").write_bytes(b"other")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+
+        orphans = scanner._walk_scan_root(str(root), "dl", [])
+
+        assert len(orphans) == 1
+
 
 # ==================== A 组：扫描器 / runtime 契约 ====================
 

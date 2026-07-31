@@ -136,6 +136,11 @@ class OrphanScanner:
         self._scan_warnings: List[PathMappingWarning] = []
         # inode 去重集合（跨平台 (st_dev, st_ino)）
         self._seen_inodes: Set[Tuple[int, int]] = set()
+        # 种子文件（expected 命中）的 inode 集合：用于识别硬链接副本。
+        # 用户用硬链接把种子文件整理到媒体库时，副本与种子文件共享同一存储块
+        # （同 inode），不额外占用磁盘空间，不应判为孤儿。由 _walk_all_roots
+        # 预收集，使硬链接识别与扫描顺序无关。
+        self._seed_inodes: Set[Tuple[int, int]] = set()
         # 目录级粗筛白名单（离线降级兜底）：normalize_path 后的种子根目录集合
         self._directory_whitelist: Set[str] = set()
         # 精筛不可用、降级为目录粗筛的下载器集合（其范围孤儿标 low confidence）
@@ -160,6 +165,7 @@ class OrphanScanner:
         self._scan_path_selection = None
         self._scan_warnings = []
         self._seen_inodes = set()
+        self._seed_inodes = set()
         self._directory_whitelist = set()
         self._degraded_downloader_ids = set()
 
@@ -268,13 +274,16 @@ class OrphanScanner:
     async def _build_torrent_file_map(self) -> None:
         """构建种子文件清单（精筛 expected + 目录粗筛白名单 + 降级标记）。
 
-        语义重做（v1.0.7+ 跨下载器共享目录修复）：
+        语义重做（v1.0.7+ 跨下载器共享目录修复 + per-seed 精筛）：
         - 精筛作用域 = 全部启用下载器（不再从去重后 scan_roots 推导，消除共享根
           first-writer-wins 导致其他下载器文件漏入 expected 的盲区）。
-        - 在线下载器：拉文件级清单进 expected（精筛）。
-        - 离线/映射缺失/清单失败下载器：不 fail-closed 整批失败，记入降级集合，
-          其文件由 directory_whitelist 在 _walk_scan_root 做目录粗筛兜底，
-          产出的孤儿标 low confidence。
+        - 在线下载器：逐种子拉文件级清单进 expected（per-seed 精筛）。单个种子
+          缺映射/清单失败仅该种子降级，其目录进 directory_whitelist（粗筛保护），
+          不再因个别种子故障整体降级拖垮其余可映射种子（回归 tr 缺映射 2164 个
+          种子致 7792 个可映射种子文件被误判的 5.7 万孤儿）。
+        - 离线/inventory 失败下载器：记入降级集合，其文件由 DB 种子目录
+          （directory_whitelist）在 _walk_scan_root 做目录粗筛兜底，产出的孤儿
+          标 low confidence。
         - 仍 fail-closed 的硬错误（store 未初始化、无启用配置等）由 build 抛出。
         """
         # 扫描路径全量语义：required_downloader_ids=None 遍历全部启用下载器。
@@ -392,6 +401,11 @@ class OrphanScanner:
     def _walk_all_roots(self, scan_paths: List[Tuple[str, Optional[str]]]) -> List[OrphanFileItem]:
         """遍历所有扫描根目录（同步方法，由 to_thread 调用）。
 
+        硬链接副本识别：开头预收集种子文件（expected）的 inode 到 _seed_inodes。
+        用户用硬链接把种子文件整理到媒体库时，副本与种子文件共享同一存储块（同
+        inode），不额外占用磁盘空间，不应判孤儿。预收集使该识别与扫描顺序无关
+        （旧 inode 去重依赖顺序：副本先扫会被误判）。
+
         单根降级语义：单个扫描根不存在/非目录时记 warning 并跳过该根，继续扫其余根，
         不让整个扫描失败。扫描根来自 DB 的种子 save_path 映射，单文件种子/已删种子
         的 save_path 在磁盘上可能不是目录，这是正常运维现象（非配置错误），不应让
@@ -403,6 +417,10 @@ class OrphanScanner:
         orphans: List[OrphanFileItem] = []
         exclude_patterns = self._parse_exclude_patterns()
         skipped_roots: List[str] = []
+
+        # 预收集种子文件 inode（硬链接副本识别）：stat expected 文件路径（不遍历
+        # 目录树），收集仍存在的种子文件 inode，供 _walk_scan_root 排除硬链接副本。
+        self._collect_seed_file_inodes()
 
         for root_path, downloader_id in scan_paths:
             if not os.path.isdir(root_path):
@@ -427,6 +445,25 @@ class OrphanScanner:
 
         return orphans
 
+    def _collect_seed_file_inodes(self) -> None:
+        """预收集种子文件（expected 命中路径）的 inode，用于识别硬链接副本。
+
+        直接 os.stat expected 文件路径（不遍历目录树），收集仍存在的种子文件 inode。
+        硬链接副本与种子文件共享同一存储块（同 inode），不额外占用磁盘空间。旧
+        inode 去重依赖扫描顺序——副本先扫时其 inode 首次出现、又不在 expected，
+        被误判孤儿。预收集后，无论原文件/副本哪个先被扫描，硬链接副本都能被识别
+        为非孤儿。
+        """
+        for values in self._expected_files.values():
+            for exp_path in values:
+                try:
+                    st = os.stat(exp_path)
+                except OSError:
+                    # 种子文件已被移动/删除（expected 路径在磁盘上不存在）→ 无法
+                    # 关联硬链接副本；此时副本是磁盘上唯一的该文件，按孤儿判定。
+                    continue
+                self._seed_inodes.add((st.st_dev, st.st_ino))
+
     def _walk_scan_root(
         self, root: str, downloader_id: Optional[str], exclude_patterns: List[str]
     ) -> List[OrphanFileItem]:
@@ -436,6 +473,11 @@ class OrphanScanner:
         - 规范化路径匹配（normcase+normpath 统一 key）
         - 路径逃逸保护（os.path.commonpath 校验文件在根目录下）
         - 隔离区排除（.btdeck_quarantine 不扫描）
+        - 降级种子目录粗筛：文件不在 expected 时，无条件检查 directory_whitelist
+          （只含降级种子目录）。文件落在任一降级种子目录下即保护（不判孤儿）——
+          修复「降级下载器的文件被在线下载器共享扫描根扫到，因 owner 错位跳过
+          粗筛」的跨下载器误判（tr 文件被 qb/tr_kpan 扫描根误判为 high 孤儿）。
+          不在白名单的孤儿，confidence 由孤儿归属下载器是否降级决定（降级=low）。
         """
         orphans: List[OrphanFileItem] = []
         root_path = os.path.abspath(root)
@@ -462,8 +504,14 @@ class OrphanScanner:
                 if self._matches_patterns(file_path.name, exclude_patterns):
                     continue
 
-                # inode 去重（跨平台）
+                # 硬链接副本识别：与种子文件共享同一存储块（同 inode）的文件不额外
+                # 占用磁盘空间，不应判为孤儿。inode 已由 _walk_all_roots 第一遍
+                # 预收集（expected 命中文件），故与扫描顺序无关——副本即使先于原文件
+                # 被扫到也能正确排除（回归：用户用硬链接整理种子到媒体库的误判）。
                 inode_key = (stat_info.st_dev, stat_info.st_ino)
+                if inode_key and inode_key in self._seed_inodes:
+                    continue
+                # inode 去重（跨平台，独立文件）
                 if inode_key:
                     if inode_key in self._seen_inodes:
                         continue
@@ -483,16 +531,19 @@ class OrphanScanner:
                 if normalized_abs in expected:
                     continue
 
-                # 第二层（离线降级目录粗筛）：仅当该文件所属下载器处于降级范围时启用。
-                # 降级下载器无法做文件级精筛，改用目录级粗筛兜底——文件若落在任一种子
-                # 根目录下则保护（不判孤儿），避免误删；否则标 low confidence 孤儿。
+                # 第二层（降级种子目录粗筛）：无条件检查。文件若落在任一降级种子目录
+                # 下则保护（不判孤儿），避免误删——这正是跨下载器共享目录误判的关键防线。
+                # 不再依赖「扫描根 owner 是否 degraded」：降级下载器（如 tr）的文件常被
+                # 在线下载器（如 qb/tr_kpan）的共享扫描根扫到，孤儿归属 owner 与文件真正
+                # 所属下载器不一致，旧判定会因 owner 在线而跳过粗筛、把降级种子文件误判
+                # 为 high 孤儿。粗筛白名单只含降级种子目录，在线下载器真孤儿不误保护。
+                if self._in_directory_whitelist(abs_path, normalized_abs):
+                    continue
+                # 不在降级种子目录 → 孤儿。confidence 由孤儿归属下载器（扫描根 owner）
+                # 是否处于降级范围决定：降级下载器无文件级精筛，产物标 low 不可清理；
+                # 在线下载器精筛已确认文件不在任何种子清单中，标 high 可清理。
                 downloader_id_str = downloader_id if downloader_id else ""
-                if downloader_id_str in self._degraded_downloader_ids:
-                    if self._in_directory_whitelist(abs_path, normalized_abs):
-                        continue
-                    confidence = "low"
-                else:
-                    confidence = "high"
+                confidence = "low" if downloader_id_str in self._degraded_downloader_ids else "high"
 
                 # 孤儿文件
                 orphans.append(

@@ -205,10 +205,11 @@ async def test_transmission_scalar_inventory_fails_with_context(tmp_path):
 
 
 async def test_partial_inventory_failure_degrades_downloader(tmp_path):
-    """部分种子文件清单拉取失败 → 该下载器整体降级（不再 fail-closed 整批失败）。
+    """部分种子文件清单拉取失败 → 仅失败种子降级，成功种子仍精筛进 expected。
 
-    语义重做（v1.0.7+）：任一环节失败改为降级，避免单个种子故障拖垮整个扫描；
-    该下载器不进 expected，其文件由目录粗筛白名单在扫描阶段兜底。
+    语义重做（per-seed 精筛）：不再因单个种子清单失败整体降级拖垮全部种子——
+    成功种子（ok）仍进 expected；失败种子（broken）目录进粗筛白名单保护；
+    下载器标记有降级种子（报告用）。
     """
     root = tmp_path / "qb"
     root.mkdir()
@@ -234,9 +235,12 @@ async def test_partial_inventory_failure_degrades_downloader(tmp_path):
     builder._load_configs = lambda: [_config("qb", 0, str(root))]
 
     snapshot = await builder.build()
-    # 文件清单拉取失败 → 整个下载器降级，expected 为空
+    # 成功种子仍精筛进 expected（不再整体降级）
+    assert normalize_path(str(root / "ok.mkv")) in snapshot.expected_paths
+    # 清单拉取失败的种子目录进粗筛白名单（保护）
+    assert normalize_path(str(root)) in snapshot.directory_whitelist
+    # 下载器标记有降级种子
     assert "qb" in snapshot.degraded_downloader_ids
-    assert snapshot.expected_paths == set()
 
 
 async def test_authoritative_empty_inventory_is_valid(tmp_path):
@@ -555,11 +559,12 @@ async def test_offline_downloader_degrades_and_directory_whitelist_backed(tmp_pa
             ]
         )
     )
-    # patch 目录粗筛白名单构建，返回含共享根的白名单（模拟 DB 种子目录）
+    # patch 目录粗筛白名单构建，返回含共享根的白名单（模拟 DB 种子目录）。
+    # build 现在以 downloader_ids=inventory_failed_ids 调用，monkeypatch 需兼容。
     monkeypatch.setattr(
         manifest_mod,
         "collect_torrent_directory_whitelist",
-        lambda session_factory: DirectoryWhitelist(
+        lambda session_factory, downloader_ids=None: DirectoryWhitelist(
             dirs={normalize_path(str(shared_root))}
         ),
     )
@@ -578,6 +583,83 @@ async def test_offline_downloader_degrades_and_directory_whitelist_backed(tmp_pa
     # directory_whitelist 非空（含 dl-a/dl-b 共享根目录，离线降级兜底）
     assert snapshot.directory_whitelist
     assert normalize_path(str(shared_root)) in snapshot.directory_whitelist
+
+
+async def test_partial_mapping_missing_keeps_mapped_seeds_precise(tmp_path):
+    """部分种子 save_path 缺映射 → 仅缺映射种子降级，可映射种子仍进 expected（per-seed 精筛）。
+
+    回归本案根因 2：tr 有 2164 个种子落在未映射目录（/Downloads/bangumi*），旧代码
+    _build_precise_expected 任一种子缺映射即整体降级，导致 tr 其余 7792 个可映射种子的
+    文件也丢失精筛保护，被共享目录在线下载器扫描根误判孤儿（qb 37992 / tr_kpan 19767）。
+    """
+    mapped_root = tmp_path / "mapped"
+    mapped_root.mkdir()
+    client = MagicMock()
+    client.torrents_info.return_value = [
+        SimpleNamespace(hash="hash-mapped", save_path=str(mapped_root)),
+        SimpleNamespace(hash="hash-unmapped", save_path="/downloads/unmapped"),
+    ]
+    client.torrents.files.return_value = [SimpleNamespace(name="mapped.mkv")]
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="tr", client=client, fail_time=0)
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("tr", 0, str(mapped_root))]
+
+    snapshot = await builder.build()
+
+    # 可映射种子仍精筛进 expected（不再因个别种子缺映射整体降级）
+    assert normalize_path(str(mapped_root / "mapped.mkv")) in snapshot.expected_paths
+    # 缺映射种子目录进入目录粗筛白名单（保护），避免被共享目录在线下载器误判孤儿
+    assert normalize_path("/downloads/unmapped") in snapshot.directory_whitelist
+    # 下载器仍标记有降级种子（报告用），但 expected 不再为空
+    assert "tr" in snapshot.degraded_downloader_ids
+    # 缺映射种子不得拉取文件清单
+    assert client.torrents.files.call_count == 1  # 仅 hash-mapped
+
+
+async def test_partial_file_fetch_failure_keeps_other_seeds_precise(tmp_path):
+    """部分种子文件清单拉取失败 → 仅该种子降级，其他种子仍进 expected（per-seed 精筛）。
+
+    回归：清单拉取失败的种子目录进入目录粗筛白名单，其余种子不受连累。
+    """
+    root = tmp_path / "qb"
+    root.mkdir()
+    client = MagicMock()
+    client.torrents_info.return_value = [
+        SimpleNamespace(hash="ok", save_path=str(root)),
+        SimpleNamespace(hash="broken", save_path=str(root)),
+    ]
+    client.torrents.files.side_effect = [
+        [SimpleNamespace(name="ok.mkv")],
+        RuntimeError("remote failure"),
+    ]
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[
+                SimpleNamespace(downloader_id="qb", client=client, fail_time=0)
+            ]
+        )
+    )
+    builder = TorrentManifestBuilder(
+        store, scan_path_selection=ScanPathSelection()
+    )
+    builder._load_configs = lambda: [_config("qb", 0, str(root))]
+
+    snapshot = await builder.build()
+
+    # 成功种子仍进 expected（不再整体降级）
+    assert normalize_path(str(root / "ok.mkv")) in snapshot.expected_paths
+    # 清单拉取失败的种子目录进入粗筛白名单（保护）
+    assert normalize_path(str(root)) in snapshot.directory_whitelist
+    # 下载器标记有降级种子
+    assert "qb" in snapshot.degraded_downloader_ids
 
 
 async def test_directory_whitelist_covers_both_root_and_seed_dir(tmp_path):
@@ -641,3 +723,86 @@ async def test_directory_whitelist_covers_both_root_and_seed_dir(tmp_path):
     # 两个候选目录都应在白名单（保守保护）
     assert normalize_path(mapped) in whitelist.dirs
     assert normalize_path(str(seed_root / "MyTorrent")) in whitelist.dirs
+
+
+async def test_directory_whitelist_filters_by_downloader(tmp_path):
+    """collect_torrent_directory_whitelist 支持 downloader_ids 过滤。
+
+    回归修复 2：白名单只含降级下载器/降级种子的目录。精筛成功下载器的种子目录
+    不进白名单——否则无条件目录粗筛会把在线下载器的真孤儿误保护。
+    """
+    from app.services.orphan_manifest import collect_torrent_directory_whitelist
+
+    root_a = tmp_path / "a"
+    root_a.mkdir()
+    root_b = tmp_path / "b"
+    root_b.mkdir()
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.database import Base
+    from app.downloader.models import BtDownloaders
+    from app.models.downloader_path_maintenance import DownloaderPathMaintenance
+    from app.torrents.models import TorrentInfo
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(
+        engine,
+        tables=[
+            BtDownloaders.__table__,
+            TorrentInfo.__table__,
+            DownloaderPathMaintenance.__table__,
+        ],
+    )
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    for dl in ("dl-a", "dl-b"):
+        db.execute(
+            BtDownloaders.__table__.insert(),
+            {
+                "downloader_id": dl,
+                "nickname": dl,
+                "host": "h",
+                "username": "u",
+                "password": "p",
+                "downloader_type": 0,
+                "enabled": True,
+                "dr": 0,
+            },
+        )
+    db.execute(
+        TorrentInfo.__table__.insert(),
+        {
+            "info_id": "i-a",
+            "downloader_id": "dl-a",
+            "downloader_name": "dl-a",
+            "hash": "h-a",
+            "name": "TorrentA",
+            "save_path": str(root_a),
+            "enabled": True,
+            "dr": 0,
+        },
+    )
+    db.execute(
+        TorrentInfo.__table__.insert(),
+        {
+            "info_id": "i-b",
+            "downloader_id": "dl-b",
+            "downloader_name": "dl-b",
+            "hash": "h-b",
+            "name": "TorrentB",
+            "save_path": str(root_b),
+            "enabled": True,
+            "dr": 0,
+        },
+    )
+    db.commit()
+    db.close()
+
+    # 只收集 dl-a 的种子目录：dl-b 的目录（在线精筛覆盖）不得进白名单
+    whitelist = collect_torrent_directory_whitelist(Session, downloader_ids={"dl-a"})
+    assert normalize_path(str(root_a)) in whitelist.dirs
+    assert normalize_path(str(root_a / "TorrentA")) in whitelist.dirs
+    assert normalize_path(str(root_b)) not in whitelist.dirs
+    assert normalize_path(str(root_b / "TorrentB")) not in whitelist.dirs
