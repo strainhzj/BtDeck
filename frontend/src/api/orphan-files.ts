@@ -13,6 +13,12 @@ export interface OrphanFileItem {
   file_size: number
   mtime: string | null
   downloader_id: string | null
+  confidence: OrphanConfidence
+  canonical_path: string | null
+  downloader_name: string | null
+  is_ignored: boolean
+  ignored_at: string | null
+  ignored_by: string | null
   is_deleted: boolean
   deleted_at: string | null
   deleted_by: string | null
@@ -35,6 +41,16 @@ export interface OrphanListResponse {
  * 数据库中持久化的扫描状态；busy 只属于触发响应，不在此联合中。
  */
 export type OrphanScanRecordStatus = 'running' | 'completed' | 'failed'
+
+/**
+ * 置信度：high=在线精筛判定，low=离线降级目录粗筛判定
+ */
+export type OrphanConfidence = 'high' | 'low'
+
+/**
+ * 状态筛选：pending=待清理，ignored=已忽视，deleted=已清理
+ */
+export type OrphanStatusFilter = 'pending' | 'ignored' | 'deleted'
 
 export interface OrphanScanRecord {
   scan_id: string
@@ -59,6 +75,7 @@ export interface OrphanScanContext {
   display_scan: OrphanScanRecord | null
   remaining_count: number
   remaining_size: number
+  ignored_count: number
   cleanup_allowed: boolean
   cleanup_block_reason: string | null
 }
@@ -164,11 +181,19 @@ export interface OrphanListParams {
   page_size?: number
   downloader_id?: string
   min_size?: number
+  path_like?: string
+  status?: OrphanStatusFilter
 }
 
 export interface CleanupRequest {
   scan_id: string
   orphan_ids: number[]
+}
+
+export interface IgnoreRequest {
+  scan_id?: string
+  orphan_ids: number[]
+  ignored: boolean
 }
 
 // ========== API 函数 ==========
@@ -224,4 +249,22 @@ export function cleanupOrphans(data: CleanupRequest): Promise<ApiResponse<Cleanu
     method: 'post',
     data: data
   }) as unknown as Promise<ApiResponse<CleanupResult>>
+}
+
+/**
+ * 忽视操作结果（与清理结果结构一致，便于统一处理）
+ */
+export type IgnoreResult = CleanupSuccessResult | CleanupRejectedResult
+
+/**
+ * 设置/取消孤儿文件的忽视态
+ *
+ * 被忽视的孤儿受保护：定时任务不自动删除，手动清理也被拒绝，但仍可在列表查询。
+ */
+export function setIgnored(data: IgnoreRequest): Promise<ApiResponse<IgnoreResult>> {
+  return request({
+    url: '/orphan-files/ignore',
+    method: 'post',
+    data: data
+  }) as unknown as Promise<ApiResponse<IgnoreResult>>
 }

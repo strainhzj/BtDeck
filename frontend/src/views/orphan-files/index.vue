@@ -46,6 +46,15 @@
       </div>
       <div class="management-stat-card">
         <span class="management-stat-card__icon management-stat-card__icon--info" aria-hidden="true">
+          <i class="el-icon-warning-outline" />
+        </span>
+        <div class="management-stat-card__content">
+          <div class="management-stat-card__label">已忽视文件数</div>
+          <div class="management-stat-card__value">{{ scanContext.ignored_count }}</div>
+        </div>
+      </div>
+      <div class="management-stat-card">
+        <span class="management-stat-card__icon management-stat-card__icon--info" aria-hidden="true">
           <i class="el-icon-folder-opened" />
         </span>
         <div class="management-stat-card__content">
@@ -88,14 +97,61 @@
     <!-- 筛选条件 -->
     <section class="management-panel" aria-label="孤儿文件筛选条件">
       <div class="management-filter">
-        <div class="management-filter__field management-filter__field--wide">
-          <label class="management-filter__label" for="orphan-downloader-id">下载器 ID</label>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="orphan-path-like">文件路径</label>
           <el-input
-            id="orphan-downloader-id"
+            id="orphan-path-like"
+            v-model="listQuery.path_like"
+            class="management-filter__control"
+            placeholder="路径关键字模糊匹配"
+            prefix-icon="el-icon-search"
+            clearable
+            @keyup.enter.native="handleFilter"
+            @clear="handleFilter"
+          />
+        </div>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="orphan-downloader">下载器</label>
+          <el-select
+            id="orphan-downloader"
             v-model="listQuery.downloader_id"
             class="management-filter__control"
-            placeholder="输入下载器 ID"
-            prefix-icon="el-icon-search"
+            placeholder="全部下载器"
+            clearable
+            filterable
+            @change="handleFilter"
+          >
+            <el-option
+              v-for="opt in downloaderOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </div>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="orphan-status">状态</label>
+          <el-select
+            id="orphan-status"
+            v-model="listQuery.status"
+            class="management-filter__control"
+            placeholder="全部状态"
+            clearable
+            @change="handleFilter"
+          >
+            <el-option label="待清理" value="pending" />
+            <el-option label="已忽视" value="ignored" />
+            <el-option label="已清理" value="deleted" />
+          </el-select>
+        </div>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="orphan-min-size">最小大小(字节)</label>
+          <el-input
+            id="orphan-min-size"
+            v-model.number="listQuery.min_size"
+            class="management-filter__control"
+            placeholder="如 10485760"
+            type="number"
             clearable
             @keyup.enter.native="handleFilter"
             @clear="handleFilter"
@@ -104,6 +160,9 @@
         <div class="management-filter__actions">
           <el-button type="primary" icon="el-icon-search" @click="handleFilter">
             搜索
+          </el-button>
+          <el-button icon="el-icon-refresh-left" @click="handleResetFilter">
+            重置
           </el-button>
         </div>
       </div>
@@ -125,11 +184,27 @@
           <el-button
             type="danger"
             icon="el-icon-delete"
-            :disabled="selectedIds.length === 0 || !cleanupAllowed"
-            :title="cleanupAllowed ? '' : cleanupBlockReason"
+            :disabled="!canBatchCleanup"
+            :title="batchCleanupTitle"
             @click="handleCleanupPreview"
           >
             清理选中
+          </el-button>
+          <el-button
+            icon="el-icon-warning-outline"
+            :disabled="!canBatchIgnore"
+            :title="batchIgnoreTitle"
+            @click="handleBatchIgnore(true)"
+          >
+            忽视选中
+          </el-button>
+          <el-button
+            icon="el-icon-circle-check"
+            :disabled="!canBatchUnignore"
+            :title="batchUnignoreTitle"
+            @click="handleBatchIgnore(false)"
+          >
+            取消忽视
           </el-button>
         </div>
       </div>
@@ -146,7 +221,7 @@
           style="width: 100%"
           @selection-change="handleSelectionChange"
         >
-          <el-table-column type="selection" width="55" />
+          <el-table-column type="selection" width="55" :selectable="rowSelectable" />
           <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip />
           <el-table-column label="大小" width="120" align="center">
             <template slot-scope="scope">
@@ -158,15 +233,51 @@
               {{ scope.row.mtime ? formatTime(scope.row.mtime) : '-' }}
             </template>
           </el-table-column>
-          <el-table-column label="下载器" width="120" align="center">
+          <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
             <template slot-scope="scope">
-              <span>{{ scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-' }}</span>
+              <span>{{ scope.row.downloader_name || (scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-') }}</span>
             </template>
           </el-table-column>
-          <el-table-column label="状态" width="80" align="center">
+          <el-table-column label="置信度" width="100" align="center">
+            <template slot-scope="scope">
+              <el-tooltip
+                v-if="scope.row.confidence === 'low'"
+                content="离线降级目录粗筛判定，需等下载器上线重新精筛后清理"
+                placement="top"
+              >
+                <el-tag type="info" size="small">低</el-tag>
+              </el-tooltip>
+              <el-tooltip v-else content="在线精筛判定，确认未被任何种子引用" placement="top">
+                <el-tag type="success" size="small">高</el-tag>
+              </el-tooltip>
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="90" align="center">
             <template slot-scope="scope">
               <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
+              <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">已忽视</el-tag>
               <el-tag v-else type="danger" size="small">待清理</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="100" align="center" fixed="right">
+            <template slot-scope="scope">
+              <el-button
+                v-if="!scope.row.is_deleted && !scope.row.is_ignored"
+                type="text"
+                size="small"
+                @click="handleRowIgnore(scope.row, true)"
+              >
+                忽视
+              </el-button>
+              <el-button
+                v-else-if="!scope.row.is_deleted && scope.row.is_ignored"
+                type="text"
+                size="small"
+                @click="handleRowIgnore(scope.row, false)"
+              >
+                取消忽视
+              </el-button>
+              <span v-else>-</span>
             </template>
           </el-table-column>
         </el-table>
@@ -244,19 +355,30 @@ import {
   triggerScan,
   cleanupPreview,
   cleanupOrphans,
+  setIgnored,
   OrphanFileItem,
   OrphanListParams,
   OrphanScanContext,
   OrphanScanRecord,
+  OrphanStatusFilter,
   CleanupPreviewSuccess,
   CleanupSuccessResult
 } from '@/api/orphan-files'
+import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
 
 interface OrphanListQuery {
   page: number
   page_size: number
   downloader_id: string
+  path_like: string
+  status: OrphanStatusFilter | ''
+  min_size: number | ''
+}
+
+interface DownloaderOption {
+  value: string
+  label: string
 }
 
 interface OrphanTableRef extends Vue {
@@ -269,15 +391,22 @@ export default class OrphanFiles extends Vue {
   private total = 0
   private listLoading = false
   private scanLoading = false
+  private ignoreLoading = false
   private listQuery: OrphanListQuery = {
     page: 1,
     page_size: 20,
-    downloader_id: ''
+    downloader_id: '',
+    path_like: '',
+    status: '',
+    min_size: ''
   }
   private refreshRequestSeq = 0
 
-  // 选中状态
-  private selectedIds: number[] = []
+  // 下载器列表（用于别名展示与下拉筛选）
+  private downloaderList: DownloaderSimple[] = []
+
+  // 选中状态：保存完整行以支持按主导状态启停批量按钮
+  private selectedRows: OrphanFileItem[] = []
 
   // 页面列表、统计和清理门禁共用的后端权威快照
   private scanContext: OrphanScanContext = {
@@ -285,6 +414,7 @@ export default class OrphanFiles extends Vue {
     display_scan: null,
     remaining_count: 0,
     remaining_size: 0,
+    ignored_count: 0,
     cleanup_allowed: false,
     cleanup_block_reason: '尚无可清理的成功扫描'
   }
@@ -297,6 +427,19 @@ export default class OrphanFiles extends Vue {
   private cleanupResult: CleanupSuccessResult | null = null
   private previewScanId: string | null = null
   private previewOrphanIds: number[] = []
+
+  async created() {
+    // 下载器列表失败不阻塞主流程（仅影响别名展示与下拉）
+    try {
+      const resp = await getDownloaderList()
+      if (resp.code === '200' && Array.isArray(resp.data)) {
+        this.downloaderList = resp.data
+      }
+    } catch (error) {
+      // 静默降级：列表仍可用 downloader_name 后端字段
+      void error
+    }
+  }
 
   mounted() {
     void this.refreshPageData()
@@ -326,6 +469,69 @@ export default class OrphanFiles extends Vue {
     return this.scanContext.cleanup_block_reason || '当前扫描快照不允许清理'
   }
 
+  private get selectedIds(): number[] {
+    return this.selectedRows.map((r) => r.id)
+  }
+
+  private get downloaderOptions(): DownloaderOption[] {
+    return this.downloaderList.map((d) => ({
+      value: d.downloader_id,
+      label: d.nickname || d.downloader_id
+    }))
+  }
+
+  // ========== 批量按钮启停（按选中主导状态）==========
+
+  /** 选中集合中"可清理"的项：待清理（未删除未忽视）。 */
+  private get pendingSelection(): OrphanFileItem[] {
+    return this.selectedRows.filter((r) => !r.is_deleted && !r.is_ignored)
+  }
+
+  /** 选中集合中"已忽视"的项。 */
+  private get ignoredSelection(): OrphanFileItem[] {
+    return this.selectedRows.filter((r) => !r.is_deleted && r.is_ignored)
+  }
+
+  /** 选中是否全部为待清理态（可清理+可忽视）。 */
+  private get allSelectionPending(): boolean {
+    return this.selectedRows.length > 0 && this.pendingSelection.length === this.selectedRows.length
+  }
+
+  /** 选中是否全部为已忽视态（可取消忽视）。 */
+  private get allSelectionIgnored(): boolean {
+    return this.selectedRows.length > 0 && this.ignoredSelection.length === this.selectedRows.length
+  }
+
+  private get canBatchCleanup(): boolean {
+    return this.allSelectionPending && this.cleanupAllowed
+  }
+
+  private get batchCleanupTitle(): string {
+    if (this.selectedRows.length === 0) return '请先选择待清理文件'
+    if (!this.allSelectionPending) return '请勿混选不同状态，仅支持清理"待清理"项'
+    return this.cleanupAllowed ? '' : this.cleanupBlockReason
+  }
+
+  private get canBatchIgnore(): boolean {
+    return this.allSelectionPending
+  }
+
+  private get batchIgnoreTitle(): string {
+    if (this.selectedRows.length === 0) return '请先选择待清理文件'
+    if (!this.allSelectionPending) return '请勿混选不同状态，仅支持忽视"待清理"项'
+    return ''
+  }
+
+  private get canBatchUnignore(): boolean {
+    return this.allSelectionIgnored
+  }
+
+  private get batchUnignoreTitle(): string {
+    if (this.selectedRows.length === 0) return '请先选择已忽视文件'
+    if (!this.allSelectionIgnored) return '请勿混选不同状态，仅支持取消"已忽视"项'
+    return ''
+  }
+
   private get scanStatusMessage(): string {
     const latest = this.latestAttempt
     if (!latest) return ''
@@ -347,14 +553,20 @@ export default class OrphanFiles extends Vue {
     const querySnapshot: Readonly<OrphanListQuery> = Object.freeze({
       page: this.listQuery.page,
       page_size: this.listQuery.page_size,
-      downloader_id: this.listQuery.downloader_id
+      downloader_id: this.listQuery.downloader_id,
+      path_like: this.listQuery.path_like,
+      status: this.listQuery.status,
+      min_size: this.listQuery.min_size
     })
     this.listLoading = true
     try {
       const params: OrphanListParams = {
         page: querySnapshot.page,
         page_size: querySnapshot.page_size,
-        downloader_id: querySnapshot.downloader_id || undefined
+        downloader_id: querySnapshot.downloader_id || undefined,
+        path_like: querySnapshot.path_like || undefined,
+        status: querySnapshot.status || undefined,
+        min_size: querySnapshot.min_size === '' ? undefined : Number(querySnapshot.min_size)
       }
       const response = await getOrphanList(params)
       if (requestId !== this.refreshRequestSeq) return
@@ -376,7 +588,7 @@ export default class OrphanFiles extends Vue {
         this.list = response.data.list
         this.total = response.data.total
         this.scanContext = response.data.scan_context
-        this.selectedIds = []
+        this.selectedRows = []
         const table = this.$refs.orphanTable as OrphanTableRef | undefined
         if (table && typeof table.clearSelection === 'function') {
           table.clearSelection()
@@ -399,6 +611,18 @@ export default class OrphanFiles extends Vue {
     void this.refreshPageData()
   }
 
+  private handleResetFilter() {
+    this.listQuery = {
+      page: 1,
+      page_size: this.listQuery.page_size,
+      downloader_id: '',
+      path_like: '',
+      status: '',
+      min_size: ''
+    }
+    void this.refreshPageData()
+  }
+
   private handleSizeChange(size: number) {
     this.listQuery.page_size = size
     this.listQuery.page = 1
@@ -411,7 +635,12 @@ export default class OrphanFiles extends Vue {
   }
 
   private handleSelectionChange(rows: OrphanFileItem[]) {
-    this.selectedIds = rows.map((r) => r.id)
+    this.selectedRows = rows
+  }
+
+  /** 已清理行不可勾选；待清理/已忽视行均可勾选（用于对应批量操作）。 */
+  private rowSelectable(row: OrphanFileItem): boolean {
+    return !row.is_deleted
   }
 
   private async handleScan() {
@@ -526,6 +755,63 @@ export default class OrphanFiles extends Vue {
     this.cleanupResult = null
     this.previewScanId = null
     this.previewOrphanIds = []
+  }
+
+  // ========== 忽视操作 ==========
+
+  private async handleRowIgnore(row: OrphanFileItem, ignored: boolean): Promise<void> {
+    await this.applyIgnore([row.id], ignored)
+  }
+
+  private async handleBatchIgnore(ignored: boolean): Promise<void> {
+    const rows = ignored ? this.pendingSelection : this.ignoredSelection
+    if (rows.length === 0) {
+      this.$message.warning(ignored ? '请选择待清理的文件' : '请选择已忽视的文件')
+      return
+    }
+    await this.applyIgnore(rows.map((r) => r.id), ignored)
+  }
+
+  private async applyIgnore(orphanIds: number[], ignored: boolean): Promise<void> {
+    const action = ignored ? '忽视' : '取消忽视'
+    try {
+      await this.$confirm(`确认${action}选中的 ${orphanIds.length} 个孤儿文件？`, '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'info'
+      })
+    } catch {
+      return // 用户取消
+    }
+
+    this.ignoreLoading = true
+    try {
+      const displayScan = this.displayScan
+      const response = await setIgnored({
+        scan_id: displayScan ? displayScan.scan_id : undefined,
+        orphan_ids: orphanIds,
+        ignored
+      })
+      if (response.code === '200' && response.data) {
+        const data = response.data
+        if (data.rejected === true) {
+          this.$message.error(data.error || `${action}失败`)
+        } else {
+          let msg = `${action}完成: 成功 ${data.success_count} 个`
+          if (data.failed_count > 0) {
+            msg += `，失败 ${data.failed_count} 个`
+          }
+          this.$message.success(msg)
+        }
+        await this.refreshPageData()
+      } else {
+        this.$message.error(response.msg || `${action}失败`)
+      }
+    } catch (error) {
+      this.$message.error(`${action}失败：` + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.ignoreLoading = false
+    }
   }
 
   // ========== 工具方法 ==========

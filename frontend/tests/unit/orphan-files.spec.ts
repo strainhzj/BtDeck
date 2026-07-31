@@ -13,6 +13,7 @@ import {
   cleanupOrphans,
   cleanupPreview,
   getOrphanList,
+  setIgnored,
   triggerScan
 } from '@/api/orphan-files'
 
@@ -21,7 +22,19 @@ jest.mock('@/api/orphan-files', () => ({
   getOrphanList: jest.fn(),
   triggerScan: jest.fn(),
   cleanupPreview: jest.fn(),
-  cleanupOrphans: jest.fn()
+  cleanupOrphans: jest.fn(),
+  setIgnored: jest.fn()
+}))
+
+jest.mock('@/api/torrents', () => ({
+  getDownloaderList: jest.fn(() =>
+    Promise.resolve({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: [{ downloader_id: 'dl-1', nickname: '主下载器' }]
+    })
+  )
 }))
 
 const localVue = createLocalVue()
@@ -31,6 +44,7 @@ const mockGetOrphanList = getOrphanList as jest.MockedFunction<typeof getOrphanL
 const mockTriggerScan = triggerScan as jest.MockedFunction<typeof triggerScan>
 const mockCleanupPreview = cleanupPreview as jest.MockedFunction<typeof cleanupPreview>
 const mockCleanupOrphans = cleanupOrphans as jest.MockedFunction<typeof cleanupOrphans>
+const mockSetIgnored = setIgnored as jest.MockedFunction<typeof setIgnored>
 
 const clearSelection = jest.fn()
 const TableStub = localVue.extend({
@@ -82,14 +96,22 @@ interface OrphanFilesVm extends Vue {
   total: number
   listLoading: boolean
   scanLoading: boolean
+  ignoreLoading: boolean
   listQuery: {
     page: number
     page_size: number
     downloader_id: string
+    path_like: string
+    status: string
+    min_size: number | ''
   }
   selectedIds: number[]
+  selectedRows: OrphanFileItem[]
   scanContext: OrphanScanContext
   cleanupAllowed: boolean
+  canBatchCleanup: boolean
+  canBatchIgnore: boolean
+  canBatchUnignore: boolean
   cleanupDialogVisible: boolean
   cleanupPreviewData: CleanupPreviewResult | null
   cleanupResult: CleanupResult | null
@@ -98,6 +120,9 @@ interface OrphanFilesVm extends Vue {
   handleScan: () => Promise<void>
   handleCleanupPreview: () => Promise<void>
   handleCleanupConfirm: () => Promise<void>
+  handleResetFilter: () => void
+  handleBatchIgnore: (ignored: boolean) => Promise<void>
+  handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
 }
 
 interface Deferred<T> {
@@ -156,6 +181,7 @@ function scanContext(
     display_scan: completed,
     remaining_count: 2,
     remaining_size: 300,
+    ignored_count: 0,
     cleanup_allowed: true,
     cleanup_block_reason: null,
     ...overrides
@@ -170,6 +196,12 @@ function orphanItem(id: number, scanId = 'scan-completed'): OrphanFileItem {
     file_size: id * 100,
     mtime: '2026-07-30T09:00:00',
     downloader_id: 'dl-1',
+    confidence: 'high',
+    canonical_path: `/data/${id}.bin`,
+    downloader_name: '主下载器',
+    is_ignored: false,
+    ignored_at: null,
+    ignored_by: null,
     is_deleted: false,
     deleted_at: null,
     deleted_by: null,
@@ -219,7 +251,10 @@ function mountView(): Wrapper<Vue> {
       'el-table-column': TableColumnStub,
       'el-input': true,
       'el-pagination': true,
-      'el-tag': true
+      'el-tag': true,
+      'el-select': true,
+      'el-option': true,
+      'el-tooltip': true
     }
   })
 }
@@ -313,7 +348,7 @@ describe('orphan files atomic page state', () => {
     vm.listQuery.page = 3
     vm.listQuery.page_size = 50
     vm.listQuery.downloader_id = 'dl-filter'
-    vm.selectedIds = [1]
+    vm.selectedRows = [orphanItem(1)]
     mockGetOrphanList.mockResolvedValueOnce(
       listResponse(scanContext(), [orphanItem(3)], 120, 3)
     )
@@ -323,12 +358,18 @@ describe('orphan files atomic page state', () => {
     expect(mockGetOrphanList).toHaveBeenLastCalledWith({
       page: 3,
       page_size: 50,
-      downloader_id: 'dl-filter'
+      downloader_id: 'dl-filter',
+      path_like: undefined,
+      status: undefined,
+      min_size: undefined
     })
     expect(vm.listQuery).toEqual({
       page: 3,
       page_size: 50,
-      downloader_id: 'dl-filter'
+      downloader_id: 'dl-filter',
+      path_like: '',
+      status: '',
+      min_size: ''
     })
     expect(vm.selectedIds).toEqual([])
     expect(clearSelection).toHaveBeenCalledTimes(1)
@@ -354,7 +395,7 @@ describe('orphan files atomic page state', () => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
-    vm.selectedIds = [1]
+    vm.selectedRows = [orphanItem(1)]
     await localVue.nextTick()
 
     expect(vm.list).toHaveLength(1)
@@ -401,7 +442,7 @@ describe('orphan files atomic page state', () => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
-    vm.selectedIds = [1]
+    vm.selectedRows = [orphanItem(1)]
     await vm.handleCleanupPreview()
     mockGetOrphanList.mockResolvedValueOnce(
       listResponse(
@@ -426,7 +467,7 @@ describe('orphan files atomic page state', () => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
-    vm.selectedIds = [1]
+    vm.selectedRows = [orphanItem(1)]
     await vm.handleCleanupPreview()
     mockCleanupOrphans.mockResolvedValueOnce({
       code: '200',
@@ -473,7 +514,7 @@ describe('orphan files atomic page state', () => {
       )
     )
     await newerRequest
-    vm.selectedIds = [99]
+    vm.selectedRows = [orphanItem(99)]
     clearSelection.mockClear()
 
     older.resolve(
@@ -493,8 +534,8 @@ describe('orphan files atomic page state', () => {
     expect(vm.listLoading).toBe(false)
     expect(clearSelection).not.toHaveBeenCalled()
     expect(mockGetOrphanList.mock.calls.slice(-2)).toEqual([
-      [{ page: 2, page_size: 20, downloader_id: undefined }],
-      [{ page: 3, page_size: 20, downloader_id: undefined }]
+      [{ page: 2, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }],
+      [{ page: 3, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }]
     ])
   })
 
@@ -595,8 +636,75 @@ describe('orphan files atomic page state', () => {
     expect(vm.listQuery.page).toBe(1)
     expect(vm.list.map((item) => item.id)).toEqual([1])
     expect(mockGetOrphanList.mock.calls.slice(-2)).toEqual([
-      [{ page: 5, page_size: 20, downloader_id: undefined }],
-      [{ page: 1, page_size: 20, downloader_id: undefined }]
+      [{ page: 5, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }],
+      [{ page: 1, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }]
     ])
+  })
+
+  it('列表项渲染置信度与下载器别名', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+
+    // 视图以 confidence/downloader_name 字段驱动展示（shallowMount 下验证 vm 数据契约）
+    const vm = viewModel(wrapper)
+    expect(vm.list[0].confidence).toBe('high')
+    expect(vm.list[0].downloader_name).toBe('主下载器')
+    expect(vm.scanContext.ignored_count).toBe(0)
+  })
+
+  it('搜索条件重置后回到默认空筛选', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.path_like = '/movie'
+    vm.listQuery.status = 'ignored'
+    vm.listQuery.min_size = 1024
+    vm.handleResetFilter()
+
+    expect(vm.listQuery.path_like).toBe('')
+    expect(vm.listQuery.status).toBe('')
+    expect(vm.listQuery.min_size).toBe('')
+  })
+
+  it('批量忽视调用 setIgnored 并刷新列表', async() => {
+    mockSetIgnored.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        success_count: 1,
+        failed_count: 0,
+        failed_list: [],
+        total_size: 0
+      }
+    })
+    mockGetOrphanList.mockResolvedValueOnce(listResponse())
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    // 选中一个待清理项（默认 orphanItem 为 pending：未删除未忽视）
+    vm.selectedRows = [orphanItem(1)]
+
+    await vm.handleBatchIgnore(true)
+
+    expect(mockSetIgnored).toHaveBeenCalledTimes(1)
+    const call = mockSetIgnored.mock.calls[0][0]
+    expect(call.ignored).toBe(true)
+    expect(call.orphan_ids).toEqual([1])
+    expect(message.success).toHaveBeenCalled()
+    // 忽视后刷新列表
+    expect(mockGetOrphanList).toHaveBeenCalled()
+  })
+
+  it('混选不同状态时批量按钮禁用', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    // 混选：一个待清理（默认 is_ignored=false）+ 一个已忽视
+    vm.selectedRows = [orphanItem(1), { ...orphanItem(2), is_ignored: true }]
+
+    expect(vm.canBatchIgnore).toBe(false)
+    expect(vm.canBatchUnignore).toBe(false)
+    expect(vm.canBatchCleanup).toBe(false)
   })
 })
