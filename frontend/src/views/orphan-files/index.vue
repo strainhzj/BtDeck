@@ -242,7 +242,7 @@
             <template slot-scope="scope">
               <el-tooltip
                 v-if="scope.row.confidence === 'low'"
-                content="离线降级目录粗筛判定，需等下载器上线重新精筛后清理"
+                content="离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛"
                 placement="top"
               >
                 <el-tag type="info" size="small">低</el-tag>
@@ -283,19 +283,51 @@
         </el-table>
       </div>
 
-      <!-- 分页 -->
-      <div class="management-pagination">
-        <el-pagination
-          background
-          :current-page="listQuery.page"
-          :page-size="listQuery.page_size"
-          :total="total"
-          :page-sizes="[10, 20, 50, 100]"
-          layout="total, sizes, prev, pager, next, jumper"
-          @size-change="handleSizeChange"
-          @current-change="handleCurrentChange"
-        />
-      </div>
+      <!-- 分页：复用种子列表列表模式同款（PageSizeCombobox + 自定义翻页按钮 + 文字汇总） -->
+      <nav class="torrent-pagination management-pagination">
+        <div class="pagination-info">
+          <PageSizeCombobox
+            ref="pageSizeCombobox"
+            :append-to-body="true"
+            v-model="pageSizeInput"
+            :page-size="listQuery.page_size"
+            :options="pageSizeOptions"
+            :expanded="pageSizeDropdownExpanded"
+            controls-id="orphan-page-size-options"
+            @focus="handlePageSizeFocus"
+            @blur="handlePageSizeBlur"
+            @toggle="togglePageSizeDropdown"
+            @apply="applyPageSizeSelection"
+            @select="handlePageSizeSelect"
+          />
+          <span class="pagination-summary">共 <strong>{{ total }}</strong> 条，第 <strong>{{ listQuery.page }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
+        </div>
+        <div class="pagination-controls">
+          <button
+            class="pagination-btn"
+            :disabled="listQuery.page <= 1"
+            @click="handlePageChange(listQuery.page - 1)"
+          >
+            <LucideIcon name="chevron-left" :size="14" />
+          </button>
+          <button
+            v-for="page in visiblePages"
+            :key="page"
+            class="pagination-btn"
+            :class="{active: page === listQuery.page}"
+            @click="handlePageChange(page)"
+          >
+            {{ page }}
+          </button>
+          <button
+            class="pagination-btn"
+            :disabled="listQuery.page >= totalPages"
+            @click="handlePageChange(listQuery.page + 1)"
+          >
+            <LucideIcon name="chevron-right" :size="14" />
+          </button>
+        </div>
+      </nav>
     </section>
 
     <!-- 清理确认对话框 -->
@@ -317,6 +349,18 @@
           <template slot="default">
             <p>文件数量: <strong>{{ cleanupPreviewData.total_count }}</strong></p>
             <p>总大小: <strong>{{ formatSize(cleanupPreviewData.total_size) }}</strong></p>
+          </template>
+        </el-alert>
+        <el-alert
+          v-if="cleanupPreviewData && (cleanupPreviewData.low_confidence_count || 0) > 0"
+          class="cleanup-low-confidence-warn"
+          :title="`其中 ${cleanupPreviewData.low_confidence_count} 个为低置信度（离线降级目录粗筛判定）`"
+          type="error"
+          :closable="false"
+          show-icon
+        >
+          <template slot="default">
+            <p>低置信度文件有误判风险（可能并非真正的孤儿）。确认清理前请核对路径，避免误删用户数据。</p>
           </template>
         </el-alert>
         <div v-if="cleanupResult" class="cleanup-result">
@@ -366,6 +410,8 @@ import {
 } from '@/api/orphan-files'
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
+import PageSizeCombobox, { PageSizeSuggestion } from '@/components/torrents/PageSizeCombobox.vue'
+import { normalizeTraditionalPageSize } from '@/views/torrents/utils/traditionalPagination'
 
 interface OrphanListQuery {
   page: number
@@ -385,7 +431,7 @@ interface OrphanTableRef extends Vue {
   clearSelection: () => void
 }
 
-@Component({ name: 'OrphanFiles' })
+@Component({ name: 'OrphanFiles', components: { PageSizeCombobox } })
 export default class OrphanFiles extends Vue {
   private list: OrphanFileItem[] = []
   private total = 0
@@ -401,6 +447,11 @@ export default class OrphanFiles extends Vue {
     min_size: ''
   }
   private refreshRequestSeq = 0
+
+  // 每页数量组合框状态（复用种子列表 PageSizeCombobox，与列表模式交互一致）
+  private pageSizeInput = String(this.listQuery.page_size)
+  private pageSizeDropdownExpanded = false
+  private pageSizeOptions = [20, 50, 100, 500, 1000]
 
   // 下载器列表（用于别名展示与下拉筛选）
   private downloaderList: DownloaderSimple[] = []
@@ -532,6 +583,30 @@ export default class OrphanFiles extends Vue {
     return ''
   }
 
+  /** 总页数（total=0 时返回 0，避免空表显示 1/1）。 */
+  private get totalPages(): number {
+    if (this.total === 0) return 0
+    return Math.max(1, Math.ceil(this.total / this.listQuery.page_size))
+  }
+
+  /** 翻页按钮可见页码窗口（最多 5 个，与种子列表列表模式一致）。 */
+  private get visiblePages(): number[] {
+    const pages: number[] = []
+    const maxVisible = 5
+    let start = Math.max(1, this.listQuery.page - Math.floor(maxVisible / 2))
+    let end = Math.min(this.totalPages, start + maxVisible - 1)
+
+    if (end - start < maxVisible - 1) {
+      start = Math.max(1, end - maxVisible + 1)
+    }
+
+    for (let i = start; i <= end; i++) {
+      pages.push(i)
+    }
+
+    return pages
+  }
+
   private get scanStatusMessage(): string {
     const latest = this.latestAttempt
     if (!latest) return ''
@@ -623,13 +698,44 @@ export default class OrphanFiles extends Vue {
     void this.refreshPageData()
   }
 
-  private handleSizeChange(size: number) {
-    this.listQuery.page_size = size
+  // 每页数量变更：与种子列表列表模式一致，应用后回到第一页。
+  private handlePageSizeSelect(suggestion: PageSizeSuggestion) {
+    this.pageSizeDropdownExpanded = false
+    this.applyPageSizeSelection(suggestion.value)
+  }
+
+  private handlePageSizeFocus() {
+    this.pageSizeDropdownExpanded = true
+  }
+
+  private handlePageSizeBlur() {
+    this.pageSizeDropdownExpanded = false
+    this.applyPageSizeSelection(this.pageSizeInput)
+  }
+
+  private togglePageSizeDropdown() {
+    this.pageSizeDropdownExpanded = !this.pageSizeDropdownExpanded
+    if (!this.pageSizeDropdownExpanded) return
+    this.$nextTick(() => {
+      const combobox = this.$refs.pageSizeCombobox as PageSizeCombobox | undefined
+      combobox?.focusInput()
+    })
+  }
+
+  private applyPageSizeSelection(value: string | number) {
+    const normalizedPageSize = normalizeTraditionalPageSize(value, this.listQuery.page_size)
+    this.pageSizeInput = String(normalizedPageSize)
+    this.pageSizeDropdownExpanded = false
+    if (normalizedPageSize === this.listQuery.page_size) return
+
+    this.listQuery.page_size = normalizedPageSize
     this.listQuery.page = 1
     void this.refreshPageData()
   }
 
-  private handleCurrentChange(page: number) {
+  // 翻页：切换当前页并重新加载。
+  private handlePageChange(page: number) {
+    if (page < 1 || page > this.totalPages) return
     this.listQuery.page = page
     void this.refreshPageData()
   }
@@ -705,6 +811,13 @@ export default class OrphanFiles extends Vue {
           this.$message.error(response.data.error || response.data.reason)
           this.cleanupDialogVisible = false
           await this.refreshPageData()
+        } else if (response.data.total_count === 0) {
+          // 预览为空：所选文件均不满足清理条件（低置信度/已忽视/已清理/scan_id 不匹配）。
+          // 不弹空对话框，给出针对性提示引导用户。
+          this.$message.warning(
+            '所选文件均无可清理项：可能是低置信度（需等下载器上线精筛）、已忽视（需先取消忽视）或已清理。'
+          )
+          this.cleanupDialogVisible = false
         } else {
           this.cleanupPreviewData = response.data
         }
@@ -840,6 +953,68 @@ export default class OrphanFiles extends Vue {
 
   .cleanup-result {
     margin-top: var(--spacing-md);
+  }
+
+  .cleanup-low-confidence-warn {
+    margin-top: var(--spacing-md);
+  }
+
+  /* 分页区：复用种子列表列表模式同款（PageSizeCombobox + 翻页按钮 + 文字汇总） */
+  .torrent-pagination.management-pagination {
+    justify-content: space-between;
+    gap: var(--spacing-md);
+
+    .pagination-info {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+
+      .pagination-summary strong {
+        color: var(--color-text-primary);
+      }
+    }
+
+    .pagination-controls {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+
+      .pagination-btn {
+        width: 32px;
+        height: 32px;
+        border: 1px solid var(--color-border-primary);
+        background: var(--color-bg-primary);
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        color: var(--color-text-primary);
+        transition: background-color var(--transition-base) ease,
+          border-color var(--transition-base) ease, color var(--transition-base) ease;
+
+        &:hover:not(:disabled) {
+          background: var(--color-primary);
+          border-color: var(--color-primary);
+          color: #fff;
+        }
+
+        &:disabled {
+          opacity: 0.5;
+          cursor: not-allowed;
+        }
+
+        &.active {
+          background: var(--color-primary);
+          border-color: var(--color-primary);
+          color: #fff;
+          font-weight: var(--font-weight-semibold);
+        }
+      }
+    }
   }
 }
 

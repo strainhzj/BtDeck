@@ -56,7 +56,7 @@ describe('孤儿文件管理页信息层级', () => {
     expect(orphanFilesSource).toContain('class="management-stats-grid"')
     expect(orphanFilesSource).toContain('class="management-stat-card"')
     expect(orphanFilesSource).toContain('已选择 {{ selectedIds.length }} 项')
-    expect(orphanFilesSource).toContain('class="management-pagination"')
+    expect(orphanFilesSource).toContain('management-pagination')
 
     const listPanel = orphanFilesSource.match(/<!-- 孤儿文件列表 -->[\s\S]*?<\/section>/)?.[0] || ''
     expect(listPanel).toContain('清理选中')

@@ -114,6 +114,8 @@ export interface CleanupPreviewSuccess {
   rejected?: false
   total_count: number
   total_size: number
+  /** 预览结果中低置信度（离线降级粗筛）文件数量；>0 时前端应警告误判风险。 */
+  low_confidence_count?: number
   items: Array<{
     id: number
     file_path: string
@@ -244,10 +246,14 @@ export function cleanupPreview(data: CleanupRequest): Promise<ApiResponse<Cleanu
  * 手动清理选中的孤儿文件
  */
 export function cleanupOrphans(data: CleanupRequest): Promise<ApiResponse<CleanupResult>> {
+  // 清理需实时复核 manifest（逐种子拉文件清单），大下载器耗时较长。
+  // 单独放宽到 120s，解除全局 20s 硬超时（后端 lease TTL=3600s 已为长任务预留）。
+  // 注：真正治本需 manifest 缓存或清理异步化，此处为临时缓解。
   return request({
     url: '/orphan-files/cleanup',
     method: 'post',
-    data: data
+    data: data,
+    timeout: 120000
   }) as unknown as Promise<ApiResponse<CleanupResult>>
 }
 

@@ -197,7 +197,7 @@ describe('API 请求契约', () => {
       mockRequest.mockReset()
       expectRequest(
         () => cleanupOrphans(data),
-        { url: '/orphan-files/cleanup', method: 'post', data }
+        { url: '/orphan-files/cleanup', method: 'post', data, timeout: 120000 }
       )
     })
   })

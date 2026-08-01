@@ -101,42 +101,55 @@ div:focus {
       outline-offset: -2px;
     }
   }
+}
 
-  .page-size-options {
-    position: absolute;
-    left: -1px;
-    bottom: calc(100% + 4px);
-    z-index: 50;
-    width: 108px;
-    margin: 0;
-    padding: 4px 0;
-    list-style: none;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--radius-sm);
-    background: var(--color-bg-primary);
-    box-shadow: var(--shadow-md);
+/* 下拉选项列表：提升为顶层独立规则（原嵌在 .page-size-combobox 后代选择器内）。
+   teleport 到 body 后，.page-size-options 脱离 .page-size-combobox 父级，
+   后代选择器会失效；这里不依赖父级，DOM 在哪儿都命中视觉样式。 */
+.page-size-options {
+  position: absolute;          /* 默认（appendToBody=false）保持原行为：相对触发器定位 */
+  left: -1px;
+  top: calc(100% + 4px);
+  z-index: 50;
+  width: 108px;
+  margin: 0;
+  padding: 4px 0;
+  list-style: none;
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+  box-shadow: var(--shadow-md);
 
-    button {
-      width: 100%;
-      padding: 4px 8px;
-      border: 0;
-      background: transparent;
-      color: var(--color-text-primary);
-      text-align: center;
-      cursor: pointer;
+  button {
+    width: 100%;
+    padding: 4px 8px;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-primary);
+    text-align: center;
+    cursor: pointer;
 
-      &[aria-selected='true'] {
-        background: var(--color-bg-hover);
-        color: var(--color-primary);
-        font-weight: var(--font-weight-semibold);
-      }
+    &[aria-selected='true'] {
+      background: var(--color-bg-hover);
+      color: var(--color-primary);
+      font-weight: var(--font-weight-semibold);
+    }
 
-      &:hover,
-      &:focus-visible {
-        background: var(--color-bg-hover);
-        color: var(--color-primary);
-        outline: none;
-      }
+    &:hover,
+    &:focus-visible {
+      background: var(--color-bg-hover);
+      color: var(--color-primary);
+      outline: none;
     }
   }
+}
+
+/* teleport 到 body 时的定位覆盖：fixed 绕开所有父级 stacking context 与 overflow 裁剪。
+   只覆盖 position/坐标系，视觉样式继承上面的 .page-size-options。
+   z-index=1000：高于普通面板(30)、低于 el-loading-mask(2000) 与 modal(1050)。 */
+.page-size-options--floating {
+  position: fixed !important;
+  left: 0;
+  top: 0;
+  z-index: var(--z-index-dropdown, 1000);
 }

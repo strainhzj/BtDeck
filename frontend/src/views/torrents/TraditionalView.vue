@@ -461,6 +461,7 @@
           <div class="pagination-info">
             <PageSizeCombobox
               ref="pageSizeCombobox"
+              :append-to-body="true"
               v-model="pageSizeInput"
               :page-size="pageSize"
               :options="pageSizeOptions"

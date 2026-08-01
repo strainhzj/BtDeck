@@ -523,24 +523,24 @@ describe('TraditionalView component regressions', () => {
     expect(suggestions.map(item => item.value)).toEqual(['20', '50', '100', '500', '1000'])
 
     const toggle = wrapper.find('.page-size-toggle')
-    expect(toggle.classes()).toContain('el-icon-arrow-down')
+    expect(toggle.classes()).toContain('el-icon-arrow-up')
     expect(toggle.element.tagName).toBe('BUTTON')
 
     await toggle.trigger('click')
     await localVue.nextTick()
     expect(vm.pageSizeDropdownExpanded).toBe(true)
-    expect(toggle.classes()).toContain('el-icon-arrow-up')
+    expect(toggle.classes()).toContain('el-icon-arrow-down')
     expect(wrapper.findAll('.page-size-options button').wrappers.map(option => option.text()))
       .toEqual(['20', '50', '100', '500', '1000'])
 
     await toggle.trigger('click')
     expect(vm.pageSizeDropdownExpanded).toBe(false)
-    expect(toggle.classes()).toContain('el-icon-arrow-down')
+    expect(toggle.classes()).toContain('el-icon-arrow-up')
 
     await toggle.trigger('click')
     await localVue.nextTick()
     expect(vm.pageSizeDropdownExpanded).toBe(true)
-    expect(toggle.classes()).toContain('el-icon-arrow-up')
+    expect(toggle.classes()).toContain('el-icon-arrow-down')
 
     await wrapper.findAll('.page-size-options button').at(1).trigger('click')
     await flushLifecycle()

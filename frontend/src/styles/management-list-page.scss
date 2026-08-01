@@ -167,13 +167,31 @@
     height: 0;
   }
 
+  /* 表头整体连贯渐变：渐变设在 tr 上（而非每个 th 单独），th 设透明透出底层，
+     避免"每列各自渐变"的拼接感，与种子列表列表模式（thead 整体渐变）视觉一致。
+     双层 + !important 用于压过 Element 默认 .el-table th.el-table__cell{background-color:#fff}。 */
+  .el-table__header-wrapper tr,
+  .el-table__fixed-header-wrapper tr {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light)) !important;
+  }
+
   .el-table__header-wrapper th,
   .el-table__fixed-header-wrapper th {
-    padding: 11px 0;
+    padding: 10px 12px;
     color: #fff;
     font-weight: var(--font-weight-semibold);
-    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
-    border-color: rgba(255, 255, 255, 0.18);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: transparent !important;
+    border-color: rgba(255, 255, 255, 0.18) !important;
+  }
+
+  /* 列表滚动时表头吸顶，与种子列表列表模式表现一致 */
+  .el-table__header-wrapper {
+    position: sticky;
+    top: 0;
+    z-index: 10;
   }
 
   .el-table__header-wrapper th .cell,
