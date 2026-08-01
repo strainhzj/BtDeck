@@ -56,12 +56,13 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（19 个 spec）
+### `frontend/tests/unit/`（20 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
 | `api-contracts.spec.ts` | API 契约一致性 |
 | `downloader-settings.spec.ts` | 下载器设置 store |
+| `deployment-recovery.spec.ts` | 部署后 chunk 一次恢复、刷新循环门禁、历史 Workbox 清退与 nginx 缓存契约 |
 | `error-normalize.spec.ts` | `utils/error-normalize.ts` |
 | `field-types-consistency.spec.ts` ✨v1.0.6.27 | 高级搜索字段类型前后端一致性 |
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |

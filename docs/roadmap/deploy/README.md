@@ -42,16 +42,18 @@
 
 ### frontend 构建 + nginx
 
-- 构建：`frontend/Dockerfile.prod` L39 `RUN npm run build` → 产物 `dist`
-- 拷贝：L59 `COPY --from=builder /app/dist /usr/share/nginx/html`
-- 启动：L84 `CMD ["nginx", "-g", "daemon off;"]`
+- 构建：`frontend/Dockerfile.prod` L50 `RUN npm run build` → 产物 `dist`
+- 拷贝：L70 `COPY --from=builder /app/dist /usr/share/nginx/html`
+- 启动：L95 `CMD ["nginx", "-g", "daemon off;"]`
 - `frontend/nginx.conf` 关键：
   - L53 `listen 80;`；L60 `root /usr/share/nginx/html;`
-  - L70-74 静态资源缓存 1y
-  - L78 `location /api/ { proxy_pass http://btdeck-backend:5001; }`
-  - L106 `location /ws/ { proxy_pass http://btdeck-backend:5002/; }`（WebSocket 走 5002）
-  - L123 `location / { try_files $uri $uri/ /index.html; }`（SPA history fallback）
-  - L133 `location /health`（容器健康检查端点）
+  - L71 `service-worker.js` 精确 no-store；L81 只有 `/assets/` 内容哈希资源缓存 1y immutable
+  - L90 `location /api/ { proxy_pass http://btdeck-backend:5001; }`
+  - L118 `location /ws/ { proxy_pass http://btdeck-backend:5002/; }`（WebSocket 走 5002）
+  - L135 `location / { try_files $uri $uri/ /index.html; }`（SPA history fallback + no-store）
+  - L145 `location /health`（容器健康检查端点）
+
+> 部署会整体替换包含哈希文件的不可变前端镜像。已打开的旧 SPA 可能在客户端路由跳转时请求旧 chunk；`router.onError` 会携带一次性 query 重新加载当前 no-store 入口，60 秒门禁防止服务器真实缺文件时循环刷新。
 
 ### 一键脚本
 

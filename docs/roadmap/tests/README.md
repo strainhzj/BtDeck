@@ -44,6 +44,8 @@ cd backend && pytest tests/api/               # API 层（35 个 test_*.py）
 |--------|------|
 | `unit/` | jest 单元测试 |
 
+- `deployment-recovery.spec.ts`：覆盖部署后 JS/CSS chunk 错误识别、一次恢复、防刷新循环、历史 Workbox 清退和 nginx 缓存契约。
+
 ### 组件内嵌测试
 
 部分组件有内嵌 `__tests__/`：

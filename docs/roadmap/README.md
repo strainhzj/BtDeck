@@ -96,4 +96,4 @@ BtDeck/
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层样例（1 个：torrent_crud.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | v1.0.6.32 增加路径映射真实目录验证索引：内部目录复用缓存下载器 RPC，外部目录在 BtDeck 运行环境有界探测，任一映射失败即整体 fail-closed；同步更新 API 类型与测试统计 |
+| 本次新增 | v1.0.6.32 路径映射真实目录验证索引；2026-08-01 增补部署后旧 SPA chunk 自动恢复、历史 Workbox 清退，以及 nginx 稳定入口/哈希资源缓存边界 |

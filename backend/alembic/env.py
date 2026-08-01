@@ -46,6 +46,7 @@ from app.models.search_template import SearchTemplate
 
 # 孤儿文件管理
 from app.models.orphan_file import OrphanScanResult, OrphanFile, OrphanCurrentCandidate, OrphanOperationLease
+from app.models.orphan_purge_job import OrphanPurgeJob
 
 from logging.config import fileConfig
 

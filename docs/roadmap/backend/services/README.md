@@ -2,7 +2,7 @@
 
 > 业务逻辑层，承接 endpoint 调用，向下依赖 core 基础设施与 ORM 模型。包含两个适配器子包（下载器适配器、标签适配器）。
 
-## services/ 根（36 个文件）
+## services/ 根（37 个文件）
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
@@ -17,12 +17,13 @@
 | `downloader_capabilities_manager.py` | 359 | 1 class, 0 def | 下载器能力配置 CRUD 与同步 |
 | `downloader_settings_manager.py` | 369 | 1 class, 1 def | 下载器设置统一管理器（封装 qB/Transmission 设置包装类） |
 | `notification_service.py` | 226 | 1 class, 0 def | 通知服务（CRUD + 版本更新检查） |
-| `orphan_file_service.py` | 1346 | 1 class, 0 def | 孤儿文件管理（失败扫描回退读模型/剩余量统计/清理预览/手动自动清理/中断恢复/超期清理/扫描告警审计） |
+| `orphan_file_service.py` | 2112 | 1 class, 0 def | 孤儿文件管理（扫描上下文/清理与隔离/恢复/彻底删除/中断恢复）；物理操作后安全回收记录隔离根内的空 UUID/scan-id 目录 |
 | `orphan_lease.py` | 259 | 2 class, 8 def | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | `orphan_lifecycle_service.py` | 252 | 1 class, 1 def | `OrphanCurrentCandidate` 表生命周期推进（仅在成功扫描根内对账，支持事务化状态落库） |
 | `orphan_manifest.py` | 560 | 5 class, 5 def | 有效路径筛选、严格下载器映射及扫描/清理共用实时 manifest |
 | `orphan_notification.py` | 129 | 0 class, 3 def | 孤儿扫描完成通知（幂等 dedupe_key） |
-| `orphan_quarantine.py` | 250 | 0 class, 8 def | 孤儿隔离区管理（移入 → 保留期 → 物理删除） |
+| `orphan_purge_job_service.py` | 403 | 2 class, 1 def | 隔离区彻底删除持久化任务：原子领取/串行后台执行/重启恢复/通知幂等补偿 |
+| `orphan_quarantine.py` | 313 | 0 class, 11 def | 孤儿隔离区管理（移入 → 保留期 → 物理删除），仅用 `os.rmdir` 回收记录根内空目录 |
 | `orphan_scanner.py` | 708 | 3 class, 1 def | 孤儿文件扫描器（未映射路径记录提醒并跳过，仅扫描成功映射范围） |
 | `path_mapping_validation.py` | 431 | 2 class, 16 def | 路径映射目录验证：复用 `app.state.store` 缓存连接，Transmission 以 `free_space` 探测，qB 以默认目录磁盘空间/现有种子路径取证；外部目录执行有界本地 stat/权限检查 |
 | `path_maintenance_service.py` | 552 | 1 class, 0 def | 下载器路径维护服务（默认/活跃路径） |

@@ -241,3 +241,44 @@ class TestOrphanScanNotification:
         )
         assert notification.scalar_one_or_none() is not None
         assert result["retried_count"] == 1
+
+    async def test_retry_task_compensates_missing_purge_notification(
+        self, async_orphan_db, monkeypatch
+    ):
+        """彻底删除已落库但首次通知失败时，补偿任务应幂等补发。"""
+        from app.models.notification import Notification
+        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+        from app.tasks.scheduler.orphan_notification_retry_task import (
+            OrphanNotificationRetryTask,
+        )
+
+        service = OrphanPurgeJobService(async_orphan_db)
+        job = await service.create_job(["/data/retry.mkv"], operator="tester")
+        assert await service.claim_job(job.task_id)
+        await service.finish_job(
+            job.task_id,
+            status="failed",
+            purged_count=0,
+            failed_count=1,
+            failed_list=[{"canonical_path": "/data/retry.mkv", "reason": "test failure"}],
+        )
+
+        class SessionContext:
+            async def __aenter__(self):
+                return async_orphan_db
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+        monkeypatch.setattr(
+            "app.tasks.scheduler.orphan_notification_retry_task.AsyncSessionLocal",
+            lambda: SessionContext(),
+        )
+        result = await OrphanNotificationRetryTask().execute()
+
+        notification = await async_orphan_db.execute(
+            select(Notification).where(Notification.dedupe_key == f"orphan_purge:{job.task_id}")
+        )
+        assert notification.scalar_one_or_none() is not None
+        assert result["purge_retried_count"] == 1
+        assert result["purge_failed_count"] == 0

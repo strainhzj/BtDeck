@@ -316,6 +316,7 @@ export interface QuarantineActionRequest {
 
 export interface QuarantineFailedItem {
   canonical_path: string
+  quarantine_path?: string | null
   reason: string
 }
 
@@ -327,10 +328,16 @@ export interface RestoreResult {
 }
 
 export interface PurgeResult {
-  rejected?: boolean
+  task_id: string
+  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed'
+  total_count: number
   purged_count: number
   failed_count: number
   failed_list: QuarantineFailedItem[]
+  error_message: string | null
+  created_at: string
+  started_at: string | null
+  completed_at: string | null
 }
 
 /**
@@ -357,13 +364,20 @@ export function restoreQuarantined(data: QuarantineActionRequest): Promise<ApiRe
 }
 
 /**
- * 立即彻底删除隔离区文件（跳过保留期，保留全部安全检查）
+ * 提交隔离区彻底删除任务（立即返回，结果由通知中心送达）
  */
 export function purgeQuarantineNow(data: QuarantineActionRequest): Promise<ApiResponse<PurgeResult>> {
   return request({
     url: '/orphan-files/purge',
     method: 'post',
-    data: data,
-    timeout: 300000
+    data: data
+  }) as unknown as Promise<ApiResponse<PurgeResult>>
+}
+
+/** 查询隔离区彻底删除任务状态 */
+export function getPurgeJobStatus(taskId: string): Promise<ApiResponse<PurgeResult>> {
+  return request({
+    url: `/orphan-files/purge-jobs/${taskId}`,
+    method: 'get'
   }) as unknown as Promise<ApiResponse<PurgeResult>>
 }

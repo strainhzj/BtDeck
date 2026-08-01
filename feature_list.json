@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-07-31",
+  "last_updated": "2026-08-01",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -167,6 +167,7 @@
       "tasks": [
         {
           "id": "orphan-files-management-enhancement.1",
+          "followup_evidence": "2026-08-01: 将隔离区彻底删除改为持久化异步任务（pending/running/completed/partial/failed），HTTP 提交后立即返回，进程重启自动恢复，终态幂等写入通知中心并由每小时补偿任务补发。根因验证：purge 每次新建 tombstone UUID 目录，文件移走后原 UUID 目录与删除后的 tombstone 目录都未 rmdir，单次可从 1 个目录变 2 个；预写失败/重试会继续累积。现在只对数据库记录隔离根内的空 UUID 目录和空 scan-id 根执行 os.rmdir，不递归、不删非空目录、不越过 .btdeck_quarantine。新 Alembic head c7d8e9f0a1b2 可升降级且表/索引幂等。后端全量 2514 passed/6 skipped，新任务模型+服务 mypy 通过，后端实现文件 Black 与 app 全量 Flake8 通过。",
           "name": "后端迁移+模型+服务+API+枚举",
           "description": "新增 Alembic 迁移（orphan_current_candidate 加 is_ignored/ignored_at/ignored_by；orphan_file 加 canonical_path 冗余列+索引+存量回填，解决 status=ignored SQL 联表）；模型加列；扫描器落库处填 canonical_path；get_orphan_list 加 status/path_like 参数+下载器别名解析+忽视态注入；set_ignored（db_write_scope+候选状态校验+审计独立 session）；cleanup_preview/cleanup_orphans/get_purgeable_candidates 拒绝已忽视；reconcile resolved→candidate 重置 is_ignored；/list 与 /ignore 端点；AuditOperationType 加 ORPHAN_IGNORE。",
           "status": "done",
@@ -190,6 +191,8 @@
         },
         {
           "id": "orphan-files-management-enhancement.2",
+          "followup_evidence": "2026-08-01: 修复隔离区大小列直接调用未暴露的 formatFileSize 导致的 Vue 2 渲染异常，改为复用组件 formatSize 方法；新增隔离区刷新渲染回归测试，并同步 cleanup 300000ms 超时的 API 契约断言。orphan-files.spec 17 passed，全量 Jest 27 suites/405 tests passed，typecheck/lint/生产 build 通过。同日后续：彻底删除前端改为仅提交异步任务，取消 300000ms 等待，提示任务 ID 及通知中心查收结果；新增提交/状态 API 契约和页面交互回归。前端全量 27 suites/407 tests、typecheck、lint、生产 build 通过。",
+          "followup_deployment_chunk_recovery": "2026-08-01: 重新部署后旧标签页访问孤儿文件路由出现 ChunkLoadError。线上取证确认浏览器旧 runtime app.64d1d8fb 请求已下线 orphan-files.15d0574e/475718e4，而当前 index 为 app.e237e2cd，当前 orphan-files.c9417ee9/43a2e370 均 200；单容器、无静态目录 volume，排除当前镜像漏文件/多实例混版。新增 deployment-recovery：router.onError 识别 JS/CSS chunk 失败，只携带查询标记自动整页切换一次并用 session 60 秒门禁防循环；启动时清退当前根作用域的历史 Workbox 注册和 BtDeck 前缀缓存。nginx 仅对 /assets/ 内容哈希资源设置 immutable，service-worker.js 改为 no-store。新增 11 项回归；前端全量 28 suites/418 tests、typecheck、lint、生产 build、nginx -t 和实际 HTTP 缓存/404 行为验证通过。",
           "name": "前端类型+视图+测试",
           "description": "OrphanFileItem 加 confidence/canonical_path/is_ignored/downloader_name；OrphanListParams 加 status/path_like/min_size；OrphanScanContext 加 ignored_count；新增 setIgnored()。视图（Vue2 class-style）：下载器别名列（getDownloaderList 建 nickname 映射）、置信度列（high/low tag+tooltip）、忽视操作（行内+批量，按选中主导状态动态启停按钮，deleted 禁勾，混选禁用）、多条件搜索（路径/下载器 el-select/状态/大小）、已忽视统计卡。",
           "status": "done",
@@ -197,8 +200,14 @@
           "files": [
             "frontend/src/api/orphan-files.ts",
             "frontend/src/views/orphan-files/index.vue",
-            "frontend/tests/unit/orphan-files.spec.ts"
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "frontend/src/utils/deployment-recovery.ts",
+            "frontend/src/router.ts",
+            "frontend/src/main.ts",
+            "frontend/nginx.conf",
+            "frontend/tests/unit/deployment-recovery.spec.ts"
           ],
+          "followup_quarantine_path_authorization_fix": "2026-08-01: 二次确认并修复彻底删除失败的真实原因：隔离文件已在 .btdeck_quarantine，但旧 purge 仍用原始 canonical_path 对当前下载器映射的 scan_roots 做授权，/Downloads/ipan/Downloads/... 重复前缀或映射变化会误报路径未授权/身份字段不完整。自动到期删除、手动异步删除和 purge_pending 崩溃恢复统一以持久化 quarantine_path/quarantine_root 做物理范围校验；manifest 只可选复核原始路径是否重新被种子引用，不参与隔离路径解析。旧记录缺少 mtime_ns/device_id/inode 时，在已通过隔离根校验且现有字段匹配的前提下补齐后再复核。失败通知显示原路径+实际隔离路径。新增重复前缀、旧身份缺失、到期删除/崩溃恢复不依赖下载器映射、隔离根越界拒绝和通知路径展示回归；隔离安全 40 passed/1 skipped，相关孤儿/manifest/API/异步任务/扫描任务选定回归 126 passed/1 skipped，前端 typecheck/lint/unit/build 通过。当前源码已移除旧错误分支，但工作区 btdeck-backend.latest.tar 仍包含旧文案且导出早于源码修改；本轮未重新导出、未部署。",
           "evidence": "typecheck 干净；orphan-files.spec 16 passed（含别名/置信度渲染、搜索重置、批量忽视、混选禁用 4 个新增用例）；全量 Jest 24 suites/352 tests 通过；eslint 干净；生产 build 成功。 UI 对齐（2026-07-31）：列表表头与种子列表列表模式完全统一（padding 10px 12px/大写/字号 12px/letter-spacing/sticky 吸顶，改 management-list-page.scss 全局生效）；分页弃用 el-pagination，复用 PageSizeCombobox + 自定义翻页按钮（LucideIcon 箭头）+ 文字汇总，与种子列表交互一致；eslint 干净，生产 build 成功。 4问题修复(2026-07-31)：表头渐变加!important(单层)；PageSizeCombobox下拉改向下展开(避overflow裁剪+el-loading-mask撞车)；preview空时友好提示；cleanupOrphans timeout 120000。lint干净,build成功。 手动清理放行low(2026-07-31):CleanupPreviewSuccess加low_confidence_count;preview弹窗含low时红色警告;置信度列tooltip改文案消除矛盾.lint干净,build成功."
         }
       ]

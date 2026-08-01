@@ -14,6 +14,14 @@ export interface NotificationItem {
     current_version?: string
     release_url?: string
     published_at?: string
+    event?: string
+    route?: string
+    task_id?: string
+    task_status?: string
+    total_count?: number
+    purged_count?: number
+    failed_count?: number
+    failed_list?: Array<{ canonical_path: string, quarantine_path?: string | null, reason: string }>
   } | null
   created_at: string
   read_at: string | null

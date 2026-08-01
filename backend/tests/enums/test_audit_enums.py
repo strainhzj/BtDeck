@@ -70,6 +70,8 @@ AUDIT_OPERATION_TYPE_PARAMS = [
     ("orphan_cleanup", "孤儿文件清理", "orphan_files"),
     ("orphan_auto_cleanup", "孤儿文件自动清理", "orphan_files"),
     ("orphan_ignore", "孤儿文件忽视", "orphan_files"),
+    ("orphan_purge", "孤儿文件彻底删除", "orphan_files"),
+    ("orphan_restore", "孤儿文件恢复", "orphan_files"),
 ]
 
 INVALID_OPERATION_TYPE_VALUES = [
@@ -110,7 +112,7 @@ class TestAuditOperationTypeMemberCount:
     """验证 AuditOperationType 枚举成员总数正确"""
 
     def test_member_count(self):
-        assert len(AuditOperationType) == 43
+        assert len(AuditOperationType) == 45
 
 
 class TestAuditOperationTypeIsValid:

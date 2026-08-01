@@ -19,6 +19,10 @@ from app.auth.dependencies import require_authenticated_user
 from app.database import get_async_db
 from app.services.audit_service import AuditLogService, get_audit_service
 from app.services.orphan_file_service import OrphanFileService
+from app.services.orphan_purge_job_service import (
+    OrphanPurgeJobService,
+    get_orphan_purge_dispatcher,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -249,21 +253,37 @@ async def purge_quarantine_now(
     req: QuarantineActionRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
-    audit_service: AuditLogService = Depends(get_audit_service),
 ):
-    """立即彻底删除隔离区文件（跳过保留期门禁，保留全部安全检查 + 审计）。"""
+    """提交隔离区彻底删除任务并立即返回，结果由通知中心异步送达。"""
     try:
-        service = OrphanFileService(db)
-        result = await service.purge_quarantine_now(
+        job = await OrphanPurgeJobService(db).create_job(
             canonical_paths=req.canonical_paths,
             operator=current_user.username,
-            store=request.app.state.store,
-            audit_service=audit_service,
         )
-        msg = f"彻底删除完成: 成功 {result['purged_count']} 个"
-        if result["failed_count"] > 0:
-            msg += f"，失败 {result['failed_count']} 个"
-        return CommonResponse(status="success", msg=msg, code="200", data=result)
+        get_orphan_purge_dispatcher(request.app).submit(str(job.task_id))
+        return CommonResponse(
+            status="success",
+            msg="彻底删除任务已提交，完成后将发送通知",
+            code="200",
+            data=job.to_dict(),
+        )
     except Exception as e:
-        logger.error(f"隔离区彻底删除失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"操作失败: {e}", code="500", data=None)
+        logger.error(f"提交隔离区彻底删除任务失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"任务提交失败: {e}", code="500", data=None)
+
+
+@router.get("/purge-jobs/{task_id}", response_model=CommonResponse)
+async def get_purge_job_status(
+    task_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """查询隔离区彻底删除任务状态。"""
+    try:
+        job = await OrphanPurgeJobService(db).get_job(task_id)
+        if job is None:
+            return CommonResponse(status="error", msg="任务不存在", code="404", data=None)
+        return CommonResponse(status="success", msg="查询成功", code="200", data=job.to_dict())
+    except Exception as e:
+        logger.error(f"查询隔离区彻底删除任务失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)

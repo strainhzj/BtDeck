@@ -12,9 +12,11 @@
 @time: 2026-07-11
 """
 
+import errno
 import json
 import logging
 import os
+import re
 import uuid
 from pathlib import Path
 from typing import Optional, Tuple
@@ -22,6 +24,8 @@ from typing import Optional, Tuple
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+_OPERATION_DIR_PATTERN = re.compile(r"^[0-9a-fA-F]{32}$")
 
 
 def _rename_no_replace(src_path: str, dest_path: str) -> None:
@@ -107,6 +111,97 @@ def build_quarantine_path(src_path: str, quarantine_root: str) -> str:
     return os.path.join(operation_dir, os.path.basename(src_path))
 
 
+def _remove_empty_directory(path: str) -> bool:
+    """仅删除真实空目录；非空、已不存在和符号链接均安全跳过。"""
+    if not path or os.path.islink(path):
+        return False
+    try:
+        os.rmdir(path)
+        logger.info("[隔离区] 已清理空目录: %s", path)
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        if exc.errno not in (errno.ENOTEMPTY, errno.EEXIST, errno.ENOENT):
+            logger.warning("[隔离区] 空目录清理失败 %s: %s", path, exc)
+        return False
+
+
+def prune_empty_quarantine_parents(file_path: Optional[str], quarantine_root: Optional[str]) -> int:
+    """删除已移走/删除文件留下的空父目录，并在为空时删除 scan_id 根目录。
+
+    只沿 ``file_path`` 到已记录 ``quarantine_root`` 的路径向上执行 ``os.rmdir``；
+    不递归、不删除非空目录，也不会越过 scan_id 根目录删除全局
+    ``.btdeck_quarantine`` 或自定义隔离父目录。
+    """
+    if not file_path or not quarantine_root or not os.path.isabs(quarantine_root) or os.path.islink(quarantine_root):
+        return 0
+
+    root_path = os.path.abspath(quarantine_root)
+    parent_path = os.path.abspath(os.path.dirname(file_path))
+    root_real = os.path.realpath(root_path)
+    parent_real = os.path.realpath(parent_path)
+    try:
+        lexical_root = os.path.commonpath([parent_path, root_path])
+        resolved_root = os.path.commonpath([parent_real, root_real])
+        if os.path.normcase(lexical_root) != os.path.normcase(root_path) or os.path.normcase(
+            resolved_root
+        ) != os.path.normcase(root_real):
+            logger.warning("[隔离区] 拒绝清理越界目录: file=%s root=%s", file_path, quarantine_root)
+            return 0
+    except ValueError:
+        return 0
+
+    removed = 0
+    current = parent_path
+    while os.path.normcase(current) != os.path.normcase(root_path):
+        if not _remove_empty_directory(current):
+            break
+        removed += 1
+        parent = os.path.dirname(current)
+        if parent == current:
+            return removed
+        current = parent
+
+    if _remove_empty_directory(root_path):
+        removed += 1
+    return removed
+
+
+def prune_recorded_quarantine_root(quarantine_root: Optional[str]) -> int:
+    """清理已记录 scan_id 根目录下历史遗留的空 UUID 操作目录。
+
+    历史 tombstone 路径在候选标记 purged 后会被清空，无法逐个反查；因此这里只
+    扫描隔离根的直接子目录，并且仅处理 ``uuid4().hex`` 形态的空目录。
+    """
+    if not quarantine_root or not os.path.isabs(quarantine_root) or os.path.islink(quarantine_root):
+        return 0
+
+    root_real = os.path.realpath(quarantine_root)
+    removed = 0
+    try:
+        entries = list(os.scandir(root_real))
+    except FileNotFoundError:
+        return 0
+    except OSError as exc:
+        logger.warning("[隔离区] 无法扫描历史空目录 %s: %s", quarantine_root, exc)
+        return 0
+
+    for entry in entries:
+        if not _OPERATION_DIR_PATTERN.fullmatch(entry.name):
+            continue
+        try:
+            is_directory = entry.is_dir(follow_symlinks=False)
+        except OSError:
+            continue
+        if is_directory and _remove_empty_directory(entry.path):
+            removed += 1
+
+    if _remove_empty_directory(root_real):
+        removed += 1
+    return removed
+
+
 def quarantine_file(
     src_path: str,
     quarantine_root: str,
@@ -132,9 +227,9 @@ def quarantine_file(
 
     # 生成隔离后的文件名（用 uuid 防冲突）
     dest_path = dest_path or build_quarantine_path(src_path, quarantine_root)
-    if os.path.commonpath(
-        [os.path.realpath(dest_path), os.path.realpath(quarantine_root)]
-    ) != os.path.realpath(quarantine_root):
+    if os.path.commonpath([os.path.realpath(dest_path), os.path.realpath(quarantine_root)]) != os.path.realpath(
+        quarantine_root
+    ):
         raise OSError("隔离目标路径逃逸隔离根")
 
     src_stat = os.stat(src_path)
@@ -181,11 +276,7 @@ def compute_purge_after(quarantined_at, retention_days: Optional[int] = None):
     """计算允许物理删除的时间（quarantined_at + 保留期）。"""
     from datetime import timedelta
 
-    days = (
-        retention_days
-        if retention_days is not None
-        else settings.ORPHAN_QUARANTINE_RETENTION_DAYS
-    )
+    days = retention_days if retention_days is not None else settings.ORPHAN_QUARANTINE_RETENTION_DAYS
     return quarantined_at + timedelta(days=days)
 
 

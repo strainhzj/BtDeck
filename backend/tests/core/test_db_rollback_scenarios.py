@@ -15,7 +15,6 @@ import sqlite3
 import shutil
 from pathlib import Path
 
-import pytest
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
@@ -29,7 +28,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "a1b2c3d4e5f6"  # 当前 head（orphan ignore + canonical_path）
+REV_HEAD = "c7d8e9f0a1b2"  # 当前 head（orphan purge jobs）
 
 
 def _make_cfg(db_path: str) -> Config:
@@ -323,7 +322,7 @@ class TestRollbackSafetyInvariants:
 
         # 篡改为任意未来版本号
         conn = sqlite3.connect(db_path)
-        conn.execute(f"UPDATE alembic_version SET version_num = 'any_future_v999'")
+        conn.execute("UPDATE alembic_version SET version_num = 'any_future_v999'")
         conn.commit()
         conn.close()
 

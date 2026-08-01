@@ -37,6 +37,10 @@ import '@/icons/components/index'
 import '@/permission'
 import waves from '@/directive/waves' // waves directive
 import LucideIcon from '@/components/common/LucideIcon.vue'
+import {
+  clearChunkRecoveryQuery,
+  retireLegacyServiceWorkers
+} from '@/utils/deployment-recovery'
 
 Vue.use(ElementUI)
 
@@ -52,6 +56,13 @@ Vue.use(SvgIcon, {
 Vue.directive('waves', waves)
 
 Vue.config.productionTip = false
+
+// Current builds do not register the generated PWA worker. Remove workers and
+// precaches left by older releases so they cannot pin an obsolete app shell.
+void retireLegacyServiceWorkers()
+
+// Keep the reload-loop marker until the initial lazy route loaded successfully.
+router.onReady(() => clearChunkRecoveryQuery())
 
 new Vue({
   router,

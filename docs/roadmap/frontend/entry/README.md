@@ -6,23 +6,25 @@
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
-| `main.ts` | 56 | `new Vue(...)` | 应用入口：初始化主题、注册插件（ElementUI/SvgIcon/waves 指令）、挂载 #app |
-| `router.ts` | 302 | `router` (default export) | 路由表（15 条顶层路由）+ 修补 `router.push` 的 NavigationDuplicated |
+| `main.ts` | 71 | `new Vue(...)` | 应用入口：初始化主题、注册插件、清退历史 Workbox、挂载 #app |
+| `router.ts` | 318 | `router` (default export) | 路由表 + `router.push` 修补 + 部署后旧 chunk 一次恢复 |
 | `permission.ts` | 70 | `router.beforeEach` / `router.afterEach` | 全局路由守卫：token 判断、白名单、NProgress、页面标题 |
 | `App.vue` | 31 | `App` 组件（class-component） | 根组件，仅 `<div id="app"><router-view /></div>` |
-| `registerServiceWorker.ts` | 32 | 条件 `register` | 生产环境注册 service-worker，仅日志 |
+| `registerServiceWorker.ts` | 32 | 条件 `register` | 历史 PWA 注册助手；当前 `main.ts` 不导入，启动逻辑会清退旧注册 |
 | `shims-vue.d.ts` | 4 | `declare module '*.vue'` | 为 .vue 文件提供 TS 模块声明 |
 
 ---
 
-## main.ts 关键（L1-56）
+## main.ts 关键（L1-71）
 
 - L28-31：先 `initTheme()` 再 import 其它（主题早期初始化）
-- L40 `Vue.use(ElementUI)`
-- L41-45 `Vue.use(SvgIcon, {tagName:'svg-icon', ...})`
-- L48 `Vue.directive('waves', waves)`
-- router.ts L5 `Vue.use(Router)`；store/index.ts L8 `Vue.use(Vuex)`
-- L52-56：`new Vue({ router, store, render: (h) => h(App) }).$mount('#app')`
+- L45 `Vue.use(ElementUI)`
+- L49-53 `Vue.use(SvgIcon, {tagName:'svg-icon', ...})`
+- L56 `Vue.directive('waves', waves)`
+- L62 `retireLegacyServiceWorkers()` 只清退根作用域旧注册与 BtDeck Workbox cache
+- L65 初始异步路由成功后清理 chunk 恢复 query
+- router.ts L7 `Vue.use(Router)`；store/index.ts L8 `Vue.use(Vuex)`
+- L67-71：`new Vue({ router, store, render: (h) => h(App) }).$mount('#app')`
 
 ## router.ts 路由表（L27-270）
 
@@ -42,7 +44,7 @@
 | `/query-templates` | `@/views/query-templates/index.vue` | L250 |
 | `*` | redirect `/404` | L265 |
 
-文件末尾 L273-300 自定义 `router.push` 捕获 `NavigationDuplicated`。
+文件末尾 L278-304 自定义 `router.push` 捕获 `NavigationDuplicated`；L307-317 的 `router.onError` 在旧 runtime 请求已下线路由 chunk 时触发一次整页版本恢复，并对重复失败显示手动刷新提示。
 
 ## permission.ts 关键（L1-70）
 

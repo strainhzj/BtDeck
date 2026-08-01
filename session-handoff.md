@@ -944,3 +944,159 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 
 - 本轮未执行 Git 提交或推送。
 - `.pnpm-store/` 是本轮前端验证产生的 8 KB 未跟踪缓存；清理操作因工具审批额度限制未执行。其余既有未跟踪文件均未改动。
+
+---
+
+## 2026-08-01 交接：隔离区页签刷新渲染错误修复
+
+**当前分支**：`dev`
+
+**本轮任务**：修复孤儿文件页面隔离区页签刷新后 `formatFileSize is not a function`。
+
+### 已完成
+
+- 根因确认：提交 `9891b84` 的隔离区大小列调用了未暴露为组件实例方法的 `formatFileSize`；组件已有 `formatSize` 包装方法。
+- `frontend/src/views/orphan-files/index.vue` 已改为调用 `formatSize(row.file_size)`。
+- `frontend/tests/unit/orphan-files.spec.ts` 新增隔离区 scoped slot 渲染回归测试，并补齐隔离区 API mock。
+- `frontend/tests/unit/api-contracts.spec.ts` 同步 `9891b84` 已交付的 cleanup 300000ms 超时契约断言。
+
+### 验证
+
+- `npm.cmd run test:unit -- orphan-files.spec.ts`：17 passed。
+- 前端全量 Jest：27 suites / 405 tests passed。
+- `npm.cmd run typecheck`：通过。
+- `npm.cmd run lint`：通过。
+- `npm.cmd run build`：通过；仅有既有 Sass/Element UI 弃用警告。
+- 根 `bash ./init.sh --ci`：当前 Windows 沙箱调用 `C:\Windows\System32\bash.exe` 返回 `E_ACCESSDENIED`，未执行脚本内容。
+
+### 工作区注意事项
+
+- 本轮未执行 Git 提交、推送或实际部署。
+- 保留工作区原有未跟踪文件；本轮仅修改前端视图、前端单测、API 契约测试及根进度记录文件。
+
+---
+
+## 2026-08-01 交接：隔离区彻底删除异步化与 ID 空目录修复
+
+**当前分支**：`dev`
+
+**用户确认的实现口径**：持久化任务 + HTTP 立即返回 + 进程重启恢复；结果以总数/成功/失败/失败明细写入通知中心；目录治理仅删除记录隔离根内的空 UUID/scan-id 目录，禁止递归删除。
+
+### 已完成
+
+- 新增 Alembic `c7d8e9f0a1b2` 和 `OrphanPurgeJob`，迁移表/索引幂等且可 downgrade。
+- 新增 `OrphanPurgeJobService`/`OrphanPurgeJobDispatcher`：落库、原子领取、串行后台执行、重启恢复、幂等通知和关闭取消。
+- `POST /api/v1/orphan-files/purge` 只提交任务；新增 `GET /api/v1/orphan-files/purge-jobs/{task_id}`。
+- 通知补偿任务已扩展到彻底删除终态，dedupe key 为 `orphan_purge:{task_id}`。
+- 前端提交后立即解除 loading，显示任务 ID 并告知用户在通知中心查收；取消 purge 的 300000ms 等待。
+- 已证实目录增长根因：原 UUID 目录 + 每次新建 tombstone UUID 目录都未在文件移走/删除后 `rmdir`，单次从 1 变 2；预写失败和重试会继续放大。
+- 现在 quarantine/restore/expired purge/manual purge/recovery 全部回收空操作目录，并在启动和任务后扫描数据库仍可追溯根下的历史空 UUID 目录。
+
+### 安全边界
+
+- 仅用 `os.rmdir`；非空、符号链接、越界、权限失败均保留并记录，不会删除全局 `.btdeck_quarantine` 父目录。
+- 未放宽原有 manifest、下载器授权、身份字段、lease 和 TOCTOU 安全检查。
+
+### 验证
+
+- 后端全量：`2514 passed, 6 skipped`。
+- 前端全量：`27 suites, 407 tests passed`；typecheck/lint/build 通过，build 仅既有 Sass/Element UI 弃用警告。
+- 新任务模型+服务 mypy 通过；本次后端实现文件 Black 通过，`flake8 app` 全量通过；`git diff --check` 通过。
+- 全量 mypy 仍有仓库既有 1533 个错误，全量 Black 仍有 9 个未修改旧文件的格式差异。
+- 根 `bash ./init.sh` 在当前 Windows 环境被 `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
+
+### 工作区注意事项
+
+- 未执行 Git 提交、推送或部署。
+- 未跟踪的备份 DB、镜像 tar、调试脚本、工具目录等均为任务前已有，本轮保留不动。
+
+---
+
+## 2026-08-01 交接：部署后旧 SPA 路由 ChunkLoadError 修复
+
+**当前分支**：`dev`
+
+**本轮任务**：修复重新部署后打开孤儿文件页面时，旧 `app` runtime 请求已删除路由 chunk 导致的 404 / `ChunkLoadError`。
+
+### 根因证据
+
+- 报错标签页运行 `app.64d1d8fb.js`，请求旧 `orphan-files.15d0574e.js` / `475718e4.css`。
+- 线上当前 index 已是 `app.e237e2cd.js`，其当前 orphan JS/CSS 映射均返回 200；旧哈希返回 404。因此当前容器构建完整，主因是部署前已打开 SPA 没有重新加载入口。
+- Docker Compose 是单前端容器，静态 HTML 无 volume 覆盖，排除了多副本与宿主目录混写。
+- `/service-worker.js` 原先也被缓存一年且预缓存 app shell；当前入口未主动注册它，但历史 worker 是需治理的版本驻留放大因素。
+
+### 已完成
+
+- 新增 `frontend/src/utils/deployment-recovery.ts`：chunk 错误识别、保留 hash 路由的一次整页恢复、query/session 60 秒防循环、成功后 query 清理，以及历史根作用域 Workbox 注册/cache 精确清退。
+- `router.ts` 接入 `router.onError`；`main.ts` 启动清退旧 worker，并在初始路由成功后清理恢复 query。
+- `nginx.conf` 只对 `/assets/` 哈希资源设置一年 immutable；`service-worker.js` 改为 no-store，旧 chunk 保持真实 404。
+- 新增 11 项部署恢复与 nginx 契约回归。
+
+### 验证
+
+- 前端全量：`28 suites / 418 tests passed`；typecheck、lint、生产 build 通过。
+- `nginx -t` 通过；一次性容器 HTTP 实测 index/service-worker no-store、当前哈希资源 200 immutable、旧 chunk 404。
+- 根 `bash ./init.sh` 被本机 WSL `E_ACCESSDENIED` 阻断。
+
+### 工作区注意事项
+
+- 未提交、未推送、未部署；要让当前已打开的旧页面恢复，首次部署本修复后仍需人工刷新一次，此后版本切换由客户端自动恢复。
+- 任务开始前已有的后端修改、镜像 tar、备份数据库、调试脚本和工具目录均保留未动。
+
+---
+
+## 2026-08-01 交接：隔离区彻底删除误用原始路径映射修复
+
+### 用户确认的语义
+
+隔离文件已经移动到 `.btdeck_quarantine`；彻底删除必须使用隔离记录中的实际文件路径，不能再次通过下载器路径映射推导物理删除路径。原始 `canonical_path` 只作为候选主键、展示信息和“是否重新被种子引用”的复核依据。
+
+### 根因与修复
+
+- `purge_expired_quarantine`、手动 `purge_quarantine_now` 及 `purge_pending` 恢复分支原先调用 `_path_authorized(candidate, manifest)`，该方法会用原始 `canonical_path` 对当前下载器映射后的扫描根做授权。
+- 当原始内部路径形成 `/Downloads/ipan/Downloads/...` 重复前缀，或当前映射与隔离时不同，文件虽然仍在 `.btdeck_quarantine`，却被误报“路径未授权或身份字段不完整”。
+- 新增 `_quarantine_path_authorized`：仅校验实时下载器清单完整，以及持久化 `quarantine_path` 位于持久化 `quarantine_root` 内；物理删除/tombstone/恢复均不通过下载器映射寻找隔离文件。
+- 保留 manifest 引用复核、size/mtime/inode 身份复核、隔离根逃逸、tombstone、TOCTOU 和维护 lease；原始文件的隔离前流程仍继续使用 `_path_authorized`。
+
+### 变更文件
+
+- `backend/app/services/orphan_file_service.py`
+- `backend/tests/services/test_orphan_cleanup_safety.py`
+- `feature_list.json`
+- `progress.md`
+
+### 验证与交付状态
+
+- 隔离安全回归：35 passed / 1 skipped。
+- manifest/API/异步任务回归：49 passed。
+- 后端全量：2515 passed / 6 skipped。
+- 目标代码 Black 行范围、Flake8 通过；全量 mypy 的 SQLAlchemy Column 类型错误为既有债务。
+- 未提交、未推送、未部署。根 `bash ./init.sh` 仍受 Windows WSL `E_ACCESSDENIED` 阻断。
+
+---
+
+## 2026-08-01 交接：隔离区删除失败二次修复与旧镜像包识别
+
+### 最终根因判断
+
+当前源码已经不再包含旧的“隔离区路径未授权或身份字段不完整，拒绝删除”物理删除分支；但工作区 `btdeck-backend.latest.tar` 仍包含该旧文案，且其导出时间早于本轮源码修改。因此此前“重新部署后仍报错”最符合的原因是部署加载了旧后端 tar/镜像，而不是当前修复逻辑再次把隔离文件映射回原始下载路径。
+
+### 当前实现语义
+
+- `purge_quarantine_now`、自动到期 purge、`purge_pending` 恢复只使用数据库候选记录的 `quarantine_path`；`quarantine_root` 负责绝对路径、根边界和符号链接安全校验。
+- 下载器实时 manifest 不再授权或推导隔离文件的物理路径；仅可选复核原始 `canonical_path` 是否重新被种子引用。
+- 旧隔离记录缺少身份字段时，先在隔离根校验通过后按实际隔离文件补齐缺失字段；已有字段不匹配、文件身份变化仍拒绝删除。
+- 异步任务失败通知同时输出 `canonical_path` 与 `quarantine_path`，方便确认是否仍错误使用 `/Downloads/ipan/Downloads/...`。
+
+### 本轮验证
+
+- `test_orphan_cleanup_safety.py`：40 passed / 1 skipped。
+- 选定后端回归（隔离安全、manifest、API、异步任务、忽视态、扫描任务）：126 passed / 1 skipped。
+- 目标后端 Flake8、Black diff、`git diff --check` 通过；前端 typecheck、lint、unit、build 通过。
+- 后端全量：2511 passed / 6 skipped / 5 failed；失败集中在全量测试顺序下孤儿维护 lease/任务状态污染，相关孤儿服务选定顺序通过，需后续单独治理测试隔离。
+
+### 部署注意
+
+- 当前 Docker engine 不可用，未重新构建/导出镜像，也未进行远程部署。
+- 部署前必须用当前源码重新构建后端并覆盖旧 `btdeck-backend.latest.tar`，再在目标机 `docker load` 后重建/重启容器；不能只加载现有旧 tar 或使用 `up --no-build` 复用旧镜像。
+- 本轮未执行 Git 提交、推送或部署；根 `bash ./init.sh` 仍受 Windows WSL `E_ACCESSDENIED` 阻断。

@@ -181,6 +181,14 @@ class TestOrphanFilesAuth:
         )
         assert response.status_code == 401
 
+    def test_post_purge_no_token_returns_401(self):
+        """POST /purge：无 token 应返回 401。"""
+        response = self.client.post(
+            "/api/v1/orphan-files/purge",
+            json={"canonical_paths": ["/data/orphan.bin"]},
+        )
+        assert response.status_code == 401
+
 
 # ==================== 有效 token 契约测试 ====================
 
@@ -290,9 +298,7 @@ class TestOrphanFilesCleanupWiring:
         """
         from app.services.orphan_file_service import OrphanFileService
 
-        mocked = AsyncMock(
-            return_value={"total": 0, "page": 1, "pageSize": 100000, "list": [], "scan_context": {}}
-        )
+        mocked = AsyncMock(return_value={"total": 0, "page": 1, "pageSize": 100000, "list": [], "scan_context": {}})
         with patch.object(OrphanFileService, "get_orphan_list", mocked):
             response = self.client.get("/api/v1/orphan-files/list?page_size=100000")
 
@@ -334,6 +340,59 @@ class TestOrphanFilesCleanupWiring:
         kwargs = mocked.await_args.kwargs
         assert kwargs["scan_id"] == "scan-latest"
         assert kwargs["store"] is self.app.state.store
+
+    def test_purge_submits_persistent_job_without_waiting_for_delete(self):
+        """彻底删除端点只持久化并调度任务，不在 HTTP 请求内执行物理删除。"""
+        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+
+        job = MagicMock()
+        job.task_id = "purge-task-1"
+        job.to_dict.return_value = {
+            "task_id": job.task_id,
+            "status": "pending",
+            "total_count": 1,
+        }
+        create_job = AsyncMock(return_value=job)
+        dispatcher = MagicMock()
+
+        with (
+            patch.object(OrphanPurgeJobService, "create_job", create_job),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            response = self.client.post(
+                "/api/v1/orphan-files/purge",
+                json={"canonical_paths": ["/data/orphan.bin"]},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["status"] == "pending"
+        create_job.assert_awaited_once_with(
+            canonical_paths=["/data/orphan.bin"],
+            operator="tester",
+        )
+        dispatcher.submit.assert_called_once_with("purge-task-1")
+
+    def test_get_purge_job_status_returns_persisted_state(self):
+        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+
+        job = MagicMock()
+        job.to_dict.return_value = {
+            "task_id": "purge-task-1",
+            "status": "completed",
+            "total_count": 1,
+            "purged_count": 1,
+            "failed_count": 0,
+        }
+        get_job = AsyncMock(return_value=job)
+        with patch.object(OrphanPurgeJobService, "get_job", get_job):
+            response = self.client.get("/api/v1/orphan-files/purge-jobs/purge-task-1")
+
+        assert response.status_code == 200
+        assert response.json()["data"]["status"] == "completed"
+        get_job.assert_awaited_once_with("purge-task-1")
 
     def test_get_list_valid_token_not_rejected_by_auth(self):
         """GET /list：有效 token 不应被 401 拒绝"""

@@ -10,9 +10,13 @@ import {
   OrphanListResponse,
   OrphanScanContext,
   OrphanScanRecord,
+  QuarantineItem,
+  QuarantineListResult,
   cleanupOrphans,
   cleanupPreview,
+  getQuarantineList,
   getOrphanList,
+  purgeQuarantineNow,
   setIgnored,
   triggerScan
 } from '@/api/orphan-files'
@@ -23,7 +27,9 @@ jest.mock('@/api/orphan-files', () => ({
   triggerScan: jest.fn(),
   cleanupPreview: jest.fn(),
   cleanupOrphans: jest.fn(),
-  setIgnored: jest.fn()
+  setIgnored: jest.fn(),
+  getQuarantineList: jest.fn(),
+  purgeQuarantineNow: jest.fn()
 }))
 
 jest.mock('@/api/torrents', () => ({
@@ -45,6 +51,8 @@ const mockTriggerScan = triggerScan as jest.MockedFunction<typeof triggerScan>
 const mockCleanupPreview = cleanupPreview as jest.MockedFunction<typeof cleanupPreview>
 const mockCleanupOrphans = cleanupOrphans as jest.MockedFunction<typeof cleanupOrphans>
 const mockSetIgnored = setIgnored as jest.MockedFunction<typeof setIgnored>
+const mockGetQuarantineList = getQuarantineList as jest.MockedFunction<typeof getQuarantineList>
+const mockPurgeQuarantineNow = purgeQuarantineNow as jest.MockedFunction<typeof purgeQuarantineNow>
 
 const clearSelection = jest.fn()
 const TableStub = localVue.extend({
@@ -56,7 +64,9 @@ const TableStub = localVue.extend({
 })
 const TableColumnStub = localVue.extend({
   render(createElement) {
-    return createElement('div')
+    const slot = this.$scopedSlots.default
+    if (!slot) return createElement('div')
+    return createElement('div', slot({ row: quarantineItem() }))
   }
 })
 const ButtonStub = localVue.extend({
@@ -108,6 +118,11 @@ interface OrphanFilesVm extends Vue {
   selectedIds: number[]
   selectedRows: OrphanFileItem[]
   scanContext: OrphanScanContext
+  activeTab: 'orphans' | 'quarantine'
+  quarantineList: QuarantineItem[]
+  quarantineTotal: number
+  quarantineSelected: QuarantineItem[]
+  purgeExecuting: boolean
   cleanupAllowed: boolean
   canBatchCleanup: boolean
   canBatchIgnore: boolean
@@ -123,6 +138,8 @@ interface OrphanFilesVm extends Vue {
   handleResetFilter: () => void
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
+  handleTabSwitch: () => Promise<void>
+  handleQuarantinePurge: () => Promise<void>
 }
 
 interface Deferred<T> {
@@ -206,6 +223,20 @@ function orphanItem(id: number, scanId = 'scan-completed'): OrphanFileItem {
     deleted_at: null,
     deleted_by: null,
     created_at: '2026-07-30T10:00:00'
+  }
+}
+
+function quarantineItem(): QuarantineItem {
+  return {
+    canonical_path: '/data/quarantine.bin',
+    downloader_id: 'dl-1',
+    downloader_name: '涓讳笅杞藉櫒',
+    quarantine_path: '/data/.btdeck_quarantine/quarantine.bin',
+    quarantine_root: '/data/.btdeck_quarantine',
+    quarantined_at: '2026-07-30T10:00:00',
+    purge_after: '2026-08-06T10:00:00',
+    file_size: 2048,
+    confidence: 'high'
   }
 }
 
@@ -303,6 +334,91 @@ describe('orphan files atomic page state', () => {
         total_size: 100
       }
     })
+    mockGetQuarantineList.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        total: 0,
+        page: 1,
+        pageSize: 20,
+        list: []
+      } as QuarantineListResult
+    })
+    mockPurgeQuarantineNow.mockResolvedValue({
+      code: '200',
+      msg: '彻底删除任务已提交，完成后将发送通知',
+      status: 'success',
+      data: {
+        task_id: '12345678-1234-1234-1234-123456789abc',
+        status: 'pending',
+        total_count: 1,
+        purged_count: 0,
+        failed_count: 0,
+        failed_list: [],
+        error_message: null,
+        created_at: '2026-08-01T10:00:00',
+        started_at: null,
+        completed_at: null
+      }
+    })
+  })
+
+  it('隔离区刷新后使用组件暴露的大小格式化方法渲染', async() => {
+    mockGetQuarantineList.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        total: 1,
+        page: 1,
+        pageSize: 20,
+        list: [quarantineItem()]
+      }
+    })
+
+    const renderErrors: Error[] = []
+    const previousErrorHandler = localVue.config.errorHandler
+    localVue.config.errorHandler = (error) => {
+      renderErrors.push(error)
+    }
+
+    const wrapper = mountView()
+    try {
+      await flushLifecycle()
+      const vm = viewModel(wrapper)
+      vm.activeTab = 'quarantine'
+      await vm.handleTabSwitch()
+      await localVue.nextTick()
+
+      expect(mockGetQuarantineList).toHaveBeenCalledWith({
+        page: 1,
+        page_size: 20
+      })
+      expect(vm.quarantineList).toHaveLength(1)
+      expect(renderErrors).toEqual([])
+    } finally {
+      wrapper.destroy()
+      localVue.config.errorHandler = previousErrorHandler
+    }
+  })
+
+  it('彻底删除只提交后台任务并提示通过通知中心接收结果', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.quarantineSelected = [quarantineItem()]
+
+    await vm.handleQuarantinePurge()
+
+    expect(mockPurgeQuarantineNow).toHaveBeenCalledWith({
+      canonical_paths: ['/data/quarantine.bin']
+    })
+    expect(message.success).toHaveBeenCalledWith(
+      expect.stringContaining('完成或失败后将在通知中心提醒')
+    )
+    expect(vm.quarantineSelected).toEqual([])
+    expect(vm.purgeExecuting).toBe(false)
   })
 
   it('首次加载用一次分页响应同时更新列表、统计和扫描上下文', async() => {

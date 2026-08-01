@@ -1,5 +1,63 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-01 - 部署后旧 SPA 路由 ChunkLoadError 治理
+
+### 证据链与根因排序
+
+1. **已确认主因：部署前打开的 SPA 仍运行旧 webpack runtime。** 控制台中的 `app.64d1d8fb.js` 请求 `orphan-files.15d0574e.js` / `orphan-files.475718e4.css`；现场当前 `index.html` 已引用 `app.e237e2cd.js`，它映射到 `orphan-files.c9417ee9.js` / `orphan-files.43a2e370.css`，三者均返回 200。旧 runtime 不会重新请求 no-store 的 index，客户端路由跳转时仍会按旧映射取 chunk，旧文件随容器替换消失后即 404。
+2. **高风险放大因素：稳定 URL 的 Service Worker 被当作哈希 JS 缓存一年。** `/service-worker.js` 实际返回 `Cache-Control: max-age=31536000, public, immutable`，且 Workbox 预缓存 app shell 和路由 chunk。当前 `main.ts` 未启用注册，因此不能断言本次标签页一定受它控制，但历史注册会显著延长旧版本驻留，不能忽略。
+3. **已排除：当前镜像漏文件、宿主 volume 覆盖、多实例混版。** 线上当前入口及其映射资源完整一致；Compose 只有单个固定 `btdeck-frontend` 容器，volume 仅挂载 nginx cache/log，不覆盖 `/usr/share/nginx/html`；Dockerfile 将同一次 builder 的完整 `dist` COPY 到不可变运行镜像。
+4. **低概率保留：外部代理/CDN 缓存。** 当前响应头和直连 IP 未显示代理层，index 明确 no-store；若部署拓扑以后增加反向代理，仍需保持稳定入口重验证、哈希资源 immutable 的边界。
+
+### 修复
+
+- 新增 `utils/deployment-recovery.ts`：识别 JS/CSS `ChunkLoadError`，保留 hash 路由并添加 `__btdeck_chunk_retry` 查询标记执行一次整页版本切换；query + sessionStorage 双门禁在 60 秒内禁止二次自动刷新，避免真实服务器故障造成刷新循环。
+- `router.onError` 接入恢复；初始异步路由成功后才清除可见查询标记，重复失败时显示手动刷新提示。
+- 启动时按根作用域清退旧 Service Worker，并仅删除 `vue-typescript-admin-template-` 前缀的历史 Workbox cache；失败不阻断应用启动。
+- nginx 改为只有 `/assets/` 内容哈希资源可缓存一年；`/service-worker.js` 精确 location 使用 no-cache/no-store。稳定文件不再被通用扩展名规则错误标记 immutable；缺失旧 chunk 保持真实 404，交给客户端恢复。
+
+### 验证
+
+- 新增 `deployment-recovery.spec.ts` 11 项：错误识别、路由/query 保留、一次恢复、循环门禁、storage 不可用、query 清理、Service Worker/cache 精确清退和 nginx 缓存契约。
+- 前端全量：`28 suites / 418 tests passed`；`typecheck`、严格 `lint`、生产 `build` 通过，build 仅保留既有 48 条 Sass/Element UI warning。
+- 使用生产前端镜像执行 `nginx -t` 通过；挂载新 `dist` 的一次性容器实测：index 与 service-worker 均 no-store，当前 app/orphan JS/CSS 为 immutable 200，旧 orphan chunk 为真实 404。
+- 根 `bash ./init.sh` 仍被当前 Windows WSL `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断。
+- **未执行 Git 提交、推送或远端部署。**
+
+## 2026-08-01 - 隔离区彻底删除异步化 + ID 空目录治理
+
+### 问题1：为什么同步删除响应慢
+
+- 原 HTTP 端点直接 `await purge_quarantine_now()`，请求会等到全部物理删除和审计落库后才返回。
+- 这不是单纯 `os.remove` 慢：每个候选都需要重建实时 torrent manifest，删除 tombstone 前再重建一次，并执行路径授权、size/mtime/inode、租约和 TOCTOU 复核。下载器 API 网络往返与大种子文件列表才是主要耗时，且候选按文件串行处理。
+
+### 异步任务实现
+
+- 新增 `orphan_purge_job` 持久化任务表和 Alembic head `c7d8e9f0a1b2`；状态为 pending/running/completed/partial/failed，升降级可回滚，并对已有表/索引幂等。
+- `POST /orphan-files/purge` 仅落库并调度，立即返回任务 ID；新增 `GET /orphan-files/purge-jobs/{task_id}` 查询持久化状态。
+- 应用级调度器串行执行任务，原子领取防重；服务重启时将中断的 running 恢复为 pending 并重新调度。
+- 终态先落库，再用 `orphan_purge:{task_id}` dedupe key 幂等写入通知中心，含总数/成功/失败数和失败明细；首次通知失败时由既有每小时补偿任务补发。
+- 前端不再等待 300 秒；提交后提示任务 ID、清空勾选，完成/失败统一从通知中心查收。
+
+### 问题2：目录不降反增的根因排序与验证
+
+1. **已证实的主因**：原 purge 在已有 UUID 操作目录外再创建一个 tombstone UUID 目录；移走文件后原目录变空，`os.remove(tombstone)` 后新目录也变空，但两者都未 `rmdir`。因此单次彻底删除可从 1 个 ID 目录变为 2 个，净增 1。
+2. **已证实的放大因子**：`build_quarantine_path()` 先创建目标目录，journal 预写/租约/移动失败时会留下新空目录；每次重试都可再泄漏一个。restore、到期 purge 和崩溃恢复路径也有同类残留点。
+3. **保留的低概率因子**：非空隐藏文件/NFS `.nfs*` 占用、权限或外部并发任务会使 `rmdir` 合理失败；现在记录 warning 并保留目录，不用递归删除掩盖安全问题。
+
+修复仅沿候选记录的 `quarantine_root` 执行 `os.rmdir`：删除已空 UUID 操作目录和已空 scan-id 根，不递归、不删非空目录、不跟随符号链接，且绝不越过记录根删除全局 `.btdeck_quarantine`。启动和每个 purge 任务还会清理历史空 UUID 目录。
+
+### 验证
+
+- 后端全量：`2514 passed, 6 skipped`。含任务持久化/重启恢复/成功与失败通知/补偿幂等、迁移幂等和空目录故障注入回归。
+- 前端全量：`27 suites / 407 tests passed`；`typecheck` 和 `lint` 通过；生产 `build` 通过，仅既有 Sass/Element UI 弃用警告。
+- 新任务模型+服务 mypy 通过，本次后端实现文件 Black 通过，`flake8 app` 全量通过。全量 `mypy app` 仍有仓库既有 1533 个错误；全量 Black 仍有 9 个未修改旧文件的格式差异。
+- 根 `bash ./init.sh` 在当前 Windows 环境被 WSL `Bash/Service/CreateInstance/E_ACCESSDENIED` 阻断，脚本未开始执行；等价的前后端门禁已分别执行。
+
+**未执行 Git 提交、推送或部署。**
+
+---
+
 ## 2026-08-01 - 表头渐变确诊 + PageSizeCombobox 自动方向/teleport 彻底解决遮挡
 
 **两个遗留问题收尾**：
@@ -27,6 +85,75 @@
 - 前端 lint 无错误；`npm run build` 成功；产物确认含顶层 `.page-size-options` + `.page-size-options--floating{position:fixed!important...}`。
 - 孤儿页单元测试 16 passed（组件改动未破坏现有功能）。
 - 确认全项目无其它 `.page-size-options` 级联覆盖（回归检查）。
+
+**最后更新**: 2026-08-01
+
+---
+
+### 2026-08-01：隔离区删除失败二次修复与部署包核验
+
+#### 二次根因确认
+
+- 当前源码中的物理删除流程已经不再生成“隔离区路径未授权或身份字段不完整，拒绝删除”这条旧错误；该文案仍存在于工作区的 `btdeck-backend.latest.tar` 二进制镜像中。
+- 源码最后修改时间晚于该 tar 的导出时间，说明此前重新部署实际可能加载了旧后端镜像包，不能据此判断本次源码修复未生效。
+- 旧版隔离记录还可能缺少 `mtime_ns/device_id/inode`，会被新安全门禁拒绝；已增加仅基于已记录隔离路径的兼容补齐，已有字段不匹配仍 fail-closed。
+
+#### 本轮修复
+
+- `purge_quarantine_now`、自动到期 purge、`purge_pending` 恢复统一只从持久化 `quarantine_path` 取得物理目标，并以 `quarantine_root` 做绝对路径/符号链接/根目录边界校验；不再用下载器路径映射寻找隔离文件。
+- 实时 manifest 仅可选地复核原始 `canonical_path` 是否重新被种子引用，不参与隔离路径授权或物理路径解析。
+- 失败通知同时展示原路径与实际隔离路径，便于确认删除对象；兼容旧记录补齐身份字段后再执行同样的 size/mtime/inode 复核。
+- 新增重复前缀路径和旧身份字段缺失回归测试。
+
+#### 验证与部署边界
+
+- 后端隔离安全：`40 passed, 1 skipped`；隔离安全、manifest、API、异步任务、忽视态和扫描任务选定回归：`126 passed, 1 skipped`。
+- 目标后端 Flake8 通过，Black diff 无变更，`git diff --check` 通过。
+- 前端 `typecheck`、`lint`、单元测试和生产构建均通过。
+- 后端全量本轮为 `2511 passed, 6 skipped, 5 failed`；5 个失败集中在孤儿维护 lease/任务测试的全量顺序污染，相关孤儿服务按独立及选定顺序回归通过，未将其误报为本轮删除逻辑通过。
+- 当前 Docker engine 不可用，未重新导出镜像、未提交、未推送、未部署。部署前必须重新构建并导出后端 tar，不能继续加载现有旧 tar；根 `bash ./init.sh` 仍受 Windows WSL `E_ACCESSDENIED` 阻断。
+
+---
+
+### 2026-08-01：隔离区彻底删除路径映射误用修复
+
+#### 根因确认
+
+隔离文件已经从原位置移动到 `.btdeck_quarantine`，但彻底删除前的授权检查仍用原始 `canonical_path` 对当前下载器 manifest 的扫描根做路径授权。下载器内部路径经映射后出现 `/Downloads/ipan/Downloads/...` 重复前缀，或映射配置发生变化时，物理文件其实仍在隔离区，却被误报为“路径未授权或身份字段不完整”。这不是删除动作本身找不到隔离文件，而是把原始下载路径错误地重新用于隔离文件删除授权。
+
+#### 修复
+
+- 自动到期删除、手动异步删除、`purge_pending` 崩溃恢复统一以候选记录的 `quarantine_path` + `quarantine_root` 作为物理删除对象和范围边界。
+- 下载器实时 manifest 仅用于确认清单完整、原位置/隔离路径未被重新引用，不再通过下载器路径映射定位隔离文件。
+- 保留身份字段（size/mtime/inode）、隔离根逃逸、tombstone、TOCTOU 和维护 lease 等 fail-closed 安全门禁。
+- 新增重复前缀回归：原始路径不再被当前 mapping scan root 覆盖，但隔离路径有效时，仍只删除 `.btdeck_quarantine` 中登记的文件。
+
+#### 验证
+
+- 隔离安全回归：35 passed / 1 skipped。
+- manifest、孤儿 API、异步任务回归：49 passed。
+- 后端全量：2515 passed / 6 skipped。
+- 目标代码 Black 行范围与 Flake8 通过；全量 mypy 仍存在既有 SQLAlchemy Column 类型债务。
+
+本轮未提交、未推送、未实际部署；根 `bash ./init.sh` 仍受当前 Windows WSL `E_ACCESSDENIED` 阻断。
+
+---
+
+### 隔离区页签刷新 formatFileSize 报错修复（2026-08-01）
+
+#### 问题定位
+
+- 最近一次提交 `50f4c9b` 仅更新交付记录；实际隔离区前端实现来自 `9891b84`。
+- `frontend/src/views/orphan-files/index.vue` 的隔离区大小列调用 `formatFileSize(row.file_size)`，但 Vue 2 class-style 组件实例仅暴露已有的 `formatSize()` 方法，导致隔离区表格渲染时报 `TypeError: e.formatFileSize is not a function`。
+
+#### 修复与验证
+
+- 大小列改为调用组件方法 `formatSize()`，继续复用 `@/utils/formatters` 的实现。
+- 新增隔离区刷新/渲染回归测试，覆盖 scoped slot 不再触发渲染异常。
+- `npm.cmd run test:unit -- orphan-files.spec.ts`：17 passed。
+- 同步提交 `9891b84` 已交付的 cleanup 300000ms 超时契约断言，前端全量 Jest：27 suites / 405 tests passed。
+- `npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run build`：通过；生产构建仅保留既有 Sass/Element UI 弃用警告。
+- 根 `bash ./init.sh --ci` 受当前 Windows 沙箱 `C:\Windows\System32\bash.exe` 的 `E_ACCESSDENIED` 阻断，脚本未实际开始执行；前端等价验证已完成。
 
 **最后更新**: 2026-08-01
 

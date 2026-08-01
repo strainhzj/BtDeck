@@ -283,6 +283,13 @@ async def lifespan(app: FastAPI):
     downloader_task = asyncio.create_task(startup_event(app))  # ← 传递正确的 app 实例
     app.state.downloader_task = downloader_task
 
+    # 持久化隔离区彻底删除任务：立即恢复上次进程的 pending/running 任务。
+    from app.services.orphan_purge_job_service import get_orphan_purge_dispatcher
+
+    orphan_purge_dispatcher = get_orphan_purge_dispatcher(app)
+    orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
+    app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
+
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
 
@@ -300,6 +307,19 @@ async def lifespan(app: FastAPI):
     finally:
         # ✅ 清理：取消未完成的后台任务
         print("=== 清理后台任务 ===")
+        if orphan_purge_recovery_task and not orphan_purge_recovery_task.done():
+            orphan_purge_recovery_task.cancel()
+            try:
+                await orphan_purge_recovery_task
+            except asyncio.CancelledError:
+                print("✅ 隔离区彻底删除恢复任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消隔离区彻底删除恢复任务时出错: {e}")
+        try:
+            await orphan_purge_dispatcher.shutdown()
+        except Exception as e:
+            print(f"⚠️  关闭隔离区彻底删除调度器时出错: {e}")
+
         if downloader_task and not downloader_task.done():
             print("取消未完成的下载器加载任务...")
             downloader_task.cancel()

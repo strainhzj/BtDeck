@@ -86,7 +86,7 @@ class TestGetDefaultPathTransmission:
         mock_client.get_session_variables.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_transmission_missing_download_dir_returns_none(self, caplog):
+    async def test_transmission_missing_download_dir_returns_none(self):
         """缺失 download-dir 字段时返回 None 并打"未找到 download-dir"warning（不进 except）。
 
         关键：修复前 buggy getattr(default=None) 在真实 @property 抛 KeyError 时会
@@ -94,8 +94,6 @@ class TestGetDefaultPathTransmission:
         修复后用 session.fields.get('download-dir') 显式取值，缺失返回 None，
         走 if 分支打"未找到 download-dir 字段"——日志语义正确。
         """
-        import logging
-
         from app.tasks.scheduler.downloader_path_scan import DownloaderPathScanTask
 
         mock_client = MagicMock()
@@ -107,20 +105,19 @@ class TestGetDefaultPathTransmission:
         app = SimpleNamespace(state=SimpleNamespace(store=store))
 
         task = DownloaderPathScanTask()
-        with patch("app.main.app", app):
-            with caplog.at_level(logging.WARNING):
-                path = await task._get_default_path_from_downloader(_make_downloader_model())
+        with (
+            patch("app.main.app", app),
+            patch("app.tasks.scheduler.downloader_path_scan.logger.warning") as warning,
+        ):
+            path = await task._get_default_path_from_downloader(_make_downloader_model())
 
         assert path is None
         mock_client.get_session.assert_called_once()
         # 关键 mutation 锚点：日志应该说"未找到 download-dir"而非"获取默认路径失败"
         # （后者意味着进 except 分支，即 buggy getattr 路径）
-        assert any(
-            "未找到 download-dir" in r.message for r in caplog.records
-        ), f"应打'未找到 download-dir'warning，实际: {[r.message for r in caplog.records]}"
-        assert not any(
-            "获取默认路径失败" in r.message for r in caplog.records
-        ), "不应进 except 路径（说明 buggy getattr 抛 KeyError 被外层兜底）"
+        warning.assert_called_once()
+        assert "未找到 download-dir" in str(warning.call_args.args[0])
+        assert "获取默认路径失败" not in str(warning.call_args.args[0])
 
     @pytest.mark.asyncio
     async def test_transmission_get_session_raises_returns_none(self):

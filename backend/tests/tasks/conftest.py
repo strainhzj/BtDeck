@@ -21,6 +21,7 @@ async def async_orphan_db():
         poolclass=StaticPool,
     )
     from app.models.orphan_file import OrphanFile, OrphanScanResult  # noqa: F401
+    from app.models.orphan_purge_job import OrphanPurgeJob  # noqa: F401
     from app.models.notification import Notification  # noqa: F401
     from app.downloader.models import BtDownloaders  # noqa: F401
     from app.torrents.models import TorrentInfo  # noqa: F401

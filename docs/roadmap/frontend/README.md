@@ -11,7 +11,7 @@
 | views | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 3 处 Options API） | 64 | [views/README.md](./views/README.md) |
 | store | Vuex（index.ts 空壳 + 5 个 module，双轨注册） | 6 | [store/README.md](./store/README.md) |
 | components-layout | 通用组件 17 个 + layout 骨架 8 个 + mixin | 27 | [components-layout/README.md](./components-layout/README.md) |
-| utils-types | utils 9 + types 8 + constants 1 + directive 1 | 19 | [utils-types/README.md](./utils-types/README.md) |
+| utils-types | utils 10 + types 8 + constants 1 + directive 1 | 20 | [utils-types/README.md](./utils-types/README.md) |
 
 ---
 
@@ -44,7 +44,7 @@
 
 ### 4. 路由守卫分离
 
-- 路由表在 `src/router.ts`（302 行，15 条顶层路由）
+- 路由表在 `src/router.ts`（318 行，含部署后旧 chunk 一次恢复）
 - 守卫逻辑在独立 `src/permission.ts`（`router.beforeEach`），由 `main.ts` L37 `import '@/permission'` 触发副作用注册
 
 ---
@@ -52,7 +52,7 @@
 ## 调用链骨架
 
 ```
-main.ts (L52 new Vue)
+main.ts (L67 new Vue)
   ├─ import '@/permission'     # 注册路由守卫（副作用）
   ├─ router (src/router.ts)     # 路由表
   ├─ store (src/store/index.ts) # Vuex 空壳 + 动态注册

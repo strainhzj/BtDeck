@@ -13,7 +13,7 @@
 | `recycle-bin.ts` | 196 | 5 func / 11 iface | L2 | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |
 | `audit-logs.ts` | 183 | 6 func / 10 iface | L1 | 审计日志：查询/统计/操作类型/导出/归档/下载 |
 | `tag-management.ts` | 175 | 9 func / 5 iface / 1 enum | L6 | 标签管理：分类/标签 CRUD/批量删除/分类支持检查 |
-| `orphan-files.ts` | 227 | 5 func / 15 iface / 6 type | L2 | 孤儿文件：统一扫描上下文、失败回退展示、剩余量统计、触发扫描/清理预览/清理 |
+| `orphan-files.ts` | 381 | 10 func / 23 iface / 9 type | L2 | 孤儿文件：扫描/筛选/清理/忽视/隔离恢复；彻底删除为立即返回的持久化任务，并提供任务状态查询 |
 | `torrents-backup.ts` | 148 | 7 func / 6 iface | L1 | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |
 | `notification.ts` | 104 | 6 func / 3 iface | L2 | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | `users.ts` | 51 | 4 const | L1 | 用户：getUserInfo / changePassword / login / logout |

@@ -2,7 +2,7 @@
 
 > 横切工具层：通用工具函数、TypeScript 类型定义、常量、自定义指令。
 
-## utils/（9 个 .ts 文件）
+## utils/（10 个 .ts 文件）
 
 > 另有 `utils/empty-polyfill.js`（polyfill，.js 非 .ts，跳过）。
 
@@ -14,6 +14,7 @@
 | `theme-manager.ts` | 161 | 5 | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调色板）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L78） |
 | `request.ts` | 161 | 3 | 🔵 axios 封装（详见下方） |
 | `error-normalize.ts` | 135 | 7 | 🔵 错误归一化纯逻辑（无副作用，便于单测）：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError` |
+| `deployment-recovery.ts` | 194 | 13 | 部署版本恢复：识别旧 webpack chunk 失败、一次整页切换与循环门禁、恢复 query 清理、历史根作用域 Workbox 注册/cache 清退 |
 | `downloaderType.ts` | 73 | 5 | 下载器类型枚举（`DOWNLOADER_TYPE`/`DOWNLOADER_TYPE_NAME`）+ 数字↔字符串↔标签互转 |
 | `cookies.ts` | 27 | 10 | sidebar status / token / userId（localStorage） + 通用 `getStorage`/`setStorage` |
 | `validate.ts` | 3 | 2 | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |

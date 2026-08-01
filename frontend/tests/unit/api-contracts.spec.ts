@@ -13,6 +13,8 @@ import {
   cleanupPreview as previewOrphanCleanup,
   getLatestScan,
   getOrphanList,
+  getPurgeJobStatus,
+  purgeQuarantineNow,
   triggerScan
 } from '@/api/orphan-files'
 import {
@@ -197,7 +199,21 @@ describe('API 请求契约', () => {
       mockRequest.mockReset()
       expectRequest(
         () => cleanupOrphans(data),
-        { url: '/orphan-files/cleanup', method: 'post', data, timeout: 120000 }
+        { url: '/orphan-files/cleanup', method: 'post', data, timeout: 300000 }
+      )
+    })
+
+    it('彻底删除改为立即返回的后台任务并提供状态查询', () => {
+      const data = { canonical_paths: ['/data/orphan.bin'] }
+      expectRequest(
+        () => purgeQuarantineNow(data),
+        { url: '/orphan-files/purge', method: 'post', data }
+      )
+
+      mockRequest.mockReset()
+      expectRequest(
+        () => getPurgeJobStatus('purge-task-1'),
+        { url: '/orphan-files/purge-jobs/purge-task-1', method: 'get' }
       )
     })
   })

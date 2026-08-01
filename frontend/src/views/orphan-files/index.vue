@@ -373,6 +373,7 @@
           </div>
           <div class="management-table-scroll">
             <el-table
+              ref="quarantineTable"
               v-loading="quarantineLoading"
               :data="quarantineList"
               border
@@ -383,7 +384,7 @@
               <el-table-column label="原位置（规范化路径）" prop="canonical_path" min-width="300" show-overflow-tooltip />
               <el-table-column label="大小" width="120" align="center">
                 <template slot-scope="{row}">
-                  {{ formatFileSize(row.file_size) }}
+                  {{ formatSize(row.file_size) }}
                 </template>
               </el-table-column>
               <el-table-column label="隔离时间" width="170" align="center">
@@ -682,14 +683,12 @@ export default class OrphanFiles extends Vue {
       const paths = this.quarantineSelected.map(r => r.canonical_path)
       const res = await purgeQuarantineNow({ canonical_paths: paths })
       if (res.code === '200' && res.data) {
-        const d = res.data
-        if (d.rejected) {
-          this.$message.error(d.failed_list[0]?.reason || '删除被拒绝')
-        } else {
-          this.$message.success(`彻底删除完成：成功 ${d.purged_count} 个${d.failed_count ? '，失败 ' + d.failed_count + ' 个' : ''}`)
-        }
-        this.quarantinePage = 1
-        await this.loadQuarantineList()
+        this.$message.success(
+          `彻底删除任务已提交（${res.data.task_id.slice(0, 8)}），完成或失败后将在通知中心提醒`
+        )
+        this.quarantineSelected = []
+        const table = this.$refs.quarantineTable as OrphanTableRef | undefined
+        table?.clearSelection()
       }
     } catch (error) {
       this.$message.error('删除失败：' + extractErrorMessage(error, '网络错误'))

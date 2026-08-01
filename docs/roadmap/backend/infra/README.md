@@ -16,7 +16,7 @@
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
-| `lifecycle.py` | 380 | 7 | 🔵 FastAPI `lifespan`(L175)：管理启动/关闭流程，并在调度器启动前对账孤儿文件隔离状态 |
+| `lifecycle.py` | 358 | 7 | 🔵 FastAPI `lifespan`(L175)：管理启动/关闭流程，对账孤儿隔离状态，恢复持久化彻底删除任务并在关闭时取消调度器 |
 | `routers_initializer.py` | 20 | 1 | `init_routers(app)`(L6) 注册全部路由 |
 | `__init__.py` | 0 | — | 空文件（跳过） |
 
@@ -72,6 +72,7 @@
 | `a0ada9774936_add_notification_table.py` | 新增通知表 |
 | `b075727f7182_orphan_lifecycle.py` | 孤儿文件生命周期 |
 | `c3f1a8b7d902_add_orphan_file_tables.py` | 新增孤儿文件相关表 |
+| `c7d8e9f0a1b2_add_orphan_purge_job.py` | 新增隔离区彻底删除持久化任务表与索引（幂等、可回滚） |
 | `d0e58437af70_add_tracker_reannounce_config_table.py` | 新增 Tracker 重新宣告配置表 |
 | `e2a02abcf912_fix_downloader_type_to_integer.py` | 修正 downloader.type 为整型 |
 | `e6d8a20c41f3_orphan_operation_journal.py` | 孤儿文件操作日志表 |

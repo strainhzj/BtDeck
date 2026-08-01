@@ -2,7 +2,7 @@
 
 > 数据层统一索引：SQLAlchemy ORM 模型、Repository（数据访问层）、Pydantic schemas、默认数据种子、枚举。本分支目录分散在 `app/` 多个子目录，统一在此索引。
 
-## models/ — ORM 模型（16 个根 .py + response/ 子目录 2 个 = 18 个）
+## models/ — ORM 模型（17 个根 .py + response/ 子目录 2 个 = 19 个）
 
 | 文件 | 行数 | 顶层 class | 表名 / 职责 |
 |------|------|-----------|-------------|
@@ -14,6 +14,7 @@
 | `enums.py` | 125 | 2 | `SpeedUnitEnum`、`ScheduleDayOfWeekEnum`（⚠ 与 downloader_settings.py 重复定义） |
 | `notification.py` | 98 | 1 | `notification`：系统单向通知信箱 |
 | `orphan_file.py` | 392 | 4 | `orphan_scan_result` / `orphan_file` / `orphan_current_candidate` / `orphan_operation_lease` |
+| `orphan_purge_job.py` | 78 | 1 | `orphan_purge_job`：隔离区彻底删除持久化任务状态与通知送达标记 |
 | `search_template.py` | 97 | 1 | `search_templates`：搜索模板 |
 | `seed_transfer_audit_log.py` | 229 | 1 | `seed_transfer_audit_log`：种子转移审计日志 |
 | `setting_templates.py` | 291 | 2 | `setting_templates` + `DownloaderTypeEnum` |

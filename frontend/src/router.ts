@@ -1,6 +1,8 @@
 import Vue from 'vue'
 import Router, { RawLocation, Route } from 'vue-router'
+import { Message } from 'element-ui'
 import Layout from '@/layout/index.vue'
+import { recoverFromChunkLoadError } from '@/utils/deployment-recovery'
 
 Vue.use(Router)
 
@@ -298,5 +300,19 @@ router.push = ((
     throw err
   })
 }) as Router['push']
+
+// A tab opened before deployment still runs the old webpack runtime. When that
+// runtime requests a removed lazy chunk, move the whole SPA to the current
+// build once; the retry guard prevents a genuine server-side 404 reload loop.
+router.onError((error: Error) => {
+  const outcome = recoverFromChunkLoadError(error)
+  if (outcome === 'suppressed') {
+    Message.error({
+      message: '页面资源加载失败，请手动刷新后重试',
+      duration: 6000,
+      showClose: true
+    })
+  }
+})
 
 export default router
