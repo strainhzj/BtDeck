@@ -2851,3 +2851,17 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 **验证**：后端 black/flake8 通过；pytest orphan 套件 83 passed/1 skipped（含 TestQuarantineManagement 5 用例：列表/恢复成功/恢复失败-原位占用/删除成功/删除失败-被引用）；前端 npm run lint 通过。
 
 **最后更新**: 2026-08-01
+
+## 2026-08-01 - 通知时间与主动清理异步化
+
+### 根因与修复
+
+- 通知表保存的是 UTC 的无时区 `DateTime`，`to_dict()` 原样输出后，浏览器按 Asia/Shanghai 本地时间解释，导致通知显示为约 8 小时前。新增统一时间序列化，所有通知 `created_at/read_at` 以及任务状态时间均输出显式 UTC `Z`；既有数据库数据无需迁移。
+- 主动清理原先在 `POST /orphan-files/cleanup` 内同步执行 manifest 拉取、实时身份复核和隔离移动。现在复用 `orphan_purge_job` 持久化任务和串行 dispatcher，接口只保存 `scan_id + orphan_ids` 并立即返回 pending；后台仍执行原有安全门禁，终态为 completed/partial/failed，并幂等写入通知中心。
+- 新增 `GET /orphan-files/cleanup-jobs/{task_id}`，用于诊断/状态查询；前端提交成功后关闭确认框并提示任务 ID，结果统一由通知中心送达，不再等待长请求或展示伪同步结果。
+
+### 验证
+
+- 后端：主动清理/通知/迁移相关 58 passed；回滚场景 8 passed；目标 Flake8 通过。
+- 前端：相关 Jest 48 passed；`npm run typecheck`、严格 `npm run lint`、生产 `npm run build` 通过。构建仅保留既有 Sass/Element UI 弃用及体积警告。
+- `git diff --check` 通过；未提交、未推送、未部署。

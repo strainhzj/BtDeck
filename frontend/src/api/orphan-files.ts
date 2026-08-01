@@ -162,6 +162,24 @@ export interface CleanupRejectedResult {
 
 export type CleanupResult = CleanupSuccessResult | CleanupRejectedResult
 
+/** 主动清理异步任务状态 */
+export interface CleanupJobResult {
+  task_id: string
+  operation_type: 'cleanup'
+  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed'
+  scan_id: string | null
+  total_count: number
+  success_count: number
+  purged_count: number
+  failed_count: number
+  failed_list: CleanupFailedItem[]
+  total_size: number
+  error_message: string | null
+  created_at: string | null
+  started_at: string | null
+  completed_at: string | null
+}
+
 // 兼容既有调用方的公开类型名。
 export type LatestScanResult = OrphanScanRecord
 export type ScanResult = OrphanScanTriggerResult
@@ -243,18 +261,22 @@ export function cleanupPreview(data: CleanupRequest): Promise<ApiResponse<Cleanu
 }
 
 /**
- * 手动清理选中的孤儿文件
+ * 提交手动清理任务。实际清理在后台完成，终态通过通知中心送达。
  */
-export function cleanupOrphans(data: CleanupRequest): Promise<ApiResponse<CleanupResult>> {
-  // 清理需实时复核 manifest（对 high 候选所属下载器逐种子拉文件清单），大下载器耗时较长。
-  // 后端已做低置信度分流优化（low 候选不再触发全量 manifest 拉取），耗时显著下降；
-  // 放宽到 300s 作为保险，解除全局 20s 硬超时（后端 lease TTL=3600s 已为长任务预留）。
+export function cleanupOrphans(data: CleanupRequest): Promise<ApiResponse<CleanupJobResult>> {
   return request({
     url: '/orphan-files/cleanup',
     method: 'post',
-    data: data,
-    timeout: 300000
-  }) as unknown as Promise<ApiResponse<CleanupResult>>
+    data: data
+  }) as unknown as Promise<ApiResponse<CleanupJobResult>>
+}
+
+/** 查询主动清理任务状态；完成/失败结果同时会进入通知中心。 */
+export function getCleanupJobStatus(taskId: string): Promise<ApiResponse<CleanupJobResult>> {
+  return request({
+    url: `/orphan-files/cleanup-jobs/${taskId}`,
+    method: 'get'
+  }) as unknown as Promise<ApiResponse<CleanupJobResult>>
 }
 
 /**

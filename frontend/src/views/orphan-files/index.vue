@@ -452,24 +452,11 @@
             <p>低置信度文件有误判风险（可能并非真正的孤儿）。确认清理前请核对路径，避免误删用户数据。</p>
           </template>
         </el-alert>
-        <div v-if="cleanupResult" class="cleanup-result">
-          <el-alert
-            :title="`清理完成: 成功 ${cleanupResult.success_count} 个`"
-            :type="cleanupResult.failed_count > 0 ? 'warning' : 'success'"
-            :closable="false"
-            show-icon
-          >
-            <template slot="default">
-              <p v-if="cleanupResult.failed_count > 0">失败: {{ cleanupResult.failed_count }} 个</p>
-              <p>释放空间: {{ formatSize(cleanupResult.total_size) }}</p>
-            </template>
-          </el-alert>
-        </div>
       </div>
       <span slot="footer" class="dialog-footer">
         <el-button @click="handleCloseCleanupDialog">关闭</el-button>
         <el-button
-          v-if="cleanupPreviewData && !cleanupResult"
+          v-if="cleanupPreviewData"
           type="danger"
           :loading="cleanupExecuting"
           @click="handleCleanupConfirm"
@@ -498,7 +485,6 @@ import {
   OrphanScanRecord,
   OrphanStatusFilter,
   CleanupPreviewSuccess,
-  CleanupSuccessResult,
   QuarantineItem
 } from '@/api/orphan-files'
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
@@ -582,7 +568,6 @@ export default class OrphanFiles extends Vue {
   private cleanupLoading = false
   private cleanupExecuting = false
   private cleanupPreviewData: CleanupPreviewSuccess | null = null
-  private cleanupResult: CleanupSuccessResult | null = null
   private previewScanId: string | null = null
   private previewOrphanIds: number[] = []
 
@@ -998,7 +983,6 @@ export default class OrphanFiles extends Vue {
 
     this.cleanupDialogVisible = true
     this.cleanupPreviewData = null
-    this.cleanupResult = null
     this.previewScanId = displayScan.scan_id
     this.previewOrphanIds = [...this.selectedIds]
     this.cleanupLoading = true
@@ -1047,12 +1031,11 @@ export default class OrphanFiles extends Vue {
         orphan_ids: this.previewOrphanIds
       })
       if (response.code === '200' && response.data) {
-        if (response.data.rejected === true) {
-          this.$message.error(response.data.error || this.cleanupBlockReason)
-          this.cleanupDialogVisible = false
-        } else {
-          this.cleanupResult = response.data
-        }
+        const taskId = response.data.task_id
+        this.$message.success(
+          `主动清理任务已提交（${taskId.slice(0, 8)}），完成或失败后将在通知中心提醒`
+        )
+        this.handleCloseCleanupDialog()
         await this.refreshPageData()
       } else {
         this.$message.error(response.msg || '清理失败')
@@ -1067,7 +1050,6 @@ export default class OrphanFiles extends Vue {
   private handleCloseCleanupDialog() {
     this.cleanupDialogVisible = false
     this.cleanupPreviewData = null
-    this.cleanupResult = null
     this.previewScanId = null
     this.previewOrphanIds = []
   }

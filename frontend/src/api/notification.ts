@@ -18,10 +18,20 @@ export interface NotificationItem {
     route?: string
     task_id?: string
     task_status?: string
+    operation_type?: 'purge' | 'cleanup'
+    scan_id?: string | null
     total_count?: number
+    success_count?: number
     purged_count?: number
     failed_count?: number
-    failed_list?: Array<{ canonical_path: string, quarantine_path?: string | null, reason: string }>
+    total_size?: number
+    failed_list?: Array<{
+      id?: number
+      file_path?: string
+      canonical_path?: string
+      quarantine_path?: string | null
+      reason: string
+    }>
   } | null
   created_at: string
   read_at: string | null

@@ -5,7 +5,6 @@ import OrphanFiles from '@/views/orphan-files/index.vue'
 import {
   ApiResponse,
   CleanupPreviewResult,
-  CleanupResult,
   OrphanFileItem,
   OrphanListResponse,
   OrphanScanContext,
@@ -129,7 +128,6 @@ interface OrphanFilesVm extends Vue {
   canBatchUnignore: boolean
   cleanupDialogVisible: boolean
   cleanupPreviewData: CleanupPreviewResult | null
-  cleanupResult: CleanupResult | null
   previewScanId: string | null
   refreshPageData: (allowPageCorrection?: boolean) => Promise<void>
   handleScan: () => Promise<void>
@@ -328,10 +326,20 @@ describe('orphan files atomic page state', () => {
       msg: 'ok',
       status: 'success',
       data: {
+        task_id: 'cleanup-task-1',
+        operation_type: 'cleanup',
+        status: 'pending',
+        scan_id: 'scan-completed',
+        total_count: 1,
         success_count: 1,
+        purged_count: 1,
         failed_count: 0,
         failed_list: [],
-        total_size: 100
+        total_size: 100,
+        error_message: null,
+        created_at: '2026-08-01T10:00:00Z',
+        started_at: null,
+        completed_at: null
       }
     })
     mockGetQuarantineList.mockResolvedValue({
@@ -554,7 +562,7 @@ describe('orphan files atomic page state', () => {
     expect(wrapper.text()).toContain('扫描正在进行中')
   })
 
-  it('清理成功后从统一刷新响应更新剩余数量和大小', async() => {
+  it('提交主动清理任务后立即关闭弹窗并刷新页面', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
@@ -574,37 +582,33 @@ describe('orphan files atomic page state', () => {
       scan_id: 'scan-completed',
       orphan_ids: [1]
     })
+    expect(message.success).toHaveBeenCalledWith(
+      '主动清理任务已提交（cleanup-），完成或失败后将在通知中心提醒'
+    )
+    expect(vm.cleanupDialogVisible).toBe(false)
     expect(vm.scanContext.remaining_count).toBe(1)
     expect(vm.scanContext.remaining_size).toBe(200)
     expect(vm.list.map((item) => item.id)).toEqual([2])
   })
 
-  it('后端拒绝 stale 清理时显示原因、关闭弹窗并刷新', async() => {
+  it('主动清理任务提交失败时提示错误且不伪造完成结果', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
     vm.selectedRows = [orphanItem(1)]
     await vm.handleCleanupPreview()
     mockCleanupOrphans.mockResolvedValueOnce({
-      code: '200',
-      msg: 'ok',
-      status: 'success',
-      data: {
-        rejected: true,
-        error: 'scan_id 已过期',
-        success_count: 0,
-        failed_count: 1,
-        failed_list: [{ id: 1, reason: 'scan_id 已过期' }],
-        total_size: 0
-      }
+      code: '500',
+      msg: '任务提交失败',
+      status: 'error',
+      data: null as unknown as never
     })
-    mockGetOrphanList.mockResolvedValueOnce(listResponse())
 
     await vm.handleCleanupConfirm()
 
-    expect(message.error).toHaveBeenCalledWith('scan_id 已过期')
-    expect(vm.cleanupDialogVisible).toBe(false)
-    expect(mockGetOrphanList).toHaveBeenCalledTimes(2)
+    expect(message.error).toHaveBeenCalledWith('任务提交失败')
+    expect(vm.cleanupDialogVisible).toBe(true)
+    expect(mockGetOrphanList).toHaveBeenCalledTimes(1)
   })
 
   it('逆序成功响应不能覆盖新结果、选择、页码或 loading', async() => {

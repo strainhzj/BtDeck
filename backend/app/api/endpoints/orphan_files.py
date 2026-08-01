@@ -36,7 +36,7 @@ class CleanupRequest(BaseModel):
     """清理请求模型"""
 
     scan_id: str = Field(..., min_length=1, description="预览与清理绑定的扫描批次ID")
-    orphan_ids: List[int] = Field(..., description="孤儿文件ID列表")
+    orphan_ids: List[int] = Field(..., min_length=1, description="孤儿文件ID列表")
 
 
 class IgnoreRequest(BaseModel):
@@ -150,25 +150,24 @@ async def cleanup_orphans(
     req: CleanupRequest,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
-    audit_service: AuditLogService = Depends(get_audit_service),
 ):
-    """手动清理选中的孤儿文件（安全隔离 + 审计日志）"""
+    """提交主动清理任务；实际复核和隔离动作在后台执行。"""
     try:
-        service = OrphanFileService(db)
-        result = await service.cleanup_orphans(
+        job = await OrphanPurgeJobService(db).create_cleanup_job(
+            scan_id=req.scan_id,
             orphan_ids=req.orphan_ids,
             operator=current_user.username,
-            audit_service=audit_service,
-            store=request.app.state.store,
-            scan_id=req.scan_id,
         )
-        msg = f"清理完成: 成功 {result['success_count']} 个"
-        if result["failed_count"] > 0:
-            msg += f"，失败 {result['failed_count']} 个"
-        return CommonResponse(status="success", msg=msg, code="200", data=result)
+        get_orphan_purge_dispatcher(request.app).submit(str(job.task_id))
+        return CommonResponse(
+            status="success",
+            msg="主动清理任务已提交，完成或失败后将发送通知",
+            code="200",
+            data=job.to_dict(),
+        )
     except Exception as e:
-        logger.error(f"手动清理孤儿文件失败: {e}", exc_info=True)
-        return CommonResponse(status="error", msg=f"清理失败: {e}", code="500", data=None)
+        logger.error(f"提交主动清理任务失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"任务提交失败: {e}", code="500", data=None)
 
 
 @router.post("/ignore", response_model=CommonResponse)
@@ -286,4 +285,21 @@ async def get_purge_job_status(
         return CommonResponse(status="success", msg="查询成功", code="200", data=job.to_dict())
     except Exception as e:
         logger.error(f"查询隔离区彻底删除任务失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+
+
+@router.get("/cleanup-jobs/{task_id}", response_model=CommonResponse)
+async def get_cleanup_job_status(
+    task_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """查询主动清理任务状态；结果通知仍以通知中心为准。"""
+    try:
+        job = await OrphanPurgeJobService(db).get_job(task_id)
+        if job is None or (job.operation_type or "purge") != "cleanup":
+            return CommonResponse(status="error", msg="任务不存在", code="404", data=None)
+        return CommonResponse(status="success", msg="查询成功", code="200", data=job.to_dict())
+    except Exception as e:
+        logger.error(f"查询主动清理任务失败: {e}", exc_info=True)
         return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)

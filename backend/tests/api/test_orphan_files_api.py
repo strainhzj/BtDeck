@@ -318,18 +318,26 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 422, "page_size=100001 应被校验拒绝"
         mocked.assert_not_awaited(), "校验失败不应进入业务逻辑"
 
-    def test_cleanup_passes_scan_id_and_shared_store(self):
-        from app.services.orphan_file_service import OrphanFileService
+    def test_cleanup_submits_persistent_job_without_waiting_for_manifest(self):
+        from app.services.orphan_purge_job_service import OrphanPurgeJobService
 
-        mocked = AsyncMock(
-            return_value={
-                "success_count": 0,
-                "failed_count": 0,
-                "failed_list": [],
-                "total_size": 0,
-            }
-        )
-        with patch.object(OrphanFileService, "cleanup_orphans", mocked):
+        job = MagicMock()
+        job.task_id = "cleanup-task-1"
+        job.to_dict.return_value = {
+            "task_id": job.task_id,
+            "operation_type": "cleanup",
+            "status": "pending",
+            "total_count": 1,
+        }
+        create_job = AsyncMock(return_value=job)
+        dispatcher = MagicMock()
+        with (
+            patch.object(OrphanPurgeJobService, "create_cleanup_job", create_job),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
             response = self.client.post(
                 "/api/v1/orphan-files/cleanup",
                 json={"scan_id": "scan-latest", "orphan_ids": [1]},
@@ -337,9 +345,13 @@ class TestOrphanFilesCleanupWiring:
 
         assert response.status_code == 200
         assert response.json()["code"] == "200"
-        kwargs = mocked.await_args.kwargs
-        assert kwargs["scan_id"] == "scan-latest"
-        assert kwargs["store"] is self.app.state.store
+        assert response.json()["data"]["status"] == "pending"
+        create_job.assert_awaited_once_with(
+            scan_id="scan-latest",
+            orphan_ids=[1],
+            operator="tester",
+        )
+        dispatcher.submit.assert_called_once_with("cleanup-task-1")
 
     def test_purge_submits_persistent_job_without_waiting_for_delete(self):
         """彻底删除端点只持久化并调度任务，不在 HTTP 请求内执行物理删除。"""
@@ -393,6 +405,27 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 200
         assert response.json()["data"]["status"] == "completed"
         get_job.assert_awaited_once_with("purge-task-1")
+
+    def test_get_cleanup_job_status_returns_persisted_state(self):
+        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+
+        job = MagicMock()
+        job.operation_type = "cleanup"
+        job.to_dict.return_value = {
+            "task_id": "cleanup-task-1",
+            "operation_type": "cleanup",
+            "status": "completed",
+            "total_count": 1,
+            "success_count": 1,
+            "failed_count": 0,
+        }
+        get_job = AsyncMock(return_value=job)
+        with patch.object(OrphanPurgeJobService, "get_job", get_job):
+            response = self.client.get("/api/v1/orphan-files/cleanup-jobs/cleanup-task-1")
+
+        assert response.status_code == 200
+        assert response.json()["data"]["status"] == "completed"
+        get_job.assert_awaited_once_with("cleanup-task-1")
 
     def test_get_list_valid_token_not_rejected_by_auth(self):
         """GET /list：有效 token 不应被 401 拒绝"""

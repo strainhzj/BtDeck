@@ -1100,3 +1100,20 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - 当前 Docker engine 不可用，未重新构建/导出镜像，也未进行远程部署。
 - 部署前必须用当前源码重新构建后端并覆盖旧 `btdeck-backend.latest.tar`，再在目标机 `docker load` 后重建/重启容器；不能只加载现有旧 tar 或使用 `up --no-build` 复用旧镜像。
 - 本轮未执行 Git 提交、推送或部署；根 `bash ./init.sh` 仍受 Windows WSL `E_ACCESSDENIED` 阻断。
+
+---
+
+## 2026-08-01 交接：通知时间修正与主动清理异步化
+
+### 当前实现
+
+- 新增 `backend/app/utils/datetime_utils.py`，将数据库 UTC 无时区时间序列化为带 `Z` 的 ISO-8601；通知中心不再把 UTC 误按本地时间显示为 8 小时前，隔离区任务状态时间也使用同一规则。
+- 扩展 `orphan_purge_job`：`operation_type=purge/cleanup`、`scan_id`、`orphan_ids_json`、`total_size`，新增 Alembic `d8e9f0a1b2c3`，保留既有彻底删除任务兼容性。
+- `POST /api/v1/orphan-files/cleanup` 现在只创建 pending 任务并提交现有 dispatcher；后台复用 `OrphanFileService.cleanup_orphans()` 的实时 manifest、身份、路径和 lease 安全校验。完成/部分完成/失败均写入 `orphan_cleanup:{task_id}` 通知，通知事件为 `orphan_cleanup_completed`。
+- 新增 `GET /api/v1/orphan-files/cleanup-jobs/{task_id}`；前端 API 删除 300 秒超时，确认后立即关闭弹窗并提示任务 ID，用户从通知中心查看最终结果。
+
+### 验证
+
+- 后端相关回归 58 passed，数据库回滚 8 passed，目标 Flake8 通过。
+- 前端相关 Jest 48 passed，`typecheck`、`lint`、生产 `build` 通过；build 仅报告仓库既有 Sass/Element UI 弃用与体积警告。
+- 未执行 Git stage/commit/push/deploy。工作区中的 `.pnpm-store/`、tar、备份、诊断脚本等未跟踪文件均为用户既有产物，禁止纳入本轮提交。

@@ -11,6 +11,7 @@ import {
 import {
   cleanupOrphans,
   cleanupPreview as previewOrphanCleanup,
+  getCleanupJobStatus,
   getLatestScan,
   getOrphanList,
   getPurgeJobStatus,
@@ -199,7 +200,13 @@ describe('API 请求契约', () => {
       mockRequest.mockReset()
       expectRequest(
         () => cleanupOrphans(data),
-        { url: '/orphan-files/cleanup', method: 'post', data, timeout: 300000 }
+        { url: '/orphan-files/cleanup', method: 'post', data }
+      )
+
+      mockRequest.mockReset()
+      expectRequest(
+        () => getCleanupJobStatus('cleanup-task-1'),
+        { url: '/orphan-files/cleanup-jobs/cleanup-task-1', method: 'get' }
       )
     })
 

@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime
 from app.database import Base
+from app.utils.datetime_utils import serialize_utc_datetime
 
 
 class Notification(Base):
@@ -84,8 +85,8 @@ class Notification(Base):
             "content": self.content,
             "priority": self.priority,
             "is_read": self.is_read,
-            "created_at": self.created_at.isoformat() if self.created_at else None,
-            "read_at": self.read_at.isoformat() if self.read_at else None,
+            "created_at": serialize_utc_datetime(self.created_at),
+            "read_at": serialize_utc_datetime(self.read_at),
             "dedupe_key": self.dedupe_key,
         }
         if self.extra_data:

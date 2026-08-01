@@ -40,6 +40,22 @@ async def test_create_job_is_persistent_and_deduplicates_paths(async_orphan_db):
     assert persisted is not None
 
 
+async def test_create_cleanup_job_persists_ids_and_scan_binding(async_orphan_db):
+    service = OrphanPurgeJobService(async_orphan_db)
+
+    job = await service.create_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[1, 1, 2],
+        operator="tester",
+    )
+
+    assert job.operation_type == "cleanup"
+    assert job.scan_id == "scan-latest"
+    assert job.orphan_ids == [1, 2]
+    assert job.canonical_paths == []
+    assert job.total_count == 2
+
+
 async def test_dispatcher_completes_job_and_creates_notification(async_orphan_db):
     job = await OrphanPurgeJobService(async_orphan_db).create_job(["/data/a.mkv"], operator="tester")
     app = SimpleNamespace(state=SimpleNamespace(store=MagicMock(name="shared_store")))
@@ -73,6 +89,88 @@ async def test_dispatcher_completes_job_and_creates_notification(async_orphan_db
     assert json.loads(notification.extra_data)["event"] == "orphan_purge_completed"
     purge.assert_awaited_once()
     assert purge.await_args.kwargs["store"] is app.state.store
+
+
+async def test_dispatcher_completes_cleanup_job_and_creates_notification(async_orphan_db):
+    job = await OrphanPurgeJobService(async_orphan_db).create_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[1, 2],
+        operator="tester",
+    )
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock(name="shared_store")))
+    dispatcher = OrphanPurgeJobDispatcher(app, session_factory=_session_factory(async_orphan_db))
+
+    cleanup_result = {
+        "success_count": 1,
+        "failed_count": 1,
+        "failed_list": [{"id": 2, "file_path": "/data/b.bin", "reason": "stale"}],
+        "total_size": 1024,
+    }
+    with patch.object(
+        OrphanFileService,
+        "cleanup_orphans",
+        AsyncMock(return_value=cleanup_result),
+    ) as cleanup:
+        await dispatcher.execute_job(job.task_id)
+
+    await async_orphan_db.refresh(job)
+    notification = (
+        await async_orphan_db.execute(
+            select(Notification).where(Notification.dedupe_key == f"orphan_cleanup:{job.task_id}")
+        )
+    ).scalar_one()
+    assert job.status == "partial"
+    assert job.purged_count == 1
+    assert job.total_size == 1024
+    assert job.notification_sent_at is not None
+    assert notification.priority == "warning"
+    assert json.loads(notification.extra_data)["event"] == "orphan_cleanup_completed"
+    assert "主动清理" in notification.title
+    cleanup.assert_awaited_once_with(
+        orphan_ids=[1, 2],
+        operator="tester",
+        audit_service=cleanup.await_args.kwargs["audit_service"],
+        store=app.state.store,
+        scan_id="scan-latest",
+    )
+
+
+async def test_dispatcher_cleanup_failure_is_persisted_and_notified(async_orphan_db):
+    job = await OrphanPurgeJobService(async_orphan_db).create_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[7],
+        operator="tester",
+    )
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock()))
+    dispatcher = OrphanPurgeJobDispatcher(app, session_factory=_session_factory(async_orphan_db))
+
+    with patch.object(
+        OrphanFileService,
+        "cleanup_orphans",
+        AsyncMock(
+            return_value={
+                "rejected": True,
+                "error": "scan_id 已过期",
+                "success_count": 0,
+                "failed_count": 1,
+                "failed_list": [{"id": 7, "reason": "scan_id 已过期"}],
+                "total_size": 0,
+            }
+        ),
+    ):
+        await dispatcher.execute_job(job.task_id)
+
+    await async_orphan_db.refresh(job)
+    notification = (
+        await async_orphan_db.execute(
+            select(Notification).where(Notification.dedupe_key == f"orphan_cleanup:{job.task_id}")
+        )
+    ).scalar_one()
+    assert job.status == "failed"
+    assert job.failed_count == 1
+    assert "scan_id 已过期" in (job.error_message or "")
+    assert notification.priority == "error"
+    assert "scan_id 已过期" in notification.content
 
 
 async def test_dispatcher_failure_is_persisted_and_notified(async_orphan_db):

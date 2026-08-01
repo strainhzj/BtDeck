@@ -17,6 +17,8 @@
 - Notification 模型 id 自增，type/title/content/priority/is_read 关键字构造。
 """
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -161,6 +163,20 @@ class TestListQuery:
         assert body["code"] == "200"
         assert body["data"]["total"] == 3
         assert len(body["data"]["list"]) == 2
+
+    def test_datetime_serialization_marks_database_utc_values(self):
+        """Naive UTC database values must not be parsed as browser-local time."""
+        notification = Notification(
+            type="system",
+            title="time",
+            created_at=datetime(2026, 8, 1, 12, 0, 0),
+            read_at=datetime(2026, 8, 1, 20, 0, 0, tzinfo=timezone(timedelta(hours=8))),
+        )
+
+        result = notification.to_dict()
+
+        assert result["created_at"] == "2026-08-01T12:00:00Z"
+        assert result["read_at"] == "2026-08-01T12:00:00Z"
 
 
 # ==================== 组3：未读计数 ====================

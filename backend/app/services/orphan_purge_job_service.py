@@ -19,7 +19,10 @@ from app.tasks.resource_guard import admission_controller
 logger = logging.getLogger(__name__)
 
 TERMINAL_STATUSES = ("completed", "partial", "failed")
+PURGE_OPERATION = "purge"
+CLEANUP_OPERATION = "cleanup"
 NOTIFICATION_EVENT = "orphan_purge_completed"
+CLEANUP_NOTIFICATION_EVENT = "orphan_cleanup_completed"
 NOTIFICATION_ROUTE = "/orphan-files/index"
 
 
@@ -40,11 +43,51 @@ class OrphanPurgeJobService:
         job = OrphanPurgeJob(
             task_id=str(uuid.uuid4()),
             status="pending",
+            operation_type=PURGE_OPERATION,
             canonical_paths_json=json.dumps(normalized_paths, ensure_ascii=False),
             operator=operator,
             total_count=len(normalized_paths),
             purged_count=0,
             failed_count=0,
+            created_at=now,
+            updated_at=now,
+        )
+        try:
+            async with admission_controller.db_write_scope():
+                self.db.add(job)
+                await self.db.commit()
+                await self.db.refresh(job)
+        except Exception:
+            await self.db.rollback()
+            raise
+        return job
+
+    async def create_cleanup_job(self, scan_id: str, orphan_ids: List[int], operator: str) -> OrphanPurgeJob:
+        """Create a durable asynchronous manual-cleanup task.
+
+        The IDs and scan batch are captured at submission time. The worker
+        still performs the existing freshness, manifest and file-identity
+        checks immediately before moving each file to quarantine.
+        """
+        normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
+        if not scan_id or not scan_id.strip():
+            raise ValueError("主动清理任务必须绑定有效的扫描批次")
+        if not normalized_ids:
+            raise ValueError("至少需要一个有效的孤儿文件 ID")
+
+        now = datetime.utcnow()
+        job = OrphanPurgeJob(
+            task_id=str(uuid.uuid4()),
+            status="pending",
+            operation_type=CLEANUP_OPERATION,
+            canonical_paths_json="[]",
+            scan_id=scan_id,
+            orphan_ids_json=json.dumps(normalized_ids, ensure_ascii=False),
+            operator=operator,
+            total_count=len(normalized_ids),
+            purged_count=0,
+            failed_count=0,
+            total_size=0,
             created_at=now,
             updated_at=now,
         )
@@ -93,6 +136,7 @@ class OrphanPurgeJobService:
         purged_count: int,
         failed_count: int,
         failed_list: List[Dict[str, Any]],
+        total_size: int = 0,
         error_message: Optional[str] = None,
     ) -> bool:
         if status not in TERMINAL_STATUSES:
@@ -110,6 +154,7 @@ class OrphanPurgeJobService:
                         status=status,
                         purged_count=max(0, int(purged_count)),
                         failed_count=max(0, int(failed_count)),
+                        total_size=max(0, int(total_size)),
                         failed_list_json=json.dumps(failed_list, ensure_ascii=False),
                         error_message=error_message,
                         completed_at=now,
@@ -168,7 +213,10 @@ class OrphanPurgeJobService:
         if job.notification_sent_at is not None:
             return True
 
-        title, priority = self._notification_style(job.status)
+        operation_type = str(getattr(job, "operation_type", None) or PURGE_OPERATION)
+        event = CLEANUP_NOTIFICATION_EVENT if operation_type == CLEANUP_OPERATION else NOTIFICATION_EVENT
+        dedupe_prefix = "orphan_cleanup" if operation_type == CLEANUP_OPERATION else "orphan_purge"
+        title, priority = self._notification_style(job.status, operation_type)
         content = self._notification_content(job)
         notification = await NotificationService(self.db).create_notification(
             type="system",
@@ -176,16 +224,20 @@ class OrphanPurgeJobService:
             content=content,
             priority=priority,
             extra_data={
-                "event": NOTIFICATION_EVENT,
+                "event": event,
                 "route": NOTIFICATION_ROUTE,
                 "task_id": job.task_id,
                 "task_status": job.status,
+                "operation_type": operation_type,
+                "scan_id": job.scan_id,
                 "total_count": job.total_count,
                 "purged_count": job.purged_count,
+                "success_count": job.purged_count,
                 "failed_count": job.failed_count,
+                "total_size": job.total_size or 0,
                 "failed_list": job.failed_list[:20],
             },
-            dedupe_key=f"orphan_purge:{job.task_id}",
+            dedupe_key=f"{dedupe_prefix}:{job.task_id}",
         )
         if notification is None:
             return False
@@ -204,28 +256,40 @@ class OrphanPurgeJobService:
         return True
 
     @staticmethod
-    def _notification_style(status: str) -> tuple[str, str]:
+    def _notification_style(status: str, operation_type: str = PURGE_OPERATION) -> tuple[str, str]:
+        action = "主动清理" if operation_type == CLEANUP_OPERATION else "彻底删除"
         if status == "completed":
-            return "孤儿文件彻底删除完成", "info"
+            return f"孤儿文件{action}完成", "info"
         if status == "partial":
-            return "孤儿文件彻底删除部分完成", "warning"
-        return "孤儿文件彻底删除失败", "error"
+            return f"孤儿文件{action}部分完成", "warning"
+        return f"孤儿文件{action}失败", "error"
 
     @staticmethod
     def _notification_content(job: OrphanPurgeJob) -> str:
+        operation_type = str(getattr(job, "operation_type", None) or PURGE_OPERATION)
+        is_cleanup = operation_type == CLEANUP_OPERATION
+        action = "主动清理" if is_cleanup else "彻底删除"
         lines = [
-            "### 彻底删除结果",
+            f"### {action}结果",
             f"- 任务 ID：{job.task_id}",
             f"- 总数：{job.total_count}",
             f"- 成功：{job.purged_count}",
             f"- 失败：{job.failed_count}",
         ]
+        if is_cleanup:
+            lines.append(f"- 释放空间：{job.total_size or 0} 字节")
         if job.error_message:
             lines.append(f"- 任务错误：{job.error_message[:500]}")
         if job.failed_list:
             lines.append("")
             lines.append("### 失败明细（最多显示 10 条）")
             for item in job.failed_list[:10]:
+                if is_cleanup:
+                    target = str(item.get("file_path") or item.get("id") or "未知孤儿文件")
+                    reason = str(item.get("reason", "未知原因"))
+                    lines.append(f"- {target[-200:]}：{reason[:300]}")
+                    continue
+
                 canonical_path = str(item.get("canonical_path", "未知原路径"))
                 quarantine_path = item.get("quarantine_path")
                 reason = str(item.get("reason", "未知原因"))
@@ -260,7 +324,7 @@ class OrphanPurgeJobDispatcher:
         if existing and not existing.done():
             return False
 
-        task = asyncio.create_task(self.execute_job(task_id), name=f"orphan-purge-{task_id}")
+        task = asyncio.create_task(self.execute_job(task_id), name=f"orphan-maintenance-{task_id}")
         self._tasks[task_id] = task
 
         def _on_done(done: asyncio.Task[Any]) -> None:
@@ -314,28 +378,46 @@ class OrphanPurgeJobDispatcher:
                 job = await job_service.get_job(task_id)
                 if job is None:
                     return
+                operation_type = str(getattr(job, "operation_type", None) or PURGE_OPERATION)
                 canonical_paths = job.canonical_paths
+                orphan_ids = job.orphan_ids
+                scan_id = job.scan_id
                 operator = str(job.operator)
                 total_count = int(job.total_count or 0)
 
             try:
-                if not canonical_paths:
+                if operation_type not in (PURGE_OPERATION, CLEANUP_OPERATION):
+                    raise ValueError(f"不支持的孤儿维护任务类型: {operation_type}")
+                if operation_type == PURGE_OPERATION and not canonical_paths:
                     raise ValueError("任务路径数据为空或损坏")
+                if operation_type == CLEANUP_OPERATION and not orphan_ids:
+                    raise ValueError("主动清理任务 ID 数据为空或损坏")
                 store = await self._wait_for_store()
                 async with self.session_factory() as db:
                     from app.services.audit_service import AuditLogService
                     from app.services.orphan_file_service import OrphanFileService
 
-                    purge_service = OrphanFileService(db)
-                    result = await purge_service.purge_quarantine_now(
-                        canonical_paths=canonical_paths,
-                        operator=operator,
-                        store=store,
-                        audit_service=AuditLogService(db),
-                    )
-                    await purge_service.prune_recorded_empty_quarantine_dirs()
+                    orphan_service = OrphanFileService(db)
+                    if operation_type == CLEANUP_OPERATION:
+                        result = await orphan_service.cleanup_orphans(
+                            orphan_ids=orphan_ids,
+                            operator=operator,
+                            audit_service=AuditLogService(db),
+                            store=store,
+                            scan_id=scan_id,
+                        )
+                    else:
+                        result = await orphan_service.purge_quarantine_now(
+                            canonical_paths=canonical_paths,
+                            operator=operator,
+                            store=store,
+                            audit_service=AuditLogService(db),
+                        )
+                        await orphan_service.prune_recorded_empty_quarantine_dirs()
 
-                purged_count = int(result.get("purged_count", 0) or 0)
+                result_count_key = "success_count" if operation_type == CLEANUP_OPERATION else "purged_count"
+                purged_count = int(result.get(result_count_key, 0) or 0)
+                total_size = int(result.get("total_size", 0) or 0)
                 failed_list_value = result.get("failed_list", [])
                 failed_list = failed_list_value if isinstance(failed_list_value, list) else []
                 failed_count = int(result.get("failed_count", len(failed_list)) or 0)
@@ -354,6 +436,7 @@ class OrphanPurgeJobDispatcher:
                         purged_count=purged_count,
                         failed_count=failed_count,
                         failed_list=failed_list,
+                        total_size=total_size,
                         error_message=error_message,
                     )
             except asyncio.CancelledError:
@@ -361,7 +444,10 @@ class OrphanPurgeJobDispatcher:
                 raise
             except Exception as exc:
                 logger.error("[隔离删除任务] 执行失败 task_id=%s: %s", task_id, exc, exc_info=True)
-                failed_list = [{"canonical_path": path, "reason": str(exc)} for path in canonical_paths]
+                if operation_type == CLEANUP_OPERATION:
+                    failed_list = [{"id": orphan_id, "reason": str(exc)} for orphan_id in orphan_ids]
+                else:
+                    failed_list = [{"canonical_path": path, "reason": str(exc)} for path in canonical_paths]
                 async with self.session_factory() as db:
                     await OrphanPurgeJobService(db).finish_job(
                         task_id,
@@ -369,6 +455,7 @@ class OrphanPurgeJobDispatcher:
                         purged_count=0,
                         failed_count=total_count,
                         failed_list=failed_list,
+                        total_size=0,
                         error_message=str(exc)[:2000],
                     )
 
