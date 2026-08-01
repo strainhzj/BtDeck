@@ -24,6 +24,9 @@
       </div>
     </header>
 
+    <!-- 页面 Tab：孤儿文件 / 隔离区 -->
+    <el-tabs v-model="activeTab" class="orphan-files-tabs" @tab-click="handleTabSwitch">
+      <el-tab-pane label="孤儿文件" name="orphans">
     <!-- 统计摘要 -->
     <section class="management-stats-grid" aria-label="最近一次孤儿文件扫描摘要">
       <div class="management-stat-card">
@@ -329,6 +332,91 @@
         </div>
       </nav>
     </section>
+      </el-tab-pane>
+
+      <!-- 隔离区管理 -->
+      <el-tab-pane label="隔离区" name="quarantine">
+        <section class="management-panel" aria-labelledby="quarantine-list-title">
+          <div class="management-panel__header">
+            <div class="management-panel__heading">
+              <h2 id="quarantine-list-title" class="management-panel__title">隔离区文件</h2>
+              <p class="management-panel__subtitle">
+                已清理文件暂存于此（保留期 {{ quarantineRetentionDays }} 天），可恢复到原位置或立即彻底删除
+              </p>
+            </div>
+            <div class="management-panel__meta">
+              <el-tag v-if="quarantineSelected.length > 0" type="info" effect="plain">
+                已选择 {{ quarantineSelected.length }} 项
+              </el-tag>
+              <el-button
+                type="success"
+                icon="el-icon-refresh-left"
+                :disabled="quarantineSelected.length === 0"
+                :loading="restoreExecuting"
+                @click="handleQuarantineRestore"
+              >
+                恢复选中
+              </el-button>
+              <el-button
+                type="danger"
+                icon="el-icon-delete-solid"
+                :disabled="quarantineSelected.length === 0"
+                :loading="purgeExecuting"
+                @click="handleQuarantinePurge"
+              >
+                彻底删除选中
+              </el-button>
+              <el-button icon="el-icon-refresh" :loading="quarantineLoading" @click="loadQuarantineList">
+                刷新
+              </el-button>
+            </div>
+          </div>
+          <div class="management-table-scroll">
+            <el-table
+              v-loading="quarantineLoading"
+              :data="quarantineList"
+              border
+              stripe
+              @selection-change="handleQuarantineSelectionChange"
+            >
+              <el-table-column type="selection" width="55" />
+              <el-table-column label="原位置（规范化路径）" prop="canonical_path" min-width="300" show-overflow-tooltip />
+              <el-table-column label="大小" width="120" align="center">
+                <template slot-scope="{row}">
+                  {{ formatFileSize(row.file_size) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="隔离时间" width="170" align="center">
+                <template slot-scope="{row}">
+                  {{ formatIsoTime(row.quarantined_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="预计删除" width="170" align="center">
+                <template slot-scope="{row}">
+                  {{ formatIsoTime(row.purge_after) }}
+                </template>
+              </el-table-column>
+              <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
+                <template slot-scope="{row}">
+                  {{ row.downloader_name || row.downloader_id || '-' }}
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+          <nav class="management-pagination" aria-label="隔离区分页">
+            <span class="management-pagination__total">共 {{ quarantineTotal }} 条</span>
+            <el-pagination
+              background
+              :current-page.sync="quarantinePage"
+              :page-size="quarantinePageSize"
+              :total="quarantineTotal"
+              layout="prev, pager, next"
+              @current-change="loadQuarantineList"
+            />
+          </nav>
+        </section>
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 清理确认对话框 -->
     <el-dialog
@@ -400,13 +488,17 @@ import {
   cleanupPreview,
   cleanupOrphans,
   setIgnored,
+  getQuarantineList,
+  restoreQuarantined,
+  purgeQuarantineNow,
   OrphanFileItem,
   OrphanListParams,
   OrphanScanContext,
   OrphanScanRecord,
   OrphanStatusFilter,
   CleanupPreviewSuccess,
-  CleanupSuccessResult
+  CleanupSuccessResult,
+  QuarantineItem
 } from '@/api/orphan-files'
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
@@ -447,6 +539,20 @@ export default class OrphanFiles extends Vue {
     min_size: ''
   }
   private refreshRequestSeq = 0
+
+  // 页面 Tab：orphans=孤儿文件，quarantine=隔离区
+  private activeTab: 'orphans' | 'quarantine' = 'orphans'
+
+  // 隔离区列表状态
+  private quarantineList: QuarantineItem[] = []
+  private quarantineTotal = 0
+  private quarantineLoading = false
+  private quarantinePage = 1
+  private quarantinePageSize = 20
+  private quarantineSelected: QuarantineItem[] = []
+  private restoreExecuting = false
+  private purgeExecuting = false
+  private quarantineRetentionDays = 7
 
   // 每页数量组合框状态（复用种子列表 PageSizeCombobox，与列表模式交互一致）
   private pageSizeInput = String(this.listQuery.page_size)
@@ -498,6 +604,103 @@ export default class OrphanFiles extends Vue {
 
   beforeDestroy() {
     this.refreshRequestSeq += 1
+  }
+
+  // ==================== 隔离区管理 ====================
+
+  private async handleTabSwitch() {
+    if (this.activeTab === 'quarantine' && this.quarantineList.length === 0) {
+      await this.loadQuarantineList()
+    }
+  }
+
+  private async loadQuarantineList() {
+    this.quarantineLoading = true
+    try {
+      const res = await getQuarantineList({
+        page: this.quarantinePage,
+        page_size: this.quarantinePageSize
+      })
+      if (res.code === '200' && res.data) {
+        this.quarantineList = res.data.list
+        this.quarantineTotal = res.data.total
+      }
+    } catch (error) {
+      this.$message.error('加载隔离区列表失败：' + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.quarantineLoading = false
+    }
+  }
+
+  private handleQuarantineSelectionChange(rows: QuarantineItem[]) {
+    this.quarantineSelected = rows
+  }
+
+  private async handleQuarantineRestore() {
+    if (this.quarantineSelected.length === 0) return
+    try {
+      await this.$confirm('确认恢复选中的文件到原位置？', '恢复确认', {
+        type: 'warning'
+      })
+    } catch {
+      return
+    }
+    this.restoreExecuting = true
+    try {
+      const paths = this.quarantineSelected.map(r => r.canonical_path)
+      const res = await restoreQuarantined({ canonical_paths: paths })
+      if (res.code === '200' && res.data) {
+        const d = res.data
+        if (d.rejected) {
+          this.$message.error(d.failed_list[0]?.reason || '恢复被拒绝')
+        } else {
+          this.$message.success(`恢复完成：成功 ${d.restored_count} 个${d.failed_count ? '，失败 ' + d.failed_count + ' 个' : ''}`)
+        }
+        this.quarantinePage = 1
+        await this.loadQuarantineList()
+      }
+    } catch (error) {
+      this.$message.error('恢复失败：' + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.restoreExecuting = false
+    }
+  }
+
+  private async handleQuarantinePurge() {
+    if (this.quarantineSelected.length === 0) return
+    try {
+      await this.$confirm(
+        '确认彻底删除选中的文件？此操作不可恢复，文件将被永久删除！',
+        '彻底删除确认',
+        { type: 'error', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+    this.purgeExecuting = true
+    try {
+      const paths = this.quarantineSelected.map(r => r.canonical_path)
+      const res = await purgeQuarantineNow({ canonical_paths: paths })
+      if (res.code === '200' && res.data) {
+        const d = res.data
+        if (d.rejected) {
+          this.$message.error(d.failed_list[0]?.reason || '删除被拒绝')
+        } else {
+          this.$message.success(`彻底删除完成：成功 ${d.purged_count} 个${d.failed_count ? '，失败 ' + d.failed_count + ' 个' : ''}`)
+        }
+        this.quarantinePage = 1
+        await this.loadQuarantineList()
+      }
+    } catch (error) {
+      this.$message.error('删除失败：' + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.purgeExecuting = false
+    }
+  }
+
+  private formatIsoTime(iso: string | null): string {
+    if (!iso) return '-'
+    return formatDate(iso)
   }
 
   private get latestAttempt(): OrphanScanRecord | null {

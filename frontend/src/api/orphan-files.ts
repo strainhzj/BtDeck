@@ -246,14 +246,14 @@ export function cleanupPreview(data: CleanupRequest): Promise<ApiResponse<Cleanu
  * 手动清理选中的孤儿文件
  */
 export function cleanupOrphans(data: CleanupRequest): Promise<ApiResponse<CleanupResult>> {
-  // 清理需实时复核 manifest（逐种子拉文件清单），大下载器耗时较长。
-  // 单独放宽到 120s，解除全局 20s 硬超时（后端 lease TTL=3600s 已为长任务预留）。
-  // 注：真正治本需 manifest 缓存或清理异步化，此处为临时缓解。
+  // 清理需实时复核 manifest（对 high 候选所属下载器逐种子拉文件清单），大下载器耗时较长。
+  // 后端已做低置信度分流优化（low 候选不再触发全量 manifest 拉取），耗时显著下降；
+  // 放宽到 300s 作为保险，解除全局 20s 硬超时（后端 lease TTL=3600s 已为长任务预留）。
   return request({
     url: '/orphan-files/cleanup',
     method: 'post',
     data: data,
-    timeout: 120000
+    timeout: 300000
   }) as unknown as Promise<ApiResponse<CleanupResult>>
 }
 
@@ -273,4 +273,97 @@ export function setIgnored(data: IgnoreRequest): Promise<ApiResponse<IgnoreResul
     method: 'post',
     data: data
   }) as unknown as Promise<ApiResponse<IgnoreResult>>
+}
+
+// ==================== 隔离区管理（恢复 / 立即彻底删除 / 列表） ====================
+
+/**
+ * 隔离区列表项
+ */
+export interface QuarantineItem {
+  canonical_path: string
+  downloader_id: string | null
+  downloader_name: string | null
+  quarantine_path: string | null
+  quarantine_root: string | null
+  quarantined_at: string | null
+  /** 预计物理删除时间（隔离保留期到期） */
+  purge_after: string | null
+  file_size: number
+  confidence: OrphanConfidence
+}
+
+export interface QuarantineListResult {
+  total: number
+  page: number
+  pageSize: number
+  list: QuarantineItem[]
+}
+
+export interface QuarantineListQuery {
+  page?: number
+  page_size?: number
+  downloader_id?: string
+  path_like?: string
+}
+
+/**
+ * 隔离区操作请求（恢复 / 立即彻底删除共用）
+ */
+export interface QuarantineActionRequest {
+  canonical_paths: string[]
+}
+
+export interface QuarantineFailedItem {
+  canonical_path: string
+  reason: string
+}
+
+export interface RestoreResult {
+  rejected?: boolean
+  restored_count: number
+  failed_count: number
+  failed_list: QuarantineFailedItem[]
+}
+
+export interface PurgeResult {
+  rejected?: boolean
+  purged_count: number
+  failed_count: number
+  failed_list: QuarantineFailedItem[]
+}
+
+/**
+ * 查询隔离区文件列表
+ */
+export function getQuarantineList(params: QuarantineListQuery): Promise<ApiResponse<QuarantineListResult>> {
+  return request({
+    url: '/orphan-files/quarantine',
+    method: 'get',
+    params
+  }) as unknown as Promise<ApiResponse<QuarantineListResult>>
+}
+
+/**
+ * 从隔离区恢复文件到原位置（可逆操作的逆操作）
+ */
+export function restoreQuarantined(data: QuarantineActionRequest): Promise<ApiResponse<RestoreResult>> {
+  return request({
+    url: '/orphan-files/restore',
+    method: 'post',
+    data: data,
+    timeout: 120000
+  }) as unknown as Promise<ApiResponse<RestoreResult>>
+}
+
+/**
+ * 立即彻底删除隔离区文件（跳过保留期，保留全部安全检查）
+ */
+export function purgeQuarantineNow(data: QuarantineActionRequest): Promise<ApiResponse<PurgeResult>> {
+  return request({
+    url: '/orphan-files/purge',
+    method: 'post',
+    data: data,
+    timeout: 300000
+  }) as unknown as Promise<ApiResponse<PurgeResult>>
 }
