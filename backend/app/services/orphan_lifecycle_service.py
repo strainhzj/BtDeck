@@ -240,6 +240,30 @@ class OrphanLifecycleService:
             await self.db.commit()
         return result.rowcount > 0
 
+    async def mark_restored(self, canonical_path: str, *, commit: bool = True) -> bool:
+        """标记候选为已恢复（隔离区还原到原位置）。
+
+        mark_quarantined 的逆操作：status 从 quarantined 回到 candidate，
+        清空所有隔离字段，保持 operation_state=stable。
+        """
+        result = await self.db.execute(
+            update(OrphanCurrentCandidate)
+            .where(OrphanCurrentCandidate.canonical_path == canonical_path)
+            .values(
+                status="candidate",
+                quarantine_path=None,
+                quarantine_root=None,
+                quarantined_at=None,
+                purge_after=None,
+                operation_state="stable",
+                operation_target_path=None,
+                operation_error=None,
+            )
+        )
+        if commit:
+            await self.db.commit()
+        return result.rowcount > 0
+
     async def get_latest_scan_status(self) -> Optional[Dict[str, Any]]:
         """获取最新扫描批次的状态（用于清理门禁判断）。"""
         from app.models.orphan_file import OrphanScanResult

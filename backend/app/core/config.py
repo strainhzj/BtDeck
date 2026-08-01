@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     DEV: bool = True
     DB_ECHO: bool = True
+    # 日志级别：DEBUG/INFO/WARNING/ERROR（docker-compose 已声明 LOG_LEVEL 环境变量，
+    # 由 BaseSettings 自动消费并传给 uvicorn；默认 INFO）
+    LOG_LEVEL: str = "INFO"
 
     # 目录配置
     CONFIG_DIR: Optional[str] = None
@@ -104,7 +107,10 @@ class Settings(BaseSettings):
     SYNC_HEAVY_CONCURRENCY: int = 1
     # 每类重型任务最多允许排队等待的名额（按 task_code 计）；超过即跳过本轮
     SYNC_HEAVY_QUEUE_LIMIT: int = 1
-    # 下载器 API 总令牌：阶段 2 downloader_api_runtime 使用，限制并发远程调用
+    # 下载器 API 总令牌：per-downloader 跨 lane 共享（限制同一下载器的并发远程调用）。
+    # 大下载器若 manifest 拉取仍慢，可通过环境变量 DOWNLOADER_IO_CONCURRENCY=4 提升；
+    # 注意 requests.Session 非线程安全，提并发可能偶发连接错误（被 per-seed 降级吞掉
+    # 不误删，但会部分抵消加速收益）。
     DOWNLOADER_IO_CONCURRENCY: int = 2
     # qB tracker 明细并发上限：阶段 2 tracker lane 使用
     QB_TRACKER_CONCURRENCY: int = 3

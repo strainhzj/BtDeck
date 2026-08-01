@@ -4,6 +4,7 @@
 import asyncio
 import logging
 import os
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
@@ -393,6 +394,13 @@ class TorrentManifestBuilder:
         - 仍 fail-closed 的硬错误（store 未初始化、无任何启用配置、required 含未知
           下载器、共享缓存含无配置下载器）：整批 raise。
         """
+        build_started = time.monotonic()
+        _required_log = {str(value) for value in (required_downloader_ids or set())}
+        logger.info(
+            "[孤儿清单] build 开始 required下载器=%d scope=%s",
+            len(_required_log),
+            "全量" if not _required_log else "收窄",
+        )
         if self.store is None or not hasattr(self.store, "get_snapshot"):
             raise ManifestBuildError("app.state.store 未初始化")
         cached = await self.store.get_snapshot()
@@ -476,6 +484,14 @@ class TorrentManifestBuilder:
             db_whitelist = DirectoryWhitelist()
         directory_whitelist = set(db_whitelist.dirs) | degraded_seed_dirs
 
+        logger.info(
+            "[孤儿清单] build 完成 耗时=%.2fs expected=%d 精筛覆盖下载器=%d 降级下载器=%d 白名单目录=%d",
+            time.monotonic() - build_started,
+            len(expected),
+            len(protected_ids),
+            len(degraded_downloader_ids),
+            len(directory_whitelist),
+        )
         return ManifestSnapshot(
             expected_paths=expected,
             scan_roots=[(path, frozenset(owners)) for path, owners in sorted(roots.items(), key=lambda item: item[0])],
@@ -573,7 +589,14 @@ class TorrentManifestBuilder:
 
         try:
             downloader_type = self._resolve_type(config)
+            _inv_started = time.monotonic()
             inventory = await self._fetch_inventory(downloader_id, downloader_type, client)
+            logger.info(
+                "[孤儿清单] inventory 拉取 downloader=%s 耗时=%.2fs 种子数=%d",
+                downloader_id,
+                time.monotonic() - _inv_started,
+                len(inventory),
+            )
         except ManifestBuildError as exc:
             _degrade(f"inventory 拉取失败: {exc}")
             inventory_failed_ids.add(downloader_id)
@@ -628,9 +651,18 @@ class TorrentManifestBuilder:
                         # 单种子失败降级为 reason（与原串行 _seed_degrade 语义一致）。
                         return t_hash, ext_root, None, f"种子 {t_hash[:8]} 文件清单拉取失败: {exc}"
 
+            _gather_started = time.monotonic()
             results = await asyncio.gather(
                 *[_fetch_one(h, root) for h, root in pending_fetch],
                 return_exceptions=True,
+            )
+            logger.info(
+                "[孤儿清单] 并发拉取 downloader=%s pending=%d 协程并发=%d 真实远程并发=%d 耗时=%.2fs",
+                downloader_id,
+                len(pending_fetch),
+                concurrency,
+                settings.DOWNLOADER_IO_CONCURRENCY,
+                time.monotonic() - _gather_started,
             )
         else:
             results = []

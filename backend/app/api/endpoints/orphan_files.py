@@ -43,6 +43,12 @@ class IgnoreRequest(BaseModel):
     ignored: bool = Field(..., description="True=设为忽视，False=取消忽视")
 
 
+class QuarantineActionRequest(BaseModel):
+    """隔离区操作请求模型（恢复 / 立即彻底删除）"""
+
+    canonical_paths: List[str] = Field(..., min_length=1, description="隔离区候选规范化路径列表")
+
+
 # ========== API 端点 ==========
 
 
@@ -186,4 +192,78 @@ async def set_orphan_ignored(
         return CommonResponse(status="success", msg=msg, code="200", data=result)
     except Exception as e:
         logger.error(f"设置孤儿忽视态失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"操作失败: {e}", code="500", data=None)
+
+
+@router.get("/quarantine", response_model=CommonResponse)
+async def get_quarantine_list(
+    page: int = Query(default=1, ge=1, description="页码"),
+    page_size: int = Query(default=20, ge=1, le=100000, description="每页数量"),
+    downloader_id: Optional[str] = Query(default=None, description="下载器ID筛选"),
+    path_like: Optional[str] = Query(default=None, description="文件路径模糊匹配"),
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """查询隔离区文件列表（status=quarantined 的候选）。"""
+    try:
+        service = OrphanFileService(db)
+        result = await service.get_quarantine_list(
+            page=page,
+            page_size=page_size,
+            downloader_id=downloader_id,
+            path_like=path_like,
+        )
+        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+    except Exception as e:
+        logger.error(f"查询隔离区列表失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+
+
+@router.post("/restore", response_model=CommonResponse)
+async def restore_quarantined(
+    req: QuarantineActionRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+    audit_service: AuditLogService = Depends(get_audit_service),
+):
+    """从隔离区恢复文件到原位置（mark_quarantined 的逆操作）。"""
+    try:
+        service = OrphanFileService(db)
+        result = await service.restore_quarantined(
+            canonical_paths=req.canonical_paths,
+            operator=current_user.username,
+            audit_service=audit_service,
+        )
+        msg = f"恢复完成: 成功 {result['restored_count']} 个"
+        if result["failed_count"] > 0:
+            msg += f"，失败 {result['failed_count']} 个"
+        return CommonResponse(status="success", msg=msg, code="200", data=result)
+    except Exception as e:
+        logger.error(f"隔离区恢复失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"操作失败: {e}", code="500", data=None)
+
+
+@router.post("/purge", response_model=CommonResponse)
+async def purge_quarantine_now(
+    request: Request,
+    req: QuarantineActionRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+    audit_service: AuditLogService = Depends(get_audit_service),
+):
+    """立即彻底删除隔离区文件（跳过保留期门禁，保留全部安全检查 + 审计）。"""
+    try:
+        service = OrphanFileService(db)
+        result = await service.purge_quarantine_now(
+            canonical_paths=req.canonical_paths,
+            operator=current_user.username,
+            store=request.app.state.store,
+            audit_service=audit_service,
+        )
+        msg = f"彻底删除完成: 成功 {result['purged_count']} 个"
+        if result["failed_count"] > 0:
+            msg += f"，失败 {result['failed_count']} 个"
+        return CommonResponse(status="success", msg=msg, code="200", data=result)
+    except Exception as e:
+        logger.error(f"隔离区彻底删除失败: {e}", exc_info=True)
         return CommonResponse(status="error", msg=f"操作失败: {e}", code="500", data=None)

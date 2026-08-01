@@ -14,6 +14,8 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import logging
+import os
+import sys
 
 import uvicorn as uvicorn
 from uvicorn import Config
@@ -26,13 +28,46 @@ from app.database import init_config_file
 # 配置日志
 logger = logging.getLogger(__name__)
 
-# 配置日志级别,确保 INFO 级别的日志能够输出
-# 修复: 解决启动时看不到"数据库迁移完成"等 INFO 日志的问题
-# 改进: 添加异常处理,防止日志配置失败导致应用启动失败
+# 配置日志级别：接通 LOG_LEVEL 环境变量（docker-compose 已声明）。
+_log_level_name = (settings.LOG_LEVEL or os.environ.get("LOG_LEVEL") or "INFO").upper()
+_app_log_level = getattr(logging, _log_level_name, logging.INFO)
 try:
+    # 方案：给 app.* 整棵 logger 树装独立 handler 并 propagate=False，
+    # 彻底脱离对 root/basicConfig 的依赖（避免被 uvicorn dictConfig 等覆盖/清空）。
+    # 业务日志（app.services.* 等）始终由此 handler 输出。
+    # 显式绑定 stdout（与 lifespan 的 print 同流，docker 下已验证可见），
+    # 避免 stderr 在某些查看方式下被遗漏。
+    _app_formatter = logging.Formatter("%(asctime)s %(levelname)s:%(name)s:%(message)s")
+    _app_handler = logging.StreamHandler(sys.stdout)
+    _app_handler.setFormatter(_app_formatter)
+    _app_root_logger = logging.getLogger("app")
+    _app_root_logger.setLevel(_app_log_level)
+    # 清理可能残留的 handler（force 语义），避免重复输出
+    for _h in list(_app_root_logger.handlers):
+        _app_root_logger.removeHandler(_h)
+    _app_root_logger.addHandler(_app_handler)
+    _app_root_logger.propagate = False  # 关键：不依赖 root，不受 basicConfig/uvicorn 影响
+
+    # 立即输出一条验证日志，便于确认 app logger 已就绪（docker logs 可见）
+    logger.info("[日志] app logger 已就绪，级别=%s，输出流=stdout", _log_level_name)
+
+    # 同时配置 root（兼容非 app.* 的库日志）
     logging.basicConfig(
-        level=logging.INFO, format="%(levelname)s:%(name)s:%(message)s", force=True  # 强制覆盖已配置的 logger
+        level=_app_log_level,
+        format="%(asctime)s %(levelname)s:%(name)s:%(message)s",
+        force=True,
     )
+    # 压制第三方库噪声：避免 LOG_LEVEL=DEBUG 时 SQL/HTTP 明文洪水 + cookie 泄露。
+    for _noisy in (
+        "sqlalchemy.engine",
+        "urllib3",
+        "qbittorrentapi",
+        "transmission_rpc",
+        "httpx",
+        "httpcore",
+        "asyncio",
+    ):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
 except Exception as e:
     # 日志配置失败不应阻止应用启动,使用 print 输出警告
     print(f"[WARN] Failed to configure logging: {e}")
@@ -41,6 +76,21 @@ except Exception as e:
 
 # uvicorn服务配置
 # 改进: 根据环境选择不同的配置,避免生产环境多进程导致的数据库迁移竞态问题
+
+# 规范化 LOG_LEVEL 为 uvicorn 接受的小写值（critical/error/warning/info/debug/trace）。
+# 兼容常见缩写（warn→warning 等）；非法值兜底为 info，避免 uvicorn KeyError 启动失败。
+_UVICORN_LEVEL_ALIASES = {"warn": "warning", "err": "error", "crit": "critical"}
+_UVICORN_VALID_LEVELS = {"critical", "error", "warning", "info", "debug", "trace"}
+
+
+def _to_uvicorn_level(raw: str) -> str:
+    val = (raw or "info").lower()
+    val = _UVICORN_LEVEL_ALIASES.get(val, val)
+    return val if val in _UVICORN_VALID_LEVELS else "info"
+
+
+_uvicorn_log_level = _to_uvicorn_level(settings.LOG_LEVEL)
+
 if settings.DEV and not is_frozen():
     # 开发环境: 热重载模式,单进程
     Server = uvicorn.Server(
@@ -52,6 +102,7 @@ if settings.DEV and not is_frozen():
             workers=1,  # 强制单进程,热重载模式下多进程被忽略
             timeout_graceful_shutdown=5,
             loop="asyncio",
+            log_level=_uvicorn_log_level,  # 同步 LOG_LEVEL，避免 uvicorn 默认覆盖
         )
     )
 else:
@@ -66,6 +117,7 @@ else:
             workers=1,  # ← 强制单进程,确保所有请求使用一致的数据库schema
             timeout_graceful_shutdown=5,
             loop="asyncio",
+            log_level=_uvicorn_log_level,  # 同步 LOG_LEVEL，避免 uvicorn 默认覆盖
         )
     )
 

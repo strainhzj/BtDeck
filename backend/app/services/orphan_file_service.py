@@ -17,6 +17,7 @@
 
 import logging
 import os
+import time
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -167,6 +168,39 @@ class OrphanFileService:
             except ValueError:
                 continue
         return False
+
+    @staticmethod
+    def _authorize_low_confidence(candidate: OrphanCurrentCandidate, manifest: ManifestSnapshot) -> bool:
+        """低置信度候选的授权复核（分流优化）。
+
+        low 候选的 downloader 在扫描时处于离线/降级状态。删除前分两种情况：
+        - downloader 已重新上线且精筛成功（在 manifest.downloader_ids）→ 走标准
+          _path_authorized，保留「下载器恢复后可清理」的合法路径。
+        - downloader 仍降级/离线（不在 manifest.downloader_ids）→ 用 manifest 的
+          directory_whitelist（降级种子目录 + DB 种子目录）做目录级复核：候选文件
+          不落在任何已知种子目录下才放行，与扫描期目录粗筛语义一致（fail-closed）。
+
+        安全底线：目录白名单兜底仍是 fail-closed——文件若落在任一已知种子目录则拒绝。
+        verify_file_identity（size/mtime_ns/inode）在调用方照常执行，不受此复核影响。
+        """
+        if candidate.downloader_id in manifest.downloader_ids:
+            return OrphanFileService._path_authorized(candidate, manifest)
+        # downloader 仍离线：目录白名单兜底（文件不被任何已知种子目录覆盖才可清理）
+        try:
+            norm_path = normalize_path(candidate.canonical_path)
+        except (ValueError, OSError):
+            return False
+        for directory in manifest.directory_whitelist:
+            try:
+                # 白名单目录统一用 normalize_path 规范化，与候选路径同口径
+                # （Windows normcase 小写化 + normpath），确保 commonpath 比较正确。
+                norm_dir = normalize_path(directory)
+                if os.path.commonpath([norm_path, norm_dir]) == norm_dir:
+                    # 落在已知种子目录内 → 可能被引用，拒绝（fail-closed）
+                    return False
+            except (ValueError, OSError):
+                continue
+        return True
 
     @staticmethod
     def _owning_root(candidate: OrphanCurrentCandidate, manifest: ManifestSnapshot) -> Optional[str]:
@@ -332,13 +366,10 @@ class OrphanFileService:
             (OrphanFile.canonical_path.in_(ignored_paths_subq), 1),
             else_=0,
         )
-        list_query = (
-            select(OrphanFile)
-            .order_by(
-                ignored_rank.asc(),
-                OrphanFile.file_size.desc(),
-                OrphanFile.id.asc(),
-            )
+        list_query = select(OrphanFile).order_by(
+            ignored_rank.asc(),
+            OrphanFile.file_size.desc(),
+            OrphanFile.id.asc(),
         )
         for cond in conditions:
             list_query = list_query.where(cond)
@@ -646,8 +677,21 @@ class OrphanFileService:
             ((candidate.downloader_id or ""), candidate.canonical_path): candidate
             for candidate in candidate_result.scalars().all()
         }
-        manifest = await self._build_realtime_manifest(
-            store, {candidate.downloader_id for candidate in candidates.values()}
+        # 分流优化：manifest 精筛复核范围只放 high 候选所属下载器。
+        # low 候选（离线降级目录粗筛产出）的 downloader 大概率仍离线，为其拉取整下载器
+        # 逐种子清单既慢又常因 downloader 降级被拒绝（纯浪费）。low 候选改走目录白名单
+        # 兜底复核（见循环内 _authorize_low_confidence），不触发全量 manifest 拉取。
+        high_downloader_ids = {
+            cand.downloader_id for cand in candidates.values() if (cand.confidence or "high") == "high"
+        }
+        _manifest_started = time.monotonic()
+        manifest = await self._build_realtime_manifest(store, high_downloader_ids)
+        logger.info(
+            "[孤儿清理] manifest 复核完成 耗时=%.2fs high下载器=%d/%d 总候选=%d",
+            time.monotonic() - _manifest_started,
+            len(high_downloader_ids),
+            len({c.downloader_id for c in candidates.values()}),
+            len(candidates),
         )
         if manifest is None:
             reason = "实时 manifest 构建失败，无法确认文件是否仍被种子引用（fail-closed）"
@@ -659,6 +703,8 @@ class OrphanFileService:
                 "total_size": 0,
             }
 
+        _loop_started = time.monotonic()
+        logger.info("[孤儿清理] 删除循环开始 items=%d", len(items))
         for item in items:
             try:
                 canonical = normalize_path(item.file_path)
@@ -683,7 +729,13 @@ class OrphanFileService:
                     )
                     continue
 
-                if not self._path_authorized(candidate, manifest):
+                # 授权复核：high 候选走标准精筛授权；low 候选走分流复核（下载器在线则
+                # 精筛授权，仍离线则目录白名单兜底）。两者均为 fail-closed。
+                if (candidate.confidence or "high") == "high":
+                    authorized = self._path_authorized(candidate, manifest)
+                else:
+                    authorized = self._authorize_low_confidence(candidate, manifest)
+                if not authorized:
                     failed_list.append(
                         {
                             "id": item.id,
@@ -774,6 +826,13 @@ class OrphanFileService:
             except Exception as e:
                 logger.warning(f"[孤儿清理] 审计日志记录失败: {e}")
 
+        logger.info(
+            "[孤儿清理] 完成 success=%d failed=%d total_size=%d 循环耗时=%.2fs",
+            success_count,
+            len(failed_list),
+            deleted_size,
+            time.monotonic() - _loop_started,
+        )
         return {
             "success_count": success_count,
             "failed_count": len(failed_list),
@@ -982,7 +1041,14 @@ class OrphanFileService:
 
         # 恢复会改变候选状态，必须在恢复后获取可清理集合。
         purgeable = await lifecycle.get_purgeable_candidates(days_threshold)
+        _manifest_started = time.monotonic()
         manifest = await self._build_realtime_manifest(store, {candidate.downloader_id for candidate in purgeable})
+        logger.info(
+            "[孤儿自动清理] manifest 构建完成 耗时=%.2fs 候选=%d 下载器=%d",
+            time.monotonic() - _manifest_started,
+            len(purgeable),
+            len({c.downloader_id for c in purgeable}),
+        )
         if manifest is None:
             return {
                 "quarantined_count": 0,
@@ -1001,6 +1067,7 @@ class OrphanFileService:
         quarantined_count = 0
         failed_count = 0
         total_size = 0
+        _loop_started = time.monotonic()
 
         for candidate in purgeable:
             try:
@@ -1080,7 +1147,7 @@ class OrphanFileService:
 
         logger.info(
             f"[孤儿自动清理] 完成: 隔离 {quarantined_count}，失败 {failed_count}，"
-            f"共 {total_size / (1024**2):.2f} MB"
+            f"共 {total_size / (1024**2):.2f} MB，循环耗时={time.monotonic() - _loop_started:.2f}s"
         )
 
         return {
@@ -1137,7 +1204,14 @@ class OrphanFileService:
             )
         )
         candidates = result.scalars().all()
+        _purge_manifest_started = time.monotonic()
         manifest = await self._build_realtime_manifest(store, {candidate.downloader_id for candidate in candidates})
+        logger.info(
+            "[隔离清理] 初始 manifest 构建完成 耗时=%.2fs 候选=%d 下载器=%d",
+            time.monotonic() - _purge_manifest_started,
+            len(candidates),
+            len({c.downloader_id for c in candidates}),
+        )
         if manifest is None:
             return {
                 "purged_count": 0,
@@ -1148,14 +1222,23 @@ class OrphanFileService:
 
         purged_count = 0
         failed_count = 0
+        # 统计循环内重复构建 manifest 次数（性能诊断用，每次构建都对下载器逐种子拉取）
+        _in_loop_manifest_builds = 0
+        _in_loop_manifest_total_time = 0.0
+        _loop_started = time.monotonic()
 
         for candidate in candidates:
             try:
+                _mf_started = time.monotonic()
                 current_manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
                 if current_manifest is None:
+                    _in_loop_manifest_builds += 1
+                    _in_loop_manifest_total_time += time.monotonic() - _mf_started
                     failed_count += 1
                     continue
                 manifest = current_manifest
+                _in_loop_manifest_builds += 1
+                _in_loop_manifest_total_time += time.monotonic() - _mf_started
                 qpath = candidate.quarantine_path
                 if not qpath or not os.path.exists(qpath):
                     # 文件已不在隔离区（可能已被手动清理）
@@ -1213,7 +1296,10 @@ class OrphanFileService:
                     expected_inode=self._candidate_inode(candidate),
                 )
                 await _lease_handle.assert_owned()
+                _dmf_started = time.monotonic()
                 delete_manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
+                _in_loop_manifest_builds += 1
+                _in_loop_manifest_total_time += time.monotonic() - _dmf_started
                 if delete_manifest is None or not self._path_authorized(candidate, delete_manifest):
                     raise OSError("tombstone 删除前无法获得完整授权 manifest")
                 if (
@@ -1240,7 +1326,442 @@ class OrphanFileService:
                 logger.error(f"[隔离清理] 删除失败 {candidate.quarantine_path}: {e}")
                 failed_count += 1
 
+        logger.info(
+            "[隔离清理] 完成: 物理删除=%d 失败=%d 候选=%d 循环内manifest构建=%d次(耗时=%.2fs) 循环总耗时=%.2fs",
+            purged_count,
+            failed_count,
+            len(candidates),
+            _in_loop_manifest_builds,
+            _in_loop_manifest_total_time,
+            time.monotonic() - _loop_started,
+        )
         return {"purged_count": purged_count, "failed_count": failed_count}
+
+    # ==================== 隔离区管理（恢复 / 立即彻底删除 / 列表） ====================
+
+    async def get_quarantine_list(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        downloader_id: Optional[str] = None,
+        path_like: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """分页查询隔离区文件列表（status=quarantined 的候选）。
+
+        只读，无需 lease。返回 candidate 的隔离元数据 + 下载器昵称。
+        """
+        conditions = [
+            OrphanCurrentCandidate.status == "quarantined",
+            OrphanCurrentCandidate.operation_state == "stable",
+        ]
+        if downloader_id:
+            conditions.append(OrphanCurrentCandidate.downloader_id == downloader_id)
+        if path_like:
+            conditions.append(OrphanCurrentCandidate.canonical_path.like(f"%{path_like}%"))
+
+        total_result = await self.db.execute(
+            select(func.count()).select_from(OrphanCurrentCandidate).where(*conditions)
+        )
+        total = int(total_result.scalar() or 0)
+
+        list_query = (
+            select(OrphanCurrentCandidate)
+            .where(*conditions)
+            .order_by(OrphanCurrentCandidate.purge_after.asc())
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        result = await self.db.execute(list_query)
+        candidates = result.scalars().all()
+
+        # 批量补下载器昵称
+        downloader_ids = {c.downloader_id for c in candidates if c.downloader_id}
+        nickname_map: Dict[str, str] = {}
+        if downloader_ids:
+            from app.downloader.models import BtDownloaders
+
+            dl_result = await self.db.execute(
+                select(BtDownloaders.downloader_id, BtDownloaders.nickname).where(
+                    BtDownloaders.downloader_id.in_(downloader_ids)
+                )
+            )
+            nickname_map = {row[0]: row[1] for row in dl_result.all() if row[1]}
+
+        item_list = []
+        for c in candidates:
+            item_list.append(
+                {
+                    "canonical_path": c.canonical_path,
+                    "downloader_id": c.downloader_id,
+                    "downloader_name": nickname_map.get(c.downloader_id) if c.downloader_id else None,
+                    "quarantine_path": c.quarantine_path,
+                    "quarantine_root": c.quarantine_root,
+                    "quarantined_at": c.quarantined_at.isoformat() if c.quarantined_at else None,
+                    "purge_after": c.purge_after.isoformat() if c.purge_after else None,
+                    "file_size": c.file_size,
+                    "confidence": c.confidence,
+                }
+            )
+
+        return {
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+            "list": item_list,
+        }
+
+    async def restore_quarantined(
+        self,
+        canonical_paths: List[str],
+        operator: str,
+        audit_service: Any = None,
+        _lease_acquired: bool = False,
+        _lease_handle: Any = None,
+    ) -> Dict[str, Any]:
+        """从隔离区恢复文件到原位置（mark_quarantined 的逆操作）。
+
+        安全检查：
+        - operation_state 必须为 stable（避免与崩溃恢复冲突）
+        - quarantine_path 必须存在；canonical_path 原位必须不存在（防 Windows rename 覆盖）
+        - quarantine_path 必须仍在 quarantine_root 内（防路径篡改）
+        - verify_file_identity 身份复核（size/mtime_ns/inode）
+        """
+        if not _lease_acquired:
+            from app.services.orphan_lease import (
+                OrphanLeaseBusyError,
+                orphan_maintenance_scope,
+            )
+
+            try:
+                async with orphan_maintenance_scope("manual_restore") as lease_handle:
+                    return await self.restore_quarantined(
+                        canonical_paths=canonical_paths,
+                        operator=operator,
+                        audit_service=audit_service,
+                        _lease_acquired=True,
+                        _lease_handle=lease_handle,
+                    )
+            except OrphanLeaseBusyError as exc:
+                return {
+                    "restored_count": 0,
+                    "failed_count": len(canonical_paths),
+                    "failed_list": [{"canonical_path": p, "reason": str(exc)} for p in canonical_paths],
+                    "rejected": True,
+                    "error": str(exc),
+                }
+
+        _loop_started = time.monotonic()
+        logger.info("[隔离恢复] 开始 canonical_paths=%d operator=%s", len(canonical_paths), operator)
+
+        result = await self.db.execute(
+            select(OrphanCurrentCandidate).where(
+                OrphanCurrentCandidate.canonical_path.in_(canonical_paths),
+                OrphanCurrentCandidate.status == "quarantined",
+                OrphanCurrentCandidate.operation_state == "stable",
+            )
+        )
+        candidates = result.scalars().all()
+
+        restored_count = 0
+        failed_list: List[Dict[str, Any]] = []
+
+        for candidate in candidates:
+            try:
+                qpath = candidate.quarantine_path
+                canonical = candidate.canonical_path
+                # 安全检查：隔离文件存在
+                if not qpath or not os.path.exists(qpath):
+                    failed_list.append({"canonical_path": canonical, "reason": "隔离区文件不存在"})
+                    continue
+                # 安全检查：原位不存在（防 Windows os.rename 覆盖其它文件）
+                if os.path.exists(canonical):
+                    failed_list.append({"canonical_path": canonical, "reason": "原位置已被占用，拒绝恢复（避免覆盖）"})
+                    continue
+                # 安全检查：路径仍在隔离区内（防路径篡改）
+                qroot = candidate.quarantine_root
+                if qroot:
+                    try:
+                        if os.path.commonpath([os.path.realpath(qpath), os.path.realpath(qroot)]) != os.path.realpath(
+                            qroot
+                        ):
+                            failed_list.append({"canonical_path": canonical, "reason": "隔离路径逃逸，拒绝恢复"})
+                            continue
+                    except ValueError:
+                        failed_list.append({"canonical_path": canonical, "reason": "隔离路径跨驱动器，拒绝恢复"})
+                        continue
+                # 身份复核
+                ok, reason = verify_file_identity(
+                    qpath,
+                    expected_size=candidate.file_size,
+                    expected_mtime_ns=candidate.mtime_ns,
+                    expected_inode=self._candidate_inode(candidate),
+                )
+                if not ok:
+                    failed_list.append({"canonical_path": canonical, "reason": f"身份复核失败: {reason}"})
+                    continue
+
+                await _lease_handle.assert_owned()
+                # 还原到原位（与移入时的 os.rename 互逆）
+                os.rename(qpath, canonical)
+                await _lease_handle.assert_owned()
+
+                # 回滚候选 + 明细（同一事务）
+                await self._finalize_restore(candidate, operator=operator)
+                restored_count += 1
+                logger.info("[隔离恢复] 已还原: %s -> %s", qpath, canonical)
+
+            except Exception as e:
+                logger.error("[隔离恢复] 恢复失败 %s: %s", candidate.canonical_path, e)
+                failed_list.append({"canonical_path": candidate.canonical_path, "reason": str(e)})
+
+        # 未匹配的 canonical_paths（候选不存在或状态不符）
+        matched = {c.canonical_path for c in candidates}
+        for p in canonical_paths:
+            if p not in matched:
+                failed_list.append({"canonical_path": p, "reason": "候选不存在或非 quarantined 稳定态"})
+
+        # 审计日志
+        if audit_service and restored_count > 0:
+            try:
+                await audit_service.log_operation(
+                    operation_type=AuditOperationType.ORPHAN_RESTORE.value,
+                    operator=operator,
+                    operation_detail={
+                        "action": "manual_restore",
+                        "restored_count": restored_count,
+                        "failed_count": len(failed_list),
+                    },
+                    operation_result=AuditOperationResult.SUCCESS if not failed_list else AuditOperationResult.PARTIAL,
+                    error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                )
+            except Exception as e:
+                logger.warning("[隔离恢复] 审计日志记录失败: %s", e)
+
+        logger.info(
+            "[隔离恢复] 完成 restored=%d failed=%d 耗时=%.2fs",
+            restored_count,
+            len(failed_list),
+            time.monotonic() - _loop_started,
+        )
+        return {
+            "restored_count": restored_count,
+            "failed_count": len(failed_list),
+            "failed_list": failed_list,
+        }
+
+    async def _finalize_restore(self, candidate: OrphanCurrentCandidate, *, operator: str) -> None:
+        """在同一事务中回滚候选（mark_restored）+ 回滚扫描明细（is_deleted=False）。"""
+        effective_scan_id = candidate.last_seen_scan_id
+        try:
+            async with admission_controller.db_write_scope():
+                candidate_updated = await OrphanLifecycleService(self.db).mark_restored(
+                    canonical_path=candidate.canonical_path,
+                    commit=False,
+                )
+                if not candidate_updated:
+                    raise RuntimeError(f"候选不存在，无法最终化恢复: {candidate.canonical_path}")
+                # 回滚明细：匹配同批次、同下载器、同路径、已删除的明细
+                if effective_scan_id:
+                    await self.db.execute(
+                        update(OrphanFile)
+                        .where(
+                            OrphanFile.scan_id == effective_scan_id,
+                            OrphanFile.is_deleted == True,  # noqa: E712
+                            OrphanFile.downloader_id == candidate.downloader_id,
+                            OrphanFile.canonical_path == candidate.canonical_path,
+                        )
+                        .values(
+                            is_deleted=False,
+                            deleted_at=None,
+                            deleted_by=None,
+                        )
+                    )
+                await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            raise
+
+    async def purge_quarantine_now(
+        self,
+        canonical_paths: List[str],
+        operator: str,
+        store: Any = None,
+        audit_service: Any = None,
+        _lease_acquired: bool = False,
+        _lease_handle: Any = None,
+    ) -> Dict[str, Any]:
+        """立即彻底删除隔离区文件（跳过 purge_after 时间门禁，保留全部安全检查）。
+
+        复用 purge_expired_quarantine 的安全检查全套（manifest 复核/路径校验/身份复核/tombstone），
+        唯一区别：不要求 purge_after < now。
+        """
+        if not _lease_acquired:
+            from app.services.orphan_lease import (
+                OrphanLeaseBusyError,
+                orphan_maintenance_scope,
+            )
+
+            try:
+                async with orphan_maintenance_scope("manual_purge") as lease_handle:
+                    return await self.purge_quarantine_now(
+                        canonical_paths=canonical_paths,
+                        operator=operator,
+                        store=store,
+                        audit_service=audit_service,
+                        _lease_acquired=True,
+                        _lease_handle=lease_handle,
+                    )
+            except OrphanLeaseBusyError as exc:
+                return {
+                    "purged_count": 0,
+                    "failed_count": len(canonical_paths),
+                    "failed_list": [{"canonical_path": p, "reason": str(exc)} for p in canonical_paths],
+                    "rejected": True,
+                    "error": str(exc),
+                }
+
+        await self._recover_interrupted_operations(store=store, lease_handle=_lease_handle)
+
+        _loop_started = time.monotonic()
+        logger.info("[隔离删除] 开始 canonical_paths=%d operator=%s", len(canonical_paths), operator)
+
+        result = await self.db.execute(
+            select(OrphanCurrentCandidate).where(
+                OrphanCurrentCandidate.canonical_path.in_(canonical_paths),
+                OrphanCurrentCandidate.status == "quarantined",
+                OrphanCurrentCandidate.operation_state == "stable",
+            )
+        )
+        candidates = result.scalars().all()
+
+        purged_count = 0
+        failed_list: List[Dict[str, Any]] = []
+
+        for candidate in candidates:
+            try:
+                await self._purge_single_candidate(candidate, store, _lease_handle)
+                purged_count += 1
+            except Exception as e:
+                logger.error("[隔离删除] 删除失败 %s: %s", candidate.quarantine_path, e)
+                failed_list.append({"canonical_path": candidate.canonical_path, "reason": str(e)})
+
+        # 未匹配的 canonical_paths
+        matched = {c.canonical_path for c in candidates}
+        for p in canonical_paths:
+            if p not in matched:
+                failed_list.append({"canonical_path": p, "reason": "候选不存在或非 quarantined 稳定态"})
+
+        # 审计日志
+        if audit_service and purged_count > 0:
+            try:
+                await audit_service.log_operation(
+                    operation_type=AuditOperationType.ORPHAN_PURGE.value,
+                    operator=operator,
+                    operation_detail={
+                        "action": "manual_purge",
+                        "purged_count": purged_count,
+                        "failed_count": len(failed_list),
+                    },
+                    operation_result=AuditOperationResult.SUCCESS if not failed_list else AuditOperationResult.PARTIAL,
+                    error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                )
+            except Exception as e:
+                logger.warning("[隔离删除] 审计日志记录失败: %s", e)
+
+        logger.info(
+            "[隔离删除] 完成 purged=%d failed=%d 耗时=%.2fs",
+            purged_count,
+            len(failed_list),
+            time.monotonic() - _loop_started,
+        )
+        return {"purged_count": purged_count, "failed_count": len(failed_list), "failed_list": failed_list}
+
+    async def _purge_single_candidate(
+        self,
+        candidate: OrphanCurrentCandidate,
+        store: Any,
+        _lease_handle: Any,
+    ) -> None:
+        """物理删除单个隔离候选（保留 purge_expired_quarantine 的全部安全检查）。
+
+        抽取自 purge_expired_quarantine 循环体，供立即删除与到期删除共享。
+        """
+        qpath = candidate.quarantine_path
+        if not qpath or not os.path.exists(qpath):
+            # 文件已不在隔离区（可能已被手动清理），直接标记
+            await self._mark_purged(candidate.canonical_path)
+            return
+
+        # 构建 manifest 复核（fail-closed：确认未被种子引用）
+        manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
+        if manifest is None:
+            raise OSError("实时 manifest 构建失败，拒绝删除（fail-closed）")
+        if (
+            normalize_path(qpath) in manifest.expected_paths
+            or normalize_path(candidate.canonical_path) in manifest.expected_paths
+        ):
+            raise OSError("文件当前已被种子引用，拒绝删除")
+        if not self._path_authorized(candidate, manifest) or not self._identity_complete(candidate):
+            raise OSError("路径未授权或身份字段不完整，拒绝删除")
+
+        # 二次验证：路径仍在隔离区内
+        quarantine_root = candidate.quarantine_root
+        if not quarantine_root:
+            raise OSError("路径不在隔离区内")
+        if os.path.commonpath([os.path.realpath(qpath), os.path.realpath(quarantine_root)]) != os.path.realpath(
+            quarantine_root
+        ):
+            raise OSError("路径逃逸隔离区")
+
+        ok, reason = verify_file_identity(
+            qpath,
+            expected_size=candidate.file_size,
+            expected_mtime_ns=candidate.mtime_ns,
+            expected_inode=self._candidate_inode(candidate),
+        )
+        if not ok:
+            raise OSError(f"身份复核失败: {reason}")
+
+        # tombstone 预写 + 物理删除（与 purge_expired_quarantine 一致）
+        tombstone_path = build_quarantine_path(qpath, quarantine_root)
+        await self._commit_candidate_state(
+            candidate.canonical_path,
+            operation_state="purge_pending",
+            operation_target_path=tombstone_path,
+            operation_error=None,
+        )
+        await _lease_handle.assert_owned()
+        quarantine_file(
+            qpath,
+            quarantine_root,
+            dest_path=tombstone_path,
+            expected_size=candidate.file_size,
+            expected_mtime_ns=candidate.mtime_ns,
+            expected_inode=self._candidate_inode(candidate),
+        )
+        await _lease_handle.assert_owned()
+        # 删除前二次 manifest + 身份复核（防 TOCTOU）
+        delete_manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
+        if delete_manifest is None or not self._path_authorized(candidate, delete_manifest):
+            raise OSError("tombstone 删除前无法获得完整授权 manifest")
+        if (
+            normalize_path(candidate.canonical_path) in delete_manifest.expected_paths
+            or normalize_path(tombstone_path) in delete_manifest.expected_paths
+        ):
+            raise OSError("tombstone 删除前文件已被种子引用")
+        ok2, reason2 = verify_file_identity(
+            tombstone_path,
+            expected_size=candidate.file_size,
+            expected_mtime_ns=candidate.mtime_ns,
+            expected_inode=self._candidate_inode(candidate),
+        )
+        if not ok2:
+            raise OSError(reason2)
+        await _lease_handle.assert_owned()
+        os.remove(tombstone_path)
+        await _lease_handle.assert_owned()
+        await self._mark_purged(candidate.canonical_path)
+        logger.info("[隔离删除] 物理删除: %s", qpath)
 
     async def _mark_purged(self, canonical_path: str) -> None:
         """标记候选为已物理删除。"""

@@ -315,13 +315,14 @@ class DownloaderApiRuntime:
             log_extra.duration = duration
             log_extra.error_type = "TimeoutError"
             # 超时后底层线程仍在运行，最终会通过 future done 自行走 success/failure 统计。
-            # 此处只记录调用方视角的 timeout（debug 级，避免与业务侧 warning 双重放大）。
-            logger.debug(
-                "downloader_api_call_timeout lane=%s method=%s downloader=%s timeout=%.1fs",
+            # 超时是孤儿清理 manifest 拉取慢的核心成因，提到 INFO 级便于 docker 下定位。
+            logger.info(
+                "downloader_api_call_timeout lane=%s method=%s downloader=%s timeout=%.1fs duration=%.1fs",
                 lane.value,
                 method_name,
                 downloader_id,
                 effective_timeout,
+                duration,
                 extra=log_extra.to_dict(),
             )
             # future 仍可能完成；附加 done callback 在线程结束后归档统计（不计入调用方等待）。
@@ -331,15 +332,16 @@ class DownloaderApiRuntime:
             duration = time.monotonic() - started
             log_extra.duration = duration
             log_extra.error_type = type(e).__name__
-            # 失败路径在 runtime 层降级为 debug（业务侧 _fetch_single_trackers 等已有逐条 error），
+            # 失败路径在 runtime 层记录（业务侧 _fetch_single_trackers 等已有逐条 error），
             # 同时聚合到窗口统计（shutdown/maybe_flush 时统一输出 failure_count + last_error_type）。
             stats.record_failure(lane.value, method_name, downloader_id, duration, type(e).__name__)
-            logger.debug(
-                "downloader_api_call_error lane=%s method=%s downloader=%s error=%s",
+            logger.info(
+                "downloader_api_call_error lane=%s method=%s downloader=%s error=%s duration=%.1fs",
                 lane.value,
                 method_name,
                 downloader_id,
                 type(e).__name__,
+                duration,
                 extra=log_extra.to_dict(),
             )
             raise

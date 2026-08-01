@@ -1018,9 +1018,7 @@ class TestConcurrentLease:
         )
         lease = MagicMock()
         lease.assert_owned = AsyncMock()
-        with patch.object(
-            OrphanFileService, "_build_realtime_manifest", return_value=manifest
-        ):
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
             result = await service.cleanup_orphans(
                 orphan_ids=[1],
                 operator="admin",
@@ -1032,7 +1030,315 @@ class TestConcurrentLease:
 
         assert result["success_count"] == 1, "low confidence 在 manifest 授权时应被放行清理"
         assert not any(
-            "低置信度" in (item.get("reason") or "")
-            for item in result.get("failed_list", [])
+            "低置信度" in (item.get("reason") or "") for item in result.get("failed_list", [])
         ), "手动清理不再以低置信度拒绝"
         assert not f.exists(), "文件应已被移入隔离区"
+
+
+class TestAuthorizeLowConfidence:
+    """低置信度分流复核（_authorize_low_confidence）单元测试。
+
+    覆盖三个分支：
+    1. downloader 已重新上线（在 manifest.downloader_ids）→ 走标准精筛授权
+    2. downloader 仍离线 + 文件不在白名单目录内 → 放行（fail-closed 不拒绝）
+    3. downloader 仍离线 + 文件落在白名单目录内 → 拒绝（fail-closed 保护）
+
+    采用纯静态方法测试（staticmethod 无需实例化 service，无需 DB）。
+    """
+
+    @staticmethod
+    def _make_candidate(canonical_path, downloader_id="dl_001", confidence="low"):
+        """构造一个最小 OrphanCurrentCandidate 替身（仅需 downloader_id/canonical_path/confidence）。"""
+        from types import SimpleNamespace
+
+        return SimpleNamespace(
+            canonical_path=canonical_path,
+            downloader_id=downloader_id,
+            confidence=confidence,
+        )
+
+    def test_online_downloader_uses_standard_path_authorized(self, tmp_path):
+        """分支1：downloader 已上线精筛成功（在 downloader_ids）→ 走 _path_authorized。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot
+
+        candidate = self._make_candidate(str(tmp_path / "orphan.bin"), "dl_001")
+        manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[(str(tmp_path), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        assert OrphanFileService._authorize_low_confidence(candidate, manifest) is True
+
+    def test_offline_downloader_file_outside_whitelist_allows(self, tmp_path):
+        """分支2：downloader 离线 + 文件不在白名单目录内 → 放行。
+
+        典型场景：low 候选的 downloader 仍离线，但文件确实是孤儿（不在任何已知种子目录下）。
+        """
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot
+
+        orphan_file = tmp_path / "real_orphan.bin"
+        orphan_file.write_bytes(b"x")
+        # 白名单目录指向另一个位置（种子目录），不覆盖孤儿文件
+        seed_dir = tmp_path / "downloads" / "seeds"
+        seed_dir.mkdir(parents=True)
+        candidate = self._make_candidate(str(orphan_file), "dl_offline")
+        manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[(str(tmp_path), frozenset({"dl_offline"}))],
+            downloader_ids=set(),  # downloader 离线，不在精筛覆盖集
+            directory_whitelist={str(seed_dir)},
+        )
+        assert OrphanFileService._authorize_low_confidence(candidate, manifest) is True
+
+    def test_offline_downloader_file_in_whitelist_rejects(self, tmp_path):
+        """分支3：downloader 离线 + 文件落在白名单目录内 → 拒绝（fail-closed 保护）。
+
+        典型场景：文件恰好落在某个已知种子的目录下，可能仍被引用 → 拒绝删除。
+        """
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot
+
+        seed_dir = tmp_path / "downloads" / "seeds"
+        seed_dir.mkdir(parents=True)
+        orphan_in_seed_dir = seed_dir / "maybe_orphan.bin"
+        orphan_in_seed_dir.write_bytes(b"x")
+        candidate = self._make_candidate(str(orphan_in_seed_dir), "dl_offline")
+        manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[(str(tmp_path), frozenset({"dl_offline"}))],
+            downloader_ids=set(),  # downloader 离线
+            directory_whitelist={str(seed_dir)},
+        )
+        assert OrphanFileService._authorize_low_confidence(candidate, manifest) is False
+
+    def test_offline_downloader_empty_whitelist_allows(self, tmp_path):
+        """边界：downloader 离线 + 白名单为空 → 放行（无已知种子目录需保护）。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot
+
+        orphan_file = tmp_path / "orphan.bin"
+        orphan_file.write_bytes(b"x")
+        candidate = self._make_candidate(str(orphan_file), "dl_offline")
+        manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[(str(tmp_path), frozenset({"dl_offline"}))],
+            downloader_ids=set(),
+            directory_whitelist=set(),
+        )
+        assert OrphanFileService._authorize_low_confidence(candidate, manifest) is True
+
+
+def _make_quarantined_candidate(async_orphan_db, tmp_path, *, filename="quarantined_file.mkv", content=b"x" * 100):
+    """构造一个已隔离状态的候选 + 文件（直接置入隔离区目录，模拟 cleanup 后的状态）。
+
+    返回 (candidate, canonical_path, quarantine_path, quarantine_root, stat)。
+    """
+    from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
+
+    # 原位置（尚不存在）+ 隔离区目录
+    canonical = str(tmp_path / filename)
+    quarantine_root = str(tmp_path / ".btdeck_quarantine" / "scan_test")
+    import os
+
+    os.makedirs(quarantine_root, exist_ok=True)
+    # 文件直接放到隔离区内的一个 uuid 子目录（模拟 build_quarantine_path 结构）
+    quarantine_path = os.path.join(quarantine_root, "abcdef1234567890", filename)
+    os.makedirs(os.path.dirname(quarantine_path), exist_ok=True)
+    with open(quarantine_path, "wb") as f:
+        f.write(content)
+    q_stat = os.stat(quarantine_path)
+
+    old_time = datetime.utcnow() - timedelta(days=10)
+    # scan_id 唯一约束：基于 filename 生成，避免同测试多次调用冲突
+    scan_id = f"scan_q_{filename}"
+    async_orphan_db.add(
+        OrphanScanResult(
+            scan_id=scan_id,
+            scan_time=old_time,
+            scan_type="manual",
+            status="completed",
+        )
+    )
+    candidate = OrphanCurrentCandidate(
+        canonical_path=canonical,
+        downloader_id="dl_001",
+        first_seen_at=old_time,
+        last_seen_at=datetime.utcnow(),
+        last_seen_scan_id=scan_id,
+        consecutive_scan_count=2,
+        status="quarantined",
+        operation_state="stable",
+        file_size=q_stat.st_size,
+        mtime_ns=q_stat.st_mtime_ns,
+        device_id=q_stat.st_dev,
+        inode=q_stat.st_ino,
+        quarantine_path=quarantine_path,
+        quarantine_root=quarantine_root,
+        quarantined_at=datetime.utcnow(),
+        purge_after=datetime.utcnow() + timedelta(days=7),
+    )
+    # OrphanFile 明细标记为 is_deleted=True（隔离时 _finalize_quarantine 的状态）
+    detail = OrphanFile(
+        scan_id=scan_id,
+        file_path=canonical,
+        file_size=q_stat.st_size,
+        mtime=datetime.utcnow(),
+        downloader_id="dl_001",
+        canonical_path=canonical,
+    )
+    detail.is_deleted = True
+    detail.deleted_at = datetime.utcnow()
+    detail.deleted_by = "admin"
+    async_orphan_db.add(detail)
+    async_orphan_db.add(candidate)
+    return candidate, canonical, quarantine_path, quarantine_root, q_stat, scan_id
+
+
+class TestQuarantineManagement:
+    """隔离区管理：恢复 / 立即彻底删除 / 列表查询。"""
+
+    async def test_get_quarantine_list_returns_only_quarantined(self, async_orphan_db, tmp_path):
+        """列表查询只返回 status=quarantined 的候选。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        _make_quarantined_candidate(async_orphan_db, tmp_path, filename="file_a.mkv")
+        _make_quarantined_candidate(async_orphan_db, tmp_path, filename="file_b.mkv")
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        result = await service.get_quarantine_list(page=1, page_size=20)
+        assert result["total"] == 2
+        assert len(result["list"]) == 2
+        assert all(item["quarantine_path"] for item in result["list"])
+
+    async def test_restore_moves_file_back_and_rolls_back_status(self, async_orphan_db, tmp_path):
+        """恢复：文件回到原位 + candidate.status=candidate + is_deleted=False。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile
+        from sqlalchemy import select
+
+        candidate, canonical, quarantine_path, _, _, scan_id = _make_quarantined_candidate(
+            async_orphan_db, tmp_path, filename="to_restore.mkv"
+        )
+        await async_orphan_db.commit()
+
+        lease = MagicMock()
+        lease.assert_owned = AsyncMock()
+        service = OrphanFileService(async_orphan_db)
+        result = await service.restore_quarantined(
+            canonical_paths=[canonical],
+            operator="admin",
+            _lease_acquired=True,
+            _lease_handle=lease,
+        )
+        assert result["restored_count"] == 1, f"应恢复1个，实际: {result}"
+        import os
+
+        assert os.path.exists(canonical), "文件应回到原位"
+        assert not os.path.exists(quarantine_path), "隔离区文件应已移走"
+
+        # 候选状态回滚
+        await async_orphan_db.refresh(candidate)
+        assert candidate.status == "candidate", "候选应回到 candidate 态"
+        assert candidate.quarantine_path is None, "隔离字段应清空"
+        # 明细 is_deleted 回滚
+        detail = (await async_orphan_db.execute(select(OrphanFile).where(OrphanFile.scan_id == scan_id))).scalar_one()
+        assert detail.is_deleted is False, "明细 is_deleted 应回滚为 False"
+
+    async def test_restore_rejects_when_original_path_occupied(self, async_orphan_db, tmp_path):
+        """恢复失败-原位被占用：原位置已有文件 → 拒绝恢复（防覆盖）。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        candidate, canonical, quarantine_path, _, _, _ = _make_quarantined_candidate(
+            async_orphan_db, tmp_path, filename="occupied.mkv"
+        )
+        await async_orphan_db.commit()
+        # 原位放一个文件
+        import os
+
+        with open(canonical, "wb") as f:
+            f.write(b"existing")
+
+        lease = MagicMock()
+        lease.assert_owned = AsyncMock()
+        service = OrphanFileService(async_orphan_db)
+        result = await service.restore_quarantined(
+            canonical_paths=[canonical],
+            operator="admin",
+            _lease_acquired=True,
+            _lease_handle=lease,
+        )
+        assert result["restored_count"] == 0
+        assert result["failed_count"] == 1
+        assert "原位置已被占用" in result["failed_list"][0]["reason"]
+        # 隔离区文件仍在
+        assert os.path.exists(quarantine_path)
+
+    async def test_purge_now_physically_deletes(self, async_orphan_db, tmp_path):
+        """立即删除：文件物理删除 + candidate.status=purged（mock manifest 授权通过）。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot
+
+        candidate, canonical, quarantine_path, _, _, _ = _make_quarantined_candidate(
+            async_orphan_db, tmp_path, filename="to_purge.mkv"
+        )
+        await async_orphan_db.commit()
+
+        # mock manifest：文件未被引用，路径授权通过
+        manifest = ManifestSnapshot(
+            expected_paths=set(),
+            scan_roots=[(str(tmp_path), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        lease = MagicMock()
+        lease.assert_owned = AsyncMock()
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            result = await service.purge_quarantine_now(
+                canonical_paths=[canonical],
+                operator="admin",
+                store=MagicMock(),
+                _lease_acquired=True,
+                _lease_handle=lease,
+            )
+        assert result["purged_count"] == 1, f"应删除1个，实际: {result}"
+        import os
+
+        assert not os.path.exists(quarantine_path), "隔离区文件应已物理删除"
+        await async_orphan_db.refresh(candidate)
+        assert candidate.status == "purged"
+
+    async def test_purge_now_rejects_when_referenced_by_torrent(self, async_orphan_db, tmp_path):
+        """立即删除保留安全检查：文件被种子引用 → 拒绝删除（fail-closed）。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot, normalize_path
+
+        candidate, canonical, quarantine_path, _, _, _ = _make_quarantined_candidate(
+            async_orphan_db, tmp_path, filename="referenced.mkv"
+        )
+        await async_orphan_db.commit()
+
+        # mock manifest：canonical_path 在 expected_paths 中（被种子引用）
+        manifest = ManifestSnapshot(
+            expected_paths={normalize_path(canonical)},
+            scan_roots=[(str(tmp_path), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        lease = MagicMock()
+        lease.assert_owned = AsyncMock()
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            result = await service.purge_quarantine_now(
+                canonical_paths=[canonical],
+                operator="admin",
+                store=MagicMock(),
+                _lease_acquired=True,
+                _lease_handle=lease,
+            )
+        assert result["purged_count"] == 0, "被种子引用时应拒绝删除"
+        assert result["failed_count"] == 1
+        import os
+
+        assert os.path.exists(quarantine_path), "文件不应被删除"

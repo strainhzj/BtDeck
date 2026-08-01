@@ -58,13 +58,16 @@ start_server() {
     # 设置环境变量
     export PYTHONPATH=$PROJECT_DIR:$PYTHONPATH
 
-    # 使用 uvicorn 启动
+    # 使用 uvicorn 启动。log-level 读 LOG_LEVEL 环境变量（默认 info），
+    # uvicorn 要求小写（critical/error/warning/info/debug/trace），此处统一转小写。
+    LOG_LEVEL_LOWER="${LOG_LEVEL:-info}"
+    LOG_LEVEL_LOWER="${LOG_LEVEL_LOWER,,}"  # bash 参数扩展：转小写
     exec uvicorn "$APP_MODULE" \
         --host 0.0.0.0 \
         --port $PORT \
         --workers $WORKERS \
         --loop asyncio \
-        --log-level info
+        --log-level "$LOG_LEVEL_LOWER"
 }
 
 # 主流程
