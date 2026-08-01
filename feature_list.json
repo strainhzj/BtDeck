@@ -184,7 +184,7 @@
             "backend/tests/api/test_orphan_files_api.py",
             "backend/tests/enums/test_audit_enums.py"
           ],
-          "evidence": "迁移链单 head a1b2c3d4e5f6（无分叉），upgrade/downgrade 可逆，【可回滚】标注通过 BTD401；新增 11 个后端测试（status 过滤 pending/ignored/deleted、path_like 模糊+通配符转义、别名/置信度注入、set_ignored 生命周期、cleanup_preview 拒绝已忽视）全过；孤儿相关回归 192 passed/1 skipped；迁移/枚举/回滚专项 306 passed；全量后端 2461 passed/6 skipped；black+flake8 干净。"
+          "evidence": "迁移链单 head a1b2c3d4e5f6（无分叉），upgrade/downgrade 可逆，【可回滚】标注通过 BTD401；新增 11 个后端测试（status 过滤 pending/ignored/deleted、path_like 模糊+通配符转义、别名/置信度注入、set_ignored 生命周期、cleanup_preview 拒绝已忽视）全过；孤儿相关回归 192 passed/1 skipped；迁移/枚举/回滚专项 306 passed；全量后端 2461 passed/6 skipped；black+flake8 干净。 UI/排序增强（2026-07-31）：get_orphan_list 的 order_by 下推 is_ignored 排序键（canonical_path 联候选忽视集合生成 0/1），被忽视孤儿文件沉底、待清理排列在前，组内保持 file_size DESC、id ASC；零前端入参侵入。新增 2 个排序回归测试（混合态沉底、纯 pending 不受干扰），test_orphan_ignore_and_filters.py 13 passed。 4问题修复(2026-07-31,经3轮审查重订)：cleanup超时-gather并发(_build_precise_expected串行改gather,worker纯数据+主协程串行汇合,理论2x受Semaphore2钳制)；交付 diagnose_orphan_cleanup.py 诊断脚本。orphan_manifest.py mypy修掉既有nonlocal错误。后端62 passed/1 skipped。治本待办:manifest缓存/cleanup异步化。 手动清理放行low(2026-07-31):cleanup_preview去confidence==high+响应加low_confidence_count;cleanup_orphans去循环内confidence拒绝;自动清理get_purgeable_candidates仍排除low(安全).安全底线(manifest复核/身份/忽视/lease)全保留.测试改写为放行断言.52 passed/1 skipped."
         },
         {
           "id": "orphan-files-management-enhancement.2",
@@ -197,7 +197,7 @@
             "frontend/src/views/orphan-files/index.vue",
             "frontend/tests/unit/orphan-files.spec.ts"
           ],
-          "evidence": "typecheck 干净；orphan-files.spec 16 passed（含别名/置信度渲染、搜索重置、批量忽视、混选禁用 4 个新增用例）；全量 Jest 24 suites/352 tests 通过；eslint 干净；生产 build 成功。"
+          "evidence": "typecheck 干净；orphan-files.spec 16 passed（含别名/置信度渲染、搜索重置、批量忽视、混选禁用 4 个新增用例）；全量 Jest 24 suites/352 tests 通过；eslint 干净；生产 build 成功。 UI 对齐（2026-07-31）：列表表头与种子列表列表模式完全统一（padding 10px 12px/大写/字号 12px/letter-spacing/sticky 吸顶，改 management-list-page.scss 全局生效）；分页弃用 el-pagination，复用 PageSizeCombobox + 自定义翻页按钮（LucideIcon 箭头）+ 文字汇总，与种子列表交互一致；eslint 干净，生产 build 成功。 4问题修复(2026-07-31)：表头渐变加!important(单层)；PageSizeCombobox下拉改向下展开(避overflow裁剪+el-loading-mask撞车)；preview空时友好提示；cleanupOrphans timeout 120000。lint干净,build成功。 手动清理放行low(2026-07-31):CleanupPreviewSuccess加low_confidence_count;preview弹窗含low时红色警告;置信度列tooltip改文案消除矛盾.lint干净,build成功."
         }
       ]
     },

@@ -1,5 +1,154 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-01 - 表头渐变确诊 + PageSizeCombobox 自动方向/teleport 彻底解决遮挡
+
+**两个遗留问题收尾**：
+
+### 问题1（表头渐变未生效）—— 确诊为部署问题，代码已正确
+深入分析构建产物 `dist/assets/css/app*.css`：
+- 我的 `.management-table .el-table__header-wrapper th` 规则是**唯一**带 `!important` 的表头背景规则（Element 默认 `.el-table th.el-table__cell{background-color:#fff}` 无 `!important`），且在产物中出现顺序更后。
+- 按 CSS 规则：`!important` 永远赢非 `!important` → **渐变规则在 CSS 层面必赢，代码正确**。
+- 结论：用户看到的"未生效"是**远端部署的旧镜像未更新**，不含本次构建。需在远端重新构建并部署前端镜像（`btdeck-frontend`）。
+
+### 问题2（PageSizeCombobox 下拉被遮挡）—— teleport + 自动方向彻底解决
+经子代理深入设计，采用"手动 teleport 到 body + position:fixed + 自动方向判断"方案（Element el-select 同路，更轻量无新依赖）：
+
+**`PageSizeCombobox.vue`**：新增 `appendToBody` prop（默认 false，零回归）。开启后：
+- `@Watch('expanded')` 展开时把 `<ul>` 用原生 `appendChild` 挪到 `document.body`（手动 portal，Vue2 无 `<teleport>`）；
+- `measureAndPlace()` 用 `getBoundingClientRect` 判断下方空间，自动向上/向下展开；`position:fixed` 绕开所有父级 stacking context 与 overflow 裁剪；
+- `window scroll`(capture=true，捕获祖先滚动) / `resize` 监听重定位；`beforeDestroy` 把节点挪回原父级再卸载（避免 Vue patch 报错）+ 移除监听 + 取消 RAF（防泄漏）。
+- 测量用 `top:-9999px` 移出视口避免定位闪烁。
+
+**`index.scss`**：把 `.page-size-options` 从 `.page-size-combobox` 后代选择器**提升为顶层独立规则**（teleport 后脱离父级，后代选择器失效）；新增 `.page-size-options--floating{position:fixed!important;z-index:var(--z-index-dropdown,1000)}`（1000：高于面板 30、低于 el-loading-mask 2000 与 modal 1050）。
+
+**调用点**：孤儿页/种子列表/TraditionalView 三处 `<PageSizeCombobox>` 加 `append-to-body`。
+
+### 验证
+- 前端 lint 无错误；`npm run build` 成功；产物确认含顶层 `.page-size-options` + `.page-size-options--floating{position:fixed!important...}`。
+- 孤儿页单元测试 16 passed（组件改动未破坏现有功能）。
+- 确认全项目无其它 `.page-size-options` 级联覆盖（回归检查）。
+
+**最后更新**: 2026-08-01
+
+---
+
+## 2026-07-31 - 手动清理放行低置信度孤儿（自动清理仍排除）
+
+**需求**：低置信度（low confidence，离线降级目录粗筛产出）孤儿文件，用户可在前端警告确认后主动手动清理；但自动清理（定时任务）仍排除 low，保留安全限制。
+
+**诊断结论**（对 E:\Users\huangzj\Desktop\app.db 实测）：用户报告的 id 203494/203495/203496 scan_id 匹配、未忽视、未清理，**根因是三者均为 low confidence**（归属 tr 下载器，扫描时离线降级），被 cleanup_preview 的 `confidence=="high"` 硬过滤 → 返回空。
+
+### 改动（前后端协同，保留全部安全底线）
+
+**后端**（`app/services/orphan_file_service.py`）：
+- `cleanup_preview`（手动预览）：移除 SQL 的 `confidence == "high"` 过滤，放行 low；响应新增 `low_confidence_count` 供前端警告。
+- `cleanup_orphans`（手动清理）：移除循环内 confidence 拒绝（原 `:692-702`）。
+- **安全底线全部保留**：实时 manifest 复核（`expected_paths` 文件被引用则拒、`_path_authorized` 下载器授权、`verify_file_identity` 身份复核）、忽视态保护、lease。即 low 文件仍需通过这些复核才能删（下载器离线时仍会被拒，属正确安全行为）。
+- **自动清理路径不变**：`get_purgeable_candidates`（`orphan_lifecycle_service.py:173`）仍 `confidence == "high"`，定时任务不删 low。
+
+**前端**：
+- `orphan-files.ts`：`CleanupPreviewSuccess` 增 `low_confidence_count?: number`。
+- `index.vue`：preview 弹窗当 `low_confidence_count > 0` 时显示红色 error 警告（误判风险提示）；置信度列"低"标签 tooltip 文案改为"手动清理可删，自动清理需等下载器上线精筛"（消除与原"需等上线才可清理"的矛盾）。
+
+**测试**（`tests/services/test_orphan_cleanup_safety.py`）：
+- `test_cleanup_rejects_low_confidence_candidate` → 重写为 `test_cleanup_allows_low_confidence_when_manifest_authorizes`：补全候选身份字段 + mock lease，断言 low 在 manifest 授权时被放行清理（success_count=1、无"低置信度"拒绝、文件已隔离）。
+
+### 验证
+- 后端 flake8 干净；pytest **52 passed, 1 skipped**（含新的手动放行测试 + 自动清理忽略安全测试，验证自动路径仍正常）。
+- `get_purgeable_candidates` 源码确认仍含 `confidence=="high"`（自动清理安全限制保持）。
+- 前端 lint 无错误；`npm run build` 成功。
+
+**最后更新**: 2026-07-31
+
+---
+
+## 2026-07-31 - 孤儿文件页面 4 个问题修复（经 3 轮子代理独立审查重订）
+
+**任务**: 修复用户报告的 4 个问题：①表头渐变未生效；②PageSizeCombobox 下拉被列表遮挡；③cleanup-preview 返回空；④cleanup 请求超时。
+
+**过程**：初版计划经 3 份子代理独立审查，**有力推翻了多处核心假设**，重订为更精准、更小改动方案。
+
+### 审查推翻的关键（诚实记录）
+- 审查1 推翻"confidence 不一致是 preview 空的根因"——用户报告 code=200（非 500）证明 SQL 正常执行，根因在数据层（low confidence / scan_id 不匹配 / 被忽视），需诊断脚本定位，而非盲改 cleanup SQL（那会破坏 `test_cleanup_rejects_low_confidence_candidate:955` 并丢失逐项诊断能力）。
+- 审查2 确认 gather 受 `Semaphore(2)` 钳制，理论加速仅 2x，治本需 manifest 缓存/异步化；并纠正"手动 cleanup per-candidate 反复重建 manifest"实为 purge 路径（`:1159/:1221`），手动 cleanup 只在 `:646` 建 1 次。
+- 审查3 推翻"改 overflow+z-index"方案（漏 `.management-table-scroll` 第三道裁剪 + z-index 撞 `el-loading-mask`），改用更优的"下拉向下展开"。
+
+### 改动
+
+**问题1（表头渐变）**：`management-list-page.scss` 表头规则加 `!important`（单层，采纳审查3；放弃双层 tr+th）。
+
+**问题2（下拉遮挡）**：`index.scss` 把 `.page-size-options` 从 `bottom` 改 `top`（向下展开，pagination 是 panel 末尾子元素，下方空白）；`PageSizeCombobox.vue` toggle 图标方向同步反转。
+
+**问题3（preview 空）**：
+- 交付只读诊断脚本 `backend/scripts/diagnose_orphan_cleanup.py`（在远端库运行，输出指定 orphan_id 的 scan_id 匹配/confidence/is_deleted/is_ignored/canonical_path 列存在性/alembic 版本，定位 0 行匹配的数据原因）。
+- 前端 `handleCleanupPreview`：preview 返回 `total_count===0` 时给出针对性提示（低置信度/已忽视/已清理），不再静默空弹窗。
+- **不改** cleanup 的 confidence SQL（保持循环内判断作为正确防御纵深）。
+
+**问题4（cleanup 超时）**：
+- 前端 `cleanupOrphans` 单独设 `timeout:120000`（标注临时，解除 20s 硬超时）。
+- 后端 `_build_precise_expected`（`orphan_manifest.py`）串行 `for torrent` 改为有界并发 gather（严格按审查2）：worker 只返回纯数据元组不写共享状态、`_seed_degrade` 闭包重构为返回值由主协程串行汇合、`return_exceptions=True` + 显式 `isinstance(result, ManifestBuildError)` 复现降级、operation 统一。顺带修掉既有的 `nonlocal seed_degraded` mypy 错误。
+
+### 验证
+- 后端 flake8 干净；`orphan_manifest.py` mypy **Success no issues**（修掉既有 nonlocal 错误）。
+- 后端 pytest：manifest+cleanup+ignore+query 共 **62 passed, 1 skipped**（含 manifest 改造的 21 个核心回归全过）。
+- 前端 lint 无错误；`npm run build` 成功。
+- 诊断脚本本机空库 dry-run 正常输出。
+
+### 诚实边界（治本待办，列后续专项）
+- **manifest TTL 缓存**：purge 路径 per-candidate 反复重建（`:1159/:1221`）受益最大，独立架构改动。
+- **cleanup 异步化**：复用 `orphan_maintenance_scope` lease（TTL=3600s）+ 前端轮询，彻底摆脱 HTTP timeout。是架构正解。
+- **DOWNLOADER_IO_CONCURRENCY 调优**：真正的并发杠杆，但跨 SYNC lane 共享，需独立评估下载器承载。
+- 大下载器（数千种子）cleanup 仍可能超时，本次仅 2x 缓解。
+
+**最后更新**: 2026-07-31
+
+---
+
+## 2026-07-31 - 孤儿文件页面 UI 对齐种子列表 + 被忽视沉底排序
+
+**任务 ID**: `orphan-files-management-enhancement`（UI 对齐 + 排序增强）
+
+**需求**:
+1. 列表列头颜色/样式与种子列表的列表模式保持一致。
+2. 页面大小选择控件复用种子列表的页面大小选择控件。
+3. 被忽视的孤儿文件排序优先级到最后，待清理数据排列在前（需后端配合）。
+
+**决策点（已与用户确认）**:
+- 列头：完全复刻种子列表列表模式细节（padding/大写/字号/sticky）。
+- 样式范围：改共享样式 `management-list-page.scss`，所有管理类页面表头一并统一。
+- 分页：完整替换为种子列表同款（PageSizeCombobox + 自定义翻页按钮 + 文字汇总），弃用 el-pagination。
+
+**改动**:
+
+### 后端：排序下推 is_ignored（`backend/app/services/orphan_file_service.py`）
+- `get_orphan_list` 的 `list_query.order_by` 原为硬编码 `file_size DESC, id ASC`，完全不感知忽视态。
+- 新增 `ignored_rank` 排序键：以 `OrphanFile.canonical_path IN (候选表 is_ignored=True 子查询)` 构造 `case(…, else_=0)`，生成 0（非忽视，靠前）/1（已忽视，沉底）。
+- 最终排序：`ignored_rank.asc(), file_size.desc(), id.asc()`。零前端入参侵入（不暴露 sort_by/order 参数）。
+- 效果：`status=None`（混合待清理+已忽视）时待清理自然靠前、已忽视沉底；单状态筛选（pending/ignored/deleted）不受影响。
+
+### 前端样式：表头全局统一（`frontend/src/styles/management-list-page.scss`）
+- `.management-table` 表头规则对齐 `torrent-theme.scss` 列表模式细节：padding `10px 12px`、`text-transform: uppercase`、`font-size: 12px`、`letter-spacing: 0.5px`。
+- 新增 `.el-table__header-wrapper { position: sticky; top:0; z-index:10 }` 列表滚动吸顶。
+- 所有复用 `.management-table` 的管理页（回收站/审计日志/定时任务等）一并统一。
+
+### 前端分页：复用 PageSizeCombobox（`frontend/src/views/orphan-files/index.vue`）
+- 弃用 `<el-pagination>`，改用 `<nav class="torrent-pagination management-pagination">`：PageSizeCombobox（controlsId=orphan-page-size-options）+ 自定义翻页按钮（LucideIcon chevron-left/right）+ 文字汇总「共 X 条，第 Y/Z 页」。
+- 新增状态机 `pageSizeInput/pageSizeDropdownExpanded/pageSizeOptions=[20,50,100]`、计算属性 `totalPages/visiblePages`、方法 `handlePageSizeSelect/Focus/Blur/togglePageSizeDropdown/applyPageSizeSelection/handlePageChange`（参照 `views/torrents/index.vue` 与 `utils/traditionalPagination.ts`）。
+- scoped 样式内写自包含分页样式（翻页按钮主题色 hover/active），不污染也不依赖 torrent-theme.scss 全局引入。
+
+**验证**:
+- 后端：`pytest tests/services/test_orphan_ignore_and_filters.py` 13 passed（含 2 个新增排序回归：混合态沉底 `test_list_orders_ignored_last_within_mixed_status`、纯 pending 不受干扰 `test_list_orders_pure_pending_unchanged`）；orphan 专项全量 203 passed/1 skipped。
+- 后端 flake8 通过；mypy 报告的 86 个错误全部是既有 SQLAlchemy Column 类型债（1541-1574 行），与本次改动（325 行 order_by）无关（git stash 验证前后错误数一致）。
+- 前端：`vue-cli-service lint` 无错误；`npm run build` 成功（orphan-files chunk 正常打包）。
+
+**诚实边界（未做）**:
+- 未给孤儿列表增加可点击的列头排序（用户未要求，本次仅按"忽视态沉底"固定排序）。
+- 后端既有 mypy 类型债未在本任务处理（超出范围）。
+
+**最后更新**: 2026-07-31
+
+---
+
 ## 2026-07-31 - 孤儿文件自动清理忽视态边界回归与防御纵深加固
 
 **任务 ID**: `orphan-files-management-enhancement`（回归补丁）
