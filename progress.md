@@ -2660,3 +2660,67 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 验证结果：后端全量 `pytest tests -q` 为 **2154 passed、1 skipped、0 failed**；前端全量 Jest 为 **16 suites / 265 tests**，TypeScript、严格 ESLint、Vuex lint 和生产构建均通过；变更文件 Flake8、Ruff、Black API 格式校验及 `git diff --check` 通过。根 `init.sh` 因当前 Windows 无可用 WSL 无法执行；Mypy 仍存在项目既有 SQLAlchemy/VO 类型债务，未通过本次任务掩盖或降级。
 
 **最后更新**: 2026-07-18
+
+---
+
+### 孤儿种子删除低置信度超时 —— 初步修复 + 调试日志（2026-08-01）
+
+#### 问题现象
+孤儿种子页面删除低置信度种子时出现超时；docker 部署环境下看不到业务日志。
+
+#### 根因定位（经多路子代理深度审查确认）
+超时不在删除动作本身，而在删除前的实时 manifest 复核：`_build_realtime_manifest` 对 qBittorrent 需逐种子远程拉取文件清单（`torrents.files`），真实并发被 `DOWNLOADER_IO_CONCURRENCY=2` 钳制，大下载器（数千种子）耗时远超前端 120s。关键放大因素：`16ca426` 放行低置信度后，数量庞大的 low 候选首次进入 `cleanup_orphans`，而它们的 downloader 大概率仍离线——为其拉取整下载器逐种子清单既慢又常被 fail-closed 拒绝（纯浪费）。docker 下看不到现场的原因：超时日志写的是 `logger.debug`（root=INFO 不输出）+ `LOG_LEVEL` 环境变量是死配置（docker-compose 声明了但代码从不读）。
+
+#### 本轮修复（7 文件）
+1. **日志可见性彻底修复**：`config.py` 新增 `LOG_LEVEL` 字段（BaseSettings 自动消费环境变量）；`main.py` 接通 LOG_LEVEL + 日志格式加时间戳 + 压制第三方噪声库（sqlalchemy/urllib3/qbittorrentapi 等，避免 DEBUG 时洪水 + cookie 泄露）+ 传 `log_level` 给 uvicorn Config（避免被 uvicorn 默认覆盖）；`btdeck_startup.sh` 的 `--log-level` 改为读环境变量。
+2. **超时日志 DEBUG→INFO**：`downloader_api_runtime.py` 的超时/异常日志从 DEBUG 提到 INFO 并加 duration，docker 下即可定位超时事件。
+3. **manifest 构建全链路耗时埋点**：`orphan_manifest.py` 的 build()/inventory 拉取/并发 gather 四处加 INFO 耗时日志（种子数/并发度/降级数/耗时）。
+4. **三条删除路径耗时埋点**：`orphan_file_service.py` 的 cleanup_orphans / auto_cleanup_expired / purge_expired_quarantine 三处加 INFO 耗时日志；purge 路径特别记录循环内重复构建 manifest 的次数与累计耗时（暴露 1+2N 次构建的性能热点）。
+5. **低置信度分流优化（核心治本）**：cleanup_orphans 的 manifest required 集合只放 high 候选所属下载器，low 候选不再触发全量逐种子拉取；新增 `_authorize_low_confidence` 方法——downloader 在线走标准精筛授权（保留恢复后可清理合法路径），仍离线则用 directory_whitelist 做目录级 fail-closed 兜底复核。
+6. **前端超时 120s→300s**：`orphan-files.ts` 放宽作为保险（配合分流优化，300s 足以覆盖 high 候选的 manifest）。
+7. **并发参数 env 化**：`DOWNLOADER_IO_CONCURRENCY` 保持默认 2（避免 requests.Session 非线程安全风险 + 全局影响其他 lane），补充注释说明可通过环境变量调整。
+
+#### 审查修正的关键问题
+- E2（致命）：原计划 LOG_LEVEL 接通不完整（basicConfig 会被 uvicorn 覆盖）→ 改为同时传 uvicorn Config + config.py 加字段。
+- E1：DEBUG 会触发第三方库洪水 → 配套压制。
+- D1：遗漏 purge_expired_quarantine（循环内重复构建 ~2N 次）→ 三条路径都加埋点。
+- B2：被忽视的治本方案（low 候选拉 manifest 是浪费）→ 采纳分流优化。
+- 3 处 import 遗漏（main.py 缺 os；manifest/file_service 缺 time）→ 补入。
+
+#### 验证结果
+- 后端 black/flake8 通过；mypy 无新增错误（84→85 仅行号偏移，diff 后零新增）；pytest 孤儿套件 **78 passed, 1 skipped**（含新增 `TestAuthorizeLowConfidence` 4 个用例）。
+- 前端 `npm run lint` 通过（No lint errors + contract check）。
+- 治本（manifest 缓存/异步化）留待日志确认现场后再做。
+
+#### Hotfix：uvicorn --log-level 大写报错（2026-08-01）
+重新部署时镜像启动报错 `Invalid value for '--log-level': 'INFO' is not one of 'critical','error','warning','info','debug','trace'`。根因：docker-compose 传入 `LOG_LEVEL=INFO`（大写），而 uvicorn CLI 要求小写；`btdeck_startup.sh` 用 `${LOG_LEVEL:-info}` 原样透传未转小写。修复：改用 bash 参数扩展 `${VAR,,}` 转小写后再传给 `--log-level`。已验证 python:3.11-slim 自带 bash 5.2 支持 `${VAR,,}`，且对 INFO/DEBUG/空值等各种输入均正确输出小写。main.py 的 Config(log_level=...) 路径用 Python `.lower()` 不受此问题影响。
+
+#### 日志可见性二次修复：app logger 独立 handler（2026-08-01）
+用户反馈删除成功但 docker logs 仍看不到业务日志（能看到启动 print）。经子代理用 uvicorn 源码复现验证，basicConfig(force=True) 理论上是最终赢家，但为确保彻底脱离 root/basicConfig 的不确定性，改用更稳健方案：给 `app` logger 树装独立 `StreamHandler(sys.stdout)` 并 `propagate=False`，业务日志始终由此 handler 输出到 stdout（与已验证可见的 lifespan print 同流），不受 uvicorn dictConfig/root 状态影响。另加 `[日志] app logger 已就绪` 验证日志，启动即可确认。
+
+同时修复一个并发健壮性问题：本地环境 `LOG_LEVEL=warn` 导致 `Config(log_level='warn')` 触发 uvicorn `KeyError`（uvicorn 只接受 `warning` 不接受缩写）。新增 `_to_uvicorn_level` 规范化函数，兼容 warn/err/crit 等常见缩写，非法值兜底 info，三处（两处 Config + startup.sh）统一使用。
+
+验证：black/flake8 通过；app.main import 成功；规范化函数 13 个用例全过；orphan pytest 25 passed/1 skipped。
+
+#### 待办：隔离区管理功能（2026-08-01）
+用户反馈需要处理 .btdeck_quarantine 里的文件。调研确认当前 BtDeck 无恢复/立即删除/隔离区列表功能，只能等定时任务（每天凌晨3点）隔离满7天后物理删除。规划新增：GET /orphan-files/quarantine（列表）、POST /orphan-files/restore（恢复）、POST /orphan-files/purge（立即彻底删除），涉及后端 service 方法 + API 端点 + 审计枚举 + 前端 UI。已完成可行性调研，待实施。
+
+#### 隔离区管理功能实现完成（2026-08-01）
+实现隔离区文件的三项管理能力，纯新增不破坏现有流水线：
+
+**后端**：
+- 审计枚举新增 ORPHAN_PURGE/ORPHAN_RESTORE（audit_enums.py，含中文映射+资源组）
+- lifecycle service 新增 mark_restored（mark_quarantined 逆操作：status→candidate、清空 quarantine 字段）
+- orphan_file_service 新增三个方法：get_quarantine_list（只读列表）、restore_quarantined（恢复+lease+审计）、purge_quarantine_now（立即删除+lease+审计，复用 purge_expired_quarantine 全套安全检查只跳时间门禁）
+- API 端点：GET /orphan-files/quarantine、POST /orphan-files/restore、POST /orphan-files/purge
+
+**安全底线**：
+- 恢复：operation_state=stable 门禁 + quarantine_path 存在 + 原位不存在（防 Windows rename 覆盖）+ 路径逃逸复核 + verify_file_identity 身份复核
+- 删除：保留 purge_expired_quarantine 全部检查（manifest 复核/路径授权/身份复核/tombstone），只跳 purge_after 时间门禁
+- 两者都走 orphan_maintenance_scope lease 互斥 + 审计日志
+
+**前端**：孤儿文件页面新增"隔离区"Tab，含列表（原位置/大小/隔离时间/预计删除时间/下载器）、恢复选中、彻底删除选中（带不可逆确认弹窗）
+
+**验证**：后端 black/flake8 通过；pytest orphan 套件 83 passed/1 skipped（含 TestQuarantineManagement 5 用例：列表/恢复成功/恢复失败-原位占用/删除成功/删除失败-被引用）；前端 npm run lint 通过。
+
+**最后更新**: 2026-08-01
