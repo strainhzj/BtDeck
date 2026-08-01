@@ -64,7 +64,7 @@ async def get_latest_scan(
 @router.get("/list", response_model=CommonResponse)
 async def get_orphan_list(
     page: int = Query(default=1, ge=1, description="页码"),
-    page_size: int = Query(default=20, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(default=20, ge=1, le=100000, description="每页数量（最大 10 万，与前端页大小输入上限对齐）"),
     downloader_id: Optional[str] = Query(default=None, description="下载器ID筛选"),
     min_size: Optional[int] = Query(default=None, ge=0, description="最小文件大小（字节）"),
     path_like: Optional[str] = Query(default=None, description="文件路径模糊匹配"),

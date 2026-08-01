@@ -165,6 +165,42 @@ class TestGetPurgeableCandidatesIgnoresFilter:
         assert any(c.canonical_path == "/data/revived.mkv" for c in purgeable), "取消忽视后应可清理"
 
 
+class TestGetPurgeableCandidatesConfidenceFilter:
+    """get_purgeable_candidates 必须排除 low confidence 候选（自动清理安全底线）。
+
+    与手动清理(cleanup_orphans 放行 low)对偶：自动清理(定时任务)仍只清理 high confidence，
+    low（离线降级目录粗筛产出）需等下载器上线精筛复核提升为 high 后才可自动清理。
+    本类守护 orphan_lifecycle_service.get_purgeable_candidates 的 confidence=='high' 子句，
+    防止该安全限制被误删。
+    """
+
+    async def test_low_confidence_excluded_even_if_meeting_threshold(self, async_orphan_db):
+        """low confidence 候选满足天数/状态/未忽视，仍不得进入可清理集合。"""
+        low = _make_candidate("/data/low.mkv", confidence="low")
+        high = _make_candidate("/data/high.mkv", confidence="high")
+        async_orphan_db.add_all([low, high])
+        await async_orphan_db.commit()
+
+        purgeable = await OrphanLifecycleService(async_orphan_db).get_purgeable_candidates(days_threshold=30)
+        paths = {c.canonical_path for c in purgeable}
+
+        assert "/data/high.mkv" in paths, "high confidence 候选应可自动清理"
+        assert "/data/low.mkv" not in paths, "low confidence 候选绝不可自动清理（离线粗筛有误判风险）"
+
+    async def test_all_low_yields_empty_purgeable(self, async_orphan_db):
+        """全部 low confidence 时，可清理集合必须为空。"""
+        async_orphan_db.add_all(
+            [
+                _make_candidate("/data/low_a.mkv", confidence="low"),
+                _make_candidate("/data/low_b.mkv", confidence="low"),
+            ]
+        )
+        await async_orphan_db.commit()
+
+        purgeable = await OrphanLifecycleService(async_orphan_db).get_purgeable_candidates(days_threshold=30)
+        assert purgeable == [], "全部 low confidence 时不应有任何可清理候选"
+
+
 # ==================== 2. 服务 E2E 层 ====================
 
 

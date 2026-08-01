@@ -941,3 +941,88 @@ async def test_inventory_failure_downloader_db_seed_dirs_in_whitelist(tmp_path):
     # 其 DB 种子目录经真实 collect_torrent_directory_whitelist 进粗筛白名单
     assert normalize_path(str(external_root)) in snapshot.directory_whitelist
     assert normalize_path(str(external_root / "MyTorrent")) in snapshot.directory_whitelist
+
+
+async def test_gather_fetch_many_seeds_no_loss_no_duplication(tmp_path):
+    """gather 并发拉取多种子文件清单：成功种子的文件全部进 expected，无丢失无重复。
+
+    守护本次 _build_precise_expected 串行→gather 改造：worker 返回纯数据、主协程串行汇合，
+    大量种子下不应丢文件或重复。使用 20 个种子验证并发汇合正确性。
+
+    注：client.torrents.files 用「按 hash 参数返回」的函数 side_effect（非列表），
+    因为 gather 并发调用顺序不确定，列表 side_effect 按序消耗会错配——这恰恰是
+    「worker 应自包含、不依赖调用顺序」这一并发安全设计的核心验证点。
+    """
+    root = tmp_path / "qb"
+    root.mkdir()
+    client = MagicMock()
+    seeds = [SimpleNamespace(hash=f"hash-{i:02d}", save_path=str(root)) for i in range(20)]
+    client.torrents_info.return_value = seeds
+
+    # 按 hash 返回对应种子的 2 个文件（与调用顺序无关，并发安全）
+    def files_by_hash(torrent_hash):
+        return [
+            SimpleNamespace(name=f"{torrent_hash}-a.mkv"),
+            SimpleNamespace(name=f"{torrent_hash}-b.mkv"),
+        ]
+
+    client.torrents.files.side_effect = files_by_hash
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[SimpleNamespace(downloader_id="qb", client=client, fail_time=0)]
+        )
+    )
+    builder = TorrentManifestBuilder(store, scan_path_selection=ScanPathSelection())
+    builder._load_configs = lambda: [_config("qb", 0, str(root))]
+
+    snapshot = await builder.build()
+
+    # 20 种子 × 2 文件 = 40 个路径，全部进 expected（无丢失、无重复）
+    expected_under_root = [
+        p for p in snapshot.expected_paths if normalize_path(str(root)) in p
+    ]
+    assert len(expected_under_root) == 40, f"20 种子×2 文件应得 40，实际 {len(expected_under_root)}"
+    # 每个种子的 a/b 文件都在
+    for i in range(20):
+        assert normalize_path(str(root / f"hash-{i:02d}-a.mkv")) in snapshot.expected_paths
+        assert normalize_path(str(root / f"hash-{i:02d}-b.mkv")) in snapshot.expected_paths
+    # 无降级（全部成功）
+    assert "qb" not in snapshot.degraded_downloader_ids
+    assert "qb" in snapshot.downloader_ids
+
+
+async def test_gather_empty_files_degrades_single_seed(tmp_path):
+    """单种子文件清单为空 → 该种子降级（目录进粗筛白名单），不进 expected。
+
+    守护 gather 路径下 _merge_seed_files 对空清单的降级处理（files=[] 触发 seed_degrade）。
+    """
+    root = tmp_path / "qb"
+    root.mkdir()
+    client = MagicMock()
+    client.torrents_info.return_value = [
+        SimpleNamespace(hash="empty-seed", save_path=str(root)),
+        SimpleNamespace(hash="ok-seed", save_path=str(root)),
+    ]
+
+    # 按 hash 返回（gather 并发顺序无关）：empty-seed 空清单，ok-seed 正常
+    def files_by_hash(torrent_hash):
+        if torrent_hash == "empty-seed":
+            return []
+        return [SimpleNamespace(name="real.mkv")]
+
+    client.torrents.files.side_effect = files_by_hash
+    store = SimpleNamespace(
+        get_snapshot=AsyncMock(
+            return_value=[SimpleNamespace(downloader_id="qb", client=client, fail_time=0)]
+        )
+    )
+    builder = TorrentManifestBuilder(store, scan_path_selection=ScanPathSelection())
+    builder._load_configs = lambda: [_config("qb", 0, str(root))]
+
+    snapshot = await builder.build()
+
+    # 成功种子进 expected
+    assert normalize_path(str(root / "real.mkv")) in snapshot.expected_paths
+    # 空清单种子目录进粗筛白名单（降级保护）
+    assert normalize_path(str(root)) in snapshot.directory_whitelist
+    assert "qb" in snapshot.degraded_downloader_ids

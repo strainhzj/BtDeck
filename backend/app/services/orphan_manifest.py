@@ -547,6 +547,9 @@ class TorrentManifestBuilder:
         )
         client = getattr(vo, "client", None) if vo is not None else None
 
+        # 提前初始化，供下方 _seed_degrade 闭包以 nonlocal 引用（mypy 要求绑定在前）。
+        seed_degraded = False
+
         def _degrade(reason: str) -> None:
             degraded_downloader_ids.add(downloader_id)
             logger.warning(
@@ -579,7 +582,10 @@ class TorrentManifestBuilder:
         # 本地缓冲：成功种子的文件清单并入 expected；任一种子降级则该下载器整体
         # 退出 downloader_ids（文件级判定不完整，清理授权不可靠）。
         local_expected: Set[str] = set()
-        seed_degraded = False
+
+        # 单遍遍历 inventory：解析身份 → 分类。得到「需远程拉取」清单，
+        # 同时就地处理「缺 hash/save_path / 缺映射 / embedded 已有文件」这三类（不涉及并发）。
+        pending_fetch: List[Tuple[str, str]] = []  # (torrent_hash, external_root)
         for torrent in inventory:
             torrent_hash, save_path, embedded_files = self._torrent_identity(downloader_type, torrent)
             if not torrent_hash or not save_path:
@@ -597,24 +603,75 @@ class TorrentManifestBuilder:
                 # collect_torrent_directory_whitelist 的映射缺失兜底一致）。
                 _seed_degrade(save_path, f"种子 {torrent_hash[:8]} save_path={save_path} 缺映射")
                 continue
-
-            files = embedded_files
-            if files is None:
-                try:
-                    files = await self._fetch_files(downloader_id, downloader_type, client, torrent_hash)
-                except ManifestBuildError as exc:
-                    _seed_degrade(external_root, f"种子 {torrent_hash[:8]} 文件清单拉取失败: {exc}")
-                    continue
-            if not files:
-                _seed_degrade(external_root, f"种子 {torrent_hash[:8]} 文件清单为空")
+            if embedded_files is not None:
+                # Transmission 一次带回 files，无需远程拉取，直接汇合。
+                self._merge_seed_files(torrent_hash, external_root, embedded_files, local_expected, _seed_degrade)
                 continue
-            for rel_path in files:
-                local_expected.add(normalize_path(os.path.join(external_root, rel_path)))
+            # qBittorrent：需逐种子 _fetch_files（远程调用，原串行是超时主因）。
+            pending_fetch.append((torrent_hash, external_root))
+
+        # 对需远程拉取的种子有界并发 gather。
+        # worker 只返回纯数据元组，绝不写共享状态（避免 asyncio 交错下的逻辑竞态）。
+        # 注意：真实远程并发受 downloader_api_runtime 的 per-downloader Semaphore
+        # （DOWNLOADER_IO_CONCURRENCY，默认 2）钳制，asyncio 层 Semaphore 仅作协程数量护栏，
+        # 理论加速上限约 2x；大下载器（数千种子）仍可能较慢（治本需 manifest 缓存或异步化）。
+        if pending_fetch:
+            concurrency = max(1, min(len(pending_fetch), settings.ORPHAN_SCAN_BATCH_SIZE))
+            semaphore = asyncio.Semaphore(concurrency)
+
+            async def _fetch_one(t_hash: str, ext_root: str) -> Tuple[str, str, Optional[List[str]], Optional[str]]:
+                async with semaphore:
+                    try:
+                        files = await self._fetch_files(downloader_id, downloader_type, client, t_hash)
+                        return t_hash, ext_root, files, None
+                    except ManifestBuildError as exc:
+                        # 单种子失败降级为 reason（与原串行 _seed_degrade 语义一致）。
+                        return t_hash, ext_root, None, f"种子 {t_hash[:8]} 文件清单拉取失败: {exc}"
+
+            results = await asyncio.gather(
+                *[_fetch_one(h, root) for h, root in pending_fetch],
+                return_exceptions=True,
+            )
+        else:
+            results = []
+
+        # 串行汇合 gather 结果（主协程串行写共享集合，语义与原串行实现一致）。
+        for result in results:
+            # return_exceptions=True：非预期异常（非 ManifestBuildError 的）归一为降级，避免拖垮整批。
+            if isinstance(result, BaseException):
+                seed_degraded = True
+                degraded_downloader_ids.add(downloader_id)
+                logger.warning("[孤儿清单] 下载器 %s 文件清单并发拉取异常: %s", downloader_id, result)
+                continue
+            t_hash, ext_root, files, degrade_reason = result
+            if degrade_reason is not None:
+                _seed_degrade(ext_root, degrade_reason)
+                continue
+            self._merge_seed_files(t_hash, ext_root, files, local_expected, _seed_degrade)
+
         expected.update(local_expected)
         # 仅当该下载器所有种子都成功精筛（无 per-seed 降级）时才记录为精筛覆盖
         # downloader_id：清理授权依赖此集合判断候选所属下载器文件级判定是否可靠。
         if not seed_degraded:
             protected_ids.add(downloader_id)
+
+    def _merge_seed_files(
+        self,
+        torrent_hash: str,
+        external_root: str,
+        files: Optional[List[str]],
+        local_expected: Set[str],
+        seed_degrade_fn: Any,
+    ) -> None:
+        """汇合单个种子的文件清单到 local_expected（embedded 与拉取结果共用）。
+
+        seed_degrade_fn 为调用方的 _seed_degrade 闭包，清单为空时触发单种子降级。
+        """
+        if not files:
+            seed_degrade_fn(external_root, f"种子 {torrent_hash[:8]} 文件清单为空")
+            return
+        for rel_path in files:
+            local_expected.add(normalize_path(os.path.join(external_root, rel_path)))
 
     def _load_configs(self) -> List[BtDownloaders]:
         db = self.session_factory()

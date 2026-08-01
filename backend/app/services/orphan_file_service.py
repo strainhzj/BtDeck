@@ -20,7 +20,7 @@ import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
@@ -322,7 +322,24 @@ class OrphanFileService:
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
 
-        list_query = select(OrphanFile).order_by(OrphanFile.file_size.desc(), OrphanFile.id.asc())
+        # 排序：被忽视的孤儿文件优先级最低（沉底），待清理/已清理数据排列在前。
+        # 通过 canonical_path 与候选忽视集合做联表判定，生成 0/1 排序键：
+        # 非忽视=0（靠前）、已忽视=1（沉底）；组内保持 file_size DESC、id ASC 稳定排序。
+        ignored_paths_subq = select(OrphanCurrentCandidate.canonical_path).where(
+            OrphanCurrentCandidate.is_ignored == True  # noqa: E712
+        )
+        ignored_rank = case(
+            (OrphanFile.canonical_path.in_(ignored_paths_subq), 1),
+            else_=0,
+        )
+        list_query = (
+            select(OrphanFile)
+            .order_by(
+                ignored_rank.asc(),
+                OrphanFile.file_size.desc(),
+                OrphanFile.id.asc(),
+            )
+        )
         for cond in conditions:
             list_query = list_query.where(cond)
         offset = (page - 1) * page_size
@@ -499,8 +516,6 @@ class OrphanFileService:
                 OrphanFile.id.in_(orphan_ids),
                 OrphanFile.scan_id == scan_id,
                 OrphanFile.is_deleted == False,  # noqa: E712
-                # 清理门槛：仅 high confidence 可进入清理流程，low confidence 不进预览。
-                OrphanFile.confidence == "high",
                 # 忽视态保护：被用户忽视的孤儿不进清理预览。
                 OrphanFile.canonical_path.notin_(
                     select(OrphanCurrentCandidate.canonical_path).where(
@@ -511,10 +526,15 @@ class OrphanFileService:
         )
         items = result.scalars().all()
 
+        # 手动清理放行低置信度文件：low confidence（离线降级目录粗筛产出）有误判风险，
+        # 但用户可在前端警告确认后主动删除。仅自动清理（get_purgeable_candidates）仍排除 low。
+        # 统计 low 数量供前端弹出"含低置信度，有误判风险"警告。
+        low_confidence_count = sum(1 for item in items if item.confidence != "high")
         total_size = sum(item.file_size for item in items)
         return {
             "total_count": len(items),
             "total_size": total_size,
+            "low_confidence_count": low_confidence_count,
             "items": [
                 {
                     "id": item.id,
@@ -672,18 +692,10 @@ class OrphanFileService:
                         }
                     )
                     continue
-                # 清理门槛：仅 high confidence（在线精筛判定）允许清理；
-                # low confidence（离线降级目录粗筛）仅展示，需等下载器上线经精筛复核提升后清理。
-                if (candidate.confidence or "high") != "high":
-                    failed_list.append(
-                        {
-                            "id": item.id,
-                            "file_path": item.file_path,
-                            "reason": "低置信度孤儿（离线降级粗筛），需等下载器上线重新精筛后清理",
-                        }
-                    )
-                    continue
                 # 忽视态保护：被用户忽视的孤儿受保护，需先取消忽视才能清理。
+                # 注：手动清理放行低置信度文件（low 有误判风险，由前端警告确认后删除）；
+                # 仅自动清理（get_purgeable_candidates）仍排除 low。清理安全底线不变——
+                # 实时 manifest 复核（expected_paths/_path_authorized/verify_file_identity）照常拦截。
                 if getattr(candidate, "is_ignored", False):
                     failed_list.append(
                         {

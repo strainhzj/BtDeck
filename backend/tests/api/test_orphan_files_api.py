@@ -282,6 +282,36 @@ class TestOrphanFilesCleanupWiring:
             status=None,
         )
 
+    def test_list_accepts_page_size_upper_bound_100000(self):
+        """page_size 上限 100000 应被接受（与前端页大小输入上限 10 万对齐）。
+
+        守护本次修改：orphan_files.py 的 /list page_size 从 le=100 提到 le=100000。
+        若上限被误改回 100，本测试会失败（100000 被拒为 422）。
+        """
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(
+            return_value={"total": 0, "page": 1, "pageSize": 100000, "list": [], "scan_context": {}}
+        )
+        with patch.object(OrphanFileService, "get_orphan_list", mocked):
+            response = self.client.get("/api/v1/orphan-files/list?page_size=100000")
+
+        assert response.status_code == 200, "page_size=100000 应被接受"
+        mocked.assert_awaited_once_with(
+            page=1, page_size=100000, downloader_id=None, min_size=None, path_like=None, status=None
+        )
+
+    def test_list_rejects_page_size_over_upper_bound(self):
+        """page_size 超过 100000 应被 Pydantic 校验拒绝（422），不进入业务逻辑。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(return_value={"total": 0, "page": 1, "pageSize": 100001, "list": [], "scan_context": {}})
+        with patch.object(OrphanFileService, "get_orphan_list", mocked):
+            response = self.client.get("/api/v1/orphan-files/list?page_size=100001")
+
+        assert response.status_code == 422, "page_size=100001 应被校验拒绝"
+        mocked.assert_not_awaited(), "校验失败不应进入业务逻辑"
+
     def test_cleanup_passes_scan_id_and_shared_store(self):
         from app.services.orphan_file_service import OrphanFileService
 

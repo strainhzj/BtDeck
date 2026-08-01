@@ -236,6 +236,66 @@ async def test_path_like_escapes_wildcards(async_orphan_db):
     assert paths == ["/data/100%_file.bin"]
 
 
+# ==================== 排序：被忽视沉底，待清理在前 ====================
+
+
+async def test_list_orders_ignored_last_within_mixed_status(async_orphan_db):
+    """status=None 混合待清理+已忽视时，已忽视必须排在所有待清理之后。
+
+    组内仍按 file_size DESC：待清理组中大文件在前；已忽视组同样大文件在前。
+    """
+    await _seed(
+        async_orphan_db,
+        [
+            # 待清理组
+            _detail("scan_1", "/data/pending_big.bin", 500),
+            _detail("scan_1", "/data/pending_small.bin", 50),
+            # 已忽视组（即便文件更大，也必须沉底）
+            _detail("scan_1", "/data/ignored_huge.bin", 9999),
+            _detail("scan_1", "/data/ignored_tiny.bin", 10),
+        ],
+        candidates=[
+            _candidate("/data/ignored_huge.bin", ignored=True),
+            _candidate("/data/ignored_tiny.bin", ignored=True),
+            _candidate("/data/pending_big.bin", ignored=False),
+            _candidate("/data/pending_small.bin", ignored=False),
+        ],
+    )
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20)
+
+    paths = [item["file_path"] for item in result["list"]]
+    # 前 2 条为待清理（按大小降序），后 2 条为已忽视（按大小降序）
+    assert paths == [
+        "/data/pending_big.bin",
+        "/data/pending_small.bin",
+        "/data/ignored_huge.bin",
+        "/data/ignored_tiny.bin",
+    ]
+
+
+async def test_list_orders_pure_pending_unchanged(async_orphan_db):
+    """纯待清理（status=pending）场景排序不受 ignored_rank 干扰，仍按大小降序。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/a.bin", 100),
+            _detail("scan_1", "/data/b.bin", 300),
+            _detail("scan_1", "/data/c.bin", 200),
+        ],
+        candidates=[
+            _candidate("/data/a.bin", ignored=False),
+            _candidate("/data/b.bin", ignored=False),
+            _candidate("/data/c.bin", ignored=False),
+        ],
+    )
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(status="pending")
+
+    paths = [item["file_path"] for item in result["list"]]
+    assert paths == ["/data/b.bin", "/data/c.bin", "/data/a.bin"]
+
+
 # ==================== set_ignored 生命周期 ====================
 
 
@@ -342,3 +402,37 @@ async def test_cleanup_preview_excludes_ignored(async_orphan_db):
     paths = {item["file_path"] for item in result["items"]}
     assert paths == {"/data/cleanable.bin"}
     assert result["total_count"] == 1
+
+
+async def test_cleanup_preview_includes_low_confidence_with_count(async_orphan_db):
+    """手动清理放行 low confidence：low 明细进入 preview 的 items，且响应返回 low_confidence_count。
+
+    守护本次修改：cleanup_preview 移除了 SQL 的 confidence=='high' 过滤，并新增 low_confidence_count
+    字段供前端警告。若误加回 high 过滤，low 项会被排除、count 恒为 0。
+    """
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/low.bin", 100, confidence="low"),
+            _detail("scan_1", "/data/high.bin", 200, confidence="high"),
+        ],
+        candidates=[
+            _candidate("/data/low.bin", ignored=False),
+            _candidate("/data/high.bin", ignored=False),
+        ],
+    )
+
+    details = (await async_orphan_db.execute(OrphanFile.__table__.select())).fetchall()
+    ids_by_path = {row.file_path: row.id for row in details}
+
+    result = await OrphanFileService(async_orphan_db).cleanup_preview(
+        orphan_ids=[ids_by_path["/data/low.bin"], ids_by_path["/data/high.bin"]],
+        scan_id="scan_1",
+    )
+
+    # low 与 high 都进入 items（手动清理不再按 confidence 过滤）
+    paths = {item["file_path"] for item in result["items"]}
+    assert paths == {"/data/low.bin", "/data/high.bin"}, "low confidence 明细应进入 preview items"
+    assert result["total_count"] == 2
+    # low_confidence_count 准确反映 low 项数量
+    assert result["low_confidence_count"] == 1, "应统计 1 个 low confidence 项供前端警告"
