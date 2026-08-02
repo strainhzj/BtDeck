@@ -7,7 +7,7 @@
         <span>全局速度限制</span>
         <span class="section-index">01</span>
       </div>
-      <el-form :model="formData" label-width="140px">
+      <el-form :model="formData" label-position="top" label-width="auto" class="speed-limit-form">
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="下载速度限制">
@@ -510,6 +510,8 @@ export default class SpeedSettingsTab extends Vue {
   display: flex;
   gap: 8px;
   align-items: center;
+  width: 100%;
+  min-width: 0;
 }
 
 .form-hint {
@@ -793,12 +795,23 @@ export default class SpeedSettingsTab extends Vue {
 }
 
 .speed-settings-tab ::v-deep .el-form-item {
+  width: 100%;
   margin-bottom: 0;
 }
 
 .speed-settings-tab ::v-deep .el-form-item__label,
 .field-label {
+  box-sizing: border-box;
+  width: 100% !important;
+  padding: 0 0 5px !important;
   font-size: 10px;
+  line-height: 1.2;
+  text-align: left !important;
+}
+
+.speed-settings-tab ::v-deep .el-form-item__content {
+  min-width: 0;
+  margin-left: 0 !important;
 }
 
 .form-hint {

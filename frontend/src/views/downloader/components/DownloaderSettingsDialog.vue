@@ -67,7 +67,8 @@
             ref="basicFormRef"
             :model="formData"
             :rules="basicFormRules"
-            label-width="140px"
+            label-position="top"
+            label-width="auto"
             class="workspace-basic-form"
           >
             <!-- 连接配置 -->
@@ -1991,15 +1992,24 @@ export default class DownloaderSettingsDialog extends Vue {
   }
 
   ::v-deep .el-form-item {
+    width: 100%;
     margin-bottom: 10px;
   }
 
   ::v-deep .el-form-item__label {
-    height: 30px;
-    padding-right: 10px;
+    box-sizing: border-box;
+    width: 100% !important;
+    height: auto;
+    padding: 0 0 5px !important;
     color: var(--color-text-secondary);
     font-size: 10px;
-    line-height: 30px;
+    line-height: 1.2;
+    text-align: left !important;
+  }
+
+  ::v-deep .el-form-item__content {
+    min-width: 0;
+    margin-left: 0 !important;
   }
 
   ::v-deep .el-input__inner,
