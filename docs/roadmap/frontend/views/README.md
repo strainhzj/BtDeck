@@ -7,7 +7,7 @@
 | 模块 | 文件数 | 总行数 | 主入口 | 范式 |
 |------|--------|--------|--------|------|
 | torrents | 20 | 11,189 | `index.vue`（2,662 行） | class-component（全部） |
-| downloader | 14 | 8,409 | `index.vue`（824 行） | class-component（全部） |
+| downloader | 14 | 11,277 | `index.vue`（1,644 行） | class-component（全部） |
 | tracker | 12 | 5,357 | 4 个并列页面 | class-component（11）+ ⚠ 1 Options API |
 | tasks | 1 | 2,419 | `index.vue` | class-component |
 | logs | 1 | 1,116 | `audit.vue` | class-component |
@@ -50,19 +50,19 @@
 
 | 文件 | 行数 | 范式 | 一句话职责 |
 |------|------|------|-----------|
-| `index.vue` | 824 | class（`DownloaderManager`） | 下载器管理主入口 |
-| `components/DownloaderSettingsDialog.vue` | 1512 | class | 设置总对话框（聚合多 Tab） |
-| `components/PathMappingTab.vue` | 989 | class | 路径映射 Tab（本地↔远程） |
-| `components/TagManagementTab.vue` | 1049 | class | 标签管理 Tab |
-| `components/DownloaderPathMaintenance.vue` | 819 | class | 下载器路径管理面板 |
-| `components/SpeedSettingsTab.vue` | 712 | class | 速度限制 Tab |
-| `components/AdvancedSettingsTab.vue` | 529 | class | 高级设置 Tab |
-| `components/TemplateSelectionDialog.vue` | 499 | class | 下载器模板选择对话框 |
-| `components/BasicSettingsTab.vue` | 423 | class | 基础设置 Tab |
-| `components/DownloaderCard.vue` | 438 | class | 单个下载器卡片 |
+| `index.vue` | 1644 | class（`DownloaderManager`） | 下载器节点控制室主入口；聚合状态摘要、筛选操作台、节点矩阵、轮询遥测和响应式动效 |
+| `components/DownloaderSettingsDialog.vue` | 2215 | class | 新增/编辑共用的顶层配置工作区，聚合基础、速度、路径和标签 Tab；新增模式锁定依赖节点 ID 的页签 |
+| `components/PathMappingTab.vue` | 1097 | class | 高密度双向路径映射 Tab（本地↔远程），含刷新、测试、增删改与空状态 |
+| `components/TagManagementTab.vue` | 1219 | class | 标签/分类检索、过滤、排序、同步与维护工作台 |
+| `components/DownloaderPathManagement.vue` | 959 | class | 下载器路径资产管理面板（筛选、状态、刷新、增删改） |
+| `components/SpeedSettingsTab.vue` | 906 | class | 全局与分时段速度策略工作台 |
+| `components/AdvancedSettingsTab.vue` | 512 | class | 兼容保留的高级设置 Tab，应用图标已迁移 Lucide |
+| `components/TemplateSelectionDialog.vue` | 744 | class | 高密度模板选择对话框，含自定义标题、加载与空状态 |
+| `components/BasicSettingsTab.vue` | 405 | class | 兼容保留的基础设置 Tab，应用图标已迁移 Lucide |
+| `components/DownloaderCard.vue` | 692 | class | 单节点遥测卡片，集中展示连接、吞吐、任务、延迟与全部管理动作 |
 | `components/DownloaderDialog.vue` | 335 | class | 下载器新增/编辑对话框 |
-| `components/PathManagementTab.vue` | 168 | class | 路径管理 Tab |
-| `types.ts` | 346 | util | 下载器模块 TS 类型定义 |
+| `components/PathManagementTab.vue` | 174 | class | 路径映射/路径资产双视图容器 |
+| `types.ts` | 363 | util | 下载器模块 TS 类型定义 |
 | `settings.ts` | 12 | util | 分时段开关/调度规则类型片段 |
 
 ## tracker/ 详情（12 个文件）

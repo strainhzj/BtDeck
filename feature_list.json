@@ -1,9 +1,60 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-01",
+  "last_updated": "2026-08-02",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
+    {
+      "id": "downloader-control-room-ui-redesign",
+      "name": "下载器控制室 UI 重绘与导航 Lucide 化",
+      "description": "完整重绘下载器管理、下载器设置与新增下载器界面，以高密度节点遥测、实验性版式和响应式全屏配置工作区替代传统卡片/表单布局；导航、下载器及关联通知/主题入口的应用图标统一迁移到 Lucide，保留既有业务能力与 API 契约。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "downloader-control-room-ui-redesign.1",
+          "name": "重绘下载器管理与配置工作区",
+          "description": "实现节点控制室总览、实时摘要、筛选操作台和高密度遥测卡片；将新增/编辑下载器改造为顶层全屏配置工作区，并统一速度、路径、标签、模板子页面的视觉语言、密度与响应式行为。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/downloader/index.vue",
+            "frontend/src/views/downloader/components/DownloaderCard.vue",
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/src/views/downloader/components/SpeedSettingsTab.vue",
+            "frontend/src/views/downloader/components/PathManagementTab.vue",
+            "frontend/src/views/downloader/components/PathMappingTab.vue",
+            "frontend/src/views/downloader/components/DownloaderPathManagement.vue",
+            "frontend/src/views/downloader/components/TagManagementTab.vue",
+            "frontend/src/views/downloader/components/TemplateSelectionDialog.vue",
+            "frontend/src/views/downloader/components/BasicSettingsTab.vue",
+            "frontend/src/views/downloader/components/AdvancedSettingsTab.vue"
+          ],
+          "evidence": "保留新增、编辑、删除、启停、连接测试、同步、筛选、刷新、模板选择、速度策略、路径映射/资产和标签分类能力；新增模式锁定依赖已有节点的设置页；修复设置弹窗遮罩层高于内容的既有层级问题（append-to-body）及启用开关字符串状态判断。真实浏览器验收覆盖 1280x720 桌面、390x844 移动端、管理总览、新增页及编辑模式下的速度/路径/标签页，无页面级横向溢出。"
+        },
+        {
+          "id": "downloader-control-room-ui-redesign.2",
+          "name": "导航与关联界面 Lucide 图标统一及回归",
+          "description": "扩展共享 LucideIcon 注册表，将路由侧栏、顶栏、主题切换、通知抽屉及下载器页面的应用图标迁移为 Lucide，并以源代码契约测试约束受影响模板不得回退到内联 SVG、Element icon 属性或表情符号。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/common/LucideIcon.vue",
+            "frontend/src/components/common/__tests__/LucideIcon.spec.ts",
+            "frontend/src/components/ThemeSwitcher/index.vue",
+            "frontend/src/router.ts",
+            "frontend/src/layout/components/Navbar/index.vue",
+            "frontend/src/layout/components/Sidebar/index.vue",
+            "frontend/src/layout/components/Sidebar/SidebarItem.vue",
+            "frontend/src/layout/components/NotificationDrawer/index.vue",
+            "frontend/src/layout/components/NotificationDrawer/NotificationItem.vue",
+            "frontend/tests/unit/downloader-control-room-ui.spec.ts"
+          ],
+          "evidence": "npm run typecheck 与严格 npm run lint 通过；新增定向回归 2 suites / 110 tests 通过；前端全量 Jest 29 suites / 498 tests 通过；npm run build 成功，仅有仓库既有的 48 条 Sass/Element UI/资源体积 warning；浏览器可见旧图标审计中管理总览无应用级 Element 字体图标，设置工作区自有图标均由 LucideIcon 渲染。"
+        }
+      ]
+    },
     {
       "id": "orphan-scan-path-scope-mapping-fix",
       "name": "孤儿扫描有效路径筛选与严格映射修复",

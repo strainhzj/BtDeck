@@ -4,7 +4,7 @@
     <div class="navbar-left">
       <!-- Logo（可选） -->
       <div class="navbar-logo">
-        <svg-icon name="dashboard" class="logo-icon" />
+        <LucideIcon name="orbit" :size="28" :stroke-width="1.65" class="logo-icon" />
         <span class="logo-text">BtDeck</span>
       </div>
 
@@ -17,19 +17,25 @@
       <!-- 反馈按钮 -->
       <el-button
         class="icon-button feedback-button"
-        icon="el-icon-chat-dot-round"
         circle
+        aria-label="提交反馈"
+        title="提交反馈"
         @click="handleFeedback"
-      />
+      >
+        <LucideIcon name="message-circle" :size="19" :stroke-width="1.8" />
+      </el-button>
 
       <!-- 通知中心 -->
       <el-badge :value="notificationCount" :hidden="notificationCount === 0" class="notification-badge">
         <el-button
           class="icon-button"
-          icon="el-icon-bell"
           circle
+          aria-label="打开通知中心"
+          title="通知中心"
           @click="handleNotification"
-        />
+        >
+          <LucideIcon name="bell" :size="19" :stroke-width="1.8" />
+        </el-button>
       </el-badge>
 
       <!-- 主题切换器 -->
@@ -42,19 +48,21 @@
         @command="handleUserAction"
       >
         <div class="avatar-wrapper">
-          <span class="user-avatar">👤</span>
+          <span class="user-avatar">
+            <LucideIcon name="user-round" :size="18" :stroke-width="1.8" />
+          </span>
           <span class="user-name">{{ userName }}</span>
-          <i class="el-icon-caret-bottom" />
+          <LucideIcon name="chevron-down" :size="14" :stroke-width="1.8" class="user-chevron" />
         </div>
         <el-dropdown-menu slot="dropdown">
           <router-link to="/">
             <el-dropdown-item>
-              <i class="el-icon-house" />
+              <LucideIcon name="house" :size="16" :stroke-width="1.8" />
               <span>首页</span>
             </el-dropdown-item>
           </router-link>
           <el-dropdown-item divided command="logout">
-            <i class="el-icon-switch-button" />
+            <LucideIcon name="log-out" :size="16" :stroke-width="1.8" />
             <span>退出登录</span>
           </el-dropdown-item>
         </el-dropdown-menu>
@@ -169,9 +177,7 @@ export default class extends Vue {
 }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
-  font-size: 32px;
+  color: var(--color-primary, #059669);
 }
 
 .logo-text {
@@ -208,9 +214,6 @@ export default class extends Vue {
     color: var(--color-text-primary, #1F2937);
   }
 
-  i {
-    font-size: 20px;
-  }
 }
 
 /* 通知徽章 */
@@ -267,10 +270,10 @@ export default class extends Vue {
     white-space: nowrap;
   }
 
-  .el-icon-caret-bottom {
+  .user-chevron {
     cursor: pointer;
-    font-size: 12px;
     color: var(--color-text-secondary, #6B7280);
+    transition: transform var(--transition-base, 200ms);
   }
 }
 
@@ -281,12 +284,11 @@ export default class extends Vue {
     align-items: center;
     gap: var(--spacing-sm, 8px);
 
-    i {
-      font-size: 16px;
+    .lucide-icon {
       color: var(--color-text-secondary, #6B7280);
     }
 
-    &:hover i {
+    &:hover .lucide-icon {
       color: var(--color-primary, #059669);
     }
   }

@@ -1,0 +1,101 @@
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
+
+const readSource = (relativePath: string): string => readFileSync(
+  resolve(__dirname, '../../src', relativePath),
+  'utf8'
+)
+
+const templateOf = (source: string): string => {
+  const templateStart = source.indexOf('<template>')
+  const scriptStart = source.indexOf('<script')
+  return templateStart >= 0 && scriptStart > templateStart
+    ? source.slice(templateStart, scriptStart)
+    : ''
+}
+
+const downloaderPage = readSource('views/downloader/index.vue')
+const downloaderCard = readSource('views/downloader/components/DownloaderCard.vue')
+const settingsDialog = readSource('views/downloader/components/DownloaderSettingsDialog.vue')
+const routerSource = readSource('router.ts')
+
+const lucideOnlySurfaces = [
+  'views/downloader/index.vue',
+  'views/downloader/components/DownloaderCard.vue',
+  'views/downloader/components/DownloaderSettingsDialog.vue',
+  'views/downloader/components/BasicSettingsTab.vue',
+  'views/downloader/components/AdvancedSettingsTab.vue',
+  'views/downloader/components/SpeedSettingsTab.vue',
+  'views/downloader/components/PathManagementTab.vue',
+  'views/downloader/components/PathMappingTab.vue',
+  'views/downloader/components/DownloaderPathManagement.vue',
+  'views/downloader/components/TagManagementTab.vue',
+  'views/downloader/components/TemplateSelectionDialog.vue',
+  'layout/components/Sidebar/index.vue',
+  'layout/components/Sidebar/SidebarItem.vue',
+  'layout/components/Navbar/index.vue',
+  'components/ThemeSwitcher/index.vue',
+  'layout/components/NotificationDrawer/index.vue',
+  'layout/components/NotificationDrawer/NotificationItem.vue'
+].map((path) => [path, templateOf(readSource(path))] as const)
+
+describe('下载器控制台视觉骨架', () => {
+  it('使用高密度总览、指令栏、节点网格和响应式降级', () => {
+    expect(downloaderPage).toContain('class="downloader-control-room"')
+    expect(downloaderPage).toContain('class="control-metrics"')
+    expect(downloaderPage).toContain('class="command-deck"')
+    expect(downloaderPage).toContain('class="downloader-grid"')
+    expect(downloaderPage).toContain('@media (max-width: 680px)')
+    expect(downloaderPage).toContain('@media (prefers-reduced-motion: reduce)')
+  })
+
+  it('节点卡片保留测试、同步、设置、启停和删除功能', () => {
+    expect(downloaderCard).toContain('class="node-telemetry"')
+    expect(downloaderCard).toContain("$emit('test'")
+    expect(downloaderCard).toContain("$emit('sync'")
+    expect(downloaderCard).toContain("$emit('settings'")
+    expect(downloaderCard).toContain("$emit('delete'")
+    expect(downloaderCard).toContain("$emit('toggle-enable'")
+  })
+})
+
+describe('下载器设置工作台', () => {
+  it('使用自定义标题、左侧模式导航和紧凑基础信息网格', () => {
+    expect(settingsDialog).toContain('class="workspace-header"')
+    expect(settingsDialog).toContain('tab-position="left"')
+    expect(settingsDialog).toContain('class="workspace-basic-form"')
+    expect(settingsDialog).toContain('class="panel-intro"')
+    expect(settingsDialog).toContain('class="workspace-footer-button')
+  })
+
+  it('新增模式锁定依赖已保存下载器的子面板，并保留全部设置模块', () => {
+    expect(settingsDialog).toMatch(/name="speed"[\s\S]*?:disabled="!isEdit"/)
+    expect(settingsDialog).toMatch(/name="pathManagement"[\s\S]*?:disabled="!isEdit"/)
+    expect(settingsDialog).toMatch(/name="tagManagement"[\s\S]*?:disabled="!isEdit"/)
+    expect(settingsDialog).toContain('<speed-settings-tab')
+    expect(settingsDialog).toContain('<path-management-tab')
+    expect(settingsDialog).toContain('<tag-management-tab')
+    expect(settingsDialog).toContain('<template-selection-dialog')
+  })
+})
+
+describe.each(lucideOnlySurfaces)('%s 图标契约', (_path, template) => {
+  it('模板不直接绘制 SVG、不引用 Element 图标且不含表情符号', () => {
+    expect(template).not.toContain('<svg')
+    expect(template).not.toContain('el-icon-')
+    expect(template).not.toMatch(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u)
+  })
+})
+
+describe('全局导航 Lucide 化', () => {
+  it('路由元数据使用 Lucide 名称且侧栏不再消费旧 svg-icon', () => {
+    expect(routerSource).toContain("icon: 'layout-dashboard'")
+    expect(routerSource).toContain("icon: 'server'")
+    expect(routerSource).toContain("icon: 'download'")
+    expect(routerSource).toContain("icon: 'panels-top-left'")
+
+    const sidebarItem = readSource('layout/components/Sidebar/SidebarItem.vue')
+    expect(sidebarItem).toContain('<LucideIcon')
+    expect(sidebarItem).not.toContain('<svg-icon')
+  })
+})

@@ -1,5 +1,30 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-02 交接：下载器控制室 UI 重绘与导航 Lucide 化
+
+**当前任务**: `downloader-control-room-ui-redesign`
+**分支**: dev
+**状态**: 实现、全量回归、生产构建、真实浏览器桌面/移动端验收和项目记录均已完成；尚未提交。
+
+### 本次交付
+
+- `views/downloader/index.vue` 与 `DownloaderCard.vue` 已改造成高密度节点控制室和遥测卡片矩阵，所有原管理动作保持可用。
+- `DownloaderSettingsDialog.vue` 已成为新增/编辑共用的顶层全屏配置工作区；速度、路径、标签与模板子页使用同一信息架构。新增模式只允许完成基础连接配置，依赖已有节点的页签明确锁定。
+- 设置工作区必须保留 `append-to-body`：这是防止布局堆叠上下文导致 `v-modal` 覆盖弹窗的必要修复。
+- 路由侧栏、Navbar、ThemeSwitcher、NotificationDrawer 和下载器页面的应用图标已统一到共享 `LucideIcon`；新增注册图标由 `LucideIcon.spec.ts` 覆盖。
+- 新增 `frontend/tests/unit/downloader-control-room-ui.spec.ts`，锁定页面骨架、原业务方法、新增模式页签约束，以及无内联 SVG、Element icon 属性和表情符号的模板契约。
+
+### 验证与边界
+
+- typecheck、严格 lint、定向 110 tests、全量 29 suites / 498 tests、生产 build 均通过；build 仅保留仓库既有 48 条 warning。
+- Git Bash 根 `./init.sh` 退出 0；前端 init 子脚本仅有当前 Windows/npm 环境的 null-byte warning。
+- 浏览器验收覆盖 1280x720 与 390x844；管理页、新增页、编辑速度/路径/标签页无页面级横向溢出，弹窗层级与点击命中正常。
+- 浏览器验收使用的临时免登录入口、401 跳转保护和三节点样例数据均已删除；源码中不存在 `visualQa`/`loadVisualQaFixture` 残留。
+- 未修改 API、后端、数据库 Schema、Alembic 或依赖；未执行 Git stage / commit / push / 部署。
+- 会话开始前已有的 `.docker_temp_482561487`、`.pnpm-store/`、`.spec-workflow/`、`.zcode/`、数据库备份、调试脚本、镜像归档、批处理和 `tools/` 均保持不动。
+
+---
+
 ## 2026-07-31 交接：孤儿文件管理增强（别名/置信度/忽视/多条件搜索）
 
 **当前任务**: `orphan-files-management-enhancement`

@@ -2,7 +2,7 @@
   <div class="notification-item" :class="{'is-unread': !notification.is_read}">
     <!-- 类型图标 -->
     <div class="notification-icon" :class="iconClass">
-      <i :class="iconName" />
+      <LucideIcon :name="iconName" :size="17" />
     </div>
 
     <!-- 内容区域 -->
@@ -25,12 +25,12 @@
           :class="{'btn-read': notification.is_read}"
           @click.stop="$emit('toggle-read', notification.id)"
         >
-          <i :class="notification.is_read ? 'el-icon-refresh-left' : 'el-icon-check'" />
+          <LucideIcon :name="notification.is_read ? 'refresh-cw' : 'check'" :size="14" />
         </el-button>
       </el-tooltip>
       <el-tooltip content="删除" placement="top">
         <el-button type="text" size="mini" class="btn-delete" @click.stop="$emit('delete', notification.id)">
-          <i class="el-icon-delete" />
+          <LucideIcon name="trash-2" :size="14" />
         </el-button>
       </el-tooltip>
     </div>
@@ -47,10 +47,10 @@ export default class extends Vue {
 
   get iconName(): string {
     const map: Record<string, string> = {
-      version_update: 'el-icon-upload',
-      system: 'el-icon-setting'
+      version_update: 'upload',
+      system: 'settings'
     }
-    return map[this.notification.type] || 'el-icon-bell'
+    return map[this.notification.type] || 'bell'
   }
 
   get iconClass(): string {
@@ -109,8 +109,6 @@ export default class extends Vue {
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-
-  i { font-size: 18px; }
 
   &.icon-info {
     background: rgba(59, 130, 246, 0.1);

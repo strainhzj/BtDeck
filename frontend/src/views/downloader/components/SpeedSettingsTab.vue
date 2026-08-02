@@ -1,8 +1,12 @@
 <template>
   <div class="speed-settings-tab">
     <!-- 全局速度限制 -->
-    <div class="form-section">
-      <div class="form-section-title">全局速度限制</div>
+    <div class="form-section form-section--limits">
+      <div class="form-section-title">
+        <span class="section-title-icon"><LucideIcon name="gauge" :size="15" /></span>
+        <span>全局速度限制</span>
+        <span class="section-index">01</span>
+      </div>
       <el-form :model="formData" label-width="140px">
         <el-row :gutter="16">
           <el-col :span="12">
@@ -46,8 +50,12 @@
     </div>
 
     <!-- 分时段限速 -->
-    <div class="form-section">
-      <div class="form-section-title">分时段限速</div>
+    <div class="form-section form-section--schedule">
+      <div class="form-section-title">
+        <span class="section-title-icon"><LucideIcon name="clock" :size="15" /></span>
+        <span>分时段限速</span>
+        <span class="section-index">02</span>
+      </div>
       <div class="switch-item">
         <span class="switch-label">启用分时段限速</span>
         <el-switch
@@ -59,8 +67,12 @@
     </div>
 
     <!-- 限速规则列表 -->
-    <div class="form-section">
-      <div class="form-section-title">限速规则</div>
+    <div class="form-section form-section--rules">
+      <div class="form-section-title">
+        <span class="section-title-icon"><LucideIcon name="list-checks" :size="15" /></span>
+        <span>限速规则</span>
+        <span class="section-count">{{ scheduleRules.length }} RULES</span>
+      </div>
 
       <!-- 规则卡片列表 -->
       <div v-if="scheduleRules.length > 0" class="rules-list">
@@ -74,18 +86,18 @@
             <div class="rule-actions">
               <el-button
                 size="mini"
-                icon="el-icon-arrow-up"
                 :disabled="index === 0"
                 @click="moveRuleUp(index)"
               >
+                <LucideIcon name="arrow-up" :size="13" />
                 上移
               </el-button>
               <el-button
                 size="mini"
-                icon="el-icon-arrow-down"
                 :disabled="index === scheduleRules.length - 1"
                 @click="moveRuleDown(index)"
               >
+                <LucideIcon name="arrow-down" :size="13" />
                 下移
               </el-button>
               <el-switch
@@ -96,9 +108,9 @@
               <el-button
                 type="danger"
                 size="mini"
-                icon="el-icon-delete"
                 @click="removeRule(index)"
               >
+                <LucideIcon name="trash-2" :size="13" />
                 删除
               </el-button>
             </div>
@@ -190,10 +202,7 @@
         :disabled="!enableScheduling"
         @click="addRule"
       >
-        <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
+        <LucideIcon class="button-icon" name="plus" :size="15" />
         添加限速规则
       </el-button>
     </div>
@@ -204,6 +213,17 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { Downloader, DownloaderSettings, DownloaderCapabilities, SpeedScheduleRule } from '../types'
 import { resolveEnableSchedule } from '../settings'
+
+interface LegacySpeedScheduleRule {
+  dl_speed_limit?: number
+  ul_speed_limit?: number
+  dl_speed_unit?: number
+  ul_speed_unit?: number
+  speed_limit?: number
+  speed_unit?: number
+  download?: SpeedScheduleRule['download']
+  upload?: SpeedScheduleRule['upload']
+}
 
 @Component({
   name: 'SpeedSettingsTab'
@@ -248,9 +268,6 @@ export default class SpeedSettingsTab extends Vue {
   // 监听设置变化
   @Watch('settings', { immediate: true, deep: true })
   onSettingsChange(val: DownloaderSettings) {
-    console.log('🔍 [SpeedSettingsTab] onSettingsChange 被触发')
-    console.log('🔍 [SpeedSettingsTab] 接收到的 settings:', JSON.stringify(val, null, 2))
-
     if (val) {
       // 处理下载速度单位（优先使用新字段，回退到旧字段）
       const dlSpeedUnitValue = val.dlSpeedUnit ?? val.dl_speed_unit ?? val.speed_unit ?? 0
@@ -266,15 +283,6 @@ export default class SpeedSettingsTab extends Vue {
       this.formData.dl_speed_unit = dlSpeedUnitNumber
       this.formData.ul_speed_unit = ulSpeedUnitNumber
 
-      console.log('✅ [SpeedSettingsTab] formData 已更新:', {
-        download_speed_limit: this.formData.download_speed_limit,
-        upload_speed_limit: this.formData.upload_speed_limit,
-        dl_speed_unit: this.formData.dl_speed_unit,
-        ul_speed_unit: this.formData.ul_speed_unit,
-        dl_speed_unit_type: typeof this.formData.dl_speed_unit,
-        ul_speed_unit_type: typeof this.formData.ul_speed_unit
-      })
-
       // 处理分时段规则（确保正确清空或加载）
       const scheduleEnabled = resolveEnableSchedule(val)
 
@@ -282,15 +290,18 @@ export default class SpeedSettingsTab extends Vue {
         // 后端返回了规则数据，加载规则
         this.scheduleRules = val.schedule_rules.map((rule, index) => {
           const weekdays = this.normalizeWeekdays(rule.weekdays || [])
+          const legacyRule = rule as unknown as LegacySpeedScheduleRule
+          const legacyDownloadLimit = legacyRule.dl_speed_limit
+          const legacyUploadLimit = legacyRule.ul_speed_limit
           const downloadConfig = rule.download || {
-            enabled: (rule as any).dl_speed_limit ? (rule as any).dl_speed_limit > 0 : true,
-            speed_limit: (rule as any).dl_speed_limit ?? (rule as any).speed_limit ?? 500,
-            speed_unit: (rule as any).dl_speed_unit ?? (rule as any).speed_unit ?? 0
+            enabled: legacyDownloadLimit !== undefined ? legacyDownloadLimit > 0 : true,
+            speed_limit: legacyDownloadLimit ?? legacyRule.speed_limit ?? 500,
+            speed_unit: this.normalizeSpeedUnit(legacyRule.dl_speed_unit ?? legacyRule.speed_unit)
           }
           const uploadConfig = rule.upload || {
-            enabled: (rule as any).ul_speed_limit ? (rule as any).ul_speed_limit > 0 : false,
-            speed_limit: (rule as any).ul_speed_limit ?? (rule as any).speed_limit ?? 0,
-            speed_unit: (rule as any).ul_speed_unit ?? (rule as any).speed_unit ?? 0
+            enabled: legacyUploadLimit !== undefined ? legacyUploadLimit > 0 : false,
+            speed_limit: legacyUploadLimit ?? legacyRule.speed_limit ?? 0,
+            speed_unit: this.normalizeSpeedUnit(legacyRule.ul_speed_unit ?? legacyRule.speed_unit)
           }
 
           return {
@@ -315,19 +326,20 @@ export default class SpeedSettingsTab extends Vue {
           }
         })
         this.enableScheduling = scheduleEnabled
-        console.log(`✅ [SpeedSettingsTab] 加载了 ${this.scheduleRules.length} 条分时段规则`)
       } else {
         // 后端返回空数组或 undefined，清空规则
         this.scheduleRules = []
         this.enableScheduling = scheduleEnabled
-        console.log('✅ [SpeedSettingsTab] 清空了分时段规则（后端未返回规则数据）')
       }
     } else {
-      console.warn('⚠️ [SpeedSettingsTab] settings 为空或未定义')
       // settings 为空时也要清空规则
       this.scheduleRules = []
       this.enableScheduling = false
     }
+  }
+
+  private normalizeSpeedUnit(value: number | undefined): 0 | 1 {
+    return value === 1 ? 1 : 0
   }
 
   private normalizeWeekdays(weekdays: number[]): number[] {
@@ -708,5 +720,189 @@ export default class SpeedSettingsTab extends Vue {
 .button-icon {
   width: 16px;
   height: 16px;
+}
+
+// Dense control-room treatment. These overrides intentionally keep the
+// existing form model and validation behavior while reducing vertical travel.
+.speed-settings-tab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.58fr);
+  gap: 10px;
+  padding: 0;
+}
+
+.form-section {
+  min-width: 0;
+  margin: 0;
+  padding: 13px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 12px;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.84), rgba(255, 255, 255, 0.55)),
+    var(--color-bg-secondary);
+
+  &--limits {
+    grid-column: 1;
+  }
+
+  &--schedule {
+    grid-column: 2;
+  }
+
+  &--rules {
+    grid-column: 1 / -1;
+  }
+}
+
+.form-section-title {
+  min-height: 24px;
+  margin-bottom: 10px;
+  gap: 7px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+
+  &::before {
+    display: none;
+  }
+}
+
+.section-title-icon {
+  display: inline-flex;
+  width: 25px;
+  height: 25px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.22);
+  border-radius: 7px;
+  color: var(--color-primary);
+  background: rgba(var(--color-primary-rgb), 0.07);
+}
+
+.section-index,
+.section-count {
+  margin-left: auto;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 0.12em;
+}
+
+.speed-settings-tab ::v-deep .el-form-item {
+  margin-bottom: 0;
+}
+
+.speed-settings-tab ::v-deep .el-form-item__label,
+.field-label {
+  font-size: 10px;
+}
+
+.form-hint {
+  font-size: 9px;
+}
+
+.switch-item {
+  min-height: 54px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 9px;
+  background: rgba(var(--color-primary-rgb), 0.035);
+}
+
+.switch-label {
+  font-size: 11px;
+}
+
+.rules-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.rule-card {
+  min-width: 0;
+  padding: 11px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.rule-header {
+  margin-bottom: 9px;
+}
+
+.rule-title {
+  font-size: 11px;
+}
+
+.rule-actions {
+  gap: 4px;
+}
+
+.rule-actions ::v-deep .el-button {
+  height: 26px;
+  margin-left: 0;
+  padding: 0 7px;
+  font-size: 9px;
+}
+
+.rule-actions ::v-deep .el-button span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.rule-content,
+.rule-speed {
+  gap: 7px;
+  margin-bottom: 8px;
+}
+
+.rule-speed {
+  margin-top: 8px;
+}
+
+.speed-block {
+  gap: 6px;
+  padding: 8px;
+}
+
+.speed-title {
+  font-size: 10px;
+}
+
+.weekday-selector {
+  gap: 4px;
+}
+
+::v-deep .weekday-checkbox .el-checkbox__label {
+  min-width: 30px;
+  padding: 4px 7px;
+  font-size: 9px;
+}
+
+.add-rule-btn {
+  height: 34px;
+  padding: 0 12px;
+  border-width: 1px;
+  font-size: 10px;
+}
+
+.add-rule-btn ::v-deep span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+@media (max-width: 1080px) {
+  .speed-settings-tab,
+  .rules-list {
+    grid-template-columns: 1fr;
+  }
+
+  .form-section:nth-child(n) {
+    grid-column: 1;
+  }
 }
 </style>

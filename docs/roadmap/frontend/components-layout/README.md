@@ -8,8 +8,8 @@
 
 | 文件 | 行数 | class name | 一句话职责 |
 |------|------|-----------|-----------|
-| `LucideIcon.vue` | 158 | `LucideIcon extends Vue`（`@Component` + `vue-property-decorator`） | 轻量 Vue 2 包装器，统一渲染 Lucide 图标；静态具名 import 用到的图标（webpack 5 + sideEffects tree-shake，只打包所用图标，避免 ~2000 图标集入包）；stroke 跟随 `currentColor`，`size`/`strokeWidth` 通过 prop 透传。在 `main.ts:44` 全局注册 `Vue.component('LucideIcon', ...)`；v1.0.6.31 新增 `arrow-up-down/arrow-up/arrow-down` 三个排序状态图标 |
-| `__tests__/LucideIcon.spec.ts` | 83 | — | LucideIcon 单测（覆盖注册图标渲染，含 v1.0.6.31 新增排序图标） |
+| `LucideIcon.vue` | 313 | `LucideIcon extends Vue`（`@Component` + `vue-property-decorator`） | 轻量 Vue 2 包装器，统一渲染 Lucide 图标；静态具名 import 保持 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` 通过 prop 透传。v1.0.6 下载器控制室重绘后同时承载侧栏、顶栏、通知、主题及下载器工作区图标 |
+| `__tests__/LucideIcon.spec.ts` | 185 | — | LucideIcon 单测，覆盖共享注册表、尺寸/线宽透传、未知图标降级及下载器/导航新增图标真实 SVG 渲染 |
 
 > v1.0.6.28 引入 `lucide@^1.27.0` 依赖（`package.json`）。设计动机：高级搜索标签选择器重塑需要大量细粒度图标，统一基础设施避免各组件各自 import SVG；v1.0.6.31 起列头排序图标亦复用同一包装器。
 
@@ -22,7 +22,7 @@
 | `Breadcrumb/index.vue` | 105 | class | 面包屑导航 |
 | `Hamburger/index.vue` | 37 | class | 侧边栏折叠按钮 |
 | `Pagination/index.vue` | 80 | class | 分页组件封装 |
-| `ThemeSwitcher/index.vue` | 162 | class | 主题切换器（明/暗） |
+| `ThemeSwitcher/index.vue` | 171 | class | 主题切换器（明/暗），触发器与选项图标统一使用 Lucide |
 
 ### components/tasks/（3 个文件，任务专用组件）
 
@@ -64,12 +64,12 @@
 |------|------|-----------|-----------|
 | `index.ts` | 3 | — | barrel 导出 AppMain/Navbar/Sidebar |
 | `AppMain.vue` | 25 | class | 主内容区 `<router-view>` 容器 |
-| `Navbar/index.vue` | 316 | class | 顶栏（折叠按钮/面包屑/用户菜单/通知入口） |
-| `Sidebar/index.vue` | 227 | class | 侧边栏容器（基于路由生成菜单） |
-| `Sidebar/SidebarItem.vue` | 237 | class | 单个菜单项（递归子菜单） |
+| `Navbar/index.vue` | 318 | class | 顶栏（折叠按钮/面包屑/反馈/通知/用户菜单），应用图标统一使用 Lucide |
+| `Sidebar/index.vue` | 226 | class | 侧边栏容器（基于路由生成菜单），折叠控制使用 Lucide |
+| `Sidebar/SidebarItem.vue` | 255 | class | 单个菜单项（递归子菜单）；路由 meta icon 与子菜单箭头由 LucideIcon 渲染 |
 | `Sidebar/SidebarItemLink.vue` | 30 | class | 菜单项链接包装（外链/内链分流） |
-| `NotificationDrawer/index.vue` | 519 | class | 通知抽屉容器 |
-| `NotificationDrawer/NotificationItem.vue` | 187 | class | 单条通知项 |
+| `NotificationDrawer/index.vue` | 588 | class | 通知抽屉容器；标题、筛选、加载、空状态与关闭动作统一使用 Lucide |
+| `NotificationDrawer/NotificationItem.vue` | 185 | class | 单条通知项，详情入口使用 Lucide |
 
 > 注意：`components/index.ts` 只 re-export `AppMain/Navbar/Sidebar`，**未导出 NotificationDrawer**（需直接路径 import）。
 

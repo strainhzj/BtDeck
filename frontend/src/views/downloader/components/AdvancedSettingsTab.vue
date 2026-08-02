@@ -1,6 +1,6 @@
 <template>
   <!--
-    ⚠️ 【已废弃】高级设置页签组件已废弃
+    【已废弃】高级设置页签组件已废弃
     原因: qBittorrent客户端支持不完整，部分字段无法生效
     处理: 在父组件DownloaderSettingsDialog中使用v-if="false"隐藏
     未来: 可能完全移除此组件
@@ -11,9 +11,7 @@
       <div class="form-section-title">
         qBittorrent 专属设置
         <span v-if="downloaderType === 0" class="capability-badge supported">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
+          <LucideIcon name="check" :size="13" />
           已支持
         </span>
       </div>
@@ -33,11 +31,7 @@
       </div>
 
       <div v-else class="unsupported-hint">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
+        <LucideIcon name="info" :size="16" />
         <span>当前下载器为 Transmission，qBittorrent 专属设置不可用。如需配置 qBittorrent 选项，请切换到 qBittorrent 下载器。</span>
       </div>
     </div>
@@ -47,17 +41,11 @@
       <div class="form-section-title">
         Transmission 专属设置
         <span v-if="downloaderType === 1" class="capability-badge supported">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
+          <LucideIcon name="check" :size="13" />
           已支持
         </span>
         <span v-else class="capability-badge unsupported">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <line x1="15" y1="9" x2="9" y2="15"></line>
-            <line x1="9" y1="9" x2="15" y2="15"></line>
-          </svg>
+          <LucideIcon name="circle-x" :size="13" />
           不适用
         </span>
       </div>
@@ -94,11 +82,7 @@
       </div>
 
       <div v-else class="unsupported-hint">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="8" x2="12" y2="12"></line>
-          <line x1="12" y1="16" x2="12.01" y2="16"></line>
-        </svg>
+        <LucideIcon name="info" :size="16" />
         <span>当前下载器为 qBittorrent，Transmission 专属设置不可用。如需配置 Transmission 选项，请切换到 Transmission 下载器。</span>
       </div>
     </div>
@@ -138,7 +122,7 @@
 
 <script lang="ts">
 /**
- * ⚠️ 【已废弃】高级设置页签组件
+ * 【已废弃】高级设置页签组件
  *
  * 废弃原因:
  * - qBittorrent客户端对高级设置支持不完整

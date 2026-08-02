@@ -10,7 +10,7 @@ Vue.use(Router)
   redirect:                      if set to 'noredirect', no redirect action will be trigger when clicking the breadcrumb
   meta: {
     title: 'title'               the name showed in subMenu and breadcrumb (recommend set)
-    icon: 'svg-name'             the icon showed in the sidebar
+    icon: 'lucide-name'          the Lucide icon showed in the sidebar
     breadcrumb: false            if false, the item will be hidden in breadcrumb (default is true)
     hidden: true                 if true, this route will not show in the sidebar (default is false)
   }
@@ -47,7 +47,7 @@ const router = new Router({
           component: () => import(/* webpackChunkName: "dashboard" */ '@/views/dashboard/index.vue'),
           meta: {
             title: '首页',
-            icon: 'home'
+            icon: 'layout-dashboard'
           }
         }
       ]
@@ -62,7 +62,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '下载器管理',
-            icon: 'download'
+            icon: 'server'
           }
         }
       ]
@@ -73,7 +73,7 @@ const router = new Router({
       redirect: '/torrents/index',
       meta: {
         title: '种子管理',
-        icon: 'files'
+        icon: 'download'
       },
       children: [
         {
@@ -144,7 +144,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '关键词看板',
-            icon: 'data-board'
+            icon: 'panels-top-left'
           }
         },
         {
@@ -162,7 +162,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '汇报配置',
-            icon: 'setting'
+            icon: 'settings'
           }
         },
         {
@@ -171,7 +171,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '测试工具',
-            icon: 'tools'
+            icon: 'wrench'
           }
         }
       ]
@@ -190,7 +190,7 @@ const router = new Router({
       redirect: '/logs/audit',
       meta: {
         title: '日志管理',
-        icon: 'document'
+        icon: 'file-text'
       },
       children: [
         {
@@ -199,7 +199,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '操作日志',
-            icon: 'document'
+            icon: 'file-text'
           }
         }
       ]
@@ -214,7 +214,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '回收站',
-            icon: 'delete'
+            icon: 'trash-2'
           }
         }
       ]
@@ -229,7 +229,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '孤儿文件',
-            icon: 'folder'
+            icon: 'folder-search'
           }
         }
       ]
@@ -244,7 +244,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '系统设置',
-            icon: 'setting'
+            icon: 'settings'
           }
         }
       ]
@@ -259,7 +259,7 @@ const router = new Router({
           meta: {
             keepAlive: true,
             title: '查询模板',
-            icon: 'search'
+            icon: 'layout-template'
           }
         }
       ]

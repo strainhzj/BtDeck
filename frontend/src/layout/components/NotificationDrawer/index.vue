@@ -13,7 +13,7 @@
     <!-- 自定义头部 -->
     <template slot="title">
       <div class="drawer-header">
-        <span class="drawer-title">通知中心</span>
+        <span class="drawer-title"><LucideIcon name="bell" :size="16" />通知中心</span>
         <div class="drawer-header-actions">
           <el-button
             v-if="unreadCount > 0"
@@ -23,6 +23,9 @@
           >
             全部已读
           </el-button>
+          <button type="button" class="drawer-close" aria-label="关闭通知中心" @click="handleClose">
+            <LucideIcon name="x" :size="15" />
+          </button>
         </div>
       </div>
     </template>
@@ -44,7 +47,7 @@
     <!-- 通知列表 -->
     <div class="drawer-body">
       <div v-if="loading" class="drawer-loading">
-        <i class="el-icon-loading" />
+        <LucideIcon class="is-spinning" name="refresh-cw" :size="20" />
       </div>
 
       <template v-else-if="notifications.length > 0">
@@ -63,7 +66,7 @@
 
       <!-- 空状态 -->
       <div v-else class="drawer-empty">
-        <i class="el-icon-bell" />
+        <LucideIcon name="bell" :size="34" :stroke-width="1.35" />
         <p>暂无通知</p>
       </div>
     </div>
@@ -72,12 +75,20 @@
   <!-- 通知详情弹窗 -->
   <el-dialog
     :visible.sync="detailVisible"
-    :title="detailTitle"
     width="500px"
+    :show-close="false"
     append-to-body
     custom-class="notification-detail-dialog"
     @close="handleDetailClose"
   >
+    <template #title>
+      <div class="detail-dialog-header">
+        <span>{{ detailTitle }}</span>
+        <button type="button" aria-label="关闭通知详情" @click="detailVisible = false">
+          <LucideIcon name="x" :size="15" />
+        </button>
+      </div>
+    </template>
     <div class="detail-meta">
       <el-tag size="mini" :type="detailTypeTag">{{ detailTypeLabel }}</el-tag>
       <span class="detail-time">{{ detailTime }}</span>
@@ -85,7 +96,7 @@
     <div class="detail-content" v-html="detailHtml" />
     <div v-if="detailReleaseUrl" class="detail-footer">
       <a :href="detailReleaseUrl" target="_blank" class="detail-link">
-        <i class="el-icon-link" /> 在 GitHub 上查看完整 Release
+        <LucideIcon name="external-link" :size="13" /> 在 GitHub 上查看完整 Release
       </a>
     </div>
   </el-dialog>
@@ -345,9 +356,31 @@ export default class extends Vue {
 }
 
 .drawer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 16px;
   font-weight: 600;
   color: var(--color-text-primary, #1F2937);
+}
+
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawer-close {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-primary, #E5E7EB);
+  border-radius: 8px;
+  color: var(--color-text-secondary, #6B7280);
+  background: transparent;
+  cursor: pointer;
 }
 
 /* 筛选标签 */
@@ -406,7 +439,7 @@ export default class extends Vue {
   display: flex;
   justify-content: center;
   padding: var(--spacing-xl, 32px);
-  i { font-size: 24px; color: var(--color-text-tertiary, #9CA3AF); }
+  color: var(--color-text-tertiary, #9CA3AF);
 }
 
 .drawer-empty {
@@ -414,8 +447,16 @@ export default class extends Vue {
   flex-direction: column;
   align-items: center;
   padding: var(--spacing-xxl, 48px) 0;
-  i { font-size: 48px; color: var(--color-text-quaternary, #D1D5DB); }
+  color: var(--color-text-quaternary, #D1D5DB);
   p { margin-top: var(--spacing-md, 12px); color: var(--color-text-tertiary, #9CA3AF); font-size: 14px; }
+}
+
+.is-spinning {
+  animation: notification-spin 0.8s linear infinite;
+}
+
+@keyframes notification-spin {
+  to { transform: rotate(360deg); }
 }
 
 .load-more {
@@ -427,6 +468,34 @@ export default class extends Vue {
 <style lang="scss">
 /* 通知详情弹窗样式 */
 .notification-detail-dialog {
+  .el-dialog__header {
+    padding: 14px 18px;
+    border-bottom: 1px solid #E5E7EB;
+  }
+
+  .detail-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #111827;
+    font-size: 15px;
+    font-weight: 600;
+
+    button {
+      display: inline-flex;
+      width: 28px;
+      height: 28px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      color: #6B7280;
+      background: transparent;
+      cursor: pointer;
+    }
+  }
+
   .el-dialog__body {
     padding-top: 12px;
   }
