@@ -13,6 +13,7 @@
             v-if="downloader"
             :downloader="downloader"
             :settings="settings"
+            :path-mapping-rules="pathMappingRules"
             ref="pathMappingConfigRef"
           />
           <div v-else class="empty-state">
@@ -65,6 +66,9 @@ import DownloaderPathManagement from './DownloaderPathManagement.vue'
 export default class PathManagementTab extends Vue {
   @Prop({ default: null }) downloader!: Downloader | null
   @Prop({ default: () => ({}) as DownloaderSettings }) settings!: DownloaderSettings
+  // 使用设置弹窗详情回填后的规则，而不是依赖列表接口中的可选字段。
+  // undefined 表示调用方未提供该 prop，此时保留子组件的旧字段兼容回退。
+  @Prop({ default: undefined }) pathMappingRules!: string | undefined
 
   // 当前激活的子页签
   private activeSubTab = 'pathMapping'

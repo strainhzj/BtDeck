@@ -99,6 +99,40 @@ describe('下载器设置工作台', () => {
     expect(settingsDialog).toContain('<tag-management-tab')
     expect(settingsDialog).toContain('<template-selection-dialog')
   })
+
+  it('prevents async detail hydration from triggering validation while preserving submit validation', () => {
+    expect(settingsDialog).toContain(':validate-on-rule-change="false"')
+    expect(settingsDialog).toContain('@opened="handleDialogOpened"')
+    expect(settingsDialog).toContain('this.basicFormRef.clearValidate()')
+    expect(settingsDialog).toContain('await this.basicFormRef.validate()')
+  })
+
+  it('allows edit-mode connection tests to use the saved password while requiring a password for new downloaders', () => {
+    expect(settingsDialog).toContain('hasCompleteConnectionInfo(this.formData, this.isEdit)')
+    expect(settingsDialog).toContain('password: this.formData.password')
+  })
+
+  it('passes detail-hydrated path mapping rules through to the save payload', () => {
+    expect(settingsDialog).toContain(':path-mapping-rules="formData.path_mapping_rules"')
+    expect(pathManagementTab).toContain(':path-mapping-rules="pathMappingRules"')
+    expect(pathMappingTab).toContain('@Prop({ default: undefined }) pathMappingRules!: string | undefined')
+    expect(pathMappingTab).toContain('this.pathMappingRules !== undefined')
+    expect(pathMappingTab).toContain('generateExternalPathFromRules(internalPath, rulesText)')
+    expect(pathMappingTab).toContain('const processedMappings = this.mappings.map(mapping => {')
+    expect(pathMappingTab).toContain('external: generatedExternal')
+    expect(pathMappingTab).toContain('外部路径不能为空（无法根据 path_mapping_rules 自动生成，请手动填写）')
+    expect(settingsDialog).toMatch(/const pathMappingData[\s\S]*basicData\['path_mapping'\] = pathMappingData/)
+  })
+
+  it('keeps scheduled speed controls shrinkable and stacks them on narrow viewports', () => {
+    expect(speedSettingsTab).toContain('grid-template-columns: repeat(2, minmax(0, 1fr));')
+    expect(speedSettingsTab).toContain('class="speed-value-input"')
+    expect(speedSettingsTab).toContain('class="speed-unit-select"')
+    expect(speedSettingsTab).toMatch(/\.speed-value-input\s*\{[\s\S]*?flex: 1 1 0;[\s\S]*?width: 0;[\s\S]*?min-width: 0;/)
+    expect(speedSettingsTab).toMatch(/\.speed-unit-select\s*\{[\s\S]*?flex: 0 1 100px;[\s\S]*?min-width: 0;[\s\S]*?max-width: 100%;/)
+    expect(speedSettingsTab).toContain('grid-template-columns: minmax(0, 1fr);')
+    expect(speedSettingsTab).toContain('style="width: 100%;"')
+  })
 })
 
 describe.each(lucideOnlySurfaces)('%s 图标契约', (_path, template) => {

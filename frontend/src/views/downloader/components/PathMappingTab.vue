@@ -189,6 +189,7 @@ import {
   PathMappingTestResponse
 } from '../types'
 import { testPathMapping } from '@/api/downloader'
+import { generateExternalPathFromRules } from '../path-mapping-rules'
 
 interface VueLifecycleFlags {
   _isDestroyed?: boolean
@@ -206,6 +207,9 @@ interface ApiErrorLike {
 export default class PathMappingTab extends Vue {
   @Prop({ default: null }) downloader!: Downloader | null
   @Prop({ default: () => ({}) as DownloaderSettings }) settings!: DownloaderSettings
+  // 规则以详情表单为准，允许弹窗在异步详情回填后实时更新。
+  // 未传入时回退到旧的 downloader 字段，兼容独立使用该组件的调用方。
+  @Prop({ default: undefined }) pathMappingRules!: string | undefined
 
   // 路径映射列表
   private mappings: PathMappingItem[] = []
@@ -576,46 +580,10 @@ export default class PathMappingTab extends Vue {
 
   // 根据路径映射规则自动生成外部路径
   private generateExternalFromRules(internalPath: string): string | null {
-    // 如果 downloader 对象不存在，无法生成
-    if (!this.downloader || !this.downloader.path_mapping_rules) {
-      return null
-    }
-
-    const rulesText = this.downloader.path_mapping_rules.trim()
-    if (!rulesText) {
-      return null
-    }
-
-    // 解析规则（格式：/Downloads/ipan/{#**#}//192.168.5.51/pt1/）
-    const rules = rulesText.split('\n').filter(line => line.trim())
-
-    // 按规则长度降序排序（最长的规则优先匹配）
-    rules.sort((a, b) => b.length - a.length)
-
-    for (const rule of rules) {
-      const separator = '{#**#}'
-      if (!rule.includes(separator)) {
-        continue
-      }
-
-      const [source, target] = rule.split(separator)
-      if (!source || !target) {
-        continue
-      }
-
-      const normalizedSource = source.trim()
-      const normalizedTarget = target.trim()
-
-      // 前缀匹配
-      if (internalPath.startsWith(normalizedSource)) {
-        // 替换前缀
-        const relativePath = internalPath.substring(normalizedSource.length)
-        return normalizedTarget + relativePath
-      }
-    }
-
-    // 没有找到匹配规则
-    return null
+    const rulesText = this.pathMappingRules !== undefined
+      ? this.pathMappingRules
+      : this.downloader?.path_mapping_rules
+    return generateExternalPathFromRules(internalPath, rulesText)
   }
 
   // 获取表单数据（供父组件调用）

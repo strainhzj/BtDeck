@@ -159,14 +159,18 @@
               </div>
               <div class="speed-input-group">
                 <el-input-number
+                  class="speed-value-input"
                   v-model="rule.download.speed_limit"
                   :min="0"
                   :step="100"
                   controls-position="right"
                   :disabled="!rule.download.enabled"
-                  style="flex: 1;"
                 />
-                <el-select v-model="rule.download.speed_unit" :disabled="!rule.download.enabled" style="width: 100px;">
+                <el-select
+                  class="speed-unit-select"
+                  v-model="rule.download.speed_unit"
+                  :disabled="!rule.download.enabled"
+                >
                   <el-option label="KB/s" :value="0" />
                   <el-option label="MB/s" :value="1" />
                 </el-select>
@@ -179,14 +183,18 @@
               </div>
               <div class="speed-input-group">
                 <el-input-number
+                  class="speed-value-input"
                   v-model="rule.upload.speed_limit"
                   :min="0"
                   :step="100"
                   controls-position="right"
                   :disabled="!rule.upload.enabled"
-                  style="flex: 1;"
                 />
-                <el-select v-model="rule.upload.speed_unit" :disabled="!rule.upload.enabled" style="width: 100px;">
+                <el-select
+                  class="speed-unit-select"
+                  v-model="rule.upload.speed_unit"
+                  :disabled="!rule.upload.enabled"
+                >
                   <el-option label="KB/s" :value="0" />
                   <el-option label="MB/s" :value="1" />
                 </el-select>
@@ -631,15 +639,17 @@ export default class SpeedSettingsTab extends Vue {
 
 .rule-speed {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-md);
   margin-top: var(--spacing-md);
+  min-width: 0;
 }
 
 .speed-block {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
   padding: var(--spacing-sm);
   background: var(--color-bg-primary);
   border: 1px solid var(--color-border-primary);
@@ -653,6 +663,25 @@ export default class SpeedSettingsTab extends Vue {
   font-size: 13px;
   font-weight: var(--font-weight-medium);
   color: var(--color-text-primary);
+}
+
+::v-deep .rule-speed .speed-input-group {
+  box-sizing: border-box;
+  min-width: 0;
+}
+
+::v-deep .rule-speed .speed-value-input {
+  flex: 1 1 0;
+  width: 0;
+  min-width: 0;
+  max-width: 100%;
+}
+
+::v-deep .rule-speed .speed-unit-select {
+  flex: 0 1 100px;
+  width: 100px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .weekday-selector {
@@ -920,6 +949,12 @@ export default class SpeedSettingsTab extends Vue {
 
   .form-section:nth-child(n) {
     grid-column: 1;
+  }
+}
+
+@media (max-width: 680px) {
+  .rule-speed {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 </style>

@@ -1,5 +1,29 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-02 交接：下载器设置四项运行时问题修复与回归加固
+
+**当前任务**: `downloader-control-room-ui-redesign.3`
+**分支**: `dev`
+**状态**: 根因经子代理独立验证、修复和回归测试完成；本次提交并推送。
+
+### 本次修改
+
+- `DownloaderSettingsDialog.vue`：关闭详情异步回填期间的规则自动校验；编辑模式测试连接允许空密码，由后端读取已保存凭据；将详情规则传入路径映射子组件。
+- `PathManagementTab.vue` / `PathMappingTab.vue`：补齐规则 prop 数据流，抽取最长前缀规则解析，空 `external` 自动生成后参与保存。
+- `SpeedSettingsTab.vue`：补齐限速控件的 `min-width`/flex 收缩约束和窄视口单列布局。
+- 新增连接 guard、路径规则纯函数及后端路径映射更新回归；扩展下载器 UI 契约测试。
+
+### 验证
+
+- 前端相关回归：3 suites / 37 tests passed。
+- 后端相关回归：58 passed。
+- `npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run build` 通过。
+- `git diff --check` 通过；构建仅保留仓库既有 Sass/Browserslist/资源体积 warning。
+
+### 当前工作区边界
+
+- 仅提交本次下载器设置修复、回归测试和项目记录；会话开始前已有的未跟踪临时目录、数据库备份、镜像归档、调试脚本和工具目录保持不动。
+
 ## 2026-08-02 交接：下载器管理页顶部裁剪与页签左对齐修正
 
 **当前任务**: `downloader-control-room-ui-redesign` 后续 UI 修正

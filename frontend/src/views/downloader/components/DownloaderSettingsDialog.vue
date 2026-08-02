@@ -67,6 +67,7 @@
             ref="basicFormRef"
             :model="formData"
             :rules="basicFormRules"
+            :validate-on-rule-change="false"
             label-position="top"
             label-width="auto"
             class="workspace-basic-form"
@@ -482,6 +483,7 @@
             v-else
             :downloader="downloader"
             :settings="currentSettings"
+            :path-mapping-rules="formData.path_mapping_rules"
             ref="pathManagementTabRef"
           />
         </div>
@@ -586,6 +588,7 @@ import PathManagementTab from './PathManagementTab.vue'
 import TagManagementTab from './TagManagementTab.vue'
 import TemplateSelectionDialog from './TemplateSelectionDialog.vue'
 import { resolveEnableSchedule } from '../settings'
+import { hasCompleteConnectionInfo } from '../connection'
 
 type SettingsApiData = DownloaderSettings & {
   dl_speed_limit?: number
@@ -976,9 +979,8 @@ export default class DownloaderSettingsDialog extends Vue {
 
   // 连接测试
   private async handleTestConnection() {
-    // 验证必填字段（新增模式必须填写完整连接信息）
-    if (!this.formData.host || !this.formData.port ||
-        !this.formData.username || !this.formData.password) {
+    // 编辑模式允许留空密码，由后端回退读取已保存的密码；新增模式仍要求填写密码
+    if (!hasCompleteConnectionInfo(this.formData, this.isEdit)) {
       this.$message.warning('请先填写完整的连接信息（主机、端口、用户名、密码）')
       return
     }

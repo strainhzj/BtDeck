@@ -52,6 +52,28 @@
             "frontend/tests/unit/downloader-control-room-ui.spec.ts"
           ],
           "evidence": "npm run typecheck 与严格 npm run lint 通过；新增定向回归 2 suites / 110 tests 通过；前端全量 Jest 29 suites / 498 tests 通过；npm run build 成功，仅有仓库既有的 48 条 Sass/Element UI/资源体积 warning；浏览器可见旧图标审计中管理总览无应用级 Element 字体图标，设置工作区自有图标均由 LucideIcon 渲染。"
+        },
+        {
+          "id": "downloader-control-room-ui-redesign.3",
+          "name": "下载器设置运行时回归修复与测试加固",
+          "description": "修复设置弹窗异步回填触发校验、编辑模式测试连接误拦截、路径映射规则未传递以及限速控件窄列溢出，并为关键逻辑补充行为回归与 API 契约测试。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/src/views/downloader/components/DownloaderSettingsDialog.vue",
+            "frontend/src/views/downloader/components/PathManagementTab.vue",
+            "frontend/src/views/downloader/components/PathMappingTab.vue",
+            "frontend/src/views/downloader/components/SpeedSettingsTab.vue",
+            "frontend/src/views/downloader/connection.ts",
+            "frontend/src/views/downloader/path-mapping-rules.ts",
+            "frontend/tests/unit/downloader-control-room-ui.spec.ts",
+            "frontend/tests/unit/downloader-regressions.spec.ts",
+            "backend/tests/api/test_downloader_path_mapping_update.py",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "四个根因经独立验证后分别修复：表单关闭规则变化自动校验、编辑模式空密码测试连接、详情规则传递到路径映射生成及限速控件可收缩布局。前端相关回归 3 suites / 37 tests、后端相关回归 58 tests、TypeScript、严格 lint、生产构建全部通过；构建仅保留仓库既有 Sass/Browserslist/资源体积 warning。"
         }
       ]
     },

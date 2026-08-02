@@ -1,5 +1,21 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-02 - 下载器设置四项运行时问题修复与回归加固
+
+### 修正内容
+
+- 设置弹窗的基本信息表单关闭 `validate-on-rule-change`，避免编辑详情异步回填前触发名称、主机和用户名必填错误；提交时仍保留显式表单校验。
+- 抽取连接测试前置判断：编辑已有下载器允许密码为空并交给后端回退已保存密码；新增下载器仍要求密码，端口等边界校验保持不变。
+- 将详情回填的 `path_mapping_rules` 从设置弹窗传递到路径映射组件；规则解析抽为纯函数，空 `external` 按最长匹配规则生成并随 `path_mapping` 提交，未匹配路径仍 fail-closed。
+- 修复速度规则嵌套 grid 的固有最小宽度，限速数值框/单位选择可收缩，窄视口下下载和上传规则改为单列。
+
+### 回归与交付
+
+- 新增 `frontend/tests/unit/downloader-regressions.spec.ts`，覆盖编辑/新增连接测试 guard、端口边界、最长路径规则、CRLF 规则和未匹配路径。
+- 扩展下载器 UI 契约测试及 `backend/tests/api/test_downloader_path_mapping_update.py`，覆盖路径映射缺省保留和显式更新两条后端路径。
+- 前端相关回归 3 suites / 37 tests 通过；后端相关回归 58 passed；TypeScript、严格 lint、生产构建通过；`git diff --check` 通过。
+- 本次相关文件将单独提交并推送；工作区既有未跟踪临时目录、数据库备份、镜像归档和调试工具保持不动。
+
 ## 2026-08-02 - 下载器管理页顶部裁剪与页签左对齐修正
 
 ### 修正内容
