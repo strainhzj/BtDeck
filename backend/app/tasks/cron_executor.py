@@ -38,6 +38,8 @@ class CronTaskExecutor:
             self.scheduler.start()
             logger.info("定时任务调度器启动成功")
             self._ensure_speed_schedule_job()
+            # 首次启动时立即同步一次；后续由每分钟任务持续校正。
+            await asyncio.to_thread(self._sync_speed_schedule)
             self._ensure_version_check_job()
             await self.load_all_tasks()
         except Exception as e:
@@ -64,6 +66,8 @@ class CronTaskExecutor:
             name="speed_schedule_sync",
             replace_existing=True,
             misfire_grace_time=30,
+            max_instances=1,
+            coalesce=True,
         )
 
     def _sync_speed_schedule(self):
@@ -93,8 +97,7 @@ class CronTaskExecutor:
             sql = f"""
                 SELECT ds.id, ds.downloader_id
                 FROM downloader_settings ds
-                WHERE ds.enable_schedule = 1
-                  AND ds.downloader_id IN ({placeholders})
+                WHERE ds.downloader_id IN ({placeholders})
             """
             downloaders = db.execute(text(sql), params).fetchall()
 

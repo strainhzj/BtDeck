@@ -18,8 +18,9 @@ import {
 import { ApiError } from '@/types/api'
 
 describe('SUCCESS_CODES', () => {
-  it('包含 200/206/207 三个业务成功码', () => {
+  it('包含 200/202/206/207 四个业务成功码', () => {
     expect(SUCCESS_CODES.has('200')).toBe(true)
+    expect(SUCCESS_CODES.has('202')).toBe(true)
     expect(SUCCESS_CODES.has('206')).toBe(true)
     expect(SUCCESS_CODES.has('207')).toBe(true)
   })

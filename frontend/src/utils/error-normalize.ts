@@ -14,9 +14,10 @@ import { ApiError } from '@/types/api'
  * 不归一化为 ApiError，直接 return res 让业务代码处理：
  * - '200'：标准成功
  * - '206'：需确认（如 setting-templates apply 的 needs_path_mapping_confirmation）
+ * - '202'：请求已受理，后台异步任务已排队
  * - '207'：Multi-Status 部分成功（如批量添加种子）
  */
-export const SUCCESS_CODES = new Set(['200', '206', '207'])
+export const SUCCESS_CODES = new Set(['200', '202', '206', '207'])
 
 /**
  * 从 HTTPException 的 detail 中提取 (code, message)。

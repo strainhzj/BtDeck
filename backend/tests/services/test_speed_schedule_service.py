@@ -125,6 +125,7 @@ class TestGetActiveRules:
             "id": 1, "sort_order": 1, "start_time": "08:00", "end_time": "18:00",
             "dl_speed_limit": 500, "dl_speed_unit": 0,
             "ul_speed_limit": 200, "ul_speed_unit": 0,
+            "days_of_week": "0123456",
         }
         mock_row = self._make_mock_row(row_data)
         mock_db.execute.return_value.fetchall.return_value = [mock_row]
@@ -154,7 +155,49 @@ class TestGetActiveRules:
 
         call_args = mock_db.execute.call_args
         params = call_args[0][1]  # 第二个位置参数是 params dict
-        assert params["weekday_pattern"] == "%0%"
+        assert params["current_time"] == "10:00"
+
+    def test_weekday_does_not_match_legacy_pattern_by_substring(self):
+        """当前格式的单数字规则不应被错误地按旧格式星期匹配。"""
+        mock_db = MagicMock()
+        row = self._make_mock_row(
+            {
+                "id": 1,
+                "sort_order": 1,
+                "start_time": "08:00",
+                "end_time": "18:00",
+                "dl_speed_limit": 500,
+                "dl_speed_unit": 0,
+                "ul_speed_limit": 0,
+                "ul_speed_unit": 0,
+                "days_of_week": "2",
+            }
+        )
+        mock_db.execute.return_value.fetchall.return_value = [row]
+
+        # 周二是 weekday=1；旧的 OR LIKE 逻辑会把 legacy_weekday=2 误判为命中。
+        assert SpeedScheduleService.get_active_rules(mock_db, 1, datetime(2026, 3, 31, 10, 0)) == []
+
+    def test_legacy_weekday_seven_matches_sunday(self):
+        """含 7 的旧 1-7 格式仍能正确匹配周日。"""
+        mock_db = MagicMock()
+        row = self._make_mock_row(
+            {
+                "id": 1,
+                "sort_order": 1,
+                "start_time": "08:00",
+                "end_time": "18:00",
+                "dl_speed_limit": 500,
+                "dl_speed_unit": 0,
+                "ul_speed_limit": 0,
+                "ul_speed_unit": 0,
+                "days_of_week": "7",
+            }
+        )
+        mock_db.execute.return_value.fetchall.return_value = [row]
+
+        results = SpeedScheduleService.get_active_rules(mock_db, 1, datetime(2026, 4, 5, 10, 0))
+        assert len(results) == 1
 
 
 class TestApplyToDownloader:

@@ -26,6 +26,7 @@ from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
+from app.services.speed_schedule_service import SpeedScheduleService
 from app.utils.encryption import encrypt_password, decrypt_password
 from app.models.enums import SpeedUnitEnum
 from app.models.setting_templates import DownloaderTypeEnum
@@ -911,7 +912,7 @@ def apply_downloader_settings(
 
         # 3. 查询下载器配置
         settings_sql = """
-            SELECT dl_speed_limit, ul_speed_limit, dl_speed_unit, ul_speed_unit, enable_schedule,
+            SELECT id, dl_speed_limit, ul_speed_limit, dl_speed_unit, ul_speed_unit, enable_schedule,
                    username, password, advanced_settings, override_local
             FROM downloader_settings
             WHERE downloader_id = :downloader_id
@@ -1041,7 +1042,13 @@ def apply_downloader_settings(
         )
         # 7. 应用配置到下载器
         try:
-            success = manager.apply_settings(settings_dict)
+            if bool(settings_result.enable_schedule):
+                # 分时段配置必须使用当前有效规则；无命中时由服务回退到全局速度。
+                success = SpeedScheduleService.apply_to_downloader(
+                    db, downloader_id, settings_result.id
+                )
+            else:
+                success = manager.apply_settings(settings_dict)
             if success:
                 return CommonResponse(status="success", msg="配置应用成功", code="200", data=None)
             else:

@@ -149,9 +149,11 @@ export interface TorrentAddBatchResultItem {
  */
 export interface TorrentAddBatchResponseData {
   total: number
-  success_count: number
-  failed_count: number
-  results: TorrentAddBatchResultItem[]
+  task_id?: string
+  status?: 'queued' | 'completed' | 'partial' | 'failed'
+  success_count?: number
+  failed_count?: number
+  results?: TorrentAddBatchResultItem[]
 }
 
 export interface TorrentDeleteRequest {

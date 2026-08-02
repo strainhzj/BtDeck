@@ -2926,3 +2926,23 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 后端：主动清理/通知/迁移相关 58 passed；回滚场景 8 passed；目标 Flake8 通过。
 - 前端：相关 Jest 48 passed；`npm run typecheck`、严格 `npm run lint`、生产 `npm run build` 通过。构建仅保留既有 Sass/Element UI 弃用及体积警告。
 - `git diff --check` 通过；未提交、未推送、未部署。
+
+## 2026-08-02 - 批量添加异步化、路径映射排查与分时段限速修复
+
+### 数据库只读排查
+
+- 使用 `E:/Users/huangzj/Desktop/app.db` 只读查询 nickname=`tr`（Transmission，downloader_id=`c04cc424-b16a-4265-91dc-d22e704988d8`）。221 条 path_mapping 中 182 条 external 为空，且全部集中在 `/Downloads/bangumi`（181 条）和 `/Downloads/movie/`（1 条）。
+- `path_mapping_rules` 共 13 条，覆盖 hpan/ipan/jpan/kpan，但没有 `/Downloads/bangumi{#**#}` 或 `/Downloads/movie{#**#}` 前缀规则；因此自动发现映射无法转换 external，留下空值。未修改外部 app.db；建议按实际容器挂载补充 `/Downloads/bangumi -> <外部 bangumi 路径>` 与 `/Downloads/movie -> <外部 movie 路径>`。
+
+### 本次实现
+
+- 批量添加种子移除前后端 10 个数量限制；上传文件流式落临时文件后立即返回 `code=202/task_id`，后台任务复用 `app.state.store` 客户端逐个处理，并在完成后写入通知中心（成功/失败数量及失败文件）。生命周期关闭时会取消未完成任务并清理临时文件。
+- 前端请求拦截器已将 `202` 受理码纳入业务成功码，避免异步提交被误判为失败。
+- 分时段限速修复：去除 `LIKE` 星期兼容误匹配，严格按当前 0-6 格式/含 7 的旧格式过滤；禁用分时段时恢复全局速度；调度器启动后立即同步并设置 `max_instances=1/coalesce=True`；设置应用接口在启用调度时按当前有效规则应用。
+
+### 验证与环境
+
+- 后端批量/限速/设置定向测试 36 passed；Python compileall 通过。
+- 前端 `error-normalize.spec.ts` 34 passed，确认 `202` 异步受理码不会被请求拦截器当作业务错误。
+- 前端 `npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run build` 通过；构建仅保留既有 Sass、Browserslist 和资源体积 warning。
+- 根 `bash ./init.sh --ci` 在当前 Windows/WSL 环境因 `E_ACCESSDENIED` 无法执行；未执行 Git stage/commit/push/deploy。会话开始前已有未跟踪目录、备份、镜像归档和工具文件均未触碰。

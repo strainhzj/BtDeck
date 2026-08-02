@@ -307,6 +307,13 @@ async def lifespan(app: FastAPI):
     finally:
         # ✅ 清理：取消未完成的后台任务
         print("=== 清理后台任务 ===")
+        torrent_batch_tasks = list(getattr(app.state, "torrent_batch_tasks", set()))
+        pending_torrent_batch_tasks = [task for task in torrent_batch_tasks if not task.done()]
+        for task in pending_torrent_batch_tasks:
+            task.cancel()
+        if pending_torrent_batch_tasks:
+            await asyncio.gather(*pending_torrent_batch_tasks, return_exceptions=True)
+
         if orphan_purge_recovery_task and not orphan_purge_recovery_task.done():
             orphan_purge_recovery_task.cancel()
             try:

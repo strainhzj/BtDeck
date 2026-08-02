@@ -34,7 +34,7 @@
               />
               <div class="file-upload-placeholder" v-if="torrentFiles.length === 0">
                 <span style="font-size: 32px; display: block; margin-bottom: 8px;">📁</span>
-                <span style="color: var(--color-text-secondary);">点击选择 .torrent 文件（最多10个）</span>
+                <span style="color: var(--color-text-secondary);">点击选择 .torrent 文件（数量不限）</span>
               </div>
               <div class="file-upload-info" v-else>
                 <span style="color: var(--color-success);">✓</span>
@@ -57,7 +57,7 @@
 
             <div class="form-error-tip" v-if="formErrors.torrent_file">{{ formErrors.torrent_file }}</div>
             <div style="font-size: 12px; color: var(--color-text-quaternary); margin-top: 6px;">
-              只支持 .torrent 文件，最多10个
+              只支持 .torrent 文件，提交后将在后台异步处理
             </div>
           </div>
 
@@ -263,15 +263,10 @@ export default class TorrentAddDialog extends Vue {
     if (input.files && input.files.length > 0) {
       const files = Array.from(input.files)
 
-      // 验证文件类型和数量
+      // 验证文件类型
       const invalidFiles = files.filter(file => !file.name.endsWith('.torrent'))
       if (invalidFiles.length > 0) {
         this.formErrors.torrent_file = '只能选择 .torrent 文件'
-        return
-      }
-
-      if (this.torrentFiles.length + files.length > 10) {
-        this.formErrors.torrent_file = '最多只能上传10个种子文件'
         return
       }
 
@@ -351,52 +346,69 @@ export default class TorrentAddDialog extends Vue {
       return
     }
 
+    // 异步请求完成后仍使用当前组件实例，显式保留上下文快照。
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const component = this
+    const formSnapshot = {
+      downloader_id: this.form.downloader_id,
+      save_path: this.form.save_path,
+      category: this.form.category,
+      tags: [...this.form.tags]
+    }
+    const torrentFiles = [...this.torrentFiles]
     this.loading = true
 
     try {
       // 使用批量上传API
       const response = await addTorrentsBatch({
-        torrent_files: this.torrentFiles,
-        downloader_id: this.form.downloader_id,
-        save_path: this.form.save_path,
-        category: this.form.category || '',
-        tags: Array.isArray(this.form.tags) ? this.form.tags.join(',') : '',
+        torrent_files: torrentFiles,
+        downloader_id: formSnapshot.downloader_id,
+        save_path: formSnapshot.save_path,
+        category: formSnapshot.category || '',
+        tags: formSnapshot.tags.join(','),
         paused: false,
         skip_hash_check: false,
         is_sequential_download: false,
         is_first_last_piece_priority: false
       })
 
-      if (response.code === '200' || response.code === '207') {
-        const data = response.data as { total: number, success_count: number, failed_count: number, results: Array<{ success: boolean, info_id: string | null }> }
+      if (response.code === '202') {
+        component.$message.success(response.msg || `已提交 ${torrentFiles.length} 个种子到后台处理`)
+        component.$emit('confirm', formSnapshot)
+        component.handleClose()
+      } else if (response.code === '200' || response.code === '207') {
+        const data = response.data
+        const successCount = data.success_count ?? 0
+        const failedCount = data.failed_count ?? 0
+        const results = data.results ?? []
 
         // 根据结果显示不同的提示
-        if (data.success_count === data.total) {
-          this.$message.success(`成功添加 ${data.success_count} 个种子`)
-        } else if (data.success_count === 0) {
-          this.$message.error('种子添加失败')
-          console.error('所有种子添加失败:', data.results)
+        if (successCount === data.total) {
+          component.$message.success(`成功添加 ${successCount} 个种子`)
+        } else if (successCount === 0) {
+          component.$message.error('种子添加失败')
+          console.error('所有种子添加失败:', results)
         } else {
-          this.$message.warning({
-            message: `部分成功：成功 ${data.success_count} 个，失败 ${data.failed_count} 个`,
+          component.$message.warning({
+            message: `部分成功：成功 ${successCount} 个，失败 ${failedCount} 个`,
             duration: 5000
           })
-          console.error('添加失败的种子:', data.results.filter(r => !r.success))
+          console.error('添加失败的种子:', results.filter(r => !r.success))
         }
 
         // 只要有成功的就刷新列表并关闭对话框
-        if (data.success_count > 0) {
-          this.$emit('confirm', this.form)
-          this.handleClose()
+        if (successCount > 0) {
+          component.$emit('confirm', formSnapshot)
+          component.handleClose()
         }
       } else {
-        this.$message.error(response.msg || '种子添加失败')
+        component.$message.error(response.msg || '种子添加失败')
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('添加种子失败:', error)
-      this.$message.error(error.message || '种子添加失败，请稍后重试')
+      component.$message.error(error instanceof Error ? error.message : '种子添加失败，请稍后重试')
     } finally {
-      this.loading = false
+      component.loading = false
     }
   }
 

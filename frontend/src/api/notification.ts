@@ -18,7 +18,7 @@ export interface NotificationItem {
     route?: string
     task_id?: string
     task_status?: string
-    operation_type?: 'purge' | 'cleanup'
+    operation_type?: 'purge' | 'cleanup' | 'torrent_batch_add'
     scan_id?: string | null
     total_count?: number
     success_count?: number
@@ -27,6 +27,7 @@ export interface NotificationItem {
     total_size?: number
     failed_list?: Array<{
       id?: number
+      file_name?: string
       file_path?: string
       canonical_path?: string
       quarantine_path?: string | null

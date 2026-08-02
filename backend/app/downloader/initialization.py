@@ -719,6 +719,11 @@ async def _async_initialization_tasks(app: FastAPI):
         # 初始加载所有启用的下载器（已包含完整同步逻辑）
         await _load_initial_downloaders(app)
 
+        # 下载器缓存就绪后立即应用一次当前分时段/全局限速，避免必须等待下一分钟轮询。
+        from app.tasks.cron_executor import cron_executor
+
+        await asyncio.to_thread(cron_executor._sync_speed_schedule)
+
         print("=== 异步初始化任务完成 ===")
 
     except Exception as e:

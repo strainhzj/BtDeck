@@ -1,5 +1,31 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-02 交接：批量添加异步化、tr 路径映射排查与分时段限速修复
+
+**当前任务**: `v1.0.6.33`
+**分支**: `dev`
+**状态**: 实现与定向验证完成；未提交、未推送、未部署。
+
+### 关键结论
+
+- 只读查询 `E:/Users/huangzj/Desktop/app.db` 的 `nickname=tr`：221 条映射中 182 条 `external` 为空，集中于 `/Downloads/bangumi`（181）和 `/Downloads/movie/`（1）；现有 13 条 `path_mapping_rules` 未覆盖这两个前缀。外部数据库未修改，实际目标路径需按容器挂载确认后在应用内补规则。
+- `/torrents/add-batch` 现在不限制文件数量，流式暂存上传文件后返回 `202/task_id`；后台使用 `app.state.store` 缓存客户端处理，结束时创建通知中心 `system` 通知，包含总数、成功数、失败数和失败文件。
+- 分时段限速现在严格过滤星期，停用调度会恢复全局基线，启动/缓存就绪后立即同步，调度任务配置 `max_instances=1/coalesce=True`；设置应用接口启用调度时按当前有效规则应用。
+
+### 变更文件
+
+- 后端：`backend/app/api/endpoints/torrent_crud.py`、`backend/app/services/torrent_batch_add_service.py`、`backend/app/services/speed_schedule_service.py`、`backend/app/api/endpoints/downloader_settings.py`、`backend/app/tasks/cron_executor.py`、`backend/app/downloader/initialization.py`、`backend/app/startup/lifecycle.py`。
+- 前端：`frontend/src/views/torrents/components/TorrentAddDialog.vue`、`frontend/src/api/torrents.ts`、`frontend/src/api/notification.ts`、`frontend/src/utils/error-normalize.ts`（将 202 受理码纳入成功白名单）。
+- 测试/记录：批量接口测试、限速测试、`feature_list.json`、`progress.md`、本文件。
+
+### 验证
+
+- 后端批量/限速/设置定向测试：36 passed；compileall 通过。前端 `error-normalize.spec.ts`：34 passed。
+- 前端 `npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run build` 通过；build 仅有既有 Sass/Browserslist/资源体积 warning。
+- 根 `bash ./init.sh --ci` 因当前 Windows/WSL `E_ACCESSDENIED` 无法执行；会话开始前已有未跟踪目录、备份、镜像归档和工具文件保持不动。
+
+---
+
 ## 2026-08-02 交接：下载器设置四项运行时问题修复与回归加固
 
 **当前任务**: `downloader-control-room-ui-redesign.3`
