@@ -1,5 +1,32 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-02 交接：下载器管理页顶部裁剪与页签左对齐修正
+
+**当前任务**: `downloader-control-room-ui-redesign` 后续 UI 修正
+**分支**: dev
+**状态**: 已实现、完成前端回归并提交（`fix(frontend): align downloader settings tabs`）。
+
+### 本次修改
+
+- `frontend/src/views/downloader/index.vue`：移除顶部“节点控制台” hero、简介和指标区，页面从“状态链路已建立”工具栏开始；保留节点筛选、列表、卡片操作和响应式样式。
+- `frontend/src/views/downloader/components/DownloaderSettingsDialog.vue`：为下载器设置/新增共用卡片移除旧的水平页签规则，建立固定左侧导航、可收缩内容区、明确的左对齐和最小宽度盒模型。
+- `SpeedSettingsTab.vue`、`PathManagementTab.vue`、`PathMappingTab.vue`、`DownloaderPathManagement.vue`、`TagManagementTab.vue`：统一根容器宽度约束与左对齐；路径映射移除重复内边距，路径子页签改为左起布局。
+- `frontend/tests/unit/downloader-control-room-ui.spec.ts`：增加顶部裁剪、设置/新增共用页签弹性布局和路径页签左对齐契约。
+
+### 验证
+
+- 定向 UI 契约：22 passed。
+- 前端全量 Jest：29 suites / 498 tests passed。
+- `npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run build` 均通过。
+- 使用 `E:\\Git\\bin\\bash.exe ./init.sh --ci`：全栈环境验证通过；前端子脚本保留当前 Windows/npm 的 null-byte warning，后端虚拟环境未激活为提示。
+
+### 当前工作区边界
+
+- 本次提交仅包含上述相关的已跟踪文件；会话开始前已有的大量未跟踪临时目录、数据库备份、镜像归档和调试脚本保持不动，不执行 push 或部署。
+- 会话开始前已有的大量未跟踪临时目录、数据库备份、镜像归档和调试脚本未触碰。
+
+---
+
 ## 2026-08-02 交接：下载器控制室 UI 重绘与导航 Lucide 化
 
 **当前任务**: `downloader-control-room-ui-redesign`

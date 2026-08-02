@@ -614,7 +614,12 @@ export default class DownloaderPathManagement extends Vue {
 @import '@/styles/theme-variables.scss';
 
 .downloader-path-management {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  text-align: left;
 }
 
 .tab-header {

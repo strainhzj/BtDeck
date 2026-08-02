@@ -31,7 +31,7 @@
             "frontend/src/views/downloader/components/BasicSettingsTab.vue",
             "frontend/src/views/downloader/components/AdvancedSettingsTab.vue"
           ],
-          "evidence": "保留新增、编辑、删除、启停、连接测试、同步、筛选、刷新、模板选择、速度策略、路径映射/资产和标签分类能力；新增模式锁定依赖已有节点的设置页；修复设置弹窗遮罩层高于内容的既有层级问题（append-to-body）及启用开关字符串状态判断。真实浏览器验收覆盖 1280x720 桌面、390x844 移动端、管理总览、新增页及编辑模式下的速度/路径/标签页，无页面级横向溢出。"
+          "evidence": "保留新增、编辑、删除、启停、连接测试、同步、筛选、刷新、模板选择、速度策略、路径映射/资产和标签分类能力；新增模式锁定依赖已有节点的设置页；修复设置弹窗遮罩层高于内容的既有层级问题（append-to-body）及启用开关字符串状态判断。后续 UI 调整移除管理页顶部节点控制台，仅保留状态链路工具栏及以下内容；设置工作台及速度、路径、标签页统一采用左对齐和弹性宽度约束，移除路径映射页重复内边距以修复页签错位。定向回归 22 项、前端全量 29 suites / 498 tests、typecheck、严格 lint 与生产构建均通过。"
         },
         {
           "id": "downloader-control-room-ui-redesign.2",

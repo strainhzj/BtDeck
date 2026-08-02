@@ -691,7 +691,12 @@ export default class PathMappingTab extends Vue {
 @import '@/styles/theme-variables.scss';
 
 .path-mapping-tab {
-  padding: var(--spacing-lg);
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
 }
 
 .tab-header {

@@ -1,7 +1,7 @@
 <template>
   <main
     class="downloader-control-room"
-    aria-labelledby="downloader-page-title"
+    aria-label="下载器管理"
     @pointermove="handlePointerMove"
     @pointerleave="resetPointerGlow"
   >
@@ -12,46 +12,6 @@
       <div class="control-orbit control-orbit--one" />
       <div class="control-orbit control-orbit--two" />
     </div>
-
-    <header class="control-hero">
-      <div class="control-hero__copy">
-        <div class="control-kicker">
-          <LucideIcon name="waypoints" :size="15" :stroke-width="1.8" />
-          <span>LIVE NETWORK / DOWNLOADER FABRIC</span>
-          <span class="control-kicker__pulse" aria-hidden="true" />
-        </div>
-        <h1 id="downloader-page-title" class="control-title">
-          <span>节点</span>
-          <span class="control-title__accent">控制台</span>
-        </h1>
-        <p class="control-intro">
-          在同一信号面板中观察连接、吞吐与任务密度，并直接调度每一个下载节点。
-        </p>
-      </div>
-
-      <dl class="control-metrics" aria-label="下载器状态摘要">
-        <div class="control-metric control-metric--total">
-          <dt>全部节点</dt>
-          <dd>{{ downloaderList.length }}</dd>
-          <span>REGISTERED</span>
-        </div>
-        <div class="control-metric control-metric--online">
-          <dt>在线</dt>
-          <dd>{{ onlineDownloaderCount }}</dd>
-          <span>RESPONDING</span>
-        </div>
-        <div class="control-metric control-metric--tasks">
-          <dt>活动任务</dt>
-          <dd>{{ activeTorrentCount }}</dd>
-          <span>TRANSFER QUEUE</span>
-        </div>
-        <div class="control-metric control-metric--enabled">
-          <dt>已启用</dt>
-          <dd>{{ enabledDownloaderCount }}</dd>
-          <span>ENABLED</span>
-        </div>
-      </dl>
-    </header>
 
     <section class="command-deck" aria-label="下载器筛选与操作">
       <div class="command-deck__signal">
@@ -279,16 +239,6 @@ export default class DownloaderManager extends Vue {
 
   get pendingDownloaderCount(): number {
     return this.downloaderList.filter(item => item.status.online === undefined).length
-  }
-
-  get enabledDownloaderCount(): number {
-    return this.downloaderList.filter(item => item.info.enabled === '1').length
-  }
-
-  get activeTorrentCount(): number {
-    return this.downloaderList.reduce((total, item) => {
-      return total + (item.status.downloading_count || 0) + (item.status.seeding_count || 0)
-    }, 0)
   }
 
   created() {
@@ -998,130 +948,12 @@ export default class DownloaderManager extends Vue {
   }
 }
 
-.control-hero {
-  position: relative;
-  display: grid;
-  grid-template-columns: minmax(330px, 0.9fr) minmax(560px, 1.1fr);
-  gap: clamp(32px, 5vw, 88px);
-  align-items: end;
-  padding: clamp(8px, 1vw, 18px) 0 clamp(30px, 4vw, 56px);
-}
-
-.control-kicker,
 .section-index {
   font-family: var(--font-mono);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-}
-
-.control-kicker {
-  display: inline-flex;
-  align-items: center;
-  gap: 9px;
-  color: var(--color-primary);
-
-  &__pulse {
-    width: 6px;
-    height: 6px;
-    margin-left: 3px;
-    border-radius: 50%;
-    background: var(--color-success);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
-    animation: signal-pulse 2s ease-out infinite;
-  }
-}
-
-.control-title {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.18em;
-  margin: 14px 0 12px;
-  font-size: clamp(44px, 5.5vw, 88px);
-  font-weight: 700;
-  line-height: 0.88;
-  letter-spacing: -0.075em;
-
-  &__accent {
-    color: transparent;
-    -webkit-text-stroke: 1.5px var(--color-primary);
-    text-stroke: 1.5px var(--color-primary);
-  }
-}
-
-.control-intro {
-  max-width: 560px;
-  margin: 0;
-  color: var(--color-text-secondary);
-  font-size: 13px;
-  line-height: 1.7;
-}
-
-.control-metrics {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0;
-  border-top: 1px solid var(--page-downloader-line);
-  border-bottom: 1px solid var(--page-downloader-line);
-}
-
-.control-metric {
-  position: relative;
-  min-width: 0;
-  padding: 18px 16px 16px;
-  border-right: 1px solid var(--page-downloader-line);
-
-  &:last-child {
-    border-right: 0;
-  }
-
-  &::before {
-    content: '';
-    position: absolute;
-    top: -2px;
-    left: 16px;
-    width: 28px;
-    height: 3px;
-    background: var(--color-primary);
-  }
-
-  dt {
-    color: var(--color-text-tertiary);
-    font-size: 11px;
-    letter-spacing: 0.05em;
-  }
-
-  dd {
-    margin: 7px 0 4px;
-    font-family: var(--font-mono);
-    font-size: clamp(25px, 2.4vw, 38px);
-    font-weight: 600;
-    line-height: 1;
-  }
-
-  > span {
-    display: block;
-    overflow: hidden;
-    color: var(--color-text-quaternary);
-    font-family: var(--font-mono);
-    font-size: 8px;
-    letter-spacing: 0.12em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  &--online::before {
-    background: var(--color-success);
-  }
-
-  &--tasks::before {
-    background: var(--color-info);
-  }
-
-  &--enabled::before {
-    background: var(--color-warning);
-  }
 }
 
 .command-deck {
@@ -1518,11 +1350,6 @@ export default class DownloaderManager extends Vue {
   to { transform: rotate(360deg); }
 }
 
-@keyframes signal-pulse {
-  70% { box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
-}
-
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
@@ -1532,11 +1359,6 @@ export default class DownloaderManager extends Vue {
 }
 
 @media (max-width: 1180px) {
-  .control-hero {
-    grid-template-columns: 1fr;
-    gap: 28px;
-  }
-
   .command-deck {
     align-items: stretch;
     flex-direction: column;
@@ -1565,26 +1387,6 @@ export default class DownloaderManager extends Vue {
     margin: -12px;
     padding: 22px 14px;
     border-radius: 0;
-  }
-
-  .control-title {
-    font-size: clamp(42px, 15vw, 62px);
-  }
-
-  .control-metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .control-metric {
-    border-bottom: 1px solid var(--page-downloader-line);
-
-    &:nth-child(2) {
-      border-right: 0;
-    }
-
-    &:nth-child(n + 3) {
-      border-bottom: 0;
-    }
   }
 
   .command-deck__actions {

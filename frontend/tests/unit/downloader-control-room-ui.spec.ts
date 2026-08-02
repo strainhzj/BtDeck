@@ -17,6 +17,8 @@ const templateOf = (source: string): string => {
 const downloaderPage = readSource('views/downloader/index.vue')
 const downloaderCard = readSource('views/downloader/components/DownloaderCard.vue')
 const settingsDialog = readSource('views/downloader/components/DownloaderSettingsDialog.vue')
+const pathManagementTab = readSource('views/downloader/components/PathManagementTab.vue')
+const pathMappingTab = readSource('views/downloader/components/PathMappingTab.vue')
 const routerSource = readSource('router.ts')
 
 const lucideOnlySurfaces = [
@@ -40,11 +42,13 @@ const lucideOnlySurfaces = [
 ].map((path) => [path, templateOf(readSource(path))] as const)
 
 describe('下载器控制台视觉骨架', () => {
-  it('使用高密度总览、指令栏、节点网格和响应式降级', () => {
+  it('从状态链路工具栏开始展示节点网格，并保留响应式降级', () => {
     expect(downloaderPage).toContain('class="downloader-control-room"')
-    expect(downloaderPage).toContain('class="control-metrics"')
     expect(downloaderPage).toContain('class="command-deck"')
     expect(downloaderPage).toContain('class="downloader-grid"')
+    expect(downloaderPage).toContain('状态链路已建立')
+    expect(downloaderPage).not.toContain('class="control-hero"')
+    expect(downloaderPage).not.toContain('class="control-metrics"')
     expect(downloaderPage).toContain('@media (max-width: 680px)')
     expect(downloaderPage).toContain('@media (prefers-reduced-motion: reduce)')
   })
@@ -66,6 +70,18 @@ describe('下载器设置工作台', () => {
     expect(settingsDialog).toContain('class="workspace-basic-form"')
     expect(settingsDialog).toContain('class="panel-intro"')
     expect(settingsDialog).toContain('class="workspace-footer-button')
+    expect(settingsDialog).toContain('text-align: left;')
+    expect(settingsDialog).toContain('flex: 1 1 auto;')
+    expect(settingsDialog).toContain('justify-content: flex-start !important;')
+    expect(settingsDialog).toContain('width: 0;')
+    expect(settingsDialog).toContain('class="tab-content tab-content--basic"')
+    expect(settingsDialog).toContain('text-align: left !important;')
+    expect(settingsDialog).toContain('overflow: hidden;')
+    expect(pathManagementTab).toContain('display: flex;')
+    expect(pathManagementTab).toContain('justify-content: flex-start !important;')
+    expect(pathManagementTab).toContain('text-align: left;')
+    expect(pathManagementTab).toContain('text-align: left !important;')
+    expect(pathMappingTab).toContain('padding: 0;')
   })
 
   it('新增模式锁定依赖已保存下载器的子面板，并保留全部设置模块', () => {

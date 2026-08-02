@@ -665,7 +665,12 @@ export default class TagManagementTab extends Vue {
 @import '@/styles/theme-variables.scss';
 
 .tag-management-tab {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  text-align: left;
 }
 
 // ==================== 空状态 ====================

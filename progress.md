@@ -1,5 +1,26 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-02 - 下载器管理页顶部裁剪与页签左对齐修正
+
+### 修正内容
+
+- 基于最近提交 `5a07e0c` 的下载器控制室重绘，移除管理页顶部“节点控制台”标题、简介和状态指标，只保留“状态链路已建立”工具栏及以下节点列表区域。
+- 设置工作台的左侧页签改为明确的弹性左右布局，补齐内容面板、页签面板和子组件的 `width`/`min-width`/左对齐约束，避免卡片宽度变化后内容漂移或溢出。
+- 针对设置与新增下载器共用卡片中的页签未跟随重绘的问题，移除旧的水平页签样式，明确 Element UI 左侧导航的 `nav`、`item`、内容面板和 `tab-pane` 盒模型；页签按钮和内容强制从左起布局。
+- 路径管理二级页签、路径映射、速度设置、路径资产和标签页统一跟随工作台左对齐；移除路径映射组件与父页签重复的内边距。
+- 更新下载器控制室 UI 契约测试，锁定顶部裁剪、设置/新增共用页签弹性布局和路径页签左对齐规则。
+
+### 验证
+
+- `npm.cmd run test:unit -- --runTestsByPath tests/unit/downloader-control-room-ui.spec.ts`：22 passed。
+- `npm.cmd run test:unit`：29 suites / 498 tests passed。
+- `npm.cmd run typecheck`：通过。
+- `npm.cmd run lint`：通过（contract check、Vue ESLint、Vuex action lint 均通过）。
+- `npm.cmd run build`：通过；保留仓库既有 Browserslist/Sass/Element UI warning。
+- 使用 `E:\\Git\\bin\\bash.exe ./init.sh --ci`：全栈环境验证通过；前端子脚本保留当前 Windows/npm 的 null-byte warning，后端虚拟环境未激活为提示。
+
+---
+
 ## 2026-08-02 - 下载器控制室 UI 重绘与导航 Lucide 化
 
 ### 交付结果

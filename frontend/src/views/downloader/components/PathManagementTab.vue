@@ -86,14 +86,28 @@ export default class PathManagementTab extends Vue {
 @import '@/styles/theme-variables.scss';
 
 .path-management-tab {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  text-align: left;
 }
 
 .management-sub-tabs {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   border: none;
   box-shadow: none;
+  text-align: left;
 
   ::v-deep .el-tabs__header {
+    box-sizing: border-box;
+    width: 100%;
     background: var(--color-bg-secondary);
     margin: 0 0 var(--spacing-lg) 0;
     padding: 5px;
@@ -101,11 +115,36 @@ export default class PathManagementTab extends Vue {
     border: 1px solid var(--color-border-primary);
   }
 
+  ::v-deep .el-tabs__nav-wrap,
+  ::v-deep .el-tabs__nav-scroll,
+  ::v-deep .el-tabs__nav {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+
+  ::v-deep .el-tabs__nav {
+    display: flex;
+    float: none;
+  }
+
   ::v-deep .el-tabs__content {
+    box-sizing: border-box;
+    width: 100%;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
     padding: 0;
+    text-align: left;
+  }
+
+  ::v-deep .el-tab-pane {
+    min-width: 0;
+    text-align: left;
   }
 
   ::v-deep .el-tabs__item {
+    box-sizing: border-box;
     border: none;
     height: 34px;
     padding: 0 13px;
@@ -115,7 +154,8 @@ export default class PathManagementTab extends Vue {
     transition: all var(--transition-base);
     display: inline-flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-start !important;
+    text-align: left !important;
 
     &:hover {
       color: var(--color-primary);
@@ -137,7 +177,13 @@ export default class PathManagementTab extends Vue {
 }
 
 .sub-tab-content {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   padding: 0;
+  text-align: left !important;
 }
 
 .empty-state {

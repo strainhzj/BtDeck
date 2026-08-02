@@ -1232,51 +1232,6 @@ export default class DownloaderSettingsDialog extends Vue {
   }
 }
 
-.settings-tabs {
-  border: none;
-  box-shadow: none;
-
-  ::v-deep .el-tabs__header {
-    background: var(--color-bg-secondary);
-    margin: 0;
-    padding: var(--spacing-sm) var(--spacing-xl);
-    border-bottom: 1px solid var(--color-border-primary);
-  }
-
-  ::v-deep .el-tabs__content {
-    padding: 0;
-  }
-
-  ::v-deep .el-tabs__item {
-    border: none;
-    padding: 8px 20px;
-    font-size: 14px;
-    font-weight: var(--font-weight-medium);
-    color: var(--color-text-secondary);
-    transition: all var(--transition-base);
-    // 标签文字水平垂直居中
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-
-    &:hover {
-      color: var(--color-primary);
-    }
-
-    &.is-active {
-      color: var(--color-primary);
-      background: var(--color-primary-lightest);
-      border-radius: var(--radius-md);
-    }
-  }
-}
-
-.tab-content {
-  padding: var(--spacing-xl);
-  max-height: 500px;
-  overflow-y: auto;
-}
-
 .switch-row {
   margin-top: var(--spacing-lg);
   padding-top: var(--spacing-lg);
@@ -1736,12 +1691,23 @@ export default class DownloaderSettingsDialog extends Vue {
 }
 
 .settings-tabs {
+  display: flex;
+  align-items: stretch;
+  box-sizing: border-box;
+  flex: 1 1 auto;
   height: 100%;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
   border: 0;
   background: transparent;
   box-shadow: none;
+  overflow: hidden;
+  text-align: left;
 
   ::v-deep > .el-tabs__header.is-left {
+    box-sizing: border-box;
+    flex: 0 0 218px;
     width: 218px;
     height: 100%;
     margin: 0;
@@ -1752,9 +1718,23 @@ export default class DownloaderSettingsDialog extends Vue {
       linear-gradient(90deg, rgba(var(--color-primary-rgb), 0.045) 1px, transparent 1px),
       rgba(249, 250, 251, 0.72);
     background-size: 24px 24px;
+    float: none;
+    overflow: hidden;
   }
 
-  ::v-deep > .el-tabs__header .el-tabs__nav-wrap {
+  ::v-deep > .el-tabs__header.is-left .el-tabs__nav-wrap,
+  ::v-deep > .el-tabs__header.is-left .el-tabs__nav-scroll,
+  ::v-deep > .el-tabs__header.is-left .el-tabs__nav {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+  }
+
+  ::v-deep > .el-tabs__header.is-left .el-tabs__nav {
+    float: none;
+  }
+
+  ::v-deep > .el-tabs__header.is-left .el-tabs__nav-wrap {
     height: 100%;
 
     &::after {
@@ -1762,11 +1742,12 @@ export default class DownloaderSettingsDialog extends Vue {
     }
   }
 
-  ::v-deep > .el-tabs__header .el-tabs__active-bar {
+  ::v-deep > .el-tabs__header.is-left .el-tabs__active-bar {
     display: none;
   }
 
-  ::v-deep > .el-tabs__header .el-tabs__item.is-left {
+  ::v-deep > .el-tabs__header.is-left .el-tabs__item.is-left {
+    box-sizing: border-box;
     display: flex;
     align-items: center;
     width: 100%;
@@ -1777,7 +1758,9 @@ export default class DownloaderSettingsDialog extends Vue {
     border-radius: 12px;
     color: var(--color-text-secondary);
     line-height: normal;
-    text-align: left;
+    text-align: left !important;
+    justify-content: flex-start !important;
+    white-space: normal;
     transition: color var(--transition-base), border-color var(--transition-base), background var(--transition-base), transform var(--transition-base);
 
     &:hover:not(.is-disabled) {
@@ -1801,22 +1784,36 @@ export default class DownloaderSettingsDialog extends Vue {
   }
 
   ::v-deep > .el-tabs__content {
+    box-sizing: border-box;
+    flex: 1 1 0;
     height: 100%;
+    width: 0;
+    min-width: 0;
+    min-height: 0;
     padding: 0;
     overflow: hidden;
   }
 
   ::v-deep > .el-tabs__content > .el-tab-pane {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 0;
     height: 100%;
+    overflow: hidden;
+    text-align: left !important;
   }
 }
 
 .workspace-tab-label {
   display: flex;
   align-items: center;
+  box-sizing: border-box;
   width: 100%;
   min-width: 0;
   gap: 9px;
+  text-align: left;
 
   &__icon {
     display: inline-flex;
@@ -1869,11 +1866,22 @@ export default class DownloaderSettingsDialog extends Vue {
 }
 
 .tab-content {
+  display: block;
+  box-sizing: border-box;
+  align-self: stretch;
   height: 100%;
+  width: 100%;
+  min-width: 0;
   max-height: none;
   padding: 18px 20px 26px;
   overflow: auto;
   scrollbar-gutter: stable;
+  text-align: left !important;
+}
+
+.tab-content > * {
+  min-width: 0;
+  text-align: left;
 }
 
 .panel-intro {
@@ -1892,6 +1900,7 @@ export default class DownloaderSettingsDialog extends Vue {
 
   > div {
     min-width: 0;
+    text-align: left;
   }
 
   > div > span {
@@ -2136,6 +2145,7 @@ export default class DownloaderSettingsDialog extends Vue {
 
   .settings-tabs {
     ::v-deep > .el-tabs__header.is-left {
+      flex-basis: 64px;
       width: 64px;
       padding: 12px 7px;
     }

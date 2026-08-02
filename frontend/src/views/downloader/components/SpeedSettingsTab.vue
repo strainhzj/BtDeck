@@ -725,10 +725,14 @@ export default class SpeedSettingsTab extends Vue {
 // Dense control-room treatment. These overrides intentionally keep the
 // existing form model and validation behavior while reducing vertical travel.
 .speed-settings-tab {
+  box-sizing: border-box;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(260px, 0.58fr);
   gap: 10px;
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  text-align: left;
 }
 
 .form-section {
