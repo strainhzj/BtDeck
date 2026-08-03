@@ -1178,6 +1178,7 @@ class OrphanFileService:
 
         try:
             async with admission_controller.db_write_scope():
+                await self.db.flush()
                 await self.db.commit()
         except Exception as exc:
             await self.db.rollback()
@@ -1635,6 +1636,11 @@ class OrphanFileService:
                     "downloader_name": nickname_map.get(c.downloader_id) if c.downloader_id else None,
                     "quarantine_path": c.quarantine_path,
                     "quarantine_root": c.quarantine_root,
+                    "mtime": (
+                        datetime.utcfromtimestamp(c.mtime_ns / 1_000_000_000).isoformat()
+                        if c.mtime_ns
+                        else None
+                    ),
                     "quarantined_at": c.quarantined_at.isoformat() if c.quarantined_at else None,
                     "purge_after": c.purge_after.isoformat() if c.purge_after else None,
                     "file_size": c.file_size,

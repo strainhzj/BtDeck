@@ -254,6 +254,7 @@ function quarantineItem(): QuarantineItem {
     downloader_name: '涓讳笅杞藉櫒',
     quarantine_path: '/data/.btdeck_quarantine/quarantine.bin',
     quarantine_root: '/data/.btdeck_quarantine',
+    mtime: '2026-07-30T09:00:00',
     quarantined_at: '2026-07-30T10:00:00',
     purge_after: '2026-08-06T10:00:00',
     file_size: 2048,

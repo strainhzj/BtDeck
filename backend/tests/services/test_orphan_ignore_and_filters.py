@@ -432,6 +432,38 @@ async def test_set_ignored_uses_canonical_path_and_repairs_changed_owner(async_o
     assert row.downloader_id == "dl_new"
 
 
+async def test_set_ignored_chunks_large_batch(async_orphan_db):
+    """大批量忽视应分块查询和 flush，避免 SQLite 参数/批量写入限制。"""
+    item_count = 401
+    details = [_detail("scan_1", f"/data/batch-{index}.bin", index + 1) for index in range(item_count)]
+    candidates = [_candidate(f"/data/batch-{index}.bin") for index in range(item_count)]
+    await _seed(async_orphan_db, details, candidates=candidates)
+
+    detail_result = await async_orphan_db.execute(OrphanFile.__table__.select().order_by(OrphanFile.id))
+    orphan_ids = [row.id for row in detail_result.fetchall()]
+
+    result = await OrphanFileService(async_orphan_db).set_ignored(
+        orphan_ids=orphan_ids,
+        ignored=True,
+        operator="alice",
+        scan_id="scan_1",
+    )
+
+    assert result["success_count"] == item_count
+    assert result["failed_count"] == 0
+
+    candidate_result = await async_orphan_db.execute(
+        OrphanCurrentCandidate.__table__.select().where(
+            OrphanCurrentCandidate.canonical_path.in_(
+                [normalize_path(f"/data/batch-{index}.bin") for index in range(item_count)]
+            )
+        )
+    )
+    rows = candidate_result.fetchall()
+    assert len(rows) == item_count
+    assert all(row.is_ignored == 1 and row.ignored_by == "alice" for row in rows)
+
+
 async def test_set_ignored_unignore_clears_fields(async_orphan_db):
     await _seed(
         async_orphan_db,

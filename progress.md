@@ -16,7 +16,7 @@
 - 前端全量 Jest：31 suites / 527 tests（新增 clipboard 用例）；TypeScript typecheck、定向严格 ESLint、生产 build 均通过。
 - 变更后端文件 Flake8、`git diff --check` 通过；生产 build 仅保留仓库既有 Sass/Element UI 与资源体积 warning。
 - 全量 mypy 仍报告孤儿历史 SQLAlchemy 模块既有 Column 类型债务，新增选择解析辅助代码无新增命中。
-- 无数据库 Schema、迁移或依赖变更；未执行 Git stage、commit、push 或部署，工作区原有未跟踪文件保持不动。
+- 无数据库 Schema、迁移或依赖变化；已提交并合并远程 `origin/dev`（并行会话 `5725797` 同主题实现，见下条）后推送，工作区原有未跟踪文件保持不动。
 
 ## 2026-08-03 - 孤儿列表固定表头、忽视身份与大页性能修复
 
@@ -33,7 +33,23 @@
 - 前端孤儿页面：24 passed；前端全量：30 suites / 516 tests；TypeScript typecheck、定向严格 ESLint和生产 build 均通过。
 - Flake8、`git diff --check` 与 Git Bash 根 `./init.sh --ci` 通过；生产 build 仅保留仓库既有 Browserslist、Sass/Element UI 和资源体积 warning，根验证保留 Windows/npm null-byte 环境 warning。
 - 全量 mypy 仍报告孤儿历史 SQLAlchemy 模块的 169 条 Column 类型债务；新增规范路径身份辅助代码无新增命中。当前 Windows Python 的 Black CLI 再次出现格式处理完成后进程不退出，已停止对应验证进程。
-- 无数据库 Schema、迁移或依赖变更；未执行 Git stage、commit、push 或部署，工作区原有未跟踪文件保持不动。
+- 无数据库 Schema、迁移或依赖变更；已随 `v1.0.6.36` 一并提交，工作区原有未跟踪文件保持不动。
+
+## 2026-08-03 - 孤儿文件列表表头与大分页批量操作修复（并行会话）
+
+### 修正内容
+
+- 孤儿文件与隔离区列表统一为相同的八列表头：选择、文件路径、大小、修改时间、下载器、置信度、状态、操作；隔离区补充后端返回的原文件修改时间。
+- 两个页签均使用固定高度滚动容器和吸顶表头；孤儿文件列表改为首尾占位行 + 可视窗口渲染，保留完整数据集合用于全选和批量操作，降低 2000 条及以上分页的 DOM 与重渲染开销。
+- 孤儿文件选择改为轻量自维护复选框，避免大分页交给 Element UI 维护 2000 条选择行；全选仍覆盖当前完整分页中的所有可操作记录。
+- `set_ignored` 将孤儿明细查询、候选查询和 ORM flush 按 200 条分块，并把原先按候选逐项扫描的 O(n²) 映射改为按明细 ID 直接定位，修复 2000 条批量忽视返回“成功 0、失败 2000”。
+
+### 验证与边界
+
+- 后端孤儿服务/API 定向回归：37 passed；新增 401 条跨批次 flush 的批量忽视回归用例；Flake8 通过。
+- 前端孤儿页面回归：20 passed；前端全量 Jest 30 suites / 512 tests passed；TypeScript、全量 Vue ESLint、Vuex action lint 和生产构建通过。
+- 完整 `npm run lint` 仍在任务开始前已有的 `advancedSearch.generated.ts` 契约漂移检查处阻断；Black 在当前 Windows Python 环境中命令超时；根 `./init.sh --ci` 仍被 WSL `E_ACCESSDENIED` 阻断，均未修改无关文件。
+- 该实现已由并行会话推送到 `origin/dev`（`5725797`）；合并时保留其隔离区 mtime/状态/置信度列等功能点。
 
 ## 2026-08-03 - 种子实时进度与孤儿列表交互修复
 

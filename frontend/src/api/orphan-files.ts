@@ -329,6 +329,7 @@ export interface QuarantineItem {
   downloader_name: string | null
   quarantine_path: string | null
   quarantine_root: string | null
+  mtime: string | null
   quarantined_at: string | null
   /** 预计物理删除时间（隔离保留期到期） */
   purge_after: string | null
