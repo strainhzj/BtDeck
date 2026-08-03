@@ -1932,6 +1932,60 @@
             "session-handoff.md"
           ],
           "evidence": "后端相关回归 81 passed（含架构门禁）；前端全量 Jest 30 suites/511 tests，孤儿页面定向 19 tests，TypeScript typecheck、Vue ESLint、Vuex action lint 与生产 build 均通过。批量添加通知正文和 extra_data.failed_list 均包含失败文件及原因；active-torrents 写库按复合身份、变更检测和 SYNC_DB_COMMIT_BATCH_SIZE 分批提交；孤儿列表新增 confidence 查询参数、高置信度优先排序、固定高度触底追加分页。完整 npm run lint 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截；Black 在当前 Windows Python 环境命令超时未完成，未写回格式。"
+        },
+        {
+          "id": "v1.0.6.35",
+          "name": "孤儿列表固定表头、忽视身份与大页性能修复",
+          "description": "修复孤儿文件表头随外层滚动离开视口、忽视操作因候选下载器归属漂移而全部失败且缺少原因日志，以及 500/1000 大页一次渲染全部表格行造成的明显卡顿；统一候选身份为 canonical_path，并保留下载器归属作为可修正元数据。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/services/test_orphan_ignore_and_filters.py",
+            "backend/tests/services/test_orphan_lifecycle.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "只读现场数据核对确认最新成功扫描剩余 44499 条中有 1915 条明细与候选的 downloader_id 不一致，但 canonical_path 与 last_seen_scan_id 一致，证明旧复合匹配会误报候选不存在。忽视、清理映射及成功生命周期对账现统一按 canonical_path，安全状态门禁保持不变，并记录开始、逐类失败原因、样例、提交异常和归属修正数；前端对全失败/部分失败展示 failed_list 原因。列表改由 Element Table 内部滚动固定表头，采用 48px 定高可视窗口渲染（1000 条时仅渲染可视行与上下占位行），页面大小预设保留 20/50/100/500/1000，自定义与 API 上限收紧为 1000。孤儿后端全套 226 passed/1 skipped，前端孤儿页面 24 tests、全量 30 suites/516 tests、typecheck、定向 ESLint、生产 build 与根 init.sh --ci 通过；Flake8 与 git diff --check 通过。全量 mypy 仍报告该历史 SQLAlchemy 模块既有 Column 类型债务；build 仅保留仓库既有警告。"
+        },
+        {
+          "id": "v1.0.6.36",
+          "name": "孤儿全选当前筛选与隔离区表头对齐、JSON 复制回退与操作日志布局优化",
+          "description": "孤儿列表表头复选框改为按当前筛选全集选择（不再局限于虚拟窗口可见行），隔离区页签复用孤儿页签的共享表头样式，JSON/内容复制抽成可回退剪贴板工具以兼容非 HTTPS 部署，操作日志页顶部筛选与操作栏拆为独立响应式布局。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/services/test_orphan_ignore_and_filters.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/api/audit-logs.ts",
+            "frontend/src/utils/clipboard.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/views/logs/audit.vue",
+            "frontend/src/views/tasks/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "frontend/tests/unit/api-contracts.spec.ts",
+            "frontend/tests/unit/management-pages-ui.spec.ts",
+            "frontend/tests/unit/clipboard.spec.ts",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "孤儿列表表头复选框不再依赖 Element 自带 selection 列（其数据源被虚拟窗口截成约 15 行），改为维护 select_all + excluded_orphan_ids + 当前筛选快照的独立选择模型，已选计数按服务端 total 计算并显示\"当前筛选全部\"标识；清理/忽视提交时由后端 resolve_orphan_selection 按与列表完全一致的 _build_orphan_conditions 把筛选快照解析为稳定 ID 集，并按 500/批切块避免 SQLite 绑定变量上限，清理预览对全选大批量截断为前 200 条明细并返回 items_truncated（计数与大小仍覆盖全部）。隔离区页签接入共享 management-table 表头类，与孤儿页签的表头布局、颜色、间距及固定方式一致。JSON/内容复制抽成共享 copyTextToClipboard：优先 Clipboard API，非安全上下文或权限拒绝时回退隐藏 textarea + execCommand，操作日志详情 JSON 与任务详情复制统一使用并保留成功/失败提示。操作日志搜索栏与操作栏拆为独立响应式布局，查询/重置/操作逻辑不变，前端补 torrent_name 查询参数对齐后端已有模糊搜索。孤儿后端全套 229 passed/1 skipped（含新增 select_all 解析用例），前端全量 Jest 31 suites/527 tests、typecheck、定向 ESLint、生产 build、Flake8 与 git diff --check 均通过；全量 mypy 仍为孤儿历史 SQLAlchemy 模块既有 Column 类型债务。"
         }
       ]
     }

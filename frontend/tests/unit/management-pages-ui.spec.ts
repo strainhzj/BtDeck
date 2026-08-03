@@ -9,6 +9,10 @@ const orphanFilesSource = readFileSync(
   resolve(__dirname, '../../src/views/orphan-files/index.vue'),
   'utf8'
 )
+const auditLogsSource = readFileSync(
+  resolve(__dirname, '../../src/views/logs/audit.vue'),
+  'utf8'
+)
 const sharedStyles = readFileSync(
   resolve(__dirname, '../../src/styles/management-list-page.scss'),
   'utf8'
@@ -27,7 +31,7 @@ describe.each([
     expect(source).toContain('<header class="management-page__header"')
     expect(source).toContain('class="management-filter"')
     expect(source).toContain('class="management-panel__header"')
-    expect(source).toContain('class="management-table-scroll"')
+    expect(source).toContain('class="management-table-scroll')
     expect(source).toContain('class="management-table"')
   })
 
@@ -55,11 +59,34 @@ describe('孤儿文件管理页信息层级', () => {
   it('使用响应式统计摘要，并将清理动作与文件列表放在一起', () => {
     expect(orphanFilesSource).toContain('class="management-stats-grid"')
     expect(orphanFilesSource).toContain('class="management-stat-card"')
-    expect(orphanFilesSource).toContain('已选择 {{ selectedIds.length }} 项')
+    expect(orphanFilesSource).toContain('已选择 {{ selectedCount }} 项')
     expect(orphanFilesSource).toContain('management-pagination')
 
     const listPanel = orphanFilesSource.match(/<!-- 孤儿文件列表 -->[\s\S]*?<\/section>/)?.[0] || ''
     expect(listPanel).toContain('清理选中')
+  })
+
+  it('隔离区表格复用孤儿列表的共享表头样式', () => {
+    const quarantinePanel = orphanFilesSource.match(/<!-- 隔离区管理 -->[\s\S]*?<\/el-tab-pane>/)?.[0] || ''
+    expect(quarantinePanel).toContain('class="management-table-scroll quarantine-table-scroll"')
+    expect(quarantinePanel).toContain('class="management-table"')
+  })
+})
+
+describe('操作日志搜索与操作栏', () => {
+  it('将查询字段和数据操作分成两个主题化面板', () => {
+    expect(auditLogsSource).toContain('class="app-container management-page audit-logs-container"')
+    expect(auditLogsSource).toContain('class="management-panel audit-filter-panel"')
+    expect(auditLogsSource).toContain('class="management-filter audit-filter-grid"')
+    expect(auditLogsSource).toContain('class="management-panel audit-action-panel"')
+    expect(auditLogsSource).toContain('class="audit-action-bar__actions"')
+    expect(auditLogsSource).not.toContain('class="filter-container"')
+  })
+
+  it('复制 JSON 使用兼容剪贴板工具且按钮不再使用表情符号', () => {
+    expect(auditLogsSource).toContain("import { copyTextToClipboard } from '@/utils/clipboard'")
+    expect(auditLogsSource).toContain('await copyTextToClipboard(JSON.stringify(currentLog, null, 2))')
+    expect(auditLogsSource).not.toContain('📋 复制JSON')
   })
 })
 

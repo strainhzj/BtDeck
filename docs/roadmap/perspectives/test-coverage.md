@@ -69,7 +69,7 @@
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI |
 | `operator-contract.spec.ts` ✨v1.0.6.26 | 高级搜索操作符前后端契约守卫（与 `app/contracts/advanced_search_contract.json` 镜像） |
-| `orphan-files.spec.ts` | 孤儿文件页面的扫描状态、统计与刷新交互 |
+| `orphan-files.spec.ts` | 孤儿文件页面的扫描状态、统计与刷新、固定表头、可视窗口、大页上限及忽视失败原因交互 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |

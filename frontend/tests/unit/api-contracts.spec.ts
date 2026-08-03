@@ -16,6 +16,7 @@ import {
   getOrphanList,
   getPurgeJobStatus,
   purgeQuarantineNow,
+  setIgnored,
   triggerScan
 } from '@/api/orphan-files'
 import {
@@ -207,6 +208,20 @@ describe('API 请求契约', () => {
       expectRequest(
         () => getCleanupJobStatus('cleanup-task-1'),
         { url: '/orphan-files/cleanup-jobs/cleanup-task-1', method: 'get' }
+      )
+    })
+
+    it('全选当前筛选结果保留筛选快照与排除项', () => {
+      const data = {
+        scan_id: 'scan-1',
+        select_all: true,
+        excluded_orphan_ids: [2],
+        filters: { status: 'pending' as const, confidence: 'high' as const },
+        ignored: true
+      }
+      expectRequest(
+        () => setIgnored(data),
+        { url: '/orphan-files/ignore', method: 'post', data, timeout: 120000 }
       )
     })
 

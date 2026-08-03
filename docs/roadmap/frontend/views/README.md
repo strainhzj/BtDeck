@@ -16,7 +16,7 @@
 | dashboard | 1 | 955 | `index.vue` | class-component |
 | login | 1 | 534 | `index.vue` | class-component |
 | query-templates | 2 | 544 | `index.vue`（v1.0.5 新增） | class-component |
-| orphan-files | 1 | 1,250 | `index.vue` | class-component |
+| orphan-files | 1 | 1,390 | `index.vue` | class-component |
 | nested | 7 | 140 | 菜单演示 | class-component |
 | tree | 1 | 80 | `index.vue` | class-component |
 | 404.vue（顶层） | 1 | 340 | `404.vue` | class-component |
@@ -94,7 +94,7 @@
 | `query-templates/index.vue` | 272 | `QueryTemplates`（v1.0.5） | 查询模板列表主入口 |
 | `query-templates/components/QueryTemplateDialog.vue` | 272 | class | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 534 | `Login` | 登录页 |
-| `orphan-files/index.vue` | 1250 | `OrphanFiles` | 孤儿文件扫描/筛选/清理/忽视/隔恢复；彻底删除只提交后台任务，结果由通知中心送达 |
+| `orphan-files/index.vue` | 1390 | `OrphanFiles` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复；内部滚动固定表头并采用可视窗口渲染大页，忽视展示逐项失败原因；彻底删除只提交后台任务 |
 | `404.vue` | 340 | `Page404` | 404 页面 |
 | `nested/*`（7 文件） | 140 | class | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 80 | `Tree` | 树形组件演示页 |

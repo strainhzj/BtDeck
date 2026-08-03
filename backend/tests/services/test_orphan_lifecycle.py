@@ -82,6 +82,45 @@ class TestOrphanLifecycleProgression:
         paths = [c.canonical_path for c in purgeable]
         assert "/data/old.mkv" in paths, "连续 35 天孤儿应满足清理条件"
 
+    async def test_successful_reconcile_updates_changed_downloader_owner(self, async_orphan_db):
+        """同一路径改变扫描归属时同步候选元数据，避免复合匹配漂移。"""
+        from app.models.orphan_file import OrphanCurrentCandidate
+        from app.services.orphan_lifecycle_service import OrphanLifecycleService
+
+        service = OrphanLifecycleService(async_orphan_db)
+        path = "/shared/overlap.bin"
+        await service.reconcile_candidates(
+            scan_id="scan_1",
+            scan_time=datetime.utcnow() - timedelta(minutes=1),
+            orphans=[
+                {
+                    "canonical_path": path,
+                    "downloader_id": "dl_old",
+                    "file_size": 100,
+                }
+            ],
+        )
+        await service.reconcile_candidates(
+            scan_id="scan_2",
+            scan_time=datetime.utcnow(),
+            orphans=[
+                {
+                    "canonical_path": path,
+                    "downloader_id": "dl_new",
+                    "file_size": 100,
+                }
+            ],
+        )
+
+        result = await async_orphan_db.execute(
+            select(OrphanCurrentCandidate).where(
+                OrphanCurrentCandidate.canonical_path == path
+            )
+        )
+        candidate = result.scalar_one()
+        assert candidate.downloader_id == "dl_new"
+        assert candidate.last_seen_scan_id == "scan_2"
+
     async def test_resolved_when_reappears_in_torrent(self, async_orphan_db):
         """文件在后续扫描重新成为合法文件（不在孤儿清单）时标记 resolved。"""
         from app.services.orphan_lifecycle_service import OrphanLifecycleService

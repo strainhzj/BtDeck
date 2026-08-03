@@ -893,6 +893,7 @@ import {
   TaskCreateRequest
 } from '@/api/tasks'
 import request from '@/utils/request'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 // 导入新创建的组件
 import MonacoEditor from '@/components/tasks/MonacoEditor.vue'
@@ -1888,40 +1889,28 @@ export default class TaskManage extends Vue {
 
   // 复制日志详情内容
   private async handleCopyLogDetail() {
-    if (!this.selectedLog?.logDetail) {
-      this.$message.warning('暂无内容可复制')
+    const selectedLog = this.selectedLog
+    const message = this.$message
+    if (!selectedLog?.logDetail) {
+      message.warning('暂无内容可复制')
       return
     }
 
     try {
       // 构建复制内容
-      const content = `任务名称：${this.selectedLog.taskName}
-开始时间：${this.selectedLog.startTime}
-结束时间：${this.selectedLog.endTime}
-执行结果：${this.selectedLog.success ? '成功' : '失败'}
-执行耗时：${this.selectedLog.duration}s
+      const content = `任务名称：${selectedLog.taskName}
+开始时间：${selectedLog.startTime}
+结束时间：${selectedLog.endTime}
+执行结果：${selectedLog.success ? '成功' : '失败'}
+执行耗时：${selectedLog.duration}s
 执行详情：
-${this.selectedLog.logDetail}`
+${selectedLog.logDetail}`
 
-      // 使用现代浏览器的Clipboard API
-      if (navigator.clipboard) {
-        await navigator.clipboard.writeText(content)
-        this.$message.success('内容已复制到剪贴板')
-      } else {
-        // 降级方案：使用document.execCommand
-        const textArea = document.createElement('textarea')
-        textArea.value = content
-        textArea.style.position = 'fixed'
-        textArea.style.opacity = '0'
-        document.body.appendChild(textArea)
-        textArea.select()
-        document.execCommand('copy')
-        document.body.removeChild(textArea)
-        this.$message.success('内容已复制到剪贴板')
-      }
+      await copyTextToClipboard(content)
+      message.success('内容已复制到剪贴板')
     } catch (error) {
       console.error('复制失败:', error)
-      this.$message.error('复制失败，请手动复制内容')
+      message.error('复制失败，请手动复制内容')
     }
   }
 

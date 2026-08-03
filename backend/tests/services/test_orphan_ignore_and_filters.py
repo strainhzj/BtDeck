@@ -9,6 +9,7 @@
 """
 
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -224,6 +225,58 @@ async def test_status_filter_deleted(async_orphan_db):
     assert result["total"] == 1
 
 
+async def test_resolve_select_all_uses_list_filters_and_exclusions(async_orphan_db):
+    """全选必须解析当前筛选全集，并保留用户取消勾选的排除项。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/movie/a.bin", 100, confidence="high"),
+            _detail("scan_1", "/data/movie/b.bin", 200, confidence="high"),
+            _detail("scan_1", "/data/movie/low.bin", 300, confidence="low"),
+            _detail("scan_1", "/data/music/ignored.bin", 400, confidence="high"),
+        ],
+        candidates=[
+            _candidate("/data/movie/a.bin"),
+            _candidate("/data/movie/b.bin"),
+            _candidate("/data/movie/low.bin"),
+            _candidate("/data/music/ignored.bin", ignored=True),
+        ],
+    )
+    rows = (await async_orphan_db.execute(OrphanFile.__table__.select())).fetchall()
+    ids_by_path = {row.file_path: row.id for row in rows}
+
+    selected_ids = await OrphanFileService(async_orphan_db).resolve_orphan_selection(
+        orphan_ids=[],
+        select_all=True,
+        excluded_orphan_ids=[ids_by_path["/data/movie/b.bin"]],
+        scan_id="scan_1",
+        path_like="movie",
+        status="pending",
+        confidence="high",
+    )
+
+    assert selected_ids == [ids_by_path["/data/movie/a.bin"]]
+
+
+async def test_set_ignored_chunks_large_select_all_snapshot(async_orphan_db):
+    """跨越单块上限的全选 ID 快照不会触发 SQLite 绑定变量上限。"""
+    details = [_detail("scan_1", f"/data/bulk/{index}.bin", index + 1) for index in range(520)]
+    candidates = [_candidate(detail.file_path) for detail in details]
+    await _seed(async_orphan_db, details, candidates=candidates)
+    rows = (await async_orphan_db.execute(OrphanFile.__table__.select())).fetchall()
+    orphan_ids = [int(row.id) for row in rows]
+
+    result = await OrphanFileService(async_orphan_db).set_ignored(
+        orphan_ids=orphan_ids,
+        ignored=True,
+        operator="bulk-user",
+        scan_id="scan_1",
+    )
+
+    assert result["success_count"] == 520
+    assert result["failed_count"] == 0
+
+
 # ==================== 路径模糊筛选 ====================
 
 
@@ -350,6 +403,35 @@ async def test_set_ignored_marks_candidate(async_orphan_db):
     assert row.ignored_by == "alice"
 
 
+async def test_set_ignored_uses_canonical_path_and_repairs_changed_owner(async_orphan_db):
+    """路径是候选主键；扫描归属变化不能让忽视操作误判候选不存在。"""
+    candidate = _candidate("/data/a.bin", downloader_id="dl_old", ignored=False)
+    candidate.last_seen_scan_id = "scan_1"
+    await _seed(
+        async_orphan_db,
+        [_detail("scan_1", "/data/a.bin", 100, downloader_id="dl_new")],
+        candidates=[candidate],
+    )
+
+    detail = await async_orphan_db.execute(OrphanFile.__table__.select())
+    orphan_id = detail.first().id
+
+    result = await OrphanFileService(async_orphan_db).set_ignored(
+        orphan_ids=[orphan_id], ignored=True, operator="alice", scan_id="scan_1"
+    )
+
+    assert result["success_count"] == 1
+    assert result["failed_count"] == 0
+    candidate_result = await async_orphan_db.execute(
+        OrphanCurrentCandidate.__table__.select().where(
+            OrphanCurrentCandidate.canonical_path == normalize_path("/data/a.bin")
+        )
+    )
+    row = candidate_result.first()
+    assert row.is_ignored == 1
+    assert row.downloader_id == "dl_new"
+
+
 async def test_set_ignored_unignore_clears_fields(async_orphan_db):
     await _seed(
         async_orphan_db,
@@ -389,13 +471,43 @@ async def test_set_ignored_rejects_quarantined_candidate(async_orphan_db):
     detail = await async_orphan_db.execute(OrphanFile.__table__.select())
     orphan_id = detail.first().id
 
-    result = await OrphanFileService(async_orphan_db).set_ignored(
-        orphan_ids=[orphan_id], ignored=True, operator="alice", scan_id="scan_1"
-    )
+    with patch("app.services.orphan_file_service.logger.warning") as warning_log:
+        result = await OrphanFileService(async_orphan_db).set_ignored(
+            orphan_ids=[orphan_id], ignored=True, operator="alice", scan_id="scan_1"
+        )
 
     assert result["success_count"] == 0
     assert result["failed_count"] == 1
     assert "清理流程" in result["failed_list"][0]["reason"]
+    assert "failed_reasons" in str(warning_log.call_args)
+    assert "清理流程" in str(warning_log.call_args)
+
+
+async def test_set_ignored_commit_failure_logs_exception_and_returns_reason(async_orphan_db):
+    await _seed(
+        async_orphan_db,
+        [_detail("scan_1", "/data/a.bin", 100)],
+        candidates=[_candidate("/data/a.bin", ignored=False)],
+    )
+    detail = await async_orphan_db.execute(OrphanFile.__table__.select())
+    orphan_id = detail.first().id
+
+    with (
+        patch.object(
+            async_orphan_db,
+            "commit",
+            new=AsyncMock(side_effect=RuntimeError("simulated commit failure")),
+        ),
+        patch("app.services.orphan_file_service.logger.exception") as exception_log,
+    ):
+        result = await OrphanFileService(async_orphan_db).set_ignored(
+            orphan_ids=[orphan_id], ignored=True, operator="alice", scan_id="scan_1"
+        )
+
+    assert result["success_count"] == 0
+    assert result["failed_count"] == 1
+    assert result["failed_list"][0]["reason"] == "数据库提交失败，请查看后端日志"
+    assert "simulated commit failure" in str(exception_log.call_args)
 
 
 # ==================== 清理门禁：已忽视被拒绝 ====================

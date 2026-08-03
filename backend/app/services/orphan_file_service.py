@@ -19,8 +19,9 @@ import asyncio
 import logging
 import os
 import time
+from collections import Counter
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
 
 from sqlalchemy import case, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -46,12 +47,188 @@ from app.torrents.audit_enums import AuditOperationResult, AuditOperationType
 
 logger = logging.getLogger(__name__)
 
+SelectionValue = TypeVar("SelectionValue")
+ORPHAN_QUERY_CHUNK_SIZE = 500
+ORPHAN_PREVIEW_ITEM_LIMIT = 200
+
+
+def _chunk_values(values: Sequence[SelectionValue]) -> Iterator[Sequence[SelectionValue]]:
+    """按保守的 SQLite 绑定变量数量切分查询参数。"""
+    for start in range(0, len(values), ORPHAN_QUERY_CHUNK_SIZE):
+        yield values[start : start + ORPHAN_QUERY_CHUNK_SIZE]
+
 
 class OrphanFileService:
     """孤儿文件管理服务（异步）"""
 
     def __init__(self, db: AsyncSession):
         self.db = db
+
+    @staticmethod
+    def _detail_canonical_path(detail: OrphanFile) -> str:
+        """返回扫描明细的稳定候选身份。"""
+        canonical_path = cast(Optional[str], detail.canonical_path)
+        return canonical_path or normalize_path(cast(str, detail.file_path))
+
+    @staticmethod
+    def _sync_candidate_owner(
+        candidate: OrphanCurrentCandidate,
+        detail: OrphanFile,
+    ) -> bool:
+        """在同一候选快照内同步归属下载器，返回是否发生修正。
+
+        canonical_path 是候选表主键；downloader_id 是随扫描范围变化的归属
+        元数据。只在候选尚无 last_seen_scan_id，或候选与明细属于同一扫描
+        快照时修正，避免旧页面操作覆盖更新扫描已经确认的新归属。
+        """
+        current_owner = cast(Optional[str], detail.downloader_id) or ""
+        if cast(str, candidate.downloader_id) == current_owner:
+            return False
+        if cast(Optional[str], candidate.last_seen_scan_id) not in (
+            None,
+            cast(str, detail.scan_id),
+        ):
+            return False
+        setattr(candidate, "downloader_id", current_owner)
+        return True
+
+    @staticmethod
+    def _build_orphan_conditions(
+        scan_id: str,
+        *,
+        downloader_id: Optional[str] = None,
+        min_size: Optional[int] = None,
+        include_deleted: bool = False,
+        path_like: Optional[str] = None,
+        status: Optional[str] = None,
+        confidence: Optional[str] = None,
+    ) -> List[Any]:
+        """构建列表与“全选当前筛选”共用的 SQL 条件。"""
+        effective_include_deleted = include_deleted
+        ignored_filter: Optional[bool] = None
+        if status == "deleted":
+            effective_include_deleted = True
+        elif status == "ignored":
+            ignored_filter = True
+            effective_include_deleted = False
+        elif status == "pending":
+            ignored_filter = False
+            effective_include_deleted = False
+
+        conditions: List[Any] = [OrphanFile.scan_id == scan_id]
+        if status == "deleted":
+            conditions.append(OrphanFile.is_deleted == True)  # noqa: E712
+        elif not effective_include_deleted:
+            conditions.append(OrphanFile.is_deleted == False)  # noqa: E712
+
+        ignored_paths = select(OrphanCurrentCandidate.canonical_path).where(
+            OrphanCurrentCandidate.is_ignored == True  # noqa: E712
+        )
+        if ignored_filter is True:
+            conditions.append(OrphanFile.canonical_path.in_(ignored_paths))
+        elif ignored_filter is False:
+            conditions.append(OrphanFile.canonical_path.notin_(ignored_paths))
+
+        if downloader_id:
+            conditions.append(OrphanFile.downloader_id == downloader_id)
+        if min_size is not None:
+            conditions.append(OrphanFile.file_size >= min_size)
+        if confidence:
+            conditions.append(OrphanFile.confidence == confidence)
+        if path_like:
+            escaped = path_like.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conditions.append(OrphanFile.file_path.like(f"%{escaped}%", escape="\\"))
+        return conditions
+
+    async def resolve_orphan_selection(
+        self,
+        *,
+        orphan_ids: Sequence[int],
+        select_all: bool,
+        excluded_orphan_ids: Sequence[int],
+        scan_id: Optional[str],
+        downloader_id: Optional[str] = None,
+        min_size: Optional[int] = None,
+        path_like: Optional[str] = None,
+        status: Optional[str] = None,
+        confidence: Optional[str] = None,
+    ) -> List[int]:
+        """把显式勾选或当前筛选全集解析为稳定的明细 ID 快照。"""
+        normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids if int(orphan_id) > 0))
+        if not select_all:
+            if not normalized_ids:
+                raise ValueError("至少需要选择一个孤儿文件")
+            return normalized_ids
+        if not scan_id:
+            raise ValueError("全选当前筛选结果必须绑定扫描批次")
+
+        conditions = self._build_orphan_conditions(
+            scan_id,
+            downloader_id=downloader_id,
+            min_size=min_size,
+            path_like=path_like,
+            status=status,
+            confidence=confidence,
+        )
+        query = select(OrphanFile.id).order_by(OrphanFile.id.asc())
+        for condition in conditions:
+            query = query.where(condition)
+        result = await self.db.execute(query)
+        excluded = {int(orphan_id) for orphan_id in excluded_orphan_ids}
+        return [int(orphan_id) for orphan_id in result.scalars().all() if int(orphan_id) not in excluded]
+
+    async def _load_orphan_details(
+        self,
+        orphan_ids: Sequence[int],
+        *,
+        scan_id: Optional[str],
+        exclude_ignored: bool = False,
+    ) -> List[OrphanFile]:
+        """分块加载明细，避免大批量全选触发 SQLite 绑定变量上限。"""
+        normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
+        details_by_id: Dict[int, OrphanFile] = {}
+        for chunk in _chunk_values(normalized_ids):
+            conditions: List[Any] = [
+                OrphanFile.id.in_(list(chunk)),
+                OrphanFile.is_deleted == False,  # noqa: E712
+            ]
+            if scan_id:
+                conditions.append(OrphanFile.scan_id == scan_id)
+            if exclude_ignored:
+                conditions.append(
+                    OrphanFile.canonical_path.notin_(
+                        select(OrphanCurrentCandidate.canonical_path).where(
+                            OrphanCurrentCandidate.is_ignored == True  # noqa: E712
+                        )
+                    )
+                )
+            result = await self.db.execute(select(OrphanFile).where(*conditions))
+            for detail in result.scalars().all():
+                details_by_id[int(detail.id)] = detail
+        return [details_by_id[orphan_id] for orphan_id in normalized_ids if orphan_id in details_by_id]
+
+    async def _load_candidates(
+        self,
+        canonical_paths: Sequence[str],
+        *,
+        stable_only: bool = False,
+    ) -> Dict[str, OrphanCurrentCandidate]:
+        """按规范化路径分块加载候选。"""
+        normalized_paths = list(dict.fromkeys(str(path) for path in canonical_paths if path))
+        candidates: Dict[str, OrphanCurrentCandidate] = {}
+        for chunk in _chunk_values(normalized_paths):
+            conditions: List[Any] = [OrphanCurrentCandidate.canonical_path.in_(list(chunk))]
+            if stable_only:
+                conditions.extend(
+                    [
+                        OrphanCurrentCandidate.status == "candidate",
+                        OrphanCurrentCandidate.operation_state == "stable",
+                    ]
+                )
+            result = await self.db.execute(select(OrphanCurrentCandidate).where(*conditions))
+            for candidate in result.scalars().all():
+                candidates[cast(str, candidate.canonical_path)] = candidate
+        return candidates
 
     # ==================== 新鲜度门禁 ====================
 
@@ -405,52 +582,16 @@ class OrphanFileService:
         )
         scan_context["ignored_count"] = int(ignored_count_result.scalar() or 0)
 
-        # 状态筛选解析为条件。status 优先于 include_deleted（显式状态覆盖旧隐式参数）。
-        effective_include_deleted = include_deleted
-        ignored_filter: Optional[bool] = None
-        if status == "deleted":
-            effective_include_deleted = True
-        elif status == "ignored":
-            ignored_filter = True
-            effective_include_deleted = False
-        elif status == "pending":
-            ignored_filter = False
-            effective_include_deleted = False
-
-        conditions: List[Any] = [OrphanFile.scan_id == display_scan.scan_id]
-        if status == "deleted":
-            conditions.append(OrphanFile.is_deleted == True)  # noqa: E712
-        elif not effective_include_deleted:
-            conditions.append(OrphanFile.is_deleted == False)  # noqa: E712
-
-        # 忽视态：靠 orphan_file.canonical_path 与候选 is_ignored 做 SQL 联表过滤。
-        if ignored_filter is True:
-            conditions.append(
-                OrphanFile.canonical_path.in_(
-                    select(OrphanCurrentCandidate.canonical_path).where(
-                        OrphanCurrentCandidate.is_ignored == True  # noqa: E712
-                    )
-                )
-            )
-        elif ignored_filter is False:
-            conditions.append(
-                OrphanFile.canonical_path.notin_(
-                    select(OrphanCurrentCandidate.canonical_path).where(
-                        OrphanCurrentCandidate.is_ignored == True  # noqa: E712
-                    )
-                )
-            )
-
-        if downloader_id:
-            conditions.append(OrphanFile.downloader_id == downloader_id)
-        if min_size is not None:
-            conditions.append(OrphanFile.file_size >= min_size)
-        if confidence:
-            conditions.append(OrphanFile.confidence == confidence)
-        if path_like:
-            # LIKE 通配符转义，防止用户输入的 %/_ 被当模式
-            escaped = path_like.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            conditions.append(OrphanFile.file_path.like(f"%{escaped}%", escape="\\"))
+        # 列表与“全选当前筛选”必须共用完全相同的过滤语义。
+        conditions = self._build_orphan_conditions(
+            cast(str, display_scan.scan_id),
+            downloader_id=downloader_id,
+            min_size=min_size,
+            include_deleted=include_deleted,
+            path_like=path_like,
+            status=status,
+            confidence=confidence,
+        )
 
         # 总数
         count_query = select(func.count(OrphanFile.id))
@@ -652,20 +793,11 @@ class OrphanFileService:
                 "items": [],
             }
 
-        result = await self.db.execute(
-            select(OrphanFile).where(
-                OrphanFile.id.in_(orphan_ids),
-                OrphanFile.scan_id == scan_id,
-                OrphanFile.is_deleted == False,  # noqa: E712
-                # 忽视态保护：被用户忽视的孤儿不进清理预览。
-                OrphanFile.canonical_path.notin_(
-                    select(OrphanCurrentCandidate.canonical_path).where(
-                        OrphanCurrentCandidate.is_ignored == True  # noqa: E712
-                    )
-                ),
-            )
+        items = await self._load_orphan_details(
+            orphan_ids,
+            scan_id=scan_id,
+            exclude_ignored=True,
         )
-        items = result.scalars().all()
 
         # 手动清理放行低置信度文件：low confidence（离线降级目录粗筛产出）有误判风险，
         # 但用户可在前端警告确认后主动删除。仅自动清理（get_purgeable_candidates）仍排除 low。
@@ -683,8 +815,9 @@ class OrphanFileService:
                     "file_size": item.file_size,
                     "confidence": item.confidence,
                 }
-                for item in items
+                for item in items[:ORPHAN_PREVIEW_ITEM_LIMIT]
             ],
+            "items_truncated": len(items) > ORPHAN_PREVIEW_ITEM_LIMIT,
         }
 
     # ==================== 手动清理 ====================
@@ -761,14 +894,10 @@ class OrphanFileService:
         )
 
         # 恢复可能已经最终化选中项，必须重新读取当前工作集。
-        result = await self.db.execute(
-            select(OrphanFile).where(
-                OrphanFile.id.in_(orphan_ids),
-                OrphanFile.scan_id == scan_id,
-                OrphanFile.is_deleted == False,  # noqa: E712
-            )
+        items = await self._load_orphan_details(
+            orphan_ids,
+            scan_id=scan_id,
         )
-        items = result.scalars().all()
 
         success_count = 0
         failed_list: List[Dict[str, Any]] = []
@@ -776,17 +905,20 @@ class OrphanFileService:
 
         # 实时 manifest 复核：store 提供时必须成功构建（fail-closed）
         # manifest 构建失败 → 无法确认文件是否仍被种子引用 → 拒绝所有清理
-        candidate_result = await self.db.execute(
-            select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.canonical_path.in_([normalize_path(item.file_path) for item in items]),
-                OrphanCurrentCandidate.status == "candidate",
-                OrphanCurrentCandidate.operation_state == "stable",
-            )
+        candidates = await self._load_candidates(
+            [self._detail_canonical_path(item) for item in items],
+            stable_only=True,
         )
-        candidates = {
-            ((candidate.downloader_id or ""), candidate.canonical_path): candidate
-            for candidate in candidate_result.scalars().all()
-        }
+        owner_reassigned = 0
+        for item in items:
+            candidate = candidates.get(self._detail_canonical_path(item))
+            if candidate is not None and self._sync_candidate_owner(candidate, item):
+                owner_reassigned += 1
+        if owner_reassigned:
+            logger.info(
+                "[孤儿清理] 按 canonical_path 修正候选归属 owner_reassigned=%d",
+                owner_reassigned,
+            )
         # 分流优化：manifest 精筛复核范围只放 high 候选所属下载器。
         # low 候选（离线降级目录粗筛产出）的 downloader 大概率仍离线，为其拉取整下载器
         # 逐种子清单既慢又常因 downloader 降级被拒绝（纯浪费）。low 候选改走目录白名单
@@ -817,7 +949,7 @@ class OrphanFileService:
         logger.info("[孤儿清理] 删除循环开始 items=%d", len(items))
         for item in items:
             try:
-                canonical = normalize_path(item.file_path)
+                canonical = self._detail_canonical_path(item)
                 if canonical in manifest.expected_paths:
                     failed_list.append(
                         {
@@ -828,7 +960,7 @@ class OrphanFileService:
                     )
                     continue
 
-                candidate = candidates.get(((item.downloader_id or ""), canonical))
+                candidate = candidates.get(canonical)
                 if candidate is None:
                     failed_list.append(
                         {
@@ -967,7 +1099,7 @@ class OrphanFileService:
 
         仅对 status=candidate 且 operation_state=stable 的候选生效（已进入
         清理流水线 quarantined/purged 的候选不再可忽视）。映射键为明细的
-        canonical_path + downloader_id。
+        canonical_path；downloader_id 仅为当前扫描归属元数据。
 
         Returns:
             {"success_count": int, "failed_count": int, "failed_list": [...]}
@@ -975,79 +1107,105 @@ class OrphanFileService:
         if not orphan_ids:
             return {"success_count": 0, "failed_count": 0, "failed_list": []}
 
-        # 取明细（限定 scan_id 调用方绑定的批次，避免跨批次误操作）
-        detail_filter = [
-            OrphanFile.id.in_(orphan_ids),
-            OrphanFile.is_deleted == False,  # noqa: E712
-        ]
-        if scan_id:
-            detail_filter.append(OrphanFile.scan_id == scan_id)
-        detail_result = await self.db.execute(select(OrphanFile).where(*detail_filter))
-        details = detail_result.scalars().all()
+        logger.info(
+            "[孤儿忽视] 开始 operator=%s ignored=%s scan_id=%s requested=%d",
+            operator,
+            ignored,
+            scan_id,
+            len(orphan_ids),
+        )
+
+        # 取明细（限定 scan_id 调用方绑定的批次，避免跨批次误操作）。
+        # 分块查询同时支持“全选当前筛选”产生的大规模 ID 快照。
+        details = await self._load_orphan_details(orphan_ids, scan_id=scan_id)
 
         if not details:
+            logger.warning(
+                "[孤儿忽视] 未找到扫描明细 operator=%s ignored=%s scan_id=%s requested_ids=%s",
+                operator,
+                ignored,
+                scan_id,
+                orphan_ids[:20],
+            )
             return {
                 "success_count": 0,
                 "failed_count": len(orphan_ids),
                 "failed_list": [{"id": oid, "reason": "未找到对应的孤儿明细"} for oid in orphan_ids],
             }
 
-        # 按 (downloader_id, canonical_path) 定位候选
-        keys = [((d.downloader_id or ""), d.canonical_path or normalize_path(d.file_path)) for d in details]
-        canonical_paths = [k[1] for k in keys]
-        cand_result = await self.db.execute(
-            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path.in_(canonical_paths))
-        )
-        candidates = {((c.downloader_id or ""), c.canonical_path): c for c in cand_result.scalars().all()}
+        # canonical_path 是候选表主键和列表忽视态的统一身份；downloader_id
+        # 仅是当前扫描归属元数据，不能参与候选是否存在的判定。
+        canonical_paths = [self._detail_canonical_path(detail) for detail in details]
+        candidates = await self._load_candidates(canonical_paths)
 
         now = datetime.utcnow()
         success_count = 0
         failed_list: List[Dict[str, Any]] = []
-        detail_by_key = {
-            ((d.downloader_id or ""), (d.canonical_path or normalize_path(d.file_path))): d for d in details
-        }
+        owner_reassigned = 0
+        details_by_id = {int(detail.id): detail for detail in details}
 
         for orphan_id in orphan_ids:
-            # 找到该 id 对应的明细与候选
-            matched = False
-            for (dl_id, cpath), detail in detail_by_key.items():
-                if detail.id != orphan_id:
-                    continue
-                matched = True
-                candidate = candidates.get((dl_id, cpath))
-                if candidate is None:
-                    failed_list.append(
-                        {"id": orphan_id, "file_path": detail.file_path, "reason": "当前候选状态不存在或已失效"}
-                    )
-                    break
-                if candidate.status != "candidate" or candidate.operation_state != "stable":
-                    failed_list.append(
-                        {
-                            "id": orphan_id,
-                            "file_path": detail.file_path,
-                            "reason": f"候选已进入清理流程（status={candidate.status}），不可忽视",
-                        }
-                    )
-                    break
-                candidate.is_ignored = bool(ignored)
-                candidate.ignored_at = now if ignored else None
-                candidate.ignored_by = operator if ignored else None
-                success_count += 1
-                break
-            if not matched:
+            detail = details_by_id.get(orphan_id)
+            if detail is None:
                 failed_list.append({"id": orphan_id, "reason": "未找到对应的孤儿明细"})
+                continue
+
+            canonical_path = self._detail_canonical_path(detail)
+            candidate = candidates.get(canonical_path)
+            if candidate is None:
+                failed_list.append(
+                    {"id": orphan_id, "file_path": detail.file_path, "reason": "当前候选状态不存在或已失效"}
+                )
+                continue
+            if candidate.status != "candidate" or candidate.operation_state != "stable":
+                failed_list.append(
+                    {
+                        "id": orphan_id,
+                        "file_path": detail.file_path,
+                        "reason": (
+                            "候选已进入清理流程"
+                            f"（status={candidate.status}, operation_state={candidate.operation_state}），不可忽视"
+                        ),
+                    }
+                )
+                continue
+            if self._sync_candidate_owner(candidate, detail):
+                owner_reassigned += 1
+            candidate.is_ignored = bool(ignored)
+            candidate.ignored_at = now if ignored else None
+            candidate.ignored_by = operator if ignored else None
+            success_count += 1
 
         try:
             async with admission_controller.db_write_scope():
                 await self.db.commit()
-        except Exception:
+        except Exception as exc:
             await self.db.rollback()
-            # 提交失败则全部计入 failed
+            logger.exception(
+                "[孤儿忽视] 数据库提交失败 operator=%s ignored=%s scan_id=%s requested=%d error=%s",
+                operator,
+                ignored,
+                scan_id,
+                len(orphan_ids),
+                exc,
+            )
+            reason = "数据库提交失败，请查看后端日志"
             return {
                 "success_count": 0,
                 "failed_count": len(orphan_ids),
-                "failed_list": [{"id": oid, "reason": "提交失败"} for oid in orphan_ids],
+                "failed_list": [{"id": oid, "reason": reason} for oid in orphan_ids],
             }
+
+        if failed_list:
+            reason_counts = Counter(str(item.get("reason") or "未知原因") for item in failed_list)
+            logger.warning(
+                "[孤儿忽视] 存在失败 operator=%s ignored=%s scan_id=%s failed_reasons=%s samples=%s",
+                operator,
+                ignored,
+                scan_id,
+                dict(reason_counts),
+                failed_list[:5],
+            )
 
         # 审计日志：用独立 session，避免污染主事务（参考 auto_cleanup_expired 模式）
         try:
@@ -1073,7 +1231,12 @@ class OrphanFileService:
             logger.warning(f"[孤儿忽视] 审计日志记录失败: {e}")
 
         logger.info(
-            f"[孤儿忽视] operator={operator} ignored={ignored} " f"成功 {success_count}，失败 {len(failed_list)}"
+            "[孤儿忽视] 完成 operator=%s ignored=%s success=%d failed=%d owner_reassigned=%d",
+            operator,
+            ignored,
+            success_count,
+            len(failed_list),
+            owner_reassigned,
         )
         return {
             "success_count": success_count,

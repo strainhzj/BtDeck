@@ -257,6 +257,45 @@ class TestOrphanFilesCleanupWiring:
         assert response.json()["code"] == "200"
         mocked.assert_awaited_once_with([1], scan_id="scan-latest")
 
+    def test_cleanup_preview_resolves_select_all_filter_snapshot(self):
+        """全选请求应先按筛选与排除项解析 ID，再进入既有安全预览。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        resolve_selection = AsyncMock(return_value=[11, 13])
+        preview = AsyncMock(return_value={"total_count": 2, "total_size": 30, "items": []})
+        with (
+            patch.object(OrphanFileService, "resolve_orphan_selection", resolve_selection),
+            patch.object(OrphanFileService, "cleanup_preview", preview),
+        ):
+            response = self.client.post(
+                "/api/v1/orphan-files/cleanup-preview",
+                json={
+                    "scan_id": "scan-latest",
+                    "select_all": True,
+                    "excluded_orphan_ids": [12],
+                    "filters": {
+                        "status": "pending",
+                        "confidence": "high",
+                        "path_like": "movie",
+                    },
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"]["total_count"] == 2
+        resolve_selection.assert_awaited_once_with(
+            orphan_ids=[],
+            select_all=True,
+            excluded_orphan_ids=[12],
+            scan_id="scan-latest",
+            downloader_id=None,
+            min_size=None,
+            path_like="movie",
+            status="pending",
+            confidence="high",
+        )
+        preview.assert_awaited_once_with([11, 13], scan_id="scan-latest")
+
     def test_list_returns_atomic_scan_context(self):
         """分页端点应原样返回列表、统计与扫描上下文的一致快照。"""
         from app.services.orphan_file_service import OrphanFileService
@@ -291,22 +330,58 @@ class TestOrphanFilesCleanupWiring:
             confidence=None,
         )
 
-    def test_list_accepts_page_size_upper_bound_100000(self):
-        """page_size 上限 100000 应被接受（与前端页大小输入上限 10 万对齐）。
+    def test_ignore_passes_scan_identity_and_preserves_failure_reasons(self):
+        """忽视端点必须把服务层逐项失败原因原样返回，供前端和日志诊断。"""
+        from app.services.orphan_file_service import OrphanFileService
 
-        守护本次修改：orphan_files.py 的 /list page_size 从 le=100 提到 le=100000。
-        若上限被误改回 100，本测试会失败（100000 被拒为 422）。
+        payload = {
+            "success_count": 0,
+            "failed_count": 1,
+            "failed_list": [
+                {
+                    "id": 7,
+                    "file_path": "/data/a.bin",
+                    "reason": "当前候选状态不存在或已失效",
+                }
+            ],
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "set_ignored", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/ignore",
+                json={
+                    "scan_id": "scan-latest",
+                    "orphan_ids": [7],
+                    "ignored": True,
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == "200"
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with(
+            orphan_ids=[7],
+            ignored=True,
+            operator="tester",
+            scan_id="scan-latest",
+        )
+
+    def test_list_accepts_page_size_upper_bound_1000(self):
+        """page_size 上限 1000 应被接受（与孤儿列表虚拟窗口批次上限对齐）。
+
+        大于 1000 的请求会造成超大 SQL IN、响应序列化和浏览器内存峰值；
+        列表通过滚动追加继续访问全部结果，不需要单批返回更多数据。
         """
         from app.services.orphan_file_service import OrphanFileService
 
-        mocked = AsyncMock(return_value={"total": 0, "page": 1, "pageSize": 100000, "list": [], "scan_context": {}})
+        mocked = AsyncMock(return_value={"total": 0, "page": 1, "pageSize": 1000, "list": [], "scan_context": {}})
         with patch.object(OrphanFileService, "get_orphan_list", mocked):
-            response = self.client.get("/api/v1/orphan-files/list?page_size=100000")
+            response = self.client.get("/api/v1/orphan-files/list?page_size=1000")
 
-        assert response.status_code == 200, "page_size=100000 应被接受"
+        assert response.status_code == 200, "page_size=1000 应被接受"
         mocked.assert_awaited_once_with(
             page=1,
-            page_size=100000,
+            page_size=1000,
             downloader_id=None,
             min_size=None,
             path_like=None,
@@ -315,14 +390,14 @@ class TestOrphanFilesCleanupWiring:
         )
 
     def test_list_rejects_page_size_over_upper_bound(self):
-        """page_size 超过 100000 应被 Pydantic 校验拒绝（422），不进入业务逻辑。"""
+        """page_size 超过 1000 应被 Pydantic 校验拒绝（422），不进入业务逻辑。"""
         from app.services.orphan_file_service import OrphanFileService
 
-        mocked = AsyncMock(return_value={"total": 0, "page": 1, "pageSize": 100001, "list": [], "scan_context": {}})
+        mocked = AsyncMock(return_value={"total": 0, "page": 1, "pageSize": 1001, "list": [], "scan_context": {}})
         with patch.object(OrphanFileService, "get_orphan_list", mocked):
-            response = self.client.get("/api/v1/orphan-files/list?page_size=100001")
+            response = self.client.get("/api/v1/orphan-files/list?page_size=1001")
 
-        assert response.status_code == 422, "page_size=100001 应被校验拒绝"
+        assert response.status_code == 422, "page_size=1001 应被校验拒绝"
         mocked.assert_not_awaited(), "校验失败不应进入业务逻辑"
 
     def test_cleanup_submits_persistent_job_without_waiting_for_manifest(self):

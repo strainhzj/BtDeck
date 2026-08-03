@@ -1,5 +1,40 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-03 - 孤儿全选当前筛选、隔离区表头对齐、剪贴板回退与操作日志布局
+
+### 实现内容
+
+- **真全选**：孤儿列表表头复选框不再依赖 Element 自带 selection 列（其数据源被虚拟窗口截成约 15 行），改为维护 `select_all + excluded_orphan_ids + 当前筛选快照` 的独立选择模型；已选计数按服务端 `total` 计算，选中全部时显示“当前筛选全部”标识。清理/忽视提交时前端发送 `select_all + filters + excluded_orphan_ids`，后端 `resolve_orphan_selection` 按与列表完全一致的 `_build_orphan_conditions` 把筛选快照解析为稳定 ID 集。
+- **批量查询分块**：全选产生的大规模 ID 快照按 500/批切块，规避 SQLite 绑定变量上限；清理预览对全选大批量截断为前 200 条明细并返回 `items_truncated`（计数与总大小仍覆盖全部）。
+- **隔离区表头对齐**：隔离区页签接入共享 `management-table` 表头类，与孤儿页签的表头布局、颜色、间距及固定方式一致，字段与功能不变。
+- **剪贴板回退**：新增 `frontend/src/utils/clipboard.ts` 的共享 `copyTextToClipboard`，优先 Clipboard API，非安全上下文/权限拒绝时回退隐藏 textarea + `execCommand`；操作日志详情 JSON 复制与任务详情内容复制统一接入并保留成功/失败提示。
+- **操作日志布局**：搜索栏与操作栏拆为独立筛选面板与操作栏，窄视口响应式排列；查询、重置及操作逻辑不变，前端补 `torrent_name` 查询参数对齐后端已有模糊搜索。
+
+### 验证与边界
+
+- 后端孤儿全套：229 passed / 1 skipped（含新增 select_all 快照解析用例）。
+- 前端全量 Jest：31 suites / 527 tests（新增 clipboard 用例）；TypeScript typecheck、定向严格 ESLint、生产 build 均通过。
+- 变更后端文件 Flake8、`git diff --check` 通过；生产 build 仅保留仓库既有 Sass/Element UI 与资源体积 warning。
+- 全量 mypy 仍报告孤儿历史 SQLAlchemy 模块既有 Column 类型债务，新增选择解析辅助代码无新增命中。
+- 无数据库 Schema、迁移或依赖变更；未执行 Git stage、commit、push 或部署，工作区原有未跟踪文件保持不动。
+
+## 2026-08-03 - 孤儿列表固定表头、忽视身份与大页性能修复
+
+### 根因与修复
+
+- 表头问题来自滚动放在 `.orphan-table-scroll` 外层，而 Element Table 自身的 overflow 形成了不滚动的 sticky 包含块；现改为给表格 `height="100%"`，监听其内部 body 滚动，表头由组件原生固定。
+- 只读核对现场数据库：最新成功扫描剩余 44,499 条中，1,915 条明细的 `downloader_id` 与同路径候选不一致，同时 `canonical_path` 与 `last_seen_scan_id` 一致。旧忽视逻辑用 `(downloader_id, canonical_path)` 查候选，导致这些合法项全部返回“候选不存在”。现统一以候选表主键 `canonical_path` 定位，成功扫描对账及同快照操作同步修正归属元数据；候选状态、operation_state 和扫描批次门禁均保留。
+- 忽视服务新增结构化开始/完成日志、失败原因计数与样例、数据库提交异常堆栈；前端区分成功、部分失败和全部失败，并展示后端 `failed_list.reason`。
+- 大页保留 20/50/100/500/1000 选项，自定义与 API 单批上限统一为 1000；表格按 48px 定高计算可视窗口并加 8 行 overscan，通过上下占位行保持滚动高度，1000 条数据不再同时创建 1000 个 DOM 行。
+
+### 验证与边界
+
+- 后端孤儿模块全套：226 passed / 1 skipped；其中忽视、生命周期与 API 定向回归 52 passed。
+- 前端孤儿页面：24 passed；前端全量：30 suites / 516 tests；TypeScript typecheck、定向严格 ESLint和生产 build 均通过。
+- Flake8、`git diff --check` 与 Git Bash 根 `./init.sh --ci` 通过；生产 build 仅保留仓库既有 Browserslist、Sass/Element UI 和资源体积 warning，根验证保留 Windows/npm null-byte 环境 warning。
+- 全量 mypy 仍报告孤儿历史 SQLAlchemy 模块的 169 条 Column 类型债务；新增规范路径身份辅助代码无新增命中。当前 Windows Python 的 Black CLI 再次出现格式处理完成后进程不退出，已停止对应验证进程。
+- 无数据库 Schema、迁移或依赖变更；未执行 Git stage、commit、push 或部署，工作区原有未跟踪文件保持不动。
+
 ## 2026-08-03 - 种子实时进度与孤儿列表交互修复
 
 ### 修正内容

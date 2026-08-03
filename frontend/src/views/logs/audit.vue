@@ -1,131 +1,150 @@
 <template>
-  <div class="app-container audit-logs-container">
+  <div class="app-container management-page audit-logs-container">
+    <header class="management-page__header" aria-labelledby="audit-logs-title">
+      <div class="management-page__heading">
+        <h1 id="audit-logs-title" class="management-page__title">操作日志</h1>
+        <p class="management-page__subtitle">检索关键操作记录，核对执行结果并导出留档</p>
+      </div>
+    </header>
+
     <!-- 筛选区域 -->
-    <div class="filter-container">
-      <el-input
-        v-model="listQuery.torrent_name"
-        placeholder="种子名称（支持模糊搜索）"
-        style="width: 200px;"
-        class="filter-item"
-        clearable
-        @keyup.enter.native="handleFilter"
-      />
-      <el-select
-        v-model="listQuery.operation_type"
-        placeholder="操作类型"
-        style="width: 200px;"
-        class="filter-item"
-        clearable
-        filterable
-      >
-        <el-option label="全部类型" value="" />
-        <el-option-group label="种子管理">
-          <el-option label="新增种子" value="add" />
-          <el-option label="等级4删除（待删除）" value="delete_l4" />
-          <el-option label="等级3删除（回收站）" value="delete_l3" />
-          <el-option label="等级2删除（保留数据）" value="delete_l2" />
-          <el-option label="等级1删除（完全删除）" value="delete_l1" />
-          <el-option label="还原种子" value="restore" />
-        </el-option-group>
-        <el-option-group label="下载器操作">
-          <el-option label="添加下载器" value="downloader_add" />
-          <el-option label="删除下载器" value="downloader_delete" />
-          <el-option label="修改下载器" value="downloader_update" />
-          <el-option label="测试下载器" value="downloader_test" />
-        </el-option-group>
-        <el-option-group label="定时任务">
-          <el-option label="添加定时任务" value="scheduled_task_add" />
-          <el-option label="删除定时任务" value="scheduled_task_delete" />
-          <el-option label="修改定时任务" value="scheduled_task_update" />
-          <el-option label="执行定时任务" value="scheduled_task_execute" />
-        </el-option-group>
-        <el-option-group label="关键词规则">
-          <el-option label="添加关键词规则" value="keyword_rule_add" />
-          <el-option label="删除关键词规则" value="keyword_rule_delete" />
-          <el-option label="修改关键词规则" value="keyword_rule_update" />
-        </el-option-group>
-      </el-select>
-      <el-input
-        v-model="listQuery.operator"
-        placeholder="操作人"
-        style="width: 150px;"
-        class="filter-item"
-        clearable
-        @keyup.enter.native="handleFilter"
-      />
-      <el-select
-        v-model="listQuery.operation_result"
-        placeholder="操作结果"
-        style="width: 130px;"
-        class="filter-item"
-        clearable
-      >
-        <el-option label="全部" value="" />
-        <el-option label="成功" value="success" />
-        <el-option label="失败" value="failed" />
-        <el-option label="部分成功" value="partial" />
-      </el-select>
+    <section class="management-panel audit-filter-panel" aria-labelledby="audit-filter-title">
+      <div class="management-panel__header">
+        <div class="management-panel__heading">
+          <h2 id="audit-filter-title" class="management-panel__title">筛选日志</h2>
+          <p class="management-panel__description">可组合名称、类型、操作人、结果与时间范围进行查询</p>
+        </div>
+        <div class="management-panel__meta">
+          <el-tag type="info" effect="plain">共 {{ total }} 条</el-tag>
+        </div>
+      </div>
+      <div class="management-filter audit-filter-grid">
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="audit-torrent-name">种子名称</label>
+          <el-input
+            id="audit-torrent-name"
+            v-model="listQuery.torrent_name"
+            class="management-filter__control"
+            placeholder="支持模糊搜索"
+            prefix-icon="el-icon-search"
+            clearable
+            @keyup.enter.native="handleFilter"
+          />
+        </div>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="audit-operation-type">操作类型</label>
+          <el-select
+            id="audit-operation-type"
+            v-model="listQuery.operation_type"
+            class="management-filter__control"
+            placeholder="全部类型"
+            clearable
+            filterable
+          >
+            <el-option label="全部类型" value="" />
+            <el-option-group label="种子管理">
+              <el-option label="新增种子" value="add" />
+              <el-option label="等级4删除（待删除）" value="delete_l4" />
+              <el-option label="等级3删除（回收站）" value="delete_l3" />
+              <el-option label="等级2删除（保留数据）" value="delete_l2" />
+              <el-option label="等级1删除（完全删除）" value="delete_l1" />
+              <el-option label="还原种子" value="restore" />
+            </el-option-group>
+            <el-option-group label="下载器操作">
+              <el-option label="添加下载器" value="downloader_add" />
+              <el-option label="删除下载器" value="downloader_delete" />
+              <el-option label="修改下载器" value="downloader_update" />
+              <el-option label="测试下载器" value="downloader_test" />
+            </el-option-group>
+            <el-option-group label="定时任务">
+              <el-option label="添加定时任务" value="scheduled_task_add" />
+              <el-option label="删除定时任务" value="scheduled_task_delete" />
+              <el-option label="修改定时任务" value="scheduled_task_update" />
+              <el-option label="执行定时任务" value="scheduled_task_execute" />
+            </el-option-group>
+            <el-option-group label="关键词规则">
+              <el-option label="添加关键词规则" value="keyword_rule_add" />
+              <el-option label="删除关键词规则" value="keyword_rule_delete" />
+              <el-option label="修改关键词规则" value="keyword_rule_update" />
+            </el-option-group>
+          </el-select>
+        </div>
+        <div class="management-filter__field audit-filter-field--operator">
+          <label class="management-filter__label" for="audit-operator">操作人</label>
+          <el-input
+            id="audit-operator"
+            v-model="listQuery.operator"
+            class="management-filter__control"
+            placeholder="全部操作人"
+            clearable
+            @keyup.enter.native="handleFilter"
+          />
+        </div>
+        <div class="management-filter__field audit-filter-field--result">
+          <label class="management-filter__label" for="audit-operation-result">操作结果</label>
+          <el-select
+            id="audit-operation-result"
+            v-model="listQuery.operation_result"
+            class="management-filter__control"
+            placeholder="全部结果"
+            clearable
+          >
+            <el-option label="全部" value="" />
+            <el-option label="成功" value="success" />
+            <el-option label="失败" value="failed" />
+            <el-option label="部分成功" value="partial" />
+          </el-select>
+        </div>
+        <div class="management-filter__field management-filter__field--wide audit-filter-field--time">
+          <label class="management-filter__label" for="audit-date-range">操作时间</label>
+          <el-date-picker
+            id="audit-date-range"
+            v-model="dateRange"
+            class="management-filter__control"
+            type="datetimerange"
+            range-separator="至"
+            start-placeholder="开始时间"
+            end-placeholder="结束时间"
+            value-format="yyyy-MM-dd HH:mm:ss"
+            @change="handleDateRangeChange"
+          />
+        </div>
+        <div class="management-filter__actions audit-search-actions">
+          <el-button v-waves type="primary" icon="el-icon-search" @click="handleFilter">
+            搜索
+          </el-button>
+          <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
+        </div>
+      </div>
+    </section>
 
-      <!-- 时间范围选择 -->
-      <el-date-picker
-        v-model="dateRange"
-        type="datetimerange"
-        range-separator="至"
-        start-placeholder="开始时间"
-        end-placeholder="结束时间"
-        value-format="yyyy-MM-dd HH:mm:ss"
-        style="width: 350px;"
-        class="filter-item"
-        @change="handleDateRangeChange"
-      />
-
-      <el-button
-        v-waves
-        class="filter-item"
-        type="primary"
-        icon="el-icon-search"
-        @click="handleFilter"
-      >
-        搜索
-      </el-button>
-      <el-button
-        class="filter-item"
-        type="default"
-        icon="el-icon-refresh"
-        @click="resetFilter"
-      >
-        重置
-      </el-button>
-
-      <!-- 导出和归档按钮 -->
-      <el-dropdown @command="handleExport" class="filter-item">
-        <el-button type="success" icon="el-icon-download">
-          导出 <i class="el-icon-arrow-down el-icon--right" />
-        </el-button>
-        <el-dropdown-menu slot="dropdown">
-          <el-dropdown-item command="csv">导出为 CSV</el-dropdown-item>
-          <el-dropdown-item command="excel">导出为 Excel</el-dropdown-item>
-        </el-dropdown-menu>
-      </el-dropdown>
-
-      <el-button
-        class="filter-item"
-        type="warning"
-        icon="el-icon-folder"
-        @click="showArchiveDialog"
-      >
-        归档历史日志
-      </el-button>
-
-      <el-button
-        class="filter-item"
-        type="info"
-        icon="el-icon-refresh"
-        @click="refreshStatistics"
-      >
-        刷新统计
-      </el-button>
-    </div>
+    <!-- 数据操作栏 -->
+    <section class="management-panel audit-action-panel" aria-labelledby="audit-actions-title">
+      <div class="audit-action-bar">
+        <div class="audit-action-bar__heading">
+          <span class="audit-action-bar__icon" aria-hidden="true"><i class="el-icon-setting" /></span>
+          <div>
+            <h2 id="audit-actions-title" class="audit-action-bar__title">日志操作</h2>
+            <p class="audit-action-bar__description">导出当前筛选结果，或归档历史数据</p>
+          </div>
+        </div>
+        <div class="audit-action-bar__actions">
+          <el-dropdown @command="handleExport">
+            <el-button type="success" icon="el-icon-download">
+              导出 <i class="el-icon-arrow-down el-icon--right" />
+            </el-button>
+            <el-dropdown-menu slot="dropdown">
+              <el-dropdown-item command="csv">导出为 CSV</el-dropdown-item>
+              <el-dropdown-item command="excel">导出为 Excel</el-dropdown-item>
+            </el-dropdown-menu>
+          </el-dropdown>
+          <el-button type="warning" icon="el-icon-folder" @click="showArchiveDialog">
+            归档历史日志
+          </el-button>
+          <el-button icon="el-icon-refresh" @click="refreshStatistics">刷新统计</el-button>
+        </div>
+      </div>
+    </section>
 
     <!-- 统计信息卡片 -->
     <el-row :gutter="20" style="margin-bottom: 20px;">
@@ -408,7 +427,7 @@
 
       <span slot="footer" class="dialog-footer">
         <el-button @click="detailDialogVisible = false">关闭</el-button>
-        <el-button type="primary" @click="handleCopyJson">📋 复制JSON</el-button>
+        <el-button type="primary" icon="el-icon-document-copy" @click="handleCopyJson">复制 JSON</el-button>
       </span>
     </el-dialog>
 
@@ -455,8 +474,8 @@
 
       <span slot="footer" class="dialog-footer">
         <el-button @click="archiveDialogVisible = false">取消</el-button>
-        <el-button type="warning" :loading="archiveLoading" @click="handleConfirmArchive">
-          📁 确认归档
+        <el-button type="warning" icon="el-icon-folder-checked" :loading="archiveLoading" @click="handleConfirmArchive">
+          确认归档
         </el-button>
       </span>
     </el-dialog>
@@ -465,20 +484,31 @@
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
-import { queryAuditLogs, getAuditLogStatistics, exportAuditLogs, archiveAuditLogs } from '@/api/audit-logs'
+import {
+  queryAuditLogs,
+  getAuditLogStatistics,
+  exportAuditLogs,
+  archiveAuditLogs,
+  AuditLogArchiveRequest,
+  AuditLogItem,
+  AuditLogQueryRequest,
+  AuditLogStatisticsResponse
+} from '@/api/audit-logs'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
-@Component({
-  name: 'AuditLogs'
-})
-export default class AuditLogs extends Vue {
-  // 列表数据
-  list: any[] = []
-  total = 0
-  listLoading = false
-  currentRow: any = null
+interface AuditLogListQuery extends AuditLogQueryRequest {
+  torrent_name: string
+  operation_type: string
+  operator: string
+  operation_result: string
+  start_time: string
+  end_time: string
+  page: number
+  page_size: number
+}
 
-  // 查询参数
-  listQuery = {
+function createDefaultListQuery(): AuditLogListQuery {
+  return {
     torrent_name: '',
     operation_type: '',
     operator: '',
@@ -488,12 +518,26 @@ export default class AuditLogs extends Vue {
     page: 1,
     page_size: 20
   }
+}
+
+@Component({
+  name: 'AuditLogs'
+})
+export default class AuditLogs extends Vue {
+  // 列表数据
+  list: AuditLogItem[] = []
+  total = 0
+  listLoading = false
+  currentRow: AuditLogItem | null = null
+
+  // 查询参数
+  listQuery: AuditLogListQuery = createDefaultListQuery()
 
   // 日期范围
   dateRange: string[] | null = null
 
   // 统计信息
-  statistics: any = {
+  statistics: AuditLogStatisticsResponse = {
     total_count: 0,
     operation_type_stats: {},
     operator_stats: {},
@@ -503,10 +547,10 @@ export default class AuditLogs extends Vue {
   // 对话框
   detailDialogVisible = false
   archiveDialogVisible = false
-  currentLog: any = null
+  currentLog: AuditLogItem | null = null
 
   // 归档表单
-  archiveForm = {
+  archiveForm: AuditLogArchiveRequest = {
     end_time: '',
     archive_path: ''
   }
@@ -586,16 +630,7 @@ export default class AuditLogs extends Vue {
 
   // 重置筛选
   resetFilter() {
-    this.listQuery = {
-      torrent_name: '',
-      operation_type: '',
-      operator: '',
-      operation_result: '',
-      start_time: '',
-      end_time: '',
-      page: 1,
-      page_size: 20
-    }
+    this.listQuery = createDefaultListQuery()
     this.dateRange = null
     this.getList()
   }
@@ -624,12 +659,12 @@ export default class AuditLogs extends Vue {
   }
 
   // 行点击
-  handleRowClick(row: any) {
+  handleRowClick(row: AuditLogItem) {
     this.currentRow = row
   }
 
   // 查看详情
-  handleViewDetail(row: any) {
+  handleViewDetail(row: AuditLogItem) {
     this.currentLog = row
     this.detailDialogVisible = true
   }
@@ -713,14 +748,17 @@ export default class AuditLogs extends Vue {
   }
 
   // 复制JSON
-  handleCopyJson() {
-    if (this.currentLog) {
-      const jsonText = JSON.stringify(this.currentLog, null, 2)
-      navigator.clipboard.writeText(jsonText).then(() => {
-        this.$message.success('JSON已复制到剪贴板')
-      }).catch(() => {
-        this.$message.error('复制失败')
-      })
+  async handleCopyJson(): Promise<void> {
+    const currentLog = this.currentLog
+    const message = this.$message
+    if (!currentLog) return
+
+    try {
+      await copyTextToClipboard(JSON.stringify(currentLog, null, 2))
+      message.success('JSON 已复制到剪贴板')
+    } catch (error) {
+      console.error('复制审计日志 JSON 失败:', error)
+      message.error('复制失败，请手动选择内容复制')
     }
   }
 
@@ -804,12 +842,12 @@ export default class AuditLogs extends Vue {
   }
 
   // 格式化JSON
-  formatJson(jsonStr: string): string {
+  formatJson(jsonStr: unknown): string {
     try {
       const obj = typeof jsonStr === 'string' ? JSON.parse(jsonStr) : jsonStr
       return JSON.stringify(obj, null, 2)
     } catch (e) {
-      return jsonStr
+      return typeof jsonStr === 'string' ? jsonStr : String(jsonStr)
     }
   }
 
@@ -835,20 +873,97 @@ export default class AuditLogs extends Vue {
 
 <style lang="scss" scoped>
 .audit-logs-container {
-  // 继承app-container的padding
   padding: 20px;
 }
 
-.filter-container {
-  background: #fff;
-  padding: 20px;
-  border-radius: 4px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 12px 0 rgba(0, 0, 0, 0.1);
+.audit-filter-panel {
+  overflow: visible;
+}
 
-  .filter-item {
-    margin-right: 10px;
-    margin-bottom: 10px;
+.audit-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(190px, 1fr) minmax(210px, 1fr) minmax(150px, 0.7fr) minmax(150px, 0.7fr);
+  align-items: end;
+
+  .management-filter__field {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .audit-filter-field--time {
+    grid-column: span 2;
+  }
+
+  .audit-search-actions {
+    grid-column: span 2;
+    justify-content: flex-end;
+    margin-left: 0;
+  }
+
+  ::v-deep .management-filter__control {
+    width: 100%;
+  }
+}
+
+.audit-action-panel {
+  overflow: visible;
+  background:
+    linear-gradient(135deg, var(--color-bg-primary), var(--color-bg-secondary));
+}
+
+.audit-action-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  min-height: 82px;
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.audit-action-bar__heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.audit-action-bar__icon {
+  display: inline-flex;
+  flex: 0 0 42px;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  margin-right: var(--spacing-md);
+  color: #fff;
+  font-size: 20px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.audit-action-bar__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+}
+
+.audit-action-bar__description {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.audit-action-bar__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+
+  .el-button + .el-button {
+    margin-left: 0;
   }
 }
 
@@ -1111,6 +1226,41 @@ export default class AuditLogs extends Vue {
     max-height: 300px;
     overflow-y: auto;
     color: #606266;
+  }
+}
+
+@media (max-width: 1200px) {
+  .audit-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .audit-logs-container {
+    padding: var(--spacing-md);
+  }
+
+  .audit-filter-grid {
+    grid-template-columns: 1fr;
+
+    .audit-filter-field--time,
+    .audit-search-actions {
+      grid-column: span 1;
+    }
+
+    .audit-search-actions {
+      justify-content: flex-start;
+    }
+  }
+
+  .audit-action-bar {
+    flex-direction: column;
+    align-items: stretch;
+    padding: var(--spacing-md);
+  }
+
+  .audit-action-bar__actions {
+    justify-content: flex-start;
   }
 }
 </style>

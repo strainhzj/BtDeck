@@ -17,7 +17,7 @@
 | `downloader_capabilities_manager.py` | 359 | 1 class, 0 def | 下载器能力配置 CRUD 与同步 |
 | `downloader_settings_manager.py` | 369 | 1 class, 1 def | 下载器设置统一管理器（封装 qB/Transmission 设置包装类） |
 | `notification_service.py` | 226 | 1 class, 0 def | 通知服务（CRUD + 版本更新检查） |
-| `orphan_file_service.py` | 2112 | 1 class, 0 def | 孤儿文件管理（扫描上下文/清理与隔离/恢复/彻底删除/中断恢复）；物理操作后安全回收记录隔离根内的空 UUID/scan-id 目录 |
+| `orphan_file_service.py` | 2261 | 1 class, 0 def | 孤儿文件管理（扫描上下文/清理与隔离/恢复/彻底删除/中断恢复）；候选以 canonical_path 为稳定身份，忽视失败记录分类原因与样例；物理操作后安全回收记录隔离根内的空 UUID/scan-id 目录 |
 | `orphan_lease.py` | 259 | 2 class, 8 def | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | `orphan_lifecycle_service.py` | 252 | 1 class, 1 def | `OrphanCurrentCandidate` 表生命周期推进（仅在成功扫描根内对账，支持事务化状态落库） |
 | `orphan_manifest.py` | 560 | 5 class, 5 def | 有效路径筛选、严格下载器映射及扫描/清理共用实时 manifest |

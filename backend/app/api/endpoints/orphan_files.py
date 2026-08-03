@@ -32,18 +32,38 @@ router = APIRouter(tags=["孤儿文件管理"])
 # ========== 请求/响应模型 ==========
 
 
-class CleanupRequest(BaseModel):
+class OrphanSelectionFilters(BaseModel):
+    """“全选当前筛选”使用的列表过滤快照。"""
+
+    downloader_id: Optional[str] = None
+    min_size: Optional[int] = Field(default=None, ge=0)
+    path_like: Optional[str] = None
+    status: Optional[str] = None
+    confidence: Optional[str] = None
+
+
+class OrphanSelectionRequest(BaseModel):
+    """显式 ID 或当前筛选全集选择。"""
+
+    orphan_ids: List[int] = Field(default_factory=list, description="显式选择的孤儿文件ID列表")
+    select_all: bool = Field(default=False, description="是否选择当前筛选条件下的全部结果")
+    excluded_orphan_ids: List[int] = Field(
+        default_factory=list,
+        description="全选后由用户取消勾选的孤儿文件ID",
+    )
+    filters: Optional[OrphanSelectionFilters] = Field(default=None, description="全选时绑定的筛选快照")
+
+
+class CleanupRequest(OrphanSelectionRequest):
     """清理请求模型"""
 
     scan_id: str = Field(..., min_length=1, description="预览与清理绑定的扫描批次ID")
-    orphan_ids: List[int] = Field(..., min_length=1, description="孤儿文件ID列表")
 
 
-class IgnoreRequest(BaseModel):
+class IgnoreRequest(OrphanSelectionRequest):
     """忽视请求模型"""
 
     scan_id: Optional[str] = Field(default=None, description="绑定的扫描批次ID（限定操作范围）")
-    orphan_ids: List[int] = Field(..., description="孤儿文件ID列表")
     ignored: bool = Field(..., description="True=设为忽视，False=取消忽视")
 
 
@@ -51,6 +71,27 @@ class QuarantineActionRequest(BaseModel):
     """隔离区操作请求模型（恢复 / 立即彻底删除）"""
 
     canonical_paths: List[str] = Field(..., min_length=1, description="隔离区候选规范化路径列表")
+
+
+async def _resolve_selection(
+    service: OrphanFileService,
+    req: OrphanSelectionRequest,
+    *,
+    scan_id: Optional[str],
+) -> List[int]:
+    """把请求选择语义解析为提交时的稳定 ID 快照。"""
+    filters = req.filters or OrphanSelectionFilters()
+    return await service.resolve_orphan_selection(
+        orphan_ids=req.orphan_ids,
+        select_all=req.select_all,
+        excluded_orphan_ids=req.excluded_orphan_ids,
+        scan_id=scan_id,
+        downloader_id=filters.downloader_id,
+        min_size=filters.min_size,
+        path_like=filters.path_like,
+        status=filters.status,
+        confidence=filters.confidence,
+    )
 
 
 # ========== API 端点 ==========
@@ -74,7 +115,12 @@ async def get_latest_scan(
 @router.get("/list", response_model=CommonResponse)
 async def get_orphan_list(
     page: int = Query(default=1, ge=1, description="页码"),
-    page_size: int = Query(default=20, ge=1, le=100000, description="每页数量（最大 10 万，与前端页大小输入上限对齐）"),
+    page_size: int = Query(
+        default=20,
+        ge=1,
+        le=1000,
+        description="每批加载数量（最大 1000，避免超大响应阻塞列表）",
+    ),
     downloader_id: Optional[str] = Query(default=None, description="下载器ID筛选"),
     min_size: Optional[int] = Query(default=None, ge=0, description="最小文件大小（字节）"),
     path_like: Optional[str] = Query(default=None, description="文件路径模糊匹配"),
@@ -142,7 +188,8 @@ async def cleanup_preview(
     """清理预览（返回选中文件的数和总大小）"""
     try:
         service = OrphanFileService(db)
-        result = await service.cleanup_preview(req.orphan_ids, scan_id=req.scan_id)
+        orphan_ids = await _resolve_selection(service, req, scan_id=req.scan_id)
+        result = await service.cleanup_preview(orphan_ids, scan_id=req.scan_id)
         return CommonResponse(status="success", msg="预览成功", code="200", data=result)
     except Exception as e:
         logger.error(f"清理预览失败: {e}", exc_info=True)
@@ -158,9 +205,11 @@ async def cleanup_orphans(
 ):
     """提交主动清理任务；实际复核和隔离动作在后台执行。"""
     try:
+        service = OrphanFileService(db)
+        orphan_ids = await _resolve_selection(service, req, scan_id=req.scan_id)
         job = await OrphanPurgeJobService(db).create_cleanup_job(
             scan_id=req.scan_id,
-            orphan_ids=req.orphan_ids,
+            orphan_ids=orphan_ids,
             operator=current_user.username,
         )
         get_orphan_purge_dispatcher(request.app).submit(str(job.task_id))
@@ -187,8 +236,9 @@ async def set_orphan_ignored(
     """
     try:
         service = OrphanFileService(db)
+        orphan_ids = await _resolve_selection(service, req, scan_id=req.scan_id)
         result = await service.set_ignored(
-            orphan_ids=req.orphan_ids,
+            orphan_ids=orphan_ids,
             ignored=req.ignored,
             operator=current_user.username,
             scan_id=req.scan_id,

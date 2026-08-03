@@ -6,6 +6,7 @@ import type { ApiEnvelope } from '@/utils/request'
  */
 export interface AuditLogQueryRequest {
   torrent_info_id?: string
+  torrent_name?: string
   operation_type?: string
   operator?: string
   downloader_id?: string
@@ -49,6 +50,8 @@ export interface AuditLogItem {
   user_agent: string | null
   request_id: string | null
   session_id: string | null
+  torrent_name?: string | null
+  downloader_name?: string | null
 }
 
 /**
@@ -83,6 +86,7 @@ export interface OperationTypeItem {
  */
 export interface AuditLogExportRequest {
   torrent_info_id?: string
+  torrent_name?: string
   operation_type?: string
   operator?: string
   downloader_id?: string

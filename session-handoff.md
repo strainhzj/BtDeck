@@ -1,5 +1,53 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-03 交接：孤儿全选当前筛选、隔离区表头对齐、剪贴板回退与操作日志布局
+
+**当前任务**: `v1.0.6.36`
+**分支**: `dev`
+**状态**: 实现、回归、静态检查和生产构建完成；未提交、未推送、未部署。
+
+### 本次修改
+
+- 孤儿列表表头复选框改为独立选择模型（`select_all` + `excluded_orphan_ids` + 当前筛选快照），不再依赖被虚拟窗口截断的 Element selection 列；已选计数按服务端 `total` 计算，全选时显示“当前筛选全部”。
+- 后端新增 `OrphanSelectionRequest` 与 `resolve_orphan_selection`，清理/忽视提交时按与列表完全一致的 `_build_orphan_conditions` 把筛选快照解析为稳定 ID 集；大批量 ID 按 500/批切块，清理预览截断为前 200 条明细并返回 `items_truncated`。
+- 隔离区页签接入共享 `management-table` 表头类，与孤儿页签表头布局、颜色、间距及固定方式一致。
+- 新增共享 `copyTextToClipboard`（优先 Clipboard API，非安全上下文/权限拒绝回退 textarea + `execCommand`），操作日志 JSON 复制与任务详情复制统一接入。
+- 操作日志搜索栏与操作栏拆为独立响应式布局，查询/重置/操作逻辑不变；前端补 `torrent_name` 查询参数对齐后端已有模糊搜索。
+
+### 验证
+
+- 后端孤儿全套：229 passed / 1 skipped（含新增 select_all 快照解析用例）；变更文件 Flake8、`git diff --check` 通过。
+- 前端全量 Jest：31 suites / 527 tests；typecheck、定向严格 ESLint、生产 build 通过；build 仅保留既有 warning。
+- 全量 mypy 仍为孤儿历史 SQLAlchemy 模块既有 Column 类型债务，新增选择解析辅助代码无新增命中。
+
+### 工作区边界
+
+- 无 Schema、迁移或依赖变化；未执行 Git stage、commit、push 或部署。
+- 会话开始前已有的未跟踪临时目录、数据库备份、调试脚本、镜像归档和工具文件均保持不动。
+
+## 2026-08-03 交接：孤儿列表固定表头、忽视身份与大页性能修复
+
+**当前任务**: `v1.0.6.35`
+**分支**: `dev`
+**状态**: 实现、回归、静态检查和生产构建完成；未提交、未推送、未部署。
+
+### 本次修改
+
+- 忽视与清理候选定位统一使用 `canonical_path`，下载器 ID 仅作为可随成功扫描修正的归属元数据；保留 scan_id、candidate/stable 等安全门禁。
+- 忽视失败会在后端记录原因计数、样例与异常堆栈，API 保留逐项 `failed_list`；页面会明确显示全失败或部分失败及具体原因。
+- 孤儿表改用 Element Table 内部滚动和原生固定表头；1000 条大页通过定高可视窗口及上下占位行渲染，单批 API/自定义输入上限统一为 1000。
+
+### 验证
+
+- 后端孤儿全套：226 passed / 1 skipped；忽视/生命周期/API 定向：52 passed；Flake8 通过。
+- 前端孤儿页面：24 tests；全量：30 suites / 516 tests；typecheck、定向 ESLint、生产 build 通过。
+- `git diff --check` 与 Git Bash 根 `./init.sh --ci` 通过；build 仅保留既有警告，根验证保留 Windows/npm null-byte 环境 warning。全量 mypy 的 169 条报告为孤儿历史 SQLAlchemy Column 类型债务；Black CLI 在 Windows 上仍有完成后不退出的既有环境问题。
+
+### 工作区边界
+
+- 无 Schema、迁移或依赖变化；未执行 Git stage、commit、push 或部署。
+- 会话开始前已有的未跟踪临时目录、数据库备份、调试脚本、镜像归档和工具文件均保持不动。
+
 ## 2026-08-03 交接：种子实时进度与孤儿列表交互修复
 
 **当前任务**: `v1.0.6.34`

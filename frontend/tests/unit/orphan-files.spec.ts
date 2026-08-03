@@ -7,6 +7,7 @@ import {
   CleanupPreviewResult,
   OrphanFileItem,
   OrphanListResponse,
+  OrphanSelectionPayload,
   OrphanScanContext,
   OrphanScanRecord,
   QuarantineItem,
@@ -55,11 +56,11 @@ const mockPurgeQuarantineNow = purgeQuarantineNow as jest.MockedFunction<typeof 
 
 const clearSelection = jest.fn()
 const TableStub = localVue.extend({
-  props: ['data'],
+  props: ['data', 'height'],
   methods: {
     clearSelection
   },
-  template: '<div class="orphan-table-stub"><slot /></div>'
+  template: '<div class="orphan-table-stub" :data-height="height"><slot /></div>'
 })
 const TableColumnStub = localVue.extend({
   render(createElement) {
@@ -106,6 +107,13 @@ interface OrphanFilesVm extends Vue {
   listLoading: boolean
   scanLoading: boolean
   ignoreLoading: boolean
+  pageSizeInput: string
+  tableScrollTop: number
+  tableViewportHeight: number
+  virtualTableData: Array<OrphanFileItem & {
+    __virtualSpacer?: 'top' | 'bottom'
+    __virtualHeight?: number
+  }>
   listQuery: {
     page: number
     page_size: number
@@ -117,6 +125,11 @@ interface OrphanFilesVm extends Vue {
   }
   selectedIds: number[]
   selectedRows: OrphanFileItem[]
+  allMatchingSelected: boolean
+  excludedSelectionIds: number[]
+  selectedCount: number
+  selectionAllChecked: boolean
+  selectionIndeterminate: boolean
   scanContext: OrphanScanContext
   activeTab: 'orphans' | 'quarantine'
   quarantineList: QuarantineItem[]
@@ -130,6 +143,7 @@ interface OrphanFilesVm extends Vue {
   cleanupDialogVisible: boolean
   cleanupPreviewData: CleanupPreviewResult | null
   previewScanId: string | null
+  previewSelection: OrphanSelectionPayload | null
   refreshPageData: (allowPageCorrection?: boolean) => Promise<void>
   loadOrphanPage: (page: number, replace: boolean) => Promise<void>
   handleScan: () => Promise<void>
@@ -139,6 +153,10 @@ interface OrphanFilesVm extends Vue {
   handleResetFilter: () => void
   handleListScroll: (event: Event) => void
   loadNextOrphanPage: () => Promise<void>
+  applyPageSizeSelection: (value: string | number) => void
+  handleSelectAllChange: (checked: boolean) => void
+  handleRowSelectionChange: (row: OrphanFileItem, checked: boolean) => void
+  isRowSelected: (row: OrphanFileItem) => boolean
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
   handleTabSwitch: () => Promise<void>
@@ -286,6 +304,9 @@ function mountView(): Wrapper<Vue> {
       'el-input': true,
       'el-pagination': true,
       'el-tag': true,
+      'el-tabs': true,
+      'el-tab-pane': true,
+      'el-checkbox': true,
       'el-select': true,
       'el-option': true,
       'el-tooltip': true
@@ -502,7 +523,9 @@ describe('orphan files atomic page state', () => {
       min_size: ''
     })
     expect(vm.selectedIds).toEqual([])
-    expect(clearSelection).toHaveBeenCalledTimes(1)
+    expect(vm.allMatchingSelected).toBe(false)
+    expect(vm.excludedSelectionIds).toEqual([])
+    expect(clearSelection).not.toHaveBeenCalled()
   })
 
   it('最新失败时展示旧成功结果和失败原因，并禁用清理', async() => {
@@ -776,6 +799,121 @@ describe('orphan files atomic page state', () => {
     })
   })
 
+  it('孤儿表格使用内部固定高度滚动以保持表头可见', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+
+    const table = wrapper.find('.orphan-table-stub')
+    expect(table.attributes('data-height')).toBe('100%')
+  })
+
+  it('1000 条数据只渲染可视窗口及上下占位行', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.list = Array.from({ length: 1000 }, (_, index) => orphanItem(index + 1))
+    vm.tableViewportHeight = 480
+    vm.tableScrollTop = 24000
+    await localVue.nextTick()
+
+    const renderedRows = vm.virtualTableData
+    const dataRows = renderedRows.filter((row) => !row.__virtualSpacer)
+    expect(dataRows.length).toBeLessThanOrEqual(26)
+    expect(renderedRows[0].__virtualSpacer).toBe('top')
+    expect(renderedRows[renderedRows.length - 1].__virtualSpacer).toBe('bottom')
+    expect(renderedRows[0].__virtualHeight).toBeGreaterThan(0)
+  })
+
+  it('表头全选覆盖当前筛选全部结果而非仅虚拟窗口行', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.total = 75
+    vm.listQuery.status = 'pending'
+
+    vm.handleSelectAllChange(true)
+
+    expect(vm.allMatchingSelected).toBe(true)
+    expect(vm.selectedCount).toBe(75)
+    expect(vm.selectionAllChecked).toBe(true)
+    expect(vm.isRowSelected(orphanItem(1))).toBe(true)
+
+    vm.handleRowSelectionChange(orphanItem(1), false)
+
+    expect(vm.excludedSelectionIds).toEqual([1])
+    expect(vm.selectedCount).toBe(74)
+    expect(vm.selectionAllChecked).toBe(false)
+    expect(vm.selectionIndeterminate).toBe(true)
+    expect(vm.isRowSelected(orphanItem(1))).toBe(false)
+  })
+
+  it('全选批量忽视把筛选快照与排除项交给后端', async() => {
+    mockSetIgnored.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { success_count: 49, failed_count: 0, failed_list: [] }
+    })
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.total = 50
+    vm.listQuery.status = 'pending'
+    vm.listQuery.confidence = 'high'
+    vm.handleSelectAllChange(true)
+    vm.handleRowSelectionChange(orphanItem(2), false)
+
+    await vm.handleBatchIgnore(true)
+
+    expect(mockSetIgnored).toHaveBeenCalledWith({
+      scan_id: 'scan-completed',
+      select_all: true,
+      excluded_orphan_ids: [2],
+      filters: { status: 'pending', confidence: 'high' },
+      ignored: true
+    })
+  })
+
+  it('全选清理预览复用同一筛选选择快照', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.total = 30
+    vm.listQuery.status = 'pending'
+    vm.listQuery.downloader_id = 'dl-1'
+    vm.handleSelectAllChange(true)
+
+    await vm.handleCleanupPreview()
+
+    expect(mockCleanupPreview).toHaveBeenCalledWith({
+      scan_id: 'scan-completed',
+      select_all: true,
+      excluded_orphan_ids: [],
+      filters: { downloader_id: 'dl-1', status: 'pending' }
+    })
+    expect(vm.previewSelection).toEqual({
+      select_all: true,
+      excluded_orphan_ids: [],
+      filters: { downloader_id: 'dl-1', status: 'pending' }
+    })
+  })
+
+  it('自定义单次加载数量超过上限时自动限制为 1000', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    vm.applyPageSizeSelection(5000)
+    await flushLifecycle()
+
+    expect(vm.listQuery.page_size).toBe(1000)
+    expect(vm.pageSizeInput).toBe('1000')
+    expect(message.info).toHaveBeenCalledWith('单次最多加载 1000 条，已自动调整')
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, page_size: 1000 })
+    )
+  })
+
   it('置信度筛选会透传到列表查询并从第一页重新加载', async() => {
     const wrapper = mountView()
     await flushLifecycle()
@@ -836,8 +974,7 @@ describe('orphan files atomic page state', () => {
       data: {
         success_count: 1,
         failed_count: 0,
-        failed_list: [],
-        total_size: 0
+        failed_list: []
       }
     })
     mockGetOrphanList.mockResolvedValueOnce(listResponse())
@@ -856,6 +993,58 @@ describe('orphan files atomic page state', () => {
     expect(message.success).toHaveBeenCalled()
     // 忽视后刷新列表
     expect(mockGetOrphanList).toHaveBeenCalled()
+  })
+
+  it('忽视全部失败时展示后端逐项失败原因而不是成功提示', async() => {
+    mockSetIgnored.mockResolvedValueOnce({
+      code: '200',
+      msg: '忽视完成: 成功 0 个，失败 1 个',
+      status: 'success',
+      data: {
+        success_count: 0,
+        failed_count: 1,
+        failed_list: [
+          {
+            id: 1,
+            file_path: '/data/1.bin',
+            reason: '当前候选状态不存在或已失效'
+          }
+        ]
+      }
+    })
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    await vm.handleRowIgnore(orphanItem(1), true)
+
+    expect(message.error).toHaveBeenCalledWith(
+      '忽视失败：当前候选状态不存在或已失效'
+    )
+    expect(message.success).not.toHaveBeenCalled()
+  })
+
+  it('忽视部分失败时展示成功数、失败数和后端原因', async() => {
+    mockSetIgnored.mockResolvedValueOnce({
+      code: '200',
+      msg: '忽视完成: 成功 1 个，失败 1 个',
+      status: 'success',
+      data: {
+        success_count: 1,
+        failed_count: 1,
+        failed_list: [{ id: 2, reason: '候选已进入清理流程' }]
+      }
+    })
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    await vm.handleRowIgnore(orphanItem(1), true)
+
+    expect(message.warning).toHaveBeenCalledWith(
+      '忽视部分完成：成功 1 个，失败 1 个；候选已进入清理流程'
+    )
+    expect(message.success).not.toHaveBeenCalled()
   })
 
   it('混选不同状态时批量按钮禁用', async() => {

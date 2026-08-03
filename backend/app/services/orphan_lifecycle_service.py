@@ -89,6 +89,7 @@ class OrphanLifecycleService:
         inserted = 0
         updated = 0
         resolved = 0
+        owner_reassigned = 0
 
         # 处理本次发现的孤儿
         for orphan in orphans:
@@ -98,7 +99,7 @@ class OrphanLifecycleService:
                 # 新发现 → insert（first_seen_at 用 scan_time，反映实际首次发现时间）
                 candidate = OrphanCurrentCandidate(
                     canonical_path=path,
-                    downloader_id=orphan.get("downloader_id", ""),
+                    downloader_id=orphan.get("downloader_id") or "",
                     first_seen_at=scan_time,
                     last_seen_at=scan_time,
                     last_seen_scan_id=scan_id,
@@ -113,6 +114,14 @@ class OrphanLifecycleService:
                 self.db.add(candidate)
                 inserted += 1
             else:
+                # canonical_path 是候选表主键，也是候选生命周期的稳定身份。
+                # 同一路径可能因扫描根重叠、路径映射调整而改变归属下载器；
+                # 若不在每次成功对账时同步，忽视/清理会用旧 downloader_id
+                # 与当前扫描明细做复合匹配，导致合法候选被误判为不存在。
+                current_downloader_id = orphan.get("downloader_id") or ""
+                if existing_cand.downloader_id != current_downloader_id:
+                    setattr(existing_cand, "downloader_id", current_downloader_id)
+                    owner_reassigned += 1
                 # resolved → candidate 必须重新开始连续孤儿计时。
                 if existing_cand.status == "resolved":
                     existing_cand.first_seen_at = scan_time
@@ -148,7 +157,12 @@ class OrphanLifecycleService:
             await self.db.commit()
 
         logger.info(
-            f"[孤儿生命周期] scan_id={scan_id} 对账完成: " f"新增 {inserted}，更新 {updated}，标记 resolved {resolved}"
+            "[孤儿生命周期] scan_id=%s 对账完成: 新增 %d，更新 %d，归属修正 %d，标记 resolved %d",
+            scan_id,
+            inserted,
+            updated,
+            owner_reassigned,
+            resolved,
         )
         return {"inserted": inserted, "updated": updated, "resolved": resolved}
 

@@ -121,6 +121,8 @@ export interface CleanupPreviewSuccess {
     file_path: string
     file_size: number
   }>
+  /** 大批量全选时仅返回前 200 条预览明细，计数与大小仍覆盖全部。 */
+  items_truncated?: boolean
 }
 
 export interface CleanupPreviewRejected {
@@ -206,14 +208,27 @@ export interface OrphanListParams {
   confidence?: OrphanConfidence
 }
 
-export interface CleanupRequest {
-  scan_id: string
-  orphan_ids: number[]
+export interface OrphanSelectionFilters {
+  downloader_id?: string
+  min_size?: number
+  path_like?: string
+  status?: OrphanStatusFilter
+  confidence?: OrphanConfidence
 }
 
-export interface IgnoreRequest {
+export interface OrphanSelectionPayload {
+  orphan_ids?: number[]
+  select_all?: boolean
+  excluded_orphan_ids?: number[]
+  filters?: OrphanSelectionFilters
+}
+
+export interface CleanupRequest extends OrphanSelectionPayload {
+  scan_id: string
+}
+
+export interface IgnoreRequest extends OrphanSelectionPayload {
   scan_id?: string
-  orphan_ids: number[]
   ignored: boolean
 }
 
@@ -280,10 +295,14 @@ export function getCleanupJobStatus(taskId: string): Promise<ApiResponse<Cleanup
   }) as unknown as Promise<ApiResponse<CleanupJobResult>>
 }
 
-/**
- * 忽视操作结果（与清理结果结构一致，便于统一处理）
- */
-export type IgnoreResult = CleanupSuccessResult | CleanupRejectedResult
+/** 忽视操作结果；逐项失败原因必须保留给页面展示。 */
+export interface IgnoreResult {
+  rejected?: boolean
+  error?: string
+  success_count: number
+  failed_count: number
+  failed_list: CleanupFailedItem[]
+}
 
 /**
  * 设置/取消孤儿文件的忽视态
@@ -294,7 +313,8 @@ export function setIgnored(data: IgnoreRequest): Promise<ApiResponse<IgnoreResul
   return request({
     url: '/orphan-files/ignore',
     method: 'post',
-    data: data
+    data: data,
+    timeout: 120000
   }) as unknown as Promise<ApiResponse<IgnoreResult>>
 }
 
