@@ -225,38 +225,65 @@
           </el-button>
         </div>
       </div>
-      <div class="management-table-scroll orphan-table-scroll" @scroll.passive="handleListScroll">
+      <div
+        ref="orphanTableScroll"
+        class="management-table-scroll orphan-table-scroll"
+        @scroll.passive="handleListScroll"
+      >
         <el-table
           ref="orphanTable"
           v-loading="listLoading"
-          :data="list"
+          :data="virtualTableRows"
           class="management-table"
           border
           fit
           highlight-current-row
+          :row-class-name="getOrphanRowClass"
+          :row-style="getOrphanRowStyle"
+          :cell-style="getOrphanCellStyle"
           empty-text="暂无孤儿文件，点击“立即扫描”开始检测"
           style="width: 100%"
-          @selection-change="handleSelectionChange"
         >
-          <el-table-column type="selection" width="55" :selectable="rowSelectable" />
+          <el-table-column width="55" align="center">
+            <template slot="header">
+              <input
+                type="checkbox"
+                :checked="allRowsSelected"
+                :indeterminate.prop="selectionIndeterminate"
+                :disabled="list.length === 0"
+                aria-label="全选孤儿文件"
+                @change="handleSelectAllChange"
+              />
+            </template>
+            <template slot-scope="scope">
+              <input
+                v-if="!scope.row.__virtualSpacer"
+                type="checkbox"
+                :checked="isRowSelected(scope.row)"
+                :disabled="!rowSelectable(scope.row)"
+                :aria-label="`选择 ${scope.row.file_path}`"
+                @change.stop="handleOrphanRowSelection(scope.row, $event)"
+              />
+            </template>
+          </el-table-column>
           <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip />
           <el-table-column label="大小" width="120" align="center">
-            <template slot-scope="scope">
+            <template v-if="!scope.row.__virtualSpacer" slot-scope="scope">
               {{ formatSize(scope.row.file_size) }}
             </template>
           </el-table-column>
           <el-table-column label="修改时间" width="170" align="center">
-            <template slot-scope="scope">
+            <template v-if="!scope.row.__virtualSpacer" slot-scope="scope">
               {{ scope.row.mtime ? formatTime(scope.row.mtime) : '-' }}
             </template>
           </el-table-column>
           <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
-            <template slot-scope="scope">
+            <template v-if="!scope.row.__virtualSpacer" slot-scope="scope">
               <span>{{ scope.row.downloader_name || (scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-') }}</span>
             </template>
           </el-table-column>
           <el-table-column label="置信度" width="100" align="center">
-            <template slot-scope="scope">
+            <template v-if="!scope.row.__virtualSpacer" slot-scope="scope">
               <el-tooltip
                 v-if="scope.row.confidence === 'low'"
                 content="离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛"
@@ -270,14 +297,14 @@
             </template>
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
-            <template slot-scope="scope">
+            <template v-if="!scope.row.__virtualSpacer" slot-scope="scope">
               <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
               <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">已忽视</el-tag>
               <el-tag v-else type="danger" size="small">待清理</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="100" align="center" fixed="right">
-            <template slot-scope="scope">
+          <el-table-column label="操作" width="100" align="center">
+            <template v-if="!scope.row.__virtualSpacer" slot-scope="scope">
               <el-button
                 v-if="!scope.row.is_deleted && !scope.row.is_ignored"
                 type="text"
@@ -370,31 +397,41 @@
               ref="quarantineTable"
               v-loading="quarantineLoading"
               :data="quarantineList"
+              class="management-table quarantine-table"
               border
+              fit
               stripe
               @selection-change="handleQuarantineSelectionChange"
             >
               <el-table-column type="selection" width="55" />
-              <el-table-column label="原位置（规范化路径）" prop="canonical_path" min-width="300" show-overflow-tooltip />
+              <el-table-column label="文件路径" prop="canonical_path" min-width="300" show-overflow-tooltip />
               <el-table-column label="大小" width="120" align="center">
                 <template slot-scope="{row}">
                   {{ formatSize(row.file_size) }}
                 </template>
               </el-table-column>
-              <el-table-column label="隔离时间" width="170" align="center">
+              <el-table-column label="修改时间" width="170" align="center">
                 <template slot-scope="{row}">
-                  {{ formatIsoTime(row.quarantined_at) }}
-                </template>
-              </el-table-column>
-              <el-table-column label="预计删除" width="170" align="center">
-                <template slot-scope="{row}">
-                  {{ formatIsoTime(row.purge_after) }}
+                  {{ formatIsoTime(row.mtime || row.quarantined_at) }}
                 </template>
               </el-table-column>
               <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
                 <template slot-scope="{row}">
                   {{ row.downloader_name || row.downloader_id || '-' }}
                 </template>
+              </el-table-column>
+              <el-table-column label="置信度" width="100" align="center">
+                <template slot-scope="{row}">
+                  <el-tag :type="row.confidence === 'low' ? 'info' : 'success'" size="small">
+                    {{ row.confidence === 'low' ? '低' : '高' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="状态" width="90" align="center">
+                <el-tag type="warning" size="small">隔离中</el-tag>
+              </el-table-column>
+              <el-table-column label="操作" width="100" align="center">
+                <span>-</span>
               </el-table-column>
             </el-table>
           </div>
@@ -486,6 +523,14 @@ import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
 import PageSizeCombobox, { PageSizeSuggestion } from '@/components/torrents/PageSizeCombobox.vue'
 import { normalizeTraditionalPageSize } from '@/views/torrents/utils/traditionalPagination'
+import {
+  calculateTraditionalVirtualWindow,
+  TraditionalVirtualWindow
+} from '@/views/torrents/utils/traditionalVirtualList'
+
+const ORPHAN_VIRTUAL_ROW_HEIGHT = 44
+const ORPHAN_VIRTUAL_OVERSCAN = 8
+const ORPHAN_TABLE_VIEWPORT_FALLBACK = 470
 
 interface OrphanListQuery {
   page: number
@@ -505,6 +550,13 @@ interface DownloaderOption {
 interface OrphanTableRef extends Vue {
   clearSelection: () => void
 }
+
+interface OrphanVirtualSpacer {
+  __virtualSpacer: true
+  __virtualSpacerHeight: number
+}
+
+type OrphanTableRow = OrphanFileItem | OrphanVirtualSpacer
 
 @Component({ name: 'OrphanFiles', components: { PageSizeCombobox } })
 export default class OrphanFiles extends Vue {
@@ -548,6 +600,10 @@ export default class OrphanFiles extends Vue {
 
   // 选中状态：保存完整行以支持按主导状态启停批量按钮
   private selectedRows: OrphanFileItem[] = []
+  private tableScrollTop = 0
+  private pendingTableScrollTop = 0
+  private tableViewportHeight = ORPHAN_TABLE_VIEWPORT_FALLBACK
+  private tableScrollFrame: number | null = null
 
   // 页面列表、统计和清理门禁共用的后端权威快照
   private scanContext: OrphanScanContext = {
@@ -583,10 +639,15 @@ export default class OrphanFiles extends Vue {
 
   mounted() {
     void this.refreshPageData()
+    this.$nextTick(() => this.updateOrphanTableViewport())
   }
 
   beforeDestroy() {
     this.refreshRequestSeq += 1
+    if (this.tableScrollFrame !== null) {
+      window.cancelAnimationFrame(this.tableScrollFrame)
+      this.tableScrollFrame = null
+    }
   }
 
   // ==================== 隔离区管理 ====================
@@ -708,6 +769,51 @@ export default class OrphanFiles extends Vue {
     return this.selectedRows.map((r) => r.id)
   }
 
+  private get virtualWindow(): TraditionalVirtualWindow {
+    return calculateTraditionalVirtualWindow(
+      this.list.length,
+      this.tableScrollTop,
+      this.tableViewportHeight,
+      ORPHAN_VIRTUAL_ROW_HEIGHT,
+      ORPHAN_VIRTUAL_OVERSCAN
+    )
+  }
+
+  private get virtualizedList(): OrphanFileItem[] {
+    return this.list.slice(this.virtualWindow.startIndex, this.virtualWindow.endIndex)
+  }
+
+  private get virtualTableRows(): OrphanTableRow[] {
+    const rows: OrphanTableRow[] = []
+    if (this.virtualWindow.topSpacerHeight > 0) {
+      rows.push({
+        __virtualSpacer: true,
+        __virtualSpacerHeight: this.virtualWindow.topSpacerHeight
+      })
+    }
+    rows.push(...this.virtualizedList)
+    if (this.virtualWindow.bottomSpacerHeight > 0) {
+      rows.push({
+        __virtualSpacer: true,
+        __virtualSpacerHeight: this.virtualWindow.bottomSpacerHeight
+      })
+    }
+    return rows
+  }
+
+  private get allRowsSelected(): boolean {
+    const selectableRows = this.list.filter((row) => this.rowSelectable(row))
+    if (selectableRows.length === 0) return false
+    const selectedIds = new Set(this.selectedRows.map((row) => row.id))
+    return selectableRows.every((row) => selectedIds.has(row.id))
+  }
+
+  private get selectionIndeterminate(): boolean {
+    const selectableCount = this.list.filter((row) => this.rowSelectable(row)).length
+    const selectedCount = this.selectedRows.filter((row) => this.rowSelectable(row)).length
+    return selectedCount > 0 && selectedCount < selectableCount
+  }
+
   private get downloaderOptions(): DownloaderOption[] {
     return this.downloaderList.map((d) => ({
       value: d.downloader_id,
@@ -820,6 +926,7 @@ export default class OrphanFiles extends Vue {
         if (replace) {
           this.list = response.data.list
           this.selectedRows = []
+          this.resetOrphanTableScroll()
           const table = this.$refs.orphanTable as OrphanTableRef | undefined
           if (table && typeof table.clearSelection === 'function') {
             table.clearSelection()
@@ -847,11 +954,24 @@ export default class OrphanFiles extends Vue {
   }
 
   private handleListScroll(event: Event) {
-    if (this.listLoading || this.list.length >= this.total) return
     const target = event.target as HTMLElement | null
     if (!target) return
-    if (target.scrollHeight - target.scrollTop - target.clientHeight > 80) return
-    void this.loadNextOrphanPage()
+    this.pendingTableScrollTop = target.scrollTop
+    this.tableViewportHeight = target.clientHeight || ORPHAN_TABLE_VIEWPORT_FALLBACK
+    if (this.tableScrollFrame === null) {
+      this.tableScrollFrame = window.requestAnimationFrame(() => {
+        this.tableScrollTop = this.pendingTableScrollTop
+        this.tableScrollFrame = null
+      })
+    }
+
+    if (
+      !this.listLoading &&
+      this.list.length < this.total &&
+      target.scrollHeight - target.scrollTop - target.clientHeight <= 80
+    ) {
+      void this.loadNextOrphanPage()
+    }
   }
 
   private async loadNextOrphanPage(): Promise<void> {
@@ -912,8 +1032,65 @@ export default class OrphanFiles extends Vue {
     void this.refreshPageData()
   }
 
-  private handleSelectionChange(rows: OrphanFileItem[]) {
-    this.selectedRows = rows
+  private handleSelectAllChange(event: Event) {
+    const input = event.target as HTMLInputElement | null
+    this.selectedRows = input && input.checked
+      ? this.list.filter((row) => this.rowSelectable(row))
+      : []
+  }
+
+  private isRowSelected(row: OrphanFileItem): boolean {
+    return this.selectedRows.some((selected) => selected.id === row.id)
+  }
+
+  private handleOrphanRowSelection(row: OrphanFileItem, event: Event) {
+    const input = event.target as HTMLInputElement | null
+    const selected = this.selectedRows.filter((item) => item.id !== row.id)
+    if (input && input.checked) {
+      selected.push(row)
+    }
+    this.selectedRows = selected
+  }
+
+  private getOrphanRowClass({ row }: { row: OrphanTableRow }): string {
+    return this.isVirtualSpacer(row) ? 'orphan-virtual-spacer-row' : ''
+  }
+
+  private getOrphanRowStyle({ row }: { row: OrphanTableRow }): Record<string, string> {
+    return this.isVirtualSpacer(row)
+      ? { height: `${row.__virtualSpacerHeight}px` }
+      : {}
+  }
+
+  private getOrphanCellStyle({ row }: { row: OrphanTableRow }): Record<string, string> {
+    return this.isVirtualSpacer(row)
+      ? { height: `${row.__virtualSpacerHeight}px`, padding: '0', border: '0' }
+      : {}
+  }
+
+  private isVirtualSpacer(row: OrphanTableRow): row is OrphanVirtualSpacer {
+    return '__virtualSpacer' in row && row.__virtualSpacer
+  }
+
+  private updateOrphanTableViewport() {
+    const container = this.$refs.orphanTableScroll as HTMLElement | undefined
+    if (container && container.clientHeight > 0) {
+      this.tableViewportHeight = container.clientHeight
+    }
+  }
+
+  private resetOrphanTableScroll() {
+    this.tableScrollTop = 0
+    this.pendingTableScrollTop = 0
+    if (this.tableScrollFrame !== null) {
+      window.cancelAnimationFrame(this.tableScrollFrame)
+      this.tableScrollFrame = null
+    }
+    this.$nextTick(() => {
+      const container = this.$refs.orphanTableScroll as HTMLElement | undefined
+      if (container) container.scrollTop = 0
+      this.updateOrphanTableViewport()
+    })
   }
 
   /** 已清理行不可勾选；待清理/已忽视行均可勾选（用于对应批量操作）。 */
@@ -1129,12 +1306,57 @@ export default class OrphanFiles extends Vue {
   }
 
   /* 列表固定可视高度，数据通过滚动触底按页追加。 */
-  .orphan-table-scroll {
+  .management-table-scroll {
+    position: relative;
     height: 520px;
     max-height: calc(100vh - 430px);
     min-height: 300px;
     overflow-x: auto;
     overflow-y: auto;
+  }
+
+  /* Element UI 默认给表格本体设置 overflow:hidden，会截断 sticky 表头的滚动上下文。
+     表格由外层固定高度容器负责裁剪，确保两个页签的表头都能吸顶。 */
+  ::v-deep .management-table-scroll > .el-table {
+    overflow: visible;
+  }
+
+  /* 表头必须固定在列表滚动容器顶部；固定右侧列使用独立的 header wrapper，也要同步固定。 */
+  ::v-deep .management-table-scroll .el-table__header-wrapper,
+  ::v-deep .management-table-scroll .el-table__fixed-header-wrapper {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  ::v-deep .management-table-scroll .el-table__fixed-header-wrapper {
+    background: transparent;
+  }
+
+  /* 大页数只把可视窗口交给 el-table，首尾占位行维持完整滚动高度。 */
+  ::v-deep .management-table-scroll .orphan-virtual-spacer-row {
+    pointer-events: none;
+    background: transparent !important;
+  }
+
+  ::v-deep .management-table-scroll .orphan-virtual-spacer-row > td {
+    padding: 0 !important;
+    border: 0 !important;
+    line-height: 0;
+  }
+
+  ::v-deep .management-table-scroll .el-table__body tr:not(.orphan-virtual-spacer-row) > td {
+    height: 44px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+  }
+
+  ::v-deep .management-table-scroll input[type='checkbox'] {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    vertical-align: middle;
+    accent-color: var(--color-primary);
   }
 
   /* 懒加载状态沿用列表底部汇总区，避免滚动过程中布局跳动。 */

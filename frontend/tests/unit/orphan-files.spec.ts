@@ -117,6 +117,9 @@ interface OrphanFilesVm extends Vue {
   }
   selectedIds: number[]
   selectedRows: OrphanFileItem[]
+  virtualizedList: OrphanFileItem[]
+  virtualTableRows: Array<OrphanFileItem | { __virtualSpacer: true, __virtualSpacerHeight: number }>
+  allRowsSelected: boolean
   scanContext: OrphanScanContext
   activeTab: 'orphans' | 'quarantine'
   quarantineList: QuarantineItem[]
@@ -138,6 +141,7 @@ interface OrphanFilesVm extends Vue {
   handleFilter: () => void
   handleResetFilter: () => void
   handleListScroll: (event: Event) => void
+  handleSelectAllChange: (event: Event) => void
   loadNextOrphanPage: () => Promise<void>
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
@@ -236,6 +240,7 @@ function quarantineItem(): QuarantineItem {
     downloader_name: '涓讳笅杞藉櫒',
     quarantine_path: '/data/.btdeck_quarantine/quarantine.bin',
     quarantine_root: '/data/.btdeck_quarantine',
+    mtime: '2026-07-30T09:00:00',
     quarantined_at: '2026-07-30T10:00:00',
     purge_after: '2026-08-06T10:00:00',
     file_size: 2048,
@@ -774,6 +779,22 @@ describe('orphan files atomic page state', () => {
       status: undefined,
       min_size: undefined
     })
+  })
+
+  it('大分页使用虚拟窗口渲染但全选仍覆盖完整列表', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.list = Array.from({ length: 2000 }, (_, index) => orphanItem(index + 1))
+    vm.total = 2000
+
+    expect(vm.virtualizedList.length).toBeLessThan(vm.list.length)
+    expect(vm.virtualTableRows.length).toBeLessThan(vm.list.length)
+
+    vm.handleSelectAllChange({ target: { checked: true } } as unknown as Event)
+
+    expect(vm.selectedRows).toHaveLength(2000)
+    expect(vm.allRowsSelected).toBe(true)
   })
 
   it('置信度筛选会透传到列表查询并从第一页重新加载', async() => {

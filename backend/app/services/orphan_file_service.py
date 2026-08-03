@@ -46,6 +46,9 @@ from app.torrents.audit_enums import AuditOperationResult, AuditOperationType
 
 logger = logging.getLogger(__name__)
 
+# SQLite 的单条 IN/批量 flush 不能依赖运行环境的变量上限；忽视操作统一按小批次处理。
+_ORPHAN_OPERATION_BATCH_SIZE = 200
+
 
 class OrphanFileService:
     """孤儿文件管理服务（异步）"""
@@ -976,14 +979,16 @@ class OrphanFileService:
             return {"success_count": 0, "failed_count": 0, "failed_list": []}
 
         # 取明细（限定 scan_id 调用方绑定的批次，避免跨批次误操作）
-        detail_filter = [
-            OrphanFile.id.in_(orphan_ids),
-            OrphanFile.is_deleted == False,  # noqa: E712
-        ]
+        detail_filter = [OrphanFile.is_deleted == False]  # noqa: E712
         if scan_id:
             detail_filter.append(OrphanFile.scan_id == scan_id)
-        detail_result = await self.db.execute(select(OrphanFile).where(*detail_filter))
-        details = detail_result.scalars().all()
+        details: List[OrphanFile] = []
+        for start in range(0, len(orphan_ids), _ORPHAN_OPERATION_BATCH_SIZE):
+            id_batch = orphan_ids[start : start + _ORPHAN_OPERATION_BATCH_SIZE]
+            detail_result = await self.db.execute(
+                select(OrphanFile).where(*detail_filter, OrphanFile.id.in_(id_batch))
+            )
+            details.extend(detail_result.scalars().all())
 
         if not details:
             return {
@@ -995,50 +1000,67 @@ class OrphanFileService:
         # 按 (downloader_id, canonical_path) 定位候选
         keys = [((d.downloader_id or ""), d.canonical_path or normalize_path(d.file_path)) for d in details]
         canonical_paths = [k[1] for k in keys]
-        cand_result = await self.db.execute(
-            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path.in_(canonical_paths))
-        )
-        candidates = {((c.downloader_id or ""), c.canonical_path): c for c in cand_result.scalars().all()}
+        candidates: Dict[tuple[str, str], OrphanCurrentCandidate] = {}
+        for start in range(0, len(canonical_paths), _ORPHAN_OPERATION_BATCH_SIZE):
+            path_batch = canonical_paths[start : start + _ORPHAN_OPERATION_BATCH_SIZE]
+            cand_result = await self.db.execute(
+                select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path.in_(path_batch))
+            )
+            candidates.update(
+                {((c.downloader_id or ""), c.canonical_path): c for c in cand_result.scalars().all()}
+            )
 
         now = datetime.utcnow()
         success_count = 0
         failed_list: List[Dict[str, Any]] = []
-        detail_by_key = {
-            ((d.downloader_id or ""), (d.canonical_path or normalize_path(d.file_path))): d for d in details
-        }
+        detail_by_id = {detail.id: detail for detail in details}
 
         for orphan_id in orphan_ids:
-            # 找到该 id 对应的明细与候选
-            matched = False
-            for (dl_id, cpath), detail in detail_by_key.items():
-                if detail.id != orphan_id:
-                    continue
-                matched = True
-                candidate = candidates.get((dl_id, cpath))
-                if candidate is None:
-                    failed_list.append(
-                        {"id": orphan_id, "file_path": detail.file_path, "reason": "当前候选状态不存在或已失效"}
-                    )
-                    break
-                if candidate.status != "candidate" or candidate.operation_state != "stable":
-                    failed_list.append(
-                        {
-                            "id": orphan_id,
-                            "file_path": detail.file_path,
-                            "reason": f"候选已进入清理流程（status={candidate.status}），不可忽视",
-                        }
-                    )
-                    break
-                candidate.is_ignored = bool(ignored)
-                candidate.ignored_at = now if ignored else None
-                candidate.ignored_by = operator if ignored else None
-                success_count += 1
-                break
-            if not matched:
+            detail = detail_by_id.get(orphan_id)
+            if detail is None:
                 failed_list.append({"id": orphan_id, "reason": "未找到对应的孤儿明细"})
+                continue
+
+            detail_key = (
+                detail.downloader_id or "",
+                detail.canonical_path or normalize_path(detail.file_path),
+            )
+            candidate = candidates.get(detail_key)
+            if candidate is None:
+                failed_list.append(
+                    {"id": orphan_id, "file_path": detail.file_path, "reason": "当前候选状态不存在或已失效"}
+                )
+                continue
+            if candidate.status != "candidate" or candidate.operation_state != "stable":
+                failed_list.append(
+                    {
+                        "id": orphan_id,
+                        "file_path": detail.file_path,
+                        "reason": f"候选已进入清理流程（status={candidate.status}），不可忽视",
+                    }
+                )
+                continue
+            candidate.is_ignored = bool(ignored)
+            candidate.ignored_at = now if ignored else None
+            candidate.ignored_by = operator if ignored else None
+            success_count += 1
+
+            # 每 200 个成功更新先 flush，避免 SQLite/驱动在大批量 ORM flush 时失败。
+            if success_count % _ORPHAN_OPERATION_BATCH_SIZE == 0:
+                try:
+                    async with admission_controller.db_write_scope():
+                        await self.db.flush()
+                except Exception:
+                    await self.db.rollback()
+                    return {
+                        "success_count": 0,
+                        "failed_count": len(orphan_ids),
+                        "failed_list": [{"id": oid, "reason": "提交失败"} for oid in orphan_ids],
+                    }
 
         try:
             async with admission_controller.db_write_scope():
+                await self.db.flush()
                 await self.db.commit()
         except Exception:
             await self.db.rollback()
@@ -1472,6 +1494,11 @@ class OrphanFileService:
                     "downloader_name": nickname_map.get(c.downloader_id) if c.downloader_id else None,
                     "quarantine_path": c.quarantine_path,
                     "quarantine_root": c.quarantine_root,
+                    "mtime": (
+                        datetime.utcfromtimestamp(c.mtime_ns / 1_000_000_000).isoformat()
+                        if c.mtime_ns
+                        else None
+                    ),
                     "quarantined_at": c.quarantined_at.isoformat() if c.quarantined_at else None,
                     "purge_after": c.purge_after.isoformat() if c.purge_after else None,
                     "file_size": c.file_size,

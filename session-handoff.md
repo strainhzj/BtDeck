@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-03 交接：孤儿文件列表表头与大分页批量操作修复
+
+**当前任务**: `v1.0.6.35`
+**分支**: `dev`
+**状态**: 已实现并完成验证，已提交；推送因当前环境无法解析 `github.com` 暂未完成，未部署。
+
+### 本次修改
+
+- `frontend/src/views/orphan-files/index.vue`：孤儿/隔离区统一八列结构；固定高度滚动容器与 sticky 表头；孤儿表使用首尾占位行的虚拟窗口；自维护选择状态保证大分页全选和批量忽视不依赖 Element UI 全量行渲染。
+- `frontend/src/api/orphan-files.ts`、`backend/app/services/orphan_file_service.py`：隔离区列表补充 `mtime`，用于统一“修改时间”列。
+- `backend/app/services/orphan_file_service.py`：`set_ignored` 的明细/候选查询和 flush 按 200 条分块，按明细 ID O(1) 映射候选。
+- `backend/tests/services/test_orphan_ignore_and_filters.py`、`frontend/tests/unit/orphan-files.spec.ts`：新增 401 条大批量忽视、2000 条虚拟窗口/全选回归。
+
+### 验证结果
+
+- 后端：`tests/services/test_orphan_ignore_and_filters.py tests/api/test_orphan_files_api.py` 共 37 passed；Flake8 通过。
+- 前端：孤儿页面 20 tests passed；全量 Jest 30 suites / 512 tests passed；`typecheck`、全量 Vue ESLint、Vuex action lint、`build` 通过。
+- 已知环境阻断：`npm run lint` 的既有 advanced-search contract 漂移、Black Windows 进程超时、根 `./init.sh --ci` 的 WSL `E_ACCESSDENIED`。
+
+### 后续
+
+网络恢复后推送当前提交即可；不要将工作区原有 `.agents/`、`.claude/`、`.code-graph/`、`.codex/`、`.spec-workflow/`、`.zcode/` 和 `PLANS/orphan-files-state-consistency-fix/` 一并加入。
+
 ## 2026-08-03 交接：种子实时进度与孤儿列表交互修复
 
 **当前任务**: `v1.0.6.34`
