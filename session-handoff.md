@@ -1,5 +1,27 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-03 交接：种子实时进度与孤儿列表交互修复
+
+**当前任务**: `v1.0.6.34`
+**分支**: `dev`
+**状态**: 实现与定向验证完成；未提交、未推送、未部署。
+
+### 本次修改
+
+- `torrent_batch_add_service.py` 生成的异步完成通知正文带失败文件/原因；通知抽屉详情渲染 `failed_list`，批量添加同步响应提示也保留具体原因。
+- `torrent_speed.py` 在实时轮询后统一异步同步活跃/补查进度，使用下载器 ID + hash 复合键、变更检测、分批 commit 和 `db_write_scope`，避免同 hash 跨下载器串台。
+- 孤儿文件 API/服务新增 `confidence` 筛选并将 high 排序在前；前端固定高度滚动列表触底懒加载，筛选/刷新从第一页替换数据。
+
+### 验证
+
+- 后端相关回归：81 passed（含架构门禁）。
+- 前端全量 Jest：30 suites / 511 tests；`orphan-files.spec.ts`：19 tests；`typecheck`、直接 Vue ESLint、Vuex action lint 和生产构建均通过。
+- 完整前端 lint 被既有 advanced-search 生成契约漂移拦截；Black 在当前 Windows Python 环境命令超时未退出；根 `./init.sh --ci` 受 Windows/WSL `E_ACCESSDENIED` 阻断。
+
+### 工作区边界
+
+- 未执行 Git stage、commit、push 或部署；会话开始前已有的未跟踪目录、备份、镜像归档与工具文件保持不动。
+
 ## 2026-08-02 交接：批量添加异步化、tr 路径映射排查与分时段限速修复
 
 **当前任务**: `v1.0.6.33`

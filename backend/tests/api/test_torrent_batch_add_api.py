@@ -113,3 +113,4 @@ async def test_batch_add_completion_notification_contains_failure_details():
     assert notification_kwargs["extra_data"]["task_id"] == "task-1"
     assert notification_kwargs["extra_data"]["success_count"] == 1
     assert notification_kwargs["extra_data"]["failed_list"] == [{"file_name": "bad.torrent", "reason": "解析失败"}]
+    assert "bad.torrent：解析失败" in notification_kwargs["content"]

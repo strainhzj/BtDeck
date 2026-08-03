@@ -288,6 +288,7 @@ class TestOrphanFilesCleanupWiring:
             min_size=None,
             path_like=None,
             status=None,
+            confidence=None,
         )
 
     def test_list_accepts_page_size_upper_bound_100000(self):
@@ -304,7 +305,13 @@ class TestOrphanFilesCleanupWiring:
 
         assert response.status_code == 200, "page_size=100000 应被接受"
         mocked.assert_awaited_once_with(
-            page=1, page_size=100000, downloader_id=None, min_size=None, path_like=None, status=None
+            page=1,
+            page_size=100000,
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            status=None,
+            confidence=None,
         )
 
     def test_list_rejects_page_size_over_upper_bound(self):

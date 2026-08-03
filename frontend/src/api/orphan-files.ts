@@ -203,6 +203,7 @@ export interface OrphanListParams {
   min_size?: number
   path_like?: string
   status?: OrphanStatusFilter
+  confidence?: OrphanConfidence
 }
 
 export interface CleanupRequest {

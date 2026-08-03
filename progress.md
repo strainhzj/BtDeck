@@ -1,5 +1,21 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-03 - 种子实时进度与孤儿列表交互修复
+
+### 修正内容
+
+- 批量添加种子完成通知正文补充失败文件与具体原因；通知详情读取 `extra_data.failed_list` 结构化展示，前端同步响应也会提示失败明细。
+- `/api/v1/torrents/active-torrents` 将活跃及 TTL 补查种子的最新进度按 `(downloader_id, hash)` 复合身份异步写回 `torrent_info`，只写入实际变化，并按 `SYNC_DB_COMMIT_BATCH_SIZE` 分批提交。
+- 孤儿文件列表改为固定高度滚动容器，触底按页追加数据；新增高/低置信度筛选，默认排序保证高置信度在前。
+
+### 验证与边界
+
+- 后端相关回归：81 passed（含架构门禁；批量通知、孤儿 API/筛选、active-torrents 及进度写库）。
+- 前端全量 Jest：30 suites / 511 tests passed；孤儿页面定向 19 passed；TypeScript typecheck、直接 Vue ESLint、Vuex action lint 和生产构建均通过。
+- 完整 `npm run lint` 仍被任务开始前已有的 `advancedSearch.generated.ts` 契约漂移拦截，未修改该无关生成文件；根 `./init.sh --ci` 仍受 Windows/WSL `E_ACCESSDENIED` 阻断。
+- Black 在当前 Windows Python 环境中命令超时未退出，未执行格式化写回；Flake8 与 `git diff --check` 通过。
+- 未执行 Git stage、commit、push 或部署；保留工作区原有未跟踪目录与工具文件。
+
 ## 2026-08-02 - 下载器设置四项运行时问题修复与回归加固
 
 ### 修正内容

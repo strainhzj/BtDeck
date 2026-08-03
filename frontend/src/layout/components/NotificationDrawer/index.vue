@@ -94,6 +94,14 @@
       <span class="detail-time">{{ detailTime }}</span>
     </div>
     <div class="detail-content" v-html="detailHtml" />
+    <div v-if="detailFailureList.length > 0" class="detail-failures">
+      <h4>失败明细</h4>
+      <ul>
+        <li v-for="(item, index) in detailFailureList" :key="failureItemKey(item, index)">
+          <span class="detail-failure-target">{{ failureItemTarget(item) }}</span>：{{ item.reason }}
+        </li>
+      </ul>
+    </div>
     <div v-if="detailReleaseUrl" class="detail-footer">
       <a :href="detailReleaseUrl" target="_blank" class="detail-link">
         <LucideIcon name="external-link" :size="13" /> 在 GitHub 上查看完整 Release
@@ -106,7 +114,7 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { NotificationModule } from '@/store/modules/notification'
-import { NotificationItem } from '@/api/notification'
+import { NotificationFailureItem, NotificationExtraData, NotificationItem } from '@/api/notification'
 import NotificationItemComp from './NotificationItem.vue'
 
 @Component({
@@ -125,7 +133,7 @@ export default class extends Vue {
   private detailContent = ''
   private detailType = ''
   private detailCreatedAt = ''
-  private detailExtraData: { release_url?: string } | null = null
+  private detailExtraData: NotificationExtraData | null = null
 
   private tabs = [
     { label: '全部', value: 'all' },
@@ -294,6 +302,18 @@ export default class extends Vue {
 
   private get detailReleaseUrl(): string {
     return this.detailExtraData?.release_url || ''
+  }
+
+  private get detailFailureList(): NotificationFailureItem[] {
+    return this.detailExtraData?.failed_list || []
+  }
+
+  private failureItemTarget(item: NotificationFailureItem): string {
+    return item.file_name || item.file_path || item.canonical_path || item.quarantine_path || (item.id ? `记录 ${item.id}` : '未知项')
+  }
+
+  private failureItemKey(item: NotificationFailureItem, index: number): string {
+    return `${this.failureItemTarget(item)}-${index}`
   }
 
   private handleView(notification: NotificationItem) {
@@ -549,6 +569,38 @@ export default class extends Vue {
       border: none;
       border-top: 1px solid #E5E7EB;
       margin: 8px 0;
+    }
+  }
+
+  .detail-failures {
+    margin-top: 16px;
+    padding: 12px;
+    border: 1px solid #FDE68A;
+    border-radius: 8px;
+    background: #FFFBEB;
+    color: #78350F;
+    font-size: 13px;
+    line-height: 1.5;
+
+    h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    li {
+      margin: 3px 0;
+      word-break: break-word;
+    }
+
+    .detail-failure-target {
+      color: #92400E;
+      font-weight: 600;
     }
   }
 

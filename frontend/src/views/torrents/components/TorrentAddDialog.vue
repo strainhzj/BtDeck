@@ -381,19 +381,25 @@ export default class TorrentAddDialog extends Vue {
         const successCount = data.success_count ?? 0
         const failedCount = data.failed_count ?? 0
         const results = data.results ?? []
+        const failedResults = results.filter(result => !result.success)
+        const failureSummary = failedResults
+          .slice(0, 3)
+          .map(result => `${result.file_name}：${result.error || '未知错误'}`)
+          .join('；')
+        const failureSuffix = failedResults.length > 3 ? `；其余 ${failedResults.length - 3} 个失败项请查看详情` : ''
 
         // 根据结果显示不同的提示
         if (successCount === data.total) {
           component.$message.success(`成功添加 ${successCount} 个种子`)
         } else if (successCount === 0) {
-          component.$message.error('种子添加失败')
+          component.$message.error(`种子添加失败：${failureSummary || '未知错误'}${failureSuffix}`)
           console.error('所有种子添加失败:', results)
         } else {
           component.$message.warning({
-            message: `部分成功：成功 ${successCount} 个，失败 ${failedCount} 个`,
+            message: `部分成功：成功 ${successCount} 个，失败 ${failedCount} 个${failureSummary ? `（${failureSummary}${failureSuffix}）` : ''}`,
             duration: 5000
           })
-          console.error('添加失败的种子:', results.filter(r => !r.success))
+          console.error('添加失败的种子:', failedResults)
         }
 
         // 只要有成功的就刷新列表并关闭对话框

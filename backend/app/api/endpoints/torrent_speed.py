@@ -18,12 +18,14 @@ from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 from fastapi import APIRouter, Depends, Request
 from qbittorrentapi import APIError as QbAPIError, Client as qbClient
 from transmission_rpc import Client as trClient, TransmissionError
-from sqlalchemy import select
+from sqlalchemy import select, tuple_
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
+from app.core.config import settings
 from app.database import AsyncSessionLocal
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.tasks.resource_guard import admission_controller
 from app.torrents.models import TorrentInfo
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,10 @@ class _TTLQueue:
 
 # 全局 TTL 队列实例
 _ttl_queue = _TTLQueue(_TTL_SECONDS)
+
+# active-torrents 每秒轮询可能产生重叠的后台写入任务；串行化“查询旧值→变更检测→提交”
+# 整段流程，避免较早轮询在较晚轮询之后提交而覆盖最新进度。
+_progress_sync_lock = asyncio.Lock()
 
 
 # 活动种子集合缓存的有效期（秒）。略大于前端 1 秒轮询间隔，容忍偶尔漏轮询。
@@ -340,6 +346,11 @@ async def _supplement_disappeared(
                 data = await _call_with_timeout(dl_id, "tr_supplement_speeds", _supplement_tr_sync, client, hashes)
             else:
                 continue
+            for item in data:
+                # 补查结果也必须带上下载器身份，否则同 hash 跨下载器时会
+                # 无法安全地写回对应的 TorrentInfo 记录。
+                item["downloader_id"] = dl_id
+                item["downloader_type"] = dl_type
             supplement_results.extend(data)
         except asyncio.TimeoutError:
             logger.warning(f"补查下载器 {nickname} 消失种子超时({_DOWNLOADER_TIMEOUT}s)")
@@ -349,99 +360,80 @@ async def _supplement_disappeared(
     return supplement_results
 
 
-async def _update_completed_torrents(completed_hashes: List[str]) -> None:
-    """
-    更新已完成的种子到数据库
-
-    检测进度达到100%且当前状态为downloading的种子，更新为completed状态。
-
-    Args:
-        completed_hashes: 进度达到100%的种子hash列表
-    """
-    if not completed_hashes:
-        return
-
-    try:
-        async with AsyncSessionLocal() as db:
-            # 查询当前状态为downloading的种子
-            stmt = select(TorrentInfo).where(
-                TorrentInfo.hash.in_(completed_hashes),
-                TorrentInfo.status == "downloading",
-                TorrentInfo.dr == 0,  # 未删除
-            )
-            result = await db.execute(stmt)
-            torrents_to_update = result.scalars().all()
-
-            if not torrents_to_update:
-                return
-
-            # 批量更新
-            for torrent in torrents_to_update:
-                torrent.progress = 100.0
-                torrent.status = "completed"
-                torrent.completed_date = datetime.now()
-                torrent.update_time = datetime.now()
-
-            await db.commit()
-            logger.info(f"已更新 {len(torrents_to_update)} 个种子为完成状态")
-
-    except Exception as e:
-        logger.error(f"更新已完成种子到数据库失败: {e}", exc_info=True)
-
-
 async def _sync_torrents_to_db(torrent_data: List[Dict[str, Any]]) -> None:
     """
-    将补查到的种子最新进度和状态同步到数据库。
+    将实时获取到的种子最新进度和状态同步到数据库。
 
-    避免搜索按钮查询数据库时出现进度回退。
-    如果进度达到100%，同时更新为completed状态。
+    只按 (downloader_id, hash) 复合身份更新，避免同 hash 跨下载器串台。
+    仅在进度或完成状态发生变化时写入，并按治理配置分批提交。
     """
     if not torrent_data:
         return
 
     try:
-        hashes = [t["hash"] for t in torrent_data if t.get("hash")]
-        if not hashes:
+        data_map: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for item in torrent_data:
+            torrent_hash = str(item.get("hash") or "")
+            downloader_id = str(item.get("downloader_id") or "")
+            if torrent_hash and downloader_id:
+                data_map[(downloader_id, torrent_hash)] = item
+
+        if not data_map:
             return
 
-        async with AsyncSessionLocal() as db:
-            stmt = select(TorrentInfo).where(
-                TorrentInfo.hash.in_(hashes),
-                TorrentInfo.dr == 0,
-            )
-            result = await db.execute(stmt)
-            db_torrents = result.scalars().all()
+        async with _progress_sync_lock:
+            async with AsyncSessionLocal() as db:
+                stmt = select(TorrentInfo).where(
+                    tuple_(TorrentInfo.downloader_id, TorrentInfo.hash).in_(list(data_map)),
+                    TorrentInfo.dr == 0,
+                )
+                result = await db.execute(stmt)
+                db_torrents = result.scalars().all()
 
-            # 构建 hash -> 补查数据 的映射
-            data_map = {t["hash"]: t for t in torrent_data}
+                pending_updates: List[Tuple[TorrentInfo, float, bool]] = []
+                for torrent in db_torrents:
+                    key = (str(torrent.downloader_id or ""), str(torrent.hash or ""))
+                    new_data = data_map.get(key)
+                    if not new_data:
+                        continue
 
-            updated = 0
-            for torrent in db_torrents:
-                new_data = data_map.get(torrent.hash)
-                if not new_data:
-                    continue
+                    try:
+                        new_progress = float(new_data.get("progress", 0) or 0)
+                    except (TypeError, ValueError):
+                        logger.warning("忽略无效的种子进度: downloader_id=%s hash=%s", *key)
+                        continue
 
-                new_progress = new_data.get("progress", 0)
+                    progress_changed = float(torrent.progress or 0) != new_progress
+                    should_complete = new_progress >= 100 and torrent.status == "downloading"
 
-                # 只在进度有变化时更新，减少写操作
-                if torrent.progress == new_progress and torrent.status not in ("downloading",):
-                    continue
+                    # 只在进度或状态有变化时更新，避免 1 秒轮询产生无效写入。
+                    if not progress_changed and not should_complete:
+                        continue
 
-                torrent.progress = new_progress
-                torrent.update_time = datetime.now()
-                updated += 1
+                    pending_updates.append((torrent, new_progress, should_complete))
 
-                # 进度达到100%时更新为completed
-                if new_progress >= 100 and torrent.status == "downloading":
-                    torrent.status = "completed"
-                    torrent.completed_date = datetime.now()
+                if not pending_updates:
+                    return
 
-            if updated > 0:
-                await db.commit()
-                logger.info(f"已同步 {updated} 个消失种子的进度到数据库")
+                batch_size = max(1, int(settings.SYNC_DB_COMMIT_BATCH_SIZE))
+                for start in range(0, len(pending_updates), batch_size):
+                    batch = pending_updates[start : start + batch_size]
+                    now = datetime.now()
+                    for torrent, new_progress, should_complete in batch:
+                        torrent.progress = new_progress
+                        torrent.update_time = now
+                        if should_complete:
+                            torrent.status = "completed"
+                            torrent.completed_date = now
+
+                    # 仅将实际 commit 放入写入治理临界区，查询和变更判断均在外部完成。
+                    async with admission_controller.db_write_scope():
+                        await db.commit()
+
+                logger.info("已同步 %s 个实时种子的进度到数据库", len(pending_updates))
 
     except Exception as e:
-        logger.error(f"同步消失种子进度到数据库失败: {e}", exc_info=True)
+        logger.error(f"同步实时种子进度到数据库失败: {e}", exc_info=True)
 
 
 @dataclass
@@ -581,13 +573,9 @@ async def get_active_torrents(
             active_torrents.extend(supplement_data)
 
         # ---- 异步同步数据库（进度+状态） ----
-        # 1. 补查到的消失种子：同步进度和状态到数据库
-        if supplement_data:
-            asyncio.create_task(_sync_torrents_to_db(supplement_data))
-        # 2. 活跃种子中进度100%的：更新为completed
-        completed_hashes = [t["hash"] for t in active_torrents if t.get("progress", 0) >= 100]
-        if completed_hashes:
-            asyncio.create_task(_update_completed_torrents(completed_hashes))
+        # 活跃数据和 TTL 补查数据都包含最新进度；统一提交，避免只更新补查分支。
+        if active_torrents:
+            asyncio.create_task(_sync_torrents_to_db(active_torrents))
 
         if gathered.complete:
             return CommonResponse(status="success", msg="获取速度数据成功", code="200", data=active_torrents)

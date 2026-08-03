@@ -333,6 +333,7 @@ class OrphanFileService:
         include_deleted: bool = False,
         path_like: Optional[str] = None,
         status: Optional[str] = None,
+        confidence: Optional[str] = None,
     ) -> Dict[str, Any]:
         """分页查询孤儿文件列表与同一批次的页面扫描上下文。
 
@@ -341,6 +342,7 @@ class OrphanFileService:
             status: 状态筛选——pending=待清理（默认，未删除未忽视）、
                 ignored=已忽视（联表候选 is_ignored=1）、deleted=已清理。
                 None 时等价 pending+deleted 由 include_deleted 控制（兼容旧调用）。
+            confidence: 置信度筛选——high=高置信度，low=低置信度。
 
         Returns:
             分页字段与 scan_context。扫描原始量保留在 display_scan，
@@ -443,6 +445,8 @@ class OrphanFileService:
             conditions.append(OrphanFile.downloader_id == downloader_id)
         if min_size is not None:
             conditions.append(OrphanFile.file_size >= min_size)
+        if confidence:
+            conditions.append(OrphanFile.confidence == confidence)
         if path_like:
             # LIKE 通配符转义，防止用户输入的 %/_ 被当模式
             escaped = path_like.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
@@ -455,7 +459,13 @@ class OrphanFileService:
         total_result = await self.db.execute(count_query)
         total = total_result.scalar() or 0
 
-        # 排序：被忽视的孤儿文件优先级最低（沉底），待清理/已清理数据排列在前。
+        # 排序：高置信度优先，其次被忽视的孤儿文件优先级最低（沉底），
+        # 组内再按文件大小降序和 ID 升序保持稳定。
+        confidence_rank = case(
+            (OrphanFile.confidence == "high", 0),
+            else_=1,
+        )
+        # 被忽视的孤儿文件优先级最低（沉底），待清理/已清理数据排列在前。
         # 通过 canonical_path 与候选忽视集合做联表判定，生成 0/1 排序键：
         # 非忽视=0（靠前）、已忽视=1（沉底）；组内保持 file_size DESC、id ASC 稳定排序。
         ignored_paths_subq = select(OrphanCurrentCandidate.canonical_path).where(
@@ -466,6 +476,7 @@ class OrphanFileService:
             else_=0,
         )
         list_query = select(OrphanFile).order_by(
+            confidence_rank.asc(),
             ignored_rank.asc(),
             OrphanFile.file_size.desc(),
             OrphanFile.id.asc(),

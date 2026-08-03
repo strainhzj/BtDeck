@@ -300,6 +300,14 @@ async def _create_completion_notification(
         "failed_count": failed_count,
         "failed_list": failed_list,
     }
+    content = f"批量添加种子任务完成：共 {total_count} 个，成功 {success_count} 个，失败 {failed_count} 个。"
+    if failed_list:
+        content += "\n\n失败明细：\n"
+        content += "\n".join(
+            f"- {item['file_name'] or '未知文件'}：{item['reason']}" for item in failed_list[:20]
+        )
+        if len(failed_list) > 20:
+            content += f"\n- 其余 {len(failed_list) - 20} 个失败项请展开通知详情查看。"
 
     try:
         async with AsyncSessionLocal() as db:
@@ -307,7 +315,7 @@ async def _create_completion_notification(
             await service.create_notification(
                 type="system",
                 title="批量添加种子完成",
-                content=f"批量添加种子任务完成：共 {total_count} 个，成功 {success_count} 个，失败 {failed_count} 个。",
+                content=content,
                 priority=priority,
                 extra_data=extra_data,
                 dedupe_key=f"torrent_batch_add:{task_id}",

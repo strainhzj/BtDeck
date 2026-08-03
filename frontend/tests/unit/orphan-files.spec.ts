@@ -112,6 +112,7 @@ interface OrphanFilesVm extends Vue {
     downloader_id: string
     path_like: string
     status: string
+    confidence: string
     min_size: number | ''
   }
   selectedIds: number[]
@@ -130,10 +131,14 @@ interface OrphanFilesVm extends Vue {
   cleanupPreviewData: CleanupPreviewResult | null
   previewScanId: string | null
   refreshPageData: (allowPageCorrection?: boolean) => Promise<void>
+  loadOrphanPage: (page: number, replace: boolean) => Promise<void>
   handleScan: () => Promise<void>
   handleCleanupPreview: () => Promise<void>
   handleCleanupConfirm: () => Promise<void>
+  handleFilter: () => void
   handleResetFilter: () => void
+  handleListScroll: (event: Event) => void
+  loadNextOrphanPage: () => Promise<void>
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
   handleTabSwitch: () => Promise<void>
@@ -480,7 +485,7 @@ describe('orphan files atomic page state', () => {
     await vm.refreshPageData()
 
     expect(mockGetOrphanList).toHaveBeenLastCalledWith({
-      page: 3,
+      page: 1,
       page_size: 50,
       downloader_id: 'dl-filter',
       path_like: undefined,
@@ -488,11 +493,12 @@ describe('orphan files atomic page state', () => {
       min_size: undefined
     })
     expect(vm.listQuery).toEqual({
-      page: 3,
+      page: 1,
       page_size: 50,
       downloader_id: 'dl-filter',
       path_like: '',
       status: '',
+      confidence: '',
       min_size: ''
     })
     expect(vm.selectedIds).toEqual([])
@@ -621,10 +627,8 @@ describe('orphan files atomic page state', () => {
       .mockImplementationOnce(() => older.promise)
       .mockImplementationOnce(() => newer.promise)
 
-    vm.listQuery.page = 2
-    const olderRequest = vm.refreshPageData()
-    vm.listQuery.page = 3
-    const newerRequest = vm.refreshPageData()
+    const olderRequest = vm.loadOrphanPage(2, true)
+    const newerRequest = vm.loadOrphanPage(3, true)
     newer.resolve(
       listResponse(
         scanContext({ remaining_count: 1 }),
@@ -740,25 +744,61 @@ describe('orphan files atomic page state', () => {
     expect(message.error).not.toHaveBeenCalled()
   })
 
-  it('页码超出末页时最多修正一次并使用新请求序号补发', async() => {
+  it('滚动触底时追加下一页且不替换已加载数据', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
-    vm.listQuery.page = 5
-    mockGetOrphanList
-      .mockResolvedValueOnce(listResponse(scanContext(), [], 1, 5))
-      .mockResolvedValueOnce(
-        listResponse(scanContext(), [orphanItem(1)], 1, 1)
-      )
+    vm.list = [orphanItem(1)]
+    vm.total = 3
+    vm.listQuery.page = 1
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(scanContext(), [orphanItem(2)], 3, 2)
+    )
 
-    await vm.refreshPageData()
+    vm.handleListScroll({
+      target: {
+        scrollHeight: 1000,
+        scrollTop: 700,
+        clientHeight: 220
+      }
+    } as unknown as Event)
+    await flushLifecycle()
 
+    expect(vm.listQuery.page).toBe(2)
+    expect(vm.list.map((item) => item.id)).toEqual([1, 2])
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith({
+      page: 2,
+      page_size: 20,
+      downloader_id: undefined,
+      path_like: undefined,
+      status: undefined,
+      min_size: undefined
+    })
+  })
+
+  it('置信度筛选会透传到列表查询并从第一页重新加载', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.confidence = 'low'
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(scanContext(), [orphanItem(7)], 1, 1)
+    )
+
+    vm.handleFilter()
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith({
+      page: 1,
+      page_size: 20,
+      downloader_id: undefined,
+      path_like: undefined,
+      status: undefined,
+      min_size: undefined,
+      confidence: 'low'
+    })
+    expect(vm.list.map((item) => item.id)).toEqual([7])
     expect(vm.listQuery.page).toBe(1)
-    expect(vm.list.map((item) => item.id)).toEqual([1])
-    expect(mockGetOrphanList.mock.calls.slice(-2)).toEqual([
-      [{ page: 5, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }],
-      [{ page: 1, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }]
-    ])
   })
 
   it('列表项渲染置信度与下载器别名', async() => {
@@ -778,11 +818,13 @@ describe('orphan files atomic page state', () => {
     const vm = viewModel(wrapper)
     vm.listQuery.path_like = '/movie'
     vm.listQuery.status = 'ignored'
+    vm.listQuery.confidence = 'low'
     vm.listQuery.min_size = 1024
     vm.handleResetFilter()
 
     expect(vm.listQuery.path_like).toBe('')
     expect(vm.listQuery.status).toBe('')
+    expect(vm.listQuery.confidence).toBe('')
     expect(vm.listQuery.min_size).toBe('')
   })
 

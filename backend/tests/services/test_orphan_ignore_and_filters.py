@@ -113,6 +113,30 @@ async def test_list_injects_downloader_name_and_confidence(async_orphan_db):
     assert by_path["/data/a.bin"]["canonical_path"] == normalize_path("/data/a.bin")
 
 
+async def test_list_filters_confidence_and_defaults_to_high_first(async_orphan_db):
+    """列表支持置信度筛选，未筛选时高置信度稳定排在低置信度前。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/low-large.bin", 999, confidence="low"),
+            _detail("scan_1", "/data/high-small.bin", 100, confidence="high"),
+            _detail("scan_1", "/data/high-large.bin", 300, confidence="high"),
+        ],
+    )
+
+    service = OrphanFileService(async_orphan_db)
+    default_result = await service.get_orphan_list(page=1, page_size=20)
+    assert [item["file_path"] for item in default_result["list"]] == [
+        "/data/high-large.bin",
+        "/data/high-small.bin",
+        "/data/low-large.bin",
+    ]
+
+    low_result = await service.get_orphan_list(confidence="low")
+    assert low_result["total"] == 1
+    assert [item["file_path"] for item in low_result["list"]] == ["/data/low-large.bin"]
+
+
 # ==================== 忽视态注入与计数 ====================
 
 

@@ -148,6 +148,20 @@
           </el-select>
         </div>
         <div class="management-filter__field">
+          <label class="management-filter__label" for="orphan-confidence">置信度</label>
+          <el-select
+            id="orphan-confidence"
+            v-model="listQuery.confidence"
+            class="management-filter__control"
+            placeholder="全部置信度"
+            clearable
+            @change="handleFilter"
+          >
+            <el-option label="高置信度" value="high" />
+            <el-option label="低置信度" value="low" />
+          </el-select>
+        </div>
+        <div class="management-filter__field">
           <label class="management-filter__label" for="orphan-min-size">最小大小(字节)</label>
           <el-input
             id="orphan-min-size"
@@ -211,7 +225,7 @@
           </el-button>
         </div>
       </div>
-      <div class="management-table-scroll">
+      <div class="management-table-scroll orphan-table-scroll" @scroll.passive="handleListScroll">
         <el-table
           ref="orphanTable"
           v-loading="listLoading"
@@ -286,7 +300,7 @@
         </el-table>
       </div>
 
-      <!-- 分页：复用种子列表列表模式同款（PageSizeCombobox + 自定义翻页按钮 + 文字汇总） -->
+      <!-- 列表按页追加，滚动到底部时懒加载下一页。 -->
       <nav class="torrent-pagination management-pagination">
         <div class="pagination-info">
           <PageSizeCombobox
@@ -303,32 +317,12 @@
             @apply="applyPageSizeSelection"
             @select="handlePageSizeSelect"
           />
-          <span class="pagination-summary">共 <strong>{{ total }}</strong> 条，第 <strong>{{ listQuery.page }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
+          <span class="pagination-summary">已加载 <strong>{{ list.length }}</strong> / <strong>{{ total }}</strong> 条</span>
         </div>
         <div class="pagination-controls">
-          <button
-            class="pagination-btn"
-            :disabled="listQuery.page <= 1"
-            @click="handlePageChange(listQuery.page - 1)"
-          >
-            <LucideIcon name="chevron-left" :size="14" />
-          </button>
-          <button
-            v-for="page in visiblePages"
-            :key="page"
-            class="pagination-btn"
-            :class="{active: page === listQuery.page}"
-            @click="handlePageChange(page)"
-          >
-            {{ page }}
-          </button>
-          <button
-            class="pagination-btn"
-            :disabled="listQuery.page >= totalPages"
-            @click="handlePageChange(listQuery.page + 1)"
-          >
-            <LucideIcon name="chevron-right" :size="14" />
-          </button>
+          <span v-if="listLoading" class="pagination-summary">正在加载…</span>
+          <span v-else-if="list.length < total" class="pagination-summary">继续滚动加载更多</span>
+          <span v-else class="pagination-summary">已加载全部结果</span>
         </div>
       </nav>
     </section>
@@ -483,6 +477,7 @@ import {
   OrphanListParams,
   OrphanScanContext,
   OrphanScanRecord,
+  OrphanConfidence,
   OrphanStatusFilter,
   CleanupPreviewSuccess,
   QuarantineItem
@@ -498,6 +493,7 @@ interface OrphanListQuery {
   downloader_id: string
   path_like: string
   status: OrphanStatusFilter | ''
+  confidence: OrphanConfidence | ''
   min_size: number | ''
 }
 
@@ -523,6 +519,7 @@ export default class OrphanFiles extends Vue {
     downloader_id: '',
     path_like: '',
     status: '',
+    confidence: '',
     min_size: ''
   }
   private refreshRequestSeq = 0
@@ -770,30 +767,6 @@ export default class OrphanFiles extends Vue {
     return ''
   }
 
-  /** 总页数（total=0 时返回 0，避免空表显示 1/1）。 */
-  private get totalPages(): number {
-    if (this.total === 0) return 0
-    return Math.max(1, Math.ceil(this.total / this.listQuery.page_size))
-  }
-
-  /** 翻页按钮可见页码窗口（最多 5 个，与种子列表列表模式一致）。 */
-  private get visiblePages(): number[] {
-    const pages: number[] = []
-    const maxVisible = 5
-    let start = Math.max(1, this.listQuery.page - Math.floor(maxVisible / 2))
-    let end = Math.min(this.totalPages, start + maxVisible - 1)
-
-    if (end - start < maxVisible - 1) {
-      start = Math.max(1, end - maxVisible + 1)
-    }
-
-    for (let i = start; i <= end; i++) {
-      pages.push(i)
-    }
-
-    return pages
-  }
-
   private get scanStatusMessage(): string {
     const latest = this.latestAttempt
     if (!latest) return ''
@@ -810,14 +783,21 @@ export default class OrphanFiles extends Vue {
     return ''
   }
 
-  private async refreshPageData(allowPageCorrection = true): Promise<void> {
+  private async refreshPageData(): Promise<void> {
+    this.listQuery.page = 1
+    await this.loadOrphanPage(1, true)
+  }
+
+  /** 请求一页孤儿文件；replace=true 用于筛选/刷新，false 用于滚动追加。 */
+  private async loadOrphanPage(page: number, replace: boolean): Promise<void> {
     const requestId = ++this.refreshRequestSeq
     const querySnapshot: Readonly<OrphanListQuery> = Object.freeze({
-      page: this.listQuery.page,
+      page,
       page_size: this.listQuery.page_size,
       downloader_id: this.listQuery.downloader_id,
       path_like: this.listQuery.path_like,
       status: this.listQuery.status,
+      confidence: this.listQuery.confidence,
       min_size: this.listQuery.min_size
     })
     this.listLoading = true
@@ -830,31 +810,29 @@ export default class OrphanFiles extends Vue {
         status: querySnapshot.status || undefined,
         min_size: querySnapshot.min_size === '' ? undefined : Number(querySnapshot.min_size)
       }
+      if (querySnapshot.confidence) {
+        params.confidence = querySnapshot.confidence
+      }
       const response = await getOrphanList(params)
       if (requestId !== this.refreshRequestSeq) return
 
       if (response.code === '200' && response.data) {
-        const maxPage = Math.max(
-          1,
-          Math.ceil(response.data.total / querySnapshot.page_size)
-        )
-        if (
-          allowPageCorrection &&
-          querySnapshot.page > maxPage
-        ) {
-          this.listQuery.page = maxPage
-          await this.refreshPageData(false)
-          return
+        if (replace) {
+          this.list = response.data.list
+          this.selectedRows = []
+          const table = this.$refs.orphanTable as OrphanTableRef | undefined
+          if (table && typeof table.clearSelection === 'function') {
+            table.clearSelection()
+          }
+        } else {
+          const existingIds = new Set(this.list.map((item) => item.id))
+          this.list = this.list.concat(
+            response.data.list.filter((item) => !existingIds.has(item.id))
+          )
         }
-
-        this.list = response.data.list
         this.total = response.data.total
         this.scanContext = response.data.scan_context
-        this.selectedRows = []
-        const table = this.$refs.orphanTable as OrphanTableRef | undefined
-        if (table && typeof table.clearSelection === 'function') {
-          table.clearSelection()
-        }
+        this.listQuery.page = querySnapshot.page
       } else {
         this.$message.error(response.msg || '获取列表失败')
       }
@@ -866,6 +844,19 @@ export default class OrphanFiles extends Vue {
         this.listLoading = false
       }
     }
+  }
+
+  private handleListScroll(event: Event) {
+    if (this.listLoading || this.list.length >= this.total) return
+    const target = event.target as HTMLElement | null
+    if (!target) return
+    if (target.scrollHeight - target.scrollTop - target.clientHeight > 80) return
+    void this.loadNextOrphanPage()
+  }
+
+  private async loadNextOrphanPage(): Promise<void> {
+    if (this.listLoading || this.list.length >= this.total) return
+    await this.loadOrphanPage(this.listQuery.page + 1, false)
   }
 
   private handleFilter() {
@@ -880,6 +871,7 @@ export default class OrphanFiles extends Vue {
       downloader_id: '',
       path_like: '',
       status: '',
+      confidence: '',
       min_size: ''
     }
     void this.refreshPageData()
@@ -917,13 +909,6 @@ export default class OrphanFiles extends Vue {
 
     this.listQuery.page_size = normalizedPageSize
     this.listQuery.page = 1
-    void this.refreshPageData()
-  }
-
-  // 翻页：切换当前页并重新加载。
-  private handlePageChange(page: number) {
-    if (page < 1 || page > this.totalPages) return
-    this.listQuery.page = page
     void this.refreshPageData()
   }
 
@@ -1143,7 +1128,16 @@ export default class OrphanFiles extends Vue {
     margin-top: var(--spacing-md);
   }
 
-  /* 分页区：复用种子列表列表模式同款（PageSizeCombobox + 翻页按钮 + 文字汇总） */
+  /* 列表固定可视高度，数据通过滚动触底按页追加。 */
+  .orphan-table-scroll {
+    height: 520px;
+    max-height: calc(100vh - 430px);
+    min-height: 300px;
+    overflow-x: auto;
+    overflow-y: auto;
+  }
+
+  /* 懒加载状态沿用列表底部汇总区，避免滚动过程中布局跳动。 */
   .torrent-pagination.management-pagination {
     justify-content: space-between;
     gap: var(--spacing-md);
@@ -1162,42 +1156,8 @@ export default class OrphanFiles extends Vue {
 
     .pagination-controls {
       display: flex;
-      gap: 6px;
       align-items: center;
-
-      .pagination-btn {
-        width: 32px;
-        height: 32px;
-        border: 1px solid var(--color-border-primary);
-        background: var(--color-bg-primary);
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        color: var(--color-text-primary);
-        transition: background-color var(--transition-base) ease,
-          border-color var(--transition-base) ease, color var(--transition-base) ease;
-
-        &:hover:not(:disabled) {
-          background: var(--color-primary);
-          border-color: var(--color-primary);
-          color: #fff;
-        }
-
-        &:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        &.active {
-          background: var(--color-primary);
-          border-color: var(--color-primary);
-          color: #fff;
-          font-weight: var(--font-weight-semibold);
-        }
-      }
+      min-height: 32px;
     }
   }
 }

@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-02",
+  "last_updated": "2026-08-03",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -1905,6 +1905,33 @@
             "session-handoff.md"
           ],
           "evidence": "只读查询 E:/Users/huangzj/Desktop/app.db 的 nickname=tr 记录确认 221 条映射中 182 条 external 为空，缺口集中在 /Downloads/bangumi（181 条）和 /Downloads/movie（1 条）；现有 path_mapping_rules 未覆盖这两个内部前缀，未修改外部数据库。批量添加改为流式暂存 + asyncio 后台任务，返回 code=202/task_id，后台复用 app.state.store 客户端并在完成后创建 system 通知；前后端均移除 10 个数量限制，前端请求拦截器已将 202 纳入成功码。限速调度改为精确星期过滤、启用状态回退全局基线、启动后立即同步并设置 max_instances=1/coalesce。后端定向 36 项通过，frontend error-normalize 34 项、typecheck/lint/build 通过；build 仅保留既有 Sass/资源体积 warning。"
+        },
+        {
+          "id": "v1.0.6.34",
+          "name": "种子实时进度与孤儿列表交互修复",
+          "description": "补齐批量添加种子异步通知的失败原因展示；将 active-torrents 获取到的实时进度按下载器与 hash 复合身份写回数据库；孤儿文件列表改为固定高度滚动懒加载，并支持置信度筛选及高置信度默认排序。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/api/endpoints/torrent_speed.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/services/torrent_batch_add_service.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/api/test_torrent_batch_add_api.py",
+            "backend/tests/endpoints/test_active_only_filter.py",
+            "backend/tests/services/test_orphan_ignore_and_filters.py",
+            "frontend/src/api/notification.ts",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/layout/components/NotificationDrawer/index.vue",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/views/torrents/components/TorrentAddDialog.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "后端相关回归 81 passed（含架构门禁）；前端全量 Jest 30 suites/511 tests，孤儿页面定向 19 tests，TypeScript typecheck、Vue ESLint、Vuex action lint 与生产 build 均通过。批量添加通知正文和 extra_data.failed_list 均包含失败文件及原因；active-torrents 写库按复合身份、变更检测和 SYNC_DB_COMMIT_BATCH_SIZE 分批提交；孤儿列表新增 confidence 查询参数、高置信度优先排序、固定高度触底追加分页。完整 npm run lint 仍被任务开始前已有的 advancedSearch.generated.ts 契约漂移拦截；Black 在当前 Windows Python 环境命令超时未完成，未写回格式。"
         }
       ]
     }

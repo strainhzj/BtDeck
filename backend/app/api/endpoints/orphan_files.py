@@ -82,6 +82,10 @@ async def get_orphan_list(
         default=None,
         description="状态筛选：pending=待清理，ignored=已忽视，deleted=已清理",
     ),
+    confidence: Optional[str] = Query(
+        default=None,
+        description="置信度筛选：high=高置信度，low=低置信度",
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
@@ -89,7 +93,7 @@ async def get_orphan_list(
 
     scan_context 区分最新扫描尝试、页面展示的成功批次、扫描原始统计与
     尚未清理的动态统计；最新 running 不回退，最新 failed 仅只读展示
-    最近成功批次。支持按 下载器/路径/状态/大小 多条件筛选与分页。
+    最近成功批次。支持按 下载器/路径/状态/置信度/大小 多条件筛选与分页。
     """
     try:
         service = OrphanFileService(db)
@@ -100,6 +104,7 @@ async def get_orphan_list(
             min_size=min_size,
             path_like=path_like,
             status=status,
+            confidence=confidence,
         )
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:

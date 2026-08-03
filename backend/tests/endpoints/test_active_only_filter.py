@@ -10,6 +10,7 @@ get_torrent_infos 的 active_keys 过滤单元测试
 并验证活动集合缓存的写入/读取/过期语义（_ActiveKeysCache）。
 """
 
+import asyncio
 import sqlite3
 import time
 from typing import Set, Tuple
@@ -28,10 +29,12 @@ from app.api.endpoints.torrent_speed import (
     _ActiveSpeedGatherResult,
     _DownloaderSpeedResult,
     _gather_active_speeds,
+    _sync_torrents_to_db,
     _active_keys_cache,
     get_active_torrents,
     get_active_keys_snapshot,
 )
+from app.tasks.resource_guard import admission_controller
 from app.torrents.models import TorrentInfo
 
 
@@ -407,11 +410,17 @@ class TestActiveSpeedEndpointWiring:
                     new=AsyncMock(return_value=gathered),
                 ),
                 patch("app.api.endpoints.torrent_speed._ttl_queue.get_disappeared", return_value={}),
+                patch(
+                    "app.api.endpoints.torrent_speed._sync_torrents_to_db",
+                    new=AsyncMock(),
+                ) as sync_db,
             ):
                 response = await get_active_torrents(request, _user=object())
+                await asyncio.sleep(0)
 
             assert response.code == "206"
             assert _active_keys_cache.snapshot().status == ActiveSnapshotStatus.PARTIAL
+            sync_db.assert_awaited_once_with(gathered.torrents)
         finally:
             _active_keys_cache.reset()
 
@@ -427,3 +436,72 @@ class TestActiveSpeedEndpointWiring:
             assert snapshot.ready is True
         finally:
             _active_keys_cache.reset()
+
+
+class _AsyncSessionContext:
+    def __init__(self, rows):
+        self.rows = rows
+        self.commit_count = 0
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *_args):
+        return None
+
+    async def execute(self, _statement):
+        class ScalarResult:
+            def __init__(self, values):
+                self.values = values
+
+            def all(self):
+                return self.values
+
+        class Result:
+            def __init__(self, values):
+                self.values = values
+
+            def scalars(self):
+                return ScalarResult(self.values)
+
+        return Result(self.rows)
+
+    async def commit(self):
+        self.commit_count += 1
+
+
+class _AsyncScope:
+    def __init__(self):
+        self.entered = False
+
+    async def __aenter__(self):
+        self.entered = True
+        return None
+
+    async def __aexit__(self, *_args):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_sync_realtime_progress_is_scoped_by_downloader_and_hash():
+    """实时进度写库不能因 hash 相同而串到另一下载器。"""
+    first = MagicMock(downloader_id="dl_a", hash="same-hash", progress=10.0, status="downloading")
+    second = MagicMock(downloader_id="dl_b", hash="same-hash", progress=20.0, status="downloading")
+    session = _AsyncSessionContext([first, second])
+    scope = _AsyncScope()
+
+    with (
+        patch("app.api.endpoints.torrent_speed.AsyncSessionLocal", return_value=session),
+        patch.object(admission_controller, "db_write_scope", return_value=scope),
+    ):
+        await _sync_torrents_to_db(
+            [
+                {"downloader_id": "dl_a", "hash": "same-hash", "progress": 12.5},
+                {"downloader_id": "dl_b", "hash": "same-hash", "progress": 35.0},
+            ]
+        )
+
+    assert first.progress == 12.5
+    assert second.progress == 35.0
+    assert session.commit_count == 1
+    assert scope.entered is True
