@@ -18,6 +18,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+from freezegun import freeze_time
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
@@ -157,7 +158,12 @@ class TestSaveAndReadback:
 
     @pytest.mark.parametrize("downloader_type", [0, 1])
     def test_schedule_save_then_apply_uses_global_speed(self, client, db_session, downloader_type):
-        """保存分时段规则后，立即应用仍应使用全局限速（qBittorrent/Transmission）。"""
+        """保存分时段规则后，立即应用仍应使用全局限速（qBittorrent/Transmission）。
+
+        实现按真实 datetime.now() 判定规则是否命中，因此本用例必须把时间冻结到
+        规则时段（09:00–18:00、周一~周五）之外，否则在工作日白天跑 CI 时规则会
+        命中，导致应用的是规则速度而非全局限速，与测试语义相悖。
+        """
         db_session.execute(
             text("UPDATE bt_downloaders SET downloader_type=:type WHERE downloader_id='dl-1'"),
             {"type": downloader_type},
@@ -188,8 +194,11 @@ class TestSaveAndReadback:
 
         previous_store = getattr(runtime_app.state, "store", None)
         runtime_app.state.store = SimpleNamespace(get_snapshot_sync=lambda: [cached_downloader])
+        # 冻结到周日 03:00：规则时段为工作日 09:00–18:00，此刻必然不命中，
+        # 故 apply 走全局限速基线。
         try:
-            response = client.post(f"{_url()}/apply")
+            with freeze_time("2026-03-15 03:00:00"):
+                response = client.post(f"{_url()}/apply")
         finally:
             runtime_app.state.store = previous_store
 
