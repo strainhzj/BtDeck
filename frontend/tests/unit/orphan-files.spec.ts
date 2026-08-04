@@ -60,13 +60,23 @@ const TableStub = localVue.extend({
   methods: {
     clearSelection
   },
-  template: '<div class="orphan-table-stub" :data-height="height"><slot /></div>'
+  computed: {
+    listenerNames(): string {
+      return Object.keys(this.$listeners).join(',')
+    }
+  },
+  template: '<div class="orphan-table-stub" :data-height="height" :data-listeners="listenerNames"><slot /></div>'
 })
 const TableColumnStub = localVue.extend({
+  props: {
+    type: { type: String, default: '' },
+    selectable: { type: Function, default: null },
+    prop: { type: String, default: '' }
+  },
   render(createElement) {
     const slot = this.$scopedSlots.default
-    if (!slot) return createElement('div')
-    return createElement('div', slot({ row: quarantineItem() }))
+    if (!slot) return createElement('div', { attrs: { 'data-column-type': this.type } })
+    return createElement('div', { attrs: { 'data-column-type': this.type } }, slot({ row: quarantineItem() }))
   }
 })
 const ButtonStub = localVue.extend({
@@ -786,6 +796,22 @@ describe('orphan files atomic page state', () => {
     expect(vm.list.map((item) => item.id)).toEqual([21])
   })
 
+  // 回归保护：表头全选必须用原生 type="selection" 列，而非 slot="header" 自定义 el-checkbox。
+  // 后者的表头绑定不会随 data 变化更新（el-table 不重渲染表头 slot），会导致 checkbox 卡在初始 disabled。
+  it('多选用原生 type=selection 列而非 slot=header 自定义 checkbox', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+
+    const table = wrapper.find('.orphan-table-stub')
+    // 选择列透传 type="selection"
+    const selectionColumn = table.find('[data-column-type="selection"]')
+    expect(selectionColumn.exists()).toBe(true)
+    // 表格绑定 @selection-change（原生选择事件驱动，而非自定义 @change）
+    expect(table.attributes('data-listeners')).toContain('selection-change')
+    // 不能残留表头自定义 checkbox（slot="header" 的产物）
+    expect(table.find('.orphan-select-all').exists()).toBe(false)
+  })
+
   it('选择回调仅记录当前页选中行（已清理行不可选）', async() => {
     const wrapper = mountView()
     await flushLifecycle()
@@ -809,6 +835,23 @@ describe('orphan files atomic page state', () => {
 
     expect(vm.selectedCount).toBe(1)
     expect(vm.selectedRows.map((row) => row.id)).toEqual([3])
+  })
+
+  // 端到端验证 @selection-change 事件绑定：模拟 el-table emit selection-change，
+  // 确认事件名与 handler 正确连通（防止拼错事件名或漏绑）。
+  it('el-table 触发 selection-change 事件时同步到 selectedRows', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const pending1 = orphanItem(1)
+    const pending2 = orphanItem(2)
+
+    // shallowMount 下 el-table 是 TableStub，直接用其根元素 vm emit
+    const tableEl = wrapper.find('.orphan-table-stub')
+    ;(tableEl.vm as Vue).$emit('selection-change', [pending1, pending2])
+    await localVue.nextTick()
+
+    expect(vm.selectedRows.map((row) => row.id)).toEqual([1, 2])
   })
 
   it('当前页选中后批量忽视提交 orphan_ids 而非 select_all', async() => {
