@@ -120,8 +120,6 @@ interface OrphanFilesVm extends Vue {
   selectedIds: number[]
   selectedRows: OrphanFileItem[]
   selectedCount: number
-  selectionAllChecked: boolean
-  selectionIndeterminate: boolean
   scanContext: OrphanScanContext
   activeTab: 'orphans' | 'quarantine'
   quarantineList: QuarantineItem[]
@@ -145,9 +143,7 @@ interface OrphanFilesVm extends Vue {
   handleFilter: () => void
   handleResetFilter: () => void
   applyPageSizeSelection: (value: string | number) => void
-  handleSelectAllChange: (checked: boolean) => void
-  handleRowSelectionChange: (row: OrphanFileItem, checked: boolean) => void
-  isRowSelected: (row: OrphanFileItem) => boolean
+  handleOrphanSelectionChange: (rows: OrphanFileItem[]) => void
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
   handleTabSwitch: () => Promise<void>
@@ -515,7 +511,8 @@ describe('orphan files atomic page state', () => {
       min_size: ''
     })
     expect(vm.selectedIds).toEqual([])
-    expect(clearSelection).not.toHaveBeenCalled()
+    // refreshPageData 现在会清空当前页选择（传统分页标准行为），通过 el-table ref 调 clearSelection
+    expect(clearSelection).toHaveBeenCalled()
   })
 
   it('最新失败时展示旧成功结果和失败原因，并禁用清理', async() => {
@@ -789,7 +786,7 @@ describe('orphan files atomic page state', () => {
     expect(vm.list.map((item) => item.id)).toEqual([21])
   })
 
-  it('全选仅勾选当前页可选行而非跨页全选', async() => {
+  it('选择回调仅记录当前页选中行（已清理行不可选）', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
@@ -800,23 +797,21 @@ describe('orphan files atomic page state', () => {
     vm.total = 100
     vm.listQuery.status = 'pending'
 
-    vm.handleSelectAllChange(true)
+    // el-table 的 :selectable=rowSelectable 保证 deleted 行不可选，
+    // 故 selection-change 只回调可选行
+    vm.handleOrphanSelectionChange([pending1, pending3])
 
     expect(vm.selectedRows.map((row) => row.id)).toEqual([1, 3])
     expect(vm.selectedCount).toBe(2)
-    expect(vm.selectionAllChecked).toBe(true)
-    expect(vm.isRowSelected(pending1)).toBe(true)
-    expect(vm.isRowSelected(deletedRow)).toBe(false)
 
-    vm.handleRowSelectionChange(pending1, false)
+    // 取消选中其中一行
+    vm.handleOrphanSelectionChange([pending3])
 
     expect(vm.selectedCount).toBe(1)
-    expect(vm.selectionAllChecked).toBe(false)
-    expect(vm.selectionIndeterminate).toBe(true)
-    expect(vm.isRowSelected(pending1)).toBe(false)
+    expect(vm.selectedRows.map((row) => row.id)).toEqual([3])
   })
 
-  it('当前页全选后批量忽视提交 orphan_ids 而非 select_all', async() => {
+  it('当前页选中后批量忽视提交 orphan_ids 而非 select_all', async() => {
     mockSetIgnored.mockResolvedValueOnce({
       code: '200',
       msg: 'ok',
@@ -831,7 +826,7 @@ describe('orphan files atomic page state', () => {
     vm.list = [pending1, pending3]
     vm.total = 50
     vm.listQuery.status = 'pending'
-    vm.handleSelectAllChange(true)
+    vm.handleOrphanSelectionChange([pending1, pending3])
 
     await vm.handleBatchIgnore(true)
 
@@ -844,7 +839,7 @@ describe('orphan files atomic page state', () => {
     expect(call.filters).toBeUndefined()
   })
 
-  it('当前页全选后清理预览提交 orphan_ids 而非 select_all', async() => {
+  it('当前页选中后清理预览提交 orphan_ids 而非 select_all', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
@@ -852,7 +847,7 @@ describe('orphan files atomic page state', () => {
     vm.list = [pending1]
     vm.total = 30
     vm.listQuery.status = 'pending'
-    vm.handleSelectAllChange(true)
+    vm.handleOrphanSelectionChange([pending1])
 
     await vm.handleCleanupPreview()
 

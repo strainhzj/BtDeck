@@ -237,32 +237,15 @@
           highlight-current-row
           empty-text="暂无孤儿文件，点击“立即扫描”开始检测"
           style="width: 100%"
+          @selection-change="handleOrphanSelectionChange"
         >
           <el-table-column
+            type="selection"
             width="55"
             align="center"
-          >
-            <template slot="header">
-              <el-checkbox
-                class="orphan-select-all"
-                :value="selectionAllChecked"
-                :indeterminate="selectionIndeterminate"
-                :disabled="selectableTotal === 0"
-                aria-label="选择当前页的全部孤儿文件"
-                @change="handleSelectAllChange"
-              />
-            </template>
-            <template slot-scope="scope">
-              <el-checkbox
-                v-if="rowSelectable(scope.row)"
-                class="orphan-row-checkbox"
-                :value="isRowSelected(scope.row)"
-                :aria-label="`选择 ${scope.row.file_path}`"
-                @click.native.stop
-                @change="handleRowSelectionChange(scope.row, $event)"
-              />
-            </template>
-          </el-table-column>
+            :selectable="rowSelectable"
+            aria-label="选择当前页的全部孤儿文件"
+          />
           <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip />
           <el-table-column label="大小" width="120" align="center">
             <template slot-scope="scope">
@@ -743,21 +726,8 @@ export default class OrphanFiles extends Vue {
     return this.selectedRows.map((r) => r.id)
   }
 
-  private get selectableTotal(): number {
-    if (this.listQuery.status === 'deleted') return 0
-    return this.list.filter((r) => !r.is_deleted).length
-  }
-
   private get selectedCount(): number {
     return this.selectedRows.length
-  }
-
-  private get selectionAllChecked(): boolean {
-    return this.selectableTotal > 0 && this.selectedCount === this.selectableTotal
-  }
-
-  private get selectionIndeterminate(): boolean {
-    return this.selectedCount > 0 && !this.selectionAllChecked
   }
 
   private get downloaderOptions(): DownloaderOption[] {
@@ -837,14 +807,14 @@ export default class OrphanFiles extends Vue {
 
   /** 筛选/刷新/每页条数变更入口：回到第 1 页并清空当前页选择。 */
   private async refreshPageData(): Promise<void> {
-    this.selectedRows = []
+    this.clearOrphanSelection()
     this.listQuery.page = 1
     await this.loadOrphanPage(1)
   }
 
   /** 翻页回调：切换页码时清空当前页选择，再加载目标页（传统分页标准行为）。 */
   private async handleOrphanPageChange(page: number): Promise<void> {
-    this.selectedRows = []
+    this.clearOrphanSelection()
     this.listQuery.page = page
     await this.loadOrphanPage(page)
   }
@@ -954,33 +924,16 @@ export default class OrphanFiles extends Vue {
     void this.refreshPageData()
   }
 
-  /** 全选仅覆盖当前页可选行（已清理行不可选）。 */
-  private handleSelectAllChange(checked: boolean): void {
-    if (!checked || this.selectableTotal === 0) {
-      this.selectedRows = []
-      return
-    }
-    this.selectedRows = this.list.filter((row) => this.rowSelectable(row))
+  /** el-table 原生 selection-change：同步当前页选中行（全选/单选均由此驱动）。 */
+  private handleOrphanSelectionChange(rows: OrphanFileItem[]): void {
+    this.selectedRows = rows
   }
 
-  private handleRowSelectionChange(row: OrphanFileItem, checked: boolean): void {
-    if (!this.rowSelectable(row)) return
-    if (checked) {
-      if (!this.selectedRows.some((selected) => selected.id === row.id)) {
-        this.selectedRows = this.selectedRows.concat(row)
-      }
-    } else {
-      this.selectedRows = this.selectedRows.filter((selected) => selected.id !== row.id)
-    }
-  }
-
-  private isRowSelected(row: OrphanFileItem): boolean {
-    if (!this.rowSelectable(row)) return false
-    return this.selectedRows.some((selected) => selected.id === row.id)
-  }
-
+  /** 通过 el-table ref 清空选择（翻页/筛选/刷新时调用）。 */
   private clearOrphanSelection(): void {
     this.selectedRows = []
+    const table = this.$refs.orphanTable as OrphanTableRef | undefined
+    table?.clearSelection()
   }
 
   private buildSelectionPayload(): OrphanSelectionPayload {
@@ -1228,22 +1181,6 @@ export default class OrphanFiles extends Vue {
 
     ::v-deep .management-table {
       min-width: 0;
-    }
-
-    ::v-deep .orphan-select-all .el-checkbox__inner {
-      border-color: rgba(255, 255, 255, 0.9);
-    }
-
-    ::v-deep .orphan-select-all.is-checked .el-checkbox__inner,
-    ::v-deep .orphan-select-all.is-indeterminate .el-checkbox__inner {
-      background: #fff;
-      border-color: #fff;
-    }
-
-    ::v-deep .orphan-select-all.is-checked .el-checkbox__inner::after,
-    ::v-deep .orphan-select-all.is-indeterminate .el-checkbox__inner::before {
-      border-color: var(--color-primary);
-      background: var(--color-primary);
     }
   }
 
