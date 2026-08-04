@@ -38,6 +38,7 @@ class OrphanSelectionFilters(BaseModel):
     downloader_id: Optional[str] = None
     min_size: Optional[int] = Field(default=None, ge=0)
     path_like: Optional[str] = None
+    path_prefix: Optional[str] = Field(default=None, description="文件路径左匹配（LIKE prefix%）")
     status: Optional[str] = None
     confidence: Optional[str] = None
 
@@ -67,6 +68,13 @@ class IgnoreRequest(OrphanSelectionRequest):
     ignored: bool = Field(..., description="True=设为忽视，False=取消忽视")
 
 
+class PrefixMatchPreviewRequest(BaseModel):
+    """左匹配（前缀）预览请求模型"""
+
+    path_prefix: str = Field(..., min_length=1, description="文件路径左匹配前缀")
+    scan_id: str = Field(..., min_length=1, description="绑定的扫描批次ID")
+
+
 class QuarantineActionRequest(BaseModel):
     """隔离区操作请求模型（恢复 / 立即彻底删除）"""
 
@@ -89,6 +97,7 @@ async def _resolve_selection(
         downloader_id=filters.downloader_id,
         min_size=filters.min_size,
         path_like=filters.path_like,
+        path_prefix=filters.path_prefix,
         status=filters.status,
         confidence=filters.confidence,
     )
@@ -123,7 +132,8 @@ async def get_orphan_list(
     ),
     downloader_id: Optional[str] = Query(default=None, description="下载器ID筛选"),
     min_size: Optional[int] = Query(default=None, ge=0, description="最小文件大小（字节）"),
-    path_like: Optional[str] = Query(default=None, description="文件路径模糊匹配"),
+    path_like: Optional[str] = Query(default=None, description="文件路径模糊匹配（包含）"),
+    path_prefix: Optional[str] = Query(default=None, description="文件路径左匹配（前缀）"),
     status: Optional[str] = Query(
         default=None,
         description="状态筛选：pending=待清理，ignored=已忽视，deleted=已清理",
@@ -149,6 +159,7 @@ async def get_orphan_list(
             downloader_id=downloader_id,
             min_size=min_size,
             path_like=path_like,
+            path_prefix=path_prefix,
             status=status,
             confidence=confidence,
         )
@@ -251,6 +262,26 @@ async def set_orphan_ignored(
     except Exception as e:
         logger.error(f"设置孤儿忽视态失败: {e}", exc_info=True)
         return CommonResponse(status="error", msg=f"操作失败: {e}", code="500", data=None)
+
+
+@router.post("/prefix-match-preview", response_model=CommonResponse)
+async def prefix_match_preview(
+    req: PrefixMatchPreviewRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """左匹配（前缀）预览：统计以 path_prefix 开头的“待清理”孤儿文件数与大小。
+
+    与 cleanup 共用新鲜度门禁（最新扫描 completed + scan_id 最新），stale 时返回
+    rejected=True。范围严格限定 status=pending（排除已忽视 / 已清理）。
+    """
+    try:
+        service = OrphanFileService(db)
+        result = await service.prefix_match_preview(req.path_prefix, req.scan_id)
+        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+    except Exception as e:
+        logger.error(f"左匹配预览失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
 
 
 @router.get("/quarantine", response_model=CommonResponse)

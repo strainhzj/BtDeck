@@ -313,6 +313,88 @@ async def test_path_like_escapes_wildcards(async_orphan_db):
     assert paths == ["/data/100%_file.bin"]
 
 
+# ==================== 左匹配（前缀 path_prefix） ====================
+
+
+async def test_path_prefix_matches_left_anchored_only(async_orphan_db):
+    """path_prefix 必须只命中以前缀开头的路径，子串相同但前缀不匹配的不命中。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/leak/a.bin", 100),
+            _detail("scan_1", "/data/leak/sub/b.bin", 200),
+            _detail("scan_1", "/data/other/leak_c.bin", 300),  # 子串含 leak 但非前缀
+        ],
+    )
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(path_prefix="/data/leak/")
+
+    paths = sorted(item["file_path"] for item in result["list"])
+    assert paths == ["/data/leak/a.bin", "/data/leak/sub/b.bin"]
+    assert result["total"] == 2
+
+
+async def test_path_prefix_escapes_wildcards(async_orphan_db):
+    """前缀中的 %/_ 应作字面量，不当作 LIKE 通配符。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/100%_dir/file.bin", 100),
+            _detail("scan_1", "/data/100A_dir/file.bin", 200),
+        ],
+    )
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(path_prefix="/data/100%_dir")
+
+    paths = [item["file_path"] for item in result["list"]]
+    assert paths == ["/data/100%_dir/file.bin"]
+
+
+async def test_prefix_match_preview_counts_pending_only_and_size(async_orphan_db):
+    """prefix_match_preview 必须只统计待清理项（排除已忽视/已清理），并返回正确大小与低置信度数。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/leak/a.bin", 100, confidence="high"),
+            _detail("scan_1", "/data/leak/b.bin", 200, confidence="low"),
+            _detail("scan_1", "/data/leak/ignored.bin", 400, confidence="high"),
+            _detail("scan_1", "/data/leak/deleted.bin", 800, deleted=True),
+            _detail("scan_1", "/data/other/c.bin", 50, confidence="high"),
+        ],
+        candidates=[
+            _candidate("/data/leak/a.bin"),
+            _candidate("/data/leak/b.bin"),
+            _candidate("/data/leak/ignored.bin", ignored=True),
+        ],
+    )
+
+    result = await OrphanFileService(async_orphan_db).prefix_match_preview("/data/leak/", "scan_1")
+
+    assert result.get("rejected") is not True
+    assert result["count"] == 2  # a.bin + b.bin（排除 ignored 与 deleted）
+    assert result["total_size"] == 300
+    assert result["low_confidence_count"] == 1  # b.bin
+
+
+async def test_prefix_match_preview_rejects_stale_scan(async_orphan_db):
+    """scan_id 非最新批次时，preview 应返回 rejected=True 而非误导性计数。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_old", "/data/leak/a.bin", 100),
+            _detail("scan_latest", "/data/leak/a.bin", 100),
+        ],
+    )
+    # _seed 只为每个 detail 建 scan；显式补一个最新 completed scan
+    async_orphan_db.add(_scan("scan_latest"))
+    await async_orphan_db.commit()
+
+    result = await OrphanFileService(async_orphan_db).prefix_match_preview("/data/leak/", "scan_old")
+
+    assert result["rejected"] is True
+    assert result["count"] == 0
+
+
 # ==================== 排序：被忽视沉底，待清理在前 ====================
 
 

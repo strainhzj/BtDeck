@@ -100,6 +100,7 @@ class OrphanFileService:
         min_size: Optional[int] = None,
         include_deleted: bool = False,
         path_like: Optional[str] = None,
+        path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
     ) -> List[Any]:
@@ -138,6 +139,12 @@ class OrphanFileService:
         if path_like:
             escaped = path_like.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(OrphanFile.file_path.like(f"%{escaped}%", escape="\\"))
+        # 左匹配（前缀）独立于 path_like（包含匹配）：file_path LIKE 'prefix%'。
+        # 与 path_like 同样的转义规则，仅尾部追加 %。注：SQLite LIKE 对 ASCII 大小写
+        # 不敏感，Windows 盘符 D:\ 与 d:\ 可互通，符合文件系统语义。
+        if path_prefix:
+            escaped_pfx = path_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+            conditions.append(OrphanFile.file_path.like(f"{escaped_pfx}%", escape="\\"))
         return conditions
 
     async def resolve_orphan_selection(
@@ -150,6 +157,7 @@ class OrphanFileService:
         downloader_id: Optional[str] = None,
         min_size: Optional[int] = None,
         path_like: Optional[str] = None,
+        path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
     ) -> List[int]:
@@ -167,6 +175,7 @@ class OrphanFileService:
             downloader_id=downloader_id,
             min_size=min_size,
             path_like=path_like,
+            path_prefix=path_prefix,
             status=status,
             confidence=confidence,
         )
@@ -509,6 +518,7 @@ class OrphanFileService:
         min_size: Optional[int] = None,
         include_deleted: bool = False,
         path_like: Optional[str] = None,
+        path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -516,6 +526,7 @@ class OrphanFileService:
 
         Args:
             path_like: 文件路径模糊匹配（LIKE %path_like%）。
+            path_prefix: 文件路径左匹配（LIKE prefix%），与 path_like 独立叠加（AND）。
             status: 状态筛选——pending=待清理（默认，未删除未忽视）、
                 ignored=已忽视（联表候选 is_ignored=1）、deleted=已清理。
                 None 时等价 pending+deleted 由 include_deleted 控制（兼容旧调用）。
@@ -589,6 +600,7 @@ class OrphanFileService:
             min_size=min_size,
             include_deleted=include_deleted,
             path_like=path_like,
+            path_prefix=path_prefix,
             status=status,
             confidence=confidence,
         )
@@ -776,6 +788,46 @@ class OrphanFileService:
         }
 
     # ==================== 清理预览 ====================
+
+    async def prefix_match_preview(self, path_prefix: str, scan_id: str) -> Dict[str, Any]:
+        """左匹配预览：统计以 path_prefix 开头的“待清理”孤儿文件数与大小。
+
+        与 cleanup 共用新鲜度门禁：最新扫描必须 completed 且 scan_id 必须最新，
+        否则返回 rejected=True（避免对过期数据给出误导性的“将影响 N 个”）。
+        范围严格限定 status=pending（排除已忽视 / 已清理），与前端快捷操作语义一致。
+        """
+        gate = await self._check_cleanup_allowed(scan_id)
+        if not gate["allowed"]:
+            return {
+                "rejected": True,
+                "reason": gate["reason"],
+                "count": 0,
+                "total_size": 0,
+                "low_confidence_count": 0,
+                "sample_paths": [],
+            }
+
+        conditions = self._build_orphan_conditions(
+            scan_id,
+            path_prefix=path_prefix,
+            status="pending",  # 强制仅待清理
+        )
+        query = select(
+            OrphanFile.id,
+            OrphanFile.file_size,
+            OrphanFile.confidence,
+            OrphanFile.file_path,
+        )
+        for condition in conditions:
+            query = query.where(condition)
+        result = await self.db.execute(query)
+        rows = result.all()
+        return {
+            "count": len(rows),
+            "total_size": sum(int(row.file_size or 0) for row in rows),
+            "low_confidence_count": sum(1 for row in rows if row.confidence != "high"),
+            "sample_paths": [row.file_path for row in rows[:10]],
+        }
 
     async def cleanup_preview(self, orphan_ids: List[int], scan_id: Optional[str] = None) -> Dict[str, Any]:
         """清理预览（返回文件数 + 总大小）。

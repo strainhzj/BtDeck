@@ -291,6 +291,7 @@ class TestOrphanFilesCleanupWiring:
             downloader_id=None,
             min_size=None,
             path_like="movie",
+            path_prefix=None,
             status="pending",
             confidence="high",
         )
@@ -326,6 +327,7 @@ class TestOrphanFilesCleanupWiring:
             downloader_id=None,
             min_size=None,
             path_like=None,
+            path_prefix=None,
             status=None,
             confidence=None,
         )
@@ -385,6 +387,7 @@ class TestOrphanFilesCleanupWiring:
             downloader_id=None,
             min_size=None,
             path_like=None,
+            path_prefix=None,
             status=None,
             confidence=None,
         )
@@ -529,6 +532,127 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 200
         data = response.json()
         assert data["code"] != "401"
+
+
+class TestOrphanFilesPrefixMatch:
+    """左匹配（前缀）快捷操作端点与 select_all 透传契约。"""
+
+    def setup_method(self):
+        self.app = FastAPI()
+        self.app.include_router(api_router, prefix="/api/v1")
+        self.app.dependency_overrides[get_async_db] = lambda: MagicMock()
+        self.app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
+        self.client = TestClient(self.app)
+
+    def test_prefix_match_preview_no_token_returns_401(self):
+        """POST /prefix-match-preview：无 token 必须 401。"""
+        # 撤销 setup_method 里对认证的 override，恢复真实认证依赖
+        self.app.dependency_overrides.pop(require_authenticated_user, None)
+        response = self.client.post(
+            "/api/v1/orphan-files/prefix-match-preview",
+            json={"path_prefix": "/data/", "scan_id": "scan-latest"},
+        )
+        assert response.status_code == 401
+
+    def test_prefix_match_preview_invokes_service(self):
+        """POST /prefix-match-preview：应调用 prefix_match_preview 并原样返回结果。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "count": 3,
+            "total_size": 1234,
+            "low_confidence_count": 1,
+            "sample_paths": ["/data/a.bin", "/data/b.bin"],
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "prefix_match_preview", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/prefix-match-preview",
+                json={"path_prefix": "/data/", "scan_id": "scan-latest"},
+            )
+        assert response.status_code == 200
+        assert response.json()["code"] == "200"
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with("/data/", "scan-latest")
+
+    def test_prefix_match_preview_rejects_empty_prefix(self):
+        """path_prefix 为空字符串应被 Pydantic min_length=1 拒绝（422）。"""
+        response = self.client.post(
+            "/api/v1/orphan-files/prefix-match-preview",
+            json={"path_prefix": "", "scan_id": "scan-latest"},
+        )
+        assert response.status_code == 422
+
+    def test_cleanup_select_all_passes_path_prefix_filter(self):
+        """select_all + filters.path_prefix 应透传到 resolve_orphan_selection。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+
+        resolve_selection = AsyncMock(return_value=[1, 2])
+        fake_job = SimpleNamespace(
+            task_id="task-prefix",
+            to_dict=lambda: {"task_id": "task-prefix", "operation_type": "cleanup"},
+        )
+        with (
+            patch.object(OrphanFileService, "resolve_orphan_selection", resolve_selection),
+            patch.object(OrphanPurgeJobService, "create_cleanup_job", AsyncMock(return_value=fake_job)),
+            patch("app.api.endpoints.orphan_files.get_orphan_purge_dispatcher"),
+        ):
+            self.client.post(
+                "/api/v1/orphan-files/cleanup",
+                json={
+                    "scan_id": "scan-latest",
+                    "select_all": True,
+                    "filters": {"path_prefix": "/data/leak/", "status": "pending"},
+                },
+            )
+        resolve_selection.assert_awaited_once_with(
+            orphan_ids=[],
+            select_all=True,
+            excluded_orphan_ids=[],
+            scan_id="scan-latest",
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix="/data/leak/",
+            status="pending",
+            confidence=None,
+        )
+
+    def test_ignore_select_all_passes_path_prefix_filter(self):
+        """ignore 的 select_all + filters.path_prefix 应透传到 resolve_orphan_selection。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        resolve_selection = AsyncMock(return_value=[5, 6])
+        with (
+            patch.object(OrphanFileService, "resolve_orphan_selection", resolve_selection),
+            patch.object(
+                OrphanFileService,
+                "set_ignored",
+                AsyncMock(return_value={"success_count": 2, "failed_count": 0, "failed_list": []}),
+            ),
+        ):
+            self.client.post(
+                "/api/v1/orphan-files/ignore",
+                json={
+                    "scan_id": "scan-latest",
+                    "select_all": True,
+                    "ignored": True,
+                    "filters": {"path_prefix": "/data/leak/", "status": "pending"},
+                },
+            )
+        resolve_selection.assert_awaited_once_with(
+            orphan_ids=[],
+            select_all=True,
+            excluded_orphan_ids=[],
+            scan_id="scan-latest",
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix="/data/leak/",
+            status="pending",
+            confidence=None,
+        )
 
 
 # 延迟导入，避免模块加载时触发 settings 初始化
