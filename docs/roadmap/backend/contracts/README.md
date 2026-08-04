@@ -1,6 +1,14 @@
 # backend/contracts — 前后端共享契约
 
 > 新增于 v1.0.6.27（commit `eef3eea`）。本目录存放**前后端共享的、机器可读的领域契约**，作为单一真相源（single source of truth），消除"后端枚举/操作符列表"与"前端下拉选项"重复维护导致的漂移。
+> 定位方式：`Grep -i <功能词> docs/roadmap/backend/contracts/README.md`，命中行即含文件 + 职责，无需 Read 全文。
+
+## 关键词速查
+
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 契约加载器 contract-loader | `advanced_search.py` | 高级搜索契约加载器：把 JSON 解析为模块级常量（`SEARCH_FIELD_CONTRACT` / `SUPPORTED_SEARCH_OPERATORS` / `FRONTEND_TO_BACKEND_OPERATOR` / `NEGATED_SEARCH_OPERATORS` 等），提供 `allowed_operators_for_field(field)` / `field_kind(field)` 查询函数 |
+| 机器可读契约 contract-json | `advanced_search_contract.json` | **机器可读契约**：字段 → kind/operators/negated 映射、nullOperators、maxRegexConditions、maxRegexPatternLength、operatorGroups（前端 label↔后端 backendValue 双向表） |
 
 ## 设计动机
 
@@ -12,14 +20,6 @@
 
 三处任一改动都可能让前后端契约不一致（典型 bug：前端可选 `not_contains`，后端不支持）。
 本目录通过一份 JSON 契约 + Python 加载器，让**前端构建期与后端运行期读取同一份定义**，从而把"漂移"从运行时错误降级为编译期/启动期错误。
-
-## 文件清单（3 个）
-
-| 文件 | 行数 | 顶层符号 | 一句话职责 |
-|------|------|---------|-----------|
-| `__init__.py` | 1 | 0 class, 0 def | 包标识（仅 docstring） |
-| `advanced_search.py` | 38 | 0 class, 2 def | 高级搜索契约加载器：把 JSON 解析为模块级常量（`SEARCH_FIELD_CONTRACT` / `SUPPORTED_SEARCH_OPERATORS` / `FRONTEND_TO_BACKEND_OPERATOR` / `NEGATED_SEARCH_OPERATORS` 等），提供 `allowed_operators_for_field(field)` / `field_kind(field)` 查询函数 |
-| `advanced_search_contract.json` | 94 | — | **机器可读契约**：字段 → kind/operators/negated 映射、nullOperators、maxRegexConditions、maxRegexPatternLength、operatorGroups（前端 label↔后端 backendValue 双向表） |
 
 ## 关键常量（`advanced_search.py`，模块级）
 

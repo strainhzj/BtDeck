@@ -1,15 +1,16 @@
 # perspectives — 跨切专题索引
 
 > 跨分支的横向主题：调用链、约定、风险、测试覆盖。本目录**只放索引与摘要**，完整论述链接到已有文档，避免双份真相。
+> 定位方式：`Grep -i <功能词> docs/roadmap/perspectives/README.md`，命中行即含专题文件 + 职责，无需 Read 全文。
 
-## 专题清单
+## 关键词速查
 
-| 专题 | 内容 | 链接 |
-|------|------|------|
-| 架构调用链 | 5 条关键业务流程的调用链索引（入口 → 数据层） | [architecture.md](./architecture.md) |
-| 约定 | 代码约定索引（链接到 backend/frontend docs/constraints/，不复制条款） | [conventions.md](./conventions.md) |
-| 风险与技术债 | 孤儿文件、入口分散、双 SPA fallback、文档/代码漂移等 | [risks.md](./risks.md) |
-| 测试覆盖 | 源文件 ↔ 测试文件覆盖矩阵 | [test-coverage.md](./test-coverage.md) |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 架构调用链 architecture | [architecture.md](./architecture.md) | 5 条关键业务流程的调用链索引（入口 → 数据层） |
+| 约定 conventions | [conventions.md](./conventions.md) | 代码约定索引（链接到 backend/frontend docs/constraints/，不复制条款） |
+| 风险技术债 risks | [risks.md](./risks.md) | 孤儿文件、入口分散、双 SPA fallback、文档/代码漂移等 |
+| 测试覆盖 test-coverage | [test-coverage.md](./test-coverage.md) | 源文件 ↔ 测试文件覆盖矩阵 |
 
 ## 单一真相原则
 

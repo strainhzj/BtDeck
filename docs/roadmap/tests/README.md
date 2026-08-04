@@ -1,6 +1,28 @@
 # tests — 测试
 
 > 后端 pytest（109 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 jest unit。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
+
+## 关键词速查
+
+| 关键词 | 文件/目录 | 一句话职责 |
+|--------|-----------|-----------|
+| 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
+| 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
+| panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
+| API 层测试 api | `backend/tests/api/` | API 层测试（37 个 test_*.py，对应 app/api/） |
+| 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
+| 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
+| 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
+| 端点集成测试 endpoints | `backend/tests/endpoints/` | 端点集成测试（对应 app/api/endpoints/） |
+| 枚举测试 enums | `backend/tests/enums/` | 枚举测试（对应 app/enums/） |
+| 模型测试 models | `backend/tests/models/` | ORM 模型测试（对应 app/models/） |
+| 仓储测试 repositories | `backend/tests/repositories/` | 仓储测试（对应 app/repositories/） |
+| 服务层测试 services | `backend/tests/services/` | 服务层测试（对应 app/services/，含 tag_adapters/） |
+| 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
+| 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | jest 单元测试（含 deployment-recovery.spec.ts：chunk 错误识别/一次恢复/防刷新循环/Workbox 清退/nginx 缓存契约） |
+| 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选组件单测（4 spec 共 1741 行）+ LucideIcon.spec.ts（✨v1.0.6.28） |
 
 ## backend/tests/（109 个 test_*.py + 支持文件）
 

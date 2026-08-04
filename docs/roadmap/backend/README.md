@@ -1,20 +1,21 @@
 # backend 分支 — FastAPI 后端总览
 
 > Python 3.11+ / FastAPI 0.115 / SQLAlchemy + SQLite（异步 + 同步双引擎）。本分支是 BtDeck 的服务端，含 HTTP API、WebSocket、定时任务调度、ORM、数据迁移与下载器/Tracker 业务逻辑。
+> 定位方式：`Grep -i <功能词> docs/roadmap/backend/README.md`，命中行即含子分支 + 职责，无需 Read 全文。
 
-## 子分支索引
+## 关键词速查
 
-| 子分支 | 范围 | 文件数 | 链接 |
-|--------|------|--------|------|
-| app-root | `backend/app/` 包根 10 文件（应用工厂、DB 引擎、异常处理、版本、入口） | 10 | [app-root.md](./app-root.md) |
-| api | HTTP 路由层（endpoints 35 + models 1 + schemas 3 + api.py + responseVO.py） | 41 | [api/README.md](./api/README.md) |
-| services | 业务服务层 37 + downloader_adapters 6 + tag_adapters 6 | 49 | [services/README.md](./services/README.md) |
-| core | 基础设施 21 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） | 21 | [core/README.md](./core/README.md) |
-| **contracts** ✨v1.0.6.27 | 前后端共享机器可读契约（advanced_search JSON + 加载器） | 3 | [contracts/README.md](./contracts/README.md) |
-| data-models | ORM 16 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2 | 35 | [data-models/README.md](./data-models/README.md) |
-| tasks | 定时任务 14 + scheduler 14 + scheduler/torrent_sync 4 | 32 | [tasks/README.md](./tasks/README.md) |
-| domain | downloader 9 + torrents 9 + tracker 1 + auth 5 + user 1 | 25 | [domain/README.md](./domain/README.md) |
-| infra | utils 3 + startup 2 + migrations 3 + alembic 1+9 | 18 | [infra/README.md](./infra/README.md) |
+| 关键词 | 子分支/文件 | 一句话职责 |
+|--------|------------|-----------|
+| 包根入口 app-root | [app-root.md](./app-root.md) | `backend/app/` 包根 10 文件（应用工厂、DB 引擎、异常处理、版本、入口） |
+| HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 41 文件（endpoints 35 + models 1 + schemas 3 + api.py + responseVO.py） |
+| 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 49 文件（services 37 + downloader_adapters 6 + tag_adapters 6） |
+| 基础设施 core | [core/README.md](./core/README.md) | 基础设施 21 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） |
+| 前后端契约 contracts | [contracts/README.md](./contracts/README.md) | 前后端共享机器可读契约 3 文件（advanced_search JSON + 加载器）✨v1.0.6.27 |
+| 数据层 data-models | [data-models/README.md](./data-models/README.md) | 数据层 35 文件（ORM 16 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2） |
+| 定时任务 tasks | [tasks/README.md](./tasks/README.md) | 定时任务 32 文件（tasks 14 + scheduler 14 + scheduler/torrent_sync 4） |
+| 领域 domain | [domain/README.md](./domain/README.md) | 领域目录 25 文件（downloader 9 + torrents 9 + tracker 1 + auth 5 + user 1） |
+| 横切基础设施 infra | [infra/README.md](./infra/README.md) | 横切基础设施 18 文件（utils 3 + startup 2 + migrations 3 + alembic 1+9） |
 
 ---
 

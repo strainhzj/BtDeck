@@ -1,34 +1,34 @@
 # backend/core — 基础设施层
 
 > 全局基础设施：配置、路径映射、数据库结果封装、文件操作、Tracker 判断等。⚠ 本目录混有真正的核心基础设施与若干**0 引用孤儿文件**，需区分对待。
+> 定位方式：`Grep -i <功能词> docs/roadmap/backend/core/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 文件清单（21 个）
+## 关键词速查
 
-| 文件 | 行数 | 顶层符号 | 引用数 | 一句话职责 |
-|------|------|---------|--------|-----------|
-| `__init__.py` | 0 | — | — | 空包标识（跳过） |
-| `background_task_manager.py` | 202 | 3 | 1 | 后台任务管理器（内存态，单机部署） |
-| `config.py` | 236 | 4 | **28** | 🔵 全局配置 `Settings`（BaseSettings），含 frozen/docker/secret-key 判定 |
-| `database_result.py` | 148 | 2 | 11 | 🔵 统一 DB 操作返回格式 `DatabaseResult[T]`（泛型） |
-| `db_backup.py` | 167 | 2 | 2 | alembic upgrade 前对 `app.db` 物理备份（Level-2 回滚兜底）；v1.0.6.27 起新增 `list_pre_migration_backups` 列举历史备份，供 ratio 迁移诊断/回滚使用（被 `ratio_data_diagnostics.py` + `migration.py` 引用） |
-| `downloader.py` | 29 | 1 | **0** | ⚠️ **孤儿**：遗留下载器依赖桩（`from app.downloader import models` 已失效） |
-| `file_operations.py` | 1474 | 1 | 4 | 文件操作服务（`.waiting-delete` 标记文件创建/删除/批量+回滚，回收站用） |
-| `filename_utils.py` | 140 | 1 | 3 | 文件名清理（非法字符/长度，给种子备份文件名） |
-| `init_schema_from_production.py` | 146 | 3 | **0** | ⚠️ **孤儿/已下线**：从生产 DB schema 反向建库的灾备脚本，main.py 不再调用 |
-| `json_parser.py` | 127 | 3 | 4 | 异常安全 JSON 解析（吞 JSONDecodeError） |
-| `migration.py` | 202 | 4 | 3 | 🔵 数据库迁移统一入口 `migrate_database()`（空库建表/增量升级/幽灵版本救援）；v1.0.6.27 起集成 ratio 迁移前自动备份 |
-| `path_mapping.py` | 898 | 3 | 10 | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离） |
-| `ratio_data_diagnostics.py` ✨v1.0.6.27 | 336 | 0 class, 10 def | 2 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 与 `tests/core/test_ratio_data_diagnostics.py` 消费 |
-| `reannounce_config_operations.py` | 348 | 13 | 2 | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
-| `security.py` | 263 | 7 | **0** | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |
-| `torrent_file_backup.py` | 503 | 1 | 3 | 种子文件备份服务（从下载器备份目录拷贝到项目备份目录） |
-| `torrent_operations.py` | 250 | 8 | **0** | ⚠️ **孤儿（内容已重写但未接线）**：v1.0.6.27 起内容已重写为 ratio/ratio_limit 工具，但**生产路径未 import**（实际生效的是 `app/services/torrent_ratio_values.py`）。建议删除或与 services 版合并，消除双份真相 |
-| `torrent_status_mapper.py` | 113 | 1 | 6 | 统一 qb/transmission 种子状态映射 |
-| `tracker_judgment.py` | 415 | 2 | 2 | Tracker 状态判断引擎（关键词池，失败优先策略） |
-| `tracker_mapper.py` | 301 | 7 | 2 | qb/transmission tracker 状态统一映射 + 关键词池判断集成 |
-| `tracker_operations.py` | 292 | 10 | **0** | ⚠️ **孤儿**：标准化 tracker DB 操作（DatabaseResult 重构版），未启用 |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 后台任务 background-task | `background_task_manager.py` | 后台任务管理器（内存态，单机部署） |
+| 全局配置 config | `config.py` | 🔵 全局配置 `Settings`（BaseSettings），含 frozen/docker/secret-key 判定 |
+| DB 结果封装 database-result | `database_result.py` | 🔵 统一 DB 操作返回格式 `DatabaseResult[T]`（泛型） |
+| 迁移备份 db-backup | `db_backup.py` | alembic upgrade 前对 `app.db` 物理备份（Level-2 回滚兜底）；v1.0.6.27 起新增 `list_pre_migration_backups` 列举历史备份，供 ratio 迁移诊断/回滚使用 |
+| 下载器桩 downloader-stub | `downloader.py` | ⚠️ **孤儿**：遗留下载器依赖桩（`from app.downloader import models` 已失效） |
+| 文件操作 file-operations | `file_operations.py` | 文件操作服务（`.waiting-delete` 标记文件创建/删除/批量+回滚，回收站用） |
+| 文件名清理 filename | `filename_utils.py` | 文件名清理（非法字符/长度，给种子备份文件名） |
+| 灾备建库 init-schema | `init_schema_from_production.py` | ⚠️ **孤儿/已下线**：从生产 DB schema 反向建库的灾备脚本，main.py 不再调用 |
+| JSON 解析 json-parser | `json_parser.py` | 异常安全 JSON 解析（吞 JSONDecodeError） |
+| DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（空库建表/增量升级/幽灵版本救援）；v1.0.6.27 起集成 ratio 迁移前自动备份 |
+| 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离） |
+| ratio 诊断 ratio-diagnostics | `ratio_data_diagnostics.py` ✨v1.0.6.27 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 消费 |
+| Reannounce 配置 reannounce-config | `reannounce_config_operations.py` | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
+| 解密孤儿 security | `security.py` | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |
+| 种子文件备份 torrent-file-backup | `torrent_file_backup.py` | 种子文件备份服务（从下载器备份目录拷贝到项目备份目录） |
+| ratio 工具孤儿 ratio-tools | `torrent_operations.py` | ⚠️ **孤儿（内容已重写但未接线）**：v1.0.6.27 起内容已重写为 ratio/ratio_limit 工具，但**生产路径未 import**（实际生效的是 `app/services/torrent_ratio_values.py`） |
+| 状态映射 status-mapper | `torrent_status_mapper.py` | 统一 qb/transmission 种子状态映射 |
+| Tracker 判断 tracker-judgment | `tracker_judgment.py` | Tracker 状态判断引擎（关键词池，失败优先策略） |
+| Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成 |
+| Tracker 操作孤儿 tracker-operations | `tracker_operations.py` | ⚠️ **孤儿**：标准化 tracker DB 操作（DatabaseResult 重构版），未启用 |
 
-> 引用数 = `backend/app/` 范围内 `from app.core.<mod>` / `import app.core.<mod>` 的 .py 文件数（排除自身）。🔵 = 基础设施型（高频引用）；⚠️ = 孤儿/低使用。
+> 🔵 = 基础设施型（高频引用）；⚠️ = 孤儿/低使用。各文件的引用统计详见下方"孤儿/低使用"与"基础设施型"两节。
 
 ---
 

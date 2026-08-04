@@ -31,6 +31,31 @@ BtDeck/
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
+## 功能域速查（第一层直达）
+
+> 按功能词直达源文件，无需逐层翻页。定位时先在 `docs/roadmap/` 下 `Grep -i <功能词>` 命中本表行，再读对应源文件（路径相对 `frontend/src` / `backend/app`）。
+
+| 功能域（含检索词） | 前端入口 | 后端入口 |
+|------|---------|---------|
+| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts` | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
+| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；`services/torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
+| 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
+| Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
+| 任务/定时任务 task cron | `views/tasks/index.vue`、`api/tasks.ts` | `api/endpoints/tasks.py` / `cron_tasks.py`；`tasks/`（scheduler） |
+| 审计日志 audit | `views/logs/audit.vue`、`api/audit-logs.ts` | `api/endpoints/audit_logs.py`；`services/audit_service.py` / `audit_service_sync.py` |
+| 回收站 recycle | `views/recycle-bin/index.vue`、`api/recycle-bin.ts` | `api/endpoints/recycle_bin.py`；`services/recycle_bin_service.py` |
+| 通知中心 notification | `layout/components/NotificationDrawer/`、`api/notification.ts`、`store/modules/notification.ts` | `api/endpoints/notifications.py`；`services/notification_service.py`；`models/notification.py` |
+| 查询模板 query-template | `views/query-templates/` | `api/endpoints/setting_templates.py`；`services/template_service.py`；`models/setting_templates.py` |
+| 标签管理 tag | 下载器页 TagManagementTab | `api/endpoints/tag_management.py`；`services/tag_service.py` / `tag_sync_service.py` / `tag_adapters/`；`models/torrent_tags.py` |
+| 高级搜索 advanced-search | 种子页高级搜索 | `api/endpoints/advanced_search.py`；`services/advanced_search.py` / `sqlite_search_runtime.py` |
+| 种子转移 seed-transfer | — | `api/endpoints/seed_transfer.py`；`services/seed_transfer_service.py`；`models/seed_transfer_audit_log.py` |
+| 重复种子 duplicate | — | `api/endpoints/duplicate_torrents.py` |
+| 种子备份 torrent-backup | `api/torrents-backup.ts` | `api/endpoints/torrent_backup.py`；`services/torrent_file_backup_manager.py`；`models/torrent_file_backup.py` |
+| 仪表盘 dashboard | `views/dashboard/index.vue`、`api/dashboard.ts` | `api/endpoints/dashboard.py`；`services/dashboard_service.py` |
+| 速度计划/设置 speed-schedule | `views/settings/index.vue` | `api/endpoints/downloader_settings.py`；`services/speed_schedule_service.py` |
+
+---
+
 ## 分支说明
 
 | 分支 | 一句话职责 | 链接 |
@@ -96,4 +121,4 @@ BtDeck/
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层样例（1 个：torrent_crud.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | v1.0.6.33~36：异步批量添加（`torrent_batch_add_service` 自 `torrent_crud` 抽取）、种子实时进度、孤儿列表大分页/真全选/固定表头/忽视身份、剪贴板回退（`clipboard.ts`）、操作日志布局优化、测试 103→109 |
+| 本次新增 | v1.0.6.33~36：异步批量添加（`torrent_batch_add_service` 自 `torrent_crud` 抽取）、种子实时进度、孤儿列表大分页/真全选/固定表头/忽视身份、剪贴板回退（`clipboard.ts`）、操作日志布局优化、测试 103→109；第一层新增"功能域速查"（功能词→源文件倒排索引，支持 Grep 直达） |

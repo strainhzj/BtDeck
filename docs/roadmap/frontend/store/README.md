@@ -1,17 +1,18 @@
 # frontend/store — Vuex 状态管理
 
 > Vuex 3 + TypeScript。⚠ **双轨注册**：4 个 module 用 `vuex-module-decorators` 动态注册，1 个用传统 namespaced Module。
+> 定位方式：`Grep -i <功能词> docs/roadmap/frontend/store/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 文件清单
+## 关键词速查
 
-| 文件 | 行数 | 注册方式 | 一句话职责 |
-|------|------|---------|-----------|
-| `index.ts` | 18 | — | 先建空 store，由各 module 动态注册（L17 注释明示） |
-| `modules/user.ts` | 203 | `@Module({dynamic:true, store, name:'user'})` + `getModule` | 用户认证（Login/LogOut/GetUserInfo/ResetToken/SetTwoFactorFlag） |
-| `modules/downloaderSettings.ts` | 388 | ⚠ 传统 `namespaced: true` Module（`export default`） | 下载器设置/能力/模板 CRUD（fetchSettings/updateSettings/fetchTemplates/applyTemplate 等） |
-| `modules/notification.ts` | 160 | `@Module({dynamic:true, store, name:'notification'})` + `getModule` | 通知抽屉（ToggleDrawer/FetchUnreadCount/MarkAsRead 等） |
-| `modules/app.ts` | 66 | `@Module({dynamic:true, store, name:'app'})` + `getModule` | 应用 UI 状态（ToggleSideBar/CloseSideBar/ToggleDevice） |
-| `modules/viewMode.ts` | 54 | `@Module({dynamic:true, store, name:'viewMode'})` + `getModule` | 视图模式（setViewMode/toggleFilterPanel） |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| store 空壳 index | `index.ts` | 先建空 store，由各 module 动态注册（L17 注释明示） |
+| 用户认证 user | `modules/user.ts` | 用户认证（Login/LogOut/GetUserInfo/ResetToken/SetTwoFactorFlag）；`@Module` 动态注册 |
+| 下载器设置 downloader-settings | `modules/downloaderSettings.ts` | ⚠ 传统 `namespaced: true` Module（`export default`）：下载器设置/能力/模板 CRUD（fetchSettings/updateSettings/fetchTemplates/applyTemplate 等） |
+| 通知抽屉 notification | `modules/notification.ts` | 通知抽屉（ToggleDrawer/FetchUnreadCount/MarkAsRead 等）；`@Module` 动态注册 |
+| 应用 UI app | `modules/app.ts` | 应用 UI 状态（ToggleSideBar/CloseSideBar/ToggleDevice）；`@Module` 动态注册 |
+| 视图模式 view-mode | `modules/viewMode.ts` | 视图模式（setViewMode/toggleFilterPanel）；`@Module` 动态注册 |
 
 ---
 

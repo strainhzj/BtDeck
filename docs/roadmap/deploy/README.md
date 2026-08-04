@@ -1,6 +1,24 @@
 # deploy — 多部署模式
 
 > BtDeck 支持 4 种部署模式：Docker Compose（推荐）、PyInstaller 单机包（Windows/Linux）、Inno Setup（Windows 安装包）、fpm（Linux 包）。⚠ 不同模式的入口与 SPA fallback 不同。
+> 定位方式：`Grep -i <功能词> docs/roadmap/deploy/README.md`，命中行即含模式/文件 + 职责，无需 Read 全文。
+
+## 关键词速查
+
+| 关键词 | 模式/文件 | 一句话职责 |
+|--------|-----------|-----------|
+| Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001 / WebSocket 5002；SPA fallback = nginx |
+| Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
+| 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.bat` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；bat 含 3 profile 镜像源重试链 |
+| PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；SPA fallback = `factory.py:_mount_frontend_static` |
+| 构建脚本 build | `deploy/build-windows.bat` / `deploy/build-linux.sh` | Windows 一键构建（PyInstaller + Inno Setup）；Linux 一键构建（PyInstaller + fpm） |
+| Inno Setup 安装包 innosetup | `deploy/btdeck.iss` + `ChineseSimplified.isl` | Windows 安装包脚本 + 中文语言包 |
+| fpm Linux 包 fpm | `deploy/build-linux.sh` | Linux deb/rpm 打包 |
+| 系统服务 nssm | `deploy/btdeck.service` / `deploy/nssm.exe` | systemd 服务单元（Linux）/ Windows 服务包装器 |
+| 启动脚本 start.bat | `deploy/start.bat` / `deploy/start.sh` | 启动脚本 |
+| 打包依赖 requirements | `deploy/requirements-linux-package.txt` / `requirements-windows-package.txt` | Linux / Windows 打包专用依赖 |
+| 打包辅助 analyze-package | `deploy/analyze-package-size.py` / `verify-package.py` | 打包体积分析 / 产物校验 |
+| 构建产物 artifact | `deploy/dist/btdeck.exe` / `deploy/build/btdeck/` | Windows 可执行 / PyInstaller 中间产物 |
 
 ## 部署模式总览
 

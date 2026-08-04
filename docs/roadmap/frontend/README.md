@@ -1,17 +1,18 @@
 # frontend 分支 — Vue 2 + TypeScript 前端
 
 > Vue 2.6.12 + TypeScript + Element UI + Vuex + axios。本分支是 BtDeck 的 Web 前端，通过 nginx 反代后端 FastAPI。
+> 定位方式：`Grep -i <功能词> docs/roadmap/frontend/README.md`，命中行即含子分支 + 职责，无需 Read 全文。
 
-## 子分支索引
+## 关键词速查
 
-| 子分支 | 范围 | 文件数 | 链接 |
-|--------|------|--------|------|
-| entry | 应用入口（main.ts / router.ts / permission.ts / App.vue / registerServiceWorker.ts / shims-vue.d.ts） | 6 | [entry/README.md](./entry/README.md) |
-| api | axios 封装的 12 个领域 API 模块 | 12 | [api/README.md](./api/README.md) |
-| views | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 3 处 Options API） | 64 | [views/README.md](./views/README.md) |
-| store | Vuex（index.ts 空壳 + 5 个 module，双轨注册） | 6 | [store/README.md](./store/README.md) |
-| components-layout | 通用组件 17 个 + layout 骨架 8 个 + mixin | 27 | [components-layout/README.md](./components-layout/README.md) |
-| utils-types | utils 11 + types 8 + constants 1 + directive 1 | 21 | [utils-types/README.md](./utils-types/README.md) |
+| 关键词 | 子分支 | 一句话职责 |
+|--------|--------|-----------|
+| 应用入口 entry | [entry/](./entry/README.md) | 应用入口（main.ts / router.ts / permission.ts / App.vue / registerServiceWorker.ts / shims-vue.d.ts，6 文件） |
+| API 封装 api axios | [api/](./api/README.md) | axios 封装的 12 个领域 API 模块 |
+| 页面视图 view | [views/](./views/README.md) | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 3 处 Options API） |
+| Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 5 个 module，双轨注册） |
+| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 17 个 + layout 骨架 8 个 + mixin |
+| 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 11 + types 8 + constants 1 + directive 1 |
 
 ---
 

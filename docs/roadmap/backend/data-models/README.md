@@ -1,30 +1,32 @@
 # backend/data-models — ORM + 仓储 + Schemas + 默认数据 + 枚举
 
 > 数据层统一索引：SQLAlchemy ORM 模型、Repository（数据访问层）、Pydantic schemas、默认数据种子、枚举。本分支目录分散在 `app/` 多个子目录，统一在此索引。
+> 定位方式：`Grep -i <功能词> docs/roadmap/backend/data-models/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## models/ — ORM 模型（17 个根 .py + response/ 子目录 2 个 = 19 个）
+## 关键词速查
 
-| 文件 | 行数 | 顶层 class | 表名 / 职责 |
-|------|------|-----------|-------------|
-| `__init__.py` | 77 | 0 | **有实质内容**：集中导出所有模型 + 常量（见下方说明） |
-| `downloader_capabilities.py` | 225 | 1 | `downloader_capabilities`：下载器能力配置 |
-| `downloader_capabilities_vo.py` | 98 | 1 | 下载器能力响应 VO（Pydantic） |
-| `downloader_path_maintenance.py` | 167 | 1 | `downloader_path_maintenance`：默认/在用路径 |
-| `downloader_settings.py` | 156 | 2 | `downloader_settings` + `SpeedUnitEnum` |
-| `enums.py` | 125 | 2 | `SpeedUnitEnum`、`ScheduleDayOfWeekEnum`（⚠ 与 downloader_settings.py 重复定义） |
-| `notification.py` | 98 | 1 | `notification`：系统单向通知信箱 |
-| `orphan_file.py` | 392 | 4 | `orphan_scan_result` / `orphan_file` / `orphan_current_candidate` / `orphan_operation_lease` |
-| `orphan_purge_job.py` | 78 | 1 | `orphan_purge_job`：隔离区彻底删除持久化任务状态与通知送达标记 |
-| `search_template.py` | 97 | 1 | `search_templates`：搜索模板 |
-| `seed_transfer_audit_log.py` | 229 | 1 | `seed_transfer_audit_log`：种子转移审计日志 |
-| `setting_templates.py` | 291 | 2 | `setting_templates` + `DownloaderTypeEnum` |
-| `setting_templates_vo.py` | 91 | 1 | 配置模板响应 VO |
-| `speed_schedule_rules.py` | 233 | 1 | `speed_schedule_rules`：分时段限速规则 |
-| `torrent_deletion_audit_log.py` | 323 | 1 | `torrent_deletion_audit_log`：种子删除审计日志 |
-| `torrent_file_backup.py` | 168 | 1 | `torrent_file_backup`：种子文件本地存储记录 |
-| `torrent_tags.py` | 217 | 2 | `torrent_tags` + `torrent_tag_relations` |
-| `response/__init__.py` | 1 | 0 | 仅 docstring（跳过） |
-| `response/dashboard.py` | 67 | 7 | 7 个看板 Pydantic 模型（`DownloaderStats`/`TorrentStats`/`TaskStats`/`DashboardData` 等） |
+### models/ — ORM 模型（17 个根 .py + response/ 子目录 2 个 = 19 个）
+
+| 关键词 | 文件 | 表名 / 一句话职责 |
+|--------|------|-------------------|
+| 模型导出 models-init | `__init__.py` | **有实质内容**：集中导出所有模型 + 常量（见下方说明） |
+| 下载器能力 model capability | `downloader_capabilities.py` | `downloader_capabilities`：下载器能力配置 |
+| 能力 VO capability-vo | `downloader_capabilities_vo.py` | 下载器能力响应 VO（Pydantic） |
+| 路径维护 model path-maintenance | `downloader_path_maintenance.py` | `downloader_path_maintenance`：默认/在用路径 |
+| 下载器设置 model downloader-setting | `downloader_settings.py` | `downloader_settings` + `SpeedUnitEnum` |
+| 枚举 model enums | `enums.py` | `SpeedUnitEnum`、`ScheduleDayOfWeekEnum`（⚠ 与 downloader_settings.py 重复定义） |
+| 通知模型 model notification | `notification.py` | `notification`：系统单向通知信箱 |
+| 孤儿模型 model orphan | `orphan_file.py` | `orphan_scan_result` / `orphan_file` / `orphan_current_candidate` / `orphan_operation_lease` |
+| 孤儿清理任务 model orphan-purge | `orphan_purge_job.py` | `orphan_purge_job`：隔离区彻底删除持久化任务状态与通知送达标记 |
+| 搜索模板 model search-template | `search_template.py` | `search_templates`：搜索模板 |
+| 种子转移审计 model seed-transfer-audit | `seed_transfer_audit_log.py` | `seed_transfer_audit_log`：种子转移审计日志 |
+| 配置模板 model template | `setting_templates.py` | `setting_templates` + `DownloaderTypeEnum` |
+| 模板 VO template-vo | `setting_templates_vo.py` | 配置模板响应 VO |
+| 限速规则 model speed-schedule | `speed_schedule_rules.py` | `speed_schedule_rules`：分时段限速规则 |
+| 删除审计 model deletion-audit | `torrent_deletion_audit_log.py` | `torrent_deletion_audit_log`：种子删除审计日志 |
+| 备份记录 model torrent-backup | `torrent_file_backup.py` | `torrent_file_backup`：种子文件本地存储记录 |
+| 标签模型 model torrent-tag | `torrent_tags.py` | `torrent_tags` + `torrent_tag_relations` |
+| 看板模型 model dashboard | `response/dashboard.py` | 7 个看板 Pydantic 模型（`DownloaderStats`/`TorrentStats`/`TaskStats`/`DashboardData` 等） |
 
 ### models/__init__.py 实质导出
 
@@ -32,46 +34,44 @@
 模型：`DownloaderSetting`、`SettingTemplate`、`SpeedScheduleRule`、`TorrentTag`、`TorrentTagRelation`、`TorrentDeletionAuditLog`、`TorrentFileBackup`、`DownloaderPathMaintenance`、`SeedTransferAuditLog`
 常量：`OPERATOR_SYSTEM_SCHEDULER`、`OPERATOR_RECYCLE_BIN_CLEANER`、`DELETION_STATUS_*`(3)、`CALLER_SOURCE_*`(3)、`DOWNLOADER_TYPE_*`(2)、`TRANSFER_STATUS_*`(2) 等
 
-## repositories/ — 数据访问层（3 个 Repository + `__init__.py` = 4 个 .py）
+### repositories/ — 数据访问层（3 个 Repository + `__init__.py` = 4 个 .py）
 
-| 文件 | 行数 | 顶层 class | 职责 |
-|------|------|-----------|------|
-| `__init__.py` | 13 | 0 | 包 docstring |
-| `async_torrent_tag_repository.py` | 355 | 1 (`AsyncTorrentTagRepository`) | 标签仓储异步版（供定时任务/异步 Service） |
-| `torrent_file_backup_repository.py` | 412 | 1 (`TorrentFileBackupRepository`) | 种子文件备份 CRUD |
-| `torrent_tag_repository.py` | 401 | 1 (`TorrentTagRepository`) | 标签仓储同步版 |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 标签仓储异步 async-tag-repo | `async_torrent_tag_repository.py` | `AsyncTorrentTagRepository`：标签仓储异步版（供定时任务/异步 Service） |
+| 备份仓储 backup-repo | `torrent_file_backup_repository.py` | `TorrentFileBackupRepository`：种子文件备份 CRUD |
+| 标签仓储同步 sync-tag-repo | `torrent_tag_repository.py` | `TorrentTagRepository`：标签仓储同步版 |
 
-## schemas/ — Pydantic schemas（8 个文件，无 `__init__.py`）
+### schemas/ — Pydantic schemas（8 个文件，无 `__init__.py`）
 
-| 文件 | 行数 | 顶层 class | 职责 |
-|------|------|-----------|------|
-| `auth.py` | 71 | 11 | 认证 schema（User/Token/2FA/LoginResponse/Config） |
-| `downloader_settings.py` | 263 | 17 | 下载器设置/模板/限速规则 CRUD schema（Base/Create/Update/InDB/Response 全套） |
-| `duplicate_detection.py` | 77 | 6 | 重复检测请求/响应（含 `TaskStatus` 枚举） |
-| `seed_transfer.py` | 240 | 4 | 种子转移请求/响应（单条 + 批量） |
-| `tag_schemas.py` | 206 | 14 | 标签管理全套 schema |
-| `token.py` | 33 | 2 | `Token`、`TokenPayload`（JWT 最小模型） |
-| `torrent_backup.py` | 177 | 6 | 种子文件备份 API schema |
-| `torrent_location.py` | 46 | 2 | 修改种子保存路径请求/响应 |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 认证 schema auth | `auth.py` | 认证 schema（User/Token/2FA/LoginResponse/Config） |
+| 下载器设置 schema downloader-setting | `downloader_settings.py` | 下载器设置/模板/限速规则 CRUD schema（Base/Create/Update/InDB/Response 全套） |
+| 重复检测 schema duplicate | `duplicate_detection.py` | 重复检测请求/响应（含 `TaskStatus` 枚举） |
+| 种子转移 schema seed-transfer | `seed_transfer.py` | 种子转移请求/响应（单条 + 批量） |
+| 标签 schema tag | `tag_schemas.py` | 标签管理全套 schema |
+| JWT schema token | `token.py` | `Token`、`TokenPayload`（JWT 最小模型） |
+| 备份 schema torrent-backup | `torrent_backup.py` | 种子文件备份 API schema |
+| 种子路径 schema torrent-location | `torrent_location.py` | 修改种子保存路径请求/响应 |
 
-## data/ — 默认数据种子（4 个文件）
+### data/ — 默认数据种子（4 个文件）
 
-| 文件 | 行数 | 顶层 def | 职责 |
-|------|------|---------|------|
-| `default_scheduled_tasks.py` | 337 | 3 | 11 个系统默认定时任务种子（见下方清单） |
-| `default_search_templates.py` | 176 | 1 | 4 个预设搜索查询模板（v1.0.5）幂等初始化 |
-| `default_templates.py` | 367 | 5 | 5 个下载器配置模板（qb 标准/高性能、trans 标准/高性能、夜间不限速） |
-| `default_tracker_keywords.py` | 366 | 2 | Tracker 关键词池默认数据（成功/失败/忽略池） |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 默认任务种子 default-tasks | `default_scheduled_tasks.py` | 11 个系统默认定时任务种子（见下方清单） |
+| 默认搜索模板 default-search | `default_search_templates.py` | 4 个预设搜索查询模板（v1.0.5）幂等初始化 |
+| 默认配置模板 default-templates | `default_templates.py` | 5 个下载器配置模板（qb 标准/高性能、trans 标准/高性能、夜间不限速） |
+| 默认关键词 default-keywords | `default_tracker_keywords.py` | Tracker 关键词池默认数据（成功/失败/忽略池） |
 
 `default_scheduled_tasks.py` 提供的 11 个 task_code（行号实测）：
 `cached_downloader_sync`(L40)、`TRACKER_MESSAGE_LOGGER`(L57)、`downloader_path_scan`(L74)、`Tag_Data_Sync`(L91)、`TORRENT_TRACKER_STATUS_JUDGE`(L108)、`torrent_info_sync_ac608e4d`(L125)、`tracker_sync_598b784c`(L142)、`tracker_reannounce`(L159)、`orphan_scan_cleanup`(L176)、`orphan_quarantine_purge`(L193)、`orphan_notification_retry`(L210)
 
-## enums/
+### enums/
 
-| 文件 | 行数 | 顶层符号 | 职责 |
-|------|------|---------|------|
-| `__init__.py` | 9 | 0 | 包 docstring |
-| `tracker_status.py` | 117 | 3 | `QBittorrentTrackerStatus`、`TransmissionTrackerStatus` + `get_tracker_status_text()` 中文映射 |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| Tracker 状态枚举 tracker-status | `tracker_status.py` | `QBittorrentTrackerStatus`、`TransmissionTrackerStatus` + `get_tracker_status_text()` 中文映射 |
 
 ---
 

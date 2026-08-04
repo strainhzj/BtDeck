@@ -1,21 +1,21 @@
 # backend/app-root — 包根入口文件
 
 > `backend/app/` 包根 10 个文件（非子包），承担应用工厂、DB 引擎、异常处理、版本、多种入口。
+> 定位方式：`Grep -i <功能词> docs/roadmap/backend/app-root.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 文件清单
+## 关键词速查
 
-| 文件 | 行数 | 顶层符号 | 一句话职责 |
-|------|------|---------|-----------|
-| `__init__.py` | 0 | — | 空包标识（跳过） |
-| `config.py` | 5 | 0 class, 0 def | 兼容层：旧代码 `from app.config import settings` 转发到 `app.core.config` |
-| `database.py` | 435 | 0 class, 6 def | 数据库引擎与会话工厂（`get_db` / `get_async_db` / `init_db` / `init_config_file` / `merge_configs` / `_apply_sqlite_pragmas`） |
-| `desktop_main.py` | 103 | 0 class, 7 def | 桌面端入口（pywebview），日志配置 + 子进程启停后台 API |
-| `exception_handlers.py` | 237 | 0 class, 8 def | 全局异常处理器：把 `HTTPException` / `RequestValidationError` / 未捕获异常统一归一化为 `CommonResponse` |
-| `factory.py` | 117 | 0 class, 4 def | FastAPI 应用工厂（`create_app` + 路由/静态/CORS/lifespan 配置） |
-| `main.py` | 95 | 0 class, 0 def | 后端启动入口：配置 uvicorn server（单进程），执行 `init_config_file` + `migrate_database` 后 `Server.run()` |
-| `version.py` | 161 | 0 class, 5 def | 版本信息集中管理（`get_version_info` / `get_current_version` / `get_version_content` / `VERSION_HISTORY` 常量） |
-| `websocket_main.py` | 22 | 0 class, 0 def | WebSocket 服务独立入口，单独跑 uvicorn on `settings.WS_PORT` |
-| `yamlConfig.py` | 92 | 1 class, 0 def | `Yaml` 配置类（点表示法访问嵌套配置，封装 pyyaml） |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 配置兼容 config-compat | `config.py` | 兼容层：旧代码 `from app.config import settings` 转发到 `app.core.config` |
+| DB 引擎 database | `database.py` | 数据库引擎与会话工厂（`get_db` / `get_async_db` / `init_db` / `init_config_file` / `merge_configs` / `_apply_sqlite_pragmas`） |
+| 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview），日志配置 + 子进程启停后台 API |
+| 异常处理 exception | `exception_handlers.py` | 全局异常处理器：把 `HTTPException` / `RequestValidationError` / 未捕获异常统一归一化为 `CommonResponse` |
+| 应用工厂 factory | `factory.py` | FastAPI 应用工厂（`create_app` + 路由/静态/CORS/lifespan 配置） |
+| 启动入口 main | `main.py` | 后端启动入口：配置 uvicorn server（单进程），执行 `init_config_file` + `migrate_database` 后 `Server.run()` |
+| 版本 version | `version.py` | 版本信息集中管理（`get_version_info` / `get_current_version` / `get_version_content` / `VERSION_HISTORY` 常量） |
+| WebSocket websocket | `websocket_main.py` | WebSocket 服务独立入口，单独跑 uvicorn on `settings.WS_PORT` |
+| YAML 配置 yaml | `yamlConfig.py` | `Yaml` 配置类（点表示法访问嵌套配置，封装 pyyaml） |
 
 ---
 

@@ -1,17 +1,18 @@
 # frontend/entry — 应用入口
 
 > Vue 应用实例化、路由表、路由守卫、根组件。`src/` 顶层 6 个文件。
+> 定位方式：`Grep -i <功能词> docs/roadmap/frontend/entry/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
-## 文件清单
+## 关键词速查
 
-| 文件 | 行数 | 顶层符号 | 一句话职责 |
-|------|------|---------|-----------|
-| `main.ts` | 71 | `new Vue(...)` | 应用入口：初始化主题、注册插件、清退历史 Workbox、挂载 #app |
-| `router.ts` | 318 | `router` (default export) | 路由表 + `router.push` 修补 + 部署后旧 chunk 一次恢复 |
-| `permission.ts` | 70 | `router.beforeEach` / `router.afterEach` | 全局路由守卫：token 判断、白名单、NProgress、页面标题 |
-| `App.vue` | 31 | `App` 组件（class-component） | 根组件，仅 `<div id="app"><router-view /></div>` |
-| `registerServiceWorker.ts` | 32 | 条件 `register` | 历史 PWA 注册助手；当前 `main.ts` 不导入，启动逻辑会清退旧注册 |
-| `shims-vue.d.ts` | 4 | `declare module '*.vue'` | 为 .vue 文件提供 TS 模块声明 |
+| 关键词 | 文件 | 一句话职责 |
+|--------|------|-----------|
+| 应用入口 main | `main.ts` | 应用入口：初始化主题、注册插件、清退历史 Workbox、挂载 #app（`new Vue(...)`） |
+| 路由表 router | `router.ts` | 路由表（default export）+ `router.push` 修补 + 部署后旧 chunk 一次恢复 |
+| 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、白名单、NProgress、页面标题（`router.beforeEach` / `afterEach`） |
+| 根组件 app | `App.vue` | 根组件（class-component），仅 `<div id="app"><router-view /></div>` |
+| PWA 注册 service-worker | `registerServiceWorker.ts` | 历史 PWA 注册助手；当前 `main.ts` 不导入，启动逻辑会清退旧注册 |
+| TS 声明 shims-vue | `shims-vue.d.ts` | 为 .vue 文件提供 TS 模块声明（`declare module '*.vue'`） |
 
 ---
 
