@@ -10,12 +10,14 @@ import {
   OrphanSelectionPayload,
   OrphanScanContext,
   OrphanScanRecord,
+  PrefixMatchPreviewResult,
   QuarantineItem,
   QuarantineListResult,
   cleanupOrphans,
   cleanupPreview,
   getQuarantineList,
   getOrphanList,
+  prefixMatchPreview,
   purgeQuarantineNow,
   setIgnored,
   triggerScan
@@ -29,7 +31,8 @@ jest.mock('@/api/orphan-files', () => ({
   cleanupOrphans: jest.fn(),
   setIgnored: jest.fn(),
   getQuarantineList: jest.fn(),
-  purgeQuarantineNow: jest.fn()
+  purgeQuarantineNow: jest.fn(),
+  prefixMatchPreview: jest.fn()
 }))
 
 jest.mock('@/api/torrents', () => ({
@@ -53,6 +56,7 @@ const mockCleanupOrphans = cleanupOrphans as jest.MockedFunction<typeof cleanupO
 const mockSetIgnored = setIgnored as jest.MockedFunction<typeof setIgnored>
 const mockGetQuarantineList = getQuarantineList as jest.MockedFunction<typeof getQuarantineList>
 const mockPurgeQuarantineNow = purgeQuarantineNow as jest.MockedFunction<typeof purgeQuarantineNow>
+const mockPrefixMatchPreview = prefixMatchPreview as jest.MockedFunction<typeof prefixMatchPreview>
 
 const clearSelection = jest.fn()
 const TableStub = localVue.extend({
@@ -144,6 +148,10 @@ interface OrphanFilesVm extends Vue {
   cleanupPreviewData: CleanupPreviewResult | null
   previewScanId: string | null
   previewSelection: OrphanSelectionPayload | null
+  quickActionDialogVisible: boolean
+  quickActionType: 'cleanup' | 'ignore' | null
+  quickActionPrefix: string
+  quickActionLoading: boolean
   refreshPageData: () => Promise<void>
   loadOrphanPage: (page: number) => Promise<void>
   handleOrphanPageChange: (page: number) => Promise<void>
@@ -156,6 +164,9 @@ interface OrphanFilesVm extends Vue {
   handleOrphanSelectionChange: (rows: OrphanFileItem[]) => void
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
+  handleQuickAction: (command: 'cleanup' | 'ignore') => void
+  handleQuickActionCancel: () => void
+  handleQuickActionConfirm: () => Promise<void>
   handleTabSwitch: () => Promise<void>
   handleQuarantinePurge: () => Promise<void>
 }
@@ -172,7 +183,7 @@ const message = {
   warning: jest.fn(),
   info: jest.fn()
 }
-const confirm = jest.fn(() => Promise.resolve())
+const confirm = jest.fn((..._args: unknown[]) => Promise.resolve())
 
 function deferred<T>(): Deferred<T> {
   let resolvePromise!: (value: T) => void
@@ -1060,5 +1071,344 @@ describe('orphan files atomic page state', () => {
     expect(vm.canBatchIgnore).toBe(false)
     expect(vm.canBatchUnignore).toBe(false)
     expect(vm.canBatchCleanup).toBe(false)
+  })
+})
+
+describe('orphan files quick action (prefix match)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
+  function prefixPreviewSuccess(
+    count = 3,
+    totalSize = 600,
+    lowConfidenceCount = 0
+  ): ApiResponse<PrefixMatchPreviewResult> {
+    return {
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        count,
+        total_size: totalSize,
+        low_confidence_count: lowConfidenceCount,
+        sample_paths: ['/data/leak/a.bin', '/data/leak/b.bin', '/data/leak/c.bin']
+      }
+    }
+  }
+
+  function prefixPreviewRejected(reason: string): ApiResponse<PrefixMatchPreviewResult> {
+    return {
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        rejected: true,
+        reason,
+        count: 0,
+        total_size: 0,
+        low_confidence_count: 0,
+        sample_paths: []
+      }
+    }
+  }
+
+  it('handleQuickAction 打开对话框并重置前缀', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.quickActionPrefix = '旧前缀'
+
+    vm.handleQuickAction('cleanup')
+
+    expect(vm.quickActionType).toBe('cleanup')
+    expect(vm.quickActionPrefix).toBe('')
+    expect(vm.quickActionDialogVisible).toBe(true)
+  })
+
+  it('handleQuickActionCancel 关闭对话框', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.quickActionDialogVisible = true
+
+    vm.handleQuickActionCancel()
+
+    expect(vm.quickActionDialogVisible).toBe(false)
+  })
+
+  it('空前缀提示警告且不发起请求', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('ignore')
+    vm.quickActionPrefix = '   '
+
+    await vm.handleQuickActionConfirm()
+
+    expect(message.warning).toHaveBeenCalledWith('请输入路径前缀')
+    expect(mockPrefixMatchPreview).not.toHaveBeenCalled()
+  })
+
+  it('无成功扫描批次时提示且不发起请求', async() => {
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(
+        scanContext({ display_scan: null, cleanup_allowed: false }),
+        [],
+        0
+      )
+    )
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('ignore')
+    vm.quickActionPrefix = '/data/'
+
+    await vm.handleQuickActionConfirm()
+
+    expect(message.warning).toHaveBeenCalledWith('当前无可用的成功扫描批次，无法按前缀操作')
+    expect(mockPrefixMatchPreview).not.toHaveBeenCalled()
+  })
+
+  it('preview rejected(scan 过期)提示原因并保留对话框', async() => {
+    mockPrefixMatchPreview.mockResolvedValueOnce(
+      prefixPreviewRejected('最新扫描已完成新批次，当前快照已过期')
+    )
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('cleanup')
+    vm.quickActionPrefix = '/data/leak/'
+
+    await vm.handleQuickActionConfirm()
+
+    expect(mockPrefixMatchPreview).toHaveBeenCalledWith({
+      path_prefix: '/data/leak/',
+      scan_id: 'scan-completed'
+    })
+    expect(message.error).toHaveBeenCalledWith('最新扫描已完成新批次，当前快照已过期')
+    expect(vm.quickActionDialogVisible).toBe(true)
+    expect(vm.quickActionLoading).toBe(false)
+  })
+
+  it('命中数为 0 时提示无匹配且保留对话框', async() => {
+    mockPrefixMatchPreview.mockResolvedValueOnce(prefixPreviewSuccess(0))
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('ignore')
+    vm.quickActionPrefix = '/data/none/'
+
+    await vm.handleQuickActionConfirm()
+
+    expect(message.warning).toHaveBeenCalledWith('没有匹配的待清理文件')
+    expect(mockSetIgnored).not.toHaveBeenCalled()
+    expect(vm.quickActionDialogVisible).toBe(true)
+  })
+
+  it('快捷删除：preview→二次确认→cleanupOrphans 用 select_all+path_prefix+pending', async() => {
+    mockPrefixMatchPreview.mockResolvedValueOnce(prefixPreviewSuccess(5, 1500))
+    mockCleanupOrphans.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        task_id: 'cleanup-task-abc12345',
+        operation_type: 'cleanup',
+        status: 'pending',
+        scan_id: 'scan-completed',
+        total_count: 5,
+        success_count: 0,
+        purged_count: 0,
+        failed_count: 0,
+        failed_list: [],
+        total_size: 1500,
+        error_message: null,
+        created_at: '2026-08-04T10:00:00',
+        started_at: null,
+        completed_at: null
+      }
+    })
+    mockGetOrphanList.mockResolvedValueOnce(listResponse())
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('cleanup')
+    vm.quickActionPrefix = '/data/leak/'
+
+    await vm.handleQuickActionConfirm()
+
+    // 选择载荷必须带 scan_id + select_all + filters(path_prefix + status=pending)
+    expect(mockCleanupOrphans).toHaveBeenCalledTimes(1)
+    const call = mockCleanupOrphans.mock.calls[0][0]
+    expect(call.scan_id).toBe('scan-completed')
+    expect(call.select_all).toBe(true)
+    expect(call.filters).toEqual({ path_prefix: '/data/leak/', status: 'pending' })
+    // 未携带 orphan_ids（避免与 select_all 混淆）
+    expect(call.orphan_ids).toBeUndefined()
+    // 成功提示与关闭弹窗 + 刷新
+    expect(message.success).toHaveBeenCalledWith(
+      '主动清理任务已提交（cleanup-），完成或失败后将在通知中心提醒'
+    )
+    expect(vm.quickActionDialogVisible).toBe(false)
+    expect(mockGetOrphanList).toHaveBeenCalled()
+  })
+
+  it('快捷删除含低置信度时二次确认文案带警告但仍执行', async() => {
+    mockPrefixMatchPreview.mockResolvedValueOnce(prefixPreviewSuccess(5, 500, 2))
+    mockCleanupOrphans.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        task_id: 'cleanup-low-conf',
+        operation_type: 'cleanup',
+        status: 'pending',
+        scan_id: 'scan-completed',
+        total_count: 5,
+        success_count: 0,
+        purged_count: 0,
+        failed_count: 0,
+        failed_list: [],
+        total_size: 500,
+        error_message: null,
+        created_at: '2026-08-04T10:00:00',
+        started_at: null,
+        completed_at: null
+      }
+    })
+    mockGetOrphanList.mockResolvedValueOnce(listResponse())
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('cleanup')
+    vm.quickActionPrefix = '/data/leak/'
+
+    await vm.handleQuickActionConfirm()
+
+    // $confirm 被调用且文案含低置信度警告
+    expect(confirm).toHaveBeenCalledTimes(1)
+    const confirmText = String(confirm.mock.calls[0][0])
+    expect(confirmText).toContain('将影响 5 个待清理文件')
+    expect(confirmText).toContain('其中 2 个为低置信度')
+    // 仍提交任务
+    expect(mockCleanupOrphans).toHaveBeenCalledTimes(1)
+  })
+
+  it('快捷忽视：跳过 applyIgnore 直接调 setIgnored(不双重确认)', async() => {
+    mockPrefixMatchPreview.mockResolvedValueOnce(prefixPreviewSuccess(2))
+    mockSetIgnored.mockResolvedValueOnce({
+      code: '200',
+      msg: '忽视完成: 成功 2 个',
+      status: 'success',
+      data: {
+        success_count: 2,
+        failed_count: 0,
+        failed_list: []
+      }
+    })
+    mockGetOrphanList.mockResolvedValueOnce(listResponse())
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('ignore')
+    vm.quickActionPrefix = '/data/leak/'
+
+    await vm.handleQuickActionConfirm()
+
+    // 只有一次 $confirm（二次确认），applyIgnore 的内置确认不被触发
+    expect(confirm).toHaveBeenCalledTimes(1)
+    expect(mockSetIgnored).toHaveBeenCalledTimes(1)
+    const call = mockSetIgnored.mock.calls[0][0]
+    expect(call.ignored).toBe(true)
+    expect(call.scan_id).toBe('scan-completed')
+    expect(call.select_all).toBe(true)
+    expect(call.filters).toEqual({ path_prefix: '/data/leak/', status: 'pending' })
+    expect(message.success).toHaveBeenCalledWith('忽视完成：成功 2 个')
+    expect(vm.quickActionDialogVisible).toBe(false)
+  })
+
+  it('快捷忽视部分失败时展示成功数/失败数/原因', async() => {
+    mockPrefixMatchPreview.mockResolvedValueOnce(prefixPreviewSuccess(2))
+    mockSetIgnored.mockResolvedValueOnce({
+      code: '200',
+      msg: '忽视完成: 成功 1 个，失败 1 个',
+      status: 'success',
+      data: {
+        success_count: 1,
+        failed_count: 1,
+        failed_list: [{ id: 9, reason: '候选已进入清理流程' }]
+      }
+    })
+    mockGetOrphanList.mockResolvedValueOnce(listResponse())
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('ignore')
+    vm.quickActionPrefix = '/data/leak/'
+
+    await vm.handleQuickActionConfirm()
+
+    expect(message.warning).toHaveBeenCalledWith(
+      '忽视部分完成：成功 1 个，失败 1 个；候选已进入清理流程'
+    )
+    expect(message.success).not.toHaveBeenCalled()
+  })
+
+  it('用户取消二次确认时复位 loading 且保留对话框与前缀', async() => {
+    mockPrefixMatchPreview.mockResolvedValueOnce(prefixPreviewSuccess(3))
+    const cancelConfirm = jest.fn(() => Promise.reject(new Error('cancel')))
+    const wrapper = shallowMount(OrphanFiles, {
+      localVue,
+      mocks: { $message: message, $confirm: cancelConfirm },
+      stubs: {
+        'el-button': ButtonStub,
+        'el-alert': AlertStub,
+        'el-dialog': DialogStub,
+        'el-table': TableStub,
+        'el-table-column': TableColumnStub,
+        'el-input': true,
+        'el-pagination': true,
+        'el-tag': true,
+        'el-tabs': true,
+        'el-tab-pane': true,
+        'el-checkbox': true,
+        'el-select': true,
+        'el-option': true,
+        'el-tooltip': true
+      }
+    })
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('cleanup')
+    vm.quickActionPrefix = '/data/leak/'
+
+    await vm.handleQuickActionConfirm()
+
+    expect(mockCleanupOrphans).not.toHaveBeenCalled()
+    expect(vm.quickActionLoading).toBe(false)
+    expect(vm.quickActionDialogVisible).toBe(true)
+    expect(vm.quickActionPrefix).toBe('/data/leak/')
+  })
+
+  it('cleanup 门禁关闭时快捷删除提示且不发请求', async() => {
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(
+        scanContext({ cleanup_allowed: false, cleanup_block_reason: '最新扫描尚未完成' }),
+        [orphanItem(1)],
+        1
+      )
+    )
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.handleQuickAction('cleanup')
+    vm.quickActionPrefix = '/data/leak/'
+
+    await vm.handleQuickActionConfirm()
+
+    expect(message.warning).toHaveBeenCalledWith('最新扫描尚未完成')
+    expect(mockPrefixMatchPreview).not.toHaveBeenCalled()
+    expect(mockCleanupOrphans).not.toHaveBeenCalled()
   })
 })
