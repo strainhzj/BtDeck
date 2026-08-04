@@ -198,9 +198,6 @@
           <el-tag v-if="selectedCount > 0" type="info" effect="plain">
             已选择 {{ selectedCount }} 项
           </el-tag>
-          <el-tag v-if="allMatchingSelected" type="success" effect="plain">
-            当前筛选全部
-          </el-tag>
           <el-button
             type="danger"
             icon="el-icon-delete"
@@ -232,13 +229,9 @@
         <el-table
           ref="orphanTable"
           v-loading="listLoading"
-          :data="virtualTableData"
+          :data="list"
           class="management-table"
           height="100%"
-          :row-key="orphanRowKey"
-          :row-class-name="orphanRowClassName"
-          :row-style="orphanRowStyle"
-          :cell-style="orphanCellStyle"
           border
           fit
           highlight-current-row
@@ -255,7 +248,7 @@
                 :value="selectionAllChecked"
                 :indeterminate="selectionIndeterminate"
                 :disabled="selectableTotal === 0"
-                aria-label="选择当前筛选条件下的全部孤儿文件"
+                aria-label="选择当前页的全部孤儿文件"
                 @change="handleSelectAllChange"
               />
             </template>
@@ -273,48 +266,44 @@
           <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip />
           <el-table-column label="大小" width="120" align="center">
             <template slot-scope="scope">
-              <span v-if="!isVirtualSpacer(scope.row)">{{ formatSize(scope.row.file_size) }}</span>
+              {{ formatSize(scope.row.file_size) }}
             </template>
           </el-table-column>
           <el-table-column label="修改时间" width="170" align="center">
             <template slot-scope="scope">
-              <span v-if="!isVirtualSpacer(scope.row)">{{ scope.row.mtime ? formatTime(scope.row.mtime) : '-' }}</span>
+              {{ scope.row.mtime ? formatTime(scope.row.mtime) : '-' }}
             </template>
           </el-table-column>
           <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
             <template slot-scope="scope">
-              <span v-if="!isVirtualSpacer(scope.row)">{{ scope.row.downloader_name || (scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-') }}</span>
+              {{ scope.row.downloader_name || (scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-') }}
             </template>
           </el-table-column>
           <el-table-column label="置信度" width="100" align="center">
             <template slot-scope="scope">
-              <template v-if="!isVirtualSpacer(scope.row)">
-                <el-tooltip
-                  v-if="scope.row.confidence === 'low'"
-                  content="离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛"
-                  placement="top"
-                >
-                  <el-tag type="info" size="small">低</el-tag>
-                </el-tooltip>
-                <el-tooltip v-else content="在线精筛判定，确认未被任何种子引用" placement="top">
-                  <el-tag type="success" size="small">高</el-tag>
-                </el-tooltip>
-              </template>
+              <el-tooltip
+                v-if="scope.row.confidence === 'low'"
+                content="离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛"
+                placement="top"
+              >
+                <el-tag type="info" size="small">低</el-tag>
+              </el-tooltip>
+              <el-tooltip v-else content="在线精筛判定，确认未被任何种子引用" placement="top">
+                <el-tag type="success" size="small">高</el-tag>
+              </el-tooltip>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
             <template slot-scope="scope">
-              <template v-if="!isVirtualSpacer(scope.row)">
-                <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
-                <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">已忽视</el-tag>
-                <el-tag v-else type="danger" size="small">待清理</el-tag>
-              </template>
+              <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
+              <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">已忽视</el-tag>
+              <el-tag v-else type="danger" size="small">待清理</el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="100" align="center" fixed="right">
             <template slot-scope="scope">
               <el-button
-                v-if="!isVirtualSpacer(scope.row) && !scope.row.is_deleted && !scope.row.is_ignored"
+                v-if="!scope.row.is_deleted && !scope.row.is_ignored"
                 type="text"
                 size="small"
                 @click="handleRowIgnore(scope.row, true)"
@@ -322,21 +311,21 @@
                 忽视
               </el-button>
               <el-button
-                v-else-if="!isVirtualSpacer(scope.row) && !scope.row.is_deleted && scope.row.is_ignored"
+                v-else-if="!scope.row.is_deleted && scope.row.is_ignored"
                 type="text"
                 size="small"
                 @click="handleRowIgnore(scope.row, false)"
               >
                 取消忽视
               </el-button>
-              <span v-else-if="!isVirtualSpacer(scope.row)">-</span>
+              <span v-else>-</span>
             </template>
           </el-table-column>
         </el-table>
       </div>
 
-      <!-- 列表按页追加，滚动到底部时懒加载下一页。 -->
-      <nav class="torrent-pagination management-pagination">
+      <!-- 列表传统分页：按页码切换，切换页码时清空当前页选择。 -->
+      <nav class="torrent-pagination management-pagination" aria-label="孤儿文件分页">
         <div class="pagination-info">
           <PageSizeCombobox
             ref="pageSizeCombobox"
@@ -352,12 +341,17 @@
             @apply="applyPageSizeSelection"
             @select="handlePageSizeSelect"
           />
-          <span class="pagination-summary">已加载 <strong>{{ list.length }}</strong> / <strong>{{ total }}</strong> 条</span>
+          <span class="pagination-summary">共 <strong>{{ total }}</strong> 条</span>
         </div>
         <div class="pagination-controls">
-          <span v-if="listLoading" class="pagination-summary">正在加载…</span>
-          <span v-else-if="list.length < total" class="pagination-summary">继续滚动加载更多</span>
-          <span v-else class="pagination-summary">已加载全部结果</span>
+          <el-pagination
+            background
+            :current-page.sync="listQuery.page"
+            :page-size="listQuery.page_size"
+            :total="total"
+            layout="prev, pager, next"
+            @current-change="handleOrphanPageChange"
+          />
         </div>
       </nav>
     </section>
@@ -517,7 +511,6 @@ import {
   OrphanScanRecord,
   OrphanConfidence,
   OrphanStatusFilter,
-  OrphanSelectionFilters,
   OrphanSelectionPayload,
   CleanupPreviewSuccess,
   IgnoreResult,
@@ -527,7 +520,6 @@ import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
 import PageSizeCombobox, { PageSizeSuggestion } from '@/components/torrents/PageSizeCombobox.vue'
 import { normalizeTraditionalPageSize } from '@/views/torrents/utils/traditionalPagination'
-import { calculateTraditionalVirtualWindow } from '@/views/torrents/utils/traditionalVirtualList'
 
 interface OrphanListQuery {
   page: number
@@ -546,26 +538,8 @@ interface DownloaderOption {
 
 interface OrphanTableRef extends Vue {
   clearSelection: () => void
-  bodyWrapper?: HTMLElement
-  doLayout?: () => void
 }
 
-type OrphanVirtualSpacer = 'top' | 'bottom'
-
-interface OrphanVirtualTableRow extends OrphanFileItem {
-  __virtualSpacer?: OrphanVirtualSpacer
-  __virtualHeight?: number
-}
-
-interface OrphanTableRenderArgs {
-  row: OrphanVirtualTableRow
-}
-
-type OrphanTableInlineStyle = Record<string, string>
-
-const ORPHAN_VIRTUAL_ROW_HEIGHT = 48
-const ORPHAN_VIRTUAL_OVERSCAN = 8
-const ORPHAN_TABLE_VIEWPORT_FALLBACK = 472
 const ORPHAN_PAGE_SIZE_MAX = 1000
 
 @Component({ name: 'OrphanFiles', components: { PageSizeCombobox } })
@@ -585,13 +559,6 @@ export default class OrphanFiles extends Vue {
     min_size: ''
   }
   private refreshRequestSeq = 0
-  private tableScrollTop = 0
-  private tableViewportHeight = ORPHAN_TABLE_VIEWPORT_FALLBACK
-  private orphanTableBody: HTMLElement | null = null
-  private readonly orphanTableScrollListener: EventListener = (event) => {
-    this.handleListScroll(event)
-  }
-
   // 页面 Tab：orphans=孤儿文件，quarantine=隔离区
   private activeTab: 'orphans' | 'quarantine' = 'orphans'
 
@@ -614,10 +581,8 @@ export default class OrphanFiles extends Vue {
   // 下载器列表（用于别名展示与下拉筛选）
   private downloaderList: DownloaderSimple[] = []
 
-  // 选中状态：保存完整行以支持按主导状态启停批量按钮
+  // 选中状态：保存完整行以支持按主导状态启停批量按钮（仅当前页）
   private selectedRows: OrphanFileItem[] = []
-  private allMatchingSelected = false
-  private excludedSelectionIds: number[] = []
 
   // 页面列表、统计和清理门禁共用的后端权威快照
   private scanContext: OrphanScanContext = {
@@ -652,13 +617,11 @@ export default class OrphanFiles extends Vue {
   }
 
   mounted() {
-    this.$nextTick(() => this.bindOrphanTableScroll())
     void this.refreshPageData()
   }
 
   beforeDestroy() {
     this.refreshRequestSeq += 1
-    this.unbindOrphanTableScroll()
   }
 
   // ==================== 隔离区管理 ====================
@@ -781,12 +744,12 @@ export default class OrphanFiles extends Vue {
   }
 
   private get selectableTotal(): number {
-    return this.listQuery.status === 'deleted' ? 0 : this.total
+    if (this.listQuery.status === 'deleted') return 0
+    return this.list.filter((r) => !r.is_deleted).length
   }
 
   private get selectedCount(): number {
-    if (!this.allMatchingSelected) return this.selectedRows.length
-    return Math.max(0, this.selectableTotal - this.excludedSelectionIds.length)
+    return this.selectedRows.length
   }
 
   private get selectionAllChecked(): boolean {
@@ -795,39 +758,6 @@ export default class OrphanFiles extends Vue {
 
   private get selectionIndeterminate(): boolean {
     return this.selectedCount > 0 && !this.selectionAllChecked
-  }
-
-  private get currentSelectionFilters(): OrphanSelectionFilters {
-    const filters: OrphanSelectionFilters = {}
-    if (this.listQuery.downloader_id) filters.downloader_id = this.listQuery.downloader_id
-    if (this.listQuery.path_like) filters.path_like = this.listQuery.path_like
-    if (this.listQuery.status) filters.status = this.listQuery.status
-    if (this.listQuery.confidence) filters.confidence = this.listQuery.confidence
-    if (this.listQuery.min_size !== '') filters.min_size = Number(this.listQuery.min_size)
-    return filters
-  }
-
-  private get orphanVirtualWindow() {
-    return calculateTraditionalVirtualWindow(
-      this.list.length,
-      this.tableScrollTop,
-      this.tableViewportHeight,
-      ORPHAN_VIRTUAL_ROW_HEIGHT,
-      ORPHAN_VIRTUAL_OVERSCAN
-    )
-  }
-
-  private get virtualTableData(): OrphanVirtualTableRow[] {
-    const window = this.orphanVirtualWindow
-    const rows: OrphanVirtualTableRow[] = []
-    if (window.topSpacerHeight > 0) {
-      rows.push(this.createVirtualSpacer('top', window.topSpacerHeight))
-    }
-    rows.push(...this.list.slice(window.startIndex, window.endIndex))
-    if (window.bottomSpacerHeight > 0) {
-      rows.push(this.createVirtualSpacer('bottom', window.bottomSpacerHeight))
-    }
-    return rows
   }
 
   private get downloaderOptions(): DownloaderOption[] {
@@ -851,17 +781,11 @@ export default class OrphanFiles extends Vue {
 
   /** 选中是否全部为待清理态（可清理+可忽视）。 */
   private get allSelectionPending(): boolean {
-    if (this.allMatchingSelected) {
-      return this.selectedCount > 0 && this.listQuery.status === 'pending'
-    }
     return this.selectedRows.length > 0 && this.pendingSelection.length === this.selectedRows.length
   }
 
   /** 选中是否全部为已忽视态（可取消忽视）。 */
   private get allSelectionIgnored(): boolean {
-    if (this.allMatchingSelected) {
-      return this.selectedCount > 0 && this.listQuery.status === 'ignored'
-    }
     return this.selectedRows.length > 0 && this.ignoredSelection.length === this.selectedRows.length
   }
 
@@ -871,9 +795,6 @@ export default class OrphanFiles extends Vue {
 
   private get batchCleanupTitle(): string {
     if (this.selectedCount === 0) return '请先选择待清理文件'
-    if (this.allMatchingSelected && this.listQuery.status !== 'pending') {
-      return '全选当前筛选结果时，请先将状态筛选为“待清理”'
-    }
     if (!this.allSelectionPending) return '请勿混选不同状态，仅支持清理"待清理"项'
     return this.cleanupAllowed ? '' : this.cleanupBlockReason
   }
@@ -884,9 +805,6 @@ export default class OrphanFiles extends Vue {
 
   private get batchIgnoreTitle(): string {
     if (this.selectedCount === 0) return '请先选择待清理文件'
-    if (this.allMatchingSelected && this.listQuery.status !== 'pending') {
-      return '全选当前筛选结果时，请先将状态筛选为“待清理”'
-    }
     if (!this.allSelectionPending) return '请勿混选不同状态，仅支持忽视"待清理"项'
     return ''
   }
@@ -897,9 +815,6 @@ export default class OrphanFiles extends Vue {
 
   private get batchUnignoreTitle(): string {
     if (this.selectedCount === 0) return '请先选择已忽视文件'
-    if (this.allMatchingSelected && this.listQuery.status !== 'ignored') {
-      return '全选当前筛选结果时，请先将状态筛选为“已忽视”'
-    }
     if (!this.allSelectionIgnored) return '请勿混选不同状态，仅支持取消"已忽视"项'
     return ''
   }
@@ -920,13 +835,22 @@ export default class OrphanFiles extends Vue {
     return ''
   }
 
+  /** 筛选/刷新/每页条数变更入口：回到第 1 页并清空当前页选择。 */
   private async refreshPageData(): Promise<void> {
+    this.selectedRows = []
     this.listQuery.page = 1
-    await this.loadOrphanPage(1, true)
+    await this.loadOrphanPage(1)
   }
 
-  /** 请求一页孤儿文件；replace=true 用于筛选/刷新，false 用于滚动追加。 */
-  private async loadOrphanPage(page: number, replace: boolean): Promise<void> {
+  /** 翻页回调：切换页码时清空当前页选择，再加载目标页（传统分页标准行为）。 */
+  private async handleOrphanPageChange(page: number): Promise<void> {
+    this.selectedRows = []
+    this.listQuery.page = page
+    await this.loadOrphanPage(page)
+  }
+
+  /** 请求一页孤儿文件，整页替换当前列表。 */
+  private async loadOrphanPage(page: number): Promise<void> {
     const requestId = ++this.refreshRequestSeq
     const querySnapshot: Readonly<OrphanListQuery> = Object.freeze({
       page,
@@ -954,24 +878,9 @@ export default class OrphanFiles extends Vue {
       if (requestId !== this.refreshRequestSeq) return
 
       if (response.code === '200' && response.data) {
-        if (replace) {
-          this.list = response.data.list
-          this.resetOrphanTableScroll()
-          this.clearOrphanSelection()
-        } else {
-          const existingIds = new Set(this.list.map((item) => item.id))
-          this.list = this.list.concat(
-            response.data.list.filter((item) => !existingIds.has(item.id))
-          )
-        }
+        this.list = response.data.list
         this.total = response.data.total
         this.scanContext = response.data.scan_context
-        this.listQuery.page = querySnapshot.page
-        this.$nextTick(() => {
-          this.bindOrphanTableScroll()
-          const table = this.$refs.orphanTable as OrphanTableRef | undefined
-          table?.doLayout?.()
-        })
       } else {
         this.$message.error(response.msg || '获取列表失败')
       }
@@ -983,21 +892,6 @@ export default class OrphanFiles extends Vue {
         this.listLoading = false
       }
     }
-  }
-
-  private handleListScroll(event: Event) {
-    const target = event.target as HTMLElement | null
-    if (!target) return
-    this.tableScrollTop = Math.max(0, target.scrollTop)
-    this.tableViewportHeight = target.clientHeight || ORPHAN_TABLE_VIEWPORT_FALLBACK
-    if (this.listLoading || this.list.length >= this.total) return
-    if (target.scrollHeight - target.scrollTop - target.clientHeight > 80) return
-    void this.loadNextOrphanPage()
-  }
-
-  private async loadNextOrphanPage(): Promise<void> {
-    if (this.listLoading || this.list.length >= this.total) return
-    await this.loadOrphanPage(this.listQuery.page + 1, false)
   }
 
   private handleFilter() {
@@ -1060,26 +954,17 @@ export default class OrphanFiles extends Vue {
     void this.refreshPageData()
   }
 
+  /** 全选仅覆盖当前页可选行（已清理行不可选）。 */
   private handleSelectAllChange(checked: boolean): void {
     if (!checked || this.selectableTotal === 0) {
-      this.clearOrphanSelection()
+      this.selectedRows = []
       return
     }
-    this.allMatchingSelected = true
-    this.excludedSelectionIds = []
-    this.selectedRows = []
+    this.selectedRows = this.list.filter((row) => this.rowSelectable(row))
   }
 
-  private handleRowSelectionChange(row: OrphanVirtualTableRow, checked: boolean): void {
+  private handleRowSelectionChange(row: OrphanFileItem, checked: boolean): void {
     if (!this.rowSelectable(row)) return
-    if (this.allMatchingSelected) {
-      const exclusions = new Set(this.excludedSelectionIds)
-      if (checked) exclusions.delete(row.id)
-      else exclusions.add(row.id)
-      this.excludedSelectionIds = Array.from(exclusions)
-      return
-    }
-
     if (checked) {
       if (!this.selectedRows.some((selected) => selected.id === row.id)) {
         this.selectedRows = this.selectedRows.concat(row)
@@ -1089,32 +974,22 @@ export default class OrphanFiles extends Vue {
     }
   }
 
-  private isRowSelected(row: OrphanVirtualTableRow): boolean {
+  private isRowSelected(row: OrphanFileItem): boolean {
     if (!this.rowSelectable(row)) return false
-    if (this.allMatchingSelected) return !this.excludedSelectionIds.includes(row.id)
     return this.selectedRows.some((selected) => selected.id === row.id)
   }
 
   private clearOrphanSelection(): void {
     this.selectedRows = []
-    this.allMatchingSelected = false
-    this.excludedSelectionIds = []
   }
 
   private buildSelectionPayload(): OrphanSelectionPayload {
-    if (this.allMatchingSelected) {
-      return {
-        select_all: true,
-        excluded_orphan_ids: [...this.excludedSelectionIds],
-        filters: { ...this.currentSelectionFilters }
-      }
-    }
     return { orphan_ids: [...this.selectedIds] }
   }
 
   /** 已清理行不可勾选；待清理/已忽视行均可勾选（用于对应批量操作）。 */
-  private rowSelectable(row: OrphanVirtualTableRow): boolean {
-    return !this.isVirtualSpacer(row) && !row.is_deleted
+  private rowSelectable(row: OrphanFileItem): boolean {
+    return !row.is_deleted
   }
 
   private async handleScan() {
@@ -1246,15 +1121,6 @@ export default class OrphanFiles extends Vue {
   }
 
   private async handleBatchIgnore(ignored: boolean): Promise<void> {
-    if (this.allMatchingSelected) {
-      const validSelection = ignored ? this.allSelectionPending : this.allSelectionIgnored
-      if (!validSelection) {
-        this.$message.warning(ignored ? this.batchIgnoreTitle : this.batchUnignoreTitle)
-        return
-      }
-      await this.applyIgnore(this.buildSelectionPayload(), this.selectedCount, ignored)
-      return
-    }
     const rows = ignored ? this.pendingSelection : this.ignoredSelection
     if (rows.length === 0) {
       this.$message.warning(ignored ? '请选择待清理的文件' : '请选择已忽视的文件')
@@ -1313,85 +1179,6 @@ export default class OrphanFiles extends Vue {
 
   // ========== 工具方法 ==========
 
-  private bindOrphanTableScroll(): void {
-    const table = this.$refs.orphanTable as OrphanTableRef | undefined
-    const body = table?.bodyWrapper || table?.$el.querySelector<HTMLElement>('.el-table__body-wrapper')
-    if (!body) return
-    if (this.orphanTableBody !== body) {
-      this.unbindOrphanTableScroll()
-      this.orphanTableBody = body
-      body.addEventListener('scroll', this.orphanTableScrollListener, { passive: true })
-    }
-    this.tableViewportHeight = body.clientHeight || ORPHAN_TABLE_VIEWPORT_FALLBACK
-  }
-
-  private unbindOrphanTableScroll(): void {
-    if (!this.orphanTableBody) return
-    this.orphanTableBody.removeEventListener('scroll', this.orphanTableScrollListener)
-    this.orphanTableBody = null
-  }
-
-  private resetOrphanTableScroll(): void {
-    this.tableScrollTop = 0
-    if (this.orphanTableBody) {
-      this.orphanTableBody.scrollTop = 0
-    }
-  }
-
-  private createVirtualSpacer(
-    position: OrphanVirtualSpacer,
-    height: number
-  ): OrphanVirtualTableRow {
-    return {
-      id: position === 'top' ? -1 : -2,
-      scan_id: '',
-      file_path: '',
-      file_size: 0,
-      mtime: null,
-      downloader_id: null,
-      confidence: 'high',
-      canonical_path: null,
-      downloader_name: null,
-      is_ignored: false,
-      ignored_at: null,
-      ignored_by: null,
-      is_deleted: true,
-      deleted_at: null,
-      deleted_by: null,
-      created_at: null,
-      __virtualSpacer: position,
-      __virtualHeight: height
-    }
-  }
-
-  private isVirtualSpacer(row: OrphanVirtualTableRow): boolean {
-    return Boolean(row.__virtualSpacer)
-  }
-
-  private orphanRowKey(row: OrphanVirtualTableRow): number | string {
-    return row.__virtualSpacer ? `orphan-virtual-${row.__virtualSpacer}` : row.id
-  }
-
-  private orphanRowClassName({ row }: OrphanTableRenderArgs): string {
-    return this.isVirtualSpacer(row) ? 'orphan-virtual-spacer' : 'orphan-table-row'
-  }
-
-  private orphanRowStyle({ row }: OrphanTableRenderArgs): OrphanTableInlineStyle {
-    const height = row.__virtualSpacer
-      ? Math.max(0, row.__virtualHeight || 0)
-      : ORPHAN_VIRTUAL_ROW_HEIGHT
-    return { height: `${height}px` }
-  }
-
-  private orphanCellStyle({ row }: OrphanTableRenderArgs): OrphanTableInlineStyle {
-    if (!this.isVirtualSpacer(row)) return {}
-    return {
-      height: `${Math.max(0, row.__virtualHeight || 0)}px`,
-      padding: '0',
-      borderBottom: '0'
-    }
-  }
-
   private summarizeIgnoreFailures(data: IgnoreResult): string {
     if (data.error) return data.error
     const reasons = Array.from(
@@ -1432,7 +1219,7 @@ export default class OrphanFiles extends Vue {
     margin-top: var(--spacing-md);
   }
 
-  /* 列表固定可视高度，数据通过滚动触底按页追加。 */
+  /* 列表固定可视高度，配合分页器按页切换。 */
   .orphan-table-scroll {
     height: 520px;
     max-height: calc(100vh - 430px);
@@ -1441,28 +1228,6 @@ export default class OrphanFiles extends Vue {
 
     ::v-deep .management-table {
       min-width: 0;
-    }
-
-    ::v-deep .orphan-table-row > td {
-      box-sizing: border-box;
-      height: 48px;
-      padding: 8px 0;
-    }
-
-    ::v-deep .orphan-virtual-spacer > td {
-      padding: 0 !important;
-      border-bottom: 0 !important;
-    }
-
-    ::v-deep .orphan-virtual-spacer .cell {
-      height: 100%;
-      min-height: 0;
-      padding: 0 !important;
-      overflow: hidden;
-    }
-
-    ::v-deep .orphan-virtual-spacer .el-checkbox {
-      display: none;
     }
 
     ::v-deep .orphan-select-all .el-checkbox__inner {
@@ -1488,7 +1253,7 @@ export default class OrphanFiles extends Vue {
     }
   }
 
-  /* 懒加载状态沿用列表底部汇总区，避免滚动过程中布局跳动。 */
+  /* 分页区：左侧每页条数与总数，右侧翻页器。 */
   .torrent-pagination.management-pagination {
     justify-content: space-between;
     gap: var(--spacing-md);

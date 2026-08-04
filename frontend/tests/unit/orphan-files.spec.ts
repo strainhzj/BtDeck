@@ -108,12 +108,6 @@ interface OrphanFilesVm extends Vue {
   scanLoading: boolean
   ignoreLoading: boolean
   pageSizeInput: string
-  tableScrollTop: number
-  tableViewportHeight: number
-  virtualTableData: Array<OrphanFileItem & {
-    __virtualSpacer?: 'top' | 'bottom'
-    __virtualHeight?: number
-  }>
   listQuery: {
     page: number
     page_size: number
@@ -125,8 +119,6 @@ interface OrphanFilesVm extends Vue {
   }
   selectedIds: number[]
   selectedRows: OrphanFileItem[]
-  allMatchingSelected: boolean
-  excludedSelectionIds: number[]
   selectedCount: number
   selectionAllChecked: boolean
   selectionIndeterminate: boolean
@@ -144,15 +136,14 @@ interface OrphanFilesVm extends Vue {
   cleanupPreviewData: CleanupPreviewResult | null
   previewScanId: string | null
   previewSelection: OrphanSelectionPayload | null
-  refreshPageData: (allowPageCorrection?: boolean) => Promise<void>
-  loadOrphanPage: (page: number, replace: boolean) => Promise<void>
+  refreshPageData: () => Promise<void>
+  loadOrphanPage: (page: number) => Promise<void>
+  handleOrphanPageChange: (page: number) => Promise<void>
   handleScan: () => Promise<void>
   handleCleanupPreview: () => Promise<void>
   handleCleanupConfirm: () => Promise<void>
   handleFilter: () => void
   handleResetFilter: () => void
-  handleListScroll: (event: Event) => void
-  loadNextOrphanPage: () => Promise<void>
   applyPageSizeSelection: (value: string | number) => void
   handleSelectAllChange: (checked: boolean) => void
   handleRowSelectionChange: (row: OrphanFileItem, checked: boolean) => void
@@ -524,8 +515,6 @@ describe('orphan files atomic page state', () => {
       min_size: ''
     })
     expect(vm.selectedIds).toEqual([])
-    expect(vm.allMatchingSelected).toBe(false)
-    expect(vm.excludedSelectionIds).toEqual([])
     expect(clearSelection).not.toHaveBeenCalled()
   })
 
@@ -651,8 +640,8 @@ describe('orphan files atomic page state', () => {
       .mockImplementationOnce(() => older.promise)
       .mockImplementationOnce(() => newer.promise)
 
-    const olderRequest = vm.loadOrphanPage(2, true)
-    const newerRequest = vm.loadOrphanPage(3, true)
+    const olderRequest = vm.handleOrphanPageChange(2)
+    const newerRequest = vm.handleOrphanPageChange(3)
     newer.resolve(
       listResponse(
         scanContext({ remaining_count: 1 }),
@@ -768,38 +757,6 @@ describe('orphan files atomic page state', () => {
     expect(message.error).not.toHaveBeenCalled()
   })
 
-  it('滚动触底时追加下一页且不替换已加载数据', async() => {
-    const wrapper = mountView()
-    await flushLifecycle()
-    const vm = viewModel(wrapper)
-    vm.list = [orphanItem(1)]
-    vm.total = 3
-    vm.listQuery.page = 1
-    mockGetOrphanList.mockResolvedValueOnce(
-      listResponse(scanContext(), [orphanItem(2)], 3, 2)
-    )
-
-    vm.handleListScroll({
-      target: {
-        scrollHeight: 1000,
-        scrollTop: 700,
-        clientHeight: 220
-      }
-    } as unknown as Event)
-    await flushLifecycle()
-
-    expect(vm.listQuery.page).toBe(2)
-    expect(vm.list.map((item) => item.id)).toEqual([1, 2])
-    expect(mockGetOrphanList).toHaveBeenLastCalledWith({
-      page: 2,
-      page_size: 20,
-      downloader_id: undefined,
-      path_like: undefined,
-      status: undefined,
-      min_size: undefined
-    })
-  })
-
   it('孤儿表格使用内部固定高度滚动以保持表头可见', async() => {
     const wrapper = mountView()
     await flushLifecycle()
@@ -808,95 +765,102 @@ describe('orphan files atomic page state', () => {
     expect(table.attributes('data-height')).toBe('100%')
   })
 
-  it('1000 条数据只渲染可视窗口及上下占位行', async() => {
+  it('翻页切换加载对应页并清空当前页选择', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
-    vm.list = Array.from({ length: 1000 }, (_, index) => orphanItem(index + 1))
-    vm.tableViewportHeight = 480
-    vm.tableScrollTop = 24000
-    await localVue.nextTick()
+    vm.selectedRows = [orphanItem(1)]
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(scanContext(), [orphanItem(21)], 100, 2)
+    )
 
-    const renderedRows = vm.virtualTableData
-    const dataRows = renderedRows.filter((row) => !row.__virtualSpacer)
-    expect(dataRows.length).toBeLessThanOrEqual(26)
-    expect(renderedRows[0].__virtualSpacer).toBe('top')
-    expect(renderedRows[renderedRows.length - 1].__virtualSpacer).toBe('bottom')
-    expect(renderedRows[0].__virtualHeight).toBeGreaterThan(0)
+    await vm.handleOrphanPageChange(2)
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith({
+      page: 2,
+      page_size: 20,
+      downloader_id: undefined,
+      path_like: undefined,
+      status: undefined,
+      min_size: undefined
+    })
+    expect(vm.listQuery.page).toBe(2)
+    expect(vm.selectedRows).toEqual([])
+    expect(vm.list.map((item) => item.id)).toEqual([21])
   })
 
-  it('表头全选覆盖当前筛选全部结果而非仅虚拟窗口行', async() => {
+  it('全选仅勾选当前页可选行而非跨页全选', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
-    vm.total = 75
+    const pending1 = orphanItem(1)
+    const deletedRow = { ...orphanItem(2), is_deleted: true }
+    const pending3 = orphanItem(3)
+    vm.list = [pending1, deletedRow, pending3]
+    vm.total = 100
     vm.listQuery.status = 'pending'
 
     vm.handleSelectAllChange(true)
 
-    expect(vm.allMatchingSelected).toBe(true)
-    expect(vm.selectedCount).toBe(75)
+    expect(vm.selectedRows.map((row) => row.id)).toEqual([1, 3])
+    expect(vm.selectedCount).toBe(2)
     expect(vm.selectionAllChecked).toBe(true)
-    expect(vm.isRowSelected(orphanItem(1))).toBe(true)
+    expect(vm.isRowSelected(pending1)).toBe(true)
+    expect(vm.isRowSelected(deletedRow)).toBe(false)
 
-    vm.handleRowSelectionChange(orphanItem(1), false)
+    vm.handleRowSelectionChange(pending1, false)
 
-    expect(vm.excludedSelectionIds).toEqual([1])
-    expect(vm.selectedCount).toBe(74)
+    expect(vm.selectedCount).toBe(1)
     expect(vm.selectionAllChecked).toBe(false)
     expect(vm.selectionIndeterminate).toBe(true)
-    expect(vm.isRowSelected(orphanItem(1))).toBe(false)
+    expect(vm.isRowSelected(pending1)).toBe(false)
   })
 
-  it('全选批量忽视把筛选快照与排除项交给后端', async() => {
+  it('当前页全选后批量忽视提交 orphan_ids 而非 select_all', async() => {
     mockSetIgnored.mockResolvedValueOnce({
       code: '200',
       msg: 'ok',
       status: 'success',
-      data: { success_count: 49, failed_count: 0, failed_list: [] }
+      data: { success_count: 2, failed_count: 0, failed_list: [] }
     })
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
+    const pending1 = orphanItem(1)
+    const pending3 = orphanItem(3)
+    vm.list = [pending1, pending3]
     vm.total = 50
     vm.listQuery.status = 'pending'
-    vm.listQuery.confidence = 'high'
     vm.handleSelectAllChange(true)
-    vm.handleRowSelectionChange(orphanItem(2), false)
 
     await vm.handleBatchIgnore(true)
 
-    expect(mockSetIgnored).toHaveBeenCalledWith({
-      scan_id: 'scan-completed',
-      select_all: true,
-      excluded_orphan_ids: [2],
-      filters: { status: 'pending', confidence: 'high' },
-      ignored: true
-    })
+    const call = mockSetIgnored.mock.calls[0][0]
+    expect(call.scan_id).toBe('scan-completed')
+    expect(call.orphan_ids).toEqual([1, 3])
+    expect(call.ignored).toBe(true)
+    expect(call.select_all).toBeUndefined()
+    expect(call.excluded_orphan_ids).toBeUndefined()
+    expect(call.filters).toBeUndefined()
   })
 
-  it('全选清理预览复用同一筛选选择快照', async() => {
+  it('当前页全选后清理预览提交 orphan_ids 而非 select_all', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
+    const pending1 = orphanItem(1)
+    vm.list = [pending1]
     vm.total = 30
     vm.listQuery.status = 'pending'
-    vm.listQuery.downloader_id = 'dl-1'
     vm.handleSelectAllChange(true)
 
     await vm.handleCleanupPreview()
 
     expect(mockCleanupPreview).toHaveBeenCalledWith({
       scan_id: 'scan-completed',
-      select_all: true,
-      excluded_orphan_ids: [],
-      filters: { downloader_id: 'dl-1', status: 'pending' }
+      orphan_ids: [1]
     })
-    expect(vm.previewSelection).toEqual({
-      select_all: true,
-      excluded_orphan_ids: [],
-      filters: { downloader_id: 'dl-1', status: 'pending' }
-    })
+    expect(vm.previewSelection).toEqual({ orphan_ids: [1] })
   })
 
   it('自定义单次加载数量超过上限时自动限制为 1000', async() => {
