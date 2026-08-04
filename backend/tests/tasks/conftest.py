@@ -12,6 +12,25 @@ from sqlalchemy.pool import StaticPool
 from app.database import Base
 
 
+@pytest.fixture(autouse=True)
+async def _clean_orphan_lease_between_tests():
+    """每个测试前清空进程级测试库的孤儿维护 lease 表。
+
+    背景：orphan_maintenance_scope 在未注入测试 session 时会写生产
+    AsyncSessionLocal（测试中为进程级共享库）。若先前测试偶发残留 lease 行，
+    后续走真实 lease 的任务测试（trigger_scan 等）会被 OrphanLeaseBusyError
+    拒绝。此处做防御性清理，保证每个任务测试开始时 lease 表干净。
+    """
+    from sqlalchemy import text
+
+    from app.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as session:
+        await session.execute(text("DELETE FROM orphan_operation_lease"))
+        await session.commit()
+    yield
+
+
 @pytest.fixture
 async def async_orphan_db():
     """异步内存 SQLite，建孤儿 + 通知 + 下载器 + 种子信息相关表。"""

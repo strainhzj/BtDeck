@@ -856,7 +856,7 @@ class OrphanFileService:
             )
 
             try:
-                async with orphan_maintenance_scope("manual_cleanup") as lease_handle:
+                async with orphan_maintenance_scope("manual_cleanup", db=self.db) as lease_handle:
                     return await self.cleanup_orphans(
                         orphan_ids=orphan_ids,
                         operator=operator,
@@ -1279,7 +1279,7 @@ class OrphanFileService:
             )
 
             try:
-                async with orphan_maintenance_scope("auto_cleanup") as lease_handle:
+                async with orphan_maintenance_scope("auto_cleanup", db=self.db) as lease_handle:
                     return await self.auto_cleanup_expired(
                         days_threshold=days_threshold,
                         operator=operator,
@@ -1450,7 +1450,7 @@ class OrphanFileService:
             )
 
             try:
-                async with orphan_maintenance_scope("quarantine_purge") as lease_handle:
+                async with orphan_maintenance_scope("quarantine_purge", db=self.db) as lease_handle:
                     return await self.purge_expired_quarantine(
                         store=store, _lease_acquired=True, _lease_handle=lease_handle
                     )
@@ -1667,7 +1667,7 @@ class OrphanFileService:
             )
 
             try:
-                async with orphan_maintenance_scope("quarantine_dir_prune"):
+                async with orphan_maintenance_scope("quarantine_dir_prune", db=self.db):
                     return await self.prune_recorded_empty_quarantine_dirs(
                         _lease_acquired=True,
                     )
@@ -1719,7 +1719,7 @@ class OrphanFileService:
             )
 
             try:
-                async with orphan_maintenance_scope("manual_restore") as lease_handle:
+                async with orphan_maintenance_scope("manual_restore", db=self.db) as lease_handle:
                     return await self.restore_quarantined(
                         canonical_paths=canonical_paths,
                         operator=operator,
@@ -1895,7 +1895,7 @@ class OrphanFileService:
             )
 
             try:
-                async with orphan_maintenance_scope("manual_purge") as lease_handle:
+                async with orphan_maintenance_scope("manual_purge", db=self.db) as lease_handle:
                     return await self.purge_quarantine_now(
                         canonical_paths=canonical_paths,
                         operator=operator,
@@ -2448,7 +2448,7 @@ class OrphanFileService:
         )
 
         try:
-            async with orphan_maintenance_scope("scan") as lease_handle:
+            async with orphan_maintenance_scope("scan", db=self.db) as lease_handle:
                 scanner = OrphanScanner(app=app, lease_handle=lease_handle)
                 result = await scanner.scan(scan_type=scan_type, operator=operator)
         except OrphanLeaseBusyError as exc:

@@ -47,14 +47,15 @@ class OrphanLeaseBusyError(RuntimeError):
 class OrphanLeaseHandle:
     """维护租约句柄；危险操作前必须确认租约仍归当前 worker。"""
 
-    def __init__(self, owner: str):
+    def __init__(self, owner: str, db: Optional[AsyncSession] = None):
         self.owner = owner
+        self.db = db
         self.lost = asyncio.Event()
 
     async def assert_owned(self) -> None:
         if (
             self.lost.is_set()
-            or await get_lease_holder(ORPHAN_MAINTENANCE_LEASE) != self.owner
+            or await get_lease_holder(ORPHAN_MAINTENANCE_LEASE, db=self.db) != self.owner
         ):
             self.lost.set()
             raise OrphanLeaseBusyError("孤儿维护租约已丢失，停止文件操作")
@@ -221,15 +222,28 @@ async def get_lease_holder(
 
 
 @asynccontextmanager
-async def orphan_maintenance_scope(operation: str, ttl: Optional[int] = None):
-    """统一跨进程维护 lease，始终使用独立 session。"""
+async def orphan_maintenance_scope(
+    operation: str,
+    ttl: Optional[int] = None,
+    db: Optional[AsyncSession] = None,
+):
+    """统一跨进程维护 lease 作用域。
+
+    Args:
+        operation: 维护操作名（用于生成 owner 前缀，如 manual_cleanup / scan）。
+        ttl: TTL 秒数（None 取 settings.ORPHAN_LEASE_TTL_SECONDS）。
+        db: 可选 DB session。传入时，acquire/release 使用该 session 落 lease，
+            使 lease 与调用方同库（测试注入内存库时天然按测试隔离）；
+            不传则开独立生产 session。heartbeat 续期始终走独立 session，
+            避免把调用方事务中途提交。
+    """
     owner = f"{operation}-{_make_owner()}"
     ttl_seconds = ttl if ttl is not None else settings.ORPHAN_LEASE_TTL_SECONDS
-    if not await acquire_lease(ORPHAN_MAINTENANCE_LEASE, owner=owner, ttl=ttl_seconds):
+    if not await acquire_lease(ORPHAN_MAINTENANCE_LEASE, owner=owner, ttl=ttl_seconds, db=db):
         raise OrphanLeaseBusyError("另一个孤儿文件维护操作正在运行")
 
     stopped = asyncio.Event()
-    handle = OrphanLeaseHandle(owner)
+    handle = OrphanLeaseHandle(owner, db=db)
 
     async def heartbeat() -> None:
         interval = max(1, ttl_seconds // 3)
@@ -256,4 +270,4 @@ async def orphan_maintenance_scope(operation: str, ttl: Optional[int] = None):
             await heartbeat_task
         except asyncio.CancelledError:
             pass
-        await release_lease(ORPHAN_MAINTENANCE_LEASE, owner=owner)
+        await release_lease(ORPHAN_MAINTENANCE_LEASE, owner=owner, db=db)
