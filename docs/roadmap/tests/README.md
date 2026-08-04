@@ -1,8 +1,8 @@
 # tests — 测试
 
-> 后端 pytest（103 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 jest unit。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（109 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 jest unit。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 
-## backend/tests/（103 个 test_*.py + 支持文件）
+## backend/tests/（109 个 test_*.py + 支持文件）
 
 ### 顶层
 
@@ -35,7 +35,7 @@
 ```bash
 cd backend && pytest                          # 全量
 cd backend && pytest tests/services/ -v       # 按目录
-cd backend && pytest tests/api/               # API 层（35 个 test_*.py）
+cd backend && pytest tests/api/               # API 层（37 个 test_*.py）
 ```
 
 ## frontend/tests/
@@ -67,7 +67,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：119 个 .py（其中 103 个 test_*.py + 16 个支持文件）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
+- **后端测试组织良好**：125 个 .py（其中 109 个 test_*.py + 16 个支持文件）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是本次新增覆盖的重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（1591 行）/ `test_advanced_search_models_strict.py` / `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（v1.0.6.26，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制

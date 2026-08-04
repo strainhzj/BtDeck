@@ -8,7 +8,7 @@
 |--------|------|--------|------|
 | app-root | `backend/app/` 包根 10 文件（应用工厂、DB 引擎、异常处理、版本、入口） | 10 | [app-root.md](./app-root.md) |
 | api | HTTP 路由层（endpoints 35 + models 1 + schemas 3 + api.py + responseVO.py） | 41 | [api/README.md](./api/README.md) |
-| services | 业务服务层 36 + downloader_adapters 6 + tag_adapters 6 | 48 | [services/README.md](./services/README.md) |
+| services | 业务服务层 37 + downloader_adapters 6 + tag_adapters 6 | 49 | [services/README.md](./services/README.md) |
 | core | 基础设施 21 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） | 21 | [core/README.md](./core/README.md) |
 | **contracts** ✨v1.0.6.27 | 前后端共享机器可读契约（advanced_search JSON + 加载器） | 3 | [contracts/README.md](./contracts/README.md) |
 | data-models | ORM 16 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2 | 35 | [data-models/README.md](./data-models/README.md) |

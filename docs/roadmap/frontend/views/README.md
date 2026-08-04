@@ -9,14 +9,14 @@
 | torrents | 20 | 11,189 | `index.vue`（2,662 行） | class-component（全部） |
 | downloader | 14 | 11,277 | `index.vue`（1,644 行） | class-component（全部） |
 | tracker | 12 | 5,357 | 4 个并列页面 | class-component（11）+ ⚠ 1 Options API |
-| tasks | 1 | 2,419 | `index.vue` | class-component |
-| logs | 1 | 1,116 | `audit.vue` | class-component |
+| tasks | 1 | 2,408 | `index.vue` | class-component |
+| logs | 1 | 1,266 | `audit.vue` | class-component |
 | recycle-bin | 1 | 1,179 | `index.vue` | ⚠ **Options API** |
 | settings | 1 | 992 | `index.vue` | class-component |
 | dashboard | 1 | 955 | `index.vue` | class-component |
 | login | 1 | 534 | `index.vue` | class-component |
 | query-templates | 2 | 544 | `index.vue`（v1.0.5 新增） | class-component |
-| orphan-files | 1 | 1,390 | `index.vue` | class-component |
+| orphan-files | 1 | 1,543 | `index.vue` | class-component |
 | nested | 7 | 140 | 菜单演示 | class-component |
 | tree | 1 | 80 | `index.vue` | class-component |
 | 404.vue（顶层） | 1 | 340 | `404.vue` | class-component |
@@ -86,15 +86,15 @@
 
 | 模块/文件 | 行数 | class name | 职责 |
 |-----------|------|-----------|------|
-| `tasks/index.vue` | 2419 | `TaskManage` | 任务管理主页（CRUD + 调度/Cron/Python 类选择） |
-| `logs/audit.vue` | 1116 | `AuditLogs` | 审计日志查询/筛选/分页 |
+| `tasks/index.vue` | 2408 | `TaskManage` | 任务管理主页（CRUD + 调度/Cron/Python 类选择） |
+| `logs/audit.vue` | 1266 | `AuditLogs` | 审计日志查询/筛选/分页；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐） |
 | `recycle-bin/index.vue` | 1179 | ⚠ Options API（`RecycleBin`，L374） | 回收站，删除任务恢复/彻底删除/分页筛选 |
 | `settings/index.vue` | 992 | `Settings` | 全局设置页 |
 | `dashboard/index.vue` | 955 | `Dashboard` | 仪表盘聚合统计卡片 |
 | `query-templates/index.vue` | 272 | `QueryTemplates`（v1.0.5） | 查询模板列表主入口 |
 | `query-templates/components/QueryTemplateDialog.vue` | 272 | class | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 534 | `Login` | 登录页 |
-| `orphan-files/index.vue` | 1390 | `OrphanFiles` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复；内部滚动固定表头并采用可视窗口渲染大页，忽视展示逐项失败原因；彻底删除只提交后台任务 |
+| `orphan-files/index.vue` | 1543 | `OrphanFiles` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复；内部滚动固定表头并采用可视窗口渲染大页（v1.0.6.34~36 真全选/固定表头/大分页交互优化），忽视展示逐项失败原因；彻底删除只提交后台任务 |
 | `404.vue` | 340 | `Page404` | 404 页面 |
 | `nested/*`（7 文件） | 140 | class | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 80 | `Tree` | 树形组件演示页 |

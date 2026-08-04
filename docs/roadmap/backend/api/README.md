@@ -54,18 +54,18 @@
 | `duplicate_torrents.py` | 416 | 1 class, 3 def | 重复种子查询 |
 | `login.py` | 88 | 0 class, 2 def | 登录（`/login`，校验密码并签发 token） |
 | `notifications.py` | 116 | 0 class, 6 def | 通知中心：列表/未读计数/标记已读 |
-| `orphan_files.py` | 307 | 3 class, 11 def | 孤儿文件管理：扫描/列表/清理/忽视/隔离恢复；列表单批上限 1000，彻底删除仅提交持久化后台任务，并提供任务状态查询 |
+| `orphan_files.py` | 360 | 3 class, 11 def | 孤儿文件管理：扫描/列表/清理/忽视/隔离恢复；列表单批上限 1000，彻底删除仅提交持久化后台任务，并提供任务状态查询 |
 | `recycle_bin.py` | 311 | 4 class, 5 def | 回收站：列表/还原/清理预览/手动清理 |
 | `seed_transfer.py` | 268 | 0 class, 2 def | 种子转移，对接 `seed_transfer_service` |
 | `setting_templates.py` | 338 | 0 class, 6 def | 配置模板管理：CRUD + 应用 |
 | `tag_management.py` | 1459 | 0 class, 19 def | 标签管理：标签 CRUD/种子标签分配/批量操作 |
 | `tasks.py` | 40 | 0 class, 2 def | 任务日志（`/logs`、`/statistics`） |
 | `torrent_backup.py` | 824 | 0 class, 12 def | 种子文件备份：备份/还原/列表/管理 |
-| `torrent_crud.py` | 828 | 1 class, 5 def | 种子 CRUD（列表/添加/查询/上传 .torrent）★ [详情](./endpoints/torrent_crud.md) |
+| `torrent_crud.py` | 649 | 1 class, 5 def | 种子 CRUD（列表/添加/查询/上传 .torrent）；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
 | `torrent_deletion.py` | 902 | 7 class, 9 def | 种子删除（多等级删除） |
 | `torrent_helpers.py` | 866 | 0 class, 16 def | 种子端点共享工具（哈希/序列化/bencode/DB 辅助）；v1.0.6.25 起写入路径经 `torrent_ratio_values` 规范化 ratio |
 | `torrent_location.py` | 93 | 0 class, 1 def | 修改种子保存路径 |
-| `torrent_speed.py` | 604 | 6 class, 12 def | 种子级实时速度查询（走 `app.state.store` 缓存） |
+| `torrent_speed.py` | 592 | 6 class, 12 def | 种子级实时速度查询（走 `app.state.store` 缓存） |
 | `torrent_status.py` | 959 | 6 class, 6 def | 种子状态控制（暂停/恢复/重检） |
 | `torrent_sync.py` | 1526 | 2 class, 16 def | 种子同步端点 + 同步辅助函数；v1.0.6.25 起同步写入用 `torrent_ratio_values` |
 | `torrents.py` | 30 | 0 class, 0 def | 种子聚合路由器（include_router 合并 6 个子路由） |

@@ -2,14 +2,14 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 103 个 test_*.py）
+## 后端测试分布（共 109 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 35 | `app/api/` | ✅ 覆盖良好（35 文件对 41 源文件；v1.0.6.32 新增路径映射真实目录验证） |
-| `tests/services/` | 25 | `app/services/` | 🟡 中等（25 对 48；v1.0.6.25~32 新增 ratio/advanced_search/sqlite_search/torrent_metadata/orphan/path_mapping 相关覆盖） |
+| `tests/api/` | 37 | `app/api/` | ✅ 覆盖良好（37 文件对 41 源文件；v1.0.6.32 路径映射真实目录验证，v1.0.6.33 异步批量添加 + 下载器路径映射更新） |
+| `tests/services/` | 28 | `app/services/` | 🟡 中等（28 对 48；v1.0.6.25~34 新增 ratio/advanced_search/sqlite_search/torrent_metadata/orphan 生命周期与忽视筛选/path_mapping 相关覆盖） |
 | `tests/tasks/` | 12 | `app/tasks/` | 🟡 部分覆盖（12 对 32） |
-| `tests/core/` | 12 | `app/core/` | 🟡 中等（12 对 21；v1.0.6.27 新增 `test_ratio_data_diagnostics.py`） |
+| `tests/core/` | 13 | `app/core/` | 🟡 中等（13 对 21；v1.0.6.27 新增 `test_ratio_data_diagnostics.py`，v1.0.6.33~36 新增 `test_path_mapping_unicode.py`） |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 16） |
 | `tests/utils/` | 3 | `app/utils/` | ✅ 全覆盖（3 对 3） |
 | `tests/auth/` | 3 | `app/auth/` | ✅ 覆盖良好（3 对 5） |
@@ -20,9 +20,9 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：35+25+12+12+6+3+3+2+1+1+1+1+1 = **103** 个 test_*.py（外加 conftest.py / __init__.py / panic_fixes_verification.py 等 16 个支持文件，全 .py 共 119）。
+> 合计：37+28+12+13+6+3+3+2+1+1+1+1+1 = **109** 个 test_*.py（外加 conftest.py / __init__.py / panic_fixes_verification.py 等 16 个支持文件，全 .py 共 125）。
 
-> 注：`tests/api/`（35 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。端点覆盖仍有继续加固空间。
+> 注：`tests/api/`（37 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。端点覆盖仍有继续加固空间。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -36,6 +36,16 @@
 | `tests/api/test_advanced_search_pagination.py` | 139 | `app/api/endpoints/advanced_search.py`（分页） |
 | `tests/services/test_torrent_metadata.py` | 100 | `app/services/torrent_metadata.py` |
 | `tests/api/test_path_mapping_validation.py` | 301 | `app/api/endpoints/downloader.py` + `app/services/path_mapping_validation.py` |
+
+### v1.0.6.33~36 新增后端测试
+
+| 新增测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/core/test_path_mapping_unicode.py` | 553 | `app/core/path_mapping.py`（路径映射 unicode：空格/中文边界） |
+| `tests/api/test_torrent_batch_add_api.py` | 116 | `app/api/endpoints/torrent_crud.py` + `app/services/torrent_batch_add_service.py`（异步批量添加） |
+| `tests/api/test_downloader_path_mapping_update.py` | 141 | `app/api/endpoints/downloader.py` + `app/api/schemas/path_mapping.py`（设置稳定化后的路径映射更新） |
+
+> 补记：`tests/services/` 当前 28 个根测试中，有 4 个未在文档基准（25）中列出（净增 3 计入 25→28）——`test_orphan_purge_job_service.py`（298 行，隔离区持久化任务）、`test_orphan_ignore_and_filters.py`、`test_orphan_lifecycle.py`、`test_advanced_search_batching.py`（后 3 个为更早提交新增但此前文档漏记）。
 
 ### 关键源文件测试覆盖抽样
 
@@ -56,12 +66,15 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（20 个 spec）
+### `frontend/tests/unit/`（23 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
 | `api-contracts.spec.ts` | API 契约一致性 |
+| `clipboard.spec.ts` ✨v1.0.6.36 | `utils/clipboard.ts`（剪贴板复制回退：Clipboard API / execCommand 降级） |
 | `downloader-settings.spec.ts` | 下载器设置 store |
+| `downloader-control-room-ui.spec.ts` ✨v1.0.6.30 | 下载器控制室 UI（节点矩阵/筛选操作台/遥测卡片交互） |
+| `downloader-regressions.spec.ts` ✨v1.0.6.33 | 下载器设置工作流回归 |
 | `deployment-recovery.spec.ts` | 部署后 chunk 一次恢复、刷新循环门禁、历史 Workbox 清退与 nginx 缓存契约 |
 | `error-normalize.spec.ts` | `utils/error-normalize.ts` |
 | `field-types-consistency.spec.ts` ✨v1.0.6.27 | 高级搜索字段类型前后端一致性 |

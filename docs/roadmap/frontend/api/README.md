@@ -11,9 +11,9 @@
 | `tasks.ts` | 499 | 18 func / 24 iface | L2 | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
 | `downloader.ts` | 317 | 24 const | L1 | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
 | `recycle-bin.ts` | 196 | 5 func / 11 iface | L2 | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |
-| `audit-logs.ts` | 183 | 6 func / 10 iface | L1 | 审计日志：查询/统计/操作类型/导出/归档/下载 |
+| `audit-logs.ts` | 187 | 6 func / 10 iface | L1 | 审计日志：查询/统计/操作类型/导出/归档/下载 |
 | `tag-management.ts` | 175 | 9 func / 5 iface / 1 enum | L6 | 标签管理：分类/标签 CRUD/批量删除/分类支持检查 |
-| `orphan-files.ts` | 410 | 11 func / 25 iface / 8 type | L2 | 孤儿文件：扫描/筛选/清理/忽视/隔离恢复；忽视结果保留逐项失败原因，彻底删除为立即返回的持久化任务并提供状态查询 |
+| `orphan-files.ts` | 427 | 11 func / 25 iface / 8 type | L2 | 孤儿文件：扫描/筛选/清理/忽视/隔离恢复；忽视结果保留逐项失败原因，彻底删除为立即返回的持久化任务并提供状态查询 |
 | `torrents-backup.ts` | 148 | 7 func / 6 iface | L1 | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |
 | `notification.ts` | 104 | 6 func / 3 iface | L2 | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | `users.ts` | 51 | 4 const | L1 | 用户：getUserInfo / changePassword / login / logout |

@@ -11,7 +11,7 @@
 | views | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 3 处 Options API） | 64 | [views/README.md](./views/README.md) |
 | store | Vuex（index.ts 空壳 + 5 个 module，双轨注册） | 6 | [store/README.md](./store/README.md) |
 | components-layout | 通用组件 17 个 + layout 骨架 8 个 + mixin | 27 | [components-layout/README.md](./components-layout/README.md) |
-| utils-types | utils 10 + types 8 + constants 1 + directive 1 | 20 | [utils-types/README.md](./utils-types/README.md) |
+| utils-types | utils 11 + types 8 + constants 1 + directive 1 | 21 | [utils-types/README.md](./utils-types/README.md) |
 
 ---
 

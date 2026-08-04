@@ -2,7 +2,7 @@
 
 > 业务逻辑层，承接 endpoint 调用，向下依赖 core 基础设施与 ORM 模型。包含两个适配器子包（下载器适配器、标签适配器）。
 
-## services/ 根（37 个文件）
+## services/ 根（38 个文件）
 
 | 文件 | 行数 | 顶层符号 | 一句话职责 |
 |------|------|---------|-----------|
@@ -17,7 +17,7 @@
 | `downloader_capabilities_manager.py` | 359 | 1 class, 0 def | 下载器能力配置 CRUD 与同步 |
 | `downloader_settings_manager.py` | 369 | 1 class, 1 def | 下载器设置统一管理器（封装 qB/Transmission 设置包装类） |
 | `notification_service.py` | 226 | 1 class, 0 def | 通知服务（CRUD + 版本更新检查） |
-| `orphan_file_service.py` | 2261 | 1 class, 0 def | 孤儿文件管理（扫描上下文/清理与隔离/恢复/彻底删除/中断恢复）；候选以 canonical_path 为稳定身份，忽视失败记录分类原因与样例；物理操作后安全回收记录隔离根内的空 UUID/scan-id 目录 |
+| `orphan_file_service.py` | 2482 | 1 class, 0 def | 孤儿文件管理（扫描上下文/清理与隔离/恢复/彻底删除/中断恢复）；候选以 canonical_path 为稳定身份，忽视失败记录分类原因与样例；物理操作后安全回收记录隔离根内的空 UUID/scan-id 目录；v1.0.6.34~36 扩展列表大分页/真全选/忽视过滤逻辑 |
 | `orphan_lease.py` | 259 | 2 class, 8 def | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | `orphan_lifecycle_service.py` | 252 | 1 class, 1 def | `OrphanCurrentCandidate` 表生命周期推进（仅在成功扫描根内对账，支持事务化状态落库） |
 | `orphan_manifest.py` | 560 | 5 class, 5 def | 有效路径筛选、严格下载器映射及扫描/清理共用实时 manifest |
@@ -30,12 +30,13 @@
 | `reannounce_service.py` | 239 | 0 class, 5 def | Tracker Reannounce 核心服务（API 与定时任务共用） |
 | `recycle_bin_service.py` | 783 | 1 class, 0 def | 回收站服务（列表/还原/清理/批量/记录） |
 | `seed_transfer_service.py` | 721 | 1 class, 0 def | 种子转移（备份读种子 → 加到目标 → 轮询验证） |
-| `speed_schedule_service.py` | 155 | 1 class, 0 def | 分时段限速服务 |
+| `speed_schedule_service.py` | 199 | 1 class, 0 def | 分时段限速服务 |
 | `sqlite_search_runtime.py` ✨v1.0.6.27 | 100 | 1 class, 8 def | 高级搜索有界正则运行时（`RegexSearchTimeout`、`validate_regex_pattern`、threading.local 状态隔离、单次 match 10ms / 查询总预算 2s 双重熔断，防 ReDoS） |
 | `sync_db_write.py` | 183 | 0 class, 5 def | 同步任务 DB 写入治理（变更检测 + 批量 upsert + 串行化） |
 | `tag_service.py` | 809 | 1 class, 0 def | 标签管理业务（支持同步/异步两种调用） |
 | `tag_sync_service.py` | 669 | 1 class, 0 def | 标签同步服务（去 DB 查询，直接走缓存） |
 | `template_service.py` | 690 | 1 class, 1 def | 配置模板服务（CRUD/验证/应用/冲突检测） |
+| `torrent_batch_add_service.py` ✨v1.0.6.33 | 370 | 2 class, 9 def | 异步批量添加种子服务：暂存上传 .torrent → 逐个异步 add（Transmission 轮询验证 hash）→ 失败/完成通知；任务注册到 `app.state` 后台执行，自 `torrent_crud.py` 抽取 |
 | `torrent_crud_service.py` | 686 | 0 class, 26 def | 种子 DB CRUD 服务（模块级函数集合，无类；v1.0.6.25 起写入时通过 `torrent_ratio_values` 规范化 ratio/ratio_limit） |
 | `torrent_deletion_by_level.py` | 1670 | 1 class, 0 def | 种子按等级删除（L1 删任务+数据 / L2 保数据 / L3 移回收站 / L4 加标签） |
 | `torrent_deletion_service.py` | 621 | 8 class, 0 def | 种子删除服务（抽象基类 + 各下载器策略） |
@@ -82,4 +83,4 @@
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrent_deletion_by_level.py` 1670 行、`orphan_file_service.py` 1339 行、`advanced_search.py` 1311 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`orphan_file_service.py` 2482 行、`torrent_deletion_by_level.py` 1670 行、`advanced_search.py` 1311 行）

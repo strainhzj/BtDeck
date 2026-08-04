@@ -12,7 +12,7 @@
 | `cleanup_executor.py` | 478 | 1 (`CleanupTaskExecutor`) | 后台执行器 | 自动清理执行器：回收站(L3)+待删除标签(L4) |
 | `cron_crud.py` | 429 | 2 (`CronTaskCRUD`/`TaskLogsCRUD`) | 数据访问 | 定时任务同步 CRUD（`DatabaseResult`） |
 | `cron_crud_async.py` | 218 | 2 | 数据访问 | 定时任务异步 CRUD |
-| `cron_executor.py` | 825 | 2 (`CronTaskExecutor`) | 🔵 调度核心 | **APScheduler 调度核心**：`AsyncIOScheduler` + `add_job`（L60/142/791） |
+| `cron_executor.py` | 828 | 2 (`CronTaskExecutor`) | 🔵 调度核心 | **APScheduler 调度核心**：`AsyncIOScheduler` + `add_job`（L60/142/791） |
 | `cron_models.py` | 76 | 1 (`CronTask`) | ORM | `CronTask` 定时任务表 |
 | `enhanced_python_executor.py` | 593 | 5 | 执行器 | 增强沙箱化 Python 代码执行器（REQ-002，智能异步检测） |
 | `logger.py` | 161 | 4 | 日志 | 任务执行日志写入与统计 |
@@ -29,7 +29,7 @@
 | `dashboard_stats.py` | 90 | 1 | 看板统计聚合任务 |
 | `downloader_cache_sync.py` | 330 | 1 | 下载器实例缓存同步 |
 | `downloader_path_scan.py` | 840 | 1 | 扫描 torrent_info 路径写入 downloader_path_maintenance |
-| `orphan_notification_retry_task.py` | 56 | 1 | 补发未成功的幂等通知 |
+| `orphan_notification_retry_task.py` | 68 | 1 | 补发未成功的幂等通知（隔离区彻底删除完成通知） |
 | `orphan_quarantine_purge_task.py` | 25 | 1 | 每日清理超期孤儿隔离区 |
 | `orphan_scan_task.py` | 121 | 1 | 每周日凌晨 2 点全量扫描孤儿文件 |
 | `tag_sync.py` | 244 | 4 | 定期从下载器同步标签到 DB |

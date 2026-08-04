@@ -12,7 +12,7 @@ BtDeck/
 ├── backend/          ← FastAPI 后端（Python 3.11+）
 │   ├── app-root/        包根入口（main/factory/database/exception_handlers …）
 │   ├── api/             HTTP 路由层（35 endpoints + schemas + models + responseVO）
-│   ├── services/        业务服务层 + 下载器/标签适配器（含 ratio/search 运行时与路径映射真实目录验证）
+│   ├── services/        业务服务层 + 下载器/标签适配器（含 ratio/search 运行时、v1.0.6.33 异步批量添加与路径映射真实目录验证）
 │   ├── core/            基础设施（config / path_mapping / file_ops …）+ ⚠ 含 4 个孤儿文件（torrent_operations 已重写为 ratio 工具但仍 0 引用）
 │   ├── contracts/ ✨    前后端共享机器可读契约（v1.0.6.27 新增：advanced_search JSON + 加载器）
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
@@ -25,9 +25,9 @@ BtDeck/
 │   ├── views/           页面视图（13 个 view 模块，Options API + class-component 并存）
 │   ├── store/           Vuex（index.ts 空壳 + 5 个 getModule 自注册 module）
 │   ├── components-layout/  通用组件（v1.0.6.28 LucideIcon / v1.0.6.30 PageSizeCombobox）+ 布局骨架
-│   └── utils-types/     工具 / 类型 / 常量 / 指令
+│   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 103 个 test_*.py + frontend jest unit）
+├── tests/            ← 测试（backend pytest 109 个 test_*.py + frontend jest unit）
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -53,7 +53,7 @@ BtDeck/
 | ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（103 个 test_*.py，按子目录组织）+ 前端 jest unit | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（109 个 test_*.py，按子目录组织）+ 前端 jest unit | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -90,10 +90,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32） |
-| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~32 增量同步（含高级搜索契约化、Lucide 基础设施、视觉密度修正、列表分页/排序对齐、保存路径列与路径映射真实目录验证） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36） |
+| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~32、v1.0.6.33~36 增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层样例（1 个：torrent_crud.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | v1.0.6.32 路径映射真实目录验证索引；2026-08-01 增补部署后旧 SPA chunk 自动恢复、历史 Workbox 清退，以及 nginx 稳定入口/哈希资源缓存边界 |
+| 本次新增 | v1.0.6.33~36：异步批量添加（`torrent_batch_add_service` 自 `torrent_crud` 抽取）、种子实时进度、孤儿列表大分页/真全选/固定表头/忽视身份、剪贴板回退（`clipboard.ts`）、操作日志布局优化、测试 103→109 |

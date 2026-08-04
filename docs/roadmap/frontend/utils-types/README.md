@@ -2,7 +2,7 @@
 
 > 横切工具层：通用工具函数、TypeScript 类型定义、常量、自定义指令。
 
-## utils/（10 个 .ts 文件）
+## utils/（11 个 .ts 文件）
 
 > 另有 `utils/empty-polyfill.js`（polyfill，.js 非 .ts，跳过）。
 
@@ -17,6 +17,7 @@
 | `deployment-recovery.ts` | 194 | 13 | 部署版本恢复：识别旧 webpack chunk 失败、一次整页切换与循环门禁、恢复 query 清理、历史根作用域 Workbox 注册/cache 清退 |
 | `downloaderType.ts` | 73 | 5 | 下载器类型枚举（`DOWNLOADER_TYPE`/`DOWNLOADER_TYPE_NAME`）+ 数字↔字符串↔标签互转 |
 | `cookies.ts` | 27 | 10 | sidebar status / token / userId（localStorage） + 通用 `getStorage`/`setStorage` |
+| `clipboard.ts` ✨v1.0.6.36 | 45 | 1 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制） |
 | `validate.ts` | 3 | 2 | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
 
 ### request.ts 关键（axios 封装，L1-161）
