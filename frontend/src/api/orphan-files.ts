@@ -212,6 +212,7 @@ export interface OrphanSelectionFilters {
   downloader_id?: string
   min_size?: number
   path_like?: string
+  path_prefix?: string
   status?: OrphanStatusFilter
   confidence?: OrphanConfidence
 }
@@ -316,6 +317,56 @@ export function setIgnored(data: IgnoreRequest): Promise<ApiResponse<IgnoreResul
     data: data,
     timeout: 120000
   }) as unknown as Promise<ApiResponse<IgnoreResult>>
+}
+
+// ==================== 左匹配（前缀）快捷操作 ====================
+
+export interface PrefixMatchPreviewRequest {
+  path_prefix: string
+  scan_id: string
+}
+
+/**
+ * 左匹配预览成功结果。范围严格限定 status=pending（排除已忽视/已清理）。
+ * low_confidence_count>0 时前端应在二次确认中追加低置信度误判警告。
+ */
+export interface PrefixMatchPreviewSuccess {
+  rejected?: false
+  count: number
+  total_size: number
+  low_confidence_count: number
+  /** 命中文件路径样本（最多 10 条），供未来扩展展示。 */
+  sample_paths: string[]
+}
+
+/**
+ * 左匹配预览拒绝结果：scan 过期或最新扫描未完成（与 cleanup 同样新鲜度门禁）。
+ */
+export interface PrefixMatchPreviewRejected {
+  rejected: true
+  reason: string
+  count: 0
+  total_size: 0
+  low_confidence_count: 0
+  sample_paths: []
+}
+
+export type PrefixMatchPreviewResult = PrefixMatchPreviewSuccess | PrefixMatchPreviewRejected
+
+/**
+ * 左匹配（前缀）预览：统计以 path_prefix 开头的“待清理”孤儿文件数与大小。
+ *
+ * 与 cleanup 共用新鲜度门禁，stale 时返回 rejected=true。前端快捷操作
+ * （快捷删除/快捷忽视）先用本接口拿命中数做二次确认，再复用 cleanup/ignore 执行。
+ */
+export function prefixMatchPreview(
+  data: PrefixMatchPreviewRequest
+): Promise<ApiResponse<PrefixMatchPreviewResult>> {
+  return request({
+    url: '/orphan-files/prefix-match-preview',
+    method: 'post',
+    data: data
+  }) as unknown as Promise<ApiResponse<PrefixMatchPreviewResult>>
 }
 
 // ==================== 隔离区管理（恢复 / 立即彻底删除 / 列表） ====================

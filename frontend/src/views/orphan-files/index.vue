@@ -223,6 +223,29 @@
           >
             取消忽视
           </el-button>
+          <el-dropdown trigger="click" @command="handleQuickAction">
+            <el-button icon="el-icon-magic-stick">
+              快捷操作<i class="el-icon-arrow-down el-icon--right"></i>
+            </el-button>
+            <el-dropdown-menu slot="dropdown">
+              <el-dropdown-item
+                command="cleanup"
+                icon="el-icon-delete"
+                :disabled="!cleanupAllowed"
+                :title="cleanupBlockReason"
+              >
+                快捷删除（按前缀）
+              </el-dropdown-item>
+              <el-dropdown-item
+                command="ignore"
+                icon="el-icon-warning-outline"
+                :disabled="!displayScan"
+                title="按路径前缀批量忽视待清理文件"
+              >
+                快捷忽视（按前缀）
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </el-dropdown>
         </div>
       </div>
       <div class="management-table-scroll orphan-table-scroll">
@@ -474,6 +497,55 @@
         </el-button>
       </span>
     </el-dialog>
+
+    <!-- 快捷操作（左匹配）对话框 -->
+    <el-dialog
+      :title="quickActionType === 'cleanup' ? '快捷删除（按前缀）' : '快捷忽视（按前缀）'"
+      :visible.sync="quickActionDialogVisible"
+      width="520px"
+      :close-on-click-modal="false"
+      custom-class="management-dialog"
+    >
+      <div v-loading="quickActionLoading">
+        <el-alert
+          type="info"
+          :closable="false"
+          show-icon
+          title="按路径前缀左匹配待清理文件"
+        >
+          <template slot="default">
+            <p>
+              输入路径前缀（绝对路径开头），将匹配所有
+              <strong>文件路径</strong> 以此开头的<strong>待清理</strong>文件（排除已忽视/已清理）。
+            </p>
+            <p v-if="quickActionType === 'cleanup'">删除即移入隔离区，可恢复。</p>
+          </template>
+        </el-alert>
+        <div style="margin-top: 16px">
+          <label for="quick-action-prefix" style="display:block; margin-bottom: 6px; font-weight: 600">
+            路径前缀
+          </label>
+          <el-input
+            id="quick-action-prefix"
+            v-model="quickActionPrefix"
+            placeholder="例如：D:\downloads\待清理目录\ 或 /data/leak/"
+            clearable
+            :disabled="quickActionLoading"
+            @keyup.enter.native="handleQuickActionConfirm"
+          />
+        </div>
+      </div>
+      <span slot="footer" class="dialog-footer">
+        <el-button :disabled="quickActionLoading" @click="handleQuickActionCancel">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="quickActionLoading"
+          @click="handleQuickActionConfirm"
+        >
+          确定
+        </el-button>
+      </span>
+    </el-dialog>
   </div>
 </template>
 
@@ -485,6 +557,7 @@ import {
   cleanupPreview,
   cleanupOrphans,
   setIgnored,
+  prefixMatchPreview,
   getQuarantineList,
   restoreQuarantined,
   purgeQuarantineNow,
@@ -495,9 +568,11 @@ import {
   OrphanConfidence,
   OrphanStatusFilter,
   OrphanSelectionPayload,
+  OrphanSelectionFilters,
   CleanupPreviewSuccess,
   IgnoreResult,
-  QuarantineItem
+  QuarantineItem,
+  PrefixMatchPreviewResult
 } from '@/api/orphan-files'
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
@@ -585,6 +660,12 @@ export default class OrphanFiles extends Vue {
   private cleanupPreviewData: CleanupPreviewSuccess | null = null
   private previewScanId: string | null = null
   private previewSelection: OrphanSelectionPayload | null = null
+
+  // 快捷操作（左匹配）：下拉 + 前缀输入对话框
+  private quickActionDialogVisible = false
+  private quickActionType: 'cleanup' | 'ignore' | null = null
+  private quickActionPrefix = ''
+  private quickActionLoading = false
 
   async created() {
     // 下载器列表失败不阻塞主流程（仅影响别名展示与下拉）
@@ -1140,6 +1221,156 @@ export default class OrphanFiles extends Vue {
     if (reasons.length === 0) return `${data.failed_count} 个文件未处理`
     const summary = reasons.slice(0, 3).join('；')
     return reasons.length > 3 ? `${summary}；另有 ${reasons.length - 3} 类原因` : summary
+  }
+
+  // ========== 快捷操作（左匹配：快捷删除 / 快捷忽视） ==========
+
+  private handleQuickAction(command: 'cleanup' | 'ignore'): void {
+    this.quickActionType = command
+    this.quickActionPrefix = ''
+    this.quickActionDialogVisible = true
+  }
+
+  private handleQuickActionCancel(): void {
+    this.quickActionDialogVisible = false
+  }
+
+  private async handleQuickActionConfirm(): Promise<void> {
+    const actionType = this.quickActionType
+    if (!actionType) return
+
+    const prefix = (this.quickActionPrefix || '').trim()
+    if (!prefix) {
+      this.$message.warning('请输入路径前缀')
+      return
+    }
+    const displayScan = this.displayScan
+    if (!displayScan) {
+      this.$message.warning('当前无可用的成功扫描批次，无法按前缀操作')
+      return
+    }
+    if (actionType === 'cleanup' && !this.cleanupAllowed) {
+      this.$message.warning(this.cleanupBlockReason)
+      return
+    }
+
+    this.quickActionLoading = true
+    let preview: PrefixMatchPreviewResult | null = null
+    try {
+      const resp = await prefixMatchPreview({
+        path_prefix: prefix,
+        scan_id: displayScan.scan_id
+      })
+      if (resp.code === '200' && resp.data) {
+        preview = resp.data
+      } else {
+        this.$message.error(resp.msg || '前缀匹配预览失败')
+        this.quickActionLoading = false
+        return
+      }
+    } catch (error) {
+      this.$message.error('前缀匹配预览失败：' + extractErrorMessage(error, '网络错误'))
+      this.quickActionLoading = false
+      return
+    }
+
+    // scan 过期/未完成：后端返回 rejected，提示原因并保留对话框供用户刷新后重试
+    if (preview && preview.rejected === true) {
+      this.$message.error(preview.reason || '当前扫描快照不允许操作')
+      this.quickActionLoading = false
+      return
+    }
+    if (preview.count === 0) {
+      this.$message.warning('没有匹配的待清理文件')
+      this.quickActionLoading = false
+      return
+    }
+
+    // 构造与 cleanup/ignore 共用的选择载荷：select_all + filters（含 status=pending）
+    const filters: OrphanSelectionFilters = {
+      path_prefix: prefix,
+      status: 'pending'
+    }
+    const scanId = displayScan.scan_id
+
+    // 二次确认（删除文案含总数/大小/低置信度警告；忽视文案含总数）
+    const isCleanup = actionType === 'cleanup'
+    let confirmText = `将影响 ${preview.count} 个待清理文件`
+    if (isCleanup) {
+      confirmText += `（共 ${this.formatSize(preview.total_size)}）`
+      if (preview.low_confidence_count > 0) {
+        confirmText += `\n⚠️ 其中 ${preview.low_confidence_count} 个为低置信度，有误判风险，请核对路径`
+      }
+      confirmText += '\n\n确认将它们移入隔离区（可恢复）？'
+    } else {
+      confirmText += '\n\n确认将它们设为忽视（受保护，不再被自动/手动清理）？'
+    }
+
+    try {
+      await this.$confirm(confirmText, '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: isCleanup ? 'warning' : 'info',
+        dangerouslyUseHTMLString: false
+      })
+    } catch {
+      // 用户取消：复位 loading，保留对话框与前缀，便于改前缀重试
+      this.quickActionLoading = false
+      return
+    }
+
+    try {
+      if (isCleanup) {
+        // 直接提交异步清理任务，跳过 cleanupPreview 明细对话框（数量已由 prefix 预览给出）
+        const resp = await cleanupOrphans({
+          scan_id: scanId,
+          select_all: true,
+          filters
+        })
+        if (resp.code === '200' && resp.data) {
+          const taskId = resp.data.task_id || ''
+          this.$message.success(
+            `主动清理任务已提交（${taskId.slice(0, 8)}），完成或失败后将在通知中心提醒`
+          )
+          this.quickActionDialogVisible = false
+          await this.refreshPageData()
+        } else {
+          this.$message.error(resp.msg || '清理任务提交失败')
+        }
+      } else {
+        // 快捷忽视：直接调 setIgnored，跳过 applyIgnore 的内置 $confirm（此处已二次确认）
+        const resp = await setIgnored({
+          scan_id: scanId,
+          select_all: true,
+          filters,
+          ignored: true
+        })
+        if (resp.code === '200' && resp.data) {
+          const data = resp.data
+          if (data.rejected === true) {
+            this.$message.error(`忽视失败：${this.summarizeIgnoreFailures(data)}`)
+          } else if (data.success_count === 0 && data.failed_count > 0) {
+            this.$message.error(`忽视失败：${this.summarizeIgnoreFailures(data)}`)
+          } else if (data.failed_count > 0) {
+            this.$message.warning(
+              `忽视部分完成：成功 ${data.success_count} 个，失败 ${data.failed_count} 个；${this.summarizeIgnoreFailures(data)}`
+            )
+          } else {
+            this.$message.success(`忽视完成：成功 ${data.success_count} 个`)
+          }
+          this.quickActionDialogVisible = false
+          await this.refreshPageData()
+        } else {
+          this.$message.error(resp.msg || '忽视失败')
+        }
+      }
+    } catch (error) {
+      this.$message.error(
+        (isCleanup ? '清理失败：' : '忽视失败：') + extractErrorMessage(error, '网络错误')
+      )
+    } finally {
+      this.quickActionLoading = false
+    }
   }
 
   private formatSize(size: number): string {
