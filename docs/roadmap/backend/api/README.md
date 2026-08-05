@@ -29,7 +29,7 @@
 | 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
-| 孤儿文件 API orphan | `orphan_files.py` | 孤儿文件管理：扫描/列表/清理/忽视/隔离恢复；列表单批上限 1000，彻底删除仅提交持久化后台任务，并提供任务状态查询 |
+| 孤儿文件 API orphan | `orphan_files.py` | 孤儿文件管理：扫描/列表/清理/忽视/隔离恢复；列表单批上限 1000，彻底删除仅提交持久化后台任务，并提供任务状态查询；`/list` 支持 `group_by_folder=true` 按直接父目录聚合分页（同目录≥2 文件折叠为文件夹行，单文件原样） |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理 |
 | 种子转移 seed-transfer | `seed_transfer.py` | 种子转移，对接 `seed_transfer_service` |
 | 配置模板 template | `setting_templates.py` | 配置模板管理：CRUD + 应用 |

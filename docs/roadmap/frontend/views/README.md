@@ -17,7 +17,7 @@
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框（v1.0.5 新增） |
-| 孤儿文件 orphan-files | `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（v1.0.6.34~36 真全选/固定表头/大分页交互优化） |
+| 孤儿文件 orphan-files | `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（v1.0.6.34~36 真全选/固定表头/大分页交互优化）；按文件夹展示开关（后端 `group_by_folder` 按直接父目录聚合分页，同目录≥2 文件折叠为文件夹行，单文件原样，纯展示、删除仍按文件，localStorage 持久化） |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
@@ -95,7 +95,7 @@
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates`，v1.0.5） |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
-| `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（`OrphanFiles`）；内部滚动固定表头并采用可视窗口渲染大页（v1.0.6.34~36 真全选/固定表头/大分页交互优化），忽视展示逐项失败原因；彻底删除只提交后台任务 |
+| `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（`OrphanFiles`）；内部滚动固定表头并采用可视窗口渲染大页（v1.0.6.34~36 真全选/固定表头/大分页交互优化），忽视展示逐项失败原因；彻底删除只提交后台任务；「按文件夹展示」切换按钮开启后请求 `group_by_folder=true`，由后端按直接父目录聚合分页（同目录≥2 文件折叠为 el-table 树形文件夹行，单文件原样；勾选文件夹行联动选中其全部子文件，反向同步文件夹行态；纯展示，删除/忽视仍展开为文件 id 提交后端；`btdeck_orphan_folder_view` localStorage 持久化） |
 | `404.vue` | 404 页面（`Page404`） |
 | `nested/*`（7 文件） | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 树形组件演示页（`Tree`） |

@@ -18,7 +18,7 @@
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
-| 孤儿文件管理 orphan | `orphan_file_service.py` | 孤儿文件管理（扫描/清理/隔离/恢复/彻底删除/中断恢复）；canonical_path 稳定身份；v1.0.6.34~36 大分页/真全选/忽视过滤 |
+| 孤儿文件管理 orphan | `orphan_file_service.py` | 孤儿文件管理（扫描/清理/隔离/恢复/彻底删除/中断恢复）；canonical_path 稳定身份；v1.0.6.34~36 大分页/真全选/忽视过滤；`get_orphan_list_grouped` 按直接父目录聚合分页（SQLite 自定义函数 `bt_orphan_parent_dir`，见 `orphan_folder_grouping.py`） |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `OrphanCurrentCandidate` 表生命周期推进（事务化状态落库） |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |
