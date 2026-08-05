@@ -1308,3 +1308,30 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - 后端相关回归 58 passed，数据库回滚 8 passed，目标 Flake8 通过。
 - 前端相关 Jest 48 passed，`typecheck`、`lint`、生产 `build` 通过；build 仅报告仓库既有 Sass/Element UI 弃用与体积警告。
 - 未执行 Git stage/commit/push/deploy。工作区中的 `.pnpm-store/`、tar、备份、诊断脚本等未跟踪文件均为用户既有产物，禁止纳入本轮提交。
+
+---
+
+## 2026-08-05 交接：孤儿文件筛选交互优化与通知大小格式化
+
+三项用户诉求已完成（经 3 轮子代理独立审查修订）：
+
+1. **去除最小大小筛选**：删除 `orphan-files/index.vue` 的 min_size 共6处；删除 `api/orphan-files.ts` 死类型字段。后端 `min_size` 保留兼容（记 backlog）。
+2. **通知释放空间自适应单位**：新建公共 `backend/app/utils/format_size.py`（2位小数 + B/KB/MB/GB/TB/PB 自动选单位）；`orphan_notification._format_size` 与 `orphan_purge_job_service` 释放空间行复用。验证：57286409241 → 53.35 GB ✅。
+3. **筛选下拉换 AdvancedMultiSelect（多选）**：后端 `_build_orphan_conditions` 对 downloader_id/confidence 支持 `in_`；**status 因三态互斥保持单选**（避免 or_ 退化为恒真）；前端 downloader_id/confidence 换 AdvancedMultiSelect，修复空数组提交判断 bug，status 保持 el-select。
+
+### 关键决策
+
+- **status 多选陷阱**：审查发现 pending/ignored/deleted 互斥，同时多选会让 `or_()` 退化为恒真。用户授权"用最佳判断处理"，故 status 保持单选。
+- **format_size 抽公共 utils** 而非跨服务依赖私有下划线函数。
+
+### 验证
+
+- 前端：56 passed；build/lint 通过；vue-tsc 2735 ≤ 基线 2736（未引入新错误）。
+- 后端：181 passed；black/flake8 通过；mypy 仅修 1 个自引入错误。
+- 未执行 Git stage/commit/push/deploy。
+
+### backlog
+
+- `orphan_purge_job.py:42 total_size: Integer` → 应改 BigInteger（已存在隐患）。
+- 后端 `min_size` 死参数长期清理。
+- `docs/roadmap/backend/services/orphan_file_service.md` 已更新本次触及符号行号，但存在历史漂移（非本次引入）。

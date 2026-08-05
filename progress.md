@@ -3013,3 +3013,64 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 前端 `error-normalize.spec.ts` 34 passed，确认 `202` 异步受理码不会被请求拦截器当作业务错误。
 - 前端 `npm.cmd run typecheck`、`npm.cmd run lint`、`npm.cmd run build` 通过；构建仅保留既有 Sass、Browserslist 和资源体积 warning。
 - 根 `bash ./init.sh --ci` 在当前 Windows/WSL 环境因 `E_ACCESSDENIED` 无法执行；未执行 Git stage/commit/push/deploy。会话开始前已有未跟踪目录、备份、镜像归档和工具文件均未触碰。
+
+## 2026-08-05 - 孤儿文件筛选交互优化与通知大小格式化
+
+### 背景
+
+用户提出三项调整诉求：1.孤儿种子页面去除"最小大小(字节)"筛选；2.孤儿种子页面下拉框采用种子列表页(列表模式)展示的下拉控件；3.清理/忽略种子通知的"释放空间"采用最接近的单位(如 57286409241 字节→53.35GB，而非 0.05TB 或 5万MB)。
+
+### 决策过程（关键）
+
+- 启动 3 轮子代理独立审查计划：前端深度、后端深度、规范完整性，每轮都实际读代码验证行号与调用点。
+- 用户明确选择"筛选下拉换样式"+"改成多选语义"。
+- **status 多选陷阱（我替用户做的判断）**：审查发现 status 三态(pending/ignored/deleted)互斥，同时多选会让 SQL `or_()` 退化为恒真条件（pending+ignored→所有未删除文件），这不是用户想要的过滤。用户授权"用最佳判断处理"，故决定 **status 保持单选(规避陷阱)，仅 downloader_id/confidence 改多选**。
+- 问题3 采纳审查建议：_format_size 抽公共 utils(format_size.py)而非跨服务依赖私有下划线函数。
+
+### 实现（按 1→3→2 低→高风险顺序）
+
+**问题1 - 去除最小大小筛选**：删除孤儿页面 index.vue 模板/类型/默认值/查询快照/提交转换/重置共6处；删除 api/orphan-files.ts 的 OrphanListParams.min_size 与 OrphanSelectionFilters.min_size 死类型字段；同步 orphan-files.spec.ts。后端 min_size 保留兼容(记 backlog)。
+
+**问题3 - 通知释放空间自适应单位**：新建 `backend/app/utils/format_size.py` 公共 `format_size`(自动选最近单位 B/KB/MB/GB/TB/PB，2位小数)；`orphan_notification._format_size` 改薄封装委托(扫描完成通知连带改善)；`orphan_purge_job_service` 释放空间行调用 format_size(用 int() 修 mypy Column 类型)。新增 test_format_size.py 11个边界测试。
+
+**问题2a - 后端多值过滤**：`_build_orphan_conditions` 对 downloader_id/confidence 支持 split(',')去重→单值==/多值in_(仿 duplicate_torrents 范式)；status 保持单值(三态互斥)；min_size 不动；4 调用点(list/grouped/resolve/prefix_preview)自动受益。更新 orphan_files.py 端点与 OrphanSelectionFilters 的 Query description 声明多值。
+
+**问题2b - 前端 AdvancedMultiSelect**：导出 AdvancedMultiSelect 的 SelectOption 类型；孤儿页面 downloader_id/confidence 的 el-select 换 AdvancedMultiSelect(allow-create=false, show-mode-toggle=false)；listQuery 字段改数组；**修复空数组提交判断 bug**(arr.length ? join : undefined，原 `|| undefined` 对空数组 truthy 失效)；status 保持 el-select；补 confidenceOptions getter(DownloaderOption 死接口删除)；测试同步 Vm 类型与 stub。
+
+### 验证
+
+- 前端：orphan-files.spec.ts 56 passed；npm run build 成功；npm run lint(含 contract:check) 通过；vue-tsc 类型错误数 2735 ≤ 基线 2736(未引入新错误，删除 min_size 字段反而消除 1 个旧错误)。
+- 后端：orphan+utils+通知相关 181 passed(含新增 format_size 11个 + 多值过滤 2个)；改动文件 black/flake8 通过；mypy 仅修 1 个自引入错误(281 行 format_size 参数类型，已用 int() 修复)。
+- 规范流程：feature_list.json 已登记 `orphan-files-filter-and-notification-polish`(3 task，status=done，含 evidence)；docs/roadmap 行号复测见下。
+
+### 待办与 backlog
+
+- `orphan_purge_job.py:42 total_size: Integer` 应改为 BigInteger(已存在隐患，单任务超 2GB 理论溢出)。
+- 后端 `min_size` 死参数长期清理(前端已不传，后端保留兼容)。
+- 未执行 Git stage/commit/push/deploy（按规范仅用户要求时提交）。
+
+## 2026-08-05(续) - status 多选 + 路径框样式对齐
+
+### 背景
+
+用户追加两项诉求：1.孤儿状态(status)下拉也采用 AdvancedMultiSelect；2.文件路径模糊搜索框样式对齐 AdvancedMultiSelect 触发器。
+
+### 决策（用户确认）
+
+- **status 多选语义**：用户选"OR 并集 + 前端提示"。三态互斥，pending 与 ignored/deleted 组合时 SQL 退化为"所有未删除文件"，前端在退化时显示 ⚠ 提示文案。
+- **路径框样式**：用户选"仅尺寸与圆角对齐"(32px 高/4px 圆角/12px 字号)，颜色仍用 el-input 默认。
+
+### 实现
+
+- **后端** `_build_orphan_conditions`：status 改为支持逗号多值，每个值用 `and_()` 打包(is_deleted + 忽视子查询)再 `or_()` 取并集；补 `and_`/`or_` import；单值仍走原路径(回归保护)。API description 与 OrphanSelectionFilters 同步声明多值。
+- **前端**：status el-select → AdvancedMultiSelect；listQuery.status 改数组；提交/重置同步；新增 `statusOptions` getter 与 `statusFilterDegraded` computed(检测 pending+ignored/deleted 组合)，退化时在字段下方显示 ⚠ 提示；新增 `.management-filter__hint` 全局样式。
+- **路径框**：path el-input 加 `orphan-path-input` class，scoped 注入 `::v-deep .el-input__inner` 的 32px/4px/12px 样式。
+- **类型**：OrphanListParams/OrphanSelectionFilters 的 status/confidence 改为 `string`(接受逗号串)，与 downloader_id 一致(顺带修复上次遗留的 confidence join 类型问题)。
+
+### 验证
+
+- 前端：56 passed；build 成功；lint 通过；vue-tsc 2736 = 基线(未引入新错误)。
+- 后端：orphan+utils 相关 158 passed(+1 skipped 预存)；black/flake8 通过；mypy status 分支无新错误(149 个均为预存 Column 误报)。
+- 文档：roadmap 行号复测更新(resolve_orphan_selection L184→L199, get_orphan_list L547→L562, 总行数 2776→2791)。
+
+### backlog（无变化，沿用上次）

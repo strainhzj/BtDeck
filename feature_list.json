@@ -1988,6 +1988,62 @@
           "evidence": "孤儿列表表头复选框不再依赖 Element 自带 selection 列（其数据源被虚拟窗口截成约 15 行），改为维护 select_all + excluded_orphan_ids + 当前筛选快照的独立选择模型，已选计数按服务端 total 计算并显示\"当前筛选全部\"标识；清理/忽视提交时由后端 resolve_orphan_selection 按与列表完全一致的 _build_orphan_conditions 把筛选快照解析为稳定 ID 集，并按 500/批切块避免 SQLite 绑定变量上限，清理预览对全选大批量截断为前 200 条明细并返回 items_truncated（计数与大小仍覆盖全部）。隔离区页签接入共享 management-table 表头类，与孤儿页签的表头布局、颜色、间距及固定方式一致。JSON/内容复制抽成共享 copyTextToClipboard：优先 Clipboard API，非安全上下文或权限拒绝时回退隐藏 textarea + execCommand，操作日志详情 JSON 与任务详情复制统一使用并保留成功/失败提示。操作日志搜索栏与操作栏拆为独立响应式布局，查询/重置/操作逻辑不变，前端补 torrent_name 查询参数对齐后端已有模糊搜索。孤儿后端全套 229 passed/1 skipped（含新增 select_all 解析用例），前端全量 Jest 31 suites/527 tests、typecheck、定向 ESLint、生产 build、Flake8 与 git diff --check 均通过；全量 mypy 仍为孤儿历史 SQLAlchemy 模块既有 Column 类型债务。"
         }
       ]
+    },
+    {
+      "id": "orphan-files-filter-and-notification-polish",
+      "name": "孤儿文件筛选交互优化与通知大小格式化",
+      "description": "三项调整：1.去除孤儿文件页面最小大小(字节)筛选（前端移除输入与类型，后端 min_size 参数保留以兼容）。2.下载器/置信度筛选改用与种子列表页(列表模式)一致的 AdvancedMultiSelect 多选控件（提交逗号串，后端 _build_orphan_conditions 支持 in_）；status 因三态互斥(避免 or_ 退化为恒真)保持单选。3.清理/忽略通知释放空间改用最接近单位+2位小数（新建公共 format_size utils，扫描完成通知连带改善）。经 3 轮子代理独立审查修订：修复空数组提交 truthy bug、补 allow-create=false、规避 status SQL 退化陷阱。 续:status 也改多选(OR 并集+前端退化提示),路径框尺寸对齐 AdvancedMultiSelect。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-files-filter-and-notification-polish.1",
+          "name": "去除最小大小筛选(前端)",
+          "description": "删除孤儿页面 index.vue 最小大小 label/input/类型/默认值/查询快照/提交转换/重置共6处；删除 api/orphan-files.ts 的 OrphanListParams.min_size 与 OrphanSelectionFilters.min_size 死类型字段；同步 orphan-files.spec.ts 移除 min_size 断言。后端 min_size 保留兼容。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "2026-08-05: 前端 56 个 orphan-files 单元测试全通过；npm run build 成功；ESLint 无错误；vue-tsc 类型错误数 2735 <= 基线 2736(未引入新错误)。后端 min_size 参数与 OrphanSelectionFilters.min_size 保留向后兼容，记入后续清理 backlog。"
+        },
+        {
+          "id": "orphan-files-filter-and-notification-polish.2",
+          "name": "通知释放空间自适应单位(后端)",
+          "description": "新建 app/utils/format_size.py 公共 format_size(自动选最近单位 B/KB/MB/GB/TB/PB,2位小数)；orphan_notification._format_size 改为薄封装委托公共函数(扫描完成通知连带改善)；orphan_purge_job_service 释放空间行调用 format_size。新增 test_format_size.py 边界测试,更新 test_orphan_notifications 与 test_orphan_purge_job_service 断言。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/utils/format_size.py",
+            "backend/app/services/orphan_notification.py",
+            "backend/app/services/orphan_purge_job_service.py",
+            "backend/tests/utils/test_format_size.py",
+            "backend/tests/services/test_orphan_notifications.py",
+            "backend/tests/services/test_orphan_purge_job_service.py"
+          ],
+          "evidence": "2026-08-05: format_size(57286409241)==53.35 GB 符合用户示例；format_size 11个边界单测通过；orphan 相关 181 个测试全通过；改动文件 black/flake8 通过；mypy 仅 1 个 281 错误已用 int() 修复(其余为预存 Column 误报)。"
+        },
+        {
+          "id": "orphan-files-filter-and-notification-polish.3",
+          "name": "筛选下拉换 AdvancedMultiSelect 多选(跨端)",
+          "description": "后端: _build_orphan_conditions 对 downloader_id/confidence/status 全部支持 split 去重->单值==/多值in_或OR并集(仿 duplicate_torrents);status 三态互斥,多值时每个用 and_() 打包(is_deleted+忽视子查询)再 or_() 取并集,pending 与 ignored/deleted 组合退化为所有未删除文件(前端给提示);min_size 不动;4 调用点自动受益。更新 orphan_files.py 端点与 OrphanSelectionFilters 的 Query description 声明多值。前端: 导出 AdvancedMultiSelect 的 SelectOption 类型;孤儿页面 downloader_id/confidence/status 三个 el-select 全换 AdvancedMultiSelect(allow-create=false,show-mode-toggle=false);listQuery 字段改数组;修复空数组提交判断(arr.length?join:undefined);新增 statusFilterDegraded computed 检测退化组合并显示提示;路径框 path el-input 尺寸对齐(32px/4px/12px);测试同步。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_ignore_and_filters.py",
+            "frontend/src/components/torrents/AdvancedMultiSelect.vue",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "frontend/src/styles/management-list-page.scss"
+          ],
+          "evidence": "2026-08-05(续): status 改多选 OR 并集(and_/or_ import),新增 status 多值测试(ignored+deleted 正常并集 / pending+deleted / pending+ignored 退化 / 去重),27 个 filter 测试全通过。前端 status 换 AdvancedMultiSelect + 退化提示;路径框 32px/4px/12px 对齐。OrphanListParams/OrphanSelectionFilters 的 status/confidence改 string(接受逗号串,顺带修复上次遗留 confidence join 类型问题)。前端 56 passed,build/lint 通过,vue-tsc 2736=基线。后端 158 passed,black/flake8 通过,mypy status 分支无新错误。"
+        }
+      ]
     }
   ]
 }

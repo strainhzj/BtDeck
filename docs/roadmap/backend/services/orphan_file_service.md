@@ -9,9 +9,9 @@
 | 项目 | 值 |
 |------|-----|
 | 源路径 | `backend/app/services/orphan_file_service.py` |
-| 行数 | 2482（实测 `wc -l`） |
-| 模块职责 | 孤儿文件管理：扫描上下文/清理与隔离/恢复/彻底删除/中断恢复；候选以 canonical_path 为稳定身份；v1.0.6.34~36 扩展列表大分页/真全选/忽视过滤 |
-| 顶层符号 | 1 class（`OrphanFileService` L61）+ 1 模块级工具函数（`_chunk_values` L55） |
+| 行数 | 2791（实测 `wc -l`） |
+| 模块职责 | 孤儿文件管理：扫描上下文/清理与隔离/恢复/彻底删除/中断恢复；候选以 canonical_path 为稳定身份；v1.0.6.34~36 扩展列表大分页/真全选/忽视过滤；v1.0.6+ downloader_id/confidence/status 全部支持逗号多值(单值==/多值in_ 或 OR 并集)，status 三态互斥时 OR 退化为“所有未删除文件”(前端给提示) |
+| 顶层符号 | 1 class（`OrphanFileService` L62）+ 1 模块级工具函数（`_chunk_values` L56） |
 
 ---
 
@@ -19,6 +19,7 @@
 
 - **选择身份**：孤儿候选以 `canonical_path` 为稳定身份；`resolve_orphan_selection` 把显式勾选或当前筛选全集解析为稳定明细 ID 快照。
 - **全选语义（v1.0.6.35）**：`select_all=true` 时以筛选条件重建全量 ID（绑定 scan_id），扣除 `excluded_orphan_ids`。
+- **多值过滤（v1.0.6+）**：`_build_orphan_conditions` 对 `downloader_id`/`confidence`/`status` 全部支持逗号分隔多值。downloader_id/confidence 用 `in_`；status 三态(pending/ignored/deleted)互斥，多值时每个用 `and_()` 打包(is_deleted+忽视子查询)再用 `or_()` 取并集——pending 与 ignored/deleted 组合会退化为“所有未删除文件”(前端给提示)。单值仍走原路径(回归保护)。`min_size` 数值区间不动。list/grouped/resolve/prefix_preview 4 个调用点共用此方法。
 - **安全清理**：`cleanup_orphans` 有新鲜度门禁（最新扫描必须 completed、scan_id 必须最新）+ 删除前实时复核文件身份（size/mtime_ns/inode/符号链接/路径逃逸），不提供 force 绕过。
 - **物理操作安全**：仅用 `os.rmdir` 回收记录隔离根内的空 UUID/scan-id 目录。
 
@@ -33,8 +34,8 @@
 | L64 | `__init__` | def | `(self, db: AsyncSession)` |
 | L68 | `_detail_canonical_path` | static | 取明细 canonical_path |
 | L74 | `_sync_candidate_owner` | def | 同步候选归属 |
-| L96 | `_build_orphan_conditions` | def | 构造筛选条件（downloader/path/status/confidence/min_size） |
-| L143 | `resolve_orphan_selection` | async def | **全选/勾选解析为稳定 ID 快照** |
+| L97 | `_build_orphan_conditions` | def | 构造筛选条件（downloader/path/status/confidence/min_size；downloader_id/confidence 支持逗号多值 in_） |
+| L199 | `resolve_orphan_selection` | async def | **全选/勾选解析为稳定 ID 快照** |
 | L180 | `_load_orphan_details` | async def | 按 ID 加载明细 |
 | L210 | `_load_candidates` | async def | 加载候选 |
 | L235 | `_get_latest_scan` | async def | 取最新扫描（可按 status） |
@@ -51,7 +52,7 @@
 | L449 | `_authorize_low_confidence` | static | 低置信度授权 |
 | L482 | `_owning_root` | static | 归属根 |
 | L497 | `get_latest_scan_result` | async def | 最新扫描结果 |
-| L504 | `get_orphan_list` | async def | **列表大分页 + 扫描上下文** |
+| L562 | `get_orphan_list` | async def | **列表大分页 + 扫描上下文** |
 | L645 | `_enrich_items` | async def | 补充条目 |
 | L694 | `reconcile_stable_candidate_details` | async def | 对账稳定候选明细 |
 | L780 | `cleanup_preview` | async def | 清理预览 |
@@ -96,9 +97,9 @@ async def resolve_orphan_selection(
     """把显式勾选或当前筛选全集解析为稳定的明细 ID 快照。"""
 ```
 
-- **定位**：`orphan_file_service.py:143`
+- **定位**：`orphan_file_service.py:199`
 - **职责**：`select_all=false` 时返回去重后的显式 `orphan_ids`（空则报错）；`select_all=true` 时用 `_build_orphan_conditions` 按筛选条件重建全量 ID（须绑定 scan_id），扣除 `excluded_orphan_ids`。
-- **调用链**：`_build_orphan_conditions`（L96）→ `db.execute(select(OrphanFile.id))` → 排除集过滤。
+- **调用链**：`_build_orphan_conditions`（L97）→ `db.execute(select(OrphanFile.id))` → 排除集过滤。
 
 ### `get_orphan_list` — 列表大分页 + 扫描上下文
 
