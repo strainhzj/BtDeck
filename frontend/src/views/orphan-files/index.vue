@@ -105,7 +105,7 @@
           <el-input
             id="orphan-path-like"
             v-model="listQuery.path_like"
-            class="management-filter__control"
+            class="management-filter__control orphan-path-input"
             placeholder="路径关键字模糊匹配"
             prefix-icon="el-icon-search"
             clearable
@@ -115,63 +115,51 @@
         </div>
         <div class="management-filter__field">
           <label class="management-filter__label" for="orphan-downloader">下载器</label>
-          <el-select
-            id="orphan-downloader"
+          <AdvancedMultiSelect
             v-model="listQuery.downloader_id"
+            :options="downloaderOptions"
+            :allow-create="false"
+            :show-mode-toggle="false"
+            :virtual-scroll-threshold="100"
+            :list-height="240"
             class="management-filter__control"
-            placeholder="全部下载器"
-            clearable
-            filterable
             @change="handleFilter"
-          >
-            <el-option
-              v-for="opt in downloaderOptions"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
+          />
         </div>
         <div class="management-filter__field">
-          <label class="management-filter__label" for="orphan-status">状态</label>
-          <el-select
-            id="orphan-status"
+          <label class="management-filter__label" for="orphan-status">
+            状态
+            <el-tooltip
+              v-if="statusFilterDegraded"
+              content="同时选“待清理”与“已忽视/已清理”会扩大为全部未删除文件"
+              placement="top"
+              :open-delay="200"
+            >
+              <span class="management-filter__warn-icon" aria-label="筛选组合提示">⚠</span>
+            </el-tooltip>
+          </label>
+          <AdvancedMultiSelect
             v-model="listQuery.status"
+            :options="statusOptions"
+            :allow-create="false"
+            :show-mode-toggle="false"
+            :virtual-scroll-threshold="100"
+            :list-height="240"
             class="management-filter__control"
-            placeholder="全部状态"
-            clearable
             @change="handleFilter"
-          >
-            <el-option label="待清理" value="pending" />
-            <el-option label="已忽视" value="ignored" />
-            <el-option label="已清理" value="deleted" />
-          </el-select>
+          />
         </div>
         <div class="management-filter__field">
           <label class="management-filter__label" for="orphan-confidence">置信度</label>
-          <el-select
-            id="orphan-confidence"
+          <AdvancedMultiSelect
             v-model="listQuery.confidence"
+            :options="confidenceOptions"
+            :allow-create="false"
+            :show-mode-toggle="false"
+            :virtual-scroll-threshold="100"
+            :list-height="240"
             class="management-filter__control"
-            placeholder="全部置信度"
-            clearable
             @change="handleFilter"
-          >
-            <el-option label="高置信度" value="high" />
-            <el-option label="低置信度" value="low" />
-          </el-select>
-        </div>
-        <div class="management-filter__field">
-          <label class="management-filter__label" for="orphan-min-size">最小大小(字节)</label>
-          <el-input
-            id="orphan-min-size"
-            v-model.number="listQuery.min_size"
-            class="management-filter__control"
-            placeholder="如 10485760"
-            type="number"
-            clearable
-            @keyup.enter.native="handleFilter"
-            @clear="handleFilter"
           />
         </div>
         <div class="management-filter__actions">
@@ -633,21 +621,17 @@ import {
 import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { formatFileSize, formatDate, extractErrorMessage } from '@/utils/formatters'
 import PageSizeCombobox, { PageSizeSuggestion } from '@/components/torrents/PageSizeCombobox.vue'
+import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
+import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
 import { normalizeTraditionalPageSize } from '@/views/torrents/utils/traditionalPagination'
 
 interface OrphanListQuery {
   page: number
   page_size: number
-  downloader_id: string
+  downloader_id: string[]
   path_like: string
-  status: OrphanStatusFilter | ''
-  confidence: OrphanConfidence | ''
-  min_size: number | ''
-}
-
-interface DownloaderOption {
-  value: string
-  label: string
+  status: OrphanStatusFilter[]
+  confidence: OrphanConfidence[]
 }
 
 interface OrphanTableRef extends Vue {
@@ -665,7 +649,7 @@ function isFolderRow(row: OrphanTableRow | undefined | null): row is OrphanFolde
   return !!row && (row as OrphanFolderRow)._is_folder === true
 }
 
-@Component({ name: 'OrphanFiles', components: { PageSizeCombobox } })
+@Component({ name: 'OrphanFiles', components: { PageSizeCombobox, AdvancedMultiSelect } })
 export default class OrphanFiles extends Vue {
   private list: OrphanFileItem[] = []
   private total = 0
@@ -675,11 +659,10 @@ export default class OrphanFiles extends Vue {
   private listQuery: OrphanListQuery = {
     page: 1,
     page_size: 20,
-    downloader_id: '',
+    downloader_id: [],
     path_like: '',
-    status: '',
-    confidence: '',
-    min_size: ''
+    status: [],
+    confidence: []
   }
   private refreshRequestSeq = 0
   // 页面 Tab：orphans=孤儿文件，quarantine=隔离区
@@ -931,11 +914,38 @@ export default class OrphanFiles extends Vue {
     return this.selectedFileIds.length
   }
 
-  private get downloaderOptions(): DownloaderOption[] {
+  private get downloaderOptions(): SelectOption[] {
     return this.downloaderList.map((d) => ({
       value: d.downloader_id,
       label: d.nickname || d.downloader_id
     }))
+  }
+
+  /** 置信度筛选选项（值与 OrphanConfidence 联合类型对齐，防拼写漂移）。 */
+  private get confidenceOptions(): SelectOption[] {
+    return [
+      { value: 'high', label: '高置信度' },
+      { value: 'low', label: '低置信度' }
+    ]
+  }
+
+  /** 状态筛选选项（值与 OrphanStatusFilter 联合类型对齐，防拼写漂移）。 */
+  private get statusOptions(): SelectOption[] {
+    return [
+      { value: 'pending', label: '待清理' },
+      { value: 'ignored', label: '已忽视' },
+      { value: 'deleted', label: '已清理' }
+    ]
+  }
+
+  /**
+   * status 多选退化检测：pending 与 ignored/deleted 同选时，后端 OR 会退化为
+   * “所有未删除文件”（pending+ignored 恒真；pending+deleted 含全部未删除+已删除），
+   * 结果反直觉，故在 UI 给出提示。
+   */
+  private get statusFilterDegraded(): boolean {
+    const s = this.listQuery.status
+    return s.includes('pending') && (s.includes('ignored') || s.includes('deleted'))
   }
 
   // ========== 批量按钮启停（按选中主导状态，基于展开后的文件）==========
@@ -1029,22 +1039,25 @@ export default class OrphanFiles extends Vue {
       downloader_id: this.listQuery.downloader_id,
       path_like: this.listQuery.path_like,
       status: this.listQuery.status,
-      confidence: this.listQuery.confidence,
-      min_size: this.listQuery.min_size
+      confidence: this.listQuery.confidence
     })
     this.listLoading = true
     try {
       const params: OrphanListParams = {
         page: querySnapshot.page,
         page_size: querySnapshot.page_size,
-        downloader_id: querySnapshot.downloader_id || undefined,
+        // 多选数组转逗号串（后端按逗号分隔多值过滤）；空数组不传
+        downloader_id: querySnapshot.downloader_id.length
+          ? querySnapshot.downloader_id.join(',')
+          : undefined,
         path_like: querySnapshot.path_like || undefined,
-        status: querySnapshot.status || undefined,
-        min_size: querySnapshot.min_size === '' ? undefined : Number(querySnapshot.min_size),
+        status: querySnapshot.status.length
+          ? querySnapshot.status.join(',')
+          : undefined,
+        confidence: querySnapshot.confidence.length
+          ? querySnapshot.confidence.join(',')
+          : undefined,
         group_by_folder: this.folderView || undefined
-      }
-      if (querySnapshot.confidence) {
-        params.confidence = querySnapshot.confidence
       }
       const response = await getOrphanList(params)
       if (requestId !== this.refreshRequestSeq) return
@@ -1075,11 +1088,10 @@ export default class OrphanFiles extends Vue {
     this.listQuery = {
       page: 1,
       page_size: this.listQuery.page_size,
-      downloader_id: '',
+      downloader_id: [],
       path_like: '',
-      status: '',
-      confidence: '',
-      min_size: ''
+      status: [],
+      confidence: []
     }
     void this.refreshPageData()
   }
@@ -1688,6 +1700,17 @@ export default class OrphanFiles extends Vue {
   > span:not(.el-table__expand-icon) {
     flex: 1 1 auto;
     min-width: 0;
+  }
+}
+
+// 路径模糊搜索框：尺寸/圆角/字号对齐同筛选区 AdvancedMultiSelect 触发器（32px/4px/12px），
+// 与下载器/状态/置信度三个下拉框视觉等高。
+.orphan-path-input {
+  ::v-deep .el-input__inner {
+    height: 32px;
+    line-height: 32px;
+    font-size: 12px;
+    border-radius: 4px;
   }
 }
 </style>

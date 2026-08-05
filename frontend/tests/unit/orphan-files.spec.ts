@@ -127,11 +127,10 @@ interface OrphanFilesVm extends Vue {
   listQuery: {
     page: number
     page_size: number
-    downloader_id: string
+    downloader_id: string[]
     path_like: string
-    status: string
-    confidence: string
-    min_size: number | ''
+    status: string[]
+    confidence: string[]
   }
   selectedIds: number[]
   selectedRows: OrphanTableRow[]
@@ -363,7 +362,8 @@ function mountView(): Wrapper<Vue> {
       'el-checkbox': true,
       'el-select': true,
       'el-option': true,
-      'el-tooltip': true
+      'el-tooltip': true,
+      AdvancedMultiSelect: true
     }
   })
 }
@@ -551,7 +551,7 @@ describe('orphan files atomic page state', () => {
     clearSelection.mockClear()
     vm.listQuery.page = 3
     vm.listQuery.page_size = 50
-    vm.listQuery.downloader_id = 'dl-filter'
+    vm.listQuery.downloader_id = ['dl-filter']
     vm.selectedRows = [orphanItem(1)]
     mockGetOrphanList.mockResolvedValueOnce(
       listResponse(scanContext(), [orphanItem(3)], 120, 3)
@@ -565,16 +565,15 @@ describe('orphan files atomic page state', () => {
       downloader_id: 'dl-filter',
       path_like: undefined,
       status: undefined,
-      min_size: undefined
+      confidence: undefined
     })
     expect(vm.listQuery).toEqual({
       page: 1,
       page_size: 50,
-      downloader_id: 'dl-filter',
+      downloader_id: ['dl-filter'],
       path_like: '',
-      status: '',
-      confidence: '',
-      min_size: ''
+      status: [],
+      confidence: []
     })
     expect(vm.selectedIds).toEqual([])
     // refreshPageData 现在会清空当前页选择（传统分页标准行为），通过 el-table ref 调 clearSelection
@@ -734,8 +733,8 @@ describe('orphan files atomic page state', () => {
     expect(vm.listLoading).toBe(false)
     expect(clearSelection).not.toHaveBeenCalled()
     expect(mockGetOrphanList.mock.calls.slice(-2)).toEqual([
-      [{ page: 2, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }],
-      [{ page: 3, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined, min_size: undefined }]
+      [{ page: 2, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined }],
+      [{ page: 3, page_size: 20, downloader_id: undefined, path_like: undefined, status: undefined }]
     ])
   })
 
@@ -844,8 +843,7 @@ describe('orphan files atomic page state', () => {
       page_size: 20,
       downloader_id: undefined,
       path_like: undefined,
-      status: undefined,
-      min_size: undefined
+      status: undefined
     })
     expect(vm.listQuery.page).toBe(2)
     expect(vm.selectedRows).toEqual([])
@@ -877,7 +875,7 @@ describe('orphan files atomic page state', () => {
     const pending3 = orphanItem(3)
     vm.list = [pending1, deletedRow, pending3]
     vm.total = 100
-    vm.listQuery.status = 'pending'
+    vm.listQuery.status = ['pending']
 
     // el-table 的 :selectable=rowSelectable 保证 deleted 行不可选，
     // 故 selection-change 只回调可选行
@@ -924,7 +922,7 @@ describe('orphan files atomic page state', () => {
     const pending3 = orphanItem(3)
     vm.list = [pending1, pending3]
     vm.total = 50
-    vm.listQuery.status = 'pending'
+    vm.listQuery.status = ['pending']
     vm.handleOrphanSelectionChange([pending1, pending3])
 
     await vm.handleBatchIgnore(true)
@@ -945,7 +943,7 @@ describe('orphan files atomic page state', () => {
     const pending1 = orphanItem(1)
     vm.list = [pending1]
     vm.total = 30
-    vm.listQuery.status = 'pending'
+    vm.listQuery.status = ['pending']
     vm.handleOrphanSelectionChange([pending1])
 
     await vm.handleCleanupPreview()
@@ -977,7 +975,7 @@ describe('orphan files atomic page state', () => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
-    vm.listQuery.confidence = 'low'
+    vm.listQuery.confidence = ['low']
     mockGetOrphanList.mockResolvedValueOnce(
       listResponse(scanContext(), [orphanItem(7)], 1, 1)
     )
@@ -991,7 +989,6 @@ describe('orphan files atomic page state', () => {
       downloader_id: undefined,
       path_like: undefined,
       status: undefined,
-      min_size: undefined,
       confidence: 'low'
     })
     expect(vm.list.map((item) => item.id)).toEqual([7])
@@ -1014,15 +1011,13 @@ describe('orphan files atomic page state', () => {
     await flushLifecycle()
     const vm = viewModel(wrapper)
     vm.listQuery.path_like = '/movie'
-    vm.listQuery.status = 'ignored'
-    vm.listQuery.confidence = 'low'
-    vm.listQuery.min_size = 1024
+    vm.listQuery.status = ['ignored']
+    vm.listQuery.confidence = ['low']
     vm.handleResetFilter()
 
     expect(vm.listQuery.path_like).toBe('')
-    expect(vm.listQuery.status).toBe('')
-    expect(vm.listQuery.confidence).toBe('')
-    expect(vm.listQuery.min_size).toBe('')
+    expect(vm.listQuery.status).toEqual([])
+    expect(vm.listQuery.confidence).toEqual([])
   })
 
   it('批量忽视调用 setIgnored 并刷新列表', async() => {

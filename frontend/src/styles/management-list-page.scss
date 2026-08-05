@@ -90,6 +90,19 @@
   width: 100%;
 }
 
+// 状态筛选组合退化提示图标（label 内联，hover 显示 tooltip，不占额外布局空间）：
+// pending 与 ignored/deleted 同选时 OR 会退化为“所有未删除文件”。
+.management-filter__warn-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  color: var(--color-warning, #d97706);
+  font-size: var(--font-size-sm, 12px);
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
 .management-filter__actions {
   display: flex;
   flex-wrap: wrap;

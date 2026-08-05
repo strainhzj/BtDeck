@@ -340,7 +340,7 @@ import VirtualScrollList from './VirtualScrollList.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 
 // 选项接口
-interface SelectOption {
+export interface SelectOption {
   value: string | number
   label: string
   icon?: string

@@ -246,21 +246,20 @@ export interface OrphanListParams {
   page?: number
   page_size?: number
   downloader_id?: string
-  min_size?: number
   path_like?: string
-  status?: OrphanStatusFilter
-  confidence?: OrphanConfidence
+  // status/confidence 支持逗号分隔多值（后端 OR 并集过滤），故用 string 而非单值联合类型
+  status?: string
+  confidence?: string
   /** 按文件夹（直接父目录）聚合分页：true 时同目录≥2 文件折叠为文件夹行 */
   group_by_folder?: boolean
 }
 
 export interface OrphanSelectionFilters {
   downloader_id?: string
-  min_size?: number
   path_like?: string
   path_prefix?: string
-  status?: OrphanStatusFilter
-  confidence?: OrphanConfidence
+  status?: string
+  confidence?: string
 }
 
 export interface OrphanSelectionPayload {
