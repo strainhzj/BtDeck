@@ -142,6 +142,10 @@ async def get_orphan_list(
         default=None,
         description="置信度筛选：high=高置信度，low=低置信度",
     ),
+    group_by_folder: bool = Query(
+        default=False,
+        description="按文件夹（直接父目录）聚合分页：True 时同目录下≥2 个文件折叠为文件夹行，单文件保持原样；分页单位为文件夹组",
+    ),
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
@@ -150,19 +154,34 @@ async def get_orphan_list(
     scan_context 区分最新扫描尝试、页面展示的成功批次、扫描原始统计与
     尚未清理的动态统计；最新 running 不回退，最新 failed 仅只读展示
     最近成功批次。支持按 下载器/路径/状态/置信度/大小 多条件筛选与分页。
+
+    group_by_folder=True 时改走文件夹聚合分页（仅影响列表数据形态，
+    scan_context 统计口径不变）；默认 False 保持扁平文件行分页，向后兼容。
     """
     try:
         service = OrphanFileService(db)
-        result = await service.get_orphan_list(
-            page=page,
-            page_size=page_size,
-            downloader_id=downloader_id,
-            min_size=min_size,
-            path_like=path_like,
-            path_prefix=path_prefix,
-            status=status,
-            confidence=confidence,
-        )
+        if group_by_folder:
+            result = await service.get_orphan_list_grouped(
+                page=page,
+                page_size=page_size,
+                downloader_id=downloader_id,
+                min_size=min_size,
+                path_like=path_like,
+                path_prefix=path_prefix,
+                status=status,
+                confidence=confidence,
+            )
+        else:
+            result = await service.get_orphan_list(
+                page=page,
+                page_size=page_size,
+                downloader_id=downloader_id,
+                min_size=min_size,
+                path_like=path_like,
+                path_prefix=path_prefix,
+                status=status,
+                confidence=confidence,
+            )
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询孤儿文件列表失败: {e}", exc_info=True)

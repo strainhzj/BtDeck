@@ -23,10 +23,11 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
 
-from sqlalchemy import case, func, select, update
+from sqlalchemy import case, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
+from app.services.orphan_folder_grouping import orphan_parent_dir
 from app.services.orphan_lifecycle_service import OrphanLifecycleService
 from app.services.orphan_manifest import (
     ManifestSnapshot,
@@ -146,6 +147,29 @@ class OrphanFileService:
             escaped_pfx = path_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(OrphanFile.file_path.like(f"{escaped_pfx}%", escape="\\"))
         return conditions
+
+    @staticmethod
+    def _orphan_order_columns() -> tuple:
+        """构造孤儿文件列表的稳定排序键（confidence_rank, ignored_rank）。
+
+        - confidence_rank：高置信度=0（靠前），低置信度=1。
+        - ignored_rank：已忽视=1（沉底），其余=0。
+
+        供 get_orphan_list 与 get_orphan_list_grouped 共用，避免排序逻辑漂移。
+        组内最终排序为 ``confidence_rank, ignored_rank, file_size DESC, id ASC``。
+        """
+        confidence_rank = case(
+            (OrphanFile.confidence == "high", 0),
+            else_=1,
+        )
+        ignored_paths_subq = select(OrphanCurrentCandidate.canonical_path).where(
+            OrphanCurrentCandidate.is_ignored == True  # noqa: E712
+        )
+        ignored_rank = case(
+            (OrphanFile.canonical_path.in_(ignored_paths_subq), 1),
+            else_=0,
+        )
+        return confidence_rank, ignored_rank
 
     async def resolve_orphan_selection(
         self,
@@ -614,20 +638,7 @@ class OrphanFileService:
 
         # 排序：高置信度优先，其次被忽视的孤儿文件优先级最低（沉底），
         # 组内再按文件大小降序和 ID 升序保持稳定。
-        confidence_rank = case(
-            (OrphanFile.confidence == "high", 0),
-            else_=1,
-        )
-        # 被忽视的孤儿文件优先级最低（沉底），待清理/已清理数据排列在前。
-        # 通过 canonical_path 与候选忽视集合做联表判定，生成 0/1 排序键：
-        # 非忽视=0（靠前）、已忽视=1（沉底）；组内保持 file_size DESC、id ASC 稳定排序。
-        ignored_paths_subq = select(OrphanCurrentCandidate.canonical_path).where(
-            OrphanCurrentCandidate.is_ignored == True  # noqa: E712
-        )
-        ignored_rank = case(
-            (OrphanFile.canonical_path.in_(ignored_paths_subq), 1),
-            else_=0,
-        )
+        confidence_rank, ignored_rank = self._orphan_order_columns()
         list_query = select(OrphanFile).order_by(
             confidence_rank.asc(),
             ignored_rank.asc(),
@@ -652,6 +663,229 @@ class OrphanFileService:
             "pageSize": page_size,
             "list": item_dicts,
             "scan_context": scan_context,
+        }
+
+    async def get_orphan_list_grouped(
+        self,
+        page: int = 1,
+        page_size: int = 20,
+        downloader_id: Optional[str] = None,
+        min_size: Optional[int] = None,
+        include_deleted: bool = False,
+        path_like: Optional[str] = None,
+        path_prefix: Optional[str] = None,
+        status: Optional[str] = None,
+        confidence: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """按直接父目录聚合分页查询孤儿文件列表。
+
+        与 ``get_orphan_list`` 共用相同的 scan_context / remaining / ignored 统计口径
+        （文件级），区别仅在列表数据形态：本方法把同一直接父目录下的文件聚合。
+
+        - cnt >= 2 的组 → 组装为 OrphanFolderRow（含 children / 聚合字段）
+        - cnt == 1 的组 → 直接返回该 OrphanFileItem（保持原样，单文件不折叠）
+        - 分页单位为"文件夹组"，``total`` = 组数
+        - 组间排序：组内最大文件大小降序、父目录路径字典序升序
+        - 组内排序：复用 _orphan_order_columns 的稳定排序（confidence/ignored/file_size/id）
+
+        父目录计算由注册到 SQLite 连接的 ``bt_orphan_parent_dir`` 自定义函数完成，
+        支持 ``/`` 与 ``\\`` 分隔符统一处理。
+        """
+        # aiosqlite 下 connect 事件不生效，需在查询前显式注册自定义函数。
+        # driver_connection 是 aiosqlite.Connection，其 create_function 为协程，
+        # 会安全转发到 worker 线程注册到真实 sqlite3 连接。
+        try:
+            sa_conn = await self.db.connection()
+            raw_conn = await sa_conn.get_raw_connection()
+            aio_conn = raw_conn.driver_connection
+            if aio_conn is not None and hasattr(aio_conn, "create_function"):
+                await aio_conn.create_function("bt_orphan_parent_dir", 1, orphan_parent_dir)
+        except (AttributeError, TypeError):
+            pass
+        latest_attempt = await self._get_latest_scan()
+        display_scan: Optional[OrphanScanResult] = None
+        if latest_attempt is not None:
+            if latest_attempt.status == "completed":
+                display_scan = latest_attempt
+            elif latest_attempt.status == "failed":
+                display_scan = await self._get_latest_scan(status="completed")
+
+        gate = self._evaluate_cleanup_snapshot(
+            latest_attempt,
+            display_scan.scan_id if display_scan is not None else None,
+        )
+        scan_context: Dict[str, Any] = {
+            "latest_attempt": latest_attempt.to_dict() if latest_attempt is not None else None,
+            "display_scan": display_scan.to_dict() if display_scan is not None else None,
+            "remaining_count": 0,
+            "remaining_size": 0,
+            "ignored_count": 0,
+            "cleanup_allowed": gate["allowed"],
+            "cleanup_block_reason": gate["reason"],
+        }
+        if display_scan is None:
+            return {
+                "total": 0,
+                "page": page,
+                "pageSize": page_size,
+                "list": [],
+                "scan_context": scan_context,
+            }
+
+        remaining_result = await self.db.execute(
+            select(
+                func.count(OrphanFile.id),
+                func.coalesce(func.sum(OrphanFile.file_size), 0),
+            ).where(
+                OrphanFile.scan_id == display_scan.scan_id,
+                OrphanFile.is_deleted == False,  # noqa: E712
+            )
+        )
+        remaining_count, remaining_size = remaining_result.one()
+        scan_context["remaining_count"] = int(remaining_count or 0)
+        scan_context["remaining_size"] = int(remaining_size or 0)
+
+        ignored_count_result = await self.db.execute(
+            select(func.count(OrphanFile.id)).where(
+                OrphanFile.scan_id == display_scan.scan_id,
+                OrphanFile.is_deleted == False,  # noqa: E712
+                OrphanFile.canonical_path.in_(
+                    select(OrphanCurrentCandidate.canonical_path).where(
+                        OrphanCurrentCandidate.is_ignored == True  # noqa: E712
+                    )
+                ),
+            )
+        )
+        scan_context["ignored_count"] = int(ignored_count_result.scalar() or 0)
+
+        conditions = self._build_orphan_conditions(
+            cast(str, display_scan.scan_id),
+            downloader_id=downloader_id,
+            min_size=min_size,
+            include_deleted=include_deleted,
+            path_like=path_like,
+            path_prefix=path_prefix,
+            status=status,
+            confidence=confidence,
+        )
+
+        # 父目录自定义函数表达式（GROUP BY / WHERE IN 共用同一实例）
+        parent_dir_func = func.bt_orphan_parent_dir(OrphanFile.file_path)
+
+        # 分组分页：对所有父目录组统一分页（不挂 HAVING，单文件组也纳入流）。
+        group_query = (
+            select(
+                parent_dir_func.label("pdir"),
+                func.count().label("cnt"),
+                func.max(OrphanFile.file_size).label("max_size"),
+            )
+            .where(*conditions)
+            .group_by(parent_dir_func)
+        )
+
+        # total = 组数（子查询计数）
+        count_result = await self.db.execute(select(func.count()).select_from(group_query.subquery()))
+        total = int(count_result.scalar() or 0)
+
+        # 本页组：组内最大文件降序、父目录字典序升序
+        page_query = (
+            group_query.order_by(
+                text("max_size DESC"),
+                text("pdir ASC"),
+            )
+            .offset((page - 1) * page_size)
+            .limit(page_size)
+        )
+        page_result = await self.db.execute(page_query)
+        page_groups = page_result.all()
+
+        if not page_groups:
+            return {
+                "total": total,
+                "page": page,
+                "pageSize": page_size,
+                "list": [],
+                "scan_context": scan_context,
+            }
+
+        pdirs = [g.pdir for g in page_groups]
+
+        # 拉本页组对应的全部子文件，按现有稳定排序
+        confidence_rank, ignored_rank = self._orphan_order_columns()
+        children_query = (
+            select(OrphanFile)
+            .where(*conditions, parent_dir_func.in_(pdirs))
+            .order_by(
+                confidence_rank.asc(),
+                ignored_rank.asc(),
+                OrphanFile.file_size.desc(),
+                OrphanFile.id.asc(),
+            )
+        )
+        children_result = await self.db.execute(children_query)
+        children_rows = children_result.scalars().all()
+
+        # 批量注入 downloader_name / 忽视态（复用 _enrich_items）
+        children_dicts = [item.to_dict() for item in children_rows]
+        await self._enrich_items(children_dicts)
+
+        # 按 pdir 分桶组装（保持 page_groups 的组间顺序）
+        buckets: Dict[str, List[Dict[str, Any]]] = {}
+        for child_dict, child_row in zip(children_dicts, children_rows):
+            pdir = orphan_parent_dir(child_row.file_path)
+            buckets.setdefault(pdir, []).append(child_dict)
+
+        item_list: List[Dict[str, Any]] = []
+        for g in page_groups:
+            children = buckets.get(g.pdir, [])
+            if len(children) <= 1:
+                # cnt=1（或异常 0）：单文件原样返回，不组装为文件夹行
+                item_list.extend(children)
+            else:
+                item_list.append(self._build_folder_row(g.pdir, children))
+
+        return {
+            "total": total,
+            "page": page,
+            "pageSize": page_size,
+            "list": item_list,
+            "scan_context": scan_context,
+        }
+
+    def _build_folder_row(self, folder_path: str, children: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """组装文件夹聚合行 DTO（仅前端展示用，snake_case 对齐前端契约）。
+
+        聚合字段（all_pending 等）从 children 推导；children 为已 _enrich_items
+        注入完整字段的 OrphanFileItem dict 列表。
+        """
+        child_ids = [c["id"] for c in children]
+        total_size = sum(int(c.get("file_size") or 0) for c in children)
+        mtimes = [c["mtime"] for c in children if c.get("mtime")]
+        latest_mtime = max(mtimes) if mtimes else None
+        names = {c.get("downloader_name") for c in children if c.get("downloader_name")}
+        downloader_name = next(iter(names)) if len(names) == 1 else None
+        all_deleted = all(c.get("is_deleted") for c in children)
+        all_ignored = (not all_deleted) and all(c.get("is_ignored") for c in children)
+        all_pending = (
+            (not all_deleted)
+            and (not all_ignored)
+            and all(not c.get("is_deleted") and not c.get("is_ignored") for c in children)
+        )
+        has_low_confidence = any(c.get("confidence") == "low" for c in children)
+        return {
+            "_is_folder": True,
+            "folder_key": "folder:" + folder_path,
+            "folder_path": folder_path,
+            "child_count": len(children),
+            "children": children,
+            "child_ids": child_ids,
+            "total_size": total_size,
+            "latest_mtime": latest_mtime,
+            "downloader_name": downloader_name,
+            "all_pending": all_pending,
+            "all_ignored": all_ignored,
+            "all_deleted": all_deleted,
+            "has_low_confidence": has_low_confidence,
         }
 
     async def _enrich_items(self, item_dicts: List[Dict[str, Any]]) -> None:
@@ -1689,9 +1923,7 @@ class OrphanFileService:
                     "quarantine_path": c.quarantine_path,
                     "quarantine_root": c.quarantine_root,
                     "mtime": (
-                        datetime.utcfromtimestamp(c.mtime_ns / 1_000_000_000).isoformat()
-                        if c.mtime_ns
-                        else None
+                        datetime.utcfromtimestamp(c.mtime_ns / 1_000_000_000).isoformat() if c.mtime_ns else None
                     ),
                     "quarantined_at": c.quarantined_at.isoformat() if c.quarantined_at else None,
                     "purge_after": c.purge_after.isoformat() if c.purge_after else None,
