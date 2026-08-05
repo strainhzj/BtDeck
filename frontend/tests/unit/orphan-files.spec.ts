@@ -132,6 +132,7 @@ interface OrphanFilesVm extends Vue {
     status: string[]
     confidence: string[]
   }
+  statusFilterDegraded: boolean
   selectedIds: number[]
   selectedRows: OrphanTableRow[]
   selectedCount: number
@@ -1811,5 +1812,147 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const pathColumn = wrapper.find('.orphan-path-cell')
     expect(pathColumn.exists()).toBe(true)
     expect(pathColumn.text()).toContain('/data/alone.mp4')
+  })
+})
+
+// 回归保护：status 多选退化检测（pending 与 ignored/deleted 组合会扩大为全部未删除文件）
+describe('orphan files status filter degradation hint', () => {
+  function mountAndGetVm() {
+    const wrapper = mountView()
+    return viewModel(wrapper)
+  }
+
+  it('仅选 pending 不触发退化提示', async() => {
+    const vm = mountAndGetVm()
+    vm.listQuery.status = ['pending']
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(false)
+  })
+
+  it('仅选 ignored 或 deleted 不触发退化提示', async() => {
+    const vm = mountAndGetVm()
+    vm.listQuery.status = ['ignored']
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(false)
+    vm.listQuery.status = ['deleted']
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(false)
+  })
+
+  it('pending + ignored 触发退化提示', async() => {
+    const vm = mountAndGetVm()
+    vm.listQuery.status = ['pending', 'ignored']
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(true)
+  })
+
+  it('pending + deleted 触发退化提示', async() => {
+    const vm = mountAndGetVm()
+    vm.listQuery.status = ['pending', 'deleted']
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(true)
+  })
+
+  it('ignored + deleted 不触发退化提示（不矛盾的组合）', async() => {
+    const vm = mountAndGetVm()
+    vm.listQuery.status = ['ignored', 'deleted']
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(false)
+  })
+
+  it('三态全选触发退化提示', async() => {
+    const vm = mountAndGetVm()
+    vm.listQuery.status = ['pending', 'ignored', 'deleted']
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(true)
+  })
+
+  it('空数组不触发退化提示', async() => {
+    const vm = mountAndGetVm()
+    vm.listQuery.status = []
+    await localVue.nextTick()
+    expect(vm.statusFilterDegraded).toBe(false)
+  })
+})
+
+// 回归保护：多选筛选数组提交转换为逗号串（修复空数组 truthy 提交判断 bug）
+describe('orphan files multi-value filter submission', () => {
+  it('downloader_id 多选数组提交为逗号串', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.downloader_id = ['dl-001', 'dl-002']
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    vm.handleFilter()
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ downloader_id: 'dl-001,dl-002' })
+    )
+  })
+
+  it('confidence 多选数组提交为逗号串', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.confidence = ['high', 'low']
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    vm.handleFilter()
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ confidence: 'high,low' })
+    )
+  })
+
+  it('status 多选数组提交为逗号串', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.status = ['pending', 'deleted']
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    vm.handleFilter()
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'pending,deleted' })
+    )
+  })
+
+  it('空数组不提交（修复原 || undefined 对空数组 truthy 的判断 bug）', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    // 三个筛选都置空数组
+    vm.listQuery.downloader_id = []
+    vm.listQuery.confidence = []
+    vm.listQuery.status = []
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    vm.handleFilter()
+    await flushLifecycle()
+
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.downloader_id).toBeUndefined()
+    expect(callArgs.confidence).toBeUndefined()
+    expect(callArgs.status).toBeUndefined()
+  })
+
+  it('单选值数组提交为单值字符串（走 join 仍正确）', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.downloader_id = ['dl-only']
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    vm.handleFilter()
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ downloader_id: 'dl-only' })
+    )
   })
 })
