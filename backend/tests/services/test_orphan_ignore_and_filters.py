@@ -317,6 +317,92 @@ async def test_status_filter_supports_multi_value_union(async_orphan_db):
     assert deduped["list"][0]["file_path"] == "/data/deleted.bin"
 
 
+async def test_status_filter_multi_value_edge_cases(async_orphan_db):
+    """status 多值的边界场景回归保护：三态全选/空串/纯逗号/含未知值/单值仍走原路径。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/ignored.bin", 100),
+            _detail("scan_1", "/data/normal.bin", 200),
+            _detail("scan_1", "/data/deleted.bin", 300, deleted=True),
+        ],
+        candidates=[
+            _candidate("/data/ignored.bin", ignored=True),
+            _candidate("/data/normal.bin", ignored=False),
+        ],
+    )
+
+    service = OrphanFileService(async_orphan_db)
+
+    # 三态全选：OR 退化为“所有文件”（含已删除）
+    all_three = await service.get_orphan_list(status="pending,ignored,deleted")
+    assert all_three["total"] == 3
+
+    # 空串/纯逗号/纯空白：split 后无可用值 → 等价于无 status 筛选（默认排除已删除）
+    for empty_status in ["", ",", " , ", ",,"]:
+        result = await service.get_orphan_list(status=empty_status)
+        assert result["total"] == 2, f"空串类 status={empty_status!r} 应等价于无筛选"
+
+    # 含未知值：未知值被静默忽略，已知值正常过滤
+    with_unknown = await service.get_orphan_list(status="pending,foobar")
+    # pending + 未知 → 等同 pending 单值（normal）
+    assert with_unknown["total"] == 1
+    assert with_unknown["list"][0]["file_path"] == "/data/normal.bin"
+
+    # 单值字符串仍走原 == 路径（回归保护，不因多值改造破坏单值）
+    single_deleted = await service.get_orphan_list(status="deleted")
+    assert single_deleted["total"] == 1
+    assert single_deleted["list"][0]["file_path"] == "/data/deleted.bin"
+
+
+async def test_resolve_select_all_matches_list_under_multi_value_filters(async_orphan_db):
+    """全选当前筛选在多值过滤下必须与列表结果一致（list 与 resolve 同走 _build_orphan_conditions）。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/a.bin", 100, downloader_id="dl_001", confidence="high"),
+            _detail("scan_1", "/data/b.bin", 200, downloader_id="dl_002", confidence="low"),
+            _detail("scan_1", "/data/c.bin", 300, downloader_id="dl_001", confidence="low"),
+            _detail("scan_1", "/data/ignored.bin", 400, downloader_id="dl_001", confidence="high"),
+        ],
+        candidates=[
+            _candidate("/data/a.bin"),
+            _candidate("/data/b.bin"),
+            _candidate("/data/c.bin"),
+            _candidate("/data/ignored.bin", ignored=True),
+        ],
+    )
+    rows = (await async_orphan_db.execute(OrphanFile.__table__.select())).fetchall()
+    ids_by_path = {row.file_path: row.id for row in rows}
+
+    service = OrphanFileService(async_orphan_db)
+
+    # 多值 confidence=high,low + 多值 downloader_id=dl_001,dl_002
+    multi_filters = dict(confidence="high,low", downloader_id="dl_001,dl_002")
+    list_result = await service.get_orphan_list(**multi_filters)
+    list_ids = {item["id"] for item in list_result["list"]}
+
+    selected_ids = set(
+        await service.resolve_orphan_selection(
+            orphan_ids=[],
+            select_all=True,
+            excluded_orphan_ids=[],
+            scan_id="scan_1",
+            **multi_filters,
+        )
+    )
+
+    # 全选解析的 ID 集合必须与列表返回的 ID 集合完全一致
+    assert selected_ids == list_ids, "多值过滤下 list 与 resolve 结果不一致"
+    # 确实命中了预期的 4 个文件（未删除的全部）
+    assert selected_ids == {
+        ids_by_path["/data/a.bin"],
+        ids_by_path["/data/b.bin"],
+        ids_by_path["/data/c.bin"],
+        ids_by_path["/data/ignored.bin"],
+    }
+
+
 async def test_resolve_select_all_uses_list_filters_and_exclusions(async_orphan_db):
     """全选必须解析当前筛选全集，并保留用户取消勾选的排除项。"""
     await _seed(

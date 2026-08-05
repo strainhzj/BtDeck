@@ -142,6 +142,9 @@ class OrphanFileService:
                 conditions.append(status_clauses[0])
             elif status_clauses:
                 conditions.append(or_(*status_clauses))
+            elif not include_deleted:
+                # status 传入但 split 后无有效值（如 ","），回落到默认排除已删除
+                conditions.append(OrphanFile.is_deleted == False)  # noqa: E712
         elif not include_deleted:
             # 无 status 筛选时默认排除已删除（与历史行为一致）
             conditions.append(OrphanFile.is_deleted == False)  # noqa: E712
