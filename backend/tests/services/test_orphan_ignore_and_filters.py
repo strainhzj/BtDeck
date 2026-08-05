@@ -138,6 +138,50 @@ async def test_list_filters_confidence_and_defaults_to_high_first(async_orphan_d
     assert [item["file_path"] for item in low_result["list"]] == ["/data/low-large.bin"]
 
 
+async def test_list_filters_confidence_supports_multi_value(async_orphan_db):
+    """置信度筛选支持逗号分隔多值（单值仍走 == 分支，多值走 in_）。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/low.bin", 100, confidence="low"),
+            _detail("scan_1", "/data/high.bin", 200, confidence="high"),
+            _detail("scan_1", "/data/low2.bin", 300, confidence="low"),
+        ],
+    )
+
+    service = OrphanFileService(async_orphan_db)
+    # 多值 in_：high,low → 命中全部
+    both = await service.get_orphan_list(confidence="high,low")
+    assert both["total"] == 3
+    # 单值仍走 == 分支（回归保护）
+    only_low = await service.get_orphan_list(confidence="low")
+    assert only_low["total"] == 2
+    # 去重：重复值不应改变结果
+    deduped = await service.get_orphan_list(confidence="low,low")
+    assert deduped["total"] == 2
+
+
+async def test_list_filters_downloader_id_supports_multi_value(async_orphan_db):
+    """下载器筛选支持逗号分隔多值。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/a.bin", 100, downloader_id="dl_001"),
+            _detail("scan_1", "/data/b.bin", 200, downloader_id="dl_002"),
+            _detail("scan_1", "/data/c.bin", 300, downloader_id="dl_003"),
+        ],
+    )
+
+    service = OrphanFileService(async_orphan_db)
+    both = await service.get_orphan_list(downloader_id="dl_001,dl_002")
+    assert both["total"] == 2
+    assert {item["file_path"] for item in both["list"]} == {"/data/a.bin", "/data/b.bin"}
+    # 单值仍走 == 分支（回归保护）
+    one = await service.get_orphan_list(downloader_id="dl_003")
+    assert one["total"] == 1
+    assert one["list"][0]["file_path"] == "/data/c.bin"
+
+
 # ==================== 忽视态注入与计数 ====================
 
 
@@ -223,6 +267,54 @@ async def test_status_filter_deleted(async_orphan_db):
     paths = [item["file_path"] for item in result["list"]]
     assert paths == ["/data/deleted.bin"]
     assert result["total"] == 1
+
+
+async def test_status_filter_supports_multi_value_union(async_orphan_db):
+    """status 支持逗号分隔多值（OR 并集）；含 pending 的组合会退化为“所有未删除文件”。"""
+    await _seed(
+        async_orphan_db,
+        [
+            _detail("scan_1", "/data/ignored.bin", 100),
+            _detail("scan_1", "/data/normal.bin", 200),
+            _detail("scan_1", "/data/deleted.bin", 300, deleted=True),
+        ],
+        candidates=[
+            _candidate("/data/ignored.bin", ignored=True),
+            _candidate("/data/normal.bin", ignored=False),
+        ],
+    )
+
+    service = OrphanFileService(async_orphan_db)
+
+    # 不矛盾的组合：ignored+deleted → 已忽视 ∪ 已删除
+    ignored_deleted = await service.get_orphan_list(status="ignored,deleted")
+    assert ignored_deleted["total"] == 2
+    assert {item["file_path"] for item in ignored_deleted["list"]} == {
+        "/data/ignored.bin",
+        "/data/deleted.bin",
+    }
+
+    # pending + deleted（OR 并集）：(未删除 AND 不在忽视集) OR 已删除 = normal + deleted
+    pending_deleted = await service.get_orphan_list(status="pending,deleted")
+    assert pending_deleted["total"] == 2
+    assert {item["file_path"] for item in pending_deleted["list"]} == {
+        "/data/normal.bin",
+        "/data/deleted.bin",
+    }
+
+    # pending + ignored（OR 退化）：(未删除 AND 不在忽视集) OR (未删除 AND 在忽视集)
+    #   = 未删除 AND (不在忽视集 OR 在忽视集) = 未删除 AND 恒真 = 所有未删除文件
+    pending_ignored = await service.get_orphan_list(status="pending,ignored")
+    assert pending_ignored["total"] == 2
+    assert {item["file_path"] for item in pending_ignored["list"]} == {
+        "/data/normal.bin",
+        "/data/ignored.bin",
+    }
+
+    # 去重：重复值不应改变结果
+    deduped = await service.get_orphan_list(status="deleted,deleted")
+    assert deduped["total"] == 1
+    assert deduped["list"][0]["file_path"] == "/data/deleted.bin"
 
 
 async def test_resolve_select_all_uses_list_filters_and_exclusions(async_orphan_db):

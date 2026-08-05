@@ -35,12 +35,15 @@ router = APIRouter(tags=["孤儿文件管理"])
 class OrphanSelectionFilters(BaseModel):
     """“全选当前筛选”使用的列表过滤快照。"""
 
-    downloader_id: Optional[str] = None
+    downloader_id: Optional[str] = Field(default=None, description="下载器ID筛选（支持逗号分隔多值）")
     min_size: Optional[int] = Field(default=None, ge=0)
     path_like: Optional[str] = None
     path_prefix: Optional[str] = Field(default=None, description="文件路径左匹配（LIKE prefix%）")
-    status: Optional[str] = None
-    confidence: Optional[str] = None
+    status: Optional[str] = Field(
+        default=None,
+        description="状态筛选（支持逗号分隔多值，OR 并集）：pending/ignored/deleted",
+    )
+    confidence: Optional[str] = Field(default=None, description="置信度筛选（支持逗号分隔多值）：high/low")
 
 
 class OrphanSelectionRequest(BaseModel):
@@ -130,17 +133,21 @@ async def get_orphan_list(
         le=1000,
         description="每批加载数量（最大 1000，避免超大响应阻塞列表）",
     ),
-    downloader_id: Optional[str] = Query(default=None, description="下载器ID筛选"),
+    downloader_id: Optional[str] = Query(default=None, description="下载器ID筛选（支持逗号分隔多值）"),
     min_size: Optional[int] = Query(default=None, ge=0, description="最小文件大小（字节）"),
     path_like: Optional[str] = Query(default=None, description="文件路径模糊匹配（包含）"),
     path_prefix: Optional[str] = Query(default=None, description="文件路径左匹配（前缀）"),
     status: Optional[str] = Query(
         default=None,
-        description="状态筛选：pending=待清理，ignored=已忽视，deleted=已清理",
+        description=(
+            "状态筛选（支持逗号分隔多值，OR 并集）："
+            "pending=待清理，ignored=已忽视，deleted=已清理。"
+            "注：pending 与 ignored 同选会退化为“所有未删除文件”"
+        ),
     ),
     confidence: Optional[str] = Query(
         default=None,
-        description="置信度筛选：high=高置信度，low=低置信度",
+        description="置信度筛选（支持逗号分隔多值）：high=高置信度，low=低置信度",
     ),
     group_by_folder: bool = Query(
         default=False,

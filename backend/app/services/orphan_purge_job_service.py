@@ -15,6 +15,7 @@ from app.database import AsyncSessionLocal
 from app.models.orphan_purge_job import OrphanPurgeJob
 from app.services.notification_service import NotificationService
 from app.tasks.resource_guard import admission_controller
+from app.utils.format_size import format_size
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +278,7 @@ class OrphanPurgeJobService:
             f"- 失败：{job.failed_count}",
         ]
         if is_cleanup:
-            lines.append(f"- 释放空间：{job.total_size or 0} 字节")
+            lines.append(f"- 释放空间：{format_size(int(job.total_size or 0))}")
         if job.error_message:
             lines.append(f"- 任务错误：{job.error_message[:500]}")
         if job.failed_list:

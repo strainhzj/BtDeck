@@ -23,7 +23,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
 
-from sqlalchemy import case, func, select, text, update
+from sqlalchemy import and_, case, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
@@ -106,37 +106,62 @@ class OrphanFileService:
         confidence: Optional[str] = None,
     ) -> List[Any]:
         """构建列表与“全选当前筛选”共用的 SQL 条件。"""
-        effective_include_deleted = include_deleted
-        ignored_filter: Optional[bool] = None
-        if status == "deleted":
-            effective_include_deleted = True
-        elif status == "ignored":
-            ignored_filter = True
-            effective_include_deleted = False
-        elif status == "pending":
-            ignored_filter = False
-            effective_include_deleted = False
-
         conditions: List[Any] = [OrphanFile.scan_id == scan_id]
-        if status == "deleted":
-            conditions.append(OrphanFile.is_deleted == True)  # noqa: E712
-        elif not effective_include_deleted:
-            conditions.append(OrphanFile.is_deleted == False)  # noqa: E712
 
+        # status 三态互斥（一个文件只可能是 pending/ignored/deleted 之一）：
+        # - pending：未删除 且 不在忽视集
+        # - ignored：未删除 且 在忽视集
+        # - deleted：已删除
+        # 支持逗号分隔多值：每个值用 and_() 打包完整条件，多值时用 or_() 取并集。
+        # 注意：pending 与 ignored/deleted 组合时，OR 会让 is_deleted/忽视集条件退化为
+        # “所有未删除文件”，这是用户明确的“OR 并集”语义（前端会给提示）。
         ignored_paths = select(OrphanCurrentCandidate.canonical_path).where(
             OrphanCurrentCandidate.is_ignored == True  # noqa: E712
         )
-        if ignored_filter is True:
-            conditions.append(OrphanFile.canonical_path.in_(ignored_paths))
-        elif ignored_filter is False:
-            conditions.append(OrphanFile.canonical_path.notin_(ignored_paths))
+        if status:
+            statuses = list(dict.fromkeys(s.strip() for s in status.split(",") if s.strip()))
+            status_clauses: List[Any] = []
+            for s in statuses:
+                if s == "deleted":
+                    status_clauses.append(OrphanFile.is_deleted == True)  # noqa: E712
+                elif s == "ignored":
+                    status_clauses.append(
+                        and_(
+                            OrphanFile.is_deleted == False,  # noqa: E712
+                            OrphanFile.canonical_path.in_(ignored_paths),
+                        )
+                    )
+                elif s == "pending":
+                    status_clauses.append(
+                        and_(
+                            OrphanFile.is_deleted == False,  # noqa: E712
+                            OrphanFile.canonical_path.notin_(ignored_paths),
+                        )
+                    )
+            if len(status_clauses) == 1:
+                conditions.append(status_clauses[0])
+            elif status_clauses:
+                conditions.append(or_(*status_clauses))
+        elif not include_deleted:
+            # 无 status 筛选时默认排除已删除（与历史行为一致）
+            conditions.append(OrphanFile.is_deleted == False)  # noqa: E712
 
         if downloader_id:
-            conditions.append(OrphanFile.downloader_id == downloader_id)
+            # 支持多选：逗号分隔的字符串（与 duplicate_torrents 多值过滤范式一致）
+            downloader_ids = list(dict.fromkeys(d.strip() for d in downloader_id.split(",") if d.strip()))
+            if len(downloader_ids) == 1:
+                conditions.append(OrphanFile.downloader_id == downloader_ids[0])
+            else:
+                conditions.append(OrphanFile.downloader_id.in_(downloader_ids))
         if min_size is not None:
             conditions.append(OrphanFile.file_size >= min_size)
         if confidence:
-            conditions.append(OrphanFile.confidence == confidence)
+            # 支持多选：逗号分隔的字符串
+            confidences = list(dict.fromkeys(c.strip() for c in confidence.split(",") if c.strip()))
+            if len(confidences) == 1:
+                conditions.append(OrphanFile.confidence == confidences[0])
+            else:
+                conditions.append(OrphanFile.confidence.in_(confidences))
         if path_like:
             escaped = path_like.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(OrphanFile.file_path.like(f"%{escaped}%", escape="\\"))

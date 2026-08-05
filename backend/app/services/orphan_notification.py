@@ -11,7 +11,7 @@
   type: system
   priority: warning
   title: 孤儿文件扫描完成
-  content: 本次扫描发现 N 个孤儿文件，共 X GB，请前往孤儿文件管理页面查看。
+  content: 本次扫描发现 N 个孤儿文件，共 X（自适应单位），请前往孤儿文件管理页面查看。
   extra_data: {event, scan_id, scan_type, orphan_count, orphan_size, route}
   dedupe_key: orphan_scan:{scan_id}
 
@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.notification import Notification
 from app.services.notification_service import NotificationService
+from app.utils.format_size import format_size
 
 logger = logging.getLogger(__name__)
 
@@ -35,14 +36,12 @@ NOTIF_EVENT = "orphan_scan_completed"
 
 
 def _format_size(size_bytes: int) -> str:
-    """将字节数格式化为人类可读的大小（GB/MB/KB）。"""
-    if size_bytes >= 1024**3:
-        return f"{size_bytes / (1024 ** 3):.1f} GB"
-    elif size_bytes >= 1024**2:
-        return f"{size_bytes / (1024 ** 2):.1f} MB"
-    elif size_bytes >= 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    return f"{size_bytes} B"
+    """将字节数格式化为人类可读大小（自动单位 B/KB/MB/GB/TB/PB，2 位小数）。
+
+    委托公共工具 ``app.utils.format_size.format_size``，避免与其它 service
+    各自重复实现（如 orphan_purge_job_service 的清理释放空间展示）。
+    """
+    return format_size(size_bytes)
 
 
 async def create_notification(

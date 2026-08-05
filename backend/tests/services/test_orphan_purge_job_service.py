@@ -126,6 +126,8 @@ async def test_dispatcher_completes_cleanup_job_and_creates_notification(async_o
     assert notification.priority == "warning"
     assert json.loads(notification.extra_data)["event"] == "orphan_cleanup_completed"
     assert "主动清理" in notification.title
+    # 回归保护：清理通知『释放空间』应使用自适应单位（不再是裸字节数）
+    assert "释放空间：1.00 KB" in (notification.content or "")
     cleanup.assert_awaited_once_with(
         orphan_ids=[1, 2],
         operator="tester",

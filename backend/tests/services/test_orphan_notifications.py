@@ -198,7 +198,7 @@ class TestOrphanScanNotification:
         notif = result.scalar_one_or_none()
         assert notif is not None
         assert notif.title == "孤儿文件扫描完成"
-        assert "128" in (notif.content or ""), "通知内容应包含 GB 级大小"
+        assert "128.50 GB" in (notif.content or ""), "通知内容应包含自适应单位 + 2 位小数大小"
 
     async def test_retry_task_compensates_missing_notification(
         self, async_orphan_db, monkeypatch
