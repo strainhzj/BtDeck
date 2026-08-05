@@ -284,11 +284,11 @@
             :selectable="rowSelectable"
             aria-label="选择当前页的全部孤儿文件"
           />
-          <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip>
+          <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip class-name="orphan-path-cell">
             <template slot-scope="scope">
               <span v-if="scope.row._is_folder" class="orphan-folder-cell">
                 <i class="el-icon-folder" aria-hidden="true"></i>
-                <span class="orphan-folder-cell__path">{{ scope.row.folder_path }}</span>
+                <span class="orphan-folder-cell__path" :title="scope.row.folder_path">{{ scope.row.folder_path }}</span>
                 <el-tag size="mini" type="info" class="orphan-folder-cell__count">
                   {{ scope.row.children.length }} 个文件
                 </el-tag>
@@ -1641,11 +1641,13 @@ export default class OrphanFiles extends Vue {
 }
 
 // 按文件夹展示：文件夹聚合行单元格
+// 用 inline-flex 作为内容容器（宽度跟随内容），由外层 .orphan-path-cell .cell 统一管理
+// 与树展开箭头（.el-table__expand-icon）的对齐。
 .orphan-folder-cell {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
   max-width: 100%;
+  gap: 6px;
 
   > .el-icon-folder {
     color: var(--color-warning, #e6a23c);
@@ -1653,14 +1655,39 @@ export default class OrphanFiles extends Vue {
   }
 
   &__path {
-    // 路径过长时省略，与列级 show-overflow-tooltip 配合
+    // 路径过长时省略，hover 时由 title 属性显示完整路径
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    // 关键：flex 子项默认 min-width: auto，不允许收缩到内容尺寸以下。
+    // 设为 0 才能在 flex 容器内收缩并显示省略号，保证文件数标签始终可见。
+    min-width: 0;
+    flex: 0 1 auto;
   }
 
   &__count {
     flex-shrink: 0;
+  }
+}
+
+// 文件路径列：让树展开箭头（.el-table__expand-icon）与单元格内容在同一水平线。
+// element-ui 把箭头作为 .cell 的前置兄弟插入，默认 inline-block 且垂直对齐基线不一致，
+// 加上 .orphan-folder-cell 是 inline-flex，会导致箭头与内容错行/错位。
+// 将 .cell 设为横向 flex、垂直居中，箭头不收缩，内容区占据剩余宽度并内部再省略。
+::v-deep .orphan-path-cell .cell {
+  display: flex;
+  align-items: center;
+  width: 100%;
+
+  > .el-table__expand-icon {
+    flex-shrink: 0;
+  }
+
+  // 内容容器（orphan-folder-cell 或单文件 span）占据剩余空间
+  > .orphan-folder-cell,
+  > span:not(.el-table__expand-icon) {
+    flex: 1 1 auto;
+    min-width: 0;
   }
 }
 </style>

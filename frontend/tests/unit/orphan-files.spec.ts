@@ -1671,3 +1671,150 @@ describe('orphan files folder view (persistence + regression)', () => {
     expect(vm.getRowKey(vm.list[0])).toBe('file:1')
   })
 })
+
+/**
+ * 文件夹聚合行渲染契约回归。
+ *
+ * 保护本轮三处模板/CSS 修复：
+ * 1. 文件路径列透传 class-name="orphan-path-cell"（让 .cell 成为横向 flex 容器，
+ *    与树展开箭头同水平线对齐）
+ * 2. 文件夹行渲染 .orphan-folder-cell（图标 + __path + __count），
+ *    路径过长时 __path 收缩显示省略号，「N 个文件」标签始终可见（不被挤出可视区）
+ * 3. __path 绑定 :title=folder_path，hover 显示完整路径（替代被嵌套结构干扰的原生 tooltip）
+ *
+ * 既有 TableColumnStub 把 slot 的 row 硬编码为 quarantineItem()，无法覆盖文件夹行
+ * 模板分支，故此处用按注入 rows 多行渲染的本地 column stub。
+ * jsdom 不计算 CSS（flex/省略号不可直接断言），改为严格校验模板结构契约。
+ */
+describe('orphan files folder view (folder row rendering contract)', () => {
+  /**
+   * 按注入 rows 多行渲染 scoped slot 的列 stub：
+   * - 透传 class-name 到根元素，用于校验列级 class-name 透传
+   * - 对每一行调用默认 scoped slot，使文件夹行分支（_is_folder）与单文件分支都能渲染
+   *
+   * shallowMount 下 el-table 被 stub，列组件的 $parent 是 TableStub 而非 OrphanFiles，
+   * 故向上遍历原型链找到带 tableData 的实例（即 OrphanFiles 根组件 vm）。
+   */
+  const FolderColumnStub = localVue.extend({
+    props: {
+      type: { type: String, default: '' },
+      prop: { type: String, default: '' },
+      className: { type: String, default: '' }
+    },
+    render(createElement) {
+      let parent: unknown = this.$parent
+      let rows: OrphanTableRow[] = []
+      while (parent) {
+        const maybe = parent as { tableData?: OrphanTableRow[] }
+        if (maybe && Array.isArray(maybe.tableData)) {
+          rows = maybe.tableData
+          break
+        }
+        parent = (parent as { $parent?: unknown }).$parent
+      }
+      const slot = this.$scopedSlots.default
+      const children = slot ? rows.map((row) => slot({ row })) : []
+      return createElement(
+        'div',
+        { class: this.className, attrs: { 'data-column-type': this.type } },
+        children
+      )
+    }
+  })
+
+  function mountFolderView(rows: OrphanTableRow[]): Wrapper<Vue> {
+    mockGetOrphanList.mockResolvedValueOnce(listResponse(scanContext(), rows, rows.length))
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    return shallowMount(OrphanFiles, {
+      localVue,
+      mocks: { $message: message, $confirm: confirm },
+      stubs: {
+        'el-button': ButtonStub,
+        'el-alert': AlertStub,
+        'el-dialog': DialogStub,
+        'el-table': TableStub,
+        'el-table-column': FolderColumnStub,
+        'el-input': true,
+        'el-pagination': true,
+        'el-tag': true,
+        'el-tabs': true,
+        'el-tab-pane': true,
+        'el-checkbox': true,
+        'el-select': true,
+        'el-option': true,
+        'el-tooltip': true
+      }
+    })
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+  })
+
+  it('文件路径列透传 class-name="orphan-path-cell"（.cell 横向 flex 对齐锚点）', async() => {
+    const children = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/movie/a.mp4' }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/movie/b.mp4' })
+    ]
+    const wrapper = mountFolderView([folderRow('/data/movie', children)])
+    await flushLifecycle()
+
+    // FolderColumnStub 把 class-name 渲染到列根元素；el-table-column 的 class-name 属性
+    // 在真实 element-ui 中会落到 td.el-table__cell 上，这里只验证属性被组件正确透传。
+    const pathColumn = wrapper.find('.orphan-path-cell')
+    expect(pathColumn.exists()).toBe(true)
+  })
+
+  it('文件夹行渲染 .orphan-folder-cell 结构，__count 始终显示「N 个文件」且数量正确', async() => {
+    const children = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/movie/a.mp4', file_size: 100 }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/movie/b.mp4', file_size: 200 }),
+      orphanItem(3, 'scan-completed', { file_path: '/data/movie/c.mp4', file_size: 300 })
+    ]
+    const wrapper = mountFolderView([folderRow('/data/movie', children)])
+    await flushLifecycle()
+
+    const folderCell = wrapper.find('.orphan-folder-cell')
+    expect(folderCell.exists()).toBe(true)
+    // 文件夹图标
+    expect(folderCell.find('.el-icon-folder').exists()).toBe(true)
+    // 文件数标签（el-tag 被 stub，文本直接渲染）
+    const countEl = folderCell.find('.orphan-folder-cell__count')
+    expect(countEl.exists()).toBe(true)
+    expect(countEl.text()).toContain('3')
+    expect(countEl.text()).toContain('个文件')
+  })
+
+  it('文件夹路径过长：__path 显示省略号锚点（min-width:0 修复）并绑定 :title 显示完整路径', async() => {
+    const longPath = '/downloads/complete/movies/2026/very-long-folder-name-that-overflows-the-cell-width/movie.mkv'
+    const children = [
+      orphanItem(1, 'scan-completed', { file_path: longPath + '/a.mp4' }),
+      orphanItem(2, 'scan-completed', { file_path: longPath + '/b.mp4' })
+    ]
+    const wrapper = mountFolderView([folderRow(longPath, children)])
+    await flushLifecycle()
+
+    const pathEl = wrapper.find('.orphan-folder-cell__path')
+    expect(pathEl.exists()).toBe(true)
+    // 文本内容是完整路径（省略号是 CSS 渲染效果，jsdom 不计算；这里验证节点存在且文本为路径）
+    expect(pathEl.text()).toBe(longPath)
+    // :title 绑定完整路径，hover 可见（替代被嵌套结构破坏的列级 tooltip）
+    expect(pathEl.attributes('title')).toBe(longPath)
+    // 文件数标签仍存在（未被挤出 DOM 结构，jsdom 下无法验证可视性，但结构契约被锁定）
+    expect(wrapper.find('.orphan-folder-cell__count').exists()).toBe(true)
+  })
+
+  it('单文件行不渲染 .orphan-folder-cell（仅文件夹行走聚合行结构）', async() => {
+    const single = orphanItem(1, 'scan-completed', { file_path: '/data/alone.mp4' })
+    const wrapper = mountFolderView([single])
+    await flushLifecycle()
+
+    // 单文件行不走文件夹聚合分支
+    expect(wrapper.find('.orphan-folder-cell').exists()).toBe(false)
+    // 但仍渲染在路径列中（FolderColumnStub 按行渲染 slot）
+    const pathColumn = wrapper.find('.orphan-path-cell')
+    expect(pathColumn.exists()).toBe(true)
+    expect(pathColumn.text()).toContain('/data/alone.mp4')
+  })
+})
