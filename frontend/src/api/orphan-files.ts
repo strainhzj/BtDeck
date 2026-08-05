@@ -26,6 +26,46 @@ export interface OrphanFileItem {
 }
 
 /**
+ * 文件夹聚合行（后端 group_by_folder=true 时返回，仅前端展示用，不提交后端）
+ *
+ * 折叠模式下，同一直接父目录下 ≥2 个孤儿文件聚合为一行；单文件（cnt=1）
+ * 由后端直接返回 OrphanFileItem（无 _is_folder），保持原样。
+ * 删除/忽视等操作始终展开为子文件 id 逐个提交，本类型不影响后端语义。
+ * 字段与后端 get_orphan_list_grouped 返回的 OrphanFolderRow DTO 对齐（snake_case）。
+ */
+export interface OrphanFolderRow {
+  /** 类型标记，用于列模板分支与 isFolderRow 类型守卫 */
+  _is_folder: true
+  /** row-key 用稳定身份，形如 'folder:<folder_path>' */
+  folder_key: string
+  /** 直接父目录路径 */
+  folder_path: string
+  /** 子文件数 */
+  child_count: number
+  /** 子文件列表（含完整 OrphanFileItem 字段） */
+  children: OrphanFileItem[]
+  /** 子文件 id 列表，用于展开提交 */
+  child_ids: number[]
+  /** 子文件大小合计 */
+  total_size: number
+  /** 子文件最近修改时间 */
+  latest_mtime: string | null
+  /** 子文件下载器名一致则该名，否则 null（渲染"多个"） */
+  downloader_name: string | null
+  /** 聚合状态：全部待清理 */
+  all_pending: boolean
+  /** 聚合状态：全部已忽视 */
+  all_ignored: boolean
+  /** 聚合状态：全部已清理 */
+  all_deleted: boolean
+  /** 子文件中是否含低置信度项 */
+  has_low_confidence: boolean
+}
+
+/** 表格行：文件行或文件夹聚合行 */
+export type OrphanTableRow = OrphanFileItem | OrphanFolderRow
+
+/**
  * 分页响应格式（符合项目规范）
  * ⚠️ 必须使用 pageSize 和 list，严禁使用其他变体
  */
@@ -33,7 +73,11 @@ export interface OrphanListResponse {
   total: number
   page: number
   pageSize: number
-  list: OrphanFileItem[]
+  /**
+   * 列表数据：扁平模式为 OrphanFileItem[]；group_by_folder=true 的折叠模式为
+   * OrphanFolderRow（≥2 文件聚合）与 OrphanFileItem（单文件原样）的混合数组。
+   */
+  list: OrphanTableRow[]
   scan_context: OrphanScanContext
 }
 
@@ -206,6 +250,8 @@ export interface OrphanListParams {
   path_like?: string
   status?: OrphanStatusFilter
   confidence?: OrphanConfidence
+  /** 按文件夹（直接父目录）聚合分页：true 时同目录≥2 文件折叠为文件夹行 */
+  group_by_folder?: boolean
 }
 
 export interface OrphanSelectionFilters {

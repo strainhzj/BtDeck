@@ -6,10 +6,12 @@ import {
   ApiResponse,
   CleanupPreviewResult,
   OrphanFileItem,
+  OrphanFolderRow,
   OrphanListResponse,
   OrphanSelectionPayload,
   OrphanScanContext,
   OrphanScanRecord,
+  OrphanTableRow,
   PrefixMatchPreviewResult,
   QuarantineItem,
   QuarantineListResult,
@@ -132,8 +134,17 @@ interface OrphanFilesVm extends Vue {
     min_size: number | ''
   }
   selectedIds: number[]
-  selectedRows: OrphanFileItem[]
+  selectedRows: OrphanTableRow[]
   selectedCount: number
+  selectedFileIds: number[]
+  selectedFileItems: OrphanFileItem[]
+  folderView: boolean
+  tableData: OrphanTableRow[]
+  setFolderView: (val: boolean) => void
+  handleOrphanSelect: (selection: OrphanTableRow[], row: OrphanTableRow) => void
+  syncFolderCheckboxState: (table: { selection: OrphanTableRow[], toggleRowSelection: (row: OrphanTableRow, selected?: boolean) => void }) => void
+  getRowKey: (row: OrphanTableRow) => string
+  rowSelectable: (row: OrphanTableRow) => boolean
   scanContext: OrphanScanContext
   activeTab: 'orphans' | 'quarantine'
   quarantineList: QuarantineItem[]
@@ -234,7 +245,11 @@ function scanContext(
   }
 }
 
-function orphanItem(id: number, scanId = 'scan-completed'): OrphanFileItem {
+function orphanItem(
+  id: number,
+  scanId = 'scan-completed',
+  overrides: Partial<OrphanFileItem> = {}
+): OrphanFileItem {
   return {
     id,
     scan_id: scanId,
@@ -251,7 +266,37 @@ function orphanItem(id: number, scanId = 'scan-completed'): OrphanFileItem {
     is_deleted: false,
     deleted_at: null,
     deleted_by: null,
-    created_at: '2026-07-30T10:00:00'
+    created_at: '2026-07-30T10:00:00',
+    ...overrides
+  }
+}
+
+/** 构造后端 get_orphan_list_grouped 返回的 OrphanFolderRow（snake_case 对齐契约）。 */
+function folderRow(
+  folderPath: string,
+  children: OrphanFileItem[],
+  overrides: Partial<OrphanFolderRow> = {}
+): OrphanFolderRow {
+  const childIds = children.map((c) => c.id)
+  const totalSize = children.reduce((s, c) => s + (c.file_size || 0), 0)
+  const allDeleted = children.every((c) => c.is_deleted)
+  const allIgnored = !allDeleted && children.every((c) => c.is_ignored)
+  const allPending = !allDeleted && !allIgnored && children.every((c) => !c.is_deleted && !c.is_ignored)
+  return {
+    _is_folder: true,
+    folder_key: 'folder:' + folderPath,
+    folder_path: folderPath,
+    child_count: children.length,
+    children,
+    child_ids: childIds,
+    total_size: totalSize,
+    latest_mtime: children[0]?.mtime ?? null,
+    downloader_name: children[0]?.downloader_name ?? null,
+    all_pending: allPending,
+    all_ignored: allIgnored,
+    all_deleted: allDeleted,
+    has_low_confidence: children.some((c) => c.confidence === 'low'),
+    ...overrides
   }
 }
 
@@ -272,7 +317,7 @@ function quarantineItem(): QuarantineItem {
 
 function listResponse(
   context: OrphanScanContext = scanContext(),
-  list: OrphanFileItem[] = [orphanItem(1), orphanItem(2)],
+  list: OrphanTableRow[] = [orphanItem(1), orphanItem(2)],
   total = list.length,
   page = 1
 ): ApiResponse<OrphanListResponse> {
@@ -838,14 +883,14 @@ describe('orphan files atomic page state', () => {
     // 故 selection-change 只回调可选行
     vm.handleOrphanSelectionChange([pending1, pending3])
 
-    expect(vm.selectedRows.map((row) => row.id)).toEqual([1, 3])
+    expect(vm.selectedFileIds).toEqual([1, 3])
     expect(vm.selectedCount).toBe(2)
 
     // 取消选中其中一行
     vm.handleOrphanSelectionChange([pending3])
 
     expect(vm.selectedCount).toBe(1)
-    expect(vm.selectedRows.map((row) => row.id)).toEqual([3])
+    expect(vm.selectedFileIds).toEqual([3])
   })
 
   // 端到端验证 @selection-change 事件绑定：模拟 el-table emit selection-change，
@@ -862,7 +907,7 @@ describe('orphan files atomic page state', () => {
     ;(tableEl.vm as Vue).$emit('selection-change', [pending1, pending2])
     await localVue.nextTick()
 
-    expect(vm.selectedRows.map((row) => row.id)).toEqual([1, 2])
+    expect(vm.selectedFileIds).toEqual([1, 2])
   })
 
   it('当前页选中后批量忽视提交 orphan_ids 而非 select_all', async() => {
@@ -1410,5 +1455,219 @@ describe('orphan files quick action (prefix match)', () => {
     expect(message.warning).toHaveBeenCalledWith('最新扫描尚未完成')
     expect(mockPrefixMatchPreview).not.toHaveBeenCalled()
     expect(mockCleanupOrphans).not.toHaveBeenCalled()
+  })
+})
+
+
+// ============================================================================
+// 按文件夹展示（后端聚合分页）：删除仍按文件，仅展示折叠
+// 覆盖：消费后端 folder row / 选择联动（含反向同步）/ 持久化 / 扁平模式回归
+// ============================================================================
+
+describe('orphan files folder view (consume backend folder rows)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+  })
+
+  it('默认扁平模式：folderView=false，tableData 直接返回 list', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    expect(vm.folderView).toBe(false)
+    expect(vm.tableData).toBe(vm.list)
+  })
+
+  it('折叠模式：tableData 消费后端返回的混合 list（folder row + 单文件）', async() => {
+    const folderChildren = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/movie/a.mp4', file_size: 100 }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/movie/b.mp4', file_size: 200 })
+    ]
+    const single = orphanItem(3, 'scan-completed', { file_path: '/data/alone.mp4', file_size: 50 })
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(scanContext(), [folderRow('/data/movie', folderChildren), single], 2)
+    )
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    expect(vm.folderView).toBe(true)
+    expect(vm.tableData).toHaveLength(2)
+    // 第一项是文件夹行
+    const folder = vm.tableData[0] as OrphanFolderRow
+    expect(folder._is_folder).toBe(true)
+    expect(folder.folder_path).toBe('/data/movie')
+    expect(folder.child_count).toBe(2)
+    expect(folder.child_ids).toEqual([1, 2])
+    expect(folder.total_size).toBe(300)
+    // 第二项是单文件（原样 OrphanFileItem，无 _is_folder）
+    const fileItem = vm.tableData[1] as OrphanFileItem
+    expect((fileItem as unknown as { _is_folder?: boolean })._is_folder).toBeUndefined()
+    expect(fileItem.id).toBe(3)
+  })
+
+  it('getRowKey：文件夹行用 folder_key，文件行用 file: 前缀', async() => {
+    const folderChildren = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/m/a' }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/m/b' })
+    ]
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(scanContext(), [folderRow('/data/m', folderChildren)], 1)
+    )
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    const folder = vm.tableData[0] as OrphanFolderRow
+    expect(vm.getRowKey(folder)).toBe('folder:/data/m')
+    expect(vm.getRowKey(folder.children[0])).toBe('file:1')
+  })
+})
+
+describe('orphan files folder view (selection linkage)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+    const folderChildren = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/m/a', file_size: 100 }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/m/b', file_size: 200 })
+    ]
+    mockGetOrphanList.mockResolvedValue(
+      listResponse(scanContext(), [folderRow('/data/m', folderChildren)], 1)
+    )
+  })
+
+  it('勾选文件夹行 → 联动其全部子文件（调 toggleRowSelection）', async() => {
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = vm.tableData[0] as OrphanFolderRow
+
+    const toggleSpy = jest.fn()
+    const fakeSelection: OrphanTableRow[] = [folder]
+    ;(wrapper.vm.$refs as Record<string, unknown>).orphanTable = {
+      selection: fakeSelection,
+      toggleRowSelection: toggleSpy
+    }
+    ;(vm as unknown as { handleOrphanSelect: (s: OrphanTableRow[], r: OrphanTableRow) => void }).handleOrphanSelect(
+      [...fakeSelection],
+      folder
+    )
+
+    expect(toggleSpy).toHaveBeenCalledWith(folder.children[0], true)
+    expect(toggleSpy).toHaveBeenCalledWith(folder.children[1], true)
+  })
+
+  it('selectedFileIds/selectedFileItems 从文件夹行正确展开 child_ids', async() => {
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = vm.tableData[0] as OrphanFolderRow
+
+    vm.selectedRows = [folder]
+    expect(vm.selectedFileIds.sort((a, b) => a - b)).toEqual([1, 2])
+    expect(vm.selectedFileItems.map((f) => f.id).sort((a, b) => a - b)).toEqual([1, 2])
+  })
+
+  it('反向同步：子文件全部选中时文件夹行应被勾选', async() => {
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = vm.tableData[0] as OrphanFolderRow
+
+    const selection: OrphanTableRow[] = [...folder.children]
+    const toggleSpy = jest.fn()
+    const fakeTable = { selection, toggleRowSelection: toggleSpy }
+    vm.syncFolderCheckboxState(fakeTable)
+
+    expect(toggleSpy).toHaveBeenCalledWith(folder, true)
+  })
+
+  it('反向同步：子文件未全选时文件夹行不应被勾选', async() => {
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = vm.tableData[0] as OrphanFolderRow
+
+    const selection: OrphanTableRow[] = [folder.children[0]]
+    const toggleSpy = jest.fn()
+    const fakeTable = { selection, toggleRowSelection: toggleSpy }
+    vm.syncFolderCheckboxState(fakeTable)
+
+    expect(toggleSpy).not.toHaveBeenCalled()
+  })
+
+  it('rowSelectable：文件夹行有可选子文件则可选；已清理文件不可选', async() => {
+    const deletedChildren = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/m/a', is_deleted: true }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/m/b', is_deleted: true })
+    ]
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(scanContext(), [folderRow('/data/m', deletedChildren), orphanItem(3, 'scan-completed', { is_deleted: true })], 2)
+    )
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    const folder = vm.tableData[0] as OrphanFolderRow
+    expect(vm.rowSelectable(folder)).toBe(false)
+    expect(vm.rowSelectable(vm.list[1] as OrphanTableRow)).toBe(false)
+  })
+})
+
+describe('orphan files folder view (persistence + regression)', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+  })
+
+  it('setFolderView 持久化到 localStorage', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    vm.setFolderView(true)
+    expect(vm.folderView).toBe(true)
+    expect(localStorage.getItem('btdeck_orphan_folder_view')).toBe('1')
+
+    vm.setFolderView(false)
+    expect(localStorage.getItem('btdeck_orphan_folder_view')).toBe('0')
+  })
+
+  it('从 localStorage 恢复 folderView 偏好', async() => {
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    expect(vm.folderView).toBe(true)
+  })
+
+  it('扁平模式回归：selectedIds/selectedCount 行为不变', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    expect(vm.folderView).toBe(false)
+    vm.selectedRows = [vm.list[0]]
+    expect(vm.selectedIds).toEqual([1])
+    expect(vm.selectedCount).toBe(1)
+    expect(vm.selectedFileIds).toEqual([1])
+  })
+
+  it('扁平模式回归：tableData 不含文件夹行，getRowKey 文件行用 file: 前缀', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    expect(vm.tableData).toBe(vm.list)
+    expect((vm.tableData as OrphanTableRow[]).every((r) => (r as unknown as { _is_folder?: boolean })._is_folder !== true)).toBe(true)
+    expect(vm.getRowKey(vm.list[0])).toBe('file:1')
   })
 })

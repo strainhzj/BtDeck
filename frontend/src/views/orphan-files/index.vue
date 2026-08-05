@@ -223,6 +223,18 @@
           >
             取消忽视
           </el-button>
+          <el-tooltip
+            content="开启后同目录下多个文件折叠为文件夹一行（仅影响展示，删除仍按文件）"
+            placement="top"
+          >
+            <el-button
+              :type="folderView ? 'primary' : 'default'"
+              :icon="folderView ? 'el-icon-folder-opened' : 'el-icon-folder'"
+              @click="setFolderView(!folderView)"
+            >
+              按文件夹展示
+            </el-button>
+          </el-tooltip>
           <el-dropdown trigger="click" @command="handleQuickAction">
             <el-button icon="el-icon-magic-stick">
               快捷操作<i class="el-icon-arrow-down el-icon--right"></i>
@@ -252,7 +264,9 @@
         <el-table
           ref="orphanTable"
           v-loading="listLoading"
-          :data="list"
+          :data="tableData"
+          :row-key="getRowKey"
+          :tree-props="{children: 'children'}"
           class="management-table"
           height="100%"
           border
@@ -261,6 +275,7 @@
           empty-text="暂无孤儿文件，点击“立即扫描”开始检测"
           style="width: 100%"
           @selection-change="handleOrphanSelectionChange"
+          @select="handleOrphanSelect"
         >
           <el-table-column
             type="selection"
@@ -269,47 +284,86 @@
             :selectable="rowSelectable"
             aria-label="选择当前页的全部孤儿文件"
           />
-          <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip />
+          <el-table-column label="文件路径" prop="file_path" min-width="300" show-overflow-tooltip>
+            <template slot-scope="scope">
+              <span v-if="scope.row._is_folder" class="orphan-folder-cell">
+                <i class="el-icon-folder" aria-hidden="true"></i>
+                <span class="orphan-folder-cell__path">{{ scope.row.folder_path }}</span>
+                <el-tag size="mini" type="info" class="orphan-folder-cell__count">
+                  {{ scope.row.children.length }} 个文件
+                </el-tag>
+              </span>
+              <span v-else>{{ scope.row.file_path }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="大小" width="120" align="center">
             <template slot-scope="scope">
-              {{ formatSize(scope.row.file_size) }}
+              {{ formatSize(scope.row._is_folder ? scope.row.total_size : scope.row.file_size) }}
             </template>
           </el-table-column>
           <el-table-column label="修改时间" width="170" align="center">
             <template slot-scope="scope">
-              {{ scope.row.mtime ? formatTime(scope.row.mtime) : '-' }}
+              {{ (scope.row._is_folder ? scope.row.latest_mtime : scope.row.mtime) ? formatTime(scope.row._is_folder ? scope.row.latest_mtime : scope.row.mtime) : '-' }}
             </template>
           </el-table-column>
           <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
             <template slot-scope="scope">
-              {{ scope.row.downloader_name || (scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-') }}
+              <template v-if="scope.row._is_folder">
+                {{ scope.row.downloader_name || '多个' }}
+              </template>
+              <template v-else>
+                {{ scope.row.downloader_name || (scope.row.downloader_id ? maskId(scope.row.downloader_id) : '-') }}
+              </template>
             </template>
           </el-table-column>
           <el-table-column label="置信度" width="100" align="center">
             <template slot-scope="scope">
-              <el-tooltip
-                v-if="scope.row.confidence === 'low'"
-                content="离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛"
-                placement="top"
-              >
-                <el-tag type="info" size="small">低</el-tag>
-              </el-tooltip>
-              <el-tooltip v-else content="在线精筛判定，确认未被任何种子引用" placement="top">
-                <el-tag type="success" size="small">高</el-tag>
-              </el-tooltip>
+              <template v-if="scope.row._is_folder">
+                <el-tooltip
+                  v-if="scope.row.has_low_confidence"
+                  content="文件夹内含离线降级目录粗筛判定的低置信度项，有误判风险"
+                  placement="top"
+                >
+                  <el-tag type="info" size="small">混合</el-tag>
+                </el-tooltip>
+                <el-tooltip v-else content="文件夹内全部为在线精筛判定，确认未被任何种子引用" placement="top">
+                  <el-tag type="success" size="small">高</el-tag>
+                </el-tooltip>
+              </template>
+              <template v-else>
+                <el-tooltip
+                  v-if="scope.row.confidence === 'low'"
+                  content="离线降级目录粗筛判定，有误判风险；手动清理可删，自动清理需等下载器上线精筛"
+                  placement="top"
+                >
+                  <el-tag type="info" size="small">低</el-tag>
+                </el-tooltip>
+                <el-tooltip v-else content="在线精筛判定，确认未被任何种子引用" placement="top">
+                  <el-tag type="success" size="small">高</el-tag>
+                </el-tooltip>
+              </template>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="90" align="center">
             <template slot-scope="scope">
-              <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
-              <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">已忽视</el-tag>
-              <el-tag v-else type="danger" size="small">待清理</el-tag>
+              <template v-if="scope.row._is_folder">
+                <el-tag v-if="scope.row.all_deleted" type="info" size="small">已清理</el-tag>
+                <el-tag v-else-if="scope.row.all_ignored" type="warning" size="small">已忽视</el-tag>
+                <el-tag v-else-if="scope.row.all_pending" type="danger" size="small">待清理</el-tag>
+                <el-tag v-else type="info" size="small">混合</el-tag>
+              </template>
+              <template v-else>
+                <el-tag v-if="scope.row.is_deleted" type="info" size="small">已清理</el-tag>
+                <el-tag v-else-if="scope.row.is_ignored" type="warning" size="small">已忽视</el-tag>
+                <el-tag v-else type="danger" size="small">待清理</el-tag>
+              </template>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="100" align="center" fixed="right">
             <template slot-scope="scope">
+              <span v-if="scope.row._is_folder">-</span>
               <el-button
-                v-if="!scope.row.is_deleted && !scope.row.is_ignored"
+                v-else-if="!scope.row.is_deleted && !scope.row.is_ignored"
                 type="text"
                 size="small"
                 @click="handleRowIgnore(scope.row, true)"
@@ -562,6 +616,8 @@ import {
   restoreQuarantined,
   purgeQuarantineNow,
   OrphanFileItem,
+  OrphanFolderRow,
+  OrphanTableRow,
   OrphanListParams,
   OrphanScanContext,
   OrphanScanRecord,
@@ -596,9 +652,18 @@ interface DownloaderOption {
 
 interface OrphanTableRef extends Vue {
   clearSelection: () => void
+  toggleRowSelection: (row: OrphanTableRow, selected?: boolean) => void
+  selection: OrphanTableRow[]
 }
 
 const ORPHAN_PAGE_SIZE_MAX = 1000
+
+const FOLDER_VIEW_STORAGE_KEY = 'btdeck_orphan_folder_view'
+
+/** 文件夹行类型守卫（列模板分支与选择联动用）；字段对齐后端 _is_folder 标记。 */
+function isFolderRow(row: OrphanTableRow | undefined | null): row is OrphanFolderRow {
+  return !!row && (row as OrphanFolderRow)._is_folder === true
+}
 
 @Component({ name: 'OrphanFiles', components: { PageSizeCombobox } })
 export default class OrphanFiles extends Vue {
@@ -640,7 +705,12 @@ export default class OrphanFiles extends Vue {
   private downloaderList: DownloaderSimple[] = []
 
   // 选中状态：保存完整行以支持按主导状态启停批量按钮（仅当前页）
-  private selectedRows: OrphanFileItem[] = []
+  // 折叠模式下可能含 OrphanFolderRow，提交前由 selectedFileIds 展开为文件 id
+  private selectedRows: OrphanTableRow[] = []
+
+  // 按文件夹展示开关（localStorage 持久化）：开启后由后端按直接父目录聚合分页，
+  // 同目录下 ≥2 个文件折叠为文件夹行，单文件保持原样。仅影响展示，删除仍按文件 id。
+  private folderView = localStorage.getItem(FOLDER_VIEW_STORAGE_KEY) === '1'
 
   // 页面列表、统计和清理门禁共用的后端权威快照
   private scanContext: OrphanScanContext = {
@@ -791,6 +861,31 @@ export default class OrphanFiles extends Vue {
     return this.scanContext.display_scan
   }
 
+  // ==================== 按文件夹展示（后端聚合分页，删除仍按文件）====================
+
+  /**
+   * 表格数据源：两种模式都直接消费 list（后端按 group_by_folder 决定返回形态）。
+   * 折叠模式 list 元素是 OrphanFolderRow（带 _is_folder/children）或 OrphanFileItem（单文件原样）；
+   * 扁平模式 list 元素是 OrphanFileItem。
+   */
+  private get tableData(): OrphanTableRow[] {
+    return this.list
+  }
+
+  /** el-table row-key：文件夹行用 folder_key，文件行用 'file:'+id，前缀隔离保唯一稳定。 */
+  private getRowKey(row: OrphanTableRow): string {
+    return isFolderRow(row) ? row.folder_key : 'file:' + row.id
+  }
+
+  /** 切换按文件夹展示：持久化偏好并重新请求后端（数据形态由后端切换）。 */
+  private setFolderView(val: boolean): void {
+    if (this.folderView === val) return
+    this.folderView = val
+    localStorage.setItem(FOLDER_VIEW_STORAGE_KEY, val ? '1' : '0')
+    this.clearOrphanSelection()
+    void this.refreshPageData()
+  }
+
   private get cleanupAllowed(): boolean {
     return Boolean(
       this.scanContext.cleanup_allowed &&
@@ -803,12 +898,37 @@ export default class OrphanFiles extends Vue {
     return this.scanContext.cleanup_block_reason || '当前扫描快照不允许清理'
   }
 
+  /** 权威选择集：展开文件夹行 child_ids 后的实际文件 id（后端始终收扁平 orphan_ids）。 */
+  private get selectedFileIds(): number[] {
+    const ids = new Set<number>()
+    for (const row of this.selectedRows) {
+      if (isFolderRow(row)) row.child_ids.forEach((id) => ids.add(id))
+      else ids.add(row.id)
+    }
+    return [...ids]
+  }
+
+  /**
+   * 选中文件对应的完整对象：从 selectedRows 自身展开。
+   * - 文件夹行：展开其 children（子文件对象，引用 list 中的原对象）
+   * - 文件行：原样
+   * 直接从 selectedRows 展开而非反查 list，保证直接赋值 selectedRows 的测试与调用路径语义稳定。
+   */
+  private get selectedFileItems(): OrphanFileItem[] {
+    const items: OrphanFileItem[] = []
+    for (const row of this.selectedRows) {
+      if (isFolderRow(row)) items.push(...row.children)
+      else items.push(row)
+    }
+    return items
+  }
+
   private get selectedIds(): number[] {
-    return this.selectedRows.map((r) => r.id)
+    return this.selectedFileIds
   }
 
   private get selectedCount(): number {
-    return this.selectedRows.length
+    return this.selectedFileIds.length
   }
 
   private get downloaderOptions(): DownloaderOption[] {
@@ -818,26 +938,26 @@ export default class OrphanFiles extends Vue {
     }))
   }
 
-  // ========== 批量按钮启停（按选中主导状态）==========
+  // ========== 批量按钮启停（按选中主导状态，基于展开后的文件）==========
 
   /** 选中集合中"可清理"的项：待清理（未删除未忽视）。 */
   private get pendingSelection(): OrphanFileItem[] {
-    return this.selectedRows.filter((r) => !r.is_deleted && !r.is_ignored)
+    return this.selectedFileItems.filter((r) => !r.is_deleted && !r.is_ignored)
   }
 
   /** 选中集合中"已忽视"的项。 */
   private get ignoredSelection(): OrphanFileItem[] {
-    return this.selectedRows.filter((r) => !r.is_deleted && r.is_ignored)
+    return this.selectedFileItems.filter((r) => !r.is_deleted && r.is_ignored)
   }
 
   /** 选中是否全部为待清理态（可清理+可忽视）。 */
   private get allSelectionPending(): boolean {
-    return this.selectedRows.length > 0 && this.pendingSelection.length === this.selectedRows.length
+    return this.selectedFileItems.length > 0 && this.pendingSelection.length === this.selectedFileItems.length
   }
 
   /** 选中是否全部为已忽视态（可取消忽视）。 */
   private get allSelectionIgnored(): boolean {
-    return this.selectedRows.length > 0 && this.ignoredSelection.length === this.selectedRows.length
+    return this.selectedFileItems.length > 0 && this.ignoredSelection.length === this.selectedFileItems.length
   }
 
   private get canBatchCleanup(): boolean {
@@ -920,7 +1040,8 @@ export default class OrphanFiles extends Vue {
         downloader_id: querySnapshot.downloader_id || undefined,
         path_like: querySnapshot.path_like || undefined,
         status: querySnapshot.status || undefined,
-        min_size: querySnapshot.min_size === '' ? undefined : Number(querySnapshot.min_size)
+        min_size: querySnapshot.min_size === '' ? undefined : Number(querySnapshot.min_size),
+        group_by_folder: this.folderView || undefined
       }
       if (querySnapshot.confidence) {
         params.confidence = querySnapshot.confidence
@@ -1006,11 +1127,51 @@ export default class OrphanFiles extends Vue {
   }
 
   /** el-table 原生 selection-change：同步当前页选中行（全选/单选均由此驱动）。 */
-  private handleOrphanSelectionChange(rows: OrphanFileItem[]): void {
+  private handleOrphanSelectionChange(rows: OrphanTableRow[]): void {
     this.selectedRows = rows
   }
 
-  /** 通过 el-table ref 清空选择（翻页/筛选/刷新时调用）。 */
+  /**
+   * el-table @select：用户点击单行 checkbox。
+   *
+   * element-ui 2.15 树表 checkbox 无内置父子联动（store/index.js rowSelectedChanged 仅 toggle 单行），
+   * 故折叠模式下需手动处理：
+   * - 点文件夹行 → 联动其全部可选子文件（公共 API toggleRowSelection 静默，不触发 @select，无递归）
+   * - 子文件变化 → 反向同步文件夹行勾选态（syncFolderCheckboxState）
+   * 公共 API 会触发 selection-change，selectedRows 由 handleOrphanSelectionChange 同步。
+   */
+  private handleOrphanSelect(selection: OrphanTableRow[], row: OrphanTableRow): void {
+    if (!this.folderView) return
+    const table = this.$refs.orphanTable as OrphanTableRef | undefined
+    if (!table) return
+    if (isFolderRow(row)) {
+      const selected = selection.indexOf(row) > -1
+      row.children
+        .filter((c) => this.rowSelectable(c))
+        .forEach((c) => table.toggleRowSelection(c, selected))
+    }
+    this.syncFolderCheckboxState(table)
+  }
+
+  /**
+   * 反向同步：子文件勾选态变化时，更新文件夹行 checkbox（仅全选/未选两态，无 indeterminate）。
+   * 文件夹行仅当其全部可选子文件都被选中时才勾选。
+   */
+  private syncFolderCheckboxState(table: OrphanTableRef): void {
+    const sel = table.selection
+    for (const row of this.list) {
+      if (!isFolderRow(row)) continue
+      const selectable = row.children.filter((c) => this.rowSelectable(c))
+      if (selectable.length === 0) continue
+      const allSelected = selectable.every((c) => sel.indexOf(c) > -1)
+      const folderSelected = sel.indexOf(row) > -1
+      if (allSelected !== folderSelected) {
+        table.toggleRowSelection(row, allSelected)
+      }
+    }
+  }
+
+  /** 通过 el-table ref 清空选择（翻页/筛选/刷新/切换展示模式时调用）。 */
   private clearOrphanSelection(): void {
     this.selectedRows = []
     const table = this.$refs.orphanTable as OrphanTableRef | undefined
@@ -1021,8 +1182,13 @@ export default class OrphanFiles extends Vue {
     return { orphan_ids: [...this.selectedIds] }
   }
 
-  /** 已清理行不可勾选；待清理/已忽视行均可勾选（用于对应批量操作）。 */
-  private rowSelectable(row: OrphanFileItem): boolean {
+  /**
+   * 行是否可勾选。
+   * - 文件行：已清理行不可勾选（待清理/已忽视可勾选）
+   * - 文件夹行：有任一可选子文件即可勾选
+   */
+  private rowSelectable(row: OrphanTableRow): boolean {
+    if (isFolderRow(row)) return row.children.some((c) => !c.is_deleted)
     return !row.is_deleted
   }
 
@@ -1471,6 +1637,30 @@ export default class OrphanFiles extends Vue {
 @media (max-width: 600px) {
   ::v-deep .management-dialog {
     width: calc(100% - 32px) !important;
+  }
+}
+
+// 按文件夹展示：文件夹聚合行单元格
+.orphan-folder-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+
+  > .el-icon-folder {
+    color: var(--color-warning, #e6a23c);
+    flex-shrink: 0;
+  }
+
+  &__path {
+    // 路径过长时省略，与列级 show-overflow-tooltip 配合
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__count {
+    flex-shrink: 0;
   }
 }
 </style>
