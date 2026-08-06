@@ -34,6 +34,8 @@ class SystemStats(BaseModel):
     uptime: int = Field(..., description="Uptime in seconds")
     uptime_display: str = Field(..., description="Formatted uptime display")
     version: str = Field(..., description="Version")
+    total_download_speed: int = Field(0, description="Total download speed across all online downloaders (bytes/s)")
+    total_upload_speed: int = Field(0, description="Total upload speed across all online downloaders (bytes/s)")
 
 
 class DownloaderListItem(BaseModel):
@@ -45,6 +47,8 @@ class DownloaderListItem(BaseModel):
     status: str  # online/offline
     downloading: int = Field(0, description="Current downloading count")
     seeding: int = Field(0, description="Current seeding count")
+    download_speed: int = Field(0, description="Current download speed (bytes/s)")
+    upload_speed: int = Field(0, description="Current upload speed (bytes/s)")
 
 
 class ActivityItem(BaseModel):

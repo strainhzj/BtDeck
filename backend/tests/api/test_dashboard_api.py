@@ -23,6 +23,7 @@
 - code 是字符串"200"/"500"，断言用 ==。
 """
 
+import json
 import time
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -103,13 +104,16 @@ async def _add_cron(async_db, *, task_code, task_status=0, dr=0, task_name="t"):
     return task
 
 
-async def _add_audit(async_db, *, operation_type="add", operation_time=None, torrent_name=None, downloader_name=None):
+async def _add_audit(
+    async_db, *, operation_type="add", operation_time=None, torrent_name=None, downloader_name=None, operation_detail=None
+):
     """插入审计日志行。operation_time 默认 now（让相对时间落到"秒前"分支便于断言）。"""
     log = TorrentAuditLog(
         operation_type=operation_type,
         operation_time=operation_time or datetime.now(),
         torrent_name=torrent_name,
         downloader_name=downloader_name,
+        operation_detail=operation_detail,
     )
     async_db.add(log)
     await async_db.commit()
@@ -338,6 +342,54 @@ class TestActivities:
         act = r.json()["data"]["activities"][0]
         assert "天前" in act["time"]
 
+    @pytest.mark.asyncio
+    async def test_orphan_cleanup_shows_cleaned_files(self, client, async_db):
+        """孤儿文件清理：展示被清理文件/目录名，不再出现'未知下载器 种子 未知种子'。"""
+        await _add_audit(
+            async_db,
+            operation_type="orphan_cleanup",
+            torrent_name=None,
+            downloader_name=None,
+            operation_detail=json.dumps(
+                {"action": "manual_cleanup", "success_count": 2, "failed_count": 0, "cleaned_files": ["a.torrent", "b"]}
+            ),
+        )
+        r = client.get(URL)
+        act = r.json()["data"]["activities"][0]
+        assert "孤儿文件清理文件 a.torrent、b" in act["action"]
+        assert "未知下载器" not in act["action"]
+        assert "未知种子" not in act["action"]
+
+    @pytest.mark.asyncio
+    async def test_orphan_cleanup_historical_without_files(self, client, async_db):
+        """历史孤儿清理日志无 cleaned_files → 回退展示成功计数，不出现未知占位符。"""
+        await _add_audit(
+            async_db,
+            operation_type="orphan_cleanup",
+            torrent_name=None,
+            downloader_name=None,
+            operation_detail=json.dumps({"action": "manual_cleanup", "success_count": 3, "failed_count": 1}),
+        )
+        r = client.get(URL)
+        act = r.json()["data"]["activities"][0]
+        assert "孤儿文件清理（成功 3 个）" in act["action"]
+        assert "未知下载器" not in act["action"]
+
+    @pytest.mark.asyncio
+    async def test_orphan_ignore_no_unknown_placeholder(self, client, async_db):
+        """其它孤儿操作（忽视）走计数字段文案，同样不出现未知占位符。"""
+        await _add_audit(
+            async_db,
+            operation_type="orphan_ignore",
+            torrent_name=None,
+            downloader_name=None,
+            operation_detail=json.dumps({"action": "ignore", "success_count": 5, "failed_count": 0}),
+        )
+        r = client.get(URL)
+        act = r.json()["data"]["activities"][0]
+        assert "孤儿文件忽视（成功 5 个）" in act["action"]
+        assert "未知下载器" not in act["action"]
+
 
 # ==================== 组4：缓存读取（store / torrent_stats） ====================
 
@@ -385,7 +437,7 @@ class TestCacheRead:
         assert r.json()["data"]["torrents"] == {"active": 10, "downloading": 4, "seeding": 6, "paused": 0}
 
     def test_downloader_list_construction(self, client):
-        """downloader_list 每项含 6 个键，status 由 fail_time 决定。"""
+        """downloader_list 每项含 8 个键，status 由 fail_time 决定。"""
         _set_store(
             client.app,
             [
@@ -396,6 +448,8 @@ class TestCacheRead:
                     downloader_type=1,
                     downloading_count=2,
                     seeding_count=3,
+                    download_speed=10,
+                    upload_speed=5,
                 ),
                 SimpleNamespace(
                     fail_time=999,
@@ -404,6 +458,8 @@ class TestCacheRead:
                     downloader_type=2,
                     downloading_count=0,
                     seeding_count=0,
+                    download_speed=0,
+                    upload_speed=0,
                 ),
             ],
         )
@@ -418,10 +474,15 @@ class TestCacheRead:
             "status",
             "downloading",
             "seeding",
+            "download_speed",
+            "upload_speed",
         }
         assert online["status"] == "online"
         assert online["downloading"] == 2
         assert online["seeding"] == 3
+        # 缓存速度单位 KB/s → bytes/s（×1024）
+        assert online["download_speed"] == 10 * 1024
+        assert online["upload_speed"] == 5 * 1024
         offline = next(d for d in lst if d["downloader_id"] == "d2")
         assert offline["status"] == "offline"
 
@@ -510,6 +571,28 @@ class TestSystemStats:
         sys_stats = r.json()["data"]["system"]
         assert "天" in sys_stats["uptime_display"]
         assert sys_stats["uptime"] >= 2 * 86400 - 5  # 容忍几秒抖动
+
+    def test_system_total_speeds_from_online_downloaders(self, client):
+        """系统总速度 = 所有在线下载器速度之和（KB/s→bytes/s ×1024），离线下载器不计。"""
+        _set_store(
+            client.app,
+            [
+                SimpleNamespace(fail_time=0, download_speed=100, upload_speed=50),
+                SimpleNamespace(fail_time=0, download_speed=300, upload_speed=20),
+                SimpleNamespace(fail_time=1700000000, download_speed=9999, upload_speed=9999),  # 离线不计
+            ],
+        )
+        r = client.get(URL)
+        sys_stats = r.json()["data"]["system"]
+        assert sys_stats["total_download_speed"] == (100 + 300) * 1024
+        assert sys_stats["total_upload_speed"] == (50 + 20) * 1024
+
+    def test_system_total_speeds_zero_without_store(self, client):
+        """无 store（降级）→ 总速度为 0。"""
+        r = client.get(URL)
+        sys_stats = r.json()["data"]["system"]
+        assert sys_stats["total_download_speed"] == 0
+        assert sys_stats["total_upload_speed"] == 0
 
 
 # ==================== 组6：错误降级 ====================

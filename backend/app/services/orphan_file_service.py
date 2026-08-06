@@ -1216,6 +1216,7 @@ class OrphanFileService:
         success_count = 0
         failed_list: List[Dict[str, Any]] = []
         deleted_size = 0
+        cleaned_names: List[str] = []  # 成功清理的文件/目录 basename（供审计日志展示）
 
         # 实时 manifest 复核：store 提供时必须成功构建（fail-closed）
         # manifest 构建失败 → 无法确认文件是否仍被种子引用 → 拒绝所有清理
@@ -1359,6 +1360,7 @@ class OrphanFileService:
 
                 deleted_size += item.file_size
                 success_count += 1
+                cleaned_names.append(os.path.basename(actual_path))
 
             except Exception as e:
                 logger.error(f"[孤儿清理] 隔离文件失败 {item.file_path}: {e}")
@@ -1375,6 +1377,7 @@ class OrphanFileService:
                         "success_count": success_count,
                         "failed_count": len(failed_list),
                         "total_size": deleted_size,
+                        "cleaned_files": cleaned_names,
                     },
                     operation_result=AuditOperationResult.SUCCESS if not failed_list else AuditOperationResult.PARTIAL,
                     error_message=f"失败 {len(failed_list)} 个" if failed_list else None,

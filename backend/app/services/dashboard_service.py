@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 from datetime import datetime
@@ -22,7 +23,7 @@ class DashboardService:
         downloaders_stats = await self._get_downloaders_stats()
         torrents_stats = await self._get_torrents_stats()
         tasks_stats = await self._get_tasks_stats()
-        system_stats = self._get_system_stats()
+        system_stats = await self._get_system_stats()
         downloader_list = await self._get_downloader_list()
         activities = await self._get_recent_activities()
 
@@ -65,7 +66,7 @@ class DashboardService:
         stopped = max(total - running, 0)
         return {"total": total, "running": running, "stopped": stopped}
 
-    def _get_system_stats(self) -> Dict[str, Any]:
+    async def _get_system_stats(self) -> Dict[str, Any]:
         start_time = getattr(self.app.state, "start_time", None)
         if start_time is None:
             start_time = time.time()
@@ -82,10 +83,23 @@ class DashboardService:
         else:
             uptime_display = f"{minutes}分钟"
 
+        # 所有在线下载器速度之和（缓存单位为 KB/s，转 bytes/s 输出，与前端 formatSpeed 一致）
+        total_download_speed = 0
+        total_upload_speed = 0
+        if hasattr(self.app.state, "store") and self.app.state.store is not None:
+            cached_downloaders = await self.app.state.store.get_snapshot()
+            for downloader in cached_downloaders:
+                if getattr(downloader, "fail_time", 0) != 0:
+                    continue
+                total_download_speed += int(getattr(downloader, "download_speed", 0) or 0) * 1024
+                total_upload_speed += int(getattr(downloader, "upload_speed", 0) or 0) * 1024
+
         return {
             "uptime": uptime,
             "uptime_display": uptime_display,
             "version": "1.0.0",
+            "total_download_speed": total_download_speed,
+            "total_upload_speed": total_upload_speed,
         }
 
     async def _get_downloader_list(self) -> List[Dict[str, Any]]:
@@ -114,6 +128,9 @@ class DashboardService:
                     "status": "online" if getattr(downloader, "fail_time", 0) == 0 else "offline",
                     "downloading": downloading,
                     "seeding": seeding,
+                    # 缓存速度单位为 KB/s，转 bytes/s 输出（与前端 formatSpeed 一致）
+                    "download_speed": int(getattr(downloader, "download_speed", 0) or 0) * 1024,
+                    "upload_speed": int(getattr(downloader, "upload_speed", 0) or 0) * 1024,
                 }
             )
 
@@ -121,7 +138,7 @@ class DashboardService:
 
     async def _get_recent_activities(self) -> List[Dict[str, Any]]:
         query = """
-        SELECT operation_time, operation_type, torrent_name, downloader_name
+        SELECT operation_time, operation_type, torrent_name, downloader_name, operation_detail
         FROM torrent_audit_log
         ORDER BY operation_time DESC
         LIMIT 10
@@ -133,7 +150,7 @@ class DashboardService:
         now = datetime.now()
 
         for row in rows:
-            operation_time, op_type, torrent_name, downloader_name = row
+            operation_time, op_type, torrent_name, downloader_name, operation_detail = row
 
             time_str = "--"
             if operation_time:
@@ -154,15 +171,23 @@ class DashboardService:
                         time_str = f"{delta.days}天前"
 
             action = AuditOperationType.get_display_name(op_type) if op_type else "系统操作"
-            category = AuditOperationType.get_category(op_type) if op_type else None
+            raw_category = AuditOperationType.get_category(op_type) if op_type else None
 
-            if category not in {"torrent", "tracker", "tag", "downloader", "scheduled_task"}:
+            if raw_category not in {"torrent", "tracker", "tag", "downloader", "scheduled_task"}:
                 category = "system"
+            else:
+                category = raw_category
 
-            # 组合详细的操作描述
-            downloader_display = downloader_name if downloader_name else "未知下载器"
-            torrent_display = torrent_name if torrent_name else "未知种子"
-            action_detail = f"{action} {downloader_display} 种子 {torrent_display}"
+            detail_dict = self._parse_operation_detail(operation_detail)
+
+            # 孤儿文件类操作没有种子/下载器关联，走专用文案，避免"未知下载器 种子 未知种子"
+            if raw_category == "orphan_files" and op_type:
+                action_detail = self._build_orphan_action_detail(op_type, action, detail_dict)
+            else:
+                # 组合详细的操作描述
+                downloader_display = downloader_name if downloader_name else "未知下载器"
+                torrent_display = torrent_name if torrent_name else "未知种子"
+                action_detail = f"{action} {downloader_display} 种子 {torrent_display}"
 
             activities.append(
                 {
@@ -176,3 +201,45 @@ class DashboardService:
             )
 
         return activities
+
+    @staticmethod
+    def _parse_operation_detail(operation_detail: Any) -> Dict[str, Any]:
+        """安全解析审计日志 operation_detail JSON，失败返回空字典。"""
+        if not operation_detail:
+            return {}
+        if isinstance(operation_detail, dict):
+            return operation_detail
+        try:
+            parsed = json.loads(operation_detail)
+            return parsed if isinstance(parsed, dict) else {}
+        except (TypeError, ValueError):
+            return {}
+
+    @staticmethod
+    def _build_orphan_action_detail(op_type: str, action: str, detail: Dict[str, Any]) -> str:
+        """构建孤儿文件类操作的日志描述。
+
+        清理类操作优先展示被清理文件/目录名（"孤儿文件清理文件 <名>"）；
+        历史日志无 cleaned_files 时回退计数字段，其余孤儿操作按各自计数字段展示。
+        """
+        if op_type in (AuditOperationType.ORPHAN_CLEANUP.value, AuditOperationType.ORPHAN_AUTO_CLEANUP.value):
+            cleaned_files = detail.get("cleaned_files") or []
+            if cleaned_files:
+                shown = cleaned_files[:10]
+                suffix = f" 等{len(cleaned_files)}个" if len(cleaned_files) > len(shown) else ""
+                return f"{action}文件 {'、'.join(shown)}{suffix}"
+            count = int(detail.get("success_count", detail.get("quarantined_count", 0)) or 0)
+            return f"{action}（成功 {count} 个）" if count else action
+
+        field_map = {
+            AuditOperationType.ORPHAN_IGNORE.value: "success_count",
+            AuditOperationType.ORPHAN_RESTORE.value: "restored_count",
+            AuditOperationType.ORPHAN_PURGE.value: "purged_count",
+            AuditOperationType.ORPHAN_SCAN.value: "total_orphans",
+        }
+        field = field_map.get(op_type)
+        if field:
+            count = int(detail.get(field, 0) or 0)
+            if count:
+                return f"{action}（成功 {count} 个）"
+        return action
