@@ -18,7 +18,7 @@
             @dragleave="handleDragLeave"
             @drop.prevent="handleDrop"
           >
-            <div class="upload-icon">📁</div>
+            <div class="upload-icon"><LucideIcon name="file-up" :size="48" /></div>
             <div class="upload-text">点击或拖拽TXT文件到此处</div>
             <div class="upload-hint">仅支持.txt文件,每行一个关键词</div>
           </div>
@@ -60,7 +60,7 @@
 
       <!-- 成功消息 -->
       <div v-if="importSuccess" class="success-message">
-        <span class="success-icon">✅</span>
+        <span class="success-icon"><LucideIcon name="circle-check-big" :size="20" /></span>
         <span>成功导入 {{ successCount }} 个关键词,失败 {{ failCount }} 个</span>
       </div>
     </div>
@@ -346,7 +346,9 @@ export default class ImportKeywordsDialog extends Vue {
 }
 
 .upload-icon {
-  font-size: 48px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   margin-bottom: var(--spacing-sm);
 }
 
@@ -453,7 +455,8 @@ export default class ImportKeywordsDialog extends Vue {
 }
 
 .success-icon {
-  font-size: 20px;
+  display: flex;
+  align-items: center;
 }
 
 .dialog-footer {

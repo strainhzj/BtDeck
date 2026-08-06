@@ -101,7 +101,17 @@ import {
   FolderSync,
   TestTube2,
   Sparkles,
-  PlugZap
+  PlugZap,
+  Tags,
+  ClipboardList,
+  Forward,
+  FileUp,
+  CalendarDays,
+  CalendarRange,
+  ArrowDownAZ,
+  ListFilter,
+  WandSparkles,
+  ArrowLeft
 } from 'lucide'
 
 // Lucide 默认根 <svg> 属性（与 lucide 源码 defaultAttributes 一致）。
@@ -208,7 +218,17 @@ const ICONS: Record<string, unknown> = {
   'test-tube-2': TestTube2,
   sparkles: Sparkles,
   'plug-zap': PlugZap,
-  'trash-2': Trash2
+  'trash-2': Trash2,
+  tags: Tags,
+  'clipboard-list': ClipboardList,
+  forward: Forward,
+  'file-up': FileUp,
+  'calendar-days': CalendarDays,
+  'calendar-range': CalendarRange,
+  'arrow-down-a-z': ArrowDownAZ,
+  'list-filter': ListFilter,
+  'wand-sparkles': WandSparkles,
+  'arrow-left': ArrowLeft
 }
 
 // IconNode 子节点：[tag, attrs] 或 [tag, attrs, children]
