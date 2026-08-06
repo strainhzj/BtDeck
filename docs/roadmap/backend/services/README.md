@@ -12,7 +12,7 @@
 | 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（ORM 查询引擎，13 字段；v1.0.6.25 起 4 个 ratio 操作符 + `app.contracts` 校验；正则经 `sqlite_search_runtime` 受限执行防 ReDoS） |
 | 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
-| 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据 |
+| 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除任务生命周期） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |

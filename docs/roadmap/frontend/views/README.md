@@ -74,11 +74,12 @@
 | `keywords-board.vue` | 关键词看板主页面（`TrackerKeywordsBoard`） |
 | `test.vue` | Tracker 连通性测试页 |
 | `keywords-search.vue` | 关键词搜索页（`KeywordsSearchPage`） |
-| `components/KeywordListModal.vue` | 关键词列表弹窗 |
+| `components/KeywordListModal.vue` | 关键词列表弹窗（搜索框右侧含快捷操作入口） |
 | `components/ImportKeywordsDialog.vue` | 批量导入关键词对话框 |
 | `components/AddKeywordDialog.vue` | 添加关键词对话框 |
 | `components/KeywordCard.vue` | 单个关键词卡片 |
 | `components/KeywordTagCard.vue` | 关键词标签卡片 |
+| `components/KeywordQuickActionDialog.vue` | 关键词快捷操作（左匹配）对话框，看板与详情弹窗共用（预览→二次确认→批量删除/移动） |
 | `components/ApiLogViewer.vue` | API 调用日志查看器 |
 | `components/MatchTimeline.vue` | 匹配时间线组件 |
 | `components/TestResultSummary.vue` | 测试结果汇总 |
@@ -91,7 +92,7 @@
 | `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs`）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐） |
 | `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L374）：回收站，删除任务恢复/彻底删除/分页筛选 |
 | `settings/index.vue` | 全局设置页（`Settings`） |
-| `dashboard/index.vue` | 仪表盘聚合统计卡片（`Dashboard`） |
+| `dashboard/index.vue` | 仪表盘聚合统计卡片（`Dashboard`）：系统状态卡显示所有下载器上传/下载速度之和，下载器状态卡显示各自下载/上传速度 |
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates`，v1.0.5） |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
