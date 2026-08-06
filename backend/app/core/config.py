@@ -140,7 +140,11 @@ class Settings(BaseSettings):
     ORPHAN_QUARANTINE_RETENTION_DAYS: int = 7
     # 隔离区目录名（在每个扫描根下创建，同文件系统保证 os.rename 原子）
     ORPHAN_QUARANTINE_DIR_NAME: str = ".btdeck_quarantine"
-    # 跨进程操作 lease TTL（秒）：扫描/预览/清理互斥租约的过期时间
+    # Level3 回收站归档标记：孤儿扫描与清理流水线无条件跳过含此标记的路径，
+    # 防止回收站数据被误判为孤儿后清理（与 ORPHAN_QUARANTINE_DIR_NAME 同属系统保留名）。
+    # 默认值与 recycle_bin_service.py / torrent_deletion_by_level.py 的硬编码一致。
+    ORPHAN_RECYCLE_BIN_TAG: str = ".pending_delete"
+    # 跨进程操作 lease TTL（秒）：扫描/清理互斥租约的过期时间
     ORPHAN_LEASE_TTL_SECONDS: int = 3600
 
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}

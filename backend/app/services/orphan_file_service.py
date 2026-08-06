@@ -45,6 +45,7 @@ from app.services.orphan_quarantine import (
 )
 from app.tasks.resource_guard import admission_controller
 from app.torrents.audit_enums import AuditOperationResult, AuditOperationType
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -396,6 +397,19 @@ class OrphanFileService:
 
     @staticmethod
     def _path_authorized(candidate: OrphanCurrentCandidate, manifest: ManifestSnapshot) -> bool:
+        # 纵深防御：回收站归档路径无条件拒绝清理/隔离，即使扫描侧门禁失效（历史误判
+        # 候选仍残留在 orphan_current_candidate 中）也不误处理。隔离区路径同理拒绝。
+        # 这保护已写入候选池的 Level3 回收站文件不被定时任务移隔离→物理删除。
+        recycle_tag = getattr(settings, "ORPHAN_RECYCLE_BIN_TAG", ".pending_delete") or ""
+        if recycle_tag and recycle_tag in candidate.canonical_path:
+            logger.warning(
+                "[孤儿清理] 拒绝处理 Level3 回收站路径（历史误判候选保护）: %s",
+                candidate.canonical_path,
+            )
+            return False
+        quarantine_dir_name = getattr(settings, "ORPHAN_QUARANTINE_DIR_NAME", ".btdeck_quarantine")
+        if quarantine_dir_name and quarantine_dir_name in candidate.canonical_path:
+            return False
         if candidate.downloader_id not in manifest.downloader_ids:
             return False
         candidate_path = os.path.realpath(candidate.canonical_path)

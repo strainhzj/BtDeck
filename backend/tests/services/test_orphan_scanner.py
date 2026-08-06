@@ -110,6 +110,40 @@ class TestExcludePatterns:
         assert not OrphanScanner._matches_patterns("any.file", [])
 
 
+# ==================== Level3 回收站标记判定 ====================
+
+
+class TestRecycleBinTag:
+    """Level3 回收站归档标记（.pending_delete）判定测试。
+
+    回归孤儿扫描 bug：Level3 删除产生的 .pending_delete 文件被误判为孤儿。
+    fnmatch 的 *.pending_delete 模式无法覆盖两种改名形态，改用子串判断。
+    """
+
+    def test_is_recycle_bin_path_multi_file_dir(self):
+        """多文件目录形态：TorrentName.pending_delete 命中"""
+        assert OrphanScanner._is_recycle_bin_path("[Seed].pending_delete")
+
+    def test_is_recycle_bin_path_single_file_with_ext(self):
+        """单文件改名形态（有扩展名）：movie.pending_delete.mkv 命中"""
+        assert OrphanScanner._is_recycle_bin_path("movie.pending_delete.mkv")
+
+    def test_is_recycle_bin_path_single_file_no_ext(self):
+        """单文件改名形态（无扩展名）：README.pending_delete 命中（glob 盲区回归）"""
+        assert OrphanScanner._is_recycle_bin_path("README.pending_delete")
+
+    def test_is_recycle_bin_path_normal_file_not_match(self):
+        """普通文件不命中"""
+        assert not OrphanScanner._is_recycle_bin_path("episode.mkv")
+        assert not OrphanScanner._is_recycle_bin_path("movie.mkv")
+
+    def test_is_recycle_bin_path_empty_tag_disables(self):
+        """用户显式清空 ORPHAN_RECYCLE_BIN_TAG → 返回 False（不排除任何文件）"""
+        with patch("app.services.orphan_scanner.settings") as mock_settings:
+            mock_settings.ORPHAN_RECYCLE_BIN_TAG = ""
+            assert not OrphanScanner._is_recycle_bin_path("[Seed].pending_delete")
+
+
 # ==================== 路径收集辅助方法 ====================
 
 
@@ -528,6 +562,111 @@ class TestOrphanDetection:
         scanner = OrphanScanner()
         with pytest.raises(OrphanScanIncompleteError):
             scanner._walk_scan_root("/nonexistent/path", None, [])
+
+    # ==================== Level3 回收站文件不应被误判为孤儿（核心回归） ====================
+
+    def test_iter_regular_files_skips_quarantine_dir(self, tmp_path):
+        """_iter_regular_files 不递归进入隔离区目录 .btdeck_quarantine"""
+        qdir = tmp_path / ".btdeck_quarantine"
+        qdir.mkdir()
+        (qdir / "q.bin").write_bytes(b"x")
+        normal = tmp_path / "normal.mkv"
+        normal.write_bytes(b"x")
+
+        results = list(OrphanScanner._iter_regular_files(str(tmp_path), ".btdeck_quarantine"))
+        names = {p.name for p, _ in results}
+        assert "normal.mkv" in names
+        assert "q.bin" not in names
+
+    def test_iter_regular_files_skips_recycle_bin_dir(self, tmp_path):
+        """_iter_regular_files 不递归进入 Level3 多文件回收站目录 [Seed].pending_delete。
+
+        回归核心 bug：TorrentName.pending_delete/ 目录会被递归，内部子文件（原名不变）
+        被逐个枚举为孤儿（生产库 204 条误判的来源）。
+        """
+        recycle_dir = tmp_path / "[Seed].pending_delete"
+        recycle_dir.mkdir()
+        (recycle_dir / "inner.zip").write_bytes(b"x")
+        normal = tmp_path / "normal.mkv"
+        normal.write_bytes(b"x")
+
+        results = list(OrphanScanner._iter_regular_files(str(tmp_path), ".btdeck_quarantine"))
+        names = {p.name for p, _ in results}
+        assert "normal.mkv" in names
+        # 多文件目录被剪枝，内部 inner.zip 不被枚举
+        assert "inner.zip" not in names
+
+    def test_iter_regular_files_yields_path_and_stat(self, tmp_path):
+        """_iter_regular_files 返回 (Path, stat_result) 元组"""
+        f = tmp_path / "f.txt"
+        f.write_text("x")
+        results = list(OrphanScanner._iter_regular_files(str(tmp_path), ".btdeck_quarantine"))
+        assert len(results) == 1
+        path, stat_info = results[0]
+        assert path.name == "f.txt"
+        assert hasattr(stat_info, "st_size")
+
+    def test_walk_scan_root_skips_pending_delete_dir(self, tmp_path):
+        """多文件回收站目录内的子文件不被判为孤儿（端到端）。
+
+        场景：[Seed].pending_delete/inner.zip（Level3 多文件形态）+ 一个真孤儿。
+        断言 inner.zip 不在结果，真孤儿在。
+        """
+        recycle_dir = tmp_path / "[Seed].pending_delete"
+        recycle_dir.mkdir()
+        (recycle_dir / "inner.zip").write_bytes(b"x")
+        orphan = tmp_path / "real_orphan.mkv"
+        orphan.write_bytes(b"x")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+
+        orphans = scanner._walk_scan_root(str(tmp_path), "dl_001", [])
+        paths = [o.file_path for o in orphans]
+
+        assert os.path.abspath(str(orphan)) in paths
+        # 回收站目录内子文件绝不被判孤儿
+        assert not any("inner.zip" in p for p in paths)
+        assert not any(".pending_delete" in p for p in paths)
+
+    def test_walk_scan_root_skips_pending_delete_single_file(self, tmp_path):
+        """单文件回收站改名（有扩展名）不被判孤儿：movie.pending_delete.mkv
+
+        回归 fnmatch 盲区：*.pending_delete 要求以 .pending_delete 结尾，
+        对 movie.pending_delete.mkv 返回 False（扩展名在后）。
+        """
+        recycle_file = tmp_path / "movie.pending_delete.mkv"
+        recycle_file.write_bytes(b"x")
+        orphan = tmp_path / "real_orphan.mkv"
+        orphan.write_bytes(b"x")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+
+        orphans = scanner._walk_scan_root(str(tmp_path), "dl_001", [])
+        paths = [o.file_path for o in orphans]
+
+        assert os.path.abspath(str(orphan)) in paths
+        assert os.path.abspath(str(recycle_file)) not in paths
+
+    def test_walk_scan_root_skips_pending_delete_no_ext(self, tmp_path):
+        """单文件回收站改名（无扩展名）不被判孤儿：README.pending_delete
+
+        回归 glob 方案的盲区：README → splitext 无扩展 → 改名 README.pending_delete。
+        """
+        recycle_file = tmp_path / "README.pending_delete"
+        recycle_file.write_bytes(b"x")
+        orphan = tmp_path / "real_orphan.mkv"
+        orphan.write_bytes(b"x")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+
+        orphans = scanner._walk_scan_root(str(tmp_path), "dl_001", [])
+        paths = [o.file_path for o in orphans]
+
+        assert os.path.abspath(str(orphan)) in paths
+        assert os.path.abspath(str(recycle_file)) not in paths
 
     def test_orphan_file_item_attributes(self):
         """OrphanFileItem 正确保存属性"""
@@ -1334,6 +1473,74 @@ async def test_transmission_fetch_uses_files_argument_and_object_shape(
 
     assert result == ["folder/video.mkv"]
     fake_tr_client.get_torrent.assert_called_once_with("hash-tr", arguments=["files"])
+
+
+# ==================== 清理流水线回收站路径门禁（纵深防御） ====================
+
+
+class TestPathAuthorizedRecycleBinGate:
+    """_path_authorized 对 Level3 回收站路径的拒绝门禁测试。
+
+    纵深防御：即使历史误判候选已残留在 orphan_current_candidate 中（canonical_path
+    含 .pending_delete），清理流水线（手动 cleanup_orphans / 自动 auto_cleanup_expired）
+    也通过 _path_authorized 统一授权入口拒绝处理，避免被移隔离→物理删除。
+    """
+
+    @staticmethod
+    def _candidate(canonical_path, downloader_id="dl_001"):
+        """构造仅含 canonical_path/downloader_id 的候选（门禁只读这两个字段）"""
+        return SimpleNamespace(canonical_path=canonical_path, downloader_id=downloader_id)
+
+    def test_rejects_pending_delete_path(self):
+        """canonical_path 含 .pending_delete → 拒绝（多文件目录形态）"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        candidate = self._candidate("/data/save/[Seed].pending_delete/inner.zip")
+        # 门禁在 downloader 校验前即拒绝，manifest 可为 None
+        assert OrphanFileService._path_authorized(candidate, None) is False
+
+    def test_rejects_pending_delete_single_file(self):
+        """canonical_path 含 .pending_delete → 拒绝（单文件改名形态）"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        candidate = self._candidate("/data/save/movie.pending_delete.mkv")
+        assert OrphanFileService._path_authorized(candidate, None) is False
+
+    def test_rejects_quarantine_path(self):
+        """canonical_path 含隔离区目录名 → 拒绝"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        candidate = self._candidate("/data/save/.btdeck_quarantine/scan_1/orphan.bin")
+        assert OrphanFileService._path_authorized(candidate, None) is False
+
+    def test_normal_path_passes_gate_then_full_authorize(self, tmp_path):
+        """普通路径越过回收站门禁，全部校验通过 → True（证明门禁不误伤合法孤儿）。
+
+        对照同一 manifest 下回收站路径被门禁拒绝。区分手段：让普通路径完整通过
+        downloader + scan_roots commonpath 校验得 True，回收站路径无论 manifest
+        多合法都被门禁挡回 False。
+        """
+        from app.services.orphan_file_service import OrphanFileService
+
+        # 构造真实存在的扫描根，使 commonpath 校验可计算
+        scan_root = tmp_path / "save"
+        scan_root.mkdir()
+        orphan_in_root = scan_root / "real_orphan.mkv"
+        orphan_in_root.write_bytes(b"x")
+
+        manifest = SimpleNamespace(
+            downloader_ids={"dl_001"},
+            scan_roots=[(str(scan_root), frozenset({"dl_001"}))],
+        )
+        # 普通路径：门禁放行 + downloader 通过 + commonpath 通过 → True
+        normal = self._candidate(str(orphan_in_root))
+        assert OrphanFileService._path_authorized(normal, manifest) is True
+
+        # 同一扫描根下的回收站路径：门禁拒绝（无论 manifest 多合法）
+        recycle_dir = scan_root / "[Seed].pending_delete"
+        recycle_dir.mkdir()
+        recycle_candidate = self._candidate(str(recycle_dir / "inner.zip"))
+        assert OrphanFileService._path_authorized(recycle_candidate, manifest) is False
 
 
 # ==================== 辅助函数 ====================

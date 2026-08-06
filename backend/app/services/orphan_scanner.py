@@ -488,6 +488,7 @@ class OrphanScanner:
             expected.update(values)
 
         quarantine_dir_name = getattr(settings, "ORPHAN_QUARANTINE_DIR_NAME", ".btdeck_quarantine")
+        recycle_tag = getattr(settings, "ORPHAN_RECYCLE_BIN_TAG", ".pending_delete") or ""
 
         try:
             for file_path, stat_info in self._iter_regular_files(root, quarantine_dir_name):
@@ -496,12 +497,20 @@ class OrphanScanner:
                 abs_path = os.path.abspath(str_path)
                 normalized_abs = _normalize_path(abs_path)
 
-                # 隔离区排除（不在隔离区内的文件才扫描）
-                if quarantine_dir_name in file_path.parts:
+                # 隔离区 + 回收站路径二次防御（_iter_regular_files 已剪枝目录，此处兜底
+                # 历史残留/边界场景）：隔离区按路径分量精确匹配，回收站按路径子串匹配
+                # （多文件目录名 TorrentName.pending_delete 是单分量，parts 精确匹配不命中）。
+                if quarantine_dir_name in file_path.parts or (recycle_tag and recycle_tag in str_path):
                     continue
 
                 # 排除模式匹配
                 if self._matches_patterns(file_path.name, exclude_patterns):
+                    continue
+
+                # Level3 单文件改名形态（name.pending_delete.ext / README.pending_delete）：
+                # 目录剪枝只拦目录，普通文件在此用 basename 子串判断排除，
+                # 对齐 recycle_bin_service.py 的 ".pending_delete" in path 既有逻辑。
+                if recycle_tag and recycle_tag in file_path.name:
                     continue
 
                 # 硬链接副本识别：与种子文件共享同一存储块（同 inode）的文件不额外
@@ -570,7 +579,15 @@ class OrphanScanner:
 
     @staticmethod
     def _iter_regular_files(root: str, excluded_dir_name: str):
-        """显式 scandir 递归；任何枚举/stat 异常都上抛，避免 pathlib 静默漏目录。"""
+        """显式 scandir 递归；任何枚举/stat 异常都上抛，避免 pathlib 静默漏目录。
+
+        目录级剪枝（不递归进入）：
+        - 隔离区目录（excluded_dir_name，默认 .btdeck_quarantine）精确名匹配
+        - Level3 回收站归档目录（TorrentName.pending_delete，endswith 回收站标记）
+          回收站标记来自配置 ORPHAN_RECYCLE_BIN_TAG；endswith 覆盖多文件种子改名
+          （TorrentName/ → TorrentName.pending_delete/），子文件原名不再被枚举为孤儿。
+        """
+        recycle_tag = getattr(settings, "ORPHAN_RECYCLE_BIN_TAG", ".pending_delete") or ""
         stack = [os.path.abspath(root)]
         while stack:
             current = stack.pop()
@@ -582,7 +599,9 @@ class OrphanScanner:
                         except OSError as exc:
                             raise OrphanScanIncompleteError(f"获取目录项信息失败 {entry.path}: {exc}") from exc
                         if stat.S_ISDIR(stat_info.st_mode):
-                            if entry.name != excluded_dir_name:
+                            # 隔离区精确名 + 回收站目录后缀名，命中任一则不递归
+                            is_recycle_dir = bool(recycle_tag) and entry.name.endswith(recycle_tag)
+                            if entry.name != excluded_dir_name and not is_recycle_dir:
                                 stack.append(entry.path)
                             continue
                         if stat.S_ISREG(stat_info.st_mode):
@@ -614,6 +633,21 @@ class OrphanScanner:
     def _matches_patterns(filename: str, patterns: List[str]) -> bool:
         """检查文件名是否匹配任一排除模式（fnmatch 语法）"""
         return any(fnmatch.fnmatch(filename, pat) for pat in patterns)
+
+    @staticmethod
+    def _is_recycle_bin_path(basename: str) -> bool:
+        """判断文件/目录名是否属于 Level3 回收站归档（含 .pending_delete 标记）。
+
+        用子串判断（非 glob）覆盖两种 Level3 删除改名形态：
+        - 多文件目录：TorrentName.pending_delete（endswith tag）
+        - 单文件改名：name.pending_delete.ext 或 README.pending_delete（tag in basename）
+
+        fnmatch 的 ``*.pending_delete`` 模式只匹配以 ``.pending_delete`` 结尾的字符串，
+        无法覆盖上述两种形态（详见 recycle_bin_service.py 的 ".pending_delete" in path
+        既有判定），故这里用子串判断而非 glob。tag 为空（用户显式清空配置）时返回 False。
+        """
+        tag = getattr(settings, "ORPHAN_RECYCLE_BIN_TAG", ".pending_delete") or ""
+        return bool(tag) and tag in basename
 
     def _in_directory_whitelist(self, abs_path: str, normalized_abs: str) -> bool:
         """判断文件是否落在目录粗筛白名单任一种子根目录下（离线降级兜底）。
