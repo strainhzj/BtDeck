@@ -43,7 +43,15 @@
             {{ pool.label }}
           </span>
           <div class="pool-header-right">
-            <!-- 池子操作按钮 (仅忽略池、成功池、失败池显示) -->
+            <!-- 快捷操作按钮（所有池子显示，含候选池） -->
+            <div class="pool-actions">
+              <el-tooltip content="快捷操作（按前缀左匹配）" placement="bottom">
+                <i class="pool-action-btn" @click="handleQuickAction(pool.type)">
+                  <LucideIcon name="wand-sparkles" :size="18" />
+                </i>
+              </el-tooltip>
+            </div>
+            <!-- 池子操作按钮 (仅忽略池、成功池、失败池显示；候选池由系统自动生成) -->
             <div v-if="pool.type !== 'candidate'" class="pool-actions">
               <el-tooltip content="添加关键词" placement="bottom">
                 <i class="pool-action-btn" @click="handleAddKeyword(pool.type)">
@@ -58,11 +66,6 @@
               <el-tooltip content="导出关键词" placement="bottom">
                 <i class="pool-action-btn" @click="handleExportKeywords(pool.type)">
                   <LucideIcon name="download" :size="18" />
-                </i>
-              </el-tooltip>
-              <el-tooltip content="快捷操作（按前缀左匹配）" placement="bottom">
-                <i class="pool-action-btn" @click="handleQuickAction(pool.type)">
-                  <LucideIcon name="wand-sparkles" :size="18" />
                 </i>
               </el-tooltip>
             </div>
@@ -120,57 +123,14 @@
       @success="handleImportSuccess"
     />
 
-    <!-- 快捷操作（左匹配）对话框 -->
-    <el-dialog
-      :title="quickActionTitle"
-      :visible.sync="quickActionDialogVisible"
-      width="520px"
-      :close-on-click-modal="false"
-      custom-class="management-dialog"
-    >
-      <div v-loading="quickActionLoading">
-        <el-alert type="info" :closable="false" show-icon title="按关键词文本前缀左匹配本池关键词">
-          <template slot="default">
-            <p>
-              输入前缀，将匹配所有<strong>{{ quickActionSourcePoolLabel }}</strong>中<strong>关键词文本</strong>以此开头的词（排除已删除）。
-            </p>
-            <p v-if="quickActionType === 'delete'">删除后关键词进入逻辑删除状态。</p>
-          </template>
-        </el-alert>
-        <div style="margin-top: 16px">
-          <label for="quick-action-prefix" style="display:block; margin-bottom: 6px; font-weight: 600">关键词前缀</label>
-          <el-input
-            id="quick-action-prefix"
-            v-model="quickActionPrefix"
-            placeholder="例如：success- 或 50%"
-            clearable
-            :disabled="quickActionLoading"
-            @keyup.enter.native="handleQuickActionConfirm"
-          />
-        </div>
-        <!-- 移动目标池子（仅移动模式显示，排除 candidate 与源池子） -->
-        <div v-if="quickActionType === 'move'" style="margin-top: 16px">
-          <label for="quick-action-target" style="display:block; margin-bottom: 6px; font-weight: 600">移动到池子</label>
-          <el-select
-            id="quick-action-target"
-            v-model="quickActionTargetPool"
-            :disabled="quickActionLoading"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="opt in availableTargetPools"
-              :key="opt.value"
-              :label="opt.label"
-              :value="opt.value"
-            />
-          </el-select>
-        </div>
-      </div>
-      <span slot="footer" class="dialog-footer">
-        <el-button :disabled="quickActionLoading" @click="handleQuickActionCancel">取消</el-button>
-        <el-button type="primary" :loading="quickActionLoading" @click="handleQuickActionConfirm">确定</el-button>
-      </span>
-    </el-dialog>
+    <!-- 快捷操作（左匹配）对话框：可复用组件，看板与详情弹窗共用 -->
+    <keyword-quick-action-dialog
+      :visible.sync="quickActionVisible"
+      :source-pool="quickActionSourcePool"
+      :source-pool-label="quickActionSourcePoolLabel"
+      :source-pool-count="quickActionSourcePoolCount"
+      @success="handleQuickActionSuccess"
+    />
   </div>
 </template>
 
@@ -180,8 +140,8 @@ import KeywordTagCard from './components/KeywordTagCard.vue'
 import KeywordListModal from './components/KeywordListModal.vue'
 import AddKeywordDialog from './components/AddKeywordDialog.vue'
 import ImportKeywordsDialog from './components/ImportKeywordsDialog.vue'
-import { getPoolKeywords, deleteKeyword, moveKeywordToPool, batchDeleteKeywords, batchMoveKeywords, keywordPrefixMatchPreview, PoolType } from '@/api/tracker'
-import { extractErrorMessage } from '@/utils/tracker'
+import KeywordQuickActionDialog from './components/KeywordQuickActionDialog.vue'
+import { getPoolKeywords, deleteKeyword, moveKeywordToPool, PoolType } from '@/api/tracker'
 
 interface PoolKeyword {
   keyword_id: string
@@ -205,7 +165,8 @@ interface Pool {
     KeywordTagCard,
     KeywordListModal,
     AddKeywordDialog,
-    ImportKeywordsDialog
+    ImportKeywordsDialog,
+    KeywordQuickActionDialog
   }
 })
 export default class TrackerKeywordsBoard extends Vue {
@@ -218,13 +179,10 @@ export default class TrackerKeywordsBoard extends Vue {
   draggedKeyword: PoolKeyword | null = null
   draggedPoolType = ''
 
-  // 快捷操作（左匹配）：下拉触发 + 前缀输入对话框
-  quickActionDialogVisible = false
-  quickActionType: 'delete' | 'move' | null = null
+  // 快捷操作（左匹配）：下拉触发，实际逻辑在 KeywordQuickActionDialog 组件内
+  quickActionVisible = false
   quickActionSourcePool: PoolType | '' = ''
-  quickActionTargetPool: PoolType = 'ignored'
-  quickActionPrefix = ''
-  quickActionLoading = false
+  quickActionSourcePoolCount = 0
 
   pools: Pool[] = [
     {
@@ -338,20 +296,9 @@ export default class TrackerKeywordsBoard extends Vue {
     return this.getPoolLabel(this.currentPoolType)
   }
 
-  // 快捷操作：移动目标池子候选（排除 candidate 系统自动生成池 + 当前源池子）
-  get availableTargetPools(): { value: PoolType, label: string }[] {
-    return this.pools
-      .filter(pool => pool.type !== 'candidate' && pool.type !== this.quickActionSourcePool)
-      .map(pool => ({ value: pool.type as PoolType, label: pool.label }))
-  }
-
+  // 快捷操作：源池标签（供 KeywordQuickActionDialog 展示）
   get quickActionSourcePoolLabel(): string {
     return this.getPoolLabel(this.quickActionSourcePool)
-  }
-
-  get quickActionTitle(): string {
-    const base = this.quickActionType === 'delete' ? '快捷删除' : '快捷移动'
-    return `${base}（按前缀）`
   }
 
   // 拖拽相关方法
@@ -611,115 +558,28 @@ export default class TrackerKeywordsBoard extends Vue {
   // ==================== 快捷操作（左匹配） ====================
 
   /**
-   * 打开快捷操作对话框
-   * delete / move 两种动作均复用同一对话框；移动模式额外显示目标池子选择。
-   * candidate 池（系统自动生成）不显示快捷操作入口，此处 sourcePool 必非 candidate。
+   * 打开快捷操作对话框（所有池子可用，含候选池）。
+   * 实际的前缀输入/预览/执行逻辑在 KeywordQuickActionDialog 组件内。
    */
   handleQuickAction(sourcePool: string) {
+    const pool = this.pools.find(p => p.type === sourcePool)
     this.quickActionSourcePool = sourcePool as PoolType
-    this.quickActionPrefix = ''
-    this.quickActionType = 'delete'
-    // 默认目标池：源池非 ignored 时选 ignored，否则选 success
-    this.quickActionTargetPool = sourcePool === 'ignored' ? 'success' : 'ignored'
-    this.quickActionDialogVisible = true
-  }
-
-  handleQuickActionCancel() {
-    this.quickActionDialogVisible = false
+    this.quickActionSourcePoolCount = pool?.count || 0
+    this.quickActionVisible = true
   }
 
   /**
-   * 确认执行快捷操作：预览 → 门禁 → 二次确认 → 执行 → 精准刷新
-   * 对齐 orphan-files 快捷操作流程（handleQuickActionConfirm）。
+   * 快捷操作执行成功后的精准刷新。
+   * @param payload 移动模式含 targetPool（需同时刷新目标池），删除模式 targetPool 为 null。
    */
-  async handleQuickActionConfirm() {
-    const prefix = this.quickActionPrefix.trim()
-    const sourcePool = this.quickActionSourcePool
-    const actionType = this.quickActionType
-
-    // 门禁 1：前缀非空
-    if (!prefix) {
-      this.$message.warning('请输入关键词前缀')
-      return
-    }
-    if (!sourcePool || !actionType) {
-      return
-    }
-
-    // 门禁 2：源池为空（本页仅前 20 条，用 count 判断总量）
-    const sourcePoolObj = this.pools.find(p => p.type === sourcePool)
-    if (sourcePoolObj && sourcePoolObj.count === 0) {
-      this.$message.warning('该池没有关键词')
-      return
-    }
-
-    // 门禁 3：移动模式源==目标
-    if (actionType === 'move' && sourcePool === this.quickActionTargetPool) {
-      this.$message.warning('不能移动到原池子')
-      return
-    }
-
-    this.quickActionLoading = true
-    try {
-      // 预览命中
-      const resp = await keywordPrefixMatchPreview({ pool_type: sourcePool, prefix })
-      if (resp.code !== '200' || !resp.data) {
-        this.$message.error(resp.msg || '预览失败')
-        return
-      }
-
-      // 0 命中
-      if (resp.data.count === 0) {
-        this.$message.info('没有匹配的关键词')
-        return
-      }
-
-      // 二次确认文案（附带 sample 前 5 条供核对）
-      const sampleText = resp.data.sample_keywords.slice(0, 5).join('、')
-      const sampleHint = sampleText ? `\n匹配样本：${sampleText}${resp.data.count > 5 ? ' …' : ''}` : ''
-      const isDelete = actionType === 'delete'
-      const targetLabel = this.getPoolLabel(this.quickActionTargetPool)
-      const confirmText = isDelete
-        ? `将删除 ${resp.data.count} 个匹配的关键词。${sampleHint}\n\n确认删除？`
-        : `将移动 ${resp.data.count} 个关键词到${targetLabel}。${sampleHint}\n\n确认移动？`
-
-      try {
-        await this.$confirm(confirmText, '提示', {
-          confirmButtonText: '确定',
-          cancelButtonText: '取消',
-          type: isDelete ? 'warning' : 'info',
-          dangerouslyUseHTMLString: false
-        })
-      } catch {
-        // 用户取消二次确认：复位 loading，保留对话框与前缀，便于改前缀重试
-        this.quickActionLoading = false
-        return
-      }
-
-      // 执行
-      const keywordIds = resp.data.keyword_ids
-      if (isDelete) {
-        await batchDeleteKeywords({ keyword_ids: keywordIds })
-        this.$message.success(`已删除 ${resp.data.count} 个关键词`)
-        // 精准刷新：仅源池
-        await this.loadPoolData(sourcePool)
-      } else {
-        await batchMoveKeywords({ keyword_ids: keywordIds, target_pool: this.quickActionTargetPool })
-        this.$message.success(`已移动 ${resp.data.count} 个关键词到${targetLabel}`)
-        // 精准刷新：源池 + 目标池
-        await Promise.all([
-          this.loadPoolData(sourcePool),
-          this.loadPoolData(this.quickActionTargetPool)
-        ])
-      }
-
-      this.quickActionDialogVisible = false
-    } catch (error: any) {
-      console.error('快捷操作失败:', error)
-      const errorMsg = extractErrorMessage(error, '操作失败')
-      this.$message.error(errorMsg)
-    } finally {
-      this.quickActionLoading = false
+  async handleQuickActionSuccess(payload: { sourcePool: PoolType, targetPool: PoolType | null }) {
+    if (payload.targetPool) {
+      await Promise.all([
+        this.loadPoolData(payload.sourcePool),
+        this.loadPoolData(payload.targetPool)
+      ])
+    } else {
+      await this.loadPoolData(payload.sourcePool)
     }
   }
 }

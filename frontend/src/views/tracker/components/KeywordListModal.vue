@@ -30,6 +30,13 @@
           </el-input>
         </div>
 
+        <!-- 快捷操作（按前缀左匹配），位于搜索框右侧 -->
+        <el-tooltip content="快捷操作（按前缀左匹配）" placement="top">
+          <i class="quick-action-btn" @click="openQuickAction">
+            <LucideIcon name="wand-sparkles" :size="16" />
+          </i>
+        </el-tooltip>
+
         <el-select
           v-model="searchForm.timeRange"
           placeholder="时间范围"
@@ -166,6 +173,14 @@
       </div>
     </div>
 
+    <!-- 快捷操作（左匹配）对话框：可复用组件，与关键词看板共用 -->
+    <keyword-quick-action-dialog
+      :visible.sync="quickActionVisible"
+      :source-pool="quickActionSourcePool"
+      :source-pool-label="quickActionSourcePoolLabel"
+      @success="handleQuickActionSuccess"
+    />
+
     <template #footer>
       <span class="dialog-footer">
         <el-button @click="handleClose">关 闭</el-button>
@@ -178,6 +193,7 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { moveKeywordToPool, deleteKeyword, batchMoveKeywords, batchDeleteKeywords, getPoolKeywords } from '@/api/tracker'
 import type { PoolType } from '@/api/tracker'
+import KeywordQuickActionDialog from './KeywordQuickActionDialog.vue'
 
 interface KeywordItem {
   keyword_id: string
@@ -200,7 +216,10 @@ interface Pagination {
 }
 
 @Component({
-  name: 'KeywordListModal'
+  name: 'KeywordListModal',
+  components: {
+    KeywordQuickActionDialog
+  }
 })
 export default class KeywordListModal extends Vue {
   @Prop({ required: true }) visible!: boolean
@@ -220,6 +239,10 @@ export default class KeywordListModal extends Vue {
     total: 0
   }
   keywordList: KeywordItem[] = []
+
+  // 快捷操作（左匹配）状态：实际逻辑在 KeywordQuickActionDialog 组件内
+  quickActionVisible = false
+  quickActionSourcePool: PoolType | '' = ''
 
   // 全选相关
   allSelected = false
@@ -248,6 +271,10 @@ export default class KeywordListModal extends Vue {
 
   get dialogTitle(): string {
     return `${this.poolConfig[this.poolType]?.label || '池子'}详情`
+  }
+
+  get quickActionSourcePoolLabel(): string {
+    return this.poolConfig[this.quickActionSourcePool]?.label || '池子'
   }
 
   get availablePools() {
@@ -414,6 +441,19 @@ export default class KeywordListModal extends Vue {
     }
   }
 
+  // ==================== 快捷操作（左匹配） ====================
+
+  openQuickAction() {
+    this.quickActionSourcePool = this.poolType as PoolType
+    this.quickActionVisible = true
+  }
+
+  handleQuickActionSuccess() {
+    // 快捷操作执行成功后：通知父组件（看板）刷新池计数，并刷新本弹窗列表
+    this.$emit('refresh')
+    this.loadData()
+  }
+
   handleClose() {
     this.dialogVisible = false
     this.searchForm = {
@@ -476,6 +516,26 @@ export default class KeywordListModal extends Vue {
   .search-input-wrapper {
     flex: 1;
     min-width: 200px;
+  }
+
+  // 快捷操作按钮（搜索框右侧）
+  .quick-action-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      color: var(--color-info);
+      background: var(--color-info-light);
+      transform: scale(1.05);
+    }
   }
 
   .el-select {

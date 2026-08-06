@@ -21,6 +21,8 @@ export interface SystemStats {
   uptime: number
   uptime_display: string
   version: string
+  total_download_speed: number
+  total_upload_speed: number
 }
 
 export interface DownloaderListItem {
@@ -30,6 +32,8 @@ export interface DownloaderListItem {
   status: 'online' | 'offline'
   downloading: number
   seeding: number
+  download_speed: number
+  upload_speed: number
 }
 
 export interface ActivityItem {

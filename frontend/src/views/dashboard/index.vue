@@ -84,13 +84,13 @@
           <span class="stat-card-title">系统状态</span>
           <div class="stat-card-icon info">✓</div>
         </div>
-        <div class="stat-card-value">{{ systemHealthDisplay }}<span v-if="hasDashboardData">%</span></div>
+        <div class="stat-card-value">{{ systemTotalSpeed }}</div>
         <div class="stat-card-progress">
           <div class="stat-card-progress-bar" :style="{width: systemHealth + '%'}"></div>
         </div>
-        <div class="stat-card-trend up">
-          <span>运行时间</span>
-          <span>{{ systemUptime }}</span>
+        <div class="stat-card-trend up stat-card-trend--column">
+          <span>{{ systemSpeedDetail }}</span>
+          <span class="stat-card-trend-uptime">运行时间 {{ systemUptime }}</span>
         </div>
       </div>
     </div>
@@ -132,6 +132,14 @@
               <div class="downloader-mini-stat">
                 <div class="downloader-mini-stat-value">{{ formatStatValue(downloader.seeding) }}</div>
                 <div class="downloader-mini-stat-label">做种中</div>
+              </div>
+              <div class="downloader-mini-stat">
+                <div class="downloader-mini-stat-value">{{ formatSpeedDisplay(downloader.download_speed) }}</div>
+                <div class="downloader-mini-stat-label">下载速度</div>
+              </div>
+              <div class="downloader-mini-stat">
+                <div class="downloader-mini-stat-value">{{ formatSpeedDisplay(downloader.upload_speed) }}</div>
+                <div class="downloader-mini-stat-label">上传速度</div>
               </div>
             </div>
             <div v-else class="downloader-card-stats">
@@ -236,6 +244,7 @@ import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { getDashboardData } from '@/api/dashboard'
 import { DashboardData, DownloaderListItem } from '@/types/dashboard'
+import { formatSpeed } from '@/utils/formatters'
 import { debounce } from 'lodash-es'
 import { Message } from 'element-ui'
 
@@ -252,7 +261,7 @@ export default class extends Vue {
     downloaders: { total: 0, online: 0, offline: 0 },
     torrents: { active: 0, downloading: 0, seeding: 0, paused: 0 },
     tasks: { total: 0, running: 0, stopped: 0 },
-    system: { uptime: 0, uptime_display: '--', version: '--' },
+    system: { uptime: 0, uptime_display: '--', version: '--', total_download_speed: 0, total_upload_speed: 0 },
     downloader_list: [],
     activities: []
   }
@@ -313,8 +322,25 @@ export default class extends Vue {
     return this.hasDashboardData ? 100 : 0
   }
 
-  get systemHealthDisplay() {
-    return this.hasDashboardData ? String(this.systemHealth) : '--'
+  // 系统状态主数值：所有下载器上传+下载速度之和
+  get systemTotalSpeed() {
+    if (!this.hasDashboardData) return '--'
+    const total = (this.dashboard.system.total_download_speed || 0) + (this.dashboard.system.total_upload_speed || 0)
+    return formatSpeed(total) || '0 B/s'
+  }
+
+  // 系统状态副文字：↓下载 ↑上传
+  get systemSpeedDetail() {
+    if (!this.hasDashboardData) return ''
+    const dl = formatSpeed(this.dashboard.system.total_download_speed) || '0 B/s'
+    const ul = formatSpeed(this.dashboard.system.total_upload_speed) || '0 B/s'
+    return `↓${dl} ↑${ul}`
+  }
+
+  private formatSpeedDisplay(value?: number | null): string {
+    if (!this.hasDashboardData) return '--'
+    if (value === null || value === undefined) return '--'
+    return formatSpeed(value) || '0 B/s'
   }
 
   created() {
@@ -613,6 +639,18 @@ export default class extends Vue {
   &.down {
     color: var(--color-error);
   }
+
+  // 系统状态卡：速度明细与运行时间纵向排列
+  &.stat-card-trend--column {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+  }
+}
+
+.stat-card-trend-uptime {
+  color: var(--color-text-tertiary);
+  font-size: 11px;
 }
 
 // 主内容区
@@ -770,6 +808,9 @@ export default class extends Vue {
   font-size: 18px;
   font-weight: 700;
   color: var(--color-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .downloader-mini-stat-label {
