@@ -6,7 +6,7 @@ from app.api.endpoints import (
     tracker_test,
     tracker_keywords_pools,
 )
-from app.api.endpoints import audit_logs, recycle_bin, duplicate_torrents
+from app.api.endpoints import audit_logs, recycle_bin, duplicate_torrents, duplicate_quick_delete
 from app.api.endpoints import dashboard
 
 # 导入下载器设置相关API
@@ -62,6 +62,8 @@ api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-
 api_router.include_router(recycle_bin.router, prefix="/recycle", tags=["recycle-bin"])
 # 添加重复检测路由
 api_router.include_router(duplicate_torrents.router, prefix="/torrents", tags=["torrents"])
+# 添加快捷删除重复种子路由
+api_router.include_router(duplicate_quick_delete.router, prefix="/torrents", tags=["torrents"])
 # 添加下载器设置管理路由
 api_router.include_router(downloader_settings.router, prefix="/downloaders", tags=["下载器设置"])
 api_router.include_router(setting_templates.router, prefix="/setting-templates", tags=["配置模板"])
