@@ -864,6 +864,75 @@ export function getDuplicateTorrents(params?: DuplicateQuery): Promise<ApiRespon
   }) as unknown as Promise<ApiResponse<DuplicateResponse>>
 }
 
+// ==================== 快捷删除重复种子接口 ====================
+
+export interface QuickDeletePreviewItem {
+  info_id: string
+  downloader_id: string
+  downloader_name: string
+  name: string
+  size: number | null
+  status: string
+  hash: string
+}
+
+export interface QuickDeletePreviewGroup {
+  hash: string
+  name: string
+  size: number | null
+  kept: QuickDeletePreviewItem[]
+  to_delete: QuickDeletePreviewItem[]
+  skipped: boolean
+}
+
+export interface QuickDeletePreviewResponse {
+  total: number
+  page: number
+  pageSize: number
+  total_groups: number
+  total_delete: number
+  skipped_groups: number
+  list: QuickDeletePreviewGroup[]
+}
+
+export interface QuickDeletePreviewRequest {
+  downloader_ids: string[]
+  keep_downloader_ids: string[]
+  page?: number
+  pageSize?: number
+}
+
+export function getQuickDeleteDuplicatePreview(
+  params: QuickDeletePreviewRequest
+): Promise<ApiResponse<QuickDeletePreviewResponse>> {
+  return request({
+    url: '/torrents/duplicates/quick-delete-preview',
+    method: 'post',
+    data: params
+  }) as unknown as Promise<ApiResponse<QuickDeletePreviewResponse>>
+}
+
+export interface QuickDeleteRequest {
+  downloader_ids: string[]
+  keep_downloader_ids: string[]
+  delete_level?: number
+  notify_on_complete?: boolean
+}
+
+export interface QuickDeleteResponse {
+  task_id: string | null
+  total_count: number
+  delete_level: number
+}
+
+export function quickDeleteDuplicates(params: QuickDeleteRequest): Promise<ApiResponse<QuickDeleteResponse>> {
+  return request({
+    url: '/torrents/duplicates/quick-delete',
+    method: 'post',
+    data: params
+  }) as unknown as Promise<ApiResponse<QuickDeleteResponse>>
+}
+
 
 
 // ==================== 种子转移相关接口 ====================

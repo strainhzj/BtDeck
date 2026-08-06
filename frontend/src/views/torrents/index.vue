@@ -64,7 +64,7 @@
       <!-- 批量开始 -->
       <batch-button
         type="success"
-        icon="el-icon-video-play"
+        lucide-icon="play"
         tooltip="开始"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchStart"
@@ -73,7 +73,7 @@
       <!-- 批量暂停 -->
       <batch-button
         type="warning"
-        icon="el-icon-video-pause"
+        lucide-icon="pause"
         tooltip="暂停"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchPause"
@@ -89,7 +89,7 @@
       >
         <batch-button
           type="danger"
-          icon="el-icon-delete"
+          lucide-icon="trash"
           tooltip="删除"
           :disabled="multipleSelection.length === 0"
         />
@@ -112,7 +112,7 @@
       <!-- 批量重检 -->
       <batch-button
         type="info"
-        icon="el-icon-refresh"
+        lucide-icon="refresh-cw"
         tooltip="重检"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchRecheck"
@@ -121,7 +121,7 @@
       <!-- Tracker操作 -->
       <batch-button
         type="default"
-        icon="el-icon-link"
+        lucide-icon="link"
         tooltip="Tracker操作"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchTracker"
@@ -130,7 +130,7 @@
       <!-- Tracker汇报 -->
       <batch-button
         type="info"
-        icon="el-icon-share"
+        lucide-icon="forward"
         tooltip="Tracker汇报"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchReannounce"
@@ -139,7 +139,7 @@
       <!-- 全局替换 -->
       <batch-button
         type="default"
-        icon="el-icon-setting"
+        lucide-icon="settings"
         tooltip="全局替换"
         @click="showGlobalReplaceDialog = true"
       />
@@ -147,7 +147,7 @@
       <!-- 批量转移 -->
       <batch-button
         type="info"
-        icon="el-icon-sort"
+        lucide-icon="route"
         tooltip="转移"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchTransfer"
@@ -156,18 +156,32 @@
       <!-- 批量修改路径 -->
       <batch-button
         type="primary"
-        icon="el-icon-folder-opened"
+        lucide-icon="folder-open"
         tooltip="修改路径"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchSetLocation"
       />
+
+      <!-- 快捷操作（下拉） -->
+      <el-dropdown trigger="click" @command="handleQuickActionCommand">
+        <batch-button
+          type="default"
+          lucide-icon="zap"
+          tooltip="快捷操作"
+        />
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item command="delete-duplicates" divided>
+            <i class="el-icon-delete"></i> 快捷删除重复种子
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
 
       <div style="flex: 1;"></div>
 
       <!-- 添加种子 -->
       <batch-button
         type="primary"
-        icon="el-icon-plus"
+        lucide-icon="plus"
         tooltip="添加种子"
         @click="showAddDialog = true"
       />
@@ -175,7 +189,7 @@
       <!-- 列设置 -->
       <batch-button
         type="default"
-        icon="el-icon-setting"
+        lucide-icon="settings"
         tooltip="列设置"
         @click="showColumnSettings = true"
       />
@@ -694,12 +708,12 @@
       />
     </el-dialog>
 
-    <!-- 重复检测对话框（不再需要弹窗，结果直接显示在主列表中） -->
-    <!-- <DuplicateTorrentsDialog
-      :visible.sync="showDuplicateTorrentsDialog"
-      @close="handleDuplicateTorrentsDialogClose"
-      @refresh="handleRefreshDuplicateTorrents"
-    /> -->
+    <!-- 快捷删除重复种子对话框 -->
+    <QuickDeleteDuplicatesDialog
+      :visible.sync="showQuickDeleteDuplicatesDialog"
+      @close="showQuickDeleteDuplicatesDialog = false"
+      @deleted="handleQuickDeleteDeleted"
+    />
   </div>
 </template>
 <script lang="ts">
@@ -708,6 +722,7 @@ import { mixins } from 'vue-class-component'
 import BatchButton from '@/components/BatchButton/index.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
+import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import {
@@ -777,6 +792,7 @@ type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
     GlobalReplaceTrackerDialog: () => import('./components/GlobalReplaceTrackerDialog.vue'),
     BatchTransferDialog: () => import('./components/BatchTransferDialog.vue'),
     SetLocationDialog: () => import('./components/SetLocationDialog.vue'),
+    QuickDeleteDuplicatesDialog
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
@@ -822,6 +838,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private showAdvancedSearchDialog = false
   private showBatchTransferDialog = false
   private showSetLocationDialog = false
+  private showQuickDeleteDuplicatesDialog = false
   private advancedSearchSearching = false
 
   // 修改路径相关
@@ -1104,6 +1121,24 @@ export default class extends mixins(TorrentBatchMixin) {
   private handleManualRefresh() {
     this.getList()
     this.loadActiveSpeed()
+  }
+
+  // ==================== 快捷操作 ====================
+
+  /**
+   * 快捷操作下拉菜单命令分发
+   */
+  private handleQuickActionCommand(command: string) {
+    if (command === 'delete-duplicates') {
+      this.showQuickDeleteDuplicatesDialog = true
+    }
+  }
+
+  /**
+   * 快捷删除重复种子完成后刷新列表
+   */
+  private handleQuickDeleteDeleted() {
+    this.handleManualRefresh()
   }
 
   // 分页切换

@@ -2,13 +2,14 @@
   <el-tooltip :content="tooltip" :placement="placement">
     <el-button
       :type="type"
-      :icon="icon"
+      :icon="lucideIcon ? '' : icon"
       :circle="circle"
       :size="size"
       :disabled="disabled"
       :loading="loading"
       @click="handleClick"
     >
+      <LucideIcon v-if="lucideIcon" :name="lucideIcon" :size="lucideSize" />
       <slot v-if="!circle"></slot>
     </el-button>
   </el-tooltip>
@@ -16,13 +17,15 @@
 
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 
 @Component({
-  name: 'BatchButton'
+  name: 'BatchButton',
+  components: { LucideIcon }
 })
 export default class extends Vue {
   // ========== Props 定义 ==========
-  
+
   /**
    * 按钮类型
    * @type {'primary' | 'success' | 'warning' | 'danger' | 'info' | 'text' | 'default'}
@@ -31,11 +34,25 @@ export default class extends Vue {
   private type!: string
 
   /**
-   * Element UI 图标类名
+   * Element UI 图标类名（与 lucide-icon 二选一，优先 lucide-icon）
    * @example 'el-icon-check' | 'el-icon-delete' | 'el-icon-refresh'
    */
-  @Prop({ required: true })
+  @Prop({ default: '' })
   private icon!: string
+
+  /**
+   * Lucide 图标名（提供时用 LucideIcon 渲染，替代 el-icon）
+   * @example 'play' | 'trash' | 'settings'
+   */
+  @Prop({ default: '' })
+  private lucideIcon!: string
+
+  /**
+   * Lucide 图标尺寸（px）
+   * @default 16
+   */
+  @Prop({ default: 16 })
+  private lucideSize!: number
 
   /**
    * 鼠标悬停时显示的提示文字

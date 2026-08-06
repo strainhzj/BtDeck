@@ -191,6 +191,16 @@
         :disabled="multipleSelection.length === 0"
         @click="handleBatchSetLocation"
       >修改路径</el-button>
+      <el-dropdown trigger="click" @command="handleQuickActionCommand">
+        <el-button type="text" size="small" title="快捷操作">
+          快捷操作<i class="el-icon-arrow-down el-icon--right"></i>
+        </el-button>
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item command="delete-duplicates">
+            <i class="el-icon-delete"></i> 快捷删除重复种子
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
     </div>
     <div class="page-body">
       <!-- 左侧过滤面板 -->
@@ -673,6 +683,13 @@
       @success="handleGlobalReplaceSuccess"
     />
 
+    <!-- 快捷删除重复种子 -->
+    <QuickDeleteDuplicatesDialog
+      :visible.sync="showQuickDeleteDuplicatesDialog"
+      @close="showQuickDeleteDuplicatesDialog = false"
+      @deleted="handleQuickDeleteDeleted"
+    />
+
     <!-- P1新增：高级搜索 -->
     <el-dialog
       :visible.sync="showAdvancedSearchDialog"
@@ -736,6 +753,7 @@ import SetLocationDialog from './components/SetLocationDialog.vue'
 import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
+import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
@@ -829,6 +847,7 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     BatchTransferDialog,
     TrackerOperationDialog,
     GlobalReplaceTrackerDialog,
+    QuickDeleteDuplicatesDialog,
     FilterGroup,
     PageSizeCombobox,
     AdvancedSearchBuilder: () => import('@/components/torrents/AdvancedSearchBuilder.vue')
@@ -892,6 +911,8 @@ export default class extends mixins(TorrentBatchMixin) {
   // P1新增：高级搜索 / 查找重复
   private showAdvancedSearchDialog = false
   private advancedSearchSearching = false
+  // 快捷删除重复种子
+  private showQuickDeleteDuplicatesDialog = false
 
   // 详情面板
   private currentRow: any = null
@@ -1644,6 +1665,24 @@ export default class extends mixins(TorrentBatchMixin) {
       this.getList()
     }
     this.loadActiveSpeed()
+  }
+
+  // ====== 快捷操作 ======
+
+  /**
+   * 快捷操作下拉菜单命令分发
+   */
+  private handleQuickActionCommand(command: string) {
+    if (command === 'delete-duplicates') {
+      this.showQuickDeleteDuplicatesDialog = true
+    }
+  }
+
+  /**
+   * 快捷删除重复种子完成后刷新列表
+   */
+  private handleQuickDeleteDeleted() {
+    this.handleManualRefresh()
   }
 
   // ====== P0#3/#4 Tracker 状态判断（委托下沉的纯函数） + 单条汇报 ======
