@@ -5,6 +5,7 @@ import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import TraditionalView from '@/views/torrents/TraditionalView.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
   advancedSearch,
   getActiveTorrents,
@@ -296,7 +297,10 @@ function mountTraditionalView(): Wrapper<Vue> {
       TrackerOperationDialog: true,
       GlobalReplaceTrackerDialog: true,
       PageSizeCombobox,
-      AdvancedSearchBuilder: true
+      AdvancedSearchBuilder: true,
+      // shallowMount 默认会把 LucideIcon stub 成空占位，无法断言 svg/name。
+      // 传入真实组件引用，让 <LucideIcon> 真实渲染（见 FilterGroup.spec.ts 同款做法）。
+      LucideIcon
     }
   })
 }
@@ -382,6 +386,41 @@ describe('TraditionalView component regressions', () => {
       '等级1: 完全删除'
     ])
     expect('handleBatchDelete' in (wrapper.vm as object)).toBe(false)
+  })
+
+  it('删除下拉四个等级项各自渲染正确的 LucideIcon（name + danger）', async() => {
+    // 图标迁移回归锚点：4 个等级入口的图标从 el-icon-* 改为 LucideIcon。
+    // 任一回退（改回 el-icon、name 写错、等级1 丢失 danger 红色）都会让本用例失败。
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+
+    const levelItems = wrapper.findAll('.delete-level-menu .el-dropdown-item-stub')
+    expect(levelItems).toHaveLength(4)
+
+    // 下标顺序与 DOM 一致：command 4 / 3 / 2 / 1
+    const expectedIcons = ['tag', 'trash-2', 'trash', 'alert-triangle']
+
+    for (let index = 0; index < levelItems.length; index += 1) {
+      const item = levelItems.at(index)
+
+      // 真实 svg 渲染，防回退成 missing 占位或 el-icon 字体图标
+      expect(item.find('svg').exists()).toBe(true)
+      expect(item.find('.lucide-icon--missing').exists()).toBe(false)
+
+      // name prop 契约
+      const icon = item.findComponent(LucideIcon)
+      expect(icon.exists()).toBe(true)
+      expect(icon.props('name')).toBe(expectedIcons[index])
+
+      // 每个图标都带 menu-icon 间距类
+      expect(item.find('.lucide-icon').classes()).toContain('menu-icon')
+    }
+
+    // 仅等级1（完全删除）带 danger 红色警示
+    expect(levelItems.at(3).find('.lucide-icon').classes()).toContain('danger')
+    expect(levelItems.at(0).find('.lucide-icon').classes()).not.toContain('danger')
+    expect(levelItems.at(1).find('.lucide-icon').classes()).not.toContain('danger')
+    expect(levelItems.at(2).find('.lucide-icon').classes()).not.toContain('danger')
   })
 
   it('详情面板默认 Tracker 且不再包含常规页签', async() => {

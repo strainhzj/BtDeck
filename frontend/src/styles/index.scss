@@ -153,3 +153,18 @@ div:focus {
   top: 0;
   z-index: var(--z-index-dropdown, 1000);
 }
+
+/* el-dropdown-item 内 LucideIcon 的统一间距与配色。
+   全局（非 scoped）规则：el-dropdown-menu 常通过 append-to-body teleport 到 <body>，
+   组件内 scoped 样式无法穿透，故集中在此声明，供各视图下拉项复用。 */
+.el-dropdown-menu .menu-icon {
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  color: var(--color-text-secondary);
+  flex-shrink: 0;
+
+  &.danger {
+    color: var(--color-error);
+  }
+}
