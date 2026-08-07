@@ -1,76 +1,71 @@
 <template>
   <div class="app-container file-management-page">
-    <!-- 页面标题 -->
-    <div style="margin-bottom: 20px;">
-      <h2 style="font-size: 20px; color: #303133; font-weight: 600; margin: 0;">
-        📁 种子文件管理
+    <!-- 页面标题（BEM 范式，对齐 orphan-files） -->
+    <div class="management-page__header">
+      <h2 class="management-page__title">
+        <LucideIcon name="folder" :size="20" />种子文件管理
       </h2>
-      <p style="font-size: 14px; color: #909399; margin-top: 8px; margin-bottom: 0;">
-        管理种子文件备份，支持去重、导出、导入操作
-      </p>
+      <p class="management-page__subtitle">管理种子文件备份，支持去重、导出、导入操作</p>
     </div>
 
-    <!-- ========== 筛选区域 ========== -->
-    <div class="filter-container">
-      <el-input
-        v-model="listQuery.search"
-        placeholder="搜索任务名称或Info Hash..."
-        style="width: 250px;"
-        class="filter-item"
-        clearable
-        @keyup.enter.native="handleFilter"
-      >
-        <i slot="prefix" class="el-input__icon el-icon-search"></i>
-      </el-input>
+    <!-- ========== 筛选区域（BEM 范式，复用 management-list-page.scss 全局样式） ========== -->
+    <section class="management-panel" aria-label="种子文件筛选条件">
+      <div class="management-filter">
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="file-search">任务名称 / Info Hash</label>
+          <el-input
+            id="file-search"
+            v-model="listQuery.search"
+            class="management-filter__control file-mgmt-input"
+            placeholder="搜索任务名称或Info Hash..."
+            prefix-icon="el-icon-search"
+            clearable
+            @keyup.enter.native="handleFilter"
+            @clear="handleFilter"
+          />
+        </div>
 
-      <el-select
-        v-model="listQuery.downloader_id"
-        placeholder="筛选下载器"
-        clearable
-        style="width: 200px;"
-        class="filter-item"
-      >
-        <el-option
-          v-for="downloader in downloaderList"
-          :key="downloader.downloader_id"
-          :label="downloader.downloader_name"
-          :value="downloader.downloader_id"
-        />
-      </el-select>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="file-downloader">下载器</label>
+          <el-select
+            id="file-downloader"
+            v-model="listQuery.downloader_id"
+            class="management-filter__control file-mgmt-input"
+            placeholder="全部下载器"
+            clearable
+            @change="handleFilter"
+          >
+            <el-option
+              v-for="downloader in downloaderList"
+              :key="downloader.downloader_id"
+              :label="downloader.downloader_name"
+              :value="downloader.downloader_id"
+            />
+          </el-select>
+        </div>
 
-      <el-date-picker
-        v-model="dateRange"
-        type="daterange"
-        range-separator="至"
-        start-placeholder="开始日期"
-        end-placeholder="结束日期"
-        class="filter-item"
-        style="width: 280px;"
-        value-format="yyyy-MM-dd"
-        clearable
-        @change="handleDateChange"
-      />
+        <div class="management-filter__field management-filter__field--wide">
+          <label class="management-filter__label" for="file-date">创建时间</label>
+          <el-date-picker
+            id="file-date"
+            v-model="dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            class="management-filter__control file-mgmt-input file-mgmt-daterange"
+            value-format="yyyy-MM-dd"
+            clearable
+            @change="handleDateChange"
+          />
+        </div>
 
-      <el-button
-        v-waves
-        class="filter-item"
-        type="primary"
-        icon="el-icon-search"
-        size="small"
-        @click="handleFilter"
-      >
-        搜索
-      </el-button>
-      <el-button
-        class="filter-item"
-        type="default"
-        icon="el-icon-refresh-left"
-        size="small"
-        @click="resetFilter"
-      >
-        重置
-      </el-button>
-    </div>
+        <div class="management-filter__actions file-mgmt-actions">
+          <el-button type="primary" icon="el-icon-search" @click="handleFilter">搜索</el-button>
+          <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
+        </div>
+      </div>
+    </section>
 
     <!-- ========== 批量操作工具栏 ========== -->
     <section class="batch-operations">
@@ -283,6 +278,7 @@
 import { Component, Vue } from 'vue-property-decorator'
 import Pagination from '@/components/Pagination/index.vue'
 import BatchButton from '@/components/BatchButton/index.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 import waves from '@/directive/waves'
 import { getToken } from '@/utils/cookies'
 import {
@@ -307,7 +303,7 @@ interface ListQuery {
 @Component({
   name: 'FileManagement',
   directives: { waves },
-  components: { Pagination, BatchButton }
+  components: { Pagination, BatchButton, LucideIcon }
 })
 export default class FileManagement extends Vue {
   // 列表数据
@@ -698,24 +694,46 @@ export default class FileManagement extends Vue {
   padding: 20px;
 }
 
-.filter-container {
-  padding-bottom: 10px;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-
-  .filter-item {
-    margin-bottom: 10px;
+// 三控件统一高度对齐（修复重构前的高度不齐问题）。
+// orphan-files 的等高前提是 AdvancedMultiSelect 自带 32px；本页改用 el-select/el-date-picker，
+// 无法自动等高，需用 ::v-deep 统一压到 32px（参照 orphan-files .orphan-path-input）。
+.file-mgmt-input {
+  ::v-deep .el-input__inner {
+    // 命中 el-input 与 el-select（内部同为 .el-input__inner）
+    height: 32px;
+    line-height: 32px;
+    font-size: 12px;
+    border-radius: 4px;
   }
 
-  // 搜索和重置按钮之间的间距更小
-  .filter-item.el-button {
-    margin-right: 0;
+  // 命中 el-date-picker 外壳（.el-input__inner 选择器无法命中 .el-range-editor）
+  ::v-deep .el-range-editor {
+    height: 32px;
   }
 
-  // 紧凑排列搜索和重置按钮
-  .filter-item.el-button + .filter-item.el-button {
-    margin-left: 5px;
+  ::v-deep .el-range-input {
+    font-size: 12px;
+  }
+}
+
+// 搜索/重置按钮紧跟控件（覆盖全局 .management-filter__actions 的 margin-left:auto，
+// 避免 field 较少时按钮被推到面板最右留出大段空白）。
+.file-mgmt-actions {
+  margin-left: 0 !important;
+}
+
+// 日期范围选择器精简版修复：确保"至"分隔符与清除图标在窄宽下不被遮挡。
+// （management-filter__field--wide 的 flex-basis:320px 仍可能挤压 daterange，故保留必要修正。）
+.file-mgmt-daterange {
+  ::v-deep .el-range-separator {
+    padding: 0 8px;
+    min-width: 24px;
+    line-height: 32px;
+  }
+
+  ::v-deep .el-range-input {
+    flex: 1;
+    min-width: 0;
   }
 }
 
@@ -759,54 +777,6 @@ export default class FileManagement extends Vue {
     th.el-table__cell {
       border-right: none;
     }
-  }
-}
-
-// 修复日期范围选择器分隔符"至"被遮挡的问题，并确保清除图标显示
-::v-deep .el-date-editor--daterange {
-  .el-range-separator {
-    padding: 0 8px;
-    min-width: 24px;
-    line-height: 32px;
-  }
-
-  .el-range-input {
-    flex: 1;
-    min-width: 0;
-  }
-
-  // 为清除图标预留空间，避免被挤压
-  .el-range-input:last-child {
-    padding-right: 30px;
-  }
-
-  // 确保清除图标正确显示
-  .el-range__close-icon {
-    display: inline-block !important;
-    position: absolute !important;
-    right: 5px !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-    color: #C0C4CC !important;
-    font-size: 14px !important;
-    cursor: pointer !important;
-    z-index: 10 !important;
-    width: auto !important;
-    height: auto !important;
-    float: none !important;
-    font-style: normal !important;  // 确保图标为正体
-
-    &:hover {
-      color: #909399 !important;
-    }
-  }
-
-  // 确保清除图标的伪元素显示（使用圆形关闭图标）
-  .el-range__close-icon::before {
-    content: "\e79d" !important;
-    font-family: element-icons !important;
-    font-size: 16px !important;
-    font-style: normal !important;  // 确保伪元素也为正体
   }
 }
 </style>
