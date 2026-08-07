@@ -57,10 +57,10 @@
             </div>
             <div class="form-group" style="flex-direction: row; align-items: flex-end; gap: 8px;">
               <el-button type="primary" class="btn" @click="handleQuery">
-                🔍 查询
+                <LucideIcon name="search" :size="14" /> 查询
               </el-button>
               <el-button class="btn btn-secondary" @click="resetQuery">
-                🔄 重置
+                <LucideIcon name="rotate-ccw" :size="14" /> 重置
               </el-button>
             </div>
           </div>
@@ -71,7 +71,7 @@
           <!-- 批量启用 -->
           <batch-button
             type="success"
-            icon="el-icon-video-play"
+            lucide-icon="play"
             tooltip="启用"
             :disabled="multipleSelection.length === 0"
             @click="handleBatchEnable"
@@ -80,7 +80,7 @@
           <!-- 批量暂停 -->
           <batch-button
             type="warning"
-            icon="el-icon-video-pause"
+            lucide-icon="pause"
             tooltip="暂停"
             :disabled="multipleSelection.length === 0"
             @click="handleBatchDisable"
@@ -89,7 +89,7 @@
           <!-- 批量删除 -->
           <batch-button
             type="danger"
-            icon="el-icon-delete"
+            lucide-icon="trash"
             tooltip="删除"
             :disabled="multipleSelection.length === 0"
             @click="handleBatchDelete"
@@ -98,7 +98,7 @@
           <!-- 批量重检 -->
           <batch-button
             type="info"
-            icon="el-icon-refresh"
+            lucide-icon="refresh-cw"
             tooltip="重检"
             :disabled="multipleSelection.length === 0"
             @click="handleRefresh"
@@ -109,7 +109,7 @@
           <!-- 刷新 -->
           <batch-button
             type="default"
-            icon="el-icon-refresh"
+            lucide-icon="refresh-cw"
             tooltip="刷新"
             @click="handleRefresh"
           />
@@ -117,7 +117,7 @@
           <!-- 新增任务 -->
           <batch-button
             type="primary"
-            icon="el-icon-plus"
+            lucide-icon="plus"
             tooltip="新增任务"
             @click="handleCreate"
           />
@@ -165,30 +165,30 @@
         <template slot-scope="scope">
           <el-dropdown @command="handleCommand" trigger="click" size="mini">
             <el-button size="mini" type="primary">
-              操作 <i class="el-icon-arrow-down el-icon--right"></i>
+              操作 <LucideIcon name="chevron-down" :size="12" style="margin-left: 4px;" />
             </el-button>
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item
                 :command="{action: 'execute', row: scope.row}"
                 :disabled="!scope.row.enabled"
               >
-                <i class="el-icon-video-play"></i>
+                <LucideIcon class="menu-icon" name="play" :size="14" />
                 立即执行
                 <el-tooltip v-if="!scope.row.enabled" content="任务已禁用，请先启用" placement="right">
-                  <i class="el-icon-info" style="color: #909399; margin-left: 5px;"></i>
+                  <LucideIcon class="menu-icon" name="info" :size="14" />
                 </el-tooltip>
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'edit', row: scope.row}">
-                <i class="el-icon-edit"></i> 编辑
+                <LucideIcon class="menu-icon" name="pencil" :size="14" /> 编辑
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'logs', row: scope.row}">
-                <i class="el-icon-view"></i> 查看日志
+                <LucideIcon class="menu-icon" name="eye" :size="14" /> 查看日志
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'interrupt', row: scope.row}">
-                <i class="el-icon-video-pause"></i> 中断
+                <LucideIcon class="menu-icon" name="pause" :size="14" /> 中断
               </el-dropdown-item>
               <el-dropdown-item :command="{action: 'delete', row: scope.row}" divided>
-                <i class="el-icon-delete" style="color: #f56c6c;"></i>
+                <LucideIcon class="menu-icon danger" name="trash" :size="14" />
                 <span style="color: #f56c6c;">删除</span>
               </el-dropdown-item>
             </el-dropdown-menu>
@@ -258,28 +258,28 @@
         <!-- 日志统计信息 - 紧凑一行布局 -->
         <div class="log-stats-compact">
           <div class="log-stat-item">
-            <div class="log-stat-icon primary">📊</div>
+            <div class="log-stat-icon primary"><LucideIcon name="bar-chart-3" :size="16" /></div>
             <div class="log-stat-content">
               <div class="log-stat-value">{{ logStatistics.totalLogs }}</div>
               <div class="log-stat-label">总日志数</div>
             </div>
           </div>
           <div class="log-stat-item">
-            <div class="log-stat-icon success">✅</div>
+            <div class="log-stat-icon success"><LucideIcon name="circle-check-big" :size="16" /></div>
             <div class="log-stat-content">
               <div class="log-stat-value">{{ logStatistics.successLogs }}</div>
               <div class="log-stat-label">成功日志</div>
             </div>
           </div>
           <div class="log-stat-item">
-            <div class="log-stat-icon danger">❌</div>
+            <div class="log-stat-icon danger"><LucideIcon name="circle-x" :size="16" /></div>
             <div class="log-stat-content">
               <div class="log-stat-value">{{ logStatistics.failedLogs }}</div>
               <div class="log-stat-label">失败日志</div>
             </div>
           </div>
           <div class="log-stat-item">
-            <div class="log-stat-icon info">📅</div>
+            <div class="log-stat-icon info"><LucideIcon name="calendar-days" :size="16" /></div>
             <div class="log-stat-content">
               <div class="log-stat-value">{{ logStatistics.todayLogs }}</div>
               <div class="log-stat-label">今日日志</div>
@@ -328,10 +328,10 @@
 
             <div class="form-group" style="flex-direction: row; align-items: flex-end; gap: 8px;">
               <el-button type="primary" class="btn" @click="handleLogQuery">
-                🔍 搜索
+                <LucideIcon name="search" :size="14" /> 搜索
               </el-button>
               <el-button class="btn btn-secondary" @click="resetLogQuery">
-                🔄 重置
+                <LucideIcon name="rotate-ccw" :size="14" /> 重置
               </el-button>
             </div>
 
@@ -360,12 +360,12 @@
             class="batch-btn batch-btn-danger"
             @click="handleLogBatchDelete"
           >
-            🗑️ 批量删除 ({{ logMultipleSelection.length }})
+            <LucideIcon name="trash" :size="14" /> 批量删除 ({{ logMultipleSelection.length }})
           </el-button>
 
           <el-dropdown @command="handleLogExport">
             <el-button type="success" class="batch-btn batch-btn-info">
-              📥 导出
+              <LucideIcon name="download" :size="14" /> 导出
             </el-button>
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item command="csv">导出为 CSV</el-dropdown-item>
@@ -379,7 +379,7 @@
             class="batch-btn batch-btn-warning"
             @click="handleLogCleanup"
           >
-            🧹 清理过期日志
+            <LucideIcon name="wand-sparkles" :size="14" /> 清理过期日志
           </el-button>
         </section>
 
@@ -518,7 +518,7 @@
               :label="option.label"
               :value="option.value"
             >
-              <i :class="option.icon" style="margin-right: 8px;"></i>
+              <LucideIcon :name="option.icon" :size="14" style="margin-right: 8px;" />
               {{ option.label }}
             </el-option>
           </el-select>
@@ -650,7 +650,7 @@
                 @click="previewCleanup"
                 :loading="previewLoading"
               >
-                🔍 预览清理
+                <LucideIcon name="search" :size="14" /> 预览清理
               </el-button>
             </el-col>
           </el-row>
@@ -676,7 +676,7 @@
         <!-- 高级配置 -->
         <el-form-item>
           <el-button type="text" @click="showAdvancedConfig = !showAdvancedConfig" size="small">
-            <i :class="showAdvancedConfig ? 'el-icon-arrow-up' : 'el-icon-arrow-down'"></i>
+            <LucideIcon :name="showAdvancedConfig ? 'chevron-up' : 'chevron-down'" :size="14" />
             {{ showAdvancedConfig ? '收起' : '展开' }}高级配置
           </el-button>
         </el-form-item>
@@ -766,7 +766,7 @@
           :loading="submitLoading"
           :disabled="!canSubmit"
         >
-          <i class="el-icon-check"></i>
+          <LucideIcon name="check" :size="14" />
           {{ submitLoading ? '保存中...' : '确定' }}
         </el-button>
       </div>
@@ -875,6 +875,26 @@
         <el-button @click="previewDialogVisible = false">关闭</el-button>
       </div>
     </el-dialog>
+
+    <!-- 日志清理对话框 -->
+    <el-dialog title="清理过期日志" :visible.sync="logCleanupDialogVisible" width="440px">
+      <el-form label-width="120px">
+        <el-form-item label="保留最近天数">
+          <el-input-number v-model="logCleanupForm.days" :min="1" :max="365" />
+          <small style="margin-left: 8px; color: #909399;">清理此天数之前的日志</small>
+        </el-form-item>
+        <el-form-item label="保留成功日志">
+          <el-switch v-model="logCleanupForm.keep_success" />
+        </el-form-item>
+        <el-form-item label="保留失败日志">
+          <el-switch v-model="logCleanupForm.keep_error" />
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button @click="logCleanupDialogVisible = false">取消</el-button>
+        <el-button type="warning" :loading="logCleanupLoading" @click="executeLogCleanup">确定清理</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -889,6 +909,9 @@ import {
   interruptTask,
   getTaskLogs,
   getTaskLogStatistics,
+  cleanupTaskLogs,
+  deleteTaskLogs,
+  exportTaskLogs,
   ScheduledTask,
   TaskCreateRequest
 } from '@/api/tasks'
@@ -899,6 +922,7 @@ import { copyTextToClipboard } from '@/utils/clipboard'
 import MonacoEditor from '@/components/tasks/MonacoEditor.vue'
 import CronEditor from '@/components/tasks/CronEditor.vue'
 import PythonClassSelector from '@/components/tasks/PythonClassSelector.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 
 // 使用集中类型定义
 import {
@@ -919,7 +943,8 @@ type ValidationResult = BTDeckTypes.ScriptValidationResult
   components: {
     MonacoEditor,
     CronEditor,
-    PythonClassSelector
+    PythonClassSelector,
+    LucideIcon
   }
 })
 export default class TaskManage extends Vue {
@@ -998,12 +1023,12 @@ export default class TaskManage extends Vue {
 
   // 任务类型选项
   private taskTypeOptions: TaskTypeOption[] = [
-    { label: 'shell脚本', value: 0, icon: 'el-icon-document', description: 'Linux/Unix Shell脚本' },
-    { label: 'cmd脚本', value: 1, icon: 'el-icon-document', description: 'Windows批处理脚本' },
-    { label: 'powershell脚本', value: 2, icon: 'el-icon-document', description: 'Windows PowerShell脚本' },
-    { label: 'python脚本', value: 3, icon: 'el-icon-document', description: 'Python脚本文件' },
-    { label: 'python内部类', value: 4, icon: 'el-icon-document', description: 'Python内部类方法' },
-    { label: '清理回收站', value: 5, icon: 'el-icon-delete', description: '自动清理回收站任务' }
+    { label: 'shell脚本', value: 0, icon: 'file-text', description: 'Linux/Unix Shell脚本' },
+    { label: 'cmd脚本', value: 1, icon: 'file-text', description: 'Windows批处理脚本' },
+    { label: 'powershell脚本', value: 2, icon: 'file-text', description: 'Windows PowerShell脚本' },
+    { label: 'python脚本', value: 3, icon: 'file-text', description: 'Python脚本文件' },
+    { label: 'python内部类', value: 4, icon: 'file-text', description: 'Python内部类方法' },
+    { label: '清理回收站', value: 5, icon: 'trash', description: '自动清理回收站任务' }
   ]
 
   // UI状态
@@ -1019,14 +1044,23 @@ export default class TaskManage extends Vue {
   private previewData: any = null
   private previewLoading = false
 
+  // 日志清理对话框
+  private logCleanupDialogVisible = false
+  private logCleanupLoading = false
+  private logCleanupForm = {
+    days: 30,            // 保留最近 N 天
+    keep_success: false, // 是否保留所有成功日志
+    keep_error: false    // 是否保留所有失败日志
+  }
+
   // 任务查询选项（修复模板undefined错误）
   private taskOptions: TaskTypeOption[] = [
-    { label: 'shell脚本', value: 0, icon: 'el-icon-document', description: 'Linux/Unix Shell脚本' },
-    { label: 'cmd脚本', value: 1, icon: 'el-icon-document', description: 'Windows批处理脚本' },
-    { label: 'powershell脚本', value: 2, icon: 'el-icon-document', description: 'Windows PowerShell脚本' },
-    { label: 'python脚本', value: 3, icon: 'el-icon-document', description: 'Python脚本文件' },
-    { label: 'python内部类', value: 4, icon: 'el-icon-document', description: 'Python内部类方法' },
-    { label: '清理回收站', value: 5, icon: 'el-icon-delete', description: '自动清理回收站任务' }
+    { label: 'shell脚本', value: 0, icon: 'file-text', description: 'Linux/Unix Shell脚本' },
+    { label: 'cmd脚本', value: 1, icon: 'file-text', description: 'Windows批处理脚本' },
+    { label: 'powershell脚本', value: 2, icon: 'file-text', description: 'Windows PowerShell脚本' },
+    { label: 'python脚本', value: 3, icon: 'file-text', description: 'Python脚本文件' },
+    { label: 'python内部类', value: 4, icon: 'file-text', description: 'Python内部类方法' },
+    { label: '清理回收站', value: 5, icon: 'trash', description: '自动清理回收站任务' }
   ]
 
   // 日志查询相关（修复模板undefined错误）
@@ -1842,41 +1876,90 @@ export default class TaskManage extends Vue {
     return tags[type] || 'info'
   }
 
-  // 日志导出处理（修复模板undefined错误）
-  private handleLogExport(command: string) {
-    this.$message.info(`日志导出功能: ${command}`)
+  // 日志导出处理（对接 exportTaskLogs，返回 Blob 文件流）
+  private async handleLogExport(command: string) {
+    try {
+      const blob = await exportTaskLogs({ ...this.logQueryParams, format: command as 'csv' | 'json' | 'txt' })
+      const url = window.URL.createObjectURL(blob as unknown as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `任务日志_${Date.now()}.${command}`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+      this.$message.success('导出成功')
+    } catch (error) {
+      console.error('导出日志失败:', error)
+      this.$message.error('导出失败，请稍后重试')
+    }
   }
 
-  // 日志清理处理（修复模板undefined错误）
+  // 日志清理：打开清理对话框
   private handleLogCleanup() {
-    this.$confirm('确定要清理历史日志吗？', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(() => {
-      this.$message.success('日志清理完成')
-    }).catch(() => {
-      this.$message.info('已取消清理')
-    })
+    // 重置为默认值，避免上次残留
+    this.logCleanupForm = { days: 30, keep_success: false, keep_error: false }
+    this.logCleanupDialogVisible = true
   }
 
-  // 日志批量删除处理（修复模板undefined错误）
-  private handleLogBatchDelete() {
+  // 执行日志清理（对接 cleanupTaskLogs）
+  private async executeLogCleanup() {
+    this.logCleanupLoading = true
+    try {
+      const res = await cleanupTaskLogs({
+        days: this.logCleanupForm.days,
+        keep_success: this.logCleanupForm.keep_success,
+        keep_error: this.logCleanupForm.keep_error
+      })
+      if (res.code === '200') {
+        this.$message.success(res.msg || '日志清理完成')
+        this.logCleanupDialogVisible = false
+        await this.fetchLogStatistics()
+        await this.fetchLogList()
+      } else {
+        this.$message.error(res.msg || '清理失败')
+      }
+    } catch (error) {
+      console.error('清理日志失败:', error)
+      this.$message.error('清理失败，请稍后重试')
+    } finally {
+      this.logCleanupLoading = false
+    }
+  }
+
+  // 日志批量删除处理（对接 deleteTaskLogs，传 log_ids）
+  private async handleLogBatchDelete() {
     if (this.logMultipleSelection.length === 0) {
       this.$message.warning('请选择要删除的日志')
       return
     }
 
-    this.$confirm(`确定要删除选中的 ${this.logMultipleSelection.length} 条日志吗？`, '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning'
-    }).then(() => {
-      this.$message.success(`成功删除 ${this.logMultipleSelection.length} 条日志`)
-      this.logMultipleSelection = []
-    }).catch(() => {
+    try {
+      await this.$confirm(`确定要删除选中的 ${this.logMultipleSelection.length} 条日志吗？`, '提示', {
+        confirmButtonText: '确定',
+        cancelButtonText: '取消',
+        type: 'warning'
+      })
+    } catch {
       this.$message.info('已取消删除')
-    })
+      return
+    }
+
+    try {
+      const ids = this.logMultipleSelection.map((log: BTDeckTypes.TaskLog) => log.logId)
+      const res = await deleteTaskLogs({ log_ids: ids })
+      if (res.code === '200') {
+        this.$message.success(res.msg || `成功删除 ${this.logMultipleSelection.length} 条日志`)
+        this.logMultipleSelection = []
+        await this.fetchLogStatistics()
+        await this.fetchLogList()
+      } else {
+        this.$message.error(res.msg || '删除失败')
+      }
+    } catch (error) {
+      console.error('批量删除日志失败:', error)
+      this.$message.error('删除失败，请稍后重试')
+    }
   }
 
   // ========== 执行详情相关方法 ==========
