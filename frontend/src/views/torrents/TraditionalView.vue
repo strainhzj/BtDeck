@@ -42,7 +42,7 @@
           >
             <i class="el-icon-delete"></i> 删除<i class="el-icon-arrow-down el-icon--right"></i>
           </el-button>
-          <el-dropdown-menu slot="dropdown">
+          <el-dropdown-menu slot="dropdown" class="delete-level-menu">
             <el-dropdown-item command="4">
               <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
             </el-dropdown-item>

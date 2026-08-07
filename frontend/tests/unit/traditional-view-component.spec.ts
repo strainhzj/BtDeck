@@ -367,7 +367,9 @@ describe('TraditionalView component regressions', () => {
     await flushLifecycle()
 
     const deleteTrigger = wrapper.find('.toolbar-left .danger')
-    const levelItems = wrapper.findAll('.el-dropdown-item-stub')
+    // 仅统计"删除"下拉菜单内的等级入口，避免被工具栏其它下拉
+    // （如"快捷操作"中的快捷删除重复种子）误计入
+    const levelItems = wrapper.findAll('.delete-level-menu .el-dropdown-item-stub')
 
     expect(deleteTrigger.exists()).toBe(true)
     expect(deleteTrigger.text()).toContain('删除')
