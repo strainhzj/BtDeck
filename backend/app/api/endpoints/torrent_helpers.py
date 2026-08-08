@@ -23,6 +23,7 @@ from app.core.torrent_status_mapper import TorrentStatusMapper
 from transmission_rpc import Client as trClient
 from app.database import AsyncSessionLocal
 from app.services.audit_service import get_audit_service
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.torrent_ratio_values import normalize_ratio, normalize_ratio_limit
 
 logger = logging.getLogger(__name__)
@@ -661,16 +662,33 @@ async def calculate_info_hash(torrent_file_path: str) -> str:
 
 
 async def get_transmission_torrent_info(
-    tr_client: trClient, info_hash: str, timeout: int = 10
+    downloader_id: str,
+    tr_client: trClient,
+    info_hash: str,
+    timeout: int = 10,
+    per_call_timeout: float = 5.0,
 ) -> Optional[Dict[str, Any]]:
-    """从Transmission获取种子信息"""
+    """从Transmission获取种子信息（经 INTERACTIVE lane 调用，禁止裸同步调用）
+
+    P0-04 修复（sync-database-blocking-remediation W2-3）：tr_client.get_torrents
+    由 call_downloader_api 在 INTERACTIVE lane 线程池中执行，不再阻塞事件循环；
+    downloader_id 由调用方传入（用于 per-downloader 限流与日志）。轮询重试逻辑
+    （timeout 秒窗口、异常后 sleep 1s 重试）保持原语义不变。
+    """
     import time
 
     start_time = time.time()
     while time.time() - start_time < timeout:
         try:
-            # 获取所有种子
-            torrents = tr_client.get_torrents(info_hash)
+            # 获取所有种子（经 runtime 线程池执行）
+            torrents = await call_downloader_api(
+                downloader_id,
+                DownloadLane.INTERACTIVE,
+                tr_client.get_torrents,
+                args=(info_hash,),
+                timeout=per_call_timeout,
+                operation="get_transmission_torrent_info",
+            )
             return torrents[0]
             # 查找匹配的种子
             # for torrent in torrents:
@@ -753,7 +771,7 @@ def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
         name=tr_torrent.name,
         save_path=tr_torrent.download_dir,
         size=tr_torrent.total_size,
-        status=convert_transmission_status(tr_torrent.status),
+        status=TorrentStatusMapper.resolve_transmission_status(tr_torrent.status, tr_torrent.error),
         torrent_file=tr_torrent.torrent_file,
         added_date=tr_torrent.added_date,
         completed_date=tr_torrent.done_date if tr_torrent.done_date else None,

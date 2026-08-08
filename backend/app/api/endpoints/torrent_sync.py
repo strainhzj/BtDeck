@@ -23,6 +23,7 @@ from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.tracker_mapper import extract_tracker_host
 from app.core.background_task_manager import task_manager, TaskStatus
 from app.models.setting_templates import DownloaderTypeEnum
+from app.core.config import settings
 
 # 审计日志相关导入（使用异步版本）
 from app.services.audit_service import get_audit_service, extract_audit_info_from_request
@@ -119,9 +120,73 @@ def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -
 # ==================== 同步核心函数 ====================
 
 
-async def torrent_sync_db_async(downloader_info: Dict[str, Any]) -> Dict[str, Any]:
+async def torrent_sync_db_async(
+    downloader_info: Dict[str, Any],
+    trigger: str = "api",
+) -> Dict[str, Any]:
     """
-    异步版本的种子同步数据库函数
+    异步版本的种子同步数据库函数（legacy adapter，W2-1）
+
+    签名与旧版本完全兼容（两个调用方 torrent_sync_async / sync_single_downloader
+    零改动）。SYNC_CANONICAL_COORDINATOR_ENABLED=True 时内部转发到
+    SyncCoordinator::run_sync（sync_type="full"，统一资源准入/写治理/观测）；
+    False 时回退旧直接调用 qb/tr_add_torrents_async 全量同步的路径（应急回滚）。
+    ⚠️ legacy 只能作为应急回退，禁止与新路径同时执行，两个稳定版本后删除。
+
+    Args:
+        downloader_info: 下载器信息字典
+        trigger: 触发来源（"manual"/"cron"/"api"），仅影响结构化日志与观测
+
+    Returns:
+        同步结果字典（status/message/downloader_type/nickname，契约不变）
+    """
+    if not settings.SYNC_CANONICAL_COORDINATOR_ENABLED:
+        return await _legacy_full_sync_impl(downloader_info)
+
+    from app.services.sync_coordinator import (
+        SyncRequest,
+        map_sync_result_to_legacy_dict,
+        run_sync,
+    )
+
+    downloader_id = downloader_info.get("downloader_id")
+    result = await run_sync(
+        SyncRequest(
+            sync_type="full",
+            downloader_ids=[str(downloader_id)] if downloader_id else None,
+            trigger=trigger,
+        )
+    )
+    return map_sync_result_to_legacy_dict(result, downloader_info)
+
+
+async def _execute_manual_sync_via_coordinator(downloader_info: Dict[str, Any]) -> Dict[str, Any]:
+    """手动 sync-single 后台执行体（W2-1 新路径）。
+
+    经 SyncCoordinator::run_sync 执行（sync_type="full", trigger="manual"），
+    返回旧 dict 结构（status/message/downloader_type/nickname）保持 TaskLog
+    与前端 sync-status 契约不变。资源准入在后台执行体内完成，不阻塞 HTTP 线程。
+    """
+    from app.services.sync_coordinator import (
+        SyncRequest,
+        map_sync_result_to_legacy_dict,
+        run_sync,
+    )
+
+    downloader_id = downloader_info.get("downloader_id")
+    result = await run_sync(
+        SyncRequest(
+            sync_type="full",
+            downloader_ids=[str(downloader_id)] if downloader_id else None,
+            trigger="manual",
+        )
+    )
+    return map_sync_result_to_legacy_dict(result, downloader_info)
+
+
+async def _legacy_full_sync_impl(downloader_info: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    旧全量同步实现（仅 SYNC_CANONICAL_COORDINATOR_ENABLED=False 应急回滚时使用）
 
     使用 AsyncSessionLocal 进行异步数据库操作，
     替代同步版本的 torrent_sync 函数。
@@ -480,7 +545,7 @@ def tr_add_torrents(db, downloaders, app=None):
             torrent_id=torrent_info.id,
             hash=torrent_info.hashString,
             name=torrent_info.name,
-            status=TorrentStatusMapper.convert_transmission_status(torrent_info.status),
+            status=TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
             save_path=torrent_info.download_dir,
             size=torrent_info.total_size,
             torrent_file=torrent_info.torrent_file,
@@ -1240,8 +1305,16 @@ async def sync_single_downloader(
         async def execute_sync_task():
             """执行同步任务并更新状态"""
             try:
+                if settings.SYNC_CANONICAL_COORDINATOR_ENABLED:
+                    # W2-1 新路径：经 SyncCoordinator 统一准入/写治理/观测。
+                    # 准入在后台执行体内完成（不阻塞 HTTP 请求线程）。
+                    sync_coro = _execute_manual_sync_via_coordinator(downloader_info)
+                else:
+                    # 应急回滚：旧直接调用 torrent_sync_db_async 全量同步路径。
+                    # ⚠️ legacy 只能作为应急回退，禁止与新路径同时执行。
+                    sync_coro = torrent_sync_db_async(downloader_info)
                 # 执行同步（使用任务管理器的并发控制）
-                await task_manager.execute_task(task.task_id, torrent_sync_db_async(downloader_info))
+                await task_manager.execute_task(task.task_id, sync_coro)
 
                 # 获取任务结果
                 completed_task = task_manager.get_task(task.task_id)
@@ -1363,203 +1436,77 @@ async def get_sync_task_status(
 
 async def update_tracker_status_from_keywords() -> Dict[str, Any]:
     """
-    根据关键词看板更新tracker状态
+    根据关键词看板更新tracker状态（W1-2 兼容包装）
 
     在种子同步完成后调用此函数，按tracker_host分组，
-    根据关键词池判断每个tracker的状态，并批量更新到数据库。
+    根据关键词池判断每个tracker的状态，并更新到数据库。
 
-    判断规则：
+    判断规则（由服务层承担，语义不变）：
     - 全部失败 → status = 'error'
     - 有成功/忽略 → status = 'normal'
     - 其他情况 → status = 'unknown'
+
+    W1-2 起 Tracker 全表更新业务逻辑搬迁至
+    app/services/tracker_status_sync.py::sync_tracker_status_from_keywords
+    （增量写：只写判定结果有变化的行，零变化零 DML；统一分批写入
+    bulk_upsert_with_retry）。本函数仅负责：
+    1. 自建 AsyncSessionLocal 会话；
+    2. 调用服务层；
+    3. 将 TrackerStatusStats 映射回历史返回结构，并追加
+       scanned/changed/unchanged/batches/duration_ms 新字段。
+
+    两个调用方（torrent_sync_async / tracker_sync_task）因此零改动。
 
     Returns:
         更新结果字典
     """
     from app.database import AsyncSessionLocal
-    from app.torrents.models import TrackerInfo, TrackerKeywordConfig
-    from sqlalchemy import select
-    from urllib.parse import urlparse
-    from datetime import datetime
+    from app.services.tracker_status_sync import sync_tracker_status_from_keywords
 
     try:
         async with AsyncSessionLocal() as db:
-            # Step 1: 加载所有启用的关键词到内存
-            result = await db.execute(
-                select(TrackerKeywordConfig).filter(
-                    TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0
-                )
-            )
-            keywords = result.scalars().all()
+            stats = await sync_tracker_status_from_keywords(db)
 
-            # 构建关键词字典 {keyword: keyword_type}
-            keyword_map = {}
-            for kw in keywords:
-                if kw.keyword not in keyword_map:
-                    keyword_map[kw.keyword] = kw.keyword_type
-                # 如果重复，保留后读取的（通常priority更高）
-
-            logger.debug(f"加载关键词: {len(keyword_map)}条")
-
-            if not keyword_map:
-                return {"status": "success", "message": "未加载到任何关键词", "updated_count": 0}
-
-            # Step 2: 查询所有tracker信息（只查询需要的字段）
-            result = await db.execute(
-                select(
-                    TrackerInfo.tracker_id,
-                    TrackerInfo.tracker_url,
-                    TrackerInfo.last_announce_msg,
-                    TrackerInfo.last_scrape_msg,
-                    TrackerInfo.tracker_host,
-                ).filter(TrackerInfo.dr == 0)
-            )
-            trackers = result.all()
-
-            if not trackers:
-                return {"status": "success", "message": "未发现任何tracker", "updated_count": 0}
-
-            logger.debug(f"发现tracker记录: {len(trackers)}条")
-
-            # Step 3: 按tracker_host分组，提取消息
-            tracker_host_msgs = {}  # {tracker_host: [(tracker_id, msg), ...]}
-
-            for tracker in trackers:
-                tracker_id = tracker.tracker_id
-                tracker_url = tracker.tracker_url
-                announce_msg = tracker.last_announce_msg
-                scrape_msg = tracker.last_scrape_msg
-                tracker_host = tracker.tracker_host
-
-                # 如果tracker_host为空，尝试从URL提取
-                if not tracker_host and tracker_url:
-                    try:
-                        parsed = urlparse(tracker_url)
-                        if parsed and parsed.hostname:
-                            tracker_host = parsed.hostname
-                            logger.debug(f"从URL提取tracker_host: {tracker_host}")
-                    except Exception as e:
-                        logger.debug(f"解析tracker URL失败: {tracker_url}, 错误: {e}")
-
-                if not tracker_host:
-                    logger.debug(f"跳过无tracker_host的记录: tracker_id={tracker_id}")
-                    continue
-
-                # 优先使用announce消息，为空则使用scrape消息
-                msg = announce_msg or scrape_msg or ""
-
-                # 过滤空消息
-                if not msg or not msg.strip():
-                    continue
-
-                if tracker_host not in tracker_host_msgs:
-                    tracker_host_msgs[tracker_host] = []
-
-                tracker_host_msgs[tracker_host].append({"tracker_id": tracker_id, "msg": msg.strip()})
-
-            logger.debug(f"按tracker_host分组后: {len(tracker_host_msgs)}个host")
-
-            # Step 4: 判断每个tracker_host的状态
-            tracker_status_map = {}  # {tracker_id: (status, msg)}
-
-            for tracker_host, msg_list in tracker_host_msgs.items():
-                # 判断每条消息的类型
-                msg_types = []
-                for item in msg_list:
-                    msg = item["msg"]
-
-                    # 精确匹配关键词（优先级高）
-                    exact_match = None
-                    if msg in keyword_map:
-                        exact_match = keyword_map[msg]
-                    elif msg.strip() in keyword_map:  # 去除前后空格后再匹配
-                        exact_match = keyword_map[msg.strip()]
-
-                    if exact_match:
-                        msg_types.append(exact_match)
-                    else:
-                        # 尝试部分匹配（关键词包含在消息中）
-                        partial_match = None
-                        for keyword, keyword_type in keyword_map.items():
-                            if keyword.lower() in msg.lower():
-                                partial_match = keyword_type
-                                break
-
-                        if partial_match:
-                            msg_types.append(partial_match)
-                            logger.debug(f"部分匹配成功: msg='{msg[:50]}...' keyword='{partial_match}'")
-                        else:
-                            msg_types.append("unknown")
-
-                # 判断规则
-                if all(t == "failed" for t in msg_types):
-                    # 全部失败 → error
-                    status = "error"
-                    status_msg = "失败"
-                elif any(t in ["success", "ignored"] for t in msg_types):
-                    # 有成功或忽略 → normal
-                    status = "normal"
-                    status_msg = "正常"
-                else:
-                    # 其他情况 → unknown
-                    status = "unknown"
-                    status_msg = "未知"
-
-                # 将状态应用到该host下的所有tracker
-                for item in msg_list:
-                    tracker_status_map[item["tracker_id"]] = (status, status_msg)
-
-                logger.debug(f"Tracker Host: {tracker_host} | 状态: {status} | 消息类型: {msg_types}")
-
-            # Step 5: 按状态分组批量UPDATE，减少SQL语句数量和锁持有时间
-            from sqlalchemy import update as sa_update
-
-            # 按状态分组: {status: [(tracker_id, status_msg), ...]}
-            status_groups = {}
-            for tracker_id, (status, status_msg) in tracker_status_map.items():
-                if status not in status_groups:
-                    status_groups[status] = []
-                status_groups[status].append((tracker_id, status_msg))
-
-            updated_count = 0
-            now = datetime.now()
-
-            for status, items in status_groups.items():
-                if not items:
-                    continue
-                tracker_ids = [item[0] for item in items]
-                # 同一组状态取第一个的status_msg（同组状态一致）
-                status_msg = items[0][1]
-
-                try:
-                    # 批量UPDATE：同状态的所有tracker_id一次性更新
-                    result = await db.execute(
-                        sa_update(TrackerInfo)
-                        .where(TrackerInfo.tracker_id.in_(tracker_ids))
-                        .values(
-                            status=status,
-                            msg=status_msg,
-                            update_time=now,
-                        )
-                        .execution_options(synchronize_session=False)
-                    )
-                    updated_count += result.rowcount or 0
-
-                except Exception as e:
-                    logger.warning(f"批量更新tracker状态失败 [status={status}]: {e}")
-
-            await db.commit()
-
-            failed_count = len(tracker_status_map) - updated_count
-            logger.debug(f"Tracker状态批量更新完成: 成功{updated_count}条, 失败{failed_count}条")
-
+        # 无关键词 / 无 tracker 提前返回，保持原消息语义
+        if stats.reason == "no_keywords":
             return {
                 "status": "success",
-                "message": f"更新完成: {updated_count}条成功, {failed_count}条失败",
-                "updated_count": updated_count,
-                "failed_count": failed_count,
-                "total_hosts": len(tracker_host_msgs),
+                "message": "未加载到任何关键词",
+                "updated_count": 0,
+                "scanned": stats.scanned,
+                "changed": stats.changed,
+                "unchanged": stats.unchanged,
+                "batches": stats.batches,
+                "duration_ms": stats.duration_ms,
             }
+        if stats.reason == "no_trackers":
+            return {
+                "status": "success",
+                "message": "未发现任何tracker",
+                "updated_count": 0,
+                "scanned": stats.scanned,
+                "changed": stats.changed,
+                "unchanged": stats.unchanged,
+                "batches": stats.batches,
+                "duration_ms": stats.duration_ms,
+            }
+
+        # 统一写入器成功返回即代表变化集全部提交成功（失败会抛异常），故 failed_count=0
+        updated_count = stats.changed
+        failed_count = 0
+
+        return {
+            "status": "success",
+            "message": f"更新完成: {updated_count}条成功, {failed_count}条失败",
+            "updated_count": updated_count,
+            "failed_count": failed_count,
+            "total_hosts": stats.total_hosts,
+            "scanned": stats.scanned,
+            "changed": stats.changed,
+            "unchanged": stats.unchanged,
+            "batches": stats.batches,
+            "duration_ms": stats.duration_ms,
+        }
 
     except Exception as e:
         logger.error(f"更新tracker状态失败: {str(e)}", exc_info=True)

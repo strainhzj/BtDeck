@@ -42,7 +42,7 @@ from app.core.tracker_mapper import extract_tracker_host
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
-from app.services.sync_db_write import bulk_upsert_with_retry, has_torrent_info_changes
+from app.services.sync_db_write import WriteStats, bulk_upsert_with_retry, has_torrent_info_changes
 from app.services.torrent_metadata import fetch_qb_torrent_details
 from app.services.torrent_ratio_values import (
     MISSING_RATIO_VALUE,
@@ -1389,7 +1389,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             "torrent_id": torrent_info.id,
             "hash": torrent_info.hashString,
             "name": torrent_info.name,
-            "status": convert_transmission_status(torrent_info.status),
+            "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
             "save_path": torrent_info.download_dir,
             "size": torrent_info.total_size,
             "progress": progress_value,
@@ -1441,69 +1441,23 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
 
     # 第三阶段：批量执行数据库操作（分批提交，释放锁）
     logger.debug(f"[PERF] 开始批量写入：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
-    bulk_write_start = datetime.now()
 
     try:
-        # ✅ 使用重试机制执行批量写入
-        async def _bulk_write_with_retry():
-            # 批量插入（一次性完成，通常数据量较小）
-            if to_insert:
-                await db.run_sync(lambda session: session.bulk_insert_mappings(TorrentInfo, to_insert))
-                logger.debug(f"[PERF] 批量插入 {len(to_insert)} 个种子完成")
-
-            # ✅ 方案A：分批更新种子数据，避免长时间持有数据库锁
-            # 原因：一次性更新10000+条记录会导致事务时间过长（>30秒）
-            #      SQLite在WAL模式下仍对UPDATE操作使用独占锁
-            # 策略：每批500条记录，分批提交，中间释放锁
-            #
-            # ⚠️ 重要限制：分批提交后数据原子性无法保证
-            # - 如果某批更新失败，前面已提交的批次无法回滚
-            # - 这是性能与数据一致性之间的权衡
-            # - 影响：可能出现部分数据更新成功、部分失败的情况
-            # - 建议：定时任务会重新同步，最终达到一致状态
-            if to_update:
-                BATCH_SIZE = 500  # 每批500条，平衡性能和锁持有时间（约5秒/批）
-                total_updated = 0
-                batch_start = datetime.now()
-
-                for i in range(0, len(to_update), BATCH_SIZE):
-                    batch = to_update[i : i + BATCH_SIZE]
-
-                    # 执行当前批次更新
-                    await db.run_sync(lambda session: session.bulk_update_mappings(TorrentInfo, batch))
-                    await db.commit()  # ✅ 每批提交一次，释放数据库锁
-
-                    total_updated += len(batch)
-                    progress_pct = (total_updated / len(to_update)) * 100
-                    logger.debug(
-                        f"[PERF] 批量更新进度: {total_updated}/{len(to_update)} "
-                        f"({progress_pct:.1f}%) - 本批{len(batch)}条"
-                    )
-
-                batch_duration = (datetime.now() - batch_start).total_seconds()
-                # 避免除零错误：确保至少有1个批次
-                total_batches = max(1, len(to_update) / BATCH_SIZE)
-                avg_time_per_batch = batch_duration / total_batches
-                logger.info(
-                    f"[PERF] 分批更新完成：共{len(to_update)}条，"
-                    f"耗时{batch_duration:.2f}秒，"
-                    f"平均{avg_time_per_batch:.2f}秒/批"
-                )
-
-            bulk_write_duration = (datetime.now() - bulk_write_start).total_seconds()
-            logger.debug(f"[PERF] 批量写入完成，总耗时 {bulk_write_duration:.3f} 秒")
-
-        # 执行批量写入（带重试机制）
-        # ✅ 方案3优化：增加重试次数和延迟时间，提高容错性
-        await _retry_on_db_lock(
-            _bulk_write_with_retry,
-            max_retries=5,  # 增加重试次数：3次 → 5次
-            base_delay=5.0,  # 增加基础延迟：1秒 → 5秒（指数退避：5秒, 10秒, 20秒, 40秒, 80秒）
-            rollback=db.rollback,
-            error_context=f"[{bt_downloader.nickname}] 批量写入种子数据",
+        # ✅ W2-1 写路径收编：自建 500/批 + _retry_on_db_lock 的 _bulk_write_with_retry
+        # 迁移到统一 bulk_upsert_with_retry（真实分批提交 + db_write_scope 串行化
+        # 写者 + 批级重试；batch_size/重试参数走配置 SYNC_DB_COMMIT_BATCH_SIZE /
+        # SYNC_DB_LOCK_RETRY_COUNT），消除旁路写者（P0-01/P0-06）。
+        write_stats = await bulk_upsert_with_retry(
+            db,
+            to_insert,
+            to_update,
+            model=TorrentInfo,
+            label=f"full-sync:{bt_downloader.downloader_id}",
         )
-
-        logger.info(f"[{bt_downloader.nickname}] 批量写入成功：插入 {len(to_insert)} 个，更新 {len(to_update)} 个")
+        logger.info(
+            f"[{bt_downloader.nickname}] 批量写入成功：插入 {len(to_insert)} 个，"
+            f"更新 {len(to_update)} 个（{write_stats.batches} 批提交，{write_stats.retries} 次重试）"
+        )
 
     except Exception as e:
         await db.rollback()
@@ -2124,69 +2078,23 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
 
     # 第三阶段：批量执行数据库操作（分批提交，释放锁）
     logger.debug(f"[PERF] 开始批量写入：插入 {len(to_insert)} 个，更新 {len(to_update)} 个...")
-    bulk_write_start = datetime.now()
 
     try:
-        # ✅ 使用重试机制执行批量写入
-        async def _bulk_write_with_retry():
-            # 批量插入（一次性完成，通常数据量较小）
-            if to_insert:
-                await db.run_sync(lambda session: session.bulk_insert_mappings(TorrentInfo, to_insert))
-                logger.debug(f"[PERF] 批量插入 {len(to_insert)} 个种子完成")
-
-            # ✅ 方案A：分批更新种子数据，避免长时间持有数据库锁
-            # 原因：一次性更新10000+条记录会导致事务时间过长（>30秒）
-            #      SQLite在WAL模式下仍对UPDATE操作使用独占锁
-            # 策略：每批500条记录，分批提交，中间释放锁
-            #
-            # ⚠️ 重要限制：分批提交后数据原子性无法保证
-            # - 如果某批更新失败，前面已提交的批次无法回滚
-            # - 这是性能与数据一致性之间的权衡
-            # - 影响：可能出现部分数据更新成功、部分失败的情况
-            # - 建议：定时任务会重新同步，最终达到一致状态
-            if to_update:
-                BATCH_SIZE = 500  # 每批500条，平衡性能和锁持有时间（约5秒/批）
-                total_updated = 0
-                batch_start = datetime.now()
-
-                for i in range(0, len(to_update), BATCH_SIZE):
-                    batch = to_update[i : i + BATCH_SIZE]
-
-                    # 执行当前批次更新
-                    await db.run_sync(lambda session: session.bulk_update_mappings(TorrentInfo, batch))
-                    await db.commit()  # ✅ 每批提交一次，释放数据库锁
-
-                    total_updated += len(batch)
-                    progress_pct = (total_updated / len(to_update)) * 100
-                    logger.debug(
-                        f"[PERF] 批量更新进度: {total_updated}/{len(to_update)} "
-                        f"({progress_pct:.1f}%) - 本批{len(batch)}条"
-                    )
-
-                batch_duration = (datetime.now() - batch_start).total_seconds()
-                # 避免除零错误：确保至少有1个批次
-                total_batches = max(1, len(to_update) / BATCH_SIZE)
-                avg_time_per_batch = batch_duration / total_batches
-                logger.info(
-                    f"[PERF] 分批更新完成：共{len(to_update)}条，"
-                    f"耗时{batch_duration:.2f}秒，"
-                    f"平均{avg_time_per_batch:.2f}秒/批"
-                )
-
-            bulk_write_duration = (datetime.now() - bulk_write_start).total_seconds()
-            logger.debug(f"[PERF] 批量写入完成，总耗时 {bulk_write_duration:.3f} 秒")
-
-        # 执行批量写入（带重试机制）
-        # ✅ 方案3优化：增加重试次数和延迟时间，提高容错性
-        await _retry_on_db_lock(
-            _bulk_write_with_retry,
-            max_retries=5,  # 增加重试次数：3次 → 5次
-            base_delay=5.0,  # 增加基础延迟：1秒 → 5秒（指数退避：5秒, 10秒, 20秒, 40秒, 80秒）
-            rollback=db.rollback,
-            error_context=f"[{bt_downloader.nickname}] 批量写入种子数据",
+        # ✅ W2-1 写路径收编：自建 500/批 + _retry_on_db_lock 的 _bulk_write_with_retry
+        # 迁移到统一 bulk_upsert_with_retry（真实分批提交 + db_write_scope 串行化
+        # 写者 + 批级重试；batch_size/重试参数走配置 SYNC_DB_COMMIT_BATCH_SIZE /
+        # SYNC_DB_LOCK_RETRY_COUNT），消除旁路写者（P0-01/P0-06）。
+        write_stats = await bulk_upsert_with_retry(
+            db,
+            to_insert,
+            to_update,
+            model=TorrentInfo,
+            label=f"full-sync:{bt_downloader.downloader_id}",
         )
-
-        logger.info(f"[{bt_downloader.nickname}] 批量写入成功：插入 {len(to_insert)} 个，更新 {len(to_update)} 个")
+        logger.info(
+            f"[{bt_downloader.nickname}] 批量写入成功：插入 {len(to_insert)} 个，"
+            f"更新 {len(to_update)} 个（{write_stats.batches} 批提交，{write_stats.retries} 次重试）"
+        )
 
     except Exception as e:
         await db.rollback()
@@ -2462,7 +2370,7 @@ TR_API_TIMEOUT = int(os.getenv("TR_API_TIMEOUT", "60"))
 TR_ACTIVE_WINDOW_SECONDS = int(os.getenv("TR_ACTIVE_WINDOW_SECONDS", "43200"))  # 默认12小时（覆盖静种）
 QB_FULL_SYNC_INTERVAL_SECONDS = int(os.getenv("QB_FULL_SYNC_INTERVAL_SECONDS", "43200"))
 TR_FULL_SYNC_INTERVAL_SECONDS = int(os.getenv("TR_FULL_SYNC_INTERVAL_SECONDS", "43200"))
-TR_BASE_FIELDS = ["id", "hashString", "name", "status", "activityDate", "trackerStats"]
+TR_BASE_FIELDS = ["id", "hashString", "name", "status", "activityDate", "trackerStats", "error"]
 TR_DETAIL_FIELDS = [
     "id",
     "hashString",
@@ -2470,6 +2378,7 @@ TR_DETAIL_FIELDS = [
     "status",
     "activityDate",
     "trackerStats",
+    "error",
     "percentDone",
     "downloadDir",
     "totalSize",
@@ -2694,24 +2603,66 @@ async def _enrich_qb_torrents_with_trackers(
     )
 
 
-async def _mark_qb_removed_torrents(db: AsyncSession, downloader_id: str, removed_hashes: List[str]) -> None:
-    """标记 qBittorrent 增量同步中被删除的种子"""
+async def _mark_qb_removed_torrents(db: AsyncSession, downloader_id: str, removed_hashes: List[str]) -> WriteStats:
+    """标记 qBittorrent 增量同步中被删除的种子（W1-3 统一写治理）。
+
+    变更路径（对照旧旁路写者，消除 db_write_scope 外自建 commit/retry）：
+    1. 事务外只读查询待更新 info_id 列表（不 commit、不进 db_write_scope）。
+    2. 空变更（removed_hashes 为空或查询无命中）直接返回零值 WriteStats，
+       不创建事务、不 commit。
+    3. 命中行构造 mapping 后统一走 bulk_upsert_with_retry（统一批大小 +
+       db_write_scope 串行化 + 批级重试，锁冲突只重试当前批）。
+    4. 查询/写入异常原样上抛（保留统一写入器 ChunkedWriteError/原异常链），
+       但先回滚失败事务，保证调用方降级路径能继续复用会话。
+
+    Args:
+        db: 异步数据库会话。
+        downloader_id: 下载器标识。
+        removed_hashes: 增量同步上报的已删除种子 hash 列表。
+
+    Returns:
+        WriteStats 写入统计；无变更时返回零值统计（scanned/changed 等全 0）。
+    """
     if not removed_hashes:
-        return
+        return WriteStats()
+
     try:
-        from sqlalchemy import update
+        # 事务外计算待更新 ID（只读查询，不 commit）
+        result = await db.execute(
+            select(TorrentInfo.info_id, TorrentInfo.downloader_name).where(
+                TorrentInfo.downloader_id == downloader_id,
+                TorrentInfo.hash.in_(removed_hashes),
+                TorrentInfo.dr == 0,
+            )
+        )
+        rows = result.all()
+        if not rows:
+            return WriteStats()
 
         current_time = datetime.now()
-        await db.execute(
-            update(TorrentInfo)
-            .where(
-                TorrentInfo.downloader_id == downloader_id, TorrentInfo.hash.in_(removed_hashes), TorrentInfo.dr == 0
-            )
-            .values(dr=1, update_time=current_time, update_by="system")
+        # TorrentInfo 主键为 (info_id, downloader_id, downloader_name) 三列复合主键，
+        # bulk_update_mappings 的 mapping 必须包含全部主键列才能命中更新。
+        mappings = [
+            {
+                "info_id": row.info_id,
+                "downloader_id": downloader_id,
+                "downloader_name": row.downloader_name,
+                "dr": 1,
+                "update_time": current_time,
+                "update_by": "system",
+            }
+            for row in rows
+        ]
+        return await bulk_upsert_with_retry(
+            db,
+            [],
+            mappings,
+            model=TorrentInfo,
+            label="QB_REMOVED_MARK",
         )
-        await db.commit()
-    except Exception as e:
-        logger.warning(f"[QB_SYNC] mark removed torrents failed: {e}")
+    except Exception:
+        # 异常原样上抛（保留统一写入器的 ChunkedWriteError/原异常链），
+        # 但先回滚失败事务，保证调用方降级路径（fallback 全量同步）能继续复用会话。
         await db.rollback()
         raise
 
@@ -3169,7 +3120,7 @@ async def tr_add_torrents_info_only_async(
             "torrent_id": torrent_info.id,
             "hash": torrent_info.hashString,
             "name": torrent_info.name,
-            "status": convert_transmission_status(torrent_info.status),
+            "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
             "save_path": torrent_info.download_dir,
             "size": torrent_info.total_size,
             "progress": progress_value,

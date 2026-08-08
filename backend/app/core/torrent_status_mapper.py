@@ -92,6 +92,48 @@ class TorrentStatusMapper:
         """
         return TorrentStatusMapper.TRANSMISSION_STATUS_MAP.get(tr_status, tr_status)
 
+    # Transmission error 字段语义（RPC spec，由 transmission_rpc Torrent.error 返回 int）：
+    #   0 = ok（正常）
+    #   1 = tracker warning（tracker 警告，轻微，不归入错误）
+    #   2 = tracker error（tracker 错误）
+    #   3 = local error（本地错误，如磁盘满/数据损坏）
+    TR_ERROR_THRESHOLD = 2
+
+    @staticmethod
+    def resolve_transmission_status(tr_status: object, tr_error: object) -> str:
+        """Transmission 状态 + error 字段联合判定通用状态。
+
+        Transmission 的种子级错误独立于 ``status`` 字段（一个 error=3 的种子
+        ``status`` 仍是 ``downloading``/``seeding`` 等正常值）。本方法把
+        ``error >= 2``（tracker 错误 / 本地错误）的种子归入 ``"error"``，
+        与前端已支持的 ``status="error"`` 标签对齐。
+
+        Args:
+            tr_status: Transmission 的 ``status`` 字段（经 transmission_rpc
+                归一化为字符串，如 ``"downloading"``）。
+            tr_error: Transmission 的 ``error`` 字段（int）。非 int 值（None、
+                MagicMock、缺失等）按 0 处理，回退查表。
+
+        Returns:
+            转换后的通用状态值。
+
+        Note:
+            - ``isinstance`` 守卫规避两类陷阱：(1) ``transmission_rpc`` 的
+              ``Torrent.error`` 在字段缺失时抛 ``KeyError``（``getattr`` 默认值无效）；
+              (2) 测试 ``MagicMock`` 未设 ``error`` 属性时返回 ``MagicMock`` 而非 0。
+            - ``checking`` 状态优先于 error：校验过程中 tracker 报错不应掩盖
+              "校验中"语义。
+        """
+        base = TorrentStatusMapper.convert_transmission_status(tr_status)  # type: ignore[arg-type]
+        if not isinstance(tr_error, int):
+            return base
+        # 校验中状态优先，避免校验过程被 tracker 错误误判为 error
+        if base == "checking":
+            return base
+        if tr_error >= TorrentStatusMapper.TR_ERROR_THRESHOLD:
+            return "error"
+        return base
+
     @classmethod
     def get_qbittorrent_mapping_rules(cls) -> Dict[str, str]:
         """

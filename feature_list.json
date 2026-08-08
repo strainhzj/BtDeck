@@ -1,9 +1,48 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-03",
+  "last_updated": "2026-08-08",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
+    {
+      "id": "transmission-torrent-error-state-sync-fix",
+      "name": "Transmission 种子错误状态同步修复",
+      "description": "修复 Transmission 种子在出现明显错误（tracker 错误 / 本地错误）时同步后状态未正确显示为错误的问题。根因为双层缺陷：RPC 请求字段列表未含 error 字段，且状态映射器无通往 error 的分支。新增 resolve_transmission_status 联合 status 与 error 字段判定，error>=2 归入 error 状态。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "transmission-torrent-error-state-sync-fix.1",
+          "name": "修复 error 字段同步与状态判定",
+          "description": "新增 TorrentStatusMapper.resolve_transmission_status（isinstance 守卫规避 KeyError 与 MagicMock 陷阱，checking 优先于 error）；TR_BASE_FIELDS/TR_DETAIL_FIELDS 追加 error 字段；4 个 DB 写入点（FULL/INFO-ONLY/LEGACY sync + 种子添加）改用 resolve；明确不改 seed_transfer_service（迁移校验）与 torrent_metadata（去重展示）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/core/torrent_status_mapper.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/core/test_torrent_status_mapper.py",
+            "backend/tests/api/test_transmission_error_sync.py",
+            "backend/tests/api/test_torrent_crud_status_migration.py"
+          ],
+          "evidence": "经 3 个独立子代理审查 + transmission_rpc v7.0.11 库源码验证。新增测试 66 passed；回归 test_torrent_crud_status_migration.py（24 passed）、test_sync_db_write.py、test_torrent_sync_review.py 全通过。black/flake8 干净；mypy 对本次改动零错误。前端已支持 status=error，无需改前端。"
+        },
+        {
+          "id": "transmission-torrent-error-state-sync-fix.2",
+          "name": "进度记录",
+          "description": "更新 progress.md 记录根因、修复与已知限制。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "feature_list.json",
+            "progress.md"
+          ],
+          "evidence": "未新增模型列/迁移；未改前端；未动 has_tracker_error 体系。"
+        }
+      ]
+    },
     {
       "id": "downloader-control-room-ui-redesign",
       "name": "下载器控制室 UI 重绘与导航 Lucide 化",
@@ -859,6 +898,19 @@
           "description": "docker-compose.yml 一键启动",
           "status": "done",
           "evidence": "docker-compose.yml"
+        },
+        {
+          "id": "v1.0.9.6",
+          "name": "Docker remote deployment health wait",
+          "description": "Wait for slow backend startup reconciliation before starting the frontend dependency",
+          "status": "done",
+          "files": [
+            "build-and-export-images.bat",
+            ".btdeck-remote-deploy.sh",
+            "docker-compose.yml",
+            "backend/Dockerfile"
+          ],
+          "evidence": "Remote read-only logs showed orphan reconciliation taking about 162.6 seconds while the previous 30-second health start period plus retries caused Compose dependency failure. The deployment helper now starts backend first and polls health for up to 300 seconds before starting frontend; local Compose and image healthchecks use a 5-minute start period. Syntax, Docker Compose config, and init.sh --ci verification passed; remote deployment not executed."
         }
       ]
     },
@@ -2078,6 +2130,68 @@
         "session-handoff.md"
       ],
       "evidence": "2026-08-08：确认后端AsyncDeletionExecutor单种子30秒超时，Transmission目标任务存在；根据Transmission RPC支持hash作为torrent-remove的ids，删除路径不再先调用get_torrents()全量查询，保留单任务安全信息查询。Transmission适配器、等级删除API、快捷删除API共35项pytest通过；目标文件flake8通过，新增测试black check通过。"
+    },
+    {
+      "id": "sync-database-blocking-remediation-w1",
+      "name": "同步任务数据库阻塞修复 W1：SQLite 写事务短事务化（P0）",
+      "description": "修复计划第一批 W1（PLANS/sync-database-blocking-remediation.md，G1 门）：通用批量写入改为真实分批提交、Tracker 关键词状态只写变化行、qB removed 标记纳入统一写治理，并建立最小文件型 SQLite 争用回归。对应风险 P0-02/P0-03/P0-06（部分）、P1-04（部分）、P1-07（部分）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w1.1",
+          "name": "W1-1 通用写入改为真实分批提交",
+          "description": "bulk_upsert_with_retry 真实分批（每批独立 commit，批间让行），WriteStats 统计，锁冲突按 SQLite 错误码分类只重试当前批，退避=指数+抖动且单批总睡眠≤2s，非锁异常不重试，ChunkedWriteError 携带部分进度，SYNC_CHUNKED_COMMIT_ENABLED 开关回退单事务。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_db_write.py",
+            "backend/app/core/config.py",
+            "backend/.env.example",
+            "backend/tests/services/test_sync_db_write.py"
+          ],
+          "evidence": "python -m pytest tests/services/test_sync_db_write.py -q → 31 passed；governance+resource_guard 53 passed；文件型 SQLite 批间可见性用例 reads==[2,4,5]；mypy/flake8/black 通过"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w1.2",
+          "name": "W1-2 Tracker 关键词状态只写变化行",
+          "description": "判定+写回搬迁至 services/tracker_status_sync.py（规则逐行保持），追加现有 status/msg 查询做变化检测，零变化零 DML（不 commit），变化集走统一分批写入，SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED 回退全量写回；端点层改兼容包装（调用方零改动）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/tracker_status_sync.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/core/config.py",
+            "backend/tests/services/test_tracker_status_sync.py"
+          ],
+          "evidence": "python -m pytest tests/services/test_tracker_status_sync.py tests/api/test_tracker_keywords_pools.py -q → 32 passed；零变化 DML=0/commit=0 断言；分块 commit 次数 ceil(n/batch) 断言"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w1.3",
+          "name": "W1-3 qB removed 标记纳入统一写治理",
+          "description": "_mark_qb_removed_torrents 事务外计算待更新 ID（三列复合主键），空变更零 commit，统一 bulk_upsert_with_retry 分批更新；架构测试追加同步模块 DML 准入断言。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/tests/api/test_qb_removed_mark_governance.py",
+            "backend/tests/test_architecture_constraints.py"
+          ],
+          "evidence": "python -m pytest tests/api/test_qb_removed_mark_governance.py tests/api/test_torrents_async_db_governance.py tests/test_architecture_constraints.py -q → 38 passed；450 行 batch_size=2 → 225 次 commit 且全部 dr=1；BUSY 第 2 批仅重试该批"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w1.4",
+          "name": "W1 文件型 SQLite 争用回归",
+          "description": "tests/integration/test_sqlite_sync_contention.py：真实临时 .db + WAL + 两独立连接，交互写穿插分批同步全部成功、真实 SQLITE_BUSY 错误码分类与重试恢复、短事务锁释放、零变化不持锁；22k P99<250ms 基准以 performance marker + skip 预留。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/integration/test_sqlite_sync_contention.py"
+          ],
+          "evidence": "python -m pytest tests/integration/ -q → 5 passed, 1 skipped；连续 3 次运行无 flaky；探针实测单批 commit P99≈5ms（Windows WAL+NORMAL）"
+        }
+      ]
     }
   ]
 }

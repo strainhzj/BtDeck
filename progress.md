@@ -1,5 +1,72 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-08 - Transmission 种子错误状态同步丢失修复
+
+### 问题
+
+Transmission 的种子在出现明显错误（tracker 错误 / 本地错误如磁盘满、数据损坏）时，同步后状态未正确显示为错误。经端到端追踪定位为**双层缺陷**：
+
+1. **字段层**：`TR_BASE_FIELDS`/`TR_DETAIL_FIELDS`（torrents_async.py:2373-2391）未含 `error`，Transmission RPC 按需返回字段时根本不返回错误信息。
+2. **映射层**：`convert_transmission_status()` 仅依据 `status` 字符串查表，无通往 `"error"` 的分支；而 Transmission 的 `error` 字段（0=ok/1=tracker警告/2=tracker错误/3=本地错误）独立于 `status`（一个 error=3 的种子 status 仍是 downloading/seeding），被完全忽略。
+
+### 根因验证
+
+- 经 3 个独立子代理交叉审查 + `transmission_rpc` v7.0.11 库源码验证确认。
+- 关键陷阱：`Torrent.error` property 实现为 `self.fields["error"]`（方括号索引），字段缺失抛 **KeyError** 而非 AttributeError → `getattr(default=0)` 无效，必须先加字段再用 `isinstance` 守卫。
+
+### 本次实现
+
+- **新增** `TorrentStatusMapper.resolve_transmission_status(tr_status, tr_error)`（torrent_status_mapper.py）：`error>=2` 归入 `"error"`；`isinstance` 守卫规避 KeyError 与测试 MagicMock 陷阱；`checking` 状态优先于 error（校验过程不被 tracker 错误误判）。
+- **字段列表**：`TR_BASE_FIELDS`/`TR_DETAIL_FIELDS` 追加 `"error"`。
+- **4 个 DB 写入点**改用 resolve：torrents_async.py:1392（FULL sync）、3122（INFO-ONLY sync）、torrent_sync.py:548（LEGACY sync）、torrent_helpers.py:774（种子添加路径）。
+- **明确不改**：seed_transfer_service.py:607（迁移成功校验，改了会导致健康做种种子被误判迁移失败并触发源种子删除）、torrent_metadata.py:212（重复检测展示，留待后续评估）。
+- **测试**：扩展 `_make_tr_torrent` 工厂加 `error` 默认参数；新增 `TestTransmissionErrorStateMapping`（mapper 单测）+ `test_transmission_error_sync.py`（集成测试，覆盖记录创建、变更检测、恢复链路）。
+
+### 验证
+
+- 新增测试 66 项全通过；回归 test_torrent_crud_status_migration.py（24 passed）、test_sync_db_write.py、test_torrent_sync_review.py 全通过（5 skipped 均为 pre-existing 测试隔离问题，与本次无关）。
+- black/flake8 干净；mypy 对本次改动零错误（77 个错误全为预先存在的 Column[arg-type]/rowcount 等，不在改动行）。
+- 前端已完全支持 status="error"（status-config.ts 已有 error 标签/图标/红色样式/筛选项），无需改前端。
+
+### 已知限制（发布说明）
+
+1. 首次部署后，历史 DB 中所有 Transmission `error>=2` 的种子会在下次同步刷新为 `status="error"`，UI 错误计数会上升（预期且正确，无自动删除副作用）。
+2. 用户仅看到"错误"标签，看不到具体原因（如"磁盘已满"）——errorString 持久化留待后续。
+3. dashboard 仪表盘暂无 error 统计桶（error 种子落入 other，downloading/seeding 计数会略降）。
+
+### 变更边界
+
+- 未新增模型列 / 未做 Alembic 迁移；未改前端；未动 has_tracker_error 体系（独立 tracker 判断任务领地）。
+- 未执行 Git stage/commit/push。
+
+## 2026-08-08 - 同步任务数据库阻塞详细修复计划
+
+### 本次产物
+
+- 新增 [同步任务数据库阻塞与接口超时修复计划](PLANS/sync-database-blocking-remediation.md)，将评估文档的 P0-01～P0-06、P1-01～P1-07、P2-01～P2-06 全量映射到 W0～W5 交付项和 G0～G5 发布门。
+- 计划明确先以 SQLite 为主：W1 先修真实分批提交、Tracker 增量写和旁路 DML，W2 再统一手动/定时同步、保留交互下载器容量、清理 async 阻塞调用并强制单 Worker。
+- 后续 W3 增加有界队列、运行预算、持久化 checkpoint 和任务新鲜度，W4 补齐结构化观测、readiness 与真实文件型 SQLite 争用基准，W5 再根据指标决定 Tracker 指纹、DBWriteQueue 和 PostgreSQL 演进。
+- 每个工作项均包含根因、目标文件、实施步骤、测试、观测、回滚和 DoD；计划同时定义 CRUD SLO、事件循环 lag、事务时长、WAL、内存和数据新鲜度门槛。
+- 更新 PLANS/README.md，增加专项修复计划入口。
+
+### 变更边界
+
+- 本次只新增/更新 Markdown 计划和会话记录，未修改业务源码、数据库 Schema、Alembic 迁移或运行配置。
+- 已核对源评估与计划均覆盖同一组 19 个风险编号；计划内相对链接有效，git diff --check 和 ./init.sh --ci 通过。前端 init 保留既有 null-byte warning。
+- 未执行 Git stage、commit 或 push；工作区既有 Docker、feature_list 和未跟踪文件保持不动。
+
+## 2026-08-08 - 同步任务数据库阻塞与接口超时 P0/P1/P2 风险登记
+
+### 本次整理
+
+- 新增 `backend/docs/operations/database-blocking-and-sync-issues-2026-08.md`，汇总本次会话发现的 P0/P1/P2 问题、代码证据、实际任务日志、临时止损、分阶段修复、观测指标和文件型 SQLite 压测验收标准。
+- 明确当前 `sync-resource-governance` 只能视为部分止血：Tracker 状态全量重写、info-only 大事务、手动/旧版同步旁路、请求端同步下载器调用阻塞事件循环、交互 API 容量未保留以及 SQLite 多 Worker 风险仍未闭环。
+- 追加实测边界：本地库约 2.2 万种子/3 万 Tracker；历史 Tracker 任务最长 1161 秒；相关治理测试 75 项通过，但现有 benchmark 未覆盖真实文件型 SQLite 写锁和真实请求并发。
+
+### 变更边界
+
+- 本次仅新增运行评估文档和进度记录，未修改业务源码、数据库 Schema、迁移或运行配置；未执行 Git stage/commit/push。
+
 ## 2026-08-08 - 列表模式删除等级入口 Lucide 同步
 
 ### 本次实现
@@ -14,6 +81,25 @@
 - npm run lint 仅因其他测试文件已有 5 条 ESLint warning 退出；本次改动文件无 warning。build 保留既有 56 条 Sass/资源 warning。
 - E:\Git\bin\bash.exe ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning；git diff --check 通过。
 - 未执行提交或推送；保留工作区中既有 Docker 远端部署改动及未跟踪文件。
+
+## 2026-08-08 - Docker 远端部署后端健康检查等待修复
+
+### 根因
+
+- 远端 `btdeck-backend` 从 `04:10:24Z` 开始执行孤儿文件隔离状态对账，直到 `04:13:06Z` 才完成 FastAPI 启动前流程，耗时约 162.6 秒。
+- 原健康检查仅配置 `start_period=30s`、`interval=30s`、`retries=3`；Compose 在后端最终就绪前将其判定为 unhealthy，随后报 `dependency failed to start`。
+- 远端实际 Compose 文件由主机持有，`build-and-export-images.bat` 原先只上传两个镜像 tar，不会同步本地 Compose 配置。
+
+### 本次实现
+
+- 新增 `.btdeck-remote-deploy.sh`：部署时先启动 backend，轮询 `docker inspect` 健康状态最多 300 秒，确认 healthy 后再启动 frontend；同时兼容 `docker compose` 与 `docker-compose`。
+- `build-and-export-images.bat` 将该远端部署 helper 与两个镜像 tar 一并上传并调用，保留远端现有 Unraid Compose 的下载目录挂载配置。
+- `docker-compose.yml` 后端健康检查 `start_period` 调整为 5 分钟；`backend/Dockerfile` 的镜像健康检查调整为 300 秒。
+
+### 验证与边界
+
+- `.btdeck-remote-deploy.sh` 通过 `sh -n`；`docker compose -f docker-compose.yml config --quiet` 通过；根 `E:\Git\bin\bash.exe ./init.sh --ci` 通过。
+- Docker Desktop 本机引擎仍受 Windows 管道权限限制，未进行本地容器构建；本次未执行远端部署、Git stage、commit 或 push。
 
 ## 2026-08-03 - 孤儿全选当前筛选、隔离区表头对齐、剪贴板回退与操作日志布局
 
@@ -3090,16 +3176,79 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 
 ### backlog（无变化，沿用上次）
 
-## 2026-08-08 - Transmission ??2??????????????
+## 2026-08-08 - Transmission 等级2删除超时：移除全量任务预查询
 
-### ?????
+### 实现与判断
 
-- ???????? `AsyncDeletionExecutor` ???? 30 ?????????? Transmission???????????
-- Transmission RPC ? `torrent-remove` ???????? SHA1 hash ?? `ids`???2???? `get_torrents()` ???????????????????????????????????
-- `TransmissionDeleteAdapter._delete_torrents_impl` ???????? hash ????????????? `get_torrent_info()` ????????????????????
+- 已确认现场为后端 `AsyncDeletionExecutor` 的单种子 30 秒超时，目标下载器为 Transmission，且目标种子确实存在。
+- Transmission RPC 的 `torrent-remove` 支持直接使用稳定 SHA1 hash 作为 `ids`；等级2删除前的 `get_torrents()` 全量列表查询不是删除正确性的必要条件，反而会在任务较多时增加远程等待。
+- `TransmissionDeleteAdapter._delete_torrents_impl` 改为直接使用传入 hash 去重后删除；保留目标任务的 `get_torrent_info()` 查询，用于现有安全告警，不改变告警语义。
 
-### ??
+### 验证
 
-- ?? `backend/tests/services/test_transmission_delete_adapter.py`?????????? `get_torrents()`?
-- Transmission ????? + ???? API + ???? API?35 passed????? flake8 ??????? black check ???
-- ??? `docs/roadmap/backend/services/README.md`???? Git stage/commit/push/deploy?
+- 新增 `backend/tests/services/test_transmission_delete_adapter.py`，断言删除路径不调用 `get_torrents()`。
+- Transmission 删除适配器 + 等级删除 API + 快捷删除 API：35 passed；目标文件 flake8 通过；新增测试 black check 通过。
+- 已同步 `docs/roadmap/backend/services/README.md`；未执行 Git stage/commit/push/deploy。
+
+## 2026-08-08(续) - 孤儿隔离区彻底删除：重跑幂等 + manifest 预构建（TDD）
+
+### 背景
+
+生产库（E:\Users\huangzj\Desktop\app.db）排查发现 2026-08-08 06:05 的删除任务 ea9555f4（20 文件）终态 partial（4 成功/16 失败"候选不存在或非 quarantined 稳定态"）。证据链：16 个候选 updated_at（06:06:40-06:33:50）早于任务 started_at（06:37:53），即第一次执行已删除 16 个后进程中断，重启恢复任务重跑时把已删项误报为失败。另实测每文件 1.5~2 分钟（20 文件约 40 分钟），系 `_purge_single_candidate` 每文件构建 2 次全量实时 manifest。
+
+### 实现（TDD：先写 6 个失败测试 → 实现 → 全绿）
+
+- 新增 `backend/tests/services/test_orphan_purge_idempotency.py`（6 测试）：
+  - 幂等：已 purged 候选 → purged_count 计入、无失败；混合批次（已删+隔离中）→ 全部成功；
+  - 区分报错：真不存在 → "候选不存在（未找到对应记录）"；已被恢复（status=candidate）→ 附实际状态；
+  - manifest：同下载器 2 文件 → 仅构建 1 次（修复前 2N=4 次）；不同下载器 → 各 1 次。
+- `purge_quarantine_now`（orphan_file_service.py）：
+  - 未匹配路径按候选现状区分：status=purged → 幂等成功（重启重跑不再误报）；其他状态 → 附 status/operation_state；无记录 → 候选不存在；
+  - manifest 按 downloader_id 预构建缓存（cast 辅助静态检查），`_purge_single_candidate` 增加 manifest 参数复用（None 时降级逐文件构建兜底）。
+- 已知边界：`restore_quarantined` 存在同样的"未匹配→笼统失败"模式，本次未改（同批次处理，建议后续会话按同法修复）。
+
+### 验证
+
+- 新增 6 passed；孤儿全量回归 250 passed（+1 skipped 预存）；tests/services 全量 822 passed。
+- black/flake8 通过；mypy 149 个错误全部为预存 Column 误报，本次未新增。
+- 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-08(续) - W1 分批：同步数据库写事务短事务化（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施修复计划第一批 W1（P0 数据库事务修复，G1 门）：消除 info-only / Tracker 状态 / qB removed 三条写路径的单大事务与旁路写者，并建立最小文件型 SQLite 争用回归。修复执行交给 4 个子代理，主代理逐项审查（源码审查 + 亲自复跑测试）后通过。
+
+### W1-1 通用写入改为真实分批提交（app/services/sync_db_write.py）
+
+- `bulk_upsert_with_retry` 重写：每批独立 db_write_scope + DML + commit（批大小默认 `SYNC_DB_COMMIT_BATCH_SIZE=200`），批间 `asyncio.sleep(0)` 让行；新增 `WriteStats`（scanned/changed/committed/batches/retries/elapsed_ms）、`ChunkedWriteError`（携带部分进度统计，`__cause__` 保留异常链）。
+- 锁冲突按 SQLite 错误码分类（5/6/261/262/266/517），**禁止消息字符串匹配**；非锁异常（IntegrityError 等）立即失败不重试；退避 = 指数 + `random.uniform` 抖动，单批总睡眠 ≤ `SYNC_DB_RETRY_MAX_BACKOFF_SECONDS=2.0`。
+- 新配置：`SYNC_CHUNKED_COMMIT_ENABLED`（False 回退单事务，快速回滚开关）、`SYNC_DB_LOCK_RETRY_COUNT=3`、`SYNC_DB_RETRY_MAX_BACKOFF_SECONDS=2.0`；.env.example 同步。
+- 消除对 `torrents_async._retry_on_db_lock` 的反向依赖（该函数保留给旧全量路径调用方）；info-only 两个调用点直接受益、零改动。
+
+### W1-2 Tracker 关键词状态只写变化行（新 app/services/tracker_status_sync.py）
+
+- 判定 + 写回从端点层整体搬迁至服务层 `sync_tracker_status_from_keywords(db)`，**判定规则逐行保持**（精确匹配优先 → 部分匹配 → unknown；全部 failed→error / 有 success|ignored→normal / 其他→unknown）；Step2 追加查询现有 status/msg 用于变化检测（strip 归一化对比）；变化集走 W1-1 统一分批写入；**零变化不进 db_write_scope、不 UPDATE、不 commit**。
+- `update_tracker_status_from_keywords`（torrent_sync.py）改为兼容包装：自建会话 → 调服务 → 映射回原 dict 结构并追加 scanned/changed/unchanged/batches/duration_ms；两个调用方（torrent_sync_async / tracker_sync_task）零改动。
+- 新配置 `SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED`（False 回退全量写回，判定规则不变）。
+- 发现并钉住：重复关键词实际保留**先读取的**值（原注释"保留后读取的"与行为不符）；按"规则逐行保持"约束未改语义。
+
+### W1-3 qB removed 标记纳入统一写治理（app/api/endpoints/torrents_async.py）
+
+- `_mark_qb_removed_torrents` 重写：事务外只读查询待更新 ID → 空变更返回零值 `WriteStats`（不 commit）→ mapping 走 `bulk_upsert_with_retry`（统一批大小 + db_write_scope + 批级重试）；删除路径内自建 commit/retry；失败先 rollback 再原样上抛。
+- 实测 TorrentInfo 为 **(info_id, downloader_id, downloader_name) 三列复合主键**，mapping 必须含全部主键列（否则 bulk_update_mappings 静默 0 行更新）。
+- 架构测试追加：同步模块（removed 标记 / qB、TR info-only / qB、TR tracker-only 共 5 函数）DML 只能经批准写入口（bulk_upsert_with_retry / sync_trackers_batch_async）。
+- 扫描发现的旧全量旁路写者（qb/tr_add_torrents_async 内嵌批处理、sync_add_tracker_async、mark_removed_trackers_*、死代码 _batch_commit_tracker_sync）留给 W2-1 Coordinator 收编，本轮未重构。
+
+### 文件型 SQLite 争用回归（新 tests/integration/test_sqlite_sync_contention.py）
+
+- 真实临时 .db + WAL + 两独立连接（NullPool 每事务独立 sqlite3 连接）；核心用例证明交互写 10 笔在同步 20 批分批写入期间全部成功且单笔 < 5s（远小于 busy_timeout 15s）+ 穿插证明；真实 SQLITE_BUSY 错误码分类（sqlite_errorcode=5）与 `bulk_upsert_with_retry` 真实重试恢复（retries>=1）；短事务提交边界锁释放（纯事件协议、零时间断言）；零变化同步不持锁。
+- 22k 行 P99 < 250ms 基准以 `@pytest.mark.performance` + skip 预留（数据校准留给 G1 压测）；探针实测单批 commit P99≈5ms（Windows WAL + synchronous=NORMAL）。
+
+### 验证
+
+- **全量回归：2699 passed, 7 skipped, 0 failed**（162.8s）。
+- 新增/改造测试：test_sync_db_write 31、test_tracker_status_sync 21、test_qb_removed_mark_governance 9、争用回归 5（+1 perf skip）、架构约束 22。
+- black（10 个改动文件）通过（4 个测试文件先应用 black 格式化后复跑 83 passed）；mypy sync_db_write/tracker_status_sync 无错误；flake8 通过；torrents_async mypy 15 个错误为存量基线（stash 复测 HEAD 同数，未新增）。
+- 回滚路径：`SYNC_CHUNKED_COMMIT_ENABLED=false` + `SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED=false` 即回旧写回行为，无 Schema 变更。
+- 未执行 Git stage/commit/push/deploy。
