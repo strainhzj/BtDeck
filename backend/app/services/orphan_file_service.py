@@ -2259,9 +2259,22 @@ class OrphanFileService:
         purged_count = 0
         failed_list: List[Dict[str, Any]] = []
 
+        # manifest 按 downloader 预构建缓存：禁止逐文件重建（N 文件 = 1 次/下载器，
+        # 修复前每文件 2 次全量下载器 API 拉取，是"分钟级/文件"的性能放大器）。
+        manifest_cache: Dict[str, Optional[ManifestSnapshot]] = {}
+
         for candidate in candidates:
             try:
-                await self._purge_single_candidate(candidate, store, _lease_handle)
+                # 候选表 downloader_id 非空；ORM 列类型标注缺失，cast 仅辅助静态检查
+                downloader_id = cast(str, candidate.downloader_id)
+                if downloader_id not in manifest_cache:
+                    manifest_cache[downloader_id] = await self._build_realtime_manifest(store, {downloader_id})
+                await self._purge_single_candidate(
+                    candidate,
+                    store,
+                    _lease_handle,
+                    manifest=manifest_cache[downloader_id],
+                )
                 purged_count += 1
             except Exception as e:
                 logger.error("[隔离删除] 删除失败 %s: %s", candidate.quarantine_path, e)
@@ -2273,11 +2286,38 @@ class OrphanFileService:
                     }
                 )
 
-        # 未匹配的 canonical_paths
+        # 未匹配的 canonical_paths：区分"已删除（幂等成功）"与"真不存在/状态不符"。
+        # 崩溃恢复重跑场景下，上次执行已物理删除的候选（status=purged）必须视为
+        # 成功，否则任务被误报 partial 且错误信息误导用户。
         matched = {c.canonical_path for c in candidates}
         for p in canonical_paths:
-            if p not in matched:
-                failed_list.append({"canonical_path": p, "reason": "候选不存在或非 quarantined 稳定态"})
+            if p in matched:
+                continue
+            row = (
+                await self.db.execute(
+                    select(
+                        OrphanCurrentCandidate.status,
+                        OrphanCurrentCandidate.operation_state,
+                    ).where(OrphanCurrentCandidate.canonical_path == p)
+                )
+            ).first()
+            if row is not None and row.status == "purged":
+                logger.info("[隔离删除] 候选已删除，幂等成功: %s", p)
+                purged_count += 1
+                continue
+            if row is not None:
+                failed_list.append(
+                    {
+                        "canonical_path": p,
+                        "reason": (
+                            "候选状态不符"
+                            f"（status={row.status}, operation_state={row.operation_state}），"
+                            "可能已被恢复或仍在处理中"
+                        ),
+                    }
+                )
+                continue
+            failed_list.append({"canonical_path": p, "reason": "候选不存在（未找到对应记录）"})
 
         # 审计日志
         if audit_service and purged_count > 0:
@@ -2309,10 +2349,15 @@ class OrphanFileService:
         candidate: OrphanCurrentCandidate,
         store: Any,
         _lease_handle: Any,
+        manifest: Optional[ManifestSnapshot] = None,
     ) -> None:
         """物理删除单个隔离候选（保留 purge_expired_quarantine 的全部安全检查）。
 
         抽取自 purge_expired_quarantine 循环体，供立即删除与到期删除共享。
+
+        Args:
+            manifest: 调用方按 downloader 预构建的实时 manifest（可复用）；为 None
+                时降级为逐文件构建（仅作兜底，正常路径由 purge_quarantine_now 提供）。
         """
         qpath = candidate.quarantine_path
         if not qpath or not os.path.exists(qpath):
@@ -2324,7 +2369,9 @@ class OrphanFileService:
         # 文件进入隔离区后，物理删除只校验持久化的隔离路径和文件身份。
         # 不再用 manifest 为隔离路径授权；manifest 仅作为可选的原路径引用
         # 复核，不能参与实际删除路径解析。
-        reference_manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
+        if manifest is None:
+            manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
+        reference_manifest = manifest
         if (
             reference_manifest is not None
             and normalize_path(candidate.canonical_path) in reference_manifest.expected_paths
@@ -2377,7 +2424,11 @@ class OrphanFileService:
             # 原路径引用复核，不参与 tombstone 的物理路径解析或授权。
             if not self._path_in_quarantine_root(tombstone_path, quarantine_root):
                 raise OSError("tombstone 路径越过 quarantine_root，拒绝删除")
-            delete_manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
+            delete_manifest = (
+                manifest
+                if manifest is not None
+                else await self._build_realtime_manifest(store, {candidate.downloader_id})
+            )
             if (
                 delete_manifest is not None
                 and normalize_path(candidate.canonical_path) in delete_manifest.expected_paths
