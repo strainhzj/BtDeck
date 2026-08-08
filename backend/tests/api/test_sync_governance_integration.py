@@ -17,6 +17,7 @@ admission_controller 持有 heavy_sync + db_write_scope 期间，请求侧
 import asyncio
 import time
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -162,3 +163,82 @@ class TestRequestSideNotBlockedByGovernance:
 
         # 关键断言：heavy_sync.acquire 在整个 DashboardService 调用期间未被触发
         assert not acquire_spy.is_set(), "DashboardService 路径不应 acquire heavy_sync（请求侧不碰治理锁）"
+
+
+class TestManualSyncNoLegacyFullBypass:
+    """W2-1 架构断言：手动 sync-single 不再直接调用 legacy 全量实现。
+
+    验证目标（P0-01 消除手动同步旁路）：
+    - sync_single_downloader 后台执行体经 SyncCoordinator（run_sync 被调）；
+    - 调用链中不再出现直接 qb_add_torrents_async / tr_add_torrents_async
+      全量函数调用（patch 断言其未被调用）。
+    """
+
+    def _make_downloader_row(self):
+        downloader = MagicMock()
+        downloader.downloader_id = "dl_001"
+        downloader.nickname = "test-dl"
+        downloader.downloader_type = "qbittorrent"
+        downloader.host = "192.168.1.1"
+        downloader.port = 8080
+        downloader.username = "admin"
+        downloader.password = "password"
+        downloader.torrent_save_path = "/downloads"
+        downloader.enabled = True
+        downloader.status = "1"
+        return downloader
+
+    async def test_manual_sync_goes_through_coordinator_not_legacy_full(self):
+        """手动入口（开关开启）调 run_sync，且不直接调全量 qb/tr_add_torrents_async。"""
+        from app.api.endpoints.torrent_sync import SyncSingleRequest, sync_single_downloader
+        from app.core.background_task_manager import TaskStatus, task_manager
+        from app.core.config import settings
+        from app.services.sync_coordinator import SyncResult
+
+        request = MagicMock()
+        request.client.host = "127.0.0.1"
+        request.client.port = 12345
+        request.headers = {"user-agent": "test"}
+        request.url.path = "/api/v1/torrents/sync-single"
+
+        db = MagicMock()
+        db.query.return_value.filter.return_value.first.return_value = self._make_downloader_row()
+
+        with (
+            patch("app.services.sync_coordinator.run_sync", new=AsyncMock()) as mock_run_sync,
+            patch("app.api.endpoints.torrents_async.qb_add_torrents_async", new=AsyncMock()) as mock_qb_full,
+            patch("app.api.endpoints.torrents_async.tr_add_torrents_async", new=AsyncMock()) as mock_tr_full,
+            patch.object(settings, "SYNC_CANONICAL_COORDINATOR_ENABLED", True),
+            patch(
+                "app.api.endpoints.torrent_sync.asyncio.create_task",
+                side_effect=lambda coro: asyncio.ensure_future(coro),
+            ),
+        ):
+            mock_run_sync.return_value = SyncResult(outcome="success", run_id="r-arch", message="ok")
+            response = await sync_single_downloader(
+                request,
+                SyncSingleRequest(downloader_id="dl_001"),
+                _user=MagicMock(),
+                db=db,
+            )
+
+            assert response.status == "success"
+            task_id = response.data["task_id"]
+
+            # 等待后台执行体完成（patch 上下文内等待，确保断言看到被 patch 的调用）
+            task = task_manager.get_task(task_id)
+            for _ in range(200):
+                if task is not None and task.status in (TaskStatus.SUCCESS, TaskStatus.FAILED, TaskStatus.CANCELLED):
+                    break
+                await asyncio.sleep(0.01)
+                task = task_manager.get_task(task_id)
+
+            # 架构断言 1：手动入口经统一 Coordinator（run_sync 被调、trigger=manual）
+            assert mock_run_sync.await_count == 1, "手动入口必须经 SyncCoordinator::run_sync"
+            req = mock_run_sync.await_args.args[0]
+            assert req.trigger == "manual"
+            assert req.sync_type == "full"
+
+            # 架构断言 2：手动入口调用链不再直接出现 legacy 全量函数
+            assert mock_qb_full.await_count == 0, "手动入口不得直接调用 qb_add_torrents_async（旁路写者）"
+            assert mock_tr_full.await_count == 0, "手动入口不得直接调用 tr_add_torrents_async（旁路写者）"

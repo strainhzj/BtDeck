@@ -18,10 +18,12 @@ from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
-from qbittorrentapi import Client as qbClient
-from transmission_rpc import Client as trClient
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
 logger = logging.getLogger(__name__)
+
+# 单次还原/轮询远程调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
+_RESTORE_CALL_TIMEOUT = 30.0
 
 
 class RecycleBinService:
@@ -383,25 +385,42 @@ class RecycleBinService:
             # 步骤8：使用缓存的客户端执行操作
             if downloader.is_qbittorrent:
                 # 使用缓存的qBittorrent客户端
-                client.torrents_add(
-                    torrent_files=file_bytes,
-                    save_path=torrent.save_path,
-                    is_stopped=True,  # 还原后默认暂停，让用户手动开始
-                    skip_checking=True,  # 跳过哈希校验
+                # P0-04 修复：torrents_add 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                await call_downloader_api(
+                    downloader_vo.downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_add,
+                    kwargs={
+                        "torrent_files": file_bytes,
+                        "save_path": torrent.save_path,
+                        "is_stopped": True,  # 还原后默认暂停，让用户手动开始
+                        "skip_checking": True,  # 跳过哈希校验
+                    },
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_qb_add_torrent",
                 )
 
                 # 等待qBittorrent处理种子
-                await self._wait_for_qb_torrent(client, torrent.hash)
+                await self._wait_for_qb_torrent(downloader_vo.downloader_id, client, torrent.hash)
 
                 return {"success": True}
 
             elif downloader.is_transmission:
                 # 使用缓存的Transmission客户端
                 # 注意：Transmission的add_torrent()不支持skip_checking参数
-                client.add_torrent(file_bytes, paused=True, download_dir=torrent.save_path)  # 还原后默认暂停
+                # P0-04 修复：add_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                await call_downloader_api(
+                    downloader_vo.downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.add_torrent,
+                    args=(file_bytes,),
+                    kwargs={"paused": True, "download_dir": torrent.save_path},  # 还原后默认暂停
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_tr_add_torrent",
+                )
 
                 # 等待Transmission处理种子
-                await self._wait_for_tr_torrent(client, torrent.hash)
+                await self._wait_for_tr_torrent(downloader_vo.downloader_id, client, torrent.hash)
 
                 return {"success": True}
 
@@ -412,24 +431,44 @@ class RecycleBinService:
             logger.error(f"重新添加种子到下载器失败: {str(e)}", exc_info=True)
             return {"success": False, "error": str(e)}
 
-    async def _wait_for_qb_torrent(self, qb_client: qbClient, torrent_hash: str, max_retries: int = 30) -> bool:
-        """等待qBittorrent处理种子"""
+    async def _wait_for_qb_torrent(
+        self, downloader_id: str, qb_client: Any, torrent_hash: str, max_retries: int = 30
+    ) -> bool:
+        """等待qBittorrent处理种子（轮询单次调用经 INTERACTIVE lane 执行）"""
         for _ in range(max_retries):
             await asyncio.sleep(1)
             try:
-                torrents = qb_client.torrents_info(torrent_hashes=torrent_hash)
+                # P0-04 修复：轮询内的 torrents_info 经 INTERACTIVE lane 线程池执行
+                torrents = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    qb_client.torrents_info,
+                    kwargs={"torrent_hashes": torrent_hash},
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_qb_wait_torrent",
+                )
                 if torrents and len(torrents) > 0:
                     return True
             except Exception:
                 continue
         return False
 
-    async def _wait_for_tr_torrent(self, tr_client: trClient, torrent_hash: str, max_retries: int = 30) -> bool:
-        """等待Transmission处理种子"""
+    async def _wait_for_tr_torrent(
+        self, downloader_id: str, tr_client: Any, torrent_hash: str, max_retries: int = 30
+    ) -> bool:
+        """等待Transmission处理种子（轮询单次调用经 INTERACTIVE lane 执行）"""
         for _ in range(max_retries):
             await asyncio.sleep(1)
             try:
-                torrent = tr_client.get_torrent(torrent_hash)
+                # P0-04 修复：轮询内的 get_torrent 经 INTERACTIVE lane 线程池执行
+                torrent = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    tr_client.get_torrent,
+                    args=(torrent_hash,),
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_tr_wait_torrent",
+                )
                 if torrent:
                     return True
             except Exception:

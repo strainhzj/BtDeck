@@ -4,6 +4,7 @@ qBittorrent删除适配器
 """
 
 from typing import List, Dict, Any, Optional, Tuple
+import asyncio
 import logging
 import os
 from qbittorrentapi import Client, LoginFailed
@@ -46,7 +47,15 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
 
     @property
     def client(self) -> Client:
-        """获取qBittorrent客户端实例"""
+        """获取qBittorrent客户端实例
+
+        懒建说明（P0-04/W2-3）：本 property 在 client=None 的兼容路径下会同步执行
+        Client(...) + auth.log_in()（网络登录）。该懒建必须发生在线程池内，禁止在
+        async 方法内直接访问本 property——所有 async 方法均通过
+        await asyncio.to_thread(lambda: self.client.xxx(...)) 在 worker 线程内访问，
+        因此即使触发懒建也不会阻塞事件循环。正常路径（DownloaderAdapterFactory）
+        强制传入缓存客户端，本 property 仅为纯属性读取。
+        """
         if self._client:
             # 使用传入的已初始化客户端（从缓存获取）
             return self._client
@@ -159,9 +168,12 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
 
             # 批量删除种子
             try:
-                # qBittorrent支持批量删除
-                self.client.torrents.delete(
-                    hashes=valid_hashes, delete_files=delete_files, skip_other_check=skip_other_check
+                # qBittorrent支持批量删除（W2-3/P0-04：同步网络调用放入线程池，
+                # 避免阻塞事件循环；lambda 包裹保证客户端懒建也在工作线程内执行）
+                await asyncio.to_thread(
+                    lambda: self.client.torrents.delete(
+                        hashes=valid_hashes, delete_files=delete_files, skip_other_check=skip_other_check
+                    )
                 )
 
                 # 记录成功删除的种子
@@ -198,8 +210,11 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
 
         for hash_value in torrent_hashes:
             try:
-                self.client.torrents.delete(
-                    hashes=[hash_value], delete_files=delete_files, skip_other_check=skip_other_check
+                # 同步删除调用放入线程池，不阻塞事件循环（P0-04/W2-3）
+                await asyncio.to_thread(
+                    lambda: self.client.torrents.delete(
+                        hashes=[hash_value], delete_files=delete_files, skip_other_check=skip_other_check
+                    )
                 )
 
                 result["success_hashes"].append(hash_value)
@@ -218,8 +233,8 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         existence_map = {}
 
         try:
-            # 获取所有种子信息
-            all_torrents = self.client.torrents.info()
+            # 获取所有种子信息（线程池内执行，避免阻塞事件循环）
+            all_torrents = await asyncio.to_thread(lambda: self.client.torrents.info())
 
             # 构建存在性映射
             existing_hashes = {t.hash for t in all_torrents}
@@ -238,8 +253,8 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
     async def get_torrent_info(self, torrent_hash: str) -> Optional[Dict[str, Any]]:
         """获取种子信息"""
         try:
-            # 尝试获取单个种子信息
-            torrents = self.client.torrents.info(hashes=[torrent_hash])
+            # 尝试获取单个种子信息（线程池内执行，避免阻塞事件循环）
+            torrents = await asyncio.to_thread(lambda: self.client.torrents.info(hashes=[torrent_hash]))
 
             if torrents:
                 torrent = torrents[0]
@@ -309,8 +324,8 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
     async def test_connection(self) -> bool:
         """测试连接"""
         try:
-            # 尝试获取API版本
-            version = self.client.app.version()
+            # 尝试获取API版本（线程池内执行，避免阻塞事件循环）
+            version = await asyncio.to_thread(lambda: self.client.app.version())
             logger.info(f"qBittorrent连接测试成功，版本: {version}")
             return True
         except Exception as e:
@@ -320,11 +335,19 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
     async def get_downloader_info(self) -> Dict[str, Any]:
         """获取下载器信息"""
         try:
-            info = self.client.app.preferences()
+            # 一次线程池调用完成 4 次 app.* 探测（同步网络调用不阻塞事件循环）
+            info, version, build_info, web_api_version = await asyncio.to_thread(
+                lambda: (
+                    self.client.app.preferences(),
+                    self.client.app.version(),
+                    self.client.app.build_info(),
+                    self.client.app.web_api_version(),
+                )
+            )
             return {
-                "version": self.client.app.version(),
-                "build_info": self.client.app.build_info(),
-                "web_api_version": self.client.app.web_api_version(),
+                "version": version,
+                "build_info": build_info,
+                "web_api_version": web_api_version,
                 "download_path": info.get("save_path", ""),
                 "temp_path": info.get("temp_path", ""),
                 "max_connections": info.get("max_conn_per_torrent", 0),
@@ -345,8 +368,8 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
                 - size: int (种子大小，字节)
         """
         try:
-            # 获取所有种子信息
-            all_torrents = self.client.torrents.info()
+            # 获取所有种子信息（线程池内执行，避免阻塞事件循环）
+            all_torrents = await asyncio.to_thread(lambda: self.client.torrents.info())
 
             # 转换为统一格式
             result = []
@@ -412,13 +435,13 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         try:
             # 创建标签（如果不存在）
             try:
-                self.client.torrent_tags.create_tags(tags=tag)
+                await asyncio.to_thread(lambda: self.client.torrent_tags.create_tags(tags=tag))
             except Exception as e:
                 # 标签可能已存在,忽略错误
                 logger.debug(f"创建标签可能失败(可能已存在): {str(e)}")
 
-            # 为种子添加标签
-            self.client.torrents_add_tags(torrent_hashes=[torrent_hash], tags=[tag])
+            # 为种子添加标签（线程池内执行，避免阻塞事件循环）
+            await asyncio.to_thread(lambda: self.client.torrents_add_tags(torrent_hashes=[torrent_hash], tags=[tag]))
 
             logger.info(f"qBittorrent种子 {torrent_hash} 已添加标签: {tag}")
             return True, ""
@@ -484,8 +507,8 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
             (成功标志, 文件列表, 错误信息)
         """
         try:
-            # 调用 qBittorrent API 获取文件列表
-            torrent_files = self.client.torrents.files(torrent_hash=torrent_hash)
+            # 调用 qBittorrent API 获取文件列表（线程池内执行，避免阻塞事件循环）
+            torrent_files = await asyncio.to_thread(lambda: self.client.torrents.files(torrent_hash=torrent_hash))
 
             if not torrent_files:
                 return False, None, f"种子 {torrent_hash} 没有文件信息"

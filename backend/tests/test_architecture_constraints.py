@@ -327,3 +327,94 @@ def test_no_top_level_app_factory_import_in_endpoints():
         "丢失业务路由（历史 bug：tag_aggregation 测试 404）。请在函数体内 lazy import。"
         "发现违规:\n" + "\n".join(violations)
     )
+
+
+# ==============================================================================
+# sync-database-blocking-remediation W1-3：同步模块 DML 只能通过批准写入口
+# ==============================================================================
+# 背景：_mark_qb_removed_torrents 曾直接执行 update(TorrentInfo) + db.commit()
+# （在 db_write_scope 之外、无统一批大小、无 retry），属于旁路写者（P0-03/P0-06）。
+# W1-3 已收编为 bulk_upsert_with_retry（统一批大小 + db_write_scope + 批级重试）。
+# 本约束固化：info-only / tracker-only / removed 标记相关同步函数体内禁止直接 DML
+# （db.commit / db.execute(update|delete|insert) / 函数内局部 import sqlalchemy.update），
+# 必须调用批准写入口。只读 db.execute(select(...)) 不受限；db.rollback() 属错误清理路径不受限。
+
+# 同步模块白名单：函数名 → 必须调用的批准写入口
+_SYNC_APPROVED_ENTRY_RULES = {
+    "_mark_qb_removed_torrents": ("bulk_upsert_with_retry",),
+    "qb_add_torrents_info_only_async": ("bulk_upsert_with_retry",),
+    "tr_add_torrents_info_only_async": ("bulk_upsert_with_retry",),
+    "qb_sync_trackers_only_async": ("sync_trackers_batch_async",),
+    "tr_sync_trackers_only_async": ("sync_trackers_batch_async",),
+}
+
+_DIRECT_DML_CALL_NAMES = frozenset({"update", "delete", "insert", "sqlite_insert"})
+
+
+def _find_function_node(tree: ast.AST, name: str) -> ast.AST:
+    """在模块 AST 中定位指定函数（路径漂移时抛 AssertionError，不让测试静默通过）。"""
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name:
+            return node
+    raise AssertionError(f"未找到函数 {name}（路径漂移？）")
+
+
+def _sync_dml_violations(func_node: ast.AST) -> list[str]:
+    """返回函数体内（含嵌套闭包）绕过批准写入口的直接 DML 描述列表。
+
+    检测三类旁路：
+    1. db.commit() 直接提交；
+    2. db.execute(update(...)) / db.execute(delete(...)) / db.execute(insert(...))
+       （首参是 update/delete/insert/sqlite_insert 构造调用）；
+    3. 函数体内 `from sqlalchemy import update/delete` 局部导入（旁路 DML 惯用入口）。
+    """
+    violations = []
+    for node in ast.walk(func_node):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name) and func.value.id == "db":
+                if func.attr == "commit":
+                    violations.append(f"行 {node.lineno}: db.commit() 直接调用")
+                elif func.attr == "execute" and node.args:
+                    arg0 = node.args[0]
+                    dml_name = None
+                    if isinstance(arg0, ast.Call):
+                        if isinstance(arg0.func, ast.Name) and arg0.func.id in _DIRECT_DML_CALL_NAMES:
+                            dml_name = arg0.func.id
+                        elif isinstance(arg0.func, ast.Attribute) and arg0.func.attr in _DIRECT_DML_CALL_NAMES:
+                            dml_name = arg0.func.attr
+                    if dml_name:
+                        violations.append(f"行 {node.lineno}: db.execute({dml_name}(...)) 直接 DML")
+        elif isinstance(node, ast.ImportFrom) and node.module == "sqlalchemy":
+            for alias in node.names:
+                if alias.name in {"update", "delete"}:
+                    violations.append(f"行 {node.lineno}: 函数内局部 import sqlalchemy.{alias.name}")
+    return violations
+
+
+def test_sync_module_dml_only_through_approved_write_entries():
+    """🔴 防回归：同步模块（info-only / tracker-only / removed 标记）的 DML
+    只能通过批准写入口（bulk_upsert_with_retry / sync_trackers_batch_async）。
+
+    mutation 验证点：把 _mark_qb_removed_torrents 改回直接 update+commit，
+    或在 info-only 函数里新增 db.commit() / 删掉 bulk_upsert_with_retry 调用，
+    此测试立即报红。
+    """
+    path = APP_ROOT / "api" / "endpoints" / "torrents_async.py"
+    tree = _parse(path)
+    failures = []
+    for func_name, approved_entries in _SYNC_APPROVED_ENTRY_RULES.items():
+        func_node = _find_function_node(tree, func_name)
+        for violation in _sync_dml_violations(func_node):
+            failures.append(f"{func_name}: {violation}")
+        called_names = {
+            node.func.id
+            for node in ast.walk(func_node)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        for entry in approved_entries:
+            if entry not in called_names:
+                failures.append(f"{func_name}: 未调用批准写入口 {entry}")
+    assert (
+        not failures
+    ), "同步模块 DML 必须通过批准写入口（bulk_upsert_with_retry / sync_trackers_batch_async）:\n" + "\n".join(failures)

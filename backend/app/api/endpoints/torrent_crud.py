@@ -32,6 +32,7 @@ from app.api.endpoints.torrent_helpers import (
 from app.api.endpoints.torrent_speed import get_active_keys_snapshot
 from app.api.endpoints.torrent_sync import qb_add_torrents, tr_add_torrents
 from app.services.torrent_crud_service import get_torrent_info
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.torrent_batch_add_service import (
     TorrentBatchAddOptions,
     cleanup_staged_files,
@@ -44,6 +45,12 @@ from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 logger = logging.getLogger(__name__)
 router = APIRouter()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 单次下载器 API 调用超时（秒）：与 tracker.py 切片同风格；qB/TR add 及轮询单次调用
+# 沿用 30s 预算（原 qbittorrentapi / transmission_rpc HTTP 默认超时），轮询循环本身
+# （30 次 × sleep 1s）由端点既有逻辑控制，不因 runtime timeout 改变重试语义。
+_QB_CALL_TIMEOUT = 30.0
+_TR_CALL_TIMEOUT = 30.0
 
 
 # ==================== 种子操作请求模型 ====================
@@ -185,6 +192,10 @@ async def create_torrent(
         result.status = "failed"
         return result
 
+    # mypy 收窄：能通过下载器缓存匹配即证明 downloader_id 非空（Form 参数类型为 Optional[str]），
+    # 后续 call_downloader_api / get_transmission_torrent_info 均要求 str。
+    assert downloader_id is not None
+
     # 使用缓存的下载器对象（替换原来的数据库查询）
     downloader = downloader_vo
     if torrent_file:
@@ -244,7 +255,16 @@ async def create_torrent(
                 # 将文件数据包装成类似文件对象
                 from io import BytesIO
 
-                tr_client.add_torrent(BytesIO(file_data), **add_args)
+                # P0-04 修复：add_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    tr_client.add_torrent,
+                    args=(BytesIO(file_data),),
+                    kwargs=add_args,
+                    timeout=_TR_CALL_TIMEOUT,
+                    operation="add_torrent",
+                )
             else:
                 result.code = "400"
                 result.msg = "Transmission需要种子文件"
@@ -256,7 +276,7 @@ async def create_torrent(
             retry_count = 0
             while tr_torrent is None and retry_count < max_retries:
                 await asyncio.sleep(1)
-                tr_torrent = await get_transmission_torrent_info(tr_client, info_hash)
+                tr_torrent = await get_transmission_torrent_info(downloader_id, tr_client, info_hash)
                 retry_count += 1
 
             if not tr_torrent:
@@ -320,17 +340,25 @@ async def create_torrent(
             file_data = await asyncio.to_thread(read_file_data_qb, tmp_file_path)
             from io import BytesIO
 
-            qb_client.torrents_add(
-                torrent_files=BytesIO(file_data),
-                save_path=save_path,
-                is_stopped=paused,
-                tags=tags,
-                category=category,
-                is_skip_checking=skip_hash_check,
-                is_sequential_download=is_sequential_download,
-                is_first_last_piece_priority=is_first_last_piece_priority,
-                upload_limit=upload_limit,
-                download_limit=download_limit,
+            # P0-04 修复：torrents_add 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+            await call_downloader_api(
+                downloader_id,
+                DownloadLane.INTERACTIVE,
+                qb_client.torrents_add,
+                kwargs={
+                    "torrent_files": BytesIO(file_data),
+                    "save_path": save_path,
+                    "is_stopped": paused,
+                    "tags": tags,
+                    "category": category,
+                    "is_skip_checking": skip_hash_check,
+                    "is_sequential_download": is_sequential_download,
+                    "is_first_last_piece_priority": is_first_last_piece_priority,
+                    "upload_limit": upload_limit,
+                    "download_limit": download_limit,
+                },
+                timeout=_QB_CALL_TIMEOUT,
+                operation="add_torrent",
             )
 
             # 从qBittorrent获取种子信息（最多30秒）
@@ -339,7 +367,15 @@ async def create_torrent(
             retry_count = 0
             while (torrents is None or len(torrents) == 0) and retry_count < max_retries:
                 await asyncio.sleep(1)
-                torrents = qb_client.torrents_info(torrent_hashes=info_hash)
+                # P0-04 修复：轮询内的 torrents_info 同样经 INTERACTIVE lane 执行
+                torrents = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    qb_client.torrents_info,
+                    kwargs={"torrent_hashes": info_hash},
+                    timeout=_QB_CALL_TIMEOUT,
+                    operation="get_qb_torrent_info",
+                )
                 retry_count += 1
 
             # 双重检查：确保torrents列表不为空
@@ -475,7 +511,9 @@ async def create_torrents_batch(
     cached_downloaders = await app.state.store.get_snapshot()
     downloader = next((item for item in cached_downloaders if item.downloader_id == downloader_id), None)
     if downloader is None:
-        return CommonResponse(status="error", msg=f"下载器不在缓存中 [downloader_id={downloader_id}]", code="404", data=None)
+        return CommonResponse(
+            status="error", msg=f"下载器不在缓存中 [downloader_id={downloader_id}]", code="404", data=None
+        )
     if (getattr(downloader, "fail_time", 0) or 0) > 0:
         return CommonResponse(status="error", msg="下载器已失效，无法提交批量任务", code="503", data=None)
     if not getattr(downloader, "client", None):

@@ -26,6 +26,7 @@ from app.services.tag_service import TagService
 from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.models.setting_templates import DownloaderTypeEnum
 from app.torrents.models import TorrentInfo
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -33,6 +34,9 @@ router = APIRouter()
 # 下载器类型常量
 DOWNLOADER_TYPE_QBITTORRENT = 0  # 支持分类和标签
 DOWNLOADER_TYPE_TRANSMISSION = 1  # 仅支持标签
+
+# 同步到下载器时的单次调用超时（秒，W2-3 P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
+_SYNC_CALL_TIMEOUT = 30.0
 
 
 # ==================== 辅助函数 ====================
@@ -1078,11 +1082,26 @@ async def _sync_tag_to_downloader(
 
         # 根据下载器类型同步
         if downloader_type == DOWNLOADER_TYPE_QBITTORRENT:
-            # qBittorrent: 创建分类或标签
+            # qBittorrent: 创建分类或标签（P0-04：经 call_downloader_api 执行）
+            # ⚠️ 本 helper 当前无调用方（死代码），保留仅为兼容；若未来启用请确认调用点带 await
             if tag_type == "category":
-                client.torrent_categories.create_category(name=tag_name)
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrent_categories.create_category,
+                    kwargs={"name": tag_name},
+                    timeout=_SYNC_CALL_TIMEOUT,
+                    operation="tag_sync_qb_create_category",
+                )
             else:
-                client.torrent_tags.create_tags(tags=tag_name)
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrent_tags.create_tags,
+                    kwargs={"tags": tag_name},
+                    timeout=_SYNC_CALL_TIMEOUT,
+                    operation="tag_sync_qb_create_tags",
+                )
             logger.info(f"成功同步标签到qBittorrent: {tag_name} ({tag_type})")
             return {"success": True, "message": "同步成功"}
 
@@ -1169,22 +1188,44 @@ async def _sync_tags_to_torrent_downloader(
             if category_tags:
                 # qBittorrent只支持单个分类，使用第一个
                 category = category_tags[0] if category_tags else ""
-                # 需要获取种子的当前保存路径
-                torrent_info = client.torrents_info(torrent_hashes=[torrent_hash])
+                # 需要获取种子的当前保存路径（P0-04：经 call_downloader_api 的
+                # INTERACTIVE lane 执行，禁止在事件循环内裸同步调用）
+                torrent_info = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_info,
+                    kwargs={"torrent_hashes": [torrent_hash]},
+                    timeout=_SYNC_CALL_TIMEOUT,
+                    operation="tag_sync_qb_torrents_info",
+                )
                 if torrent_info and len(torrent_info) > 0:
                     first_torrent = torrent_info[0]
                     if isinstance(first_torrent, dict):
                         save_path = first_torrent.get("save_path", "")
                     else:
                         save_path = getattr(first_torrent, "save_path", "") or ""
-                    client.torrents_set_category(
-                        category=category,
-                        save_path=save_path,
-                        torrent_hashes=[torrent_hash],
+                    await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        client.torrents_set_category,
+                        kwargs={
+                            "category": category,
+                            "save_path": save_path,
+                            "torrent_hashes": [torrent_hash],
+                        },
+                        timeout=_SYNC_CALL_TIMEOUT,
+                        operation="tag_sync_qb_set_category",
                     )
 
             if tag_names:
-                client.torrents_add_tags(tags=tag_names, torrent_hashes=[torrent_hash])
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_add_tags,
+                    kwargs={"tags": tag_names, "torrent_hashes": [torrent_hash]},
+                    timeout=_SYNC_CALL_TIMEOUT,
+                    operation="tag_sync_qb_add_tags",
+                )
 
             logger.info(f"成功同步标签到种子 {torrent_hash[:8]}...")
             return {"success": True, "message": "同步成功"}
@@ -1200,8 +1241,13 @@ async def _sync_tags_to_torrent_downloader(
                         processed_tags.append(tag[1:])  # 去掉@前缀
                     else:
                         processed_tags.append(tag)
-                client.torrents_set_tags(
-                    tags=processed_tags, torrent_hashes=[torrent_hash]
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_set_tags,
+                    kwargs={"tags": processed_tags, "torrent_hashes": [torrent_hash]},
+                    timeout=_SYNC_CALL_TIMEOUT,
+                    operation="tag_sync_tr_set_tags",
                 )
 
             logger.info(f"成功同步标签到Transmission种子 {torrent_hash[:8]}...")
@@ -1301,8 +1347,15 @@ async def _sync_tag_delete_to_downloader(
             if tag_type == "category":
                 # 完整分类删除逻辑：检查种子 -> 转移种子（可选）-> 删除分类
                 try:
-                    # 步骤1：检查分类下是否有种子
-                    category_torrents = client.torrents_info(category=tag_name)
+                    # 步骤1：检查分类下是否有种子（P0-04：经 call_downloader_api 执行）
+                    category_torrents = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        client.torrents_info,
+                        kwargs={"category": tag_name},
+                        timeout=_SYNC_CALL_TIMEOUT,
+                        operation="tag_delete_qb_torrents_info",
+                    )
                     torrent_count = len(category_torrents)
 
                     # 步骤2：如果提供了目标分类且有种，先转移种子
@@ -1350,8 +1403,16 @@ async def _sync_tag_delete_to_downloader(
                                     f"  - 新分类: '{new_category or '未分类'}'"
                                 )
 
-                                client.torrents.set_category(
-                                    category=new_category, torrent_hashes=[torrent_hash]
+                                await call_downloader_api(
+                                    downloader_id,
+                                    DownloadLane.INTERACTIVE,
+                                    client.torrents.set_category,
+                                    kwargs={
+                                        "category": new_category,
+                                        "torrent_hashes": [torrent_hash],
+                                    },
+                                    timeout=_SYNC_CALL_TIMEOUT,
+                                    operation="tag_delete_qb_transfer_category",
                                 )
                                 transferred_count += 1
                                 logger.debug(
@@ -1397,7 +1458,14 @@ async def _sync_tag_delete_to_downloader(
                     logger.info(f"准备删除qBittorrent分类: {tag_name}")
 
                     # 检查分类下是否还有种子
-                    remaining_torrents = client.torrents.info(category=tag_name)
+                    remaining_torrents = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        client.torrents.info,
+                        kwargs={"category": tag_name},
+                        timeout=_SYNC_CALL_TIMEOUT,
+                        operation="tag_delete_qb_remaining_info",
+                    )
                     remaining_count = len(remaining_torrents)
 
                     if remaining_count > 0:
@@ -1416,8 +1484,15 @@ async def _sync_tag_delete_to_downloader(
                     try:
                         logger.debug(f"使用SDK方法删除qBittorrent分类: {tag_name}")
 
-                        # 直接调用SDK的删除分类方法
-                        client.torrents_remove_categories(categories=[tag_name])
+                        # 直接调用SDK的删除分类方法（P0-04：经 call_downloader_api 执行）
+                        await call_downloader_api(
+                            downloader_id,
+                            DownloadLane.INTERACTIVE,
+                            client.torrents_remove_categories,
+                            kwargs={"categories": [tag_name]},
+                            timeout=_SYNC_CALL_TIMEOUT,
+                            operation="tag_delete_qb_remove_categories",
+                        )
 
                         logger.info(f"成功删除qBittorrent分类: {tag_name}（通过SDK）")
                         return {"success": True, "message": "同步成功"}
@@ -1438,7 +1513,14 @@ async def _sync_tag_delete_to_downloader(
             else:
                 # qBittorrent标签删除
                 try:
-                    client.torrents_delete_tags(tags=tag_name)
+                    await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        client.torrents_delete_tags,
+                        kwargs={"tags": tag_name},
+                        timeout=_SYNC_CALL_TIMEOUT,
+                        operation="tag_delete_qb_delete_tags",
+                    )
                     logger.info(f"成功删除qBittorrent标签: {tag_name}")
                 except Exception as e:
                     logger.error(f"删除qBittorrent标签失败: {str(e)}")

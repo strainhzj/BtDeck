@@ -20,6 +20,22 @@ from unittest.mock import MagicMock, AsyncMock, patch, call
 from datetime import datetime
 
 
+@pytest.fixture(autouse=True)
+def _patch_call_downloader_api(monkeypatch):
+    """本文件测试直接执行 func，不经过真实 runtime 单例（与 test_torrent_speed_regression
+    同款约定，见其 456 行注释）：同一 pytest 进程中先跑的 API 测试用 TestClient 触发
+    lifespan，会把全局单例 downloader_api_runtime 的 executor shutdown（不可逆），
+    导致本文件调用真实 call_downloader_api 报 cannot schedule new futures after shutdown。
+    直接执行 func 保持异常语义（client 抛什么异常就透传什么），与迁移前行为一致。
+    """
+    from app.services import reannounce_service as _rs
+
+    async def _direct_call(downloader_id, lane, func, args=(), kwargs=None, *, timeout=None, operation=""):
+        return func(*args, **(kwargs or {}))
+
+    monkeypatch.setattr(_rs, "call_downloader_api", _direct_call)
+
+
 # ==================== 辅助工具 ====================
 
 class _FakeTorrentRecord:

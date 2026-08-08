@@ -27,12 +27,12 @@ mock AsyncSession 按端点 6 次 db.execute 顺序返回预设数据，
 """
 
 from typing import Any, List, Optional
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.api.endpoints.tracker import replace_tracker
-
 
 # ============================================================================
 # 辅助函数
@@ -135,8 +135,8 @@ def _build_db(
     results.append(_result(downloader_id_list))
     # 5/6. 每个 downloader 两次查询（downloader + torrent_ids）
     for dl, tids in zip(downloaders, torrent_ids_per_downloader):
-        results.append(_result([dl], scalar_one=True))   # 查 downloader
-        results.append(_result([(t,) for t in tids]))     # 查 torrent_ids
+        results.append(_result([dl], scalar_one=True))  # 查 downloader
+        results.append(_result([(t,) for t in tids]))  # 查 torrent_ids
 
     async def _execute(*args, **kwargs):
         i = n["i"]
@@ -149,11 +149,37 @@ def _build_db(
     return db
 
 
-def _make_args(db, *, replace_url="http://old.example.com/announce",
-               target_url="http://new.example.com/announce"):
-    """构造 replace_tracker 端点的公共参数。"""
+def _make_args(
+    db,
+    *,
+    replace_url="http://old.example.com/announce",
+    target_url="http://new.example.com/announce",
+    downloader_ids=("dl-1",),
+):
+    """构造 replace_tracker 端点的公共参数。
+
+    注：W2-3 迁移后端点从 app.state.store 获取客户端连接（禁止自建 qbClient/trClient），
+    因此 req 必须携带 store；helper 在用例中被 patch，store 内的 client 不会被实际调用，
+    只需存在（client 非 None 以通过 _require_downloader_vo 校验）。
+    """
+    req = MagicMock()
+    store = SimpleNamespace()
+    store.get_snapshot = AsyncMock(
+        return_value=[
+            SimpleNamespace(
+                downloader_id=dl_id,
+                client=MagicMock(),
+                fail_time=0,
+                downloader_type=0,
+                nickname=f"test-{dl_id}",
+            )
+            for dl_id in downloader_ids
+        ]
+    )
+    req.app = SimpleNamespace()
+    req.app.state = SimpleNamespace(store=store)
     return dict(
-        req=MagicMock(),
+        req=req,
         background_tasks=MagicMock(),
         _user=None,
         replace_tracker_url=replace_url,
@@ -185,7 +211,7 @@ async def test_qb_replace_tracker_type_error_does_not_bubble():
 
     with patch(
         "app.api.endpoints.tracker.qb_replace_tracker",
-        side_effect=TypeError("Object of type ValueError is not JSON serializable"),
+        new=AsyncMock(side_effect=TypeError("Object of type ValueError is not JSON serializable")),
     ):
         result = await replace_tracker(**_make_args(db))
 
@@ -216,9 +242,9 @@ async def test_tr_replace_tracker_failure_caught():
 
     with patch(
         "app.api.endpoints.tracker.tr_replace_tracker",
-        side_effect=ValueError("invalid torrent id format"),
+        new=AsyncMock(side_effect=ValueError("invalid torrent id format")),
     ):
-        result = await replace_tracker(**_make_args(db))
+        result = await replace_tracker(**_make_args(db, downloader_ids=("dl-tr",)))
 
     assert result.code == "200"
     assert result.data["failed_count"] == 1
@@ -247,8 +273,8 @@ async def test_partial_failure_continues_other_downloaders():
             raise TypeError("first downloader RPC failed")
         # 第二个 downloader 正常返回
 
-    with patch("app.api.endpoints.tracker.qb_replace_tracker", side_effect=_qb_side_effect):
-        result = await replace_tracker(**_make_args(db))
+    with patch("app.api.endpoints.tracker.qb_replace_tracker", new=AsyncMock(side_effect=_qb_side_effect)):
+        result = await replace_tracker(**_make_args(db, downloader_ids=("dl-fail", "dl-ok")))
 
     assert result.code == "200"
     assert result.data["success_count"] == 1
@@ -291,11 +317,11 @@ async def test_downloader_not_exist_increments_failed():
     db = MagicMock()
     n = {"i": 0}
     results = [
-        _result([_make_tracker_info()]),              # 1. tracker_info_list
+        _result([_make_tracker_info()]),  # 1. tracker_info_list
         _result([_make_torrent()], scalar_one=True),  # 2. torrent
-        MagicMock(),                                   # 3. update
-        _result([("dl-missing",)]),                    # 4. downloader_id_list
-        _result([], scalar_one=True),                  # 5. 查 downloader 返回 None
+        MagicMock(),  # 3. update
+        _result([("dl-missing",)]),  # 4. downloader_id_list
+        _result([], scalar_one=True),  # 5. 查 downloader 返回 None
     ]
 
     async def _execute(*args, **kwargs):
@@ -332,8 +358,8 @@ async def test_all_succeed_returns_full_success():
         downloaders=[dl],
     )
 
-    with patch("app.api.endpoints.tracker.qb_replace_tracker"):
-        result = await replace_tracker(**_make_args(db))
+    with patch("app.api.endpoints.tracker.qb_replace_tracker", new=AsyncMock()):
+        result = await replace_tracker(**_make_args(db, downloader_ids=("dl-ok",)))
 
     assert result.code == "200"
     assert result.data["success_count"] == 1
@@ -354,8 +380,8 @@ async def test_data_structure_backward_compatible():
         downloaders=[dl],
     )
 
-    with patch("app.api.endpoints.tracker.qb_replace_tracker"):
-        result = await replace_tracker(**_make_args(db))
+    with patch("app.api.endpoints.tracker.qb_replace_tracker", new=AsyncMock()):
+        result = await replace_tracker(**_make_args(db, downloader_ids=("dl-ok",)))
 
     assert result.code == "200"
     data = result.data

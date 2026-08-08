@@ -27,6 +27,35 @@ from app.database import Base
 
 
 @pytest.fixture
+async def async_tracker_sync_db():
+    """异步内存 SQLite，只建 TrackerInfo + TrackerKeywordConfig 两张表。
+
+    专供 tracker_status_sync 服务层测试（W1-2 增量写回）。
+    用 StaticPool 保证单连接（:memory: 库跨连接不共享）。
+    yield 一个 AsyncSession；测试结束后 drop 这两张表。
+    """
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    from app.torrents.models import TrackerInfo, TrackerKeywordConfig  # noqa: F401
+
+    tables = [TrackerInfo.__table__, TrackerKeywordConfig.__table__]
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=tables))
+    Session = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    session = Session()
+    try:
+        yield session
+    finally:
+        await session.close()
+        async with engine.begin() as conn:
+            await conn.run_sync(lambda c: Base.metadata.drop_all(c, tables=tables))
+        await engine.dispose()
+
+
+@pytest.fixture
 async def async_orphan_db():
     """异步内存 SQLite，建孤儿 + 通知 + 下载器 + 种子信息相关表。
 

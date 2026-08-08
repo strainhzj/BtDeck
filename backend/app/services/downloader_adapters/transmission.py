@@ -127,7 +127,8 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
                     try:
                         # 使用transmission_rpc的remove_torrent方法
                         # 注意：参数名是 ids，不是 torrent_id
-                        self.client.remove_torrent(ids=torrent_hash, delete_data=delete_data)
+                        # 同步网络调用放入线程池，避免阻塞事件循环（P0-04/W2-3）
+                        await asyncio.to_thread(self.client.remove_torrent, ids=torrent_hash, delete_data=delete_data)
                         result["success_hashes"].append(torrent_hash)
                         if delete_data:
                             result["deleted_files"].append(torrent_hash)

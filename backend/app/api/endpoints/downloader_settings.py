@@ -27,12 +27,16 @@ from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
 from app.services.speed_schedule_service import SpeedScheduleService
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.utils.encryption import encrypt_password, decrypt_password
 from app.models.enums import SpeedUnitEnum
 from app.models.setting_templates import DownloaderTypeEnum
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+# 测试连接单次调用超时（秒，P0-04：网络探测经 call_downloader_api 的 INTERACTIVE lane 执行）
+_TEST_CONNECT_TIMEOUT = 10.0
 
 
 # ========== 辅助函数 ==========
@@ -1174,6 +1178,11 @@ async def test_downloader_settings(
                 return CommonResponse(status="error", msg="未提供密码且数据库中无密码", code="422", data=None)
 
         # 6. ✅ 绕过缓存，直接创建客户端进行测试
+        # ⚠️ P0-04（W2-3）合法例外说明：本端点是"测试连接"场景，使用用户在页面提交的
+        # 新配置（尚未保存到数据库，app.state.store 中也没有对应客户端），因此允许在
+        # 函数内自建客户端并仅做一次探测（不 login/logout、不入 store、不留连接）；
+        # 但网络调用本身仍必须经 call_downloader_api（INTERACTIVE lane + 超时），
+        # 禁止在事件循环内裸同步调用。其余端点一律禁止自建客户端。
         try:
             import time
 
@@ -1189,7 +1198,7 @@ async def test_downloader_settings(
                     protocol = "https" if int(test_is_ssl) == 1 else "http"
                     url = f"{protocol}://{test_host}:{int(test_port)}"
 
-                    # 创建客户端并测试连接
+                    # 创建客户端并测试连接（测试连接场景：合法自建，见上方例外说明）
                     qb_client = QBClient(
                         host=url,
                         username=test_username,
@@ -1198,8 +1207,14 @@ async def test_downloader_settings(
                         REQUESTS_ARGS={"timeout": 10},  # 10秒超时
                     )
 
-                    # 尝试登录并获取版本信息
-                    version = qb_client.app_version()
+                    # 尝试登录并获取版本信息（P0-04：经 call_downloader_api 执行）
+                    version = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        qb_client.app_version,
+                        timeout=_TEST_CONNECT_TIMEOUT,
+                        operation="qb_test_app_version",
+                    )
                     if not version:
                         return CommonResponse(
                             status="success",
@@ -1254,8 +1269,14 @@ async def test_downloader_settings(
                         timeout=10,  # 10秒超时
                     )
 
-                    # 尝试获取会话信息
-                    session = tr_client.get_session()
+                    # 尝试获取会话信息（P0-04：经 call_downloader_api 执行）
+                    session = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        tr_client.get_session,
+                        timeout=_TEST_CONNECT_TIMEOUT,
+                        operation="tr_test_get_session",
+                    )
                     if not session:
                         return CommonResponse(
                             status="success",

@@ -22,6 +22,7 @@ from uvicorn import Config
 
 from app.core.config import is_frozen, settings
 from app.core.migration import migrate_database
+from app.core.startup_guard import StartupGuardError, log_startup_manifest, validate_from_env
 from app.factory import app
 from app.database import init_config_file
 
@@ -72,6 +73,20 @@ except Exception as e:
     # 日志配置失败不应阻止应用启动,使用 print 输出警告
     print(f"[WARN] Failed to configure logging: {e}")
     print("[WARN] Using default logging configuration")
+
+
+# === SQLite 单 Worker 启动约束（W2-4 / P0-06，fail-fast）===
+# 容器脚本（btdeck_startup.sh）与外部 uvicorn 命令可能绕过下方 Server 配置写死的
+# workers=1，因此这里解析**实际生效的 WORKERS 环境变量**（未设置视为 1，与
+# python main.py 直接运行默认一致），校验不通过直接抛异常阻止启动。
+try:
+    _startup_backend, _startup_workers, _startup_scheduler_enabled = validate_from_env()
+    # 启动清单日志：database_backend / worker_count / scheduler_enabled / process_id
+    # 启动配置与实际进程数在此日志中可核对。
+    log_startup_manifest(_startup_backend, _startup_workers, _startup_scheduler_enabled)
+except StartupGuardError as exc:
+    logger.error("启动约束校验失败，拒绝启动: %s", exc)
+    raise
 
 
 # uvicorn服务配置

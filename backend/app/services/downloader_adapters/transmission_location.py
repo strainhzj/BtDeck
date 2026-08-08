@@ -9,6 +9,7 @@ Transmission种子位置修改适配器
 @time: 2026-03-04
 """
 
+import asyncio
 import logging
 from typing import List, Dict, Any
 from transmission_rpc import Client
@@ -66,8 +67,11 @@ class TransmissionLocationAdapter(TorrentLocationAdapter):
             )
 
             # Transmission的move参数：True=移动文件，False=仅修改路径
-            # 调用API（支持批量操作）
-            self.client.move_torrent_data(ids=hashes, location=target_path, move=move_files)  # 支持列表
+            # 调用API（支持批量操作；同步网络调用放入线程池，避免阻塞事件循环）
+            # 注意：transmission_rpc 的 move_torrent_data 是同步方法，须经 to_thread 执行
+            await asyncio.to_thread(
+                self.client.move_torrent_data, ids=hashes, location=target_path, move=move_files
+            )  # 支持列表
 
             result["success"] = True
             result["moved_count"] = len(hashes)

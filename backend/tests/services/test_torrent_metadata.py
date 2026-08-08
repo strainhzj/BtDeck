@@ -606,7 +606,14 @@ async def test_qb_info_removal_only_delta_commits_before_advancing_rid():
     db = AsyncMock()
     query_result = MagicMock()
     query_result.all.return_value = []
-    db.execute.side_effect = [MagicMock(), query_result]
+    # W1-3：removed 标记先事务外查询出命中行，再走 bulk_upsert_with_retry 分批提交。
+    # 这里让查询返回 1 个命中行，使统一写入器真实执行 commit（事件 "remove-commit"）。
+    removed_row = MagicMock()
+    removed_row.info_id = "dead-id"
+    removed_row.downloader_name = "dl"
+    removed_result = MagicMock()
+    removed_result.all.return_value = [removed_row]
+    db.execute.side_effect = [removed_result, query_result]
     events = []
     db.commit.side_effect = lambda: events.append("remove-commit")
     save_mock = MagicMock(side_effect=lambda *_args: events.append("rid"))
@@ -652,7 +659,14 @@ async def test_qb_info_removal_commit_failure_falls_back_without_advancing_rid()
     db = AsyncMock()
     query_result = MagicMock()
     query_result.all.return_value = []
-    db.execute.side_effect = [MagicMock(), query_result]
+    # W1-3：removed 标记先事务外查询出命中行，再走 bulk_upsert_with_retry 分批提交。
+    # 这里让查询返回 1 个命中行，使统一写入器的 commit 真实触发并抛错。
+    removed_row = MagicMock()
+    removed_row.info_id = "dead-id"
+    removed_row.downloader_name = "dl"
+    removed_result = MagicMock()
+    removed_result.all.return_value = [removed_row]
+    db.execute.side_effect = [removed_result, query_result]
     db.commit.side_effect = RuntimeError("removed commit failed")
     api_mock = AsyncMock(
         side_effect=[

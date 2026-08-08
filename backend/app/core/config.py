@@ -112,6 +112,12 @@ class Settings(BaseSettings):
     # 注意 requests.Session 非线程安全，提并发可能偶发连接错误（被 per-seed 降级吞掉
     # 不误删，但会部分抵消加速收益）。
     DOWNLOADER_IO_CONCURRENCY: int = 2
+    # 每下载器后台容量（W2-2 交互容量保留）：background 调用（TRACKER/SYNC lane）
+    # 最多占用该数量的 per-downloader 并发槽，其余槽始终保留给交互请求
+    # （INTERACTIVE lane）。默认 1：后台最多占 1 槽，交互恒保留 1 槽。
+    # 若配置与总容量矛盾（total<=1 且本值>=1），运行时自动降级为 0 并记录警告，
+    # 不会破坏交互保留槽。详见 PLANS/sync-database-blocking-remediation.md W2-2
+    DOWNLOADER_BACKGROUND_CAPACITY: int = 1
     # qB tracker 明细并发上限：阶段 2 tracker lane 使用
     QB_TRACKER_CONCURRENCY: int = 3
     # 下载器 API 单次调用超时（秒）：阶段 2 downloader_api_runtime 使用
@@ -123,6 +129,29 @@ class Settings(BaseSettings):
     # DB 写入临界区开关：True 时同步函数 commit 包裹 db_write_scope 串行化写者；
     # 上线后若多下载器并发同步 P95 退化 >30% 可临时关闭快速回滚。
     SYNC_DB_WRITE_SCOPE_ENABLED: bool = True
+    # 真分批提交开关（W1-1）：True 时 bulk_upsert_with_retry 按
+    # SYNC_DB_COMMIT_BATCH_SIZE 真实分批提交（每批独立 commit），消除单大事务
+    # 对 SQLite 写锁的长时间持有；False 时回退旧行为（单事务一次提交）。
+    # 详见 PLANS/sync-database-blocking-remediation.md W1-1
+    SYNC_CHUNKED_COMMIT_ENABLED: bool = True
+    # 单批最大尝试次数（含首次）：锁冲突时只重试当前失败批
+    SYNC_DB_LOCK_RETRY_COUNT: int = 3
+    # 单批重试总退避上限（秒）：任何一批的重试总睡眠不超过该值，
+    # 防止排队雪崩（对应计划第 12 节 "DB retry total backoff 不超过 2 秒"）
+    SYNC_DB_RETRY_MAX_BACKOFF_SECONDS: float = 2.0
+    # Tracker 关键词状态增量写回开关（W1-2）：True 时服务层对判定结果与库中
+    # 现有 (status, msg) 做 strip 归一化变化检测，只写变化行（零变化零 DML，
+    # 不进 db_write_scope、不 UPDATE、不 commit）；False 时回退旧逻辑（跳过
+    # 变化检测，所有匹配 tracker 全部写回）。回退不改变判定规则，只改变写回策略。
+    # 详见 PLANS/sync-database-blocking-remediation.md W1-2
+    SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED: bool = True
+    # 统一 SyncCoordinator 开关（W2-1）：True 时手动同步（sync-single）与
+    # 定时任务（info/tracker）统一经 app/services/sync_coordinator.py::run_sync
+    # 执行（统一资源准入/写治理/观测），torrent_sync_db_async 作为 legacy adapter
+    # 内部转发；False 时手动入口回退旧直接调用 torrent_sync_db_async 全量同步的
+    # 路径（应急回滚）。⚠️ legacy 只能作为应急回退，禁止与新路径同时执行，
+    # 两个稳定版本后删除。详见 PLANS/sync-database-blocking-remediation.md W2-1
+    SYNC_CANONICAL_COORDINATOR_ENABLED: bool = True
 
     # 孤儿文件管理配置（v1.0.6）
     # 自动清理超期天数：连续成为孤儿超过该天数的候选由定时任务移入隔离区

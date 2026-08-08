@@ -30,8 +30,12 @@ from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.torrent_status_mapper import TorrentStatusMapper
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
 logger = logging.getLogger(__name__)
+
+# 单次转移远程调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
+_TRANSFER_CALL_TIMEOUT = 30.0
 
 
 class SeedTransferService:
@@ -334,7 +338,15 @@ class SeedTransferService:
                 try:
                     from io import BytesIO
 
-                    target_client.torrents_add(torrent_files=BytesIO(torrent_content), save_path=target_path)
+                    # P0-04 修复：torrents_add 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                    await call_downloader_api(
+                        target_downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        target_client.torrents_add,
+                        kwargs={"torrent_files": BytesIO(torrent_content), "save_path": target_path},
+                        timeout=_TRANSFER_CALL_TIMEOUT,
+                        operation="transfer_qb_add_torrent",
+                    )
                 except LoginFailed as e:
                     result["error_message"] = f"目标下载器登录失败: {str(e)}"
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
@@ -348,7 +360,16 @@ class SeedTransferService:
                 try:
                     from io import BytesIO
 
-                    target_client.add_torrent(BytesIO(torrent_content), download_dir=target_path)
+                    # P0-04 修复：add_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                    await call_downloader_api(
+                        target_downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        target_client.add_torrent,
+                        args=(BytesIO(torrent_content),),
+                        kwargs={"download_dir": target_path},
+                        timeout=_TRANSFER_CALL_TIMEOUT,
+                        operation="transfer_tr_add_torrent",
+                    )
                 except Exception as e:
                     result["error_message"] = f"添加种子到Transmission失败: {str(e)}"
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
@@ -361,7 +382,10 @@ class SeedTransferService:
             # 4. 验证种子添加成功（轮询状态）
             logger.info(f"验证种子 {info_hash} 在目标下载器中的状态")
             verified = await self._verify_transfer(
-                target_client=target_client, downloader_type=target_downloader.downloader_type, info_hash=info_hash
+                downloader_id=target_downloader_id,
+                target_client=target_client,
+                downloader_type=target_downloader.downloader_type,
+                info_hash=info_hash,
             )
 
             if not verified:
@@ -477,6 +501,7 @@ class SeedTransferService:
 
             # 删除原种子（不删除文件）
             delete_result = await self._delete_source_torrent(
+                downloader_id=source_downloader_id,
                 source_client=source_client,
                 downloader_type=source_downloader.downloader_type,
                 info_hash=info_hash,
@@ -502,12 +527,19 @@ class SeedTransferService:
             return result
 
     async def _verify_transfer(
-        self, target_client: Any, downloader_type: int, info_hash: str, max_retries: int = 5, retry_interval: int = 5
+        self,
+        downloader_id: int,
+        target_client: Any,
+        downloader_type: int,
+        info_hash: str,
+        max_retries: int = 5,
+        retry_interval: int = 5,
     ) -> bool:
         """
         验证种子转移成功
 
         Args:
+            downloader_id: 目标下载器ID（用于 call_downloader_api 限流与日志）
             target_client: 目标下载器客户端
             downloader_type: 下载器类型（0=qBittorrent, 1=Transmission）
             info_hash: 种子哈希值
@@ -526,8 +558,15 @@ class SeedTransferService:
 
             try:
                 if normalized_type == DownloaderTypeEnum.QBITTORRENT:
-                    # 获取种子信息
-                    torrents = target_client.torrents_info(torrent_hashes=info_hash)
+                    # 获取种子信息（P0-04 修复：轮询内的 torrents_info 经 INTERACTIVE lane 执行）
+                    torrents = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        target_client.torrents_info,
+                        kwargs={"torrent_hashes": info_hash},
+                        timeout=_TRANSFER_CALL_TIMEOUT,
+                        operation="transfer_qb_verify",
+                    )
 
                     if not torrents or len(torrents) == 0:
                         logger.warning(f"第 {i+1} 次验证：未找到种子 {info_hash}")
@@ -547,8 +586,15 @@ class SeedTransferService:
                         return True
 
                 elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
-                    # 获取种子信息
-                    torrents = target_client.get_torrents(info_hash)
+                    # 获取种子信息（P0-04 修复：轮询内的 get_torrents 经 INTERACTIVE lane 执行）
+                    torrents = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        target_client.get_torrents,
+                        args=(info_hash,),
+                        timeout=_TRANSFER_CALL_TIMEOUT,
+                        operation="transfer_tr_verify",
+                    )
 
                     if not torrents or len(torrents) == 0:
                         logger.warning(f"第 {i+1} 次验证：未找到种子 {info_hash}")
@@ -575,12 +621,13 @@ class SeedTransferService:
         return False
 
     async def _delete_source_torrent(
-        self, source_client: Any, downloader_type: int, info_hash: str, delete_files: bool = False
+        self, downloader_id: int, source_client: Any, downloader_type: int, info_hash: str, delete_files: bool = False
     ) -> bool:
         """
         删除源下载器的种子
 
         Args:
+            downloader_id: 源下载器ID（用于 call_downloader_api 限流与日志）
             source_client: 源下载器客户端
             downloader_type: 下载器类型（0=qBittorrent, 1=Transmission）
             info_hash: 种子哈希值
@@ -593,12 +640,28 @@ class SeedTransferService:
             normalized_type = DownloaderTypeEnum.normalize(downloader_type)
 
             if normalized_type == DownloaderTypeEnum.QBITTORRENT:
-                source_client.torrents_delete(delete_files=delete_files, torrent_hashes=info_hash)
+                # P0-04 修复：torrents_delete 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    source_client.torrents_delete,
+                    kwargs={"delete_files": delete_files, "torrent_hashes": info_hash},
+                    timeout=_TRANSFER_CALL_TIMEOUT,
+                    operation="transfer_qb_delete_source",
+                )
                 logger.info(f"已从qBittorrent删除种子 {info_hash}，删除文件: {delete_files}")
                 return True
 
             elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
-                source_client.remove_torrent(delete_data=delete_files, ids=info_hash)
+                # P0-04 修复：remove_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    source_client.remove_torrent,
+                    kwargs={"delete_data": delete_files, "ids": info_hash},
+                    timeout=_TRANSFER_CALL_TIMEOUT,
+                    operation="transfer_tr_delete_source",
+                )
                 logger.info(f"已从Transmission删除种子 {info_hash}，删除文件: {delete_files}")
                 return True
 

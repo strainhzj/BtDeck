@@ -107,7 +107,7 @@ USER appuser
 EXPOSE 5001
 
 # 健康检查
-HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 \
     CMD curl -f http://localhost:5001/docs || exit 1
 
 # 启动命令

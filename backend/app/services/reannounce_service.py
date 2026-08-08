@@ -15,11 +15,15 @@ from typing import List, Dict, Any, Optional
 
 from sqlalchemy.orm import Session
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
 logger = logging.getLogger(__name__)
 
 # 每批最大种子数
 BATCH_SIZE = 500
+
+# 单次 reannounce 远程调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
+_REANNOUNCE_CALL_TIMEOUT = 30.0
 
 # 并发锁字典(按下载器ID隔离)
 _reannounce_locks: Dict[str, asyncio.Lock] = {}
@@ -110,7 +114,15 @@ async def execute_reannounce(
                     # qBittorrent: 使用 hash
                     hashes = [r.hash for r in batch if r.hash]
                     if hashes:
-                        client.torrents_reannounce(torrent_hashes=hashes)
+                        # P0-04 修复：经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                        await call_downloader_api(
+                            downloader_id,
+                            DownloadLane.INTERACTIVE,
+                            client.torrents_reannounce,
+                            kwargs={"torrent_hashes": hashes},
+                            timeout=_REANNOUNCE_CALL_TIMEOUT,
+                            operation="qb_reannounce",
+                        )
                     result["success_count"] += len(hashes)
 
                 elif downloader_type == DownloaderTypeEnum.TRANSMISSION:
@@ -123,7 +135,15 @@ async def execute_reannounce(
                         if tid is not None:
                             ids.append(tid)
                     if ids:
-                        client.reannounce_torrent(ids)
+                        # P0-04 修复：经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                        await call_downloader_api(
+                            downloader_id,
+                            DownloadLane.INTERACTIVE,
+                            client.reannounce_torrent,
+                            args=(ids,),
+                            timeout=_REANNOUNCE_CALL_TIMEOUT,
+                            operation="tr_reannounce",
+                        )
                     result["success_count"] += len(ids)
 
                 else:

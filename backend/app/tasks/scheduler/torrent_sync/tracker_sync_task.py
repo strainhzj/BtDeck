@@ -47,14 +47,20 @@ class TrackerSyncTask(BaseSyncTask):
         """
         执行 Tracker 同步任务
 
+        W2-1：执行核心统一委托 SyncCoordinator（sync_type="tracker",
+        trigger="cron"）。下载器列表仍由本任务负责（get_valid_downloaders）；
+        Coordinator 内串行处理各下载器（保持原 max_concurrent=1 语义），
+        tracker_status 阶段（关键词状态增量写回）由 Coordinator 内置，
+        本任务不再重复调用 update_tracker_status_from_keywords。
+
         Args:
             **kwargs: 额外参数
 
         Returns:
-            同步结果字典
+            同步结果字典（status/message/successful_syncs/failed_syncs/
+            total_downloaders/tracker_status_update，结构向后兼容）
         """
         from app.main import app as downloader_app
-        from app.api.endpoints.torrent_sync import update_tracker_status_from_keywords
 
         self.last_execution_time = self.execution_count
         self.execution_count += 1
@@ -78,14 +84,20 @@ class TrackerSyncTask(BaseSyncTask):
 
             logger.info(f"找到 {len(valid_downloaders)} 个有效下载器")
 
-            # 串行执行 Tracker 同步，避免 SQLite 数据库并发写入冲突
-            logger.debug("开始串行执行 Tracker 同步...")
-            result = await self.execute_sync_with_concurrency(
-                downloaders=valid_downloaders,
-                sync_func=self._sync_tracker_only,
-                sync_type="Tracker",
-                max_concurrent=1,  # 串行执行，彻底避免并发写入导致的数据库锁定问题
+            # 串行执行 Tracker 同步（Coordinator 内逐下载器处理，避免 SQLite
+            # 数据库并发写入冲突；max_concurrent=1 语义保持不变）
+            logger.debug("开始串行执行 Tracker 同步（经 SyncCoordinator）...")
+            from app.services.sync_coordinator import SyncRequest, run_sync
+
+            coordinator_result = await run_sync(
+                SyncRequest(
+                    sync_type="tracker",
+                    downloader_ids=[str(getattr(d, "downloader_id", None)) for d in valid_downloaders],
+                    trigger="cron",
+                )
             )
+
+            result = self._map_coordinator_result(coordinator_result, len(valid_downloaders))
 
             # 更新统计
             if result["status"] == "success":
@@ -104,20 +116,6 @@ class TrackerSyncTask(BaseSyncTask):
                 f"总计 {result.get('total_downloaders', 0)} 个下载器"
             )
 
-            # Tracker sync complete: update tracker status by keyword board
-            if result.get("successful_syncs", 0) > 0:
-                try:
-                    logger.debug("使用关键词更新 tracker 状态...")
-                    tracker_status_result = await update_tracker_status_from_keywords()
-                    logger.info(f"Tracker 状态更新结果: {tracker_status_result.get('message', 'N/A')}")
-                    result["tracker_status_update"] = tracker_status_result
-                except Exception as update_error:
-                    logger.error(
-                        "Tracker 状态更新失败: %s",
-                        str(update_error),
-                        exc_info=True,
-                    )
-
             return result
 
         except Exception as e:
@@ -132,83 +130,38 @@ class TrackerSyncTask(BaseSyncTask):
                 "total_downloaders": 0,
             }
 
-    async def _sync_tracker_only(self, downloader_info: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _map_coordinator_result(result, total_downloaders: int) -> Dict[str, Any]:
+        """SyncResult -> 任务页兼容 dict（status/successful_syncs/...）。
+
+        outcome 映射（与旧任务语义对齐）：
+        - success -> success；partial -> partial；no_action -> no_action；
+        - skipped / already_running -> skipped（调度器跳过不算失败）；
+        - cancelled / failed -> failed。
         """
-        只同步 Tracker 信息（专用实现）
+        outcome = result.outcome
+        if outcome == "success":
+            status = "success"
+        elif outcome == "partial":
+            status = "partial"
+        elif outcome == "no_action":
+            status = "no_action"
+        elif outcome in ("skipped", "already_running"):
+            status = "skipped"
+        else:  # cancelled / failed
+            status = "failed"
 
-        核心流程:
-        1. 从 app.state.store 获取缓存的客户端连接（遵循约束16）
-        2. 从数据库查询 hash -> info_id 映射（只查2个字段）
-        3. 从下载器 API 获取 tracker 数据
-        4. 调用 sync_add_tracker_async 写入 tracker_info 表
-
-        不做的事情:
-        - 不同步种子基础信息（torrent_info 表不写入）
-        - 不做种子文件备份
-        - 不标记删除的种子
-
-        Args:
-            downloader_info: 下载器信息字典（由 base.py sync_single_downloader 构建）
-
-        Returns:
-            同步结果字典
-        """
-        from app.database import AsyncSessionLocal
-        from app.downloader.models import BtDownloaders
-        from app.main import app as downloader_app
-        from app.api.endpoints.torrents_async import (
-            qb_sync_trackers_only_async,
-            tr_sync_trackers_only_async,
-        )
-
-        # === 构建下载器对象 ===
-        downloader = BtDownloaders()
-        for key, value in downloader_info.items():
-            if hasattr(downloader, key):
-                setattr(downloader, key, value)
-
-        nickname = downloader_info.get("nickname", "unknown")
-
-        # === 确定下载器类型 ===
-        original_type = downloader.downloader_type
-        if original_type == "qbittorrent" or original_type == 0 or original_type == "0":
-            downloader_type_str = "qbittorrent"
-        elif original_type == "transmission" or original_type == 1 or original_type == "1":
-            downloader_type_str = "transmission"
-        else:
-            error_msg = f"不支持的下载器类型: {original_type}"
-            logger.error(error_msg)
-            return {"status": "failed", "message": error_msg, "nickname": nickname}
-
-        # === 从缓存获取客户端连接（遵循约束16） ===
-        try:
-            cached_downloaders = await downloader_app.state.store.get_snapshot()
-            downloader_vo = next(
-                (d for d in cached_downloaders if str(d.downloader_id) == str(downloader_info.get("downloader_id"))),
-                None,
-            )
-        except Exception as e:
-            logger.error(f"获取缓存下载器失败: {e}")
-            downloader_vo = None
-
-        if not downloader_vo or not hasattr(downloader_vo, "client") or downloader_vo.client is None:
-            error_msg = f"无法获取下载器 {nickname} 的缓存客户端连接"
-            logger.error(error_msg)
-            return {"status": "failed", "message": error_msg, "nickname": nickname}
-
-        client = downloader_vo.client
-
-        # === 执行 tracker-only 同步 ===
-        async with AsyncSessionLocal() as db:
-            try:
-                if downloader_type_str == "qbittorrent":
-                    result = await qb_sync_trackers_only_async(db, downloader, client)
-                else:
-                    result = await tr_sync_trackers_only_async(db, downloader, client)
-
-                return result
-
-            except Exception as e:
-                error_msg = f"Tracker 同步失败 ({downloader_type_str}/{nickname}): {str(e)}"
-                logger.error(error_msg, exc_info=True)
-                return {"status": "failed", "message": error_msg, "nickname": nickname}
+        mapped: Dict[str, Any] = {
+            "status": status,
+            "message": result.message or "; ".join(result.errors) or "Tracker 同步完成",
+            "successful_syncs": result.details.get("successful_syncs", 0),
+            "failed_syncs": result.details.get("failed_syncs", 0),
+            "total_downloaders": total_downloaders,
+            "outcome": outcome,
+            "run_id": result.run_id,
+            "skip_reason": result.skip_reason,
+        }
+        tracker_status_update = result.details.get("tracker_status_update")
+        if tracker_status_update is not None:
+            mapped["tracker_status_update"] = tracker_status_update
+        return mapped

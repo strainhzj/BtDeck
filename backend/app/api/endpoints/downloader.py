@@ -17,17 +17,20 @@ from app.downloader.request import ListDownloader, RequestDownloader, UpdateDown
 from app.downloader.responseVO import DownloaderListVO, DownloaderVO, DownloaderStatusVO, DownloaderSimpleVO
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.path_mapping_validation import validate_path_mapping_directories
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.utils.encryption import encrypt_password, decrypt_password
-from qbittorrentapi import Client as qbClient
-from requests.exceptions import SSLError, ConnectionError
+from requests.exceptions import ConnectionError
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from transmission_rpc import Client as trClient, TransmissionAuthError
+from transmission_rpc import TransmissionAuthError
 
 # 创建日志记录器
 logger = logging.getLogger(__name__)  # Fixed for proper response handling
 router = APIRouter()
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 降级路径单次下载器调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
+_DETAIL_CALL_TIMEOUT = 10.0
 
 
 @router.get("/detail/{downloader_id}", summary="获取下载器明细信息", response_model=CommonResponse[List[DownloaderVO]])
@@ -572,9 +575,9 @@ async def get_status(
         # 使用统一的类型转换方法
         normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
         if normalized_type == DownloaderTypeEnum.QBITTORRENT:
-            result = get_qbittorrent_detail(delay, downloader)
+            result = await get_qbittorrent_detail(delay, downloader)
         elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
-            result = get_transmission_detail(delay, downloader)
+            result = await get_transmission_detail(delay, downloader)
         else:
             result = DownloaderStatusVO(
                 connectStatus="unsupported",
@@ -709,39 +712,60 @@ def _build_status_from_cache(cached_downloader) -> DownloaderStatusVO:
     )
 
 
-def get_qbittorrent_detail(delay, downloader):
+async def _get_cached_downloader_client(downloader_id: str):
+    """从 app.state.store 获取指定下载器的缓存客户端连接（P0-04：客户端只能来自 store）。
+
+    返回 None 表示：缓存未初始化 / 下载器不在缓存中 / 缓存对象无 client 连接。
+    本函数只读取缓存，不创建任何下载器客户端连接。
+    """
+    try:
+        from app.factory import app as downloader_app
+
+        if (
+            not hasattr(downloader_app, "state")
+            or not hasattr(downloader_app.state, "store")
+            or downloader_app.state.store is None
+        ):
+            return None
+        cached_downloaders = await downloader_app.state.store.get_snapshot()
+        if not cached_downloaders:
+            return None
+        for cached_downloader in cached_downloaders:
+            did = _get_downloader_id_from_cache(cached_downloader)
+            if did is not None and did == str(downloader_id):
+                return getattr(cached_downloader, "client", None)
+    except Exception as e:
+        logger.warning(f"从缓存获取下载器客户端失败 [downloader_id={downloader_id}]: {e}")
+    return None
+
+
+async def get_qbittorrent_detail(delay, downloader):
     # delay 可能为数值/False/None；保留 == 让 0==False 为 True（见 get_delay_async 返回值）
     if delay == 0 or delay == False:  # noqa: E712
         client_status = "disconnected"
         upload_speed = "0.00 KB/s"
         download_speed = "0.00 KB/s"
     else:
-        # 确定协议尝试顺序
-        if downloader.is_ssl == "1":
-            protocols = ["https", "http"]  # 优先HTTPS，失败降级HTTP
-        else:
-            protocols = ["http", "https"]  # 优先HTTP，失败尝试HTTPS
-
         client_status = "connection_failed"
         upload_speed = "0.00 KB/s"
         download_speed = "0.00 KB/s"
 
-        for protocol in protocols:
+        # P0-04（W2-3）：禁止自建 qbClient 连接；客户端只能来自 app.state.store。
+        # 本接口为 [已废弃] 降级路径，通常由缓存未命中触发——缓存中无该下载器时
+        # 无法实时探测，直接返回断开状态（不再发起网络请求，避免阻塞事件循环）。
+        client = await _get_cached_downloader_client(downloader.id)
+        if client is None:
+            logger.warning(f"下载器 {downloader.nickname} 不在缓存中，降级路径无法探测 qBittorrent 连接状态")
+            client_status = "disconnected"
+        else:
             try:
-                host = f"{protocol}://{downloader.host}"
-                logger.info(f"尝试连接qBittorrent下载器: {downloader.host}:{downloader.port} ({protocol})")
-
-                # 创建qBittorrent客户端，禁用SSL证书验证
-                client = qbClient(
-                    host=host,
-                    port=downloader.port,
-                    username=downloader.username,
-                    password=downloader.password,
-                    VERIFY_WEBUI_CERTIFICATE=False,  # 禁用SSL证书验证
-                    REQUESTS_ARGS={"timeout": 10},  # 设置连接超时
+                transfer_info = await call_downloader_api(
+                    downloader.id,
+                    DownloadLane.INTERACTIVE,
+                    client.transfer_info,
+                    timeout=_DETAIL_CALL_TIMEOUT,
+                    operation="qb_transfer_info",
                 )
-
-                transfer_info = client.transfer_info()
                 # 转换为KB/s，然后自动转换单位
                 upload_speed_kb = transfer_info.get("up_info_speed", 0) / 1024
                 download_speed_kb = transfer_info.get("dl_info_speed", 0) / 1024
@@ -757,36 +781,22 @@ def get_qbittorrent_detail(delay, downloader):
                 )
 
                 client_status = "connected"
-                logger.info(f"qBittorrent下载器连接成功: {downloader.nickname} ({protocol})")
-                break  # 连接成功，退出协议尝试循环
+                logger.info(f"qBittorrent下载器连接成功: {downloader.nickname}")
+
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"qBittorrent下载器连接超时: {downloader.host}:{downloader.port} ({_DETAIL_CALL_TIMEOUT}s)"
+                )
+                client_status = "连接超时，请检查网络和下载器配置"
 
             except Exception as qb_error:
-                logger.warning(
-                    f"qBittorrent下载器连接失败: {downloader.host}:{downloader.port} ({protocol}) - {str(qb_error)}"
-                )
-
-                if "SSL" in str(qb_error).upper() or "CERTIFICATE" in str(qb_error).upper():
-                    # SSL相关错误，尝试HTTP
-                    if protocol == "https":
-                        continue
-                    else:
-                        client_status = "SSL连接失败"
-                        break
-                elif "401" in str(qb_error) or "authorization" in str(qb_error).lower():
+                logger.warning(f"qBittorrent下载器连接失败: {downloader.host}:{downloader.port} - {str(qb_error)}")
+                if "401" in str(qb_error) or "authorization" in str(qb_error).lower():
                     # 认证错误
                     client_status = "登录失败，请检查账号密码是否正确"
-                    break  # 认证错误不需要尝试其他协议
-                elif protocol == "https":
-                    # HTTPS连接失败，尝试HTTP
-                    continue
                 else:
-                    # HTTP也失败，标记连接失败
+                    # 其他错误，标记连接失败
                     client_status = "连接失败，请检查网络和下载器配置"
-                    break
-    # torrents_info = client.torrents_info(status_filter="active")
-    # for torrent in torrents_info:
-    #     upload_speed = upload_speed + torrent['upspeed']
-    #     download_speed = download_speed + torrent['dlspeed']
 
     return DownloaderStatusVO(
         connectStatus=client_status,
@@ -800,38 +810,33 @@ def get_qbittorrent_detail(delay, downloader):
     )
 
 
-def get_transmission_detail(delay, downloader):
+async def get_transmission_detail(delay, downloader):
     # delay 可能为数值/False/None；保留 == 让 0==False 为 True（见 get_delay_async 返回值）
     if delay == 0 or delay == False:  # noqa: E712
         client_status = "disconnected"
         upload_speed = "0.00 KB/s"
         download_speed = "0.00 KB/s"
     else:
-        # 确定协议尝试顺序
-        if downloader.is_ssl == "1":
-            protocols = ["https", "http"]  # 优先HTTPS，失败降级HTTP
-        else:
-            protocols = ["http", "https"]  # 优先HTTP，失败尝试HTTPS
-
         client_status = "connection_failed"
         upload_speed = "0.00 KB/s"
         download_speed = "0.00 KB/s"
 
-        for protocol in protocols:
+        # P0-04（W2-3）：禁止自建 trClient 连接；客户端只能来自 app.state.store。
+        # 本接口为 [已废弃] 降级路径，通常由缓存未命中触发——缓存中无该下载器时
+        # 无法实时探测，直接返回断开状态（不再发起网络请求，避免阻塞事件循环）。
+        client = await _get_cached_downloader_client(downloader.id)
+        if client is None:
+            logger.warning(f"下载器 {downloader.nickname} 不在缓存中，降级路径无法探测 Transmission 连接状态")
+            client_status = "disconnected"
+        else:
             try:
-                logger.info(f"尝试连接Transmission下载器: {downloader.host}:{downloader.port} ({protocol})")
-
-                # transmission_rpc.Client不支持verify参数，直接使用基本参数
-                tr_client = trClient(
-                    host=downloader.host,
-                    username=downloader.username,
-                    password=downloader.password,
-                    port=downloader.port,
-                    protocol=protocol,
-                    timeout=10.0,
+                stats = await call_downloader_api(
+                    downloader.id,
+                    DownloadLane.INTERACTIVE,
+                    client.session_stats,
+                    timeout=_DETAIL_CALL_TIMEOUT,
+                    operation="tr_session_stats",
                 )
-
-                stats = tr_client.session_stats()
                 # 转换为KB/s，然后自动转换单位
                 upload_speed_kb = stats.upload_speed / 1024
                 download_speed_kb = stats.download_speed / 1024
@@ -846,58 +851,34 @@ def get_transmission_detail(delay, downloader):
                     else f"{download_speed_kb:.2f} KB/s"
                 )
 
-                # 连接成功，根据协议提供详细状态信息
-                ssl_security = " (SSL加密)" if protocol == "https" else " (非加密)"
-                client_status = f"connected{ssl_security}"
-                logger.info(f"Transmission下载器连接成功: {downloader.nickname} ({protocol})")
-                break  # 连接成功，退出协议尝试循环
+                client_status = "connected"
+                logger.info(f"Transmission下载器连接成功: {downloader.nickname}")
 
-            except SSLError as ssl_error:
+            except asyncio.TimeoutError:
                 logger.warning(
-                    f"Transmission下载器SSL连接失败: {downloader.host}:{downloader.port} ({protocol}) - {str(ssl_error)}"
+                    f"Transmission下载器连接超时: {downloader.host}:{downloader.port} ({_DETAIL_CALL_TIMEOUT}s)"
                 )
-                if protocol == "https" and (
-                    "WRONG_VERSION_NUMBER" in str(ssl_error) or "CERTIFICATE" in str(ssl_error).upper()
-                ):
-                    # SSL版本或证书错误，继续尝试HTTP
-                    continue
-                else:
-                    # 其他SSL错误，标记连接失败
-                    client_status = f"SSL连接失败: {str(ssl_error)[:100]}"
-                    break
+                client_status = "连接超时，请检查网络和下载器配置"
 
             except TransmissionAuthError as auth_error:
                 logger.warning(f"Transmission下载器认证失败: {downloader.host}:{downloader.port} - {str(auth_error)}")
                 client_status = "登录失败，请检查账号密码是否正确"
-                break  # 认证错误不需要尝试其他协议
 
             except ConnectionError as conn_error:
-                logger.warning(
-                    f"Transmission下载器连接错误: {downloader.host}:{downloader.port} ({protocol}) - {str(conn_error)}"
-                )
-                if protocol == "https":
-                    # HTTPS连接失败，尝试HTTP
-                    continue
-                else:
-                    # HTTP也失败，标记连接失败
-                    client_status = "连接失败，请检查网络和下载器配置"
-                    break
+                logger.warning(f"Transmission下载器连接错误: {downloader.host}:{downloader.port} - {str(conn_error)}")
+                client_status = "连接失败，请检查网络和下载器配置"
 
             except TypeError as param_error:
-                logger.error(
-                    f"Transmission下载器参数错误: {downloader.host}:{downloader.port} ({protocol}) - {str(param_error)}"
-                )
+                logger.error(f"Transmission下载器参数错误: {downloader.host}:{downloader.port} - {str(param_error)}")
                 if "unexpected keyword argument" in str(param_error):
                     # 参数错误，标记配置问题
                     client_status = "下载器配置错误，请检查参数设置"
                 else:
                     client_status = f"参数错误: {str(param_error)[:100]}"
-                break
 
             except Exception as e:
-                logger.error(f"Transmission下载器未知错误: {downloader.host}:{downloader.port} ({protocol}) - {str(e)}")
+                logger.error(f"Transmission下载器未知错误: {downloader.host}:{downloader.port} - {str(e)}")
                 client_status = f"未知错误: {str(e)[:100]}"
-                break
 
     return DownloaderStatusVO(
         connectStatus=client_status,

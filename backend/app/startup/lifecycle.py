@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.core.config import settings
+from app.core.startup_guard import resolve_runtime_info, validate_scheduler_scope
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
 from app.tasks.scheduler.dashboard_stats import DashboardStatsJob
@@ -261,7 +262,12 @@ async def lifespan(app: FastAPI):
     await update_cron_task_status()
 
     # 4. 启动定时任务调度器
+    # W2-4 纵深防御（P0-06）：scheduler 单实例断言——SQLite 多 Worker 已被 main.py
+    # 启动前置校验挡住，此处兜底：SQLite + WORKERS!=1 拒绝启动 scheduler；
+    # PostgreSQL + 多 Worker 时记录显式状态（Leader 选举未实现）。
     try:
+        _startup_backend, _startup_workers, _ = resolve_runtime_info()
+        validate_scheduler_scope(_startup_backend, _startup_workers)
         # ✅ 修复：在启动调度器前设置 app 实例
         cron_executor.set_app(app)
         await cron_executor.start()

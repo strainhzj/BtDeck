@@ -34,7 +34,7 @@ import bencodepy
 import uuid
 from io import BytesIO
 from typing import Any, List
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import UploadFile
@@ -42,6 +42,24 @@ from qbittorrentapi.exceptions import APIError
 from transmission_rpc import TransmissionError
 
 from app.api.endpoints.torrent_crud import create_torrent
+
+
+@pytest.fixture(autouse=True)
+def _patch_runtime_call():
+    """端点已迁移至 call_downloader_api（W2-3 P0-04）：测试直接执行 func 保持异常语义。
+
+    全量 pytest 中其它 TestClient 测试（如 test_tag_aggregation_api）经 lifespan 退出会
+    关闭全局 downloader_api_runtime executor，此处若不 patch，真实 call_downloader_api
+    会抛 RuntimeError('cannot schedule new futures after shutdown')。按仓库既有约定
+    （test_torrent_speed_regression / test_active_torrents_endpoint）统一 patch。
+    """
+
+    async def fake_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+        # 保持异常透传语义：func 抛什么异常就原样抛什么（与 runtime 行为一致）
+        return func(*args, **(kwargs or {}))
+
+    with patch("app.api.endpoints.torrent_crud.call_downloader_api", side_effect=fake_call):
+        yield
 
 
 def _make_valid_torrent_bytes() -> bytes:

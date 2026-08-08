@@ -13,9 +13,14 @@ from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.torrents.models import TorrentInfo as torrentInfoModel
 from app.api.endpoints.torrent_helpers import _safe_write_audit_log
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# 单次下载器 API 调用超时（秒）：状态控制为交互操作，沿用 runtime 默认 30s 预算；
+# 超时/API 异常继续由端点既有 except Exception 严格模式分支映射（回滚 + 500）。
+_STATUS_CALL_TIMEOUT = 30.0
 
 
 # ==================== 状态控制请求模型 ====================
@@ -128,7 +133,8 @@ async def pause_torrents(
             result.code = "500"
             return result
 
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        # P0-04 修复：async 端点内使用异步快照接口（get_snapshot_sync 仅限同步上下文）
+        cached_downloaders = await app.state.store.get_snapshot()
 
         # 根据 downloader_id 查找对应的下载器
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
@@ -179,12 +185,26 @@ async def pause_torrents(
         try:
             # 使用枚举类型判断下载器类型
             if downloader_vo.downloader_type == DownloaderTypeEnum.QBITTORRENT:
-                # qBittorrent 下载器
-                client.torrents_pause(torrent_hashes=group_hashes)
+                # qBittorrent 下载器（P0-04 修复：经 INTERACTIVE lane 线程池执行）
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_pause,
+                    kwargs={"torrent_hashes": group_hashes},
+                    timeout=_STATUS_CALL_TIMEOUT,
+                    operation="pause_torrents",
+                )
 
             elif downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION:
-                # Transmission 下载器
-                client.stop_torrent(group_hashes)
+                # Transmission 下载器（P0-04 修复：经 INTERACTIVE lane 线程池执行）
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.stop_torrent,
+                    args=(group_hashes,),
+                    timeout=_STATUS_CALL_TIMEOUT,
+                    operation="stop_torrents",
+                )
 
             else:
                 error_msg = f"不支持的下载器类型: {downloader_vo.downloader_type}"
@@ -345,7 +365,8 @@ async def resume_torrents(
             result.code = "500"
             return result
 
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        # P0-04 修复：async 端点内使用异步快照接口（get_snapshot_sync 仅限同步上下文）
+        cached_downloaders = await app.state.store.get_snapshot()
 
         # 根据 downloader_id 查找对应的下载器
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
@@ -396,12 +417,26 @@ async def resume_torrents(
         try:
             # 使用枚举类型判断下载器类型
             if downloader_vo.downloader_type == DownloaderTypeEnum.QBITTORRENT:
-                # qBittorrent 下载器
-                client.torrents_resume(torrent_hashes=group_hashes)
+                # qBittorrent 下载器（P0-04 修复：经 INTERACTIVE lane 线程池执行）
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_resume,
+                    kwargs={"torrent_hashes": group_hashes},
+                    timeout=_STATUS_CALL_TIMEOUT,
+                    operation="resume_torrents",
+                )
 
             elif downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION:
-                # Transmission 下载器
-                client.start_torrent(group_hashes)
+                # Transmission 下载器（P0-04 修复：经 INTERACTIVE lane 线程池执行）
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.start_torrent,
+                    args=(group_hashes,),
+                    timeout=_STATUS_CALL_TIMEOUT,
+                    operation="start_torrents",
+                )
 
             else:
                 error_msg = f"不支持的下载器类型: {downloader_vo.downloader_type}"
@@ -573,7 +608,8 @@ async def recheck_torrents(
             result.code = "500"
             return result
 
-        cached_downloaders = app.state.store.get_snapshot_sync()
+        # P0-04 修复：async 端点内使用异步快照接口（get_snapshot_sync 仅限同步上下文）
+        cached_downloaders = await app.state.store.get_snapshot()
 
         # 根据 downloader_id 查找对应的下载器
         downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
@@ -636,12 +672,26 @@ async def recheck_torrents(
         try:
             # 使用枚举类型判断下载器类型
             if downloader_vo.downloader_type == DownloaderTypeEnum.QBITTORRENT:
-                # qBittorrent 下载器
-                client.torrents_recheck(torrent_hashes=group_hashes)
+                # qBittorrent 下载器（P0-04 修复：经 INTERACTIVE lane 线程池执行）
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_recheck,
+                    kwargs={"torrent_hashes": group_hashes},
+                    timeout=_STATUS_CALL_TIMEOUT,
+                    operation="recheck_torrents",
+                )
 
             elif downloader_vo.downloader_type == DownloaderTypeEnum.TRANSMISSION:
-                # Transmission 下载器
-                client.verify_torrent(group_hashes)
+                # Transmission 下载器（P0-04 修复：经 INTERACTIVE lane 线程池执行）
+                await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.verify_torrent,
+                    args=(group_hashes,),
+                    timeout=_STATUS_CALL_TIMEOUT,
+                    operation="verify_torrents",
+                )
 
             else:
                 error_msg = f"不支持的下载器类型: {downloader_vo.downloader_type}"

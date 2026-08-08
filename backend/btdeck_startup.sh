@@ -1,6 +1,12 @@
 #!/bin/bash
 # btdeck_startup.sh - BTDeck 后端启动脚本（简化版）
 # 专为 Docker 容器环境设计
+#
+# ⚠️ SQLite 单 Worker 启动约束（W2-4 / P0-06）：
+# 不能通过启动多个 SQLite Worker 缓解接口卡顿！
+# resource_guard 与 Python 信号量均为进程内对象，多 Worker 会使锁与资源准入失效，
+# 且每个 Worker 都可能各自启动 scheduler，导致定时任务重复执行。
+# 本脚本在启动前做 fail-fast 校验（规则与 app/core/startup_guard.py 保持一致，改动需同步两边）。
 
 set -e  # 遇到错误立即退出
 
@@ -49,6 +55,37 @@ ensure_log_dir() {
     fi
 }
 
+# ==== SQLite 单 Worker 启动约束（W2-4 / P0-06，fail-fast）====
+# 解析后端类型：DATABASE_URL 环境变量优先；未设置时按默认文件型 SQLite（app.db）处理。
+detect_backend_type() {
+    local url="${DATABASE_URL:-}"
+    case "$url" in
+        sqlite* | sqlite3*) echo "sqlite" ;;
+        postgres* | postgresql*) echo "postgres" ;;
+        mysql* | mariadb*) echo "mysql" ;;
+        "") echo "sqlite" ;;  # 未配置 DATABASE_URL 即默认 SQLite 文件库
+        *) echo "other" ;;
+    esac
+}
+
+# 启动前 fail-fast：SQLite 后端 + WORKERS != 1 直接拒绝启动。
+# 注意：不能通过启动多个 SQLite Worker 缓解接口卡顿。
+check_worker_config() {
+    local backend
+    backend=$(detect_backend_type)
+    if [ "$backend" = "sqlite" ] && [ "$WORKERS" -ne 1 ]; then
+        log_error "========================================"
+        log_error "启动约束校验失败：SQLite 后端禁止多 Worker 启动"
+        log_error "当前 DATABASE_URL=${DATABASE_URL:-<未设置，默认 SQLite 文件库>}，WORKERS=$WORKERS"
+        log_error "SQLite 文件库的写锁治理与资源准入（db_write_scope / 信号量）均为进程内对象，"
+        log_error "多 Worker 会使锁与准入失效并放大写锁争用，且各进程都会各自启动 scheduler；"
+        log_error "不能通过启动多个 SQLite Worker 缓解接口卡顿。请将 WORKERS 改为 1 后重启。"
+        log_error "如确需多 Worker，请先切换 PostgreSQL 后端（scheduler Leader 选举另行实现）。"
+        log_error "========================================"
+        exit 1
+    fi
+}
+
 # 启动服务
 start_server() {
     log_info "正在启动 BTDeck 后端服务..."
@@ -80,6 +117,8 @@ main() {
     # 四轨治理后：shell 层只负责环境准备 + 启动 uvicorn。
     # 配置初始化(init_config_file)、数据库迁移(migrate_database)、seed(init_db)
     # 全部由 FastAPI lifespan 统一负责，避免重复执行。
+    # W2-4：启动前执行 SQLite 单 Worker 约束校验（fail-fast）
+    check_worker_config
     start_server
 }
 
