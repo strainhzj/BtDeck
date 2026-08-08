@@ -54,7 +54,7 @@
 | 删除适配器基类 delete-base | `location_base.py` | 种子位置修改适配器抽象基类 |
 | qB 删除适配器 qb-delete | `qbittorrent.py` | `QBittorrentDeleteAdapter` |
 | qB 位置适配器 qb-location | `qbittorrent_location.py` | qBittorrent 位置修改适配器 |
-| Transmission 删除适配器 tr-delete | `transmission.py` | `TransmissionDeleteAdapter`（强制缓存连接） |
+| Transmission 删除适配器 tr-delete | `transmission.py` | `TransmissionDeleteAdapter`（强制缓存连接；按 hash 直接删除，不在删除前拉取全量任务列表；保留目标任务安全告警查询） |
 | Transmission 位置适配器 tr-location | `transmission_location.py` | Transmission 位置修改适配器 |
 
 ### tag_adapters/ 子包（6 个文件）

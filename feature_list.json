@@ -2060,6 +2060,24 @@
           "evidence": "2026-08-05(续): status 改多选 OR 并集(and_/or_ import),新增 status 多值测试(ignored+deleted 正常并集 / pending+deleted / pending+ignored 退化 / 去重),27 个 filter 测试全通过。前端 status 换 AdvancedMultiSelect + 退化提示;路径框 32px/4px/12px 对齐。OrphanListParams/OrphanSelectionFilters 的 status/confidence改 string(接受逗号串,顺带修复上次遗留 confidence join 类型问题)。前端 56 passed,build/lint 通过,vue-tsc 2736=基线。后端 158 passed,black/flake8 通过,mypy status 分支无新错误。"
         }
       ]
+    },
+    {
+      "id": "transmission-level2-delete-timeout",
+      "name": "Transmission等级2删除超时修复",
+      "description": "移除等级2删除前对Transmission全量任务列表的重复查询，直接按本地已确认的稳定hash调用删除，保留目标任务安全告警查询。",
+      "status": "done",
+      "scope": "backend",
+      "branch": "dev",
+      "plan_file": null,
+      "files": [
+        "backend/app/services/downloader_adapters/transmission.py",
+        "backend/tests/services/test_transmission_delete_adapter.py",
+        "docs/roadmap/backend/services/README.md",
+        "feature_list.json",
+        "progress.md",
+        "session-handoff.md"
+      ],
+      "evidence": "2026-08-08：确认后端AsyncDeletionExecutor单种子30秒超时，Transmission目标任务存在；根据Transmission RPC支持hash作为torrent-remove的ids，删除路径不再先调用get_torrents()全量查询，保留单任务安全信息查询。Transmission适配器、等级删除API、快捷删除API共35项pytest通过；目标文件flake8通过，新增测试black check通过。"
     }
   ]
 }

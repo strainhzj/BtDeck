@@ -97,13 +97,11 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
             return result
 
         try:
-            # 验证种子存在
-            existing_torrents = await self.validate_torrents_exist(torrent_hashes)
-            valid_hashes = [h for h, exists in existing_torrents.items() if exists]
-
-            if not valid_hashes:
-                result["warnings"].append("没有找到可删除的有效种子")
-                return result
+            # 删除请求已经携带由本地 TorrentInfo 解析出的稳定 SHA1 hash。
+            # Transmission RPC 的 torrent-remove 支持直接使用 hash 作为 ids，
+            # 无需为每个删除请求先拉取全部任务列表；该全量查询在种子较多时
+            # 会产生额外的远程等待，并且不是删除正确性的必要条件。
+            valid_hashes = list(dict.fromkeys(torrent_hashes))
 
             # 获取种子信息用于安全检查
             for hash_value in valid_hashes:
