@@ -3,11 +3,13 @@ import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import TorrentsManagement from '@/views/torrents/index.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
   getActiveTorrents,
   getDownloaderList,
   getTorrentList
 } from '@/api/torrents'
+import type { Torrent } from '@/api/torrents'
 
 jest.mock('@/store/modules/viewMode', () => ({
   ViewModeModule: {
@@ -110,7 +112,7 @@ function mountListView(): Wrapper<Vue> {
     stubs: {
       BatchButton: true,
       PageSizeCombobox,
-      LucideIcon: true,
+      LucideIcon,
       BatchOperationDialog: true,
       AdvancedSearchBuilder: true,
       TorrentAddDialog: true,
@@ -129,7 +131,7 @@ function mountListView(): Wrapper<Vue> {
         template: '<div><slot /></div>'
       },
       'el-dropdown-item': {
-        template: '<div><slot /></div>'
+        template: '<div class="el-dropdown-item-stub"><slot /></div>'
       },
       'el-dialog': {
         template: '<div><slot /><slot name="title" /><slot name="footer" /></div>'
@@ -140,6 +142,29 @@ function mountListView(): Wrapper<Vue> {
       'el-switch': true
     }
   })
+}
+
+function torrentFixture(): Torrent {
+  return {
+    infoId: 'info-1',
+    downloaderId: 'downloader-1',
+    downloaderName: 'qb',
+    torrentId: 'torrent-1',
+    hash: 'hash-1',
+    name: '种子-1',
+    savePath: '/downloads',
+    size: 1024,
+    status: 'paused',
+    torrentFile: '',
+    addedDate: '2026-08-08T00:00:00Z',
+    completedDate: null,
+    ratio: 0,
+    ratioLimit: 0,
+    tags: '',
+    category: '',
+    superSeeding: false,
+    enabled: true
+  }
 }
 
 describe('torrent list view pagination and sorting', () => {
@@ -168,6 +193,43 @@ describe('torrent list view pagination and sorting', () => {
   afterEach(() => {
     wrapper?.destroy()
     consoleDebugSpy.mockRestore()
+  })
+
+  it('批量与行内删除等级入口均使用正确的 LucideIcon', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [torrentFixture()],
+        total: 1,
+        pageSize: 20
+      }
+    })
+
+    wrapper = mountListView()
+    await flushLifecycle()
+
+    const expectedIcons = ['tag', 'trash-2', 'trash', 'alert-triangle']
+    const menus = wrapper.findAll('.delete-level-menu')
+    expect(menus).toHaveLength(2)
+
+    menus.wrappers.forEach(menu => {
+      const levelItems = menu.findAll('.el-dropdown-item-stub')
+      expect(levelItems).toHaveLength(4)
+
+      levelItems.wrappers.forEach((item, index) => {
+        expect(item.find('svg').exists()).toBe(true)
+        expect(item.find('.lucide-icon--missing').exists()).toBe(false)
+        expect(item.findComponent(LucideIcon).props('name')).toBe(expectedIcons[index])
+        expect(item.find('.lucide-icon').classes()).toContain('menu-icon')
+      })
+
+      expect(levelItems.at(3).find('.lucide-icon').classes()).toContain('danger')
+      expect(levelItems.at(0).find('.lucide-icon').classes()).not.toContain('danger')
+      expect(levelItems.at(1).find('.lucide-icon').classes()).not.toContain('danger')
+      expect(levelItems.at(2).find('.lucide-icon').classes()).not.toContain('danger')
+    })
   })
 
   it('uses the traditional page-size combobox presets and custom limit behavior', async() => {
@@ -204,9 +266,9 @@ describe('torrent list view pagination and sorting', () => {
       .toEqual(['name', 'size', 'status', 'ratio', 'added_date'])
     expect(wrapper.find('th[data-sort-field="added_date"]').attributes('aria-sort')).toBe('descending')
     expect(sortableHeaders.wrappers.every(header => header.find('.sort-icon').exists())).toBe(true)
-    expect(wrapper.find('th[data-sort-field="name"] .sort-icon').attributes('name'))
+    expect(wrapper.find('th[data-sort-field="name"] .sort-icon').findComponent(LucideIcon).props('name'))
       .toBe('arrow-up-down')
-    expect(wrapper.find('th[data-sort-field="added_date"] .sort-icon').attributes('name'))
+    expect(wrapper.find('th[data-sort-field="added_date"] .sort-icon').findComponent(LucideIcon).props('name'))
       .toBe('arrow-down')
 
     const nameHeader = wrapper.find('th[data-sort-field="name"]')
@@ -216,7 +278,7 @@ describe('torrent list view pagination and sorting', () => {
     expect(vm.listQuery.sort_by).toBe('name')
     expect(vm.listQuery.sort_order).toBe('desc')
     expect(nameHeader.attributes('aria-sort')).toBe('descending')
-    expect(nameHeader.find('.sort-icon').attributes('name')).toBe('arrow-down')
+    expect(nameHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-down')
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.objectContaining({ sort_by: 'name', sort_order: 'desc' })
     )
@@ -226,7 +288,7 @@ describe('torrent list view pagination and sorting', () => {
 
     expect(vm.listQuery.sort_order).toBe('asc')
     expect(nameHeader.attributes('aria-sort')).toBe('ascending')
-    expect(nameHeader.find('.sort-icon').attributes('name')).toBe('arrow-up')
+    expect(nameHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-up')
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.objectContaining({ sort_by: 'name', sort_order: 'asc' })
     )
@@ -241,7 +303,7 @@ describe('torrent list view pagination and sorting', () => {
     const sizeHeader = wrapper.find('th[data-sort-field="size"]')
 
     expect(sortableHeaders.wrappers.map(header => header.text()).join('')).not.toMatch(/[▲▼]/)
-    expect(sizeHeader.find('.sort-icon').attributes('name')).toBe('arrow-up-down')
+    expect(sizeHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-up-down')
 
     await sizeHeader.trigger('keydown', { key: ' ', code: 'Space', keyCode: 32 })
     await flushLifecycle()
@@ -249,7 +311,7 @@ describe('torrent list view pagination and sorting', () => {
     expect(vm.listQuery.sort_by).toBe('size')
     expect(vm.listQuery.sort_order).toBe('desc')
     expect(sizeHeader.attributes('aria-sort')).toBe('descending')
-    expect(sizeHeader.find('.sort-icon').attributes('name')).toBe('arrow-down')
+    expect(sizeHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-down')
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.objectContaining({ sort_by: 'size', sort_order: 'desc' })
     )
@@ -259,6 +321,6 @@ describe('torrent list view pagination and sorting', () => {
 
     expect(vm.listQuery.sort_order).toBe('asc')
     expect(sizeHeader.attributes('aria-sort')).toBe('ascending')
-    expect(sizeHeader.find('.sort-icon').attributes('name')).toBe('arrow-up')
+    expect(sizeHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-up')
   })
 })

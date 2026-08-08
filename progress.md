@@ -1,5 +1,20 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-08 - 列表模式删除等级入口 Lucide 同步
+
+### 本次实现
+
+- 检查最近 4 次提交，确认 2e2e28a23cd7918483be400be54f18fb0642608f 只覆盖 TraditionalView.vue；列表模式 index.vue 的工具栏批量删除和行内删除仍使用 Element 图标。
+- 两组四级删除菜单均迁移为 LucideIcon：tag、trash-2、trash、alert-triangle；保留原有删除命令、等级 1 danger 配色和下拉交互。
+- 增加列表模式回归，锁定两组菜单的 SVG、图标名称、menu-icon 与 danger 标识；更新前端视图路线图和 feature_list.json 的 v1.0.6.37 evidence。
+
+### 验证与边界
+
+- npm run test:unit 全量通过；目标两套视图 2 suites / 26 tests 通过；typecheck、改动文件 lint、Vuex action lint、生产 build 通过。
+- npm run lint 仅因其他测试文件已有 5 条 ESLint warning 退出；本次改动文件无 warning。build 保留既有 56 条 Sass/资源 warning。
+- E:\Git\bin\bash.exe ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning；git diff --check 通过。
+- 未执行提交或推送；保留工作区中既有 Docker 远端部署改动及未跟踪文件。
+
 ## 2026-08-03 - 孤儿全选当前筛选、隔离区表头对齐、剪贴板回退与操作日志布局
 
 ### 实现内容

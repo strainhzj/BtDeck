@@ -93,18 +93,18 @@
           tooltip="删除"
           :disabled="multipleSelection.length === 0"
         />
-        <el-dropdown-menu slot="dropdown">
+        <el-dropdown-menu slot="dropdown" class="delete-level-menu">
           <el-dropdown-item command="4">
-            <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
+            <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
           </el-dropdown-item>
           <el-dropdown-item command="3">
-            <i class="el-icon-folder-delete"></i> 等级3: 移至回收站
+            <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
           </el-dropdown-item>
           <el-dropdown-item command="2">
-            <i class="el-icon-delete"></i> 等级2: 删除任务(保留数据)
+            <LucideIcon class="menu-icon" name="trash" :size="14" />等级2: 删除任务(保留数据)
           </el-dropdown-item>
           <el-dropdown-item command="1" divided>
-            <i class="el-icon-warning"></i> 等级1: 完全删除
+            <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />等级1: 完全删除
           </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
@@ -456,18 +456,18 @@
                   <button class="action-btn delete">
                     <LucideIcon name="trash" :size="14" />
                   </button>
-                  <el-dropdown-menu slot="dropdown">
+                  <el-dropdown-menu slot="dropdown" class="delete-level-menu">
                     <el-dropdown-item command="4">
-                      <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
+                      <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
                     </el-dropdown-item>
                     <el-dropdown-item command="3">
-                      <i class="el-icon-folder-delete"></i> 等级3: 移至回收站
+                      <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
                     </el-dropdown-item>
                     <el-dropdown-item command="2">
-                      <i class="el-icon-delete"></i> 等级2: 删除任务(保留数据)
+                      <LucideIcon class="menu-icon" name="trash" :size="14" />等级2: 删除任务(保留数据)
                     </el-dropdown-item>
                     <el-dropdown-item command="1" divided>
-                      <i class="el-icon-warning"></i> 等级1: 完全删除
+                      <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />等级1: 完全删除
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </el-dropdown>

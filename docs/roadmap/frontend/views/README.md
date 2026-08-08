@@ -26,8 +26,8 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，`TorrentsManagement` class，extends mixins(TorrentBatchMixin)）；v1.0.6.30 接入共享 `PageSizeCombobox` + 5 列头服务端排序（首次降序/同字段切换升降序），v1.0.6.29 高级搜索标题收紧为 16px 图标 + 15px 文字 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)）；v1.0.6.30 复用共享 `PageSizeCombobox`（保留原分页状态/虚拟滚动/重复任务），v1.0.6.31 在“分类/标签”与“添加时间”之间新增保存路径列（兼容 `savePath/save_path`） |
+| `index.vue` | 种子管理主入口（列表模式，`TorrentsManagement` class，extends mixins(TorrentBatchMixin)）；v1.0.6.30 接入共享 `PageSizeCombobox` + 5 列头服务端排序（首次降序/同字段切换升降序），v1.0.6.29 高级搜索标题收紧为 16px 图标 + 15px 文字，v1.0.6.37 批量与行内四级删除入口统一使用 LucideIcon |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)）；v1.0.6.30 复用共享 `PageSizeCombobox`（保留原分页状态/虚拟滚动/重复任务），v1.0.6.31 在“分类/标签”与“添加时间”之间新增保存路径列（兼容 `savePath/save_path`），v1.0.6.37 与列表模式统一四级删除入口 LucideIcon |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统） |
 | `FileManagement.vue` | 种子文件管理（选择/优先级） |
 | `components/TorrentAddDialog.vue` | 添加种子对话框 |

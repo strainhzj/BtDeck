@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-08 交接：列表模式删除等级入口 Lucide 同步
+
+当前任务: v1.0.6.37
+分支: dev
+状态: 实现完成并通过验证；未提交、未推送。
+
+### 实现
+
+- 列表模式 frontend/src/views/torrents/index.vue 的工具栏批量删除和每行删除两组菜单，四级入口统一使用 tag、trash-2、trash、alert-triangle 四个 LucideIcon。
+- 保留原有删除命令、menu-icon 间距样式、等级 1 的 danger 标识及下拉交互。
+- frontend/tests/unit/torrent-list-view-component.spec.ts 新增两组菜单的 Lucide SVG、name、样式类和危险等级回归；同步更新视图路线图与 feature_list.json。
+
+### 验证
+
+- 全量 npm run test:unit 通过；传统/列表目标套件 2 suites / 26 tests 通过；typecheck、改动文件 lint、Vuex action lint、生产 build 通过。
+- 完整 npm run lint 只被其他测试文件已有 5 条 ESLint warning 拦截，本次改动文件无 warning；build 仅有既有 56 条 Sass/资源 warning。
+- E:\Git\bin\bash.exe ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning；git diff --check 通过。
+
+### 交接边界
+
+- 未执行 Git stage、commit 或 push。
+- 工作区中既有 Docker 远端部署改动及未跟踪文件均保留，未纳入本次任务。
+
 ## 2026-08-03 交接：孤儿全选当前筛选、隔离区表头对齐、剪贴板回退与操作日志布局
 
 **当前任务**: `v1.0.6.36`

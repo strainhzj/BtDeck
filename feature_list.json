@@ -1986,6 +1986,22 @@
             "session-handoff.md"
           ],
           "evidence": "孤儿列表表头复选框不再依赖 Element 自带 selection 列（其数据源被虚拟窗口截成约 15 行），改为维护 select_all + excluded_orphan_ids + 当前筛选快照的独立选择模型，已选计数按服务端 total 计算并显示\"当前筛选全部\"标识；清理/忽视提交时由后端 resolve_orphan_selection 按与列表完全一致的 _build_orphan_conditions 把筛选快照解析为稳定 ID 集，并按 500/批切块避免 SQLite 绑定变量上限，清理预览对全选大批量截断为前 200 条明细并返回 items_truncated（计数与大小仍覆盖全部）。隔离区页签接入共享 management-table 表头类，与孤儿页签的表头布局、颜色、间距及固定方式一致。JSON/内容复制抽成共享 copyTextToClipboard：优先 Clipboard API，非安全上下文或权限拒绝时回退隐藏 textarea + execCommand，操作日志详情 JSON 与任务详情复制统一使用并保留成功/失败提示。操作日志搜索栏与操作栏拆为独立响应式布局，查询/重置/操作逻辑不变，前端补 torrent_name 查询参数对齐后端已有模糊搜索。孤儿后端全套 229 passed/1 skipped（含新增 select_all 解析用例），前端全量 Jest 31 suites/527 tests、typecheck、定向 ESLint、生产 build、Flake8 与 git diff --check 均通过；全量 mypy 仍为孤儿历史 SQLAlchemy 模块既有 Column 类型债务。"
+        },
+        {
+          "id": "v1.0.6.37",
+          "name": "列表模式删除等级入口 Lucide 化",
+          "description": "将列表模式工具栏批量删除与每行操作删除的四级入口图标同步迁移为 LucideIcon，与传统模式保持一致，并保留删除命令、危险等级配色和下拉交互。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/index.vue",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "docs/roadmap/frontend/views/README.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "列表模式批量删除与行内删除两组四级入口均改用 tag/trash-2/trash/alert-triangle 四个 LucideIcon，等级1继续使用 danger 样式；新增回归验证两组菜单均渲染正确 SVG、图标 name、menu-icon 间距类与 danger 标识。全量 npm run test:unit 通过，列表视图定向 Jest 4/4 通过，typecheck、改动文件 lint、Vuex action lint、生产 build 与 git diff --check 通过；完整 npm run lint 仅被其他测试文件已有 5 条 warning 拦截；根 E:\\Git\\bin\\bash.exe ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning。"
         }
       ]
     },
