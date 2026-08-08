@@ -1,5 +1,125 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-08 交接：W2 分批实施完成（sync-database-blocking-remediation G2 代码完成）
+
+当前任务：修复计划第二批 W2（P0 同步路径与请求响应性）实施完成，6 个子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W2 代码与测试完成（G2 门剩余：运行观测类验收——CRUD P95/P99 SLO、event loop lag，需发布观察/W4 基准数据）；未提交、未推送。
+
+### 本次改动（backend app/ 16+ 文件 + tests/ 10+ 文件）
+
+- **W2-1** 新 `app/services/sync_coordinator.py`（756 行）：SyncRequest/SyncResult + run_sync 阶段编排（准入→备份 hook→下载器解析→sync→tracker_status）；手动入口与定时任务统一走 Coordinator；`torrent_sync_db_async` 改 legacy adapter（`SYNC_CANONICAL_COORDINATOR_ENABLED` 开关回退）；旧全量内嵌 `_bulk_write_with_retry` 收编到统一写入器；文件备份段保留（"同步后置短事务"边界）。
+- **W2-2** `downloader_api_runtime.py`：两级信号量（total=2 + background=1，TRACKER/SYNC 后台最多占 1 槽，INTERACTIVE 恒留 1 槽）；删除 priority 参数；queue_wait_ms/remote_call_ms 日志；矛盾组合自动降级。
+- **W2-3** 5 个垂直切片（tracker 漏 await×4 修复 / crud+status / tag+downloader+settings / reannounce+recycle_bin+seed_transfer / deletion adapters→to_thread）；新 AST 架构测试 `tests/architecture/test_async_downloader_calls.py`（30 项）。
+- **W2-4** 新 `app/core/startup_guard.py`：SQLite 多 Worker fail-fast（main.py 模块加载期 + btdeck_startup.sh shell 双接线 + scheduler 纵深防御），PostgreSQL 不误杀。
+- **测试基建修复**：test_reannounce_service 加 autouse patch（TestClient lifespan 关闭全局 runtime 单例的污染，仓库既有约定同款）。
+
+### 验证（主代理亲自复跑）
+
+- 全量 `pytest`：**2959 passed, 7 skipped, 0 failed**（254.9s）。
+- 新测试：sync_coordinator 20 / runtime 34 / worker_guard 53 / AST 架构 30 / 各切片 24+31+19+22。
+- black/flake8 通过；mypy 关键模块无错误；tag_management/downloader_settings black 存量债务经 HEAD 验证为历史遗留。
+
+### 下一步
+
+1. **G2 发布观察**：一个完整 info/Tracker 周期 + 手动单下载器同步 + 高峰交互时段；核对 CRUD 只读 P95<1s / 写 P95<2s / 超时率<0.1% / event loop lag P99<100ms（代码层阻塞路径已清除，量化验收待运行数据）。
+2. **W3（P1）**：有界队列与单轮预算（qB Tracker workers/预算）、持久化 checkpoint（Alembic 迁移 + sync_checkpoints 表）、info 有界流水线（SQLite 默认 downloader_concurrency=1）、outcome/freshness 六态语义（task_logs 增补字段）。
+3. W3 有 Schema 变更：先执行 Alembic 再启用 checkpoint；验证历史 task_logs 兼容。
+4. 发布门记录与 roadmap 更新（roadmap-maintain 规则实测行号）。
+
+### 变更边界
+
+- 本次改 backend app/ 与 tests/（清单见 feature_list.json sync-database-blocking-remediation-w2）；未改 Schema/迁移/运行配置（W2-4 仅加启动校验与注释）；未执行 Git stage/commit/push。
+
+## 2026-08-08 交接：W1 分批实施完成（sync-database-blocking-remediation G1 代码完成）
+
+当前任务：修复计划第一批 W1（P0 数据库事务修复）实施完成，4 个子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W1 代码与测试完成（G1 发布门剩余：发布观察 + 22k/30k 压测定批大小最终值）；未提交、未推送。
+
+### 本次改动（backend app/ 5 文件 + tests/ 7 文件 + .env.example）
+
+- **W1-1** `app/services/sync_db_write.py`：`bulk_upsert_with_retry` 真实分批提交（每批独立 commit，批间让行），`WriteStats` / `ChunkedWriteError`（部分进度 + 异常链），锁冲突按 SQLite 错误码分类（5/6/261/262/266/517），退避=指数+抖动且单批总睡眠 ≤ 2s；新配置 `SYNC_CHUNKED_COMMIT_ENABLED` / `SYNC_DB_LOCK_RETRY_COUNT=3` / `SYNC_DB_RETRY_MAX_BACKOFF_SECONDS=2.0`。
+- **W1-2** 新 `app/services/tracker_status_sync.py`：判定规则逐行保持的增量写（变化检测，零变化零 DML 不 commit）；`torrent_sync.py::update_tracker_status_from_keywords` 改兼容包装（调用方零改动）；新配置 `SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED`。注意：重复关键词实际保留"先读取的"值（与原注释不符，按规则保持未改）。
+- **W1-3** `torrents_async.py::_mark_qb_removed_torrents`：事务外算 ID → 统一写入器更新（三列复合主键 info_id/downloader_id/downloader_name），空变更零 commit；架构测试追加同步模块 DML 准入断言。
+- 新 `tests/integration/test_sqlite_sync_contention.py`：真实文件型 SQLite 争用回归（交互写穿插分批同步、真实 BUSY 错误码、短事务锁释放、零变化不持锁），22k 基准以 perf marker + skip 预留。
+
+### 验证（主代理亲自复跑）
+
+- 全量 `pytest`：**2699 passed, 7 skipped, 0 failed**。
+- 新测试：test_sync_db_write 31 / test_tracker_status_sync 21 / test_qb_removed_mark_governance 9 / 争用回归 5+1skip / 架构约束 22。
+- black（10 文件）通过；mypy sync_db_write + tracker_status_sync 无错误；flake8 通过；torrents_async mypy 15 错误为存量基线（stash 复测 HEAD 同数）。
+- 4 个测试文件经 black 格式化后复跑 83 passed。
+
+### 下一步
+
+1. **G1 发布观察**：一个完整 info/Tracker 周期；22k/30k 真实压测确定 `SYNC_DB_COMMIT_BATCH_SIZE` 最终值（当前 200，压测数据决定 200~500）。
+2. **W2（第二批 P0）**：统一 SyncCoordinator 收编手动同步与旧全量旁路写者（qb/tr_add_torrents_async、sync_add_tracker_async、mark_removed_trackers_*）；DownloaderApiRuntime 交互容量保留（background_capacity，SQLite 默认 1）；async 端点同步下载器调用迁移 + 漏 await 架构扫描；SQLite 多 Worker fail-fast。
+3. 每个发布门记录测试命令/结果/性能报告路径；源码行号变化后按 roadmap-maintain 规则更新 docs/roadmap。
+4. 回滚：`SYNC_CHUNKED_COMMIT_ENABLED=false` + `SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED=false` 即回旧写回行为（开关最多保留两个稳定版本），无 Schema 变更。
+
+### 变更边界
+
+- 本次仅改 backend app/（sync_db_write.py、tracker_status_sync.py 新、torrents_async.py、torrent_sync.py、config.py）、tests/（7 文件）、.env.example、progress.md、session-handoff.md、feature_list.json；未改 Schema/迁移/运行配置。
+- 未执行 Git stage/commit/push。
+
+## 2026-08-08 交接：同步任务数据库阻塞详细修复计划
+
+当前任务：根据数据库阻塞评估创建可执行修复计划
+
+分支：dev
+状态：计划文档完成；未实施业务修复，未提交、未推送。
+
+### 产物
+
+- [同步任务数据库阻塞与接口超时修复计划](PLANS/sync-database-blocking-remediation.md)
+- [数据库阻塞与同步问题评估](backend/docs/operations/database-blocking-and-sync-issues-2026-08.md)
+
+### 计划决策
+
+- P0 分两批发布：G1 先缩短 SQLite 事务并消除无变化全表写；G2 再统一手动/定时同步路径、为交互请求保留下载器容量、清理 async 端点阻塞并强制 SQLite 单 Worker。
+- P1 引入有界队列、运行预算、durable checkpoint、明确 outcome/freshness，并用真实文件型 SQLite DML 与并发 CRUD 验收。
+- P2 不预设引入 DBWriteQueue 或切换 PostgreSQL；先收集至少 7 天指标并通过 ADR 决策。旧 v1.0.8 计划后续必须移除与 app.state.store 约束冲突的下载器连接池设想。
+- 健康检查分为 liveness、readiness 和受保护的同步业务健康；高频 readiness 只做有超时的只读检查，不用写探针制造额外锁。
+
+### 下一步
+
+1. 实施 W0 基线与止血手册。
+2. 创建 W1 实施任务，优先修改 sync_db_write、Tracker 状态更新和 qB removed 标记。
+3. 使用真实临时 SQLite 文件执行最小争用回归，通过 G1 后独立发布观察。
+4. 实施启动时在 feature_list.json 建立对应任务/evidence，并按源码变更更新 docs/roadmap。
+
+### 变更边界
+
+- 本次仅改动 PLANS/sync-database-blocking-remediation.md、PLANS/README.md、progress.md 和 session-handoff.md。
+- 源评估与计划的 19 个风险编号逐项一致；计划链接检查、git diff --check 和 ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning。
+- 未修改业务源码、Schema、迁移或运行配置；未执行 Git stage、commit 或 push。
+
+## 2026-08-08 交接：同步任务数据库阻塞与接口超时风险登记
+
+当前任务：运行问题评估文档整理
+
+分支：`dev`
+状态：文档完成；未提交、未推送。
+
+### 产物
+
+- [数据库阻塞与同步问题评估](backend/docs/operations/database-blocking-and-sync-issues-2026-08.md)
+
+### 核心结论
+
+- 默认 Tracker/info 任务前后出现卡顿和接口超时与当前代码一致，问题应按 P0 生产可用性缺陷处理。
+- 关键根因包括 Tracker 状态全表重写、info-only 单大事务、手动/旧版同步旁路、异步端点直接执行同步下载器 API、后台 Tracker 占满每下载器容量以及 SQLite 进程内锁无法覆盖多 Worker/旁路写者。
+- 文档给出 P0/P1/P2 问题登记、无代码止损、分阶段修复、日志/指标/告警和真实文件型 SQLite 压测验收标准。
+
+### 验证与边界
+
+- 只读核对本地 `app.db` 和历史 `task_logs`；本地库约 2.2 万种子、3 万 Tracker，历史 Tracker 任务最长 1161 秒。
+- 相关治理测试 75 项通过；测试和 benchmark 仍未证明真实磁盘/WAL/索引并发下的接口 SLO。
+- 本次未修改业务源码、数据库或运行配置；未执行 Git stage、commit 或 push。工作区原有修改和未跟踪文件保持不动。
+
 ## 2026-08-08 交接：列表模式删除等级入口 Lucide 同步
 
 当前任务: v1.0.6.37
@@ -22,6 +142,36 @@
 
 - 未执行 Git stage、commit 或 push。
 - 工作区中既有 Docker 远端部署改动及未跟踪文件均保留，未纳入本次任务。
+
+## 2026-08-08 交接：Docker 远端部署后端健康检查等待修复
+
+**当前任务**: `v1.0.9.6`
+**分支**: `dev`
+**状态**: 实现完成并通过静态/配置验证；未提交、未推送、未实际部署。
+
+### 根因与决策
+
+- 远端后端启动时的孤儿文件隔离状态对账耗时约 162.6 秒，超过原 Compose 健康检查窗口，导致 `frontend` 的 `service_healthy` 依赖报错。
+- 不移动或跳过对账逻辑，采用部署编排层等待：先启动 backend 并轮询健康状态，healthy 后再启动 frontend。
+- 远端 Compose 文件包含 Unraid 下载目录挂载，未用本地 Compose 覆盖；helper 只上传并执行部署等待逻辑。
+
+### 变更文件
+
+- `build-and-export-images.bat`
+- `.btdeck-remote-deploy.sh`
+- `docker-compose.yml`
+- `backend/Dockerfile`
+- `feature_list.json`
+- `progress.md`
+- `session-handoff.md`
+
+### 验证与后续
+
+- `.btdeck-remote-deploy.sh` 通过 `sh -n`。
+- `docker compose -f docker-compose.yml config --quiet` 通过。
+- 根 `E:\Git\bin\bash.exe ./init.sh --ci` 通过；仅有既有前端 npm null-byte warning。
+- Docker Desktop 本机引擎仍因 Windows 管道权限不可用，未本地构建；需要下一步重新运行 `build-and-export-images.bat` 做实际远端部署验证。
+
 
 ## 2026-08-03 交接：孤儿全选当前筛选、隔离区表头对齐、剪贴板回退与操作日志布局
 
@@ -1359,11 +1509,11 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - 后端 `min_size` 死参数长期清理。
 - `docs/roadmap/backend/services/orphan_file_service.md` 已更新本次触及符号行号，但存在历史漂移（非本次引入）。
 
-## 2026-08-08 - Transmission ??2??????
+## 2026-08-08 - Transmission 等级2删除超时修复
 
-- ?????????? `AsyncDeletionExecutor` ??? 30 ??????? Transmission ??????
-- ??? `TransmissionDeleteAdapter` ???????? `get_torrents()` ????????????????? hash ?? `remove_torrent()`?
-- ?????? `get_torrent_info()`????????????????????
-- ?????? `backend/tests/services/test_transmission_delete_adapter.py`??? 35 ? pytest ??????? flake8/???? black check ???
-- ?????????????? `get_torrent()` ? `remove_torrent()` ?????? `remove_torrent()` ???? SDK ???????????????? runtime/to_thread?
-- ??? Git stage/commit/push/deploy??? `init.sh` ???? Windows/WSL `E_ACCESSDENIED` ?????
+- 用户已确认问题为后端 `AsyncDeletionExecutor` 单种子 30 秒超时，目标为 Transmission 且任务存在。
+- 已移除 `TransmissionDeleteAdapter` 删除流程前的全量 `get_torrents()` 预查询，改为直接按本地已确认的稳定 hash 调用 `remove_torrent()`。
+- 保留目标任务 `get_torrent_info()`，继续提供安全告警；未改变删除文件选项。
+- 新增回归测试 `backend/tests/services/test_transmission_delete_adapter.py`；相关 35 项 pytest 全部通过，目标 flake8/新增测试 black check 通过。
+- 后续若仍超时，应分别测量目标 `get_torrent()` 与 `remove_torrent()` 的耗时；当前 `remove_torrent()` 仍是同步 SDK 调用，尚未在本次范围内改造为统一 runtime/to_thread。
+- 未执行 Git stage/commit/push/deploy；全栈 `init.sh` 仍受当前 Windows/WSL `E_ACCESSDENIED` 环境限制。
