@@ -2192,6 +2192,88 @@
           "evidence": "python -m pytest tests/integration/ -q → 5 passed, 1 skipped；连续 3 次运行无 flaky；探针实测单批 commit P99≈5ms（Windows WAL+NORMAL）"
         }
       ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w2",
+      "name": "同步任务数据库阻塞修复 W2：统一同步路径与请求响应性（P0）",
+      "description": "修复计划第二批 W2（PLANS/sync-database-blocking-remediation.md，G2 门）：统一 SyncCoordinator 消除手动同步旁路、交互下载器 API 容量保留、清除 async 请求端同步下载器调用与漏 await、SQLite 单 Worker 启动约束。对应风险 P0-01/P0-04/P0-05/P0-06 全部覆盖。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w2.1",
+          "name": "W2-1 统一 SyncCoordinator 消除手动同步旁路",
+          "description": "新建 services/sync_coordinator.py（SyncRequest/SyncResult/run_sync 阶段编排：准入→备份 hook→下载器解析→sync→tracker_status）；手动入口与定时任务统一走 Coordinator；torrent_sync_db_async 改 legacy adapter + SYNC_CANONICAL_COORDINATOR_ENABLED 开关；旧全量写路径（内嵌 _bulk_write_with_retry）收编到统一 bulk_upsert_with_retry。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_coordinator.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/tasks/scheduler/torrent_sync/torrent_info_sync_task.py",
+            "backend/app/tasks/scheduler/torrent_sync/tracker_sync_task.py",
+            "backend/tests/services/test_sync_coordinator.py",
+            "backend/tests/api/test_sync_governance_integration.py"
+          ],
+          "evidence": "python -m pytest tests/services/test_sync_coordinator.py -q → 20 passed；架构断言手动入口不再调旧全量实现；幂等 already_running/取消 partial/cancelled/dry_run/开关回退全覆盖"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w2.2",
+          "name": "W2-2 交互下载器 API 容量保留",
+          "description": "DownloaderApiRuntime 两级信号量：background（DOWNLOADER_BACKGROUND_CAPACITY=1，TRACKER/SYNC lane 必须同时取 background+total 槽）+ total（DOWNLOADER_IO_CONCURRENCY=2，INTERACTIVE 只取 total）；删除未生效 priority 参数；queue_wait_ms/remote_call_ms 实测入日志；矛盾组合自动降级 + 警告。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/downloader_api_runtime.py",
+            "backend/app/core/config.py",
+            "backend/.env.example",
+            "backend/tests/services/test_downloader_api_runtime.py"
+          ],
+          "evidence": "python -m pytest tests/services/test_downloader_api_runtime.py -q → 34 passed；交互穿插/多后台不超消费/超时租约不绕过/每下载器隔离/降级组合"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w2.3",
+          "name": "W2-3 清除 async 请求端同步下载器调用和漏 await",
+          "description": "5 个垂直切片：Tracker CRUD（4 处漏 await 修复含 AsyncSession.commit、6 处自建→store、13 处裸调用→runtime）；种子 CRUD/状态（9 处）；标签/下载器（12+ 处，test_downloader_settings 保留自建客户端合法例外）；服务层收尾（reannounce/recycle_bin/seed_transfer 12 处）；删除/位置适配器（14 处→asyncio.to_thread，懒建在工作线程）。新建 AST 架构测试框架（30 项含负向自检）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/tracker.py",
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_status.py",
+            "backend/app/api/endpoints/tag_management.py",
+            "backend/app/api/endpoints/downloader.py",
+            "backend/app/api/endpoints/downloader_settings.py",
+            "backend/app/services/reannounce_service.py",
+            "backend/app/services/recycle_bin_service.py",
+            "backend/app/services/seed_transfer_service.py",
+            "backend/app/services/downloader_adapters/",
+            "backend/tests/architecture/test_async_downloader_calls.py",
+            "backend/tests/api/test_tracker_migration.py",
+            "backend/tests/api/test_torrent_crud_status_migration.py",
+            "backend/tests/api/test_tag_downloader_migration.py",
+            "backend/tests/services/test_w2_3d_service_migration.py",
+            "backend/tests/services/test_w2_3e_adapter_migration.py"
+          ],
+          "evidence": "AST 架构测试 30 passed；各切片端点/服务测试 24+31+19+22 passed；全量回归 2959 passed；API 契约与错误码保持"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w2.4",
+          "name": "W2-4 SQLite 单 Worker 启动约束",
+          "description": "新建 core/startup_guard.py 纯函数校验（SQLite+workers≠1 fail-fast，PostgreSQL 不误杀，scheduler 纵深防御，启动清单日志）；接线 main.py 模块加载期 + btdeck_startup.sh shell fail-fast + lifecycle scheduler 启动处；docker-compose 注释。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/core/startup_guard.py",
+            "backend/app/main.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/btdeck_startup.sh",
+            "backend/tests/core/test_sqlite_worker_guard.py"
+          ],
+          "evidence": "python -m pytest tests/core/test_sqlite_worker_guard.py -q → 53 passed（含子进程验证两个启动入口 fail-fast）"
+        }
+      ]
     }
   ]
 }

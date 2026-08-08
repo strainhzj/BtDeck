@@ -3252,3 +3252,51 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - black（10 个改动文件）通过（4 个测试文件先应用 black 格式化后复跑 83 passed）；mypy sync_db_write/tracker_status_sync 无错误；flake8 通过；torrents_async mypy 15 个错误为存量基线（stash 复测 HEAD 同数，未新增）。
 - 回滚路径：`SYNC_CHUNKED_COMMIT_ENABLED=false` + `SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED=false` 即回旧写回行为，无 Schema 变更。
 - 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-08(续) - W2 分批：统一同步路径与请求响应性（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施修复计划第二批 W2（P0 同步路径与请求响应性，G2 门）。共 4 个子任务 + 2 个收尾切片，全部由子代理执行、主代理逐项审查（源码审查 + 亲自复跑测试）后通过。
+
+### W2-1 统一 SyncCoordinator 消除手动同步旁路
+
+- 新建 `app/services/sync_coordinator.py`（756 行）：`SyncRequest`（sync_type/trigger/run_id/deadline/force/dry_run/is_cancelled）+ `SyncResult`（outcome/phase/scanned/committed/skip_reason/errors/duration_ms）；`run_sync` 阶段编排：资源准入（复用 admission_controller，task_code 映射保证手动与定时互斥）→ 备份 hook（预留）→ 下载器解析（只从 app.state.store）→ sync phase（按类型复用 info-only/tracker-only/legacy full）→ tracker_status phase。
+- 幂等运行键（downloader_id:sync_type，force 跳过）；取消在阶段/下载器边界检查，已提交批次保留；dry_run 零调用；结构化观测日志。
+- `torrent_sync_db_async` 改 legacy adapter（转发 run_sync），`sync_single_downloader` 后台执行体走 Coordinator；`SYNC_CANONICAL_COORDINATOR_ENABLED` 开关应急回退。
+- 旧全量写路径收编：qb/tr_add_torrents_async 内嵌 `_bulk_write_with_retry`（自建 500/批）迁移到统一 `bulk_upsert_with_retry`；文件备份段（TorrentFileBackup 逐条 commit）按计划保留为"同步后置短事务"边界并在报告中说明。
+- 测试：test_sync_coordinator 20 项（手动/Cron 同源、竞争 already_running、admission 超时、取消 partial/cancelled、离线、dry_run、开关回退、API 兼容）+ 架构断言（手动入口不再调旧全量实现）。
+
+### W2-2 交互下载器 API 容量保留
+
+- `DownloaderApiRuntime` 两级信号量：total（DOWNLOADER_IO_CONCURRENCY=2 不变）+ background（新配置 DOWNLOADER_BACKGROUND_CAPACITY=1）；TRACKER/SYNC lane 为 background（必须同时取两级槽），INTERACTIVE 只取 total 槽 → 后台最多占 1 槽、恒留 1 交互槽；acquire 顺序 background→total、release 反向，无循环等待。
+- 删除未生效的 `priority` 参数（grep 确认无调用方）；`queue_wait_ms`/`remote_call_ms` 线程内实测进入日志与窗口统计；timeout 文档化为总预算（含排队）。
+- 矛盾组合防护：total=1 且 bg=1 自动降级 bg=0 + 警告（缓存 None 防重复告警）。
+- 测试 34 项（交互穿插、多后台不超消费、超时后租约不绕过、异常/取消/shutdown 无泄漏、每下载器隔离、降级组合、timings 字段、priority 已删）。
+
+### W2-3 清除 async 请求端同步下载器调用和漏 await（5 个垂直切片）
+
+- **a. Tracker CRUD**（tracker.py）：修复 **4 处漏 await**（含 AsyncSession.commit 未 await 导致 TR tracker 添加/修改功能静默失效；sync def → async def）；6 处客户端自建改 store 获取；13 处裸同步改 call_downloader_api(INTERACTIVE)；新建 AST 架构测试框架 `tests/architecture/test_async_downloader_calls.py`（规则表 + 白名单 + 自检样例）。
+- **b. 种子 CRUD/状态**（torrent_crud.py/torrent_status.py/torrent_helpers.py）：create_torrent 的 TR add/qB add/30 次轮询 3 处 + helper 签名扩展 downloader_id；pause/resume/recheck 6 处；3 处 `get_snapshot_sync()` 改 `await get_snapshot()`；轮询回归测试。
+- **c. 标签/下载器**（tag_management.py/downloader.py/downloader_settings.py）：tag 两个 helper 10+2 处；downloader get_status 降级路径 async 化 + store 获取（删除 qbClient/trClient import）；test_downloader_settings **保留自建客户端**（合法测试连接场景，注释说明）+ 调用走 runtime；AST 增强（嵌套属性链检测 + 函数级豁免）。
+- **d. 服务层收尾**（reannounce/recycle_bin/seed_transfer_service）：12 处裸同步 → INTERACTIVE lane；删除模块级客户端 import（AST 生效前提）；19 项新测试。
+- **e. 删除/位置适配器**（downloader_adapters/ 4 文件）：14 处裸同步 → `asyncio.to_thread`（与同文件惯例一致，adapter 无 downloader_id 且工厂在约束外）；qB 用 lambda 形式保证懒建 `Client()`+`log_in()` 在工作线程求值（专项线程探针测试）；AST adapter 专用规则（to_thread 包裹豁免）。
+- 全部保持 HTTP 契约/错误码/超时语义；AST 测试最终 30 项（含负向自检防假通过）。
+
+### W2-4 SQLite 单 Worker 启动约束
+
+- 新建 `app/core/startup_guard.py`（纯函数）：detect_backend（sqlite+aiosqlite 方言）/parse_worker_count/resolve_database_url/validate_worker_count（SQLite+workers≠1 抛可操作错误）/validate_scheduler_scope（PostgreSQL 多 Worker 显式"Leader 未实现"）/log_startup_manifest（database_backend/worker_count/scheduler_enabled/process_id）。
+- 接线：main.py 模块加载期校验（外部 WORKERS 环境变量，绕不开）+ btdeck_startup.sh 纯 shell fail-fast（exit 1）+ lifecycle.py scheduler 启动处纵深防御；docker-compose 注释说明。
+- 测试 53 项（含子进程验证两个启动入口 fail-fast）；受支持入口全覆盖（裸 uvicorn 不设 WORKERS env 的盲区已在报告中说明）。
+
+### 测试基建修复（主代理）
+
+- 全量回归发现 test_reannounce_service 15 项失败：根因是同一 pytest 进程中 api 目录的 with TestClient 测试触发 lifespan shutdown 关闭全局单例 `downloader_api_runtime` executor（不可逆），W2-3d 迁移后 reannounce 真实调用单例即失败（此前用独立进程跑 api 掩盖了该问题）。按仓库既有约定（test_torrent_speed_regression.py:456 注释同款）给该文件加 autouse fixture patch call_downloader_api 直接执行 func，修复后全量 2959 passed。
+
+### 验证
+
+- **全量回归：2959 passed, 7 skipped, 0 failed**（254.9s）。
+- 新增测试：sync_coordinator 20、runtime 34、worker_guard 53、AST 架构 30、各切片端点/服务测试 24+31+19+22。
+- black/flake8 通过（tag_management/downloader_settings 的 black 存量债务经 `git show HEAD` 验证为历史遗留，未新增）；mypy sync_coordinator/runtime/startup_guard/tracker_status_sync 无错误。
+- G2 门运行观测类验收项（CRUD P95/P99 SLO、event loop lag P99 < 100ms）需真实运行环境数据：代码层阻塞路径已全部消除（架构扫描无未批准调用），量化验收留给 W4（W4-1 lag 采样器、W4-3 争用基准）与发布观察期。
+- 未执行 Git stage/commit/push/deploy。
