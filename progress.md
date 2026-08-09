@@ -3316,3 +3316,127 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - black/flake8 通过（tag_management/downloader_settings 的 black 存量债务经 `git show HEAD` 验证为历史遗留，未新增）；mypy sync_coordinator/runtime/startup_guard/tracker_status_sync 无错误。
 - G2 门运行观测类验收项（CRUD P95/P99 SLO、event loop lag P99 < 100ms）需真实运行环境数据：代码层阻塞路径已全部消除（架构扫描无未批准调用），量化验收留给 W4（W4-1 lag 采样器、W4-3 争用基准）与发布观察期。
 - 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-09(续) - W4-3 实施：真实文件型 SQLite 争用基准与响应性验收（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施 W4-3（P1-07：测试覆盖真实文件型 SQLite 争用）。2 个子代理执行 + 主代理逐项审查（源码抽查 + 亲跑验证 + 全量回归）后通过。
+
+### 基准脚本（新 backend/scripts/sync_contention_benchmark.py，1506 行）
+
+- **真实文件型环境**：独立临时目录 + 真实 .db + WAL/synchronous=NORMAL/busy_timeout=15000（与 app/database.py `_apply_sqlite_pragmas` 语义一致）+ NullPool + handle_error 层 SQLITE_BUSY 计数 + WAL 见证连接；最小 ORM 模型 3 张表（bench_torrent / tracker_info / tracker_keyword_config，后两者表名列名对齐生产）。
+- **三档数据**：small 2k/3k、mid 10k/15k、large 22k/30k（对应生产规模）；大档生成实测 1.1s；合成数据无任何敏感信息。
+- **场景 A/B/C**：A=真实 `bulk_upsert_with_retry`（batch 200）；B=真实 `sync_tracker_status_from_keywords` 两遍（第 1 遍全量写、第 2 遍验证零变化零 DML）；C=批量 UPDATE dr=1 逐批 commit+有界重试。请求探针：只读 count/分页/任务状态 + 单条 INSERT/UPDATE，每探针独立连接。
+- **fake 下载器**：slow_func 经 `call_downloader_api` 真实调用（lane executor + 两级 semaphore + wait_for 超时路径，不跳过网络阶段），`--downloader-delay-ms` 控制。
+- **故障注入**（--fault）：busy（持锁 300ms×4，断言真实 BUSY 计数>0、重试有界、最终一致）、cancel（中途取消，已提交整批保留无半批）、slow-downloader（2s 调用 1s 超时返回，事件循环零阻塞）。
+- **SLO 发布门**（--assert-slo）：大档只读 P95<1s、写 P95<2s、超时率<0.1%、最终 BUSY 失败=0，不满足 exit 1。**本机大档实测全部 PASS：只读 P95=31.76ms、写 P95=33.32ms、超时率 0%、BUSY 失败 0，无需校准系数**。
+- **输出**：stdout 表格 + `benchmark_results/sync_contention_<ts>.json`（环境信息/每场景指标/故障注入结果/WAL 增量，无敏感数据）。
+
+### 响应性集成测试（新 backend/tests/integration/test_sync_api_responsiveness.py）
+
+4 用例：info 风格分批写期间只读探针 P95<1.5s（实测 30.6ms）、tracker 风格批量更新期间写探针 P95<2.5s（实测 35.5ms）、2s 慢下载器调用期间事件循环心跳 P99<100ms（实测 16ms）、连续 BUSY 有界重试无雪崩（3 笔总耗时 2.63s）。断言窗口按计划允许放宽防 CI 抖动，实测值记录在报告。
+
+### 故障注入集成回归（扩展 test_sqlite_sync_contention.py）
+
+新增 4 用例：两次连续 BUSY 后成功、300ms 持锁交互写排队成功、慢下载器超时心跳不阻塞（max lag<1s）、取消中途整批保留。集成测试共 13 passed + 1 skipped（22k 性能基准）。
+
+### 运维手册（新 backend/docs/operations/sync-contention-runbook.md）
+
+基准命令、三档数据说明、故障注入说明、验收矩阵表、JSON 对比方法、CI/发布门接入建议（大档 --assert-slo）、环境校准系数方法（"生产门禁仍按绝对阈值"原则）、已知噪音记录（`_attach_done_stats` CancelledError 缺口为 W4-1 收口候选）。
+
+### 审查中修复的问题（主代理）
+
+- **worker_guard bash 定位**：`_find_git_bash` 兜底路径只含 C:/Program Files/Git，本机 Git Bash 在 E:/Git（且当前环境 PATH 无 git 导致推导失败）——补充 E:/Git、D:/Git 常见安装位置后 66 passed。
+- **新集成测试的全局单例污染**：两个慢下载器用例调真实全局 runtime 单例，全量顺序下被 api 的 TestClient lifespan shutdown（与 W2 时 test_reannounce_service 同型问题）——两文件加 autouse fixture patch `call_downloader_api` 为"asyncio 默认 executor + wait_for 超时"（保持线程边界与超时语义，不依赖可被关闭的全局单例）。
+
+### 验证
+
+- **全量回归：2967 passed, 7 skipped, 0 failed**（248.1s）。
+- 集成测试 14 项（13 passed + 1 perf skip）；基准脚本 small 档 SLO 4/4 PASS、busy 故障注入 3/3 PASS。
+- black/flake8 通过；基准脚本与 runbook 无敏感数据。
+- 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-09(续) - W3-2 实施：持久化同步检查点（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施 W3-2（P1-03：全量同步状态仅在内存，重启后重复工作）。1 个子代理执行 + 主代理逐项审查（源码抽查 + 亲跑验证 + 全量回归）后通过。
+
+### 模型与迁移
+
+- 新建 `app/models/sync_checkpoint.py`（150 行）：`sync_checkpoints` 表 13 列按计划 Schema（downloader_id/sync_type/cursor_value/cycle_started_at/last_full_sync_at/last_success_at/last_attempt_at/outcome/detail_json/version/created_at/updated_at）；`(downloader_id, sync_type)` 唯一约束 + 双索引；`version` 乐观锁；**detail_json 白名单清洗**（sanitize_detail_json 只允许 scanned/changed/committed/batches/retries/duration_ms/version_conflicts 数值，敏感 key 不可能落库）；outcome 六态常量与 W3-4 对齐。
+- 新建 Alembic 迁移 `3a4b5c6d7e8f_add_sync_checkpoints.py`（down=d8e9f0a1b2c3，upgrade/downgrade 完整往返）；`alembic/env.py` 注册模型；`test_db_migration.py` 期望值更新（EXPECTED_HEAD/表数 29→30）。
+
+### SyncCoordinator 集成（sync_coordinator.py）
+
+- `SyncCheckpointStore`（独立短事务，不抢 db_write_scope 写锁）：get_or_create（并发创建由唯一约束兜底）、乐观锁推进（UPDATE WHERE version=?，冲突时重读 + 单调合并：last_success_at 取 max、cursor 不覆盖、终态不降级，重试一次仍失败记 version_conflicts）。
+- **cursor 不超前于数据**：推进严格滞后于批次 durable commit（重启后重做最后一批幂等安全）；批级推进 API `push_sync_progress` 预留给 W3-1。
+- run_sync 集成：sync phase 初始化 checkpoint（cycle_started_at/last_attempt_at）→ 每下载器成功后推进（partial + last_success_at + 聚合统计）→ 终态落 outcome（success/partial/failed/skipped/cancelled，last_success_at 保留）；`_is_run_cancelled` 识别显式取消 → cancelled；dry_run 零读写；SyncResult.checkpoint 填充实际值（不再恒 None）；观测日志 checkpoint_loaded/advanced/finalized。
+
+### 测试
+
+- `tests/core/test_sync_checkpoint_migration.py`（2 项）：空库 upgrade→列/约束/索引核对→downgrade→再 upgrade；旧 head 建库+历史 task_logs 数据→升级→数据完整。
+- `tests/services/test_sync_checkpoint.py`（13 项）：CRUD+唯一约束、乐观锁不倒退（cursor 保留/终态不降级/failed 保留 last_success_at）、首次运行创建、**重启续跑**（partial+cursor+二次运行经 get_run_checkpoint 收到续跑上下文）、取消 cancelled、dry_run 零副作用、并发推进不丢游标、detail_json 白名单。
+- `tests/services/conftest.py` 新增 autouse `_isolate_checkpoint_store`（每测试独立内存库，防 run_sync 检查点写污染进程级测试库）。
+
+### 审查中修复与确认（主代理）
+
+- **test_db_rollback_scenarios.py 的 REV_HEAD 常量漏更新**（子代理只更新了 test_db_migration.py）：`d8e9f0a1b2c3` → `3a4b5c6d7e8f`，修复后 8 passed。
+- **工作区存在并行会话的外部改动**（orphan_files.py 等升级为 submit_cleanup_job API + 前端多处）：orphan cleanup 2 个测试失败（500）经 git stash 二分确认为**外部未完成改动**（端点已换 submit_cleanup_job、测试仍 patch 旧 create_cleanup_job），与 W3-2 无关，未代修（待外部会话同步测试）。
+
+### 验证
+
+- **全量回归：2980 passed, 2 failed（仅 orphan cleanup 2 项，外部并行改动所致，非 W3-2 引入）**。
+- W3-2 相关全部通过：checkpoint 迁移 2 + checkpoint 服务 13 + coordinator 20 + rollback 8 + migration 11。
+- black/mypy/flake8 通过（模型/迁移/coordinator）。
+- 未执行 Git stage/commit/push/deploy。
+
+
+## 2026-08-09 - 孤儿删除硬链接副本检测与诊断（TDD）
+
+### 背景
+
+用户反馈孤儿删除不总能释放真实存储空间。代码核查确认：扫描阶段识别硬链接（共享 inode 不判孤儿），但删除阶段不检查 nlink——若被删文件存在其它硬链接（种子/媒体库），os.remove 后空间不释放，且用户无感知。
+
+### 实现（TDD：7 测试先 RED 后 GREEN）
+
+- 新增 backend/tests/services/test_orphan_hardlink_detection.py（7 测试）：find_hardlink_copies 单测（找副本/排除自身/限定扫描根）+ 立即删除有副本返回诊断 + 无副本无诊断 + 到期删除遇副本跳过 + 无副本正常删除。
+- orphan_quarantine.py 新增 find_hardlink_copies：os.walk 比对 (st_dev, st_ino)，限定候选 downloader 的 scan_roots，排除被删路径，跨平台不依赖 find 命令。
+- orphan_file_service.py：HardlinkCopyError 异常 + _detect_hardlink_copies（删除前抓 nlink，>1 才按需构建 manifest 推导 scan_roots 与 is_seed）；_purge_single_candidate 增 mode 参数：purge_now 照删+返回 hardlink_note；purge_expired 抛 HardlinkCopyError 跳过；purge_quarantine_now 收集 hardlink_notes；purge_expired_quarantine 捕获跳过、候选保持 quarantined、返回 skipped_hardlink。
+- 模型/迁移：OrphanPurgeJob 加 hardlink_notes_json 列 + property + to_dict；Alembic f9a1b2c3d4e5（ADD COLUMN 可回滚）；finish_job/execute_job 透传；notify_job_result extra_data + 通知正文硬链接提示段。
+- 前端：PurgeResult 加 hardlink_notes? + HardlinkNote interface。
+
+### 设计决策（用户确认）
+
+1. 副本枚举仅限候选所属 downloader 的 scan_roots；2. is_seed 用 manifest.expected_paths 判定；3. 到期删除遇副本跳过不删（安全优先），立即删除照删+上报副本位置与种子属性；4. inode 不可靠时立即删除照删（仅缺诊断），到期删除保守跳过。
+
+### 验证
+
+- 新增 7 passed；孤儿+迁移+API 全量 322 passed（+1 skipped 预存）。
+- black/flake8 通过；mypy 各文件回到基线（orphan_file_service 149、orphan_purge_job 3 均为预存 Column 误报），新代码零新增错误。
+- 迁移链升级/降级往返通过；EXPECTED_HEAD 同步更新为 f9a1b2c3d4e5。
+- 前端 vue-tsc 未在当前环境运行（PATH 缺失），类型为纯增量可选字段。
+- 未执行 Git stage/commit/push/deploy。
+
+
+## 2026-08-09(续) - 清理阶段硬链接副本预警（TDD，选 B 方案）
+
+### 背景
+
+硬链接检测原仅覆盖删除阶段（隔离→物理删除）。用户反馈：清理阶段（candidate→隔离）若文件有硬链接副本，应尽早告知，避免反馈延迟（用户以为清理的是孤儿，实际可能与媒体库/种子共享存储）。设计选 B：清理是可恢复操作（7天保留期+可恢复），故清理照常隔离、不阻断，但在结果中返回 hardlink_notes。
+
+### 实现（TDD：3 测试先 RED 后 GREEN）
+
+- 新增 backend/tests/services/test_orphan_cleanup_hardlink_warning.py（3 测试）：手动清理有副本（照常隔离+预警+is_seed判定）+ 无副本（无预警）+ 自动清理有副本（照常隔离+预警）。
+- orphan_file_service.py：
+  - _detect_hardlink_copies 文档扩展 cleanup_warn 模式（与 purge_now 同走返回路径，永不抛异常，函数体无需改动）；
+  - cleanup_orphans 隔离前调用 _detect_hardlink_copies(mode="cleanup_warn")，收集 hardlink_notes，return 加该字段；
+  - auto_cleanup_expired 同样在隔离前检测+收集+返回 hardlink_notes。
+- 复用既有通知链路：cleanup 任务结果 hardlink_notes 经 execute_job 透传 finish_job，通知正文已有"### 硬链接提示"段（上一次实现），无需额外改动。
+
+### 验证
+
+- 新增 3 passed；孤儿全量 237 passed（+1 skipped 预存）。
+- black/flake8 通过；mypy orphan_file_service 仍 149（基线，新代码零新增错误）。
+- 未执行 Git commit。

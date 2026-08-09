@@ -464,6 +464,14 @@ export interface QuarantineFailedItem {
   reason: string
 }
 
+/** 硬链接副本诊断：成功删除但存在其它硬链接，空间未完全释放。 */
+export interface HardlinkNote {
+  canonical_path: string
+  deleted_path: string | null
+  remaining_count: number
+  copies: Array<{ path: string; is_seed: boolean }>
+}
+
 export interface RestoreResult {
   rejected?: boolean
   restored_count: number
@@ -482,6 +490,8 @@ export interface PurgeResult {
   purged_count: number
   failed_count: number
   failed_list: QuarantineFailedItem[]
+  /** 成功删除但存在其它硬链接副本的诊断（空间未完全释放） */
+  hardlink_notes?: HardlinkNote[]
   error_message: string | null
   created_at: string | null
   started_at: string | null
