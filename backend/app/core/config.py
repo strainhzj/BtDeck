@@ -167,6 +167,9 @@ class Settings(BaseSettings):
     ORPHAN_CANDIDATE_PURGE_DAYS: int = 30
     # 隔离区保留期（天）：移入隔离区后保留该天数再允许物理删除
     ORPHAN_QUARANTINE_RETENTION_DAYS: int = 7
+    # 到期删除遇硬链接副本跳过时，purge_after 延后的天数（打破每日重试循环；
+    # 副本被清除后 purge_after 到期仍会正常删除，无延后次数上限）
+    ORPHAN_HARDLINK_PURGE_DELAY_DAYS: int = 7
     # 隔离区目录名（在每个扫描根下创建，同文件系统保证 os.rename 原子）
     ORPHAN_QUARANTINE_DIR_NAME: str = ".btdeck_quarantine"
     # Level3 回收站归档标记：孤儿扫描与清理流水线无条件跳过含此标记的路径，
