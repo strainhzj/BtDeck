@@ -41,6 +41,11 @@ class OrphanPurgeJob(Base):
     failed_count = Column(Integer, nullable=False, default=0, comment="失败数量")
     total_size = Column(Integer, nullable=False, default=0, server_default="0", comment="成功处理的文件总大小")
     failed_list_json = Column(Text, nullable=True, comment="失败项 JSON 数组")
+    hardlink_notes_json = Column(
+        Text,
+        nullable=True,
+        comment="成功删除但存在其它硬链接副本的诊断 JSON 数组（路径+is_seed）",
+    )
     error_message = Column(Text, nullable=True, comment="任务级异常")
     notification_sent_at = Column(DateTime, nullable=True, comment="结果通知成功写入时间")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True, comment="创建时间")
@@ -92,6 +97,17 @@ class OrphanPurgeJob(Base):
             return []
         return value if isinstance(value, list) else []
 
+    @property
+    def hardlink_notes(self) -> List[Dict[str, Any]]:
+        """解析硬链接副本诊断项（成功删除但存在其它副本）。"""
+        if not self.hardlink_notes_json:
+            return []
+        try:
+            value = json.loads(cast(str, self.hardlink_notes_json))
+        except (json.JSONDecodeError, TypeError):
+            return []
+        return value if isinstance(value, list) else []
+
     def to_dict(self) -> Dict[str, Any]:
         """转换为 API 任务状态。"""
         return {
@@ -105,6 +121,7 @@ class OrphanPurgeJob(Base):
             "failed_count": self.failed_count,
             "total_size": self.total_size or 0,
             "failed_list": self.failed_list,
+            "hardlink_notes": self.hardlink_notes,
             "error_message": self.error_message,
             "created_at": serialize_utc_datetime(self.created_at),
             "started_at": serialize_utc_datetime(self.started_at),

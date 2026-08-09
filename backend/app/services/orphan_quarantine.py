@@ -19,7 +19,7 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 from app.core.config import settings
 
@@ -270,6 +270,53 @@ def is_path_in_quarantine(path: str, scan_roots) -> bool:
     if dir_name in path_parts:
         return True
     return False
+
+
+def find_hardlink_copies(
+    target_inode: Tuple[int, int],
+    scan_roots: List[str],
+    exclude_path: Optional[str],
+) -> List[str]:
+    """在给定扫描根下枚举与目标 inode 相同的其它硬链接路径。
+
+    用于隔离删除的诊断：删除隔离副本不会释放空间时，定位剩余副本。仅扫描候选
+    所属 downloader 的 scan_roots（不扫全盘），排除被删路径本身。
+
+    Args:
+        target_inode: (st_dev, st_ino)，被删文件的 inode 身份
+        scan_roots: 候选所属 downloader 的扫描根列表（manifest.scan_roots 的 root 部分）
+        exclude_path: 被删文件绝对路径（隔离路径），需从结果排除
+
+    Returns:
+        其它硬链接路径绝对路径列表（顺序不保证）；扫描根外的链接不返回。
+
+    Raises:
+        OSError: inode 不可靠或扫描失败（网络盘/CIFS 等），由调用方兜底处理。
+    """
+    if not target_inode or not scan_roots:
+        return []
+
+    target_dev, target_ino = target_inode
+    exclude_abs = os.path.abspath(exclude_path) if exclude_path else None
+    found: List[str] = []
+
+    for root in scan_roots:
+        if not root or not os.path.isabs(root):
+            continue
+        for dir_path, _dirnames, filenames in os.walk(root):
+            for name in filenames:
+                full = os.path.join(dir_path, name)
+                abs_full = os.path.abspath(full)
+                if exclude_abs is not None and os.path.normcase(abs_full) == os.path.normcase(exclude_abs):
+                    continue
+                try:
+                    st = os.stat(full)
+                except OSError:
+                    # 单文件 stat 失败不中断整体枚举
+                    continue
+                if st.st_dev == target_dev and st.st_ino == target_ino:
+                    found.append(abs_full)
+    return found
 
 
 def compute_purge_after(quarantined_at, retention_days: Optional[int] = None):

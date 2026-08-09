@@ -41,6 +41,7 @@ from app.services.orphan_purge_job_service import (
 from app.services.orphan_quarantine import (
     build_quarantine_path,
     compute_purge_after,
+    find_hardlink_copies,
     prune_empty_quarantine_parents,
     prune_recorded_quarantine_root,
     quarantine_file,
@@ -56,6 +57,31 @@ logger = logging.getLogger(__name__)
 SelectionValue = TypeVar("SelectionValue")
 ORPHAN_QUERY_CHUNK_SIZE = 500
 ORPHAN_PREVIEW_ITEM_LIMIT = 200
+
+
+class HardlinkCopyError(Exception):
+    """到期删除遇硬链接副本时抛出，由上层捕获以跳过删除（安全优先）。
+
+    attributes:
+        canonical_path: 候选规范化路径
+        quarantine_path: 隔离区物理路径
+        copies: 已检测到的副本列表（path + is_seed）；枚举失败时为空
+        reason: 跳过原因（供 failed_list 展示）
+    """
+
+    def __init__(
+        self,
+        canonical_path: str,
+        quarantine_path: Optional[str],
+        copies: List[Dict[str, Any]],
+        *,
+        reason: str,
+    ) -> None:
+        super().__init__(reason)
+        self.canonical_path = canonical_path
+        self.quarantine_path = quarantine_path
+        self.copies = copies
+        self.reason = reason
 
 
 def _chunk_values(values: Sequence[SelectionValue]) -> Iterator[Sequence[SelectionValue]]:
@@ -1246,6 +1272,7 @@ class OrphanFileService:
         failed_list: List[Dict[str, Any]] = []
         deleted_size = 0
         cleaned_names: List[str] = []  # 成功清理的文件/目录 basename（供审计日志展示）
+        hardlink_notes: List[Dict[str, Any]] = []
 
         # 实时 manifest 复核：store 提供时必须成功构建（fail-closed）
         # manifest 构建失败 → 无法确认文件是否仍被种子引用 → 拒绝所有清理
@@ -1378,6 +1405,11 @@ class OrphanFileService:
                     continue
                 owning_root = self._owning_root(candidate, manifest)
                 quarantine_root = resolve_quarantine_root(owning_root, scan_id=scan_id)
+                # 清理预警（不阻断）：原文件若存在硬链接副本，隔离前记录诊断，
+                # 让用户在后续彻底删除前知情。隔离本身可恢复，故不拒绝。
+                cleanup_note = await self._detect_hardlink_copies(
+                    candidate, cast(str, actual_path), manifest, "cleanup_warn"
+                )
                 await self._quarantine_candidate(
                     candidate,
                     actual_path,
@@ -1390,6 +1422,8 @@ class OrphanFileService:
                 deleted_size += item.file_size
                 success_count += 1
                 cleaned_names.append(os.path.basename(actual_path))
+                if cleanup_note is not None:
+                    hardlink_notes.append(cleanup_note)
 
             except Exception as e:
                 logger.error(f"[孤儿清理] 隔离文件失败 {item.file_path}: {e}")
@@ -1426,6 +1460,7 @@ class OrphanFileService:
             "failed_count": len(failed_list),
             "failed_list": failed_list,
             "total_size": deleted_size,
+            "hardlink_notes": hardlink_notes,
         }
 
     # ==================== 忽视管理 ====================
@@ -1691,6 +1726,7 @@ class OrphanFileService:
         quarantined_count = 0
         failed_count = 0
         total_size = 0
+        hardlink_notes: List[Dict[str, Any]] = []
         _loop_started = time.monotonic()
 
         for candidate in purgeable:
@@ -1726,6 +1762,13 @@ class OrphanFileService:
                     logger.warning(f"[孤儿自动清理] 复核失败，跳过: {reason}")
                     continue
 
+                # 清理预警（不阻断）：原文件若存在硬链接副本，隔离前记录诊断。
+                auto_note = await self._detect_hardlink_copies(
+                    candidate,
+                    cast(str, candidate.canonical_path),
+                    manifest,
+                    "cleanup_warn",
+                )
                 # 移入隔离区
                 await self._quarantine_candidate(
                     candidate,
@@ -1738,6 +1781,8 @@ class OrphanFileService:
 
                 quarantined_count += 1
                 total_size += candidate.file_size
+                if auto_note is not None:
+                    hardlink_notes.append(auto_note)
 
             except Exception as e:
                 logger.error(f"[孤儿自动清理] 隔离失败 {candidate.canonical_path}: {e}")
@@ -1779,6 +1824,7 @@ class OrphanFileService:
             "success_count": quarantined_count,  # 向后兼容字段
             "failed_count": failed_count,
             "total_size": total_size,
+            "hardlink_notes": hardlink_notes,
         }
 
     # ==================== 隔离区到期物理删除 ====================
@@ -1830,6 +1876,7 @@ class OrphanFileService:
         candidates = result.scalars().all()
         purged_count = 0
         failed_count = 0
+        skipped_hardlink: List[Dict[str, Any]] = []
         # 隔离区物理删除不依赖下载器 manifest；保留统计字段以兼容已有日志/调用方。
         _in_loop_manifest_builds = 0
         _in_loop_manifest_total_time = 0.0
@@ -1871,6 +1918,31 @@ class OrphanFileService:
                 )
                 if not ok:
                     logger.warning(f"[隔离清理] 文件身份变化，跳过: {reason}")
+                    failed_count += 1
+                    continue
+
+                # 硬链接副本保护：到期删除遇副本必须跳过（安全优先），避免删了
+                # 隔离副本却因其它链接（如种子/媒体库）未释放空间。删除前抓取
+                # inode（删除后失效）；nlink>1 时跳过。副本路径枚举需要 manifest
+                # 推导 scan_roots，但到期删除不主动构建下载器 manifest（隔离后
+                # 下载器可能已降级）；manifest 为 None 时仅按 nlink 跳过、无法
+                # 列出具体副本路径（reason 标注）。
+                try:
+                    await self._detect_hardlink_copies(candidate, cast(str, qpath), None, mode="purge_expired")
+                except HardlinkCopyError as he:
+                    logger.warning("[隔离清理] %s: %s", qpath, he.reason)
+                    failed_count += 1
+                    skipped_hardlink.append(
+                        {
+                            "canonical_path": he.canonical_path,
+                            "quarantine_path": he.quarantine_path,
+                            "reason": he.reason,
+                            "copies": he.copies,
+                        }
+                    )
+                    continue
+                except Exception as he:
+                    logger.warning("[隔离清理] 硬链接检测异常，保守跳过 %s: %s", qpath, he)
                     failed_count += 1
                     continue
 
@@ -1917,15 +1989,20 @@ class OrphanFileService:
                 failed_count += 1
 
         logger.info(
-            "[隔离清理] 完成: 物理删除=%d 失败=%d 候选=%d 循环内manifest构建=%d次(耗时=%.2fs) 循环总耗时=%.2fs",
+            "[隔离清理] 完成: 物理删除=%d 失败=%d 跳过硬链接=%d 候选=%d 循环内manifest构建=%d次(耗时=%.2fs) 循环总耗时=%.2fs",
             purged_count,
             failed_count,
+            len(skipped_hardlink),
             len(candidates),
             _in_loop_manifest_builds,
             _in_loop_manifest_total_time,
             time.monotonic() - _loop_started,
         )
-        return {"purged_count": purged_count, "failed_count": failed_count}
+        return {
+            "purged_count": purged_count,
+            "failed_count": failed_count,
+            "skipped_hardlink": skipped_hardlink,
+        }
 
     # ==================== 隔离区管理（恢复 / 立即彻底删除 / 列表） ====================
 
@@ -2279,6 +2356,7 @@ class OrphanFileService:
 
         purged_count = 0
         failed_list: List[Dict[str, Any]] = []
+        hardlink_notes: List[Dict[str, Any]] = []
 
         # manifest 按 downloader 预构建缓存：禁止逐文件重建（N 文件 = 1 次/下载器，
         # 修复前每文件 2 次全量下载器 API 拉取，是"分钟级/文件"的性能放大器）。
@@ -2290,13 +2368,16 @@ class OrphanFileService:
                 downloader_id = cast(str, candidate.downloader_id)
                 if downloader_id not in manifest_cache:
                     manifest_cache[downloader_id] = await self._build_realtime_manifest(store, {downloader_id})
-                await self._purge_single_candidate(
+                note = await self._purge_single_candidate(
                     candidate,
                     store,
                     _lease_handle,
                     manifest=manifest_cache[downloader_id],
+                    mode="purge_now",
                 )
                 purged_count += 1
+                if note is not None:
+                    hardlink_notes.append(note)
             except Exception as e:
                 logger.error("[隔离删除] 删除失败 %s: %s", candidate.quarantine_path, e)
                 failed_list.append(
@@ -2358,12 +2439,18 @@ class OrphanFileService:
                 logger.warning("[隔离删除] 审计日志记录失败: %s", e)
 
         logger.info(
-            "[隔离删除] 完成 purged=%d failed=%d 耗时=%.2fs",
+            "[隔离删除] 完成 purged=%d failed=%d hardlink_notes=%d 耗时=%.2fs",
             purged_count,
             len(failed_list),
+            len(hardlink_notes),
             time.monotonic() - _loop_started,
         )
-        return {"purged_count": purged_count, "failed_count": len(failed_list), "failed_list": failed_list}
+        return {
+            "purged_count": purged_count,
+            "failed_count": len(failed_list),
+            "failed_list": failed_list,
+            "hardlink_notes": hardlink_notes,
+        }
 
     async def _purge_single_candidate(
         self,
@@ -2371,7 +2458,8 @@ class OrphanFileService:
         store: Any,
         _lease_handle: Any,
         manifest: Optional[ManifestSnapshot] = None,
-    ) -> None:
+        mode: str = "purge_now",
+    ) -> Optional[Dict[str, Any]]:
         """物理删除单个隔离候选（保留 purge_expired_quarantine 的全部安全检查）。
 
         抽取自 purge_expired_quarantine 循环体，供立即删除与到期删除共享。
@@ -2379,13 +2467,21 @@ class OrphanFileService:
         Args:
             manifest: 调用方按 downloader 预构建的实时 manifest（可复用）；为 None
                 时降级为逐文件构建（仅作兜底，正常路径由 purge_quarantine_now 提供）。
+            mode: ``purge_now``（立即彻底删除）或 ``purge_expired``（到期自动删除）。
+                两者对硬链接副本的处理不同：
+                - purge_now：照常删除，返回副本诊断（路径 + is_seed）供通知展示；
+                - purge_expired：存在副本时抛 ``HardlinkCopyError`` 跳过删除（安全优先）。
+
+        Returns:
+            立即删除模式下，若被删文件存在其它硬链接副本，返回 hardlink_note 字典；
+            否则返回 None。
         """
         qpath = candidate.quarantine_path
         if not qpath or not os.path.exists(qpath):
             # 文件已不在隔离区（可能已被手动清理），直接标记
             await self._mark_purged(candidate.canonical_path)
             prune_empty_quarantine_parents(qpath, candidate.quarantine_root)
-            return
+            return None
 
         # 文件进入隔离区后，物理删除只校验持久化的隔离路径和文件身份。
         # 不再用 manifest 为隔离路径授权；manifest 仅作为可选的原路径引用
@@ -2420,6 +2516,10 @@ class OrphanFileService:
         )
         if not ok:
             raise OSError(f"身份复核失败: {reason}")
+
+        # 硬链接副本检测：删除前抓取 inode/nlink（删除后 inode 失效无法反查）。
+        # 仅在 nlink>1 时触发副本枚举，限定在候选所属 downloader 的 scan_roots。
+        hardlink_note = await self._detect_hardlink_copies(candidate, cast(str, qpath), manifest, mode, store)
 
         # tombstone 预写 + 物理删除（与 purge_expired_quarantine 一致）
         tombstone_path = build_quarantine_path(qpath, quarantine_root)
@@ -2474,6 +2574,107 @@ class OrphanFileService:
             if not os.path.exists(tombstone_path):
                 prune_empty_quarantine_parents(tombstone_path, quarantine_root)
             raise
+        return hardlink_note
+
+    async def _detect_hardlink_copies(
+        self,
+        candidate: OrphanCurrentCandidate,
+        qpath: str,
+        manifest: Optional[ManifestSnapshot],
+        mode: str,
+        store: Any = None,
+    ) -> Optional[Dict[str, Any]]:
+        """删除/清理前检测硬链接副本。
+
+        - nlink=1：无副本，返回 None（不触碰 manifest）。
+        - nlink>1：需要 manifest 推导 scan_roots 与 is_seed。manifest 为 None 时
+          按需构建一次（仅此场景，常规 nlink=1 操作不依赖 manifest）。
+          - purge_now（立即删除）/ cleanup_warn（清理预警）：返回 hardlink_note
+            字典，操作照常进行（不阻断，因为两者都是可恢复/可后续决策的）。
+          - purge_expired（到期删除）：抛 HardlinkCopyError 由上层跳过删除
+            （安全优先，到期自动删除不可恢复）。
+        - inode 不可靠（网络盘等 stat 失败）：
+          - purge_now / cleanup_warn：照常操作，仅缺诊断（记 warning）。
+          - purge_expired：保守跳过（抛 HardlinkCopyError，reason 标注不可靠）。
+        """
+        # ORM 列类型标注缺失，cast 仅辅助静态检查（运行期为真实值）。
+        canonical_path = cast(str, candidate.canonical_path)
+        try:
+            qstat = os.stat(qpath)
+        except OSError as exc:
+            if mode == "purge_expired":
+                raise HardlinkCopyError(
+                    canonical_path,
+                    qpath,
+                    [],
+                    reason="隔离文件 inode 不可靠，跳过到期删除",
+                ) from exc
+            logger.warning("[隔离删除] inode 不可靠，跳过硬链接诊断: %s (%s)", qpath, exc)
+            return None
+
+        if qstat.st_nlink <= 1:
+            return None
+
+        # nlink>1：按需补建 manifest（仅此场景），用于推导 scan_roots 与 is_seed。
+        if manifest is None and store is not None:
+            manifest = await self._build_realtime_manifest(store, {candidate.downloader_id})
+
+        scan_roots = self._candidate_scan_roots(candidate, manifest)
+        if not scan_roots:
+            # manifest 不可用或候选 downloader 不在 scan_roots：无法枚举具体副本路径。
+            # 立即删除照常（仅缺诊断）；到期删除仍按 nlink>1 跳过。
+            if mode == "purge_expired":
+                raise HardlinkCopyError(
+                    canonical_path,
+                    qpath,
+                    [],
+                    reason="存在其它硬链接副本（manifest 不可用，无法枚举具体路径），跳过到期删除",
+                )
+            logger.info("[隔离删除] manifest 不可用，仅按 nlink 检测副本: %s", qpath)
+            return None
+
+        try:
+            copy_paths = find_hardlink_copies(
+                target_inode=(qstat.st_dev, qstat.st_ino),
+                scan_roots=scan_roots,
+                exclude_path=qpath,
+            )
+        except OSError as exc:
+            if mode == "purge_expired":
+                raise HardlinkCopyError(
+                    canonical_path,
+                    qpath,
+                    [],
+                    reason="硬链接副本枚举失败，跳过到期删除",
+                ) from exc
+            logger.warning("[隔离删除] 副本枚举失败，仅缺诊断: %s (%s)", qpath, exc)
+            return None
+
+        expected = manifest.expected_paths if manifest is not None else set()
+        copies = [{"path": p, "is_seed": normalize_path(p) in expected} for p in copy_paths]
+        note = {
+            "canonical_path": canonical_path,
+            "deleted_path": qpath,
+            "remaining_count": len(copies),
+            "copies": copies,
+        }
+        logger.info("[隔离删除] 检测到硬链接副本 path=%s copies=%d", qpath, len(copies))
+        if mode == "purge_expired":
+            raise HardlinkCopyError(
+                canonical_path,
+                qpath,
+                copies,
+                reason=f"存在 {len(copies)} 个其它硬链接副本，跳过到期删除",
+            )
+        return note
+
+    @staticmethod
+    def _candidate_scan_roots(candidate: OrphanCurrentCandidate, manifest: Optional[ManifestSnapshot]) -> List[str]:
+        """取候选所属 downloader 在 manifest.scan_roots 中的扫描根列表。"""
+        if manifest is None:
+            return []
+        downloader_id = candidate.downloader_id
+        return [root for root, owners in manifest.scan_roots if downloader_id in owners]
 
     async def _mark_purged(self, canonical_path: str) -> None:
         """标记候选为已物理删除。"""
