@@ -754,35 +754,63 @@ class UnifiedPathMappingService:
         self.path_mapping_service: Optional[PathMappingService] = None
         self.path_mapping_converter: Optional[PathMappingConverter] = None
         self.config_type: Optional[str] = None  # 'json', 'rules', 或 'both'
+        # JSON 是否有至少一条有效映射（internal+external 均非空）。
+        # False 表示 JSON 全部无效（如自动发现 external 未回填），转换时应回退到 rules。
+        self._json_effective: bool = False
 
         # 验证必需配置
         if require_json_config and not path_mapping:
             raise ValueError("等级3删除功能必须配置 path_mapping（JSON格式）。" "请先在下载器设置中配置路径映射。")
 
-        # 优先使用 path_mapping（JSON格式）
+        # 优先使用 path_mapping（JSON格式）。
+        # 注意：JSON 非空但其全部映射 external 为空（如系统自动发现后未回填）时，
+        # 该 JSON 实际无法转换任何路径，必须回退到 path_mapping_rules，否则会让
+        # 下载器的所有路径解析失败（典型后果：孤儿扫描把整下载器文件误判为孤儿）。
+        json_effective = False
         if path_mapping:
             try:
                 self.path_mapping_service = PathMappingService(path_mapping)
                 self.config_type = "json"
-                logger.info("使用 path_mapping（JSON格式）进行路径映射")
+                # 判定 JSON 是否有至少一条有效映射（internal 与 external 均非空）。
+                json_effective = any(
+                    isinstance(m, dict) and m.get("internal") and m.get("external")
+                    for m in (self.path_mapping_service.mappings or [])
+                )
+                if json_effective:
+                    logger.info("使用 path_mapping（JSON格式）进行路径映射")
+                else:
+                    logger.warning(
+                        "path_mapping（JSON格式）的所有映射 external 为空"
+                        "（可能为自动发现未回填），将尝试回退到 path_mapping_rules"
+                    )
             except Exception as e:
                 logger.error(f"加载 path_mapping 失败: {str(e)}")
                 if require_json_config:
                     raise ValueError(f"path_mapping 配置无效: {str(e)}") from e
+        self._json_effective = json_effective
 
-        # 回退到 path_mapping_rules（多行文本格式）
-        elif path_mapping_rules:
+        # 加载 path_mapping_rules（多行文本格式）：
+        # - JSON 无效（全空 external 或加载失败）时作为主映射回退；
+        # - JSON 有效时也加载 converter，使 get_rules() 能返回 rules 供下游
+        #   （如孤儿扫描的 resolve_external_path）使用，但不影响 internal_to_external
+        #   的优先级（该方法始终先尝试 JSON service）。
+        if path_mapping_rules:
             try:
-                self.path_mapping_converter = PathMappingConverter(path_mapping_rules)
-                if self.path_mapping_converter.is_enabled():
-                    self.config_type = "rules"
-                    logger.warning(
-                        "⚠️ 使用 path_mapping_rules（多行文本格式）进行路径映射。"
-                        "建议配置 path_mapping（JSON格式）以获得更好的功能支持。"
-                    )
+                converter = PathMappingConverter(path_mapping_rules)
+                if converter.is_enabled():
+                    self.path_mapping_converter = converter
+                    if not json_effective:
+                        # JSON 无效：以 rules 为主
+                        self.config_type = "rules"
+                        logger.warning(
+                            "⚠️ 使用 path_mapping_rules（多行文本格式）进行路径映射。"
+                            "建议配置 path_mapping（JSON格式）以获得更好的功能支持。"
+                        )
+                    else:
+                        # JSON 有效：标记 both，converter 仅供 get_rules() 暴露
+                        self.config_type = "both"
                 else:
                     logger.warning("path_mapping_rules 规则为空或无效")
-                    self.path_mapping_converter = None
             except Exception as e:
                 logger.error(f"加载 path_mapping_rules 失败: {str(e)}")
 
@@ -805,15 +833,21 @@ class UnifiedPathMappingService:
         if not internal_path:
             return internal_path
 
-        # 优先使用 PathMappingService
-        if self.path_mapping_service:
+        # 优先使用 PathMappingService（仅当 JSON 有效时）。
+        # JSON 全空 external（_json_effective=False）时 service 虽存在但无法转换任何
+        # 路径，必须跳过它直接用 rules converter，否则会原样返回下载器内部路径。
+        if self.path_mapping_service and self._json_effective:
             return self.path_mapping_service.internal_to_external(internal_path)
 
-        # 回退到 PathMappingConverter
+        # 回退到 PathMappingConverter（JSON 无效或未配置 JSON 时）
         if self.path_mapping_converter:
             converted = self.path_mapping_converter.convert(internal_path)
             if converted:
                 return converted
+
+        # JSON 存在但无效（保留 service 以便前端 get_mappings 回显），返回原路径
+        if self.path_mapping_service:
+            return self.path_mapping_service.internal_to_external(internal_path)
 
         # 未配置映射，返回原路径
         logger.debug(f"未配置路径映射，返回原路径: {internal_path}")
