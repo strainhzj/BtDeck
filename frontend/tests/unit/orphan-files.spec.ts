@@ -310,6 +310,7 @@ function quarantineItem(): QuarantineItem {
     mtime: '2026-07-30T09:00:00',
     quarantined_at: '2026-07-30T10:00:00',
     purge_after: '2026-08-06T10:00:00',
+    purge_delay_count: 0,
     file_size: 2048,
     confidence: 'high'
   }

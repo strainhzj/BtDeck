@@ -299,6 +299,8 @@ class TestPurgeExpiredDelayRetry:
             expected_low <= candidate.purge_after <= expected_high
         ), f"purge_after 应按 {delay_days} 天延后，实际: {candidate.purge_after}"
         assert candidate.status == "quarantined"
+        # 延后计数递增：1 次跳过 → purge_delay_count=1
+        assert candidate.purge_delay_count == 1, f"延后计数应递增为 1，实际: {candidate.purge_delay_count}"
 
     async def test_purge_after_delay_custom_days(self, async_orphan_db, tmp_path, monkeypatch):
         """自定义 ORPHAN_HARDLINK_PURGE_DELAY_DAYS 时按自定义天数延后。"""
@@ -396,3 +398,54 @@ class TestPurgeExpiredDelayRetry:
 
         assert result.get("purged_count", 0) == 1, f"副本清除 + 延后到期后应正常删除: {result}"
         assert not os.path.exists(quarantine_path), "隔离文件应已物理删除"
+
+    async def test_purge_delay_count_accumulates_across_runs(self, async_orphan_db, tmp_path):
+        """连续两次跳过 → purge_delay_count 累加到 2（SQL 表达式原子递增）。"""
+        from datetime import timedelta as td
+
+        scan_root = tmp_path / "scan_root"
+        (scan_root / "media").mkdir(parents=True)
+
+        candidate, canonical, quarantine_path = _make_quarantined(async_orphan_db, tmp_path, "delay-accumulate.mkv")
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)
+        seed_copy = scan_root / "media" / "delay-accumulate.mkv"
+        os.link(quarantine_path, seed_copy)
+        await async_orphan_db.commit()
+
+        manifest = ManifestSnapshot(
+            expected_paths={normalize_path(str(seed_copy))},
+            scan_roots=[(str(scan_root), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        service = OrphanFileService(async_orphan_db)
+
+        # 第一次跳过 → count=1
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            await service.purge_expired_quarantine(store=MagicMock())
+        await async_orphan_db.refresh(candidate)
+        assert candidate.purge_delay_count == 1, f"第一次跳过 count 应为 1: {candidate.purge_delay_count}"
+
+        # 模拟次日再次到期 → 第二次跳过 → count=2（SQL 原子递增，非对象 read-modify-write）
+        await async_orphan_db.refresh(candidate)
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)
+        await async_orphan_db.commit()
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            await service.purge_expired_quarantine(store=MagicMock())
+        await async_orphan_db.refresh(candidate)
+        assert candidate.purge_delay_count == 2, f"第二次跳过 count 应为 2: {candidate.purge_delay_count}"
+        assert candidate.status == "quarantined"
+
+    async def test_purge_delay_count_unchanged_without_copies(self, async_orphan_db, tmp_path):
+        """无副本正常删除时 count 不变（仍为 0）。"""
+        candidate, canonical, quarantine_path = _make_quarantined(async_orphan_db, tmp_path, "delay-no-copy.mkv")
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)
+        await async_orphan_db.commit()
+
+        manifest = _empty_manifest(tmp_path)
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            result = await service.purge_expired_quarantine(store=MagicMock())
+
+        assert result.get("purged_count", 0) == 1, "无副本应正常删除"
+        await async_orphan_db.refresh(candidate)
+        assert candidate.purge_delay_count == 0, f"无副本删除 count 应保持 0: {candidate.purge_delay_count}"

@@ -44,8 +44,8 @@ def _clean_database_path_env():
 # 链尾：6132b66d14a7(String→Float) → 8f4c2d1a9b7e(数值约束/兼容修复) → f2a7c91b4d6e(orphan confidence)
 #       → a1b2c3d4e5f6(orphan ignore + canonical_path) → c7d8e9f0a1b2(orphan purge jobs)
 #       → d8e9f0a1b2c3(async manual cleanup fields) → 3a4b5c6d7e8f(sync checkpoints)
-#       → f9a1b2c3d4e5(orphan purge hardlink notes)
-EXPECTED_HEAD = "f9a1b2c3d4e5"
+#       → f9a1b2c3d4e5(orphan purge hardlink notes) → f0e1d2c3b4a5(orphan purge delay count)
+EXPECTED_HEAD = "f0e1d2c3b4a5"
 PREV_HEAD = "e6d8a20c41f3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
@@ -133,6 +133,19 @@ class TestMigrationChainIntegrity:
         # + c7d8e9f0a1b2 加 orphan_purge_job = 29
         # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
         assert count == 30, f"空库 upgrade 应建 30 张业务表（含 orphan_purge_job + sync_checkpoints），实际 {count}"
+
+        # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
+        conn = sqlite3.connect(db_path)
+        try:
+            col = conn.execute("PRAGMA table_info(orphan_current_candidate)").fetchall()
+            purge_col = [c for c in col if c[1] == "purge_delay_count"]
+            assert purge_col, "orphan_current_candidate 应含 purge_delay_count 列"
+            # c[2]=type, c[3]=notnull, c[4]=dflt_value（SQLite 存储时带引号）
+            assert purge_col[0][2].lower() == "integer", f"类型应为 INTEGER: {purge_col[0]}"
+            assert purge_col[0][3] == 1, f"应 NOT NULL: {purge_col[0]}"
+            assert purge_col[0][4].strip("'") == "0", f"默认值应为 0: {purge_col[0]}"
+        finally:
+            conn.close()
 
     def test_upgrade_head_is_idempotent(self, tmp_path):
         """已有 head 库再次 upgrade 应幂等（version 不变、表数不变）。"""
@@ -302,8 +315,7 @@ class TestRatioColumnMigration:
         rows = {
             row[0]: row[1:]
             for row in conn.execute(
-                "SELECT info_id, ratio, ratio_limit, typeof(ratio), typeof(ratio_limit) "
-                "FROM torrent_info"
+                "SELECT info_id, ratio, ratio_limit, typeof(ratio), typeof(ratio_limit) " "FROM torrent_info"
             ).fetchall()
         }
         conn.close()
@@ -342,9 +354,7 @@ class TestRatioColumnMigration:
             ("ratio_limit", "1e999"),
         ):
             with pytest.raises(sqlite3.IntegrityError):
-                conn.execute(
-                    f"UPDATE torrent_info SET {column}={invalid_sql} WHERE info_id='ok'"
-                )
+                conn.execute(f"UPDATE torrent_info SET {column}={invalid_sql} WHERE info_id='ok'")
             conn.rollback()
         conn.close()
 

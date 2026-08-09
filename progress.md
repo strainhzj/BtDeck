@@ -1,5 +1,26 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-09 - purge_delay_count 计数列 + 隔离区展示(硬链接延后可观测性)
+
+### 背景
+上一批实现了"到期删除遇硬链接副本跳过时延后 purge_after"。本批补充可观测性:新增 `purge_delay_count` 计数列记录每次延后,并在隔离区列表展示(用户决策:展示 + 每次隔离重置,不加通知触发点)。计划经 3 个独立子代理审查后实施。
+
+### 实现
+1. **模型**(orphan_file.py):`OrphanCurrentCandidate` 加 `purge_delay_count Integer NOT NULL default=0`,同步 `__init__` 参数与 `to_dict` 键。
+2. **迁移**:新 Alembic `f0e1d2c3b4a5_orphan_purge_delay_count.py`(down_revision=f9a1b2c3d4e5),幂等 inspector 守卫 + `server_default="0"`(SQLite ADD COLUMN NOT NULL 硬要求),downgrade 可回滚。
+3. **head 同步**:test_db_migration.py `EXPECTED_HEAD` → f0e1d2c3b4a5 + 链注释 + 新增"列存在且 default=0"断言(dflt_value 存储带引号,strip 后比较)。
+4. **延后递增**(orphan_file_service.py):改用 **SQL 表达式原子递增**(`purge_delay_count=OrphanCurrentCandidate.purge_delay_count + 1`)并入同一次 UPDATE,避免 commit 后对象过期/StaleData 与 read-modify-write 丢计数;日志记录累计次数。
+5. **隔离区展示**:get_quarantine_list 手工 dict 加 `purge_delay_count` 键;前端 `QuarantineItem` 加字段;index.vue 隔离区表格加"延后次数"列(>0 用 warning tag 高亮,0 显示短横线);spec 工厂加字段。
+6. **重置语义**:mark_quarantined 白名单加 `purge_delay_count=0`(每次进入隔离态重新计数,re-quarantine 不残留旧计数)。
+
+### 验证
+- 迁移测试 11 passed(head 链完整 + 列存在/类型/NOT NULL/默认值断言);孤儿套件 **253 passed / 1 skipped**(基线 251+2);hardlink 专项 23 passed(含 count 递增/跨次累加/无副本不变)。
+- black/flake8 通过;mypy 新增行零错误(__init__ 的 `self.purge_delay_count=...` 跟随既有 setattr Column 债模式)。
+- 前端 typecheck 零错误;orphan-files.spec.ts **70 passed**(含隔离区渲染)。
+
+### 变更边界
+- 加 1 列 + 1 迁移 + 前端展示,不加通知触发点(用户决策);工作区"同步治理"未提交改动保持原样;Git 提交待用户要求。
+
 ## 2026-08-09 - 孤儿硬链接功能后续:到期跳过延后 + restore 幂等 + 前端类型检查
 
 ### 待办 #1:到期删除遇硬链接副本跳过时延后 purge_after(B 方案)

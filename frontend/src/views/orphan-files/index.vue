@@ -471,6 +471,19 @@
                   {{ formatIsoTime(row.purge_after) }}
                 </template>
               </el-table-column>
+              <el-table-column label="延后次数" width="110" align="center">
+                <template slot-scope="{row}">
+                  <el-tag
+                    v-if="(row.purge_delay_count || 0) > 0"
+                    type="warning"
+                    size="small"
+                    effect="plain"
+                  >
+                    {{ row.purge_delay_count }}
+                  </el-tag>
+                  <span v-else>-</span>
+                </template>
+              </el-table-column>
               <el-table-column label="下载器" width="140" align="center" show-overflow-tooltip>
                 <template slot-scope="{row}">
                   {{ row.downloader_name || row.downloader_id || '-' }}
