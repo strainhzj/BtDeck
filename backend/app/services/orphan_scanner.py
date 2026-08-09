@@ -39,7 +39,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from sqlalchemy import update
+from sqlalchemy import delete, update
 
 from app.core.config import settings
 from app.database import AsyncSessionLocal, SessionLocal
@@ -199,7 +199,19 @@ class OrphanScanner:
             total_orphan_size = sum(o.file_size for o in orphans)
             logger.info(f"[孤儿扫描 {scan_id}] 扫描完成，发现 {len(orphans)} 个孤儿文件")
 
-            # 5. 明细、生命周期与 completed 状态在同一事务中落地。
+            # 护栏：孤儿数超阈值时告警（不阻断落库，真实大批量孤儿仍照常入库可清理，
+            # 仅提醒核查是否为异常量级，如路径映射失效导致的整目录误判）。
+            orphan_count_warning = len(orphans) > settings.ORPHAN_SCAN_MAX_ORPHANS_WARNING
+            if orphan_count_warning:
+                logger.warning(
+                    "[孤儿扫描 %s] 孤儿数 %d 超过护栏阈值 %d（可能是真实大批量数据，"
+                    "也可能是路径映射失效导致的误判，请核查）",
+                    scan_id,
+                    len(orphans),
+                    settings.ORPHAN_SCAN_MAX_ORPHANS_WARNING,
+                )
+
+            # 5. 明细分批落地、生命周期分批对账、completed 状态最后提交。
             total_files_scanned = total_expected + len(orphans)
             if self.lease_handle is not None:
                 await self.lease_handle.assert_owned()
@@ -214,8 +226,8 @@ class OrphanScanner:
                 scan_roots=[path for path, _ in scan_paths],
             )
 
-            # 6. 通知（total_orphans > 0 时创建，失败不回滚成功扫描）
-            await self._notify_scan_completed(scan_id, scan_type, len(orphans), total_orphan_size)
+            # 6. 通知（total_orphans > 0 时创建，失败不回滚成功扫描；护栏超阈值时附异常提示）
+            await self._notify_scan_completed(scan_id, scan_type, len(orphans), total_orphan_size, orphan_count_warning)
 
             return {
                 "scan_id": scan_id,
@@ -228,6 +240,7 @@ class OrphanScanner:
                 "total_paths_skipped": skipped_path_count,
                 "degraded_downloader_ids": sorted(self._degraded_downloader_ids),
                 "warnings": [warning.to_dict() for warning in self._scan_warnings],
+                "orphan_count_warning": orphan_count_warning,
                 "status": "completed",
             }
 
@@ -710,9 +723,17 @@ class OrphanScanner:
                     scan_time,
                     orphan_dicts,
                     scan_roots=scan_roots,
+                    batch_size=settings.ORPHAN_SCAN_COMMIT_BATCH_SIZE,
                 )
 
-    async def _notify_scan_completed(self, scan_id: str, scan_type: str, orphan_count: int, orphan_size: int) -> None:
+    async def _notify_scan_completed(
+        self,
+        scan_id: str,
+        scan_type: str,
+        orphan_count: int,
+        orphan_size: int,
+        orphan_count_warning: bool = False,
+    ) -> None:
         """扫描完成通知（total_orphans > 0 时创建，失败不回滚成功扫描）。"""
         try:
             from app.services.orphan_notification import notify_scan_completed
@@ -724,6 +745,7 @@ class OrphanScanner:
                     scan_type=scan_type,
                     orphan_count=orphan_count,
                     orphan_size=orphan_size,
+                    orphan_count_warning=orphan_count_warning,
                 )
         except Exception as e:
             logger.warning(
@@ -744,28 +766,29 @@ class OrphanScanner:
         total_orphan_size: int,
         scan_roots: Optional[List[str]] = None,
     ) -> None:
-        """原子写入明细、候选生命周期和 completed 批次状态。"""
+        """落库明细、候选生命周期和 completed 批次状态（分批提交）。
+
+        不再单事务一次性 commit：12 万孤儿单次 commit 会独占 SQLite 写锁
+        十余分钟（实测 8-09: 18:54:02→19:05:47 落库 11 分 45 秒），导致 API
+        卡死。改为三步分批：
+        1. OrphanFile 明细分批写入（每批独立 session + db_write_scope + commit）
+        2. 候选对账分批（insert/update 按批 commit；resolved 依赖完整 seen_paths 最后统一）
+        3. completed 状态最后单独 commit
+        中途崩溃时扫描记录残留 running，由启动恢复标 failed（门禁语义不变）。
+        """
+        # 1. OrphanFile 明细分批写入（复用 _save_orphan_files 的分批模式）
+        await self._save_orphan_files(scan_id, orphans)
+
+        # 2. 候选生命周期对账（分批提交）
+        await self._reconcile_lifecycle(
+            scan_id,
+            scan_time,
+            orphans,
+            scan_roots=scan_roots,
+        )
+
+        # 3. completed 状态最后单独提交
         async with self._async_session_factory() as db:
-            records = [
-                OrphanFile(
-                    scan_id=scan_id,
-                    file_path=o.file_path,
-                    file_size=o.file_size,
-                    mtime=o.mtime,
-                    downloader_id=o.downloader_id,
-                    confidence=o.confidence,
-                    canonical_path=_normalize_path(o.file_path),
-                )
-                for o in orphans
-            ]
-            db.add_all(records)
-            await self._reconcile_lifecycle(
-                scan_id,
-                scan_time,
-                orphans,
-                scan_roots=scan_roots,
-                db=db,
-            )
             await db.execute(
                 update(OrphanScanResult)
                 .where(OrphanScanResult.scan_id == scan_id)
@@ -804,7 +827,7 @@ class OrphanScanner:
         if not orphans:
             return
 
-        batch_size = settings.SYNC_DB_COMMIT_BATCH_SIZE
+        batch_size = settings.ORPHAN_SCAN_COMMIT_BATCH_SIZE
         async with self._async_session_factory() as db:
             for i in range(0, len(orphans), batch_size):
                 batch = orphans[i : i + batch_size]
@@ -849,12 +872,19 @@ class OrphanScanner:
                 await db.commit()
 
     async def _fail_scan(self, scan_id: str, error_msg: str) -> None:
-        """更新批次状态为 failed"""
+        """标记批次为 failed，并清理本批次已提交的孤儿明细。
+
+        落库改为分批后，中途失败时前几批 OrphanFile 明细可能已 commit；
+        必须按 scan_id 删除，否则成为幽灵明细（failed 批次的孤儿记录残留，
+        膨胀 orphan_file 表，且可能被 reconcile_stable_candidate_details 按
+        last_seen_scan_id 误关联）。
+        """
         async with self._async_session_factory() as db:
             await db.execute(
                 update(OrphanScanResult)
                 .where(OrphanScanResult.scan_id == scan_id)
                 .values(status="failed", error_message=error_msg[:1000])
             )
+            await db.execute(delete(OrphanFile).where(OrphanFile.scan_id == scan_id))
             async with admission_controller.db_write_scope():
                 await db.commit()

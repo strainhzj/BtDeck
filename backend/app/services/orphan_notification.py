@@ -74,12 +74,15 @@ async def notify_scan_completed(
     scan_type: str,
     orphan_count: int,
     orphan_size: int,
+    orphan_count_warning: bool = False,
 ) -> Optional[Notification]:
     """扫描完成后创建通知（幂等，失败不回滚）。
 
     语义：
     - orphan_count == 0 → 不通知，返回 None
     - orphan_count > 0 → 用 dedupe_key=orphan_scan:{scan_id} 创建通知
+    - orphan_count_warning=True → 正文追加护栏提示（孤儿数异常，可能是真实
+      大批量数据，也可能是路径映射失效导致的误判，提醒核查）
     - 通知创建失败（含去重命中）只记 error，不抛异常（不回滚成功扫描）
 
     Args:
@@ -88,6 +91,7 @@ async def notify_scan_completed(
         scan_type: 扫描类型（manual/scheduled）
         orphan_count: 孤儿文件数量
         orphan_size: 孤儿文件总大小（字节）
+        orphan_count_warning: 孤儿数超过护栏阈值（默认 False）
 
     Returns:
         创建的通知对象（orphan_count==0 或失败时返回 None）
@@ -100,6 +104,11 @@ async def notify_scan_completed(
     dedupe_key = f"orphan_scan:{scan_id}"
     size_str = _format_size(orphan_size)
     content = f"本次扫描发现 {orphan_count} 个孤儿文件，共 {size_str}，请前往孤儿文件管理页面查看。"
+    if orphan_count_warning:
+        content += (
+            "（注意：孤儿数量超过护栏阈值，可能是真实的大批量数据，"
+            "也可能是路径映射失效导致的误判，请前往孤儿文件管理页面核查。）"
+        )
 
     extra_data = {
         "event": NOTIF_EVENT,

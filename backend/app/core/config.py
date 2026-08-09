@@ -175,6 +175,12 @@ class Settings(BaseSettings):
     ORPHAN_RECYCLE_BIN_TAG: str = ".pending_delete"
     # 跨进程操作 lease TTL（秒）：扫描/清理互斥租约的过期时间
     ORPHAN_LEASE_TTL_SECONDS: int = 3600
+    # 孤儿扫描落库分批提交批次大小（每批独立事务+写锁，防止大批量孤儿单事务
+    # 独占 SQLite 写锁导致 API 卡死；实测 12 万孤儿单次 commit 约 11 分钟）
+    ORPHAN_SCAN_COMMIT_BATCH_SIZE: int = 200
+    # 孤儿数上限护栏阈值：扫描发现的孤儿超过此值记 warning + 通知（不阻断落库，
+    # 真实大批量孤儿仍照常入库可清理，仅提醒用户核查是否为异常量级）
+    ORPHAN_SCAN_MAX_ORPHANS_WARNING: int = 50000
 
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 
