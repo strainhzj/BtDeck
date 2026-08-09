@@ -247,6 +247,12 @@ class OrphanCurrentCandidate(Base):
     quarantine_root = Column(String(600), nullable=True, comment="隔离区根目录")
     quarantined_at = Column(DateTime, nullable=True, comment="移入隔离区时间")
     purge_after = Column(DateTime, nullable=True, index=True, comment="允许物理删除时间")
+    purge_delay_count = Column(
+        Integer,
+        default=0,
+        nullable=False,
+        comment="硬链接副本跳过导致 purge_after 延后的次数（每次进入隔离态重置）",
+    )
     operation_state = Column(
         String(30),
         nullable=False,
@@ -294,6 +300,7 @@ class OrphanCurrentCandidate(Base):
         quarantine_root: Optional[str] = None,
         quarantined_at: Optional[datetime] = None,
         purge_after: Optional[datetime] = None,
+        purge_delay_count: int = 0,
         operation_state: str = "stable",
         operation_target_path: Optional[str] = None,
         operation_error: Optional[str] = None,
@@ -318,6 +325,7 @@ class OrphanCurrentCandidate(Base):
         self.quarantine_root = quarantine_root
         self.quarantined_at = quarantined_at
         self.purge_after = purge_after
+        self.purge_delay_count = purge_delay_count
         self.operation_state = operation_state
         self.operation_target_path = operation_target_path
         self.operation_error = operation_error
@@ -344,6 +352,7 @@ class OrphanCurrentCandidate(Base):
             "quarantine_root": self.quarantine_root,
             "quarantined_at": self.quarantined_at.isoformat() if self.quarantined_at else None,
             "purge_after": self.purge_after.isoformat() if self.purge_after else None,
+            "purge_delay_count": self.purge_delay_count,
             "operation_state": self.operation_state,
             "operation_target_path": self.operation_target_path,
             "operation_error": self.operation_error,

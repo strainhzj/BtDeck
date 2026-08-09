@@ -1934,12 +1934,15 @@ class OrphanFileService:
                     # 次日任务会再次选中→再次跳过。延后 N 天后副本若仍存在继续延后
                     # （无上限），副本被清除后 purge_after 到期仍会正常删除。
                     new_purge_after = compute_purge_after(datetime.utcnow(), settings.ORPHAN_HARDLINK_PURGE_DELAY_DAYS)
+                    # 计数用 SQL 表达式原子递增（并入同一次 UPDATE，避免 commit 后
+                    # ORM 对象过期/StaleData 陷阱与 read-modify-write 丢计数）。
                     await self._commit_candidate_state(
                         cast(str, candidate.canonical_path),
                         purge_after=new_purge_after,
+                        purge_delay_count=OrphanCurrentCandidate.purge_delay_count + 1,
                     )
                     logger.warning(
-                        "[隔离清理] %s: %s (purge_after 已延后至 %s)",
+                        "[隔离清理] %s: %s (purge_after 已延后至 %s, 累计延后次数+1)",
                         qpath,
                         he.reason,
                         new_purge_after,
@@ -2082,6 +2085,7 @@ class OrphanFileService:
                     ),
                     "quarantined_at": c.quarantined_at.isoformat() if c.quarantined_at else None,
                     "purge_after": c.purge_after.isoformat() if c.purge_after else None,
+                    "purge_delay_count": c.purge_delay_count,
                     "file_size": c.file_size,
                     "confidence": c.confidence,
                 }

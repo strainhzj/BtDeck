@@ -433,6 +433,8 @@ export interface QuarantineItem {
   quarantined_at: string | null
   /** 预计物理删除时间（隔离保留期到期） */
   purge_after: string | null
+  /** 硬链接副本跳过导致 purge_after 延后的次数（每次进入隔离态重置） */
+  purge_delay_count?: number
   file_size: number
   confidence: OrphanConfidence
 }

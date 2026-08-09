@@ -2466,6 +2466,47 @@
           "evidence": "前端 typecheck 零错误(node 环境:nvm v22.23.1 @ C:\\nvm4w\\nodejs)。未新增数据库列/迁移/通知触发点;前端仅验证未改代码。"
         }
       ]
+    },
+    {
+      "id": "orphan-purge-delay-counter",
+      "name": "purge_delay_count 计数列 + 隔离区展示(硬链接延后可观测性)",
+      "description": "新增 purge_delay_count 列记录'到期删除遇硬链接副本跳过时 purge_after 延后'的次数,隔离区列表展示(>0 高亮)。每次进入隔离态重置。不加通知触发点。计划经 3 个独立子代理审查(修正:server_default 硬要求/EXPECTED_HEAD 同步/SQL 原子递增/重置语义)。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-purge-delay-counter.1",
+          "name": "列 + 迁移 + 递增 + 展示",
+          "description": "模型加列(Column/__init__/to_dict);新迁移 f0e1d2c3b4a5(幂等 + server_default=0);延后处 SQL 表达式原子递增;get_quarantine_list 加键;mark_quarantined 白名单重置;前端 QuarantineItem + 表格'延后次数'列 + spec 工厂。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/models/orphan_file.py",
+            "backend/alembic/versions/f0e1d2c3b4a5_orphan_purge_delay_count.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "迁移 11 passed(head 链完整 + 列存在/NOT NULL/默认 0 断言);孤儿套件 253 passed/1 skipped(基线 251+2);hardlink 专项 23 passed(count 递增/跨次累加/无副本不变);black/flake8 通过;mypy 新增行零错误;前端 typecheck 零错误 + orphan-files.spec 70 passed。"
+        },
+        {
+          "id": "orphan-purge-delay-counter.2",
+          "name": "记录",
+          "description": "progress.md 记录实现与验证;feature_list.json 更新。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "feature_list.json",
+            "progress.md"
+          ],
+          "evidence": "明确变更边界:加 1 列 + 1 迁移 + 前端展示,不加通知触发点;工作区'同步治理'未提交改动保持原样。"
+        }
+      ]
     }
   ]
 }

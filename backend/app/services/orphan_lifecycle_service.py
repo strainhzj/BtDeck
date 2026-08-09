@@ -239,6 +239,8 @@ class OrphanLifecycleService:
                 quarantine_root=quarantine_root,
                 quarantined_at=now,
                 purge_after=purge_after,
+                # 每次进入隔离态重置延后计数（语义：本次隔离周期的硬链接跳过次数）
+                purge_delay_count=0,
                 operation_state="stable",
                 operation_target_path=None,
                 operation_error=None,
