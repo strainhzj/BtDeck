@@ -817,12 +817,21 @@ export default class OrphanFiles extends Vue {
       const paths = this.quarantineSelected.map(r => r.canonical_path)
       const res = await purgeQuarantineNow({ canonical_paths: paths })
       if (res.code === '200' && res.data) {
-        this.$message.success(
-          `彻底删除任务已提交（${res.data.task_id.slice(0, 8)}），完成或失败后将在通知中心提醒`
-        )
+        const taskId = res.data.task_id
+        const skippedCount = res.data.skipped_count || 0
+        if (taskId) {
+          const skippedText = skippedCount ? `，跳过处理中 ${skippedCount} 个` : ''
+          this.$message.success(
+            `彻底删除任务已提交（${taskId.slice(0, 8)}）${skippedText}，完成或失败后将在通知中心提醒`
+          )
+        } else {
+          this.$message.info(res.msg || '所选隔离文件均已在彻底删除任务中处理')
+        }
         this.quarantineSelected = []
         const table = this.$refs.quarantineTable as OrphanTableRef | undefined
         table?.clearSelection()
+        this.quarantinePage = 1
+        await this.loadQuarantineList()
       }
     } catch (error) {
       this.$message.error('删除失败：' + extractErrorMessage(error, '网络错误'))
@@ -1304,9 +1313,15 @@ export default class OrphanFiles extends Vue {
       })
       if (response.code === '200' && response.data) {
         const taskId = response.data.task_id
-        this.$message.success(
-          `主动清理任务已提交（${taskId.slice(0, 8)}），完成或失败后将在通知中心提醒`
-        )
+        const skippedCount = response.data.skipped_count || 0
+        if (taskId) {
+          const skippedText = skippedCount ? `，跳过处理中 ${skippedCount} 个` : ''
+          this.$message.success(
+            `主动清理任务已提交（${taskId.slice(0, 8)}）${skippedText}，完成或失败后将在通知中心提醒`
+          )
+        } else {
+          this.$message.info(response.msg || '所选孤儿文件均已在主动清理任务中处理')
+        }
         this.handleCloseCleanupDialog()
         await this.refreshPageData()
       } else {
@@ -1507,9 +1522,15 @@ export default class OrphanFiles extends Vue {
         })
         if (resp.code === '200' && resp.data) {
           const taskId = resp.data.task_id || ''
-          this.$message.success(
-            `主动清理任务已提交（${taskId.slice(0, 8)}），完成或失败后将在通知中心提醒`
-          )
+          const skippedCount = resp.data.skipped_count || 0
+          if (taskId) {
+            const skippedText = skippedCount ? `，跳过处理中 ${skippedCount} 个` : ''
+            this.$message.success(
+              `主动清理任务已提交（${taskId.slice(0, 8)}）${skippedText}，完成或失败后将在通知中心提醒`
+            )
+          } else {
+            this.$message.info(resp.msg || '匹配文件均已在主动清理任务中处理')
+          }
           this.quickActionDialogVisible = false
           await this.refreshPageData()
         } else {

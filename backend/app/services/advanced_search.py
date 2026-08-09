@@ -37,6 +37,7 @@ from app.services.sqlite_search_runtime import (
     ensure_search_runtime,
     regex_query_budget,
 )
+from app.services.deletion_task_manager import build_active_deletion_exclusion
 
 logger = logging.getLogger(__name__)
 
@@ -135,11 +136,18 @@ class SearchQueryBuilder:
         """
         self.db = db
         ensure_search_runtime(db)
-        self.base_query = db.query(TorrentInfo).filter(TorrentInfo.dr == 0)
+        self.base_query = self._new_base_query()
+
+    def _new_base_query(self):
+        query = self.db.query(TorrentInfo).filter(TorrentInfo.dr == 0)
+        active_deletion_exclusion = build_active_deletion_exclusion(TorrentInfo.info_id)
+        if active_deletion_exclusion is not None:
+            query = query.filter(active_deletion_exclusion)
+        return query
 
     def reset(self) -> "SearchQueryBuilder":
         """重置查询到初始状态"""
-        self.base_query = self.db.query(TorrentInfo).filter(TorrentInfo.dr == 0)
+        self.base_query = self._new_base_query()
         return self
 
     def apply_basic_filters(self, request: EnhancedAdvancedSearchRequest) -> "SearchQueryBuilder":

@@ -22,14 +22,31 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+import app.services.deletion_task_manager as manager_module
 from app.api.api import api_router
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
+from app.services.deletion_task_manager import DeletionTaskManager
 from app.torrents.models import TorrentInfo
 from tests.api.conftest import make_torrent
 
 PREVIEW_URL = "/api/v1/torrents/duplicates/quick-delete-preview"
 EXECUTE_URL = "/api/v1/torrents/duplicates/quick-delete"
+
+
+@pytest.fixture(autouse=True)
+def isolated_deletion_manager(monkeypatch):
+    """隔离模块单例，并避免测试创建长期清理协程。"""
+    original_manager = manager_module._manager
+    original_instance = DeletionTaskManager._instance
+    monkeypatch.setattr(DeletionTaskManager, "_start_cleanup_task", lambda self: None)
+    manager_module._manager = None
+    DeletionTaskManager._instance = None
+    try:
+        yield manager_module.get_deletion_task_manager()
+    finally:
+        manager_module._manager = original_manager
+        DeletionTaskManager._instance = original_instance
 
 
 @pytest.fixture
@@ -252,3 +269,54 @@ class TestExecute:
         assert body["code"] == "200"
         assert body["data"]["task_id"] is None
         assert body["data"]["total_count"] == 0
+
+    def test_repeat_preview_hides_active_item_and_execute_skips_duplicate(self, client, db_session):
+        make_torrent(db_session, info_id="e4", downloader_id="dl-a", downloader_name="A", hash_="same", name="t")
+        make_torrent(db_session, info_id="e5", downloader_id="dl-b", downloader_name="B", hash_="same", name="t")
+        payload = {
+            "downloader_ids": ["dl-a", "dl-b"],
+            "keep_downloader_ids": ["dl-b"],
+            "delete_level": 2,
+        }
+        with patch(
+            "app.services.async_deletion_executor.AsyncDeletionExecutor.execute_deletion_task",
+            new_callable=AsyncMock,
+        ):
+            first = client.post(EXECUTE_URL, json=payload).json()["data"]
+            preview = client.post(
+                PREVIEW_URL,
+                json={
+                    "downloader_ids": payload["downloader_ids"],
+                    "keep_downloader_ids": payload["keep_downloader_ids"],
+                },
+            ).json()["data"]
+            repeated = client.post(EXECUTE_URL, json=payload).json()["data"]
+
+        assert first["task_id"]
+        assert preview["total_delete"] == 0
+        assert repeated["task_id"] is None
+        assert repeated["accepted_count"] == 0
+        assert repeated["skipped_count"] == 1
+
+    def test_mixed_repeat_accepts_only_new_candidate(self, client, db_session):
+        make_torrent(db_session, info_id="old-delete", downloader_id="dl-a", hash_="old", name="old")
+        make_torrent(db_session, info_id="old-keep", downloader_id="dl-b", hash_="old", name="old")
+        payload = {
+            "downloader_ids": ["dl-a", "dl-b"],
+            "keep_downloader_ids": ["dl-b"],
+            "delete_level": 2,
+        }
+        with patch(
+            "app.services.async_deletion_executor.AsyncDeletionExecutor.execute_deletion_task",
+            new_callable=AsyncMock,
+        ):
+            first = client.post(EXECUTE_URL, json=payload).json()["data"]
+            make_torrent(db_session, info_id="new-delete", downloader_id="dl-a", hash_="new", name="new")
+            make_torrent(db_session, info_id="new-keep", downloader_id="dl-b", hash_="new", name="new")
+            mixed = client.post(EXECUTE_URL, json=payload).json()["data"]
+
+        assert first["accepted_count"] == 1
+        assert mixed["task_id"]
+        assert mixed["requested_count"] == 2
+        assert mixed["accepted_count"] == 1
+        assert mixed["skipped_count"] == 1

@@ -1,5 +1,29 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-09 交接：异步操作条目占用完成
+
+当前任务：解决前端刷新后可对同一数据重复提交异步操作的问题。
+
+状态：实现和相关回归完成；未提交、未推送。
+
+### 已完成
+
+- 种子批量删除/重复种子快捷删除：进程内活动 ID 原子占用，普通列表、重复查询、快捷预览和高级搜索排除 pending/running；终态释放。
+- 孤儿主动清理/隔离区彻底删除：基于 `orphan_purge_job` 的持久化条目占用，列表与操作入口排除活动项，混合提交跳过，全部占用不派发。
+- 前端四条操作链提交即刷新；`task_id=null` 不轮询；混合提交提示跳过数。
+- `feature_list.json` 新增 `v1.0.6.38` evidence，`docs/roadmap/` 已按 2026-08-09 源码实测行号更新。
+
+### 验证与已知外部状态
+
+- 相关后端 249 passed；前端定向 Jest/typecheck/改动文件 ESLint/build 通过；核心服务 mypy 与后端改动文件 flake8 通过。
+- 完整后端套件的本次相关测试均通过；当前无关 `test_sqlite_worker_guard.py` 因 subprocess mock 的 `stdout=None` 失败。完整前端 lint 被无关关键词测试文件 5 条既有 warning 拦截。
+- 工作区同时存在未提交的同步治理/checkpoint/benchmark 改动及构建产物，本任务未覆盖或清理这些文件。
+
+### 后续建议
+
+1. 如需跨后端进程重启保留种子删除占用，可将当前进程内 `DeletionTaskManager` 迁移为持久化任务表；当前需求仅针对前端刷新，已满足。
+2. 提交前按业务范围分组审查 dirty worktree，避免把并行同步治理改动与本功能误混在同一提交。
+
 ## 2026-08-08 交接：W2 分批实施完成（sync-database-blocking-remediation G2 代码完成）
 
 当前任务：修复计划第二批 W2（P0 同步路径与请求响应性）实施完成，6 个子代理执行 + 主代理逐项审查通过

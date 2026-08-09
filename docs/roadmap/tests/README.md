@@ -89,11 +89,12 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：125 个 .py（其中 109 个 test_*.py + 16 个支持文件）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
+- **后端测试组织良好**：149 个 .py（其中 131 个 test_*.py）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是本次新增覆盖的重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（1591 行）/ `test_advanced_search_models_strict.py` / `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（v1.0.6.26，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制
 - **前端测试集中在核心组件**：`components/torrents/` 的搜索/多选组件有完整单测（含性能测试），其他组件测试覆盖较薄
+- **异步操作占用回归**：`test_deletion_task_manager.py`、孤儿任务/查询状态测试及 `quick-delete-duplicates-dialog.spec.ts` 覆盖重复提交、混合跳过、终态释放与提交即刷新
 - **架构约束测试**：`test_architecture_constraints.py` 是防退化机制（自动检测反模式）
 - 详细覆盖矩阵（源文件 ↔ 测试文件对应）见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)
 

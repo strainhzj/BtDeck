@@ -26,10 +26,11 @@
 | 能力配置 capability-mgmt | `downloader_capabilities_management.py` | 下载器能力配置管理（更新/重置/删除） |
 | 路径维护 path-mgmt | `downloader_path_maintenance.py` | 下载器路径维护 CRUD（默认/活跃路径） |
 | 下载器设置 downloader-setting | `downloader_settings.py` | 下载器设置管理（CRUD + 应用；含已废弃 advanced_settings） |
-| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询 |
+| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询；排除 pending/running 删除任务中的种子后再判定重复组 |
+| 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
-| 孤儿文件 API orphan | `orphan_files.py` | 孤儿文件管理：扫描/列表/清理/忽视/隔离恢复；列表单批上限 1000，彻底删除仅提交持久化后台任务，并提供任务状态查询；`/list` 支持 `group_by_folder=true` 按直接父目录聚合分页（同目录≥2 文件折叠为文件夹行，单文件原样） |
+| 孤儿文件 API orphan | `orphan_files.py` | 孤儿文件管理：扫描/列表/清理/忽视/隔离恢复；清理与彻底删除提交会原子占用条目、混合跳过，全部已占用时语义成功且不派发新任务 |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理 |
 | 种子转移 seed-transfer | `seed_transfer.py` | 种子转移，对接 `seed_transfer_service` |
 | 配置模板 template | `setting_templates.py` | 配置模板管理：CRUD + 应用 |
@@ -37,8 +38,8 @@
 | 任务日志 task-log | `tasks.py` | 任务日志（`/logs`、`/statistics`） |
 | 种子备份 torrent-backup | `torrent_backup.py` | 种子文件备份：备份/还原/列表/管理 |
 | 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
-| 种子删除 torrent-delete | `torrent_deletion.py` | 种子删除（多等级删除） |
-| 种子工具 torrent-helper | `torrent_helpers.py` | 种子端点共享工具（哈希/序列化/bencode/DB 辅助）；v1.0.6.25 起写入路径经 `torrent_ratio_values` 规范化 ratio |
+| 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计 |
+| 种子工具 torrent-helper | `torrent_helpers.py` | 种子端点共享工具（哈希/序列化/bencode/DB 辅助）；普通列表与计数排除活动删除任务中的种子 |
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存） |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |

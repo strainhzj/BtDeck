@@ -22,6 +22,7 @@ from app.torrents.trackerVO import TrackerInfoVO
 from app.models.setting_templates import DownloaderTypeEnum
 from app.enums.tracker_status import QBittorrentTrackerStatus, TransmissionTrackerStatus
 from app.services.torrent_metadata import fetch_live_torrent_metadata
+from app.services.deletion_task_manager import build_active_deletion_exclusion
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +126,9 @@ async def get_duplicate_torrents(
             TorrentInfo.hash.isnot(None),
             TorrentInfo.hash != "",  # hash不为空
         ]
+        active_deletion_exclusion = build_active_deletion_exclusion(TorrentInfo.info_id)
+        if active_deletion_exclusion is not None:
+            base_conditions.append(active_deletion_exclusion)
 
         # 应用过滤条件
         if query.name_like:

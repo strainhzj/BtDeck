@@ -404,7 +404,10 @@ class TestOrphanFilesCleanupWiring:
         mocked.assert_not_awaited(), "校验失败不应进入业务逻辑"
 
     def test_cleanup_submits_persistent_job_without_waiting_for_manifest(self):
-        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+        from app.services.orphan_purge_job_service import (
+            OrphanJobSubmission,
+            OrphanPurgeJobService,
+        )
 
         job = MagicMock()
         job.task_id = "cleanup-task-1"
@@ -414,10 +417,18 @@ class TestOrphanFilesCleanupWiring:
             "status": "pending",
             "total_count": 1,
         }
-        create_job = AsyncMock(return_value=job)
+        submit_job = AsyncMock(
+            return_value=OrphanJobSubmission(
+                operation_type="cleanup",
+                scan_id="scan-latest",
+                job=job,
+                accepted_items=[1],
+                skipped_items=[],
+            )
+        )
         dispatcher = MagicMock()
         with (
-            patch.object(OrphanPurgeJobService, "create_cleanup_job", create_job),
+            patch.object(OrphanPurgeJobService, "submit_cleanup_job", submit_job),
             patch(
                 "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
                 return_value=dispatcher,
@@ -431,16 +442,56 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 200
         assert response.json()["code"] == "200"
         assert response.json()["data"]["status"] == "pending"
-        create_job.assert_awaited_once_with(
+        submit_job.assert_awaited_once_with(
             scan_id="scan-latest",
             orphan_ids=[1],
             operator="tester",
         )
         dispatcher.submit.assert_called_once_with("cleanup-task-1")
 
+    def test_cleanup_all_active_returns_success_without_dispatch(self):
+        from app.services.orphan_purge_job_service import (
+            OrphanJobSubmission,
+            OrphanPurgeJobService,
+        )
+
+        submission = OrphanJobSubmission(
+            operation_type="cleanup",
+            scan_id="scan-latest",
+            job=None,
+            accepted_items=[],
+            skipped_items=[1],
+        )
+        dispatcher = MagicMock()
+        with (
+            patch.object(
+                OrphanPurgeJobService,
+                "submit_cleanup_job",
+                AsyncMock(return_value=submission),
+            ),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            response = self.client.post(
+                "/api/v1/orphan-files/cleanup",
+                json={"scan_id": "scan-latest", "orphan_ids": [1]},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == "200"
+        assert response.json()["data"]["task_id"] is None
+        assert response.json()["data"]["status"] == "already_running"
+        assert response.json()["data"]["skipped_count"] == 1
+        dispatcher.submit.assert_not_called()
+
     def test_purge_submits_persistent_job_without_waiting_for_delete(self):
         """彻底删除端点只持久化并调度任务，不在 HTTP 请求内执行物理删除。"""
-        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+        from app.services.orphan_purge_job_service import (
+            OrphanJobSubmission,
+            OrphanPurgeJobService,
+        )
 
         job = MagicMock()
         job.task_id = "purge-task-1"
@@ -449,11 +500,19 @@ class TestOrphanFilesCleanupWiring:
             "status": "pending",
             "total_count": 1,
         }
-        create_job = AsyncMock(return_value=job)
+        submit_job = AsyncMock(
+            return_value=OrphanJobSubmission(
+                operation_type="purge",
+                scan_id=None,
+                job=job,
+                accepted_items=["/data/orphan.bin"],
+                skipped_items=[],
+            )
+        )
         dispatcher = MagicMock()
 
         with (
-            patch.object(OrphanPurgeJobService, "create_job", create_job),
+            patch.object(OrphanPurgeJobService, "submit_purge_job", submit_job),
             patch(
                 "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
                 return_value=dispatcher,
@@ -466,7 +525,7 @@ class TestOrphanFilesCleanupWiring:
 
         assert response.status_code == 200
         assert response.json()["data"]["status"] == "pending"
-        create_job.assert_awaited_once_with(
+        submit_job.assert_awaited_once_with(
             canonical_paths=["/data/orphan.bin"],
             operator="tester",
         )
@@ -586,16 +645,30 @@ class TestOrphanFilesPrefixMatch:
     def test_cleanup_select_all_passes_path_prefix_filter(self):
         """select_all + filters.path_prefix 应透传到 resolve_orphan_selection。"""
         from app.services.orphan_file_service import OrphanFileService
-        from app.services.orphan_purge_job_service import OrphanPurgeJobService
+        from app.services.orphan_purge_job_service import (
+            OrphanJobSubmission,
+            OrphanPurgeJobService,
+        )
 
         resolve_selection = AsyncMock(return_value=[1, 2])
         fake_job = SimpleNamespace(
             task_id="task-prefix",
             to_dict=lambda: {"task_id": "task-prefix", "operation_type": "cleanup"},
         )
+        submission = OrphanJobSubmission(
+            operation_type="cleanup",
+            scan_id="scan-latest",
+            job=fake_job,
+            accepted_items=[1, 2],
+            skipped_items=[],
+        )
         with (
             patch.object(OrphanFileService, "resolve_orphan_selection", resolve_selection),
-            patch.object(OrphanPurgeJobService, "create_cleanup_job", AsyncMock(return_value=fake_job)),
+            patch.object(
+                OrphanPurgeJobService,
+                "submit_cleanup_job",
+                AsyncMock(return_value=submission),
+            ),
             patch("app.api.endpoints.orphan_files.get_orphan_purge_dispatcher"),
         ):
             self.client.post(

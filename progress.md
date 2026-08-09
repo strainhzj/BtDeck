@@ -1,5 +1,21 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-09 - 前端异步操作条目占用与刷新防重复提交
+
+### 问题与实现
+
+- 种子批量删除和重复种子快捷删除原先只创建进程内任务，业务状态落库前刷新页面仍能查到同一行并再次提交。现由 `DeletionTaskManager.create_task_reserving` 在单锁临界区原子划分 accepted/skipped，并维护线程安全活动 ID 快照；completed/partial/failed 终态释放。
+- 普通种子列表/计数、重复种子查询、快捷删除预览和高级搜索统一排除活动删除 ID。提交阶段保留全候选并交给任务管理器原子查重，避免“先查后写”竞态；全部占用返回 `task_id=null`，混合提交只执行 accepted 项。
+- 孤儿主动清理和隔离区彻底删除复用既有 `orphan_purge_job`，用 JSON1 子查询把 pending/running 任务中的 orphan ID / canonical path 作为持久化占用；提交锁独立于可关闭的同步写治理开关。列表、分组统计、预览、忽视、隔离列表和恢复入口排除占用项，worker 仍可读取自身快照；终态自然释放。
+- 前端 API 类型补齐 nullable task_id 与 requested/accepted/skipped；所有四类异步操作提交后立即刷新，无任务时仅提示并停止轮询，混合提交展示跳过数量。
+
+### 验证
+
+- 后端相关回归：249 passed；py_compile、改动文件 flake8 通过；`deletion_task_manager.py` 与 `orphan_purge_job_service.py` mypy 通过。
+- 前端：3 个定向 Jest suites、typecheck、改动文件 ESLint 与生产 build 通过；build 仅有既有 Sass/Browserslist warnings。
+- 完整后端收集 3005 项，本次相关用例全部通过；失败来自工作区既有 `test_sqlite_worker_guard.py` mock 返回 `stdout=None` 后执行 `None + str`，未越界修改。完整前端 lint 仍仅被 3 个无关关键词测试文件的 5 条既有 warning 拦截。
+- `docs/roadmap/` 已按实测行号同步；未新增数据库 Schema/Alembic 迁移，未执行 Git stage/commit/push。
+
 ## 2026-08-08 - Transmission 种子错误状态同步丢失修复
 
 ### 问题

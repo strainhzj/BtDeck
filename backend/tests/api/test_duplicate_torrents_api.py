@@ -23,6 +23,7 @@
 from datetime import datetime
 import sqlite3
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
@@ -217,6 +218,32 @@ class TestDuplicateDetection:
         body = r.json()
         assert body["code"] == "200"
         assert body["data"]["total"] == 2  # dr=1 的不计入
+
+    def test_active_deletion_record_no_longer_forms_duplicate(self, client, db_session):
+        """活动删除中的一条记录被排除后，剩余单条不再构成重复组。"""
+        make_torrent(
+            db_session,
+            info_id="active-delete",
+            downloader_id="dl-a",
+            hash_="dup-active",
+            name="active",
+        )
+        make_torrent(
+            db_session,
+            info_id="visible",
+            downloader_id="dl-b",
+            hash_="dup-active",
+            name="visible",
+        )
+
+        with patch(
+            "app.api.endpoints.duplicate_torrents.build_active_deletion_exclusion",
+            return_value=TorrentInfo.info_id != "active-delete",
+        ):
+            response = client.post("/api/v1/torrents/duplicates", json={})
+
+        assert response.json()["code"] == "200"
+        assert response.json()["data"]["total"] == 0
 
 
 # ==================== 组3：分页 ====================

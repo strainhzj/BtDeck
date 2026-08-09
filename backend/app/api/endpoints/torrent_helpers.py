@@ -23,6 +23,7 @@ from app.core.torrent_status_mapper import TorrentStatusMapper
 from transmission_rpc import Client as trClient
 from app.database import AsyncSessionLocal
 from app.services.audit_service import get_audit_service
+from app.services.deletion_task_manager import build_active_deletion_exclusion
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.torrent_ratio_values import normalize_ratio, normalize_ratio_limit
 
@@ -74,6 +75,12 @@ def get_torrent_infos(
     count_query = db.query(TorrentInfo).filter(
         and_(TorrentInfo.dr == 0, TorrentInfo.deleted_at.is_(None))  # 只统计未移入回收站的种子
     )
+
+    # 业务删除状态落库前，也立即隐藏 pending/running 删除任务中的种子。
+    active_deletion_exclusion = build_active_deletion_exclusion(TorrentInfo.info_id)
+    if active_deletion_exclusion is not None:
+        query = query.filter(active_deletion_exclusion)
+        count_query = count_query.filter(active_deletion_exclusion)
 
     # 添加过滤条件
     if downloader_id:

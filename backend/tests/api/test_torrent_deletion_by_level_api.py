@@ -22,7 +22,7 @@
 """
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -41,6 +41,7 @@ from app.torrents.models import TorrentInfo, TrackerInfo
 from tests.api.conftest import make_torrent
 
 URL = "/api/v1/torrents/delete-with-level"
+ASYNC_URL = "/api/v1/torrents/delete-batch-async"
 
 LEVEL4_TAG = TorrentDeletionByLevelService.LEVEL4_TAG  # "pending_delete"
 
@@ -172,6 +173,88 @@ class TestDeleteWithLevelParamValidation:
         body = r.json()
         assert body["code"] == "200"
         assert body["data"]["total"] == 0
+
+
+class TestAsyncDeleteReservation:
+    def test_all_active_returns_semantic_success_without_executor(self, client):
+        from app.services.deletion_task_manager import DeletionTaskSubmission
+
+        manager = MagicMock()
+        manager.create_task_reserving = AsyncMock(
+            return_value=DeletionTaskSubmission(
+                task_id=None,
+                accepted_info_ids=[],
+                skipped_info_ids=["a", "b"],
+            )
+        )
+        with (
+            patch(
+                "app.services.deletion_task_manager.get_deletion_task_manager",
+                return_value=manager,
+            ),
+            patch(
+                "app.services.async_deletion_executor.AsyncDeletionExecutor"
+            ) as executor_class,
+        ):
+            response = client.post(
+                ASYNC_URL,
+                json={"torrent_info_ids": ["a", "b"], "delete_level": 2},
+            )
+
+        data = response.json()["data"]
+        assert response.json()["code"] == "200"
+        assert data["task_id"] is None
+        assert data["requested_count"] == 2
+        assert data["accepted_count"] == 0
+        assert data["skipped_count"] == 2
+        executor_class.assert_not_called()
+
+    def test_mixed_submission_executes_only_new_ids(self, client):
+        from app.services.deletion_task_manager import DeletionTaskSubmission
+
+        manager = MagicMock()
+        manager.create_task_reserving = AsyncMock(
+            return_value=DeletionTaskSubmission(
+                task_id="mixed-task",
+                accepted_info_ids=["new"],
+                skipped_info_ids=["active"],
+            )
+        )
+        executor = MagicMock()
+        executor.execute_deletion_task = AsyncMock()
+
+        def close_background(coroutine):
+            coroutine.close()
+            return MagicMock()
+
+        with (
+            patch(
+                "app.services.deletion_task_manager.get_deletion_task_manager",
+                return_value=manager,
+            ),
+            patch(
+                "app.services.async_deletion_executor.AsyncDeletionExecutor",
+                return_value=executor,
+            ),
+            patch(
+                "app.api.endpoints.torrent_deletion.asyncio.create_task",
+                side_effect=close_background,
+            ),
+        ):
+            response = client.post(
+                ASYNC_URL,
+                json={
+                    "torrent_info_ids": ["active", "new"],
+                    "delete_level": 2,
+                },
+            )
+
+        data = response.json()["data"]
+        assert data["task_id"] == "mixed-task"
+        assert data["accepted_count"] == 1
+        assert data["skipped_count"] == 1
+        call_kwargs = executor.execute_deletion_task.call_args.kwargs
+        assert call_kwargs["torrent_info_ids"] == ["new"]
 
 
 # ==================== 组3：L4 service 级测试（核心价值） ====================

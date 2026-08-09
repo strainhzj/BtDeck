@@ -4,11 +4,15 @@
 """
 
 import asyncio
+import json
+import threading
 import uuid
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Any
+from typing import Any, Dict, FrozenSet, List, Optional, Set
 from enum import Enum
 from dataclasses import dataclass, field
+
+from sqlalchemy import String, cast as sql_cast, func, literal, select
 
 
 class TaskStatus(str, Enum):
@@ -36,9 +40,31 @@ class DeletionTask:
     error_message: Optional[str] = None  # 错误信息
     results: List[Dict[str, Any]] = field(default_factory=list)  # 删除结果列表
     failed_items: List[Dict[str, Any]] = field(default_factory=list)  # 失败项列表
+    skipped_info_ids: List[str] = field(default_factory=list)  # 提交时已被其他活动任务占用
     created_at: datetime = field(default_factory=datetime.now)  # 创建时间
     started_at: Optional[datetime] = None  # 开始时间
     completed_at: Optional[datetime] = None  # 完成时间
+
+
+@dataclass(frozen=True)
+class DeletionTaskSubmission:
+    """原子占用后的任务提交结果。"""
+
+    task_id: Optional[str]
+    accepted_info_ids: List[str]
+    skipped_info_ids: List[str]
+
+    @property
+    def accepted_count(self) -> int:
+        return len(self.accepted_info_ids)
+
+    @property
+    def skipped_count(self) -> int:
+        return len(self.skipped_info_ids)
+
+    @property
+    def requested_count(self) -> int:
+        return self.accepted_count + self.skipped_count
 
 
 class DeletionTaskManager:
@@ -48,7 +74,7 @@ class DeletionTaskManager:
     """
 
     _instance: Optional["DeletionTaskManager"] = None
-    _lock: Optional[asyncio.Lock] = None
+    _lock: asyncio.Lock
 
     def __new__(cls):
         if cls._instance is None:
@@ -63,6 +89,9 @@ class DeletionTaskManager:
         self._initialized = True
         self._tasks: Dict[str, DeletionTask] = {}
         self._lock = asyncio.Lock()
+        # 同步列表查询不能等待 asyncio.Lock，单独维护线程安全的活动 ID 快照。
+        self._active_torrent_info_ids: Set[str] = set()
+        self._active_ids_lock = threading.RLock()
         self._cleanup_task: Optional[asyncio.Task] = None
 
         # 启动后台清理任务
@@ -88,6 +117,64 @@ class DeletionTaskManager:
             # 如果还没有事件循环，稍后在初始化时创建
             pass
 
+    @staticmethod
+    def _normalize_info_ids(torrent_info_ids: List[str]) -> List[str]:
+        return list(
+            dict.fromkeys(
+                str(info_id).strip()
+                for info_id in torrent_info_ids
+                if info_id is not None and str(info_id).strip()
+            )
+        )
+
+    def get_active_torrent_info_ids_snapshot(self) -> FrozenSet[str]:
+        """返回活动删除任务占用的种子 ID，不暴露内部可变集合。"""
+        with self._active_ids_lock:
+            return frozenset(self._active_torrent_info_ids)
+
+    async def create_task_reserving(
+        self,
+        torrent_info_ids: List[str],
+        delete_level: int,
+        operator: str,
+    ) -> DeletionTaskSubmission:
+        """原子过滤已占用 ID，并只为未占用项创建任务。"""
+        normalized_ids = self._normalize_info_ids(torrent_info_ids)
+        if not normalized_ids:
+            raise ValueError("至少需要一个有效的种子 ID")
+
+        async with self._lock:
+            with self._active_ids_lock:
+                skipped_ids = [
+                    info_id for info_id in normalized_ids if info_id in self._active_torrent_info_ids
+                ]
+                accepted_ids = [
+                    info_id for info_id in normalized_ids if info_id not in self._active_torrent_info_ids
+                ]
+                if not accepted_ids:
+                    return DeletionTaskSubmission(
+                        task_id=None,
+                        accepted_info_ids=[],
+                        skipped_info_ids=skipped_ids,
+                    )
+                self._active_torrent_info_ids.update(accepted_ids)
+
+            task_id = str(uuid.uuid4())
+            task = DeletionTask(
+                task_id=task_id,
+                torrent_info_ids=accepted_ids,
+                delete_level=delete_level,
+                operator=operator,
+                total_count=len(accepted_ids),
+                skipped_info_ids=skipped_ids,
+            )
+            self._tasks[task_id] = task
+            return DeletionTaskSubmission(
+                task_id=task_id,
+                accepted_info_ids=list(accepted_ids),
+                skipped_info_ids=list(skipped_ids),
+            )
+
     async def create_task(self, torrent_info_ids: List[str], delete_level: int, operator: str) -> str:
         """
         创建新的删除任务
@@ -100,17 +187,10 @@ class DeletionTaskManager:
         Returns:
             任务ID
         """
-        async with self._lock:
-            task_id = str(uuid.uuid4())
-            task = DeletionTask(
-                task_id=task_id,
-                torrent_info_ids=torrent_info_ids,
-                delete_level=delete_level,
-                operator=operator,
-                total_count=len(torrent_info_ids),
-            )
-            self._tasks[task_id] = task
-            return task_id
+        submission = await self.create_task_reserving(torrent_info_ids, delete_level, operator)
+        if submission.task_id is None:
+            raise ValueError("所选种子均已在其他删除任务中处理")
+        return submission.task_id
 
     async def get_task(self, task_id: str) -> Optional[DeletionTask]:
         """
@@ -174,6 +254,8 @@ class DeletionTaskManager:
             elif status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.PARTIAL]:
                 if task.completed_at is None:
                     task.completed_at = datetime.now()
+                with self._active_ids_lock:
+                    self._active_torrent_info_ids.difference_update(task.torrent_info_ids)
 
             return True
 
@@ -190,6 +272,9 @@ class DeletionTaskManager:
                     expired_tasks.append(task_id)
 
             for task_id in expired_tasks:
+                task = self._tasks[task_id]
+                with self._active_ids_lock:
+                    self._active_torrent_info_ids.difference_update(task.torrent_info_ids)
                 del self._tasks[task_id]
 
             if expired_tasks:
@@ -221,3 +306,22 @@ def get_deletion_task_manager() -> DeletionTaskManager:
     if _manager is None:
         _manager = DeletionTaskManager()
     return _manager
+
+
+def get_active_deletion_info_ids_snapshot() -> FrozenSet[str]:
+    """供同步查询读取活动删除占用；未初始化管理器时不产生副作用。"""
+    if _manager is None:
+        return frozenset()
+    return _manager.get_active_torrent_info_ids_snapshot()
+
+
+def build_active_deletion_exclusion(column: Any) -> Optional[Any]:
+    """构造活动删除 ID 排除条件，单 JSON 绑定避免 SQLite 变量上限。"""
+    active_ids = get_active_deletion_info_ids_snapshot()
+    if not active_ids:
+        return None
+
+    payload = json.dumps(sorted(active_ids), ensure_ascii=False)
+    values = func.json_each(literal(payload)).table_valued("value").alias("active_deletion_ids")
+    active_ids_query = select(sql_cast(values.c.value, String))
+    return column.notin_(active_ids_query)

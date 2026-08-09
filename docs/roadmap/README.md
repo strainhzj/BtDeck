@@ -12,7 +12,7 @@ BtDeck/
 ├── backend/          ← FastAPI 后端（Python 3.11+）
 │   ├── app-root/        包根入口（main/factory/database/exception_handlers …）
 │   ├── api/             HTTP 路由层（35 endpoints + schemas + models + responseVO）
-│   ├── services/        业务服务层 + 下载器/标签适配器（含 ratio/search 运行时、v1.0.6.33 异步批量添加与路径映射真实目录验证）
+│   ├── services/        业务服务层 + 下载器/标签适配器（含 ratio/search 运行时、异步删除条目占用与查询排除）
 │   ├── core/            基础设施（config / path_mapping / file_ops …）+ ⚠ 含 4 个孤儿文件（torrent_operations 已重写为 ratio 工具但仍 0 引用）
 │   ├── contracts/ ✨    前后端共享机器可读契约（v1.0.6.27 新增：advanced_search JSON + 加载器）
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
@@ -27,7 +27,7 @@ BtDeck/
 │   ├── components-layout/  通用组件（v1.0.6.28 LucideIcon / v1.0.6.30 PageSizeCombobox）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 109 个 test_*.py + frontend jest unit）
+├── tests/            ← 测试（backend pytest 131 个 test_*.py + frontend jest unit）
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -37,8 +37,8 @@ BtDeck/
 
 | 功能域（含检索词） | 前端入口 | 后端入口 |
 |------|---------|---------|
-| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts` | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
-| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；`services/torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
+| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts` | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（清理/彻底删除活动项持久化占用与查询排除）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
+| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
 | 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
 | 任务/定时任务 task cron | `views/tasks/index.vue`、`api/tasks.ts` | `api/endpoints/tasks.py` / `cron_tasks.py`；`tasks/`（scheduler） |
@@ -49,7 +49,7 @@ BtDeck/
 | 标签管理 tag | 下载器页 TagManagementTab | `api/endpoints/tag_management.py`；`services/tag_service.py` / `tag_sync_service.py` / `tag_adapters/`；`models/torrent_tags.py` |
 | 高级搜索 advanced-search | 种子页高级搜索 | `api/endpoints/advanced_search.py`；`services/advanced_search.py` / `sqlite_search_runtime.py` |
 | 种子转移 seed-transfer | — | `api/endpoints/seed_transfer.py`；`services/seed_transfer_service.py`；`models/seed_transfer_audit_log.py` |
-| 重复种子 duplicate | — | `api/endpoints/duplicate_torrents.py` |
+| 重复种子 duplicate | `components/torrents/QuickDeleteDuplicatesDialog.vue` | `api/endpoints/duplicate_torrents.py` / `duplicate_quick_delete.py`；`services/duplicate_quick_delete_service.py` |
 | 种子备份 torrent-backup | `api/torrents-backup.ts` | `api/endpoints/torrent_backup.py`；`services/torrent_file_backup_manager.py`；`models/torrent_file_backup.py` |
 | 仪表盘 dashboard | `views/dashboard/index.vue`、`api/dashboard.ts` | `api/endpoints/dashboard.py`；`services/dashboard_service.py` |
 | 速度计划/设置 speed-schedule | `views/settings/index.vue` | `api/endpoints/downloader_settings.py`；`services/speed_schedule_service.py` |
@@ -78,7 +78,7 @@ BtDeck/
 | ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（109 个 test_*.py，按子目录组织）+ 前端 jest unit | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（131 个 test_*.py，按子目录组织）+ 前端 jest unit | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -115,10 +115,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37） |
-| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按 v1.0.6.25~32、v1.0.6.33~36 增量同步 |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用） |
+| 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
-| 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层样例（1 个：torrent_crud.py） |
+| 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | v1.0.6.37：孤儿清理活动文案展示清理文件/目录名（`dashboard_service` 孤儿类操作专用文案）、仪表盘系统状态卡显示所有下载器上传/下载速度之和、下载器状态卡显示各自速度（`download_speed`/`upload_speed`，缓存 KB/s×1024→bytes/s）、关键词看板快捷操作按钮扩展到候选池卡片、抽取 `KeywordQuickActionDialog.vue` 复用组件并在各池详情弹窗搜索框右侧添加入口（看板/弹窗共用） |
+| 本次新增 | 2026-08-09：种子批量删除/重复种子快捷删除使用进程内活动 ID 原子占用，孤儿清理/隔离区彻底删除使用持久化任务条目占用；列表、重复查询与高级搜索排除 pending/running 项，失败或部分完成后释放 |

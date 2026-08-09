@@ -5,7 +5,9 @@ import TorrentsManagement from '@/views/torrents/index.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
+  deleteBatchAsync,
   getActiveTorrents,
+  getBatchDeleteStatus,
   getDownloaderList,
   getTorrentList
 } from '@/api/torrents'
@@ -50,6 +52,8 @@ const localVue = createLocalVue()
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
+const mockDeleteBatchAsync = deleteBatchAsync as jest.MockedFunction<typeof deleteBatchAsync>
+const mockGetBatchDeleteStatus = getBatchDeleteStatus as jest.MockedFunction<typeof getBatchDeleteStatus>
 localVue.directive('loading', {})
 
 interface ListQueryState {
@@ -65,6 +69,7 @@ interface TorrentListViewVm extends Vue {
   pageSizeInput: string
   pageSizeDropdownExpanded: boolean
   listQuery: ListQueryState
+  callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
 }
 
 const message = {
@@ -254,6 +259,96 @@ describe('torrent list view pagination and sorting', () => {
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.objectContaining({ skip: 0, limit: 500 })
     )
+  })
+
+  it('异步删除提交后先刷新列表再开始轮询，并提示跳过的处理中项', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetTorrentList.mockClear()
+    mockDeleteBatchAsync.mockResolvedValueOnce({
+      status: 'success',
+      msg: '已提交删除任务，正在后台执行',
+      code: '200',
+      data: {
+        task_id: 'delete-task-1',
+        total_count: 1,
+        requested_count: 2,
+        accepted_count: 1,
+        skipped_count: 1,
+        skipped_info_ids: ['info-1'],
+        delete_level: 2
+      }
+    })
+    mockGetBatchDeleteStatus.mockResolvedValueOnce({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        task_id: 'delete-task-1',
+        status: 'completed',
+        total_count: 1,
+        requested_count: 2,
+        accepted_count: 1,
+        skipped_count: 1,
+        skipped_info_ids: ['info-1'],
+        success_count: 1,
+        failed_count: 0,
+        results: [],
+        failed_items: []
+      }
+    })
+    const second = {
+      ...torrentFixture(),
+      infoId: 'info-2',
+      torrentId: 'torrent-2',
+      hash: 'hash-2'
+    }
+
+    await (wrapper.vm as unknown as TorrentListViewVm).callDeleteWithLevelAPI(
+      [torrentFixture(), second],
+      2
+    )
+
+    expect(message.warning).toHaveBeenCalledWith('已跳过 1 个正在处理的种子')
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(mockGetBatchDeleteStatus).toHaveBeenCalledWith('delete-task-1')
+    expect(mockGetTorrentList.mock.invocationCallOrder[0])
+      .toBeLessThan(mockGetBatchDeleteStatus.mock.invocationCallOrder[0])
+  })
+
+  it('全部已在处理中时不轮询但仍立即刷新列表', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetTorrentList.mockClear()
+    mockDeleteBatchAsync.mockResolvedValueOnce({
+      status: 'success',
+      msg: '所选种子均已在删除任务中处理',
+      code: '200',
+      data: {
+        task_id: null,
+        total_count: 0,
+        requested_count: 2,
+        accepted_count: 0,
+        skipped_count: 2,
+        skipped_info_ids: ['info-1', 'info-2'],
+        delete_level: 2
+      }
+    })
+    const second = {
+      ...torrentFixture(),
+      infoId: 'info-2',
+      torrentId: 'torrent-2',
+      hash: 'hash-2'
+    }
+
+    await (wrapper.vm as unknown as TorrentListViewVm).callDeleteWithLevelAPI(
+      [torrentFixture(), second],
+      2
+    )
+
+    expect(message.info).toHaveBeenCalledWith('所选种子均已在删除任务中处理')
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(mockGetBatchDeleteStatus).not.toHaveBeenCalled()
   })
 
   it('sorts the same five headers as traditional mode by click and keyboard', async() => {
