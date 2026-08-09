@@ -43,8 +43,9 @@ def _clean_database_path_env():
 # 已知的迁移链 revision（与 alembic/versions/ 保持一致，变更时同步更新）
 # 链尾：6132b66d14a7(String→Float) → 8f4c2d1a9b7e(数值约束/兼容修复) → f2a7c91b4d6e(orphan confidence)
 #       → a1b2c3d4e5f6(orphan ignore + canonical_path) → c7d8e9f0a1b2(orphan purge jobs)
-#       → d8e9f0a1b2c3(async manual cleanup fields)
-EXPECTED_HEAD = "d8e9f0a1b2c3"
+#       → d8e9f0a1b2c3(async manual cleanup fields) → 3a4b5c6d7e8f(sync checkpoints)
+#       → f9a1b2c3d4e5(orphan purge hardlink notes)
+EXPECTED_HEAD = "f9a1b2c3d4e5"
 PREV_HEAD = "e6d8a20c41f3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
@@ -130,7 +131,8 @@ class TestMigrationChainIntegrity:
         # + c3f1a8b7d902 加 orphan_scan_result + orphan_file = 26
         # + b075727f7182 加 orphan_current_candidate + orphan_operation_lease = 28
         # + c7d8e9f0a1b2 加 orphan_purge_job = 29
-        assert count == 29, f"空库 upgrade 应建 29 张业务表（含 orphan_purge_job），实际 {count}"
+        # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
+        assert count == 30, f"空库 upgrade 应建 30 张业务表（含 orphan_purge_job + sync_checkpoints），实际 {count}"
 
     def test_upgrade_head_is_idempotent(self, tmp_path):
         """已有 head 库再次 upgrade 应幂等（version 不变、表数不变）。"""
@@ -170,7 +172,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 29
+        assert _table_count(str(target_db)) == 30
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)

@@ -218,9 +218,7 @@ class OrphanPurgeJobService:
             raise ValueError("所选隔离文件均已在彻底删除任务中处理")
         return submission.job
 
-    async def submit_cleanup_job(
-        self, scan_id: str, orphan_ids: List[int], operator: str
-    ) -> OrphanJobSubmission:
+    async def submit_cleanup_job(self, scan_id: str, orphan_ids: List[int], operator: str) -> OrphanJobSubmission:
         """原子提交主动清理任务；后台仍执行全部安全复核。"""
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
         if not scan_id or not scan_id.strip():
@@ -278,6 +276,7 @@ class OrphanPurgeJobService:
         failed_list: List[Dict[str, Any]],
         total_size: int = 0,
         error_message: Optional[str] = None,
+        hardlink_notes: Optional[List[Dict[str, Any]]] = None,
     ) -> bool:
         if status not in TERMINAL_STATUSES:
             raise ValueError(f"非法终态: {status}")
@@ -296,6 +295,9 @@ class OrphanPurgeJobService:
                         failed_count=max(0, int(failed_count)),
                         total_size=max(0, int(total_size)),
                         failed_list_json=json.dumps(failed_list, ensure_ascii=False),
+                        hardlink_notes_json=(
+                            json.dumps(hardlink_notes, ensure_ascii=False) if hardlink_notes else None
+                        ),
                         error_message=error_message,
                         completed_at=now,
                         updated_at=now,
@@ -376,6 +378,7 @@ class OrphanPurgeJobService:
                 "failed_count": job.failed_count,
                 "total_size": job.total_size or 0,
                 "failed_list": job.failed_list[:20],
+                "hardlink_notes": job.hardlink_notes[:20],
             },
             dedupe_key=f"{dedupe_prefix}:{job.task_id}",
         )
@@ -439,6 +442,21 @@ class OrphanPurgeJobService:
                     )
                 else:
                     lines.append(f"- {canonical_path[-200:]}：{reason[:300]}")
+        hardlink_notes = job.hardlink_notes
+        if hardlink_notes:
+            lines.append("")
+            lines.append("### 硬链接提示（已删除但空间未释放）")
+            lines.append("以下文件存在其它硬链接副本，删除隔离副本后磁盘空间未完全释放：")
+            for note in hardlink_notes[:10]:
+                note_path = str(note.get("canonical_path", "未知原路径"))
+                copies = note.get("copies", [])
+                copy_descs = []
+                for copy in copies[:5]:
+                    copy_path = str(copy.get("path", ""))
+                    is_seed = "种子文件" if copy.get("is_seed") else "普通副本"
+                    copy_descs.append(f"{copy_path[-120:]}（{is_seed}）")
+                copies_text = "、".join(copy_descs) if copy_descs else "副本路径在扫描范围外"
+                lines.append(f"- {note_path[-160:]}：剩余 {note.get('remaining_count', 0)} 个副本 — {copies_text}")
         return "\n".join(lines)
 
 
@@ -561,6 +579,8 @@ class OrphanPurgeJobDispatcher:
                 failed_list_value = result.get("failed_list", [])
                 failed_list = failed_list_value if isinstance(failed_list_value, list) else []
                 failed_count = int(result.get("failed_count", len(failed_list)) or 0)
+                hardlink_notes_value = result.get("hardlink_notes", [])
+                hardlink_notes = hardlink_notes_value if isinstance(hardlink_notes_value, list) else []
                 if result.get("rejected") or (purged_count == 0 and failed_count > 0):
                     status = "failed"
                 elif failed_count > 0:
@@ -578,6 +598,7 @@ class OrphanPurgeJobDispatcher:
                         failed_list=failed_list,
                         total_size=total_size,
                         error_message=error_message,
+                        hardlink_notes=hardlink_notes if hardlink_notes else None,
                     )
             except asyncio.CancelledError:
                 # 保持 running；下次启动会恢复为 pending 并重新领取。
