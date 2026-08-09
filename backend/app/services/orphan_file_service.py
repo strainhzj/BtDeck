@@ -1930,7 +1930,20 @@ class OrphanFileService:
                 try:
                     await self._detect_hardlink_copies(candidate, cast(str, qpath), None, mode="purge_expired")
                 except HardlinkCopyError as he:
-                    logger.warning("[隔离清理] %s: %s", qpath, he.reason)
+                    # 延后 purge_after，打破「每日重试循环」：跳过后 purge_after 不变，
+                    # 次日任务会再次选中→再次跳过。延后 N 天后副本若仍存在继续延后
+                    # （无上限），副本被清除后 purge_after 到期仍会正常删除。
+                    new_purge_after = compute_purge_after(datetime.utcnow(), settings.ORPHAN_HARDLINK_PURGE_DELAY_DAYS)
+                    await self._commit_candidate_state(
+                        cast(str, candidate.canonical_path),
+                        purge_after=new_purge_after,
+                    )
+                    logger.warning(
+                        "[隔离清理] %s: %s (purge_after 已延后至 %s)",
+                        qpath,
+                        he.reason,
+                        new_purge_after,
+                    )
                     failed_count += 1
                     skipped_hardlink.append(
                         {
@@ -2234,11 +2247,38 @@ class OrphanFileService:
                     }
                 )
 
-        # 未匹配的 canonical_paths（候选不存在或状态不符）
+        # 未匹配的 canonical_paths：区分「已恢复（幂等成功）」/「状态不符」/「不存在」。
+        # 崩溃恢复重跑场景下，上次执行已还原的候选（status=candidate，mark_restored
+        # 把候选从 quarantined 回滚到 candidate）必须视为成功，否则任务被误报 partial
+        # 且错误信息误导用户（与 purge_quarantine_now 的三态区分同构）。
         matched = {c.canonical_path for c in candidates}
         for p in canonical_paths:
-            if p not in matched:
-                failed_list.append({"canonical_path": p, "reason": "候选不存在或非 quarantined 稳定态"})
+            if p in matched:
+                continue
+            row = (
+                await self.db.execute(
+                    select(OrphanCurrentCandidate.status, OrphanCurrentCandidate.operation_state).where(
+                        OrphanCurrentCandidate.canonical_path == p
+                    )
+                )
+            ).first()
+            if row is not None and row.status == "candidate":
+                logger.info("[隔离恢复] 候选已恢复，幂等成功: %s", p)
+                restored_count += 1
+                continue
+            if row is not None:
+                failed_list.append(
+                    {
+                        "canonical_path": p,
+                        "reason": (
+                            "候选状态不符"
+                            f"（status={row.status}, operation_state={row.operation_state}），"
+                            "可能已被删除或仍在处理中"
+                        ),
+                    }
+                )
+                continue
+            failed_list.append({"canonical_path": p, "reason": "候选不存在（未找到对应记录）"})
 
         # 审计日志
         if audit_service and restored_count > 0:

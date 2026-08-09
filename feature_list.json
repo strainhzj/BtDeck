@@ -2430,6 +2430,42 @@
           "evidence": "progress.md 如实记录两批会话(映射加固 + 分批重构)。明确未解决:tr 降级根因(缺运行时日志)、白名单兜底加固(独立低优先级)。"
         }
       ]
+    },
+    {
+      "id": "orphan-hardlink-followup-delay-and-restore-idempotency",
+      "name": "孤儿硬链接功能后续:到期跳过延后 + restore 幂等 + 前端类型检查",
+      "description": "到期删除遇硬链接副本跳过后 purge_after 延后 N 天(打破每日重试循环,可配置无上限);restore_quarantined 三态幂等(已恢复=幂等成功/状态不符附实际状态/不存在区分);前端 typecheck 验证 hardlink_notes 类型。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-hardlink-followup-delay-and-restore-idempotency.1",
+          "name": "到期跳过延后 + restore 幂等实现",
+          "description": "config 新增 ORPHAN_HARDLINK_PURGE_DELAY_DAYS=7;orphan_file_service except HardlinkCopyError 块跳过时延后 purge_after(cast 修复 mypy);restore_quarantined 未匹配分支改三态区分(candidate=幂等成功/purged=附实际状态/不存在)。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/core/config.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py",
+            "backend/tests/services/test_orphan_purge_idempotency.py"
+          ],
+          "evidence": "新增 8 测试(延后默认/自定义/窗口内不重选/副本清除后恢复删除 + restore 幂等/混合/状态不符/不存在)全绿;孤儿套件 251 passed/1 skipped(基线243+8);hardlink+idempotency 专项 21 passed;black/flake8 通过;mypy 149=基线零新增。"
+        },
+        {
+          "id": "orphan-hardlink-followup-delay-and-restore-idempotency.2",
+          "name": "前端类型检查与记录",
+          "description": "npm run typecheck(tsc --noEmit)验证 hardlink_notes? 可选字段无类型错误;更新 progress.md/feature_list.json。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "feature_list.json",
+            "progress.md"
+          ],
+          "evidence": "前端 typecheck 零错误(node 环境:nvm v22.23.1 @ C:\\nvm4w\\nodejs)。未新增数据库列/迁移/通知触发点;前端仅验证未改代码。"
+        }
+      ]
     }
   ]
 }

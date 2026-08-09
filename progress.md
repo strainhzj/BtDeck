@@ -1,5 +1,30 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-09 - 孤儿硬链接功能后续:到期跳过延后 + restore 幂等 + 前端类型检查
+
+### 待办 #1:到期删除遇硬链接副本跳过时延后 purge_after(B 方案)
+- config.py 新增 `ORPHAN_HARDLINK_PURGE_DELAY_DAYS=7`:到期删除遇副本跳过后,purge_after 延后 N 天,打破"每日重试循环"(跳过后 purge_after 不变 → 次日再次选中→再次跳过)。
+- orphan_file_service.py `except HardlinkCopyError` 块:跳过后 `_commit_candidate_state` 把 purge_after 延后至 `now + N 天`(无上限,副本清除后仍会正常删除)。`except Exception` 保守跳过分支不改(检测异常时无法确认是否真有副本,不延后)。
+- 新增 4 测试:默认天数延后、自定义天数延后、延后窗口内不再选中、副本清除+延后到期后正常删除;原 `test_purge_expired_skips_file_with_copies` 补延后断言。
+
+### 待办 #2:restore_quarantined 幂等修复
+- 原 L2237-2241 把所有未匹配路径笼统报"候选不存在或非 quarantined 稳定态"。改为三态区分(镜像 purge_quarantine_now 范本):
+  - `status=candidate`(已恢复,mark_restored 把候选回滚到 candidate)→ 幂等成功,restored_count+1
+  - 状态不符(purged 等)→ 失败原因附实际 status/operation_state
+  - 无记录 → "候选不存在"
+- 新增 `TestRestoreIdempotency` 4 测试:已恢复幂等成功、混合批次、purged 附实际状态、不存在区分原因。
+
+### 待办 #3:前端类型检查
+- `cd frontend && npm run typecheck`(`tsc --noEmit`)通过,零错误。确认 `hardlink_notes?` 可选字段与 `HardlinkNote` interface 无类型问题。node 环境:nvm-windows v22.23.1(`C:\nvm4w\nodejs`,PATH 需手动加入)。
+
+### 验证
+- 孤儿套件 **251 passed / 1 skipped**(基线 243 + 新增 8);hardlink+idempotency 专项 21 passed。
+- black/flake8 通过;mypy orphan_file_service.py **149 错误 = 基线**(L1938 新增的 `candidate.canonical_path` Column 参数错误已用 `cast(str, ...)` 修复,零新增)。
+
+### 变更边界
+- 未新增数据库列/迁移;未加通知触发点;前端仅验证未改代码。
+- 工作区"同步治理"未提交改动保持原样;Git 提交待用户要求。
+
 ## 2026-08-09 - 孤儿扫描落库分批重构 + 孤儿数护栏(API 卡死治本)
 
 ### 背景

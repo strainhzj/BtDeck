@@ -233,3 +233,100 @@ class TestPurgeNowManifestHoisting:
 
         assert result["purged_count"] == 2, f"两个文件都应删除: {result}"
         assert builder.await_count == 2, f"manifest 应按 downloader 各构建 1 次，实际 {builder.await_count} 次"
+
+
+# ==================== 修复 3：隔离区"恢复"重跑幂等（与 purge 同构） ====================
+
+
+class TestRestoreIdempotency:
+    """restore_quarantined 对已恢复候选必须幂等成功（与 purge 三态区分同构）。
+
+    背景：崩溃恢复重跑时，上次已还原（status=candidate，mark_restored 把候选从
+    quarantined 回滚到 candidate）的候选被笼统报"候选不存在或非 quarantined 稳定态"。
+    → 修复：candidate 视为恢复成功；真不存在/状态不符必须区分并附实际状态。
+    """
+
+    def _restored_candidate(self, async_orphan_db, tmp_path, filename):
+        """构造一个已恢复（status=candidate）的候选，无隔离文件。"""
+        old_time = datetime.utcnow() - timedelta(days=10)
+        canonical = str(tmp_path / filename)
+        async_orphan_db.add(
+            OrphanCurrentCandidate(
+                canonical_path=canonical,
+                downloader_id="dl_001",
+                first_seen_at=old_time,
+                last_seen_at=old_time,
+                status="candidate",
+            )
+        )
+        return canonical
+
+    async def test_already_restored_candidate_is_idempotent_success(self, async_orphan_db, tmp_path):
+        """重启重跑场景：候选已是 candidate（已恢复）→ 视为恢复成功，无失败。"""
+        canonical = self._restored_candidate(async_orphan_db, tmp_path, "already-restored.mkv")
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        result = await service.restore_quarantined(
+            canonical_paths=[canonical],
+            operator="admin",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["restored_count"] == 1, f"已恢复候选应幂等成功: {result}"
+        assert result["failed_count"] == 0, f"不应产生失败: {result}"
+        assert result["failed_list"] == []
+
+    async def test_mixed_batch_counts_idempotent_as_restored(self, async_orphan_db, tmp_path):
+        """混合批次（1 已恢复 + 1 隔离中）→ 全部计入 restored_count，无失败。"""
+        restored_canonical = self._restored_candidate(async_orphan_db, tmp_path, "gone-restored.mkv")
+        candidate, canonical, quarantine_path = _make_quarantined(async_orphan_db, tmp_path, "still-quarantined.mkv")
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        result = await service.restore_quarantined(
+            canonical_paths=[restored_canonical, canonical],
+            operator="admin",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["restored_count"] == 2, f"两个都应计入恢复成功: {result}"
+        assert result["failed_count"] == 0, f"不应产生失败: {result}"
+        assert os.path.exists(canonical), "隔离中的候选应被还原到原位置"
+
+    async def test_restore_status_mismatch_reports_actual_status(self, async_orphan_db, tmp_path):
+        """候选是 purged（已删除）→ 失败原因必须附实际状态，而非笼统文案。"""
+        canonical = _purged_candidate(async_orphan_db, tmp_path, "purged-not-restorable.mkv")
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        result = await service.restore_quarantined(
+            canonical_paths=[canonical],
+            operator="admin",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["restored_count"] == 0
+        assert result["failed_count"] == 1
+        reason = result["failed_list"][0]["reason"]
+        assert "purged" in reason, f"失败原因应包含实际状态: {reason}"
+        assert "候选不存在" not in reason, f"候选存在时不应报不存在: {reason}"
+
+    async def test_restore_missing_candidate_reports_distinct_reason(self, async_orphan_db, tmp_path):
+        """真不存在的路径仍报失败，但原因必须区分"不存在"。"""
+        service = OrphanFileService(async_orphan_db)
+        result = await service.restore_quarantined(
+            canonical_paths=["/never/existed/on/disk.mkv"],
+            operator="admin",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["restored_count"] == 0
+        assert result["failed_count"] == 1
+        reason = result["failed_list"][0]["reason"]
+        assert "候选不存在" in reason, f"应明确候选不存在: {reason}"
+        assert "非 quarantined 稳定态" not in reason, f"不应使用旧的笼统文案: {reason}"

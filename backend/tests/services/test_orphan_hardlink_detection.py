@@ -238,6 +238,12 @@ class TestPurgeExpiredHardlinkSkip:
         assert len(skipped) == 1, f"应记录1条跳过详情: {skipped}"
         skipped_reasons = " ".join(str(item.get("reason", "")) for item in skipped)
         assert "硬链接" in skipped_reasons or "副本" in skipped_reasons, f"跳过原因应说明硬链接副本: {result}"
+        # 延后逻辑：purge_after 应被延后到未来（打破每日重试循环）
+        await async_orphan_db.refresh(candidate)
+        assert candidate.purge_after is not None, "跳过后 purge_after 应被延后"
+        assert (
+            candidate.purge_after > datetime.utcnow()
+        ), f"跳过后 purge_after 应延后到未来，实际: {candidate.purge_after}"
 
     async def test_purge_expired_deletes_when_no_copies(self, async_orphan_db, tmp_path):
         """无副本的到期文件正常删除（回归保护）。"""
@@ -252,3 +258,141 @@ class TestPurgeExpiredHardlinkSkip:
 
         assert result.get("purged_count", 0) == 1, "无副本应正常删除"
         assert not os.path.exists(quarantine_path)
+
+
+# ==================== 到期跳过：purge_after 延后（打破每日重试循环） ====================
+
+
+class TestPurgeExpiredDelayRetry:
+    """到期删除遇副本跳过后，purge_after 延后 N 天；副本清除后仍会正常删除。"""
+
+    async def test_purge_after_delayed_by_configured_days(self, async_orphan_db, tmp_path):
+        """跳过时按 ORPHAN_HARDLINK_PURGE_DELAY_DAYS 延后（默认 7 天）。"""
+        from app.core.config import settings
+
+        scan_root = tmp_path / "scan_root"
+        (scan_root / "media").mkdir(parents=True)
+
+        candidate, canonical, quarantine_path = _make_quarantined(async_orphan_db, tmp_path, "delay-default.mkv")
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)  # 已到期
+        seed_copy = scan_root / "media" / "delay-default.mkv"
+        os.link(quarantine_path, seed_copy)
+        await async_orphan_db.commit()
+
+        delay_days = settings.ORPHAN_HARDLINK_PURGE_DELAY_DAYS
+        manifest = ManifestSnapshot(
+            expected_paths={normalize_path(str(seed_copy))},
+            scan_roots=[(str(scan_root), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            result = await service.purge_expired_quarantine(store=MagicMock())
+
+        assert result.get("purged_count", 0) == 0
+        await async_orphan_db.refresh(candidate)
+        # 延后窗口：now + delay_days 附近（允许几秒误差）
+        expected_low = datetime.utcnow() + timedelta(days=delay_days - 0.01)
+        expected_high = datetime.utcnow() + timedelta(days=delay_days + 0.01)
+        assert candidate.purge_after is not None
+        assert (
+            expected_low <= candidate.purge_after <= expected_high
+        ), f"purge_after 应按 {delay_days} 天延后，实际: {candidate.purge_after}"
+        assert candidate.status == "quarantined"
+
+    async def test_purge_after_delay_custom_days(self, async_orphan_db, tmp_path, monkeypatch):
+        """自定义 ORPHAN_HARDLINK_PURGE_DELAY_DAYS 时按自定义天数延后。"""
+        from app.core.config import settings
+
+        monkeypatch.setattr(settings, "ORPHAN_HARDLINK_PURGE_DELAY_DAYS", 3)
+
+        scan_root = tmp_path / "scan_root"
+        (scan_root / "media").mkdir(parents=True)
+
+        candidate, canonical, quarantine_path = _make_quarantined(async_orphan_db, tmp_path, "delay-custom.mkv")
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)
+        seed_copy = scan_root / "media" / "delay-custom.mkv"
+        os.link(quarantine_path, seed_copy)
+        await async_orphan_db.commit()
+
+        manifest = ManifestSnapshot(
+            expected_paths={normalize_path(str(seed_copy))},
+            scan_roots=[(str(scan_root), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            result = await service.purge_expired_quarantine(store=MagicMock())
+
+        assert result.get("purged_count", 0) == 0
+        await async_orphan_db.refresh(candidate)
+        expected_low = datetime.utcnow() + timedelta(days=2.99)
+        expected_high = datetime.utcnow() + timedelta(days=3.01)
+        assert candidate.purge_after is not None
+        assert expected_low <= candidate.purge_after <= expected_high, f"自定义延后 3 天，实际: {candidate.purge_after}"
+
+    async def test_delayed_candidate_not_selected_within_window(self, async_orphan_db, tmp_path):
+        """延后后，下一次到期任务（延后窗口内）不再选中该候选（打破每日重试）。"""
+        from sqlalchemy import select
+
+        scan_root = tmp_path / "scan_root"
+        (scan_root / "media").mkdir(parents=True)
+
+        candidate, canonical, quarantine_path = _make_quarantined(async_orphan_db, tmp_path, "delay-window.mkv")
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)  # 已到期
+        seed_copy = scan_root / "media" / "delay-window.mkv"
+        os.link(quarantine_path, seed_copy)
+        await async_orphan_db.commit()
+
+        manifest = ManifestSnapshot(
+            expected_paths={normalize_path(str(seed_copy))},
+            scan_roots=[(str(scan_root), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            await service.purge_expired_quarantine(store=MagicMock())
+
+        # 模拟第二天重跑：purge_after 已延后到未来，查询不应再选中该候选
+        result = await async_orphan_db.execute(
+            select(OrphanCurrentCandidate).where(
+                OrphanCurrentCandidate.canonical_path == canonical,
+                OrphanCurrentCandidate.status == "quarantined",
+                OrphanCurrentCandidate.purge_after < datetime.utcnow(),
+            )
+        )
+        assert result.scalars().all() == [], "延后窗口内不应再选中该候选（purge_after 已在未来）"
+
+    async def test_purge_after_delayed_then_deleted_after_copy_removed(self, async_orphan_db, tmp_path):
+        """副本被清除、延后到期后，候选仍会正常删除（延后不永久阻塞删除）。"""
+        scan_root = tmp_path / "scan_root"
+        (scan_root / "media").mkdir(parents=True)
+
+        candidate, canonical, quarantine_path = _make_quarantined(async_orphan_db, tmp_path, "delay-clear.mkv")
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)
+        seed_copy = scan_root / "media" / "delay-clear.mkv"
+        os.link(quarantine_path, seed_copy)
+        await async_orphan_db.commit()
+
+        manifest = ManifestSnapshot(
+            expected_paths={normalize_path(str(seed_copy))},
+            scan_roots=[(str(scan_root), frozenset({"dl_001"}))],
+            downloader_ids={"dl_001"},
+        )
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            await service.purge_expired_quarantine(store=MagicMock())
+
+        # 副本被清除 + 延后到期 → 再次到期任务应正常删除
+        os.remove(str(seed_copy))
+        await async_orphan_db.refresh(candidate)
+        candidate.purge_after = datetime.utcnow() - timedelta(days=1)
+        await async_orphan_db.commit()
+
+        # 用无副本 manifest 重跑到期删除
+        manifest_no_copy = _empty_manifest(tmp_path)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest_no_copy):
+            result = await service.purge_expired_quarantine(store=MagicMock())
+
+        assert result.get("purged_count", 0) == 1, f"副本清除 + 延后到期后应正常删除: {result}"
+        assert not os.path.exists(quarantine_path), "隔离文件应已物理删除"
