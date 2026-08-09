@@ -60,6 +60,7 @@ class OrphanLifecycleService:
         *,
         scan_roots: Optional[Sequence[str]] = None,
         commit: bool = True,
+        batch_size: Optional[int] = None,
     ) -> Dict[str, int]:
         """对账候选状态（仅在完整成功扫描后调用）。
 
@@ -74,6 +75,9 @@ class OrphanLifecycleService:
             orphans: 本次扫描发现的孤儿列表，每项含 canonical_path/downloader_id/file_size/mtime_ns
             scan_roots: 本次成功扫描的根目录；未传保持全量对账兼容语义，
                 空列表表示没有目录成功扫描，不推进任何旧候选
+            batch_size: 非 None 时按批 commit（每批独立事务，避免大批量候选单事务
+                独占写锁）；resolved 标记仍依赖完整 seen_paths，在最后统一处理，
+                不随批提交（计数语义不变）
 
         Returns:
             {"inserted": int, "updated": int, "resolved": int}
@@ -91,8 +95,9 @@ class OrphanLifecycleService:
         resolved = 0
         owner_reassigned = 0
 
-        # 处理本次发现的孤儿
-        for orphan in orphans:
+        # 处理本次发现的孤儿（batch_size 非 None 时按批 commit，每批独立事务，
+        # 避免大批量候选单事务独占写锁；resolved 段依赖完整 seen_paths，留在最后）
+        for idx, orphan in enumerate(orphans):
             path = orphan["canonical_path"]
             existing_cand = existing.get(path)
             if existing_cand is None:
@@ -145,6 +150,11 @@ class OrphanLifecycleService:
                 if orphan.get("inode") is not None:
                     existing_cand.inode = str(orphan["inode"])
                 updated += 1
+
+            # 按批提交（每批独立事务）。resolved 判定依赖完整 seen_paths，
+            # 因此这里只提交 insert/update 变更，resolved 段在最后统一处理。
+            if commit and batch_size and (idx + 1) % batch_size == 0:
+                await self.db.commit()
 
         # 处理未出现在本次清单中的旧 candidate → resolved
         for path, cand in existing.items():

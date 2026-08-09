@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-08",
+  "last_updated": "2026-08-09",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -2314,6 +2314,120 @@
             "backend/tests/core/test_sqlite_worker_guard.py"
           ],
           "evidence": "python -m pytest tests/core/test_sqlite_worker_guard.py -q → 53 passed（含子进程验证两个启动入口 fail-fast）"
+        }
+      ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w4-3",
+      "name": "同步数据库阻塞修复 W4-3：真实文件型 SQLite 争用基准与响应性验收（P1-07）",
+      "description": "修复计划 W4-3（G4 门部分）：真实文件型 SQLite 争用基准脚本（三档数据 22k/30k、场景 A/B/C 真实 DML、故障注入 busy/cancel/slow-downloader、SLO 发布门 --assert-slo、JSON 对比输出）、响应性集成测试（后台同步期间 CRUD P95/lag 验收）、故障注入集成回归、运维手册。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w4-3.1",
+          "name": "W4-3 文件型 SQLite 争用基准脚本",
+          "description": "新 scripts/sync_contention_benchmark.py：真实临时 .db + WAL + 三档数据（large 22k torrents/30k trackers 生成 1.1s）；场景 A 真实 bulk_upsert_with_retry、B 真实 sync_tracker_status_from_keywords（两遍验证零变化零 DML）、C 批量 UPDATE；请求探针（只读/写/任务状态）；fake 下载器经 call_downloader_api 真实调用；故障注入 busy/cancel/slow-downloader 断言可解释降级无雪崩；--assert-slo 发布门（只读 P95<1s/写 P95<2s/超时率<0.1%/最终 BUSY=0）；JSON 输出无敏感数据。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/scripts/sync_contention_benchmark.py",
+            "backend/benchmark_results/",
+            "backend/docs/operations/sync-contention-runbook.md"
+          ],
+          "evidence": "small 档 --assert-slo 4/4 PASS；busy 故障注入 3/3 PASS（真实 BUSY=3、重试有界、最终一致）；大档实测只读 P95=31.76ms/写 P95=33.32ms/超时 0/BUSY 0，无需校准系数"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w4-3.2",
+          "name": "W4-3 响应性集成测试与故障注入回归",
+          "description": "新 tests/integration/test_sync_api_responsiveness.py 4 用例（info 写期间只读 P95、tracker 更新期间写 P95、慢下载器事件循环心跳 P99<100ms、连续 BUSY 无雪崩）；扩展 test_sqlite_sync_contention.py 4 用例（连续 BUSY 重试、300ms 持锁排队、慢下载器超时心跳、取消整批保留）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/integration/test_sync_api_responsiveness.py",
+            "backend/tests/integration/test_sqlite_sync_contention.py"
+          ],
+          "evidence": "集成测试 13 passed + 1 skipped（22k perf 基准）；实测只读 P95=30.6ms/写 P95=35.5ms/lag P99=16ms；全量回归 2967 passed, 0 failed"
+        }
+      ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w3-2",
+      "name": "同步数据库阻塞修复 W3-2：持久化同步检查点（P1-03）",
+      "description": "修复计划 W3-2（G3 门部分）：新增 sync_checkpoints 表（Alembic 迁移 3a4b5c6d7e8f）持久化同步进度，SyncCoordinator 集成（读取/乐观锁推进/终态落库/取消语义），中断与重启后从最后 durable checkpoint 继续；detail_json 白名单清洗防敏感数据。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w3-2.1",
+          "name": "W3-2 sync_checkpoints 模型与 Alembic 迁移",
+          "description": "新 app/models/sync_checkpoint.py（13 列按计划 Schema、唯一约束 downloader_id+sync_type、version 乐观锁、detail 白名单清洗、outcome 六态）；新迁移 3a4b5c6d7e8f（upgrade/downgrade 往返）；alembic/env.py 注册；迁移防护期望值更新（head/表数 30）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/models/sync_checkpoint.py",
+            "backend/app/models/__init__.py",
+            "backend/alembic/versions/3a4b5c6d7e8f_add_sync_checkpoints.py",
+            "backend/alembic/env.py",
+            "backend/tests/core/test_sync_checkpoint_migration.py",
+            "backend/tests/core/test_db_migration.py"
+          ],
+          "evidence": "迁移往返（upgrade→downgrade→upgrade）通过；旧 head 升级历史 task_logs 可读；test_db_migration 13 passed"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w3-2.2",
+          "name": "W3-2 SyncCoordinator checkpoint 集成",
+          "description": "SyncCheckpointStore（独立短事务 + 乐观锁单调合并）；run_sync 集成（初始化/每下载器成功后推进/终态落库/取消 cancelled/dry_run 零读写）；cursor 不超前于数据（推进滞后于 durable commit）；批级推进 API push_sync_progress 预留 W3-1；SyncResult.checkpoint 实际值。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_coordinator.py",
+            "backend/tests/services/test_sync_checkpoint.py",
+            "backend/tests/services/test_sync_coordinator.py",
+            "backend/tests/services/conftest.py"
+          ],
+          "evidence": "test_sync_checkpoint 13 passed（重启续跑/乐观锁不倒退/取消/并发推进/detail 白名单）；coordinator 20 passed；全量回归 2980 passed（2 orphan 失败为外部并行改动，非本任务）"
+        }
+      ]
+    },
+    {
+      "id": "orphan-scan-batch-commit-and-guardrail",
+      "name": "孤儿扫描落库分批重构 + 孤儿数护栏(API 卡死治本)",
+      "description": "孤儿扫描发现 12 万孤儿(大部分真实)时,_finalize_successful_scan 单大事务一次 commit 独占 SQLite 写锁 11 分钟导致 API 卡死。改为分批提交(明细/候选/状态三步,每批独立事务+写锁),加孤儿数护栏(超阈值仅告警不阻断),补 running 扫描启动恢复与 _fail_scan 明细清理。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-scan-batch-commit-and-guardrail.1",
+          "name": "落库分批 + 护栏 + 恢复实现",
+          "description": "config 新增 ORPHAN_SCAN_COMMIT_BATCH_SIZE/ORPHAN_SCAN_MAX_ORPHANS_WARNING;_finalize_successful_scan 三步分批(reconcile_candidates 增 batch_size 参数);_fail_scan 补明细清理;scan() 护栏 warning+通知;lifecycle 新增 recover_interrupted_orphan_scans 启动恢复。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/core/config.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/services/orphan_notification.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/tests/services/test_orphan_scanner.py",
+            "backend/tests/services/test_orphan_lifecycle.py"
+          ],
+          "evidence": "新增 6 测试(分批提交计数/分批后resolved/running恢复x2/护栏阈值两态)全绿;孤儿套件 243 passed/1 skipped(基线237+6);任务7/迁移11 passed;black/flake8 通过;mypy lifecycle 0 错误,orphan_lifecycle_service 16 个为预存 Column 债零新增。契约测试自动适配:reconcile 失败→_fail_scan 清理明细(detail_count==0 仍成立,语义从事务回滚变为失败清理)。"
+        },
+        {
+          "id": "orphan-scan-batch-commit-and-guardrail.2",
+          "name": "事故排查与记录",
+          "description": "API 卡死根因实测坐实(落库 11 分 45 秒);12 万孤儿定性为大部分真实数据;tr 降级即时原因待生产日志(独立问题)。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "feature_list.json",
+            "progress.md"
+          ],
+          "evidence": "progress.md 如实记录两批会话(映射加固 + 分批重构)。明确未解决:tr 降级根因(缺运行时日志)、白名单兜底加固(独立低优先级)。"
         }
       ]
     }

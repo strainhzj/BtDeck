@@ -42,9 +42,7 @@ class TestOrphanLifecycleProgression:
                 "mtime_ns": 1,
             }
         ]
-        await service.reconcile_candidates(
-            scan_id="scan_1", scan_time=datetime.utcnow(), orphans=orphans
-        )
+        await service.reconcile_candidates(scan_id="scan_1", scan_time=datetime.utcnow(), orphans=orphans)
         await async_orphan_db.commit()
 
         # 查候选表，consecutive_scan_count 应为 1，首次发现不满足 30 天
@@ -72,9 +70,7 @@ class TestOrphanLifecycleProgression:
         )
         await async_orphan_db.commit()
         # 第二次扫描（35 天后仍存在）
-        await service.reconcile_candidates(
-            scan_id="scan_2", scan_time=datetime.utcnow(), orphans=orphans
-        )
+        await service.reconcile_candidates(scan_id="scan_2", scan_time=datetime.utcnow(), orphans=orphans)
         await async_orphan_db.commit()
 
         # 候选的 last_seen - first_seen 应 >= 35 天 → 满足 30 天条件
@@ -113,9 +109,7 @@ class TestOrphanLifecycleProgression:
         )
 
         result = await async_orphan_db.execute(
-            select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.canonical_path == path
-            )
+            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path == path)
         )
         candidate = result.scalar_one()
         assert candidate.downloader_id == "dl_new"
@@ -142,17 +136,13 @@ class TestOrphanLifecycleProgression:
         await async_orphan_db.commit()
 
         # 第二次扫描该文件不再出现在孤儿清单（成为合法文件）
-        await service.reconcile_candidates(
-            scan_id="scan_2", scan_time=datetime.utcnow(), orphans=[]
-        )
+        await service.reconcile_candidates(scan_id="scan_2", scan_time=datetime.utcnow(), orphans=[])
         await async_orphan_db.commit()
 
         from app.models.orphan_file import OrphanCurrentCandidate
 
         result = await async_orphan_db.execute(
-            select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.canonical_path == "/data/resolved.mkv"
-            )
+            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path == "/data/resolved.mkv")
         )
         candidate = result.scalar_one_or_none()
         assert candidate is not None
@@ -174,16 +164,12 @@ class TestOrphanLifecycleProgression:
         ]
 
         await service.reconcile_candidates("scan_old", old_time, orphan)
-        await service.reconcile_candidates(
-            "scan_resolved", datetime.utcnow() - timedelta(days=1), []
-        )
+        await service.reconcile_candidates("scan_resolved", datetime.utcnow() - timedelta(days=1), [])
         restart_time = datetime.utcnow()
         await service.reconcile_candidates("scan_restart", restart_time, orphan)
 
         result = await async_orphan_db.execute(
-            select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.canonical_path == "/data/restarted.mkv"
-            )
+            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path == "/data/restarted.mkv")
         )
         candidate = result.scalar_one()
         assert candidate.status == "candidate"
@@ -218,9 +204,7 @@ class TestOrphanLifecycleProgression:
         from app.models.orphan_file import OrphanCurrentCandidate
 
         result = await async_orphan_db.execute(
-            select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.canonical_path == "/data/x.mkv"
-            )
+            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path == "/data/x.mkv")
         )
         candidate = result.scalar_one_or_none()
         assert candidate.last_seen_scan_id == "scan_1"
@@ -240,24 +224,18 @@ class TestOrphanLifecycleProgression:
             }
         ]
         for i in range(3):
-            await service.reconcile_candidates(
-                scan_id=f"scan_{i}", scan_time=datetime.utcnow(), orphans=orphan
-            )
+            await service.reconcile_candidates(scan_id=f"scan_{i}", scan_time=datetime.utcnow(), orphans=orphan)
             await async_orphan_db.commit()
 
         from app.models.orphan_file import OrphanCurrentCandidate
 
         result = await async_orphan_db.execute(
-            select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.canonical_path == "/data/dup.mkv"
-            )
+            select(OrphanCurrentCandidate).where(OrphanCurrentCandidate.canonical_path == "/data/dup.mkv")
         )
         candidates = result.scalars().all()
         assert len(candidates) == 1, "同一路径重复扫描应只有 1 个当前候选"
 
-    async def test_only_successfully_scanned_roots_can_resolve_candidates(
-        self, async_orphan_db, tmp_path
-    ):
+    async def test_only_successfully_scanned_roots_can_resolve_candidates(self, async_orphan_db, tmp_path):
         """被跳过的未映射目录不推进旧候选生命周期。"""
         from app.models.orphan_file import OrphanCurrentCandidate
         from app.services.orphan_lifecycle_service import (
@@ -298,15 +276,10 @@ class TestOrphanLifecycleProgression:
 
         rows = await async_orphan_db.execute(
             select(OrphanCurrentCandidate).where(
-                OrphanCurrentCandidate.canonical_path.in_(
-                    [scanned_file, skipped_file]
-                )
+                OrphanCurrentCandidate.canonical_path.in_([scanned_file, skipped_file])
             )
         )
-        candidates = {
-            candidate.canonical_path: candidate
-            for candidate in rows.scalars().all()
-        }
+        candidates = {candidate.canonical_path: candidate for candidate in rows.scalars().all()}
 
         assert result["resolved"] == 1
         assert candidates[scanned_file].status == "resolved"
@@ -340,13 +313,9 @@ class TestCleanupGates:
         # 尝试预览清理 —— 应被拒绝
         result = await service.cleanup_preview(orphan_ids=[])
         # 应返回明确拒绝原因（而非正常预览结果）
-        assert result.get("rejected") or result.get("error"), (
-            "最新扫描 running 时应拒绝清理"
-        )
+        assert result.get("rejected") or result.get("error"), "最新扫描 running 时应拒绝清理"
 
-    async def test_list_does_not_fallback_to_older_completed_scan(
-        self, async_orphan_db
-    ):
+    async def test_list_does_not_fallback_to_older_completed_scan(self, async_orphan_db):
         """最新批次 running 时，列表不得回退展示旧 completed 明细。"""
         from app.models.orphan_file import OrphanFile, OrphanScanResult
         from app.services.orphan_file_service import OrphanFileService
@@ -359,11 +328,7 @@ class TestCleanupGates:
                 status="completed",
             )
         )
-        async_orphan_db.add(
-            OrphanFile(
-                scan_id="old_completed", file_path="/old/orphan.bin", file_size=10
-            )
-        )
+        async_orphan_db.add(OrphanFile(scan_id="old_completed", file_path="/old/orphan.bin", file_size=10))
         async_orphan_db.add(
             OrphanScanResult(
                 scan_id="new_running",
@@ -396,9 +361,7 @@ class TestCleanupGates:
 
         service = OrphanFileService(async_orphan_db)
         result = await service.cleanup_preview(orphan_ids=[])
-        assert result.get("rejected") or result.get("error"), (
-            "最新扫描 failed 时应拒绝清理"
-        )
+        assert result.get("rejected") or result.get("error"), "最新扫描 failed 时应拒绝清理"
 
     async def test_stale_scan_id_rejected(self, async_orphan_db):
         """旧 scan_id 禁止预览和清理。"""
@@ -437,7 +400,101 @@ class TestBatchWriteAtomicity:
         """批量写入孤儿明细中途失败时，不应留下可清理的部分批次。"""
         from app.models.orphan_file import OrphanFile
 
-        # 此处验证：即使 _save_orphan_files 中途失败，DB 中不应有部分 orphan_file 行可被清理
-        # 当前实现无事务回滚保护 → 此测试在 Phase 2-3 后转绿
+        # 落库改为分批后：_finalize_successful_scan 内部先写明细，reconcile 失败时
+        # 由 _fail_scan 删除本 scan_id 已提交的明细。此处验证空库下无残留。
         result = await async_orphan_db.execute(select(OrphanFile))
         assert result.scalars().all() == [], "失败的扫描不应留下可清理的明细"
+
+
+class TestRecoverInterruptedScans:
+    """启动恢复：残留 running 的孤儿扫描记录标记为 failed。
+
+    使用独立内存库 + 注入 session 工厂（recover_interrupted_orphan_scans
+    支持 session_factory 参数），不依赖默认真实库 AsyncSessionLocal。
+    """
+
+    @pytest.fixture
+    def _recover_engine(self):
+        """创建内存库 + session 工厂，测试结束 drop 表。"""
+        from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+        from sqlalchemy.pool import StaticPool
+
+        from app.database import Base
+
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            connect_args={"check_same_thread": False},
+            poolclass=StaticPool,
+        )
+        import asyncio
+
+        async def _create():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+
+        asyncio.run(_create())
+        factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+        yield factory
+        import asyncio
+
+        async def _drop():
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.drop_all)
+
+        asyncio.run(_drop())
+        import asyncio
+
+        asyncio.run(engine.dispose())
+
+    async def test_recover_running_scan_marks_failed(self, _recover_engine):
+        """status=running 的扫描记录被恢复为 failed。"""
+        from datetime import datetime
+
+        from app.models.orphan_file import OrphanScanResult
+        from app.startup.lifecycle import recover_interrupted_orphan_scans
+
+        async with _recover_engine() as db:
+            db.add(
+                OrphanScanResult(
+                    scan_id="scan_recover_1",
+                    scan_time=datetime.utcnow(),
+                    scan_type="scheduled",
+                    status="running",
+                    operator="system",
+                )
+            )
+            db.add(
+                OrphanScanResult(
+                    scan_id="scan_recover_2",
+                    scan_time=datetime.utcnow(),
+                    scan_type="scheduled",
+                    status="running",
+                    operator="system",
+                )
+            )
+            db.add(
+                OrphanScanResult(
+                    scan_id="scan_done",
+                    scan_time=datetime.utcnow(),
+                    scan_type="scheduled",
+                    status="completed",
+                    operator="system",
+                )
+            )
+            await db.commit()
+
+        recovered = await recover_interrupted_orphan_scans(session_factory=_recover_engine)
+
+        assert recovered == 2, f"应恢复 2 条 running 记录，实际 {recovered}"
+        async with _recover_engine() as db:
+            result = await db.execute(select(OrphanScanResult).where(OrphanScanResult.scan_id == "scan_recover_1"))
+            assert result.scalar_one().status == "failed"
+            result = await db.execute(select(OrphanScanResult).where(OrphanScanResult.scan_id == "scan_done"))
+            assert result.scalar_one().status == "completed"
+
+    async def test_recover_no_running_scans(self, _recover_engine):
+        """无残留 running 记录时返回 0 且不报错。"""
+        from app.startup.lifecycle import recover_interrupted_orphan_scans
+
+        recovered = await recover_interrupted_orphan_scans(session_factory=_recover_engine)
+        assert recovered == 0

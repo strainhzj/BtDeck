@@ -1,5 +1,59 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-09 - 孤儿扫描落库分批重构 + 孤儿数护栏(API 卡死治本)
+
+### 背景
+8-09 生产事故日志实测:扫描 18:54:02 完成 → 通知 19:05:47 创建,中间 11 分 45 秒为 12 万孤儿落库时间(单大事务 commit 独占 SQLite 写锁),导致 API 卡死。12 万孤儿大部分为真实数据(用户确认),不应阻止入库。
+
+### 实现(落库分批 + 护栏 + 恢复)
+1. **配置**:新增 `ORPHAN_SCAN_COMMIT_BATCH_SIZE=200`(落库批次)、`ORPHAN_SCAN_MAX_ORPHANS_WARNING=50000`(护栏阈值)。
+2. **`_finalize_successful_scan` 分批重构**(orphan_scanner.py):原单事务(12 万行 OrphanFile insert + reconcile + 状态一次 commit)拆为三步——① `_save_orphan_files` 明细分批(每 200 条独立 session + db_write_scope + commit)② `_reconcile_lifecycle` 候选分批(insert/update 按批 commit)③ completed 状态最后单独 commit。
+3. **`reconcile_candidates` 分批支持**(orphan_lifecycle_service.py):新增 `batch_size` 参数,insert/update 按批 commit;resolved 标记依赖完整 seen_paths,留在最后统一处理(计数语义不变)。
+4. **`_fail_scan` 补明细清理**:失败时 DELETE 本 scan_id 已提交的 OrphanFile(分批后中途失败的前几批明细不再成为幽灵记录)。
+5. **护栏**:孤儿数超阈值时 `orphan_count_warning=True` + 通知正文追加异常提示(不阻断落库,真实大批量孤儿照常入库)。
+6. **启动恢复**(startup/lifecycle.py):新增 `recover_interrupted_orphan_scans()`(支持 session_factory 注入),启动时把残留 running 扫描记录标 failed(落库分批后崩溃残留的兜底;running→failed 不改门禁语义,但消除列表空白)。
+
+### 验证
+- 新增测试 6 个:reconcile 分批提交计数、分批后 resolved 正确、护栏超阈值/未超阈值标志、running 恢复×2。孤儿套件 **243 passed / 1 skipped**(基线 237+6);任务 7 passed;迁移 11 passed;black/flake8 通过;mypy lifecycle 0 错误、orphan_lifecycle_service 16 个为预存 Column 债(零新增,git diff 证实未触碰 setattr 行)。
+- 契约测试 `test_lifecycle_failure_rolls_back_details_and_completed_status` 自动适配新语义(改名为 `test_lifecycle_failure_cleans_up_details_and_marks_failed`):reconcile 失败 → 明细被 `_fail_scan` 清理 → detail_count==0 仍成立,语义从「事务回滚」变为「失败清理」。
+
+### 变更边界
+- 未新增数据库列/迁移;未动前端;未动 tr 降级问题(独立,缺运行时日志证据);未清理 12 万真实孤儿(靠下次扫描自然处理)。
+- 工作区"同步治理"未提交改动保持原样;未执行 Git 提交。
+
+## 2026-08-09 - 孤儿扫描 API 卡死事故排查与路径映射加固
+
+### 事故现象
+部署后启动孤儿文件扫描,API 请求失效卡死。日志显示扫描发现 120,100 个孤儿文件(8-02 那次扫描已落库 120,219 个)。
+
+### 直接原因(API 卡死)
+`_finalize_successful_scan`(orphan_scanner.py:736-781)把 12 万行 OrphanFile insert + reconcile_candidates 候选对账 + 状态更新塞进**单个 session,一次 db.commit()**,长时间独占 SQLite 写锁,饿死所有其它 API 写入。三个独立子代理审查确认:这有意为之的"原子写入"设计(L202 注释 + L747 docstring),`_save_orphan_files`(L799)分批函数是死代码未被主流程调用。
+
+### 根因排查过程(严谨记录,含修正)
+排查 12 万孤儿的产生源,逐步排除多个假设:
+- **tr 下载器(c04cc424)独占 119,097 个孤儿,全是 low confidence**(其余 3 个下载器共 1,122 个,全 high)。low = 扫描时整体降级。
+- 假设① inventory 超时:实测直连 tr 拉取 9952 种子+160万文件仅 17 秒,远低于 30s 超时。**排除**。
+- 假设② files 解析失败:实测 transmission-rpc 7.x 的 fields["files"] 元素有 name 键,解析正常,0 个空。**排除**。
+- 假设③ save_path 取不到:实测 `download_dir` 属性能取到。**排除**。
+- 假设④ JSON 全空 external 屏蔽 rules:**基于本地开发库(backend/config/app.db)的误判**——本地库 tr 的 path_mapping JSON external 确实全空。但**生产库(E:\...\Desktop\app.db)tr 的 JSON 有 220 条有效映射 + 仅 1 条空**,rules 也有 13 条。生产库配置健康,此假设对生产事故**不成立**。
+- **生产环境 tr 降级的即时原因(运行时 fail_time/缓存/client)只能从生产日志确认**,静态分析与实测已穷尽。
+
+### 本次代码修复(作为健壮性加固,非事故对症药)
+修复 `UnifiedPathMappingService` 的真实缺陷:JSON 非空但全部映射无效(external 全空)时,原逻辑锁定 JSON 模式并忽略 path_mapping_rules,导致映射彻底失效。
+
+变更 `backend/app/core/path_mapping.py`:
+- `__init__` 新增 `_json_effective` 标志:JSON 有至少一条有效映射(internal+external 均非空)时为 True。
+- JSON 全无效时回退到 path_mapping_rules(原 `if/elif` 互斥改为独立加载)。
+- JSON 有效时也加载 converter,使 `get_rules()` 不再返回空(供 resolve_external_path 的 rules 来源使用)。
+- `internal_to_external` 在 `_json_effective=False` 时优先 converter,避免无效 service 原样返回内部路径。
+
+验证:新增 `tests/core/test_path_mapping_fallback.py` 8 测试全绿(JSON 全空回退/JSON 有效不回退/get_rules 暴露/rules 端到端 resolve);path_mapping 回归 46 passed;孤儿回归 237 passed/1 skipped(基线一致);black/flake8/mypy 干净。生产库配置复测 7/8 路径成功解析。
+
+### 未解决(后续任务)
+- **API 卡死根因**:`_finalize_successful_scan` 单大事务分批重构(8 项治本,风险高,需单独审批)。本修复消除"JSON 全空"场景的误报源,但不解决大事务结构本身。
+- **生产环境 tr 降级即时原因**:需查生产日志(搜"精筛不可用"/"降级为目录粗筛"含 c04cc424)确认运行时 fail_time/缓存状态。
+- **白名单兜底加固**:collect_torrent_directory_whitelist L351-353 在 resolve 失败时用 internal save_path 兜底,commonpath 与 external 扫描根失配——独立加固点,留待后续。
+
 ## 2026-08-09 - 前端异步操作条目占用与刷新防重复提交
 
 ### 问题与实现

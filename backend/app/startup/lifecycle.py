@@ -1,6 +1,7 @@
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI
 
@@ -172,6 +173,49 @@ async def reconcile_orphan_file_state() -> dict[str, int]:
         return await OrphanFileService(db).reconcile_stable_candidate_details()
 
 
+async def recover_interrupted_orphan_scans(session_factory: Any = None) -> int:
+    """把残留 running 的孤儿扫描记录标记为 failed（服务重启恢复）。
+
+    落库分批后，扫描中途崩溃会残留 status=running 的记录：清理门禁
+    (_evaluate_cleanup_snapshot) 对 running 与 failed 都拒清理，但 running
+    会让 get_orphan_list 的 display_scan 为 None 导致列表空白。恢复为 failed
+    后列表回退显示最近一次 completed 扫描，状态机语义正确。
+    恢复不改门禁放行语义（仍需下一次成功扫描产生 completed）。
+
+    Args:
+        session_factory: 可注入的异步 session 工厂（默认 AsyncSessionLocal；
+            测试可传内存库工厂）。
+
+    Returns:
+        恢复（running → failed）的记录数。
+    """
+    from datetime import datetime
+
+    from sqlalchemy import update
+
+    from app.database import AsyncSessionLocal
+    from app.models.orphan_file import OrphanScanResult
+    from app.tasks.resource_guard import admission_controller
+
+    factory = session_factory or AsyncSessionLocal
+    recovered = 0
+    async with factory() as db:
+        result = await db.execute(
+            update(OrphanScanResult)
+            .where(OrphanScanResult.status == "running")
+            .values(
+                status="failed",
+                error_message="服务重启后自动标记失败（扫描未完成）",
+                updated_at=datetime.utcnow(),
+            )
+        )
+        recovered = getattr(result, "rowcount", None) or 0
+        if recovered:
+            async with admission_controller.db_write_scope():
+                await db.commit()
+    return recovered
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -257,6 +301,22 @@ async def lifespan(app: FastAPI):
         if not settings.DEV:
             raise
         print("[WARN] DEV 模式继续启动；本次孤儿文件对账不得视为通过")
+
+    # 2.6 恢复残留 running 的孤儿扫描记录（落库分批后崩溃残留的兜底恢复）。
+    print("=== 恢复中断的孤儿扫描记录 ===")
+    try:
+        _recovered_scans = await recover_interrupted_orphan_scans()
+        if _recovered_scans:
+            print(f"[OK] 已恢复 {_recovered_scans} 条残留 running 扫描记录为 failed")
+        else:
+            print("[OK] 无残留 running 扫描记录")
+    except Exception as e:
+        print(f"[ERROR] 孤儿扫描记录恢复失败: {e}")
+        import traceback
+
+        traceback.print_exc()
+        if not settings.DEV:
+            raise
 
     # 3. 更新定时任务表数据：将dr=0的数据状态改为空闲
     await update_cron_task_status()
