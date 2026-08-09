@@ -508,6 +508,45 @@ describe('orphan files atomic page state', () => {
     )
     expect(vm.quarantineSelected).toEqual([])
     expect(vm.purgeExecuting).toBe(false)
+    expect(mockGetQuarantineList).toHaveBeenCalledTimes(1)
+  })
+
+  it('隔离文件全部处理中时提示并刷新，不伪造新任务号', async() => {
+    mockPurgeQuarantineNow.mockResolvedValueOnce({
+      code: '200',
+      msg: '所选隔离文件均已在彻底删除任务中处理',
+      status: 'success',
+      data: {
+        task_id: null,
+        status: 'already_running',
+        total_count: 0,
+        requested_count: 1,
+        accepted_count: 0,
+        skipped_count: 1,
+        skipped_items: ['/data/quarantine.bin'],
+        purged_count: 0,
+        failed_count: 0,
+        failed_list: [],
+        error_message: null,
+        created_at: null,
+        started_at: null,
+        completed_at: null
+      }
+    })
+    const wrapper = mountView()
+    await flushLifecycle()
+    mockGetQuarantineList.mockClear()
+    const vm = viewModel(wrapper)
+    vm.quarantineSelected = [quarantineItem()]
+
+    await vm.handleQuarantinePurge()
+
+    expect(message.info).toHaveBeenCalledWith(
+      '所选隔离文件均已在彻底删除任务中处理'
+    )
+    expect(message.success).not.toHaveBeenCalled()
+    expect(mockGetQuarantineList).toHaveBeenCalledTimes(1)
+    expect(vm.quarantineSelected).toEqual([])
   })
 
   it('首次加载用一次分页响应同时更新列表、统计和扫描上下文', async() => {
@@ -671,6 +710,49 @@ describe('orphan files atomic page state', () => {
     expect(vm.scanContext.remaining_count).toBe(1)
     expect(vm.scanContext.remaining_size).toBe(200)
     expect(vm.list.map((item) => item.id)).toEqual([2])
+  })
+
+  it('主动清理项全部处理中时关闭弹窗并立即刷新可用列表', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.selectedRows = [orphanItem(1)]
+    await vm.handleCleanupPreview()
+    mockGetOrphanList.mockClear()
+    mockCleanupOrphans.mockResolvedValueOnce({
+      code: '200',
+      msg: '所选孤儿文件均已在主动清理任务中处理',
+      status: 'success',
+      data: {
+        task_id: null,
+        operation_type: 'cleanup',
+        status: 'already_running',
+        scan_id: 'scan-completed',
+        total_count: 0,
+        requested_count: 1,
+        accepted_count: 0,
+        skipped_count: 1,
+        skipped_items: [1],
+        success_count: 0,
+        purged_count: 0,
+        failed_count: 0,
+        failed_list: [],
+        total_size: 0,
+        error_message: null,
+        created_at: null,
+        started_at: null,
+        completed_at: null
+      }
+    })
+
+    await vm.handleCleanupConfirm()
+
+    expect(message.info).toHaveBeenCalledWith(
+      '所选孤儿文件均已在主动清理任务中处理'
+    )
+    expect(message.success).not.toHaveBeenCalled()
+    expect(vm.cleanupDialogVisible).toBe(false)
+    expect(mockGetOrphanList).toHaveBeenCalledTimes(1)
   })
 
   it('主动清理任务提交失败时提示错误且不伪造完成结果', async() => {

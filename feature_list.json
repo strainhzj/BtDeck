@@ -2054,6 +2054,48 @@
             "session-handoff.md"
           ],
           "evidence": "列表模式批量删除与行内删除两组四级入口均改用 tag/trash-2/trash/alert-triangle 四个 LucideIcon，等级1继续使用 danger 样式；新增回归验证两组菜单均渲染正确 SVG、图标 name、menu-icon 间距类与 danger 标识。全量 npm run test:unit 通过，列表视图定向 Jest 4/4 通过，typecheck、改动文件 lint、Vuex action lint、生产 build 与 git diff --check 通过；完整 npm run lint 仅被其他测试文件已有 5 条 warning 拦截；根 E:\\Git\\bin\\bash.exe ./init.sh --ci 通过，前端 init 仅有既有 null-byte warning。"
+        },
+        {
+          "id": "v1.0.6.38",
+          "name": "前端异步操作条目占用与刷新防重复提交",
+          "description": "种子批量删除、重复种子快捷删除、孤儿主动清理和隔离区彻底删除在提交时由后端原子占用业务条目；pending/running 条目从列表、重复查询和高级搜索中隐藏。混合提交仅执行未占用项并返回跳过统计，全部已占用时语义成功但不创建/派发任务；completed/partial/failed 终态释放占用，前端提交后立即刷新且 nullable task_id 不进入轮询。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/deletion_task_manager.py",
+            "backend/app/services/orphan_purge_job_service.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/services/duplicate_quick_delete_service.py",
+            "backend/app/services/advanced_search.py",
+            "backend/app/api/endpoints/torrent_deletion.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/app/api/endpoints/duplicate_torrents.py",
+            "backend/app/api/endpoints/duplicate_quick_delete.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_deletion_task_manager.py",
+            "backend/tests/services/test_orphan_purge_job_service.py",
+            "backend/tests/services/test_orphan_query_state.py",
+            "backend/tests/api/test_duplicate_quick_delete_api.py",
+            "backend/tests/api/test_duplicate_torrents_api.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "backend/tests/api/test_torrent_deletion_by_level_api.py",
+            "backend/tests/endpoints/test_active_only_filter.py",
+            "backend/tests/services/test_advanced_search_regression.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/components/torrents/QuickDeleteDuplicatesDialog.vue",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/mixins/torrentBatch.ts",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/quick-delete-duplicates-dialog.spec.ts",
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "后端相关 249 passed；新增覆盖并发占用、混合跳过、全部占用无派发、>1200 ID 单 JSON 绑定、失败/部分终态释放及查询重新可见。改动后端文件 flake8 与 py_compile 通过，两个核心占用服务 mypy 通过。前端 3 个定向 Jest suites、typecheck、改动文件 ESLint 和生产 build 通过。完整后端 3005 项运行中，本次相关测试均通过，失败来自工作区既有 test_sqlite_worker_guard.py subprocess mock 的 stdout=None；完整前端 lint 仅被 3 个无关关键词测试文件的既有 5 warnings 拦截。"
         }
       ]
     },

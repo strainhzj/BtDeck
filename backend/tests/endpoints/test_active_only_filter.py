@@ -139,6 +139,25 @@ class TestActiveKeysFilter:
         hashes = {t.hash for t in result["data"]}
         assert hashes == {"h1", "h3"}
 
+    def test_normal_list_excludes_torrents_reserved_by_deletion_task(self):
+        db = _make_session()
+        _insert_torrents(
+            db,
+            [
+                ("in-flight", "dl_a", "A", "h1"),
+                ("visible", "dl_a", "A", "h2"),
+            ],
+        )
+
+        with patch(
+            "app.api.endpoints.torrent_helpers.build_active_deletion_exclusion",
+            return_value=TorrentInfo.info_id != "in-flight",
+        ):
+            result = get_torrent_infos(db)
+
+        assert result["total"] == 1
+        assert [torrent.info_id for torrent in result["data"]] == ["visible"]
+
     def test_large_set_does_not_explode_sqlite_limit(self):
         """即使主动把变量上限压低，大集合仍通过 TEMP 表联接正确查询。"""
         db = _make_session()

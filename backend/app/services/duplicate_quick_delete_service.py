@@ -18,6 +18,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.torrents.models import TorrentInfo
+from app.services.deletion_task_manager import build_active_deletion_exclusion
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +41,13 @@ def _item(torrent: TorrentInfo) -> Dict[str, Any]:
     }
 
 
-def classify_duplicates(db: Session, downloader_ids: List[str], keep_downloader_ids: List[str]) -> List[Dict[str, Any]]:
+def classify_duplicates(
+    db: Session,
+    downloader_ids: List[str],
+    keep_downloader_ids: List[str],
+    *,
+    exclude_active: bool = True,
+) -> List[Dict[str, Any]]:
     """跨下载器重复种子全量分类。
 
     Args:
@@ -54,16 +61,17 @@ def classify_duplicates(db: Session, downloader_ids: List[str], keep_downloader_
     """
     keep_set = set(keep_downloader_ids)
 
-    rows = (
-        db.query(TorrentInfo)
-        .filter(
-            TorrentInfo.dr == 0,
-            TorrentInfo.hash.isnot(None),
-            TorrentInfo.hash != "",
-            TorrentInfo.downloader_id.in_(downloader_ids),
-        )
-        .all()
+    query = db.query(TorrentInfo).filter(
+        TorrentInfo.dr == 0,
+        TorrentInfo.hash.isnot(None),
+        TorrentInfo.hash != "",
+        TorrentInfo.downloader_id.in_(downloader_ids),
     )
+    if exclude_active:
+        active_deletion_exclusion = build_active_deletion_exclusion(TorrentInfo.info_id)
+        if active_deletion_exclusion is not None:
+            query = query.filter(active_deletion_exclusion)
+    rows = query.all()
 
     # 按标准化 hash 分组
     grouped: Dict[str, List[TorrentInfo]] = {}

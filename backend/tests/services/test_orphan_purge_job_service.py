@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """隔离区彻底删除持久化任务、恢复和通知测试。"""
 
+import asyncio
 import json
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -54,6 +55,92 @@ async def test_create_cleanup_job_persists_ids_and_scan_binding(async_orphan_db)
     assert job.orphan_ids == [1, 2]
     assert job.canonical_paths == []
     assert job.total_count == 2
+
+
+async def test_cleanup_submission_skips_active_items_and_releases_failed_job(async_orphan_db):
+    service = OrphanPurgeJobService(async_orphan_db)
+
+    first = await service.submit_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[1, 2],
+        operator="tester",
+    )
+    mixed = await service.submit_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[2, 3],
+        operator="tester",
+    )
+    all_active = await service.submit_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[1, 2, 3],
+        operator="tester",
+    )
+
+    assert first.accepted_items == [1, 2]
+    assert mixed.accepted_items == [3]
+    assert mixed.skipped_items == [2]
+    assert all_active.job is None
+    assert all_active.skipped_items == [1, 2, 3]
+
+    assert first.job is not None
+    first.job.status = "failed"
+    await async_orphan_db.commit()
+    retry = await service.submit_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[1, 2],
+        operator="tester",
+    )
+    assert retry.accepted_items == [1, 2]
+    assert retry.skipped_items == []
+
+
+async def test_purge_submission_skips_active_paths_and_allows_terminal_retry(async_orphan_db):
+    service = OrphanPurgeJobService(async_orphan_db)
+
+    first = await service.submit_purge_job(["/data/a.mkv"], operator="tester")
+    mixed = await service.submit_purge_job(
+        ["/data/a.mkv", "/data/b.mkv"],
+        operator="tester",
+    )
+
+    assert mixed.accepted_items == ["/data/b.mkv"]
+    assert mixed.skipped_items == ["/data/a.mkv"]
+    assert first.job is not None
+    first.job.status = "partial"
+    await async_orphan_db.commit()
+
+    retry = await service.submit_purge_job(["/data/a.mkv"], operator="tester")
+    assert retry.accepted_items == ["/data/a.mkv"]
+    assert retry.skipped_items == []
+
+
+async def test_submission_lock_remains_atomic_when_db_write_governance_is_disabled(
+    async_orphan_db,
+    monkeypatch,
+):
+    from app.tasks.resource_guard import settings as resource_settings
+
+    monkeypatch.setattr(resource_settings, "SYNC_DB_WRITE_SCOPE_ENABLED", False)
+    factory = _session_factory(async_orphan_db)
+    async with factory() as first_db, factory() as second_db:
+        first, second = await asyncio.gather(
+            OrphanPurgeJobService(first_db).submit_cleanup_job(
+                scan_id="scan-latest",
+                orphan_ids=[7, 8],
+                operator="tester-a",
+            ),
+            OrphanPurgeJobService(second_db).submit_cleanup_job(
+                scan_id="scan-latest",
+                orphan_ids=[8, 9],
+                operator="tester-b",
+            ),
+        )
+
+    accepted = first.accepted_items + second.accepted_items
+    skipped = first.skipped_items + second.skipped_items
+    assert accepted.count(8) == 1
+    assert skipped.count(8) == 1
+    assert set(accepted) == {7, 8, 9}
 
 
 async def test_dispatcher_completes_job_and_creates_notification(async_orphan_db):

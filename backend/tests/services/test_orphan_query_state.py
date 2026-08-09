@@ -12,6 +12,7 @@ from app.models.orphan_file import (
 )
 from app.services.orphan_file_service import OrphanFileService
 from app.services.orphan_manifest import normalize_path
+from app.services.orphan_purge_job_service import OrphanPurgeJobService
 
 pytestmark = pytest.mark.asyncio
 
@@ -206,6 +207,73 @@ async def test_completed_snapshot_preview_remains_compatible(async_orphan_db):
     assert result["total_count"] == 1
     assert result["total_size"] == 123
     assert result["items"][0]["id"] == detail.id
+
+
+async def test_active_cleanup_job_hides_detail_until_terminal_failure(async_orphan_db):
+    now = datetime.utcnow()
+    detail = _detail("scan_completed", "/data/in-flight.bin", 123)
+    async_orphan_db.add_all(
+        [
+            _scan("scan_completed", status="completed", scan_time=now),
+            detail,
+        ]
+    )
+    await async_orphan_db.commit()
+
+    submission = await OrphanPurgeJobService(async_orphan_db).submit_cleanup_job(
+        scan_id="scan_completed",
+        orphan_ids=[detail.id],
+        operator="tester",
+    )
+    hidden = await OrphanFileService(async_orphan_db).get_orphan_list()
+    preview = await OrphanFileService(async_orphan_db).cleanup_preview(
+        [detail.id],
+        scan_id="scan_completed",
+    )
+
+    assert hidden["total"] == 0
+    assert hidden["scan_context"]["remaining_count"] == 0
+    assert preview["total_count"] == 0
+
+    assert submission.job is not None
+    submission.job.status = "failed"
+    await async_orphan_db.commit()
+    visible_again = await OrphanFileService(async_orphan_db).get_orphan_list()
+    assert visible_again["total"] == 1
+    assert visible_again["list"][0]["id"] == detail.id
+
+
+async def test_active_purge_job_hides_quarantine_item_until_terminal_failure(async_orphan_db):
+    now = datetime.utcnow()
+    path = normalize_path("/data/quarantined.bin")
+    async_orphan_db.add(
+        OrphanCurrentCandidate(
+            canonical_path=path,
+            downloader_id="dl_001",
+            status="quarantined",
+            file_size=123,
+            quarantine_path="/quarantine/quarantined.bin",
+            quarantine_root="/quarantine",
+            quarantined_at=now,
+            purge_after=now + timedelta(days=7),
+            operation_state="stable",
+        )
+    )
+    await async_orphan_db.commit()
+
+    submission = await OrphanPurgeJobService(async_orphan_db).submit_purge_job(
+        [path],
+        operator="tester",
+    )
+    hidden = await OrphanFileService(async_orphan_db).get_quarantine_list()
+    assert hidden["total"] == 0
+
+    assert submission.job is not None
+    submission.job.status = "failed"
+    await async_orphan_db.commit()
+    visible_again = await OrphanFileService(async_orphan_db).get_quarantine_list()
+    assert visible_again["total"] == 1
+    assert visible_again["list"][0]["canonical_path"] == path
 
 
 async def test_reconcile_stable_candidates_is_idempotent_and_exact(async_orphan_db, tmp_path):

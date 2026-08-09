@@ -5,10 +5,11 @@ import asyncio
 import json
 import logging
 import uuid
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
-from sqlalchemy import select, update
+from sqlalchemy import Integer, String, case, cast as sql_cast, func, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
@@ -19,6 +20,11 @@ from app.utils.format_size import format_size
 
 logger = logging.getLogger(__name__)
 
+# SQLite 部署由 startup_guard 强制单 Worker；始终串行化“查占用 + 写 pending 任务”，
+# 不依赖可关闭的同步写治理开关。
+_job_submission_lock = asyncio.Lock()
+
+ACTIVE_STATUSES = ("pending", "running")
 TERMINAL_STATUSES = ("completed", "partial", "failed")
 PURGE_OPERATION = "purge"
 CLEANUP_OPERATION = "cleanup"
@@ -27,80 +33,213 @@ CLEANUP_NOTIFICATION_EVENT = "orphan_cleanup_completed"
 NOTIFICATION_ROUTE = "/orphan-files/index"
 
 
+def _active_job_json_values(column: Any, alias_name: str) -> Any:
+    """展开合法 JSON 数组；坏数据按空数组处理。"""
+    json_source = case((func.json_valid(column) == 1, column), else_="[]")
+    return func.json_each(json_source).table_valued("value").alias(alias_name)
+
+
+def active_cleanup_orphan_ids_query() -> Any:
+    """返回 pending/running 主动清理任务占用的 OrphanFile.id 查询。"""
+    values = _active_job_json_values(OrphanPurgeJob.orphan_ids_json, "active_cleanup_orphan_ids")
+    return (
+        select(sql_cast(values.c.value, Integer))
+        .select_from(OrphanPurgeJob)
+        .join(values, true())
+        .where(
+            OrphanPurgeJob.operation_type == CLEANUP_OPERATION,
+            OrphanPurgeJob.status.in_(ACTIVE_STATUSES),
+            values.c.value.is_not(None),
+        )
+    )
+
+
+def active_purge_canonical_paths_query() -> Any:
+    """返回 pending/running 隔离区删除任务占用的 canonical_path 查询。"""
+    values = _active_job_json_values(OrphanPurgeJob.canonical_paths_json, "active_purge_paths")
+    return (
+        select(sql_cast(values.c.value, String))
+        .select_from(OrphanPurgeJob)
+        .join(values, true())
+        .where(
+            OrphanPurgeJob.operation_type == PURGE_OPERATION,
+            OrphanPurgeJob.status.in_(ACTIVE_STATUSES),
+            values.c.value.is_not(None),
+        )
+    )
+
+
+@dataclass(frozen=True)
+class OrphanJobSubmission:
+    """任务数据占用结果；允许全部已占用时不创建重复任务。"""
+
+    operation_type: str
+    scan_id: Optional[str]
+    job: Optional[OrphanPurgeJob]
+    accepted_items: List[Any]
+    skipped_items: List[Any]
+
+    @property
+    def accepted_count(self) -> int:
+        return len(self.accepted_items)
+
+    @property
+    def skipped_count(self) -> int:
+        return len(self.skipped_items)
+
+    @property
+    def requested_count(self) -> int:
+        return self.accepted_count + self.skipped_count
+
+    def to_dict(self) -> Dict[str, Any]:
+        if self.job is not None:
+            data = self.job.to_dict()
+        else:
+            data = {
+                "task_id": None,
+                "status": "already_running",
+                "operation_type": self.operation_type,
+                "scan_id": self.scan_id,
+                "total_count": 0,
+                "purged_count": 0,
+                "success_count": 0,
+                "failed_count": 0,
+                "total_size": 0,
+                "failed_list": [],
+                "error_message": None,
+                "created_at": None,
+                "started_at": None,
+                "completed_at": None,
+            }
+        data.update(
+            {
+                "requested_count": self.requested_count,
+                "accepted_count": self.accepted_count,
+                "skipped_count": self.skipped_count,
+                "skipped_items": list(self.skipped_items),
+            }
+        )
+        return data
+
+
 class OrphanPurgeJobService:
     """隔离区彻底删除任务的持久化状态服务。"""
 
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def create_job(self, canonical_paths: List[str], operator: str) -> OrphanPurgeJob:
-        """创建 pending 任务；按原顺序去重路径。"""
-        # 路径可合法包含首尾空格；只用 strip 判断空白值，不改写原始主键。
-        normalized_paths = list(dict.fromkeys(path for path in canonical_paths if path and path.strip()))
-        if not normalized_paths:
-            raise ValueError("至少需要一个有效的隔离区路径")
+    async def _create_submission(
+        self,
+        *,
+        operation_type: str,
+        items: List[Any],
+        operator: str,
+        scan_id: Optional[str] = None,
+    ) -> OrphanJobSubmission:
+        """在始终启用的提交临界区内完成活动项查重与任务创建。"""
+        if operation_type == CLEANUP_OPERATION:
+            active_query = active_cleanup_orphan_ids_query()
+        elif operation_type == PURGE_OPERATION:
+            active_query = active_purge_canonical_paths_query()
+        else:
+            raise ValueError(f"不支持的孤儿维护任务类型: {operation_type}")
 
-        now = datetime.utcnow()
-        job = OrphanPurgeJob(
-            task_id=str(uuid.uuid4()),
-            status="pending",
-            operation_type=PURGE_OPERATION,
-            canonical_paths_json=json.dumps(normalized_paths, ensure_ascii=False),
-            operator=operator,
-            total_count=len(normalized_paths),
-            purged_count=0,
-            failed_count=0,
-            created_at=now,
-            updated_at=now,
-        )
         try:
-            async with admission_controller.db_write_scope():
+            async with _job_submission_lock, admission_controller.db_write_scope():
+                active_result = await self.db.execute(active_query)
+                active_items: Set[Any]
+                if operation_type == CLEANUP_OPERATION:
+                    active_items = {int(value) for value in active_result.scalars().all() if value is not None}
+                else:
+                    active_items = {str(value) for value in active_result.scalars().all() if value is not None}
+
+                skipped_items = [item for item in items if item in active_items]
+                accepted_items = [item for item in items if item not in active_items]
+                if not accepted_items:
+                    # 结束只读事务且保留当前 Session 已加载对象，避免 rollback 使其过期。
+                    await self.db.commit()
+                    return OrphanJobSubmission(
+                        operation_type=operation_type,
+                        scan_id=scan_id,
+                        job=None,
+                        accepted_items=[],
+                        skipped_items=skipped_items,
+                    )
+
+                now = datetime.utcnow()
+                job = OrphanPurgeJob(
+                    task_id=str(uuid.uuid4()),
+                    status="pending",
+                    operation_type=operation_type,
+                    canonical_paths_json=(
+                        json.dumps(accepted_items, ensure_ascii=False) if operation_type == PURGE_OPERATION else "[]"
+                    ),
+                    scan_id=scan_id,
+                    orphan_ids_json=(
+                        json.dumps(accepted_items, ensure_ascii=False) if operation_type == CLEANUP_OPERATION else None
+                    ),
+                    operator=operator,
+                    total_count=len(accepted_items),
+                    purged_count=0,
+                    failed_count=0,
+                    total_size=0,
+                    created_at=now,
+                    updated_at=now,
+                )
                 self.db.add(job)
                 await self.db.commit()
                 await self.db.refresh(job)
+                return OrphanJobSubmission(
+                    operation_type=operation_type,
+                    scan_id=scan_id,
+                    job=job,
+                    accepted_items=accepted_items,
+                    skipped_items=skipped_items,
+                )
         except Exception:
             await self.db.rollback()
             raise
-        return job
 
-    async def create_cleanup_job(self, scan_id: str, orphan_ids: List[int], operator: str) -> OrphanPurgeJob:
-        """Create a durable asynchronous manual-cleanup task.
+    async def submit_purge_job(self, canonical_paths: List[str], operator: str) -> OrphanJobSubmission:
+        """原子提交隔离区彻底删除任务；活动任务中的路径被跳过。"""
+        normalized_paths = list(dict.fromkeys(path for path in canonical_paths if path and path.strip()))
+        if not normalized_paths:
+            raise ValueError("至少需要一个有效的隔离区路径")
+        return await self._create_submission(
+            operation_type=PURGE_OPERATION,
+            items=normalized_paths,
+            operator=operator,
+        )
 
-        The IDs and scan batch are captured at submission time. The worker
-        still performs the existing freshness, manifest and file-identity
-        checks immediately before moving each file to quarantine.
-        """
+    async def create_job(self, canonical_paths: List[str], operator: str) -> OrphanPurgeJob:
+        """兼容入口；若全部已占用则明确拒绝。"""
+        submission = await self.submit_purge_job(canonical_paths, operator)
+        if submission.job is None:
+            raise ValueError("所选隔离文件均已在彻底删除任务中处理")
+        return submission.job
+
+    async def submit_cleanup_job(
+        self, scan_id: str, orphan_ids: List[int], operator: str
+    ) -> OrphanJobSubmission:
+        """原子提交主动清理任务；后台仍执行全部安全复核。"""
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
         if not scan_id or not scan_id.strip():
             raise ValueError("主动清理任务必须绑定有效的扫描批次")
         if not normalized_ids:
             raise ValueError("至少需要一个有效的孤儿文件 ID")
-
-        now = datetime.utcnow()
-        job = OrphanPurgeJob(
-            task_id=str(uuid.uuid4()),
-            status="pending",
+        return await self._create_submission(
             operation_type=CLEANUP_OPERATION,
-            canonical_paths_json="[]",
-            scan_id=scan_id,
-            orphan_ids_json=json.dumps(normalized_ids, ensure_ascii=False),
+            items=normalized_ids,
             operator=operator,
-            total_count=len(normalized_ids),
-            purged_count=0,
-            failed_count=0,
-            total_size=0,
-            created_at=now,
-            updated_at=now,
+            scan_id=scan_id,
         )
-        try:
-            async with admission_controller.db_write_scope():
-                self.db.add(job)
-                await self.db.commit()
-                await self.db.refresh(job)
-        except Exception:
-            await self.db.rollback()
-            raise
-        return job
+
+    async def create_cleanup_job(self, scan_id: str, orphan_ids: List[int], operator: str) -> OrphanPurgeJob:
+        """兼容入口；若全部已占用则明确拒绝。"""
+        submission = await self.submit_cleanup_job(scan_id, orphan_ids, operator)
+        if submission.job is None:
+            raise ValueError("所选孤儿文件均已在主动清理任务中处理")
+        return submission.job
 
     async def get_job(self, task_id: str) -> Optional[OrphanPurgeJob]:
         return await self.db.get(OrphanPurgeJob, task_id)
@@ -382,7 +521,7 @@ class OrphanPurgeJobDispatcher:
                 operation_type = str(getattr(job, "operation_type", None) or PURGE_OPERATION)
                 canonical_paths = job.canonical_paths
                 orphan_ids = job.orphan_ids
-                scan_id = job.scan_id
+                scan_id = str(job.scan_id) if job.scan_id is not None else None
                 operator = str(job.operator)
                 total_count = int(job.total_count or 0)
 

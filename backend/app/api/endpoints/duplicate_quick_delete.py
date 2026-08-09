@@ -125,7 +125,8 @@ async def quick_delete(
     """
     try:
         downloaders, keeps = _validate(payload.downloader_ids, payload.keep_downloader_ids)
-        groups = classify_duplicates(db, downloaders, keeps)
+        # 提交阶段保留活动项，由任务管理器原子查重并返回跳过数量。
+        groups = classify_duplicates(db, downloaders, keeps, exclude_active=False)
         candidates = collect_delete_candidates(groups)
 
         if not candidates:
@@ -133,7 +134,15 @@ async def quick_delete(
                 status="success",
                 msg="未发现可删除的重复种子",
                 code="200",
-                data={"task_id": None, "total_count": 0, "delete_level": payload.delete_level},
+                data={
+                    "task_id": None,
+                    "total_count": 0,
+                    "requested_count": 0,
+                    "accepted_count": 0,
+                    "skipped_count": 0,
+                    "skipped_info_ids": [],
+                    "delete_level": payload.delete_level,
+                },
             )
 
         from app.database import SessionLocal
@@ -141,16 +150,33 @@ async def quick_delete(
         from app.services.async_deletion_executor import AsyncDeletionExecutor
 
         task_manager = get_deletion_task_manager()
-        task_id = await task_manager.create_task(
+        submission = await task_manager.create_task_reserving(
             torrent_info_ids=candidates,
             delete_level=payload.delete_level,
             operator=current_user.username,
         )
+        if submission.task_id is None:
+            return CommonResponse(
+                status="success",
+                msg="重复种子均已在删除任务中处理",
+                code="200",
+                data={
+                    "task_id": None,
+                    "total_count": 0,
+                    "requested_count": submission.requested_count,
+                    "accepted_count": 0,
+                    "skipped_count": submission.skipped_count,
+                    "skipped_info_ids": submission.skipped_info_ids,
+                    "delete_level": payload.delete_level,
+                },
+            )
+
+        task_id = submission.task_id
         executor = AsyncDeletionExecutor(db_session_factory=SessionLocal, request=request)
         asyncio.create_task(
             executor.execute_deletion_task(
                 task_id=task_id,
-                torrent_info_ids=candidates,
+                torrent_info_ids=submission.accepted_info_ids,
                 delete_level=payload.delete_level,
                 operator=current_user.username,
                 request=request,
@@ -159,14 +185,23 @@ async def quick_delete(
         )
         logger.info(
             f"提交快捷删除重复种子任务: task_id={task_id}, 用户={current_user.username}, "
-            f"待删除数={len(candidates)}, delete_level={payload.delete_level}, "
+            f"接受数={submission.accepted_count}, 跳过数={submission.skipped_count}, "
+            f"delete_level={payload.delete_level}, "
             f"notify_on_complete={payload.notify_on_complete}"
         )
         return CommonResponse(
             status="success",
             msg="已提交删除任务，正在后台执行",
             code="200",
-            data={"task_id": task_id, "total_count": len(candidates), "delete_level": payload.delete_level},
+            data={
+                "task_id": task_id,
+                "total_count": submission.accepted_count,
+                "requested_count": submission.requested_count,
+                "accepted_count": submission.accepted_count,
+                "skipped_count": submission.skipped_count,
+                "skipped_info_ids": submission.skipped_info_ids,
+                "delete_level": payload.delete_level,
+            },
         )
     except HTTPException:
         raise

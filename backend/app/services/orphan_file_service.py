@@ -34,6 +34,10 @@ from app.services.orphan_manifest import (
     TorrentManifestBuilder,
     normalize_path,
 )
+from app.services.orphan_purge_job_service import (
+    active_cleanup_orphan_ids_query,
+    active_purge_canonical_paths_query,
+)
 from app.services.orphan_quarantine import (
     build_quarantine_path,
     compute_purge_after,
@@ -107,7 +111,10 @@ class OrphanFileService:
         confidence: Optional[str] = None,
     ) -> List[Any]:
         """构建列表与“全选当前筛选”共用的 SQL 条件。"""
-        conditions: List[Any] = [OrphanFile.scan_id == scan_id]
+        conditions: List[Any] = [
+            OrphanFile.scan_id == scan_id,
+            OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
+        ]
 
         # status 三态互斥（一个文件只可能是 pending/ignored/deleted 之一）：
         # - pending：未删除 且 不在忽视集
@@ -245,6 +252,7 @@ class OrphanFileService:
         *,
         scan_id: Optional[str],
         exclude_ignored: bool = False,
+        exclude_in_flight: bool = False,
     ) -> List[OrphanFile]:
         """分块加载明细，避免大批量全选触发 SQLite 绑定变量上限。"""
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
@@ -264,6 +272,8 @@ class OrphanFileService:
                         )
                     )
                 )
+            if exclude_in_flight:
+                conditions.append(OrphanFile.id.notin_(active_cleanup_orphan_ids_query()))
             result = await self.db.execute(select(OrphanFile).where(*conditions))
             for detail in result.scalars().all():
                 details_by_id[int(detail.id)] = detail
@@ -639,6 +649,7 @@ class OrphanFileService:
             ).where(
                 OrphanFile.scan_id == display_scan.scan_id,
                 OrphanFile.is_deleted == False,  # noqa: E712
+                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
             )
         )
         remaining_count, remaining_size = remaining_result.one()
@@ -650,6 +661,7 @@ class OrphanFileService:
             select(func.count(OrphanFile.id)).where(
                 OrphanFile.scan_id == display_scan.scan_id,
                 OrphanFile.is_deleted == False,  # noqa: E712
+                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
                 OrphanFile.canonical_path.in_(
                     select(OrphanCurrentCandidate.canonical_path).where(
                         OrphanCurrentCandidate.is_ignored == True  # noqa: E712
@@ -781,6 +793,7 @@ class OrphanFileService:
             ).where(
                 OrphanFile.scan_id == display_scan.scan_id,
                 OrphanFile.is_deleted == False,  # noqa: E712
+                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
             )
         )
         remaining_count, remaining_size = remaining_result.one()
@@ -791,6 +804,7 @@ class OrphanFileService:
             select(func.count(OrphanFile.id)).where(
                 OrphanFile.scan_id == display_scan.scan_id,
                 OrphanFile.is_deleted == False,  # noqa: E712
+                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
                 OrphanFile.canonical_path.in_(
                     select(OrphanCurrentCandidate.canonical_path).where(
                         OrphanCurrentCandidate.is_ignored == True  # noqa: E712
@@ -1125,6 +1139,7 @@ class OrphanFileService:
             orphan_ids,
             scan_id=scan_id,
             exclude_ignored=True,
+            exclude_in_flight=True,
         )
 
         # 手动清理放行低置信度文件：low confidence（离线降级目录粗筛产出）有误判风险，
@@ -1448,7 +1463,11 @@ class OrphanFileService:
 
         # 取明细（限定 scan_id 调用方绑定的批次，避免跨批次误操作）。
         # 分块查询同时支持“全选当前筛选”产生的大规模 ID 快照。
-        details = await self._load_orphan_details(orphan_ids, scan_id=scan_id)
+        details = await self._load_orphan_details(
+            orphan_ids,
+            scan_id=scan_id,
+            exclude_in_flight=True,
+        )
 
         if not details:
             logger.warning(
@@ -1924,6 +1943,7 @@ class OrphanFileService:
         conditions = [
             OrphanCurrentCandidate.status == "quarantined",
             OrphanCurrentCandidate.operation_state == "stable",
+            OrphanCurrentCandidate.canonical_path.notin_(active_purge_canonical_paths_query()),
         ]
         if downloader_id:
             conditions.append(OrphanCurrentCandidate.downloader_id == downloader_id)
@@ -2073,6 +2093,7 @@ class OrphanFileService:
                 OrphanCurrentCandidate.canonical_path.in_(canonical_paths),
                 OrphanCurrentCandidate.status == "quarantined",
                 OrphanCurrentCandidate.operation_state == "stable",
+                OrphanCurrentCandidate.canonical_path.notin_(active_purge_canonical_paths_query()),
             )
         )
         candidates = result.scalars().all()

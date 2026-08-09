@@ -7,7 +7,7 @@
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统双视图 + 对话框/批量操作，全部 class-component |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：异步删除提交后立即刷新；全部已占用时不轮询，混合提交提示跳过数 |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（14 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（12 文件；11 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择） |
@@ -17,7 +17,7 @@
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框（v1.0.5 新增） |
-| 孤儿文件 orphan-files | `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（v1.0.6.34~36 真全选/固定表头/大分页交互优化）；按文件夹展示开关（后端 `group_by_folder` 按直接父目录聚合分页，同目录≥2 文件折叠为文件夹行，单文件原样，纯展示、删除仍按文件，localStorage 持久化） |
+| 孤儿文件 orphan-files | `orphan-files/index.vue` | 孤儿清理/隔离区彻底删除提交后立即刷新；支持全部已占用不建任务与混合跳过提示；保留真全选/文件夹聚合展示 |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
@@ -26,7 +26,8 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，`TorrentsManagement` class，extends mixins(TorrentBatchMixin)）；v1.0.6.30 接入共享 `PageSizeCombobox` + 5 列头服务端排序（首次降序/同字段切换升降序），v1.0.6.29 高级搜索标题收紧为 16px 图标 + 15px 文字，v1.0.6.37 批量与行内四级删除入口统一使用 LucideIcon |
+| `index.vue` | 种子管理主入口（列表模式，`TorrentsManagement` class）；异步批量删除提交后依赖后端占用过滤立即刷新，全部已占用时不进入轮询 |
+| `components/QuickDeleteDuplicatesDialog.vue` | 重复种子快捷删除；提交后触发父列表刷新，nullable task_id 时仅提示而不轮询 |
 | `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)）；v1.0.6.30 复用共享 `PageSizeCombobox`（保留原分页状态/虚拟滚动/重复任务），v1.0.6.31 在“分类/标签”与“添加时间”之间新增保存路径列（兼容 `savePath/save_path`），v1.0.6.37 与列表模式统一四级删除入口 LucideIcon |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统） |
 | `FileManagement.vue` | 种子文件管理（选择/优先级） |
@@ -40,7 +41,7 @@
 | `components/TorrentDetailDialog.vue` | 种子详情对话框 |
 | `components/BatchOperationDialog.vue` | 批量操作对话框 |
 | `components/SearchTemplateDialog.vue` | 搜索模板选择对话框 |
-| `mixins/torrentBatch.ts` | 批量操作薄封装层（class-based Mixin，注入 API/绑定 this/统一文案） |
+| `mixins/torrentBatch.ts` | 批量操作薄封装层；异步删除处理占用跳过统计、提交即刷新与无任务短路 |
 | `utils/torrentBatch.ts` | 批量操作纯函数集合（可单测） |
 | `utils/traditionalTorrentIdentity.ts` | 任务行标识（infoId + downloaderId + hash） |
 | `utils/traditionalStatusFilter.ts` | 传统视图状态筛选 |
@@ -96,7 +97,7 @@
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates`，v1.0.5） |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
-| `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（`OrphanFiles`）；内部滚动固定表头并采用可视窗口渲染大页（v1.0.6.34~36 真全选/固定表头/大分页交互优化），忽视展示逐项失败原因；彻底删除只提交后台任务；「按文件夹展示」切换按钮开启后请求 `group_by_folder=true`，由后端按直接父目录聚合分页（同目录≥2 文件折叠为 el-table 树形文件夹行，单文件原样；勾选文件夹行联动选中其全部子文件，反向同步文件夹行态；纯展示，删除/忽视仍展开为文件 id 提交后端；`btdeck_orphan_folder_view` localStorage 持久化） |
+| `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（`OrphanFiles`）；清理/彻底删除提交后立即重查，nullable task_id 时提示“已在处理”并短路，混合提交展示跳过数；保留真全选与文件夹聚合展示 |
 | `404.vue` | 404 页面（`Page404`） |
 | `nested/*`（7 文件） | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 树形组件演示页（`Tree`） |
@@ -115,4 +116,4 @@
 
 ## 第三层详情
 
-- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2504 行主入口、`TraditionalView.vue` 2561 行）
+- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2754 行主入口、`TraditionalView.vue`）

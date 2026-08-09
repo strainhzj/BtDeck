@@ -244,17 +244,27 @@ async def cleanup_orphans(
     try:
         service = OrphanFileService(db)
         orphan_ids = await _resolve_selection(service, req, scan_id=req.scan_id)
-        job = await OrphanPurgeJobService(db).create_cleanup_job(
+        submission = await OrphanPurgeJobService(db).submit_cleanup_job(
             scan_id=req.scan_id,
             orphan_ids=orphan_ids,
             operator=current_user.username,
         )
-        get_orphan_purge_dispatcher(request.app).submit(str(job.task_id))
+        if submission.job is not None:
+            get_orphan_purge_dispatcher(request.app).submit(str(submission.job.task_id))
+        if submission.job is None:
+            msg = "所选孤儿文件均已在处理中，本次未重复提交"
+        elif submission.skipped_count:
+            msg = (
+                "主动清理任务已提交，"
+                f"已跳过 {submission.skipped_count} 个处理中项目，完成或失败后将发送通知"
+            )
+        else:
+            msg = "主动清理任务已提交，完成或失败后将发送通知"
         return CommonResponse(
             status="success",
-            msg="主动清理任务已提交，完成或失败后将发送通知",
+            msg=msg,
             code="200",
-            data=job.to_dict(),
+            data=submission.to_dict(),
         )
     except Exception as e:
         logger.error(f"提交主动清理任务失败: {e}", exc_info=True)
@@ -367,16 +377,26 @@ async def purge_quarantine_now(
 ):
     """提交隔离区彻底删除任务并立即返回，结果由通知中心异步送达。"""
     try:
-        job = await OrphanPurgeJobService(db).create_job(
+        submission = await OrphanPurgeJobService(db).submit_purge_job(
             canonical_paths=req.canonical_paths,
             operator=current_user.username,
         )
-        get_orphan_purge_dispatcher(request.app).submit(str(job.task_id))
+        if submission.job is not None:
+            get_orphan_purge_dispatcher(request.app).submit(str(submission.job.task_id))
+        if submission.job is None:
+            msg = "所选隔离文件均已在处理中，本次未重复提交"
+        elif submission.skipped_count:
+            msg = (
+                "彻底删除任务已提交，"
+                f"已跳过 {submission.skipped_count} 个处理中项目，完成后将发送通知"
+            )
+        else:
+            msg = "彻底删除任务已提交，完成后将发送通知"
         return CommonResponse(
             status="success",
-            msg="彻底删除任务已提交，完成后将发送通知",
+            msg=msg,
             code="200",
-            data=job.to_dict(),
+            data=submission.to_dict(),
         )
     except Exception as e:
         logger.error(f"提交隔离区彻底删除任务失败: {e}", exc_info=True)

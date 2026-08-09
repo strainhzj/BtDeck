@@ -19,6 +19,7 @@
 """
 
 from datetime import datetime
+from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine
@@ -325,6 +326,19 @@ class TestBasicFiltersRealDb:
         result = _search(db_session, name="Avatar", limit=100000)
         assert result["total"] == 1
         assert _info_ids(result) == {"t1"}
+
+    def test_builder_and_reset_hide_active_deletion_rows(self, db_session):
+        _seed_torrents(db_session)
+        with patch(
+            "app.services.advanced_search.build_active_deletion_exclusion",
+            return_value=TorrentInfo.info_id != "t1",
+        ):
+            builder = SearchQueryBuilder(db_session)
+            initial_ids = {row.info_id for row in builder.base_query.all()}
+            reset_ids = {row.info_id for row in builder.reset().base_query.all()}
+
+        assert "t1" not in initial_ids
+        assert initial_ids == reset_ids == {"t2", "t3", "t4", "t5"}
 
     def test_filter_by_downloader_id(self, db_session):
         """downloader_id 精确匹配"""

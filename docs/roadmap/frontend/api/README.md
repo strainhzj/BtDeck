@@ -7,14 +7,14 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/删除（多级别+异步）/暂停恢复/校验/tracker 操作/高级搜索/搜索模板/重复检测/辅种迁移/路径/备份/reannounce/活跃种子 |
+| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测等；异步删除响应含 nullable task_id 与 requested/accepted/skipped 占用统计 |
 | Tracker tracker | `tracker.ts` | Tracker：关键词 CRUD+批量/消息日志 CRUD+批量/统计/测试匹配/关键词池/汇报配置 CRUD+自动检测域名+批量更新 |
 | 定时任务 tasks | `tasks.ts` | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
 | 下载器 downloader | `downloader.ts` | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
 | 回收站 recycle-bin | `recycle-bin.ts` | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |
 | 审计日志 audit-logs | `audit-logs.ts` | 审计日志：查询/统计/操作类型/导出/归档/下载 |
 | 标签管理 tag | `tag-management.ts` | 标签管理：分类/标签 CRUD/批量删除/分类支持检查 |
-| 孤儿文件 orphan | `orphan-files.ts` | 孤儿文件：扫描/筛选/清理/忽视/隔离恢复；忽视结果保留逐项失败原因，彻底删除为立即返回的持久化任务并提供状态查询 |
+| 孤儿文件 orphan | `orphan-files.ts` | 孤儿文件：扫描/筛选/清理/忽视/隔离恢复；清理/彻底删除任务支持 already_running、nullable task_id 与混合跳过统计 |
 | 种子备份 torrents-backup | `torrents-backup.ts` | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |
 | 通知 notification | `notification.ts` | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |
@@ -30,4 +30,4 @@
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrents.ts` 1219 行核心 API）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrents.ts` 1307 行核心 API）

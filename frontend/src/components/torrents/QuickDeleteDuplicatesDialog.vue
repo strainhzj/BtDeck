@@ -314,10 +314,14 @@ export default class QuickDeleteDuplicatesDialog extends Vue {
         return
       }
       if (!resp.data.task_id) {
-        this.$message.info('未发现可删除的重复种子')
+        this.$message.info(resp.msg || '未发现可删除的重复种子')
+        this.$emit('deleted')
         return
       }
-      this.$message.success(`已提交删除任务（共 ${resp.data.total_count} 个种子）`)
+      const skippedText = resp.data.skipped_count
+        ? `，跳过处理中 ${resp.data.skipped_count} 个`
+        : ''
+      this.$message.success(`已提交删除任务（共 ${resp.data.total_count} 个种子${skippedText}）`)
       this.$emit('deleted')
       // 后台轮询完成状态，仅用于结果提示（不阻塞对话框）
       void this.pollDeleteStatus(resp.data.task_id)

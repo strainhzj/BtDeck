@@ -360,8 +360,12 @@ export interface BatchDeleteAsyncRequest {
 }
 
 export interface BatchDeleteAsyncResponse {
-  task_id: string
+  task_id: string | null
   total_count: number
+  requested_count: number
+  accepted_count: number
+  skipped_count: number
+  skipped_info_ids: string[]
   delete_level: number
 }
 
@@ -381,6 +385,10 @@ export interface BatchDeleteStatusResponse {
   task_id: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'partial'
   total_count: number
+  requested_count: number
+  accepted_count: number
+  skipped_count: number
+  skipped_info_ids: string[]
   success_count: number
   failed_count: number
   error_message?: string
@@ -922,6 +930,10 @@ export interface QuickDeleteRequest {
 export interface QuickDeleteResponse {
   task_id: string | null
   total_count: number
+  requested_count: number
+  accepted_count: number
+  skipped_count: number
+  skipped_info_ids: string[]
   delete_level: number
 }
 

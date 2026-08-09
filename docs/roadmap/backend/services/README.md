@@ -5,25 +5,25 @@
 
 ## 关键词速查
 
-### services/ 根（38 个文件）
+### services/ 根（42 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（ORM 查询引擎，13 字段；v1.0.6.25 起 4 个 ratio 操作符 + `app.contracts` 校验；正则经 `sqlite_search_runtime` 受限执行防 ReDoS） |
+| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（ORM 查询引擎，13 字段；契约校验 + 有界正则；基础查询排除活动删除任务中的种子） |
 | 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
-| 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除任务生命周期） |
+| 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
-| 孤儿文件管理 orphan | `orphan_file_service.py` | 孤儿文件管理（扫描/清理/隔离/恢复/彻底删除/中断恢复）；canonical_path 稳定身份；v1.0.6.34~36 大分页/真全选/忽视过滤；`get_orphan_list_grouped` 按直接父目录聚合分页（SQLite 自定义函数 `bt_orphan_parent_dir`，见 `orphan_folder_grouping.py`） |
+| 孤儿文件管理 orphan | `orphan_file_service.py` | 孤儿文件管理（扫描/清理/隔离/恢复/彻底删除/中断恢复）；列表/分组统计/预览/忽视/恢复入口排除活动清理或彻底删除任务占用项 |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `OrphanCurrentCandidate` 表生命周期推进（事务化状态落库） |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |
 | 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key） |
-| 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 隔离区彻底删除持久化任务（原子领取/串行执行/重启恢复/幂等补偿） |
+| 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放） |
 | 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 孤儿隔离区管理（移入→保留期→物理删除），仅 `os.rmdir` 回收空目录 |
 | 孤儿扫描 orphan-scanner | `orphan_scanner.py` | 孤儿文件扫描器（未映射路径记录并跳过） |
 | 路径映射验证 path-mapping | `path_mapping_validation.py` | 路径映射目录验证（free_space 探测/磁盘空间/现有种子路径取证/有界 stat） |
@@ -36,6 +36,7 @@
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
 | 标签 tag | `tag_service.py` / `tag_sync_service.py` | 标签管理业务（同步/异步）；同步服务直接走缓存 |
 | 配置模板 template | `template_service.py` | 配置模板服务（CRUD/验证/应用/冲突检测） |
+| 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete_service.py` | 跨下载器重复种子分类；预览排除活动删除 ID，提交阶段交由任务管理器原子占用 |
 | 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取 |
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
 | 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签） |
@@ -81,4 +82,4 @@
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`orphan_file_service.py` 2482 行、`torrent_deletion_by_level.py` 1670 行、`advanced_search.py` 1311 行）
+- 已完成：[orphan_file_service.md](./orphan_file_service.md)（2883 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1319 行）

@@ -1627,9 +1627,17 @@ export default class extends mixins(TorrentBatchMixin) {
 
       const taskId = response.data?.task_id
       if (!taskId) {
-        throw new Error('未返回任务ID')
+        this.$message.info(response.msg || '所选种子均已在删除任务中处理')
+        await this.getList()
+        return
+      }
+      const skippedCount = response.data?.skipped_count || 0
+      if (skippedCount > 0) {
+        this.$message.warning(`已跳过 ${skippedCount} 个正在处理的种子`)
       }
 
+      // 提交成功即刷新；后端列表会排除 pending/running 任务里的种子。
+      await this.getList()
       // 轮询查询任务状态（每5秒一次）
       await this.pollDeleteTaskStatus(taskId, level)
     } else {

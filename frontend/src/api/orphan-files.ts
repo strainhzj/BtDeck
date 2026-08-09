@@ -210,11 +210,15 @@ export type CleanupResult = CleanupSuccessResult | CleanupRejectedResult
 
 /** 主动清理异步任务状态 */
 export interface CleanupJobResult {
-  task_id: string
+  task_id: string | null
   operation_type: 'cleanup'
-  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed'
+  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'already_running'
   scan_id: string | null
   total_count: number
+  requested_count?: number
+  accepted_count?: number
+  skipped_count?: number
+  skipped_items?: number[]
   success_count: number
   purged_count: number
   failed_count: number
@@ -468,14 +472,18 @@ export interface RestoreResult {
 }
 
 export interface PurgeResult {
-  task_id: string
-  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed'
+  task_id: string | null
+  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed' | 'already_running'
   total_count: number
+  requested_count?: number
+  accepted_count?: number
+  skipped_count?: number
+  skipped_items?: string[]
   purged_count: number
   failed_count: number
   failed_list: QuarantineFailedItem[]
   error_message: string | null
-  created_at: string
+  created_at: string | null
   started_at: string | null
   completed_at: string | null
 }

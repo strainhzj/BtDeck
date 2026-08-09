@@ -797,12 +797,30 @@ async def delete_batch_async(
         # 获取任务管理器
         task_manager = get_deletion_task_manager()
 
-        # 创建任务
-        task_id = await task_manager.create_task(
+        # 原子占用种子 ID，刷新或并发标签页不能重复提交活动项。
+        submission = await task_manager.create_task_reserving(
             torrent_info_ids=delete_request.torrent_info_ids,
             delete_level=delete_request.delete_level,
             operator=delete_request.operator,
         )
+
+        if submission.task_id is None:
+            return CommonResponse(
+                status="success",
+                msg="所选种子均已在删除任务中处理",
+                code="200",
+                data={
+                    "task_id": None,
+                    "total_count": 0,
+                    "requested_count": submission.requested_count,
+                    "accepted_count": 0,
+                    "skipped_count": submission.skipped_count,
+                    "skipped_info_ids": submission.skipped_info_ids,
+                    "delete_level": delete_request.delete_level,
+                },
+            )
+
+        task_id = submission.task_id
 
         # 创建执行器并启动异步任务
         executor = AsyncDeletionExecutor(db_session_factory=SessionLocal, request=request)
@@ -811,7 +829,7 @@ async def delete_batch_async(
         asyncio.create_task(
             executor.execute_deletion_task(
                 task_id=task_id,
-                torrent_info_ids=delete_request.torrent_info_ids,
+                torrent_info_ids=submission.accepted_info_ids,
                 delete_level=delete_request.delete_level,
                 operator=delete_request.operator,
                 request=request,
@@ -821,7 +839,8 @@ async def delete_batch_async(
         logger.info(
             f"提交批量删除任务成功: task_id={task_id}, "
             f"用户={user_info.username}, "
-            f"种子数量={len(delete_request.torrent_info_ids)}, "
+            f"接受数量={submission.accepted_count}, "
+            f"跳过数量={submission.skipped_count}, "
             f"删除等级={delete_request.delete_level}"
         )
 
@@ -831,7 +850,11 @@ async def delete_batch_async(
             code="200",
             data={
                 "task_id": task_id,
-                "total_count": len(delete_request.torrent_info_ids),
+                "total_count": submission.accepted_count,
+                "requested_count": submission.requested_count,
+                "accepted_count": submission.accepted_count,
+                "skipped_count": submission.skipped_count,
+                "skipped_info_ids": submission.skipped_info_ids,
                 "delete_level": delete_request.delete_level,
             },
         )
@@ -870,6 +893,10 @@ async def get_batch_delete_status(task_id: str, user_info: AuthenticatedUserInfo
             "task_id": task.task_id,
             "status": task.status.value,
             "total_count": task.total_count,
+            "requested_count": task.total_count + len(task.skipped_info_ids),
+            "accepted_count": task.total_count,
+            "skipped_count": len(task.skipped_info_ids),
+            "skipped_info_ids": task.skipped_info_ids,
             "success_count": task.success_count,
             "failed_count": task.failed_count,
             "error_message": task.error_message,
