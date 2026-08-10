@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from contextlib import asynccontextmanager
 from typing import Any
@@ -10,6 +11,45 @@ from app.core.startup_guard import resolve_runtime_info, validate_scheduler_scop
 from app.downloader.initialization import startup_event
 from app.tasks.cron_executor import cron_executor
 from app.tasks.scheduler.dashboard_stats import DashboardStatsJob
+
+
+async def run_wal_snapshot_loop(app: FastAPI) -> None:
+    """周期性只读 WAL 快照（W4-1 第二部分）。
+
+    - 每 SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS 秒经 snapshot_wal_stats 读取
+      -wal 文件字节数，发射 EVENT_WAL_SNAPSHOT（wal_bytes / wal_growth_bytes /
+      busy_count / checkpoint_busy）。
+    - busy_count 非零 → WARNING（计划第 5 节「SQLite busy 每 5 分钟大于 0：
+      warning」）；当前 snapshot_wal_stats 无连接句柄恒为 None，接入 PASSIVE
+      checkpoint 读数后该分支生效。
+    - 只读观测：绝不执行 TRUNCATE checkpoint；观测异常吞掉继续下一轮，
+      关闭观测不影响同步治理。
+    - 间隔配置 <=0 时由调用方决定不启动本循环。
+    """
+    from app.services.sync_observability import EVENT_WAL_SNAPSHOT, log_event, snapshot_wal_stats
+
+    interval = float(settings.SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS)
+    last_wal_bytes = 0
+    while True:
+        try:
+            stats = snapshot_wal_stats(str(settings.DATABASE_PATH))
+            growth = max(0, stats["wal_bytes"] - last_wal_bytes) if last_wal_bytes > 0 else 0
+            last_wal_bytes = stats["wal_bytes"]
+            busy = stats.get("busy_count")
+            level = logging.WARNING if busy is not None and busy > 0 else logging.INFO
+            log_event(
+                EVENT_WAL_SNAPSHOT,
+                level=level,
+                wal_bytes=stats["wal_bytes"],
+                wal_growth_bytes=growth,
+                busy_count=busy,
+                checkpoint_busy=stats.get("checkpoint_busy"),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            print(f"[WARN] WAL 快照任务失败: {exc}")
+        await asyncio.sleep(interval)
 
 
 async def run_dashboard_stats_loop(app: FastAPI) -> None:
@@ -367,6 +407,26 @@ async def lifespan(app: FastAPI):
     version_notification_task = asyncio.create_task(add_version_update_notification_task(app))
     app.state.version_notification_task = version_notification_task
 
+    # 6.5 事件循环 lag 采样器挂载（W4-1 第二部分）：观测启动失败不阻断应用启动；
+    # SYNC_LAG_SAMPLER_ENABLED=False 时 start_lag_sampler 返回空句柄 no-op。
+    try:
+        from app.services.sync_observability import start_lag_sampler
+
+        lag_sampler_handle = start_lag_sampler()
+        app.state.sync_lag_sampler = lag_sampler_handle
+        print(f"[OK] 事件循环 lag 采样器已启动 (enabled={lag_sampler_handle.enabled})")
+    except Exception as e:
+        app.state.sync_lag_sampler = None
+        print(f"[WARN] 事件循环 lag 采样器启动失败（不阻断启动）: {e}")
+
+    # 6.6 WAL 只读周期快照（W4-1 第二部分）：仅当间隔配置 >0 时启动；
+    # 观测任务失败不阻断应用启动/关闭。
+    wal_snapshot_task = None
+    if float(settings.SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS) > 0:
+        wal_snapshot_task = asyncio.create_task(run_wal_snapshot_loop(app))
+        app.state.wal_snapshot_task = wal_snapshot_task
+        print("[OK] WAL 只读周期快照任务已启动")
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
@@ -451,6 +511,27 @@ async def lifespan(app: FastAPI):
             print("✅ 下载器 API runtime 已关闭")
         except Exception as e:
             print(f"⚠️  关闭下载器 API runtime 时出错: {e}")
+
+        # 取消 WAL 只读周期快照任务（W4-1 第二部分）：异常不阻断关闭。
+        if wal_snapshot_task and not wal_snapshot_task.done():
+            print("取消 WAL 快照任务...")
+            wal_snapshot_task.cancel()
+            try:
+                await wal_snapshot_task
+            except asyncio.CancelledError:
+                print("✅ WAL 快照任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消 WAL 快照任务时出错: {e}")
+
+        # 关闭事件循环 lag 采样器（W4-1 第二部分）：空句柄 stop() no-op，
+        # 异常不阻断关闭。
+        try:
+            lag_handle = getattr(app.state, "sync_lag_sampler", None)
+            if lag_handle is not None:
+                lag_handle.stop()
+            print("✅ 事件循环 lag 采样器已关闭")
+        except Exception as e:
+            print(f"⚠️  关闭事件循环 lag 采样器时出错: {e}")
 
     # # 初始化插件
     # plugin_init_task = asyncio.create_task(init_plugins_async())

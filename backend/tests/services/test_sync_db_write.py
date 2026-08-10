@@ -25,6 +25,7 @@ sync_db_write 工具单测
 """
 
 import asyncio
+import logging
 import sqlite3
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -387,6 +388,66 @@ class TestBulkUpsertWithRetry:
         assert stats.retries == 0
         assert isinstance(stats.elapsed_ms, float)
         assert stats.elapsed_ms >= 0.0
+
+    async def test_batch_commit_emits_info_event(self):
+        """每批 commit 后发射 EVENT_BATCH_COMMIT（INFO，含批次/耗时字段）。"""
+        from app.services import sync_observability as obs
+
+        db = AsyncMock()
+        with (
+            patch("app.services.sync_db_write.admission_controller", _mock_ac()),
+            patch.object(obs.logger, "log") as mock_log,
+        ):
+            stats = await bulk_upsert_with_retry(
+                db,
+                [{"id": i} for i in range(3)],
+                [],
+                model=MagicMock(),
+                label="event_test",
+            )
+
+        assert stats.batches == 1
+        infos = [c.args[1] for c in mock_log.call_args_list if c.args[0] == logging.INFO]
+        assert infos, "每批 commit 后应发射 INFO 事件"
+        msg = infos[-1]
+        assert "event=sync_batch_commit" in msg
+        assert "batch_index=0" in msg
+        assert "batch_rows=3" in msg
+        assert "commit_ms=" in msg
+        assert "retry_count=0" in msg
+
+    async def test_slow_commit_emits_warning_event(self):
+        """单批 commit 超过 500ms → EVENT_BATCH_COMMIT WARNING（outcome=slow_commit）。"""
+        from app.services import sync_observability as obs
+
+        db = AsyncMock()
+        # perf_counter 调用序列（单批一次成功）：
+        # 1) bulk_upsert start_ts → 10.0；2) 批 attempt_start → 100.0；
+        # 3) commit_ms 采样 → 100.6（commit=600ms）；4) elapsed_ms → 10.5
+        with (
+            patch("app.services.sync_db_write.admission_controller", _mock_ac()),
+            patch(
+                "app.services.sync_db_write.time.perf_counter",
+                side_effect=[10.0, 100.0, 100.6, 10.5],
+            ),
+            patch.object(obs.logger, "log") as mock_log,
+        ):
+            stats = await bulk_upsert_with_retry(
+                db,
+                [{"name": "slow"}],
+                [],
+                model=MagicMock(),
+                label="slow_commit",
+            )
+
+        assert stats.batches == 1
+        warnings = [c.args[1] for c in mock_log.call_args_list if c.args[0] == logging.WARNING]
+        assert warnings, "超过 500ms 的单批 commit 应发射 WARNING"
+        msg = warnings[-1]
+        assert "event=sync_batch_commit" in msg
+        assert "outcome=slow_commit" in msg
+        assert "commit_ms=600.0" in msg
+        assert "threshold_ms=500.0" in msg
 
     async def test_partial_progress_carried_on_chunked_write_error(self):
         """某批最终失败：ChunkedWriteError 携带已提交批统计，原异常为 __cause__。"""

@@ -40,6 +40,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from app.core.config import settings
+from app.services.sync_observability import EVENT_DOWNLOADER_CALL, log_event
 
 logger = logging.getLogger(__name__)
 
@@ -433,6 +434,18 @@ class DownloaderApiRuntime:
             log_extra.queue_wait_ms = timings["queue_wait_ms"]
             log_extra.remote_call_ms = timings["remote_call_ms"]
             stats.record_success(lane.value, method_name, downloader_id, duration, timings["queue_wait_ms"])
+            # W4-1 第二部分：成功调用事件（run_id 由上下文自动附加；与既有
+            # 聚合日志并存——成功路径保持窗口聚合节流，事件只带关键耗时字段）
+            log_event(
+                EVENT_DOWNLOADER_CALL,
+                lane=lane.value,
+                method=method_name,
+                operation=operation,
+                downloader_id=downloader_id,
+                queue_wait_ms=round(timings["queue_wait_ms"], 1),
+                remote_call_ms=round(timings["remote_call_ms"], 1),
+                remote_timeout=effective_timeout,
+            )
             return result
         except asyncio.TimeoutError:
             duration = time.monotonic() - started
@@ -453,6 +466,18 @@ class DownloaderApiRuntime:
                 timings["queue_wait_ms"],
                 timings["remote_call_ms"],
                 extra=log_extra.to_dict(),
+            )
+            # W4-1 第二部分：超时事件（与既有 timeout 日志并存）
+            log_event(
+                EVENT_DOWNLOADER_CALL,
+                lane=lane.value,
+                method=method_name,
+                operation=operation,
+                downloader_id=downloader_id,
+                queue_wait_ms=round(timings["queue_wait_ms"], 1),
+                remote_call_ms=round(timings["remote_call_ms"], 1),
+                remote_timeout=effective_timeout,
+                error_type="TimeoutError",
             )
             # future 仍可能完成；附加 done callback 在线程结束后归档统计（不计入调用方等待）。
             _attach_done_stats(future, stats, lane.value, method_name, downloader_id, started, timings)
@@ -485,6 +510,18 @@ class DownloaderApiRuntime:
                 timings["remote_call_ms"],
                 extra=log_extra.to_dict(),
             )
+            # W4-1 第二部分：失败事件（与既有 error 日志并存）
+            log_event(
+                EVENT_DOWNLOADER_CALL,
+                lane=lane.value,
+                method=method_name,
+                operation=operation,
+                downloader_id=downloader_id,
+                queue_wait_ms=round(timings["queue_wait_ms"], 1),
+                remote_call_ms=round(timings["remote_call_ms"], 1),
+                remote_timeout=effective_timeout,
+                error_type=type(e).__name__,
+            )
             raise
 
     def shutdown(self) -> None:
@@ -516,10 +553,18 @@ def _attach_done_stats(
 
     调用方已 raise TimeoutError，但底层线程可能稍后完成；此 callback 确保成功/失败计数
     不丢失（窗口聚合完整）。任何异常都被吞掉（callback 不能抛）。
+
+    W4-1 修复（sync_observability 配套）：cancelled future 先经 fut.cancelled() 短路
+    返回（旧实现对 cancelled future 调 fut.exception() 抛 CancelledError，属
+    BaseException，`except Exception` 捕获不到，callback 异常泄漏到 loop handler）；
+    异常路径兜底改为 except BaseException，保证 callback 绝不外抛。
     """
 
     def _on_done(fut: "asyncio.Future") -> None:
         try:
+            if fut.cancelled():
+                # cancelled 的 future 无结果可统计：直接返回，不记 success/failure
+                return
             duration = time.monotonic() - started
             queue_wait_ms = timings["queue_wait_ms"]
             exc = fut.exception()
@@ -527,7 +572,7 @@ def _attach_done_stats(
                 stats.record_success(lane, method, downloader_id, duration, queue_wait_ms)
             else:
                 stats.record_failure(lane, method, downloader_id, duration, type(exc).__name__, queue_wait_ms)
-        except Exception:  # noqa: BLE001
+        except BaseException:  # noqa: BLE001 - callback 绝不能抛（含 CancelledError 兜底）
             pass
 
     future.add_done_callback(_on_done)

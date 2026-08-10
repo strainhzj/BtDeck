@@ -226,6 +226,17 @@ class Settings(BaseSettings):
     # 详见 PLANS/sync-database-blocking-remediation.md W3-4
     CRON_STALE_THRESHOLD_SECONDS: float = 7200.0
 
+    # 同步观测配置（W4-1 结构化观测工具模块 sync_observability）
+    # 事件循环 lag 采样器开关：False 时 start_lag_sampler 返回空句柄 no-op
+    SYNC_LAG_SAMPLER_ENABLED: bool = True
+    # 事件循环 lag 采样间隔（秒）：每 interval 以 loop.call_at 漂移法记录一次
+    # lag 样本，滑动窗口暴露 p95/p99/max（观测告警阈值见 PLANS W4-1 第 5 节）
+    SYNC_LAG_SAMPLER_INTERVAL_SECONDS: float = 1.0
+    # WAL 只读周期快照间隔（秒，W4-1 第二部分）：生命周期内每间隔经
+    # snapshot_wal_stats 读取 -wal 文件字节数并发射 EVENT_WAL_SNAPSHOT；
+    # <=0 时不启动周期快照任务（观测关闭不影响同步治理）
+    SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS: float = 60.0
+
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 
     def __init__(self, **kwargs):

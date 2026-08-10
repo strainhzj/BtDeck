@@ -16,9 +16,14 @@ SyncCoordinator 单元测试（W2-1，PLANS/sync-database-blocking-remediation.m
 7. dry_run 不执行写入（写入函数不被调）。
 8. legacy adapter：SYNC_CANONICAL_COORDINATOR_ENABLED=False 走旧路径、
    True 走 Coordinator（patch 断言调用分支）。
+9. W4-1 第二部分：run_id 贯穿 + 阶段事件顺序还原（一次 info run_sync 全流程
+   捕获结构化事件，按 run_id 过滤断言 START→ADMISSION→BATCH_COMMIT→CHECKPOINT；
+   run_sync 结束后 run_id 上下文被清空）。
 """
 
 import asyncio
+import logging
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -597,3 +602,133 @@ class TestLegacyAdapterSwitch:
         assert mock_run_sync.await_count == 1
         assert mock_full.await_count == 0
         assert result["status"] == "success"
+
+
+# =============================================================================
+# 9. W4-1 第二部分：run_id 贯穿 + 阶段事件顺序还原
+# =============================================================================
+
+
+class TestObservabilityRunIdStageOrder:
+    """一次 run_sync 全流程的事件可按 run_id 还原完整阶段顺序。"""
+
+    async def test_run_sync_events_ordered_by_run_id(self, caplog):
+        """info run：START→ADMISSION→BATCH_COMMIT→CHECKPOINT；结束后上下文清空。"""
+        from app.services import sync_observability as obs
+
+        class _FakeSession:
+            """伪 AsyncSession：run_sync/commit 均 no-op（事件顺序测试不落库）。"""
+
+            def __init__(self):
+                self.commits = 0
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return False
+
+            async def run_sync(self, fn):
+                return None
+
+            async def commit(self):
+                self.commits += 1
+
+            async def rollback(self):
+                pass
+
+        @asynccontextmanager
+        async def _fake_write_scope():
+            yield
+
+        mock_ac = MagicMock()
+        mock_ac.db_write_scope.side_effect = lambda: _fake_write_scope()
+
+        app = make_fake_app([make_vo(client=MagicMock())])
+
+        async def fake_info_sync(db, downloaders, client=None):
+            # 复用真实 bulk_upsert_with_retry（W1-1 分批提交路径），产生真实
+            # BATCH_COMMIT 事件；250 行按默认 200 批大小应产生 ≥2 次真实批提交
+            from app.services.sync_db_write import bulk_upsert_with_retry
+
+            stats = await bulk_upsert_with_retry(
+                db,
+                [{"name": f"torrent-{i}"} for i in range(250)],
+                [],
+                model=MagicMock(),
+                label="order_test",
+            )
+            assert stats.batches >= 2
+
+        with (
+            patch("app.database.AsyncSessionLocal", new=_FakeSession),
+            patch(
+                "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=fake_info_sync
+            ),
+            patch("app.services.sync_db_write.admission_controller", new=mock_ac),
+            patch.object(obs.logger, "log", wraps=obs.logger.log) as spy_log,
+            # 注：不用 caplog 断言——仓库会话级 fixture 的 alembic fileConfig 会把
+            # app.* logger 级别抬高/禁用（见 test_sync_observability 注释），INFO 级
+            # event 日志未必进入 caplog.records；spy 直接捕获 log() 调用更可靠。
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="info", downloader_ids=["dl_001"], trigger="manual"),
+                app=app,
+            )
+
+        assert result.outcome == "success"
+        # run_sync 结束后 run_id 上下文必须清空（finally clear_run_id）
+        assert obs.current_run_id() is None
+
+        run_id = result.run_id
+        assert run_id and run_id.startswith("sync-")
+        # spy 捕获 log() 的位置参数：logger.log(level, msg)，msg 即格式化的 event 行
+        event_lines = [
+            c.args[1]
+            for c in spy_log.call_args_list
+            if isinstance(c.args[1], str) and c.args[1].startswith("event=") and f"run_id={run_id}" in c.args[1]
+        ]
+        assert event_lines, "应捕获到带 run_id 的结构化事件"
+        names = [line.split(" ", 1)[0].split("=", 1)[1] for line in event_lines]
+
+        # 阶段顺序：START → ADMISSION → BATCH_COMMIT → CHECKPOINT
+        expected = [
+            obs.EVENT_SYNC_RUN_START,
+            obs.EVENT_ADMISSION,
+            obs.EVENT_BATCH_COMMIT,
+            obs.EVENT_CHECKPOINT,
+        ]
+        assert names[0] == obs.EVENT_SYNC_RUN_START, f"首个事件应为 START: {names}"
+        indexes = [names.index(name) for name in expected]
+        assert indexes == sorted(indexes), f"阶段顺序错误: {names}"
+        # 每批一个 BATCH_COMMIT（≥2 批）；推进 + 终态两个 CHECKPOINT 都存在
+        assert names.count(obs.EVENT_BATCH_COMMIT) >= 2
+        assert names.count(obs.EVENT_CHECKPOINT) >= 2
+
+    async def test_run_sync_clear_run_id_on_rejected_path(self):
+        """准入拒绝路径（资源忙）也走 finally 清空 run_id 上下文。"""
+        from app.services import sync_observability as obs
+
+        app = make_fake_app([make_vo(client=MagicMock())])
+        with patch.object(
+            admission_controller,
+            "acquire",
+            new=AsyncMock(
+                return_value=AdmissionResult(
+                    admitted=False,
+                    skip_reason=SKIP_WAIT_TIMEOUT,
+                    wait_seconds=30.0,
+                    running_count=1,
+                    queued_count=0,
+                    task_code="torrent_info_sync_ac608e4d",
+                )
+            ),
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="info", downloader_ids=["dl_001"], trigger="manual"),
+                app=app,
+            )
+
+        assert result.outcome == "skipped"
+        assert result.run_id and result.run_id.startswith("sync-")
+        assert obs.current_run_id() is None, "准入拒绝路径结束后也必须清空 run_id"

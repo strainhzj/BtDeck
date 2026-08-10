@@ -55,6 +55,14 @@ from app.models.sync_checkpoint import (
     SyncCheckpoint,
     sanitize_detail_json,
 )
+from app.services.sync_observability import (
+    EVENT_ADMISSION,
+    EVENT_CHECKPOINT,
+    EVENT_SYNC_RUN_START,
+    clear_run_id,
+    log_event,
+    set_run_id,
+)
 from app.tasks.resource_guard import SKIP_DUPLICATE, SKIP_WAIT_TIMEOUT, admission_controller
 from app.tasks.task_profiles import TaskProfile, get_profile
 from app.utils.datetime_utils import serialize_utc_datetime
@@ -617,17 +625,45 @@ async def run_sync(req: SyncRequest, app: Any = None) -> SyncResult:
         - 手动后台任务也必须在后台执行体内完成准入（本函数被后台执行体调用），
           不在 HTTP 请求线程长持准入锁。
         - 取消/预算检查在下载器调用边界进行；已提交批次保留不回滚。
+        - W4-1 第二部分：run_id 经 contextvars 贯穿整个运行（log_event 自动
+          附加 run_id 字段），finally 清空，保证事件可按 run_id 还原阶段顺序。
     """
     start_ts = time.perf_counter()
     run_id = req.run_id or f"sync-{uuid.uuid4().hex[:12]}"
+    set_run_id(run_id)
+    try:
+        return await _run_sync_core(req, app, run_id, start_ts)
+    finally:
+        clear_run_id()
+
+
+async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: float) -> SyncResult:
+    """run_sync 主体编排（run_id 上下文已就绪，见 run_sync）。"""
     result = SyncResult(run_id=run_id, phase="admission")
     task_code = _sync_task_code(req.sync_type)
     # 解析 app 实例（测试注入；生产走 app.main，延迟导入防循环）
     runtime_app = _app_of(app)
 
+    # W4-1 第二部分：运行开始事件（run_id 由上下文自动附加；downloader_count
+    # 仅当显式指定下载器时携带请求数，未指定时以实际解析数在后续事件出现）
+    _start_fields: Dict[str, Any] = {
+        "sync_type": req.sync_type,
+        "trigger": req.trigger,
+        "phase": "admission",
+    }
+    if req.downloader_ids is not None:
+        _start_fields["downloader_count"] = len(req.downloader_ids)
+    log_event(EVENT_SYNC_RUN_START, **_start_fields)
+
     # ① 资源准入（重型同步全局互斥 + 同类去重）
     decision = await _acquire_token(task_code, req.trigger)
     result.details["admission_wait_ms"] = round(decision.wait_seconds * 1000.0, 1)
+    log_event(
+        EVENT_ADMISSION,
+        outcome="admitted" if decision.admitted else "rejected",
+        skip_reason=decision.skip_reason,
+        admission_wait_ms=result.details["admission_wait_ms"],
+    )
     if not decision.admitted:
         if decision.skip_reason == SKIP_DUPLICATE:
             result.outcome = "already_running"
@@ -993,6 +1029,14 @@ async def _advance_checkpoint_after_sync(
             fresh["cursor"] if fresh else row.get("cursor"),
             fresh["version"] if fresh else row.get("version"),
         )
+        # W4-1 第二部分：检查点推进事件（run_id 由上下文自动附加；与既有日志并存）
+        log_event(
+            EVENT_CHECKPOINT,
+            downloader_id=downloader_id,
+            sync_type=req.sync_type,
+            outcome=fresh["outcome"] if fresh else row.get("outcome"),
+            cursor=fresh["cursor"] if fresh else row.get("cursor"),
+        )
     except Exception as e:  # noqa: BLE001 - 检查点推进失败不影响同步结果
         logger.warning(
             "sync_coordinator checkpoint_advance_failed downloader_id=%s sync_type=%s error=%s",
@@ -1066,6 +1110,14 @@ async def _finalize_checkpoints(
                 final_outcome,
                 fresh["cursor"] if fresh else row.get("cursor"),
                 fresh["version"] if fresh else row.get("version"),
+            )
+            # W4-1 第二部分：检查点终态事件（run_id 由上下文自动附加；与既有日志并存）
+            log_event(
+                EVENT_CHECKPOINT,
+                downloader_id=downloader_id,
+                sync_type=req.sync_type,
+                outcome=final_outcome,
+                cursor=fresh["cursor"] if fresh else row.get("cursor"),
             )
         except Exception as e:  # noqa: BLE001 - 检查点落盘失败不阻断结果返回
             logger.warning(
