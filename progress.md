@@ -3626,3 +3626,31 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 前端：test:unit 635 passed；typecheck exit 0；build 成功；lint 0 errors（5 个存量 warning 与本次无关）。
 - black/flake8 通过。
 - 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-09(续) - W4-1 实施：阶段级结构化观测与核心指标（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施 W4-1（P1-06：缺少阶段级可观测性；P2-05 部分）。拆两部分子代理执行（完整任务与第一部分首跑均触发模型故障，重试后成功）+ 主代理逐项审查（含修复一处测试断言方式）。
+
+### W4-1a 观测工具模块（新 app/services/sync_observability.py）
+
+- **稳定事件名 + 字段字典**：EVENT_SYNC_RUN_START/ADMISSION/BATCH_COMMIT/CHECKPOINT/DOWNLOADER_CALL/LOOP_LAG/WAL_SNAPSHOT + EVENT_FIELDS 白名单（含 W4-1 最小字段集 run_id/phase/batch_rows/commit_ms/lock_wait_ms/lane/queue_wait_ms/wal_bytes 等）；`log_event` 白名单过滤 + key=value 输出 + 脱敏。
+- **脱敏**：复用 log_sanitizer.sanitize_ip + 新增敏感 key（password/passkey/cookie/authorization/token）整体遮蔽、URL 保留 scheme+host+path 去 query/userinfo、hash 保留前 8 位。
+- **lag 采样器**：loop.call_at 漂移法 + 滑动窗口 p95/p99/max；异常恢复不泄露 task；`SYNC_LAG_SAMPLER_ENABLED/INTERVAL_SECONDS` 配置；False 时 no-op。
+- **WAL 快照**：`snapshot_wal_stats`（wal_bytes 文件大小，busy/checkpoint_busy 预留 None），纯只读不 TRUNCATE。
+- **`_attach_done_stats` 修复**：cancelled future 先 `fut.cancelled()` 判断 + `except BaseException` 兜底（CancelledError 不再泄漏到 loop handler）。
+
+### W4-1b run_id 贯穿 + 生命周期挂载 + 告警阈值
+
+- **contextvars run_id 贯穿**：`set_run_id/current_run_id/clear_run_id` + log_event 自动附加；run_sync start/finally 设置/清空；sync_coordinator（RUN_START/ADMISSION/CHECKPOINT）、sync_db_write（BATCH_COMMIT + >500ms WARNING 阈值）、downloader_api_runtime（DOWNLOADER_CALL 成功/超时/失败）、tracker_status_sync（TRACKER_STATUS）全部接入 log_event。
+- **生命周期**：lifecycle.py startup 启动 lag 采样器、shutdown 停止（与 downloader_api_runtime.shutdown 并列）；WAL 周期快照发射 EVENT_WAL_SNAPSHOT。
+- **告警阈值**：单次 lag >500ms / P99 >100ms → WARNING；batch commit >500ms → WARNING（阈值常量在观测模块，初始值记录待两周基线校准）。
+- **测试修复（主代理）**：阶段顺序还原测试原用 caplog 断言但 app.* logger 受 alembic fileConfig 级别干扰（records 只捕获 3 条）——改用 spy_log 断言（log() 调用序列），并删除子代理遗留的 DIAG print。
+
+### 验证
+
+- **全量回归：3126 passed, 7 skipped, 0 failed**（249.8s）。
+- 新增：test_sync_observability 26（log_event/脱敏/lag 采样器/WAL 快照/_attach_done_stats 修复）+ coordinator 阶段顺序 2。
+- black/flake8 通过。
+- 未执行 Git stage/commit/push/deploy。
