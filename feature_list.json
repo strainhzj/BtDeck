@@ -2626,6 +2626,35 @@
           "evidence": "前端 test:unit 635 passed；typecheck 0 错误；build 成功"
         }
       ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w4-1",
+      "name": "同步数据库阻塞修复 W4-1：阶段级结构化观测与核心指标（P1-06/P2-05）",
+      "description": "修复计划 W4-1（G4 门部分）：新建 sync_observability.py（稳定事件名/字段白名单/敏感脱敏/lag 采样器/WAL 快照）、run_id contextvars 贯穿全部同步阶段、lag 采样器与 WAL 快照生命周期挂载、阈值告警（lag>500ms/P99>100ms/commit>500ms）、_attach_done_stats CancelledError 缺口修复。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w4-1.1",
+          "name": "W4-1 结构化观测模块与接线",
+          "description": "新 app/services/sync_observability.py（EVENT_* 常量 + EVENT_FIELDS 白名单 + log_event + 脱敏复用 log_sanitizer + EventLoopLagSampler（p95/p99/max、异常恢复、no-op 开关）+ snapshot_wal_stats 只读）；_attach_done_stats cancelled future 修复；run_id contextvars 贯穿（coordinator/sync_db_write/downloader_api_runtime/tracker_status_sync 接入 log_event）；lifecycle 挂载 lag 采样器 + WAL 快照；阈值告警（lag 单次>500ms/P99>100ms、commit>500ms）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_observability.py",
+            "backend/app/services/sync_coordinator.py",
+            "backend/app/services/sync_db_write.py",
+            "backend/app/services/downloader_api_runtime.py",
+            "backend/app/services/tracker_status_sync.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/core/config.py",
+            "backend/tests/services/test_sync_observability.py",
+            "backend/tests/services/test_sync_coordinator.py"
+          ],
+          "evidence": "test_sync_observability 26 passed（log_event 字段/脱敏/lag 采样器/WAL 快照/修复）；阶段顺序还原测试 2 passed（spy 断言）；全量回归 3126 passed, 0 failed"
+        }
+      ]
     }
   ]
 }

@@ -1,5 +1,35 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-09 交接：W4-1 实施完成（阶段级结构化观测与核心指标）
+
+当前任务：修复计划 W4-1（P1-06/P2-05）实施完成，拆两部分子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W4-1 代码与测试完成；未提交、未推送。
+
+### 本次改动（backend 8 文件 + 2 测试文件）
+
+- **新 `app/services/sync_observability.py`**：稳定事件名（EVENT_SYNC_RUN_START/ADMISSION/BATCH_COMMIT/CHECKPOINT/DOWNLOADER_CALL/LOOP_LAG/WAL_SNAPSHOT）+ EVENT_FIELDS 白名单 + `log_event`（key=value + 脱敏：敏感 key 遮蔽/URL 去 query/userinfo/hash 前 8 位，复用 log_sanitizer）+ `EventLoopLagSampler`（call_at 漂移法，p95/p99/max，异常恢复，`SYNC_LAG_SAMPLER_ENABLED` 开关）+ `snapshot_wal_stats`（只读）。
+- **`_attach_done_stats` 修复**：cancelled future 先 `fut.cancelled()` 判断 + `except BaseException`（CancelledError 不再泄漏）。
+- **run_id contextvars 贯穿**：set_run_id/clear_run_id + log_event 自动附加；coordinator/sync_db_write/downloader_api_runtime/tracker_status_sync 全部接入；lifecycle 挂载 lag 采样器 + WAL 快照；阈值告警（lag 单次>500ms/P99>100ms、commit>500ms → WARNING）。
+- **主代理修复**：阶段顺序测试 caplog 断言受 alembic fileConfig 干扰 → 改 spy 断言；删除子代理 DIAG 残留。
+
+### 验证（主代理亲自复跑）
+
+- 全量 `pytest`：**3126 passed, 7 skipped, 0 failed**（249.8s）。
+- 新增：test_sync_observability 26 + coordinator 阶段顺序 2；black/flake8 通过。
+
+### 下一步
+
+1. **W4-2**：liveness/readiness/同步业务健康接口（GET /health/live、/health/ready 严格超时 SELECT 1 + SQLite 单 Worker 合规 + lag 近期状态；Docker/Compose 健康检查从 /docs 改 /health/ready；受保护同步健康端点返回各任务 outcome/freshness/checkpoint age）。
+2. **G4 门剩余**：大档 `--assert-slo` 接入发布门流水线/nightly；告警阈值与 runbook 联动（两周基线校准）。
+3. **W5**：DBWriteQueue ADR（需 7 天指标）、PostgreSQL 计划重写、Tracker 指纹（数据支撑后）、文档/feature_list/roadmap 全量收口。
+4. 上线前 Alembic 迁移（head f5e6d7c8b9a0）。
+
+### 变更边界
+
+- 本次改 backend app/services + lifecycle + config + 测试；未改 Schema（W4-1 无迁移）；未执行 Git stage/commit/push。
+
 ## 2026-08-09 交接：W3-4 实施完成（任务 outcome/skip/freshness 六态语义，W3 收官）
 
 当前任务：修复计划 W3-4（P1-05）实施完成，后端/前端并行子代理执行 + 主代理逐项审查通过
