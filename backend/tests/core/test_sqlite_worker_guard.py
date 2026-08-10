@@ -256,6 +256,11 @@ def _find_git_bash() -> str:
     for extra in (
         Path("C:/Program Files/Git/bin/bash.exe"),
         Path("C:/Program Files (x86)/Git/bin/bash.exe"),
+        # 本机常见 Git 安装位置（PATH 中无 git 时兜底，实测 E:/Git 部署）
+        Path("E:/Git/bin/bash.exe"),
+        Path("E:/Git/usr/bin/bash.exe"),
+        Path("D:/Git/bin/bash.exe"),
+        Path("D:/Git/usr/bin/bash.exe"),
     ):
         candidates.append(extra)
     for candidate in candidates:
