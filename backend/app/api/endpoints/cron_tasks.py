@@ -60,6 +60,14 @@ class CronTaskResponse(BaseModel):
     enabled: bool
     lastExecuteTime: Optional[str]
     lastExecuteDuration: Optional[int]
+    # —— 数据新鲜度字段（W3-4/P1-05，向后兼容增量）——
+    lastOutcome: Optional[str]
+    lastSuccessfulDataAt: Optional[str]
+    lastAttemptAt: Optional[str]
+    lastSkipReason: Optional[str]
+    lastRunId: Optional[str]
+    freshnessSeconds: Optional[int]
+    stale: bool
     cronPlan: str
     taskStatusName: str
     taskTypeName: str
@@ -89,6 +97,9 @@ class TaskLogResponse(BaseModel):
     endTime: str
     duration: int
     success: bool
+    # —— 业务结果字段（W3-4/P1-05；历史记录为 null，向后兼容）——
+    outcome: Optional[str]
+    skipReason: Optional[str]
     logDetail: str
 
 
@@ -274,6 +285,8 @@ def _logs_to_csv(logs: list) -> str:
         "end_time",
         "duration",
         "success",
+        "outcome",
+        "skip_reason",
         "log_detail",
     ]
     fieldnames = []
@@ -332,6 +345,22 @@ def convert_cron_task_to_camel_case(task_data: dict) -> CronTaskResponse:
         lastExecuteDuration=(
             task_data.get("last_execute_duration") if task_data.get("last_execute_duration") is not None else None
         ),
+        # W3-4 数据新鲜度字段（可空字段原样透传，None 保持 None）
+        lastOutcome=safe_str(task_data.get("last_outcome")) if task_data.get("last_outcome") is not None else None,
+        lastSuccessfulDataAt=(
+            safe_str(task_data.get("last_success_at")) if task_data.get("last_success_at") is not None else None
+        ),
+        lastAttemptAt=(
+            safe_str(task_data.get("last_attempt_at")) if task_data.get("last_attempt_at") is not None else None
+        ),
+        lastSkipReason=(
+            safe_str(task_data.get("last_skip_reason")) if task_data.get("last_skip_reason") is not None else None
+        ),
+        lastRunId=safe_str(task_data.get("last_run_id")) if task_data.get("last_run_id") is not None else None,
+        freshnessSeconds=(
+            task_data.get("freshness_seconds") if task_data.get("freshness_seconds") is not None else None
+        ),
+        stale=bool(task_data.get("stale", False)),
         cronPlan=safe_str(task_data.get("cron_plan")),
         taskStatusName=safe_str(task_data.get("task_status_name"), "未知状态"),
         taskTypeName=_get_task_type_name(safe_int(task_data.get("task_type"))),
@@ -389,6 +418,8 @@ def convert_task_log_to_camel_case(log_data: dict) -> TaskLogResponse:
         endTime=safe_str(log_data.get("end_time")),
         duration=safe_int(log_data.get("duration")),
         success=safe_bool(log_data.get("success")),
+        outcome=log_data.get("outcome"),
+        skipReason=log_data.get("skip_reason"),
         logDetail=safe_str(log_data.get("log_detail")),
     )
 
@@ -483,13 +514,16 @@ async def get_task_logs(
     task_name: Optional[str] = Query(None, description="任务名称模糊查询"),
     task_id: Optional[int] = Query(None, description="任务ID"),
     success: Optional[bool] = Query(None, description="执行结果"),
+    outcome: Optional[str] = Query(
+        None, description="业务结果过滤（success/partial/skipped/failed/no_action/cancelled）"
+    ),
     db: Session = Depends(get_db),
 ):
     """获取任务执行日志"""
     # 认证已迁移至 require_authenticated_user 依赖
 
     try:
-        result = TaskLogsCRUD.get_task_logs(db, skip, limit, task_name, task_id, success)
+        result = TaskLogsCRUD.get_task_logs(db, skip, limit, task_name, task_id, success, outcome)
 
         if result.success:
             # 转换为驼峰命名格式
@@ -569,6 +603,9 @@ async def export_task_logs(
     task_name: Optional[str] = Query(None, description="任务名称模糊查询"),
     task_id: Optional[int] = Query(None, description="任务ID"),
     success: Optional[bool] = Query(None, description="执行结果"),
+    outcome: Optional[str] = Query(
+        None, description="业务结果过滤（success/partial/skipped/failed/no_action/cancelled）"
+    ),
     db: Session = Depends(get_db),
 ):
     """
@@ -581,7 +618,7 @@ async def export_task_logs(
     try:
         # 拉取全部符合条件的日志（导出不分页，上限保护）
         result = TaskLogsCRUD.get_task_logs(
-            db, skip=0, limit=10000, task_name=task_name, task_id=task_id, success=success
+            db, skip=0, limit=10000, task_name=task_name, task_id=task_id, success=success, outcome=outcome
         )
 
         if not result.success:

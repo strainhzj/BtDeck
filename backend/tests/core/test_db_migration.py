@@ -45,7 +45,8 @@ def _clean_database_path_env():
 #       → a1b2c3d4e5f6(orphan ignore + canonical_path) → c7d8e9f0a1b2(orphan purge jobs)
 #       → d8e9f0a1b2c3(async manual cleanup fields) → 3a4b5c6d7e8f(sync checkpoints)
 #       → f9a1b2c3d4e5(orphan purge hardlink notes) → f0e1d2c3b4a5(orphan purge delay count)
-EXPECTED_HEAD = "f0e1d2c3b4a5"
+#       → f5e6d7c8b9a0(task outcome/freshness columns, W3-4)
+EXPECTED_HEAD = "f5e6d7c8b9a0"
 PREV_HEAD = "e6d8a20c41f3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
@@ -144,6 +145,26 @@ class TestMigrationChainIntegrity:
             assert purge_col[0][2].lower() == "integer", f"类型应为 INTEGER: {purge_col[0]}"
             assert purge_col[0][3] == 1, f"应 NOT NULL: {purge_col[0]}"
             assert purge_col[0][4].strip("'") == "0", f"默认值应为 0: {purge_col[0]}"
+        finally:
+            conn.close()
+
+        # f5e6d7c8b9a0:task_logs/cron_task 应含 outcome/freshness 列（全部可空，历史行兼容）
+        conn = sqlite3.connect(db_path)
+        try:
+            task_log_cols = {c[1]: c for c in conn.execute("PRAGMA table_info(task_logs)").fetchall()}
+            for col_name in ("outcome", "skip_reason"):
+                assert col_name in task_log_cols, f"task_logs 应含 {col_name} 列"
+                assert task_log_cols[col_name][3] == 0, f"task_logs.{col_name} 应可空（历史行兼容）"
+            cron_task_cols = {c[1]: c for c in conn.execute("PRAGMA table_info(cron_task)").fetchall()}
+            for col_name in (
+                "last_success_at",
+                "last_attempt_at",
+                "last_outcome",
+                "last_skip_reason",
+                "last_run_id",
+            ):
+                assert col_name in cron_task_cols, f"cron_task 应含 {col_name} 列"
+                assert cron_task_cols[col_name][3] == 0, f"cron_task.{col_name} 应可空（历史行兼容）"
         finally:
             conn.close()
 
@@ -377,3 +398,117 @@ class TestRatioColumnMigration:
 
         ratio_type = _column_type(db_path, "torrent_info", "ratio")
         assert ratio_type in ("VARCHAR", "STRING", "TEXT"), f"downgrade 后 ratio 列应回 String，实际 {ratio_type}"
+
+
+# ==================== W3-4 任务 outcome/freshness 列迁移专项 ====================
+
+PREV_OUTCOME_HEAD = "f0e1d2c3b4a5"  # f5e6d7c8b9a0 的直接前驱
+
+# f5e6d7c8b9a0 新增的可空列（upgrade 后应存在，downgrade 后应消失）
+_OUTCOME_COLUMNS = {
+    "task_logs": ["outcome", "skip_reason"],
+    "cron_task": ["last_success_at", "last_attempt_at", "last_outcome", "last_skip_reason", "last_run_id"],
+}
+
+
+def _column_names(db_path: str, table: str):
+    """读 PRAGMA table_info 返回列名集合。"""
+    conn = sqlite3.connect(db_path)
+    try:
+        return {row[1] for row in conn.execute(f"PRAGMA table_info({table})")}
+    finally:
+        conn.close()
+
+
+class TestTaskOutcomeFreshnessMigration:
+    """验证 f5e6d7c8b9a0（W3-4）迁移：纯 ADD COLUMN、历史数据兼容、往返可回滚。"""
+
+    def _insert_legacy_rows(self, db_path: str):
+        """在旧 head（无新列）下插入 task_logs / cron_task 历史行。"""
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO task_logs (task_id, task_name, task_type, start_time, end_time, duration, success, log_detail, dr) "
+            "VALUES (1, '历史任务', 4, '2026-07-01 00:00:00', '2026-07-01 00:01:00', 60, 1, '历史日志', 0)"
+        )
+        conn.execute(
+            "INSERT INTO cron_task "
+            "(task_id, task_name, task_code, task_status, task_type, executor, cron_plan, enabled, "
+            "create_by, create_time, update_time, update_by, dr) "
+            "VALUES (1, '历史任务', 'legacy_task_code', 0, 4, 'app.tasks.system_tasks.SystemTask', '0 3 * * *', 1, "
+            "'admin', '2026-07-01 00:00:00', '2026-07-01 00:00:00', 'admin', 0)"
+        )
+        conn.commit()
+        conn.close()
+
+    def test_upgrade_preserves_historical_rows_with_null_new_columns(self, tmp_path):
+        """旧 head 库升级后：历史行保留，新列全部为 NULL（历史兼容核心）。"""
+        db_path = str(tmp_path / "outcome_up.db")
+        cfg = _make_alembic_config(str(db_path))
+
+        command.upgrade(cfg, PREV_OUTCOME_HEAD)
+        self._insert_legacy_rows(db_path)
+
+        command.upgrade(cfg, "head")
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+
+        conn = sqlite3.connect(db_path)
+        try:
+            log_row = conn.execute("SELECT task_name, outcome, skip_reason FROM task_logs WHERE log_id=1").fetchone()
+            assert log_row[0] == "历史任务", "历史 task_logs 行应保留"
+            assert log_row[1] is None, f"历史行 outcome 应为 NULL，实际 {log_row[1]!r}"
+            assert log_row[2] is None, f"历史行 skip_reason 应为 NULL，实际 {log_row[2]!r}"
+
+            task_row = conn.execute(
+                "SELECT task_code, last_success_at, last_attempt_at, last_outcome, last_skip_reason, last_run_id "
+                "FROM cron_task WHERE task_id=1"
+            ).fetchone()
+            assert task_row[0] == "legacy_task_code", "历史 cron_task 行应保留"
+            for value in task_row[1:]:
+                assert value is None, f"历史行 freshness 新列应为 NULL，实际 {value!r}"
+        finally:
+            conn.close()
+
+    def test_downgrade_drops_columns_keeps_data(self, tmp_path):
+        """head → downgrade 一级：新列消失、历史业务数据保留。"""
+        db_path = str(tmp_path / "outcome_down.db")
+        cfg = _make_alembic_config(str(db_path))
+
+        command.upgrade(cfg, "head")
+        conn = sqlite3.connect(db_path)
+        conn.execute(
+            "INSERT INTO task_logs (task_id, task_name, task_type, start_time, success, outcome, skip_reason, dr) "
+            "VALUES (1, '新日志', 4, '2026-08-10 00:00:00', 1, 'skipped', 'resource_busy', 0)"
+        )
+        conn.commit()
+        conn.close()
+
+        command.downgrade(cfg, PREV_OUTCOME_HEAD)
+        assert _read_version(str(db_path)) == PREV_OUTCOME_HEAD
+
+        for table, columns in _OUTCOME_COLUMNS.items():
+            names = _column_names(str(db_path), table)
+            for col_name in columns:
+                assert col_name not in names, f"downgrade 后 {table}.{col_name} 应被删除"
+
+        conn = sqlite3.connect(db_path)
+        try:
+            row = conn.execute("SELECT task_name, success FROM task_logs WHERE log_id=1").fetchone()
+            assert row is not None and row[0] == "新日志", "downgrade 后业务数据应保留"
+            assert row[1] == 1
+        finally:
+            conn.close()
+
+    def test_downgrade_then_reupgrade_round_trip(self, tmp_path):
+        """往返：upgrade → downgrade → 再次 upgrade，版本与新列均恢复。"""
+        db_path = str(tmp_path / "outcome_round.db")
+        cfg = _make_alembic_config(str(db_path))
+
+        command.upgrade(cfg, "head")
+        command.downgrade(cfg, PREV_OUTCOME_HEAD)
+        command.upgrade(cfg, "head")
+
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+        for table, columns in _OUTCOME_COLUMNS.items():
+            names = _column_names(str(db_path), table)
+            for col_name in columns:
+                assert col_name in names, f"再次 upgrade 后 {table}.{col_name} 应恢复"

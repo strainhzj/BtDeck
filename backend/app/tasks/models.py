@@ -19,6 +19,16 @@ class TaskLogs(Base):
     end_time = Column(DateTime, nullable=True, comment="结束时间")
     duration = Column(Integer, nullable=True, comment="持续时间(秒)")
     success = Column(Boolean, nullable=False, comment="执行结果")
+    outcome = Column(
+        String(20),
+        nullable=True,
+        comment="业务结果六态：success/partial/skipped/failed/no_action/cancelled（NULL=历史记录无此字段，W3-4）",
+    )
+    skip_reason = Column(
+        String(50),
+        nullable=True,
+        comment="跳过原因机器码：resource_busy/already_running/outside_budget/downloader_offline（W3-4）",
+    )
     log_detail = Column(String(2000), nullable=True, comment="执行日志")
     dr = Column(Integer, nullable=False, default=0, comment="逻辑删除标识")
 
@@ -64,6 +74,8 @@ class TaskLogs(Base):
             "end_time": self._format_datetime(self.end_time),
             "duration": self.duration,
             "success": self.success,
+            "outcome": self.outcome,
+            "skip_reason": self.skip_reason,
             "log_detail": self.log_detail,
             "dr": self.dr,
         }

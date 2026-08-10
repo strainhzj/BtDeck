@@ -274,6 +274,8 @@ class TaskLogsCRUD:
                 end_time=log_data.get("end_time"),
                 duration=log_data.get("duration"),
                 success=log_data.get("success"),
+                outcome=log_data.get("outcome"),
+                skip_reason=log_data.get("skip_reason"),
                 log_detail=log_data.get("log_detail"),
             )
 
@@ -295,8 +297,14 @@ class TaskLogsCRUD:
         task_name: Optional[str] = None,
         task_id: Optional[int] = None,
         success: Optional[bool] = None,
+        outcome: Optional[str] = None,
     ) -> DatabaseResult:
-        """获取任务日志列表"""
+        """获取任务日志列表
+
+        Args:
+            outcome: 业务结果过滤（success/partial/skipped/failed/no_action/cancelled，
+                W3-4 新增）；不传返回全部（兼容旧调用）。
+        """
         try:
             query = db.query(TaskLogs).filter(TaskLogs.dr == 0)
 
@@ -306,6 +314,8 @@ class TaskLogsCRUD:
                 query = query.filter(TaskLogs.task_id == task_id)
             if success is not None:
                 query = query.filter(TaskLogs.success == success)
+            if outcome is not None:
+                query = query.filter(TaskLogs.outcome == outcome)
 
             total = query.count()
             logs = query.order_by(desc(TaskLogs.start_time)).offset(skip).limit(limit).all()
