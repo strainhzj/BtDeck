@@ -2507,6 +2507,79 @@
           "evidence": "明确变更边界:加 1 列 + 1 迁移 + 前端展示,不加通知触发点;工作区'同步治理'未提交改动保持原样。"
         }
       ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w3-1",
+      "name": "同步数据库阻塞修复 W3-1：qB Tracker 有界队列与单轮预算（P1-01/P1-04）",
+      "description": "修复计划 W3-1（G3 门部分）：qB Tracker 拉取改为有界 worker 队列（禁止全量 create_task），单轮数量/时间预算硬上限，持久化 cursor 续跑（复用 W3-2 sync_checkpoints），cycle 语义（last_full_sync_at + 清 cursor），RID 确认与 durable commit 对齐，Coordinator 预算透传。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w3-1.1",
+          "name": "W3-1a 有界队列与单轮预算",
+          "description": "_enrich_qb_torrents_with_trackers 重写为有界 Queue + worker 池（10k hash 活跃任务 ≤ worker+2）；新配置 QB_TRACKER_WORKER_COUNT/MAX_TORRENTS_PER_RUN/RUN_BUDGET_SECONDS/PER_CALL_TIMEOUT；数量硬上限 + 时间软上限，budget_reason 观测。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/core/config.py",
+            "backend/.env.example",
+            "backend/tests/api/test_torrents_async_tracker_budget.py"
+          ],
+          "evidence": "test_torrents_async_tracker_budget 6 passed（10k 任务数上限/数量预算/时间预算/快速返回/全量一致性/timeout 透传）"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w3-1.2",
+          "name": "W3-1b 持久化 cursor 续跑与 cycle 语义",
+          "description": "qB tracker 稳定排序 + cursor（JSON last_hash 存 checkpoint cursor_value）+ 仅 durable commit 后推进（批失败停驻）+ cycle complete 清 cursor 更新 last_full_sync_at + Coordinator deadline/record_budget 透传（partial outcome）+ RID 确认点对齐验证。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/services/sync_coordinator.py",
+            "backend/tests/api/test_torrents_async_tracker_budget.py"
+          ],
+          "evidence": "追加 6 测试（续跑无重复无遗漏/批失败 cursor 停驻/cycle 完整/稳定排序/预算透传）；全量回归 3044 passed, 0 failed"
+        }
+      ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w3-3",
+      "name": "同步数据库阻塞修复 W3-3：info-only 有界并发与分阶段流水线（P1-02/P1-04）",
+      "description": "修复计划 W3-3（G3 门部分）：info-only 下载器并发配置化（SQLite 默认 1）、现有记录分页读取、内存/单轮硬上限（数量/时间/缓冲）、分阶段流水线验证（fetch 不持写锁/write 无下载器调用）、内存峰值有界测试、RID 增量完整性验证（顺序已正确）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w3-3.1",
+          "name": "W3-3a 并发配置化与内存/单轮硬上限",
+          "description": "新配置 INFO_SYNC_DOWNLOADER_CONCURRENCY=1/DB_READ_PAGE_SIZE=500/MAX_TORRENTS_PER_RUN=10000/RUN_BUDGET_SECONDS=300/MAX_BUFFERED_ROWS=2000；task max_concurrent 配置化；existing 记录分页读取 + 每页让行；预算/缓冲上限（budget_reason count|time）；phase_ms/rows_buffered 观测。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/tasks/scheduler/torrent_sync/torrent_info_sync_task.py",
+            "backend/app/core/config.py",
+            "backend/.env.example",
+            "backend/tests/api/test_torrents_async_info_budget.py"
+          ],
+          "evidence": "test_torrents_async_info_budget 8 passed（并发配置/分页 3 次 select cache 完整/数量预算/缓冲分批/时间预算/让行/TR 对称）"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w3-3.2",
+          "name": "W3-3b 流水线验证与内存峰值集成测试",
+          "description": "新 tests/integration/test_sync_memory_bound.py 9 用例：fetch 不持写锁/write 无下载器调用（时序探针）、并发符合配置（4 下载器 ×10k）、内存峰值有界（rows_buffered 代理度量）、部分失败不阻塞、RID 确认仅在 durable commit 后（commit 失败不确认）、增量异常回退分页全量受预算限制。生产代码零改动。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/integration/test_sync_memory_bound.py"
+          ],
+          "evidence": "test_sync_memory_bound 9 passed；integration 22 passed + 1 skip；全量回归 3061 passed, 0 failed"
+        }
+      ]
     }
   ]
 }

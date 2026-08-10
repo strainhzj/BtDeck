@@ -3540,3 +3540,61 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 新增 3 passed；孤儿全量 237 passed（+1 skipped 预存）。
 - black/flake8 通过；mypy orphan_file_service 仍 149（基线，新代码零新增错误）。
 - 未执行 Git commit。
+
+## 2026-08-09(续) - W3-1 实施：qB Tracker 有界队列与单轮预算 + 持久化 cursor 续跑（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施 W3-1（P1-01：qB Tracker 同步任务爆炸；P1-04 预算统一）。拆分两部分由子代理执行（完整任务连续 3 次触发子代理模型故障，拆分并限制大文件读取区间后成功）+ 主代理逐项审查通过。期间完成并行会话改动的合并验证（orphan API 已同步 29 passed、迁移链 3a4b5c6d7e8f→f9a1b2c3d4e5→f0e1d2c3b4a5 合并、rollback REV_HEAD 更新至 f0e1d2c3b4a5）。
+
+### W3-1a 有界队列与单轮预算（torrents_async.py + config.py）
+
+- `_enrich_qb_torrents_with_trackers` 重写：有界 `asyncio.Queue(maxsize=worker_count)` + 生产者/消费者（N 个 worker + 哨兵收尾），**禁止全量 create_task**；10k hash 时活跃任务数 ≤ worker_count + 2（实测断言）。
+- 新配置：`QB_TRACKER_WORKER_COUNT=2`、`QB_TRACKER_MAX_TORRENTS_PER_RUN=1000`、`QB_TRACKER_RUN_BUDGET_SECONDS=120.0`、`QB_TRACKER_PER_CALL_TIMEOUT=30.0`；`QB_TRACKER_CONCURRENCY` 保留为兼容（不再控制任务数）。
+- 预算：数量硬上限（原子计数严格 ≤ 上限）+ 时间软上限（拉取前检查）；`budget_reason: count|time|None`；生产者 put 带 wait_for 防预算到期后永久阻塞；观测字段 queue_depth/workers_active/processed_this_run/remote_error_rate。
+
+### W3-1b 持久化 cursor 续跑 + cycle 语义 + RID 对齐 + 预算接线（torrents_async.py + sync_coordinator.py）
+
+- cursor：JSON `{"last_hash": "..."}` 透明游标存 checkpoint `cursor_value`；hash 字典序稳定排序；跳过 ≤ cursor 的已 durable hash；新游标 = 最后已发起拉取的 hash。
+- **仅 durable commit 后推进**：批 `sync_trackers_batch_async` commit 成功后经 `push_sync_progress` 推进；批失败 → 停止本轮、cursor 停在最后成功批（测试验证：第 2 批失败 → cursor=h000004，重试只处理 h00005+）；幂等 upsert 保证重做安全。
+- **cycle 语义**：全部处理完（无预算/无失败/无错误）→ `last_full_sync_at` 更新 + cursor 清空（下一轮从头）；空集早退也 cycle_complete（清陈旧 cursor）。
+- **RID 对齐确认**：qb 增量两处（L2113、L3031）均为 durable commit 后 `_confirm_qb_sync_rid`，顺序已正确无需调整。
+- **Coordinator 接线**：`_sync_one_downloader` 透传 `SyncRequest.deadline/record_budget`；预算到期 → `SyncResult.outcome="partial"` + checkpoint 含 cursor；`finalize` 新增 `clear_cursor`（周期完整强制清空）。
+- 测试 12 项（10k 任务数上限/数量/时间预算/续跑无重复无遗漏/批失败停驻/cycle 完整/稳定排序/预算透传）。
+
+### 验证
+
+- **全量回归：3044 passed, 7 skipped, 0 failed**（209.1s）。
+- 新增/扩展：test_torrents_async_tracker_budget 12、sync_coordinator 20、sync_checkpoint 13、governance 7。
+- black/flake8 通过；mypy 未新增错误（18 个存量基线）。
+- 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-09(续) - W3-3 实施：info-only 有界并发与分阶段流水线（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施 W3-3（P1-02：info 同时处理多个下载器，内存和 CPU 峰值高）。拆两部分由子代理执行（沿用 W3-1 的拆分 + 大文件读取区间限制经验）+ 主代理逐项审查通过。
+
+### W3-3a 并发配置化 + 分页读取 + 内存/单轮硬上限（torrents_async.py + config.py + task）
+
+- 新配置：`INFO_SYNC_DOWNLOADER_CONCURRENCY=1`（**SQLite 默认串行处理下载器**）、`INFO_SYNC_DB_READ_PAGE_SIZE=500`、`INFO_SYNC_MAX_TORRENTS_PER_RUN=10000`、`INFO_SYNC_RUN_BUDGET_SECONDS=300`、`INFO_SYNC_MAX_BUFFERED_ROWS=2000`。
+- `torrent_info_sync_task.py` 的 `max_concurrent` 由硬编码 3 改为读配置。
+- info-only 现有记录加载改**分页读取**（hash 排序 + offset 分页，每页后 `asyncio.sleep(0)` 让行）——cache 结构不变（diff 需要内存缓存），峰值内存摊平。
+- 单轮预算（数量/时间，`budget_reason: count|time`）+ 缓冲上限（达 2000 行先 flush 再继续，flush 后清空 + 让行）；观测日志 phase_ms/rows_buffered/records_per_second/yield_count。
+- 附带发现（未改）：既有变更检测 cache 字段集缺 hash 等键 → 已有行恒判 changed（update 而非 skip）——W2 语义，记录留待后续。
+
+### W3-3b 流水线验证 + RID 完整性 + 内存峰值集成测试（新 tests/integration/test_sync_memory_bound.py，9 用例）
+
+- **fetch 不持 DB 写锁 / write 无下载器调用**：真实文件型 SQLite 时序探针（fetch 全部结束才开始 commit、首个 commit 后零远程调用、commit 次数 = ceil(10k/batch)）。
+- **并发符合配置**：真实生产链（TorrentInfoSyncTask.execute → execute_sync_with_concurrency → run_sync 计数探针内跑真实 info-only），4 下载器 × 10k，并发 1 时活跃 ≤1、并发 2 时峰值 ≥2。
+- **内存峰值有界**：rows_buffered ≤ MAX_BUFFERED_ROWS + 下载器数×页大小（代理度量，psutil 未安装；真实 RSS 门槛留 G3 发布门基准）。
+- **部分失败不阻塞**：第 2 下载器失败 → partial、其余 3 下载器完成。
+- **RID 完整性判定：顺序已正确无需改**——`_confirm_qb_sync_rid` 仅在 bulk_upsert_with_retry 全部 durable commit 成功后调用（commit 失败 → 异常 → confirm 不执行）；增量异常回退分页全量仍受单轮预算限制（测试证明）。
+- 生产代码零改动（纯验证 + 测试）。
+
+### 验证
+
+- **全量回归：3061 passed, 7 skipped, 0 failed**（208.4s）。
+- 新增：test_torrents_async_info_budget 8、test_sync_memory_bound 9；integration 22 passed + 1 skip（既有 22k 基准）。
+- black/flake8 通过。
+- 未执行 Git stage/commit/push/deploy。
