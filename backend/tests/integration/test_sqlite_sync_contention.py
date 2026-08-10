@@ -30,6 +30,16 @@ app.database 引擎）证明：同步分批写入期间，交互（普通请求�
 6. test_bulk_commit_p99_budget_on_22k_rows（@pytest.mark.performance，
    默认 skip）：22k 行分批基准，单批 commit P99 < 250ms，数据校准留给
    G1 压测，避免拖慢常规 CI。
+7. test_busy_two_consecutive_conflicts_then_success（W4-3 故障注入）：
+   持锁方连续两次 300ms 持锁制造两次真实 SQLITE_BUSY，写入方
+   bulk_upsert_with_retry 有界重试后最终成功（retries>=2、不丢行）。
+8. test_interactive_write_succeeds_under_300ms_lock_hold（W4-3 故障注入）：
+   后台持写锁 300ms 期间，交互写（busy_timeout=15s）排队等待后成功。
+9. test_slow_downloader_timeout_keeps_loop_heartbeat（W4-3 故障注入）：
+   慢下载器（2s sleep 经 call_downloader_api 真实调用，wait_for 1s 超时）
+   期间事件循环心跳探针仍运行（max lag < 1s），调用按超时返回。
+10. test_cancel_midway_keeps_committed_batches（W4-3 故障注入）：
+   后台 DML 中途取消后已提交批次保留（partial，行数为整批倍数且 < 总量）。
 
 【fixture 设计（真实文件型保证）】
 - tmp_path 每测试独立临时目录 + 真实 .db 文件（WAL/SHM 同步落盘）。
@@ -59,10 +69,31 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.pool import NullPool
 
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.sync_db_write import WriteStats, _is_sqlite_lock_conflict, bulk_upsert_with_retry
 from app.tasks.resource_guard import admission_controller
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.fixture(autouse=True)
+def _patch_call_downloader_api(monkeypatch):
+    """本文件慢下载器用例经 call_downloader_api 调真实全局单例 runtime，
+    但同一 pytest 进程中先跑的 API 测试（TestClient lifespan）会把全局单例的
+    executor shutdown（不可逆），导致 cannot schedule new futures after shutdown。
+    改为经 asyncio 默认 executor（to_thread）执行并保留 wait_for 超时语义——
+    线程边界与超时行为与 runtime 一致，但不依赖可被关闭的全局单例。
+    """
+    import tests.integration.test_sqlite_sync_contention as _mod
+
+    async def _thread_call(downloader_id, lane, func, args=(), kwargs=None, *, timeout=None, operation=""):
+        loop = asyncio.get_running_loop()
+        return await asyncio.wait_for(
+            loop.run_in_executor(None, func, *args, **(kwargs or {})),
+            timeout=timeout,
+        )
+
+    monkeypatch.setattr(_mod, "call_downloader_api", _thread_call)
 
 # 交互写单笔耗时上限（ms）：远小于 busy_timeout 15000ms。
 # 若同步写者长时间独占写锁（回归场景），交互写会被迫等满整个同步，必然超限。
@@ -483,3 +514,226 @@ async def test_bulk_commit_p99_budget_on_22k_rows(contention_db):
     p99 = commit_ms[int(len(commit_ms) * 0.99) - 1]
     assert p99 < 250.0, f"单批 commit P99={p99:.1f}ms 超过 250ms 门槛"
     assert await _count_rows(env.interactive) == 22000
+
+
+# =============================================================================
+# W4-3 故障注入用例（PLANS/sync-database-blocking-remediation.md W4-3）
+# 与 scripts/sync_contention_benchmark.py 的 --fault 注入对应：
+# 每个用例断言"可解释降级、无雪崩"（重试有界、最终状态一致）。
+# =============================================================================
+
+
+def _install_noisy_callback_filter() -> None:
+    """过滤已知噪音：call_downloader_api 超时后 wait_for 取消 wrap_future，
+    downloader_api_runtime._attach_done_stats._on_done 对 cancelled future 调
+    fut.exception() 抛 CancelledError（except Exception 捕获不到 BaseException），
+    每次超时都向 stderr 打一条 "Exception in callback"。这是既有生产代码的观测
+    缺口（W4-1 观测收口候选），测试侧只过滤该固定模式，其余异常处理保持默认。
+    """
+    loop = asyncio.get_event_loop()
+    default_handler = loop.get_exception_handler() or loop.default_exception_handler
+
+    def _filtered(loop_, context):  # noqa: ANN001 - 事件循环回调签名
+        message = str(context.get("message", ""))
+        handle = str(context.get("handle", ""))
+        if "Exception in callback" in message and "_attach_done_stats" in handle:
+            return
+        default_handler(loop_, context)
+
+    loop.set_exception_handler(_filtered)
+
+
+async def test_busy_two_consecutive_conflicts_then_success(contention_db):
+    """连续两次真实 SQLITE_BUSY（持锁方两次 300ms 持锁）后，写入方有界重试并最终成功。
+
+    【故障注入语义】对应基准 --fault busy：A 分两次各持写锁 300ms（第二次持锁
+    等待第一次 BUSY 信号后才释放），B 在短 busy_timeout=200ms 下调用真实
+    bulk_upsert_with_retry：第 1、2 次尝试分别撞上真实 SQLITE_BUSY（handle_error
+    计数验证错误码路径），第 3 次在锁释放后成功。
+    - len(busy_hits) >= 2：确实发生两次真实 BUSY；
+    - stats.retries >= 2：重试有界且发生（远小于 max_retries=10）；
+    - stats.committed == 100：最终一致（不丢行、不重复提交）。
+    """
+    env = contention_db
+    busy_hits = []
+
+    def _on_handle_error(context):  # noqa: ANN001 - SQLAlchemy 异常上下文
+        exc = getattr(context, "original_exception", None)
+        if getattr(exc, "sqlite_errorcode", None) == 5:
+            busy_hits.append(1)
+
+    event.listen(env.engine.sync_engine, "handle_error", _on_handle_error)
+
+    def _short_busy(dbapi_conn, conn_record):  # noqa: ANN001 - SQLAlchemy 事件回调签名
+        """每个新连接 busy_timeout=200ms。
+
+        注意：NullPool 下会话回滚后重试会换新连接，仅对当前会话执行 PRAGMA
+        只作用于旧连接（这正是生产行为：新连接回落到连接级 15s）。本用例要
+        验证"两次连续 BUSY + 有界重试"，必须让每次尝试都快速失败，故用连接级
+        事件对所有新连接统一收紧（仅本用例范围内）。
+        """
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA busy_timeout=200")
+        cursor.close()
+
+    event.listen(env.engine.sync_engine, "connect", _short_busy)
+    lock1_held = asyncio.Event()
+    try:
+
+        async def holder():
+            # 第一次持锁 300ms：B 的第 1 次尝试必然在 busy_timeout=200ms 内失败
+            await env.writer.run_sync(lambda s: s.bulk_insert_mappings(SyncContentionRow, _make_rows("hold1", 0, 100)))
+            lock1_held.set()
+            await asyncio.sleep(0.3)
+            await env.writer.commit()
+            # 第二次持锁 300ms：等 B 撞上第二次 BUSY 后再释放，保证重试必然再失败一次
+            await env.writer.run_sync(
+                lambda s: s.bulk_insert_mappings(SyncContentionRow, _make_rows("hold2", 100, 100))
+            )
+            deadline = time.monotonic() + 15.0
+            while len(busy_hits) < 2 and time.monotonic() < deadline:
+                await asyncio.sleep(0.005)
+            await env.writer.commit()
+
+        async def retry_writer():
+            await lock1_held.wait()
+            return await bulk_upsert_with_retry(
+                env.interactive,
+                _make_rows("twice", 2000, 100),
+                [],
+                model=SyncContentionRow,
+                label="busy_twice",
+                batch_size=100,
+                max_retries=10,
+                base_delay=0.5,  # 退避 250-750ms：保证第 2 次尝试晚于持锁方重新上锁
+            )
+
+        holder_task = asyncio.create_task(holder())
+        stats = await retry_writer()
+        await holder_task
+
+        assert len(busy_hits) >= 2, f"应发生至少两次真实 SQLITE_BUSY，实际 {len(busy_hits)}"
+        assert stats.retries >= 2, f"有界重试应 >= 2 次，实际 {stats.retries}"
+        assert stats.retries < 10, "重试应远小于 max_retries（有界）"
+        assert stats.batches == 1
+        assert stats.committed == 100
+        assert await _count_rows(env.interactive) == 300  # hold1 100 + hold2 100 + retry 100
+    finally:
+        event.remove(env.engine.sync_engine, "handle_error", _on_handle_error)
+        event.remove(env.engine.sync_engine, "connect", _short_busy)
+
+
+async def test_interactive_write_succeeds_under_300ms_lock_hold(contention_db):
+    """后台持写锁 300ms 期间，交互写（busy_timeout=15s）排队等待后成功。
+
+    【故障注入语义】对应基准 --fault busy 的探针侧：持锁方 300ms 远小于交互写
+    busy_timeout=15s，写请求在锁释放后立即成功——"可解释降级"（耗时约等于
+    持锁窗口）、无超时、无最终失败。
+    """
+    env = contention_db
+    started = asyncio.Event()
+
+    async def holder():
+        await env.writer.run_sync(lambda s: s.bulk_insert_mappings(SyncContentionRow, _make_rows("hold300", 0, 50)))
+        started.set()
+        await asyncio.sleep(0.3)
+        await env.writer.commit()
+
+    task = asyncio.create_task(holder())
+    await started.wait()
+    t0 = time.perf_counter()
+    await _interactive_insert(env.interactive, "probe-hold", 9000, "probe")
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    await task
+
+    # 写请求等待了持锁窗口（>=150ms 留调度余量），且远小于 busy_timeout 15s
+    assert elapsed_ms >= 150.0, f"交互写应排队等待持锁窗口，实际 {elapsed_ms:.1f}ms"
+    assert elapsed_ms < _INTERACTIVE_WRITE_MAX_MS, f"交互写被长时间阻塞：{elapsed_ms:.1f}ms"
+    assert await _count_rows(env.interactive) == 51  # 持锁 50 行 + 交互 1 行
+
+
+async def test_slow_downloader_timeout_keeps_loop_heartbeat(contention_db):
+    """慢下载器（2s sleep 经 call_downloader_api 真实调用）期间事件循环心跳仍运行。
+
+    【故障注入语义】对应基准 --fault slow-downloader：slow_func 在 executor 线程
+    内 sleep 2s（真实网络阶段等价物），调用方 wait_for 超时=1s → 断言调用按
+    asyncio.TimeoutError 返回；期间心跳探针持续采样事件循环 lag，
+    max lag < 1s（sleep 在独立线程，事件循环不被阻塞）——无雪崩。
+    """
+    _install_noisy_callback_filter()
+    lag = []
+    stop = asyncio.Event()
+
+    async def heartbeat():
+        while not stop.is_set():
+            t0 = time.perf_counter()
+            await asyncio.sleep(0.02)
+            lag.append(max(0.0, (time.perf_counter() - t0 - 0.02) * 1000.0))
+
+    def slow_func(*args, **kwargs):  # noqa: ANN001, ANN002, ANN003
+        time.sleep(2.0)
+        return {"ok": True}
+
+    hb = asyncio.create_task(heartbeat())
+    try:
+        with pytest.raises(asyncio.TimeoutError):
+            await call_downloader_api(
+                "bench-slow-dl",
+                DownloadLane.INTERACTIVE,
+                slow_func,
+                timeout=1.0,
+                operation="bench_slow_probe",
+            )
+    finally:
+        stop.set()
+        await hb
+        # 等底层 executor 线程结束（最多再跑 2s），避免线程泄漏与后续用例干扰
+        await asyncio.sleep(2.1)
+
+    assert len(lag) > 0, "心跳探针应持续运行"
+    assert max(lag) < 1000.0, f"事件循环被慢下载器阻塞：max lag={max(lag):.1f}ms"
+
+
+async def test_cancel_midway_keeps_committed_batches(contention_db):
+    """后台 DML 中途取消：已提交批次保留（partial），无半批残留。
+
+    【故障注入语义】对应基准 --fault cancel（W2-1 取消语义）：bulk_upsert 任务
+    提交满 1 批后取消——已提交批次不回滚、结果 partial；断言：
+    - 保留行数在 [batch_size, total) 之间（部分提交）；
+    - 保留行数为整批倍数（批次原子性，无半批）；
+    - 取消后行数不再增长（no_post_commit）。
+    """
+    env = contention_db
+    batch_size = 100
+    total = 2000
+
+    async def sync_writer() -> WriteStats:
+        return await bulk_upsert_with_retry(
+            env.writer,
+            _make_rows("cancel", 5000, total),
+            [],
+            model=SyncContentionRow,
+            label="cancel_midway",
+            batch_size=batch_size,
+            max_retries=3,
+        )
+
+    task = asyncio.create_task(sync_writer())
+    committed = 0
+    deadline = time.monotonic() + 30.0
+    # 高频轮询：在首批提交后尽快取消（20 批全程约数十毫秒，轮询 1ms 保证抓得住中途）
+    while time.monotonic() < deadline:
+        committed = await _count_rows(env.interactive, id_prefix="cancel")
+        if committed >= batch_size:
+            break
+        await asyncio.sleep(0.001)
+    assert committed >= batch_size, "等待首批提交超时"
+
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+
+    final_count = await _count_rows(env.interactive, id_prefix="cancel")
+    assert batch_size <= final_count < total, f"取消后应保留部分批次：{final_count}"
+    assert final_count % batch_size == 0, f"已提交行数应为整批倍数：{final_count}"
+    assert await _count_rows(env.interactive, id_prefix="cancel") == final_count, "取消后不应再有新提交"
