@@ -2580,6 +2580,52 @@
           "evidence": "test_sync_memory_bound 9 passed；integration 22 passed + 1 skip；全量回归 3061 passed, 0 failed"
         }
       ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w3-4",
+      "name": "同步数据库阻塞修复 W3-4：任务 outcome/skip/freshness 六态语义（P1-05）",
+      "description": "修复计划 W3-4（G3 门部分）：统一 outcome 六态（success/partial/skipped/failed/no_action/cancelled）持久化与 API 映射、skip_reason 机器码、数据新鲜度计算（cron_plan 间隔 ×2 周期阈值 + 配置兜底）、前端任务页结果标签/陈旧告警展示。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w3-4.1",
+          "name": "W3-4 后端 outcome/freshness 持久化与 API",
+          "description": "新迁移 f5e6d7c8b9a0（task_logs.outcome/skip_reason + cron_task freshness 列，全部可空）；executor 六态落库（skipped 不丢弃/重入记录/[ADMISSION_SKIP] 保持）；last_success_at 仅 success/partial/no_action 推进；新 cron_freshness.py（APScheduler 解析 cron_plan，2 周期阈值 + CRON_STALE_THRESHOLD_SECONDS 兜底）；API 增补 lastOutcome/freshnessSeconds/stale 等 + logs outcome 过滤 + CSV 同步。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/alembic/versions/f5e6d7c8b9a0_add_task_outcome_freshness.py",
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/tasks/cron_freshness.py",
+            "backend/app/tasks/cron_crud.py",
+            "backend/app/tasks/cron_crud_async.py",
+            "backend/app/tasks/models.py",
+            "backend/app/tasks/cron_models.py",
+            "backend/app/api/endpoints/cron_tasks.py",
+            "backend/app/core/config.py",
+            "backend/tests/tasks/test_cron_executor.py",
+            "backend/tests/tasks/test_cron_executor_admission.py",
+            "backend/tests/api/test_cron_tasks_outcome.py"
+          ],
+          "evidence": "executor 12 + admission 5 + API 10 + 迁移往返 3 全过；后端全量 3085 passed, 0 failed"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w3-4.2",
+          "name": "W3-4 前端任务页 outcome/freshness 展示",
+          "description": "TaskOutcome 六态类型 + TASK_OUTCOME_META 映射（el-tag + 中文）；任务列表 outcome tag + 数据陈旧告警（tooltip 成因）；日志表/详情/复制六态（旧数据回退）；新 tasks-sync-freshness.spec.ts 18 用例 + api-contracts 同步。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/tasks.ts",
+            "frontend/src/views/tasks/index.vue",
+            "frontend/tests/unit/tasks-sync-freshness.spec.ts",
+            "frontend/tests/unit/api-contracts.spec.ts"
+          ],
+          "evidence": "前端 test:unit 635 passed；typecheck 0 错误；build 成功"
+        }
+      ]
     }
   ]
 }

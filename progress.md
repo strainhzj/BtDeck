@@ -3598,3 +3598,31 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 新增：test_torrents_async_info_budget 8、test_sync_memory_bound 9；integration 22 passed + 1 skip（既有 22k 基准）。
 - black/flake8 通过。
 - 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-09(续) - W3-4 实施：任务 outcome/skip/freshness 六态语义（PLANS/sync-database-blocking-remediation.md）
+
+### 背景
+
+实施 W3-4（P1-05：调度成功、跳过和数据新鲜度语义混乱），W3 最后一项。后端/前端并行子代理执行 + 主代理逐项审查通过。
+
+### 后端（cron_executor + 迁移 f5e6d7c8b9a0 + cron_freshness + API）
+
+- **新迁移 `f5e6d7c8b9a0_add_task_outcome_freshness.py`**（down=f0e1d2c3b4a5，纯 ADD COLUMN 全部可空）：task_logs 加 outcome（String 20）/skip_reason（String 50 机器码：resource_busy/already_running/outside_budget/downloader_offline）；cron_task 加 last_success_at/last_attempt_at/last_outcome/last_skip_reason/last_run_id。迁移防护期望更新（EXPECTED_HEAD/REV_HEAD=f5e6d7c8b9a0）。
+- **executor 落库六态**：结果 dict 支持 outcome/skipped/skip_reason（skipped 键不再丢弃）；success 布尔保持原语义（执行是否成功），outcome 是业务结果，两者并存；**重入跳过改为记录** TaskLogs（outcome=skipped + [REENTRANT_SKIP]）；准入跳过补 outcome/skip_reason（[ADMISSION_SKIP] 文本与 success=True 保持）。
+- **freshness 推进**：每次执行更新 last_attempt_at/last_outcome/last_skip_reason/last_run_id；**last_success_at 仅 success/partial/no_action 推进**（skipped/failed/cancelled 不推进——计划关键语义）。
+- **stale 计算**（新 cron_freshness.py）：APScheduler CronTrigger 解析 cron_plan 最短重复间隔（`*/5`→300s、日更→86400s），阈值 = 2 个调度周期，解析失败回退配置 `CRON_STALE_THRESHOLD_SECONDS=7200`；stale = 无 last_success_at 或 freshness > 阈值。
+- **API**：CronTaskResponse 加 lastOutcome/lastSuccessfulDataAt/lastAttemptAt/lastSkipReason/lastRunId/freshnessSeconds/stale；TaskLogResponse 加 outcome/skipReason；logs 支持 outcome 过滤；CSV 导出追加两列；statistics 口径不变（success 布尔）。
+- 测试：executor 12（六态映射/重入记录/freshness 推进）、admission 5（skip 追加 outcome 断言）、API 10（字段/stale/logs 过滤/NULL 兼容）、迁移往返 3。
+
+### 前端（tasks.ts + tasks/index.vue + 测试）
+
+- `TaskOutcome` 六态字面量联合类型 + `TASK_OUTCOME_META`（el-tag type + 中文文案）+ `getTaskOutcomeMeta`/`isTaskDataStale`/`getStaleTooltipText` 映射工具（无 any）；ScheduledTask/TaskLog 增补可选字段。
+- 任务列表"上次执行"列：outcome 六态 el-tag + **数据陈旧 danger 告警 tag**（tooltip 提示成因与最后数据更新时间），旧数据回退仅时间/—；日志表/详情/复制文案六态（无 outcome 回退 success 布尔）。
+- 测试：新 tasks-sync-freshness.spec.ts 18 用例（六态映射/stale 三场景/渲染/源码契约守卫）；api-contracts.spec.ts +2；**前端 635 用例全过、typecheck 0 错误、build 成功**。
+
+### 验证
+
+- **后端全量：3085 passed, 7 skipped, 0 failed**（200.9s）。
+- 前端：test:unit 635 passed；typecheck exit 0；build 成功；lint 0 errors（5 个存量 warning 与本次无关）。
+- black/flake8 通过。
+- 未执行 Git stage/commit/push/deploy。

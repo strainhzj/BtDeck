@@ -1,5 +1,36 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-09 交接：W3-4 实施完成（任务 outcome/skip/freshness 六态语义，W3 收官）
+
+当前任务：修复计划 W3-4（P1-05）实施完成，后端/前端并行子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W3 全部完成（W3-1/W3-2/W3-3/W3-4）；G3 门剩余：真实 RSS 基准（需 psutil 环境）、大档 --assert-slo 接入发布门；未提交、未推送。
+
+### 本次改动（后端 12 文件 + 前端 4 文件）
+
+- **后端**：新迁移 `f5e6d7c8b9a0`（task_logs.outcome/skip_reason + cron_task 5 个 freshness 列，全部可空）；executor 六态落库（skipped 不丢弃/重入记录 [REENTRANT_SKIP]/[ADMISSION_SKIP] 保持）；last_success_at 仅 success/partial/no_action 推进；新 `cron_freshness.py`（APScheduler 解析 cron_plan，2 周期阈值 + `CRON_STALE_THRESHOLD_SECONDS=7200` 兜底）；API 增补 lastOutcome/freshnessSeconds/stale + logs outcome 过滤 + CSV 同步。
+- **前端**：TaskOutcome 六态类型 + 映射工具（无 any）；任务列表 outcome tag + 数据陈旧告警；日志表/详情/复制六态（旧数据回退）；tasks-sync-freshness.spec.ts 18 用例 + api-contracts +2。
+- 迁移防护期望更新（EXPECTED_HEAD/REV_HEAD=f5e6d7c8b9a0）。
+
+### 验证（主代理亲自复跑）
+
+- 后端全量 `pytest`：**3085 passed, 7 skipped, 0 failed**（200.9s）。
+- 前端：test:unit 635 passed；typecheck 0 错误；build 成功；lint 0 errors。
+- 注：子代理报告曾见 2 个 orphan_scanner 失败（其环境瞬时状态），主代理全量复跑未复现。
+
+### 下一步
+
+1. **G3 发布门**：真实 RSS 基准（psutil 环境）；大档 `--assert-slo` 接入发布门流水线/nightly。
+2. **W4-1**：结构化日志收口（`_attach_done_stats` CancelledError 缺口修复、event loop lag 采样器、run_id 贯穿校验）。
+3. **W4-2**：liveness/readiness/同步业务健康接口（Docker 健康检查从 /docs 改 /health/ready）。
+4. **W5**：P2 决策与文档收口（DBWriteQueue ADR、PostgreSQL 计划重写、feature_list/roadmap 全量核对）。
+5. 上线前 Alembic 迁移（head f5e6d7c8b9a0）。
+
+### 变更边界
+
+- 本次改 backend（迁移/executor/freshness/API/测试）+ frontend（tasks.ts/index.vue/测试）；未执行 Git stage/commit/push。
+
 ## 2026-08-09 交接：W3-3 实施完成（info-only 有界并发与分阶段流水线）
 
 当前任务：修复计划 W3-3（P1-02/P1-04）实施完成，拆两部分由子代理执行 + 主代理逐项审查通过
