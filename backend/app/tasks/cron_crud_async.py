@@ -8,7 +8,7 @@
 创建时间: 2025-01-31
 """
 
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import and_, select
@@ -177,6 +177,62 @@ class AsyncCronTaskCRUD:
             logger.error(f"异步更新任务执行持续时间失败 (ID: {task_id}): {str(e)}")
             return DatabaseResult.failure_result(f"更新任务执行持续时间失败: {str(e)}")
 
+    @staticmethod
+    async def update_task_freshness(
+        db: AsyncSession,
+        task_id: int,
+        *,
+        last_attempt_at: datetime,
+        last_outcome: str,
+        last_skip_reason: Optional[str],
+        last_run_id: str,
+        advance_success: bool,
+    ) -> DatabaseResult:
+        """
+        更新任务数据新鲜度字段（W3-4/P1-05）
+
+        每次执行都更新 last_attempt_at/last_outcome/last_skip_reason/last_run_id；
+        仅当 advance_success=True（outcome ∈ success/partial/no_action）时推进
+        last_success_at=last_attempt_at——skipped/failed/cancelled 不推进，
+        保证任务页能区分“调度器正常但数据没更新”。
+
+        Args:
+            db: 异步数据库会话
+            task_id: 任务ID
+            last_attempt_at: 本次执行结束时间
+            last_outcome: 本次业务结果（六态）
+            last_skip_reason: 跳过原因机器码（未跳过错失为 None）
+            last_run_id: 本次运行 ID
+            advance_success: True 时推进 last_success_at（数据成功 outcome）
+        """
+        try:
+            stmt = select(CronTask).where(and_(CronTask.task_id == task_id, CronTask.dr == 0))
+            result = await db.execute(stmt)
+            task = result.scalar_one_or_none()
+
+            if not task:
+                logger.warning(f"更新新鲜度失败：任务ID {task_id} 不存在")
+                return DatabaseResult.not_found_result("定时任务不存在")
+
+            task.last_attempt_at = last_attempt_at
+            task.last_outcome = last_outcome
+            task.last_skip_reason = last_skip_reason
+            task.last_run_id = last_run_id
+            if advance_success:
+                task.last_success_at = last_attempt_at
+
+            await db.commit()
+            logger.debug(
+                f"异步更新任务新鲜度成功: {task.task_name} (ID: {task_id}, outcome: {last_outcome}, "
+                f"advance_success: {advance_success})"
+            )
+            return DatabaseResult.success_result(task.to_dict())
+
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"异步更新任务新鲜度失败 (ID: {task_id}): {str(e)}")
+            return DatabaseResult.failure_result(f"更新任务新鲜度失败: {str(e)}")
+
 
 class AsyncTaskLogsCRUD:
     """任务日志异步CRUD操作类"""
@@ -202,6 +258,8 @@ class AsyncTaskLogsCRUD:
                 end_time=log_data.get("end_time"),
                 duration=log_data.get("duration"),
                 success=log_data.get("success"),
+                outcome=log_data.get("outcome"),
+                skip_reason=log_data.get("skip_reason"),
                 log_detail=log_data.get("log_detail"),
             )
 

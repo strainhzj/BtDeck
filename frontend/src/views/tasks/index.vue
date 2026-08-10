@@ -160,7 +160,29 @@
                 <code class="cron-code">{{ scope.row.cronPlan }}</code>
               </template>
             </el-table-column>
-            <el-table-column prop="lastExecuteTime" label="上次执行时间" min-width="160" show-overflow-tooltip resizable />
+            <el-table-column prop="lastExecuteTime" label="上次执行" min-width="180" resizable>
+              <template slot-scope="scope">
+                <div class="task-result-cell">
+                  <div class="task-result-tags">
+                    <el-tag
+                      v-if="getTaskOutcomeMeta(scope.row.lastOutcome)"
+                      :type="getTaskOutcomeMeta(scope.row.lastOutcome).type"
+                      size="small"
+                    >
+                      {{ getTaskOutcomeMeta(scope.row.lastOutcome).text }}
+                    </el-tag>
+                    <el-tooltip
+                      v-if="isTaskDataStale(scope.row.stale, scope.row.lastSuccessfulDataAt, scope.row.lastAttemptAt)"
+                      :content="getStaleTooltipText(scope.row.lastSuccessfulDataAt, scope.row.lastAttemptAt)"
+                      placement="top"
+                    >
+                      <el-tag type="danger" size="mini" effect="plain">数据陈旧</el-tag>
+                    </el-tooltip>
+                  </div>
+                  <div class="task-result-time">{{ scope.row.lastExecuteTime || '—' }}</div>
+                </div>
+              </template>
+            </el-table-column>
             <el-table-column label="操作" width="110" fixed="right" align="center" resizable>
         <template slot-scope="scope">
           <el-dropdown @command="handleCommand" trigger="click" size="mini">
@@ -410,9 +432,16 @@
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="success" label="执行结果" width="90" align="center" resizable>
+          <el-table-column prop="success" label="执行结果" width="100" align="center" resizable>
             <template slot-scope="scope">
-              <el-tag :type="scope.row.success ? 'success' : 'danger'" size="small">
+              <el-tag
+                v-if="getTaskOutcomeMeta(scope.row.outcome)"
+                :type="getTaskOutcomeMeta(scope.row.outcome).type"
+                size="small"
+              >
+                {{ getTaskOutcomeMeta(scope.row.outcome).text }}
+              </el-tag>
+              <el-tag v-else :type="scope.row.success ? 'success' : 'danger'" size="small">
                 {{ scope.row.success ? '成功' : '失败' }}
               </el-tag>
             </template>
@@ -792,7 +821,14 @@
           </div>
           <div class="detail-item">
             <span class="label">执行结果：</span>
-            <el-tag :type="selectedLog?.success ? 'success' : 'danger'" size="small">
+            <el-tag
+              v-if="getTaskOutcomeMeta(selectedLog?.outcome)"
+              :type="getTaskOutcomeMeta(selectedLog?.outcome).type"
+              size="small"
+            >
+              {{ getTaskOutcomeMeta(selectedLog?.outcome).text }}
+            </el-tag>
+            <el-tag v-else :type="selectedLog?.success ? 'success' : 'danger'" size="small">
               {{ selectedLog?.success ? '成功' : '失败' }}
             </el-tag>
           </div>
@@ -913,7 +949,13 @@ import {
   deleteTaskLogs,
   exportTaskLogs,
   ScheduledTask,
-  TaskCreateRequest
+  TaskCreateRequest,
+  TaskOutcome,
+  getTaskOutcomeMeta,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 仅模板 v-if 引用（vue-eslint-parser 不统计模板引用）
+  isTaskDataStale,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 仅模板 :content 引用（vue-eslint-parser 不统计模板引用）
+  getStaleTooltipText
 } from '@/api/tasks'
 import request from '@/utils/request'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -1980,11 +2022,15 @@ export default class TaskManage extends Vue {
     }
 
     try {
-      // 构建复制内容
+      // 构建复制内容（执行结果优先使用 outcome 六态文案，旧日志回退 success 布尔两态）
+      const outcomeText = getTaskOutcomeMeta(
+        (selectedLog as BTDeckTypes.TaskLog & { outcome?: TaskOutcome | null }).outcome
+      )?.text ?? (selectedLog.success ? '成功' : '失败')
+
       const content = `任务名称：${selectedLog.taskName}
 开始时间：${selectedLog.startTime}
 结束时间：${selectedLog.endTime}
-执行结果：${selectedLog.success ? '成功' : '失败'}
+执行结果：${outcomeText}
 执行耗时：${selectedLog.duration}s
 执行详情：
 ${selectedLog.logDetail}`
@@ -2468,6 +2514,28 @@ ${selectedLog.logDetail}`
   .filter-form-logs .form-group.form-group-wide {
     flex: 1 1 100%;
     max-width: 100%;
+  }
+}
+
+/* ========================================
+   任务最近结果单元格（outcome 六态 + 数据陈旧告警）
+   ======================================== */
+.task-result-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  line-height: 1.4;
+
+  .task-result-tags {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .task-result-time {
+    color: var(--color-text-secondary);
+    font-size: 12px;
   }
 }
 

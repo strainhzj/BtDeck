@@ -493,6 +493,78 @@ describe('API 请求契约', () => {
       )
     })
 
+    it('任务列表透传 outcome/数据新鲜度新字段（向后兼容增量契约）', async() => {
+      const payload = {
+        status: 'success',
+        msg: 'ok',
+        code: '200',
+        data: {
+          total: 1,
+          list: [{
+            taskId: 1,
+            taskName: '示例任务',
+            taskCode: 'demo_task',
+            taskStatus: 2,
+            taskType: 0,
+            executor: 'echo ok',
+            enabled: true,
+            cronPlan: '0 2 * * *',
+            taskStatusName: '空闲',
+            taskTypeName: 'shell脚本',
+            createTime: '2026-08-01 00:00:00',
+            updateTime: '2026-08-10 00:00:00',
+            lastOutcome: 'skipped',
+            lastSuccessfulDataAt: null,
+            lastAttemptAt: '2026-08-10 02:00:00',
+            lastSkipReason: 'resource_busy',
+            lastRunId: 'run-1',
+            freshnessSeconds: 86400,
+            stale: true
+          }]
+        }
+      }
+      mockRequest.mockResolvedValue(payload)
+
+      const res = await getTaskList({ page: 1, limit: 20 })
+      expect(mockRequest).toHaveBeenCalledTimes(1)
+      expect(res).toEqual(payload)
+      const task = res.data?.list?.[0]
+      expect(task?.lastOutcome).toBe('skipped')
+      expect(task?.lastSkipReason).toBe('resource_busy')
+      expect(task?.freshnessSeconds).toBe(86400)
+      expect(task?.stale).toBe(true)
+    })
+
+    it('任务日志透传 outcome/skipReason 新字段（历史日志无新字段仍兼容）', async() => {
+      const payload = {
+        status: 'success',
+        msg: 'ok',
+        code: '200',
+        data: {
+          total: 1,
+          list: [{
+            logId: 1,
+            taskId: 7,
+            taskName: '示例任务',
+            taskType: 0,
+            startTime: '2026-08-10 02:00:00',
+            endTime: '2026-08-10 02:00:05',
+            duration: 5,
+            success: false,
+            logDetail: '同步被跳过',
+            createTime: '2026-08-10 02:00:06',
+            outcome: 'skipped',
+            skipReason: 'resource_busy'
+          }]
+        }
+      }
+      mockRequest.mockResolvedValue(payload)
+
+      const res = await getTaskLogs({ task_id: 7 })
+      expect(res.data?.list?.[0]?.outcome).toBe('skipped')
+      expect(res.data?.list?.[0]?.skipReason).toBe('resource_busy')
+    })
+
     it('日志删除、导出、统计和清理区分 params、blob 与 data', () => {
       const deleteParams = { task_id: 7, log_ids: [1, 2] }
       expectRequest(

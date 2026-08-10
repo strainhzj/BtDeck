@@ -220,6 +220,12 @@ class Settings(BaseSettings):
     # 真实大批量孤儿仍照常入库可清理，仅提醒用户核查是否为异常量级）
     ORPHAN_SCAN_MAX_ORPHANS_WARNING: int = 50000
 
+    # 定时任务数据新鲜度兜底阈值（秒，W3-4/P1-05）：cron_plan 无法解析出最短
+    # 重复间隔时，stale 判断使用该值（默认 2 小时）；可解析时按
+    # “2 个调度周期”语义取 2 × 最短重复间隔（如每 5 分钟任务 → 600 秒）。
+    # 详见 PLANS/sync-database-blocking-remediation.md W3-4
+    CRON_STALE_THRESHOLD_SECONDS: float = 7200.0
+
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 
     def __init__(self, **kwargs):

@@ -68,6 +68,15 @@ export interface ScheduledTask {
   webhook_url?: string
   auto_retry?: boolean
   retry_strategy?: 'fixed' | 'linear' | 'exponential'
+
+  // 同步结果语义字段（v1.0.5 新增，后端可选返回，全部向后兼容）
+  lastOutcome?: TaskOutcome | null       // 最近一次执行结果（六态）
+  lastSuccessfulDataAt?: string | null   // 最近一次成功数据更新时间
+  lastAttemptAt?: string | null          // 最近一次执行尝试时间
+  lastSkipReason?: string | null         // 最近一次跳过原因（稳定机器码）
+  lastRunId?: string | null              // 最近一次运行 ID
+  freshnessSeconds?: number | null       // 数据新鲜度（秒）
+  stale?: boolean                        // 数据是否陈旧（连续跳过/超阈值）
 }
 
 export interface TaskListData {
@@ -146,6 +155,10 @@ export interface TaskLog {
   logDetail: string
   createTime: string  // 创建时间,与 types/task-logs.ts 保持一致
 
+  // 同步结果语义字段（v1.0.5 新增，可选/可空，兼容历史日志）
+  outcome?: TaskOutcome | null   // 执行结果六态
+  skipReason?: string | null     // 跳过原因（稳定机器码）
+
   // 兼容字段
   id?: number
   task_id?: number
@@ -155,6 +168,88 @@ export interface TaskLog {
   end_time?: string
   log_level?: string
   log_message?: string
+}
+
+// ========== 同步结果语义（outcome 六态 / 数据新鲜度）==========
+
+/**
+ * 任务执行结果六态（与后端 cron 执行器统一枚举）：
+ * - success：完整成功
+ * - partial：部分成功（预算/分页截断、部分下载器失败）
+ * - skipped：被跳过（资源冲突、已在运行等，不推进数据成功时间）
+ * - failed：失败
+ * - no_action：完成检查且数据已是最新（可推进数据成功时间）
+ * - cancelled：被取消
+ */
+export type TaskOutcome =
+  | 'success'
+  | 'partial'
+  | 'skipped'
+  | 'failed'
+  | 'no_action'
+  | 'cancelled'
+
+/** 六态对应的展示元信息（el-tag type + 中文文案） */
+export interface TaskOutcomeMeta {
+  /** el-tag type 取值 */
+  type: 'success' | 'warning' | 'info' | 'danger'
+  /** 中文文案 */
+  text: string
+}
+
+/** 六态 → 展示元信息映射表（唯一事实来源） */
+const TASK_OUTCOME_META: Record<TaskOutcome, TaskOutcomeMeta> = {
+  success: { type: 'success', text: '成功' },
+  partial: { type: 'warning', text: '部分成功' },
+  skipped: { type: 'info', text: '已跳过' },
+  failed: { type: 'danger', text: '失败' },
+  no_action: { type: 'info', text: '无变化' },
+  cancelled: { type: 'info', text: '已取消' }
+}
+
+/**
+ * 获取 outcome 的展示元信息；无 outcome（旧数据）或未知取值时返回 null，
+ * 调用方回退到传统 success 布尔两态展示。
+ */
+export function getTaskOutcomeMeta(outcome?: TaskOutcome | string | null): TaskOutcomeMeta | null {
+  if (!outcome) {
+    return null
+  }
+  const meta = TASK_OUTCOME_META[outcome as TaskOutcome]
+  return meta || null
+}
+
+/**
+ * 判断任务数据是否陈旧：
+ * 1. 后端明确标记 stale === true（连续跳过导致超阈值）；
+ * 2. 或从未有过成功数据（无 lastSuccessfulDataAt）但已有执行尝试（lastAttemptAt 存在）。
+ * 旧数据（全部字段缺失）不判定陈旧，保持兼容。
+ */
+export function isTaskDataStale(
+  stale?: boolean | null,
+  lastSuccessfulDataAt?: string | null,
+  lastAttemptAt?: string | null
+): boolean {
+  if (stale === true) {
+    return true
+  }
+  return Boolean(lastAttemptAt) && !lastSuccessfulDataAt
+}
+
+/**
+ * 生成数据陈旧的提示文案（含最后数据更新时间/最近尝试时间上下文）。
+ */
+export function getStaleTooltipText(
+  lastSuccessfulDataAt?: string | null,
+  lastAttemptAt?: string | null
+): string {
+  if (lastAttemptAt && !lastSuccessfulDataAt) {
+    return `任务自 ${lastAttemptAt} 起已有执行尝试，但尚无成功数据更新（数据陈旧）`
+  }
+  if (lastSuccessfulDataAt) {
+    return `数据陈旧：最后数据更新时间为 ${lastSuccessfulDataAt}`
+  }
+  return '数据陈旧：最近一次数据更新距今过久'
 }
 
 export interface TaskLogListData {

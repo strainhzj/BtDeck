@@ -19,6 +19,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models import OUTCOME_SKIPPED
 from app.tasks.cron_executor import CronTaskExecutor
 
 
@@ -123,6 +124,9 @@ class TestHeavyTaskAdmission:
         assert result.get("skipped") is True
         assert result["success"] is True
         assert "[ADMISSION_SKIP]" in result["log_detail"]
+        # ★ W3-4：结果 dict 携带六态 outcome 与跳过原因机器码（落库契约）
+        assert result["outcome"] == OUTCOME_SKIPPED
+        assert result["skip_reason"] == "resource_busy"
         execute_mock.assert_not_called()
 
         # 清理
@@ -157,6 +161,9 @@ class TestHeavyTaskAdmission:
         assert "[ADMISSION_SKIP]" in result["log_detail"]
         assert task_code in result["log_detail"]
         assert "duplicate_heavy_task_pending" in result["log_detail"]
+        # W3-4：准入跳过落库契约（outcome=skipped + 稳定机器码 resource_busy）
+        assert result["outcome"] == OUTCOME_SKIPPED
+        assert result["skip_reason"] == "resource_busy"
 
         admission_controller.release(task_code)
 

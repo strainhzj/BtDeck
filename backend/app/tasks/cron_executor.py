@@ -1,7 +1,8 @@
 import asyncio
 import logging
+import uuid
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
@@ -11,9 +12,39 @@ from app.tasks.cron_crud_async import AsyncCronTaskCRUD, AsyncTaskLogsCRUD
 from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
 from app.services.speed_schedule_service import SpeedScheduleService
+from app.models import (
+    OUTCOME_SUCCESS,
+    OUTCOME_PARTIAL,
+    OUTCOME_SKIPPED,
+    OUTCOME_FAILED,
+    OUTCOME_NO_ACTION,
+    OUTCOME_CANCELLED,
+)
 import json
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# W3-4 / P1-05：六态 outcome 与跳过原因机器码（与 app.models 统一枚举对齐）
+# =============================================================================
+
+# 合法 outcome 集合：结果 dict 显式携带 outcome 时校验，非法值回退 success 映射
+_VALID_OUTCOMES = frozenset(
+    {OUTCOME_SUCCESS, OUTCOME_PARTIAL, OUTCOME_SKIPPED, OUTCOME_FAILED, OUTCOME_NO_ACTION, OUTCOME_CANCELLED}
+)
+
+# 数据成功 outcome：只有这些 outcome 推进 last_success_at（新鲜度判断依据）
+_SUCCESS_OUTCOMES = frozenset({OUTCOME_SUCCESS, OUTCOME_PARTIAL, OUTCOME_NO_ACTION})
+
+# 跳过原因机器码（stable machine codes，任务页展示/过滤契约）
+SKIP_REASON_RESOURCE_BUSY = "resource_busy"
+SKIP_REASON_ALREADY_RUNNING = "already_running"
+SKIP_REASON_OUTSIDE_BUDGET = "outside_budget"
+SKIP_REASON_DOWNLOADER_OFFLINE = "downloader_offline"
+
+# 结果 dict 未显式携带 outcome 时，按 success 布尔映射（success 保持原语义：
+# “执行是否成功”；outcome 是业务结果，skipped 时 success 仍为 True 不误判故障）
+_SUCCESS_TO_OUTCOME = {True: OUTCOME_SUCCESS, False: OUTCOME_FAILED}
 
 
 class CronTaskExecutor:
@@ -184,6 +215,9 @@ class CronTaskExecutor:
         """执行定时任务 - 使用异步数据库操作"""
         if self.running_tasks.get(task_id, False):
             logger.warning(f"任务 {task_id} 正在运行中，跳过本次执行")
+            # W3-4：重入跳过也落库（outcome=skipped + skip_reason=already_running），
+            # 让任务页能区分“调度器正常但数据没更新”；不推进 last_success_at。
+            await self._record_reentrant_skip(task_id)
             return
 
         try:
@@ -203,8 +237,10 @@ class CronTaskExecutor:
 
                 task = task_result.data
                 start_time = datetime.now()
+                run_id = self._new_run_id(task_id)
                 success = False
                 log_detail = ""
+                result: Optional[Dict[str, Any]] = None
 
                 try:
                     logger.info(f"开始执行定时任务: {task['task_name']} (ID: {task_id})")
@@ -231,7 +267,25 @@ class CronTaskExecutor:
                     # 异步更新任务的执行持续时间
                     await AsyncCronTaskCRUD.update_task_execution_duration(db, task_id, duration)
 
-                    # 异步创建任务日志
+                    # —— W3-4：六态 outcome / skip_reason 收敛 ——
+                    # 1) skipped 键不再丢弃：skipped=True → outcome=skipped +
+                    #    skip_reason（结果带机器码则用，否则默认 resource_busy）；
+                    # 2) 结果显式携带合法 outcome 则采用（partial/no_action/cancelled）；
+                    # 3) 否则按 success 布尔映射（True→success、False→failed）。
+                    result_dict = result if isinstance(result, dict) else {}
+                    if result_dict.get("skipped"):
+                        outcome = OUTCOME_SKIPPED
+                        skip_reason = result_dict.get("skip_reason") or SKIP_REASON_RESOURCE_BUSY
+                    elif result_dict.get("outcome") in _VALID_OUTCOMES:
+                        outcome = result_dict["outcome"]
+                        skip_reason = result_dict.get("skip_reason") or (
+                            SKIP_REASON_RESOURCE_BUSY if outcome == OUTCOME_SKIPPED else None
+                        )
+                    else:
+                        outcome = _SUCCESS_TO_OUTCOME.get(success, OUTCOME_FAILED)
+                        skip_reason = None
+
+                    # 异步创建任务日志（success 保持原语义，outcome 是业务结果）
                     log_data = {
                         "task_id": task_id,
                         "task_name": task["task_name"],
@@ -240,10 +294,25 @@ class CronTaskExecutor:
                         "end_time": end_time,
                         "duration": duration,
                         "success": success,
+                        "outcome": outcome,
+                        "skip_reason": skip_reason,
                         "log_detail": log_detail,
                     }
 
                     await AsyncTaskLogsCRUD.create_task_log(db, log_data)
+
+                    # W3-4：更新任务数据新鲜度——每次执行更新
+                    # last_attempt_at/last_outcome/last_skip_reason/last_run_id；
+                    # last_success_at 仅当 outcome ∈ {success, partial, no_action} 推进。
+                    await AsyncCronTaskCRUD.update_task_freshness(
+                        db,
+                        task_id,
+                        last_attempt_at=end_time,
+                        last_outcome=outcome,
+                        last_skip_reason=skip_reason,
+                        last_run_id=run_id,
+                        advance_success=outcome in _SUCCESS_OUTCOMES,
+                    )
 
                 # 更新任务状态为空闲（在事务外）
                 await self._update_task_status(task_id, 2)
@@ -253,6 +322,51 @@ class CronTaskExecutor:
         finally:
             # 清除运行标记
             self.running_tasks[task_id] = False
+
+    @staticmethod
+    def _new_run_id(task_id: int) -> str:
+        """生成一次执行的运行 ID（唯一，重入/准入跳过也生成，便于日志溯源）。"""
+        return f"cron-{task_id}-{datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:12]}"
+
+    async def _record_reentrant_skip(self, task_id: int):
+        """重入跳过落库（W3-4/P1-05）。
+
+        与资源准入跳过保持同口径：success=True（调度器正常，不误判故障/告警）、
+        outcome=skipped、skip_reason=already_running，不推进 last_success_at，
+        使任务页能区分“调度器正常但数据没更新”。获取任务失败（如已删除）
+        则静默跳过，不影响调度器自身。
+        """
+        try:
+            async with AsyncSessionLocal() as db:
+                task_result = await AsyncCronTaskCRUD.get_cron_task_by_id(db, task_id)
+                if not task_result.success:
+                    return
+                task = task_result.data
+                now = datetime.now()
+                log_data = {
+                    "task_id": task_id,
+                    "task_name": task["task_name"],
+                    "task_type": task["task_type"],
+                    "start_time": now,
+                    "end_time": now,
+                    "duration": 0,
+                    "success": True,
+                    "outcome": OUTCOME_SKIPPED,
+                    "skip_reason": SKIP_REASON_ALREADY_RUNNING,
+                    "log_detail": "[REENTRANT_SKIP] 任务正在运行中，跳过本次执行（上一轮尚未结束）",
+                }
+                await AsyncTaskLogsCRUD.create_task_log(db, log_data)
+                await AsyncCronTaskCRUD.update_task_freshness(
+                    db,
+                    task_id,
+                    last_attempt_at=now,
+                    last_outcome=OUTCOME_SKIPPED,
+                    last_skip_reason=SKIP_REASON_ALREADY_RUNNING,
+                    last_run_id=self._new_run_id(task_id),
+                    advance_success=False,
+                )
+        except Exception as e:
+            logger.error(f"记录重入跳过日志失败 (ID: {task_id}): {str(e)}")
 
     async def _run_task_script(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """运行任务脚本"""
@@ -433,8 +547,16 @@ class CronTaskExecutor:
                                     logger.info(skip_msg)
                                     # skipped=True 区分资源治理跳过 vs 真执行失败：
                                     # _execute_task 据此把 success 记为 True（避免误判故障/告警），
-                                    # log_detail 含 [ADMISSION_SKIP] 机器可解析标记便于运维 grep。
-                                    return {"success": True, "skipped": True, "log_detail": skip_msg}
+                                    # log_detail 含 [ADMISSION_SKIP] 机器可解析标记便于运维 grep；
+                                    # outcome/skip_reason（W3-4）随结果 dict 落库为
+                                    # skipped + resource_busy（资源准入冲突的稳定机器码）。
+                                    return {
+                                        "success": True,
+                                        "skipped": True,
+                                        "outcome": OUTCOME_SKIPPED,
+                                        "skip_reason": SKIP_REASON_RESOURCE_BUSY,
+                                        "log_detail": skip_msg,
+                                    }
 
                                 # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
                                 if asyncio.iscoroutinefunction(execute_method):
