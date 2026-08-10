@@ -11,6 +11,7 @@
 
 import logging
 from typing import Dict, Any
+from app.core.config import settings
 from app.tasks.scheduler.torrent_sync.base import BaseSyncTask
 
 logger = logging.getLogger(__name__)
@@ -77,13 +78,14 @@ class TorrentInfoSyncTask(BaseSyncTask):
 
             logger.info(f"找到 {len(valid_downloaders)} 个有效下载器")
 
-            # 并发执行种子信息同步
+            # 并发执行种子信息同步（W3-3：并发数配置化，SQLite 默认 1 串行处理
+            # 下载器；上限不超过明确压测值）
             logger.debug("开始并发执行种子信息同步...")
             result = await self.execute_sync_with_concurrency(
                 downloaders=valid_downloaders,
                 sync_func=self._sync_torrent_info_only,
                 sync_type="TorrentInfo",
-                max_concurrent=3,
+                max_concurrent=settings.INFO_SYNC_DOWNLOADER_CONCURRENCY,
             )
 
             # 更新统计
@@ -124,7 +126,8 @@ class TorrentInfoSyncTask(BaseSyncTask):
         自 W2-1 起，下载器读取/转换/写入统一由
         app/services/sync_coordinator.py::run_sync 编排（sync_type="info",
         trigger="cron"，同一资源准入/写治理/观测通道），本方法仅保留
-        任务文件负责的下载器列表与并发语义（max_concurrent=3）。
+        任务文件负责的下载器列表与并发语义（并发数取
+        settings.INFO_SYNC_DOWNLOADER_CONCURRENCY，SQLite 默认 1）。
 
         Args:
             downloader_info: 下载器信息字典

@@ -118,8 +118,24 @@ class Settings(BaseSettings):
     # 若配置与总容量矛盾（total<=1 且本值>=1），运行时自动降级为 0 并记录警告，
     # 不会破坏交互保留槽。详见 PLANS/sync-database-blocking-remediation.md W2-2
     DOWNLOADER_BACKGROUND_CAPACITY: int = 1
-    # qB tracker 明细并发上限：阶段 2 tracker lane 使用
+    # qB tracker 明细并发上限（历史配置，保留兼容旧环境变量）：自 W3-1 起
+    # 不再控制任务数上限，任务数由 QB_TRACKER_WORKER_COUNT（有界 worker 队列）
+    # 取代。详见 PLANS/sync-database-blocking-remediation.md W3-1
     QB_TRACKER_CONCURRENCY: int = 3
+    # qB Tracker 有界 worker 队列 worker 数（W3-1）：同时活跃的拉取协程数，
+    # 禁止一次性为全部 hash 创建任务对象；10k 级种子时活跃 asyncio 任务数
+    # ≈ worker_count + 控制任务（生产者 1 + 当前协程）。建议不超过下载器
+    # 后台容量 DOWNLOADER_BACKGROUND_CAPACITY
+    QB_TRACKER_WORKER_COUNT: int = 2
+    # qB Tracker 单轮数量预算（W3-1）：每轮 enrich 最多拉取该数量的种子，
+    # 达到即停止消费并返回部分结果（budget_reason=count）；小于 1 视为 1
+    QB_TRACKER_MAX_TORRENTS_PER_RUN: int = 1000
+    # qB Tracker 单轮时间预算（秒，W3-1）：从本轮开始计时，超过即停止消费
+    # 并返回部分结果（budget_reason=time）；0 或负值表示不限时
+    QB_TRACKER_RUN_BUDGET_SECONDS: float = 120.0
+    # qB Tracker 单次调用超时（秒，W3-1）：单个种子 tracker 拉取的总预算
+    # （含排队与远程调用），透传给 downloader_api_runtime 的 timeout 参数
+    QB_TRACKER_PER_CALL_TIMEOUT: float = 30.0
     # 下载器 API 单次调用超时（秒）：阶段 2 downloader_api_runtime 使用
     DOWNLOADER_API_TIMEOUT_SECONDS: int = 30
     # 同步任务 DB 批量提交大小：变更检测/批量 upsert 的批次阈值
@@ -152,6 +168,25 @@ class Settings(BaseSettings):
     # 路径（应急回滚）。⚠️ legacy 只能作为应急回退，禁止与新路径同时执行，
     # 两个稳定版本后删除。详见 PLANS/sync-database-blocking-remediation.md W2-1
     SYNC_CANONICAL_COORDINATOR_ENABLED: bool = True
+
+    # 种子信息同步（info-only）资源治理配置（W3-3 第一部分，P1-02）
+    # 详见 PLANS/sync-database-blocking-remediation.md W3-3
+    # 下载器并发数：SQLite 默认 1（串行处理下载器，避免多下载器并发同步叠加
+    # 内存/CPU 峰值挤占请求侧）。配置上限不得超过明确压测值，当前默认 1。
+    INFO_SYNC_DOWNLOADER_CONCURRENCY: int = 1
+    # 现有记录分页读取页大小：构建 existing_torrents_cache 时按 hash 排序分页
+    # 读取，避免一次加载完整 ORM 对象图造成大下载器峰值内存（分页只解决
+    # "一次加载"的峰值，缓存结构与 diff 语义不变）
+    INFO_SYNC_DB_READ_PAGE_SIZE: int = 500
+    # 单轮记录数上限：info-only 每轮最多处理该数量的种子，达到即停止处理
+    # 剩余并返回部分结果（budget_reason=count）；小于 1 视为 1
+    INFO_SYNC_MAX_TORRENTS_PER_RUN: int = 10000
+    # 单轮时长上限（秒）：从本轮开始计时，超过即停止处理并返回部分结果
+    # （budget_reason=time）；0 或负值表示不限时
+    INFO_SYNC_RUN_BUDGET_SECONDS: float = 300.0
+    # to_insert+to_update 待写行缓冲上限：逐种子构造/差异计算达到该行数先
+    # flush 一批到 bulk_upsert_with_retry 再继续，控制内存峰值
+    INFO_SYNC_MAX_BUFFERED_ROWS: int = 2000
 
     # 孤儿文件管理配置（v1.0.6）
     # 自动清理超期天数：连续成为孤儿超过该天数的候选由定时任务移入隔离区
