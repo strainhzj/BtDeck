@@ -24,6 +24,7 @@ sync_observability 单测（W4-1：结构化观测工具模块 + run_id 贯穿 +
 
 import asyncio
 import logging
+import sqlite3
 import time
 from unittest.mock import MagicMock, patch
 
@@ -292,6 +293,19 @@ class TestWalSnapshot:
         stats = obs.snapshot_wal_stats(str(tmp_path / "no_such_dir" / "app.db"))
         assert stats["wal_bytes"] == 0
         assert stats["busy_count"] is None
+
+    def test_existing_sqlite_db_reports_passive_checkpoint_state(self, tmp_path):
+        """真实数据库使用 PASSIVE 探测，返回可观测的 busy 字段。"""
+        db_path = str(tmp_path / "app.db")
+        with sqlite3.connect(db_path) as conn:
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("CREATE TABLE probe (id INTEGER PRIMARY KEY)")
+            conn.commit()
+
+        stats = obs.snapshot_wal_stats(db_path)
+        assert isinstance(stats["busy_count"], int)
+        assert stats["busy_count"] >= 0
+        assert stats["checkpoint_busy"] is (stats["busy_count"] > 0)
 
 
 class TestAttachDoneStats:

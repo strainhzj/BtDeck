@@ -34,6 +34,7 @@ W2-1（PLANS/sync-database-blocking-remediation.md）：消除手动同步旁路
 """
 
 import asyncio
+import inspect
 import logging
 import time
 import uuid
@@ -1135,7 +1136,9 @@ async def _finalize_checkpoints(
     for downloader_id, row in checkpoints.items():
         try:
             full_coverage = _is_full_coverage(req, row)
-            cycle_done = req.sync_type == "tracker" and bool(cycle_map.get(downloader_id))
+            # info/tracker 的有界续跑在本轮完整处理后都允许清除 cursor；
+            # full 路径没有游标，保持原有语义。
+            cycle_done = bool(cycle_map.get(downloader_id))
             if cycle_done:
                 full_coverage = True
             clear_cursor = bool(cycle_done and final_outcome == OUTCOME_SUCCESS)
@@ -1209,7 +1212,7 @@ async def _execute_sync_phase(
         if _check_cancelled(req, result, start_ts):
             break
         downloader_id = str(info.get("downloader_id") or "")
-        status, meta = await _sync_one_downloader(req, result, info, app)
+        status, meta = await _sync_one_downloader(req, result, info, app, checkpoints.get(downloader_id))
         if status == "success":
             ok += 1
             if meta and meta.get("cycle_complete"):
@@ -1286,13 +1289,17 @@ def _app_of(app: Any) -> Any:
 
 
 async def _sync_one_downloader(
-    req: SyncRequest, result: SyncResult, info: Dict[str, Any], app: Any
+    req: SyncRequest,
+    result: SyncResult,
+    info: Dict[str, Any],
+    app: Any,
+    checkpoint: Optional[Dict[str, Any]] = None,
 ) -> Tuple[str, Optional[Dict[str, Any]]]:
     """同步单个下载器，返回 (status, meta)。
 
     status: "success" / "partial"（预算到期/批次失败，有部分成果）/"failed"。
-    meta: tracker 路径携带 {"cursor": ..., "cycle_complete": bool} 供检查点
-    推进与终态（清空 cursor / last_full_sync_at）使用；info/full 路径为 None。
+    meta: info/tracker 路径携带 {"cursor": ..., "cycle_complete": bool} 供检查点
+    推进与终态（清空 cursor / last_full_sync_at）使用；full 路径为 None。
 
     具体 qB/TR 读取与转换全部复用现有同步函数；异常在下载器粒度捕获，
     不阻断其他下载器（汇总为 partial）。
@@ -1316,20 +1323,69 @@ async def _sync_one_downloader(
 
     downloader = _build_bt_downloader(info)
     cached_client = await _get_cached_client(app, downloader_id)
+    if cached_client is None:
+        result.errors.append(f"无法获取下载器 {nickname} 的缓存客户端连接")
+        return "failed", None
 
     try:
         async with AsyncSessionLocal() as db:
             if req.sync_type == "info":
-                # W1-1 已治理路径：info-only（client=None 时由同步函数 fallback 新建）
-                if downloader_type == "qbittorrent":
-                    await qb_add_torrents_info_only_async(db, [downloader], client=cached_client)
-                else:
-                    await tr_add_torrents_info_only_async(db, [downloader], client=cached_client)
+                info_cursor: Optional[str] = None
+
+                async def _on_info_progress(cursor_value: str) -> None:
+                    nonlocal info_cursor
+                    info_cursor = cursor_value
+                    applied = await push_sync_progress(
+                        downloader_id,
+                        "info",
+                        cursor=cursor_value,
+                        detail={"downloader_id": downloader_id},
+                    )
+                    if applied and checkpoint is not None:
+                        fresh = get_run_checkpoint(downloader_id, "info")
+                        if fresh is not None:
+                            checkpoint.clear()
+                            checkpoint.update(fresh)
+
+                info_sync_func = (
+                    qb_add_torrents_info_only_async
+                    if downloader_type == "qbittorrent"
+                    else tr_add_torrents_info_only_async
+                )
+                info_kwargs: Dict[str, Any] = {
+                    "client": cached_client,
+                    "cursor": checkpoint.get("cursor") if checkpoint else None,
+                    "progress_callback": _on_info_progress,
+                }
+                try:
+                    signature = inspect.signature(info_sync_func)
+                    accepts_kwargs = any(
+                        parameter.kind == inspect.Parameter.VAR_KEYWORD
+                        for parameter in signature.parameters.values()
+                    )
+                    if not accepts_kwargs:
+                        info_kwargs = {
+                            key: value
+                            for key, value in info_kwargs.items()
+                            if key in signature.parameters
+                        }
+                except (TypeError, ValueError):
+                    pass
+                info_meta = await info_sync_func(db, [downloader], **info_kwargs)
+                if isinstance(info_meta, dict):
+                    if info_cursor is not None and not info_meta.get("cursor"):
+                        info_meta["cursor"] = info_cursor
+                    result.scanned += int(info_meta.get("processed", 0) or 0)
+                    if info_meta.get("partial"):
+                        result.errors.append(
+                            f"下载器 {nickname} info 同步部分完成（预算到期），"
+                            f"processed={info_meta.get('processed', 0)}/{info_meta.get('total', 0)}"
+                        )
+                        return "partial", info_meta
+                    if info_meta.get("cycle_complete"):
+                        return "success", info_meta
             elif req.sync_type == "tracker":
                 # tracker-only 需要缓存客户端（约束16：客户端只从 store 获取）
-                if cached_client is None:
-                    result.errors.append(f"无法获取下载器 {nickname} 的缓存客户端连接")
-                    return "failed", None
                 if downloader_type == "qbittorrent":
                     # W3-1 第二部分：Coordinator 预算（deadline/record_budget）透传给
                     # qB tracker 单轮预算；续跑 cursor 由同步实现从运行期检查点自行读取
@@ -1367,9 +1423,9 @@ async def _sync_one_downloader(
                 # full：legacy 全量同步（qb/tr_add_torrents_async，写路径已收编
                 # 至统一 bulk_upsert_with_retry；文件备份段保留原语义）
                 if downloader_type == "qbittorrent":
-                    await qb_add_torrents_async(db, [downloader])
+                    await qb_add_torrents_async(db, [downloader], client=cached_client)
                 else:
-                    await tr_add_torrents_async(db, [downloader])
+                    await tr_add_torrents_async(db, [downloader], client=cached_client)
         result.scanned += 1  # info/full 路径暂无记录级统计，按下载器计（W3 补齐）
         return "success", None
     except Exception as e:  # noqa: BLE001 - 下载器粒度捕获，汇总为 partial/failed

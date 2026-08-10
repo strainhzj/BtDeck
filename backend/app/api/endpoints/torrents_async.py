@@ -33,9 +33,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo, TrackerInfo as trackerInfoModel
-from qbittorrentapi import Client as qbClient
 from qbittorrentapi.exceptions import APIConnectionError, LoginFailed, APIError
-from transmission_rpc import Client as trClient
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
 from app.core.torrent_status_mapper import TorrentStatusMapper
@@ -1187,7 +1185,9 @@ def _deduplicate_torrent_lists(
     return deduped_insert, deduped_update
 
 
-async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> None:
+async def tr_add_torrents_async(
+    db: AsyncSession, downloaders: List[Any], *, client: Optional[Any] = None
+) -> None:
     """
     根据transmission的种子数据结构创建插入数据（异步版本）
 
@@ -1200,6 +1200,7 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     Args:
         db: 异步数据库会话
         downloaders: 下载器对象列表
+        client: 来自 app.state.store 的已缓存 Transmission 客户端；缺失时拒绝执行。
 
     Raises:
         ValueError: 当下载器列表为空时
@@ -1207,17 +1208,16 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     # 添加空列表检查，防止IndexError
     if not downloaders or len(downloaders) == 0:
         logger.error("下载器列表为空，无法同步种子信息")
-        return
+        return None
 
     bt_downloader = downloaders[0]
-    tr_client = trClient(
-        host=bt_downloader.host,
-        username=bt_downloader.username,
-        password=bt_downloader.password,
-        port=bt_downloader.port,
-        protocol="http",
-        timeout=TR_API_TIMEOUT,
-    )
+    if client is None:
+        raise ValueError(
+            f"下载器 {getattr(bt_downloader, 'nickname', bt_downloader.downloader_id)} 缺少缓存客户端，"
+            "拒绝在同步路径中自建 Transmission 连接"
+        )
+    tr_client = client
+    downloader_id = str(bt_downloader.downloader_id)
     # 分批获取 Transmission 种子，避免超大响应导致超时
     # ✅ 修复：在线程池中执行同步HTTP调用，避免阻塞事件循环
     base_torrents = await call_downloader_api(
@@ -1231,7 +1231,6 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     total = len(base_torrents)
 
     # 非首次同步时，仅同步最近活跃的种子（降低数据量）
-    downloader_id = str(bt_downloader.downloader_id)
     now_ts = datetime.now().timestamp()
     last_full_ts = _TR_LAST_FULL_SYNC.get(downloader_id, 0)
     force_full_sync = (now_ts - last_full_ts) >= TR_FULL_SYNC_INTERVAL_SECONDS
@@ -1275,9 +1274,6 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
             torrent_info_list.extend(detailed_batch)
 
     # 标记已完成首次全量同步
-    _TR_FULL_SYNC_DONE[downloader_id] = True
-    if force_full_sync:
-        _TR_LAST_FULL_SYNC[downloader_id] = now_ts
     current_time = datetime.now()
 
     # 初始化备份服务和路径映射服务
@@ -1694,6 +1690,10 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         logger.error(f"[{bt_downloader.nickname}] ❌ Tracker数据提交失败: {str(tracker_commit_err)}")
         logger.error(f"[TRACKER_FIX] Transmission Tracker数据提交失败: {str(tracker_commit_err)}")
         await db.rollback()
+    else:
+        _TR_FULL_SYNC_DONE[downloader_id] = True
+        if force_full_sync:
+            _TR_LAST_FULL_SYNC[downloader_id] = now_ts
 
 
 # ==============================================================================
@@ -1701,7 +1701,9 @@ async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
 # ==============================================================================
 
 
-async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> None:
+async def qb_add_torrents_async(
+    db: AsyncSession, downloaders: List[Any], *, client: Optional[Any] = None
+) -> None:
     """
     根据qbittorrent的种子数据结构创建插入数据（异步版本）
 
@@ -1714,6 +1716,7 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
     Args:
         db: 异步数据库会话
         downloaders: 下载器对象列表
+        client: 来自 app.state.store 的已缓存 qBittorrent 客户端；缺失时拒绝执行。
 
     Raises:
         ValueError: 当下载器列表为空时
@@ -1724,14 +1727,11 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any]) -> Non
         return
 
     bt_downloader = downloaders[0]
-    client = qbClient(
-        host=bt_downloader.host,
-        port=bt_downloader.port,
-        username=bt_downloader.username,
-        password=bt_downloader.password,
-        VERIFY_WEBUI_CERTIFICATE=False,
-        REQUESTS_ARGS={"timeout": QB_API_TIMEOUT},
-    )
+    if client is None:
+        raise ValueError(
+            f"下载器 {getattr(bt_downloader, 'nickname', bt_downloader.downloader_id)} 缺少缓存客户端，"
+            "拒绝在同步路径中自建 qBittorrent 连接"
+        )
 
     downloader_id = str(bt_downloader.downloader_id)
     torrent_info_list = []
@@ -2466,6 +2466,22 @@ def _qb_get_attr(obj: Any, key: str, default: Any = None) -> Any:
     return default
 
 
+def _qb_set_attr(obj: Any, key: str, value: Any) -> None:
+    """在 qB 返回对象/字典上记录内部同步标记。
+
+    qBittorrent API 返回值在不同版本中可能是普通对象或字典。标记仅用于
+    区分“本轮远端请求已成功返回（即使 tracker 列表为空）”与“尚未处理/请求失败”，
+    从而保证持久化游标不会越过未成功处理的 hash。
+    """
+    if isinstance(obj, dict):
+        obj[key] = value
+        return
+    try:
+        setattr(obj, key, value)
+    except Exception:  # noqa: BLE001 - SDK 对象可能禁止动态属性
+        logger.debug("无法在 qB 种子对象上记录同步标记: key=%s", key)
+
+
 async def _hydrate_qb_incremental_torrents(
     client: Any, torrent_info_list: List[Any], downloader_id: str, operation: str
 ) -> List[Any]:
@@ -2543,7 +2559,7 @@ def _qb_tracker_cycle_meta(
 
 
 async def _enrich_qb_torrents_with_trackers(
-    client: qbClient,
+    client: Any,
     torrent_info_list: List[Any],
     downloader_id: str,
     concurrency_limit: Optional[int] = None,
@@ -2566,8 +2582,8 @@ async def _enrich_qb_torrents_with_trackers(
     - 待处理 hash 按字典序稳定排序（供游标续跑与调用方批量写入共用同一顺序）；
     - cursor 为 JSON 文本 {"last_hash": ...}，跳过 ≤ last_hash 的已 durable hash，
       只处理游标之后的部分（从上次中断处继续，不重复已提交批次）；
-    - 返回值 (new_cursor, budget_reason)：new_cursor = 本轮最后一个已发起拉取的
-      hash（预算到期时未消费 hash 不计入，游标不会越过未 durable 数据）；
+    - 返回值 (new_cursor, budget_reason)：new_cursor = 本轮连续成功拉取前缀中
+      最后一个 hash；失败 hash 或预算未消费 hash 都不会被游标越过；
       budget_reason = "count"/"time"/None，供调用方判定 partial 与 cycle complete。
 
     Args:
@@ -2720,15 +2736,21 @@ async def _enrich_qb_torrents_with_trackers(
                     state["budget_reason"] = exceeded
                     return
                 state["started"] += 1
-                result = await _fetch_single_trackers(torrent_hash)
+                current_hash = torrent_hash
+                result = await _fetch_single_trackers(current_hash)
                 # 处理结果：None（拉取失败/异常）计 failed，成功写回内存对象（不写 DB）
                 if result is None:
+                    # 记录失败标记；后续写入阶段只消费连续成功的前缀，避免游标越过失败 hash。
+                    failed_torrent = info_by_hash.get(current_hash)
+                    if failed_torrent is not None:
+                        _qb_set_attr(failed_torrent, "_btdeck_tracker_enriched", False)
                     state["failed_count"] += 1
                     continue
                 fetched_hash, trackers = result
                 torrent_info = info_by_hash.get(fetched_hash)
                 if torrent_info:
                     torrent_info.trackers = trackers
+                    _qb_set_attr(torrent_info, "_btdeck_tracker_enriched", True)
                     state["success_count"] += 1
                 else:
                     logger.warning(f"[QB_TRACKER_ENRICH] Torrent info not found for hash {fetched_hash[:16]}...")
@@ -2747,12 +2769,15 @@ async def _enrich_qb_torrents_with_trackers(
     budget_reason = state["budget_reason"]
     queue_depth = queue.qsize()
     remote_error_rate = failed_count / processed_this_run if processed_this_run else 0.0
-    # W3-1 第二部分：续跑游标 = 本轮（稳定排序后）最后一个已发起拉取的 hash。
-    # 生产者按排序入队、worker 按 FIFO 消费，已拉取集合恒为排序序列的前缀；
-    # 预算到期时未消费 hash 留在队列丢弃（不写 DB），游标不会越过未 durable 数据。
+    # W3-1 第二部分：续跑游标只指向连续成功前缀的最后一个 hash。
+    # 生产者按排序入队、worker 按 FIFO 消费；失败 hash 后的成功结果不能让游标跨过
+    # 失败点，否则下一轮会永久跳过尚未 durable 的记录。
     new_cursor = None
-    if processed_this_run > 0:
-        new_cursor = _build_qb_tracker_cursor(torrent_hashes[processed_this_run - 1])
+    for torrent_hash in torrent_hashes[:processed_this_run]:
+        torrent_info = info_by_hash.get(torrent_hash)
+        if _qb_get_attr(torrent_info, "_btdeck_tracker_enriched", None) is not True:
+            break
+        new_cursor = _build_qb_tracker_cursor(torrent_hash)
 
     enrich_duration = (datetime.now() - enrich_start).total_seconds()
     logger.info(
@@ -2965,34 +2990,76 @@ def _info_budget_exceeded(
     return None
 
 
-async def qb_add_torrents_info_only_async(
-    db: AsyncSession, downloaders: List[Any], client: Optional[Any] = None
+def _parse_info_cursor(cursor_value: Optional[str]) -> Optional[str]:
+    """解析 info-only 断点游标（与 tracker 游标保持同一 JSON 结构）。"""
+    if not cursor_value:
+        return None
+    try:
+        payload = json.loads(cursor_value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    last_hash = payload.get("last_hash")
+    return str(last_hash) if last_hash else None
+
+
+def _build_info_cursor(last_hash: str) -> str:
+    """构造 info-only 断点游标。"""
+    return json.dumps({"last_hash": str(last_hash)}, ensure_ascii=False)
+
+
+async def _emit_info_progress(
+    callback: Optional[Callable[[str], Awaitable[None]]], last_hash: Optional[str]
 ) -> None:
+    """在 info-only 批量写入成功后推进运行期检查点；回调失败不阻断业务写入。"""
+    if callback is None or not last_hash:
+        return
+    try:
+        await callback(_build_info_cursor(last_hash))
+    except Exception as callback_error:  # noqa: BLE001 - checkpoint 观测不能回滚已提交数据
+        logger.warning("info-only 检查点推进失败: %s", callback_error)
+
+
+async def qb_add_torrents_info_only_async(
+    db: AsyncSession,
+    downloaders: List[Any],
+    client: Optional[Any] = None,
+    *,
+    cursor: Optional[str] = None,
+    progress_callback: Optional[Callable[[str], Awaitable[None]]] = None,
+) -> Optional[Dict[str, Any]]:
     """qBittorrent 种子信息同步（仅同步种子基础信息，不同步 tracker）
 
     Args:
         db: 异步数据库会话
         downloaders: 下载器对象列表（取第一个）
-        client: 可选的已缓存 qBittorrent 客户端（优先复用 app.state.store 中的连接）；
-            None 时 fallback 新建连接。复用连接遵循 downloader-connection 约束。
+        client: 来自 app.state.store 的已缓存 qBittorrent 客户端；缺失时拒绝执行。
     """
     if not downloaders or len(downloaders) == 0:
         logger.error("下载器列表为空，无法同步种子信息")
-        return
+        return None
 
     bt_downloader = downloaders[0]
     # 优先复用传入的缓存客户端（来自 app.state.store），避免重复创建连接
     if client is None:
-        client = qbClient(
-            host=bt_downloader.host,
-            port=bt_downloader.port,
-            username=bt_downloader.username,
-            password=bt_downloader.password,
-            VERIFY_WEBUI_CERTIFICATE=False,
-            REQUESTS_ARGS={"timeout": QB_API_TIMEOUT},
+        raise ValueError(
+            f"下载器 {getattr(bt_downloader, 'nickname', bt_downloader.downloader_id)} 缺少缓存客户端，"
+            "拒绝在 info-only 同步路径中自建 qBittorrent 连接"
         )
 
     downloader_id = str(bt_downloader.downloader_id)
+    cursor_before = cursor
+    if cursor_before is None:
+        try:
+            from app.services.sync_coordinator import get_run_checkpoint  # noqa: PLC0415
+
+            run_checkpoint = get_run_checkpoint(downloader_id, "info")
+            if run_checkpoint is not None:
+                cursor_before = run_checkpoint.get("cursor")
+        except Exception as checkpoint_error:  # noqa: BLE001 - 无活动上下文时从头执行
+            logger.debug("读取 info-only 运行期检查点失败: %s", checkpoint_error)
+    cursor_last_hash = _parse_info_cursor(cursor_before)
     torrent_info_list = []
     incremental_failed = False
     force_full_sync = False
@@ -3019,6 +3086,11 @@ async def qb_add_torrents_info_only_async(
 
     now_ts = datetime.now().timestamp()
     last_full_ts = _QB_LAST_FULL_SYNC.get(downloader_id, 0)
+    # A persisted cursor means the previous full snapshot stopped before its
+    # durable end. Resume that snapshot first; applying an incremental delta
+    # to a partial cursor could skip changed hashes that sort before it.
+    if cursor_before is not None:
+        force_full_sync = True
     if now_ts - last_full_ts >= QB_FULL_SYNC_INTERVAL_SECONDS:
         force_full_sync = True
 
@@ -3091,6 +3163,8 @@ async def qb_add_torrents_info_only_async(
             offset += QB_BATCH_SIZE
         _QB_LAST_FULL_SYNC[downloader_id] = now_ts
 
+    # 断点续跑需要稳定顺序；qB 增量与全量响应均按 hash 排序后再处理。
+    torrent_info_list.sort(key=lambda torrent: str(_qb_get_attr(torrent, "hash") or ""))
     phase_times["fetch"] = (time.monotonic() - phase_start) * 1000.0
     phase_start = time.monotonic()
 
@@ -3123,12 +3197,23 @@ async def qb_add_torrents_info_only_async(
     phase_times["normalize"] = (time.monotonic() - phase_start) * 1000.0
     yield_count += cache_pages
 
-    to_insert, to_update = [], []
+    to_insert: List[Dict[str, Any]] = []
+    to_update: List[Dict[str, Any]] = []
     stats = {"insert": 0, "update": 0, "skip": 0, "error": 0}
     ratio_stats = RatioNormalizationStats()
+    pending_torrent_count = sum(
+        1
+        for torrent in torrent_info_list
+        if (torrent_hash := str(_qb_get_attr(torrent, "hash") or ""))
+        and (cursor_last_hash is None or torrent_hash > cursor_last_hash)
+    )
+    last_processed_hash: Optional[str] = None
 
     phase_start = time.monotonic()
     for torrent_info in torrent_info_list:
+        torrent_hash = str(_qb_get_attr(torrent_info, "hash") or "")
+        if not torrent_hash or (cursor_last_hash is not None and torrent_hash <= cursor_last_hash):
+            continue
         # W3-3 单轮预算检查（数量/时间，参照 W3-1a 的 budget_reason 模式）：
         # 达到即停止处理剩余种子；已缓冲的待写行仍会在收尾时写入（部分成果
         # durable，本轮结果标记 partial + budget_reason）
@@ -3154,11 +3239,7 @@ async def qb_add_torrents_info_only_async(
                 * 1000.0
             )
             yield_count += 1
-
-        torrent_hash = _qb_get_attr(torrent_info, "hash")
-        if not torrent_hash:
-            stats["error"] += 1
-            continue
+            await _emit_info_progress(progress_callback, last_processed_hash)
 
         cached_row = existing_torrents_cache.get(torrent_hash)
         raw_progress = _qb_get_attr(torrent_info, "progress", None)
@@ -3235,6 +3316,7 @@ async def qb_add_torrents_info_only_async(
                 to_update.append(torrent_data)
             else:
                 stats["skip"] += 1
+            last_processed_hash = torrent_hash
             continue
 
         # insert 分支
@@ -3279,6 +3361,7 @@ async def qb_add_torrents_info_only_async(
             )
         )
         to_insert.append(torrent_data)
+        last_processed_hash = torrent_hash
 
     phase_times["diff"] = (time.monotonic() - phase_start) * 1000.0
 
@@ -3301,8 +3384,10 @@ async def qb_add_torrents_info_only_async(
             label=f"[QB_INFO_SYNC] {bt_downloader.nickname}",
         )
         phase_times["write"] += (time.monotonic() - write_start) * 1000.0
-        if pending_rid is not None:
+        cycle_complete = budget_reason is None and processed_count >= pending_torrent_count
+        if pending_rid is not None and cycle_complete:
             _confirm_qb_sync_rid(downloader_id, pending_rid)
+        await _emit_info_progress(progress_callback, last_processed_hash)
         total_elapsed = time.monotonic() - run_start
         records_per_second = processed_count / total_elapsed if total_elapsed > 0 else 0.0
         logger.info(
@@ -3327,35 +3412,61 @@ async def qb_add_torrents_info_only_async(
         logger.error(f"[QB_INFO_SYNC] {bt_downloader.nickname} 失败: {e}")
         raise
 
+    if progress_callback is None:
+        return None
+    cycle_complete = budget_reason is None and processed_count >= pending_torrent_count
+    return {
+        "cursor": None
+        if cycle_complete
+        else (_build_info_cursor(last_processed_hash) if last_processed_hash else cursor_before),
+        "cycle_complete": cycle_complete,
+        "partial": not cycle_complete,
+        "budget_reason": budget_reason,
+        "processed": processed_count,
+        "total": pending_torrent_count,
+    }
+
 
 async def tr_add_torrents_info_only_async(
-    db: AsyncSession, downloaders: List[Any], client: Optional[Any] = None
-) -> None:
+    db: AsyncSession,
+    downloaders: List[Any],
+    client: Optional[Any] = None,
+    *,
+    cursor: Optional[str] = None,
+    progress_callback: Optional[Callable[[str], Awaitable[None]]] = None,
+) -> Optional[Dict[str, Any]]:
     """Transmission 种子信息同步（仅同步种子基础信息，不同步 tracker）
 
     Args:
         db: 异步数据库会话
         downloaders: 下载器对象列表（取第一个）
-        client: 可选的已缓存 Transmission 客户端（优先复用 app.state.store 中的连接）；
-            None 时 fallback 新建连接。
+        client: 来自 app.state.store 的已缓存 Transmission 客户端；缺失时拒绝执行。
     """
     if not downloaders or len(downloaders) == 0:
         logger.error("下载器列表为空，无法同步种子信息")
-        return
+        return None
 
     bt_downloader = downloaders[0]
     # 优先复用传入的缓存客户端，避免重复创建连接
     if client is None:
-        tr_client = trClient(
-            host=bt_downloader.host,
-            username=bt_downloader.username,
-            password=bt_downloader.password,
-            port=bt_downloader.port,
-            protocol="http",
-            timeout=TR_API_TIMEOUT,
+        raise ValueError(
+            f"下载器 {getattr(bt_downloader, 'nickname', bt_downloader.downloader_id)} 缺少缓存客户端，"
+            "拒绝在 info-only 同步路径中自建 Transmission 连接"
         )
-    else:
-        tr_client = client
+    tr_client = client
+    downloader_id = str(bt_downloader.downloader_id)
+    cursor_before = cursor
+    if cursor_before is None:
+        try:
+            from app.services.sync_coordinator import get_run_checkpoint  # noqa: PLC0415
+
+            run_checkpoint = get_run_checkpoint(downloader_id, "info")
+            if run_checkpoint is not None:
+                cursor_before = run_checkpoint.get("cursor")
+        except Exception as checkpoint_error:  # noqa: BLE001 - 无活动上下文时从头执行
+            logger.debug("读取 info-only 运行期检查点失败: %s", checkpoint_error)
+    cursor_last_hash = _parse_info_cursor(cursor_before)
+    resume_from_cursor = cursor_before is not None
 
     # W3-3 第一部分（P1-02）：资源治理配置——下载器并发（SQLite 默认 1）、
     # 现有记录分页页大小、单轮数量/时间预算、待写行缓冲上限。观测信息随
@@ -3385,10 +3496,9 @@ async def tr_add_torrents_info_only_async(
         operation="tr_get_torrents_base",
     )
     torrent_info_list = []
-    downloader_id = str(bt_downloader.downloader_id)
     now_ts = datetime.now().timestamp()
     last_full_ts = _TR_LAST_FULL_SYNC.get(downloader_id, 0)
-    force_full_sync = (now_ts - last_full_ts) >= TR_FULL_SYNC_INTERVAL_SECONDS
+    force_full_sync = (now_ts - last_full_ts) >= TR_FULL_SYNC_INTERVAL_SECONDS or resume_from_cursor
 
     if _TR_FULL_SYNC_DONE.get(downloader_id) and not force_full_sync:
         recent_threshold = now_ts - TR_ACTIVE_WINDOW_SECONDS
@@ -3422,9 +3532,8 @@ async def tr_add_torrents_info_only_async(
                 )
             )
 
-    _TR_FULL_SYNC_DONE[downloader_id] = True
-    if force_full_sync:
-        _TR_LAST_FULL_SYNC[downloader_id] = now_ts
+    # 等本轮预算完整处理后再标记 full sync，避免部分结果导致后续轮次误走 active-only 快照。
+    torrent_info_list.sort(key=lambda torrent: str(getattr(torrent, "hashString", "") or ""))
 
     phase_times["fetch"] = (time.monotonic() - phase_start) * 1000.0
     phase_start = time.monotonic()
@@ -3455,12 +3564,24 @@ async def tr_add_torrents_info_only_async(
     phase_times["normalize"] = (time.monotonic() - phase_start) * 1000.0
     yield_count += cache_pages
 
-    to_insert, to_update = [], []
+    pending_torrent_count = sum(
+        1
+        for torrent in torrent_info_list
+        if (torrent_hash := str(getattr(torrent, "hashString", "") or ""))
+        and (cursor_last_hash is None or torrent_hash > cursor_last_hash)
+    )
+    last_processed_hash: Optional[str] = None
+
+    to_insert: List[Dict[str, Any]] = []
+    to_update: List[Dict[str, Any]] = []
     stats = {"insert": 0, "update": 0, "skip": 0, "error": 0}
     ratio_stats = RatioNormalizationStats()
 
     phase_start = time.monotonic()
     for torrent_info in torrent_info_list:
+        torrent_hash = str(getattr(torrent_info, "hashString", "") or "")
+        if not torrent_hash or (cursor_last_hash is not None and torrent_hash <= cursor_last_hash):
+            continue
         # W3-3 单轮预算检查（数量/时间，参照 W3-1a 的 budget_reason 模式）：
         # 达到即停止处理剩余种子；已缓冲的待写行仍会在收尾时写入（部分成果
         # durable，本轮结果标记 partial + budget_reason）
@@ -3486,8 +3607,9 @@ async def tr_add_torrents_info_only_async(
                 * 1000.0
             )
             yield_count += 1
+            await _emit_info_progress(progress_callback, last_processed_hash)
 
-        cached_row = existing_torrents_cache.get(torrent_info.hashString)
+        cached_row = existing_torrents_cache.get(torrent_hash)
         raw_percent = getattr(torrent_info, "percent_done", None)
         new_progress = _normalize_progress_value(float(raw_percent) * 100.0 if raw_percent else 0.0)
 
@@ -3507,7 +3629,7 @@ async def tr_add_torrents_info_only_async(
             "downloader_id": bt_downloader.downloader_id,
             "downloader_name": bt_downloader.nickname,
             "torrent_id": torrent_info.id,
-            "hash": torrent_info.hashString,
+            "hash": torrent_hash,
             "name": torrent_info.name,
             "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
             "save_path": torrent_info.download_dir,
@@ -3542,6 +3664,7 @@ async def tr_add_torrents_info_only_async(
                 to_update.append(torrent_data)
             else:
                 stats["skip"] += 1
+        last_processed_hash = torrent_hash
 
     phase_times["diff"] = (time.monotonic() - phase_start) * 1000.0
 
@@ -3587,6 +3710,25 @@ async def tr_add_torrents_info_only_async(
         await db.rollback()
         logger.error(f"[TR_INFO_SYNC] {bt_downloader.nickname} 失败: {e}")
         raise
+
+    cycle_complete = budget_reason is None and processed_count >= pending_torrent_count
+    await _emit_info_progress(progress_callback, last_processed_hash)
+    if cycle_complete:
+        _TR_FULL_SYNC_DONE[downloader_id] = True
+        if force_full_sync:
+            _TR_LAST_FULL_SYNC[downloader_id] = now_ts
+    if progress_callback is None:
+        return None
+    return {
+        "cursor": None
+        if cycle_complete
+        else (_build_info_cursor(last_processed_hash) if last_processed_hash else cursor_before),
+        "cycle_complete": cycle_complete,
+        "partial": not cycle_complete,
+        "budget_reason": budget_reason,
+        "processed": processed_count,
+        "total": pending_torrent_count,
+    }
 
 
 # ==================== Tracker-Only 同步函数 ====================
@@ -3837,11 +3979,42 @@ async def qb_sync_trackers_only_async(
     durable_cursor: Optional[str] = None  # 最后 durable 批的最后 hash 的游标 JSON
     batch_last_hash: Optional[str] = None  # 当前累计批内最后处理的 hash
 
+    # enrich 只会为远端请求成功的对象写入标记。写入阶段只消费从上次
+    # durable cursor 开始的“连续成功前缀”，这样即使中间某个 hash 的远端
+    # 请求失败，也不会把后续 hash 写入并推进游标越过失败点。
+    cursor_last_hash = _parse_qb_tracker_cursor(cursor_before)
+    pending_torrent_count = sum(
+        1
+        for torrent_info in existing_torrents
+        if (torrent_hash := str(_qb_get_attr(torrent_info, "hash") or ""))
+        and (cursor_last_hash is None or torrent_hash > cursor_last_hash)
+    )
+    durable_torrents: list[Any] = []
+    enrichment_error_count = 0
+    for torrent_info in existing_torrents:
+        torrent_hash = str(_qb_get_attr(torrent_info, "hash") or "")
+        if not torrent_hash or (cursor_last_hash is not None and torrent_hash <= cursor_last_hash):
+            continue
+        enriched = _qb_get_attr(torrent_info, "_btdeck_tracker_enriched", None)
+        if enriched is True:
+            durable_torrents.append(torrent_info)
+            continue
+        if enriched is False:
+            enrichment_error_count += 1
+        elif budget_reason is None:
+            # 没有预算截止却缺少成功标记，说明 enrich 返回的数据无法确认，
+            # 按失败处理，避免在不确定时清除周期游标。
+            enrichment_error_count += 1
+        # 未标记表示本轮预算已停止生产，后续 hash 尚未开始，不能计为错误。
+        break
+
     async def _flush_batch() -> bool:
         """提交当前累计 batch；返回是否真正发生提交（累计行非空且成功）。"""
         nonlocal accumulated_rows, accumulated_info_ids, error_count
         if not accumulated_rows:
-            return False
+            # 远端成功但没有 tracker 行时也要允许推进游标；这不是一次 DB
+            # 写入，但该 hash 的结果已经确定且可安全续跑。
+            return True
         try:
             stats = await sync_trackers_batch_async(db, accumulated_rows, current_time)
             for k in batch_stats_total:
@@ -3877,7 +4050,8 @@ async def qb_sync_trackers_only_async(
         except Exception as push_err:  # noqa: BLE001 - 检查点推进失败不阻断写入
             logger.warning(f"[{LOG_PREFIX}] 推进 tracker 检查点失败: {push_err}")
 
-    for torrent_info in existing_torrents:
+    error_count = enrichment_error_count
+    for torrent_info in durable_torrents:
         torrent_hash = _qb_get_attr(torrent_info, "hash")
         if not torrent_hash:
             continue
@@ -3892,11 +4066,12 @@ async def qb_sync_trackers_only_async(
             tracker_total_rows += len(rows)
             batch_last_hash = str(torrent_hash)
         except Exception as e:
-            # 提取失败：沿用 W3-1a 语义继续（该 hash 可能被游标跳过，周期完整时重试）
+            # 提取失败也必须停止当前有序前缀；继续消费后续 hash 会让
+            # durable cursor 越过这个未落盘的 hash，重启后永久遗漏。
             error_count += 1
             logger.error(f"[{LOG_PREFIX}] extract_tracker_rows 失败: hash={torrent_hash}, error={e}")
             await _ensure_session_active(db)
-            continue
+            break
 
         # 累计达 batch_size 行后提交（按 tracker 行数控制，非种子数）
         if len(accumulated_rows) >= batch_size:
@@ -3918,8 +4093,13 @@ async def qb_sync_trackers_only_async(
             await _push_tracker_cursor(durable_cursor)
 
     # W3-1 第二部分：cycle 语义与观测元数据
-    cycle_complete = budget_reason is None and not flush_failed and error_count == 0
-    partial = budget_reason is not None or flush_failed
+    cycle_complete = (
+        budget_reason is None
+        and not flush_failed
+        and error_count == 0
+        and len(durable_torrents) == pending_torrent_count
+    )
+    partial = budget_reason is not None or flush_failed or error_count > 0
     final_cursor: Optional[str] = None if cycle_complete else durable_cursor
     if cycle_complete:
         processed_count = total_torrents

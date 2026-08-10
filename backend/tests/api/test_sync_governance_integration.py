@@ -202,7 +202,9 @@ class TestManualSyncNoLegacyFullBypass:
         request.url.path = "/api/v1/torrents/sync-single"
 
         db = MagicMock()
-        db.query.return_value.filter.return_value.first.return_value = self._make_downloader_row()
+        execute_result = MagicMock()
+        execute_result.scalar_one_or_none.return_value = self._make_downloader_row()
+        db.execute = AsyncMock(return_value=execute_result)
 
         with (
             patch("app.services.sync_coordinator.run_sync", new=AsyncMock()) as mock_run_sync,

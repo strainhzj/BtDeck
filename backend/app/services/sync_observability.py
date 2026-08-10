@@ -34,6 +34,7 @@ import asyncio
 import logging
 import math
 import os
+import sqlite3
 import threading
 import time
 from collections import deque
@@ -478,17 +479,40 @@ def start_lag_sampler(interval_seconds: Optional[float] = None, window_size: int
 def snapshot_wal_stats(db_path: str) -> Dict[str, Any]:
     """只读 WAL 快照（绝不执行 TRUNCATE checkpoint）。
 
-    Returns:
-        wal_bytes: db_path + "-wal" 文件字节数；文件不存在/不可读返回 0
-            （未启用 WAL 或首次建库）。
-        busy_count / checkpoint_busy: 预留字段。当前签名无数据库连接句柄，
-            恒为 None；后续接线可改为经已有连接执行 PRAGMA wal_checkpoint(PASSIVE)
-            读取 busy 列（PASSIVE 非阻塞、不 TRUNCATE，但接入前需评估高峰
-            争用风险）。
+    ``busy_count`` 来自 SQLite ``wal_checkpoint(PASSIVE)`` 的 ``busy`` 列；
+    ``checkpoint_busy`` 表示本次非阻塞探测是否观察到写入者。探测使用
+    ``timeout=0`` 且不会等待、打断写事务或截断 WAL，避免观测本身制造延迟。
+    数据库不存在或探测失败时，这两个字段保持 ``None``。
     """
     wal_bytes = 0
     try:
         wal_bytes = os.path.getsize(db_path + "-wal")
     except OSError:
         wal_bytes = 0
-    return {"wal_bytes": wal_bytes, "busy_count": None, "checkpoint_busy": None}
+
+    busy_count: Optional[int] = None
+    checkpoint_busy: Optional[bool] = None
+    if os.path.exists(db_path):
+        conn: Optional[sqlite3.Connection] = None
+        try:
+            conn = sqlite3.connect(db_path, timeout=0, check_same_thread=False)
+            conn.isolation_level = None
+            conn.execute("PRAGMA busy_timeout=0")
+            row = conn.execute("PRAGMA wal_checkpoint(PASSIVE)").fetchone()
+            if row:
+                busy_count = int(row[0])
+                checkpoint_busy = busy_count > 0
+        except (OSError, sqlite3.Error) as exc:
+            logger.debug("WAL PASSIVE checkpoint probe failed for %s: %s", db_path, exc)
+        finally:
+            if conn is not None:
+                try:
+                    conn.close()
+                except sqlite3.Error:
+                    pass
+
+    return {
+        "wal_bytes": wal_bytes,
+        "busy_count": busy_count,
+        "checkpoint_busy": checkpoint_busy,
+    }

@@ -241,6 +241,8 @@ class Settings(BaseSettings):
     # SELECT 1 超时即返回 db_query_timeout，避免 SQLite busy_timeout 把健康检查
     # 拖成长期排队；lag 阈值允许运维在基线校准后临时放宽，但不跳过数据库检查。
     HEALTH_READINESS_DB_TIMEOUT_SECONDS: float = 1.0
+    # 同步业务健康查询同样必须有界，避免锁争用时健康端点自身长期占用连接。
+    HEALTH_SYNC_DB_TIMEOUT_SECONDS: float = 1.0
     HEALTH_READINESS_LAG_P99_THRESHOLD_MS: float = 100.0
 
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}

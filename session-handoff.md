@@ -1,5 +1,48 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-11 交接：按报告完成 P0/P1/P2 修复（生产门待执行）
+
+### 实施结果
+
+- `torrents_async.py` 的 qB/TR info/full、`torrent_sync.py` legacy 与 `sync-single` 全部复用
+  `app.state.store` 缓存客户端；缓存缺失明确失败；sync-single 使用 AsyncSession 异步查询。
+- qB Tracker durable cursor 只跨连续成功且已提交前缀；远程 enrich/Tracker 提取/批提交失败均不跨游标。
+- qB/TR info 支持稳定 hash cursor、单轮预算后的 durable progress callback；存在 cursor 时强制完整快照，
+  防止增量列表遗漏 cursor 前的变更。
+- WAL 观测接入 PASSIVE checkpoint（busy_count/checkpoint_busy）；同步健康端点增加有界 DB 查询超时。
+- 新增生产止血手册：[`backend/docs/operations/sync-stopgap-runbook.md`](backend/docs/operations/sync-stopgap-runbook.md)。
+
+### 验证与剩余门禁
+
+- 定向：83 passed；coordinator/checkpoint/governance/metadata/legacy 70 passed、5 skipped；
+  memory-bound/file contention 18 passed、1 skipped；health 10 passed；ruff/diff-check 通过。
+- 后端全量 pytest：`3142 passed, 7 skipped`（3149 collected）；修复后大档基准 30 轮/600 探针
+  无超时、最终 BUSY=0、SLO 4/4 PASS，JSON 位于临时目录
+  `C:\Users\huangzj\AppData\Local\Temp\btdeck-sync-fix-20260811`。
+- 未对本地 `backend/config/app.db` 执行 Alembic 迁移；未执行生产 cron 暂停/恢复演练；30 轮发布基线需归档。
+- Black 全文件检查在 Windows 环境超时并提示既有格式债。未 stage/commit/push/deploy。
+
+## 2026-08-10 交接：W0-W4-2 从头实现验证完成（发布门仍有缺口）
+
+本轮不是只复核 W4-2，而是从 W0 到 W4-2 独立审计实现、测试和运行证据。详细结果见 [`backend/docs/operations/database-blocking-and-sync-verification-2026-08.md`](backend/docs/operations/database-blocking-and-sync-verification-2026-08.md)。本轮未修改业务代码、未执行 Alembic 迁移、未 stage/commit/push。
+
+### 已复核证据
+
+- 后端全量 pytest 摘要：`3135 passed, 7 skipped`；pytest 已输出最终摘要，Windows 包装命令之后因 300 秒超时返回 124。
+- 真实文件型 SQLite 大档：22000 torrents / 30000 trackers / 30 轮，600 次探针无超时、BUSY=0、SLO 4/4 PASS。
+- `health.py` mypy、flake8 和 `git diff --check` 通过；系统 `bash.exe`/WSL `E_ACCESSDENIED`，所以 `./init.sh --ci` 未能在本环境执行。
+
+### 必须先处理的缺口
+
+1. **P0**：`SyncCoordinator` 的 info/full canonical 路径在缓存客户端为空时仍 fallback 自建 qB/TR 客户端；`sync-single` async handler 直接同步 `db.query`，SQLite 锁等待可能阻塞事件循环。扩展架构扫描覆盖 `torrents_async.py`/`torrent_sync.py`。
+2. **P1**：qB Tracker 游标可越过未处理 hash。复现：预算 2、批大小 1000、5 个 hash，只调用前 2 个却返回最后 hash 的游标。info-only 部分运行没有记录级 cursor。
+3. **P2/W4-1**：运行时 `busy_count`、`checkpoint_busy` 仍为 `None`；W0 专用生产止血 Runbook 和暂停/恢复演练证据缺失。
+4. 当前本地 `app.db` 迁移为 `f9a1b2c3d4e5`，仓库 head 为 `f5e6d7c8b9a0`；真实 `/health/ready`/同步健康验证需在受控迁移后进行。
+
+### 后续顺序
+
+先修 P0 连接/DB 边界，再修 P1 durable cursor 与 info 续跑语义，随后补 W4-1 SQLite busy/checkpoint 观测和 W0 运维演练；修复后重新跑全量测试、大档 30 轮基准、迁移后健康接口和发布门复核。
+
 ## 2026-08-10 交接：W4-2 实施完成（liveness/readiness/同步业务健康接口）
 
 当前任务：`PLANS/sync-database-blocking-remediation.md` 的 W4-2（G4 门）已完成，代码与测试已亲跑通过；分支 `dev`，未执行 stage/commit/push/deploy。

@@ -378,8 +378,23 @@ async def sync_health(
     """返回同步 outcome/freshness/活动 phase/checkpoint 年龄及业务告警。"""
     # 仅记录访问者标识，不记录 Authorization/Cookie/JWT 内容。
     logger.info("sync_health_access username=%s", user_info.username)
+    timeout_seconds = max(float(settings.HEALTH_SYNC_DB_TIMEOUT_SECONDS), 0.001)
     try:
-        data = await _build_sync_health(request.app)
+        data = await asyncio.wait_for(_build_sync_health(request.app), timeout=timeout_seconds)
+    except asyncio.TimeoutError:
+        logger.warning("sync_health_query_timeout timeout_ms=%s", round(timeout_seconds * 1000.0, 1))
+        return JSONResponse(
+            status_code=503,
+            content=_common_response(
+                "error",
+                "同步健康信息暂不可用",
+                "503",
+                {
+                    "reasonCode": "sync_health_query_timeout",
+                    "timeoutMs": round(timeout_seconds * 1000.0, 1),
+                },
+            ),
+        )
     except Exception as exc:  # noqa: BLE001 - 对外只返回稳定 reason code
         logger.warning("sync_health_query_failed error_type=%s", type(exc).__name__)
         return CommonResponse(

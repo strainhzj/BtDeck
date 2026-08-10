@@ -253,6 +253,27 @@ def test_sync_health_returns_outcome_freshness_active_phase_checkpoint_age_and_o
 
 
 @pytest.mark.asyncio
+async def test_sync_health_query_timeout_returns_503(monkeypatch):
+    """同步业务健康查询在数据库锁等待时必须有界返回。"""
+    app, _client_instance = _client(authenticated=True)
+    monkeypatch.setattr(health.settings, "HEALTH_SYNC_DB_TIMEOUT_SECONDS", 0.001)
+
+    async def slow_health(_app):
+        await asyncio.sleep(0.05)
+        return {}
+
+    monkeypatch.setattr(health, "_build_sync_health", slow_health)
+    response = await health.sync_health(
+        SimpleNamespace(app=app),
+        SimpleNamespace(username="tester"),
+    )
+
+    assert response.status_code == 503
+    body = response.body.decode("utf-8")
+    assert "sync_health_query_timeout" in body
+
+
+@pytest.mark.asyncio
 async def test_sync_coordinator_active_snapshot_is_removed_after_run(monkeypatch):
     observed = {}
     run_id = "sync-health-lifecycle"
