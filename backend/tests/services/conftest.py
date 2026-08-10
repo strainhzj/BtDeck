@@ -93,6 +93,38 @@ async def async_orphan_db():
         await engine.dispose()
 
 
+# ==================== checkpoint 存储隔离（W3-2 新增 sync_checkpoints 表） ====================
+
+
+@pytest.fixture(autouse=True)
+async def _isolate_checkpoint_store():
+    """隔离持久化检查点存储（W3-2）。
+
+    run_sync 的检查点读写默认走真实库 AsyncSessionLocal；测试若不隔离，
+    会在真实 app.db（迁移后表存在）上写入测试脏数据。本 fixture 在
+    tests/services 全量生效：每个测试换用独立内存库（StaticPool 单连接，
+    与 async_orphan_db 同款模式），测试结束恢复默认真实库实现。
+    """
+    from app.models.sync_checkpoint import SyncCheckpoint  # noqa: F401 - 注册模型
+    from app.services.sync_coordinator import SyncCheckpointStore, set_checkpoint_store
+
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    async with engine.begin() as conn:
+        await conn.run_sync(lambda c: Base.metadata.create_all(c, tables=[SyncCheckpoint.__table__]))
+    Session = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+    store = SyncCheckpointStore(session_factory=lambda: Session())
+    set_checkpoint_store(store)
+    try:
+        yield store
+    finally:
+        set_checkpoint_store(None)
+        await engine.dispose()
+
+
 # ==================== fake 下载器客户端 fixture ====================
 
 

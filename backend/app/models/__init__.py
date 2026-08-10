@@ -47,6 +47,17 @@ from app.models.seed_transfer_audit_log import (
     TRANSFER_STATUS_FAILED,
 )
 
+# 导出同步检查点模型（W3-2 持久化续跑）
+from app.models.sync_checkpoint import (
+    SyncCheckpoint,
+    OUTCOME_SUCCESS,
+    OUTCOME_PARTIAL,
+    OUTCOME_SKIPPED,
+    OUTCOME_FAILED,
+    OUTCOME_NO_ACTION,
+    OUTCOME_CANCELLED,
+)
+
 __all__ = [
     "DownloaderTypeEnum",  # 整数枚举
     "SpeedUnitEnum",
@@ -74,4 +85,12 @@ __all__ = [
     "OPERATOR_TYPE_SEED_TRANSFER",
     "TRANSFER_STATUS_SUCCESS",
     "TRANSFER_STATUS_FAILED",
+    # 同步检查点模型（W3-2 持久化续跑）
+    "SyncCheckpoint",
+    "OUTCOME_SUCCESS",
+    "OUTCOME_PARTIAL",
+    "OUTCOME_SKIPPED",
+    "OUTCOME_FAILED",
+    "OUTCOME_NO_ACTION",
+    "OUTCOME_CANCELLED",
 ]

@@ -48,6 +48,9 @@ from app.models.search_template import SearchTemplate
 from app.models.orphan_file import OrphanScanResult, OrphanFile, OrphanCurrentCandidate, OrphanOperationLease
 from app.models.orphan_purge_job import OrphanPurgeJob
 
+# 同步检查点（W3-2 持久化续跑）
+from app.models.sync_checkpoint import SyncCheckpoint
+
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config

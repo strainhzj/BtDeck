@@ -24,6 +24,10 @@ W2-1（PLANS/sync-database-blocking-remediation.md）：消除手动同步旁路
    already_running（不启动第二个作业）；force=True 跳过该去重。
 5. 取消语义：deadline 到期或 is_cancelled() 为 True 时，在下载器调用边界/
    批次边界检查；已提交批次保留（不回滚），结果标记 partial/cancelled。
+6. 持久化检查点（W3-2）：运行前按 (downloader_id, sync_type) 读取/初始化
+   sync_checkpoints；运行中批次 durable commit 后推进（outcome=partial +
+   last_success_at + cursor）；运行后按最终 outcome 落终态。更新走 version
+   乐观锁（独立短事务），并发冲突不倒退；dry_run 零副作用。
 
 下载器读取/转换直接复用现有函数；Coordinator 只做编排与治理。
 客户端只从 app.state.store 获取（downloader-connection 约束）。
@@ -34,11 +38,26 @@ import logging
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Any, Callable, Dict, List, Optional, Tuple, cast
+
+from sqlalchemy import case as sa_case
+from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.sync_checkpoint import (
+    OUTCOME_FAILED,
+    OUTCOME_PARTIAL,
+    OUTCOME_SUCCESS,
+    TERMINAL_OUTCOMES,
+    SyncCheckpoint,
+    sanitize_detail_json,
+)
 from app.tasks.resource_guard import SKIP_DUPLICATE, SKIP_WAIT_TIMEOUT, admission_controller
 from app.tasks.task_profiles import TaskProfile, get_profile
+from app.utils.datetime_utils import serialize_utc_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +79,10 @@ class SyncRequest:
         trigger: 触发来源："manual"（手动接口）/ "cron"（定时任务）/ "api"。
         run_id: 运行 ID（不传时自动生成，用于日志/TaskLog 关联）。
         deadline: 时间预算（秒，可选）；到期在下载器调用边界检查，
-            已提交批次保留，结果标记 partial/cancelled。
-        record_budget: 记录数预算（可选，W3 单轮预算使用，本步先声明字段）。
+            已提交批次保留，结果标记 partial/cancelled；W3-1 起透传给 qB
+            tracker 单轮时间预算（QB_TRACKER_RUN_BUDGET_SECONDS 覆盖）。
+        record_budget: 记录数预算（可选）；W3-1 起透传给 qB tracker 单轮
+            数量预算（QB_TRACKER_MAX_TORRENTS_PER_RUN 覆盖）。
         force: 跳过幂等运行键去重（允许排队/跳过重入检查）。
         dry_run: 只读演练：解析下载器但不执行任何写入。
         is_cancelled: 取消检测回调（阶段间轮询；True 表示请求取消）。
@@ -91,7 +112,9 @@ class SyncResult:
             记录级统计，按下载器数计数（W3 补齐记录级统计）。
         changed: 实际写入（变化）行数。
         committed: 成功提交的行数。
-        checkpoint: 持久化检查点（W3 使用，本步恒 None）。
+        checkpoint: 持久化检查点（W3-2）：本次运行读取/初始化后的检查点记录
+            dict 列表（含 downloader_id/cursor/cycle_started_at/outcome/version
+            等）；dry_run 或未进入同步阶段时保持 None。
         skip_reason: 跳过/拒绝原因（resource_busy / already_running 等）。
         errors: 错误消息列表（人类可读）。
         duration_ms: 整个运行耗时（毫秒）。
@@ -106,7 +129,7 @@ class SyncResult:
     scanned: int = 0
     changed: int = 0
     committed: int = 0
-    checkpoint: Optional[Any] = None  # W3 持久化检查点，本步恒 None
+    checkpoint: Optional[Any] = None  # W3-2 持久化检查点 dict 列表（运行后填充；dry_run 保持 None）
     skip_reason: Optional[str] = None  # "resource_busy" / "already_running" 等
     errors: List[str] = field(default_factory=list)
     duration_ms: float = 0.0
@@ -161,6 +184,349 @@ async def _unregister_running_keys(keys: List[str]) -> None:
     async with _running_keys_lock:
         for key in keys:
             _running_keys.pop(key, None)
+
+
+# =============================================================================
+# 持久化同步检查点（W3-2，PLANS/sync-database-blocking-remediation.md）
+# =============================================================================
+
+
+def _default_checkpoint_session_factory() -> AsyncSession:
+    """默认检查点会话工厂：真实库 AsyncSessionLocal（延迟导入防循环）。"""
+    from app.database import AsyncSessionLocal  # noqa: PLC0415 - 延迟导入
+
+    return AsyncSessionLocal()
+
+
+async def _query_checkpoint_row(db: AsyncSession, downloader_id: str, sync_type: str) -> Optional[SyncCheckpoint]:
+    """按 (downloader_id, sync_type) 查询检查点行。"""
+    stmt = select(SyncCheckpoint).where(
+        SyncCheckpoint.downloader_id == downloader_id,
+        SyncCheckpoint.sync_type == sync_type,
+    )
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+async def _get_checkpoint_by_id(db: AsyncSession, checkpoint_id: int) -> Optional[SyncCheckpoint]:
+    """按主键查询检查点行。"""
+    stmt = select(SyncCheckpoint).where(SyncCheckpoint.id == checkpoint_id)
+    result = await db.execute(stmt)
+    return result.scalar_one_or_none()
+
+
+def _checkpoint_row_to_dict(row: SyncCheckpoint) -> Dict[str, Any]:
+    """ORM 行 -> raw dict（datetime 保持原值，供内部比较/推进用）。"""
+    return {
+        "id": row.id,
+        "downloader_id": row.downloader_id,
+        "sync_type": row.sync_type,
+        "cursor": row.cursor_value,
+        "cycle_started_at": row.cycle_started_at,
+        "last_full_sync_at": row.last_full_sync_at,
+        "last_success_at": row.last_success_at,
+        "last_attempt_at": row.last_attempt_at,
+        "outcome": row.outcome,
+        "detail": row.detail,
+        "version": row.version,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def _checkpoint_public_dict(checkpoint: Dict[str, Any]) -> Dict[str, Any]:
+    """raw dict -> 对外可读 dict（datetime 统一转 UTC ISO 字符串）。"""
+    return {
+        key: (serialize_utc_datetime(value) if isinstance(value, datetime) else value)
+        for key, value in checkpoint.items()
+    }
+
+
+class SyncCheckpointStore:
+    """持久化同步检查点存储（W3-2）。
+
+    设计要点：
+    1. 独立短事务：每次读写使用独立 AsyncSession 并单独 commit，不持有跨批
+       写锁；checkpoint 是低频小写，不与同步数据批次争用 db_write_scope 写锁。
+    2. 原子性（cursor 不超前于数据）：checkpoint 更新与数据批次 commit 不在
+       同一事务（把 checkpoint 并入统一写入器会放大批次事务持有时间、侵入
+       sync_db_write 公共路径，成本高收益低）。本步保证推进只发生在同步实现
+       报告批次 durable commit 之后——推进严格滞后于数据落盘，重启后重做
+       最后一批是幂等安全的。
+    3. 并发不倒退：更新一律 ``UPDATE ... WHERE id=? AND version=?`` 乐观锁；
+       受影响行数=0 视为 version 冲突，重读最新行后按单调性合并
+       （last_success_at 取 max、既有 cursor 不被覆盖、终态 outcome 不被
+       进行中状态降级），重试一次仍失败则放弃本次推进并计入 conflicts。
+    """
+
+    def __init__(self, session_factory: Optional[Callable[[], AsyncSession]] = None) -> None:
+        self._session_factory = session_factory or _default_checkpoint_session_factory
+
+    def _open(self) -> AsyncSession:
+        return self._session_factory()
+
+    async def get_or_create(self, downloader_id: str, sync_type: str) -> Dict[str, Any]:
+        """读取或初始化检查点行（独立短事务），返回 raw dict。
+
+        新建行：downloader_id/sync_type/cycle_started_at=now/last_attempt_at=now，
+        outcome 保持 None（尚无完成记录）；既有行只读不改（周期语义保留，
+        W3-1 续跑依据）。并发创建竞争由唯一约束兜底：回滚后读取已存在行。
+        """
+        now = datetime.utcnow()
+        async with self._open() as db:
+            row = await _query_checkpoint_row(db, downloader_id, sync_type)
+            if row is not None:
+                return _checkpoint_row_to_dict(row)
+            db.add(
+                SyncCheckpoint(
+                    downloader_id=downloader_id,
+                    sync_type=sync_type,
+                    cycle_started_at=now,
+                    last_attempt_at=now,
+                    outcome=None,
+                    version=0,
+                )
+            )
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
+                row = await _query_checkpoint_row(db, downloader_id, sync_type)
+                if row is None:
+                    raise
+                return _checkpoint_row_to_dict(row)
+            fresh = await _query_checkpoint_row(db, downloader_id, sync_type)
+            if fresh is None:  # 防御：插入成功后重读为空不应发生
+                raise RuntimeError(f"checkpoint 创建后重读失败 downloader_id={downloader_id} sync_type={sync_type}")
+            return _checkpoint_row_to_dict(fresh)
+
+    async def advance(
+        self,
+        checkpoint_id: int,
+        expected_version: int,
+        *,
+        cursor: Optional[str] = None,
+        detail: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """运行中推进：outcome=partial + last_success_at=now（独立短事务）。
+
+        Args:
+            checkpoint_id: 检查点主键。
+            expected_version: 读取时的乐观锁版本。
+            cursor: 新的游标值（W3-1 起由同步实现提供；None 表示不提供，
+                冲突重试时既有 cursor 不被覆盖）。
+            detail: 聚合统计（sanitize_detail_json 白名单清洗后落库）。
+
+        Returns:
+            {"applied": bool, "conflicts": int, "checkpoint": raw dict | None}。
+        """
+        now = datetime.utcnow()
+        applied = False
+        conflicts = 0
+        version = expected_version
+        for attempt in range(2):
+            outcome_value: str = OUTCOME_PARTIAL
+            if attempt > 0:
+                fresh = await self._get_by_id(checkpoint_id)
+                if fresh is None:
+                    break
+                version = int(fresh["version"])
+                # 单调性合并（并发不倒退）：
+                # - last_success_at 取 max（不把成功提交时间回拨）
+                # - 既有 cursor 不被覆盖（透明游标不可比大小，保守保留）
+                # - 对方已落终态时不降级为 partial
+                if fresh["last_success_at"] is not None and fresh["last_success_at"] >= now:
+                    now = fresh["last_success_at"]
+                if fresh["cursor"] is not None and fresh["cursor"] != cursor:
+                    cursor = fresh["cursor"]
+                if fresh["outcome"] in TERMINAL_OUTCOMES:
+                    outcome_value = cast(str, fresh["outcome"])
+            if await self._apply_advance(checkpoint_id, version, now, cursor, outcome_value, detail):
+                applied = True
+                break
+            conflicts += 1
+        return {"applied": applied, "conflicts": conflicts, "checkpoint": await self._get_by_id(checkpoint_id)}
+
+    async def finalize(
+        self,
+        checkpoint_id: int,
+        expected_version: int,
+        *,
+        outcome: str,
+        cursor: Optional[str] = None,
+        last_success: bool = False,
+        last_full: bool = False,
+        detail: Optional[Dict[str, Any]] = None,
+        clear_cursor: bool = False,
+    ) -> Dict[str, Any]:
+        """运行结束落终态（独立短事务）。
+
+        - last_success=True（success/partial）：last_success_at=now；
+        - last_full=True（success 且本轮覆盖全部）：last_full_sync_at=now；
+        - 失败/跳过/取消：只更新 outcome + last_attempt_at，last_success_at 保留。
+        - clear_cursor=True（W3-1 第二部分 cycle complete）：强制清空 cursor，
+          覆盖"既有 cursor 不被覆盖"的冲突合并保护（仅周期完整、由 Coordinator
+          在 tracker 路径使用，防止陈旧 cursor 被写回）。
+
+        Returns:
+            {"applied": bool, "conflicts": int, "checkpoint": raw dict | None}。
+        """
+        now = datetime.utcnow()
+        applied = False
+        conflicts = 0
+        version = expected_version
+        for attempt in range(2):
+            if attempt > 0:
+                fresh = await self._get_by_id(checkpoint_id)
+                if fresh is None:
+                    break
+                version = int(fresh["version"])
+                if last_success and fresh["last_success_at"] is not None and fresh["last_success_at"] >= now:
+                    now = fresh["last_success_at"]
+                if fresh["cursor"] is not None and fresh["cursor"] != cursor:
+                    cursor = fresh["cursor"]
+                if clear_cursor:
+                    cursor = None
+            if await self._apply_finalize(
+                checkpoint_id, version, now, outcome, cursor, last_success, last_full, detail
+            ):
+                applied = True
+                break
+            conflicts += 1
+        return {"applied": applied, "conflicts": conflicts, "checkpoint": await self._get_by_id(checkpoint_id)}
+
+    async def _apply_advance(
+        self,
+        checkpoint_id: int,
+        expected_version: int,
+        now: datetime,
+        cursor: Optional[str],
+        outcome_value: str,
+        detail: Optional[Dict[str, Any]],
+    ) -> bool:
+        """乐观锁推进 UPDATE；受影响行数>0 表示推进成功。"""
+        stmt = (
+            update(SyncCheckpoint)
+            .where(SyncCheckpoint.id == checkpoint_id, SyncCheckpoint.version == expected_version)
+            .values(
+                cursor_value=cursor,
+                last_success_at=now,
+                last_attempt_at=now,
+                outcome=outcome_value,
+                detail_json=sanitize_detail_json(detail),
+                version=SyncCheckpoint.version + 1,
+                updated_at=now,
+            )
+        )
+        async with self._open() as db:
+            result = await db.execute(stmt)
+            await db.commit()
+            return bool(result.rowcount and result.rowcount > 0)
+
+    async def _apply_finalize(
+        self,
+        checkpoint_id: int,
+        expected_version: int,
+        now: datetime,
+        outcome: str,
+        cursor: Optional[str],
+        last_success: bool,
+        last_full: bool,
+        detail: Optional[Dict[str, Any]],
+    ) -> bool:
+        """乐观锁终态 UPDATE；受影响行数>0 表示更新成功。"""
+        stmt = (
+            update(SyncCheckpoint)
+            .where(SyncCheckpoint.id == checkpoint_id, SyncCheckpoint.version == expected_version)
+            .values(
+                cursor_value=cursor,
+                last_attempt_at=now,
+                last_success_at=sa_case((last_success, now), else_=SyncCheckpoint.last_success_at),
+                last_full_sync_at=sa_case((last_full, now), else_=SyncCheckpoint.last_full_sync_at),
+                outcome=outcome,
+                detail_json=sanitize_detail_json(detail),
+                version=SyncCheckpoint.version + 1,
+                updated_at=now,
+            )
+        )
+        async with self._open() as db:
+            result = await db.execute(stmt)
+            await db.commit()
+            return bool(result.rowcount and result.rowcount > 0)
+
+    async def _get_by_id(self, checkpoint_id: int) -> Optional[Dict[str, Any]]:
+        """按主键读取检查点（独立短事务）。"""
+        async with self._open() as db:
+            row = await _get_checkpoint_by_id(db, checkpoint_id)
+            return _checkpoint_row_to_dict(row) if row is not None else None
+
+
+# 全局检查点存储（默认真实库实现；测试用 set_checkpoint_store 换内存库）
+_CHECKPOINT_STORE = SyncCheckpointStore()
+
+
+def set_checkpoint_store(store: Optional[SyncCheckpointStore]) -> None:
+    """替换全局检查点存储（测试注入内存库）；None 恢复默认真实库实现。"""
+    global _CHECKPOINT_STORE
+    _CHECKPOINT_STORE = store if store is not None else SyncCheckpointStore()
+
+
+# 运行期活动检查点上下文：f"{downloader_id}:{sync_type}" -> raw checkpoint dict。
+# 供同步实现（W3-1 起）通过 get_run_checkpoint / push_sync_progress 查询与推进。
+# 进程内单运行上下文：同一 (downloader_id, sync_type) 的并发运行由幂等运行键
+# 防重入；不同 sync_type 之间按复合 key 隔离，互不覆盖。
+_ACTIVE_CHECKPOINTS: Dict[str, Dict[str, Any]] = {}
+
+
+def _checkpoint_key(downloader_id: str, sync_type: str) -> str:
+    return f"{str(downloader_id)}:{sync_type}"
+
+
+def _resolve_active_checkpoint(downloader_id: str, sync_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """按 (downloader_id, sync_type) 解析活动检查点；sync_type 缺省时唯一匹配兜底。"""
+    if sync_type is not None:
+        return _ACTIVE_CHECKPOINTS.get(_checkpoint_key(downloader_id, sync_type))
+    matches = [value for key, value in _ACTIVE_CHECKPOINTS.items() if key.startswith(f"{str(downloader_id)}:")]
+    return matches[0] if len(matches) == 1 else None
+
+
+def get_run_checkpoint(downloader_id: str, sync_type: Optional[str] = None) -> Optional[Dict[str, Any]]:
+    """查询当前运行的持久化检查点（续跑上下文）。
+
+    同步实现（或测试替身）在运行中调用：返回 raw checkpoint dict
+    （cursor/outcome/version/last_success_at 等）；无活动运行返回 None。
+    """
+    return _resolve_active_checkpoint(downloader_id, sync_type)
+
+
+async def push_sync_progress(
+    downloader_id: str,
+    sync_type: Optional[str] = None,
+    *,
+    cursor: Optional[str] = None,
+    detail: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """同步实现运行期推进检查点（每批 durable commit 后调用，W3-1 起使用）。
+
+    内部走 version 乐观锁独立短事务；推进失败（冲突重试后仍失败）返回 False，
+    由调用方决定是否重试。约定：cursor 必须在调用方对应批次数据 commit 之后
+    才能传入，保证游标不超前于落盘数据。
+    """
+    row = _resolve_active_checkpoint(downloader_id, sync_type)
+    if row is None:
+        logger.warning("sync_coordinator push_sync_progress 无活动检查点上下文 downloader_id=%s", downloader_id)
+        return False
+    store_out = await _CHECKPOINT_STORE.advance(int(row["id"]), int(row["version"]), cursor=cursor, detail=detail)
+    if store_out["checkpoint"] is not None:
+        _ACTIVE_CHECKPOINTS[_checkpoint_key(str(row["downloader_id"]), str(row["sync_type"]))] = store_out["checkpoint"]
+    if not store_out["applied"]:
+        logger.warning(
+            "sync_coordinator checkpoint_advance_conflict downloader_id=%s sync_type=%s conflicts=%d",
+            row["downloader_id"],
+            row["sync_type"],
+            store_out["conflicts"],
+        )
+    return bool(store_out["applied"])
 
 
 # =============================================================================
@@ -277,6 +643,7 @@ async def run_sync(req: SyncRequest, app: Any = None) -> SyncResult:
             result.message = f"资源准入未通过（{decision.skip_reason}），本轮跳过"
         return _finish(result, req, decision, start_ts)
 
+    checkpoints: Dict[str, Dict[str, Any]] = {}
     try:
         # ② 备份 phase（独立于同步写入，完成后关闭文件句柄）
         result.phase = "backup"
@@ -318,12 +685,36 @@ async def run_sync(req: SyncRequest, app: Any = None) -> SyncResult:
                 return _finish(result, req, decision, start_ts)
         try:
             if req.dry_run:
-                # 只读演练：不执行任何下载器调用与写入
+                # 只读演练：不执行任何下载器调用、检查点读写与写入
                 result.outcome = "no_action"
                 result.message = "dry_run 演练完成：未执行任何下载器调用与写入"
                 return _finish(result, req, decision, start_ts)
 
-            await _execute_sync_phase(req, result, infos, start_ts, runtime_app)
+            # ③.1 持久化检查点：运行前读取/初始化（get_or_create；dry_run 已提前
+            #      返回，本步零副作用；读取失败仅告警，不阻断同步）
+            checkpoints = await _init_checkpoints(req, infos, result, start_ts)
+
+            cycle_complete_map: Dict[str, bool] = {}
+            try:
+                cycle_complete_map = await _execute_sync_phase(req, result, infos, checkpoints, start_ts, runtime_app)
+            except Exception as e:  # noqa: BLE001 - 意外异常仍要落最终检查点后上抛
+                if result.outcome not in ("cancelled", "partial", "failed"):
+                    result.outcome = "failed"
+                result.errors.append(f"同步阶段异常: {e}")
+                raise
+            finally:
+                # ③.2 checkpoint 最终化：成功/部分/失败/取消统一在此落终态
+                #      （独立短事务；取消时 outcome=cancelled 且 last_success_at 保留；
+                #       tracker 周期完整的下载器清空 cursor + 更新 last_full_sync_at）
+                await _finalize_checkpoints(
+                    req,
+                    result,
+                    checkpoints,
+                    start_ts,
+                    cancelled=_is_run_cancelled(req, result),
+                    cycle_complete_map=cycle_complete_map,
+                )
+
             if result.outcome == "cancelled":
                 # 取消/预算到期：已提交批次保留，不再进入后续阶段
                 return _finish(result, req, decision, start_ts)
@@ -477,26 +868,276 @@ def _build_bt_downloader(info: Dict[str, Any]) -> Any:
     return downloader
 
 
+# =============================================================================
+# 检查点编排（W3-2：读取/推进/最终化）
+# =============================================================================
+
+
+def _is_run_cancelled(req: SyncRequest, result: SyncResult) -> bool:
+    """判断本轮是否被取消（显式 is_cancelled 回调或结果已标记 cancelled）。
+
+    注意：取消且已有提交时 SyncResult.outcome 为 partial，因此需要单独判定，
+    保证 checkpoint 按 cancelled 落终态且 last_success_at 保留。
+    """
+    if result.outcome == "cancelled":
+        return True
+    if req.is_cancelled is not None:
+        try:
+            return bool(req.is_cancelled())
+        except Exception:  # noqa: BLE001 - 回调异常按未取消处理
+            return False
+    return False
+
+
+def _is_full_coverage(req: SyncRequest, checkpoint: Dict[str, Any]) -> bool:
+    """本轮是否覆盖全部：full 类型，或从未续跑（开始无游标）即全量覆盖。
+
+    W3-1 引入游标后，从 cursor 续跑的轮次不再算全覆盖（每轮到达末尾时才
+    记录 cycle complete + last_full_sync_at）。
+    """
+    if req.sync_type == "full":
+        return True
+    return not checkpoint.get("cursor")
+
+
+async def _init_checkpoints(
+    req: SyncRequest,
+    infos: List[Dict[str, Any]],
+    result: SyncResult,
+    start_ts: float,
+) -> Dict[str, Dict[str, Any]]:
+    """运行前读取/初始化每个有效下载器的检查点（get_or_create，独立短事务）。
+
+    - 新建行：downloader_id/sync_type/cycle_started_at=now/last_attempt_at=now，
+      outcome 保持 None；既有行只读不改。
+    - 读取的 cursor/outcome 透传到 SyncResult.checkpoint（对外可读 dict）。
+    - 读取失败仅告警跳过（重启后重做是幂等安全的），不阻断同步。
+    - 本函数只在非 dry_run 路径被调用。
+    """
+    checkpoints: Dict[str, Dict[str, Any]] = {}
+    public_entries: List[Dict[str, Any]] = []
+    for info in infos:
+        downloader_id = str(info.get("downloader_id") or "")
+        if not downloader_id:
+            continue
+        try:
+            row = await _CHECKPOINT_STORE.get_or_create(downloader_id, req.sync_type)
+        except Exception as e:  # noqa: BLE001 - 检查点读取失败不阻断同步
+            logger.warning(
+                "sync_coordinator checkpoint_read_failed downloader_id=%s sync_type=%s error=%s",
+                downloader_id,
+                req.sync_type,
+                e,
+            )
+            continue
+        checkpoints[downloader_id] = row
+        _ACTIVE_CHECKPOINTS[_checkpoint_key(downloader_id, req.sync_type)] = row
+        public_entries.append(_checkpoint_public_dict(row))
+        logger.info(
+            "sync_coordinator checkpoint_loaded downloader_id=%s sync_type=%s outcome=%s cursor=%s version=%s",
+            downloader_id,
+            req.sync_type,
+            row["outcome"],
+            row["cursor"],
+            row["version"],
+        )
+    result.checkpoint = public_entries
+    return checkpoints
+
+
+async def _advance_checkpoint_after_sync(
+    req: SyncRequest,
+    result: SyncResult,
+    checkpoints: Dict[str, Dict[str, Any]],
+    downloader_id: str,
+    start_ts: float,
+    new_cursor: Optional[str] = None,
+) -> None:
+    """下载器同步成功（内部批次均已 durable commit）后推进检查点。
+
+    - 记录进行中状态：outcome=partial + last_success_at=now（聚合统计进
+      detail_json）。
+    - W3-1 第二部分：tracker 路径由同步实现按批推进持久化 cursor 后，此处用
+      同步结果携带的最终 cursor 做一致性收敛；new_cursor=None（info/full 路径
+      或本轮无新游标）时透传既有 cursor，保证不倒退、不清空。
+    - 失败仅告警（含 version 冲突累计），不阻断同步结果。
+    """
+    row = checkpoints.get(downloader_id)
+    if row is None:
+        return
+    detail: Dict[str, Any] = {
+        "scanned": result.scanned,
+        "changed": result.changed,
+        "committed": result.committed,
+        "duration_ms": round((time.perf_counter() - start_ts) * 1000.0, 1),
+    }
+    cursor_value = row.get("cursor") if new_cursor is None else new_cursor
+    try:
+        store_out = await _CHECKPOINT_STORE.advance(
+            int(row["id"]), int(row["version"]), cursor=cursor_value, detail=detail
+        )
+        conflicts = int(store_out.get("conflicts", 0) or 0)
+        if conflicts:
+            result.details["checkpoint_version_conflicts"] = (
+                int(result.details.get("checkpoint_version_conflicts", 0) or 0) + conflicts
+            )
+        fresh = store_out["checkpoint"]
+        if fresh is not None:
+            checkpoints[downloader_id] = fresh
+            _ACTIVE_CHECKPOINTS[_checkpoint_key(downloader_id, req.sync_type)] = fresh
+        logger.info(
+            "sync_coordinator checkpoint_advanced downloader_id=%s sync_type=%s outcome=%s cursor=%s version=%s",
+            downloader_id,
+            req.sync_type,
+            fresh["outcome"] if fresh else row.get("outcome"),
+            fresh["cursor"] if fresh else row.get("cursor"),
+            fresh["version"] if fresh else row.get("version"),
+        )
+    except Exception as e:  # noqa: BLE001 - 检查点推进失败不影响同步结果
+        logger.warning(
+            "sync_coordinator checkpoint_advance_failed downloader_id=%s sync_type=%s error=%s",
+            downloader_id,
+            req.sync_type,
+            e,
+        )
+
+
+async def _finalize_checkpoints(
+    req: SyncRequest,
+    result: SyncResult,
+    checkpoints: Dict[str, Dict[str, Any]],
+    start_ts: float,
+    cancelled: bool = False,
+    cycle_complete_map: Optional[Dict[str, bool]] = None,
+) -> None:
+    """运行后按最终 outcome 更新全部涉及检查点（独立短事务，不持有跨批写锁）。
+
+    - success/partial → outcome + last_success_at
+    - failed/skipped/no_action/cancelled → outcome + last_attempt_at
+      （last_success_at 保留，取消后仍能看到最近成功提交时间）
+    - success 且本轮覆盖全部 → last_full_sync_at
+    - W3-1 第二部分：tracker 周期完整（全部处理完且全部批 commit 成功）视为
+      全覆盖 → 终态清空 cursor（clear_cursor=True，下一轮从头开始新周期）
+      并更新 last_full_sync_at；非周期完整时 cursor 透传最后 durable 批位置。
+    - 失败仅告警（含 version 冲突累计），不阻断结果返回。
+    """
+    if not checkpoints:
+        _ACTIVE_CHECKPOINTS.clear()
+        return
+    final_outcome = "cancelled" if cancelled else (result.outcome or OUTCOME_FAILED)
+    last_success = final_outcome in (OUTCOME_SUCCESS, OUTCOME_PARTIAL)
+    detail: Dict[str, Any] = {
+        "scanned": result.scanned,
+        "changed": result.changed,
+        "committed": result.committed,
+        "duration_ms": round((time.perf_counter() - start_ts) * 1000.0, 1),
+        "version_conflicts": int(result.details.get("checkpoint_version_conflicts", 0) or 0),
+    }
+    cycle_map = cycle_complete_map or {}
+    for downloader_id, row in checkpoints.items():
+        try:
+            full_coverage = _is_full_coverage(req, row)
+            cycle_done = req.sync_type == "tracker" and bool(cycle_map.get(downloader_id))
+            if cycle_done:
+                full_coverage = True
+            clear_cursor = bool(cycle_done and final_outcome == OUTCOME_SUCCESS)
+            store_out = await _CHECKPOINT_STORE.finalize(
+                int(row["id"]),
+                int(row["version"]),
+                outcome=final_outcome,
+                cursor=None if clear_cursor else row.get("cursor"),
+                clear_cursor=clear_cursor,
+                last_success=last_success,
+                last_full=(final_outcome == OUTCOME_SUCCESS and full_coverage),
+                detail=detail,
+            )
+            conflicts = int(store_out.get("conflicts", 0) or 0)
+            if conflicts:
+                result.details["checkpoint_version_conflicts"] = (
+                    int(result.details.get("checkpoint_version_conflicts", 0) or 0) + conflicts
+                )
+            fresh = store_out["checkpoint"]
+            if fresh is not None:
+                _ACTIVE_CHECKPOINTS[_checkpoint_key(downloader_id, req.sync_type)] = fresh
+            logger.info(
+                "sync_coordinator checkpoint_finalized downloader_id=%s sync_type=%s outcome=%s cursor=%s version=%s",
+                downloader_id,
+                req.sync_type,
+                final_outcome,
+                fresh["cursor"] if fresh else row.get("cursor"),
+                fresh["version"] if fresh else row.get("version"),
+            )
+        except Exception as e:  # noqa: BLE001 - 检查点落盘失败不阻断结果返回
+            logger.warning(
+                "sync_coordinator checkpoint_finalize_failed downloader_id=%s sync_type=%s error=%s",
+                downloader_id,
+                req.sync_type,
+                e,
+            )
+    _ACTIVE_CHECKPOINTS.clear()
+
+
 async def _execute_sync_phase(
     req: SyncRequest,
     result: SyncResult,
     infos: List[Dict[str, Any]],
+    checkpoints: Dict[str, Dict[str, Any]],
     start_ts: float,
     app: Any,
-) -> None:
+) -> Dict[str, bool]:
     """按 sync_type 逐个下载器执行同步（下载器调用边界检查取消/预算）。
 
     下载器读取/转换直接复用现有同步函数（info-only / tracker-only / legacy
-    全量），本函数只做编排：会话创建、客户端获取、结果汇总。
+    全量），本函数只做编排：会话创建、客户端获取、结果汇总、检查点推进。
+
+    Returns:
+        cycle_complete_map：downloader_id -> 是否本轮完成完整周期（tracker
+        路径由同步函数报告；info/full 路径恒为空），供终态 finalize 清空
+        cursor 并更新 last_full_sync_at。
     """
     ok = 0
+    partial_ok = 0
     fail = 0
+    cycle_complete_map: Dict[str, bool] = {}
     for index, info in enumerate(infos):
         if _check_cancelled(req, result, start_ts):
             break
-        status = await _sync_one_downloader(req, result, info, app)
+        downloader_id = str(info.get("downloader_id") or "")
+        status, meta = await _sync_one_downloader(req, result, info, app)
         if status == "success":
             ok += 1
+            if meta and meta.get("cycle_complete"):
+                # W3-1 第二部分：周期完整 → 跳过中间推进，终态 finalize 负责
+                # 清空 cursor + 更新 last_full_sync_at（下一轮从头开始新周期）
+                cycle_complete_map[downloader_id] = True
+                logger.info(
+                    "sync_coordinator downloader_cycle_complete run_id=%s sync_type=%s downloader=%s",
+                    result.run_id,
+                    req.sync_type,
+                    info.get("nickname", "unknown"),
+                )
+            else:
+                await _advance_checkpoint_after_sync(
+                    req,
+                    result,
+                    checkpoints,
+                    downloader_id,
+                    start_ts,
+                    new_cursor=(meta or {}).get("cursor"),
+                )
+        elif status == "partial":
+            # W3-1 第二部分：预算到期/批次失败——有部分成果（已提交批次保留），
+            # 计入成功数（不阻塞其他下载器）但最终 outcome 标记 partial
+            ok += 1
+            partial_ok += 1
+            await _advance_checkpoint_after_sync(
+                req,
+                result,
+                checkpoints,
+                downloader_id,
+                start_ts,
+                new_cursor=(meta or {}).get("cursor"),
+            )
         else:
             fail += 1
         logger.debug(
@@ -513,16 +1154,20 @@ async def _execute_sync_phase(
     result.details["failed_syncs"] = fail
     if result.outcome in ("cancelled", "partial"):
         # 取消/预算到期：保留取消语义（已提交批次统计已累加），不再覆盖
-        return
+        return cycle_complete_map
     if ok > 0 and fail > 0:
         result.outcome = "partial"
         result.message = f"同步完成：{ok} 成功，{fail} 失败"
+    elif partial_ok > 0:
+        result.outcome = "partial"
+        result.message = "同步完成：存在部分完成（单轮预算到期或批次边界）"
     elif ok > 0:
         result.outcome = "success"
         result.message = f"同步完成：{ok} 个下载器全部成功"
     else:
         result.outcome = "failed"
         result.message = f"同步失败：{fail} 个下载器全部失败"
+    return cycle_complete_map
 
 
 def _app_of(app: Any) -> Any:
@@ -534,8 +1179,14 @@ def _app_of(app: Any) -> Any:
     return downloader_app
 
 
-async def _sync_one_downloader(req: SyncRequest, result: SyncResult, info: Dict[str, Any], app: Any) -> str:
-    """同步单个下载器，返回 "success" / "failed"。
+async def _sync_one_downloader(
+    req: SyncRequest, result: SyncResult, info: Dict[str, Any], app: Any
+) -> Tuple[str, Optional[Dict[str, Any]]]:
+    """同步单个下载器，返回 (status, meta)。
+
+    status: "success" / "partial"（预算到期/批次失败，有部分成果）/"failed"。
+    meta: tracker 路径携带 {"cursor": ..., "cycle_complete": bool} 供检查点
+    推进与终态（清空 cursor / last_full_sync_at）使用；info/full 路径为 None。
 
     具体 qB/TR 读取与转换全部复用现有同步函数；异常在下载器粒度捕获，
     不阻断其他下载器（汇总为 partial）。
@@ -545,7 +1196,7 @@ async def _sync_one_downloader(req: SyncRequest, result: SyncResult, info: Dict[
     downloader_type = _normalize_downloader_type(info.get("downloader_type"))
     if downloader_type is None:
         result.errors.append(f"下载器 {nickname} 不支持的下载器类型: {info.get('downloader_type')}")
-        return "failed"
+        return "failed", None
 
     from app.database import AsyncSessionLocal  # noqa: PLC0415 - 延迟导入
     from app.api.endpoints.torrents_async import (  # noqa: PLC0415
@@ -572,9 +1223,17 @@ async def _sync_one_downloader(req: SyncRequest, result: SyncResult, info: Dict[
                 # tracker-only 需要缓存客户端（约束16：客户端只从 store 获取）
                 if cached_client is None:
                     result.errors.append(f"无法获取下载器 {nickname} 的缓存客户端连接")
-                    return "failed"
+                    return "failed", None
                 if downloader_type == "qbittorrent":
-                    sub_result = await qb_sync_trackers_only_async(db, downloader, cached_client)
+                    # W3-1 第二部分：Coordinator 预算（deadline/record_budget）透传给
+                    # qB tracker 单轮预算；续跑 cursor 由同步实现从运行期检查点自行读取
+                    sub_result = await qb_sync_trackers_only_async(
+                        db,
+                        downloader,
+                        cached_client,
+                        deadline=req.deadline,
+                        record_budget=req.record_budget,
+                    )
                 else:
                     sub_result = await tr_sync_trackers_only_async(db, downloader, cached_client)
                 if sub_result.get("status") == "success":
@@ -582,11 +1241,22 @@ async def _sync_one_downloader(req: SyncRequest, result: SyncResult, info: Dict[
                     result.scanned += int(sub_result.get("torrent_count", 0) or 0)
                     result.changed += int(sub_result.get("tracker_count", 0) or 0)
                     result.committed += int(sub_result.get("tracker_count", 0) or 0)
-                    return "success"
+                    meta: Optional[Dict[str, Any]] = {
+                        "cursor": sub_result.get("cursor"),
+                        "cycle_complete": bool(sub_result.get("cycle_complete", False)),
+                    }
+                    if sub_result.get("partial"):
+                        # 单轮预算到期/批次失败：有部分成果，结果标记 partial
+                        result.errors.append(
+                            f"下载器 {nickname} tracker 同步部分完成（预算到期或批次边界）: "
+                            f"{sub_result.get('message', 'partial')}"
+                        )
+                        return "partial", meta
+                    return "success", meta
                 result.errors.append(
                     f"下载器 {nickname} tracker 同步失败: {sub_result.get('message', 'unknown error')}"
                 )
-                return "failed"
+                return "failed", None
             else:
                 # full：legacy 全量同步（qb/tr_add_torrents_async，写路径已收编
                 # 至统一 bulk_upsert_with_retry；文件备份段保留原语义）
@@ -595,10 +1265,10 @@ async def _sync_one_downloader(req: SyncRequest, result: SyncResult, info: Dict[
                 else:
                     await tr_add_torrents_async(db, [downloader])
         result.scanned += 1  # info/full 路径暂无记录级统计，按下载器计（W3 补齐）
-        return "success"
+        return "success", None
     except Exception as e:  # noqa: BLE001 - 下载器粒度捕获，汇总为 partial/failed
         result.errors.append(f"同步下载器 {nickname} 失败: {e}")
-        return "failed"
+        return "failed", None
 
 
 async def _run_tracker_status_phase(req: SyncRequest, result: SyncResult, start_ts: float) -> None:
