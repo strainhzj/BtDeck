@@ -1,5 +1,48 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-11 - 按同步阻塞验证报告实施修复
+
+### 已完成
+
+- P0：同步 info/full/legacy 路径只接受 `app.state.store` 缓存客户端；缓存缺失直接失败，
+  不再在业务路径构造 qB/TR 客户端；`sync-single` 改为 AsyncSession + 异步 `select`。
+- P1：qB Tracker 写入只消费 enrich 成功连续前缀，游标停在最后 durable hash；新增远程失败、
+  批大小大于预算回归；qB/TR info 增加稳定 hash cursor、durable progress callback，并在
+  有 cursor 时强制完整快照续跑。
+- P2：WAL 快照接入 SQLite `wal_checkpoint(PASSIVE)`，提供 `busy_count`/`checkpoint_busy`；
+  同步健康查询增加有界超时和 503 reason code。
+- W0：新增 [sync-stopgap-runbook.md](backend/docs/operations/sync-stopgap-runbook.md)，覆盖
+  暂停、活动运行确认、错峰恢复、升级指标和演练记录模板；同步更新 roadmap 与修复计划。
+
+### 验证
+
+- 定向修复套件：83 passed；coordinator/checkpoint/governance/metadata/legacy：70 passed、5 skipped；
+  memory-bound/file contention：18 passed、1 skipped；health：10 passed。
+- 后端全量 `python -m pytest -q`：`3142 passed, 7 skipped`（3149 collected）。
+- 修复后真实文件型 SQLite 大档：22,000 torrents / 30,000 trackers、30 轮、600 探针，
+  0 超时、最终 BUSY=0、SLO 4/4 PASS；结果归档于临时目录
+  `C:\Users\huangzj\AppData\Local\Temp\btdeck-sync-fix-20260811`。
+- `python -m ruff check`（本次修改文件）通过；`git diff --check` 通过。
+- Black 全文件检查在 Windows 环境超时且报告仓库既有格式债，未自动重排；未执行生产 Alembic 迁移、
+  未执行生产暂停/恢复演练。
+
+## 2026-08-10 - W0-W4-2 从头实现验证（发现发布门缺口）
+
+### 验证结论
+
+- 独立复跑后端全量 pytest：`3135 passed, 7 skipped`；Windows 包装命令在 pytest 已输出最终摘要后于 300 秒退出码 124，未见测试失败。
+- 独立执行真实文件型 SQLite 大档基准（22000 torrents/30000 trackers/30 轮）：600 次探针无超时、最终 BUSY=0、SLO 4/4 PASS。
+- W1 短事务、增量 Tracker 状态、W2 准入/交互容量/Worker guard、W4-2 健康接口代码和测试基本有效。
+- 发现 P0：canonical info/full 路径在缓存客户端为空时仍可自建 `qbClient`/`trClient`；`sync-single` async handler 内直接执行同步 `db.query`，可能在 SQLite 锁等待时阻塞事件循环。
+- 发现 P1：qB Tracker 在 `batch_size > 本轮预算` 时游标可越过未拉取 hash；独立 fake 客户端复现“只调用 h000000/h000001，游标却到 h000004”。info-only 部分运行也没有记录级 cursor。
+- 发现 P2：W4-1 `busy_count`/`checkpoint_busy` 仍恒为 `None`；W0 专用生产止血 Runbook/暂停恢复演练证据缺失。
+- 本地 `app.db` 为 Alembic `f9a1b2c3d4e5`，仓库 head 为 `f5e6d7c8b9a0`，`alembic check` 报数据库未更新；未在验证中擅自迁移。
+
+### 产物
+
+- 详细报告：`backend/docs/operations/database-blocking-and-sync-verification-2026-08.md`
+- 本轮无业务代码修改；待修复 P0/P1/P2 缺口后再更新对应 feature evidence 和发布门状态。
+
 ## 2026-08-09 - purge_delay_count 计数列 + 隔离区展示(硬链接延后可观测性)
 
 ### 背景

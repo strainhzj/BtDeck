@@ -11,7 +11,7 @@
 BtDeck/
 ├── backend/          ← FastAPI 后端（Python 3.11+）
 │   ├── app-root/        包根入口（main/factory/database/exception_handlers …）
-│   ├── api/             HTTP 路由层（35 endpoints + schemas + models + responseVO）
+│   ├── api/             HTTP 路由层（37 endpoints + schemas + models + responseVO）
 │   ├── services/        业务服务层 + 下载器/标签适配器（含 ratio/search 运行时、异步删除条目占用与查询排除）
 │   ├── core/            基础设施（config / path_mapping / file_ops …）+ ⚠ 含 4 个孤儿文件（torrent_operations 已重写为 ratio 工具但仍 0 引用）
 │   ├── contracts/ ✨    前后端共享机器可读契约（v1.0.6.27 新增：advanced_search JSON + 加载器）
@@ -38,7 +38,7 @@ BtDeck/
 | 功能域（含检索词） | 前端入口 | 后端入口 |
 |------|---------|---------|
 | 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts` | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（清理/彻底删除活动项持久化占用与查询排除）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
-| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
+| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
 | 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
 | 任务/定时任务 task cron | `views/tasks/index.vue`、`api/tasks.ts` | `api/endpoints/tasks.py` / `cron_tasks.py`；`tasks/`（scheduler） |
@@ -62,7 +62,7 @@ BtDeck/
 |------|-----------|------|
 | **backend** | FastAPI 后端总览与跨分支依赖骨架 | [backend/README.md](./backend/README.md) |
 | ↳ app-root | `backend/app/` 包根 8 文件：应用工厂、DB 引擎、异常处理、配置入口、版本、桌面/WebSocket main | [backend/app-root.md](./backend/app-root.md) |
-| ↳ api | HTTP 路由层（35 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
+| ↳ api | HTTP 路由层（37 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
 | ↳ services | 业务服务层 + downloader_adapters + tag_adapters | [backend/services/README.md](./backend/services/README.md) |
 | ↳ core | 基础设施（config/path_mapping/file_ops/tracker_*），⚠ 含 4 个 0 引用孤儿文件 | [backend/core/README.md](./backend/core/README.md) |
 | ↳ contracts ✨v1.0.6.27 | 前后端共享机器可读契约（advanced_search JSON + Python 加载器，单一真相源） | [backend/contracts/README.md](./backend/contracts/README.md) |
@@ -115,10 +115,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复） |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-09：种子批量删除/重复种子快捷删除使用进程内活动 ID 原子占用，孤儿清理/隔离区彻底删除使用持久化任务条目占用；列表、重复查询与高级搜索排除 pending/running 项，失败或部分完成后释放 |
+| 本次新增 | 2026-08-11：同步 info/full/tracker endpoint 统一复用 `app.state.store` 客户端；SyncCoordinator 接入 info durable cursor；WAL PASSIVE busy/checkpoint 观测与同步健康查询超时；新增 W0 止血 Runbook。 |

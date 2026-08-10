@@ -6,19 +6,18 @@ from typing import Dict, Any, Optional
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
-from sqlalchemy import update, exists
+from sqlalchemy import update, exists, select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.responseVO import CommonResponse
-from app.database import get_db, AsyncSessionLocal
+from app.database import get_async_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
 from app.torrents.models import TrackerInfo as trackerInfoModel
-from qbittorrentapi import Client as qbClient
-from transmission_rpc import Client as trClient
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.tracker_mapper import extract_tracker_host
 from app.core.background_task_manager import task_manager, TaskStatus
@@ -199,6 +198,8 @@ async def _legacy_full_sync_impl(downloader_info: Dict[str, Any]) -> Dict[str, A
     """
     from app.database import AsyncSessionLocal
     from app.api.endpoints.torrents_async import qb_add_torrents_async, tr_add_torrents_async
+    from app.main import app as downloader_app
+    from app.services.sync_coordinator import _get_cached_client
 
     async with AsyncSessionLocal() as db:
         try:
@@ -230,10 +231,19 @@ async def _legacy_full_sync_impl(downloader_info: Dict[str, Any]) -> Dict[str, A
                     "nickname": downloader.nickname,
                 }
 
+            cached_client = await _get_cached_client(downloader_app, str(downloader.downloader_id))
+            if cached_client is None:
+                return {
+                    "status": "failed",
+                    "message": f"下载器 {downloader.nickname} 缺少 store 缓存客户端连接",
+                    "downloader_type": downloader_type_str,
+                    "nickname": downloader.nickname,
+                }
+
             # 使用转换后的类型进行判断
             if downloader_type_str == "qbittorrent":
                 try:
-                    await qb_add_torrents_async(db, [downloader])
+                    await qb_add_torrents_async(db, [downloader], client=cached_client)
                     logger.info(f"Successfully synced qBittorrent downloader: {downloader.nickname}")
                     return {
                         "status": "success",
@@ -253,7 +263,7 @@ async def _legacy_full_sync_impl(downloader_info: Dict[str, Any]) -> Dict[str, A
 
             elif downloader_type_str == "transmission":
                 try:
-                    await tr_add_torrents_async(db, [downloader])
+                    await tr_add_torrents_async(db, [downloader], client=cached_client)
                     logger.info(f"Successfully synced Transmission downloader: {downloader.nickname}")
                     return {
                         "status": "success",
@@ -490,22 +500,15 @@ def tr_add_torrents(db, downloaders, app=None):
                 tr_client = None  # 触发重新创建逻辑
 
     if tr_client is None:
-        try:
-            tr_client = trClient(
-                host=bt_downloader.host,
-                username=bt_downloader.username,
-                password=bt_downloader.password,
-                port=bt_downloader.port,
-                protocol="http",
-                timeout=100.0,
-            )
-        except Exception as e:
-            logger.error(f"连接Transmission失败: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"连接Transmission失败: {str(e)}",
-                "downloader_id": bt_downloader.downloader_id,
-            }
+        logger.error(
+            "下载器 %s 缺少有效缓存 Transmission 客户端，拒绝在业务接口中自建连接",
+            bt_downloader.downloader_id,
+        )
+        return {
+            "status": "error",
+            "message": "下载器缓存客户端不可用",
+            "downloader_id": bt_downloader.downloader_id,
+        }
     try:
         torrent_info_list = tr_client.get_torrents()
     except Exception as e:
@@ -752,23 +755,15 @@ def qb_add_torrents(db, downloaders, app=None):
                 client = None  # 触发重新创建逻辑
 
     if client is None:
-        # P0-1 修复: 添加30秒超时，避免无限阻塞
-        try:
-            client = qbClient(
-                host=bt_downloader.host,
-                port=bt_downloader.port,
-                username=bt_downloader.username,
-                password=bt_downloader.password,
-                VERIFY_WEBUI_CERTIFICATE=False,
-                REQUESTS_ARGS={"timeout": 30},  # 30秒超时
-            )
-        except Exception as e:
-            logger.error(f"连接qBittorrent失败: {str(e)}")
-            return {
-                "status": "error",
-                "message": f"连接qBittorrent失败: {str(e)}",
-                "downloader_id": bt_downloader.downloader_id,
-            }
+        logger.error(
+            "下载器 %s 缺少有效缓存 qBittorrent 客户端，拒绝在业务接口中自建连接",
+            bt_downloader.downloader_id,
+        )
+        return {
+            "status": "error",
+            "message": "下载器缓存客户端不可用",
+            "downloader_id": bt_downloader.downloader_id,
+        }
     try:
         torrent_info_list = client.torrents_info()
     except Exception as e:
@@ -1239,7 +1234,7 @@ async def sync_single_downloader(
     request: Request,
     sync_request: SyncSingleRequest,
     _user=Depends(require_authenticated_user),
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_async_db),
 ):
     """
     单个下载器种子同步接口（异步后台执行）
@@ -1258,10 +1253,14 @@ async def sync_single_downloader(
     try:
         downloader_id = sync_request.downloader_id
 
-        # 从数据库查询下载器信息
-        downloader = (
-            db.query(BtDownloaders).filter(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0).first()
+        # 使用 AsyncSession 查询，避免在 async handler 内执行同步 SQLAlchemy 查询。
+        result = await db.execute(
+            select(BtDownloaders).where(
+                BtDownloaders.downloader_id == downloader_id,
+                BtDownloaders.dr == 0,
+            )
         )
+        downloader = result.scalar_one_or_none()
 
         if not downloader:
             return CommonResponse(status="error", msg=f"下载器不存在: {downloader_id}", code="404", data=None)

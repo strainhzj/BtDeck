@@ -425,6 +425,52 @@ class TestCountBudget:
         assert "partial=True" in text
         assert "budget_reason=count" in text
 
+    async def test_info_cursor_advances_only_after_durable_write_and_resumes(self, monkeypatch):
+        """部分 info 轮次持久化最后一个已写入 hash，下一轮从该 hash 后继续。"""
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 2)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        seeds = [_qb_seed(f"h{i:06d}", f"name-{i}") for i in range(5)]
+        client = _make_qb_client(seeds)
+        db = _empty_db()
+        callbacks: list[str] = []
+
+        async def capture_cursor(value: str):
+            callbacks.append(value)
+
+        with (
+            patch.object(torrents_async, "QB_USE_INCREMENTAL_SYNC", False),
+            patch.dict(torrents_async._QB_LAST_FULL_SYNC, {}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+        ):
+            first = await torrents_async.qb_add_torrents_info_only_async(
+                db,
+                [_qb_downloader()],
+                client=client,
+                progress_callback=capture_cursor,
+            )
+
+            assert first is not None
+            assert first["partial"] is True
+            assert first["cursor"] == '{"last_hash": "h000001"}'
+            assert callbacks[-1] == first["cursor"]
+            assert len(bulk_mock.await_args.args[1]) == 2
+
+            bulk_mock.reset_mock()
+            monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 10)
+            second = await torrents_async.qb_add_torrents_info_only_async(
+                db,
+                [_qb_downloader()],
+                client=client,
+                cursor=first["cursor"],
+                progress_callback=capture_cursor,
+            )
+
+        assert second is not None
+        assert second["cycle_complete"] is True
+        assert second["cursor"] is None
+        assert len(bulk_mock.await_args.args[1]) == 3
+        assert callbacks[-1] == '{"last_hash": "h000004"}'
+
 
 # ==================== 4. 缓冲上限（多次 flush） ====================
 

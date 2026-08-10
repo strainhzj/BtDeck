@@ -22,7 +22,6 @@ SyncCoordinator 单元测试（W2-1，PLANS/sync-database-blocking-remediation.m
 """
 
 import asyncio
-import logging
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -377,11 +376,12 @@ class TestDownloaderOffline:
         assert result.outcome == "failed"
         assert any("dl_missing" in err and "store" in err for err in result.errors)
 
-    async def test_empty_client_for_tracker_returns_failed(self):
-        """tracker 同步时客户端为空（store VO 无 client）→ failed + errors。"""
+    @pytest.mark.parametrize("sync_type", ["info", "tracker", "full"])
+    async def test_empty_client_for_all_sync_types_returns_failed(self, sync_type):
+        """任何同步类型都不能在 store 客户端为空时 fallback 自建连接。"""
         app = make_fake_app([make_vo(client=None)])
         result = await run_sync(
-            SyncRequest(sync_type="tracker", downloader_ids=["dl_001"], trigger="manual"),
+            SyncRequest(sync_type=sync_type, downloader_ids=["dl_001"], trigger="manual"),
             app=app,
         )
 
@@ -459,7 +459,9 @@ class TestLegacyAdapterCompatibility:
         downloader.torrent_save_path = "/downloads"
         downloader.enabled = True
         downloader.status = "1"
-        db.query.return_value.filter.return_value.first.return_value = downloader
+        execute_result = MagicMock()
+        execute_result.scalar_one_or_none.return_value = downloader
+        db.execute = AsyncMock(return_value=execute_result)
 
         from app.core.background_task_manager import task_manager, TaskStatus  # noqa: F401
 
@@ -576,12 +578,17 @@ class TestLegacyAdapterSwitch:
             patch(
                 "app.api.endpoints.torrents_async.qb_add_torrents_async", new=AsyncMock()
             ) as mock_full,
+            patch(
+                "app.services.sync_coordinator._get_cached_client",
+                new=AsyncMock(return_value=MagicMock()),
+            ) as mock_cached_client,
             patch("app.services.sync_coordinator.run_sync", new=AsyncMock()) as mock_run_sync,
         ):
             result = await torrent_sync_db_async(make_downloader_info())
 
         # 旧路径：全量函数被调，run_sync 不被调
         assert mock_full.await_count == 1
+        mock_cached_client.assert_awaited_once()
         assert mock_run_sync.await_count == 0
         assert result["status"] == "success"
 

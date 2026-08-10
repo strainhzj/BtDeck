@@ -1,11 +1,12 @@
 # 同步任务数据库阻塞与接口超时修复计划
 
-> 状态：待实施  
+> 状态：报告缺口修复已落地；生产迁移、暂停/恢复演练与发布基线归档待执行
 > 创建日期：2026-08-08  
+> 最近实施：2026-08-11（按独立验证报告修复 P0/P1/P2 缺口）
 > 问题基线：[数据库阻塞与同步问题评估](../backend/docs/operations/database-blocking-and-sync-issues-2026-08.md)  
 > 当前主数据库：SQLite  
 > 预计总工作量：12～19 个工程日，按发布门分批交付  
-> 计划边界：本文只定义实施方案；本次不修改业务代码、数据库 Schema 或运行配置
+> 计划边界：本文定义实施方案与发布门；本次修复未修改 Schema，新增的运行时保护仅为代码配置默认值，生产数据库仍须按 Alembic 流程迁移。
 
 ---
 
@@ -1355,3 +1356,25 @@ git diff --check
 5. 通过 G1 后立即发布观察，不等待 Coordinator 和 checkpoint。
 
 第二批实施 W2，直接处理用户感知的接口卡顿；第三批再引入 W3 的迁移和续跑能力。这样的拆分能把 P0 修复与较大的状态模型变更隔离，便于验证和回滚。
+
+---
+
+## 18. 2026-08-11 报告缺口修复记录
+
+本节记录依据 `database-blocking-and-sync-verification-2026-08.md` 落地的修复，
+不替代上面的发布门。生产发布前仍需在受控实例完成迁移、暂停/恢复演练和 30 轮基线归档。
+
+- **P0 连接生命周期**：`torrents_async.py` 的 qB/TR info/full 方法改为强制接收缓存
+  client；`torrent_sync.py` legacy adapter 和同步端点不再构造 `qbClient`/`trClient`，
+  缺缓存直接 failed/raise；`sync-single` 查询改为 `AsyncSession` + `select`。
+- **P1 Tracker 游标**：qB enrich 写入成功/失败标记；写入阶段只消费连续成功前缀，
+  批提交/空 tracker 结果也只推进到实际处理 hash，抽取失败停止当前前缀，避免跨过未落盘记录。
+- **P1 info 续跑**：qB/TR info 按稳定 hash 排序，支持 `{last_hash}` cursor、数量/时间预算、
+  durable 写入后的 progress callback；存在 cursor 时强制完整快照，避免增量列表跳过 cursor 前的变更。
+- **P2/W4-1 观测**：`snapshot_wal_stats()` 使用 `PRAGMA wal_checkpoint(PASSIVE)` 只读探测
+  `busy_count`/`checkpoint_busy`；同步健康端点新增有界超时 `HEALTH_SYNC_DB_TIMEOUT_SECONDS`。
+- **W0 运维闭环**：新增 [`backend/docs/operations/sync-stopgap-runbook.md`](../backend/docs/operations/sync-stopgap-runbook.md)，
+  覆盖暂停、活动运行确认、错峰恢复、升级阈值和记录模板。
+
+本次代码回归门：同步/观测/架构/健康定向套件通过；真实文件型 SQLite 争用回归通过；
+生产 `app.db` 未迁移、未执行生产任务暂停/恢复，故 G0/G4 的部署项保持待执行。

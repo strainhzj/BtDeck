@@ -861,14 +861,13 @@ async def test_qb_full_sync_incremental_branch_hydrates_changed_rows():
             {"dl-1": datetime.now().timestamp()},
             clear=True,
         ),
-        patch.object(torrents_async, "qbClient", return_value=client),
         patch.object(torrents_async, "call_downloader_api", new=api_mock),
         patch.object(torrents_async, "_hydrate_qb_incremental_torrents", new=hydrate_mock),
         patch.object(torrents_async, "_enrich_qb_torrents_with_trackers", new=AsyncMock()),
         patch.object(torrents_async, "_retry_on_db_lock", new=AsyncMock()),
         patch.object(torrents_async, "_save_qb_rid_cache"),
     ):
-        await torrents_async.qb_add_torrents_async(db, [downloader])
+        await torrents_async.qb_add_torrents_async(db, [downloader], client=client)
 
     hydrate_mock.assert_awaited_once()
     assert hydrate_mock.await_args.args[2:] == (
@@ -897,7 +896,6 @@ async def test_qb_full_sync_main_commit_failure_does_not_advance_rid():
             {"dl-1": datetime.now().timestamp()},
             clear=True,
         ),
-        patch.object(torrents_async, "qbClient", return_value=client),
         patch.object(
             torrents_async,
             "call_downloader_api",
@@ -907,7 +905,7 @@ async def test_qb_full_sync_main_commit_failure_does_not_advance_rid():
         patch.object(torrents_async, "_save_qb_rid_cache", new=save_mock),
     ):
         with pytest.raises(RuntimeError, match="main commit failed"):
-            await torrents_async.qb_add_torrents_async(db, [downloader])
+            await torrents_async.qb_add_torrents_async(db, [downloader], client=client)
 
     assert rid_cache["dl-1"] == 1
     save_mock.assert_not_called()
@@ -939,14 +937,13 @@ async def test_qb_full_sync_retry_branch_hydrates_changed_rows(monkeypatch):
             {"dl-1": datetime.now().timestamp()},
             clear=True,
         ),
-        patch.object(torrents_async, "qbClient", return_value=client),
         patch.object(torrents_async, "call_downloader_api", new=api_mock),
         patch.object(torrents_async, "_hydrate_qb_incremental_torrents", new=hydrate_mock),
         patch.object(torrents_async, "_enrich_qb_torrents_with_trackers", new=AsyncMock()),
         patch.object(torrents_async, "_retry_on_db_lock", new=AsyncMock()),
         patch.object(torrents_async, "_save_qb_rid_cache", new=save_mock),
     ):
-        await torrents_async.qb_add_torrents_async(db, [downloader])
+        await torrents_async.qb_add_torrents_async(db, [downloader], client=client)
 
     hydrate_mock.assert_awaited_once()
     assert hydrate_mock.await_args.args[2:] == (
@@ -995,14 +992,13 @@ async def test_qb_full_sync_retry_detail_failure_falls_back_without_advancing_ri
             {"dl-1": datetime.now().timestamp()},
             clear=True,
         ),
-        patch.object(torrents_async, "qbClient", return_value=client),
         patch.object(torrents_async, "call_downloader_api", new=api_mock),
         patch.object(torrents_async, "_hydrate_qb_incremental_torrents", new=hydrate_mock),
         patch.object(torrents_async, "_enrich_qb_torrents_with_trackers", new=AsyncMock()),
         patch.object(torrents_async, "_retry_on_db_lock", new=AsyncMock()),
         patch.object(torrents_async, "_save_qb_rid_cache", new=save_mock),
     ):
-        await torrents_async.qb_add_torrents_async(db, [downloader])
+            await torrents_async.qb_add_torrents_async(db, [downloader], client=client)
 
     operations = [call.kwargs["operation"] for call in api_mock.await_args_list]
     assert operations == [

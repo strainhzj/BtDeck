@@ -329,6 +329,42 @@ def test_no_top_level_app_factory_import_in_endpoints():
     )
 
 
+def test_sync_endpoints_reuse_cached_downloader_clients():
+    """同步 endpoint 不得重新构造 qBittorrent/Transmission 客户端。
+
+    客户端连接只能由 ``app.state.store`` 生命周期管理；info/full/legacy
+    路径若重新 ``Client(...)``，会绕过 per-downloader lane 并在大批量任务
+    中重新引入连接争用。此静态锚点覆盖两个同步 endpoint 文件，防止回归。
+    """
+    violations = []
+    sync_paths = (
+        _ENDPOINTS_DIR / "torrents_async.py",
+        _ENDPOINTS_DIR / "torrent_sync.py",
+    )
+    for path in sync_paths:
+        assert path.exists(), f"同步 endpoint 不存在：{path}"
+        rel_path = path.relative_to(BACKEND_ROOT).as_posix()
+        tree = _parse(path)
+        imported_aliases = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom) and node.module in {"qbittorrentapi", "transmission_rpc"}:
+                for alias in node.names:
+                    if alias.name == "Client":
+                        imported_aliases.add(alias.asname or alias.name)
+                        violations.append(f"{rel_path}:{node.lineno} import {node.module}.Client")
+            elif isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Name) and func.id in {"Client", "qbClient", "trClient"}:
+                    violations.append(f"{rel_path}:{node.lineno} {func.id}(...) 客户端构造")
+                elif isinstance(func, ast.Attribute) and func.attr == "Client":
+                    violations.append(f"{rel_path}:{node.lineno} *.Client(...) 客户端构造")
+        # Keep the alias variable referenced so this test also documents the
+        # import aliases that historically appeared in these modules.
+        assert imported_aliases is not None
+
+    assert not violations, "同步 endpoint 必须复用缓存客户端，禁止直接构造连接:\n" + "\n".join(violations)
+
+
 # ==============================================================================
 # sync-database-blocking-remediation W1-3：同步模块 DML 只能通过批准写入口
 # ==============================================================================

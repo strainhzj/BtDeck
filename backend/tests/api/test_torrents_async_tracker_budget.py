@@ -426,6 +426,47 @@ class TestQbTrackerBatchFailureCursor:
         assert retried["cycle_complete"] is True
 
 
+class TestQbTrackerRemoteFailureCursor:
+    """远程 enrich 失败时游标只能停在失败 hash 之前的 durable 前缀。"""
+
+    async def test_remote_failure_does_not_skip_following_hashes(self, monkeypatch, checkpoint_env):
+        monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 1)
+        monkeypatch.setattr(settings, "SYNC_DB_COMMIT_BATCH_SIZE", 1000)
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 10**6)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 600.0)
+
+        torrents = _make_torrent_infos(5)
+        client = MagicMock()
+        client.torrents_info = MagicMock(return_value=torrents)
+
+        def fetch_trackers(torrent_hash):
+            if torrent_hash == "h000002":
+                raise RuntimeError("模拟远端 tracker 请求失败")
+            return []
+
+        client.torrents_trackers = MagicMock(side_effect=fetch_trackers)
+        downloader = BtDownloaders(downloader_id="dl_1", nickname="qb-test")
+        db = MagicMock()
+        hash_map = {t.hash: i + 1 for i, t in enumerate(torrents)}
+
+        with (
+            patch.object(torrents_async, "_query_hash_to_info_id", new=AsyncMock(return_value=hash_map)),
+            patch.object(
+                torrents_async,
+                "sync_trackers_batch_async",
+                new=AsyncMock(return_value={"insert": 0, "update": 0, "skip": 0, "removed": 0}),
+            ),
+        ):
+            await _seed_active_checkpoint(checkpoint_env.store, downloader_id="dl_1")
+            result = await torrents_async.qb_sync_trackers_only_async(db, downloader, client)
+
+        assert result["partial"] is True
+        assert result["cycle_complete"] is False
+        assert json.loads(result["cursor"])["last_hash"] == "h000001"
+        persisted = await checkpoint_env.store.get_or_create("dl_1", "tracker")
+        assert json.loads(persisted["cursor"])["last_hash"] == "h000001"
+
+
 class TestQbTrackerCycleComplete:
     """周期完整：last_full_sync_at 更新 + cursor 清空（下一轮从头），经 Coordinator 终态。"""
 
