@@ -157,6 +157,49 @@ class SyncResult:
 _running_keys: Dict[str, str] = {}
 _running_keys_lock = asyncio.Lock()
 
+# 活动运行只读快照（W4-2 健康接口）。
+# 与 _running_keys 分开：前者只负责幂等去重，后者提供 run_id/phase 等运维视图。
+# 该注册表是进程内短生命周期状态，不作为业务事实落库，也不在健康检查中写入。
+_active_runs: Dict[str, Dict[str, Any]] = {}
+
+
+def _register_active_run(run_id: str, req: SyncRequest) -> None:
+    """登记同步运行，供受保护同步健康接口读取。"""
+    _active_runs[run_id] = {
+        "run_id": run_id,
+        "sync_type": req.sync_type,
+        "phase": "admission",
+        "started_at": datetime.now(),
+        "downloader_count": len(req.downloader_ids) if req.downloader_ids is not None else None,
+    }
+
+
+def _update_active_run(
+    run_id: str,
+    *,
+    phase: Optional[str] = None,
+    downloader_count: Optional[int] = None,
+) -> None:
+    """更新活动同步运行快照；运行已结束时允许调用并安全忽略。"""
+    active = _active_runs.get(run_id)
+    if active is None:
+        return
+    if phase is not None:
+        active["phase"] = phase
+    if downloader_count is not None:
+        active["downloader_count"] = downloader_count
+
+
+def _unregister_active_run(run_id: str) -> None:
+    """移除活动运行快照。"""
+    _active_runs.pop(run_id, None)
+
+
+def get_active_sync_runs() -> List[Dict[str, Any]]:
+    """返回活动同步运行的脱敏快照，供健康接口只读。"""
+    return [dict(value) for value in _active_runs.values()]
+
+
 # sync_type -> 资源准入 task_code（与 cron_executor / task_profiles 对齐，
 # 保证手动与定时同类型同步走同一准入通道，彻底消除旁路）。
 _SYNC_TYPE_TASK_CODES: Dict[str, str] = {
@@ -630,16 +673,19 @@ async def run_sync(req: SyncRequest, app: Any = None) -> SyncResult:
     """
     start_ts = time.perf_counter()
     run_id = req.run_id or f"sync-{uuid.uuid4().hex[:12]}"
+    _register_active_run(run_id, req)
     set_run_id(run_id)
     try:
         return await _run_sync_core(req, app, run_id, start_ts)
     finally:
+        _unregister_active_run(run_id)
         clear_run_id()
 
 
 async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: float) -> SyncResult:
     """run_sync 主体编排（run_id 上下文已就绪，见 run_sync）。"""
     result = SyncResult(run_id=run_id, phase="admission")
+    _update_active_run(run_id, phase="admission")
     task_code = _sync_task_code(req.sync_type)
     # 解析 app 实例（测试注入；生产走 app.main，延迟导入防循环）
     runtime_app = _app_of(app)
@@ -683,6 +729,7 @@ async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: floa
     try:
         # ② 备份 phase（独立于同步写入，完成后关闭文件句柄）
         result.phase = "backup"
+        _update_active_run(run_id, phase="backup")
         if _check_cancelled(req, result, start_ts):
             return _finish(result, req, decision, start_ts)
         if _BACKUP_HOOK is not None:
@@ -701,12 +748,14 @@ async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: floa
             # 指定了下载器但全部不可解析 → failed；未指定且无有效下载器 → no_action
             result.outcome = "failed" if req.downloader_ids else "no_action"
             result.phase = "sync"
+            _update_active_run(run_id, phase="sync", downloader_count=0)
             result.message = "; ".join(resolve_errors) or "没有有效的下载器可同步"
             return _finish(result, req, decision, start_ts)
         result.details["downloader_count"] = len(infos)
 
         # ③ sync phase（按 sync_type 复用现有实现）
         result.phase = "sync"
+        _update_active_run(run_id, phase="sync", downloader_count=len(infos))
         if _check_cancelled(req, result, start_ts):
             return _finish(result, req, decision, start_ts)
 
@@ -758,11 +807,14 @@ async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: floa
             # ④ tracker_status phase（仅 tracker 类型；full/info 不内置，
             # 保持 torrent_sync_async / sync_single 现有调用语义，避免重复调用）
             if req.sync_type == "tracker":
+                result.phase = "tracker_status"
+                _update_active_run(run_id, phase="tracker_status")
                 await _run_tracker_status_phase(req, result, start_ts)
         finally:
             await _unregister_running_keys(acquired_keys)
 
         result.phase = "done"
+        _update_active_run(run_id, phase="done")
         return _finish(result, req, decision, start_ts)
     finally:
         if not decision.reentrant:
@@ -777,6 +829,8 @@ def _finish(
 ) -> SyncResult:
     """结算结果：填充 duration_ms 并输出结构化日志。"""
     result.duration_ms = (time.perf_counter() - start_ts) * 1000.0
+    if result.run_id:
+        _update_active_run(result.run_id, phase=result.phase)
     _log_result(result, req, decision)
     return result
 

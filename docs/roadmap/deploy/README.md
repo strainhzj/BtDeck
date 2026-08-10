@@ -41,7 +41,7 @@
 
 | 服务 | 镜像 | 端口 | 挂载 | 依赖 |
 |------|------|------|------|------|
-| `backend` | `btdeck-backend:latest`（构建上下文 `./backend`） | 仅 `EXPOSE 5001`（容器内） | `./data/backend/{data,logs,config,backup}` → `/app/{data,logs,config,backup}` | healthcheck `curl -f http://localhost:5001/docs` |
+| `backend` | `btdeck-backend:latest`（构建上下文 `./backend`） | 仅 `EXPOSE 5001`（容器内） | `./data/backend/{data,logs,config,backup}` → `/app/{data,logs,config,backup}` | healthcheck `curl -f http://localhost:5001/health/ready`（严格 readiness） |
 | `frontend` | `btdeck-frontend:latest`（Dockerfile `Dockerfile.prod`） | `${BTDECK_PORT:-8080}:80` | `frontend_cache` / `frontend_logs` 命名卷 | `depends_on: backend (condition: service_healthy)` |
 
 - 网络：`btdeck_network`（bridge）
