@@ -26,6 +26,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.services.sync_observability import BATCH_COMMIT_WARN_MS, EVENT_BATCH_COMMIT, log_event
 from app.tasks.resource_guard import admission_controller
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,32 @@ async def _commit_batch_with_retry(
                 total_backoff * 1000.0,
                 attempt,
             )
+            # W4-1 第二部分：每批 commit 后发射结构化事件（run_id 由上下文自动
+            # 附加；与既有 batch_done 日志并存）
+            log_event(
+                EVENT_BATCH_COMMIT,
+                batch_index=batch_index,
+                batch_rows=rows,
+                changed_rows=rows,
+                commit_ms=round(commit_ms, 1),
+                lock_wait_ms=round(total_backoff * 1000.0, 1),
+                retry_count=attempt,
+            )
+            if commit_ms > BATCH_COMMIT_WARN_MS:
+                # W4-1 第二部分告警阈值：单批 commit 超过 500ms → WARNING
+                # （W0 告警候选「单批 commit 超过 500 ms」）
+                log_event(
+                    EVENT_BATCH_COMMIT,
+                    level=logging.WARNING,
+                    outcome="slow_commit",
+                    batch_index=batch_index,
+                    batch_rows=rows,
+                    changed_rows=rows,
+                    commit_ms=round(commit_ms, 1),
+                    lock_wait_ms=round(total_backoff * 1000.0, 1),
+                    retry_count=attempt,
+                    threshold_ms=BATCH_COMMIT_WARN_MS,
+                )
             return rows
         except Exception as e:
             if not _is_sqlite_lock_conflict(e):

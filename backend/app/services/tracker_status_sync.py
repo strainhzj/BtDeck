@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.services.sync_db_write import _normalize_str, bulk_upsert_with_retry
+from app.services.sync_observability import EVENT_TRACKER_STATUS, log_event
 from app.torrents.models import TrackerInfo, TrackerKeywordConfig
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,7 @@ async def sync_tracker_status_from_keywords(
             "change_ratio=0.0 classification_ms=%.1f write_ms=0.0 commit_batches=0 reason=no_keywords",
             stats.duration_ms,
         )
+        _emit_tracker_status_done(stats)
         return stats
 
     # Step 2: 查询所有tracker信息（只查询需要的字段；追加 status/msg 用于变化检测）
@@ -144,6 +146,7 @@ async def sync_tracker_status_from_keywords(
             "change_ratio=0.0 classification_ms=%.1f write_ms=0.0 commit_batches=0 reason=no_trackers",
             stats.duration_ms,
         )
+        _emit_tracker_status_done(stats)
         return stats
 
     logger.debug(f"发现tracker记录: {len(trackers)}条")
@@ -274,6 +277,7 @@ async def sync_tracker_status_from_keywords(
             scanned,
             classification_ms,
         )
+        _emit_tracker_status_done(stats)
         return stats
 
     # Step 6: 变化集走统一分批写入（W1-1：每批独立真实 commit，锁冲突只重试当前批）
@@ -309,4 +313,25 @@ async def sync_tracker_status_from_keywords(
         stats.batches,
         stats.unchanged,
     )
+    _emit_tracker_status_done(stats)
     return stats
+
+
+def _emit_tracker_status_done(stats: TrackerStatusStats) -> None:
+    """发射 tracker 状态同步完成事件（W4-1 第二部分）。
+
+    事件选择说明：使用独立事件 EVENT_TRACKER_STATUS 而非 EVENT_CHECKPOINT——
+    EVENT_CHECKPOINT 语义是检查点游标推进（position/state/cursor），而本服务是
+    数据写回统计（scanned/changed/unchanged/batches），字段集不同，混入会污染
+    游标语义还原。事件名/白名单见 sync_observability.EVENT_FIELDS。
+    """
+    log_event(
+        EVENT_TRACKER_STATUS,
+        outcome="no_change" if stats.changed == 0 else "done",
+        skip_reason=stats.reason,
+        scanned=stats.scanned,
+        changed=stats.changed,
+        unchanged=stats.unchanged,
+        batches=stats.batches,
+        duration_ms=round(stats.duration_ms, 1),
+    )
