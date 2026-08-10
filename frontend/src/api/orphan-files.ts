@@ -471,7 +471,7 @@ export interface HardlinkNote {
   canonical_path: string
   deleted_path: string | null
   remaining_count: number
-  copies: Array<{ path: string; is_seed: boolean }>
+  copies: Array<{ path: string, is_seed: boolean }>
 }
 
 export interface RestoreResult {
