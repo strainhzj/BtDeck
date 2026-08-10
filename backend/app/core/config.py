@@ -237,6 +237,12 @@ class Settings(BaseSettings):
     # <=0 时不启动周期快照任务（观测关闭不影响同步治理）
     SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS: float = 60.0
 
+    # 健康检查配置（W4-2）：readiness 只执行有界只读探针，不执行写探针。
+    # SELECT 1 超时即返回 db_query_timeout，避免 SQLite busy_timeout 把健康检查
+    # 拖成长期排队；lag 阈值允许运维在基线校准后临时放宽，但不跳过数据库检查。
+    HEALTH_READINESS_DB_TIMEOUT_SECONDS: float = 1.0
+    HEALTH_READINESS_LAG_P99_THRESHOLD_MS: float = 100.0
+
     model_config = {"case_sensitive": True, "env_file_encoding": "utf-8", "env_file": ".env"}
 
     def __init__(self, **kwargs):

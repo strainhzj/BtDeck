@@ -3329,6 +3329,24 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - black/flake8 通过；mypy 149 个错误全部为预存 Column 误报，本次未新增。
 - 未执行 Git stage/commit/push/deploy。
 
+## 2026-08-10 - W4-2 实施：liveness/readiness/同步业务健康接口（PLANS/sync-database-blocking-remediation.md）
+
+### 实现
+
+- 新增 `backend/app/api/endpoints/health.py`：`GET /health/live` 仅证明进程响应，不访问数据库或下载器；`GET /health/ready` 执行严格超时的只读 `SELECT 1`，复用 `startup_guard` 的 SQLite 单 Worker 校验和 W4-1 `EventLoopLagSampler`，失败返回 503 统一响应体及非敏感 `reasonCodes`。readiness 不执行写探针，下载器离线只进入业务健康告警。
+- 增加受认证的 `GET /api/v1/health/sync`：按任务返回最近 outcome、freshness、active run/phase、checkpoint age；下载器状态只读取缓存。Coordinator 增加进程内只读活动运行快照，贯穿 admission/backup/sync/tracker_status/done 阶段，不写入业务事实。
+- 根路径与 `/api/v1/health/*` 路由均已接线；`backend/Dockerfile` 和 `docker-compose.yml` 的健康检查从 `/docs` 切换为 `/health/ready`，Compose 保留 5 分钟 `start_period` 覆盖启动对账。
+- 修正 Windows SQLite Worker 启动测试的 Git Bash 选择顺序，并将 Bash 启动脚本输出显式按 UTF-8 解码，消除 CP936 环境下的测试读取假失败。
+
+### 验证
+
+- `python -m pytest tests/api/test_health.py -q`：9 passed。
+- `python -m pytest tests/core/test_sqlite_worker_guard.py -q`：53 passed。
+- 同步 Coordinator/观测回归：59 passed；cron/auth 回归：76 passed。
+- 后端全量 `python -m pytest -q`：**3135 passed, 7 skipped, 0 failed**（3142 collected）。
+- health.py 的 mypy、修改文件 black/flake8、`git diff --check` 通过；`./init.sh --ci` 通过。
+- 本阶段无 Schema 变更，不新增 Alembic 迁移；已按源码漂移同步 `docs/roadmap/deploy/README.md` 的健康检查路径；未执行 Git stage/commit/push/deploy。路线图全量收口留给 W5 文档阶段。
+
 ## 2026-08-08(续) - W1 分批：同步数据库写事务短事务化（PLANS/sync-database-blocking-remediation.md）
 
 ### 背景

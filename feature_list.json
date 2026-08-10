@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-09",
+  "last_updated": "2026-08-10",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "features": [
     {
@@ -2653,6 +2653,71 @@
             "backend/tests/services/test_sync_coordinator.py"
           ],
           "evidence": "test_sync_observability 26 passed（log_event 字段/脱敏/lag 采样器/WAL 快照/修复）；阶段顺序还原测试 2 passed（spy 断言）；全量回归 3126 passed, 0 failed"
+        }
+      ]
+    },
+    {
+      "id": "sync-database-blocking-remediation-w4-2",
+      "name": "同步数据库阻塞修复 W4-2：liveness/readiness/同步健康接口（G4 门）",
+      "description": "修复计划 W4-2（G4 门）：增加不访问外部下载器的进程存活探针、严格超时 SELECT 1 + SQLite 单 Worker + event-loop lag 就绪探针，Docker/Compose 健康检查迁移到 /health/ready；增加受认证同步业务健康视图，复用 outcome/freshness、活动 run/phase、checkpoint age 与缓存下载器离线告警。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/sync-database-blocking-remediation.md",
+      "tasks": [
+        {
+          "id": "sync-database-blocking-remediation-w4-2.1",
+          "name": "W4-2a liveness/readiness 探针",
+          "description": "新增 GET /health/live 与 GET /health/ready（同时提供 /api/v1/health/* 别名）；readiness 仅执行有界 SELECT 1，复用 startup_guard 的 Worker 校验与 EventLoopLagSampler，失败返回 503 + 统一响应体 + 非敏感 reasonCodes；下载器离线不影响 readiness，禁止健康检查写探针。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/health.py",
+            "backend/app/api/api.py",
+            "backend/app/startup/routers_initializer.py",
+            "backend/app/core/config.py",
+            "backend/tests/api/test_health.py"
+          ],
+          "evidence": "health 专项 9 passed：liveness 不触 DB、正常/DB 不可读/查询超时/lag 超阈值/Worker 不合规、下载器离线隔离、统一 503 响应体全部覆盖；mypy health.py 通过。"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w4-2.2",
+          "name": "W4-2b 受保护同步业务健康视图",
+          "description": "新增 GET /api/v1/health/sync；按任务类型返回最近 outcome、freshness、active run/phase、checkpoint age，并读取缓存下载器状态生成业务告警；Coordinator 维护进程内只读活动运行快照，不把健康检查写入业务事实。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/health.py",
+            "backend/app/services/sync_coordinator.py",
+            "backend/tests/api/test_health.py"
+          ],
+          "evidence": "认证/未认证访问、六态 outcome/freshness、active run/phase、checkpoint age、下载器离线告警与活动快照生命周期均有真实测试；同步协调器与观测回归 59 passed，cron/auth 回归 76 passed。"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w4-2.3",
+          "name": "W4-2c 容器探针与启动测试环境加固",
+          "description": "Dockerfile 与 Compose healthcheck 从 /docs 迁移到 /health/ready，保留覆盖启动对账时长的 5 分钟 start_period；修正 Windows Git Bash 测试选择顺序并显式按 UTF-8 解码启动脚本输出。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/Dockerfile",
+            "docker-compose.yml",
+            "backend/tests/core/test_sqlite_worker_guard.py",
+            "docs/roadmap/deploy/README.md"
+          ],
+          "evidence": "SQLite Worker 启动约束 53 passed；后端全量回归 3135 passed, 7 skipped, 0 failed；Dockerfile/Compose 均指向 /health/ready。"
+        },
+        {
+          "id": "sync-database-blocking-remediation-w4-2.4",
+          "name": "记录与会话交接",
+          "description": "更新 feature_list.json、progress.md、session-handoff.md，记录 W4-2 实现边界、验证证据、无 Schema 变更与后续 G4/W5 工作。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "文档已同步；未执行 Git stage/commit/push/deploy。"
         }
       ]
     }

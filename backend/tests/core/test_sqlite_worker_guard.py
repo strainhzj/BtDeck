@@ -251,8 +251,8 @@ def _find_git_bash() -> str:
     if git_exe:
         git_bin = Path(git_exe).resolve()
         for git_root in (git_bin.parents[2], git_bin.parents[1]):
-            candidates.append(git_root / "usr" / "bin" / "bash.exe")
             candidates.append(git_root / "bin" / "bash.exe")
+            candidates.append(git_root / "usr" / "bin" / "bash.exe")
     for extra in (
         Path("C:/Program Files/Git/bin/bash.exe"),
         Path("C:/Program Files (x86)/Git/bin/bash.exe"),
@@ -285,6 +285,7 @@ class TestStartupEntryPoints:
             env=env,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             timeout=60,
         )
         assert result.returncode == 1, (

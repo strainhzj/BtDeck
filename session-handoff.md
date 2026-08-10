@@ -1,5 +1,35 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-10 交接：W4-2 实施完成（liveness/readiness/同步业务健康接口）
+
+当前任务：`PLANS/sync-database-blocking-remediation.md` 的 W4-2（G4 门）已完成，代码与测试已亲跑通过；分支 `dev`，未执行 stage/commit/push/deploy。
+
+### 本次改动
+
+- 新增 `backend/app/api/endpoints/health.py`：
+  - `/health/live` 仅响应进程存活，不访问 DB/下载器。
+  - `/health/ready` 严格超时执行只读 `SELECT 1`，复用 `startup_guard` 的 SQLite 单 Worker 校验和 `EventLoopLagSampler`；失败为 503 统一响应体，原因只返回稳定 `reasonCodes`。
+  - `/api/v1/health/sync` 受认证保护，返回任务 outcome/freshness、active run/phase、checkpoint age，并以缓存下载器状态生成业务告警；下载器离线不影响 readiness。
+- `sync_coordinator.py` 增加进程内只读 active-run 快照，贯穿 admission/backup/sync/tracker_status/done，不在健康检查中写业务事实。
+- 根路由与 `/api/v1/health/*` 别名已接线；`backend/Dockerfile`、`docker-compose.yml` 健康检查从 `/docs` 改为 `/health/ready`，Compose `start_period` 保持 5 分钟。
+- 已按 `roadmap-maintain` 最小范围同步 `docs/roadmap/deploy/README.md` 的健康检查路径；W5 再做路线图全量收口。
+- 为 Windows 测试环境修正 Git Bash 选择顺序，并显式按 UTF-8 解码启动脚本输出；不改变生产启动脚本。
+
+### 验证证据
+
+- `python -m pytest tests/api/test_health.py -q`：9 passed。
+- `python -m pytest tests/core/test_sqlite_worker_guard.py -q`：53 passed。
+- 同步 Coordinator/观测回归 59 passed；cron/auth 回归 76 passed。
+- 后端全量 `python -m pytest -q`：**3135 passed, 7 skipped, 0 failed**（3142 collected）。
+- `./init.sh --ci`、health.py mypy、修改文件 black/flake8 通过。
+- 无 Schema 变更，不新增 Alembic 迁移；当前迁移 head 仍按计划为 `f5e6d7c8b9a0`。`feature_list.json` 与 `progress.md` 已更新。
+
+### 后续工作
+
+1. G4：将大档 `--assert-slo` 接入发布门/nightly，完成告警阈值两周基线校准与 runbook 联动。
+2. W5：Tracker 指纹、DBWriteQueue ADR（先观察 7 天指标）、PostgreSQL 计划重写条件演进、roadmap/文档全量收口。
+3. 上线前执行 Alembic 迁移（head `f5e6d7c8b9a0`）。
+
 ## 2026-08-09 交接：W4-1 实施完成（阶段级结构化观测与核心指标）
 
 当前任务：修复计划 W4-1（P1-06/P2-05）实施完成，拆两部分子代理执行 + 主代理逐项审查通过
