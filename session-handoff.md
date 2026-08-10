@@ -1,5 +1,67 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-09 交接：W3-3 实施完成（info-only 有界并发与分阶段流水线）
+
+当前任务：修复计划 W3-3（P1-02/P1-04）实施完成，拆两部分由子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W3-3 代码与测试完成（G3 门剩余：W3-4 outcome/freshness、真实 RSS 基准）；未提交、未推送。
+
+### 本次改动（backend 4 文件 + 2 测试文件）
+
+- **W3-3a**：新配置 `INFO_SYNC_DOWNLOADER_CONCURRENCY=1`（SQLite 默认串行）/ `DB_READ_PAGE_SIZE=500` / `MAX_TORRENTS_PER_RUN=10000` / `RUN_BUDGET_SECONDS=300` / `MAX_BUFFERED_ROWS=2000`；`torrent_info_sync_task` max_concurrent 配置化；existing 记录分页读取 + 每页让行；预算（count|time）+ 缓冲上限 flush；phase_ms/rows_buffered 观测。
+- **W3-3b**：新 `tests/integration/test_sync_memory_bound.py` 9 用例（fetch 不持写锁/write 无下载器调用、并发符合配置 4×10k、内存峰值有界、部分失败不阻塞、RID 确认仅 durable commit 后、增量异常回退受预算限制）——**生产代码零改动**（RID 顺序验证已正确）。
+
+### 验证（主代理亲自复跑）
+
+- 全量 `pytest`：**3061 passed, 7 skipped, 0 failed**（208.4s）。
+- 新增：info_budget 8 + memory_bound 9；integration 22 passed + 1 skip；black/flake8 通过。
+
+### 下一步
+
+1. **W3-4**：outcome/skip/freshness 六态语义（task_logs 增补可空字段 run_id/outcome/skip_reason/rows_changed/phase_summary_json + API + 前端任务页）。
+2. G3 发布门：真实 RSS 基准（需 psutil 环境）；大档 `--assert-slo` 接入发布门。
+3. 上线前 Alembic 迁移（head f0e1d2c3b4a5）。
+4. 工作区未提交内容较多（W4-3/W3-2/W3-1/W3-3 + 文档），建议 W3-4 完成后统一提交。
+
+### 变更边界
+
+- 本次改 backend app/（torrents_async.py、torrent_info_sync_task.py、config.py、.env.example）+ 2 测试文件；未改 Schema；未执行 Git stage/commit/push。
+
+## 2026-08-09 交接：W3-1 实施完成（qB Tracker 有界队列 + 持久化 cursor 续跑）
+
+当前任务：修复计划 W3-1（P1-01/P1-04）实施完成，拆分两部分由子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W3-1 代码与测试完成（G3 门剩余：W3-3 info 流水线、W3-4 outcome/freshness）；未提交、未推送。
+
+### 本次改动（backend 4 文件 + 1 测试文件扩展）
+
+- **W3-1a** `torrents_async.py::_enrich_qb_torrents_with_trackers` 重写：有界 Queue + worker 池（10k hash 活跃任务 ≤ worker+2，禁止全量 create_task）；新配置 `QB_TRACKER_WORKER_COUNT=2` / `MAX_TORRENTS_PER_RUN=1000` / `RUN_BUDGET_SECONDS=120` / `PER_CALL_TIMEOUT=30`；数量硬上限 + 时间软上限，`budget_reason` 观测。
+- **W3-1b**：稳定排序 + cursor（JSON last_hash 存 checkpoint `cursor_value`）+ 仅 durable commit 后推进（批失败停驻，测试验证第 2 批失败 cursor=h000004）+ cycle 语义（last_full_sync_at + 清 cursor）+ `SyncRequest.deadline/record_budget` 透传（partial outcome）+ RID 确认点验证（已正确无需改）。
+- 测试：`tests/api/test_torrents_async_tracker_budget.py` 12 项。
+
+### 合并处理（并行会话）
+
+- 外部会话 6 个提交（orphan API 升级 + 前端）已合并：orphan 测试 29 passed、迁移链 3a4b5c6d7e8f→f9a1b2c3d4e5→f0e1d2c3b4a5 完整、`REV_HEAD` 更新至 f0e1d2c3b4a5。
+- 子代理模型连续 3 次故障（大文件读取超上下文）——拆分任务 + 限制 `torrents_async.py` 读取区间后成功（经验：3600 行大文件禁止子代理读全文）。
+
+### 验证（主代理亲自复跑）
+
+- 全量 `pytest`：**3044 passed, 7 skipped, 0 failed**（209.1s）。
+- 相关：tracker_budget 12 / coordinator 20 / checkpoint 13 / governance 7；black/flake8 通过；mypy 未新增错误。
+
+### 下一步
+
+1. **W3-3**：info-only 有界下载器并发与分阶段流水线（SQLite 默认 downloader_concurrency=1）。
+2. **W3-4**：outcome/skip/freshness 六态语义（task_logs 增补字段 + 前端任务页）。
+3. 上线前 Alembic 迁移（head f0e1d2c3b4a5）。
+4. 后续子代理任务如涉及大文件，先拆分并限制读取区间。
+
+### 变更边界
+
+- 本次改 backend app/（torrents_async.py、sync_coordinator.py、config.py、.env.example）+ 测试；未改 Schema；未执行 Git stage/commit/push。
+
 ## 2026-08-09 交接：异步操作条目占用完成
 
 当前任务：解决前端刷新后可对同一数据重复提交异步操作的问题。
@@ -23,6 +85,71 @@
 
 1. 如需跨后端进程重启保留种子删除占用，可将当前进程内 `DeletionTaskManager` 迁移为持久化任务表；当前需求仅针对前端刷新，已满足。
 2. 提交前按业务范围分组审查 dirty worktree，避免把并行同步治理改动与本功能误混在同一提交。
+
+## 2026-08-09 交接：W3-2 实施完成（持久化同步检查点）
+
+当前任务：修复计划 W3-2（P1-03）实施完成，1 个子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W3-2 代码与测试完成（G3 门剩余：W3-1 有界队列/预算、W3-3 流水线、W3-4 outcome/freshness）；未提交、未推送。
+
+### 本次改动（backend 新增 4 文件 + 扩展 5 文件）
+
+- **新 `app/models/sync_checkpoint.py`**：sync_checkpoints 表（13 列按计划 Schema，唯一约束 downloader_id+sync_type，version 乐观锁，detail_json 白名单清洗防敏感数据，outcome 六态）。
+- **新 Alembic 迁移 `3a4b5c6d7e8f_add_sync_checkpoints.py`**（down=d8e9f0a1b2c3，往返完整）；alembic/env.py 注册；test_db_migration / test_db_rollback_scenarios 的 head 期望更新。
+- **sync_coordinator.py 集成**：SyncCheckpointStore（独立短事务 + 乐观锁单调合并）；run_sync 初始化/推进/终态/取消；cursor 不超前于数据；push_sync_progress 预留 W3-1；SyncResult.checkpoint 实际值。
+- **测试**：test_sync_checkpoint_migration（2）+ test_sync_checkpoint（13）+ conftest 隔离 fixture。
+- **主代理修复**：test_db_rollback_scenarios REV_HEAD 漏更新（子代理只更新了 test_db_migration）。
+
+### 验证（主代理亲自复跑）
+
+- 全量 `pytest`：**2980 passed, 2 failed**。
+- ⚠️ **2 个失败（orphan cleanup）为工作区并行会话的外部改动所致**（orphan_files.py 等升级为 submit_cleanup_job API + 前端多处改动，测试仍 patch 旧 create_cleanup_job）——经 git stash 二分确认与 W3-2 无关，未代修；需外部会话同步其测试或协调处理。
+- W3-2 相关全部通过：checkpoint 迁移 2 + checkpoint 13 + coordinator 20 + rollback 8 + migration 11；black/mypy/flake8 通过。
+
+### 下一步
+
+1. **W3-1**：qB Tracker 同步有界队列与单轮预算（worker 池/时间预算/游标推进——用 W3-2 的 push_sync_progress 与 cursor_value）。
+2. **W3-3**：info-only 有界下载器并发与分阶段流水线（SQLite 默认 downloader_concurrency=1）。
+3. **W3-4**：outcome/skip/freshness 六态语义（task_logs 增补字段 + 前端任务页）。
+4. 上线前先执行 Alembic 迁移（dev app.db 仍停旧 head，运行时自动迁移会处理）。
+5. 外部并行会话的 orphan API 改动需同步测试并提交。
+
+### 变更边界
+
+- 本次改 backend 模型/迁移/coordinator/测试；未改其他业务代码；未执行 Git stage/commit/push。
+
+## 2026-08-09 交接：W4-3 实施完成（真实文件型 SQLite 争用基准与响应性验收）
+
+当前任务：修复计划 W4-3（P1-07）实施完成，2 个子代理执行 + 主代理逐项审查通过
+
+分支：dev
+状态：W4-3 代码与测试完成（G4 门剩余：W4-1 结构化日志/lag 采样器、W4-2 健康接口）；未提交、未推送。
+
+### 本次改动（backend 新增 3 文件 + 扩展 2 测试文件）
+
+- **新 `scripts/sync_contention_benchmark.py`**（1506 行）：真实文件型 SQLite 争用基准——三档数据（large 22k torrents/30k trackers 生成 1.1s）、场景 A/B/C（真实 bulk_upsert_with_retry / 真实 sync_tracker_status_from_keywords 两遍验证零变化零 DML / 批量 UPDATE）、请求探针、fake 下载器经 call_downloader_api 真实调用、故障注入（busy/cancel/slow-downloader）、`--assert-slo` 发布门、JSON 对比输出（`benchmark_results/sync_contention_<ts>.json`，无敏感数据）。
+- **新 `tests/integration/test_sync_api_responsiveness.py`**：4 用例（info 写期间只读 P95<1.5s 实测 30.6ms、tracker 更新期间写 P95<2.5s 实测 35.5ms、慢下载器事件循环心跳 P99<100ms 实测 16ms、连续 BUSY 无雪崩）。
+- **扩展 `test_sqlite_sync_contention.py`**：4 故障注入用例（连续 BUSY 重试、300ms 持锁排队、慢下载器超时心跳、取消整批保留）。
+- **新 `docs/operations/sync-contention-runbook.md`**：命令/三档/故障注入/验收矩阵/JSON 对比/CI 接入/校准系数方法。
+- **测试基建修复**：`_find_git_bash` 补 E:/Git、D:/Git 常见安装位置；两个集成测试文件加 autouse patch（慢下载器用例不依赖可被 TestClient lifespan 关闭的全局 runtime 单例，改用 asyncio 默认 executor + wait_for 超时语义）。
+
+### 验证（主代理亲自复跑）
+
+- 全量 `pytest`：**2967 passed, 7 skipped, 0 failed**（248.1s）。
+- 基准：small 档 `--assert-slo` 4/4 PASS、busy 故障注入 3/3 PASS；**大档 SLO 全 PASS（只读 P95=31.76ms/写 P95=33.32ms/超时 0/BUSY 0），无需校准系数**。
+- black/flake8 通过；JSON/日志无敏感数据。
+
+### 下一步
+
+1. **W4-1**：阶段级结构化日志收口（`_attach_done_stats` 的 CancelledError 缺口修复、event loop lag 采样器、run_id 贯穿校验）——runbook 第 9 节已记录候选。
+2. **W4-2**：liveness/readiness/同步业务健康接口（Docker 健康检查从 /docs 改 /health/ready）。
+3. **G4 发布门**：大档 `--assert-slo` 接入发布门流水线/nightly；告警阈值与 runbook 联动。
+4. 之后进入 W3（有界队列/checkpoint/outcome 六态）或按计划顺序（W3 在 W4 之前，但 W4-3 已先行完成——剩余 W4-1/W4-2 与 W3 无依赖，可并行）。
+
+### 变更边界
+
+- 本次改 backend/scripts、backend/docs/operations、backend/tests/integration（各 1 个新文件 + 1 个扩展）；未改 app/ 生产代码、未改 pytest.ini；未执行 Git stage/commit/push。
 
 ## 2026-08-08 交接：W2 分批实施完成（sync-database-blocking-remediation G2 代码完成）
 
