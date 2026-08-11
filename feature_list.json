@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-10",
+  "last_updated": "2026-08-11",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-11",
@@ -2732,6 +2732,53 @@
             "session-handoff.md"
           ],
           "evidence": "文档已同步；未执行 Git stage/commit/push/deploy。"
+        }
+      ]
+    },
+    {
+      "id": "orphan-hardlink-copy-count-display",
+      "name": "孤儿文件硬链接副本数量实时展示",
+      "description": "在既有清理/删除阶段硬链接诊断基础上，为孤儿文件列表实时计算 st_nlink - 1，并在前端显示副本数量；无副本显示 0，文件不可访问保持未知，文件夹折叠行汇总全部可读子文件。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-hardlink-copy-count-display.1",
+          "name": "后端实时副本数与列表契约",
+          "description": "复用 orphan_quarantine 文件系统模块新增 get_hardlink_copy_count；get_orphan_list/get_orphan_list_grouped 经 asyncio.to_thread 在线补充 hardlink_copy_count，普通文件为 0、不可访问为 null、文件夹行在全部子项可读时返回合计。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py"
+          ],
+          "evidence": "硬链接定向 15 passed；孤儿相关回归 345 passed / 1 skipped；目标 Flake8 通过，修改服务/工具/测试 Black 通过；目标 mypy 仅报告 orphan_file_service 既有 149 条 SQLAlchemy Column 类型债，本次新增行零错误。"
+        },
+        {
+          "id": "orphan-hardlink-copy-count-display.2",
+          "name": "前端数量列、路线图与交付记录",
+          "description": "OrphanFileItem/OrphanFolderRow 增加 hardlink_copy_count；孤儿表格新增副本数量列，无副本明确显示 0、不可访问显示短横线；同步路线图、进度与交接记录。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/tests/README.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "前端 orphan-files.spec 72 passed；npm run typecheck 通过；本次 3 文件严格 ESLint 通过；生产 build 成功（仅 56 条既有 Sass/Browserslist/体积 warning）。全量 lint 被关键词测试的 5 条既有 warning 门禁拦截，本次文件零 warning。"
         }
       ]
     }

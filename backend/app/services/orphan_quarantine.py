@@ -272,6 +272,17 @@ def is_path_in_quarantine(path: str, scan_roots) -> bool:
     return False
 
 
+def get_hardlink_copy_count(file_path: str) -> int:
+    """返回文件的其它硬链接目录项数量，不包含当前路径本身。
+
+    ``st_nlink`` 是同一 inode 的目录项总数，因此前端所需的“副本数量”为
+    ``max(st_nlink - 1, 0)``。文件不可访问时保留 ``os.stat`` 的 ``OSError``，
+    由调用方区分“未知”与“没有副本”。
+    """
+    stat_result = os.stat(file_path)
+    return max(int(stat_result.st_nlink) - 1, 0)
+
+
 def find_hardlink_copies(
     target_inode: Tuple[int, int],
     scan_roots: List[str],

@@ -94,7 +94,7 @@ cd frontend && npm run test:unit    # jest
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是本次新增覆盖的重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（1591 行）/ `test_advanced_search_models_strict.py` / `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（v1.0.6.26，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制
 - **前端测试集中在核心组件**：`components/torrents/` 的搜索/多选组件有完整单测（含性能测试），其他组件测试覆盖较薄
-- **异步操作占用回归**：`test_deletion_task_manager.py`、孤儿任务/查询状态测试及 `quick-delete-duplicates-dialog.spec.ts` 覆盖重复提交、混合跳过、终态释放与提交即刷新
+- **孤儿文件回归**：`test_orphan_hardlink_detection.py` 覆盖 `st_nlink - 1`、列表/文件夹副本数与清理删除诊断；`orphan-files.spec.ts` 覆盖前端数量列（无副本显示 0）；任务/查询状态测试继续覆盖重复提交、混合跳过与终态释放
 - **架构约束测试**：`test_architecture_constraints.py` 是防退化机制（自动检测反模式）
 - 详细覆盖矩阵（源文件 ↔ 测试文件对应）见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)
 

@@ -1,5 +1,24 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-11 交接：孤儿文件硬链接副本数量已显示
+
+### 当前结果
+
+- 孤儿文件列表 API 实时返回 `hardlink_copy_count = max(st_nlink - 1, 0)`；计算不包含当前文件自身。
+- 普通文件返回 `0`；文件在扫描后已消失或 `stat` 失败时返回 `null`，前端显示 `-`，不伪装成无副本。
+- 文件夹折叠行在所有子文件可读时返回副本数合计，任一子项未知则合计为 `null`。
+- 文件系统读取经 `asyncio.to_thread` 移出事件循环并顺序执行，避免列表请求阻塞 loop 或并发打满 NAS。
+- 前端孤儿文件表新增“副本数量”列；API 类型、扁平行和文件夹行契约均已同步。
+- 本次没有数据库字段或 Alembic 迁移。
+
+### 验证与已知基线
+
+- 后端孤儿相关：`345 passed, 1 skipped`；定向列表/文件夹/API 组合 `82 passed`。
+- 前端：`orphan-files.spec.ts` 72 passed；typecheck、修改文件严格 ESLint、生产 build 通过。
+- 全量前端 lint 仍被关键词测试的 5 条既有 warning 拦截；目标 mypy 仍为大服务既有 149 条 SQLAlchemy Column 类型债，本次均零新增。
+- Git Bash `./init.sh` 通过；未 stage/commit/push/deploy。
+- 工作区原有 13 个未跟踪备份、镜像和工具产物未触碰。
+
 ## 2026-08-11 交接：按报告完成 P0/P1/P2 修复（生产门待执行）
 
 ### 实施结果

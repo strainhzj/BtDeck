@@ -11,6 +11,8 @@ export interface OrphanFileItem {
   scan_id: string
   file_path: string
   file_size: number
+  /** 同一 inode 的其它硬链接目录项数量；文件不可访问时为 null */
+  hardlink_copy_count: number | null
   mtime: string | null
   downloader_id: string | null
   confidence: OrphanConfidence
@@ -48,6 +50,8 @@ export interface OrphanFolderRow {
   child_ids: number[]
   /** 子文件大小合计 */
   total_size: number
+  /** 子文件硬链接副本数合计；任一子文件不可访问时为 null */
+  hardlink_copy_count: number | null
   /** 子文件最近修改时间 */
   latest_mtime: string | null
   /** 子文件下载器名一致则该名，否则 null（渲染"多个"） */
