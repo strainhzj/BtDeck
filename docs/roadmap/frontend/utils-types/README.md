@@ -72,7 +72,7 @@
 
 - **axios 封装集中**：`utils/request.ts`（161 行）+ `utils/error-normalize.ts`（135 行）是所有 API 调用的底座
 - **主题双文件**：`theme.ts`（核心类型与切换）+ `theme-manager.ts`（扩展调色板）分工
-- **类型分散**：共享类型在 `types/`，但大量 interface 直接定义在 `api/*.ts` 内（如 `torrents.ts` 45 个 iface）
+- **类型分散**：共享类型在 `types/`，但大量 interface 直接定义在 `api/*.ts` 内（如 `torrents.ts` 54 个 interface）
 - **`types/index.ts` 不全 re-export**：`torrent` 和 `dashboard` 需直接路径 import
 
 ## 第三层详情

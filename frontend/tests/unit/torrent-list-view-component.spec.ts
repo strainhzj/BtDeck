@@ -9,6 +9,7 @@ import {
   getActiveTorrents,
   getBatchDeleteStatus,
   getDownloaderList,
+  getDuplicateTorrents,
   getTorrentList
 } from '@/api/torrents'
 import type { Torrent } from '@/api/torrents'
@@ -52,15 +53,44 @@ const localVue = createLocalVue()
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
+const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockDeleteBatchAsync = deleteBatchAsync as jest.MockedFunction<typeof deleteBatchAsync>
 const mockGetBatchDeleteStatus = getBatchDeleteStatus as jest.MockedFunction<typeof getBatchDeleteStatus>
 localVue.directive('loading', {})
 
+const SwitchStub = localVue.extend({
+  name: 'ElSwitchStub',
+  props: {
+    value: Boolean,
+    activeColor: String,
+    inactiveColor: String
+  },
+  methods: {
+    toggle() {
+      const nextValue = !this.value
+      this.$emit('input', nextValue)
+      this.$emit('change', nextValue)
+    }
+  },
+  template: `
+    <button
+      type="button"
+      class="el-switch-stub"
+      :aria-checked="value ? 'true' : 'false'"
+      :data-active-color="activeColor"
+      :data-inactive-color="inactiveColor"
+      @click="toggle"
+    />
+  `
+})
+
 interface ListQueryState {
   skip: number
   limit: number
+  name_like: string
   sort_by: string
   sort_order: string
+  showActiveOnly: boolean
 }
 
 interface TorrentListViewVm extends Vue {
@@ -68,7 +98,12 @@ interface TorrentListViewVm extends Vue {
   pageSize: number
   pageSizeInput: string
   pageSizeDropdownExpanded: boolean
+  showingDuplicates: boolean
   listQuery: ListQueryState
+  handleDuplicateSearchToggle(enabled: boolean): Promise<void>
+  handleFilter(): void
+  handleSort(field: 'name' | 'size' | 'status' | 'ratio' | 'added_date'): void
+  handlePageChange(page: number): void
   callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
 }
 
@@ -144,7 +179,7 @@ function mountListView(): Wrapper<Vue> {
       'el-input': true,
       'el-option': true,
       'el-select': true,
-      'el-switch': true
+      'el-switch': SwitchStub
     }
   })
 }
@@ -192,6 +227,12 @@ describe('torrent list view pagination and sorting', () => {
       msg: 'ok',
       code: '200',
       data: []
+    })
+    mockGetDuplicateTorrents.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: { list: [], total: 0, page: 1, pageSize: 20 }
     })
   })
 
@@ -259,6 +300,73 @@ describe('torrent list view pagination and sorting', () => {
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.objectContaining({ skip: 0, limit: 500 })
     )
+  })
+
+  it('重复任务开关默认关闭，用户开启后渲染绿色状态并触发重复查询', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetDuplicateTorrents.mockClear()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    const switchShell = wrapper.find('.duplicate-search-switch')
+    const switchControl = wrapper.findComponent(SwitchStub)
+
+    expect(vm.showingDuplicates).toBe(false)
+    expect(switchShell.classes()).not.toContain('is-active')
+    expect(switchControl.attributes('aria-checked')).toBe('false')
+    expect(switchControl.attributes('data-active-color')).toBe('var(--color-success, #10b981)')
+
+    await switchControl.trigger('click')
+    await flushLifecycle()
+
+    expect(vm.showingDuplicates).toBe(true)
+    expect(switchShell.classes()).toContain('is-active')
+    expect(switchControl.attributes('aria-checked')).toBe('true')
+    expect(mockGetDuplicateTorrents).toHaveBeenCalledTimes(1)
+  })
+
+  it('重复任务开关开启后筛选、排序、切页和关闭均使用正确数据源', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    mockGetTorrentList.mockClear()
+    mockGetDuplicateTorrents.mockClear()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+
+    vm.listQuery.showActiveOnly = true
+    await vm.handleDuplicateSearchToggle(true)
+    expect(vm.showingDuplicates).toBe(true)
+    expect(mockGetDuplicateTorrents).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        page: 1,
+        pageSize: 20,
+        sort_by: 'added_date',
+        sort_order: 'desc',
+        active_only: true
+      })
+    )
+
+    vm.listQuery.name_like = 'needle'
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetDuplicateTorrents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name_like: 'needle', page: 1 })
+    )
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+
+    vm.handleSort('name')
+    await flushLifecycle()
+    expect(mockGetDuplicateTorrents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'name', sort_order: 'desc' })
+    )
+
+    vm.handlePageChange(2)
+    await flushLifecycle()
+    expect(mockGetDuplicateTorrents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2, pageSize: 20 })
+    )
+
+    await vm.handleDuplicateSearchToggle(false)
+    expect(vm.showingDuplicates).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
   })
 
   it('异步删除提交后先刷新列表再开始轮询，并提示跳过的处理中项', async() => {

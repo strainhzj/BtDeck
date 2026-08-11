@@ -2,14 +2,14 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 131 个 test_*.py）
+## 后端测试分布（共 140 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 44 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务与重复种子占用契约均有 API 回归 |
-| `tests/services/` | 38 | `app/services/` | 🟡 中等；新增删除任务占用、孤儿持久化占用与查询状态回归 |
+| `tests/api/` | 48 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务与重复查询筛选/排序/活动快照均有 API 回归 |
+| `tests/services/` | 40 | `app/services/` | 🟡 中等；新增删除任务占用、孤儿持久化占用与查询状态回归（不含下方 tag_adapters 子目录） |
 | `tests/tasks/` | 12 | `app/tasks/` | 🟡 部分覆盖（12 对 32） |
-| `tests/core/` | 15 | `app/core/` | 🟡 中等 |
+| `tests/core/` | 16 | `app/core/` | 🟡 中等 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 16） |
 | `tests/utils/` | 4 | `app/utils/` | ✅ 覆盖良好 |
 | `tests/auth/` | 3 | `app/auth/` | ✅ 覆盖良好（3 对 5） |
@@ -17,14 +17,14 @@
 | `tests/downloader/` | 1 | `app/downloader/` | ⚠ 薄弱（1 对 9） |
 | `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 35，仅 `test_active_only_filter.py`） |
 | `tests/architecture/` | 1 | 全局架构 | 架构约束防退化 |
-| `tests/integration/` | 2 | 跨层链路 | SQLite 同步争用与 API 响应性 |
+| `tests/integration/` | 3 | 跨层链路 | SQLite 同步争用与 API 响应性 |
 | `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 3） |
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **131** 个 test_*.py；支持文件计入后全 `.py` 共 149 个。
+> 合计：当前实测 **140** 个 test_*.py；支持文件计入后全 `.py` 共 158 个。
 
-> 注：`tests/api/`（44 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+> 注：`tests/api/`（48 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -61,6 +61,7 @@
 | 源文件 | 测试文件 | 状态 |
 |--------|---------|------|
 | `app/api/endpoints/torrent_crud.py` | （无直接测试，仅 `test_active_only_filter.py` 间接覆盖 getList 的 active_only） | ⚠ 未直接覆盖 |
+| `app/api/endpoints/duplicate_torrents.py` | `tests/api/test_duplicate_torrents_api.py`（1439 行，40 用例） | ✅ 默认添加时间倒序、安全列排序、非法排序拒绝、完整重复组筛选、活动快照/空快照、分页与元数据回填 |
 | `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（1605 行）+ `test_advanced_search_models_strict.py` | ✅✅ 重度覆盖（含活动删除排除） |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
@@ -77,7 +78,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（28 个 spec）
+### `frontend/tests/unit/`（30 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -91,7 +92,7 @@
 | `field-types-consistency.spec.ts` ✨v1.0.6.27 | 高级搜索字段类型前后端一致性 |
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
-| `management-pages-ui.spec.ts` | 管理页面 UI |
+| `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
 | `operator-contract.spec.ts` ✨v1.0.6.26 | 高级搜索操作符前后端契约守卫（与 `app/contracts/advanced_search_contract.json` 镜像） |
 | `orphan-files.spec.ts` | 孤儿清理/彻底删除工作流；硬链接副本数量链接、批量位置弹框、复制、过期响应隔离与异常提示 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
@@ -99,21 +100,26 @@
 | `store-modules.spec.ts` | Vuex modules |
 | `torrent-batch.spec.ts` | `views/torrents/utils/torrentBatch.ts` |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
-| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除提交即刷新、无任务不轮询及分页/排序 |
+| `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
+| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；重复查询开关在筛选、排序、切页和活动筛选期间保持 |
+| `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留重复查询开关、查询条件、分页和选择状态 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` | 传统视图组件（含 v1.0.6.31 保存路径列/列设置回归） |
+| `traditional-view-component.spec.ts` | 传统视图组件；重复查询保持分类/标签/活动筛选、排序、分页大小与刷新数据源 |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（4 个 spec，1741 行）
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2534 行）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
 | `AdvancedMultiSelect.performance.spec.ts` | 466 | `AdvancedMultiSelect.vue`（性能测试） |
-| `AdvancedMultiSelect.spec.ts` | 477 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
+| `AdvancedMultiSelect.spec.ts` | 571 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
 | `AdvancedSearchBuilder.spec.ts` | 609 | `AdvancedSearchBuilder.vue` |
-| `ConditionValueInput.spec.ts` | 189 | `ConditionValueInput.vue` |
+| `AdvancedSearchWorkspace.spec.ts` | 389 | `AdvancedSearchWorkspace.vue`（高级配置列表/回填/创建/覆盖更新/删除与权限、单次重置和异步竞态隔离） |
+| `ConditionValueInput.spec.ts` | 226 | `ConditionValueInput.vue` |
+| `FilterGroup.spec.ts` | 97 | `FilterGroup.vue` |
+| `QuickDeleteDuplicatesDialog.spec.ts` | 176 | `QuickDeleteDuplicatesDialog.vue` |
 
 ### 组件内嵌测试 `frontend/src/components/common/__tests__/`（1 个 spec，v1.0.6.28）
 

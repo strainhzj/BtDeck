@@ -974,6 +974,12 @@ export default class AdvancedSearchBuilder extends Vue {
     return buildAdvancedSearchParams(this.conditionGroups)
   }
 
+  /** 返回经过完整校验的条件快照，供已保存搜索更新复用。 */
+  getTemplateGroupsSnapshot(): AdvancedSearchGroupState[] {
+    this.buildSearchParams()
+    return JSON.parse(JSON.stringify(this.conditionGroups)) as AdvancedSearchGroupState[]
+  }
+
   // 预览查询
   previewSearchQuery() {
     try {
@@ -1118,7 +1124,6 @@ export default class AdvancedSearchBuilder extends Vue {
 
     this.$emit('save-template', template)
     this.saveTemplateVisible = false
-    this.$message.success('模板保存成功')
   }
 }
 </script>

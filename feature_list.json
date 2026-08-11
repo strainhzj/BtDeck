@@ -2829,6 +2829,111 @@
           "evidence": "新增后端 4、前端 3 个回归用例；后端定向 53 passed，全量 3153 passed / 7 skipped；前端全量 39 suites / 643 passed，typecheck、目标严格 ESLint 与生产 build 通过（56 条既有 warning）。后端测试文件 Black/Flake8 通过。用户已验证交互并授权在仓库根目录提交；不包含原有未跟踪产物。"
         }
       ]
+    },
+    {
+      "id": "torrent-management-ui-and-query-repair",
+      "name": "种子重复查询、任务页与管理界面修复",
+      "description": "修复种子列表重复查询在两种视图中的模式保持与排序，恢复定时任务页面运行，统一回收站/查询模板 UI，并为高级搜索增加可管理的已保存配置侧栏。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "torrent-management-ui-and-query-repair.1",
+          "name": "两种种子视图重复查询开关与模式保持",
+          "description": "将查找重复任务改为默认关闭、开启为绿色的页面级开关；开启后查询、筛选、排序、切页、分页大小、刷新和视图切换继续使用重复查询数据源，浏览器刷新恢复关闭。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/TorrentViewSwitcher.vue",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts",
+            "frontend/tests/unit/torrent-view-switcher.spec.ts"
+          ],
+          "evidence": "列表/传统视图以真实开关点击覆盖默认关闭、绿色开启态和重复查询分派，并覆盖筛选、列排序、翻页、分页大小、手动刷新、分类/标签与 active_only 参数；新增跨视图往返测试验证重复模式、查询与分页状态完整保留。"
+        },
+        {
+          "id": "torrent-management-ui-and-query-repair.2",
+          "name": "重复查询添加时间倒序与筛选契约",
+          "description": "重复查询后端默认按 added_date DESC、info_id DESC 稳定排序，并接受安全列排序；补齐分类、标签与活动快照筛选，活动集合使用临时表避免 SQLite 绑定参数上限。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/duplicate_torrents.py",
+            "backend/tests/api/test_duplicate_torrents_api.py",
+            "frontend/src/api/torrents.ts"
+          ],
+          "evidence": "重复查询 API 40 passed，覆盖默认 added_date DESC、非法排序 422、不完整重复组排除、单活跃副本排除及权威空快照；目标 Black、Flake8、mypy 通过；后端全量 3163 passed / 7 skipped / 0 failed。"
+        },
+        {
+          "id": "torrent-management-ui-and-query-repair.3",
+          "name": "定时任务页面模板 helper 运行时修复",
+          "description": "将 getTaskOutcomeMeta、isTaskDataStale、getStaleTooltipText 的模块导入通过 Vue 实例方法暴露给模板，修复 permission.ts 报 p.getTaskOutcomeMeta is not a function。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/tasks/index.vue",
+            "frontend/tests/unit/tasks-sync-freshness.spec.ts"
+          ],
+          "evidence": "tasks-sync-freshness 通过 TypeScript AST 确认三个 helper 均为 TaskManage 实例方法，并校验六态映射与 stale 文案；TypeScript 与目标 ESLint 通过。"
+        },
+        {
+          "id": "torrent-management-ui-and-query-repair.4",
+          "name": "回收站搜索区统一孤儿文件 UI",
+          "description": "回收站搜索区改用 management-page、management-panel 与 management-filter 结构，统一标签、输入框、操作按钮、Enter/清空交互。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/recycle-bin/index.vue",
+            "frontend/tests/unit/management-pages-ui.spec.ts"
+          ],
+          "evidence": "管理页 UI 契约锁定 management-filter 骨架、Enter/清空事件和保留 page_size 的显式重置；测试与生产构建通过。"
+        },
+        {
+          "id": "torrent-management-ui-and-query-repair.5",
+          "name": "查询模板行操作 Lucide 极简化",
+          "description": "将查询模板每行应用、编辑、删除按钮收敛为紧凑 type=text 操作，使用 play/pencil/trash Lucide 图标，并保留 tooltip、ARIA 与系统模板禁用提示。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/query-templates/index.vue",
+            "frontend/tests/unit/management-pages-ui.spec.ts"
+          ],
+          "evidence": "管理页源码契约锁定 138px 操作列、play/pencil/trash 图标、ARIA、tooltip 与系统模板编辑/删除禁用；Lucide 注册、TypeScript、目标 ESLint 与生产构建均通过。"
+        },
+        {
+          "id": "torrent-management-ui-and-query-repair.6",
+          "name": "高级搜索已保存配置侧栏",
+          "description": "新增两种种子视图共用的 AdvancedSearchWorkspace：左侧展示/筛选高级搜索配置，支持选择回填、新建、覆盖更新与删除；右侧继续复用 AdvancedSearchBuilder，并修复 reset 事件递归。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/AdvancedSearchWorkspace.vue",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchWorkspace.spec.ts",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue"
+          ],
+          "evidence": "工作区测试覆盖名称/描述过滤、选择回填、创建、更新、删除、系统/他人公开模板权限、单次 reset、保存前校验及并发旧响应隔离；前端全量 41 suites/657 tests 通过。"
+        },
+        {
+          "id": "torrent-management-ui-and-query-repair.7",
+          "name": "路线图、进度与交接记录",
+          "description": "按源码实测行号同步三层路线图索引、测试覆盖矩阵、进度与会话交接。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "roadmap-maintain 漂移检查覆盖变更源文件引用与测试文件计数；Git Bash 根 init.sh、feature_list JSON 解析、路线图陈旧模式扫描与 git diff --check 均通过。"
+        }
+      ]
     }
   ]
 }

@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container recycle-bin-page">
+  <div class="app-container management-page recycle-bin-page">
     <!-- 页面标题 -->
     <div style="margin-bottom: 20px;">
       <h2 style="font-size: 20px; color: #303133; font-weight: 600; margin: 0;">
@@ -11,36 +11,31 @@
     </div>
 
     <!-- ========== 筛选区域 ========== -->
-    <div class="filter-container">
-      <el-input
-        v-model="listQuery.search"
-        placeholder="搜索种子名称..."
-        style="width: 200px;"
-        class="filter-item"
-        clearable
-        @keyup.enter.native="handleFilter"
-      >
-        <i slot="prefix" class="el-input__icon el-icon-search"></i>
-      </el-input>
-
-      <el-button
-        v-waves
-        class="filter-item"
-        type="primary"
-        icon="el-icon-search"
-        @click="handleFilter"
-      >
-        搜索
-      </el-button>
-      <el-button
-        class="filter-item"
-        type="default"
-        icon="el-icon-refresh"
-        @click="resetFilter"
-      >
-        重置
-      </el-button>
-    </div>
+    <section class="management-panel" aria-label="回收站筛选条件">
+      <div class="management-filter">
+        <div class="management-filter__field management-filter__field--wide">
+          <label class="management-filter__label" for="recycle-bin-search">种子名称</label>
+          <el-input
+            id="recycle-bin-search"
+            v-model="listQuery.search"
+            class="management-filter__control"
+            placeholder="搜索种子名称..."
+            prefix-icon="el-icon-search"
+            clearable
+            @keyup.enter.native="handleFilter"
+            @clear="handleFilter"
+          />
+        </div>
+        <div class="management-filter__actions">
+          <el-button type="primary" icon="el-icon-search" @click="handleFilter">
+            搜索
+          </el-button>
+          <el-button icon="el-icon-refresh-left" @click="resetFilter">
+            重置
+          </el-button>
+        </div>
+      </div>
+    </section>
 
     <!-- ========== 批量操作工具栏 ========== -->
     <section class="batch-operations">
@@ -832,23 +827,6 @@ export default {
 <style lang="scss" scoped>
 .recycle-bin-page {
   width: 100%;
-}
-
-// ========== 筛选区域 ==========
-.filter-container {
-  margin-bottom: 20px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-
-  .filter-item {
-    margin-right: 10px;
-
-    &:last-child {
-      margin-right: 0;
-    }
-  }
 }
 
 // ========== 批量操作工具栏 ==========

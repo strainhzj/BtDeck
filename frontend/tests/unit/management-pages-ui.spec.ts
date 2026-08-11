@@ -9,6 +9,10 @@ const orphanFilesSource = readFileSync(
   resolve(__dirname, '../../src/views/orphan-files/index.vue'),
   'utf8'
 )
+const recycleBinSource = readFileSync(
+  resolve(__dirname, '../../src/views/recycle-bin/index.vue'),
+  'utf8'
+)
 const auditLogsSource = readFileSync(
   resolve(__dirname, '../../src/views/logs/audit.vue'),
   'utf8'
@@ -53,6 +57,19 @@ describe('查询模板管理页操作分组', () => {
     expect(filterPanel).toContain('搜索')
     expect(filterPanel).not.toContain('新建模板')
   })
+
+  it('表格右侧操作列使用可访问的简约 Lucide 图标并保护系统模板', () => {
+    expect(queryTemplatesSource).toContain('<el-table-column label="操作" width="138"')
+    expect(queryTemplatesSource).toContain('class="template-row-actions"')
+    expect(queryTemplatesSource).toContain('<LucideIcon name="play" :size="15" />')
+    expect(queryTemplatesSource).toContain('<LucideIcon name="pencil" :size="15" />')
+    expect(queryTemplatesSource).toContain('<LucideIcon name="trash" :size="15" />')
+    expect(queryTemplatesSource).toContain('aria-label="应用模板"')
+    expect(queryTemplatesSource.match(/:disabled="scope\.row\.is_default"/g)).toHaveLength(2)
+    expect(queryTemplatesSource).not.toContain('icon="el-icon-video-play"')
+    expect(queryTemplatesSource).not.toContain('icon="el-icon-edit"')
+    expect(queryTemplatesSource).not.toContain('icon="el-icon-delete"')
+  })
 })
 
 describe('孤儿文件管理页信息层级', () => {
@@ -70,6 +87,28 @@ describe('孤儿文件管理页信息层级', () => {
     const quarantinePanel = orphanFilesSource.match(/<!-- 隔离区管理 -->[\s\S]*?<\/el-tab-pane>/)?.[0] || ''
     expect(quarantinePanel).toContain('class="management-table-scroll quarantine-table-scroll"')
     expect(quarantinePanel).toContain('class="management-table"')
+  })
+
+})
+
+describe('回收站筛选栏', () => {
+  it('复用孤儿文件管理页的主题化筛选面板骨架', () => {
+    expect(recycleBinSource).toContain('class="app-container management-page recycle-bin-page"')
+    expect(recycleBinSource).toContain('class="management-panel" aria-label="回收站筛选条件"')
+    expect(recycleBinSource).toContain('class="management-filter"')
+    expect(recycleBinSource).toContain('class="management-filter__control"')
+    expect(recycleBinSource).toContain('class="management-filter__actions"')
+    expect(recycleBinSource).not.toContain('class="filter-container"')
+  })
+
+  it('搜索框支持回车、清空和保留分页大小的显式重置', () => {
+    expect(recycleBinSource).toContain('id="recycle-bin-search"')
+    expect(recycleBinSource).toContain('v-model="listQuery.search"')
+    expect(recycleBinSource).toContain('@keyup.enter.native="handleFilter"')
+    expect(recycleBinSource).toContain('@clear="handleFilter"')
+    expect(recycleBinSource).toContain('icon="el-icon-refresh-left" @click="resetFilter"')
+    expect(recycleBinSource).toContain('page_size: this.listQuery.page_size')
+    expect(recycleBinSource).toContain("search: ''")
   })
 })
 

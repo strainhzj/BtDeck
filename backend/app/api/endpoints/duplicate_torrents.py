@@ -8,9 +8,10 @@
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
-from sqlalchemy import select, func, and_
-from typing import Any, Optional, Dict, List
+from sqlalchemy import Column, MetaData, String, Table, and_, func, select
+from typing import Any, Dict, List, Literal, Optional
 import logging
+import uuid
 
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import get_current_user
@@ -23,6 +24,7 @@ from app.models.setting_templates import DownloaderTypeEnum
 from app.enums.tracker_status import QBittorrentTrackerStatus, TransmissionTrackerStatus
 from app.services.torrent_metadata import fetch_live_torrent_metadata
 from app.services.deletion_task_manager import build_active_deletion_exclusion
+from app.api.endpoints.torrent_speed import get_active_keys_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -57,9 +59,17 @@ class DuplicateQueryRequest(BaseModel):
         max_length=8192,
         description="种子状态（支持多选，逗号分隔）",
     )
+    category_like: Optional[str] = Field(None, description="分类模糊搜索")
+    tags_like: Optional[str] = Field(None, description="标签模糊搜索")
+    active_only: bool = Field(False, description="仅显示活动种子")
     min_size: Optional[int] = Field(None, description="最小文件大小(字节)")
     page: int = Field(1, ge=1, description="页码(从1开始)")
     pageSize: int = Field(20, ge=1, le=100000, description="每页记录数")
+    sort_by: Literal["name", "size", "status", "ratio", "added_date"] = Field(
+        "added_date",
+        description="排序字段",
+    )
+    sort_order: Literal["asc", "desc"] = Field("desc", description="排序方向")
 
     @field_validator("downloader_id", "status")
     @classmethod
@@ -116,6 +126,9 @@ async def get_duplicate_torrents(
             "status": "success"
         }
     """
+    active_table = None
+    active_connection = None
+    active_snapshot = None
     try:
         # 计算偏移量
         offset = (query.page - 1) * query.pageSize
@@ -129,6 +142,56 @@ async def get_duplicate_torrents(
         active_deletion_exclusion = build_active_deletion_exclusion(TorrentInfo.info_id)
         if active_deletion_exclusion is not None:
             base_conditions.append(active_deletion_exclusion)
+
+        if query.active_only:
+            active_snapshot = get_active_keys_snapshot()
+            if not active_snapshot.ready:
+                return CommonResponse(
+                    status="partial",
+                    msg="活动种子快照尚未就绪，请刷新速度快照后重试",
+                    code="206",
+                    data={
+                        "total": 0,
+                        "page": query.page,
+                        "pageSize": query.pageSize,
+                        "list": [],
+                        "activeSnapshotReady": False,
+                        "activeSnapshotStatus": active_snapshot.status.value,
+                    },
+                )
+
+            active_keys = set(active_snapshot.keys)
+            if not active_keys:
+                return CommonResponse(
+                    status="success",
+                    msg="查询成功",
+                    code="200",
+                    data={
+                        "total": 0,
+                        "page": query.page,
+                        "pageSize": query.pageSize,
+                        "list": [],
+                        "activeSnapshotReady": True,
+                        "activeSnapshotStatus": active_snapshot.status.value,
+                    },
+                )
+
+            active_connection = db.connection()
+            active_table = Table(
+                f"duplicate_active_keys_{uuid.uuid4().hex}",
+                MetaData(),
+                Column("downloader_id", String, primary_key=True),
+                Column("torrent_hash", String, primary_key=True),
+                prefixes=["TEMPORARY"],
+            )
+            active_table.create(bind=active_connection)
+            active_connection.execute(
+                active_table.insert(),
+                [
+                    {"downloader_id": downloader_id, "torrent_hash": torrent_hash}
+                    for downloader_id, torrent_hash in active_keys
+                ],
+            )
 
         # 应用过滤条件
         if query.name_like:
@@ -164,11 +227,26 @@ async def get_duplicate_torrents(
                 # 多个状态：使用 in_ 查询（或关系）
                 base_conditions.append(TorrentInfo.status.in_(statuses))
 
+        if query.category_like:
+            base_conditions.append(TorrentInfo.category.like(f"%{query.category_like}%"))
+
+        if query.tags_like:
+            base_conditions.append(TorrentInfo.tags.like(f"%{query.tags_like}%"))
+
         if query.min_size is not None:
             base_conditions.append(TorrentInfo.size >= query.min_size)
 
         # 第一步：构建子查询，找出符合条件的所有种子
-        filtered_torrents = select(TorrentInfo.hash).where(and_(*base_conditions)).alias()
+        filtered_torrents_query = select(TorrentInfo.hash).where(and_(*base_conditions))
+        if active_table is not None:
+            filtered_torrents_query = filtered_torrents_query.join(
+                active_table,
+                and_(
+                    TorrentInfo.downloader_id == active_table.c.downloader_id,
+                    TorrentInfo.hash == active_table.c.torrent_hash,
+                ),
+            )
+        filtered_torrents = filtered_torrents_query.alias()
 
         # 第二步：统计每个hash的出现次数，找出重复的hash（出现次数≥2）
         duplicate_hashes_subquery = (
@@ -187,13 +265,31 @@ async def get_duplicate_torrents(
             )
             .where(and_(*base_conditions))
         )
+        if active_table is not None:
+            main_query = main_query.join(
+                active_table,
+                and_(
+                    TorrentInfo.downloader_id == active_table.c.downloader_id,
+                    TorrentInfo.hash == active_table.c.torrent_hash,
+                ),
+            )
 
-        # 排序：先按hash倒序，再按添加时间倒序
-        main_query = main_query.order_by(
-            TorrentInfo.hash.desc(),
-            TorrentInfo.added_date.desc(),
-            TorrentInfo.info_id.desc(),
-        )
+        # 默认按添加时间倒序；允许列表列头在重复任务模式下继续切换排序。
+        # 添加时间始终作为非时间字段的次排序键，info_id 提供稳定分页终排序键。
+        sort_columns: Dict[str, Any] = {
+            "name": TorrentInfo.name,
+            "size": TorrentInfo.size,
+            "status": TorrentInfo.status,
+            "ratio": TorrentInfo.ratio,
+            "added_date": TorrentInfo.added_date,
+        }
+        sort_column = sort_columns[query.sort_by]
+        primary_order = sort_column.asc() if query.sort_order == "asc" else sort_column.desc()
+        secondary_orders: List[Any] = []
+        if query.sort_by != "added_date":
+            secondary_orders.append(TorrentInfo.added_date.desc())
+        secondary_orders.append(TorrentInfo.info_id.desc())
+        main_query = main_query.order_by(primary_order, *secondary_orders)
 
         # 查询有重复的种子总数
         count_query = select(func.count()).select_from(main_query.alias())
@@ -401,16 +497,25 @@ async def get_duplicate_torrents(
             f"总记录数={total}, 返回记录数={len(torrent_list)}"
         )
 
+        response_data = {
+            "total": total,
+            "page": query.page,
+            "pageSize": query.pageSize,
+            "list": torrent_list,
+        }
+        if active_snapshot is not None:
+            response_data.update(
+                {
+                    "activeSnapshotReady": True,
+                    "activeSnapshotStatus": active_snapshot.status.value,
+                }
+            )
+
         return CommonResponse(
             status="success",
             msg="查询成功",
             code="200",
-            data={
-                "total": total,
-                "page": query.page,
-                "pageSize": query.pageSize,
-                "list": torrent_list,
-            },
+            data=response_data,
         )
 
     except Exception as e:
@@ -418,3 +523,9 @@ async def get_duplicate_torrents(
 
         # 返回错误信息,但状态码为200
         return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
+    finally:
+        if active_table is not None and active_connection is not None:
+            try:
+                active_table.drop(bind=active_connection, checkfirst=True)
+            except Exception as cleanup_error:
+                logger.warning("清理重复查询活动种子临时表失败: %s", cleanup_error)

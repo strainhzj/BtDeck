@@ -7,16 +7,16 @@
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：异步删除提交后立即刷新；全部已占用时不轮询，混合提交提示跳过数 |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图均以绿色开关进入重复查询，筛选/排序/分页/刷新保持数据源，并共用带已保存配置侧栏的高级搜索工作区 |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（14 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（12 文件；11 class + ⚠ 1 Options API） |
-| 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择） |
+| 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板，避免运行时缺失 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
-| 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选） |
+| 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选），搜索区采用孤儿文件页同款 management-panel/filter 结构 |
 | 设置 settings | `settings/index.vue` | 全局设置页 |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
-| 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框（v1.0.5 新增） |
+| 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
 | 孤儿文件 orphan-files | `orphan-files/index.vue` | 孤儿列表显示硬链接副本数量（无副本为 0、文件夹为合计），点击正数弹框核对其它副本路径 |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
@@ -26,10 +26,10 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，`TorrentsManagement` class）；异步批量删除提交后依赖后端占用过滤立即刷新，全部已占用时不进入轮询 |
+| `index.vue` | 种子管理主入口（列表模式，`TorrentsManagement` class）；`handleDuplicateSearchToggle` L2298 / `fetchDuplicateTorrents` L2310 让筛选、排序、分页、刷新持续使用重复查询，默认开关关闭 |
 | `components/QuickDeleteDuplicatesDialog.vue` | 重复种子快捷删除；提交后触发父列表刷新，nullable task_id 时仅提示而不轮询 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)）；v1.0.6.30 复用共享 `PageSizeCombobox`（保留原分页状态/虚拟滚动/重复任务），v1.0.6.31 在“分类/标签”与“添加时间”之间新增保存路径列（兼容 `savePath/save_path`），v1.0.6.37 与列表模式统一四级删除入口 LucideIcon |
-| `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统） |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)）；`handleDuplicateSearchToggle` L2032 / `fetchDuplicateTorrents` L2046 保持分类、标签、活动快照、排序与分页筛选，重复开关为绿色开启态 |
+| `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates`，切换视图不丢失重复查询模式 |
 | `FileManagement.vue` | 种子文件管理（选择/优先级） |
 | `components/TorrentAddDialog.vue` | 添加种子对话框 |
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |
@@ -89,12 +89,12 @@
 
 | 模块/文件 | 职责 |
 |-----------|------|
-| `tasks/index.vue` | 任务管理主页（`TaskManage`：CRUD + 调度/Cron/Python 类选择） |
+| `tasks/index.vue` | 任务管理主页（`TaskManage` L990）：L992–1010 将 `getTaskOutcomeMeta` / stale helper 暴露为实例方法供模板调用 |
 | `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs`）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐） |
-| `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L374）：回收站，删除任务恢复/彻底删除/分页筛选 |
+| `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L369）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
 | `settings/index.vue` | 全局设置页（`Settings`） |
 | `dashboard/index.vue` | 仪表盘聚合统计卡片（`Dashboard`）：系统状态卡显示所有下载器上传/下载速度之和，下载器状态卡显示各自下载/上传速度 |
-| `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates`，v1.0.5） |
+| `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
 | `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（`OrphanFiles`）；副本数量正数可点击，弹框显示完整路径、已定位/未定位数量与复制路径操作；保留任务占用提示、真全选与文件夹聚合展示 |
@@ -108,7 +108,7 @@
 
 | 文件 | 行号 | 说明 |
 |------|------|------|
-| `recycle-bin/index.vue` | L374 `export default {` | 回收站页面 |
+| `recycle-bin/index.vue` | L369 `export default {` | 回收站页面 |
 | `tracker/reannounce-config.vue` | L299 `export default {` | Tracker 重宣告配置页 |
 | `components/torrents/CompactTable.vue` | L301 `export default {` | 紧凑表格视图（在 components 分支） |
 
@@ -116,4 +116,4 @@
 
 ## 第三层详情
 
-- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2754 行主入口、`TraditionalView.vue`）
+- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2779 行主入口、`TraditionalView.vue` 2556 行）

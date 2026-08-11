@@ -9,7 +9,7 @@
 - 参数验证 422（page>=1 / pageSize<=100000）
 - 空列表 panic 防护（downloader_id="," / status="," 不报错）—— 锚定 commit 0622d53
 - 过滤条件（多选/单值/min_size/hash 空值排除）
-- 排序（hash DESC）/ name_like 模糊匹配
+- 默认添加时间倒序与可选列排序 / name_like 模糊匹配
 - tracker 批量组装（N+1 防护）
 
 测试范式照搬 tests/api/test_cron_task_cleanup.py（独立 FastAPI app + 内存 StaticPool SQLite +
@@ -432,6 +432,18 @@ class TestParamValidation:
         assert body["data"]["pageSize"] == 100000
 
     @pytest.mark.parametrize(
+        "payload",
+        (
+            {"sort_by": "hash"},
+            {"sort_by": "added_date; DROP TABLE torrent_info"},
+            {"sort_order": "sideways"},
+        ),
+    )
+    def test_sorting_rejects_unknown_fields_and_directions(self, client, payload):
+        response = client.post("/api/v1/torrents/duplicates", json=payload)
+        assert response.status_code == 422
+
+    @pytest.mark.parametrize(
         ("field", "prefix"),
         (("downloader_id", "dl"), ("status", "status")),
     )
@@ -689,11 +701,11 @@ class TestFilters:
 
 
 class TestSortingAndNameLike:
-    """排序（hash DESC）+ name_like 模糊匹配。"""
+    """默认添加时间倒序、可选列排序 + name_like 模糊匹配。"""
 
-    def test_sorting_hash_desc(self, client, db_session):
-        """多 hash，验证 list 按 hash DESC 顺序（added_date 至少差 1 秒避免精度丢失）。"""
-        # 3 个不同 hash 的重复对，added_date 各差 1 秒
+    def test_default_sorting_added_date_desc(self, client, db_session):
+        """多 hash 时仍以 added_date DESC 为主排序，不再按 hash 分组。"""
+        expected_info_ids = []
         for idx, h in enumerate(["hash_c", "hash_a", "hash_b"]):
             base_dt = datetime(2026, 1, 1, 12, 0, idx)  # 差 idx 秒
             make_torrent(
@@ -705,6 +717,7 @@ class TestSortingAndNameLike:
                 name=f"t{idx}",
                 added_date=base_dt,
             )
+            expected_info_ids.append(f"a{idx}")
             make_torrent(
                 db_session,
                 info_id=f"b{idx}",
@@ -714,15 +727,40 @@ class TestSortingAndNameLike:
                 name=f"t{idx}",
                 added_date=base_dt,
             )
+            expected_info_ids.append(f"b{idx}")
 
         r = client.post("/api/v1/torrents/duplicates", json={"page": 1, "pageSize": 20})
         body = r.json()
         assert body["code"] == "200"
-        # total=6（3 hash × 2 条），按 hash DESC 分组排序：hash_c, hash_b, hash_a
-        hashes = [item["hash"] for item in body["data"]["list"]]
-        # 按 hash DESC：c 组应在前，a 组应在后
-        assert hashes[0] == "hash_c", f"hash DESC 首条应为 hash_c: {hashes}"
-        assert hashes[-1] == "hash_a", f"hash DESC 末条应为 hash_a: {hashes}"
+        info_ids = [item["info_id"] for item in body["data"]["list"]]
+        assert info_ids == list(reversed(expected_info_ids))
+
+    def test_explicit_name_sorting_asc(self, client, db_session):
+        """重复模式仍接受列表列头排序，主键相同时回退到 added_date DESC。"""
+        for index, name in enumerate(["Zulu", "Alpha"]):
+            for suffix in ("a", "b"):
+                make_torrent(
+                    db_session,
+                    info_id=f"{suffix}-{index}",
+                    downloader_id=f"dl-{suffix}",
+                    downloader_name=suffix.upper(),
+                    hash_=f"hash-{index}",
+                    name=name,
+                    added_date=datetime(2026, 1, index + 1, 12, 0, 0),
+                )
+
+        body = client.post(
+            "/api/v1/torrents/duplicates",
+            json={"sort_by": "name", "sort_order": "asc"},
+        ).json()
+
+        assert body["code"] == "200"
+        assert [item["name"] for item in body["data"]["list"]] == [
+            "Alpha",
+            "Alpha",
+            "Zulu",
+            "Zulu",
+        ]
 
     def test_name_like_filter(self, client, db_session):
         """name_like='keyword' → 只返回名称含该关键词的。"""
@@ -766,6 +804,183 @@ class TestSortingAndNameLike:
         assert body["data"]["total"] == 2
         for item in body["data"]["list"]:
             assert "keyword" in item["name"]
+
+
+class TestSidebarFiltersAndActiveSnapshot:
+    """重复任务模式继续接受侧栏筛选，并复用活动种子权威快照。"""
+
+    def test_category_and_tags_filters_apply_before_duplicate_detection(self, client, db_session):
+        for suffix in ("a", "b"):
+            make_torrent(
+                db_session,
+                info_id=f"matched-{suffix}",
+                downloader_id=f"dl-{suffix}",
+                downloader_name=suffix.upper(),
+                hash_="matched-hash",
+                name="Matched",
+                category="movies",
+                tags="hd,featured",
+            )
+            make_torrent(
+                db_session,
+                info_id=f"excluded-{suffix}",
+                downloader_id=f"other-{suffix}",
+                downloader_name=suffix.upper(),
+                hash_="excluded-hash",
+                name="Excluded",
+                category="music",
+                tags="lossless",
+            )
+
+        body = client.post(
+            "/api/v1/torrents/duplicates",
+            json={"category_like": "mov", "tags_like": "feature"},
+        ).json()
+
+        assert body["code"] == "200"
+        assert body["data"]["total"] == 2
+        assert {item["hash"] for item in body["data"]["list"]} == {"matched-hash"}
+
+    def test_filter_that_matches_only_one_copy_removes_the_incomplete_group(self, client, db_session):
+        make_torrent(
+            db_session,
+            info_id="partial-a",
+            downloader_id="partial-dl-a",
+            downloader_name="A",
+            hash_="partial-hash",
+            name="Partial",
+            category="movies",
+        )
+        make_torrent(
+            db_session,
+            info_id="partial-b",
+            downloader_id="partial-dl-b",
+            downloader_name="B",
+            hash_="partial-hash",
+            name="Partial",
+            category="music",
+        )
+
+        body = client.post(
+            "/api/v1/torrents/duplicates",
+            json={"category_like": "movies"},
+        ).json()
+
+        assert body["code"] == "200"
+        assert body["data"]["total"] == 0
+        assert body["data"]["list"] == []
+
+    def test_active_only_uses_authoritative_snapshot(self, client, db_session):
+        for torrent_hash, downloader_prefix in (("active-hash", "active"), ("idle-hash", "idle")):
+            for suffix in ("a", "b"):
+                make_torrent(
+                    db_session,
+                    info_id=f"{downloader_prefix}-{suffix}",
+                    downloader_id=f"{downloader_prefix}-dl-{suffix}",
+                    downloader_name=suffix.upper(),
+                    hash_=torrent_hash,
+                    name=torrent_hash,
+                )
+
+        snapshot = SimpleNamespace(
+            ready=True,
+            keys=frozenset(
+                {
+                    ("active-dl-a", "active-hash"),
+                    ("active-dl-b", "active-hash"),
+                }
+            ),
+            status=SimpleNamespace(value="ready"),
+        )
+        with patch(
+            "app.api.endpoints.duplicate_torrents.get_active_keys_snapshot",
+            return_value=snapshot,
+        ):
+            body = client.post(
+                "/api/v1/torrents/duplicates",
+                json={"active_only": True},
+            ).json()
+
+        assert body["code"] == "200"
+        assert body["data"]["total"] == 2
+        assert body["data"]["activeSnapshotReady"] is True
+        assert body["data"]["activeSnapshotStatus"] == "ready"
+        assert {item["hash"] for item in body["data"]["list"]} == {"active-hash"}
+
+    def test_active_only_requires_two_active_copies_of_the_same_hash(self, client, db_session):
+        for suffix in ("a", "b"):
+            make_torrent(
+                db_session,
+                info_id=f"single-active-{suffix}",
+                downloader_id=f"single-active-dl-{suffix}",
+                downloader_name=suffix.upper(),
+                hash_="single-active-hash",
+                name="Single active copy",
+            )
+
+        snapshot = SimpleNamespace(
+            ready=True,
+            keys=frozenset({("single-active-dl-a", "single-active-hash")}),
+            status=SimpleNamespace(value="ready"),
+        )
+        with patch(
+            "app.api.endpoints.duplicate_torrents.get_active_keys_snapshot",
+            return_value=snapshot,
+        ):
+            body = client.post(
+                "/api/v1/torrents/duplicates",
+                json={"active_only": True},
+            ).json()
+
+        assert body["code"] == "200"
+        assert body["data"]["total"] == 0
+        assert body["data"]["list"] == []
+        assert body["data"]["activeSnapshotReady"] is True
+
+    def test_active_only_authoritative_empty_snapshot_returns_ready_empty(self, client):
+        snapshot = SimpleNamespace(
+            ready=True,
+            keys=frozenset(),
+            status=SimpleNamespace(value="ready_empty"),
+        )
+        with patch(
+            "app.api.endpoints.duplicate_torrents.get_active_keys_snapshot",
+            return_value=snapshot,
+        ):
+            body = client.post(
+                "/api/v1/torrents/duplicates",
+                json={"active_only": True},
+            ).json()
+
+        assert body["code"] == "200"
+        assert body["data"] == {
+            "total": 0,
+            "page": 1,
+            "pageSize": 20,
+            "list": [],
+            "activeSnapshotReady": True,
+            "activeSnapshotStatus": "ready_empty",
+        }
+
+    def test_active_only_returns_partial_until_snapshot_is_ready(self, client):
+        snapshot = SimpleNamespace(
+            ready=False,
+            keys=frozenset(),
+            status=SimpleNamespace(value="not_ready"),
+        )
+        with patch(
+            "app.api.endpoints.duplicate_torrents.get_active_keys_snapshot",
+            return_value=snapshot,
+        ):
+            body = client.post(
+                "/api/v1/torrents/duplicates",
+                json={"active_only": True},
+            ).json()
+
+        assert body["code"] == "206"
+        assert body["data"]["list"] == []
+        assert body["data"]["activeSnapshotReady"] is False
+        assert body["data"]["activeSnapshotStatus"] == "not_ready"
 
 
 # ==================== 组8：tracker 组装 ====================
