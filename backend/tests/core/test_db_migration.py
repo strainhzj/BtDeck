@@ -46,7 +46,8 @@ def _clean_database_path_env():
 #       → d8e9f0a1b2c3(async manual cleanup fields) → 3a4b5c6d7e8f(sync checkpoints)
 #       → f9a1b2c3d4e5(orphan purge hardlink notes) → f0e1d2c3b4a5(orphan purge delay count)
 #       → f5e6d7c8b9a0(task outcome/freshness columns, W3-4)
-EXPECTED_HEAD = "f5e6d7c8b9a0"
+#       → de898cb28172(torrent error reason)
+EXPECTED_HEAD = "de898cb28172"
 PREV_HEAD = "e6d8a20c41f3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
@@ -145,6 +146,15 @@ class TestMigrationChainIntegrity:
             assert purge_col[0][2].lower() == "integer", f"类型应为 INTEGER: {purge_col[0]}"
             assert purge_col[0][3] == 1, f"应 NOT NULL: {purge_col[0]}"
             assert purge_col[0][4].strip("'") == "0", f"默认值应为 0: {purge_col[0]}"
+        finally:
+            conn.close()
+
+        # de898cb28172:torrent_info.error_reason 可空，兼容历史种子。
+        conn = sqlite3.connect(db_path)
+        try:
+            torrent_cols = {c[1]: c for c in conn.execute("PRAGMA table_info(torrent_info)").fetchall()}
+            assert "error_reason" in torrent_cols, "torrent_info 应包含 error_reason 列"
+            assert torrent_cols["error_reason"][3] == 0, "torrent_info.error_reason 应可空"
         finally:
             conn.close()
 

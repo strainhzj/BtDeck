@@ -173,4 +173,19 @@ describe('tasks/index.vue 源码契约（W3-4 接入守卫）', () => {
     expect(tasksSource).toContain('getTaskOutcomeMeta(selectedLog?.outcome)')
     expect(tasksSource).toContain('执行结果：${outcomeText}')
   })
+
+  it('查看单任务日志后，清空操作移除隐藏 task_id 并立即刷新全部日志', () => {
+    expect(tasksSource).toContain("private activeLogTaskName = ''")
+    expect(tasksSource).toContain('this.activeLogTaskName = row.taskName')
+    expect(tasksSource).toContain('this.logQueryParams.task_id = undefined')
+    expect(tasksSource).toContain("this.activeLogTaskName = ''")
+    expect(tasksSource).toContain('@close="clearLogTaskFilter"')
+    expect(tasksSource).toContain('<LucideIcon name="x" :size="14" /> 清空')
+  })
+
+  it('导出与清理按钮使用项目标准 Element 按钮风格', () => {
+    expect(tasksSource).toContain('<el-button type="success" size="small">')
+    expect(tasksSource).toContain('type="warning"\n            size="small"')
+    expect(tasksSource).not.toContain('class="batch-btn batch-btn-info"')
+  })
 })

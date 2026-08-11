@@ -56,12 +56,24 @@
 | `tests/services/test_orphan_query_state.py` | 339 | 活动任务隐藏，失败终态后重新可见 |
 | `tests/api/test_duplicate_quick_delete_api.py` | 322 | 快捷删除重复提交与混合接受 |
 
+### 2026-08-12 种子文件、错误原因与搜索交互回归
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/api/test_transmission_error_sync.py` | 177 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测与恢复清空 |
+| `tests/api/test_torrent_backup_review.py` | 188 | 备份列表当前下载器 nickname 单查询批量解析及序列化 |
+| `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
+| `tests/models/test_torrent_models.py` | 348 | `TorrentInfo.error_reason` 字段全集与值映射 |
+
 ### 关键源文件测试覆盖抽样
 
 | 源文件 | 测试文件 | 状态 |
 |--------|---------|------|
 | `app/api/endpoints/torrent_crud.py` | （无直接测试，仅 `test_active_only_filter.py` 间接覆盖 getList 的 active_only） | ⚠ 未直接覆盖 |
 | `app/api/endpoints/duplicate_torrents.py` | `tests/api/test_duplicate_torrents_api.py`（1439 行，40 用例） | ✅ 默认添加时间倒序、安全列排序、非法排序拒绝、完整重复组筛选、活动快照/空快照、分页与元数据回填 |
+| `app/api/endpoints/torrent_backup.py` | `tests/api/test_torrent_backup_review.py`（188 行） | ✅ 当前 nickname 批量查询、空列表跳过查询与序列化 |
+| `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空与 camelCase 响应 |
+| `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
 | `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（1605 行）+ `test_advanced_search_models_strict.py` | ✅✅ 重度覆盖（含活动删除排除） |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
@@ -78,7 +90,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（30 个 spec）
+### `frontend/tests/unit/`（32 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -89,6 +101,7 @@
 | `downloader-regressions.spec.ts` ✨v1.0.6.33 | 下载器设置工作流回归 |
 | `deployment-recovery.spec.ts` | 部署后 chunk 一次恢复、刷新循环门禁、历史 Workbox 清退与 nginx 缓存契约 |
 | `error-normalize.spec.ts` | `utils/error-normalize.ts` |
+| `file-management-contract.spec.ts` ✨2026-08-12 | `FileManagement.vue` + `api/torrents.ts`：当前 nickname、无逐行动态请求、统一管理页筛选 UI |
 | `field-types-consistency.spec.ts` ✨v1.0.6.27 | 高级搜索字段类型前后端一致性 |
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
@@ -99,6 +112,7 @@
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |
 | `torrent-batch.spec.ts` | `views/torrents/utils/torrentBatch.ts` |
+| `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
 | `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；重复查询开关在筛选、排序、切页和活动筛选期间保持 |
@@ -109,15 +123,15 @@
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2534 行）
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2518 行）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
 | `AdvancedMultiSelect.performance.spec.ts` | 466 | `AdvancedMultiSelect.vue`（性能测试） |
 | `AdvancedMultiSelect.spec.ts` | 571 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
-| `AdvancedSearchBuilder.spec.ts` | 609 | `AdvancedSearchBuilder.vue` |
+| `AdvancedSearchBuilder.spec.ts` | 619 | `AdvancedSearchBuilder.vue`（含组内添加条件位于添加条件组上方的顺序守卫） |
 | `AdvancedSearchWorkspace.spec.ts` | 389 | `AdvancedSearchWorkspace.vue`（高级配置列表/回填/创建/覆盖更新/删除与权限、单次重置和异步竞态隔离） |
-| `ConditionValueInput.spec.ts` | 226 | `ConditionValueInput.vue` |
+| `ConditionValueInput.spec.ts` | 200 | `ConditionValueInput.vue`（状态与下载器共用不可创建的 AdvancedMultiSelect） |
 | `FilterGroup.spec.ts` | 97 | `FilterGroup.vue` |
 | `QuickDeleteDuplicatesDialog.spec.ts` | 176 | `QuickDeleteDuplicatesDialog.vue` |
 
@@ -125,7 +139,7 @@
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
-| `LucideIcon.spec.ts` | 83 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
+| `LucideIcon.spec.ts` | 185 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
 
 ---
 

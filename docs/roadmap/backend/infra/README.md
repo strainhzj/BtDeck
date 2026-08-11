@@ -60,24 +60,32 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L97) + `run_migrations_online`(L121)，处理 PyInstaller `_MEIPASS` + 集中 import 所有 ORM 模型 |
-| Alembic revisions versions | `versions/` | **9 个** revision 文件（见下表） |
+| Alembic revisions versions | `versions/` | **18 个** revision 文件；当前 head 为 `de898cb28172`（见下表） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（9 个迁移文件）
+### alembic/versions/（18 个迁移文件）
 
 | 关键词 | 文件名 | 内容（从命名推断） |
 |--------|--------|-------------------|
 | ratio 迁移 ratio-migration | `6132b66d14a7_ratio_columns_to_float.py` ✨v1.0.6.25/27 | ratio/ratio_limit 列从 String 迁移到 Float（治本）；v1.0.6.27 加固为"迁移前 `db_backup` 自动备份 + 历史值清洗 + CHECK 约束" |
 | ratio 约束 ratio-constraint | `8f4c2d1a9b7e_ratio_value_constraints.py` ✨v1.0.6.27 | 为 ratio/ratio_limit 加 CHECK 约束 `ck_torrent_info_ratio_finite_nonnegative`（有限且非负），拒绝脏值再次入库 |
+| 同步游标 sync-checkpoint | `3a4b5c6d7e8f_add_sync_checkpoints.py` | 新增同步 checkpoint 持久化表 |
 | 搜索模板表 search-templates | `95ef8bd8b47a_add_search_templates_table.py` | 新增搜索模板表 |
 | 通知表 notification | `a0ada9774936_add_notification_table.py` | 新增通知表 |
+| 孤儿置信度 orphan-confidence | `f2a7c91b4d6e_orphan_confidence_and_resolved.py` | 增加孤儿候选置信度、已解析状态与相关索引 |
+| 孤儿忽略 orphan-ignore | `a1b2c3d4e5f6_add_orphan_ignore_and_canonical_path.py` | 增加孤儿忽略与规范路径字段 |
 | 孤儿生命周期 orphan-lifecycle | `b075727f7182_orphan_lifecycle.py` | 孤儿文件生命周期 |
 | 孤儿表 orphan-tables | `c3f1a8b7d902_add_orphan_file_tables.py` | 新增孤儿文件相关表 |
 | 孤儿清理任务表 orphan-purge-job | `c7d8e9f0a1b2_add_orphan_purge_job.py` | 新增隔离区彻底删除持久化任务表与索引（幂等、可回滚） |
+| 孤儿清理任务字段 orphan-cleanup-job | `d8e9f0a1b2c3_add_orphan_cleanup_job_fields.py` | 扩展孤儿清理任务运行字段 |
 | Tracker reannounce 表 reannounce-config | `d0e58437af70_add_tracker_reannounce_config_table.py` | 新增 Tracker 重新宣告配置表 |
 | downloader 类型修复 downloader-type | `e2a02abcf912_fix_downloader_type_to_integer.py` | 修正 downloader.type 为整型 |
 | 孤儿操作日志 orphan-journal | `e6d8a20c41f3_orphan_operation_journal.py` | 孤儿文件操作日志表 |
+| 硬链接说明 hardlink-notes | `f9a1b2c3d4e5_orphan_purge_hardlink_notes.py` | 增加隔离区硬链接跳过说明字段 |
+| 清理延后计数 purge-delay | `f0e1d2c3b4a5_orphan_purge_delay_count.py` | 增加到期清理因硬链接延后的累计次数 |
+| 任务结果新鲜度 task-outcome | `f5e6d7c8b9a0_add_task_outcome_freshness.py` | 增加定时任务最近结果与新鲜度字段 |
+| 种子错误原因 torrent-error-reason | `de898cb28172_add_torrent_error_reason.py` ✨2026-08-12 | 为 `torrent_info` 增加可空 Text `error_reason`；历史数据保持空值，upgrade/downgrade 均带列存在守卫 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 

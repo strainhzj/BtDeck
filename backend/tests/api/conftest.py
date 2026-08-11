@@ -31,6 +31,7 @@ def make_torrent(
     downloader_name="dl",
     size=0,
     status="seeding",
+    error_reason=None,
     dr=0,
     progress=0.0,
     added_date=None,
@@ -106,6 +107,7 @@ def make_torrent(
         dr,  # dr
     )
     t.has_tracker_error = has_tracker_error  # NOT NULL，__init__ 未赋值
+    t.error_reason = error_reason
     if deleted_at is not None:
         t.deleted_at = deleted_at
     db.add(t)

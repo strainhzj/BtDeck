@@ -1,5 +1,38 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-12 - 种子文件、任务日志、高级搜索与错误原因修复
+
+### 已完成
+
+- 种子文件管理：备份列表对当前页下载器做单次批量查询并返回当前 `downloader_nickname`；
+  前端刷新列表即可反映昵称变化，不逐行动态加载，也不再显示 ID；筛选区复用项目
+  `management-page` 样式。
+- 定时任务：任务日志“导出/清理过期日志”改用项目标准按钮；从任务列表“查看日志”后
+  显示当前任务筛选，点击“清空”会清除 `task_id`、全部筛选及日期并立即请求全部日志。
+- 高级搜索：共享机器契约将 `status.kind` 改为 `multiSelect`，状态与下载器使用同一
+  `AdvancedMultiSelect`（不允许新建）；旧模板标量和 equals/not_equals 兼容归一；组内
+  “添加条件”移到“添加条件组”上方。
+- 错误原因：`torrent_info` 新增可空 Text `error_reason`，Alembic head 更新为
+  `de898cb28172`；Transmission FULL/INFO-ONLY/兼容同步与新增记录均写入 errorString，
+  原因变化参与差异检测，warning/正常恢复时清空；API 输出 `errorReason`。
+- 列表模式与传统模式均在种子名称 hover tooltip 和 Tracker 卡片展示错误原因。
+- 按 `roadmap-maintain` 以 grep 实测行号同步根索引、前后端分支、迁移清单与测试矩阵；
+  `feature_list.json`、`session-handoff.md` 同步更新。
+
+### 验证
+
+- 后端全量：`3171 passed, 7 skipped`（3178 collected）；新增字段首次暴露出旧模型字段全集
+  断言缺口，补齐后全量复跑通过。相关定向套件先行累计 88 passed。
+- 前端全量：`43 suites, 672 tests`；`npm.cmd run typecheck` 与生产 build 通过；修改源码和
+  测试的严格 ESLint 通过。
+- 本地浏览器实测：文件管理筛选 UI；任务日志按钮；查看任务日志从 2 条经“清空”恢复全部
+  6 条；状态多选及“添加条件”在“添加条件组”上方，均符合预期。临时服务与 QA 数据库已清理。
+- 后端修改文件 Flake8、`git diff --check` 通过。完整前端 lint 仍仅被 3 个无关既有测试文件
+  的 5 条 warning 拦截；目标 mypy 仍报告 142 条既有 SQLAlchemy/Pydantic 类型债；Windows
+  Black 26.5.1 对目标文件检查超时，已格式化其中可完成文件且 Flake8 无误。
+- Git Bash 根 `./init.sh` 通过；保留既有“虚拟环境未激活”、前端 null-byte warning，且未对
+  本地 `backend/config/app.db`（当前 f9a1b2c3d4e5）擅自执行新迁移。
+
 ## 2026-08-11 - 按同步阻塞验证报告实施修复
 
 ### 已完成

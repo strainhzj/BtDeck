@@ -32,7 +32,7 @@
     "name": {"kind": "text", "operators": ["eq", "ne", "contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with", "in", "not_in", "regex"]},
     "save_path": {"kind": "text", "operators": ["eq", "ne", "contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with", "in", "not_in", "regex"]},
     "size": {"kind": "number", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between"]},
-    "status": {"kind": "select", "operators": ["eq", "ne", "in", "not_in"]},
+    "status": {"kind": "multiSelect", "operators": ["eq", "ne", "in", "not_in"]},
     "added_date": {"kind": "date", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "last_days", "date_range"]},
     "added_time": {"kind": "date", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "last_days", "date_range"]},
     "completed_date": {"kind": "date", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "last_days", "date_range"]},

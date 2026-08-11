@@ -8,7 +8,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 契约加载器 contract-loader | `advanced_search.py` | 高级搜索契约加载器：把 JSON 解析为模块级常量（`SEARCH_FIELD_CONTRACT` / `SUPPORTED_SEARCH_OPERATORS` / `FRONTEND_TO_BACKEND_OPERATOR` / `NEGATED_SEARCH_OPERATORS` 等），提供 `allowed_operators_for_field(field)` / `field_kind(field)` 查询函数 |
-| 机器可读契约 contract-json | `advanced_search_contract.json` | **机器可读契约**：字段 → kind/operators/negated 映射、nullOperators、maxRegexConditions、maxRegexPatternLength、operatorGroups（前端 label↔后端 backendValue 双向表） |
+| 机器可读契约 contract-json | `advanced_search_contract.json` | **机器可读契约**：字段 → kind/operators/negated 映射、nullOperators、maxRegexConditions、maxRegexPatternLength、operatorGroups；`status` 的 kind 为 `multiSelect`，与下载器字段共用精确多选语义 |
 
 ## 设计动机
 
@@ -48,7 +48,7 @@
 
 - **单一真相原则的落地实例**：本目录是 `perspectives/conventions.md` 中"避免双份真相"的代码级实现 —— 把"枚举/操作符"从散落定义收敛为一份机器可读文件
 - **加载时机**：`contracts/advanced_search.py` 在 import 时即 `json.loads`，常量在进程级缓存，无运行时 IO 开销
-- **契约演进**：修改字段操作符需同时改 JSON + 相关 Pydantic 模型 + 契约守卫测试，三处联动（见 [test-coverage.md](../../perspectives/test-coverage.md)）
+- **契约演进**：修改字段 kind/操作符需同步生成 `frontend/src/contracts/advancedSearch.generated.ts`，并由 Pydantic/前端字段类型与操作符契约测试共同守卫（见 [test-coverage.md](../../perspectives/test-coverage.md)）
 
 ## 第三层详情
 

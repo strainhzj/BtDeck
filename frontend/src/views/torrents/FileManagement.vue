@@ -1,5 +1,5 @@
 <template>
-  <div class="app-container file-management-page">
+  <div class="app-container management-page file-management-page">
     <!-- 页面标题（BEM 范式，对齐 orphan-files） -->
     <div class="management-page__header">
       <h2 class="management-page__title">
@@ -16,7 +16,7 @@
           <el-input
             id="file-search"
             v-model="listQuery.search"
-            class="management-filter__control file-mgmt-input"
+            class="management-filter__control"
             placeholder="搜索任务名称或Info Hash..."
             prefix-icon="el-icon-search"
             clearable
@@ -30,7 +30,7 @@
           <el-select
             id="file-downloader"
             v-model="listQuery.downloader_id"
-            class="management-filter__control file-mgmt-input"
+            class="management-filter__control"
             placeholder="全部下载器"
             clearable
             @change="handleFilter"
@@ -38,7 +38,7 @@
             <el-option
               v-for="downloader in downloaderList"
               :key="downloader.downloader_id"
-              :label="downloader.downloader_name"
+              :label="downloader.nickname"
               :value="downloader.downloader_id"
             />
           </el-select>
@@ -53,14 +53,14 @@
             range-separator="至"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
-            class="management-filter__control file-mgmt-input file-mgmt-daterange"
+            class="management-filter__control"
             value-format="yyyy-MM-dd"
             clearable
             @change="handleDateChange"
           />
         </div>
 
-        <div class="management-filter__actions file-mgmt-actions">
+        <div class="management-filter__actions">
           <el-button type="primary" icon="el-icon-search" @click="handleFilter">搜索</el-button>
           <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
         </div>
@@ -123,7 +123,7 @@
 
       <el-table-column label="下载器" width="150" show-overflow-tooltip>
         <template slot-scope="{row}">
-          <span>{{ getDownloaderName(row.downloader_id) }}</span>
+          <span>{{ getBackupDownloaderName(row) }}</span>
         </template>
       </el-table-column>
 
@@ -195,7 +195,7 @@
           <span style="font-family: monospace;">{{ currentDetail.info_hash }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="下载器">
-          {{ getDownloaderName(currentDetail.downloader_id) }}
+          {{ getBackupDownloaderName(currentDetail) }}
         </el-descriptions-item>
         <el-descriptions-item label="文件路径">
           {{ currentDetail.file_path || '-' }}
@@ -233,7 +233,7 @@
             <el-option
               v-for="downloader in downloaderList"
               :key="downloader.downloader_id"
-              :label="downloader.downloader_name"
+              :label="downloader.nickname"
               :value="downloader.downloader_id"
             />
           </el-select>
@@ -287,7 +287,9 @@ import {
   deleteTorrentBackup,
   importTorrentBackup,
   TorrentBackup,
-  getDownloaderList
+  TorrentBackupListParams,
+  getDownloaderList,
+  DownloaderSimple
 } from '@/api/torrents'
 import service from '@/utils/request'
 
@@ -325,7 +327,7 @@ export default class FileManagement extends Vue {
   dateRange: string[] = []
 
   // 下载器列表
-  downloaderList: any[] = []
+  downloaderList: DownloaderSimple[] = []
 
   // 选中的项目
   selectedItems: TorrentBackup[] = []
@@ -363,7 +365,7 @@ export default class FileManagement extends Vue {
     try {
       const res = await getDownloaderList()
       if (res.code === '200') {
-        this.downloaderList = res.data.list || []
+        this.downloaderList = Array.isArray(res.data) ? res.data : []
       }
     } catch (error) {
       console.error('获取下载器列表失败:', error)
@@ -374,7 +376,7 @@ export default class FileManagement extends Vue {
   async fetchList() {
     this.listLoading = true
     try {
-      const params: any = {
+      const params: TorrentBackupListParams = {
         page: this.listQuery.page,
         pageSize: this.listQuery.pageSize
       }
@@ -668,9 +670,17 @@ export default class FileManagement extends Vue {
   }
 
   // 获取下载器名称
-  getDownloaderName(downloaderId: number) {
-    const downloader = this.downloaderList.find(d => d.downloader_id === downloaderId)
-    return downloader ? downloader.downloader_name : `下载器${downloaderId}`
+  getDownloaderName(downloaderId: number | string | undefined) {
+    if (downloaderId === undefined || downloaderId === null) return '-'
+    const downloader = this.downloaderList.find(
+      item => String(item.downloader_id) === String(downloaderId)
+    )
+    return downloader?.nickname || '-'
+  }
+
+  // 列表接口已批量返回当前昵称；本地下载器列表仅作为兼容旧响应的回退。
+  getBackupDownloaderName(backup: Partial<TorrentBackup>) {
+    return backup.downloader_nickname || this.getDownloaderName(backup.downloader_id)
   }
 
   // 格式化时间
@@ -692,49 +702,6 @@ export default class FileManagement extends Vue {
 <style lang="scss" scoped>
 .file-management-page {
   padding: 20px;
-}
-
-// 三控件统一高度对齐（修复重构前的高度不齐问题）。
-// orphan-files 的等高前提是 AdvancedMultiSelect 自带 32px；本页改用 el-select/el-date-picker，
-// 无法自动等高，需用 ::v-deep 统一压到 32px（参照 orphan-files .orphan-path-input）。
-.file-mgmt-input {
-  ::v-deep .el-input__inner {
-    // 命中 el-input 与 el-select（内部同为 .el-input__inner）
-    height: 32px;
-    line-height: 32px;
-    font-size: 12px;
-    border-radius: 4px;
-  }
-
-  // 命中 el-date-picker 外壳（.el-input__inner 选择器无法命中 .el-range-editor）
-  ::v-deep .el-range-editor {
-    height: 32px;
-  }
-
-  ::v-deep .el-range-input {
-    font-size: 12px;
-  }
-}
-
-// 搜索/重置按钮紧跟控件（覆盖全局 .management-filter__actions 的 margin-left:auto，
-// 避免 field 较少时按钮被推到面板最右留出大段空白）。
-.file-mgmt-actions {
-  margin-left: 0 !important;
-}
-
-// 日期范围选择器精简版修复：确保"至"分隔符与清除图标在窄宽下不被遮挡。
-// （management-filter__field--wide 的 flex-basis:320px 仍可能挤压 daterange，故保留必要修正。）
-.file-mgmt-daterange {
-  ::v-deep .el-range-separator {
-    padding: 0 8px;
-    min-width: 24px;
-    line-height: 32px;
-  }
-
-  ::v-deep .el-range-input {
-    flex: 1;
-    min-width: 0;
-  }
 }
 
 .batch-operations {

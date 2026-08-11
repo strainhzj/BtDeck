@@ -6,8 +6,9 @@ Transmission 种子错误状态同步集成测试
 
 覆盖范围：
 1. create_transmission_torrent_record（种子添加路径，torrent_helpers.py:774）
-2. has_torrent_info_changes 能捕获 status→error 变更（确保增量同步会触发写入）
-3. error 恢复（2→0）链路：status 应从 error 回到正常查表值
+2. errorString 会同步为 error_reason，恢复后清空
+3. has_torrent_info_changes 能捕获 status / error_reason 变更
+4. error 恢复（2→0）链路：status 应从 error 回到正常查表值
 """
 
 from datetime import datetime
@@ -27,7 +28,12 @@ def _make_downloader() -> MagicMock:
     return d
 
 
-def _make_tr_torrent(*, error: int = 0, status: str = "seeding") -> MagicMock:
+def _make_tr_torrent(
+    *,
+    error: int = 0,
+    status: str = "seeding",
+    error_string: str = "",
+) -> MagicMock:
     """构造字段齐全的 Transmission 种子 mock。
 
     显式设置 error 为 int，避免 MagicMock 自动属性陷阱。
@@ -40,6 +46,7 @@ def _make_tr_torrent(*, error: int = 0, status: str = "seeding") -> MagicMock:
     t.total_size = 2048
     t.status = status
     t.error = error
+    t.error_string = error_string
     t.torrent_file = "/config/tr/torrents/x.torrent"
     t.added_date = datetime(2026, 1, 1, 12, 0, 0)
     t.done_date = None
@@ -60,16 +67,22 @@ class TestCreateTransmissionTorrentRecordErrorState:
     def test_本地错误写入error状态(self):
         """error=3(本地错误，如磁盘满) 的种子 status 应为 error"""
         downloader = _make_downloader()
-        tr_torrent = _make_tr_torrent(error=3, status="downloading")
+        tr_torrent = _make_tr_torrent(
+            error=3,
+            status="downloading",
+            error_string="No space left on device",
+        )
         record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
         assert record.status == "error"
+        assert record.error_reason == "No space left on device"
 
     def test_tracker错误写入error状态(self):
         """error=2(tracker错误) 的种子 status 应为 error"""
         downloader = _make_downloader()
-        tr_torrent = _make_tr_torrent(error=2, status="seeding")
+        tr_torrent = _make_tr_torrent(error=2, status="seeding", error_string="Tracker gave HTTP 503")
         record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
         assert record.status == "error"
+        assert record.error_reason == "Tracker gave HTTP 503"
 
     def test_正常种子写入查表状态(self):
         """error=0 的正常种子 status 应为查表值（seeding）"""
@@ -77,13 +90,21 @@ class TestCreateTransmissionTorrentRecordErrorState:
         tr_torrent = _make_tr_torrent(error=0, status="seeding")
         record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
         assert record.status == "seeding"
+        assert record.error_reason is None
 
     def test_tracker警告不写入error状态(self):
         """error=1(tracker警告) 的种子 status 应为查表值，不归入 error"""
         downloader = _make_downloader()
-        tr_torrent = _make_tr_torrent(error=1, status="downloading")
+        tr_torrent = _make_tr_torrent(error=1, status="downloading", error_string="temporary warning")
         record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
         assert record.status == "downloading"
+        assert record.error_reason is None
+
+    def test_严重错误空文案不写入空字符串(self):
+        downloader = _make_downloader()
+        tr_torrent = _make_tr_torrent(error=3, error_string="   ")
+        record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
+        assert record.error_reason is None
 
 
 # ============================================================
@@ -111,6 +132,16 @@ class TestStatusErrorChangeDetection:
         existing = {"hash": "h1", "status": "error"}
         new_mapping = {"hash": "h1", "status": "error"}
         assert has_torrent_info_changes(existing, new_mapping) is False
+
+    def test_error_reason变化被检测(self):
+        existing = {"hash": "h1", "status": "error", "error_reason": "old reason"}
+        new_mapping = {"hash": "h1", "status": "error", "error_reason": "new reason"}
+        assert has_torrent_info_changes(existing, new_mapping) is True
+
+    def test_error恢复时清空原因被检测(self):
+        existing = {"hash": "h1", "status": "error", "error_reason": "disk full"}
+        new_mapping = {"hash": "h1", "status": "seeding", "error_reason": None}
+        assert has_torrent_info_changes(existing, new_mapping) is True
 
 
 # ============================================================

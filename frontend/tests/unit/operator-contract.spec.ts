@@ -18,6 +18,8 @@ import {
   AdvancedSearchValidationError,
   buildAdvancedSearchParams,
   formatConditionValue,
+  normalizeLoadedConditionValue,
+  normalizeLoadedOperator,
   resolveBackendOperator,
   transitionConditionValue
 } from '@/components/torrents/advancedSearchState'
@@ -50,6 +52,15 @@ describe('高级搜索运行时契约', () => {
     expect(ADVANCED_SEARCH_NEGATED_OPERATORS).toEqual(
       backendContract.negatedOperators
     )
+  })
+
+  test('状态字段使用多选契约并兼容旧模板的单值 equals', () => {
+    expect(ADVANCED_SEARCH_FIELDS.status.kind).toBe('multiSelect')
+    expect(normalizeLoadedOperator('status', 'equals')).toBe('in')
+    expect(normalizeLoadedOperator('status', 'ne')).toBe('not_in')
+    expect(
+      normalizeLoadedConditionValue('status', 'multiSelect', 'in', 'paused')
+    ).toEqual(['paused'])
   })
 
   test('每个 UI 操作符都显式映射，且至少被一个字段允许', () => {

@@ -177,6 +177,12 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(vm.formattedQuery).toBe('暂无有效搜索条件')
   })
 
+  it('组内添加条件入口位于全局添加条件组入口之前', () => {
+    const text = wrapper.text()
+    expect(text.indexOf('添加条件')).toBeGreaterThanOrEqual(0)
+    expect(text.indexOf('添加条件')).toBeLessThan(text.indexOf('添加条件组'))
+  })
+
   it('添加、复制、清空和删除条件组时保持独立数据', () => {
     const source = vm.conditionGroups[0]
     source.name = '下载条件'
@@ -242,6 +248,10 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
 
   it('根据字段返回操作符、选项和排除能力', () => {
     expect(vm.getFieldOptions('status').length).toBeGreaterThan(0)
+    expect(vm.getOperatorGroups('status')[0].operators?.map(op => op.value)).toEqual([
+      'in',
+      'not_in'
+    ])
     expect(vm.getFieldOptions('super_seeding')).toEqual([
       { label: '是', value: 'true' },
       { label: '否', value: 'false' }
@@ -263,8 +273,8 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     secondGroup.logic = 'or'
     firstGroup.betweenGroupLogic = 'or'
     secondGroup.conditions[0].field = 'status'
-    secondGroup.conditions[0].operator = 'equals'
-    secondGroup.conditions[0].value = 'paused'
+    secondGroup.conditions[0].operator = 'in'
+    secondGroup.conditions[0].value = ['paused']
     secondGroup.conditions[0].mode = 'exclude'
 
     const params = vm.buildSearchParams()
@@ -287,8 +297,8 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
       conditions: [
         expect.objectContaining({
           field: 'status',
-          operator: 'ne',
-          value: 'paused',
+          operator: 'not_in',
+          value: ['paused'],
           mode: 'exclude'
         })
       ]

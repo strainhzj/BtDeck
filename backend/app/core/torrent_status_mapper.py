@@ -9,7 +9,7 @@ Version: 1.0.0
 Date: 2026-02-04
 """
 
-from typing import Dict
+from typing import Dict, Optional
 
 
 class TorrentStatusMapper:
@@ -133,6 +133,34 @@ class TorrentStatusMapper:
         if tr_error >= TorrentStatusMapper.TR_ERROR_THRESHOLD:
             return "error"
         return base
+
+    @staticmethod
+    def extract_transmission_error_reason(tr_torrent: object) -> Optional[str]:
+        """提取 Transmission 严重错误的可展示原因。
+
+        ``transmission_rpc`` 仅在请求包含 ``errorString`` 时才暴露
+        ``Torrent.error_string``，字段缺失时属性访问可能抛出 ``KeyError``。
+        因此这里集中做防御性读取，并在错误恢复、警告或空文案时返回
+        ``None``，让同步写入能够清除数据库中的历史错误原因。
+        """
+        try:
+            tr_error = getattr(tr_torrent, "error")
+        except (AttributeError, KeyError):
+            return None
+
+        if not isinstance(tr_error, int) or tr_error < TorrentStatusMapper.TR_ERROR_THRESHOLD:
+            return None
+
+        try:
+            raw_reason = getattr(tr_torrent, "error_string")
+        except (AttributeError, KeyError):
+            raw_reason = None
+
+        if not isinstance(raw_reason, str):
+            return None
+
+        reason = raw_reason.strip()
+        return reason or None
 
     @classmethod
     def get_qbittorrent_mapping_rules(cls) -> Dict[str, str]:

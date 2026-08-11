@@ -14,13 +14,15 @@ import logging
 import shutil
 import urllib3
 import zipfile
-from typing import Optional, List
+from typing import Dict, Optional, List, Sequence
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 from fastapi import APIRouter, HTTPException, Request, Query, Depends, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
 import io
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
@@ -33,6 +35,7 @@ from app.schemas.torrent_backup import (
 )
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
+from app.downloader.models import BtDownloaders
 
 # 禁用 urllib3 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -69,9 +72,29 @@ def get_downloader_from_store(downloader_id: int, app):
         return None
 
 
-def backup_to_dict(backup: TorrentFileBackup) -> dict:
+def backup_to_dict(backup: TorrentFileBackup, downloader_nickname: Optional[str] = None) -> dict:
     """将TorrentFileBackup对象转换为字典"""
-    return backup.to_dict()
+    data = backup.to_dict()
+    data["downloader_nickname"] = downloader_nickname
+    return data
+
+
+async def get_backup_downloader_nicknames(
+    db: AsyncSession,
+    backups: Sequence[TorrentFileBackup],
+) -> Dict[str, str]:
+    """一次查询返回备份列表所引用下载器的当前昵称。"""
+    downloader_ids = {str(backup.downloader_id) for backup in backups if backup.downloader_id is not None}
+    if not downloader_ids:
+        return {}
+
+    result = await db.execute(
+        select(BtDownloaders.downloader_id, BtDownloaders.nickname).where(
+            BtDownloaders.downloader_id.in_(downloader_ids),
+            BtDownloaders.dr == 0,
+        )
+    )
+    return {str(row.downloader_id): row.nickname for row in result.all() if row.nickname}
 
 
 # ==================== API端点 ====================
@@ -210,8 +233,16 @@ async def list_backups(
             result_data = await manager.list_backups(downloader_id=downloader_id, page=page, page_size=pageSize)
 
             if result_data["success"]:
-                # 转换为响应模型
-                backup_list = [backup_to_dict(backup) for backup in result_data["list"]]
+                # 批量关联当前下载器昵称，避免逐行查询或前端逐行动态加载。
+                backups = result_data["list"]
+                nickname_map = await get_backup_downloader_nicknames(db, backups)
+                backup_list = [
+                    backup_to_dict(
+                        backup,
+                        nickname_map.get(str(backup.downloader_id)),
+                    )
+                    for backup in backups
+                ]
 
                 return CommonResponse(
                     status="success",

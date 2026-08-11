@@ -131,6 +131,12 @@ const SIZE_MULTIPLIERS: Readonly<Record<string, number>> = Object.freeze({
 const LOCAL_DATE_PATTERN =
   /^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}):(\d{2}))?$/
 
+const EXACT_MULTI_SELECT_FIELDS = new Set([
+  'status',
+  'category',
+  'downloader_name'
+])
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
@@ -386,13 +392,15 @@ export function normalizeLoadedOperator(
       `模板包含未知操作符：${operator || '未选择'}`
     )
   }
-  if (field === 'category' || field === 'downloader_name') {
+  if (EXACT_MULTI_SELECT_FIELDS.has(field)) {
     if (
+      frontendOperator === 'equals' ||
       frontendOperator === 'contains_any' ||
       frontendOperator === 'contains_all'
     ) {
       frontendOperator = 'in'
     } else if (
+      frontendOperator === 'not_equals' ||
       frontendOperator === 'not_contains_any' ||
       frontendOperator === 'not_contains_all'
     ) {

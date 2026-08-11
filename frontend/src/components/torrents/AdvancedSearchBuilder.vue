@@ -42,13 +42,6 @@
               @click="startEditingGroup(group)"
               title="重命名条件组"
             />
-            <el-button
-              size="mini"
-              icon="el-icon-plus"
-              @click="addCondition(group)"
-            >
-              添加条件
-            </el-button>
             <el-dropdown v-if="conditionGroups.length > 1" trigger="click" @command="handleGroupCommand">
               <el-button size="mini" type="danger">
                 更多<i class="el-icon-arrow-down el-icon--right"></i>
@@ -228,6 +221,17 @@
           </div>
         </div>
 
+        <!-- 组内添加条件放在条件列表底部，避免与全局“添加条件组”误触。 -->
+        <div class="add-condition">
+          <el-button
+            size="small"
+            icon="el-icon-plus"
+            @click="addCondition(group)"
+          >
+            添加条件
+          </el-button>
+        </div>
+
         <!-- 组间逻辑选择 -->
         <div
           v-if="groupIndex < conditionGroups.length - 1"
@@ -379,7 +383,7 @@ interface SearchField {
   supportsExclude?: boolean
   /**
    * multiSelect 字段的匹配模式，决定 UI 暴露哪些操作符：
-   * - 'exact'     单值精确列（category/downloader_name）→ in/not_in
+   * - 'exact'     单值精确列（status/category/downloader_name）→ in/not_in
    * - 'substring' 逗号分隔字符串列（tags）→ contains_any/not_contains_any
    * 仅对 multiSelect 类型生效；其它类型忽略。
    */
@@ -444,8 +448,9 @@ export default class AdvancedSearchBuilder extends Vue {
     {
       key: 'status',
       label: '状态',
-      type: 'select',
+      type: 'multiSelect',
       supportsExclude: true,
+      matchMode: 'exact',
       options: STATUS_OPTIONS
     },
     {
@@ -806,7 +811,7 @@ export default class AdvancedSearchBuilder extends Vue {
     if (this.operatorGroups[fieldType]) {
       let operators = this.operatorGroups[fieldType]
       // multiSelect 字段按 matchMode 过滤：
-      // - exact（category/downloader_name 单值列）只暴露 in/not_in
+      // - exact（status/category/downloader_name 单值列）只暴露 in/not_in
       // - substring（tags 逗号串列）只暴露 contains_any/not_contains_any
       // 避免对单值列暴露 contains_*（语义错：LIKE 对精确列多余），
       // 也避免对逗号串列暴露 in（语义错：整串相等而非子串）。
@@ -1281,6 +1286,12 @@ export default class AdvancedSearchBuilder extends Vue {
           white-space: nowrap;
         }
       }
+    }
+
+    .add-condition {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 4px;
     }
   }
 

@@ -34,10 +34,10 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L12)、`TrackerInfo`(L215)、`TrackerKeywordConfig`(L269)、`TrackerMessageLog`(L349)、`TrackerReannounceConfig`(L432) |
+| 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L12，`error_reason` Text L24)、`TrackerInfo`(L240)、`TrackerKeywordConfig`(L294)、`TrackerMessageLog`(L374)、`TrackerReannounceConfig`(L457) |
 | 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 39 成员) + `AuditOperationResult`(L239) |
 | 审计 ORM audit-model | `audit_models.py` | ORM：`TorrentAuditLog`(L21) 种子审计日志表 |
-| 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14) |
+| 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14)，`error_reason` L37 自动输出为 `errorReason` |
 | Tracker VO tracker-vo | `trackerVO.py` | `TrackerInfoVO`(L5) |
 | 请求 VO torrent-request | `request.py` | 请求 VO：`Tracker`(L6) / `ModifyTrackerRequest`(L12) |
 | 空占位 qb | `qbittorrent.py` | ⚠ **空文件**（0 字节，占位） |

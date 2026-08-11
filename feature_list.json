@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-11",
+  "last_updated": "2026-08-12",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-11",
@@ -18,6 +18,102 @@
     "evidence": "修复后定向套件 83 passed；coordinator/checkpoint/governance/metadata/legacy 70 passed/5 skipped；memory-bound/file contention 18 passed/1 skipped；health 10 passed；ruff 与 git diff --check 通过。新增 W0 止血 Runbook、WAL PASSIVE busy/checkpoint 观测、info durable cursor；生产 Alembic 迁移、暂停/恢复演练和 30 轮基线归档仍待执行。"
   },
   "features": [
+    {
+      "id": "torrent-management-usability-and-error-reason",
+      "name": "种子文件、任务日志、高级搜索与错误原因修复",
+      "description": "统一种子文件管理与任务日志交互，修复查看日志筛选清空，调整高级搜索状态多选与按钮层级，并将 Transmission 错误原因同步入库后在两种种子视图展示。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "torrent-management-usability-and-error-reason.1",
+          "name": "种子文件管理显示当前下载器昵称并统一搜索样式",
+          "description": "备份列表对当前页 downloader_id 做单次批量查询并返回 downloader_nickname；前端直接消费列表字段，刷新列表即可反映改名，不逐行动态加载，同时复用 management-page 筛选结构。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/torrent_backup.py",
+            "backend/tests/api/test_torrent_backup_review.py",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/views/torrents/FileManagement.vue",
+            "frontend/tests/unit/file-management-contract.spec.ts"
+          ],
+          "evidence": "后端覆盖单查询批量 nickname、空列表不查询及序列化；前端契约覆盖当前 nickname、无逐行动态请求和统一筛选样式；本地浏览器实测页面布局通过。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.2",
+          "name": "任务日志按钮与查看日志筛选交互修复",
+          "description": "导出/清理过期日志改为项目标准 Element 按钮；从任务列表查看日志时显示当前任务筛选，清空同时清除 task_id 并立即重新请求全部日志。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/tasks/index.vue",
+            "frontend/tests/unit/tasks-sync-freshness.spec.ts"
+          ],
+          "evidence": "浏览器实测查看任务日志得到 2 条，点击清空后筛选标签消失并立即恢复全部 6 条；按钮视觉核对通过，源码契约覆盖清空与标准按钮。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.3",
+          "name": "高级搜索状态多选与添加按钮层级调整",
+          "description": "机器契约将 status kind 改为 multiSelect；状态与下载器复用不可创建的 AdvancedMultiSelect，并兼容旧模板标量和 equals/not_equals；组内添加条件移到添加条件组上方。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/contracts/advanced_search_contract.json",
+            "frontend/src/contracts/advancedSearch.generated.ts",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/components/torrents/ConditionValueInput.vue",
+            "frontend/src/components/torrents/advancedSearchState.ts",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/src/components/torrents/__tests__/ConditionValueInput.spec.ts",
+            "frontend/tests/unit/field-types-consistency.spec.ts",
+            "frontend/tests/unit/operator-contract.spec.ts"
+          ],
+          "evidence": "契约生成检查、状态多选/旧模板归一、按钮顺序测试均通过；浏览器实测状态呈现多选触发器且添加条件位于添加条件组上方。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.4",
+          "name": "Transmission 错误原因持久化与双视图展示",
+          "description": "TorrentInfo 新增可空 error_reason Text 列及可回滚 Alembic 迁移；FULL/INFO-ONLY/兼容同步与新增记录写入 errorString，原因变化参与差异检测，恢复时清空；响应自动输出 errorReason，两种视图在名称 tooltip 和 Tracker 卡片展示。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/alembic/versions/de898cb28172_add_torrent_error_reason.py",
+            "backend/app/torrents/models.py",
+            "backend/app/torrents/responseVO.py",
+            "backend/app/core/torrent_status_mapper.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/api/test_transmission_error_sync.py",
+            "backend/tests/api/test_torrents_async_info_budget.py",
+            "backend/tests/api/test_torrent_list_api.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/models/test_torrent_models.py",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/tests/unit/torrent-error-reason-ui.spec.ts"
+          ],
+          "evidence": "错误原因写入、变化检测、warning/正常状态不保留、恢复清空、迁移升级/降级、camelCase 响应和两视图展示均有回归覆盖。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.5",
+          "name": "全量回归与项目记录",
+          "description": "完成页面实测、前后端全量回归、构建/类型/目标 lint，并同步路线图、功能状态、进度和交接记录。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "后端全量 3171 passed / 7 skipped；前端全量 43 suites / 672 tests；typecheck、生产 build、修改文件严格 ESLint、后端 Flake8、Git Bash 根 ./init.sh 与 git diff --check 通过。完整前端 lint 仅剩 3 个无关既有测试文件的 5 条 warning。"
+        }
+      ]
+    },
     {
       "id": "transmission-torrent-error-state-sync-fix",
       "name": "Transmission 种子错误状态同步修复",

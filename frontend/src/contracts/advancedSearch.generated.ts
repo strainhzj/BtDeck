@@ -136,7 +136,7 @@ export const ADVANCED_SEARCH_FIELDS: Readonly<Record<string, AdvancedSearchField
     ]
   },
   "status": {
-    "kind": "select",
+    "kind": "multiSelect",
     "operators": [
       "eq",
       "ne",

@@ -143,6 +143,23 @@ class TestBasicAndSoftDelete:
         assert len(body["data"]["list"]) == 3
         assert _info_ids(body) == {"i0", "i1", "i2"}
 
+    def test_error_reason_uses_camel_case_contract(self, client, db_session):
+        make_torrent(
+            db_session,
+            info_id="i-error",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h-error",
+            name="errored",
+            status="error",
+            error_reason="No space left on device",
+        )
+
+        body = client.get(URL).json()
+        item = body["data"]["list"][0]
+        assert item["errorReason"] == "No space left on device"
+        assert "error_reason" not in item
+
     def test_recycle_bin_excluded(self, client, db_session):
         """deleted_at 非空的记录被排除（方案B：不同 hash 避免唯一索引冲突）。
 
