@@ -291,9 +291,20 @@
           </el-table-column>
           <el-table-column label="副本数量" width="100" align="center">
             <template slot-scope="scope">
+              <button
+                v-if="canOpenHardlinkLocations(scope.row)"
+                type="button"
+                class="orphan-hardlink-copy-count orphan-hardlink-copy-count--link"
+                :title="getHardlinkCopyCountTitle(scope.row)"
+                :aria-label="getHardlinkCopyCountTitle(scope.row)"
+                @click.stop="handleHardlinkCopyClick(scope.row)"
+              >
+                {{ formatHardlinkCopyCount(scope.row.hardlink_copy_count) }}
+              </button>
               <span
+                v-else
                 class="orphan-hardlink-copy-count"
-                :title="scope.row._is_folder ? '文件夹内所有孤儿文件的硬链接副本总数' : '与当前文件共享 inode 的其它目录项数量'"
+                :title="getHardlinkCopyCountTitle(scope.row)"
               >
                 {{ formatHardlinkCopyCount(scope.row.hardlink_copy_count) }}
               </span>
@@ -516,6 +527,130 @@
       </el-tab-pane>
     </el-tabs>
 
+    <!-- 硬链接副本位置对话框（点击副本数量后按需扫描） -->
+    <el-dialog
+      :title="hardlinkLocationDialogTitle"
+      :visible.sync="hardlinkLocationDialogVisible"
+      width="760px"
+      :close-on-click-modal="false"
+      custom-class="management-dialog hardlink-location-dialog"
+      @closed="resetHardlinkLocationDialog"
+    >
+      <div v-loading="hardlinkLocationLoading" class="hardlink-location-content">
+        <el-alert
+          title="仅在系统已配置的下载目录内查找，不扫描整块磁盘。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+
+        <template v-if="hardlinkLocationResult">
+          <div class="hardlink-location-summary">
+            <span>实时副本 <strong>{{ hardlinkLocationResult.total_copy_count }}</strong></span>
+            <span>已定位 <strong>{{ hardlinkLocationResult.total_found_count }}</strong></span>
+            <span>扫描目录 <strong>{{ hardlinkLocationResult.searched_root_count }}</strong></span>
+          </div>
+
+          <el-alert
+            v-if="hardlinkLocationResult.total_unlocated_count > 0"
+            class="hardlink-location-alert"
+            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在已配置目录中定位`"
+            description="这些副本可能位于未配置目录、无权限目录或当前不可访问的存储中。"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+          <el-alert
+            v-if="hardlinkLocationResult.unknown_count > 0"
+            class="hardlink-location-alert"
+            :title="`${hardlinkLocationResult.unknown_count} 个源文件当前不可访问，无法核对位置`"
+            type="error"
+            :closable="false"
+            show-icon
+          />
+          <el-alert
+            v-if="hardlinkLocationResult.search_error"
+            class="hardlink-location-alert"
+            :title="hardlinkLocationResult.search_error"
+            type="error"
+            :closable="false"
+            show-icon
+          />
+          <el-alert
+            v-if="hardlinkLocationResult.missing_orphan_ids.length > 0"
+            class="hardlink-location-alert"
+            :title="`${hardlinkLocationResult.missing_orphan_ids.length} 个列表项已失效，请刷新页面后重试`"
+            type="warning"
+            :closable="false"
+            show-icon
+          />
+
+          <div class="hardlink-location-list">
+            <section
+              v-for="item in hardlinkLocationResult.items"
+              :key="item.orphan_id"
+              class="hardlink-location-item"
+            >
+              <header class="hardlink-location-item__header">
+                <span class="hardlink-location-item__source" :title="item.file_path">
+                  {{ item.file_path }}
+                </span>
+                <span class="hardlink-location-item__metrics">
+                  <el-tag size="mini" type="info">副本 {{ formatHardlinkCopyCount(item.copy_count) }}</el-tag>
+                  <el-tag size="mini" type="success">已定位 {{ item.found_count }}</el-tag>
+                </span>
+              </header>
+
+              <el-alert
+                v-if="item.copy_count === null"
+                :title="item.error || '源文件不可访问，无法重新核对副本位置'"
+                type="error"
+                :closable="false"
+                show-icon
+              />
+              <el-alert
+                v-else-if="item.error"
+                :title="item.error"
+                type="warning"
+                :closable="false"
+                show-icon
+              />
+
+              <div v-if="item.copies.length > 0" class="hardlink-location-copies">
+                <div
+                  v-for="copyPath in item.copies"
+                  :key="copyPath"
+                  class="hardlink-location-copy"
+                >
+                  <span class="hardlink-location-copy__path" :title="copyPath">{{ copyPath }}</span>
+                  <el-button
+                    type="text"
+                    size="mini"
+                    class="hardlink-location-copy__button"
+                    @click="copyHardlinkPath(copyPath)"
+                  >
+                    复制路径
+                  </el-button>
+                </div>
+              </div>
+              <p v-else-if="item.copy_count && item.copy_count > 0" class="hardlink-location-empty">
+                当前已配置目录内未定位到副本路径。
+              </p>
+              <p v-else-if="item.copy_count === 0" class="hardlink-location-empty">
+                点击查询时已复核为 0 个副本。
+              </p>
+              <p v-if="item.unlocated_count && item.unlocated_count > 0" class="hardlink-location-unlocated">
+                该文件还有 {{ item.unlocated_count }} 个副本位置未定位。
+              </p>
+            </section>
+          </div>
+        </template>
+      </div>
+      <span slot="footer" class="dialog-footer">
+        <el-button @click="hardlinkLocationDialogVisible = false">关闭</el-button>
+      </span>
+    </el-dialog>
+
     <!-- 清理确认对话框 -->
     <el-dialog
       title="清理确认"
@@ -618,6 +753,7 @@
 import { Component, Vue } from 'vue-property-decorator'
 import {
   getOrphanList,
+  getHardlinkCopyLocations,
   triggerScan,
   cleanupPreview,
   cleanupOrphans,
@@ -629,6 +765,7 @@ import {
   OrphanFileItem,
   OrphanFolderRow,
   OrphanTableRow,
+  HardlinkCopyLocationsResult,
   OrphanListParams,
   OrphanScanContext,
   OrphanScanRecord,
@@ -647,6 +784,7 @@ import PageSizeCombobox, { PageSizeSuggestion } from '@/components/torrents/Page
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
 import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
 import { normalizeTraditionalPageSize } from '@/views/torrents/utils/traditionalPagination'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 interface OrphanListQuery {
   page: number
@@ -717,6 +855,13 @@ export default class OrphanFiles extends Vue {
   // 按文件夹展示开关（localStorage 持久化）：开启后由后端按直接父目录聚合分页，
   // 同目录下 ≥2 个文件折叠为文件夹行，单文件保持原样。仅影响展示，删除仍按文件 id。
   private folderView = localStorage.getItem(FOLDER_VIEW_STORAGE_KEY) === '1'
+
+  // 副本位置对话框：点击时才扫描配置目录；序号用于丢弃关闭/重开后的过期响应。
+  private hardlinkLocationDialogVisible = false
+  private hardlinkLocationLoading = false
+  private hardlinkLocationResult: HardlinkCopyLocationsResult | null = null
+  private hardlinkLocationDialogTitle = '硬链接副本位置'
+  private hardlinkLocationRequestSeq = 0
 
   // 页面列表、统计和清理门禁共用的后端权威快照
   private scanContext: OrphanScanContext = {
@@ -890,6 +1035,78 @@ export default class OrphanFiles extends Vue {
   /** el-table row-key：文件夹行用 folder_key，文件行用 'file:'+id，前缀隔离保唯一稳定。 */
   private getRowKey(row: OrphanTableRow): string {
     return isFolderRow(row) ? row.folder_key : 'file:' + row.id
+  }
+
+  /** 只有明确大于 0 的副本数量可点击；0 与未知态保持普通文本。 */
+  private canOpenHardlinkLocations(row: OrphanTableRow): boolean {
+    return typeof row.hardlink_copy_count === 'number' && row.hardlink_copy_count > 0
+  }
+
+  private getHardlinkCopyCountTitle(row: OrphanTableRow): string {
+    const count = row.hardlink_copy_count
+    if (typeof count !== 'number') return '文件当前不可访问，副本数量未知'
+    if (count === 0) return '没有其它硬链接副本'
+    return isFolderRow(row)
+      ? `点击查看文件夹内 ${count} 个硬链接副本的位置`
+      : `点击查看 ${count} 个硬链接副本的位置`
+  }
+
+  /** 文件夹行只提交当前明确有副本的子项，避免对 0 副本文件做无意义扫描。 */
+  private getHardlinkLocationTargets(row: OrphanTableRow): OrphanFileItem[] {
+    const items = isFolderRow(row) ? row.children : [row]
+    return items.filter(
+      (item) => typeof item.hardlink_copy_count === 'number' && item.hardlink_copy_count > 0
+    )
+  }
+
+  private async handleHardlinkCopyClick(row: OrphanTableRow): Promise<void> {
+    const targets = this.getHardlinkLocationTargets(row)
+    if (targets.length === 0) return
+
+    const orphanIds = [...new Set(targets.map((item) => item.id))]
+    const requestId = this.hardlinkLocationRequestSeq + 1
+    this.hardlinkLocationRequestSeq = requestId
+    this.hardlinkLocationDialogTitle = isFolderRow(row)
+      ? `硬链接副本位置（${targets.length} 个文件）`
+      : '硬链接副本位置'
+    this.hardlinkLocationDialogVisible = true
+    this.hardlinkLocationLoading = true
+    this.hardlinkLocationResult = null
+
+    try {
+      const response = await getHardlinkCopyLocations({ orphan_ids: orphanIds })
+      if (requestId !== this.hardlinkLocationRequestSeq) return
+      if (response.code === '200' && response.data) {
+        this.hardlinkLocationResult = response.data
+      } else {
+        this.$message.error(response.msg || '查询硬链接副本位置失败')
+      }
+    } catch (error) {
+      if (requestId !== this.hardlinkLocationRequestSeq) return
+      this.$message.error(
+        '查询硬链接副本位置失败：' + extractErrorMessage(error, '网络错误')
+      )
+    } finally {
+      if (requestId === this.hardlinkLocationRequestSeq) {
+        this.hardlinkLocationLoading = false
+      }
+    }
+  }
+
+  private resetHardlinkLocationDialog(): void {
+    this.hardlinkLocationRequestSeq += 1
+    this.hardlinkLocationLoading = false
+    this.hardlinkLocationResult = null
+    this.hardlinkLocationDialogTitle = '硬链接副本位置'
+  }
+
+  private async copyHardlinkPath(path: string): Promise<void> {
+    try {
+      await copyTextToClipboard(path)
+      this.$message.success('路径已复制')
+    } catch (error) {
+      this.$message.error('复制失败：' + extractErrorMessage(error, '当前浏览器不支持剪贴板'))
+    }
   }
 
   /** 切换按文件夹展示：持久化偏好并重新请求后端（数据形态由后端切换）。 */
@@ -1629,6 +1846,29 @@ export default class OrphanFiles extends Vue {
     margin-top: var(--spacing-md);
   }
 
+  .orphan-hardlink-copy-count {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .orphan-hardlink-copy-count--link {
+    margin: 0;
+    padding: 2px 8px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--color-primary);
+    cursor: pointer;
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+
+    &:hover,
+    &:focus-visible {
+      background: rgba(var(--color-primary-rgb), 0.08);
+      outline: none;
+    }
+  }
+
   /* 列表固定可视高度，配合分页器按页切换。 */
   .orphan-table-scroll {
     height: 520px;
@@ -1670,6 +1910,98 @@ export default class OrphanFiles extends Vue {
       min-height: 32px;
     }
   }
+}
+
+.hardlink-location-content {
+  min-height: 120px;
+}
+
+.hardlink-location-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-md);
+  margin: var(--spacing-md) 0;
+  color: var(--color-text-secondary);
+
+  strong {
+    color: var(--color-text-primary);
+  }
+}
+
+.hardlink-location-alert {
+  margin-bottom: var(--spacing-md);
+}
+
+.hardlink-location-list {
+  display: grid;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-md);
+}
+
+.hardlink-location-item {
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-md);
+  background: var(--color-bg-secondary);
+
+  &__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--spacing-md);
+    margin-bottom: var(--spacing-sm);
+  }
+
+  &__source {
+    min-width: 0;
+    color: var(--color-text-primary);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  &__metrics {
+    display: inline-flex;
+    flex-shrink: 0;
+    gap: var(--spacing-xs);
+  }
+}
+
+.hardlink-location-copies {
+  display: grid;
+  gap: var(--spacing-xs);
+}
+
+.hardlink-location-copy {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-xs) var(--spacing-sm);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg-primary);
+
+  &__path {
+    min-width: 0;
+    flex: 1 1 auto;
+    color: var(--color-text-primary);
+    font-family: Consolas, Monaco, monospace;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  &__button {
+    flex-shrink: 0;
+  }
+}
+
+.hardlink-location-empty,
+.hardlink-location-unlocated {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+}
+
+.hardlink-location-unlocated {
+  color: var(--color-warning);
 }
 
 ::v-deep .management-dialog {

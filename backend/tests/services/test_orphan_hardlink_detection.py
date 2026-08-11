@@ -18,8 +18,12 @@ import pytest
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
 from app.services.orphan_file_service import OrphanFileService
-from app.services.orphan_manifest import ManifestSnapshot, normalize_path
-from app.services.orphan_quarantine import find_hardlink_copies, get_hardlink_copy_count
+from app.services.orphan_manifest import ManifestSnapshot, ScanPathSelection, normalize_path
+from app.services.orphan_quarantine import (
+    find_hardlink_copies,
+    find_hardlink_paths,
+    get_hardlink_copy_count,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -138,6 +142,41 @@ class TestFindHardlinkCopies:
         )
         assert copies == [], "扫描根外的硬链接不应返回"
 
+    def test_bulk_lookup_returns_each_inode_once_across_overlapping_roots(self, tmp_path):
+        """批量定位一次处理多个 inode，重叠扫描根不得产生重复路径。"""
+        scan_root = tmp_path / "scan_root"
+        nested_root = scan_root / "nested"
+        nested_root.mkdir(parents=True)
+
+        first = scan_root / "first.mkv"
+        first.write_bytes(b"first")
+        first_copy = nested_root / "first-copy.mkv"
+        os.link(first, first_copy)
+
+        second = nested_root / "second.mkv"
+        second.write_bytes(b"second")
+        second_copy = scan_root / "second-copy.mkv"
+        os.link(second, second_copy)
+
+        first_stat = os.stat(first)
+        second_stat = os.stat(second)
+        first_inode = (first_stat.st_dev, first_stat.st_ino)
+        second_inode = (second_stat.st_dev, second_stat.st_ino)
+
+        found = find_hardlink_paths(
+            target_inodes={first_inode, second_inode},
+            scan_roots=[str(scan_root), str(nested_root)],
+        )
+
+        assert set(found[first_inode]) == {
+            os.path.realpath(first),
+            os.path.realpath(first_copy),
+        }
+        assert set(found[second_inode]) == {
+            os.path.realpath(second),
+            os.path.realpath(second_copy),
+        }
+
 
 class TestHardlinkCopyCount:
     """孤儿列表展示所需的硬链接副本数量。"""
@@ -221,6 +260,255 @@ class TestHardlinkCopyCount:
         assert folder["hardlink_copy_count"] == 1
         child_counts = {item["file_path"]: item["hardlink_copy_count"] for item in folder["children"]}
         assert child_counts == {str(linked): 1, str(solo): 0}
+
+
+class TestHardlinkCopyLocations:
+    """点击副本数量时按需定位已配置扫描目录内的其它硬链接路径。"""
+
+    async def test_returns_found_and_unlocated_copy_counts(self, async_orphan_db, tmp_path):
+        """扫描全部已配置根，返回完整路径，并区分范围外及不可访问副本。"""
+        source_root = tmp_path / "downloads"
+        other_root = tmp_path / "library"
+        outside_root = tmp_path / "outside"
+        source_root.mkdir()
+        other_root.mkdir()
+        outside_root.mkdir()
+
+        linked = source_root / "linked.mkv"
+        linked.write_bytes(b"linked")
+        configured_copy = other_root / "linked-copy.mkv"
+        os.link(linked, configured_copy)
+        outside_copy = outside_root / "linked-outside.mkv"
+        os.link(linked, outside_copy)
+
+        solo = source_root / "solo.mkv"
+        solo.write_bytes(b"solo")
+        missing = source_root / "gone.mkv"
+
+        scan = OrphanScanResult(
+            scan_id="scan_hardlink_locations",
+            scan_time=datetime.utcnow(),
+            scan_type="manual",
+            status="completed",
+        )
+        async_orphan_db.add(scan)
+        linked_detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(linked),
+            file_size=6,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(linked)),
+        )
+        solo_detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(solo),
+            file_size=4,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(solo)),
+        )
+        missing_detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(missing),
+            file_size=4,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(missing)),
+        )
+        async_orphan_db.add_all([linked_detail, solo_detail, missing_detail])
+        await async_orphan_db.commit()
+
+        selection = ScanPathSelection(
+            scan_roots=(
+                (normalize_path(str(source_root)), frozenset({"dl_001"})),
+                (normalize_path(str(other_root)), frozenset({"dl_002"})),
+            )
+        )
+        service = OrphanFileService(async_orphan_db)
+        with patch(
+            "app.services.orphan_file_service.collect_scan_path_selection",
+            return_value=selection,
+        ):
+            result = await service.get_hardlink_copy_locations(
+                [linked_detail.id, solo_detail.id, missing_detail.id, 999999]
+            )
+
+        assert result["requested_count"] == 4
+        assert result["resolved_count"] == 3
+        assert result["missing_orphan_ids"] == [999999]
+        assert result["total_copy_count"] == 2
+        assert result["total_found_count"] == 1
+        assert result["total_unlocated_count"] == 1
+        assert result["unknown_count"] == 1
+        assert result["searched_root_count"] == 2
+        assert result["search_error"] is None
+
+        by_id = {item["orphan_id"]: item for item in result["items"]}
+        linked_item = by_id[linked_detail.id]
+        assert linked_item["copy_count"] == 2
+        assert linked_item["found_count"] == 1
+        assert linked_item["unlocated_count"] == 1
+        assert linked_item["copies"] == [os.path.realpath(configured_copy)]
+        assert linked_item["error"] is None
+
+        assert by_id[solo_detail.id]["copy_count"] == 0
+        assert by_id[solo_detail.id]["copies"] == []
+        assert by_id[missing_detail.id]["copy_count"] is None
+        assert by_id[missing_detail.id]["unlocated_count"] is None
+        assert by_id[missing_detail.id]["error"] == "源文件不可访问，无法重新核对副本位置"
+
+    async def test_multiple_positive_sources_share_one_bulk_scan(self, async_orphan_db, tmp_path):
+        """文件夹批量查询去重 ID，并把多个 inode 合并为一次配置目录遍历。"""
+        source_root = tmp_path / "downloads"
+        copy_root = tmp_path / "library"
+        source_root.mkdir()
+        copy_root.mkdir()
+
+        first = source_root / "first.mkv"
+        first.write_bytes(b"first")
+        first_copy = copy_root / "first-copy.mkv"
+        os.link(first, first_copy)
+
+        second = source_root / "second.mkv"
+        second.write_bytes(b"second")
+        second_copy = copy_root / "second-copy.mkv"
+        os.link(second, second_copy)
+
+        scan = OrphanScanResult(
+            scan_id="scan_hardlink_bulk_locations",
+            scan_time=datetime.utcnow(),
+            scan_type="manual",
+            status="completed",
+        )
+        first_detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(first),
+            file_size=5,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(first)),
+        )
+        second_detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(second),
+            file_size=6,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(second)),
+        )
+        async_orphan_db.add_all([scan, first_detail, second_detail])
+        await async_orphan_db.commit()
+
+        selection = ScanPathSelection(
+            scan_roots=(
+                (normalize_path(str(source_root)), frozenset({"dl_001"})),
+                (normalize_path(str(copy_root)), frozenset({"dl_002"})),
+            )
+        )
+        service = OrphanFileService(async_orphan_db)
+        with (
+            patch(
+                "app.services.orphan_file_service.collect_scan_path_selection",
+                return_value=selection,
+            ),
+            patch(
+                "app.services.orphan_file_service.find_hardlink_paths",
+                wraps=find_hardlink_paths,
+            ) as bulk_lookup,
+        ):
+            result = await service.get_hardlink_copy_locations([first_detail.id, first_detail.id, second_detail.id])
+
+        bulk_lookup.assert_called_once()
+        target_inodes, scan_roots = bulk_lookup.call_args.args
+        expected_inodes = {
+            (int(os.stat(first).st_dev), int(os.stat(first).st_ino)),
+            (int(os.stat(second).st_dev), int(os.stat(second).st_ino)),
+        }
+        assert target_inodes == expected_inodes
+        assert set(scan_roots) == {root for root, _owners in selection.scan_roots}
+
+        assert result["requested_count"] == 2
+        assert result["resolved_count"] == 2
+        assert result["total_copy_count"] == 2
+        assert result["total_found_count"] == 2
+        assert result["total_unlocated_count"] == 0
+        by_id = {item["orphan_id"]: item for item in result["items"]}
+        assert by_id[first_detail.id]["copies"] == [os.path.realpath(first_copy)]
+        assert by_id[second_detail.id]["copies"] == [os.path.realpath(second_copy)]
+
+    async def test_scan_failure_keeps_live_count_as_unlocated(self, async_orphan_db, tmp_path):
+        """配置目录扫描失败时不伪造路径，实时副本总数全部转为未定位并返回错误。"""
+        source_root = tmp_path / "downloads"
+        source_root.mkdir()
+        source = source_root / "linked.mkv"
+        source.write_bytes(b"linked")
+        os.link(source, source_root / "linked-copy.mkv")
+
+        scan = OrphanScanResult(
+            scan_id="scan_hardlink_location_failure",
+            scan_time=datetime.utcnow(),
+            scan_type="manual",
+            status="completed",
+        )
+        detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(source),
+            file_size=6,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(source)),
+        )
+        async_orphan_db.add_all([scan, detail])
+        await async_orphan_db.commit()
+
+        selection = ScanPathSelection(scan_roots=((normalize_path(str(source_root)), frozenset({"dl_001"})),))
+        service = OrphanFileService(async_orphan_db)
+        with (
+            patch(
+                "app.services.orphan_file_service.collect_scan_path_selection",
+                return_value=selection,
+            ),
+            patch(
+                "app.services.orphan_file_service.find_hardlink_paths",
+                side_effect=OSError("storage offline"),
+            ) as bulk_lookup,
+        ):
+            result = await service.get_hardlink_copy_locations([detail.id])
+
+        bulk_lookup.assert_called_once()
+        expected_error = "已配置下载目录扫描失败，未能完整定位副本位置"
+        assert result["search_error"] == expected_error
+        assert result["searched_root_count"] == 1
+        assert result["total_copy_count"] == 1
+        assert result["total_found_count"] == 0
+        assert result["total_unlocated_count"] == 1
+        assert result["items"][0]["copies"] == []
+        assert result["items"][0]["unlocated_count"] == 1
+        assert result["items"][0]["error"] == expected_error
+
+    async def test_zero_copy_does_not_scan_configured_roots(self, async_orphan_db, tmp_path):
+        """列表变更为零副本时直接返回，不做无意义的目录遍历。"""
+        source = tmp_path / "solo.mkv"
+        source.write_bytes(b"solo")
+        scan = OrphanScanResult(
+            scan_id="scan_zero_copy_location",
+            scan_time=datetime.utcnow(),
+            scan_type="manual",
+            status="completed",
+        )
+        detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(source),
+            file_size=4,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(source)),
+        )
+        async_orphan_db.add_all([scan, detail])
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        with patch("app.services.orphan_file_service.collect_scan_path_selection") as collect_roots:
+            result = await service.get_hardlink_copy_locations([detail.id])
+
+        collect_roots.assert_not_called()
+        assert result["total_copy_count"] == 0
+        assert result["total_found_count"] == 0
+        assert result["items"][0]["copies"] == []
 
 
 # ==================== 立即删除 mode=purge_now：副本诊断 ====================

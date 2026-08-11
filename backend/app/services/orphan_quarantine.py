@@ -19,7 +19,7 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from app.core.config import settings
 
@@ -283,6 +283,74 @@ def get_hardlink_copy_count(file_path: str) -> int:
     return max(int(stat_result.st_nlink) - 1, 0)
 
 
+def find_hardlink_paths(
+    target_inodes: Set[Tuple[int, int]],
+    scan_roots: List[str],
+) -> Dict[Tuple[int, int], List[str]]:
+    """一次遍历扫描根，返回每个目标 inode 在范围内的全部物理路径。
+
+    扫描范围严格限定为调用方提供的绝对路径，不扫描整盘。重叠/别名扫描根会先
+    折叠，符号链接文件不会被误当作硬链接目录项；返回路径按物理路径去重并排序，
+    便于文件夹聚合行一次查询多个孤儿文件时复用同一轮目录遍历。
+    """
+    normalized_targets = {(int(device_id), int(inode)) for device_id, inode in target_inodes}
+    found: Dict[Tuple[int, int], List[str]] = {identity: [] for identity in normalized_targets}
+    if not normalized_targets or not scan_roots:
+        return found
+
+    # realpath 去掉符号链接根别名；父根已覆盖子根时只保留父根，避免重复遍历。
+    candidate_roots: List[str] = []
+    seen_root_keys: Set[str] = set()
+    for root in scan_roots:
+        if not root or not os.path.isabs(root):
+            continue
+        physical_root = os.path.realpath(os.path.abspath(root))
+        root_key = os.path.normcase(physical_root)
+        if root_key in seen_root_keys:
+            continue
+        seen_root_keys.add(root_key)
+        candidate_roots.append(physical_root)
+
+    minimal_roots: List[str] = []
+    for root in sorted(candidate_roots, key=lambda value: (len(value), os.path.normcase(value))):
+        covered = False
+        for parent in minimal_roots:
+            try:
+                covered = os.path.normcase(os.path.commonpath([root, parent])) == os.path.normcase(parent)
+            except ValueError:
+                covered = False
+            if covered:
+                break
+        if not covered:
+            minimal_roots.append(root)
+
+    seen_paths: Dict[Tuple[int, int], Set[str]] = {identity: set() for identity in normalized_targets}
+    for root in minimal_roots:
+        for dir_path, _dirnames, filenames in os.walk(root):
+            for name in filenames:
+                full_path = os.path.join(dir_path, name)
+                if os.path.islink(full_path):
+                    continue
+                try:
+                    stat_result = os.stat(full_path)
+                except OSError:
+                    # 单文件不可访问不影响其它位置的定位。
+                    continue
+                identity = (int(stat_result.st_dev), int(stat_result.st_ino))
+                if identity not in normalized_targets:
+                    continue
+                physical_path = os.path.realpath(os.path.abspath(full_path))
+                path_key = os.path.normcase(physical_path)
+                if path_key in seen_paths[identity]:
+                    continue
+                seen_paths[identity].add(path_key)
+                found[identity].append(physical_path)
+
+    for paths in found.values():
+        paths.sort(key=os.path.normcase)
+    return found
+
+
 def find_hardlink_copies(
     target_inode: Tuple[int, int],
     scan_roots: List[str],
@@ -307,27 +375,13 @@ def find_hardlink_copies(
     if not target_inode or not scan_roots:
         return []
 
-    target_dev, target_ino = target_inode
-    exclude_abs = os.path.abspath(exclude_path) if exclude_path else None
-    found: List[str] = []
-
-    for root in scan_roots:
-        if not root or not os.path.isabs(root):
-            continue
-        for dir_path, _dirnames, filenames in os.walk(root):
-            for name in filenames:
-                full = os.path.join(dir_path, name)
-                abs_full = os.path.abspath(full)
-                if exclude_abs is not None and os.path.normcase(abs_full) == os.path.normcase(exclude_abs):
-                    continue
-                try:
-                    st = os.stat(full)
-                except OSError:
-                    # 单文件 stat 失败不中断整体枚举
-                    continue
-                if st.st_dev == target_dev and st.st_ino == target_ino:
-                    found.append(abs_full)
-    return found
+    identity = (int(target_inode[0]), int(target_inode[1]))
+    exclude_key = os.path.normcase(os.path.realpath(os.path.abspath(exclude_path))) if exclude_path else None
+    return [
+        path
+        for path in find_hardlink_paths({identity}, scan_roots).get(identity, [])
+        if exclude_key is None or os.path.normcase(os.path.realpath(path)) != exclude_key
+    ]
 
 
 def compute_purge_after(quarantined_at, retention_days: Optional[int] = None):

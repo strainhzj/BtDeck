@@ -2737,8 +2737,8 @@
     },
     {
       "id": "orphan-hardlink-copy-count-display",
-      "name": "孤儿文件硬链接副本数量实时展示",
-      "description": "在既有清理/删除阶段硬链接诊断基础上，为孤儿文件列表实时计算 st_nlink - 1，并在前端显示副本数量；无副本显示 0，文件不可访问保持未知，文件夹折叠行汇总全部可读子文件。",
+      "name": "孤儿文件硬链接副本数量与位置核对",
+      "description": "在既有清理/删除阶段硬链接诊断基础上，为孤儿文件列表实时计算 st_nlink - 1 并显示副本数量；无副本显示 0，文件不可访问保持未知。副本数量大于 0 时可按需查询已配置扫描目录中的其它硬链接位置，并在弹框中核对、复制完整路径。",
       "status": "done",
       "branch": "dev",
       "plan_file": null,
@@ -2779,6 +2779,54 @@
             "session-handoff.md"
           ],
           "evidence": "前端 orphan-files.spec 72 passed；npm run typecheck 通过；本次 3 文件严格 ESLint 通过；生产 build 成功（仅 56 条既有 Sass/Browserslist/体积 warning）。全量 lint 被关键词测试的 5 条既有 warning 门禁拦截，本次文件零 warning。"
+        },
+        {
+          "id": "orphan-hardlink-copy-count-display.3",
+          "name": "副本位置按需查询与前端核对弹框",
+          "description": "新增 POST /api/v1/orphan-files/hardlink-copies：实时复核所选文件的 inode/link count，在全部已配置可扫描下载目录中以一次遍历批量定位其它硬链接；前端仅将大于 0 的数量显示为可点击入口，弹框按源文件展示完整路径、总数/已定位/未定位数量并支持复制。文件夹聚合行只查询其中副本数大于 0 的子文件。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "frontend/tests/unit/api-contracts.spec.ts",
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/tests/README.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "后端服务/API 定向 49 passed，孤儿相关回归 350 passed / 1 skipped；前端全量单测 640 passed，typecheck、修改文件严格 ESLint 与生产 build 通过（56 条既有 warning），全量 lint 仅剩 5 条无关既有 warning。后端目标 Flake8、py_compile 通过，新增文件/代码区间 Black 通过；目标 mypy 仅有 orphan_file_service 既有 149 条 SQLAlchemy Column 类型债，本次新增行零错误。Git Bash ./init.sh 通过，无 Schema 或 Alembic 变更。"
+        },
+        {
+          "id": "orphan-hardlink-copy-count-display.4",
+          "name": "硬链接副本位置回归加固与提交前验证",
+          "description": "在用户验证交互通过后新增 7 个回归用例：后端锁定重复 ID 去重、多个正副本 inode 共用一次扫描、扫描失败时保留实时总数并计入未定位、HTTP 1~5000 项边界；前端锁定连续点击只接受最新响应、扫描/源文件/列表项异常提示和请求失败后加载态释放。同步测试覆盖路线图与交付记录。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/services/test_orphan_hardlink_detection.py",
+            "backend/tests/api/test_orphan_files_api.py",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "docs/roadmap/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "新增后端 4、前端 3 个回归用例；后端定向 53 passed，全量 3153 passed / 7 skipped；前端全量 39 suites / 643 passed，typecheck、目标严格 ESLint 与生产 build 通过（56 条既有 warning）。后端测试文件 Black/Flake8 通过。用户已验证交互并授权在仓库根目录提交；不包含原有未跟踪产物。"
         }
       ]
     }

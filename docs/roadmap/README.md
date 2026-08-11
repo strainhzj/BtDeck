@@ -37,7 +37,7 @@ BtDeck/
 
 | 功能域（含检索词） | 前端入口 | 后端入口 |
 |------|---------|---------|
-| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（硬链接副本数量列） | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（实时硬链接副本计数 + 清理/彻底删除活动项占用）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
+| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（硬链接副本数量列，可点击查看位置） | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（实时硬链接副本计数 + 配置目录内按需定位 + 清理/彻底删除活动项占用）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
 | 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
 | 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
@@ -115,10 +115,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接副本计数） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接副本计数与位置核对） |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-11：同步 info/full/tracker endpoint 统一复用 `app.state.store` 客户端；SyncCoordinator 接入 info durable cursor；WAL PASSIVE busy/checkpoint 观测与同步健康查询超时；新增 W0 止血 Runbook；孤儿列表实时返回并展示硬链接副本数量。 |
+| 本次新增 | 2026-08-11：同步 info/full/tracker endpoint 统一复用 `app.state.store` 客户端；SyncCoordinator 接入 info durable cursor；WAL PASSIVE busy/checkpoint 观测与同步健康查询超时；新增 W0 止血 Runbook；孤儿列表实时返回副本数量，并可按需定位已配置下载目录内的其它硬链接路径；补强批量单次扫描、失败降级、请求边界和前端竞态回归。 |

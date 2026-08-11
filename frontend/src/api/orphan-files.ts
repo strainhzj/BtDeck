@@ -85,6 +85,34 @@ export interface OrphanListResponse {
   scan_context: OrphanScanContext
 }
 
+/** 单个孤儿文件的硬链接副本位置核对结果。 */
+export interface HardlinkCopyLocationItem {
+  orphan_id: number
+  file_path: string
+  /** 点击时重新读取的实时副本总数；源文件不可访问时为 null。 */
+  copy_count: number | null
+  found_count: number
+  /** 位于未配置/无权限目录中的剩余数量；源文件不可访问时为 null。 */
+  unlocated_count: number | null
+  /** 已配置扫描目录内定位到的其它硬链接绝对路径。 */
+  copies: string[]
+  error: string | null
+}
+
+/** 批量副本位置查询结果，文件夹聚合行也只触发一轮扫描。 */
+export interface HardlinkCopyLocationsResult {
+  requested_count: number
+  resolved_count: number
+  missing_orphan_ids: number[]
+  total_copy_count: number
+  total_found_count: number
+  total_unlocated_count: number
+  unknown_count: number
+  searched_root_count: number
+  search_error: string | null
+  items: HardlinkCopyLocationItem[]
+}
+
 /**
  * 数据库中持久化的扫描状态；busy 只属于触发响应，不在此联合中。
  */
@@ -286,6 +314,10 @@ export interface IgnoreRequest extends OrphanSelectionPayload {
   ignored: boolean
 }
 
+export interface HardlinkCopyLocationsRequest {
+  orphan_ids: number[]
+}
+
 // ========== API 函数 ==========
 
 /**
@@ -307,6 +339,20 @@ export function getOrphanList(params: OrphanListParams): Promise<ApiResponse<Orp
     method: 'get',
     params: params
   }) as unknown as Promise<ApiResponse<OrphanListResponse>>
+}
+
+/**
+ * 按需定位硬链接副本位置。目录遍历可能命中 NAS，使用与孤儿扫描一致的长超时。
+ */
+export function getHardlinkCopyLocations(
+  data: HardlinkCopyLocationsRequest
+): Promise<ApiResponse<HardlinkCopyLocationsResult>> {
+  return request({
+    url: '/orphan-files/hardlink-copies',
+    method: 'post',
+    data,
+    timeout: 120000
+  }) as unknown as Promise<ApiResponse<HardlinkCopyLocationsResult>>
 }
 
 /**
