@@ -17,6 +17,7 @@ D 组：孤儿文件生命周期与数据库测试（v1.0.6+ 语义重做）
 from datetime import datetime, timedelta
 
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 
 pytestmark = pytest.mark.asyncio
@@ -413,8 +414,8 @@ class TestRecoverInterruptedScans:
     支持 session_factory 参数），不依赖默认真实库 AsyncSessionLocal。
     """
 
-    @pytest.fixture
-    def _recover_engine(self):
+    @pytest_asyncio.fixture
+    async def _recover_engine(self):
         """创建内存库 + session 工厂，测试结束 drop 表。"""
         from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
         from sqlalchemy.pool import StaticPool
@@ -426,25 +427,15 @@ class TestRecoverInterruptedScans:
             connect_args={"check_same_thread": False},
             poolclass=StaticPool,
         )
-        import asyncio
-
-        async def _create():
+        try:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
-
-        asyncio.run(_create())
-        factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
-        yield factory
-        import asyncio
-
-        async def _drop():
+            factory = async_sessionmaker(bind=engine, class_=AsyncSession, expire_on_commit=False)
+            yield factory
+        finally:
             async with engine.begin() as conn:
                 await conn.run_sync(Base.metadata.drop_all)
-
-        asyncio.run(_drop())
-        import asyncio
-
-        asyncio.run(engine.dispose())
+            await engine.dispose()
 
     async def test_recover_running_scan_marks_failed(self, _recover_engine):
         """status=running 的扫描记录被恢复为 failed。"""
