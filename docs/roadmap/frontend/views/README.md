@@ -17,7 +17,7 @@
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框（v1.0.5 新增） |
-| 孤儿文件 orphan-files | `orphan-files/index.vue` | 孤儿清理/隔离区彻底删除提交后立即刷新；支持全部已占用不建任务与混合跳过提示；保留真全选/文件夹聚合展示 |
+| 孤儿文件 orphan-files | `orphan-files/index.vue` | 孤儿列表显示硬链接副本数量（无副本为 0、文件夹为合计）；保留清理占用提示、真全选与文件夹聚合展示 |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
@@ -97,7 +97,7 @@
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates`，v1.0.5） |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
-| `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（`OrphanFiles`）；清理/彻底删除提交后立即重查，nullable task_id 时提示“已在处理”并短路，混合提交展示跳过数；保留真全选与文件夹聚合展示 |
+| `orphan-files/index.vue` | 孤儿文件扫描/筛选/清理/忽视/隔离恢复（`OrphanFiles`）；显示实时硬链接副本数量（无副本为 0、不可访问为 `-`、文件夹为合计）；保留任务占用提示、真全选与文件夹聚合展示 |
 | `404.vue` | 404 页面（`Page404`） |
 | `nested/*`（7 文件） | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 树形组件演示页（`Tree`） |

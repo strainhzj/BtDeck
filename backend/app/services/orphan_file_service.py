@@ -42,6 +42,7 @@ from app.services.orphan_quarantine import (
     build_quarantine_path,
     compute_purge_after,
     find_hardlink_copies,
+    get_hardlink_copy_count,
     prune_empty_quarantine_parents,
     prune_recorded_quarantine_root,
     quarantine_file,
@@ -954,6 +955,12 @@ class OrphanFileService:
             and all(not c.get("is_deleted") and not c.get("is_ignored") for c in children)
         )
         has_low_confidence = any(c.get("confidence") == "low" for c in children)
+        known_copy_counts = [
+            count
+            for count in (child.get("hardlink_copy_count") for child in children)
+            if isinstance(count, int) and not isinstance(count, bool)
+        ]
+        hardlink_copy_count = sum(known_copy_counts) if len(known_copy_counts) == len(children) else None
         return {
             "_is_folder": True,
             "folder_key": "folder:" + folder_path,
@@ -968,16 +975,39 @@ class OrphanFileService:
             "all_ignored": all_ignored,
             "all_deleted": all_deleted,
             "has_low_confidence": has_low_confidence,
+            "hardlink_copy_count": hardlink_copy_count,
         }
 
-    async def _enrich_items(self, item_dicts: List[Dict[str, Any]]) -> None:
-        """为本页明细批量注入 downloader_name（别名）与忽视态字段。
+    @staticmethod
+    def _enrich_hardlink_copy_counts(item_dicts: List[Dict[str, Any]]) -> None:
+        """在线读取每个孤儿文件的硬链接副本数；不可访问时标记为未知。"""
+        unavailable_count = 0
+        for item in item_dicts:
+            file_path = item.get("file_path")
+            if not isinstance(file_path, str) or not file_path:
+                item["hardlink_copy_count"] = None
+                unavailable_count += 1
+                continue
+            try:
+                item["hardlink_copy_count"] = get_hardlink_copy_count(file_path)
+            except OSError:
+                item["hardlink_copy_count"] = None
+                unavailable_count += 1
+        if unavailable_count:
+            logger.debug("[孤儿列表] %d 个文件无法读取硬链接数量", unavailable_count)
 
+    async def _enrich_items(self, item_dicts: List[Dict[str, Any]]) -> None:
+        """为本页明细批量注入硬链接数、downloader_name（别名）与忽视态字段。
+
+        - hardlink_copy_count：实时 ``st_nlink - 1``；文件不可访问时为 None。
         - downloader_name：JOIN bt_downloaders.nickname，nickname 为空回退掩码 ID。
         - is_ignored/ignored_at/ignored_by：按 canonical_path 批量查候选。
         """
         if not item_dicts:
             return
+
+        # 文件系统 stat 可能命中网络盘，统一移出事件循环并顺序读取，避免并发打满 NAS。
+        await asyncio.to_thread(self._enrich_hardlink_copy_counts, item_dicts)
 
         # 下载器别名
         downloader_ids = {d["downloader_id"] for d in item_dicts if d.get("downloader_id")}

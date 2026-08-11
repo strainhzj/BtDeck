@@ -3715,3 +3715,30 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 新增：test_sync_observability 26（log_event/脱敏/lag 采样器/WAL 快照/_attach_done_stats 修复）+ coordinator 阶段顺序 2。
 - black/flake8 通过。
 - 未执行 Git stage/commit/push/deploy。
+
+## 2026-08-11 - 孤儿文件硬链接副本数量实时展示
+
+### 提交核查与实现判断
+
+- 检查了近期硬链接相关提交：`d38c2db` 已实现清理/删除阶段的 inode 副本枚举与诊断，`a5e1e5b` 仅补前端 `PurgeResult` 类型，`0597423`/`f9ae521` 处理到期跳过延后与延后次数；主孤儿列表尚未返回或展示副本数量。
+- 用户确认“副本数量”口径为 `max(st_nlink - 1, 0)`，不包含当前目录项；这可直接得到全文件系统链接总数，无需为列表逐项遍历扫描根。
+- 文件扫描后已消失或 `stat` 失败时返回 `null`，前端显示 `-`，避免把“未知”误报成无副本 `0`。
+
+### 实现
+
+- `orphan_quarantine.py` 新增 `get_hardlink_copy_count()`，复用既有硬链接文件系统模块。
+- `OrphanFileService._enrich_items()` 通过 `asyncio.to_thread` 顺序执行本页 `stat`，避免阻塞事件循环或并发打满 NAS；扁平文件行注入 `hardlink_copy_count`。
+- 文件夹折叠行在全部子文件可读取时汇总副本数；任一子文件未知时文件夹合计为 `null`。
+- 前端 `OrphanFileItem` / `OrphanFolderRow` 增加类型字段，孤儿列表新增“副本数量”列：普通文件明确显示 `0`，有副本显示实际数量，不可访问显示 `-`。
+- 无数据库 Schema 变更，无 Alembic 迁移；列表字段为运行时计算。
+
+### 验证
+
+- 后端 TDD：新增测试先因缺少 `get_hardlink_copy_count` 导入失败，实施后 `test_orphan_hardlink_detection.py` 15 passed。
+- 后端孤儿相关回归：`345 passed, 1 skipped`；列表/文件夹/API 定向组合 `82 passed`。
+- 后端目标 Flake8 通过；`orphan_quarantine.py`、`orphan_file_service.py`、硬链接测试 Black 通过。`orphan_files.py` 当前与 HEAD 均存在同一既有 Black 格式差异，未扩大无关重排。
+- 目标 mypy 仍为 `orphan_file_service.py` 既有 149 条 SQLAlchemy Column 类型债，本次新增行零错误。
+- 前端 `orphan-files.spec.ts` 72 passed；`npm run typecheck` 通过；本次 3 文件严格 ESLint 通过；生产 build 成功（56 条既有 warning）。
+- 全量 `npm run lint` 被关键词相关测试的 5 条既有 warning 门禁拦截，本次文件无 warning。
+- Git Bash `./init.sh` 轻量验证通过；系统 WSL `bash` 首次调用的 `E_ACCESSDENIED` 不影响 Git Bash 结果。
+- 未执行 Git stage/commit/push/deploy；任务前 13 个未跟踪备份/工具/镜像产物保持不动。

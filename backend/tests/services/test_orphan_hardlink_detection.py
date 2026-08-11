@@ -16,10 +16,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from app.models.orphan_file import OrphanCurrentCandidate
+from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
 from app.services.orphan_file_service import OrphanFileService
 from app.services.orphan_manifest import ManifestSnapshot, normalize_path
-from app.services.orphan_quarantine import find_hardlink_copies
+from app.services.orphan_quarantine import find_hardlink_copies, get_hardlink_copy_count
 
 pytestmark = pytest.mark.asyncio
 
@@ -137,6 +137,90 @@ class TestFindHardlinkCopies:
             exclude_path=str(target),
         )
         assert copies == [], "扫描根外的硬链接不应返回"
+
+
+class TestHardlinkCopyCount:
+    """孤儿列表展示所需的硬链接副本数量。"""
+
+    def test_counts_other_directory_entries_excluding_self(self, tmp_path):
+        """副本数等于 st_nlink - 1；唯一链接明确返回 0。"""
+        target = tmp_path / "target.mkv"
+        target.write_bytes(b"payload")
+
+        assert get_hardlink_copy_count(str(target)) == 0
+
+        os.link(target, tmp_path / "copy-1.mkv")
+        assert get_hardlink_copy_count(str(target)) == 1
+
+        os.link(target, tmp_path / "copy-2.mkv")
+        assert get_hardlink_copy_count(str(target)) == 2
+
+    async def test_list_and_folder_rows_include_copy_count(self, async_orphan_db, tmp_path):
+        """扁平行返回实时数量，文件夹行汇总子文件；不可访问文件不误报为 0。"""
+        data_dir = tmp_path / "data"
+        library_dir = tmp_path / "library"
+        missing_dir = tmp_path / "missing"
+        data_dir.mkdir()
+        library_dir.mkdir()
+
+        linked = data_dir / "linked.mkv"
+        linked.write_bytes(b"linked")
+        os.link(linked, library_dir / "linked-copy.mkv")
+
+        solo = data_dir / "solo.mkv"
+        solo.write_bytes(b"solo")
+        missing = missing_dir / "gone.mkv"
+
+        scan = OrphanScanResult(
+            scan_id="scan_hardlink_count",
+            scan_time=datetime.utcnow(),
+            scan_type="manual",
+            status="completed",
+        )
+        scan.total_paths_scanned = 1
+        scan.total_files_scanned = 3
+        scan.total_orphans = 3
+        scan.total_orphan_size = 17
+        async_orphan_db.add(scan)
+        async_orphan_db.add_all(
+            [
+                OrphanFile(
+                    scan_id=scan.scan_id,
+                    file_path=str(linked),
+                    file_size=6,
+                    downloader_id="dl_001",
+                    canonical_path=normalize_path(str(linked)),
+                ),
+                OrphanFile(
+                    scan_id=scan.scan_id,
+                    file_path=str(solo),
+                    file_size=4,
+                    downloader_id="dl_001",
+                    canonical_path=normalize_path(str(solo)),
+                ),
+                OrphanFile(
+                    scan_id=scan.scan_id,
+                    file_path=str(missing),
+                    file_size=7,
+                    downloader_id="dl_001",
+                    canonical_path=normalize_path(str(missing)),
+                ),
+            ]
+        )
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        flat_result = await service.get_orphan_list(page=1, page_size=20)
+        by_path = {item["file_path"]: item for item in flat_result["list"]}
+        assert by_path[str(linked)]["hardlink_copy_count"] == 1
+        assert by_path[str(solo)]["hardlink_copy_count"] == 0
+        assert by_path[str(missing)]["hardlink_copy_count"] is None
+
+        grouped_result = await service.get_orphan_list_grouped(page=1, page_size=20)
+        folder = next(item for item in grouped_result["list"] if item.get("_is_folder"))
+        assert folder["hardlink_copy_count"] == 1
+        child_counts = {item["file_path"]: item["hardlink_copy_count"] for item in folder["children"]}
+        assert child_counts == {str(linked): 1, str(solo): 0}
 
 
 # ==================== 立即删除 mode=purge_now：副本诊断 ====================
@@ -401,8 +485,6 @@ class TestPurgeExpiredDelayRetry:
 
     async def test_purge_delay_count_accumulates_across_runs(self, async_orphan_db, tmp_path):
         """连续两次跳过 → purge_delay_count 累加到 2（SQL 表达式原子递增）。"""
-        from datetime import timedelta as td
-
         scan_root = tmp_path / "scan_root"
         (scan_root / "media").mkdir(parents=True)
 

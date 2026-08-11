@@ -164,6 +164,8 @@ async def get_orphan_list(
 
     group_by_folder=True 时改走文件夹聚合分页（仅影响列表数据形态，
     scan_context 统计口径不变）；默认 False 保持扁平文件行分页，向后兼容。
+    文件行实时返回 hardlink_copy_count（st_nlink - 1，无副本为 0，文件不可访问为 null）；
+    文件夹聚合行返回子文件副本数之和，任一子文件不可访问时为 null。
     """
     try:
         service = OrphanFileService(db)

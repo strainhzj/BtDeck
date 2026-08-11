@@ -289,6 +289,16 @@
               {{ formatSize(scope.row._is_folder ? scope.row.total_size : scope.row.file_size) }}
             </template>
           </el-table-column>
+          <el-table-column label="副本数量" width="100" align="center">
+            <template slot-scope="scope">
+              <span
+                class="orphan-hardlink-copy-count"
+                :title="scope.row._is_folder ? '文件夹内所有孤儿文件的硬链接副本总数' : '与当前文件共享 inode 的其它目录项数量'"
+              >
+                {{ formatHardlinkCopyCount(scope.row.hardlink_copy_count) }}
+              </span>
+            </template>
+          </el-table-column>
           <el-table-column label="修改时间" width="170" align="center">
             <template slot-scope="scope">
               {{ (scope.row._is_folder ? scope.row.latest_mtime : scope.row.mtime) ? formatTime(scope.row._is_folder ? scope.row.latest_mtime : scope.row.mtime) : '-' }}
@@ -1587,6 +1597,10 @@ export default class OrphanFiles extends Vue {
 
   private formatSize(size: number): string {
     return formatFileSize(size)
+  }
+
+  private formatHardlinkCopyCount(count: number | null | undefined): string {
+    return typeof count === 'number' ? String(count) : '-'
   }
 
   private formatTime(time: string | null): string {

@@ -180,6 +180,7 @@ interface OrphanFilesVm extends Vue {
   handleQuickActionConfirm: () => Promise<void>
   handleTabSwitch: () => Promise<void>
   handleQuarantinePurge: () => Promise<void>
+  formatHardlinkCopyCount: (count: number | null | undefined) => string
 }
 
 interface Deferred<T> {
@@ -255,6 +256,7 @@ function orphanItem(
     scan_id: scanId,
     file_path: `/data/${id}.bin`,
     file_size: id * 100,
+    hardlink_copy_count: 0,
     mtime: '2026-07-30T09:00:00',
     downloader_id: 'dl-1',
     confidence: 'high',
@@ -282,6 +284,9 @@ function folderRow(
   const allDeleted = children.every((c) => c.is_deleted)
   const allIgnored = !allDeleted && children.every((c) => c.is_ignored)
   const allPending = !allDeleted && !allIgnored && children.every((c) => !c.is_deleted && !c.is_ignored)
+  const hardlinkCopyCount = children.every((c) => c.hardlink_copy_count !== null)
+    ? children.reduce((sum, child) => sum + (child.hardlink_copy_count || 0), 0)
+    : null
   return {
     _is_folder: true,
     folder_key: 'folder:' + folderPath,
@@ -290,6 +295,7 @@ function folderRow(
     children,
     child_ids: childIds,
     total_size: totalSize,
+    hardlink_copy_count: hardlinkCopyCount,
     latest_mtime: children[0]?.mtime ?? null,
     downloader_name: children[0]?.downloader_name ?? null,
     all_pending: allPending,
@@ -1778,6 +1784,7 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     props: {
       type: { type: String, default: '' },
       prop: { type: String, default: '' },
+      label: { type: String, default: '' },
       className: { type: String, default: '' }
     },
     render(createElement) {
@@ -1795,7 +1802,13 @@ describe('orphan files folder view (folder row rendering contract)', () => {
       const children = slot ? rows.map((row) => slot({ row })) : []
       return createElement(
         'div',
-        { class: this.className, attrs: { 'data-column-type': this.type } },
+        {
+          class: this.className,
+          attrs: {
+            'data-column-type': this.type,
+            'data-column-label': this.label
+          }
+        },
         children
       )
     }
@@ -1895,6 +1908,41 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const pathColumn = wrapper.find('.orphan-path-cell')
     expect(pathColumn.exists()).toBe(true)
     expect(pathColumn.text()).toContain('/data/alone.mp4')
+  })
+
+  it('副本数量列显示文件数值（无副本为 0）并显示文件夹汇总值', async() => {
+    const children = [
+      orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 }),
+      orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 })
+    ]
+    const zeroCopyFile = orphanItem(3, 'scan-completed', { hardlink_copy_count: 0 })
+    const wrapper = mountFolderView([folderRow('/data/movie', children), zeroCopyFile])
+    await flushLifecycle()
+
+    const countColumn = wrapper.find('[data-column-label="副本数量"]')
+    expect(countColumn.exists()).toBe(true)
+    const values = countColumn.findAll('.orphan-hardlink-copy-count')
+    expect(values).toHaveLength(2)
+    expect(values.at(0).text()).toBe('2')
+    expect(values.at(1).text()).toBe('0')
+  })
+})
+
+describe('orphan files hardlink copy count formatting', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    localStorage.clear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+  })
+
+  it('明确区分无副本 0 与文件不可访问的未知状态', async() => {
+    const vm = viewModel(mountView())
+    await flushLifecycle()
+
+    expect(vm.formatHardlinkCopyCount(0)).toBe('0')
+    expect(vm.formatHardlinkCopyCount(3)).toBe('3')
+    expect(vm.formatHardlinkCopyCount(null)).toBe('-')
+    expect(vm.formatHardlinkCopyCount(undefined)).toBe('-')
   })
 })
 
