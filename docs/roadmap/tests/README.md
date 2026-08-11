@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（109 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 jest unit。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（140 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（41 个 test suite）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -10,7 +10,7 @@
 | 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
 | 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
 | panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
-| API 层测试 api | `backend/tests/api/` | API 层测试（37 个 test_*.py，对应 app/api/） |
+| API 层测试 api | `backend/tests/api/` | API 层测试（48 个 test_*.py，对应 app/api/） |
 | 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
@@ -21,10 +21,10 @@
 | 服务层测试 services | `backend/tests/services/` | 服务层测试（对应 app/services/，含 tag_adapters/） |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | jest 单元测试（含 deployment-recovery.spec.ts：chunk 错误识别/一次恢复/防刷新循环/Workbox 清退/nginx 缓存契约） |
-| 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选组件单测（4 spec 共 1741 行）+ LucideIcon.spec.ts（✨v1.0.6.28） |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 30 个 Jest 单元测试（含重复查询跨视图状态、任务模板 helper、管理页 UI 与部署恢复契约） |
+| 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2534 行）+ LucideIcon.spec.ts（185 行） |
 
-## backend/tests/（109 个 test_*.py + 支持文件）
+## backend/tests/（140 个 test_*.py + 支持文件）
 
 ### 顶层
 
@@ -57,7 +57,7 @@
 ```bash
 cd backend && pytest                          # 全量
 cd backend && pytest tests/services/ -v       # 按目录
-cd backend && pytest tests/api/               # API 层（37 个 test_*.py）
+cd backend && pytest tests/api/               # API 层（48 个 test_*.py）
 ```
 
 ## frontend/tests/
@@ -71,13 +71,16 @@ cd backend && pytest tests/api/               # API 层（37 个 test_*.py）
 ### 组件内嵌测试
 
 部分组件有内嵌 `__tests__/`：
-- `frontend/src/components/torrents/__tests__/`（4 个 spec，1741 行）
+- `frontend/src/components/torrents/__tests__/`（7 个 spec，2534 行）
   - `AdvancedMultiSelect.performance.spec.ts`（466 行，性能测试）
-  - `AdvancedMultiSelect.spec.ts`（477 行）
+  - `AdvancedMultiSelect.spec.ts`（571 行）
   - `AdvancedSearchBuilder.spec.ts`（609 行）
-  - `ConditionValueInput.spec.ts`（189 行）
+  - `AdvancedSearchWorkspace.spec.ts`（389 行）
+  - `ConditionValueInput.spec.ts`（226 行）
+  - `FilterGroup.spec.ts`（97 行）
+  - `QuickDeleteDuplicatesDialog.spec.ts`（176 行）
 - `frontend/src/components/common/__tests__/` ✨v1.0.6.28
-  - `LucideIcon.spec.ts`（83 行）
+  - `LucideIcon.spec.ts`（185 行）
 
 ### 运行命令
 
@@ -89,7 +92,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：149 个 .py（其中 131 个 test_*.py）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
+- **后端测试组织良好**：158 个 .py（其中 140 个 test_*.py）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是本次新增覆盖的重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（1591 行）/ `test_advanced_search_models_strict.py` / `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（v1.0.6.26，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制

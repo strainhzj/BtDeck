@@ -18,6 +18,7 @@
  */
 import { readFileSync } from 'fs'
 import { resolve } from 'path'
+import * as ts from 'typescript'
 
 import Vue, { CreateElement } from 'vue'
 import { Component, Prop } from 'vue-property-decorator'
@@ -116,6 +117,19 @@ describe('tasks/index.vue 源码契约（W3-4 接入守卫）', () => {
     resolve(__dirname, '../../src/views/tasks/index.vue'),
     'utf8'
   )
+  const tasksScript = tasksSource.match(/<script lang="ts">([\s\S]*?)<\/script>/)?.[1] || ''
+  const tasksAst = ts.createSourceFile(
+    'tasks-index.ts',
+    tasksScript,
+    ts.ScriptTarget.Latest,
+    true,
+    ts.ScriptKind.TS
+  )
+  const taskManageClass = tasksAst.statements.find(
+    (statement): statement is ts.ClassDeclaration => (
+      ts.isClassDeclaration(statement) && statement.name?.text === 'TaskManage'
+    )
+  )
 
   it('任务列表"上次执行"列已接入 outcome 六态与数据陈旧告警', () => {
     expect(tasksSource).toContain('getTaskOutcomeMeta(scope.row.lastOutcome)')
@@ -123,6 +137,31 @@ describe('tasks/index.vue 源码契约（W3-4 接入守卫）', () => {
       'isTaskDataStale(scope.row.stale, scope.row.lastSuccessfulDataAt, scope.row.lastAttemptAt)'
     )
     expect(tasksSource).toContain('数据陈旧')
+  })
+
+  it('将模板工具函数暴露为 Vue 实例方法，避免运行时 getTaskOutcomeMeta 不存在', () => {
+    expect(taskManageClass).toBeDefined()
+    const classMembers: ts.ClassElement[] = taskManageClass
+      ? Array.from(taskManageClass.members)
+      : []
+    const instanceMethods = classMembers
+      .filter(ts.isMethodDeclaration)
+      .map(method => method.name)
+      .filter(ts.isIdentifier)
+      .map(name => name.text)
+
+    expect(instanceMethods).toEqual(expect.arrayContaining([
+      'getTaskOutcomeMeta',
+      'isTaskDataStale',
+      'getStaleTooltipText'
+    ]))
+    expect(tasksScript).toContain('return resolveTaskOutcomeMeta(outcome)')
+    expect(tasksScript).toContain(
+      'return resolveTaskDataStale(stale, lastSuccessfulDataAt, lastAttemptAt)'
+    )
+    expect(tasksScript).toContain(
+      'return buildStaleTooltipText(lastSuccessfulDataAt, lastAttemptAt)'
+    )
   })
 
   it('日志表格执行结果保留 success 布尔回退（兼容旧日志）', () => {

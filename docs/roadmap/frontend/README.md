@@ -22,7 +22,7 @@
 
 - **class-component**（`export default class` + `@Component`）：src 下共 **81 个**（App.vue 1 + views 55 + components 16 + layout 8 个 .vue + layout/mixin/resize.ts 1）
 - **Options API**（`export default {`，无装饰器）：全仓库仅 **3 处** .vue（技术债候选）
-  - `views/recycle-bin/index.vue`（L374）
+  - `views/recycle-bin/index.vue`（L369）
   - `views/tracker/reannounce-config.vue`（L299）
   - `components/torrents/CompactTable.vue`（L301）
 

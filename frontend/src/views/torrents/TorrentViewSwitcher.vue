@@ -56,7 +56,8 @@ export default class extends Vue {
       multipleSelection: [...currentView.multipleSelection],
       list: [...currentView.list],
       total: currentView.total,
-      downloaderList: [...currentView.downloaderList]
+      downloaderList: [...currentView.downloaderList],
+      showingDuplicates: currentView.showingDuplicates === true
     }
 
     console.log('[TorrentViewSwitcher] 状态已保存:', {
@@ -81,6 +82,7 @@ export default class extends Vue {
     newView.list = this.sharedState.list
     newView.total = this.sharedState.total
     newView.downloaderList = this.sharedState.downloaderList
+    newView.showingDuplicates = this.sharedState.showingDuplicates
 
     console.log('[TorrentViewSwitcher] 状态已恢复:', {
       mode: this.currentMode,

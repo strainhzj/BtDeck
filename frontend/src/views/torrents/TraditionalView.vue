@@ -102,15 +102,19 @@
         >
           高级搜索
         </el-button>
-        <el-button
-          type="text"
-          size="small"
-          icon="el-icon-copy-document"
-          @click="handleShowDuplicateTorrents"
-          title="查找重复任务"
+        <label
+          class="duplicate-search-switch"
+          :class="{'is-active': showingDuplicates}"
         >
-          重复
-        </el-button>
+          <el-switch
+            v-model="showingDuplicates"
+            active-color="var(--color-success, #10b981)"
+            inactive-color="var(--color-border-secondary, #c0c4cc)"
+            aria-label="查找重复任务"
+            @change="handleDuplicateSearchToggle"
+          />
+          <span>查找重复任务</span>
+        </label>
       </div>
 
       <!-- 右侧操作区 -->
@@ -704,12 +708,14 @@
           <span>高级搜索</span>
         </span>
       </template>
-      <AdvancedSearchBuilder
+      <AdvancedSearchWorkspace
         ref="advancedSearchBuilder"
         :searching="advancedSearchSearching"
+        :sort-by="listQuery.sort_by"
+        :sort-order="listQuery.sort_order"
         @search="handleAdvancedSearchFromBuilder"
         @reset="handleResetAdvancedSearch"
-        @save-template="handleSaveSearchTemplate"
+        @template-loaded="handleAdvancedTemplateLoaded"
       />
     </el-dialog>
 
@@ -754,6 +760,7 @@ import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
+import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
@@ -770,7 +777,6 @@ import {
   advancedSearch,
   getDuplicateTorrents,
   applySearchTemplate,
-  createSearchTemplate,
   type DownloaderSimple,
   type QueryTemplateConditions,
   type AdvancedSearchRequest
@@ -807,10 +813,7 @@ import {
   resolveTraditionalStatusFilterSelection
 } from './utils/traditionalStatusFilter'
 import type { StatusFilterItem } from './utils/traditionalStatusFilter'
-import type {
-  AdvancedSearchBuilderParams,
-  AdvancedSearchTemplateDraft
-} from '@/components/torrents/advancedSearchState'
+import type { AdvancedSearchBuilderParams } from '@/components/torrents/advancedSearchState'
 import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
 import {
   calculateTraditionalVirtualWindow,
@@ -850,7 +853,7 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     QuickDeleteDuplicatesDialog,
     FilterGroup,
     PageSizeCombobox,
-    AdvancedSearchBuilder: () => import('@/components/torrents/AdvancedSearchBuilder.vue')
+    AdvancedSearchWorkspace
   }
 })
 export default class extends mixins(TorrentBatchMixin) {
@@ -1135,7 +1138,11 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // ====== 数据获取 ======
   private async getList(activeSnapshotRetry = false) {
-    this.showingDuplicates = false
+    if (this.showingDuplicates) {
+      await this.fetchDuplicateTorrents(false, activeSnapshotRetry)
+      return
+    }
+
     this.activeAdvancedSearchRequest = null
     const requestSequence = this.prepareForListReplacement()
     this.listLoading = true
@@ -1837,11 +1844,18 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   private handleResetAdvancedSearch() {
-    const builder = this.$refs.advancedSearchBuilder as any
-    if (builder && builder.resetConditions) {
-      builder.resetConditions()
-    }
+    // AdvancedSearchBuilder 在发出 reset 前已经完成内部重置；这里只处理反馈，
+    // 避免再次调用 resetConditions 形成 reset 事件递归。
     this.$message.success('搜索条件已重置')
+  }
+
+  private handleAdvancedTemplateLoaded(conditions: QueryTemplateConditions) {
+    if (conditions.sort_by) {
+      this.listQuery.sort_by = conditions.sort_by
+    }
+    if (conditions.sort_order) {
+      this.listQuery.sort_order = conditions.sort_order
+    }
   }
 
   /**
@@ -1922,32 +1936,6 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  /** P1#9 把当前高级搜索条件保存为查询模板 */
-  private async handleSaveSearchTemplate(template: AdvancedSearchTemplateDraft) {
-    const conditions: QueryTemplateConditions = {
-      source: 'advanced',
-      version: 1,
-      condition_groups: template.conditions || [],
-      sort_by: this.listQuery.sort_by,
-      sort_order: this.listQuery.sort_order
-    }
-    try {
-      const response = await createSearchTemplate({
-        name: template.name,
-        description: template.description,
-        conditions,
-        is_public: false
-      } as any)
-      if (response.code === '200') {
-        this.$message.success('模板保存成功')
-      } else {
-        this.$message.error(response.msg || '模板保存失败')
-      }
-    } catch (error) {
-      this.$message.error('模板保存失败：' + (error as Error).message)
-    }
-  }
-
   /**
    * P1#9 应用查询模板（按 conditions.source 分支）
    * - source=simple：回填 listQuery 并 getList()
@@ -1960,6 +1948,7 @@ export default class extends mixins(TorrentBatchMixin) {
     }
     try {
       if (conditions.source === 'simple' && conditions.listQuery) {
+        this.showingDuplicates = false
         const saved = conditions.listQuery
         this.listQuery = {
           skip: 0,
@@ -2040,15 +2029,21 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   // ====== P1#10 查找重复任务 ======
-  private async handleShowDuplicateTorrents() {
-    this.showingDuplicates = true
+  private async handleDuplicateSearchToggle(enabled: boolean) {
+    this.showingDuplicates = enabled
     this.activeAdvancedSearchRequest = null
     this.currentPage = 1
+    this.listQuery.skip = 0
     this.resetTableViewport()
+    if (!enabled) {
+      await this.getList()
+      return
+    }
+
     await this.fetchDuplicateTorrents(true)
   }
 
-  private async fetchDuplicateTorrents(showResultMessage = false) {
+  private async fetchDuplicateTorrents(showResultMessage = false, activeSnapshotRetry = false) {
     this.activeAdvancedSearchRequest = null
     const requestSequence = this.prepareForListReplacement()
     this.listLoading = true
@@ -2063,10 +2058,23 @@ export default class extends mixins(TorrentBatchMixin) {
         name_like: this.listQuery.name_like || undefined,
         downloader_id: downloaderId,
         status,
+        category_like: this.listQuery.category_like || undefined,
+        tags_like: this.listQuery.tags_like || undefined,
         page: this.currentPage,
-        pageSize: this.pageSize
+        pageSize: this.pageSize,
+        sort_by: this.listQuery.sort_by,
+        sort_order: this.listQuery.sort_order,
+        active_only: this.listQuery.showActiveOnly || undefined
       })
       if (requestSequence !== this.listRequestSequence) return
+      if (needsActiveSnapshotRefresh(response, this.listQuery.showActiveOnly)) {
+        this.activeListRetryPending = true
+        if (!activeSnapshotRetry) {
+          await this.loadActiveSpeed()
+        }
+        return
+      }
+      this.activeListRetryPending = false
       const { list, total } = normalizePaginatedResponse<any>(response)
       const nextList = list.map(normalizeTorrent).map(item => ({ ...item, checked: false }))
       this.replaceTorrentList(nextList, total)
@@ -2078,7 +2086,6 @@ export default class extends mixins(TorrentBatchMixin) {
       const errorMessage = extractErrorMessage(error)
       console.error('查找重复失败:', error)
       this.$message.error(errorMessage || '查找重复失败')
-      this.showingDuplicates = false
     } finally {
       if (requestSequence === this.listRequestSequence) {
         this.listLoading = false
@@ -2204,6 +2211,32 @@ export default class extends mixins(TorrentBatchMixin) {
 
 .manual-refresh-btn {
   padding: 0 6px;
+}
+
+.duplicate-search-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: var(--font-weight-medium, 500);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast, 150ms);
+
+  &:hover {
+    border-color: var(--color-success);
+  }
+
+  &.is-active {
+    color: var(--color-success-dark);
+    background: var(--color-success-light);
+    border-color: var(--color-success);
+  }
 }
 
 // P0新增：批量操作行（容纳进阶批量操作，避免主 toolbar 过挤）

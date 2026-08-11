@@ -951,11 +951,9 @@ import {
   ScheduledTask,
   TaskCreateRequest,
   TaskOutcome,
-  getTaskOutcomeMeta,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 仅模板 v-if 引用（vue-eslint-parser 不统计模板引用）
-  isTaskDataStale,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- 仅模板 :content 引用（vue-eslint-parser 不统计模板引用）
-  getStaleTooltipText
+  getTaskOutcomeMeta as resolveTaskOutcomeMeta,
+  isTaskDataStale as resolveTaskDataStale,
+  getStaleTooltipText as buildStaleTooltipText
 } from '@/api/tasks'
 import request from '@/utils/request'
 import { copyTextToClipboard } from '@/utils/clipboard'
@@ -990,6 +988,26 @@ type ValidationResult = BTDeckTypes.ScriptValidationResult
   }
 })
 export default class TaskManage extends Vue {
+  // 模板只能访问 Vue 实例成员；模块级导入必须通过实例方法暴露。
+  private getTaskOutcomeMeta(outcome?: TaskOutcome | string | null) {
+    return resolveTaskOutcomeMeta(outcome)
+  }
+
+  private isTaskDataStale(
+    stale?: boolean | null,
+    lastSuccessfulDataAt?: string | null,
+    lastAttemptAt?: string | null
+  ): boolean {
+    return resolveTaskDataStale(stale, lastSuccessfulDataAt, lastAttemptAt)
+  }
+
+  private getStaleTooltipText(
+    lastSuccessfulDataAt?: string | null,
+    lastAttemptAt?: string | null
+  ): string {
+    return buildStaleTooltipText(lastSuccessfulDataAt, lastAttemptAt)
+  }
+
   private taskList: BTDeckTypes.ScheduledTask[] = []
   private loading = false
   private dialogVisible = false
@@ -2023,7 +2041,7 @@ export default class TaskManage extends Vue {
 
     try {
       // 构建复制内容（执行结果优先使用 outcome 六态文案，旧日志回退 success 布尔两态）
-      const outcomeText = getTaskOutcomeMeta(
+      const outcomeText = resolveTaskOutcomeMeta(
         (selectedLog as BTDeckTypes.TaskLog & { outcome?: TaskOutcome | null }).outcome
       )?.text ?? (selectedLog.success ? '成功' : '失败')
 

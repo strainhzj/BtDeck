@@ -3785,3 +3785,37 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 前端全量 `39 suites, 643 passed`；`npm run typecheck`、目标测试严格 ESLint、生产 build 通过（56 条既有 warning）。
 - 后端两个测试文件 Black/Flake8 通过；无 Schema 或 Alembic 变更。
 - 用户已验证页面交互并授权提交；提交范围仅包含本功能的 20 个跟踪文件，不包含工作区原有 13 个未跟踪备份、镜像与工具产物，不执行 push/deploy。
+
+## 2026-08-11 - 种子重复查询、任务页与管理界面六项修复
+
+### 已确认交互
+
+- “查找重复任务”是两种种子视图的页面级开关：默认关闭，开启态绿色；开启后查询、筛选、排序、切页、分页大小、刷新和视图切换继续留在重复查询，浏览器刷新恢复关闭。
+- 重复结果默认按添加时间倒序；列头排序仍可覆盖主排序。
+- 高级搜索对话框左侧显示已保存的高级配置，可选择回填、创建、覆盖保存和删除；系统模板与他人的公开模板只读。
+
+### 实现
+
+- 列表/传统视图用 `el-switch` 替换一次性重复查询按钮，`getList()` 在开关开启时分派到重复端点；`TorrentViewSwitcher` 共享 `showingDuplicates`。重复请求继续携带名称、下载器、状态、分类、标签、活动快照、排序和分页参数。
+- `duplicate_torrents.py` 默认 `added_date DESC, info_id DESC`，安全支持五个列排序；活动筛选复用权威速度快照并以连接级 TEMP 表联接，避免大集合触发 SQLite 绑定参数上限。
+- `tasks/index.vue` 将 outcome/stale 的模块 helper 通过实例方法暴露给 Vue 模板，修复 `p.getTaskOutcomeMeta is not a function`。
+- 回收站搜索区改用孤儿文件页同款 `management-panel` / `management-filter`；查询模板行操作改用 Lucide play/pencil/trash 极简按钮。
+- 新增 `AdvancedSearchWorkspace.vue`：左侧管理高级搜索模板，右侧复用 `AdvancedSearchBuilder`；Builder 提供校验后的条件快照。父视图的 reset handler 不再反向重置 Builder，消除同步事件递归。
+- 按 `roadmap-maintain` 用源码实测行号同步根索引、前后端分支索引和测试覆盖矩阵；无数据库 Schema 或 Alembic 变更。
+
+### 用户确认后的回归加固
+
+- 重复查询 API 增至 40 项：新增非法排序字段/方向 422、不完整重复组排除、仅单个活跃副本排除，以及权威空活动快照 `ready_empty` 契约。
+- 列表与传统视图通过真实 `el-switch` stub 点击验证默认关闭、绿色开启态和查询分派；新增 `torrent-view-switcher.spec.ts`，验证两种视图往返时重复模式、查询、分页和选择状态不丢失。
+- 定时任务回归使用 TypeScript AST 确认 `getTaskOutcomeMeta` / stale helpers 是 `TaskManage` 实例方法，直接保护原始运行时错误边界。
+- 高级搜索工作区补充名称/描述筛选、单次 reset、保存前校验与并发旧响应隔离；管理页契约细化回收站 Enter/清空/重置和查询模板 ARIA/禁用态。
+
+### 验证
+
+- 后端重复查询定向：`40 passed`；目标 Black（single worker + no-cache）、Flake8、mypy 通过。
+- 后端全量：`3163 passed, 7 skipped, 0 failed`。
+- 前端高风险相关：`6 suites, 69 tests`；前端全量：`41 suites, 657 tests`。
+- `npm run typecheck`、全部变更文件严格 ESLint、生产 build 通过；build 仅有仓库既有 Sass/Browserslist/体积 warning。
+- 完整 `npm run lint` 仍仅被 3 个无关关键词测试文件的既有 5 条 warning 门禁拦截，本次文件为 0 warning。
+- Git Bash 根 `./init.sh`、`git diff --check`、feature_list JSON 解析与路线图陈旧模式扫描通过；前端 init 仅有既有 null-byte warning。
+- 用户已授权提交；提交范围仅包含本次功能、回归和路线图文件，不执行 push/deploy，任务开始前的未跟踪备份、镜像和工具产物保持不动。

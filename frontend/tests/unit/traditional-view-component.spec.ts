@@ -110,6 +110,14 @@ interface TraditionalViewVm extends Vue {
   tableScrollTop: number
   tableViewportHeight: number
   showingDuplicates: boolean
+  listQuery: {
+    name_like: string
+    sort_by: string
+    sort_order: string
+    category_like: string
+    tags_like: string
+    showActiveOnly: boolean
+  }
   currentRow: TorrentRow | null
   activeDetailTab: string
   detailTabs: Array<{ label: string, value: string }>
@@ -128,7 +136,9 @@ interface TraditionalViewVm extends Vue {
     queryString: string,
     callback: (suggestions: PageSizeSuggestion[]) => void
   ): void
-  handleShowDuplicateTorrents(): Promise<void>
+  handleDuplicateSearchToggle(enabled: boolean): Promise<void>
+  handleFilter(): void
+  handleSort(field: string): void
   handlePageChange(page: number): void
   handleManualRefresh(): void
   performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
@@ -170,6 +180,32 @@ const ButtonStub = localVue.extend({
     disabled: Boolean
   },
   template: '<button v-bind="$attrs" :disabled="disabled" v-on="$listeners"><slot /></button>'
+})
+
+const SwitchStub = localVue.extend({
+  name: 'ElSwitchStub',
+  props: {
+    value: Boolean,
+    activeColor: String,
+    inactiveColor: String
+  },
+  methods: {
+    toggle() {
+      const nextValue = !this.value
+      this.$emit('input', nextValue)
+      this.$emit('change', nextValue)
+    }
+  },
+  template: `
+    <button
+      type="button"
+      class="el-switch-stub"
+      :aria-checked="value ? 'true' : 'false'"
+      :data-active-color="activeColor"
+      :data-inactive-color="inactiveColor"
+      @click="toggle"
+    />
+  `
 })
 
 const DropdownStub = localVue.extend({
@@ -284,6 +320,7 @@ function mountTraditionalView(): Wrapper<Vue> {
       },
       'el-option': true,
       'el-progress': true,
+      'el-switch': SwitchStub,
       'el-tooltip': {
         template: '<span><slot /></span>'
       },
@@ -624,6 +661,28 @@ describe('TraditionalView component regressions', () => {
     )
   })
 
+  it('传统视图重复任务开关默认关闭，用户开启后渲染绿色状态', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    mockGetDuplicateTorrents.mockClear()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    const switchShell = wrapper.find('.duplicate-search-switch')
+    const switchControl = wrapper.findComponent(SwitchStub)
+
+    expect(vm.showingDuplicates).toBe(false)
+    expect(switchShell.classes()).not.toContain('is-active')
+    expect(switchControl.attributes('aria-checked')).toBe('false')
+    expect(switchControl.attributes('data-active-color')).toBe('var(--color-success, #10b981)')
+
+    await switchControl.trigger('click')
+    await flushLifecycle()
+
+    expect(vm.showingDuplicates).toBe(true)
+    expect(switchShell.classes()).toContain('is-active')
+    expect(switchControl.attributes('aria-checked')).toBe('true')
+    expect(mockGetDuplicateTorrents).toHaveBeenCalledTimes(1)
+  })
+
   it('重复任务翻页、改分页大小和刷新始终保留重复任务数据源', async() => {
     wrapper = mountTraditionalView()
     await flushLifecycle()
@@ -632,10 +691,37 @@ describe('TraditionalView component regressions', () => {
     mockGetActiveTorrents.mockClear()
     const vm = wrapper.vm as unknown as TraditionalViewVm
 
-    await vm.handleShowDuplicateTorrents()
+    vm.listQuery.category_like = 'movies'
+    vm.listQuery.tags_like = 'featured'
+    vm.listQuery.showActiveOnly = true
+    await vm.handleDuplicateSearchToggle(true)
     expect(vm.showingDuplicates).toBe(true)
     expect(mockGetDuplicateTorrents).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 1, pageSize: 20 })
+      expect.objectContaining({
+        page: 1,
+        pageSize: 20,
+        sort_by: 'added_date',
+        sort_order: 'desc',
+        category_like: 'movies',
+        tags_like: 'featured',
+        active_only: true
+      })
+    )
+
+    mockGetDuplicateTorrents.mockClear()
+    vm.listQuery.name_like = 'needle'
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetDuplicateTorrents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name_like: 'needle', page: 1 })
+    )
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+
+    mockGetDuplicateTorrents.mockClear()
+    vm.handleSort('name')
+    await flushLifecycle()
+    expect(mockGetDuplicateTorrents).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'name', sort_order: 'desc' })
     )
 
     mockGetDuplicateTorrents.mockClear()
@@ -659,6 +745,11 @@ describe('TraditionalView component regressions', () => {
     expect(mockGetDuplicateTorrents).toHaveBeenCalledTimes(1)
     expect(mockGetTorrentList).not.toHaveBeenCalled()
     expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
+
+    mockGetTorrentList.mockClear()
+    await vm.handleDuplicateSearchToggle(false)
+    expect(vm.showingDuplicates).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
   })
 
   it('切页开始加载时立即关闭上一页详情', async() => {

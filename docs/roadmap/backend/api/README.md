@@ -27,7 +27,7 @@
 | 能力配置 capability-mgmt | `downloader_capabilities_management.py` | 下载器能力配置管理（更新/重置/删除） |
 | 路径维护 path-mgmt | `downloader_path_maintenance.py` | 下载器路径维护 CRUD（默认/活跃路径） |
 | 下载器设置 downloader-setting | `downloader_settings.py` | 下载器设置管理（CRUD + 应用；含已废弃 advanced_settings） |
-| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询；排除 pending/running 删除任务中的种子后再判定重复组 |
+| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询（`DuplicateQueryRequest` L48 / `get_duplicate_torrents` L86）；排除 pending/running 删除任务，支持名称/下载器/状态/分类/标签/活动快照筛选及安全列排序，默认 `added_date DESC` 后再判定重复组 |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |

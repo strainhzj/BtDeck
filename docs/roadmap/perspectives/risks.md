@@ -47,7 +47,7 @@
 | Options API（`export default {`） | **3** | 3/82 ≈ 3.7% |
 
 3 个 Options API 文件：
-- [views/recycle-bin/index.vue:374](../../frontend/src/views/recycle-bin/index.vue)
+- [views/recycle-bin/index.vue:369](../../frontend/src/views/recycle-bin/index.vue)
 - [views/tracker/reannounce-config.vue:299](../../frontend/src/views/tracker/reannounce-config.vue)
 - [components/torrents/CompactTable.vue:301](../../frontend/src/components/torrents/CompactTable.vue)
 

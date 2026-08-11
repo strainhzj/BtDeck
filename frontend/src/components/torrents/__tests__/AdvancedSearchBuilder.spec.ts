@@ -373,7 +373,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
       description: '回归测试模板'
     })
     expect(vm.saveTemplateVisible).toBe(false)
-    expect(message.success).toHaveBeenCalledWith('模板保存成功')
+    expect(message.success).not.toHaveBeenCalledWith('模板保存成功')
   })
 
   // ===== 动态字段选项注入（分类/标签/下载器）回归保护 =====

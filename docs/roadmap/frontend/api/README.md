@@ -7,7 +7,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测等；异步删除响应含 nullable task_id 与 requested/accepted/skipped 占用统计 |
+| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测等；重复查询类型支持分类/标签/活动快照与安全排序，异步删除响应含 nullable task_id 与 requested/accepted/skipped 占用统计 |
 | Tracker tracker | `tracker.ts` | Tracker：关键词 CRUD+批量/消息日志 CRUD+批量/统计/测试匹配/关键词池/汇报配置 CRUD+自动检测域名+批量更新 |
 | 定时任务 tasks | `tasks.ts` | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
 | 下载器 downloader | `downloader.ts` | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
@@ -26,8 +26,8 @@
 
 - **统一信封**：所有 API 返回 `ApiEnvelope<T>`（status/msg/code/data），与后端 `CommonResponse` 对齐
 - **分页字段**：固定 `list/total/pageSize`（见 [约束](../../../frontend/docs/constraints/api-response-format.md)）
-- **类型定义**：请求/响应 interface 多数定义在 API 文件内（如 `torrents.ts` 45 个 iface），部分共享类型在 `src/types/`
+- **类型定义**：请求/响应 interface 多数定义在 API 文件内（如 `torrents.ts` 54 个 interface），部分共享类型在 `src/types/`
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrents.ts` 1307 行核心 API）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrents.ts` 1314 行核心 API）

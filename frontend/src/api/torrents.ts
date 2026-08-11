@@ -852,9 +852,14 @@ export interface DuplicateQuery {
   name_like?: string
   downloader_id?: string
   status?: string
+  category_like?: string
+  tags_like?: string
+  active_only?: boolean
   min_size?: number
   page?: number
   pageSize?: number
+  sort_by?: 'name' | 'size' | 'status' | 'ratio' | 'added_date'
+  sort_order?: 'asc' | 'desc'
 }
 
 export interface DuplicateResponse {
@@ -862,6 +867,8 @@ export interface DuplicateResponse {
   page: number
   pageSize: number
   list: Torrent[]
+  activeSnapshotReady?: boolean
+  activeSnapshotStatus?: string
 }
 
 export function getDuplicateTorrents(params?: DuplicateQuery): Promise<ApiResponse<DuplicateResponse>> {

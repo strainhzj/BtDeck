@@ -106,28 +106,56 @@
               {{ formatTime(scope.row.created_time) }}
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="240" align="center" fixed="right">
+          <el-table-column label="操作" width="138" align="center" fixed="right">
             <template slot-scope="scope">
-              <el-button type="primary" size="mini" icon="el-icon-video-play" @click="handleApply(scope.row)">
-                应用
-              </el-button>
-              <el-button
-                size="mini"
-                icon="el-icon-edit"
-                :disabled="scope.row.is_default"
-                @click="handleEdit(scope.row)"
-              >
-                编辑
-              </el-button>
-              <el-button
-                type="danger"
-                size="mini"
-                icon="el-icon-delete"
-                :disabled="scope.row.is_default"
-                @click="handleDelete(scope.row)"
-              >
-                删除
-              </el-button>
+              <div class="template-row-actions">
+                <el-tooltip content="应用模板" placement="top" :open-delay="200">
+                  <span class="template-action-trigger">
+                    <el-button
+                      type="text"
+                      class="template-action-btn template-action-btn--apply"
+                      aria-label="应用模板"
+                      @click="handleApply(scope.row)"
+                    >
+                      <LucideIcon name="play" :size="15" />
+                    </el-button>
+                  </span>
+                </el-tooltip>
+                <el-tooltip
+                  :content="scope.row.is_default ? '系统模板不可编辑' : '编辑模板'"
+                  placement="top"
+                  :open-delay="200"
+                >
+                  <span class="template-action-trigger">
+                    <el-button
+                      type="text"
+                      class="template-action-btn"
+                      :aria-label="scope.row.is_default ? '系统模板不可编辑' : '编辑模板'"
+                      :disabled="scope.row.is_default"
+                      @click="handleEdit(scope.row)"
+                    >
+                      <LucideIcon name="pencil" :size="15" />
+                    </el-button>
+                  </span>
+                </el-tooltip>
+                <el-tooltip
+                  :content="scope.row.is_default ? '系统模板不可删除' : '删除模板'"
+                  placement="top"
+                  :open-delay="200"
+                >
+                  <span class="template-action-trigger">
+                    <el-button
+                      type="text"
+                      class="template-action-btn template-action-btn--delete"
+                      :aria-label="scope.row.is_default ? '系统模板不可删除' : '删除模板'"
+                      :disabled="scope.row.is_default"
+                      @click="handleDelete(scope.row)"
+                    >
+                      <LucideIcon name="trash" :size="15" />
+                    </el-button>
+                  </span>
+                </el-tooltip>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -146,6 +174,7 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import QueryTemplateDialog from './components/QueryTemplateDialog.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
   getSearchTemplates,
   deleteSearchTemplate,
@@ -154,7 +183,7 @@ import {
 
 @Component({
   name: 'QueryTemplates',
-  components: { QueryTemplateDialog }
+  components: { QueryTemplateDialog, LucideIcon }
 })
 export default class QueryTemplates extends Vue {
   private list: SearchTemplate[] = []
@@ -270,3 +299,44 @@ export default class QueryTemplates extends Vue {
   }
 }
 </script>
+
+<style lang="scss" scoped>
+.template-row-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.template-action-trigger {
+  display: inline-flex;
+}
+
+.template-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+
+  &:hover:not(.is-disabled),
+  &:focus-visible:not(.is-disabled) {
+    color: var(--color-primary);
+    background: var(--color-primary-lightest);
+  }
+
+  &--apply {
+    color: var(--color-primary);
+  }
+
+  &--delete:hover:not(.is-disabled),
+  &--delete:focus-visible:not(.is-disabled) {
+    color: var(--color-error);
+    background: var(--color-error-lightest, #fef2f2);
+  }
+}
+</style>
