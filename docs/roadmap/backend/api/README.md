@@ -37,16 +37,16 @@
 | 配置模板 template | `setting_templates.py` | 配置模板管理：CRUD + 应用 |
 | 标签管理 tag | `tag_management.py` | 标签管理：标签 CRUD/种子标签分配/批量操作 |
 | 任务日志 task-log | `tasks.py` | 任务日志（`/logs`、`/statistics`） |
-| 种子备份 torrent-backup | `torrent_backup.py` | 种子文件备份：备份/还原/列表/管理 |
+| 种子备份 torrent-backup | `torrent_backup.py` | 种子文件备份：备份/还原/列表/管理；`get_backup_downloader_nicknames` L82 对当前页下载器做单次批量查询，列表直接返回当前 nickname |
 | 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
 | 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计 |
-| 种子工具 torrent-helper | `torrent_helpers.py` | 种子端点共享工具（哈希/序列化/bencode/DB 辅助）；普通列表与计数排除活动删除任务中的种子 |
+| 种子工具 torrent-helper | `torrent_helpers.py` | 种子端点共享工具（哈希/序列化/bencode/DB 辅助）；VO 转换透传 `error_reason`，Transmission 新增记录提取错误文本；普通列表与计数排除活动删除任务中的种子 |
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存） |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |
-| 种子同步 torrent-sync | `torrent_sync.py` | 种子同步端点 + 同步辅助函数；手动/兼容路径复用缓存客户端，sync-single 使用 AsyncSession；v1.0.6.25 起同步写入用 `torrent_ratio_values` |
+| 种子同步 torrent-sync | `torrent_sync.py` | 种子同步端点 + 同步辅助函数；手动/兼容路径复用缓存客户端，sync-single 使用 AsyncSession；Transmission 兼容同步写入错误原因（L552），恢复时写空值清除 |
 | 种子聚合 torrents | `torrents.py` | 种子聚合路由器（include_router 合并 6 个子路由） |
-| 异步种子 DB torrents-async | `torrents_async.py` | 异步版种子 DB 操作（供定时任务用）；info/tracker 受单轮预算与 durable cursor 约束，客户端只接收缓存实例；v1.0.6.25 起写入经 `torrent_ratio_values` |
+| 异步种子 DB torrents-async | `torrents_async.py` | 异步版种子 DB 操作（供定时任务用）；Transmission RPC 基础/详情字段包含 errorString，FULL 与 INFO-ONLY 写入错误原因（L1388/L3643），INFO-ONLY 预取旧值以检测原因变化与恢复清空；info/tracker 仍受单轮预算与 durable cursor 约束 |
 | Tracker 查询 tracker | `tracker.py` | Tracker 信息查询/同步（异步会话） |
 | Tracker 关键词 tracker-keyword | `tracker_keywords.py` | Tracker 关键词 CRUD + 批量 |
 | 关键词池 keyword-pool | `tracker_keywords_pools.py` | Tracker 关键词池（candidate/ignored/success/failed 四池） |

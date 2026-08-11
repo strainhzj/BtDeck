@@ -1,5 +1,32 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-12 交接：种子文件、任务日志、高级搜索与错误原因七项修复
+
+### 当前结果
+
+- 种子文件管理的下载器列由列表 API 单次批量解析并返回当前 nickname；刷新列表会反映改名，
+  无逐行动态请求，缺失下载器显示 `-`。搜索区已统一为项目 management-page 风格。
+- 任务日志导出/清理按钮使用项目标准成功/警告样式。从任务列表查看日志会显示当前任务筛选；
+  “清空”同时清除 task_id、普通筛选和日期并立即加载全部日志。
+- 高级搜索 `status` 已改为与下载器相同的 `AdvancedMultiSelect` 精确多选控件，不允许创建
+  自定义值；旧模板标量及 equals/not_equals 会兼容归一为数组和 in/not_in。
+- 组内“添加条件”位于条件列表底部，全局“添加条件组”在其下方，降低误触。
+- `torrent_info.error_reason` 已通过可回滚 Alembic `de898cb28172` 增加。Transmission FULL、
+  INFO-ONLY、legacy 和新增记录路径同步 errorString；错误原因变化可单独触发更新，恢复后清空。
+- API 以 `errorReason` 输出；列表/传统两视图都在名称 hover tooltip 与 Tracker 卡片显示原因。
+- 路线图、迁移清单、测试矩阵、功能状态与进度记录已同步；未 stage/commit/push/deploy。
+
+### 验证与已知基线
+
+- 后端全量：`3171 passed, 7 skipped`；相关定向 88 passed；修改文件 Flake8 与
+  `git diff --check`、Git Bash 根 `./init.sh` 通过。
+- 前端全量：`43 suites, 672 tests`；typecheck、生产 build、修改文件严格 ESLint 通过。
+- 本地浏览器实测文件管理布局、任务按钮、任务日志 2→6 条清空恢复、状态多选与添加按钮层级；
+  临时浏览器/服务/QA 数据库均已关闭或删除。
+- 完整前端 lint 只剩 3 个无关关键词测试文件中的 5 条既有 warning；目标 mypy 为仓库既有
+  SQLAlchemy/Pydantic 类型债 142 条；Windows Black 26.5.1 检查存在超时，Flake8 无错误。
+- 工作区任务前已有的未跟踪备份、镜像、缓存与工具目录均未触碰。
+
 ## 2026-08-11 交接：种子重复查询、任务页与管理界面六项修复
 
 ### 当前结果

@@ -327,6 +327,7 @@ def convert_to_vo(torrent: torrentInfoModel) -> TorrentInfoVO:
         save_path=torrent.save_path,
         size=torrent.size,
         status=torrent.status,
+        error_reason=torrent.error_reason,
         torrent_file=torrent.torrent_file,
         added_date=added_timestamp,
         completed_date=completed_timestamp,
@@ -473,6 +474,7 @@ def convert_to_vo_with_trackers(
         save_path=torrent.save_path,
         size=torrent.size,
         status=torrent.status,
+        error_reason=torrent.error_reason,
         progress=torrent.progress,
         torrent_file=torrent.torrent_file,
         added_date=torrent.added_date,  # 保持 datetime 对象，让 Pydantic 自动序列化为 ISO 8601
@@ -779,6 +781,7 @@ def create_transmission_torrent_record(downloader, downloader_id, tr_torrent):
         save_path=tr_torrent.download_dir,
         size=tr_torrent.total_size,
         status=TorrentStatusMapper.resolve_transmission_status(tr_torrent.status, tr_torrent.error),
+        error_reason=TorrentStatusMapper.extract_transmission_error_reason(tr_torrent),
         torrent_file=tr_torrent.torrent_file,
         added_date=tr_torrent.added_date,
         completed_date=tr_torrent.done_date if tr_torrent.done_date else None,

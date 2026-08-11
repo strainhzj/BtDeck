@@ -311,6 +311,12 @@
 
         <!-- 日志筛选区 -->
         <section class="filter-section filter-section-logs">
+          <div v-if="activeLogTaskName" class="active-log-task-filter">
+            <span class="active-log-task-filter__label">当前任务筛选</span>
+            <el-tag closable type="info" @close="clearLogTaskFilter">
+              {{ activeLogTaskName }}
+            </el-tag>
+          </div>
           <div class="filter-form filter-form-logs">
             <!-- 第一行：任务名称、日志内容、执行结果、搜索/重置按钮 -->
             <div class="form-group">
@@ -353,7 +359,7 @@
                 <LucideIcon name="search" :size="14" /> 搜索
               </el-button>
               <el-button class="btn btn-secondary" @click="resetLogQuery">
-                <LucideIcon name="rotate-ccw" :size="14" /> 重置
+                <LucideIcon name="x" :size="14" /> 清空
               </el-button>
             </div>
 
@@ -386,8 +392,9 @@
           </el-button>
 
           <el-dropdown @command="handleLogExport">
-            <el-button type="success" class="batch-btn batch-btn-info">
+            <el-button type="success" size="small">
               <LucideIcon name="download" :size="14" /> 导出
+              <LucideIcon name="chevron-down" :size="12" />
             </el-button>
             <el-dropdown-menu slot="dropdown">
               <el-dropdown-item command="csv">导出为 CSV</el-dropdown-item>
@@ -398,7 +405,7 @@
 
           <el-button
             type="warning"
-            class="batch-btn batch-btn-warning"
+            size="small"
             @click="handleLogCleanup"
           >
             <LucideIcon name="wand-sparkles" :size="14" /> 清理过期日志
@@ -1060,6 +1067,7 @@ export default class TaskManage extends Vue {
     page: 1,
     limit: 20
   }
+  private activeLogTaskName = ''
 
   private taskForm: TaskForm = {
     task_name: '',
@@ -1301,6 +1309,7 @@ export default class TaskManage extends Vue {
 
   // 查看日志按钮点击处理
   private async handleViewLogs(row: ScheduledTask) {
+    const logQueryParams = this.logQueryParams
     try {
       // 显示加载状态
       this.logLoading = true
@@ -1317,18 +1326,19 @@ export default class TaskManage extends Vue {
       console.log('Task ID:', taskId)
       console.log('Task Name:', row.taskName)
 
-      // 1. 切换到日志页签
-      this.activeTab = 'logs'
+      // 1. 先设置筛选条件，再切换页签，确保页签 watcher 不会先请求全部日志。
+      logQueryParams.task_id = taskId
+      logQueryParams.page = 1 // 重置到第一页
+      this.activeLogTaskName = row.taskName || `任务 ${taskId}`
 
-      // 2. 设置筛选条件
-      this.logQueryParams.task_id = taskId
-      this.logQueryParams.page = 1 // 重置到第一页
-
-      // 3. 清空其他筛选条件以提供更精确的结果
-      this.logQueryParams.task_name = ''
-      this.logQueryParams.log_content = ''
-      this.logQueryParams.success = undefined
+      // 清空其他筛选条件以提供更精确的结果。
+      logQueryParams.task_name = ''
+      logQueryParams.log_content = ''
+      logQueryParams.success = undefined
       this.logDateRange = []
+
+      // 2. 切换到日志页签。
+      this.activeTab = 'logs'
 
       // 4. 等待页签切换完成，然后刷新日志数据
       await this.$nextTick()
@@ -1892,8 +1902,17 @@ export default class TaskManage extends Vue {
       page: 1,
       limit: 20
     }
+    this.activeLogTaskName = ''
     // 清空日期范围选择
     this.logDateRange = []
+    this.fetchLogList()
+  }
+
+  // 关闭可见任务筛选标签时保留其它搜索条件，仅恢复为全部任务日志。
+  private clearLogTaskFilter() {
+    this.logQueryParams.task_id = undefined
+    this.logQueryParams.page = 1
+    this.activeLogTaskName = ''
     this.fetchLogList()
   }
 
@@ -2187,6 +2206,19 @@ ${selectedLog.logDetail}`
    ======================================== */
 
 /* 表单帮助文本 */
+.active-log-task-filter {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+
+  &__label {
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+  }
+}
+
 .form-help {
   margin-top: 6px;
   color: var(--color-text-tertiary);

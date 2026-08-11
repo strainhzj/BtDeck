@@ -1185,9 +1185,7 @@ def _deduplicate_torrent_lists(
     return deduped_insert, deduped_update
 
 
-async def tr_add_torrents_async(
-    db: AsyncSession, downloaders: List[Any], *, client: Optional[Any] = None
-) -> None:
+async def tr_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, client: Optional[Any] = None) -> None:
     """
     根据transmission的种子数据结构创建插入数据（异步版本）
 
@@ -1387,6 +1385,7 @@ async def tr_add_torrents_async(
             "hash": torrent_info.hashString,
             "name": torrent_info.name,
             "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
+            "error_reason": TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
             "save_path": torrent_info.download_dir,
             "size": torrent_info.total_size,
             "progress": progress_value,
@@ -1701,9 +1700,7 @@ async def tr_add_torrents_async(
 # ==============================================================================
 
 
-async def qb_add_torrents_async(
-    db: AsyncSession, downloaders: List[Any], *, client: Optional[Any] = None
-) -> None:
+async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, client: Optional[Any] = None) -> None:
     """
     根据qbittorrent的种子数据结构创建插入数据（异步版本）
 
@@ -2371,7 +2368,16 @@ TR_API_TIMEOUT = int(os.getenv("TR_API_TIMEOUT", "60"))
 TR_ACTIVE_WINDOW_SECONDS = int(os.getenv("TR_ACTIVE_WINDOW_SECONDS", "43200"))  # 默认12小时（覆盖静种）
 QB_FULL_SYNC_INTERVAL_SECONDS = int(os.getenv("QB_FULL_SYNC_INTERVAL_SECONDS", "43200"))
 TR_FULL_SYNC_INTERVAL_SECONDS = int(os.getenv("TR_FULL_SYNC_INTERVAL_SECONDS", "43200"))
-TR_BASE_FIELDS = ["id", "hashString", "name", "status", "activityDate", "trackerStats", "error"]
+TR_BASE_FIELDS = [
+    "id",
+    "hashString",
+    "name",
+    "status",
+    "activityDate",
+    "trackerStats",
+    "error",
+    "errorString",
+]
 TR_DETAIL_FIELDS = [
     "id",
     "hashString",
@@ -2380,6 +2386,7 @@ TR_DETAIL_FIELDS = [
     "activityDate",
     "trackerStats",
     "error",
+    "errorString",
     "percentDone",
     "downloadDir",
     "totalSize",
@@ -3009,9 +3016,7 @@ def _build_info_cursor(last_hash: str) -> str:
     return json.dumps({"last_hash": str(last_hash)}, ensure_ascii=False)
 
 
-async def _emit_info_progress(
-    callback: Optional[Callable[[str], Awaitable[None]]], last_hash: Optional[str]
-) -> None:
+async def _emit_info_progress(callback: Optional[Callable[[str], Awaitable[None]]], last_hash: Optional[str]) -> None:
     """在 info-only 批量写入成功后推进运行期检查点；回调失败不阻断业务写入。"""
     if callback is None or not last_hash:
         return
@@ -3416,9 +3421,11 @@ async def qb_add_torrents_info_only_async(
         return None
     cycle_complete = budget_reason is None and processed_count >= pending_torrent_count
     return {
-        "cursor": None
-        if cycle_complete
-        else (_build_info_cursor(last_processed_hash) if last_processed_hash else cursor_before),
+        "cursor": (
+            None
+            if cycle_complete
+            else (_build_info_cursor(last_processed_hash) if last_processed_hash else cursor_before)
+        ),
         "cycle_complete": cycle_complete,
         "partial": not cycle_complete,
         "budget_reason": budget_reason,
@@ -3553,6 +3560,7 @@ async def tr_add_torrents_info_only_async(
             TorrentInfo.name,
             TorrentInfo.size,
             TorrentInfo.status,
+            TorrentInfo.error_reason,
             TorrentInfo.ratio,
             TorrentInfo.ratio_limit,
             TorrentInfo.tags,
@@ -3632,6 +3640,7 @@ async def tr_add_torrents_info_only_async(
             "hash": torrent_hash,
             "name": torrent_info.name,
             "status": TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
+            "error_reason": TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
             "save_path": torrent_info.download_dir,
             "size": torrent_info.total_size,
             "progress": progress_value,
@@ -3720,9 +3729,11 @@ async def tr_add_torrents_info_only_async(
     if progress_callback is None:
         return None
     return {
-        "cursor": None
-        if cycle_complete
-        else (_build_info_cursor(last_processed_hash) if last_processed_hash else cursor_before),
+        "cursor": (
+            None
+            if cycle_complete
+            else (_build_info_cursor(last_processed_hash) if last_processed_hash else cursor_before)
+        ),
         "cycle_complete": cycle_complete,
         "partial": not cycle_complete,
         "budget_reason": budget_reason,

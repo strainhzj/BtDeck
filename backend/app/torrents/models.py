@@ -21,6 +21,7 @@ class TorrentInfo(Base):
     save_path = Column(String, index=True, comment="种子文件保存路径")
     size = Column(Float, comment="种子大小")
     status = Column(String, index=True, comment="状态")
+    error_reason = Column(Text, nullable=True, comment="下载器返回的种子错误原因")
     progress = Column(Float, default=0.0, comment="下载进度(0-100)")
     torrent_file = Column(String, index=True, comment="种子文件")
     added_date = Column(DATETIME, comment="添加时间")
@@ -98,6 +99,7 @@ class TorrentInfo(Base):
         original_filename=None,
         backup_file_path=None,
         original_file_list=None,
+        error_reason=None,
         **kw: Any,
     ):
         super().__init__(**kw)
@@ -110,6 +112,7 @@ class TorrentInfo(Base):
         self.save_path = save_path
         self.size = size
         self.status = status
+        self.error_reason = error_reason
         self.progress = progress
         self.torrent_file = torrent_file
         self.added_date = added_date
@@ -142,6 +145,7 @@ class TorrentInfo(Base):
             "save_path": self.save_path,
             "size": self.size,
             "status": self.status,
+            "error_reason": self.error_reason,
             "progress": self.progress,
             "torrent_file": self.torrent_file,
             "added_date": self.added_date,

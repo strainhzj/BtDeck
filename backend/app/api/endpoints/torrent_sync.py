@@ -549,6 +549,7 @@ def tr_add_torrents(db, downloaders, app=None):
             hash=torrent_info.hashString,
             name=torrent_info.name,
             status=TorrentStatusMapper.resolve_transmission_status(torrent_info.status, torrent_info.error),
+            error_reason=TorrentStatusMapper.extract_transmission_error_reason(torrent_info),
             save_path=torrent_info.download_dir,
             size=torrent_info.total_size,
             torrent_file=torrent_info.torrent_file,

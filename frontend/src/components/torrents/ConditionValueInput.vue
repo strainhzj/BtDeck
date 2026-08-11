@@ -256,7 +256,7 @@
       <AdvancedMultiSelect
         v-model="inputValue"
         :options="fieldOptions"
-        :allow-create="true"
+        :allow-create="field !== 'status'"
         :virtual-scroll-threshold="100"
         :list-height="200"
         :show-advanced="true"
@@ -358,7 +358,7 @@ export default class ConditionValueInput extends Vue {
   readonly fieldTypeMap = {
     name: 'text',
     size: 'number',
-    status: 'select',
+    status: 'multiSelect',
     downloader_name: 'multiSelect',
     save_path: 'text',
     added_date: 'date',

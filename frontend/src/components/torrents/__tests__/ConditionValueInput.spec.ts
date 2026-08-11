@@ -1,4 +1,4 @@
-import { createLocalVue, mount, shallowMount } from '@vue/test-utils'
+import { createLocalVue, shallowMount } from '@vue/test-utils'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
 import ConditionValueInput from '../ConditionValueInput.vue'
@@ -55,9 +55,9 @@ describe('ConditionValueInput 字段选项透传', () => {
     errorSpy.mockRestore()
   })
 
-  // category/downloader_name 现在也是 multiSelect（与 tags 同分支），
-  // 用 it.each 参数化覆盖三个字段，避免重复用例
+  // status/category/downloader_name 都与 tags 共用 multiSelect 分支。
   it.each([
+    ['status', categoryOptions],
     ['category', categoryOptions],
     ['downloader_name', categoryOptions],
     ['tags', tagOptions]
@@ -83,9 +83,9 @@ describe('ConditionValueInput 字段选项透传', () => {
     wrapper.destroy()
   })
 
-  // tags / category / downloader_name 三个字段共用同一段 multiSelect 模板，
-  // 同一个回写 bug 也同时影响它们，故参数化覆盖三者。
+  // 四个字段共用同一段 multiSelect 模板，统一守住值回写链路。
   it.each([
+    ['status', 'in', categoryOptions, 'movie'],
     ['tags', 'contains_any', tagOptions, 'tag1'],
     ['category', 'in', categoryOptions, 'movie'],
     ['downloader_name', 'in', categoryOptions, 'movie']
@@ -129,33 +129,20 @@ describe('ConditionValueInput 字段选项透传', () => {
     }
   )
 
-  it('空 fieldOptions 时 select 与 multiSelect 分支均不崩溃', () => {
-    // select 空选项（用 status 字段——它仍是 select 类型）
-    const selectWrapper = mount(ConditionValueInput, {
-      localVue,
-      propsData: {
-        field: 'status',
-        operator: 'equals',
-        value: null,
-        fieldOptions: []
-      },
-      stubs: { 'advanced-multi-select': true }
-    })
-    expect(selectWrapper.findAll({ name: 'ElOption' }).length).toBe(0)
-    selectWrapper.destroy()
-
-    // multiSelect 空选项（category 现在是 multiSelect）
+  it('状态 multiSelect 在空 fieldOptions 时不崩溃且禁止创建自定义状态', () => {
     const multiWrapper = shallowMount(ConditionValueInput, {
       localVue,
       propsData: {
-        field: 'category',
+        field: 'status',
         operator: 'in',
         value: [],
         fieldOptions: []
       },
       stubs: { 'advanced-multi-select': AdvancedMultiSelect }
     })
-    expect(multiWrapper.findComponent(AdvancedMultiSelect).props('options')).toEqual([])
+    const multi = multiWrapper.findComponent(AdvancedMultiSelect)
+    expect(multi.props('options')).toEqual([])
+    expect(multi.props('allowCreate')).toBe(false)
     multiWrapper.destroy()
   })
 
@@ -164,8 +151,8 @@ describe('ConditionValueInput 字段选项透传', () => {
       localVue,
       propsData: {
         field: 'status',
-        operator: 'equals',
-        value: 'downloading',
+        operator: 'in',
+        value: ['downloading'],
         fieldOptions: categoryOptions
       },
       stubs: {
@@ -182,44 +169,31 @@ describe('ConditionValueInput 字段选项透传', () => {
     const changeEvents = wrapper.emitted('change')
     expect(inputEvents).toHaveLength(1)
     expect(changeEvents).toHaveLength(1)
-    // emit 的载荷应等于当前 inputValue（来自 value='downloading' 经 normalize 后）
-    expect(inputEvents?.[0][0]).toBe('downloading')
+    expect(inputEvents?.[0][0]).toEqual(['downloading'])
 
     wrapper.destroy()
   })
 
-  // ============================================================
-  // 回归：emoji→Lucide 改造——select 分支 el-option 内渲染图标
-  // 背景：本次改造给 FieldOption 加了可选 icon，并在 el-option 默认 slot 内放
-  // <LucideIcon v-if="option.icon">。:label 仍是纯文本（el-select 触发器/过滤用）。
-  // 不变量：带 icon 的 option 下拉项内出现真实 svg；无 icon 时不出现。
-  // ============================================================
-  it('select 分支：带 icon 的 fieldOptions 在 el-option 内渲染 LucideIcon', () => {
+  it('状态字段把带图标选项完整透传给 AdvancedMultiSelect', () => {
     const iconOptions = [
       { label: '做种中', value: 'seeding', icon: 'trending-up' },
       { label: '错误', value: 'error', icon: 'alert-triangle' },
       { label: '无图标', value: 'none' }
     ]
-    const wrapper = mount(ConditionValueInput, {
+    const wrapper = shallowMount(ConditionValueInput, {
       localVue,
       propsData: {
         field: 'status',
-        operator: 'equals',
-        value: null,
+        operator: 'in',
+        value: [],
         fieldOptions: iconOptions
       },
-      stubs: { 'advanced-multi-select': true }
+      stubs: { 'advanced-multi-select': AdvancedMultiSelect }
     })
 
-    const options = wrapper.findAll({ name: 'ElOption' })
-    expect(options).toHaveLength(3)
-    // 前两项 el-option 内应渲染真实 LucideIcon svg（el-option 用默认 slot）
-    const svgs = wrapper.findAll('.el-select-dropdown__item svg, .ams__option-label svg, option svg, svg')
-    expect(svgs.length).toBeGreaterThanOrEqual(2)
-    // 不应有 missing 占位
-    expect(wrapper.find('.lucide-icon--missing').exists()).toBe(false)
-    // 各 option 的 :label 仍是纯文本（不被图标污染）
-    expect(options.at(0).props('label')).toBe('做种中')
+    const multi = wrapper.findComponent(AdvancedMultiSelect)
+    expect(multi.props('options')).toEqual(iconOptions)
+    expect(multi.props('allowCreate')).toBe(false)
 
     wrapper.destroy()
   })

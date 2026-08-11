@@ -17,6 +17,8 @@ export interface Torrent {
   save_path?: string // 蛇形命名兼容
   size: number
   status: string
+  errorReason?: string | null
+  error_reason?: string | null // 蛇形命名兼容
   torrentFile: string
   torrent_file?: string // 蛇形命名兼容
   addedDate: string
@@ -1083,7 +1085,8 @@ export interface TorrentBackup {
   info_hash: string
   task_name: string
   torrent_name: string
-  downloader_id: number
+  downloader_id: number | string
+  downloader_nickname?: string | null
   file_path: string
   created_at: string
   updated_at: string
@@ -1096,7 +1099,7 @@ export interface TorrentBackup {
 export interface TorrentBackupListParams {
   page: number
   pageSize: number
-  downloader_id?: number
+  downloader_id?: number | string
 }
 
 /**

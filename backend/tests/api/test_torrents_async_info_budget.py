@@ -173,13 +173,14 @@ def _make_qb_client(seeds):
     return client
 
 
-def _tr_seed(i, hash_, name):
+def _tr_seed(i, hash_, name, *, error=0, error_string=""):
     return SimpleNamespace(
         id=i,
         hashString=hash_,
         name=name,
         status=6,
-        error=0,
+        error=error,
+        error_string=error_string,
         download_dir="/downloads",
         total_size=4096,
         percent_done=0.5,
@@ -576,6 +577,42 @@ class TestTrSymmetricPaginatedRead:
         text = _completion_log(mock_info, "[TR_INFO_SYNC]")
         assert "插入 0" in text
         assert "更新 1200" in text
+
+    async def test_tr_error_reason_is_requested_and_written(self, monkeypatch):
+        monkeypatch.setattr(settings, "INFO_SYNC_MAX_TORRENTS_PER_RUN", 100)
+        monkeypatch.setattr(settings, "INFO_SYNC_RUN_BUDGET_SECONDS", 600.0)
+        seed = _tr_seed(
+            1,
+            "tr-error-hash",
+            "error-seed",
+            error=3,
+            error_string="No space left on device",
+        )
+        client = _make_tr_client([seed])
+        db = _empty_db()
+
+        with (
+            patch.dict(torrents_async._TR_FULL_SYNC_DONE, {}, clear=True),
+            patch.dict(torrents_async._TR_LAST_FULL_SYNC, {}, clear=True),
+            patch.object(
+                torrents_async,
+                "bulk_upsert_with_retry",
+                new=AsyncMock(),
+            ) as bulk_mock,
+        ):
+            await torrents_async.tr_add_torrents_info_only_async(
+                db,
+                [_tr_downloader()],
+                client=client,
+            )
+
+        inserted = bulk_mock.await_args.args[1]
+        assert inserted[0]["status"] == "error"
+        assert inserted[0]["error_reason"] == "No space left on device"
+        assert all(
+            "errorString" in call.kwargs["arguments"]
+            for call in client.get_torrents.call_args_list
+        )
 
 
 def _tr_downloader():

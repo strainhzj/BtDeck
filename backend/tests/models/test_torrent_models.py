@@ -13,8 +13,6 @@ TorrentInfo 和 TrackerInfo 模型单元测试
 """
 
 from datetime import datetime
-import pytest
-from unittest.mock import patch
 
 
 # ============================================================
@@ -57,6 +55,7 @@ def _make_torrent_info(**kwargs):
         "backup_file_path": None,
         "original_file_list": None,
         "has_tracker_error": False,
+        "error_reason": None,
     }
     defaults.update(kwargs)
 
@@ -136,7 +135,7 @@ class TestTorrentInfoToDict:
             "tags", "category", "super_seeding", "enabled", "create_time",
             "create_by", "update_time", "update_by", "dr", "deleted_at",
             "original_filename", "backup_file_path", "original_file_list",
-            "has_tracker_error",
+            "has_tracker_error", "error_reason",
         }
         assert set(result.keys()) == expected_keys
 
@@ -146,12 +145,14 @@ class TestTorrentInfoToDict:
             name="特定种子",
             size=2048,
             status="seeding",
+            error_reason="tracker timeout",
         )
         result = info.to_dict()
 
         assert result["name"] == "特定种子"
         assert result["size"] == 2048
         assert result["status"] == "seeding"
+        assert result["error_reason"] == "tracker timeout"
 
 
 # ============================================================
@@ -269,7 +270,6 @@ class TestSoftDelete:
             original_filename="existing.torrent",
             deleted_at=None,
         )
-        original = info.original_filename
         info.soft_delete(save_original_filename=False)
 
         assert info.deleted_at is not None

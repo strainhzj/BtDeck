@@ -383,9 +383,18 @@
                     :stroke-width="2.5"
                   />
                 </div>
-                <div class="torrent-name-text" :title="torrent.name">
-                  {{ torrent.name }}
-                </div>
+                <el-tooltip
+                  :disabled="!getTorrentErrorReason(torrent)"
+                  :content="getTorrentErrorReason(torrent)"
+                  placement="top"
+                >
+                  <div
+                    class="torrent-name-text"
+                    :title="getTorrentErrorReason(torrent) ? '' : torrent.name"
+                  >
+                    {{ torrent.name }}
+                  </div>
+                </el-tooltip>
               </div>
             </td>
             <td v-if="getColumnSetting('downloadSpeed').visible">
@@ -501,6 +510,15 @@
           <LucideIcon name="x" :size="16" />
         </button>
       </div>
+      <el-alert
+        v-if="getTorrentErrorReason(currentRow)"
+        class="torrent-error-alert"
+        title="种子错误原因"
+        :description="getTorrentErrorReason(currentRow)"
+        type="error"
+        show-icon
+        :closable="false"
+      />
       <div class="tracker-table-wrapper">
         <table class="tracker-table">
           <thead>
@@ -752,6 +770,7 @@ import {
   reannounceTorrents,
   getActiveTorrents,
   applySearchTemplate,
+  type Torrent,
   type QueryTemplateConditions
 } from '@/api/torrents'
 import { TorrentStatus } from '@/types/torrent'
@@ -1235,6 +1254,10 @@ export default class extends mixins(TorrentBatchMixin) {
   private handleCloseTrackerDetail() {
     this.showTrackerDetail = false
     this.currentRow = null
+  }
+
+  private getTorrentErrorReason(torrent: Torrent | null | undefined): string {
+    return torrent?.errorReason || torrent?.error_reason || ''
   }
 
   /**
@@ -2382,6 +2405,11 @@ export default class extends mixins(TorrentBatchMixin) {
 
 <style lang="scss" scoped>
 @import '@/styles/torrent-theme.scss';
+
+.torrent-error-alert {
+  width: auto;
+  margin: 12px 16px 0;
+}
 
 .advanced-search-dialog__title {
   display: inline-flex;

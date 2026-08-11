@@ -349,7 +349,16 @@
                 </td>
                 <td v-if="getColumnSetting('name').visible" class="col-name">
                   <div class="torrent-name-cell">
-                    <span class="torrent-name-text" :title="torrent.name">{{ torrent.name }}</span>
+                    <el-tooltip
+                      :disabled="!getTorrentErrorReason(torrent)"
+                      :content="getTorrentErrorReason(torrent)"
+                      placement="top"
+                    >
+                      <span
+                        class="torrent-name-text"
+                        :title="getTorrentErrorReason(torrent) ? '' : torrent.name"
+                      >{{ torrent.name }}</span>
+                    </el-tooltip>
                   </div>
                 </td>
                 <td v-if="getColumnSetting('size').visible" class="col-size">{{ formatFileSize(torrent.size) }}</td>
@@ -538,6 +547,15 @@
             <div class="detail-content">
               <!-- Tracker 信息 -->
               <template v-if="activeDetailTab === 'tracker'">
+                <el-alert
+                  v-if="getTorrentErrorReason(currentRow)"
+                  class="torrent-error-alert"
+                  title="种子错误原因"
+                  :description="getTorrentErrorReason(currentRow)"
+                  type="error"
+                  show-icon
+                  :closable="false"
+                />
                 <table class="tracker-table tracker-table-detail">
                   <thead>
                     <tr>
@@ -777,6 +795,7 @@ import {
   advancedSearch,
   getDuplicateTorrents,
   applySearchTemplate,
+  type Torrent,
   type DownloaderSimple,
   type QueryTemplateConditions,
   type AdvancedSearchRequest
@@ -1493,6 +1512,10 @@ export default class extends mixins(TorrentBatchMixin) {
     this.currentRow = null
   }
 
+  private getTorrentErrorReason(torrent: Torrent | null | undefined): string {
+    return torrent?.errorReason || torrent?.error_reason || ''
+  }
+
   private prepareForListReplacement(): number {
     // 切页、筛选或切换数据源后旧行已不属于当前列表，立即关闭以阻止误操作。
     this.closeDetailPanel()
@@ -2137,6 +2160,10 @@ export default class extends mixins(TorrentBatchMixin) {
 <style lang="scss" scoped>
 // 复用现有样式变量
 @import '@/styles/traditional-view-theme.scss';
+
+.torrent-error-alert {
+  margin-bottom: 10px;
+}
 
 // 对话框标题：图标 + 文本对齐（el-dialog #title slot）
 .dialog-title-with-icon {

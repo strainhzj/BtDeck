@@ -7,10 +7,10 @@
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图均以绿色开关进入重复查询，筛选/排序/分页/刷新保持数据源，并共用带已保存配置侧栏的高级搜索工作区 |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图均以绿色开关进入重复查询，筛选/排序/分页/刷新保持数据源，并共用带已保存配置侧栏的高级搜索工作区；两视图均在名称 tooltip 与 Tracker 卡片展示错误原因 |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（14 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（12 文件；11 class + ⚠ 1 Options API） |
-| 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板，避免运行时缺失 |
+| 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选），搜索区采用孤儿文件页同款 management-panel/filter 结构 |
 | 设置 settings | `settings/index.vue` | 全局设置页 |
@@ -26,11 +26,11 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，`TorrentsManagement` class）；`handleDuplicateSearchToggle` L2298 / `fetchDuplicateTorrents` L2310 让筛选、排序、分页、刷新持续使用重复查询，默认开关关闭 |
+| `index.vue` | 种子管理主入口（列表模式，class L826）；`getTorrentErrorReason` L1259 为名称 tooltip 与 Tracker 卡片提供错误原因；`handleDuplicateSearchToggle` L2321 / `fetchDuplicateTorrents` L2333 让筛选、排序、分页、刷新持续使用重复查询，默认开关关闭 |
 | `components/QuickDeleteDuplicatesDialog.vue` | 重复种子快捷删除；提交后触发父列表刷新，nullable task_id 时仅提示而不轮询 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)）；`handleDuplicateSearchToggle` L2032 / `fetchDuplicateTorrents` L2046 保持分类、标签、活动快照、排序与分页筛选，重复开关为绿色开启态 |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L878）；`getTorrentErrorReason` L1515 展示错误原因；`handleDuplicateSearchToggle` L2055 / `fetchDuplicateTorrents` L2069 保持分类、标签、活动快照、排序与分页筛选，重复开关为绿色开启态 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates`，切换视图不丢失重复查询模式 |
-| `FileManagement.vue` | 种子文件管理（选择/优先级） |
+| `FileManagement.vue` | 种子文件管理（`FileManagement` L310）：筛选区复用 `management-page` 项目样式；`getBackupDownloaderName` L682 优先展示列表批量返回的当前 downloader nickname，不逐行动态请求 |
 | `components/TorrentAddDialog.vue` | 添加种子对话框 |
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |
 | `components/TrackerOperationDialog.vue` | Tracker 操作对话框 |
@@ -89,7 +89,7 @@
 
 | 模块/文件 | 职责 |
 |-----------|------|
-| `tasks/index.vue` | 任务管理主页（`TaskManage` L990）：L992–1010 将 `getTaskOutcomeMeta` / stale helper 暴露为实例方法供模板调用 |
+| `tasks/index.vue` | 任务管理主页（`TaskManage` L997）：`handleViewLogs` L1311 记录可见任务筛选，`resetLogQuery` L1896 / `clearLogTaskFilter` L1912 清除 task_id 并立即查询全部日志；导出/过期清理为标准 Element 按钮 |
 | `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs`）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐） |
 | `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L369）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
 | `settings/index.vue` | 全局设置页（`Settings`） |
@@ -116,4 +116,4 @@
 
 ## 第三层详情
 
-- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2779 行主入口、`TraditionalView.vue` 2556 行）
+- 本次未产出 views 第三层（建议优先级：`torrents/index.vue` 2807 行主入口、`TraditionalView.vue` 2583 行）
