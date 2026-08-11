@@ -9,6 +9,7 @@
 测试端点（均走 require_authenticated_user 认证）：
 - GET    /api/v1/orphan-files/latest
 - GET    /api/v1/orphan-files/list
+- POST   /api/v1/orphan-files/hardlink-copies
 - POST   /api/v1/orphan-files/scan
 - POST   /api/v1/orphan-files/cleanup-preview
 - POST   /api/v1/orphan-files/cleanup
@@ -143,6 +144,14 @@ class TestOrphanFilesAuth:
         response = self.client.get(
             "/api/v1/orphan-files/list",
             headers={"x-access-token": _create_wrong_secret_token()},
+        )
+        assert response.status_code == 401
+
+    def test_post_hardlink_copies_no_token_returns_401(self):
+        """POST /hardlink-copies：无 token 应返回 401。"""
+        response = self.client.post(
+            "/api/v1/orphan-files/hardlink-copies",
+            json={"orphan_ids": [1]},
         )
         assert response.status_code == 401
 
@@ -331,6 +340,53 @@ class TestOrphanFilesCleanupWiring:
             status=None,
             confidence=None,
         )
+
+    def test_hardlink_copy_locations_passes_ids_and_preserves_result(self):
+        """副本位置端点按 ID 查询，并原样返回范围内定位与未定位数量。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "requested_count": 2,
+            "resolved_count": 2,
+            "missing_orphan_ids": [],
+            "total_copy_count": 3,
+            "total_found_count": 2,
+            "total_unlocated_count": 1,
+            "unknown_count": 0,
+            "searched_root_count": 2,
+            "search_error": None,
+            "items": [],
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_hardlink_copy_locations", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies",
+                json={"orphan_ids": [7, 8]},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == "200"
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with([7, 8])
+
+    @pytest.mark.parametrize(
+        "orphan_ids",
+        ([], list(range(5001))),
+        ids=("empty", "over-limit"),
+    )
+    def test_hardlink_copy_locations_rejects_invalid_batch_size(self, orphan_ids):
+        """空批次和超过 5000 项的批次在进入目录扫描前由请求模型拒绝。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock()
+        with patch.object(OrphanFileService, "get_hardlink_copy_locations", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies",
+                json={"orphan_ids": orphan_ids},
+            )
+
+        assert response.status_code == 422
+        mocked.assert_not_awaited()
 
     def test_ignore_passes_scan_identity_and_preserves_failure_reasons(self):
         """忽视端点必须把服务层逐项失败原因原样返回，供前端和日志诊断。"""

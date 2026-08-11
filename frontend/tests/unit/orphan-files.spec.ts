@@ -5,6 +5,7 @@ import OrphanFiles from '@/views/orphan-files/index.vue'
 import {
   ApiResponse,
   CleanupPreviewResult,
+  HardlinkCopyLocationsResult,
   OrphanFileItem,
   OrphanFolderRow,
   OrphanListResponse,
@@ -17,6 +18,7 @@ import {
   QuarantineListResult,
   cleanupOrphans,
   cleanupPreview,
+  getHardlinkCopyLocations,
   getQuarantineList,
   getOrphanList,
   prefixMatchPreview,
@@ -24,6 +26,7 @@ import {
   setIgnored,
   triggerScan
 } from '@/api/orphan-files'
+import { copyTextToClipboard } from '@/utils/clipboard'
 
 jest.mock('@/api/orphan-files', () => ({
   getLatestScan: jest.fn(),
@@ -31,10 +34,15 @@ jest.mock('@/api/orphan-files', () => ({
   triggerScan: jest.fn(),
   cleanupPreview: jest.fn(),
   cleanupOrphans: jest.fn(),
+  getHardlinkCopyLocations: jest.fn(),
   setIgnored: jest.fn(),
   getQuarantineList: jest.fn(),
   purgeQuarantineNow: jest.fn(),
   prefixMatchPreview: jest.fn()
+}))
+
+jest.mock('@/utils/clipboard', () => ({
+  copyTextToClipboard: jest.fn(() => Promise.resolve())
 }))
 
 jest.mock('@/api/torrents', () => ({
@@ -55,10 +63,12 @@ const mockGetOrphanList = getOrphanList as jest.MockedFunction<typeof getOrphanL
 const mockTriggerScan = triggerScan as jest.MockedFunction<typeof triggerScan>
 const mockCleanupPreview = cleanupPreview as jest.MockedFunction<typeof cleanupPreview>
 const mockCleanupOrphans = cleanupOrphans as jest.MockedFunction<typeof cleanupOrphans>
+const mockGetHardlinkCopyLocations = getHardlinkCopyLocations as jest.MockedFunction<typeof getHardlinkCopyLocations>
 const mockSetIgnored = setIgnored as jest.MockedFunction<typeof setIgnored>
 const mockGetQuarantineList = getQuarantineList as jest.MockedFunction<typeof getQuarantineList>
 const mockPurgeQuarantineNow = purgeQuarantineNow as jest.MockedFunction<typeof purgeQuarantineNow>
 const mockPrefixMatchPreview = prefixMatchPreview as jest.MockedFunction<typeof prefixMatchPreview>
+const mockCopyTextToClipboard = copyTextToClipboard as jest.MockedFunction<typeof copyTextToClipboard>
 
 const clearSelection = jest.fn()
 const TableStub = localVue.extend({
@@ -163,6 +173,9 @@ interface OrphanFilesVm extends Vue {
   quickActionType: 'cleanup' | 'ignore' | null
   quickActionPrefix: string
   quickActionLoading: boolean
+  hardlinkLocationDialogVisible: boolean
+  hardlinkLocationLoading: boolean
+  hardlinkLocationResult: HardlinkCopyLocationsResult | null
   refreshPageData: () => Promise<void>
   loadOrphanPage: (page: number) => Promise<void>
   handleOrphanPageChange: (page: number) => Promise<void>
@@ -180,6 +193,9 @@ interface OrphanFilesVm extends Vue {
   handleQuickActionConfirm: () => Promise<void>
   handleTabSwitch: () => Promise<void>
   handleQuarantinePurge: () => Promise<void>
+  canOpenHardlinkLocations: (row: OrphanTableRow) => boolean
+  handleHardlinkCopyClick: (row: OrphanTableRow) => Promise<void>
+  copyHardlinkPath: (path: string) => Promise<void>
   formatHardlinkCopyCount: (count: number | null | undefined) => string
 }
 
@@ -339,6 +355,17 @@ function listResponse(
       pageSize: 20,
       scan_context: context
     }
+  }
+}
+
+function hardlinkLocationsResponse(
+  data: HardlinkCopyLocationsResult
+): ApiResponse<HardlinkCopyLocationsResult> {
+  return {
+    code: '200',
+    msg: 'ok',
+    status: 'success',
+    data
   }
 }
 
@@ -1926,6 +1953,196 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     expect(values.at(0).text()).toBe('2')
     expect(values.at(1).text()).toBe('0')
   })
+
+  it('仅有副本的数量可点击，文件夹行只查询有副本的子文件并展示位置', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const solo = orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 })
+    const configuredCopy = '/library/movies/linked-copy.mkv'
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: {
+        requested_count: 1,
+        resolved_count: 1,
+        missing_orphan_ids: [],
+        total_copy_count: 2,
+        total_found_count: 1,
+        total_unlocated_count: 1,
+        unknown_count: 0,
+        searched_root_count: 2,
+        search_error: null,
+        items: [{
+          orphan_id: linked.id,
+          file_path: linked.file_path,
+          copy_count: 2,
+          found_count: 1,
+          unlocated_count: 1,
+          copies: [configuredCopy],
+          error: null
+        }]
+      }
+    })
+    const wrapper = mountFolderView([folderRow('/data/movie', [linked, solo]), solo])
+    await flushLifecycle()
+
+    const countColumn = wrapper.find('[data-column-label="副本数量"]')
+    const links = countColumn.findAll('button.orphan-hardlink-copy-count--link')
+    expect(links).toHaveLength(1)
+    expect(links.at(0).text()).toBe('2')
+
+    await links.at(0).trigger('click')
+    await flushLifecycle()
+
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledWith({ orphan_ids: [linked.id] })
+    expect(viewModel(wrapper).hardlinkLocationDialogVisible).toBe(true)
+    expect(wrapper.find('.hardlink-location-summary').text()).toContain('已定位 1')
+    expect(wrapper.find('.hardlink-location-copy__path').text()).toBe(configuredCopy)
+    expect(wrapper.text()).toContain('还有 1 个副本未在已配置目录中定位')
+
+    await wrapper.find('.hardlink-location-copy__button').trigger('click')
+    await flushLifecycle()
+    expect(mockCopyTextToClipboard).toHaveBeenCalledWith(configuredCopy)
+  })
+
+  it('连续点击不同文件时只接受最后一次位置响应，旧响应不得覆盖弹框', async() => {
+    const first = orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 })
+    const second = orphanItem(2, 'scan-completed', { hardlink_copy_count: 1 })
+    const firstRequest = deferred<ApiResponse<HardlinkCopyLocationsResult>>()
+    const secondRequest = deferred<ApiResponse<HardlinkCopyLocationsResult>>()
+    mockGetHardlinkCopyLocations
+      .mockReturnValueOnce(firstRequest.promise)
+      .mockReturnValueOnce(secondRequest.promise)
+
+    const wrapper = mountFolderView([first, second])
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    const firstCall = vm.handleHardlinkCopyClick(first)
+    const secondCall = vm.handleHardlinkCopyClick(second)
+    expect(mockGetHardlinkCopyLocations).toHaveBeenNthCalledWith(1, { orphan_ids: [first.id] })
+    expect(mockGetHardlinkCopyLocations).toHaveBeenNthCalledWith(2, { orphan_ids: [second.id] })
+
+    secondRequest.resolve(hardlinkLocationsResponse({
+      requested_count: 1,
+      resolved_count: 1,
+      missing_orphan_ids: [],
+      total_copy_count: 1,
+      total_found_count: 1,
+      total_unlocated_count: 0,
+      unknown_count: 0,
+      searched_root_count: 1,
+      search_error: null,
+      items: [{
+        orphan_id: second.id,
+        file_path: second.file_path,
+        copy_count: 1,
+        found_count: 1,
+        unlocated_count: 0,
+        copies: ['/library/second-copy.bin'],
+        error: null
+      }]
+    }))
+    await secondCall
+    await flushLifecycle()
+
+    expect(vm.hardlinkLocationLoading).toBe(false)
+    expect(vm.hardlinkLocationResult?.items[0].orphan_id).toBe(second.id)
+
+    firstRequest.resolve(hardlinkLocationsResponse({
+      requested_count: 1,
+      resolved_count: 1,
+      missing_orphan_ids: [],
+      total_copy_count: 1,
+      total_found_count: 1,
+      total_unlocated_count: 0,
+      unknown_count: 0,
+      searched_root_count: 1,
+      search_error: null,
+      items: [{
+        orphan_id: first.id,
+        file_path: first.file_path,
+        copy_count: 1,
+        found_count: 1,
+        unlocated_count: 0,
+        copies: ['/library/first-copy.bin'],
+        error: null
+      }]
+    }))
+    await firstCall
+    await flushLifecycle()
+
+    expect(vm.hardlinkLocationResult?.items[0].orphan_id).toBe(second.id)
+    expect(vm.hardlinkLocationLoading).toBe(false)
+  })
+
+  it('弹框同时提示扫描失败、源文件不可访问和已失效列表项', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 })
+    const unavailable = orphanItem(2, 'scan-completed', { hardlink_copy_count: 1 })
+    const removed = orphanItem(3, 'scan-completed', { hardlink_copy_count: 1 })
+    const searchError = '已配置下载目录扫描失败，未能完整定位副本位置'
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce(hardlinkLocationsResponse({
+      requested_count: 3,
+      resolved_count: 2,
+      missing_orphan_ids: [removed.id],
+      total_copy_count: 1,
+      total_found_count: 0,
+      total_unlocated_count: 1,
+      unknown_count: 1,
+      searched_root_count: 2,
+      search_error: searchError,
+      items: [
+        {
+          orphan_id: linked.id,
+          file_path: linked.file_path,
+          copy_count: 1,
+          found_count: 0,
+          unlocated_count: 1,
+          copies: [],
+          error: searchError
+        },
+        {
+          orphan_id: unavailable.id,
+          file_path: unavailable.file_path,
+          copy_count: null,
+          found_count: 0,
+          unlocated_count: null,
+          copies: [],
+          error: '源文件不可访问，无法重新核对副本位置'
+        }
+      ]
+    }))
+    const wrapper = mountFolderView([
+      folderRow('/data/movie', [linked, unavailable, removed])
+    ])
+    await flushLifecycle()
+
+    await wrapper.find('button.orphan-hardlink-copy-count--link').trigger('click')
+    await flushLifecycle()
+
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledWith({
+      orphan_ids: [linked.id, unavailable.id, removed.id]
+    })
+    expect(wrapper.text()).toContain(searchError)
+    expect(wrapper.text()).toContain('1 个源文件当前不可访问，无法核对位置')
+    expect(wrapper.text()).toContain('1 个列表项已失效，请刷新页面后重试')
+    expect(wrapper.text()).toContain('源文件不可访问，无法重新核对副本位置')
+  })
+
+  it('位置查询异常后释放加载态并保留空结果', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 })
+    mockGetHardlinkCopyLocations.mockRejectedValueOnce(new Error('storage offline'))
+    const wrapper = mountFolderView([linked])
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    await vm.handleHardlinkCopyClick(linked)
+    await flushLifecycle()
+
+    expect(vm.hardlinkLocationLoading).toBe(false)
+    expect(vm.hardlinkLocationResult).toBeNull()
+    expect(message.error).toHaveBeenCalledWith(expect.stringContaining('storage offline'))
+  })
 })
 
 describe('orphan files hardlink copy count formatting', () => {
@@ -1943,6 +2160,15 @@ describe('orphan files hardlink copy count formatting', () => {
     expect(vm.formatHardlinkCopyCount(3)).toBe('3')
     expect(vm.formatHardlinkCopyCount(null)).toBe('-')
     expect(vm.formatHardlinkCopyCount(undefined)).toBe('-')
+  })
+
+  it('只有大于 0 的实时数量允许打开位置查询', async() => {
+    const vm = viewModel(mountView())
+    await flushLifecycle()
+
+    expect(vm.canOpenHardlinkLocations(orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 }))).toBe(true)
+    expect(vm.canOpenHardlinkLocations(orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 }))).toBe(false)
+    expect(vm.canOpenHardlinkLocations(orphanItem(3, 'scan-completed', { hardlink_copy_count: null }))).toBe(false)
   })
 })
 

@@ -3742,3 +3742,46 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 全量 `npm run lint` 被关键词相关测试的 5 条既有 warning 门禁拦截，本次文件无 warning。
 - Git Bash `./init.sh` 轻量验证通过；系统 WSL `bash` 首次调用的 `E_ACCESSDENIED` 不影响 Git Bash 结果。
 - 未执行 Git stage/commit/push/deploy；任务前 13 个未跟踪备份/工具/镜像产物保持不动。
+
+## 2026-08-11 - 孤儿文件硬链接副本位置点击核对
+
+### 已确认交互与边界
+
+- 只有副本数量大于 `0` 时才显示为可点击入口；`0` 和未知值保持普通文本。
+- 点击后再按需查询位置，避免列表加载时扫描目录；搜索范围限定为系统已配置且可扫描的下载目录，不遍历整块磁盘。
+- 弹框显示完整路径并提供复制按钮；文件夹聚合行按源文件分组，只提交其中副本数量大于 `0` 的子文件。
+- `st_nlink - 1` 是文件系统报告的总副本数，而配置目录扫描可能无法覆盖目录外或不可访问的链接，因此界面同时显示总数、已定位数和未定位数，不把未找到误报成不存在。
+
+### 实现
+
+- `orphan_quarantine.find_hardlink_paths()` 支持多个 inode 在一次目录遍历中批量定位，去重重叠扫描根、物理路径和符号链接；既有单文件查询复用该实现。
+- `OrphanFileService.get_hardlink_copy_locations()` 批量加载未删除孤儿记录，在线复核源文件 inode/link count，通过 `collect_scan_path_selection()` 获取全部已配置扫描根，并在线程中执行有界文件系统扫描；返回缺失记录、未知源文件、扫描错误和逐文件路径明细。
+- 新增受认证保护的 `POST /api/v1/orphan-files/hardlink-copies`，请求最多 `5000` 个孤儿文件 ID，沿用统一 `CommonResponse`。
+- 前端新增位置查询类型与 API；数量链接打开懒加载弹框，支持过期响应防护、文件夹子项过滤、完整路径展示和剪贴板复制。
+- 已按 `roadmap-maintain` 同步根索引、后端 API/服务、前端 API/视图、测试索引及 `orphan_file_service` 第三层路线图的实测行号与调用链。
+- 无数据库 Schema 变更，无 Alembic 迁移。
+
+### 验证
+
+- 后端服务/API 定向：`49 passed`；后端孤儿相关：`350 passed, 1 skipped`。
+- 前端全量单测：`39 suites, 640 passed`；`npm run typecheck` 和本次 4 个修改文件严格 ESLint 通过；生产 build 成功（仍为 56 条既有 warning）。
+- 后端目标 Flake8、`py_compile`、新增文件/代码区间 Black 检查通过；目标 mypy 仅报告 `orphan_file_service.py` 既有 149 条 SQLAlchemy Column 类型债，本次新增行零错误。
+- 全量 `npm run lint` 仅被 5 条无关既有 warning 门禁拦截，本次文件无 warning；`git diff --check` 通过。
+- Git Bash `./init.sh` 通过；未执行 Git stage/commit/push/deploy，任务前 13 个未跟踪产物保持不动。
+
+## 2026-08-11 - 硬链接副本位置回归保护加固与提交
+
+### 新增回归保护
+
+- 后端服务新增双文件均有副本场景，明确断言重复孤儿 ID 去重、两个 inode 只调用一次 `find_hardlink_paths()`、源路径被排除且每个副本归入正确源文件。
+- 后端新增扫描根不可访问场景，锁定实时 `st_nlink - 1` 总数不丢失、路径不伪造、全部转入 `unlocated_count`，并同时返回汇总和逐文件错误。
+- HTTP 端点新增空数组与超过 5000 项的参数化验证，确保无效批次在创建目录扫描前返回 422。
+- 前端新增连续点击竞态测试，后返回的旧请求不得覆盖最新弹框；新增扫描失败、源文件不可访问、列表项失效的组合提示测试；新增请求异常后释放 loading 并保持空结果测试。
+- 按 `roadmap-maintain` 更新测试分支索引、覆盖矩阵和根路线图元信息；业务实现与第三层源码行号未变化。
+
+### 验证与提交范围
+
+- 后端定向 `53 passed`；后端全量 `3153 passed, 7 skipped`。
+- 前端全量 `39 suites, 643 passed`；`npm run typecheck`、目标测试严格 ESLint、生产 build 通过（56 条既有 warning）。
+- 后端两个测试文件 Black/Flake8 通过；无 Schema 或 Alembic 变更。
+- 用户已验证页面交互并授权提交；提交范围仅包含本功能的 20 个跟踪文件，不包含工作区原有 13 个未跟踪备份、镜像与工具产物，不执行 push/deploy。

@@ -84,6 +84,17 @@ class QuarantineActionRequest(BaseModel):
     canonical_paths: List[str] = Field(..., min_length=1, description="隔离区候选规范化路径列表")
 
 
+class HardlinkCopyLocationsRequest(BaseModel):
+    """按孤儿明细 ID 批量定位硬链接副本位置。"""
+
+    orphan_ids: List[int] = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+        description="需要定位副本位置的孤儿文件 ID（文件夹行展开后批量提交）",
+    )
+
+
 async def _resolve_selection(
     service: OrphanFileService,
     req: OrphanSelectionRequest,
@@ -194,6 +205,25 @@ async def get_orphan_list(
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"查询孤儿文件列表失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+
+
+@router.post("/hardlink-copies", response_model=CommonResponse)
+async def get_hardlink_copy_locations(
+    req: HardlinkCopyLocationsRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """按需定位其它硬链接路径，仅搜索系统已配置的孤儿扫描目录。
+
+    返回实时 ``st_nlink - 1`` 总数、已定位路径数与未定位数量。未定位链接可能位于
+    未配置目录或无权限目录；接口不会为定位路径而扫描整块磁盘。
+    """
+    try:
+        result = await OrphanFileService(db).get_hardlink_copy_locations(req.orphan_ids)
+        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+    except Exception as e:
+        logger.error(f"查询硬链接副本位置失败: {e}", exc_info=True)
         return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
 
 

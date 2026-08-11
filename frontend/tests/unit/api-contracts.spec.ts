@@ -12,6 +12,7 @@ import {
   cleanupOrphans,
   cleanupPreview as previewOrphanCleanup,
   getCleanupJobStatus,
+  getHardlinkCopyLocations,
   getLatestScan,
   getOrphanList,
   getPurgeJobStatus,
@@ -181,6 +182,19 @@ describe('API 请求契约', () => {
       expectRequest(
         () => getOrphanList(params),
         { url: '/orphan-files/list', method: 'get', params }
+      )
+    })
+
+    it('副本位置按孤儿 ID 批量查询并允许目录扫描长耗时', () => {
+      const data = { orphan_ids: [1, 2] }
+      expectRequest(
+        () => getHardlinkCopyLocations(data),
+        {
+          url: '/orphan-files/hardlink-copies',
+          method: 'post',
+          data,
+          timeout: 120000
+        }
       )
     })
 

@@ -31,7 +31,7 @@
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
-| 孤儿文件 API orphan | `orphan_files.py` | 扫描/列表/清理/忽视/隔离恢复；列表文件行返回实时 `hardlink_copy_count`，文件夹行返回合计；清理提交支持原子占用与混合跳过 |
+| 孤儿文件 API orphan | `orphan_files.py` | 扫描/列表/清理/忽视/隔离恢复；列表返回实时 `hardlink_copy_count`，`POST /hardlink-copies` 按 ID 批量定位配置目录内的副本路径；清理提交支持原子占用与混合跳过 |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理 |
 | 种子转移 seed-transfer | `seed_transfer.py` | 种子转移，对接 `seed_transfer_service` |
 | 配置模板 template | `setting_templates.py` | 配置模板管理：CRUD + 应用 |

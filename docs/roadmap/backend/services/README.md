@@ -19,13 +19,13 @@
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
-| 孤儿文件管理 orphan | `orphan_file_service.py` | 孤儿文件管理（扫描/清理/隔离/恢复/彻底删除/中断恢复）；列表实时补充硬链接副本数并排除活动任务占用项 |
+| 孤儿文件管理 orphan | `orphan_file_service.py` | 孤儿文件管理（扫描/清理/隔离/恢复/彻底删除/中断恢复）；列表实时计数，并批量按需定位配置目录内的硬链接路径 |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `OrphanCurrentCandidate` 表生命周期推进（事务化状态落库） |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |
 | 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key） |
 | 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放） |
-| 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/同 inode 路径枚举，仅 `os.rmdir` 回收空目录 |
+| 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/多 inode 单轮路径枚举，仅 `os.rmdir` 回收空目录 |
 | 孤儿扫描 orphan-scanner | `orphan_scanner.py` | 孤儿文件扫描器（未映射路径记录并跳过） |
 | 路径映射验证 path-mapping | `path_mapping_validation.py` | 路径映射目录验证（free_space 探测/磁盘空间/现有种子路径取证/有界 stat） |
 | 路径维护 path-maintenance | `path_maintenance_service.py` | 下载器路径维护服务（默认/活跃路径） |
@@ -84,4 +84,4 @@
 
 ## 第三层详情
 
-- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3158 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1319 行）
+- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3277 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1319 行）

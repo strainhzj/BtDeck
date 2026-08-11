@@ -32,6 +32,7 @@ from app.services.orphan_lifecycle_service import OrphanLifecycleService
 from app.services.orphan_manifest import (
     ManifestSnapshot,
     TorrentManifestBuilder,
+    collect_scan_path_selection,
     normalize_path,
 )
 from app.services.orphan_purge_job_service import (
@@ -42,6 +43,7 @@ from app.services.orphan_quarantine import (
     build_quarantine_path,
     compute_purge_after,
     find_hardlink_copies,
+    find_hardlink_paths,
     get_hardlink_copy_count,
     prune_empty_quarantine_parents,
     prune_recorded_quarantine_root,
@@ -612,6 +614,123 @@ class OrphanFileService:
         if not record:
             return None
         return record.to_dict()
+
+    @staticmethod
+    def _inspect_hardlink_sources(targets: Sequence[tuple[int, str]]) -> List[Dict[str, Any]]:
+        """顺序读取源文件 inode/nlink；由调用方放入线程，避免阻塞事件循环。"""
+        inspected: List[Dict[str, Any]] = []
+        for orphan_id, file_path in targets:
+            try:
+                stat_result = os.stat(file_path)
+            except OSError:
+                inspected.append(
+                    {
+                        "orphan_id": orphan_id,
+                        "file_path": file_path,
+                        "identity": None,
+                        "copy_count": None,
+                        "error": "源文件不可访问，无法重新核对副本位置",
+                    }
+                )
+                continue
+            inspected.append(
+                {
+                    "orphan_id": orphan_id,
+                    "file_path": file_path,
+                    "identity": (int(stat_result.st_dev), int(stat_result.st_ino)),
+                    "copy_count": max(int(stat_result.st_nlink) - 1, 0),
+                    "error": None,
+                }
+            )
+        return inspected
+
+    async def get_hardlink_copy_locations(self, orphan_ids: Sequence[int]) -> Dict[str, Any]:
+        """按需定位孤儿文件在已配置扫描目录内的其它硬链接路径。
+
+        ``st_nlink - 1`` 仍是副本总数的权威口径；具体位置只能通过目录遍历反查。
+        本方法只遍历孤儿扫描当前使用的已配置根，并对多个目标 inode 合并为一轮扫描。
+        因此范围外或无权限目录中的链接会计入 ``unlocated_count``，但不会伪造路径。
+        """
+        normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
+        if not normalized_ids:
+            raise ValueError("至少需要一个孤儿文件 ID")
+
+        details = await self._load_orphan_details(
+            normalized_ids,
+            scan_id=None,
+            exclude_in_flight=False,
+        )
+        detail_ids = {int(detail.id) for detail in details}
+        missing_orphan_ids = [orphan_id for orphan_id in normalized_ids if orphan_id not in detail_ids]
+        targets = [(int(detail.id), cast(str, detail.file_path)) for detail in details]
+        inspected = await asyncio.to_thread(self._inspect_hardlink_sources, targets)
+
+        target_inodes = {
+            cast(tuple[int, int], item["identity"])
+            for item in inspected
+            if item["identity"] is not None and int(item["copy_count"] or 0) > 0
+        }
+        scan_roots: List[str] = []
+        paths_by_inode: Dict[tuple[int, int], List[str]] = {}
+        search_error: Optional[str] = None
+        if target_inodes:
+            try:
+                selection = await asyncio.to_thread(collect_scan_path_selection)
+                # 用户确认口径：搜索全部已配置且可扫描的下载目录，不限当前 owner，
+                # 以便共享文件系统上的交叉做种副本也能被定位。
+                scan_roots = [root for root, _owners in selection.scan_roots]
+                paths_by_inode = await asyncio.to_thread(
+                    find_hardlink_paths,
+                    target_inodes,
+                    scan_roots,
+                )
+            except Exception as exc:
+                search_error = "已配置下载目录扫描失败，未能完整定位副本位置"
+                logger.warning("[孤儿列表] 硬链接副本位置扫描失败: %s", exc)
+
+        items: List[Dict[str, Any]] = []
+        for inspected_item in inspected:
+            source_path = cast(str, inspected_item["file_path"])
+            copy_count = cast(Optional[int], inspected_item["copy_count"])
+            identity = cast(Optional[tuple[int, int]], inspected_item["identity"])
+            copies: List[str] = []
+            if identity is not None and copy_count is not None and copy_count > 0:
+                source_key = os.path.normcase(os.path.realpath(os.path.abspath(source_path)))
+                copies = [
+                    path
+                    for path in paths_by_inode.get(identity, [])
+                    if os.path.normcase(os.path.realpath(path)) != source_key
+                ]
+            found_count = len(copies)
+            unlocated_count = max(copy_count - found_count, 0) if copy_count is not None else None
+            item_error = cast(Optional[str], inspected_item["error"])
+            if item_error is None and search_error is not None and copy_count:
+                item_error = search_error
+            items.append(
+                {
+                    "orphan_id": inspected_item["orphan_id"],
+                    "file_path": source_path,
+                    "copy_count": copy_count,
+                    "found_count": found_count,
+                    "unlocated_count": unlocated_count,
+                    "copies": copies,
+                    "error": item_error,
+                }
+            )
+
+        known_items = [item for item in items if item["copy_count"] is not None]
+        return {
+            "requested_count": len(normalized_ids),
+            "resolved_count": len(details),
+            "missing_orphan_ids": missing_orphan_ids,
+            "total_copy_count": sum(int(item["copy_count"]) for item in known_items),
+            "total_found_count": sum(int(item["found_count"]) for item in items),
+            "total_unlocated_count": sum(int(item["unlocated_count"] or 0) for item in known_items),
+            "unknown_count": len(items) - len(known_items),
+            "searched_root_count": len(scan_roots),
+            "search_error": search_error,
+            "items": items,
+        }
 
     async def get_orphan_list(
         self,
