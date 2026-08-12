@@ -183,6 +183,25 @@
             "session-handoff.md"
           ],
           "evidence": "用户原始 tracker_url contains azusa + status in [error] 载荷在真实内存 SQLite 返回 1 条；后端全量 3233 passed / 7 skipped，相关 235 passed、语义重点 142 passed；前端全量 43 suites / 686 tests，相关 4 suites / 119 tests；Ruff、Flake8、目标 ESLint、TypeScript、contract:check、生产 build 与 git diff --check 通过。根 init.sh 在本 Windows 环境因 WSL E_ACCESSDENIED 且无 /bin/bash 未执行，改用等价分端校验。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.9",
+          "name": "高级搜索跨字段回归矩阵加固",
+          "description": "在功能修复提交后独立补充高级搜索高风险边界测试：验证基础/关系/多值/数值/日期/状态/下载器/超级做种条件的 include/exclude 全集分区，五个可空字段的未设置/已设置分区，Tracker 通配符与软删除边界，以及前端模板到请求转换不会双重取反。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/services/test_advanced_search_regression.py",
+            "frontend/tests/unit/operator-contract.spec.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts",
+            "docs/roadmap/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "新增后端 20 个参数化实例与前端 29 个 Jest 实例；后端重点 162 passed、全量 3253 passed / 7 skipped，前端重点 2 suites / 111 tests、全量 43 suites / 715 tests。后端 Black/Flake8、前端 TypeScript 与目标测试均通过；测试路线图行数由当前源码实测更新。"
         }
       ]
     },

@@ -253,6 +253,13 @@ def _info_ids(result):
     return {item["infoId"] for item in result["data"]}
 
 
+def _condition_info_ids(session, condition):
+    """执行单个条件并返回基础查询中的 info_id 集合。"""
+    builder = SearchQueryBuilder(session)
+    builder.base_query = builder.base_query.filter(builder._build_condition_filter(condition))
+    return {torrent.info_id for torrent in builder.base_query.all()}
+
+
 def _seed_error_semantic_torrents(session):
     """构造普通列表 ``error`` 语义的完整真值表。"""
     session.add(
@@ -1819,6 +1826,15 @@ class TestAdvancedSearchSemanticDefectRegressions:
             name="tag spaced",
             tags="已整理, 辅种",
         )
+        make_torrent(
+            db_session,
+            info_id="tag-semicolon",
+            downloader_id="d1",
+            downloader_name="qbit-主",
+            hash_="tag-semicolon-hash",
+            name="tag semicolon",
+            tags="已整理; 辅种",
+        )
         builder = SearchQueryBuilder(db_session)
         builder.base_query = builder.base_query.filter(
             builder._build_condition_filter(SearchCondition(field="tags", operator="contains_any", value=["辅种"]))
@@ -1827,24 +1843,19 @@ class TestAdvancedSearchSemanticDefectRegressions:
         assert {torrent.info_id for torrent in builder.base_query.all()} == {
             "tag-exact",
             "tag-spaced",
+            "tag-semicolon",
         }
 
     def test_empty_category_and_tags_are_queryable_as_unset(self, db_session):
         _seed_torrents(db_session)
-        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t4").update(
-            {TorrentInfo.category: None}
-        )
-        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t5").update(
-            {TorrentInfo.category: ""}
-        )
+        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t4").update({TorrentInfo.category: None})
+        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t5").update({TorrentInfo.category: ""})
         db_session.commit()
 
         for field in ("category", "tags"):
             builder = SearchQueryBuilder(db_session)
             builder.base_query = builder.base_query.filter(
-                builder._build_condition_filter(
-                    SearchCondition(field=field, operator="is_null", value=None)
-                )
+                builder._build_condition_filter(SearchCondition(field=field, operator="is_null", value=None))
             )
             assert {torrent.info_id for torrent in builder.base_query.all()} == {"t4", "t5"}
 
@@ -1933,16 +1944,187 @@ class TestAdvancedSearchSemanticDefectRegressions:
 
     def test_enabled_boolean_filter_accepts_false_without_truthiness_loss(self, db_session):
         _seed_torrents(db_session)
-        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t5").update(
-            {TorrentInfo.enabled: False}
-        )
+        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t5").update({TorrentInfo.enabled: False})
         db_session.commit()
 
         builder = SearchQueryBuilder(db_session)
         builder.base_query = builder.base_query.filter(
-            builder._build_condition_filter(
-                SearchCondition(field="enabled", operator="eq", value=False)
-            )
+            builder._build_condition_filter(SearchCondition(field="enabled", operator="eq", value=False))
         )
 
         assert {torrent.info_id for torrent in builder.base_query.all()} == {"t5"}
+
+
+class TestAdvancedSearchSemanticMatrix:
+    """Cross-field matrix that protects complement and nullable semantics."""
+
+    ACTIVE_INFO_IDS = {"t1", "t2", "t3", "t4", "t5"}
+
+    @pytest.mark.parametrize(
+        ("field", "operator", "negative_operator", "value"),
+        [
+            ("name", "contains", "not_contains", "Avatar"),
+            ("ratio", "gt", None, 2),
+            ("completed_date", "eq", "ne", "2026-03-01"),
+            ("category", "in", "not_in", ["电影"]),
+            ("tags", "contains_any", "not_contains_any", ["movie"]),
+            ("status", "in", "not_in", ["error"]),
+            ("downloader_name", "in", "not_in", ["qbit-新名称"]),
+            ("super_seeding", "eq", "ne", "1"),
+            ("tracker_url", "contains", "not_contains", "tracker1"),
+            ("tracker_msg", "contains", "not_contains", "timeout"),
+        ],
+    )
+    def test_include_and_exclude_partition_the_active_universe(
+        self,
+        db_session,
+        field,
+        operator,
+        negative_operator,
+        value,
+    ):
+        """Every supported exclude mode is the exact complement of inclusion."""
+        _seed_torrents(db_session)
+        if field == "downloader_name":
+            downloader = db_session.query(BtDownloaders).filter_by(downloader_id="d1").one()
+            downloader.nickname = "qbit-新名称"
+        if field == "super_seeding":
+            db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t1").update({TorrentInfo.super_seeding: "1"})
+        db_session.commit()
+
+        included = _condition_info_ids(
+            db_session,
+            SearchCondition(field=field, operator=operator, value=value),
+        )
+        excluded = _condition_info_ids(
+            db_session,
+            SearchCondition(
+                field=field,
+                operator=operator,
+                value=value,
+                mode="exclude",
+            ),
+        )
+
+        assert included
+        assert excluded
+        assert included.isdisjoint(excluded)
+        assert included | excluded == self.ACTIVE_INFO_IDS
+
+        if negative_operator is not None:
+            explicit_negative = _condition_info_ids(
+                db_session,
+                SearchCondition(
+                    field=field,
+                    operator=negative_operator,
+                    value=value,
+                ),
+            )
+            assert explicit_negative == excluded
+
+    @pytest.mark.parametrize(
+        ("field", "expected_unset"),
+        [
+            ("completed_date", {"t1", "t3", "t4"}),
+            ("ratio", {"t4"}),
+            ("ratio_limit", {"t4"}),
+            ("tags", {"t4", "t5"}),
+            ("category", {"t4", "t5"}),
+        ],
+    )
+    def test_declared_null_operator_pairs_partition_the_active_universe(
+        self,
+        db_session,
+        field,
+        expected_unset,
+    ):
+        """Each nullable contract field has exhaustive, disjoint null operators."""
+        _seed_torrents(db_session)
+        if field == "category":
+            db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t4").update({TorrentInfo.category: None})
+            db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t5").update({TorrentInfo.category: ""})
+            db_session.commit()
+
+        unset_ids = _condition_info_ids(
+            db_session,
+            SearchCondition(field=field, operator="is_null", value=None),
+        )
+        set_ids = _condition_info_ids(
+            db_session,
+            SearchCondition(field=field, operator="is_not_null", value=None),
+        )
+
+        assert unset_ids == expected_unset
+        assert unset_ids.isdisjoint(set_ids)
+        assert unset_ids | set_ids == self.ACTIVE_INFO_IDS
+
+    @pytest.mark.parametrize(
+        ("field", "literal_value", "expected_info_id"),
+        [
+            ("tracker_url", "%", "tracker-literal-percent"),
+            ("tracker_url", "_", "tracker-literal-underscore"),
+            ("tracker_msg", "%", "tracker-literal-percent"),
+            ("tracker_msg", "_", "tracker-literal-underscore"),
+        ],
+    )
+    def test_tracker_text_treats_sql_wildcards_as_literals(
+        self,
+        db_session,
+        field,
+        literal_value,
+        expected_info_id,
+    ):
+        """Relationship text filters escape LIKE wildcards just like base fields."""
+        _seed_torrents(db_session)
+        now = datetime(2026, 8, 12, 12, 0, 0)
+        for suffix, literal in (("percent", "%"), ("underscore", "_")):
+            info_id = f"tracker-literal-{suffix}"
+            make_torrent(
+                db_session,
+                info_id=info_id,
+                downloader_id="d1",
+                downloader_name="qbit-主",
+                hash_=f"hash-{info_id}",
+                name=info_id,
+            )
+            db_session.add(
+                TrackerInfo(
+                    tracker_id=f"tracker-{suffix}",
+                    torrent_info_id=info_id,
+                    tracker_name=f"Literal {suffix}",
+                    tracker_url=f"https://literal{literal}tracker.example/announce",
+                    last_announce_msg=f"literal{literal}message",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                )
+            )
+        db_session.commit()
+
+        matched = _condition_info_ids(
+            db_session,
+            SearchCondition(
+                field=field,
+                operator="contains",
+                value=literal_value,
+            ),
+        )
+
+        assert matched == {expected_info_id}
+
+    def test_deleted_matching_tracker_remains_in_negative_complement(self, db_session):
+        """A soft-deleted Tracker cannot exclude its torrent from NOT EXISTS."""
+        _seed_torrents(db_session)
+
+        matched = _condition_info_ids(
+            db_session,
+            SearchCondition(
+                field="tracker_url",
+                operator="not_contains",
+                value="tracker2",
+            ),
+        )
+
+        assert matched == self.ACTIVE_INFO_IDS

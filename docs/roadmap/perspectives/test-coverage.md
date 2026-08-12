@@ -32,7 +32,7 @@
 |------------|------|-----------|
 | `tests/core/test_ratio_data_diagnostics.py` | 158 | `app/core/ratio_data_diagnostics.py` |
 | `tests/services/test_torrent_ratio_values.py` | 179 | `app/services/torrent_ratio_values.py` |
-| `tests/services/test_advanced_search_regression.py` | 1846 | `app/services/advanced_search.py`（真实 SQLite 完备回归：状态真值表、Tracker `NOT EXISTS`、字面文本、标签 token、稳定下载器 ID/改名、超级做种三态、回收站/NULL 补集） |
+| `tests/services/test_advanced_search_regression.py` | 2130 | `app/services/advanced_search.py`（真实 SQLite 完备回归：状态真值表、Tracker `NOT EXISTS`/软删除、字面文本、标签 token、稳定下载器 ID/改名、超级做种三态、回收站/NULL 补集及跨字段正反分区矩阵） |
 | `tests/services/test_advanced_search_models_strict.py` | 161 | `app/api/models/advanced_search.py`（字段级操作符白名单、模板 include/exclude、旧标签与超级做种值归一） |
 | `tests/services/test_sqlite_search_runtime.py` | 27 | `app/services/sqlite_search_runtime.py`（正则熔断） |
 | `tests/api/test_advanced_search_pagination.py` | 139 | `app/api/endpoints/advanced_search.py`（分页） |
@@ -76,7 +76,7 @@
 | `app/api/endpoints/torrent_backup.py` | `tests/api/test_torrent_backup_review.py`（188 行） | ✅ 当前 nickname 批量查询、空列表跳过查询与序列化 |
 | `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空、Tracker 状态归一与 camelCase 响应 |
 | `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
-| `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（1846 行）+ `test_advanced_search_models_strict.py`（161 行） | ✅✅ 重度覆盖（20 字段审计、活动/回收站排除、普通列表一致的 `error`、关系/文本/标签/空值/三态/稳定 ID 与排除补集） |
+| `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（2130 行）+ `test_advanced_search_models_strict.py`（161 行） | ✅✅ 重度覆盖（20 字段审计、活动/回收站排除、普通列表一致的 `error`、关系/文本/标签/空值/三态/稳定 ID 与跨字段正反分区） |
 | `app/tasks/scheduler/torrent_tracker_status_judge.py` | `test_torrent_tracker_status_judge.py` + `test_heavy_task_db_write_governance.py` | ✅ 未联系/发送中中性语义、明确失败/未知聚合与批量查询治理 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
@@ -109,12 +109,12 @@
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
-| `operator-contract.spec.ts`（243 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、空值白名单及 `mode=exclude` 不预翻转操作符 |
+| `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
 | `orphan-files.spec.ts` | 孤儿清理/彻底删除工作流；硬链接副本数量链接、批量位置弹框、复制、过期响应隔离与异常提示 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |
-| `torrent-batch.spec.ts` | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式） |
+| `torrent-batch.spec.ts`（995 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |

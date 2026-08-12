@@ -648,6 +648,65 @@ describe('buildAdvancedSearchRequestFromTemplateGroups', () => {
     })
   })
 
+  it('keeps exclude mode and positive operators through template-to-request conversion', () => {
+    const result = buildAdvancedSearchRequestFromTemplateGroups([
+      {
+        logic: 'and',
+        conditions: [
+          { field: 'ratio', operator: 'gt', value: 2, mode: 'exclude' },
+          { field: 'completed_date', operator: 'is_null', value: 'legacy', mode: 'include' },
+          { field: 'category', operator: 'in', value: ['电影'], mode: 'exclude' },
+          { field: 'tags', operator: 'contains_any', value: ['movie'], mode: 'exclude' },
+          { field: 'status', operator: 'in', value: ['error'], mode: 'exclude' },
+          { field: 'downloader_name', operator: 'in', value: ['d1'], mode: 'exclude' },
+          { field: 'super_seeding', operator: 'eq', value: 'unsupported', mode: 'exclude' },
+          { field: 'tracker_url', operator: 'contains', value: 'azusa', mode: 'exclude' }
+        ]
+      }
+    ], 'added_date', 'desc', 20)
+    const request = requireAdvancedRequest(result.request)
+
+    expect(result.error).toBeNull()
+    expect(request.condition_groups?.[0].conditions).toEqual([
+      { field: 'ratio', operator: 'gt', value: 2, mode: 'exclude' },
+      { field: 'completed_date', operator: 'is_null', value: null },
+      { field: 'category', operator: 'in', value: ['电影'], mode: 'exclude' },
+      { field: 'tags', operator: 'contains_any', value: ['movie'], mode: 'exclude' },
+      { field: 'status', operator: 'in', value: ['error'], mode: 'exclude' },
+      { field: 'downloader_name', operator: 'in', value: ['d1'], mode: 'exclude' },
+      { field: 'super_seeding', operator: 'eq', value: 'unsupported', mode: 'exclude' },
+      { field: 'tracker_url', operator: 'contains', value: 'azusa', mode: 'exclude' }
+    ])
+  })
+
+  it('preserves each independent connector when three template groups become a request', () => {
+    const result = buildAdvancedSearchRequestFromTemplateGroups([
+      {
+        logic: 'and',
+        betweenGroupLogic: 'or',
+        conditions: [{ field: 'name', operator: 'contains', value: 'one' }]
+      },
+      {
+        logic: 'or',
+        betweenGroupLogic: 'and',
+        conditions: [{ field: 'status', operator: 'in', value: ['error'] }]
+      },
+      {
+        logic: 'and',
+        conditions: [{ field: 'tracker_url', operator: 'contains', value: 'azusa' }]
+      }
+    ], 'added_date', 'desc', 20)
+    const request = requireAdvancedRequest(result.request)
+
+    expect(result.error).toBeNull()
+    expect(request.condition_groups?.map(group => group.logic)).toEqual([
+      'AND',
+      'OR',
+      'AND'
+    ])
+    expect(request.between_group_logics).toEqual(['OR', 'AND'])
+  })
+
   it('does not pass raw builder condition_groups directly to backend', () => {
     const groups = [
       {
