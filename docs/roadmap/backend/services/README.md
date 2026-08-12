@@ -9,7 +9,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（ORM 查询引擎，13 字段；契约校验 + 有界正则；基础查询排除活动删除任务中的种子） |
+| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（ORM 查询引擎，13 字段；契约校验 + 有界正则；基础查询排除活动删除任务中的种子）；`_build_status_filter()` L366 统一普通/高级搜索的 `error` 语义 |
 | 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
@@ -84,4 +84,4 @@
 
 ## 第三层详情
 
-- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3277 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1319 行）
+- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3277 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1350 行）

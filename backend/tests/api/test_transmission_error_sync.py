@@ -12,11 +12,13 @@ Transmission 种子错误状态同步集成测试
 """
 
 from datetime import datetime
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.api.endpoints.torrent_helpers import create_transmission_torrent_record
+from app.api.endpoints.torrents_async import extract_tracker_rows_from_torrent
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.services.sync_db_write import has_torrent_info_changes
 
@@ -175,3 +177,70 @@ class TestResolveConsistencyWithRecordCreation:
         tr_torrent = _make_tr_torrent(error=tr_error, status=tr_status)
         record = create_transmission_torrent_record(downloader, "dl-1", tr_torrent)
         assert record.status == expected
+
+
+class TestTransmissionTrackerStatusNormalization:
+    """TrackerStats 布尔字段必须先归一，不能直接当作 0-5 状态码。"""
+
+    @staticmethod
+    def _tracker_stat(
+        *,
+        has_contacted: bool,
+        succeeded: bool,
+        timed_out: bool = False,
+        state: int = 0,
+        result: str = "",
+    ) -> SimpleNamespace:
+        fields = {
+            "announce": "https://tracker.example/announce",
+            "host": "tracker.example",
+            "hasAnnounced": has_contacted,
+            "lastAnnounceSucceeded": succeeded,
+            "lastAnnounceTimedOut": timed_out,
+            "announceState": state,
+            "lastAnnounceResult": result,
+            "hasScraped": has_contacted,
+            "lastScrapeSucceeded": succeeded,
+            "lastScrapeTimedOut": timed_out,
+            "scrapeState": state,
+            "lastScrapeResult": result,
+        }
+        return SimpleNamespace(
+            fields=fields,
+            site_name="tracker.example",
+            last_announce_succeeded=succeeded,
+            last_announce_timed_out=timed_out,
+            last_announce_result=result,
+            last_scrape_succeeded=succeeded,
+            last_scrape_timed_out=timed_out,
+            last_scrape_result=result,
+        )
+
+    @pytest.mark.parametrize(
+        "tracker_stat,expected",
+        [
+            (
+                _tracker_stat.__func__(
+                    has_contacted=False,
+                    succeeded=False,
+                    result="Connection refused",
+                ),
+                0,
+            ),
+            (_tracker_stat.__func__(has_contacted=True, succeeded=True, result="Success"), 2),
+            (_tracker_stat.__func__(has_contacted=True, succeeded=False, result="Connection refused"), 3),
+            (_tracker_stat.__func__(has_contacted=True, succeeded=False, timed_out=True), 4),
+        ],
+    )
+    def test_同步提取使用真实Tracker状态而非成功布尔值(self, tracker_stat, expected):
+        torrent = SimpleNamespace(tracker_stats=[tracker_stat])
+
+        rows, _ = extract_tracker_rows_from_torrent(
+            torrent,
+            torrent_info_id="info-1",
+            downloader_type="transmission",
+            current_time=datetime(2026, 8, 12, 12, 0, 0),
+        )
+
+        assert rows[0]["last_announce_succeeded"] == expected
+        assert rows[0]["last_scrape_succeeded"] == expected

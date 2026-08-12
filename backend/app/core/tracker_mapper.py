@@ -15,7 +15,7 @@ Tracker状态映射模块
 """
 
 import logging
-from typing import Dict
+from typing import Any, Dict
 from urllib.parse import urlparse
 
 from app.core.tracker_judgment import judgment_engine, TrackerStatus
@@ -115,6 +115,56 @@ def map_transmission_tracker_status(status: int) -> str:
         5: TrackerStatus.DISABLED,  # 已清除 -> 已禁用
     }
     return status_mapping.get(status, TrackerStatus.NOT_CONTACTED)
+
+
+def resolve_transmission_tracker_status_code(tracker_status: Any, activity: str = "announce") -> int:
+    """把 Transmission TrackerStats 的布尔统计归一为项目 0-5 状态码。
+
+    ``lastAnnounceSucceeded`` / ``lastScrapeSucceeded`` 是布尔值，不是
+    ``TransmissionTrackerStatus`` 的状态码。旧实现把 False/True 直接写入整型列，
+    列表随后将它们解释为 0=未联系、1=发送中，导致已联系但失败的 Tracker
+    也显示成“未联系”。
+    """
+    if activity not in {"announce", "scrape"}:
+        raise ValueError("activity must be announce or scrape")
+
+    fields = getattr(tracker_status, "fields", None)
+    fields = fields if isinstance(fields, dict) else {}
+    title = activity.title()
+
+    def read(attribute: str, field: str, default: Any = None) -> Any:
+        if field in fields:
+            return fields[field]
+        try:
+            return getattr(tracker_status, attribute)
+        except (AttributeError, KeyError):
+            return default
+
+    succeeded = bool(read(f"last_{activity}_succeeded", f"last{title}Succeeded", False))
+    timed_out = bool(read(f"last_{activity}_timed_out", f"last{title}TimedOut", False))
+    has_contacted = read(f"has_{activity}d", f"has{title}d")
+    activity_state = read(f"{activity}_state", f"{activity}State", 0)
+    result = read(f"last_{activity}_result", f"last{title}Result", "")
+
+    if succeeded:
+        return 2  # 工作中
+    if timed_out:
+        return 4  # 超时
+    if has_contacted is False:
+        try:
+            return 1 if int(activity_state or 0) > 0 else 0  # 发送中 / 未联系
+        except (TypeError, ValueError):
+            return 0
+    if has_contacted is True:
+        return 3  # 已联系但未成功：工作失败
+
+    # 兼容旧测试桩或缺少 hasAnnounced/hasScraped 的旧 RPC 返回。
+    try:
+        if int(activity_state or 0) > 0:
+            return 1
+    except (TypeError, ValueError):
+        pass
+    return 3 if str(result or "").strip() else 0
 
 
 def map_qbittorrent_tracker(tracker: Dict) -> Dict:

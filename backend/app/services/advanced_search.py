@@ -184,7 +184,7 @@ class SearchQueryBuilder:
 
         # 状态过滤
         if request.status:
-            filters.append(TorrentInfo.status == request.status)
+            filters.append(self._build_status_filter("eq", request.status))
 
         # 种子大小范围过滤
         if request.size_min:
@@ -307,6 +307,8 @@ class SearchQueryBuilder:
             return self._build_tracker_url_filter(operator, value)
         if field == "tracker_msg":
             return self._build_tracker_msg_filter(operator, value)
+        if field == "status":
+            return self._build_status_filter(operator, value)
         if field not in self.FIELD_MAPPING:
             raise ValueError(f"search field has no query mapping: {field}")
         column = self.FIELD_MAPPING[field]
@@ -360,6 +362,35 @@ class SearchQueryBuilder:
         except KeyError as exc:
             raise ValueError(f"operator has no query implementation: {operator}") from exc
         return operator_factory(column, value)
+
+    def _build_status_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+        """构建与普通种子列表一致的状态过滤。
+
+        对用户而言 ``error`` 同时表示下载器上报的错误状态，以及所有 Tracker
+        均失败后写入的 ``has_tracker_error`` 标记。高级搜索必须复用这一语义，
+        否则相同的“错误”筛选在普通列表与高级搜索中会得到不同结果。
+        """
+        if operator in {"eq", "equals", "ne", "not_equals"}:
+            if value != "error":
+                return TorrentInfo.status != value if operator in {"ne", "not_equals"} else TorrentInfo.status == value
+            error_filter = or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+            return not_(error_filter) if operator in {"ne", "not_equals"} else error_filter
+
+        if operator in {"in", "not_in"}:
+            values = list(value) if isinstance(value, (list, tuple)) else [value]
+            if "error" not in values:
+                return self.OPERATOR_MAPPING[operator](TorrentInfo.status, values)
+
+            non_error_values = [item for item in values if item != "error"]
+            status_filters = [
+                or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+            ]
+            if non_error_values:
+                status_filters.append(TorrentInfo.status.in_(non_error_values))
+            positive_filter = or_(*status_filters)
+            return not_(positive_filter) if operator == "not_in" else positive_filter
+
+        return self.OPERATOR_MAPPING[operator](TorrentInfo.status, value)
 
     def _build_between_filter(self, column, field: str, value: Any) -> expression.ClauseElement:
         """between 操作符：value = {min, max}（size 带 minUnit/maxUnit；date 带 start/end）。

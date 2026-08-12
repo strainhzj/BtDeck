@@ -4,6 +4,12 @@
 
 ### 当前结果
 
+- 后续三项修正已完成：高级搜索“添加条件”居中并改主按钮，“添加条件组”改次按钮；组间
+  AND/OR 位于条件组卡片外。`error` 高级搜索现与普通列表同义，可命中
+  `status='error'` 或 `has_tracker_error=True`，用户提供的 azusa 组合载荷已有真实 DB 回归。
+- Tracker“未联系”误归类的根因已修复：Transmission 不再把成功布尔值当状态码写库，
+  announce/scrape 按联系、成功、超时和活动状态归一；定时判定将 qB 未联系及 Transmission
+  未联系/发送中视为中性，仅全部明确失败时设置 `has_tracker_error=True`。
 - 种子文件管理的下载器列由列表 API 单次批量解析并返回当前 nickname；刷新列表会反映改名，
   无逐行动态请求，缺失下载器显示 `-`。搜索区已统一为项目 management-page 风格。
 - 任务日志导出/清理按钮使用项目标准成功/警告样式。从任务列表查看日志会显示当前任务筛选；
@@ -18,6 +24,8 @@
 
 ### 验证与已知基线
 
+- 后续修正后端全量：`3182 passed, 7 skipped`；前端全量 `43 suites, 674 tests`；typecheck、生产 build、
+  变更文件严格 ESLint 通过。每一项修改均有独立回归用例。
 - 后端全量：`3171 passed, 7 skipped`；相关定向 88 passed；修改文件 Flake8 与
   `git diff --check`、Git Bash 根 `./init.sh` 通过。
 - 前端全量：`43 suites, 672 tests`；typecheck、生产 build、修改文件严格 ESLint 通过。
@@ -26,6 +34,8 @@
 - 完整前端 lint 只剩 3 个无关关键词测试文件中的 5 条既有 warning；目标 mypy 为仓库既有
   SQLAlchemy/Pydantic 类型债 142 条；Windows Black 26.5.1 检查存在超时，Flake8 无错误。
 - 工作区任务前已有的未跟踪备份、镜像、缓存与工具目录均未触碰。
+- `roadmap-maintain` 技能包未附带说明中提到的漂移脚本，已用源码关键符号行号、文件末行、
+  测试文件计数及链接回读替代；本轮未 stage/commit/push/deploy。
 
 ## 2026-08-11 交接：种子重复查询、任务页与管理界面六项修复
 

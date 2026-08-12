@@ -106,8 +106,17 @@ class TestTorrentTrackerStatusJudgeGovernance:
             # _judge_one_batch: TrackerInfo IN
             query_chain_5 = MagicMock()
             query_chain_5.filter.return_value.all.return_value = [fake_tracker]
+            # _judge_one_batch: BtDownloaders 类型映射
+            query_chain_6 = MagicMock()
+            query_chain_6.filter.return_value.all.return_value = []
 
-            session.query.side_effect = [query_chain_1, query_chain_3, query_chain_4, query_chain_5]
+            session.query.side_effect = [
+                query_chain_1,
+                query_chain_3,
+                query_chain_4,
+                query_chain_5,
+                query_chain_6,
+            ]
             return session
 
         task = TorrentTrackerStatusJudge()

@@ -136,7 +136,7 @@ HTTP POST /api/v1/advanced-search
        │      └─ _sqlite_bt_regexp       (单次 match 10ms 超时 + 查询总预算 2s 双重熔断，防 ReDoS)
        │
        └─ [ORM 查询执行]
-            app/services/advanced_search.py  AdvancedSearchService (1311 行)
+            app/services/advanced_search.py  AdvancedSearchService (1350 行)
               ├─ 13 字段查询引擎（v1.0.6.25 起 ratio 4 操作符 eq/ne/gt/lt + is_null/is_not_null）
               ├─ ratio/ratio_limit 值经 app/services/torrent_ratio_values.py 三态规范化（value/explicit_null/unavailable）
               └─ CHECK 约束 ck_torrent_info_ratio_finite_nonnegative（alembic 8f4c2d1a9b7e）兜底

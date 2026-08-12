@@ -27,7 +27,7 @@ BtDeck/
 │   ├── components-layout/  通用组件（LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 140 个 test_*.py + frontend Jest 43 个 test suite）
+├── tests/            ← 测试（backend pytest 141 个 test_*.py + frontend Jest 43 个 test suite）
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -38,7 +38,7 @@ BtDeck/
 | 功能域（含检索词） | 前端入口 | 后端入口 |
 |------|---------|---------|
 | 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（硬链接副本数量列，可点击查看位置） | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（实时硬链接副本计数 + 配置目录内按需定位 + 清理/彻底删除活动项占用）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
-| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；Transmission 同步会持久化/清除错误原因，列表名称 tooltip 与 Tracker 卡片展示 `errorReason`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
+| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；Transmission 同步会持久化/清除错误原因，并把 Tracker announce/scrape 统计归一为 0–4 状态码，避免“已联系失败”误显示为“未联系”；列表名称 tooltip 与 Tracker 卡片展示 `errorReason`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
 | 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
 | 任务/定时任务 task cron | `views/tasks/index.vue`、`api/tasks.ts`（outcome/stale 展示 helper 由实例方法暴露给模板；查看日志保留可见任务筛选，清空后立即恢复全部日志） | `api/endpoints/tasks.py` / `cron_tasks.py`；`tasks/`（scheduler） |
@@ -47,7 +47,7 @@ BtDeck/
 | 通知中心 notification | `layout/components/NotificationDrawer/`、`api/notification.ts`、`store/modules/notification.ts` | `api/endpoints/notifications.py`；`services/notification_service.py`；`models/notification.py` |
 | 查询模板 query-template | `views/query-templates/`（行操作为 Lucide 极简按钮） | `api/endpoints/advanced_search.py`；`services/advanced_search.py`；`models/search_template.py` |
 | 标签管理 tag | 下载器页 TagManagementTab | `api/endpoints/tag_management.py`；`services/tag_service.py` / `tag_sync_service.py` / `tag_adapters/`；`models/torrent_tags.py` |
-| 高级搜索 advanced-search | `components/torrents/AdvancedSearchWorkspace.vue`（左侧已保存搜索选择/创建/更新/删除）+ Builder（状态使用精确多选；组内添加条件位于添加条件组上方）+ 两种种子视图 | `api/endpoints/advanced_search.py`；`services/advanced_search.py` / `sqlite_search_runtime.py` |
+| 高级搜索 advanced-search | `components/torrents/AdvancedSearchWorkspace.vue`（左侧已保存搜索选择/创建/更新/删除）+ Builder（“添加条件”居中主按钮，组间 AND/OR 为组卡片外独立控件）+ 两种种子视图 | `api/endpoints/advanced_search.py`；`services/advanced_search.py`（`error` 同时匹配种子错误状态与 `has_tracker_error`）/ `sqlite_search_runtime.py` |
 | 种子转移 seed-transfer | — | `api/endpoints/seed_transfer.py`；`services/seed_transfer_service.py`；`models/seed_transfer_audit_log.py` |
 | 重复种子 duplicate | `views/torrents/index.vue` / `TraditionalView.vue`（绿色查询开关，筛选/排序/分页期间保持）+ `components/torrents/QuickDeleteDuplicatesDialog.vue` | `api/endpoints/duplicate_torrents.py`（默认添加时间倒序、活动快照与侧栏筛选）/ `duplicate_quick_delete.py`；`services/duplicate_quick_delete_service.py` |
 | 种子备份 torrent-backup | `views/torrents/FileManagement.vue`、`api/torrents.ts` / `api/torrents-backup.ts` | `api/endpoints/torrent_backup.py`（列表单次批量解析当前下载器 nickname，不逐行请求）；`services/torrent_file_backup_manager.py`；`models/torrent_file_backup.py` |
@@ -78,7 +78,7 @@ BtDeck/
 | ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（140 个 test_*.py，按子目录组织）+ 前端 Jest（43 个 test suite） | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（141 个 test_*.py，按子目录组织）+ 前端 Jest（43 个 test suite） | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -121,4 +121,4 @@ BtDeck/
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索状态改精确多选并调整添加按钮层级；Transmission 错误原因新增 Alembic 列、同步恢复清空、列表 tooltip 与 Tracker 卡片展示。 |
+| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索调整按钮视觉与组间 AND/OR 层级，并统一高级/普通列表的 `error` 语义；Transmission 错误原因同步展示及 Tracker 状态码归一化，未联系/发送中不再归类为错误。 |

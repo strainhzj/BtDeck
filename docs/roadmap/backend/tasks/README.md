@@ -37,7 +37,7 @@
 | 孤儿全量扫描 orphan-scan | `orphan_scan_task.py` | 每周日凌晨 2 点全量扫描孤儿文件 |
 | 标签同步 tag-sync | `tag_sync.py` | 定期从下载器同步标签到 DB |
 | 种子同步废弃 torrent-sync-old | `torrent_sync.py` | ⚠ **已废弃**：拆分为下方两个任务 |
-| tracker 状态判断 torrent-tracker-judge | `torrent_tracker_status_judge.py` | 遍历种子检查 tracker 状态 |
+| tracker 状态判断 torrent-tracker-judge | `torrent_tracker_status_judge.py` | 遍历种子检查 tracker 状态；`evaluate_tracker_error_state()` L51 按下载器区分状态码，未联系/发送中为中性，仅全部明确失败才标错 |
 | 候选池填充 candidate-pool | `tracker_candidate_pool.py` | 从 tracker_message_log 读未处理消息填候选池 |
 | tracker 消息入库 tracker-logger | `tracker_message_logger.py` | 定期扫描所有 tracker 返回消息入库 |
 | reannounce 任务 reannounce | `tracker_reannounce_task.py` | 按站点间隔定时对种子执行 tracker 汇报 |

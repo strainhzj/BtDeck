@@ -2,13 +2,13 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 140 个 test_*.py）
+## 后端测试分布（共 141 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
 | `tests/api/` | 48 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务与重复查询筛选/排序/活动快照均有 API 回归 |
 | `tests/services/` | 40 | `app/services/` | 🟡 中等；新增删除任务占用、孤儿持久化占用与查询状态回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 12 | `app/tasks/` | 🟡 部分覆盖（12 对 32） |
+| `tests/tasks/` | 13 | `app/tasks/` | 🟡 部分覆盖（13 对 32） |
 | `tests/core/` | 16 | `app/core/` | 🟡 中等 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 16） |
 | `tests/utils/` | 4 | `app/utils/` | ✅ 覆盖良好 |
@@ -22,7 +22,7 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **140** 个 test_*.py；支持文件计入后全 `.py` 共 158 个。
+> 合计：当前实测 **141** 个 test_*.py；支持文件计入后全 `.py` 共 159 个。
 
 > 注：`tests/api/`（48 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
@@ -32,7 +32,7 @@
 |------------|------|-----------|
 | `tests/core/test_ratio_data_diagnostics.py` | 158 | `app/core/ratio_data_diagnostics.py` |
 | `tests/services/test_torrent_ratio_values.py` | 179 | `app/services/torrent_ratio_values.py` |
-| `tests/services/test_advanced_search_regression.py` | 1591 | `app/services/advanced_search.py`（完备回归） |
+| `tests/services/test_advanced_search_regression.py` | 1664 | `app/services/advanced_search.py`（完备回归，含 tracker URL + `error`/`has_tracker_error` 组合条件） |
 | `tests/services/test_advanced_search_models_strict.py` | 128 | `app/api/models/advanced_search.py`（Pydantic 严格模式） |
 | `tests/services/test_sqlite_search_runtime.py` | 27 | `app/services/sqlite_search_runtime.py`（正则熔断） |
 | `tests/api/test_advanced_search_pagination.py` | 139 | `app/api/endpoints/advanced_search.py`（分页） |
@@ -60,7 +60,8 @@
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
-| `tests/api/test_transmission_error_sync.py` | 177 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测与恢复清空 |
+| `tests/api/test_transmission_error_sync.py` | 246 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测、恢复清空与 Tracker 0–4 状态归一化 |
+| `tests/tasks/test_torrent_tracker_status_judge.py` | 52 | qB/Transmission 未联系/发送中为中性，明确失败与混合未知的聚合判定 |
 | `tests/api/test_torrent_backup_review.py` | 188 | 备份列表当前下载器 nickname 单查询批量解析及序列化 |
 | `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
 | `tests/models/test_torrent_models.py` | 348 | `TorrentInfo.error_reason` 字段全集与值映射 |
@@ -72,9 +73,10 @@
 | `app/api/endpoints/torrent_crud.py` | （无直接测试，仅 `test_active_only_filter.py` 间接覆盖 getList 的 active_only） | ⚠ 未直接覆盖 |
 | `app/api/endpoints/duplicate_torrents.py` | `tests/api/test_duplicate_torrents_api.py`（1439 行，40 用例） | ✅ 默认添加时间倒序、安全列排序、非法排序拒绝、完整重复组筛选、活动快照/空快照、分页与元数据回填 |
 | `app/api/endpoints/torrent_backup.py` | `tests/api/test_torrent_backup_review.py`（188 行） | ✅ 当前 nickname 批量查询、空列表跳过查询与序列化 |
-| `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空与 camelCase 响应 |
+| `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空、Tracker 状态归一与 camelCase 响应 |
 | `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
-| `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（1605 行）+ `test_advanced_search_models_strict.py` | ✅✅ 重度覆盖（含活动删除排除） |
+| `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（1664 行）+ `test_advanced_search_models_strict.py` | ✅✅ 重度覆盖（含活动删除排除与普通列表一致的 `error` 语义） |
+| `app/tasks/scheduler/torrent_tracker_status_judge.py` | `test_torrent_tracker_status_judge.py` + `test_heavy_task_db_write_governance.py` | ✅ 未联系/发送中中性语义、明确失败/未知聚合与批量查询治理 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
 | `app/services/torrent_ratio_values.py` | `test_torrent_ratio_values.py` | ✅（v1.0.6.25 新增） |
@@ -111,7 +113,7 @@
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |
-| `torrent-batch.spec.ts` | `views/torrents/utils/torrentBatch.ts` |
+| `torrent-batch.spec.ts` | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
@@ -123,13 +125,13 @@
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2518 行）
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2543 行）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
 | `AdvancedMultiSelect.performance.spec.ts` | 466 | `AdvancedMultiSelect.vue`（性能测试） |
 | `AdvancedMultiSelect.spec.ts` | 571 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
-| `AdvancedSearchBuilder.spec.ts` | 619 | `AdvancedSearchBuilder.vue`（含组内添加条件位于添加条件组上方的顺序守卫） |
+| `AdvancedSearchBuilder.spec.ts` | 644 | `AdvancedSearchBuilder.vue`（添加条件居中/主次配色、组间 AND/OR 位于卡片外与按钮顺序守卫） |
 | `AdvancedSearchWorkspace.spec.ts` | 389 | `AdvancedSearchWorkspace.vue`（高级配置列表/回填/创建/覆盖更新/删除与权限、单次重置和异步竞态隔离） |
 | `ConditionValueInput.spec.ts` | 200 | `ConditionValueInput.vue`（状态与下载器共用不可创建的 AdvancedMultiSelect） |
 | `FilterGroup.spec.ts` | 97 | `FilterGroup.vue` |

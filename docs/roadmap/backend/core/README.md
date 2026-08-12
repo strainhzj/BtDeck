@@ -25,7 +25,7 @@
 | ratio 工具孤儿 ratio-tools | `torrent_operations.py` | ⚠️ **孤儿（内容已重写但未接线）**：v1.0.6.27 起内容已重写为 ratio/ratio_limit 工具，但**生产路径未 import**（实际生效的是 `app/services/torrent_ratio_values.py`） |
 | 状态映射 status-mapper | `torrent_status_mapper.py` | 统一 qb/transmission 种子状态映射；`resolve_transmission_status` L103 判定错误状态，`extract_transmission_error_reason` L138 安全提取 errorString（warning/恢复返回空） |
 | Tracker 判断 tracker-judgment | `tracker_judgment.py` | Tracker 状态判断引擎（关键词池，失败优先策略） |
-| Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成 |
+| Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成；`resolve_transmission_tracker_status_code()` L120 将布尔统计/联系状态归一为项目 0–4 状态码 |
 | Tracker 操作孤儿 tracker-operations | `tracker_operations.py` | ⚠️ **孤儿**：标准化 tracker DB 操作（DatabaseResult 重构版），未启用 |
 
 > 🔵 = 基础设施型（高频引用）；⚠️ = 孤儿/低使用。各文件的引用统计详见下方"孤儿/低使用"与"基础设施型"两节。

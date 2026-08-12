@@ -2,239 +2,242 @@
   <div class="advanced-search-builder">
     <!-- 搜索条件组列表 -->
     <div class="condition-groups">
-      <div
-        v-for="(group, groupIndex) in conditionGroups"
-        :key="group.id"
-        class="condition-group"
-      >
-        <!-- 组头部 -->
-        <div class="group-header">
-          <div class="group-title">
-            <el-input
-              v-if="group.editing"
-              v-model="group.name"
-              size="mini"
-              style="width: 120px; margin-right: 8px;"
-              @blur="finishEditingGroup(group)"
-              @keyup.enter.native="finishEditingGroup(group)"
-              placeholder="组名称"
-            />
-            <span
-              v-else
-              @dblclick="startEditingGroup(group)"
-              class="group-name"
-              :title="group.name || `条件组 ${groupIndex + 1}`"
-            >
-              {{ group.name || `条件组 ${groupIndex + 1}` }}
-            </span>
-            <el-tag
-              :type="getLogicTagType(group.logic)"
-              size="mini"
-              style="margin-left: 8px;"
-            >
-              {{ (group.logic || 'and').toUpperCase() }}
-            </el-tag>
-          </div>
-          <div class="group-actions">
-            <el-button
-              size="mini"
-              icon="el-icon-edit"
-              @click="startEditingGroup(group)"
-              title="重命名条件组"
-            />
-            <el-dropdown v-if="conditionGroups.length > 1" trigger="click" @command="handleGroupCommand">
-              <el-button size="mini" type="danger">
-                更多<i class="el-icon-arrow-down el-icon--right"></i>
-              </el-button>
-              <el-dropdown-menu slot="dropdown">
-                <el-dropdown-item :command="{action: 'delete', index: groupIndex}">
-                  <i class="el-icon-delete"></i> 删除组
-                </el-dropdown-item>
-                <el-dropdown-item :command="{action: 'duplicate', index: groupIndex}">
-                  <i class="el-icon-copy-document"></i> 复制组
-                </el-dropdown-item>
-                <el-dropdown-item :command="{action: 'clear', index: groupIndex}">
-                  <i class="el-icon-refresh-left"></i> 清空条件
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </el-dropdown>
-          </div>
-        </div>
-
-        <!-- 组内逻辑设置 -->
-        <div class="group-logic-settings">
-          <el-select
-            v-model="group.logic"
-            size="mini"
-            @change="onGroupLogicChange(group)"
-            style="width: 100px;"
-          >
-            <el-option label="AND (并且)" value="and" />
-            <el-option label="OR (或者)" value="or" />
-          </el-select>
-          <span class="logic-desc">{{ getGroupLogicDescription(group.logic) }}</span>
-        </div>
-
-        <!-- 条件列表 -->
-        <div class="conditions">
-          <div
-            v-for="(condition, conditionIndex) in group.conditions"
-            :key="condition.id"
-            class="condition-item"
-          >
-            <!-- 条件间逻辑连接符 -->
-            <div
-              v-if="conditionIndex > 0"
-              class="condition-logic"
-            >
+      <template v-for="(group, groupIndex) in conditionGroups">
+        <div
+          :key="group.id"
+          class="condition-group"
+        >
+          <!-- 组头部 -->
+          <div class="group-header">
+            <div class="group-title">
+              <el-input
+                v-if="group.editing"
+                v-model="group.name"
+                size="mini"
+                style="width: 120px; margin-right: 8px;"
+                @blur="finishEditingGroup(group)"
+                @keyup.enter.native="finishEditingGroup(group)"
+                placeholder="组名称"
+              />
+              <span
+                v-else
+                @dblclick="startEditingGroup(group)"
+                class="group-name"
+                :title="group.name || `条件组 ${groupIndex + 1}`"
+              >
+                {{ group.name || `条件组 ${groupIndex + 1}` }}
+              </span>
               <el-tag
                 :type="getLogicTagType(group.logic)"
                 size="mini"
-                class="logic-tag"
+                style="margin-left: 8px;"
               >
                 {{ (group.logic || 'and').toUpperCase() }}
               </el-tag>
             </div>
+            <div class="group-actions">
+              <el-button
+                size="mini"
+                icon="el-icon-edit"
+                @click="startEditingGroup(group)"
+                title="重命名条件组"
+              />
+              <el-dropdown v-if="conditionGroups.length > 1" trigger="click" @command="handleGroupCommand">
+                <el-button size="mini" type="danger">
+                  更多<i class="el-icon-arrow-down el-icon--right"></i>
+                </el-button>
+                <el-dropdown-menu slot="dropdown">
+                  <el-dropdown-item :command="{action: 'delete', index: groupIndex}">
+                    <i class="el-icon-delete"></i> 删除组
+                  </el-dropdown-item>
+                  <el-dropdown-item :command="{action: 'duplicate', index: groupIndex}">
+                    <i class="el-icon-copy-document"></i> 复制组
+                  </el-dropdown-item>
+                  <el-dropdown-item :command="{action: 'clear', index: groupIndex}">
+                    <i class="el-icon-refresh-left"></i> 清空条件
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </el-dropdown>
+            </div>
+          </div>
 
-            <!-- 条件内容 -->
-            <div class="condition-content">
-              <!-- 字段选择器 -->
-              <div class="condition-field">
-                <el-select
-                  v-model="condition.field"
-                  placeholder="选择字段"
-                  size="small"
-                  @change="onFieldChange(condition)"
-                  style="width: 140px;"
+          <!-- 组内逻辑设置 -->
+          <div class="group-logic-settings">
+            <el-select
+              v-model="group.logic"
+              size="mini"
+              @change="onGroupLogicChange(group)"
+              style="width: 100px;"
+            >
+              <el-option label="AND (并且)" value="and" />
+              <el-option label="OR (或者)" value="or" />
+            </el-select>
+            <span class="logic-desc">{{ getGroupLogicDescription(group.logic) }}</span>
+          </div>
+
+          <!-- 条件列表 -->
+          <div class="conditions">
+            <div
+              v-for="(condition, conditionIndex) in group.conditions"
+              :key="condition.id"
+              class="condition-item"
+            >
+              <!-- 条件间逻辑连接符 -->
+              <div
+                v-if="conditionIndex > 0"
+                class="condition-logic"
+              >
+                <el-tag
+                  :type="getLogicTagType(group.logic)"
+                  size="mini"
+                  class="logic-tag"
                 >
-                  <el-option-group label="高级信息">
-                    <el-option
-                      v-for="field in advancedFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="基本信息">
-                    <el-option
-                      v-for="field in basicFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="状态信息">
-                    <el-option
-                      v-for="field in statusFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="时间信息">
-                    <el-option
-                      v-for="field in timeFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="比率信息">
-                    <el-option
-                      v-for="field in ratioFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                </el-select>
+                  {{ (group.logic || 'and').toUpperCase() }}
+                </el-tag>
               </div>
 
-              <!-- 操作符选择器 -->
-              <div class="condition-operator">
-                <el-select
-                  v-model="condition.operator"
-                  placeholder="选择操作"
-                  size="small"
-                  @change="onOperatorChange(condition)"
-                  style="width: 120px;"
-                  :disabled="!condition.field"
-                >
-                  <el-option-group
-                    v-for="operatorGroup in getOperatorGroups(condition.field)"
-                    :key="operatorGroup.type"
-                    :label="operatorGroup.label"
+              <!-- 条件内容 -->
+              <div class="condition-content">
+                <!-- 字段选择器 -->
+                <div class="condition-field">
+                  <el-select
+                    v-model="condition.field"
+                    placeholder="选择字段"
+                    size="small"
+                    @change="onFieldChange(condition)"
+                    style="width: 140px;"
                   >
-                    <el-option
-                      v-for="op in operatorGroup.operators"
-                      :key="op.value"
-                      :label="op.label"
-                      :value="op.value"
-                    />
-                  </el-option-group>
-                </el-select>
-              </div>
+                    <el-option-group label="高级信息">
+                      <el-option
+                        v-for="field in advancedFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="基本信息">
+                      <el-option
+                        v-for="field in basicFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="状态信息">
+                      <el-option
+                        v-for="field in statusFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="时间信息">
+                      <el-option
+                        v-for="field in timeFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="比率信息">
+                      <el-option
+                        v-for="field in ratioFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                  </el-select>
+                </div>
 
-              <!-- 条件值输入 -->
-              <div class="condition-value">
-                <ConditionValueInput
-                  :field="condition.field"
-                  :operator="condition.operator"
-                  :value="condition.value"
-                  :fieldOptions="getFieldOptions(condition.field)"
-                  @input="val => onConditionValueChange(condition, val)"
-                  @change="val => onConditionValueChange(condition, val)"
-                  style="flex: 1;"
-                />
-              </div>
+                <!-- 操作符选择器 -->
+                <div class="condition-operator">
+                  <el-select
+                    v-model="condition.operator"
+                    placeholder="选择操作"
+                    size="small"
+                    @change="onOperatorChange(condition)"
+                    style="width: 120px;"
+                    :disabled="!condition.field"
+                  >
+                    <el-option-group
+                      v-for="operatorGroup in getOperatorGroups(condition.field)"
+                      :key="operatorGroup.type"
+                      :label="operatorGroup.label"
+                    >
+                      <el-option
+                        v-for="op in operatorGroup.operators"
+                        :key="op.value"
+                        :label="op.label"
+                        :value="op.value"
+                      />
+                    </el-option-group>
+                  </el-select>
+                </div>
 
-              <!-- 排除/包含切换 -->
-              <div class="condition-mode">
-                <el-radio-group
-                  v-model="condition.mode"
-                  size="small"
-                  @change="onConditionModeChange(condition)"
-                  :disabled="!conditionSupportsExclude(condition)"
-                >
-                  <el-radio-button label="include">包含</el-radio-button>
-                  <el-radio-button
-                    label="exclude"
+                <!-- 条件值输入 -->
+                <div class="condition-value">
+                  <ConditionValueInput
+                    :field="condition.field"
+                    :operator="condition.operator"
+                    :value="condition.value"
+                    :fieldOptions="getFieldOptions(condition.field)"
+                    @input="val => onConditionValueChange(condition, val)"
+                    @change="val => onConditionValueChange(condition, val)"
+                    style="flex: 1;"
+                  />
+                </div>
+
+                <!-- 排除/包含切换 -->
+                <div class="condition-mode">
+                  <el-radio-group
+                    v-model="condition.mode"
+                    size="small"
+                    @change="onConditionModeChange(condition)"
                     :disabled="!conditionSupportsExclude(condition)"
                   >
-                    排除
-                  </el-radio-button>
-                </el-radio-group>
-              </div>
+                    <el-radio-button label="include">包含</el-radio-button>
+                    <el-radio-button
+                      label="exclude"
+                      :disabled="!conditionSupportsExclude(condition)"
+                    >
+                      排除
+                    </el-radio-button>
+                  </el-radio-group>
+                </div>
 
-              <!-- 删除条件按钮 -->
-              <div class="condition-actions">
-                <el-button
-                  size="mini"
-                  type="danger"
-                  icon="el-icon-delete"
-                  circle
-                  @click="removeCondition(group, conditionIndex)"
-                  :disabled="group.conditions.length <= 1"
-                />
+                <!-- 删除条件按钮 -->
+                <div class="condition-actions">
+                  <el-button
+                    size="mini"
+                    type="danger"
+                    icon="el-icon-delete"
+                    circle
+                    @click="removeCondition(group, conditionIndex)"
+                    :disabled="group.conditions.length <= 1"
+                  />
+                </div>
               </div>
             </div>
           </div>
+
+          <!-- 组内添加条件放在条件列表底部，避免与全局“添加条件组”误触。 -->
+          <div class="add-condition">
+            <el-button
+              type="primary"
+              size="small"
+              icon="el-icon-plus"
+              @click="addCondition(group)"
+            >
+              添加条件
+            </el-button>
+          </div>
         </div>
 
-        <!-- 组内添加条件放在条件列表底部，避免与全局“添加条件组”误触。 -->
-        <div class="add-condition">
-          <el-button
-            size="small"
-            icon="el-icon-plus"
-            @click="addCondition(group)"
-          >
-            添加条件
-          </el-button>
-        </div>
-
-        <!-- 组间逻辑选择 -->
+        <!-- 组间逻辑是条件组之间的独立控件，不属于任一条件组。 -->
         <div
           v-if="groupIndex < conditionGroups.length - 1"
+          :key="`${group.id}-between-logic`"
           class="group-between-logic"
         >
           <div class="logic-connector">
@@ -250,13 +253,12 @@
             <span class="logic-description">{{ getBetweenGroupLogicDescription(group.betweenGroupLogic) }}</span>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- 添加条件组按钮 -->
     <div class="add-group">
       <el-button
-        type="primary"
         size="small"
         icon="el-icon-plus"
         @click="addConditionGroup"
@@ -1264,34 +1266,34 @@ export default class AdvancedSearchBuilder extends Vue {
       }
     }
 
-    .group-between-logic {
-      display: flex;
-      justify-content: center;
-      margin: 16px 0;
-
-      .logic-connector {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 12px 16px;
-        background-color: #fef3c7;
-        border: 1px solid #fcd34d;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(251, 191, 36, 0.1);
-
-        .logic-description {
-          margin-top: 4px;
-          font-size: 11px;
-          color: #92400e;
-          white-space: nowrap;
-        }
-      }
-    }
-
     .add-condition {
       display: flex;
-      justify-content: flex-end;
+      justify-content: center;
       margin-top: 4px;
+    }
+  }
+
+  .group-between-logic {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0 16px;
+
+    .logic-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 16px;
+      background-color: #fef3c7;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(251, 191, 36, 0.1);
+
+      .logic-description {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #92400e;
+        white-space: nowrap;
+      }
     }
   }
 

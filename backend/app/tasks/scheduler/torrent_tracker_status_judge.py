@@ -20,15 +20,77 @@ Version: 1.0.0
 
 import asyncio
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Any, Dict, List, Optional
 import logging
 import threading
 
 from app.database import SessionLocal
+from app.downloader.models import BtDownloaders
+from app.models.setting_templates import DownloaderTypeEnum
 from app.tasks.resource_guard import admission_controller
 from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 
 logger = logging.getLogger(__name__)
+
+
+def _tracker_is_not_contacted(tracker: TrackerInfo, downloader_type: Any) -> bool:
+    """判断 Tracker 是否处于未联系/发送中的中性状态。"""
+    if downloader_type is None:
+        return False
+    try:
+        type_name = DownloaderTypeEnum(DownloaderTypeEnum.normalize(downloader_type)).to_name()
+        announce_status = int(tracker.last_announce_succeeded)
+    except (TypeError, ValueError):
+        return False
+
+    if type_name == "qbittorrent":
+        return announce_status == 1
+    return announce_status in {0, 1}
+
+
+def evaluate_tracker_error_state(
+    trackers: List[TrackerInfo], keyword_map: Dict[str, str], downloader_type: Any
+) -> Optional[bool]:
+    """根据 Tracker 原始状态与关键词返回种子的错误标记。
+
+    ``True`` 表示所有 Tracker 都明确失败，``False`` 表示至少存在正常或未联系的
+    Tracker，``None`` 表示仍有未知状态，应保留数据库原值。
+    """
+    has_normal_tracker = False
+    has_failed_tracker = False
+    has_neutral_tracker = False
+    has_unknown_tracker = False
+
+    for tracker in trackers:
+        if _tracker_is_not_contacted(tracker, downloader_type):
+            has_neutral_tracker = True
+            continue
+
+        messages = [
+            message
+            for message in (tracker.last_announce_msg or "", tracker.last_scrape_msg or "")
+            if message
+        ]
+        tracker_matched = False
+        for message in messages:
+            keyword_type = keyword_map.get(message)
+            if keyword_type == "failed":
+                has_failed_tracker = True
+                tracker_matched = True
+                break
+            if keyword_type in {"success", "ignored"}:
+                has_normal_tracker = True
+                tracker_matched = True
+                break
+
+        if not tracker_matched:
+            has_unknown_tracker = True
+
+    if has_normal_tracker or has_neutral_tracker:
+        return False
+    if has_failed_tracker and not has_unknown_tracker:
+        return True
+    return None
 
 
 class TorrentTrackerStatusJudge:
@@ -321,6 +383,16 @@ class TorrentTrackerStatusJudge:
             for tracker in batch_trackers:
                 trackers_by_torrent.setdefault(str(tracker.torrent_info_id), []).append(tracker)
 
+            downloader_ids = {str(t.downloader_id) for t in torrents if t.downloader_id is not None}
+            downloader_type_rows = (
+                db.query(BtDownloaders.downloader_id, BtDownloaders.downloader_type)
+                .filter(BtDownloaders.downloader_id.in_(downloader_ids), BtDownloaders.dr == 0)
+                .all()
+                if downloader_ids
+                else []
+            )
+            downloader_type_map = {str(row[0]): row[1] for row in downloader_type_rows}
+
             for torrent_id in torrent_ids:
                 try:
                     torrent = torrent_map.get(torrent_id)
@@ -335,59 +407,23 @@ class TorrentTrackerStatusJudge:
                             self.total_no_tracker += 1
                         continue
 
-                    # 判断每个tracker的状态
-                    # 逻辑修正：只有明确匹配失败池才算失败，否则按以下规则处理：
-                    # 1. 匹配成功池/忽略池 → tracker正常
-                    # 2. 匹配失败池 → tracker错误
-                    # 3. 未匹配任何池 → 不确定状态，不影响整体判断
-                    has_normal_tracker = False
-                    has_failed_tracker = False
-                    has_unknown_tracker = False
-
-                    for tracker in trackers:
-                        # 获取tracker的消息
-                        announce_msg = tracker.last_announce_msg or ""
-                        scrape_msg = tracker.last_scrape_msg or ""
-                        messages = [msg for msg in [announce_msg, scrape_msg] if msg]
-
-                        # 检查消息是否匹配关键词池
-                        tracker_matched = False
-
-                        for msg in messages:
-                            # 精确匹配关键词
-                            if msg in keyword_map:
-                                keyword_type = keyword_map[msg]
-                                if keyword_type == "failed":
-                                    has_failed_tracker = True
-                                    tracker_matched = True
-                                    break
-                                elif keyword_type in ["success", "ignored"]:
-                                    has_normal_tracker = True
-                                    tracker_matched = True
-                                    break
-
-                        # 如果tracker的消息不匹配任何关键词，标记为未知状态
-                        if not tracker_matched and messages:
-                            has_unknown_tracker = True
-
                     # 更新has_tracker_error字段
                     old_value = torrent.has_tracker_error
+                    decision = evaluate_tracker_error_state(
+                        trackers,
+                        keyword_map,
+                        downloader_type_map.get(str(torrent.downloader_id)),
+                    )
 
-                    # 判断规则：
-                    # 1. 只要有正常的tracker → has_tracker_error=False
-                    # 2. 所有tracker都失败（无正常、无未知） → has_tracker_error=True
-                    # 3. 有未确定状态 → 保持原值
-                    if has_normal_tracker:
+                    if decision is False:
                         torrent.has_tracker_error = False
                         with self._stats_lock:
                             self.total_at_least_one_normal += 1
-                    elif has_failed_tracker and not has_normal_tracker and not has_unknown_tracker:
-                        # 只有失败的tracker，没有正常的，也没有未确定的
+                    elif decision is True:
                         torrent.has_tracker_error = True
                         with self._stats_lock:
                             self.total_all_failed += 1
                     else:
-                        # 有未确定状态或混合状态，保持原值
                         with self._stats_lock:
                             self.total_no_change += 1
 

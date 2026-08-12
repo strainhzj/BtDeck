@@ -766,6 +766,65 @@ class TestConditionGroupsRealDb:
         # name 含 Movie 的只有 t6(Deleted Movie)，但 dr=1 排除；status=error 是 t4 但 name 不含 Movie
         assert result["total"] == 0
 
+    def test_tracker_url_and_error_status_matches_tracker_error_flag(self, db_session):
+        """用户实测请求：Tracker URL + error 组合应命中 Tracker 错误种子。"""
+        now = datetime(2026, 8, 12, 12, 0, 0)
+        db_session.add(BtDownloaders(downloader_id="d-azusa", nickname="qbit-azusa", downloader_type=0))
+        db_session.commit()
+        make_torrent(
+            db_session,
+            info_id="t-azusa",
+            downloader_id="d-azusa",
+            downloader_name="qbit-azusa",
+            hash_="h-azusa",
+            name="Azusa tracker error",
+            status="seeding",
+            has_tracker_error=True,
+            added_date=now,
+        )
+        db_session.add(
+            TrackerInfo(
+                tracker_id="tk-azusa",
+                torrent_info_id="t-azusa",
+                tracker_name="Azusa",
+                tracker_url="https://tracker.azusa.example/announce",
+                last_announce_succeeded=3,
+                last_announce_msg="failed",
+                last_scrape_succeeded=3,
+                last_scrape_msg="failed",
+                create_time=now,
+                create_by="tester",
+                update_time=now,
+                update_by="tester",
+                dr=0,
+            )
+        )
+        db_session.commit()
+
+        request = EnhancedAdvancedSearchRequest.model_validate(
+            {
+                "page": 1,
+                "limit": 20,
+                "sort_by": "added_date",
+                "sort_order": "desc",
+                "condition_groups": [
+                    {
+                        "logic": "AND",
+                        "conditions": [
+                            {"field": "tracker_url", "operator": "contains", "value": "azusa"},
+                            {"field": "status", "operator": "in", "value": ["error"]},
+                        ],
+                    }
+                ],
+                "between_group_logics": [],
+            }
+        )
+
+        result = AdvancedSearchService(db_session).search_torrents(request, user_id="tester")
+
+        assert result["total"] == 1
+        assert _info_ids(result) == {"t-azusa"}
+
     def test_single_or_group(self, db_session):
         """单 OR 组：status='error' OR status='paused' → t3(paused)+t4(error)"""
         _seed_torrents(db_session)
