@@ -26,6 +26,7 @@
 | 状态映射 status-mapper | `torrent_status_mapper.py` | 统一 qb/transmission 种子状态映射；`resolve_transmission_status` L103 判定错误状态，`extract_transmission_error_reason` L138 安全提取 errorString（warning/恢复返回空） |
 | Tracker 判断 tracker-judgment | `tracker_judgment.py` | Tracker 状态判断引擎（关键词池，失败优先策略） |
 | Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成；`resolve_transmission_tracker_status_code()` L120 将布尔统计/联系状态归一为项目 0–4 状态码 |
+| Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L40 以非空消息优先、Working 空消息兜底构造证据，L66 聚合为明确正常/全部失败/未知保留 |
 | Tracker 操作孤儿 tracker-operations | `tracker_operations.py` | ⚠️ **孤儿**：标准化 tracker DB 操作（DatabaseResult 重构版），未启用 |
 
 > 🔵 = 基础设施型（高频引用）；⚠️ = 孤儿/低使用。各文件的引用统计详见下方"孤儿/低使用"与"基础设施型"两节。

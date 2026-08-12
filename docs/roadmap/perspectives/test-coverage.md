@@ -62,7 +62,9 @@
 |------------|------|-----------|
 | `tests/api/test_transmission_error_sync.py` | 394 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测、恢复清空、旧 RPC 兼容及 legacy/async Tracker 0–4 状态写入 |
 | `tests/api/test_tracker_migration.py` | 730 | qB/Transmission Tracker 手动新增、修改、删除路径；Transmission announce/scrape 独立状态码持久化 |
-| `tests/tasks/test_torrent_tracker_status_judge.py` | 529 | qB/Transmission 未联系/发送中为中性；Working + `None`/空白消息明确正常；zimiao 双 Tracker 顺序/类型/空消息矩阵；非空关键词优先、软删除隔离、真实 SQLite 批量更新、独立 Cron 错峰与重任务互斥 |
+| `tests/services/test_tracker_status_sync.py` | 972 | Tracker 行级 Working + `None`/空白消息历史 error 恢复；announce/scrape 状态边界、非空关键词优先、未知逐行保留、双消息、幂等、host 跨种子隔离及 zimiao 359 行快照形态 |
+| `tests/services/test_sync_coordinator.py` | 814 | 统一同步协调、准入/取消/检查点/观测；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序 |
+| `tests/tasks/test_torrent_tracker_status_judge.py` | 546 | qB/Transmission 未联系/发送中为中性；Working + `None`/空白消息明确正常；zimiao 双 Tracker 顺序/类型/空消息矩阵；非空关键词优先、软删除隔离、真实 SQLite 批量更新、独立 Cron 错峰与重任务互斥 |
 | `tests/api/test_torrent_backup_review.py` | 188 | 备份列表当前下载器 nickname 单查询批量解析及序列化 |
 | `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
 | `tests/models/test_torrent_models.py` | 348 | `TorrentInfo.error_reason` 字段全集与值映射 |
@@ -78,6 +80,7 @@
 | `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
 | `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（2130 行）+ `test_advanced_search_models_strict.py`（161 行） | ✅✅ 重度覆盖（20 字段审计、活动/回收站排除、普通列表一致的 `error`、关系/文本/标签/空值/三态/稳定 ID 与跨字段正反分区） |
 | `app/tasks/scheduler/torrent_tracker_status_judge.py` | `test_torrent_tracker_status_judge.py` + `test_heavy_task_db_write_governance.py` | ✅ 状态码+关键词联合判定、Working 空消息恢复正常、zimiao 双 Tracker 聚合、软删除隔离、独立 Cron 错峰、重任务互斥与批量查询治理 |
+| `app/core/tracker_status_policy.py` / `app/services/tracker_status_sync.py` | `test_tracker_status_sync.py` + `test_torrent_tracker_status_judge.py` | ✅ 共享状态/关键词证据语义、行级 Working 空消息恢复、未知保留、双消息聚合、幂等及 host 隔离 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
 | `app/services/torrent_ratio_values.py` | `test_torrent_ratio_values.py` | ✅（v1.0.6.25 新增） |

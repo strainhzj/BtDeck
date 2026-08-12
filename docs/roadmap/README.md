@@ -121,4 +121,4 @@ BtDeck/
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏，并新增跨字段补集/空值分区及模板请求协议回归矩阵；Transmission 错误原因同步展示及 Tracker 状态码归一化；状态判断继续联合状态码与关键词，Working 且消息为空时明确正常，并以独立 Cron 在 Tracker 同步后 10 分钟执行，新增 zimiao 双 Tracker、真实写库、互斥准入与迁移边界回归。 |
+| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏，并新增跨字段补集/空值分区及模板请求协议回归矩阵；Transmission 错误原因同步展示及 Tracker 状态码归一化；状态判断继续联合状态码与关键词，Working 且消息为空时明确正常，并以独立 Cron 在 Tracker 同步后 10 分钟执行；补齐 Tracker 行级同步跳过 Working 空消息的历史错误残留，抽取共享判定策略并加入最新 zimiao 359 行快照形态、幂等与跨种子 host 隔离回归。 |
