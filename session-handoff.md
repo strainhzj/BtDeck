@@ -1,6 +1,6 @@
 # Session Handoff - BtDeck 全栈项目
 
-## 2026-08-12 交接：种子文件、任务日志、高级搜索与错误原因七项修复
+## 2026-08-12 交接：种子文件、任务日志、高级搜索与错误原因七项修复及回归加固
 
 ### 当前结果
 
@@ -20,12 +20,17 @@
 - `torrent_info.error_reason` 已通过可回滚 Alembic `de898cb28172` 增加。Transmission FULL、
   INFO-ONLY、legacy 和新增记录路径同步 errorString；错误原因变化可单独触发更新，恢复后清空。
 - API 以 `errorReason` 输出；列表/传统两视图都在名称 hover tooltip 与 Tracker 卡片显示原因。
-- 路线图、迁移清单、测试矩阵、功能状态与进度记录已同步；未 stage/commit/push/deploy。
+- 功能修复已独立提交为 `82ceed8`；后续测试与项目记录作为独立回归加固提交交付。
+- 路线图、迁移清单、测试矩阵、功能状态与进度记录已同步；未 push/deploy。
 
 ### 验证与已知基线
 
-- 后续修正后端全量：`3182 passed, 7 skipped`；前端全量 `43 suites, 674 tests`；typecheck、生产 build、
-  变更文件严格 ESLint 通过。每一项修改均有独立回归用例。
+- 回归加固新增 33 项后端和 2 项前端用例，覆盖高级搜索运算符真值表、Transmission 新旧 RPC
+  与四类写库入口、定时任务真实 SQLite 批量更新、多条件组连接器顺序/删除收敛及前端中性边界。
+- 后端全量：`3215 passed, 7 skipped`；前端全量 `43 suites, 676 tests`；typecheck、生产 build、
+  变更文件严格 ESLint、目标 Ruff/Flake8、Git Bash 根 `./init.sh --ci` 与 `git diff --check` 通过。
+- 完整前端 lint 仍仅有 3 个无关关键词测试文件的 5 条既有 warning（0 error）；Windows Black
+  目标检查复现超时，未重排存量测试文件。
 - 后端全量：`3171 passed, 7 skipped`；相关定向 88 passed；修改文件 Flake8 与
   `git diff --check`、Git Bash 根 `./init.sh` 通过。
 - 前端全量：`43 suites, 672 tests`；typecheck、生产 build、修改文件严格 ESLint 通过。

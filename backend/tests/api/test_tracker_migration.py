@@ -99,18 +99,50 @@ def _make_qb_client(torrents=None):
     return client
 
 
+def _make_tr_tracker_stat(
+    announce: str,
+    *,
+    has_announced: bool = True,
+    announce_succeeded: bool = True,
+    announce_timed_out: bool = False,
+    announce_state: int = 0,
+    announce_result: str = "ok",
+    has_scraped: bool = True,
+    scrape_succeeded: bool = True,
+    scrape_timed_out: bool = False,
+    scrape_state: int = 0,
+    scrape_result: str = "ok",
+):
+    st = SimpleNamespace()
+    st.site_name = "example"
+    st.fields = {
+        "announce": announce,
+        "hasAnnounced": has_announced,
+        "lastAnnounceSucceeded": announce_succeeded,
+        "lastAnnounceTimedOut": announce_timed_out,
+        "announceState": announce_state,
+        "lastAnnounceResult": announce_result,
+        "hasScraped": has_scraped,
+        "lastScrapeSucceeded": scrape_succeeded,
+        "lastScrapeTimedOut": scrape_timed_out,
+        "scrapeState": scrape_state,
+        "lastScrapeResult": scrape_result,
+    }
+    st.last_announce_succeeded = announce_succeeded
+    st.last_announce_timed_out = announce_timed_out
+    st.last_announce_result = announce_result
+    st.last_scrape_succeeded = scrape_succeeded
+    st.last_scrape_timed_out = scrape_timed_out
+    st.last_scrape_result = scrape_result
+    return st
+
+
 def _make_tr_torrent(tracker_stats=None):
     """伪 Transmission Torrent 对象（get_torrent 返回值）。"""
-    stats = []
-    for announce in tracker_stats or [_TRACKER_URL]:
-        st = SimpleNamespace()
-        st.site_name = "example"
-        st.fields = {"announce": announce}
-        st.last_announce_succeeded = True
-        st.last_announce_result = "ok"
-        st.last_scrape_succeeded = True
-        st.last_scrape_result = "ok"
-        stats.append(st)
+    stats = [
+        item if not isinstance(item, str) else _make_tr_tracker_stat(item)
+        for item in (tracker_stats or [_TRACKER_URL])
+    ]
     t = SimpleNamespace()
     t.id = 12345
     t.tracker_stats = stats
@@ -246,6 +278,39 @@ class TestAddTrackerSuccess:
         # 核心断言：TR 下载器方法真实执行（漏 await 修复前此处必然失败）
         tr_client.change_torrent.assert_called_once_with(12345, tracker_list=[[_TRACKER_URL]])
         tr_client.get_torrent.assert_called_once_with(12345)
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_add_tr_persists_failure_and_timeout_status_codes(self):
+        """手动新增 Tracker 也必须使用归一状态码，不能回退为 False/True。"""
+        torrent = SimpleNamespace(info_id="info-1", name="t1", downloader_id="dl-tr", torrent_id=12345)
+        dl = _make_downloader(downloader_id="dl-tr", downloader_type=1)
+        tracker_stat = _make_tr_tracker_stat(
+            _TRACKER_URL,
+            announce_succeeded=False,
+            announce_result="Connection refused",
+            scrape_succeeded=False,
+            scrape_timed_out=True,
+            scrape_result="Timed out",
+        )
+        tr_client = _make_tr_client(_make_tr_torrent([tracker_stat]))
+        db = _make_db(
+            [
+                _result(scalar=torrent),
+                _result(rows=[dl]),
+                _result(rows=[]),
+                _result(first=("info-1",)),
+            ]
+        )
+        req = _make_req([make_downloader_vo("dl-tr", client=tr_client, downloader_type=1)])
+
+        with _patch_passthrough():
+            result = await add_tracker(**self._args(req, db))
+
+        assert result.data["success_count"] == 1
+        tracker_row = db.add.call_args.args[0]
+        assert tracker_row.last_announce_succeeded == 3
+        assert tracker_row.last_scrape_succeeded == 4
         db.commit.assert_awaited_once()
 
 
@@ -449,6 +514,44 @@ class TestModifyTracker:
         assert result.data["success_count"] == 1
         tr_client.change_torrent.assert_called_once_with(12345, tracker_list=[[_TRACKER_URL]])
         tr_client.get_torrent.assert_called_once_with(12345)
+        db.commit.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_modify_tr_persists_not_contacted_and_sending_status_codes(self):
+        """手动修改 Tracker 时 announce/scrape 必须保持各自的中性状态。"""
+        torrent = SimpleNamespace(info_id="info-1", name="t1", downloader_id="dl-tr", torrent_id=12345)
+        dl = _make_downloader(downloader_id="dl-tr", downloader_type=1)
+        old_tracker = MagicMock(tracker_url=_TRACKER_URL)
+        tracker_stat = _make_tr_tracker_stat(
+            _TRACKER_URL,
+            has_announced=False,
+            announce_succeeded=False,
+            announce_state=0,
+            announce_result="stale error",
+            has_scraped=False,
+            scrape_succeeded=False,
+            scrape_state=1,
+            scrape_result="",
+        )
+        db = _make_db(
+            [
+                _result(rows=[old_tracker]),
+                _result(scalar=torrent),
+                _result(rows=[dl]),
+                MagicMock(),
+                _result(first=("info-1",)),
+            ]
+        )
+        tr_client = _make_tr_client(_make_tr_torrent([tracker_stat]))
+        req = _make_req([make_downloader_vo("dl-tr", client=tr_client, downloader_type=1)])
+
+        with _patch_passthrough():
+            result = await modify_tracker(**self._args(req, db))
+
+        assert result.data["success_count"] == 1
+        tracker_row = db.add.call_args.args[0]
+        assert tracker_row.last_announce_succeeded == 0
+        assert tracker_row.last_scrape_succeeded == 1
         db.commit.assert_awaited_once()
 
     @pytest.mark.asyncio
