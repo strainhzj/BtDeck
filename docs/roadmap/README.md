@@ -18,7 +18,7 @@ BtDeck/
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
 │   ├── tasks/           定时任务 + scheduler + 后台任务
 │   ├── domain/          领域目录（downloader / torrents / tracker / auth / user）
-│   └── infra/           utils + startup + migrations + alembic（18 个 revision，最新增加种子错误原因列）
+│   └── infra/           utils + startup + migrations + alembic（19 个 revision，最新错峰 Tracker 状态判断任务）
 ├── frontend/         ← Vue 2.6 + TypeScript 前端
 │   ├── entry/           应用入口（main.ts / router.ts / permission.ts / App.vue）
 │   ├── api/             axios API 封装（13 个领域模块）
@@ -115,10 +115,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索与错误原因修复） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索、错误原因及 Tracker 判断修复） |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏，并新增跨字段补集/空值分区及模板请求协议回归矩阵；Transmission 错误原因同步展示及 Tracker 状态码归一化，未联系/发送中不再归类为错误。 |
+| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏，并新增跨字段补集/空值分区及模板请求协议回归矩阵；Transmission 错误原因同步展示及 Tracker 状态码归一化；状态判断继续联合状态码与关键词，Working 且消息为空时明确正常，并以独立 Cron 在 Tracker 同步后 10 分钟执行，新增 zimiao 双 Tracker、真实写库、互斥准入与迁移边界回归。 |

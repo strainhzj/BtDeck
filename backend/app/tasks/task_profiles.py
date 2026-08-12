@@ -75,7 +75,7 @@ TASK_PROFILES: Dict[str, TaskProfile] = {
     ),
     "TORRENT_TRACKER_STATUS_JUDGE": _heavy(
         "TORRENT_TRACKER_STATUS_JUDGE",
-        "种子 Tracker 状态判断任务（5min，批量 20k+ 种子）",
+        "种子 Tracker 状态判断任务（30min，Tracker 同步后错峰，批量 20k+ 种子）",
     ),
     "TRACKER_MESSAGE_LOGGER": _heavy(
         "TRACKER_MESSAGE_LOGGER",

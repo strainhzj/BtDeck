@@ -12,6 +12,7 @@
 """
 
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -112,8 +113,8 @@ DEFAULT_SCHEDULED_TASKS = [
         "enabled": True,
         "last_execute_time": None,
         "last_execute_duration": None,
-        "cron_plan": "0 */5 * * *",  # 每5分钟执行
-        "description": "定期检查所有种子的tracker状态，根据关键词池（失败池、成功池、忽略池）智能判断tracker是否失败，自动更新has_tracker_error字段（间隔: 5分钟，批量处理20,000+种子）",
+        "cron_plan": "20,50 * * * *",  # 每30分钟执行（Tracker 状态同步后10分钟）
+        "description": "定期检查所有种子的tracker状态，根据状态码与关键词池（失败池、成功池、忽略池）共同判断tracker是否失败，自动更新has_tracker_error字段（每30分钟，在Tracker状态同步任务后10分钟执行，批量处理20,000+种子）",
         "timeout_seconds": 300,
         "max_retry_count": 0,
         "retry_interval": 300,
@@ -249,16 +250,10 @@ def init_default_scheduled_tasks(db_session) -> int:
 
         for task_data in DEFAULT_SCHEDULED_TASKS:
             # 检查任务是否已存在（通过 task_code 唯一性）
-            existing = (
-                db_session.query(CronTask)
-                .filter_by(task_code=task_data["task_code"])
-                .first()
-            )
+            existing = db_session.query(CronTask).filter_by(task_code=task_data["task_code"]).first()
 
             if existing:
-                logger.info(
-                    f"系统默认任务已存在，跳过: {task_data['task_name']} ({task_data['task_code']})"
-                )
+                logger.info(f"系统默认任务已存在，跳过: {task_data['task_name']} ({task_data['task_code']})")
                 continue
 
             # 创建新任务
@@ -285,9 +280,7 @@ def init_default_scheduled_tasks(db_session) -> int:
 
             db_session.add(task)
             created_count += 1
-            logger.info(
-                f"创建系统默认定时任务: {task_data['task_name']} ({task_data['task_code']})"
-            )
+            logger.info(f"创建系统默认定时任务: {task_data['task_name']} ({task_data['task_code']})")
 
         # 提交所有更改
         db_session.commit()
@@ -311,7 +304,7 @@ def get_default_scheduled_tasks() -> list:
     return DEFAULT_SCHEDULED_TASKS.copy()
 
 
-def get_task_by_code(task_code: str) -> dict:
+def get_task_by_code(task_code: str) -> Optional[dict]:
     """
     根据任务代码获取系统默认定时任务配置
 

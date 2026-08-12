@@ -20,7 +20,7 @@ Version: 1.0.0
 
 import asyncio
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, cast
 import logging
 import threading
 
@@ -33,19 +33,36 @@ from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 logger = logging.getLogger(__name__)
 
 
-def _tracker_is_not_contacted(tracker: TrackerInfo, downloader_type: Any) -> bool:
-    """判断 Tracker 是否处于未联系/发送中的中性状态。"""
+def _tracker_announce_status(tracker: TrackerInfo, downloader_type: Any) -> Optional[tuple[str, int]]:
+    """将下载器类型和 announce 状态归一化；无法识别时返回 ``None``。"""
     if downloader_type is None:
-        return False
+        return None
     try:
         type_name = DownloaderTypeEnum(DownloaderTypeEnum.normalize(downloader_type)).to_name()
         announce_status = int(tracker.last_announce_succeeded)
     except (TypeError, ValueError):
+        return None
+
+    return type_name, announce_status
+
+
+def _tracker_is_not_contacted(tracker: TrackerInfo, downloader_type: Any) -> bool:
+    """判断 Tracker 是否处于未联系/发送中的中性状态。"""
+    status = _tracker_announce_status(tracker, downloader_type)
+    if status is None:
         return False
+
+    type_name, announce_status = status
 
     if type_name == "qbittorrent":
         return announce_status == 1
     return announce_status in {0, 1}
+
+
+def _tracker_is_working(tracker: TrackerInfo, downloader_type: Any) -> bool:
+    """判断 Tracker 是否处于下载器定义的 Working 状态。"""
+    status = _tracker_announce_status(tracker, downloader_type)
+    return status is not None and status[1] == 2
 
 
 def evaluate_tracker_error_state(
@@ -66,11 +83,19 @@ def evaluate_tracker_error_state(
             has_neutral_tracker = True
             continue
 
-        messages = [
-            message
-            for message in (tracker.last_announce_msg or "", tracker.last_scrape_msg or "")
-            if message
-        ]
+        messages: List[str] = []
+        for raw_message in (tracker.last_announce_msg, tracker.last_scrape_msg):
+            if isinstance(raw_message, str) and raw_message.strip():
+                messages.append(cast(str, raw_message))
+
+        # Tracker 状态与关键词仍然共同参与判断：有消息时继续按关键词池分类；
+        # 仅当下载器明确报告 Working 且两类消息均为空时，才把它视为正常。
+        # 否则会把 qBittorrent/Transmission 常见的 ``Working + None`` 留在
+        # unknown 分支，导致数据库中的历史错误标记无法被清除。
+        if not messages and _tracker_is_working(tracker, downloader_type):
+            has_normal_tracker = True
+            continue
+
         tracker_matched = False
         for message in messages:
             keyword_type = keyword_map.get(message)
@@ -119,7 +144,7 @@ class TorrentTrackerStatusJudge:
     category = "tracker"
 
     # 任务配置
-    default_interval = 300  # 默认5分钟（300秒）
+    default_interval = 1800  # 默认30分钟（1800秒）
 
     # 性能优化常量
     BATCH_SIZE = 1000  # 批量处理种子数量
@@ -284,10 +309,11 @@ class TorrentTrackerStatusJudge:
 
             # 构建快速查找字典 (keyword -> type)
             # 如果存在重复keyword，保留priority最高的
-            keyword_map = {}
+            keyword_map: Dict[str, str] = {}
             for kw in keywords:
-                if kw.keyword not in keyword_map:
-                    keyword_map[kw.keyword] = kw.keyword_type
+                keyword = str(kw.keyword)
+                if keyword not in keyword_map:
+                    keyword_map[keyword] = str(kw.keyword_type)
                 else:
                     # 如果重复，保留priority更高的
                     existing = (
@@ -301,8 +327,8 @@ class TorrentTrackerStatusJudge:
                         .first()
                     )
                     if existing:
-                        keyword_map[kw.keyword] = existing.keyword_type
-                        logger.warning(f"发现重复关键词: {kw.keyword}，保留高优先级记录")
+                        keyword_map[keyword] = str(existing.keyword_type)
+                        logger.warning(f"发现重复关键词: {keyword}，保留高优先级记录")
 
             logger.info(f"加载关键词: {len(keyword_map)}条")
             return keyword_map
@@ -399,6 +425,10 @@ class TorrentTrackerStatusJudge:
                     if not torrent:
                         continue
 
+                    # 旧式 SQLAlchemy declarative 模型在 mypy 中会把实例字段误判为
+                    # ``Column``；运行时这里始终是 ORM 实例属性。
+                    torrent_row = cast(Any, torrent)
+
                     trackers = trackers_by_torrent.get(str(torrent.info_id), [])
 
                     # 判断是否有tracker
@@ -408,7 +438,7 @@ class TorrentTrackerStatusJudge:
                         continue
 
                     # 更新has_tracker_error字段
-                    old_value = torrent.has_tracker_error
+                    old_value = torrent_row.has_tracker_error
                     decision = evaluate_tracker_error_state(
                         trackers,
                         keyword_map,
@@ -416,11 +446,11 @@ class TorrentTrackerStatusJudge:
                     )
 
                     if decision is False:
-                        torrent.has_tracker_error = False
+                        torrent_row.has_tracker_error = False
                         with self._stats_lock:
                             self.total_at_least_one_normal += 1
                     elif decision is True:
-                        torrent.has_tracker_error = True
+                        torrent_row.has_tracker_error = True
                         with self._stats_lock:
                             self.total_all_failed += 1
                     else:
@@ -428,11 +458,11 @@ class TorrentTrackerStatusJudge:
                             self.total_no_change += 1
 
                     # 统计更新数量
-                    if torrent.has_tracker_error != old_value:
+                    if torrent_row.has_tracker_error != old_value:
                         with self._stats_lock:
                             self.total_torrents_updated += 1
 
-                    torrent.update_time = datetime.now()
+                    torrent_row.update_time = datetime.now()
                     with self._stats_lock:
                         self.total_torrents_processed += 1
 
@@ -487,7 +517,7 @@ class TorrentTrackerStatusJudge:
     def get_schedule_config(self) -> Dict[str, Any]:
         """获取调度配置建议"""
         return {
-            "cron_expression": "0 */5 * * *",  # 每5分钟执行一次
+            "cron_expression": "20,50 * * * *",  # Tracker 同步后 10 分钟执行
             "timezone": "Asia/Shanghai",
             "max_instances": 1,  # 防止重叠执行
             "coalesce": True,  # 合并错过的执行

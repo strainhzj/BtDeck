@@ -1,5 +1,27 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-12 交接：Tracker Working 空消息判定与独立 Cron 错峰
+
+### 当前结果
+
+- 状态判断仍联合使用下载器状态码和关键词：Working 且 announce/scrape 消息均为空时明确正常；
+  有非空消息时关键词继续生效，未知消息保持原值，未联系/发送中仍为中性。
+- 独立状态判断任务改为 `20,50 * * * *`，在 `10,40 * * * *` 的 Tracker 状态同步后 10 分钟；
+  新 head `4c1d8e7a2b90` 只迁移未自定义的系统旧值，并支持对称 downgrade。
+- `E:\Users\huangzj\Desktop\app.db` 始终只读。346 个 zimiao 样例重放为 316 正常、30 明确错误、
+  0 未知；293 个历史错误标记会由下一轮状态判断清除。
+- 新增 36 组 zimiao 双 Tracker 顺序/下载器类型/空消息矩阵，并覆盖真实 SQLite 写回、软删除、
+  同步/判断重任务互斥和迁移幂等/自定义值保护。
+- 按用户要求仅提交本次相关文件，不推送、不部署；任务前已有的备份、镜像、缓存及工具未跟踪文件未触碰。
+
+### 验证与环境说明
+
+- 判断+迁移定向 `80 passed`；迁移/回滚/任务准入相关 `130 passed`；后端全量
+  `3316 passed, 7 skipped`（3323 collected）。
+- 目标 mypy、Flake8、Ruff、Black API check、compileall、BtDeck 架构门禁、单 Alembic head、
+  feature_list JSON 解析和 `git diff --check` 通过。
+- 根 `init.sh` 因 Windows WSL `E_ACCESSDENIED` 未运行，已用后端全量及分项工具完成等价校验。
+
 ## 2026-08-12 交接：高级搜索跨字段回归矩阵加固
 
 ### 当前结果

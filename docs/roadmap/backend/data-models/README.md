@@ -59,13 +59,13 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 默认任务种子 default-tasks | `default_scheduled_tasks.py` | 11 个系统默认定时任务种子（见下方清单） |
+| 默认任务种子 default-tasks | `default_scheduled_tasks.py` | 11 个系统默认定时任务种子；Tracker 状态同步为 `10,40 * * * *`，独立状态判断为 `20,50 * * * *`（见下方清单） |
 | 默认搜索模板 default-search | `default_search_templates.py` | 4 个预设搜索查询模板（v1.0.5）幂等初始化 |
 | 默认配置模板 default-templates | `default_templates.py` | 5 个下载器配置模板（qb 标准/高性能、trans 标准/高性能、夜间不限速） |
 | 默认关键词 default-keywords | `default_tracker_keywords.py` | Tracker 关键词池默认数据（成功/失败/忽略池） |
 
 `default_scheduled_tasks.py` 提供的 11 个 task_code（行号实测）：
-`cached_downloader_sync`(L40)、`TRACKER_MESSAGE_LOGGER`(L57)、`downloader_path_scan`(L74)、`Tag_Data_Sync`(L91)、`TORRENT_TRACKER_STATUS_JUDGE`(L108)、`torrent_info_sync_ac608e4d`(L125)、`tracker_sync_598b784c`(L142)、`tracker_reannounce`(L159)、`orphan_scan_cleanup`(L176)、`orphan_quarantine_purge`(L193)、`orphan_notification_retry`(L210)
+`cached_downloader_sync`(L41)、`TRACKER_MESSAGE_LOGGER`(L58)、`downloader_path_scan`(L75)、`Tag_Data_Sync`(L92)、`TORRENT_TRACKER_STATUS_JUDGE`(L109)、`torrent_info_sync_ac608e4d`(L126)、`tracker_sync_598b784c`(L143)、`tracker_reannounce`(L160)、`orphan_scan_cleanup`(L177)、`orphan_quarantine_purge`(L194)、`orphan_notification_retry`(L211)
 
 ### enums/
 

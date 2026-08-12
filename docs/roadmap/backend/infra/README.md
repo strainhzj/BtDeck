@@ -60,11 +60,11 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L97) + `run_migrations_online`(L121)，处理 PyInstaller `_MEIPASS` + 集中 import 所有 ORM 模型 |
-| Alembic revisions versions | `versions/` | **18 个** revision 文件；当前 head 为 `de898cb28172`（见下表） |
+| Alembic revisions versions | `versions/` | **19 个** revision 文件；当前 head 为 `4c1d8e7a2b90`（见下表） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（18 个迁移文件）
+### alembic/versions/（19 个迁移文件）
 
 | 关键词 | 文件名 | 内容（从命名推断） |
 |--------|--------|-------------------|
@@ -86,6 +86,7 @@
 | 清理延后计数 purge-delay | `f0e1d2c3b4a5_orphan_purge_delay_count.py` | 增加到期清理因硬链接延后的累计次数 |
 | 任务结果新鲜度 task-outcome | `f5e6d7c8b9a0_add_task_outcome_freshness.py` | 增加定时任务最近结果与新鲜度字段 |
 | 种子错误原因 torrent-error-reason | `de898cb28172_add_torrent_error_reason.py` ✨2026-08-12 | 为 `torrent_info` 增加可空 Text `error_reason`；历史数据保持空值，upgrade/downgrade 均带列存在守卫 |
+| Tracker 判断错峰 tracker-judge-stagger | `4c1d8e7a2b90_stagger_tracker_status_judge_schedule.py` ✨2026-08-12 | 将未自定义的独立状态判断 Cron 从旧计划迁到 `20,50 * * * *`，在 Tracker 同步后 10 分钟执行；upgrade/downgrade 均只命中已知系统值 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 
