@@ -240,4 +240,99 @@ describe('高级搜索运行时契约', () => {
     expect(ADVANCED_SEARCH_FIELDS.category.operators).toContain('is_not_null')
     expect(ADVANCED_SEARCH_FIELDS.name.operators).not.toContain('is_null')
   })
+
+  test.each([
+    ['completed_date', 'date', 'is_null'],
+    ['completed_date', 'date', 'is_not_null'],
+    ['ratio', 'number', 'is_null'],
+    ['ratio', 'number', 'is_not_null'],
+    ['ratio_limit', 'number', 'is_null'],
+    ['ratio_limit', 'number', 'is_not_null'],
+    ['tags', 'multiSelect', 'is_null'],
+    ['tags', 'multiSelect', 'is_not_null'],
+    ['category', 'multiSelect', 'is_null'],
+    ['category', 'multiSelect', 'is_not_null']
+  ] as const)(
+    '可空字段 %s/%s 在状态转换与序列化时始终使用 null',
+    (field, kind, operator) => {
+      expect(ADVANCED_SEARCH_FIELDS[field].operators).toContain(operator)
+      expect(transitionConditionValue(field, kind, operator)).toBeNull()
+      expect(
+        formatConditionValue(field, kind, operator, '历史残留值')
+      ).toBeNull()
+    }
+  )
+
+  test.each([
+    ['name', 'text'],
+    ['size', 'number'],
+    ['status', 'multiSelect'],
+    ['added_date', 'date'],
+    ['downloader_name', 'multiSelect'],
+    ['super_seeding', 'select'],
+    ['tracker_url', 'text'],
+    ['enabled', 'boolean']
+  ] as const)(
+    '非空字段 %s/%s 不会意外继承未设置操作符',
+    (field) => {
+      expect(ADVANCED_SEARCH_FIELDS[field].operators).not.toContain('is_null')
+      expect(ADVANCED_SEARCH_FIELDS[field].operators).not.toContain(
+        'is_not_null'
+      )
+    }
+  )
+
+  test.each([
+    ['name', 'text', 'contains', 'Avatar'],
+    ['ratio', 'number', 'greater_than', 2],
+    ['completed_date', 'date', 'equals', '2026-03-01'],
+    ['category', 'multiSelect', 'in', ['电影']],
+    ['tags', 'multiSelect', 'contains_any', ['movie']],
+    ['status', 'multiSelect', 'in', ['error']],
+    ['downloader_name', 'multiSelect', 'in', ['d1']],
+    ['super_seeding', 'select', 'equals', 'unsupported'],
+    ['tracker_url', 'text', 'contains', 'azusa']
+  ] as const)(
+    '排除模式矩阵保留正向操作符：%s/%s',
+    (field, kind, operator, value) => {
+      const conditionValue: string | number | string[] = Array.isArray(value)
+        ? value.map(item => String(item))
+        : value as string | number
+      const params = buildAdvancedSearchParams([
+        {
+          id: 'g1',
+          logic: 'and',
+          conditions: [
+            {
+              id: 'c1',
+              field,
+              operator,
+              value: conditionValue,
+              mode: 'exclude'
+            }
+          ]
+        }
+      ])
+      const groups = JSON.parse(params.groups) as Array<{
+        conditions: Array<{
+          operator: string
+          value: unknown
+          mode: string
+        }>
+      }>
+      const expectedOperator = ADVANCED_SEARCH_OPERATOR_MAPPING[operator]
+      if (!expectedOperator) throw new Error(`missing operator: ${operator}`)
+
+      expect(ADVANCED_SEARCH_FIELDS[field].kind).toBe(kind)
+      expect(groups[0].conditions[0]).toEqual(
+        expect.objectContaining({
+          operator: expectedOperator,
+          mode: 'exclude'
+        })
+      )
+      expect(groups[0].conditions[0].operator).not.toBe(
+        ADVANCED_SEARCH_NEGATED_OPERATORS[expectedOperator]
+      )
+    }
+  )
 })
