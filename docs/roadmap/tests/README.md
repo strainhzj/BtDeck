@@ -22,7 +22,7 @@
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
 | 前端 jest 测试 jest | `frontend/tests/unit/` | 32 个 Jest 单元测试（新增文件管理 nickname/UI 与种子错误原因展示契约） |
-| 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2584 行）+ LucideIcon.spec.ts（185 行） |
+| 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2612 行）+ LucideIcon.spec.ts（185 行） |
 
 ## backend/tests/（141 个 test_*.py + 支持文件）
 
@@ -73,14 +73,14 @@ cd backend && pytest tests/api/               # API 层（48 个 test_*.py）
 ### 组件内嵌测试
 
 部分组件有内嵌 `__tests__/`：
-- `frontend/src/components/torrents/__tests__/`（7 个 spec，2584 行）
+- `frontend/src/components/torrents/__tests__/`（7 个 spec，2612 行）
   - `AdvancedMultiSelect.performance.spec.ts`（466 行，性能测试）
   - `AdvancedMultiSelect.spec.ts`（571 行）
-  - `AdvancedSearchBuilder.spec.ts`（685 行）
+  - `AdvancedSearchBuilder.spec.ts`（684 行）
   - `AdvancedSearchWorkspace.spec.ts`（389 行）
-  - `ConditionValueInput.spec.ts`（200 行）
-  - `FilterGroup.spec.ts`（97 行）
-  - `QuickDeleteDuplicatesDialog.spec.ts`（176 行）
+  - `ConditionValueInput.spec.ts`（243 行）
+  - `FilterGroup.spec.ts`（89 行）
+  - `QuickDeleteDuplicatesDialog.spec.ts`（170 行）
 - `frontend/src/components/common/__tests__/` ✨v1.0.6.28
   - `LucideIcon.spec.ts`（185 行）
 
@@ -96,9 +96,9 @@ cd frontend && npm run test:unit    # jest
 
 - **后端测试组织良好**：159 个 .py（其中 141 个 test_*.py）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
-- **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是本次新增覆盖的重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（1770 行）/ `test_advanced_search_models_strict.py` / `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
+- **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（1846 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（v1.0.6.26，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制
-- **2026-08-12 回归**：`test_transmission_error_sync.py` 覆盖错误文本持久化、恢复清空、新旧 RPC 与 legacy/async 状态写库，`test_tracker_migration.py` 覆盖手动 Tracker 新增/修改，`test_torrent_tracker_status_judge.py` 覆盖真实 SQLite 批量判定，`test_torrent_backup_review.py` 覆盖 nickname 单查询批量解析；前端文件管理/错误原因契约与 Builder 多条件组、状态中性边界共同防退化
+- **2026-08-12 回归**：除错误原因/Tracker 状态/nickname 用例外，`test_advanced_search_regression.py` + 严格模型测试覆盖 Tracker 多行否定、SQL 通配符字面量、标签 token、回收站排除、下载器改名、超级做种三态、空值白名单与 include/exclude 补集；前端契约、Builder、输入控件和请求转换共同防止协议双重取反
 - **前端测试集中在核心组件**：`components/torrents/` 的搜索/多选组件有完整单测（含性能测试），其他组件测试覆盖较薄
 - **孤儿文件回归**：`test_orphan_hardlink_detection.py` 覆盖 `st_nlink - 1`、多 inode 单轮路径定位/重复 ID 去重、范围外未定位数、扫描失败降级与清理删除诊断；`test_orphan_files_api.py` 守卫 1~5000 项请求边界；`orphan-files.spec.ts` 覆盖数量链接、文件夹批量查询、位置弹框、复制路径、过期响应隔离及异常提示；任务/查询状态测试继续覆盖重复提交、混合跳过与终态释放
 - **架构约束测试**：`test_architecture_constraints.py` 是防退化机制（自动检测反模式）

@@ -82,6 +82,7 @@ export interface AdvancedSearchTemplateDraft {
 }
 
 export type AdvancedSearchWireValue =
+  | null
   | string
   | number
   | string[]
@@ -218,6 +219,7 @@ export function defaultConditionValue(
   operator: string
 ): AdvancedSearchConditionValue {
   if (!field || !fieldKind) return null
+  if (operator === 'is_null' || operator === 'is_not_null') return null
   if (field === 'size') {
     return operator === 'between'
       ? { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
@@ -285,6 +287,7 @@ export function normalizeLoadedConditionValue(
   operator: string,
   value: unknown
 ): AdvancedSearchConditionValue {
+  if (operator === 'is_null' || operator === 'is_not_null') return null
   if (value === null || value === undefined) {
     return defaultConditionValue(field, fieldKind, operator)
   }
@@ -357,6 +360,23 @@ export function normalizeLoadedConditionValue(
       max: legacyNumber(range.max)
     }
   }
+  if (field === 'super_seeding') {
+    if (value === true || value === 'true' || value === 1 || value === '1') {
+      return '1'
+    }
+    if (
+      value === false ||
+      value === 'false' ||
+      value === 0 ||
+      value === '0'
+    ) {
+      return '0'
+    }
+    if (value === 'unsupported' || value === 'unknown') {
+      return 'unsupported'
+    }
+    throw new AdvancedSearchValidationError('模板中的超级做种状态无效')
+  }
   if (fieldKind === 'number') {
     return legacyNumber(value)
   }
@@ -391,6 +411,22 @@ export function normalizeLoadedOperator(
     throw new AdvancedSearchValidationError(
       `模板包含未知操作符：${operator || '未选择'}`
     )
+  }
+  if (field === 'tags') {
+    if (
+      frontendOperator === 'equals' ||
+      frontendOperator === 'contains' ||
+      frontendOperator === 'in'
+    ) {
+      return 'contains_any'
+    }
+    if (
+      frontendOperator === 'not_equals' ||
+      frontendOperator === 'not_contains' ||
+      frontendOperator === 'not_in'
+    ) {
+      return 'not_contains_any'
+    }
   }
   if (EXACT_MULTI_SELECT_FIELDS.has(field)) {
     if (
@@ -443,6 +479,8 @@ export function formatConditionValue(
   operator: string,
   value: unknown
 ): AdvancedSearchWireValue {
+  if (operator === 'is_null' || operator === 'is_not_null') return null
+
   if (field === 'size' && operator === 'between') {
     if (!isRecord(value)) {
       throw new AdvancedSearchValidationError('种子大小范围结构无效')
@@ -623,9 +661,17 @@ export function buildAdvancedSearchParams(
           `条件组${groupIndex + 1}第${conditionIndex + 1}项未选择有效字段`
         )
       }
+      if (
+        condition.mode === 'exclude' &&
+        !operatorSupportsExclude(condition.operator)
+      ) {
+        throw new AdvancedSearchValidationError(
+          `操作符“${condition.operator}”不支持排除模式`
+        )
+      }
       const backendOperator = resolveBackendOperator(
         condition.operator,
-        condition.mode
+        'include'
       )
       if (!field.operators.includes(backendOperator)) {
         throw new AdvancedSearchValidationError(

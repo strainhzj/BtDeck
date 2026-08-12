@@ -124,11 +124,11 @@ HTTP POST /api/v1/advanced-search
   └─ app/api/endpoints/advanced_search.py  (436 行)
        │
        ├─ [请求期契约校验]
-       │    app/api/models/advanced_search.py  (692 行, Pydantic)
+       │    app/api/models/advanced_search.py  (706 行, Pydantic)
        │      └─ import app/contracts/advanced_search.py
        │            └─ ADVANCED_SEARCH_CONTRACT ← advanced_search_contract.json
        │                 （SUPPORTED_SEARCH_OPERATORS / allowed_operators_for_field / FRONTEND_TO_BACKEND_OPERATOR）
-       │      → 拒绝"前端可选但契约未声明"的操作符
+       │      → 字段级白名单；include/exclude 模式独立；旧模板值兼容归一
        │
        ├─ [正则执行熔断]（仅 regex 类条件）
        │    app/services/sqlite_search_runtime.py  (100 行)
@@ -136,13 +136,14 @@ HTTP POST /api/v1/advanced-search
        │      └─ _sqlite_bt_regexp       (单次 match 10ms 超时 + 查询总预算 2s 双重熔断，防 ReDoS)
        │
        └─ [ORM 查询执行]
-            app/services/advanced_search.py  AdvancedSearchService (1350 行)
-              ├─ 13 字段查询引擎（v1.0.6.25 起 ratio 4 操作符 eq/ne/gt/lt + is_null/is_not_null）
-              ├─ ratio/ratio_limit 值经 app/services/torrent_ratio_values.py 三态规范化（value/explicit_null/unavailable）
-              └─ CHECK 约束 ck_torrent_info_ratio_finite_nonnegative（alembic 8f4c2d1a9b7e）兜底
+            app/services/advanced_search.py  AdvancedSearchService (1397 行)
+              ├─ 20 字段查询引擎；字段级空值操作符 + include/exclude 严格补集
+              ├─ Tracker 否定以 NOT EXISTS 覆盖多 Tracker；文本通配符按字面、标签按完整 token
+              ├─ 下载器 UI 提交稳定 ID，并兼容当前/历史 nickname；超级做种是/否/不支持三态
+              └─ 基础查询排除 dr/deleted_at/活动删除，避免回收站泄漏
 ```
 
-> **前后端契约守卫**：前端 `frontend/tests/unit/operator-contract.spec.ts`（v1.0.6.26）镜像同一份操作符语义，与后端 `app/contracts/advanced_search_contract.json` 形成 dual-source 守卫（任一端改动另一端测试即失败）。
+> **前后端契约守卫**：`advanced_search_contract.json` 是单一源，前端生成 `advancedSearch.generated.ts`；`npm run contract:check` 检测生成漂移，`operator-contract.spec.ts` 再执行运行时值/模式兼容守卫。
 
 ---
 

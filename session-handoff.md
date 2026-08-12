@@ -1,5 +1,31 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-12 交接：高级搜索全字段语义修复（未提交）
+
+### 当前结果
+
+- 已完成状态字段之外的 20 字段审计与修复：Tracker 关系否定采用 `NOT EXISTS`；文本 `%`/`_`
+  字面匹配；标签完整 token；下载器稳定 ID + 新旧 nickname 兼容；超级做种是/否/不支持三态；
+  完成时间/比率/比率限制/标签/分类提供字段级空值查询；回收站不再进入高级搜索基础集。
+- 前端 Builder 只展示字段契约允许的操作符；空值条件不显示输入框；下载器显示 nickname 但提交
+  ID；模板旧布尔/标签操作符可兼容回填。
+- `mode=exclude` 现在作为独立协议字段贯穿 Builder、模板、`torrentBatch`、Pydantic 与 ORM，
+  操作符不再提前翻转，后端取严格补集并正确包含 NULL/未设置值。
+- 用户原始结构 `tracker_url contains azusa` + `status in [error]` 已用真实内存 SQLite 验证，
+  返回 `total=1`。
+- 无数据库迁移；未 stage/commit/push/deploy。此前未跟踪的备份、镜像、缓存与工具目录均未触碰。
+
+### 验证与环境说明
+
+- 后端全量 `3233 passed, 7 skipped`，相关套件 `235 passed`、语义重点 `142 passed`；前端全量
+  `43 suites, 686 passed`，相关 4 suites/`119 passed`、重点契约 2 suites/`82 passed`。
+- Ruff、Flake8、目标 ESLint、TypeScript、`contract:check`、生产 build、`git diff --check` 通过。
+- 根 `./init.sh` 在当前 Windows 环境无法启动：默认 WSL 返回 `E_ACCESSDENIED`，提权运行环境无
+  `/bin/bash`；本轮采用分端等价校验。完整前端 lint 仍只受 3 个无关关键词测试文件的 5 条既有
+  warning 影响。
+- 下一步若用户要求提交：只纳入本轮源码/测试文件和本节项目记录/路线图，不要纳入任务前
+  未跟踪产物；提交前再跑最终相关套件和 `git diff --check`。
+
 ## 2026-08-12 交接：种子文件、任务日志、高级搜索与错误原因七项修复及回归加固
 
 ### 当前结果

@@ -582,7 +582,21 @@ function parseConditionGroups(value: unknown): NonNullable<
             `条件组${groupIndex + 1}第${conditionIndex + 1}项缺少值`
           )
         }
-        return { field, operator, value: rawCondition.value }
+        const rawMode = rawCondition.mode
+        if (
+          rawMode !== undefined &&
+          rawMode !== 'include' &&
+          rawMode !== 'exclude'
+        ) {
+          throw new AdvancedSearchValidationError(
+            `条件组${groupIndex + 1}第${conditionIndex + 1}项模式无效`
+          )
+        }
+        const mode: 'include' | 'exclude' = rawMode === 'exclude'
+          ? 'exclude'
+          : 'include'
+        const condition = { field, operator, value: rawCondition.value }
+        return mode === 'exclude' ? { ...condition, mode } : condition
       }
     )
     return { logic, conditions }

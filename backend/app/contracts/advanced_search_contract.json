@@ -1,5 +1,5 @@
 {
-  "version": 2,
+  "version": 3,
   "maxRegexConditions": 3,
   "maxRegexPatternLength": 256,
   "nullOperators": ["is_null", "is_not_null"],
@@ -35,12 +35,12 @@
     "status": {"kind": "multiSelect", "operators": ["eq", "ne", "in", "not_in"]},
     "added_date": {"kind": "date", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "last_days", "date_range"]},
     "added_time": {"kind": "date", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "last_days", "date_range"]},
-    "completed_date": {"kind": "date", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "last_days", "date_range"]},
-    "ratio": {"kind": "number", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between"]},
-    "ratio_limit": {"kind": "number", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between"]},
-    "tags": {"kind": "multiSelect", "operators": ["eq", "ne", "contains", "not_contains", "contains_any", "contains_all", "not_contains_any", "not_contains_all"]},
-    "category": {"kind": "multiSelect", "operators": ["eq", "ne", "in", "not_in"]},
-    "super_seeding": {"kind": "boolean", "operators": ["eq", "ne"]},
+    "completed_date": {"kind": "date", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "last_days", "date_range", "is_null", "is_not_null"]},
+    "ratio": {"kind": "number", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "is_null", "is_not_null"]},
+    "ratio_limit": {"kind": "number", "operators": ["eq", "ne", "gt", "gte", "lt", "lte", "between", "is_null", "is_not_null"]},
+    "tags": {"kind": "multiSelect", "operators": ["eq", "ne", "contains", "not_contains", "contains_any", "contains_all", "not_contains_any", "not_contains_all", "is_null", "is_not_null"]},
+    "category": {"kind": "multiSelect", "operators": ["eq", "ne", "in", "not_in", "is_null", "is_not_null"]},
+    "super_seeding": {"kind": "select", "operators": ["eq", "ne"]},
     "enabled": {"kind": "boolean", "operators": ["eq", "ne"]},
     "tracker_url": {"kind": "text", "operators": ["eq", "ne", "contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with", "in", "not_in", "regex"]},
     "tracker_msg": {"kind": "text", "operators": ["eq", "ne", "contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with", "in", "not_in", "regex"]}
@@ -62,7 +62,9 @@
       {"value": "less_than", "label": "小于", "backendValue": "lt"},
       {"value": "greater_equal", "label": "大于等于", "backendValue": "gte"},
       {"value": "less_equal", "label": "小于等于", "backendValue": "lte"},
-      {"value": "between", "label": "介于", "backendValue": "between"}
+      {"value": "between", "label": "介于", "backendValue": "between"},
+      {"value": "is_null", "label": "未设置", "backendValue": "is_null"},
+      {"value": "is_not_null", "label": "已设置", "backendValue": "is_not_null"}
     ],
     "date": [
       {"value": "equals", "label": "等于", "backendValue": "eq"},
@@ -72,7 +74,9 @@
       {"value": "greater_equal", "label": "不早于", "backendValue": "gte"},
       {"value": "less_equal", "label": "不晚于", "backendValue": "lte"},
       {"value": "last_days", "label": "最近N天", "backendValue": "last_days"},
-      {"value": "date_range", "label": "日期范围", "backendValue": "date_range"}
+      {"value": "date_range", "label": "日期范围", "backendValue": "date_range"},
+      {"value": "is_null", "label": "未设置", "backendValue": "is_null"},
+      {"value": "is_not_null", "label": "已设置", "backendValue": "is_not_null"}
     ],
     "select": [
       {"value": "equals", "label": "等于", "backendValue": "eq"},
@@ -84,7 +88,9 @@
       {"value": "in", "label": "包含任意", "backendValue": "in"},
       {"value": "not_in", "label": "不包含任意", "backendValue": "not_in"},
       {"value": "contains_any", "label": "包含任意", "backendValue": "contains_any"},
-      {"value": "not_contains_any", "label": "不包含任意", "backendValue": "not_contains_any"}
+      {"value": "not_contains_any", "label": "不包含任意", "backendValue": "not_contains_any"},
+      {"value": "is_null", "label": "未设置", "backendValue": "is_null"},
+      {"value": "is_not_null", "label": "已设置", "backendValue": "is_not_null"}
     ],
     "boolean": [
       {"value": "equals", "label": "等于", "backendValue": "eq"},

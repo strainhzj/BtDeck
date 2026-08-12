@@ -359,6 +359,7 @@ import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
 import { extractErrorMessage } from '@/utils/formatters'
 import { ApiResponse } from '@/types/api'
 import {
+  ADVANCED_SEARCH_FIELDS,
   ADVANCED_SEARCH_OPERATOR_GROUPS,
   AdvancedSearchFieldKind,
   AdvancedSearchOperatorConfig
@@ -474,7 +475,7 @@ export default class AdvancedSearchBuilder extends Vue {
     {
       key: 'super_seeding',
       label: '超级做种',
-      type: 'boolean',
+      type: 'select',
       supportsExclude: true
     }
   ]
@@ -572,11 +573,11 @@ export default class AdvancedSearchBuilder extends Vue {
       console.error('获取标签失败:', tagRes.reason)
     }
 
-    // 下载器（value 用 nickname：TorrentInfo.downloader_name 存的就是 downloader.nickname）
+    // 下载器显示 nickname，但请求值使用稳定 downloader_id，昵称变更不影响已选条件。
     if (downloaderRes.status === 'fulfilled') {
       const body = downloaderRes.value as ApiResponse<DownloaderSimple[]>
       if (body.code === '200' && Array.isArray(body.data)) {
-        this.downloaderOptions = body.data.map(d => ({ label: d.nickname, value: d.nickname }))
+        this.downloaderOptions = body.data.map(d => ({ label: d.nickname, value: d.downloader_id }))
       } else {
         failedCount += 1
       }
@@ -783,8 +784,9 @@ export default class AdvancedSearchBuilder extends Vue {
     switch (fieldKey) {
       case 'super_seeding':
         return [
-          { label: '是', value: 'true' },
-          { label: '否', value: 'false' }
+          { label: '是', value: '1' },
+          { label: '否', value: '0' },
+          { label: '不支持', value: 'unsupported' }
         ]
 
       case 'category':
@@ -811,7 +813,10 @@ export default class AdvancedSearchBuilder extends Vue {
 
     // 基本操作符
     if (this.operatorGroups[fieldType]) {
-      let operators = this.operatorGroups[fieldType]
+      const allowedOperators = ADVANCED_SEARCH_FIELDS[fieldKey]?.operators || []
+      let operators = this.operatorGroups[fieldType].filter(operator =>
+        allowedOperators.includes(operator.backendValue)
+      )
       // multiSelect 字段按 matchMode 过滤：
       // - exact（status/category/downloader_name 单值列）只暴露 in/not_in
       // - substring（tags 逗号串列）只暴露 contains_any/not_contains_any
@@ -819,8 +824,9 @@ export default class AdvancedSearchBuilder extends Vue {
       // 也避免对逗号串列暴露 in（语义错：整串相等而非子串）。
       if (fieldType === 'multiSelect') {
         const exactOps = ['in', 'not_in']
+        const nullOps = ['is_null', 'is_not_null']
         operators = field.matchMode === 'exact'
-          ? operators.filter(op => exactOps.includes(op.value))
+          ? operators.filter(op => exactOps.includes(op.value) || nullOps.includes(op.value))
           : operators.filter(op => !exactOps.includes(op.value))
       }
       groups.push({

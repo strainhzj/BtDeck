@@ -521,6 +521,43 @@ describe('P1-F - buildAdvancedSearchRequest', () => {
     expect(request.between_group_logics).toEqual(['AND'])
   })
 
+  it('保留显式 exclude 模式并省略默认 include 模式', () => {
+    const result = buildAdvancedSearchRequest({
+      groups: JSON.stringify([
+        {
+          logic: 'and',
+          conditions: [
+            { field: 'ratio', operator: 'lte', value: 2, mode: 'exclude' },
+            { field: 'name', operator: 'contains', value: 'test', mode: 'include' }
+          ]
+        }
+      ]),
+      between_group_logics: JSON.stringify([])
+    }, 'added_date', 20)
+    const request = requireAdvancedRequest(result.request)
+    expect(request.condition_groups?.[0].conditions).toEqual([
+      { field: 'ratio', operator: 'lte', value: 2, mode: 'exclude' },
+      { field: 'name', operator: 'contains', value: 'test' }
+    ])
+  })
+
+  it('拒绝未知条件模式，避免静默退化为 include', () => {
+    const result = buildAdvancedSearchRequest({
+      groups: JSON.stringify([
+        {
+          logic: 'and',
+          conditions: [
+            { field: 'ratio', operator: 'lte', value: 2, mode: 'unexpected' }
+          ]
+        }
+      ]),
+      between_group_logics: JSON.stringify([])
+    }, 'added_date', 20)
+
+    expect(result.request).toBeNull()
+    expect(result.error).toContain('模式无效')
+  })
+
   it('between_group_logics 非数组时明确拒绝', () => {
     const searchParams = {
       groups: JSON.stringify([{ logic: 'and', conditions: [{ field: 'name', operator: 'eq', value: 'one' }] }]),
@@ -601,7 +638,7 @@ describe('buildAdvancedSearchRequestFromTemplateGroups', () => {
     expect(conditionGroups[0].conditions).toEqual([
       { field: 'name', operator: 'eq', value: 'ubuntu' },
       { field: 'size', operator: 'gt', value: '1.5 GB' },
-      { field: 'tags', operator: 'not_contains_any', value: ['linux', 'iso'] },
+      { field: 'tags', operator: 'contains_any', value: ['linux', 'iso'], mode: 'exclude' },
       { field: 'super_seeding', operator: 'eq', value: '1' }
     ])
     expect(conditionGroups[1].conditions[0]).toEqual({

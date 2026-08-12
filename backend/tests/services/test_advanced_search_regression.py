@@ -677,7 +677,7 @@ class TestOperatorMappingRealDb:
     # --- NULL 类操作符 ---
 
     def test_is_null_on_tags(self, db_session):
-        """is_null 对 tags：命中 tags=NULL 的 t4。
+        """标签“未设置”统一命中 tags=NULL 的 t4 与 tags='' 的 t5。
 
         注意：SearchCondition.value 是 Pydantic 必填字段（Union 不含 None），
         但 OPERATOR_MAPPING 的 is_null lambda 忽略 value，故传占位字符串。
@@ -687,7 +687,7 @@ class TestOperatorMappingRealDb:
         builder.base_query = builder.base_query.filter(
             builder._build_condition_filter(SearchCondition(field="tags", operator="is_null", value="_ignored_"))
         )
-        assert {r.info_id for r in builder.base_query.all()} == {"t4"}
+        assert {r.info_id for r in builder.base_query.all()} == {"t4", "t5"}
 
     def test_is_not_null_on_completed_date(self, db_session):
         """is_not_null 对 completed_date：t2(2026-03-01)+t5(2026-05-25)"""
@@ -735,14 +735,13 @@ class TestOperatorMappingRealDb:
         assert {r.info_id for r in builder.base_query.all()} == {"t1"}
 
     def test_not_contains_any_excludes_matching(self, db_session):
-        """not_contains_any(['movie'])：排除含 movie 的 t1/t3；t4(NULL) 被 SQL NULL 语义排除"""
+        """not_contains_any 是 contains_any 的严格补集，未设置标签也应命中。"""
         _seed_torrents(db_session)
         builder = SearchQueryBuilder(db_session)
         builder.base_query = builder.base_query.filter(
             builder._build_condition_filter(SearchCondition(field="tags", operator="not_contains_any", value=["movie"]))
         )
-        # t2(flac) 不含 movie 命中；t1/t3 含 movie 排除；t4(NULL) NOT(NULL LIKE)→NULL 排除；t5("") 不含 movie 命中
-        assert {r.info_id for r in builder.base_query.all()} == {"t2", "t5"}
+        assert {r.info_id for r in builder.base_query.all()} == {"t2", "t4", "t5"}
 
     def test_not_contains_all_excludes_rows_matching_all(self, db_session):
         """not_contains_all(['movie','4k'])：排除同时含两者的（t1）"""
@@ -754,7 +753,7 @@ class TestOperatorMappingRealDb:
             )
         )
         # NOT(tags LIKE movie AND tags LIKE 4k)：t1 同时含两者被排除
-        assert {r.info_id for r in builder.base_query.all()} == {"t2", "t3", "t5"}
+        assert {r.info_id for r in builder.base_query.all()} == {"t2", "t3", "t4", "t5"}
 
     def test_contains_any_with_comma_string_value_fallback(self, db_session):
         """contains_any 收到逗号串 value（历史形态）→ _normalize_multi_value 拆分"""
@@ -1139,7 +1138,7 @@ class TestTrackerSubqueryRealDb:
         assert {r.info_id for r in builder.base_query.all()} == {"t1", "t4"}
 
     def test_tracker_url_not_contains(self, db_session):
-        """tracker_url not_contains 'tracker4' → 排除 t4；但需注意 EXISTS 语义"""
+        """tracker_url not_contains 是“存在匹配 tracker”的严格补集。"""
         _seed_torrents(db_session)
         builder = SearchQueryBuilder(db_session)
         builder.base_query = builder.base_query.filter(
@@ -1147,11 +1146,8 @@ class TestTrackerSubqueryRealDb:
                 SearchCondition(field="tracker_url", operator="not_contains", value="tracker4")
             )
         )
-        # not_contains 走 _build_text_filter：OR col IS NULL OR (IS NOT NULL AND NOT LIKE)
-        # EXISTS 语义：种子存在 dr=0 tracker 且其 url not_contains 'tracker4'
-        # t1(tk1 url not_contains tracker4) → 命中；t4(tk4 url 含 tracker4) → 不命中
-        # 无 tracker 的种子（t2/t3/t5）：EXISTS 为假 → 不命中
-        assert {r.info_id for r in builder.base_query.all()} == {"t1"}
+        # t4 存在匹配 tracker，必须排除；无活动 tracker 的 t2/t3/t5 属于补集。
+        assert {r.info_id for r in builder.base_query.all()} == {"t1", "t2", "t3", "t5"}
 
     def test_tracker_url_starts_with(self, db_session):
         """tracker_url starts_with 'https://tracker1' → t1"""
@@ -1452,39 +1448,19 @@ class TestEndToEndSearchTorrents:
 
 
 class TestNullSafetyBoundary:
-    """NULL 安全边界（characterization test，钉死当前行为）。
+    """NULL/未设置值在否定条件中服从严格补集语义。"""
 
-    本类不是 xfail 对照，而是独立断言两条 NULL 处理路径的当前行为：
-      - 顶层 OPERATOR_MAPPING 的字符串操作符（作用于 name/tags/category 等）
-      - _build_text_filter（仅服务 tracker_url/tracker_msg 子查询）
-
-    两条路径 NULL 行为不同是 SQL 实现必需的安全处理（避免 None.contains 报错），
-    非 bug。本类钉死现状防回归，标注"当前行为"。
-    """
-
-    def test_top_level_not_contains_on_null_tags_excludes_row(self, db_session):
-        """顶层 not_contains 对 NULL 列：t4(tags=NULL) 在 not_contains('xx') 下被排除。
-
-        当前行为：~column.contains('xx') 生成 NOT(tags LIKE '%xx%')，
-        SQL 三值逻辑下 NOT(NULL LIKE) → NULL → WHERE 视为不匹配 → 行被排除。
-        这与 _build_text_filter 的 not_contains（NULL 视为匹配）行为相反。
-        """
+    def test_top_level_not_contains_on_null_tags_includes_row(self, db_session):
+        """NULL 不包含任意文本，因此属于 contains 的严格补集。"""
         _seed_torrents(db_session)
         builder = SearchQueryBuilder(db_session)
         builder.base_query = builder.base_query.filter(
             builder._build_condition_filter(SearchCondition(field="tags", operator="not_contains", value="xx"))
         )
-        # t1/t2/t3/t5（tags 不含 xx，not_contains 为 True）；t4(NULL) 被排除
-        assert {r.info_id for r in builder.base_query.all()} == {"t1", "t2", "t3", "t5"}
+        assert {r.info_id for r in builder.base_query.all()} == {"t1", "t2", "t3", "t4", "t5"}
 
-    def test_tracker_not_contains_null_msg_excludes_via_exists(self, db_session):
-        """tracker 子查询 _build_text_filter 的 not_contains 对 NULL tracker msg 的行为。
-
-        当前行为：_build_text_filter 的 not_contains 用
-          OR col IS NULL OR (IS NOT NULL AND NOT LIKE)
-        但在 EXISTS 子查询上下文，种子的 tracker 必须存在（dr=0）。
-        t3/t5 无 tracker → EXISTS 为假 → 不命中（无论 msg NULL 与否）。
-        """
+    def test_tracker_not_contains_includes_torrents_without_active_tracker(self, db_session):
+        """不存在匹配消息的活动 Tracker（包括无 Tracker）均属于严格补集。"""
         _seed_torrents(db_session)
         builder = SearchQueryBuilder(db_session)
         builder.base_query = builder.base_query.filter(
@@ -1492,11 +1468,7 @@ class TestNullSafetyBoundary:
                 SearchCondition(field="tracker_msg", operator="not_contains", value="nonexistent_text")
             )
         )
-        # 有 dr=0 tracker 且 msg not_contains 'nonexistent_text'：
-        # t1(msg=ok/seeds=10 不含 nonexistent_text) → 命中
-        # t4(msg 含 timeout/error 不含 nonexistent_text) → 命中
-        # t2(tk2 dr=1 排除)、t3/t5(无 tracker) → 不命中
-        assert {r.info_id for r in builder.base_query.all()} == {"t1", "t4"}
+        assert {r.info_id for r in builder.base_query.all()} == {"t1", "t2", "t3", "t4", "t5"}
 
     def test_top_level_contains_on_null_excludes_row(self, db_session):
         """顶层 contains 对 NULL 列：t4(tags=NULL) 在 contains('movie') 下不命中。
@@ -1753,18 +1725,224 @@ class TestOperatorContractGuard:
         )
 
         frontend_operators = {
-            item["backendValue"]
-            for group in ADVANCED_SEARCH_CONTRACT["operatorGroups"].values()
-            for item in group
+            item["backendValue"] for group in ADVANCED_SEARCH_CONTRACT["operatorGroups"].values() for item in group
         }
         assert frontend_operators <= SUPPORTED_SEARCH_OPERATORS
         for operator in frontend_operators:
             assert any(
-                operator in field["operators"]
-                for field in SEARCH_FIELD_CONTRACT.values()
+                operator in field["operators"] for field in SEARCH_FIELD_CONTRACT.values()
             ), f"{operator} is exposed by the UI but allowed by no field"
         for operator, negated in NEGATED_SEARCH_OPERATORS.items():
             assert NEGATED_SEARCH_OPERATORS[negated] == operator
             for field in SEARCH_FIELD_CONTRACT.values():
                 if operator in field["operators"]:
                     assert negated in field["operators"]
+
+
+class TestAdvancedSearchSemanticDefectRegressions:
+    """Root-cause regressions for the cross-field audit completed in 2026-08."""
+
+    def test_tracker_negative_operator_rejects_torrent_with_any_matching_tracker(self, db_session):
+        _seed_torrents(db_session)
+        now = datetime(2026, 8, 12, 12, 0, 0)
+        db_session.add(
+            TrackerInfo(
+                tracker_id="tk1-secondary",
+                torrent_info_id="t1",
+                tracker_name="Secondary",
+                tracker_url="https://other.example/announce",
+                create_time=now,
+                create_by="tester",
+                update_time=now,
+                update_by="tester",
+                dr=0,
+            )
+        )
+        db_session.commit()
+
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(
+                SearchCondition(field="tracker_url", operator="not_contains", value="tracker1")
+            )
+        )
+
+        assert "t1" not in {torrent.info_id for torrent in builder.base_query.all()}
+
+    @pytest.mark.parametrize(
+        ("literal_value", "matching_name"),
+        [("%", "literal%name"), ("_", "literal_name")],
+    )
+    def test_text_contains_treats_sql_wildcards_as_literals(self, db_session, literal_value, matching_name):
+        _seed_torrents(db_session)
+        make_torrent(
+            db_session,
+            info_id=f"literal-{ord(literal_value)}",
+            downloader_id="d1",
+            downloader_name="qbit-主",
+            hash_=f"literal-hash-{ord(literal_value)}",
+            name=matching_name,
+        )
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(SearchCondition(field="name", operator="contains", value=literal_value))
+        )
+
+        assert {torrent.info_id for torrent in builder.base_query.all()} == {f"literal-{ord(literal_value)}"}
+
+    def test_tag_matching_uses_complete_tokens(self, db_session):
+        _seed_torrents(db_session)
+        make_torrent(
+            db_session,
+            info_id="tag-prefix",
+            downloader_id="d1",
+            downloader_name="qbit-主",
+            hash_="tag-prefix-hash",
+            name="tag prefix",
+            tags="IYUU自动辅种",
+        )
+        make_torrent(
+            db_session,
+            info_id="tag-exact",
+            downloader_id="d1",
+            downloader_name="qbit-主",
+            hash_="tag-exact-hash",
+            name="tag exact",
+            tags="已整理,辅种",
+        )
+        make_torrent(
+            db_session,
+            info_id="tag-spaced",
+            downloader_id="d1",
+            downloader_name="qbit-主",
+            hash_="tag-spaced-hash",
+            name="tag spaced",
+            tags="已整理, 辅种",
+        )
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(SearchCondition(field="tags", operator="contains_any", value=["辅种"]))
+        )
+
+        assert {torrent.info_id for torrent in builder.base_query.all()} == {
+            "tag-exact",
+            "tag-spaced",
+        }
+
+    def test_empty_category_and_tags_are_queryable_as_unset(self, db_session):
+        _seed_torrents(db_session)
+        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t4").update(
+            {TorrentInfo.category: None}
+        )
+        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t5").update(
+            {TorrentInfo.category: ""}
+        )
+        db_session.commit()
+
+        for field in ("category", "tags"):
+            builder = SearchQueryBuilder(db_session)
+            builder.base_query = builder.base_query.filter(
+                builder._build_condition_filter(
+                    SearchCondition(field=field, operator="is_null", value=None)
+                )
+            )
+            assert {torrent.info_id for torrent in builder.base_query.all()} == {"t4", "t5"}
+
+    def test_recycle_bin_rows_never_leak_into_advanced_search(self, db_session):
+        _seed_torrents(db_session)
+        make_torrent(
+            db_session,
+            info_id="recycled",
+            downloader_id="d1",
+            downloader_name="qbit-主",
+            hash_="recycled-hash",
+            name="recycled",
+            dr=0,
+            deleted_at=datetime(2026, 8, 12, 12, 0, 0),
+        )
+
+        result = _search(db_session, limit=100000)
+
+        assert "recycled" not in _info_ids(result)
+        assert result["total"] == 5
+
+    def test_downloader_filter_survives_nickname_change_and_accepts_stable_id(self, db_session):
+        _seed_torrents(db_session)
+        downloader = db_session.query(BtDownloaders).filter_by(downloader_id="d1").one()
+        downloader.nickname = "qbit-新名称"
+        db_session.commit()
+
+        for value in (["d1"], ["qbit-主"], ["qbit-新名称"]):
+            builder = SearchQueryBuilder(db_session)
+            builder.base_query = builder.base_query.filter(
+                builder._build_condition_filter(SearchCondition(field="downloader_name", operator="in", value=value))
+            )
+            assert {torrent.info_id for torrent in builder.base_query.all()} == {"t1", "t2", "t5"}
+
+    @pytest.mark.parametrize(
+        ("value", "expected_ids"),
+        [
+            ("1", {"super-yes"}),
+            ("0", {"super-no"}),
+            ("unsupported", {"super-blank", "super-null"}),
+        ],
+    )
+    def test_super_seeding_is_a_three_state_filter(self, db_session, value, expected_ids):
+        db_session.add(BtDownloaders(downloader_id="super-dl", nickname="super", downloader_type=0))
+        db_session.commit()
+        for info_id, stored_value in (
+            ("super-yes", "1"),
+            ("super-no", "0"),
+            ("super-blank", ""),
+            ("super-null", None),
+        ):
+            make_torrent(
+                db_session,
+                info_id=info_id,
+                downloader_id="super-dl",
+                downloader_name="super",
+                hash_=f"hash-{info_id}",
+                name=info_id,
+                super_seeding=stored_value,
+            )
+
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(SearchCondition(field="super_seeding", operator="eq", value=value))
+        )
+
+        assert {torrent.info_id for torrent in builder.base_query.all()} == expected_ids
+
+    def test_exclude_numeric_filter_is_strict_complement_including_null(self, db_session):
+        _seed_torrents(db_session)
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(SearchCondition(field="ratio", operator="gt", value=2, mode="exclude"))
+        )
+
+        assert {torrent.info_id for torrent in builder.base_query.all()} == {"t2", "t4", "t5"}
+
+    def test_direct_lte_filter_is_not_confused_with_excluding_gt(self, db_session):
+        _seed_torrents(db_session)
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(SearchCondition(field="ratio", operator="lte", value=2))
+        )
+
+        assert {torrent.info_id for torrent in builder.base_query.all()} == {"t2", "t5"}
+
+    def test_enabled_boolean_filter_accepts_false_without_truthiness_loss(self, db_session):
+        _seed_torrents(db_session)
+        db_session.query(TorrentInfo).filter(TorrentInfo.info_id == "t5").update(
+            {TorrentInfo.enabled: False}
+        )
+        db_session.commit()
+
+        builder = SearchQueryBuilder(db_session)
+        builder.base_query = builder.base_query.filter(
+            builder._build_condition_filter(
+                SearchCondition(field="enabled", operator="eq", value=False)
+            )
+        )
+
+        assert {torrent.info_id for torrent in builder.base_query.all()} == {"t5"}

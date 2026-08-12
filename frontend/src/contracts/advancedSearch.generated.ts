@@ -19,7 +19,7 @@ export interface AdvancedSearchFieldContract {
   operators: readonly string[]
 }
 
-export const ADVANCED_SEARCH_CONTRACT_VERSION = 2
+export const ADVANCED_SEARCH_CONTRACT_VERSION = 3
 export const ADVANCED_SEARCH_MAX_REGEX_CONDITIONS = 3
 export const ADVANCED_SEARCH_MAX_REGEX_PATTERN_LENGTH = 256
 
@@ -183,7 +183,9 @@ export const ADVANCED_SEARCH_FIELDS: Readonly<Record<string, AdvancedSearchField
       "lte",
       "between",
       "last_days",
-      "date_range"
+      "date_range",
+      "is_null",
+      "is_not_null"
     ]
   },
   "ratio": {
@@ -195,7 +197,9 @@ export const ADVANCED_SEARCH_FIELDS: Readonly<Record<string, AdvancedSearchField
       "gte",
       "lt",
       "lte",
-      "between"
+      "between",
+      "is_null",
+      "is_not_null"
     ]
   },
   "ratio_limit": {
@@ -207,7 +211,9 @@ export const ADVANCED_SEARCH_FIELDS: Readonly<Record<string, AdvancedSearchField
       "gte",
       "lt",
       "lte",
-      "between"
+      "between",
+      "is_null",
+      "is_not_null"
     ]
   },
   "tags": {
@@ -220,7 +226,9 @@ export const ADVANCED_SEARCH_FIELDS: Readonly<Record<string, AdvancedSearchField
       "contains_any",
       "contains_all",
       "not_contains_any",
-      "not_contains_all"
+      "not_contains_all",
+      "is_null",
+      "is_not_null"
     ]
   },
   "category": {
@@ -229,11 +237,13 @@ export const ADVANCED_SEARCH_FIELDS: Readonly<Record<string, AdvancedSearchField
       "eq",
       "ne",
       "in",
-      "not_in"
+      "not_in",
+      "is_null",
+      "is_not_null"
     ]
   },
   "super_seeding": {
-    "kind": "boolean",
+    "kind": "select",
     "operators": [
       "eq",
       "ne"
@@ -357,6 +367,16 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
       "value": "between",
       "label": "介于",
       "backendValue": "between"
+    },
+    {
+      "value": "is_null",
+      "label": "未设置",
+      "backendValue": "is_null"
+    },
+    {
+      "value": "is_not_null",
+      "label": "已设置",
+      "backendValue": "is_not_null"
     }
   ],
   "date": [
@@ -399,6 +419,16 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
       "value": "date_range",
       "label": "日期范围",
       "backendValue": "date_range"
+    },
+    {
+      "value": "is_null",
+      "label": "未设置",
+      "backendValue": "is_null"
+    },
+    {
+      "value": "is_not_null",
+      "label": "已设置",
+      "backendValue": "is_not_null"
     }
   ],
   "select": [
@@ -443,6 +473,16 @@ export const ADVANCED_SEARCH_OPERATOR_GROUPS: Readonly<
       "value": "not_contains_any",
       "label": "不包含任意",
       "backendValue": "not_contains_any"
+    },
+    {
+      "value": "is_null",
+      "label": "未设置",
+      "backendValue": "is_null"
+    },
+    {
+      "value": "is_not_null",
+      "label": "已设置",
+      "backendValue": "is_not_null"
     }
   ],
   "boolean": [
@@ -474,6 +514,8 @@ export const ADVANCED_SEARCH_OPERATOR_MAPPING: Readonly<Record<string, string>> 
   "greater_equal": "gte",
   "less_equal": "lte",
   "between": "between",
+  "is_null": "is_null",
+  "is_not_null": "is_not_null",
   "last_days": "last_days",
   "date_range": "date_range",
   "in": "in",
@@ -497,6 +539,8 @@ export const ADVANCED_SEARCH_REVERSE_OPERATOR_MAPPING: Readonly<Record<string, s
   "gte": "greater_equal",
   "lte": "less_equal",
   "between": "between",
+  "is_null": "is_null",
+  "is_not_null": "is_not_null",
   "last_days": "last_days",
   "date_range": "date_range",
   "in": "in",

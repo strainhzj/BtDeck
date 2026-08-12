@@ -63,6 +63,19 @@ describe('高级搜索运行时契约', () => {
     ).toEqual(['paused'])
   })
 
+  test('历史标签标量操作符归一化为完整 token 多选语义', () => {
+    expect(normalizeLoadedOperator('tags', 'contains')).toBe('contains_any')
+    expect(normalizeLoadedOperator('tags', 'ne')).toBe('not_contains_any')
+    expect(
+      normalizeLoadedConditionValue(
+        'tags',
+        'multiSelect',
+        'contains_any',
+        '辅种'
+      )
+    ).toEqual(['辅种'])
+  })
+
   test('每个 UI 操作符都显式映射，且至少被一个字段允许', () => {
     const operators = Object.values(ADVANCED_SEARCH_OPERATOR_GROUPS).flat()
     expect(operators.length).toBeGreaterThanOrEqual(20)
@@ -153,7 +166,7 @@ describe('高级搜索运行时契约', () => {
     })
   })
 
-  test('构建协议会落实排除语义并保留对象 value', () => {
+  test('构建协议保留排除模式，由后端对正向操作符取严格补集', () => {
     const params = buildAdvancedSearchParams([
       {
         id: 'g1',
@@ -182,13 +195,49 @@ describe('高级搜索运行时契约', () => {
 
     expect(groups[0].conditions).toEqual([
       expect.objectContaining({
-        operator: 'not_contains_any',
-        value: ['movie']
+        operator: 'contains_any',
+        value: ['movie'],
+        mode: 'exclude'
       }),
       expect.objectContaining({
         operator: 'date_range',
         value: { start: '2026-01-01', end: null }
       })
     ])
+    expect(groups[0].conditions[0]).not.toEqual(
+      expect.objectContaining({ operator: 'not_contains_any' })
+    )
+  })
+
+  test('超级做种使用是、否、不支持三态并兼容历史布尔模板', () => {
+    expect(ADVANCED_SEARCH_FIELDS.super_seeding).toEqual({
+      kind: 'select',
+      operators: ['eq', 'ne']
+    })
+    expect(
+      normalizeLoadedConditionValue(
+        'super_seeding',
+        'select',
+        'equals',
+        false
+      )
+    ).toBe('0')
+    expect(
+      formatConditionValue(
+        'super_seeding',
+        'select',
+        'equals',
+        'unsupported'
+      )
+    ).toBe('unsupported')
+  })
+
+  test('无值操作符不要求输入，并按字段契约限制可见范围', () => {
+    expect(
+      formatConditionValue('ratio_limit', 'number', 'is_null', null)
+    ).toBeNull()
+    expect(ADVANCED_SEARCH_FIELDS.ratio_limit.operators).toContain('is_null')
+    expect(ADVANCED_SEARCH_FIELDS.category.operators).toContain('is_not_null')
+    expect(ADVANCED_SEARCH_FIELDS.name.operators).not.toContain('is_null')
   })
 })

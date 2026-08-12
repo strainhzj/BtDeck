@@ -154,6 +154,35 @@
             "session-handoff.md"
           ],
           "evidence": "新增 33 项后端和 2 项前端回归：高级搜索 basic/eq/ne/in/not_in 真值表与软删除排除；Transmission 新旧 RPC 字段、announce/scrape 独立状态、legacy/async/manual add/modify 写库；定时任务真实 SQLite 批量更新；三个条件组连接器顺序及删除收敛；前端发送中/布尔 false 中性边界。后端全量 3215 passed / 7 skipped，前端全量 43 suites / 676 tests；typecheck、build、目标 Ruff/Flake8/ESLint、Git Bash 根 ./init.sh --ci 与 git diff --check 通过。完整前端 lint 仅被 3 个无关既有测试文件的 5 条 warning 拦截。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.8",
+          "name": "高级搜索全字段语义审计与修复",
+          "description": "排查并修复状态字段之外的同类查询问题：Tracker 多行否定改为 NOT EXISTS，文本 LIKE 通配符按字面匹配，标签按完整 token，下载器显示 nickname 但提交稳定 ID 并兼容改名，超级做种支持是/否/不支持三态，include/exclude 独立传输并实现严格补集；空值操作符改为字段级白名单，回收站记录从基础查询排除。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/models/advanced_search.py",
+            "backend/app/contracts/advanced_search.py",
+            "backend/app/contracts/advanced_search_contract.json",
+            "backend/app/services/advanced_search.py",
+            "backend/tests/services/test_advanced_search_models_strict.py",
+            "backend/tests/services/test_advanced_search_regression.py",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/components/torrents/ConditionValueInput.vue",
+            "frontend/src/components/torrents/advancedSearchState.ts",
+            "frontend/src/contracts/advancedSearch.generated.ts",
+            "frontend/src/views/torrents/utils/torrentBatch.ts",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/src/components/torrents/__tests__/ConditionValueInput.spec.ts",
+            "frontend/tests/unit/operator-contract.spec.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts",
+            "docs/roadmap/",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "用户原始 tracker_url contains azusa + status in [error] 载荷在真实内存 SQLite 返回 1 条；后端全量 3233 passed / 7 skipped，相关 235 passed、语义重点 142 passed；前端全量 43 suites / 686 tests，相关 4 suites / 119 tests；Ruff、Flake8、目标 ESLint、TypeScript、contract:check、生产 build 与 git diff --check 通过。根 init.sh 在本 Windows 环境因 WSL E_ACCESSDENIED 且无 /bin/bash 未执行，改用等价分端校验。"
         }
       ]
     },

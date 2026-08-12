@@ -75,6 +75,39 @@ def test_template_exclude_mode_is_validated_using_negated_operator():
     validate_template_conditions_payload(payload)
 
 
+def test_template_exclude_mode_preserves_the_positive_operator():
+    payload = _advanced_template(
+        {
+            "field": "ratio",
+            "operator": "greater_than",
+            "value": 2,
+            "mode": "exclude",
+        }
+    )
+
+    validated = validate_template_conditions_payload(payload)
+
+    condition = validated["condition_groups"][0]["conditions"][0]
+    assert condition["operator"] == "greater_than"
+    assert condition["mode"] == "exclude"
+
+
+def test_null_operators_are_limited_to_fields_that_declare_them():
+    assert SearchCondition(field="ratio_limit", operator="is_null", value=None).value is None
+    with pytest.raises(ValidationError, match="not allowed for field"):
+        SearchCondition(field="name", operator="is_null", value=None)
+
+
+@pytest.mark.parametrize(
+    ("operator", "expected"),
+    [("contains", "contains_any"), ("eq", "contains_any"), ("ne", "not_contains_any")],
+)
+def test_legacy_tag_scalar_operators_normalize_to_token_semantics(operator, expected):
+    condition = SearchCondition(field="tags", operator=operator, value="辅种")
+    assert condition.operator == expected
+    assert condition.value == ["辅种"]
+
+
 def test_template_rejects_exclude_mode_without_exact_negation():
     payload = _advanced_template(
         {

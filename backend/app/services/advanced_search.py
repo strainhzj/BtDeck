@@ -13,13 +13,14 @@ from contextlib import nullcontext
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, not_, desc, asc, func, exists
+from sqlalchemy import and_, or_, not_, desc, asc, func, exists, literal, case
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.sql import expression
 
 from app.core.json_parser import safe_json_parse
 
 from app.torrents.models import TorrentInfo, TrackerInfo
+from app.downloader.models import BtDownloaders
 from app.models.search_template import SearchTemplate
 from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
 from app.api.models.advanced_search import (
@@ -65,6 +66,42 @@ def _normalize_multi_value(value: Any) -> List[str]:
     return [item for item in items if item]
 
 
+NEGATED_OPERATORS = {
+    "ne": "eq",
+    "not_contains": "contains",
+    "not_starts_with": "starts_with",
+    "not_ends_with": "ends_with",
+    "not_in": "in",
+    "not_contains_any": "contains_any",
+    "not_contains_all": "contains_all",
+}
+
+
+def _literal_contains(column, value: Any) -> expression.ClauseElement:
+    """Build a literal substring match; ``%`` and ``_`` are user text, not wildcards."""
+    return column.contains(value, autoescape=True) if isinstance(value, str) else column == value
+
+
+def _literal_starts_with(column, value: Any) -> expression.ClauseElement:
+    return column.startswith(value, autoescape=True) if isinstance(value, str) else column == value
+
+
+def _literal_ends_with(column, value: Any) -> expression.ClauseElement:
+    return column.endswith(value, autoescape=True) if isinstance(value, str) else column == value
+
+
+def _tag_token_filter(column, value: Any) -> expression.ClauseElement:
+    """Match a complete comma/semicolon-delimited tag, never an arbitrary substring."""
+    token = str(value).strip()
+    normalized = func.trim(func.replace(func.coalesce(column, ""), ";", ","))
+    # qBittorrent may serialize tags as ``tag1, tag2`` while Transmission
+    # synchronization writes ``tag1,tag2``. Normalize delimiter whitespace
+    # without touching spaces inside an actual tag name.
+    for _ in range(2):
+        normalized = func.replace(func.replace(normalized, ", ", ","), " ,", ",")
+    return (literal(",") + normalized + literal(",")).contains(f",{token},", autoescape=True)
+
+
 class SearchQueryBuilder:
     """搜索查询构建器 - 负责构建复杂的SQLAlchemy查询"""
 
@@ -99,27 +136,28 @@ class SearchQueryBuilder:
         "gte": lambda column, value: column >= value,
         "lt": lambda column, value: column < value,
         "lte": lambda column, value: column <= value,
-        "contains": lambda column, value: column.contains(value) if isinstance(value, str) else column == value,
-        "not_contains": lambda column, value: ~column.contains(value) if isinstance(value, str) else column != value,
-        "starts_with": lambda column, value: column.startswith(value) if isinstance(value, str) else column == value,
-        "ends_with": lambda column, value: column.endswith(value) if isinstance(value, str) else column == value,
-        "not_starts_with": lambda column, value: (
-            ~column.startswith(value) if isinstance(value, str) else column != value
-        ),
-        "not_ends_with": lambda column, value: ~column.endswith(value) if isinstance(value, str) else column != value,
+        "contains": _literal_contains,
+        "not_contains": lambda column, value: not_(_literal_contains(column, value)),
+        "starts_with": _literal_starts_with,
+        "ends_with": _literal_ends_with,
+        "not_starts_with": lambda column, value: not_(_literal_starts_with(column, value)),
+        "not_ends_with": lambda column, value: not_(_literal_ends_with(column, value)),
         "in": lambda column, value: column.in_(value if isinstance(value, (list, tuple)) else [value]),
-        "not_in": lambda column, value: ~column.in_(value if isinstance(value, (list, tuple)) else [value]),
+        "not_in": lambda column, value: not_(column.in_(value if isinstance(value, (list, tuple)) else [value])),
         "is_null": lambda column, value: column.is_(None),
         "is_not_null": lambda column, value: column.isnot(None),
-        # 多值子串匹配：针对逗号分隔字符串列（如 tags="movie,4k"）
-        # value 经 _normalize_multi_value 归一化为字符串列表后，逐个做 LIKE 子串匹配
-        "contains_any": lambda column, value: or_(*[column.contains(v) for v in _normalize_multi_value(value)]),
-        "contains_all": lambda column, value: and_(*[column.contains(v) for v in _normalize_multi_value(value)]),
+        # 标签按完整 token 匹配，兼容逗号/分号分隔，避免“辅种”误命中“IYUU自动辅种”。
+        "contains_any": lambda column, value: or_(
+            *[_tag_token_filter(column, v) for v in _normalize_multi_value(value)]
+        ),
+        "contains_all": lambda column, value: and_(
+            *[_tag_token_filter(column, v) for v in _normalize_multi_value(value)]
+        ),
         "not_contains_any": lambda column, value: not_(
-            or_(*[column.contains(v) for v in _normalize_multi_value(value)])
+            or_(*[_tag_token_filter(column, v) for v in _normalize_multi_value(value)])
         ),
         "not_contains_all": lambda column, value: not_(
-            and_(*[column.contains(v) for v in _normalize_multi_value(value)])
+            and_(*[_tag_token_filter(column, v) for v in _normalize_multi_value(value)])
         ),
     }
 
@@ -139,7 +177,10 @@ class SearchQueryBuilder:
         self.base_query = self._new_base_query()
 
     def _new_base_query(self):
-        query = self.db.query(TorrentInfo).filter(TorrentInfo.dr == 0)
+        query = self.db.query(TorrentInfo).filter(
+            TorrentInfo.dr == 0,
+            TorrentInfo.deleted_at.is_(None),
+        )
         active_deletion_exclusion = build_active_deletion_exclusion(TorrentInfo.info_id)
         if active_deletion_exclusion is not None:
             query = query.filter(active_deletion_exclusion)
@@ -168,15 +209,15 @@ class SearchQueryBuilder:
 
         # 下载器名称过滤
         if request.downloader_name:
-            filters.append(TorrentInfo.downloader_name.contains(request.downloader_name))
+            filters.append(_literal_contains(TorrentInfo.downloader_name, request.downloader_name))
 
         # 种子名称过滤
         if request.name:
-            filters.append(TorrentInfo.name.contains(request.name))
+            filters.append(_literal_contains(TorrentInfo.name, request.name))
 
         # 标签过滤
         if request.tags:
-            filters.append(TorrentInfo.tags.contains(request.tags))
+            filters.append(_tag_token_filter(TorrentInfo.tags, request.tags))
 
         # 分类过滤
         if request.category:
@@ -302,13 +343,23 @@ class SearchQueryBuilder:
         field = condition.field
         operator = condition.operator
         value = condition.value
+        mode = condition.mode
 
+        if field == "downloader_name":
+            condition_filter = self._build_downloader_filter(operator, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
         if field == "tracker_url":
-            return self._build_tracker_url_filter(operator, value)
+            condition_filter = self._build_tracker_url_filter(operator, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
         if field == "tracker_msg":
-            return self._build_tracker_msg_filter(operator, value)
+            condition_filter = self._build_tracker_msg_filter(operator, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
         if field == "status":
-            return self._build_status_filter(operator, value)
+            condition_filter = self._build_status_filter(operator, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
+        if field == "super_seeding":
+            condition_filter = self._build_super_seeding_filter(operator, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
         if field not in self.FIELD_MAPPING:
             raise ValueError(f"search field has no query mapping: {field}")
         column = self.FIELD_MAPPING[field]
@@ -321,9 +372,11 @@ class SearchQueryBuilder:
                 if value is None:
                     raise ValueError(f"invalid size value for {operator}")
 
-        if field in ["added_date", "completed_date", "added_time"] and operator in [
+        positive_operator = NEGATED_OPERATORS.get(operator, operator)
+        explicitly_negated = operator in NEGATED_OPERATORS
+
+        if field in ["added_date", "completed_date", "added_time"] and positive_operator in [
             "eq",
-            "ne",
             "gt",
             "gte",
             "lt",
@@ -334,10 +387,15 @@ class SearchQueryBuilder:
                 parsed_date = validate_date_string(value)
                 if parsed_date is None:
                     raise ValueError(f"invalid date value for {operator}")
-                if operator in {"eq", "ne"} and len(value.strip()) == 10:
+                if positive_operator == "eq" and len(value.strip()) == 10:
                     day_end = parsed_date.replace(hour=23, minute=59, second=59)
-                    day_filter = and_(column >= parsed_date, column <= day_end)
-                    return day_filter if operator == "eq" else not_(day_filter)
+                    positive_filter = and_(
+                        column.is_not(None),
+                        column >= parsed_date,
+                        column <= day_end,
+                    )
+                    condition_filter = not_(positive_filter) if explicitly_negated else positive_filter
+                    return not_(condition_filter) if mode == "exclude" else condition_filter
                 value = parsed_date
 
         if field in self.NUMERIC_FIELDS and operator in ["gt", "gte", "lt", "lte"]:
@@ -351,17 +409,31 @@ class SearchQueryBuilder:
 
         # between / regex / last_days / date_range 需要先解构 value，单独 dispatch
         if operator == "between":
-            return self._build_between_filter(column, field, value)
+            condition_filter = self._build_between_filter(column, field, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
         if operator == "regex":
-            return self._build_regex_filter(column, value)
+            condition_filter = self._build_regex_filter(column, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
         if operator in ("last_days", "date_range"):
-            return self._build_date_window_filter(column, operator, value)
+            condition_filter = self._build_date_window_filter(column, operator, value)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
+
+        if operator in {"is_null", "is_not_null"} and field in {"tags", "category"}:
+            unset_filter = or_(column.is_(None), column == "")
+            condition_filter = unset_filter if operator == "is_null" else not_(unset_filter)
+            return not_(condition_filter) if mode == "exclude" else condition_filter
 
         try:
-            operator_factory = self.OPERATOR_MAPPING[operator]
+            operator_factory = self.OPERATOR_MAPPING[positive_operator]
         except KeyError as exc:
             raise ValueError(f"operator has no query implementation: {operator}") from exc
-        return operator_factory(column, value)
+        positive_filter = operator_factory(column, value)
+        if positive_operator not in {"is_null", "is_not_null"}:
+            # Convert SQL's UNKNOWN-on-NULL into a stable false result. This makes
+            # explicit negative operators and UI exclude mode exact complements.
+            positive_filter = and_(column.is_not(None), positive_filter)
+        condition_filter = not_(positive_filter) if explicitly_negated else positive_filter
+        return not_(condition_filter) if mode == "exclude" else condition_filter
 
     def _build_status_filter(self, operator: str, value: Any) -> expression.ClauseElement:
         """构建与普通种子列表一致的状态过滤。
@@ -370,27 +442,59 @@ class SearchQueryBuilder:
         均失败后写入的 ``has_tracker_error`` 标记。高级搜索必须复用这一语义，
         否则相同的“错误”筛选在普通列表与高级搜索中会得到不同结果。
         """
+        status_value = func.coalesce(TorrentInfo.status, "")
         if operator in {"eq", "equals", "ne", "not_equals"}:
             if value != "error":
-                return TorrentInfo.status != value if operator in {"ne", "not_equals"} else TorrentInfo.status == value
-            error_filter = or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+                positive_filter = status_value == value
+                return not_(positive_filter) if operator in {"ne", "not_equals"} else positive_filter
+            error_filter = or_(status_value == "error", TorrentInfo.has_tracker_error.is_(True))
             return not_(error_filter) if operator in {"ne", "not_equals"} else error_filter
 
         if operator in {"in", "not_in"}:
             values = list(value) if isinstance(value, (list, tuple)) else [value]
             if "error" not in values:
-                return self.OPERATOR_MAPPING[operator](TorrentInfo.status, values)
+                positive_filter = func.coalesce(TorrentInfo.status, "").in_(values)
+                return not_(positive_filter) if operator == "not_in" else positive_filter
 
             non_error_values = [item for item in values if item != "error"]
-            status_filters = [
-                or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
-            ]
+            status_filters = [or_(status_value == "error", TorrentInfo.has_tracker_error.is_(True))]
             if non_error_values:
-                status_filters.append(TorrentInfo.status.in_(non_error_values))
+                status_filters.append(func.coalesce(TorrentInfo.status, "").in_(non_error_values))
             positive_filter = or_(*status_filters)
             return not_(positive_filter) if operator == "not_in" else positive_filter
 
         return self.OPERATOR_MAPPING[operator](TorrentInfo.status, value)
+
+    def _build_downloader_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+        """Match stable IDs while retaining compatibility with nickname payloads.
+
+        New UI requests always carry ``downloader_id`` under the historical
+        ``downloader_name`` field key. Current and stale nicknames remain
+        accepted so saved searches created before the migration keep working.
+        """
+        values = list(value) if isinstance(value, (list, tuple)) else [value]
+        positive = or_(
+            TorrentInfo.downloader_id.in_(values),
+            TorrentInfo.downloader_name.in_(values),
+            exists().where(
+                and_(
+                    BtDownloaders.downloader_id == TorrentInfo.downloader_id,
+                    BtDownloaders.nickname.in_(values),
+                )
+            ),
+        )
+        return not_(positive) if operator in {"ne", "not_in"} else positive
+
+    def _build_super_seeding_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+        """Query qBittorrent yes/no and Transmission unsupported as three states."""
+        values = list(value) if isinstance(value, (list, tuple)) else [value]
+        state = case(
+            (TorrentInfo.super_seeding.in_(["1", "true", "True", "是"]), "1"),
+            (TorrentInfo.super_seeding.in_(["0", "false", "False", "否"]), "0"),
+            else_="unsupported",
+        )
+        positive = state.in_(values)
+        return not_(positive) if operator in {"ne", "not_in"} else positive
 
     def _build_between_filter(self, column, field: str, value: Any) -> expression.ClauseElement:
         """between 操作符：value = {min, max}（size 带 minUnit/maxUnit；date 带 start/end）。
@@ -535,11 +639,12 @@ class SearchQueryBuilder:
         Build tracker_msg filter using tracker_info table.
         Match last_announce_msg OR last_scrape_msg on active trackers (dr == 0).
         """
-        tracker_text_filter = self._build_tracker_msg_text_filter(operator, value)
-
-        return exists().where(
+        positive_operator = NEGATED_OPERATORS.get(operator, operator)
+        tracker_text_filter = self._build_tracker_msg_text_filter(positive_operator, value)
+        matching_tracker = exists().where(
             and_(TrackerInfo.torrent_info_id == TorrentInfo.info_id, TrackerInfo.dr == 0, tracker_text_filter)
         )
+        return not_(matching_tracker) if operator in NEGATED_OPERATORS else matching_tracker
 
     def _build_tracker_msg_text_filter(self, operator: str, value: Any) -> expression.ClauseElement:
         """Build OR text filter for tracker announce/scrape message fields."""
@@ -553,11 +658,12 @@ class SearchQueryBuilder:
         Build tracker_url filter using tracker_info table.
         Match tracker_url field on active trackers (dr == 0).
         """
-        tracker_url_filter = self._build_text_filter(TrackerInfo.tracker_url, operator, value)
-
-        return exists().where(
+        positive_operator = NEGATED_OPERATORS.get(operator, operator)
+        tracker_url_filter = self._build_text_filter(TrackerInfo.tracker_url, positive_operator, value)
+        matching_tracker = exists().where(
             and_(TrackerInfo.torrent_info_id == TorrentInfo.info_id, TrackerInfo.dr == 0, tracker_url_filter)
         )
+        return not_(matching_tracker) if operator in NEGATED_OPERATORS else matching_tracker
 
     def _build_text_filter(self, column, operator: str, value: Any) -> expression.ClauseElement:
         """
@@ -582,20 +688,20 @@ class SearchQueryBuilder:
         if operator in ["contains", "not_contains", "starts_with", "ends_with", "not_starts_with", "not_ends_with"]:
             # 使用AND确保列值不为None，然后应用文本操作符
             if operator == "contains":
-                return and_(column.is_not(None), column.contains(value))
+                return and_(column.is_not(None), _literal_contains(column, value))
             if operator == "not_contains":
                 # 对于not_contains，None值也不包含目标字符串，所以视为匹配
-                return or_(column.is_(None), and_(column.is_not(None), ~column.contains(value)))
+                return or_(column.is_(None), and_(column.is_not(None), not_(_literal_contains(column, value))))
             if operator == "starts_with":
-                return and_(column.is_not(None), column.startswith(value))
+                return and_(column.is_not(None), _literal_starts_with(column, value))
             if operator == "ends_with":
-                return and_(column.is_not(None), column.endswith(value))
+                return and_(column.is_not(None), _literal_ends_with(column, value))
             if operator == "not_starts_with":
                 # None不匹配任何前缀，所以视为符合not_starts_with条件
-                return or_(column.is_(None), and_(column.is_not(None), ~column.startswith(value)))
+                return or_(column.is_(None), and_(column.is_not(None), not_(_literal_starts_with(column, value))))
             if operator == "not_ends_with":
                 # None不匹配任何后缀，所以视为符合not_ends_with条件
-                return or_(column.is_(None), and_(column.is_not(None), ~column.endswith(value)))
+                return or_(column.is_(None), and_(column.is_not(None), not_(_literal_ends_with(column, value))))
 
         # 等值比较操作符：SQL语义可以安全处理None
         if operator in ["eq", "equals"]:
