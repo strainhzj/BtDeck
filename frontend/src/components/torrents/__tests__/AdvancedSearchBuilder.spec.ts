@@ -1,4 +1,6 @@
 import Vue from 'vue'
+import fs from 'fs'
+import path from 'path'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 import AdvancedSearchBuilder from '../AdvancedSearchBuilder.vue'
 import { getAllCategories, getAllTags } from '@/api/tag-management'
@@ -181,6 +183,29 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     const text = wrapper.text()
     expect(text.indexOf('添加条件')).toBeGreaterThanOrEqual(0)
     expect(text.indexOf('添加条件')).toBeLessThan(text.indexOf('添加条件组'))
+  })
+
+  it('添加条件居中且与添加条件组交换主次颜色', () => {
+    const addCondition = wrapper.find('.add-condition el-button-stub')
+    const addGroup = wrapper.find('.add-group el-button-stub')
+    const componentSource = fs.readFileSync(
+      path.resolve(__dirname, '../AdvancedSearchBuilder.vue'),
+      'utf8'
+    )
+
+    expect(addCondition.attributes('type')).toBe('primary')
+    expect(addGroup.attributes('type')).toBeUndefined()
+    expect(componentSource).toMatch(/\.add-condition\s*\{[^}]*justify-content:\s*center;/s)
+  })
+
+  it('组间 AND/OR 选择器位于条件组卡片外', async() => {
+    vm.addConditionGroup()
+    await Vue.nextTick()
+
+    const connector = wrapper.find('.group-between-logic')
+    expect(connector.exists()).toBe(true)
+    expect(connector.element.parentElement?.classList.contains('condition-groups')).toBe(true)
+    expect(connector.element.closest('.condition-group')).toBeNull()
   })
 
   it('添加、复制、清空和删除条件组时保持独立数据', () => {

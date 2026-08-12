@@ -2,6 +2,29 @@
 
 ## 2026-08-12 - 种子文件、任务日志、高级搜索与错误原因修复
 
+### 后续修正：高级搜索 UI/组合查询与 Tracker 状态语义
+
+- 高级搜索中“添加条件”改为居中的主按钮，“添加条件组”改为次按钮；组间 AND/OR 控件
+  作为 `.condition-groups` 下的独立节点，不再嵌套在任一条件组卡片中。
+- 修复用户原始 `tracker_url contains azusa` + `status in [error]` 请求无结果：高级搜索的
+  `error` 现在与普通列表一致，同时匹配 `TorrentInfo.status == "error"` 和
+  `TorrentInfo.has_tracker_error == True`，并覆盖 eq/ne/in/not_in。
+- 确认 Tracker“未联系”误分类来自两处：Transmission 过去把成功布尔值直接写入整型状态列，
+  定时判定又只看失败关键词。现在依据 hasAnnounced/hasScraped、成功、超时和活动状态归一为
+  0–4 状态码；qB 未联系及 Transmission 未联系/发送中均按中性处理，仅全部明确失败才标错。
+- 每项均补回归：Builder 按钮视觉/DOM 层级、原始高级搜索载荷、Transmission announce/scrape
+  状态矩阵、定时聚合以及前端“未联系”中性样式。
+
+### 后续修正验证
+
+- 后端全量：`3182 passed, 7 skipped`（3189 collected）。
+- 前端全量：`43 suites, 674 tests`；`npm.cmd run typecheck`、生产 build 与变更文件严格
+  ESLint 通过。
+- 完整 `npm.cmd run lint` 的契约检查通过，随后仍被 3 个无关既有关键词测试文件的 5 条
+  warning 门禁拦截（0 error）；build 的 51 条 Sass/Browserslist/体积 warning 为既有基线。
+- 路线图按源码实测行号同步；技能包未包含其说明所列 drift 脚本，改以 `rg` 关键符号/末行、
+  文件计数和链接回读校验。无 Schema/Alembic 变更，未 stage/commit/push/deploy。
+
 ### 已完成
 
 - 种子文件管理：备份列表对当前页下载器做单次批量查询并返回当前 `downloader_nickname`；

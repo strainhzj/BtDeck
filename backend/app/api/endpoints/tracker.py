@@ -15,6 +15,7 @@ from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo as torrentInfoModel
 from app.torrents.models import TrackerInfo as trackerInfoModel
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.core.tracker_mapper import resolve_transmission_tracker_status_code
 
 # 审计日志相关导入
 from app.services.audit_service import get_audit_service, extract_audit_info_from_request
@@ -651,9 +652,13 @@ async def tr_add_torrents_tracker(db, downloader_vo, todo_tracker_list, torrent_
                 torrent_info_id=info_id_result[0],
                 tracker_name=tracker_status.site_name,
                 tracker_url=tracker_status.fields.get("announce"),
-                last_announce_succeeded=tracker_status.last_announce_succeeded,
+                last_announce_succeeded=resolve_transmission_tracker_status_code(
+                    tracker_status, "announce"
+                ),
                 last_announce_msg=tracker_status.last_announce_result,
-                last_scrape_succeeded=tracker_status.last_scrape_succeeded,
+                last_scrape_succeeded=resolve_transmission_tracker_status_code(
+                    tracker_status, "scrape"
+                ),
                 last_scrape_msg=tracker_status.last_scrape_result,
                 create_time=current_time,
                 create_by="admin",
@@ -826,9 +831,13 @@ async def tr_change_torrents_tracker(db, downloader_vo, todo_tracker_list, torre
             torrent_info_id=torrent_info_id_value,
             tracker_name=tracker_status.site_name,
             tracker_url=tracker_status.fields.get("announce"),
-            last_announce_succeeded=tracker_status.last_announce_succeeded,
+            last_announce_succeeded=resolve_transmission_tracker_status_code(
+                tracker_status, "announce"
+            ),
             last_announce_msg=tracker_status.last_announce_result,
-            last_scrape_succeeded=tracker_status.last_scrape_succeeded,
+            last_scrape_succeeded=resolve_transmission_tracker_status_code(
+                tracker_status, "scrape"
+            ),
             last_scrape_msg=tracker_status.last_scrape_result,
             create_time=current_time,
             create_by="admin",

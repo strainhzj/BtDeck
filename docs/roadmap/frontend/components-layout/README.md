@@ -39,7 +39,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 高级搜索构建 advanced-search | `AdvancedSearchBuilder.vue` | 高级搜索条件构建器（`AdvancedSearchBuilder` class，L418）；组内“添加条件”位于条件列表底部 L224–233、全局“添加条件组”位于其后 L256–265，降低误触；`getTemplateGroupsSnapshot()` L983 提供校验后的条件快照 |
+| 高级搜索构建 advanced-search | `AdvancedSearchBuilder.vue` | 高级搜索条件构建器（`AdvancedSearchBuilder` class，L420）；“添加条件”居中主按钮 L225–235，全局“添加条件组”改次按钮 L260–268，组间 AND/OR 为卡片外独立控件 L238–256；`getTemplateGroupsSnapshot()` L985 提供校验后的条件快照 |
 | 高级搜索工作区 saved-search | `AdvancedSearchWorkspace.vue` | 两种种子视图共用的高级搜索工作区（`AdvancedSearchWorkspace` L156）：左侧加载高级模板并支持选择回填、搜索、新建、覆盖更新与删除（L232–385），右侧复用 Builder |
 | 条件值输入 condition-value | `ConditionValueInput.vue` | 搜索条件值输入（`ConditionValueInput` L346，按字段类型切换控件）；L358–362 将状态与下载器一样路由到不可创建选项的 `AdvancedMultiSelect` |
 | 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应 |
@@ -50,7 +50,7 @@
 | 虚拟滚动 virtual-scroll | `VirtualScrollList.vue` | 虚拟滚动列表（`VirtualScrollList` class） |
 | 过滤组 filter-group | `FilterGroup.vue` | 过滤条件组容器（`FilterGroup` class） |
 | 分页组合框 page-size | `PageSizeCombobox.vue` ✨v1.0.6.30 | 共享分页组合框（20/50/100/500/1000 预设 + 1–100000 自定义输入；被列表/传统两视图复用，统一每页数量交互） |
-| 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 571）/ AdvancedSearchBuilder（619）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（200）/ FilterGroup（97）/ QuickDeleteDuplicatesDialog（176），共 2518 行 |
+| 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 571）/ AdvancedSearchBuilder（644）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（200）/ FilterGroup（97）/ QuickDeleteDuplicatesDialog（176），共 2543 行 |
 
 > ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。
 
@@ -91,8 +91,8 @@
 
 - **范式分布**：本分支 28 个文件中，27 个为 class-component；`components/torrents/CompactTable.vue` 是唯一的 Options API（全仓库 3 处之一）
 - **Monaco Editor 双版本**：`components/MonacoEditor.vue`（通用）与 `components/tasks/MonacoEditor.vue`（任务专用，含 Python 高亮）
-- **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2518 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态多选和两类添加按钮顺序均有回归守卫
+- **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2543 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态多选、添加按钮视觉和组间控件层级均有回归守卫
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`CronEditor.vue` 1269 行、`AdvancedSearchBuilder.vue` 1389 行、`AdvancedSearchWorkspace.vue` 609 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`CronEditor.vue` 1269 行、`AdvancedSearchBuilder.vue` 1391 行、`AdvancedSearchWorkspace.vue` 609 行）

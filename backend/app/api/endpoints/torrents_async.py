@@ -37,7 +37,7 @@ from qbittorrentapi.exceptions import APIConnectionError, LoginFailed, APIError
 from app.core.torrent_file_backup import TorrentFileBackupService
 from app.core.path_mapping import PathMappingService
 from app.core.torrent_status_mapper import TorrentStatusMapper
-from app.core.tracker_mapper import extract_tracker_host
+from app.core.tracker_mapper import extract_tracker_host, resolve_transmission_tracker_status_code
 from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
@@ -762,10 +762,14 @@ def extract_tracker_rows_from_torrent(
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
                     "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
-                    "last_announce_succeeded": tracker_status.last_announce_succeeded,
+                    "last_announce_succeeded": resolve_transmission_tracker_status_code(
+                        tracker_status, "announce"
+                    ),
                     "last_announce_msg": tracker_status.last_announce_result,
-                    "last_scrape_succeeded": tracker_status.last_announce_succeeded,
-                    "last_scrape_msg": tracker_status.last_announce_result,
+                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(
+                        tracker_status, "scrape"
+                    ),
+                    "last_scrape_msg": tracker_status.last_scrape_result,
                     "create_time": current_time,
                     "create_by": "admin",
                     "update_time": current_time,
@@ -1005,9 +1009,13 @@ async def sync_add_tracker_async(
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
                     "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
-                    "last_announce_succeeded": tracker_status.last_announce_succeeded,
+                    "last_announce_succeeded": resolve_transmission_tracker_status_code(
+                        tracker_status, "announce"
+                    ),
                     "last_announce_msg": tracker_status.last_announce_result,
-                    "last_scrape_succeeded": tracker_status.last_scrape_succeeded,
+                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(
+                        tracker_status, "scrape"
+                    ),
                     "last_scrape_msg": tracker_status.last_scrape_result,
                     "create_time": current_time,
                     "create_by": "admin",
@@ -4154,9 +4162,9 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     不需要额外 API 调用来获取 tracker 数据，效率远高于 qBittorrent。
 
     TR 的 tracker_stats 字段名与 QB 不同，sync_add_tracker_async 内部已做字段映射：
-    - tracker_status.last_announce_succeeded -> last_announce_succeeded
+    - announce 统计字段 -> 归一化的 last_announce_succeeded 状态码
     - tracker_status.last_announce_result    -> last_announce_msg
-    - tracker_status.last_scrape_succeeded   -> last_scrape_succeeded
+    - scrape 统计字段   -> 归一化的 last_scrape_succeeded 状态码
     - tracker_status.last_scrape_result      -> last_scrape_msg
     """
     LOG_PREFIX = "TR_TRACKER_ONLY"

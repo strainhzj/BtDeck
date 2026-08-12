@@ -406,6 +406,7 @@ describe('P0-D - isTrackerAnnounceSuccess / getTrackerStatusClass', () => {
   it('getTrackerStatusClass 返回正确样式类', () => {
     expect(getTrackerStatusClass('工作中')).toBe('tracker-status-working')
     expect(getTrackerStatusClass(true)).toBe('tracker-status-working')
+    expect(getTrackerStatusClass('未联系')).toBe('tracker-status-neutral')
     expect(getTrackerStatusClass('工作失败')).toBe('tracker-status-error')
     expect(getTrackerStatusClass('已禁用')).toBe('tracker-status-error')
     expect(getTrackerStatusClass('超时')).toBe('tracker-status-error')

@@ -19,7 +19,7 @@ from app.downloader.models import BtDownloaders
 from app.torrents.models import TorrentInfo as torrentInfoModel, TorrentInfo
 from app.torrents.models import TrackerInfo as trackerInfoModel
 from app.core.torrent_status_mapper import TorrentStatusMapper
-from app.core.tracker_mapper import extract_tracker_host
+from app.core.tracker_mapper import extract_tracker_host, resolve_transmission_tracker_status_code
 from app.core.background_task_manager import task_manager, TaskStatus
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.config import settings
@@ -645,9 +645,13 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
                     "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
-                    "last_announce_succeeded": tracker_status.last_announce_succeeded,
+                    "last_announce_succeeded": resolve_transmission_tracker_status_code(
+                        tracker_status, "announce"
+                    ),
                     "last_announce_msg": tracker_status.last_announce_result,
-                    "last_scrape_succeeded": tracker_status.last_scrape_succeeded,
+                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(
+                        tracker_status, "scrape"
+                    ),
                     "last_scrape_msg": tracker_status.last_scrape_result,
                     "create_time": current_time,
                     "create_by": "admin",

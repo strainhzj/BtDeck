@@ -111,6 +111,29 @@
             "session-handoff.md"
           ],
           "evidence": "后端全量 3171 passed / 7 skipped；前端全量 43 suites / 672 tests；typecheck、生产 build、修改文件严格 ESLint、后端 Flake8、Git Bash 根 ./init.sh 与 git diff --check 通过。完整前端 lint 仅剩 3 个无关既有测试文件的 5 条 warning。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.6",
+          "name": "高级搜索 UI、错误组合查询与 Tracker 中性状态修复",
+          "description": "高级搜索将组内添加条件居中并设为主按钮，添加条件组改为次按钮，组间 AND/OR 移到组卡片外；高级搜索 error 状态复用普通列表语义，同时匹配 status='error' 与 has_tracker_error；Transmission Tracker 同步使用联系状态、成功和超时字段写入真实 0–4 状态码，定时判定将未联系/发送中视为中性。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/advanced_search.py",
+            "backend/app/core/tracker_mapper.py",
+            "backend/app/api/endpoints/torrent_sync.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/api/endpoints/tracker.py",
+            "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
+            "backend/tests/services/test_advanced_search_regression.py",
+            "backend/tests/api/test_transmission_error_sync.py",
+            "backend/tests/tasks/test_torrent_tracker_status_judge.py",
+            "backend/tests/tasks/test_heavy_task_db_write_governance.py",
+            "frontend/src/components/torrents/AdvancedSearchBuilder.vue",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts"
+          ],
+          "evidence": "用户原始 tracker_url contains azusa + status in [error] 请求已有真实 SQLite 回归；按钮主次/居中与组间控件 DOM 层级、Transmission 未联系/成功/失败/超时映射、定时错误聚合及前端未联系中性样式均有测试。后端全量 3182 passed / 7 skipped，前端全量 43 suites / 674 tests，typecheck 和 build 通过；完整 lint 仅被 3 个无关既有测试文件的 5 条 warning 拦截。"
         }
       ]
     },
