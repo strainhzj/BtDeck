@@ -19,6 +19,7 @@ SyncCoordinator 单元测试（W2-1，PLANS/sync-database-blocking-remediation.m
 9. W4-1 第二部分：run_id 贯穿 + 阶段事件顺序还原（一次 info run_sync 全流程
    捕获结构化事件，按 run_id 过滤断言 START→ADMISSION→BATCH_COMMIT→CHECKPOINT；
    run_sync 结束后 run_id 上下文被清空）。
+10. tracker-only 原始同步成功后才执行行级 Tracker 状态同步，且调用顺序固定。
 """
 
 import asyncio
@@ -355,6 +356,78 @@ class TestCancellation:
         assert mock_write.await_count == 0
         assert result.outcome == "cancelled"
         assert any("deadline" in err for err in result.errors)
+
+
+# =============================================================================
+# 5. Tracker 原始同步与行级状态同步顺序
+# =============================================================================
+
+
+class TestTrackerStatusPhaseOrdering:
+    """Tracker 行级联合判定必须在原始 Tracker 数据同步完成后执行。"""
+
+    async def test_tracker_status_phase_runs_after_raw_tracker_sync(self):
+        app = make_fake_app([make_vo(client=MagicMock())])
+        calls = []
+
+        async def raw_tracker_sync(*args, **kwargs):
+            calls.append("raw_tracker_sync")
+            return {
+                "status": "success",
+                "message": "ok",
+                "scanned": 1,
+                "changed": 1,
+                "batches": 1,
+                "cycle_complete": True,
+            }
+
+        async def tracker_status_sync():
+            calls.append("tracker_status_sync")
+            return {"status": "success", "changed": 1}
+
+        with (
+            patch(
+                "app.api.endpoints.torrents_async.qb_sync_trackers_only_async",
+                new=raw_tracker_sync,
+            ),
+            patch(
+                "app.api.endpoints.torrent_sync.update_tracker_status_from_keywords",
+                new=tracker_status_sync,
+            ),
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="tracker", downloader_ids=["dl_001"], trigger="cron"),
+                app=app,
+            )
+
+        assert calls == ["raw_tracker_sync", "tracker_status_sync"]
+        assert result.details["successful_syncs"] == 1
+        assert result.details["tracker_status_update"]["changed"] == 1
+
+    async def test_tracker_status_phase_is_skipped_when_raw_sync_fails(self):
+        app = make_fake_app([make_vo(client=MagicMock())])
+        status_sync = AsyncMock()
+
+        async def failed_raw_tracker_sync(*args, **kwargs):
+            return {"status": "failed", "message": "raw sync failed"}
+
+        with (
+            patch(
+                "app.api.endpoints.torrents_async.qb_sync_trackers_only_async",
+                new=failed_raw_tracker_sync,
+            ),
+            patch(
+                "app.api.endpoints.torrent_sync.update_tracker_status_from_keywords",
+                new=status_sync,
+            ),
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="tracker", downloader_ids=["dl_001"], trigger="cron"),
+                app=app,
+            )
+
+        assert status_sync.await_count == 0
+        assert result.details["successful_syncs"] == 0
 
 
 # =============================================================================

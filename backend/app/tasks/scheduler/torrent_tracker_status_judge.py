@@ -26,6 +26,7 @@ import threading
 
 from app.database import SessionLocal
 from app.downloader.models import BtDownloaders
+from app.core.tracker_status_policy import build_tracker_evidence, decide_tracker_error_state
 from app.models.setting_templates import DownloaderTypeEnum
 from app.tasks.resource_guard import admission_controller
 from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
@@ -73,49 +74,30 @@ def evaluate_tracker_error_state(
     ``True`` 表示所有 Tracker 都明确失败，``False`` 表示至少存在正常或未联系的
     Tracker，``None`` 表示仍有未知状态，应保留数据库原值。
     """
-    has_normal_tracker = False
-    has_failed_tracker = False
     has_neutral_tracker = False
-    has_unknown_tracker = False
+    evidence_types: List[str] = []
 
     for tracker in trackers:
         if _tracker_is_not_contacted(tracker, downloader_type):
             has_neutral_tracker = True
             continue
 
-        messages: List[str] = []
-        for raw_message in (tracker.last_announce_msg, tracker.last_scrape_msg):
-            if isinstance(raw_message, str) and raw_message.strip():
-                messages.append(cast(str, raw_message))
-
         # Tracker 状态与关键词仍然共同参与判断：有消息时继续按关键词池分类；
         # 仅当下载器明确报告 Working 且两类消息均为空时，才把它视为正常。
         # 否则会把 qBittorrent/Transmission 常见的 ``Working + None`` 留在
         # unknown 分支，导致数据库中的历史错误标记无法被清除。
-        if not messages and _tracker_is_working(tracker, downloader_type):
-            has_normal_tracker = True
-            continue
+        tracker_evidence = build_tracker_evidence(
+            tracker.last_announce_succeeded if _tracker_is_working(tracker, downloader_type) else None,
+            tracker.last_announce_msg,
+            tracker.last_scrape_msg,
+            keyword_map,
+            match_mode="exact",
+        )
+        evidence_types.extend(tracker_evidence or ["unknown"])
 
-        tracker_matched = False
-        for message in messages:
-            keyword_type = keyword_map.get(message)
-            if keyword_type == "failed":
-                has_failed_tracker = True
-                tracker_matched = True
-                break
-            if keyword_type in {"success", "ignored"}:
-                has_normal_tracker = True
-                tracker_matched = True
-                break
-
-        if not tracker_matched:
-            has_unknown_tracker = True
-
-    if has_normal_tracker or has_neutral_tracker:
+    if has_neutral_tracker:
         return False
-    if has_failed_tracker and not has_unknown_tracker:
-        return True
-    return None
+    return decide_tracker_error_state(evidence_types)
 
 
 class TorrentTrackerStatusJudge:

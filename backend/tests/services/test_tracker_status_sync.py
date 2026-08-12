@@ -7,8 +7,9 @@ tracker_status_sync 服务层单测（W1-2 只写变化行）
 2. 变化检测：全不变（DML=0/commit=0）、部分变化（只写变化行）、全部变化。
 3. 判定规则保留：精确匹配优先于部分匹配、大小写不敏感部分匹配、
    重复关键词保留后读取、全部 failed→error / 有 success|ignored→normal /
-   其他→unknown（含 candidate 关键词判 unknown）。
-4. 消息兜底：无 announce_msg 用 scrape_msg；host 为空从 URL 提取；空消息跳过。
+   其他未知组合保留原值。
+4. 状态与消息联合判定：Working + None/空白消息恢复 normal，非 Working 空消息
+   跳过；非空消息优先，announce/scrape 均参与；host 为空从 URL 提取。
 5. 开关回退：SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED=False 时全部写回。
 6. 大数据集分块：commit 次数 == ceil(n/batch_size)。
 7. 兼容包装：update_tracker_status_from_keywords 返回旧字段 + 新字段，
@@ -46,6 +47,8 @@ def _make_tracker(
     scrape_msg=None,
     status=None,
     msg=None,
+    announce_status=None,
+    scrape_status=None,
     url=None,
     dr=0,
 ):
@@ -56,6 +59,8 @@ def _make_tracker(
         tracker_url=url,
         last_announce_msg=announce_msg,
         last_scrape_msg=scrape_msg,
+        last_announce_succeeded=announce_status,
+        last_scrape_succeeded=scrape_status,
         tracker_host=host,
         status=status,
         msg=msg,
@@ -395,7 +400,7 @@ class TestJudgmentRulesPreserved:
         assert await _fetch_state(async_tracker_sync_db, "t1") == ("normal", "正常")
 
     async def test_disabled_keyword_not_loaded(self, async_tracker_sync_db):
-        """失效关键词（enabled=False）不参与判定 → unknown。"""
+        """失效关键词不参与判定；未知消息保留旧值。"""
         await _seed(
             async_tracker_sync_db,
             _make_keyword("超时", "failed"),
@@ -406,12 +411,13 @@ class TestJudgmentRulesPreserved:
 
         stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
 
-        assert stats.changed == 2
-        assert await _fetch_state(async_tracker_sync_db, "t1") == ("unknown", "未知")
+        assert stats.changed == 1
+        assert stats.unchanged == 1
+        assert await _fetch_state(async_tracker_sync_db, "t1") == ("unknown", None)
         assert await _fetch_state(async_tracker_sync_db, "t2") == ("error", "失败")
 
     async def test_host_rule_error_normal_unknown(self, async_tracker_sync_db):
-        """host 级规则：全部 failed→error；有 success/ignored→normal；其他→unknown（含 candidate）。"""
+        """host 级规则：全部 failed→error；有 success/ignored→normal；未知保留原值。"""
         await _seed(
             async_tracker_sync_db,
             _make_keyword("超时", "failed"),
@@ -433,14 +439,15 @@ class TestJudgmentRulesPreserved:
 
         stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
 
-        assert stats.changed == 6
+        assert stats.changed == 4
+        assert stats.unchanged == 2
         assert stats.total_hosts == 5
         assert await _fetch_state(async_tracker_sync_db, "t1") == ("error", "失败")
         assert await _fetch_state(async_tracker_sync_db, "t2") == ("normal", "正常")
         assert await _fetch_state(async_tracker_sync_db, "t3") == ("normal", "正常")
         assert await _fetch_state(async_tracker_sync_db, "t4") == ("normal", "正常")
-        assert await _fetch_state(async_tracker_sync_db, "t5") == ("unknown", "未知")
-        assert await _fetch_state(async_tracker_sync_db, "t6") == ("unknown", "未知")
+        assert await _fetch_state(async_tracker_sync_db, "t5") == ("unknown", None)
+        assert await _fetch_state(async_tracker_sync_db, "t6") == ("unknown", None)
 
     async def test_host_status_applies_to_all_trackers_under_host(self, async_tracker_sync_db):
         """同一 host 下多个 tracker 共享同一判定状态。"""
@@ -457,6 +464,29 @@ class TestJudgmentRulesPreserved:
         assert stats.total_hosts == 1
         assert await _fetch_state(async_tracker_sync_db, "t1") == ("error", "失败")
         assert await _fetch_state(async_tracker_sync_db, "t2") == ("error", "失败")
+
+    async def test_unknown_row_is_not_overwritten_by_failed_sibling_under_same_host(self, async_tracker_sync_db):
+        """同 host 的明确失败不能把未知消息行连带覆盖，未知行必须保留旧值。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("超时", "failed"),
+            _make_tracker("failed", host="shared", announce_msg="超时", status="normal", msg="正常"),
+            _make_tracker(
+                "unknown",
+                host="shared",
+                announce_msg="unclassified response",
+                status="normal",
+                msg="正常",
+            ),
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.scanned == 2
+        assert stats.changed == 1
+        assert stats.unchanged == 1
+        assert await _fetch_state(async_tracker_sync_db, "failed") == ("error", "失败")
+        assert await _fetch_state(async_tracker_sync_db, "unknown") == ("normal", "正常")
 
 
 # ==================== 7. 消息兜底 / host 提取 / 空消息跳过 ====================
@@ -499,7 +529,301 @@ class TestMsgFallbackAndHostExtraction:
         assert await _fetch_state(async_tracker_sync_db, "t5") == ("unknown", None)
 
 
-# ==================== 8. 开关回退 ====================
+# ==================== 8. Working 空消息历史错误恢复 ====================
+
+
+class TestWorkingBlankStatusRecovery:
+    """覆盖 zimiao 快照中的 Working(2) + 空消息 + 历史 error 真实数据形态。"""
+
+    @pytest.mark.parametrize(
+        "announce_msg,scrape_msg",
+        [(None, None), ("", ""), ("   ", "\t")],
+    )
+    async def test_working_blank_message_clears_stale_error(
+        self,
+        async_tracker_sync_db,
+        announce_msg,
+        scrape_msg,
+    ):
+        """Working 且两类消息均为空时，历史 error/失败必须恢复 normal/正常。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("失败", "failed"),
+            _make_tracker(
+                "zimiao_working",
+                host="tracker.zimiao.example",
+                announce_msg=announce_msg,
+                scrape_msg=scrape_msg,
+                announce_status=2,
+                scrape_status=2,
+                status="error",
+                msg="失败",
+            ),
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.scanned == 1
+        assert stats.changed == 1
+        assert stats.unchanged == 0
+        assert await _fetch_state(async_tracker_sync_db, "zimiao_working") == ("normal", "正常")
+
+    @pytest.mark.parametrize("announce_status", [None, 0, 1, 3, 4, 5])
+    async def test_non_working_blank_message_keeps_existing_state(self, async_tracker_sync_db, announce_status):
+        """非 Working 空消息缺少可靠结论，不能误清历史状态。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("失败", "failed"),
+            _make_tracker(
+                "blank_non_working",
+                announce_status=announce_status,
+                status="error",
+                msg="失败",
+            ),
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.scanned == 0
+        assert stats.changed == 0
+        assert stats.batches == 0
+        assert await _fetch_state(async_tracker_sync_db, "blank_non_working") == ("error", "失败")
+
+    async def test_working_with_failed_message_still_uses_keyword(self, async_tracker_sync_db):
+        """非空消息优先：原始 Working 不能掩盖失败关键词。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("Connection refused", "failed"),
+            _make_tracker(
+                "working_failed",
+                announce_msg="Connection refused",
+                announce_status=2,
+                status="normal",
+                msg="正常",
+            ),
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.changed == 1
+        assert await _fetch_state(async_tracker_sync_db, "working_failed") == ("error", "失败")
+
+    async def test_working_with_unknown_message_preserves_existing_state(self, async_tracker_sync_db):
+        """Working 伴随未知非空消息时不猜测，保留历史状态且零 DML。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("失败", "failed"),
+            _make_tracker(
+                "working_unknown",
+                announce_msg="unclassified response",
+                announce_status=2,
+                status="error",
+                msg="失败",
+            ),
+        )
+        commits = _spy_commit(async_tracker_sync_db)
+        run_sync_calls = _spy_run_sync(async_tracker_sync_db)
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.scanned == 1
+        assert stats.changed == 0
+        assert stats.unchanged == 1
+        assert stats.batches == 0
+        assert commits == []
+        assert run_sync_calls == []
+        assert await _fetch_state(async_tracker_sync_db, "working_unknown") == ("error", "失败")
+
+    async def test_announce_and_scrape_messages_both_participate(self, async_tracker_sync_db):
+        """两类消息共同判定：announce 失败 + scrape 成功时 host 为 normal。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("失败", "failed"),
+            _make_keyword("成功", "success"),
+            _make_tracker(
+                "two_messages",
+                announce_msg="失败",
+                scrape_msg="成功",
+                announce_status=2,
+                status="error",
+                msg="失败",
+            ),
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.changed == 1
+        assert await _fetch_state(async_tracker_sync_db, "two_messages") == ("normal", "正常")
+
+    @pytest.mark.parametrize("reverse_order", [False, True])
+    async def test_zimiao_mixed_host_recovers_only_working_row_independent_of_order(
+        self,
+        async_tracker_sync_db,
+        reverse_order,
+    ):
+        """同 host 的失败消息不应被别的种子 Working 证据掩盖。"""
+        trackers = [
+            _make_tracker(
+                "failed",
+                host="tracker.zimiao.example",
+                announce_msg="skipping tracker announce (unreachable)",
+                announce_status=4,
+                status="error",
+                msg="失败",
+            ),
+            _make_tracker(
+                "working",
+                host="tracker.zimiao.example",
+                announce_msg=None,
+                scrape_msg=None,
+                announce_status=2,
+                scrape_status=2,
+                status="error",
+                msg="失败",
+            ),
+        ]
+        if reverse_order:
+            trackers.reverse()
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("skipping tracker announce (unreachable)", "failed"),
+            *trackers,
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.scanned == 2
+        assert stats.changed == 1
+        assert stats.unchanged == 1
+        assert stats.total_hosts == 1
+        assert await _fetch_state(async_tracker_sync_db, "failed") == ("error", "失败")
+        assert await _fetch_state(async_tracker_sync_db, "working") == ("normal", "正常")
+
+    async def test_working_blank_recovery_is_idempotent(self, async_tracker_sync_db):
+        """首次清理历史错误，第二轮应为零变化、零 DML。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("失败", "failed"),
+            _make_tracker(
+                "idempotent",
+                announce_status=2,
+                scrape_status=2,
+                status="error",
+                msg="失败",
+            ),
+        )
+
+        first = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+        commits = _spy_commit(async_tracker_sync_db)
+        run_sync_calls = _spy_run_sync(async_tracker_sync_db)
+        second = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert first.changed == 1
+        assert second.scanned == 1
+        assert second.changed == 0
+        assert second.unchanged == 1
+        assert second.batches == 0
+        assert commits == []
+        assert run_sync_calls == []
+        assert await _fetch_state(async_tracker_sync_db, "idempotent") == ("normal", "正常")
+
+    async def test_working_blank_recovery_does_not_depend_on_scrape_status(self, async_tracker_sync_db):
+        """announce 明确 Working 即足够；旧/缺失 scrape 状态不能阻断历史错误恢复。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("失败", "failed"),
+            _make_tracker(
+                "announce_working",
+                announce_status=2,
+                scrape_status=None,
+                status="error",
+                msg="失败",
+            ),
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.changed == 1
+        assert await _fetch_state(async_tracker_sync_db, "announce_working") == ("normal", "正常")
+
+    async def test_scrape_working_alone_does_not_override_announce_state(self, async_tracker_sync_db):
+        """scrape=Working 但 announce 非 Working 时缺少整体正常结论，保持旧值。"""
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("失败", "failed"),
+            _make_tracker(
+                "scrape_only_working",
+                announce_status=4,
+                scrape_status=2,
+                status="error",
+                msg="失败",
+            ),
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db)
+
+        assert stats.scanned == 0
+        assert stats.changed == 0
+        assert await _fetch_state(async_tracker_sync_db, "scrape_only_working") == ("error", "失败")
+
+    async def test_zimiao_snapshot_shape_recovers_exact_working_blank_subset(self, async_tracker_sync_db):
+        """按最新快照比例回归：152 个 Working 空消息恢复，207 个其它行保持。"""
+        rows = []
+        for index in range(152):
+            rows.append(
+                _make_tracker(
+                    f"working_{index}",
+                    host="tracker.zimiao.icu",
+                    announce_status=2,
+                    scrape_status=2,
+                    status="error",
+                    msg="失败",
+                )
+            )
+        for index in range(201):
+            rows.append(
+                _make_tracker(
+                    f"failed_{index}",
+                    host="tracker.zimiao.icu",
+                    announce_msg="种子已被删除或尚未发布",
+                    scrape_msg="种子已被删除或尚未发布",
+                    announce_status=4,
+                    scrape_status=4,
+                    status="error",
+                    msg="失败",
+                )
+            )
+        for index in range(6):
+            rows.append(
+                _make_tracker(
+                    f"neutral_{index}",
+                    host="tracker.zimiao.icu",
+                    announce_status=1,
+                    scrape_status=1,
+                    status="error",
+                    msg="失败",
+                )
+            )
+        await _seed(
+            async_tracker_sync_db,
+            _make_keyword("种子已被删除或尚未发布", "failed"),
+            *rows,
+        )
+
+        stats = await sync_tracker_status_from_keywords(async_tracker_sync_db, batch_size=50)
+
+        assert stats.scanned == 353  # 152 Working + 201 有消息；6 个中性空消息跳过
+        assert stats.changed == 152
+        assert stats.unchanged == 201
+        assert stats.batches == 4
+        assert stats.total_hosts == 1
+        for index in range(152):
+            assert await _fetch_state(async_tracker_sync_db, f"working_{index}") == ("normal", "正常")
+        assert await _fetch_state(async_tracker_sync_db, "failed_0") == ("error", "失败")
+        assert await _fetch_state(async_tracker_sync_db, "neutral_0") == ("error", "失败")
+
+
+# ==================== 9. 开关回退 ====================
 
 
 class TestIncrementalSwitchFallback:

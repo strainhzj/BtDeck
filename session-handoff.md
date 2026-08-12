@@ -1,5 +1,31 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-12 交接：Tracker Working 空消息行级残留完整修复
+
+### 当前结果
+
+- 最新快照证明部署仍是旧版本：Alembic 为 `de898cb28172`，判断 Cron 为旧 `0 */5 * * *`；本地分支
+  仍比 `origin/dev` 多提交 `196a530`，因此上一轮修复和 `4c1d8e7a2b90` 迁移尚未进入部署来源。
+- 已补齐真正遗留缺陷：Tracker 行级状态同步不再跳过 `Working(2) + None/空白消息`，会按行清理历史
+  `error/失败`；种子级与行级统一复用 `tracker_status_policy.py` 的状态码+关键词证据语义。
+- Working 空消息仅修复当前 Tracker 行，不作为 host 全局正常证据，避免同站点不同种子相互掩盖；
+  非空消息仍优先，announce/scrape 都参与，未知消息保留原值，全部明确失败才判错。
+- 独立状态判断任务仍为 `20,50 * * * *`，位于 Tracker 同步 `10,40 * * * *` 后 10 分钟；既有迁移
+  `4c1d8e7a2b90` 在新镜像真正包含代码并启动后才会落库。
+
+### 快照与验证
+
+- `E:\Users\huangzj\Desktop\app.db` 全程只读且 `quick_check=ok`。zimiao 域名相关 359 行中恰有
+  152 行 `Working + 空消息 + error/失败`，行级重放只恢复这 152 行；种子级会清理 294 个历史错误，
+  并把 2 个“全部明确失败”的旧正常标记纠正为错误。
+- 行级 `40 passed`、种子级 `75 passed`、同步协调器 `26 passed`（含成功后执行、失败时跳过）；最终
+  后端全量 `3337 passed, 7 skipped`。目标 mypy、Flake8、Ruff、Black（变更源码/行级测试，
+  `--no-cache`）、compileall、
+  BtDeck 架构门禁、单 head `4c1d8e7a2b90`、feature JSON 与 `git diff --check` 通过。
+- 根 `init.sh` 仍因 Windows WSL `E_ACCESSDENIED` 无法启动；已按脚本内容完成 harness、后端环境及
+  前端 Node/配置等价检查。PowerShell 的 `npm.ps1` 受本机执行策略限制，但本次无前端变更。
+- 当前新增修复尚未提交、未推送、未部署；任务前已有备份、镜像、缓存及工具未跟踪文件未触碰。
+
 ## 2026-08-12 交接：Tracker Working 空消息判定与独立 Cron 错峰
 
 ### 当前结果

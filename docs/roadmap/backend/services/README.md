@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### services/ 根（42 个文件）
+### services/ 根（43 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -35,6 +35,7 @@
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
+| Tracker 状态同步 tracker-status-sync | `tracker_status_sync.py` | L68 在 Tracker 原始同步后联合状态码与 announce/scrape 关键词增量写回；Working 空消息按行恢复 normal，未知逐行保留旧值，避免 host 级跨种子掩盖 |
 | 同步观测 sync-observability | `sync_observability.py` | run_id/阶段事件、事件循环 lag、WAL bytes 与 PASSIVE busy/checkpoint 快照 |
 | 标签 tag | `tag_service.py` / `tag_sync_service.py` | 标签管理业务（同步/异步）；同步服务直接走缓存 |
 | 配置模板 template | `template_service.py` | 配置模板服务（CRUD/验证/应用/冲突检测） |

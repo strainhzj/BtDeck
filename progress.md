@@ -1,5 +1,39 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-12 - Tracker Working 空消息行级残留完整修复
+
+### 根因与修复
+
+- 对用户重新复制的 `E:\Users\huangzj\Desktop\app.db` 只读复核：数据库仍停留在 Alembic
+  `de898cb28172`，状态判断 Cron 仍是旧 `0 */5 * * *`；本地修复提交 `196a530` 尚未推送，说明重新部署
+  实际未包含上一轮代码/迁移。
+- 发现上一轮之外的第二层缺陷：`tracker_status_sync.py` 会直接跳过 announce/scrape 均为空的行，导致
+  下载器已同步为 `Working(2)` 时，`tracker_info.status='error'/msg='失败'` 仍永久残留。
+- 新增 `app/core/tracker_status_policy.py` 作为行级同步与种子级判断的共享纯函数：非空 announce/scrape
+  消息优先按关键词分类；仅消息均为空且原始状态明确 Working 时提供正常证据；成功/忽略/Working
+  任一存在即正常、全部失败才错误、未知保留旧值。
+- 行级同步把 Working 空消息作为当前 Tracker 行自身的正常证据，不参与 host 全局汇总，避免同 host
+  下一个正常种子掩盖其它种子的明确失败消息；保留原有消息型 host 聚合和增量零 DML 机制。
+- 种子级 `evaluate_tracker_error_state()` 改为复用共享证据聚合，同时保留下载器类型对应的未联系/
+  发送中中性规则及精确关键词语义。独立状态判断 Cron 与 `4c1d8e7a2b90` 错峰迁移保持不变。
+
+### 最新快照证据与验证
+
+- 快照 `quick_check=ok`，大小 `920604672`；zimiao 域名相关 359 个活动 Tracker：201 个明确失败消息、
+  152 个 `Working + 空消息 + error/失败`、6 个中性空消息。只读重放后行级只将这 152 行恢复
+  `normal/正常`，其余不被跨种子 host 连带覆盖。
+- 种子级只读重放会清理 294 个 zimiao 历史 `has_tracker_error=True`；另有 2 个所有 Tracker 均明确
+  失败的旧正常标记会被纠正为错误。
+- 新增/加固 20 个行级回归实例，含 None/空串/空白、announce/scrape 状态边界、非空失败/未知、
+  未知与明确失败同 host 时逐行保留、双消息、顺序、
+  幂等、跨种子 host 隔离及 zimiao 359 行快照形态；另加 2 个同步协调器顺序回归，锁定原始 Tracker
+  同步成功后才执行行级状态同步、失败时跳过。行级 `40 passed`、种子级 `75 passed`、协调器
+  `26 passed`；最终全量已覆盖这些路径。
+- 最终后端全量收集 3344 项，`3337 passed, 7 skipped`。目标 mypy、Flake8、Ruff、Black
+  （变更源码/行级测试，`--no-cache`）、
+  compileall、BtDeck 架构门禁、单 Alembic head `4c1d8e7a2b90`、feature JSON 与 `git diff --check`
+  全部通过。根 `init.sh` 仍被 Windows WSL `E_ACCESSDENIED` 阻止，已完成等价分项门禁；样例库全程只读。
+
 ## 2026-08-12 - Tracker Working 空消息判定与独立 Cron 错峰修复
 
 ### 已完成

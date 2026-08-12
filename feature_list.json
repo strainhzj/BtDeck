@@ -210,11 +210,15 @@
           "status": "done",
           "scope": "backend",
           "files": [
+            "backend/app/core/tracker_status_policy.py",
+            "backend/app/services/tracker_status_sync.py",
             "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
             "backend/app/data/default_scheduled_tasks.py",
             "backend/app/tasks/task_profiles.py",
             "backend/alembic/versions/4c1d8e7a2b90_stagger_tracker_status_judge_schedule.py",
             "backend/tests/tasks/test_torrent_tracker_status_judge.py",
+            "backend/tests/services/test_tracker_status_sync.py",
+            "backend/tests/services/test_sync_coordinator.py",
             "backend/tests/core/test_db_migration.py",
             "backend/tests/core/test_db_rollback_scenarios.py",
             "backend/docs/constraints/database-migration.md",
@@ -223,7 +227,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "对 E:/Users/huangzj/Desktop/app.db 只读重放：346 个 zimiao 相关种子得到 316 normal / 30 error / 0 unknown，293 个历史 has_tracker_error=True 会清除。新增 36 组 zimiao 双 Tracker 顺序/下载器类型/空消息矩阵，以及非空关键词优先、真实 SQLite 写回、软删除隔离、同步/判断重任务互斥、迁移重复升级与自定义值保护回归；判断+迁移定向 80 passed，迁移/回滚/任务准入相关 130 passed，后端全量 3316 passed / 7 skipped。目标 mypy、Flake8、Ruff、Black API check、compileall、BtDeck 架构门禁、单 Alembic head 与 git diff --check 通过；根 init.sh 仅因 Windows WSL E_ACCESSDENIED 未执行。"
+          "evidence": "首次修复提交 196a530 尚未推送，最新快照仍为旧 Alembic de898cb28172 与旧 Cron，证明重部署未包含该提交。进一步只读排查发现 tracker_status_sync 会跳过 Working+空消息，造成 tracker_info 历史 error/失败残留；现抽取 tracker_status_policy 供行级/种子级共同使用，Working 空消息按行恢复 normal、非空 announce/scrape 关键词优先、未知逐行保留、全部明确失败才错误，并隔离同 host 不同种子的 Working 证据。最新快照 quick_check=ok；zimiao 域名相关 359 行中 152 行 Working+空消息+error/失败会被精确恢复，种子级会清理 294 个历史错误并纠正 2 个全部失败的旧正常标记。新增/加固 None/空串/空白、announce/scrape 状态边界、双消息、未知同 host 隔离、顺序、幂等、跨种子 host 与 359 行快照形态回归，并锁定原始 Tracker 同步成功后才执行行级状态同步；行级 40 passed、种子级 75 passed、协调器 26 passed，最终后端全量 3337 passed / 7 skipped。目标 mypy、Flake8、Ruff、Black --no-cache、compileall、BtDeck 架构门禁、单 Alembic head、feature JSON 与 git diff --check 通过；根 init.sh 仍被 Windows WSL E_ACCESSDENIED 阻止，已完成等价分项门禁。"
         }
       ]
     },
