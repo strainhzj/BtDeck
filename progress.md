@@ -1,5 +1,34 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-12 - Tracker Working 空消息判定与独立 Cron 错峰修复
+
+### 已完成
+
+- 以 `E:\Users\huangzj\Desktop\app.db` 只读复核 zimiao 样例，确认主要误判不是当前同步状态本身，
+  而是 `Working(status=2) + None/空消息` 进入 unknown 后保留了历史 `has_tracker_error=True`。
+- 保留状态码与关键词联合判定：未联系/发送中仍为中性；Working 仅在 announce/scrape 两类消息都
+  为 `None`、空串或空白时明确正常；存在非空消息时仍按 failed/success/ignored 关键词分类，未知
+  消息仍返回 `None` 保留旧值。
+- 状态判断继续作为独立 Cron。Tracker 状态同步保持 `10,40 * * * *`，状态判断改为
+  `20,50 * * * *`，每 30 分钟在同步任务后 10 分钟执行；任务 profile 与内部建议周期同步为 30 分钟。
+- 新增 Alembic `4c1d8e7a2b90` 数据迁移：仅当 task_code、旧 Cron 和系统旧描述全部命中时更新，
+  避免覆盖用户自定义计划/描述；downgrade 对称恢复，当前迁移链仍为单 head。
+- 新增 36 组 zimiao 双 Tracker 顺序/下载器类型/空消息矩阵，并补齐非空关键词优先、真实 SQLite
+  写回、软删除隔离、同步/判断重任务互斥，以及迁移重复升级、自定义值和逻辑删除保护。
+- 按 `roadmap-navigation` 定位源码，并由 `roadmap-maintain` 同步 tasks/data-models/infra/测试覆盖索引、
+  revision 数量、当前 head 和实测行号；更新数据库迁移约束、后端说明、功能状态与交接记录。
+
+### 样例库重放与验证
+
+- 只读重放 346 个 zimiao 相关种子：新逻辑为 `316 normal / 30 error / 0 unknown`；其中 293 个当前
+  错误标记会在下一轮判断中清除，30 个所有 Tracker 均明确失败的种子继续保持错误。
+- 判断+迁移定向 `80 passed`；迁移/回滚/任务准入相关 `130 passed`；后端全量收集 3323 项，
+  `3316 passed, 7 skipped`。
+- 修改范围 mypy、Flake8、Ruff、Black API check、compileall，`scripts/lint_btdeck.py`、
+  `alembic heads`（仅 `4c1d8e7a2b90`）及 `git diff --check` 通过。
+- 根 `./init.sh` 在当前 Windows 主机仍被 WSL `E_ACCESSDENIED` 阻止；已执行等价分项门禁。样例
+  `app.db` 全程只读，未直接迁移或写入；应用升级时由 Alembic 迁移存量任务计划。
+
 ## 2026-08-12 - 高级搜索跨字段回归矩阵加固与提交推送
 
 ### 新增回归保护

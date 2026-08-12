@@ -28,7 +28,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "de898cb28172"  # 当前 head（torrent_info.error_reason）
+REV_HEAD = "4c1d8e7a2b90"  # 当前 head（Tracker 状态判断任务错峰）
 
 
 def _make_cfg(db_path: str) -> Config:
@@ -61,7 +61,7 @@ class TestLevel1CodeRollbackDbUntouched:
 
     场景：用户升级到含 orphan_file_tables 迁移的版本，发现 bug 回滚到上一版本。
     旧代码的迁移链 head 是 95ef8bd8b47a（不含 orphan_file_tables 迁移），
-    但 DB 的 version 是 c3f1a8b7d902（当前 head）。
+    但 DB 的 version 是 c3f1a8b7d902（相对旧代码的未来版本）。
     """
 
     def test_future_version_warned_not_downgraded(self, tmp_path, monkeypatch):

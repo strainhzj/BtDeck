@@ -47,7 +47,8 @@ def _clean_database_path_env():
 #       → f9a1b2c3d4e5(orphan purge hardlink notes) → f0e1d2c3b4a5(orphan purge delay count)
 #       → f5e6d7c8b9a0(task outcome/freshness columns, W3-4)
 #       → de898cb28172(torrent error reason)
-EXPECTED_HEAD = "de898cb28172"
+#       → 4c1d8e7a2b90(tracker status judge schedule)
+EXPECTED_HEAD = "4c1d8e7a2b90"
 PREV_HEAD = "e6d8a20c41f3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
@@ -195,6 +196,161 @@ class TestMigrationChainIntegrity:
 
         assert version_before == version_after == EXPECTED_HEAD
         assert count_before == count_after
+
+
+# ==================== Tracker 状态判断任务错峰迁移专项 ====================
+
+TRACKER_JUDGE_SCHEDULE_PREV = "de898cb28172"
+_OLD_TRACKER_JUDGE_CRON = "0 */5 * * *"
+_NEW_TRACKER_JUDGE_CRON = "20,50 * * * *"
+_OLD_TRACKER_JUDGE_DESCRIPTION = (
+    "定期检查所有种子的tracker状态，根据关键词池（失败池、成功池、忽略池）"
+    "智能判断tracker是否失败，自动更新has_tracker_error字段"
+    "（间隔: 5分钟，批量处理20,000+种子）"
+)
+_NEW_TRACKER_JUDGE_DESCRIPTION = (
+    "定期检查所有种子的tracker状态，根据状态码与关键词池（失败池、成功池、忽略池）"
+    "共同判断tracker是否失败，自动更新has_tracker_error字段"
+    "（每30分钟，在Tracker状态同步任务后10分钟执行，批量处理20,000+种子）"
+)
+
+
+def _insert_tracker_judge_task(
+    db_path: str,
+    cron_plan: str,
+    description: str = _OLD_TRACKER_JUDGE_DESCRIPTION,
+    dr: int = 0,
+) -> None:
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute(
+            """
+            INSERT INTO cron_task (
+                task_name, task_code, task_status, task_type, executor, enabled,
+                cron_plan, description, timeout_seconds, max_retry_count,
+                retry_interval, dr, create_time, update_time, create_by, update_by
+            ) VALUES (?, ?, 1, 4, ?, 1, ?, ?, 300, 0, 300, ?,
+                      CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'admin', 'admin')
+            """,
+            (
+                "种子Tracker状态判断任务",
+                "TORRENT_TRACKER_STATUS_JUDGE",
+                "app.tasks.scheduler.torrent_tracker_status_judge.TorrentTrackerStatusJudge",
+                cron_plan,
+                description,
+                dr,
+            ),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def _read_tracker_judge_schedule(db_path: str):
+    conn = sqlite3.connect(db_path)
+    try:
+        return conn.execute(
+            "SELECT cron_plan, description FROM cron_task " "WHERE task_code = 'TORRENT_TRACKER_STATUS_JUDGE'"
+        ).fetchone()
+    finally:
+        conn.close()
+
+
+class TestTrackerJudgeScheduleMigration:
+    def test_upgrade_and_downgrade_stagger_default_schedule(self, tmp_path):
+        db_path = str(tmp_path / "tracker_judge_schedule.db")
+        cfg = _make_alembic_config(db_path)
+        command.upgrade(cfg, TRACKER_JUDGE_SCHEDULE_PREV)
+        _insert_tracker_judge_task(db_path, _OLD_TRACKER_JUDGE_CRON)
+
+        command.upgrade(cfg, "head")
+        assert _read_tracker_judge_schedule(db_path) == (
+            _NEW_TRACKER_JUDGE_CRON,
+            _NEW_TRACKER_JUDGE_DESCRIPTION,
+        )
+
+        command.downgrade(cfg, TRACKER_JUDGE_SCHEDULE_PREV)
+        assert _read_tracker_judge_schedule(db_path) == (
+            _OLD_TRACKER_JUDGE_CRON,
+            _OLD_TRACKER_JUDGE_DESCRIPTION,
+        )
+
+        command.upgrade(cfg, "head")
+        assert _read_tracker_judge_schedule(db_path) == (
+            _NEW_TRACKER_JUDGE_CRON,
+            _NEW_TRACKER_JUDGE_DESCRIPTION,
+        )
+
+    def test_upgrade_preserves_custom_schedule_and_description(self, tmp_path):
+        db_path = str(tmp_path / "tracker_judge_custom_schedule.db")
+        cfg = _make_alembic_config(db_path)
+        command.upgrade(cfg, TRACKER_JUDGE_SCHEDULE_PREV)
+        _insert_tracker_judge_task(db_path, "7 * * * *", "用户自定义状态判断任务")
+
+        command.upgrade(cfg, "head")
+
+        assert _read_tracker_judge_schedule(db_path) == (
+            "7 * * * *",
+            "用户自定义状态判断任务",
+        )
+
+    def test_upgrade_preserves_custom_description_even_with_legacy_cron(self, tmp_path):
+        db_path = str(tmp_path / "tracker_judge_custom_description.db")
+        cfg = _make_alembic_config(db_path)
+        command.upgrade(cfg, TRACKER_JUDGE_SCHEDULE_PREV)
+        _insert_tracker_judge_task(
+            db_path,
+            _OLD_TRACKER_JUDGE_CRON,
+            "用户自定义状态判断任务",
+        )
+
+        command.upgrade(cfg, "head")
+
+        assert _read_tracker_judge_schedule(db_path) == (
+            _OLD_TRACKER_JUDGE_CRON,
+            "用户自定义状态判断任务",
+        )
+
+    def test_upgrade_preserves_logically_deleted_legacy_task(self, tmp_path):
+        db_path = str(tmp_path / "tracker_judge_deleted_task.db")
+        cfg = _make_alembic_config(db_path)
+        command.upgrade(cfg, TRACKER_JUDGE_SCHEDULE_PREV)
+        _insert_tracker_judge_task(
+            db_path,
+            _OLD_TRACKER_JUDGE_CRON,
+            dr=1,
+        )
+
+        command.upgrade(cfg, "head")
+
+        assert _read_tracker_judge_schedule(db_path) == (
+            _OLD_TRACKER_JUDGE_CRON,
+            _OLD_TRACKER_JUDGE_DESCRIPTION,
+        )
+
+    def test_downgrade_preserves_schedule_after_user_customizes_migrated_description(self, tmp_path):
+        db_path = str(tmp_path / "tracker_judge_post_migration_customization.db")
+        cfg = _make_alembic_config(db_path)
+        command.upgrade(cfg, TRACKER_JUDGE_SCHEDULE_PREV)
+        _insert_tracker_judge_task(db_path, _OLD_TRACKER_JUDGE_CRON)
+        command.upgrade(cfg, "head")
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute(
+                "UPDATE cron_task SET description = ? " "WHERE task_code = 'TORRENT_TRACKER_STATUS_JUDGE'",
+                ("升级后用户自定义描述",),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        command.downgrade(cfg, TRACKER_JUDGE_SCHEDULE_PREV)
+
+        assert _read_tracker_judge_schedule(db_path) == (
+            _NEW_TRACKER_JUDGE_CRON,
+            "升级后用户自定义描述",
+        )
 
 
 # ==================== 串库防护 ====================

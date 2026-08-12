@@ -202,6 +202,28 @@
             "session-handoff.md"
           ],
           "evidence": "新增后端 20 个参数化实例与前端 29 个 Jest 实例；后端重点 162 passed、全量 3253 passed / 7 skipped，前端重点 2 suites / 111 tests、全量 43 suites / 715 tests。后端 Black/Flake8、前端 TypeScript 与目标测试均通过；测试路线图行数由当前源码实测更新。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.10",
+          "name": "Tracker Working 空消息判定与独立 Cron 错峰修复",
+          "description": "保留 Tracker 状态码与关键词联合判断：qBittorrent/Transmission 状态为 Working 且 announce/scrape 消息为 None、空串或空白时明确判为正常；只要存在非空消息仍按失败/成功/忽略关键词分类，未知消息继续保留旧值。种子 Tracker 状态判断保持独立 Cron，并从旧系统计划迁移到 20,50 * * * *，在 10,40 的 Tracker 状态同步任务后 10 分钟运行。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
+            "backend/app/data/default_scheduled_tasks.py",
+            "backend/app/tasks/task_profiles.py",
+            "backend/alembic/versions/4c1d8e7a2b90_stagger_tracker_status_judge_schedule.py",
+            "backend/tests/tasks/test_torrent_tracker_status_judge.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/docs/constraints/database-migration.md",
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "对 E:/Users/huangzj/Desktop/app.db 只读重放：346 个 zimiao 相关种子得到 316 normal / 30 error / 0 unknown，293 个历史 has_tracker_error=True 会清除。新增 36 组 zimiao 双 Tracker 顺序/下载器类型/空消息矩阵，以及非空关键词优先、真实 SQLite 写回、软删除隔离、同步/判断重任务互斥、迁移重复升级与自定义值保护回归；判断+迁移定向 80 passed，迁移/回滚/任务准入相关 130 passed，后端全量 3316 passed / 7 skipped。目标 mypy、Flake8、Ruff、Black API check、compileall、BtDeck 架构门禁、单 Alembic head 与 git diff --check 通过；根 init.sh 仅因 Windows WSL E_ACCESSDENIED 未执行。"
         }
       ]
     },
