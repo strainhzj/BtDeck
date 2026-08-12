@@ -50,7 +50,7 @@
 | 虚拟滚动 virtual-scroll | `VirtualScrollList.vue` | 虚拟滚动列表（`VirtualScrollList` class） |
 | 过滤组 filter-group | `FilterGroup.vue` | 过滤条件组容器（`FilterGroup` class） |
 | 分页组合框 page-size | `PageSizeCombobox.vue` ✨v1.0.6.30 | 共享分页组合框（20/50/100/500/1000 预设 + 1–100000 自定义输入；被列表/传统两视图复用，统一每页数量交互） |
-| 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 571）/ AdvancedSearchBuilder（644）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（200）/ FilterGroup（97）/ QuickDeleteDuplicatesDialog（176），共 2543 行 |
+| 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 571）/ AdvancedSearchBuilder（685）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（200）/ FilterGroup（97）/ QuickDeleteDuplicatesDialog（176），共 2584 行 |
 
 > ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。
 
@@ -91,7 +91,7 @@
 
 - **范式分布**：本分支 28 个文件中，27 个为 class-component；`components/torrents/CompactTable.vue` 是唯一的 Options API（全仓库 3 处之一）
 - **Monaco Editor 双版本**：`components/MonacoEditor.vue`（通用）与 `components/tasks/MonacoEditor.vue`（任务专用，含 Python 高亮）
-- **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2543 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态多选、添加按钮视觉和组间控件层级均有回归守卫
+- **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2584 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态多选、添加按钮视觉、三条件组连接器顺序及删除收敛均有回归守卫
 
 ## 第三层详情
 

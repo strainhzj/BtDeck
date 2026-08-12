@@ -253,6 +253,39 @@ def _info_ids(result):
     return {item["infoId"] for item in result["data"]}
 
 
+def _seed_error_semantic_torrents(session):
+    """构造普通列表 ``error`` 语义的完整真值表。"""
+    session.add(
+        BtDownloaders(
+            downloader_id="semantic-dl",
+            nickname="semantic-qbit",
+            downloader_type=0,
+        )
+    )
+    session.commit()
+
+    rows = [
+        ("semantic-status-error", "error", False, 0),
+        ("semantic-tracker-error", "seeding", True, 0),
+        ("semantic-both-error", "error", True, 0),
+        ("semantic-paused", "paused", False, 0),
+        ("semantic-seeding", "seeding", False, 0),
+        ("semantic-deleted-tracker-error", "seeding", True, 1),
+    ]
+    for info_id, status, has_tracker_error, dr in rows:
+        make_torrent(
+            session,
+            info_id=info_id,
+            downloader_id="semantic-dl",
+            downloader_name="semantic-qbit",
+            hash_=f"hash-{info_id}",
+            name=info_id,
+            status=status,
+            has_tracker_error=has_tracker_error,
+            dr=dr,
+        )
+
+
 # ==================== ratio 数值比较回归（v1.0.6.1：String 列已迁移为 Float）====================
 
 
@@ -744,6 +777,79 @@ class TestOperatorMappingRealDb:
         """非法大小值必须拒绝，不能丢弃条件后返回未过滤数据。"""
         with pytest.raises(ValueError, match="invalid size value"):
             SearchCondition(field="size", operator="gt", value="abc")
+
+
+class TestErrorStatusSemanticRealDb:
+    """高级搜索必须与普通列表共享完整的 ``error`` 状态真值表。"""
+
+    def test_basic_error_filter_matches_downloader_and_tracker_errors(self, db_session):
+        _seed_error_semantic_torrents(db_session)
+
+        result = _search(db_session, status="error", limit=100000)
+
+        assert result["total"] == 3
+        assert _info_ids(result) == {
+            "semantic-status-error",
+            "semantic-tracker-error",
+            "semantic-both-error",
+        }
+
+    def test_basic_non_error_filter_keeps_raw_status_semantics(self, db_session):
+        _seed_error_semantic_torrents(db_session)
+
+        result = _search(db_session, status="seeding", limit=100000)
+
+        assert _info_ids(result) == {"semantic-tracker-error", "semantic-seeding"}
+
+    @pytest.mark.parametrize(
+        "operator,value,expected_ids",
+        [
+            (
+                "eq",
+                "error",
+                {
+                    "semantic-status-error",
+                    "semantic-tracker-error",
+                    "semantic-both-error",
+                },
+            ),
+            ("ne", "error", {"semantic-paused", "semantic-seeding"}),
+            (
+                "in",
+                ["error", "paused"],
+                {
+                    "semantic-status-error",
+                    "semantic-tracker-error",
+                    "semantic-both-error",
+                    "semantic-paused",
+                },
+            ),
+            ("not_in", ["error", "paused"], {"semantic-seeding"}),
+            ("in", ["paused"], {"semantic-paused"}),
+            (
+                "not_in",
+                ["paused"],
+                {
+                    "semantic-status-error",
+                    "semantic-tracker-error",
+                    "semantic-both-error",
+                    "semantic-seeding",
+                },
+            ),
+        ],
+    )
+    def test_condition_operator_truth_table(self, db_session, operator, value, expected_ids):
+        _seed_error_semantic_torrents(db_session)
+        group = SearchGroup(
+            logic="AND",
+            conditions=[SearchCondition(field="status", operator=operator, value=value)],
+        )
+
+        result = _search(db_session, condition_groups=[group], limit=100000)
+
+        assert _info_ids(result) == expected_ids
+        assert result["total"] == len(expected_ids)
+        assert len(result["data"]) == len(expected_ids)
 
 
 # ==================== C. TestConditionGroupsRealDb ====================

@@ -133,7 +133,27 @@
             "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
             "frontend/tests/unit/torrent-batch.spec.ts"
           ],
-          "evidence": "用户原始 tracker_url contains azusa + status in [error] 请求已有真实 SQLite 回归；按钮主次/居中与组间控件 DOM 层级、Transmission 未联系/成功/失败/超时映射、定时错误聚合及前端未联系中性样式均有测试。后端全量 3182 passed / 7 skipped，前端全量 43 suites / 674 tests，typecheck 和 build 通过；完整 lint 仅被 3 个无关既有测试文件的 5 条 warning 拦截。"
+          "evidence": "用户原始 tracker_url contains azusa + status in [error] 请求已有真实 SQLite 回归；按钮主次/居中与组间控件 DOM 层级、Transmission 未联系/成功/失败/超时映射、定时错误聚合及前端未联系中性样式均有测试。功能修复已独立提交为 82ceed8。"
+        },
+        {
+          "id": "torrent-management-usability-and-error-reason.7",
+          "name": "高级搜索与 Tracker 状态回归矩阵加固",
+          "description": "在功能提交后独立补充真实数据库、兼容同步、异步同步、手动 Tracker 维护、定时批量判定与多条件组 UI 边界测试，覆盖所有已修改语义的正反分支。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/tests/services/test_advanced_search_regression.py",
+            "backend/tests/api/test_transmission_error_sync.py",
+            "backend/tests/api/test_tracker_migration.py",
+            "backend/tests/tasks/test_torrent_tracker_status_judge.py",
+            "frontend/src/components/torrents/__tests__/AdvancedSearchBuilder.spec.ts",
+            "frontend/tests/unit/torrent-batch.spec.ts",
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "新增 33 项后端和 2 项前端回归：高级搜索 basic/eq/ne/in/not_in 真值表与软删除排除；Transmission 新旧 RPC 字段、announce/scrape 独立状态、legacy/async/manual add/modify 写库；定时任务真实 SQLite 批量更新；三个条件组连接器顺序及删除收敛；前端发送中/布尔 false 中性边界。后端全量 3215 passed / 7 skipped，前端全量 43 suites / 676 tests；typecheck、build、目标 Ruff/Flake8/ESLint、Git Bash 根 ./init.sh --ci 与 git diff --check 通过。完整前端 lint 仅被 3 个无关既有测试文件的 5 条 warning 拦截。"
         }
       ]
     },

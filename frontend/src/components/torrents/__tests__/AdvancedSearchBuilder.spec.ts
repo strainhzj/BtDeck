@@ -208,6 +208,47 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(connector.element.closest('.condition-group')).toBeNull()
   })
 
+  it('三个条件组只渲染两个独立连接器且顺序与组间逻辑一致', async() => {
+    vm.conditionGroups[0].betweenGroupLogic = 'or'
+    vm.addConditionGroup()
+    vm.conditionGroups[1].betweenGroupLogic = 'and'
+    vm.addConditionGroup()
+    await Vue.nextTick()
+
+    const groups = wrapper.findAll('.condition-group')
+    const connectors = wrapper.findAll('.group-between-logic')
+    const children = Array.from(wrapper.find('.condition-groups').element.children)
+
+    expect(groups).toHaveLength(3)
+    expect(connectors).toHaveLength(2)
+    expect(children.map(child => child.className)).toEqual([
+      'condition-group',
+      'group-between-logic',
+      'condition-group',
+      'group-between-logic',
+      'condition-group'
+    ])
+    expect(connectors.at(0).find('el-select-stub').attributes('value')).toBe('or')
+    expect(connectors.at(1).find('el-select-stub').attributes('value')).toBe('and')
+    expect(connectors.wrappers.every(connector => connector.element.closest('.condition-group') === null)).toBe(true)
+  })
+
+  it('删除中间条件组后连接器数量和归属同步收敛', async() => {
+    vm.addConditionGroup()
+    vm.addConditionGroup()
+    await Vue.nextTick()
+    expect(wrapper.findAll('.group-between-logic')).toHaveLength(2)
+
+    vm.removeConditionGroup(1)
+    await Vue.nextTick()
+
+    const connectors = wrapper.findAll('.group-between-logic')
+    expect(vm.conditionGroups).toHaveLength(2)
+    expect(connectors).toHaveLength(1)
+    expect(connectors.at(0).element.parentElement?.classList.contains('condition-groups')).toBe(true)
+    expect(connectors.at(0).element.closest('.condition-group')).toBeNull()
+  })
+
   it('添加、复制、清空和删除条件组时保持独立数据', () => {
     const source = vm.conditionGroups[0]
     source.name = '下载条件'

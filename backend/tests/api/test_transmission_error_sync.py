@@ -13,12 +13,14 @@ Transmission 种子错误状态同步集成测试
 
 from datetime import datetime
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.api.endpoints.torrent_helpers import create_transmission_torrent_record
-from app.api.endpoints.torrents_async import extract_tracker_rows_from_torrent
+from app.api.endpoints.torrent_sync import sync_add_tracker
+from app.api.endpoints.torrents_async import extract_tracker_rows_from_torrent, sync_add_tracker_async
+from app.core.tracker_mapper import resolve_transmission_tracker_status_code
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.services.sync_db_write import has_torrent_info_changes
 
@@ -244,3 +246,149 @@ class TestTransmissionTrackerStatusNormalization:
 
         assert rows[0]["last_announce_succeeded"] == expected
         assert rows[0]["last_scrape_succeeded"] == expected
+
+    def test_announce与scrape使用各自统计而不是互相复制(self):
+        tracker_stat = self._tracker_stat(has_contacted=True, succeeded=True, result="Success")
+        tracker_stat.fields.update(
+            {
+                "hasScraped": True,
+                "lastScrapeSucceeded": False,
+                "lastScrapeTimedOut": True,
+                "lastScrapeResult": "scrape timeout",
+            }
+        )
+        tracker_stat.last_scrape_succeeded = False
+        tracker_stat.last_scrape_timed_out = True
+        tracker_stat.last_scrape_result = "scrape timeout"
+        torrent = SimpleNamespace(tracker_stats=[tracker_stat])
+
+        rows, _ = extract_tracker_rows_from_torrent(
+            torrent,
+            torrent_info_id="info-independent",
+            downloader_type="transmission",
+            current_time=datetime(2026, 8, 12, 12, 0, 0),
+        )
+
+        assert rows[0]["last_announce_succeeded"] == 2
+        assert rows[0]["last_scrape_succeeded"] == 4
+        assert rows[0]["last_announce_msg"] == "Success"
+        assert rows[0]["last_scrape_msg"] == "scrape timeout"
+
+    def test_未联系但正在发送归一为发送中(self):
+        tracker_stat = self._tracker_stat(
+            has_contacted=False,
+            succeeded=False,
+            state=1,
+        )
+
+        assert resolve_transmission_tracker_status_code(tracker_stat, "announce") == 1
+        assert resolve_transmission_tracker_status_code(tracker_stat, "scrape") == 1
+
+    @pytest.mark.parametrize(
+        "activity,attributes,expected",
+        [
+            ("announce", {"announce_state": 1}, 1),
+            ("announce", {"last_announce_result": "Connection refused"}, 3),
+            ("announce", {}, 0),
+            ("scrape", {"scrape_state": 1}, 1),
+            ("scrape", {"last_scrape_result": "Connection refused"}, 3),
+            ("scrape", {}, 0),
+        ],
+    )
+    def test_缺少hasContacted字段的旧RPC返回保持兼容(self, activity, attributes, expected):
+        tracker_stat = SimpleNamespace(
+            last_announce_succeeded=False,
+            last_announce_timed_out=False,
+            last_announce_result="",
+            announce_state=0,
+            last_scrape_succeeded=False,
+            last_scrape_timed_out=False,
+            last_scrape_result="",
+            scrape_state=0,
+        )
+        for name, value in attributes.items():
+            setattr(tracker_stat, name, value)
+
+        assert resolve_transmission_tracker_status_code(tracker_stat, activity) == expected
+
+    def test_fields字典优先于可能陈旧的对象属性(self):
+        tracker_stat = self._tracker_stat(
+            has_contacted=True,
+            succeeded=False,
+            result="Connection refused",
+        )
+        tracker_stat.last_announce_succeeded = True
+        tracker_stat.last_scrape_succeeded = True
+
+        assert resolve_transmission_tracker_status_code(tracker_stat, "announce") == 3
+        assert resolve_transmission_tracker_status_code(tracker_stat, "scrape") == 3
+
+    def test_不支持的活动名称立即拒绝(self):
+        tracker_stat = self._tracker_stat(has_contacted=False, succeeded=False)
+
+        with pytest.raises(ValueError, match="activity must be announce or scrape"):
+            resolve_transmission_tracker_status_code(tracker_stat, "invalid")
+
+    def test_legacy同步写入独立announce与scrape状态码(self):
+        tracker_stat = self._tracker_stat(
+            has_contacted=True,
+            succeeded=False,
+            result="announce failed",
+        )
+        tracker_stat.fields.update(
+            {
+                "hasScraped": True,
+                "lastScrapeSucceeded": False,
+                "lastScrapeTimedOut": True,
+                "lastScrapeResult": "scrape timeout",
+            }
+        )
+        db = MagicMock()
+
+        sync_add_tracker(
+            db,
+            downloader_type=1,
+            mode="insert",
+            torrent_info=SimpleNamespace(tracker_stats=[tracker_stat]),
+            torrent_info_id="legacy-info",
+        )
+
+        insert_statement = db.execute.call_args_list[-1].args[0]
+        params = insert_statement.compile().params
+        assert params["last_announce_succeeded_m0"] == 3
+        assert params["last_scrape_succeeded_m0"] == 4
+
+    @pytest.mark.asyncio
+    async def test_async同步写入独立announce与scrape状态码(self):
+        tracker_stat = self._tracker_stat(
+            has_contacted=True,
+            succeeded=False,
+            result="announce failed",
+        )
+        tracker_stat.fields.update(
+            {
+                "hasScraped": True,
+                "lastScrapeSucceeded": False,
+                "lastScrapeTimedOut": True,
+                "lastScrapeResult": "scrape timeout",
+            }
+        )
+        tracker_stat.last_scrape_succeeded = False
+        tracker_stat.last_scrape_timed_out = True
+        tracker_stat.last_scrape_result = "scrape timeout"
+        db = MagicMock()
+        db.execute = AsyncMock()
+        db.in_transaction.return_value = True
+
+        await sync_add_tracker_async(
+            db,
+            downloader_type="transmission",
+            mode="insert",
+            torrent_info=SimpleNamespace(tracker_stats=[tracker_stat]),
+            torrent_info_id="async-info",
+        )
+
+        insert_statement = db.execute.await_args_list[-1].args[0]
+        params = insert_statement.compile().params
+        assert params["last_announce_succeeded_m0"] == 3
+        assert params["last_scrape_succeeded_m0"] == 4

@@ -14,16 +14,24 @@
   0–4 状态码；qB 未联系及 Transmission 未联系/发送中均按中性处理，仅全部明确失败才标错。
 - 每项均补回归：Builder 按钮视觉/DOM 层级、原始高级搜索载荷、Transmission announce/scrape
   状态矩阵、定时聚合以及前端“未联系”中性样式。
+- 功能修复先独立提交为 `82ceed8`；随后补充 33 项后端、2 项前端回归，覆盖高级搜索
+  basic/eq/ne/in/not_in 真值表与软删除排除，Transmission 新旧 RPC 字段优先级、announce/scrape
+  独立状态及 legacy/async/manual add/modify 全部写库入口，定时任务真实 SQLite 批量更新，
+  三条件组连接器顺序/删除收敛，以及前端发送中、布尔 `false` 的中性边界。
 
 ### 后续修正验证
 
-- 后端全量：`3182 passed, 7 skipped`（3189 collected）。
-- 前端全量：`43 suites, 674 tests`；`npm.cmd run typecheck`、生产 build 与变更文件严格
+- 后端全量：`3215 passed, 7 skipped`（3222 collected）。
+- 前端全量：`43 suites, 676 tests`；`npm.cmd run typecheck`、生产 build 与变更文件严格
   ESLint 通过。
 - 完整 `npm.cmd run lint` 的契约检查通过，随后仍被 3 个无关既有关键词测试文件的 5 条
   warning 门禁拦截（0 error）；build 的 51 条 Sass/Browserslist/体积 warning 为既有基线。
+- 新增 Python 测试通过 Ruff、Flake8，前端测试通过目标 `--max-warnings 0` ESLint，
+  Git Bash 根 `./init.sh --ci` 与 `git diff --check` 通过；Windows Black 目标检查再次超时，
+  未自动重排存量文件。
 - 路线图按源码实测行号同步；技能包未包含其说明所列 drift 脚本，改以 `rg` 关键符号/末行、
-  文件计数和链接回读校验。无 Schema/Alembic 变更，未 stage/commit/push/deploy。
+  文件计数和链接回读校验。无新增 Schema/Alembic 变更；功能提交后以独立测试提交交付，
+  未 push/deploy。
 
 ### 已完成
 
