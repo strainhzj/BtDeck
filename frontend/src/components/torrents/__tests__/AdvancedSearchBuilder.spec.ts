@@ -319,8 +319,9 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
       'not_in'
     ])
     expect(vm.getFieldOptions('super_seeding')).toEqual([
-      { label: '是', value: 'true' },
-      { label: '否', value: 'false' }
+      { label: '是', value: '1' },
+      { label: '否', value: '0' },
+      { label: '不支持', value: 'unsupported' }
     ])
     expect(vm.getOperatorGroups('name')[0]).toMatchObject({ type: 'basic', label: '基本操作' })
     expect(vm.fieldSupportsExclude('name')).toBe(true)
@@ -363,7 +364,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
       conditions: [
         expect.objectContaining({
           field: 'status',
-          operator: 'not_in',
+          operator: 'in',
           value: ['paused'],
           mode: 'exclude'
         })
@@ -454,7 +455,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
 
   // ===== 动态字段选项注入（分类/标签/下载器）回归保护 =====
 
-  it('created 触发首次加载并填充分类/标签/下载器选项，下载器 value 为 nickname', async() => {
+  it('created 触发首次加载并填充分类/标签/下载器选项，下载器显示昵称并提交稳定 ID', async() => {
     await flushLifecycle()
 
     // 分类
@@ -471,18 +472,19 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
       { label: 'tag2', value: 'tag2' }
     ])
 
-    // 下载器：value 必须是 nickname，不能是 downloader_id
-    // （TorrentInfo.downloader_name 列存的就是 downloader.nickname）
     const downloaderOptions = vm.getFieldOptions('downloader_name')
     expect(downloaderOptions).toHaveLength(2)
-    expect(downloaderOptions.every(o => o.value === o.label)).toBe(true)
-    expect(downloaderOptions.map(o => o.value)).toEqual(['qbit-主', 'tr-辅'])
+    expect(downloaderOptions).toEqual([
+      { label: 'qbit-主', value: 'd1' },
+      { label: 'tr-辅', value: 'd2' }
+    ])
 
     // 既有字段不受污染：status 仍返回 STATUS_OPTIONS，super_seeding 仍是是/否
     expect(vm.getFieldOptions('status').length).toBeGreaterThan(0)
     expect(vm.getFieldOptions('super_seeding')).toEqual([
-      { label: '是', value: 'true' },
-      { label: '否', value: 'false' }
+      { label: '是', value: '1' },
+      { label: '否', value: '0' },
+      { label: '不支持', value: 'unsupported' }
     ])
 
     // 三个 API 各被 created 调用一次
@@ -569,7 +571,7 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     // 选项已更新为最新数据
     expect(vm.getFieldOptions('category')).toEqual([{ label: '新分类', value: '新分类' }])
     expect(vm.getFieldOptions('tags')).toEqual([{ label: '新标签', value: '新标签' }])
-    expect(vm.getFieldOptions('downloader_name')).toEqual([{ label: '新下载器', value: '新下载器' }])
+    expect(vm.getFieldOptions('downloader_name')).toEqual([{ label: '新下载器', value: 'x' }])
   })
 
   it('multiSelect 字段：value 以数组形态进 condition_groups，且不生成扁平参数', async() => {
@@ -628,19 +630,18 @@ describe('AdvancedSearchBuilder 关键查询链路', () => {
     expect(condition.value).toBeNull()
   })
 
-  it('getOperatorGroups 按 matchMode 过滤：单值列只暴露 in/not_in，逗号串列只暴露 contains_*', () => {
-    // category（单值精确列，matchMode=exact）→ 只 in/not_in
+  it('getOperatorGroups 按字段契约过滤，并为可空字段暴露未设置操作', () => {
     const catOps = (vm.getOperatorGroups('category')[0].operators || []).map((o: { value: string }) => o.value)
-    expect(catOps).toEqual(['in', 'not_in'])
+    expect(catOps).toEqual(['in', 'not_in', 'is_null', 'is_not_null'])
     expect(catOps).not.toContain('contains_any')
 
-    // downloader_name（单值精确列）→ 只 in/not_in
+    // 下载器值非空，不暴露空值操作。
     const dlOps = (vm.getOperatorGroups('downloader_name')[0].operators || []).map((o: { value: string }) => o.value)
     expect(dlOps).toEqual(['in', 'not_in'])
 
-    // tags（逗号串列，matchMode=substring）→ 只 contains_any/not_contains_any
+    // 标签按 token 匹配，并允许筛选未设置/已设置。
     const tagOps = (vm.getOperatorGroups('tags')[0].operators || []).map((o: { value: string }) => o.value)
-    expect(tagOps).toEqual(['contains_any', 'not_contains_any'])
+    expect(tagOps).toEqual(['contains_any', 'not_contains_any', 'is_null', 'is_not_null'])
     expect(tagOps).not.toContain('in')
   })
 

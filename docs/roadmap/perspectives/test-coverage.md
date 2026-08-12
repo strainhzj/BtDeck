@@ -32,8 +32,8 @@
 |------------|------|-----------|
 | `tests/core/test_ratio_data_diagnostics.py` | 158 | `app/core/ratio_data_diagnostics.py` |
 | `tests/services/test_torrent_ratio_values.py` | 179 | `app/services/torrent_ratio_values.py` |
-| `tests/services/test_advanced_search_regression.py` | 1770 | `app/services/advanced_search.py`（完备回归，含 tracker URL + `error`/`has_tracker_error` 组合条件及 basic/eq/ne/in/not_in 真值表） |
-| `tests/services/test_advanced_search_models_strict.py` | 128 | `app/api/models/advanced_search.py`（Pydantic 严格模式） |
+| `tests/services/test_advanced_search_regression.py` | 1846 | `app/services/advanced_search.py`（真实 SQLite 完备回归：状态真值表、Tracker `NOT EXISTS`、字面文本、标签 token、稳定下载器 ID/改名、超级做种三态、回收站/NULL 补集） |
+| `tests/services/test_advanced_search_models_strict.py` | 161 | `app/api/models/advanced_search.py`（字段级操作符白名单、模板 include/exclude、旧标签与超级做种值归一） |
 | `tests/services/test_sqlite_search_runtime.py` | 27 | `app/services/sqlite_search_runtime.py`（正则熔断） |
 | `tests/api/test_advanced_search_pagination.py` | 139 | `app/api/endpoints/advanced_search.py`（分页） |
 | `tests/services/test_torrent_metadata.py` | 100 | `app/services/torrent_metadata.py` |
@@ -76,7 +76,7 @@
 | `app/api/endpoints/torrent_backup.py` | `tests/api/test_torrent_backup_review.py`（188 行） | ✅ 当前 nickname 批量查询、空列表跳过查询与序列化 |
 | `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空、Tracker 状态归一与 camelCase 响应 |
 | `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
-| `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（1770 行）+ `test_advanced_search_models_strict.py` | ✅✅ 重度覆盖（含活动删除排除、basic/eq/ne/in/not_in 与普通列表一致的 `error` 语义） |
+| `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（1846 行）+ `test_advanced_search_models_strict.py`（161 行） | ✅✅ 重度覆盖（20 字段审计、活动/回收站排除、普通列表一致的 `error`、关系/文本/标签/空值/三态/稳定 ID 与排除补集） |
 | `app/tasks/scheduler/torrent_tracker_status_judge.py` | `test_torrent_tracker_status_judge.py` + `test_heavy_task_db_write_governance.py` | ✅ 未联系/发送中中性语义、明确失败/未知聚合与批量查询治理 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
@@ -109,7 +109,7 @@
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
-| `operator-contract.spec.ts` ✨v1.0.6.26 | 高级搜索操作符前后端契约守卫（与 `app/contracts/advanced_search_contract.json` 镜像） |
+| `operator-contract.spec.ts`（243 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、空值白名单及 `mode=exclude` 不预翻转操作符 |
 | `orphan-files.spec.ts` | 孤儿清理/彻底删除工作流；硬链接副本数量链接、批量位置弹框、复制、过期响应隔离与异常提示 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
@@ -126,17 +126,17 @@
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2584 行）
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2612 行）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
 | `AdvancedMultiSelect.performance.spec.ts` | 466 | `AdvancedMultiSelect.vue`（性能测试） |
 | `AdvancedMultiSelect.spec.ts` | 571 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
-| `AdvancedSearchBuilder.spec.ts` | 685 | `AdvancedSearchBuilder.vue`（添加条件居中/主次配色、组间 AND/OR 位于卡片外、三组顺序及删除收敛守卫） |
+| `AdvancedSearchBuilder.spec.ts` | 684 | `AdvancedSearchBuilder.vue`（按钮/组间层级、字段操作符过滤、下载器稳定 ID、超级做种三态与空值选项） |
 | `AdvancedSearchWorkspace.spec.ts` | 389 | `AdvancedSearchWorkspace.vue`（高级配置列表/回填/创建/覆盖更新/删除与权限、单次重置和异步竞态隔离） |
-| `ConditionValueInput.spec.ts` | 200 | `ConditionValueInput.vue`（状态与下载器共用不可创建的 AdvancedMultiSelect） |
-| `FilterGroup.spec.ts` | 97 | `FilterGroup.vue` |
-| `QuickDeleteDuplicatesDialog.spec.ts` | 176 | `QuickDeleteDuplicatesDialog.vue` |
+| `ConditionValueInput.spec.ts` | 243 | `ConditionValueInput.vue`（状态/下载器不可创建多选、空值无需输入、超级做种三态） |
+| `FilterGroup.spec.ts` | 89 | `FilterGroup.vue` |
+| `QuickDeleteDuplicatesDialog.spec.ts` | 170 | `QuickDeleteDuplicatesDialog.vue` |
 
 ### 组件内嵌测试 `frontend/src/components/common/__tests__/`（1 个 spec，v1.0.6.28）
 

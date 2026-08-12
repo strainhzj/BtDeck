@@ -22,6 +22,8 @@ interface ConditionValueInputVm extends Vue {
   handleInput(): void
   handleChange(): void
   inputValue: any
+  inputType: string
+  currentFieldOptions: FieldOption[]
 }
 
 const localVue = createLocalVue()
@@ -194,6 +196,49 @@ describe('ConditionValueInput 字段选项透传', () => {
     const multi = wrapper.findComponent(AdvancedMultiSelect)
     expect(multi.props('options')).toEqual(iconOptions)
     expect(multi.props('allowCreate')).toBe(false)
+
+    wrapper.destroy()
+  })
+
+  it('未设置操作符隐藏值输入并显示无需填写提示', () => {
+    const wrapper = shallowMount(ConditionValueInput, {
+      localVue,
+      propsData: {
+        field: 'ratio_limit',
+        operator: 'is_null',
+        value: null
+      }
+    })
+    const vm = wrapper.vm as unknown as ConditionValueInputVm
+
+    expect(vm.inputType).toBe('none')
+    expect(wrapper.find('.condition-value-input__empty').text()).toBe('无需填写')
+    expect(wrapper.find('el-input-stub').exists()).toBe(false)
+
+    wrapper.destroy()
+  })
+
+  it('超级做种渲染是、否、不支持三态单选', () => {
+    const wrapper = shallowMount(ConditionValueInput, {
+      localVue,
+      propsData: {
+        field: 'super_seeding',
+        operator: 'equals',
+        value: 'unsupported'
+      },
+      stubs: {
+        'el-select': true,
+        'el-option': true
+      }
+    })
+    const vm = wrapper.vm as unknown as ConditionValueInputVm
+
+    expect(vm.inputType).toBe('select')
+    expect(vm.currentFieldOptions).toEqual([
+      { label: '是', value: '1' },
+      { label: '否', value: '0' },
+      { label: '不支持', value: 'unsupported' }
+    ])
 
     wrapper.destroy()
   })

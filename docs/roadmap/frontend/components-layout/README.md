@@ -39,18 +39,18 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 高级搜索构建 advanced-search | `AdvancedSearchBuilder.vue` | 高级搜索条件构建器（`AdvancedSearchBuilder` class，L420）；“添加条件”居中主按钮 L225–235，全局“添加条件组”改次按钮 L260–268，组间 AND/OR 为卡片外独立控件 L238–256；`getTemplateGroupsSnapshot()` L985 提供校验后的条件快照 |
+| 高级搜索构建 advanced-search | `AdvancedSearchBuilder.vue`（1396 行） | 高级搜索条件构建器（`AdvancedSearchBuilder` L421）；“添加条件”居中、组间 AND/OR 位于卡片外；L572 下载器显示 nickname/提交稳定 ID，L785 超级做种三态，`getOperatorGroups()` L807 按字段契约过滤操作符；`getTemplateGroupsSnapshot()` L991 提供校验后快照 |
 | 高级搜索工作区 saved-search | `AdvancedSearchWorkspace.vue` | 两种种子视图共用的高级搜索工作区（`AdvancedSearchWorkspace` L156）：左侧加载高级模板并支持选择回填、搜索、新建、覆盖更新与删除（L232–385），右侧复用 Builder |
-| 条件值输入 condition-value | `ConditionValueInput.vue` | 搜索条件值输入（`ConditionValueInput` L346，按字段类型切换控件）；L358–362 将状态与下载器一样路由到不可创建选项的 `AdvancedMultiSelect` |
+| 条件值输入 condition-value | `ConditionValueInput.vue`（864 行） | 搜索条件值输入（`ConditionValueInput` L351）；状态/下载器使用不可创建多选，空值操作符显示“无需填写”，`currentFieldOptions` L494 为超级做种提供是/否/不支持三态下拉 |
 | 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应 |
-| 高级搜索状态 advanced-search-state | `advancedSearchState.ts` ✨v1.0.6.28 | 高级搜索可复用状态/纯逻辑；L134–138 将 status/category/downloader_name 统一为精确多选，加载旧模板时把标量值与 equals/not_equals 兼容归一为数组及 in/not_in |
+| 高级搜索状态 advanced-search-state | `advancedSearchState.ts`（728 行）✨v1.0.6.28 | 高级搜索可复用状态/纯逻辑；L284/L403 兼容旧模板的多选、标签 token 与超级做种布尔值；L638 构建请求时保留正操作符和独立 `mode`，空值操作符发送 `null`，避免排除模式双重取反 |
 | 紧凑表格视图 compact-table | `CompactTable.vue` | ⚠ **Options API**（L301 `export default {`，`CompactTable`）：紧凑表格视图 |
 | 重复种子检测 duplicate | `DuplicateTorrentsDialog.vue` | 重复种子检测对话框 |
 | 大小过滤 size-range | `SizeRangeFilter.vue` | 种子大小范围过滤器（`SizeRangeFilter` class） |
 | 虚拟滚动 virtual-scroll | `VirtualScrollList.vue` | 虚拟滚动列表（`VirtualScrollList` class） |
 | 过滤组 filter-group | `FilterGroup.vue` | 过滤条件组容器（`FilterGroup` class） |
 | 分页组合框 page-size | `PageSizeCombobox.vue` ✨v1.0.6.30 | 共享分页组合框（20/50/100/500/1000 预设 + 1–100000 自定义输入；被列表/传统两视图复用，统一每页数量交互） |
-| 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 571）/ AdvancedSearchBuilder（685）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（200）/ FilterGroup（97）/ QuickDeleteDuplicatesDialog（176），共 2584 行 |
+| 搜索组件测试 search-test | `__tests__/*.spec.ts`（7 个） | AdvancedMultiSelect（性能 466 + 单元 571）/ AdvancedSearchBuilder（684）/ AdvancedSearchWorkspace（389）/ ConditionValueInput（243）/ FilterGroup（89）/ QuickDeleteDuplicatesDialog（170），共 2612 行 |
 
 > ⚠ `CompactTable.vue` 是全仓库 3 处 Options API 之一（技术债候选）。
 
@@ -91,8 +91,8 @@
 
 - **范式分布**：本分支 28 个文件中，27 个为 class-component；`components/torrents/CompactTable.vue` 是唯一的 Options API（全仓库 3 处之一）
 - **Monaco Editor 双版本**：`components/MonacoEditor.vue`（通用）与 `components/tasks/MonacoEditor.vue`（任务专用，含 Python 高亮）
-- **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2584 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态多选、添加按钮视觉、三条件组连接器顺序及删除收敛均有回归守卫
+- **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2612 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态/下载器多选、稳定 ID、超级做种三态、空值控件、按钮视觉与多条件组均有回归守卫
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`CronEditor.vue` 1269 行、`AdvancedSearchBuilder.vue` 1391 行、`AdvancedSearchWorkspace.vue` 609 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`CronEditor.vue` 1269 行、`AdvancedSearchBuilder.vue` 1396 行、`AdvancedSearchWorkspace.vue` 609 行）

@@ -47,7 +47,7 @@ BtDeck/
 | 通知中心 notification | `layout/components/NotificationDrawer/`、`api/notification.ts`、`store/modules/notification.ts` | `api/endpoints/notifications.py`；`services/notification_service.py`；`models/notification.py` |
 | 查询模板 query-template | `views/query-templates/`（行操作为 Lucide 极简按钮） | `api/endpoints/advanced_search.py`；`services/advanced_search.py`；`models/search_template.py` |
 | 标签管理 tag | 下载器页 TagManagementTab | `api/endpoints/tag_management.py`；`services/tag_service.py` / `tag_sync_service.py` / `tag_adapters/`；`models/torrent_tags.py` |
-| 高级搜索 advanced-search | `components/torrents/AdvancedSearchWorkspace.vue`（左侧已保存搜索选择/创建/更新/删除）+ Builder（“添加条件”居中主按钮，组间 AND/OR 为组卡片外独立控件）+ 两种种子视图 | `api/endpoints/advanced_search.py`；`services/advanced_search.py`（`error` 同时匹配种子错误状态与 `has_tracker_error`）/ `sqlite_search_runtime.py` |
+| 高级搜索 advanced-search | `components/torrents/AdvancedSearchWorkspace.vue`（左侧已保存搜索选择/创建/更新/删除）+ Builder（契约过滤操作符；下载器显示 nickname/提交稳定 ID；超级做种三态；包含/排除模式原样传输）+ 两种种子视图 | `api/endpoints/advanced_search.py`；`services/advanced_search.py`（20 字段；`error` 复用列表语义；Tracker 否定走 `NOT EXISTS`；文本字面匹配、标签完整 token、空值严格补集、回收站排除）/ `sqlite_search_runtime.py` |
 | 种子转移 seed-transfer | — | `api/endpoints/seed_transfer.py`；`services/seed_transfer_service.py`；`models/seed_transfer_audit_log.py` |
 | 重复种子 duplicate | `views/torrents/index.vue` / `TraditionalView.vue`（绿色查询开关，筛选/排序/分页期间保持）+ `components/torrents/QuickDeleteDuplicatesDialog.vue` | `api/endpoints/duplicate_torrents.py`（默认添加时间倒序、活动快照与侧栏筛选）/ `duplicate_quick_delete.py`；`services/duplicate_quick_delete_service.py` |
 | 种子备份 torrent-backup | `views/torrents/FileManagement.vue`、`api/torrents.ts` / `api/torrents-backup.ts` | `api/endpoints/torrent_backup.py`（列表单次批量解析当前下载器 nickname，不逐行请求）；`services/torrent_file_backup_manager.py`；`models/torrent_file_backup.py` |
@@ -121,4 +121,4 @@ BtDeck/
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索调整按钮视觉与组间 AND/OR 层级，并统一高级/普通列表的 `error` 语义；Transmission 错误原因同步展示及 Tracker 状态码归一化，未联系/发送中不再归类为错误。 |
+| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏；Transmission 错误原因同步展示及 Tracker 状态码归一化，未联系/发送中不再归类为错误。 |

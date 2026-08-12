@@ -37,13 +37,14 @@ function extractFieldType(source: string, field: string, typeQuote: "'" | '"' = 
   return m ? m[1] : null
 }
 
-describe('字段类型三表一致性（status / category / downloader_name / tags）', () => {
+describe('字段类型三表一致性（多选字段与超级做种）', () => {
   // 三表对三个关键字段的期望类型
   const cases: Array<{ field: string, expected: string }> = [
     { field: 'status', expected: 'multiSelect' },
     { field: 'category', expected: 'multiSelect' },
     { field: 'downloader_name', expected: 'multiSelect' },
-    { field: 'tags', expected: 'multiSelect' }
+    { field: 'tags', expected: 'multiSelect' },
+    { field: 'super_seeding', expected: 'select' }
   ]
 
   describe.each(cases)('$field', ({ field, expected }) => {

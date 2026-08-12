@@ -30,7 +30,7 @@ def allowed_operators_for_field(field: str) -> FrozenSet[str]:
     config = SEARCH_FIELD_CONTRACT.get(field)
     if not config:
         return frozenset()
-    return frozenset(config["operators"]) | NULL_SEARCH_OPERATORS
+    return frozenset(config["operators"])
 
 
 def field_kind(field: str) -> str | None:

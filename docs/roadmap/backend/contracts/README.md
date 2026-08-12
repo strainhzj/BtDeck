@@ -7,8 +7,8 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 契约加载器 contract-loader | `advanced_search.py` | 高级搜索契约加载器：把 JSON 解析为模块级常量（`SEARCH_FIELD_CONTRACT` / `SUPPORTED_SEARCH_OPERATORS` / `FRONTEND_TO_BACKEND_OPERATOR` / `NEGATED_SEARCH_OPERATORS` 等），提供 `allowed_operators_for_field(field)` / `field_kind(field)` 查询函数 |
-| 机器可读契约 contract-json | `advanced_search_contract.json` | **机器可读契约**：字段 → kind/operators/negated 映射、nullOperators、maxRegexConditions、maxRegexPatternLength、operatorGroups；`status` 的 kind 为 `multiSelect`，与下载器字段共用精确多选语义 |
+| 契约加载器 contract-loader | `advanced_search.py`（38 行） | 高级搜索契约加载器：把 JSON 解析为模块级常量（`SEARCH_FIELD_CONTRACT` / `SUPPORTED_SEARCH_OPERATORS` / `FRONTEND_TO_BACKEND_OPERATOR` / `NEGATED_SEARCH_OPERATORS` 等）；`allowed_operators_for_field(field)` 严格返回该字段声明的白名单，不再把全局空值操作符注入所有字段 |
+| 机器可读契约 contract-json | `advanced_search_contract.json`（100 行，v3） | **机器可读契约**：20 字段 → kind/operators/negated 映射、nullOperators、正则上限及 operatorGroups；完成时间/比率/比率限制/标签/分类声明“未设置/已设置”，`status`/下载器为精确多选，超级做种为是/否/不支持三态 `select` |
 
 ## 设计动机
 
@@ -37,10 +37,10 @@
 
 | 消费者 | 用途 |
 |--------|------|
-| `app/api/models/advanced_search.py` | Pydantic 校验器引用 `SUPPORTED_SEARCH_OPERATORS` / `allowed_operators_for_field`，请求期拒绝非法操作符 |
-| `backend/tests/services/test_advanced_search_regression.py` | 契约守卫测试：断言契约覆盖所有字段、无未声明操作符 |
+| `app/api/models/advanced_search.py` | Pydantic 校验器引用 `SUPPORTED_SEARCH_OPERATORS` / `allowed_operators_for_field`，请求期拒绝非法操作符；`SearchCondition.mode` 独立保存 include/exclude，旧标签标量操作符归一为 token 操作符 |
+| `backend/tests/services/test_advanced_search_regression.py` / `test_advanced_search_models_strict.py` | 契约与真实 SQLite 守卫：字段白名单、模板模式、空值、标签、Tracker、下载器改名与三态查询 |
 
-> 前端目前通过 `frontend/tests/unit/operator-contract.spec.ts`（v1.0.6.26 新增）镜像同一份语义做前后端契约守卫；后续可改为构建期直接读取 JSON。
+> 前端通过 `frontend/scripts/generate-advanced-search-contract.js` 从本 JSON 生成 `advancedSearch.generated.ts`，`operator-contract.spec.ts` 再逐项校验生成结果与源 JSON 完全一致；`npm run contract:check` 阻止漂移。
 
 ---
 

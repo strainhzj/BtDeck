@@ -596,6 +596,7 @@ export interface AdvancedSearchRequest {
       field: string
       operator: string
       value: unknown
+      mode?: 'include' | 'exclude'
     }>
   }>
   between_group_logics?: Array<'AND' | 'OR'>

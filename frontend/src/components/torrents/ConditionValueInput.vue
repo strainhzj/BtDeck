@@ -1,8 +1,13 @@
 <template>
   <div class="condition-value-input">
+    <span
+      v-if="inputType === 'none'"
+      class="condition-value-input__empty"
+    >无需填写</span>
+
     <!-- 文本输入 -->
     <el-input
-      v-if="inputType === 'text'"
+      v-else-if="inputType === 'text'"
       v-model="inputValue"
       :placeholder="placeholder"
       size="small"
@@ -233,7 +238,7 @@
       style="width: 100%;"
     >
       <el-option
-        v-for="option in fieldOptions"
+        v-for="option in currentFieldOptions"
         :key="option.value"
         :label="option.label"
         :value="option.value"
@@ -256,7 +261,7 @@
       <AdvancedMultiSelect
         v-model="inputValue"
         :options="fieldOptions"
-        :allow-create="field !== 'status'"
+        :allow-create="!['status', 'downloader_name'].includes(field)"
         :virtual-scroll-threshold="100"
         :list-height="200"
         :show-advanced="true"
@@ -367,7 +372,7 @@ export default class ConditionValueInput extends Vue {
     ratio_limit: 'number',
     tags: 'multiSelect',
     category: 'multiSelect',
-    super_seeding: 'boolean',
+    super_seeding: 'select',
     tracker_url: 'text',
     tracker_msg: 'text'
   }
@@ -383,15 +388,19 @@ export default class ConditionValueInput extends Vue {
     { label: '错误', value: 'error' }
   ]
 
-  // 布尔选项
-  readonly booleanOptions: FieldOption[] = [
-    { label: '是', value: 'true' },
-    { label: '否', value: 'false' }
+  readonly superSeedingOptions: FieldOption[] = [
+    { label: '是', value: '1' },
+    { label: '否', value: '0' },
+    { label: '不支持', value: 'unsupported' }
   ]
 
   // Computed
   get inputType(): string {
     const fieldType = this.fieldTypeMap[this.field as keyof typeof this.fieldTypeMap] || 'text'
+
+    if (this.operator === 'is_null' || this.operator === 'is_not_null') {
+      return 'none'
+    }
 
     // 根据操作符调整输入类型
     switch (this.operator) {
@@ -493,7 +502,7 @@ export default class ConditionValueInput extends Vue {
       case 'status':
         return this.statusOptions
       case 'super_seeding':
-        return this.booleanOptions
+        return this.superSeedingOptions
       default:
         return []
     }
@@ -693,6 +702,14 @@ export default class ConditionValueInput extends Vue {
 <style lang="scss" scoped>
 .condition-value-input {
   width: 100%;
+
+  &__empty {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    color: #909399;
+    font-size: 13px;
+  }
 
   .last-days-input {
     display: flex;

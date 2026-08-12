@@ -209,6 +209,15 @@ def _normalize_condition_value(field: str, operator: str, value: Any) -> Any:
         if not items:
             raise ValueError(f"{operator} requires at least one value")
         return items
+    if field == "super_seeding":
+        normalized = str(value).strip().lower()
+        if normalized in {"1", "true"}:
+            return "1"
+        if normalized in {"0", "false"}:
+            return "0"
+        if normalized in {"unsupported", "unknown"}:
+            return "unsupported"
+        raise ValueError("super_seeding requires true, false or unsupported")
     if kind == "number" and operator in _SCALAR_COMPARISON_OPERATORS:
         return _parse_size_value(value) if field == "size" else _finite_non_negative_number(value, field=field)
     if kind == "date" and operator in _SCALAR_COMPARISON_OPERATORS:
@@ -237,6 +246,10 @@ class SearchCondition(BaseModel):
     field: str = Field(..., description="搜索字段", examples=["name"])
     operator: str = Field(..., description="操作符", examples=["contains"])
     value: Any = Field(..., description="搜索值", examples=["电影"])
+    mode: Literal["include", "exclude"] = Field(
+        "include",
+        description="条件模式；exclude 表示对当前操作符的完整结果取严格补集",
+    )
 
     @model_validator(mode="after")
     def validate_field_operator_and_value(self):
@@ -244,9 +257,20 @@ class SearchCondition(BaseModel):
             raise ValueError(f"unknown search field: {self.field}")
         if self.operator not in SUPPORTED_SEARCH_OPERATORS:
             raise ValueError(f"unknown search operator: {self.operator}")
+        if self.field == "tags":
+            self.operator = {
+                "eq": "contains_any",
+                "contains": "contains_any",
+                "in": "contains_any",
+                "ne": "not_contains_any",
+                "not_contains": "not_contains_any",
+                "not_in": "not_contains_any",
+            }.get(self.operator, self.operator)
         allowed = allowed_operators_for_field(self.field)
         if self.operator not in allowed:
             raise ValueError(f"operator {self.operator!r} is not allowed for field {self.field!r}")
+        if self.mode == "exclude" and self.operator not in NEGATED_SEARCH_OPERATORS:
+            raise ValueError(f"operator {self.operator!r} does not support exclude mode")
         self.value = _normalize_condition_value(self.field, self.operator, self.value)
         return self
 
@@ -414,11 +438,8 @@ def _template_condition_for_validation(raw: Any) -> SearchCondition:
     mode = raw.get("mode", "include")
     if mode not in {"include", "exclude"}:
         raise ValueError("template condition mode must be include or exclude")
-    if mode == "exclude":
-        negated_operator = NEGATED_SEARCH_OPERATORS.get(operator)
-        if negated_operator is None:
-            raise ValueError(f"operator {frontend_operator!r} does not support exclude mode")
-        operator = negated_operator
+    if mode == "exclude" and operator not in NEGATED_SEARCH_OPERATORS:
+        raise ValueError(f"operator {frontend_operator!r} does not support exclude mode")
     value = raw.get("value")
     if field == "size" and operator != "between" and isinstance(value, dict):
         numeric = value.get("value", value.get("min"))
@@ -429,7 +450,7 @@ def _template_condition_for_validation(raw: Any) -> SearchCondition:
             "min": (f"{value.get('min')} {value.get('minUnit', 'GB')}" if value.get("min") is not None else None),
             "max": (f"{value.get('max')} {value.get('maxUnit', 'GB')}" if value.get("max") is not None else None),
         }
-    return SearchCondition.model_validate({"field": field, "operator": operator, "value": value})
+    return SearchCondition.model_validate({"field": field, "operator": operator, "value": value, "mode": mode})
 
 
 def validate_template_conditions_payload(value: Any) -> Dict[str, Any]:

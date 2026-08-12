@@ -1,5 +1,38 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-12 - 高级搜索全字段语义审计与修复
+
+### 已完成
+
+- 审计机器契约中的 20 个高级搜索字段，不只修状态：Tracker URL/消息的否定条件改为
+  `NOT EXISTS(匹配 Tracker)`，多 Tracker 种子不会因另一条不匹配记录被误纳入；无活动 Tracker
+  自然属于正条件的严格补集。
+- 文本 contains/starts/ends 对 `%`、`_` 使用字面匹配；标签从任意子串改为逗号/分号分隔的完整
+  token 匹配并兼容分隔符空格，避免“辅种”误命中“IYUU自动辅种”。
+- 下载器选择仍显示 nickname，但请求保存稳定 `downloader_id`；后端兼容 ID、当前 nickname 与历史
+  快照 nickname，下载器改名后旧模板仍可命中。
+- 超级做种改为“是/否/不支持”三态；完成时间、比率、比率限制、标签、分类增加字段级
+  “未设置/已设置”，不支持空值搜索的字段在请求期拒绝。
+- 前端不再把排除模式预先翻成反操作符，而是原样发送正操作符 + `mode=exclude`；后端统一取严格
+  补集，NULL/未设置值不再被 SQL 三值逻辑意外漏掉。查询模板和中间请求转换均保留该模式。
+- 高级搜索基础集同时排除 `dr != 0`、`deleted_at != NULL` 和活动删除任务，回收站记录不再泄漏。
+- 同步更新 v3 机器契约、生成 TypeScript、路线图、功能清单与交接记录；无 Schema/Alembic 变更，
+  未 stage/commit/push/deploy，任务前未跟踪产物未触碰。
+
+### 回归与验证
+
+- 后端相关全链路：`235 passed`；新增语义重点两文件：`142 passed`。覆盖用户原始 azusa + error
+  载荷、Tracker 多行否定、SQL 通配符、标签 token、回收站、下载器改名、超级做种三态、空值
+  白名单/空字符串、布尔 false 与 include/exclude 补集。
+- 前端：Builder/Input/契约/请求转换 4 suites、`119 passed`；新增重点两套件 `82 passed`。
+- 全量回归：后端 `3233 passed, 7 skipped`；前端 `43 suites, 686 passed`。
+- 后端 Ruff/Flake8，前端目标 ESLint、`tsc --noEmit`、`contract:check`、生产 build 及
+  `git diff --check` 均通过；build 只有既有 Sass/Browserslist/体积提示。
+- 用与用户示例同结构的真实 SQLite 请求单独验证，`tracker_url contains azusa` +
+  `status in [error]` 返回 `total=1`。
+- 根 `./init.sh` 未能在当前 Windows 主机执行：WSL 启动返回 `E_ACCESSDENIED`，提权环境又无
+  `/bin/bash`；已拆分执行后端/前端等价校验。完整前端 lint 的 5 条无关既有 warning 仍为基线。
+
 ## 2026-08-12 - 种子文件、任务日志、高级搜索与错误原因修复
 
 ### 后续修正：高级搜索 UI/组合查询与 Tracker 状态语义

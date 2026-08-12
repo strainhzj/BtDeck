@@ -9,7 +9,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（ORM 查询引擎，13 字段；契约校验 + 有界正则；基础查询排除活动删除任务中的种子）；`_build_status_filter()` L366 统一普通/高级搜索的 `error` 语义 |
+| 高级搜索 advanced-search ratio | `advanced_search.py` | 高级搜索服务（1397 行，20 字段；契约校验 + 有界正则；基础查询排除 `dr`/`deleted_at`/活动删除）；`_build_condition_filter()` L329 统一严格补集，`_build_status_filter()` L438 复用列表 `error` 语义，下载器 L468 支持稳定 ID/新旧 nickname，超级做种 L488 为是/否/不支持三态，Tracker 否定用 `NOT EXISTS` |
 | 异步删除 async-deletion | `async_deletion_executor.py` | 异步批量删除执行器（超时/跳过失败/计数） |
 | 审计日志 audit | `audit_service.py` / `audit_service_sync.py` | 审计日志异步/同步服务（记录/查询/归档，不阻塞主业务） |
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
@@ -79,9 +79,9 @@
 - **适配器模式**：`downloader_adapters` 与 `tag_adapters` 都遵循"抽象基类 → qB/Transmission 两实现 → 工厂创建"三件套
 - **同步/异步双版本**：`audit_service.py`（异步）+ `audit_service_sync.py`（同步）；`tag_service.py` 内部支持两种调用；`cron_crud.py` + `cron_crud_async.py`（在 tasks 分支）
 - **模块级函数 vs 类**：`torrent_crud_service.py`（26 个函数无类）与 `torrent_metadata.py`（23 个函数无类）是有意写成工具函数集合，与 `DashboardService` 等类风格并存
-- **契约驱动（v1.0.6.27）**：`advanced_search.py` 不再硬编码操作符/字段语义，而是 import `app.contracts.advanced_search` 做请求期校验 + `sqlite_search_runtime` 做有界正则执行
+- **契约驱动（v1.0.6.27）**：`advanced_search.py` import `app.contracts.advanced_search` 做请求期校验 + `sqlite_search_runtime` 做有界正则执行；2026-08-12 起空值操作符按字段白名单校验，文本按字面量、标签按完整 token，否定条件与 UI `mode=exclude` 分离执行
 - **三态值规范化（v1.0.6.25）**：`torrent_ratio_values.py` 用 `RatioValueState` 枚举区分"有限值/下载器明确无限制/数据缺失"
 
 ## 第三层详情
 
-- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3277 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1350 行）
+- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3277 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1397 行）
