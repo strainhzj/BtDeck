@@ -14,7 +14,7 @@
 | 回收站 recycle-bin | `recycle-bin.ts` | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |
 | 审计日志 audit-logs | `audit-logs.ts` | 审计日志：查询/统计/操作类型/导出/归档/下载 |
 | 标签管理 tag | `tag-management.ts` | 标签管理：分类/标签 CRUD/批量删除/分类支持检查 |
-| 孤儿文件 orphan | `orphan-files.ts` | 扫描/筛选/清理/忽视/隔离恢复；数量行含 `hardlink_copy_count`，`getHardlinkCopyLocations` 批量查询副本路径；清理任务支持占用与混合跳过统计 |
+| 孤儿文件 orphan | `orphan-files.ts` | `triggerScan` 提交后台 scan_id/task_id，`getScanStatus` 轮询；`getOrphanFolderChildren` 展开后独立分页；`reviewScanGuardrail` 双确认复核；保留硬链接定位、清理/忽视/隔离恢复 |
 | 种子备份 torrents-backup | `torrents-backup.ts` | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |
 | 通知 notification | `notification.ts` | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |

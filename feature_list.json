@@ -19,6 +19,69 @@
   },
   "features": [
     {
+      "id": "orphan-scan-background-stable-details-and-guardrail",
+      "name": "孤儿扫描后台化、稳定明细复用与 12 万级争用治理",
+      "description": "将孤儿扫描改为持久化后台任务和轻量状态轮询；文件夹子项按展开懒加载、独立分页，硬链接实时统计仅覆盖当前可见文件；生命周期查询、明细复用、更新与 resolved 全部分批并进入 db_write_scope；超过 50000 条的扫描在路径映射和孤儿样本复核前强制禁止任何清理。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-scan-background-stable-details-and-guardrail.1",
+          "name": "后台扫描、稳定明细与超量安全门禁",
+          "description": "POST /orphan-files/scan 立即返回 scan_id/task_id，后台串行执行并支持 queued 重启恢复；同一 canonical_path 复用 current_detail_id，仅在首次发现或清理后重新出现时新增明细；历史和新产生的超量成功批次在完成双重人工核查前均不可预览或清理。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/alembic/versions/7b2c9d4e6f10_orphan_scan_background_and_current_detail.py",
+            "backend/app/models/orphan_file.py",
+            "backend/app/services/orphan_scan_job_service.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/tasks/scheduler/orphan_scan_task.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue"
+          ],
+          "evidence": "后台任务 API/调度/恢复与双重复核回归通过；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。真实文件型 SQLite WAL+NullPool 以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s；测试运行通过。未执行任何清理。"
+        },
+        {
+          "id": "orphan-scan-background-stable-details-and-guardrail.2",
+          "name": "文件夹懒加载与可见文件硬链接统计",
+          "description": "文件夹父页只做 SQL 聚合，展开后调用独立分页接口加载子项；父行不 stat，只有扁平当前页、单文件父页和已展开子页执行实时 st_nlink 统计。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_folder_grouping.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "frontend/tests/unit/api-contracts.spec.ts"
+          ],
+          "evidence": "后端父行无 children/stat、子项独立分页及可见页硬链接回归通过；前端类型检查、改动文件 ESLint 与 orphan-files/API 契约 Jest 通过。"
+        },
+        {
+          "id": "orphan-scan-background-stable-details-and-guardrail.3",
+          "name": "真实 SQLite 12 万级接口响应时间回归",
+          "description": "以真实临时数据库文件启用生产同类 WAL、synchronous=NORMAL、busy_timeout 和 NullPool，在 120100 条生命周期分批写入期间并发轮询轻量状态 API，防止重新退化成长事务或重复明细。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/integration/test_orphan_scan_120k_regression.py",
+            "backend/tests/services/test_orphan_scan_job_service.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py"
+          ],
+          "evidence": "test_orphan_scan_120k_regression.py：1 passed（约 42 秒）；迁移 head/backfill 回归通过；孤儿相关全量套件最终验证记录见 progress.md。"
+        }
+      ]
+    },
+    {
       "id": "torrent-management-usability-and-error-reason",
       "name": "种子文件、任务日志、高级搜索与错误原因修复",
       "description": "统一种子文件管理与任务日志交互，修复查看日志筛选清空，调整高级搜索状态多选与按钮层级，并将 Transmission 错误原因同步入库后在两种种子视图展示。",

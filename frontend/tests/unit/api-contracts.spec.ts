@@ -14,9 +14,12 @@ import {
   getCleanupJobStatus,
   getHardlinkCopyLocations,
   getLatestScan,
+  getOrphanFolderChildren,
   getOrphanList,
   getPurgeJobStatus,
+  getScanStatus,
   purgeQuarantineNow,
+  reviewScanGuardrail,
   setIgnored,
   triggerScan
 } from '@/api/orphan-files'
@@ -202,6 +205,41 @@ describe('API 请求契约', () => {
       expectRequest(
         () => triggerScan(),
         { url: '/orphan-files/scan', method: 'post' }
+      )
+    })
+
+    it('后台扫描提供轻量状态轮询与双重核查接口', () => {
+      expectRequest(
+        () => getScanStatus('scan-1'),
+        { url: '/orphan-files/scans/scan-1', method: 'get' }
+      )
+
+      mockRequest.mockReset()
+      const data = {
+        confirmed_path_mapping: true as const,
+        confirmed_orphan_samples: true as const,
+        note: '已核查路径映射和二十条样本'
+      }
+      expectRequest(
+        () => reviewScanGuardrail('scan-1', data),
+        {
+          url: '/orphan-files/scans/scan-1/guardrail-review',
+          method: 'post',
+          data
+        }
+      )
+    })
+
+    it('文件夹子项展开后使用独立分页查询', () => {
+      const params = {
+        folder_path: '/data/movies',
+        page: 3,
+        page_size: 20,
+        status: 'pending' as const
+      }
+      expectRequest(
+        () => getOrphanFolderChildren(params),
+        { url: '/orphan-files/folders/children', method: 'get', params }
       )
     })
 

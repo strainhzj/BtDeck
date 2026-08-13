@@ -16,7 +16,7 @@
 | 下载器设置 model downloader-setting | `downloader_settings.py` | `downloader_settings` + `SpeedUnitEnum` |
 | 枚举 model enums | `enums.py` | `SpeedUnitEnum`、`ScheduleDayOfWeekEnum`（⚠ 与 downloader_settings.py 重复定义） |
 | 通知模型 model notification | `notification.py` | `notification`：系统单向通知信箱 |
-| 孤儿模型 model orphan | `orphan_file.py` | `orphan_scan_result` / `orphan_file` / `orphan_current_candidate` / `orphan_operation_lease` |
+| 孤儿模型 model orphan | `orphan_file.py` | `orphan_scan_result`（后台状态、增量统计、超量复核）/ `orphan_file`（稳定明细）/ `orphan_current_candidate`（`current_detail_id` 指针）/ `orphan_operation_lease` |
 | 孤儿清理任务 model orphan-purge | `orphan_purge_job.py` | `orphan_purge_job`：隔离区彻底删除持久化任务状态与通知送达标记 |
 | 搜索模板 model search-template | `search_template.py` | `search_templates`：搜索模板 |
 | 种子转移审计 model seed-transfer-audit | `seed_transfer_audit_log.py` | `seed_transfer_audit_log`：种子转移审计日志 |

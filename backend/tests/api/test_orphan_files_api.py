@@ -22,6 +22,7 @@
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+import time
 
 import jwt
 import pytest
@@ -265,6 +266,101 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 200
         assert response.json()["code"] == "200"
         mocked.assert_awaited_once_with([1], scan_id="scan-latest")
+
+    def test_manual_scan_immediately_returns_persistent_background_task(self):
+        """POST /scan 只持久化并派发任务，不得在请求协程内执行扫描。"""
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+        from app.services.orphan_scanner import OrphanScanner
+
+        submission = {
+            "scan_id": "scan-background-1",
+            "task_id": "scan-background-1",
+            "status": "queued",
+            "accepted": True,
+        }
+        submit_scan = AsyncMock(return_value=submission)
+        dispatcher = MagicMock()
+        started = time.perf_counter()
+        with (
+            patch.object(OrphanScanJobService, "submit_scan", submit_scan),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_scan_dispatcher",
+                return_value=dispatcher,
+            ),
+            patch.object(OrphanScanner, "scan", AsyncMock()) as scanner_scan,
+        ):
+            response = self.client.post("/api/v1/orphan-files/scan")
+        elapsed = time.perf_counter() - started
+
+        assert response.status_code == 200
+        assert response.json()["data"] == submission
+        assert elapsed < 1.0
+        submit_scan.assert_awaited_once_with(scan_type="manual", operator="tester")
+        dispatcher.submit.assert_called_once_with("scan-background-1")
+        scanner_scan.assert_not_awaited()
+
+    def test_scan_status_uses_lightweight_single_record_service(self):
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+
+        record = {
+            "scan_id": "scan-background-1",
+            "task_id": "scan-background-1",
+            "status": "running",
+        }
+        get_scan = AsyncMock(return_value=record)
+        with patch.object(OrphanScanJobService, "get_scan", get_scan):
+            response = self.client.get("/api/v1/orphan-files/scans/scan-background-1")
+
+        assert response.status_code == 200
+        assert response.json()["data"] == record
+        get_scan.assert_awaited_once_with("scan-background-1")
+
+    def test_guardrail_review_requires_both_safety_confirmations(self):
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+
+        review = AsyncMock()
+        with patch.object(OrphanScanJobService, "review_guardrail", review):
+            response = self.client.post(
+                "/api/v1/orphan-files/scans/scan-large/guardrail-review",
+                json={
+                    "confirmed_path_mapping": True,
+                    "confirmed_orphan_samples": False,
+                    "note": "已核查路径映射和十条样本",
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == "400"
+        review.assert_not_awaited()
+
+    def test_guardrail_review_records_operator_and_note_after_double_check(self):
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+
+        payload = {
+            "scan_id": "scan-large",
+            "task_id": "scan-large",
+            "status": "completed",
+            "cleanup_reviewed_by": "tester",
+        }
+        review = AsyncMock(return_value=payload)
+        note = "已核查全部路径映射并抽样二十条孤儿文件"
+        with patch.object(OrphanScanJobService, "review_guardrail", review):
+            response = self.client.post(
+                "/api/v1/orphan-files/scans/scan-large/guardrail-review",
+                json={
+                    "confirmed_path_mapping": True,
+                    "confirmed_orphan_samples": True,
+                    "note": note,
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"] == payload
+        review.assert_awaited_once_with(
+            scan_id="scan-large",
+            operator="tester",
+            note=note,
+        )
 
     def test_cleanup_preview_resolves_select_all_filter_snapshot(self):
         """全选请求应先按筛选与排除项解析 ID，再进入既有安全预览。"""

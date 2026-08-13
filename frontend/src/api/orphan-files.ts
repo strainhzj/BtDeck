@@ -44,13 +44,19 @@ export interface OrphanFolderRow {
   folder_path: string
   /** 子文件数 */
   child_count: number
-  /** 子文件列表（含完整 OrphanFileItem 字段） */
+  /** 当前已加载的独立分页子文件；父行初始为空 */
   children: OrphanFileItem[]
-  /** 子文件 id 列表，用于展开提交 */
+  /** 当前已加载页的子文件 id；父行初始为空 */
   child_ids: number[]
+  /** 子项是否已按需加载 */
+  children_loaded: boolean
+  children_loading: boolean
+  child_page: number
+  child_page_size: number
+  child_total: number
   /** 子文件大小合计 */
   total_size: number
-  /** 子文件硬链接副本数合计；任一子文件不可访问时为 null */
+  /** 父行固定为 null；展开页中每个可见文件单独实时统计 */
   hardlink_copy_count: number | null
   /** 子文件最近修改时间 */
   latest_mtime: string | null
@@ -116,7 +122,7 @@ export interface HardlinkCopyLocationsResult {
 /**
  * 数据库中持久化的扫描状态；busy 只属于触发响应，不在此联合中。
  */
-export type OrphanScanRecordStatus = 'running' | 'completed' | 'failed'
+export type OrphanScanRecordStatus = 'queued' | 'running' | 'completed' | 'failed'
 
 /**
  * 置信度：high=在线精筛判定，low=离线降级目录粗筛判定
@@ -139,6 +145,14 @@ export interface OrphanScanRecord {
   status: OrphanScanRecordStatus
   error_message: string | null
   operator: string | null
+  details_mode: 'snapshot' | 'current'
+  new_orphans: number
+  known_orphans: number
+  resolved_orphans: number
+  cleanup_review_required: boolean
+  cleanup_reviewed_at: string | null
+  cleanup_reviewed_by: string | null
+  cleanup_review_note: string | null
   created_at: string | null
 }
 
@@ -156,32 +170,14 @@ export interface OrphanScanContext {
   cleanup_block_reason: string | null
 }
 
-export interface OrphanScanCompletedResult {
+export interface OrphanScanSubmittedResult {
   scan_id: string
-  scan_time: string
-  scan_type: string
-  total_paths_scanned: number
-  total_files_scanned: number
-  total_orphans: number
-  total_orphan_size: number
-  status: 'completed'
+  task_id: string
+  status: 'queued' | 'running'
+  accepted: boolean
 }
 
-export interface OrphanScanFailedResult {
-  scan_id: string
-  status: 'failed'
-  error: string
-}
-
-export interface OrphanScanBusyResult {
-  status: 'busy'
-  error: string
-}
-
-export type OrphanScanTriggerResult =
-  | OrphanScanCompletedResult
-  | OrphanScanFailedResult
-  | OrphanScanBusyResult
+export type OrphanScanTriggerResult = OrphanScanSubmittedResult
 
 /**
  * 清理预览结果。后端仍会在执行时重新校验 scan_id 与安全门禁。
@@ -314,6 +310,23 @@ export interface IgnoreRequest extends OrphanSelectionPayload {
   ignored: boolean
 }
 
+export interface OrphanFolderChildrenParams extends Omit<OrphanListParams, 'group_by_folder'> {
+  folder_path: string
+}
+
+export interface OrphanFolderChildrenResponse {
+  total: number
+  page: number
+  pageSize: number
+  list: OrphanFileItem[]
+}
+
+export interface OrphanGuardrailReviewRequest {
+  confirmed_path_mapping: true
+  confirmed_orphan_samples: true
+  note: string
+}
+
 export interface HardlinkCopyLocationsRequest {
   orphan_ids: number[]
 }
@@ -341,6 +354,17 @@ export function getOrphanList(params: OrphanListParams): Promise<ApiResponse<Orp
   }) as unknown as Promise<ApiResponse<OrphanListResponse>>
 }
 
+/** 展开文件夹后独立分页加载子文件；后端只对本页执行实时硬链接统计。 */
+export function getOrphanFolderChildren(
+  params: OrphanFolderChildrenParams
+): Promise<ApiResponse<OrphanFolderChildrenResponse>> {
+  return request({
+    url: '/orphan-files/folders/children',
+    method: 'get',
+    params
+  }) as unknown as Promise<ApiResponse<OrphanFolderChildrenResponse>>
+}
+
 /**
  * 按需定位硬链接副本位置。目录遍历可能命中 NAS，使用与孤儿扫描一致的长超时。
  */
@@ -363,6 +387,26 @@ export function triggerScan(): Promise<ApiResponse<OrphanScanTriggerResult>> {
     url: '/orphan-files/scan',
     method: 'post'
   }) as unknown as Promise<ApiResponse<OrphanScanTriggerResult>>
+}
+
+/** 轻量轮询后台扫描状态；接口只读取单条扫描记录。 */
+export function getScanStatus(scanId: string): Promise<ApiResponse<OrphanScanRecord>> {
+  return request({
+    url: `/orphan-files/scans/${scanId}`,
+    method: 'get'
+  }) as unknown as Promise<ApiResponse<OrphanScanRecord>>
+}
+
+/** 路径映射和孤儿样本均核查后，显式解锁超量扫描清理门禁。 */
+export function reviewScanGuardrail(
+  scanId: string,
+  data: OrphanGuardrailReviewRequest
+): Promise<ApiResponse<OrphanScanRecord>> {
+  return request({
+    url: `/orphan-files/scans/${scanId}/guardrail-review`,
+    method: 'post',
+    data
+  }) as unknown as Promise<ApiResponse<OrphanScanRecord>>
 }
 
 /**

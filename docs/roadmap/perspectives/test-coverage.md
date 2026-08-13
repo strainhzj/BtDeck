@@ -2,12 +2,12 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 143 个 test_*.py）
+## 后端测试分布（共 145 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
 | `tests/api/` | 49 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
-| `tests/services/` | 40 | `app/services/` | 🟡 中等；新增删除任务占用、孤儿持久化占用与查询状态回归（不含下方 tag_adapters 子目录） |
+| `tests/services/` | 42 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
 | `tests/tasks/` | 13 | `app/tasks/` | 🟡 部分覆盖（13 对 32） |
 | `tests/core/` | 17 | `app/core/` | 🟡 中等 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 16） |
@@ -17,12 +17,12 @@
 | `tests/downloader/` | 1 | `app/downloader/` | ⚠ 薄弱（1 对 9） |
 | `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 35，仅 `test_active_only_filter.py`） |
 | `tests/architecture/` | 1 | 全局架构 | 架构约束防退化 |
-| `tests/integration/` | 3 | 跨层链路 | SQLite 同步争用与 API 响应性 |
+| `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
 | `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 3） |
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **143** 个 test_*.py。
+> 合计：当前实测 **145** 个 test_*.py。
 
 > 注：`tests/api/`（49 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
@@ -89,7 +89,8 @@
 | `app/tasks/scheduler/torrent_tracker_status_judge.py` | `test_torrent_tracker_status_judge.py` + `test_heavy_task_db_write_governance.py` | ✅ 状态码+关键词联合判定、Working 空消息恢复正常、zimiao 双 Tracker 聚合、软删除隔离、独立 Cron 错峰、重任务互斥与批量查询治理 |
 | `app/core/tracker_status_policy.py` / `app/services/tracker_status_sync.py` | `test_tracker_status_policy.py` + `test_tracker_status_sync.py` + `test_torrent_tracker_status_judge.py` | ✅ 共享状态/关键词证据语义直接契约、行级 Working 空消息恢复、未知保留、双消息聚合、幂等及 host 隔离 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
-| `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
+| `app/services/orphan_scan_job_service.py` / `orphan_lifecycle_service.py` / `orphan_file_service.py` | `test_orphan_scan_job_service.py`（232 行）+ `test_orphan_lifecycle.py` + `test_orphan_folder_grouping.py` + `test_orphan_scan_120k_regression.py`（315 行） | ✅ 后台 scan_id 提交/恢复/复核、稳定明细复用、分批生命周期、文件夹懒加载；真实文件 SQLite WAL/NullPool 覆盖 120100 条争用与状态 API 延迟 |
+| `app/services/orphan_purge_job_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与可见文件硬链接副本计数/位置回归 |
 | `app/services/torrent_ratio_values.py` | `test_torrent_ratio_values.py` | ✅（v1.0.6.25 新增） |
 | `app/services/sqlite_search_runtime.py` | `test_sqlite_search_runtime.py` | ✅（v1.0.6.27 新增） |
 | `app/services/path_mapping_validation.py` | `test_path_mapping_validation.py` | ✅（v1.0.6.32 新增，10 个用例） |
@@ -97,7 +98,7 @@
 | `app/services/orphan_scanner.py` | `test_orphan_scanner.py` | ✅ |
 | `app/services/reannounce_service.py` | `test_reannounce_service.py` + `test_reannounce_config.py` | ✅ |
 | `app/core/database_result.py` | `test_database_result.py` | ✅ |
-| `app/core/migration.py` | `test_db_migration.py` + `test_db_rollback_scenarios.py` | ✅ ratio/schema 链及 `4c1d8e7a2b90` 状态判断计划重复升级/降级、自定义 Cron/描述与逻辑删除保护 |
+| `app/core/migration.py` | `test_db_migration.py` + `test_db_rollback_scenarios.py` | ✅ 单 head `7b2c9d4e6f10`；覆盖历史 120100 条清理锁定、current_detail 回填及整链升降级 |
 | `app/core/path_mapping.py` | （未发现直接测试） | ⚠ 未覆盖 |
 | `app/core/file_operations.py`（1474 行） | （未发现直接测试） | ⚠ 未覆盖 |
 
@@ -120,7 +121,7 @@
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
 | `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
-| `orphan-files.spec.ts` | 孤儿清理/彻底删除工作流；硬链接副本数量链接、批量位置弹框、复制、过期响应隔离与异常提示 |
+| `orphan-files.spec.ts` | 孤儿后台扫描轮询、超量复核、文件夹展开懒加载/子页选择、可见文件硬链接及清理/隔离工作流 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |

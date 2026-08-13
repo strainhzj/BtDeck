@@ -257,8 +257,15 @@ class TestHardlinkCopyCount:
 
         grouped_result = await service.get_orphan_list_grouped(page=1, page_size=20)
         folder = next(item for item in grouped_result["list"] if item.get("_is_folder"))
-        assert folder["hardlink_copy_count"] == 1
-        child_counts = {item["file_path"]: item["hardlink_copy_count"] for item in folder["children"]}
+        assert folder["hardlink_copy_count"] is None
+        assert folder["children"] == []
+
+        children_result = await service.get_orphan_folder_children(
+            folder["folder_path"],
+            page=1,
+            page_size=20,
+        )
+        child_counts = {item["file_path"]: item["hardlink_copy_count"] for item in children_result["list"]}
         assert child_counts == {str(linked): 1, str(solo): 0}
 
 

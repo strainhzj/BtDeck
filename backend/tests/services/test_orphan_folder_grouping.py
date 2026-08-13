@@ -141,12 +141,19 @@ async def test_grouping_two_files_same_dir_become_folder_row(grouped_db):
     folder = folder_rows[0]
     assert folder["folder_path"] == "/data/movie"
     assert folder["child_count"] == 2
-    # 组内按 file_size DESC 排序：b.mp4(200) 在前、a.mp4(100) 在后
-    assert folder["child_ids"] == [2, 1]
+    # 父列表不加载目录全部子项；展开后由独立分页接口获取。
+    assert folder["children"] == []
+    assert folder["child_ids"] == []
+    assert folder["children_loaded"] is False
     assert folder["total_size"] == 300
     assert folder["folder_key"] == "folder:/data/movie"
     assert folder["all_pending"] is True
     assert folder["has_low_confidence"] is False
+
+    children = await OrphanFileService(grouped_db).get_orphan_folder_children("/data/movie", page=1, page_size=20)
+    # 子页按 file_size DESC 稳定排序：b.mp4(200) 在前、a.mp4(100) 在后。
+    assert children["total"] == 2
+    assert [item["id"] for item in children["list"]] == [2, 1]
 
     # 单文件原样（OrphanFileItem，无 _is_folder / children 等字段）
     single = file_rows[0]
@@ -251,7 +258,9 @@ async def test_grouping_intra_group_stable_order(grouped_db):
 
     result = await OrphanFileService(grouped_db).get_orphan_list_grouped(page=1, page_size=20)
     folder = next(r for r in result["list"] if r.get("_is_folder"))
-    child_paths = [c["file_path"] for c in folder["children"]]
+    assert folder["children"] == []
+    children = await OrphanFileService(grouped_db).get_orphan_folder_children("/data/g", page=1, page_size=20)
+    child_paths = [c["file_path"] for c in children["list"]]
     # 组内排序键：confidence_rank(高=0,低=1) → ignored_rank(非忽视=0,已忽视=1) → file_size DESC → id ASC
     # high1: confidence=high(0), ignored=0, size=200
     # high2: confidence=high(0), ignored=1(已忽视), size=300

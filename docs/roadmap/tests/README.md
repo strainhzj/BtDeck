@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（143 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（43 个 spec）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（145 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（43 个 spec）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -18,13 +18,14 @@
 | 枚举测试 enums | `backend/tests/enums/` | 枚举测试（对应 app/enums/） |
 | 模型测试 models | `backend/tests/models/` | ORM 模型测试（对应 app/models/） |
 | 仓储测试 repositories | `backend/tests/repositories/` | 仓储测试（对应 app/repositories/） |
-| 服务层测试 services | `backend/tests/services/` | 服务层测试（对应 app/services/，含 tag_adapters/） |
+| 服务层测试 services | `backend/tests/services/` | 服务层测试（42 个，含孤儿后台扫描调度器与 tag_adapters） |
+| 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
 | 前端 jest 测试 jest | `frontend/tests/unit/` | 32 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖） |
 | 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2263 行）+ LucideIcon.spec.ts（185 行） |
 
-## backend/tests/（143 个 test_*.py + 支持文件）
+## backend/tests/（145 个 test_*.py + 支持文件）
 
 ### 顶层
 
@@ -95,7 +96,7 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：当前实测 143 个 test_*.py，按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
+- **后端测试组织良好**：当前实测 145 个 test_*.py，按源码分支镜像组织（api/auth/core/downloader/endpoints/integration/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（2130 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（338 行，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制

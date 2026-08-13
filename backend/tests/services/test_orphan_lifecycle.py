@@ -15,6 +15,7 @@ D 组：孤儿文件生命周期与数据库测试（v1.0.6+ 语义重做）
 """
 
 from datetime import datetime, timedelta
+from unittest.mock import AsyncMock
 
 import pytest
 import pytest_asyncio
@@ -236,6 +237,48 @@ class TestOrphanLifecycleProgression:
         candidates = result.scalars().all()
         assert len(candidates) == 1, "同一路径重复扫描应只有 1 个当前候选"
 
+    async def test_existing_candidate_without_detail_binds_new_detail_immediately(
+        self,
+        async_orphan_db,
+    ):
+        """迁移未匹配到历史明细时，本轮新建明细必须立即成为当前明细。"""
+        from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile
+        from app.services.orphan_lifecycle_service import OrphanLifecycleService
+
+        path = "/data/missing-historical-detail.mkv"
+        async_orphan_db.add(
+            OrphanCurrentCandidate(
+                canonical_path=path,
+                downloader_id="dl_001",
+                last_seen_scan_id="scan_legacy",
+                current_detail_id=None,
+            )
+        )
+        await async_orphan_db.commit()
+
+        result = await OrphanLifecycleService(async_orphan_db).reconcile_candidates(
+            scan_id="scan_current",
+            scan_time=datetime.utcnow(),
+            orphans=[
+                {
+                    "canonical_path": path,
+                    "file_path": path,
+                    "downloader_id": "dl_001",
+                    "file_size": 123,
+                }
+            ],
+            persist_current_details=True,
+        )
+
+        candidate = await async_orphan_db.get(OrphanCurrentCandidate, path)
+        assert candidate is not None
+        assert candidate.current_detail_id is not None
+        detail = await async_orphan_db.get(OrphanFile, candidate.current_detail_id)
+        assert detail is not None
+        assert detail.scan_id == "scan_current"
+        assert result["detail_inserted"] == 1
+        assert result["detail_reused"] == 0
+
     async def test_only_successfully_scanned_roots_can_resolve_candidates(self, async_orphan_db, tmp_path):
         """被跳过的未映射目录不推进旧候选生命周期。"""
         from app.models.orphan_file import OrphanCurrentCandidate
@@ -315,6 +358,38 @@ class TestCleanupGates:
         result = await service.cleanup_preview(orphan_ids=[])
         # 应返回明确拒绝原因（而非正常预览结果）
         assert result.get("rejected") or result.get("error"), "最新扫描 running 时应拒绝清理"
+
+    async def test_large_scan_blocks_cleanup_until_path_and_sample_review(self, async_orphan_db):
+        """超过护栏的批次即使 completed，也必须先完成显式双重核查。"""
+        from app.models.orphan_file import OrphanScanResult
+        from app.services.orphan_file_service import OrphanFileService
+
+        record = OrphanScanResult(
+            scan_id="scan_large_guarded",
+            scan_time=datetime.utcnow(),
+            scan_type="manual",
+            status="completed",
+            details_mode="current",
+        )
+        record.total_orphans = 120_100
+        record.cleanup_review_required = True
+        async_orphan_db.add(record)
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        blocked = await service.cleanup_preview(orphan_ids=[], scan_id="scan_large_guarded")
+        assert blocked["rejected"] is True
+        assert "路径映射" in blocked["reason"]
+        assert "孤儿样本" in blocked["reason"]
+
+        record.cleanup_reviewed_at = datetime.utcnow()
+        record.cleanup_reviewed_by = "reviewer"
+        record.cleanup_review_note = "核查路径映射并抽样二十条，判定准确"
+        await async_orphan_db.commit()
+
+        allowed = await service.cleanup_preview(orphan_ids=[], scan_id="scan_large_guarded")
+        assert allowed.get("rejected") is not True
+        assert allowed["total_count"] == 0
 
     async def test_list_does_not_fallback_to_older_completed_scan(self, async_orphan_db):
         """最新批次 running 时，列表不得回退展示旧 completed 明细。"""
@@ -398,13 +473,86 @@ class TestBatchWriteAtomicity:
     """批量写入中途失败时不存在可清理的部分批次。"""
 
     async def test_no_partial_cleanable_batch_on_write_failure(self, async_orphan_db):
-        """批量写入孤儿明细中途失败时，不应留下可清理的部分批次。"""
+        """失败批次即使留下稳定明细，也必须被最新扫描门禁禁止清理。"""
         from app.models.orphan_file import OrphanFile
 
-        # 落库改为分批后：_finalize_successful_scan 内部先写明细，reconcile 失败时
-        # 由 _fail_scan 删除本 scan_id 已提交的明细。此处验证空库下无残留。
+        # current 模式允许生命周期短事务分批提交，失败时不按 scan_id 删除，
+        # 因为其中可能含更早批次创建并持续复用的稳定明细；安全性由最新 failed
+        # 扫描门禁保证。空库基线仍不应凭空出现明细。
         result = await async_orphan_db.execute(select(OrphanFile))
         assert result.scalars().all() == [], "失败的扫描不应留下可清理的明细"
+
+    async def test_small_followup_scan_inherits_unreviewed_large_candidate_guardrail(
+        self,
+        async_orphan_db,
+    ):
+        """部分/小扫描不能洗掉仍活跃的 12 万批次清理门禁。"""
+        from app.models.orphan_file import (
+            OrphanCurrentCandidate,
+            OrphanScanResult,
+        )
+        from app.services.orphan_scanner import OrphanScanner
+
+        guarded = OrphanScanResult(
+            scan_id="scan_guarded_120100",
+            scan_time=datetime.utcnow() - timedelta(minutes=5),
+            scan_type="manual",
+            status="completed",
+            details_mode="current",
+        )
+        guarded.total_orphans = 120_100
+        guarded.cleanup_review_required = True
+        followup = OrphanScanResult(
+            scan_id="scan_small_followup",
+            scan_time=datetime.utcnow(),
+            scan_type="manual",
+            status="running",
+            details_mode="current",
+        )
+        async_orphan_db.add_all(
+            [
+                guarded,
+                followup,
+                OrphanCurrentCandidate(
+                    canonical_path="C:/data/still-active.bin",
+                    downloader_id="dl-1",
+                    last_seen_scan_id="scan_guarded_120100",
+                    status="candidate",
+                ),
+            ]
+        )
+        await async_orphan_db.commit()
+
+        scanner = OrphanScanner(
+            async_session_factory=lambda: async_orphan_db,
+        )
+        scanner._reconcile_lifecycle = AsyncMock(
+            return_value={
+                "detail_inserted": 0,
+                "detail_reused": 0,
+                "resolved": 0,
+            }
+        )
+        await scanner._finalize_successful_scan(
+            "scan_small_followup",
+            datetime.utcnow(),
+            [],
+            total_paths=0,
+            total_files=0,
+            total_orphans=0,
+            total_orphan_size=0,
+            orphan_count_warning=False,
+            scan_roots=[],
+        )
+
+        persisted = await async_orphan_db.get(
+            OrphanScanResult,
+            "scan_small_followup",
+        )
+        assert persisted is not None
+        assert persisted.status == "completed"
+        assert persisted.cleanup_review_required is True
+        assert persisted.cleanup_reviewed_at is None
 
 
 class TestRecoverInterruptedScans:

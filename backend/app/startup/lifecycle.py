@@ -240,19 +240,21 @@ async def recover_interrupted_orphan_scans(session_factory: Any = None) -> int:
     factory = session_factory or AsyncSessionLocal
     recovered = 0
     async with factory() as db:
-        result = await db.execute(
-            update(OrphanScanResult)
-            .where(OrphanScanResult.status == "running")
-            .values(
-                status="failed",
-                error_message="服务重启后自动标记失败（扫描未完成）",
-                updated_at=datetime.utcnow(),
+        async with admission_controller.db_write_scope():
+            result = await db.execute(
+                update(OrphanScanResult)
+                .where(OrphanScanResult.status == "running")
+                .values(
+                    status="failed",
+                    error_message="服务重启后自动标记失败（扫描未完成）",
+                    updated_at=datetime.utcnow(),
+                )
             )
-        )
-        recovered = getattr(result, "rowcount", None) or 0
-        if recovered:
-            async with admission_controller.db_write_scope():
+            recovered = getattr(result, "rowcount", None) or 0
+            if recovered:
                 await db.commit()
+            else:
+                await db.rollback()
     return recovered
 
 
@@ -396,6 +398,13 @@ async def lifespan(app: FastAPI):
     orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
     app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
 
+    # 持久化孤儿扫描任务：queued 在启动后继续执行；残留 running 已在上方标 failed。
+    from app.services.orphan_scan_job_service import get_orphan_scan_dispatcher
+
+    orphan_scan_dispatcher = get_orphan_scan_dispatcher(app)
+    orphan_scan_recovery_task = asyncio.create_task(orphan_scan_dispatcher.recover_pending_scans())
+    app.state.orphan_scan_recovery_task = orphan_scan_recovery_task
+
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
 
@@ -452,6 +461,19 @@ async def lifespan(app: FastAPI):
             await orphan_purge_dispatcher.shutdown()
         except Exception as e:
             print(f"⚠️  关闭隔离区彻底删除调度器时出错: {e}")
+
+        if orphan_scan_recovery_task and not orphan_scan_recovery_task.done():
+            orphan_scan_recovery_task.cancel()
+            try:
+                await orphan_scan_recovery_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                print(f"⚠️  取消孤儿扫描恢复任务时出错: {e}")
+        try:
+            await orphan_scan_dispatcher.shutdown()
+        except Exception as e:
+            print(f"⚠️  关闭孤儿扫描调度器时出错: {e}")
 
         if downloader_task and not downloader_task.done():
             print("取消未完成的下载器加载任务...")

@@ -48,8 +48,10 @@ def _clean_database_path_env():
 #       → f5e6d7c8b9a0(task outcome/freshness columns, W3-4)
 #       → de898cb28172(torrent error reason)
 #       → 4c1d8e7a2b90(tracker status judge schedule)
-EXPECTED_HEAD = "4c1d8e7a2b90"
+#       → 7b2c9d4e6f10(orphan background scan + stable current detail)
+EXPECTED_HEAD = "7b2c9d4e6f10"
 PREV_HEAD = "e6d8a20c41f3"
+ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
 
@@ -179,6 +181,30 @@ class TestMigrationChainIntegrity:
         finally:
             conn.close()
 
+        # 7b2c9d4e6f10：后台扫描、稳定明细和超量清理复核字段/索引完整。
+        conn = sqlite3.connect(db_path)
+        try:
+            scan_columns = {column[1] for column in conn.execute("PRAGMA table_info(orphan_scan_result)").fetchall()}
+            assert {
+                "details_mode",
+                "new_orphans",
+                "known_orphans",
+                "resolved_orphans",
+                "cleanup_review_required",
+                "cleanup_reviewed_at",
+                "cleanup_reviewed_by",
+                "cleanup_review_note",
+            }.issubset(scan_columns)
+            candidate_columns = {
+                column[1] for column in conn.execute("PRAGMA table_info(orphan_current_candidate)").fetchall()
+            }
+            assert "current_detail_id" in candidate_columns
+            index_names = {row[1] for row in conn.execute("PRAGMA index_list(orphan_current_candidate)").fetchall()}
+            assert "ux_orphan_candidate_current_detail_id" in index_names
+            assert "ix_orphan_candidate_last_scan_status" in index_names
+        finally:
+            conn.close()
+
     def test_upgrade_head_is_idempotent(self, tmp_path):
         """已有 head 库再次 upgrade 应幂等（version 不变、表数不变）。"""
         db_path = tmp_path / "idempotent.db"
@@ -196,6 +222,121 @@ class TestMigrationChainIntegrity:
 
         assert version_before == version_after == EXPECTED_HEAD
         assert count_before == count_after
+
+    def test_orphan_background_upgrade_backfills_guardrail_and_current_detail(self, tmp_path):
+        """升级必须锁定历史超量成功扫描，并绑定存量稳定明细。"""
+        db_path = tmp_path / "orphan_background_upgrade.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        timestamp = "2026-08-13 16:55:53.576000"
+        conn = sqlite3.connect(db_path)
+        try:
+            scan_rows = [
+                ("guarded-120100", "completed", 120_100, "2026-08-13 16:55:53.576000"),
+                ("normal-100", "completed", 100, "2026-08-13 16:56:53.576000"),
+                ("failed-120100", "failed", 120_100, "2026-08-13 16:57:53.576000"),
+                ("latest-small", "completed", 1, "2026-08-13 16:58:53.576000"),
+            ]
+            for scan_id, status, total_orphans, scan_timestamp in scan_rows:
+                conn.execute(
+                    """
+                    INSERT INTO orphan_scan_result (
+                        scan_id, scan_time, scan_type, total_paths_scanned,
+                        total_files_scanned, total_orphans, total_orphan_size,
+                        status, error_message, operator, created_at, updated_at
+                    ) VALUES (?, ?, 'manual', 1, ?, ?, ?, ?, NULL, 'migration-test', ?, ?)
+                    """,
+                    (
+                        scan_id,
+                        scan_timestamp,
+                        total_orphans,
+                        total_orphans,
+                        total_orphans * 1024,
+                        status,
+                        scan_timestamp,
+                        scan_timestamp,
+                    ),
+                )
+
+            canonical_path = "C:/data/known-orphan.bin"
+            conn.execute(
+                """
+                INSERT INTO orphan_file (
+                    id, scan_id, file_path, file_size, mtime, downloader_id,
+                    confidence, canonical_path, is_deleted, deleted_at,
+                    deleted_by, created_at
+                ) VALUES (1, 'guarded-120100', ?, 1024, NULL, 'dl-1',
+                          'high', ?, 0, NULL, NULL, ?)
+                """,
+                (canonical_path, canonical_path, timestamp),
+            )
+
+            candidate_values = {
+                "canonical_path": canonical_path,
+                "downloader_id": "dl-1",
+                "first_seen_at": timestamp,
+                "last_seen_at": timestamp,
+                "last_seen_scan_id": "guarded-120100",
+                "consecutive_scan_count": 1,
+                "status": "candidate",
+                "file_size": 1024,
+                "confidence": "high",
+                "mtime_ns": 1,
+                "device_id": "1",
+                "inode": "2",
+                "quarantine_path": None,
+                "quarantine_root": None,
+                "quarantined_at": None,
+                "purge_after": None,
+                "purge_delay_count": 0,
+                "operation_state": "stable",
+                "operation_target_path": None,
+                "operation_error": None,
+                "is_ignored": 0,
+                "ignored_at": None,
+                "ignored_by": None,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            }
+            available_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(orphan_current_candidate)").fetchall()
+            }
+            insert_columns = [name for name in candidate_values if name in available_columns]
+            placeholders = ", ".join("?" for _ in insert_columns)
+            conn.execute(
+                f"INSERT INTO orphan_current_candidate "  # noqa: S608
+                f"({', '.join(insert_columns)}) VALUES ({placeholders})",
+                [candidate_values[name] for name in insert_columns],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+
+        conn = sqlite3.connect(db_path)
+        try:
+            reviews = dict(
+                conn.execute("SELECT scan_id, cleanup_review_required " "FROM orphan_scan_result").fetchall()
+            )
+            assert reviews == {
+                "guarded-120100": 1,
+                "normal-100": 0,
+                "failed-120100": 0,
+                # 活跃候选仍指向未复核超量批次，小扫描不能洗掉门禁。
+                "latest-small": 1,
+            }
+            assert {
+                row[0] for row in conn.execute("SELECT DISTINCT details_mode FROM orphan_scan_result").fetchall()
+            } == {"snapshot"}
+            pointer = conn.execute(
+                "SELECT current_detail_id FROM orphan_current_candidate " "WHERE canonical_path = ?",
+                (canonical_path,),
+            ).fetchone()
+            assert pointer == (1,)
+        finally:
+            conn.close()
 
 
 # ==================== Tracker 状态判断任务错峰迁移专项 ====================

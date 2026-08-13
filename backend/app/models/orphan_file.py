@@ -21,8 +21,10 @@ from sqlalchemy import (
     DateTime,
     Text,
     ForeignKey,
+    Index,
     UniqueConstraint,
 )
+from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -41,7 +43,7 @@ class OrphanScanResult(Base):
         total_files_scanned: 扫描的文件总数
         total_orphans: 发现的孤儿文件数量
         total_orphan_size: 孤儿文件总大小（字节）
-        status: 扫描状态（running/completed/failed）
+        status: 扫描状态（queued/running/completed/failed）
         error_message: 失败时的错误信息
         operator: 触发者（用户名或 system）
         created_at / updated_at: 时间戳
@@ -60,10 +62,28 @@ class OrphanScanResult(Base):
         String(20),
         nullable=False,
         default="running",
-        comment="扫描状态：running/completed/failed",
+        comment="扫描状态：queued/running/completed/failed",
     )
     error_message = Column(Text, nullable=True, comment="失败时的错误信息")
     operator = Column(String(100), nullable=True, comment="触发者（用户名或system）")
+    details_mode = Column(
+        String(16),
+        nullable=False,
+        default="snapshot",
+        comment="明细读取模式：snapshot=旧批次快照，current=稳定当前明细",
+    )
+    new_orphans = Column(Integer, default=0, nullable=False, comment="本次首次/重新发现并新增的明细数")
+    known_orphans = Column(Integer, default=0, nullable=False, comment="本次复用稳定明细的已知孤儿数")
+    resolved_orphans = Column(Integer, default=0, nullable=False, comment="本次转为resolved的候选数")
+    cleanup_review_required = Column(
+        Boolean,
+        default=False,
+        nullable=False,
+        comment="是否因超护栏而要求人工核查路径映射与孤儿样本",
+    )
+    cleanup_reviewed_at = Column(DateTime, nullable=True, comment="超护栏安全复核时间")
+    cleanup_reviewed_by = Column(String(100), nullable=True, comment="超护栏安全复核人")
+    cleanup_review_note = Column(Text, nullable=True, comment="路径映射与孤儿样本核查说明")
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(
@@ -80,13 +100,15 @@ class OrphanScanResult(Base):
         scan_time: Optional[datetime] = None,
         scan_type: str = "manual",
         operator: Optional[str] = None,
-        status: str = "running",
+        status: str = "queued",
+        details_mode: str = "snapshot",
     ):
         self.scan_id = scan_id
         self.scan_time = scan_time or datetime.utcnow()
         self.scan_type = scan_type
         self.operator = operator
         self.status = status
+        self.details_mode = details_mode
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -101,6 +123,14 @@ class OrphanScanResult(Base):
             "status": self.status,
             "error_message": self.error_message,
             "operator": self.operator,
+            "details_mode": self.details_mode,
+            "new_orphans": self.new_orphans,
+            "known_orphans": self.known_orphans,
+            "resolved_orphans": self.resolved_orphans,
+            "cleanup_review_required": bool(self.cleanup_review_required),
+            "cleanup_reviewed_at": (self.cleanup_reviewed_at.isoformat() if self.cleanup_reviewed_at else None),
+            "cleanup_reviewed_by": self.cleanup_reviewed_by,
+            "cleanup_review_note": self.cleanup_review_note,
             "created_at": self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -219,9 +249,28 @@ class OrphanCurrentCandidate(Base):
     """
 
     __tablename__ = "orphan_current_candidate"
-    __table_args__ = (UniqueConstraint("downloader_id", "canonical_path", name="uq_orphan_candidate_dl_path"),)
+    __table_args__ = (
+        UniqueConstraint("downloader_id", "canonical_path", name="uq_orphan_candidate_dl_path"),
+        Index(
+            "ix_orphan_candidate_last_scan_status",
+            "last_seen_scan_id",
+            "status",
+        ),
+        Index(
+            "ux_orphan_candidate_current_detail_id",
+            "current_detail_id",
+            unique=True,
+        ),
+    )
 
     canonical_path = Column(String(600), primary_key=True, comment="规范化路径（normcase+normpath）")
+    current_detail_id = Column(
+        Integer,
+        ForeignKey("orphan_file.id"),
+        nullable=True,
+        comment="当前稳定孤儿明细ID；后续扫描复用，避免重复历史明细",
+    )
+    current_detail = relationship("OrphanFile", foreign_keys=[current_detail_id], lazy="noload")
     downloader_id = Column(String(36), nullable=False, comment="关联下载器ID")
     first_seen_at = Column(DateTime, nullable=False, comment="首次发现时间")
     last_seen_at = Column(DateTime, nullable=False, comment="最后一次确认时间")
@@ -286,6 +335,7 @@ class OrphanCurrentCandidate(Base):
         self,
         canonical_path: str,
         downloader_id: str,
+        current_detail_id: Optional[int] = None,
         first_seen_at: Optional[datetime] = None,
         last_seen_at: Optional[datetime] = None,
         last_seen_scan_id: Optional[str] = None,
@@ -311,6 +361,7 @@ class OrphanCurrentCandidate(Base):
         now = datetime.utcnow()
         self.canonical_path = canonical_path
         self.downloader_id = downloader_id
+        self.current_detail_id = current_detail_id
         self.first_seen_at = first_seen_at or now
         self.last_seen_at = last_seen_at or now
         self.last_seen_scan_id = last_seen_scan_id
@@ -337,6 +388,7 @@ class OrphanCurrentCandidate(Base):
         """转换为字典"""
         return {
             "canonical_path": self.canonical_path,
+            "current_detail_id": self.current_detail_id,
             "downloader_id": self.downloader_id,
             "first_seen_at": self.first_seen_at.isoformat() if self.first_seen_at else None,
             "last_seen_at": self.last_seen_at.isoformat() if self.last_seen_at else None,

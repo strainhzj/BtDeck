@@ -57,48 +57,28 @@ class OrphanScanTask:
         }
 
         try:
-            # 1. 扫描孤儿文件
-            from app.services.orphan_file_service import OrphanFileService
+            # 1. 提交持久化后台扫描；完成后的自动清理由扫描调度器统一串接。
+            from app.services.orphan_scan_job_service import (
+                OrphanScanJobService,
+                get_orphan_scan_dispatcher,
+            )
 
             if not settings.ORPHAN_SCAN_ENABLED:
-                logger.info(
-                    f"[{self.name}] 定时扫描已关闭（ORPHAN_SCAN_ENABLED=False），跳过"
-                )
+                logger.info(f"[{self.name}] 定时扫描已关闭（ORPHAN_SCAN_ENABLED=False），跳过")
                 result.update({"status": "skipped", "message": "定时扫描已关闭"})
                 return result
 
             logger.info(f"[{self.name}] 开始扫描孤儿文件")
             async with AsyncSessionLocal() as scan_db:
-                scan_service = OrphanFileService(scan_db)
-                scan_result = await scan_service.trigger_scan(
-                    scan_type="scheduled", operator="system", app=app
-                )
+                scan_result = await OrphanScanJobService(scan_db).submit_scan(scan_type="scheduled", operator="system")
+            if app is None:
+                raise RuntimeError("定时孤儿扫描缺少 FastAPI app，无法提交后台任务")
+            get_orphan_scan_dispatcher(app).submit(str(scan_result["scan_id"]))
             result["scan_result"] = scan_result
-
-            # 2. 自动清理超期孤儿文件（只有 completed + scan_id 才进入）
-            completed_scan_id = scan_result.get("scan_id")
-            if scan_result.get("status") == "completed" and isinstance(completed_scan_id, str):
-                logger.info(f"[{self.name}] 扫描完成，开始自动清理超期文件")
-                cleanup_result = await self._auto_cleanup_expired(
-                    scan_id=completed_scan_id,
-                    store=getattr(getattr(app, "state", None), "store", None),
-                )
-                result["cleanup_result"] = cleanup_result
-                result["status"] = "success"
-                skipped_path_count = scan_result.get("total_paths_skipped", 0)
-                skipped_message = (
-                    f"，另有 {skipped_path_count} 个路径因映射不完整已记录并跳过"
-                    if skipped_path_count
-                    else ""
-                )
-                result["message"] = (
-                    f"扫描发现 {scan_result.get('total_orphans', 0)} 个孤儿文件，"
-                    f"自动清理超期文件成功 {cleanup_result.get('quarantined_count', cleanup_result.get('success_count', 0))} 个"
-                    f"{skipped_message}"
-                )
-            else:
-                result["status"] = scan_result.get("status", "failed")
-                result["message"] = f"扫描未完成: {scan_result.get('error', '未知')}"
+            result["status"] = "success"
+            result["message"] = (
+                f"孤儿扫描后台任务已提交（scan_id={scan_result['scan_id']}，" f"status={scan_result['status']}）"
+            )
 
             logger.info(f"[{self.name}] 执行完成: {result.get('message')}")
 
@@ -108,9 +88,7 @@ class OrphanScanTask:
 
         return result
 
-    async def _auto_cleanup_expired(
-        self, scan_id: Optional[str] = None, store: Any = None
-    ) -> Dict[str, Any]:
+    async def _auto_cleanup_expired(self, scan_id: Optional[str] = None, store: Any = None) -> Dict[str, Any]:
         """自动清理超期孤儿文件（独立 session）
 
         Args:

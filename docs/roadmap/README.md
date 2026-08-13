@@ -18,7 +18,7 @@ BtDeck/
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
 │   ├── tasks/           定时任务 + scheduler + 后台任务
 │   ├── domain/          领域目录（downloader / torrents / tracker / auth / user）
-│   └── infra/           utils + startup + migrations + alembic（19 个 revision，最新错峰 Tracker 状态判断任务）
+│   └── infra/           utils + startup + migrations + alembic（20 个 revision，最新孤儿后台扫描与稳定明细迁移）
 ├── frontend/         ← Vue 2.6 + TypeScript 前端
 │   ├── entry/           应用入口（main.ts / router.ts / permission.ts / App.vue）
 │   ├── api/             axios API 封装（12 个领域模块）
@@ -27,7 +27,7 @@ BtDeck/
 │   ├── components-layout/  通用组件（LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 143 个 test_*.py + frontend Jest 44 个 test suite）
+├── tests/            ← 测试（backend pytest 145 个 test_*.py + frontend Jest 43 个 spec）
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -37,7 +37,7 @@ BtDeck/
 
 | 功能域（含检索词） | 前端入口 | 后端入口 |
 |------|---------|---------|
-| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（硬链接副本数量列，可点击查看位置） | `api/endpoints/orphan_files.py`；`services/orphan_file_service.py` / `orphan_scanner.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_lifecycle_service.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（实时硬链接副本计数 + 配置目录内按需定位 + 清理/彻底删除活动项占用）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
+| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（后台扫描轮询；文件夹展开后懒加载/独立分页；仅可见文件实时统计硬链接） | `api/endpoints/orphan_files.py`；`services/orphan_scan_job_service.py` / `orphan_file_service.py` / `orphan_scanner.py` / `orphan_lifecycle_service.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（持久化后台 scan_id、稳定明细复用、分批生命周期事务、超量复核及后续小扫描门禁传递）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
 | 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；Transmission 同步会持久化/清除错误原因，并把 Tracker announce/scrape 统计归一为 0–4 状态码，避免“已联系失败”误显示为“未联系”；列表名称 tooltip 与 Tracker 卡片展示 `errorReason`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
 | 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
@@ -78,7 +78,7 @@ BtDeck/
 | ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（141 个 test_*.py，按子目录组织）+ 前端 Jest（43 个 test suite） | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（145 个 test_*.py，按子目录组织）+ 前端 Jest（43 个 spec） | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -115,10 +115,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索、错误原因及 Tracker 判断修复）/ 2026-08-13（最新提交回归加固） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索、错误原因及 Tracker 判断修复）/ 2026-08-13（最新提交回归加固；孤儿扫描 12 万级后台化） |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏，并新增跨字段补集/空值分区及模板请求协议回归矩阵；Transmission 错误原因同步展示及 Tracker 状态码归一化；状态判断继续联合状态码与关键词，Working 且消息为空时明确正常，并以独立 Cron 在 Tracker 同步后 10 分钟执行；补齐 Tracker 行级同步跳过 Working 空消息的历史错误残留，抽取共享判定策略并加入最新 zimiao 359 行快照形态、幂等与跨种子 host 隔离回归。2026-08-13：为最新提交 `625c1e3d` 新增共享策略纯函数回归契约；同内容异常排查改为 `getList?same_content_only=true`，在当前种子列表按行分页，复用普通筛选/排序/分页并移除独立弹窗和全量诊断查询。 |
+| 本次新增 | 2026-08-12：种子文件、任务日志、高级搜索、Transmission 错误原因与 Tracker 共享判定策略回归。2026-08-13：同内容异常排查改为当前列表分页；孤儿扫描 POST 改为立即返回 scan_id/task_id 的持久化后台任务，新增单行状态轮询；候选以 current_detail_id 复用稳定明细，生命周期查询/更新/resolved 统一 200 条短事务与 db_write_scope；文件夹子项展开后懒加载且独立分页，硬链接仅统计当前可见文件；超过 50000 条的历史/新扫描在核查路径映射和孤儿样本前禁止清理；新增真实文件 SQLite WAL/NullPool 的 120100 条争用与状态接口延迟回归。 |

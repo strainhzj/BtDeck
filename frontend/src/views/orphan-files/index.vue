@@ -88,14 +88,29 @@
       show-icon
     />
     <el-alert
-      v-else-if="latestAttempt && latestAttempt.status === 'running'"
+      v-else-if="latestAttempt && (latestAttempt.status === 'queued' || latestAttempt.status === 'running')"
       class="orphan-scan-state-alert"
-      title="孤儿文件扫描进行中"
+      :title="latestAttempt.status === 'queued' ? '孤儿文件扫描等待执行' : '孤儿文件扫描进行中'"
       :description="scanStatusMessage"
       type="info"
       :closable="false"
       show-icon
     />
+    <el-alert
+      v-if="guardrailReviewPending"
+      class="orphan-scan-state-alert"
+      title="超量扫描已锁定清理"
+      type="error"
+      :closable="false"
+      show-icon
+    >
+      <div class="orphan-guardrail-review">
+        <span>请先核查下载器路径映射，并抽样确认孤儿文件判定；完成前所有清理入口均被后端拒绝。</span>
+        <el-button size="mini" type="danger" plain @click="handleGuardrailReview">
+          已完成双重核查
+        </el-button>
+      </div>
+    </el-alert>
 
     <!-- 筛选条件 -->
     <section class="management-panel" aria-label="孤儿文件筛选条件">
@@ -254,7 +269,7 @@
           v-loading="listLoading"
           :data="tableData"
           :row-key="getRowKey"
-          :tree-props="{children: 'children'}"
+          :row-class-name="getOrphanRowClassName"
           class="management-table"
           height="100%"
           border
@@ -263,8 +278,72 @@
           empty-text="暂无孤儿文件，点击“立即扫描”开始检测"
           style="width: 100%"
           @selection-change="handleOrphanSelectionChange"
-          @select="handleOrphanSelect"
+          @expand-change="handleFolderExpandChange"
         >
+          <el-table-column type="expand" width="48">
+            <template slot-scope="scope">
+              <div v-if="scope.row._is_folder" class="orphan-folder-children">
+                <el-table
+                  v-loading="scope.row.children_loading"
+                  :data="scope.row.children"
+                  :row-key="getRowKey"
+                  border
+                  size="mini"
+                  @selection-change="handleFolderChildSelection(scope.row, $event)"
+                >
+                  <el-table-column type="selection" width="48" :selectable="rowSelectable" />
+                  <el-table-column prop="file_path" label="文件路径" min-width="320" show-overflow-tooltip />
+                  <el-table-column label="大小" width="110" align="center">
+                    <template slot-scope="childScope">{{ formatSize(childScope.row.file_size) }}</template>
+                  </el-table-column>
+                  <el-table-column label="副本数量" width="90" align="center">
+                    <template slot-scope="childScope">
+                      <button
+                        v-if="canOpenHardlinkLocations(childScope.row)"
+                        type="button"
+                        class="orphan-hardlink-copy-count orphan-hardlink-copy-count--link"
+                        :title="getHardlinkCopyCountTitle(childScope.row)"
+                        @click.stop="handleHardlinkCopyClick(childScope.row)"
+                      >
+                        {{ formatHardlinkCopyCount(childScope.row.hardlink_copy_count) }}
+                      </button>
+                      <span v-else>{{ formatHardlinkCopyCount(childScope.row.hardlink_copy_count) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="状态" width="90" align="center">
+                    <template slot-scope="childScope">
+                      <el-tag v-if="childScope.row.is_deleted" type="info" size="mini">已清理</el-tag>
+                      <el-tag v-else-if="childScope.row.is_ignored" type="warning" size="mini">已忽视</el-tag>
+                      <el-tag v-else type="danger" size="mini">待清理</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="90" align="center">
+                    <template slot-scope="childScope">
+                      <el-button
+                        v-if="!childScope.row.is_deleted"
+                        type="text"
+                        size="mini"
+                        @click="handleRowIgnore(childScope.row, !childScope.row.is_ignored)"
+                      >
+                        {{ childScope.row.is_ignored ? '取消忽视' : '忽视' }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <el-pagination
+                  class="orphan-folder-children__pagination"
+                  background
+                  layout="total, prev, pager, next, sizes"
+                  :current-page="scope.row.child_page"
+                  :page-size="scope.row.child_page_size"
+                  :page-sizes="[20, 50, 100, 200]"
+                  :total="scope.row.child_total"
+                  @current-change="handleFolderChildPageChange(scope.row, $event)"
+                  @size-change="handleFolderChildPageSizeChange(scope.row, $event)"
+                />
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column
             type="selection"
             width="55"
@@ -278,7 +357,7 @@
                 <i class="el-icon-folder" aria-hidden="true"></i>
                 <span class="orphan-folder-cell__path" :title="scope.row.folder_path">{{ scope.row.folder_path }}</span>
                 <el-tag size="mini" type="info" class="orphan-folder-cell__count">
-                  {{ scope.row.children.length }} 个文件
+                  {{ scope.row.child_count }} 个文件
                 </el-tag>
               </span>
               <span v-else>{{ scope.row.file_path }}</span>
@@ -753,8 +832,11 @@
 import { Component, Vue } from 'vue-property-decorator'
 import {
   getOrphanList,
+  getOrphanFolderChildren,
   getHardlinkCopyLocations,
   triggerScan,
+  getScanStatus,
+  reviewScanGuardrail,
   cleanupPreview,
   cleanupOrphans,
   setIgnored,
@@ -812,7 +894,7 @@ function isFolderRow(row: OrphanTableRow | undefined | null): row is OrphanFolde
 
 @Component({ name: 'OrphanFiles', components: { PageSizeCombobox, AdvancedMultiSelect } })
 export default class OrphanFiles extends Vue {
-  private list: OrphanFileItem[] = []
+  private list: OrphanTableRow[] = []
   private total = 0
   private listLoading = false
   private scanLoading = false
@@ -826,6 +908,10 @@ export default class OrphanFiles extends Vue {
     confidence: []
   }
   private refreshRequestSeq = 0
+  private scanPollTimer: number | null = null
+  private scanPollRequestSeq = 0
+  private activeScanId: string | null = null
+  private scanSubmitting = false
   // 页面 Tab：orphans=孤儿文件，quarantine=隔离区
   private activeTab: 'orphans' | 'quarantine' = 'orphans'
 
@@ -849,8 +935,9 @@ export default class OrphanFiles extends Vue {
   private downloaderList: DownloaderSimple[] = []
 
   // 选中状态：保存完整行以支持按主导状态启停批量按钮（仅当前页）
-  // 折叠模式下可能含 OrphanFolderRow，提交前由 selectedFileIds 展开为文件 id
   private selectedRows: OrphanTableRow[] = []
+  private outerSelectedRows: OrphanFileItem[] = []
+  private folderChildSelections: Record<string, OrphanFileItem[]> = {}
 
   // 按文件夹展示开关（localStorage 持久化）：开启后由后端按直接父目录聚合分页，
   // 同目录下 ≥2 个文件折叠为文件夹行，单文件保持原样。仅影响展示，删除仍按文件 id。
@@ -907,6 +994,7 @@ export default class OrphanFiles extends Vue {
 
   beforeDestroy() {
     this.refreshRequestSeq += 1
+    this.stopScanPolling()
   }
 
   // ==================== 隔离区管理 ====================
@@ -1037,6 +1125,87 @@ export default class OrphanFiles extends Vue {
     return isFolderRow(row) ? row.folder_key : 'file:' + row.id
   }
 
+  /** 文件夹聚合行仅承担展开入口，不参与父表选择。 */
+  private getOrphanRowClassName({ row }: { row: OrphanTableRow }): string {
+    return isFolderRow(row) ? 'orphan-folder-row' : ''
+  }
+
+  private buildCurrentFolderParams(folderPath: string, page: number, pageSize: number) {
+    return {
+      folder_path: folderPath,
+      page,
+      page_size: pageSize,
+      downloader_id: this.listQuery.downloader_id.length
+        ? this.listQuery.downloader_id.join(',')
+        : undefined,
+      path_like: this.listQuery.path_like || undefined,
+      status: this.listQuery.status.length ? this.listQuery.status.join(',') : undefined,
+      confidence: this.listQuery.confidence.length
+        ? this.listQuery.confidence.join(',')
+        : undefined
+    }
+  }
+
+  private async loadFolderChildren(row: OrphanFolderRow): Promise<void> {
+    this.$set(row, 'children_loading', true)
+    try {
+      const response = await getOrphanFolderChildren(
+        this.buildCurrentFolderParams(row.folder_path, row.child_page, row.child_page_size)
+      )
+      if (response.code === '200' && response.data) {
+        this.$set(row, 'children', response.data.list)
+        this.$set(row, 'child_ids', response.data.list.map((item) => item.id))
+        this.$set(row, 'child_total', response.data.total)
+        this.$set(row, 'children_loaded', true)
+      } else {
+        this.$message.error(response.msg || '加载文件夹子项失败')
+      }
+    } catch (error) {
+      this.$message.error('加载文件夹子项失败：' + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.$set(row, 'children_loading', false)
+    }
+  }
+
+  private handleFolderExpandChange(row: OrphanTableRow, expanded: boolean): void {
+    if (expanded && isFolderRow(row) && !row.children_loaded && !row.children_loading) {
+      void this.loadFolderChildren(row)
+    }
+  }
+
+  private clearFolderSelection(row: OrphanFolderRow): void {
+    this.$delete(this.folderChildSelections, row.folder_key)
+    this.syncVisibleSelections()
+  }
+
+  private handleFolderChildSelection(row: OrphanFolderRow, items: OrphanFileItem[]): void {
+    this.$set(this.folderChildSelections, row.folder_key, items)
+    this.syncVisibleSelections()
+  }
+
+  private async handleFolderChildPageChange(row: OrphanFolderRow, page: number): Promise<void> {
+    this.clearFolderSelection(row)
+    this.$set(row, 'child_page', page)
+    await this.loadFolderChildren(row)
+  }
+
+  private async handleFolderChildPageSizeChange(row: OrphanFolderRow, pageSize: number): Promise<void> {
+    this.clearFolderSelection(row)
+    this.$set(row, 'child_page', 1)
+    this.$set(row, 'child_page_size', pageSize)
+    await this.loadFolderChildren(row)
+  }
+
+  private get guardrailReviewPending(): boolean {
+    const latest = this.latestAttempt
+    return Boolean(
+      latest &&
+      latest.status === 'completed' &&
+      latest.cleanup_review_required &&
+      !latest.cleanup_reviewed_at
+    )
+  }
+
   /** 只有明确大于 0 的副本数量可点击；0 与未知态保持普通文本。 */
   private canOpenHardlinkLocations(row: OrphanTableRow): boolean {
     return typeof row.hardlink_copy_count === 'number' && row.hardlink_copy_count > 0
@@ -1044,11 +1213,11 @@ export default class OrphanFiles extends Vue {
 
   private getHardlinkCopyCountTitle(row: OrphanTableRow): string {
     const count = row.hardlink_copy_count
-    if (typeof count !== 'number') return '文件当前不可访问，副本数量未知'
+    if (typeof count !== 'number') {
+      return isFolderRow(row) ? '展开后仅统计当前可见文件的实时副本数量' : '文件当前不可访问，副本数量未知'
+    }
     if (count === 0) return '没有其它硬链接副本'
-    return isFolderRow(row)
-      ? `点击查看文件夹内 ${count} 个硬链接副本的位置`
-      : `点击查看 ${count} 个硬链接副本的位置`
+    return `点击查看 ${count} 个硬链接副本的位置`
   }
 
   /** 文件夹行只提交当前明确有副本的子项，避免对 0 副本文件做无意义扫描。 */
@@ -1134,8 +1303,7 @@ export default class OrphanFiles extends Vue {
   private get selectedFileIds(): number[] {
     const ids = new Set<number>()
     for (const row of this.selectedRows) {
-      if (isFolderRow(row)) row.child_ids.forEach((id) => ids.add(id))
-      else ids.add(row.id)
+      if (!isFolderRow(row)) ids.add(row.id)
     }
     return [...ids]
   }
@@ -1149,8 +1317,7 @@ export default class OrphanFiles extends Vue {
   private get selectedFileItems(): OrphanFileItem[] {
     const items: OrphanFileItem[] = []
     for (const row of this.selectedRows) {
-      if (isFolderRow(row)) items.push(...row.children)
-      else items.push(row)
+      if (!isFolderRow(row)) items.push(row)
     }
     return items
   }
@@ -1252,6 +1419,9 @@ export default class OrphanFiles extends Vue {
   private get scanStatusMessage(): string {
     const latest = this.latestAttempt
     if (!latest) return ''
+    if (latest.status === 'queued') {
+      return '扫描任务已进入后台队列；页面仅轮询轻量状态，列表与清理暂不可用。'
+    }
     if (latest.status === 'running') {
       return '扫描正在进行中，完成前列表与统计保持为空，清理功能暂不可用。'
     }
@@ -1315,6 +1485,14 @@ export default class OrphanFiles extends Vue {
         this.list = response.data.list
         this.total = response.data.total
         this.scanContext = response.data.scan_context
+        const latest = this.scanContext.latest_attempt
+        if (
+          latest &&
+          (latest.status === 'queued' || latest.status === 'running') &&
+          this.activeScanId !== latest.scan_id
+        ) {
+          this.startScanPolling(latest.scan_id)
+        }
       } else {
         this.$message.error(response.msg || '获取列表失败')
       }
@@ -1389,52 +1567,25 @@ export default class OrphanFiles extends Vue {
 
   /** el-table 原生 selection-change：同步当前页选中行（全选/单选均由此驱动）。 */
   private handleOrphanSelectionChange(rows: OrphanTableRow[]): void {
-    this.selectedRows = rows
+    this.outerSelectedRows = rows.filter((row): row is OrphanFileItem => !isFolderRow(row))
+    this.syncVisibleSelections()
   }
 
-  /**
-   * el-table @select：用户点击单行 checkbox。
-   *
-   * element-ui 2.15 树表 checkbox 无内置父子联动（store/index.js rowSelectedChanged 仅 toggle 单行），
-   * 故折叠模式下需手动处理：
-   * - 点文件夹行 → 联动其全部可选子文件（公共 API toggleRowSelection 静默，不触发 @select，无递归）
-   * - 子文件变化 → 反向同步文件夹行勾选态（syncFolderCheckboxState）
-   * 公共 API 会触发 selection-change，selectedRows 由 handleOrphanSelectionChange 同步。
-   */
-  private handleOrphanSelect(selection: OrphanTableRow[], row: OrphanTableRow): void {
-    if (!this.folderView) return
-    const table = this.$refs.orphanTable as OrphanTableRef | undefined
-    if (!table) return
-    if (isFolderRow(row)) {
-      const selected = selection.indexOf(row) > -1
-      row.children
-        .filter((c) => this.rowSelectable(c))
-        .forEach((c) => table.toggleRowSelection(c, selected))
-    }
-    this.syncFolderCheckboxState(table)
-  }
-
-  /**
-   * 反向同步：子文件勾选态变化时，更新文件夹行 checkbox（仅全选/未选两态，无 indeterminate）。
-   * 文件夹行仅当其全部可选子文件都被选中时才勾选。
-   */
-  private syncFolderCheckboxState(table: OrphanTableRef): void {
-    const sel = table.selection
-    for (const row of this.list) {
-      if (!isFolderRow(row)) continue
-      const selectable = row.children.filter((c) => this.rowSelectable(c))
-      if (selectable.length === 0) continue
-      const allSelected = selectable.every((c) => sel.indexOf(c) > -1)
-      const folderSelected = sel.indexOf(row) > -1
-      if (allSelected !== folderSelected) {
-        table.toggleRowSelection(row, allSelected)
-      }
-    }
+  private syncVisibleSelections(): void {
+    const merged: OrphanFileItem[] = [...this.outerSelectedRows]
+    Object.keys(this.folderChildSelections).forEach((folderKey) => {
+      merged.push(...this.folderChildSelections[folderKey])
+    })
+    const unique = new Map<number, OrphanFileItem>()
+    merged.forEach((item) => unique.set(item.id, item))
+    this.selectedRows = [...unique.values()]
   }
 
   /** 通过 el-table ref 清空选择（翻页/筛选/刷新/切换展示模式时调用）。 */
   private clearOrphanSelection(): void {
     this.selectedRows = []
+    this.outerSelectedRows = []
+    this.folderChildSelections = {}
     const table = this.$refs.orphanTable as OrphanTableRef | undefined
     table?.clearSelection()
   }
@@ -1446,10 +1597,10 @@ export default class OrphanFiles extends Vue {
   /**
    * 行是否可勾选。
    * - 文件行：已清理行不可勾选（待清理/已忽视可勾选）
-   * - 文件夹行：有任一可选子文件即可勾选
+   * - 文件夹行：不可勾选，必须展开后选择当前可见子项
    */
   private rowSelectable(row: OrphanTableRow): boolean {
-    if (isFolderRow(row)) return row.children.some((c) => !c.is_deleted)
+    if (isFolderRow(row)) return false
     return !row.is_deleted
   }
 
@@ -1464,26 +1615,100 @@ export default class OrphanFiles extends Vue {
       return // 用户取消
     }
 
+    this.scanSubmitting = true
     this.scanLoading = true
     try {
       const response = await triggerScan()
       if (response.code === '200' && response.data) {
         const data = response.data
-        if (data.status === 'completed') {
-          this.$message.success(`扫描完成: 发现 ${data.total_orphans} 个孤儿文件`)
-        } else if (data.status === 'busy') {
-          this.$message.warning(data.error || '孤儿文件维护任务正在进行')
-        } else {
-          this.$message.warning(`扫描失败: ${data.error}`)
-        }
+        this.activeScanId = data.scan_id
+        this.$message.success(data.accepted ? '扫描任务已提交到后台' : '已有扫描任务，继续跟踪其状态')
+        await this.refreshPageData()
+        this.startScanPolling(data.scan_id)
       } else {
         this.$message.error(response.msg || '扫描失败')
       }
     } catch (error) {
       this.$message.error('扫描失败：' + extractErrorMessage(error, '网络错误'))
     } finally {
-      await this.refreshPageData()
-      this.scanLoading = false
+      this.scanSubmitting = false
+      this.scanLoading = this.activeScanId !== null
+    }
+  }
+
+  private startScanPolling(scanId: string): void {
+    this.stopScanPolling()
+    this.activeScanId = scanId
+    this.scanLoading = true
+    const requestSeq = ++this.scanPollRequestSeq
+    const poll = async() => {
+      try {
+        const response = await getScanStatus(scanId)
+        if (requestSeq !== this.scanPollRequestSeq) return
+        if (!response.data) {
+          this.scanPollTimer = window.setTimeout(poll, 3000)
+          return
+        }
+        const record = response.data
+        this.scanContext.latest_attempt = record
+        if (record.status === 'queued' || record.status === 'running') {
+          this.scanPollTimer = window.setTimeout(poll, 2000)
+          return
+        }
+        this.stopScanPolling()
+        if (record.status === 'completed') {
+          this.$message.success(
+            `扫描完成：孤儿 ${record.total_orphans}，新增明细 ${record.new_orphans}，复用 ${record.known_orphans}`
+          )
+        } else {
+          this.$message.warning(`扫描失败：${record.error_message || '未知错误'}`)
+        }
+        await this.refreshPageData()
+      } catch (error) {
+        if (requestSeq !== this.scanPollRequestSeq) return
+        this.scanPollTimer = window.setTimeout(poll, 3000)
+      }
+    }
+    void poll()
+  }
+
+  private stopScanPolling(): void {
+    this.scanPollRequestSeq += 1
+    if (this.scanPollTimer !== null) {
+      window.clearTimeout(this.scanPollTimer)
+      this.scanPollTimer = null
+    }
+    this.activeScanId = null
+    this.scanLoading = this.scanSubmitting
+  }
+
+  private async handleGuardrailReview(): Promise<void> {
+    const latest = this.latestAttempt
+    if (!latest || !this.guardrailReviewPending) return
+    try {
+      await this.$confirm(
+        '仅在已逐一核查相关下载器路径映射，并抽样确认孤儿判定无误后继续。复核不会执行清理，只会解除后端门禁。',
+        '确认双重安全核查',
+        { type: 'warning', confirmButtonText: '继续填写说明', cancelButtonText: '取消' }
+      )
+      const promptResult = await this.$prompt(
+        '填写核查范围、抽样数量和结论（至少 8 个字符）',
+        '核查说明',
+        { inputValidator: (value: string) => value.trim().length >= 8 || '核查说明至少 8 个字符' }
+      )
+      const response = await reviewScanGuardrail(latest.scan_id, {
+        confirmed_path_mapping: true,
+        confirmed_orphan_samples: true,
+        note: promptResult.value.trim()
+      })
+      if (response.code === '200') {
+        this.$message.success('安全护栏复核已记录；未执行任何清理')
+        await this.refreshPageData()
+      } else {
+        this.$message.error(response.msg || '护栏复核失败')
+      }
+    } catch (error) {
+      void error
     }
   }
 
@@ -1925,6 +2150,24 @@ export default class OrphanFiles extends Vue {
 
   strong {
     color: var(--color-text-primary);
+  }
+
+  .orphan-folder-children {
+    padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+    background: var(--color-bg-secondary);
+
+    &__pagination {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: var(--spacing-md);
+    }
+  }
+
+  // Element UI 的 expand 列会为普通文件也生成箭头；普通文件没有懒加载子项，
+  // 隐藏其图标，只允许聚合文件夹行展开。
+  ::v-deep .management-table .el-table__body tr:not(.orphan-folder-row) .el-table__expand-icon {
+    visibility: hidden;
+    pointer-events: none;
   }
 }
 

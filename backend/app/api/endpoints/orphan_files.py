@@ -23,6 +23,10 @@ from app.services.orphan_purge_job_service import (
     OrphanPurgeJobService,
     get_orphan_purge_dispatcher,
 )
+from app.services.orphan_scan_job_service import (
+    OrphanScanJobService,
+    get_orphan_scan_dispatcher,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +99,14 @@ class HardlinkCopyLocationsRequest(BaseModel):
     )
 
 
+class OrphanGuardrailReviewRequest(BaseModel):
+    """超量扫描解锁前的双重人工核查声明。"""
+
+    confirmed_path_mapping: bool = Field(..., description="已核查全部相关下载器路径映射")
+    confirmed_orphan_samples: bool = Field(..., description="已抽样核查孤儿文件判定")
+    note: str = Field(..., min_length=8, max_length=2000, description="核查范围、样本与结论")
+
+
 async def _resolve_selection(
     service: OrphanFileService,
     req: OrphanSelectionRequest,
@@ -133,6 +145,47 @@ async def get_latest_scan(
     except Exception as e:
         logger.error(f"获取最新扫描结果失败: {e}", exc_info=True)
         return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+
+
+@router.get("/scans/{scan_id}", response_model=CommonResponse)
+async def get_scan_status(
+    scan_id: str,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """查询单个后台扫描的轻量状态；不读取孤儿明细。"""
+    try:
+        result = await OrphanScanJobService(db).get_scan(scan_id)
+        if result is None:
+            return CommonResponse(status="error", msg="扫描任务不存在", code="404", data=None)
+        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+    except Exception as e:
+        logger.error("查询孤儿扫描状态失败 scan_id=%s: %s", scan_id, e, exc_info=True)
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+
+
+@router.post("/scans/{scan_id}/guardrail-review", response_model=CommonResponse)
+async def review_scan_guardrail(
+    scan_id: str,
+    req: OrphanGuardrailReviewRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """核查路径映射和孤儿样本后，显式解锁超量扫描的清理门禁。"""
+    try:
+        if not req.confirmed_path_mapping or not req.confirmed_orphan_samples:
+            raise ValueError("必须同时完成路径映射核查和孤儿样本核查")
+        result = await OrphanScanJobService(db).review_guardrail(
+            scan_id=scan_id,
+            operator=current_user.username,
+            note=req.note,
+        )
+        return CommonResponse(status="success", msg="安全护栏复核完成", code="200", data=result)
+    except ValueError as e:
+        return CommonResponse(status="error", msg=str(e), code="400", data=None)
+    except Exception as e:
+        logger.error("复核孤儿扫描护栏失败 scan_id=%s: %s", scan_id, e, exc_info=True)
+        return CommonResponse(status="error", msg=f"复核失败: {e}", code="500", data=None)
 
 
 @router.get("/list", response_model=CommonResponse)
@@ -176,7 +229,8 @@ async def get_orphan_list(
     group_by_folder=True 时改走文件夹聚合分页（仅影响列表数据形态，
     scan_context 统计口径不变）；默认 False 保持扁平文件行分页，向后兼容。
     文件行实时返回 hardlink_copy_count（st_nlink - 1，无副本为 0，文件不可访问为 null）；
-    文件夹聚合行返回子文件副本数之和，任一子文件不可访问时为 null。
+    文件夹父行不加载子项且 hardlink_copy_count=null，展开后的独立分页接口只对
+    当前可见子文件实时统计硬链接。
     """
     try:
         service = OrphanFileService(db)
@@ -208,6 +262,39 @@ async def get_orphan_list(
         return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
 
 
+@router.get("/folders/children", response_model=CommonResponse)
+async def get_orphan_folder_children(
+    folder_path: str = Query(..., min_length=1, description="直接父目录路径（来自文件夹行）"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=200),
+    downloader_id: Optional[str] = Query(default=None),
+    min_size: Optional[int] = Query(default=None, ge=0),
+    path_like: Optional[str] = Query(default=None),
+    path_prefix: Optional[str] = Query(default=None),
+    status: Optional[str] = Query(default=None),
+    confidence: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+):
+    """展开文件夹后独立分页加载子文件；只对本页文件做实时硬链接统计。"""
+    try:
+        result = await OrphanFileService(db).get_orphan_folder_children(
+            folder_path,
+            page=page,
+            page_size=page_size,
+            downloader_id=downloader_id,
+            min_size=min_size,
+            path_like=path_like,
+            path_prefix=path_prefix,
+            status=status,
+            confidence=confidence,
+        )
+        return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+    except Exception as e:
+        logger.error("查询孤儿文件夹子项失败 folder=%s: %s", folder_path, e, exc_info=True)
+        return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+
+
 @router.post("/hardlink-copies", response_model=CommonResponse)
 async def get_hardlink_copy_locations(
     req: HardlinkCopyLocationsRequest,
@@ -235,13 +322,13 @@ async def trigger_manual_scan(
 ):
     """手动触发孤儿文件扫描"""
     try:
-        service = OrphanFileService(db)
-        result = await service.trigger_scan(
+        result = await OrphanScanJobService(db).submit_scan(
             scan_type="manual",
             operator=current_user.username,
-            app=request.app,
         )
-        return CommonResponse(status="success", msg="扫描完成", code="200", data=result)
+        get_orphan_scan_dispatcher(request.app).submit(str(result["scan_id"]))
+        msg = "扫描任务已提交" if result["accepted"] else "已有扫描任务进行中"
+        return CommonResponse(status="success", msg=msg, code="200", data=result)
     except Exception as e:
         logger.error(f"手动扫描失败: {e}", exc_info=True)
         return CommonResponse(status="error", msg=f"扫描失败: {e}", code="500", data=None)
@@ -286,10 +373,7 @@ async def cleanup_orphans(
         if submission.job is None:
             msg = "所选孤儿文件均已在处理中，本次未重复提交"
         elif submission.skipped_count:
-            msg = (
-                "主动清理任务已提交，"
-                f"已跳过 {submission.skipped_count} 个处理中项目，完成或失败后将发送通知"
-            )
+            msg = "主动清理任务已提交，" f"已跳过 {submission.skipped_count} 个处理中项目，完成或失败后将发送通知"
         else:
             msg = "主动清理任务已提交，完成或失败后将发送通知"
         return CommonResponse(
@@ -418,10 +502,7 @@ async def purge_quarantine_now(
         if submission.job is None:
             msg = "所选隔离文件均已在处理中，本次未重复提交"
         elif submission.skipped_count:
-            msg = (
-                "彻底删除任务已提交，"
-                f"已跳过 {submission.skipped_count} 个处理中项目，完成后将发送通知"
-            )
+            msg = "彻底删除任务已提交，" f"已跳过 {submission.skipped_count} 个处理中项目，完成后将发送通知"
         else:
             msg = "彻底删除任务已提交，完成后将发送通知"
         return CommonResponse(

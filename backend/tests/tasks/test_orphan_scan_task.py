@@ -49,11 +49,7 @@ class TestOrphanTaskProfileAlignment:
         """executor 路径指向 OrphanScanTask"""
         from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
 
-        task = next(
-            t
-            for t in DEFAULT_SCHEDULED_TASKS
-            if t["task_code"] == "orphan_scan_cleanup"
-        )
+        task = next(t for t in DEFAULT_SCHEDULED_TASKS if t["task_code"] == "orphan_scan_cleanup")
         assert "OrphanScanTask" in task["executor"]
         assert task["executor"].startswith("app.tasks.scheduler.orphan_scan_task")
 
@@ -61,21 +57,13 @@ class TestOrphanTaskProfileAlignment:
         """cron 表达式为每周一次（0 2 * * 0 = 每周日 2 点）"""
         from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
 
-        task = next(
-            t
-            for t in DEFAULT_SCHEDULED_TASKS
-            if t["task_code"] == "orphan_scan_cleanup"
-        )
+        task = next(t for t in DEFAULT_SCHEDULED_TASKS if t["task_code"] == "orphan_scan_cleanup")
         assert task["cron_plan"] == "0 2 * * 0"
 
     def test_quarantine_purge_is_registered_daily(self):
         from app.data.default_scheduled_tasks import DEFAULT_SCHEDULED_TASKS
 
-        task = next(
-            t
-            for t in DEFAULT_SCHEDULED_TASKS
-            if t["task_code"] == "orphan_quarantine_purge"
-        )
+        task = next(t for t in DEFAULT_SCHEDULED_TASKS if t["task_code"] == "orphan_quarantine_purge")
         assert task["executor"].endswith("OrphanQuarantinePurgeTask")
         assert task["cron_plan"] == "0 3 * * *"
 
@@ -126,32 +114,32 @@ class TestOrphanScanTaskStructure:
 
     @pytest.mark.asyncio
     async def test_execute_calls_scanner_when_enabled(self):
-        """ORPHAN_SCAN_ENABLED=True 时调用 OrphanScanner.scan"""
+        """ORPHAN_SCAN_ENABLED=True 时只提交后台任务并立即返回。"""
         task = OrphanScanTask()
-        mock_scanner = MagicMock()
-        mock_scanner.scan = AsyncMock(
+        submit_scan = AsyncMock(
             return_value={
-                "status": "completed",
+                "status": "queued",
                 "scan_id": "scan_task_test",
-                "total_orphans": 5,
-                "total_orphan_size": 1024,
+                "task_id": "scan_task_test",
+                "accepted": True,
             }
         )
+        dispatcher = MagicMock()
 
-        # OrphanScanner 在 execute() 内部延迟导入，patch 源模块
         with (
-            patch("app.services.orphan_scanner.OrphanScanner") as mock_scanner_cls,
-            patch.object(
-                task,
-                "_auto_cleanup_expired",
-                AsyncMock(return_value={"success_count": 2, "failed_count": 0}),
+            patch(
+                "app.services.orphan_scan_job_service.OrphanScanJobService.submit_scan",
+                submit_scan,
+            ),
+            patch(
+                "app.services.orphan_scan_job_service.get_orphan_scan_dispatcher",
+                return_value=dispatcher,
             ),
         ):
-            mock_scanner_cls.return_value = mock_scanner
-
             result = await task.execute(app=MagicMock())
 
-            mock_scanner.scan.assert_called_once()
+            submit_scan.assert_awaited_once_with(scan_type="scheduled", operator="system")
+            dispatcher.submit.assert_called_once_with("scan_task_test")
             assert result["status"] == "success"
 
 

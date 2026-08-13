@@ -1,5 +1,24 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-13 - 孤儿扫描后台化、稳定明细复用与 12 万级争用治理
+
+### 交付结果
+
+- `POST /orphan-files/scan` 仅创建持久化 `queued` 扫描并立即返回同值的 `scan_id/task_id`；进程内串行调度器领取任务、重启恢复 queued、把残留 running 终结为 failed。页面以 `GET /orphan-files/scans/{scan_id}` 单行只读接口轮询，不再让扫描请求占住 HTTP 连接。
+- `orphan_current_candidate.current_detail_id` 绑定稳定当前明细：成功扫描仍重新核查文件系统并推进 `first/last_seen`、次数与 resolved，但已知且未清理的同一路径只复用/按需更新一条 `orphan_file`，不再每轮重复插入 12 万条；清理后同路径重新出现才创建新明细。
+- 生命周期发现/更新、明细复用、resolved 和可清理候选均按 `ORPHAN_SCAN_COMMIT_BATCH_SIZE`（默认 200）keyset/分块执行；每批查询、变更、flush/commit 在同一 `db_write_scope`，启动时稳定隔离候选对账也改为分页，避免 SQLite 长写锁和 `BUSY_SNAPSHOT`。
+- 文件夹父页仅做 SQL 聚合，初始不加载 children、也不 stat 子项；展开后调用 `/folders/children` 独立分页。实时 `st_nlink - 1` 只覆盖扁平当前页、单文件父页和展开后的当前子页。
+- Alembic head `7b2c9d4e6f10` 增加 queued/current 统计、超量复核字段、稳定明细 FK/索引并回填存量。历史及新产生的 `>50000` 成功扫描进入强制清理门禁；必须同时确认路径映射和孤儿样本并记录说明。未复核门禁会向仍有活跃候选的后续小扫描传递，防止以零路径/部分扫描绕过。
+- 本轮没有调用清理、隔离或彻底删除入口；现有 120100 条继续锁定，等待真实路径映射与样本核查。
+
+### 验证
+
+- 全部孤儿相关后端测试：`369 passed, 1 skipped`（包含安全门禁传递、迁移/生命周期、存量候选即时绑定稳定明细与真实文件型 12 万争用回归）。
+- 12 万回归使用真实临时 SQLite 文件、WAL、`synchronous=NORMAL`、15 秒 busy timeout、NullPool：120100 个已知孤儿以 200 条短事务更新期间并发轮询状态 API；完成后 `orphan_file` 仍为 120100、新扫描明细为 0，接口 P95 `<1s`、最大 `<3s`（运行约 42 秒，阈值 180 秒）。
+- 前端 `typecheck`、改动文件 ESLint、`2 suites / 112 tests` 和生产 build 通过；build 仅有仓库既有 51 条 Sass/Browserslist warning。
+- 后端涉及文件 Flake8、compileall 通过；新增后台任务/API/startup/task 四个文件 mypy 通过。包含历史 SQLAlchemy 1.x ORM 文件的 mypy 仍报既有 `Column` 类型体系问题（203 条），未作为本功能回归失败处理。
+- `alembic heads` 为单 head `7b2c9d4e6f10`；根 `init.sh` 经 Git Bash 通过，前端子 init 仍有既有 null-byte warning；`roadmap-maintain` 已同步模块、迁移与测试覆盖路线图。
+
 ## 2026-08-13 - 同内容异常排查改为当前列表分页
 
 ### 用户确认口径与交付

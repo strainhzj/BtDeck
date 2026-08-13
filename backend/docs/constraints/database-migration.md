@@ -23,7 +23,7 @@
   DEV/生产环境均无条件阻止迁移
 - DEV 分流：DEV=true 失败告警继续；DEV=false 失败终止
 
-## 当前迁移链（2026-08-12）
+## 当前迁移链（2026-08-13）
 
 ```
 e2a02abcf912 (base, down_revision=None)
@@ -53,12 +53,12 @@ f2a7c91b4d6e → a1b2c3d4e5f6 → c7d8e9f0a1b2 → d8e9f0a1b2c3
 3a4b5c6d7e8f → f9a1b2c3d4e5 → f0e1d2c3b4a5
     └─ 同步 checkpoint、硬链接说明与清理延后计数
 
-f5e6d7c8b9a0 → de898cb28172 → 4c1d8e7a2b90 ← 当前 HEAD
-    └─ 任务结果新鲜度、种子错误原因、Tracker 状态判断任务错峰
+f5e6d7c8b9a0 → de898cb28172 → 4c1d8e7a2b90 → 7b2c9d4e6f10 ← 当前 HEAD
+    └─ 任务结果新鲜度、种子错误原因、Tracker 错峰、孤儿后台扫描/稳定明细/超量复核
 ```
 
 - 单 head，无分叉
-- `alembic heads` 必须输出且只输出 `4c1d8e7a2b90`
+- `alembic heads` 必须输出且只输出 `7b2c9d4e6f10`
 
 `6132` 与 follower 采用混合兼容策略：尚未执行 `6132` 的数据库直接获得修正后的
 严格迁移；已执行旧版 `6132` 的数据库由 `8f4c2d1a9b7e` 幂等补齐约束。旧版曾

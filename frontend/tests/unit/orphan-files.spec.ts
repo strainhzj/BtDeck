@@ -19,19 +19,25 @@ import {
   cleanupOrphans,
   cleanupPreview,
   getHardlinkCopyLocations,
+  getOrphanFolderChildren,
   getQuarantineList,
   getOrphanList,
+  getScanStatus,
   prefixMatchPreview,
   purgeQuarantineNow,
   setIgnored,
-  triggerScan
+  triggerScan,
+  reviewScanGuardrail
 } from '@/api/orphan-files'
 import { copyTextToClipboard } from '@/utils/clipboard'
 
 jest.mock('@/api/orphan-files', () => ({
   getLatestScan: jest.fn(),
   getOrphanList: jest.fn(),
+  getOrphanFolderChildren: jest.fn(),
   triggerScan: jest.fn(),
+  getScanStatus: jest.fn(),
+  reviewScanGuardrail: jest.fn(),
   cleanupPreview: jest.fn(),
   cleanupOrphans: jest.fn(),
   getHardlinkCopyLocations: jest.fn(),
@@ -60,7 +66,10 @@ const localVue = createLocalVue()
 localVue.directive('loading', {})
 
 const mockGetOrphanList = getOrphanList as jest.MockedFunction<typeof getOrphanList>
+const mockGetOrphanFolderChildren = getOrphanFolderChildren as jest.MockedFunction<typeof getOrphanFolderChildren>
 const mockTriggerScan = triggerScan as jest.MockedFunction<typeof triggerScan>
+const mockGetScanStatus = getScanStatus as jest.MockedFunction<typeof getScanStatus>
+const mockReviewScanGuardrail = reviewScanGuardrail as jest.MockedFunction<typeof reviewScanGuardrail>
 const mockCleanupPreview = cleanupPreview as jest.MockedFunction<typeof cleanupPreview>
 const mockCleanupOrphans = cleanupOrphans as jest.MockedFunction<typeof cleanupOrphans>
 const mockGetHardlinkCopyLocations = getHardlinkCopyLocations as jest.MockedFunction<typeof getHardlinkCopyLocations>
@@ -128,6 +137,7 @@ const DialogStub = localVue.extend({
 })
 
 interface OrphanFilesVm extends Vue {
+  // 多数历史用例使用扁平列表；文件夹行为由 tableData 单独覆盖。
   list: OrphanFileItem[]
   total: number
   listLoading: boolean
@@ -151,8 +161,9 @@ interface OrphanFilesVm extends Vue {
   folderView: boolean
   tableData: OrphanTableRow[]
   setFolderView: (val: boolean) => void
-  handleOrphanSelect: (selection: OrphanTableRow[], row: OrphanTableRow) => void
-  syncFolderCheckboxState: (table: { selection: OrphanTableRow[], toggleRowSelection: (row: OrphanTableRow, selected?: boolean) => void }) => void
+  handleFolderExpandChange: (row: OrphanTableRow, expanded: boolean) => void
+  loadFolderChildren: (row: OrphanFolderRow) => Promise<void>
+  handleFolderChildSelection: (row: OrphanFolderRow, items: OrphanFileItem[]) => void
   getRowKey: (row: OrphanTableRow) => string
   rowSelectable: (row: OrphanTableRow) => boolean
   scanContext: OrphanScanContext
@@ -180,6 +191,7 @@ interface OrphanFilesVm extends Vue {
   loadOrphanPage: (page: number) => Promise<void>
   handleOrphanPageChange: (page: number) => Promise<void>
   handleScan: () => Promise<void>
+  stopScanPolling: () => void
   handleCleanupPreview: () => Promise<void>
   handleCleanupConfirm: () => Promise<void>
   handleFilter: () => void
@@ -241,6 +253,14 @@ function scanRecord(
     status: 'completed',
     error_message: null,
     operator: 'tester',
+    details_mode: 'current',
+    new_orphans: 2,
+    known_orphans: 0,
+    resolved_orphans: 0,
+    cleanup_review_required: false,
+    cleanup_reviewed_at: null,
+    cleanup_reviewed_by: null,
+    cleanup_review_note: null,
     created_at: '2026-07-30T10:00:00',
     ...overrides
   }
@@ -310,6 +330,11 @@ function folderRow(
     child_count: children.length,
     children,
     child_ids: childIds,
+    children_loaded: children.length > 0,
+    children_loading: false,
+    child_page: 1,
+    child_page_size: 20,
+    child_total: children.length,
     total_size: totalSize,
     hardlink_copy_count: hardlinkCopyCount,
     latest_mtime: children[0]?.mtime ?? null,
@@ -411,20 +436,34 @@ describe('orphan files atomic page state', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockGetOrphanList.mockResolvedValue(listResponse())
+    mockGetOrphanFolderChildren.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 0, page: 1, pageSize: 20, list: [] }
+    })
     mockTriggerScan.mockResolvedValue({
       code: '200',
       msg: 'ok',
       status: 'success',
       data: {
         scan_id: 'scan-completed',
-        scan_time: '2026-07-30T10:00:00',
-        scan_type: 'manual',
-        total_paths_scanned: 3,
-        total_files_scanned: 20,
-        total_orphans: 2,
-        total_orphan_size: 300,
-        status: 'completed'
+        task_id: 'scan-completed',
+        status: 'queued',
+        accepted: true
       }
+    })
+    mockGetScanStatus.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: scanRecord()
+    })
+    mockReviewScanGuardrail.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: scanRecord({ cleanup_review_required: true, cleanup_reviewed_at: '2026-08-13T10:00:00' })
     })
     mockCleanupPreview.mockResolvedValue({
       code: '200',
@@ -705,6 +744,12 @@ describe('orphan files atomic page state', () => {
         0
       )
     )
+    mockGetScanStatus.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: running
+    })
 
     const wrapper = mountView()
     await flushLifecycle()
@@ -855,7 +900,7 @@ describe('orphan files atomic page state', () => {
     ])
   })
 
-  it('扫描触发 busy 只反馈占用并通过统一刷新读取持久化状态', async() => {
+  it('扫描触发立即返回 queued 并开始轻量状态轮询', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
@@ -864,35 +909,27 @@ describe('orphan files atomic page state', () => {
       msg: 'ok',
       status: 'success',
       data: {
-        status: 'busy',
-        error: '孤儿文件维护任务正在进行'
+        scan_id: 'scan-running',
+        task_id: 'scan-running',
+        status: 'queued',
+        accepted: false
       }
     })
     const persistedRunning = scanRecord({
       scan_id: 'scan-running',
       status: 'running'
     })
-    mockGetOrphanList.mockResolvedValueOnce(
-      listResponse(
-        scanContext({
-          latest_attempt: persistedRunning,
-          display_scan: null,
-          remaining_count: 0,
-          remaining_size: 0,
-          cleanup_allowed: false,
-          cleanup_block_reason: '扫描进行中'
-        }),
-        [],
-        0
-      )
-    )
+    mockGetScanStatus.mockResolvedValueOnce({ code: '200', msg: 'ok', status: 'success', data: persistedRunning })
 
     await vm.handleScan()
+    await Promise.resolve()
 
-    expect(message.warning).toHaveBeenCalledWith('孤儿文件维护任务正在进行')
+    expect(message.success).toHaveBeenCalledWith('已有扫描任务，继续跟踪其状态')
     expect(mockGetOrphanList).toHaveBeenCalledTimes(2)
-    expect(vm.scanContext.latest_attempt?.status).toBe('running')
-    expect(vm.scanContext.latest_attempt?.status).not.toBe('busy')
+    expect(mockGetScanStatus).toHaveBeenCalledWith('scan-running')
+    expect(vm.scanLoading).toBe(true)
+    vm.stopScanPolling()
+    expect(vm.scanLoading).toBe(false)
   })
 
   it('最新刷新失败时保留已有数据并结束 loading', async() => {
@@ -1652,71 +1689,57 @@ describe('orphan files folder view (selection linkage)', () => {
     )
   })
 
-  it('勾选文件夹行 → 联动其全部子文件（调 toggleRowSelection）', async() => {
+  it('文件夹首次展开后才请求独立分页子项', async() => {
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = vm.tableData[0] as OrphanFolderRow
+    const children = [...folder.children]
+    folder.children = []
+    folder.child_ids = []
+    folder.children_loaded = false
+    mockGetOrphanFolderChildren.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 2, page: 1, pageSize: 20, list: children }
+    })
+
+    await vm.loadFolderChildren(folder)
+
+    expect(mockGetOrphanFolderChildren).toHaveBeenCalledWith(expect.objectContaining({
+      folder_path: '/data/m',
+      page: 1,
+      page_size: 20
+    }))
+    expect(folder.children.map((item) => item.id)).toEqual([1, 2])
+    expect(folder.children_loaded).toBe(true)
+  })
+
+  it('选择只包含当前可见且明确勾选的子文件', async() => {
     localStorage.setItem('btdeck_orphan_folder_view', '1')
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
     const folder = vm.tableData[0] as OrphanFolderRow
 
-    const toggleSpy = jest.fn()
-    const fakeSelection: OrphanTableRow[] = [folder]
-    ;(wrapper.vm.$refs as Record<string, unknown>).orphanTable = {
-      selection: fakeSelection,
-      toggleRowSelection: toggleSpy
-    }
-    ;(vm as unknown as { handleOrphanSelect: (s: OrphanTableRow[], r: OrphanTableRow) => void }).handleOrphanSelect(
-      [...fakeSelection],
-      folder
-    )
-
-    expect(toggleSpy).toHaveBeenCalledWith(folder.children[0], true)
-    expect(toggleSpy).toHaveBeenCalledWith(folder.children[1], true)
+    vm.handleFolderChildSelection(folder, [folder.children[0]])
+    expect(vm.selectedFileIds).toEqual([1])
+    expect(vm.selectedFileItems.map((item) => item.id)).toEqual([1])
   })
 
-  it('selectedFileIds/selectedFileItems 从文件夹行正确展开 child_ids', async() => {
+  it('文件夹父行永远不可选择，避免隐式提交未加载子项', async() => {
     localStorage.setItem('btdeck_orphan_folder_view', '1')
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
     const folder = vm.tableData[0] as OrphanFolderRow
 
-    vm.selectedRows = [folder]
-    expect(vm.selectedFileIds.sort((a, b) => a - b)).toEqual([1, 2])
-    expect(vm.selectedFileItems.map((f) => f.id).sort((a, b) => a - b)).toEqual([1, 2])
+    expect(vm.rowSelectable(folder)).toBe(false)
   })
 
-  it('反向同步：子文件全部选中时文件夹行应被勾选', async() => {
-    localStorage.setItem('btdeck_orphan_folder_view', '1')
-    const wrapper = mountView()
-    await flushLifecycle()
-    const vm = viewModel(wrapper)
-    const folder = vm.tableData[0] as OrphanFolderRow
-
-    const selection: OrphanTableRow[] = [...folder.children]
-    const toggleSpy = jest.fn()
-    const fakeTable = { selection, toggleRowSelection: toggleSpy }
-    vm.syncFolderCheckboxState(fakeTable)
-
-    expect(toggleSpy).toHaveBeenCalledWith(folder, true)
-  })
-
-  it('反向同步：子文件未全选时文件夹行不应被勾选', async() => {
-    localStorage.setItem('btdeck_orphan_folder_view', '1')
-    const wrapper = mountView()
-    await flushLifecycle()
-    const vm = viewModel(wrapper)
-    const folder = vm.tableData[0] as OrphanFolderRow
-
-    const selection: OrphanTableRow[] = [folder.children[0]]
-    const toggleSpy = jest.fn()
-    const fakeTable = { selection, toggleRowSelection: toggleSpy }
-    vm.syncFolderCheckboxState(fakeTable)
-
-    expect(toggleSpy).not.toHaveBeenCalled()
-  })
-
-  it('rowSelectable：文件夹行有可选子文件则可选；已清理文件不可选', async() => {
+  it('rowSelectable：文件夹行和已清理文件不可选', async() => {
     const deletedChildren = [
       orphanItem(1, 'scan-completed', { file_path: '/data/m/a', is_deleted: true }),
       orphanItem(2, 'scan-completed', { file_path: '/data/m/b', is_deleted: true })
@@ -1937,21 +1960,26 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     expect(pathColumn.text()).toContain('/data/alone.mp4')
   })
 
-  it('副本数量列显示文件数值（无副本为 0）并显示文件夹汇总值', async() => {
+  it('副本数量列只显示可见文件数值，文件夹父行不汇总未加载子项', async() => {
     const children = [
       orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 }),
       orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 })
     ]
     const zeroCopyFile = orphanItem(3, 'scan-completed', { hardlink_copy_count: 0 })
-    const wrapper = mountFolderView([folderRow('/data/movie', children), zeroCopyFile])
+    const lazyFolder = folderRow('/data/movie', children, {
+      children: [],
+      child_ids: [],
+      children_loaded: false,
+      hardlink_copy_count: null
+    })
+    const wrapper = mountFolderView([lazyFolder, zeroCopyFile])
     await flushLifecycle()
 
     const countColumn = wrapper.find('[data-column-label="副本数量"]')
     expect(countColumn.exists()).toBe(true)
     const values = countColumn.findAll('.orphan-hardlink-copy-count')
-    expect(values).toHaveLength(2)
-    expect(values.at(0).text()).toBe('2')
-    expect(values.at(1).text()).toBe('0')
+    // 渲染 stub 只展开首个父行；真实懒加载目录父行不做硬链接 stat，也不显示汇总值。
+    expect(values).toHaveLength(0)
   })
 
   it('仅有副本的数量可点击，文件夹行只查询有副本的子文件并展示位置', async() => {
