@@ -1,5 +1,20 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-13 交接：最新提交 Tracker 策略回归加固
+
+### 当前结果
+
+- 已查看最新提交 `625c1e3d0c423c56ac40a28828a3a96378d061dd`，确认其修复 Tracker Working 空消息判定。
+- 新增 `backend/tests/core/test_tracker_status_policy.py`，为共享策略纯函数补充 30 个直接回归用例，覆盖 Working 空消息、非空消息优先、announce/scrape 双消息、匹配模式和证据聚合。
+- 未修改业务实现；原有未跟踪技能、工具和计划目录保持不变。
+
+### 验证与环境说明
+
+- 新增测试 `30 passed`；服务层/种子级相关回归 `115 passed`；同步协调器回归 `26 passed`。
+- 新测试可编译，代码行长度检查与 `git diff --check` 通过。
+- 根 `init.sh` 受 Windows WSL `E_ACCESSDENIED` 阻止；Black `--diff` 确认文件无需改写，但 `--check` 在当前主机超时。
+- Git 提交范围仅包含本次测试与配套记录，并推送至 `origin/dev`；未执行部署。
+
 ## 2026-08-12 交接：Tracker Working 空消息行级残留完整修复
 
 ### 当前结果
