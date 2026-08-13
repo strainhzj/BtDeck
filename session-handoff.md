@@ -1,5 +1,20 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-14 交接：孤儿迁移中断恢复与大库回填修复
+
+### 当前结果
+
+- 后端重部署报 `no such column orphan_current_candidate.current_detail_id` 的首因不是对账逻辑，而是上一轮 Alembic 迁移没有完成：1.02GB 旧库留有 `_alembic_tmp_orphan_scan_result`，重启重试会先报临时表冲突；继续后原回填 SQL 又因索引选择退化。
+- revision `7b2c9d4e6f10` 已支持残留 batch 表幂等恢复、原表缺失 fail-closed、原生快速加列和 canonical_path 索引强制回填；大表 downgrade 也合并为单次 batch。
+- 迁移入口现在保留真实异常日志并校验最终 head；FastAPI lifespan、`main.py` 直接运行及桌面入口都会在迁移失败时终止，ORM 对账不会再把首因掩盖成缺列错误。
+- 原始 `E:\Users\huangzj\Desktop\app.db` 与线上库均只读，未改动；没有对任何 120100/120219 条历史批次执行清理。超 50000 条批次仍需路径映射和孤儿样本双复核。
+
+### 验证与后续发布
+
+- 用户真实库的工作区副本从 `4c1d8e7a2b90` 升到 `7b2c9d4e6f10` 约 4.97 秒；202669/202669 候选完成稳定明细绑定，完整性、外键、唯一索引和超量门禁均通过。
+- 定向回归 `66 passed`（含假成功版本校验）；compileall、Flake8、目标 mypy 通过。Black 对涉及文件已实际重排，但 Windows 退出卡住导致命令超时，后续检查未发现格式相关编译/lint 问题。
+- 当前代码尚未提交、推送或重新部署。发布时应先保留并验证迁移前备份，只启动单个新后端实例，确认日志显示迁移到 `7b2c9d4e6f10` 后再开放流量；不得手工 stamp 或清理 `_alembic_tmp_*`/孤儿数据。
+
 ## 2026-08-13 交接：孤儿扫描后台化、稳定明细与超量清理门禁
 
 ### 当前结果

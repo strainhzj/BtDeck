@@ -293,21 +293,21 @@ async def lifespan(app: FastAPI):
 
     # 1. 执行数据库迁移（在所有其他初始化之前）
     # 四轨治理后统一入口：migrate_database()（编程式 alembic，含幽灵版本救援/备份）
-    # DEV 分流：DEV=True 失败告警继续（与历史行为一致，保证存量无感）；
-    #          DEV=False 失败抛 RuntimeError 终止（生产数据一致性）。
+    # 无论 DEV 与否，只要迁移未完成就停止启动。继续加载新 ORM 会把首因掩盖为
+    # ``no such column``，并可能让后台任务在不一致 schema 上运行。
     print("=== 执行数据库迁移 ===")
     from app.core.migration import migrate_database
 
     try:
-        migrate_database()
+        if not migrate_database():
+            raise RuntimeError("数据库迁移未完成，拒绝在不一致 schema 上启动")
         print("[OK] 数据库迁移完成")
     except Exception as e:
         print(f"[ERROR] 数据库迁移失败: {e}")
         import traceback
 
         traceback.print_exc()
-        if not settings.DEV:
-            raise  # 生产环境终止启动
+        raise
 
     # 1.5 初始化数据库初始数据（admin用户、配置、定时任务等）
     # 修复：uvicorn启动时不会执行main.py的if __name__块，所以需要在lifespan中调用

@@ -338,6 +338,80 @@ class TestMigrationChainIntegrity:
         finally:
             conn.close()
 
+    def test_orphan_background_upgrade_recovers_stale_batch_table(self, tmp_path):
+        """SQLite batch 中断留下临时表时，原表仍在即可安全重建并继续升级。"""
+        db_path = tmp_path / "orphan_background_stale_batch.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("CREATE TABLE _alembic_tmp_orphan_scan_result " "AS SELECT * FROM orphan_scan_result WHERE 0")
+            conn.commit()
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+
+        conn = sqlite3.connect(db_path)
+        try:
+            assert _read_version(str(db_path)) == EXPECTED_HEAD
+            assert (
+                conn.execute(
+                    "SELECT name FROM sqlite_master " "WHERE type='table' AND name='_alembic_tmp_orphan_scan_result'"
+                ).fetchone()
+                is None
+            )
+            scan_columns = {column[1] for column in conn.execute("PRAGMA table_info(orphan_scan_result)")}
+            assert "details_mode" in scan_columns
+        finally:
+            conn.close()
+
+    def test_orphan_background_upgrade_rejects_orphaned_temp_without_source(self, tmp_path):
+        """仅剩 batch 临时表时数据完整性未知，必须拒绝自动删除或 stamp。"""
+        db_path = tmp_path / "orphan_background_missing_source.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("ALTER TABLE orphan_scan_result RENAME TO _alembic_tmp_orphan_scan_result")
+            conn.commit()
+        finally:
+            conn.close()
+
+        with pytest.raises(RuntimeError, match="pre-migration 备份"):
+            command.upgrade(cfg, "head")
+
+        assert _read_version(str(db_path)) == ORPHAN_BACKGROUND_PREV
+
+    def test_orphan_background_upgrade_uses_canonical_path_index(self, tmp_path):
+        """稳定明细回填必须按 canonical_path 查找，避免 SQLite 错选 scan_id 索引。"""
+        db_path = tmp_path / "orphan_background_query_plan.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        migration_path = (
+            BACKEND_ROOT / "alembic" / "versions" / "7b2c9d4e6f10_orphan_scan_background_and_current_detail.py"
+        )
+        source = migration_path.read_text(encoding="utf-8")
+        assert source.count("INDEXED BY ix_orphan_file_canonical_path") == 2
+
+        conn = sqlite3.connect(db_path)
+        try:
+            plan = conn.execute(
+                "EXPLAIN QUERY PLAN "
+                "SELECT detail.id FROM orphan_file AS detail "
+                "INDEXED BY ix_orphan_file_canonical_path "
+                "WHERE detail.canonical_path = ? AND detail.scan_id = ? "
+                "ORDER BY detail.id DESC LIMIT 1",
+                ("C:/data/sample.bin", "scan-id"),
+            ).fetchall()
+            assert any("ix_orphan_file_canonical_path" in str(row) for row in plan)
+        finally:
+            conn.close()
+
 
 # ==================== Tracker 状态判断任务错峰迁移专项 ====================
 

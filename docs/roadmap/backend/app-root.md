@@ -9,10 +9,10 @@
 |--------|------|-----------|
 | 配置兼容 config-compat | `config.py` | 兼容层：旧代码 `from app.config import settings` 转发到 `app.core.config` |
 | DB 引擎 database | `database.py` | 数据库引擎与会话工厂（`get_db` / `get_async_db` / `init_db` / `init_config_file` / `merge_configs` / `_apply_sqlite_pragmas`） |
-| 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview），日志配置 + 子进程启停后台 API |
+| 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview）；`initialize_app_data()`(L31) 初始化配置并在迁移失败时拒绝启动后台 API |
 | 异常处理 exception | `exception_handlers.py` | 全局异常处理器：把 `HTTPException` / `RequestValidationError` / 未捕获异常统一归一化为 `CommonResponse` |
 | 应用工厂 factory | `factory.py` | FastAPI 应用工厂（`create_app` + 路由/静态/CORS/lifespan 配置） |
-| 启动入口 main | `main.py` | 后端启动入口：配置 uvicorn server（单进程），执行 `init_config_file` + `migrate_database` 后 `Server.run()` |
+| 启动入口 main | `main.py` | 后端启动入口：Docker import `app` 后由 lifespan 初始化；直接运行路径（L140-163）执行配置/迁移，迁移失败时不进入 `Server.run()` |
 | 版本 version | `version.py` | 版本信息集中管理（`get_version_info` / `get_current_version` / `get_version_content` / `VERSION_HISTORY` 常量） |
 | WebSocket websocket | `websocket_main.py` | WebSocket 服务独立入口，单独跑 uvicorn on `settings.WS_PORT` |
 | YAML 配置 yaml | `yamlConfig.py` | `Yaml` 配置类（点表示法访问嵌套配置，封装 pyyaml） |
@@ -28,9 +28,8 @@
   └─ WebSocket: websocket_main.py（独立服务，端口 WS_PORT）
 
 main.py
-  ├─→ app.database.init_config_file()
-  ├─→ app.core.migration.migrate_database()
-  └─→ app.factory.app  (uvicorn 加载的 ASGI app)
+  ├─→ app.factory.app  (uvicorn 导入时加载 ASGI app)
+  └─→ __main__ 直跑路径：init_config_file() → migrate_database() → Server.run()
 
 factory.py:create_app(configure_routes)
   ├─→ CORSMiddleware 注册（校验 ALLOWED_HOSTS 不含 "*"）
@@ -42,6 +41,6 @@ factory.py:create_app(configure_routes)
 
 ## 注意事项
 
-- **入口分散**：`main.py`（uvicorn 配置 + 早期迁移）、`factory.py`（app 工厂 + 路由/SPA fallback）、`btdeck_startup.sh`（Docker 入口，再配置 uvicorn）三处都对"如何启动"有发言权。详见 [../perspectives/risks.md](../perspectives/risks.md)。
+- **入口分散**：`main.py`（uvicorn 配置 + 直跑路径早期迁移）、`factory.py`（app 工厂 + 路由/SPA fallback）、`btdeck_startup.sh`（Docker 入口）三处都对"如何启动"有发言权。详见 [../perspectives/risks.md](../perspectives/risks.md)。
 - **双 SPA fallback**：Docker 部署用 nginx（`frontend/nginx.conf`），PyInstaller 单机打包用 `factory.py:_mount_frontend_static`。
 - **`main.py` 无 app 实例**：app 来自 `from app.factory import app`，业务路由在 factory 中通过 `init_routers` 挂载，main.py 只负责 uvicorn server 配置。

@@ -28,14 +28,37 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 _HISTORICAL_GUARDRAIL_THRESHOLD = 50_000
+_BATCH_TEMP_PREFIX = "_alembic_tmp_"
 
 
 def _column_names(bind: sa.engine.Connection, table_name: str) -> set[str]:
     return {str(column["name"]) for column in sa.inspect(bind).get_columns(table_name)}
 
 
+def _recover_stale_batch_table(bind: sa.engine.Connection, table_name: str) -> None:
+    """移除 Alembic batch 中断后遗留的可重建临时表。
+
+    SQLite 的 batch alter 会先创建 ``_alembic_tmp_<table>``，再复制数据、删除
+    原表并重命名。若容器在原表仍存在时被重启，临时表只是原表的派生副本，必须
+    先移除，否则下一次迁移会立即报 ``table already exists``。若原表已经消失，
+    则无法证明临时表复制完整，拒绝自动处理并要求从迁移前备份恢复。
+    """
+    temp_table = f"{_BATCH_TEMP_PREFIX}{table_name}"
+    inspector = sa.inspect(bind)
+    if not inspector.has_table(temp_table):
+        return
+    if not inspector.has_table(table_name):
+        raise RuntimeError(
+            f"检测到未完成的 SQLite batch 迁移：{temp_table} 存在但 {table_name} 缺失；"
+            "请从已验证的 pre-migration 备份恢复后重试"
+        )
+    bind.exec_driver_sql(f'DROP TABLE "{temp_table}"')
+
+
 def upgrade() -> None:
     bind = op.get_bind()
+    _recover_stale_batch_table(bind, "orphan_scan_result")
+    _recover_stale_batch_table(bind, "orphan_current_candidate")
     inspector = sa.inspect(bind)
 
     if inspector.has_table("orphan_scan_result"):
@@ -53,15 +76,18 @@ def upgrade() -> None:
         for name, type_, nullable, server_default in additions:
             if name in columns:
                 continue
-            with op.batch_alter_table("orphan_scan_result") as batch_op:
-                batch_op.add_column(
-                    sa.Column(
-                        name,
-                        type_,
-                        nullable=nullable,
-                        server_default=server_default,
-                    )
-                )
+            # SQLite 原生支持 ADD COLUMN。逐列使用 batch_alter_table 会反复重建
+            # 整张表，并在部署中断后留下 _alembic_tmp_*，导致后续重启永久失败。
+            op.add_column(
+                "orphan_scan_result",
+                sa.Column(
+                    name,
+                    type_,
+                    nullable=nullable,
+                    server_default=server_default,
+                ),
+            )
+            columns.add(name)
 
         # 数据安全迁移：历史超阈值成功批次一律要求人工核查路径映射与样本。
         bind.execute(
@@ -80,8 +106,18 @@ def upgrade() -> None:
     if inspector.has_table("orphan_current_candidate"):
         columns = _column_names(bind, "orphan_current_candidate")
         if "current_detail_id" not in columns:
-            with op.batch_alter_table("orphan_current_candidate") as batch_op:
-                batch_op.add_column(
+            if bind.dialect.name == "sqlite":
+                # SQLite 支持可空 REFERENCES 列的原生 ADD COLUMN；Alembic 的
+                # op.add_column(ForeignKey) 会额外发出不受支持的 ALTER CONSTRAINT。
+                bind.exec_driver_sql(
+                    "ALTER TABLE orphan_current_candidate "
+                    "ADD COLUMN current_detail_id INTEGER "
+                    "CONSTRAINT fk_orphan_candidate_current_detail "
+                    "REFERENCES orphan_file(id)"
+                )
+            else:
+                op.add_column(
+                    "orphan_current_candidate",
                     sa.Column(
                         "current_detail_id",
                         sa.Integer(),
@@ -90,17 +126,25 @@ def upgrade() -> None:
                             name="fk_orphan_candidate_current_detail",
                         ),
                         nullable=True,
-                    )
+                    ),
                 )
 
         # 优先绑定 last_seen_scan_id 对应明细；若存量数据不完整，再回退同路径最新行。
         if inspector.has_table("orphan_file"):
+            orphan_file_indexes = {str(index["name"]) for index in sa.inspect(bind).get_indexes("orphan_file")}
+            if "ix_orphan_file_canonical_path" not in orphan_file_indexes:
+                op.create_index(
+                    "ix_orphan_file_canonical_path",
+                    "orphan_file",
+                    ["canonical_path"],
+                )
             bind.execute(sa.text("""
                     UPDATE orphan_current_candidate
                        SET current_detail_id = COALESCE(
                            (
                                SELECT detail.id
                                  FROM orphan_file AS detail
+                                      INDEXED BY ix_orphan_file_canonical_path
                                 WHERE detail.canonical_path = orphan_current_candidate.canonical_path
                                   AND detail.scan_id = orphan_current_candidate.last_seen_scan_id
                                 ORDER BY detail.id DESC
@@ -109,6 +153,7 @@ def upgrade() -> None:
                            (
                                SELECT fallback.id
                                  FROM orphan_file AS fallback
+                                      INDEXED BY ix_orphan_file_canonical_path
                                 WHERE fallback.canonical_path = orphan_current_candidate.canonical_path
                                 ORDER BY fallback.id DESC
                                 LIMIT 1
@@ -178,6 +223,8 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     bind = op.get_bind()
+    _recover_stale_batch_table(bind, "orphan_current_candidate")
+    _recover_stale_batch_table(bind, "orphan_scan_result")
     inspector = sa.inspect(bind)
 
     if inspector.has_table("orphan_current_candidate"):
@@ -198,16 +245,23 @@ def downgrade() -> None:
 
     if inspector.has_table("orphan_scan_result"):
         columns = _column_names(bind, "orphan_scan_result")
-        for name in (
-            "cleanup_review_note",
-            "cleanup_reviewed_by",
-            "cleanup_reviewed_at",
-            "cleanup_review_required",
-            "resolved_orphans",
-            "known_orphans",
-            "new_orphans",
-            "details_mode",
-        ):
-            if name in columns:
-                with op.batch_alter_table("orphan_scan_result") as batch_op:
+        removable_columns = [
+            name
+            for name in (
+                "cleanup_review_note",
+                "cleanup_reviewed_by",
+                "cleanup_reviewed_at",
+                "cleanup_review_required",
+                "resolved_orphans",
+                "known_orphans",
+                "new_orphans",
+                "details_mode",
+            )
+            if name in columns
+        ]
+        # SQLite 删除列需要重建表，但所有列应在同一次 batch 中完成，避免对大表
+        # 重复复制八次，并让中断恢复逻辑能以单一临时副本为边界。
+        if removable_columns:
+            with op.batch_alter_table("orphan_scan_result") as batch_op:
+                for name in removable_columns:
                     batch_op.drop_column(name)

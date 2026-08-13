@@ -2,14 +2,14 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 145 个 test_*.py）
+## 后端测试分布（共 147 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
 | `tests/api/` | 49 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
 | `tests/services/` | 42 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
 | `tests/tasks/` | 13 | `app/tasks/` | 🟡 部分覆盖（13 对 32） |
-| `tests/core/` | 17 | `app/core/` | 🟡 中等 |
+| `tests/core/` | 19 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 16） |
 | `tests/utils/` | 4 | `app/utils/` | ✅ 覆盖良好 |
 | `tests/auth/` | 3 | `app/auth/` | ✅ 覆盖良好（3 对 5） |
@@ -22,7 +22,7 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **145** 个 test_*.py。
+> 合计：当前实测 **147** 个 test_*.py。
 
 > 注：`tests/api/`（49 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
@@ -98,7 +98,7 @@
 | `app/services/orphan_scanner.py` | `test_orphan_scanner.py` | ✅ |
 | `app/services/reannounce_service.py` | `test_reannounce_service.py` + `test_reannounce_config.py` | ✅ |
 | `app/core/database_result.py` | `test_database_result.py` | ✅ |
-| `app/core/migration.py` | `test_db_migration.py` + `test_db_rollback_scenarios.py` | ✅ 单 head `7b2c9d4e6f10`；覆盖历史 120100 条清理锁定、current_detail 回填及整链升降级 |
+| `app/core/migration.py` / `startup/lifecycle.py` / `7b2c9d4e6f10` | `test_db_migration.py` + `test_db_rollback_scenarios.py` + `test_orphan_migration_production_shape.py` + `test_startup_migration_guard.py` | ✅ 单 head；覆盖 batch 中断恢复/缺原表拒绝、canonical_path 索引回填、历史超量锁定、真实文件 WAL 大数据升级与任意模式启动 fail-fast |
 | `app/core/path_mapping.py` | （未发现直接测试） | ⚠ 未覆盖 |
 | `app/core/file_operations.py`（1474 行） | （未发现直接测试） | ⚠ 未覆盖 |
 

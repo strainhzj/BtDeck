@@ -19,14 +19,14 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L262)：管理启动/关闭流程；对账孤儿隔离状态、将残留 running 扫描终结为 failed、恢复 queued 扫描与持久化清理任务 |
+| 生命周期 lifecycle | `lifecycle.py` | 🔵 FastAPI `lifespan`(L262)：迁移未完成时在 seed/对账/调度器前 fail-fast；成功后对账孤儿隔离状态、终结残留 running 并恢复 queued 扫描/清理任务 |
 | 路由注册 routers | `routers_initializer.py` | `init_routers(app)`(L6) 注册全部路由 |
 
 ### lifecycle.py 管理的流程
 
 **启动阶段**（`lifespan` L262 起，行号实测）：
 - L282-290：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载）
-- L298-308：`migrate_database()`（生产环境迁移失败即终止）
+- L302-311：`migrate_database()`（任意运行模式迁移失败或未到 head 均终止）
 - L314-322：`init_db()`（初始数据）；L325：`await init_database_connection()`
 - L330-345：`await reconcile_orphan_file_state()`（幂等对账历史隔离候选）
 - L350-364：`recover_interrupted_orphan_scans()` 将残留 running 批次标记 failed
@@ -58,7 +58,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L97) + `run_migrations_online`(L121)，处理 PyInstaller `_MEIPASS` + 集中 import 所有 ORM 模型 |
+| Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
 | Alembic revisions versions | `versions/` | **20 个** revision 文件；当前 head 为 `7b2c9d4e6f10`（见下表） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
@@ -86,7 +86,7 @@
 | 任务结果新鲜度 task-outcome | `f5e6d7c8b9a0_add_task_outcome_freshness.py` | 增加定时任务最近结果与新鲜度字段 |
 | 种子错误原因 torrent-error-reason | `de898cb28172_add_torrent_error_reason.py` ✨2026-08-12 | 为 `torrent_info` 增加可空 Text `error_reason`；历史数据保持空值，upgrade/downgrade 均带列存在守卫 |
 | Tracker 判断错峰 tracker-judge-stagger | `4c1d8e7a2b90_stagger_tracker_status_judge_schedule.py` ✨2026-08-12 | 将未自定义的独立状态判断 Cron 从旧计划迁到 `20,50 * * * *`，在 Tracker 同步后 10 分钟执行；upgrade/downgrade 均只命中已知系统值 |
-| 孤儿后台扫描 orphan-background-scan | `7b2c9d4e6f10_orphan_scan_background_and_current_detail.py` ✨2026-08-13 | 新增 queued/current 扫描统计与超量复核字段、候选 `current_detail_id` 指针/索引；回填稳定明细，历史 completed 且 >50000 条批次自动锁定，并把未复核门禁传递到仍有活跃候选时的最新小扫描 |
+| 孤儿后台扫描 orphan-background-scan | `7b2c9d4e6f10_orphan_scan_background_and_current_detail.py` ✨2026-08-13 | `upgrade`(L58)/`downgrade`(L224)：新增后台扫描/复核字段与 `current_detail_id`；原生加列、恢复残留 `_alembic_tmp_*`，强制 canonical_path 索引回填；历史 >50000 批次及其后续链保持清理锁定 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 

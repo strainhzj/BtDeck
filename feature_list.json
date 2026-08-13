@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-13",
+  "last_updated": "2026-08-14",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-11",
@@ -34,6 +34,8 @@
           "scope": "fullstack",
           "files": [
             "backend/alembic/versions/7b2c9d4e6f10_orphan_scan_background_and_current_detail.py",
+            "backend/alembic/env.py",
+            "backend/app/core/migration.py",
             "backend/app/models/orphan_file.py",
             "backend/app/services/orphan_scan_job_service.py",
             "backend/app/services/orphan_scanner.py",
@@ -41,11 +43,13 @@
             "backend/app/services/orphan_file_service.py",
             "backend/app/api/endpoints/orphan_files.py",
             "backend/app/startup/lifecycle.py",
+            "backend/app/main.py",
+            "backend/app/desktop_main.py",
             "backend/app/tasks/scheduler/orphan_scan_task.py",
             "frontend/src/api/orphan-files.ts",
             "frontend/src/views/orphan-files/index.vue"
           ],
-          "evidence": "后台任务 API/调度/恢复与双重复核回归通过；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。真实文件型 SQLite WAL+NullPool 以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s；测试运行通过。未执行任何清理。"
+          "evidence": "后台任务 API/调度/恢复与双重复核回归通过；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。原始副本与线上库均未写入，未执行任何清理。"
         },
         {
           "id": "orphan-scan-background-stable-details-and-guardrail.2",
@@ -75,9 +79,12 @@
             "backend/tests/integration/test_orphan_scan_120k_regression.py",
             "backend/tests/services/test_orphan_scan_job_service.py",
             "backend/tests/core/test_db_migration.py",
-            "backend/tests/core/test_db_rollback_scenarios.py"
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_db_governance_extended.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py",
+            "backend/tests/core/test_startup_migration_guard.py"
           ],
-          "evidence": "test_orphan_scan_120k_regression.py：1 passed（约 42 秒）；迁移 head/backfill 回归通过；孤儿相关全量套件最终验证记录见 progress.md。"
+          "evidence": "test_orphan_scan_120k_regression.py：1 passed（约 42 秒）；2026-08-14 迁移/治理/回滚/startup 专项 66 passed（含真实文件 WAL 大数据、batch 中断恢复、canonical_path 索引回填、升降级、Alembic 假成功版本校验与 fail-fast）；用户 1.02GB 旧库副本完整升级约 4.97 秒。孤儿相关全量套件记录见 progress.md。"
         }
       ]
     },

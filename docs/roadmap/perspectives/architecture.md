@@ -8,11 +8,10 @@
 
 ```
 入口（Docker）
-  btdeck_startup.sh:62-67
-    exec uvicorn app.main:app --host 0.0.0.0 --port 5001 --workers 1
+  btdeck_startup.sh:102
+    exec uvicorn app.main:app ...
       │
-      └─ app/main.py:95  Server.run()
-            │
+      └─ app/main.py:26  from app.factory import app
             └─ app/factory.py:116  app = create_app(configure_routes=False)
                   │  app/factory.py:84  create_app()
                   │    ├─ L92  FastAPI(lifespan=lifespan)
@@ -22,14 +21,14 @@
                   │         └─ app/startup/routers_initializer.py:6  init_routers(app)
                   │              └─ app/api/api.py:40  api_router (prefix=/api/v1)
                   │
-      早期迁移（main.py 内）
-        ├─ app/main.py:78  init_config_file()
-        ├─ app/main.py:83  yaml.reload()
-        └─ app/main.py:92  migrate_database()  → app/core/migration.py
+直接运行（非 Docker import 路径）
+  app/main.py:140-163
+    init_config_file() → yaml.reload() → migrate_database()
+      └─ 失败时拒绝进入 Server.run()
 
 FastAPI lifespan（请求进入前）
   app/startup/lifecycle.py:262  lifespan(app)
-    ├─ L302 migrate_database()
+    ├─ L302 migrate_database()（失败时 fail-fast，后续均不执行）
     ├─ L318 init_db()
     ├─ L327 await init_database_connection()
     ├─ L332 await reconcile_orphan_file_state() # 分批对账历史隔离候选

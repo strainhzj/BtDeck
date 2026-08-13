@@ -143,6 +143,7 @@ alembic downgrade <目标版本>        # 降级到目标版本
 | orphan_operation_journal | e6d8a20c41f3 | 纯增量 |
 | ratio String→Float | 6132b66d14a7 | 【受限回滚】优先恢复迁移前备份 |
 | ratio CHECK follower | 8f4c2d1a9b7e | 可移除约束，但不能恢复历史脏值 |
+| orphan background scan | 7b2c9d4e6f10 | 【受限回滚】会移除后台统计、超量复核记录与稳定明细指针；大表仅允许单次 batch |
 
 ## 回滚决策树
 

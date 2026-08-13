@@ -35,7 +35,8 @@ def initialize_app_data() -> None:
 
     yaml.reload()
     logger.info("Database path: %s", settings.DATABASE_PATH)
-    migrate_database()
+    if not migrate_database():
+        raise RuntimeError("数据库迁移未完成，拒绝启动桌面服务")
 
 
 def run_server() -> None:

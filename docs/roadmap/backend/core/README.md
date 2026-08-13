@@ -16,7 +16,7 @@
 | 文件名清理 filename | `filename_utils.py` | 文件名清理（非法字符/长度，给种子备份文件名） |
 | 灾备建库 init-schema | `init_schema_from_production.py` | ⚠️ **孤儿/已下线**：从生产 DB schema 反向建库的灾备脚本，main.py 不再调用 |
 | JSON 解析 json-parser | `json_parser.py` | 异常安全 JSON 解析（吞 JSONDecodeError） |
-| DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（空库建表/增量升级/幽灵版本救援）；v1.0.6.27 起集成 ratio 迁移前自动备份 |
+| DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（L145，空库/增量/幽灵救援、升级后 head 校验与显式成功状态）；应用启动遇失败一律 fail-fast |
 | 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离） |
 | ratio 诊断 ratio-diagnostics | `ratio_data_diagnostics.py` ✨v1.0.6.27 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 消费 |
 | Reannounce 配置 reannounce-config | `reannounce_config_operations.py` | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
@@ -67,7 +67,7 @@
 | `torrent_status_mapper.py` | 6 | 状态映射 |
 | `file_operations.py` | 4 | 回收站文件标记 |
 | `json_parser.py` | 4 | JSON 解析 |
-| `migration.py` | 3 | DB 迁移入口（v1.0.6.27 起在 ratio 迁移前调用 `db_backup` 自动备份） |
+| `migration.py` | 3 | DB 迁移入口：迁移前验证备份、保留未来版本回滚路径、升级后校验 head 并向生命周期返回成功状态 |
 | `ratio_data_diagnostics.py` | 2 | ratio 迁移只读诊断 + 回滚 checksum（v1.0.6.27） |
 | `db_backup.py` | 2 | alembic upgrade 前物理备份 + 历史备份列举（v1.0.6.27 升级） |
 

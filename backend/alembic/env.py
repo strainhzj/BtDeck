@@ -80,7 +80,7 @@ except Exception:
 # Interpret the config file for Python logging.
 # 守卫：fileConfig 会按 alembic.ini 重新配置 logging，可能覆盖应用配置。
 # 这里仅在 alembic 独立运行时生效；应用内编程式调用后由应用自行管理 logging。
-if config.config_file_name is not None:
+if config.config_file_name is not None and config.attributes.get("configure_logger", True):
     try:
         fileConfig(config.config_file_name)
     except Exception:

@@ -21,9 +21,10 @@
 - 迁移前自动备份（`config/app.db.pre-migration-*`，保留 3 个主备份文件）
 - 备份须通过 integrity_check、Alembic 版本和 SHA-256 验证；失败在
   DEV/生产环境均无条件阻止迁移
-- DEV 分流：DEV=true 失败告警继续；DEV=false 失败终止
+- 迁移函数在 DEV=true 时可返回失败状态供诊断，但应用生命周期在任何模式下都必须
+  fail-fast；禁止加载依赖新 schema 的 ORM、seed、对账或后台任务
 
-## 当前迁移链（2026-08-13）
+## 当前迁移链（2026-08-14）
 
 ```
 e2a02abcf912 (base, down_revision=None)
@@ -86,13 +87,28 @@ f5e6d7c8b9a0 → de898cb28172 → 4c1d8e7a2b90 → 7b2c9d4e6f10 ← 当前 HEAD
 ```
 1. init_config_file() + yaml.reload()
 2. migrate_database()   ← 统一迁移入口（编程式 alembic API）
+   └─ 未到达目标 head 时立即终止启动，DEV 模式也不得继续
 3. init_db()            ← 仅 seed 数据（不再 create_all）
 4. init_routers / 启动后台任务
 5. 服务就绪
 ```
 
-其中备份失败是独立硬门禁，不受 DEV 容错分流影响。一般 migration 异常仍沿用
-DEV=true 告警、DEV=false 终止的历史策略。
+其中备份失败是独立硬门禁。任何 migration 异常或升级后版本未到达目标 head，均在
+seed、孤儿对账和调度器之前终止应用启动；未知未来版本的显式代码回滚仍按 rollback
+guide 保留“不降级、不 stamp”的兼容路径。
+
+### SQLite 大库与中断恢复约束
+
+- 纯 `ADD COLUMN` 使用 SQLite 原生加列能力，一次迁移不得为多个新增列逐列调用
+  `batch_alter_table`，否则会反复复制整表并扩大部署中断窗口。
+- `ADD COLUMN ... REFERENCES` 若 Alembic 尝试额外执行 SQLite 不支持的
+  `ALTER CONSTRAINT`，可在 revision 内使用受控原生 DDL，但必须有外键清单和
+  `foreign_key_check` 回归；禁止脱离 Alembic 手工改生产库。
+- 使用 batch copy-and-move 的 revision 必须覆盖 `_alembic_tmp_*` 中断场景：原表仍在
+  时临时表是可重建副本，可由 revision 幂等清理；原表缺失时不得猜测完整性，必须从
+  已验证的 pre-migration 备份恢复。
+- 大表数据回填必须用真实数据分布检查 `EXPLAIN QUERY PLAN`。关联路径查询须命中
+  `canonical_path` 索引，禁止依赖 SQLite 自行选择可能退化的低选择性批次索引。
 
 ## 发布后只读验证
 

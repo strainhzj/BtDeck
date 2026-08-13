@@ -1,5 +1,21 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-14 - 1.02GB 真实孤儿库迁移中断恢复与启动 fail-fast
+
+### 根因与修复
+
+- 对用户复制到 `E:\Users\huangzj\Desktop\app.db` 的 1,020,416,000 字节数据库只读核查：`quick_check=ok`、Alembic 仍为 `4c1d8e7a2b90`，同时残留空的 `_alembic_tmp_orphan_scan_result`。旧迁移逐列 batch 重建大表，中断后下次直接报临时表已存在；移除残留后，`current_detail_id` 回填又被 SQLite 错选 `scan_id` 索引，120 秒仍未完成。
+- `7b2c9d4e6f10` 改为原生 `ADD COLUMN`，SQLite 外键列使用受控 `ALTER TABLE ... REFERENCES`；升级/降级入口识别 batch 残留：原表仍在时删除可重建临时副本，原表缺失时拒绝猜测并要求从已验证迁移前备份恢复。
+- 回填确保 `ix_orphan_file_canonical_path` 存在并用 `INDEXED BY` 固定查询计划；8 个 downgrade 列在单次 batch 中移除，避免再次重复复制大表。
+- 应用内 Alembic 保留现有日志 handler，迁移异常会显示首因；`migrate_database()` 返回显式成功状态并校验最终 head。lifespan、直接运行和桌面入口均在迁移失败时 fail-fast，不再继续 seed、孤儿隔离对账、调度器或下载器任务。
+
+### 真实数据与回归证据
+
+- 仅在工作区副本上完整升级：约 4.97 秒到 `7b2c9d4e6f10`；202669 个候选全部填充 `current_detail_id`，未匹配 0、重复指针组 0；`quick_check=ok`、`foreign_key_check=0`，无 `_alembic_tmp_%` 表。
+- 历史 8 个 `total_orphans>50000` 的 completed 批次均为 `cleanup_review_required=1` 且未复核；没有调用清理、隔离或删除入口。桌面原始副本和线上数据库均未写入。
+- 迁移链/治理/回滚/startup 专项：`66 passed`，包含 Alembic 无异常但未到 head 的假成功回归。改动 Python 文件 compileall、Flake8 与目标 mypy 通过。Black 已完成 5 个文件重排，但 Windows 进程在退出阶段超时；产物由后续编译、lint 与 pytest 验证。
+- 已同步数据库迁移约束、根/后端/测试路线图、feature_list 与 handoff；任务产生的 1GB 级工作区测试副本将在交付前清理，不纳入版本控制。
+
 ## 2026-08-13 - 孤儿扫描后台化、稳定明细复用与 12 万级争用治理
 
 ### 交付结果
