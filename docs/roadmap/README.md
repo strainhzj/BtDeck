@@ -11,8 +11,8 @@
 BtDeck/
 ├── backend/          ← FastAPI 后端（Python 3.11+）
 │   ├── app-root/        包根入口（main/factory/database/exception_handlers …）
-│   ├── api/             HTTP 路由层（37 endpoints + schemas + models + responseVO）
-│   ├── services/        业务服务层 + 下载器/标签适配器（含 ratio/search 运行时、异步删除条目占用与查询排除）
+│   ├── api/             HTTP 路由层（38 endpoints + schemas + models + responseVO）
+│   ├── services/        业务服务层 + 下载器/标签适配器（含同名同大小只读排查、ratio/search 运行时、异步删除条目占用与查询排除）
 │   ├── core/            基础设施（config / path_mapping / file_ops …）+ ⚠ 含 4 个孤儿文件（torrent_operations 已重写为 ratio 工具但仍 0 引用）
 │   ├── contracts/ ✨    前后端共享机器可读契约（v1.0.6.27 新增：advanced_search JSON + 加载器）
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
@@ -21,13 +21,13 @@ BtDeck/
 │   └── infra/           utils + startup + migrations + alembic（19 个 revision，最新错峰 Tracker 状态判断任务）
 ├── frontend/         ← Vue 2.6 + TypeScript 前端
 │   ├── entry/           应用入口（main.ts / router.ts / permission.ts / App.vue）
-│   ├── api/             axios API 封装（13 个领域模块）
+│   ├── api/             axios API 封装（12 个领域模块）
 │   ├── views/           页面视图（13 个 view 模块，Options API + class-component 并存）
 │   ├── store/           Vuex（index.ts 空壳 + 5 个 getModule 自注册 module）
 │   ├── components-layout/  通用组件（LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 141 个 test_*.py + frontend Jest 43 个 test suite）
+├── tests/            ← 测试（backend pytest 143 个 test_*.py + frontend Jest 44 个 test suite）
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -49,7 +49,7 @@ BtDeck/
 | 标签管理 tag | 下载器页 TagManagementTab | `api/endpoints/tag_management.py`；`services/tag_service.py` / `tag_sync_service.py` / `tag_adapters/`；`models/torrent_tags.py` |
 | 高级搜索 advanced-search | `components/torrents/AdvancedSearchWorkspace.vue`（左侧已保存搜索选择/创建/更新/删除）+ Builder（契约过滤操作符；下载器显示 nickname/提交稳定 ID；超级做种三态；包含/排除模式原样传输）+ 两种种子视图 | `api/endpoints/advanced_search.py`；`services/advanced_search.py`（20 字段；`error` 复用列表语义；Tracker 否定走 `NOT EXISTS`；文本字面匹配、标签完整 token、空值严格补集、回收站排除）/ `sqlite_search_runtime.py` |
 | 种子转移 seed-transfer | — | `api/endpoints/seed_transfer.py`；`services/seed_transfer_service.py`；`models/seed_transfer_audit_log.py` |
-| 重复种子 duplicate | `views/torrents/index.vue` / `TraditionalView.vue`（绿色查询开关，筛选/排序/分页期间保持）+ `components/torrents/QuickDeleteDuplicatesDialog.vue` | `api/endpoints/duplicate_torrents.py`（默认添加时间倒序、活动快照与侧栏筛选）/ `duplicate_quick_delete.py`；`services/duplicate_quick_delete_service.py` |
+| 重复种子/同内容排查 duplicate same-content inspection | `views/torrents/index.vue` / `TraditionalView.vue`（绿色同 Hash 查询开关 + 快捷操作“同内容异常排查”）+ `components/torrents/QuickDeleteDuplicatesDialog.vue` / `SameContentInspectionDialog.vue`（完整结果/仅错误种子） | `api/endpoints/duplicate_torrents.py`（同 Hash 重复查询）/ `duplicate_quick_delete.py` / `same_content_inspection.py`（同名同大小且不同 Hash 的只读排查）；`services/duplicate_quick_delete_service.py` / `same_content_inspection_service.py`（任务错误、Tracker 状态码/失败关键词与凭据脱敏） |
 | 种子备份 torrent-backup | `views/torrents/FileManagement.vue`、`api/torrents.ts` / `api/torrents-backup.ts` | `api/endpoints/torrent_backup.py`（列表单次批量解析当前下载器 nickname，不逐行请求）；`services/torrent_file_backup_manager.py`；`models/torrent_file_backup.py` |
 | 仪表盘 dashboard | `views/dashboard/index.vue`、`api/dashboard.ts` | `api/endpoints/dashboard.py`；`services/dashboard_service.py` |
 | 速度计划/设置 speed-schedule | `views/settings/index.vue` | `api/endpoints/downloader_settings.py`；`services/speed_schedule_service.py` |
@@ -62,7 +62,7 @@ BtDeck/
 |------|-----------|------|
 | **backend** | FastAPI 后端总览与跨分支依赖骨架 | [backend/README.md](./backend/README.md) |
 | ↳ app-root | `backend/app/` 包根 8 文件：应用工厂、DB 引擎、异常处理、配置入口、版本、桌面/WebSocket main | [backend/app-root.md](./backend/app-root.md) |
-| ↳ api | HTTP 路由层（37 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
+| ↳ api | HTTP 路由层（38 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
 | ↳ services | 业务服务层 + downloader_adapters + tag_adapters | [backend/services/README.md](./backend/services/README.md) |
 | ↳ core | 基础设施（config/path_mapping/file_ops/tracker_*），⚠ 含 4 个 0 引用孤儿文件 | [backend/core/README.md](./backend/core/README.md) |
 | ↳ contracts ✨v1.0.6.27 | 前后端共享机器可读契约（advanced_search JSON + Python 加载器，单一真相源） | [backend/contracts/README.md](./backend/contracts/README.md) |
@@ -121,4 +121,4 @@ BtDeck/
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏，并新增跨字段补集/空值分区及模板请求协议回归矩阵；Transmission 错误原因同步展示及 Tracker 状态码归一化；状态判断继续联合状态码与关键词，Working 且消息为空时明确正常，并以独立 Cron 在 Tracker 同步后 10 分钟执行；补齐 Tracker 行级同步跳过 Working 空消息的历史错误残留，抽取共享判定策略并加入最新 zimiao 359 行快照形态、幂等与跨种子 host 隔离回归。2026-08-13：为最新提交 `625c1e3d` 新增共享策略纯函数回归契约，直接覆盖 Working 空消息、非空消息优先、双消息、匹配模式与证据聚合。 |
+| 本次新增 | 2026-08-12：种子文件列表批量返回当前下载器 nickname 并统一筛选 UI；任务日志操作按钮、任务筛选清空交互修复；高级搜索除调整按钮/组间 AND/OR 与统一 `error` 语义外，完成全字段审计：修复 Tracker 多行否定、SQL 通配符、标签 token、下载器改名、超级做种三态、NULL 补集、字段级空值操作符与回收站泄漏，并新增跨字段补集/空值分区及模板请求协议回归矩阵；Transmission 错误原因同步展示及 Tracker 状态码归一化；状态判断继续联合状态码与关键词，Working 且消息为空时明确正常，并以独立 Cron 在 Tracker 同步后 10 分钟执行；补齐 Tracker 行级同步跳过 Working 空消息的历史错误残留，抽取共享判定策略并加入最新 zimiao 359 行快照形态、幂等与跨种子 host 隔离回归。2026-08-13：为最新提交 `625c1e3d` 新增共享策略纯函数回归契约；新增种子快捷操作“同内容异常排查”，按名称+大小+不同 InfoHash 主动分组，支持完整/仅错误两种只读结果，联合任务错误、Tracker 原始状态及失败关键词判定，并仅返回脱敏 Tracker 主机。 |

@@ -120,6 +120,7 @@ interface TraditionalViewVm extends Vue {
   }
   currentRow: TorrentRow | null
   activeDetailTab: string
+  showSameContentInspectionDialog: boolean
   detailTabs: Array<{ label: string, value: string }>
   categoryFilterItems: Array<{ label: string, value: string }>
   tagFilterItems: Array<{ label: string, value: string }>
@@ -129,6 +130,7 @@ interface TraditionalViewVm extends Vue {
   virtualBottomSpacerHeight: number
   visibleTableColumnCount: number
   handleRowClick(row: TorrentRow): void
+  handleQuickActionCommand(command: string): void
   showAddDialog: boolean
   handleAdd(): Promise<void>
   handlePageSizeSelect(suggestion: PageSizeSuggestion): void
@@ -333,6 +335,7 @@ function mountTraditionalView(): Wrapper<Vue> {
       BatchTransferDialog: true,
       TrackerOperationDialog: true,
       GlobalReplaceTrackerDialog: true,
+      SameContentInspectionDialog: true,
       PageSizeCombobox,
       AdvancedSearchBuilder: true,
       // shallowMount 默认会把 LucideIcon stub 成空占位，无法断言 svg/name。
@@ -423,6 +426,20 @@ describe('TraditionalView component regressions', () => {
       '等级1: 完全删除'
     ])
     expect('handleBatchDelete' in (wrapper.vm as object)).toBe(false)
+  })
+
+  it('快捷操作可打开同内容异常排查弹窗', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+
+    expect(wrapper.text()).toContain('同内容异常排查')
+    expect(vm.showSameContentInspectionDialog).toBe(false)
+
+    vm.handleQuickActionCommand('inspect-same-content')
+    await localVue.nextTick()
+
+    expect(vm.showSameContentInspectionDialog).toBe(true)
   })
 
   it('删除下拉四个等级项各自渲染正确的 LucideIcon（name + danger）', async() => {

@@ -1,5 +1,32 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-13 - 同名同大小种子只读异常排查
+
+### 用户确认口径与交付
+
+- 在种子列表模式和传统模式的“快捷操作”中新增“同内容异常排查”，两种视图复用同一个只读弹窗。
+- 无需选择下载器或填写条件：后端主动按“名称完全相同 + 大小完全相同 + 规范化 InfoHash 至少 2 个不同值”发现候选组；同一下载器内的跨站不同 Hash 任务同样可成组。
+- 弹窗支持“完整排查结果”和“仅错误种子”。分页单位是候选组；仅错误模式过滤无错误组，并在组内只返回错误种子，同时保留该组总副本数、不同 Hash 数和错误数作为上下文。
+- 功能只读：不连接下载器、不删除、不重汇报、不修改数据库；回收站、逻辑删除和活动删除任务占用项不进入结果。
+
+### 判错与安全边界
+
+- 错误口径联合种子任务 `status=error`、非空 `error_reason`、`has_tracker_error`，以及 Tracker 持久化 `status=error`、announce/scrape 失败/超时状态码 3/4。
+- 为避免后台 Tracker 行级状态尚未同步时漏报，最新 announce/scrape 消息还会直接匹配当前启用的 `failed` 关键词池；界面明确展示任务错误、聚合 Tracker 错误或具体 Tracker 消息/状态原因。
+- 新 API 只返回 Tracker 主机名，不返回完整 Tracker URL。错误消息中的 URL 会去除 userinfo/path/query/fragment，常见 `passkey/authkey/api-key/token/secret` 参数脱敏，异常响应也不回显内部异常文本。
+- 新增 `POST /api/v1/torrents/same-content-inspection`，统一使用 `CommonResponse` 和 `total/page/pageSize/list`；API 口径记录于 `backend/docs/api/same-content-inspection.md`。
+- 已按 `roadmap-maintain` 用当前源码实测行号同步根索引、后端 API/服务、前端 API/组件/视图和测试覆盖矩阵；无 Schema/Alembic 变更。
+
+### 验证
+
+- 新 API：`4 passed`；快捷删除、Tracker 共享策略与新功能相关回归：`48 passed`。
+- 前端弹窗与两视图入口：`3 suites / 36 tests passed`；`npm run typecheck` 通过。
+- 后端新增文件：mypy、Black（single worker + 独立 cache）、Flake8、py_compile 通过；本次前端文件严格 ESLint 0 warning；`git diff --check` 通过。
+- 前端生产 build 成功；仅报告仓库既有 Sass/Browserslist/包体积 warning。
+- 大型后端回归曾并行运行并因 180/300 秒上限超时，超时前无失败，但未计作完整通过；随后顺序执行直接相关 48 项全部通过。
+- 完整 `npm run lint` 在 ESLint 前被任务前已有的高级搜索生成契约漂移拦截；绕过契约后全量 ESLint 仅有 3 个既有关键词测试文件的 5 条 warning，本次文件严格检查为 0 warning。
+- 用户已授权提交并推送；提交范围仅包含本功能源码、测试、API/路线图与项目记录，任务前已有的未跟踪技能、工具和计划目录保持不动；未部署。
+
 ## 2026-08-13 - 最新提交 Tracker 策略回归加固
 
 ### 新增回归保护

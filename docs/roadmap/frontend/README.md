@@ -11,7 +11,7 @@
 | API 封装 api axios | [api/](./api/README.md) | axios 封装的 12 个领域 API 模块 |
 | 页面视图 view | [views/](./views/README.md) | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 3 处 Options API） |
 | Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 5 个 module，双轨注册） |
-| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 17 个 + layout 骨架 8 个 + mixin |
+| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 22 个 .vue + layout 骨架 8 个 .vue + mixin；种子视图共享同内容异常排查弹窗 |
 | 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 11 + types 8 + constants 1 + directive 1 |
 
 ---
@@ -20,13 +20,13 @@
 
 ### 1. 组件范式：class-component 为主
 
-- **class-component**（`export default class` + `@Component`）：src 下共 **81 个**（App.vue 1 + views 55 + components 16 + layout 8 个 .vue + layout/mixin/resize.ts 1）
+- **class-component**（`export default class` + `@Component`）：src 下 `.vue` 实测 **85 个**，新增 `SameContentInspectionDialog.vue` 延续该范式
 - **Options API**（`export default {`，无装饰器）：全仓库仅 **3 处** .vue（技术债候选）
   - `views/recycle-bin/index.vue`（L369）
   - `views/tracker/reannounce-config.vue`（L299）
   - `components/torrents/CompactTable.vue`（L301）
 
-> `.vue` 总数 82（class 79 + Options 3，另有 2 个 .ts mixin 属 class 范式不计入 .vue）。class-component 占比 79/82 ≈ 96.3%。
+> `.vue` 总数实测 88（class 85 + Options 3），class-component 占比 85/88 ≈ 96.6%。
 
 > ⚠ 注意：根目录 `frontend/CLAUDE.md` 与 `AGENTS.md` 约束写的是"必须使用 Options API，禁止 Composition API 和 `<script setup>`"，但**实际代码库以 class-component 为主**。这是文档/代码漂移点，路线图如实记录，详见 [../perspectives/risks.md](../perspectives/risks.md)。
 

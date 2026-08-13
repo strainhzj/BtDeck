@@ -1,6 +1,6 @@
 # backend/api — HTTP 路由层
 
-> FastAPI 路由聚合层，按业务域组织 37 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
+> FastAPI 路由聚合层，按业务域组织 38 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
 > 定位方式：`Grep -i <功能词> docs/roadmap/backend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -9,10 +9,10 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 路由聚合 api-router | `api.py` | 顶层 `api_router = APIRouter()`，按 prefix 挂载全部子路由（27 次 include_router；prefix→模块映射见下方"路由聚合"） |
+| 路由聚合 api-router | `api.py` | 顶层 `api_router = APIRouter()`，按 prefix 挂载全部子路由（33 次 include_router；L75 挂载同内容只读排查，prefix→模块映射见下方“路由聚合”） |
 | 响应封装 response-vo | `responseVO.py` | 通用响应封装 `CommonResponse[T]`（status / msg / code / data） |
 
-### endpoints/（37 个文件）
+### endpoints/（38 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -29,6 +29,7 @@
 | 下载器设置 downloader-setting | `downloader_settings.py` | 下载器设置管理（CRUD + 应用；含已废弃 advanced_settings） |
 | 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询（`DuplicateQueryRequest` L48 / `get_duplicate_torrents` L86）；排除 pending/running 删除任务，支持名称/下载器/状态/分类/标签/活动快照筛选及安全列排序，默认 `added_date DESC` 后再判定重复组 |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
+| 同内容异常排查 same-content inspection | `same_content_inspection.py` ✨2026-08-13 | `SameContentInspectionRequest` L19 / `same_content_inspection()` L28：`POST /torrents/same-content-inspection`，按组分页返回完整或仅错误种子，只读委托 `same_content_inspection_service` |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
 | 孤儿文件 API orphan | `orphan_files.py` | 扫描/列表/清理/忽视/隔离恢复；列表返回实时 `hardlink_copy_count`，`POST /hardlink-copies` 按 ID 批量定位配置目录内的副本路径；清理提交支持原子占用与混合跳过 |
@@ -94,7 +95,7 @@
 | `/tags` | tag_management |
 | `/notifications` | notifications |
 | `/orphan-files` | orphan_files |
-| `/torrents` 附加 | duplicate_torrents、torrent_backup、seed_transfer |
+| `/torrents` 附加 | duplicate_torrents、duplicate_quick_delete、same_content_inspection、torrent_backup、seed_transfer |
 
 最终在 `app/startup/routers_initializer.py:16` 注入顶层前缀 `API_V1_STR`（默认 `/api/v1`）。
 

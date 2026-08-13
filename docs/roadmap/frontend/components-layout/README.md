@@ -1,6 +1,6 @@
 # frontend/components-layout — 通用组件与布局骨架
 
-> 通用可复用组件（21 个 .vue）+ 布局骨架（layout/ 下 8 个 .vue + 1 mixin）。除特别标注的 Options API 外均为 class-component。
+> 通用可复用组件（22 个 .vue）+ 布局骨架（layout/ 下 8 个 .vue + 1 mixin）。除特别标注的 Options API 外均为 class-component。
 > 定位方式：`Grep -i <功能词> docs/roadmap/frontend/components-layout/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -35,7 +35,7 @@
 | Python 类选择器 python-class | `PythonClassSelector.vue` | Python 类/方法选择器（`PythonClassSelector`） |
 | 任务 Monaco 编辑器 tasks-monaco | `MonacoEditor.vue` | 任务专用 Monaco 编辑器（含 Python 高亮） |
 
-#### components/torrents/（11 个 .vue + 1 个业务 .ts + 7 个测试）
+#### components/torrents/（12 个 .vue + 1 个业务 .ts + 7 个测试）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -46,6 +46,7 @@
 | 高级搜索状态 advanced-search-state | `advancedSearchState.ts`（728 行）✨v1.0.6.28 | 高级搜索可复用状态/纯逻辑；L284/L403 兼容旧模板的多选、标签 token 与超级做种布尔值；L638 构建请求时保留正操作符和独立 `mode`，空值操作符发送 `null`，避免排除模式双重取反 |
 | 紧凑表格视图 compact-table | `CompactTable.vue` | ⚠ **Options API**（L301 `export default {`，`CompactTable`）：紧凑表格视图 |
 | 重复种子检测 duplicate | `DuplicateTorrentsDialog.vue` | 重复种子检测对话框 |
+| 同内容异常排查 same-content inspection | `SameContentInspectionDialog.vue`（568 行）✨2026-08-13 | 两种种子视图共享的只读排查弹窗（class L215）；L219 支持完整/仅错误模式，L247 按组分页查询，展示任务错误类型与脱敏 Tracker 主机/消息，不提供写操作 |
 | 大小过滤 size-range | `SizeRangeFilter.vue` | 种子大小范围过滤器（`SizeRangeFilter` class） |
 | 虚拟滚动 virtual-scroll | `VirtualScrollList.vue` | 虚拟滚动列表（`VirtualScrollList` class） |
 | 过滤组 filter-group | `FilterGroup.vue` | 过滤条件组容器（`FilterGroup` class） |
@@ -89,7 +90,7 @@
 
 ## 关键观察
 
-- **范式分布**：本分支 28 个文件中，27 个为 class-component；`components/torrents/CompactTable.vue` 是唯一的 Options API（全仓库 3 处之一）
+- **范式分布**：本分支新增 `SameContentInspectionDialog.vue` 后仍以 class-component 为主；`components/torrents/CompactTable.vue` 是本分支唯一的 Options API（全仓库 3 处之一）
 - **Monaco Editor 双版本**：`components/MonacoEditor.vue`（通用）与 `components/tasks/MonacoEditor.vue`（任务专用，含 Python 高亮）
 - **测试覆盖**：`components/torrents/__tests__/` 有 7 个测试文件（2612 行），覆盖 AdvancedMultiSelect / AdvancedSearchBuilder / AdvancedSearchWorkspace / ConditionValueInput / FilterGroup / QuickDeleteDuplicatesDialog；状态/下载器多选、稳定 ID、超级做种三态、空值控件、按钮视觉与多条件组均有回归守卫
 

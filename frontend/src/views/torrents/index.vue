@@ -179,6 +179,9 @@
           tooltip="快捷操作"
         />
         <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item command="inspect-same-content">
+            <i class="el-icon-search"></i> 同内容异常排查
+          </el-dropdown-item>
           <el-dropdown-item command="delete-duplicates" divided>
             <i class="el-icon-delete"></i> 快捷删除重复种子
           </el-dropdown-item>
@@ -743,6 +746,12 @@
       @close="showQuickDeleteDuplicatesDialog = false"
       @deleted="handleQuickDeleteDeleted"
     />
+
+    <!-- 同名同大小种子只读排查对话框 -->
+    <SameContentInspectionDialog
+      :visible.sync="showSameContentInspectionDialog"
+      @close="showSameContentInspectionDialog = false"
+    />
   </div>
 </template>
 <script lang="ts">
@@ -753,6 +762,7 @@ import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
+import SameContentInspectionDialog from '@/components/torrents/SameContentInspectionDialog.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import {
@@ -819,7 +829,8 @@ type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
     GlobalReplaceTrackerDialog: () => import('./components/GlobalReplaceTrackerDialog.vue'),
     BatchTransferDialog: () => import('./components/BatchTransferDialog.vue'),
     SetLocationDialog: () => import('./components/SetLocationDialog.vue'),
-    QuickDeleteDuplicatesDialog
+    QuickDeleteDuplicatesDialog,
+    SameContentInspectionDialog
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
@@ -866,6 +877,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private showBatchTransferDialog = false
   private showSetLocationDialog = false
   private showQuickDeleteDuplicatesDialog = false
+  private showSameContentInspectionDialog = false
   private advancedSearchSearching = false
   private showingDuplicates = false
 
@@ -1162,7 +1174,9 @@ export default class extends mixins(TorrentBatchMixin) {
    * 快捷操作下拉菜单命令分发
    */
   private handleQuickActionCommand(command: string) {
-    if (command === 'delete-duplicates') {
+    if (command === 'inspect-same-content') {
+      this.showSameContentInspectionDialog = true
+    } else if (command === 'delete-duplicates') {
       this.showQuickDeleteDuplicatesDialog = true
     }
   }

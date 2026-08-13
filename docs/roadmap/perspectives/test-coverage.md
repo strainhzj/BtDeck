@@ -2,11 +2,11 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 142 个 test_*.py）
+## 后端测试分布（共 143 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 48 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务与重复查询筛选/排序/活动快照均有 API 回归 |
+| `tests/api/` | 49 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
 | `tests/services/` | 40 | `app/services/` | 🟡 中等；新增删除任务占用、孤儿持久化占用与查询状态回归（不含下方 tag_adapters 子目录） |
 | `tests/tasks/` | 13 | `app/tasks/` | 🟡 部分覆盖（13 对 32） |
 | `tests/core/` | 17 | `app/core/` | 🟡 中等 |
@@ -22,9 +22,9 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **142** 个 test_*.py；支持文件计入后全 `.py` 共 160 个。
+> 合计：当前实测 **143** 个 test_*.py。
 
-> 注：`tests/api/`（48 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+> 注：`tests/api/`（49 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -74,6 +74,7 @@
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
 | `tests/core/test_tracker_status_policy.py` | 105 | `app/core/tracker_status_policy.py`：Working 空消息正常证据、非空消息优先、announce/scrape 双消息、精确/部分关键词匹配、未知保留及错误状态聚合 |
+| `tests/api/test_same_content_inspection_api.py` | 222 | `same_content_inspection.py` + `same_content_inspection_service.py`：名称/大小/不同 Hash 严格分组、回收站排除、完整/仅错误成员、任务/Tracker/失败关键词判错与 URL/passkey 脱敏 |
 
 ### 关键源文件测试覆盖抽样
 
@@ -81,6 +82,7 @@
 |--------|---------|------|
 | `app/api/endpoints/torrent_crud.py` | （无直接测试，仅 `test_active_only_filter.py` 间接覆盖 getList 的 active_only） | ⚠ 未直接覆盖 |
 | `app/api/endpoints/duplicate_torrents.py` | `tests/api/test_duplicate_torrents_api.py`（1439 行，40 用例） | ✅ 默认添加时间倒序、安全列排序、非法排序拒绝、完整重复组筛选、活动快照/空快照、分页与元数据回填 |
+| `app/api/endpoints/same_content_inspection.py` / `app/services/same_content_inspection_service.py` | `tests/api/test_same_content_inspection_api.py`（222 行，4 用例） | ✅ 同名同大小且不同 Hash 分组、两种结果模式、局部 Tracker 失败/关键词判定、回收站隔离与凭据脱敏 |
 | `app/api/endpoints/torrent_backup.py` | `tests/api/test_torrent_backup_review.py`（188 行） | ✅ 当前 nickname 批量查询、空列表跳过查询与序列化 |
 | `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空、Tracker 状态归一与 camelCase 响应 |
 | `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
@@ -102,7 +104,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（32 个 spec）
+### `frontend/tests/unit/`（33 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -126,6 +128,7 @@
 | `torrent-batch.spec.ts`（995 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
+| `same-content-inspection-dialog.spec.ts` ✨2026-08-13 | 同内容排查首次加载、完整/仅错误模式、按组分页与关闭同步；两视图组件测试守卫快捷入口 |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
 | `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；重复查询开关在筛选、排序、切页和活动筛选期间保持 |
 | `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留重复查询开关、查询条件、分页和选择状态 |

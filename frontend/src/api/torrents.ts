@@ -882,6 +882,80 @@ export function getDuplicateTorrents(params?: DuplicateQuery): Promise<ApiRespon
   }) as unknown as Promise<ApiResponse<DuplicateResponse>>
 }
 
+// ==================== 同名同大小种子只读排查 ====================
+
+export type SameContentInspectionMode = 'all' | 'errors'
+
+export interface SameContentTrackerIssue {
+  tracker_name: string
+  tracker_host: string
+  issue_types: Array<'tracker_status' | 'announce' | 'scrape'>
+  announce_status: string
+  announce_message: string
+  scrape_status: string
+  scrape_message: string
+  status_message: string
+}
+
+export interface SameContentInspectionItem {
+  info_id: string
+  downloader_id: string
+  downloader_name: string
+  hash: string
+  status: string
+  error_reason: string
+  has_tracker_error: boolean
+  is_error: boolean
+  error_types: Array<'torrent_status' | 'error_reason' | 'tracker_aggregate' | 'tracker_detail'>
+  tracker_hosts: string[]
+  tracker_issues: SameContentTrackerIssue[]
+  updated_at: string | null
+}
+
+export interface SameContentInspectionGroup {
+  group_key: string
+  name: string
+  size: number
+  copy_count: number
+  distinct_hash_count: number
+  downloader_count: number
+  error_count: number
+  tracker_hosts: string[]
+  last_updated_at: string | null
+  items: SameContentInspectionItem[]
+}
+
+export interface SameContentInspectionSummary {
+  candidate_group_count: number
+  candidate_torrent_count: number
+  error_group_count: number
+  error_torrent_count: number
+}
+
+export interface SameContentInspectionResponse {
+  total: number
+  page: number
+  pageSize: number
+  list: SameContentInspectionGroup[]
+  summary: SameContentInspectionSummary
+}
+
+export interface SameContentInspectionRequest {
+  mode: SameContentInspectionMode
+  page?: number
+  pageSize?: number
+}
+
+export function getSameContentInspection(
+  params: SameContentInspectionRequest
+): Promise<ApiResponse<SameContentInspectionResponse>> {
+  return request({
+    url: '/torrents/same-content-inspection',
+    method: 'post',
+    data: params
+  }) as unknown as Promise<ApiResponse<SameContentInspectionResponse>>
+}
+
 // ==================== 快捷删除重复种子接口 ====================
 
 export interface QuickDeletePreviewItem {

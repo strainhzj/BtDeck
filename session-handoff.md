@@ -1,5 +1,23 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-13 交接：同名同大小种子只读异常排查
+
+### 当前结果
+
+- 列表模式与传统模式的“快捷操作”均可打开“同内容异常排查”；两者复用 `SameContentInspectionDialog.vue`。
+- 后端按名称、大小精确相等且规范化 InfoHash 至少两个不同值分组，不要求跨下载器，因此能覆盖用户提供的“同一下载器内多个站点、不同 Hash”数据形态。
+- 弹窗支持完整结果与仅错误种子；错误联合任务状态/原因/聚合标记、Tracker 持久化状态、原始失败码与启用失败关键词。结果按组分页，完整模式含健康成员，仅错误模式只含错误成员。
+- 接口是纯 DB 只读查询，不调用下载器且没有写操作。Tracker 只返回 host，URL 路径、query、passkey/token 等凭据均不返回或已脱敏。
+- 新端点：`POST /api/v1/torrents/same-content-inspection`；无数据库 Schema 或 Alembic 迁移。
+
+### 验证与已知基线
+
+- 后端新 API `4 passed`；相关回归 `48 passed`；新增后端文件 mypy、Black、Flake8、py_compile 通过。
+- 前端 `3 suites / 36 tests passed`，typecheck、改动文件 ESLint、生产 build 通过；build 仅有既有 warning。
+- 完整前端 lint 仍受任务前已有的高级搜索生成契约漂移与 3 个关键词测试文件 5 条 warning 阻断，本次文件 0 warning。
+- 大型后端回归并行执行时超时，未把未完成运行记为通过；直接相关回归已改为顺序执行并全部通过。
+- 路线图、API 说明、feature_list 与 progress 已同步。用户已授权仅提交并推送本功能相关文件；任务前已有未跟踪目录均未触碰，未部署。
+
 ## 2026-08-13 交接：最新提交 Tracker 策略回归加固
 
 ### 当前结果
