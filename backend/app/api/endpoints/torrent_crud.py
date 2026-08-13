@@ -618,6 +618,10 @@ def get_torrents(
     sort_by: Optional[str] = Query(None, description="排序字段"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     active_only: bool = Query(False, description="仅显示活动种子（实时速度>0，由活动集合缓存驱动）"),
+    same_content_only: bool = Query(
+        False,
+        description="仅显示名称、大小相同且规范化 InfoHash 至少两个不同值的种子",
+    ),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
@@ -667,6 +671,7 @@ def get_torrents(
             sort_order=sort_order,
             tracker=tracker_like,
             active_keys=active_keys,
+            same_content_only=same_content_only,
         )
 
         # 构建响应数据，包含总数和列表

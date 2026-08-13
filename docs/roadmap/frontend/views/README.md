@@ -7,7 +7,7 @@
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图均保留同 Hash 重复查询，并在快捷操作提供“同内容异常排查”；共享只读弹窗按名称+大小+不同 InfoHash 分组，支持完整/仅错误结果；两视图仍共用高级搜索工作区并展示错误原因 |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图保留同 Hash 重复查询；快捷操作“同内容异常排查”直接切换当前表格到 `same_content_only` 数据源，复用筛选、排序和行级分页并可退出；两视图仍共用高级搜索工作区 |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（14 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（12 文件；11 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
@@ -26,10 +26,10 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，class L837）；快捷操作 L182 与命令分发 L1176 打开共享同内容排查弹窗 L751；既有同 Hash 重复查询、筛选与高级搜索保持不变 |
+| `index.vue` | 种子管理主入口（列表模式，class L842）；同内容提示/退出 L71、快捷入口 L192、命令分发 L1186；`getList()` L1038 追加 `same_content_only` 并沿用当前页 `skip/limit` |
 | `components/QuickDeleteDuplicatesDialog.vue` | 重复种子快捷删除；提交后触发父列表刷新，nullable task_id 时仅提示而不轮询 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L889）；快捷操作 L203 与命令分发 L1718 打开共享同内容排查弹窗 L719；既有同 Hash 重复查询与错误原因展示保持不变 |
-| `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates`，切换视图不丢失重复查询模式 |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L890）；同内容提示/退出 L212、快捷入口 L203、命令分发 L1724；`getList()` L1175 追加列表筛选并保留虚拟表格/分页路径 |
+| `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent`（L60–61、L86–87），切换视图不丢失查询模式 |
 | `FileManagement.vue` | 种子文件管理（`FileManagement` L310）：筛选区复用 `management-page` 项目样式；`getBackupDownloaderName` L682 优先展示列表批量返回的当前 downloader nickname，不逐行动态请求 |
 | `components/TorrentAddDialog.vue` | 添加种子对话框 |
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |

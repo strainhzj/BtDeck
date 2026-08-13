@@ -9,10 +9,10 @@
 | 项目 | 值 |
 |------|-----|
 | 源路径 | `backend/app/api/endpoints/torrent_crud.py` |
-| 行数 | 828（实测 `wc -l`） |
+| 行数 | 648（实测 PowerShell `Get-Content`） |
 | 模块职责 | 种子 CRUD 端点：列表同步、单个/批量添加、按主键查询、通用条件查询 |
 | 路由前缀 | 由 `torrents.py` 聚合后挂到 `/torrents`（最终 `/api/v1/torrents/*`） |
-| 顶层符号 | 1 class（`TorrentOperationRequest`）+ 5 def（含 4 个路由处理函数 + 0 个模块级工具函数） |
+| 顶层符号 | 1 class（`TorrentOperationRequest`）+ 5 路由函数 |
 
 ---
 
@@ -102,20 +102,16 @@ asyncio.create_task(write_audit_log_async())  # L426 后台执行
 | L36 | `logger` | 模块常量 | `logging.getLogger(__name__)` |
 | L37 | `router` | 模块常量 | `APIRouter()` |
 | L38 | `urllib3.disable_warnings(...)` | 模块副作用 | 关闭 InsecureRequestWarning |
-| L44 | `TorrentOperationRequest` | class（BaseModel） | 种子操作请求统一基类（`@dataclass` 等效：Pydantic 自动生成 `__init__`） |
-| L52 | `torrent_list` | def（路由） | `POST /list` 同步下载器种子到 DB |
-| L122 | `create_torrent` | async def（路由） | `POST /add` 单个添加 |
-| L187 | `write_temp_file` | def（嵌套） | 安全写入临时文件（内嵌于 create_torrent） |
-| L231 | `read_file_data` | def（嵌套） | 读文件到 bytes（Transmission 分支） |
-| L308 | `read_file_data_qb` | def（嵌套） | 读文件到 bytes（qBittorrent 分支） |
-| L395 | `write_audit_log_async` | async def（嵌套） | 异步审计日志写入 |
-| L440 | `create_torrents_batch` | async def（路由） | `POST /add-batch` 批量添加（最多 10 个） |
-| L514 | `write_temp_file` | def（嵌套） | 安全写入临时文件（batch 版） |
-| L543 | `read_file_data` | def（嵌套） | 读文件（batch Transmission） |
-| L587 | `read_file_data_qb` | def（嵌套） | 读文件（batch qBittorrent） |
-| L649 | `write_audit_log` | async def（嵌套） | 异步审计日志（batch 版） |
-| L722 | `get_torrent` | def（路由） | `GET /torrents/{info_id}/{downloader_id}/{downloader_name}` 按主键查 |
-| L737 | `get_torrents` | def（路由） | `GET /getList` 通用条件查询 |
+| L59 | `TorrentOperationRequest` | class（BaseModel） | 种子操作请求统一基类 |
+| L67 | `torrent_list` | def（路由） | `POST /list` 同步下载器种子到 DB |
+| L137 | `create_torrent` | async def（路由） | `POST /add` 单个添加 |
+| L206 | `write_temp_file` | def（嵌套） | 安全写入临时文件（内嵌于 create_torrent） |
+| L250 | `read_file_data` | def（嵌套） | 读文件到 bytes（Transmission 分支） |
+| L336 | `read_file_data_qb` | def（嵌套） | 读文件到 bytes（qBittorrent 分支） |
+| L439 | `write_audit_log_async` | async def（嵌套） | 异步审计日志写入 |
+| L484 | `create_torrents_batch` | async def（路由） | `POST /add-batch` 提交异步批量添加 |
+| L581 | `get_torrent` | def（路由） | `GET /torrents/{info_id}/{downloader_id}/{downloader_name}` 按主键查 |
+| L596 | `get_torrents` | def（路由） | `GET /getList` 通用条件查询（含同内容列表筛选） |
 
 > 嵌套函数（write_temp_file / read_file_data / write_audit_log）不计入"顶层符号"，但按提示词要求收录在索引中以便定位。
 
@@ -242,14 +238,16 @@ def get_torrents(
     sort_by: Optional[str] = Query(None, description="排序字段"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     active_only: bool = Query(False, description="仅显示活动种子"),
+    same_content_only: bool = Query(False, description="仅显示同名同大小且不同 InfoHash 的种子"),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
 ```
 
-- **定位**：`torrent_crud.py:737`
-- **职责**：支持 13 个过滤条件 + 排序 + 分页的通用查询，委托 `get_torrent_infos(...)`（torrent_helpers）。
-- **活动种子特殊处理**（L771-787）：`active_only=True` 时读取 `get_active_keys_snapshot()`，若快照未就绪返回 `206`（partial），前端保留现有列表并先刷新速度快照。
+- **定位**：`torrent_crud.py:596`
+- **职责**：支持普通筛选、活动快照、同内容条件、排序与分页的通用查询，委托 `get_torrent_infos(...)`（torrent_helpers）。
+- **活动种子特殊处理**（L633–654）：`active_only=True` 时读取 `get_active_keys_snapshot()`，若快照未就绪返回 `206`（partial）。
+- **同内容筛选**（L621–624、L674）：`same_content_only=True` 委托共享查询按“名称 + 大小 + 至少两个不同规范化 Hash”过滤，并继续按种子行 `skip/limit` 分页。
 - **响应字段**：`total/list/pageSize`（分页固定字段，见 [API 响应格式约束](../../../../backend/docs/constraints/api-response-format.md)）。
 
 ---

@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Sequence, Set, Tuple
 
 import bencodepy
-from sqlalchemy import Column, MetaData, String, Table, and_, or_, asc, desc
+from sqlalchemy import Column, MetaData, String, Table, and_, or_, asc, desc, func
 from sqlalchemy.orm import Session
 
 from app.torrents.models import (
@@ -64,6 +64,7 @@ def get_torrent_infos(
     sort_order: Optional[str] = None,
     tracker: Optional[str] = None,
     active_keys: Optional[Set[Tuple[str, str]]] = None,
+    same_content_only: bool = False,
 ) -> Dict[str, Any]:
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
     # 构建基础查询（排除回收站中的种子：dr=0 且 deleted_at=NULL）
@@ -237,6 +238,35 @@ def get_torrent_infos(
             query = query.join(active_table, join_condition)
             count_query = count_query.join(active_table, join_condition)
 
+        if same_content_only:
+            # 从已应用普通列表筛选（含活动快照）的 count_query 派生候选组，
+            # 保证名称、下载器、状态等条件与列表 total/list 口径完全一致。
+            same_content_valid_row = and_(
+                TorrentInfo.name.isnot(None),
+                func.length(func.trim(TorrentInfo.name)) > 0,
+                TorrentInfo.size.isnot(None),
+                TorrentInfo.size > 0,
+                TorrentInfo.hash.isnot(None),
+                func.length(func.trim(TorrentInfo.hash)) > 0,
+            )
+            query = query.filter(same_content_valid_row)
+            count_query = count_query.filter(same_content_valid_row)
+            same_content_groups = (
+                count_query.with_entities(
+                    TorrentInfo.name.label("same_content_name"),
+                    TorrentInfo.size.label("same_content_size"),
+                )
+                .group_by(TorrentInfo.name, TorrentInfo.size)
+                .having(func.count(func.distinct(func.lower(func.trim(TorrentInfo.hash)))) >= 2)
+                .subquery()
+            )
+            same_content_join = and_(
+                TorrentInfo.name == same_content_groups.c.same_content_name,
+                TorrentInfo.size == same_content_groups.c.same_content_size,
+            )
+            query = query.join(same_content_groups, same_content_join)
+            count_query = count_query.join(same_content_groups, same_content_join)
+
         # 获取总数
         total = count_query.count()
 
@@ -251,6 +281,14 @@ def get_torrent_infos(
         else:
             # 默认按添加时间倒序排序
             query = query.order_by(desc(TorrentInfo.added_date))
+
+        # 分页必须具有确定顺序；业务排序值相同时按复合主键稳定兜底，
+        # 避免相邻页重复或漏行。兜底统一升序，不改变主排序方向。
+        query = query.order_by(
+            asc(TorrentInfo.info_id),
+            asc(TorrentInfo.downloader_id),
+            asc(TorrentInfo.downloader_name),
+        )
 
         # 分页查询
         query_result_list = query.offset(skip).limit(limit).all()

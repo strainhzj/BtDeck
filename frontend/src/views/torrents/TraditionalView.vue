@@ -209,6 +209,18 @@
         </el-dropdown-menu>
       </el-dropdown>
     </div>
+    <el-alert
+      v-if="showingSameContent"
+      class="same-content-list-alert"
+      title="同内容异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <el-button type="text" size="small" @click="exitSameContentInspection">
+        退出排查并返回普通列表
+      </el-button>
+    </el-alert>
     <div class="page-body">
       <!-- 左侧过滤面板 -->
       <aside class="filter-panel" :class="{collapsed: viewModeModule.filterPanelCollapsed}">
@@ -715,12 +727,6 @@
       @deleted="handleQuickDeleteDeleted"
     />
 
-    <!-- 同名同大小种子只读排查 -->
-    <SameContentInspectionDialog
-      :visible.sync="showSameContentInspectionDialog"
-      @close="showSameContentInspectionDialog = false"
-    />
-
     <!-- P1新增：高级搜索 -->
     <el-dialog
       :visible.sync="showAdvancedSearchDialog"
@@ -787,7 +793,6 @@ import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
-import SameContentInspectionDialog from '@/components/torrents/SameContentInspectionDialog.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
@@ -880,7 +885,6 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     TrackerOperationDialog,
     GlobalReplaceTrackerDialog,
     QuickDeleteDuplicatesDialog,
-    SameContentInspectionDialog,
     FilterGroup,
     PageSizeCombobox,
     AdvancedSearchWorkspace
@@ -946,8 +950,6 @@ export default class extends mixins(TorrentBatchMixin) {
   private advancedSearchSearching = false
   // 快捷删除重复种子
   private showQuickDeleteDuplicatesDialog = false
-  // 同名同大小种子只读排查
-  private showSameContentInspectionDialog = false
 
   // 详情面板
   private currentRow: any = null
@@ -960,6 +962,7 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 重复任务查询使用独立分页，避免翻页后意外回到普通列表
   private showingDuplicates = false
+  private showingSameContent = false
   private activeAdvancedSearchRequest: AdvancedSearchRequest | null = null
 
   // 查询参数（复用现有结构）
@@ -1189,6 +1192,9 @@ export default class extends mixins(TorrentBatchMixin) {
       delete params.showActiveOnly
       if (showActive) {
         params.active_only = true
+      }
+      if (this.showingSameContent) {
+        params.same_content_only = true
       }
 
       // 处理数组参数
@@ -1715,12 +1721,27 @@ export default class extends mixins(TorrentBatchMixin) {
   /**
    * 快捷操作下拉菜单命令分发
    */
-  private handleQuickActionCommand(command: string) {
+  private async handleQuickActionCommand(command: string) {
     if (command === 'inspect-same-content') {
-      this.showSameContentInspectionDialog = true
+      this.showingDuplicates = false
+      this.showingSameContent = true
+      this.activeAdvancedSearchRequest = null
+      this.currentPage = 1
+      this.listQuery.skip = 0
+      this.resetTableViewport()
+      await this.getList()
+      this.$message.success(`排查完成，共找到 ${this.total} 条同内容种子`)
     } else if (command === 'delete-duplicates') {
       this.showQuickDeleteDuplicatesDialog = true
     }
+  }
+
+  private async exitSameContentInspection() {
+    this.showingSameContent = false
+    this.currentPage = 1
+    this.listQuery.skip = 0
+    this.resetTableViewport()
+    await this.getList()
   }
 
   /**
@@ -1914,6 +1935,7 @@ export default class extends mixins(TorrentBatchMixin) {
       }
 
       this.showingDuplicates = false
+      this.showingSameContent = false
       this.currentPage = 1
       this.listQuery.skip = 0
       this.activeAdvancedSearchRequest = request as AdvancedSearchRequest
@@ -1987,6 +2009,7 @@ export default class extends mixins(TorrentBatchMixin) {
     try {
       if (conditions.source === 'simple' && conditions.listQuery) {
         this.showingDuplicates = false
+        this.showingSameContent = false
         const saved = conditions.listQuery
         this.listQuery = {
           skip: 0,
@@ -2028,6 +2051,7 @@ export default class extends mixins(TorrentBatchMixin) {
           return false
         }
         this.showingDuplicates = false
+        this.showingSameContent = false
         this.currentPage = 1
         this.listQuery.skip = 0
         this.activeAdvancedSearchRequest = request as AdvancedSearchRequest
@@ -2069,6 +2093,7 @@ export default class extends mixins(TorrentBatchMixin) {
   // ====== P1#10 查找重复任务 ======
   private async handleDuplicateSearchToggle(enabled: boolean) {
     this.showingDuplicates = enabled
+    if (enabled) this.showingSameContent = false
     this.activeAdvancedSearchRequest = null
     this.currentPage = 1
     this.listQuery.skip = 0
@@ -2178,6 +2203,10 @@ export default class extends mixins(TorrentBatchMixin) {
 
 .torrent-error-alert {
   margin-bottom: 10px;
+}
+
+.same-content-list-alert {
+  margin: 0 10px 10px;
 }
 
 // 对话框标题：图标 + 文本对齐（el-dialog #title slot）

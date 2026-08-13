@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（143 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（44 个 test suite）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（143 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（43 个 spec）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -10,7 +10,7 @@
 | 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
 | 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
 | panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
-| API 层测试 api | `backend/tests/api/` | API 层测试（49 个 test_*.py，对应 app/api/；新增同内容排查分组/错误/脱敏回归） |
+| API 层测试 api | `backend/tests/api/` | API 层测试（49 个 test_*.py，对应 app/api/；同内容列表筛选、组合条件、活动删除/活动快照、稳定行级分页、大页关联预取及旧端点移除回归） |
 | 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
@@ -21,7 +21,7 @@
 | 服务层测试 services | `backend/tests/services/` | 服务层测试（对应 app/services/，含 tag_adapters/） |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | 33 个 Jest 单元测试（新增同内容排查弹窗模式/分页与两视图入口回归） |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 32 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖） |
 | 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2263 行）+ LucideIcon.spec.ts（185 行） |
 
 ## backend/tests/（143 个 test_*.py + 支持文件）
@@ -69,7 +69,7 @@ cd backend && pytest tests/api/               # API 层（48 个 test_*.py）
 - `deployment-recovery.spec.ts`：覆盖部署后 JS/CSS chunk 错误识别、一次恢复、防刷新循环、历史 Workbox 清退和 nginx 缓存契约。
 - `file-management-contract.spec.ts`：覆盖备份列表当前 nickname、单次列表加载与 management-page 筛选区契约。
 - `torrent-error-reason-ui.spec.ts`：覆盖两种种子视图名称 tooltip 与 Tracker 卡片错误原因展示。
-- `same-content-inspection-dialog.spec.ts`：覆盖弹窗首次完整查询、仅错误模式重置分页、按组翻页与关闭同步；列表/传统视图测试同时守卫快捷入口。
+- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖同内容快捷入口在当前表格发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；`torrent-view-switcher.spec.ts` 守卫跨视图状态。
 
 ### 组件内嵌测试
 

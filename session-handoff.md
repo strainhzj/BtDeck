@@ -1,6 +1,23 @@
 # Session Handoff - BtDeck 全栈项目
 
-## 2026-08-13 交接：同名同大小种子只读异常排查
+## 2026-08-13 交接：同内容异常排查改为当前列表分页
+
+### 当前结果
+
+- 最新提交 `ea5a5f3` 的独立排查弹窗/端点/诊断服务已移除；当前入口不会打开新窗口或弹窗。
+- 两种种子视图均通过现有 `GET /api/v1/torrents/getList` 发送 `same_content_only=true`，继续复用普通筛选、排序、刷新、每页条数和 `skip/limit` 行级分页。
+- 当前表格上方显示排查状态与退出入口；切换列表/传统视图会保留 `showingSameContent`。
+- 同内容判定为“名称相同 + 大小相同 + 至少两个不同规范化 InfoHash”，普通筛选先参与候选判定；只加载当前页关联数据，无数据库迁移。
+
+### 验证与已知基线
+
+- 后端定向回归 `40 passed`（同内容专用 9 用例），覆盖组合筛选、活动删除/活动快照、复合主键稳定分页、低 SQLite 变量上限大页与仅当前页 Tracker 预取；前端 `3 suites / 36 tests passed`，覆盖列表操作保持模式及切换其它查询源清理模式；TypeScript、改动文件 ESLint、生产 build、Black、Flake8、py_compile 与 `git diff --check` 通过。
+- 根 `init.sh` 经 `E:\\Git\\bin\\bash.exe` 运行完成，前端子脚本有既有 warning。
+- 最终全量回归：后端 `3376 passed, 7 skipped`；前端 `43 suites / 719 tests passed`。
+- 完整前端 lint 仍被 3 个无关关键词测试文件 5 条既有 warning 阻断；后端 mypy 的 64 条既有 ORM/Pydantic 类型错误未在本任务扩大修复。
+- API 文档、路线图、feature_list 与 progress 已同步；本轮修改已纳入同一提交范围，未推送、未部署。
+
+## 2026-08-13 交接：同名同大小种子只读异常排查（已被上方方案替代）
 
 ### 当前结果
 

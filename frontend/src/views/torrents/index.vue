@@ -68,6 +68,19 @@
       </div>
     </section>
 
+    <el-alert
+      v-if="showingSameContent"
+      class="same-content-list-alert"
+      title="同内容异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <el-button type="text" @click="exitSameContentInspection">
+        退出排查并返回普通列表
+      </el-button>
+    </el-alert>
+
     <!-- 批量操作工具栏 -->
     <section class="batch-operations">
       <!-- 批量开始 -->
@@ -747,11 +760,6 @@
       @deleted="handleQuickDeleteDeleted"
     />
 
-    <!-- 同名同大小种子只读排查对话框 -->
-    <SameContentInspectionDialog
-      :visible.sync="showSameContentInspectionDialog"
-      @close="showSameContentInspectionDialog = false"
-    />
   </div>
 </template>
 <script lang="ts">
@@ -762,7 +770,6 @@ import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
-import SameContentInspectionDialog from '@/components/torrents/SameContentInspectionDialog.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import {
@@ -829,8 +836,7 @@ type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
     GlobalReplaceTrackerDialog: () => import('./components/GlobalReplaceTrackerDialog.vue'),
     BatchTransferDialog: () => import('./components/BatchTransferDialog.vue'),
     SetLocationDialog: () => import('./components/SetLocationDialog.vue'),
-    QuickDeleteDuplicatesDialog,
-    SameContentInspectionDialog
+    QuickDeleteDuplicatesDialog
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
@@ -877,9 +883,9 @@ export default class extends mixins(TorrentBatchMixin) {
   private showBatchTransferDialog = false
   private showSetLocationDialog = false
   private showQuickDeleteDuplicatesDialog = false
-  private showSameContentInspectionDialog = false
   private advancedSearchSearching = false
   private showingDuplicates = false
+  private showingSameContent = false
 
   // 修改路径相关
   private selectedTorrentsForLocation: any[] = []
@@ -1046,6 +1052,9 @@ export default class extends mixins(TorrentBatchMixin) {
       if (showActive) {
         params.active_only = true
       }
+      if (this.showingSameContent) {
+        params.same_content_only = true
+      }
 
       // 处理数组参数：转换为逗号分隔的字符串
       if (params.downloader_id && Array.isArray(params.downloader_id)) {
@@ -1173,12 +1182,24 @@ export default class extends mixins(TorrentBatchMixin) {
   /**
    * 快捷操作下拉菜单命令分发
    */
-  private handleQuickActionCommand(command: string) {
+  private async handleQuickActionCommand(command: string) {
     if (command === 'inspect-same-content') {
-      this.showSameContentInspectionDialog = true
+      this.showingDuplicates = false
+      this.showingSameContent = true
+      this.currentPage = 1
+      this.listQuery.skip = 0
+      await this.getList()
+      this.$message.success(`排查完成，共找到 ${this.total} 条同内容种子`)
     } else if (command === 'delete-duplicates') {
       this.showQuickDeleteDuplicatesDialog = true
     }
+  }
+
+  private async exitSameContentInspection() {
+    this.showingSameContent = false
+    this.currentPage = 1
+    this.listQuery.skip = 0
+    await this.getList()
   }
 
   /**
@@ -2082,6 +2103,7 @@ export default class extends mixins(TorrentBatchMixin) {
     }
 
     this.showingDuplicates = false
+    this.showingSameContent = false
     this.advancedSearchSearching = true
     try {
       const response = await advancedSearch(request)
@@ -2117,6 +2139,7 @@ export default class extends mixins(TorrentBatchMixin) {
     try {
       if (conditions.source === 'simple' && conditions.listQuery) {
         this.showingDuplicates = false
+        this.showingSameContent = false
         // 简单查询：回填 listQuery（保留 skip/limit），回到第 1 页
         const saved = conditions.listQuery
         this.listQuery = {
@@ -2136,6 +2159,7 @@ export default class extends mixins(TorrentBatchMixin) {
         return true
       } else if (conditions.source === 'advanced' && conditions.condition_groups) {
         this.showingDuplicates = false
+        this.showingSameContent = false
         const sortBy = conditions.sort_by || this.listQuery.sort_by || 'added_date'
         const sortOrder = conditions.sort_order || this.listQuery.sort_order || 'desc'
         this.listQuery.sort_by = sortBy
@@ -2334,6 +2358,7 @@ export default class extends mixins(TorrentBatchMixin) {
   /** 切换重复任务数据源；开启后所有筛选、排序、分页和刷新都继续走重复查询。 */
   private async handleDuplicateSearchToggle(enabled: boolean) {
     this.showingDuplicates = enabled
+    if (enabled) this.showingSameContent = false
     this.currentPage = 1
     this.listQuery.skip = 0
     if (!enabled) {
@@ -2423,6 +2448,10 @@ export default class extends mixins(TorrentBatchMixin) {
 .torrent-error-alert {
   width: auto;
   margin: 12px 16px 0;
+}
+
+.same-content-list-alert {
+  margin: 0 16px 12px;
 }
 
 .advanced-search-dialog__title {

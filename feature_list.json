@@ -2328,28 +2328,28 @@
         {
           "id": "v1.0.6.39",
           "name": "同名同大小种子只读异常排查",
-          "description": "在列表模式与传统模式的快捷操作中增加“同内容异常排查”。后端主动发现名称完全相同、大小完全相同且规范化 InfoHash 至少两个不同值的活动种子组；弹窗支持完整结果和仅错误种子两种按组分页视图。错误联合任务 status/error_reason/has_tracker_error、Tracker 持久化状态、announce/scrape 失败码与启用失败关键词判断；只查询展示，不连接下载器、不执行写操作，Tracker URL/passkey 仅以脱敏 host/消息返回。",
+          "description": "在列表模式与传统模式的快捷操作中增加“同内容异常排查”。后端通过现有 GET /torrents/getList 的 same_content_only 条件主动发现名称完全相同、大小完全相同且规范化 InfoHash 至少两个不同值的种子；普通筛选先参与候选判定，结果按种子行复用现有排序与 skip/limit 分页。前端不打开新窗口或弹窗，直接在当前种子表格加载并提供退出入口；不连接下载器、不执行写操作。",
           "status": "done",
           "scope": "fullstack",
           "files": [
             "backend/app/api/api.py",
-            "backend/app/api/endpoints/same_content_inspection.py",
-            "backend/app/services/same_content_inspection_service.py",
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
             "backend/docs/api/same-content-inspection.md",
             "backend/tests/api/test_same_content_inspection_api.py",
             "frontend/src/api/torrents.ts",
-            "frontend/src/components/torrents/SameContentInspectionDialog.vue",
             "frontend/src/views/torrents/index.vue",
             "frontend/src/views/torrents/TraditionalView.vue",
-            "frontend/tests/unit/same-content-inspection-dialog.spec.ts",
+            "frontend/src/views/torrents/TorrentViewSwitcher.vue",
             "frontend/tests/unit/torrent-list-view-component.spec.ts",
             "frontend/tests/unit/traditional-view-component.spec.ts",
+            "frontend/tests/unit/torrent-view-switcher.spec.ts",
             "docs/roadmap/",
             "feature_list.json",
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "新增 API 回归 4 passed，覆盖严格名称/大小/不同 Hash 分组、回收站/逻辑删除排除、完整/仅错误成员、任务/Tracker/失败关键词判错，以及 Tracker URL 路径/query/passkey/token 脱敏；快捷删除+共享 Tracker 策略+新功能相关回归 48 passed。前端弹窗和两视图入口 3 suites/36 tests passed，typecheck、改动文件零告警 ESLint、生产 build 通过；后端新增文件 mypy、Black、Flake8、py_compile 与 git diff --check 通过。完整 npm run lint 仍被任务前已有的高级搜索生成契约漂移和 3 个关键词测试文件 5 条 warning 拦截，本次文件为 0 warning。"
+          "evidence": "后端全量 3376 passed/7 skipped；同内容列表筛选与普通列表定向回归 40 passed，9 个专用 API 用例覆盖严格名称/大小/不同规范化 Hash、空名称/零大小/空 Hash及混合无效成员、组合普通条件先参与候选判定、回收站与活动删除排除、活动快照、复合主键稳定排序分页、低 SQLite 变量上限下 limit=100000、大页仅预取当前页 Tracker，以及旧 POST 端点 404。前端全量 43 suites/719 tests，定向 3 suites/36 tests，覆盖当前表格加载、筛选、排序、页大小、翻页、刷新保持 same_content_only，并在重复查询、高级搜索、模板和显式退出时清理模式；TypeScript、改动文件严格 ESLint、Black、Flake8、py_compile、生产 build、根 init.sh 与 git diff --check 通过。完整 npm run lint 仍仅被 3 个无关关键词测试文件的既有 5 条 warning 拦截；后端 mypy 在 torrent_helpers/torrent_crud 的既有 ORM/Pydantic 类型问题上报告 64 条。"
         }
       ]
     },

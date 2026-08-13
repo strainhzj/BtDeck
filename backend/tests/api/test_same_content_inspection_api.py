@@ -1,24 +1,28 @@
 # -*- coding: utf-8 -*-
-"""同名同大小种子只读排查 API 回归测试。"""
+"""同内容排查复用种子列表查询的 API 回归测试。"""
 
+import sqlite3
 from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.api.api import api_router
+from app.api.endpoints import torrent_helpers
+from app.api.endpoints.torrent_speed import ActiveKeysSnapshot, ActiveSnapshotStatus
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
-from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
+from app.torrents.models import TorrentInfo, TrackerInfo
 from tests.api.conftest import make_torrent
 
-URL = "/api/v1/torrents/same-content-inspection"
+URL = "/api/v1/torrents/getList"
 
 
 @pytest.fixture
@@ -28,15 +32,9 @@ def db_session():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    tables = [
-        BtDownloaders.__table__,
-        TorrentInfo.__table__,
-        TrackerInfo.__table__,
-        TrackerKeywordConfig.__table__,
-    ]
+    tables = [BtDownloaders.__table__, TorrentInfo.__table__, TrackerInfo.__table__]
     Base.metadata.create_all(bind=engine, tables=tables)
-    session_factory = sessionmaker(bind=engine)
-    session = session_factory()
+    session = sessionmaker(bind=engine)()
     yield session
     session.close()
     Base.metadata.drop_all(bind=engine, tables=tables)
@@ -56,201 +54,451 @@ def client(db_session):
     app.dependency_overrides.clear()
 
 
-def _add_tracker(
-    db_session,
-    *,
-    tracker_id: str,
-    info_id: str,
-    tracker_url: str,
-    tracker_host: str | None = None,
-    announce_status: int = 2,
-    announce_message: str = "Success",
-    scrape_status: int = 2,
-    scrape_message: str = "Success",
-    status: str = "normal",
-    status_message: str = "正常",
-):
-    now = datetime(2026, 8, 13, 12, 0, 0)
-    tracker = TrackerInfo(
-        tracker_id=tracker_id,
-        torrent_info_id=info_id,
-        tracker_name="site",
-        tracker_url=tracker_url,
-        tracker_host=tracker_host,
-        last_announce_succeeded=announce_status,
-        last_announce_msg=announce_message,
-        last_scrape_succeeded=scrape_status,
-        last_scrape_msg=scrape_message,
-        status=status,
-        msg=status_message,
-        create_time=now,
-        create_by="tester",
-        update_time=now,
-        update_by="tester",
-        dr=0,
+def _ids(body):
+    return [item["infoId"] for item in body["data"]["list"]]
+
+
+def test_same_content_filter_returns_rows_in_normal_list_contract(client, db_session):
+    make_torrent(
+        db_session,
+        info_id="match-a",
+        downloader_id="dl-a",
+        hash_=" HASH-A ",
+        name="Exact",
+        size=1024,
     )
-    db_session.add(tracker)
-    db_session.commit()
-    return tracker
-
-
-def test_groups_by_exact_name_size_and_distinct_hash(client, db_session):
-    make_torrent(db_session, info_id="match-a", downloader_id="dl-a", hash_="HASH-A", name="Exact", size=1024)
-    make_torrent(db_session, info_id="match-b", downloader_id="dl-a", hash_="HASH-B", name="Exact", size=1024)
-
-    # 同名但大小不同、同大小但名称不同，均不能并入候选组。
-    make_torrent(db_session, info_id="different-size", downloader_id="dl-b", hash_="HASH-C", name="Exact", size=2048)
-    make_torrent(db_session, info_id="different-name", downloader_id="dl-b", hash_="HASH-D", name="Other", size=1024)
-
-    # 名称和大小相同但只有同一个规范化 hash，不满足“不同 InfoHash”。
-    make_torrent(db_session, info_id="same-hash-a", downloader_id="dl-c", hash_=" DUP ", name="SameHash", size=4096)
-    make_torrent(db_session, info_id="same-hash-b", downloader_id="dl-d", hash_="dup", name="SameHash", size=4096)
-
-    # 回收站/逻辑删除记录不参与主动排查。
+    make_torrent(
+        db_session,
+        info_id="match-b",
+        downloader_id="dl-a",
+        hash_="hash-b",
+        name="Exact",
+        size=1024,
+    )
+    make_torrent(
+        db_session,
+        info_id="different-size",
+        downloader_id="dl-b",
+        hash_="hash-c",
+        name="Exact",
+        size=2048,
+    )
+    make_torrent(
+        db_session,
+        info_id="single",
+        downloader_id="dl-b",
+        hash_="hash-d",
+        name="Single",
+        size=1024,
+    )
+    make_torrent(
+        db_session,
+        info_id="same-hash-a",
+        downloader_id="dl-c",
+        hash_=" DUP ",
+        name="SameHash",
+        size=4096,
+    )
+    make_torrent(
+        db_session,
+        info_id="same-hash-b",
+        downloader_id="dl-d",
+        hash_="dup",
+        name="SameHash",
+        size=4096,
+    )
     make_torrent(
         db_session,
         info_id="recycled",
         downloader_id="dl-e",
-        hash_="HASH-E",
+        hash_="hash-e",
         name="Exact",
         size=1024,
         deleted_at=datetime(2026, 8, 13, 10, 0, 0),
     )
+    for invalid_group, invalid_name, invalid_size, hashes in (
+        ("blank-name", " ", 1024, ("blank-name-a", "blank-name-b")),
+        ("zero-size", "ZeroSize", 0, ("zero-size-a", "zero-size-b")),
+        ("blank-hash", "BlankHash", 1024, (" ", "valid-hash")),
+    ):
+        for index, hash_ in enumerate(hashes):
+            make_torrent(
+                db_session,
+                info_id=f"{invalid_group}-{index}",
+                downloader_id=f"invalid-dl-{index}",
+                hash_=hash_,
+                name=invalid_name,
+                size=invalid_size,
+            )
     make_torrent(
         db_session,
-        info_id="deleted",
-        downloader_id="dl-f",
-        hash_="HASH-F",
+        info_id="invalid-member",
+        downloader_id="dl-invalid-member",
+        hash_=" ",
         name="Exact",
         size=1024,
-        dr=1,
     )
 
-    response = client.post(URL, json={"mode": "all", "page": 1, "pageSize": 20})
+    response = client.get(URL, params={"same_content_only": "true", "skip": 0, "limit": 20})
     body = response.json()
 
     assert response.status_code == 200
     assert body["code"] == "200", body["msg"]
-    assert body["data"]["total"] == 1
-    assert body["data"]["summary"] == {
-        "candidate_group_count": 1,
-        "candidate_torrent_count": 2,
-        "error_group_count": 0,
-        "error_torrent_count": 0,
-    }
-    group = body["data"]["list"][0]
-    assert group["name"] == "Exact"
-    assert group["size"] == 1024
-    assert group["copy_count"] == 2
-    assert group["distinct_hash_count"] == 2
-    assert group["downloader_count"] == 1
-    assert {item["info_id"] for item in group["items"]} == {"match-a", "match-b"}
+    assert body["data"]["total"] == 2
+    assert body["data"]["pageSize"] == 20
+    assert set(_ids(body)) == {"match-a", "match-b"}
+    assert "invalid-member" not in _ids(body)
+    assert all("trackerInfo" in item for item in body["data"]["list"])
 
 
-def test_errors_mode_filters_groups_and_members(client, db_session):
-    db_session.add(
-        TrackerKeywordConfig(
-            keyword_type="failed",
-            keyword="Tracker HTTP response 403",
-        )
-    )
-    db_session.commit()
-
-    # 候选组一：一条健康、一条任务错误、一条局部 Tracker 错误。
-    make_torrent(db_session, info_id="healthy", downloader_id="dl-a", hash_="H-1", name="Candidate-A", size=100)
+def test_same_content_filter_uses_list_filters_before_group_detection(client, db_session):
     make_torrent(
         db_session,
-        info_id="task-error",
+        info_id="a-seed",
         downloader_id="dl-a",
-        hash_="H-2",
-        name="Candidate-A",
-        size=100,
-        status="error",
-        error_reason="No data found",
-    )
-    make_torrent(
-        db_session,
-        info_id="tracker-error",
-        downloader_id="dl-a",
-        hash_="H-3",
-        name="Candidate-A",
+        hash_="a",
+        name="Filtered",
         size=100,
         status="seeding",
     )
-    _add_tracker(
-        db_session,
-        tracker_id="tracker-issue",
-        info_id="tracker-error",
-        tracker_url="https://tracker.example/announce?passkey=secret-passkey",
-        tracker_host="tracker.example",
-        # 原始状态仍为 Working，但最新消息命中失败关键词，也必须主动发现。
-        scrape_status=2,
-        scrape_message=(
-            "Tracker HTTP response 403; retry "
-            "https://tracker.example/message-path-secret/announce?passkey=message-secret&token=message-token"
-        ),
-    )
-
-    # 候选组二：全部健康，仅用于验证 errors 模式会过滤整个组。
-    make_torrent(db_session, info_id="other-a", downloader_id="dl-b", hash_="O-1", name="Candidate-B", size=200)
-    make_torrent(db_session, info_id="other-b", downloader_id="dl-b", hash_="O-2", name="Candidate-B", size=200)
-
-    response = client.post(URL, json={"mode": "errors", "page": 1, "pageSize": 20})
-    body = response.json()
-
-    assert body["code"] == "200", body["msg"]
-    data = body["data"]
-    assert data["total"] == 1
-    assert data["summary"] == {
-        "candidate_group_count": 2,
-        "candidate_torrent_count": 5,
-        "error_group_count": 1,
-        "error_torrent_count": 2,
-    }
-
-    group = data["list"][0]
-    assert group["name"] == "Candidate-A"
-    assert group["copy_count"] == 3
-    assert group["error_count"] == 2
-    assert {item["info_id"] for item in group["items"]} == {"task-error", "tracker-error"}
-
-    items = {item["info_id"]: item for item in group["items"]}
-    assert items["task-error"]["error_types"] == ["torrent_status", "error_reason"]
-    tracker_item = items["tracker-error"]
-    assert tracker_item["error_types"] == ["tracker_detail"]
-    assert tracker_item["tracker_hosts"] == ["tracker.example"]
-    assert tracker_item["tracker_issues"][0]["issue_types"] == ["scrape"]
-    assert tracker_item["tracker_issues"][0]["scrape_status"] == "工作中"
-
-    serialized = response.text
-    assert "secret-passkey" not in serialized
-    assert "message-secret" not in serialized
-    assert "message-token" not in serialized
-    assert "message-path-secret" not in serialized
-    assert "tracker.example" in serialized
-
-
-def test_aggregate_tracker_error_is_included(client, db_session):
-    make_torrent(db_session, info_id="normal", downloader_id="dl-a", hash_="A", name="Aggregate", size=300)
     make_torrent(
         db_session,
-        info_id="aggregate-error",
+        info_id="b-seed",
+        downloader_id="dl-b",
+        hash_="b",
+        name="Filtered",
+        size=100,
+        status="seeding",
+    )
+    make_torrent(
+        db_session,
+        info_id="c-pause",
         downloader_id="dl-a",
-        hash_="B",
-        name="Aggregate",
-        size=300,
-        has_tracker_error=True,
+        hash_="c",
+        name="Filtered",
+        size=100,
+        status="paused",
     )
 
-    body = client.post(URL, json={"mode": "errors"}).json()
+    filtered = client.get(
+        URL,
+        params={"same_content_only": "true", "downloader_id": "dl-b", "limit": 20},
+    ).json()
+    assert filtered["data"]["total"] == 0
+    assert filtered["data"]["list"] == []
 
-    assert body["code"] == "200"
-    item = body["data"]["list"][0]["items"][0]
-    assert item["info_id"] == "aggregate-error"
-    assert item["has_tracker_error"] is True
-    assert item["error_types"] == ["tracker_aggregate"]
+    status_filtered = client.get(
+        URL,
+        params={"same_content_only": "true", "status": "seeding", "limit": 20},
+    ).json()
+    assert status_filtered["data"]["total"] == 2
+    assert set(_ids(status_filtered)) == {"a-seed", "b-seed"}
 
 
-def test_request_validation_rejects_unknown_mode(client):
-    response = client.post(URL, json={"mode": "unknown"})
-    assert response.status_code == 422
+def test_same_content_filter_applies_combined_list_filters_before_grouping(client, db_session):
+    matching_rows = [
+        ("match-a", "dl-a", "hash-a", datetime(2026, 8, 10, 10, 0, 0)),
+        ("match-b", "dl-b", "hash-b", datetime(2026, 8, 11, 10, 0, 0)),
+    ]
+    for info_id, downloader_id, hash_, added_date in matching_rows:
+        make_torrent(
+            db_session,
+            info_id=info_id,
+            downloader_id=downloader_id,
+            hash_=hash_,
+            name="Needle Movie",
+            size=2048,
+            status="seeding",
+            tags="featured,1080p",
+            category="movies",
+            save_path="/media/library",
+            added_date=added_date,
+        )
+
+    # 只有一个副本满足 category 条件，过滤后不能再借助另一个副本成组。
+    make_torrent(
+        db_session,
+        info_id="partial-a",
+        downloader_id="dl-a",
+        hash_="partial-a",
+        name="Needle Partial",
+        size=2048,
+        tags="featured",
+        category="movies",
+        save_path="/media/library",
+        added_date=datetime(2026, 8, 10, 11, 0, 0),
+    )
+    make_torrent(
+        db_session,
+        info_id="partial-b",
+        downloader_id="dl-b",
+        hash_="partial-b",
+        name="Needle Partial",
+        size=2048,
+        tags="featured",
+        category="series",
+        save_path="/media/library",
+        added_date=datetime(2026, 8, 10, 12, 0, 0),
+    )
+
+    response = client.get(
+        URL,
+        params={
+            "same_content_only": "true",
+            "name_like": "Needle",
+            "downloader_id": "dl-a,dl-b",
+            "status": "seeding",
+            "save_path_like": "/media",
+            "size_min": "2KB",
+            "size_max": "3KB",
+            "added_date_min": "2026-08-10",
+            "added_date_max": "2026-08-12",
+            "tags_like": "featured",
+            "category_like": "movies",
+            "sort_by": "added_date",
+            "sort_order": "asc",
+            "limit": 20,
+        },
+    )
+    body = response.json()
+
+    assert response.status_code == 200
+    assert body["code"] == "200", body["msg"]
+    assert body["data"]["total"] == 2
+    assert _ids(body) == ["match-a", "match-b"]
+
+
+def test_active_deletion_exclusion_applies_before_same_content_grouping(client, db_session):
+    make_torrent(
+        db_session,
+        info_id="reserved",
+        downloader_id="dl-a",
+        hash_="reserved-hash",
+        name="Reserved Group",
+        size=1024,
+    )
+    make_torrent(
+        db_session,
+        info_id="visible-single",
+        downloader_id="dl-b",
+        hash_="visible-hash",
+        name="Reserved Group",
+        size=1024,
+    )
+    for suffix in ("a", "b"):
+        make_torrent(
+            db_session,
+            info_id=f"valid-{suffix}",
+            downloader_id=f"dl-{suffix}",
+            hash_=f"valid-hash-{suffix}",
+            name="Valid Group",
+            size=2048,
+        )
+
+    with patch(
+        "app.api.endpoints.torrent_helpers.build_active_deletion_exclusion",
+        return_value=TorrentInfo.info_id != "reserved",
+    ):
+        body = client.get(URL, params={"same_content_only": "true", "limit": 20}).json()
+
+    assert body["code"] == "200", body["msg"]
+    assert body["data"]["total"] == 2
+    assert set(_ids(body)) == {"valid-a", "valid-b"}
+
+
+def test_active_only_snapshot_applies_before_same_content_grouping(client, db_session):
+    rows = [
+        ("partial-a", "dl-a", "partial-hash-a", "Partial Group", 1024),
+        ("partial-b", "dl-b", "partial-hash-b", "Partial Group", 1024),
+        ("active-a", "dl-a", "active-hash-a", "Active Group", 2048),
+        ("active-b", "dl-b", "active-hash-b", "Active Group", 2048),
+    ]
+    for info_id, downloader_id, hash_, name, size in rows:
+        make_torrent(
+            db_session,
+            info_id=info_id,
+            downloader_id=downloader_id,
+            hash_=hash_,
+            name=name,
+            size=size,
+        )
+
+    snapshot = ActiveKeysSnapshot(
+        frozenset(
+            {
+                ("dl-a", "partial-hash-a"),
+                ("dl-a", "active-hash-a"),
+                ("dl-b", "active-hash-b"),
+            }
+        ),
+        ActiveSnapshotStatus.READY,
+    )
+    with patch(
+        "app.api.endpoints.torrent_crud.get_active_keys_snapshot",
+        return_value=snapshot,
+    ):
+        body = client.get(
+            URL,
+            params={"same_content_only": "true", "active_only": "true", "limit": 20},
+        ).json()
+
+    assert body["code"] == "200", body["msg"]
+    assert body["data"]["activeSnapshotReady"] is True
+    assert body["data"]["activeSnapshotStatus"] == "ready"
+    assert body["data"]["total"] == 2
+    assert set(_ids(body)) == {"active-a", "active-b"}
+
+
+def test_same_content_filter_paginates_rows_and_keeps_total(client, db_session):
+    for group_index in range(3):
+        for copy_index in reversed(range(2)):
+            make_torrent(
+                db_session,
+                info_id=f"g{group_index}-{copy_index}",
+                downloader_id=f"dl-{copy_index}",
+                hash_=f"hash-{group_index}-{copy_index}",
+                name=f"Group-{group_index}",
+                size=100 + group_index,
+                added_date=datetime(2026, 8, 13, 12, group_index, 0),
+            )
+
+    query = {
+        "same_content_only": "true",
+        "limit": 2,
+        "sort_by": "added_date",
+        "sort_order": "asc",
+    }
+    statements = []
+
+    def record_torrent_select(_conn, _cursor, statement, _parameters, _context, _many):
+        normalized = " ".join(statement.lower().split())
+        if "from torrent_info" in normalized and " order by " in normalized:
+            statements.append(normalized)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record_torrent_select)
+    try:
+        first = client.get(URL, params={**query, "skip": 0}).json()
+        repeated_first = client.get(URL, params={**query, "skip": 0}).json()
+        second = client.get(URL, params={**query, "skip": 2}).json()
+        third = client.get(URL, params={**query, "skip": 4}).json()
+    finally:
+        event.remove(engine, "before_cursor_execute", record_torrent_select)
+
+    assert first["data"]["total"] == 6
+    assert second["data"]["total"] == 6
+    assert third["data"]["total"] == 6
+    assert _ids(first) == ["g0-0", "g0-1"]
+    assert _ids(repeated_first) == _ids(first)
+    assert _ids(second) == ["g1-0", "g1-1"]
+    assert _ids(third) == ["g2-0", "g2-1"]
+    assert any(
+        "order by torrent_info.added_date asc, torrent_info.info_id asc, "
+        "torrent_info.downloader_id asc, torrent_info.downloader_name asc" in statement
+        for statement in statements
+    )
+
+
+def test_same_content_filter_prefetches_related_data_for_current_page_only(
+    client,
+    db_session,
+    monkeypatch,
+):
+    now = datetime(2026, 8, 13, 12, 0, 0)
+    for index in range(8):
+        info_id = f"bulk-{index}"
+        make_torrent(
+            db_session,
+            info_id=info_id,
+            downloader_id="dl-bulk",
+            hash_=f"bulk-hash-{index}",
+            name="Bulk Group",
+            size=8192,
+            added_date=now.replace(minute=index),
+        )
+        db_session.add(
+            TrackerInfo(
+                tracker_id=f"tracker-{index}",
+                torrent_info_id=info_id,
+                tracker_name=f"Tracker {index}",
+                tracker_url=f"https://tracker.example/{info_id}",
+                create_time=now,
+                create_by="tester",
+                update_time=now,
+                update_by="tester",
+                dr=0,
+            )
+        )
+    db_session.commit()
+
+    monkeypatch.setattr(torrent_helpers, "_RELATED_PREFETCH_BATCH_SIZE", 2)
+    tracker_selects = []
+
+    def record_tracker_select(_conn, _cursor, statement, parameters, _context, _many):
+        normalized = " ".join(statement.lower().split())
+        if "from tracker_info" in normalized and "torrent_info_id in" in normalized:
+            tracker_selects.append(parameters)
+
+    engine = db_session.get_bind()
+    event.listen(engine, "before_cursor_execute", record_tracker_select)
+    try:
+        body = client.get(
+            URL,
+            params={
+                "same_content_only": "true",
+                "skip": 0,
+                "limit": 3,
+                "sort_by": "added_date",
+                "sort_order": "asc",
+            },
+        ).json()
+    finally:
+        event.remove(engine, "before_cursor_execute", record_tracker_select)
+
+    assert body["code"] == "200", body["msg"]
+    assert body["data"]["total"] == 8
+    assert _ids(body) == ["bulk-0", "bulk-1", "bulk-2"]
+    assert all(len(item["trackerInfo"]) == 1 for item in body["data"]["list"])
+    assert len(tracker_selects) == 2
+
+
+def test_same_content_filter_large_page_respects_sqlite_bind_limit(client, db_session):
+    for index in range(60):
+        make_torrent(
+            db_session,
+            info_id=f"large-{index:03d}",
+            downloader_id="large-dl",
+            hash_=f"large-hash-{index:03d}",
+            name="Large Group",
+            size=16384,
+            added_date=datetime(2026, 8, 13, 12, index % 60, 0),
+        )
+
+    connection_fairy = db_session.connection().connection
+    driver_connection = getattr(connection_fairy, "driver_connection", connection_fairy)
+    previous_limit = driver_connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, 20)
+    try:
+        response = client.get(
+            URL,
+            params={
+                "same_content_only": "true",
+                "skip": 0,
+                "limit": 100000,
+                "sort_by": "added_date",
+                "sort_order": "asc",
+            },
+        )
+    finally:
+        driver_connection.setlimit(sqlite3.SQLITE_LIMIT_VARIABLE_NUMBER, previous_limit)
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["code"] == "200", body["msg"]
+    assert body["data"]["total"] == 60
+    assert body["data"]["pageSize"] == 100000
+    assert len(body["data"]["list"]) == 60
+
+
+def test_legacy_post_endpoint_is_removed(client):
+    response = client.post("/api/v1/torrents/same-content-inspection", json={})
+    assert response.status_code == 404

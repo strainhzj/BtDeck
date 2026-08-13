@@ -5,6 +5,7 @@ import TorrentsManagement from '@/views/torrents/index.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
+  advancedSearch,
   deleteBatchAsync,
   getActiveTorrents,
   getBatchDeleteStatus,
@@ -50,6 +51,7 @@ jest.mock('@/api/torrents', () => ({
 }))
 
 const localVue = createLocalVue()
+const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
@@ -99,13 +101,18 @@ interface TorrentListViewVm extends Vue {
   pageSizeInput: string
   pageSizeDropdownExpanded: boolean
   showingDuplicates: boolean
+  showingSameContent: boolean
   listQuery: ListQueryState
-  showSameContentInspectionDialog: boolean
-  handleQuickActionCommand(command: string): void
+  handleQuickActionCommand(command: string): Promise<void>
+  exitSameContentInspection(): Promise<void>
   handleDuplicateSearchToggle(enabled: boolean): Promise<void>
   handleFilter(): void
   handleSort(field: 'name' | 'size' | 'status' | 'ratio' | 'added_date'): void
   handlePageChange(page: number): void
+  handlePageSizeSelect(suggestion: { value: string }): void
+  handleManualRefresh(): void
+  performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
+  applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
 }
 
@@ -162,7 +169,6 @@ function mountListView(): Wrapper<Vue> {
       GlobalReplaceTrackerDialog: true,
       BatchTransferDialog: true,
       SetLocationDialog: true,
-      SameContentInspectionDialog: true,
       'el-button': {
         template: '<button v-on="$listeners"><slot /></button>'
       },
@@ -231,6 +237,12 @@ describe('torrent list view pagination and sorting', () => {
       code: '200',
       data: []
     })
+    mockAdvancedSearch.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: { list: [], total: 0, page: 1, pageSize: 20 }
+    })
     mockGetDuplicateTorrents.mockResolvedValue({
       status: 'success',
       msg: 'ok',
@@ -281,18 +293,116 @@ describe('torrent list view pagination and sorting', () => {
     })
   })
 
-  it('快捷操作可打开同内容异常排查弹窗', async() => {
+  it('同内容模式的筛选、排序、分页大小、翻页和刷新始终复用列表查询', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    mockGetTorrentList.mockClear()
+    mockGetActiveTorrents.mockClear()
+
+    expect(wrapper.text()).toContain('同内容异常排查')
+    expect(vm.showingSameContent).toBe(false)
+
+    await vm.handleQuickActionCommand('inspect-same-content')
+    await flushLifecycle()
+
+    expect(vm.showingSameContent).toBe(true)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 0, limit: 20, same_content_only: true })
+    )
+    expect(wrapper.text()).toContain('退出排查并返回普通列表')
+
+    vm.listQuery.name_like = 'needle'
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name_like: 'needle', skip: 0, same_content_only: true })
+    )
+
+    vm.handleSort('name')
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'name', sort_order: 'desc', same_content_only: true })
+    )
+
+    vm.handlePageSizeSelect({ value: '50' })
+    await flushLifecycle()
+    expect(vm.currentPage).toBe(1)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 0, limit: 50, same_content_only: true })
+    )
+
+    vm.handlePageChange(2)
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 50, limit: 50, same_content_only: true })
+    )
+
+    mockGetTorrentList.mockClear()
+    vm.handleManualRefresh()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 50, limit: 50, same_content_only: true })
+    )
+    expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
+
+    await vm.exitSameContentInspection()
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ same_content_only: true })
+    )
+  })
+
+  it('重复任务、高级搜索和查询模板均会退出同内容模式', async() => {
     wrapper = mountListView()
     await flushLifecycle()
     const vm = wrapper.vm as unknown as TorrentListViewVm
 
-    expect(wrapper.text()).toContain('同内容异常排查')
-    expect(vm.showSameContentInspectionDialog).toBe(false)
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockGetTorrentList.mockClear()
+    mockGetDuplicateTorrents.mockClear()
 
-    vm.handleQuickActionCommand('inspect-same-content')
-    await localVue.nextTick()
+    await vm.handleDuplicateSearchToggle(true)
 
-    expect(vm.showSameContentInspectionDialog).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(vm.showingDuplicates).toBe(true)
+    expect(mockGetDuplicateTorrents).toHaveBeenCalledTimes(1)
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockAdvancedSearch.mockClear()
+    await vm.performAdvancedSearch({
+      complex_search: true,
+      groups_count: 1,
+      groups: JSON.stringify([{
+        logic: 'AND',
+        conditions: [{ field: 'name', operator: 'contains', value: 'needle' }]
+      }]),
+      between_group_logics: JSON.stringify([])
+    })
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockAdvancedSearch).toHaveBeenCalledTimes(1)
+
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockGetTorrentList.mockClear()
+    const applied = await vm.applyQueryTemplate({
+      source: 'simple',
+      version: 1,
+      listQuery: {
+        name_like: 'template',
+        downloader_id: [],
+        status: [],
+        showActiveOnly: false,
+        sort_by: 'added_date',
+        sort_order: 'desc'
+      }
+    })
+    expect(applied).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ same_content_only: true })
+    )
   })
 
   it('uses the traditional page-size combobox presets and custom limit behavior', async() => {

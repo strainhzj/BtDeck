@@ -1,6 +1,26 @@
 # Progress Log - BtDeck 全栈项目
 
-## 2026-08-13 - 同名同大小种子只读异常排查
+## 2026-08-13 - 同内容异常排查改为当前列表分页
+
+### 用户确认口径与交付
+
+- 检查最近提交 `ea5a5f3` 后，将独立 `POST /torrents/same-content-inspection`、646 行共享弹窗及 447 行诊断服务移除。
+- 同内容排查改为现有 `GET /torrents/getList?same_content_only=true`：普通筛选先参与候选组判定，按种子行复用现有排序及 `skip/limit` 分页，只为当前页装配 Tracker 数据。
+- 列表模式和传统模式均不打开新窗口/弹窗；快捷操作直接切换当前表格数据源，筛选、排序、切页、分页大小和刷新保持列表逻辑，并显示“退出排查”入口。
+- `TorrentViewSwitcher` 同步保存 `showingSameContent`，两种视图切换不丢失排查模式；进入重复查询、高级搜索或应用模板时会退出同内容模式。
+- 判定仍为名称完全相同、大小相同且规范化 InfoHash 至少两个不同值，并排除逻辑删除、回收站和活动删除占用项；无 Schema/Alembic 变更。
+
+### 验证
+
+- 后端：`test_same_content_inspection_api.py + test_torrent_list_api.py` 共 `40 passed`；专用用例从 4 个扩为 9 个，新增组合筛选、活动删除、活动快照、复合主键稳定排序分页、低 SQLite 变量上限大页及仅当前页 Tracker 预取保护。
+- 后端改动文件：Black、Flake8、py_compile 通过。
+- 前端：列表视图、传统视图、视图切换共 `3 suites / 36 tests passed`；新增筛选、排序、分页大小、翻页、刷新持续携带 `same_content_only`，以及重复查询、高级搜索、模板切换清理模式的回归保护；TypeScript、改动文件 ESLint、生产 build 通过（仅既有 Sass/Browserslist warning）。
+- 根 `init.sh` 经 Git Bash 通过，前端子脚本报告既有 warning；`git diff --check` 通过。
+- 全量回归：后端 `3376 passed, 7 skipped`；前端 `43 suites / 719 tests passed`。
+- 完整 `npm run lint` 被 3 个无关关键词测试文件的既有 5 条 warning 拦截，无新增 error；后端 mypy 在既有 ORM Column/Pydantic 构造上报告 64 条历史错误。
+- 已按 `roadmap-maintain` 用当前源码实测行号同步 API 说明、根/分支路线图与测试覆盖矩阵。
+
+## 2026-08-13 - 同名同大小种子只读异常排查（已由上方列表分页方案替代）
 
 ### 用户确认口径与交付
 

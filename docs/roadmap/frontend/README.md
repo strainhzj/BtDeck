@@ -11,7 +11,7 @@
 | API 封装 api axios | [api/](./api/README.md) | axios 封装的 12 个领域 API 模块 |
 | 页面视图 view | [views/](./views/README.md) | 13 个页面视图模块 + 404.vue（⚠ 以 class-component 为主，仅 3 处 Options API） |
 | Vuex 状态 store | [store/](./store/README.md) | Vuex（index.ts 空壳 + 5 个 module，双轨注册） |
-| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 22 个 .vue + layout 骨架 8 个 .vue + mixin；种子视图共享同内容异常排查弹窗 |
+| 通用组件/布局 component layout | [components-layout/](./components-layout/README.md) | 通用组件 21 个 .vue + layout 骨架 8 个 .vue + mixin；同内容排查复用种子列表视图，不设独立弹窗 |
 | 工具/类型/常量/指令 utils types | [utils-types/](./utils-types/README.md) | utils 11 + types 8 + constants 1 + directive 1 |
 
 ---
@@ -20,7 +20,7 @@
 
 ### 1. 组件范式：class-component 为主
 
-- **class-component**（`export default class` + `@Component`）：src 下 `.vue` 实测 **85 个**，新增 `SameContentInspectionDialog.vue` 延续该范式
+- **class-component**（`export default class` + `@Component`）：src 下 `.vue` 仍以该范式为主；同内容排查直接复用两种现有种子视图
 - **Options API**（`export default {`，无装饰器）：全仓库仅 **3 处** .vue（技术债候选）
   - `views/recycle-bin/index.vue`（L369）
   - `views/tracker/reannounce-config.vue`（L299）
