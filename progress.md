@@ -1,5 +1,22 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-13 - 最新提交 Tracker 策略回归加固
+
+### 新增回归保护
+
+- 查看最新提交 `625c1e3d0c423c56ac40a28828a3a96378d061dd`，确认其主题为“完整修复 Tracker Working 空消息判定”，影响共享策略、行级同步服务和种子级状态判断。
+- 新增 `backend/tests/core/test_tracker_status_policy.py`，直接覆盖共享纯函数：状态码 2 的 Working 归一化、None/空串/空白消息正常证据、非空 announce/scrape 消息优先、精确/部分匹配模式、未知消息保留、全部失败/任一正常的聚合规则。
+- 未修改业务实现；保留工作区原有未跟踪目录不变。
+
+### 验证
+
+- 新增策略回归：`30 passed`。
+- 提交直接涉及的行级同步与种子级判断回归：`115 passed`。
+- 同步协调器回归：`26 passed`。
+- 新测试可编译，代码行长度检查通过，`git diff --check` 通过。
+- 根 `init.sh` 仍因当前 Windows WSL `E_ACCESSDENIED` 无法启动；Black 的 `--diff` 检查确认新文件无需格式调整，但 `--check` 在本机运行时超时。
+- 用户已授权提交并推送；提交范围仅包含本次测试与配套记录，任务前已有未跟踪目录全部排除。
+
 ## 2026-08-12 - Tracker Working 空消息行级残留完整修复
 
 ### 根因与修复

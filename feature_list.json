@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-12",
+  "last_updated": "2026-08-13",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-11",
@@ -219,6 +219,7 @@
             "backend/tests/tasks/test_torrent_tracker_status_judge.py",
             "backend/tests/services/test_tracker_status_sync.py",
             "backend/tests/services/test_sync_coordinator.py",
+            "backend/tests/core/test_tracker_status_policy.py",
             "backend/tests/core/test_db_migration.py",
             "backend/tests/core/test_db_rollback_scenarios.py",
             "backend/docs/constraints/database-migration.md",
@@ -227,7 +228,7 @@
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "首次修复提交 196a530 尚未推送，最新快照仍为旧 Alembic de898cb28172 与旧 Cron，证明重部署未包含该提交。进一步只读排查发现 tracker_status_sync 会跳过 Working+空消息，造成 tracker_info 历史 error/失败残留；现抽取 tracker_status_policy 供行级/种子级共同使用，Working 空消息按行恢复 normal、非空 announce/scrape 关键词优先、未知逐行保留、全部明确失败才错误，并隔离同 host 不同种子的 Working 证据。最新快照 quick_check=ok；zimiao 域名相关 359 行中 152 行 Working+空消息+error/失败会被精确恢复，种子级会清理 294 个历史错误并纠正 2 个全部失败的旧正常标记。新增/加固 None/空串/空白、announce/scrape 状态边界、双消息、未知同 host 隔离、顺序、幂等、跨种子 host 与 359 行快照形态回归，并锁定原始 Tracker 同步成功后才执行行级状态同步；行级 40 passed、种子级 75 passed、协调器 26 passed，最终后端全量 3337 passed / 7 skipped。目标 mypy、Flake8、Ruff、Black --no-cache、compileall、BtDeck 架构门禁、单 Alembic head、feature JSON 与 git diff --check 通过；根 init.sh 仍被 Windows WSL E_ACCESSDENIED 阻止，已完成等价分项门禁。"
+          "evidence": "首次修复提交 196a530 尚未推送，最新快照仍为旧 Alembic de898cb28172 与旧 Cron，证明重部署未包含该提交。进一步只读排查发现 tracker_status_sync 会跳过 Working+空消息，造成 tracker_info 历史 error/失败残留；现抽取 tracker_status_policy 供行级/种子级共同使用，Working 空消息按行恢复 normal、非空 announce/scrape 关键词优先、未知逐行保留、全部明确失败才错误，并隔离同 host 不同种子的 Working 证据。最新快照 quick_check=ok；zimiao 域名相关 359 行中 152 行 Working+空消息+error/失败会被精确恢复，种子级会清理 294 个历史错误并纠正 2 个全部失败的旧正常标记。新增/加固 None/空串/空白、announce/scrape 状态边界、双消息、未知同 host 隔离、顺序、幂等、跨种子 host 与 359 行快照形态回归，并锁定原始 Tracker 同步成功后才执行行级状态同步；新增 test_tracker_status_policy.py 纯函数契约回归 30 passed，服务层/种子级既有回归 115 passed，协调器回归 26 passed。目标 Flake8、py_compile、feature JSON 与 git diff --check 通过；根 init.sh 仍被 Windows WSL E_ACCESSDENIED 阻止，Black --diff 确认新文件无需改写。"
         }
       ]
     },

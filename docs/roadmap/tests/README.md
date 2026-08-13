@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（141 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（43 个 test suite）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（142 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（43 个 test suite）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -24,7 +24,7 @@
 | 前端 jest 测试 jest | `frontend/tests/unit/` | 32 个 Jest 单元测试（新增文件管理 nickname/UI 与种子错误原因展示契约） |
 | 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2263 行）+ LucideIcon.spec.ts（185 行） |
 
-## backend/tests/（141 个 test_*.py + 支持文件）
+## backend/tests/（142 个 test_*.py + 支持文件）
 
 ### 顶层
 
@@ -94,10 +94,11 @@ cd frontend && npm run test:unit    # jest
 
 ## 测试覆盖观察
 
-- **后端测试组织良好**：159 个 .py（其中 141 个 test_*.py）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
+- **后端测试组织良好**：160 个 .py（其中 142 个 test_*.py）按源码分支镜像组织（api/auth/core/downloader/endpoints/...），与路线图分支划分一致
 - **路径映射验证防退化**：`tests/api/test_path_mapping_validation.py` 覆盖 Transmission、qBittorrent、缓存不可用、外部路径缺失与多映射整体失败
 - **v1.0.6.25~28 测试加固**：ratio 迁移与高级搜索是重点 —— `test_ratio_data_diagnostics.py` / `test_torrent_ratio_values.py` / `test_advanced_search_regression.py`（2130 行）/ `test_advanced_search_models_strict.py`（161 行）/ `test_sqlite_search_runtime.py` / `test_advanced_search_pagination.py` / `test_torrent_metadata.py`
 - **前端契约守卫测试**：`operator-contract.spec.ts`（338 行，前后端操作符契约一致性）+ `field-types-consistency.spec.ts`（字段类型一致性）是本次新增的防退化机制
+- **2026-08-13 最新提交回归**：新增 `test_tracker_status_policy.py` 的 30 个纯函数契约用例，直接守卫 `625c1e3d` 新增的 Working 空消息证据、非空消息优先、announce/scrape 双消息、精确/部分匹配、未知保留与失败聚合；并复跑 `test_tracker_status_sync.py`、`test_torrent_tracker_status_judge.py` 的 115 个既有集成回归。
 - **2026-08-12 回归**：除错误原因/Tracker 状态/nickname 用例外，`test_advanced_search_regression.py` + 严格模型测试覆盖 Tracker 多行否定/软删除、SQL 通配符字面量、逗号/分号标签 token、回收站排除、下载器改名、超级做种三态、空值白名单；新增跨字段 include/exclude 全集分区与五个空值字段分区矩阵。`test_torrent_tracker_status_judge.py` 以 36 组 zimiao 双 Tracker 顺序/下载器类型/空消息矩阵守卫种子级 Working 恢复；`test_tracker_status_sync.py` 再覆盖行级 Working 空消息清理、未知逐行保留、announce/scrape 状态边界与双消息、幂等、跨种子 host 隔离及最新 zimiao 359 行快照形态；`test_sync_coordinator.py` 锁定原始 Tracker 同步成功后才运行行级判断。迁移测试覆盖重复升级、自定义计划/描述、逻辑删除及 downgrade 精确保护；前端契约和模板请求转换逐字段守卫正操作符 + `mode=exclude`。
 - **前端测试集中在核心组件**：`components/torrents/` 的搜索/多选组件有完整单测（含性能测试），其他组件测试覆盖较薄
 - **孤儿文件回归**：`test_orphan_hardlink_detection.py` 覆盖 `st_nlink - 1`、多 inode 单轮路径定位/重复 ID 去重、范围外未定位数、扫描失败降级与清理删除诊断；`test_orphan_files_api.py` 守卫 1~5000 项请求边界；`orphan-files.spec.ts` 覆盖数量链接、文件夹批量查询、位置弹框、复制路径、过期响应隔离及异常提示；任务/查询状态测试继续覆盖重复提交、混合跳过与终态释放

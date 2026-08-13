@@ -2,14 +2,14 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 141 个 test_*.py）
+## 后端测试分布（共 142 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
 | `tests/api/` | 48 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务与重复查询筛选/排序/活动快照均有 API 回归 |
 | `tests/services/` | 40 | `app/services/` | 🟡 中等；新增删除任务占用、孤儿持久化占用与查询状态回归（不含下方 tag_adapters 子目录） |
 | `tests/tasks/` | 13 | `app/tasks/` | 🟡 部分覆盖（13 对 32） |
-| `tests/core/` | 16 | `app/core/` | 🟡 中等 |
+| `tests/core/` | 17 | `app/core/` | 🟡 中等 |
 | `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 16） |
 | `tests/utils/` | 4 | `app/utils/` | ✅ 覆盖良好 |
 | `tests/auth/` | 3 | `app/auth/` | ✅ 覆盖良好（3 对 5） |
@@ -22,7 +22,7 @@
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **141** 个 test_*.py；支持文件计入后全 `.py` 共 159 个。
+> 合计：当前实测 **142** 个 test_*.py；支持文件计入后全 `.py` 共 160 个。
 
 > 注：`tests/api/`（48 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
@@ -69,6 +69,12 @@
 | `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
 | `tests/models/test_torrent_models.py` | 348 | `TorrentInfo.error_reason` 字段全集与值映射 |
 
+### 2026-08-13 最新提交回归加固
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/core/test_tracker_status_policy.py` | 105 | `app/core/tracker_status_policy.py`：Working 空消息正常证据、非空消息优先、announce/scrape 双消息、精确/部分关键词匹配、未知保留及错误状态聚合 |
+
 ### 关键源文件测试覆盖抽样
 
 | 源文件 | 测试文件 | 状态 |
@@ -80,7 +86,7 @@
 | `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
 | `app/services/advanced_search.py` | `test_advanced_search.py` + `test_advanced_search_regression.py`（2130 行）+ `test_advanced_search_models_strict.py`（161 行） | ✅✅ 重度覆盖（20 字段审计、活动/回收站排除、普通列表一致的 `error`、关系/文本/标签/空值/三态/稳定 ID 与跨字段正反分区） |
 | `app/tasks/scheduler/torrent_tracker_status_judge.py` | `test_torrent_tracker_status_judge.py` + `test_heavy_task_db_write_governance.py` | ✅ 状态码+关键词联合判定、Working 空消息恢复正常、zimiao 双 Tracker 聚合、软删除隔离、独立 Cron 错峰、重任务互斥与批量查询治理 |
-| `app/core/tracker_status_policy.py` / `app/services/tracker_status_sync.py` | `test_tracker_status_sync.py` + `test_torrent_tracker_status_judge.py` | ✅ 共享状态/关键词证据语义、行级 Working 空消息恢复、未知保留、双消息聚合、幂等及 host 隔离 |
+| `app/core/tracker_status_policy.py` / `app/services/tracker_status_sync.py` | `test_tracker_status_policy.py` + `test_tracker_status_sync.py` + `test_torrent_tracker_status_judge.py` | ✅ 共享状态/关键词证据语义直接契约、行级 Working 空消息恢复、未知保留、双消息聚合、幂等及 host 隔离 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_purge_job_service.py` / `orphan_file_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与硬链接副本计数/位置回归 |
 | `app/services/torrent_ratio_values.py` | `test_torrent_ratio_values.py` | ✅（v1.0.6.25 新增） |
