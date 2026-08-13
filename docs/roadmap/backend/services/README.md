@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### services/ 根（43 个文件）
+### services/ 根（44 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -34,6 +34,7 @@
 | 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证） |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
+| 同内容异常排查 same-content inspection | `same_content_inspection_service.py` ✨2026-08-13 | 同名+同大小+不同规范化 InfoHash 的只读分组排查：L222 在 DB 聚合候选/错误组，L289 组装任务与 Tracker 诊断，L328 按组分页；错误联合任务状态/原因/聚合标记、Tracker 3/4 状态码及启用失败关键词，L78 对消息 URL/凭据脱敏且响应只含 host |
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
 | Tracker 状态同步 tracker-status-sync | `tracker_status_sync.py` | L68 在 Tracker 原始同步后联合状态码与 announce/scrape 关键词增量写回；Working 空消息按行恢复 normal，未知逐行保留旧值，避免 host 级跨种子掩盖 |
 | 同步观测 sync-observability | `sync_observability.py` | run_id/阶段事件、事件循环 lag、WAL bytes 与 PASSIVE busy/checkpoint 快照 |

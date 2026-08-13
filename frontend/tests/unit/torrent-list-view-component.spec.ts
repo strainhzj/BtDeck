@@ -100,6 +100,8 @@ interface TorrentListViewVm extends Vue {
   pageSizeDropdownExpanded: boolean
   showingDuplicates: boolean
   listQuery: ListQueryState
+  showSameContentInspectionDialog: boolean
+  handleQuickActionCommand(command: string): void
   handleDuplicateSearchToggle(enabled: boolean): Promise<void>
   handleFilter(): void
   handleSort(field: 'name' | 'size' | 'status' | 'ratio' | 'added_date'): void
@@ -160,6 +162,7 @@ function mountListView(): Wrapper<Vue> {
       GlobalReplaceTrackerDialog: true,
       BatchTransferDialog: true,
       SetLocationDialog: true,
+      SameContentInspectionDialog: true,
       'el-button': {
         template: '<button v-on="$listeners"><slot /></button>'
       },
@@ -276,6 +279,20 @@ describe('torrent list view pagination and sorting', () => {
       expect(levelItems.at(1).find('.lucide-icon').classes()).not.toContain('danger')
       expect(levelItems.at(2).find('.lucide-icon').classes()).not.toContain('danger')
     })
+  })
+
+  it('快捷操作可打开同内容异常排查弹窗', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+
+    expect(wrapper.text()).toContain('同内容异常排查')
+    expect(vm.showSameContentInspectionDialog).toBe(false)
+
+    vm.handleQuickActionCommand('inspect-same-content')
+    await localVue.nextTick()
+
+    expect(vm.showSameContentInspectionDialog).toBe(true)
   })
 
   it('uses the traditional page-size combobox presets and custom limit behavior', async() => {

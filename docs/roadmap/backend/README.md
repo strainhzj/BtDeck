@@ -8,8 +8,8 @@
 | 关键词 | 子分支/文件 | 一句话职责 |
 |--------|------------|-----------|
 | 包根入口 app-root | [app-root.md](./app-root.md) | `backend/app/` 包根 10 文件（应用工厂、DB 引擎、异常处理、版本、入口） |
-| HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 41 文件（endpoints 35 + models 1 + schemas 3 + api.py + responseVO.py） |
-| 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 49 文件（services 37 + downloader_adapters 6 + tag_adapters 6） |
+| HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 44 文件（endpoints 38 + models 1 + schemas 3 + api.py + responseVO.py，不计 `__init__.py`） |
+| 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 56 文件（services 44 + downloader_adapters 6 + tag_adapters 6） |
 | 基础设施 core | [core/README.md](./core/README.md) | 基础设施 21 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） |
 | 前后端契约 contracts | [contracts/README.md](./contracts/README.md) | 前后端共享机器可读契约 3 文件（advanced_search JSON + 加载器）✨v1.0.6.27 |
 | 数据层 data-models | [data-models/README.md](./data-models/README.md) | 数据层 35 文件（ORM 16 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2） |

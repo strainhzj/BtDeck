@@ -200,6 +200,9 @@
           快捷操作<i class="el-icon-arrow-down el-icon--right"></i>
         </el-button>
         <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item command="inspect-same-content">
+            <i class="el-icon-search"></i> 同内容异常排查
+          </el-dropdown-item>
           <el-dropdown-item command="delete-duplicates">
             <i class="el-icon-delete"></i> 快捷删除重复种子
           </el-dropdown-item>
@@ -712,6 +715,12 @@
       @deleted="handleQuickDeleteDeleted"
     />
 
+    <!-- 同名同大小种子只读排查 -->
+    <SameContentInspectionDialog
+      :visible.sync="showSameContentInspectionDialog"
+      @close="showSameContentInspectionDialog = false"
+    />
+
     <!-- P1新增：高级搜索 -->
     <el-dialog
       :visible.sync="showAdvancedSearchDialog"
@@ -778,6 +787,7 @@ import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
+import SameContentInspectionDialog from '@/components/torrents/SameContentInspectionDialog.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
@@ -870,6 +880,7 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     TrackerOperationDialog,
     GlobalReplaceTrackerDialog,
     QuickDeleteDuplicatesDialog,
+    SameContentInspectionDialog,
     FilterGroup,
     PageSizeCombobox,
     AdvancedSearchWorkspace
@@ -935,6 +946,8 @@ export default class extends mixins(TorrentBatchMixin) {
   private advancedSearchSearching = false
   // 快捷删除重复种子
   private showQuickDeleteDuplicatesDialog = false
+  // 同名同大小种子只读排查
+  private showSameContentInspectionDialog = false
 
   // 详情面板
   private currentRow: any = null
@@ -1703,7 +1716,9 @@ export default class extends mixins(TorrentBatchMixin) {
    * 快捷操作下拉菜单命令分发
    */
   private handleQuickActionCommand(command: string) {
-    if (command === 'delete-duplicates') {
+    if (command === 'inspect-same-content') {
+      this.showSameContentInspectionDialog = true
+    } else if (command === 'delete-duplicates') {
       this.showQuickDeleteDuplicatesDialog = true
     }
   }

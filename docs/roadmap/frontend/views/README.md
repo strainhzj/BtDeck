@@ -7,7 +7,7 @@
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图均以绿色开关进入重复查询，筛选/排序/分页/刷新保持数据源，并共用带已保存配置侧栏的高级搜索工作区；两视图均在名称 tooltip 与 Tracker 卡片展示错误原因 |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图均保留同 Hash 重复查询，并在快捷操作提供“同内容异常排查”；共享只读弹窗按名称+大小+不同 InfoHash 分组，支持完整/仅错误结果；两视图仍共用高级搜索工作区并展示错误原因 |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（14 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（12 文件；11 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
@@ -26,9 +26,9 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，class L826）；`getTorrentErrorReason` L1259 为名称 tooltip 与 Tracker 卡片提供错误原因；`handleDuplicateSearchToggle` L2321 / `fetchDuplicateTorrents` L2333 让筛选、排序、分页、刷新持续使用重复查询，默认开关关闭 |
+| `index.vue` | 种子管理主入口（列表模式，class L837）；快捷操作 L182 与命令分发 L1176 打开共享同内容排查弹窗 L751；既有同 Hash 重复查询、筛选与高级搜索保持不变 |
 | `components/QuickDeleteDuplicatesDialog.vue` | 重复种子快捷删除；提交后触发父列表刷新，nullable task_id 时仅提示而不轮询 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L878）；`getTorrentErrorReason` L1515 展示错误原因；`handleDuplicateSearchToggle` L2055 / `fetchDuplicateTorrents` L2069 保持分类、标签、活动快照、排序与分页筛选，重复开关为绿色开启态 |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L889）；快捷操作 L203 与命令分发 L1718 打开共享同内容排查弹窗 L719；既有同 Hash 重复查询与错误原因展示保持不变 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates`，切换视图不丢失重复查询模式 |
 | `FileManagement.vue` | 种子文件管理（`FileManagement` L310）：筛选区复用 `management-page` 项目样式；`getBackupDownloaderName` L682 优先展示列表批量返回的当前 downloader nickname，不逐行动态请求 |
 | `components/TorrentAddDialog.vue` | 添加种子对话框 |
