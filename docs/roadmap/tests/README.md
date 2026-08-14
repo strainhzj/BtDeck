@@ -70,8 +70,8 @@ cd backend && pytest tests/api/               # API 层（48 个 test_*.py）
 - `deployment-recovery.spec.ts`：覆盖部署后 JS/CSS chunk 错误识别、一次恢复、防刷新循环、历史 Workbox 清退和 nginx 缓存契约。
 - `file-management-contract.spec.ts`：覆盖备份列表当前 nickname、单次列表加载与 management-page 筛选区契约。
 - `torrent-error-reason-ui.spec.ts`：覆盖两种种子视图名称 tooltip 与 Tracker 卡片错误原因展示。
-- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖 Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue`，并锁定共享组件的列结构、状态语义和 `_tracker-table.scss` 视觉样式；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
-- `tracker-detail-card.spec.ts`：运行时验证列表/传统视图共用的 TrackerDetailCard 五列结构、snake/camel 字段兼容、错误提示、中性状态、单条汇报事件和 loading 状态。
+- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖 Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue` 并分别传入 `list`/`traditional` layout，锁定共享组件的完整弹框骨架、列结构、状态语义和 `_tracker-table.scss` 视觉样式；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
+- `tracker-detail-card.spec.ts`：运行时验证列表/传统视图共用的 TrackerDetailCard 完整弹框骨架（标题、关闭按钮、页签、内容区）、五列结构、snake/camel 字段兼容、错误提示、中性状态、单条汇报事件和 loading 状态。
 
 ### 组件内嵌测试
 

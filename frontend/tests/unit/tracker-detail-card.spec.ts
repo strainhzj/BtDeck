@@ -31,12 +31,24 @@ const ButtonStub = localVue.extend({
   template: '<button class="el-button-stub" v-bind="$attrs" :disabled="loading" v-on="$listeners"><slot /></button>'
 })
 
-function mountCard(trackerInfo: TrackerRow[], errorReason = ''): Wrapper<Vue> {
+interface CardOptions {
+  visible?: boolean
+  layout?: 'list' | 'traditional'
+  activeTab?: 'tracker' | 'files' | 'peers'
+  torrentName?: string
+}
+
+function mountCard(
+  trackerInfo: TrackerRow[],
+  errorReason = '',
+  options: CardOptions = {}
+): Wrapper<Vue> {
   return shallowMount(TrackerDetailCard, {
     localVue,
     propsData: {
       trackerInfo,
-      errorReason
+      errorReason,
+      ...options
     },
     stubs: {
       'el-alert': AlertStub,
@@ -69,7 +81,20 @@ describe('TrackerDetailCard shared view contract', () => {
         lastScrapeSucceeded: '未联系'
       }
     ]
-    wrapper = mountCard(trackerInfo, '连接被远端拒绝')
+    wrapper = mountCard(trackerInfo, '连接被远端拒绝', {
+      visible: true,
+      torrentName: '共享弹框种子'
+    })
+
+    expect(wrapper.find('.tracker-detail-card').classes()).toEqual(
+      expect.arrayContaining(['tracker-detail-card--list', 'is-open'])
+    )
+    expect(wrapper.find('.tracker-detail-header').exists()).toBe(true)
+    expect(wrapper.find('.tracker-title').text()).toContain('Tracker详情 - 共享弹框种子')
+    expect(wrapper.find('.tracker-detail-tabs').text()).toContain('Tracker')
+    expect(wrapper.find('.tracker-detail-tabs').text()).toContain('文件')
+    expect(wrapper.find('.tracker-detail-tabs').text()).toContain('Peers')
+    expect(wrapper.find('.tracker-close').exists()).toBe(true)
 
     expect(wrapper.findAll('thead th').wrappers.map(header => header.text().trim())).toEqual([
       'Tracker名称',
@@ -111,6 +136,26 @@ describe('TrackerDetailCard shared view contract', () => {
     await buttons.at(0).trigger('click')
 
     expect(wrapper.emitted('reannounce')).toEqual([[trackerInfo[0], 0]])
+    await wrapper.find('.tracker-close').trigger('click')
+    expect(wrapper.emitted('close')).toHaveLength(1)
+  })
+
+  it('传统定位也渲染同一套标题、页签、内容区和 Tracker 表格', () => {
+    wrapper = mountCard([], '', {
+      visible: true,
+      layout: 'traditional',
+      torrentName: '传统模式种子'
+    })
+
+    expect(wrapper.find('.tracker-detail-card').classes()).toEqual(
+      expect.arrayContaining(['tracker-detail-card--traditional', 'is-open'])
+    )
+    expect(wrapper.find('.tracker-detail-header').exists()).toBe(true)
+    expect(wrapper.find('.tracker-title').text()).toContain('Tracker详情 - 传统模式种子')
+    expect(wrapper.find('.tracker-close').exists()).toBe(true)
+    expect(wrapper.findAll('.tracker-tab-btn')).toHaveLength(3)
+    expect(wrapper.find('.tracker-detail-content').exists()).toBe(true)
+    expect(wrapper.find('table.tracker-table-detail').exists()).toBe(true)
   })
 
   it('中性 Tracker 状态不被误标为错误，且无错误原因时不渲染告警', () => {

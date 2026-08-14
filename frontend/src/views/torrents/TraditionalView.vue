@@ -569,52 +569,18 @@
             </el-button>
           </div>
         </div>
-        <!-- 分页上方悬浮元数据面板 -->
-        <div class="detail-panel-trad" :class="{open: !!currentRow}">
-          <div class="detail-panel-content">
-            <div class="detail-header-compact">
-              <h3>{{ currentRow && currentRow.name }}</h3>
-              <button class="close-btn" @click="closeDetailPanel">
-                <LucideIcon name="x" :size="16" />
-              </button>
-            </div>
-            <div class="detail-tabs-compact">
-              <button
-                v-for="tab in detailTabs"
-                :key="tab.value"
-                class="tab-btn"
-                :class="{active: activeDetailTab === tab.value}"
-                @click="activeDetailTab = tab.value"
-              >
-                {{ tab.label }}
-              </button>
-            </div>
-            <div class="detail-content">
-              <!-- Tracker 信息 -->
-              <template v-if="activeDetailTab === 'tracker'">
-                <TrackerDetailCard
-                  :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
-                  :error-reason="getTorrentErrorReason(currentRow)"
-                  @reannounce="handleTrackerReannounce"
-                />
-              </template>
-
-              <!-- 文件列表（占位） -->
-              <template v-else-if="activeDetailTab === 'files'">
-                <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
-                  文件列表功能开发中...
-                </div>
-              </template>
-
-              <!-- Peers（占位） -->
-              <template v-else-if="activeDetailTab === 'peers'">
-                <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
-                  Peers 信息功能开发中...
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
+        <!-- Tracker详情卡片；列表模式与传统模式共用完整弹框骨架 -->
+        <TrackerDetailCard
+          :visible="!!currentRow"
+          layout="traditional"
+          :torrent-name="(currentRow && currentRow.name) || ''"
+          :active-tab.sync="activeDetailTab"
+          :tabs="detailTabs"
+          :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
+          :error-reason="getTorrentErrorReason(currentRow)"
+          @close="closeDetailPanel"
+          @reannounce="handleTrackerReannounce"
+        />
       </div>
     </div>
 
@@ -2406,63 +2372,6 @@ export default class extends mixins(TorrentBatchMixin) {
   min-height: 0;
   position: relative;
   overflow: hidden;
-}
-
-// 元数据以悬浮窗覆盖表格底部，始终位于分页栏上方且不挤压列表
-.detail-panel-trad {
-  position: absolute;
-  z-index: 20;
-  left: 8px;
-  right: 8px;
-  bottom: calc(var(--trad-pagination-height) + 8px);
-  width: auto;
-  height: 0;
-  max-height: calc(100% - var(--trad-pagination-height) - 24px);
-  min-height: 0;
-  background: var(--trad-detail-panel-bg);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  box-shadow: none;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(8px);
-  transition:
-    height 0.2s ease,
-    opacity 0.2s ease,
-    transform 0.2s ease,
-    border-color 0.2s ease,
-    visibility 0s linear 0.2s;
-
-  &.open {
-    width: auto;
-    height: 240px;
-    border-color: var(--color-border-primary);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    transform: translateY(0);
-    transition-delay: 0s;
-  }
-}
-
-.detail-panel-content {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.detail-header-compact,
-.detail-tabs-compact {
-  flex-shrink: 0;
-}
-
-.detail-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
 }
 
 .table-container {

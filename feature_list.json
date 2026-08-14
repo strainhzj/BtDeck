@@ -3253,7 +3253,7 @@
     {
       "id": "torrent-tracker-domain-and-single-error-inspection",
       "name": "种子 Tracker 主域名筛选与错误单种排查",
-      "description": "从定时 Tracker 同步已入库的 tracker_url/tracker_host 提取主机域名，支持种子列表按 Tracker 主域名筛选；新增错误且全局同名同大小内容唯一的只读快捷排查，并让列表/传统模式共用同一个 Tracker 详情内容组件。",
+      "description": "从定时 Tracker 同步已入库的 tracker_url/tracker_host 提取主机域名，支持种子列表按 Tracker 主域名筛选；新增错误且全局同名同大小内容唯一的只读快捷排查，并让列表/传统模式共用同一个 Tracker 完整详情弹框组件。",
       "status": "done",
       "branch": "dev",
       "plan_file": null,
@@ -3274,12 +3274,14 @@
         {
           "id": "torrent-tracker-domain-and-single-error-inspection.2",
           "name": "两种种子视图筛选、快捷操作与 Tracker 卡片统一",
-          "description": "列表模式和传统模式加载已同步 Tracker 主域名选项，支持多选筛选和错误单种排查；跨视图状态保留新增排查模式；两种视图均通过 TrackerDetailCard 共享 Tracker 详情错误提示、表格列结构、状态语义和单条汇报事件，仅保留外层布局容器差异。",
+          "description": "列表模式和传统模式加载已同步 Tracker 主域名选项，支持多选筛选和错误单种排查；跨视图状态保留新增排查模式；两种视图均通过 TrackerDetailCard 共享完整详情弹框骨架（标题、关闭按钮、页签、内容区）、表格列结构、状态语义和单条汇报事件，仅通过 layout 属性保留定位差异。",
           "status": "done",
           "scope": "frontend",
           "files": [
             "frontend/src/api/torrents.ts",
             "frontend/src/styles/_tracker-table.scss",
+            "frontend/src/styles/torrent-theme.scss",
+            "frontend/src/styles/traditional-view-theme.scss",
             "frontend/src/views/torrents/components/TrackerDetailCard.vue",
             "frontend/src/views/torrents/index.vue",
             "frontend/src/views/torrents/TraditionalView.vue",
@@ -3289,7 +3291,7 @@
             "frontend/tests/unit/torrent-view-switcher.spec.ts",
             "frontend/tests/unit/tracker-detail-card.spec.ts"
           ],
-          "evidence": "两视图父模板均改为调用同一个 TrackerDetailCard，组件集中维护错误提示、5 列表格、状态语义和 reannounce 事件；共享 Tracker 表格 Sass 样式与静态组件复用契约回归通过；新增运行时组件测试覆盖 snake/camel 字段、错误提示、中性状态、汇报事件和 loading；目标 Jest 4 suites / 43 tests passed，npm run typecheck 通过，目标 ESLint 和生产构建通过。"
+          "evidence": "两视图父模板均改为调用同一个 TrackerDetailCard，组件集中维护标题、关闭按钮、页签、内容区、错误提示、5 列表格、状态语义和 reannounce 事件；父模板只传入 list/traditional layout 定位属性，旧的两套外层卡片代码和样式已删除；共享 Tracker 表格 Sass 样式与静态组件复用契约回归通过；新增运行时组件测试覆盖完整弹框骨架、snake/camel 字段、错误提示、中性状态、汇报事件和 loading；目标 Jest 4 suites / 44 tests passed，npm run typecheck 通过，目标 ESLint 和生产构建通过。"
         },
         {
           "id": "torrent-tracker-domain-and-single-error-inspection.3",

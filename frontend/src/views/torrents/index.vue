@@ -538,26 +538,18 @@
       </table>
     </section>
 
-    <!-- Tracker详情卡片 -->
-    <section
-      class="tracker-detail-card"
-      :class="{active: showTrackerDetail && currentRow}"
-    >
-      <div class="tracker-header">
-        <h3 class="tracker-title">
-          <LucideIcon name="bar-chart-3" :size="16" style="margin-right: 6px; vertical-align: middle;" />
-          Tracker详情 - {{ currentRow && currentRow.name }}
-        </h3>
-        <button class="tracker-close" @click="handleCloseTrackerDetail">
-          <LucideIcon name="x" :size="16" />
-        </button>
-      </div>
-      <TrackerDetailCard
-        :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
-        :error-reason="getTorrentErrorReason(currentRow)"
-        @reannounce="handleTrackerReannounce"
-      />
-    </section>
+    <!-- Tracker详情卡片；弹框骨架与传统模式共用 TrackerDetailCard -->
+    <TrackerDetailCard
+      :visible="showTrackerDetail && !!currentRow"
+      layout="list"
+      :torrent-name="(currentRow && currentRow.name) || ''"
+      :active-tab.sync="activeDetailTab"
+      :tabs="detailTabs"
+      :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
+      :error-reason="getTorrentErrorReason(currentRow)"
+      @close="handleCloseTrackerDetail"
+      @reannounce="handleTrackerReannounce"
+    />
 
     <!-- 分页 -->
     <nav class="torrent-pagination">
@@ -873,6 +865,12 @@ export default class extends mixins(TorrentBatchMixin) {
   // Tracker详情
   private showTrackerDetail = false
   private currentRow: any = null
+  private activeDetailTab = 'tracker'
+  private detailTabs = [
+    { label: 'Tracker', value: 'tracker' },
+    { label: '文件', value: 'files' },
+    { label: 'Peers', value: 'peers' }
+  ]
 
   // 搜索相关
   private listQuery = {
@@ -1298,6 +1296,7 @@ export default class extends mixins(TorrentBatchMixin) {
       this.handleCloseTrackerDetail()
     } else {
       this.currentRow = row
+      this.activeDetailTab = 'tracker'
       this.showTrackerDetail = true
     }
   }

@@ -4,6 +4,7 @@ import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import TraditionalView from '@/views/torrents/TraditionalView.vue'
+import TrackerDetailCard from '@/views/torrents/components/TrackerDetailCard.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
@@ -635,15 +636,18 @@ describe('TraditionalView component regressions', () => {
     const vm = wrapper.vm as unknown as TraditionalViewVm
     const row = { hash: 'hash-1', name: '测试种子' }
 
-    expect(wrapper.find('.detail-panel-trad').classes()).not.toContain('open')
+    const trackerCard = wrapper.findComponent(TrackerDetailCard)
+    expect(trackerCard.exists()).toBe(true)
+    expect(trackerCard.props('layout')).toBe('traditional')
+    expect(trackerCard.props('visible')).toBe(false)
     vm.handleRowClick(row)
     await localVue.nextTick()
 
     expect(vm.currentRow).toBe(row)
     expect(vm.activeDetailTab).toBe('tracker')
     expect(vm.detailTabs.map(tab => tab.value)).toEqual(['tracker', 'files', 'peers'])
-    expect(wrapper.find('.detail-panel-trad').classes()).toContain('open')
-    expect(wrapper.find('.detail-tabs-compact').text()).not.toContain('常规')
+    expect(trackerCard.props('visible')).toBe(true)
+    expect(trackerCard.props('activeTab')).toBe('tracker')
   })
 
   it('同 hash 不同下载器使用任务身份切换详情且只高亮当前行', async() => {
@@ -1316,10 +1320,11 @@ describe('TraditionalView layout contracts', () => {
 
   it('元数据面板绝对定位在固定分页栏上方且不占列表布局', () => {
     expect(source).toMatch(/\.table-area\s*\{[\s\S]*?position:\s*relative;[\s\S]*?overflow:\s*hidden;/)
-    expect(source).toMatch(/\.detail-panel-trad\s*\{[\s\S]*?position:\s*absolute;/)
-    expect(source).toContain('bottom: calc(var(--trad-pagination-height) + 8px);')
-    expect(source).toContain('pointer-events: none;')
-    expect(source).toMatch(/&\.open\s*\{[\s\S]*?pointer-events:\s*auto;/)
+    expect(trackerDetailCardSource).toMatch(/&--traditional\s*\{[\s\S]*?position:\s*absolute;/)
+    expect(trackerDetailCardSource).toContain('bottom: calc(var(--trad-pagination-height) + 8px);')
+    expect(trackerDetailCardSource).toContain('pointer-events: none;')
+    expect(trackerDetailCardSource).toMatch(/&\.is-open\s*\{[\s\S]*?pointer-events:\s*auto;/)
+    expect(source).not.toContain('detail-panel-trad')
   })
 
   it('传统列表锁定视口高度并使用表格虚拟窗口', () => {
@@ -1345,6 +1350,8 @@ describe('TraditionalView layout contracts', () => {
       expect(viewSource).toContain('@reannounce="handleTrackerReannounce"')
       expect(viewSource).not.toContain('<table class="tracker-table tracker-table-detail">')
     }
+    expect(listSource).toContain('layout="list"')
+    expect(source).toContain('layout="traditional"')
     expect(trackerDetailCardSource).toContain('<table class="tracker-table tracker-table-detail">')
     expect(trackerDetailCardSource).toContain('<th style="width: 80px;">Announce</th>')
     expect(trackerDetailCardSource).toContain('<th>Announce信息</th>')

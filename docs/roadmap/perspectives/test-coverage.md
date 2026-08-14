@@ -138,8 +138,8 @@
 | `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；Tracker 主域名选项与多选参数转换；错误单种列表模式在筛选/退出时发送 `single_error_only`；同内容列表模式在筛选、排序、分页大小、切页、刷新期间保持列表数据源，并在重复查询/高级搜索/模板/显式退出时清理 |
 | `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留 Tracker 查询、错误单种/同内容排查、重复查询、查询条件、分页和选择状态 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` | 传统视图组件；Tracker 主域名过滤、错误单种快捷入口与退出；重复查询保持分类/标签/活动筛选；同内容排查复用当前表格筛选、排序、分页大小、翻页、刷新并守卫其它查询模式切换；静态契约锁定列表/传统父模板共用 `TrackerDetailCard.vue`，以及共享组件的 Tracker 卡片结构、状态语义和 `_tracker-table.scss` 视觉样式 |
-| `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归：五列结构、snake/camel 字段、错误提示、中性状态、汇报事件和 loading |
+| `traditional-view-component.spec.ts` | 传统视图组件；Tracker 主域名过滤、错误单种快捷入口与退出；重复查询保持分类/标签/活动筛选；同内容排查复用当前表格筛选、排序、分页大小、翻页、刷新并守卫其它查询模式切换；静态契约锁定列表/传统父模板共用 `TrackerDetailCard.vue`、`list`/`traditional` layout 与完整弹框定位，以及共享组件的 Tracker 卡片结构、状态语义和 `_tracker-table.scss` 视觉样式 |
+| `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归：完整弹框骨架（标题、关闭按钮、页签、内容区）、五列结构、snake/camel 字段、错误提示、中性状态、汇报事件和 loading |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |

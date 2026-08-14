@@ -185,42 +185,6 @@
     }
   }
 
-  /* Tracker详情卡片 - 改为 Flexbox 子元素 */
-  .tracker-detail-card {
-    /* 移除 fixed 定位，改为普通流式布局 */
-    position: relative;
-    width: 100%;
-    height: 160px; /* 200px → 160px，紧凑布局 */
-    background: var(--color-bg-primary);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-    overflow: hidden;
-    border-left: 4px solid var(--color-primary);
-    flex-shrink: 0; /* 固定高度，不参与 flex 缩放 */
-    margin-top: 12px; /* 16px → 12px，紧凑布局 */
-    display: none;
-    flex-direction: column;
-
-    /* 侧边栏展开/折叠时，宽度平滑过渡 */
-    transition: all var(--transition-layout, 300ms) ease;
-
-    &.active {
-      display: flex;
-      animation: slideIn 0.3s ease;
-    }
-  }
-
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
   /* 分页控件 - 改为 Flexbox 子元素 */
   .torrent-pagination {
     position: relative; /* 移除 fixed 定位 */
@@ -664,49 +628,6 @@
       color: var(--color-error);
     }
   }
-}
-
-/* ========================================
-   Tracker详情卡片样式
-   ======================================== */
-.tracker-detail-card {
-  .tracker-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 16px;
-    background: var(--color-bg-secondary);
-    border-bottom: 1px solid var(--color-border-primary);
-    flex-shrink: 0;
-
-    .tracker-title {
-      font-size: 16px;
-      font-weight: var(--font-weight-bold);
-      color: var(--color-text-primary);
-      margin: 0;
-    }
-
-    .tracker-close {
-      width: 28px;
-      height: 28px;
-      border: none;
-      background: var(--color-bg-tertiary);
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      font-size: 16px;
-      color: var(--color-text-secondary);
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      transition: transform var(--transition-base) ease, box-shadow var(--transition-base) ease, opacity var(--transition-base) ease;
-
-      &:hover {
-        background: var(--color-border-primary);
-        color: var(--color-text-primary);
-      }
-    }
-  }
-
 }
 
 /* ========================================
@@ -1340,18 +1261,6 @@
       }
     }
 
-    // Tracker 卡片 - 移动端全宽显示
-    .tracker-detail-card {
-      position: fixed; /* 移动端改为固定定位 */
-      bottom: 0;
-      left: 0;
-      right: 0;
-      width: 100%;
-      height: 140px; /* 移动端更紧凑，180px → 140px */
-      margin: 0;
-      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-      z-index: var(--z-index-fixed);
-    }
   }
 }
 
