@@ -10,7 +10,7 @@
 
 ### 验证与后续
 
-- 定向回归 `39 passed`，`backend/tests/tasks` `330 passed`，目标 Python 文件编译通过。
+- 定向回归 `39 passed`，`backend/tests/tasks` `331 passed`，目标 Python 文件编译通过。
 - 本轮源码、测试、路线图和项目记录已提交为 `d0d2a9e` 并推送到 `origin/dev`；提交只包含本轮跟踪文件，工作区既有未跟踪目录保持不动。Black 在当前 Windows 进程中仍会超时，Flake8、`py_compile`、`git diff --check` 与定向回归已通过。
 
 ## 2026-08-14 交接：孤儿迁移中断恢复与大库回填修复

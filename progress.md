@@ -11,7 +11,7 @@
 
 ### 验证
 
-- 定向孤儿/定时任务回归 `39 passed`；完整 `backend/tests/tasks` `330 passed`；目标 Python 文件 `py_compile` 通过。
+- 定向孤儿/定时任务回归 `39 passed`；完整 `backend/tests/tasks` `331 passed`；目标 Python 文件 `py_compile` 通过。
 - 新增回归覆盖：Cron 等待同一 dispatcher 的扫描+清理结果、超量门禁在 Cron 中收口为 skipped、内部类 failed/partial 终态进入 task_logs、dispatcher 异常不伪造 success。
 
 ## 2026-08-14 - 1.02GB 真实孤儿库迁移中断恢复与启动 fail-fast
