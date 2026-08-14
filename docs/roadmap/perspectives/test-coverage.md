@@ -89,7 +89,7 @@
 | `app/tasks/scheduler/torrent_tracker_status_judge.py` | `test_torrent_tracker_status_judge.py` + `test_heavy_task_db_write_governance.py` | ✅ 状态码+关键词联合判定、Working 空消息恢复正常、zimiao 双 Tracker 聚合、软删除隔离、独立 Cron 错峰、重任务互斥与批量查询治理 |
 | `app/core/tracker_status_policy.py` / `app/services/tracker_status_sync.py` | `test_tracker_status_policy.py` + `test_tracker_status_sync.py` + `test_torrent_tracker_status_judge.py` | ✅ 共享状态/关键词证据语义直接契约、行级 Working 空消息恢复、未知保留、双消息聚合、幂等及 host 隔离 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
-| `app/services/orphan_scan_job_service.py` / `orphan_lifecycle_service.py` / `orphan_file_service.py` | `test_orphan_scan_job_service.py`（232 行）+ `test_orphan_lifecycle.py` + `test_orphan_folder_grouping.py` + `test_orphan_scan_120k_regression.py`（315 行） | ✅ 后台 scan_id 提交/恢复/复核、稳定明细复用、分批生命周期、文件夹懒加载；真实文件 SQLite WAL/NullPool 覆盖 120100 条争用与状态 API 延迟 |
+| `app/services/orphan_scan_job_service.py` / `orphan_lifecycle_service.py` / `orphan_file_service.py` | `test_orphan_scan_job_service.py`（232 行）+ `test_orphan_lifecycle.py` + `test_orphan_folder_grouping.py` + `test_orphan_scan_120k_regression.py`（315 行） | ✅ 后台 scan_id 提交/恢复/兼容复核记录、稳定明细复用、分批生命周期、文件夹懒加载；真实文件 SQLite WAL/NullPool 覆盖 120100 条争用与状态 API 延迟 |
 | `app/services/orphan_purge_job_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与可见文件硬链接副本计数/位置回归 |
 | `app/services/torrent_ratio_values.py` | `test_torrent_ratio_values.py` | ✅（v1.0.6.25 新增） |
 | `app/services/sqlite_search_runtime.py` | `test_sqlite_search_runtime.py` | ✅（v1.0.6.27 新增） |
@@ -98,7 +98,7 @@
 | `app/services/orphan_scanner.py` | `test_orphan_scanner.py` | ✅ |
 | `app/services/reannounce_service.py` | `test_reannounce_service.py` + `test_reannounce_config.py` | ✅ |
 | `app/core/database_result.py` | `test_database_result.py` | ✅ |
-| `app/core/migration.py` / `startup/lifecycle.py` / `7b2c9d4e6f10` | `test_db_migration.py` + `test_db_rollback_scenarios.py` + `test_orphan_migration_production_shape.py` + `test_startup_migration_guard.py` | ✅ 单 head；覆盖 batch 中断恢复/缺原表拒绝、canonical_path 索引回填、历史超量锁定、真实文件 WAL 大数据升级与任意模式启动 fail-fast |
+| `app/core/migration.py` / `startup/lifecycle.py` / `7b2c9d4e6f10` | `test_db_migration.py` + `test_db_rollback_scenarios.py` + `test_orphan_migration_production_shape.py` + `test_startup_migration_guard.py` | ✅ 单 head；覆盖 batch 中断恢复/缺原表拒绝、canonical_path 索引回填、历史超量提醒标记、真实文件 WAL 大数据升级与任意模式启动 fail-fast |
 | `app/core/path_mapping.py` | （未发现直接测试） | ⚠ 未覆盖 |
 | `app/core/file_operations.py`（1474 行） | （未发现直接测试） | ⚠ 未覆盖 |
 

@@ -100,11 +100,11 @@ class HardlinkCopyLocationsRequest(BaseModel):
 
 
 class OrphanGuardrailReviewRequest(BaseModel):
-    """超量扫描解锁前的双重人工核查声明。"""
+    """兼容旧客户端的超量扫描复核记录请求。"""
 
-    confirmed_path_mapping: bool = Field(..., description="已核查全部相关下载器路径映射")
-    confirmed_orphan_samples: bool = Field(..., description="已抽样核查孤儿文件判定")
-    note: str = Field(..., min_length=8, max_length=2000, description="核查范围、样本与结论")
+    confirmed_path_mapping: bool = Field(..., description="兼容旧客户端的路径映射确认")
+    confirmed_orphan_samples: bool = Field(..., description="兼容旧客户端的孤儿样本确认")
+    note: str = Field(..., min_length=8, max_length=2000, description="兼容旧客户端的复核说明")
 
 
 async def _resolve_selection(
@@ -171,7 +171,7 @@ async def review_scan_guardrail(
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
-    """核查路径映射和孤儿样本后，显式解锁超量扫描的清理门禁。"""
+    """兼容旧客户端记录超量扫描复核；当前超量提醒不再阻断清理。"""
     try:
         if not req.confirmed_path_mapping or not req.confirmed_orphan_samples:
             raise ValueError("必须同时完成路径映射核查和孤儿样本核查")

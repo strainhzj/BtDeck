@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""孤儿后台扫描任务提交、恢复、执行与护栏复核测试。"""
+"""孤儿后台扫描任务提交、恢复、执行与兼容复核记录测试。"""
 
 from contextlib import asynccontextmanager
 from types import SimpleNamespace

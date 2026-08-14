@@ -17,7 +17,7 @@
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
-| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；文件夹展开时懒加载并独立分页，仅当前可见文件实时统计硬链接；超量批次显示路径映射/样本复核入口 |
+| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；文件夹展开时懒加载并独立分页，仅当前可见文件实时统计硬链接；超量批次显示可关闭提醒，不再要求样本复核 |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
@@ -97,7 +97,7 @@
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
-| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L896）；仅文件夹模式注册展开列，子表隐藏重复表头；`loadFolderChildren` L1150 仅展开时加载子页，`startScanPolling` L1640 轮询后台扫描，`handleGuardrailReview` L1686 记录双确认复核；保留硬链接定位、清理/忽视/隔离恢复 |
+| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L892）；仅文件夹模式注册展开列，子表隐藏重复表头；`loadFolderChildren` L1146 仅展开时加载子页，`startScanPolling` L1641 轮询后台扫描，`dismissLargeScanReminder` L1206 关闭超量提醒；保留硬链接定位、清理/忽视/隔离恢复 |
 | `404.vue` | 404 页面（`Page404`） |
 | `nested/*`（7 文件） | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 树形组件演示页（`Tree`） |

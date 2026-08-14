@@ -152,8 +152,8 @@ class TestOrphanScanTaskStructure:
             assert result["status"] == "success"
 
     @pytest.mark.asyncio
-    async def test_guardrail_rejection_is_skipped_and_logged(self):
-        """超量门禁拒绝自动清理时任务成功收口为 skipped，绝不报告清理成功。"""
+    async def test_cleanup_rejection_is_skipped_and_logged(self):
+        """自动清理出现后端安全拒绝时任务收口为 skipped，绝不报告清理成功。"""
         task = OrphanScanTask()
         dispatcher = MagicMock()
         dispatcher.wait_for_completion = AsyncMock(
@@ -167,7 +167,7 @@ class TestOrphanScanTaskStructure:
                 },
                 "cleanup_result": {
                     "rejected": True,
-                    "error": "最新扫描超过护栏阈值，等待路径映射与样本复核",
+                    "error": "实时安全校验未通过",
                     "quarantined_count": 0,
                     "failed_count": 0,
                 },
@@ -195,7 +195,7 @@ class TestOrphanScanTaskStructure:
         assert result["status"] == "skipped"
         assert result["outcome"] == "skipped"
         assert result["cleanup_result"]["quarantined_count"] == 0
-        assert "复核" in result["message"]
+        assert "实时安全校验未通过" in result["message"]
         assert "清理终态" in result["log_detail"]
 
 

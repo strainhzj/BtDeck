@@ -19,15 +19,15 @@
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
-| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；文件夹父行只 SQL 聚合，`get_orphan_folder_children` L1149 展开后独立分页，实时硬链接仅覆盖当前可见文件 |
+| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；文件夹父行只 SQL 聚合，`get_orphan_folder_children` L1147 展开后独立分页，实时硬链接仅覆盖当前可见文件；超量扫描仅作为可关闭提醒 |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `reconcile_candidates` L76 按 200 条分批查询/更新/current_detail 复用/resolved keyset，每批整体进入 `db_write_scope`；可清理查询亦分页 |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |
 | 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key） |
 | 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放） |
-| 孤儿扫描任务 orphan-scan-job | `orphan_scan_job_service.py` | 持久化 queued/running/completed/failed 扫描；scan_id 即 task_id，单行状态查询、串行后台调度、重启恢复与超量复核 |
+| 孤儿扫描任务 orphan-scan-job | `orphan_scan_job_service.py` | 持久化 queued/running/completed/failed 扫描；scan_id 即 task_id，单行状态查询、串行后台调度、重启恢复与超量提醒/兼容复核记录 |
 | 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/多 inode 单轮路径枚举，仅 `os.rmdir` 回收空目录 |
-| 孤儿扫描 orphan-scanner | `orphan_scanner.py` | 文件系统/manifest 核查器；支持预建 queued 批次，成功后分批推进稳定明细与生命周期；超 50000 持久化清理复核门禁并向仍有活跃候选的后续小扫描传递 |
+| 孤儿扫描 orphan-scanner | `orphan_scanner.py` | 文件系统/manifest 核查器；支持预建 queued 批次，成功后分批推进稳定明细与生命周期；超 50000 持久化提醒并向仍有活跃候选的后续小扫描传递，不阻断清理 |
 | 路径映射验证 path-mapping | `path_mapping_validation.py` | 路径映射目录验证（free_space 探测/磁盘空间/现有种子路径取证/有界 stat） |
 | 路径维护 path-maintenance | `path_maintenance_service.py` | 下载器路径维护服务（默认/活跃路径） |
 | Tracker 重宣告 reannounce | `reannounce_service.py` | Tracker Reannounce 核心服务（API 与定时任务共用） |

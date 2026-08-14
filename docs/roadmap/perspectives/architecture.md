@@ -119,11 +119,11 @@ APScheduler job（注册）
                       └─ orphan_lifecycle_service.py (454 行)
                            └─ 每 200 条短事务查询/更新/resolved + db_write_scope
 
-列表：orphan_file_service.py (3438 行)
+列表：orphan_file_service.py (3161 行)
   ├─ 文件夹父行只做 SQL 聚合
   └─ /folders/children 展开后独立分页，仅当前可见文件 stat 硬链接
 
-清理：预览/手动/前缀/定时公用最新批次门禁；>50000 条在路径映射+样本复核前全部拒绝，未复核状态向仍有活跃候选的后续小扫描传递
+清理：预览/手动/前缀/定时公用最新 completed + scan_id 门禁；>50000 条仅显示可关闭提醒，删除前继续实时复核 manifest、路径授权和文件身份
 ```
 
 ## 链 6：高级搜索（HTTP → 契约校验 → 有界正则 → ORM 执行）✨v1.0.6.25~28

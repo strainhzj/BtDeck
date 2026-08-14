@@ -86,7 +86,7 @@
 | 任务结果新鲜度 task-outcome | `f5e6d7c8b9a0_add_task_outcome_freshness.py` | 增加定时任务最近结果与新鲜度字段 |
 | 种子错误原因 torrent-error-reason | `de898cb28172_add_torrent_error_reason.py` ✨2026-08-12 | 为 `torrent_info` 增加可空 Text `error_reason`；历史数据保持空值，upgrade/downgrade 均带列存在守卫 |
 | Tracker 判断错峰 tracker-judge-stagger | `4c1d8e7a2b90_stagger_tracker_status_judge_schedule.py` ✨2026-08-12 | 将未自定义的独立状态判断 Cron 从旧计划迁到 `20,50 * * * *`，在 Tracker 同步后 10 分钟执行；upgrade/downgrade 均只命中已知系统值 |
-| 孤儿后台扫描 orphan-background-scan | `7b2c9d4e6f10_orphan_scan_background_and_current_detail.py` ✨2026-08-13 | `upgrade`(L58)/`downgrade`(L224)：新增后台扫描/复核字段与 `current_detail_id`；原生加列、恢复残留 `_alembic_tmp_*`，强制 canonical_path 索引回填；历史 >50000 批次及其后续链保持清理锁定 |
+| 孤儿后台扫描 orphan-background-scan | `7b2c9d4e6f10_orphan_scan_background_and_current_detail.py` ✨2026-08-13 | `upgrade`(L58)/`downgrade`(L224)：新增后台扫描/提醒兼容字段与 `current_detail_id`；原生加列、恢复残留 `_alembic_tmp_*`，强制 canonical_path 索引回填；历史 >50000 批次保留提醒状态，不再作为清理锁定依据 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 

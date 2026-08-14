@@ -804,7 +804,7 @@ class OrphanScanner:
         卡死。现在由候选生命周期把稳定 OrphanFile 明细与 candidate 在同一个
         200 条短事务内新增/复用，并对 resolved 做 keyset 分批；最后单独提交
         completed 状态。已知孤儿不再按扫描批次重复插入明细。
-        中途崩溃时扫描记录残留 running，由启动恢复标 failed（门禁语义不变）。
+        中途崩溃时扫描记录残留 running，由启动恢复标 failed（清理仍受完成态/新鲜度门禁约束）。
         """
         # 当前候选与稳定明细在同一批事务中推进：已知路径只更新候选及明细元数据，
         # 不再为每次扫描重复插入一份 orphan_file 历史行。
@@ -818,11 +818,9 @@ class OrphanScanner:
         # 3. completed 状态最后单独提交
         async with self._async_session_factory() as db:
             async with admission_controller.db_write_scope():
-                # 一次较小或部分范围扫描不能替上一批超量结果洗掉未完成的
-                # 人工复核。生命周期批次已经可能把 last_seen_scan_id 更新为
-                # 当前 scan_id，因此这里沿“上一成功批次 → 当前批次”传递门禁，
-                # 而不是再依赖候选的旧 last_seen_scan_id。复核当前最新批次后，
-                # 下一次扫描看到的上一批已 reviewed，传递链自然结束。
+                # 一次较小或部分范围扫描仍保留上一批超量结果的提醒，避免
+                # 大批量候选在后续扫描后完全失去可见性。该字段现在仅用于
+                # 页面提醒，不参与清理放行判定。
                 prior_result = await db.execute(
                     select(
                         OrphanScanResult.cleanup_review_required,
@@ -843,13 +841,13 @@ class OrphanScanner:
                 has_active_candidates = bool(
                     await db.scalar(select(exists().where(OrphanCurrentCandidate.status != "resolved")))
                 )
-                inherited_guardrail = bool(
+                inherited_large_scan_reminder = bool(
                     prior_review is not None
                     and prior_review.cleanup_review_required
                     and prior_review.cleanup_reviewed_at is None
                     and has_active_candidates
                 )
-                cleanup_review_required = bool(orphan_count_warning or inherited_guardrail)
+                cleanup_review_required = bool(orphan_count_warning or inherited_large_scan_reminder)
                 await db.execute(
                     update(OrphanScanResult)
                     .where(OrphanScanResult.scan_id == scan_id)

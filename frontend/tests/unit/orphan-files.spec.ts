@@ -126,12 +126,13 @@ const ButtonStub = localVue.extend({
   `
 })
 const AlertStub = localVue.extend({
-  props: ['title', 'description', 'type'],
+  props: ['title', 'description', 'type', 'closable'],
   template: `
     <div class="orphan-alert-stub" :data-type="type">
       <strong>{{ title }}</strong>
       <span>{{ description }}</span>
       <slot />
+      <button v-if="closable" class="orphan-alert-close" @click="$emit('close')">close</button>
     </div>
   `
 })
@@ -189,6 +190,8 @@ interface OrphanFilesVm extends Vue {
   quickActionType: 'cleanup' | 'ignore' | null
   quickActionPrefix: string
   quickActionLoading: boolean
+  largeScanReminderVisible: boolean
+  dismissLargeScanReminder: () => void
   hardlinkLocationDialogVisible: boolean
   hardlinkLocationLoading: boolean
   hardlinkLocationResult: HardlinkCopyLocationsResult | null
@@ -639,6 +642,40 @@ describe('orphan files atomic page state', () => {
     expect(vm.scanContext.remaining_size).toBe(300)
     expect(wrapper.text()).toContain('待清理文件数')
     expect(wrapper.text()).toContain('待清理空间')
+  })
+
+  it('超量扫描只显示可关闭提醒，不阻断清理', async() => {
+    const guarded = scanRecord({
+      scan_id: 'scan-large-reminder',
+      total_orphans: 50001,
+      cleanup_review_required: true,
+      // 历史兼容字段即使已有值，也不能恢复“先复核才能清理”的旧门禁语义。
+      cleanup_reviewed_at: '2026-08-14T00:00:00Z'
+    })
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(
+        scanContext({
+          latest_attempt: guarded,
+          display_scan: guarded,
+          cleanup_allowed: true,
+          cleanup_block_reason: null
+        })
+      )
+    )
+
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    expect(vm.largeScanReminderVisible).toBe(true)
+    expect(vm.cleanupAllowed).toBe(true)
+    expect(wrapper.text()).toContain('超量扫描提醒')
+    expect(wrapper.text()).not.toContain('已完成双重核查')
+
+    await wrapper.find('.orphan-alert-close').trigger('click')
+    await localVue.nextTick()
+    expect(vm.largeScanReminderVisible).toBe(false)
+    expect(vm.cleanupAllowed).toBe(true)
   })
 
   it('点击顶部刷新会同时替换列表与统计上下文', async() => {

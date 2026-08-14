@@ -105,7 +105,7 @@ class OrphanScanJobService:
         operator: str,
         note: str,
     ) -> Dict[str, Any]:
-        """在路径映射和孤儿样本均由调用方确认后解锁超护栏扫描。"""
+        """兼容旧客户端记录超量扫描复核信息；当前清理不依赖该记录。"""
         reviewed_at = datetime.utcnow()
         try:
             async with admission_controller.db_write_scope():
@@ -205,11 +205,15 @@ class OrphanScanDispatcher:
             )
             return
         result = task.result()
-        self._results[scan_id] = result if isinstance(result, dict) else {
-            "scan_id": scan_id,
-            "status": "completed",
-            "scan_result": result,
-        }
+        self._results[scan_id] = (
+            result
+            if isinstance(result, dict)
+            else {
+                "scan_id": scan_id,
+                "status": "completed",
+                "scan_result": result,
+            }
+        )
 
         # 内存结果只用于当前 Cron 等待者；限制缓存规模，避免高频手动扫描
         # 长期持有结果摘要。正在等待的调用已经持有 Task，不依赖被淘汰的项。
@@ -366,7 +370,8 @@ class OrphanScanDispatcher:
 
             cleanup_result: Optional[Dict[str, Any]] = None
             execution_log = [f"扫描阶段结束 status={result.get('status')}"]
-            # 定时扫描成功后才进入自动清理；超护栏批次被共用门禁明确拒绝。
+            # 定时扫描成功后才进入自动清理；超量标志仅作为提醒，清理仍执行
+            # 通用的最新快照、实时 manifest 和文件身份安全校验。
             if scan_type == "scheduled" and result.get("status") == "completed":
                 execution_log.append("进入定时自动清理阶段（沿用扫描 scan_id 门禁）")
                 try:

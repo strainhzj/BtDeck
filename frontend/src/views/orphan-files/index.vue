@@ -97,19 +97,15 @@
       show-icon
     />
     <el-alert
-      v-if="guardrailReviewPending"
+      v-if="largeScanReminderVisible"
       class="orphan-scan-state-alert"
-      title="超量扫描已锁定清理"
-      type="error"
-      :closable="false"
+      title="超量扫描提醒"
+      type="warning"
+      :closable="true"
       show-icon
+      @close="dismissLargeScanReminder"
     >
-      <div class="orphan-guardrail-review">
-        <span>请先核查下载器路径映射，并抽样确认孤儿文件判定；完成前所有清理入口均被后端拒绝。</span>
-        <el-button size="mini" type="danger" plain @click="handleGuardrailReview">
-          已完成双重核查
-        </el-button>
-      </div>
+      本次扫描发现的孤儿文件数量较多，请留意下载器路径映射和孤儿判定；此提醒不影响清理。
     </el-alert>
 
     <!-- 筛选条件 -->
@@ -837,7 +833,6 @@ import {
   getHardlinkCopyLocations,
   triggerScan,
   getScanStatus,
-  reviewScanGuardrail,
   cleanupPreview,
   cleanupOrphans,
   setIgnored,
@@ -961,6 +956,7 @@ export default class OrphanFiles extends Vue {
     cleanup_allowed: false,
     cleanup_block_reason: '尚无可清理的成功扫描'
   }
+  private dismissedLargeScanReminderId: string | null = null
 
   // 清理对话框
   private cleanupDialogVisible = false
@@ -1197,14 +1193,19 @@ export default class OrphanFiles extends Vue {
     await this.loadFolderChildren(row)
   }
 
-  private get guardrailReviewPending(): boolean {
+  private get largeScanReminderVisible(): boolean {
     const latest = this.latestAttempt
     return Boolean(
       latest &&
       latest.status === 'completed' &&
       latest.cleanup_review_required &&
-      !latest.cleanup_reviewed_at
+      this.dismissedLargeScanReminderId !== latest.scan_id
     )
+  }
+
+  private dismissLargeScanReminder(): void {
+    const latest = this.latestAttempt
+    if (latest) this.dismissedLargeScanReminderId = latest.scan_id
   }
 
   /** 只有明确大于 0 的副本数量可点击；0 与未知态保持普通文本。 */
@@ -1681,36 +1682,6 @@ export default class OrphanFiles extends Vue {
     }
     this.activeScanId = null
     this.scanLoading = this.scanSubmitting
-  }
-
-  private async handleGuardrailReview(): Promise<void> {
-    const latest = this.latestAttempt
-    if (!latest || !this.guardrailReviewPending) return
-    try {
-      await this.$confirm(
-        '仅在已逐一核查相关下载器路径映射，并抽样确认孤儿判定无误后继续。复核不会执行清理，只会解除后端门禁。',
-        '确认双重安全核查',
-        { type: 'warning', confirmButtonText: '继续填写说明', cancelButtonText: '取消' }
-      )
-      const promptResult = await this.$prompt(
-        '填写核查范围、抽样数量和结论（至少 8 个字符）',
-        '核查说明',
-        { inputValidator: (value: string) => value.trim().length >= 8 || '核查说明至少 8 个字符' }
-      )
-      const response = await reviewScanGuardrail(latest.scan_id, {
-        confirmed_path_mapping: true,
-        confirmed_orphan_samples: true,
-        note: promptResult.value.trim()
-      })
-      if (response.code === '200') {
-        this.$message.success('安全护栏复核已记录；未执行任何清理')
-        await this.refreshPageData()
-      } else {
-        this.$message.error(response.msg || '护栏复核失败')
-      }
-    } catch (error) {
-      void error
-    }
   }
 
   private async handleCleanupPreview() {

@@ -79,11 +79,11 @@ class OrphanScanResult(Base):
         Boolean,
         default=False,
         nullable=False,
-        comment="是否因超护栏而要求人工核查路径映射与孤儿样本",
+        comment="是否因超量而显示人工提醒（兼容历史字段名）",
     )
-    cleanup_reviewed_at = Column(DateTime, nullable=True, comment="超护栏安全复核时间")
-    cleanup_reviewed_by = Column(String(100), nullable=True, comment="超护栏安全复核人")
-    cleanup_review_note = Column(Text, nullable=True, comment="路径映射与孤儿样本核查说明")
+    cleanup_reviewed_at = Column(DateTime, nullable=True, comment="兼容旧客户端的超量复核时间")
+    cleanup_reviewed_by = Column(String(100), nullable=True, comment="兼容旧客户端的超量复核人")
+    cleanup_review_note = Column(Text, nullable=True, comment="兼容旧客户端的超量复核说明")
 
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
     updated_at = Column(

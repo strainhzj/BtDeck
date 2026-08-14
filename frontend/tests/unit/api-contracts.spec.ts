@@ -208,7 +208,7 @@ describe('API 请求契约', () => {
       )
     })
 
-    it('后台扫描提供轻量状态轮询与双重核查接口', () => {
+    it('后台扫描提供轻量状态轮询与兼容复核记录接口', () => {
       expectRequest(
         () => getScanStatus('scan-1'),
         { url: '/orphan-files/scans/scan-1', method: 'get' }

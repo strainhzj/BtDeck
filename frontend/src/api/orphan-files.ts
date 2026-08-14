@@ -397,7 +397,7 @@ export function getScanStatus(scanId: string): Promise<ApiResponse<OrphanScanRec
   }) as unknown as Promise<ApiResponse<OrphanScanRecord>>
 }
 
-/** 路径映射和孤儿样本均核查后，显式解锁超量扫描清理门禁。 */
+/** 兼容旧客户端的超量扫描复核记录接口；当前超量提醒不再阻断清理。 */
 export function reviewScanGuardrail(
   scanId: string,
   data: OrphanGuardrailReviewRequest

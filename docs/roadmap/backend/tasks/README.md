@@ -34,7 +34,7 @@
 | 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance |
 | 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知（隔离区彻底删除完成通知） |
 | 隔离区清理 orphan-purge | `orphan_quarantine_purge_task.py` | 每日清理超期孤儿隔离区 |
-| 孤儿全量扫描 orphan-scan | `orphan_scan_task.py` | 每周日凌晨 2 点提交并等待同一 dispatcher 的 scan_id/task_id 扫描+清理终态；阶段摘要写入 Cron task_logs，超量门禁会拒绝清理 |
+| 孤儿全量扫描 orphan-scan | `orphan_scan_task.py` | 每周日凌晨 2 点提交并等待同一 dispatcher 的 scan_id/task_id 扫描+清理终态；阶段摘要写入 Cron task_logs，超量标志仅作提醒 |
 | 标签同步 tag-sync | `tag_sync.py` | 定期从下载器同步标签到 DB |
 | 种子同步废弃 torrent-sync-old | `torrent_sync.py` | ⚠ **已废弃**：拆分为下方两个任务 |
 | tracker 状态判断 torrent-tracker-judge | `torrent_tracker_status_judge.py` | 遍历种子检查 tracker 状态；`evaluate_tracker_error_state()` L69 复用共享策略联合下载器状态码与关键词，Working 且 announce/scrape 消息为空时明确正常，有消息仍按关键词分类；独立 Cron 为 `20,50 * * * *`，在 Tracker 同步后 10 分钟运行 |

@@ -37,7 +37,7 @@ BtDeck/
 
 | 功能域（含检索词） | 前端入口 | 后端入口 |
 |------|---------|---------|
-| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（后台扫描轮询；文件夹展开后懒加载/独立分页；仅可见文件实时统计硬链接） | `api/endpoints/orphan_files.py`；`services/orphan_scan_job_service.py` / `orphan_file_service.py` / `orphan_scanner.py` / `orphan_lifecycle_service.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（持久化后台 scan_id、稳定明细复用、分批生命周期事务、超量复核及后续小扫描门禁传递）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
+| 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（后台扫描轮询；文件夹展开后懒加载/独立分页；仅可见文件实时统计硬链接；超量批次显示可关闭提醒） | `api/endpoints/orphan_files.py`；`services/orphan_scan_job_service.py` / `orphan_file_service.py` / `orphan_scanner.py` / `orphan_lifecycle_service.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（持久化后台 scan_id、稳定明细复用、分批生命周期事务、超量提醒字段与通用实时清理安全校验）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
 | 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；Transmission 同步会持久化/清除错误原因，并把 Tracker announce/scrape 统计归一为 0–4 状态码，避免“已联系失败”误显示为“未联系”；列表名称 tooltip 与 Tracker 卡片展示 `errorReason`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
 | 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
@@ -121,4 +121,4 @@ BtDeck/
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件、任务日志、高级搜索、Transmission 错误原因与 Tracker 共享判定策略回归。2026-08-13：同内容排查改为列表分页；孤儿扫描后台化、稳定明细复用、生命周期短事务、文件夹懒加载/可见文件硬链接及 >50000 双复核门禁。2026-08-14：补齐 SQLite batch 中断恢复、canonical_path 索引回填、真实 1.02 GB 旧库升级、迁移失败启动 fail-fast、孤儿文件页面视图模式/嵌套表头回归及模式切换/普通行展开保护。 |
+| 本次新增 | 2026-08-12：种子文件、任务日志、高级搜索、Transmission 错误原因与 Tracker 共享判定策略回归。2026-08-13：同内容排查改为列表分页；孤儿扫描后台化、稳定明细复用、生命周期短事务、文件夹懒加载/可见文件硬链接及 >50000 双复核门禁。2026-08-14：补齐 SQLite batch 中断恢复、canonical_path 索引回填、真实 1.02 GB 旧库升级、迁移失败启动 fail-fast、孤儿文件页面视图模式/嵌套表头回归及模式切换/普通行展开保护；超量扫描改为可关闭提醒并移除复核清理门禁。 |

@@ -15,7 +15,7 @@ D 组：孤儿文件生命周期与数据库测试（v1.0.6+ 语义重做）
 """
 
 from datetime import datetime, timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import pytest_asyncio
@@ -359,8 +359,8 @@ class TestCleanupGates:
         # 应返回明确拒绝原因（而非正常预览结果）
         assert result.get("rejected") or result.get("error"), "最新扫描 running 时应拒绝清理"
 
-    async def test_large_scan_blocks_cleanup_until_path_and_sample_review(self, async_orphan_db):
-        """超过护栏的批次即使 completed，也必须先完成显式双重核查。"""
+    async def test_large_scan_only_warns_and_does_not_block_cleanup(self, async_orphan_db):
+        """超过护栏的批次只产生提醒，completed 快照仍可进入清理流程。"""
         from app.models.orphan_file import OrphanScanResult
         from app.services.orphan_file_service import OrphanFileService
 
@@ -377,19 +377,67 @@ class TestCleanupGates:
         await async_orphan_db.commit()
 
         service = OrphanFileService(async_orphan_db)
-        blocked = await service.cleanup_preview(orphan_ids=[], scan_id="scan_large_guarded")
-        assert blocked["rejected"] is True
-        assert "路径映射" in blocked["reason"]
-        assert "孤儿样本" in blocked["reason"]
-
-        record.cleanup_reviewed_at = datetime.utcnow()
-        record.cleanup_reviewed_by = "reviewer"
-        record.cleanup_review_note = "核查路径映射并抽样二十条，判定准确"
-        await async_orphan_db.commit()
-
         allowed = await service.cleanup_preview(orphan_ids=[], scan_id="scan_large_guarded")
         assert allowed.get("rejected") is not True
         assert allowed["total_count"] == 0
+
+    @pytest.mark.parametrize("entry", ["prefix", "manual", "scheduled"])
+    async def test_large_scan_reminder_does_not_block_other_cleanup_entries(
+        self,
+        async_orphan_db,
+        entry,
+    ):
+        """超量提醒不得重新成为前缀、手动或定时清理入口的隐式门禁。"""
+        from app.models.orphan_file import OrphanScanResult
+        from app.services.orphan_file_service import OrphanFileService
+        from app.services.orphan_manifest import ManifestSnapshot
+
+        scan_id = f"scan_large_{entry}"
+        record = OrphanScanResult(
+            scan_id=scan_id,
+            scan_time=datetime.utcnow(),
+            scan_type="scheduled" if entry == "scheduled" else "manual",
+            status="completed",
+            details_mode="current",
+        )
+        record.total_orphans = 120_100
+        record.cleanup_review_required = True
+        async_orphan_db.add(record)
+        await async_orphan_db.commit()
+
+        service = OrphanFileService(async_orphan_db)
+        if entry == "prefix":
+            result = await service.prefix_match_preview("/data/", scan_id)
+        else:
+            empty_manifest = ManifestSnapshot(
+                expected_paths=set(),
+                scan_roots=[],
+                downloader_ids=set(),
+            )
+            with (
+                patch.object(service, "_recover_interrupted_operations", new=AsyncMock()),
+                patch.object(
+                    service,
+                    "_build_realtime_manifest",
+                    new=AsyncMock(return_value=empty_manifest),
+                ),
+            ):
+                if entry == "manual":
+                    result = await service.cleanup_orphans(
+                        orphan_ids=[],
+                        operator="tester",
+                        scan_id=scan_id,
+                        _lease_acquired=True,
+                    )
+                else:
+                    result = await service.auto_cleanup_expired(
+                        days_threshold=30,
+                        operator="system",
+                        scan_id=scan_id,
+                        _lease_acquired=True,
+                    )
+
+        assert result.get("rejected") is not True, f"{entry} 清理入口不应被超量提醒拒绝"
 
     async def test_list_does_not_fallback_to_older_completed_scan(self, async_orphan_db):
         """最新批次 running 时，列表不得回退展示旧 completed 明细。"""
@@ -482,11 +530,11 @@ class TestBatchWriteAtomicity:
         result = await async_orphan_db.execute(select(OrphanFile))
         assert result.scalars().all() == [], "失败的扫描不应留下可清理的明细"
 
-    async def test_small_followup_scan_inherits_unreviewed_large_candidate_guardrail(
+    async def test_small_followup_scan_inherits_large_scan_reminder(
         self,
         async_orphan_db,
     ):
-        """部分/小扫描不能洗掉仍活跃的 12 万批次清理门禁。"""
+        """部分/小扫描保留仍活跃的大批次提醒，但不形成清理门禁。"""
         from app.models.orphan_file import (
             OrphanCurrentCandidate,
             OrphanScanResult,

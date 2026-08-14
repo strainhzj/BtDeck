@@ -385,7 +385,11 @@ class OrphanFileService:
         latest_attempt: Optional[OrphanScanResult],
         scan_id: Optional[str],
     ) -> Dict[str, Any]:
-        """纯判定扫描快照是否仍具备清理资格。"""
+        """纯判定扫描快照是否仍具备清理资格。
+
+        超量扫描字段只用于页面提醒，不再作为清理门禁；清理仍要求最新扫描
+        已成功完成，并绑定同一批次的 scan_id。
+        """
         if latest_attempt is None:
             return {
                 "allowed": False,
@@ -396,12 +400,6 @@ class OrphanFileService:
             return {
                 "allowed": False,
                 "reason": (f"最新扫描状态为 {latest_attempt.status}（非 completed），禁止清理"),
-                "latest_scan_id": latest_attempt.scan_id,
-            }
-        if bool(latest_attempt.cleanup_review_required) and latest_attempt.cleanup_reviewed_at is None:
-            return {
-                "allowed": False,
-                "reason": ("本批次孤儿数量超过安全护栏；在核查路径映射和孤儿样本并完成显式复核前，禁止清理"),
                 "latest_scan_id": latest_attempt.scan_id,
             }
         if not scan_id:

@@ -21,15 +21,15 @@
     {
       "id": "orphan-scan-background-stable-details-and-guardrail",
       "name": "孤儿扫描后台化、稳定明细复用与 12 万级争用治理",
-      "description": "将孤儿扫描改为持久化后台任务和轻量状态轮询；文件夹子项按展开懒加载、独立分页，硬链接实时统计仅覆盖当前可见文件；生命周期查询、明细复用、更新与 resolved 全部分批并进入 db_write_scope；超过 50000 条的扫描在路径映射和孤儿样本复核前强制禁止任何清理。",
+      "description": "将孤儿扫描改为持久化后台任务和轻量状态轮询；文件夹子项按展开懒加载、独立分页，硬链接实时统计仅覆盖当前可见文件；生命周期查询、明细复用、更新与 resolved 全部分批并进入 db_write_scope；超过 50000 条的扫描只显示可关闭提醒，不再要求双重核查或阻断清理。",
       "status": "done",
       "branch": "dev",
       "plan_file": null,
       "tasks": [
         {
           "id": "orphan-scan-background-stable-details-and-guardrail.1",
-          "name": "后台扫描、稳定明细与超量安全门禁",
-          "description": "POST /orphan-files/scan 立即返回 scan_id/task_id，后台串行执行并支持 queued 重启恢复；同一 canonical_path 复用 current_detail_id，仅在首次发现或清理后重新出现时新增明细；历史和新产生的超量成功批次在完成双重人工核查前均不可预览或清理。",
+          "name": "后台扫描、稳定明细与超量提醒",
+          "description": "POST /orphan-files/scan 立即返回 scan_id/task_id，后台串行执行并支持 queued 重启恢复；同一 canonical_path 复用 current_detail_id，仅在首次发现或清理后重新出现时新增明细；历史和新产生的超量成功批次保留可关闭提醒，清理仍遵循通用最新快照与实时安全校验。",
           "status": "done",
           "scope": "fullstack",
           "files": [
@@ -54,7 +54,7 @@
             "frontend/src/api/orphan-files.ts",
             "frontend/src/views/orphan-files/index.vue"
           ],
-          "evidence": "后台任务 API/调度/恢复与双重复核回归通过；定时入口等待同一 dispatcher 的扫描+自动清理终态，阶段摘要经 CronTaskExecutor 透传到同一条 task_logs，queued 不再提前记为 success；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。原始副本与线上库均未写入，未执行任何清理。"
+          "evidence": "后台任务 API/调度/恢复与双重复核兼容回归通过；定时入口等待同一 dispatcher 的扫描+自动清理终态，阶段摘要经 CronTaskExecutor 透传到同一条 task_logs，queued 不再提前记为 success；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。2026-08-14 后续调整：超量字段仅作为可关闭页面提醒，移除清理放行前的双重核查要求；保留历史复核字段和兼容 API。追加参数化回归锁定清理预览、前缀快捷、手动和定时入口均不因超量提醒拒绝。原始副本与线上库均未写入，未执行任何清理。"
         },
         {
           "id": "orphan-scan-background-stable-details-and-guardrail.2",
