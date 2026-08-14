@@ -81,7 +81,11 @@ const mockCopyTextToClipboard = copyTextToClipboard as jest.MockedFunction<typeo
 
 const clearSelection = jest.fn()
 const TableStub = localVue.extend({
-  props: ['data', 'height'],
+  props: {
+    data: { type: Array, default: () => [] },
+    height: { type: [String, Number], default: '' },
+    showHeader: { type: Boolean, default: true }
+  },
   methods: {
     clearSelection
   },
@@ -90,7 +94,7 @@ const TableStub = localVue.extend({
       return Object.keys(this.$listeners).join(',')
     }
   },
-  template: '<div class="orphan-table-stub" :data-height="height" :data-listeners="listenerNames"><slot /></div>'
+  template: '<div class="orphan-table-stub" :data-height="height" :data-show-header="String(showHeader)" :data-row-count="String(data.length)" :data-listeners="listenerNames"><slot /></div>'
 })
 const TableColumnStub = localVue.extend({
   props: {
@@ -161,6 +165,7 @@ interface OrphanFilesVm extends Vue {
   folderView: boolean
   tableData: OrphanTableRow[]
   setFolderView: (val: boolean) => void
+  getOrphanRowClassName: (payload: { row: OrphanTableRow }) => string
   handleFolderExpandChange: (row: OrphanTableRow, expanded: boolean) => void
   loadFolderChildren: (row: OrphanFolderRow) => Promise<void>
   handleFolderChildSelection: (row: OrphanFolderRow, items: OrphanFileItem[]) => void
@@ -1717,6 +1722,40 @@ describe('orphan files folder view (selection linkage)', () => {
     expect(folder.children_loaded).toBe(true)
   })
 
+  it('展开事件只为未加载文件夹请求子项，普通文件不会触发子项请求', async() => {
+    const child = orphanItem(3, 'scan-completed', { file_path: '/data/movie/c.mp4' })
+    const folder = folderRow('/data/movie', [], {
+      child_count: 1,
+      child_ids: [],
+      children_loaded: false,
+      child_total: 1
+    })
+    const single = orphanItem(4, 'scan-completed', { file_path: '/data/alone.mp4' })
+    mockGetOrphanList.mockResolvedValueOnce(listResponse(scanContext(), [folder, single], 2))
+    mockGetOrphanFolderChildren.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 1, page: 1, pageSize: 20, list: [child] }
+    })
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const rows = vm.tableData
+    const loadedFolder = rows[0] as OrphanFolderRow
+    const visibleFile = rows[1] as OrphanFileItem
+
+    vm.handleFolderExpandChange(visibleFile, true)
+    await flushLifecycle()
+    expect(mockGetOrphanFolderChildren).not.toHaveBeenCalled()
+
+    vm.handleFolderExpandChange(loadedFolder, true)
+    await flushLifecycle()
+    expect(mockGetOrphanFolderChildren).toHaveBeenCalledTimes(1)
+    expect(loadedFolder.children.map((item) => item.id)).toEqual([3])
+  })
+
   it('选择只包含当前可见且明确勾选的子文件', async() => {
     localStorage.setItem('btdeck_orphan_folder_view', '1')
     const wrapper = mountView()
@@ -1804,6 +1843,39 @@ describe('orphan files folder view (persistence + regression)', () => {
     expect(vm.tableData).toBe(vm.list)
     expect((vm.tableData as OrphanTableRow[]).every((r) => (r as unknown as { _is_folder?: boolean })._is_folder !== true)).toBe(true)
     expect(vm.getRowKey(vm.list[0])).toBe('file:1')
+  })
+
+  it('只有文件夹模式注册展开列，扁平模式不显示展开入口', async() => {
+    const flatWrapper = mountView()
+    await flushLifecycle()
+
+    expect(flatWrapper.findAll('[data-column-type="expand"]')).toHaveLength(0)
+    flatWrapper.destroy()
+
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const folderWrapper = mountView()
+    await flushLifecycle()
+
+    expect(folderWrapper.findAll('[data-column-type="expand"]')).toHaveLength(1)
+  })
+
+  it('切换展示模式时展开列随 folderView 动态增删', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const expandColumns = () => wrapper.findAll('[data-column-type="expand"]')
+
+    expect(expandColumns()).toHaveLength(0)
+
+    vm.setFolderView(true)
+    await flushLifecycle()
+    expect(expandColumns()).toHaveLength(1)
+    expect(localStorage.getItem('btdeck_orphan_folder_view')).toBe('1')
+
+    vm.setFolderView(false)
+    await flushLifecycle()
+    expect(expandColumns()).toHaveLength(0)
+    expect(localStorage.getItem('btdeck_orphan_folder_view')).toBe('0')
   })
 })
 
@@ -1958,6 +2030,38 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const pathColumn = wrapper.find('.orphan-path-cell')
     expect(pathColumn.exists()).toBe(true)
     expect(pathColumn.text()).toContain('/data/alone.mp4')
+    // 文件夹模式虽然保留主表展开列，但普通文件行不能产生展开内容。
+    expect(wrapper.find('.orphan-folder-children').exists()).toBe(false)
+    expect(wrapper.findAll('.orphan-folder-children .orphan-table-stub')).toHaveLength(0)
+  })
+
+  it('展开行 class 只标记文件夹，普通文件保持可被箭头隐藏的普通行 class', async() => {
+    const children = [orphanItem(1, 'scan-completed', { file_path: '/data/movie/a.mp4' })]
+    const folder = folderRow('/data/movie', children)
+    const single = orphanItem(2, 'scan-completed', { file_path: '/data/alone.mp4' })
+    const wrapper = mountFolderView([folder, single])
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    expect(vm.getOrphanRowClassName({ row: folder })).toBe('orphan-folder-row')
+    expect(vm.getOrphanRowClassName({ row: single })).toBe('')
+  })
+
+  it('文件夹展开子表隐藏重复表头', async() => {
+    const children = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/movie/a.mp4' }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/movie/b.mp4' })
+    ]
+    const wrapper = mountFolderView([folderRow('/data/movie', children)])
+    await flushLifecycle()
+
+    const tables = wrapper.findAll('.orphan-table-stub')
+    expect(tables.length).toBeGreaterThan(1)
+    expect(tables.at(0).attributes('data-show-header')).toBe('true')
+    expect(tables.at(1).attributes('data-show-header')).toBe('false')
+    expect(tables.at(1).attributes('data-row-count')).toBe('2')
+    expect(tables.at(1).attributes('data-listeners')).toContain('selection-change')
+    expect(tables.at(1).find('[data-column-type="selection"]').exists()).toBe(true)
   })
 
   it('副本数量列只显示可见文件数值，文件夹父行不汇总未加载子项', async() => {

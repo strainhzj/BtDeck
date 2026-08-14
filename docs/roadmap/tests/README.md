@@ -104,7 +104,7 @@ cd frontend && npm run test:unit    # jest
 - **2026-08-12 回归**：除错误原因/Tracker 状态/nickname 用例外，`test_advanced_search_regression.py` + 严格模型测试覆盖 Tracker 多行否定/软删除、SQL 通配符字面量、逗号/分号标签 token、回收站排除、下载器改名、超级做种三态、空值白名单；新增跨字段 include/exclude 全集分区与五个空值字段分区矩阵。`test_torrent_tracker_status_judge.py` 以 36 组 zimiao 双 Tracker 顺序/下载器类型/空消息矩阵守卫种子级 Working 恢复；`test_tracker_status_sync.py` 再覆盖行级 Working 空消息清理、未知逐行保留、announce/scrape 状态边界与双消息、幂等、跨种子 host 隔离及最新 zimiao 359 行快照形态；`test_sync_coordinator.py` 锁定原始 Tracker 同步成功后才运行行级判断。迁移测试覆盖重复升级、自定义计划/描述、逻辑删除及 downgrade 精确保护；前端契约和模板请求转换逐字段守卫正操作符 + `mode=exclude`。
 - **2026-08-14 迁移恢复回归**：`test_orphan_migration_production_shape.py` 使用真实文件 SQLite/WAL 和重复扫描明细验证残留 batch 临时表恢复、canonical_path 索引回填及超量清理门禁；`test_startup_migration_guard.py` 保证迁移失败不会继续 seed、孤儿对账或调度器启动。
 - **前端测试集中在核心组件**：`components/torrents/` 的搜索/多选组件有完整单测（含性能测试），其他组件测试覆盖较薄
-- **孤儿文件回归**：`test_orphan_hardlink_detection.py` 覆盖 `st_nlink - 1`、多 inode 单轮路径定位/重复 ID 去重、范围外未定位数、扫描失败降级与清理删除诊断；`test_orphan_files_api.py` 守卫 1~5000 项请求边界；`orphan-files.spec.ts` 覆盖数量链接、文件夹批量查询、位置弹框、复制路径、过期响应隔离及异常提示；任务/查询状态测试继续覆盖重复提交、混合跳过与终态释放
+- **孤儿文件回归**：`test_orphan_hardlink_detection.py` 覆盖 `st_nlink - 1`、多 inode 单轮路径定位/重复 ID 去重、范围外未定位数、扫描失败降级与清理删除诊断；`test_orphan_files_api.py` 守卫 1~5000 项请求边界；`orphan-files.spec.ts`（当前定向 81 项）覆盖数量链接、文件夹批量查询、位置弹框、复制路径、过期响应隔离及异常提示，并额外守卫扁平/文件夹模式展开列动态切换、普通文件行展开标记与懒加载事件、子表隐藏表头但保留可见数据/选择事件；任务/查询状态测试继续覆盖重复提交、混合跳过与终态释放
 - **架构约束测试**：`test_architecture_constraints.py` 是防退化机制（自动检测反模式）
 - 详细覆盖矩阵（源文件 ↔ 测试文件对应）见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)
 

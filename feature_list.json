@@ -72,7 +72,7 @@
             "frontend/tests/unit/orphan-files.spec.ts",
             "frontend/tests/unit/api-contracts.spec.ts"
           ],
-          "evidence": "后端父行无 children/stat、子项独立分页及可见页硬链接回归通过；前端类型检查、改动文件 ESLint 与 orphan-files/API 契约 Jest 通过。"
+          "evidence": "后端父行无 children/stat、子项独立分页及可见页硬链接回归通过；前端类型检查、改动文件 ESLint 与 orphan-files/API 契约 Jest 通过。2026-08-14 补齐孤儿文件页面视图契约：扁平模式不注册 expand 列，文件夹模式子表隐藏重复表头，并将普通行箭头隐藏规则移到实际页面作用域；追加模式动态切换、普通文件行 class/展开事件、子表数据与选择事件回归，定向 orphan-files Jest 81 passed，生产 build 通过（仅既有 warning）。"
         },
         {
           "id": "orphan-scan-background-stable-details-and-guardrail.3",

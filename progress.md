@@ -1,5 +1,19 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-14 - 孤儿文件页面视图模式与嵌套表头修复
+
+### 根因与修复
+
+- 主表无条件注册 Element UI `expand` 列，`folderView` 原先只影响请求参数；因此扁平模式仍会为每行生成左侧展开入口。
+- 文件夹展开区复用的子表未关闭默认表头，展开后会把子表列头再次渲染成第二个绿色表头；普通文件箭头隐藏规则还被错误嵌套在 `.hardlink-location-summary` 下，生成选择器无法命中实际管理表。
+- 现在仅文件夹模式注册展开列，子表显式 `show-header=false`，并将普通行箭头隐藏规则移到 `.orphan-files-page` 的实际作用域；后端聚合、懒加载、分页和选择语义不变。
+
+### 验证
+
+- `orphan-files.spec.ts` 定向回归 `81 passed`；新增扁平/文件夹展开列动态切换、普通文件行展开 class/懒加载事件，以及子表表头、数据行和选择事件回归。
+- 前端 `npm run typecheck`、改动文件 ESLint、生产 build 和 `git diff --check` 通过；build 仅报告仓库既有 51 条 Sass/Element UI/Browserslist warning。
+- 完整 `npm run lint` 仍被 3 个无关关键词测试文件的既有 5 条 warning 阻断；根 `./init.sh --ci` 在当前主机因缺少 `/bin/bash` 无法启动。未修改后端，未触碰工作区既有未跟踪文件。
+
 ## 2026-08-14 - 定时孤儿扫描回接 Cron 生命周期与执行日志
 
 ### 根因与修复

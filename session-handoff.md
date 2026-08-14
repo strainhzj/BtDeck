@@ -1,5 +1,20 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-14 交接：孤儿文件页面视图模式与嵌套表头修复
+
+### 当前结果
+
+- 已修复扁平模式仍显示左侧展开按钮：主表的 `expand` 列现在只在 `folderView` 开启时注册。
+- 已修复文件夹模式展开后出现第二套列头：懒加载子表显式关闭表头；普通文件行的 Element UI 展开箭头隐藏规则也已移到正确的页面作用域。
+- 根因是页面结构条件未覆盖表格列/子表渲染，且原箭头 CSS 规则被嵌套在不匹配的 `.hardlink-location-summary` 作用域；后端接口、文件夹聚合、懒加载分页和选择逻辑未改动。
+- 已同步 `docs/roadmap/`、`feature_list.json` 和 `progress.md`；本轮已获授权提交并推送，仍不部署，工作区原有未跟踪文件保持不动。
+
+### 验证与已知基线
+
+- `frontend/tests/unit/orphan-files.spec.ts` 定向回归 `81 passed`，覆盖模式动态切换、普通文件行展开 class/懒加载事件，以及子表隐藏表头后仍保留数据行和选择事件；TypeScript、改动文件 ESLint、生产 build、`git diff --check` 通过。
+- 生产 build 仍有仓库既有 51 条 Sass/Element UI/Browserslist warning；完整前端 lint 被 3 个无关关键词测试文件的既有 5 条 warning 阻断，无本次文件错误。
+- 根 `./init.sh --ci` 在当前 Windows 主机因找不到 `/bin/bash` 未能执行；此次未修改后端。
+
 ## 2026-08-14 继续交接：孤儿扫描定时入口已回接 Cron
 
 ### 当前结果

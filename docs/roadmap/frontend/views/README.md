@@ -97,7 +97,7 @@
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
-| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L896）；`loadFolderChildren` L1149 仅展开时加载子页，`startScanPolling` L1639 轮询后台扫描，`handleGuardrailReview` L1685 记录双确认复核；保留硬链接定位、清理/忽视/隔离恢复 |
+| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L896）；仅文件夹模式注册展开列，子表隐藏重复表头；`loadFolderChildren` L1150 仅展开时加载子页，`startScanPolling` L1640 轮询后台扫描，`handleGuardrailReview` L1686 记录双确认复核；保留硬链接定位、清理/忽视/隔离恢复 |
 | `404.vue` | 404 页面（`Page404`） |
 | `nested/*`（7 文件） | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 树形组件演示页（`Tree`） |

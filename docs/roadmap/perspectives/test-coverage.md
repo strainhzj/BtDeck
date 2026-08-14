@@ -121,7 +121,7 @@
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
 | `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
-| `orphan-files.spec.ts` | 孤儿后台扫描轮询、超量复核、文件夹展开懒加载/子页选择、可见文件硬链接及清理/隔离工作流 |
+| `orphan-files.spec.ts` | 孤儿后台扫描轮询、超量复核、文件夹展开懒加载/子页选择、可见文件硬链接、清理/隔离工作流，以及扁平/文件夹模式展开列切换、普通行展开保护、子表表头/数据/选择事件契约 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |

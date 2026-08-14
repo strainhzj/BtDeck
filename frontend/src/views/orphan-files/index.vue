@@ -280,13 +280,14 @@
           @selection-change="handleOrphanSelectionChange"
           @expand-change="handleFolderExpandChange"
         >
-          <el-table-column type="expand" width="48">
+          <el-table-column v-if="folderView" type="expand" width="48">
             <template slot-scope="scope">
               <div v-if="scope.row._is_folder" class="orphan-folder-children">
                 <el-table
                   v-loading="scope.row.children_loading"
                   :data="scope.row.children"
                   :row-key="getRowKey"
+                  :show-header="false"
                   border
                   size="mini"
                   @selection-change="handleFolderChildSelection(scope.row, $event)"
@@ -2135,6 +2136,24 @@ export default class OrphanFiles extends Vue {
       min-height: 32px;
     }
   }
+
+  .orphan-folder-children {
+    padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+    background: var(--color-bg-secondary);
+
+    &__pagination {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: var(--spacing-md);
+    }
+  }
+
+  // Element UI 的 expand 列会为文件夹模式中的普通文件也生成箭头；
+  // 普通文件没有懒加载子项，只允许聚合文件夹行展开。
+  ::v-deep .management-table .el-table__body tr:not(.orphan-folder-row) .el-table__expand-icon {
+    visibility: hidden;
+    pointer-events: none;
+  }
 }
 
 .hardlink-location-content {
@@ -2150,24 +2169,6 @@ export default class OrphanFiles extends Vue {
 
   strong {
     color: var(--color-text-primary);
-  }
-
-  .orphan-folder-children {
-    padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
-    background: var(--color-bg-secondary);
-
-    &__pagination {
-      display: flex;
-      justify-content: flex-end;
-      margin-top: var(--spacing-md);
-    }
-  }
-
-  // Element UI 的 expand 列会为普通文件也生成箭头；普通文件没有懒加载子项，
-  // 隐藏其图标，只允许聚合文件夹行展开。
-  ::v-deep .management-table .el-table__body tr:not(.orphan-folder-row) .el-table__expand-icon {
-    visibility: hidden;
-    pointer-events: none;
   }
 }
 
