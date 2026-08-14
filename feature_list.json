@@ -45,11 +45,16 @@
             "backend/app/startup/lifecycle.py",
             "backend/app/main.py",
             "backend/app/desktop_main.py",
+            "backend/app/tasks/cron_executor.py",
             "backend/app/tasks/scheduler/orphan_scan_task.py",
+            "backend/tests/services/test_orphan_scan_job_service.py",
+            "backend/tests/tasks/test_cron_executor_admission.py",
+            "backend/tests/tasks/test_orphan_scan_task.py",
+            "backend/tests/tasks/test_orphan_scan_task_lifecycle.py",
             "frontend/src/api/orphan-files.ts",
             "frontend/src/views/orphan-files/index.vue"
           ],
-          "evidence": "后台任务 API/调度/恢复与双重复核回归通过；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。原始副本与线上库均未写入，未执行任何清理。"
+          "evidence": "后台任务 API/调度/恢复与双重复核回归通过；定时入口等待同一 dispatcher 的扫描+自动清理终态，阶段摘要经 CronTaskExecutor 透传到同一条 task_logs，queued 不再提前记为 success；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。原始副本与线上库均未写入，未执行任何清理。"
         },
         {
           "id": "orphan-scan-background-stable-details-and-guardrail.2",

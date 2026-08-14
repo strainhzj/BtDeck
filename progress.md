@@ -1,5 +1,19 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-14 - 定时孤儿扫描回接 Cron 生命周期与执行日志
+
+### 根因与修复
+
+- `OrphanScanTask.execute()` 原先只创建 `queued` 扫描并立即返回 `status=success`，实际扫描和定时自动清理由进程内 dispatcher 另起任务完成，导致 APScheduler 的 Cron 执行记录与业务终态脱节。
+- `OrphanScanDispatcher` 现在返回扫描、清理及阶段摘要，并提供 `wait_for_completion()`；定时入口等待同一个 dispatcher 任务直到扫描和清理均收口，扫描失败、超时、清理部分失败和超护栏拒绝分别写入明确终态。
+- `CronTaskExecutor` 将内部类返回的业务终态透传为 `success/outcome/skip_reason`，并把 OrphanScanTask 的阶段摘要写入现有 `task_logs` 记录；HTTP/手动扫描仍只提交 queued 并由页面轻量轮询，不改变后台 API 语义。
+- 超过 50000 条的批次继续沿用 `cleanup_review_required` 门禁；路径映射与孤儿样本核查完成前没有调用清理、隔离或物理删除入口。
+
+### 验证
+
+- 定向孤儿/定时任务回归 `39 passed`；完整 `backend/tests/tasks` `330 passed`；目标 Python 文件 `py_compile` 通过。
+- 新增回归覆盖：Cron 等待同一 dispatcher 的扫描+清理结果、超量门禁在 Cron 中收口为 skipped、内部类 failed/partial 终态进入 task_logs、dispatcher 异常不伪造 success。
+
 ## 2026-08-14 - 1.02GB 真实孤儿库迁移中断恢复与启动 fail-fast
 
 ### 根因与修复

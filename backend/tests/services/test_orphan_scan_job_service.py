@@ -114,7 +114,7 @@ async def test_dispatcher_executes_precreated_scan_id_without_creating_new_recor
         patch("app.services.orphan_scanner.OrphanScanner.scan", scan),
         patch.object(dispatcher, "_audit_result", AsyncMock()) as audit,
     ):
-        await dispatcher.execute_scan("scan-worker")
+        execution = await dispatcher.execute_scan("scan-worker")
 
     scan.assert_awaited_once_with(
         scan_type="manual",
@@ -123,6 +123,27 @@ async def test_dispatcher_executes_precreated_scan_id_without_creating_new_recor
         create_record=False,
     )
     audit.assert_awaited_once()
+    assert execution["status"] == "completed"
+    assert execution["scan_result"]["scan_id"] == "scan-worker"
+    assert execution["cleanup_result"] is None
+
+
+async def test_wait_for_completion_returns_the_same_dispatcher_result():
+    """Cron 等待的是 submit 创建的同一个后台 task，而非重新发起扫描。"""
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock()))
+    dispatcher = OrphanScanDispatcher(app)
+    expected = {
+        "scan_id": "scan-wait",
+        "status": "completed",
+        "scan_result": {"scan_id": "scan-wait", "status": "completed"},
+        "cleanup_result": {"quarantined_count": 3, "failed_count": 0},
+    }
+    with patch.object(dispatcher, "execute_scan", AsyncMock(return_value=expected)):
+        assert dispatcher.submit("scan-wait") is True
+        result = await dispatcher.wait_for_completion("scan-wait", timeout_seconds=1)
+
+    assert result == expected
+    await dispatcher.shutdown()
 
 
 async def test_scheduled_cleanup_failure_is_logged_without_rewriting_completed_scan(
@@ -180,7 +201,7 @@ async def test_scheduled_cleanup_failure_is_logged_without_rewriting_completed_s
         ),
         patch("app.services.orphan_scan_job_service.logger.error") as error_log,
     ):
-        await dispatcher.execute_scan("scan-scheduled-cleanup-error")
+        execution = await dispatcher.execute_scan("scan-scheduled-cleanup-error")
 
     async_orphan_db.expire_all()
     stored = await async_orphan_db.get(
@@ -190,6 +211,8 @@ async def test_scheduled_cleanup_failure_is_logged_without_rewriting_completed_s
     assert stored.status == "completed"
     cleanup.assert_awaited_once()
     assert any("定时扫描后自动清理失败" in str(call.args[0]) for call in error_log.call_args_list)
+    assert execution["status"] == "completed"
+    assert execution["cleanup_result"]["rejected"] is True
 
 
 async def test_review_guardrail_only_allows_latest_completed_guarded_scan(

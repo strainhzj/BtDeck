@@ -107,12 +107,12 @@ APScheduler job（注册）
 
 ```
 触发：定时任务 or HTTP /api/v1/orphan-files/scan
-  ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (106 行, 只提交后台任务)
+  ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (242 行, 提交并等待 dispatcher 终态，阶段摘要进入 Cron task_logs)
   └─ [HTTP]  app/api/endpoints/orphan_files.py  POST /scan (L317，handler L318)
-       └─ app/services/orphan_scan_job_service.py (329 行)
+       └─ app/services/orphan_scan_job_service.py (477 行)
             ├─ 持久化 queued scan_id/task_id 并立即返回
             ├─ GET /scans/{scan_id} 只读单行轮询状态
-            └─ OrphanScanDispatcher 串行调度/重启恢复
+            └─ OrphanScanDispatcher 串行调度/重启恢复/定时等待终态
                  └─ app/services/orphan_scanner.py  OrphanScanner (927 行)
                       ├─ orphan_manifest.py 严格映射 + 实时 manifest
                       ├─ 文件系统核查 → 稳定 current detail

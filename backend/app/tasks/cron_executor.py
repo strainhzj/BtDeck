@@ -504,6 +504,60 @@ class CronTaskExecutor:
         from app.tasks.task_profiles import get_profile
 
         profile = get_profile(task_code)
+        execution_events = []
+
+        def record_execution_event(message: str) -> None:
+            execution_events.append(str(message))
+
+        def normalize_internal_result(result: Any) -> Dict[str, Any]:
+            """把内部类的业务终态透传给 Cron 日志/新鲜度字段。"""
+            if not isinstance(result, dict):
+                return {
+                    "success": True,
+                    "log_detail": f"Python内部类执行成功\n结果: {str(result)}",
+                }
+
+            normalized: Dict[str, Any] = dict(result)
+            status = str(result.get("status") or "").lower()
+            success = result.get("success")
+            if not isinstance(success, bool):
+                success = status not in {"error", "failed", "failure", "timeout"}
+            normalized["success"] = success
+            if status == "skipped" or result.get("skipped"):
+                normalized["skipped"] = True
+                normalized.setdefault("outcome", OUTCOME_SKIPPED)
+                normalized.setdefault("skip_reason", SKIP_REASON_OUTSIDE_BUDGET)
+            elif status in {"error", "failed", "failure", "timeout"}:
+                normalized.setdefault("outcome", OUTCOME_FAILED)
+            elif status == "partial":
+                normalized.setdefault("outcome", OUTCOME_PARTIAL)
+            elif status in {"success", "completed", "ok"}:
+                normalized.setdefault("outcome", OUTCOME_SUCCESS)
+
+            phase_lines = result.get("execution_log") or execution_events
+            detail = result.get("log_detail")
+            if not detail and phase_lines:
+                detail = "\n".join(str(line) for line in phase_lines)
+            prefix = "Python内部类执行成功" if success else "Python内部类执行失败"
+            rendered_detail = f"{prefix}\n{detail or ''}\n结果: {str(result)}"
+            # TaskLogs.log_detail 是 2000 字段；保留阶段摘要和结果前缀，避免
+            # hardlink_notes/异常上下文过大时把最终 Cron 日志写入失败。
+            normalized["log_detail"] = rendered_detail[:2000]
+            return normalized
+
+        def attach_execution_context(task_instance: Any) -> None:
+            setter = getattr(task_instance, "set_execution_context", None)
+            if not callable(setter):
+                return
+            try:
+                setter(
+                    execution_logger=record_execution_event,
+                    timeout_seconds=task.get("timeout_seconds"),
+                )
+            except TypeError:
+                # 用户自定义内部类可能只接受无参上下文；上下文注入失败不能
+                # 改变其原有执行契约，终态仍由 normalize_internal_result 收敛。
+                logger.debug("内部类不接受标准 Cron 执行上下文", exc_info=True)
 
         try:
             # 检查是否是类路径格式（包含点号）
@@ -526,6 +580,8 @@ class CronTaskExecutor:
                         task_instance = task_class()
                         if hasattr(task_instance, "set_app"):
                             task_instance.set_app(self.app)
+
+                    attach_execution_context(task_instance)
 
                     # 检查是否有execute方法
                     if hasattr(task_instance, "execute"):
@@ -563,20 +619,14 @@ class CronTaskExecutor:
                                     result = await execute_method(app=self.app)
                                 else:
                                     result = execute_method(app=self.app)
-                                return {
-                                    "success": True,
-                                    "log_detail": f"Python内部类执行成功\n结果: {str(result)}",
-                                }
+                                return normalize_internal_result(result)
                         else:
                             # 轻量任务：不进入资源背压，走原路径
                             if asyncio.iscoroutinefunction(execute_method):
                                 result = await execute_method(app=self.app)
                             else:
                                 result = execute_method(app=self.app)
-                            return {
-                                "success": True,
-                                "log_detail": f"Python内部类执行成功\n结果: {str(result)}",
-                            }
+                            return normalize_internal_result(result)
                     else:
                         return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}
 

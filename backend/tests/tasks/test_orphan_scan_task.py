@@ -114,7 +114,7 @@ class TestOrphanScanTaskStructure:
 
     @pytest.mark.asyncio
     async def test_execute_calls_scanner_when_enabled(self):
-        """ORPHAN_SCAN_ENABLED=True 时只提交后台任务并立即返回。"""
+        """ORPHAN_SCAN_ENABLED=True 时等待后台扫描与清理终态。"""
         task = OrphanScanTask()
         submit_scan = AsyncMock(
             return_value={
@@ -125,6 +125,14 @@ class TestOrphanScanTaskStructure:
             }
         )
         dispatcher = MagicMock()
+        dispatcher.wait_for_completion = AsyncMock(
+            return_value={
+                "scan_id": "scan_task_test",
+                "status": "completed",
+                "scan_result": {"scan_id": "scan_task_test", "status": "completed"},
+                "cleanup_result": {"quarantined_count": 0, "failed_count": 0},
+            }
+        )
 
         with (
             patch(
@@ -140,7 +148,55 @@ class TestOrphanScanTaskStructure:
 
             submit_scan.assert_awaited_once_with(scan_type="scheduled", operator="system")
             dispatcher.submit.assert_called_once_with("scan_task_test")
+            dispatcher.wait_for_completion.assert_awaited_once_with("scan_task_test")
             assert result["status"] == "success"
+
+    @pytest.mark.asyncio
+    async def test_guardrail_rejection_is_skipped_and_logged(self):
+        """超量门禁拒绝自动清理时任务成功收口为 skipped，绝不报告清理成功。"""
+        task = OrphanScanTask()
+        dispatcher = MagicMock()
+        dispatcher.wait_for_completion = AsyncMock(
+            return_value={
+                "scan_id": "scan_guarded",
+                "status": "completed",
+                "scan_result": {
+                    "scan_id": "scan_guarded",
+                    "status": "completed",
+                    "total_orphans": 120100,
+                },
+                "cleanup_result": {
+                    "rejected": True,
+                    "error": "最新扫描超过护栏阈值，等待路径映射与样本复核",
+                    "quarantined_count": 0,
+                    "failed_count": 0,
+                },
+            }
+        )
+        with (
+            patch(
+                "app.services.orphan_scan_job_service.OrphanScanJobService.submit_scan",
+                AsyncMock(
+                    return_value={
+                        "scan_id": "scan_guarded",
+                        "task_id": "scan_guarded",
+                        "status": "queued",
+                        "accepted": True,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.orphan_scan_job_service.get_orphan_scan_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            result = await task.execute(app=MagicMock())
+
+        assert result["status"] == "skipped"
+        assert result["outcome"] == "skipped"
+        assert result["cleanup_result"]["quarantined_count"] == 0
+        assert "复核" in result["message"]
+        assert "清理终态" in result["log_detail"]
 
 
 # ==================== CleanupTaskExecutor bug 修复验证 ====================

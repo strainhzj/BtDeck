@@ -159,6 +159,10 @@ class OrphanScanDispatcher:
         self.app = app
         self.session_factory = session_factory
         self._tasks: Dict[str, asyncio.Task[Any]] = {}
+        # 保留最近一次后台执行的完整结果，供定时任务等待同一个 dispatcher
+        # 任务并把扫描/自动清理终态写回 Cron task_logs。API 调用方仍只拿到
+        # queued，不读取这里的结果。
+        self._results: Dict[str, Dict[str, Any]] = {}
         self._serial_lock = asyncio.Lock()
         self._closed = False
 
@@ -180,15 +184,38 @@ class OrphanScanDispatcher:
     def _task_done(self, scan_id: str, task: asyncio.Task[Any]) -> None:
         self._tasks.pop(scan_id, None)
         if task.cancelled():
+            self._results[scan_id] = {
+                "scan_id": scan_id,
+                "status": "cancelled",
+                "error": "孤儿扫描后台任务被取消",
+            }
             return
         error = task.exception()
         if error is not None:
+            self._results[scan_id] = {
+                "scan_id": scan_id,
+                "status": "failed",
+                "error": str(error),
+            }
             logger.error(
                 "[孤儿扫描任务] 未捕获异常 scan_id=%s: %s",
                 scan_id,
                 error,
                 exc_info=(type(error), error, error.__traceback__),
             )
+            return
+        result = task.result()
+        self._results[scan_id] = result if isinstance(result, dict) else {
+            "scan_id": scan_id,
+            "status": "completed",
+            "scan_result": result,
+        }
+
+        # 内存结果只用于当前 Cron 等待者；限制缓存规模，避免高频手动扫描
+        # 长期持有结果摘要。正在等待的调用已经持有 Task，不依赖被淘汰的项。
+        if len(self._results) > 128:
+            oldest_scan_id = next(iter(self._results))
+            self._results.pop(oldest_scan_id, None)
 
     async def recover_pending_scans(self) -> int:
         async with self.session_factory() as db:
@@ -197,7 +224,91 @@ class OrphanScanDispatcher:
             self.submit(scan_id)
         return len(scan_ids)
 
-    async def execute_scan(self, scan_id: str) -> None:
+    async def wait_for_completion(
+        self,
+        scan_id: str,
+        *,
+        timeout_seconds: Optional[float] = None,
+        poll_interval_seconds: float = 0.5,
+    ) -> Dict[str, Any]:
+        """等待指定 dispatcher 任务完成（仅供 Cron 入口使用）。
+
+        手动/API 入口不调用此方法，仍由 ``submit`` 后立即返回 queued。若当前
+        进程没有对应 Task，则回退到持久化扫描状态轮询；这种情况通常发生在
+        进程重启或另一 worker 已接管任务，无法伪造自动清理结果，因此返回
+        ``cleanup_result=None``，由调用方记录为结果不可确认而不是提前成功。
+        """
+        loop = asyncio.get_running_loop()
+        deadline = None if timeout_seconds is None else loop.time() + max(float(timeout_seconds), 0.0)
+
+        while True:
+            task = self._tasks.get(scan_id)
+            if task is not None:
+                try:
+                    result = await asyncio.wait_for(
+                        asyncio.shield(task),
+                        timeout=None if deadline is None else max(deadline - loop.time(), 0.0),
+                    )
+                    if isinstance(result, dict):
+                        return result
+                    return self._results.get(
+                        scan_id,
+                        {"scan_id": scan_id, "status": "completed", "scan_result": result},
+                    )
+                except asyncio.TimeoutError:
+                    return {
+                        "scan_id": scan_id,
+                        "status": "timeout",
+                        "error": "等待孤儿扫描及自动清理终态超时",
+                        "scan_result": await self._get_persisted_scan(scan_id),
+                    }
+                except Exception as exc:
+                    return self._results.get(
+                        scan_id,
+                        {
+                            "scan_id": scan_id,
+                            "status": "failed",
+                            "error": str(exc),
+                        },
+                    )
+
+            cached = self._results.get(scan_id)
+            if cached is not None:
+                return cached
+
+            persisted = await self._get_persisted_scan(scan_id)
+            if persisted is None:
+                return {
+                    "scan_id": scan_id,
+                    "status": "failed",
+                    "error": "未找到孤儿扫描批次",
+                }
+            if persisted.get("status") in {"completed", "failed"}:
+                return {
+                    "scan_id": scan_id,
+                    "status": persisted.get("status"),
+                    "scan_result": persisted,
+                    "cleanup_result": None,
+                    "execution_log": ["未在当前进程找到 dispatcher，已从持久化状态确认扫描终态"],
+                }
+
+            if deadline is not None and loop.time() >= deadline:
+                return {
+                    "scan_id": scan_id,
+                    "status": "timeout",
+                    "error": "等待孤儿扫描及自动清理终态超时",
+                    "scan_result": persisted,
+                }
+            sleep_seconds = max(float(poll_interval_seconds), 0.05)
+            if deadline is not None:
+                sleep_seconds = min(sleep_seconds, max(deadline - loop.time(), 0.0))
+            await asyncio.sleep(sleep_seconds)
+
+    async def _get_persisted_scan(self, scan_id: str) -> Optional[Dict[str, Any]]:
+        async with self.session_factory() as db:
+            return await OrphanScanJobService(db).get_scan(scan_id)
+
+    async def execute_scan(self, scan_id: str) -> Dict[str, Any]:
         from app.services.orphan_scanner import OrphanScanner
 
         async with self._serial_lock:
@@ -206,12 +317,25 @@ class OrphanScanDispatcher:
             except RuntimeError:
                 # _wait_for_store 已把持久化任务标记为 failed；让后台任务正常
                 # 收口，避免 done callback 再记录一条“未捕获异常”噪音。
-                return
+                return {
+                    "scan_id": scan_id,
+                    "status": "failed",
+                    "scan_result": await self._get_persisted_scan(scan_id),
+                    "error": "下载器共享连接缓存尚未初始化",
+                    "execution_log": ["等待下载器共享连接缓存超时，扫描未执行"],
+                }
             async with self.session_factory() as db:
                 record_result = await db.execute(select(OrphanScanResult).where(OrphanScanResult.scan_id == scan_id))
                 record = record_result.scalar_one_or_none()
                 if record is None or record.status != "queued":
-                    return
+                    persisted = record.to_dict() if record is not None else None
+                    return {
+                        "scan_id": scan_id,
+                        "status": "skipped" if record is not None else "failed",
+                        "scan_result": persisted,
+                        "error": "扫描批次不处于 queued 状态，未重复执行" if record is not None else "未找到扫描批次",
+                        "execution_log": ["dispatcher 未重复领取非 queued 批次"],
+                    }
                 scan_type = str(record.scan_type)
                 operator = str(record.operator or "system")
 
@@ -240,25 +364,49 @@ class OrphanScanDispatcher:
 
             await self._audit_result(result, scan_type=scan_type, operator=operator)
 
+            cleanup_result: Optional[Dict[str, Any]] = None
+            execution_log = [f"扫描阶段结束 status={result.get('status')}"]
             # 定时扫描成功后才进入自动清理；超护栏批次被共用门禁明确拒绝。
             if scan_type == "scheduled" and result.get("status") == "completed":
+                execution_log.append("进入定时自动清理阶段（沿用扫描 scan_id 门禁）")
                 try:
                     from app.services.orphan_file_service import OrphanFileService
 
                     async with self.session_factory() as db:
-                        await OrphanFileService(db).auto_cleanup_expired(
+                        cleanup_result = await OrphanFileService(db).auto_cleanup_expired(
                             days_threshold=settings.ORPHAN_AUTO_CLEANUP_DAYS,
                             operator="system",
                             scan_id=scan_id,
                             store=getattr(getattr(self.app, "state", None), "store", None),
                         )
+                    execution_log.append(
+                        "自动清理阶段结束 "
+                        f"rejected={bool(cleanup_result.get('rejected'))} "
+                        f"quarantined={cleanup_result.get('quarantined_count', 0)} "
+                        f"failed={cleanup_result.get('failed_count', 0)}"
+                    )
                 except Exception as exc:
+                    cleanup_result = {
+                        "quarantined_count": 0,
+                        "failed_count": 0,
+                        "rejected": True,
+                        "error": str(exc),
+                    }
+                    execution_log.append(f"自动清理阶段异常：{exc}")
                     logger.error(
                         "[孤儿扫描任务] 定时扫描后自动清理失败 scan_id=%s: %s",
                         scan_id,
                         exc,
                         exc_info=True,
                     )
+
+            return {
+                "scan_id": scan_id,
+                "status": result.get("status"),
+                "scan_result": result,
+                "cleanup_result": cleanup_result,
+                "execution_log": execution_log,
+            }
 
     async def _wait_for_store(self, scan_id: str, timeout_seconds: float = 60.0) -> None:
         """下载器缓存可能仍在 lifespan 后台初始化；保持 queued 等待而非误报失败。"""

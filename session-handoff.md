@@ -1,5 +1,18 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-14 继续交接：孤儿扫描定时入口已回接 Cron
+
+### 当前结果
+
+- 修复 `OrphanScanTask` 只提交 queued 就返回 success 的回归：定时入口提交后等待同一 `OrphanScanDispatcher` 的扫描+自动清理终态；扫描失败/超时、部分清理失败和超量门禁拒绝均不再伪造 success。
+- dispatcher 返回 `scan_result`、`cleanup_result` 和阶段摘要；Cron 内部类执行器透传业务 outcome，并把阶段摘要、scan_id 和终态写入现有 `task_logs`，没有新增独立孤儿日志体系。
+- HTTP/手动扫描仍立即返回 `scan_id/task_id/status=queued`，页面轮询接口与 120100 条安全门禁没有改变；路径映射与孤儿样本复核前未执行清理。
+
+### 验证与后续
+
+- 定向回归 `39 passed`，`backend/tests/tasks` `330 passed`，目标 Python 文件编译通过。
+- 本轮源码、测试、路线图和项目记录尚未提交/推送；提交前需执行 Black/Flake8/`git diff --check`，确认只纳入本轮跟踪文件，保留工作区既有未跟踪目录不动。
+
 ## 2026-08-14 交接：孤儿迁移中断恢复与大库回填修复
 
 ### 当前结果

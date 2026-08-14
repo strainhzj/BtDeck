@@ -194,3 +194,59 @@ class TestLightTaskBypass:
         execute_mock.assert_awaited_once()
         # admission_controller.task_scope 不应被进入
         scope_mock.assert_not_called()
+
+
+class TestInternalClassResultPropagation:
+    """内部类业务终态必须进入 Cron task_logs，而不是统一伪造 success。"""
+
+    async def test_failed_business_result_is_not_reported_as_cron_success(self, monkeypatch):
+        execute_mock = AsyncMock(
+            return_value={
+                "status": "error",
+                "message": "扫描未完成",
+                "execution_log": ["扫描已提交", "扫描终态 status=failed"],
+            }
+        )
+        _inject_fake_task_class(monkeypatch, "fake_module_orphan_result", "Task", execute_mock)
+
+        executor = _make_executor_with_app()
+        result = await executor._run_python_internal_class(
+            {
+                "task_id": 5,
+                "task_code": "some_random_light_task_code",
+                "task_type": 4,
+                "executor": "fake_module_orphan_result.Task",
+            }
+        )
+
+        assert result["success"] is False
+        assert result["outcome"] == "failed"
+        assert "扫描终态 status=failed" in result["log_detail"]
+
+    async def test_execution_context_phase_is_included_in_task_log_detail(self, monkeypatch):
+        class PhaseTask:
+            def set_execution_context(self, *, execution_logger=None, timeout_seconds=None):
+                self.execution_logger = execution_logger
+
+            async def execute(self, **kwargs):
+                self.execution_logger("扫描已提交")
+                self.execution_logger("扫描终态 status=completed")
+                return {"status": "success", "message": "扫描与自动清理已完成"}
+
+        fake_module = types.ModuleType("fake_module_phase")
+        fake_module.PhaseTask = PhaseTask
+        monkeypatch.setitem(sys.modules, "fake_module_phase", fake_module)
+
+        executor = _make_executor_with_app()
+        result = await executor._run_python_internal_class(
+            {
+                "task_id": 6,
+                "task_code": "some_random_light_task_code",
+                "task_type": 4,
+                "executor": "fake_module_phase.PhaseTask",
+            }
+        )
+
+        assert result["success"] is True
+        assert "扫描已提交" in result["log_detail"]
+        assert "扫描终态 status=completed" in result["log_detail"]

@@ -5,12 +5,11 @@ H 组：孤儿文件任务与 API 契约（v1.0.6+ 语义重做）
 覆盖：
 - 只有 completed + scan_id 才能进入生命周期对账和自动清理
 - 自动清理必须接收本次 scan ID
-- 定时入口只报告持久化后台任务的提交结果，不在请求链路同步扫描/清理
+- 定时入口等待同一持久化后台任务的扫描与清理终态，Cron 日志不提前记 success
 - preview 与 cleanup 使用相同新鲜度规则
 - stale ID 返回明确拒绝原因
 - API 响应继续遵循 CommonResponse 和 list/total/pageSize
 
-本阶段因任务/服务重构尚未实现，全部应失败。
 """
 
 from datetime import datetime, timedelta
@@ -78,6 +77,14 @@ class TestOrphanTaskLifecycle:
             }
         )
         dispatcher = MagicMock()
+        dispatcher.wait_for_completion = AsyncMock(
+            return_value={
+                "scan_id": "scan_fresh",
+                "status": "completed",
+                "scan_result": {"scan_id": "scan_fresh", "status": "completed", "total_orphans": 2},
+                "cleanup_result": {"quarantined_count": 1, "failed_count": 0},
+            }
+        )
         with (
             patch(
                 "app.services.orphan_scan_job_service.OrphanScanJobService.submit_scan",
@@ -92,14 +99,25 @@ class TestOrphanTaskLifecycle:
 
         dispatcher.submit.assert_called_once_with("scan_fresh")
         assert result["scan_result"]["scan_id"] == "scan_fresh"
+        assert result["cleanup_result"]["quarantined_count"] == 1
+        assert result["status"] == "success"
+        dispatcher.wait_for_completion.assert_awaited_once_with("scan_fresh")
 
-    async def test_scheduled_entry_does_not_run_scan_or_cleanup_inline(self, fake_app):
-        """定时入口仅提交后台任务，不应在调度请求中同步扫描或清理。"""
+    async def test_scheduled_entry_waits_for_dispatcher_terminal_without_inline_scan(self, fake_app):
+        """定时入口等待 dispatcher 终态，但不绕过后台扫描器同步执行。"""
         from app.services.orphan_scanner import OrphanScanner
         from app.tasks.scheduler.orphan_scan_task import OrphanScanTask
 
         task = OrphanScanTask()
         dispatcher = MagicMock()
+        dispatcher.wait_for_completion = AsyncMock(
+            return_value={
+                "scan_id": "scan_queued",
+                "status": "completed",
+                "scan_result": {"scan_id": "scan_queued", "status": "completed"},
+                "cleanup_result": {"quarantined_count": 0, "failed_count": 0},
+            }
+        )
         with (
             patch(
                 "app.services.orphan_scan_job_service.OrphanScanJobService.submit_scan",
@@ -126,9 +144,10 @@ class TestOrphanTaskLifecycle:
             result = await task.execute(app=fake_app)
 
         assert result["status"] == "success"
-        assert result["scan_result"]["status"] == "queued"
-        assert "后台任务已提交" in result["message"]
+        assert result["scan_result"]["status"] == "completed"
+        assert "扫描与自动清理已完成" in result["message"]
         dispatcher.submit.assert_called_once_with("scan_queued")
+        dispatcher.wait_for_completion.assert_awaited_once_with("scan_queued")
         scan.assert_not_awaited()
         cleanup.assert_not_awaited()
 
