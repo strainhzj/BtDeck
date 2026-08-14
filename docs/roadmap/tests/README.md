@@ -1,6 +1,6 @@
 # tests — 测试
 
-> 后端 pytest（147 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（43 个 spec）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
+> 后端 pytest（147 个 test_*.py，按子目录组织；另有 conftest.py/__init__.py 等支持文件）+ 前端 Jest（44 个 spec）。测试覆盖矩阵见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)。
 > 定位方式：`Grep -i <功能词> docs/roadmap/tests/README.md`，命中行即含测试入口 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -22,7 +22,7 @@
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
-| 前端 jest 测试 jest | `frontend/tests/unit/` | 32 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖） |
+| 前端 jest 测试 jest | `frontend/tests/unit/` | 33 个 Jest 单元测试（同内容排查由两视图组件及跨视图状态用例覆盖；TrackerDetailCard 运行时契约单独覆盖） |
 | 组件内嵌测试 component-test | `frontend/src/components/torrents/__tests__/` + `components/common/__tests__/` | 搜索/多选/已保存高级搜索组件单测（7 spec 共 2263 行）+ LucideIcon.spec.ts（185 行） |
 
 ## backend/tests/（147 个 test_*.py + 支持文件）
@@ -70,7 +70,8 @@ cd backend && pytest tests/api/               # API 层（48 个 test_*.py）
 - `deployment-recovery.spec.ts`：覆盖部署后 JS/CSS chunk 错误识别、一次恢复、防刷新循环、历史 Workbox 清退和 nginx 缓存契约。
 - `file-management-contract.spec.ts`：覆盖备份列表当前 nickname、单次列表加载与 management-page 筛选区契约。
 - `torrent-error-reason-ui.spec.ts`：覆盖两种种子视图名称 tooltip 与 Tracker 卡片错误原因展示。
-- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖同内容快捷入口在当前表格发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；`torrent-view-switcher.spec.ts` 守卫跨视图状态。
+- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖 Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue`，并锁定共享组件的列结构、状态语义和 `_tracker-table.scss` 视觉样式；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
+- `tracker-detail-card.spec.ts`：运行时验证列表/传统视图共用的 TrackerDetailCard 五列结构、snake/camel 字段兼容、错误提示、中性状态、单条汇报事件和 loading 状态。
 
 ### 组件内嵌测试
 

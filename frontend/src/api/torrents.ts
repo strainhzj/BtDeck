@@ -189,9 +189,11 @@ export interface TorrentListParams {
   tags_like?: string
   category_like?: string
   tracker_like?: string
+  tracker_domain?: string | string[]  // Tracker主域名筛选，支持单个或多选
   status?: string | string[]  // 支持单个状态或状态数组
   active_only?: boolean  // 仅显示活动种子（实时速度>0，后端按活动集合缓存过滤）
   same_content_only?: boolean  // 仅显示同名、同大小且不同 InfoHash 的种子
+  single_error_only?: boolean  // 仅显示错误且全局同内容唯一的种子
   skip?: number
   limit?: number
   sort_by?: string
@@ -214,6 +216,16 @@ export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<
     method: 'get',
     params: params
   }) as unknown as Promise<ApiResponse<TorrentListResponseData>>
+}
+
+/**
+ * 获取已由 Tracker 同步任务采集到的 Tracker 主域名列表
+ */
+export function getTrackerDomains(): Promise<ApiResponse<string[]>> {
+  return request({
+    url: '/torrents/tracker-domains',
+    method: 'get'
+  }) as unknown as Promise<ApiResponse<string[]>>
 }
 
 /**

@@ -38,9 +38,9 @@
 | 标签管理 tag | `tag_management.py` | 标签管理：标签 CRUD/种子标签分配/批量操作 |
 | 任务日志 task-log | `tasks.py` | 任务日志（`/logs`、`/statistics`） |
 | 种子备份 torrent-backup | `torrent_backup.py` | 种子文件备份：备份/还原/列表/管理；`get_backup_downloader_nicknames` L82 对当前页下载器做单次批量查询，列表直接返回当前 nickname |
-| 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；`get_torrents()` L596 新增 `same_content_only` L621 并委托列表共享查询；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
+| 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；`get_torrents()` L597 支持 `tracker_domain` L613 和 `single_error_only` L630，并委托列表共享查询；新增 `GET /tracker-domains` 返回定时 Tracker 同步已采集的主机域名；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
 | 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计 |
-| 种子工具 torrent-helper | `torrent_helpers.py` | `get_torrent_infos()` L46 复用普通筛选/排序/分页；`same_content_only` L241 从已过滤查询聚合同名同大小且不同规范化 Hash 的候选键，L285 以复合主键稳定分页，关联数据只装配当前页；列表与计数排除活动删除任务中的种子 |
+| 种子工具 torrent-helper | `torrent_helpers.py` | `get_torrent_infos()` L47 复用普通筛选/排序/分页；`tracker_domain` L178 用 TrackerInfo 的 URL hostname/host 精确筛选；`same_content_only` L282 从已过滤查询聚合同名同大小且不同规范化 Hash；`single_error_only` L311 使用全局可见任务的同名同大小唯一性，忽略当前 Tracker/状态筛选且不按 Tracker 服务数量判断；关联数据只装配当前页，列表与计数排除活动删除任务中的种子 |
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存） |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |

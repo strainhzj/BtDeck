@@ -1,0 +1,130 @@
+import Vue from 'vue'
+import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
+
+import type { TrackerInfo } from '@/api/torrents'
+import TrackerDetailCard from '@/views/torrents/components/TrackerDetailCard.vue'
+
+type TrackerRow = TrackerInfo & { reannouncing?: boolean }
+
+const localVue = createLocalVue()
+
+const AlertStub = localVue.extend({
+  name: 'ElAlertStub',
+  props: {
+    title: String,
+    description: String
+  },
+  template: `
+    <div class="el-alert-stub">
+      <span class="alert-title">{{ title }}</span>
+      <span class="alert-description">{{ description }}</span>
+    </div>
+  `
+})
+
+const ButtonStub = localVue.extend({
+  name: 'ElButtonStub',
+  inheritAttrs: false,
+  props: {
+    loading: Boolean
+  },
+  template: '<button class="el-button-stub" v-bind="$attrs" :disabled="loading" v-on="$listeners"><slot /></button>'
+})
+
+function mountCard(trackerInfo: TrackerRow[], errorReason = ''): Wrapper<Vue> {
+  return shallowMount(TrackerDetailCard, {
+    localVue,
+    propsData: {
+      trackerInfo,
+      errorReason
+    },
+    stubs: {
+      'el-alert': AlertStub,
+      'el-button': ButtonStub
+    }
+  })
+}
+
+describe('TrackerDetailCard shared view contract', () => {
+  let wrapper: Wrapper<Vue>
+
+  afterEach(() => {
+    wrapper?.destroy()
+  })
+
+  it('统一渲染五列 Tracker 表格、错误提示和 snake/camel 字段', () => {
+    const trackerInfo: TrackerRow[] = [
+      {
+        tracker_name: 'Tracker A',
+        tracker_url: 'https://tracker-a.example/announce',
+        last_announce_succeeded: '工作中',
+        last_announce_msg: 'announce ok',
+        last_scrape_succeeded: '工作失败'
+      },
+      {
+        trackerName: 'Tracker B',
+        trackerUrl: 'https://tracker-b.example/announce',
+        lastAnnounceSucceeded: 'success',
+        lastAnnounceMsg: 'camel announce ok',
+        lastScrapeSucceeded: '未联系'
+      }
+    ]
+    wrapper = mountCard(trackerInfo, '连接被远端拒绝')
+
+    expect(wrapper.findAll('thead th').wrappers.map(header => header.text().trim())).toEqual([
+      'Tracker名称',
+      'Announce',
+      'Announce信息',
+      'Scrape',
+      '操作'
+    ])
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+
+    const firstRow = wrapper.findAll('tbody tr').at(0)
+    expect(firstRow.find('td').text()).toContain('Tracker A')
+    expect(firstRow.find('.tracker-url-mini').text()).toBe('https://tracker-a.example/announce')
+    expect(firstRow.find('.tracker-status-working').text()).toContain('✓ 工作')
+    expect(firstRow.find('.tracker-status-error').text()).toContain('✗ 工作失败')
+    expect(firstRow.findAll('td').at(2).text()).toBe('announce ok')
+
+    const secondRow = wrapper.findAll('tbody tr').at(1)
+    expect(secondRow.find('.tracker-url-mini').text()).toBe('https://tracker-b.example/announce')
+    expect(secondRow.find('.tracker-status-working').exists()).toBe(true)
+    expect(secondRow.find('.tracker-status-neutral').exists()).toBe(true)
+    expect(secondRow.findAll('td').at(2).text()).toBe('camel announce ok')
+
+    expect(wrapper.find('.alert-title').text()).toBe('种子错误原因')
+    expect(wrapper.find('.alert-description').text()).toBe('连接被远端拒绝')
+  })
+
+  it('汇报按钮透传当前 Tracker 和行号，并保留 loading 状态', async() => {
+    const trackerInfo: TrackerRow[] = [
+      { trackerName: '可汇报', reannouncing: false },
+      { trackerName: '汇报中', reannouncing: true }
+    ]
+    wrapper = mountCard(trackerInfo)
+    const buttons = wrapper.findAll('.el-button-stub')
+
+    expect(buttons).toHaveLength(2)
+    expect(buttons.at(1).attributes('disabled')).toBe('disabled')
+
+    await buttons.at(0).trigger('click')
+
+    expect(wrapper.emitted('reannounce')).toEqual([[trackerInfo[0], 0]])
+  })
+
+  it('中性 Tracker 状态不被误标为错误，且无错误原因时不渲染告警', () => {
+    wrapper = mountCard([
+      {
+        trackerName: '未联系 Tracker',
+        lastAnnounceSucceeded: '未联系',
+        lastScrapeSucceeded: '发送中'
+      }
+    ])
+
+    expect(wrapper.find('.torrent-error-alert').exists()).toBe(false)
+    expect(wrapper.findAll('.tracker-status-neutral')).toHaveLength(2)
+    expect(wrapper.find('tbody tr').text()).toContain('✗ 未联系')
+    expect(wrapper.find('tbody tr').text()).toContain('✗ 发送中')
+  })
+})

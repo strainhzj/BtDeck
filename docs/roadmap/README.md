@@ -27,7 +27,7 @@ BtDeck/
 │   ├── components-layout/  通用组件（LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 145 个 test_*.py + frontend Jest 43 个 spec）
+├── tests/            ← 测试（backend pytest 145 个 test_*.py + frontend Jest 44 个 spec）
 └── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
@@ -38,7 +38,8 @@ BtDeck/
 | 功能域（含检索词） | 前端入口 | 后端入口 |
 |------|---------|---------|
 | 孤儿文件管理 orphan | `views/orphan-files/index.vue`、`api/orphan-files.ts`（后台扫描轮询；文件夹展开后懒加载/独立分页；仅可见文件实时统计硬链接；超量批次显示可关闭提醒） | `api/endpoints/orphan_files.py`；`services/orphan_scan_job_service.py` / `orphan_file_service.py` / `orphan_scanner.py` / `orphan_lifecycle_service.py` / `orphan_quarantine.py` / `orphan_manifest.py` / `orphan_lease.py` / `orphan_notification.py` / `orphan_purge_job_service.py`（持久化后台 scan_id、稳定明细复用、分批生命周期事务、超量提醒字段与通用实时清理安全校验）；`models/orphan_file.py`；`tasks/scheduler/orphan_*_task.py` |
-| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue）、`api/torrents.ts` | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；Transmission 同步会持久化/清除错误原因，并把 Tracker announce/scrape 统计归一为 0–4 状态码，避免“已联系失败”误显示为“未联系”；列表名称 tooltip 与 Tracker 卡片展示 `errorReason`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
+| 种子管理 torrent | `views/torrents/`（index.vue、TraditionalView.vue、`components/TrackerDetailCard.vue`）、`api/torrents.ts`；两视图按已同步 Tracker 主机域名筛选，快捷操作排查错误且全局同名同大小内容唯一的单种；Tracker 详情内容由共享组件统一，表格视觉由 `_tracker-table.scss` 统一 | `api/endpoints/torrent_crud.py` / `torrents.py` / `torrents_async.py` / `torrent_deletion.py` / `torrent_status.py` / `torrent_location.py` / `torrent_speed.py` / `torrent_sync.py`；`getList` 支持 `tracker_domain` / `single_error_only`，域名来自 TrackerInfo 定时同步数据；Transmission 同步会持久化/清除错误原因，并把 Tracker announce/scrape 统计归一为 0–4 状态码，避免“已联系失败”误显示为“未联系”；列表名称 tooltip 与 Tracker 卡片展示 `errorReason`；同步统一走缓存下载器客户端、短事务与可续跑 cursor；`services/deletion_task_manager.py`（活动删除 ID 占用）/ `torrent_crud_service.py` / `torrent_batch_add_service.py` / `torrent_deletion_service.py` / `torrent_location_service.py` |
+| 错误单种排查 single-error torrent | `views/torrents/index.vue` / `TraditionalView.vue`（快捷操作、Tracker 主机域名多选和可退出排查提示） | `torrent_crud.py:get_torrents` + `torrent_helpers.py:get_torrent_infos`（`single_error_only`：错误且全局同名同大小内容唯一；同一任务的多个 Tracker 服务不影响唯一性） |
 | 下载器管理 downloader | `views/downloader/`、`api/downloader.ts` | `api/endpoints/downloader*.py`；`services/downloader_adapters/` / `downloader_api_runtime.py` / `downloader_capabilities_manager.py` / `downloader_settings_manager.py` / `path_maintenance_service.py`；`models/downloader*.py` |
 | Tracker 管理 tracker | `views/tracker/`、`api/tracker.ts` | `api/endpoints/tracker*.py`；`services/reannounce_service.py` |
 | 任务/定时任务 task cron | `views/tasks/index.vue`、`api/tasks.ts`（outcome/stale 展示 helper 由实例方法暴露给模板；查看日志保留可见任务筛选，清空后立即恢复全部日志） | `api/endpoints/tasks.py` / `cron_tasks.py`；`tasks/`（scheduler） |
@@ -78,7 +79,7 @@ BtDeck/
 | ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（145 个 test_*.py，按子目录组织）+ 前端 Jest（43 个 spec） | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（145 个 test_*.py，按子目录组织）+ 前端 Jest（44 个 spec） | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -115,10 +116,10 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索、错误原因及 Tracker 判断修复）/ 2026-08-13（孤儿扫描 12 万级后台化）/ 2026-08-14（大库迁移中断恢复、启动 fail-fast、孤儿文件页面视图模式与嵌套表头修复） |
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索、错误原因及 Tracker 判断修复）/ 2026-08-13（孤儿扫描 12 万级后台化）/ 2026-08-14（大库迁移中断恢复、启动 fail-fast、孤儿文件页面视图模式与嵌套表头修复、Tracker 主域名筛选与错误单种排查及卡片样式统一） |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |
-| 本次新增 | 2026-08-12：种子文件、任务日志、高级搜索、Transmission 错误原因与 Tracker 共享判定策略回归。2026-08-13：同内容排查改为列表分页；孤儿扫描后台化、稳定明细复用、生命周期短事务、文件夹懒加载/可见文件硬链接及 >50000 双复核门禁。2026-08-14：补齐 SQLite batch 中断恢复、canonical_path 索引回填、真实 1.02 GB 旧库升级、迁移失败启动 fail-fast、孤儿文件页面视图模式/嵌套表头回归及模式切换/普通行展开保护；超量扫描改为可关闭提醒并移除复核清理门禁。 |
+| 本次新增 | 2026-08-12：种子文件、任务日志、高级搜索、Transmission 错误原因与 Tracker 共享判定策略回归。2026-08-13：同内容排查改为列表分页；孤儿扫描后台化、稳定明细复用、生命周期短事务、文件夹懒加载/可见文件硬链接及 >50000 双复核门禁。2026-08-14：补齐 SQLite batch 中断恢复、canonical_path 索引回填、真实 1.02 GB 旧库升级、迁移失败启动 fail-fast、孤儿文件页面视图模式/嵌套表头回归及模式切换/普通行展开保护；超量扫描改为可关闭提醒并移除复核清理门禁；Tracker 主域名筛选（实测域名提取低于 1 秒，无需内存缓存）、错误单种全局唯一排查与列表/传统 Tracker 详情内容共享组件及 `_tracker-table.scss` 视觉样式统一；新增 TrackerDetailCard 运行时回归测试。 |

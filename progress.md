@@ -1,5 +1,22 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-14 - Tracker 主域名筛选、错误单种排查与卡片统一
+
+### 需求确认与实现
+
+- 按用户确认，Tracker 筛选使用 `tracker_url` 的主机/域名部分：去除 scheme、端口和路径，复用定时 Tracker 同步已写入的 `TrackerInfo.tracker_url/tracker_host`，未新增数据库字段或迁移。
+- 已测量获取全部域名的真实耗时：30475 条 Tracker 记录提取 90 个域名，SQLAlchemy 查询+解析 5 次为 231.515–262.118ms，低于 1 秒，因此不增加内存持久化缓存。
+- `GET /api/v1/torrents/getList` 新增 `tracker_domain` 和 `single_error_only`：错误单种先判断错误状态，再以全局可见任务的名称+大小是否只有一个任务判定唯一，不按该种子包含多少 Tracker 服务判定。
+- 列表/传统模式均新增 Tracker 主域名多选、错误单种快捷操作和退出提示；列表模式 Tracker 详情卡片统一为传统模式的 Tracker 名称+URL、Announce、Announce 信息、Scrape、操作列，并复用共享状态语义。
+- 用户反馈上一版仍存在视觉差异后，将 Tracker 详情表格重构到 `frontend/src/views/torrents/components/TrackerDetailCard.vue`，列表模式和传统模式都调用同一个组件；字号、间距、状态色、URL 截断和操作列冻结样式由组件统一引用 `frontend/src/styles/_tracker-table.scss`，父页面只保留各自的外层布局容器。
+- 新增 `frontend/tests/unit/tracker-detail-card.spec.ts` 运行时回归，覆盖共享组件的五列结构、snake/camel 字段兼容、错误提示、中性状态、汇报事件和 loading，防止两种视图再次分叉或恢复旧卡片代码。
+
+### 验证
+
+- 后端 `tests/api/test_torrent_list_api.py`：35 passed。
+- 前端目标组件/视图测试：4 suites / 43 passed；`npm run typecheck` 通过；目标 ESLint、生产构建通过；`git diff --check` 通过（仅报告 Windows 换行转换提示）。
+- 当前未提交、未推送、未部署；工作区原有未跟踪产物保持不动。
+
 ## 2026-08-14 - 超量扫描改为可关闭提醒
 
 ### 需求与调整

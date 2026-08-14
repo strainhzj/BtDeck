@@ -11,6 +11,7 @@ import {
   getActiveTorrents,
   getDownloaderList,
   getDuplicateTorrents,
+  getTrackerDomains,
   getTorrentList,
   addTorrent
 } from '@/api/torrents'
@@ -36,6 +37,7 @@ jest.mock('@/api/torrents', () => ({
   recheckTorrents: jest.fn(),
   reannounceTorrents: jest.fn(),
   getDownloaderList: jest.fn(),
+  getTrackerDomains: jest.fn(),
   getActiveTorrents: jest.fn(),
   advancedSearch: jest.fn(),
   getDuplicateTorrents: jest.fn(),
@@ -80,6 +82,7 @@ const localVue = createLocalVue()
 const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
+const mockGetTrackerDomains = getTrackerDomains as jest.MockedFunction<typeof getTrackerDomains>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockAddTorrent = addTorrent as jest.MockedFunction<typeof addTorrent>
@@ -111,6 +114,7 @@ interface TraditionalViewVm extends Vue {
   tableViewportHeight: number
   showingDuplicates: boolean
   showingSameContent: boolean
+  showingSingleErrors: boolean
   listQuery: {
     name_like: string
     sort_by: string
@@ -118,6 +122,7 @@ interface TraditionalViewVm extends Vue {
     category_like: string
     tags_like: string
     showActiveOnly: boolean
+    tracker_domain: string[]
   }
   currentRow: TorrentRow | null
   activeDetailTab: string
@@ -132,6 +137,7 @@ interface TraditionalViewVm extends Vue {
   handleRowClick(row: TorrentRow): void
   handleQuickActionCommand(command: string): Promise<void>
   exitSameContentInspection(): Promise<void>
+  exitSingleErrorInspection(): Promise<void>
   showAddDialog: boolean
   handleAdd(): Promise<void>
   handlePageSizeSelect(suggestion: PageSizeSuggestion): void
@@ -358,6 +364,12 @@ describe('TraditionalView component regressions', () => {
       code: '200',
       data: []
     })
+    mockGetTrackerDomains.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: []
+    })
     mockGetActiveTorrents.mockResolvedValue({
       status: 'success',
       msg: 'ok',
@@ -538,6 +550,48 @@ describe('TraditionalView component regressions', () => {
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.not.objectContaining({ same_content_only: true })
     )
+  })
+
+  it('支持 Tracker 主域名筛选，并可快捷排查错误单种', async() => {
+    mockGetTrackerDomains.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: ['tracker.example.com', 'mirror.example.net']
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm & {
+      trackerDomainOptions: Array<{ value: string, label: string }>
+    }
+
+    expect(vm.trackerDomainOptions).toEqual([
+      { value: 'tracker.example.com', label: 'tracker.example.com' },
+      { value: 'mirror.example.net', label: 'mirror.example.net' }
+    ])
+
+    vm.listQuery.tracker_domain = ['tracker.example.com', 'mirror.example.net']
+    mockGetTorrentList.mockClear()
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tracker_domain: 'tracker.example.com,mirror.example.net' })
+    )
+
+    await vm.handleQuickActionCommand('inspect-single-errors')
+    await flushLifecycle()
+    expect(vm.showingSingleErrors).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tracker_domain: 'tracker.example.com,mirror.example.net',
+        single_error_only: true
+      })
+    )
+    expect(wrapper.text()).toContain('错误单种排查')
+
+    await vm.exitSingleErrorInspection()
+    expect(vm.showingSingleErrors).toBe(false)
   })
 
   it('删除下拉四个等级项各自渲染正确的 LucideIcon（name + danger）', async() => {
@@ -1239,6 +1293,26 @@ describe('TraditionalView layout contracts', () => {
     resolve(__dirname, '../../src/views/torrents/TraditionalView.vue'),
     'utf8'
   )
+  const listSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/index.vue'),
+    'utf8'
+  )
+  const listThemeSource = readFileSync(
+    resolve(__dirname, '../../src/styles/torrent-theme.scss'),
+    'utf8'
+  )
+  const traditionalThemeSource = readFileSync(
+    resolve(__dirname, '../../src/styles/traditional-view-theme.scss'),
+    'utf8'
+  )
+  const trackerDetailCardSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/components/TrackerDetailCard.vue'),
+    'utf8'
+  )
+  const sharedTrackerTableSource = readFileSync(
+    resolve(__dirname, '../../src/styles/_tracker-table.scss'),
+    'utf8'
+  )
 
   it('元数据面板绝对定位在固定分页栏上方且不占列表布局', () => {
     expect(source).toMatch(/\.table-area\s*\{[\s\S]*?position:\s*relative;[\s\S]*?overflow:\s*hidden;/)
@@ -1260,5 +1334,35 @@ describe('TraditionalView layout contracts', () => {
     expect(source).toMatch(/\.filter-panel,[\s\S]*?\.filter-panel-content\s*\{[\s\S]*?min-height:\s*0;/)
     expect(source).toMatch(/\.filter-panel-content\s*\{[\s\S]*?overscroll-behavior:\s*contain;/)
     expect(source).toContain('scrollbar-gutter: stable;')
+  })
+
+  it('两种视图使用同一个 TrackerDetailCard 组件', () => {
+    for (const viewSource of [source, listSource]) {
+      expect(viewSource).toContain('<TrackerDetailCard')
+      expect(viewSource).toContain("import TrackerDetailCard from './components/TrackerDetailCard.vue'")
+      expect(viewSource).toContain('TrackerDetailCard,')
+      expect(viewSource).toContain(':tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"')
+      expect(viewSource).toContain('@reannounce="handleTrackerReannounce"')
+      expect(viewSource).not.toContain('<table class="tracker-table tracker-table-detail">')
+    }
+    expect(trackerDetailCardSource).toContain('<table class="tracker-table tracker-table-detail">')
+    expect(trackerDetailCardSource).toContain('<th style="width: 80px;">Announce</th>')
+    expect(trackerDetailCardSource).toContain('<th>Announce信息</th>')
+    expect(trackerDetailCardSource).toContain('<th style="width: 80px;">Scrape</th>')
+    expect(trackerDetailCardSource).toContain('trackerAnnounceSuccess(')
+    expect(trackerDetailCardSource).toContain('trackerStatusClass(')
+    expect(listSource).not.toContain('<th>Tracker地址</th>')
+    expect(listSource).not.toContain('<th>Scrape信息</th>')
+  })
+
+  it('共享 TrackerDetailCard 组件引用同一份紧凑视觉样式', () => {
+    expect(sharedTrackerTableSource).toContain('@mixin tracker-table-styles')
+    expect(sharedTrackerTableSource).toContain('font-size: 11px;')
+    expect(sharedTrackerTableSource).toContain('padding: 5px;')
+    expect(trackerDetailCardSource).toContain("@import '@/styles/tracker-table';")
+    expect(trackerDetailCardSource).toContain('@include tracker-table-styles;')
+    expect(listThemeSource).not.toContain("@import './tracker-table';")
+    expect(traditionalThemeSource).not.toContain("@import './tracker-table';")
+    expect(source).not.toContain('@include tracker-table-styles;')
   })
 })

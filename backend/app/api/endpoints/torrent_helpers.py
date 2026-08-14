@@ -8,7 +8,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Sequence, Set, Tuple
 
 import bencodepy
-from sqlalchemy import Column, MetaData, String, Table, and_, or_, asc, desc, func
+from sqlalchemy import Column, MetaData, String, Table, and_, asc, desc, false, func, or_
 from sqlalchemy.orm import Session
 
 from app.torrents.models import (
@@ -20,6 +20,7 @@ from app.torrents.responseVO import TorrentInfoVO
 from app.torrents.trackerVO import TrackerInfoVO
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.torrent_status_mapper import TorrentStatusMapper
+from app.core.reannounce_config_operations import extract_domains_from_trackers
 from transmission_rpc import Client as trClient
 from app.database import AsyncSessionLocal
 from app.services.audit_service import get_audit_service
@@ -63,8 +64,10 @@ def get_torrent_infos(
     sort_by: Optional[str] = None,
     sort_order: Optional[str] = None,
     tracker: Optional[str] = None,
+    tracker_domain: Optional[str] = None,
     active_keys: Optional[Set[Tuple[str, str]]] = None,
     same_content_only: bool = False,
+    single_error_only: bool = False,
 ) -> Dict[str, Any]:
     """通用查询方法，支持多种过滤条件和排序，返回数据总数和列表"""
     # 构建基础查询（排除回收站中的种子：dr=0 且 deleted_at=NULL）
@@ -172,6 +175,44 @@ def get_torrent_infos(
             query = query.filter(TorrentInfo.info_id.in_(info_id_list))
             count_query = count_query.filter(TorrentInfo.info_id.in_(info_id_list))
 
+    if tracker_domain is not None:
+        requested_domains = extract_domains_from_trackers(
+            [value.strip() for value in tracker_domain.split(",") if value.strip()]
+        )
+        if not requested_domains:
+            query = query.filter(false())
+            count_query = count_query.filter(false())
+        else:
+            domain_conditions = []
+            lowered_url = func.lower(TrackerInfo.tracker_url)
+            lowered_host = func.lower(TrackerInfo.tracker_host)
+            for domain in requested_domains:
+                # tracker_host 由同步任务保存为 netloc（可能带端口）；URL 作为
+                # 旧数据/手动写入数据的回退，均只匹配 URL 的主机部分。
+                domain_conditions.append(
+                    or_(
+                        lowered_host == domain,
+                        lowered_host.like(f"{domain}:%"),
+                        lowered_url == domain,
+                        lowered_url.like(f"{domain}/%"),
+                        lowered_url.like(f"{domain}:%"),
+                        lowered_url.like(f"%://{domain}"),
+                        lowered_url.like(f"%://{domain}/%"),
+                        lowered_url.like(f"%://{domain}:%"),
+                    )
+                )
+            tracker_domain_exists = (
+                db.query(TrackerInfo.tracker_id)
+                .filter(
+                    TrackerInfo.torrent_info_id == TorrentInfo.info_id,
+                    TrackerInfo.dr == 0,
+                    or_(*domain_conditions),
+                )
+                .exists()
+            )
+            query = query.filter(tracker_domain_exists)
+            count_query = count_query.filter(tracker_domain_exists)
+
     # 状态筛选：支持多选（逗号分隔），error状态满足 status='error' 或 has_tracker_error=True 之一即可
     if status:
         # 支持多选：逗号分隔的字符串
@@ -267,6 +308,45 @@ def get_torrent_infos(
             query = query.join(same_content_groups, same_content_join)
             count_query = count_query.join(same_content_groups, same_content_join)
 
+        if single_error_only:
+            # 快捷排查只保留错误种子；唯一性基于全局可见任务计算，不能受当前
+            # 下载器、Tracker、状态等筛选条件影响，否则会把同内容的其它任务漏掉。
+            error_filter = or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+            query = query.filter(error_filter)
+            count_query = count_query.filter(error_filter)
+
+            unique_content_valid_row = and_(
+                TorrentInfo.name.isnot(None),
+                func.length(func.trim(TorrentInfo.name)) > 0,
+                TorrentInfo.size.isnot(None),
+                TorrentInfo.size > 0,
+                TorrentInfo.hash.isnot(None),
+                func.length(func.trim(TorrentInfo.hash)) > 0,
+            )
+            unique_content_query = db.query(TorrentInfo).filter(
+                TorrentInfo.dr == 0,
+                TorrentInfo.deleted_at.is_(None),
+                unique_content_valid_row,
+            )
+            unique_deletion_exclusion = build_active_deletion_exclusion(TorrentInfo.info_id)
+            if unique_deletion_exclusion is not None:
+                unique_content_query = unique_content_query.filter(unique_deletion_exclusion)
+            unique_content_groups = (
+                unique_content_query.with_entities(
+                    TorrentInfo.name.label("single_content_name"),
+                    TorrentInfo.size.label("single_content_size"),
+                )
+                .group_by(TorrentInfo.name, TorrentInfo.size)
+                .having(func.count(TorrentInfo.info_id) == 1)
+                .subquery()
+            )
+            unique_content_join = and_(
+                TorrentInfo.name == unique_content_groups.c.single_content_name,
+                TorrentInfo.size == unique_content_groups.c.single_content_size,
+            )
+            query = query.join(unique_content_groups, unique_content_join)
+            count_query = count_query.join(unique_content_groups, unique_content_join)
+
         # 获取总数
         total = count_query.count()
 
@@ -322,7 +402,9 @@ def get_torrent_infos_legacy(
     sort_by: Optional[str] = None,
     sort_order: Optional[str] = None,
     tracker: Optional[str] = None,
+    tracker_domain: Optional[str] = None,
     active_keys: Optional[Set[Tuple[str, str]]] = None,
+    single_error_only: bool = False,
 ) -> List[TorrentInfo]:
     """通用查询方法（旧版本，保持兼容性），支持多种过滤条件和排序"""
     result = get_torrent_infos(
@@ -344,7 +426,9 @@ def get_torrent_infos_legacy(
         sort_by=sort_by,
         sort_order=sort_order,
         tracker=tracker,
+        tracker_domain=tracker_domain,
         active_keys=active_keys,
+        single_error_only=single_error_only,
     )
     return result["data"]
 

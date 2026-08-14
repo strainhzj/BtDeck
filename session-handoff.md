@@ -1,5 +1,19 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-14 交接：Tracker 主域名筛选与错误单种排查
+
+### 当前结果
+
+- 复用定时 Tracker 同步任务已经写入的 `TrackerInfo` 数据，新增主机域名列表接口和种子列表 `tracker_domain` 筛选；主机值按 URL hostname 归一，不把端口/路径带入筛选项。
+- 列表模式、传统模式均支持 Tracker 主域名多选和“错误单种排查”快捷入口。排查只读调用现有列表接口，要求任务处于错误状态且全局可见的同名同大小内容只有一个任务；同一任务有多个 Tracker 服务不会被误判为重复。
+- 列表模式和传统模式现在共用 `views/torrents/components/TrackerDetailCard.vue`，错误提示、5 列表格、状态判断和单条汇报事件不再各自维护；组件内部引用 `_tracker-table.scss` 统一字号、间距、状态色、URL 截断和操作列冻结样式，父页面只保留各自外层布局；跨视图切换会保留错误单种排查模式及查询条件。
+- 新增 `tracker-detail-card.spec.ts` 运行时回归，锁定共享组件的列结构、snake/camel 字段、错误/中性状态、汇报事件和按钮 loading，配合父页面静态契约防止两种模式重新出现不同 Tracker 卡片代码。
+
+### 验证与后续
+
+- 后端列表 API 定向回归 `35 passed`；前端目标 4 个 Jest 套件 `43 passed`；`npm run typecheck`、目标 ESLint、生产构建通过；真实 30475 条 Tracker 数据域名提取 5 次为 `231.515–262.118ms`，低于 1 秒，未引入内存缓存。
+- 已同步 `feature_list.json`、`progress.md` 与三层路线图；本轮未提交、未推送、未部署。工作区原有未跟踪文件未触碰。
+
 ## 2026-08-14 交接：超量扫描改为可关闭提醒
 
 ### 当前结果

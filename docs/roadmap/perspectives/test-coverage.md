@@ -76,11 +76,17 @@
 | `tests/core/test_tracker_status_policy.py` | 105 | `app/core/tracker_status_policy.py`：Working 空消息正常证据、非空消息优先、announce/scrape 双消息、精确/部分关键词匹配、未知保留及错误状态聚合 |
 | `tests/api/test_same_content_inspection_api.py` | 503 | `torrent_crud.py` + `torrent_helpers.py`：同名同大小不同规范化 Hash、非法候选及混合成员边界、组合列表条件先分组、活动删除/活动快照排除、复合主键稳定行级分页、低 SQLite 变量上限大页、仅当前页 Tracker 预取与旧 POST 端点移除 |
 
+### 2026-08-14 Tracker 筛选与错误单种排查回归
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/api/test_torrent_list_api.py` | 829 | `torrent_crud.py` + `torrent_helpers.py`：Tracker 主机域名去端口筛选、同步域名列表排序、错误状态与全局同名同大小唯一性；Tracker 多服务不改变任务唯一性 |
+
 ### 关键源文件测试覆盖抽样
 
 | 源文件 | 测试文件 | 状态 |
 |--------|---------|------|
-| `app/api/endpoints/torrent_crud.py` / `torrent_helpers.py` | `test_torrent_list_api.py` + `test_same_content_inspection_api.py`（503 行，9 用例） | ✅ 普通列表及 `same_content_only` 组合筛选、无效成员排除、活动删除/活动快照、复合主键稳定行级分页、大页绑定安全、当前页关联预取、软删除/回收站排除与 camelCase 响应 |
+| `app/api/endpoints/torrent_crud.py` / `torrent_helpers.py` | `test_torrent_list_api.py` + `test_same_content_inspection_api.py`（829 + 503 行） | ✅ 普通列表及 `same_content_only` 组合筛选、Tracker 主机域名筛选与域名列表、`single_error_only` 全局唯一错误单种、无效成员排除、活动删除/活动快照、复合主键稳定行级分页、大页绑定安全、当前页关联预取、软删除/回收站排除与 camelCase 响应 |
 | `app/api/endpoints/duplicate_torrents.py` | `tests/api/test_duplicate_torrents_api.py`（1439 行，40 用例） | ✅ 默认添加时间倒序、安全列排序、非法排序拒绝、完整重复组筛选、活动快照/空快照、分页与元数据回填 |
 | `app/api/endpoints/torrent_backup.py` | `tests/api/test_torrent_backup_review.py`（188 行） | ✅ 当前 nickname 批量查询、空列表跳过查询与序列化 |
 | `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空、Tracker 状态归一与 camelCase 响应 |
@@ -104,7 +110,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（32 个 spec）
+### `frontend/tests/unit/`（33 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -129,10 +135,11 @@
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
-| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；同内容列表模式在筛选、排序、分页大小、切页、刷新期间保持列表数据源，并在重复查询/高级搜索/模板/显式退出时清理 |
-| `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留同内容排查、重复查询、查询条件、分页和选择状态 |
+| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；Tracker 主域名选项与多选参数转换；错误单种列表模式在筛选/退出时发送 `single_error_only`；同内容列表模式在筛选、排序、分页大小、切页、刷新期间保持列表数据源，并在重复查询/高级搜索/模板/显式退出时清理 |
+| `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留 Tracker 查询、错误单种/同内容排查、重复查询、查询条件、分页和选择状态 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` | 传统视图组件；重复查询保持分类/标签/活动筛选；同内容排查复用当前表格筛选、排序、分页大小、翻页、刷新并守卫其它查询模式切换 |
+| `traditional-view-component.spec.ts` | 传统视图组件；Tracker 主域名过滤、错误单种快捷入口与退出；重复查询保持分类/标签/活动筛选；同内容排查复用当前表格筛选、排序、分页大小、翻页、刷新并守卫其它查询模式切换；静态契约锁定列表/传统父模板共用 `TrackerDetailCard.vue`，以及共享组件的 Tracker 卡片结构、状态语义和 `_tracker-table.scss` 视觉样式 |
+| `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归：五列结构、snake/camel 字段、错误提示、中性状态、汇报事件和 loading |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |

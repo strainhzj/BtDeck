@@ -9,10 +9,10 @@
 | 项目 | 值 |
 |------|-----|
 | 源路径 | `backend/app/api/endpoints/torrent_crud.py` |
-| 行数 | 648（实测 PowerShell `Get-Content`） |
+| 行数 | 738（实测 PowerShell `Get-Content`） |
 | 模块职责 | 种子 CRUD 端点：列表同步、单个/批量添加、按主键查询、通用条件查询 |
 | 路由前缀 | 由 `torrents.py` 聚合后挂到 `/torrents`（最终 `/api/v1/torrents/*`） |
-| 顶层符号 | 1 class（`TorrentOperationRequest`）+ 5 路由函数 |
+| 顶层符号 | 1 class（`TorrentOperationRequest`）+ 6 路由函数 |
 
 ---
 
@@ -90,7 +90,7 @@ asyncio.create_task(write_audit_log_async())  # L426 后台执行
 
 ### INV-8：所有路由统一认证 + 统一响应
 
-- 认证：`_user=Depends(require_authenticated_user)`（4 个路由均有）
+- 认证：`_user=Depends(require_authenticated_user)`（6 个路由均有）
 - 响应：`response_model=CommonResponse`（除 `get_torrents` 外）
 
 ---
@@ -111,7 +111,8 @@ asyncio.create_task(write_audit_log_async())  # L426 后台执行
 | L439 | `write_audit_log_async` | async def（嵌套） | 异步审计日志写入 |
 | L484 | `create_torrents_batch` | async def（路由） | `POST /add-batch` 提交异步批量添加 |
 | L581 | `get_torrent` | def（路由） | `GET /torrents/{info_id}/{downloader_id}/{downloader_name}` 按主键查 |
-| L596 | `get_torrents` | def（路由） | `GET /getList` 通用条件查询（含同内容列表筛选） |
+| L597 | `get_torrents` | def（路由） | `GET /getList` 通用条件查询（含 Tracker 主域名和错误单种全局唯一筛选） |
+| L707 | `get_tracker_domains` | def（路由） | `GET /tracker-domains` 返回定时 Tracker 同步采集的主机域名列表 |
 
 > 嵌套函数（write_temp_file / read_file_data / write_audit_log）不计入"顶层符号"，但按提示词要求收录在索引中以便定位。
 
@@ -232,6 +233,7 @@ def get_torrents(
     tags_like: Optional[str] = Query(None, description="标签模糊查询"),
     category_like: Optional[str] = Query(None, description="分类模糊查询"),
     tracker_like: Optional[str] = Query(None, description="tracker地址模糊查询"),
+    tracker_domain: Optional[str] = Query(None, description="Tracker主域名筛选（支持多选，逗号分隔）"),
     status: Optional[str] = Query(None, description="种子状态筛选(支持多选，逗号分隔)"),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=100000, description="限制记录数"),
@@ -239,16 +241,33 @@ def get_torrents(
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     active_only: bool = Query(False, description="仅显示活动种子"),
     same_content_only: bool = Query(False, description="仅显示同名同大小且不同 InfoHash 的种子"),
+    single_error_only: bool = Query(False, description="仅显示错误且全局同名同大小内容唯一的种子"),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
 ```
 
-- **定位**：`torrent_crud.py:596`
-- **职责**：支持普通筛选、活动快照、同内容条件、排序与分页的通用查询，委托 `get_torrent_infos(...)`（torrent_helpers）。
+- **定位**：`torrent_crud.py:597`
+- **职责**：支持普通筛选、Tracker 主域名、活动快照、同内容/错误单种条件、排序与分页的通用查询，委托 `get_torrent_infos(...)`（torrent_helpers）。
 - **活动种子特殊处理**（L633–654）：`active_only=True` 时读取 `get_active_keys_snapshot()`，若快照未就绪返回 `206`（partial）。
-- **同内容筛选**（L621–624、L674）：`same_content_only=True` 委托共享查询按“名称 + 大小 + 至少两个不同规范化 Hash”过滤，并继续按种子行 `skip/limit` 分页。
+- **Tracker 主域名筛选**（L613、L682）：`tracker_domain` 接受逗号分隔多选，使用已同步的 TrackerInfo URL hostname/host 关系筛选；域名列表由 `/tracker-domains` 提供。
+- **同内容筛选**（L626–629、L684）：`same_content_only=True` 委托共享查询按“名称 + 大小 + 至少两个不同规范化 Hash”过滤，并继续按种子行 `skip/limit` 分页。
+- **错误单种筛选**（L630–633、L685）：`single_error_only=True` 只保留错误任务，并用不受当前 Tracker/状态筛选影响的全局名称+大小分组确认任务唯一；同一任务的多个 Tracker 服务不增加任务计数。
 - **响应字段**：`total/list/pageSize`（分页固定字段，见 [API 响应格式约束](../../../../backend/docs/constraints/api-response-format.md)）。
+
+#### `get_tracker_domains` — 已同步 Tracker 主域名
+
+```python
+@router.get("/tracker-domains")
+def get_tracker_domains(
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+```
+
+- **定位**：`torrent_crud.py:707`
+- **职责**：读取 `TrackerInfo` 中仍有效的 `tracker_url/tracker_host`，复用 `extract_domains_from_trackers()` 提取 URL hostname，去重排序后返回 `CommonResponse.data`。
+- **性能决策**：实际数据库中 30475 条 Tracker 记录提取 90 个域名，5 次查询+解析耗时 231.515–262.118ms，低于 1 秒，因此当前不做进程内持久化缓存。
 
 ---
 
@@ -261,7 +280,7 @@ torrent_crud.py
   ├─→ app.database.{get_db, AsyncSessionLocal}   (DB 会话)
   ├─→ app.auth.dependencies.require_authenticated_user  (认证)
   ├─→ app.downloader.models.BtDownloaders        (下载器 ORM)
-  ├─→ app.torrents.models.TorrentInfo            (种子 ORM)
+  ├─→ app.torrents.models.{TorrentInfo, TrackerInfo} (种子/Tracker ORM)
   ├─→ app.torrents.audit_enums.{AuditOperationType, AuditOperationResult}
   │
   ├─→ app.api.endpoints.torrent_helpers          (横向复用)
@@ -270,6 +289,7 @@ torrent_crud.py
   │     ├─ create_qbittorrent_torrent_record
   │     ├─ create_transmission_torrent_record
   │     └─ get_torrent_infos
+  ├─→ app.core.reannounce_config_operations.extract_domains_from_trackers (主机域名归一)
   ├─→ app.api.endpoints.torrent_speed.get_active_keys_snapshot  (活动种子快照)
   ├─→ app.api.endpoints.torrent_sync.{qb_add_torrents, tr_add_torrents}  (同步)
   │

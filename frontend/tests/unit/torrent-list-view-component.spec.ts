@@ -11,6 +11,7 @@ import {
   getBatchDeleteStatus,
   getDownloaderList,
   getDuplicateTorrents,
+  getTrackerDomains,
   getTorrentList
 } from '@/api/torrents'
 import type { Torrent } from '@/api/torrents'
@@ -44,6 +45,7 @@ jest.mock('@/api/torrents', () => ({
   advancedSearch: jest.fn(),
   getDuplicateTorrents: jest.fn(),
   getDownloaderList: jest.fn(),
+  getTrackerDomains: jest.fn(),
   reannounceTorrents: jest.fn(),
   getActiveTorrents: jest.fn(),
   applySearchTemplate: jest.fn(),
@@ -54,6 +56,7 @@ const localVue = createLocalVue()
 const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
+const mockGetTrackerDomains = getTrackerDomains as jest.MockedFunction<typeof getTrackerDomains>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockDeleteBatchAsync = deleteBatchAsync as jest.MockedFunction<typeof deleteBatchAsync>
@@ -93,6 +96,7 @@ interface ListQueryState {
   sort_by: string
   sort_order: string
   showActiveOnly: boolean
+  tracker_domain: string[]
 }
 
 interface TorrentListViewVm extends Vue {
@@ -102,9 +106,11 @@ interface TorrentListViewVm extends Vue {
   pageSizeDropdownExpanded: boolean
   showingDuplicates: boolean
   showingSameContent: boolean
+  showingSingleErrors: boolean
   listQuery: ListQueryState
   handleQuickActionCommand(command: string): Promise<void>
   exitSameContentInspection(): Promise<void>
+  exitSingleErrorInspection(): Promise<void>
   handleDuplicateSearchToggle(enabled: boolean): Promise<void>
   handleFilter(): void
   handleSort(field: 'name' | 'size' | 'status' | 'ratio' | 'added_date'): void
@@ -232,6 +238,12 @@ describe('torrent list view pagination and sorting', () => {
       data: []
     })
     mockGetActiveTorrents.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: []
+    })
+    mockGetTrackerDomains.mockResolvedValue({
       status: 'success',
       msg: 'ok',
       code: '200',
@@ -403,6 +415,48 @@ describe('torrent list view pagination and sorting', () => {
     expect(mockGetTorrentList).toHaveBeenLastCalledWith(
       expect.not.objectContaining({ same_content_only: true })
     )
+  })
+
+  it('支持 Tracker 主域名筛选，并可快捷排查错误单种', async() => {
+    mockGetTrackerDomains.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: ['tracker.example.com', 'mirror.example.net']
+    })
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm & {
+      trackerDomainOptions: Array<{ value: string, label: string }>
+    }
+
+    expect(vm.trackerDomainOptions).toEqual([
+      { value: 'tracker.example.com', label: 'tracker.example.com' },
+      { value: 'mirror.example.net', label: 'mirror.example.net' }
+    ])
+
+    vm.listQuery.tracker_domain = ['tracker.example.com', 'mirror.example.net']
+    mockGetTorrentList.mockClear()
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tracker_domain: 'tracker.example.com,mirror.example.net' })
+    )
+
+    await vm.handleQuickActionCommand('inspect-single-errors')
+    await flushLifecycle()
+    expect(vm.showingSingleErrors).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tracker_domain: 'tracker.example.com,mirror.example.net',
+        single_error_only: true
+      })
+    )
+    expect(wrapper.text()).toContain('错误单种排查')
+
+    await vm.exitSingleErrorInspection()
+    expect(vm.showingSingleErrors).toBe(false)
   })
 
   it('uses the traditional page-size combobox presets and custom limit behavior', async() => {
