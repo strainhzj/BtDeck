@@ -18,6 +18,7 @@
 | 通知模型 model notification | `notification.py` | `notification`：系统单向通知信箱 |
 | 孤儿模型 model orphan | `orphan_file.py` | `orphan_scan_result`（后台状态、增量统计、超量提醒与兼容复核字段）/ `orphan_file`（稳定明细）/ `orphan_current_candidate`（`current_detail_id` 指针）/ `orphan_operation_lease` |
 | 孤儿清理任务 model orphan-purge | `orphan_purge_job.py` | `orphan_purge_job`：隔离区彻底删除持久化任务状态与通知送达标记 |
+| 副本预扫描结果 model orphan-hardlink-copy ✨2026-08-15 | `orphan_hardlink_copy.py` | `orphan_hardlink_copy_result`（按 `(device_id, inode_id)` 唯一，device_id 字符串适配 Windows 无符号卷号）/ `orphan_hardlink_scan_state`（单行 keyset 游标） |
 | 搜索模板 model search-template | `search_template.py` | `search_templates`：搜索模板 |
 | 种子转移审计 model seed-transfer-audit | `seed_transfer_audit_log.py` | `seed_transfer_audit_log`：种子转移审计日志 |
 | 配置模板 model template | `setting_templates.py` | `setting_templates` + `DownloaderTypeEnum` |

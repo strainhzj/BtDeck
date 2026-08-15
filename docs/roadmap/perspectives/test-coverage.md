@@ -63,7 +63,7 @@
 | `tests/api/test_transmission_error_sync.py` | 394 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测、恢复清空、旧 RPC 兼容及 legacy/async Tracker 0–4 状态写入 |
 | `tests/api/test_tracker_migration.py` | 730 | qB/Transmission Tracker 手动新增、修改、删除路径；Transmission announce/scrape 独立状态码持久化 |
 | `tests/services/test_tracker_status_sync.py` | 972 | Tracker 行级 Working + `None`/空白消息历史 error 恢复；announce/scrape 状态边界、非空关键词优先、未知逐行保留、双消息、幂等、host 跨种子隔离及 zimiao 359 行快照形态 |
-| `tests/services/test_sync_coordinator.py` | 798 | 统一同步协调、准入/取消/检查点/观测；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序；info/full 同步后调用备份增量补偿 |
+| `tests/services/test_sync_coordinator.py` | 870 | 统一同步协调、准入/取消/检查点/观测；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序；info/full 同步后调用备份增量补偿（full 同样触发、tracker 不触发、补偿失败不阻断信息同步） |
 | `tests/tasks/test_torrent_tracker_status_judge.py` | 546 | qB/Transmission 未联系/发送中为中性；Working + `None`/空白消息明确正常；zimiao 双 Tracker 顺序/类型/空消息矩阵；非空关键词优先、软删除隔离、真实 SQLite 批量更新、独立 Cron 错峰与重任务互斥 |
 | `tests/api/test_torrent_backup_review.py` | 188 | 备份列表当前下载器 nickname 单查询批量解析及序列化 |
 | `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
@@ -86,6 +86,7 @@
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
+| `tests/services/test_orphan_hardlink_copy_scan.py` | 571 | `orphan_hardlink_scan_service.py` + `orphan_quarantine.py::find_hardlink_paths_bounded`：过期 deadline 部分结果+budget_exceeded、单目标路径截断不影响其它目标、无界对等、walk 限量 deferral、游标推进/回绕、幂等更新、保留期清理、单链接轮不遍历、stat 预算停止保进度、受控时钟中途截止/截断优先级、resolved/无指针跳过、新鲜度排序、budget 落行、任务注册/heavy_sync/护栏默认值契约与 execute 包装器 |
 | `tests/services/test_torrent_file_backup_reconcile.py` | 162 | `torrent_file_backup_manager.py`：`reconcile_missing_backups` 限量批次、幂等收敛、qB/Transmission 常见源文件名、逻辑删除墓碑不再自动重建与源目录不可用一次性上报 |
 
 ### 关键源文件测试覆盖抽样
@@ -102,7 +103,7 @@
 | `app/core/tracker_status_policy.py` / `app/services/tracker_status_sync.py` | `test_tracker_status_policy.py` + `test_tracker_status_sync.py` + `test_torrent_tracker_status_judge.py` | ✅ 共享状态/关键词证据语义直接契约、行级 Working 空消息恢复、未知保留、双消息聚合、幂等及 host 隔离 |
 | `app/services/deletion_task_manager.py` | `test_deletion_task_manager.py` + 删除 API/快捷删除 API 测试 | ✅ 原子占用、终态释放、大集合排除 |
 | `app/services/orphan_scan_job_service.py` / `orphan_lifecycle_service.py` / `orphan_file_service.py` | `test_orphan_scan_job_service.py`（232 行）+ `test_orphan_lifecycle.py` + `test_orphan_folder_grouping.py` + `test_orphan_scan_120k_regression.py`（315 行） | ✅ 后台 scan_id 提交/恢复/兼容复核记录、稳定明细复用、分批生命周期、文件夹懒加载；真实文件 SQLite WAL/NullPool 覆盖 120100 条争用与状态 API 延迟 |
-| `app/services/orphan_purge_job_service.py` / `orphan_quarantine.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性与可见文件硬链接副本计数/位置回归 |
+| `app/services/orphan_purge_job_service.py` / `orphan_quarantine.py` / `orphan_hardlink_scan_service.py` | `test_orphan_purge_job_service.py` + `test_orphan_query_state.py` + `test_orphan_hardlink_detection.py` + `test_orphan_hardlink_copy_scan.py` + `test_orphan_files_api.py` | ✅ 持久化占用、查询可见性、可见文件硬链接副本计数；副本位置自 2026-08-15 起由定时预扫描落库（性能护栏与只读契约回归） |
 | `app/services/torrent_ratio_values.py` | `test_torrent_ratio_values.py` | ✅（v1.0.6.25 新增） |
 | `app/services/sqlite_search_runtime.py` | `test_sqlite_search_runtime.py` | ✅（v1.0.6.27 新增） |
 | `app/services/path_mapping_validation.py` | `test_path_mapping_validation.py` | ✅（v1.0.6.32 新增，10 个用例） |
@@ -110,7 +111,7 @@
 | `app/services/orphan_scanner.py` | `test_orphan_scanner.py` | ✅ |
 | `app/services/reannounce_service.py` | `test_reannounce_service.py` + `test_reannounce_config.py` | ✅ |
 | `app/core/database_result.py` | `test_database_result.py` | ✅ |
-| `app/core/migration.py` / `startup/lifecycle.py` / `7b2c9d4e6f10` / `b6e1c4d9a2f7` | `test_db_migration.py` + `test_db_rollback_scenarios.py` + `test_orphan_migration_production_shape.py` + `test_startup_migration_guard.py` | ✅ 单 head；覆盖 batch 中断恢复/缺原表拒绝、canonical_path 索引回填、历史超量提醒标记、真实文件 WAL 大数据升级与任意模式启动 fail-fast；`b6e1c4d9a2f7` 备份下载器 ID UUID 类型升级保留 UUID/索引/外键，含不可无损转换数据时 downgrade 拒绝回滚 |
+| `app/core/migration.py` / `startup/lifecycle.py` / `7b2c9d4e6f10` / `b6e1c4d9a2f7` / `c8d9e0f1a2b3` | `test_db_migration.py` + `test_db_rollback_scenarios.py` + `test_orphan_migration_production_shape.py` + `test_startup_migration_guard.py` | ✅ 单 head；覆盖 batch 中断恢复/缺原表拒绝、canonical_path 索引回填、历史超量提醒标记、真实文件 WAL 大数据升级与任意模式启动 fail-fast；`b6e1c4d9a2f7` 备份下载器 ID UUID 类型升级保留 UUID/索引/外键，含不可无损转换数据时 downgrade 拒绝回滚；`c8d9e0f1a2b3` 副本预扫描两表可建可回滚、device_id 字符串列与身份唯一约束 |
 | `app/core/path_mapping.py` | （未发现直接测试） | ⚠ 未覆盖 |
 | `app/core/file_operations.py`（1474 行） | （未发现直接测试） | ⚠ 未覆盖 |
 

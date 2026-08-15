@@ -1,5 +1,45 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-15 - 两批改动回归加固
+
+### 新增回归保护（本轮对话全部修改）
+
+- 备份补偿（`test_torrent_file_backup_reconcile.py` 3→12 用例）：文件复用双路径不触发复制、`torrent_file` 直连与 `.torrents` 子目录双源解析、复制失败不落库不回填、commit 失败回滚并清理新复制文件、目标筛选（跨下载器/dr/deleted_at/短 hash 排除）与 added_date 倒序批次、路径映射异常回退原路径；仓储字符串过滤/计数、schema 空串拒绝、`get_downloader_from_store` 按 str() 归一匹配 UUID 与整数值；批次配置默认值守护。
+- 同步协调器（`test_sync_coordinator.py` 26→29 用例）：full 同步同样触发补偿、tracker-only 不触发、补偿抛异常仅记入 errors/details 不阻断信息同步（outcome 保持 success）。
+- 副本预扫描（`test_orphan_hardlink_copy_scan.py` 10→19 用例）：受控时钟中途截止保留已完成根部分结果、截断 note 优先于预算 note、resolved 候选与无候选指针明细跳过、无结果身份优先获得遍历名额且旧结果不被覆盖、budget_exceeded 写入行 scan_note 而权威副本数不丢、任务注册契约（executor 可导入/调度/timeout>预算）、heavy_sync 登记断言、五项护栏默认值守护、execute() 包装器摘要透传。
+- 查库契约（`test_orphan_hardlink_detection.py`）：服务与端点双层模块级断言不再引入遍历函数。
+- 前端（`orphan-files.spec.ts` 82→83 用例）：预扫描路径截断提示 + 未定位余量展示。
+
+### 验证
+
+- 后端 `tests/services + tests/api + tests/tasks` 全量 **2285 passed, 6 skipped**；black/flake8 通过。
+- 前端全量 **738 passed**；typecheck、目标文件严格 ESLint 0 warning 通过。
+- 文档同步：feature_list.json 两个 feature 的任务 evidence 追加回归加固记录；roadmap 测试计数更新。
+
+## 2026-08-15 - 副本定位改为定时预扫描落库，前端只读结果
+
+### 需求与实现
+
+- 用户要求：整体查找副本在文件系统过大时耗时不可控，不能放在点击请求里；改为新的定时任务后台执行并存库，前端只查结果，并严格控制性能。
+- 新定时任务 `orphan_hardlink_copy_scan`（每日 04:00，`OrphanHardlinkScanService.run_round`）：keyset 游标分批 stat 候选 → 仅 `nlink>1` 的身份进入限时遍历 → 结果按 `(device_id, inode_id)` 唯一落库 → 保留期清理。任务登记 `task_profiles` heavy_sync 互斥。
+- 性能护栏（全部可配）：stat 限量 2000/轮（`ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE`）、遍历限量 200 inode/轮（`MAX_TARGETS`）、单调时钟预算 300s 在 `os.walk` 目录间检查（`BUDGET_SECONDS`，超时保留部分结果标记 `budget_exceeded`）、单 inode 路径存储上限 100（`MAX_PATHS_PER_TARGET`，截断标记 `truncated`）、结果保留 30 天清理、写库分批 200 行短事务、遍历单线程串行。
+- 新迁移 `c8d9e0f1a2b3`（head 由 `b6e1c4d9a2f7` 推进，单 head）：`orphan_hardlink_copy_result` + 单行游标表 `orphan_hardlink_scan_state`；`device_id` 用 String(32)——Windows `st_dev` 是无符号卷序列号，实测可超 SQLite 有符号 64 位（`Python int too large to convert`），与 `orphan_current_candidate` 同惯例。
+- `hardlink-copies` 端点改为纯查库：模块级测试断言服务不再 import 任何遍历函数；保留每文件廉价 stat 复核实时 `st_nlink-1` 总数；未覆盖文件返回 `pending_scan=true`；响应以 `scanned_count/pending_scan_count` 取代 `searched_root_count`。
+- 前端弹框：文案改为"由每日定时任务后台整体查找并存储"，新增待预扫描计数/扫描时间/等待提示/截断提示。
+
+### 验证过程中发现并修复的问题
+
+- 同步 helper 内 `await db.flush()` 未 await（协程被丢弃）导致 `current_detail_id` 挂空、stat 窗口恒为空——测试从"永远空窗口"变为真实管线后暴露。
+- Windows 下测试真实调用根收集器会把整个 `C:\` 作为扫描根（os.walk 全盘）——测试改为 patch 根收集器限定 tmp 目录；生产环境由 300s 预算兜底（预算内在后台串行遍历，不与交互争抢）。
+- Windows `time.monotonic()` 分辨率 15.6ms（GetTickCount64），内存库整轮可能落在同一 tick 使 `budget=0` 测试不确定——改用受控时钟序列。
+- 测试与迁移断言适配：SQLite 把表内唯一约束物化为 `sqlite_autoindex_*`（不保留约束名）→ 改断言 autoindex + 重复身份 INSERT 被拒；全量表计数 30→32。
+
+### 验证
+
+- 后端：新增 `test_orphan_hardlink_copy_scan.py`（限时遍历/限量/游标/幂等/清理/预算 10 用例）；`TestHardlinkCopyLocations` 重写为查库契约；迁移 3 文件 34 passed；`tests/services + tests/api` 全量 1930 passed 6 skipped；`tests/tasks` 368 passed（含 task_profiles 漂移守卫驱动更新）；black/flake8 全部通过。
+- 前端：orphan-files.spec.ts 82 passed；全量 44 suites / 737 passed；typecheck、变更文件严格 ESLint 0 warning、生产 build 通过。
+- 已同步 roadmap（services/infra/tasks/data-models/tests/test-coverage/根元信息，行号实测）、feature_list.json、session-handoff.md；未执行 Git 提交，工作区原有未跟踪产物保持不动。
+
 ## 2026-08-15 - 种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语
 
 ### 根因与实现

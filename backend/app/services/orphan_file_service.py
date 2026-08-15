@@ -23,10 +23,11 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
 
-from sqlalchemy import and_, case, func, or_, select, text, update
+from sqlalchemy import and_, case, func, or_, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
+from app.models.orphan_hardlink_copy import OrphanHardlinkCopyResult
 from app.services.orphan_folder_grouping import orphan_parent_dir
 from app.services.orphan_lifecycle_service import OrphanLifecycleService
 from app.services.orphan_manifest import (
@@ -41,9 +42,7 @@ from app.services.orphan_purge_job_service import (
 from app.services.orphan_quarantine import (
     build_quarantine_path,
     compute_purge_after,
-    collect_runtime_accessible_roots,
     find_hardlink_copies,
-    find_hardlink_paths,
     get_hardlink_copy_count,
     prune_empty_quarantine_parents,
     prune_recorded_quarantine_root,
@@ -54,6 +53,7 @@ from app.services.orphan_quarantine import (
 from app.tasks.resource_guard import admission_controller
 from app.torrents.audit_enums import AuditOperationResult, AuditOperationType
 from app.core.config import settings
+from app.utils.datetime_utils import serialize_utc_datetime
 
 logger = logging.getLogger(__name__)
 
@@ -681,12 +681,32 @@ class OrphanFileService:
             )
         return inspected
 
-    async def get_hardlink_copy_locations(self, orphan_ids: Sequence[int]) -> Dict[str, Any]:
-        """按需定位孤儿文件在当前运行环境可访问目录内的其它硬链接路径。
+    async def _load_hardlink_copy_results(
+        self, identities: Sequence[tuple[int, int]]
+    ) -> Dict[tuple[int, int], OrphanHardlinkCopyResult]:
+        """按物理身份分片反查定时预扫描落库的副本结果。"""
+        rows: Dict[tuple[int, int], OrphanHardlinkCopyResult] = {}
+        for start in range(0, len(identities), 400):
+            # device_id 以字符串落库（Windows st_dev 可超有符号 64 位）
+            chunk = [
+                (str(identity[0]), identity[1]) for identity in identities[start : start + 400]
+            ]
+            result = await self.db.execute(
+                select(OrphanHardlinkCopyResult).where(
+                    tuple_(OrphanHardlinkCopyResult.device_id, OrphanHardlinkCopyResult.inode_id).in_(chunk)
+                )
+            )
+            for row in result.scalars().all():
+                rows[(int(row.device_id), int(row.inode_id))] = row
+        return rows
 
-        ``st_nlink - 1`` 仍是副本总数的权威口径；具体位置只能通过目录遍历反查。
-        本方法收集当前进程可访问、与目标 inode 同文件系统的挂载根，并对多个目标
-        合并为一轮扫描。无权限或未挂载目录中的链接会计入 ``unlocated_count``。
+    async def get_hardlink_copy_locations(self, orphan_ids: Sequence[int]) -> Dict[str, Any]:
+        """读取定时预扫描任务落库的副本定位结果。
+
+        大文件系统上的整体目录遍历由 ``orphan_hardlink_copy_scan`` 定时任务在
+        后台按预算执行，本方法不做任何目录遍历：仅对源文件做廉价 ``stat`` 复核
+        实时 ``st_nlink - 1`` 总数，路径来自结果表。尚无结果的身份返回
+        ``pending_scan=True``，等待下一轮预扫描覆盖。
         """
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
         if not normalized_ids:
@@ -702,50 +722,33 @@ class OrphanFileService:
         targets = [(int(detail.id), cast(str, detail.file_path)) for detail in details]
         inspected = await asyncio.to_thread(self._inspect_hardlink_sources, targets)
 
-        target_inodes = {
+        search_error: Optional[str] = None
+        result_rows: Dict[tuple[int, int], OrphanHardlinkCopyResult] = {}
+        lookup_identities = [
             cast(tuple[int, int], item["identity"])
             for item in inspected
             if item["identity"] is not None and int(item["copy_count"] or 0) > 0
-        }
-        scan_roots: List[str] = []
-        paths_by_inode: Dict[tuple[int, int], List[str]] = {}
-        search_error: Optional[str] = None
-        if target_inodes:
+        ]
+        if lookup_identities:
             try:
-                source_paths = [
-                    cast(str, item["file_path"])
-                    for item in inspected
-                    if item["identity"] is not None and int(item["copy_count"] or 0) > 0
-                ]
-                scan_roots = await asyncio.to_thread(
-                    collect_runtime_accessible_roots,
-                    target_inodes,
-                    source_paths,
-                )
-                paths_by_inode = await asyncio.to_thread(
-                    find_hardlink_paths,
-                    target_inodes,
-                    scan_roots,
-                )
+                result_rows = await self._load_hardlink_copy_results(lookup_identities)
             except Exception as exc:
-                search_error = "当前运行环境可访问目录扫描失败，未能完整定位副本位置"
-                logger.warning("[孤儿列表] 硬链接副本位置扫描失败: %s", exc)
+                search_error = "副本定位结果读取失败，请稍后重试"
+                logger.warning("[孤儿列表] 副本定位结果读取失败: %s", exc)
 
         items: List[Dict[str, Any]] = []
         for inspected_item in inspected:
             source_path = cast(str, inspected_item["file_path"])
             copy_count = cast(Optional[int], inspected_item["copy_count"])
             identity = cast(Optional[tuple[int, int]], inspected_item["identity"])
+            stored = result_rows.get(identity) if identity is not None else None
             copies: List[str] = []
-            if identity is not None and copy_count is not None and copy_count > 0:
+            if stored is not None and copy_count is not None and copy_count > 0:
                 source_key = os.path.normcase(os.path.realpath(os.path.abspath(source_path)))
-                copies = [
-                    path
-                    for path in paths_by_inode.get(identity, [])
-                    if os.path.normcase(os.path.realpath(path)) != source_key
-                ]
+                copies = [path for path in stored.copies if os.path.normcase(os.path.realpath(path)) != source_key]
             found_count = len(copies)
             unlocated_count = max(copy_count - found_count, 0) if copy_count is not None else None
+            pending_scan = identity is not None and copy_count is not None and copy_count > 0 and stored is None
             item_error = cast(Optional[str], inspected_item["error"])
             if item_error is None and search_error is not None and copy_count:
                 item_error = search_error
@@ -757,6 +760,9 @@ class OrphanFileService:
                     "found_count": found_count,
                     "unlocated_count": unlocated_count,
                     "copies": copies,
+                    "scanned_at": serialize_utc_datetime(stored.scanned_at) if stored is not None else None,
+                    "pending_scan": pending_scan,
+                    "result_truncated": bool(stored.truncated) if stored is not None else False,
                     "error": item_error,
                 }
             )
@@ -770,7 +776,8 @@ class OrphanFileService:
             "total_found_count": sum(int(item["found_count"]) for item in items),
             "total_unlocated_count": sum(int(item["unlocated_count"] or 0) for item in known_items),
             "unknown_count": len(items) - len(known_items),
-            "searched_root_count": len(scan_roots),
+            "scanned_count": sum(1 for item in items if not item["pending_scan"] and item["copy_count"]),
+            "pending_scan_count": sum(1 for item in items if item["pending_scan"]),
             "search_error": search_error,
             "items": items,
         }

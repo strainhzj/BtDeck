@@ -16,7 +16,7 @@ from alembic.config import Config
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 ALEMBIC_INI = BACKEND_ROOT / "alembic.ini"
 PREVIOUS_HEAD = "4c1d8e7a2b90"
-EXPECTED_HEAD = "b6e1c4d9a2f7"
+EXPECTED_HEAD = "c8d9e0f1a2b3"
 
 
 def _config(db_path: Path) -> Config:

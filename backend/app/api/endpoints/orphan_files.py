@@ -301,11 +301,11 @@ async def get_hardlink_copy_locations(
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
-    """按需定位当前运行环境可访问目录中的其它硬链接路径。
+    """读取定时预扫描任务落库的硬链接副本位置，不做任何目录遍历。
 
-    返回实时 ``st_nlink - 1`` 总数、已定位路径数与未定位数量。硬链接不能跨文件
-    系统，因此只遍历目标 inode 所在文件系统在当前进程命名空间内可访问的挂载根；
-    未定位链接可能位于无权限或未挂载目录。
+    返回实时 ``st_nlink - 1`` 总数（廉价 stat 复核）与结果表中最近一轮定位到的
+    路径；尚无结果的文件返回 ``pending_scan=true``，由每日
+    ``orphan_hardlink_copy_scan`` 任务在预算内逐步覆盖。
     """
     try:
         result = await OrphanFileService(db).get_hardlink_copy_locations(req.orphan_ids)

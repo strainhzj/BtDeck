@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import re
+import time
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -404,11 +405,34 @@ def find_hardlink_paths(
     目标 ``st_dev`` 剪枝，既保证覆盖当前运行环境的同文件系统目录，又不进入不可能
     存在硬链接的其它挂载；符号链接文件不会被误当作硬链接目录项。
     """
+    return find_hardlink_paths_bounded(target_inodes, scan_roots)[0]
+
+
+def find_hardlink_paths_bounded(
+    target_inodes: Set[Tuple[int, int]],
+    scan_roots: List[str],
+    deadline: Optional[float] = None,
+    max_paths_per_target: Optional[int] = None,
+) -> Tuple[Dict[Tuple[int, int], List[str]], Dict[Tuple[int, int], str]]:
+    """带运行预算的 :func:`find_hardlink_paths`，供定时任务使用。
+
+    Args:
+        deadline: ``time.monotonic()`` 时间戳；遍历目录间检查，超时立即停止并
+            把剩余目标标记 ``budget_exceeded``。返回已定位的部分结果，不抛异常。
+        max_paths_per_target: 单个 inode 最多收集的路径数；超过后该目标标记
+            ``truncated`` 但继续为其它目标遍历，防止万级硬链接撑爆存储。
+
+    Returns:
+        ``(paths_by_inode, notes_by_inode)``；notes 值为 ``budget_exceeded`` 或
+        ``truncated``（可同时存在时优先记录 budget_exceeded）。
+    """
     normalized_targets = {(int(device_id), int(inode)) for device_id, inode in target_inodes}
     target_devices = {device_id for device_id, _inode in normalized_targets}
     found: Dict[Tuple[int, int], List[str]] = {identity: [] for identity in normalized_targets}
+    notes: Dict[Tuple[int, int], str] = {}
+    path_cap = max(int(max_paths_per_target), 1) if max_paths_per_target else None
     if not normalized_targets or not scan_roots:
-        return found
+        return found, notes
 
     # realpath 去掉符号链接根别名；父根已覆盖子根时只保留父根，避免重复遍历。
     candidate_roots: List[str] = []
@@ -442,9 +466,14 @@ def find_hardlink_paths(
         if not covered:
             minimal_roots.append(root)
 
+    capped: Set[Tuple[int, int]] = set()
     seen_paths: Dict[Tuple[int, int], Set[str]] = {identity: set() for identity in normalized_targets}
+    budget_exceeded = False
     for root in minimal_roots:
         for dir_path, dirnames, filenames in os.walk(root):
+            if deadline is not None and time.monotonic() > deadline:
+                budget_exceeded = True
+                break
             accessible_dirs: List[str] = []
             for directory_name in dirnames:
                 directory_path = os.path.join(dir_path, directory_name)
@@ -467,7 +496,7 @@ def find_hardlink_paths(
                     # 单文件不可访问不影响其它位置的定位。
                     continue
                 identity = (int(stat_result.st_dev), int(stat_result.st_ino))
-                if identity not in normalized_targets:
+                if identity not in normalized_targets or identity in capped:
                     continue
                 physical_path = os.path.realpath(os.path.abspath(full_path))
                 path_key = os.path.normcase(physical_path)
@@ -475,10 +504,24 @@ def find_hardlink_paths(
                     continue
                 seen_paths[identity].add(path_key)
                 found[identity].append(physical_path)
+                if path_cap is not None and len(found[identity]) >= path_cap:
+                    capped.add(identity)
+        if budget_exceeded:
+            break
+
+    if budget_exceeded:
+        # 中途截止时所有结果都可能不完整；已达路径上限的目标保持 truncated 语义。
+        for identity in normalized_targets:
+            notes[identity] = "budget_exceeded"
+        for identity in capped:
+            notes[identity] = "truncated"
+    else:
+        for identity in capped:
+            notes[identity] = "truncated"
 
     for paths in found.values():
         paths.sort(key=os.path.normcase)
-    return found
+    return found, notes
 
 
 def find_hardlink_copies(

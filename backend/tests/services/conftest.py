@@ -69,6 +69,10 @@ async def async_orphan_db():
     )
     # 延迟 import 避免循环依赖，并确保所有相关 ORM 模型已注册到 Base.metadata
     from app.models.orphan_file import OrphanFile, OrphanScanResult  # noqa: F401
+    from app.models.orphan_hardlink_copy import (  # noqa: F401
+        OrphanHardlinkCopyResult,
+        OrphanHardlinkScanState,
+    )
     from app.models.orphan_purge_job import OrphanPurgeJob  # noqa: F401
     from app.models.notification import Notification  # noqa: F401
     from app.downloader.models import BtDownloaders  # noqa: F401

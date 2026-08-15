@@ -184,6 +184,78 @@ class TestManualAndCronConvergeOnCoordinator:
         assert len(downloaders) == 1
         reconcile_backups.assert_awaited_once()
 
+    async def test_run_sync_full_also_reconciles_backups(self):
+        """full 同步路径在下载器完成后同样触发备份增量补偿。"""
+        app = make_fake_app([make_vo(client=MagicMock())])
+        with (
+            patch("app.api.endpoints.torrents_async.qb_add_torrents_async", new=AsyncMock()) as mock_full_sync,
+            patch(
+                "app.services.sync_coordinator._reconcile_torrent_file_backups",
+                new=AsyncMock(),
+            ) as reconcile_backups,
+            patch(
+                "app.services.sync_coordinator._get_cached_client",
+                new=AsyncMock(return_value=MagicMock()),
+            ),
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="full", downloader_ids=["dl_001"], trigger="manual"),
+                app=app,
+            )
+
+        assert result.outcome == "success"
+        assert mock_full_sync.await_count == 1
+        reconcile_backups.assert_awaited_once()
+
+    async def test_run_sync_tracker_does_not_reconcile_backups(self):
+        """tracker-only 同步不改种子信息，不触发备份补偿。"""
+        app = make_fake_app([make_vo(client=MagicMock())])
+        with (
+            patch(
+                "app.api.endpoints.torrents_async.qb_sync_trackers_only_async",
+                new=AsyncMock(
+                    return_value={
+                        "status": "success",
+                        "tracker_count": 0,
+                        "torrent_count": 0,
+                        "cycle_complete": True,
+                    }
+                ),
+            ) as mock_tracker,
+            patch(
+                "app.services.sync_coordinator._reconcile_torrent_file_backups",
+                new=AsyncMock(),
+            ) as reconcile_backups,
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="tracker", downloader_ids=["dl_001"], trigger="cron"),
+                app=app,
+            )
+
+        assert result.outcome == "success"
+        assert mock_tracker.await_count == 1
+        reconcile_backups.assert_not_awaited()
+
+    async def test_backup_reconcile_failure_does_not_block_info_sync(self):
+        """补偿抛异常时只记入 errors/details，下载器信息同步结果保持 success。"""
+        app = make_fake_app([make_vo(client=MagicMock())])
+        with (
+            patch("app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()),
+            patch(
+                "app.services.torrent_file_backup_manager.TorrentFileBackupManagerService." "reconcile_missing_backups",
+                new=AsyncMock(side_effect=RuntimeError("nas unreachable")),
+            ),
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="info", downloader_ids=["dl_001"], trigger="cron"),
+                app=app,
+            )
+
+        assert result.outcome == "success"
+        assert any("种子文件增量备份失败" in message for message in result.errors)
+        failed_detail = result.details.get("torrent_file_backup", {}).get("dl_001")
+        assert failed_detail == {"status": "failed", "error": "nas unreachable"}
+
 
 # =============================================================================
 # 2. 两个相同任务竞争：只允许一个运行

@@ -223,6 +223,26 @@ DEFAULT_SCHEDULED_TASKS = [
         "create_by": "migration_system",
         "update_by": "admin",
     },
+    {
+        "task_name": "孤儿硬链接副本预扫描任务",
+        "task_code": "orphan_hardlink_copy_scan",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_hardlink_copy_scan_task.OrphanHardlinkCopyScanTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "0 4 * * *",
+        "description": (
+            "每日后台预扫描孤儿文件的硬链接副本位置并落库（单轮限量与时间预算，"
+            "详见 ORPHAN_HARDLINK_SCAN_* 配置）；前端副本位置弹框只读扫描结果。"
+        ),
+        "timeout_seconds": 7200,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
 ]
 
 

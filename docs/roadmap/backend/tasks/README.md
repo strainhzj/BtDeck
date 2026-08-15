@@ -34,6 +34,7 @@
 | 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance |
 | 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知（隔离区彻底删除完成通知） |
 | 隔离区清理 orphan-purge | `orphan_quarantine_purge_task.py` | 每日清理超期孤儿隔离区 |
+| 副本预扫描 orphan-hardlink-copy-scan ✨2026-08-15 | `orphan_hardlink_copy_scan_task.py` | 每日 04:00 调 `OrphanHardlinkScanService.run_round`：keyset 游标限量 stat + 限时串行遍历，结果落库供前端只读（性能护栏见 services 分支） |
 | 孤儿全量扫描 orphan-scan | `orphan_scan_task.py` | 每周日凌晨 2 点提交并等待同一 dispatcher 的 scan_id/task_id 扫描+清理终态；阶段摘要写入 Cron task_logs，超量标志仅作提醒 |
 | 标签同步 tag-sync | `tag_sync.py` | 定期从下载器同步标签到 DB |
 | 种子同步废弃 torrent-sync-old | `torrent_sync.py` | ⚠ **已废弃**：拆分为下方两个任务 |

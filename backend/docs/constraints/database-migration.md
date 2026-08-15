@@ -54,12 +54,13 @@ f2a7c91b4d6e → a1b2c3d4e5f6 → c7d8e9f0a1b2 → d8e9f0a1b2c3
 3a4b5c6d7e8f → f9a1b2c3d4e5 → f0e1d2c3b4a5
     └─ 同步 checkpoint、硬链接说明与清理延后计数
 
-f5e6d7c8b9a0 → de898cb28172 → 4c1d8e7a2b90 → 7b2c9d4e6f10 → b6e1c4d9a2f7 ← 当前 HEAD
-    └─ 任务结果新鲜度、种子错误原因、Tracker 错峰、孤儿后台扫描，以及种子备份下载器 UUID 类型修复
+f5e6d7c8b9a0 → de898cb28172 → 4c1d8e7a2b90 → 7b2c9d4e6f10 → b6e1c4d9a2f7 → c8d9e0f1a2b3 ← 当前 HEAD
+    └─ 任务结果新鲜度、种子错误原因、Tracker 错峰、孤儿后台扫描、种子备份下载器
+       UUID 类型修复，以及孤儿硬链接副本预扫描结果表
 ```
 
 - 单 head，无分叉
-- `alembic heads` 必须输出且只输出 `b6e1c4d9a2f7`
+- `alembic heads` 必须输出且只输出 `c8d9e0f1a2b3`
 
 `6132` 与 follower 采用混合兼容策略：尚未执行 `6132` 的数据库直接获得修正后的
 严格迁移；已执行旧版 `6132` 的数据库由 `8f4c2d1a9b7e` 幂等补齐约束。旧版曾

@@ -91,21 +91,27 @@ export interface OrphanListResponse {
   scan_context: OrphanScanContext
 }
 
-/** 单个孤儿文件的硬链接副本位置核对结果。 */
+/** 单个孤儿文件的硬链接副本位置查询结果（读取定时预扫描落库数据）。 */
 export interface HardlinkCopyLocationItem {
   orphan_id: number
   file_path: string
   /** 点击时重新读取的实时副本总数；源文件不可访问时为 null。 */
   copy_count: number | null
   found_count: number
-  /** 位于当前运行环境不可访问目录中的剩余数量；源文件不可访问时为 null。 */
+  /** 最近一轮预扫描未定位到的剩余数量；源文件不可访问时为 null。 */
   unlocated_count: number | null
-  /** 当前运行环境可访问的同文件系统目录内定位到的其它硬链接绝对路径。 */
+  /** 定时预扫描落库的其它硬链接绝对路径（已过滤源文件自身）。 */
   copies: string[]
+  /** 结果扫描时间（UTC ISO）；该文件尚未被预扫描覆盖时为 null。 */
+  scanned_at: string | null
+  /** 有副本但尚未被定时预扫描覆盖，等待下一轮。 */
+  pending_scan: boolean
+  /** 单 inode 路径数超上限被截断。 */
+  result_truncated: boolean
   error: string | null
 }
 
-/** 批量副本位置查询结果，文件夹聚合行也只触发一轮扫描。 */
+/** 批量副本位置查询结果；只读预扫描结果，不做目录遍历。 */
 export interface HardlinkCopyLocationsResult {
   requested_count: number
   resolved_count: number
@@ -114,7 +120,10 @@ export interface HardlinkCopyLocationsResult {
   total_found_count: number
   total_unlocated_count: number
   unknown_count: number
-  searched_root_count: number
+  /** 已有预扫描结果的文件数（有副本且已覆盖）。 */
+  scanned_count: number
+  /** 有副本但等待预扫描覆盖的文件数。 */
+  pending_scan_count: number
   search_error: string | null
   items: HardlinkCopyLocationItem[]
 }

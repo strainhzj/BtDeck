@@ -191,6 +191,18 @@ class Settings(BaseSettings):
     # 避免历史缺口在单轮内产生大规模文件 IO；小于 1 时按 1 处理。
     TORRENT_BACKUP_RECONCILE_BATCH_SIZE: int = 200
 
+    # 孤儿硬链接副本预扫描定时任务（前端只读库内结果，不再实时遍历）
+    # 单轮最多 stat 的孤儿明细数（keyset 游标推进，含截止时间检查）
+    ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE: int = 2000
+    # 单轮最多进入目录遍历的目标 inode 数（仅 nlink>1 的文件需要遍历）
+    ORPHAN_HARDLINK_SCAN_MAX_TARGETS: int = 200
+    # 单轮遍历的单调时钟预算（秒）；在 os.walk 目录间检查，超时保留部分结果
+    ORPHAN_HARDLINK_SCAN_BUDGET_SECONDS: float = 300.0
+    # 单个 inode 最多存储的副本路径数，超出截断并标记 truncated
+    ORPHAN_HARDLINK_SCAN_MAX_PATHS_PER_TARGET: int = 100
+    # 结果保留天数；超期未刷新的行由任务清理，控制表体积
+    ORPHAN_HARDLINK_SCAN_RESULT_RETENTION_DAYS: int = 30
+
     # 孤儿文件管理配置（v1.0.6）
     # 自动清理超期天数：连续成为孤儿超过该天数的候选由定时任务移入隔离区
     # 语义重做：依据「连续成为孤儿的时间」，不再依据文件 mtime

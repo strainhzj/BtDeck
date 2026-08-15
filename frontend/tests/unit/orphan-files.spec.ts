@@ -2125,31 +2125,49 @@ describe('orphan files folder view (folder row rendering contract)', () => {
 
   it('仅有副本的数量可点击，文件夹行只查询有副本的子文件并展示位置', async() => {
     const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
-    const solo = orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 })
+    const solo = orphanItem(2, 'scan-completed', { hardlink_copy_count: 1 })
     const configuredCopy = '/library/movies/linked-copy.mkv'
     mockGetHardlinkCopyLocations.mockResolvedValueOnce({
       code: '200',
       msg: 'ok',
       status: 'success',
       data: {
-        requested_count: 1,
-        resolved_count: 1,
+        requested_count: 2,
+        resolved_count: 2,
         missing_orphan_ids: [],
-        total_copy_count: 2,
+        total_copy_count: 3,
         total_found_count: 1,
-        total_unlocated_count: 1,
+        total_unlocated_count: 2,
         unknown_count: 0,
-        searched_root_count: 2,
+        scanned_count: 1,
+        pending_scan_count: 1,
         search_error: null,
-        items: [{
-          orphan_id: linked.id,
-          file_path: linked.file_path,
-          copy_count: 2,
-          found_count: 1,
-          unlocated_count: 1,
-          copies: [configuredCopy],
-          error: null
-        }]
+        items: [
+          {
+            orphan_id: linked.id,
+            file_path: linked.file_path,
+            copy_count: 2,
+            found_count: 1,
+            unlocated_count: 1,
+            copies: [configuredCopy],
+            scanned_at: '2026-08-15T04:00:00Z',
+            pending_scan: false,
+            result_truncated: false,
+            error: null
+          },
+          {
+            orphan_id: solo.id,
+            file_path: solo.file_path,
+            copy_count: 1,
+            found_count: 0,
+            unlocated_count: 1,
+            copies: [],
+            scanned_at: null,
+            pending_scan: true,
+            result_truncated: false,
+            error: null
+          }
+        ]
       }
     })
     const wrapper = mountFolderView([folderRow('/data/movie', [linked, solo]), solo])
@@ -2157,17 +2175,20 @@ describe('orphan files folder view (folder row rendering contract)', () => {
 
     const countColumn = wrapper.find('[data-column-label="副本数量"]')
     const links = countColumn.findAll('button.orphan-hardlink-copy-count--link')
-    expect(links).toHaveLength(1)
-    expect(links.at(0).text()).toBe('2')
+    // 文件夹聚合行（2+1=3）与顶层 solo 行各一个可点击链接
+    expect(links).toHaveLength(2)
+    expect(links.at(0).text()).toBe('3')
 
     await links.at(0).trigger('click')
     await flushLifecycle()
 
-    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledWith({ orphan_ids: [linked.id] })
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledWith({ orphan_ids: [linked.id, solo.id] })
     expect(viewModel(wrapper).hardlinkLocationDialogVisible).toBe(true)
     expect(wrapper.find('.hardlink-location-summary').text()).toContain('已定位 1')
+    expect(wrapper.find('.hardlink-location-summary').text()).toContain('待预扫描 1')
     expect(wrapper.find('.hardlink-location-copy__path').text()).toBe(configuredCopy)
-    expect(wrapper.text()).toContain('还有 1 个副本未在当前可访问目录中定位')
+    expect(wrapper.text()).toContain('还有 2 个副本未在最近一轮预扫描中定位')
+    expect(wrapper.text()).toContain('等待每日定时任务预扫描定位副本路径，可稍后重新打开查看。')
 
     await wrapper.find('.hardlink-location-copy__button').trigger('click')
     await flushLifecycle()
@@ -2200,7 +2221,8 @@ describe('orphan files folder view (folder row rendering contract)', () => {
       total_found_count: 1,
       total_unlocated_count: 0,
       unknown_count: 0,
-      searched_root_count: 1,
+      scanned_count: 1,
+      pending_scan_count: 0,
       search_error: null,
       items: [{
         orphan_id: second.id,
@@ -2209,6 +2231,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
         found_count: 1,
         unlocated_count: 0,
         copies: ['/library/second-copy.bin'],
+        scanned_at: '2026-08-15T04:00:00Z',
+        pending_scan: false,
+        result_truncated: false,
         error: null
       }]
     }))
@@ -2226,7 +2251,8 @@ describe('orphan files folder view (folder row rendering contract)', () => {
       total_found_count: 1,
       total_unlocated_count: 0,
       unknown_count: 0,
-      searched_root_count: 1,
+      scanned_count: 1,
+      pending_scan_count: 0,
       search_error: null,
       items: [{
         orphan_id: first.id,
@@ -2235,6 +2261,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
         found_count: 1,
         unlocated_count: 0,
         copies: ['/library/first-copy.bin'],
+        scanned_at: '2026-08-15T04:00:00Z',
+        pending_scan: false,
+        result_truncated: false,
         error: null
       }]
     }))
@@ -2249,7 +2278,7 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 })
     const unavailable = orphanItem(2, 'scan-completed', { hardlink_copy_count: 1 })
     const removed = orphanItem(3, 'scan-completed', { hardlink_copy_count: 1 })
-    const searchError = '当前运行环境可访问目录扫描失败，未能完整定位副本位置'
+    const searchError = '副本定位结果读取失败，请稍后重试'
     mockGetHardlinkCopyLocations.mockResolvedValueOnce(hardlinkLocationsResponse({
       requested_count: 3,
       resolved_count: 2,
@@ -2258,7 +2287,8 @@ describe('orphan files folder view (folder row rendering contract)', () => {
       total_found_count: 0,
       total_unlocated_count: 1,
       unknown_count: 1,
-      searched_root_count: 2,
+      scanned_count: 0,
+      pending_scan_count: 0,
       search_error: searchError,
       items: [
         {
@@ -2268,6 +2298,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
           found_count: 0,
           unlocated_count: 1,
           copies: [],
+          scanned_at: null,
+          pending_scan: false,
+          result_truncated: false,
           error: searchError
         },
         {
@@ -2277,6 +2310,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
           found_count: 0,
           unlocated_count: null,
           copies: [],
+          scanned_at: null,
+          pending_scan: false,
+          result_truncated: false,
           error: '源文件不可访问，无法重新核对副本位置'
         }
       ]
@@ -2311,6 +2347,46 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     expect(vm.hardlinkLocationLoading).toBe(false)
     expect(vm.hardlinkLocationResult).toBeNull()
     expect(message.error).toHaveBeenCalledWith(expect.stringContaining('storage offline'))
+  })
+
+  it('预扫描路径数超上限时提示截断并保留已定位路径', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 120 })
+    const truncatedPaths = ['/library/copy-1.mkv', '/library/copy-2.mkv']
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce(hardlinkLocationsResponse({
+      requested_count: 1,
+      resolved_count: 1,
+      missing_orphan_ids: [],
+      total_copy_count: 120,
+      total_found_count: 2,
+      total_unlocated_count: 118,
+      unknown_count: 0,
+      scanned_count: 1,
+      pending_scan_count: 0,
+      search_error: null,
+      items: [{
+        orphan_id: linked.id,
+        file_path: linked.file_path,
+        copy_count: 120,
+        found_count: 2,
+        unlocated_count: 118,
+        copies: truncatedPaths,
+        scanned_at: '2026-08-15T04:00:00Z',
+        pending_scan: false,
+        result_truncated: true,
+        error: null
+      }]
+    }))
+    const wrapper = mountFolderView([linked])
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    await vm.handleHardlinkCopyClick(linked)
+    await flushLifecycle()
+
+    const copyPaths = wrapper.findAll('.hardlink-location-copy__path')
+    expect(copyPaths).toHaveLength(2)
+    expect(wrapper.text()).toContain('路径数超过存储上限，仅显示前 2 条。')
+    expect(wrapper.text()).toContain('该文件还有 118 个副本位置未定位。')
   })
 })
 

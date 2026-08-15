@@ -1,5 +1,41 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-15 交接：两批改动回归加固完成
+
+### 当前结果
+
+- 本轮对话全部修改已补齐回归保护：备份补偿 12 用例（复用/双源/失败/回滚/筛选排序/映射回退/UUID 仓储-schema-store 链）、协调器 29 用例（full 触发/tracker 不触发/失败不阻断+details）、预扫描 19 用例（中途截止/截断优先级/resolved 跳过/新鲜度排序/budget 落行/任务注册契约/护栏默认值/包装器）、查库契约服务+端点双层符号断言、前端截断提示。
+- 关键防回归锚点：交互链路（服务与端点模块）不得 import 遍历函数；任务必须登记 heavy_sync；timeout 必须大于遍历预算；五项 ORPHAN_HARDLINK_SCAN_* 与 TORRENT_BACKUP_RECONCILE_BATCH_SIZE 默认正值；补偿失败不得改变信息同步 outcome；旧结果 scanned_at 不得被未遍历轮覆盖。
+
+### 验证
+
+- 后端 services+api+tasks 全量 2285 passed / 6 skipped；前端全量 738 passed + typecheck + 目标文件 ESLint 0 warning。
+- feature_list.json 两个 feature 任务 evidence 已追加回归加固记录；progress.md 与 roadmap 测试计数已更新。
+- 本批仅测试与文档，未提交（含上一批预扫描功能实现共 28 个跟踪文件待用户指令提交）。
+
+## 2026-08-15 交接：副本定位改为定时预扫描落库，前端只读结果
+
+### 当前结果
+
+- 用户明确：整体查找副本在文件系统过大时耗时不可控，不能在点击请求里执行。副本位置查找已改为定时任务 `orphan_hardlink_copy_scan`（每日 04:00）后台预扫描落库，`POST /orphan-files/hardlink-copies` 只读库（模块级测试断言服务不再 import 遍历函数），仅保留每文件廉价 stat 复核实时 `st_nlink - 1` 总数。
+- 结果表 `orphan_hardlink_copy_result` 按 `(device_id, inode_id)` 唯一存最近一轮结果（含 scanned_at/truncated/scan_note），`orphan_hardlink_scan_state` 单行 keyset 游标跨轮推进避免大库每轮从头 stat。迁移 `c8d9e0f1a2b3`（当前 head，纯增量可回滚）。`device_id` 为 String(32)：Windows `st_dev` 无符号卷号可超 SQLite 有符号 64 位。
+- 性能护栏（Settings 可配）：stat 限量 2000/轮、遍历 200 inode/轮、单调时钟预算 300s（os.walk 目录间检查，超时保留部分结果）、单 inode 路径上限 100、结果保留 30 天、写库分批 200 行短事务、遍历单线程串行、heavy_sync 互斥（与其它孤儿/同步任务排队）。
+- 遍历语义：未遍历的多副本身份不覆盖旧结果（deferred，接口显示待预扫描）；平凡 0 副本直写；walk 找到的路径包含孤儿源路径本身，接口按请求文件过滤。`find_hardlink_paths_bounded` 提供带预算遍历，原 `find_hardlink_paths` 保留为无界包装（隔离诊断等旧调用方不变）。
+- 前端弹框：说明文案、待预扫描计数/标签、扫描时间、等待提示与截断提示；API 类型同步 `scanned_at/pending_scan/result_truncated/scanned_count/pending_scan_count`（移除 `searched_root_count`）。
+
+### 验证
+
+- 后端：`test_orphan_hardlink_copy_scan.py` 10 用例（deadline 部分结果/路径截断/无界对等/deferral/游标推进回绕/幂等更新/保留期清理/单链接不遍历/stat 预算）；`TestHardlinkCopyLocations` 查库契约重写；迁移 34 passed（两表可建可回滚、唯一身份 INSERT 拒绝、全量表 32）；`tests/services + tests/api` 1930 passed 6 skipped；`tests/tasks` 含 profiles 漂移守卫更新后全过；black/flake8 通过。
+- 前端：orphan-files.spec.ts 82 passed；全量 737 passed；typecheck/严格 ESLint/build 通过。
+- 过程修复：async flush 未 await 致游标挂空、Windows 测试真实收集盘根致全盘遍历（测试 patch 根收集器）、monotonic 15.6ms 分辨率致 budget=0 测试不确定（受控时钟）。
+
+### 后续与边界
+
+- 未执行 Git 提交/推送/部署；工作区原有未跟踪产物保持不动。
+- 部署后首轮预扫描前，弹框内多副本文件会显示"待预扫描"——属预期；可在任务管理页手动运行 `orphan_hardlink_copy_scan` 立即补扫（同样受预算约束）。
+- 大库收敛速度参考：每轮 stat 2000 个文件；只有 `nlink>1` 的文件进入遍历（每轮 200 个 inode、300s 预算），全量覆盖后游标回绕按结果新旧滚动刷新。若需加快可调大 `ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE/MAX_TARGETS`，代价是单轮 IO 更重。
+- 任务默认每日 04:00 执行；调度计划可在任务管理页按 Cron 语义调整。
+
 ## 2026-08-15 交接：种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语
 
 ### 当前结果

@@ -603,7 +603,7 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 硬链接副本位置对话框（点击副本数量后按需扫描） -->
+    <!-- 硬链接副本位置对话框（读取定时预扫描落库结果，不做实时遍历） -->
     <el-dialog
       :title="hardlinkLocationDialogTitle"
       :visible.sync="hardlinkLocationDialogVisible"
@@ -614,7 +614,7 @@
     >
       <div v-loading="hardlinkLocationLoading" class="hardlink-location-content">
         <el-alert
-          title="在当前运行环境可访问的同文件系统目录中整体查找。"
+          title="副本位置由每日定时任务在后台整体查找并存储，此处直接显示最近一轮结果。"
           type="info"
           :closable="false"
           show-icon
@@ -624,14 +624,14 @@
           <div class="hardlink-location-summary">
             <span>实时副本 <strong>{{ hardlinkLocationResult.total_copy_count }}</strong></span>
             <span>已定位 <strong>{{ hardlinkLocationResult.total_found_count }}</strong></span>
-            <span>扫描目录 <strong>{{ hardlinkLocationResult.searched_root_count }}</strong></span>
+            <span>待预扫描 <strong>{{ hardlinkLocationResult.pending_scan_count }}</strong></span>
           </div>
 
           <el-alert
             v-if="hardlinkLocationResult.total_unlocated_count > 0"
             class="hardlink-location-alert"
-            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在当前可访问目录中定位`"
-            description="这些副本可能位于无权限目录、未挂载目录或当前不可访问的存储中。"
+            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在最近一轮预扫描中定位`"
+            description="这些副本可能位于无权限或未挂载目录，也可能尚未被预扫描覆盖；副本总数为实时统计。"
             type="warning"
             :closable="false"
             show-icon
@@ -673,7 +673,16 @@
                 </span>
                 <span class="hardlink-location-item__metrics">
                   <el-tag size="mini" type="info">副本 {{ formatHardlinkCopyCount(item.copy_count) }}</el-tag>
-                  <el-tag size="mini" type="success">已定位 {{ item.found_count }}</el-tag>
+                  <el-tag v-if="item.pending_scan" size="mini" type="warning">待预扫描</el-tag>
+                  <el-tag v-else size="mini" type="success">已定位 {{ item.found_count }}</el-tag>
+                  <el-tag
+                    v-if="item.scanned_at"
+                    size="mini"
+                    type="info"
+                    :title="item.scanned_at"
+                  >
+                    扫描于 {{ formatTime(item.scanned_at) }}
+                  </el-tag>
                 </span>
               </header>
 
@@ -708,9 +717,15 @@
                     复制路径
                   </el-button>
                 </div>
+                <p v-if="item.result_truncated" class="hardlink-location-unlocated">
+                  路径数超过存储上限，仅显示前 {{ item.copies.length }} 条。
+                </p>
               </div>
+              <p v-else-if="item.pending_scan" class="hardlink-location-empty">
+                等待每日定时任务预扫描定位副本路径，可稍后重新打开查看。
+              </p>
               <p v-else-if="item.copy_count && item.copy_count > 0" class="hardlink-location-empty">
-                当前运行环境可访问目录内未定位到副本路径。
+                最近一轮预扫描未定位到副本路径。
               </p>
               <p v-else-if="item.copy_count === 0" class="hardlink-location-empty">
                 点击查询时已复核为 0 个副本。

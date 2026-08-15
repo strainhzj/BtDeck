@@ -3345,7 +3345,7 @@
             "backend/tests/core/test_orphan_migration_production_shape.py",
             "backend/docs/constraints/database-migration.md"
           ],
-          "evidence": "本地库取证：1042 条备份最新停在 2026-05-29，活跃种子 2.1 万+ 无备份记录，确认 6 月初 info-only 拆分后备份不再执行。新增 test_torrent_file_backup_reconcile.py 3 passed（限量批次 batch_size=1 只建 1 条、两轮后 no_action 收敛、大小写不敏感 hash 与 name.hash 文件名、墓碑 no_action、源目录不可用 skip_reason 一次性上报）；test_sync_coordinator.py 守卫 info 同步后调用补偿且失败不阻断信息同步；test_db_migration.py 新增 b6e1c4d9a2f7 用例：升级保留 UUID/索引/外键，UUID 数据 downgrade 拒绝执行保持 head（修复 SQLite 数值亲和力会把 '550e8400-…' 截断成 550 的破坏性回滚），整数文本 downgrade 无损转换。迁移链单 head 校验通过；tests/services 全量 1061 passed 1 skipped，tests/api+tests/core 1250 passed 5 skipped；black/flake8 通过，mypy 无新增错误类别（新代码仅 1 处与全仓库一致的 ORM 直接赋值）。"
+          "evidence": "本地库取证：1042 条备份最新停在 2026-05-29，活跃种子 2.1 万+ 无备份记录，确认 6 月初 info-only 拆分后备份不再执行。新增 test_torrent_file_backup_reconcile.py 3 passed（限量批次 batch_size=1 只建 1 条、两轮后 no_action 收敛、大小写不敏感 hash 与 name.hash 文件名、墓碑 no_action、源目录不可用 skip_reason 一次性上报）；test_sync_coordinator.py 守卫 info 同步后调用补偿且失败不阻断信息同步；test_db_migration.py 新增 b6e1c4d9a2f7 用例：升级保留 UUID/索引/外键，UUID 数据 downgrade 拒绝执行保持 head（修复 SQLite 数值亲和力会把 '550e8400-…' 截断成 550 的破坏性回滚），整数文本 downgrade 无损转换。迁移链单 head 校验通过；tests/services 全量 1061 passed 1 skipped，tests/api+tests/core 1250 passed 5 skipped；black/flake8 通过，mypy 无新增错误类别（新代码仅 1 处与全仓库一致的 ORM 直接赋值）。 回归加固（同日第二批）：test_torrent_file_backup_reconcile.py 扩至 12 用例——backup_file_path/项目内旧文件复用不触发复制、torrent_file 直连与 .torrents 子目录双源解析、复制失败计 missing_source 不落库不回填、commit 失败回滚并清理新复制文件、目标筛选（跨下载器/dr=1/deleted_at/39 位 hash 排除）与 added_date 倒序批次、路径映射异常回退原路径；仓储字符串过滤/计数、schema 空串拒绝、get_downloader_from_store str() 归一匹配（UUID 与整数值快照）；test_sync_coordinator.py 扩至 29 用例——full 同步同样触发补偿、tracker-only 不触发、补偿异常仅记入 errors/details 不阻断信息同步（outcome 仍 success）；TORRENT_BACKUP_RECONCILE_BATCH_SIZE 默认正值守护。"
         },
         {
           "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.2",
@@ -3401,6 +3401,99 @@
             "feature_list.json"
           ],
           "evidence": "全部行号由当前源码 grep 实测（reconcile_missing_backups L151、_reconcile_torrent_file_backups L1435、collect_runtime_accessible_roots L311、迁移 upgrade L50/downgrade L66）；无 7b2c9d4e6f10 陈旧 head 引用残留；回读校验通过。"
+        }
+      ]
+    },
+    {
+      "id": "orphan-hardlink-copy-prescan-task",
+      "name": "孤儿副本位置改为定时预扫描落库，前端只读结果",
+      "description": "大文件系统上点击副本数量触发的整体目录遍历耗时不可控。改为每日定时任务 orphan_hardlink_copy_scan 在后台按预算预扫描并落库（按 (device_id, inode_id) 唯一存储结果），hardlink-copies 接口只读库（保留每文件廉价 stat 复核实时 st_nlink-1 总数），未覆盖文件返回 pending_scan 等待下一轮。性能护栏：单轮 stat 限量、遍历 inode 限量、单调时钟预算（os.walk 目录间检查）、单 inode 路径存储上限、结果保留期清理、分批短事务写库与 heavy_sync 互斥。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-hardlink-copy-prescan-task.1",
+          "name": "结果表/游标表迁移与 ORM 模型",
+          "description": "新迁移 c8d9e0f1a2b3（head 由 b6e1c4d9a2f7 推进）：orphan_hardlink_copy_result 按 (device_id, inode_id) 唯一（device_id 用 String(32)——Windows st_dev 为无符号卷序列号，可超出 SQLite 有符号 64 位，与 orphan_current_candidate 同惯例）+ scanned_at 索引；orphan_hardlink_scan_state 单行 keyset 游标。纯增量可回滚（downgrade 删表），重复升级幂等。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/alembic/versions/c8d9e0f1a2b3_add_orphan_hardlink_copy_results.py",
+            "backend/app/models/orphan_hardlink_copy.py",
+            "backend/docs/constraints/database-migration.md",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py"
+          ],
+          "evidence": "test_db_migration.py 新增 c8d9e0f1a2b3 用例：空库建两表、device_id VARCHAR 断言、sqlite_autoindex 唯一性 + 重复身份 INSERT 被 IntegrityError 拒绝、重复升级幂等、downgrade 干净删表；空库全量表计数 30→32；迁移链单 head c8d9e0f1a2b3；三个迁移测试文件 34 passed。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.2",
+          "name": "定时预扫描任务与限时遍历（性能护栏）",
+          "description": "OrphanHardlinkScanService.run_round：keyset 游标分批加载未 resolved 候选并顺序 stat（ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE 默认 2000，含截止检查）；仅 nlink>1 的身份进入遍历（MAX_TARGETS 默认 200，无结果优先、其余按结果新旧排序）；find_hardlink_paths_bounded 在 os.walk 目录间检查单调时钟截止（BUDGET_SECONDS 默认 300s），超时保留部分结果并标记 budget_exceeded；单 inode 路径上限（默认 100）截断标记 truncated；未遍历的多副本身份不覆盖旧结果（deferred）；平凡 0 副本直写；分批 200 行 db_write_scope flush；结果保留期（默认 30 天）清理；遍历全线程串行。任务注册 default_scheduled_tasks（每日 04:00）并登记 task_profiles _heavy（heavy_sync 互斥）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_hardlink_scan_service.py",
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/tasks/scheduler/orphan_hardlink_copy_scan_task.py",
+            "backend/app/tasks/task_profiles.py",
+            "backend/app/data/default_scheduled_tasks.py",
+            "backend/app/core/config.py",
+            "backend/tests/services/test_orphan_hardlink_copy_scan.py",
+            "backend/tests/services/conftest.py",
+            "backend/tests/tasks/test_task_profiles.py"
+          ],
+          "evidence": "新增 test_orphan_hardlink_copy_scan.py 10 用例全过：过期 deadline 返回部分结果+budget_exceeded 不抛异常、路径截断不影响同轮其它目标、无界对等（与 find_hardlink_paths 输出一致）、walk 限量外身份 deferred 且旧结果不覆盖、接口立即读到落库结果并过滤源路径、游标推进（stat 限量场景）与全覆盖回绕、同身份重复轮走更新不重复（幂等）、保留期清理、单链接轮不进入遍历（find_hardlink_paths_bounded 未被调用）、stat 预算停止保留进度（受控时钟，规避 Windows monotonic 15.6ms 分辨率）。task_profiles 漂移守卫测试驱动补齐期望集。开发中还发现并修复：同步 helper 内 async flush 未 await 导致游标挂空；Windows 下测试真实收集盘根导致全盘遍历（测试改为 patch 根收集器，生产由 300s 预算兜底）。 回归加固（同日第二批）：文件扩至 571 行 19 用例——受控时钟下中途截止保留已完成根的部分结果、截断目标遇预算截止 note 仍为 truncated、resolved 候选与无候选指针明细跳过、无结果身份优先于新鲜结果获得遍历名额（旧结果 scanned_at 不被覆盖）、budget_exceeded 注入行 scan_note 且权威副本数不丢失、任务注册契约（executor 可导入指向任务类、cron 0 4 * * *、timeout>预算）、heavy_sync 登记断言、五项性能护栏默认值正值守护、execute() 包装器会话与摘要透传。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.3",
+          "name": "hardlink-copies 端点改为纯查库",
+          "description": "get_hardlink_copy_locations 不再 import 任何遍历函数（模块级测试断言防回归）：保留 _inspect_hardlink_sources 廉价 stat 复核实时 st_nlink-1 总数；按 (device_id, inode_id) 分片反查结果表（400/片），副本列表 = 库内路径 - 源路径本身；无结果的多副本文件返回 pending_scan=true/scanned_at=null；结果表读取失败降级为错误提示且实时总数不丢失；响应以 scanned_count/pending_scan_count 取代 searched_root_count。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py"
+          ],
+          "evidence": "TestHardlinkCopyLocations 重写为查库契约：模块级断言交互链路无 collect_runtime_accessible_roots/find_hardlink_paths 符号；已扫描身份返回过滤后路径+scanned_at+result_truncated，未覆盖返回 pending_scan（1/1 计数），零副本跳过结果表查询，结果读取失败保留实时总数转未定位并报错；tests/services+tests/api 全量 1930 passed 6 skipped。 回归加固：服务与端点模块级断言均不再引入遍历函数符号（性能契约双层防护）。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.4",
+          "name": "前端弹框展示预扫描结果与提示语",
+          "description": "副本位置弹框改为展示库内结果：说明文案改为“由每日定时任务在后台整体查找并存储”；汇总新增“待预扫描”计数（取代扫描目录）；条目增加扫描时间 tag 与“待预扫描”tag；未覆盖文件显示等待提示；路径截断提示；未定位文案改为“最近一轮预扫描”。API 类型同步新字段（scanned_at/pending_scan/result_truncated/scanned_count/pending_scan_count）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "orphan-files.spec.ts 82 passed：文件夹聚合行+待扫描子文件批量查询与展示、待预扫描计数/等待文案/截断提示断言、竞态隔离与异常释放既有用例保持；npm run typecheck、变更文件严格 ESLint 0 warning、生产 build 通过；前端全量 44 suites/737 passed。 回归加固：新增预扫描路径数超上限截断提示用例（保留已定位路径并显示未定位余量），orphan-files.spec.ts 扩至 83 用例。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.5",
+          "name": "路线图、功能状态与会话交接",
+          "description": "按 roadmap-maintain 实测行号同步：services（新增 orphan-hardlink-scan 行、orphan-quarantine 补 bounded 遍历）、orphan_file_service.md 第三层（调用链改为结果表反查）、infra（22 个 revision、head c8d9e0f1a2b3）、tasks/data-models/tests/test-coverage/根元信息。",
+          "status": "done",
+          "scope": "docs",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/README.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "docs/roadmap/backend/tasks/README.md",
+            "docs/roadmap/backend/data-models/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "progress.md",
+            "session-handoff.md",
+            "feature_list.json"
+          ],
+          "evidence": "行号实测：run_round L56、collect_runtime_accessible_roots L312、find_hardlink_paths_bounded L411、get_hardlink_copy_locations L703、_load_hardlink_copy_results L684；无陈旧 head 引用残留，回读校验通过。"
         }
       ]
     }

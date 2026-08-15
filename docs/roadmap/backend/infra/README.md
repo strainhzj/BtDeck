@@ -59,11 +59,11 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
-| Alembic revisions versions | `versions/` | **21 个** revision 文件；当前 head 为 `b6e1c4d9a2f7`（见下表） |
+| Alembic revisions versions | `versions/` | **22 个** revision 文件；当前 head 为 `c8d9e0f1a2b3`（见下表） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（21 个迁移文件）
+### alembic/versions/（22 个迁移文件）
 
 | 关键词 | 文件名 | 内容（从命名推断） |
 |--------|--------|-------------------|
@@ -87,6 +87,7 @@
 | 种子错误原因 torrent-error-reason | `de898cb28172_add_torrent_error_reason.py` ✨2026-08-12 | 为 `torrent_info` 增加可空 Text `error_reason`；历史数据保持空值，upgrade/downgrade 均带列存在守卫 |
 | Tracker 判断错峰 tracker-judge-stagger | `4c1d8e7a2b90_stagger_tracker_status_judge_schedule.py` ✨2026-08-12 | 将未自定义的独立状态判断 Cron 从旧计划迁到 `20,50 * * * *`，在 Tracker 同步后 10 分钟执行；upgrade/downgrade 均只命中已知系统值 |
 | 孤儿后台扫描 orphan-background-scan | `7b2c9d4e6f10_orphan_scan_background_and_current_detail.py` ✨2026-08-13 | `upgrade`(L58)/`downgrade`(L224)：新增后台扫描/提醒兼容字段与 `current_detail_id`；原生加列、恢复残留 `_alembic_tmp_*`，强制 canonical_path 索引回填；历史 >50000 批次保留提醒状态，不再作为清理锁定依据 |
+| 副本预扫描结果表 orphan-hardlink-results | `c8d9e0f1a2b3_add_orphan_hardlink_copy_results.py` ✨2026-08-15 | 纯增量两表：`orphan_hardlink_copy_result`（唯一身份 + scanned_at 索引）与单行游标表；downgrade 直接删表，可回滚 |
 | 备份下载器 ID 类型 torrent-backup-id-type | `b6e1c4d9a2f7_fix_torrent_backup_downloader_id_type.py` ✨2026-08-15 | `upgrade`(L50)/`downgrade`(L66)：`torrent_file_backup.downloader_id` Integer→String(36)（与 `bt_downloaders` UUID 主键对齐）；幂等类型探测 + batch 临时表恢复；downgrade 遇不可无损转整数的 UUID 文本时 raise 拒绝破坏性回滚 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。

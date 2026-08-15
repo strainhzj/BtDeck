@@ -50,10 +50,12 @@ def _clean_database_path_env():
 #       → 4c1d8e7a2b90(tracker status judge schedule)
 #       → 7b2c9d4e6f10(orphan background scan + stable current detail)
 #       → b6e1c4d9a2f7(torrent backup downloader UUID type)
-EXPECTED_HEAD = "b6e1c4d9a2f7"
+#       → c8d9e0f1a2b3(orphan hardlink copy results)
+EXPECTED_HEAD = "c8d9e0f1a2b3"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
+HARDLINK_COPY_RESULTS_PREV = "b6e1c4d9a2f7"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
 
@@ -139,7 +141,9 @@ class TestMigrationChainIntegrity:
         # + b075727f7182 加 orphan_current_candidate + orphan_operation_lease = 28
         # + c7d8e9f0a1b2 加 orphan_purge_job = 29
         # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
-        assert count == 30, f"空库 upgrade 应建 30 张业务表（含 orphan_purge_job + sync_checkpoints），实际 {count}"
+        assert (
+            count == 32
+        ), f"空库 upgrade 应建 32 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -225,6 +229,71 @@ class TestMigrationChainIntegrity:
         assert version_before == version_after == EXPECTED_HEAD
         assert count_before == count_after
 
+    def test_orphan_hardlink_copy_results_upgrade_and_downgrade(self, tmp_path):
+        """副本预扫描结果表/游标表可建可回滚，且重复升级幂等。"""
+        db_path = tmp_path / "orphan_hardlink_results.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, HARDLINK_COPY_RESULTS_PREV)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            assert "orphan_hardlink_copy_result" not in tables
+            assert "orphan_hardlink_scan_state" not in tables
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            assert "orphan_hardlink_copy_result" in tables
+            assert "orphan_hardlink_scan_state" in tables
+            columns = {
+                column[1]: column[2]
+                for column in conn.execute("PRAGMA table_info(orphan_hardlink_copy_result)").fetchall()
+            }
+            # device_id 必须是字符串列：Windows st_dev 是无符号卷号，可超有符号 64 位
+            assert columns["device_id"].upper().startswith("VARCHAR")
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(orphan_hardlink_copy_result)").fetchall()}
+            # SQLite 把表内唯一约束物化为 sqlite_autoindex_*，不保留约束名
+            assert any(name.startswith("sqlite_autoindex") for name in indexes)
+            assert "ix_orphan_hardlink_copy_result_scanned_at" in indexes
+            # (device_id, inode_id) 唯一性：插入重复物理身份必须被拒绝
+            conn.execute(
+                "INSERT INTO orphan_hardlink_copy_result (device_id, inode_id, copy_count, "
+                "found_count, copies_json, scanned_at, created_at, updated_at) "
+                "VALUES ('1', 1, 0, 0, '[]', 0, 0, 0)"
+            )
+            try:
+                conn.execute(
+                    "INSERT INTO orphan_hardlink_copy_result (device_id, inode_id, copy_count, "
+                    "found_count, copies_json, scanned_at, created_at, updated_at) "
+                    "VALUES ('1', 1, 0, 0, '[]', 0, 0, 0)"
+                )
+                raise AssertionError("重复物理身份应被唯一约束拒绝")
+            except sqlite3.IntegrityError:
+                pass
+        finally:
+            conn.close()
+
+        # 重复升级幂等
+        command.upgrade(cfg, "head")
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+
+        # downgrade 干净删表（纯增量，无数据迁移）
+        command.downgrade(cfg, HARDLINK_COPY_RESULTS_PREV)
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            assert "orphan_hardlink_copy_result" not in tables
+            assert "orphan_hardlink_scan_state" not in tables
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+
     def test_torrent_backup_downloader_uuid_type_upgrade_and_downgrade(self, tmp_path):
         """备份下载器 ID 改为 VARCHAR(36) 时必须保留 UUID、索引与外键。"""
         db_path = tmp_path / "torrent_backup_uuid.db"
@@ -271,11 +340,13 @@ class TestMigrationChainIntegrity:
         finally:
             conn.close()
 
-        # UUID 文本无法无损转 Integer：downgrade 必须拒绝执行并保持 head 版本，
-        # 而不是经 SQLite 数值亲和力把 '550e8400-…' 截断成 550。
+        # UUID 文本无法无损转 Integer：downgrade 必须拒绝执行并保持 b6e1 版本，
+        # 而不是经 SQLite 数值亲和力把 '550e8400-…' 截断成 550。先退掉纯增量的
+        # 副本结果迁移，再验证类型迁移自身的破坏性回滚拒绝。
+        command.downgrade(cfg, HARDLINK_COPY_RESULTS_PREV)
         with pytest.raises(RuntimeError, match="pre-migration"):
             command.downgrade(cfg, TORRENT_BACKUP_ID_TYPE_PREV)
-        assert _read_version(str(db_path)) == EXPECTED_HEAD
+        assert _read_version(str(db_path)) == HARDLINK_COPY_RESULTS_PREV
 
         # 数据可无损转换时（NULL/整数文本），downgrade 允许执行且保留值。
         conn = sqlite3.connect(db_path)
@@ -665,7 +736,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 30
+        assert _table_count(str(target_db)) == 32
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)
