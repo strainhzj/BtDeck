@@ -49,7 +49,7 @@ class TorrentFileBackupRepository:
         file_size: Optional[int] = None,
         task_name: Optional[str] = None,
         uploader_id: Optional[int] = None,
-        downloader_id: Optional[int] = None,
+        downloader_id: Optional[str] = None,
         upload_time: Optional[datetime] = None,
         use_count: int = 0,
     ) -> Optional[TorrentFileBackup]:
@@ -158,7 +158,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError:
             return None
 
-    async def list_by_downloader(self, downloader_id: int, skip: int = 0, limit: int = 20) -> List[TorrentFileBackup]:
+    async def list_by_downloader(self, downloader_id: str, skip: int = 0, limit: int = 20) -> List[TorrentFileBackup]:
         """
         按下载器查询种子文件备份列表
 
@@ -212,7 +212,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError:
             return []
 
-    async def count_by_downloader(self, downloader_id: int) -> int:
+    async def count_by_downloader(self, downloader_id: str) -> int:
         """
         统计下载器的备份文件数量
 
@@ -385,7 +385,7 @@ class TorrentFileBackupRepository:
         except SQLAlchemyError:
             return False
 
-    async def get_total_size_by_downloader(self, downloader_id: int) -> int:
+    async def get_total_size_by_downloader(self, downloader_id: str) -> int:
         """
         统计下载器备份文件总大小
 

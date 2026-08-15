@@ -297,7 +297,7 @@ interface ListQuery {
   page: number
   pageSize: number
   search: string
-  downloader_id: number | null
+  downloader_id: string | null
   startTime: string
   endTime: string
 }
@@ -339,7 +339,7 @@ export default class FileManagement extends Vue {
   // 导入对话框
   importDialogVisible = false
   importForm = {
-    downloader_id: null as number | null
+    downloader_id: null as string | null
   }
   fileList: any[] = []
   importLoading = false

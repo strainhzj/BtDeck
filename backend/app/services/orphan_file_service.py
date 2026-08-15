@@ -32,7 +32,6 @@ from app.services.orphan_lifecycle_service import OrphanLifecycleService
 from app.services.orphan_manifest import (
     ManifestSnapshot,
     TorrentManifestBuilder,
-    collect_scan_path_selection,
     normalize_path,
 )
 from app.services.orphan_purge_job_service import (
@@ -42,6 +41,7 @@ from app.services.orphan_purge_job_service import (
 from app.services.orphan_quarantine import (
     build_quarantine_path,
     compute_purge_after,
+    collect_runtime_accessible_roots,
     find_hardlink_copies,
     find_hardlink_paths,
     get_hardlink_copy_count,
@@ -682,11 +682,11 @@ class OrphanFileService:
         return inspected
 
     async def get_hardlink_copy_locations(self, orphan_ids: Sequence[int]) -> Dict[str, Any]:
-        """按需定位孤儿文件在已配置扫描目录内的其它硬链接路径。
+        """按需定位孤儿文件在当前运行环境可访问目录内的其它硬链接路径。
 
         ``st_nlink - 1`` 仍是副本总数的权威口径；具体位置只能通过目录遍历反查。
-        本方法只遍历孤儿扫描当前使用的已配置根，并对多个目标 inode 合并为一轮扫描。
-        因此范围外或无权限目录中的链接会计入 ``unlocated_count``，但不会伪造路径。
+        本方法收集当前进程可访问、与目标 inode 同文件系统的挂载根，并对多个目标
+        合并为一轮扫描。无权限或未挂载目录中的链接会计入 ``unlocated_count``。
         """
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
         if not normalized_ids:
@@ -712,17 +712,23 @@ class OrphanFileService:
         search_error: Optional[str] = None
         if target_inodes:
             try:
-                selection = await asyncio.to_thread(collect_scan_path_selection)
-                # 用户确认口径：搜索全部已配置且可扫描的下载目录，不限当前 owner，
-                # 以便共享文件系统上的交叉做种副本也能被定位。
-                scan_roots = [root for root, _owners in selection.scan_roots]
+                source_paths = [
+                    cast(str, item["file_path"])
+                    for item in inspected
+                    if item["identity"] is not None and int(item["copy_count"] or 0) > 0
+                ]
+                scan_roots = await asyncio.to_thread(
+                    collect_runtime_accessible_roots,
+                    target_inodes,
+                    source_paths,
+                )
                 paths_by_inode = await asyncio.to_thread(
                     find_hardlink_paths,
                     target_inodes,
                     scan_roots,
                 )
             except Exception as exc:
-                search_error = "已配置下载目录扫描失败，未能完整定位副本位置"
+                search_error = "当前运行环境可访问目录扫描失败，未能完整定位副本位置"
                 logger.warning("[孤儿列表] 硬链接副本位置扫描失败: %s", exc)
 
         items: List[Dict[str, Any]] = []

@@ -366,6 +366,17 @@ describe('torrent list view pagination and sorting', () => {
     )
   })
 
+  it('简单搜索三个下拉框按下载器、状态、tracker展示提示语', () => {
+    wrapper = mountListView()
+    // vue-test-utils v1 对驼峰注册名不做 kebab 转换，stub 标签为 advancedmultiselect-stub
+    const selects = wrapper.findAll('advancedmultiselect-stub')
+
+    expect(selects).toHaveLength(3)
+    expect(selects.at(0).attributes('placeholder')).toBe('请选择下载器')
+    expect(selects.at(1).attributes('placeholder')).toBe('请选择种子状态')
+    expect(selects.at(2).attributes('placeholder')).toBe('请选择tracker')
+  })
+
   it('重复任务、高级搜索和查询模板均会退出同内容模式', async() => {
     wrapper = mountListView()
     await flushLifecycle()

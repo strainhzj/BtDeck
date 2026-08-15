@@ -2167,7 +2167,7 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     expect(viewModel(wrapper).hardlinkLocationDialogVisible).toBe(true)
     expect(wrapper.find('.hardlink-location-summary').text()).toContain('已定位 1')
     expect(wrapper.find('.hardlink-location-copy__path').text()).toBe(configuredCopy)
-    expect(wrapper.text()).toContain('还有 1 个副本未在已配置目录中定位')
+    expect(wrapper.text()).toContain('还有 1 个副本未在当前可访问目录中定位')
 
     await wrapper.find('.hardlink-location-copy__button').trigger('click')
     await flushLifecycle()
@@ -2249,7 +2249,7 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 })
     const unavailable = orphanItem(2, 'scan-completed', { hardlink_copy_count: 1 })
     const removed = orphanItem(3, 'scan-completed', { hardlink_copy_count: 1 })
-    const searchError = '已配置下载目录扫描失败，未能完整定位副本位置'
+    const searchError = '当前运行环境可访问目录扫描失败，未能完整定位副本位置'
     mockGetHardlinkCopyLocations.mockResolvedValueOnce(hardlinkLocationsResponse({
       requested_count: 3,
       resolved_count: 2,

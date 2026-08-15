@@ -28,7 +28,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "7b2c9d4e6f10"  # 当前 head（孤儿后台扫描与稳定当前明细）
+REV_HEAD = "b6e1c4d9a2f7"  # 当前 head（种子备份下载器 UUID 类型修复）
 
 
 def _make_cfg(db_path: str) -> Config:

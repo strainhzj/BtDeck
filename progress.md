@@ -1,5 +1,27 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-15 - 种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语
+
+### 根因与实现
+
+- 用户报告"种子文件管理页面 6 月 7 日后无变动"。取证确认非前端缓存：6 月初同步拆分 info-only 后代码不再执行种子文件备份；本地库 1042 条备份最新停在 2026-05-29，活跃种子 2.1 万+ 无备份记录。
+- 同步协调器在 info-only 与 full 路径单下载器完成后调用 `_reconcile_torrent_file_backups`（L1435）：`reconcile_missing_backups`（L151）按 `TORRENT_BACKUP_RECONCILE_BATCH_SIZE`（默认 200）限量增量补齐，支持复用已有备份文件/项目内旧文件、qB 纯 hash 与 Transmission `name.hash.torrent` 源文件名；逻辑删除墓碑视为已处理不自动重建；文件复制在写锁外、DB 记录与 `TorrentInfo.backup_file_path` 同一短事务提交，失败只记错误不阻断信息同步。
+- 连带缺陷修复：下载器主键为 UUID 字符串，但备份模型/筛选/导入接口按整数校验；全部改为 String，新增迁移 `b6e1c4d9a2f7`（Integer→String(36)，幂等类型探测 + batch 临时表恢复）。
+- 孤儿"查找副本"按用户确认口径从"仅扫已配置映射目录"改为"当前运行环境可访问目录整体查找"：`collect_runtime_accessible_roots`（L311）Linux 读 `/proc/self/mountinfo`、其它平台回退源路径同设备祖先、Windows 枚举盘符；硬链接不跨文件系统，按目标 `st_dev` 严格剪枝并在 `os.walk` 中跳过符号链接与异设备目录，不进入系统/缓存目录所在的其他磁盘。
+- 种子页三个筛选下拉提示语从左至右改为"请选择下载器/请选择种子状态/请选择tracker"：`AdvancedMultiSelect` 新增 `placeholder` prop（默认"请选择"保持兼容），仅改提示不改筛选逻辑。
+
+### 验证过程中修复的问题
+
+- 迁移测试抓到 downgrade 数据破坏：SQLite batch 重建经数值亲和力把 `'550e8400-…'` 截断成 `550`；按仓库"受限回滚"惯例改为存在不可无损转整数值时 `raise RuntimeError` 拒绝自动回滚（6132/7b2c9 同款），测试改为断言拒绝执行保持 head + 整数文本可无损降级。
+- 前端新测试的 stub 选择器修正：vue-test-utils v1 对驼峰注册名不做 kebab 转换，实际标签为 `advancedmultiselect-stub`。
+- 修复 HEAD 既有失败的 `torrent-error-reason-ui.spec.ts` 契约漂移：`title="种子错误原因"`/`:description` 锚点随 5c297b5 迁入 TrackerDetailCard，契约改为扫描卡片源码 + 视图 `:error-reason` 透传断言。
+
+### 验证
+
+- 后端：新增 `test_torrent_file_backup_reconcile.py` 3 passed；`tests/services` 全量 1061 passed 1 skipped；`tests/api + tests/core` 1250 passed 5 skipped（迁移链单 head）；black/flake8 通过；mypy 无新增错误类别（新代码 cast 清理后仅 1 处与全仓库一致的 ORM 直接赋值）。
+- 前端：全量 44 suites / 737 passed；`npm run typecheck`、变更文件严格 ESLint 0 warning、生产 build 成功；完整 `npm run lint` 仍被无关 `keywords-board.spec.ts` 5 条既有 warning 拦截（本次文件 0 warning）。
+- 按 roadmap-maintain 实测行号同步 services/orphan_file_service.md/infra/frontend/tests/test-coverage 与根 README 元信息；feature_list.json 新增功能条目；未执行 Git 提交，工作区原有未跟踪产物保持不动。
+
 ## 2026-08-14 - Tracker 主域名筛选、错误单种排查与卡片统一
 
 ### 需求确认与实现

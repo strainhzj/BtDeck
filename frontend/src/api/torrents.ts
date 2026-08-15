@@ -1099,7 +1099,7 @@ export interface TorrentBackup {
   info_hash: string
   task_name: string
   torrent_name: string
-  downloader_id: number | string
+  downloader_id: string
   downloader_nickname?: string | null
   file_path: string
   created_at: string
@@ -1113,7 +1113,7 @@ export interface TorrentBackup {
 export interface TorrentBackupListParams {
   page: number
   pageSize: number
-  downloader_id?: number | string
+  downloader_id?: string
 }
 
 /**
@@ -1195,7 +1195,7 @@ export function deleteTorrentBackup(infoHash: string): Promise<ApiResponse<any>>
  * @param files 种子文件列表
  * @returns 导入结果
  */
-export function importTorrentBackup(downloaderId: number, files: File[]): Promise<ApiResponse<any>> {
+export function importTorrentBackup(downloaderId: string, files: File[]): Promise<ApiResponse<any>> {
   if (!files || files.length === 0) {
     return Promise.reject(new Error('No files to upload'))
   }

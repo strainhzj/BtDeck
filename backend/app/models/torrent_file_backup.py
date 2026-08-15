@@ -55,7 +55,7 @@ class TorrentFileBackup(Base):
     task_name = Column(String(500), nullable=True, comment="关联的任务名称")
     uploader_id = Column(Integer, nullable=True, comment="上传用户ID")
     downloader_id = Column(
-        Integer,
+        String(36),
         ForeignKey("bt_downloaders.downloader_id", ondelete="CASCADE"),
         nullable=True,
         index=True,
@@ -83,7 +83,7 @@ class TorrentFileBackup(Base):
         file_size: Optional[int] = None,
         task_name: Optional[str] = None,
         uploader_id: Optional[int] = None,
-        downloader_id: Optional[int] = None,
+        downloader_id: Optional[str] = None,
         upload_time: Optional[datetime] = None,
         last_used_time: Optional[datetime] = None,
         use_count: int = 0,

@@ -34,7 +34,13 @@ class TorrentFileBackupCreate(BaseModel):
         ..., min_length=1, max_length=500, description="种子文件名称", examples=["example.torrent"]
     )
 
-    downloader_id: int = Field(..., gt=0, description="下载器ID", examples=[1])
+    downloader_id: str = Field(
+        ...,
+        min_length=1,
+        max_length=64,
+        description="下载器ID",
+        examples=["550e8400-e29b-41d4-a716-446655440000"],
+    )
 
     task_name: Optional[str] = Field(
         None, max_length=500, description="关联的任务名称（可选）", examples=["我的下载任务"]
@@ -61,7 +67,7 @@ class TorrentFileBackupResponse(BaseModel):
     file_size: Optional[int] = Field(None, description="文件大小（字节）")
     task_name: Optional[str] = Field(None, description="关联的任务名称")
     uploader_id: Optional[int] = Field(None, description="上传用户ID")
-    downloader_id: Optional[int] = Field(None, description="关联的下载器ID")
+    downloader_id: Optional[str] = Field(None, description="关联的下载器ID")
     upload_time: Optional[datetime] = Field(None, description="上传时间")
     last_used_time: Optional[datetime] = Field(None, description="最后使用时间")
     use_count: int = Field(..., description="使用次数")
@@ -79,7 +85,7 @@ class TorrentFileBackupResponse(BaseModel):
                 "file_size": 102400,
                 "task_name": "我的下载任务",
                 "uploader_id": 1,
-                "downloader_id": 1,
+                "downloader_id": "550e8400-e29b-41d4-a716-446655440000",
                 "upload_time": "2026-02-15T12:00:00",
                 "last_used_time": "2026-02-15T14:30:00",
                 "use_count": 5,
@@ -116,7 +122,7 @@ class TorrentFileBackupListResponse(BaseModel):
                         "file_path": "backup/torrents/...",
                         "file_size": 102400,
                         "task_name": "任务1",
-                        "downloader_id": 1,
+                        "downloader_id": "550e8400-e29b-41d4-a716-446655440000",
                         "upload_time": "2026-02-15T12:00:00",
                         "use_count": 5,
                         "is_deleted": False,

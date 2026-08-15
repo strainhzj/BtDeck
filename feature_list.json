@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-14",
+  "last_updated": "2026-08-15",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-11",
@@ -3312,6 +3312,95 @@
             "session-handoff.md"
           ],
           "evidence": "已按当前源码重新测量关键行号并同步三层路线图、测试覆盖、功能清单、进度和交接记录；JSON 解析通过。"
+        }
+      ]
+    },
+    {
+      "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders",
+      "name": "种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语",
+      "description": "修复 6 月初同步拆分为 info-only 后种子文件备份停更：info/full 同步按下载器限量增量补齐缺失备份，并把 torrent_file_backup.downloader_id 从错误的 Integer 迁移为与 bt_downloaders 一致的 String(36) UUID；孤儿文件『查找副本』从仅扫已配置映射目录改为整体收集当前运行环境可访问、与目标 inode 同文件系统的挂载根；种子页三个筛选下拉提示语改为『请选择下载器/请选择种子状态/请选择tracker』。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.1",
+          "name": "info/full 同步后备份增量补偿与下载器 ID UUID 类型修复",
+          "description": "同步协调器在 info-only 与 full 路径单下载器完成后调用 reconcile_missing_backups：按 TORRENT_BACKUP_RECONCILE_BATCH_SIZE（默认 200）限量批次处理无备份记录的活跃种子，复用已有备份文件/项目内旧文件或从下载器种子目录（qB 纯 hash 与 Transmission name.hash.torrent 均支持）复制，逻辑删除墓碑不再自动重建；文件复制在写锁外、记录与 TorrentInfo.backup_file_path 同一短事务提交。同时修复备份模型/筛选/导入接口按整数校验下载器 UUID 的缺陷，新增迁移 b6e1c4d9a2f7（Integer→String(36)，幂等类型探测 + batch 临时表恢复，downgrade 遇不可无损转换的 UUID 文本时 raise 拒绝破坏性回滚）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_coordinator.py",
+            "backend/app/services/torrent_file_backup_manager.py",
+            "backend/app/core/config.py",
+            "backend/app/models/torrent_file_backup.py",
+            "backend/app/repositories/torrent_file_backup_repository.py",
+            "backend/app/schemas/torrent_backup.py",
+            "backend/app/api/endpoints/torrent_backup.py",
+            "backend/alembic/versions/b6e1c4d9a2f7_fix_torrent_backup_downloader_id_type.py",
+            "backend/tests/services/test_torrent_file_backup_reconcile.py",
+            "backend/tests/services/test_sync_coordinator.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py",
+            "backend/docs/constraints/database-migration.md"
+          ],
+          "evidence": "本地库取证：1042 条备份最新停在 2026-05-29，活跃种子 2.1 万+ 无备份记录，确认 6 月初 info-only 拆分后备份不再执行。新增 test_torrent_file_backup_reconcile.py 3 passed（限量批次 batch_size=1 只建 1 条、两轮后 no_action 收敛、大小写不敏感 hash 与 name.hash 文件名、墓碑 no_action、源目录不可用 skip_reason 一次性上报）；test_sync_coordinator.py 守卫 info 同步后调用补偿且失败不阻断信息同步；test_db_migration.py 新增 b6e1c4d9a2f7 用例：升级保留 UUID/索引/外键，UUID 数据 downgrade 拒绝执行保持 head（修复 SQLite 数值亲和力会把 '550e8400-…' 截断成 550 的破坏性回滚），整数文本 downgrade 无损转换。迁移链单 head 校验通过；tests/services 全量 1061 passed 1 skipped，tests/api+tests/core 1250 passed 5 skipped；black/flake8 通过，mypy 无新增错误类别（新代码仅 1 处与全仓库一致的 ORM 直接赋值）。"
+        },
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.2",
+          "name": "孤儿副本从整体可访问目录定位（同文件系统剪枝）",
+          "description": "get_hardlink_copy_locations 不再读取下载器映射清单（collect_scan_path_selection），改由 orphan_quarantine.collect_runtime_accessible_roots 整体收集：Linux 读 /proc/self/mountinfo 当前进程挂载命名空间（含 Docker bind mount），其它平台回退源路径最高同设备祖先，Windows 枚举盘符；因硬链接不能跨文件系统，仅保留 st_dev 与目标 inode 相同的根，折叠父子重叠并在 os.walk 中按设备剪枝、跳过符号链接目录，覆盖映射目录之外的可见副本同时不进入无关磁盘。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py"
+          ],
+          "evidence": "test_orphan_hardlink_detection.py 重写定位用例：旧『已配置目录外副本计入 unlocated』场景改为运行环境根内副本可被整体定位（total_found 1→2、unlocated 1→0、searched_root_count 2→3），并继续覆盖多 inode 单轮遍历复用、扫描失败降级与无目标时不触发扫描；端点/前端文案同步改为『当前运行环境可访问目录』。tests/services 全量 1061 passed 1 skipped。"
+        },
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.3",
+          "name": "种子页筛选下拉提示语与备份 ID 类型对齐",
+          "description": "AdvancedMultiSelect 新增 placeholder prop（默认『请选择』保持兼容），列表视图简单搜索三个下拉从左至右改为『请选择下载器/请选择种子状态/请选择tracker』，传统视图 Tracker 主域名下拉改为『请选择tracker』；FileManagement 与 api/torrents.ts 的备份 downloader_id 类型改为 string，与后端 UUID 对齐。仅改提示语，不改变筛选逻辑。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/AdvancedMultiSelect.vue",
+            "frontend/src/components/torrents/__tests__/AdvancedMultiSelect.spec.ts",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/FileManagement.vue",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "AdvancedMultiSelect.spec.ts 新增 placeholder 定制用例；torrent-list-view-component.spec.ts 新增三个下拉提示语断言（修复 stub 选择器：vue-test-utils v1 驼峰注册名不转 kebab，实际标签为 advancedmultiselect-stub）；orphan-files.spec.ts 同步整体定位文案。前端全量 44 suites / 737 passed（含修复 HEAD 既有失败的 torrent-error-reason-ui.spec.ts 契约漂移：title/description 锚点随 5c297b5 迁入 TrackerDetailCard）；npm run typecheck 通过、变更文件严格 ESLint 0 warning、生产 build 成功；完整 npm run lint 仍被无关 keywords-board.spec.ts 5 条既有 warning 拦截（本次文件 0 warning）。"
+        },
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.4",
+          "name": "路线图、功能状态与会话交接",
+          "description": "按 roadmap-maintain 用源码实测行号同步：后端 services（sync-coordinator/torrent-backup/orphan-quarantine）、orphan_file_service.md 第三层（调用链 collect_runtime_accessible_roots L311）、infra（21 个 revision、head b6e1c4d9a2f7 及受限回滚语义）、frontend components-layout（AdvancedMultiSelect placeholder）、tests 分支与 test-coverage 矩阵、根 README 元信息。",
+          "status": "done",
+          "scope": "docs",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/frontend/components-layout/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "progress.md",
+            "session-handoff.md",
+            "feature_list.json"
+          ],
+          "evidence": "全部行号由当前源码 grep 实测（reconcile_missing_backups L151、_reconcile_torrent_file_backups L1435、collect_runtime_accessible_roots L311、迁移 upgrade L50/downgrade L66）；无 7b2c9d4e6f10 陈旧 head 引用残留；回读校验通过。"
         }
       ]
     }

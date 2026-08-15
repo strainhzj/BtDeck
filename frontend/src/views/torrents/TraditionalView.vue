@@ -272,6 +272,7 @@
             <div class="filter-group-title">Tracker主域名</div>
             <AdvancedMultiSelect
               v-model="listQuery.tracker_domain"
+              placeholder="请选择tracker"
               :options="trackerDomainOptions"
               :allow-create="false"
               :show-mode-toggle="false"

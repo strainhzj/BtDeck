@@ -98,9 +98,9 @@ export interface HardlinkCopyLocationItem {
   /** 点击时重新读取的实时副本总数；源文件不可访问时为 null。 */
   copy_count: number | null
   found_count: number
-  /** 位于未配置/无权限目录中的剩余数量；源文件不可访问时为 null。 */
+  /** 位于当前运行环境不可访问目录中的剩余数量；源文件不可访问时为 null。 */
   unlocated_count: number | null
-  /** 已配置扫描目录内定位到的其它硬链接绝对路径。 */
+  /** 当前运行环境可访问的同文件系统目录内定位到的其它硬链接绝对路径。 */
   copies: string[]
   error: string | null
 }

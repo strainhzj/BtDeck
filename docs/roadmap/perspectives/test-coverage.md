@@ -63,7 +63,7 @@
 | `tests/api/test_transmission_error_sync.py` | 394 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测、恢复清空、旧 RPC 兼容及 legacy/async Tracker 0–4 状态写入 |
 | `tests/api/test_tracker_migration.py` | 730 | qB/Transmission Tracker 手动新增、修改、删除路径；Transmission announce/scrape 独立状态码持久化 |
 | `tests/services/test_tracker_status_sync.py` | 972 | Tracker 行级 Working + `None`/空白消息历史 error 恢复；announce/scrape 状态边界、非空关键词优先、未知逐行保留、双消息、幂等、host 跨种子隔离及 zimiao 359 行快照形态 |
-| `tests/services/test_sync_coordinator.py` | 814 | 统一同步协调、准入/取消/检查点/观测；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序 |
+| `tests/services/test_sync_coordinator.py` | 798 | 统一同步协调、准入/取消/检查点/观测；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序；info/full 同步后调用备份增量补偿 |
 | `tests/tasks/test_torrent_tracker_status_judge.py` | 546 | qB/Transmission 未联系/发送中为中性；Working + `None`/空白消息明确正常；zimiao 双 Tracker 顺序/类型/空消息矩阵；非空关键词优先、软删除隔离、真实 SQLite 批量更新、独立 Cron 错峰与重任务互斥 |
 | `tests/api/test_torrent_backup_review.py` | 188 | 备份列表当前下载器 nickname 单查询批量解析及序列化 |
 | `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
@@ -81,6 +81,12 @@
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
 | `tests/api/test_torrent_list_api.py` | 829 | `torrent_crud.py` + `torrent_helpers.py`：Tracker 主机域名去端口筛选、同步域名列表排序、错误状态与全局同名同大小唯一性；Tracker 多服务不改变任务唯一性 |
+
+### 2026-08-15 备份补偿与副本整体定位回归
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/services/test_torrent_file_backup_reconcile.py` | 162 | `torrent_file_backup_manager.py`：`reconcile_missing_backups` 限量批次、幂等收敛、qB/Transmission 常见源文件名、逻辑删除墓碑不再自动重建与源目录不可用一次性上报 |
 
 ### 关键源文件测试覆盖抽样
 
@@ -104,7 +110,7 @@
 | `app/services/orphan_scanner.py` | `test_orphan_scanner.py` | ✅ |
 | `app/services/reannounce_service.py` | `test_reannounce_service.py` + `test_reannounce_config.py` | ✅ |
 | `app/core/database_result.py` | `test_database_result.py` | ✅ |
-| `app/core/migration.py` / `startup/lifecycle.py` / `7b2c9d4e6f10` | `test_db_migration.py` + `test_db_rollback_scenarios.py` + `test_orphan_migration_production_shape.py` + `test_startup_migration_guard.py` | ✅ 单 head；覆盖 batch 中断恢复/缺原表拒绝、canonical_path 索引回填、历史超量提醒标记、真实文件 WAL 大数据升级与任意模式启动 fail-fast |
+| `app/core/migration.py` / `startup/lifecycle.py` / `7b2c9d4e6f10` / `b6e1c4d9a2f7` | `test_db_migration.py` + `test_db_rollback_scenarios.py` + `test_orphan_migration_production_shape.py` + `test_startup_migration_guard.py` | ✅ 单 head；覆盖 batch 中断恢复/缺原表拒绝、canonical_path 索引回填、历史超量提醒标记、真实文件 WAL 大数据升级与任意模式启动 fail-fast；`b6e1c4d9a2f7` 备份下载器 ID UUID 类型升级保留 UUID/索引/外键，含不可无损转换数据时 downgrade 拒绝回滚 |
 | `app/core/path_mapping.py` | （未发现直接测试） | ⚠ 未覆盖 |
 | `app/core/file_operations.py`（1474 行） | （未发现直接测试） | ⚠ 未覆盖 |
 

@@ -18,7 +18,7 @@ import pytest
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
 from app.services.orphan_file_service import OrphanFileService
-from app.services.orphan_manifest import ManifestSnapshot, ScanPathSelection, normalize_path
+from app.services.orphan_manifest import ManifestSnapshot, normalize_path
 from app.services.orphan_quarantine import (
     find_hardlink_copies,
     find_hardlink_paths,
@@ -270,10 +270,10 @@ class TestHardlinkCopyCount:
 
 
 class TestHardlinkCopyLocations:
-    """点击副本数量时按需定位已配置扫描目录内的其它硬链接路径。"""
+    """点击副本数量时按需定位当前运行环境可访问的其它硬链接路径。"""
 
     async def test_returns_found_and_unlocated_copy_counts(self, async_orphan_db, tmp_path):
-        """扫描全部已配置根，返回完整路径，并区分范围外及不可访问副本。"""
+        """旧映射目录之外但运行环境可访问的副本也必须被整体扫描定位。"""
         source_root = tmp_path / "downloads"
         other_root = tmp_path / "library"
         outside_root = tmp_path / "outside"
@@ -323,16 +323,11 @@ class TestHardlinkCopyLocations:
         async_orphan_db.add_all([linked_detail, solo_detail, missing_detail])
         await async_orphan_db.commit()
 
-        selection = ScanPathSelection(
-            scan_roots=(
-                (normalize_path(str(source_root)), frozenset({"dl_001"})),
-                (normalize_path(str(other_root)), frozenset({"dl_002"})),
-            )
-        )
+        runtime_roots = [str(source_root), str(other_root), str(outside_root)]
         service = OrphanFileService(async_orphan_db)
         with patch(
-            "app.services.orphan_file_service.collect_scan_path_selection",
-            return_value=selection,
+            "app.services.orphan_file_service.collect_runtime_accessible_roots",
+            return_value=runtime_roots,
         ):
             result = await service.get_hardlink_copy_locations(
                 [linked_detail.id, solo_detail.id, missing_detail.id, 999999]
@@ -342,18 +337,21 @@ class TestHardlinkCopyLocations:
         assert result["resolved_count"] == 3
         assert result["missing_orphan_ids"] == [999999]
         assert result["total_copy_count"] == 2
-        assert result["total_found_count"] == 1
-        assert result["total_unlocated_count"] == 1
+        assert result["total_found_count"] == 2
+        assert result["total_unlocated_count"] == 0
         assert result["unknown_count"] == 1
-        assert result["searched_root_count"] == 2
+        assert result["searched_root_count"] == 3
         assert result["search_error"] is None
 
         by_id = {item["orphan_id"]: item for item in result["items"]}
         linked_item = by_id[linked_detail.id]
         assert linked_item["copy_count"] == 2
-        assert linked_item["found_count"] == 1
-        assert linked_item["unlocated_count"] == 1
-        assert linked_item["copies"] == [os.path.realpath(configured_copy)]
+        assert linked_item["found_count"] == 2
+        assert linked_item["unlocated_count"] == 0
+        assert linked_item["copies"] == sorted(
+            [os.path.realpath(configured_copy), os.path.realpath(outside_copy)],
+            key=os.path.normcase,
+        )
         assert linked_item["error"] is None
 
         assert by_id[solo_detail.id]["copy_count"] == 0
@@ -402,17 +400,12 @@ class TestHardlinkCopyLocations:
         async_orphan_db.add_all([scan, first_detail, second_detail])
         await async_orphan_db.commit()
 
-        selection = ScanPathSelection(
-            scan_roots=(
-                (normalize_path(str(source_root)), frozenset({"dl_001"})),
-                (normalize_path(str(copy_root)), frozenset({"dl_002"})),
-            )
-        )
+        runtime_roots = [str(source_root), str(copy_root)]
         service = OrphanFileService(async_orphan_db)
         with (
             patch(
-                "app.services.orphan_file_service.collect_scan_path_selection",
-                return_value=selection,
+                "app.services.orphan_file_service.collect_runtime_accessible_roots",
+                return_value=runtime_roots,
             ),
             patch(
                 "app.services.orphan_file_service.find_hardlink_paths",
@@ -428,7 +421,7 @@ class TestHardlinkCopyLocations:
             (int(os.stat(second).st_dev), int(os.stat(second).st_ino)),
         }
         assert target_inodes == expected_inodes
-        assert set(scan_roots) == {root for root, _owners in selection.scan_roots}
+        assert set(scan_roots) == set(runtime_roots)
 
         assert result["requested_count"] == 2
         assert result["resolved_count"] == 2
@@ -463,12 +456,11 @@ class TestHardlinkCopyLocations:
         async_orphan_db.add_all([scan, detail])
         await async_orphan_db.commit()
 
-        selection = ScanPathSelection(scan_roots=((normalize_path(str(source_root)), frozenset({"dl_001"})),))
         service = OrphanFileService(async_orphan_db)
         with (
             patch(
-                "app.services.orphan_file_service.collect_scan_path_selection",
-                return_value=selection,
+                "app.services.orphan_file_service.collect_runtime_accessible_roots",
+                return_value=[str(source_root)],
             ),
             patch(
                 "app.services.orphan_file_service.find_hardlink_paths",
@@ -478,7 +470,7 @@ class TestHardlinkCopyLocations:
             result = await service.get_hardlink_copy_locations([detail.id])
 
         bulk_lookup.assert_called_once()
-        expected_error = "已配置下载目录扫描失败，未能完整定位副本位置"
+        expected_error = "当前运行环境可访问目录扫描失败，未能完整定位副本位置"
         assert result["search_error"] == expected_error
         assert result["searched_root_count"] == 1
         assert result["total_copy_count"] == 1
@@ -509,7 +501,7 @@ class TestHardlinkCopyLocations:
         await async_orphan_db.commit()
 
         service = OrphanFileService(async_orphan_db)
-        with patch("app.services.orphan_file_service.collect_scan_path_selection") as collect_roots:
+        with patch("app.services.orphan_file_service.collect_runtime_accessible_roots") as collect_roots:
             result = await service.get_hardlink_copy_locations([detail.id])
 
         collect_roots.assert_not_called()

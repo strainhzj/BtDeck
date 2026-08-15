@@ -187,6 +187,9 @@ class Settings(BaseSettings):
     # to_insert+to_update 待写行缓冲上限：逐种子构造/差异计算达到该行数先
     # flush 一批到 bulk_upsert_with_retry 再继续，控制内存峰值
     INFO_SYNC_MAX_BUFFERED_ROWS: int = 2000
+    # info-only 同步完成后每个下载器最多补齐的种子文件备份数。限量增量处理
+    # 避免历史缺口在单轮内产生大规模文件 IO；小于 1 时按 1 处理。
+    TORRENT_BACKUP_RECONCILE_BATCH_SIZE: int = 200
 
     # 孤儿文件管理配置（v1.0.6）
     # 自动清理超期天数：连续成为孤儿超过该天数的候选由定时任务移入隔离区

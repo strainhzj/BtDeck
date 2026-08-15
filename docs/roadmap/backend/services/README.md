@@ -15,7 +15,7 @@
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
-| 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义 |
+| 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1435 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
@@ -26,7 +26,7 @@
 | 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key） |
 | 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放） |
 | 孤儿扫描任务 orphan-scan-job | `orphan_scan_job_service.py` | 持久化 queued/running/completed/failed 扫描；scan_id 即 task_id，单行状态查询、串行后台调度、重启恢复与超量提醒/兼容复核记录 |
-| 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/多 inode 单轮路径枚举，仅 `os.rmdir` 回收空目录 |
+| 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/多 inode 单轮路径枚举；`collect_runtime_accessible_roots` L311 按目标 `st_dev` 收集当前进程可访问挂载根（硬链接不跨文件系统），仅 `os.rmdir` 回收空目录 |
 | 孤儿扫描 orphan-scanner | `orphan_scanner.py` | 文件系统/manifest 核查器；支持预建 queued 批次，成功后分批推进稳定明细与生命周期；超 50000 持久化提醒并向仍有活跃候选的后续小扫描传递，不阻断清理 |
 | 路径映射验证 path-mapping | `path_mapping_validation.py` | 路径映射目录验证（free_space 探测/磁盘空间/现有种子路径取证/有界 stat） |
 | 路径维护 path-maintenance | `path_maintenance_service.py` | 下载器路径维护服务（默认/活跃路径） |
@@ -45,7 +45,7 @@
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
 | 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签） |
 | 种子删除策略 torrent-delete | `torrent_deletion_service.py` | 种子删除服务（抽象基类 + 各下载器策略） |
-| 种子备份 torrent-backup | `torrent_file_backup_manager.py` | 种子文件备份管理（协调 Repository 与文件操作） |
+| 种子备份 torrent-backup | `torrent_file_backup_manager.py` | 种子文件备份管理（协调 Repository 与文件操作）；`reconcile_missing_backups` L151 增量补齐缺失备份（限量批次、墓碑感知、幂等） |
 | 种子路径修改 torrent-location | `torrent_location_service.py` | 种子保存路径修改（参数验证→取适配器→调 SDK） |
 | 种子元数据 hydrate torrent-meta | `torrent_metadata.py` | Torrent 元数据 hydrate（缓存连接补齐展示，不二次建连） |
 | ratio 规范化 torrent-ratio | `torrent_ratio_values.py` | ratio/ratio_limit 规范化（三态枚举 value/explicit_null/unavailable） |

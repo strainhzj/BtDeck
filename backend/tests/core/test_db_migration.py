@@ -49,9 +49,11 @@ def _clean_database_path_env():
 #       → de898cb28172(torrent error reason)
 #       → 4c1d8e7a2b90(tracker status judge schedule)
 #       → 7b2c9d4e6f10(orphan background scan + stable current detail)
-EXPECTED_HEAD = "7b2c9d4e6f10"
+#       → b6e1c4d9a2f7(torrent backup downloader UUID type)
+EXPECTED_HEAD = "b6e1c4d9a2f7"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
+TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
 
@@ -222,6 +224,82 @@ class TestMigrationChainIntegrity:
 
         assert version_before == version_after == EXPECTED_HEAD
         assert count_before == count_after
+
+    def test_torrent_backup_downloader_uuid_type_upgrade_and_downgrade(self, tmp_path):
+        """备份下载器 ID 改为 VARCHAR(36) 时必须保留 UUID、索引与外键。"""
+        db_path = tmp_path / "torrent_backup_uuid.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, TORRENT_BACKUP_ID_TYPE_PREV)
+        downloader_id = "550e8400-e29b-41d4-a716-446655440000"
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute(
+                "INSERT INTO bt_downloaders (downloader_id, downloader_type) VALUES (?, 0)",
+                (downloader_id,),
+            )
+            conn.execute(
+                """
+                INSERT INTO torrent_file_backup (
+                    info_hash, file_path, downloader_id, use_count, is_deleted,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, 0, 0, ?, ?)
+                """,
+                ("a" * 40, "backup/a.torrent", downloader_id, "2026-08-14", "2026-08-14"),
+            )
+            conn.commit()
+            old_type = {
+                column[1]: column[2] for column in conn.execute("PRAGMA table_info(torrent_file_backup)").fetchall()
+            }
+            assert old_type["downloader_id"].upper() == "INTEGER"
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        conn = sqlite3.connect(db_path)
+        try:
+            columns = {
+                column[1]: column[2] for column in conn.execute("PRAGMA table_info(torrent_file_backup)").fetchall()
+            }
+            assert columns["downloader_id"].upper() == "VARCHAR(36)"
+            assert conn.execute("SELECT downloader_id FROM torrent_file_backup").fetchone() == (downloader_id,)
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(torrent_file_backup)").fetchall()}
+            assert "ix_torrent_file_backup_downloader_id" in indexes
+            assert "ix_torrent_file_backup_info_hash" in indexes
+        finally:
+            conn.close()
+
+        # UUID 文本无法无损转 Integer：downgrade 必须拒绝执行并保持 head 版本，
+        # 而不是经 SQLite 数值亲和力把 '550e8400-…' 截断成 550。
+        with pytest.raises(RuntimeError, match="pre-migration"):
+            command.downgrade(cfg, TORRENT_BACKUP_ID_TYPE_PREV)
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+
+        # 数据可无损转换时（NULL/整数文本），downgrade 允许执行且保留值。
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("INSERT INTO bt_downloaders (downloader_id, downloader_type) VALUES ('5', 0)")
+            conn.execute("UPDATE torrent_file_backup SET downloader_id = '5'")
+            conn.commit()
+        finally:
+            conn.close()
+
+        command.downgrade(cfg, TORRENT_BACKUP_ID_TYPE_PREV)
+        conn = sqlite3.connect(db_path)
+        try:
+            columns = {
+                column[1]: column[2] for column in conn.execute("PRAGMA table_info(torrent_file_backup)").fetchall()
+            }
+            assert columns["downloader_id"].upper() == "INTEGER"
+            assert conn.execute("SELECT downloader_id FROM torrent_file_backup").fetchone() == (5,)
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
 
     def test_orphan_background_upgrade_backfills_guardrail_and_current_detail(self, tmp_path):
         """升级必须锁定历史超量成功扫描，并绑定存量稳定明细。"""

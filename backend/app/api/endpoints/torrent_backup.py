@@ -47,7 +47,7 @@ router = APIRouter()
 # ==================== 辅助函数 ====================
 
 
-def get_downloader_from_store(downloader_id: int, app):
+def get_downloader_from_store(downloader_id: str, app):
     """
     从应用状态存储中获取下载器配置
 
@@ -65,7 +65,10 @@ def get_downloader_from_store(downloader_id: int, app):
 
     try:
         cached_downloaders = app.state.store.get_snapshot_sync()
-        downloader = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
+        downloader = next(
+            (d for d in cached_downloaders if str(d.downloader_id) == str(downloader_id)),
+            None,
+        )
         return downloader
     except Exception as e:
         logger.error(f"从 store 获取下载器失败: {e}")
@@ -206,7 +209,7 @@ async def create_backup(
 async def list_backups(
     request: Request,
     _user=Depends(require_authenticated_user),
-    downloader_id: Optional[int] = Query(None, description="下载器ID（可选）"),
+    downloader_id: Optional[str] = Query(None, description="下载器ID（可选）"),
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页大小"),
 ):
@@ -649,7 +652,7 @@ async def export_backups(
 async def import_backups(
     request: Request,
     _user=Depends(require_authenticated_user),
-    downloader_id: int = Query(..., description="目标下载器ID"),
+    downloader_id: str = Query(..., min_length=1, max_length=64, description="目标下载器ID"),
     files: List[UploadFile] = File(..., description="种子文件列表"),
 ):
     """

@@ -42,7 +42,7 @@
 | 高级搜索构建 advanced-search | `AdvancedSearchBuilder.vue`（1396 行） | 高级搜索条件构建器（`AdvancedSearchBuilder` L421）；“添加条件”居中、组间 AND/OR 位于卡片外；L572 下载器显示 nickname/提交稳定 ID，L785 超级做种三态，`getOperatorGroups()` L807 按字段契约过滤操作符；`getTemplateGroupsSnapshot()` L991 提供校验后快照 |
 | 高级搜索工作区 saved-search | `AdvancedSearchWorkspace.vue` | 两种种子视图共用的高级搜索工作区（`AdvancedSearchWorkspace` L156）：左侧加载高级模板并支持选择回填、搜索、新建、覆盖更新与删除（L232–385），右侧复用 Builder |
 | 条件值输入 condition-value | `ConditionValueInput.vue`（864 行） | 搜索条件值输入（`ConditionValueInput` L351）；状态/下载器使用不可创建多选，空值操作符显示“无需填写”，`currentFieldOptions` L494 为超级做种提供是/否/不支持三态下拉 |
-| 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应 |
+| 高级多选 advanced-multiselect | `AdvancedMultiSelect.vue` | 高级多选下拉（`AdvancedMultiSelect` class）；v1.0.6.29 改 32px 紧凑触发器 + 点击浮层，保留搜索/创建/已选区/虚拟滚动/快捷操作与 Lucide 图标；v1.0.6.30/31 增加常驻清空按钮并修复多选字段点击无响应；2026-08-15 新增 `placeholder` prop 定制未选提示语（种子页筛选下拉：下载器/种子状态/tracker） |
 | 高级搜索状态 advanced-search-state | `advancedSearchState.ts`（728 行）✨v1.0.6.28 | 高级搜索可复用状态/纯逻辑；L284/L403 兼容旧模板的多选、标签 token 与超级做种布尔值；L638 构建请求时保留正操作符和独立 `mode`，空值操作符发送 `null`，避免排除模式双重取反 |
 | 紧凑表格视图 compact-table | `CompactTable.vue` | ⚠ **Options API**（L301 `export default {`，`CompactTable`）：紧凑表格视图 |
 | 重复种子检测 duplicate | `DuplicateTorrentsDialog.vue` | 重复种子检测对话框 |

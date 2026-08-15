@@ -23,7 +23,7 @@
 - **安全清理**：预览、前缀预览、手动和定时自动清理共用最新 completed/scan_id 门禁；超 50000 条只保留提醒状态，不再要求路径映射+孤儿样本复核；删除前仍实时复核 manifest、路径授权和文件身份，不提供 force。
 - **活动项占用**：查询和用户操作入口通过 `orphan_purge_job_service` 的 JSON 子查询排除 pending/running 清理 ID 或彻底删除路径；后台 worker 读取自身任务快照时不套该过滤。任务进入 completed/partial/failed 后查询自然重新放行未完成项。
 - **文件夹/硬链接**：文件夹父页仅 SQL 聚合，不读子项也不 `stat`；展开后 `get_orphan_folder_children` 独立分页，仅返回页在线读取 `st_nlink - 1`（无副本 `0`，不可访问 `None`）。
-- **硬链接位置核对**：点击时重新读取源文件 inode/nlink；`get_hardlink_copy_locations` 复用扫描路径选择并让多个 inode 共用一轮目录遍历，仅返回已配置下载目录内路径，同时明确返回未定位数量。
+- **硬链接位置核对**：点击时重新读取源文件 inode/nlink；`get_hardlink_copy_locations` 收集当前进程命名空间可访问、与目标 inode 同 `st_dev` 的挂载根并让多个 inode 共用一轮目录遍历（覆盖映射目录之外的可见副本），同时明确返回未定位数量。
 - **物理操作安全**：仅用 `os.rmdir` 回收记录隔离根内的空 UUID/scan-id 目录。
 
 ---
@@ -48,7 +48,7 @@
 | L384 | `_evaluate_cleanup_snapshot` | def | completed/scan_id 共用清理门禁；超量字段仅作提醒 |
 | L438 | `_build_realtime_manifest` | async def | 构建删除前实时 manifest |
 | L648 | `get_latest_scan_result` | async def | 最新扫描结果 |
-| L684 | `get_hardlink_copy_locations` | async def | **批量按需定位配置目录内副本** |
+| L684 | `get_hardlink_copy_locations` | async def | **批量按需定位运行环境可访问目录内副本** |
 | L772 | `get_orphan_list` | async def | **稳定当前明细分页 + 扫描上下文** |
 | L913 | `get_orphan_list_grouped` | async def | 文件夹父页 SQL 聚合，不加载/不 stat 全部子项 |
 | L1147 | `get_orphan_folder_children` | async def | **展开后子项独立分页，仅可见页统计硬链接** |
@@ -102,12 +102,12 @@ async def get_hardlink_copy_locations(
     self,
     orphan_ids: Sequence[int],
 ) -> Dict[str, Any]:
-    """按需定位孤儿文件在已配置扫描目录内的其它硬链接路径。"""
+    """按需定位孤儿文件在当前运行环境可访问目录内的其它硬链接路径。"""
 ```
 
-- **定位**：`orphan_file_service.py:686`
-- **职责**：重新读取所选源文件 inode/nlink，批量加载当前未删除明细，并把多个目标 inode 合并为一次配置目录遍历；返回已定位完整路径、未定位数量、失效 ID 与不可访问状态。
-- **调用链**：`_load_orphan_details`（L300）→ `_inspect_hardlink_sources`（L658，经 `asyncio.to_thread`）→ `collect_scan_path_selection` → `find_hardlink_paths`。
+- **定位**：`orphan_file_service.py:684`
+- **职责**：重新读取所选源文件 inode/nlink，批量加载当前未删除明细，并把多个目标 inode 合并为一次目录遍历；返回已定位完整路径、未定位数量、失效 ID 与不可访问状态。
+- **调用链**：`_load_orphan_details`（L300）→ `_inspect_hardlink_sources`（L658，经 `asyncio.to_thread`）→ `collect_runtime_accessible_roots`（orphan_quarantine.py:311，按目标 `st_dev` 收集挂载根）→ `find_hardlink_paths`。
 
 ### `get_orphan_list` — 列表大分页 + 扫描上下文
 

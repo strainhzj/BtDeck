@@ -1,5 +1,27 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-15 交接：种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语
+
+### 当前结果
+
+- "种子文件管理 6 月 7 日后无变动"根因确认：6 月初同步拆分 info-only 后不再执行种子文件备份（本地库 1042 条备份最新停在 2026-05-29，活跃种子 2.1 万+ 无备份记录）。修复：`sync_coordinator` 在 info-only 与 full 路径单下载器完成后调用 `_reconcile_torrent_file_backups`（L1435），`reconcile_missing_backups`（torrent_file_backup_manager.py L151）按 `TORRENT_BACKUP_RECONCILE_BATCH_SIZE`（默认 200，config.py）限量增量补齐；支持复用已有备份/项目内旧文件、qB `<hash>.torrent` 与 Transmission `<name>.<hash>.torrent` 源文件名；逻辑删除墓碑不自动重建；失败只记 error 不阻断信息同步。
+- 连带缺陷修复：备份表 `downloader_id` 为 Integer 但下载器主键是 UUID 字符串，导致按下载器筛选/手动备份/批量导入失效。模型/仓储/schema/端点/前端类型全部改为 String；新增迁移 `b6e1c4d9a2f7`（幂等类型探测 + batch 临时表恢复；downgrade 遇不可无损转整数的 UUID 文本时 raise 拒绝执行——修复测试发现的 SQLite 数值亲和力会把 `550e8400-…` 截断成 `550` 的数据破坏）。迁移链单 head 已验证。
+- 孤儿"查找副本"按用户确认口径改为"当前运行环境可访问目录整体查找"：`collect_runtime_accessible_roots`（orphan_quarantine.py L311）不再读下载器映射清单，Linux 读 `/proc/self/mountinfo` 当前进程挂载命名空间、其它平台回退源路径同设备祖先、Windows 枚举盘符；硬链接不跨文件系统，按目标 `st_dev` 严格剪枝 + `os.walk` 跳过符号链接与异设备目录。
+- 种子页三个筛选下拉提示语改为"请选择下载器/请选择种子状态/请选择tracker"：`AdvancedMultiSelect` 新增 `placeholder` prop（默认"请选择"），仅改提示不改筛选逻辑；传统视图 Tracker 主域名下拉同批更新。
+
+### 验证
+
+- 后端：新增 `test_torrent_file_backup_reconcile.py` 3 passed（限量/幂等收敛/两种文件名/墓碑/源不可用）；`tests/services` 全量 1061 passed 1 skipped；`tests/api + tests/core` 1250 passed 5 skipped；black/flake8 通过；mypy 错误种类分布与 HEAD 完全一致（新代码 cast 清理后仅 1 处与全仓库惯例相同的 ORM 直接赋值）。
+- 前端：全量 44 suites / 737 passed；typecheck、变更文件严格 ESLint 0 warning、生产 build 成功；完整 lint 仍被无关 `keywords-board.spec.ts` 5 条既有 warning 拦截（本次文件 0 warning）。
+- 过程中修复：①迁移 downgrade 破坏性回滚拒绝（见上）；②新测试 stub 选择器（vue-test-utils v1 驼峰名不转 kebab，实际为 `advancedmultiselect-stub`）；③HEAD 既有失败的 `torrent-error-reason-ui.spec.ts` 契约漂移（锚点随 5c297b5 迁入 TrackerDetailCard，契约改为扫描卡片源码 + 视图 `:error-reason` 透传）。
+- 已同步 roadmap（services/orphan_file_service.md 第三层/infra/frontend/tests/test-coverage/根元信息，行号全部实测）、feature_list.json（新 feature 4 tasks）、progress.md、session-handoff.md。
+
+### 后续与边界
+
+- 未执行 Git 提交/推送/部署；工作区原有未跟踪产物（数据库备份、镜像 tar、tools/ 等）保持不动。
+- 2.1 万历史缺口的补齐依赖定时同步逐轮推进（每下载器每轮 200 条），可通过 `TORRENT_BACKUP_RECONCILE_BATCH_SIZE` 调节；建议部署后观察 task 详情 `torrent_file_backup` 统计的 pending 递减。
+- 生产部署走正常迁移流程到 `b6e1c4d9a2f7`；如需回滚该迁移且备份表已含 UUID 数据，须从 pre-migration 备份恢复（downgrade 会主动拒绝）。
+
 ## 2026-08-14 交接：Tracker 主域名筛选与错误单种排查
 
 ### 当前结果

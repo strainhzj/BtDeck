@@ -33,7 +33,6 @@ from app.core.config import settings
 from app.services.sync_coordinator import SyncRequest, SyncResult, run_sync
 from app.tasks.resource_guard import SKIP_WAIT_TIMEOUT, AdmissionResult, admission_controller
 
-
 # =============================================================================
 # fixtures
 # =============================================================================
@@ -102,9 +101,7 @@ class TestManualAndCronConvergeOnCoordinator:
         from app.api.endpoints.torrent_sync import _execute_manual_sync_via_coordinator
 
         with patch("app.services.sync_coordinator.run_sync", new=AsyncMock()) as mock_run_sync:
-            mock_run_sync.return_value = SyncResult(
-                outcome="success", run_id="r-manual", message="ok"
-            )
+            mock_run_sync.return_value = SyncResult(outcome="success", run_id="r-manual", message="ok")
             result = await _execute_manual_sync_via_coordinator(make_downloader_info())
 
         assert mock_run_sync.await_count == 1
@@ -165,9 +162,15 @@ class TestManualAndCronConvergeOnCoordinator:
     async def test_run_sync_info_uses_governed_write_service(self):
         """run_sync(info) 调用 W1-1 已治理的 info-only 写入函数（手动/Cron 同源）。"""
         app = make_fake_app([make_vo(client=MagicMock())])
-        with patch(
-            "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()
-        ) as mock_info_only:
+        with (
+            patch(
+                "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()
+            ) as mock_info_only,
+            patch(
+                "app.services.sync_coordinator._reconcile_torrent_file_backups",
+                new=AsyncMock(),
+            ) as reconcile_backups,
+        ):
             result = await run_sync(
                 SyncRequest(sync_type="info", downloader_ids=["dl_001"], trigger="manual"),
                 app=app,
@@ -179,6 +182,7 @@ class TestManualAndCronConvergeOnCoordinator:
         assert mock_info_only.await_args.args[0] is not None
         downloaders = mock_info_only.await_args.args[1]
         assert len(downloaders) == 1
+        reconcile_backups.assert_awaited_once()
 
 
 # =============================================================================
@@ -226,9 +230,7 @@ class TestSameTaskCompetition:
     async def test_force_allows_second_run(self):
         """force=True 跳过幂等去重：第二个任务可排队/执行（不同运行键不冲突）。"""
         app = make_fake_app([make_vo(client=MagicMock())])
-        with patch(
-            "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()
-        ):
+        with patch("app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()):
             first = await run_sync(
                 SyncRequest(sync_type="info", downloader_ids=["dl_001"], trigger="manual"),
                 app=app,
@@ -326,9 +328,7 @@ class TestCancellation:
     async def test_cancel_before_any_commit_returns_cancelled(self):
         """阶段起始即取消：无任何写入，outcome=cancelled。"""
         app = make_fake_app([make_vo(client=MagicMock())])
-        with patch(
-            "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()
-        ) as mock_write:
+        with patch("app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()) as mock_write:
             result = await run_sync(
                 SyncRequest(
                     sync_type="info",
@@ -345,9 +345,7 @@ class TestCancellation:
     async def test_deadline_expiry_marks_cancelled(self):
         """deadline=0 到期：不执行写入，outcome=cancelled。"""
         app = make_fake_app([make_vo(client=MagicMock())])
-        with patch(
-            "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()
-        ) as mock_write:
+        with patch("app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()) as mock_write:
             result = await run_sync(
                 SyncRequest(sync_type="info", downloader_ids=["dl_001"], trigger="manual", deadline=0.0),
                 app=app,
@@ -572,9 +570,9 @@ class TestLegacyAdapterCompatibility:
                 task = task_manager.get_task(data["task_id"])
 
             # 后台执行体经 Coordinator（trigger=manual）
-            assert mock_run_sync.await_count == 1, (
-                f"run_sync 未被后台执行体调用，task.status={task.status if task else None}"
-            )
+            assert (
+                mock_run_sync.await_count == 1
+            ), f"run_sync 未被后台执行体调用，task.status={task.status if task else None}"
             req: SyncRequest = mock_run_sync.await_args.args[0]
             assert req.trigger == "manual"
             assert req.sync_type == "full"
@@ -596,12 +594,8 @@ class TestDryRun:
         """dry_run 时 info-only 写入函数不被调用，outcome=no_action。"""
         app = make_fake_app([make_vo(client=MagicMock())])
         with (
-            patch(
-                "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()
-            ) as mock_qb,
-            patch(
-                "app.api.endpoints.torrents_async.tr_add_torrents_info_only_async", new=AsyncMock()
-            ) as mock_tr,
+            patch("app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=AsyncMock()) as mock_qb,
+            patch("app.api.endpoints.torrents_async.tr_add_torrents_info_only_async", new=AsyncMock()) as mock_tr,
         ):
             result = await run_sync(
                 SyncRequest(sync_type="info", downloader_ids=["dl_001"], trigger="manual", dry_run=True),
@@ -617,12 +611,8 @@ class TestDryRun:
         """dry_run 时 tracker-only 写入函数不被调用。"""
         app = make_fake_app([make_vo(client=MagicMock())])
         with (
-            patch(
-                "app.api.endpoints.torrents_async.qb_sync_trackers_only_async", new=AsyncMock()
-            ) as mock_qb,
-            patch(
-                "app.api.endpoints.torrents_async.tr_sync_trackers_only_async", new=AsyncMock()
-            ) as mock_tr,
+            patch("app.api.endpoints.torrents_async.qb_sync_trackers_only_async", new=AsyncMock()) as mock_qb,
+            patch("app.api.endpoints.torrents_async.tr_sync_trackers_only_async", new=AsyncMock()) as mock_tr,
         ):
             result = await run_sync(
                 SyncRequest(sync_type="tracker", downloader_ids=["dl_001"], trigger="cron", dry_run=True),
@@ -648,9 +638,7 @@ class TestLegacyAdapterSwitch:
 
         with (
             patch.object(settings, "SYNC_CANONICAL_COORDINATOR_ENABLED", False),
-            patch(
-                "app.api.endpoints.torrents_async.qb_add_torrents_async", new=AsyncMock()
-            ) as mock_full,
+            patch("app.api.endpoints.torrents_async.qb_add_torrents_async", new=AsyncMock()) as mock_full,
             patch(
                 "app.services.sync_coordinator._get_cached_client",
                 new=AsyncMock(return_value=MagicMock()),
@@ -671,9 +659,7 @@ class TestLegacyAdapterSwitch:
 
         with (
             patch.object(settings, "SYNC_CANONICAL_COORDINATOR_ENABLED", True),
-            patch(
-                "app.api.endpoints.torrents_async.qb_add_torrents_async", new=AsyncMock()
-            ) as mock_full,
+            patch("app.api.endpoints.torrents_async.qb_add_torrents_async", new=AsyncMock()) as mock_full,
             patch("app.services.sync_coordinator.run_sync", new=AsyncMock()) as mock_run_sync,
         ):
             mock_run_sync.return_value = SyncResult(outcome="success", run_id="r-switch", message="ok")
@@ -742,9 +728,7 @@ class TestObservabilityRunIdStageOrder:
 
         with (
             patch("app.database.AsyncSessionLocal", new=_FakeSession),
-            patch(
-                "app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=fake_info_sync
-            ),
+            patch("app.api.endpoints.torrents_async.qb_add_torrents_info_only_async", new=fake_info_sync),
             patch("app.services.sync_db_write.admission_controller", new=mock_ac),
             patch.object(obs.logger, "log", wraps=obs.logger.log) as spy_log,
             # 注：不用 caplog 断言——仓库会话级 fixture 的 alembic fileConfig 会把

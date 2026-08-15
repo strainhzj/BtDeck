@@ -614,7 +614,7 @@
     >
       <div v-loading="hardlinkLocationLoading" class="hardlink-location-content">
         <el-alert
-          title="仅在系统已配置的下载目录内查找，不扫描整块磁盘。"
+          title="在当前运行环境可访问的同文件系统目录中整体查找。"
           type="info"
           :closable="false"
           show-icon
@@ -630,8 +630,8 @@
           <el-alert
             v-if="hardlinkLocationResult.total_unlocated_count > 0"
             class="hardlink-location-alert"
-            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在已配置目录中定位`"
-            description="这些副本可能位于未配置目录、无权限目录或当前不可访问的存储中。"
+            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在当前可访问目录中定位`"
+            description="这些副本可能位于无权限目录、未挂载目录或当前不可访问的存储中。"
             type="warning"
             :closable="false"
             show-icon
@@ -710,7 +710,7 @@
                 </div>
               </div>
               <p v-else-if="item.copy_count && item.copy_count > 0" class="hardlink-location-empty">
-                当前已配置目录内未定位到副本路径。
+                当前运行环境可访问目录内未定位到副本路径。
               </p>
               <p v-else-if="item.copy_count === 0" class="hardlink-location-empty">
                 点击查询时已复核为 0 个副本。

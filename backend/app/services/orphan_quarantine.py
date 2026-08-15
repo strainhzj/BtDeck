@@ -283,17 +283,129 @@ def get_hardlink_copy_count(file_path: str) -> int:
     return max(int(stat_result.st_nlink) - 1, 0)
 
 
+def _decode_mountinfo_path(value: str) -> str:
+    """解码 ``/proc/self/mountinfo`` 路径字段中的八进制转义。"""
+    return re.sub(r"\\([0-7]{3})", lambda match: chr(int(match.group(1), 8)), value)
+
+
+def _same_device_ancestor(path: str, device_id: int) -> Optional[str]:
+    """返回路径所在文件系统在当前命名空间内可访问的最高层祖先。"""
+    current = os.path.realpath(os.path.abspath(os.path.dirname(path)))
+    highest: Optional[str] = None
+    while current:
+        try:
+            stat_result = os.stat(current)
+        except OSError:
+            break
+        if int(stat_result.st_dev) != int(device_id):
+            break
+        if os.path.isdir(current) and os.access(current, os.R_OK | os.X_OK):
+            highest = current
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return highest
+
+
+def collect_runtime_accessible_roots(
+    target_inodes: Set[Tuple[int, int]],
+    source_paths: List[str],
+) -> List[str]:
+    """收集当前运行环境可访问、且可能包含目标硬链接的文件系统根。
+
+    硬链接不能跨文件系统，因此只保留 ``st_dev`` 与目标 inode 相同的挂载点。
+    Linux 优先读取当前进程的 mount namespace（``/proc/self/mountinfo``），可覆盖
+    Docker bind mount 等并非下载器映射目录的可见路径；其它平台回退到源文件所在
+    卷的最高可访问祖先。返回根会折叠父子重叠项，避免重复扫描。
+    """
+    target_devices = {int(device_id) for device_id, _inode in target_inodes}
+    if not target_devices:
+        return []
+
+    candidates: List[str] = []
+    mountinfo_path = "/proc/self/mountinfo"
+    if os.name != "nt" and os.path.isfile(mountinfo_path):
+        try:
+            with open(mountinfo_path, "r", encoding="utf-8") as mountinfo:
+                for line in mountinfo:
+                    fields = line.rstrip("\n").split()
+                    if len(fields) < 5:
+                        continue
+                    mount_point = _decode_mountinfo_path(fields[4])
+                    try:
+                        stat_result = os.stat(mount_point)
+                    except OSError:
+                        continue
+                    if (
+                        int(stat_result.st_dev) in target_devices
+                        and os.path.isdir(mount_point)
+                        and os.access(mount_point, os.R_OK | os.X_OK)
+                    ):
+                        candidates.append(mount_point)
+        except OSError as exc:
+            logger.debug("读取当前运行环境挂载点失败，回退源路径祖先: %s", exc)
+
+    for source_path in source_paths:
+        try:
+            source_stat = os.stat(source_path)
+        except OSError:
+            continue
+        device_id = int(source_stat.st_dev)
+        if device_id not in target_devices:
+            continue
+        ancestor = _same_device_ancestor(source_path, device_id)
+        if ancestor:
+            candidates.append(ancestor)
+
+    # Windows 可能通过多个盘符暴露同一卷；枚举可访问盘符，仍按 st_dev 严格过滤。
+    if os.name == "nt":
+        for codepoint in range(ord("A"), ord("Z") + 1):
+            drive_root = f"{chr(codepoint)}:\\"
+            try:
+                drive_stat = os.stat(drive_root)
+            except OSError:
+                continue
+            if int(drive_stat.st_dev) in target_devices and os.access(drive_root, os.R_OK | os.X_OK):
+                candidates.append(drive_root)
+
+    normalized: List[str] = []
+    seen: Set[str] = set()
+    for root in candidates:
+        physical_root = os.path.realpath(os.path.abspath(root))
+        key = os.path.normcase(physical_root)
+        if key not in seen:
+            seen.add(key)
+            normalized.append(physical_root)
+
+    minimal_roots: List[str] = []
+    for root in sorted(normalized, key=lambda value: (len(value), os.path.normcase(value))):
+        covered = False
+        for parent in minimal_roots:
+            try:
+                covered = os.path.normcase(os.path.commonpath([root, parent])) == os.path.normcase(parent)
+            except ValueError:
+                covered = False
+            if covered:
+                break
+        if covered:
+            continue
+        minimal_roots.append(root)
+    return minimal_roots
+
+
 def find_hardlink_paths(
     target_inodes: Set[Tuple[int, int]],
     scan_roots: List[str],
 ) -> Dict[Tuple[int, int], List[str]]:
     """一次遍历扫描根，返回每个目标 inode 在范围内的全部物理路径。
 
-    扫描范围严格限定为调用方提供的绝对路径，不扫描整盘。重叠/别名扫描根会先
-    折叠，符号链接文件不会被误当作硬链接目录项；返回路径按物理路径去重并排序，
-    便于文件夹聚合行一次查询多个孤儿文件时复用同一轮目录遍历。
+    扫描范围严格限定为调用方提供的绝对路径。重叠/别名扫描根会先折叠，并按
+    目标 ``st_dev`` 剪枝，既保证覆盖当前运行环境的同文件系统目录，又不进入不可能
+    存在硬链接的其它挂载；符号链接文件不会被误当作硬链接目录项。
     """
     normalized_targets = {(int(device_id), int(inode)) for device_id, inode in target_inodes}
+    target_devices = {device_id for device_id, _inode in normalized_targets}
     found: Dict[Tuple[int, int], List[str]] = {identity: [] for identity in normalized_targets}
     if not normalized_targets or not scan_roots:
         return found
@@ -305,6 +417,12 @@ def find_hardlink_paths(
         if not root or not os.path.isabs(root):
             continue
         physical_root = os.path.realpath(os.path.abspath(root))
+        try:
+            root_stat = os.stat(physical_root)
+        except OSError:
+            continue
+        if int(root_stat.st_dev) not in target_devices:
+            continue
         root_key = os.path.normcase(physical_root)
         if root_key in seen_root_keys:
             continue
@@ -326,7 +444,19 @@ def find_hardlink_paths(
 
     seen_paths: Dict[Tuple[int, int], Set[str]] = {identity: set() for identity in normalized_targets}
     for root in minimal_roots:
-        for dir_path, _dirnames, filenames in os.walk(root):
+        for dir_path, dirnames, filenames in os.walk(root):
+            accessible_dirs: List[str] = []
+            for directory_name in dirnames:
+                directory_path = os.path.join(dir_path, directory_name)
+                if os.path.islink(directory_path):
+                    continue
+                try:
+                    directory_stat = os.stat(directory_path)
+                except OSError:
+                    continue
+                if int(directory_stat.st_dev) in target_devices:
+                    accessible_dirs.append(directory_name)
+            dirnames[:] = accessible_dirs
             for name in filenames:
                 full_path = os.path.join(dir_path, name)
                 if os.path.islink(full_path):

@@ -13,6 +13,7 @@
         />
         <AdvancedMultiSelect
           v-model="listQuery.downloader_id"
+          placeholder="请选择下载器"
           :options="downloaderOptions"
           :allow-create="false"
           :show-mode-toggle="false"
@@ -24,6 +25,7 @@
         />
         <AdvancedMultiSelect
           v-model="listQuery.status"
+          placeholder="请选择种子状态"
           :options="statusOptions"
           :allow-create="false"
           :show-mode-toggle="false"
@@ -35,6 +37,7 @@
         />
         <AdvancedMultiSelect
           v-model="listQuery.tracker_domain"
+          placeholder="请选择tracker"
           :options="trackerDomainOptions"
           :allow-create="false"
           :show-mode-toggle="false"
