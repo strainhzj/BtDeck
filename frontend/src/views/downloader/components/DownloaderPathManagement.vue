@@ -103,15 +103,23 @@
         </el-table-column>
 
         <!-- 状态 -->
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column label="状态" width="96" align="center">
           <template #default="{row}">
-            <el-switch
-              v-model="row.is_enabled"
-              @change="handleToggleEnabled(row)"
-              :disabled="updating"
-              active-color="#059669"
-              inactive-color="#d1d5db"
-            />
+            <div class="status-cell">
+              <el-switch
+                v-model="row.is_enabled"
+                @change="handleToggleEnabled(row)"
+                :disabled="updating"
+                active-color="#059669"
+                inactive-color="#d1d5db"
+              />
+              <!-- 历史路径（自动禁用，种子回归后自动恢复）/ 手动禁用（需用户重新启用） -->
+              <span
+                v-if="!row.is_enabled"
+                class="disabled-source-tag"
+                :class="row.disabled_by === 'user' ? 'disabled-source-tag--user' : 'disabled-source-tag--auto'"
+              >{{ row.disabled_by === 'user' ? '手动禁用' : '历史路径' }}</span>
+            </div>
           </template>
         </el-table-column>
 
@@ -241,6 +249,7 @@ interface PathItem {
   path_type: string
   path_value: string
   is_enabled: boolean
+  disabled_by: string | null
   torrent_count: number
   last_updated_time: string | null
   created_at: string | null
@@ -935,6 +944,31 @@ export default class DownloaderPathManagement extends Vue {
 
 .is-spinning {
   animation: managed-path-spin 0.8s linear infinite;
+}
+
+.status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.disabled-source-tag {
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.disabled-source-tag--auto {
+  color: var(--color-warning, #b45309);
+  background: rgba(180, 83, 9, 0.12);
+}
+
+.disabled-source-tag--user {
+  color: var(--color-danger, #b91c1c);
+  background: rgba(185, 28, 28, 0.1);
 }
 
 @keyframes managed-path-spin {

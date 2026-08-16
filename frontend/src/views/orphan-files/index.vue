@@ -202,14 +202,12 @@
     </section>
 
     <!-- 孤儿文件列表 -->
-    <section class="management-panel" aria-labelledby="orphan-file-list-title">
-      <div class="management-panel__header">
-        <div class="management-panel__heading">
-          <h2 id="orphan-file-list-title" class="management-panel__title">文件列表</h2>
-          <p class="management-panel__description">
-            {{ displayScan ? `展示成功扫描 ${formatTime(displayScan.scan_time)} 的剩余结果` : '完成首次成功扫描后将在此显示结果' }}
-          </p>
-        </div>
+    <CollapsiblePanel
+      title="文件列表"
+      :description="displayScan ? `展示成功扫描 ${formatTime(displayScan.scan_time)} 的剩余结果` : '完成首次成功扫描后将在此显示结果'"
+      storage-key="btdeck_orphan_file_list_collapsed"
+    >
+      <template #meta>
         <div class="management-panel__meta">
           <el-tag v-if="selectedCount > 0" type="info" effect="plain">
             已选择 {{ selectedCount }} 项
@@ -284,7 +282,7 @@
             </el-dropdown-menu>
           </el-dropdown>
         </div>
-      </div>
+      </template>
       <div class="management-table-scroll orphan-table-scroll">
         <el-table
           ref="orphanTable"
@@ -525,7 +523,7 @@
           />
         </div>
       </nav>
-    </section>
+    </CollapsiblePanel>
       </el-tab-pane>
 
       <!-- 隔离区管理 -->

@@ -60,7 +60,6 @@ const router = new Router({
           path: 'index',
           component: () => import(/* webpackChunkName: "form" */ '@/views/downloader/index.vue'),
           meta: {
-            keepAlive: true,
             title: '下载器管理',
             icon: 'server'
           }
@@ -80,7 +79,6 @@ const router = new Router({
           path: 'index',
           component: () => import(/* webpackChunkName: "torrents" */ '@/views/torrents/TorrentViewSwitcher.vue'),
           meta: {
-            keepAlive: true,
             title: '种子列表',
             icon: 'list'
           }
@@ -89,7 +87,6 @@ const router = new Router({
           path: 'traditional',
           component: () => import(/* webpackChunkName: "torrents-traditional" */ '@/views/torrents/TraditionalView.vue'),
           meta: {
-            keepAlive: true,
             title: '种子列表（传统模式）',
             icon: 'list',
             hidden: true
@@ -99,7 +96,6 @@ const router = new Router({
           path: 'file-management',
           component: () => import(/* webpackChunkName: "file-management" */ '@/views/torrents/FileManagement.vue'),
           meta: {
-            keepAlive: true,
             title: '种子文件管理',
             icon: 'folder'
           }
@@ -122,7 +118,6 @@ const router = new Router({
           path: 'index',
           component: () => import(/* webpackChunkName: "tasks" */ '@/views/tasks/index.vue'),
           meta: {
-            keepAlive: true,
             title: '定时任务',
             icon: 'timer'
           }
@@ -142,7 +137,6 @@ const router = new Router({
           path: 'keywords-board',
           component: () => import(/* webpackChunkName: "tracker-keywords-board" */ '@/views/tracker/keywords-board.vue'),
           meta: {
-            keepAlive: true,
             title: '关键词看板',
             icon: 'panels-top-left'
           }
@@ -160,7 +154,6 @@ const router = new Router({
           path: 'reannounce-config',
           component: () => import(/* webpackChunkName: "tracker-reannounce-config" */ '@/views/tracker/reannounce-config.vue'),
           meta: {
-            keepAlive: true,
             title: '汇报配置',
             icon: 'settings'
           }
@@ -169,7 +162,6 @@ const router = new Router({
           path: 'test',
           component: () => import(/* webpackChunkName: "tracker-test" */ '@/views/tracker/test.vue'),
           meta: {
-            keepAlive: true,
             title: '测试工具',
             icon: 'wrench'
           }
@@ -197,7 +189,6 @@ const router = new Router({
           path: 'audit',
           component: () => import(/* webpackChunkName: "audit-logs" */ '@/views/logs/audit.vue'),
           meta: {
-            keepAlive: true,
             title: '操作日志',
             icon: 'file-text'
           }
@@ -212,7 +203,6 @@ const router = new Router({
           path: 'index',
           component: () => import(/* webpackChunkName: "recycle-bin" */ '@/views/recycle-bin/index.vue'),
           meta: {
-            keepAlive: true,
             title: '回收站',
             icon: 'trash-2'
           }
@@ -227,7 +217,6 @@ const router = new Router({
           path: 'index',
           component: () => import(/* webpackChunkName: "orphan-files" */ '@/views/orphan-files/index.vue'),
           meta: {
-            keepAlive: true,
             title: '孤儿文件',
             icon: 'folder-search'
           }
@@ -242,7 +231,6 @@ const router = new Router({
           path: 'index',
           component: () => import(/* webpackChunkName: "settings" */ '@/views/settings/index.vue'),
           meta: {
-            keepAlive: true,
             title: '系统设置',
             icon: 'settings'
           }
@@ -257,7 +245,6 @@ const router = new Router({
           path: 'index',
           component: () => import(/* webpackChunkName: "query-templates" */ '@/views/query-templates/index.vue'),
           meta: {
-            keepAlive: true,
             title: '查询模板',
             icon: 'layout-template'
           }

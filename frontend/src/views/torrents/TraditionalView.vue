@@ -735,6 +735,7 @@ import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
+import SpeedPollingMixin from './mixins/speedPolling'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
@@ -829,7 +830,7 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     AdvancedMultiSelect
   }
 })
-export default class extends mixins(TorrentBatchMixin) {
+export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
   // ====== 状态管理 ======
   private viewModeModule = ViewModeModule
 
@@ -840,8 +841,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private multipleSelection: any[] = []
 
   // 实时速度轮询
-  private speedTimer: number | null = null
-  private speedPollingActive = false
+  // 实时速度轮询（speedTimer/speedPollingActive 由 SpeedPollingMixin 提供）
   private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
   private torrentSpeedTargetIndex: TorrentSpeedTargetIndex<TraditionalSpeedTarget> = buildTorrentSpeedTargetIndex([])
@@ -1252,25 +1252,7 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   // ====== 实时速度轮询 ======
-  private startSpeedPolling() {
-    if (this.speedPollingActive) return
-    this.speedPollingActive = true
-    const poll = async() => {
-      if (!this.speedPollingActive) return
-      await this.loadActiveSpeed()
-      if (!this.speedPollingActive) return
-      this.speedTimer = window.setTimeout(poll, 1000)
-    }
-    poll()
-  }
-
-  private stopSpeedPolling() {
-    this.speedPollingActive = false
-    if (this.speedTimer) {
-      window.clearTimeout(this.speedTimer)
-      this.speedTimer = null
-    }
-  }
+  // startSpeedPolling / stopSpeedPolling 由 SpeedPollingMixin 提供（含后台标签页暂停/恢复）
 
   /**
    * 加载活跃种子实时速度和进度（对齐列表模式 index.vue:2177-2214）
@@ -1278,7 +1260,7 @@ export default class extends mixins(TorrentBatchMixin) {
    * token 实际存在 Cookie（cookies.ts:10），导致恒为 null → 401 → 速度永远为 0。
    * 改用封装的 getActiveTorrents()，复用统一 axios 拦截器（token 注入、401 跳登录）。
    */
-  private async loadActiveSpeed(): Promise<boolean> {
+  protected async loadActiveSpeed(): Promise<boolean> {
     const requestId = Date.now()
     try {
       const res = await getActiveTorrents()

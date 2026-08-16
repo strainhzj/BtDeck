@@ -719,3 +719,122 @@ describe('torrent list view pagination and sorting', () => {
     expect(sizeHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-up')
   })
 })
+
+describe('详情死路由不启动轮询（W1-1）', () => {
+  function mountWithRoute(path: string): Wrapper<Vue> {
+    return shallowMount(TorrentsManagement, {
+      localVue,
+      mocks: {
+        $route: { path, query: {} },
+        $router: { replace: jest.fn() },
+        $message: message,
+        $notify: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
+        $confirm: jest.fn(() => Promise.resolve()),
+        $loading: jest.fn(() => ({ close: jest.fn() }))
+      },
+      stubs: {
+        BatchButton: true,
+        PageSizeCombobox,
+        LucideIcon,
+        BatchOperationDialog: true,
+        AdvancedSearchBuilder: true,
+        TorrentAddDialog: true,
+        TrackerOperationDialog: true,
+        GlobalReplaceTrackerDialog: true,
+        BatchTransferDialog: true,
+        SetLocationDialog: true,
+        QuickDeleteDuplicatesDialog: true,
+        TrackerDetailCard: true,
+        'el-button': { template: '<button v-on="$listeners"><slot /></button>' },
+        'el-checkbox': true,
+        'el-dropdown': { template: '<div><slot /><slot name="dropdown" /></div>' },
+        'el-dropdown-menu': { template: '<div><slot /></div>' },
+        'el-dropdown-item': { template: '<div><slot /></div>' },
+        'el-table': { template: '<div><slot /></div>' },
+        'el-table-column': { template: '<div><slot /></div>' },
+        'el-pagination': true,
+        'el-select': { template: '<div><slot /></div>' },
+        'el-option': true,
+        'el-input': { template: '<input v-on="$listeners" />' },
+        'el-date-picker': true,
+        'el-tag': true,
+        'el-switch': true,
+        'el-tooltip': true,
+        'el-popover': true,
+        'el-dialog': { template: '<div><slot /></div>' },
+        'el-form': { template: '<form><slot /></form>' },
+        'el-form-item': true,
+        'el-tabs': { template: '<div><slot /></div>' },
+        'el-tab-pane': { template: '<div><slot /></div>' },
+        'el-badge': true,
+        'el-empty': true,
+        'el-skeleton': true,
+        'el-skeleton-item': true,
+        'el-alert': true,
+        'el-radio-group': true,
+        'el-radio': true,
+        'el-tree': true,
+        'el-upload': true,
+        'el-progress': true,
+        'el-rate': true,
+        'el-autocomplete': true,
+        'el-cascader': true,
+        'el-checkbox-group': true,
+        'el-color-picker': true,
+        'el-input-number': true,
+        'el-radio-button': true,
+        'el-slider': true,
+        'el-switch-stub': true,
+        'el-time-select': true,
+        'el-transfer': true,
+        'el-divider': true,
+        'el-link': true,
+        'el-card': true,
+        'el-carousel': true,
+        'el-carousel-item': true,
+        'el-collapse': true,
+        'el-collapse-item': true,
+        'el-container': true,
+        'el-aside': true,
+        'el-header': true,
+        'el-main': true,
+        'el-footer': true,
+        'el-row': true,
+        'el-col': true,
+        'el-steps': true,
+        'el-step': true,
+        'el-timeline': true,
+        'el-timeline-item': true,
+        'el-breadcrumb': true,
+        'el-breadcrumb-item': true,
+        'el-page-header': true,
+        'el-descriptions': true,
+        'el-descriptions-item': true,
+        'el-result': true,
+        'el-avatar': true,
+        'el-image': true,
+        'el-backtop': true,
+        'el-infinite-scroll': true,
+        'el-loading': true,
+        'el-drawer': true,
+        'el-menu': true,
+        'el-menu-item': true,
+        'el-submenu': true,
+        'el-button-group': true,
+        'el-option-group': true
+      }
+    })
+  }
+
+  it('/torrents/detail/:hash 下不启动速度轮询', async() => {
+    const wrapper = mountWithRoute('/torrents/detail/abc123')
+    await flushLifecycle()
+    expect((wrapper.vm as any).speedPollingActive).toBe(false)
+  })
+
+  it('/torrents/index 下正常启动速度轮询', async() => {
+    const wrapper = mountWithRoute('/torrents/index')
+    await flushLifecycle()
+    expect((wrapper.vm as any).speedPollingActive).toBe(true)
+  })
+})

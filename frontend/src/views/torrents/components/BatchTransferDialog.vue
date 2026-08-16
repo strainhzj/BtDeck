@@ -136,6 +136,7 @@
 
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
+import { ApiError } from '@/types/api'
 import {
   transferSeedsBatch,
   getDownloaderList,
@@ -382,6 +383,16 @@ export default class BatchTransferDialog extends Vue {
         })
       }
     } catch (error: any) {
+      // 后端批量转移部分/全部失败时返回 code=400（HTTP 200），被响应拦截器转为
+      // rejected Promise：从 ApiError.rawResponse 取 results 展示失败明细弹窗
+      if (error instanceof ApiError && error.code === '400' && error.rawResponse?.data?.data) {
+        this.batchResult = error.rawResponse.data.data
+        this.dialogVisible = false
+        this.$emit('update:visible', false)
+        this.resultDialogVisible = true
+        this.submitting = false
+        return
+      }
       console.error('批量转移异常:', error)
       const errorMsg = error.response?.data?.msg || error.message || '批量转移失败，请稍后重试'
       this.$message.error({
@@ -395,12 +406,15 @@ export default class BatchTransferDialog extends Vue {
 
   async handleResultConfirm() {
     this.resultDialogVisible = false
-    // 如果全部成功且需要删除原种子，直接执行删除
+    // 全部成功且需要删除原种子时直接删除
     if (this.resultFailed === 0 && this.formData.delete_source && this.resultSuccess > 0) {
       await this.batchDeleteSourceTorrents()
-    } else {
+    } else if (this.resultFailed === 0) {
+      // 全部成功：通知父页面刷新并提示完成
       this.$emit('success')
     }
+    // 部分/全部失败：不 emit success（不提示"完成"，不触发删除源种子），
+    // 用户依据失败明细自行处理
   }
 
   handleResultClose() {
@@ -455,7 +469,7 @@ export default class BatchTransferDialog extends Vue {
     } catch (error: any) {
       console.error('批量删除原种子异常:', error)
       this.$message.error('删除原种子时发生错误，请手动检查')
-      this.$emit('success')
+      // 删除失败不 emit success：避免父页面误提示"批量转移完成"
     } finally {
       loading.close()
     }

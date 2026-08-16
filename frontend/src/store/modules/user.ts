@@ -1,6 +1,16 @@
 import { VuexModule, Module, Action, Mutation, getModule } from 'vuex-module-decorators'
 import { login, logout, getUserInfo } from '@/api/users'
-import { getToken, setToken, removeToken, getUserId, setUserId, removeUserId } from '@/utils/cookies'
+import {
+  getToken,
+  setToken,
+  removeToken,
+  getRefreshToken,
+  setRefreshToken,
+  removeRefreshToken,
+  getUserId,
+  setUserId,
+  removeUserId
+} from '@/utils/cookies'
 import store from '@/store'
 
 export interface IUserState {
@@ -32,6 +42,22 @@ class User extends VuexModule implements IUserState {
   @Mutation
   private SET_TOKEN(token: string) {
     this.token = token
+  }
+
+  /**
+   * 静默续期后更新令牌（双令牌体系 W6-1）。
+   * 请求拦截器在发请求时读 UserModule.token，401 刷新成功后必须
+   * 更新内存 + cookie，重放请求才能携带新 token。
+   */
+  @Action({ rawError: true })
+  public SetToken(token: string) {
+    setToken(token)
+    this.SET_TOKEN(token)
+  }
+
+  /** 读取 refresh token（供 401 单飞刷新使用） */
+  public getRefreshTokenValue(): string {
+    return getRefreshToken() || ''
   }
 
   @Mutation
@@ -72,13 +98,18 @@ class User extends VuexModule implements IUserState {
     username = username.trim()
     const response = await login({ username, password, twofa_code })
     // response 是 CommonResponse 格式: {code, msg, status, data}
-    // data 是一个数组，包含 [{access_token, token_type, user_id}]
+    // data 是一个数组，包含 [{access_token, refresh_token, token_type, user_id}]
     const access_token = response.data && response.data[0] && response.data[0].access_token
+    const refresh_token = response.data && response.data[0] && response.data[0].refresh_token
     const user_id = response.data && response.data[0] && response.data[0].user_id
 
     if (access_token) {
       setToken(access_token)
       this.SET_TOKEN(access_token)
+      // 双令牌体系（W6-1）：持久化 refresh token 供 401 静默续期
+      if (refresh_token) {
+        setRefreshToken(refresh_token)
+      }
       // 保存 user_id，确保转换为字符串类型
       if (user_id !== undefined && user_id !== null) {
         this.SET_USER_ID(String(user_id))
@@ -91,6 +122,7 @@ class User extends VuexModule implements IUserState {
   @Action({ rawError: true })
   public ResetToken() {
     removeToken()
+    removeRefreshToken()
     removeUserId()
     this.SET_TOKEN('')
     this.SET_USER_ID('')
@@ -193,6 +225,7 @@ class User extends VuexModule implements IUserState {
       console.warn('后端登出调用失败，仅本地清除 token:', e)
     }
     removeToken()
+    removeRefreshToken()
     removeUserId()
     this.SET_TOKEN('')
     this.SET_USER_ID('')

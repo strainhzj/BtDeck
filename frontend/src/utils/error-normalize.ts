@@ -65,10 +65,13 @@ export function extractFromDetail(
  *
  * 登录接口的 code=401 表达"用户名/密码错误"业务语义，不是真正的认证失效，
  * 必须保留在登录页并显示错误，而非跳转登录页（会形成死循环）。
+ * /auth/refresh 的 401 表达"refresh token 失效"，由 request.ts 单飞刷新
+ * 流程处理（刷新失败才登出），同样豁免直接跳转。
  */
 export function isLoginRequest(config: unknown): boolean {
   const url = (config as { url?: string } | null)?.url
-  return !!url && url.includes('/login')
+  if (!url) return false
+  return url.includes('/login') || url.includes('/auth/refresh')
 }
 
 /**

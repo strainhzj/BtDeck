@@ -46,6 +46,8 @@ Vue.use(ElementUI)
 
 // 全局注册 Lucide 图标组件，统一替换界面中的 emoji / el-icon-* / 自绘 SVG。
 Vue.component('LucideIcon', LucideIcon)
+// 全局注册通用可折叠面板（W8：各页面展开/收缩 + 用户习惯持久化）
+Vue.component('CollapsiblePanel', () => import('@/components/CollapsiblePanel.vue'))
 Vue.use(SvgIcon, {
   tagName: 'svg-icon',
   defaultWidth: '1em',

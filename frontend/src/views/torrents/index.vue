@@ -731,6 +731,7 @@ import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplic
 import TrackerDetailCard from './components/TrackerDetailCard.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
+import SpeedPollingMixin from './mixins/speedPolling'
 import {
   getTorrentList,
   deleteTorrentsWithLevel,
@@ -801,7 +802,7 @@ type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
-export default class extends mixins(TorrentBatchMixin) {
+export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
   // 视图模式管理
   private viewModeModule = ViewModeModule
 
@@ -815,9 +816,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private listLoading = true
   private multipleSelection: any[] = []
 
-  // 实时速度轮询
-  private speedTimer: number | null = null
-  private speedPollingActive = false
+  // 实时速度轮询（speedTimer/speedPollingActive 由 SpeedPollingMixin 提供）
   private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
   private activeListRetryPending = false
@@ -964,7 +963,11 @@ export default class extends mixins(TorrentBatchMixin) {
     await this.getTrackerDomainList()
     await this.getList()
     this.loadUserPreferences()
-    this.startSpeedPolling()
+    // 详情死路由（/torrents/detail/:hash）直接挂载本组件：不启动轮询，只展示列表数据
+    const routePath = this.$route && this.$route.path ? this.$route.path : ''
+    if (!routePath.startsWith('/torrents/detail')) {
+      this.startSpeedPolling()
+    }
 
     // v1.0.5：处理从查询模板管理页跳转来的应用请求
     await this.handleApplyTemplateFromRoute()
@@ -2257,7 +2260,7 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   /** 加载活跃种子实时速度和进度 */
-  private async loadActiveSpeed(): Promise<boolean> {
+  protected async loadActiveSpeed(): Promise<boolean> {
     const requestId = Date.now()
 
     try {
@@ -2299,28 +2302,8 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-  /** 启动速度轮询（请求完成后等待1秒再发下一次） */
-  private startSpeedPolling() {
-    if (this.speedPollingActive) return
-    this.speedPollingActive = true
-    const poll = async() => {
-      if (!this.speedPollingActive) return
-      await this.loadActiveSpeed()
-      if (!this.speedPollingActive) return
-      // 请求完成后等待1秒再发下一次
-      this.speedTimer = window.setTimeout(poll, 1000)
-    }
-    poll()
-  }
-
-  /** 停止速度轮询 */
-  private stopSpeedPolling() {
-    this.speedPollingActive = false
-    if (this.speedTimer) {
-      clearTimeout(this.speedTimer)
-      this.speedTimer = null
-    }
-  }
+  // ====== 实时速度轮询 ======
+  // startSpeedPolling / stopSpeedPolling 由 SpeedPollingMixin 提供（含后台标签页暂停/恢复）
 
   private formatDate(timestamp: number | string | null | undefined): string {
     return formatDate(timestamp)

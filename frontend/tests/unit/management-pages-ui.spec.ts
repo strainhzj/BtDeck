@@ -94,7 +94,8 @@ describe('孤儿文件管理页信息层级', () => {
 describe('回收站筛选栏', () => {
   it('复用孤儿文件管理页的主题化筛选面板骨架', () => {
     expect(recycleBinSource).toContain('class="app-container management-page recycle-bin-page"')
-    expect(recycleBinSource).toContain('class="management-panel" aria-label="回收站筛选条件"')
+    expect(recycleBinSource).toContain('<CollapsiblePanel')
+    expect(recycleBinSource).toContain('storage-key="btdeck_recycle_bin_filter_collapsed"')
     expect(recycleBinSource).toContain('class="management-filter"')
     expect(recycleBinSource).toContain('class="management-filter__control"')
     expect(recycleBinSource).toContain('class="management-filter__actions"')
@@ -115,7 +116,8 @@ describe('回收站筛选栏', () => {
 describe('操作日志搜索与操作栏', () => {
   it('将查询字段和数据操作分成两个主题化面板', () => {
     expect(auditLogsSource).toContain('class="app-container management-page audit-logs-container"')
-    expect(auditLogsSource).toContain('class="management-panel audit-filter-panel"')
+    expect(auditLogsSource).toContain('<CollapsiblePanel')
+    expect(auditLogsSource).toContain('storage-key="btdeck_audit_filter_collapsed"')
     expect(auditLogsSource).toContain('class="management-filter audit-filter-grid"')
     expect(auditLogsSource).toContain('class="management-panel audit-action-panel"')
     expect(auditLogsSource).toContain('class="audit-action-bar__actions"')

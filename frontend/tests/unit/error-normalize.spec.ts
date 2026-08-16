@@ -37,6 +37,10 @@ describe('isLoginRequest', () => {
     expect(isLoginRequest({ url: '/api/v1/auth/login' })).toBe(true)
   })
 
+  it('豁免 /auth/refresh（401 由单飞刷新流程处理，不直接跳登录）', () => {
+    expect(isLoginRequest({ url: '/api/v1/auth/refresh' })).toBe(true)
+  })
+
   it('非登录路径返回 false', () => {
     expect(isLoginRequest({ url: '/api/v1/torrents/getList' })).toBe(false)
   })

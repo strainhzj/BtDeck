@@ -8,16 +8,14 @@
     </header>
 
     <!-- 筛选区域 -->
-    <section class="management-panel audit-filter-panel" aria-labelledby="audit-filter-title">
-      <div class="management-panel__header">
-        <div class="management-panel__heading">
-          <h2 id="audit-filter-title" class="management-panel__title">筛选日志</h2>
-          <p class="management-panel__description">可组合名称、类型、操作人、结果与时间范围进行查询</p>
-        </div>
-        <div class="management-panel__meta">
-          <el-tag type="info" effect="plain">共 {{ total }} 条</el-tag>
-        </div>
-      </div>
+    <CollapsiblePanel
+      title="筛选日志"
+      description="可组合名称、类型、操作人、结果与时间范围进行查询"
+      storage-key="btdeck_audit_filter_collapsed"
+    >
+      <template #meta>
+        <el-tag type="info" effect="plain">共 {{ total }} 条</el-tag>
+      </template>
       <div class="management-filter audit-filter-grid">
         <div class="management-filter__field">
           <label class="management-filter__label" for="audit-torrent-name">种子名称</label>
@@ -44,6 +42,7 @@
             <el-option label="全部类型" value="" />
             <el-option-group label="种子管理">
               <el-option label="新增种子" value="add" />
+              <el-option label="种子转移" value="transfer" />
               <el-option label="等级4删除（待删除）" value="delete_l4" />
               <el-option label="等级3删除（回收站）" value="delete_l3" />
               <el-option label="等级2删除（保留数据）" value="delete_l2" />
@@ -116,7 +115,7 @@
           <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
         </div>
       </div>
-    </section>
+    </CollapsiblePanel>
 
     <!-- 数据操作栏 -->
     <section class="management-panel audit-action-panel" aria-labelledby="audit-actions-title">
@@ -766,6 +765,7 @@ export default class AuditLogs extends Vue {
   getOperationTypeName(type: string): string {
     const typeMap: Record<string, string> = {
       add: '新增种子',
+      transfer: '种子转移',
       delete_l4: '等级4删除',
       delete_l3: '等级3删除',
       delete_l2: '等级2删除',

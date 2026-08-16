@@ -1,6 +1,9 @@
 import axios, { AxiosRequestConfig } from 'axios'
 import { Message } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
+import { setRefreshToken } from '@/utils/cookies'
+import { refreshAccessToken } from '@/api/users'
+import { refreshTokensOnce, type TokenPair } from '@/utils/token-refresh'
 import {
   SUCCESS_CODES,
   isLoginRequest,
@@ -59,6 +62,48 @@ function redirectToLogin(): void {
     UserModule.ResetToken()
     window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
   }
+}
+
+// ====== 401 静默续期（双令牌体系 W6-1） ======
+
+/** 刷新依赖注入（独立于 axios 层，便于单测 token-refresh 编排） */
+const refreshDeps = {
+  doRefresh: async(refreshToken: string): Promise<TokenPair> => {
+    const res = await refreshAccessToken(refreshToken)
+    const item = res.data && res.data[0]
+    if (!item || !item.access_token) {
+      throw new Error('刷新响应缺少 access_token')
+    }
+    return {
+      accessToken: item.access_token,
+      // 后端使用即轮换：优先用新 refresh token，缺失时沿用旧值
+      refreshToken: item.refresh_token || refreshToken
+    }
+  },
+  getRefreshToken: () => UserModule.getRefreshTokenValue(),
+  saveTokens: (pair: TokenPair) => {
+    UserModule.SetToken(pair.accessToken)
+    setRefreshToken(pair.refreshToken)
+  }
+}
+
+/**
+ * 401 统一处理：先尝试静默续期并重放原请求一次，失败才登出。
+ * 登录/refresh 请求豁免（isLoginRequest）；已重放过的请求不再续期（防循环）。
+ */
+async function handleUnauthorized(config: AxiosRequestConfig, fallbackError: unknown): Promise<never> {
+  const retried = (config as AxiosRequestConfig & { _retried?: boolean })._retried
+  if (!retried && !isLoginRequest(config)) {
+    const pair = await refreshTokensOnce(refreshDeps)
+    if (pair) {
+      (config as AxiosRequestConfig & { _retried?: boolean })._retried = true
+      // 重放原请求：请求拦截器会自动携带新 token，响应拦截器继续解包/归一化
+      const retryResult = await service.request(config)
+      return retryResult as never
+    }
+  }
+  redirectToLogin()
+  return Promise.reject(fallbackError)
 }
 
 // Request interceptors
@@ -122,9 +167,9 @@ service.interceptors.response.use(
     // 业务错误：HTTP 200 但 code 非 2xx 成功
     const apiError = buildBusinessError(res, response.status, response)
 
-    // 认证失败：非登录接口触发跳转
+    // 认证失败：先尝试静默续期+重放，失败才跳登录（登录/refresh 请求豁免）
     if (apiError.code === '401' && !isLoginRequest(response.config)) {
-      redirectToLogin()
+      return handleUnauthorized(response.config, apiError)
     }
 
     return Promise.reject(apiError)
@@ -149,9 +194,9 @@ service.interceptors.response.use(
       error.request
     )
 
-    // 认证失败跳转（登录接口豁免）
+    // 认证失败：先尝试静默续期+重放，失败才跳登录（登录/refresh 请求豁免）
     if (httpStatus === 401 && !isLoginRequest(error.config)) {
-      redirectToLogin()
+      return handleUnauthorized(error.config, apiError)
     }
 
     return Promise.reject(apiError)

@@ -13,6 +13,7 @@ export interface UserInfoData {
 
 interface LoginResponseItem {
   access_token: string
+  refresh_token?: string
   token_type: string
   user_id: string | number
 }
@@ -42,6 +43,21 @@ export const login = (data: LoginRequest) =>
     url: '/auth/login',
     method: 'post',
     data
+  })
+
+interface RefreshResponseItem {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  user_id: string | number
+}
+
+/** 双令牌体系（W6-1）：用 refresh token 换发新 access token（使用即轮换） */
+export const refreshAccessToken = (refreshToken: string) =>
+  request<ApiEnvelope<RefreshResponseItem[]>>({
+    url: '/auth/refresh',
+    method: 'post',
+    data: { refresh_token: refreshToken }
   })
 
 export const logout = () =>
