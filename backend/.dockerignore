@@ -53,6 +53,11 @@ htmlcov/
 *.db-shm
 config/*.db*
 config/*pre-migration*
+# 安全修复（W12/W7）：config.yaml 含 secret_key/login_status_secret 真实密钥，
+# 禁止进入镜像层（不挂载卷直接 docker run 时镜像内嵌密钥会被使用）
+config/config.yaml
+config/config.yaml.*
+app/config.yaml
 
 # 运行时缓存/状态文件（compose 已挂载卷覆盖）
 config/qb_rid_cache.json

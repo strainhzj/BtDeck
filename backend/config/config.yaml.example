@@ -21,6 +21,11 @@ server:
   workers: 4
   timeout: 60
 security:
+  # 必须替换为随机值（安全修复 W7）：此文件曾被 git 跟踪且含真实密钥，
+  # 任何使用模板默认值/历史值的部署共享同一加密主密钥（用户密码 AES-ECB
+  # 与下载器密码 SM4 均依赖它）。生成: python -c "import secrets; print(secrets.token_hex(16))"
+  # 注意：首次启动 init_config_file 只会补缺失字段，不会覆盖已有密钥——
+  # 升级部署务必手动更新本文件后再启动。
   secret_key: your-secret-key-here
   token_expire_minutes: 60
   algorithm: HS256

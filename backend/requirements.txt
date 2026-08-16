@@ -15,7 +15,11 @@ click~=8.1.8
 requests~=2.32.3
 regex>=2024.11.6,<2027.0.0
 pydantic~=2.12.4
-fastapi~=0.115.0
+# CVE-2024-47874（multipart 解析 DoS，修复于 starlette 0.40.0）：
+# fastapi 0.115.6 起放宽 starlette 上限至 <0.42，配套升级（W13）。
+# 历史组合 fastapi~=0.115.0 + starlette~=0.41.3 是矛盾锁定（pip 只能解析到
+# fastapi 0.115.2，starlette 永远停留在受 CVE 影响的 0.38.x）。
+fastapi~=0.115.6
 pyotp~=2.9.0
 qrcode~=8.1
 pycryptodomex~=3.23.0
@@ -29,7 +33,7 @@ aiosqlite~=0.21.0
 pillow~=11.1.0
 transmission-rpc~=7.0.11
 urllib3~=2.2.2
-starlette~=0.38.0
+starlette~=0.41.3
 sympy~=1.12
 alembic~=1.13.3
 bencodepy~=0.9.5

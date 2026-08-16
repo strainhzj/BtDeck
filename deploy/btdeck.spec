@@ -19,7 +19,9 @@ datas = [
     (os.path.join(BACKEND_DIR, 'alembic'), 'alembic'),
     (os.path.join(BACKEND_DIR, 'alembic.ini'), '.'),
     # 后端配置模板
-    (os.path.join(BACKEND_DIR, 'config'), 'config'),
+    # 安全修复（W12）：不再打包 backend/config 目录——其中含真实 config.yaml
+    # （密钥）与开发库 app.db（历史构建已实证泄露，TOC 可查）。运行时
+    # CONFIG_PATH 为 exe 同级 config/，首启由 init_config_file 自动生成。
 ]
 
 # 如果前端已构建，包含静态文件
