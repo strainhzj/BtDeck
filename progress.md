@@ -4363,3 +4363,49 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 完整 `npm run lint` 仍仅被 3 个无关关键词测试文件的既有 5 条 warning 门禁拦截，本次文件为 0 warning。
 - Git Bash 根 `./init.sh`、`git diff --check`、feature_list JSON 解析与路线图陈旧模式扫描通过；前端 init 仅有既有 null-byte warning。
 - 用户已授权提交；提交范围仅包含本次功能、回归和路线图文件，不执行 push/deploy，任务开始前的未跟踪备份、镜像和工具产物保持不动。
+
+## 2026-08-16 - 8 项问题根因分析与修复计划（验证后）
+
+### 需求
+
+- 用户反馈 8 项问题：① active-torrents 任意界面轮询 ② 标签/分类不同步下载器 ③ 新种子添加时间为空 ④ 路径同步误删历史路径 ⑤ 转移假成功/无日志 ⑥ 令牌不续期 ⑦ 删除日志无 IP ⑧ 缺展开/收缩与用户习惯记录。要求先找出最可能根因（深层推导），再生成修复方案。
+
+### 根因分析（4 个子代理独立验证）
+
+- ① 代码无全局轮询（仅 index.vue/TraditionalView，created 启动/beforeDestroy 停止）；部署镜像与源码一致；`/torrents/detail/:hash` 挂载整个列表视图导致详情页也轮询；keepAlive meta 死配置。
+- ② create_tag 被"架构调整"注释刻意摘除同步（tag_management.py:448-450）；`_sync_tag_to_downloader` 与 adapter create_tag 均死代码；update_tag 同样缺同步。
+- ③ 所有写入路径 added_on 无效即写 NULL（torrents_async.py:3297/3348、torrent_helpers.py:862、torrent_sync.py:824）；首轮 rid=0 maindata 快照不水合；无兜底无回填。子代理修正：info_only 变更检测缓存不含 added_date 列，"有值→None 覆盖"不成立，NULL 只在插入时产生、自愈依赖 delta/12h 全量；生产库 22277 条 0 空值，仅新添加路径命中。
+- ④ 子代理修正：斜杠形态不一致假设被驳（存储与比较均原始形态）；真实根因=无宽限期立即禁用 + `_sync_active_path` 永不重新启用（生产库 id 38：2 条活种子、count 持续更新、is_enabled 恒 0）。
+- ⑤ qB torrents_add 返回 "Fails." 不抛异常且返回值被忽略（qbittorrentapi 源码级确认）；`_verify_transfer` 按 hash 查旧种子即判成功；批量端点固定 code=200；审计写 seed_transfer_audit_log 无读取 API；端点硬编码 admin。
+- ⑥ 后端只签单个 60 分钟 access_token 无 refresh 端点；前端 request.ts 401 直接登出。
+- ⑦ 4 个删除端点从不调用 extract_audit_info_from_request；torrent_deletion_service.py:527 硬编码 ip_address=None；by_level 8 处不传 IP；写对 IP 的 _log_deletion_operation_async 死代码。
+- ⑧ 无通用折叠面板组件；偏好散落硬编码 localStorage 键；子代理修正：viewMode 实际已持久化（btdeck_view_mode），仅注释误导。
+
+### 交付
+
+- 新建 `PLANS/verified-bugfix-remediation.md`：5 个发布门（G1~G5）、8 项问题→根因→交付项映射、5 个实施 Phase（含文件清单与测试）、验收标准、风险与回滚。
+- `PLANS/README.md` 注册专项修复计划。
+- 未实施代码改动；待用户确认优先级后按 Phase 交付（建议先做 Phase 3 的转移修复与 Phase 4 的令牌续期）。
+
+### 2026-08-16 决策记录（计划批准）
+
+- 用户确认：8 项问题**全部一次性实施**；令牌续期采用**双令牌 refresh 体系**（access 60 分钟 + refresh 7 天，refresh_tokens 表持久化、使用即轮换、登出撤销），替代初版计划的"滑动续期"。
+- 3 个子代理独立审查修正（并入最终计划）：W1-1 路由 name 判断不可用（改用 path 判断）；W4-1 需新增 disabled_by 迁移字段防"重新启用推翻用户手动禁用"（存量 is_enabled=0 保守标 user）；W3-1 水合需宽松模式且仅 info_only 预算路径；W3-3 回填改后台任务；W5-3 前端需经 ApiError.rawResponse 取 400 载荷；W6 需独立 refresh 校验函数（verify_access_token 60 分钟年龄检查会拒 7 天 token）与登出撤销改造；W7 operator 防伪造（请求参数默认 admin 可伪造）。
+- 计划文件 `PLANS/verified-bugfix-remediation.md` 已更新为审查修正版并批准；开始按 Phase 1~5 实施。
+
+## 2026-08-16 - 8 项修复实施完成（Phase 1~5）
+
+### 实施（计划 PLANS/verified-bugfix-remediation.md 已批准）
+
+- **Phase 1 轮询**：SpeedPollingMixin（speedPolling.ts）统一两视图轮询 + visibilitychange 后台暂停/恢复；详情死路由跳过轮询；删除 router 13 处 keepAlive 死配置。
+- **Phase 2 标签/路径**：create_tag/update_tag 同步下载器（qB 409 幂等、TR no-op、失败 best-effort）；downloader_path_maintenance 新增 disabled_by（迁移 a7b8c9d0e1f2），_sync_active_path 仅恢复 auto、_cleanup_obsolete_paths 宽限期 30 天（PATH_CLEANUP_GRACE_DAYS），服务层 delete/update 标 user；前端路径管理显示"历史路径/手动禁用"标签。
+- **Phase 3 添加时间/转移**：首轮 rid=0 快照宽松水合（strict=False）；UI 添加 datetime.now() 兜底；启动后台回填（INFO_SYNC_STARTUP_BACKFILL_ENABLED，默认关）；torrents_add 返回值 "Fails." 检查、目标查重 duplicate、批量 code=400、审计 TRANSFER 并入 torrent_audit_log + 真实用户；前端 BatchTransferDialog 经 ApiError.rawResponse 展示失败明细、部分失败不 emit success。
+- **Phase 4 令牌/删除日志**：双令牌体系——refresh_tokens 表（迁移 a8b9c0d1e2f3，SHA-256 哈希、使用即轮换、登出撤销）、/auth/refresh 端点、登录签发 refresh；前端 SetToken action、Login 接 refresh、401 单飞刷新重放（token-refresh.ts 可测编排）、isLoginRequest 豁免 /auth/refresh；4 删除端点提取 audit_info、by_level 8 处 log_operation 补 IP/UA、operator 防伪造（认证用户优先）、recycle_bin manual_cleanup 补 request。
+- **Phase 5 折叠面板**：CollapsiblePanel.vue（storageKey 持久化、null 默认展开、aria-expanded/controls），全局注册，接入 audit/recycle-bin/query-templates/orphan-files 四个面板。
+
+### 验证
+
+- 定向测试：后端 267 用例全绿（111 Phase2/3 + 128 Phase4 + 28 W7 新增/回归）；前端 190 用例全绿（speed-polling 6、batch-transfer 4、token-refresh 5、collapsible-panel 7、management-pages-ui 13、error-normalize 35 等）。
+- 迁移：25 用例全绿（EXPECTED_HEAD=a8b9c0d1e2f3）；生产库副本实证 disabled_by 迁移（2 条禁用记录保守标 user）。
+- 全量回归：后端全量 + 前端全量 + 生产 build 结果见收尾记录。
+- 未执行 git 提交（按仓库会话规范，用户未要求）。

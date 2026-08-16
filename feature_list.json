@@ -19,6 +19,156 @@
   },
   "features": [
     {
+      "id": "verified-bugfix-2026-08",
+      "name": "8 项已验证问题修复（轮询/标签同步/添加时间/路径清理/转移/令牌续期/删除日志/折叠面板）",
+      "description": "①active-torrents 只在种子列表页轮询（详情死路由跳过+后台标签暂停）②标签/分类创建/重命名同步下载器（qB 立即、TR 使用时）③新种子添加时间兜底+首轮快照水合+存量回填 ④路径清理宽限期+auto 来源自动恢复（disabled_by 字段）⑤转移返回值检查+目标查重+批量 400+审计并入 torrent_audit_log ⑥双令牌 refresh 体系（refresh_tokens 表+轮换+登出撤销+前端 401 单飞刷新重放）⑦删除审计补 IP/UA/真实操作者 ⑧CollapsiblePanel 通用折叠组件+偏好持久化",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/verified-bugfix-remediation.md",
+      "tasks": [
+        {
+          "id": "verified-bugfix-2026-08.1",
+          "name": "轮询生命周期（W1-1/W1-2/W1-3）",
+          "description": "详情路由不轮询；后台标签页 visibility 暂停/恢复（SpeedPollingMixin）；删除 keepAlive 死配置",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/mixins/speedPolling.ts",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/router.ts",
+            "frontend/tests/unit/speed-polling.spec.ts"
+          ],
+          "evidence": "speed-polling.spec 6 用例全绿；视图组件 120 用例回归全绿；typecheck/eslint 通过"
+        },
+        {
+          "id": "verified-bugfix-2026-08.2",
+          "name": "标签同步下载器（W2-1/W2-2）",
+          "description": "create_tag/update_tag 调用 _sync_tag_to_downloader；qB 409 幂等；TR no-op；同步失败 best-effort",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/tag_management.py",
+            "backend/tests/api/test_tag_downloader_migration.py"
+          ],
+          "evidence": "test_tag_downloader_migration 35 用例全绿；test_tag_aggregation+架构测试 48 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.3",
+          "name": "路径清理宽限期与自动恢复（W4-1/W4-2/W4-3）",
+          "description": "disabled_by 字段（迁移 a7b8c9d0e1f2）；_sync_active_path 仅恢复 auto；_cleanup_obsolete_paths 宽限期；前端历史路径标签",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/alembic/versions/a7b8c9d0e1f2_add_path_maintenance_disabled_by.py",
+            "backend/app/models/downloader_path_maintenance.py",
+            "backend/app/tasks/scheduler/downloader_path_scan.py",
+            "backend/app/services/path_maintenance_service.py",
+            "backend/app/core/config.py",
+            "backend/tests/tasks/test_path_maintenance_cleanup.py",
+            "frontend/src/views/downloader/components/DownloaderPathManagement.vue"
+          ],
+          "evidence": "path_maintenance_cleanup 11 用例全绿；迁移 25 用例全绿（EXPECTED_HEAD=a8b9c0d1e2f3）；生产库副本实证（2 条禁用记录保守标 user）"
+        },
+        {
+          "id": "verified-bugfix-2026-08.4",
+          "name": "添加时间兜底与回填（W3-1/W3-2/W3-3）",
+          "description": "首轮 rid=0 快照宽松水合；UI 添加 datetime.now() 兜底；启动后台回填任务（INFO_SYNC_STARTUP_BACKFILL_ENABLED）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/app/services/torrent_added_date_backfill.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/core/config.py",
+            "backend/tests/services/test_added_date_backfill.py",
+            "backend/tests/services/test_torrent_metadata.py",
+            "backend/tests/api/test_torrent_crud_add_fallback.py"
+          ],
+          "evidence": "backfill 5 + hydration 2 + fallback 2 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.5",
+          "name": "转移假成功修复与审计（W5-1~W5-4）",
+          "description": "torrents_add 返回值检查（Fails.）；目标查重 duplicate；批量 code=400；审计 TRANSFER 并入 torrent_audit_log；真实用户",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/seed_transfer_service.py",
+            "backend/app/api/endpoints/seed_transfer.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/services/test_seed_transfer_service_fixes.py",
+            "backend/tests/api/test_seed_transfer_batch_fixes.py",
+            "backend/tests/api/test_seed_transfer_api.py",
+            "frontend/src/views/torrents/components/BatchTransferDialog.vue",
+            "frontend/src/views/torrents/components/TransferDialog.vue",
+            "frontend/src/views/logs/audit.vue",
+            "frontend/tests/unit/batch-transfer-dialog.spec.ts"
+          ],
+          "evidence": "transfer 服务 5 + 批量 4 + API 10 用例全绿；BatchTransferDialog Jest 4 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.6",
+          "name": "双令牌 refresh 体系（W6-1/W6-2）",
+          "description": "refresh_tokens 表（迁移 a8b9c0d1e2f3）；登录签发+使用即轮换+/auth/refresh+登出撤销；前端 SetToken/Login 接 refresh/401 单飞刷新重放",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/auth/models.py",
+            "backend/alembic/versions/a8b9c0d1e2f3_add_refresh_tokens.py",
+            "backend/app/auth/utils.py",
+            "backend/app/auth/request.py",
+            "backend/app/api/endpoints/login.py",
+            "backend/app/api/endpoints/cuser.py",
+            "backend/tests/api/test_auth_refresh.py",
+            "frontend/src/utils/cookies.ts",
+            "frontend/src/api/users.ts",
+            "frontend/src/store/modules/user.ts",
+            "frontend/src/utils/token-refresh.ts",
+            "frontend/src/utils/request.ts",
+            "frontend/src/utils/error-normalize.ts",
+            "frontend/tests/unit/token-refresh.spec.ts"
+          ],
+          "evidence": "auth_refresh 6 用例全绿；token-refresh Jest 5 用例全绿；迁移 25 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.7",
+          "name": "删除审计 IP/UA/操作者（W7）",
+          "description": "4 删除端点提取 audit_info；服务层透传；by_level/recycle_bin 补传；operator 防伪造（认证用户优先）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrent_deletion.py",
+            "backend/app/services/torrent_deletion_service.py",
+            "backend/app/services/torrent_deletion_by_level.py",
+            "backend/app/services/recycle_bin_service.py",
+            "backend/app/api/endpoints/recycle_bin.py",
+            "backend/tests/services/test_torrent_deletion_service.py"
+          ],
+          "evidence": "deletion service 44 用例全绿；删除/recycle 相关 83 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.8",
+          "name": "通用折叠面板（W8-1/W8-2/W8-3）",
+          "description": "CollapsiblePanel 组件（storageKey 持久化/a11y）；audit/recycle-bin/query-templates/orphan-files 接入；全局注册",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/CollapsiblePanel.vue",
+            "frontend/src/main.ts",
+            "frontend/src/views/logs/audit.vue",
+            "frontend/src/views/recycle-bin/index.vue",
+            "frontend/src/views/query-templates/index.vue",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/collapsible-panel.spec.ts",
+            "frontend/tests/unit/management-pages-ui.spec.ts"
+          ],
+          "evidence": "collapsible-panel 7 用例全绿；management-pages-ui 13 用例全绿"
+        }
+      ]
+    },
+    {
       "id": "orphan-scan-background-stable-details-and-guardrail",
       "name": "孤儿扫描后台化、稳定明细复用与 12 万级争用治理",
       "description": "将孤儿扫描改为持久化后台任务和轻量状态轮询；文件夹子项按展开懒加载、独立分页，硬链接实时统计仅覆盖当前可见文件；生命周期查询、明细复用、更新与 resolved 全部分批并进入 db_write_scope；超过 50000 条的扫描只显示可关闭提醒，不再要求双重核查或阻断清理。",
