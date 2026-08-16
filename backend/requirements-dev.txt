@@ -22,7 +22,7 @@ ruff~=0.8.0
 # ---- 调试工具（app/ 代码未引用，仅在 IDE 远程调试场景安装）----
 debugpy~=1.8.11
 
-# ---- 可选安全依赖（app/ 当前未使用 passlib/bcrypt，保留版本约束以备未来引入）----
+# ---- 诊断脚本依赖（scripts/diagnose.py 使用 passlib；bcrypt 为运行时依赖，见 requirements.txt）----
 passlib[bcrypt]~=1.7.4
 
 # ---- Cython 编译工具（仅 setup.py 的 PyInstaller 原生打包路径需要，Docker 容器不调用）----

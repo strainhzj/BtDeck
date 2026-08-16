@@ -23,6 +23,8 @@ fastapi~=0.115.6
 pyotp~=2.9.0
 qrcode~=8.1
 pycryptodomex~=3.23.0
+# 密码哈希运行时依赖（app/auth/security.py 直接 import bcrypt；passlib 仅 scripts/diagnose.py 使用）
+bcrypt~=5.0.0
 python-dotenv~=0.21.0
 PyYAML~=6.0.1
 gmssl~=3.2.2
