@@ -1,5 +1,28 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-16 - 修复新种子显示 unknown 与传统模式进度条不可见
+
+### 需求与根因
+
+- 用户报告两个问题：1）传统模式下载数据时进度条不随进度变长；2）列表/传统两模式对新添加种子都显示 "unknown"，应显示"下载中"。
+- 根因（两问题同源）：qBittorrent 新添加种子处于 `metaDL`/`forcedMetaDL`/`allocating` 等初始态，后端 `QBITTORRENT_STATUS_MAP`（`torrent_status_mapper.py`）缺失这些键导致原样入库；前端 `normalizeTorrentStatus`（`formatters.ts`）只识别 7 个规范值，其余一律归一 `'unknown'` → 状态列显示 "unknown"。
+- 传统模式进度条额外踩中样式缺陷：`.progress-bar-fill`（`traditional-view-theme.scss`）无默认背景色、仅按状态类着色，状态为 unknown 时填充条透明 → 宽度在增长但不可见（列表模式 `.progress-fill` 有默认渐变背景故正常）。同一缺陷族还包括 `pausedDL/pausedUP/checkingDL/checkingUP`（后端有意保留的统计变体）与 `completed`（实时轮询完成时写入）此前均无文案/样式。
+
+### 修复内容
+
+- 后端 `torrent_status_mapper.py`：`QBITTORRENT_STATUS_MAP` 补齐 7 个缺失状态——`metaDL/forcedMetaDL/allocating/forcedDL→downloading`、`forcedUP→seeding`、`missingFiles→error`、`checkingResumeData→checkingDL`；`moving`（迁移瞬时态）有意不映射并注释说明。新映射与 `torrent_stats_cache.get_stats` 的统计桶天然兼容（downloading/seeding 桶可正确归类）。
+- 前端 `formatters.ts`：`normalizeTorrentStatus` 由 7 分支 switch 重写为 `TORRENT_STATUS_FOLD_MAP` 折叠表（大小写不敏感），覆盖 qB 全量状态词表（含历史入库的 `pausedDL/pausedUP/checkingDL/checkingUP/stalledDL/forcedUP/uploading` 等变体），兜底已入库历史数据展示；未识别仍归 `'unknown'`。
+- 前端 `status-config.ts`：`STATUS_TEXT_MAP`/`STATUS_ICON_MAP` 补 `completed: '已完成'/'circle-check-big'` 与 `unknown: '未知'/'help-circle'`（`STATUS_OPTIONS` 六态筛选选项不变）。
+- 样式：`traditional-view-theme.scss` `.progress-bar-fill` 加兜底背景 `var(--color-text-tertiary)` + `&.completed`；状态图标圆点与徽章补 `&.completed`/`&.unknown`；`torrent-theme.scss` 列表徽章补 `&.unknown`。
+- 存量数据自愈：下一次种子同步会把 DB 中 `metaDL` 等原值重写为规范状态；同步前前端折叠表兜底展示。
+
+### 验证
+
+- 后端：`tests/core/test_torrent_status_mapper.py` 60 passed（映射表完整性/参数化用例同步更新，seeding 来源计数 4→5）；`tests/api/test_transmission_error_sync.py` 32 passed；mypy/black/flake8 通过。`test_path_mapping_validation.py` 直接用原始 state 字符串不走映射器，不受影响（已核）。
+- 前端：`shared-utils.spec.ts`（+14 折叠用例）/`status-config.spec.ts`/`traditional-view-component.spec.ts`/`torrent-list-view-component.spec.ts`/`torrent-error-reason-ui.spec.ts` 共 **111 passed**；改动文件 eslint 零问题；`tsc --noEmit` 通过。
+- roadmap 同步：`backend/core/README.md` status-mapper 行（L103→L112/L138→L147 漂移修正 + 变更摘要）、`frontend/utils-types/README.md` formatters 行（L571→L589）与 status-config 行。
+- 无 schema 变更，无新迁移；未执行 Git 提交（待用户指令）。
+
 ## 2026-08-16 - 副本位置弹窗行级删除硬链接副本
 
 ### 需求与实现

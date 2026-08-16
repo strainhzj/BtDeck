@@ -35,6 +35,15 @@ class TorrentStatusMapper:
         "queuedDL": "queuedDL",  # 下载队列中 -> 保持不变
         # 其他状态保持不变
         "downloading": "downloading",  # 正在下载 -> 保持不变
+        # 新添加种子的初始态统一归入下载中，避免前端显示 unknown
+        "metaDL": "downloading",  # 获取元数据中（磁力链初始态）-> 下载中
+        "forcedMetaDL": "downloading",  # 强制获取元数据 -> 下载中
+        "allocating": "downloading",  # 分配磁盘空间（新种子初始态）-> 下载中
+        "forcedDL": "downloading",  # 强制下载 -> 下载中
+        "forcedUP": "seeding",  # 强制做种 -> 做种中
+        "missingFiles": "error",  # 数据文件缺失 -> 错误
+        "checkingResumeData": "checkingDL",  # 恢复数据检查 -> 下载检查中
+        # 注：moving（迁移保存路径的瞬时态）有意不映射，语义取决于迁移前的下载/做种状态
         "paused": "paused",  # 已暂停 -> 保持不变
         "error": "error",  # 错误 -> 保持不变
         "unknown": "unknown",  # 未知 -> 保持不变

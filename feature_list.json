@@ -3605,6 +3605,51 @@
           "evidence": "orphan-files.spec.ts 新增 7 用例（文件 99 passed，全套件 44 suites/754 tests passed）：删除按钮渲染（数量/文案/data-loading）、确认后按 {orphan_id, copy_paths} 调用+就地刷新（mockGetOrphanList 仅挂载 1 次、行计数 2→1）+重查同 orphan_ids、行级 loading 态进出、逐项失败原因展示且不重查、rejected 载荷提示且不重查、取消确认不调用、located 筛选开启时改走整页刷新（mockGetOrphanList 2 次）。typecheck 通过；三个改动文件 eslint --max-warnings 0 零问题。"
         }
       ]
+    },
+    {
+      "id": "torrent-status-unknown-fix",
+      "name": "修复新种子显示 unknown 与传统模式进度条不可见",
+      "description": "qBittorrent 新添加种子初始态（metaDL/forcedMetaDL/allocating/forcedDL/forcedUP/missingFiles/checkingResumeData）在后端 QBITTORRENT_STATUS_MAP 缺失映射原样入库，前端 normalizeTorrentStatus 将未识别状态归一 unknown，导致列表/传统两模式新种子状态列显示 unknown；传统模式 .progress-bar-fill 无默认背景色，unknown 状态下进度条透明不可见（宽度在增长但看不到）。修复：后端映射表补齐 7 个状态（moving 瞬时态有意不映射）；前端 normalizeTorrentStatus 重写为全量状态折叠表（大小写不敏感，兜底历史入库的 pausedDL/checkingDL 等变体）；status-config 补 completed/unknown 文案与图标；传统/列表样式补默认背景与 completed/unknown 徽章。无 schema 变更，存量数据由下一次同步自愈。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "torrent-status-unknown-fix.1",
+          "name": "后端：QBITTORRENT_STATUS_MAP 补齐新种子初始态映射",
+          "scope": "backend",
+          "description": "torrent_status_mapper.py 新增 metaDL/forcedMetaDL/allocating/forcedDL→downloading、forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL；与 torrent_stats_cache 统计桶兼容。",
+          "status": "done",
+          "evidence": "pytest tests/core/test_torrent_status_mapper.py 60 passed（映射表完整性用例同步更新，seeding 来源计数 4→5）；tests/api/test_transmission_error_sync.py 32 passed；mypy/black/flake8 通过",
+          "files": [
+            "backend/app/core/torrent_status_mapper.py"
+          ]
+        },
+        {
+          "id": "torrent-status-unknown-fix.2",
+          "name": "前端：normalizeTorrentStatus 全量状态折叠 + completed/unknown 文案",
+          "scope": "frontend",
+          "description": "formatters.ts 重写为 TORRENT_STATUS_FOLD_MAP 折叠表（qB 全量状态词表，大小写不敏感）；status-config.ts 补 completed=已完成/circle-check-big 与 unknown=未知/help-circle。",
+          "status": "done",
+          "evidence": "shared-utils.spec.ts +14 折叠用例；status-config.spec.ts 契约不变量通过；eslint/tsc 通过",
+          "files": [
+            "frontend/src/utils/formatters.ts",
+            "frontend/src/constants/status-config.ts"
+          ]
+        },
+        {
+          "id": "torrent-status-unknown-fix.3",
+          "name": "样式：传统模式进度条默认背景与 completed/unknown 徽章",
+          "scope": "frontend",
+          "description": "traditional-view-theme.scss .progress-bar-fill 加兜底背景（unknown 状态进度条可见）+ &.completed；状态图标圆点/徽章补 completed/unknown；torrent-theme.scss 列表徽章补 unknown。",
+          "status": "done",
+          "evidence": "traditional-view-component.spec.ts / torrent-list-view-component.spec.ts / torrent-error-reason-ui.spec.ts 全部通过；静态契约无破坏",
+          "files": [
+            "frontend/src/styles/traditional-view-theme.scss",
+            "frontend/src/styles/torrent-theme.scss"
+          ]
+        }
+      ]
     }
   ]
 }

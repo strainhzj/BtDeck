@@ -24,15 +24,21 @@ class TestQBittorrentStatusMapping:
             ("seeding", "seeding"),
             ("queuedUP", "seeding"),
             ("uploading", "seeding"),
+            ("forcedUP", "seeding"),
             # 上传暂停保持不变
             ("pausedUP", "pausedUP"),
             # 下载相关状态
             ("stalledDL", "downloading"),
+            ("metaDL", "downloading"),
+            ("forcedMetaDL", "downloading"),
+            ("allocating", "downloading"),
+            ("forcedDL", "downloading"),
             # 下载暂停保持不变
             ("pausedDL", "pausedDL"),
             # 检查状态保持不变
             ("checkingDL", "checkingDL"),
             ("checkingUP", "checkingUP"),
+            ("checkingResumeData", "checkingDL"),
             # 队列状态保持不变
             ("queuedDL", "queuedDL"),
             # 基本状态保持不变
@@ -40,6 +46,8 @@ class TestQBittorrentStatusMapping:
             ("paused", "paused"),
             ("error", "error"),
             ("unknown", "unknown"),
+            # 数据文件缺失归入错误
+            ("missingFiles", "error"),
             # 未知状态 -> fallback 返回原值
             ("completely_new_status", "completely_new_status"),
         ],
@@ -65,15 +73,22 @@ class TestQBittorrentStatusMapping:
             "seeding",
             "queuedUP",
             "uploading",
+            "forcedUP",
             "pausedUP",
             "stalledDL",
+            "metaDL",
+            "forcedMetaDL",
+            "allocating",
+            "forcedDL",
             "pausedDL",
             "checkingDL",
             "checkingUP",
+            "checkingResumeData",
             "queuedDL",
             "downloading",
             "paused",
             "error",
+            "missingFiles",
             "unknown",
         }
         actual_keys = set(TorrentStatusMapper.QBITTORRENT_STATUS_MAP.keys())
@@ -82,7 +97,7 @@ class TestQBittorrentStatusMapping:
     def test_映射值中seeding的数量(self):
         """验证映射到 'seeding' 的状态数量"""
         seeding_sources = [k for k, v in TorrentStatusMapper.QBITTORRENT_STATUS_MAP.items() if v == "seeding"]
-        assert len(seeding_sources) == 4  # stalledUP, seeding, queuedUP, uploading
+        assert len(seeding_sources) == 5  # stalledUP, seeding, queuedUP, uploading, forcedUP
 
 
 # ============================================================

@@ -23,7 +23,7 @@
 | 解密孤儿 security | `security.py` | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |
 | 种子文件备份 torrent-file-backup | `torrent_file_backup.py` | 种子文件备份服务（从下载器备份目录拷贝到项目备份目录） |
 | ratio 工具孤儿 ratio-tools | `torrent_operations.py` | ⚠️ **孤儿（内容已重写但未接线）**：v1.0.6.27 起内容已重写为 ratio/ratio_limit 工具，但**生产路径未 import**（实际生效的是 `app/services/torrent_ratio_values.py`） |
-| 状态映射 status-mapper | `torrent_status_mapper.py` | 统一 qb/transmission 种子状态映射；`resolve_transmission_status` L103 判定错误状态，`extract_transmission_error_reason` L138 安全提取 errorString（warning/恢复返回空） |
+| 状态映射 status-mapper | `torrent_status_mapper.py` ✨2026-08-16 | 统一 qb/transmission 种子状态映射；qB 映射表补齐新种子初始态（metaDL/forcedMetaDL/allocating→downloading、forcedDL→downloading、forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL，moving 有意不映射），`resolve_transmission_status` L112 判定错误状态，`extract_transmission_error_reason` L147 安全提取 errorString（warning/恢复返回空） |
 | Tracker 判断 tracker-judgment | `tracker_judgment.py` | Tracker 状态判断引擎（关键词池，失败优先策略） |
 | Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成；`resolve_transmission_tracker_status_code()` L120 将布尔统计/联系状态归一为项目 0–4 状态码 |
 | Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L40 以非空消息优先、Working 空消息兜底构造证据，L66 聚合为明确正常/全部失败/未知保留 |

@@ -560,6 +560,11 @@
     background: rgba(var(--theme-error-rgb), 0.1);
     color: var(--color-error);
   }
+
+  &.unknown {
+    background: rgba(107, 114, 128, 0.08);
+    color: #6b7280;
+  }
 }
 
 /* ========================================

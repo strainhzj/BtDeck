@@ -11,7 +11,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 格式化工具 formatters | `formatters.ts` | 🔵 通用格式化：种子/分页/状态归一化、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`（L571 默认导出聚合） |
+| 格式化工具 formatters | `formatters.ts` ✨2026-08-16 | 🔵 通用格式化：种子/分页/状态归一化（`normalizeTorrentStatus` 折叠 qB 全量状态词表 metaDL/pausedDL/checkingDL 等到统一七态，未识别归 unknown）、debounce/throttle、错误消息提取与 toast、文件大小/速度/日期/ratio/时长/百分比/相对时间格式化、`getTorrentId`/`getDownloaderId`（L589 默认导出聚合） |
 | Tracker 工具 tracker | `tracker.ts` | Tracker 工具：`LANGUAGE_LABELS`/`KEYWORD_TYPE_OPTIONS`/`PRIORITY_RANGE`、语言/类型/优先级标签、`debounce`/`formatDateTime`/`extractErrorMessage`/`downloadJSON`/`parseJSON`/`validateKeywordData` |
 | 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
 | 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调色板）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L78） |
@@ -58,7 +58,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子状态配置 status-config | `status-config.ts` | 与后端 `QBITTORRENT_STATUS_MAP` 对齐的种子状态统一选项（`StatusOption` 接口 + `STATUS_OPTIONS`，label/value/originalStates） |
+| 种子状态配置 status-config | `status-config.ts` ✨2026-08-16 | 与后端 `QBITTORRENT_STATUS_MAP` 对齐的种子状态统一选项（`StatusOption` 接口 + `STATUS_OPTIONS`，label/value/originalStates）；`STATUS_TEXT_MAP`/`STATUS_ICON_MAP` 含 completed/unknown 文案与图标兜底 |
 
 ### directive/waves/
 
