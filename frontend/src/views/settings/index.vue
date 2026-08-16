@@ -362,6 +362,16 @@ export default class extends Vue {
 
     // 初始化2FA状态
     this.isEnabled2FA = this.twoFactorFlag === '1'
+
+    // 强制改密提示（安全修复 W9）：路由守卫把强制改密用户引导到本页
+    const forceChange = this.$route.query.forceChange
+    if (forceChange === '1') {
+      this.$message({
+        message: '首次登录或仍在使用默认密码，请立即修改密码',
+        type: 'warning',
+        duration: 6000
+      })
+    }
   }
 
   beforeDestroy() {
@@ -682,6 +692,8 @@ export default class extends Vue {
         duration: 3000
       })
 
+      // 强制改密标志清除（安全修复 W9）：改密后路由守卫不再拦截
+      UserModule.SetMustChangePassword(false)
       this.cancelPasswordChange()
     } catch (error) {
       this.$message({

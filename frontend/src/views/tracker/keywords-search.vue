@@ -412,12 +412,21 @@ export default class KeywordsSearchPage extends Vue {
       return escapedKeyword
     }
 
-    // 转义搜索词
-    const escapedSearchTerm = this.escapeHtml(this.searchForm.keyword)
+    // 转义搜索词 + 正则元字符转义（安全修复 W15）：
+    // escapeHtml 只处理 HTML 字符，输入 "(" 等正则元字符会让 new RegExp
+    // 抛 SyntaxError 导致组件渲染崩溃（自伤型 DoS）
+    const escapedSearchTerm = this.escapeRegExp(this.escapeHtml(this.searchForm.keyword))
 
     // 使用正则表达式进行不区分大小写的替换
     const regex = new RegExp(`(${escapedSearchTerm})`, 'gi')
     return escapedKeyword.replace(regex, '<mark>$1</mark>')
+  }
+
+  /**
+   * 正则元字符转义，防止 RegExp 构造崩溃
+   */
+  private escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }
 
   /**

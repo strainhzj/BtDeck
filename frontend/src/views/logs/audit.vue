@@ -460,13 +460,13 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="归档文件路径">
+        <el-form-item label="归档文件名">
           <el-input
             v-model="archiveForm.archive_path"
             placeholder="留空则自动生成"
           />
           <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-            默认保存到：data/audit_logs_archive/
+            仅接受文件名（自动追加 .json 后缀），固定保存到：data/audit_logs_archive/
           </div>
         </el-form-item>
       </el-form>

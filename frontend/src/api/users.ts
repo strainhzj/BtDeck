@@ -16,6 +16,8 @@ interface LoginResponseItem {
   refresh_token?: string
   token_type: string
   user_id: string | number
+  /** 首次登录/默认口令强制改密标志（安全修复 W9） */
+  must_change_password?: boolean
 }
 
 interface LoginRequest {

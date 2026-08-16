@@ -45,7 +45,15 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
         }
       } else {
         // 已有用户信息，直接放行
-        next()
+        // 强制改密拦截（安全修复 W9）：mustChangePassword 时只允许访问
+        // 设置页（改密入口），优先于 redirect 参数——仅靠登录页跳转可被
+        // 直接改 URL 绕过，必须由守卫统一强制
+        if (UserModule.mustChangePassword && to.path !== '/settings' && to.path !== '/login') {
+          next({ path: '/settings', query: { forceChange: '1' }, replace: true })
+          NProgress.done()
+        } else {
+          next()
+        }
       }
     }
   } else {

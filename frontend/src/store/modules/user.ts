@@ -21,6 +21,7 @@ export interface IUserState {
   introduction: string
   roles: string[]
   twoFactorFlag: string
+  mustChangePassword: boolean
 }
 
 interface ILoginPayload {
@@ -38,10 +39,25 @@ class User extends VuexModule implements IUserState {
   public introduction = ''
   public roles: string[] = []
   public twoFactorFlag = '0'
+  public mustChangePassword = false
 
   @Mutation
   private SET_TOKEN(token: string) {
     this.token = token
+  }
+
+  @Mutation
+  private SET_MUST_CHANGE_PASSWORD(flag: boolean) {
+    this.mustChangePassword = flag
+  }
+
+  /**
+   * 设置/清除强制改密标志（安全修复 W9）。
+   * 登录响应携带 must_change_password；改密成功后由设置页清除。
+   */
+  @Action({ rawError: true })
+  public SetMustChangePassword(flag: boolean) {
+    this.SET_MUST_CHANGE_PASSWORD(flag)
   }
 
   /**
@@ -102,6 +118,7 @@ class User extends VuexModule implements IUserState {
     const access_token = response.data && response.data[0] && response.data[0].access_token
     const refresh_token = response.data && response.data[0] && response.data[0].refresh_token
     const user_id = response.data && response.data[0] && response.data[0].user_id
+    const must_change_password = response.data && response.data[0] && response.data[0].must_change_password
 
     if (access_token) {
       setToken(access_token)
@@ -114,6 +131,8 @@ class User extends VuexModule implements IUserState {
       if (user_id !== undefined && user_id !== null) {
         this.SET_USER_ID(String(user_id))
       }
+      // 强制改密标志（安全修复 W9）：路由守卫据此拦截非改密页面
+      this.SET_MUST_CHANGE_PASSWORD(Boolean(must_change_password))
     } else {
       throw Error('登录失败：未获取到访问令牌')
     }
@@ -127,6 +146,8 @@ class User extends VuexModule implements IUserState {
     this.SET_TOKEN('')
     this.SET_USER_ID('')
     this.SET_ROLES([])
+    // 登出/失效时清除强制改密标志，避免切换账号残留上一账号的强制状态
+    this.SET_MUST_CHANGE_PASSWORD(false)
   }
 
   /**
