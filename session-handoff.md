@@ -1,5 +1,33 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-15 交接：已定位副本快捷筛选 + 预扫描范围收紧
+
+### 当前结果
+
+- 孤儿页"快捷操作"新增"筛选已定位副本"：一键切换 `hardlink_copies=located` 筛选并回第一页（再点取消；激活态显示勾选图标与取消文案，不落入前缀对话框流程）；筛选区同步新增"已定位副本"复选框（tooltip 注明按每日预扫描结果过滤）。列表/文件夹聚合/子项展开三条查询链共用同一筛选口径。
+- 后端筛选实现：`_build_orphan_conditions(hardlink_copies="located")` 追加 EXISTS——候选表最近扫描的 `(device_id, inode)`（inode 字符串列 CAST 整数）命中 `orphan_hardlink_copy_result` 且 `found_count > 1`（含源路径口径，与弹框 copies 剔除源路径一致；NULL 身份/未扫描不命中，fail-closed）；`/list` 与 `/folders/children` 新增同名 Query 参数。无 schema 变更。
+- 预扫描范围核查与收紧（用户确认方案）：原 `status != "resolved"` 未排除已忽视（is_ignored 独立列、status 保持 candidate），且包含 quarantined/purged 候选（文件已移动/删除 → 线上 stat_failed=101 主因）。现收紧为 `status == "candidate" AND is_ignored == False`；取消忽视/隔离恢复经 reconcile 重置回 candidate 自动恢复扫描；游标基于 OrphanFile.id 不受影响；被排除身份旧结果行由 30 天保留期正常清理。预期部署后 stat_failed 显著下降。
+- 决策记录：实现前经独立子代理审查计划，修正三处（spec 的 listQuery 整对象 toEqual 必挂、handleQuickAction 需先分支、found_count>1 在 budget 截断轮的 fail-closed 漏报可接受并注明）。
+
+### 验证
+
+- 后端相关三文件 92 passed（API 两处精确断言更新 + 3 透传用例；服务层 +4 筛选用例含 CAST/正交/文件夹一致性；扫描排除 +1 用例）；EXISTS 经 SQLite 方言 compile 实测；black/flake8 通过；mypy 与改动前基线一致（149 存量，零新增）。
+- 前端 orphan-files.spec.ts 88 passed（新增 5 用例）；本次文件 lint 干净（完整 lint 仍被 keyword 相关 spec 的 5 条 dev 分支存量 warning 拦截，与本次无关）。
+- roadmap 行号实测同步（并修正 4da8115 时第三层文档已漂移 3161→实际 3449）；feature_list.json 新增 feature `orphan-located-copies-filter-and-scan-scope`（4 tasks）；progress.md 已更新。
+
+### 回归加固（第三批：+7 后端 / +4 前端，最终 99 / 92 passed，生产代码零改动）
+
+- located 筛选边界：截断行（truncated=1）与共享同一 inode 的两个孤儿明细均命中；身份列脏数据（非数字 inode 字符串/单侧 NULL）fail-closed 不抛错不误命中；scanned_at 过期未清理的行仍可筛出；与 confidence AND 叠加返回交集。
+- API 宽松契约：`hardlink_copies=bogus` 原样透传（无 API 层校验，与 status/confidence 口径一致）。
+- 扫描收紧交互（最关键）：`stat_limit=1` 两轮间 keyset 游标越过被排除候选不消耗 stat 尝试（`stat_inspected` 断言可分辨排除是否失效），`stat_failed` 只来自在范围内文件；被排除候选既有结果行本轮不删除/不覆盖，保留期任务负责清理。
+- 前端：快捷操作切换保留既有筛选一并提交；refreshPageData 保留 located 快照；文件夹视图与 located 同时提交；子表默认不带参数。
+
+### 后续与边界
+
+- 未执行 Git 提交/推送/部署；工作区原有未跟踪产物保持不动。
+- 筛选基于候选表最近一次扫描的 (device_id, inode) join 预扫描结果：文件重建（inode 变化）窗口期内可能误命中旧结果；budget_exceeded 截断轮次个别行可能漏报（均 fail-closed 方向，tooltip/注释已注明）。
+- 已忽视/已隔离文件不再被预扫描覆盖——用户在"已忽视"视图点开副本数量可能显示"待预扫描"，属预期（历史已扫结果在保留期内仍可用）。
+
 ## 2026-08-15 交接：两批改动回归加固完成
 
 ### 当前结果

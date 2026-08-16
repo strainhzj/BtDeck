@@ -3496,6 +3496,67 @@
           "evidence": "行号实测：run_round L56、collect_runtime_accessible_roots L312、find_hardlink_paths_bounded L411、get_hardlink_copy_locations L703、_load_hardlink_copy_results L684；无陈旧 head 引用残留，回读校验通过。"
         }
       ]
+    },
+    {
+      "id": "orphan-located-copies-filter-and-scan-scope",
+      "name": "孤儿列表已定位副本快捷筛选 + 预扫描范围收紧",
+      "description": "用户无法得知哪些孤儿文件的副本路径已被预扫描定位。孤儿列表/文件夹聚合/子项展开新增 hardlink_copies=located 筛选（快捷操作一键切换 + 筛选区复选框）：SQL 以候选表最近扫描的 (device_id, inode)（inode 字符串列 CAST 整数，与 orphan_purge_job_service 同口径）EXISTS join orphan_hardlink_copy_result 且 found_count>1（found_count 含源路径自身，>1 即定位到非源副本，与副本位置弹框口径一致；NULL 身份/未扫描不命中，fail-closed）。同时核查并收紧预扫描任务范围：_stat_window 候选过滤从 status != resolved 收紧为 status=candidate 且未忽视——已忽视受保护无需定位副本，quarantined/purged 候选文件已被移动/删除、纳入只产生无效 stat（线上 stat_failed=101 主因）；取消忽视/隔离恢复后经 reconcile 重置回 candidate 自动恢复扫描。无 schema 变更，无需迁移。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.1",
+          "name": "后端：located 筛选条件与端点参数透传",
+          "description": "_build_orphan_conditions 新增 hardlink_copies 参数，值为 located 时追加 EXISTS（select(1).select_from(候选).join(结果表, device_id 相等 AND CAST(inode AS INTEGER)==inode_id).where(canonical_path 关联外层 AND found_count>1).exists()，SQLAlchemy 2.0 自动 correlate）；线程化到 get_orphan_list/get_orphan_list_grouped/get_orphan_folder_children 三处；/list（grouped 与 flat 两分支）与 /folders/children 端点新增同名 Query 参数；resolve_orphan_selection/prefix 预览不参与（选择载荷无该筛选）。无效取值不追加条件，与 status/confidence 宽松口径一致。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py"
+          ],
+          "evidence": "EXISTS 语句经 sqlite 方言 compile 实测（CAST 正确、外层 orphan_file 自动关联）。test_orphan_ignore_and_filters.py 新增 4 用例：located 仅命中 found_count=2 样本（found_count=1 仅源路径/无结果行/无身份列均不命中）、bogus 取值不追加条件（total=4）、与 status=ignored 组合正交（已忽视且已定位仍可筛出）、grouped 与 folder_children 与扁平列表口径一致；候选 inode 以字符串 '101' 落库命中整数 inode_id=101（CAST 验证）。test_orphan_files_api.py 两处精确 kwargs 断言补 hardlink_copies=None，新增 /list flat+grouped 与 /folders/children 透传用例。三文件 92 passed。 回归加固（第三批）：新增 4 用例——截断行（truncated=1）与共享同一 inode 的两个孤儿明细（互为硬链接）均命中 located；身份列脏数据（inode='not-a-number'/device 单侧 NULL/inode 单侧 NULL）安全跳过不抛错不误命中（CAST fail-closed）；scanned_at 过期 60 天未清理的行仍可筛出（located 只看 found_count）；located 与 confidence=high AND 叠加只返回交集；API 层新增未知取值 bogus 原样透传用例（宽松契约与 status/confidence 一致）。"
+        },
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.2",
+          "name": "后端：预扫描候选范围收紧",
+          "description": "_stat_window 候选子查询收紧为 status=='candidate' AND is_ignored.is_(False)；keyset 游标基于 OrphanFile.id，被排除候选不影响推进与回绕；被排除身份的既有结果行仍由 30 天保留期正常清理。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_hardlink_scan_service.py"
+          ],
+          "evidence": "test_orphan_hardlink_copy_scan.py 新增 TestScanScopeExclusions：已忽视/quarantined/purged 候选不进入 stat 窗口（stat_inspected=1、stat_failed=0，若纳入会以 stat_failed 形式出现）；取消忽视（is_ignored=False）后下一轮回绕重新纳入并落结果行。20 passed。 回归加固（第三批）：新增 2 用例——stat_limit=1 两轮间 keyset 游标越过被排除候选（若排除失效 ignored 会额外贡献一次成功 stat，stat_inspected 断言可分辨；stat_failed 只来自在范围内的 gone 文件）；被排除候选的既有结果行本轮不被删除/覆盖（scanned_at/found_count 原样保留），仍交由保留期任务清理。"
+        },
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.3",
+          "name": "前端：快捷操作切换 + 筛选区复选框",
+          "description": "快捷操作 dropdown 新增'筛选已定位副本'项（toggleLocatedCopies 命令在 handleQuickAction 先分支处理，切换 listQuery.hardlinkCopies 并 handleFilter() 回第一页，不落入前缀对话框流程；激活时显示勾选图标与取消文案）；筛选区置信度后新增'已定位副本' el-checkbox（tooltip 注明按每日预扫描结果过滤、与实时副本数可能短暂不一致）；loadOrphanPage/buildCurrentFolderParams 序列化 hardlink_copies='located'|undefined；重置清空。OrphanListParams 增加可选字段（children 参数类型经 Omit 派生自动继承）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue"
+          ],
+          "evidence": "orphan-files.spec.ts 新增 5 用例：快捷操作一键开启提交 hardlink_copies='located' 且 page=1 且不打开前缀对话框、再次点击取消不提交、默认关闭不提交、重置清空开关、文件夹子项展开透传 located。类型定义与 listQuery 整对象 toEqual 断言同步更新。88 passed。 回归加固（第三批）：新增 4 用例——快捷操作切换保留既有 path_like/status 筛选一并提交（不互相覆盖）；refreshPageData 刷新保留 located 快照；文件夹视图开启时 group_by_folder 与 hardlink_copies 同时提交；文件夹子项默认关闭时不提交 hardlink_copies。"
+        },
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.4",
+          "name": "路线图、功能状态与会话交接",
+          "description": "roadmap 实测行号同步（orphan_file_service.md 第三层全表行号修正 + located 筛选不变式与调用依赖、services README 预扫描范围与 located 筛选描述、根 README 功能域与元信息第三批）、progress.md 与 session-handoff.md 更新。",
+          "status": "done",
+          "scope": "docs",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "全部行号 grep 实测重写（发现并顺带修正 4da8115 时第三层文档已漂移：记录 3161 行，实测当时 3449 行/当前 3480 行）。验证：后端 black/flake8 通过、mypy 与改动前基线一致（149 存量错误，无新增）；前端 lint 无新增问题（keyword spec 5 个警告为 dev 分支存量）。 回归加固（第三批）验证：后端三文件 99 passed（API 40 + 服务层 38 + 扫描 21，black 重排后复跑通过、flake8 干净）；前端 orphan-files.spec.ts 92 passed；生产代码本轮零改动（mypy 基线不变）。"
+        }
+      ]
     }
   ]
 }

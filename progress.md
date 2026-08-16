@@ -1,5 +1,35 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-15 - 已定位副本快捷筛选 + 预扫描范围收紧
+
+### 需求与实现
+
+- 用户要求：孤儿页面快捷操作里增加"快速筛选出已找到副本路径的数据"（此前用户无法得知哪些文件的副本已被定位）；同时核查找副本任务是否排除已忽视数据。
+- 核查结论：预扫描 `_stat_window` 原过滤 `status != "resolved"`，**未排除已忽视**（忽视是独立布尔列 `is_ignored`，status 保持 `candidate`），且包含 quarantined/purged 候选——其文件已被移动/删除，是部署日志 `stat_failed=101` 的主要来源。经用户确认收紧为 `status == "candidate" AND is_ignored == False`（取消忽视/隔离恢复经 reconcile 重置回 candidate 自动恢复扫描；游标基于 OrphanFile.id 不受影响）。
+- 后端筛选：`_build_orphan_conditions` 新增 `hardlink_copies` 参数，`located` 时追加 EXISTS——候选表最近扫描的 `(device_id, inode)`（inode 字符串列 `CAST(inode AS INTEGER)` join 整数 `inode_id`，与 `orphan_purge_job_service` 同口径）命中结果表且 `found_count > 1`（found_count 含源路径自身，>1 即定位到非源副本，与弹框 copies 剔除源路径口径一致；NULL 身份/未扫描不命中，fail-closed）。线程化到 list/grouped/folder_children 三处；`/list`（grouped+flat 两分支）与 `/folders/children` 新增同名 Query 参数；无效取值忽略（与 status/confidence 宽松口径一致）。
+- 前端：快捷操作 dropdown 新增"筛选已定位副本"（`toggleLocatedCopies` 在 `handleQuickAction` 先分支处理，切换 `listQuery.hardlinkCopies` 并回第一页重载，不落入前缀对话框流程；激活时显示勾选图标/取消文案）；筛选区新增"已定位副本" `el-checkbox`（tooltip 注明按每日预扫描结果过滤）；`loadOrphanPage`/`buildCurrentFolderParams` 序列化 `hardlink_copies='located'|undefined`；重置清空。
+- 无 schema 变更，无需迁移。
+
+### 决策记录
+
+- 独立子代理审查计划后修正三处：前端 spec 对 `listQuery` 的整对象 `toEqual` 精确断言必须同步（否则必挂）；`handleQuickAction` 需先分支处理新命令；`found_count > 1` 在 budget_exceeded 部分遍历的极端情形存在 fail-closed 方向漏报（无误报），经审查确认接受该折中并在 tooltip/注释注明。
+- 扫描范围收紧同时排除 quarantined/purged（用户确认）：省出的 stat 预算留给待清理文件，`stat_failed` 将显著下降。
+
+### 验证
+
+- 后端相关三文件 **92 passed**（`tests/api/test_orphan_files_api.py` 两处精确断言更新 + 3 个透传用例；`test_orphan_ignore_and_filters.py` +4 筛选用例；`test_orphan_hardlink_copy_scan.py` +1 排除用例）。
+- EXISTS 语句经 SQLite 方言 compile 实测；black/flake8 通过；mypy 与改动前基线一致（149 存量错误，零新增）。
+- 前端 `orphan-files.spec.ts` **88 passed**（新增 5 用例）；lint 无新增问题（keyword 相关 spec 5 个警告为 dev 分支存量，与本次无关）。
+- roadmap 实测行号同步；发现并顺带修正第三层 `orphan_file_service.md` 在 4da8115 时已漂移（记录 3161 行，实测 3449 行）。
+
+### 回归加固（第三批，+7 后端 / +4 前端，最终 99 / 92 passed）
+
+- located 筛选（`test_orphan_ignore_and_filters.py` 4→8 用例）：截断行（truncated=1）与共享同一 inode 的两个孤儿明细（互为硬链接）均命中；身份列脏数据（`inode='not-a-number'`/device 或 inode 单侧 NULL）安全跳过不抛错不误命中（CAST fail-closed）；`scanned_at` 过期 60 天未清理的行仍可筛出（located 只看 found_count 不看新鲜度）；located 与 confidence=high AND 叠加只返回交集。
+- API 宽松契约（`test_orphan_files_api.py`）：未知取值 `bogus` 原样透传到服务层（不做 API 层校验，与 status/confidence 一致）。
+- 扫描范围收紧（`test_orphan_hardlink_copy_scan.py` TestScanScopeExclusions +2 用例）：`stat_limit=1` 两轮间 keyset 游标越过被排除候选——若排除失效 ignored 会额外贡献一次成功 stat（`stat_inspected` 断言可分辨），`stat_failed` 只来自在范围内的 gone 文件；被排除候选的既有结果行本轮不被删除/覆盖（scanned_at/found_count 原样），仍交由 30 天保留期任务清理。
+- 前端（`orphan-files.spec.ts` 5→9 用例）：快捷操作切换保留既有 path_like/status 筛选一并提交；refreshPageData 刷新保留 located 快照；文件夹视图开启时 group_by_folder 与 hardlink_copies 同时提交；文件夹子项默认关闭时不提交 hardlink_copies。
+- 生产代码本轮零改动（纯测试）；black 重排后复跑通过、flake8 干净、mypy 基线不变。
+
 ## 2026-08-15 - 两批改动回归加固
 
 ### 新增回归保护（本轮对话全部修改）

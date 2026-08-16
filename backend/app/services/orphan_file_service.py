@@ -23,7 +23,7 @@ from collections import Counter
 from datetime import datetime
 from typing import Any, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
 
-from sqlalchemy import and_, case, func, or_, select, text, tuple_, update
+from sqlalchemy import Integer, and_, case, cast as sql_cast, func, or_, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
@@ -153,6 +153,7 @@ class OrphanFileService:
         path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
+        hardlink_copies: Optional[str] = None,
     ) -> List[Any]:
         """构建列表与“全选当前筛选”共用的 SQL 条件。"""
         detail_scope = (
@@ -231,6 +232,30 @@ class OrphanFileService:
         if path_prefix:
             escaped_pfx = path_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(OrphanFile.file_path.like(f"{escaped_pfx}%", escape="\\"))
+        if hardlink_copies == "located":
+            # 仅保留预扫描已定位到硬链接副本路径的文件：候选表最近一次扫描记录的
+            # (device_id, inode) 命中预扫描结果且 found_count > 1。found_count 含孤儿
+            # 源路径自身，> 1 即至少定位到一条非源副本路径，与副本位置弹框（copies
+            # 剔除源路径）口径一致；候选身份列为 NULL 或文件重建后 inode 变化时均
+            # 不命中（fail-closed），权威实时值仍以列表 hardlink_copy_count 为准。
+            # 候选 inode 为字符串列（Windows st_ino 超宽防护），结果表 inode_id 为整
+            # 数列，join 需显式 CAST（与 orphan_purge_job_service 同口径）。
+            conditions.append(
+                select(1)
+                .select_from(OrphanCurrentCandidate)
+                .join(
+                    OrphanHardlinkCopyResult,
+                    and_(
+                        OrphanHardlinkCopyResult.device_id == OrphanCurrentCandidate.device_id,
+                        OrphanHardlinkCopyResult.inode_id == sql_cast(OrphanCurrentCandidate.inode, Integer),
+                    ),
+                )
+                .where(
+                    OrphanCurrentCandidate.canonical_path == OrphanFile.canonical_path,
+                    OrphanHardlinkCopyResult.found_count > 1,
+                )
+                .exists()
+            )
         return conditions
 
     @staticmethod
@@ -688,9 +713,7 @@ class OrphanFileService:
         rows: Dict[tuple[int, int], OrphanHardlinkCopyResult] = {}
         for start in range(0, len(identities), 400):
             # device_id 以字符串落库（Windows st_dev 可超有符号 64 位）
-            chunk = [
-                (str(identity[0]), identity[1]) for identity in identities[start : start + 400]
-            ]
+            chunk = [(str(identity[0]), identity[1]) for identity in identities[start : start + 400]]
             result = await self.db.execute(
                 select(OrphanHardlinkCopyResult).where(
                     tuple_(OrphanHardlinkCopyResult.device_id, OrphanHardlinkCopyResult.inode_id).in_(chunk)
@@ -793,6 +816,7 @@ class OrphanFileService:
         path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
+        hardlink_copies: Optional[str] = None,
     ) -> Dict[str, Any]:
         """分页查询孤儿文件列表与同一批次的页面扫描上下文。
 
@@ -803,6 +827,8 @@ class OrphanFileService:
                 ignored=已忽视（联表候选 is_ignored=1）、deleted=已清理。
                 None 时等价 pending+deleted 由 include_deleted 控制（兼容旧调用）。
             confidence: 置信度筛选——high=高置信度，low=低置信度。
+            hardlink_copies: 副本定位筛选——located=仅显示预扫描任务已定位到
+                副本路径的文件（依据每日 orphan_hardlink_copy_scan 落库结果）。
 
         Returns:
             分页字段与 scan_context。扫描原始量保留在 display_scan，
@@ -885,6 +911,7 @@ class OrphanFileService:
             path_prefix=path_prefix,
             status=status,
             confidence=confidence,
+            hardlink_copies=hardlink_copies,
         )
 
         # 总数
@@ -934,6 +961,7 @@ class OrphanFileService:
         path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
+        hardlink_copies: Optional[str] = None,
     ) -> Dict[str, Any]:
         """按直接父目录聚合分页查询孤儿文件列表。
 
@@ -1035,6 +1063,7 @@ class OrphanFileService:
             path_prefix=path_prefix,
             status=status,
             confidence=confidence,
+            hardlink_copies=hardlink_copies,
         )
 
         # 父目录自定义函数表达式（GROUP BY / WHERE IN 共用同一实例）
@@ -1169,6 +1198,7 @@ class OrphanFileService:
         path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
+        hardlink_copies: Optional[str] = None,
     ) -> Dict[str, Any]:
         """展开文件夹后按独立页加载子项；硬链接统计仅覆盖返回页。"""
         try:
@@ -1199,6 +1229,7 @@ class OrphanFileService:
             path_prefix=path_prefix,
             status=status,
             confidence=confidence,
+            hardlink_copies=hardlink_copies,
         )
         parent_dir_func = func.bt_orphan_parent_dir(OrphanFile.file_path)
         conditions.append(parent_dir_func == folder_path)

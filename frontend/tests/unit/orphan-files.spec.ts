@@ -156,6 +156,7 @@ interface OrphanFilesVm extends Vue {
     path_like: string
     status: string[]
     confidence: string[]
+    hardlinkCopies: boolean
   }
   statusFilterDegraded: boolean
   selectedIds: number[]
@@ -208,7 +209,7 @@ interface OrphanFilesVm extends Vue {
   handleOrphanSelectionChange: (rows: OrphanFileItem[]) => void
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
-  handleQuickAction: (command: 'cleanup' | 'ignore') => void
+  handleQuickAction: (command: 'cleanup' | 'ignore' | 'toggleLocatedCopies') => void
   handleQuickActionCancel: () => void
   handleQuickActionConfirm: () => Promise<void>
   handleTabSwitch: () => Promise<void>
@@ -728,7 +729,8 @@ describe('orphan files atomic page state', () => {
       downloader_id: ['dl-filter'],
       path_like: '',
       status: [],
-      confidence: []
+      confidence: [],
+      hardlinkCopies: false
     })
     expect(vm.selectedIds).toEqual([])
     // refreshPageData 现在会清空当前页选择（传统分页标准行为），通过 el-table ref 调 clearSelection
@@ -2556,5 +2558,174 @@ describe('orphan files multi-value filter submission', () => {
     expect(mockGetOrphanList).toHaveBeenLastCalledWith(
       expect.objectContaining({ downloader_id: 'dl-only' })
     )
+  })
+})
+
+// 副本定位筛选（hardlink_copies=located）：快捷操作一键切换 + 筛选区复选框 + 重置
+describe('orphan files hardlink copies located filter', () => {
+  it('快捷操作一键开启：提交 hardlink_copies=located 并回第一页', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.page = 4
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleQuickAction('toggleLocatedCopies')
+    await flushLifecycle()
+
+    expect(vm.listQuery.hardlinkCopies).toBe(true)
+    expect(vm.listQuery.page).toBe(1)
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hardlink_copies: 'located', page: 1 })
+    )
+    // 切换筛选不打开前缀操作对话框
+    expect(vm.quickActionDialogVisible).toBe(false)
+  })
+
+  it('快捷操作再次点击取消筛选：hardlink_copies 不提交', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleQuickAction('toggleLocatedCopies')
+    await flushLifecycle()
+
+    expect(vm.listQuery.hardlinkCopies).toBe(false)
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
+  })
+
+  it('默认关闭时不提交 hardlink_copies', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    vm.handleFilter()
+    await flushLifecycle()
+
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
+  })
+
+  it('重置筛选清空副本定位开关', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleResetFilter()
+    await flushLifecycle()
+
+    expect(vm.listQuery.hardlinkCopies).toBe(false)
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
+  })
+
+  it('文件夹子项展开请求透传 hardlink_copies=located', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = folderRow('/data', [], { child_count: 1, child_ids: [], children_loaded: false, child_total: 1 })
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanFolderChildren.mockClear()
+    mockGetOrphanFolderChildren.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 1, page: 1, pageSize: 20, list: [orphanItem(11, 'scan-completed', { file_path: '/data/a' })] }
+    })
+
+    await vm.loadFolderChildren(folder)
+    await flushLifecycle()
+
+    expect(mockGetOrphanFolderChildren).toHaveBeenLastCalledWith(
+      expect.objectContaining({ folder_path: '/data', hardlink_copies: 'located' })
+    )
+  })
+
+  it('快捷操作切换保留既有筛选一并提交（不互相覆盖）', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.path_like = '/media'
+    vm.listQuery.status = ['pending']
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleQuickAction('toggleLocatedCopies')
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        path_like: '/media',
+        status: 'pending',
+        hardlink_copies: 'located',
+        page: 1
+      })
+    )
+  })
+
+  it('刷新保留 located 筛选快照（refreshPageData 不丢开关）', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    await vm.refreshPageData()
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hardlink_copies: 'located', page: 1 })
+    )
+  })
+
+  it('文件夹视图开启时 located 与 group_by_folder 同时提交', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    // 直接改实例数据绕过 localStorage 持久化，避免影响其它用例
+    vm.folderView = true
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleFilter()
+    await flushLifecycle()
+
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.group_by_folder).toBe(true)
+    expect(callArgs.hardlink_copies).toBe('located')
+    vm.folderView = false
+  })
+
+  it('文件夹子项默认关闭时不提交 hardlink_copies', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = folderRow('/data', [], { child_count: 1, child_ids: [], children_loaded: false, child_total: 1 })
+    mockGetOrphanFolderChildren.mockClear()
+    mockGetOrphanFolderChildren.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 0, page: 1, pageSize: 20, list: [] }
+    })
+
+    await vm.loadFolderChildren(folder)
+    await flushLifecycle()
+
+    const callArgs = mockGetOrphanFolderChildren.mock.calls[
+      mockGetOrphanFolderChildren.mock.calls.length - 1
+    ][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
   })
 })

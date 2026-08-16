@@ -173,6 +173,23 @@
             @change="handleFilter"
           />
         </div>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="orphan-located-copies">副本定位</label>
+          <el-tooltip
+            content="按每日预扫描任务落库的结果过滤，与列表实时副本数可能短暂不一致"
+            placement="top"
+            :open-delay="200"
+          >
+            <el-checkbox
+              id="orphan-located-copies"
+              v-model="listQuery.hardlinkCopies"
+              class="management-filter__control orphan-located-copies-checkbox"
+              @change="handleFilter"
+            >
+              已定位副本
+            </el-checkbox>
+          </el-tooltip>
+        </div>
         <div class="management-filter__actions">
           <el-button type="primary" icon="el-icon-search" @click="handleFilter">
             搜索
@@ -254,6 +271,15 @@
                 title="按路径前缀批量忽视待清理文件"
               >
                 快捷忽视（按前缀）
+              </el-dropdown-item>
+              <el-dropdown-item
+                command="toggleLocatedCopies"
+                :icon="listQuery.hardlinkCopies ? 'el-icon-check' : 'el-icon-copy-document'"
+                :disabled="!displayScan"
+                :title="listQuery.hardlinkCopies ? '取消副本定位筛选，恢复完整列表' : '仅显示预扫描已定位到硬链接副本路径的文件'"
+                divided
+              >
+                {{ listQuery.hardlinkCopies ? '取消已定位副本筛选' : '筛选已定位副本' }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
@@ -886,6 +912,8 @@ interface OrphanListQuery {
   path_like: string
   status: OrphanStatusFilter[]
   confidence: OrphanConfidence[]
+  // 仅显示预扫描已定位到硬链接副本路径的文件（快捷操作可一键切换）
+  hardlinkCopies: boolean
 }
 
 interface OrphanTableRef extends Vue {
@@ -916,7 +944,8 @@ export default class OrphanFiles extends Vue {
     downloader_id: [],
     path_like: '',
     status: [],
-    confidence: []
+    confidence: [],
+    hardlinkCopies: false
   }
   private refreshRequestSeq = 0
   private scanPollTimer: number | null = null
@@ -1154,7 +1183,8 @@ export default class OrphanFiles extends Vue {
       status: this.listQuery.status.length ? this.listQuery.status.join(',') : undefined,
       confidence: this.listQuery.confidence.length
         ? this.listQuery.confidence.join(',')
-        : undefined
+        : undefined,
+      hardlink_copies: this.listQuery.hardlinkCopies ? ('located' as const) : undefined
     }
   }
 
@@ -1475,7 +1505,8 @@ export default class OrphanFiles extends Vue {
       downloader_id: this.listQuery.downloader_id,
       path_like: this.listQuery.path_like,
       status: this.listQuery.status,
-      confidence: this.listQuery.confidence
+      confidence: this.listQuery.confidence,
+      hardlinkCopies: this.listQuery.hardlinkCopies
     })
     this.listLoading = true
     try {
@@ -1493,6 +1524,7 @@ export default class OrphanFiles extends Vue {
         confidence: querySnapshot.confidence.length
           ? querySnapshot.confidence.join(',')
           : undefined,
+        hardlink_copies: querySnapshot.hardlinkCopies ? ('located' as const) : undefined,
         group_by_folder: this.folderView || undefined
       }
       const response = await getOrphanList(params)
@@ -1535,7 +1567,8 @@ export default class OrphanFiles extends Vue {
       downloader_id: [],
       path_like: '',
       status: [],
-      confidence: []
+      confidence: [],
+      hardlinkCopies: false
     }
     void this.refreshPageData()
   }
@@ -1868,9 +1901,15 @@ export default class OrphanFiles extends Vue {
     return reasons.length > 3 ? `${summary}；另有 ${reasons.length - 3} 类原因` : summary
   }
 
-  // ========== 快捷操作（左匹配：快捷删除 / 快捷忽视） ==========
+  // ========== 快捷操作（左匹配：快捷删除 / 快捷忽视；副本定位筛选切换） ==========
 
-  private handleQuickAction(command: 'cleanup' | 'ignore'): void {
+  private handleQuickAction(command: 'cleanup' | 'ignore' | 'toggleLocatedCopies'): void {
+    if (command === 'toggleLocatedCopies') {
+      // 一键切换"仅看已定位副本"筛选：不走前缀对话框流程，直接回第一页重载
+      this.listQuery.hardlinkCopies = !this.listQuery.hardlinkCopies
+      this.handleFilter()
+      return
+    }
     this.quickActionType = command
     this.quickActionPrefix = ''
     this.quickActionDialogVisible = true
@@ -2060,6 +2099,13 @@ export default class OrphanFiles extends Vue {
 
   .orphan-hardlink-copy-count {
     font-variant-numeric: tabular-nums;
+  }
+
+  /* 副本定位筛选复选框：与筛选区 el-input 默认高度对齐（容器按底边对齐） */
+  .orphan-located-copies-checkbox {
+    display: inline-flex;
+    align-items: center;
+    height: 40px;
   }
 
   .orphan-hardlink-copy-count--link {

@@ -6,6 +6,10 @@
 的 inode 做带截止时间的串行遍历，并把结果按 ``(device_id, inode_id)`` 落库；
 前端 ``hardlink-copies`` 接口只读库内结果，不再触发任何目录遍历。
 
+扫描范围仅限待清理且未忽视的候选（``status == "candidate" 且未忽视``）：已忽视
+候选受保护无需定位副本，quarantined/purged 候选文件已被移动/删除，纳入只会
+产生无效 stat；取消忽视或隔离恢复后经 reconcile 重置回 candidate，自动恢复扫描。
+
 单轮预算（性能护栏）：
 
 - stat 阶段最多 ``ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE`` 个文件；
@@ -181,7 +185,11 @@ class OrphanHardlinkScanService:
                     OrphanFile.id.in_(
                         select(OrphanCurrentCandidate.current_detail_id).where(
                             OrphanCurrentCandidate.current_detail_id.isnot(None),
-                            OrphanCurrentCandidate.status != "resolved",
+                            # 仅扫描待清理且未忽视的候选：已忽视受保护无需定位副本，
+                            # quarantined/purged 候选文件已被移动/删除，stat 必然失败
+                            # （取消忽视或隔离恢复会经 reconcile 重置回 candidate，自动回到扫描范围）。
+                            OrphanCurrentCandidate.status == "candidate",
+                            OrphanCurrentCandidate.is_ignored.is_(False),
                         )
                     ),
                 )

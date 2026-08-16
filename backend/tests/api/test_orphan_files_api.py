@@ -435,6 +435,83 @@ class TestOrphanFilesCleanupWiring:
             path_prefix=None,
             status=None,
             confidence=None,
+            hardlink_copies=None,
+        )
+
+    def test_list_passes_hardlink_copies_filter_to_flat_and_grouped_queries(self):
+        """hardlink_copies=located 应同时透传到扁平与文件夹聚合两条查询路径。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {"total": 0, "page": 1, "pageSize": 20, "list": [], "scan_context": {}}
+        expected_kwargs = dict(
+            page=1,
+            page_size=20,
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix=None,
+            status=None,
+            confidence=None,
+            hardlink_copies="located",
+        )
+        flat = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_list", flat):
+            response = self.client.get("/api/v1/orphan-files/list?hardlink_copies=located")
+        assert response.status_code == 200
+        flat.assert_awaited_once_with(**expected_kwargs)
+
+        grouped = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_list_grouped", grouped):
+            response = self.client.get("/api/v1/orphan-files/list?hardlink_copies=located&group_by_folder=true")
+        assert response.status_code == 200
+        grouped.assert_awaited_once_with(**expected_kwargs)
+
+    def test_list_passes_unknown_hardlink_copies_value_through(self):
+        """hardlink_copies 未知取值不做 API 层校验，原样透传由服务层忽略（宽松契约与 status/confidence 一致）。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {"total": 0, "page": 1, "pageSize": 20, "list": [], "scan_context": {}}
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_list", mocked):
+            response = self.client.get("/api/v1/orphan-files/list?hardlink_copies=bogus")
+
+        assert response.status_code == 200
+        mocked.assert_awaited_once_with(
+            page=1,
+            page_size=20,
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix=None,
+            status=None,
+            confidence=None,
+            hardlink_copies="bogus",
+        )
+
+    def test_folder_children_passes_hardlink_copies_filter(self):
+        """文件夹子项端点应透传副本定位筛选，保持展开视图与主列表口径一致。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {"total": 0, "page": 1, "pageSize": 20, "list": []}
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_folder_children", mocked):
+            response = self.client.get(
+                "/api/v1/orphan-files/folders/children" "?folder_path=%2Fdata&hardlink_copies=located"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with(
+            "/data",
+            page=1,
+            page_size=20,
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix=None,
+            status=None,
+            confidence=None,
+            hardlink_copies="located",
         )
 
     def test_hardlink_copy_locations_passes_ids_and_preserves_result(self):
@@ -542,6 +619,7 @@ class TestOrphanFilesCleanupWiring:
             path_prefix=None,
             status=None,
             confidence=None,
+            hardlink_copies=None,
         )
 
     def test_list_rejects_page_size_over_upper_bound(self):

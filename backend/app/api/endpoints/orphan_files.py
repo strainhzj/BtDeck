@@ -213,6 +213,13 @@ async def get_orphan_list(
         default=None,
         description="置信度筛选（支持逗号分隔多值）：high=高置信度，low=低置信度",
     ),
+    hardlink_copies: Optional[str] = Query(
+        default=None,
+        description=(
+            "副本定位筛选：located=仅显示预扫描任务已定位到硬链接副本路径的文件"
+            "（依据每日 orphan_hardlink_copy_scan 落库结果，与列表实时副本数可能短暂不一致）"
+        ),
+    ),
     group_by_folder: bool = Query(
         default=False,
         description="按文件夹（直接父目录）聚合分页：True 时同目录下≥2 个文件折叠为文件夹行，单文件保持原样；分页单位为文件夹组",
@@ -244,6 +251,7 @@ async def get_orphan_list(
                 path_prefix=path_prefix,
                 status=status,
                 confidence=confidence,
+                hardlink_copies=hardlink_copies,
             )
         else:
             result = await service.get_orphan_list(
@@ -255,6 +263,7 @@ async def get_orphan_list(
                 path_prefix=path_prefix,
                 status=status,
                 confidence=confidence,
+                hardlink_copies=hardlink_copies,
             )
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
@@ -273,6 +282,7 @@ async def get_orphan_folder_children(
     path_prefix: Optional[str] = Query(default=None),
     status: Optional[str] = Query(default=None),
     confidence: Optional[str] = Query(default=None),
+    hardlink_copies: Optional[str] = Query(default=None),
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
@@ -288,6 +298,7 @@ async def get_orphan_folder_children(
             path_prefix=path_prefix,
             status=status,
             confidence=confidence,
+            hardlink_copies=hardlink_copies,
         )
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:

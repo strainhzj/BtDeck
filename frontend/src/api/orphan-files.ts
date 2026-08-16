@@ -291,6 +291,8 @@ export interface OrphanListParams {
   // status/confidence 支持逗号分隔多值（后端 OR 并集过滤），故用 string 而非单值联合类型
   status?: string
   confidence?: string
+  /** 副本定位筛选：located=仅显示预扫描已定位到硬链接副本路径的文件 */
+  hardlink_copies?: 'located'
   /** 按文件夹（直接父目录）聚合分页：true 时同目录≥2 文件折叠为文件夹行 */
   group_by_folder?: boolean
 }

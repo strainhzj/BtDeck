@@ -21,7 +21,7 @@ from app.services.orphan_quarantine import find_hardlink_paths, find_hardlink_pa
 pytestmark = pytest.mark.asyncio
 
 
-async def _add_candidate(db, scan, file_path: str, *, status: str = "candidate") -> OrphanFile:
+async def _add_candidate(db, scan, file_path: str, *, status: str = "candidate", ignored: bool = False) -> OrphanFile:
     detail = OrphanFile(
         scan_id=scan.scan_id,
         file_path=file_path,
@@ -31,18 +31,21 @@ async def _add_candidate(db, scan, file_path: str, *, status: str = "candidate")
     )
     db.add(detail)
     await db.flush()
-    db.add(
-        OrphanCurrentCandidate(
-            canonical_path=normalize_path(file_path),
-            downloader_id="dl_001",
-            first_seen_at=datetime.utcnow() - timedelta(days=1),
-            last_seen_at=datetime.utcnow(),
-            status=status,
-            operation_state="stable",
-            confidence="high",
-            current_detail_id=detail.id,
-        )
+    candidate = OrphanCurrentCandidate(
+        canonical_path=normalize_path(file_path),
+        downloader_id="dl_001",
+        first_seen_at=datetime.utcnow() - timedelta(days=1),
+        last_seen_at=datetime.utcnow(),
+        status=status,
+        operation_state="stable",
+        confidence="high",
+        current_detail_id=detail.id,
+        is_ignored=ignored,
     )
+    if ignored:
+        candidate.ignored_at = datetime.utcnow()
+        candidate.ignored_by = "tester"
+    db.add(candidate)
     return detail
 
 
@@ -569,3 +572,134 @@ class TestTaskRegistrationContract:
         assert result["scan_result"]["rows_written"] == 3
         round_mock.assert_awaited_once()
         session_factory.assert_called_once()
+
+
+class TestScanScopeExclusions:
+    """预扫描范围仅限待清理且未忽视候选（status=candidate 且 is_ignored=False）。
+
+    已忽视候选受保护无需定位副本；quarantined/purged 候选文件已被移动/删除，
+    纳入只会产生无效 stat（线上 stat_failed 的主要来源）。
+    """
+
+    async def test_ignored_and_terminal_status_candidates_are_skipped(self, async_orphan_db, tmp_path):
+        """已忽视/quarantined/purged 候选不进入 stat 窗口；取消忽视后恢复扫描。"""
+        downloads = tmp_path / "downloads"
+        downloads.mkdir()
+        kept = downloads / "kept.mkv"
+        kept.write_bytes(b"k")
+        ignored = downloads / "ignored.mkv"
+        ignored.write_bytes(b"i")
+        quarantined = downloads / "quarantined.mkv"
+        purged = downloads / "purged.mkv"
+
+        scan = await _make_scan(async_orphan_db)
+        await _add_candidate(async_orphan_db, scan, str(kept))
+        await _add_candidate(async_orphan_db, scan, str(ignored), ignored=True)
+        await _add_candidate(async_orphan_db, scan, str(quarantined), status="quarantined")
+        await _add_candidate(async_orphan_db, scan, str(purged), status="purged")
+        await async_orphan_db.commit()
+
+        service = OrphanHardlinkScanService(async_orphan_db)
+        summary = await service.run_round()
+
+        assert summary["status"] == "success"
+        # 只有 kept 进入 stat；quarantined/purged 若被纳入会以 stat_failed 形式出现
+        assert summary["stat_inspected"] == 1
+        assert summary["stat_failed"] == 0
+        assert summary["walk_targets"] == 0
+        assert summary["rows_written"] == 1
+
+        # 取消忽视（回 candidate 且未忽视）后，下一轮重新纳入并落平凡结果
+        ignored_candidate = (
+            await async_orphan_db.execute(
+                select(OrphanCurrentCandidate).where(
+                    OrphanCurrentCandidate.canonical_path == normalize_path(str(ignored))
+                )
+            )
+        ).scalar_one()
+        ignored_candidate.is_ignored = False
+        await async_orphan_db.commit()
+
+        second = await service.run_round()
+        # 游标已回绕：kept 重新覆盖 + 取消忽视的 ignored 重新纳入
+        assert second["stat_inspected"] == 2
+
+        rows = (await async_orphan_db.execute(select(OrphanHardlinkCopyResult))).scalars().all()
+        ignored_stat = os.stat(ignored)
+        kept_stat = os.stat(kept)
+        result_identities = {(int(row.device_id), int(row.inode_id)) for row in rows}
+        assert (int(ignored_stat.st_dev), int(ignored_stat.st_ino)) in result_identities
+        assert (int(kept_stat.st_dev), int(kept_stat.st_ino)) in result_identities
+        assert len(rows) == 2
+
+    async def test_excluded_candidates_do_not_consume_stat_attempts_between_cursor_pages(
+        self, async_orphan_db, tmp_path
+    ):
+        """keyset 游标越过被排除候选：不消耗 stat 尝试，stat_failed 只来自在范围内的文件。"""
+        downloads = tmp_path / "downloads"
+        downloads.mkdir()
+        kept_first = downloads / "kept-first.mkv"
+        kept_first.write_bytes(b"a")
+        ignored = downloads / "ignored.mkv"
+        ignored.write_bytes(b"b")
+        kept_second = downloads / "kept-second.mkv"
+        kept_second.write_bytes(b"c")
+        gone = downloads / "gone.mkv"  # 在范围内但文件已消失
+
+        scan = await _make_scan(async_orphan_db)
+        first_detail = await _add_candidate(async_orphan_db, scan, str(kept_first))
+        await _add_candidate(async_orphan_db, scan, str(ignored), ignored=True)
+        second_detail = await _add_candidate(async_orphan_db, scan, str(kept_second))
+        gone_detail = await _add_candidate(async_orphan_db, scan, str(gone))
+        await async_orphan_db.commit()
+
+        service = OrphanHardlinkScanService(async_orphan_db)
+        with patch.object(settings, "ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE", 1):
+            first_round = await service.run_round()
+
+        assert first_round["stat_inspected"] == 1
+        assert first_round["stat_failed"] == 0
+        assert first_round["cursor_advanced_to"] == first_detail.id
+
+        second_round = await service.run_round()
+        # 游标之后在范围内的是 kept_second 与 gone（ignored 被跳过）：
+        # 若排除失效，ignored 会额外贡献一次成功 stat（stat_inspected 变 2）
+        assert second_round["stat_inspected"] == 1
+        assert second_round["stat_failed"] == 1
+        assert second_round["cursor_wrapped"] is True
+        # 明细按加入顺序分配递增 ID：ignored(2) 夹在 kept_second(3) 之前被游标越过
+        assert first_detail.id < second_detail.id
+        assert gone_detail.id > second_detail.id
+
+    async def test_excluded_candidates_keep_existing_result_rows_until_retention(self, async_orphan_db, tmp_path):
+        """被排除候选的既有结果行本轮不被删除/覆盖，仍交给保留期任务清理。"""
+        downloads = tmp_path / "downloads"
+        downloads.mkdir()
+        ignored = downloads / "ignored-linked.mkv"
+        ignored.write_bytes(b"x")
+
+        scan = await _make_scan(async_orphan_db)
+        await _add_candidate(async_orphan_db, scan, str(ignored), ignored=True)
+        scanned_at = datetime.utcnow() - timedelta(days=1)
+        async_orphan_db.add(
+            OrphanHardlinkCopyResult(
+                device_id="11",
+                inode_id=999,
+                copy_count=1,
+                found_count=2,
+                copies_json='["/data/a.bin", "/data/b.bin"]',
+                truncated=0,
+                scan_note=None,
+                scanned_at=scanned_at,
+            )
+        )
+        await async_orphan_db.commit()
+
+        summary = await OrphanHardlinkScanService(async_orphan_db).run_round()
+
+        assert summary["status"] == "success"
+        assert summary["stat_inspected"] == 0
+        rows = (await async_orphan_db.execute(select(OrphanHardlinkCopyResult))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].scanned_at == scanned_at
+        assert rows[0].found_count == 2
