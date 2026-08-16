@@ -28,7 +28,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "ff42d3402df5"  # 当前 head（users.must_change_password 强制改密 W8/W9）
+REV_HEAD = "ab68fe061d5b"  # 当前 head（orphan_purge_job 提交端 IP 列）
 
 
 def _make_cfg(db_path: str) -> Config:

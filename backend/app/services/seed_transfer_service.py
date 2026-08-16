@@ -18,11 +18,13 @@ import asyncio
 import logging
 import re
 import time
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import AsyncSessionLocal
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
@@ -151,6 +153,13 @@ class SeedTransferService:
         # （save_path / f"{info_hash}.torrent"），含 .. 等字符可读保存目录外文件。
         if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", info_hash or ""):
             result["error_message"] = "info_hash 格式非法（须为 40/64 位十六进制），拒绝转移"
+            return result
+
+        # 服务层兜底防御：schema 层已拦截同下载器转移，但历史 token/内部调用
+        # 可能绕过 schema；同下载器转移会走"查重 duplicate"或添加失败，且
+        # delete_source 分支存在误标源行的风险，直接拒绝。
+        if source_downloader_id == target_downloader_id:
+            result["error_message"] = "源下载器与目标下载器相同，拒绝转移"
             return result
 
         # 获取源和目标下载器信息
@@ -450,6 +459,18 @@ class SeedTransferService:
 
             logger.info(f"种子 {info_hash} 验证成功")
 
+            # 4.5 立即落库目标下载器的种子行（对齐 info-only 同步的数据形态）：
+            # 不等下一轮同步（10 分钟），列表页转移完成后立即可见；后续同步按
+            # (downloader_id, hash) 命中同一行走 update，不会产生重复行。
+            await self._upsert_target_torrent_row(
+                source_torrent=source_torrent,
+                target_downloader=target_downloader,
+                info_hash=info_hash,
+                target_path=target_path,
+                torrent_name=result.get("torrent_name"),
+                username=username,
+            )
+
             # 5. 更新备份使用记录
             await self.backup_manager.increment_use_count(info_hash)
 
@@ -569,6 +590,9 @@ class SeedTransferService:
                 await self._update_transfer_log(info_hash, "partial", result["error_message"])
             else:
                 logger.info(f"原种子已删除: {info_hash}")
+                # 源下载器已删种子，同步删除语义标记源行（只置 dr=1，与
+                # _mark_qb_removed_torrents 同构：不进回收站、不进普通列表）。
+                await self._mark_source_row_transferred(source_downloader_id, info_hash)
                 await self._update_transfer_log(
                     info_hash, "success", "原种子已删除", result["torrent_name"], result["transfer_duration"]
                 )
@@ -764,6 +788,129 @@ class SeedTransferService:
             return False
 
         return False
+
+    async def _upsert_target_torrent_row(
+        self,
+        source_torrent: Optional[TorrentInfo],
+        target_downloader: BtDownloaders,
+        info_hash: str,
+        target_path: str,
+        torrent_name: Optional[str],
+        username: str,
+    ) -> None:
+        """转移成功后立即在目标下载器名下落库/更新种子行（不等下一轮同步）。
+
+        - 字段形态对齐 info-only 同步的 insert dict（torrents_async.py），
+          后续同步按 (downloader_id, hash) 命中同一行走 update；
+          downloader_name 用当前昵称，与同步 update 分支一致，保证
+          bulk_update 三列复合主键命中。
+        - size/status/progress/ratio 等从源行复制，与目标下载器真实状态
+          可能短暂不一致，由下一轮同步修正（torrent_file 跨类型转移时
+          指向源路径，同样会被同步覆盖）。
+        - best-effort：任何失败仅记 warning 不影响转移结果（目标下载器
+          已添加成功是既成事实，报错会诱导用户重试产生次生问题）；
+          并发同 hash 转移撞 (hash, downloader_id) WHERE dr=0 唯一索引时
+          转为按主键更新。
+        """
+        try:
+            existing_result = await self.db.execute(
+                select(TorrentInfo).where(
+                    TorrentInfo.downloader_id == str(target_downloader.downloader_id),
+                    TorrentInfo.hash == info_hash,
+                    TorrentInfo.dr == 0,
+                )
+            )
+            existing_row = existing_result.scalar_one_or_none()
+            now = datetime.now()
+
+            if existing_row is not None:
+                existing_row.save_path = target_path
+                existing_row.name = torrent_name or existing_row.name
+                existing_row.update_time = now
+                existing_row.update_by = username
+            else:
+                source_progress = round(float(source_torrent.progress or 0), 2) if source_torrent else 0.0
+                self.db.add(
+                    TorrentInfo(
+                        id_=str(uuid.uuid4()),
+                        downloader_id=str(target_downloader.downloader_id),
+                        downloader_name=target_downloader.nickname,
+                        torrent_id=info_hash,
+                        hash=info_hash,
+                        name=torrent_name or (source_torrent.name if source_torrent else info_hash),
+                        save_path=target_path,
+                        size=float(source_torrent.size or 0) if source_torrent else 0.0,
+                        status=(source_torrent.status or "downloading") if source_torrent else "downloading",
+                        progress=source_progress,
+                        torrent_file=(source_torrent.torrent_file or "") if source_torrent else "",
+                        added_date=now,
+                        completed_date=(source_torrent.completed_date if source_torrent else None),
+                        ratio=(
+                            float(source_torrent.ratio) if source_torrent and source_torrent.ratio is not None else 0.0
+                        ),
+                        ratio_limit=(source_torrent.ratio_limit if source_torrent else None),
+                        tags=(source_torrent.tags or "") if source_torrent else "",
+                        category=(source_torrent.category or "") if source_torrent else "",
+                        super_seeding=(source_torrent.super_seeding or "") if source_torrent else "",
+                        enabled=True,
+                        create_time=now,
+                        create_by=username,
+                        update_time=now,
+                        update_by=username,
+                        dr=0,
+                    )
+                )
+
+            try:
+                await self.db.commit()
+            except IntegrityError:
+                # 并发竞态：另一请求已插入同 (hash, downloader_id) 行——转为更新
+                await self.db.rollback()
+                race_result = await self.db.execute(
+                    select(TorrentInfo).where(
+                        TorrentInfo.downloader_id == str(target_downloader.downloader_id),
+                        TorrentInfo.hash == info_hash,
+                        TorrentInfo.dr == 0,
+                    )
+                )
+                race_row = race_result.scalar_one_or_none()
+                if race_row is not None:
+                    race_row.save_path = target_path
+                    race_row.name = torrent_name or race_row.name
+                    race_row.update_time = now
+                    race_row.update_by = username
+                    await self.db.commit()
+
+            logger.info(f"转移后已落库目标下载器种子行: {info_hash} -> {target_downloader.nickname}")
+        except Exception as e:
+            await self.db.rollback()
+            logger.warning(f"转移后落库目标种子行失败（不影响转移结果，等待同步补齐）: {info_hash}: {e}")
+
+    async def _mark_source_row_transferred(self, source_downloader_id: int, info_hash: str) -> None:
+        """源种子已从源下载器删除，按同步删除语义标记源行 dr=1（best-effort）。
+
+        只置 dr=1 + update_time，不写 deleted_at（与 _mark_qb_removed_torrents
+        同构：不进回收站也不进普通列表）。失败仅记 warning——源下载器上种子
+        已不存在，下一轮同步的 removed 标记会自愈。
+        """
+        try:
+            source_result = await self.db.execute(
+                select(TorrentInfo).where(
+                    TorrentInfo.downloader_id == str(source_downloader_id),
+                    TorrentInfo.hash == info_hash,
+                    TorrentInfo.dr == 0,
+                )
+            )
+            source_row = source_result.scalar_one_or_none()
+            if source_row is None:
+                return
+            source_row.dr = 1
+            source_row.update_time = datetime.now()
+            source_row.update_by = "system"
+            await self.db.commit()
+        except Exception as e:
+            await self.db.rollback()
+            logger.warning(f"转移后标记源种子行删除态失败（等待同步自愈）: {info_hash}: {e}")
 
     async def _log_transfer_attempt(
         self,

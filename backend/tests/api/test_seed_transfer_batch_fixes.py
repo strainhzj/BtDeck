@@ -89,9 +89,7 @@ async def batch_client():
 
     app = FastAPI()
     app.include_router(api_router, prefix="/api/v1")
-    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(
-        username="tester", user_id=7
-    )
+    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester", user_id=7)
 
     had_store = hasattr(global_app.state, "store")
     old_store = getattr(global_app.state, "store", None)
@@ -171,10 +169,33 @@ class TestBatchTransferAudit:
         assert resp.json()["code"] == "400"
 
         async with session_factory() as db:
-            rows = (
-                (await db.execute(select(TorrentAuditLog))).scalars().all()
-            )
+            rows = (await db.execute(select(TorrentAuditLog))).scalars().all()
         assert len(rows) == 2
         assert all(row.operation_type == "transfer" for row in rows)
         assert all(row.operator == "tester" for row in rows)
         assert {row.operation_result for row in rows} == {"success", "failed"}
+
+    async def test_audit_rows_record_request_ip_and_user_agent(self, batch_client):
+        """审计 IP：端点从请求提取 ip_address/user_agent 并写入审计行。"""
+        from sqlalchemy import select
+
+        app, client, session_factory = batch_client
+        with (
+            patch(
+                "app.api.endpoints.seed_transfer.SeedTransferService",
+                _fake_service_cls(["success"]),
+            ),
+            patch(
+                "app.api.endpoints.seed_transfer.extract_audit_info_from_request",
+                return_value={"ip_address": "192.168.5.60", "user_agent": "pytest-agent"},
+            ),
+        ):
+            resp = client.post(URL, json=_body(hashes=("a" * 40,)))
+
+        assert resp.json()["code"] == "200"
+
+        async with session_factory() as db:
+            rows = (await db.execute(select(TorrentAuditLog))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].ip_address == "192.168.5.60"
+        assert rows[0].user_agent == "pytest-agent"

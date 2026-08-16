@@ -575,12 +575,30 @@ class TestSeedTransferMigration:
 
         source_dl = SimpleNamespace(downloader_id=1, nickname="src", downloader_type=0, torrent_save_path="")
         target_dl = SimpleNamespace(downloader_id=2, nickname="dst", downloader_type=0, torrent_save_path="")
-        torrent_info = SimpleNamespace(name="my-seed", save_path="/src/path")
+        torrent_info = SimpleNamespace(
+            name="my-seed",
+            save_path="/src/path",
+            progress=100.0,
+            size=1024,
+            status="seeding",
+            torrent_file="",
+            completed_date=None,
+            ratio=1.0,
+            ratio_limit=None,
+            tags="",
+            category="",
+            super_seeding="0",
+        )
+        # 转移成功后新增两次 DB 查询：目标预插行检查（None → 插入）与源行删除标记
+        source_row_to_mark = SimpleNamespace(dr=0, update_time=None)
 
         db = MagicMock()
         db_result = MagicMock()
-        db_result.scalar_one_or_none.side_effect = [source_dl, target_dl, torrent_info]
+        db_result.scalar_one_or_none.side_effect = [source_dl, target_dl, torrent_info, None, source_row_to_mark]
         db.execute = AsyncMock(return_value=db_result)
+        db.commit = AsyncMock()
+        db.rollback = AsyncMock()
+        db.add = MagicMock()
 
         target_client = MagicMock()
         source_client = MagicMock()

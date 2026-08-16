@@ -859,6 +859,7 @@ class OrphanFileService:
         copy_paths: Sequence[str],
         operator: str,
         audit_service: Any = None,
+        ip_address: Optional[str] = None,
         _lease_acquired: bool = False,
         _lease_handle: Any = None,
     ) -> Dict[str, Any]:
@@ -910,6 +911,7 @@ class OrphanFileService:
                         copy_paths=normalized_paths,
                         operator=operator,
                         audit_service=audit_service,
+                        ip_address=ip_address,
                         _lease_acquired=True,
                         _lease_handle=lease_handle,
                     )
@@ -1112,6 +1114,7 @@ class OrphanFileService:
                     },
                     operation_result=audit_result,
                     error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                    ip_address=ip_address,
                 )
             except Exception as exc:
                 logger.warning("[副本删除] 审计日志记录失败: %s", exc)
@@ -1943,6 +1946,7 @@ class OrphanFileService:
         audit_service: Any = None,
         store: Any = None,
         scan_id: Optional[str] = None,
+        ip_address: Optional[str] = None,
         _lease_acquired: bool = False,
         _lease_handle: Any = None,
     ) -> Dict[str, Any]:
@@ -1977,6 +1981,7 @@ class OrphanFileService:
                         audit_service=audit_service,
                         store=store,
                         scan_id=scan_id,
+                        ip_address=ip_address,
                         _lease_acquired=True,
                         _lease_handle=lease_handle,
                     )
@@ -2189,6 +2194,7 @@ class OrphanFileService:
                     },
                     operation_result=AuditOperationResult.SUCCESS if not failed_list else AuditOperationResult.PARTIAL,
                     error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                    ip_address=ip_address,
                 )
             except Exception as e:
                 logger.warning(f"[孤儿清理] 审计日志记录失败: {e}")
@@ -2217,6 +2223,7 @@ class OrphanFileService:
         operator: str,
         scan_id: Optional[str] = None,
         audit_service: Any = None,
+        ip_address: Optional[str] = None,
     ) -> Dict[str, Any]:
         """设置/取消孤儿文件的忽视态（保护标志，存候选表，跨扫描持久）。
 
@@ -2358,6 +2365,7 @@ class OrphanFileService:
                     },
                     operation_result=AuditOperationResult.SUCCESS if not failed_list else AuditOperationResult.PARTIAL,
                     error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                    ip_address=ip_address,
                 )
                 await audit_db.commit()
         except Exception as e:
@@ -2891,6 +2899,7 @@ class OrphanFileService:
         canonical_paths: List[str],
         operator: str,
         audit_service: Any = None,
+        ip_address: Optional[str] = None,
         _lease_acquired: bool = False,
         _lease_handle: Any = None,
     ) -> Dict[str, Any]:
@@ -2914,6 +2923,7 @@ class OrphanFileService:
                         canonical_paths=canonical_paths,
                         operator=operator,
                         audit_service=audit_service,
+                        ip_address=ip_address,
                         _lease_acquired=True,
                         _lease_handle=lease_handle,
                     )
@@ -3051,6 +3061,7 @@ class OrphanFileService:
                     },
                     operation_result=AuditOperationResult.SUCCESS if not failed_list else AuditOperationResult.PARTIAL,
                     error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                    ip_address=ip_address,
                 )
             except Exception as e:
                 logger.warning("[隔离恢复] 审计日志记录失败: %s", e)
@@ -3119,6 +3130,7 @@ class OrphanFileService:
         operator: str,
         store: Any = None,
         audit_service: Any = None,
+        ip_address: Optional[str] = None,
         _lease_acquired: bool = False,
         _lease_handle: Any = None,
     ) -> Dict[str, Any]:
@@ -3140,6 +3152,7 @@ class OrphanFileService:
                         operator=operator,
                         store=store,
                         audit_service=audit_service,
+                        ip_address=ip_address,
                         _lease_acquired=True,
                         _lease_handle=lease_handle,
                     )
@@ -3246,6 +3259,7 @@ class OrphanFileService:
                     },
                     operation_result=AuditOperationResult.SUCCESS if not failed_list else AuditOperationResult.PARTIAL,
                     error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                    ip_address=ip_address,
                 )
             except Exception as e:
                 logger.warning("[隔离删除] 审计日志记录失败: %s", e)

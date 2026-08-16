@@ -673,6 +673,8 @@ class TestOrphanFilesCleanupWiring:
             ignored=True,
             operator="tester",
             scan_id="scan-latest",
+            # testclient 直连：extract_audit_info_from_request 取 request.client.host
+            ip_address="testclient",
         )
 
     def test_list_accepts_page_size_upper_bound_1000(self):
@@ -754,7 +756,10 @@ class TestOrphanFilesCleanupWiring:
             scan_id="scan-latest",
             orphan_ids=[1],
             operator="tester",
+            ip_address=submit_job.await_args.kwargs["ip_address"],
         )
+        # 审计 IP 透传：testclient 无代理头时应为 None 而非缺失
+        assert "ip_address" in submit_job.await_args.kwargs
         dispatcher.submit.assert_called_once_with("cleanup-task-1")
 
     def test_cleanup_all_active_returns_success_without_dispatch(self):
@@ -836,7 +841,9 @@ class TestOrphanFilesCleanupWiring:
         submit_job.assert_awaited_once_with(
             canonical_paths=["/data/orphan.bin"],
             operator="tester",
+            ip_address=submit_job.await_args.kwargs["ip_address"],
         )
+        assert "ip_address" in submit_job.await_args.kwargs
         dispatcher.submit.assert_called_once_with("purge-task-1")
 
     def test_get_purge_job_status_returns_persisted_state(self):

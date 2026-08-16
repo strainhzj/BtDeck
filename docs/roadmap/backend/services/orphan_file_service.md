@@ -55,7 +55,7 @@
 | L814 | `_hardlink_copy_marker_reason` | static | 隔离区/回收站标记拒绝原因（settings 口径） |
 | L825 | `_in_seed_directory` | static | 副本是否落在种子目录（normalize_path + commonpath） |
 | L840 | `_remove_hardlink_copy` | static | tombstone 三段式删除单个副本目录项（同线程，复核失败回滚） |
-| L871 | `delete_hardlink_copies` | async def | **弹窗删除已定位副本（租约/状态门禁/共享 inode/种子目录 fail-closed + 审计）** |
+| L856 | `delete_hardlink_copies` | async def | **弹窗删除已定位副本（租约/状态门禁/共享 inode/种子目录 fail-closed + 审计）** |
 | L1137 | `get_orphan_list` | async def | **稳定当前明细分页 + 扫描上下文** |
 | L1282 | `get_orphan_list_grouped` | async def | 文件夹父页 SQL 聚合，不加载/不 stat 全部子项 |
 | L1518 | `get_orphan_folder_children` | async def | **展开后子项独立分页，仅可见页统计硬链接** |
@@ -63,13 +63,13 @@
 | L1661 | `reconcile_stable_candidate_details` | async def | keyset 分批对账稳定隔离候选明细，每页统一进入 `db_write_scope` |
 | L1819 | `prefix_match_preview` | async def | 路径前缀预览（共用清理门禁） |
 | L1860 | `cleanup_preview` | async def | 清理预览 |
-| L1906 | `cleanup_orphans` | async def | **后台手动清理任务执行** |
-| L2180 | `set_ignored` | async def | 设置忽视 |
+| L1942 | `cleanup_orphans` | async def | **后台手动清理任务执行** |
+| L2219 | `set_ignored` | async def | 设置忽视 |
 | L2347 | `auto_cleanup_expired` | async def | 过期自动清理（共用最新快照与实时安全校验） |
 | L2544 | `purge_expired_quarantine` | async def | 过期隔离清除 |
 | L2737 | `get_quarantine_list` | async def | 隔离区列表 |
-| L2854 | `restore_quarantined` | async def | 恢复隔离 |
-| L3064 | `purge_quarantine_now` | async def | 后台立即彻底删除 |
+| L2897 | `restore_quarantined` | async def | 恢复隔离 |
+| L3127 | `purge_quarantine_now` | async def | 后台立即彻底删除 |
 | L3215 | `_purge_single_candidate` | async def | 单个彻底删除 |
 | L3339 | `_detect_hardlink_copies` | async def | 删除前枚举硬链接副本 |
 | L3603 | `_recover_interrupted_operations` | async def | 中断操作恢复 |
@@ -125,13 +125,14 @@ async def delete_hardlink_copies(
     copy_paths: Sequence[str],
     operator: str,
     audit_service: Any = None,
+    ip_address: Optional[str] = None,
     _lease_acquired: bool = False,
     _lease_handle: Any = None,
 ) -> Dict[str, Any]:
     """删除孤儿文件已定位硬链接副本的目录项（仅移除该路径链接，数据保留）。"""
 ```
 
-- **定位**：`orphan_file_service.py:871`
+- **定位**：`orphan_file_service.py:856`
 - **职责**：tombstone 三段式（`_remove_hardlink_copy` L840）删除指向同一 inode 的其它路径；门禁链见「关键不变式·硬链接副本删除」。状态类拒绝以 `failed_list` 返回（HTTP 200），租约 busy 返回 `rejected=true`。
 - **调用链**：`orphan_maintenance_scope`（lease）→ `_load_orphan_details`（exclude_in_flight）→ `_load_candidates`（status/operation_state 门禁）→ `_inspect_hardlink_sources`（源身份）→ `_load_hardlink_copy_results` → 同身份候选反查 + `collect_torrent_directory_whitelist`（to_thread，全量下载器）→ `_remove_hardlink_copy`（to_thread）→ setattr payload 更新结果行 + commit → 审计（restore 模式）。
 - **端点**：`POST /orphan-files/hardlink-copies/delete`（`orphan_files.py:341`，请求 `{orphan_id, copy_paths≤50}`）。
@@ -174,13 +175,14 @@ async def cleanup_orphans(
     audit_service: Any = None,
     store: Any = None,
     scan_id: Optional[str] = None,
+    ip_address: Optional[str] = None,
     _lease_acquired: bool = False,
     _lease_handle: Any = None,
 ) -> Dict[str, Any]:
     """手动清理选中的孤儿文件（安全隔离 + 标记 + 审计日志）。"""
 ```
 
-- **定位**：`orphan_file_service.py:1906`
+- **定位**：`orphan_file_service.py:1942`
 - **职责**：清理门禁（最新 completed + scan_id + 实时 manifest/身份复核）后安全隔离 + 标记 + 审计；超量字段仅作为页面提醒，不提供 force 绕过。
 - **前置**：`_check_cleanup_allowed`（L453）、`_build_realtime_manifest`（L466）；worker 读取已占用 ID 时不启用查询排除。
 

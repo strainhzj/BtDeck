@@ -14,7 +14,7 @@ import logging
 from typing import Optional
 
 import urllib3
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
@@ -24,7 +24,7 @@ from app.schemas.seed_transfer import (
     SeedTransferRequest,
     SeedTransferBatchRequest,
 )
-from app.services.audit_service import AuditLogService
+from app.services.audit_service import AuditLogService, extract_audit_info_from_request
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 
 # 注意：禁止在此处顶层 `from app.factory import app`。
@@ -50,6 +50,8 @@ async def _log_transfer_audit(
     target_path: str,
     transfer_status: str,
     error_message: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
 ):
     """转移操作写入 torrent_audit_log（操作日志页面可见）。
 
@@ -73,6 +75,8 @@ async def _log_transfer_audit(
             ),
             error_message=error_message,
             downloader_id=str(target_downloader_id),
+            ip_address=ip_address,
+            user_agent=user_agent,
         )
     except Exception as e:  # noqa: BLE001 - 审计失败不影响主流程
         logger.warning(f"记录转移审计日志失败: {e}")
@@ -85,6 +89,7 @@ async def _log_transfer_audit(
 async def transfer_seed(
     transfer_request: SeedTransferRequest,
     background_tasks: BackgroundTasks,
+    request: Request = None,
     _user=Depends(require_authenticated_user),
 ):
     """
@@ -130,6 +135,7 @@ async def transfer_seed(
         # 使用真实登录用户（修复硬编码 admin；旧 token 可能无 user_id，兜底 1）
         user_id = getattr(_user, "user_id", None) or 1
         username = getattr(_user, "username", None) or "admin"
+        audit_info = extract_audit_info_from_request(request) if request else {}
 
         # 执行种子转移
         async with AsyncSessionLocal() as db:
@@ -173,6 +179,8 @@ async def transfer_seed(
                     target_path=transfer_request.target_path,
                     transfer_status=result["transfer_status"],
                     error_message=result.get("error_message"),
+                    ip_address=audit_info.get("ip_address"),
+                    user_agent=audit_info.get("user_agent"),
                 )
 
                 if result["success"]:
@@ -199,6 +207,7 @@ async def transfer_seed(
 async def batch_transfer_seeds(
     batch_request: SeedTransferBatchRequest,
     background_tasks: BackgroundTasks,
+    request: Request = None,
     _user=Depends(require_authenticated_user),
 ):
     """
@@ -248,6 +257,7 @@ async def batch_transfer_seeds(
         # 使用真实登录用户（修复硬编码 admin；旧 token 可能无 user_id，兜底 1）
         user_id = getattr(_user, "user_id", None) or 1
         username = getattr(_user, "username", None) or "admin"
+        audit_info = extract_audit_info_from_request(request) if request else {}
 
         results = []
         success_count = 0
@@ -303,6 +313,8 @@ async def batch_transfer_seeds(
                         target_path=batch_request.target_path,
                         transfer_status=result["transfer_status"],
                         error_message=result.get("error_message"),
+                        ip_address=audit_info.get("ip_address"),
+                        user_agent=audit_info.get("user_agent"),
                     )
 
                 # 构建响应数据

@@ -17,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
 from app.database import get_async_db
-from app.services.audit_service import AuditLogService, get_audit_service
+from app.services.audit_service import AuditLogService, extract_audit_info_from_request, get_audit_service
 from app.services.orphan_file_service import OrphanFileService
 from app.services.orphan_purge_job_service import (
     OrphanPurgeJobService,
@@ -352,6 +352,7 @@ async def get_hardlink_copy_locations(
 @router.post("/hardlink-copies/delete", response_model=CommonResponse)
 async def delete_hardlink_copies(
     req: HardlinkCopyDeleteRequest,
+    request: Request = None,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
     audit_service: AuditLogService = Depends(get_audit_service),
@@ -363,11 +364,13 @@ async def delete_hardlink_copies(
     状态类拒绝以 failed_list 返回（不使用 400）。
     """
     try:
+        audit_info = extract_audit_info_from_request(request) if request else {}
         result = await OrphanFileService(db).delete_hardlink_copies(
             orphan_id=req.orphan_id,
             copy_paths=req.copy_paths,
             operator=current_user.username,
             audit_service=audit_service,
+            ip_address=audit_info.get("ip_address"),
         )
         if result.get("rejected"):
             msg = str(result.get("error") or "维护操作互斥，本次未执行删除")
@@ -428,12 +431,14 @@ async def cleanup_orphans(
 ):
     """提交主动清理任务；实际复核和隔离动作在后台执行。"""
     try:
+        audit_info = extract_audit_info_from_request(request) if request else {}
         service = OrphanFileService(db)
         orphan_ids = await _resolve_selection(service, req, scan_id=req.scan_id)
         submission = await OrphanPurgeJobService(db).submit_cleanup_job(
             scan_id=req.scan_id,
             orphan_ids=orphan_ids,
             operator=current_user.username,
+            ip_address=audit_info.get("ip_address"),
         )
         if submission.job is not None:
             get_orphan_purge_dispatcher(request.app).submit(str(submission.job.task_id))
@@ -457,6 +462,7 @@ async def cleanup_orphans(
 @router.post("/ignore", response_model=CommonResponse)
 async def set_orphan_ignored(
     req: IgnoreRequest,
+    request: Request = None,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
@@ -465,6 +471,7 @@ async def set_orphan_ignored(
     被忽视的孤儿受保护：定时任务不自动删除，手动清理也被拒绝，但仍可在列表查询。
     """
     try:
+        audit_info = extract_audit_info_from_request(request) if request else {}
         service = OrphanFileService(db)
         orphan_ids = await _resolve_selection(service, req, scan_id=req.scan_id)
         result = await service.set_ignored(
@@ -472,6 +479,7 @@ async def set_orphan_ignored(
             ignored=req.ignored,
             operator=current_user.username,
             scan_id=req.scan_id,
+            ip_address=audit_info.get("ip_address"),
         )
         action = "忽视" if req.ignored else "取消忽视"
         msg = f"{action}完成: 成功 {result['success_count']} 个"
@@ -531,17 +539,20 @@ async def get_quarantine_list(
 @router.post("/restore", response_model=CommonResponse)
 async def restore_quarantined(
     req: QuarantineActionRequest,
+    request: Request = None,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
     audit_service: AuditLogService = Depends(get_audit_service),
 ):
     """从隔离区恢复文件到原位置（mark_quarantined 的逆操作）。"""
     try:
+        audit_info = extract_audit_info_from_request(request) if request else {}
         service = OrphanFileService(db)
         result = await service.restore_quarantined(
             canonical_paths=req.canonical_paths,
             operator=current_user.username,
             audit_service=audit_service,
+            ip_address=audit_info.get("ip_address"),
         )
         msg = f"恢复完成: 成功 {result['restored_count']} 个"
         if result["failed_count"] > 0:
@@ -561,9 +572,11 @@ async def purge_quarantine_now(
 ):
     """提交隔离区彻底删除任务并立即返回，结果由通知中心异步送达。"""
     try:
+        audit_info = extract_audit_info_from_request(request) if request else {}
         submission = await OrphanPurgeJobService(db).submit_purge_job(
             canonical_paths=req.canonical_paths,
             operator=current_user.username,
+            ip_address=audit_info.get("ip_address"),
         )
         if submission.job is not None:
             get_orphan_purge_dispatcher(request.app).submit(str(submission.job.task_id))

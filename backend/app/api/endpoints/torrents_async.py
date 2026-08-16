@@ -2335,6 +2335,13 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
 
 
 def _normalize_progress_value(value: Any) -> float:
+    """进度归一化：None/异常→0，[0,100] 夹取，统一舍入到 2 位小数。
+
+    舍入是同步写库的最终口径：下载器原始 progress（0-1 小数 ×100）会带
+    十几位浮点尾差（如 99.556946664657），落库原样存储导致列表页展示脏值；
+    且 0.5 阈值"保留旧值"分支沿用归一化结果，存量脏值会在下次同步被
+    has_torrent_info_changes 的精确比较判为变化并覆盖为舍入值（自愈）。
+    """
     if value is None:
         return 0.0
     try:
@@ -2345,7 +2352,7 @@ def _normalize_progress_value(value: Any) -> float:
         return 0.0
     if value_float > 100.0:
         return 100.0
-    return value_float
+    return round(value_float, 2)
 
 
 def convert_transmission_status(transmission_status: str) -> str:

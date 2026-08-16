@@ -20,12 +20,12 @@
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
 | 孤儿副本预扫描 orphan-hardlink-scan ✨2026-08-15 | `orphan_hardlink_scan_service.py` | `run_round` L60 定时预扫描：stat 限量/keyset 游标/遍历限量/时间预算/路径上限/分批短事务写库/保留期清理；`_stat_window` L167 仅纳入 `status=candidate` 且未忽视候选（忽视/隔离/清除不再消耗预算）；交互端不再遍历 |
-| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；文件夹父行只 SQL 聚合，`get_orphan_folder_children` L1518 展开后独立分页，实时硬链接仅覆盖当前可见文件；`hardlink_copies=located` 筛选（候选身份 CAST join 结果表 `found_count>1`）list/grouped/children 三点透传；`delete_hardlink_copies` L871 弹窗删除已定位副本（租约/状态门禁/共享 inode/种子目录 fail-closed + tombstone 三段式 + 审计）；超量扫描仅作为可关闭提醒 |
+| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；文件夹父行只 SQL 聚合，`get_orphan_folder_children` L1568 展开后独立分页，实时硬链接仅覆盖当前可见文件；`hardlink_copies=located` 筛选（候选身份 CAST join 结果表 `found_count>1`）list/grouped/children 三点透传；`delete_hardlink_copies` L856 弹窗删除已定位副本（租约/状态门禁/共享 inode/种子目录 fail-closed + tombstone 三段式 + 审计）；手动操作审计带提交端 IP（2026-08-16 第二批：5 函数 ip_address 形参+租约递归透传）；超量扫描仅作为可关闭提醒 |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `reconcile_candidates` L76 按 200 条分批查询/更新/current_detail 复用/resolved keyset，每批整体进入 `db_write_scope`；可清理查询亦分页 |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |
 | 孤儿通知 orphan-notify | `orphan_notification.py` | 孤儿扫描完成通知（幂等 dedupe_key） |
-| 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放） |
+| 孤儿彻底删除 orphan-purge | `orphan_purge_job_service.py` | 孤儿清理/隔离区彻底删除持久化任务（条目级原子占用、混合跳过、串行执行、重启恢复；终态即释放；job 行持久化提交端 IP 供后台审计，迁移 ab68fe061d5b） |
 | 孤儿扫描任务 orphan-scan-job | `orphan_scan_job_service.py` | 持久化 queued/running/completed/failed 扫描；scan_id 即 task_id，单行状态查询、串行后台调度、重启恢复与超量提醒/兼容复核记录 |
 | 孤儿隔离区 orphan-quarantine | `orphan_quarantine.py` | 隔离区管理 + `st_nlink - 1` 副本计数/多 inode 单轮路径枚举；`collect_runtime_accessible_roots` L311 按目标 `st_dev` 收集当前进程可访问挂载根（硬链接不跨文件系统），仅 `os.rmdir` 回收空目录 |
 | 孤儿扫描 orphan-scanner | `orphan_scanner.py` | 文件系统/manifest 核查器；支持预建 queued 批次，成功后分批推进稳定明细与生命周期；超 50000 持久化提醒并向仍有活跃候选的后续小扫描传递，不阻断清理 |
@@ -33,7 +33,7 @@
 | 路径维护 path-maintenance | `path_maintenance_service.py` | 下载器路径维护服务（默认/活跃路径） |
 | Tracker 重宣告 reannounce | `reannounce_service.py` | Tracker Reannounce 核心服务（API 与定时任务共用） |
 | 回收站 recycle-bin | `recycle_bin_service.py` | 回收站服务（列表/还原/清理/批量/记录） |
-| 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证） |
+| 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；验证成功 `_upsert_target_torrent_row` L792 立即落库目标行（与后续同步同一条），delete_source 成功 `_mark_source_row_transferred` L889 源行 dr=1；source==target 服务层防御） |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
@@ -87,4 +87,4 @@
 
 ## 第三层详情
 
-- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3480 行，实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1397 行）
+- 已完成：[orphan_file_service.md](./orphan_file_service.md)（3883 行，2026-08-16 第二批实测）；其余建议优先级：`torrent_deletion_by_level.py`、`advanced_search.py`（1397 行）

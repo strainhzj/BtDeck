@@ -1,5 +1,30 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-16（第二批） - 进度精度/转移落库/审计 IP 三项修复
+
+### 排查结论（四个问题，问题 4 经拓扑核实为正常）
+
+1. **进度 99.556946664657%**：`_normalize_progress_value` 只夹取不舍入，qB/TR 的 0-1 小数 ×100 原样落库；实测库中 3 条脏值。
+2. **转移后无目标记录**：`transfer_seed` 全程不写 `torrent_info`，要等 10 分钟同步任务才出现。
+3. **转移/orphan_cleanup/orphan_hardlink_copy_delete 审计无 IP**：调用点未传 ip_address；cleanup/purge 为后台任务链（无 request 上下文）。
+4. **IP 全是 192.168.5.60**：docker nginx 反代 + XFF 提取链路正常，.60 为访问端电脑（宿主机为 .51）；已向用户说明（另发现 `extract_audit_info_from_request` 信任 XFF 首值可伪造，遗留待用户决定）。
+
+### 实现（方案经 2 个独立审查代理复核，合入 7 项修订）
+
+- **问题 1**：`torrents_async.py::_normalize_progress_value` 末尾 `round(value_float, 2)`（8 处同步写路径汇聚点）。存量脏值自愈：0.5 阈值保留旧值→保留的是舍入值 + `has_torrent_info_changes` 精确比较判变化 + 全量同步 update 无条件写回；无需数据迁移。
+- **问题 2**：`seed_transfer_service.py` 新增 `_upsert_target_torrent_row`（验证成功后按 (downloader_id, hash, dr=0) upsert 目标行；字段对齐 info-only 同步 insert dict，downloader_name=当前昵称保证 bulk_update 主键命中；显式 commit；IntegrityError 竞态转 update；异常吞掉仅 warning）+ `_mark_source_row_transferred`（delete_source 成功时源行 dr=1，与 `_mark_qb_removed_torrents` 同构，不进回收站）+ source==target 服务层兜底防御。
+- **问题 3**：
+  - 转移：两端点加 `request: Request`，`_log_transfer_audit` 传 ip_address/user_agent（torrent_audit_log 已有列）。
+  - 孤儿（用户确认全部补齐）：同步端点 `/hardlink-copies/delete`、`/restore`、`/ignore` 加 request 直接透传；后台任务链 `/cleanup`、`/purge` 经 `orphan_purge_job` 新增 `ip_address` 列（迁移 `ab68fe061d5b`，inspect 守卫 add_column + batch downgrade，串接 ff42d3402df5）持久化，execute_job 读 job 会话内取出传入服务层；5 个服务函数（delete_hardlink_copies/cleanup_orphans/set_ignored/restore_quarantined/purge_quarantine_now）加 ip_address 形参 + 4 处租约递归透传 + 5 处审计调用点传值；4 个提交入口（submit_*/create_*）全加参。
+- **测试**：新增 `test_progress_rounding.py`（9 项）；`test_seed_transfer_service_fixes.py` 增 TestTargetRowUpsert 5 项；batch fixes 增审计 IP 断言；`test_orphan_purge_job_service.py` 增 IP 落库+透传 2 项；修复 5 处受影响断言（execute_job/cleanup/purge/ignore 精确 kwargs + w2_3d mock 队列扩展）；`test_db_migration.py`/`test_db_rollback_scenarios.py`/`test_orphan_migration_production_shape.py` 三处 head 版本常量同步为 ab68fe061d5b；`docs/constraints/database-migration.md` HEAD 标注修正（原标 c8d9e0f1a2b3 已过期 5 个版本）。
+- **质量**：black/flake8 干净；mypy 新增错误种类 0（16 个新报错全为文件既有 13 类存量模式，ORM 属性赋值等）。
+
+### 遗留
+
+- `extract_audit_info_from_request` 取 XFF 首值可被客户端伪造（nginx 追加真实 IP 在末尾），待用户决定是否收紧（取尾值/X-Real-IP/直接 client.host）。
+- 预插行 status/size/ratio/torrent_file 与目标下载器真实状态短暂不一致（torrent_file 跨类型转移指向源路径），下次同步覆盖，属预期。
+
+
 ## 2026-08-16 - scan_context 统计缓存（孤儿列表二次优化）
 
 ### 需求与根因

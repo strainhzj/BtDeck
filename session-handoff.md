@@ -1,5 +1,29 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-16 交接：进度精度/转移落库/审计 IP 三项修复
+
+### 当前结果
+
+- **进度精度**：`torrents_async.py::_normalize_progress_value` 统一 `round(2)`（全部 8 处同步写路径汇聚点）。存量脏值（99.556946664657%）无需迁移，下次同步自愈（0.5 阈值保留舍入值 + has_torrent_info_changes 精确比较 + 全量同步无条件写回）。
+- **转移落库**：`seed_transfer_service.py` 验证成功后 `_upsert_target_torrent_row` 立即 upsert 目标下载器行（字段对齐 info-only 同步 insert dict；downloader_name=当前昵称保证后续 bulk_update 三列主键命中；(hash, downloader_id) WHERE dr=0 唯一索引保证与后续同步同一条）；显式 commit、IntegrityError 竞态转 update、异常吞掉仅 warning（目标已添加成功是既成事实，报错会诱导重试）。delete_source 成功时 `_mark_source_row_transferred` 源行 dr=1（同步删除语义，不进回收站）。另加 source==target 服务层兜底防御。
+- **审计 IP**：转移两端点加 request，`_log_transfer_audit` 传 ip_address/user_agent；孤儿 5 项手动操作（cleanup/purge/restore/ignore/hardlink-copy-delete）全部补齐——同步端点直接 `extract_audit_info_from_request` 透传，后台任务链经 `orphan_purge_job.ip_address` 新列（迁移 `ab68fe061d5b`，串接 ff42d3402df5）在提交时持久化、execute_job 读 job 会话内取出传入服务层；5 个服务函数加 ip_address 形参 + 4 处租约递归 + 5 处审计调用点；4 个提交入口全加参。
+- 问题 4（IP 全 192.168.5.60）经拓扑核实为正常：docker nginx 反代 + XFF 链路，.60 为访问端电脑；宿主机实为 .51。
+
+### 验证
+
+- 定向：progress_rounding 9 + seed_transfer fixes 10 + batch fixes 5 + orphan job 15 + orphan api 70 + w2_3d 19 + migration 链 25 + rollback 10 + production_shape + governance（tests/core 全目录 458）全部通过。
+- 全量 pytest：见下（第二批全量结果见 progress.md；第一批全量 5 失败均为本次改动牵连的版本常量/mock 队列，已全部修复）。
+- black/flake8 干净；mypy 新增错误种类 0（stash 基线对比）；EXPECTED_HEAD/REV_HEAD 三处测试常量与 `docs/constraints/database-migration.md` HEAD 标注同步为 ab68fe061d5b（原文档标 c8d9e0f1a2b3 已过期 5 个版本）。
+
+### 后续与边界
+
+- 未执行 Git 提交（用户未要求）；部署后首日观察：进度脏值应在 10 分钟同步周期后消失；转移完成后列表立即可见目标行。
+- 遗留待用户决定：`extract_audit_info_from_request` 取 XFF 首值可被客户端伪造（nginx 追加真实 IP 在末尾），如需收紧改为取尾值/X-Real-IP/直接 client.host。
+- 预插行 status/size/ratio/torrent_file 与目标下载器真实状态短暂不一致（torrent_file 跨类型转移指向源路径），下次同步覆盖，属预期行为。
+- 孤儿后台任务（auto_cleanup/scan 审计、cleanup_executor L3/L4）仍无 IP（无 request 上下文，审查确认边界合理）；手动扫描 `submit_scan` 提交时捕获 IP 属可选增强未做。
+
+# Session Handoff - BtDeck 全栈项目
+
 ## 2026-08-16 交接：副本位置弹窗行级删除硬链接副本
 
 ### 当前结果
