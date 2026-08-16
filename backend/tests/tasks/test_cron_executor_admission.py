@@ -34,13 +34,22 @@ def _inject_fake_task_class(monkeypatch, module_path: str, class_name: str, exec
     """向 sys.modules 注入一个伪模块 + 伪任务类，execute 由测试控制。
 
     让 cron_executor._run_python_internal_class 通过 __import__ 能加载到这个伪类。
+    必须是真实 class：白名单修复后解析目标经 inspect.isclass 校验，
+    MagicMock 实例（非类）会被拒绝。
     """
+
+    class _Fake:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        # 类属性 execute 在实例上可访问；AsyncMock 满足
+        # asyncio.iscoroutinefunction → 走 await 调用路径
+        execute = execute_mock
+
     fake_module = types.ModuleType(module_path)
-    fake_task_class = MagicMock()
-    fake_task_class.return_value = MagicMock(execute=execute_mock)
-    setattr(fake_module, class_name, fake_task_class)
+    setattr(fake_module, class_name, _Fake)
     monkeypatch.setitem(sys.modules, module_path, fake_module)
-    return fake_task_class
+    return _Fake
 
 
 @pytest.fixture(autouse=True)
@@ -59,14 +68,14 @@ class TestRunPythonInternalClassSignature:
     async def test_accepts_task_dict_and_extracts_executor(self, monkeypatch):
         """签名必须是 _run_python_internal_class(task: Dict)，从 task['executor'] 取路径。"""
         execute_mock = AsyncMock(return_value={"status": "ok"})
-        _inject_fake_task_class(monkeypatch, "fake_module_xyz", "FakeTask", execute_mock)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_xyz", "FakeTask", execute_mock)
 
         executor = _make_executor_with_app()
         task = {
             "task_id": 1,
             "task_code": "nonexistent_lightweight",  # 未登记 → 轻量任务
             "task_type": 4,
-            "executor": "fake_module_xyz.FakeTask",
+            "executor": "app.tasks.fake_module_xyz.FakeTask",
         }
 
         result = await executor._run_python_internal_class(task)
@@ -80,7 +89,7 @@ class TestHeavyTaskAdmission:
     async def test_heavy_task_admitted_runs_execute(self, monkeypatch):
         """admitted=True 时 execute 被调用，且在 task_scope 内。"""
         execute_mock = AsyncMock(return_value={"status": "ok"})
-        _inject_fake_task_class(monkeypatch, "fake_module_heavy_ok", "HeavyTask", execute_mock)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_heavy_ok", "HeavyTask", execute_mock)
 
         executor = _make_executor_with_app()
         # 使用真实注册表中的重型 task_code
@@ -88,7 +97,7 @@ class TestHeavyTaskAdmission:
             "task_id": 1,
             "task_code": "torrent_info_sync_ac608e4d",
             "task_type": 4,
-            "executor": "fake_module_heavy_ok.HeavyTask",
+            "executor": "app.tasks.fake_module_heavy_ok.HeavyTask",
         }
 
         result = await executor._run_python_internal_class(task)
@@ -98,7 +107,7 @@ class TestHeavyTaskAdmission:
     async def test_heavy_task_skipped_does_not_call_execute(self, monkeypatch):
         """admitted=False 时返回 skipped，execute **不被调用**（核心防回归）。"""
         execute_mock = AsyncMock(return_value={"status": "ok"})
-        _inject_fake_task_class(monkeypatch, "fake_module_heavy_skip", "HeavyTask", execute_mock)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_heavy_skip", "HeavyTask", execute_mock)
 
         # 强制 admission 返回 admitted=False（构造同类去重场景）
         from app.tasks.resource_guard import admission_controller
@@ -114,7 +123,7 @@ class TestHeavyTaskAdmission:
             "task_id": 2,
             "task_code": task_code,
             "task_type": 4,
-            "executor": "fake_module_heavy_skip.HeavyTask",
+            "executor": "app.tasks.fake_module_heavy_skip.HeavyTask",
         }
 
         result = await executor._run_python_internal_class(task)
@@ -135,7 +144,7 @@ class TestHeavyTaskAdmission:
     async def test_heavy_task_skipped_log_carries_reason(self, monkeypatch):
         """skipped 日志含 task_code/reason/字段（运维溯源）。"""
         execute_mock = AsyncMock()
-        _inject_fake_task_class(monkeypatch, "fake_module_log", "Task", execute_mock)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_log", "Task", execute_mock)
 
         from app.tasks.resource_guard import admission_controller
         from app.tasks.task_profiles import get_profile
@@ -150,7 +159,7 @@ class TestHeavyTaskAdmission:
             "task_id": 3,
             "task_code": task_code,
             "task_type": 4,
-            "executor": "fake_module_log.Task",
+            "executor": "app.tasks.fake_module_log.Task",
         }
 
         result = await executor._run_python_internal_class(task)
@@ -174,7 +183,7 @@ class TestLightTaskBypass:
     async def test_light_task_does_not_touch_admission(self, monkeypatch):
         """轻量 task_code 直接调 execute，不经过 admission_controller。"""
         execute_mock = AsyncMock(return_value={"status": "ok"})
-        _inject_fake_task_class(monkeypatch, "fake_module_light", "LightTask", execute_mock)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_light", "LightTask", execute_mock)
 
         # 监视 admission_controller.task_scope 是否被调
         from app.tasks.resource_guard import admission_controller
@@ -184,7 +193,7 @@ class TestLightTaskBypass:
             "task_id": 4,
             "task_code": "some_random_light_task_code",  # 未登记
             "task_type": 4,
-            "executor": "fake_module_light.LightTask",
+            "executor": "app.tasks.fake_module_light.LightTask",
         }
 
         with patch.object(admission_controller, "task_scope", new=MagicMock()) as scope_mock:
@@ -207,7 +216,7 @@ class TestInternalClassResultPropagation:
                 "execution_log": ["扫描已提交", "扫描终态 status=failed"],
             }
         )
-        _inject_fake_task_class(monkeypatch, "fake_module_orphan_result", "Task", execute_mock)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_orphan_result", "Task", execute_mock)
 
         executor = _make_executor_with_app()
         result = await executor._run_python_internal_class(
@@ -215,7 +224,7 @@ class TestInternalClassResultPropagation:
                 "task_id": 5,
                 "task_code": "some_random_light_task_code",
                 "task_type": 4,
-                "executor": "fake_module_orphan_result.Task",
+                "executor": "app.tasks.fake_module_orphan_result.Task",
             }
         )
 
@@ -233,9 +242,9 @@ class TestInternalClassResultPropagation:
                 self.execution_logger("扫描终态 status=completed")
                 return {"status": "success", "message": "扫描与自动清理已完成"}
 
-        fake_module = types.ModuleType("fake_module_phase")
+        fake_module = types.ModuleType("app.tasks.fake_module_phase")
         fake_module.PhaseTask = PhaseTask
-        monkeypatch.setitem(sys.modules, "fake_module_phase", fake_module)
+        monkeypatch.setitem(sys.modules, "app.tasks.fake_module_phase", fake_module)
 
         executor = _make_executor_with_app()
         result = await executor._run_python_internal_class(
@@ -243,7 +252,7 @@ class TestInternalClassResultPropagation:
                 "task_id": 6,
                 "task_code": "some_random_light_task_code",
                 "task_type": 4,
-                "executor": "fake_module_phase.PhaseTask",
+                "executor": "app.tasks.fake_module_phase.PhaseTask",
             }
         )
 

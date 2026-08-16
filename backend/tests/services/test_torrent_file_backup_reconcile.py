@@ -17,6 +17,14 @@ from app.models.torrent_file_backup import TorrentFileBackup
 from app.repositories.torrent_file_backup_repository import TorrentFileBackupRepository
 from app.schemas.torrent_backup import TorrentFileBackupCreate
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
+
+import bencodepy
+
+
+def _valid_torrent_bytes() -> bytes:
+    """最小合法 bencode 种子（含 info 字典），满足 core 层内容校验。"""
+    return bencodepy.encode({b"info": {b"name": b"t", b"length": 1}})
+
 from app.torrents.models import TorrentInfo
 
 pytestmark = pytest.mark.asyncio
@@ -69,9 +77,9 @@ async def test_reconcile_is_bounded_idempotent_and_supports_common_filenames(asy
     backup_root = tmp_path / "project-backups"
     source_root.mkdir()
     # qB 常见纯 hash 文件名（同时验证大小写不敏感）。
-    (source_root / f"{first_hash.upper()}.torrent").write_bytes(b"first")
+    (source_root / f"{first_hash.upper()}.torrent").write_bytes(_valid_torrent_bytes())
     # Transmission 常见 name.hash.torrent 文件名。
-    (source_root / f"movie.{second_hash}.torrent").write_bytes(b"second")
+    (source_root / f"movie.{second_hash}.torrent").write_bytes(_valid_torrent_bytes())
 
     async_orphan_db.add(
         BtDownloaders(
@@ -131,7 +139,7 @@ async def test_reconcile_respects_deleted_backup_tombstone(async_orphan_db, tmp_
     source_root = tmp_path / "torrent-sources"
     backup_root = tmp_path / "project-backups"
     source_root.mkdir()
-    (source_root / f"{info_hash}.torrent").write_bytes(b"payload")
+    (source_root / f"{info_hash}.torrent").write_bytes(_valid_torrent_bytes())
     async_orphan_db.add(BtDownloaders(downloader_id=downloader_id, nickname="test", downloader_type=0))
     async_orphan_db.add(_torrent(downloader_id, info_hash, "deleted-by-user"))
     async_orphan_db.add(
@@ -186,7 +194,7 @@ class TestReconcileSourceResolutionAndReuse:
         backup_root = tmp_path / "project-backups"
         backup_root.mkdir()
         referenced = backup_root / "referenced.torrent"
-        referenced.write_bytes(b"referenced")
+        referenced.write_bytes(_valid_torrent_bytes())
 
         referenced_torrent = _torrent(downloader_id, "e" * 40, "referenced")
         referenced_torrent.backup_file_path = str(referenced)
@@ -223,10 +231,10 @@ class TestReconcileSourceResolutionAndReuse:
 
         direct_hash = "1" * 40
         direct_source = source_root / "direct.torrent"
-        direct_source.write_bytes(b"direct")
+        direct_source.write_bytes(_valid_torrent_bytes())
         direct_torrent = _torrent(downloader_id, direct_hash, "direct", torrent_file=str(direct_source))
         subdir_hash = "2" * 40
-        (source_root / ".torrents" / f"{subdir_hash}.torrent").write_bytes(b"subdir")
+        (source_root / ".torrents" / f"{subdir_hash}.torrent").write_bytes(_valid_torrent_bytes())
         subdir_torrent = _torrent(downloader_id, subdir_hash, "subdir")
 
         async_orphan_db.add(BtDownloaders(downloader_id=downloader_id, nickname="test", downloader_type=0))
@@ -288,7 +296,7 @@ class TestReconcileSourceResolutionAndReuse:
         backup_root = tmp_path / "project-backups"
         backup_root.mkdir()
         source = source_root / "rollback.torrent"
-        source.write_bytes(b"payload")
+        source.write_bytes(_valid_torrent_bytes())
         torrent = _torrent(downloader_id, "4" * 40, "rollback", torrent_file=str(source))
         async_orphan_db.add(BtDownloaders(downloader_id=downloader_id, nickname="test", downloader_type=0))
         async_orphan_db.add(torrent)
@@ -334,7 +342,7 @@ class TestReconcileSelectionFilters:
         async_orphan_db.add_all([newest, older, *excluded_cases])
         await async_orphan_db.commit()
         for torrent in [newest, older]:
-            (source_root / f"{torrent.hash}.torrent").write_bytes(b"src")
+            (source_root / f"{torrent.hash}.torrent").write_bytes(_valid_torrent_bytes())
 
         manager = TorrentFileBackupManagerService(
             db=async_orphan_db,

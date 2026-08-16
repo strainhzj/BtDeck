@@ -63,10 +63,9 @@ ALLOWLIST: dict[str, set[str]] = {
         "app/api/endpoints/tracker_messages.py",
         "app/api/endpoints/tracker_test.py",
     },
-    "BTD301": {
-        "app/tasks/cron_executor.py",
-        "app/tasks/enhanced_python_executor.py",
-    },
+    # BTD301（exec 调用）白名单已清空：cron_executor 的 exec 回落与
+    # enhanced_python_executor 死代码在安全修复中删除，全仓不应再有 exec。
+    "BTD301": set(),
     "BTD305": {
         "app/api/endpoints/downloader.py",
         "app/api/endpoints/downloader_settings.py",

@@ -13,6 +13,7 @@
 import logging
 import shutil
 import urllib3
+import uuid
 import zipfile
 from typing import Dict, Optional, List, Sequence
 from datetime import datetime
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
+from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.path_mapping import PathMappingService
 from app.schemas.torrent_backup import (
@@ -158,6 +160,14 @@ async def create_backup(
 
             # 判断备份方式
             if backup_request.source_file_path:
+                # 后缀闸门（用户可控路径）：仅接受 .torrent 种子文件；
+                # 内容级校验（bencode+info 字典）由 core 层统一收口
+                if not backup_request.source_file_path.lower().endswith(".torrent"):
+                    return CommonResponse(
+                        status="error",
+                        msg="source_file_path 仅接受 .torrent 种子文件",
+                        code="400",
+                    )
                 # 从路径备份
                 result_data = await manager.backup_torrent_from_path(
                     info_hash=backup_request.info_hash,
@@ -693,14 +703,19 @@ async def import_backups(
         async with AsyncSessionLocal() as db:
             manager = TorrentFileBackupManagerService(db=db)
 
-            # 临时保存目录
-            temp_dir = Path("data/temp_imports")
-            temp_dir.mkdir(parents=True, exist_ok=True)
+            # 临时保存目录：每请求独立子目录 + 文件名消毒。
+            # 安全：客户端 filename 可携带 ../..（multipart 库原样保留），
+            # 直接拼接会写出 temp_imports 之外的任意路径；sanitize 剥离
+            # 路径分隔符与控制字符。每请求子目录同时消除并发导入的
+            # 重名覆盖与 rmtree 竞态（历史实现会删掉整个共享目录）。
+            request_dir = Path("data/temp_imports") / uuid.uuid4().hex
+            request_dir.mkdir(parents=True, exist_ok=True)
 
             for file in files:
                 try:
-                    # 保存临时文件
-                    temp_file_path = temp_dir / file.filename
+                    # 保存临时文件（文件名消毒 + 截断，防越界写入与超长路径）
+                    safe_name = FilenameUtils.sanitize_filename(file.filename or "unnamed")[:200]
+                    temp_file_path = request_dir / safe_name
                     with open(temp_file_path, "wb") as buffer:
                         shutil.copyfileobj(file.file, buffer)
 
@@ -767,8 +782,8 @@ async def import_backups(
                     failed_count += 1
                     failed_items.append({"filename": file.filename, "reason": str(e)})
 
-            # 清理临时目录
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            # 清理本请求的临时子目录（不影响并发请求）
+            shutil.rmtree(request_dir, ignore_errors=True)
 
             message = f"导入完成：成功{success_count}个，失败{failed_count}个"
             return CommonResponse(

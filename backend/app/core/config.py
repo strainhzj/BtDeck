@@ -81,9 +81,13 @@ class Settings(BaseSettings):
     NGINX_PORT: int = 5000
 
     # 运行模式
-    DEBUG: bool = True
+    # DEBUG/DB_ECHO 默认关闭（安全修复 W11）：DEBUG 开启会把完整 traceback
+    # （绝对路径/源码行）写入 500 响应体；DEV 保持默认 True 以兼容
+    # 桌面/frozen 发行版（DEV=False 会触发 SECRET_KEY/ALLOWED_HOSTS 强制校验，
+    # 发行版无环境变量注入机制，直接拒绝启动）
+    DEBUG: bool = False
     DEV: bool = True
-    DB_ECHO: bool = True
+    DB_ECHO: bool = False
     # 日志级别：DEBUG/INFO/WARNING/ERROR（docker-compose 已声明 LOG_LEVEL 环境变量，
     # 由 BaseSettings 自动消费并传给 uvicorn；默认 INFO）
     LOG_LEVEL: str = "INFO"
@@ -286,6 +290,17 @@ class Settings(BaseSettings):
                 print(f"[WARN] 无法创建配置目录 {self.CONFIG_PATH}: {e}")
                 print("[WARN] 请确保运行用户对该目录有写权限")
 
+    @validator("SECRET_KEY", pre=True)
+    def _empty_secret_key_to_default(cls, value):
+        """compose 传 ${SECRET_KEY:-} 展开为空串时，回退随机生成密钥。
+
+        空串密钥会让 JWT 签名使用可预测空密钥（严重），必须归一化。
+        生产校验（_validate_security_config）仍按环境变量层面拒绝空值。
+        """
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return _default_secret_key()
+        return value
+
     @validator("ALLOWED_HOSTS", pre=True)
     def _parse_allowed_hosts(cls, value):
         """允许环境变量使用 JSON 数组或逗号分隔字符串配置 CORS 来源。"""
@@ -300,6 +315,7 @@ class Settings(BaseSettings):
 
     def _validate_security_config(self):
         """启动期安全校验：生产环境拒绝隐式密钥和通配 CORS。"""
+        # SECRET_KEY 显式传了空串（如 compose 的 ${SECRET_KEY:-}）视为未设置
         if not self.DEV and not os.getenv("SECRET_KEY"):
             raise RuntimeError("生产环境必须通过 SECRET_KEY 环境变量显式配置 JWT 密钥")
 

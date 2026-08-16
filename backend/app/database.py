@@ -175,11 +175,24 @@ def init_db():
                 username="admin",
                 password=hashed_password,
                 is_active=True,
+                # 首次登录强制改密（安全修复 W9）：默认口令不得长期留存
+                must_change_password=True,
                 two_factor_secret=twofactor_secret,
             )
             db.add(admin_user)
             logger.info("Default admin user created")
-            print("Default admin user created (username: admin, password: admin)")
+            print("Default admin user created (username: admin, initial password must be changed at first login)")
+        elif not getattr(admin_exists, "must_change_password", False):
+            # 存量部署升级路径：admin 仍在使用默认口令 → 标记强制改密
+            # （幂等：一旦改密或已标记则不再触发）
+            from app.auth.security import verify_password
+
+            try:
+                if verify_password("admin", admin_exists.password):
+                    admin_exists.must_change_password = True
+                    logger.warning("检测到 admin 仍使用默认密码，已标记强制改密")
+            except Exception as e:
+                logger.warning(f"默认口令检测失败（跳过强制改密标记）: {e}")
 
         # 添加默认配置
         cookie_expire_config = db.query(Config).filter(Config.key == "cookie_expire_minutes").first()

@@ -10,7 +10,7 @@ from app.core.config import settings
 from app.core.database_result import DatabaseError
 from app.database import get_db
 from app.tasks.cron_crud import CronTaskCRUD, TaskLogsCRUD
-from app.tasks.cron_executor import cron_executor
+from app.tasks.cron_executor import cron_executor, is_internal_class_executor_allowed
 
 router = APIRouter()
 
@@ -219,14 +219,51 @@ def _validate_task_type_allowed(task_type: int) -> Optional[CommonResponse]:
     return CommonResponse(status="error", msg=f"不支持的任务类型: {task_type}", code="400", data=None)
 
 
+def _type4_executor_error(executor: str) -> CommonResponse:
+    return CommonResponse(
+        status="error",
+        msg=(
+            "task_type=4 的 executor 仅允许 app.tasks. 命名空间下的内置类路径"
+            "（如 app.tasks.scheduler.downloader_cache_sync.CachedDownloaderSyncTask）"
+        ),
+        code="400",
+        data=None,
+    )
+
+
+def _validate_type4_executor(task_type: int, executor: Optional[str]) -> Optional[CommonResponse]:
+    """task_type=4 的 executor 白名单校验（与执行层 is_internal_class_executor_allowed 同一策略）。
+
+    仅对 task_type=4 生效——type 5/6 的 executor 是 JSON 配置，不能按类路径校验。
+    """
+    if task_type != 4 or executor is None:
+        return None
+    if not is_internal_class_executor_allowed(executor.strip()):
+        return _type4_executor_error(executor)
+    return None
+
+
 def _validate_update_task_type(db: Session, task_id: int, task_data: CronTaskUpdate) -> Optional[CommonResponse]:
     """更新时按目标任务类型校验，防止绕过创建接口修改脚本任务。"""
     if task_data.task_type is not None:
-        return _validate_task_type_allowed(task_data.task_type)
+        type_error = _validate_task_type_allowed(task_data.task_type)
+        if type_error:
+            return type_error
+        executor_error = _validate_type4_executor(task_data.task_type, getattr(task_data, "executor", None))
+        if executor_error:
+            return executor_error
+        return None
 
     existing_result = CronTaskCRUD.get_cron_task_by_id(db, task_id)
     if existing_result.success and existing_result.data:
-        return _validate_task_type_allowed(existing_result.data.get("task_type"))
+        existing_type = existing_result.data.get("task_type")
+        type_error = _validate_task_type_allowed(existing_type)
+        if type_error:
+            return type_error
+        # 类型未变更但 executor 被改写：按存量类型校验新 executor
+        executor_error = _validate_type4_executor(existing_type, getattr(task_data, "executor", None))
+        if executor_error:
+            return executor_error
     return None
 
 
@@ -452,6 +489,9 @@ async def create_cron_task(
     task_type_error = _validate_task_type_allowed(task_data.task_type)
     if task_type_error:
         return task_type_error
+    executor_error = _validate_type4_executor(task_data.task_type, task_data.executor)
+    if executor_error:
+        return executor_error
 
     try:
         result = CronTaskCRUD.create_cron_task(db, {**task_data.model_dump(), "create_by": "admin"})
@@ -921,6 +961,24 @@ async def validate_python_class(
 ):
     """验证Python类路径"""
     # 认证已迁移至 require_authenticated_user 依赖
+
+    # 安全闸门：与执行层同一白名单策略，非 app.tasks. 命名空间的类路径
+    # 不进入 importlib 验证（该服务自身就是任意模块导入面）。
+    if not is_internal_class_executor_allowed(validation_data.class_path.strip()):
+        return CommonResponse(
+            status="success",
+            msg="Python类路径验证完成",
+            code="200",
+            data={
+                "valid": False,
+                "exists": False,
+                "classInfo": None,
+                "message": (
+                    "类路径不在允许范围内：task_type=4 仅允许 app.tasks. 命名空间下的内置类路径"
+                    "（如 app.tasks.scheduler.downloader_cache_sync.CachedDownloaderSyncTask）"
+                ),
+            },
+        )
 
     try:
         # 导入Python类验证服务

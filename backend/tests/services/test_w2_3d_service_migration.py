@@ -28,6 +28,10 @@ from app.services.reannounce_service import BATCH_SIZE
 from app.services.recycle_bin_service import RecycleBinService
 from app.services.seed_transfer_service import SeedTransferService
 
+# 服务层 info_hash 格式闸门（安全修复 W4）：测试统一使用合法 40 位 hex
+VALID_HASH = "a" * 40
+
+
 import app.services.reannounce_service as reannounce_service
 import app.services.recycle_bin_service as recycle_bin_service
 import app.services.seed_transfer_service as seed_transfer_service
@@ -448,7 +452,7 @@ class TestSeedTransferMigration:
                 downloader_id=2,
                 target_client=target_client,
                 downloader_type=0,
-                info_hash="h",
+                info_hash=VALID_HASH,
                 max_retries=1,
                 retry_interval=0,
             )
@@ -456,7 +460,7 @@ class TestSeedTransferMigration:
         assert ok is True
         mock_call.assert_awaited_once()
         _assert_interactive_call(mock_call.await_args, target_client.torrents_info, 2)
-        assert mock_call.await_args.kwargs["kwargs"] == {"torrent_hashes": "h"}
+        assert mock_call.await_args.kwargs["kwargs"] == {"torrent_hashes": VALID_HASH}
         assert mock_call.await_args.kwargs["operation"] == "transfer_qb_verify"
 
     @pytest.mark.asyncio
@@ -473,7 +477,7 @@ class TestSeedTransferMigration:
                 downloader_id=2,
                 target_client=target_client,
                 downloader_type=1,
-                info_hash="h",
+                info_hash=VALID_HASH,
                 max_retries=1,
                 retry_interval=0,
             )
@@ -481,7 +485,7 @@ class TestSeedTransferMigration:
         assert ok is True
         mock_call.assert_awaited_once()
         _assert_interactive_call(mock_call.await_args, target_client.get_torrents, 2)
-        assert mock_call.await_args.kwargs["args"] == ("h",)
+        assert mock_call.await_args.kwargs["args"] == (VALID_HASH,)
         assert mock_call.await_args.kwargs["operation"] == "transfer_tr_verify"
 
     @pytest.mark.asyncio
@@ -499,7 +503,7 @@ class TestSeedTransferMigration:
                 downloader_id=2,
                 target_client=target_client,
                 downloader_type=0,
-                info_hash="h",
+                info_hash=VALID_HASH,
                 max_retries=2,
                 retry_interval=0,
             )
@@ -518,13 +522,13 @@ class TestSeedTransferMigration:
 
         with patch.object(seed_transfer_service, "call_downloader_api", new=AsyncMock(return_value=None)) as mock_call:
             ok = await service._delete_source_torrent(
-                downloader_id=1, source_client=source_client, downloader_type=0, info_hash="h", delete_files=False
+                downloader_id=1, source_client=source_client, downloader_type=0, info_hash=VALID_HASH, delete_files=False
             )
 
         assert ok is True
         mock_call.assert_awaited_once()
         _assert_interactive_call(mock_call.await_args, source_client.torrents_delete, 1)
-        assert mock_call.await_args.kwargs["kwargs"] == {"delete_files": False, "torrent_hashes": "h"}
+        assert mock_call.await_args.kwargs["kwargs"] == {"delete_files": False, "torrent_hashes": VALID_HASH}
         assert mock_call.await_args.kwargs["operation"] == "transfer_qb_delete_source"
 
     @pytest.mark.asyncio
@@ -535,13 +539,13 @@ class TestSeedTransferMigration:
 
         with patch.object(seed_transfer_service, "call_downloader_api", new=AsyncMock(return_value=None)) as mock_call:
             ok = await service._delete_source_torrent(
-                downloader_id=1, source_client=source_client, downloader_type=1, info_hash="h", delete_files=True
+                downloader_id=1, source_client=source_client, downloader_type=1, info_hash=VALID_HASH, delete_files=True
             )
 
         assert ok is True
         mock_call.assert_awaited_once()
         _assert_interactive_call(mock_call.await_args, source_client.remove_torrent, 1)
-        assert mock_call.await_args.kwargs["kwargs"] == {"delete_data": True, "ids": "h"}
+        assert mock_call.await_args.kwargs["kwargs"] == {"delete_data": True, "ids": VALID_HASH}
         assert mock_call.await_args.kwargs["operation"] == "transfer_tr_delete_source"
 
     @pytest.mark.asyncio
@@ -556,7 +560,7 @@ class TestSeedTransferMigration:
             new=AsyncMock(side_effect=asyncio.TimeoutError()),
         ) as mock_call:
             ok = await service._delete_source_torrent(
-                downloader_id=1, source_client=source_client, downloader_type=0, info_hash="h", delete_files=False
+                downloader_id=1, source_client=source_client, downloader_type=0, info_hash=VALID_HASH, delete_files=False
             )
 
         assert ok is False
@@ -610,7 +614,7 @@ class TestSeedTransferMigration:
                     result = await service.transfer_seed(
                         source_downloader_id=1,
                         target_downloader_id=2,
-                        info_hash="h",
+                        info_hash=VALID_HASH,
                         target_path="/dst/path",
                         delete_source=True,
                         user_id=1,
@@ -669,7 +673,7 @@ class TestSeedTransferMigration:
                 result = await service.transfer_seed(
                     source_downloader_id=1,
                     target_downloader_id=2,
-                    info_hash="h",
+                    info_hash=VALID_HASH,
                     target_path="/dst/path",
                     delete_source=False,
                     user_id=1,

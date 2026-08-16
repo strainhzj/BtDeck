@@ -37,6 +37,16 @@ os.environ["CONFIG_DIR"] = str(_TEST_RUNTIME_ROOT)
 os.environ["DATABASE_PATH"] = str(_TEST_DATABASE_PATH)
 os.environ.setdefault("SECRET_KEY", "btdeck-pytest-isolated-secret")
 
+# 测试隔离的 SM4 密钥：在测试运行时目录生成固定密钥的 config.yaml，
+# 使真实 get_sm4_encryption() 单例在测试进程内可用（encrypt 已 fail-closed，
+# 无密钥会正确抛错——下载器加密相关测试需要确定性密钥而非报错）。
+_TEST_CONFIG_PATH = _TEST_RUNTIME_ROOT / "config.yaml"
+if not _TEST_CONFIG_PATH.exists():
+    _TEST_CONFIG_PATH.write_text(
+        "app:\n  name: BtDeck-test\nsecurity:\n  secret_key: pytestsm4testkey\n  login_status_secret: pytestloginsecret\n",
+        encoding="utf-8",
+    )
+
 import pytest
 from unittest.mock import MagicMock, patch
 

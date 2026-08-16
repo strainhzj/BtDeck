@@ -353,3 +353,125 @@ class TestUpdateEndpointSecurity:
         db_session.expire_all()
         updated = db_session.query(CronTask).get(task.task_id)
         assert updated.task_name == "新名字", "更新后 task_name 须真正落库"
+
+
+# ==================== 组4：task_type=4 executor 白名单 ====================
+# 安全背景：历史实现中 type=4 的 executor 解析失败会回落到 exec() 任意代码执行
+# （认证后 RCE）。修复后 API/执行/加载三层均要求 executor 为
+# app.tasks. 命名空间下的严格类路径。
+
+
+class TestType4ExecutorWhitelist:
+    """_validate_type4_executor 纯函数 + is_internal_class_executor_allowed 白名单。"""
+
+    @pytest.mark.parametrize(
+        "evil_executor",
+        [
+            '__import__("os").system("echo pwned")',  # 动态导入 payload（含括号）
+            'os.system("echo pwned")',  # 非白名单前缀
+            "print(1)",  # 纯代码无点号
+            "import os",  # import 语句
+            "app.tasks;os.system",  # 分号注入
+            "C:/Windows/evil",  # 路径分隔符
+            "app.tasksevil.Evil",  # 前缀伪造（app.tasksevil 不以 app.tasks. 开头）
+            "evils.app.tasks.Evil",  # 后缀伪造
+            "..\/..\/evil",  # 穿越字符串
+            "",  # 空
+        ],
+    )
+    def test_evil_executors_rejected(self, evil_executor):
+        from app.api.endpoints.cron_tasks import _validate_type4_executor
+        from app.tasks.cron_executor import is_internal_class_executor_allowed
+
+        assert is_internal_class_executor_allowed(evil_executor) is False
+        resp = _validate_type4_executor(4, evil_executor)
+        assert resp is not None and resp.code == "400"
+
+    def test_builtin_class_path_allowed(self):
+        from app.api.endpoints.cron_tasks import _validate_type4_executor
+        from app.tasks.cron_executor import is_internal_class_executor_allowed
+
+        ok = "app.tasks.scheduler.downloader_cache_sync.CachedDownloaderSyncTask"
+        assert is_internal_class_executor_allowed(ok) is True
+        assert _validate_type4_executor(4, ok) is None
+
+    def test_type56_executor_not_validated(self):
+        """type 5/6 的 executor 是 JSON 配置，不做类路径校验（正则不适用）。"""
+        from app.api.endpoints.cron_tasks import _validate_type4_executor
+
+        assert _validate_type4_executor(5, '{"cleanup_level_3": true}') is None
+        assert _validate_type4_executor(6, '{"days": 30}') is None
+
+    def test_none_executor_allowed_for_update_partial(self):
+        """更新请求不带 executor 字段时不校验（CronTaskUpdate.executor 可选）。"""
+        from app.api.endpoints.cron_tasks import _validate_type4_executor
+
+        assert _validate_type4_executor(4, None) is None
+
+
+class TestAddEndpointExecutorGate:
+    """POST /add 端点：type=4 恶意 executor 在写库前被拒。"""
+
+    def test_add_type4_evil_executor_returns_400(self, db_session, client_factory):
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
+            c = client_factory()
+            r = c.post(
+                URL_ADD,
+                json=_make_body(
+                    task_type=4,
+                    task_code="evil_exec",
+                    executor='__import__("os").system("echo pwned")',
+                ),
+            )
+        assert r.json()["code"] == "400"
+        assert db_session.query(CronTask).filter_by(task_code="evil_exec").first() is None
+
+    def test_add_type4_builtin_executor_succeeds(self, db_session, client_factory):
+        with patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False):
+            c = client_factory()
+            r = c.post(
+                URL_ADD,
+                json=_make_body(
+                    task_type=4,
+                    task_code="builtin_exec",
+                    executor="app.tasks.scheduler.downloader_cache_sync.CachedDownloaderSyncTask",
+                ),
+            )
+        assert r.json()["code"] == "200"
+        task = db_session.query(CronTask).filter_by(task_code="builtin_exec").first()
+        assert task is not None
+
+
+class TestUpdateEndpointExecutorGate:
+    """PUT /{task_id}：类型保持 4 但 executor 改写为恶意串 → 拒绝。"""
+
+    def test_update_swap_executor_to_evil_blocked(self, db_session, client_factory):
+        from unittest.mock import AsyncMock
+        from app.api.endpoints import cron_tasks as cron_module
+
+        task = _make_cron_task(db_session, task_type=4, task_code="swap_me")
+        with (
+            patch.object(settings, "BTDECK_ALLOW_CUSTOM_SCRIPTS", False),
+            patch.object(cron_module.cron_executor, "refresh_task", AsyncMock(return_value=True)),
+        ):
+            c = client_factory()
+            r = c.put(URL_UPDATE.format(task_id=task.task_id), json={"executor": 'os.system("evil")'})
+        assert r.json()["code"] == "400"
+        db_session.expire_all()
+        updated = db_session.query(CronTask).get(task.task_id)
+        assert updated.executor != 'os.system("evil")', "恶意 executor 不得落库"
+
+
+class TestPythonClassValidationEndpointGate:
+    """/validation/python-class：非白名单路径不进入 importlib。"""
+
+    def test_validation_rejects_non_whitelisted_path(self, db_session, client_factory):
+        c = client_factory()
+        r = c.post(
+            "/api/v1/cronTasks/validation/python-class",
+            json={"class_path": "os.path"},
+        )
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["data"]["valid"] is False
+        assert "app.tasks." in body["data"]["message"]

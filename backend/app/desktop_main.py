@@ -8,7 +8,12 @@ import uvicorn
 import webview
 from uvicorn import Config
 
-os.environ.setdefault("DEV", "false")
+# 桌面版启动语义（安全修复 W11）：
+# 历史实现 setdefault("DEV","false") 但未提供 SECRET_KEY——DEV=false 触发
+# _validate_security_config 的强制校验，该入口启动即 RuntimeError。
+# 桌面版无环境变量注入机制，JWT 密钥由 config.py 的随机生成兜底；
+# 生产安全加固（显式 SECRET_KEY/ALLOWED_HOSTS/DEV=false）留给外层部署
+# （systemd 单元已按此模式配置，见 deploy/btdeck.service）。
 os.environ.setdefault("ALLOWED_HOSTS", '["http://127.0.0.1:5001", "http://localhost:5001"]')
 
 from app.core.config import settings

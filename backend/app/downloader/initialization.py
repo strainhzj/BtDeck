@@ -2002,3 +2002,55 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
 
         traceback.print_exc()
         return {}
+
+
+def encrypt_plaintext_downloader_passwords() -> int:
+    """启动期幂等加密钩子：把 bt_downloaders 中遗留的明文密码加密回写。
+
+    背景：add 端点历史缺陷明文落库（update 却加密），decrypt 对非 sm4:
+    前缀静默透传使明文/密文混存不可见。本钩子在每次启动时把非空且非
+    sm4:/encrypted: 前缀的密码行用当前密钥加密——密钥轮换后用户重录的
+    明文也会在下次启动自动加密（自愈闭环）。
+
+    密钥不可用时跳过并告警，绝不阻塞启动（可用性优先，新写入路径已
+    fail-closed 不会产生新的明文）。
+
+    Returns:
+        本次加密的行数
+    """
+    from app.downloader.models import BtDownloaders
+    from app.utils.encryption import encrypt_password
+
+    encrypted_count = 0
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(BtDownloaders)
+            .filter(BtDownloaders.password.isnot(None))
+            .filter(BtDownloaders.password != "")
+            .all()
+        )
+        for row in rows:
+            password = row.password or ""
+            if password.startswith(("sm4:", "encrypted:")):
+                continue
+            try:
+                row.password = encrypt_password(password)
+                encrypted_count += 1
+            except RuntimeError:
+                # 密钥缺失/长度非法：整体跳过（每行都会同样失败），下次启动重试
+                logger.warning("SM4 密钥不可用，跳过明文下载器密码加密（下次启动重试）")
+                db.rollback()
+                return 0
+        if encrypted_count:
+            db.commit()
+            logger.info(f"启动钩子：已加密 {encrypted_count} 条明文下载器密码")
+    except Exception as e:
+        logger.warning(f"明文下载器密码加密钩子未完成（下次启动重试）: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+    return encrypted_count

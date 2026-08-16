@@ -1,5 +1,7 @@
 import asyncio
+import inspect
 import logging
+import re
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -8,6 +10,7 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from sqlalchemy import text
 
+from app.core.config import settings
 from app.tasks.cron_crud_async import AsyncCronTaskCRUD, AsyncTaskLogsCRUD
 from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
@@ -23,6 +26,30 @@ from app.models import (
 import json
 
 logger = logging.getLogger(__name__)
+
+# =============================================================================
+# 安全白名单：task_type=4 的 executor 只允许第一方任务命名空间下的类路径
+# =============================================================================
+# 严格类路径格式（模块段+类名，各段均为合法标识符），杜绝任意代码/表达式字符串
+_INTERNAL_CLASS_PATH_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)+$")
+# 仅允许第一方任务命名空间（系统内置定时任务全部位于 app.tasks.scheduler.*），
+# 阻断标准库/第三方模块的任意导入
+_INTERNAL_CLASS_MODULE_PREFIX = "app.tasks."
+
+
+def is_internal_class_executor_allowed(executor: str) -> bool:
+    """校验 task_type=4 的 executor 是否为允许的内置类路径。
+
+    规则：严格类路径格式 + 模块必须位于 app.tasks. 命名空间。
+    历史 exec 回落路径已删除，任何不符合本规则的 executor 一律拒绝执行。
+    """
+    if not executor:
+        return False
+    if not _INTERNAL_CLASS_PATH_PATTERN.match(executor):
+        return False
+    module_path = executor.rsplit(".", 1)[0]
+    return module_path.startswith(_INTERNAL_CLASS_MODULE_PREFIX)
+
 
 # =============================================================================
 # W3-4 / P1-05：六态 outcome 与跳过原因机器码（与 app.models 统一枚举对齐）
@@ -148,14 +175,68 @@ class CronTaskExecutor:
 
                 if result.success:
                     tasks = result.data
+                    rejected: list = []
                     for task in tasks:
-                        await self.add_task_to_scheduler(task)
-                    logger.info(f"成功加载 {len(tasks)} 个定时任务")
+                        if self._is_task_allowed_by_policy(task):
+                            await self.add_task_to_scheduler(task)
+                        else:
+                            rejected.append(task)
+                    logger.info(f"成功加载 {len(tasks) - len(rejected)} 个定时任务")
+                    if rejected:
+                        await self._notify_policy_rejected_tasks(db, rejected)
                 else:
                     logger.error(f"加载定时任务失败: {result.message}")
 
         except Exception as e:
             logger.error(f"加载定时任务时发生错误: {str(e)}")
+
+    @staticmethod
+    def _is_task_allowed_by_policy(task: Dict[str, Any]) -> bool:
+        """加载期安全策略检查。
+
+        0-3 脚本类型受 BTDECK_ALLOW_CUSTOM_SCRIPTS 开关管控（默认关闭）；
+        4 仅允许 app.tasks. 命名空间下的内置类路径。
+        执行层（_run_task_script）有同一策略的二次校验作为兜底。
+        """
+        task_type = task.get("task_type")
+        if task_type in (0, 1, 2, 3):
+            return bool(settings.BTDECK_ALLOW_CUSTOM_SCRIPTS)
+        if task_type == 4:
+            return is_internal_class_executor_allowed(str(task.get("executor") or ""))
+        return True
+
+    async def _notify_policy_rejected_tasks(self, db, rejected: list) -> None:
+        """安全策略拒绝加载的任务：告警日志 + 系统通知（dedupe 防重复打扰）。
+
+        不自动改写任务的 enabled 状态（避免启动期静默篡改用户数据），
+        由通知引导用户到任务页自行修正或删除；执行层闸门保证该任务
+        即使被手动"立即启动"也不会执行。
+        """
+        try:
+            from app.services.notification_service import NotificationService
+
+            service = NotificationService(db)
+            for task in rejected:
+                task_id = task.get("task_id")
+                name = task.get("task_name") or task_id
+                logger.warning(
+                    f"定时任务 '{name}'(ID:{task_id}) 因安全策略被拒绝加载"
+                    f"(task_type={task.get('task_type')})，请在任务页修正或删除"
+                )
+                await service.create_notification(
+                    type="system",
+                    title="定时任务被安全策略拦截",
+                    content=(
+                        f"任务「{name}」(ID: {task_id}) 不符合执行安全策略："
+                        "task_type=4 仅允许 app.tasks. 命名空间下的内置类路径，"
+                        "脚本类型(0-3)需开启 BTDECK_ALLOW_CUSTOM_SCRIPTS。"
+                        "该任务已停止调度，请在任务页修正或删除。"
+                    ),
+                    priority="warning",
+                    dedupe_key=f"cron_policy_blocked:{task_id}",
+                )
+        except Exception as e:
+            logger.error(f"写入定时任务安全拦截通知失败: {str(e)}")
 
     async def add_task_to_scheduler(self, task: Dict[str, Any]) -> bool:
         """添加任务到调度器"""
@@ -373,6 +454,24 @@ class CronTaskExecutor:
         task_type = task["task_type"]
         executor = task["executor"]
 
+        # 执行层统一安全闸门：无论任务来自调度器还是"立即启动"（start_task_immediately
+        # 不经过 load_all_tasks 的加载期检查），都在此二次校验。
+        # 0-3 脚本类型受 BTDECK_ALLOW_CUSTOM_SCRIPTS 开关管控（默认关闭）；
+        # 4 仅允许 app.tasks. 命名空间下的内置类路径（杜绝 exec 回落的任意代码执行）。
+        if task_type in (0, 1, 2, 3) and not settings.BTDECK_ALLOW_CUSTOM_SCRIPTS:
+            return {
+                "success": False,
+                "log_detail": "自定义脚本任务已被安全策略禁用（BTDECK_ALLOW_CUSTOM_SCRIPTS=False），本次执行被拒绝",
+            }
+        if task_type == 4 and not is_internal_class_executor_allowed(str(executor or "")):
+            return {
+                "success": False,
+                "log_detail": (
+                    "executor 不是允许的内置类路径（须为 app.tasks. 命名空间下的类路径），"
+                    f"已拒绝执行: {str(executor)[:80]}"
+                ),
+            }
+
         try:
             if task_type == 0:  # Shell脚本
                 return await self._run_shell_script(executor)
@@ -560,157 +659,96 @@ class CronTaskExecutor:
                 logger.debug("内部类不接受标准 Cron 执行上下文", exc_info=True)
 
         try:
-            # 检查是否是类路径格式（包含点号）
-            if "." in executor_code and not executor_code.strip().startswith(
-                ("import", "def", "print", "await", "time", "async")
-            ):
-                # 尝试作为类路径执行
+            # 安全闸门（与 _run_task_script 同一策略的双保险）：type=4 仅允许
+            # 第一方任务命名空间下的严格类路径，拒绝任意代码与任意模块导入。
+            if not is_internal_class_executor_allowed(executor_code):
+                return {
+                    "success": False,
+                    "log_detail": (
+                        "executor 不是允许的内置类路径（须为 app.tasks. 命名空间下的类路径），"
+                        f"已拒绝执行: {executor_code[:80]}"
+                    ),
+                }
+
+            # 尝试作为类路径执行
+            try:
+                module_path, class_name = executor_code.rsplit(".", 1)
+                module = __import__(module_path, fromlist=[class_name])
+                task_class = getattr(module, class_name)
+
+                if not inspect.isclass(task_class):
+                    return {"success": False, "log_detail": f"executor 解析目标不是类: {class_name}"}
+
+                # ✅ 修复：尝试在初始化时传递 app 实例
+                task_instance = None
                 try:
-                    module_path, class_name = executor_code.rsplit(".", 1)
-                    module = __import__(module_path, fromlist=[class_name])
-                    task_class = getattr(module, class_name)
+                    # 尝试通过 __init__ 参数传递 app
+                    task_instance = task_class(app=self.app)
+                except TypeError:
+                    # 如果 __init__ 不接受 app 参数，使用 set_app 方法
+                    task_instance = task_class()
+                    if hasattr(task_instance, "set_app"):
+                        task_instance.set_app(self.app)
 
-                    # ✅ 修复：尝试在初始化时传递 app 实例
-                    task_instance = None
-                    try:
-                        # 尝试通过 __init__ 参数传递 app
-                        task_instance = task_class(app=self.app)
-                    except TypeError:
-                        # 如果 __init__ 不接受 app 参数，使用 set_app 方法
-                        task_instance = task_class()
-                        if hasattr(task_instance, "set_app"):
-                            task_instance.set_app(self.app)
+                attach_execution_context(task_instance)
 
-                    attach_execution_context(task_instance)
+                # 检查是否有execute方法
+                if hasattr(task_instance, "execute"):
+                    execute_method = task_instance.execute
 
-                    # 检查是否有execute方法
-                    if hasattr(task_instance, "execute"):
-                        execute_method = task_instance.execute
+                    # ★ 资源治理：重型任务用 task_scope 包裹 execute()，
+                    # admitted=False 时直接返回 skipped，不调 execute。
+                    if profile is not None:
+                        async with admission_controller.task_scope(task_code, profile) as admission_result:
+                            if not admission_result.admitted:
+                                skip_msg = (
+                                    f"[ADMISSION_SKIP] Python内部类被资源治理跳过: "
+                                    f"task_code={task_code}, "
+                                    f"reason={admission_result.skip_reason}, "
+                                    f"wait={admission_result.wait_seconds:.3f}s, "
+                                    f"running={admission_result.running_count}, "
+                                    f"queued={admission_result.queued_count}"
+                                )
+                                logger.info(skip_msg)
+                                # skipped=True 区分资源治理跳过 vs 真执行失败：
+                                # _execute_task 据此把 success 记为 True（避免误判故障/告警），
+                                # log_detail 含 [ADMISSION_SKIP] 机器可解析标记便于运维 grep；
+                                # outcome/skip_reason（W3-4）随结果 dict 落库为
+                                # skipped + resource_busy（资源准入冲突的稳定机器码）。
+                                return {
+                                    "success": True,
+                                    "skipped": True,
+                                    "outcome": OUTCOME_SKIPPED,
+                                    "skip_reason": SKIP_REASON_RESOURCE_BUSY,
+                                    "log_detail": skip_msg,
+                                }
 
-                        # ★ 资源治理：重型任务用 task_scope 包裹 execute()，
-                        # admitted=False 时直接返回 skipped，不调 execute。
-                        if profile is not None:
-                            async with admission_controller.task_scope(task_code, profile) as admission_result:
-                                if not admission_result.admitted:
-                                    skip_msg = (
-                                        f"[ADMISSION_SKIP] Python内部类被资源治理跳过: "
-                                        f"task_code={task_code}, "
-                                        f"reason={admission_result.skip_reason}, "
-                                        f"wait={admission_result.wait_seconds:.3f}s, "
-                                        f"running={admission_result.running_count}, "
-                                        f"queued={admission_result.queued_count}"
-                                    )
-                                    logger.info(skip_msg)
-                                    # skipped=True 区分资源治理跳过 vs 真执行失败：
-                                    # _execute_task 据此把 success 记为 True（避免误判故障/告警），
-                                    # log_detail 含 [ADMISSION_SKIP] 机器可解析标记便于运维 grep；
-                                    # outcome/skip_reason（W3-4）随结果 dict 落库为
-                                    # skipped + resource_busy（资源准入冲突的稳定机器码）。
-                                    return {
-                                        "success": True,
-                                        "skipped": True,
-                                        "outcome": OUTCOME_SKIPPED,
-                                        "skip_reason": SKIP_REASON_RESOURCE_BUSY,
-                                        "log_detail": skip_msg,
-                                    }
-
-                                # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
-                                if asyncio.iscoroutinefunction(execute_method):
-                                    result = await execute_method(app=self.app)
-                                else:
-                                    result = execute_method(app=self.app)
-                                return normalize_internal_result(result)
-                        else:
-                            # 轻量任务：不进入资源背压，走原路径
+                            # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
                             if asyncio.iscoroutinefunction(execute_method):
                                 result = await execute_method(app=self.app)
                             else:
                                 result = execute_method(app=self.app)
                             return normalize_internal_result(result)
                     else:
-                        return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}
+                        # 轻量任务：不进入资源背压，走原路径
+                        if asyncio.iscoroutinefunction(execute_method):
+                            result = await execute_method(app=self.app)
+                        else:
+                            result = execute_method(app=self.app)
+                        return normalize_internal_result(result)
+                else:
+                    return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}
 
-                except (ImportError, AttributeError) as e:
-                    # 如果不是有效的类路径，则作为代码执行
-                    logger.debug(f"无法作为类路径执行，转为代码执行: {str(e)}")
-
-            # 检查代码是否包含异步语法
-            has_await = "await" in executor_code
-            has_async_def = "async def" in executor_code
-
-            if has_await or has_async_def:
-                # 处理异步代码
-                return await self._execute_async_python_code(executor_code)
-            else:
-                # 处理同步代码 - ✅ 现在是异步函数
-                return await self._execute_sync_python_code(executor_code)
+            except (ImportError, AttributeError) as e:
+                # 类路径无法解析：按执行失败处理，绝不回落到任意代码执行
+                # （历史 exec 回落路径已删除——那等价于认证后 RCE）
+                return {
+                    "success": False,
+                    "log_detail": f"内置类路径解析失败，已拒绝执行: {executor_code[:80]} ({str(e)})",
+                }
 
         except Exception as e:
             return {"success": False, "log_detail": f"Python内部类执行异常: {str(e)}"}
-
-    async def _execute_async_python_code(self, code: str) -> Dict[str, Any]:
-        """执行异步Python代码"""
-        try:
-            # 创建一个包装的异步函数
-            wrapped_code = f"""
-import asyncio
-async def _async_exec_func():
-    try:
-{chr(10).join('        ' + line for line in code.split(chr(10)))}
-        return {{"success": True, "message": "异步代码执行成功"}}  # noqa: E272
-    except Exception as e:
-        return {{"success": False, "message": str(e)}}
-"""
-
-            # 创建执行环境
-            exec_globals = {
-                "__builtins__": __builtins__,
-                "datetime": datetime,
-                "asyncio": asyncio,
-                "time": __import__("time"),
-            }
-
-            # 执行包装代码
-            exec(wrapped_code, exec_globals)
-
-            # 获取并执行异步函数
-            async_func = exec_globals["_async_exec_func"]
-            result = await async_func()
-
-            if result["success"]:
-                return {"success": True, "log_detail": f"异步Python代码执行成功\n执行代码: {code}"}
-            else:
-                return {"success": False, "log_detail": f"异步代码执行失败: {result['message']}"}
-
-        except Exception as e:
-            return {"success": False, "log_detail": f"异步Python代码执行异常: {str(e)}"}
-
-    async def _execute_sync_python_code(self, code: str) -> Dict[str, Any]:
-        """
-        执行同步Python代码 - 使用线程池避免阻塞事件循环
-
-        ✅ 修复：在线程池中执行同步代码，避免阻塞事件循环
-        """
-        try:
-            loop = asyncio.get_event_loop()
-
-            # 定义在线程池中执行的函数
-            def exec_sync_code():
-                exec_globals = {
-                    "__builtins__": __builtins__,
-                    "datetime": datetime,
-                    "asyncio": asyncio,
-                    "time": __import__("time"),
-                }
-                exec(code, exec_globals)
-
-            # ✅ 在线程池中执行同步代码，避免阻塞事件循环
-            await loop.run_in_executor(None, exec_sync_code)
-
-            return {"success": True, "log_detail": f"同步Python代码执行成功\n执行代码: {code}"}
-
-        except Exception as e:
-            return {"success": False, "log_detail": f"同步Python代码执行异常: {str(e)}"}
 
     async def _update_task_status(self, task_id: int, status: int):
         """更新任务状态 - 使用异步数据库操作"""

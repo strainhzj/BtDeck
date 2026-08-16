@@ -33,7 +33,9 @@ def get_login_secret() -> str:
                 _config_cache_time = datetime.now()
         except Exception as e:
             logger.warning("从配置文件加载登录密钥失败: %s", e)
-            _cached_login_secret = "[REDACTED-SECRET]"
+            # fail-safe：配置丢失时生成一次性随机值（旧 token 全部失效需重新登录），
+            # 而不是历史硬编码常量（可预测、长期有效）
+            _cached_login_secret = secrets.token_hex(16)
 
     return _cached_login_secret
 
@@ -142,7 +144,9 @@ def verify_totp(secret: Optional[str], token: Optional[str]) -> bool:
         totp = pyotp.TOTP(str(secret))
         result = bool(totp.verify(str(token)))
         if not result:
-            logger.warning(f"TOTP验证失败: token={token}, secret前4位={str(secret)[:4] if secret else None}")
+            # 脱敏日志（安全修复 W10）：不打印验证码明文与 secret 片段，
+            # 避免日志渠道二次泄露（TOTP 可重放性依赖验证码保密）
+            logger.warning("TOTP验证失败")
         return result
     except Exception as e:
         logger.error(f"TOTP验证异常: {str(e)}")

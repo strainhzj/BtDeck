@@ -9,10 +9,12 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True)
-    password = Column(String)  # SM4加密后的密码
+    password = Column(String)  # bcrypt 哈希（存量旧格式为 AES-ECB 密文，登录时自动升级）
     two_factor_secret = Column(String, nullable=True)  # 2FA密钥
     two_factor_flag = Column(String, nullable=True)
     is_active = Column(Boolean, default=True)
+    # 首次登录/默认口令强制改密标志（安全修复 W9）
+    must_change_password = Column(Boolean, nullable=False, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

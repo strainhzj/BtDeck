@@ -52,9 +52,13 @@ def _mount_frontend_static(app: FastAPI) -> None:
             if path == "api" or path.startswith("api/"):
                 raise HTTPException(status_code=404, detail="API route not found")
 
-            file_path = frontend_path / path
-            if file_path.exists() and file_path.is_file():
-                return FileResponse(str(file_path))
+            # 路径包含校验：resolve 后必须仍位于前端目录内，否则回退 index.html。
+            # 覆盖 .. 穿越、URL 编码分隔符（%2e%2e/%5c）与绝对路径注入
+            # （pathlib 拼接遇绝对路径会整体替换基路径，resolve 后必然逃出目录被拒绝）。
+            frontend_root = frontend_path.resolve()
+            resolved = (frontend_path / path).resolve()
+            if resolved.is_relative_to(frontend_root) and resolved.is_file():
+                return FileResponse(str(resolved))
             return FileResponse(str(frontend_path / "index.html"))
 
     app.state.frontend_static_mounted = True
@@ -89,7 +93,16 @@ def create_app(configure_routes: bool = True) -> FastAPI:
     if "*" in settings.ALLOWED_HOSTS:
         raise RuntimeError("ALLOWED_HOSTS 不允许包含 '*'，请配置明确的前端来源")
 
-    _app = FastAPI(title=settings.PROJECT_NAME, openapi_url=f"{settings.API_V1_STR}/openapi.json", lifespan=lifespan)
+    # 生产模式（DEV=False）关闭 OpenAPI 文档面：/docs、/redoc、openapi.json
+    # 会暴露全部端点与参数结构，降低未认证侦察成本（安全修复 W11）
+    if settings.DEV:
+        _app = FastAPI(
+            title=settings.PROJECT_NAME,
+            openapi_url=f"{settings.API_V1_STR}/openapi.json",
+            lifespan=lifespan,
+        )
+    else:
+        _app = FastAPI(title=settings.PROJECT_NAME, docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
     # 配置 CORS 中间件
     _app.add_middleware(

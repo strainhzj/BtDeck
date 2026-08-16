@@ -16,6 +16,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from typing import Dict, Any, Optional
 from datetime import datetime
@@ -144,6 +145,13 @@ class SeedTransferService:
             "source_path": None,
             "target_path": target_path,
         }
+
+        # info_hash 服务层格式校验（防穿越读取）：部分请求 schema 只限长度
+        # 不限字符集，而 info_hash 会拼入本地种子文件路径
+        # （save_path / f"{info_hash}.torrent"），含 .. 等字符可读保存目录外文件。
+        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", info_hash or ""):
+            result["error_message"] = "info_hash 格式非法（须为 40/64 位十六进制），拒绝转移"
+            return result
 
         # 获取源和目标下载器信息
         source_downloader_result = await self.db.execute(

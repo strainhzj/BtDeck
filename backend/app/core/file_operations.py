@@ -228,11 +228,10 @@ class FileOperationService:
                                 logger.info(f"[UNC访问诊断] 找到完全匹配的文件: {exact_match_path}")
                                 return True, exact_match_path
 
-                        # 尝试使用第一个匹配的文件
-                        if matching_files:
-                            fallback_path = os.path.join(dir_path, matching_files[0])
-                            logger.warning(f"[UNC访问诊断] 未找到完全匹配，使用第一个匹配文件: {fallback_path}")
-                            return True, fallback_path
+                        # 安全修复（W15）：不再"取第一个匹配文件"作为删除目标——
+                        # 目录中其他含 waiting-delete 的文件可能是别的种子的删除
+                        # 标记，取第一个会删错文件（完整性缺陷）。只接受精确匹配。
+                        logger.warning(f"[UNC访问诊断] 未找到与目标 '{file_name}' 完全匹配的文件，放弃降级")
                     else:
                         logger.warning("[UNC访问诊断] 目录中未找到包含 'waiting-delete' 的文件")
                         logger.info(f"[UNC访问诊断] 目录中的前10个文件: {files_in_dir[:10]}")

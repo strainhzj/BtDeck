@@ -52,7 +52,7 @@ def _clean_database_path_env():
 #       → b6e1c4d9a2f7(torrent backup downloader UUID type)
 #       → c8d9e0f1a2b3(orphan hardlink copy results)
 #       → d4e5f6a7b8c9(orphan hardlink copy count snapshot)
-EXPECTED_HEAD = "a8b9c0d1e2f3"
+EXPECTED_HEAD = "ff42d3402df5"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"

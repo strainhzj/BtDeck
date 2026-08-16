@@ -323,6 +323,19 @@ async def lifespan(app: FastAPI):
 
         traceback.print_exc()
 
+    # 1.7 安全钩子：把历史遗留的明文下载器密码加密回写（幂等，密钥缺失时跳过）
+    print("=== 加密明文下载器密码 ===")
+    try:
+        from app.downloader.initialization import encrypt_plaintext_downloader_passwords
+
+        encrypted_rows = encrypt_plaintext_downloader_passwords()
+        if encrypted_rows:
+            print(f"[OK] 已加密 {encrypted_rows} 条明文下载器密码")
+        else:
+            print("[OK] 无需加密的明文下载器密码")
+    except Exception as e:
+        print(f"[WARN] 明文下载器密码加密钩子失败（不阻塞启动）: {e}")
+
     # 2. 数据库连接初始化
     await init_database_connection()
 
