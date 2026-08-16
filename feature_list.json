@@ -4,18 +4,11 @@
   "last_updated": "2026-08-16",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
-    "date": "2026-08-11",
-    "scope": "sync-database-blocking-remediation report-gap remediation and regression verification",
-    "report": "backend/docs/operations/database-blocking-and-sync-verification-2026-08.md",
-    "gate_status": {
-      "W0": "runbook-added-production-rehearsal-pending",
-      "W1": "basic-pass",
-      "W2": "fixed-local-regression-production-pending",
-      "W3": "fixed-local-regression",
-      "W4-1": "fixed-local-observability",
-      "W4-2": "code-pass-sync-timeout-deployment-migration-pending"
-    },
-    "evidence": "修复后定向套件 83 passed；coordinator/checkpoint/governance/metadata/legacy 70 passed/5 skipped；memory-bound/file contention 18 passed/1 skipped；health 10 passed；ruff 与 git diff --check 通过。新增 W0 止血 Runbook、WAL PASSIVE busy/checkpoint 观测、info durable cursor；生产 Alembic 迁移、暂停/恢复演练和 30 轮基线归档仍待执行。"
+    "date": "2026-08-16",
+    "scope": "backend lint + 全量 pytest + 前端 lint/build",
+    "report": "PLANS/security-remediation.md",
+    "gate_status": "pending_final_verify",
+    "evidence": "security-remediation-2026-08"
   },
   "features": [
     {
@@ -3798,6 +3791,197 @@
             "frontend/src/styles/traditional-view-theme.scss",
             "frontend/src/styles/torrent-theme.scss"
           ]
+        }
+      ]
+    },
+    {
+      "id": "security-remediation-2026-08",
+      "name": "安全修复（两轮对抗验证驱动）",
+      "description": "修复两轮对抗验证确认的 8 项高危 + 中危发现：serve_frontend 未认证路径穿越、cron task_type=4 认证后 RCE、备份导入任意写入、source_file_path 任意读取、下载器密码明文入库 + encrypt fail-open、git 公开真实密钥 + 密码可逆存储、默认凭据无强制改密 + 登录无限速、发行包内嵌 config 目录；另含审计归档/导出穿越、2FA 端点越权、DEBUG/docs/compose 配置加固、starlette CVE 升级、删错文件兜底与前端两处加固。",
+      "status": "implemented",
+      "branch": "dev",
+      "plan_file": "PLANS/security-remediation.md",
+      "tasks": [
+        {
+          "id": "w1-serve-frontend-traversal",
+          "name": "serve_frontend 路径包含校验",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/factory.py",
+            "tests/api/test_factory_serve_frontend.py"
+          ],
+          "evidence": "7 tests passed"
+        },
+        {
+          "id": "w2-cron-rce",
+          "name": "cron task_type=4 三层拦截 + 删除 exec 引擎",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/tasks/cron_executor.py",
+            "app/api/endpoints/cron_tasks.py",
+            "app/tasks/enhanced_python_executor.py",
+            "scripts/lint_btdeck.py",
+            "tests/tasks/test_cron_executor_security.py",
+            "tests/api/test_cron_security_api.py"
+          ],
+          "evidence": "55 tests passed"
+        },
+        {
+          "id": "w3-backup-import-filename",
+          "name": "备份导入 filename 消毒 + 每请求子目录",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/torrent_backup.py"
+          ],
+          "evidence": "sanitize + uuid dir"
+        },
+        {
+          "id": "w4-source-path-validation",
+          "name": "source_file_path bencode 内容校验 + seed_transfer info_hash 格式",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/core/torrent_file_backup.py",
+            "app/api/endpoints/torrent_backup.py",
+            "app/services/seed_transfer_service.py",
+            "tests/services/test_backup_source_validation.py"
+          ],
+          "evidence": "16 tests passed"
+        },
+        {
+          "id": "w5-audit-path-fix",
+          "name": "审计归档/导出路径限制",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/services/audit_service.py",
+            "app/api/endpoints/audit_logs.py",
+            "src/views/logs/audit.vue",
+            "tests/api/test_audit_path_security.py"
+          ],
+          "evidence": "18 tests passed"
+        },
+        {
+          "id": "w6-downloader-password-encryption",
+          "name": "下载器密码加密 + encrypt fail-closed + 启动钩子",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/downloader.py",
+            "app/utils/encryption.py",
+            "app/core/security.py",
+            "app/downloader/initialization.py",
+            "app/startup/lifecycle.py",
+            "tests/utils/test_downloader_password_encryption.py"
+          ],
+          "evidence": "9 tests passed"
+        },
+        {
+          "id": "w7-key-untrack",
+          "name": "git 停止跟踪密钥 + 轮换手册",
+          "status": "done",
+          "scope": "repo",
+          "files": [
+            "backend/config/config.yaml.example",
+            "backend/.gitignore",
+            "backend/.dockerignore",
+            "docs/security/key-rotation-runbook.md"
+          ],
+          "evidence": "git rm --cached 执行；runbook 含顺序契约"
+        },
+        {
+          "id": "w8-bcrypt-migration",
+          "name": "密码 bcrypt 双读迁移 + changePassword 修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/auth/security.py",
+            "app/auth/models.py",
+            "app/api/endpoints/cuser.py",
+            "app/database.py",
+            "alembic/versions/ff42d3402df5_add_users_must_change_password.py",
+            "tests/auth/test_bcrypt_dual_read.py"
+          ],
+          "evidence": "7 tests passed; alembic head ff42d3402df5 单头"
+        },
+        {
+          "id": "w9-login-throttle-force-change",
+          "name": "登录限流 + 首登强制改密",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/auth/login_throttle.py",
+            "app/api/endpoints/login.py",
+            "src/store/modules/user.ts",
+            "src/permission.ts",
+            "src/views/settings/index.vue",
+            "tests/api/test_login_throttle_and_change_password.py"
+          ],
+          "evidence": "10 tests passed"
+        },
+        {
+          "id": "w10-twofa-ownership",
+          "name": "2FA 端点绑定本人 + 日志脱敏",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/cuser.py",
+            "app/auth/utils.py",
+            "tests/api/test_twofa_ownership.py"
+          ],
+          "evidence": "5 tests passed"
+        },
+        {
+          "id": "w11-config-hardening",
+          "name": "DEBUG/DEV/docs/compose 加固",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/core/config.py",
+            "app/factory.py",
+            "app/desktop_main.py",
+            "docker-compose.yml",
+            ".env.example"
+          ],
+          "evidence": "DEBUG 默认 False；compose 透传 4 变量"
+        },
+        {
+          "id": "w12-packaging-fix",
+          "name": "发行包不再打包 config 目录",
+          "status": "done",
+          "scope": "deploy",
+          "files": [
+            "deploy/btdeck.spec",
+            "deploy/btdeck-windows.spec",
+            "deploy/btdeck.iss"
+          ],
+          "evidence": "datas/iss 移除 config"
+        },
+        {
+          "id": "w13-deps-upgrade",
+          "name": "starlette/fastapi 升级（CVE-2024-47874）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "requirements.txt",
+            "frontend/nginx.conf"
+          ],
+          "evidence": "fastapi 0.115.14 + starlette 0.41.3；tests/api 895 passed"
+        },
+        {
+          "id": "w15-low-cost-fixes",
+          "name": "删错文件兜底 + 前端正则/v-html 加固",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/core/file_operations.py",
+            "src/views/tracker/keywords-search.vue",
+            "src/views/tracker/components/MatchTimeline.vue"
+          ],
+          "evidence": "仅精确匹配；escapeRegExp；sanitizeDescription"
         }
       ]
     }

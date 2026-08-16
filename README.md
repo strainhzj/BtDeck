@@ -36,6 +36,12 @@ docker compose up -d --build
 
 访问 http://localhost:8080
 
+> **首次登录**：默认账号 `admin` / `admin`，系统会强制要求修改密码。
+> **安全加固**（公网/跨网络部署必做）：复制 `.env.example` 为 `.env`，按注释设置
+> `DEV=false` + `SECRET_KEY` + `ALLOWED_HOSTS` 三件套（缺一容器拒绝启动），
+> 并启用 TLS——参考 `deploy/nginx-tls.conf.example`（默认纯 HTTP 部署下
+> 登录口令与 token 明文传输，可被网络嗅探）。
+
 ### 开发环境
 
 ```bash

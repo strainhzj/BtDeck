@@ -4409,3 +4409,37 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 迁移：25 用例全绿（EXPECTED_HEAD=a8b9c0d1e2f3）；生产库副本实证 disabled_by 迁移（2 条禁用记录保守标 user）。
 - 全量回归：后端全量 + 前端全量 + 生产 build 结果见收尾记录。
 - 未执行 git 提交（按仓库会话规范，用户未要求）。
+
+---
+
+## 2026-08-16 安全修复（两轮对抗验证驱动，PLANS/security-remediation.md）
+
+### 背景
+5 域调查代理 + 9 个对抗验证代理完成两轮安全分析（25 项发现终审），3 个审查代理评审修复计划（修订 15+ 项）。随后按批准计划实施 W1-W15。
+
+### 已实施（后端）
+- **W1** serve_frontend resolve+is_relative_to 双校验（覆盖绝对路径注入/`%5c`/未编码穿越）；7 测试
+- **W2** cron task_type=4 三层拦截：执行层 `_run_task_script` 闸门（封 0-3 + type4 白名单 `app.tasks.` 前缀 + isclass 校验）、解析层删除 ImportError→exec 回落与两个 exec 方法、API/加载层白名单 + 系统通知；删除 enhanced_python_executor 死代码 + BTD301 白名单清空；41+14 测试
+- **W3** 备份导入 filename sanitize + 每请求 uuid 子目录（消除并发 rmtree 竞态）
+- **W4** core 层 bencode+info 内容校验（2MB 上限）；端点 .torrent 后缀；seed_transfer info_hash 40/64 hex 闸门；16 测试
+- **W5** 归档仅取 basename+强制 .json+固定目录；download-export fullmatch 白名单；前端文案同步；18 测试
+- **W6** downloader add 加密落库（ORM 构造点）；encrypt fail-closed raise；core/security encrypt_tracker_info 同修；启动幂等钩子加密存量明文；conftest 补测试 SM4 密钥；9 测试
+- **W8** 密码 bcrypt（bcrypt 库，passlib 1.7.4 与新版 bcrypt 不兼容故未用）；verify 双读（$2b$ → bcrypt，否则旧 AES-ECB）；login 条件更新自动升级（防并发竞态）；changePassword 修复（原直调 sm4_decrypt 会 500）→ verify_password + 绑定本人 + 撤销 refresh + 清强制标志；admin seed bcrypt + 存量默认口令检测；alembic 迁移 ff42d3402df5（幂等加列）；7 测试
+- **W9** login_throttle 模块（阶梯 5→15m / 10→1h，密码与 TOTP 共用计数，绝不信任 XFF，429 不带剩余时间）；must_change_password 进 token_data；改密撤销 refresh token；10 测试
+- **W10** 2FA 四个端点（2faVerifyCode/QrCode/update2faFlg/verifyPasswordFor2FA）绑定本人；TOTP 日志脱敏 4 处；5 测试
+- **W11** DEBUG/DB_ECHO 默认 False；DEV 保持 True（frozen 兼容）；desktop_main 移除 DEV=false setdefault（历史必崩入口）；DEV=False 关 docs/openapi；SECRET_KEY 空串归一；compose 透传 DEV/SECRET_KEY/ALLOWED_HOSTS/DEBUG（修复 .env 指引断链）
+- **W12** 两个 spec datas 移除 config 目录；btdeck.iss 移除构建机 config 复制；.dockerignore 排除 config.yaml
+- **W13** fastapi~=0.115.6 + starlette~=0.41.3（实测解析 fastapi 0.115.14 + starlette 0.41.3，CVE-2024-47874 修复）；nginx login location 1M；升级后 tests/api 895 passed
+- **W15** file_operations 删除"取第一个 waiting-delete 文件"兜底（删错文件完整性缺陷）；keywords-search escapeRegExp；MatchTimeline sanitizeDescription 白名单
+- **W7** git rm --cached 两个密钥 yaml；.gitignore 补 app/config.yaml；config.yaml.example 更新密钥警告；清理仓库垃圾（畸形目录/nul）；轮换 runbook（顺序契约 + 自救 + filter-repo 手册）
+
+### 前端
+- user.ts mustChangePassword 状态；permission.ts 守卫拦截（优先于 redirect）；settings 改密成功清标志 + forceChange 提示；audit.vue 归档文案
+
+### 文档
+- PLANS/security-remediation.md（含不修决议）；docs/security/key-rotation-runbook.md；deploy/nginx-tls.conf.example；README 安全加固指引；feature_list.json 新增 feature（14 tasks）
+
+### 遗留（人工）
+1. git filter-repo 历史清洗 + force push
+2. 生产密钥轮换（顺序：先登录升级 bcrypt 再轮换）
+3. 桌面版 verify-package.py 验证
