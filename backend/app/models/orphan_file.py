@@ -179,6 +179,11 @@ class OrphanFile(Base):
         index=True,
         comment="规范化路径（normcase+normpath，用于忽略态 SQL 联表过滤）",
     )
+    hardlink_copy_count = Column(
+        Integer,
+        nullable=True,
+        comment="硬链接副本数快照（发现文件时 st_nlink-1，每日预扫描/每次成功扫描刷新；NULL=未知）",
+    )
 
     is_deleted = Column(Boolean, default=False, nullable=False, comment="是否已清理")
     deleted_at = Column(DateTime, nullable=True, comment="清理时间")
@@ -195,6 +200,7 @@ class OrphanFile(Base):
         downloader_id: Optional[str] = None,
         confidence: str = "high",
         canonical_path: Optional[str] = None,
+        hardlink_copy_count: Optional[int] = None,
     ):
         self.scan_id = scan_id
         self.file_path = file_path
@@ -203,6 +209,7 @@ class OrphanFile(Base):
         self.downloader_id = downloader_id
         self.confidence = confidence
         self.canonical_path = canonical_path
+        self.hardlink_copy_count = hardlink_copy_count
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -215,6 +222,7 @@ class OrphanFile(Base):
             "downloader_id": self.downloader_id,
             "confidence": self.confidence,
             "canonical_path": self.canonical_path,
+            "hardlink_copy_count": self.hardlink_copy_count,
             "is_deleted": self.is_deleted,
             "deleted_at": self.deleted_at.isoformat() if self.deleted_at else None,
             "deleted_by": self.deleted_by,

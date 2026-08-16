@@ -197,21 +197,20 @@ class TestHardlinkCopyCount:
         os.link(target, tmp_path / "copy-2.mkv")
         assert get_hardlink_copy_count(str(target)) == 2
 
-    async def test_list_and_folder_rows_include_copy_count(self, async_orphan_db, tmp_path):
-        """扁平行返回实时数量，文件夹行汇总子文件；不可访问文件不误报为 0。"""
-        data_dir = tmp_path / "data"
-        library_dir = tmp_path / "library"
-        missing_dir = tmp_path / "missing"
-        data_dir.mkdir()
-        library_dir.mkdir()
+    async def test_list_and_folder_rows_include_copy_count(self, async_orphan_db, monkeypatch):
+        """扁平行/子文件行直出明细快照列；列表链路不再触发文件系统 stat。"""
+        linked = "D:/data/linked.mkv"
+        solo = "D:/data/solo.mkv"
+        missing = "D:/missing/gone.mkv"
 
-        linked = data_dir / "linked.mkv"
-        linked.write_bytes(b"linked")
-        os.link(linked, library_dir / "linked-copy.mkv")
+        # 性能契约：列表链路不得触碰文件系统（副本数来自扫描时落库的快照列）
+        def _no_stat(*args, **kwargs):  # pragma: no cover - 触发即失败
+            raise AssertionError("列表链路不应执行实时 stat")
 
-        solo = data_dir / "solo.mkv"
-        solo.write_bytes(b"solo")
-        missing = missing_dir / "gone.mkv"
+        monkeypatch.setattr(
+            "app.services.orphan_file_service.get_hardlink_copy_count",
+            _no_stat,
+        )
 
         scan = OrphanScanResult(
             scan_id="scan_hardlink_count",
@@ -228,24 +227,27 @@ class TestHardlinkCopyCount:
             [
                 OrphanFile(
                     scan_id=scan.scan_id,
-                    file_path=str(linked),
+                    file_path=linked,
                     file_size=6,
                     downloader_id="dl_001",
-                    canonical_path=normalize_path(str(linked)),
+                    canonical_path=normalize_path(linked),
+                    hardlink_copy_count=1,
                 ),
                 OrphanFile(
                     scan_id=scan.scan_id,
-                    file_path=str(solo),
+                    file_path=solo,
                     file_size=4,
                     downloader_id="dl_001",
-                    canonical_path=normalize_path(str(solo)),
+                    canonical_path=normalize_path(solo),
+                    hardlink_copy_count=0,
                 ),
                 OrphanFile(
                     scan_id=scan.scan_id,
-                    file_path=str(missing),
+                    file_path=missing,
                     file_size=7,
                     downloader_id="dl_001",
-                    canonical_path=normalize_path(str(missing)),
+                    canonical_path=normalize_path(missing),
+                    hardlink_copy_count=None,
                 ),
             ]
         )
@@ -254,9 +256,9 @@ class TestHardlinkCopyCount:
         service = OrphanFileService(async_orphan_db)
         flat_result = await service.get_orphan_list(page=1, page_size=20)
         by_path = {item["file_path"]: item for item in flat_result["list"]}
-        assert by_path[str(linked)]["hardlink_copy_count"] == 1
-        assert by_path[str(solo)]["hardlink_copy_count"] == 0
-        assert by_path[str(missing)]["hardlink_copy_count"] is None
+        assert by_path[linked]["hardlink_copy_count"] == 1
+        assert by_path[solo]["hardlink_copy_count"] == 0
+        assert by_path[missing]["hardlink_copy_count"] is None
 
         grouped_result = await service.get_orphan_list_grouped(page=1, page_size=20)
         folder = next(item for item in grouped_result["list"] if item.get("_is_folder"))
@@ -269,7 +271,7 @@ class TestHardlinkCopyCount:
             page_size=20,
         )
         child_counts = {item["file_path"]: item["hardlink_copy_count"] for item in children_result["list"]}
-        assert child_counts == {str(linked): 1, str(solo): 0}
+        assert child_counts == {linked: 1, solo: 0}
 
 
 class TestHardlinkCopyLocations:
@@ -883,6 +885,67 @@ def _empty_whitelist(monkeypatch, dirs=None):
 
 class TestHardlinkCopyDelete:
     """弹窗删除副本：逐路径 fail-closed，tombstone 三段式，共享 inode/种子目录拒绝。"""
+
+    async def test_delete_refreshes_sibling_details_sharing_inode(self, async_orphan_db, tmp_path, monkeypatch):
+        """删除副本后共享同一 inode 的全部孤儿明细快照列同步刷新（防兄弟行残留偏大）。"""
+        from sqlalchemy import select
+
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, copy_names=("a.mkv", "b.mkv"))
+        _empty_whitelist(monkeypatch)
+
+        source_stat = os.stat(fixture.source)
+        sibling = tmp_path / "downloads" / "sibling.mkv"
+        os.link(fixture.source, sibling)
+        sibling_detail = OrphanFile(
+            scan_id=fixture.detail.scan_id,
+            file_path=str(sibling),
+            file_size=7,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(sibling)),
+            hardlink_copy_count=3,
+        )
+        sibling_candidate = OrphanCurrentCandidate(
+            canonical_path=normalize_path(str(sibling)),
+            downloader_id="dl_001",
+            first_seen_at=datetime.utcnow() - timedelta(days=1),
+            last_seen_at=datetime.utcnow(),
+            status="candidate",
+            operation_state="stable",
+            file_size=7,
+            device_id=str(source_stat.st_dev),
+            inode=str(source_stat.st_ino),
+        )
+        fixture.detail.hardlink_copy_count = 3
+        async_orphan_db.add_all([sibling_detail, sibling_candidate])
+        await async_orphan_db.flush()
+        sibling_candidate.current_detail_id = sibling_detail.id
+        source_candidate = (
+            await async_orphan_db.execute(
+                select(OrphanCurrentCandidate).where(
+                    OrphanCurrentCandidate.canonical_path == normalize_path(str(fixture.source))
+                )
+            )
+        ).scalar_one()
+        source_candidate.current_detail_id = fixture.detail.id
+        await async_orphan_db.commit()
+
+        copy_a = os.path.realpath(str(fixture.copies[0]))
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_a],
+            operator="tester",
+            audit_service=AsyncMock(),
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+        assert result["success_count"] == 1
+
+        # 删除前 4 个链接（源 + a + b + sibling），删 a 后剩 3 个 → 副本数 2；
+        # 两个明细（含共享 inode 的兄弟）都被刷成同一个权威值。
+        await async_orphan_db.refresh(fixture.detail)
+        await async_orphan_db.refresh(sibling_detail)
+        assert fixture.detail.hardlink_copy_count == 2
+        assert sibling_detail.hardlink_copy_count == 2
 
     async def test_deletes_copy_updates_result_row_and_audits(self, async_orphan_db, tmp_path, monkeypatch):
         """happy path：副本目录项被删、源文件与数据完好、结果行/审计同步更新。"""

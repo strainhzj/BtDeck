@@ -80,6 +80,56 @@ class TestOrphanLifecycleProgression:
         paths = [c.canonical_path for c in purgeable]
         assert "/data/old.mkv" in paths, "连续 35 天孤儿应满足清理条件"
 
+    async def test_reconcile_persists_and_refreshes_copy_count_snapshot(self, async_orphan_db):
+        """新明细创建时落库快照列；后续扫描刷新变化值；None 不抹掉已知值。"""
+        from sqlalchemy import select
+
+        from app.models.orphan_file import OrphanFile
+        from app.services.orphan_lifecycle_service import OrphanLifecycleService
+
+        service = OrphanLifecycleService(async_orphan_db)
+        path = "/data/linked.mkv"
+        base = {
+            "canonical_path": path,
+            "downloader_id": "dl_001",
+            "file_size": 100,
+        }
+
+        # 首次发现：快照随创建落库
+        await service.reconcile_candidates(
+            scan_id="scan_1",
+            scan_time=datetime.utcnow(),
+            orphans=[{**base, "hardlink_copy_count": 2}],
+            persist_current_details=True,
+        )
+        await async_orphan_db.commit()
+        detail = (
+            await async_orphan_db.execute(select(OrphanFile).where(OrphanFile.canonical_path == path))
+        ).scalar_one()
+        assert detail.hardlink_copy_count == 2
+
+        # 后续扫描：值变化时刷新
+        await service.reconcile_candidates(
+            scan_id="scan_2",
+            scan_time=datetime.utcnow(),
+            orphans=[{**base, "hardlink_copy_count": 1}],
+            persist_current_details=True,
+        )
+        await async_orphan_db.commit()
+        await async_orphan_db.refresh(detail)
+        assert detail.hardlink_copy_count == 1
+
+        # stat 不可得（None）：保留已知快照（None-guard）
+        await service.reconcile_candidates(
+            scan_id="scan_3",
+            scan_time=datetime.utcnow(),
+            orphans=[{**base, "hardlink_copy_count": None}],
+            persist_current_details=True,
+        )
+        await async_orphan_db.commit()
+        await async_orphan_db.refresh(detail)
+        assert detail.hardlink_copy_count == 1
+
     async def test_successful_reconcile_updates_changed_downloader_owner(self, async_orphan_db):
         """同一路径改变扫描归属时同步候选元数据，避免复合匹配漂移。"""
         from app.models.orphan_file import OrphanCurrentCandidate

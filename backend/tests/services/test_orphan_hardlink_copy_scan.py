@@ -229,6 +229,43 @@ class TestScanRound:
         assert by_id[linked_detail.id]["scanned_at"] is not None
         assert by_id[solo_detail.id]["copy_count"] == 0
 
+    async def test_round_refreshes_detail_snapshot_counts(self, async_orphan_db, tmp_path):
+        """每轮 stat 的权威 st_nlink-1 同步刷回明细快照列；stat 失败行不动。"""
+        downloads = tmp_path / "downloads"
+        library = tmp_path / "library"
+        downloads.mkdir()
+        library.mkdir()
+        linked = downloads / "linked.mkv"
+        linked.write_bytes(b"linked")
+        os.link(linked, library / "linked-copy.mkv")
+        solo = downloads / "solo.mkv"
+        solo.write_bytes(b"solo")
+        gone = downloads / "gone.mkv"
+
+        scan = await _make_scan(async_orphan_db)
+        linked_detail = await _add_candidate(async_orphan_db, scan, str(linked))
+        linked_detail.hardlink_copy_count = 5  # 过期偏大快照
+        solo_detail = await _add_candidate(async_orphan_db, scan, str(solo))
+        gone_detail = await _add_candidate(async_orphan_db, scan, str(gone))
+        await async_orphan_db.commit()
+
+        service = OrphanHardlinkScanService(async_orphan_db)
+        with patch(
+            "app.services.orphan_hardlink_scan_service.collect_runtime_accessible_roots",
+            return_value=[str(downloads), str(library)],
+        ):
+            summary = await service.run_round()
+
+        assert summary["status"] == "success"
+        assert summary["details_refreshed"] == 2  # linked 5→1、solo None→0；gone stat 失败不计数
+
+        await async_orphan_db.refresh(linked_detail)
+        await async_orphan_db.refresh(solo_detail)
+        await async_orphan_db.refresh(gone_detail)
+        assert linked_detail.hardlink_copy_count == 1
+        assert solo_detail.hardlink_copy_count == 0
+        assert gone_detail.hardlink_copy_count is None
+
     async def test_walk_limit_defers_extra_targets_keeps_existing_rows(self, async_orphan_db, tmp_path):
         """遍历上限外的多副本身份本轮不遍历；已有旧结果不被覆盖，无结果则等待。"""
         downloads = tmp_path / "downloads"

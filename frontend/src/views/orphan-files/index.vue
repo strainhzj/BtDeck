@@ -174,9 +174,9 @@
           />
         </div>
         <div class="management-filter__field">
-          <label class="management-filter__label" for="orphan-located-copies">副本定位</label>
+          <label class="management-filter__label" for="orphan-located-copies">副本筛选</label>
           <el-tooltip
-            content="按每日预扫描任务落库的结果过滤，与列表实时副本数可能短暂不一致"
+            content="按扫描时统计的硬链接副本数过滤；副本位置详情由弹窗实时复核"
             placement="top"
             :open-delay="200"
           >
@@ -186,7 +186,7 @@
               class="management-filter__control orphan-located-copies-checkbox"
               @change="handleFilter"
             >
-              已定位副本
+              有硬链接副本
             </el-checkbox>
           </el-tooltip>
         </div>
@@ -276,10 +276,10 @@
                 command="toggleLocatedCopies"
                 :icon="listQuery.hardlinkCopies ? 'el-icon-check' : 'el-icon-copy-document'"
                 :disabled="!displayScan"
-                :title="listQuery.hardlinkCopies ? '取消副本定位筛选，恢复完整列表' : '仅显示预扫描已定位到硬链接副本路径的文件'"
+                :title="listQuery.hardlinkCopies ? '取消副本筛选，恢复完整列表' : '仅显示有硬链接副本的文件（扫描时统计）'"
                 divided
               >
-                {{ listQuery.hardlinkCopies ? '取消已定位副本筛选' : '筛选已定位副本' }}
+                {{ listQuery.hardlinkCopies ? '取消有副本筛选' : '筛选有副本文件' }}
               </el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
@@ -922,7 +922,7 @@ interface OrphanListQuery {
   path_like: string
   status: OrphanStatusFilter[]
   confidence: OrphanConfidence[]
-  // 仅显示预扫描已定位到硬链接副本路径的文件（快捷操作可一键切换）
+  // 仅显示有硬链接副本的文件（扫描时统计快照 > 0；快捷操作可一键切换）
   hardlinkCopies: boolean
 }
 
@@ -1268,26 +1268,24 @@ export default class OrphanFiles extends Vue {
     if (latest) this.dismissedLargeScanReminderId = latest.scan_id
   }
 
-  /** 只有明确大于 0 的副本数量可点击；0 与未知态保持普通文本。 */
+  /** 数值型副本数（含 0）均可点击：列值是扫描快照，弹窗会实时复核，兜住快照之后新增的副本；未知态（null）不可点击。 */
   private canOpenHardlinkLocations(row: OrphanTableRow): boolean {
-    return typeof row.hardlink_copy_count === 'number' && row.hardlink_copy_count > 0
+    return typeof row.hardlink_copy_count === 'number'
   }
 
   private getHardlinkCopyCountTitle(row: OrphanTableRow): string {
     const count = row.hardlink_copy_count
     if (typeof count !== 'number') {
-      return isFolderRow(row) ? '展开后仅统计当前可见文件的实时副本数量' : '文件当前不可访问，副本数量未知'
+      return isFolderRow(row) ? '展开后仅统计当前可见文件的副本数量快照' : '副本数量尚未生成快照（等待扫描）'
     }
-    if (count === 0) return '没有其它硬链接副本'
+    if (count === 0) return '暂无其它硬链接副本（点击可实时复核）'
     return `点击查看 ${count} 个硬链接副本的位置`
   }
 
-  /** 文件夹行只提交当前明确有副本的子项，避免对 0 副本文件做无意义扫描。 */
+  /** 文件夹行提交所有已生成数值快照的子项（含 0）：列值是扫描快照，弹窗实时复核兜住快照后新增的副本；null 子项跳过。 */
   private getHardlinkLocationTargets(row: OrphanTableRow): OrphanFileItem[] {
     const items = isFolderRow(row) ? row.children : [row]
-    return items.filter(
-      (item) => typeof item.hardlink_copy_count === 'number' && item.hardlink_copy_count > 0
-    )
+    return items.filter((item) => typeof item.hardlink_copy_count === 'number')
   }
 
   private async handleHardlinkCopyClick(row: OrphanTableRow): Promise<void> {
@@ -2058,7 +2056,8 @@ export default class OrphanFiles extends Vue {
     try {
       const resp = await prefixMatchPreview({
         path_prefix: prefix,
-        scan_id: displayScan.scan_id
+        scan_id: displayScan.scan_id,
+        hardlink_copies: this.listQuery.hardlinkCopies ? 'located' : undefined
       })
       if (resp.code === '200' && resp.data) {
         preview = resp.data
@@ -2085,10 +2084,12 @@ export default class OrphanFiles extends Vue {
       return
     }
 
-    // 构造与 cleanup/ignore 共用的选择载荷：select_all + filters（含 status=pending）
+    // 构造与 cleanup/ignore 共用的选择载荷：select_all + filters（含 status=pending；
+    // located 开启时同步限定，避免快捷前缀操作放大清理范围）
     const filters: OrphanSelectionFilters = {
       path_prefix: prefix,
-      status: 'pending'
+      status: 'pending',
+      hardlink_copies: this.listQuery.hardlinkCopies ? 'located' : undefined
     }
     const scanId = displayScan.scan_id
 

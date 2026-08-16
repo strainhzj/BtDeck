@@ -1327,6 +1327,36 @@ class TestQuarantineManagement:
         detail = (await async_orphan_db.execute(select(OrphanFile).where(OrphanFile.scan_id == scan_id))).scalar_one()
         assert detail.is_deleted is False, "明细 is_deleted 应回滚为 False"
 
+    async def test_restore_refreshes_copy_count_snapshot(self, async_orphan_db, tmp_path):
+        """恢复后补一次实时 stat：明细快照列刷新为当前副本数（隔离期间可能变化）。"""
+        from app.services.orphan_file_service import OrphanFileService
+        from app.models.orphan_file import OrphanFile
+        from sqlalchemy import select
+
+        candidate, canonical, quarantine_path, _, _, scan_id = _make_quarantined_candidate(
+            async_orphan_db, tmp_path, filename="restore-count.mkv"
+        )
+        # 隔离期间：其它位置对同一 inode 新建硬链接（模拟共享副本变化）
+        external_copy = tmp_path / "external-copy.mkv"
+        os.link(quarantine_path, external_copy)
+        detail = (await async_orphan_db.execute(select(OrphanFile).where(OrphanFile.scan_id == scan_id))).scalar_one()
+        detail.hardlink_copy_count = 0  # 隔离前的过期快照
+        await async_orphan_db.commit()
+
+        lease = MagicMock()
+        lease.assert_owned = AsyncMock()
+        result = await OrphanFileService(async_orphan_db).restore_quarantined(
+            canonical_paths=[canonical],
+            operator="admin",
+            _lease_acquired=True,
+            _lease_handle=lease,
+        )
+        assert result["restored_count"] == 1
+
+        await async_orphan_db.refresh(detail)
+        # 恢复后：原位 + external_copy 共享同一 inode → 副本数 1
+        assert detail.hardlink_copy_count == 1
+
     async def test_restore_rejects_when_original_path_occupied(self, async_orphan_db, tmp_path):
         """恢复失败-原位被占用：原位置已有文件 → 拒绝恢复（防覆盖）。"""
         from app.services.orphan_file_service import OrphanFileService

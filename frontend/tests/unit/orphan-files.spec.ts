@@ -2129,8 +2129,10 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const countColumn = wrapper.find('[data-column-label="副本数量"]')
     expect(countColumn.exists()).toBe(true)
     const values = countColumn.findAll('.orphan-hardlink-copy-count')
-    // 渲染 stub 只展开首个父行；真实懒加载目录父行不做硬链接 stat，也不显示汇总值。
-    expect(values).toHaveLength(0)
+    // 渲染 stub 只展开首个父行：真实懒加载目录父行不显示汇总值；
+    // 顶层 zeroCopyFile（快照 0）按新语义渲染为可点击数量。
+    expect(values).toHaveLength(1)
+    expect(values.at(0).text()).toBe('0')
   })
 
   it('仅有副本的数量可点击，文件夹行只查询有副本的子文件并展示位置', async() => {
@@ -2631,12 +2633,13 @@ describe('orphan files hardlink copy count formatting', () => {
     expect(vm.formatHardlinkCopyCount(undefined)).toBe('-')
   })
 
-  it('只有大于 0 的实时数量允许打开位置查询', async() => {
+  it('数值型副本数（含 0）可点击打开位置查询，未知态不可点击', async() => {
     const vm = viewModel(mountView())
     await flushLifecycle()
 
+    // 列值是扫描快照；0 也可点击，弹窗实时复核兜住快照后新增的副本
     expect(vm.canOpenHardlinkLocations(orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 }))).toBe(true)
-    expect(vm.canOpenHardlinkLocations(orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 }))).toBe(false)
+    expect(vm.canOpenHardlinkLocations(orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 }))).toBe(true)
     expect(vm.canOpenHardlinkLocations(orphanItem(3, 'scan-completed', { hardlink_copy_count: null }))).toBe(false)
   })
 })

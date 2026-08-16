@@ -1,5 +1,41 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-16 - 孤儿文件列表 5 秒慢查询优化（hardlink_copy_count 快照列）
+
+### 需求与根因
+
+- 用户报告 `GET /orphan-files/list?page=1&page_size=20&hardlink_copies=located` 耗时 5s。
+- 实测（10 万行合成库，真实 `_build_orphan_conditions` 构造 SQL）：根因两块——
+  1. SQL 侧：located 过滤编译为关联 EXISTS（候选表 join 结果表、CAST inode），count 与 list 各执行一遍，O(2N) 次两跳索引探测，current 模式 count 单条 836ms、合计 1.1s；
+  2. 文件系统侧：`_enrich_items` 对当前页 20 文件串行 `os.stat` 取实时 st_nlink-1（NAS/挂载盘上 2-5s）。
+- 用户两项决策：副本数必须**扫描发现文件时同步落库**（消除预扫描覆盖时间差导致"有副本显示没副本、删除后副本永远找不到"）；located 筛选改为**「有副本」count>0 语义**。
+
+### 实现
+
+- **模型/迁移**：`orphan_file.hardlink_copy_count`（INTEGER NULL）快照列；新迁移 `d4e5f6a7b8c9` 加列 + 按 current_detail_id 关联预扫描结果分块回填 + 覆盖索引 `ix_orphan_candidate_current_detail_status(current_detail_id, status)`（current 模式 detail_scope 从全表 SCAN 变覆盖索引）。
+- **写入链路**：扫描器 `_walk_scan_root` 从既有 stat_info 取 `st_nlink-1`（零额外 IO，在线/降级共用遍历）；lifecycle 新明细创建落库、已有明细"仅变化字段"刷新（None-guard 防抹掉已知值）；每日预扫描 `_refresh_detail_counts` 把 stat 权威值刷回明细列（恢复每日新鲜度，孤儿全量扫描默认每周才跑）。
+- **读取去 stat**：`_enrich_items` 删除串行 stat 链路，副本数经 `to_dict()` 直出（弹窗 POST /hardlink-copies 仍实时复核）。
+- **筛选重定义**：`_build_orphan_conditions` EXISTS 替换为 `hardlink_copy_count > 0`；顺带修复预存在缺口——`OrphanSelectionFilters`/`resolve_orphan_selection`/`prefix_match_preview`（前后端）透传 located，避免 located 开关下快捷前缀清理放大清理范围。
+- **联动**：`delete_hardlink_copies` 成功后按身份批量写回共享 inode 全部明细；`restore_quarantined` 恢复后补 stat 刷新。
+- **前端**：筛选 label「已定位副本」→「有硬链接副本」；副本数列 0 也可点击（弹窗实时复核）；NULL 文案「尚未生成快照」；api 类型与单测同步。
+
+### 性能结果（10 万行 current 模式复测）
+
+- located 过滤 count+list：**1107ms → 88ms（12.6×）**，且低于无过滤基线（117ms）；覆盖索引命中 `USING COVERING INDEX`。
+- 20 次串行 stat 归零；端到端 5s → 亚秒级。
+
+### 验证
+
+- 后端全量 pytest：3488 passed；迁移链测试 EXPECTED_HEAD/REV_HEAD 同步 d4e5f6a7b8c9；black/flake8 通过；mypy 存量 146 错误零净增。
+- 前端：orphan-files.spec.ts 99 passed（含新语义用例）；全量 jest 套件后台验证中；vue-tsc 存量 3012 错误零净增；eslint 存量 5 warnings 非本次引入。
+- 测试覆盖：located 快照列语义套件重写（count>0/0/NULL/共享 inode/全选/前缀）；scanner 采集、lifecycle None-guard、预扫描刷新、delete 兄弟写回、restore 补 stat 新增用例；迁移回填与覆盖索引。
+
+### 取舍（用户已确认）
+
+- 副本数 = 扫描时 st_nlink-1 快照（每日预扫描/每次成功扫描刷新），非实时；「已定位路径」仅在弹窗展示。
+- 历史 snapshot 批次未回填行显示「未知」（-），由后续扫描覆盖。
+- 声明不做（后续项）：scan_context 每页 4-5 条全量聚合按需计算；grouped GROUP BY 表达式排序优化。
+
 ## 2026-08-16 - 修复新种子显示 unknown 与传统模式进度条不可见
 
 ### 需求与根因

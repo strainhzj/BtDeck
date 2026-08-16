@@ -3651,5 +3651,29 @@
         }
       ]
     }
+  ],
+  "tasks": [
+    {
+      "id": "orphan-list-located-perf",
+      "title": "孤儿列表 hardlink_copies=located 慢查询优化（副本数快照列）",
+      "status": "completed",
+      "description": "孤儿文件列表 located 筛选与副本数列从实时 stat + 关联 EXISTS 改为 orphan_file.hardlink_copy_count 快照列：扫描发现文件时同步落库（st_nlink-1），每日预扫描/每次成功扫描刷新；located 筛选改 count>0 单列谓词；列表链路删除 20 次串行 os.stat；全选/前缀透传 located；delete/restore 联动写回。10 万行基准 located 1.1s→88ms。",
+      "evidence": {
+        "benchmark": "10万行 current 模式：located count+list 1107ms→88ms；EXPLAIN 命中 ix_orphan_candidate_current_detail_status 覆盖索引；列表链路零 os.stat",
+        "tests": "后端 3488 passed（含重写 located 套件与新增 scanner/lifecycle/预扫描/delete/restore 用例）；前端 orphan-files.spec.ts 99 passed",
+        "lint": "black/flake8 通过；mypy/vue-tsc 存量错误零净增"
+      },
+      "files": [
+        "backend/alembic/versions/d4e5f6a7b8c9_orphan_hardlink_copy_count_snapshot.py",
+        "backend/app/models/orphan_file.py",
+        "backend/app/services/orphan_scanner.py",
+        "backend/app/services/orphan_lifecycle_service.py",
+        "backend/app/services/orphan_hardlink_scan_service.py",
+        "backend/app/services/orphan_file_service.py",
+        "backend/app/api/endpoints/orphan_files.py",
+        "frontend/src/views/orphan-files/index.vue",
+        "frontend/src/api/orphan-files.ts"
+      ]
+    }
   ]
 }

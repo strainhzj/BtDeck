@@ -207,6 +207,7 @@ class OrphanLifecycleService:
                             downloader_id=orphan.get("downloader_id") or None,
                             confidence=str(orphan.get("confidence") or "high"),
                             canonical_path=path,
+                            hardlink_copy_count=orphan.get("hardlink_copy_count"),
                         )
                         self.db.add(current_detail)
                         detail_inserted += 1
@@ -221,6 +222,9 @@ class OrphanLifecycleService:
                             "confidence": str(orphan.get("confidence") or "high"),
                             "canonical_path": path,
                         }
+                        # None-guard：本轮 stat 不可得时不抹掉已知快照（与候选身份列刷新同口径）
+                        if orphan.get("hardlink_copy_count") is not None:
+                            detail_values["hardlink_copy_count"] = int(orphan["hardlink_copy_count"])
                         for field, value in detail_values.items():
                             if getattr(current_detail, field) != value:
                                 setattr(current_detail, field, value)

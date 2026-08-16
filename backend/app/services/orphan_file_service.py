@@ -236,29 +236,11 @@ class OrphanFileService:
             escaped_pfx = path_prefix.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(OrphanFile.file_path.like(f"{escaped_pfx}%", escape="\\"))
         if hardlink_copies == "located":
-            # 仅保留预扫描已定位到硬链接副本路径的文件：候选表最近一次扫描记录的
-            # (device_id, inode) 命中预扫描结果且 found_count > 1。found_count 含孤儿
-            # 源路径自身，> 1 即至少定位到一条非源副本路径，与副本位置弹框（copies
-            # 剔除源路径）口径一致；候选身份列为 NULL 或文件重建后 inode 变化时均
-            # 不命中（fail-closed），权威实时值仍以列表 hardlink_copy_count 为准。
-            # 候选 inode 为字符串列（Windows st_ino 超宽防护），结果表 inode_id 为整
-            # 数列，join 需显式 CAST（与 orphan_purge_job_service 同口径）。
-            conditions.append(
-                select(1)
-                .select_from(OrphanCurrentCandidate)
-                .join(
-                    OrphanHardlinkCopyResult,
-                    and_(
-                        OrphanHardlinkCopyResult.device_id == OrphanCurrentCandidate.device_id,
-                        OrphanHardlinkCopyResult.inode_id == sql_cast(OrphanCurrentCandidate.inode, Integer),
-                    ),
-                )
-                .where(
-                    OrphanCurrentCandidate.canonical_path == OrphanFile.canonical_path,
-                    OrphanHardlinkCopyResult.found_count > 1,
-                )
-                .exists()
-            )
+            # 仅保留有硬链接副本的文件：明细快照列 hardlink_copy_count > 0。
+            # 该列在扫描发现文件时同步落库（st_nlink-1），由每日预扫描与每次
+            # 成功全量扫描刷新——无预扫描定位路径的覆盖时间差，也不会因时间差
+            # 漏掉有副本的文件。「已定位到副本路径」的信息仅在副本位置弹窗展示。
+            conditions.append(OrphanFile.hardlink_copy_count > 0)
         return conditions
 
     @staticmethod
@@ -297,6 +279,7 @@ class OrphanFileService:
         path_prefix: Optional[str] = None,
         status: Optional[str] = None,
         confidence: Optional[str] = None,
+        hardlink_copies: Optional[str] = None,
     ) -> List[int]:
         """把显式勾选或当前筛选全集解析为稳定的明细 ID 快照。"""
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids if int(orphan_id) > 0))
@@ -317,6 +300,7 @@ class OrphanFileService:
             path_prefix=path_prefix,
             status=status,
             confidence=confidence,
+            hardlink_copies=hardlink_copies,
         )
         query = select(OrphanFile.id).order_by(OrphanFile.id.asc())
         for condition in conditions:
@@ -1067,6 +1051,22 @@ class OrphanFileService:
             }
             if copy_count is not None:
                 payload["copy_count"] = copy_count
+                # 快照列同步：共享该 inode 的全部孤儿明细（含当前明细）一起刷新，
+                # 否则兄弟孤儿行数字偏大、located 筛选残留，要等下轮扫描才纠正。
+                assert source_identity is not None
+                await self.db.execute(
+                    update(OrphanFile)
+                    .where(
+                        OrphanFile.id.in_(
+                            select(OrphanCurrentCandidate.current_detail_id).where(
+                                OrphanCurrentCandidate.current_detail_id.isnot(None),
+                                OrphanCurrentCandidate.device_id == str(source_identity[0]),
+                                sql_cast(OrphanCurrentCandidate.inode, Integer) == source_identity[1],
+                            )
+                        )
+                    )
+                    .values(hardlink_copy_count=copy_count)
+                )
             for field, value in payload.items():
                 setattr(stored, field, value)
             try:
@@ -1156,8 +1156,9 @@ class OrphanFileService:
                 ignored=已忽视（联表候选 is_ignored=1）、deleted=已清理。
                 None 时等价 pending+deleted 由 include_deleted 控制（兼容旧调用）。
             confidence: 置信度筛选——high=高置信度，low=低置信度。
-            hardlink_copies: 副本定位筛选——located=仅显示预扫描任务已定位到
-                副本路径的文件（依据每日 orphan_hardlink_copy_scan 落库结果）。
+            hardlink_copies: 副本筛选——located=仅显示有硬链接副本的文件
+                （明细快照列 hardlink_copy_count > 0，扫描时同步落库、
+                每日预扫描/每次成功扫描刷新，无预扫描定位的时间差）。
 
         Returns:
             分页字段与 scan_context。扫描原始量保留在 display_scan，
@@ -1587,36 +1588,17 @@ class OrphanFileService:
             "list": item_dicts,
         }
 
-    @staticmethod
-    def _enrich_hardlink_copy_counts(item_dicts: List[Dict[str, Any]]) -> None:
-        """在线读取每个孤儿文件的硬链接副本数；不可访问时标记为未知。"""
-        unavailable_count = 0
-        for item in item_dicts:
-            file_path = item.get("file_path")
-            if not isinstance(file_path, str) or not file_path:
-                item["hardlink_copy_count"] = None
-                unavailable_count += 1
-                continue
-            try:
-                item["hardlink_copy_count"] = get_hardlink_copy_count(file_path)
-            except OSError:
-                item["hardlink_copy_count"] = None
-                unavailable_count += 1
-        if unavailable_count:
-            logger.debug("[孤儿列表] %d 个文件无法读取硬链接数量", unavailable_count)
-
     async def _enrich_items(self, item_dicts: List[Dict[str, Any]]) -> None:
-        """为本页明细批量注入硬链接数、downloader_name（别名）与忽视态字段。
+        """为本页明细批量注入 downloader_name（别名）与忽视态字段。
 
-        - hardlink_copy_count：实时 ``st_nlink - 1``；文件不可访问时为 None。
+        - hardlink_copy_count：随 ``to_dict()`` 从明细快照列直出（发现文件时
+          stat、每日预扫描/每次成功扫描刷新），不再对当前页逐文件实时 stat
+          （NAS/网络盘上串行 stat 可达秒级）；实时值以副本位置弹窗复核为准。
         - downloader_name：JOIN bt_downloaders.nickname，nickname 为空回退掩码 ID。
         - is_ignored/ignored_at/ignored_by：按 canonical_path 批量查候选。
         """
         if not item_dicts:
             return
-
-        # 文件系统 stat 可能命中网络盘，统一移出事件循环并顺序读取，避免并发打满 NAS。
-        await asyncio.to_thread(self._enrich_hardlink_copy_counts, item_dicts)
 
         # 下载器别名
         downloader_ids = {d["downloader_id"] for d in item_dicts if d.get("downloader_id")}
@@ -1816,12 +1798,16 @@ class OrphanFileService:
 
     # ==================== 清理预览 ====================
 
-    async def prefix_match_preview(self, path_prefix: str, scan_id: str) -> Dict[str, Any]:
+    async def prefix_match_preview(
+        self, path_prefix: str, scan_id: str, hardlink_copies: Optional[str] = None
+    ) -> Dict[str, Any]:
         """左匹配预览：统计以 path_prefix 开头的“待清理”孤儿文件数与大小。
 
         与 cleanup 共用新鲜度门禁：最新扫描必须 completed 且 scan_id 必须最新，
         否则返回 rejected=True（避免对过期数据给出误导性的“将影响 N 个”）。
-        范围严格限定 status=pending（排除已忽视 / 已清理），与前端快捷操作语义一致。
+        范围严格限定 status=pending（排除已忽视 / 已清理），与前端快捷操作语义一致；
+        ``hardlink_copies`` 透传列表筛选口径（located 开启时快捷前缀操作只作用于
+        有副本的文件，避免放大清理范围）。
         """
         gate = await self._check_cleanup_allowed(scan_id)
         if not gate["allowed"]:
@@ -1839,6 +1825,7 @@ class OrphanFileService:
             current_mode=bool((scan_record := await self._get_scan(scan_id)) and scan_record.details_mode == "current"),
             path_prefix=path_prefix,
             status="pending",  # 强制仅待清理
+            hardlink_copies=hardlink_copies,
         )
         query = select(
             OrphanFile.id,
@@ -2947,8 +2934,15 @@ class OrphanFileService:
                 os.rename(qpath, canonical)
                 await _lease_handle.assert_owned()
 
+                # 恢复即刷新副本数快照：文件刚回原位，隔离期间共享副本可能已变化
+                # （stat 失败保留旧快照，fail-closed）
+                try:
+                    restored_copy_count: Optional[int] = await asyncio.to_thread(get_hardlink_copy_count, canonical)
+                except OSError:
+                    restored_copy_count = None
+
                 # 回滚候选 + 明细（同一事务）
-                await self._finalize_restore(candidate, operator=operator)
+                await self._finalize_restore(candidate, operator=operator, hardlink_copy_count=restored_copy_count)
                 prune_empty_quarantine_parents(qpath, qroot)
                 restored_count += 1
                 logger.info("[隔离恢复] 已还原: %s -> %s", qpath, canonical)
@@ -3025,8 +3019,17 @@ class OrphanFileService:
             "failed_list": failed_list,
         }
 
-    async def _finalize_restore(self, candidate: OrphanCurrentCandidate, *, operator: str) -> None:
-        """在同一事务中回滚候选（mark_restored）+ 回滚扫描明细（is_deleted=False）。"""
+    async def _finalize_restore(
+        self,
+        candidate: OrphanCurrentCandidate,
+        *,
+        operator: str,
+        hardlink_copy_count: Optional[int] = None,
+    ) -> None:
+        """在同一事务中回滚候选（mark_restored）+ 回滚扫描明细（is_deleted=False）。
+
+        ``hardlink_copy_count`` 非空时随同一 UPDATE 刷新明细的副本数快照。
+        """
         effective_scan_id = candidate.last_seen_scan_id
         try:
             async with admission_controller.db_write_scope():
@@ -3051,11 +3054,10 @@ class OrphanFileService:
                                 OrphanFile.canonical_path == candidate.canonical_path,
                             ]
                         )
-                    await self.db.execute(
-                        update(OrphanFile)
-                        .where(*detail_conditions)
-                        .values(is_deleted=False, deleted_at=None, deleted_by=None)
-                    )
+                    detail_values: Dict[str, Any] = {"is_deleted": False, "deleted_at": None, "deleted_by": None}
+                    if hardlink_copy_count is not None:
+                        detail_values["hardlink_copy_count"] = hardlink_copy_count
+                    await self.db.execute(update(OrphanFile).where(*detail_conditions).values(**detail_values))
                 await self.db.commit()
         except Exception:
             await self.db.rollback()

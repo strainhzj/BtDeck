@@ -11,7 +11,7 @@ export interface OrphanFileItem {
   scan_id: string
   file_path: string
   file_size: number
-  /** 同一 inode 的其它硬链接目录项数量；文件不可访问时为 null */
+  /** 同一 inode 的其它硬链接目录项数量（扫描时统计快照，每日预扫描/每次成功扫描刷新；尚未生成快照为 null） */
   hardlink_copy_count: number | null
   mtime: string | null
   downloader_id: string | null
@@ -56,7 +56,7 @@ export interface OrphanFolderRow {
   child_total: number
   /** 子文件大小合计 */
   total_size: number
-  /** 父行固定为 null；展开页中每个可见文件单独实时统计 */
+  /** 父行固定为 null；子行副本数为扫描时统计快照 */
   hardlink_copy_count: number | null
   /** 子文件最近修改时间 */
   latest_mtime: string | null
@@ -291,7 +291,7 @@ export interface OrphanListParams {
   // status/confidence 支持逗号分隔多值（后端 OR 并集过滤），故用 string 而非单值联合类型
   status?: string
   confidence?: string
-  /** 副本定位筛选：located=仅显示预扫描已定位到硬链接副本路径的文件 */
+  /** 副本筛选：located=仅显示有硬链接副本的文件（扫描时统计快照 > 0） */
   hardlink_copies?: 'located'
   /** 按文件夹（直接父目录）聚合分页：true 时同目录≥2 文件折叠为文件夹行 */
   group_by_folder?: boolean
@@ -303,6 +303,8 @@ export interface OrphanSelectionFilters {
   path_prefix?: string
   status?: string
   confidence?: string
+  /** 副本筛选快照：located=仅选择有硬链接副本的文件（与列表筛选项同口径） */
+  hardlink_copies?: 'located'
 }
 
 export interface OrphanSelectionPayload {
@@ -365,7 +367,7 @@ export function getOrphanList(params: OrphanListParams): Promise<ApiResponse<Orp
   }) as unknown as Promise<ApiResponse<OrphanListResponse>>
 }
 
-/** 展开文件夹后独立分页加载子文件；后端只对本页执行实时硬链接统计。 */
+/** 展开文件夹后独立分页加载子文件；子文件副本数为扫描时统计快照列。 */
 export function getOrphanFolderChildren(
   params: OrphanFolderChildrenParams
 ): Promise<ApiResponse<OrphanFolderChildrenResponse>> {
@@ -524,6 +526,8 @@ export function setIgnored(data: IgnoreRequest): Promise<ApiResponse<IgnoreResul
 export interface PrefixMatchPreviewRequest {
   path_prefix: string
   scan_id: string
+  /** 副本筛选快照：located=预览范围限定有硬链接副本的文件（与列表筛选同口径） */
+  hardlink_copies?: 'located'
 }
 
 /**

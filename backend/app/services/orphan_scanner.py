@@ -79,6 +79,7 @@ class OrphanFileItem:
         "inode",
         "downloader_id",
         "confidence",
+        "hardlink_copy_count",
     )
 
     def __init__(
@@ -91,6 +92,7 @@ class OrphanFileItem:
         device_id: Optional[int] = None,
         inode: Optional[int] = None,
         confidence: str = "high",
+        hardlink_copy_count: Optional[int] = None,
     ):
         self.file_path = file_path
         self.file_size = file_size
@@ -101,6 +103,8 @@ class OrphanFileItem:
         self.downloader_id = downloader_id
         # high: 在线下载器精筛判定的孤儿；low: 离线/降级下载器经目录粗筛兜底后的孤儿
         self.confidence = confidence
+        # 发现文件时的硬链接副本数快照（st_nlink-1），与身份列同源同批落库
+        self.hardlink_copy_count = hardlink_copy_count
 
 
 def _normalize_path(path: str) -> str:
@@ -604,6 +608,7 @@ class OrphanScanner:
                         device_id=stat_info.st_dev,
                         inode=stat_info.st_ino,
                         confidence=confidence,
+                        hardlink_copy_count=max(int(stat_info.st_nlink) - 1, 0),
                     )
                 )
 
@@ -733,6 +738,7 @@ class OrphanScanner:
                 "device_id": o.device_id,
                 "inode": o.inode,
                 "confidence": o.confidence,
+                "hardlink_copy_count": o.hardlink_copy_count,
             }
             for o in orphans
         ]

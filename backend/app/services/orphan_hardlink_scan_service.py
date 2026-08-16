@@ -10,6 +10,11 @@
 候选受保护无需定位副本，quarantined/purged 候选文件已被移动/删除，纳入只会
 产生无效 stat；取消忽视或隔离恢复后经 reconcile 重置回 candidate，自动恢复扫描。
 
+每轮 stat 得到的权威 ``st_nlink - 1`` 同步刷回孤儿明细的 ``hardlink_copy_count``
+快照列（``_refresh_detail_counts``）：列表副本数与 ``hardlink_copies=located``
+筛选都读该列，孤儿全量扫描默认每周才推进，靠本刷新维持每日新鲜度；已忽视
+候选不在扫描范围，其明细快照停在上次值。
+
 单轮预算（性能护栏）：
 
 - stat 阶段最多 ``ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE`` 个文件；
@@ -27,7 +32,7 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Sequence, Tuple, cast
 
-from sqlalchemy import delete, select, tuple_
+from sqlalchemy import delete, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
@@ -76,6 +81,7 @@ class OrphanHardlinkScanService:
             "rows_written": 0,
             "rows_updated": 0,
             "rows_deferred": 0,
+            "details_refreshed": 0,
             "cursor_advanced_to": None,
             "cursor_wrapped": False,
             "pruned_rows": 0,
@@ -116,6 +122,7 @@ class OrphanHardlinkScanService:
             summary["rows_written"] = written
             summary["rows_updated"] = updated
             summary["rows_deferred"] = deferred
+            summary["details_refreshed"] = await self._refresh_detail_counts(window)
 
             if window.next_cursor is not None:
                 await self._store_cursor(window.next_cursor)
@@ -168,6 +175,7 @@ class OrphanHardlinkScanService:
         """keyset 分批加载候选并顺序 stat，收集身份与权威 ``st_nlink - 1``。"""
         identities: Dict[Identity, List[str]] = {}
         copy_counts: Dict[Identity, int] = {}
+        detail_ids: Dict[Identity, List[int]] = {}
         stat_inspected = 0
         stat_failed = 0
         current = cursor
@@ -211,6 +219,7 @@ class OrphanHardlinkScanService:
             for item in stat_results:
                 identity = cast(Identity, item["identity"])
                 identities.setdefault(identity, []).append(cast(str, item["file_path"]))
+                detail_ids.setdefault(identity, []).append(int(item["detail_id"]))
                 # 同一身份以最后一次 stat 为准（文件系统事实单一）
                 copy_counts[identity] = int(item["copy_count"])
 
@@ -224,6 +233,7 @@ class OrphanHardlinkScanService:
         return _StatWindow(
             identities=identities,
             copy_counts=copy_counts,
+            detail_ids=detail_ids,
             stat_inspected=stat_inspected,
             stat_failed=stat_failed,
             next_cursor=next_cursor,
@@ -234,13 +244,14 @@ class OrphanHardlinkScanService:
     def _stat_paths(targets: Sequence[Tuple[int, str]]) -> List[Dict[str, Any]]:
         """顺序 stat（由调用方放入线程）；不可访问的文件计入失败但不中断本轮。"""
         inspected: List[Dict[str, Any]] = []
-        for _detail_id, file_path in targets:
+        for detail_id, file_path in targets:
             try:
                 stat_result = os.stat(file_path)
             except OSError:
                 continue
             inspected.append(
                 {
+                    "detail_id": detail_id,
                     "identity": (int(stat_result.st_dev), int(stat_result.st_ino)),
                     "copy_count": max(int(stat_result.st_nlink) - 1, 0),
                     "file_path": file_path,
@@ -354,6 +365,34 @@ class OrphanHardlinkScanService:
                     await self.db.flush()
         return written, updated, deferred
 
+    async def _refresh_detail_counts(self, window: "_StatWindow") -> int:
+        """把 stat 得到的权威 ``st_nlink - 1`` 刷回孤儿明细的快照列。
+
+        列表副本数与 ``hardlink_copies=located`` 筛选都读明细快照列，本刷新让
+        它们在每日预扫描节奏内保持新鲜（孤儿全量扫描默认每周才跑一轮）。stat
+        失败的明细不触碰（保留旧快照，fail-closed）；仅更新值有变化的行，避免
+        稳定明细每轮产生无意义 UPDATE/WAL 写放大。
+        """
+        refreshed = 0
+        for identity, detail_id_list in window.detail_ids.items():
+            value = int(window.copy_counts.get(identity, 0))
+            for start in range(0, len(detail_id_list), _IDENTITY_LOOKUP_CHUNK):
+                chunk = detail_id_list[start : start + _IDENTITY_LOOKUP_CHUNK]
+                async with admission_controller.db_write_scope():
+                    result = await self.db.execute(
+                        update(OrphanFile)
+                        .where(
+                            OrphanFile.id.in_(chunk),
+                            or_(
+                                OrphanFile.hardlink_copy_count.is_(None),
+                                OrphanFile.hardlink_copy_count != value,
+                            ),
+                        )
+                        .values(hardlink_copy_count=value)
+                    )
+                refreshed += int(result.rowcount or 0)
+        return refreshed
+
     async def _prune_expired(self) -> int:
         retention_days = max(int(settings.ORPHAN_HARDLINK_SCAN_RESULT_RETENTION_DAYS), 1)
         cutoff = datetime.utcnow() - timedelta(days=retention_days)
@@ -369,12 +408,13 @@ class OrphanHardlinkScanService:
 
 
 class _StatWindow:
-    """一轮 stat 阶段的产出（身份→源路径、身份→权威副本数、游标进度）。"""
+    """一轮 stat 阶段的产出（身份→源路径/明细ID、身份→权威副本数、游标进度）。"""
 
     def __init__(
         self,
         identities: Dict[Identity, List[str]],
         copy_counts: Dict[Identity, int],
+        detail_ids: Dict[Identity, List[int]],
         stat_inspected: int,
         stat_failed: int,
         next_cursor: Optional[int],
@@ -382,6 +422,7 @@ class _StatWindow:
     ) -> None:
         self.identities = identities
         self.copy_counts = copy_counts
+        self.detail_ids = detail_ids
         self.stat_inspected = stat_inspected
         self.stat_failed = stat_failed
         self.next_cursor = next_cursor

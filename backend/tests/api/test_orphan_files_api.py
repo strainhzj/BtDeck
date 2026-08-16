@@ -399,6 +399,7 @@ class TestOrphanFilesCleanupWiring:
             path_prefix=None,
             status="pending",
             confidence="high",
+            hardlink_copies=None,
         )
         preview.assert_awaited_once_with([11, 13], scan_id="scan-latest")
 
@@ -939,7 +940,7 @@ class TestOrphanFilesPrefixMatch:
         assert response.status_code == 200
         assert response.json()["code"] == "200"
         assert response.json()["data"] == payload
-        mocked.assert_awaited_once_with("/data/", "scan-latest")
+        mocked.assert_awaited_once_with("/data/", "scan-latest", hardlink_copies=None)
 
     def test_prefix_match_preview_rejects_empty_prefix(self):
         """path_prefix 为空字符串应被 Pydantic min_length=1 拒绝（422）。"""
@@ -997,6 +998,7 @@ class TestOrphanFilesPrefixMatch:
             path_prefix="/data/leak/",
             status="pending",
             confidence=None,
+            hardlink_copies=None,
         )
 
     def test_ignore_select_all_passes_path_prefix_filter(self):
@@ -1032,6 +1034,7 @@ class TestOrphanFilesPrefixMatch:
             path_prefix="/data/leak/",
             status="pending",
             confidence=None,
+            hardlink_copies=None,
         )
 
 

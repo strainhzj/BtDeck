@@ -51,11 +51,13 @@ def _clean_database_path_env():
 #       → 7b2c9d4e6f10(orphan background scan + stable current detail)
 #       → b6e1c4d9a2f7(torrent backup downloader UUID type)
 #       → c8d9e0f1a2b3(orphan hardlink copy results)
-EXPECTED_HEAD = "c8d9e0f1a2b3"
+#       → d4e5f6a7b8c9(orphan hardlink copy count snapshot)
+EXPECTED_HEAD = "d4e5f6a7b8c9"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
 HARDLINK_COPY_RESULTS_PREV = "b6e1c4d9a2f7"
+HARDLINK_COPY_COUNT_SNAPSHOT_PREV = "c8d9e0f1a2b3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
 

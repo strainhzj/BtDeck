@@ -8,14 +8,12 @@
 4. 状态/路径多条件搜索与分页
 """
 
-import json
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
-from app.models.orphan_hardlink_copy import OrphanHardlinkCopyResult
 from app.services.orphan_file_service import OrphanFileService
 from app.services.orphan_manifest import normalize_path
 
@@ -44,6 +42,7 @@ def _detail(
     downloader_id: str | None = "dl_001",
     confidence: str = "high",
     deleted: bool = False,
+    hardlink_copy_count: int | None = None,
 ) -> OrphanFile:
     item = OrphanFile(
         scan_id=scan_id,
@@ -52,6 +51,7 @@ def _detail(
         downloader_id=downloader_id,
         confidence=confidence,
         canonical_path=normalize_path(path),
+        hardlink_copy_count=hardlink_copy_count,
     )
     item.is_deleted = deleted
     return item
@@ -877,55 +877,26 @@ async def test_cleanup_preview_includes_low_confidence_with_count(async_orphan_d
     assert result["low_confidence_count"] == 1, "应统计 1 个 low confidence 项供前端警告"
 
 
-# ==================== 副本定位筛选（hardlink_copies=located） ====================
+# ==================== 副本筛选（hardlink_copies=located，快照列语义） ====================
 
 
-def _copy_result(device_id: str, inode_id: int, *, found_count: int) -> OrphanHardlinkCopyResult:
-    """构造预扫描落库结果行；found_count 含孤儿源路径自身（与服务层写入口径一致）。"""
-    return OrphanHardlinkCopyResult(
-        device_id=device_id,
-        inode_id=inode_id,
-        copy_count=max(found_count - 1, 0),
-        found_count=found_count,
-        copies_json=json.dumps([f"/data/copy-{inode_id}-{index}.bin" for index in range(found_count)]),
-        truncated=0,
-        scan_note=None,
-    )
-
-
-async def _seed_located_copies(async_orphan_db):
-    """四类样本：命中（found_count=2）、仅源路径（found_count=1）、未扫描、无身份列。"""
+async def _seed_copy_count_samples(async_orphan_db):
+    """四类样本：快照>0（命中）、快照=0、快照=NULL（未知）、已删除。"""
     from app.downloader.models import BtDownloaders
 
     details = [
-        _detail("scan_1", "/data/located.bin", 100),
-        _detail("scan_1", "/data/source-only.bin", 200),
-        _detail("scan_1", "/data/pending.bin", 300),
-        _detail("scan_1", "/data/no-identity.bin", 400),
+        _detail("scan_1", "/data/located.bin", 100, hardlink_copy_count=2),
+        _detail("scan_1", "/data/no-copies.bin", 200, hardlink_copy_count=0),
+        _detail("scan_1", "/data/pending.bin", 300, hardlink_copy_count=None),
+        _detail("scan_1", "/data/deleted.bin", 400, hardlink_copy_count=3, deleted=True),
     ]
-    candidates = [
-        # inode 以字符串落库（Windows 无符号防护），验证 CAST 后与整数 inode_id join
-        _candidate("/data/located.bin", device_id="11", inode="101"),
-        _candidate("/data/source-only.bin", device_id="11", inode="202"),
-        _candidate("/data/pending.bin", device_id="11", inode="303"),
-        _candidate("/data/no-identity.bin"),
-    ]
-    async_orphan_db.add_all(
-        [
-            _scan("scan_1"),
-            *details,
-            *candidates,
-            BtDownloaders(downloader_id="dl_001", nickname="主下载器"),
-            _copy_result("11", 101, found_count=2),
-            _copy_result("11", 202, found_count=1),
-        ]
-    )
+    async_orphan_db.add_all([_scan("scan_1"), *details, BtDownloaders(downloader_id="dl_001", nickname="主下载器")])
     await async_orphan_db.commit()
 
 
 async def test_list_filters_hardlink_copies_located(async_orphan_db):
-    """located 筛选仅保留预扫描定位到非源副本路径（found_count > 1）的文件。"""
-    await _seed_located_copies(async_orphan_db)
+    """located 筛选仅保留快照列 hardlink_copy_count > 0 的未删除文件。"""
+    await _seed_copy_count_samples(async_orphan_db)
 
     result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20, hardlink_copies="located")
 
@@ -933,20 +904,34 @@ async def test_list_filters_hardlink_copies_located(async_orphan_db):
     assert [item["file_path"] for item in result["list"]] == ["/data/located.bin"]
 
 
+async def test_list_returns_hardlink_copy_count_snapshot(async_orphan_db):
+    """列表行直出明细快照列，不再对文件做实时 stat。"""
+    await _seed_copy_count_samples(async_orphan_db)
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20)
+
+    counts = {item["file_path"]: item["hardlink_copy_count"] for item in result["list"]}
+    assert counts == {
+        "/data/located.bin": 2,
+        "/data/no-copies.bin": 0,
+        "/data/pending.bin": None,
+    }
+
+
 async def test_list_hardlink_copies_filter_ignores_unknown_values(async_orphan_db):
     """未识别的 hardlink_copies 取值不追加条件（与 status/confidence 宽松口径一致）。"""
-    await _seed_located_copies(async_orphan_db)
+    await _seed_copy_count_samples(async_orphan_db)
 
     result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20, hardlink_copies="bogus")
 
-    assert result["total"] == 4
+    assert result["total"] == 3
 
 
 async def test_list_hardlink_copies_filter_combines_with_ignored_status(async_orphan_db):
-    """located 与 status=ignored 正交：已忽视但已定位副本的文件仍可被筛出。"""
-    details = [_detail("scan_1", "/data/ignored-located.bin", 100)]
-    candidates = [_candidate("/data/ignored-located.bin", ignored=True, device_id="11", inode="909")]
-    async_orphan_db.add_all([_scan("scan_1"), *details, *candidates, _copy_result("11", 909, found_count=3)])
+    """located 与 status=ignored 正交：已忽视但快照有副本的文件仍可被筛出。"""
+    details = [_detail("scan_1", "/data/ignored-located.bin", 100, hardlink_copy_count=1)]
+    candidates = [_candidate("/data/ignored-located.bin", ignored=True)]
+    async_orphan_db.add_all([_scan("scan_1"), *details, *candidates])
     await async_orphan_db.commit()
 
     result = await OrphanFileService(async_orphan_db).get_orphan_list(
@@ -959,7 +944,7 @@ async def test_list_hardlink_copies_filter_combines_with_ignored_status(async_or
 
 async def test_grouped_and_folder_children_share_located_filter(async_orphan_db):
     """文件夹聚合与子项展开与扁平列表共用 located 过滤口径。"""
-    await _seed_located_copies(async_orphan_db)
+    await _seed_copy_count_samples(async_orphan_db)
 
     grouped = await OrphanFileService(async_orphan_db).get_orphan_list_grouped(
         page=1, page_size=20, hardlink_copies="located"
@@ -974,118 +959,50 @@ async def test_grouped_and_folder_children_share_located_filter(async_orphan_db)
     assert [item["file_path"] for item in children["list"]] == ["/data/located.bin"]
 
 
-async def test_list_hardlink_copies_located_matches_truncated_rows_and_shared_identity(async_orphan_db):
-    """截断结果行与共享同一 inode 的两个孤儿明细（互为硬链接）都应命中 located。"""
-    from app.downloader.models import BtDownloaders
+async def test_resolve_orphan_selection_applies_located_filter(async_orphan_db):
+    """全选当前筛选快照透传 located：只选择快照有副本的文件（口径与列表一致）。"""
+    await _seed_copy_count_samples(async_orphan_db)
+    details = (await async_orphan_db.execute(OrphanFile.__table__.select())).fetchall()
+    ids_by_path = {row.file_path: row.id for row in details}
 
+    ids = await OrphanFileService(async_orphan_db).resolve_orphan_selection(
+        orphan_ids=[],
+        select_all=True,
+        excluded_orphan_ids=[],
+        scan_id="scan_1",
+        hardlink_copies="located",
+    )
+
+    assert ids == [ids_by_path["/data/located.bin"]]
+
+
+async def test_prefix_match_preview_applies_located_filter(async_orphan_db):
+    """快捷前缀预览透传 located：统计范围限定有副本的待清理文件。"""
     details = [
-        _detail("scan_1", "/data/pair-a.bin", 100),
-        _detail("scan_1", "/data/pair-b.bin", 100),
-        _detail("scan_1", "/data/normal.bin", 200),
+        _detail("scan_1", "/data/prefix/located.bin", 100, hardlink_copy_count=2),
+        _detail("scan_1", "/data/prefix/plain.bin", 200, hardlink_copy_count=0),
+        _detail("scan_1", "/other/plain.bin", 300, hardlink_copy_count=1),
     ]
-    candidates = [
-        _candidate("/data/pair-a.bin", device_id="11", inode="707"),
-        _candidate("/data/pair-b.bin", device_id="11", inode="707"),
-        _candidate("/data/normal.bin", device_id="11", inode="808"),
-    ]
-    truncated_row = _copy_result("11", 707, found_count=3)
-    truncated_row.truncated = 1
-    truncated_row.scan_note = "truncated"
-    async_orphan_db.add_all(
-        [
-            _scan("scan_1"),
-            *details,
-            *candidates,
-            BtDownloaders(downloader_id="dl_001", nickname="主下载器"),
-            truncated_row,
-            _copy_result("11", 808, found_count=2),
-        ]
-    )
+    async_orphan_db.add_all([_scan("scan_1"), *details])
     await async_orphan_db.commit()
 
-    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20, hardlink_copies="located")
-
-    assert result["total"] == 3
-    assert {item["file_path"] for item in result["list"]} == {
-        "/data/pair-a.bin",
-        "/data/pair-b.bin",
-        "/data/normal.bin",
-    }
-
-
-async def test_list_hardlink_copies_located_tolerates_malformed_identity_columns(async_orphan_db):
-    """候选身份列为非数字字符串/单侧 NULL 时安全跳过（fail-closed），不抛错也不误命中。"""
-    details = [
-        _detail("scan_1", "/data/garbage-inode.bin", 100),
-        _detail("scan_1", "/data/device-only.bin", 200),
-        _detail("scan_1", "/data/inode-only.bin", 300),
-        _detail("scan_1", "/data/control.bin", 400),
-    ]
-    candidates = [
-        _candidate("/data/garbage-inode.bin", device_id="11", inode="not-a-number"),
-        _candidate("/data/device-only.bin", device_id="11", inode=None),
-        _candidate("/data/inode-only.bin", device_id=None, inode="555"),
-        _candidate("/data/control.bin", device_id="11", inode="556"),
-    ]
-    async_orphan_db.add_all(
-        [
-            _scan("scan_1"),
-            *details,
-            *candidates,
-            _copy_result("11", 555, found_count=2),
-            _copy_result("11", 556, found_count=2),
-        ]
+    scoped = await OrphanFileService(async_orphan_db).prefix_match_preview(
+        "/data/prefix/", "scan_1", hardlink_copies="located"
     )
-    await async_orphan_db.commit()
+    assert scoped["count"] == 1
 
-    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20, hardlink_copies="located")
-
-    # 仅 control 命中；garbage/单侧 NULL 均不命中且查询不抛异常
-    assert result["total"] == 1
-    assert [item["file_path"] for item in result["list"]] == ["/data/control.bin"]
-
-
-async def test_list_hardlink_copies_located_matches_stale_scan_results(async_orphan_db):
-    """located 只看 found_count，不要求 scanned_at 新鲜（过期未清理的行仍可筛出）。"""
-    stale_row = _copy_result("11", 404, found_count=2)
-    stale_row.scanned_at = datetime.utcnow() - timedelta(days=60)
-    async_orphan_db.add_all(
-        [
-            _scan("scan_1"),
-            _detail("scan_1", "/data/stale.bin", 100),
-            _candidate("/data/stale.bin", device_id="11", inode="404"),
-            stale_row,
-        ]
-    )
-    await async_orphan_db.commit()
-
-    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20, hardlink_copies="located")
-
-    assert result["total"] == 1
-    assert [item["file_path"] for item in result["list"]] == ["/data/stale.bin"]
+    unscoped = await OrphanFileService(async_orphan_db).prefix_match_preview("/data/prefix/", "scan_1")
+    assert unscoped["count"] == 2
 
 
 async def test_list_hardlink_copies_located_combines_with_confidence_filter(async_orphan_db):
     """located 与置信度筛选 AND 叠加：只返回同时满足两个条件的行。"""
     details = [
-        _detail("scan_1", "/data/located-high.bin", 100, confidence="high"),
-        _detail("scan_1", "/data/located-low.bin", 200, confidence="low"),
-        _detail("scan_1", "/data/unlocated-high.bin", 300, confidence="high"),
+        _detail("scan_1", "/data/located-high.bin", 100, confidence="high", hardlink_copy_count=1),
+        _detail("scan_1", "/data/located-low.bin", 200, confidence="low", hardlink_copy_count=1),
+        _detail("scan_1", "/data/unlocated-high.bin", 300, confidence="high", hardlink_copy_count=0),
     ]
-    candidates = [
-        _candidate("/data/located-high.bin", device_id="11", inode="601"),
-        _candidate("/data/located-low.bin", device_id="11", inode="602"),
-        _candidate("/data/unlocated-high.bin", device_id="11", inode="603"),
-    ]
-    async_orphan_db.add_all(
-        [
-            _scan("scan_1"),
-            *details,
-            *candidates,
-            _copy_result("11", 601, found_count=2),
-            _copy_result("11", 602, found_count=2),
-        ]
-    )
+    async_orphan_db.add_all([_scan("scan_1"), *details])
     await async_orphan_db.commit()
 
     result = await OrphanFileService(async_orphan_db).get_orphan_list(

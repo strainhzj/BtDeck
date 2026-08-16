@@ -48,6 +48,10 @@ class OrphanSelectionFilters(BaseModel):
         description="状态筛选（支持逗号分隔多值，OR 并集）：pending/ignored/deleted",
     )
     confidence: Optional[str] = Field(default=None, description="置信度筛选（支持逗号分隔多值）：high/low")
+    hardlink_copies: Optional[str] = Field(
+        default=None,
+        description="副本筛选快照：located=仅选择有硬链接副本的文件（与列表筛选项同口径）",
+    )
 
 
 class OrphanSelectionRequest(BaseModel):
@@ -80,6 +84,10 @@ class PrefixMatchPreviewRequest(BaseModel):
 
     path_prefix: str = Field(..., min_length=1, description="文件路径左匹配前缀")
     scan_id: str = Field(..., min_length=1, description="绑定的扫描批次ID")
+    hardlink_copies: Optional[str] = Field(
+        default=None,
+        description="副本筛选快照：located=预览范围限定有硬链接副本的文件（与列表筛选同口径）",
+    )
 
 
 class QuarantineActionRequest(BaseModel):
@@ -138,6 +146,7 @@ async def _resolve_selection(
         path_prefix=filters.path_prefix,
         status=filters.status,
         confidence=filters.confidence,
+        hardlink_copies=filters.hardlink_copies,
     )
 
 
@@ -228,8 +237,9 @@ async def get_orphan_list(
     hardlink_copies: Optional[str] = Query(
         default=None,
         description=(
-            "副本定位筛选：located=仅显示预扫描任务已定位到硬链接副本路径的文件"
-            "（依据每日 orphan_hardlink_copy_scan 落库结果，与列表实时副本数可能短暂不一致）"
+            "副本筛选：located=仅显示有硬链接副本的文件"
+            "（依据扫描时落库的 st_nlink-1 快照列，每日预扫描与每次成功扫描刷新；"
+            "尚未生成快照的历史行不命中）"
         ),
     ),
     group_by_folder: bool = Query(
@@ -247,9 +257,10 @@ async def get_orphan_list(
 
     group_by_folder=True 时改走文件夹聚合分页（仅影响列表数据形态，
     scan_context 统计口径不变）；默认 False 保持扁平文件行分页，向后兼容。
-    文件行实时返回 hardlink_copy_count（st_nlink - 1，无副本为 0，文件不可访问为 null）；
-    文件夹父行不加载子项且 hardlink_copy_count=null，展开后的独立分页接口只对
-    当前可见子文件实时统计硬链接。
+    文件行 hardlink_copy_count 为扫描时统计的硬链接副本数快照（发现文件时
+    st_nlink-1，每日预扫描与每次成功扫描刷新；NULL=尚未生成快照）；文件夹
+    父行不加载子项且 hardlink_copy_count=null，展开后的独立分页接口同样返回
+    子文件的快照列。副本位置弹窗仍会实时复核并展示预扫描定位的路径。
     """
     try:
         service = OrphanFileService(db)
@@ -298,7 +309,7 @@ async def get_orphan_folder_children(
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
-    """展开文件夹后独立分页加载子文件；只对本页文件做实时硬链接统计。"""
+    """展开文件夹后独立分页加载子文件；子文件副本数为扫描时统计的快照列。"""
     try:
         result = await OrphanFileService(db).get_orphan_folder_children(
             folder_path,
@@ -481,11 +492,12 @@ async def prefix_match_preview(
     """左匹配（前缀）预览：统计以 path_prefix 开头的“待清理”孤儿文件数与大小。
 
     与 cleanup 共用新鲜度门禁（最新扫描 completed + scan_id 最新），stale 时返回
-    rejected=True。范围严格限定 status=pending（排除已忽视 / 已清理）。
+    rejected=True。范围严格限定 status=pending（排除已忽视 / 已清理）；
+    hardlink_copies=located 时进一步限定有硬链接副本的文件（与列表筛选同口径）。
     """
     try:
         service = OrphanFileService(db)
-        result = await service.prefix_match_preview(req.path_prefix, req.scan_id)
+        result = await service.prefix_match_preview(req.path_prefix, req.scan_id, hardlink_copies=req.hardlink_copies)
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"左匹配预览失败: {e}", exc_info=True)

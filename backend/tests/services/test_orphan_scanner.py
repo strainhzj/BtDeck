@@ -670,6 +670,26 @@ class TestOrphanDetection:
         assert item.mtime == mtime
         assert item.downloader_id == "dl_001"
 
+    def test_walk_scan_root_captures_hardlink_copy_count(self, tmp_path):
+        """发现孤儿时同步采集 st_nlink-1 快照（零额外 IO，随明细落库）。"""
+        source = tmp_path / "source.mkv"
+        source.write_bytes(b"x")
+        os.link(source, tmp_path / "copy.mkv")
+        solo = tmp_path / "solo.mkv"
+        solo.write_bytes(b"x")
+
+        scanner = OrphanScanner()
+        scanner._expected_files = {"__global__": set()}
+
+        orphans = scanner._walk_scan_root(str(tmp_path), "dl_001", [])
+        by_path = {item.file_path: item for item in orphans}
+        # 同 inode 去重后硬链接对只保留一条孤儿，但其副本数快照正确
+        linked_paths = {os.path.abspath(str(source)), os.path.abspath(str(tmp_path / "copy.mkv"))}
+        linked_items = [item for item in orphans if item.file_path in linked_paths]
+        assert len(linked_items) == 1
+        assert linked_items[0].hardlink_copy_count == 1
+        assert by_path[os.path.abspath(str(solo))].hardlink_copy_count == 0
+
     # ==================== 共享根 + 降级下载器（根因 1 回归） ====================
 
     def test_shared_root_file_of_degraded_downloader_protected_by_whitelist(self, tmp_path):
