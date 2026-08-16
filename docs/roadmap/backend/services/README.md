@@ -20,7 +20,7 @@
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |
 | 孤儿副本预扫描 orphan-hardlink-scan ✨2026-08-15 | `orphan_hardlink_scan_service.py` | `run_round` L60 定时预扫描：stat 限量/keyset 游标/遍历限量/时间预算/路径上限/分批短事务写库/保留期清理；`_stat_window` L167 仅纳入 `status=candidate` 且未忽视候选（忽视/隔离/清除不再消耗预算）；交互端不再遍历 |
-| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；文件夹父行只 SQL 聚合，`get_orphan_folder_children` L1189 展开后独立分页，实时硬链接仅覆盖当前可见文件；`hardlink_copies=located` 筛选（候选身份 CAST join 结果表 `found_count>1`）list/grouped/children 三点透传；超量扫描仅作为可关闭提醒 |
+| 孤儿文件管理 orphan | `orphan_file_service.py` | 稳定当前明细列表/清理/隔离/恢复；文件夹父行只 SQL 聚合，`get_orphan_folder_children` L1518 展开后独立分页，实时硬链接仅覆盖当前可见文件；`hardlink_copies=located` 筛选（候选身份 CAST join 结果表 `found_count>1`）list/grouped/children 三点透传；`delete_hardlink_copies` L871 弹窗删除已定位副本（租约/状态门禁/共享 inode/种子目录 fail-closed + tombstone 三段式 + 审计）；超量扫描仅作为可关闭提醒 |
 | 孤儿 lease orphan-lease | `orphan_lease.py` | 孤儿文件操作跨进程 lease（扫描/预览/清理互斥） |
 | 孤儿生命周期 orphan-lifecycle | `orphan_lifecycle_service.py` | `reconcile_candidates` L76 按 200 条分批查询/更新/current_detail 复用/resolved keyset，每批整体进入 `db_write_scope`；可清理查询亦分页 |
 | 孤儿 manifest orphan-manifest | `orphan_manifest.py` | 有效路径筛选、严格下载器映射、扫描/清理共用实时 manifest |

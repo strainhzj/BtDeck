@@ -5,6 +5,7 @@ import OrphanFiles from '@/views/orphan-files/index.vue'
 import {
   ApiResponse,
   CleanupPreviewResult,
+  HardlinkCopyDeleteResult,
   HardlinkCopyLocationsResult,
   OrphanFileItem,
   OrphanFolderRow,
@@ -18,6 +19,7 @@ import {
   QuarantineListResult,
   cleanupOrphans,
   cleanupPreview,
+  deleteHardlinkCopy,
   getHardlinkCopyLocations,
   getOrphanFolderChildren,
   getQuarantineList,
@@ -41,6 +43,7 @@ jest.mock('@/api/orphan-files', () => ({
   cleanupPreview: jest.fn(),
   cleanupOrphans: jest.fn(),
   getHardlinkCopyLocations: jest.fn(),
+  deleteHardlinkCopy: jest.fn(),
   setIgnored: jest.fn(),
   getQuarantineList: jest.fn(),
   purgeQuarantineNow: jest.fn(),
@@ -73,6 +76,7 @@ const mockReviewScanGuardrail = reviewScanGuardrail as jest.MockedFunction<typeo
 const mockCleanupPreview = cleanupPreview as jest.MockedFunction<typeof cleanupPreview>
 const mockCleanupOrphans = cleanupOrphans as jest.MockedFunction<typeof cleanupOrphans>
 const mockGetHardlinkCopyLocations = getHardlinkCopyLocations as jest.MockedFunction<typeof getHardlinkCopyLocations>
+const mockDeleteHardlinkCopy = deleteHardlinkCopy as jest.MockedFunction<typeof deleteHardlinkCopy>
 const mockSetIgnored = setIgnored as jest.MockedFunction<typeof setIgnored>
 const mockGetQuarantineList = getQuarantineList as jest.MockedFunction<typeof getQuarantineList>
 const mockPurgeQuarantineNow = purgeQuarantineNow as jest.MockedFunction<typeof purgeQuarantineNow>
@@ -196,6 +200,8 @@ interface OrphanFilesVm extends Vue {
   hardlinkLocationDialogVisible: boolean
   hardlinkLocationLoading: boolean
   hardlinkLocationResult: HardlinkCopyLocationsResult | null
+  hardlinkLocationOrphanIds: number[]
+  hardlinkCopyDeleting: Record<string, boolean>
   refreshPageData: () => Promise<void>
   loadOrphanPage: (page: number) => Promise<void>
   handleOrphanPageChange: (page: number) => Promise<void>
@@ -216,6 +222,8 @@ interface OrphanFilesVm extends Vue {
   handleQuarantinePurge: () => Promise<void>
   canOpenHardlinkLocations: (row: OrphanTableRow) => boolean
   handleHardlinkCopyClick: (row: OrphanTableRow) => Promise<void>
+  handleHardlinkCopyDelete: (orphanId: number, copyPath: string) => Promise<void>
+  isHardlinkCopyDeleting: (orphanId: number, copyPath: string) => boolean
   copyHardlinkPath: (path: string) => Promise<void>
   formatHardlinkCopyCount: (count: number | null | undefined) => string
 }
@@ -2389,6 +2397,220 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     expect(copyPaths).toHaveLength(2)
     expect(wrapper.text()).toContain('路径数超过存储上限，仅显示前 2 条。')
     expect(wrapper.text()).toContain('该文件还有 118 个副本位置未定位。')
+  })
+
+  // ==================== 硬链接副本删除 ====================
+
+  function deleteResult(overrides: Partial<HardlinkCopyDeleteResult> = {}): HardlinkCopyDeleteResult {
+    return {
+      orphan_id: 1,
+      file_path: '/data/movie/linked.mkv',
+      copy_count: 1,
+      success_count: 1,
+      failed_count: 0,
+      failed_list: [],
+      ...overrides
+    }
+  }
+
+  function locationsResultFor(item: OrphanFileItem, copies: string[]): HardlinkCopyLocationsResult {
+    return {
+      requested_count: 1,
+      resolved_count: 1,
+      missing_orphan_ids: [],
+      total_copy_count: copies.length,
+      total_found_count: copies.length,
+      total_unlocated_count: 0,
+      unknown_count: 0,
+      scanned_count: 1,
+      pending_scan_count: 0,
+      search_error: null,
+      items: [
+        {
+          orphan_id: item.id,
+          file_path: item.file_path,
+          copy_count: copies.length,
+          found_count: copies.length,
+          unlocated_count: 0,
+          copies,
+          scanned_at: '2026-08-16T04:00:00Z',
+          pending_scan: false,
+          result_truncated: false,
+          error: null
+        }
+      ]
+    }
+  }
+
+  async function openLocationsDialog(
+    wrapper: Wrapper<Vue>,
+    item: OrphanFileItem,
+    copies: string[]
+  ): Promise<void> {
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce(
+      hardlinkLocationsResponse(locationsResultFor(item, copies))
+    )
+    await viewModel(wrapper).handleHardlinkCopyClick(item)
+    await flushLifecycle()
+  }
+
+  it('每个副本行渲染删除按钮（danger 文字按钮）', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv', '/library/b.mkv'])
+
+    const deleteButtons = wrapper.findAll('.hardlink-location-copy__button--delete')
+    expect(deleteButtons).toHaveLength(2)
+    expect(deleteButtons.at(0).text()).toBe('删除')
+    expect(deleteButtons.at(0).attributes('data-loading')).toBe('false')
+  })
+
+  it('确认删除后调用 API、就地刷新行副本数并重查弹窗位置', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const copyPath = '/library/a.mkv'
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, [copyPath])
+    const vm = viewModel(wrapper)
+
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({ orphan_id: linked.id, copy_count: 1 })
+    })
+    // 删除成功后的重查响应（副本数降为 1、列表为空）
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce(
+      hardlinkLocationsResponse(locationsResultFor(linked, []))
+    )
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(confirm).toHaveBeenCalled()
+    expect(mockDeleteHardlinkCopy).toHaveBeenCalledWith({
+      orphan_id: linked.id,
+      copy_paths: [copyPath]
+    })
+    expect(message.success).toHaveBeenCalledWith(expect.stringContaining('已删除副本'))
+    // 就地刷新：不触发整页刷新（mockGetOrphanList 只在挂载时调用一次）
+    expect(mockGetOrphanList).toHaveBeenCalledTimes(1)
+    expect(vm.list[0].hardlink_copy_count).toBe(1)
+    // 重查使用弹窗打开时的同一组 orphan_ids
+    expect(mockGetHardlinkCopyLocations).toHaveBeenLastCalledWith({ orphan_ids: [linked.id] })
+    expect(vm.hardlinkLocationResult?.items[0].copies).toEqual([])
+  })
+
+  it('删除中按钮进入 loading 态，结束后恢复', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+    const vm = viewModel(wrapper)
+
+    const pending = deferred<ApiResponse<HardlinkCopyDeleteResult>>()
+    mockDeleteHardlinkCopy.mockReturnValueOnce(pending.promise)
+    // 重查仍返回一个未删除副本，保证按钮行持续存在以观测 loading 恢复
+    mockGetHardlinkCopyLocations.mockResolvedValue(
+      hardlinkLocationsResponse(locationsResultFor(linked, ['/library/remaining.mkv']))
+    )
+
+    const clickPromise = vm.handleHardlinkCopyDelete(linked.id, '/library/a.mkv')
+    await flushLifecycle()
+    // 多次重渲染后需重新查找，避免持有脱离文档的旧节点
+    expect(wrapper.find('.hardlink-location-copy__button--delete').attributes('data-loading')).toBe('true')
+    expect(vm.isHardlinkCopyDeleting(linked.id, '/library/a.mkv')).toBe(true)
+
+    pending.resolve({ code: '200', msg: 'ok', status: 'success', data: deleteResult() })
+    await clickPromise
+    await flushLifecycle()
+    expect(wrapper.find('.hardlink-location-copy__button--delete').attributes('data-loading')).toBe('false')
+    expect(vm.isHardlinkCopyDeleting(linked.id, '/library/a.mkv')).toBe(false)
+  })
+
+  it('逐项失败原因展示且失败时不重查弹窗', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({
+        success_count: 0,
+        failed_count: 1,
+        copy_count: 2,
+        failed_list: [
+          { copy_path: '/library/a.mkv', reason: '副本位于种子目录内（可能正被引用），已拒绝删除' }
+        ]
+      })
+    })
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(message.error).toHaveBeenCalledWith(expect.stringContaining('种子目录'))
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+  })
+
+  it('租约互斥的 rejected 载荷直接提示且不重查', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({
+        success_count: 0,
+        failed_count: 1,
+        copy_count: null,
+        failed_list: [{ copy_path: '/library/a.mkv', reason: '另一个孤儿文件维护操作正在运行' }],
+        rejected: true,
+        error: '另一个孤儿文件维护操作正在运行'
+      })
+    })
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(message.error).toHaveBeenCalledWith('另一个孤儿文件维护操作正在运行')
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+  })
+
+  it('取消确认不发起删除请求', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+
+    confirm.mockRejectedValueOnce(new Error('cancel'))
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(mockDeleteHardlinkCopy).not.toHaveBeenCalled()
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+  })
+
+  it('located 筛选开启时删除成功改走整页刷新', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({ orphan_id: linked.id, copy_count: 1 })
+    })
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    // located 筛选下行需从结果中消失，触发第二次整页查询
+    expect(mockGetOrphanList).toHaveBeenCalledTimes(2)
   })
 })
 

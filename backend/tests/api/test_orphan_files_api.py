@@ -561,6 +561,83 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 422
         mocked.assert_not_awaited()
 
+    def test_hardlink_copy_delete_passes_request_and_preserves_result(self):
+        """删除副本端点透传 orphan_id/路径与操作者，逐项失败原样返回。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "orphan_id": 7,
+            "file_path": "/data/source.bin",
+            "copy_count": 1,
+            "success_count": 1,
+            "failed_count": 1,
+            "failed_list": [{"copy_path": "/lib/dup.bin", "reason": "副本位于种子目录内（可能正被引用），已拒绝删除"}],
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": ["/lib/copy-a.bin", "/lib/dup.bin"]},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["code"] == "200"
+        assert body["data"] == payload
+        assert "成功 1" in body["msg"] and "失败 1" in body["msg"]
+        mocked.assert_awaited_once()
+        kwargs = mocked.await_args.kwargs
+        assert kwargs["orphan_id"] == 7
+        assert kwargs["copy_paths"] == ["/lib/copy-a.bin", "/lib/dup.bin"]
+        assert kwargs["operator"] == "tester"
+        assert kwargs["audit_service"] is not None
+
+    def test_hardlink_copy_delete_reports_lease_rejection(self):
+        """维护租约互斥时仍返回 200 + rejected 载荷（与 ignore/restore 形态一致）。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "orphan_id": 7,
+            "file_path": None,
+            "copy_count": None,
+            "success_count": 0,
+            "failed_count": 1,
+            "failed_list": [{"copy_path": "/lib/copy-a.bin", "reason": "另一个孤儿文件维护操作正在运行"}],
+            "rejected": True,
+            "error": "另一个孤儿文件维护操作正在运行",
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": ["/lib/copy-a.bin"]},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["code"] == "200"
+        assert body["data"] == payload
+        assert "维护操作" in body["msg"]
+
+    @pytest.mark.parametrize(
+        "copy_paths",
+        ([], [f"/lib/copy-{i}.bin" for i in range(51)]),
+        ids=("empty", "over-limit"),
+    )
+    def test_hardlink_copy_delete_rejects_invalid_batch(self, copy_paths):
+        """空路径列表与超过 50 条的批次由请求模型拒绝（422），不进入服务层。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock()
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": copy_paths},
+            )
+
+        assert response.status_code == 422
+        mocked.assert_not_awaited()
+
     def test_ignore_passes_scan_identity_and_preserves_failure_reasons(self):
         """忽视端点必须把服务层逐项失败原因原样返回，供前端和日志诊断。"""
         from app.services.orphan_file_service import OrphanFileService

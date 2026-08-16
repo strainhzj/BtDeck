@@ -780,3 +780,404 @@ class TestPurgeExpiredDelayRetry:
         assert result.get("purged_count", 0) == 1, "无副本应正常删除"
         await async_orphan_db.refresh(candidate)
         assert candidate.purge_delay_count == 0, f"无副本删除 count 应保持 0: {candidate.purge_delay_count}"
+
+
+# ==================== 硬链接副本删除（弹窗交互） ====================
+
+
+class _DeleteFixture:
+    """delete_hardlink_copies 测试数据快照。"""
+
+    scan_seq = 0
+
+    def __init__(self, detail, source, copies, stored):
+        self.detail = detail
+        self.source = source
+        self.copies = copies
+        self.stored = stored
+
+
+async def _make_delete_fixture(
+    async_orphan_db,
+    tmp_path,
+    *,
+    copy_names=("copy-a.mkv",),
+    candidate_status="candidate",
+    operation_state="stable",
+    with_prescan=True,
+):
+    """构造候选态孤儿 + 真实硬链接副本 + 预扫描结果行。
+
+    copies_json 按存储层语义包含源路径本身（展示端按请求文件过滤）。
+    """
+    source_dir = tmp_path / "downloads"
+    copy_dir = tmp_path / "library"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    copy_dir.mkdir(parents=True, exist_ok=True)
+
+    source = source_dir / "source.mkv"
+    source.write_bytes(b"payload")
+    copies = []
+    for name in copy_names:
+        copy_path = copy_dir / name
+        os.link(source, copy_path)
+        copies.append(copy_path)
+
+    _DeleteFixture.scan_seq += 1
+    scan = OrphanScanResult(
+        scan_id=f"scan_hardlink_delete_{_DeleteFixture.scan_seq}",
+        scan_time=datetime.utcnow(),
+        scan_type="manual",
+        status="completed",
+    )
+    source_stat = os.stat(source)
+    detail = OrphanFile(
+        scan_id=scan.scan_id,
+        file_path=str(source),
+        file_size=7,
+        downloader_id="dl_001",
+        canonical_path=normalize_path(str(source)),
+    )
+    candidate = OrphanCurrentCandidate(
+        canonical_path=normalize_path(str(source)),
+        downloader_id="dl_001",
+        first_seen_at=datetime.utcnow() - timedelta(days=1),
+        last_seen_at=datetime.utcnow(),
+        status=candidate_status,
+        operation_state=operation_state,
+        file_size=7,
+        mtime_ns=source_stat.st_mtime_ns,
+        device_id=str(source_stat.st_dev),
+        inode=str(source_stat.st_ino),
+    )
+    async_orphan_db.add_all([scan, detail, candidate])
+
+    stored = None
+    if with_prescan:
+        stored = OrphanHardlinkCopyResult(
+            device_id=str(source_stat.st_dev),
+            inode_id=int(source_stat.st_ino),
+            copy_count=len(copies),
+            found_count=len(copies) + 1,
+            copies_json=json.dumps([os.path.realpath(str(source))] + [os.path.realpath(str(c)) for c in copies]),
+            truncated=0,
+            scan_note=None,
+            scanned_at=datetime.utcnow(),
+        )
+        async_orphan_db.add(stored)
+    await async_orphan_db.commit()
+    return _DeleteFixture(detail, source, copies, stored)
+
+
+def _empty_whitelist(monkeypatch, dirs=None):
+    """隔离真实 DB：种子目录白名单替换为受控集合。"""
+    from app.services.orphan_manifest import DirectoryWhitelist
+
+    controlled = DirectoryWhitelist(dirs=set(dirs or []))
+    monkeypatch.setattr(
+        "app.services.orphan_file_service.collect_torrent_directory_whitelist",
+        lambda session_factory, downloader_ids=None: controlled,
+    )
+    return controlled
+
+
+class TestHardlinkCopyDelete:
+    """弹窗删除副本：逐路径 fail-closed，tombstone 三段式，共享 inode/种子目录拒绝。"""
+
+    async def test_deletes_copy_updates_result_row_and_audits(self, async_orphan_db, tmp_path, monkeypatch):
+        """happy path：副本目录项被删、源文件与数据完好、结果行/审计同步更新。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, copy_names=("a.mkv", "b.mkv"))
+        _empty_whitelist(monkeypatch)
+        copy_a = os.path.realpath(str(fixture.copies[0]))
+        source_real = os.path.realpath(str(fixture.source))
+        audit_service = AsyncMock()
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_a],
+            operator="tester",
+            audit_service=audit_service,
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 1
+        assert result["failed_count"] == 0
+        assert result["copy_count"] == 1  # 2 副本删 1 个
+        assert not os.path.exists(copy_a)
+        assert os.path.exists(source_real)
+        with open(source_real, "rb") as f:
+            assert f.read() == b"payload"
+        assert os.stat(source_real).st_nlink == 2  # 源 + 剩余副本
+
+        stored = fixture.stored
+        await async_orphan_db.refresh(stored)
+        assert json.loads(stored.copies_json) == [source_real, os.path.realpath(str(fixture.copies[1]))]
+        assert stored.found_count == 2
+        assert stored.copy_count == 1
+
+        audit_service.log_operation.assert_awaited_once()
+        kwargs = audit_service.log_operation.await_args.kwargs
+        assert kwargs["operation_type"] == "orphan_hardlink_copy_delete"
+        assert kwargs["operation_detail"]["deleted_paths"] == [copy_a]
+
+    async def test_rejects_shared_inode_candidate_paths(self, async_orphan_db, tmp_path, monkeypatch):
+        """共享同一 inode 的其它孤儿源路径不可作为副本删除（防删孤儿 B 本身）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+        # 孤儿 B：同身份候选，canonical_path 指向弹窗中的"副本"路径
+        source_stat = os.stat(fixture.source)
+        async_orphan_db.add(
+            OrphanCurrentCandidate(
+                canonical_path=normalize_path(copy_real),
+                downloader_id="dl_002",
+                first_seen_at=datetime.utcnow(),
+                last_seen_at=datetime.utcnow(),
+                status="candidate",
+                operation_state="stable",
+                file_size=7,
+                mtime_ns=source_stat.st_mtime_ns,
+                device_id=str(source_stat.st_dev),
+                inode=str(source_stat.st_ino),
+            )
+        )
+        await async_orphan_db.commit()
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "孤儿文件" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real), "同 inode 孤儿源路径必须原样保留"
+
+    async def test_rejects_paths_not_in_stored_results(self, async_orphan_db, tmp_path, monkeypatch):
+        """请求路径必须与返回前端的 copies 原始字符串一致（防任意路径注入）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        unrelated = tmp_path / "unrelated.mkv"
+        unrelated.write_bytes(b"unrelated")
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [str(unrelated)],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "不一致" in result["failed_list"][0]["reason"]
+        assert os.path.exists(unrelated)
+        assert os.path.exists(str(fixture.copies[0])), "无关路径被拒不得影响真实副本"
+
+    async def test_rejects_seed_directory_copies(self, async_orphan_db, tmp_path, monkeypatch):
+        """副本位于种子目录（save 根或种子子目录）内时拒绝删除。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+        _empty_whitelist(monkeypatch, dirs=[normalize_path(str(tmp_path / "library"))])
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "种子目录" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real)
+
+    async def test_seed_whitelist_failure_fails_closed(self, async_orphan_db, tmp_path, monkeypatch):
+        """种子目录白名单加载失败时整体拒绝（fail-closed）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+
+        def _boom(session_factory, downloader_ids=None):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr("app.services.orphan_file_service.collect_torrent_directory_whitelist", _boom)
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "白名单加载失败" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real)
+
+    async def test_rejects_quarantine_and_recycle_markers(self, async_orphan_db, tmp_path, monkeypatch):
+        """隔离区/回收站标记路径拒绝（纵深防御，标记检查先于文件系统访问）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        fake_quarantine = str(tmp_path / ".btdeck_quarantine" / "x" / "a.mkv")
+        fake_recycle = str(tmp_path / "downloads" / "movie.pending_delete" / "a.mkv")
+        stored = fixture.stored
+        stored.copies_json = json.dumps([os.path.realpath(str(fixture.source)), fake_quarantine, fake_recycle])
+        await async_orphan_db.commit()
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [fake_quarantine, fake_recycle],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        reasons = [item["reason"] for item in result["failed_list"]]
+        assert any("隔离区" in reason for reason in reasons)
+        assert any("回收站" in reason for reason in reasons)
+
+    async def test_identity_mismatch_keeps_file(self, async_orphan_db, tmp_path, monkeypatch):
+        """副本被替换为普通文件时身份校验失败，替换文件必须原样保留。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        copy_path = fixture.copies[0]
+        copy_real = os.path.realpath(str(copy_path))
+        os.remove(copy_path)
+        copy_path.write_bytes(b"replaced")  # 同路径新文件（不同 inode）
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "身份" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_path)
+        with open(copy_path, "rb") as f:
+            assert f.read() == b"replaced"
+
+    async def test_inaccessible_source_fails_all(self, async_orphan_db, tmp_path, monkeypatch):
+        """源文件不可访问时无法校验身份，全部拒绝。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+        os.remove(fixture.source)
+        os.remove(fixture.copies[0])
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "源文件不可访问" in result["failed_list"][0]["reason"]
+
+    async def test_candidate_state_gate(self, async_orphan_db, tmp_path, monkeypatch):
+        """quarantined / purge_pending 候选一律拒绝（与清理流水线互斥）。"""
+        quarantined = await _make_delete_fixture(async_orphan_db, tmp_path / "q", candidate_status="quarantined")
+        pending = await _make_delete_fixture(async_orphan_db, tmp_path / "p", operation_state="purge_pending")
+        _empty_whitelist(monkeypatch)
+
+        service = OrphanFileService(async_orphan_db)
+        result_q = await service.delete_hardlink_copies(
+            quarantined.detail.id,
+            [str(quarantined.copies[0])],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+        result_p = await service.delete_hardlink_copies(
+            pending.detail.id,
+            [str(pending.copies[0])],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert "状态不允许" in result_q["failed_list"][0]["reason"]
+        assert "状态不允许" in result_p["failed_list"][0]["reason"]
+        assert os.path.exists(str(quarantined.copies[0]))
+        assert os.path.exists(str(pending.copies[0]))
+
+    async def test_missing_prescan_row_rejected(self, async_orphan_db, tmp_path, monkeypatch):
+        """无预扫描结果行（pending_scan）时不可删除。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, with_prescan=False)
+        _empty_whitelist(monkeypatch)
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [str(fixture.copies[0])],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "预扫描" in result["failed_list"][0]["reason"]
+
+    async def test_partial_batch_and_dedup(self, async_orphan_db, tmp_path, monkeypatch):
+        """批量部分失败互不影响；重复路径去重后只删一次。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, copy_names=("a.mkv", "b.mkv"))
+        _empty_whitelist(monkeypatch)
+        copy_a = os.path.realpath(str(fixture.copies[0]))
+        not_stored = str(tmp_path / "library" / "not-stored.mkv")
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_a, not_stored, copy_a],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 1
+        assert result["failed_count"] == 1
+        assert not os.path.exists(copy_a)
+        assert os.path.exists(os.path.realpath(str(fixture.copies[1])))
+
+    async def test_lease_busy_returns_rejected(self, async_orphan_db, tmp_path, monkeypatch):
+        """维护租约被占时整体拒绝并标记 rejected。"""
+        from contextlib import asynccontextmanager
+
+        from app.services.orphan_lease import OrphanLeaseBusyError
+
+        @asynccontextmanager
+        async def _busy_scope(operation, ttl=None, db=None):
+            raise OrphanLeaseBusyError("另一个孤儿文件维护操作正在运行")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr("app.services.orphan_lease.orphan_maintenance_scope", _busy_scope)
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id, [copy_real], operator="tester"
+        )
+
+        assert result["rejected"] is True
+        assert result["success_count"] == 0
+        assert "维护操作" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real)
+
+    async def test_empty_request_returns_empty(self, async_orphan_db):
+        """空路径列表直接返回空结果，不触碰文件系统。"""
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            1, [], operator="tester", _lease_acquired=True, _lease_handle=_lease()
+        )
+        assert result == {
+            "orphan_id": 1,
+            "file_path": None,
+            "copy_count": None,
+            "success_count": 0,
+            "failed_count": 0,
+            "failed_list": [],
+        }

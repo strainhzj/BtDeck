@@ -1,5 +1,27 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-16 交接：副本位置弹窗行级删除硬链接副本
+
+### 当前结果
+
+- 副本位置弹窗每个副本行新增「删除」danger 文字按钮：`$confirm(type=error)` 二次确认（文案说明仅移除该路径链接、数据仍由源文件保留、种子目录内副本会被拒绝）→ `POST /orphan-files/hardlink-copies/delete`（`{orphan_id, copy_paths:[path]}`）→ 成功后就地刷新列表行 `hardlink_copy_count`（含文件夹 children；`located` 筛选开启时改走 `refreshPageData` 整页刷新）+ 重查弹窗位置。
+- 后端 `delete_hardlink_copies`（`orphan_file_service.py:871`）逐路径 fail-closed：租约互斥 → 候选 `status=candidate`/`operation_state=stable` 门禁 → 源 stat 身份 + 预扫描结果行 → 共享 inode 拒绝集（源路径 + 同身份全部候选 canonical_path）→ 种子目录白名单（`collect_torrent_directory_whitelist` 全量，加载失败整体拒绝）→ copies 原始字符串成员判定 + 隔离区/回收站标记 + 符号链接拒绝 → tombstone 三段式（rename→身份复核→remove，复核失败回滚）。成功后 setattr payload 同步结果行，主事务 commit 后写审计（新枚举 `orphan_hardlink_copy_delete`）。
+- 响应形态：状态类拒绝一律 HTTP 200 + `failed_list[{copy_path, reason}]`；租约 busy 返回 `rejected=true`；Pydantic 参数失败 422。无 schema 变更。
+- 经 3 个只读子代理独立审查修订的关键点：审计事务冲突（改 restore 模式，commit 后写）；共享 inode 漏洞（同身份候选拒绝集）；tombstone 删除保护；Vue2 `$set/$delete`；弹窗重开竞态（删除回调 seq 快照 + `hardlinkLocationDialogVisible` 双重校验后才重查）；重查 `keepResult=true` 保留旧数据仅列表区局部遮罩。
+
+### 验证
+
+- 后端：detection 33 passed（TestHardlinkCopyDelete 13 用例，真实 os.link 临时硬链接）/ api 44 passed / enums 283 passed；`tests/services+tests/api` 1983 passed、`tests/core+tasks+enums` 1075 passed；black/flake8/ruff/lint_btdeck 通过；mypy 1563=基线（stash 对比零新增）。
+- 前端：orphan-files.spec.ts 99 passed（新增 7 用例）；全量 44 suites/754 passed；typecheck + 三个改动文件 ESLint 零问题。
+- 文档：roadmap 三层（根 README + services README + `orphan_file_service.md` 行号实测 3809 行 + api README）；feature_list.json 新增 `orphan-hardlink-copy-delete`（3 tasks）；progress.md 已更新；`./init.sh` ci 通过。
+
+### 后续与边界
+
+- 未执行 Git 提交/推送/部署；工作区原有未跟踪产物保持不动。
+- 种子目录保护为 DB 目录级（save 根 + 种子子目录），非实时 manifest 文件级——交互请求内不构建实时清单（成本考虑）；在线下载器 expected 文件级保护不覆盖此场景，目录级可能过拒（位于种子目录内但非种子文件的副本无法通过此功能删除），属用户确认的 fail-closed 取向。
+- 结果行与预扫描任务的写竞态：删除提交后若预扫描轮次已在遍历同身份，下一轮会自愈覆盖；`truncated`/`scan_note`/`scanned_at` 保留原值。
+- 前端 `audit.vue` typeMap 未加新枚举文案（缺省回退显示原始值，与既有 6 个 orphan 枚举一致）。
+
 ## 2026-08-15 交接：已定位副本快捷筛选 + 预扫描范围收紧
 
 ### 当前结果

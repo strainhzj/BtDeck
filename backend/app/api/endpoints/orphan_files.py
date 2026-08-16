@@ -99,6 +99,18 @@ class HardlinkCopyLocationsRequest(BaseModel):
     )
 
 
+class HardlinkCopyDeleteRequest(BaseModel):
+    """删除已定位硬链接副本的目录项（仅移除该路径链接，源文件与数据保留）。"""
+
+    orphan_id: int = Field(..., description="副本所属孤儿文件 ID（弹窗条目）")
+    copy_paths: List[str] = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="要删除的副本路径（必须与弹窗展示的预扫描结果路径完全一致）",
+    )
+
+
 class OrphanGuardrailReviewRequest(BaseModel):
     """兼容旧客户端的超量扫描复核记录请求。"""
 
@@ -324,6 +336,38 @@ async def get_hardlink_copy_locations(
     except Exception as e:
         logger.error(f"查询硬链接副本位置失败: {e}", exc_info=True)
         return CommonResponse(status="error", msg=f"查询失败: {e}", code="500", data=None)
+
+
+@router.post("/hardlink-copies/delete", response_model=CommonResponse)
+async def delete_hardlink_copies(
+    req: HardlinkCopyDeleteRequest,
+    db: AsyncSession = Depends(get_async_db),
+    current_user=Depends(require_authenticated_user),
+    audit_service: AuditLogService = Depends(get_audit_service),
+):
+    """删除已定位的硬链接副本目录项（tombstone 三段式，逐项 fail-closed）。
+
+    仅移除指向同一 inode 的其它路径链接，源文件与数据保留；源路径、共享
+    同一 inode 的其它孤儿、种子目录内副本、隔离区/回收站路径均拒绝删除，
+    状态类拒绝以 failed_list 返回（不使用 400）。
+    """
+    try:
+        result = await OrphanFileService(db).delete_hardlink_copies(
+            orphan_id=req.orphan_id,
+            copy_paths=req.copy_paths,
+            operator=current_user.username,
+            audit_service=audit_service,
+        )
+        if result.get("rejected"):
+            msg = str(result.get("error") or "维护操作互斥，本次未执行删除")
+        elif result["failed_count"] > 0:
+            msg = f"副本删除完成: 成功 {result['success_count']} 个，失败 {result['failed_count']} 个"
+        else:
+            msg = f"副本删除完成: 成功 {result['success_count']} 个"
+        return CommonResponse(status="success", msg=msg, code="200", data=result)
+    except Exception as e:
+        logger.error(f"删除硬链接副本失败: {e}", exc_info=True)
+        return CommonResponse(status="error", msg=f"删除失败: {e}", code="500", data=None)
 
 
 @router.post("/scan", response_model=CommonResponse)

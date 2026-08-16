@@ -687,7 +687,7 @@
             show-icon
           />
 
-          <div class="hardlink-location-list">
+          <div v-loading="hardlinkLocationRefreshing" class="hardlink-location-list">
             <section
               v-for="item in hardlinkLocationResult.items"
               :key="item.orphan_id"
@@ -742,6 +742,15 @@
                   >
                     复制路径
                   </el-button>
+                  <el-button
+                    type="text"
+                    size="mini"
+                    class="hardlink-location-copy__button hardlink-location-copy__button--delete"
+                    :loading="isHardlinkCopyDeleting(item.orphan_id, copyPath)"
+                    @click="handleHardlinkCopyDelete(item.orphan_id, copyPath)"
+                  >
+                    删除
+                  </el-button>
                 </div>
                 <p v-if="item.result_truncated" class="hardlink-location-unlocated">
                   路径数超过存储上限，仅显示前 {{ item.copies.length }} 条。
@@ -754,7 +763,7 @@
                 最近一轮预扫描未定位到副本路径。
               </p>
               <p v-else-if="item.copy_count === 0" class="hardlink-location-empty">
-                点击查询时已复核为 0 个副本。
+                该文件当前已无其它硬链接副本。
               </p>
               <p v-if="item.unlocated_count && item.unlocated_count > 0" class="hardlink-location-unlocated">
                 该文件还有 {{ item.unlocated_count }} 个副本位置未定位。
@@ -872,6 +881,7 @@ import {
   getOrphanList,
   getOrphanFolderChildren,
   getHardlinkCopyLocations,
+  deleteHardlinkCopy,
   triggerScan,
   getScanStatus,
   cleanupPreview,
@@ -989,6 +999,11 @@ export default class OrphanFiles extends Vue {
   private hardlinkLocationResult: HardlinkCopyLocationsResult | null = null
   private hardlinkLocationDialogTitle = '硬链接副本位置'
   private hardlinkLocationRequestSeq = 0
+  // 当前弹窗涉及的孤儿 ID（删除副本后重查用）；重查只遮罩列表区，不清空旧结果。
+  private hardlinkLocationOrphanIds: number[] = []
+  private hardlinkLocationRefreshing = false
+  // 行级删除中状态（key=`${orphan_id}:${copyPath}`）；Vue2 动态 key 必须 $set/$delete。
+  private hardlinkCopyDeleting: Record<string, boolean> = {}
 
   // 页面列表、统计和清理门禁共用的后端权威快照
   private scanContext: OrphanScanContext = {
@@ -1279,15 +1294,30 @@ export default class OrphanFiles extends Vue {
     const targets = this.getHardlinkLocationTargets(row)
     if (targets.length === 0) return
 
-    const orphanIds = [...new Set(targets.map((item) => item.id))]
-    const requestId = this.hardlinkLocationRequestSeq + 1
-    this.hardlinkLocationRequestSeq = requestId
+    this.hardlinkLocationOrphanIds = [...new Set(targets.map((item) => item.id))]
     this.hardlinkLocationDialogTitle = isFolderRow(row)
       ? `硬链接副本位置（${targets.length} 个文件）`
       : '硬链接副本位置'
     this.hardlinkLocationDialogVisible = true
-    this.hardlinkLocationLoading = true
-    this.hardlinkLocationResult = null
+    await this.fetchHardlinkLocations(this.hardlinkLocationOrphanIds)
+  }
+
+  /**
+   * 拉取副本位置（seq 守卫丢弃过期响应）。
+   *
+   * keepResult=true 用于删除后的重查：不清空旧结果、只对列表区做局部遮罩，
+   * 失败时保留删除前数据并明确提示，避免用户刚删完就看到弹窗内容消失。
+   */
+  private async fetchHardlinkLocations(orphanIds: number[], keepResult = false): Promise<void> {
+    if (orphanIds.length === 0) return
+    const requestId = this.hardlinkLocationRequestSeq + 1
+    this.hardlinkLocationRequestSeq = requestId
+    if (keepResult) {
+      this.hardlinkLocationRefreshing = true
+    } else {
+      this.hardlinkLocationLoading = true
+      this.hardlinkLocationResult = null
+    }
 
     try {
       const response = await getHardlinkCopyLocations({ orphan_ids: orphanIds })
@@ -1300,11 +1330,13 @@ export default class OrphanFiles extends Vue {
     } catch (error) {
       if (requestId !== this.hardlinkLocationRequestSeq) return
       this.$message.error(
-        '查询硬链接副本位置失败：' + extractErrorMessage(error, '网络错误')
+        (keepResult ? '刷新副本位置失败，当前展示为删除前结果：' : '查询硬链接副本位置失败：') +
+          extractErrorMessage(error, '网络错误')
       )
     } finally {
       if (requestId === this.hardlinkLocationRequestSeq) {
         this.hardlinkLocationLoading = false
+        this.hardlinkLocationRefreshing = false
       }
     }
   }
@@ -1312,8 +1344,91 @@ export default class OrphanFiles extends Vue {
   private resetHardlinkLocationDialog(): void {
     this.hardlinkLocationRequestSeq += 1
     this.hardlinkLocationLoading = false
+    this.hardlinkLocationRefreshing = false
     this.hardlinkLocationResult = null
     this.hardlinkLocationDialogTitle = '硬链接副本位置'
+    this.hardlinkLocationOrphanIds = []
+    this.hardlinkCopyDeleting = {}
+  }
+
+  private isHardlinkCopyDeleting(orphanId: number, copyPath: string): boolean {
+    return this.hardlinkCopyDeleting[`${orphanId}:${copyPath}`] === true
+  }
+
+  /**
+   * 删除单个硬链接副本目录项（仅移除该路径链接，源文件与数据保留）。
+   *
+   * 成功后就地刷新列表行副本数并重查弹窗；重查前用「seq 快照 + 弹窗可见」
+   * 双重校验，防止删除在途时用户关闭并重开另一弹窗后被迟到的重查覆盖。
+   */
+  private async handleHardlinkCopyDelete(orphanId: number, copyPath: string): Promise<void> {
+    const stateKey = `${orphanId}:${copyPath}`
+    if (this.hardlinkCopyDeleting[stateKey]) return
+    try {
+      await this.$confirm(
+        `确认删除硬链接副本？\n${copyPath}\n此操作不可恢复：仅移除该路径链接，数据仍由源文件保留；位于种子目录内的副本会被拒绝删除。`,
+        '删除副本确认',
+        { type: 'error', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+
+    const seqSnapshot = this.hardlinkLocationRequestSeq
+    this.$set(this.hardlinkCopyDeleting, stateKey, true)
+    try {
+      const response = await deleteHardlinkCopy({ orphan_id: orphanId, copy_paths: [copyPath] })
+      if (response.code === '200' && response.data) {
+        const data = response.data
+        if (data.rejected) {
+          this.$message.error(data.error || data.failed_list[0]?.reason || '删除被拒绝')
+        } else {
+          if (data.success_count > 0) {
+            this.$message.success(`已删除副本：${copyPath}`)
+            this.syncHardlinkCopyCount(orphanId, data.copy_count)
+            if (
+              this.hardlinkLocationDialogVisible &&
+              seqSnapshot === this.hardlinkLocationRequestSeq
+            ) {
+              await this.fetchHardlinkLocations(this.hardlinkLocationOrphanIds, true)
+            }
+          }
+          if (data.failed_count > 0) {
+            this.$message.error(`删除失败：${data.failed_list[0]?.reason || '未知原因'}`)
+          }
+        }
+      } else {
+        this.$message.error(response.msg || '删除硬链接副本失败')
+      }
+    } catch (error) {
+      this.$message.error('删除硬链接副本失败：' + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.$delete(this.hardlinkCopyDeleting, stateKey)
+    }
+  }
+
+  /**
+   * 删除成功后就地刷新列表行副本数（含文件夹行 children），避免整页刷新
+   * 重置页码/勾选/展开态；located 筛选开启时该行需从筛选结果中消失，改走全量刷新。
+   */
+  private syncHardlinkCopyCount(orphanId: number, copyCount: number | null): void {
+    if (this.listQuery.hardlinkCopies) {
+      void this.refreshPageData()
+      return
+    }
+    if (copyCount === null) return
+    const updateRow = (item: OrphanFileItem): boolean => {
+      if (item.id !== orphanId) return false
+      item.hardlink_copy_count = copyCount
+      return true
+    }
+    for (const row of this.list) {
+      if (!isFolderRow(row)) {
+        if (updateRow(row)) return
+      } else if (row.children.some(updateRow)) {
+        return
+      }
+    }
   }
 
   private async copyHardlinkPath(path: string): Promise<void> {
@@ -2266,6 +2381,15 @@ export default class OrphanFiles extends Vue {
 
   &__button {
     flex-shrink: 0;
+  }
+
+  &__button--delete {
+    color: var(--color-danger);
+
+    &:hover,
+    &:focus {
+      color: var(--color-danger);
+    }
   }
 }
 

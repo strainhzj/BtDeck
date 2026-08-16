@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-15",
+  "last_updated": "2026-08-16",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-11",
@@ -3555,6 +3555,54 @@
             "session-handoff.md"
           ],
           "evidence": "全部行号 grep 实测重写（发现并顺带修正 4da8115 时第三层文档已漂移：记录 3161 行，实测当时 3449 行/当前 3480 行）。验证：后端 black/flake8 通过、mypy 与改动前基线一致（149 存量错误，无新增）；前端 lint 无新增问题（keyword spec 5 个警告为 dev 分支存量）。 回归加固（第三批）验证：后端三文件 99 passed（API 40 + 服务层 38 + 扫描 21，black 重排后复跑通过、flake8 干净）；前端 orphan-files.spec.ts 92 passed；生产代码本轮零改动（mypy 基线不变）。"
+        }
+      ]
+    },
+    {
+      "id": "orphan-hardlink-copy-delete",
+      "name": "副本位置弹窗行级删除硬链接副本",
+      "description": "副本位置弹窗此前只能复制路径。新增行级「删除」能力：仅移除指向同一 inode 的其它路径链接（源文件与数据保留）。后端 delete_hardlink_copies 逐路径 fail-closed：维护租约（orphan_maintenance_scope，busy 整体 rejected）→ 候选 status=candidate 且 operation_state=stable 门禁 → 源文件 stat 身份 + 预扫描结果行存在 → 共享 inode 拒绝集（源路径 + 同 (device_id, inode) 全部候选 canonical_path，防删同 inode 其它孤儿）→ 种子目录白名单（collect_torrent_directory_whitelist 全量下载器 DB 目录级，加载失败整体拒绝）→ 请求路径与返回前端的 copies 原始字符串成员判定（防任意路径注入）+ 隔离区/回收站标记（settings 口径）+ 符号链接拒绝 → tombstone 三段式删除（rename→身份复核→remove，复核失败回滚）。成功后 setattr payload 同步结果行（copies_json/found_count/copy_count，保留 truncated/scan_note/scanned_at）并在主事务 commit 后写审计（新枚举 orphan_hardlink_copy_delete 三处登记）。状态类拒绝一律 200+failed_list（{copy_path, reason}），与 set_ignored/restore 响应形态一致。无 schema 变更。同步执行（≤50 路径，与 restore 同级先例）。经 3 个只读子代理独立审查修订：修复审计事务冲突（改 restore 模式）、补租约/在途排除/候选门禁、共享 inode 漏洞、tombstone 删除保护、Vue2 $set/$delete 响应式、弹窗重开竞态（seq 快照+可见双重校验）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-hardlink-copy-delete.1",
+          "name": "后端：delete_hardlink_copies 服务方法 + 审计枚举",
+          "description": "OrphanFileService 新增 delete_hardlink_copies(orphan_id, copy_paths, operator, audit_service, _lease_acquired, _lease_handle)：入口去重保序；租约模式同 restore；_hardlink_copy_marker_reason/_in_seed_directory/_remove_hardlink_copy 三个 static 辅助；结果行更新走 setattr payload（与预扫描 _write_results 同惯例，规避 ORM Column 静态类型噪音）；审计恒记（SUCCESS/PARTIAL/FAILED）。AuditOperationType 新增 ORPHAN_HARDLINK_COPY_DELETE，枚举成员/get_display_name/get_category 三处登记。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/enums/test_audit_enums.py"
+          ],
+          "evidence": "test_orphan_hardlink_detection.py 新增 TestHardlinkCopyDelete 13 用例全过（文件 33 passed）：happy path（真实 os.link 临时硬链接，副本删除后源完好、nlink 2、结果行 copies_json/found_count/copy_count 更新、审计 kwargs 断言）、共享 inode 其它候选源路径拒绝、路径不在 stored copies 拒绝、种子目录拦截（monkeypatch 服务命名空间白名单）、白名单加载失败 fail-closed、隔离区/回收站标记拒绝（标记检查先于文件系统访问）、身份不匹配（副本被替换→拒绝且替换文件保留）、源不可访问全拒、quarantined/purge_pending 状态门禁、无预扫描行拒绝、批量部分失败+去重、租约 busy rejected、空请求空结果。tests/enums 283 passed（成员计数 45→46 同步）。"
+        },
+        {
+          "id": "orphan-hardlink-copy-delete.2",
+          "name": "后端：POST /orphan-files/hardlink-copies/delete 端点",
+          "description": "请求模型 HardlinkCopyDeleteRequest{orphan_id, copy_paths 1..50}（Pydantic 失败=422）；require_authenticated_user + get_audit_service 依赖注入（restore 模式）；rejected 时 msg 取 error；透传服务结果。mypy 零新增（全量 1563=基线 1563，实测 stash 对比）、black/flake8/ruff/lint_btdeck 通过。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/api/test_orphan_files_api.py"
+          ],
+          "evidence": "test_orphan_files_api.py 新增 3 用例（文件 44 passed）：透传（kwargs 精确断言 orphan_id/copy_paths/operator/audit_service 非空，msg 含成功/失败计数）、租约 rejected 载荷（200+rejected=true+msg 含维护操作）、422 参数化（空列表/51 条超限，服务层未被调用）。"
+        },
+        {
+          "id": "orphan-hardlink-copy-delete.3",
+          "name": "前端：弹窗行级删除按钮与就地刷新",
+          "description": "orphan-files.ts 新增 deleteHardlinkCopy + HardlinkCopyDeleteRequest/Result 类型（timeout 120000）。index.vue：抽取 fetchHardlinkLocations(orphanIds, keepResult)（seq/loading/result 职责分离）；副本行新增 danger 文字按钮删除（loading 态经 $set/$delete 的 hardlinkCopyDeleting，key=orphan_id:copyPath）；$confirm type=error 对齐 handleQuarantinePurge 惯例（确认删除/取消，文案说明仅移除路径链接、数据保留、种子目录内会被拒绝）；删除成功后 syncHardlinkCopyCount 就地更新行副本数（含文件夹 children；located 筛选开启时改走 refreshPageData 整页刷新）+ 重查弹窗（keepResult 保留旧数据、hardlinkLocationRefreshing 局部遮罩、seq 快照+弹窗可见双重校验防迟到重查覆盖另一弹窗）；resetHardlinkLocationDialog 同步清空 orphanIds/deleting；copy_count===0 空态文案改通用表述。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "orphan-files.spec.ts 新增 7 用例（文件 99 passed，全套件 44 suites/754 tests passed）：删除按钮渲染（数量/文案/data-loading）、确认后按 {orphan_id, copy_paths} 调用+就地刷新（mockGetOrphanList 仅挂载 1 次、行计数 2→1）+重查同 orphan_ids、行级 loading 态进出、逐项失败原因展示且不重查、rejected 载荷提示且不重查、取消确认不调用、located 筛选开启时改走整页刷新（mockGetOrphanList 2 次）。typecheck 通过；三个改动文件 eslint --max-warnings 0 零问题。"
         }
       ]
     }

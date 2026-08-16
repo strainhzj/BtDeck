@@ -16,16 +16,18 @@
 """
 
 import asyncio
+import json
 import logging
 import os
 import time
 from collections import Counter
 from datetime import datetime
-from typing import Any, Dict, Iterator, List, Optional, Sequence, TypeVar, cast
+from typing import Any, Dict, Iterator, List, Optional, Sequence, Set, Tuple, TypeVar, cast
 
 from sqlalchemy import Integer, and_, case, cast as sql_cast, func, or_, select, text, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.database import SessionLocal
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
 from app.models.orphan_hardlink_copy import OrphanHardlinkCopyResult
 from app.services.orphan_folder_grouping import orphan_parent_dir
@@ -33,6 +35,7 @@ from app.services.orphan_lifecycle_service import OrphanLifecycleService
 from app.services.orphan_manifest import (
     ManifestSnapshot,
     TorrentManifestBuilder,
+    collect_torrent_directory_whitelist,
     normalize_path,
 )
 from app.services.orphan_purge_job_service import (
@@ -804,6 +807,332 @@ class OrphanFileService:
             "search_error": search_error,
             "items": items,
         }
+
+    # ==================== 硬链接副本删除（弹窗交互） ====================
+
+    @staticmethod
+    def _hardlink_copy_marker_reason(copy_path: str) -> Optional[str]:
+        """隔离区/回收站标记防御（与 _path_authorized / orphan_scanner 同口径）。"""
+        quarantine_dir_name = getattr(settings, "ORPHAN_QUARANTINE_DIR_NAME", ".btdeck_quarantine") or ""
+        if quarantine_dir_name and quarantine_dir_name in copy_path:
+            return "副本位于系统隔离区路径，拒绝删除"
+        recycle_tag = getattr(settings, "ORPHAN_RECYCLE_BIN_TAG", ".pending_delete") or ""
+        if recycle_tag and recycle_tag in copy_path:
+            return "副本位于回收站归档路径，拒绝删除"
+        return None
+
+    @staticmethod
+    def _in_seed_directory(normalized_copy: str, seed_dirs: Set[str]) -> bool:
+        """副本是否落在任一种子目录（save 根或种子子目录）内。
+
+        入参均为 normalize_path 规范化路径；commonpath 跨盘等 ValueError 按
+        不命中处理（目录集合自身已规范化，正常不会出现跨盘比较）。
+        """
+        for directory in seed_dirs:
+            try:
+                if os.path.commonpath([normalized_copy, directory]) == directory:
+                    return True
+            except ValueError:
+                continue
+        return False
+
+    @staticmethod
+    def _remove_hardlink_copy(copy_path: str, source_identity: Tuple[int, int]) -> None:
+        """tombstone 三段式删除单个硬链接目录项（同线程内完成，缩小 TOCTOU 窗口）。
+
+        先原子 rename 脱离原路径，再复核 tombstone 仍指向源身份，最后 remove；
+        复核失败回滚 rename。与 _purge_single_candidate 的物理删除保护同级：
+        崩溃时最多残留 tombstone 文件，不会误删无关文件。
+        """
+        if os.path.islink(copy_path):
+            raise OSError("副本路径是符号链接，拒绝删除")
+        stat_result = os.stat(copy_path)
+        if (int(stat_result.st_dev), int(stat_result.st_ino)) != source_identity:
+            raise OSError("副本身份与源文件不一致（可能已被移动或替换），已拒绝删除")
+        tombstone_base = os.path.join(os.path.dirname(copy_path), f".{os.path.basename(copy_path)}.btdeck_hldel")
+        tombstone = f"{tombstone_base}.{os.getpid()}"
+        suffix = 0
+        while os.path.exists(tombstone) and suffix < 8:
+            suffix += 1
+            tombstone = f"{tombstone_base}.{os.getpid()}.{suffix}"
+        os.rename(copy_path, tombstone)
+        try:
+            tombstone_stat = os.stat(tombstone)
+            if (int(tombstone_stat.st_dev), int(tombstone_stat.st_ino)) != source_identity:
+                raise OSError("tombstone 身份复核失败，副本已回滚")
+        except OSError:
+            try:
+                os.rename(tombstone, copy_path)
+            except OSError:
+                logger.warning("[副本删除] tombstone 回滚失败，残留待人工清理: %s", tombstone)
+            raise
+        os.remove(tombstone)
+
+    async def delete_hardlink_copies(
+        self,
+        orphan_id: int,
+        copy_paths: Sequence[str],
+        operator: str,
+        audit_service: Any = None,
+        _lease_acquired: bool = False,
+        _lease_handle: Any = None,
+    ) -> Dict[str, Any]:
+        """删除孤儿文件已定位硬链接副本的目录项（仅移除该路径链接，数据保留）。
+
+        逐路径 fail-closed，状态类拒绝以 ``failed_list`` 返回（与 set_ignored/
+        restore 响应形态一致），不做 HTTP 400 分支。安全门禁（按序）：
+
+        1. 维护租约（与 cleanup/restore 互斥，busy 整体 rejected）；
+        2. 明细存在且不在清理在途集合（exclude_in_flight）；
+        3. 候选 ``status=candidate`` 且 ``operation_state=stable``（quarantined/
+           purged/purge_pending 的源文件身份正在变化，禁止触碰）；
+        4. 源文件可 stat（身份复核的前提）且预扫描结果行存在；
+        5. 共享 inode 拒绝集：源路径 + 同 (device_id, inode) 全部候选的
+           canonical_path 不可作为副本删除（防止在 A 的弹窗删除孤儿 B 本身）；
+        6. 种子目录保护：副本位于任一有效种子目录（save 根或种子子目录）内
+           即拒绝；白名单加载失败也整体拒绝（fail-closed）；
+        7. 请求路径必须与返回前端的 copies 原始字符串一致（防任意路径注入），
+           且不携带隔离区/回收站标记、不是符号链接；
+        8. tombstone 三段式删除：rename → 身份复核 → remove，复核失败回滚。
+
+        Returns:
+            ``{orphan_id, file_path, copy_count, success_count, failed_count,
+            failed_list: [{copy_path, reason}], rejected?, error?}``；
+            ``copy_count`` 为删除后源文件实时 ``st_nlink - 1``（源不可访问为
+            None），供前端就地刷新列表行副本数。
+        """
+        normalized_paths = list(dict.fromkeys(str(path) for path in copy_paths if str(path)))
+        if not normalized_paths:
+            return {
+                "orphan_id": orphan_id,
+                "file_path": None,
+                "copy_count": None,
+                "success_count": 0,
+                "failed_count": 0,
+                "failed_list": [],
+            }
+
+        if not _lease_acquired:
+            from app.services.orphan_lease import (
+                OrphanLeaseBusyError,
+                orphan_maintenance_scope,
+            )
+
+            try:
+                async with orphan_maintenance_scope("hardlink_copy_delete", db=self.db) as lease_handle:
+                    return await self.delete_hardlink_copies(
+                        orphan_id=orphan_id,
+                        copy_paths=normalized_paths,
+                        operator=operator,
+                        audit_service=audit_service,
+                        _lease_acquired=True,
+                        _lease_handle=lease_handle,
+                    )
+            except OrphanLeaseBusyError as exc:
+                return {
+                    "orphan_id": orphan_id,
+                    "file_path": None,
+                    "copy_count": None,
+                    "success_count": 0,
+                    "failed_count": len(normalized_paths),
+                    "failed_list": [{"copy_path": p, "reason": str(exc)} for p in normalized_paths],
+                    "rejected": True,
+                    "error": str(exc),
+                }
+
+        started = time.monotonic()
+        logger.info("[副本删除] 开始 orphan_id=%s paths=%d operator=%s", orphan_id, len(normalized_paths), operator)
+
+        source_path: Optional[str] = None
+        copy_count: Optional[int] = None
+        failed_list: List[Dict[str, Any]] = []
+        deleted_paths: List[str] = []
+        deleted_set: Set[str] = set()
+        gate_error: Optional[str] = None
+        source_identity: Optional[Tuple[int, int]] = None
+        stored: Optional[OrphanHardlinkCopyResult] = None
+        stored_copies: List[str] = []
+
+        details = await self._load_orphan_details([orphan_id], scan_id=None, exclude_in_flight=True)
+        if not details:
+            gate_error = "孤儿文件不存在或已删除，请刷新页面后重试"
+        else:
+            detail = details[0]
+            source_path = cast(str, detail.file_path)
+            canonical_path = self._detail_canonical_path(detail)
+            candidates = await self._load_candidates([canonical_path])
+            candidate = candidates.get(canonical_path)
+            if candidate is None:
+                gate_error = "孤儿候选不存在或已失效，请刷新页面后重试"
+            elif candidate.status != "candidate" or candidate.operation_state != "stable":
+                gate_error = (
+                    "文件当前状态不允许删除副本"
+                    f"（status={candidate.status}, operation_state={candidate.operation_state}）"
+                )
+            else:
+                inspected = await asyncio.to_thread(self._inspect_hardlink_sources, [(int(detail.id), source_path)])
+                first = inspected[0]
+                if first["identity"] is None:
+                    gate_error = str(first["error"] or "源文件不可访问，无法校验副本身份")
+                else:
+                    source_identity = cast(Tuple[int, int], first["identity"])
+
+        if gate_error is None and source_identity is not None:
+            stored_map = await self._load_hardlink_copy_results([source_identity])
+            stored = stored_map.get(source_identity)
+            if stored is None:
+                gate_error = "该文件尚未被预扫描覆盖，请等待定时任务定位副本路径后重试"
+
+        deny_keys: Set[str] = set()
+        seed_dirs: Set[str] = set()
+        if gate_error is None and stored is not None and source_identity is not None:
+            assert source_path is not None
+            # 共享 inode 拒绝集：源路径 + 同身份全部候选 canonical_path（展示端
+            # 只剔除当前文件源路径，其余孤儿源路径会以“副本”形态出现在弹窗中）。
+            deny_keys = {os.path.normcase(os.path.realpath(os.path.abspath(source_path)))}
+            shared_rows = await self.db.execute(
+                select(OrphanCurrentCandidate.canonical_path).where(
+                    OrphanCurrentCandidate.device_id == str(source_identity[0]),
+                    sql_cast(OrphanCurrentCandidate.inode, Integer) == source_identity[1],
+                )
+            )
+            for (path_value,) in shared_rows.all():
+                if path_value:
+                    deny_keys.add(os.path.normcase(os.path.realpath(os.path.abspath(str(path_value)))))
+            # 种子目录白名单（全量下载器）：交互请求内不构建实时 manifest，
+            # 用 DB 目录级保护 fail-closed；加载失败整体拒绝。
+            try:
+                whitelist = await asyncio.to_thread(collect_torrent_directory_whitelist, SessionLocal)
+                seed_dirs = set(whitelist.dirs)
+            except Exception as exc:
+                logger.warning("[副本删除] 种子目录白名单加载失败: %s", exc)
+                gate_error = "种子目录白名单加载失败，本次已拒绝删除，请稍后重试"
+
+        if gate_error is not None:
+            failed_list = [{"copy_path": p, "reason": gate_error} for p in normalized_paths]
+        else:
+            assert stored is not None
+            stored_copies = list(stored.copies)
+            stored_set = set(stored_copies)
+            for copy_path in normalized_paths:
+                # 成员判定 = 与返回前端的 copies 原始字符串相等（天然拒绝 ../ 相对路径）
+                if copy_path not in stored_set:
+                    failed_list.append(
+                        {"copy_path": copy_path, "reason": "路径与最近预扫描结果不一致，请刷新弹窗后重试"}
+                    )
+                    continue
+                marker_reason = self._hardlink_copy_marker_reason(copy_path)
+                if marker_reason is not None:
+                    failed_list.append({"copy_path": copy_path, "reason": marker_reason})
+                    continue
+                try:
+                    normalized_copy = normalize_path(copy_path)
+                except (ValueError, OSError):
+                    failed_list.append({"copy_path": copy_path, "reason": "副本路径无法规范化，拒绝删除"})
+                    continue
+                if self._in_seed_directory(normalized_copy, seed_dirs):
+                    failed_list.append(
+                        {"copy_path": copy_path, "reason": "副本位于种子目录内（可能正被引用），已拒绝删除"}
+                    )
+                    continue
+                if os.path.normcase(os.path.realpath(os.path.abspath(copy_path))) in deny_keys:
+                    failed_list.append(
+                        {
+                            "copy_path": copy_path,
+                            "reason": "该路径本身是孤儿文件（请在孤儿列表中直接清理），不允许作为副本删除",
+                        }
+                    )
+                    continue
+                assert source_identity is not None
+                try:
+                    await asyncio.to_thread(self._remove_hardlink_copy, copy_path, source_identity)
+                    deleted_paths.append(copy_path)
+                    deleted_set.add(copy_path)
+                except OSError as exc:
+                    failed_list.append({"copy_path": copy_path, "reason": str(exc) or "删除失败"})
+                except Exception as exc:  # noqa: BLE001 - 逐项隔离失败，不影响其余路径
+                    failed_list.append({"copy_path": copy_path, "reason": f"删除失败: {exc}"})
+
+        # 成功项：复核源文件实时副本数并同步预扫描结果行（truncated/scan_note/
+        # scanned_at 保留原值；与预扫描任务的写竞态由下一轮扫描自愈）。
+        sync_error: Optional[str] = None
+        if deleted_paths and stored is not None:
+            assert source_path is not None
+            live = await asyncio.to_thread(self._inspect_hardlink_sources, [(orphan_id, source_path)])
+            copy_count = cast(Optional[int], live[0]["copy_count"])
+            remaining = [path for path in stored_copies if path not in deleted_set]
+            payload: Dict[str, Any] = {
+                "copies_json": json.dumps(remaining, ensure_ascii=False),
+                "found_count": len(remaining),
+            }
+            if copy_count is not None:
+                payload["copy_count"] = copy_count
+            for field, value in payload.items():
+                setattr(stored, field, value)
+            try:
+                async with admission_controller.db_write_scope():
+                    await self.db.flush()
+                    await self.db.commit()
+            except Exception as exc:
+                await self.db.rollback()
+                logger.exception("[副本删除] 结果行更新提交失败 orphan_id=%s: %s", orphan_id, exc)
+                # 文件已删除是既成事实；结果行未更新由下一轮预扫描自愈，如实回报调用方。
+                sync_error = "副本已删除，但副本定位结果更新失败，将在下一轮预扫描自动修正"
+
+        if failed_list:
+            reason_counts = Counter(str(item.get("reason") or "未知原因") for item in failed_list)
+            logger.warning(
+                "[副本删除] 存在失败 orphan_id=%s failed_reasons=%s samples=%s",
+                orphan_id,
+                dict(reason_counts),
+                failed_list[:5],
+            )
+
+        # 审计：主事务已提交（或未产生写），再写审计（restore 模式，恒记）
+        if audit_service is not None:
+            try:
+                if deleted_paths and not failed_list:
+                    audit_result = AuditOperationResult.SUCCESS
+                elif deleted_paths:
+                    audit_result = AuditOperationResult.PARTIAL
+                else:
+                    audit_result = AuditOperationResult.FAILED
+                await audit_service.log_operation(
+                    operation_type=AuditOperationType.ORPHAN_HARDLINK_COPY_DELETE.value,
+                    operator=operator,
+                    operation_detail={
+                        "action": "hardlink_copy_delete",
+                        "orphan_id": orphan_id,
+                        "file_path": source_path,
+                        "deleted_paths": deleted_paths,
+                        "success_count": len(deleted_paths),
+                        "failed_count": len(failed_list),
+                        "failed_list": failed_list[:10],
+                    },
+                    operation_result=audit_result,
+                    error_message=f"失败 {len(failed_list)} 个" if failed_list else None,
+                )
+            except Exception as exc:
+                logger.warning("[副本删除] 审计日志记录失败: %s", exc)
+
+        logger.info(
+            "[副本删除] 完成 orphan_id=%s success=%d failed=%d 耗时=%.2fs",
+            orphan_id,
+            len(deleted_paths),
+            len(failed_list),
+            time.monotonic() - started,
+        )
+        result: Dict[str, Any] = {
+            "orphan_id": orphan_id,
+            "file_path": source_path,
+            "copy_count": copy_count,
+            "success_count": len(deleted_paths),
+            "failed_count": len(failed_list),
+            "failed_list": failed_list,
+        }
+        if sync_error is not None:
+            result["error"] = sync_error
+        return result
 
     async def get_orphan_list(
         self,

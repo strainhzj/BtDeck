@@ -1,5 +1,32 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-16 - 副本位置弹窗行级删除硬链接副本
+
+### 需求与实现
+
+- 用户要求：在孤儿文件页面的硬链接副本位置弹窗为每个副本行添加删除按钮，直接在页面删除副本（仅移除该路径链接，源文件与数据保留）。
+- 交互安全决策（用户确认）：位于活跃种子目录内的副本**严格拒绝**删除（fail-closed，与项目清理门禁一致）。
+- 后端 `delete_hardlink_copies`（`orphan_file_service.py:871`）逐路径 fail-closed 门禁链：维护租约 `orphan_maintenance_scope("hardlink_copy_delete")`（busy → `rejected=true` 整体拒绝）→ 明细 `exclude_in_flight` 加载 → 候选 `status=candidate` 且 `operation_state=stable` → 源文件 stat 身份 + 预扫描结果行存在 → **共享 inode 拒绝集**（源路径 + 同 `(device_id, inode)` 全部候选 canonical_path，防在 A 的弹窗删除孤儿 B 本身）→ 种子目录白名单（`collect_torrent_directory_whitelist` 全量下载器 DB 目录级，`asyncio.to_thread`，加载失败整体拒绝）→ 请求路径与返回前端的 copies **原始字符串**成员判定（防任意路径注入）+ 隔离区/回收站标记（settings 口径）+ 符号链接拒绝 → **tombstone 三段式删除**（rename→身份复核→remove，复核失败回滚；`_remove_hardlink_copy` L840）。
+- 成功后 setattr payload 同步结果行（copies_json/found_count/copy_count，保留 truncated/scan_note/scanned_at；写竞态由下一轮预扫描自愈）；审计在主事务 commit 后写（restore 模式，注入 `get_audit_service`）；状态类拒绝一律 HTTP 200 + `failed_list[{copy_path, reason}]`（与 set_ignored/restore 形态一致）。新审计枚举 `orphan_hardlink_copy_delete` 三处登记（成员/display/category）。
+- 端点 `POST /orphan-files/hardlink-copies/delete`（`orphan_files.py:341`，`{orphan_id, copy_paths≤50}`，Pydantic 失败 422）。同步执行（与 restore 同级先例，单请求 ≤50 个 unlink）。
+- 前端：`deleteHardlinkCopy` API；抽取 `fetchHardlinkLocations(orphanIds, keepResult)`；副本行 danger 文字按钮「删除」（`$set/$delete` 维护行级 deleting 态）；`$confirm` type=error 对齐 `handleQuarantinePurge` 惯例；删除成功后就地更新行副本数（located 筛选开启时改走整页刷新）+ 重查弹窗（keepResult 保留旧数据、列表区局部遮罩）；**seq 快照 + 弹窗可见双重校验**防迟到重查覆盖关闭/重开后的新弹窗数据。
+
+### 决策记录（3 个只读子代理独立审查后修订）
+
+- 审计事务冲突：`get_audit_service` 绑定请求主 session 且 `log_operation` 内部 commit，不能在结果行更新 commit 前调用（会把主事务提前提交）→ 统一 restore 模式（commit 后写）。
+- 原计划裸 stat-then-unlink 保护低于项目水准 → tombstone 三段式（与 `_purge_single_candidate` 同级）。
+- 发现共享 inode 漏洞：copies_json 含共享身份的全部孤儿源路径，仅排除当前源不够 → 同身份候选反查拒绝集。
+- Vue2 动态 key 不响应 → `$set/$delete`；弹窗重开竞态 → seq 快照校验；重查失败不得清空弹窗数据 → keepResult。
+- mypy 基线实测 1563（非历史记录的 149），stash 对比零新增；ORM 列赋值改 setattr payload（与 `_write_results` 同惯例）。
+
+### 验证
+
+- 后端：`test_orphan_hardlink_detection.py` 33 passed（新增 TestHardlinkCopyDelete 13 用例：happy/共享 inode/非 stored/种子目录/白名单失败/标记/身份不匹配回滚/源不可访问/状态门禁/无预扫描/批量去重/租约 busy/空请求）；`test_orphan_files_api.py` 44 passed（透传/rejected/422 参数化）；`tests/enums` 283 passed（成员计数 45→46）；`tests/services + tests/api` 全量 **1983 passed, 6 skipped**；`tests/core + tests/tasks + tests/enums` **1075 passed**。
+- 质量：black/flake8/ruff/lint_btdeck 通过；mypy 全量 1563=基线 1563（stash 实测对比零新增）。
+- 前端：`orphan-files.spec.ts` **99 passed**（新增 7 用例）；全量 **44 suites / 754 passed**；typecheck 通过；三个改动文件 `eslint --max-warnings 0` 零问题。
+- roadmap 三层更新（根 README 功能域/元信息 + services README orphan 行 + `orphan_file_service.md` 全量行号实测 3809 行 + api README orphan 行）；顺带修正根 README 端点模块计数漂移（38→37 实测）。feature_list.json 新增 feature `orphan-hardlink-copy-delete`（3 tasks）；`./init.sh`（ci）通过。
+- 无 schema 变更，无新迁移；未执行 Git 提交（待用户指令）。
+
 ## 2026-08-15 - 已定位副本快捷筛选 + 预扫描范围收紧
 
 ### 需求与实现

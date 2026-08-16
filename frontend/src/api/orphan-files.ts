@@ -390,6 +390,52 @@ export function getHardlinkCopyLocations(
   }) as unknown as Promise<ApiResponse<HardlinkCopyLocationsResult>>
 }
 
+/** 删除硬链接副本目录项请求；路径必须与弹窗展示的预扫描结果完全一致。 */
+export interface HardlinkCopyDeleteRequest {
+  orphan_id: number
+  copy_paths: string[]
+}
+
+/** 删除硬链接副本的逐项失败明细（后端逐路径 fail-closed）。 */
+export interface HardlinkCopyDeleteFailedItem {
+  copy_path: string
+  reason: string
+}
+
+/**
+ * 删除硬链接副本目录项结果。
+ *
+ * 仅移除指向同一 inode 的其它路径链接，源文件与数据保留；源路径、共享同一
+ * inode 的其它孤儿、种子目录内副本、隔离区/回收站路径均以 failed_list 拒绝。
+ */
+export interface HardlinkCopyDeleteResult {
+  orphan_id: number
+  /** 源文件路径；明细失效时为 null */
+  file_path: string | null
+  /** 删除后源文件实时副本数（st_nlink - 1）；源不可访问为 null，供就地刷新列表行 */
+  copy_count: number | null
+  success_count: number
+  failed_count: number
+  failed_list: HardlinkCopyDeleteFailedItem[]
+  /** 维护操作互斥时整体拒绝 */
+  rejected?: boolean
+  error?: string
+}
+
+/**
+ * 删除已定位的硬链接副本目录项（tombstone 三段式，逐项 fail-closed）。
+ */
+export function deleteHardlinkCopy(
+  data: HardlinkCopyDeleteRequest
+): Promise<ApiResponse<HardlinkCopyDeleteResult>> {
+  return request({
+    url: '/orphan-files/hardlink-copies/delete',
+    method: 'post',
+    data,
+    timeout: 120000
+  }) as unknown as Promise<ApiResponse<HardlinkCopyDeleteResult>>
+}
+
 /**
  * 手动触发扫描
  */

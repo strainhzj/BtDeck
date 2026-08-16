@@ -87,6 +87,7 @@ class AuditOperationType(str, Enum):
     ORPHAN_IGNORE = "orphan_ignore"  # 孤儿文件忽视/取消忽视
     ORPHAN_PURGE = "orphan_purge"  # 孤儿文件隔离区彻底删除（手动）
     ORPHAN_RESTORE = "orphan_restore"  # 孤儿文件隔离区恢复（手动）
+    ORPHAN_HARDLINK_COPY_DELETE = "orphan_hardlink_copy_delete"  # 孤儿硬链接副本删除（手动）
 
     @classmethod
     def is_valid(cls, value: str) -> bool:
@@ -171,6 +172,7 @@ class AuditOperationType(str, Enum):
             cls.ORPHAN_IGNORE.value: "孤儿文件忽视",
             cls.ORPHAN_PURGE.value: "孤儿文件彻底删除",
             cls.ORPHAN_RESTORE.value: "孤儿文件恢复",
+            cls.ORPHAN_HARDLINK_COPY_DELETE.value: "孤儿硬链接副本删除",
         }
         return display_names.get(value, value)
 
@@ -241,6 +243,7 @@ class AuditOperationType(str, Enum):
             cls.ORPHAN_IGNORE.value: "orphan_files",
             cls.ORPHAN_PURGE.value: "orphan_files",
             cls.ORPHAN_RESTORE.value: "orphan_files",
+            cls.ORPHAN_HARDLINK_COPY_DELETE.value: "orphan_files",
         }
         return categories.get(value)
 
