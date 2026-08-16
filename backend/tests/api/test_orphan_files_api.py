@@ -942,6 +942,30 @@ class TestOrphanFilesPrefixMatch:
         assert response.json()["data"] == payload
         mocked.assert_awaited_once_with("/data/", "scan-latest", hardlink_copies=None)
 
+    def test_prefix_match_preview_passes_located_filter(self):
+        """located 开启时前缀预览应透传 hardlink_copies=located 到服务层。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "count": 2,
+            "total_size": 900,
+            "low_confidence_count": 0,
+            "sample_paths": ["/data/a.bin"],
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "prefix_match_preview", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/prefix-match-preview",
+                json={
+                    "path_prefix": "/data/",
+                    "scan_id": "scan-latest",
+                    "hardlink_copies": "located",
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with("/data/", "scan-latest", hardlink_copies="located")
+
     def test_prefix_match_preview_rejects_empty_prefix(self):
         """path_prefix 为空字符串应被 Pydantic min_length=1 拒绝（422）。"""
         response = self.client.post(

@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.models.orphan_purge_job import OrphanPurgeJob
 from app.services.notification_service import NotificationService
+from app.services.orphan_stats_cache import orphan_stats_cache
 from app.tasks.resource_guard import admission_controller
 from app.utils.format_size import format_size
 
@@ -225,12 +226,16 @@ class OrphanPurgeJobService:
             raise ValueError("主动清理任务必须绑定有效的扫描批次")
         if not normalized_ids:
             raise ValueError("至少需要一个有效的孤儿文件 ID")
-        return await self._create_submission(
+        submission = await self._create_submission(
             operation_type=CLEANUP_OPERATION,
             items=normalized_ids,
             operator=operator,
             scan_id=scan_id,
         )
+        if submission.job is not None:
+            # pending 提交即进入 active 集 → remaining 扣减 → scan_context 统计失效
+            orphan_stats_cache.invalidate()
+        return submission
 
     async def create_cleanup_job(self, scan_id: str, orphan_ids: List[int], operator: str) -> OrphanPurgeJob:
         """兼容入口；若全部已占用则明确拒绝。"""
@@ -304,6 +309,10 @@ class OrphanPurgeJobService:
                     )
                 )
                 await self.db.commit()
+                if getattr(result, "rowcount", 0):
+                    # 终态后 cleanup 任务 id 离开 active 集：failed/partial 项 remaining 回升
+                    # → scan_context 统计失效（purge 任务不改统计，全清无害）
+                    orphan_stats_cache.invalidate()
                 return bool(getattr(result, "rowcount", 0))
         except Exception:
             await self.db.rollback()

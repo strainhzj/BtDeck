@@ -103,6 +103,21 @@ def sm4_instance():
     return instance
 
 
+@pytest.fixture(autouse=True)
+def _clear_orphan_stats_cache():
+    """每个用例前清空模块级孤儿统计缓存，防止跨用例污染。
+
+    orphan_stats_cache 是模块级单例，而多个孤儿测试用例复用同一批
+    scan_id（scan_completed/scan_1 等）且数据不同；不清理会让用例吃到
+    上个用例的缓存统计。
+    """
+    from app.services.orphan_stats_cache import orphan_stats_cache
+
+    orphan_stats_cache.invalidate()
+    yield
+    orphan_stats_cache.invalidate()
+
+
 @pytest.fixture
 def mock_db():
     """Mock SQLAlchemy Session"""

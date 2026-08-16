@@ -128,6 +128,101 @@ async def test_dispatcher_executes_precreated_scan_id_without_creating_new_recor
     assert execution["cleanup_result"] is None
 
 
+async def test_execute_scan_invalidates_stats_cache(async_orphan_db):
+    """扫描执行后 scan_context 统计缓存被清空（开始前 + 落库后两处失效）。"""
+    from app.services.orphan_stats_cache import orphan_stats_cache
+
+    orphan_stats_cache.set("scan-worker-cache", 0, (111, 222, 3))
+
+    record = OrphanScanResult(
+        scan_id="scan-worker-cache",
+        scan_type="manual",
+        operator="tester",
+        status="queued",
+        details_mode="current",
+    )
+    async_orphan_db.add(record)
+    await async_orphan_db.commit()
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock()))
+    dispatcher = OrphanScanDispatcher(
+        app,
+        session_factory=_session_factory(async_orphan_db),
+    )
+
+    @asynccontextmanager
+    async def fake_lease_scope(operation):
+        assert operation == "scan"
+        yield MagicMock(name="lease")
+
+    scan = AsyncMock(
+        return_value={
+            "scan_id": "scan-worker-cache",
+            "status": "completed",
+            "total_orphans": 0,
+        }
+    )
+    with (
+        patch(
+            "app.services.orphan_scan_job_service.orphan_maintenance_scope",
+            fake_lease_scope,
+        ),
+        patch("app.services.orphan_scanner.OrphanScanner.scan", scan),
+        patch.object(dispatcher, "_audit_result", AsyncMock()),
+    ):
+        execution = await dispatcher.execute_scan("scan-worker-cache")
+
+    assert execution["status"] == "completed"
+    # 扫描开始即全清（epoch 推进），旧值不回写
+    assert orphan_stats_cache.get("scan-worker-cache")[1] is None
+
+
+async def test_execute_scan_failed_path_also_invalidates_cache(async_orphan_db):
+    """扫描失败路径同样失效缓存（避免 failed 回退展示旧批次时统计 stale）。"""
+    from app.services.orphan_stats_cache import orphan_stats_cache
+
+    orphan_stats_cache.set("scan-worker-fail", 0, (111, 222, 3))
+
+    record = OrphanScanResult(
+        scan_id="scan-worker-fail",
+        scan_type="manual",
+        operator="tester",
+        status="queued",
+        details_mode="current",
+    )
+    async_orphan_db.add(record)
+    await async_orphan_db.commit()
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock()))
+    dispatcher = OrphanScanDispatcher(
+        app,
+        session_factory=_session_factory(async_orphan_db),
+    )
+
+    @asynccontextmanager
+    async def fake_lease_scope(operation):
+        assert operation == "scan"
+        yield MagicMock(name="lease")
+
+    scan = AsyncMock(
+        return_value={
+            "scan_id": "scan-worker-fail",
+            "status": "failed",
+            "error": "boom",
+        }
+    )
+    with (
+        patch(
+            "app.services.orphan_scan_job_service.orphan_maintenance_scope",
+            fake_lease_scope,
+        ),
+        patch("app.services.orphan_scanner.OrphanScanner.scan", scan),
+        patch.object(dispatcher, "_audit_result", AsyncMock()),
+    ):
+        execution = await dispatcher.execute_scan("scan-worker-fail")
+
+    assert execution["status"] == "failed"
+    assert orphan_stats_cache.get("scan-worker-fail")[1] is None
+
+
 async def test_wait_for_completion_returns_the_same_dispatcher_result():
     """Cron 等待的是 submit 创建的同一个后台 task，而非重新发起扫描。"""
     app = SimpleNamespace(state=SimpleNamespace(store=MagicMock()))

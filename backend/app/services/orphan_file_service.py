@@ -42,6 +42,7 @@ from app.services.orphan_purge_job_service import (
     active_cleanup_orphan_ids_query,
     active_purge_canonical_paths_query,
 )
+from app.services.orphan_stats_cache import orphan_stats_cache
 from app.services.orphan_quarantine import (
     build_quarantine_path,
     compute_purge_after,
@@ -1201,34 +1202,48 @@ class OrphanFileService:
             else OrphanFile.scan_id == display_scan.scan_id
         )
 
-        remaining_result = await self.db.execute(
-            select(
-                func.count(OrphanFile.id),
-                func.coalesce(func.sum(OrphanFile.file_size), 0),
-            ).where(
-                detail_scope,
-                OrphanFile.is_deleted == False,  # noqa: E712
-                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
+        scan_id_str = cast(str, display_scan.scan_id)
+        stats_epoch, cached_stats = orphan_stats_cache.get(scan_id_str)
+        if cached_stats is not None:
+            remaining_count, remaining_size, ignored_count = cached_stats
+            scan_context["remaining_count"] = remaining_count
+            scan_context["remaining_size"] = remaining_size
+            scan_context["ignored_count"] = ignored_count
+        else:
+            remaining_result = await self.db.execute(
+                select(
+                    func.count(OrphanFile.id),
+                    func.coalesce(func.sum(OrphanFile.file_size), 0),
+                ).where(
+                    detail_scope,
+                    OrphanFile.is_deleted == False,  # noqa: E712
+                    OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
+                )
             )
-        )
-        remaining_count, remaining_size = remaining_result.one()
-        scan_context["remaining_count"] = int(remaining_count or 0)
-        scan_context["remaining_size"] = int(remaining_size or 0)
+            remaining_count, remaining_size = remaining_result.one()
+            scan_context["remaining_count"] = int(remaining_count or 0)
+            scan_context["remaining_size"] = int(remaining_size or 0)
 
-        # 本展示批次中对应候选被忽视的数量（与 remaining_* 同口径，基于 display_scan.scan_id）
-        ignored_count_result = await self.db.execute(
-            select(func.count(OrphanFile.id)).where(
-                detail_scope,
-                OrphanFile.is_deleted == False,  # noqa: E712
-                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
-                OrphanFile.canonical_path.in_(
-                    select(OrphanCurrentCandidate.canonical_path).where(
-                        OrphanCurrentCandidate.is_ignored == True  # noqa: E712
-                    )
-                ),
+            # 本展示批次中对应候选被忽视的数量（与 remaining_* 同口径，基于 display_scan.scan_id）
+            ignored_count_result = await self.db.execute(
+                select(func.count(OrphanFile.id)).where(
+                    detail_scope,
+                    OrphanFile.is_deleted == False,  # noqa: E712
+                    OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
+                    OrphanFile.canonical_path.in_(
+                        select(OrphanCurrentCandidate.canonical_path).where(
+                            OrphanCurrentCandidate.is_ignored == True  # noqa: E712
+                        )
+                    ),
+                )
             )
-        )
-        scan_context["ignored_count"] = int(ignored_count_result.scalar() or 0)
+            ignored_count = int(ignored_count_result.scalar() or 0)
+            scan_context["ignored_count"] = ignored_count
+            orphan_stats_cache.set(
+                scan_id_str,
+                stats_epoch,
+                (scan_context["remaining_count"], scan_context["remaining_size"], ignored_count),
+            )
 
         # 列表与“全选当前筛选”必须共用完全相同的过滤语义。
         conditions = self._build_orphan_conditions(
@@ -1244,12 +1259,29 @@ class OrphanFileService:
             hardlink_copies=hardlink_copies,
         )
 
-        # 总数
-        count_query = select(func.count(OrphanFile.id))
-        for cond in conditions:
-            count_query = count_query.where(cond)
-        total_result = await self.db.execute(count_query)
-        total = total_result.scalar() or 0
+        # 总数。无任何过滤条件时（含 include_deleted=False 默认），conditions 与
+        # remaining 的 WHERE 逐字等价（detail_scope ∧ is_deleted=False ∧ 不在 active
+        # 清理集），直接复用缓存的 remaining_count，连 count 查询都不发。
+        # 注意：status 必须是 None/空串，不能做逗号规范化再判空——"pending,deleted"
+        # 等组合会产出与 remaining 不等价的 OR 语义。
+        no_filter = (
+            not include_deleted
+            and status in (None, "")
+            and min_size is None
+            and downloader_id in (None, "")
+            and not path_like
+            and not path_prefix
+            and not confidence
+            and not hardlink_copies
+        )
+        if no_filter:
+            total = int(scan_context["remaining_count"])
+        else:
+            count_query = select(func.count(OrphanFile.id))
+            for cond in conditions:
+                count_query = count_query.where(cond)
+            total_result = await self.db.execute(count_query)
+            total = total_result.scalar() or 0
 
         # 排序：高置信度优先，其次被忽视的孤儿文件优先级最低（沉底），
         # 组内再按文件大小降序和 ID 升序保持稳定。
@@ -1355,33 +1387,47 @@ class OrphanFileService:
             else OrphanFile.scan_id == display_scan.scan_id
         )
 
-        remaining_result = await self.db.execute(
-            select(
-                func.count(OrphanFile.id),
-                func.coalesce(func.sum(OrphanFile.file_size), 0),
-            ).where(
-                detail_scope,
-                OrphanFile.is_deleted == False,  # noqa: E712
-                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
+        scan_id_str = cast(str, display_scan.scan_id)
+        stats_epoch, cached_stats = orphan_stats_cache.get(scan_id_str)
+        if cached_stats is not None:
+            remaining_count, remaining_size, ignored_count = cached_stats
+            scan_context["remaining_count"] = remaining_count
+            scan_context["remaining_size"] = remaining_size
+            scan_context["ignored_count"] = ignored_count
+        else:
+            remaining_result = await self.db.execute(
+                select(
+                    func.count(OrphanFile.id),
+                    func.coalesce(func.sum(OrphanFile.file_size), 0),
+                ).where(
+                    detail_scope,
+                    OrphanFile.is_deleted == False,  # noqa: E712
+                    OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
+                )
             )
-        )
-        remaining_count, remaining_size = remaining_result.one()
-        scan_context["remaining_count"] = int(remaining_count or 0)
-        scan_context["remaining_size"] = int(remaining_size or 0)
+            remaining_count, remaining_size = remaining_result.one()
+            scan_context["remaining_count"] = int(remaining_count or 0)
+            scan_context["remaining_size"] = int(remaining_size or 0)
 
-        ignored_count_result = await self.db.execute(
-            select(func.count(OrphanFile.id)).where(
-                detail_scope,
-                OrphanFile.is_deleted == False,  # noqa: E712
-                OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
-                OrphanFile.canonical_path.in_(
-                    select(OrphanCurrentCandidate.canonical_path).where(
-                        OrphanCurrentCandidate.is_ignored == True  # noqa: E712
-                    )
-                ),
+            ignored_count_result = await self.db.execute(
+                select(func.count(OrphanFile.id)).where(
+                    detail_scope,
+                    OrphanFile.is_deleted == False,  # noqa: E712
+                    OrphanFile.id.notin_(active_cleanup_orphan_ids_query()),
+                    OrphanFile.canonical_path.in_(
+                        select(OrphanCurrentCandidate.canonical_path).where(
+                            OrphanCurrentCandidate.is_ignored == True  # noqa: E712
+                        )
+                    ),
+                )
             )
-        )
-        scan_context["ignored_count"] = int(ignored_count_result.scalar() or 0)
+            ignored_count = int(ignored_count_result.scalar() or 0)
+            scan_context["ignored_count"] = ignored_count
+            orphan_stats_cache.set(
+                scan_id_str,
+                stats_epoch,
+                (scan_context["remaining_count"], scan_context["remaining_size"], ignored_count),
+            )
 
         conditions = self._build_orphan_conditions(
             cast(str, display_scan.scan_id),
@@ -2280,6 +2326,8 @@ class OrphanFileService:
                 "failed_count": len(orphan_ids),
                 "failed_list": [{"id": oid, "reason": reason} for oid in orphan_ids],
             }
+        # 忽视态变化 → scan_context 统计失效（提交成功后；失败回滚不失效）
+        orphan_stats_cache.invalidate()
 
         if failed_list:
             reason_counts = Counter(str(item.get("reason") or "未知原因") for item in failed_list)
@@ -3062,6 +3110,8 @@ class OrphanFileService:
         except Exception:
             await self.db.rollback()
             raise
+        # is_deleted=False → scan_context 统计失效（提交成功后）
+        orphan_stats_cache.invalidate()
 
     async def purge_quarantine_now(
         self,
@@ -3534,6 +3584,9 @@ class OrphanFileService:
         except Exception:
             await self.db.rollback()
             raise
+        # is_deleted=True → scan_context 统计失效（手动/自动清理/到期删除共用咽喉；
+        # 提交成功后，逐候选提交的异常路径不会跳过失效）
+        orphan_stats_cache.invalidate()
         return len(detail_ids)
 
     async def _commit_candidate_state(self, canonical_path: str, **values: Any) -> None:
@@ -3608,7 +3661,12 @@ class OrphanFileService:
         store: Any = None,
         lease_handle: Any = None,
     ) -> Dict[str, int]:
-        """恢复上次进程在 rename/remove 与最终 DB 提交之间中断的操作。"""
+        """恢复上次进程在 rename/remove 与最终 DB 提交之间中断的操作。
+
+        防御性失效：resolve 分支会把候选置为 resolved（退出 current_detail 作用域，
+        改变 remaining），且 purge/恢复路径经此入口——全清无害（purge 本不改统计）。
+        """
+        orphan_stats_cache.invalidate()
         result = await self.db.execute(
             select(OrphanCurrentCandidate).where(
                 OrphanCurrentCandidate.operation_state.in_(["quarantine_pending", "purge_pending"])

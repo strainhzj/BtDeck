@@ -236,8 +236,18 @@ async def test_active_cleanup_job_hides_detail_until_terminal_failure(async_orph
     assert preview["total_count"] == 0
 
     assert submission.job is not None
-    submission.job.status = "failed"
-    await async_orphan_db.commit()
+    # 终态转换必须走真实任务流（claim → finish_job，触发统计缓存失效）：
+    # failed 时 id 离开 active 集、remaining 回升；不能直接改 ORM 字段绕过。
+    purge_service = OrphanPurgeJobService(async_orphan_db)
+    assert await purge_service.claim_job(submission.job.task_id)
+    finished = await purge_service.finish_job(
+        submission.job.task_id,
+        status="failed",
+        purged_count=0,
+        failed_count=1,
+        failed_list=[],
+    )
+    assert finished
     visible_again = await OrphanFileService(async_orphan_db).get_orphan_list()
     assert visible_again["total"] == 1
     assert visible_again["list"][0]["id"] == detail.id

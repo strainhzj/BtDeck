@@ -1,5 +1,30 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-16 - scan_context 统计缓存（孤儿列表二次优化）
+
+### 需求与根因
+
+- 上一轮优化后接口稳定 1.6s；逐阶段基准（45 万行）定位剩余耗时：remaining_count 136ms + ignored_count 205ms + 过滤 total 135ms（三条全量聚合，占 SQL 57%）+ 列表全排序 ~190ms（30%）+ Docker 环境系数。
+- 关键事实：remaining/ignored **与过滤条件无关**，只随三类数据变化（is_deleted / is_ignored / 清理任务 active 集）；部署恒单进程（WORKERS=1）→ 进程内缓存无一致性问题；前端每次翻页整包覆盖 scanContext → 后端必须每次返回正确值，用缓存满足，前端零改动。
+
+### 实现（经双子代理独立审查修订）
+
+- 新建 `app/services/orphan_stats_cache.py`：模块单例，键=display_scan.scan_id，值=(remaining_count, remaining_size, ignored_count)，上限 4 条 FIFO 淘汰；**epoch 代际防回写**（get→set 之间有 await，invalidate 夹中间时旧计算直接丢弃）。
+- 读路径：`get_orphan_list` / `get_orphan_list_grouped` 缓存优先；**扁平路径无过滤时 total 复用 remaining_count**（显式白名单判定，`status in (None,"")` 等——"pending,deleted" 等组合不满足、grouped 的 total 是组数绝不复用）。
+- 失效点（全清 invalidate()，全部 commit 成功后）：`set_ignored`、`_finalize_quarantine`（is_deleted=True 咽喉，覆盖手动/自动清理与异常路径）、`_finalize_restore`、`submit_cleanup_job`（pending 即扣减）、`finish_job`（终态失败回升，**必需**）、`execute_scan` 两处（扫描开始封死 reconcile 分批失败窗口 + 落库后双保险）、`_recover_interrupted_operations` 防御性（purge 经此入口也会全清，接受）。
+- 测试：根 conftest autouse 清缓存 fixture（防模块单例跨用例污染）；`test_orphan_query_state.py:212` 改为走真实 claim→finish_job（原直接改 ORM 字段绕过）；新增缓存单测（含 epoch 竞态）+ 7 个集成用例（命中不再聚合、total 复用、status 组合不复用、忽视/清理提交/终态失效、grouped 不复用 total）。
+
+### 性能结果（45 万行 aiosqlite 真实服务路径）
+
+- 冷请求（miss）：310ms → 热请求（命中）：**128ms**；翻页 9 次全命中单页 126ms；失效后重算 282ms。
+- 生产估算：无过滤首屏 1.6s → 约 0.6-0.8s，翻页约 0.3s（Docker 系数 1.5x + 请求层）。
+
+### 验证
+
+- 后端全量 pytest：**3507 passed**（较上轮 +19 新用例）；black/flake8 通过；mypy 新模块零错误。
+- `./init.sh` 全栈验证全绿（29 ✓）；前端零改动。
+- 已记录 feature_list.json（evidence：冷 310ms/热 128ms/翻页 126ms）。
+
 ## 2026-08-16 - 孤儿文件列表 5 秒慢查询优化（hardlink_copy_count 快照列）
 
 ### 需求与根因

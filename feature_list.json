@@ -3674,6 +3674,27 @@
         "frontend/src/views/orphan-files/index.vue",
         "frontend/src/api/orphan-files.ts"
       ]
+    },
+    {
+      "id": "orphan-list-scan-context-cache",
+      "title": "孤儿列表 scan_context 统计缓存（按需/缓存优化）",
+      "status": "completed",
+      "description": "remaining_count/ignored_count 全量聚合改进程内缓存（display_scan.scan_id 为键，epoch 防回写，上限 4 条）；无过滤时扁平列表 total 复用 remaining_count；失效点覆盖 set_ignored/_finalize_quarantine/_finalize_restore/submit_cleanup_job/finish_job/execute_scan×2/_recover_interrupted_operations。前端零改动。",
+      "evidence": {
+        "benchmark": "45万行 aiosqlite：冷 310ms→热 128ms；翻页 9 次全命中单页 126ms；生产 1.6s→首屏约 0.6-0.8s",
+        "tests": "后端全量 3507 passed（含缓存单测 5 + 集成 7 + 修正 query_state finish_job 路径）",
+        "lint": "black/flake8 通过；mypy 新模块零错误"
+      },
+      "files": [
+        "backend/app/services/orphan_stats_cache.py",
+        "backend/app/services/orphan_file_service.py",
+        "backend/app/services/orphan_purge_job_service.py",
+        "backend/app/services/orphan_scan_job_service.py",
+        "backend/tests/conftest.py",
+        "backend/tests/services/test_orphan_stats_cache.py",
+        "backend/tests/services/test_orphan_stats_cache_integration.py",
+        "backend/tests/services/test_orphan_query_state.py"
+      ]
     }
   ]
 }

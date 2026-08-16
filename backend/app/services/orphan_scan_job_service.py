@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.database import AsyncSessionLocal
 from app.models.orphan_file import OrphanScanResult
 from app.services.orphan_lease import OrphanLeaseBusyError, orphan_maintenance_scope
+from app.services.orphan_stats_cache import orphan_stats_cache
 from app.tasks.resource_guard import admission_controller
 from app.torrents.audit_enums import AuditOperationResult, AuditOperationType
 
@@ -343,6 +344,10 @@ class OrphanScanDispatcher:
                 scan_type = str(record.scan_type)
                 operator = str(record.operator or "system")
 
+            # 扫描开始即失效：reconcile 是分批短事务提交，中途失败会部分切换候选
+            # current_detail_id 而 display_scan 仍指旧批次 → 旧 key 缓存必须提前清掉
+            orphan_stats_cache.invalidate()
+
             # 清理/隔离任务短时占用维护租约时保持 queued，并在后台重试；请求已返回。
             lease_handle = None
             for _attempt in range(60):
@@ -366,6 +371,9 @@ class OrphanScanDispatcher:
                 await self._mark_failed(scan_id, "等待孤儿维护租约超时")
                 result = {"scan_id": scan_id, "status": "failed", "error": "等待孤儿维护租约超时"}
 
+            # 提交落库后再次失效（双保险）：覆盖 reconcile 重置 is_ignored 与
+            # current_detail 切换后的统计语义；随后才允许请求读取新值。
+            orphan_stats_cache.invalidate()
             await self._audit_result(result, scan_type=scan_type, operator=operator)
 
             cleanup_result: Optional[Dict[str, Any]] = None
