@@ -597,8 +597,14 @@ class TestSeedTransferMigration:
                 }
             )
             service.backup_manager.increment_use_count = AsyncMock()
+            def _dispatch(*args, **kwargs):
+                # W5-2 目标查重：目标无该种子 → 返回空列表，继续添加
+                if kwargs.get("operation") == "transfer_qb_duplicate_check":
+                    return []
+                return [fake_torrent]
+
             with patch.object(
-                seed_transfer_service, "call_downloader_api", new=AsyncMock(return_value=[fake_torrent])
+                seed_transfer_service, "call_downloader_api", new=AsyncMock(side_effect=_dispatch)
             ) as mock_call:
                 with patch.object(seed_transfer_service, "AsyncSessionLocal", return_value=_FakeAsyncSession()):
                     result = await service.transfer_seed(
@@ -614,18 +620,22 @@ class TestSeedTransferMigration:
 
         assert result["success"] is True
         assert result["transfer_status"] == "success"
-        # 添加(target) + 验证(target) + 删除(source) 三次 runtime 调用
-        assert mock_call.await_count == 3
-        add_call = mock_call.await_args_list[0]
+        # 查重(target) + 添加(target) + 验证(target) + 删除(source) 四次 runtime 调用
+        assert mock_call.await_count == 4
+        check_call = mock_call.await_args_list[0]
+        _assert_interactive_call(check_call, target_client.torrents_info, 2)
+        assert check_call.kwargs["operation"] == "transfer_qb_duplicate_check"
+
+        add_call = mock_call.await_args_list[1]
         _assert_interactive_call(add_call, target_client.torrents_add, 2)
         assert add_call.kwargs["kwargs"]["save_path"] == "/dst/path"
         assert add_call.kwargs["operation"] == "transfer_qb_add_torrent"
 
-        verify_call = mock_call.await_args_list[1]
+        verify_call = mock_call.await_args_list[2]
         _assert_interactive_call(verify_call, target_client.torrents_info, 2)
         assert verify_call.kwargs["operation"] == "transfer_qb_verify"
 
-        delete_call = mock_call.await_args_list[2]
+        delete_call = mock_call.await_args_list[3]
         _assert_interactive_call(delete_call, source_client.torrents_delete, 1)
         assert delete_call.kwargs["operation"] == "transfer_qb_delete_source"
 

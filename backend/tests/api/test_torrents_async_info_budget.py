@@ -624,3 +624,83 @@ def _tr_downloader():
         username="admin",
         password="secret",
     )
+
+
+# ==================== W3-1：首轮快照宽松水合 ====================
+
+
+class TestFirstRunHydrationLenient:
+    """首轮 rid=0 maindata 快照必须经 _hydrate_qb_incremental_torrents 宽松水合。
+
+    回归保护：W3-1 修复"新种子 added_date 为空"——首轮快照此前不水合，
+    added_on 缺失时插入 NULL 且无自愈。本测试锁定首轮分支的调用契约
+    （strict=False），防止后续重构把首轮退回"不水合"或误用严格模式。
+    """
+
+    async def test_first_run_calls_hydration_with_lenient_mode(self):
+        from app.api.endpoints import torrents_async
+
+        client = MagicMock()
+        client.sync_maindata = MagicMock(
+            return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}}
+        )
+
+        db = _empty_db()
+        with (
+            patch.object(torrents_async, "QB_USE_INCREMENTAL_SYNC", True),
+            patch.dict(torrents_async._QB_SYNC_RID_CACHE, {}, clear=True),
+            patch.dict(torrents_async._QB_LAST_FULL_SYNC, {"dl-1": datetime.now().timestamp()}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()),
+            patch.object(
+                torrents_async,
+                "_hydrate_qb_incremental_torrents",
+                new=AsyncMock(side_effect=lambda c, tl, dl, op, strict=True: tl),
+            ) as hydrate_mock,
+        ):
+            await torrents_async.qb_add_torrents_info_only_async(db, [_qb_downloader()], client=client)
+
+        hydrate_mock.assert_awaited_once()
+        args = hydrate_mock.await_args
+        assert args.args[3] == "qb_info_first_full_details"  # operation 位置参数
+        assert args.kwargs.get("strict") is False, "首轮快照水合必须为宽松模式（strict=False）"
+
+    async def test_first_run_lenient_hydration_writes_added_date(self):
+        """首轮快照水合后插入行带 added_date（added_on 经水合生效）。"""
+        from app.api.endpoints import torrents_async
+
+        client = MagicMock()
+        client.sync_maindata = MagicMock(
+            return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}}
+        )
+        full_torrent = SimpleNamespace(
+            hash="abc",
+            name="完整名称",
+            save_path="/downloads",
+            total_size=4096,
+            progress=0.75,
+            state="downloading",
+            added_on=ADDED_TS,
+            completion_on=0,
+            ratio=1.5,
+            ratio_limit=2.0,
+            tags="",
+            category="",
+            super_seeding=False,
+        )
+
+        db = _empty_db()
+        with (
+            patch.object(torrents_async, "QB_USE_INCREMENTAL_SYNC", True),
+            patch.dict(torrents_async._QB_SYNC_RID_CACHE, {}, clear=True),
+            patch.dict(torrents_async._QB_LAST_FULL_SYNC, {"dl-1": datetime.now().timestamp()}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+            patch.object(
+                torrents_async, "fetch_qb_torrent_details", new=AsyncMock(return_value=[full_torrent])
+            ),
+        ):
+            await torrents_async.qb_add_torrents_info_only_async(db, [_qb_downloader()], client=client)
+
+        inserted = bulk_mock.await_args.args[1]
+        assert len(inserted) == 1
+        assert inserted[0]["name"] == "完整名称"
+        assert inserted[0]["added_date"] is not None, "首轮水合后 added_date 必须非空"

@@ -16,25 +16,34 @@ from qrcode.image.pil import PilImage
 from io import BytesIO
 import base64
 import logging
+from datetime import datetime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
 
 @router.post("/logout", summary="用户登出", response_model=CommonResponse)
-def logout(user_info: AuthenticatedUserInfo = Depends(require_authenticated_user)):
+def logout(
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
     """
-    用户登出端点。
+    用户登出端点：撤销该用户全部未过期 refresh token（双令牌体系 W6-1）。
 
-    本期最低实现：仅返回成功，由前端清除本地 token。
-    审计依据：backend/docs/style-and-contract-audit.md 第5节"POST /users/logout 不匹配"。
-
-    ⚠️ 已知安全隐患（后续 TODO）：
-        当前无 token 黑名单/撤销机制（JWT 无状态），登出后旧 token 在
-        ACCESS_TOKEN_EXPIRE_MINUTES 内仍有效。完整登出需要引入 Redis/内存
-        token 黑名单（记录 jti + 过期时间），属于独立安全增强任务，不在本次范围。
+    access token 仍为无状态 JWT（到期前有效），但 refresh 撤销后 401 无法
+    续期，前端将在下一次 401 时登出，令牌生命周期收敛到可撤销。
     """
     logger.info("用户登出: %s", user_info.username)
+    user_id = getattr(user_info, "user_id", None)
+    if user_id is not None:
+        db.query(models.RefreshToken).filter(
+            models.RefreshToken.user_id == user_id,
+            models.RefreshToken.revoked_at.is_(None),
+        ).update({models.RefreshToken.revoked_at: datetime.utcnow()})
+        db.commit()
+        logger.info("已撤销用户 %s 的 refresh token", user_info.username)
+    else:
+        logger.warning("登出时 user_id 缺失（旧 token），跳过 refresh 撤销")
     return CommonResponse(status="success", msg="登出成功", code="200", data=None)
 
 

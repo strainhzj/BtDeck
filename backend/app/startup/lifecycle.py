@@ -436,6 +436,16 @@ async def lifespan(app: FastAPI):
         app.state.wal_snapshot_task = wal_snapshot_task
         print("[OK] WAL 只读周期快照任务已启动")
 
+    # 6.7 存量 added_date 回填（W3-3）：仅当开关开启时启动（默认关闭）；
+    # 失败不阻断应用启动。
+    added_date_backfill_task = None
+    if settings.INFO_SYNC_STARTUP_BACKFILL_ENABLED:
+        from app.services.torrent_added_date_backfill import backfill_torrent_added_dates
+
+        added_date_backfill_task = asyncio.create_task(backfill_torrent_added_dates(app))
+        app.state.added_date_backfill_task = added_date_backfill_task
+        print("[OK] 存量 added_date 回填任务已启动")
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
@@ -544,6 +554,17 @@ async def lifespan(app: FastAPI):
                 print("✅ WAL 快照任务已取消")
             except Exception as e:
                 print(f"⚠️  取消 WAL 快照任务时出错: {e}")
+
+        # 取消存量 added_date 回填任务（W3-3）：异常不阻断关闭。
+        if added_date_backfill_task and not added_date_backfill_task.done():
+            print("取消 added_date 回填任务...")
+            added_date_backfill_task.cancel()
+            try:
+                await added_date_backfill_task
+            except asyncio.CancelledError:
+                print("✅ added_date 回填任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消 added_date 回填任务时出错: {e}")
 
         # 关闭事件循环 lag 采样器（W4-1 第二部分）：空句柄 stop() no-op，
         # 异常不阻断关闭。

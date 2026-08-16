@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     SECRET_KEY: str = Field(default_factory=_default_secret_key)
     SM4_KEY: Optional[str] = None  # 将在应用启动时生成
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
+    # refresh token 有效期（天，双令牌体系 W6-1）
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     ALGORITHM: str = "HS256"
     BTDECK_ALLOW_CUSTOM_SCRIPTS: bool = False
 
@@ -181,6 +183,8 @@ class Settings(BaseSettings):
     # 单轮记录数上限：info-only 每轮最多处理该数量的种子，达到即停止处理
     # 剩余并返回部分结果（budget_reason=count）；小于 1 视为 1
     INFO_SYNC_MAX_TORRENTS_PER_RUN: int = 10000
+    # 启动时回填 added_date 为空的行（W3-3）：后台任务执行，默认关闭
+    INFO_SYNC_STARTUP_BACKFILL_ENABLED: bool = False
     # 单轮时长上限（秒）：从本轮开始计时，超过即停止处理并返回部分结果
     # （budget_reason=time）；0 或负值表示不限时
     INFO_SYNC_RUN_BUDGET_SECONDS: float = 300.0
@@ -207,6 +211,9 @@ class Settings(BaseSettings):
     # 自动清理超期天数：连续成为孤儿超过该天数的候选由定时任务移入隔离区
     # 语义重做：依据「连续成为孤儿的时间」，不再依据文件 mtime
     ORPHAN_AUTO_CLEANUP_DAYS: int = 30
+    # 路径维护：路径清理宽限期（天）。路径最后一次有种子距今超过该天数且当前无种子
+    # 时，定时扫描才将其标记为自动禁用（disabled_by='auto'）；0=立即禁用（旧行为）。
+    PATH_CLEANUP_GRACE_DAYS: int = 30
     # 定时扫描开关：False 时定时任务跳过扫描（手动扫描不受影响）
     ORPHAN_SCAN_ENABLED: bool = True
     # 文件清单批量获取批次大小（按种子数分批调下载器 API）

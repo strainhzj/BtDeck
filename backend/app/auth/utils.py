@@ -1,4 +1,6 @@
-﻿import logging
+﻿import hashlib
+import logging
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -34,6 +36,16 @@ def get_login_secret() -> str:
             _cached_login_secret = "[REDACTED-SECRET]"
 
     return _cached_login_secret
+
+
+def create_refresh_token() -> str:
+    """生成不透明 refresh token（64 位十六进制随机串，仅存哈希）。"""
+    return secrets.token_hex(32)
+
+
+def hash_refresh_token(token: str) -> str:
+    """计算 refresh token 的 SHA-256 哈希（落库值）。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):

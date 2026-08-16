@@ -28,7 +28,7 @@ SCHEMA_SQL = BACKEND_ROOT / "config" / "production_complete_schema.sql"
 # 迁移链关键节点
 REV_BASE = "e2a02abcf912"
 REV_PRE_ORPHAN = "95ef8bd8b47a"  # orphan_file_tables 迁移之前（search_templates head）
-REV_HEAD = "d4e5f6a7b8c9"  # 当前 head（孤儿硬链接副本数快照列）
+REV_HEAD = "a8b9c0d1e2f3"  # 当前 head（refresh_tokens 双令牌 W6-1）
 
 
 def _make_cfg(db_path: str) -> Config:

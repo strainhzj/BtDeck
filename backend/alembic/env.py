@@ -10,7 +10,7 @@ from app.database import Base
 
 # 导入所有模型以确保 Alembic autogenerate 能检测到所有表
 # 认证与权限
-from app.auth.models import User, LoginLog, Config
+from app.auth.models import User, LoginLog, Config, RefreshToken
 
 # 下载器管理
 from app.downloader.models import BtDownloaders

@@ -856,11 +856,13 @@ def create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp
         size=qb_torrent.total_size,
         status=TorrentStatusMapper.convert_qbittorrent_status(qb_torrent.state),
         torrent_file="/config/qbittorrent/BT_backup/" + qb_torrent.hash + ".torrent",
-        # 防御性：添加时间戳范围检查，防止负数和溢出
+        # 防御性：添加时间戳范围检查，防止负数和溢出；
+        # 下载器侧 added_on 缺失/为 0 时以本地时间兜底（种子刚添加，入库时间即添加时间），
+        # 避免"添加时间为空"（同步链路 12 小时全量快照前无自愈）
         added_date=(
             datetime.fromtimestamp(qb_torrent.added_on)
             if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
-            else None
+            else datetime.now()
         ),
         completed_date=(
             datetime.fromtimestamp(qb_torrent.completion_on)
@@ -877,13 +879,13 @@ def create_qbittorrent_torrent_record(downloader, downloader_id, qb_torrent, tmp
         create_time=(
             datetime.fromtimestamp(qb_torrent.added_on)
             if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
-            else None
+            else datetime.now()
         ),
         create_by="admin",
         update_time=(
             datetime.fromtimestamp(qb_torrent.added_on)
             if qb_torrent.added_on > 0 and qb_torrent.added_on <= 2147483647
-            else None
+            else datetime.now()
         ),
         update_by="admin",
         dr=0,  # 🔧 修复：添加缺失的 dr 参数

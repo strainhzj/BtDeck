@@ -270,6 +270,9 @@ class PathMaintenanceService:
 
             if is_enabled is not None:
                 path.is_enabled = is_enabled
+                # 用户手动操作标记来源：禁用标 'user'（扫描永不恢复/重复禁用），
+                # 重新启用清空来源（恢复自动清理与自动恢复语义）
+                path.disabled_by = "user" if not is_enabled else None
 
             if torrent_count is not None:
                 path.torrent_count = torrent_count
@@ -387,6 +390,7 @@ class PathMaintenanceService:
                 return False
 
             path.is_enabled = False
+            path.disabled_by = "user"
             path.updated_at = datetime.utcnow()
 
             self.db.commit()

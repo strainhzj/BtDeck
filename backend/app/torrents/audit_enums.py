@@ -26,6 +26,7 @@ class AuditOperationType(str, Enum):
     PAUSE = "pause"  # 暂停种子
     RESUME = "resume"  # 恢复/开始种子
     RECHECK = "recheck"  # 重新检查种子
+    TRANSFER = "transfer"  # 种子转移
     DELETE_L4 = "delete_l4"  # 等级4删除（待删除标签）
     DELETE_L3 = "delete_l3"  # 等级3删除（回收站）
     DELETE_L2 = "delete_l2"  # 等级2删除（删除任务保留数据）
@@ -121,6 +122,7 @@ class AuditOperationType(str, Enum):
             cls.PAUSE.value: "暂停种子",
             cls.RESUME.value: "开始种子",
             cls.RECHECK.value: "重新检查种子",
+            cls.TRANSFER.value: "种子转移",
             cls.DELETE_L4.value: "等级4删除（待删除标签）",
             cls.DELETE_L3.value: "等级3删除（回收站）",
             cls.DELETE_L2.value: "等级2删除（保留数据）",
@@ -192,6 +194,7 @@ class AuditOperationType(str, Enum):
             cls.PAUSE.value: "torrent",
             cls.RESUME.value: "torrent",
             cls.RECHECK.value: "torrent",
+            cls.TRANSFER.value: "torrent",
             cls.DELETE_L4.value: "torrent",
             cls.DELETE_L3.value: "torrent",
             cls.DELETE_L2.value: "torrent",

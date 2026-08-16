@@ -208,7 +208,7 @@ class SafetyCheckService:
 class TorrentDeletionService:
     """种子删除服务主类"""
 
-    def __init__(self, db: Session, audit_service=None, async_db_session=None):
+    def __init__(self, db: Session, audit_service=None, async_db_session=None, audit_info=None, operator="admin"):
         """
         初始化种子删除服务
 
@@ -216,10 +216,15 @@ class TorrentDeletionService:
             db: 同步数据库会话
             audit_service: 可选的审计日志服务（异步版本）
             async_db_session: 异步数据库会话（用于审计日志）
+            audit_info: 请求审计信息（extract_audit_info_from_request 产物：
+                ip_address/user_agent/request_id/session_id）
+            operator: 真实操作者（由端点从认证用户传入，修复硬编码 admin）
         """
         self.db = db
         self.audit_service = audit_service
         self.async_db_session = async_db_session
+        self.audit_info = audit_info or {}
+        self.operator = operator
         self.safety_checker = SafetyCheckService()
         self.adapters: Dict[str, DownloaderDeleteAdapter] = {}
 
@@ -521,11 +526,13 @@ class TorrentDeletionService:
                             "safety_check_level": request.safety_check_level.value,
                             "reason": request.reason,
                         },
-                        "operator": "admin",  # TODO: 从请求上下文获取真实操作者
+                        "operator": self.operator,
                         "operation_result": AuditOperationResult.SUCCESS,
-                        "downloader_id": deleted.get("downloader_id"),  # TODO: 从deleted中获取downloader_id
-                        "ip_address": None,  # TODO: 从请求上下文获取
-                        "user_agent": None,
+                        "downloader_id": deleted.get("downloader_id"),
+                        "ip_address": self.audit_info.get("ip_address"),
+                        "user_agent": self.audit_info.get("user_agent"),
+                        "request_id": self.audit_info.get("request_id"),
+                        "session_id": self.audit_info.get("session_id"),
                     }
                 )
 
@@ -541,10 +548,14 @@ class TorrentDeletionService:
                             "delete_mode": request.delete_option.value,
                             "safety_check_level": request.safety_check_level.value,
                         },
-                        "operator": "admin",
+                        "operator": self.operator,
                         "operation_result": AuditOperationResult.FAILED,
                         "error_message": failed_item.get("reason"),
                         "downloader_id": None,
+                        "ip_address": self.audit_info.get("ip_address"),
+                        "user_agent": self.audit_info.get("user_agent"),
+                        "request_id": self.audit_info.get("request_id"),
+                        "session_id": self.audit_info.get("session_id"),
                     }
                 )
 
@@ -560,16 +571,20 @@ class TorrentDeletionService:
                             "skip_reason": skip_reason,
                             "warnings": skipped_item.get("warnings", []),
                         },
-                        "operator": "admin",
+                        "operator": self.operator,
                         "operation_result": AuditOperationResult.FAILED,
                         "error_message": f"跳过删除: {skip_reason}",
+                        "ip_address": self.audit_info.get("ip_address"),
+                        "user_agent": self.audit_info.get("user_agent"),
+                        "request_id": self.audit_info.get("request_id"),
+                        "session_id": self.audit_info.get("session_id"),
                     }
                 )
 
             # 使用异步数据库会话批量记录
             if self.async_db_session and operations_to_log:
                 logged_count = await self.audit_service.log_batch_operations(
-                    operations=operations_to_log, operator="admin"  # TODO: 从请求上下文获取
+                    operations=operations_to_log, operator=self.operator
                 )
                 logger.info(f"成功记录{logged_count}条删除审计日志到数据库")
 

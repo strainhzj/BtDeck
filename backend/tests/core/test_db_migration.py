@@ -52,7 +52,7 @@ def _clean_database_path_env():
 #       → b6e1c4d9a2f7(torrent backup downloader UUID type)
 #       → c8d9e0f1a2b3(orphan hardlink copy results)
 #       → d4e5f6a7b8c9(orphan hardlink copy count snapshot)
-EXPECTED_HEAD = "d4e5f6a7b8c9"
+EXPECTED_HEAD = "a8b9c0d1e2f3"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
@@ -143,9 +143,10 @@ class TestMigrationChainIntegrity:
         # + b075727f7182 加 orphan_current_candidate + orphan_operation_lease = 28
         # + c7d8e9f0a1b2 加 orphan_purge_job = 29
         # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
+        # + a8b9c0d1e2f3 加 refresh_tokens = 33（双令牌 W6-1）
         assert (
-            count == 32
-        ), f"空库 upgrade 应建 32 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描），实际 {count}"
+            count == 33
+        ), f"空库 upgrade 应建 33 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -738,7 +739,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 32
+        assert _table_count(str(target_db)) == 33
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)

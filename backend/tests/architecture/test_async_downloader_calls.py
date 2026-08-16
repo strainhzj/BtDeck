@@ -85,8 +85,8 @@ _ENDPOINT_RULES = {
     "app/api/endpoints/tag_management.py": {
         "client_constructor_names": _CLIENT_CONSTRUCTOR_NAMES,
         "client_object_names": ("client",),
-        # 已知 async helper：调用点必须带 await（_sync_tag_to_downloader 当前无调用方
-        # 死代码，登记仅为防止未来启用时漏 await）。
+        # 已知 async helper：调用点必须带 await（_sync_tag_to_downloader 由
+        # create_tag/update_tag 调用，登记强制调用点带 await）。
         "async_helpers_require_await": (
             "_sync_tag_to_downloader",
             "_sync_tags_to_torrent_downloader",

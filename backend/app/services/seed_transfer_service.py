@@ -327,6 +327,41 @@ class SeedTransferService:
 
             target_client = target_downloader_vo.client
 
+            # 2.5 目标查重：目标下载器已存在相同 hash 时直接返回 duplicate，
+            # 避免 torrents_add 静默失败后 _verify_transfer 按旧种子误判"成功"。
+            try:
+                existing_on_target = await self._check_target_duplicate(
+                    downloader_id=target_downloader_id,
+                    target_client=target_client,
+                    downloader_type=target_downloader.downloader_type,
+                    info_hash=info_hash,
+                )
+            except Exception as e:
+                # 查重失败不阻断转移（竞态由 _verify_transfer 兜底）
+                logger.warning(f"目标查重失败（继续转移）: {e}")
+                existing_on_target = False
+
+            if existing_on_target:
+                result["transfer_status"] = "duplicate"
+                result["error_message"] = f"目标下载器已存在相同种子: {info_hash}"
+                await self._log_transfer_attempt(
+                    user_id=user_id,
+                    username=username,
+                    source_downloader_id=source_downloader_id,
+                    source_downloader_name=result.get("source_downloader_name", ""),
+                    target_downloader_id=target_downloader_id,
+                    target_downloader_name=result.get("target_downloader_name", ""),
+                    torrent_name=result.get("torrent_name") or "",
+                    info_hash=info_hash,
+                    source_path=result.get("source_path") or "",
+                    target_path=target_path,
+                    delete_source=delete_source,
+                    transfer_status="duplicate",
+                    error_message=result["error_message"],
+                    transfer_duration=int((time.time() - start_time) * 1000),
+                )
+                return result
+
             # 3. 添加种子到目标下载器
             logger.info(f"添加种子到目标下载器 {target_downloader_id}，路径: {target_path}")
 
@@ -339,7 +374,7 @@ class SeedTransferService:
                     from io import BytesIO
 
                     # P0-04 修复：torrents_add 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
-                    await call_downloader_api(
+                    add_response = await call_downloader_api(
                         target_downloader_id,
                         DownloadLane.INTERACTIVE,
                         target_client.torrents_add,
@@ -347,6 +382,12 @@ class SeedTransferService:
                         timeout=_TRANSFER_CALL_TIMEOUT,
                         operation="transfer_qb_add_torrent",
                     )
+                    # qB 添加失败返回 "Fails." 字符串而不抛异常：必须检查返回值，
+                    # 否则 _verify_transfer 重试 5×5 秒后才报失败（且重复种子场景会误判成功）
+                    if isinstance(add_response, str) and "Fails" in add_response:
+                        result["error_message"] = f"目标下载器拒绝添加种子: {add_response.strip()}"
+                        await self._update_transfer_log(info_hash, "failed", result["error_message"])
+                        return result
                 except LoginFailed as e:
                     result["error_message"] = f"目标下载器登录失败: {str(e)}"
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
@@ -361,7 +402,7 @@ class SeedTransferService:
                     from io import BytesIO
 
                     # P0-04 修复：add_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
-                    await call_downloader_api(
+                    add_result = await call_downloader_api(
                         target_downloader_id,
                         DownloadLane.INTERACTIVE,
                         target_client.add_torrent,
@@ -370,6 +411,12 @@ class SeedTransferService:
                         timeout=_TRANSFER_CALL_TIMEOUT,
                         operation="transfer_tr_add_torrent",
                     )
+                    # transmission-rpc add_torrent 失败抛异常；成功返回 Torrent 对象。
+                    # 返回 None 视为异常（重复种子时返回已有 Torrent 对象，由验证最终确认）。
+                    if add_result is None:
+                        result["error_message"] = "目标下载器未返回添加结果"
+                        await self._update_transfer_log(info_hash, "failed", result["error_message"])
+                        return result
                 except Exception as e:
                     result["error_message"] = f"添加种子到Transmission失败: {str(e)}"
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
@@ -619,6 +666,45 @@ class SeedTransferService:
 
         logger.warning(f"验证失败：已重试 {max_retries} 次")
         return False
+
+    async def _check_target_duplicate(
+        self,
+        downloader_id: int,
+        target_client: Any,
+        downloader_type: int,
+        info_hash: str,
+    ) -> bool:
+        """转移前查重：目标下载器是否已存在相同 hash 的种子。
+
+        qB torrents_info 对未知 hash 返回空列表；TR get_torrents 对缺失返回空列表，
+        都不报错。存在即返回 True（transfer 直接以 duplicate 状态返回，不重复添加）。
+        """
+        try:
+            normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+            if normalized_type == DownloaderTypeEnum.QBITTORRENT:
+                torrents = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    target_client.torrents_info,
+                    kwargs={"torrent_hashes": info_hash},
+                    timeout=_TRANSFER_CALL_TIMEOUT,
+                    operation="transfer_qb_duplicate_check",
+                )
+                return bool(torrents)
+            if normalized_type == DownloaderTypeEnum.TRANSMISSION:
+                torrents = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    target_client.get_torrents,
+                    args=(info_hash,),
+                    timeout=_TRANSFER_CALL_TIMEOUT,
+                    operation="transfer_tr_duplicate_check",
+                )
+                return bool(torrents)
+            return False
+        except Exception as e:
+            logger.warning(f"目标查重异常（按不存在处理）: {e}")
+            return False
 
     async def _delete_source_torrent(
         self, downloader_id: int, source_client: Any, downloader_type: int, info_hash: str, delete_files: bool = False

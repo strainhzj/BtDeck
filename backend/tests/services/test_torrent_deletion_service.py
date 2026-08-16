@@ -15,6 +15,7 @@ TorrentDeletionService 的单元测试
 """
 
 import pytest
+from types import SimpleNamespace
 from unittest.mock import MagicMock, AsyncMock, patch
 from datetime import datetime, timedelta
 
@@ -500,3 +501,131 @@ class TestDownloaderDeleteAdapter:
         """完整实现的子类可以正常实例化"""
         adapter = _make_fake_adapter()
         assert adapter.get_downloader_type.return_value == "fake"
+
+
+# ==================== W7：删除审计 IP/UA/操作者 ====================
+
+
+class TestDeletionAuditContext:
+    """TorrentDeletionService 审计上下文（audit_info + operator 注入）。"""
+
+    def _make_service(self, audit_info=None, operator="tester"):
+        from app.services.torrent_deletion_service import TorrentDeletionService
+
+        return TorrentDeletionService(
+            db=MagicMock(),
+            audit_service=MagicMock(),
+            async_db_session=MagicMock(),
+            audit_info=audit_info,
+            operator=operator,
+        )
+
+    async def test_log_deletion_operation_carries_audit_info(self):
+        """_log_deletion_operation 生成的审计条目携带 ip/user_agent/真实操作者。"""
+        from app.services.torrent_deletion_service import (
+            DeleteRequest,
+            DeleteResult,
+            DeleteOption,
+            SafetyCheckLevel,
+        )
+
+        service = self._make_service(
+            audit_info={
+                "ip_address": "192.168.1.10",
+                "user_agent": "pytest-agent",
+                "request_id": "req-1",
+                "session_id": "sess-1",
+            },
+            operator="tester",
+        )
+
+        request = DeleteRequest(
+            torrent_info_ids=["t1"],
+            delete_option=DeleteOption.DELETE_FILES_AND_TORRENT,
+            safety_check_level=SafetyCheckLevel.ENHANCED,
+        )
+        result = DeleteResult(
+            success_count=1,
+            failed_count=0,
+            skipped_count=0,
+            total_size_freed=0,
+            deleted_torrents=[{"info_id": "t1", "name": "种子", "size": 1, "downloader_id": "d1"}],
+            failed_torrents=[],
+            skipped_torrents=[],
+            safety_warnings=[],
+            execution_time=0,
+        )
+
+        await service._log_deletion_operation(request, result)
+
+        operations = service.audit_service.log_batch_operations.call_args.kwargs["operations"]
+        entry = operations[0]
+        assert entry["operator"] == "tester"
+        assert entry["ip_address"] == "192.168.1.10"
+        assert entry["user_agent"] == "pytest-agent"
+        assert entry["request_id"] == "req-1"
+        assert entry["session_id"] == "sess-1"
+
+    async def test_default_audit_info_is_empty_and_operator_admin(self):
+        """未注入审计信息时保持旧行为（不抛错，ip 为 None）。"""
+        from app.services.torrent_deletion_service import (
+            DeleteRequest,
+            DeleteResult,
+            DeleteOption,
+            SafetyCheckLevel,
+        )
+
+        service = self._make_service(operator="admin")
+        request = DeleteRequest(
+            torrent_info_ids=["t1"],
+            delete_option=DeleteOption.DELETE_FILES_AND_TORRENT,
+            safety_check_level=SafetyCheckLevel.ENHANCED,
+        )
+        result = DeleteResult(
+            success_count=1,
+            failed_count=0,
+            skipped_count=0,
+            total_size_freed=0,
+            deleted_torrents=[{"info_id": "t1", "name": "种子", "size": 1}],
+            failed_torrents=[],
+            skipped_torrents=[],
+            safety_warnings=[],
+            execution_time=0,
+        )
+
+        await service._log_deletion_operation(request, result)
+
+        operations = service.audit_service.log_batch_operations.call_args.kwargs["operations"]
+        assert operations[0]["operator"] == "admin"
+        assert operations[0]["ip_address"] is None
+
+
+class TestByLevelAuditInfoExtraction:
+    """TorrentDeletionByLevelService 从 request 提取审计信息。"""
+
+    def test_extracts_ip_and_user_agent_from_request(self):
+        from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
+
+        app = SimpleNamespace()
+        app.state = SimpleNamespace(store=MagicMock())
+
+        request = MagicMock()
+        request.app = app
+        request.client.host = "10.0.0.5"
+
+        def _header(name, default=None):
+            return "pytest-ua" if name == "User-Agent" else default
+
+        request.headers.get.side_effect = _header
+
+        service = TorrentDeletionByLevelService(db=MagicMock(), request=request)
+        info = service._audit_request_info()
+
+        assert info["ip_address"] == "10.0.0.5"
+        assert info["user_agent"] == "pytest-ua"
+
+    def test_no_request_returns_empty(self):
+        from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
+
+        service = TorrentDeletionByLevelService(db=MagicMock())
+        assert service._audit_request_info() == {}

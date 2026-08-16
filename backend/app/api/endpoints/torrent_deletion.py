@@ -149,8 +149,16 @@ async def delete_torrent(
         async with AsyncSessionLocal() as async_db:
             audit_service = await get_audit_service(async_db)
 
-            # 创建删除服务（传入审计服务）
-            deletion_service = TorrentDeletionService(db=db, audit_service=audit_service, async_db_session=async_db)
+            # 创建删除服务（传入审计服务 + 请求审计信息 + 真实操作者）
+            from app.services.audit_service import extract_audit_info_from_request
+
+            deletion_service = TorrentDeletionService(
+                db=db,
+                audit_service=audit_service,
+                async_db_session=async_db,
+                audit_info=extract_audit_info_from_request(http_request),
+                operator=getattr(_user, "username", None) or "admin",
+            )
 
             # 🔧 修复：注册下载器适配器（从缓存获取客户端连接）
             from app.services.torrent_deletion_service import DownloaderAdapterFactory
@@ -351,8 +359,16 @@ async def preview_bulk_torrent_deletion(
         async with AsyncSessionLocal() as async_db:
             audit_service = await get_audit_service(async_db)
 
-            # 创建删除服务（传入审计服务）
-            deletion_service = TorrentDeletionService(db=db, audit_service=audit_service, async_db_session=async_db)
+            # 创建删除服务（传入审计服务 + 请求审计信息 + 真实操作者）
+            from app.services.audit_service import extract_audit_info_from_request
+
+            deletion_service = TorrentDeletionService(
+                db=db,
+                audit_service=audit_service,
+                async_db_session=async_db,
+                audit_info=extract_audit_info_from_request(http_request),
+                operator=getattr(_user, "username", None) or "admin",
+            )
 
             # 修复：注册下载器适配器（传入app对象以访问缓存）
             await _register_downloader_adapters(
@@ -418,8 +434,16 @@ async def bulk_delete_torrents(
         async with AsyncSessionLocal() as async_db:
             audit_service = await get_audit_service(async_db)
 
-            # 创建删除服务（传入审计服务）
-            deletion_service = TorrentDeletionService(db=db, audit_service=audit_service, async_db_session=async_db)
+            # 创建删除服务（传入审计服务 + 请求审计信息 + 真实操作者）
+            from app.services.audit_service import extract_audit_info_from_request
+
+            deletion_service = TorrentDeletionService(
+                db=db,
+                audit_service=audit_service,
+                async_db_session=async_db,
+                audit_info=extract_audit_info_from_request(http_request),
+                operator=getattr(_user, "username", None) or "admin",
+            )
 
             # 修复：注册下载器适配器（传入app对象以访问缓存）
             await _register_downloader_adapters(
@@ -621,7 +645,7 @@ async def delete_torrent_with_level(
     delete_level: int = Query(
         ..., description="删除等级 (1=完全删除, 2=删除任务保留数据, 3=回收站, 4=待删除标签)", ge=1, le=4
     ),
-    operator: str = Query(default="admin", description="操作人"),
+    operator: str = Query(default="admin", description="操作人（已废弃：以认证用户为准）"),
     request: Request = None,
     db: Session = Depends(get_db),
 ):
@@ -646,6 +670,9 @@ async def delete_torrent_with_level(
     # 将逗号分隔的字符串转换为列表（认证已迁移至 require_authenticated_user 依赖）
     torrent_info_id_list = [id.strip() for id in torrent_info_ids.split(",") if id.strip()]
 
+    # operator 防伪造：以认证用户为准，忽略请求参数传入的 operator
+    effective_operator = getattr(_user, "username", None) or operator
+
     try:
         # 导入删除服务
         from app.services.torrent_deletion_by_level import TorrentDeletionByLevelService
@@ -665,7 +692,7 @@ async def delete_torrent_with_level(
         result = await deletion_service.delete_batch_by_level(
             torrent_info_ids=torrent_info_id_list,
             delete_level=delete_level,
-            operator=operator,
+            operator=effective_operator,
             audit_service=audit_service,
         )
 
@@ -794,6 +821,9 @@ async def delete_batch_async(
         from app.services.deletion_task_manager import get_deletion_task_manager
         from app.services.async_deletion_executor import AsyncDeletionExecutor
 
+        # operator 防伪造：以认证用户为准，忽略请求参数传入的 operator
+        effective_operator = getattr(user_info, "username", None) or getattr(delete_request, "operator", "admin")
+
         # 获取任务管理器
         task_manager = get_deletion_task_manager()
 
@@ -801,7 +831,7 @@ async def delete_batch_async(
         submission = await task_manager.create_task_reserving(
             torrent_info_ids=delete_request.torrent_info_ids,
             delete_level=delete_request.delete_level,
-            operator=delete_request.operator,
+            operator=effective_operator,
         )
 
         if submission.task_id is None:
@@ -831,7 +861,7 @@ async def delete_batch_async(
                 task_id=task_id,
                 torrent_info_ids=submission.accepted_info_ids,
                 delete_level=delete_request.delete_level,
-                operator=delete_request.operator,
+                operator=effective_operator,
                 request=request,
             )
         )

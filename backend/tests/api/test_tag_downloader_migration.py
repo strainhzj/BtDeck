@@ -507,8 +507,8 @@ class TestSyncTagDeleteToDownloader:
         mock_runtime.assert_not_awaited()
 
 
-class TestSyncTagToDownloaderDeadCode:
-    """_sync_tag_to_downloader（当前无调用方死代码）：顺手迁移后仍保持正确行为。"""
+class TestSyncTagToDownloader:
+    """_sync_tag_to_downloader（create_tag/update_tag 调用方）：同步行为回归。"""
 
     async def test_qb_create_category_via_runtime(self):
         from app.api.endpoints import tag_management
@@ -884,3 +884,190 @@ class TestDownloaderSettingsTestConnection:
         body = r.json()
         assert body["data"]["success"] is False
         assert "认证失败" in body["data"]["message"]
+
+
+# ==================== 修复：create_tag 同步 + 409 幂等 ====================
+
+
+@pytest.fixture
+def tag_client():
+    """独立 FastAPI app（api_router），override get_db + 认证 + 伪 store。
+
+    create/update 标签同步端点共用（W2-1/W2-2）。
+    """
+    from app.models.torrent_tags import TorrentTag
+    from app.downloader.models import BtDownloaders
+
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine, tables=[TorrentTag.__table__, BtDownloaders.__table__])
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    session.add(BtDownloaders(downloader_id="dl_001", nickname="qb-test", dr=0))
+    session.commit()
+
+    app = FastAPI()
+    app.include_router(api_router, prefix="/api/v1")
+    app.state.store = make_fake_store([])
+
+    def override_get_db():
+        try:
+            yield session
+        finally:
+            session.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="tester")
+    return TestClient(app, raise_server_exceptions=False)
+
+
+class TestCreateTagSyncsToDownloader:
+    """create_tag 端点：创建标签后同步到下载器（best-effort，失败不阻断）。"""
+
+    def test_create_category_syncs_to_qb_downloader(self, tag_client):
+        """qB 分类创建成功后同步 create_category 到下载器。"""
+        from app.api.endpoints import tag_management
+
+        client = MagicMock()
+        app = tag_client.app
+        app.state.store = make_fake_store([make_downloader_vo(client=client, downloader_type=0)])
+
+        with patch.object(
+            tag_management, "call_downloader_api", new_callable=AsyncMock, side_effect=runtime_executor
+        ) as mock_runtime:
+            resp = tag_client.post(
+                "/api/v1/tags/create",
+                json={"downloader_id": "dl_001", "tag_name": "电影", "tag_type": "category", "color": "#FF5733"},
+            )
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["code"] == "200"
+        assert body["status"] == "success"
+        client.torrent_categories.create_category.assert_called_once_with(name="电影")
+        assert assert_lane_and_func(mock_runtime, client.torrent_categories.create_category)
+
+    def test_create_tag_sync_failure_does_not_block_creation(self, tag_client):
+        """下载器同步失败（如超时）不阻断标签创建，响应仍为成功。"""
+        from app.api.endpoints import tag_management
+
+        app = tag_client.app
+        app.state.store = make_fake_store([make_downloader_vo(client=MagicMock(), downloader_type=0)])
+
+        with patch.object(
+            tag_management, "call_downloader_api", new_callable=AsyncMock, side_effect=TimeoutError("sync timeout")
+        ):
+            resp = tag_client.post(
+                "/api/v1/tags/create",
+                json={"downloader_id": "dl_001", "tag_name": "电影", "tag_type": "category"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["code"] == "200"
+
+
+class TestSyncTagToDownloaderConflictAndTransmission:
+    """_sync_tag_to_downloader：qB 409 幂等 / TR no-op。"""
+
+    async def test_qb_conflict_409_is_idempotent_success(self):
+        """qB 已存在同名分类（Conflict409Error）视为幂等成功，不报失败。"""
+        from qbittorrentapi.exceptions import Conflict409Error
+        from app.api.endpoints import tag_management
+
+        client = MagicMock()
+        store = make_fake_store([make_downloader_vo(client=client, downloader_type=0)])
+        request = make_fake_request(make_fake_app(store))
+
+        async def raise_conflict(*_args, **_kwargs):
+            raise Conflict409Error
+
+        with patch.object(
+            tag_management, "call_downloader_api", new_callable=AsyncMock, side_effect=raise_conflict
+        ):
+            result = await tag_management._sync_tag_to_downloader(
+                request,
+                downloader_id="dl_001",
+                tag_id="t1",
+                tag_name="电影",
+                tag_type="category",
+                color=None,
+            )
+
+        assert result["success"] is True
+
+    async def test_tr_create_is_noop_success(self):
+        """Transmission 无独立标签创建 API：helper 直接返回成功（标签使用时才创建）。"""
+        from app.api.endpoints import tag_management
+
+        client = MagicMock()
+        store = make_fake_store([make_downloader_vo(client=client, downloader_type=1)])
+        request = make_fake_request(make_fake_app(store))
+
+        with patch.object(
+            tag_management, "call_downloader_api", new_callable=AsyncMock
+        ) as mock_runtime:
+            result = await tag_management._sync_tag_to_downloader(
+                request,
+                downloader_id="dl_001",
+                tag_id="t1",
+                tag_name="电影",
+                tag_type="category",
+                color=None,
+            )
+
+        assert result["success"] is True
+        mock_runtime.assert_not_awaited()
+
+
+class TestUpdateTagSyncsDownloader:
+    """W2-2：update_tag 重命名后同步新名到下载器（qB 无改名 API，仅创建新名）。"""
+
+    def test_update_rename_syncs_new_name_to_qb(self, tag_client):
+        from app.api.endpoints import tag_management
+
+        client = MagicMock()
+        tag_client.app.state.store = make_fake_store([make_downloader_vo(client=client, downloader_type=0)])
+
+        with patch.object(
+            tag_management, "call_downloader_api", new_callable=AsyncMock, side_effect=runtime_executor
+        ):
+            create_resp = tag_client.post(
+                "/api/v1/tags/create",
+                json={"downloader_id": "dl_001", "tag_name": "旧名字", "tag_type": "category"},
+            )
+            assert create_resp.json()["code"] == "200"
+            tag_id = create_resp.json()["data"]["tag_id"]
+
+            update_resp = tag_client.put(
+                f"/api/v1/tags/update/{tag_id}",
+                json={"tag_name": "新名字"},
+            )
+
+        assert update_resp.status_code == 200
+        assert update_resp.json()["code"] == "200"
+        # 改名同步：向 qB 创建新名分类（409 幂等；不迁移种子归属）
+        client.torrent_categories.create_category.assert_any_call(name="新名字")
+
+    def test_update_sync_failure_does_not_block_rename(self, tag_client):
+        from app.api.endpoints import tag_management
+
+        tag_client.app.state.store = make_fake_store([make_downloader_vo(client=MagicMock(), downloader_type=0)])
+
+        with patch.object(
+            tag_management, "call_downloader_api", new_callable=AsyncMock, side_effect=TimeoutError("sync timeout")
+        ):
+            create_resp = tag_client.post(
+                "/api/v1/tags/create",
+                json={"downloader_id": "dl_001", "tag_name": "旧名字", "tag_type": "category"},
+            )
+            tag_id = create_resp.json()["data"]["tag_id"]
+
+            update_resp = tag_client.put(
+                f"/api/v1/tags/update/{tag_id}",
+                json={"tag_name": "新名字"},
+            )
+
+        assert update_resp.json()["code"] == "200"
