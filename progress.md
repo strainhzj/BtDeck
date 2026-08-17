@@ -1,5 +1,35 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-17 - API 鉴权安全审计 + 附加发现修复 #1/#2
+
+### 审计结论（217 条路由全覆盖，运行时内省 + 源码核对）
+
+- 206/217 路由有鉴权（`require_authenticated_user` 主流 / 旧 `get_current_user` 5 模块）；11 条无鉴权均为合理豁免（login/refresh/health×4/docs(生产已关闭)/SPA fallback）。
+- 无业务接口缺失鉴权；3 个子代理深度评估了 4 项附加发现的价值（详见会话记录）。
+
+### 修复 #1：WebSocket 死代码清理（价值评级：高）
+
+- git 考古确认 `websocket_main.py` 是 2026-03-08 提交 `4cf9898`（删除 WebSocket 功能）漏删的遗留物，引用不存在的 `factory.wsapp`，运行必然 ImportError。
+- 删除：`backend/app/websocket_main.py`；`config.py` 的 `WS_V1_STR`/`WS_PORT` 两个零引用死配置；`frontend/nginx.conf` 的 `/ws/` 转发块与 `/api/` 块内失效的 Upgrade 头（顺带消除 `Connection ""` 与 `Connection "upgrade"` 重复指令冲突）；`deploy/nginx-tls.conf.example` 的 `/ws/` 块与头部注释。
+- roadmap 同步（行号实测）：`docs/roadmap/backend/app-root.md`（文件数 10→9、删 WebSocket 两处条目）；`docs/roadmap/deploy/README.md`（删 WebSocket 3 处，nginx 行号漂移修正 L90→L104 等，补登录接口 L93 条目）。backend/docs 三份历史审计报告按惯例保留原文。
+
+### 修复 #2：鉴权门禁盲区（价值评级：中）
+
+- 盲区实证：`test_architecture_constraints` 比例断言对"完全不带鉴权的新端点"不进分子不进分母；`lint_btdeck.py` 统计正则只认旧 `get_current_user`（主流早已是 `require_authenticated_user`，指标失真）；BTD201 只禁手动解析；逐端点 401 测试是清单非兜底。
+- 新增 `tests/api/test_auth_route_coverage.py`：遍历运行时 `app.routes`，非白名单路由的依赖树必须含鉴权函数；白名单双向校验（公开端点必须存在且不得误挂鉴权）；≥100 条受保护路由下限防"路由注册整体失败静默通过"（历史循环 import bug）。变异验证：注入无鉴权路由即报红。
+- 统计口径修复：`lint_btdeck.py` 正则同时认两种鉴权依赖，`AuthStats.depends_get_current_user` → `depends_auth_dependency`（lint 输出、`test_architecture_constraints.py`、`diagnose.py` 三处同步）。
+
+### 质量与回归
+
+- 全量 pytest：**3733 passed / 7 skipped / 0 failed**；lint_btdeck.py exit 0（认证统计：Depends=193、占比 100%）。
+- flake8 通过；black：改动段落干净（lint_btdeck/diagnose 两脚本存在**既有**格式漂移，HEAD 版本同样不过，非本次引入，未顺手重排）；mypy：config.py 全量运行 0 错误（单文件模式 2 个既有 BaseSettings no-redef）。
+- feature_list.json 未动：本次为安全维护修复，非 feature 任务，进度记于本文件。
+
+### 遗留（已评估未实施，待用户决定）
+
+- 附加发现 #3：19 端点迁移 `require_authenticated_user` 并删除旧依赖（成本在 8 个测试文件适配，约 1 天）。
+- 附加发现 #4：`.env.example` 的 `ACCESS_TOKEN_EXPIRE_MINUTES=600`（10 小时）建议下调（一行配置）。
+
 ## 2026-08-16（第二批） - 进度精度/转移落库/审计 IP 三项修复
 
 ### 排查结论（四个问题，问题 4 经拓扑核实为正常）

@@ -640,7 +640,9 @@ def build_report() -> str:
     )
 
     x_access_files = grep_py(r"X-Access-Token|x-access-token", APP_ROOT / "api")
-    depends_files = grep_py(r"Depends\s*\(\s*get_current_user\s*\)", APP_ROOT / "api")
+    depends_files = grep_py(
+        r"Depends\s*\(\s*(?:get_current_user|require_authenticated_user)\s*\)", APP_ROOT / "api"
+    )
     auth_rows = package_version(["python-jose", "jose", "PyJWT"])
     sections.extend(
         [
@@ -652,7 +654,7 @@ def build_report() -> str:
             "### 手动读取 X-Access-Token 的 endpoint 文件",
             bullets(rel(p) for p in x_access_files),
             "",
-            "### 使用 Depends(get_current_user) 的 endpoint 文件",
+            "### 使用 Depends(鉴权依赖) 的 endpoint 文件",
             bullets(rel(p) for p in depends_files),
         ]
     )

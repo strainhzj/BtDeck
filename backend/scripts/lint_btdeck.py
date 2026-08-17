@@ -93,7 +93,7 @@ class Issue:
 
 @dataclass(frozen=True)
 class AuthStats:
-    depends_get_current_user: int
+    depends_auth_dependency: int
     manual_token_parsing: int
     legacy_manual_token_parsing: int
     blocking_manual_token_parsing: int
@@ -356,7 +356,11 @@ def collect_auth_stats() -> AuthStats:
     if ENDPOINT_ROOT.exists():
         for path in iter_py_files(ENDPOINT_ROOT):
             text = read_text(path)
-            depends_count += len(re.findall(r"Depends\s*\(\s*get_current_user\s*\)", text))
+            # 认证依赖口径：旧 get_current_user 与统一 require_authenticated_user 都算，
+            # 否则主流迁移后统计失真（安全审计 2026-08 附加发现 #2）。
+            depends_count += len(
+                re.findall(r"Depends\s*\(\s*(?:get_current_user|require_authenticated_user)\s*\)", text)
+            )
             found = len(re.findall(r"['\"]x-access-token['\"]|['\"]X-Access-Token['\"]", text))
             manual_count += found
             if is_allowed("BTD201", path):
@@ -387,7 +391,7 @@ def print_text_report(report: LintReport, show_allowed: bool) -> None:
     print("=" * 28)
     print(
         "认证统计: "
-        f"Depends(get_current_user)={report.auth_stats.depends_get_current_user}, "
+        f"Depends(鉴权依赖)={report.auth_stats.depends_auth_dependency}, "
         f"手动解析={report.auth_stats.manual_token_parsing}, "
         f"白名单历史手动解析={report.auth_stats.legacy_manual_token_parsing}, "
         f"阻塞手动解析={report.auth_stats.blocking_manual_token_parsing}, "
