@@ -1,9 +1,10 @@
 import axios, { AxiosRequestConfig } from 'axios'
 import { Message } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
-import { setRefreshToken } from '@/utils/cookies'
+import { setRefreshToken, getRefreshToken } from '@/utils/cookies'
 import { refreshAccessToken } from '@/api/users'
 import { refreshTokensOnce, type TokenPair } from '@/utils/token-refresh'
+import { buildLoginRedirectTarget } from '@/utils/session'
 import {
   SUCCESS_CODES,
   isLoginRequest,
@@ -30,8 +31,14 @@ export interface RequestClient {
   <T = ApiEnvelope<unknown>>(config: AxiosRequestConfig): Promise<T>
 }
 
-/** 防止并发401重复弹窗/跳转 */
-let isRedirectingToLogin = false
+/**
+ * 登出跳转防抖窗口（毫秒）。
+ * 时间窗到期自动复位：跳转因故受挫（bfcache 后退恢复等）后，后续 401
+ * 仍能再次触发登出，不会像永久标志那样把会话失效静默吞掉。
+ */
+const REDIRECT_DEBOUNCE_MS = 3000
+
+let redirectDebounceUntil = 0
 
 /**
  * 调试模式开关
@@ -54,14 +61,21 @@ function maskToken(token: string): string {
 }
 
 /**
- * 触发登录跳转（带防抖，避免并发 401 重复跳转）。
+ * 触发登出跳转（带 3 秒防抖窗口，避免并发 401 重复跳转）。
+ *
+ * 路由为 hash 模式：真实路由在 location.hash 内，pathname 恒为部署根，
+ * 跳转目标必须走 hash URL——否则 redirect 参数退化为 '/'，且整页跳转
+ * 依赖服务器对 /login 路径的 SPA 回退（无回退的部署会 404 并卡死防抖）。
  */
-function redirectToLogin(): void {
-  if (!isRedirectingToLogin) {
-    isRedirectingToLogin = true
-    UserModule.ResetToken()
-    window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
+export function redirectToLogin(): void {
+  const now = Date.now()
+  if (now < redirectDebounceUntil) {
+    return
   }
+  redirectDebounceUntil = now + REDIRECT_DEBOUNCE_MS
+  Message({ message: '登录状态已过期，请重新登录', type: 'warning', duration: 3000 })
+  UserModule.ResetToken()
+  window.location.href = buildLoginRedirectTarget(window.location.hash, window.location.pathname)
 }
 
 // ====== 401 静默续期（双令牌体系 W6-1） ======
@@ -80,11 +94,22 @@ const refreshDeps = {
       refreshToken: item.refresh_token || refreshToken
     }
   },
-  getRefreshToken: () => UserModule.getRefreshTokenValue(),
+  // 直接读 cookie 而非 store：getModule 访问器不代理未装饰的普通方法
+  // （UserModule.getRefreshTokenValue 在运行时不存在，会让整个续期链路抛 TypeError）
+  getRefreshToken: () => getRefreshToken() || '',
   saveTokens: (pair: TokenPair) => {
     UserModule.SetToken(pair.accessToken)
     setRefreshToken(pair.refreshToken)
   }
+}
+
+/**
+ * 主动续期入口（守卫/会话监听使用，W6 伴随修复）：
+ * 成功返回 true（内存+cookie 已更新），失败/无 refresh token 返回 false。
+ */
+export async function trySilentRefresh(): Promise<boolean> {
+  const pair = await refreshTokensOnce(refreshDeps)
+  return pair !== null
 }
 
 /**
@@ -94,8 +119,8 @@ const refreshDeps = {
 async function handleUnauthorized(config: AxiosRequestConfig, fallbackError: unknown): Promise<never> {
   const retried = (config as AxiosRequestConfig & { _retried?: boolean })._retried
   if (!retried && !isLoginRequest(config)) {
-    const pair = await refreshTokensOnce(refreshDeps)
-    if (pair) {
+    const refreshed = await trySilentRefresh()
+    if (refreshed) {
       (config as AxiosRequestConfig & { _retried?: boolean })._retried = true
       // 重放原请求：请求拦截器会自动携带新 token，响应拦截器继续解包/归一化
       const retryResult = await service.request(config)

@@ -117,7 +117,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（33 个 spec）
+### `frontend/tests/unit/`（43 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -150,6 +150,19 @@
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
+| `session.spec.ts` ✨2026-08-17 | `utils/session.ts`：JWT exp 过期判定（畸形不误杀）、hash 登录跳转 URL 构造、cookie→内存快照回同步三分支、initSessionWatch 可见/聚焦触发同步与登出 |
+| `request-auth.spec.ts` ✨2026-08-17 | `utils/request.ts` 401 全链路：redirectToLogin hash 跳转与 3 秒防抖自愈、trySilentRefresh 三态、axios adapter 注入的拦截器集成（续期重放携带新 Bearer/重放仍 401 防循环登出/无 refresh 直接登出/`/auth/refresh` 豁免/HTTP 200 业务码 401 同链路） |
+| `permission-guard.spec.ts` ✨2026-08-17 | `permission.ts` 守卫真实路由导航五分支：过期+续期成功放行、过期+失败登出保 redirect、目标即 /login 无自指循环、未过期不触发续期、GetUserInfo 失败兜底登出 |
+| `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排（并发共享/失败返回 null） |
+| `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储：Login 持久化/缺 refresh 清残留、SetToken、ResetToken、LogOut 容忍空 token |
+| `user-store-must-change-password.spec.ts` ✨2026-08-16 | 强制改密标志的 store 状态流转 |
+| `batch-transfer-dialog.spec.ts` | 种子转移对话框契约 |
+| `collapsible-panel.spec.ts` | 通用折叠面板（W8） |
+| `keyword-list-modal.spec.ts` ✨2026-08-16 | Tracker 关键词列表弹窗与快捷操作入口 |
+| `keyword-quick-action-dialog.spec.ts` ✨2026-08-16 | 关键词快捷删除/移动：preview→确认→执行→emit success |
+| `keywords-board.spec.ts` ✨2026-08-16 | 关键词看板：快捷操作打开对话框与成功后精准刷新 |
+| `speed-polling.spec.ts` | 种子速度轮询契约 |
+| `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 
 ### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2612 行）
 

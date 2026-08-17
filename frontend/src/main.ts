@@ -41,6 +41,7 @@ import {
   clearChunkRecoveryQuery,
   retireLegacyServiceWorkers
 } from '@/utils/deployment-recovery'
+import { initSessionWatch } from '@/utils/session'
 
 Vue.use(ElementUI)
 
@@ -62,6 +63,10 @@ Vue.config.productionTip = false
 // Current builds do not register the generated PWA worker. Remove workers and
 // precaches left by older releases so they cannot pin an obsolete app shell.
 void retireLegacyServiceWorkers()
+
+// 双令牌会话监听（W6 伴随修复）：标签页重新可见时从 cookie 同步最新令牌，
+// 检测到会话已在别处结束时统一走登出跳转
+initSessionWatch()
 
 // Keep the reload-loop marker until the initial lazy route loaded successfully.
 router.onReady(() => clearChunkRecoveryQuery())

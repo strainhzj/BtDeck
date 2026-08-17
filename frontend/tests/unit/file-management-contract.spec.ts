@@ -34,4 +34,13 @@ describe('种子文件管理页面契约', () => {
     expect(viewSource).not.toContain('file-mgmt-actions')
     expect(viewSource).not.toContain('file-mgmt-daterange')
   })
+
+  it('备份导入上传头使用响应式 store 令牌与 Bearer（续期/重登录后无需刷新即生效）', () => {
+    // el-upload 自有 XHR 绕过 axios 拦截器：必须依赖响应式 UserModule.token，
+    // 否则静默续期/重新登录后上传仍携带旧令牌（W6 伴随修复回归锚点）
+    expect(viewSource).toContain("import { UserModule } from '@/store/modules/user'")
+    expect(viewSource).toContain('Authorization: `Bearer ${UserModule.token}`')
+    expect(viewSource).not.toContain('x-access-token')
+    expect(viewSource).not.toContain('getToken')
+  })
 })

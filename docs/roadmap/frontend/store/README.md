@@ -8,7 +8,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | store 空壳 index | `index.ts` | 先建空 store，由各 module 动态注册（L17 注释明示） |
-| 用户认证 user | `modules/user.ts` | 用户认证（Login/LogOut/GetUserInfo/ResetToken/SetTwoFactorFlag）；`@Module` 动态注册 |
+| 用户认证 user | `modules/user.ts` | 用户认证（Login/LogOut/GetUserInfo/ResetToken/SetToken 双令牌/SetTwoFactorFlag/SetMustChangePassword）；`@Module` 动态注册 |
 | 下载器设置 downloader-settings | `modules/downloaderSettings.ts` | ⚠ 传统 `namespaced: true` Module（`export default`）：下载器设置/能力/模板 CRUD（fetchSettings/updateSettings/fetchTemplates/applyTemplate 等） |
 | 通知抽屉 notification | `modules/notification.ts` | 通知抽屉（ToggleDrawer/FetchUnreadCount/MarkAsRead 等）；`@Module` 动态注册 |
 | 应用 UI app | `modules/app.ts` | 应用 UI 状态（ToggleSideBar/CloseSideBar/ToggleDevice）；`@Module` 动态注册 |
@@ -24,8 +24,8 @@
 
 ## 各 module 主要 @Action
 
-### user.ts（L22 `@Module`）
-`Login`、`ResetToken`、`SetTwoFactorFlag`、`GetUserInfo`、`LogOut`
+### user.ts（L33 `@Module`）
+`Login`（L111，缺 refresh_token 时清残留 cookie）、`ResetToken`（L146）、`SetToken`（L69，续期后内存+cookie 同步）、`SetTwoFactorFlag`、`SetMustChangePassword`、`GetUserInfo`、`LogOut`（L239，容忍空 token）
 
 ### notification.ts（L23 `@Module`）
 `ToggleDrawer`、`FetchUnreadCount`、`FetchNotifications`、`RefreshNotifications`、`MarkAsRead`、`MarkAllAsRead`、`MarkAsUnread`、`DeleteNotification`

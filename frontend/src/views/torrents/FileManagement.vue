@@ -280,7 +280,7 @@ import Pagination from '@/components/Pagination/index.vue'
 import BatchButton from '@/components/BatchButton/index.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 import waves from '@/directive/waves'
-import { getToken } from '@/utils/cookies'
+import { UserModule } from '@/store/modules/user'
 import {
   getTorrentBackupList,
   deduplicateTorrentBackup,
@@ -350,8 +350,14 @@ export default class FileManagement extends Vue {
   }
 
   get uploadHeaders() {
+    // 依赖响应式 UserModule.token：静默续期/重新登录后新令牌立即进入后续
+    // 上传请求。原实现读 cookie（无响应式依赖，Vue2 computed 求值一次后
+    // 永久缓存旧值），且 el-upload 自有 XHR 绕过 axios 拦截器，只有组件
+    // 重挂载（手动刷新页面）才能拿到新令牌。
+    // 认证契约收敛：与 request.ts 一致只发送 Authorization: Bearer
+    // （后端 dependencies.py 兼容读取）。
     return {
-      'x-access-token': getToken()
+      Authorization: `Bearer ${UserModule.token}`
     }
   }
 

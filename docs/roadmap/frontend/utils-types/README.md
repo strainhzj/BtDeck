@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### utils/（11 个 .ts 文件）
+### utils/（13 个 .ts 文件）
 
 > 另有 `utils/empty-polyfill.js`（polyfill，.js 非 .ts，跳过）。
 
@@ -16,28 +16,29 @@
 | 主题核心 theme | `theme.ts` | 主题核心：`ThemeType`/`ThemeConfig`、`THEMES`（翡翠绿/活力橙/石墨灰）、`getCurrentTheme`/`setTheme`/`toggleTheme`/`onThemeChange`/`initTheme`/`getThemeConfig`/`getAllThemes` |
 | 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调色板）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L78） |
 | axios 封装 request | `request.ts` | 🔵 axios 封装（详见下方） |
+| 会话维护 session | `session.ts` ✨2026-08-17 | 🔵 双令牌会话主动维护（纯逻辑为主，便于单测）：`getTokenExp`/`isTokenExpired`（JWT exp 解析，畸形不误杀）、`buildLoginRedirectTarget`（hash 模式登录跳转 URL）、`syncTokenFromCookie`（标签页可见时 cookie→内存快照回同步）、`initSessionWatch`（visibilitychange/focus 监听，他标签登出→统一跳登录） |
+| 单飞刷新 token-refresh | `token-refresh.ts` ✨2026-08-16 | 401 静默续期单飞编排（依赖注入纯模块）：并发 401 共享一次 `/auth/refresh`，成功返回新令牌对，失败/无 refresh token 返回 null 交调用方登出 |
 | 错误归一化 error-normalize | `error-normalize.ts` | 🔵 错误归一化纯逻辑（无副作用，便于单测）：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError` |
 | 部署恢复 deployment-recovery | `deployment-recovery.ts` | 部署版本恢复：识别旧 webpack chunk 失败、一次整页切换与循环门禁、恢复 query 清理、历史根作用域 Workbox 注册/cache 清退 |
 | 下载器类型 downloader-type | `downloaderType.ts` | 下载器类型枚举（`DOWNLOADER_TYPE`/`DOWNLOADER_TYPE_NAME`）+ 数字↔字符串↔标签互转 |
-| 存储 cookies | `cookies.ts` | sidebar status / token / userId（localStorage） + 通用 `getStorage`/`setStorage` |
+| 存储 cookies | `cookies.ts` | sidebar status / 双令牌 access+refresh token（cookie） / userId（localStorage） + 通用 `getStorage`/`setStorage` |
 | 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制） |
 | 校验 validate | `validate.ts` | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
 
-#### request.ts 关键（axios 封装，L1-161）
+#### request.ts 关键（axios 封装，L1-229）
 
-- L1 `import axios, { AxiosRequestConfig } from 'axios'`
-- L3 `import { UserModule } from '@/store/modules/user'`（401 时 ResetToken）
-- L13 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
-- L19-24 `export interface ApiEnvelope<T = unknown> { status; msg; code; data: T }`（与后端 `CommonResponse` 对齐）
-- L26 `RequestClient` 类型
-- L56 `redirectToLogin`（401 防抖）
-- L65 请求拦截器：注入 `Authorization: Bearer`
-- L100 响应拦截器：处理 blob / 成功码(200/206/207) / 业务错误 / 网络错误 / HTTP 错误
-- L161 `export default service as unknown as RequestClient`
+- L17 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
+- L84 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie）
+- L70 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast
+- L108 `trySilentRefresh`（导出）：守卫/会话监听的主动续期入口
+- L115 `handleUnauthorized`：401 统一处理，静默续期并重放一次，失败登出
+- L133 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
+- L168 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误 / HTTP 错误
+- L229 `export default service as unknown as RequestClient`
 
 #### error-normalize.ts 关键
 
-- L19 `export const SUCCESS_CODES = new Set(['200', '206', '207'])`
+- L19 `export const SUCCESS_CODES = new Set(['200', '202', '206', '207'])`
 - L33-60 `extractFromDetail`：处理 array(422)/对象 envelope/字符串/兜底四态
 - L100-135 `buildBusinessError` / `buildNetworkError` / `buildHttpError` 全部返回 `ApiError`（来自 `@/types/api`）
 
@@ -70,7 +71,7 @@
 
 ## 关键观察
 
-- **axios 封装集中**：`utils/request.ts`（161 行）+ `utils/error-normalize.ts`（135 行）是所有 API 调用的底座
+- **axios 封装集中**：`utils/request.ts`（229 行）+ `utils/error-normalize.ts`（139 行）是所有 API 调用的底座
 - **主题双文件**：`theme.ts`（核心类型与切换）+ `theme-manager.ts`（扩展调色板）分工
 - **类型分散**：共享类型在 `types/`，但大量 interface 直接定义在 `api/*.ts` 内（如 `torrents.ts` 54 个 interface）
 - **`types/index.ts` 不全 re-export**：`torrent` 和 `dashboard` 需直接路径 import

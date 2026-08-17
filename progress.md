@@ -1,5 +1,36 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-17（第二批） - 双密钥会话过期登出与重登录生效修复
+
+### 症状与根因（全部源码实证）
+
+- 症状 1「密钥过期后没有自动退出」：`request.ts` redirectToLogin 用 history 风格 URL 但路由是 hash 模式（pathname 恒为 '/'，redirect 参数退化 + 依赖服务器 SPA 回退）；防抖标志 `isRedirectingToLogin` 置位后永不复位，跳转受挫（bfcache 后退/无回退部署 404）后所有 401 被永久静默吞掉；登出纯被动（只等 API 401，无 JWT exp 主动检查）；`LogOut` 空 token 直接 throw 导致 Navbar 登出也失效。
+- 症状 2「重新登录后需刷新才生效」：`FileManagement.vue` uploadHeaders computed 读 cookie（非响应式、Vue2 求值一次永久缓存）且 el-upload 自有 XHR 绕过 axios 拦截器；跨标签页 Vuex token 快照无同步机制（cookie 变化不触发 storage 事件）；Login 缺 refresh_token 时保留已撤销旧 cookie → 续期永远失败。
+
+### 修复（8 文件，全前端）
+
+- 新增 `utils/session.ts`：`getTokenExp`/`isTokenExpired`（JWT exp 纯解析，畸形不误杀）、`buildLoginRedirectTarget`（hash 感知登录 URL）、`syncTokenFromCookie`（cookie→内存快照回同步三分支）、`initSessionWatch`（visibilitychange/focus 监听，他标签登出→统一跳登录；main.ts 接线）。
+- `request.ts`：redirectToLogin 改 `/#/login?redirect=<hash内路由>`（不再依赖服务器回退）+ 3 秒防抖窗口自动复位 + 过期 toast；导出 `redirectToLogin` 与 `trySilentRefresh`；handleUnauthorized 改用后者。
+- `permission.ts`：守卫 token 分支前置 `isTokenExpired` → `trySilentRefresh`，失败 `ResetToken()` + 跳登录（登录页本身放行避免 redirect 自指循环）。
+- `store/modules/user.ts`：LogOut 容忍空 token（跳过后端调用仍完整本地清理 + 补清 mustChangePassword）；Login 缺 refresh_token 时 `removeRefreshToken()`。
+- `FileManagement.vue`：uploadHeaders 改响应式 `UserModule.token` + `Authorization: Bearer`（后端 dependencies.py 已兼容，认证契约收敛）。
+- 测试：新增 `tests/unit/session.spec.ts`（10 用例）；`store-user.spec.ts` 改写缺 refresh 用例 + 新增 LogOut 4 用例。顺手修复 keyword 三份 spec 的 5 个既有 lint warning（lint 门禁 max-warnings=0 此前已红）。
+
+### 质量与回归
+
+- 前端全量 jest：**51 suites / 817 tests 全绿**；`npm run lint` 0 error 0 warning；`npm run build` 成功（dist 已重建为最新，覆盖 8-16 dist 落后最后一次提交 9d2258d 的问题）；根 `./init.sh`（ci 模式）通过。
+- roadmap 同步：frontend/utils-types（+session/token-refresh 条目、request.ts L1-229 实测行号、cookies 双令牌职责、SUCCESS_CODES 补 202）、frontend/entry（main/permission 职责与行号）、frontend/store（user.ts action 清单）、perspectives/test-coverage（前端 spec 清单漂移对齐 33→40 + 登记新增）、根 README 元信息。
+- feature_list.json 未动：属缺陷修复非 feature 任务。
+- 部署提醒：本机存在 6 周前旧镜像，部署前务必用本次重建的 dist 重打镜像。
+
+### 回归加固（同日第三批：+19 用例，并抓出一个生产级 bug）
+
+- **抓出生产 bug**：新增拦截器集成测试首跑即红——`UserModule.getRefreshTokenValue()` 是 user 模块唯一未装饰普通方法，vuex-module-decorators 的 `getModule` 只代理 @Action/@Mutation/getter，运行时该方法不存在 → 8-16 上线的 401 静默续期在生产从未生效（每次 401 在读取 refresh token 处抛 TypeError，续期/重放/登出全链中断，正是"过期不登出"的最直接根因）。修复：request.ts refreshDeps 直接读 cookie（`getRefreshToken() || ''`），删除死方法。
+- 新增 `tests/unit/request-auth.spec.ts`（11 用例）：redirectToLogin hash 跳转与 redirect 参数、3 秒防抖窗口自愈（假时钟）、trySilentRefresh 三态（无 token/成功轮换持久化/失败）、axios adapter 注入的拦截器集成（HTTP 401 error 分支与 HTTP 200 业务码 401 success 分支的续期重放携带新 Bearer、重放仍 401 防循环登出、无 refresh 直接登出、`/auth/refresh` 豁免不递归）。
+- 新增 `tests/unit/permission-guard.spec.ts`（5 用例）：真实 router 导航验证守卫五分支（过期+续期成功放行、过期+失败登出保 redirect、目标即 /login 无自指循环、未过期不触发续期、GetUserInfo 失败兜底）。测试技巧：连续 push 同路由会触发 NavigationDuplicated 被吞导致守卫不跑（假绿），beforeEach 统一回 /login + 各用例目标互异 + `pushQuietly` 吞守卫重定向拒绝。
+- `session.spec.ts` +2 用例（initSessionWatch 可见/聚焦触发同步与登出，共 12）；`file-management-contract.spec.ts` +1 契约（上传头响应式 UserModule.token + Bearer、禁 x-access-token/getToken 回归锚点）。
+- 全量 53 suites / 836 tests 全绿（原 817）；lint 0 warning；build 通过（含两处测试 envelope 的 TS data-null 断言修正）。roadmap test-coverage 同步（43 spec）。
+
 ## 2026-08-17 - API 鉴权安全审计 + 附加发现修复 #1/#2
 
 ### 审计结论（217 条路由全覆盖，运行时内省 + 源码核对）

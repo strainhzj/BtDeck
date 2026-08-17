@@ -3,6 +3,8 @@ import NProgress from 'nprogress'
 import 'nprogress/nprogress.css'
 import { Route } from 'vue-router'
 import { UserModule } from '@/store/modules/user'
+import { isTokenExpired } from '@/utils/session'
+import { trySilentRefresh } from '@/utils/request'
 
 NProgress.configure({ showSpinner: false })
 
@@ -14,6 +16,21 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
 
   // Determine whether the user has logged in
   if (UserModule.token) {
+    // 会话主动过期检查（双令牌 W6 伴随修复）：access token 已过期时先静默
+    // 续期，失败立即登出——不再依赖"恰好有 API 请求触发 401"才被动登出
+    if (isTokenExpired(UserModule.token)) {
+      const refreshed = await trySilentRefresh()
+      if (!refreshed) {
+        UserModule.ResetToken()
+        if (to.path === '/login') {
+          next()
+        } else {
+          next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+        }
+        NProgress.done()
+        return
+      }
+    }
     if (to.path === '/login') {
       // 已登录用户访问登录页时，读取redirect参数并重定向
       const redirect = to.query.redirect as string

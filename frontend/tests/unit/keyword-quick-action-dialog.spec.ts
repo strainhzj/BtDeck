@@ -204,7 +204,7 @@ describe('keyword quick action dialog (prefix match)', () => {
     expect(mockBatchMoveKeywords).not.toHaveBeenCalled()
     const payloads = wrapper.emitted('success')
     expect(payloads).toBeTruthy()
-    expect(payloads![0][0]).toEqual({ sourcePool: 'success', targetPool: null })
+    expect(payloads && payloads[0][0]).toEqual({ sourcePool: 'success', targetPool: null })
   })
 
   it('快捷移动：preview→选目标池→batchMoveKeywords→emit success(targetPool)', async() => {
@@ -221,7 +221,7 @@ describe('keyword quick action dialog (prefix match)', () => {
     expect(mockBatchMoveKeywords).toHaveBeenCalledWith({ keyword_ids: ['kw-1', 'kw-2', 'kw-3'], target_pool: 'failed' })
     expect(mockBatchDeleteKeywords).not.toHaveBeenCalled()
     const payloads = wrapper.emitted('success')
-    expect(payloads![0][0]).toEqual({ sourcePool: 'success', targetPool: 'failed' })
+    expect(payloads && payloads[0][0]).toEqual({ sourcePool: 'success', targetPool: 'failed' })
   })
 
   it('取消二次确认保留对话框与前缀', async() => {

@@ -4,7 +4,6 @@ import {
   getToken,
   setToken,
   removeToken,
-  getRefreshToken,
   setRefreshToken,
   removeRefreshToken,
   getUserId,
@@ -71,10 +70,9 @@ class User extends VuexModule implements IUserState {
     this.SET_TOKEN(token)
   }
 
-  /** 读取 refresh token（供 401 单飞刷新使用） */
-  public getRefreshTokenValue(): string {
-    return getRefreshToken() || ''
-  }
+  // 注：refresh token 的读取不走 store——getModule 只代理 @Action/@Mutation/
+  // getter，未装饰的普通方法在访问器上不存在（曾导致 401 续期链路抛
+  // TypeError 全链中断）。request.ts 的 refreshDeps 直接读 cookie。
 
   @Mutation
   private SET_USER_ID(userId: string) {
@@ -123,9 +121,13 @@ class User extends VuexModule implements IUserState {
     if (access_token) {
       setToken(access_token)
       this.SET_TOKEN(access_token)
-      // 双令牌体系（W6-1）：持久化 refresh token 供 401 静默续期
+      // 双令牌体系（W6-1）：持久化 refresh token 供 401 静默续期。
+      // 响应缺失时必须清除旧值：旧 token 已被后端轮换/撤销，残留会让
+      // 此后每次静默续期都失败，表现为反复被踢回登录页
       if (refresh_token) {
         setRefreshToken(refresh_token)
+      } else {
+        removeRefreshToken()
       }
       // 保存 user_id，确保转换为字符串类型
       if (user_id !== undefined && user_id !== null) {
@@ -233,17 +235,19 @@ class User extends VuexModule implements IUserState {
 
   @Action({ rawError: true })
   public async LogOut() {
-    if (this.token === '') {
-      throw Error('LogOut: token is undefined!')
-    }
-    // 通知后端登出（POST /users/logout，require_authenticated_user 保护）。
-    // 即使后端调用失败（如 token 已过期返回 401），仍本地清除 token，
-    // 保证登出 UX 不被服务端错误阻塞。后端当前无 token 黑名单，登出后旧
-    // token 在过期前仍有效是已知安全隐患（见 PLANS/v1.0.5-audit P1-A.3）。
-    try {
-      await logout()
-    } catch (e) {
-      console.warn('后端登出调用失败，仅本地清除 token:', e)
+    // token 已被清空（如过期登出已执行 ResetToken）时仍要完成本地清理：
+    // 直接跳过后端撤销调用，保证登出入口（Navbar）在任何状态下都可用，
+    // 不因 throw 中断后续的页面跳转
+    if (this.token !== '') {
+      // 通知后端登出（POST /users/logout，require_authenticated_user 保护）。
+      // 即使后端调用失败（如 token 已过期返回 401），仍本地清除 token，
+      // 保证登出 UX 不被服务端错误阻塞。后端当前无 token 黑名单，登出后旧
+      // token 在过期前仍有效是已知安全隐患（见 PLANS/v1.0.5-audit P1-A.3）。
+      try {
+        await logout()
+      } catch (e) {
+        console.warn('后端登出调用失败，仅本地清除 token:', e)
+      }
     }
     removeToken()
     removeRefreshToken()
@@ -251,6 +255,8 @@ class User extends VuexModule implements IUserState {
     this.SET_TOKEN('')
     this.SET_USER_ID('')
     this.SET_ROLES([])
+    // 与 ResetToken 对齐：清除强制改密标志，避免残留上一账号的强制状态
+    this.SET_MUST_CHANGE_PASSWORD(false)
   }
 }
 
