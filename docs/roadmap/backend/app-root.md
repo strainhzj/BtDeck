@@ -1,6 +1,6 @@
 # backend/app-root — 包根入口文件
 
-> `backend/app/` 包根 10 个文件（非子包），承担应用工厂、DB 引擎、异常处理、版本、多种入口。
+> `backend/app/` 包根 9 个文件（非子包），承担应用工厂、DB 引擎、异常处理、版本、多种入口。
 > 定位方式：`Grep -i <功能词> docs/roadmap/backend/app-root.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -14,7 +14,6 @@
 | 应用工厂 factory | `factory.py` | FastAPI 应用工厂（`create_app` + 路由/静态/CORS/lifespan 配置） |
 | 启动入口 main | `main.py` | 后端启动入口：Docker import `app` 后由 lifespan 初始化；直接运行路径（L140-163）执行配置/迁移，迁移失败时不进入 `Server.run()` |
 | 版本 version | `version.py` | 版本信息集中管理（`get_version_info` / `get_current_version` / `get_version_content` / `VERSION_HISTORY` 常量） |
-| WebSocket websocket | `websocket_main.py` | WebSocket 服务独立入口，单独跑 uvicorn on `settings.WS_PORT` |
 | YAML 配置 yaml | `yamlConfig.py` | `Yaml` 配置类（点表示法访问嵌套配置，封装 pyyaml） |
 
 ---
@@ -24,8 +23,7 @@
 ```
 启动入口
   ├─ Docker:    btdeck_startup.sh → uvicorn app.main:app
-  ├─ 桌面:      desktop_main.py → 启动子进程跑 main.py
-  └─ WebSocket: websocket_main.py（独立服务，端口 WS_PORT）
+  └─ 桌面:      desktop_main.py → 启动子进程跑 main.py
 
 main.py
   ├─→ app.factory.app  (uvicorn 导入时加载 ASGI app)

@@ -73,11 +73,9 @@ class Settings(BaseSettings):
     # 网络配置
     APP_DOMAIN: str = ""
     API_V1_STR: str = "/api/v1"
-    WS_V1_STR: str = "/ws"
     FRONTEND_PATH: str = "/public"
     HOST: str = "0.0.0.0"
     PORT: int = 5001
-    WS_PORT: int = 5002
     NGINX_PORT: int = 5000
 
     # 运行模式

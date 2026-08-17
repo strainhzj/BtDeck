@@ -5,7 +5,7 @@
 # 替换证书路径后使用。核心要点：
 #   - HTTP 全部 301 到 HTTPS
 #   - HSTS（Strict-Transport-Security）
-#   - 保留 /api/ 与 /ws/ 代理（后端容器内网可达，无需对外暴露 5001）
+#   - 保留 /api/ 代理（后端容器内网可达，无需对外暴露 5001）
 #
 # 使用：将本 server 块替换 frontend/nginx.conf 的 listen 80 server 块，
 # 证书挂载进 frontend 容器（如 ./data/certs:/etc/nginx/certs:ro），
@@ -70,14 +70,6 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Connection "";
-    }
-
-    location /ws/ {
-        proxy_pass http://btdeck-backend:5002;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
     }
 
     location / {
