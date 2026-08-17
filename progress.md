@@ -1,5 +1,41 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-17（第三批） - 问题 A/B 修复：active-torrents 206 根治与 cron 会话收敛（三提交）
+
+### 诊断结论（问题定性，前置三轮调研 + 双子代理独立审查）
+
+- **问题 A**（active-torrents 206「部分下载器速度获取失败，活动快照尚未就绪」）：complete=all() 一票否决。根因①僵尸下载器永久滞留 store 缓存——fail_time 剔除机制是死代码（periodic_check 唯一调用者已注释，fail_time 运行期恒 0），速度接口不读 is_online，每秒轮询对死下载器发起调用必然失败；根因②种子同步窗口（0/15/30/45 分）per-downloader 容量挤占——3s 总预算含 semaphore 排队，超时后底层线程持槽最长 30s。
+- **问题 B**（cron 收尾 freshness 落库 greenlet_spawn 错误）：疑因 `_execute_task` 单个 AsyncSession 跨越任务体执行期（重型任务数分钟）与任务体内部 DB 写并发交错；静态证据不足（expire_on_commit=False），定位为卫生性重构+隔离变量，验收依赖 B-1 堆栈。
+- **问题 C**（401 连续无效 Token）：已由前一批 3739498 前端修复解决（续期 TypeError/自动登出/重登录生效），本批不涉及。
+- 审查关键修正（评审 C-1）：原设想 last_update 距今判离线时长不可行——状态轮询对离线下载器也刷新 last_update（端口不通也算更新成功），必须用新字段 offline_since 表达"首次离线时间"。
+
+### 提交 1（ce5c24c）：A-1+A-3 速度接口
+
+- `_is_freshly_offline`（is_online=False 且 last_update 在 `SPEED_OFFLINE_FRESH_WINDOW`（默认 60s，可配）内才跳过；缺失/过旧保守放行）+ `_process_downloader_speeds` 跳过新鲜离线者（complete=True 空结果，不发起远程调用）+ `_supplement_disappeared` dl_map 同步过滤。
+- `_DownloaderSpeedResult.reason` / `_ActiveSpeedGatherResult.failed`（均带默认值，位置参数构造兼容）；206 msg 附加失败明细（>5 截断）+ 结构化日志；failed 仅收 complete=False 者。
+- `.env.example`：IO_CONCURRENCY 建议 4 + SPEED_API_TIMEOUT/SPEED_OFFLINE_FRESH_WINDOW 说明。
+- +13 用例（跳过三分支/混合归因/边界/补查过滤），70 tests 绿。
+
+### 提交 2（7598184）：A-2 缓存自愈闭环
+
+- `DownloaderCheckVO.offline_since`（首次离线时间戳）；`_set_online_status` 统一维护四个置位点（记录/不覆盖/恢复清空）。
+- `CachedDownloaderSyncTask` 步骤 5.5：offline_since 距今 >300s（≈30 次探测失败）剔除；缺失不删防误删；恢复在线经既有 `_check_and_add_new_downloader` 下轮（cron 每 5 分钟）重新入缓存。startup_event 死注释清理。
+- 行为变化：长期离线者从仪表盘/getStatusAll 消失（非显示离线）。新建 test_downloader_cache_sync.py（+10 用例）。
+
+### 提交 3（d036d0b）：B-1+B-2+B-3 cron 收敛
+
+- B-1：cron_crud_async 7 处 + cron_executor 2 处错误日志补 exc_info=True。
+- B-2：`_execute_task` 三段式（读会话即关 → 任务体无会话 → 收尾短会话三写 duration→log→freshness）；CRUD 签名与 datetime 时间源不变。
+- 顺手修存量缺陷：读取失败早退绕过 status=2 复位（任务页永久「运行中」）——移入外层 finally。
+- B-3：同步 execute 分支经 `asyncio.to_thread`（封死未来同步任务阻塞事件循环路径）；删全仓无引用的 `execute_with_app`。
+- +5 用例（任务体期间活跃会话=0/三写顺序/早退复位/严重异常复位/同步 execute 线程断言）。
+
+### 质量与回归
+
+- 相关批次测试全绿（70 + 10 + 375），black/flake8 全部通过，mypy 每批次与 HEAD 基线对比零新增错误。
+- feature_list.json 未动（缺陷修复非 feature 任务）。
+- 遗留观察项：greenlet 错误若部署后仍复现，依据 B-1 新增堆栈定向排查（候选：apscheduler 线程池跑同步 `_sync_speed_schedule`、aiosqlite 连接跨 greenlet）。
+
 ## 2026-08-17（第二批） - 双密钥会话过期登出与重登录生效修复
 
 ### 症状与根因（全部源码实证）

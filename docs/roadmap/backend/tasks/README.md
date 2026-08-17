@@ -15,7 +15,7 @@
 | 清理执行器 cleanup | `cleanup_executor.py` | 后台执行器 `CleanupTaskExecutor`：自动清理执行器（回收站(L3)+待删除标签(L4)） |
 | 定时任务同步 CRUD cron-crud | `cron_crud.py` | `CronTaskCRUD`/`TaskLogsCRUD`：定时任务同步 CRUD（`DatabaseResult`） |
 | 定时任务异步 CRUD cron-crud-async | `cron_crud_async.py` | 定时任务异步 CRUD |
-| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L60/142/791） |
+| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L81/257/1014）；`_execute_task` 三段式会话（读会话→无会话任务体→收尾短会话三写，L295；greenlet 交错治理）；同步 execute 经 to_thread（L745/753） |
 | 定时任务表 cron-model | `cron_models.py` | ORM `CronTask`：定时任务表 |
 | Python 沙箱执行 python-executor | `enhanced_python_executor.py` | 增强沙箱化 Python 代码执行器（REQ-002，智能异步检测） |
 | 任务日志 logger | `logger.py` | 任务执行日志写入与统计 |
@@ -30,7 +30,7 @@
 |--------|------|-----------|
 | 审计日志导出 audit-export | `audit_log_exporter.py` | 审计日志归档到文件 |
 | 看板统计 dashboard-stats | `dashboard_stats.py` | 看板统计聚合任务 |
-| 下载器缓存同步 downloader-cache | `downloader_cache_sync.py` | 下载器实例缓存同步 |
+| 下载器缓存同步 downloader-cache | `downloader_cache_sync.py` | 下载器实例缓存同步：DB 增删对比 + 步骤5.5 按 `offline_since` 剔除长期离线成员（>300s，阈值常量 L17，fail_time 死代码的替代自愈机制） |
 | 路径扫描 path-scan | `downloader_path_scan.py` | 扫描 torrent_info 路径写入 downloader_path_maintenance |
 | 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知（隔离区彻底删除完成通知） |
 | 隔离区清理 orphan-purge | `orphan_quarantine_purge_task.py` | 每日清理超期孤儿隔离区 |
@@ -61,7 +61,7 @@
 ```
 app/startup/lifecycle.py:lifespan
   └─→ await cron_executor.start()          # 启动 AsyncIOScheduler
-        └─→ AsyncIOScheduler.add_job(...)   # cron_executor.py L60/L142/L791
+        └─→ AsyncIOScheduler.add_job(...)   # cron_executor.py L81/L257/L1014
               ├─→ scheduler/*_task.py        # 各 job 实现
               ├─→ scheduler/torrent_sync/*   # 拆分后的同步子任务
               └─→ cleanup_executor.py        # 后台清理执行器（非 APScheduler）

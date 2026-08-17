@@ -9,7 +9,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28） |
+| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28；`_set_online_status` 维护 is_online/offline_since 供缓存剔除与速度接口跳过，L1525） |
 | Transmission 设置 tr-settings | `transmission_settings.py` | `TransmissionSettings`：Transmission 客户端会话设置读写 |
 | qB 设置 qb-settings | `qbittorrent_settings.py` | `QBitTorrentSettings`：qBittorrent 应用偏好设置读写 |
 | 种子拉取 torrent-fetcher | `torrent_fetcher.py` | `TorrentFetcher`：从下载器拉取种子列表的封装 |
