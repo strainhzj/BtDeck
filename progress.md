@@ -19,6 +19,13 @@
 - **测试**：新增 `test_progress_rounding.py`（9 项）；`test_seed_transfer_service_fixes.py` 增 TestTargetRowUpsert 5 项；batch fixes 增审计 IP 断言；`test_orphan_purge_job_service.py` 增 IP 落库+透传 2 项；修复 5 处受影响断言（execute_job/cleanup/purge/ignore 精确 kwargs + w2_3d mock 队列扩展）；`test_db_migration.py`/`test_db_rollback_scenarios.py`/`test_orphan_migration_production_shape.py` 三处 head 版本常量同步为 ab68fe061d5b；`docs/constraints/database-migration.md` HEAD 标注修正（原标 c8d9e0f1a2b3 已过期 5 个版本）。
 - **质量**：black/flake8 干净；mypy 新增错误种类 0（16 个新报错全为文件既有 13 类存量模式，ORM 属性赋值等）。
 
+### 回归加固（同日第三批：+20 后端测试）
+
+- **同步流进度舍入**（新文件 `test_progress_rounding_sync.py`，5 项）：qB/TR info-only 真实同步函数 + 伪客户端，锁定 insert 行 progress==99.56、存量脏值 99.556946664657 经"0.5 阈值保留旧值"分支写 99.56（自愈同步侧入口）、修正后稳定行不被重写。
+- **转移服务**（`test_seed_transfer_service_fixes.py` +6 项，共 16）：IntegrityError 竞态转 update（rollback→重查→更新→二次 commit）；duplicate/验证超时/添加失败三条早退路径不预插目标行；delete_source 删除失败（partial）源行保持 dr=0 且目标行已存在；`_mark_source_row_transferred` 源行缺失安全 no-op。
+- **审计 IP 真实链路**（+8 项）：单转移端点不 patch extract、TestClient 携带 `X-Forwarded-For` 头验证审计行记录首值 203.0.113.9（与 nginx 生产行为一致）；孤儿 5 端点（hardlink-delete/restore/ignore/cleanup/purge）同样走真实头提取并断言服务/提交 kwargs 收到 IP；无代理头回退 `request.client.host`；`execute_job` purge 路径 IP 透传；服务层 `cleanup_orphans` 的 ORPHAN_CLEANUP 审计直接收到 ip_address。
+- 合计：本次三项修复的回归保护从 21 项增至 41 项。
+
 ### 遗留
 
 - `extract_audit_info_from_request` 取 XFF 首值可被客户端伪造（nginx 追加真实 IP 在末尾），待用户决定是否收紧（取尾值/X-Real-IP/直接 client.host）。

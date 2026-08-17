@@ -1071,3 +1071,177 @@ class TestOrphanFilesPrefixMatch:
 
 # 延迟导入，避免模块加载时触发 settings 初始化
 from app.auth.dependencies import require_authenticated_user  # noqa: E402
+
+# ==================== 手动操作审计 IP 透传（真实 XFF 提取链路） ====================
+
+
+class TestOrphanAuditIpWiring:
+    """五个手动操作端点从请求头提取提交端 IP 并传入服务层/任务链。
+
+    不 patch extract_audit_info_from_request：TestClient 携带
+    X-Forwarded-For 头（nginx 反代生产行为），断言首值流到被 mock 的
+    服务方法/任务提交 kwargs，锁定端点→extract→服务层的完整接线。
+    """
+
+    TEST_IP = "203.0.113.9"
+    XFF_HEADERS = {"X-Forwarded-For": f"{TEST_IP}, 172.25.0.2"}
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.app = _create_test_app()
+        self.app.state.store = MagicMock(name="shared_downloader_store")
+        self.app.dependency_overrides[require_authenticated_user] = lambda: (SimpleNamespace(username="tester"))
+        self.mock_db = MagicMock(name="async_db")
+
+        async def override_db():
+            yield self.mock_db
+
+        self.app.dependency_overrides[get_async_db] = override_db
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+        yield
+        self.app.dependency_overrides.clear()
+
+    def test_hardlink_copy_delete_receives_ip_from_xff(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(
+            return_value={
+                "orphan_id": 7,
+                "file_path": "/data/source.bin",
+                "copy_count": 0,
+                "success_count": 1,
+                "failed_count": 0,
+                "failed_list": [],
+            }
+        )
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            resp = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": ["/lib/copy-a.bin"]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == self.TEST_IP
+
+    def test_restore_receives_ip_from_xff(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(return_value={"restored_count": 1, "failed_count": 0, "failed_list": []})
+        with patch.object(OrphanFileService, "restore_quarantined", mocked):
+            resp = self.client.post(
+                "/api/v1/orphan-files/restore",
+                json={"canonical_paths": ["/quarantine/a.bin"]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == self.TEST_IP
+
+    def test_ignore_receives_ip_from_xff(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(return_value={"success_count": 1, "failed_count": 0, "failed_list": []})
+        with (
+            patch.object(OrphanFileService, "set_ignored", mocked),
+            patch.object(
+                OrphanFileService,
+                "_load_orphan_details",
+                AsyncMock(return_value=[]),
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/ignore",
+                json={"orphan_ids": [7], "ignored": True},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == self.TEST_IP
+
+    def test_cleanup_submit_receives_ip_from_xff(self):
+        from app.services.orphan_purge_job_service import OrphanJobSubmission, OrphanPurgeJobService
+
+        job = MagicMock()
+        job.task_id = "cleanup-ip-1"
+        job.to_dict.return_value = {"task_id": "cleanup-ip-1", "status": "pending", "total_count": 1}
+        submit_job = AsyncMock(
+            return_value=OrphanJobSubmission(
+                operation_type="cleanup",
+                scan_id="scan-latest",
+                job=job,
+                accepted_items=[7],
+                skipped_items=[],
+            )
+        )
+        dispatcher = MagicMock()
+        with (
+            patch.object(OrphanPurgeJobService, "submit_cleanup_job", submit_job),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/cleanup",
+                json={"scan_id": "scan-latest", "orphan_ids": [7]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert submit_job.await_args.kwargs["ip_address"] == self.TEST_IP
+        dispatcher.submit.assert_called_once_with("cleanup-ip-1")
+
+    def test_purge_submit_receives_ip_from_xff(self):
+        from app.services.orphan_purge_job_service import OrphanJobSubmission, OrphanPurgeJobService
+
+        job = MagicMock()
+        job.task_id = "purge-ip-1"
+        job.to_dict.return_value = {"task_id": "purge-ip-1", "status": "pending", "total_count": 1}
+        submit_job = AsyncMock(
+            return_value=OrphanJobSubmission(
+                operation_type="purge",
+                scan_id=None,
+                job=job,
+                accepted_items=["/quarantine/a.bin"],
+                skipped_items=[],
+            )
+        )
+        dispatcher = MagicMock()
+        with (
+            patch.object(OrphanPurgeJobService, "submit_purge_job", submit_job),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/purge",
+                json={"canonical_paths": ["/quarantine/a.bin"]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert submit_job.await_args.kwargs["ip_address"] == self.TEST_IP
+        dispatcher.submit.assert_called_once_with("purge-ip-1")
+
+    def test_no_xff_falls_back_to_client_host(self):
+        """无代理头（直连）：extract 回退 request.client.host（testclient）。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(return_value={"success_count": 1, "failed_count": 0, "failed_list": []})
+        with (
+            patch.object(OrphanFileService, "set_ignored", mocked),
+            patch.object(
+                OrphanFileService,
+                "_load_orphan_details",
+                AsyncMock(return_value=[]),
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/ignore",
+                json={"orphan_ids": [7], "ignored": True},
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == "testclient"

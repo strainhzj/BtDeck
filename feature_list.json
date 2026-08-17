@@ -4000,9 +4000,10 @@
           "scope": "backend",
           "files": [
             "app/api/endpoints/torrents_async.py",
-            "tests/api/test_progress_rounding.py"
+            "tests/api/test_progress_rounding.py",
+            "tests/api/test_progress_rounding_sync.py"
           ],
-          "evidence": "_normalize_progress_value round(2)（8 处同步写路径汇聚点）；9 tests passed（含脏值自愈前提 has_torrent_info_changes 判变化）"
+          "evidence": "_normalize_progress_value round(2)（8 处同步写路径汇聚点）；14 tests passed：纯函数/变更检测 9 + 同步流集成 5（qB/TR insert 舍入、存量脏值经 0.5 阈值自愈、稳定行不重写）"
         },
         {
           "id": "transfer-target-row-upsert",
@@ -4014,7 +4015,7 @@
             "tests/services/test_seed_transfer_service_fixes.py",
             "tests/services/test_w2_3d_service_migration.py"
           ],
-          "evidence": "_upsert_target_torrent_row（对齐同步 insert dict + 显式 commit + IntegrityError 竞态转 update + 异常吞掉仅 warning）+ _mark_source_row_transferred（dr=1 同步删除语义）+ source==target 服务层防御；10+19 tests passed"
+          "evidence": "_upsert_target_torrent_row（对齐同步 insert dict + 显式 commit + IntegrityError 竞态转 update + 异常吞掉仅 warning）+ _mark_source_row_transferred（dr=1 同步删除语义）+ source==target 服务层防御；22 tests passed：预插/幂等/源行标记 5 + 竞态转 update、duplicate/验证超时/添加失败不建行、删除失败源行保留 dr=0、mark 空行 no-op 等 6 项补充回归"
         },
         {
           "id": "audit-ip-transfer",
@@ -4025,7 +4026,7 @@
             "app/api/endpoints/seed_transfer.py",
             "tests/api/test_seed_transfer_batch_fixes.py"
           ],
-          "evidence": "两端点加 request 参数，_log_transfer_audit 传 ip_address/user_agent；audit 行断言测试通过"
+          "evidence": "两端点加 request 参数，_log_transfer_audit 传 ip_address/user_agent；6 tests passed：含单转移端点真实 X-Forwarded-For 提取链路（不 patch extract）"
         },
         {
           "id": "audit-ip-orphan",
@@ -4042,9 +4043,10 @@
             "tests/core/test_db_rollback_scenarios.py",
             "tests/core/test_orphan_migration_production_shape.py",
             "tests/services/test_orphan_purge_job_service.py",
-            "tests/api/test_orphan_files_api.py"
+            "tests/api/test_orphan_files_api.py",
+            "tests/services/test_orphan_cleanup_hardlink_warning.py"
           ],
-          "evidence": "迁移 ab68fe061d5b（inspect 守卫 add_column + batch downgrade，【可回滚】）串接 ff42d3402df5；4 提交入口加 ip_address、execute_job 读 job 会话内取出透传、5 个服务函数签名+4 处租约递归+5 处审计调用点、5 个端点提取 IP；EXPECTED_HEAD/REV_HEAD 三处测试同步；25+10+15+70 tests passed"
+          "evidence": "迁移 ab68fe061d5b（inspect 守卫 add_column + batch downgrade，【可回滚】）串接 ff42d3402df5；4 提交入口加 ip_address、execute_job 读 job 会话内取出透传、5 个服务函数签名+4 处租约递归+5 处审计调用点、5 个端点提取 IP；EXPECTED_HEAD/REV_HEAD 三处测试同步；104 tests passed：含 5 端点真实 XFF 提取链路 + client.host 回退、execute_job cleanup/purge 双路径 IP 透传、服务层 ORPHAN_CLEANUP 审计收到 ip"
         }
       ]
     }

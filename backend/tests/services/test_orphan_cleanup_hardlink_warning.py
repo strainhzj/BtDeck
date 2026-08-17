@@ -123,6 +123,30 @@ class TestCleanupHardlinkWarning:
         assert os.path.exists(copy_path), "硬链接副本不应被破坏"
         assert not os.path.exists(file_path), "原文件应已移入隔离区"
 
+    async def test_manual_cleanup_audit_receives_ip(self, async_orphan_db, tmp_path):
+        """服务层审计接线：cleanup_orphans 的 ORPHAN_CLEANUP 审计收到 ip_address。"""
+        orphan_id, canonical, file_path = await _seed_candidate(async_orphan_db, tmp_path, "audit-ip.mkv")
+        manifest = _manifest_with_seed(tmp_path, [])
+        audit = AsyncMock()
+        service = OrphanFileService(async_orphan_db)
+        with patch.object(OrphanFileService, "_build_realtime_manifest", return_value=manifest):
+            result = await service.cleanup_orphans(
+                orphan_ids=[orphan_id],
+                operator="admin",
+                store=MagicMock(),
+                audit_service=audit,
+                scan_id="scan_cleanup",
+                ip_address="192.168.5.60",
+                _lease_acquired=True,
+                _lease_handle=_lease(),
+            )
+
+        assert result["success_count"] == 1
+        audit.log_operation.assert_awaited_once()
+        kwargs = audit.log_operation.await_args.kwargs
+        assert kwargs["operation_type"] == "orphan_cleanup"
+        assert kwargs["ip_address"] == "192.168.5.60"
+
     async def test_manual_cleanup_no_hardlink_no_warning(self, async_orphan_db, tmp_path):
         """无硬链接副本的清理不产生 hardlink_notes。"""
         orphan_id, canonical, file_path = await _seed_candidate(async_orphan_db, tmp_path, "solo.mkv")

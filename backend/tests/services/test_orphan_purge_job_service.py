@@ -111,6 +111,34 @@ async def test_execute_job_passes_ip_to_cleanup_orphans(async_orphan_db):
     assert cleanup.await_args.kwargs["ip_address"] == "192.168.5.60"
 
 
+async def test_execute_job_passes_ip_to_purge_quarantine_now(async_orphan_db):
+    """execute_job 把 job 行上的提交端 IP 透传给 purge_quarantine_now（审计用）。"""
+    job = await OrphanPurgeJobService(async_orphan_db).create_job(
+        ["/quarantine/a.bin"],
+        operator="tester",
+        ip_address="10.0.0.9",
+    )
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock(name="shared_store")))
+    dispatcher = OrphanPurgeJobDispatcher(app, session_factory=_session_factory(async_orphan_db))
+
+    with patch.object(
+        OrphanFileService,
+        "purge_quarantine_now",
+        AsyncMock(
+            return_value={
+                "purged_count": 1,
+                "failed_count": 0,
+                "failed_list": [],
+                "total_size": 512,
+                "hardlink_notes": [],
+            }
+        ),
+    ) as purge:
+        await dispatcher.execute_job(job.task_id)
+
+    assert purge.await_args.kwargs["ip_address"] == "10.0.0.9"
+
+
 async def test_cleanup_submission_skips_active_items_and_releases_failed_job(async_orphan_db):
     service = OrphanPurgeJobService(async_orphan_db)
 

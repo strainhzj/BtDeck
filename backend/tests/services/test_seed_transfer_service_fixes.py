@@ -424,3 +424,169 @@ class TestTargetRowUpsert:
         finally:
             await service.aclose()
             await db.close()
+
+    @pytest.mark.asyncio
+    async def test_upsert_integrity_error_race_converts_to_update(self):
+        """并发同 hash 转移撞唯一索引：IntegrityError 转为按主键更新，不外抛。"""
+        from sqlalchemy.exc import IntegrityError
+
+        from app.services.seed_transfer_service import SeedTransferService
+
+        db = MagicMock()
+        db.commit = AsyncMock(side_effect=[IntegrityError("dup", None, Exception("unique")), None])
+        db.rollback = AsyncMock()
+        db.add = MagicMock()
+
+        race_row = SimpleNamespace(save_path="/old", name="旧名", update_time=None, update_by=None)
+        none_result = MagicMock()
+        none_result.scalar_one_or_none.return_value = None  # 第一次查：无行 → 走插入
+        race_result = MagicMock()
+        race_result.scalar_one_or_none.return_value = race_row  # 竞态重查：命中并发插入的行
+        db.execute = AsyncMock(side_effect=[none_result, race_result])
+
+        service = SeedTransferService(db=db)
+        try:
+            source = SimpleNamespace(
+                name="测试种子",
+                progress=100.0,
+                size=1024,
+                status="seeding",
+                torrent_file="",
+                completed_date=None,
+                ratio=1.0,
+                ratio_limit=None,
+                tags="",
+                category="",
+                super_seeding="0",
+            )
+            await service._upsert_target_torrent_row(
+                source_torrent=source,
+                target_downloader=SimpleNamespace(downloader_id="dl-2", nickname="目标"),
+                info_hash=INFO_HASH,
+                target_path="/downloads/movies",
+                torrent_name="测试种子",
+                username="tester",
+            )
+        finally:
+            await service.aclose()
+
+        # 首次插入 commit 抛 IntegrityError → rollback → 重查命中 → 更新 → 二次 commit
+        assert db.commit.await_count == 2
+        assert db.rollback.await_count == 1
+        assert race_row.save_path == "/downloads/movies"
+        assert race_row.name == "测试种子"
+        assert race_row.update_by == "tester"
+
+    async def _count_target_rows(self, session_factory):
+        async with session_factory() as s:
+            return len(
+                (await s.execute(select(TorrentInfo).where(TorrentInfo.downloader_id == "dl-2"))).scalars().all()
+            )
+
+    @pytest.mark.asyncio
+    async def test_duplicate_status_does_not_create_target_row(self, transfer_env):
+        """目标已存在（duplicate 早退）不预插目标行。"""
+        target_client = MagicMock()
+        service, db = _new_service(transfer_env["session_factory"])
+
+        with patch.object(service, "_check_target_duplicate", new=AsyncMock(return_value=True)):
+            result = await _run_transfer(transfer_env, _make_app_state(target_client), service, db)
+
+        assert result["transfer_status"] == "duplicate"
+        assert await self._count_target_rows(transfer_env["session_factory"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_verify_timeout_does_not_create_target_row(self, transfer_env):
+        """验证超时（failed 早退）不预插目标行。"""
+        from app.services import seed_transfer_service as svc
+
+        target_client = MagicMock()
+        service, db = _new_service(transfer_env["session_factory"])
+
+        with (
+            patch.object(service, "_check_target_duplicate", new=AsyncMock(return_value=False)),
+            patch.object(service, "_verify_transfer", new=AsyncMock(return_value=False)),
+            patch.object(svc, "call_downloader_api", new=AsyncMock(return_value="Ok.")),
+        ):
+            result = await _run_transfer(transfer_env, _make_app_state(target_client), service, db)
+
+        assert result["success"] is False
+        assert "验证超时" in result["error_message"]
+        assert await self._count_target_rows(transfer_env["session_factory"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_add_failure_does_not_create_target_row(self, transfer_env):
+        """目标拒绝添加（"Fails." 早退）不预插目标行。"""
+        from app.services import seed_transfer_service as svc
+
+        target_client = MagicMock()
+        service, db = _new_service(transfer_env["session_factory"])
+
+        def _fails_dispatch(*args, **kwargs):
+            if kwargs.get("operation") == "transfer_qb_add_torrent":
+                return "Fails."
+            return "Ok."
+
+        with (
+            patch.object(service, "_check_target_duplicate", new=AsyncMock(return_value=False)),
+            patch.object(svc, "call_downloader_api", new=AsyncMock(side_effect=_fails_dispatch)),
+        ):
+            result = await _run_transfer(transfer_env, _make_app_state(target_client), service, db)
+
+        assert result["success"] is False
+        assert "拒绝添加" in result["error_message"]
+        assert await self._count_target_rows(transfer_env["session_factory"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_delete_source_failure_keeps_source_row_dr0(self, transfer_env):
+        """delete_source=true 但源删除失败（partial）：目标行已预插，源行保持 dr=0。"""
+        from app.services import seed_transfer_service as svc
+
+        target_client = MagicMock()
+        service, db = _new_service(transfer_env["session_factory"])
+
+        def _delete_fails(*args, **kwargs):
+            if kwargs.get("operation") == "transfer_qb_delete_source":
+                raise RuntimeError("源下载器网络中断")
+            return "Ok."
+
+        try:
+            with (
+                patch.object(service, "_check_target_duplicate", new=AsyncMock(return_value=False)),
+                patch.object(service, "_verify_transfer", new=AsyncMock(return_value=True)),
+                patch.object(svc, "call_downloader_api", new=AsyncMock(side_effect=_delete_fails)),
+            ):
+                result = await service.transfer_seed(
+                    source_downloader_id="dl-1",
+                    target_downloader_id="dl-2",
+                    info_hash=INFO_HASH,
+                    target_path="/downloads/movies",
+                    delete_source=True,
+                    user_id=1,
+                    username="tester",
+                    app_state=_make_app_state(target_client),
+                )
+        finally:
+            await service.aclose()
+            await db.close()
+
+        assert result["success"] is True
+        assert result["transfer_status"] == "partial"
+        async with transfer_env["session_factory"]() as s:
+            source_row = (await s.execute(select(TorrentInfo).where(TorrentInfo.downloader_id == "dl-1"))).scalar_one()
+            assert source_row.dr == 0  # 删除失败：源行不标记，等下次同步自愈
+        assert await self._count_target_rows(transfer_env["session_factory"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_mark_source_row_missing_is_noop(self, transfer_env):
+        """源行不存在（如已被同步标记）时 _mark_source_row_transferred 安全无操作。"""
+        service, db = _new_service(transfer_env["session_factory"])
+        try:
+            await service._mark_source_row_transferred("dl-1", "f" * 40)  # 库中无此 hash
+        finally:
+            await service.aclose()
+            await db.close()
+        # 无异常即通过；源行 dl-1 的 INFO_HASH 保持 dr=0
+        async with transfer_env["session_factory"]() as s:
+            source_row = (await s.execute(select(TorrentInfo).where(TorrentInfo.downloader_id == "dl-1"))).scalar_one()
+            assert source_row.dr == 0

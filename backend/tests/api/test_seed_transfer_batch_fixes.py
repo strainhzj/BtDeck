@@ -199,3 +199,36 @@ class TestBatchTransferAudit:
         assert len(rows) == 1
         assert rows[0].ip_address == "192.168.5.60"
         assert rows[0].user_agent == "pytest-agent"
+
+    async def test_single_transfer_audit_records_ip_from_xff_header(self, batch_client):
+        """单个转移端点的真实提取链路：不 patch extract，TestClient 携带
+        X-Forwarded-For 头 → 审计行记录首值（与 nginx 反代生产行为一致）。"""
+        from sqlalchemy import select
+
+        app, client, session_factory = batch_client
+        with patch(
+            "app.api.endpoints.seed_transfer.SeedTransferService",
+            _fake_service_cls(["success"]),
+        ):
+            resp = client.post(
+                "/api/v1/torrents/transfer",
+                json={
+                    "source_downloader_id": "1",
+                    "target_downloader_id": "2",
+                    "info_hash": "a" * 40,
+                    "target_path": "/downloads/movies",
+                    "delete_source": False,
+                },
+                headers={
+                    "X-Forwarded-For": "203.0.113.9, 172.25.0.2",
+                    "User-Agent": "regression-agent",
+                },
+            )
+
+        assert resp.json()["code"] == "200"
+
+        async with session_factory() as db:
+            rows = (await db.execute(select(TorrentAuditLog))).scalars().all()
+        assert len(rows) == 1
+        assert rows[0].ip_address == "203.0.113.9"
+        assert rows[0].user_agent == "regression-agent"
