@@ -690,11 +690,10 @@ async def startup_event(app: FastAPI):
     print("=== 开始持久化下载器数据 ===")
     app.state.store = DownloaderInitialization(check_status)
 
-    # 启动定时校验任务
-    # loop = asyncio.get_event_loop()
-    # loop.create_task(periodic_check())
-    # loop.create_task(cached_downloader_sync_task())
-    # loop.create_task(full_database_sync_task())
+    # 历史的定时校验任务（periodic_check/cached_downloader_sync_task/full_database_sync_task）
+    # 已停用：缓存健康治理现由 CachedDownloaderSyncTask（cron 每 5 分钟）基于
+    # offline_since 剔除长期离线成员 + downloader_status_polling_task 维护在线状态实现，
+    # 不再依赖周期性重认证（check_and_remove_invalid/fail_time 路径保留但无调用方）。
 
     # 异步执行初始化任务，不阻塞服务器启动
     print("=== 异步执行初始化任务 ===")
@@ -1523,6 +1522,21 @@ async def downloader_status_polling_task(app: FastAPI):
         await asyncio.sleep(hot_poll_interval)
 
 
+def _set_online_status(downloader: Any, is_online: bool) -> None:
+    """维护 is_online 与 offline_since（首次离线记时间戳，恢复在线清空）。
+
+    last_update 是"轮询时间戳"（离线时也被刷新，端口不通也算更新成功），
+    不能表达离线持续了多久；offline_since 供缓存同步任务
+    （CachedDownloaderSyncTask）剔除长期离线成员——替代 fail_time
+    剔除机制（check_and_remove_invalid 的调用方已停用）。
+    """
+    downloader.is_online = is_online
+    if is_online:
+        downloader.offline_since = None
+    elif not getattr(downloader, "offline_since", None):
+        downloader.offline_since = time.time()
+
+
 async def _update_downloader_status(downloader: Any, update_cold: bool = False) -> bool:
     """更新单个下载器的状态（热冷数据分离 + 延迟测试 + 端口连通性检查）
 
@@ -1592,21 +1606,21 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
                 port_int = int(port)
                 if not (1 <= port_int <= 65535):
                     print(f"[状态更新] {nickname}: 端口号超出有效范围(1-65535): {port}")
-                    downloader.is_online = False
+                    _set_online_status(downloader, False)
                     downloader.upload_speed = 0
                     downloader.download_speed = 0
                     downloader.last_update = time.time()
                     return True
             except (ValueError, TypeError) as e:
                 print(f"[状态更新] {nickname}: 端口号无效: {port} - {e}")
-                downloader.is_online = False
+                _set_online_status(downloader, False)
                 downloader.upload_speed = 0
                 downloader.download_speed = 0
                 downloader.last_update = time.time()
                 return True
 
             is_online = await check_port_connectivity(host, port_int, timeout=3.0, max_retries=1)
-            downloader.is_online = is_online
+            _set_online_status(downloader, is_online)
 
             if not is_online:
                 print(f"[状态更新] {nickname}: 端口{port}不可达，跳过状态更新")
@@ -1617,7 +1631,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
 
         except Exception as e:
             print(f"[状态更新] {nickname}: 端口连通性检查失败 - {e}")
-            downloader.is_online = False
+            _set_online_status(downloader, False)
             downloader.upload_speed = 0
             downloader.download_speed = 0
             downloader.last_update = time.time()
