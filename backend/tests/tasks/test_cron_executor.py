@@ -454,3 +454,105 @@ class TestExecuteTaskSessionLifecycle:
         await executor._execute_task(1)  # 不应抛出
 
         assert executor.running_tasks.get(1) is False
+
+
+# ==================== B-2 补充：会话事件序列与早退副作用 ====================
+
+
+class TestExecuteTaskSessionEventSequence:
+    """三段式会话的完整事件序列锚点（比"任务体期间计数为 0"更强的时序锁定）。
+
+    期望序列：读会话 open → close → 任务体 body → 收尾会话 open → close。
+    若有人把任务体挪回会话内（事件序变为 open→body→close），或收尾
+    复用了读会话（少一组 open/close），此用例立即报红。
+    """
+
+    def _patch_events(self, monkeypatch):
+        events = []
+
+        class _EventCtx(_FakeSessionCtx):
+            _seq = 0
+
+            async def __aenter__(self):
+                type(self)._seq += 1
+                self._tag = type(self)._seq
+                events.append(f"open{self._tag}")
+                return await _FakeSessionCtx.__aenter__(self)
+
+            async def __aexit__(self, *exc):
+                events.append(f"close{self._tag}")
+                return await _FakeSessionCtx.__aexit__(self, *exc)
+
+        monkeypatch.setattr(cron_module, "AsyncSessionLocal", lambda: _EventCtx(MagicMock()))
+        return events
+
+    async def test_session_lifecycle_event_sequence(self, monkeypatch):
+        """读会话关闭后才开始任务体；收尾使用新的独立会话。"""
+        events = self._patch_events(monkeypatch)
+        call_order = []
+
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "get_cron_task_by_id",
+            AsyncMock(return_value=DatabaseResult.success_result(TestExecuteTaskOutcomeMapping.TASK)),
+        )
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "update_task_start_time",
+            AsyncMock(
+                side_effect=lambda *a, **k: call_order.append("start_time") or DatabaseResult.success_result(True)
+            ),
+        )
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "update_task_execution_duration",
+            AsyncMock(side_effect=lambda *a, **k: call_order.append("duration") or DatabaseResult.success_result(True)),
+        )
+        monkeypatch.setattr(
+            cron_module.AsyncTaskLogsCRUD,
+            "create_task_log",
+            AsyncMock(side_effect=lambda *a, **k: call_order.append("log") or DatabaseResult.success_result(True)),
+        )
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "update_task_freshness",
+            AsyncMock(
+                side_effect=lambda *a, **k: call_order.append("freshness") or DatabaseResult.success_result(True)
+            ),
+        )
+
+        async def _run_script(self_inner, task):
+            call_order.append("body")
+            events.append("body")
+            return {"success": True, "log_detail": "ok"}
+
+        monkeypatch.setattr(CronTaskExecutor, "_run_task_script", _run_script)
+
+        executor = CronTaskExecutor()
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+        await executor._execute_task(1)
+
+        # CRUD 时序：start_time 在读会话内（body 之前），三写在收尾会话内（body 之后）
+        assert call_order == ["start_time", "body", "duration", "log", "freshness"]
+        # 会话事件完整序列：第一组会话在任务体前关闭，第二组在任务体后开启
+        assert events == ["open1", "close1", "body", "open2", "close2"]
+
+    async def test_early_return_creates_no_task_log(self, monkeypatch):
+        """读取任务失败早退：不产生任务日志、不执行三写（早退不是一次执行）。"""
+        self._patch_events(monkeypatch)
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "get_cron_task_by_id",
+            AsyncMock(return_value=DatabaseResult.failure_result("任务不存在")),
+        )
+        log_mock = AsyncMock()
+        monkeypatch.setattr(cron_module.AsyncTaskLogsCRUD, "create_task_log", log_mock)
+        duration_mock = AsyncMock()
+        monkeypatch.setattr(cron_module.AsyncCronTaskCRUD, "update_task_execution_duration", duration_mock)
+
+        executor = CronTaskExecutor()
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+        await executor._execute_task(1)
+
+        log_mock.assert_not_called()
+        duration_mock.assert_not_called()

@@ -207,3 +207,170 @@ class TestSetOnlineStatus:
         dl = SimpleNamespace(is_online=True)  # 无 offline_since 字段
         _set_online_status(dl, False)
         assert dl.offline_since is not None
+
+
+# ============ 集成级：_update_downloader_status 的 offline_since 维护 ============
+
+
+class TestUpdateDownloaderStatusOfflineSince:
+    """状态轮询真实流程中 offline_since 的记录/保持/清空（速度跳过与缓存剔除的信号源）。
+
+    _set_online_status 的纯单测见 TestSetOnlineStatus；此处验证
+    _update_downloader_status 的各置位分支（端口不可达/异常/在线恢复）
+    确实经 helper 维护 offline_since——信号源断裂会让 A-1 跳过与
+    A-2 剔除同时失效。host 用 127.0.0.1 跳过 ping3 分支。
+    """
+
+    def _make_dl(self):
+        return SimpleNamespace(
+            nickname="dl",
+            host="127.0.0.1",
+            port=8080,
+            downloader_type=0,
+        )
+
+    def _patch_port(self, monkeypatch, *, online=None, exc=None):
+        """patch check_port_connectivity：返回在线/离线或抛异常。"""
+        from unittest.mock import AsyncMock
+
+        from app.downloader import initialization as init_mod
+
+        if exc is not None:
+
+            async def _raise(*a, **k):
+                raise exc
+
+            monkeypatch.setattr(init_mod, "check_port_connectivity", _raise)
+        else:
+            monkeypatch.setattr(init_mod, "check_port_connectivity", AsyncMock(return_value=online))
+
+    async def test_port_unreachable_records_offline_since(self, monkeypatch):
+        """端口不可达 → is_online=False + offline_since 记录 + last_update 刷新。"""
+        import time
+
+        from app.downloader import initialization as init_mod
+
+        self._patch_port(monkeypatch, online=False)
+        dl = self._make_dl()
+        before = time.time()
+        ok = await init_mod._update_downloader_status(dl)
+
+        assert ok is True  # 端口不通也算更新成功（离线是有效状态）
+        assert dl.is_online is False
+        assert dl.offline_since is not None and dl.offline_since >= before
+        assert dl.last_update >= before
+        assert dl.upload_speed == 0 and dl.download_speed == 0
+
+    async def test_port_check_exception_records_offline_since(self, monkeypatch):
+        """端口检查抛异常 → 同样记录 offline_since（异常路径不丢信号）。"""
+        from app.downloader import initialization as init_mod
+
+        self._patch_port(monkeypatch, exc=OSError("network unreachable"))
+        dl = self._make_dl()
+        ok = await init_mod._update_downloader_status(dl)
+
+        assert ok is True
+        assert dl.is_online is False
+        assert dl.offline_since is not None
+
+    async def test_consecutive_offline_keeps_first_timestamp(self, monkeypatch):
+        """连续两轮离线 → offline_since 保持首次时间戳（不随轮询刷新）。"""
+        from app.downloader import initialization as init_mod
+
+        self._patch_port(monkeypatch, online=False)
+        dl = self._make_dl()
+
+        await init_mod._update_downloader_status(dl)
+        first_since = dl.offline_since
+        await init_mod._update_downloader_status(dl)
+
+        assert dl.offline_since == first_since, "offline_since 必须是首次离线时间，不是最近轮询时间"
+
+    async def test_recover_online_clears_offline_since(self, monkeypatch):
+        """离线 → 在线恢复 → offline_since 清空且速度字段恢复。"""
+        from unittest.mock import AsyncMock
+
+        from app.downloader import initialization as init_mod
+
+        dl = self._make_dl()
+
+        # 第一轮：离线
+        self._patch_port(monkeypatch, online=False)
+        await init_mod._update_downloader_status(dl)
+        assert dl.offline_since is not None
+
+        # 第二轮：恢复在线（端口通 + qB 状态成功）
+        self._patch_port(monkeypatch, online=True)
+        monkeypatch.setattr(
+            init_mod,
+            "_get_qbittorrent_status",
+            AsyncMock(return_value={"upload_speed": 12.5, "download_speed": 34.7}),
+        )
+        ok = await init_mod._update_downloader_status(dl)
+
+        assert ok is True
+        assert dl.is_online is True
+        assert dl.offline_since is None
+        assert dl.upload_speed == 12.5
+        assert dl.download_speed == 34.7
+
+
+# ============ 自愈闭环：剔除后下一轮重新加入 ============
+
+
+class TestEvictionRejoinLoop:
+    """A-2 闭环锚点：被剔除者恢复在线后，下一轮同步经 _check_and_add_new_downloader 重新入缓存。"""
+
+    async def test_evicted_downloader_readded_next_round(self, monkeypatch):
+        import time
+
+        stale = _make_cached_dl("dl_back", is_online=False, offline_since=time.time() - 600, nickname="back")
+        store = _FakeStore([stale])
+        fake_app = SimpleNamespace(state=SimpleNamespace(store=store))
+
+        check_add = AsyncMock(return_value=True)
+
+        # 第一轮：长期离线 → 剔除
+        with (
+            patch("app.database.SessionLocal", return_value=_FakeDB([_make_db_row("dl_back", "back")])),
+            patch("app.downloader.initialization._check_and_add_new_downloader", new=check_add),
+        ):
+            await CachedDownloaderSyncTask(app=fake_app)._single_sync_execution()
+        assert store.removed == [stale]
+        check_add.assert_not_called()  # 同轮对比基于剔除前快照，不会立即重加
+
+        # 第二轮：缓存已无该成员 → 进入 new_downloaders → 重新校验入缓存
+        with (
+            patch("app.database.SessionLocal", return_value=_FakeDB([_make_db_row("dl_back", "back")])),
+            patch("app.downloader.initialization._check_and_add_new_downloader", new=check_add),
+        ):
+            await CachedDownloaderSyncTask(app=fake_app)._single_sync_execution()
+
+        check_add.assert_called_once()
+        assert check_add.await_args.args[1]["downloader_id"] == "dl_back"
+
+
+# ============ VO 契约：offline_since 字段默认值 ============
+
+
+class TestDownloaderCheckVOContract:
+    """DownloaderCheckVO 的 offline_since 字段契约（缓存/接口/序列化的稳定默认值）。"""
+
+    def test_offline_since_defaults(self):
+        from app.downloader.request import DownloaderCheckVO
+
+        vo = DownloaderCheckVO()
+        assert vo.offline_since is None
+        # 既有默认值锚点：is_online 默认 False（冷启动未探测语义）
+        assert vo.is_online is False
+        assert vo.last_update is None
+
+    def test_offline_since_roundtrip(self):
+        import time
+
+        from app.downloader.request import DownloaderCheckVO
+
+        vo = DownloaderCheckVO(nickname="x", offline_since=1700000000.5)
+        assert vo.offline_since == 1700000000.5
+        vo.offline_since = time.time()
+        assert vo.offline_since > 1700000000.5

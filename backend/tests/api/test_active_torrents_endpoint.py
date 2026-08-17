@@ -407,3 +407,57 @@ class TestFreshlyOfflineSkip:
         # 失败明细只含在线失败者，离线跳过不计入（complete 语义与 msg 不打架）
         assert "online_timeout_dl" in body["msg"]
         assert "offline_skip_dl" not in body["msg"]
+
+    def test_mixed_online_active_and_offline_writes_ready_snapshot(self, client):
+        """在线者有活动种子 + 离线者跳过 → 200，权威快照 READY 且只含在线者。
+
+        active_only 过滤依赖 _active_keys_cache 的 READY 语义：离线跳过后
+        complete=True → update_complete 写入"不含离线者种子"的权威集合。
+        此用例锁定该联动，防止未来改动把混合场景退化为 PARTIAL（整表冻结）
+        或把离线者旧种子误留在集合中。
+        """
+        import time
+
+        online_dl = _make_qb_downloader(
+            dl_id="dl_on",
+            torrents=[{"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}],
+        )
+        online_dl.nickname = "online_ok"
+        # 离线者 mock 携带活动种子：跳过后其种子不得进入任何返回/快照
+        offline_dl = _make_qb_downloader(
+            dl_id="dl_off",
+            torrents=[{"hash": "h2", "dlspeed": 100, "upspeed": 0, "progress": 0.5}],
+        )
+        offline_dl.is_online = False
+        offline_dl.last_update = time.time()
+
+        _set_store(client.app, [online_dl, offline_dl])
+        with _real_call_downloader_api():
+            r = client.get(URL)
+        body = r.json()
+        assert body["code"] == "200"
+        # data 只含在线者种子（离线者被跳过，未发起调用）
+        assert [t["hash"] for t in body["data"]] == ["h1"]
+
+        snap = torrent_speed.get_active_keys_snapshot()
+        assert snap.status == torrent_speed.ActiveSnapshotStatus.READY
+        assert snap.keys == frozenset({("dl_on", "h1")})
+
+    def test_offline_skip_does_not_feed_ttl_queue(self, client):
+        """离线跳过者不进入 TTL 队列（60s 内不再对其发起消失补查）。"""
+        import time
+
+        offline_dl = _make_qb_downloader(
+            dl_id="dl_off",
+            torrents=[{"hash": "h9", "dlspeed": 100, "upspeed": 0}],
+        )
+        offline_dl.is_online = False
+        offline_dl.last_update = time.time()
+
+        _set_store(client.app, [offline_dl])
+        with patch("app.api.endpoints.torrent_speed.call_downloader_api") as mock_call:
+            r = client.get(URL)
+        assert r.json()["code"] == "200"
+        mock_call.assert_not_called()
+        # TTL 队列无该下载器任何条目（端点仅对返回数据 put）
+        assert not any(dl_id == "dl_off" for dl_id, _h in torrent_speed._ttl_queue._store.keys())
