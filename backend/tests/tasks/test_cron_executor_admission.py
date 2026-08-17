@@ -259,3 +259,38 @@ class TestInternalClassResultPropagation:
         assert result["success"] is True
         assert "扫描已提交" in result["log_detail"]
         assert "扫描终态 status=completed" in result["log_detail"]
+
+
+class TestSyncExecuteOffloaded:
+    """B-3 卫生项：同步 execute 必须经 asyncio.to_thread 执行。
+
+    直接在事件循环线程上跑同步任务体会阻塞整个 API（含 active-torrents
+    1s 轮询），制造全局假超时。当前全部内置任务为 async execute（分支
+    不可达），此测试为未来新增同步任务封死回归路径。
+    """
+
+    async def test_sync_execute_runs_off_event_loop(self, monkeypatch):
+        """同步 execute 在非事件循环线程执行，结果正常归一化。"""
+        import threading
+
+        executed_threads = []
+
+        def _sync_execute(self_inner, app=None, **kwargs):
+            executed_threads.append(threading.current_thread())
+            return {"status": "ok"}
+
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_sync", "SyncTask", _sync_execute)
+
+        executor = _make_executor_with_app()
+        task = {
+            "task_id": 1,
+            "task_code": "nonexistent_lightweight",  # 未登记 → 轻量任务路径
+            "task_type": 4,
+            "executor": "app.tasks.fake_module_sync.SyncTask",
+        }
+
+        result = await executor._run_python_internal_class(task)
+        assert result["success"] is True
+        assert len(executed_threads) == 1
+        # 核心断言：执行线程不是事件循环主线程（to_thread 生效）
+        assert executed_threads[0] is not threading.main_thread(), "同步 execute 必须经 to_thread 移出事件循环线程"

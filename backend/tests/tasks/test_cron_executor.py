@@ -64,13 +64,13 @@ class TestCronExecutorCoalesceRegression:
         add_job_kwargs = executor.scheduler.add_job.call_args.kwargs
 
         # ★ 收敛锚点：coalesce=True 必须显式传
-        assert add_job_kwargs.get("coalesce") is True, (
-            "coalesce=True 必须显式传：缺则积压触发会连续补跑，加剧 SQLite 写锁竞争"
-        )
+        assert (
+            add_job_kwargs.get("coalesce") is True
+        ), "coalesce=True 必须显式传：缺则积压触发会连续补跑，加剧 SQLite 写锁竞争"
         # ★ 收敛锚点：max_instances=1 必须显式传（双保险，避免任务重入）
-        assert add_job_kwargs.get("max_instances") == 1, (
-            "max_instances=1 必须显式传：缺则任务重入会加剧 database is locked"
-        )
+        assert (
+            add_job_kwargs.get("max_instances") == 1
+        ), "max_instances=1 必须显式传：缺则任务重入会加剧 database is locked"
 
 
 # ==================== W3-4/P1-05：六态 outcome 落库与 freshness 推进 ====================
@@ -130,9 +130,7 @@ class TestExecuteTaskOutcomeMapping:
             captured["log_data"] = log_data
             return DatabaseResult.success_result(log_data)
 
-        monkeypatch.setattr(
-            cron_module.AsyncTaskLogsCRUD, "create_task_log", AsyncMock(side_effect=_capture_log)
-        )
+        monkeypatch.setattr(cron_module.AsyncTaskLogsCRUD, "create_task_log", AsyncMock(side_effect=_capture_log))
 
         async def _run_script(self, task):
             if run_script_exc is not None:
@@ -276,9 +274,7 @@ class TestReentrantSkipRecording:
             captured["log_data"] = log_data
             return DatabaseResult.success_result(log_data)
 
-        monkeypatch.setattr(
-            cron_module.AsyncTaskLogsCRUD, "create_task_log", AsyncMock(side_effect=_capture_log)
-        )
+        monkeypatch.setattr(cron_module.AsyncTaskLogsCRUD, "create_task_log", AsyncMock(side_effect=_capture_log))
         freshness_mock = AsyncMock(return_value=DatabaseResult.success_result(True))
         monkeypatch.setattr(cron_module.AsyncCronTaskCRUD, "update_task_freshness", freshness_mock)
 
@@ -331,3 +327,130 @@ class TestReentrantSkipRecording:
         await executor._execute_task(1)
 
         log_mock.assert_not_called()
+
+
+# ==================== B-2：会话生命周期三段式（greenlet 交错治理） ====================
+
+
+class TestExecuteTaskSessionLifecycle:
+    """_execute_task 三段式会话收敛锚点。
+
+    原实现单个 AsyncSession 跨越任务体执行期（重型任务数分钟），与任务体
+    内部各路 DB 写并发交错，是 "greenlet_spawn has not been called" 偶发
+    错误的疑似窗口。收敛后：读会话/收尾会话毫秒级关闭，任务体执行期间
+    不存在任何打开的会话。
+    """
+
+    TASK = TestExecuteTaskOutcomeMapping.TASK
+
+    def _patch_session_factory(self, monkeypatch):
+        """AsyncSessionLocal 换成计数工厂：记录当前打开的会话上下文数。"""
+        state = {"open": []}
+
+        class _CountingCtx(_FakeSessionCtx):
+            async def __aenter__(self):
+                state["open"].append(self)
+                return await _FakeSessionCtx.__aenter__(self)
+
+            async def __aexit__(self, *exc):
+                state["open"].remove(self)
+                return await _FakeSessionCtx.__aexit__(self, *exc)
+
+        monkeypatch.setattr(cron_module, "AsyncSessionLocal", lambda: _CountingCtx(MagicMock()))
+        return state
+
+    def _patch_cruds(self, monkeypatch, call_order):
+        """patch 全部 CRUD 为成功，并记录调用顺序。"""
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "get_cron_task_by_id",
+            AsyncMock(return_value=DatabaseResult.success_result(self.TASK)),
+        )
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "update_task_start_time",
+            AsyncMock(return_value=DatabaseResult.success_result(True)),
+        )
+
+        def _record(name):
+            async def _inner(*args, **kwargs):
+                call_order.append(name)
+                return DatabaseResult.success_result(True)
+
+            return _inner
+
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD, "update_task_execution_duration", AsyncMock(side_effect=_record("duration"))
+        )
+        monkeypatch.setattr(cron_module.AsyncTaskLogsCRUD, "create_task_log", AsyncMock(side_effect=_record("log")))
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD, "update_task_freshness", AsyncMock(side_effect=_record("freshness"))
+        )
+
+    async def test_no_open_session_during_task_body(self, monkeypatch):
+        """任务体执行期间活跃会话数必须为 0（读会话已在进入任务体前关闭）。"""
+        state = self._patch_session_factory(monkeypatch)
+        call_order = []
+        self._patch_cruds(monkeypatch, call_order)
+        body_open_counts = []
+
+        async def _run_script(self_inner, task):
+            body_open_counts.append(len(state["open"]))
+            return {"success": True, "log_detail": "ok"}
+
+        monkeypatch.setattr(CronTaskExecutor, "_run_task_script", _run_script)
+        executor = CronTaskExecutor()
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+        await executor._execute_task(1)
+
+        assert body_open_counts == [0], "任务体执行期间不得存在未关闭的 AsyncSession（greenlet 交错窗口）"
+        assert state["open"] == [], "执行结束后不得残留打开的会话"
+
+    async def test_finalize_writes_order_and_isolated_session(self, monkeypatch):
+        """收尾三写顺序 duration → log → freshness（均在收尾短会话内完成）。"""
+        self._patch_session_factory(monkeypatch)
+        call_order = []
+        self._patch_cruds(monkeypatch, call_order)
+        monkeypatch.setattr(
+            CronTaskExecutor, "_run_task_script", AsyncMock(return_value={"success": True, "log_detail": "ok"})
+        )
+        executor = CronTaskExecutor()
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+        await executor._execute_task(1)
+
+        assert call_order == ["duration", "log", "freshness"]
+
+    async def test_early_return_still_resets_status_and_running_flag(self, monkeypatch):
+        """读取任务失败早退：status=2 复位仍执行（修复旧实现卡"运行中"的存量缺陷）。"""
+        self._patch_session_factory(monkeypatch)
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "get_cron_task_by_id",
+            AsyncMock(return_value=DatabaseResult.failure_result("任务不存在")),
+        )
+        executor = CronTaskExecutor()
+        status_mock = AsyncMock()
+        monkeypatch.setattr(executor, "_update_task_status", status_mock)
+
+        await executor._execute_task(1)
+
+        statuses = [c.args[1] for c in status_mock.await_args_list]
+        assert 1 in statuses, "执行前应写 status=1"
+        assert 2 in statuses, "早退路径必须经 finally 复位 status=2（否则任务页永久显示运行中）"
+        assert executor.running_tasks.get(1) is False, "早退路径必须清除运行标记"
+
+    async def test_severe_exception_still_finalizes(self, monkeypatch):
+        """收尾会话自身异常（严重错误路径）：running 标记仍复位，不抛出。"""
+        self._patch_session_factory(monkeypatch)
+        # get_cron_task_by_id 抛异常 → 进入外层 except（严重错误日志路径）
+        monkeypatch.setattr(
+            cron_module.AsyncCronTaskCRUD,
+            "get_cron_task_by_id",
+            AsyncMock(side_effect=RuntimeError("session broken")),
+        )
+        executor = CronTaskExecutor()
+        monkeypatch.setattr(executor, "_update_task_status", AsyncMock())
+
+        await executor._execute_task(1)  # 不应抛出
+
+        assert executor.running_tasks.get(1) is False

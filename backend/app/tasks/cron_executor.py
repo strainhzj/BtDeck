@@ -293,7 +293,14 @@ class CronTaskExecutor:
             return None
 
     async def _execute_task(self, task_id: int):
-        """执行定时任务 - 使用异步数据库操作"""
+        """执行定时任务 - 使用异步数据库操作
+
+        会话生命周期三段式（greenlet 交错治理）：读会话（读任务+写开始时间后即关闭）→
+        任务体在无会话上下文执行 → 收尾短会话顺序三写。原实现单个 AsyncSession
+        从任务开始一直开到收尾，跨越任务体执行期（重型任务可达数分钟），长期挂起的
+        会话与任务体内部各路 DB 写并发交错，是 "greenlet_spawn has not been called"
+        偶发错误的疑似窗口（最终定位依赖 exc_info 堆栈，见 cron_crud_async 日志）。
+        """
         if self.running_tasks.get(task_id, False):
             logger.warning(f"任务 {task_id} 正在运行中，跳过本次执行")
             # W3-4：重入跳过也落库（outcome=skipped + skip_reason=already_running），
@@ -308,7 +315,7 @@ class CronTaskExecutor:
             # 更新任务状态为运行中
             await self._update_task_status(task_id, 1)
 
-            # 异步获取任务信息
+            # —— 第一段：读会话（任务配置 + 开始时间，毫秒级即关闭）——
             async with AsyncSessionLocal() as db:
                 task_result = await AsyncCronTaskCRUD.get_cron_task_by_id(db, task_id)
 
@@ -319,88 +326,89 @@ class CronTaskExecutor:
                 task = task_result.data
                 start_time = datetime.now()
                 run_id = self._new_run_id(task_id)
+                await AsyncCronTaskCRUD.update_task_start_time(db, task_id, start_time)
+
+            # —— 第二段：任务体（无会话上下文执行）——
+            success = False
+            log_detail = ""
+            result: Optional[Dict[str, Any]] = None
+            try:
+                logger.info(f"开始执行定时任务: {task['task_name']} (ID: {task_id})")
+
+                # 执行任务
+                result = await self._run_task_script(task)
+                success = result["success"]
+                log_detail = result["log_detail"]
+
+                logger.info(f"定时任务执行完成: {task['task_name']}, 成功: {success}")
+
+            except Exception as e:
                 success = False
-                log_detail = ""
-                result: Optional[Dict[str, Any]] = None
+                log_detail = f"任务执行异常: {str(e)}"
+                logger.error(f"定时任务执行异常: {task['task_name']}, 错误: {str(e)}", exc_info=True)
 
-                try:
-                    logger.info(f"开始执行定时任务: {task['task_name']} (ID: {task_id})")
+            # —— 第三段：收尾短会话（duration → log → freshness 顺序三写）——
+            end_time = datetime.now()
+            duration = int((end_time - start_time).total_seconds())
 
-                    # 异步更新任务的开始执行时间
-                    await AsyncCronTaskCRUD.update_task_start_time(db, task_id, start_time)
+            # —— W3-4：六态 outcome / skip_reason 收敛 ——
+            # 1) skipped 键不再丢弃：skipped=True → outcome=skipped +
+            #    skip_reason（结果带机器码则用，否则默认 resource_busy）；
+            # 2) 结果显式携带合法 outcome 则采用（partial/no_action/cancelled）；
+            # 3) 否则按 success 布尔映射（True→success、False→failed）。
+            result_dict = result if isinstance(result, dict) else {}
+            if result_dict.get("skipped"):
+                outcome = OUTCOME_SKIPPED
+                skip_reason = result_dict.get("skip_reason") or SKIP_REASON_RESOURCE_BUSY
+            elif result_dict.get("outcome") in _VALID_OUTCOMES:
+                outcome = result_dict["outcome"]
+                skip_reason = result_dict.get("skip_reason") or (
+                    SKIP_REASON_RESOURCE_BUSY if outcome == OUTCOME_SKIPPED else None
+                )
+            else:
+                outcome = _SUCCESS_TO_OUTCOME.get(success, OUTCOME_FAILED)
+                skip_reason = None
 
-                    # 执行任务
-                    result = await self._run_task_script(task)
-                    success = result["success"]
-                    log_detail = result["log_detail"]
+            # 异步创建任务日志（success 保持原语义，outcome 是业务结果）
+            log_data = {
+                "task_id": task_id,
+                "task_name": task["task_name"],
+                "task_type": task["task_type"],
+                "start_time": start_time,
+                "end_time": end_time,
+                "duration": duration,
+                "success": success,
+                "outcome": outcome,
+                "skip_reason": skip_reason,
+                "log_detail": log_detail,
+            }
 
-                    logger.info(f"定时任务执行完成: {task['task_name']}, 成功: {success}")
+            async with AsyncSessionLocal() as db:
+                # 异步更新任务的执行持续时间
+                await AsyncCronTaskCRUD.update_task_execution_duration(db, task_id, duration)
 
-                except Exception as e:
-                    success = False
-                    log_detail = f"任务执行异常: {str(e)}"
-                    logger.error(f"定时任务执行异常: {task['task_name']}, 错误: {str(e)}")
+                await AsyncTaskLogsCRUD.create_task_log(db, log_data)
 
-                finally:
-                    end_time = datetime.now()
-                    duration = int((end_time - start_time).total_seconds())
-
-                    # 异步更新任务的执行持续时间
-                    await AsyncCronTaskCRUD.update_task_execution_duration(db, task_id, duration)
-
-                    # —— W3-4：六态 outcome / skip_reason 收敛 ——
-                    # 1) skipped 键不再丢弃：skipped=True → outcome=skipped +
-                    #    skip_reason（结果带机器码则用，否则默认 resource_busy）；
-                    # 2) 结果显式携带合法 outcome 则采用（partial/no_action/cancelled）；
-                    # 3) 否则按 success 布尔映射（True→success、False→failed）。
-                    result_dict = result if isinstance(result, dict) else {}
-                    if result_dict.get("skipped"):
-                        outcome = OUTCOME_SKIPPED
-                        skip_reason = result_dict.get("skip_reason") or SKIP_REASON_RESOURCE_BUSY
-                    elif result_dict.get("outcome") in _VALID_OUTCOMES:
-                        outcome = result_dict["outcome"]
-                        skip_reason = result_dict.get("skip_reason") or (
-                            SKIP_REASON_RESOURCE_BUSY if outcome == OUTCOME_SKIPPED else None
-                        )
-                    else:
-                        outcome = _SUCCESS_TO_OUTCOME.get(success, OUTCOME_FAILED)
-                        skip_reason = None
-
-                    # 异步创建任务日志（success 保持原语义，outcome 是业务结果）
-                    log_data = {
-                        "task_id": task_id,
-                        "task_name": task["task_name"],
-                        "task_type": task["task_type"],
-                        "start_time": start_time,
-                        "end_time": end_time,
-                        "duration": duration,
-                        "success": success,
-                        "outcome": outcome,
-                        "skip_reason": skip_reason,
-                        "log_detail": log_detail,
-                    }
-
-                    await AsyncTaskLogsCRUD.create_task_log(db, log_data)
-
-                    # W3-4：更新任务数据新鲜度——每次执行更新
-                    # last_attempt_at/last_outcome/last_skip_reason/last_run_id；
-                    # last_success_at 仅当 outcome ∈ {success, partial, no_action} 推进。
-                    await AsyncCronTaskCRUD.update_task_freshness(
-                        db,
-                        task_id,
-                        last_attempt_at=end_time,
-                        last_outcome=outcome,
-                        last_skip_reason=skip_reason,
-                        last_run_id=run_id,
-                        advance_success=outcome in _SUCCESS_OUTCOMES,
-                    )
-
-                # 更新任务状态为空闲（在事务外）
-                await self._update_task_status(task_id, 2)
+                # W3-4：更新任务数据新鲜度——每次执行更新
+                # last_attempt_at/last_outcome/last_skip_reason/last_run_id；
+                # last_success_at 仅当 outcome ∈ {success, partial, no_action} 推进。
+                await AsyncCronTaskCRUD.update_task_freshness(
+                    db,
+                    task_id,
+                    last_attempt_at=end_time,
+                    last_outcome=outcome,
+                    last_skip_reason=skip_reason,
+                    last_run_id=run_id,
+                    advance_success=outcome in _SUCCESS_OUTCOMES,
+                )
 
         except Exception as e:
-            logger.error(f"执行定时任务时发生严重错误: {str(e)}")
+            logger.error(f"执行定时任务时发生严重错误: {str(e)}", exc_info=True)
         finally:
+            # 状态复位与运行标记清理：读取失败早退 / 严重异常路径同样到达此处，
+            # 修复旧实现 status=1 卡死的存量缺陷（早退 return 绕过 status=2，
+            # 任务页持续显示“运行中”直到下一轮跑完）。
+            await self._update_task_status(task_id, 2)
             # 清除运行标记
             self.running_tasks[task_id] = False
 
@@ -724,17 +732,19 @@ class CronTaskExecutor:
                                 }
 
                             # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
+                            # 同步 execute 经 to_thread 执行：直接在事件循环线程上跑会阻塞
+                            # 整个 API（含 active-torrents 轮询），制造全局假超时。
                             if asyncio.iscoroutinefunction(execute_method):
                                 result = await execute_method(app=self.app)
                             else:
-                                result = execute_method(app=self.app)
+                                result = await asyncio.to_thread(execute_method, app=self.app)
                             return normalize_internal_result(result)
                     else:
                         # 轻量任务：不进入资源背压，走原路径
                         if asyncio.iscoroutinefunction(execute_method):
                             result = await execute_method(app=self.app)
                         else:
-                            result = execute_method(app=self.app)
+                            result = await asyncio.to_thread(execute_method, app=self.app)
                         return normalize_internal_result(result)
                 else:
                     return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}

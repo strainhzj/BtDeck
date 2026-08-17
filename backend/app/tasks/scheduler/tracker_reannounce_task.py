@@ -221,10 +221,6 @@ class TrackerReannounceTask(BaseSyncTask):
 
         return torrent_records, matched_config_ids
 
-    async def execute_with_app(self, app, db) -> Dict[str, Any]:
-        """提供给测试使用的简化入口"""
-        return await self.execute()
-
 
 # ==================== 工具函数 ====================
 
