@@ -9,7 +9,7 @@ import asyncio
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from threading import Lock
@@ -35,6 +35,14 @@ router = APIRouter()
 # 经 DownloaderApiRuntime INTERACTIVE lane 调用，复用 per-downloader 限流与 timeout 语义，
 # 避免 cron 同步期间速度接口成为旁路压力源（sync-resource-governance code review 修复）。
 _DOWNLOADER_TIMEOUT = float(os.getenv("SPEED_API_TIMEOUT", "3.0"))
+
+# 离线跳过的"新鲜度"窗口（秒），可通过环境变量配置。
+# 状态轮询（downloader_status_polling_task，10s 热间隔）对离线下载器也会刷新
+# last_update，因此 is_online=False 且 last_update 在窗口内才是可信的离线判定。
+# 窗口取 60s 而非轮询周期的整数倍下限：多离线下载器时单轮轮询耗时约
+# N×6s/5并发，窗口过小会被轮询吞吐下降击穿导致误放行。last_update 缺失
+# （冷启动/新加入，从未探测）或过旧（轮询停摆兜底）时保守放行。
+_OFFLINE_FRESH_WINDOW = float(os.getenv("SPEED_OFFLINE_FRESH_WINDOW", "60.0"))
 
 # TTL 队列配置
 _TTL_SECONDS = 60  # 种子从活跃列表消失后保留观察的时长（秒）
@@ -317,11 +325,12 @@ async def _supplement_disappeared(
     if not disappeared_by_dl:
         return []
 
-    # 构建 downloader_id -> client 映射
+    # 构建 downloader_id -> client 映射（排除状态轮询新鲜判定离线的下载器，
+    # 与 _process_downloader_speeds 的跳过口径一致，不对死下载器补查）
     dl_map: Dict[str, Dict[str, Any]] = {}
     for d in cached_downloaders:
         dl_id = getattr(d, "downloader_id", None)
-        if dl_id and getattr(d, "fail_time", 0) == 0:
+        if dl_id and getattr(d, "fail_time", 0) == 0 and not _is_freshly_offline(d):
             dl_map[dl_id] = {
                 "client": getattr(d, "client", None),
                 "downloader_type": getattr(d, "downloader_type", -1),
@@ -440,12 +449,34 @@ async def _sync_torrents_to_db(torrent_data: List[Dict[str, Any]]) -> None:
 class _DownloaderSpeedResult:
     torrents: List[Dict[str, Any]]
     complete: bool
+    # complete=False 时的失败原因机器码：fail_time / no_client / unsupported_client /
+    # timeout / api_error / unknown。complete=True 时无意义（含离线跳过的空结果）。
+    reason: str = ""
 
 
 @dataclass
 class _ActiveSpeedGatherResult:
     torrents: List[Dict[str, Any]]
     complete: bool
+    # complete=False 时收集的失败下载器明细 [{downloader_id, nickname, reason}]，
+    # 供 206 msg 与结构化日志输出。离线跳过（complete=True）不计入。
+    failed: List[Dict[str, Any]] = field(default_factory=list)
+
+
+def _is_freshly_offline(downloader: Any) -> bool:
+    """状态轮询是否新鲜地判定该下载器离线。
+
+    is_online=False 且 last_update 距今在 _OFFLINE_FRESH_WINDOW 内才可信：
+    - last_update 缺失（None）：从未被状态轮询探测（冷启动/新加入的 VO 默认值），放行；
+    - last_update 过旧：轮询停摆，放行由速度调用本身兜底。
+    is_online 字段缺失或为 None/True 时同样放行（旧 mock 对象兼容）。
+    """
+    if getattr(downloader, "is_online", None) is not False:
+        return False
+    last_update = getattr(downloader, "last_update", None)
+    if not last_update:
+        return False
+    return (time.time() - last_update) < _OFFLINE_FRESH_WINDOW
 
 
 async def _process_downloader_speeds(downloader: Any) -> _DownloaderSpeedResult:
@@ -454,11 +485,17 @@ async def _process_downloader_speeds(downloader: Any) -> _DownloaderSpeedResult:
     抽自 get_active_torrents 端点，供 _gather_active_speeds 复用。
     """
     if getattr(downloader, "fail_time", 0) > 0:
-        return _DownloaderSpeedResult([], False)
+        return _DownloaderSpeedResult([], False, reason="fail_time")
+
+    # 状态轮询新鲜判定离线：不发起远程调用（连接拒绝/超时必然失败，只会拖垮
+    # complete 判定并浪费 3s 预算）。离线是已知状态，按"完整但空"处理，
+    # 其种子本就无速度，也不会污染活动集合快照。
+    if _is_freshly_offline(downloader):
+        return _DownloaderSpeedResult([], True)
 
     client = getattr(downloader, "client", None)
     if client is None:
-        return _DownloaderSpeedResult([], False)
+        return _DownloaderSpeedResult([], False, reason="no_client")
 
     nickname = getattr(downloader, "nickname", "unknown")
     downloader_id = getattr(downloader, "downloader_id", "")
@@ -471,18 +508,18 @@ async def _process_downloader_speeds(downloader: Any) -> _DownloaderSpeedResult:
             return _DownloaderSpeedResult(torrents, True)
         else:
             logger.warning(f"不支持的客户端类型: {type(client)}")
-            return _DownloaderSpeedResult([], False)
+            return _DownloaderSpeedResult([], False, reason="unsupported_client")
     except asyncio.TimeoutError:
         logger.warning(f"获取下载器 {nickname} 速度超时({_DOWNLOADER_TIMEOUT}s)，跳过")
-        return _DownloaderSpeedResult([], False)
+        return _DownloaderSpeedResult([], False, reason="timeout")
     except (QbAPIError, TransmissionError) as e:
         # 分类捕获：客户端API异常（网络、认证、协议错误）
         logger.warning(f"下载器 {nickname} API错误: {e}", exc_info=True)
-        return _DownloaderSpeedResult([], False)
+        return _DownloaderSpeedResult([], False, reason="api_error")
     except Exception as e:
         # 未知异常：记录完整堆栈便于调试
         logger.error(f"下载器 {nickname} 未知错误: {e}", exc_info=True)
-        return _DownloaderSpeedResult([], False)
+        return _DownloaderSpeedResult([], False, reason="unknown")
 
 
 async def _gather_active_speeds(cached_downloaders: List[Any]) -> _ActiveSpeedGatherResult:
@@ -495,6 +532,7 @@ async def _gather_active_speeds(cached_downloaders: List[Any]) -> _ActiveSpeedGa
     results = await asyncio.gather(*[_process_downloader_speeds(d) for d in cached_downloaders])
 
     active_torrents: List[Dict[str, Any]] = []
+    failed: List[Dict[str, Any]] = []
     for downloader, result in zip(cached_downloaders, results):
         dl_id = getattr(downloader, "downloader_id", "")
         dl_type = getattr(downloader, "downloader_type", -1)
@@ -502,10 +540,32 @@ async def _gather_active_speeds(cached_downloaders: List[Any]) -> _ActiveSpeedGa
             t["downloader_id"] = dl_id
             t["downloader_type"] = dl_type
         active_torrents.extend(result.torrents)
+        if not result.complete:
+            failed.append(
+                {
+                    "downloader_id": dl_id,
+                    "nickname": getattr(downloader, "nickname", "unknown"),
+                    "reason": result.reason or "unknown",
+                }
+            )
     return _ActiveSpeedGatherResult(
         torrents=active_torrents,
         complete=all(result.complete for result in results),
+        failed=failed,
     )
+
+
+def _partial_failure_msg(failed: List[Dict[str, Any]]) -> str:
+    """206 提示文案：附加失败下载器名称（超过 5 个截断），便于一次定位故障成员。
+
+    前端 buildSpeedSnapshot 只按 code 分支、不读 msg 文本；完整明细
+    （含 downloader_id/reason 机器码）由调用方的结构化日志输出。
+    """
+    if not failed:  # 防御：complete=False 时 failed 理论上非空
+        return "部分下载器速度获取失败，活动快照尚未就绪"
+    names = [str(f.get("nickname") or f.get("downloader_id") or "unknown") for f in failed]
+    shown = "、".join(names[:5]) + f" 等{len(names)}个" if len(names) > 5 else "、".join(names)
+    return f"部分下载器速度获取失败，活动快照尚未就绪（失败: {shown}）"
 
 
 @router.get("/active-torrents", summary="获取所有活跃种子的实时速度和进度")
@@ -579,9 +639,12 @@ async def get_active_torrents(
 
         if gathered.complete:
             return CommonResponse(status="success", msg="获取速度数据成功", code="200", data=active_torrents)
+        # 206 携带失败明细（msg 截断 + 结构化日志），一次请求即可定位故障下载器。
+        # 前端只按 code 分支（buildSpeedSnapshot），不依赖 msg 文本，data 结构不变。
+        logger.warning("active-torrents 部分下载器速度获取失败: %s", gathered.failed)
         return CommonResponse(
             status="partial",
-            msg="部分下载器速度获取失败，活动快照尚未就绪",
+            msg=_partial_failure_msg(gathered.failed),
             code="206",
             data=active_torrents,
         )

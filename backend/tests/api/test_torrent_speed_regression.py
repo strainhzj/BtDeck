@@ -359,6 +359,119 @@ class TestSupplementDisappeared:
 # --------------------------------------------------------------------------- #
 
 
+class TestIsFreshlyOffline:
+    """A-1 helper：_is_freshly_offline 的判定分支与新鲜窗口边界。
+
+    is_online/last_update 由 downloader_status_polling_task（10s 热间隔）维护；
+    离线下载器 last_update 仍被持续刷新（端口不通也算更新成功），因此判据是
+    "is_online is False 且 last_update 在窗口内"，与 last_update 是否被刷新无关。
+    """
+
+    def _make(self, **attrs):
+        from types import SimpleNamespace
+
+        # is_online/last_update 缺省不设置，模拟旧 mock 对象/未探测 VO
+        return SimpleNamespace(**attrs)
+
+    def test_missing_is_online_attribute(self):
+        """无 is_online 属性（旧 mock 兼容）→ 放行。"""
+        from app.api.endpoints import torrent_speed
+
+        assert torrent_speed._is_freshly_offline(self._make()) is False
+
+    def test_is_online_none_or_true(self):
+        """is_online 为 None / True → 放行（VO 默认 False 之外的语义不跳过）。"""
+        from app.api.endpoints import torrent_speed
+        import time
+
+        now = time.time()
+        assert torrent_speed._is_freshly_offline(self._make(is_online=None, last_update=now)) is False
+        assert torrent_speed._is_freshly_offline(self._make(is_online=True, last_update=now)) is False
+
+    def test_offline_without_last_update(self):
+        """is_online=False 但 last_update 缺失（冷启动/新加入）→ 放行。"""
+        from app.api.endpoints import torrent_speed
+
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False)) is False
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=None)) is False
+
+    def test_offline_fresh_probe_boundary(self):
+        """离线 + last_update 恰在窗口内/外/边界的判定。"""
+        from app.api.endpoints import torrent_speed
+        import time
+
+        window = torrent_speed._OFFLINE_FRESH_WINDOW
+        now = time.time()
+        # 窗口内（刚探测过）→ 跳过
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=now - window / 2)) is True
+        # 超出窗口（轮询停摆兜底）→ 放行
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=now - window - 1)) is False
+        # 恰好等于窗口：time.time() 推移使差值略增，边界视为窗口内（< 判定）
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=now - window + 1)) is True
+
+
+class TestSupplementOfflineFilter:
+    """_supplement_disappeared 的 dl_map 离线过滤（与 _process_downloader_speeds 口径一致）。"""
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_freshly_offline_excluded_from_dl_map(self, mock_call):
+        """新鲜离线下载器不进入补查映射，不对其发起远程调用。"""
+        from app.api.endpoints.torrent_speed import _supplement_disappeared
+        from qbittorrentapi import Client as qbClient
+        import time
+
+        mock_client = MagicMock(spec=qbClient)
+        mock_dl = MagicMock()
+        mock_dl.downloader_id = "dl_off"
+        mock_dl.fail_time = 0
+        mock_dl.client = mock_client
+        mock_dl.downloader_type = 0
+        mock_dl.nickname = "offline_dl"
+        # MagicMock 自动属性需显式设值：新鲜离线
+        mock_dl.is_online = False
+        mock_dl.last_update = time.time()
+
+        disappeared = {"dl_off": [{"hash": "h1"}]}
+        result = await _supplement_disappeared(disappeared, [mock_dl])
+        assert result == []
+        mock_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_stale_offline_still_supplemented(self, mock_call):
+        """last_update 过旧（轮询停摆）→ 不视为可信离线，仍参与补查。"""
+        from app.api.endpoints.torrent_speed import (
+            _OFFLINE_FRESH_WINDOW,
+            _supplement_disappeared,
+        )
+        from qbittorrentapi import Client as qbClient
+        import time
+
+        async def fake_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            return func(*args, **(kwargs or {}))
+
+        mock_call.side_effect = fake_call
+
+        mock_client = MagicMock(spec=qbClient)
+        mock_client.torrents_info.return_value = [
+            {"hash": "h1", "dlspeed": 0, "upspeed": 0, "progress": 0.8, "state": "stalledUP"}
+        ]
+        mock_dl = MagicMock()
+        mock_dl.downloader_id = "dl_stale"
+        mock_dl.fail_time = 0
+        mock_dl.client = mock_client
+        mock_dl.downloader_type = 0
+        mock_dl.nickname = "stale_dl"
+        mock_dl.is_online = False
+        mock_dl.last_update = time.time() - (_OFFLINE_FRESH_WINDOW + 30)
+
+        disappeared = {"dl_stale": [{"hash": "h1"}]}
+        result = await _supplement_disappeared(disappeared, [mock_dl])
+        assert len(result) == 1
+        mock_call.assert_called_once()
+
+
 class TestExceptionHandling:
     """验证已修复的 APIError 导入问题及其他异常处理"""
 

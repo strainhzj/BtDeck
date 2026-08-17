@@ -95,6 +95,20 @@ def client():
     app.dependency_overrides.clear()
 
 
+@pytest.fixture(autouse=True)
+def _reset_speed_globals():
+    """隔离模块级单例状态（_active_keys_cache / _ttl_queue），防用例间泄漏。
+
+    端点每轮会写入活动集合与 TTL 队列；不重置时前序用例的 PARTIAL/过期
+    快照会污染后续用例的 snapshot 断言。
+    """
+    torrent_speed._active_keys_cache.reset()
+    torrent_speed._ttl_queue._store.clear()
+    yield
+    torrent_speed._active_keys_cache.reset()
+    torrent_speed._ttl_queue._store.clear()
+
+
 def _real_call_downloader_api():
     """patch call_downloader_api 为“真实执行同步函数”，并断言走 INTERACTIVE lane。
 
@@ -283,3 +297,113 @@ class TestEndpointMustUseRuntime:
         # 进一步验证 lane 为 INTERACTIVE（与 _real_call_downloader_api 的断言互补）
         called_lane = call_records[0][1]
         assert called_lane == DownloadLane.INTERACTIVE
+
+
+# ============ A-1：新鲜离线下载器跳过（僵尸下载器根治） ============
+
+
+class TestFreshlyOfflineSkip:
+    """状态轮询新鲜判定离线的下载器不发起远程调用，不拖垮 complete 判定。
+
+    背景：失效下载器永久滞留 store 缓存（fail_time 剔除机制为死代码），前端
+    每秒轮询对它发起调用必然失败（连接拒绝/3s 超时），把整个响应拖成 206。
+    离线是已知状态（is_online=False 且 last_update 新鲜），按"完整但空"处理。
+    """
+
+    def test_freshly_offline_skipped_without_remote_call(self, client):
+        """离线且 last_update 新鲜 → 不发起调用，返回 200（complete 语义）。"""
+        import time
+
+        dl = _make_qb_downloader(torrents=[{"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}])
+        dl.is_online = False
+        dl.last_update = time.time()
+        _set_store(client.app, [dl])
+        with patch("app.api.endpoints.torrent_speed.call_downloader_api") as mock_call:
+            r = client.get(URL)
+        body = r.json()
+        assert body["code"] == "200"
+        assert body["data"] == []
+        mock_call.assert_not_called()
+        # 活动快照为权威空集（READY_EMPTY），active_only 过滤不退化为 PARTIAL
+        snap = torrent_speed.get_active_keys_snapshot()
+        assert snap.ready
+        assert snap.status == torrent_speed.ActiveSnapshotStatus.READY_EMPTY
+
+    def test_offline_without_probe_still_called(self, client):
+        """last_update 缺失（冷启动/新加入的 VO 默认 None）→ 放行，不误杀启动期。"""
+        dl = _make_qb_downloader(torrents=[{"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}])
+        dl.is_online = False  # 不设 last_update（SimpleNamespace 无该属性 → getattr None）
+        _set_store(client.app, [dl])
+        call_records = []
+
+        async def spy_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            call_records.append(downloader_id)
+            return func(*args, **(kwargs or {}))
+
+        with patch("app.api.endpoints.torrent_speed.call_downloader_api", side_effect=spy_call):
+            r = client.get(URL)
+        assert r.json()["code"] == "200"
+        assert call_records == ["dl_qb"]
+
+    def test_offline_stale_probe_still_called(self, client):
+        """轮询停摆兜底：last_update 过旧（超出新鲜窗口）→ 放行由速度调用兜底。"""
+        import time
+
+        dl = _make_qb_downloader(torrents=[{"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}])
+        dl.is_online = False
+        dl.last_update = time.time() - (torrent_speed._OFFLINE_FRESH_WINDOW + 10)
+        _set_store(client.app, [dl])
+        call_records = []
+
+        async def spy_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            call_records.append(downloader_id)
+            return func(*args, **(kwargs or {}))
+
+        with patch("app.api.endpoints.torrent_speed.call_downloader_api", side_effect=spy_call):
+            r = client.get(URL)
+        assert r.json()["code"] == "200"
+        assert call_records == ["dl_qb"]
+
+    def test_online_with_fresh_probe_still_called(self, client):
+        """is_online=True 时无论 last_update 如何都正常调用。"""
+        import time
+
+        dl = _make_qb_downloader(torrents=[{"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}])
+        dl.is_online = True
+        dl.last_update = time.time()
+        _set_store(client.app, [dl])
+        call_records = []
+
+        async def spy_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            call_records.append(downloader_id)
+            return func(*args, **(kwargs or {}))
+
+        with patch("app.api.endpoints.torrent_speed.call_downloader_api", side_effect=spy_call):
+            r = client.get(URL)
+        assert r.json()["code"] == "200"
+        assert call_records == ["dl_qb"]
+
+    def test_mixed_online_failure_and_offline_skip_returns_206(self, client):
+        """在线下载器超时 + 离线下载器跳过 → 206 只归因在线失败者（msg 明细口径）。"""
+        import asyncio
+        import time
+
+        online_dl = _make_qb_downloader(torrents=[])
+        online_dl.nickname = "online_timeout_dl"
+        offline_dl = _make_qb_downloader(dl_id="dl_off", torrents=[{"hash": "h2", "dlspeed": 100, "upspeed": 0}])
+        offline_dl.nickname = "offline_skip_dl"
+        offline_dl.is_online = False
+        offline_dl.last_update = time.time()
+
+        async def timeout_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            raise asyncio.TimeoutError()
+
+        _set_store(client.app, [online_dl, offline_dl])
+        with patch("app.api.endpoints.torrent_speed.call_downloader_api", side_effect=timeout_call):
+            r = client.get(URL)
+        body = r.json()
+        assert body["code"] == "206"
+        assert body["status"] == "partial"
+        # 失败明细只含在线失败者，离线跳过不计入（complete 语义与 msg 不打架）
+        assert "online_timeout_dl" in body["msg"]
+        assert "offline_skip_dl" not in body["msg"]
