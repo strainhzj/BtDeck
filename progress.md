@@ -26,6 +26,12 @@
 - **审计 IP 真实链路**（+8 项）：单转移端点不 patch extract、TestClient 携带 `X-Forwarded-For` 头验证审计行记录首值 203.0.113.9（与 nginx 生产行为一致）；孤儿 5 端点（hardlink-delete/restore/ignore/cleanup/purge）同样走真实头提取并断言服务/提交 kwargs 收到 IP；无代理头回退 `request.client.host`；`execute_job` purge 路径 IP 透传；服务层 `cleanup_orphans` 的 ORPHAN_CLEANUP 审计直接收到 ip_address。
 - 合计：本次三项修复的回归保护从 21 项增至 41 项。
 
+### 转移操作日志补种子/下载器名称（同日第四批）
+
+- 需求：转移写入 torrent_audit_log 的操作日志缺种子名称与下载器名称（列表页空列、无法按种子名搜索）。
+- 实现：`_log_transfer_audit` 新增 torrent_name/source_downloader_name 参数并放入 operation_detail（AuditLogService 自动提取到 torrent_name/downloader_name 冗余列）；下载器口径统一取来源下载器——downloader_name=源 nickname、downloader_id 同步从目标改为来源（保持 id/name 同源，按下载器筛选才一致）；双向 ID 仍保留在 detail JSON。早退失败路径（源下载器不存在等）名称为空串。
+- 测试：TestBatchTransferAudit 三项审计用例补冗余列断言（torrent_name==种子、downloader_name==源、downloader_id==来源 ID、detail JSON 双向 ID 完整）；定向 51 passed。
+
 ### 遗留
 
 - `extract_audit_info_from_request` 取 XFF 首值可被客户端伪造（nginx 追加真实 IP 在末尾），待用户决定是否收紧（取尾值/X-Real-IP/直接 client.host）。

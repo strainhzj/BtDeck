@@ -52,10 +52,16 @@ async def _log_transfer_audit(
     error_message: Optional[str] = None,
     ip_address: Optional[str] = None,
     user_agent: Optional[str] = None,
+    torrent_name: Optional[str] = None,
+    source_downloader_name: Optional[str] = None,
 ):
     """转移操作写入 torrent_audit_log（操作日志页面可见）。
 
     best-effort：审计失败仅记 warning，不阻断转移响应。
+    torrent_name/downloader_name 放入 operation_detail 后由
+    AuditLogService 自动提取到冗余列（列表页展示 + 种子名称搜索）；
+    下载器口径取来源下载器（downloader_id/downloader_name 同源，
+    目标下载器信息保留在 detail 中）。
     """
     try:
         audit_service = AuditLogService(db)
@@ -67,6 +73,8 @@ async def _log_transfer_audit(
                 "source_downloader_id": source_downloader_id,
                 "target_downloader_id": target_downloader_id,
                 "target_path": target_path,
+                "torrent_name": torrent_name or "",
+                "downloader_name": source_downloader_name or "",
             },
             operation_result=(
                 AuditOperationResult.SUCCESS
@@ -74,7 +82,7 @@ async def _log_transfer_audit(
                 else AuditOperationResult.FAILED
             ),
             error_message=error_message,
-            downloader_id=str(target_downloader_id),
+            downloader_id=str(source_downloader_id),
             ip_address=ip_address,
             user_agent=user_agent,
         )
@@ -181,6 +189,8 @@ async def transfer_seed(
                     error_message=result.get("error_message"),
                     ip_address=audit_info.get("ip_address"),
                     user_agent=audit_info.get("user_agent"),
+                    torrent_name=result.get("torrent_name"),
+                    source_downloader_name=result.get("source_downloader_name"),
                 )
 
                 if result["success"]:
@@ -315,6 +325,8 @@ async def batch_transfer_seeds(
                         error_message=result.get("error_message"),
                         ip_address=audit_info.get("ip_address"),
                         user_agent=audit_info.get("user_agent"),
+                        torrent_name=result.get("torrent_name"),
+                        source_downloader_name=result.get("source_downloader_name"),
                     )
 
                 # 构建响应数据

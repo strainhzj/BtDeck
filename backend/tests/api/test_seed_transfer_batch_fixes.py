@@ -174,6 +174,10 @@ class TestBatchTransferAudit:
         assert all(row.operation_type == "transfer" for row in rows)
         assert all(row.operator == "tester" for row in rows)
         assert {row.operation_result for row in rows} == {"success", "failed"}
+        # 冗余列：种子名称 + 来源下载器名称（列表页展示与名称搜索依赖）
+        assert all(row.torrent_name == "种子" for row in rows)
+        assert all(row.downloader_name == "源" for row in rows)
+        assert all(row.downloader_id == "1" for row in rows)  # 来源下载器口径
 
     async def test_audit_rows_record_request_ip_and_user_agent(self, batch_client):
         """审计 IP：端点从请求提取 ip_address/user_agent 并写入审计行。"""
@@ -232,3 +236,15 @@ class TestBatchTransferAudit:
         assert len(rows) == 1
         assert rows[0].ip_address == "203.0.113.9"
         assert rows[0].user_agent == "regression-agent"
+        # 冗余列：种子名称 + 来源下载器名称/ID
+        assert rows[0].torrent_name == "种子"
+        assert rows[0].downloader_name == "源"
+        assert rows[0].downloader_id == "1"
+        # detail JSON 保留双向下载器信息
+        import json as _json
+
+        detail = _json.loads(rows[0].operation_detail)
+        assert detail["source_downloader_id"] == "1"
+        assert detail["target_downloader_id"] == "2"
+        assert detail["torrent_name"] == "种子"
+        assert detail["downloader_name"] == "源"

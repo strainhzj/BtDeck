@@ -4019,14 +4019,14 @@
         },
         {
           "id": "audit-ip-transfer",
-          "name": "转移审计补 IP/user_agent",
+          "name": "转移审计补 IP/user_agent 与种子名称/来源下载器名称",
           "status": "done",
           "scope": "backend",
           "files": [
             "app/api/endpoints/seed_transfer.py",
             "tests/api/test_seed_transfer_batch_fixes.py"
           ],
-          "evidence": "两端点加 request 参数，_log_transfer_audit 传 ip_address/user_agent；6 tests passed：含单转移端点真实 X-Forwarded-For 提取链路（不 patch extract）"
+          "evidence": "两端点加 request 参数，_log_transfer_audit 传 ip_address/user_agent；operation_detail 增加 torrent_name/downloader_name（来源下载器 nickname），自动提取到审计冗余列（列表页展示+名称搜索），downloader_id 对齐来源口径；6 tests passed：含单转移端点真实 XFF 链路与冗余列断言"
         },
         {
           "id": "audit-ip-orphan",
