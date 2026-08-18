@@ -191,7 +191,7 @@ class User extends VuexModule implements IUserState {
       const data = response.data
 
       // 检查API返回的数据结构
-      let roles, name, avatar, introduction, userId, twoFactorFlag
+      let roles, name, avatar, introduction, userId, twoFactorFlag, mustChangePassword
       if (data.user) {
         // 如果API返回 {user: {roles, name, avatar, introduction}} 格式
         const userData = data.user
@@ -201,6 +201,7 @@ class User extends VuexModule implements IUserState {
         avatar = userData.avatar || 'https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png'
         introduction = userData.introduction || ''
         twoFactorFlag = userData.twoFactorFlag || '0'
+        mustChangePassword = userData.mustChangePassword
       } else {
         // 如果API直接返回用户信息
         userId = data.userId || ''
@@ -209,6 +210,7 @@ class User extends VuexModule implements IUserState {
         avatar = data.avatar || 'https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png'
         introduction = data.introduction || ''
         twoFactorFlag = data.twoFactorFlag || '0'
+        mustChangePassword = data.mustChangePassword
       }
 
       // roles must be a non-empty array
@@ -221,6 +223,12 @@ class User extends VuexModule implements IUserState {
       this.SET_AVATAR(avatar)
       this.SET_INTRODUCTION(introduction)
       this.SET_TWO_FACTOR_FLAG(twoFactorFlag)
+      // 强制改密标志实时同步（安全修复 W9 补全）：仅当后端明确下发时才写，
+      // 滚动部署（新前端 + 旧后端无该字段）时不误清登录时置位的标志。
+      // 不可用 || 兜底——false 会被吞掉
+      if (mustChangePassword !== undefined) {
+        this.SET_MUST_CHANGE_PASSWORD(Boolean(mustChangePassword))
+      }
       // 如果userId存在且不为空，保存到状态和localStorage
       if (userId) {
         this.SET_USER_ID(userId)

@@ -363,15 +363,9 @@ export default class extends Vue {
     // 初始化2FA状态
     this.isEnabled2FA = this.twoFactorFlag === '1'
 
-    // 强制改密提示（安全修复 W9）：路由守卫把强制改密用户引导到本页
-    const forceChange = this.$route.query.forceChange
-    if (forceChange === '1') {
-      this.$message({
-        message: '首次登录或仍在使用默认密码，请立即修改密码',
-        type: 'warning',
-        duration: 6000
-      })
-    }
+    // 强制改密引导提示（安全修复 W9）由路由守卫统一弹出（permission.ts
+    // 的 forceChangeRedirect）：拦截重定向回本页不会重新挂载，mounted
+    // 提示无法覆盖"点击其它菜单被弹回"的场景，且会与守卫提示双弹
   }
 
   beforeDestroy() {
@@ -694,6 +688,12 @@ export default class extends Vue {
 
       // 强制改密标志清除（安全修复 W9）：改密后路由守卫不再拦截
       UserModule.SetMustChangePassword(false)
+      // 清除 URL 上的 forceChange 标记，避免 F5 重挂载时再次弹出过期警告
+      if (this.$route.query.forceChange !== undefined) {
+        const query = { ...this.$route.query }
+        delete query.forceChange
+        this.$router.replace({ query }).catch(() => undefined)
+      }
       this.cancelPasswordChange()
     } catch (error) {
       this.$message({

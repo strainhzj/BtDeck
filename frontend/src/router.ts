@@ -226,6 +226,9 @@ const router = new Router({
     {
       path: '/settings',
       component: Layout,
+      // 父路径必须解析到真实页面（强制改密守卫的落点）：缺 redirect 时
+      // /settings 只渲染 Layout，内容区为空占位，改密表单不可达（死锁事故）
+      redirect: '/settings/index',
       children: [
         {
           path: 'index',

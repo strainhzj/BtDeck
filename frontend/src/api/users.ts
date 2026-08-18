@@ -8,6 +8,8 @@ export interface UserInfoData {
   avatar?: string
   introduction?: string
   twoFactorFlag?: string
+  /** 强制改密标志实时下发（安全修复 W9 补全），旧后端可能缺失 */
+  mustChangePassword?: boolean
   user?: UserInfoData
 }
 
