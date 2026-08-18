@@ -163,89 +163,97 @@ def get_torrent_infos(
         query = query.filter(TorrentInfo.category.like(like_pattern))
         count_query = count_query.filter(TorrentInfo.category.like(like_pattern))
 
-    if tracker:
-        tracker_query_result = (
-            db.query(TrackerInfo.torrent_info_id)
-            .filter(TrackerInfo.tracker_url.like(f"%{tracker}%"))
-            .filter(TrackerInfo.dr == 0)
-            .all()
-        )
-        if tracker_query_result.__len__() > 0:
-            info_id_list = [row[0] for row in tracker_query_result]
-            query = query.filter(TorrentInfo.info_id.in_(info_id_list))
-            count_query = count_query.filter(TorrentInfo.info_id.in_(info_id_list))
-
-    if tracker_domain is not None:
-        requested_domains = extract_domains_from_trackers(
-            [value.strip() for value in tracker_domain.split(",") if value.strip()]
-        )
-        if not requested_domains:
-            query = query.filter(false())
-            count_query = count_query.filter(false())
-        else:
-            domain_conditions = []
-            lowered_url = func.lower(TrackerInfo.tracker_url)
-            lowered_host = func.lower(TrackerInfo.tracker_host)
-            for domain in requested_domains:
-                # tracker_host 由同步任务保存为 netloc（可能带端口）；URL 作为
-                # 旧数据/手动写入数据的回退，均只匹配 URL 的主机部分。
-                domain_conditions.append(
-                    or_(
-                        lowered_host == domain,
-                        lowered_host.like(f"{domain}:%"),
-                        lowered_url == domain,
-                        lowered_url.like(f"{domain}/%"),
-                        lowered_url.like(f"{domain}:%"),
-                        lowered_url.like(f"%://{domain}"),
-                        lowered_url.like(f"%://{domain}/%"),
-                        lowered_url.like(f"%://{domain}:%"),
-                    )
-                )
-            tracker_domain_exists = (
-                db.query(TrackerInfo.tracker_id)
-                .filter(
-                    TrackerInfo.torrent_info_id == TorrentInfo.info_id,
-                    TrackerInfo.dr == 0,
-                    or_(*domain_conditions),
-                )
-                .exists()
+    # 状态与 Tracker 是种子行级属性：若参与同内容分组候选判定，组内仅剩一条
+    # 错误/命中任务时整个 (name,size) 组会因“不同 Hash 数 < 2”被筛塌，与功能
+    # 目的（从同内容组里找出错误/特定 Tracker 的任务）相悖。因此 same_content_only
+    # 时这三个筛选延后到分组 join 之后应用，仅过滤组内显示行；普通列表模式在
+    # 原位置立即应用，语义不变。
+    def _apply_row_display_filters(q, cq):  # noqa: ANN001 - 内部工具函数
+        if tracker:
+            tracker_query_result = (
+                db.query(TrackerInfo.torrent_info_id)
+                .filter(TrackerInfo.tracker_url.like(f"%{tracker}%"))
+                .filter(TrackerInfo.dr == 0)
+                .all()
             )
-            query = query.filter(tracker_domain_exists)
-            count_query = count_query.filter(tracker_domain_exists)
+            if tracker_query_result.__len__() > 0:
+                info_id_list = [row[0] for row in tracker_query_result]
+                q = q.filter(TorrentInfo.info_id.in_(info_id_list))
+                cq = cq.filter(TorrentInfo.info_id.in_(info_id_list))
 
-    # 状态筛选：支持多选（逗号分隔），error状态满足 status='error' 或 has_tracker_error=True 之一即可
-    if status:
-        # 支持多选：逗号分隔的字符串
-        statuses = [s.strip() for s in status.split(",") if s.strip()]
-
-        if len(statuses) == 0:
-            # 空列表：不添加过滤条件（避免SQL语法错误）
-            pass
-        elif len(statuses) == 1:
-            # 单个状态：使用原有逻辑
-            if statuses[0] == "error":
-                query = query.filter(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True)))
-                count_query = count_query.filter(
-                    or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
-                )
+        if tracker_domain is not None:
+            requested_domains = extract_domains_from_trackers(
+                [value.strip() for value in tracker_domain.split(",") if value.strip()]
+            )
+            if not requested_domains:
+                q = q.filter(false())
+                cq = cq.filter(false())
             else:
-                query = query.filter(TorrentInfo.status == statuses[0])
-                count_query = count_query.filter(TorrentInfo.status == statuses[0])
-        else:
-            # 多个状态：使用 or_ 组合多个条件（或关系）
-            status_conditions = []
-            for s in statuses:
-                if s == "error":
-                    # error 状态特殊处理
-                    status_conditions.append(
-                        or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+                domain_conditions = []
+                lowered_url = func.lower(TrackerInfo.tracker_url)
+                lowered_host = func.lower(TrackerInfo.tracker_host)
+                for domain in requested_domains:
+                    # tracker_host 由同步任务保存为 netloc（可能带端口）；URL 作为
+                    # 旧数据/手动写入数据的回退，均只匹配 URL 的主机部分。
+                    domain_conditions.append(
+                        or_(
+                            lowered_host == domain,
+                            lowered_host.like(f"{domain}:%"),
+                            lowered_url == domain,
+                            lowered_url.like(f"{domain}/%"),
+                            lowered_url.like(f"{domain}:%"),
+                            lowered_url.like(f"%://{domain}"),
+                            lowered_url.like(f"%://{domain}/%"),
+                            lowered_url.like(f"%://{domain}:%"),
+                        )
                     )
-                else:
-                    status_conditions.append(TorrentInfo.status == s)
+                tracker_domain_exists = (
+                    db.query(TrackerInfo.tracker_id)
+                    .filter(
+                        TrackerInfo.torrent_info_id == TorrentInfo.info_id,
+                        TrackerInfo.dr == 0,
+                        or_(*domain_conditions),
+                    )
+                    .exists()
+                )
+                q = q.filter(tracker_domain_exists)
+                cq = cq.filter(tracker_domain_exists)
 
-            if status_conditions:
-                query = query.filter(or_(*status_conditions))
-                count_query = count_query.filter(or_(*status_conditions))
+        # 状态筛选：支持多选（逗号分隔），error状态满足 status='error' 或 has_tracker_error=True 之一即可
+        if status:
+            # 支持多选：逗号分隔的字符串
+            statuses = [s.strip() for s in status.split(",") if s.strip()]
+
+            if len(statuses) == 0:
+                # 空列表：不添加过滤条件（避免SQL语法错误）
+                pass
+            elif len(statuses) == 1:
+                # 单个状态：使用原有逻辑
+                if statuses[0] == "error":
+                    q = q.filter(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True)))
+                    cq = cq.filter(or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True)))
+                else:
+                    q = q.filter(TorrentInfo.status == statuses[0])
+                    cq = cq.filter(TorrentInfo.status == statuses[0])
+            else:
+                # 多个状态：使用 or_ 组合多个条件（或关系）
+                status_conditions = []
+                for s in statuses:
+                    if s == "error":
+                        # error 状态特殊处理
+                        status_conditions.append(
+                            or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+                        )
+                    else:
+                        status_conditions.append(TorrentInfo.status == s)
+
+                if status_conditions:
+                    q = q.filter(or_(*status_conditions))
+                    cq = cq.filter(or_(*status_conditions))
+        return q, cq
+
+    if not same_content_only:
+        query, count_query = _apply_row_display_filters(query, count_query)
 
     active_table = None
     active_connection = None
@@ -307,6 +315,9 @@ def get_torrent_infos(
             )
             query = query.join(same_content_groups, same_content_join)
             count_query = count_query.join(same_content_groups, same_content_join)
+            # 状态/Tracker 仅过滤组内显示行，不参与上方分组候选判定：
+            # 组是否成立由未应用这三类筛选的候选集决定。
+            query, count_query = _apply_row_display_filters(query, count_query)
 
         if single_error_only:
             # 快捷排查只保留错误种子；唯一性基于全局可见任务计算，不能受当前

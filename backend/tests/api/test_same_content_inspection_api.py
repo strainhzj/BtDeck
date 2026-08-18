@@ -268,6 +268,105 @@ def test_same_content_filter_applies_combined_list_filters_before_grouping(clien
     assert _ids(body) == ["match-a", "match-b"]
 
 
+def test_same_content_status_filter_keeps_group_and_filters_display_rows(client, db_session):
+    # 生产案例回归：同内容组内仅剩 1 条错误任务时，组必须仍然成立——
+    # 状态是行级属性，只过滤组内显示行，不参与分组候选判定。
+    make_torrent(
+        db_session,
+        info_id="err-seed",
+        downloader_id="dl-a",
+        hash_="hash-err",
+        name="Broken Film",
+        size=4096,
+        status="error",
+        has_tracker_error=True,
+    )
+    make_torrent(
+        db_session,
+        info_id="ok-seed-a",
+        downloader_id="dl-a",
+        hash_="hash-ok-a",
+        name="Broken Film",
+        size=4096,
+        status="seeding",
+    )
+    make_torrent(
+        db_session,
+        info_id="ok-seed-b",
+        downloader_id="dl-b",
+        hash_="hash-ok-b",
+        name="Broken Film",
+        size=4096,
+        status="paused",
+    )
+
+    error_rows = client.get(
+        URL,
+        params={"same_content_only": "true", "status": "error", "limit": 20},
+    ).json()
+    assert error_rows["data"]["total"] == 1
+    assert _ids(error_rows) == ["err-seed"]
+
+    seeding_rows = client.get(
+        URL,
+        params={"same_content_only": "true", "status": "seeding", "limit": 20},
+    ).json()
+    assert seeding_rows["data"]["total"] == 1
+    assert _ids(seeding_rows) == ["ok-seed-a"]
+
+    multi_status_rows = client.get(
+        URL,
+        params={"same_content_only": "true", "status": "seeding,paused", "limit": 20},
+    ).json()
+    assert multi_status_rows["data"]["total"] == 2
+    assert set(_ids(multi_status_rows)) == {"ok-seed-a", "ok-seed-b"}
+
+
+def test_same_content_tracker_filters_are_display_level(client, db_session):
+    # Tracker 地址/主域名与状态同理：组内只有一条命中 Tracker 时组不塌，
+    # 结果只显示命中的那一行。
+    now = datetime(2026, 8, 14, 9, 0, 0)
+    for info_id, tracker_host in (("t-alpha", "alpha.example"), ("t-beta", "beta.example")):
+        make_torrent(
+            db_session,
+            info_id=info_id,
+            downloader_id="dl-a",
+            hash_=f"hash-{info_id}",
+            name="Tracker Film",
+            size=2048,
+            added_date=now,
+        )
+        db_session.add(
+            TrackerInfo(
+                tracker_id=f"tracker-{info_id}",
+                torrent_info_id=info_id,
+                tracker_name=f"Tracker {info_id}",
+                tracker_url=f"https://{tracker_host}/announce",
+                create_time=now,
+                create_by="tester",
+                update_time=now,
+                update_by="tester",
+                dr=0,
+            )
+        )
+    db_session.commit()
+
+    tracker_rows = client.get(
+        URL,
+        params={"same_content_only": "true", "tracker_like": "alpha.example", "limit": 20},
+    ).json()
+    assert tracker_rows["data"]["total"] == 1
+    assert _ids(tracker_rows) == ["t-alpha"]
+
+    domain_rows = client.get(
+        URL,
+        params={"same_content_only": "true", "tracker_domain": "alpha.example", "limit": 20},
+    ).json()
+    assert domain_rows["code"] == "200", domain_rows["msg"]
+    assert domain_rows["data"]["total"] == 1
+    assert _ids(domain_rows) == ["t-alpha"]
+
+
 def test_active_deletion_exclusion_applies_before_same_content_grouping(client, db_session):
     make_torrent(
         db_session,
