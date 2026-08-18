@@ -2568,6 +2568,22 @@
             "session-handoff.md"
           ],
           "evidence": "后端全量 3376 passed/7 skipped；同内容列表筛选与普通列表定向回归 40 passed，9 个专用 API 用例覆盖严格名称/大小/不同规范化 Hash、空名称/零大小/空 Hash及混合无效成员、组合普通条件先参与候选判定、回收站与活动删除排除、活动快照、复合主键稳定排序分页、低 SQLite 变量上限下 limit=100000、大页仅预取当前页 Tracker，以及旧 POST 端点 404。前端全量 43 suites/719 tests，定向 3 suites/36 tests，覆盖当前表格加载、筛选、排序、页大小、翻页、刷新保持 same_content_only，并在重复查询、高级搜索、模板和显式退出时清理模式；TypeScript、改动文件严格 ESLint、Black、Flake8、py_compile、生产 build、根 init.sh 与 git diff --check 通过。完整 npm run lint 仍仅被 3 个无关关键词测试文件的既有 5 条 warning 拦截；后端 mypy 在 torrent_helpers/torrent_crud 的既有 ORM/Pydantic 类型问题上报告 64 条。"
+        },
+        {
+          "id": "v1.0.6.40",
+          "name": "同内容排查状态与Tracker改为组内显示筛选",
+          "description": "语义修订：same_content_only 模式下 status/tracker_like/tracker_domain 不再参与分组候选判定，改为分组 join 后仅过滤组内显示行；其余筛选（关键字/下载器/路径/大小/时间/标签/分类/活动种子）仍参与候选判定，普通列表模式行为不变。修复生产场景：同名同大小多 Hash 组内仅 1 条错误任务时，同内容+status=error 因组塌返回 0，无法实现“从同内容种子里找出错误”的功能目的（如老男孩 20 副本仅 1 条 error，期望返回 1 条实际返回 0）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/api/test_same_content_inspection_api.py",
+            "backend/docs/api/same-content-inspection.md",
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md"
+          ],
+          "evidence": "2026-08-18: 同内容专用套件 11 passed（新增 status 显示级过滤复刻生产老男孩场景、tracker_like/tracker_domain 显示级过滤两组用例），普通列表回归 test_torrent_list_api.py 35 passed；改动文件 flake8/black/py_compile 通过；mypy 58 条与改动前完全一致（零新增，均为既有 ORM/Pydantic 问题）。生产副本库只读实测：同内容+老男孩+status=error 由 0 → 1（命中唯一 error 行 hash cfcb51db），同内容+老男孩仍 20，普通+老男孩+error 仍 1，同内容全局 17748。"
         }
       ]
     },

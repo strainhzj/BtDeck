@@ -1,5 +1,32 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-18 交接：同内容异常排查语义修订（v1.0.6.40，状态/Tracker 改组内显示筛选）
+
+### 问题与定性
+
+- 生产查询 `same_content_only=true&name_like=老男孩&status=error` 返回 total=0。用生产副本库（E:\Users\huangzj\Desktop\app.db，schema 已在 head）+ 真实 `get_torrent_infos` 复现：老男孩 20 条同名同大小不同 hash 中仅 1 条 status=error，旧口径“普通筛选先参与候选判定”使组内仅剩 1 hash，`HAVING COUNT(DISTINCT hash)>=2` 不成立 → 整组丢弃。
+- 用户确认语义修订口径：status + tracker_like/tracker_domain 均为行级属性，改为**组内显示筛选**；关键字/下载器/路径/大小/时间/标签/分类/活动种子仍参与成组判定。
+
+### 变更
+
+- `backend/app/api/endpoints/torrent_helpers.py`：三类筛选收进 `_apply_row_display_filters` 闭包（L171，逻辑逐字保留）；普通列表原位应用行为不变，`same_content_only` 延后到分组 join 后应用（L307-310 附近）。
+- `backend/tests/api/test_same_content_inspection_api.py`：+2 用例（status 显示级过滤复刻生产场景；tracker_like/tracker_domain 显示级）。既有 9 用例零修改仍通过。
+- `backend/docs/api/same-content-inspection.md`：两类筛选口径重写。
+- feature_list.json 新增 v1.0.6.40；progress.md/roadmap（根 README 功能域行+元信息、backend/api/README.md L43）同步。
+
+### 验证
+
+- 专用套件 11 passed + 普通列表回归 35 passed；flake8/black/py_compile 通过；mypy 58 条 stash 基线对比零新增；根 init.sh 通过；git diff --check 干净。
+- 生产副本库只读实测：目标查询 0 → 1（hash cfcb51db 错误行）；同内容+老男孩仍 20；普通+老男孩+error 仍 1。
+
+### 后续与边界
+
+- 未执行 Git 提交（用户未要求）。**部署提醒：生产实例需更新后端代码并重启后生效**；前端无需变更。
+- 附带发现未处理：仓库内 `backend/config/app.db`（开发库）落后 10 迁移缺 error_reason，当前代码直连会全量 500，需 `alembic upgrade head`；`data/backend/config/app.db`（compose 挂载部署库）全空且落后 20+ 迁移。
+- `has_tracker_error` 未暴露到 VO/前端，“做种中但 tracker 全挂”的种子在 UI 不可见（潜在 UX 增强项）。
+
+# Session Handoff - BtDeck 全栈项目
+
 ## 2026-08-16 交接：进度精度/转移落库/审计 IP 三项修复
 
 ### 当前结果

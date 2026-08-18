@@ -1,5 +1,30 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-18 - 同内容异常排查语义修订：状态/Tracker 改为组内显示筛选（v1.0.6.40）
+
+### 排查背景（生产问题：老男孩查询无结果）
+
+- 用户查询 `same_content_only=true&name_like=老男孩&status=error` 返回 `total=0`（200 成功）。用生产副本库（E:\Users\huangzj\Desktop\app.db，schema 已在 head ab68fe061d5b）+ 真实 `get_torrent_infos` 复现确认。
+- 数据事实：老男孩 20 条同名同大小（9033579165）不同 hash，当前仅 1 条 `status='error'`（hash cfcb51db）。旧口径"普通筛选先参与候选判定"使 status=error 过滤后组内只剩 1 hash，`HAVING COUNT(DISTINCT hash)>=2` 不成立 → 整组被丢弃 → 0 条。
+- 语义歧义定性（用户确认）：旧口径回答"错误种里哪些构成同内容组"，功能目的是"同内容组里哪几条出错了"。
+
+### 实施内容（用户选定口径：status + tracker 均为显示筛选）
+
+- `torrent_helpers.py`：tracker/tracker_domain/status 三块筛选收进 `_apply_row_display_filters` 闭包（逻辑逐字保留）；普通列表模式在原位置立即应用（行为不变），`same_content_only` 模式延后到分组 join 之后应用——分组候选集只含关键字/下载器/路径/大小/时间/标签/分类/活动种子。
+- 新增 2 组 API 用例：status 显示级过滤（单 error 行组不塌、seeding、多选 or）复刻生产场景；tracker_like/tracker_domain 显示级过滤。既有 9 用例无需修改（downloader/category 参与判定的锁定在新口径下仍成立）。
+- `docs/api/same-content-inspection.md`：筛选两类口径说明重写。
+- feature_list.json 新增 v1.0.6.40 任务及 evidence。
+
+### 验证
+
+- 同内容专用套件 11 passed；普通列表回归 test_torrent_list_api.py 35 passed；flake8/black/py_compile 通过；mypy 58 条与改动前逐条一致（零新增）。
+- 生产副本库只读实测：同内容+老男孩+error **0 → 1**（命中 cfcb51db 错误行）；同内容+老男孩仍 20；普通+老男孩+error 仍 1；同内容全局 17748。
+
+### 附带发现（未处理，备查）
+
+- 本仓库存在两份 app.db：`backend/config/app.db`（开发库 22277 种，落后 10 迁移缺 error_reason）与 `data/backend/config/app.db`（docker-compose 挂载部署库，**全空**且 schema 落后 20+ 迁移）。当前代码直连开发库会因 `no such column: error_reason` 全量 500，需先 `alembic upgrade head`。
+- `has_tracker_error` 未暴露到 TorrentInfoVO/前端，列表页无法识别"做种中但 tracker 全挂"的种子（本次生产数据中该标志由定时任务动态重算，8/9 快照 2 条 → 8/18 仅 1 条 error）。
+
 ## 2026-08-17（第三批） - 问题 A/B 修复：active-torrents 206 根治与 cron 会话收敛（三提交）
 
 ### 诊断结论（问题定性，前置三轮调研 + 双子代理独立审查）
