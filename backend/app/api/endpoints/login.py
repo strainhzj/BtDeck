@@ -141,24 +141,38 @@ def refresh_token(
     """双令牌体系（W6-1）：用 refresh token 换发新 access_token + 新 refresh_token。
 
     - refresh token 本体不落库：按 SHA-256 哈希查记录
-    - 使用即轮换：旧记录置 revoked_at，换发新记录
+    - 使用即轮换：条件 UPDATE 原子撤销旧记录（并发同值刷新只有一个能成功，
+      消除"读-改-写"窗口下的双成功），换发新记录
     - 已撤销/过期/不存在一律 401（前端据此走登出）
     """
     try:
         token_hash = utils.hash_refresh_token(refresh_request.refresh_token)
-        record = db.query(models.RefreshToken).filter(models.RefreshToken.token_hash == token_hash).first()
+        now = datetime.utcnow()
 
-        if not record or record.revoked_at is not None:
-            return CommonResponse(code="401", msg="refresh token 无效或已撤销", status="error", data=[])
-        if record.expires_at < datetime.utcnow():
-            return CommonResponse(code="401", msg="refresh token 已过期", status="error", data=[])
+        # 原子轮换（对齐 cuser.logout 的条件 update 先例）：撤销动作与
+        # 有效性判定合并为单条条件 UPDATE，rowcount=0 即令牌无效/已撤销/已过期
+        rowcount = (
+            db.query(models.RefreshToken)
+            .filter(
+                models.RefreshToken.token_hash == token_hash,
+                models.RefreshToken.revoked_at.is_(None),
+                models.RefreshToken.expires_at > now,
+            )
+            .update({models.RefreshToken.revoked_at: now}, synchronize_session=False)
+        )
+        if rowcount == 0:
+            return CommonResponse(code="401", msg="refresh token 无效、已撤销或已过期", status="error", data=[])
+
+        record = db.query(models.RefreshToken).filter(models.RefreshToken.token_hash == token_hash).first()
+        if record is None:
+            # 条件更新成功后记录必存在；防御并发删除等异常场景
+            return CommonResponse(code="401", msg="refresh token 无效、已撤销或已过期", status="error", data=[])
 
         user = db.query(models.User).filter(models.User.id == record.user_id).first()
         if not user or not user.is_active:
+            # 本分支 401 不 commit，上面的撤销随事务回滚丢弃——无害：
+            # 停用用户此后同样换不出新令牌，无需额外持久化撤销
             return CommonResponse(code="401", msg="用户不存在或已停用", status="error", data=[])
-
-        # 使用即轮换：撤销旧记录
-        record.revoked_at = datetime.utcnow()
 
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = utils.create_access_token(
@@ -177,7 +191,8 @@ def refresh_token(
                 user_id=user.id,
                 token_hash=utils.hash_refresh_token(new_refresh_token),
                 expires_at=datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-                ip_address=request.client.host if request else None,
+                # ASGI 规范允许 request.client 为 None（如测试构造的裸请求）
+                ip_address=request.client.host if (request and request.client) else None,
                 user_agent=request.headers.get("user-agent") if request else None,
             )
         )

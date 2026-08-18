@@ -34,7 +34,9 @@ def auth_client():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(engine, tables=[models.User.__table__, models.RefreshToken.__table__, models.LoginLog.__table__])
+    Base.metadata.create_all(
+        engine, tables=[models.User.__table__, models.RefreshToken.__table__, models.LoginLog.__table__]
+    )
     SessionLocal = sessionmaker(bind=engine)
 
     with SessionLocal() as db:
@@ -101,11 +103,7 @@ class TestRefreshEndpoint:
         with SessionLocal() as session:
             old = session.get(models.RefreshToken, old_id)
             assert old.revoked_at is not None  # 使用即轮换
-            new_record = (
-                session.query(models.RefreshToken)
-                .filter(models.RefreshToken.id != old_id)
-                .first()
-            )
+            new_record = session.query(models.RefreshToken).filter(models.RefreshToken.id != old_id).first()
             assert new_record is not None
             assert new_record.revoked_at is None
             # 换发后的新 token 可再次刷新（链式续期）
@@ -120,6 +118,32 @@ class TestRefreshEndpoint:
         resp = client.post(REFRESH_URL, json={"refresh_token": token})
         assert resp.json()["code"] == "401"
 
+    def test_rotated_old_token_rejected_without_issuing_new_record(self, auth_client):
+        """已轮换的旧 token 再次刷新：401 且不签发新记录。
+
+        并发同值刷新败者的确定性投影——条件 UPDATE 下第二个请求 rowcount=0，
+        既不能换发令牌对，也不能在库中留下第二条新记录（双成功防护）。
+        """
+        client, SessionLocal = auth_client
+        with SessionLocal() as session:
+            token, _ = _issue_refresh(session)
+
+        resp1 = client.post(REFRESH_URL, json={"refresh_token": token})
+        assert resp1.json()["code"] == "200"
+
+        with SessionLocal() as session:
+            count_after_first = session.query(models.RefreshToken).count()
+
+        resp2 = client.post(REFRESH_URL, json={"refresh_token": token})
+        body2 = resp2.json()
+
+        assert body2["code"] == "401"
+        assert body2["status"] == "error"
+        # 失败刷新不得签发任何新记录（access_token 也不得下发）
+        assert not (body2.get("data") or [])
+        with SessionLocal() as session:
+            assert session.query(models.RefreshToken).count() == count_after_first
+
     def test_expired_token_returns_401(self, auth_client):
         client, SessionLocal = auth_client
         with SessionLocal() as session:
@@ -127,6 +151,24 @@ class TestRefreshEndpoint:
 
         resp = client.post(REFRESH_URL, json={"refresh_token": token})
         assert resp.json()["code"] == "401"
+
+    def test_revoked_at_not_overwritten_by_failed_refresh(self, auth_client):
+        """条件更新语义：无效刷新不得改写既有撤销时间（防无条件 UPDATE 回归）。"""
+        client, SessionLocal = auth_client
+        with SessionLocal() as session:
+            token, record = _issue_refresh(session, revoked=True)
+            # 撤销时间提前一天，若实现误做无条件覆盖，此值会被 utcnow() 顶掉
+            record.revoked_at = datetime.utcnow() - timedelta(days=1)
+            session.commit()
+            original_revoked_at = record.revoked_at
+            record_id = record.id
+
+        resp = client.post(REFRESH_URL, json={"refresh_token": token})
+
+        assert resp.json()["code"] == "401"
+        with SessionLocal() as session:
+            after = session.get(models.RefreshToken, record_id)
+            assert after.revoked_at == original_revoked_at
 
     def test_garbage_token_returns_401(self, auth_client):
         client, _ = auth_client
