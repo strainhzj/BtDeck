@@ -487,6 +487,7 @@ import {
   queryAuditLogs,
   getAuditLogStatistics,
   exportAuditLogs,
+  downloadExportFile,
   archiveAuditLogs,
   AuditLogArchiveRequest,
   AuditLogItem,
@@ -679,11 +680,18 @@ export default class AuditLogs extends Vue {
       const response = await exportAuditLogs(exportRequest)
       if (response && response.code === '200' && response.data) {
         this.$message.success(`正在导出为 ${command.toUpperCase()}...`)
-        // 下载文件
+        // 下载文件：走统一 axios 客户端（认证头/续期链路），成功后前端触发保存
         const fileName = response.data.file_name
         if (fileName) {
-          const downloadUrl = `/api/audit-logs/download-export/${fileName}`
-          window.open(downloadUrl, '_blank')
+          const blob = await downloadExportFile(fileName)
+          const url = window.URL.createObjectURL(blob as unknown as Blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = fileName
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          window.URL.revokeObjectURL(url)
         } else {
           this.$message.error('导出文件名缺失')
         }

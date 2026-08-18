@@ -407,9 +407,23 @@ describe('API 请求契约', () => {
       )
     })
 
-    it('导出文件 URL 编码规则不经过 Axios 包装', () => {
-      expect(downloadExportFile('audit.csv')).toBe('/api/audit-logs/download-export/audit.csv')
-      expect(mockRequest).not.toHaveBeenCalled()
+    it('导出文件下载走 Axios blob 契约（认证头/续期链路），文件名 URL 编码', () => {
+      // 历史 window.open 直开 URL 三重损坏：前缀缺 /api/v1、新标签不带
+      // Authorization、绕过拦截器无续期/登出处理——改走统一 request 客户端
+      downloadExportFile('audit_logs_20260818_120000.csv')
+      expect(mockRequest).toHaveBeenCalledWith({
+        url: '/audit-logs/download-export/audit_logs_20260818_120000.csv',
+        method: 'get',
+        responseType: 'blob'
+      })
+
+      mockRequest.mockReset()
+      downloadExportFile('audit logs +特殊.csv')
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: `/audit-logs/download-export/${encodeURIComponent('audit logs +特殊.csv')}`
+        })
+      )
     })
 
     it('聚合标签端点区分分类、标签和详细列表', () => {

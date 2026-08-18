@@ -291,7 +291,7 @@ import {
   getDownloaderList,
   DownloaderSimple
 } from '@/api/torrents'
-import service from '@/utils/request'
+import service, { trySilentRefresh, redirectToLogin } from '@/utils/request'
 
 interface ListQuery {
   page: number
@@ -585,9 +585,25 @@ export default class FileManagement extends Vue {
     console.log('Upload success:', response)
   }
 
-  // 上传失败
-  handleUploadError(error: any) {
+  // 上传失败。el-upload 自有 XHR 绕过 axios 拦截器，401 不会进入静默续期
+  // 链路：这里单独识别（element-ui ajax 的 error 对象带 status），续期成功
+  // 后提示重传（headers computed 响应式，重传自动带新令牌），确证死亡才登出
+  async handleUploadError(error: any) {
     console.error('Upload error:', error)
+    if (error && error.status === 401) {
+      const outcome = await trySilentRefresh()
+      if (outcome.status === 'renewed') {
+        this.$message.warning('登录已续期，请重新上传')
+        return
+      }
+      if (outcome.status === 'rejected') {
+        redirectToLogin()
+        return
+      }
+      // transient：网络/服务端瞬时故障，保留现场交由全局网络提示
+      this.$message.error('上传失败，请稍后重试')
+      return
+    }
     this.$message.error('上传失败')
   }
 

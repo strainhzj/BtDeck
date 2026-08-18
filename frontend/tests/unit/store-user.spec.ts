@@ -108,14 +108,19 @@ describe('UserModule 双令牌存储', () => {
       UserModule.SetMustChangePassword(true)
     })
 
-    it('清 access/userId/roles/mustChangePassword 但保留共享 refresh cookie', () => {
+    it('清内存 access/userId/roles/mustChangePassword 但保留共享 cookie（refresh 与 access 均不清）', () => {
       UserModule.ExpireSession()
 
-      expect(mockRemoveToken).toHaveBeenCalled()
-      expect(mockRemoveUserId).toHaveBeenCalled()
-      // 与 ResetToken 的本质区别：不清 refresh cookie（防"败者先读、胜者后写"
-      // 残余竞态把他标签刚轮换出的有效令牌一并杀死）
+      // 与 ResetToken 的本质区别：共享 cookie 全保留——
+      // - refresh cookie：防"败者先读、胜者后写"残余竞态把他标签刚轮换出的
+      //   有效令牌一并杀死
+      // - access cookie：他标签 focus 时的 syncTokenFromCookie 以"cookie 空 +
+      //   内存有 token"判登出，删共享 access cookie 会级联误杀正常工作的标签
+      //   （对抗审计跨标签级联路径）；SPA 内守卫读已清空的内存 token，
+      //   登录页正常展示
+      expect(mockRemoveToken).not.toHaveBeenCalled()
       expect(mockRemoveRefreshToken).not.toHaveBeenCalled()
+      expect(mockRemoveUserId).toHaveBeenCalled()
       expect(UserModule.token).toBe('')
       expect(UserModule.userId).toBe('')
       expect(UserModule.roles).toEqual([])
@@ -140,6 +145,13 @@ describe('UserModule 双令牌存储', () => {
       mockGetUserInfo.mockRejectedValue(networkApiError)
 
       await expect(UserModule.GetUserInfo()).rejects.toBe(networkApiError)
+    })
+
+    it('业务/HTTP 5xx 原样上抛：服务端瞬时故障不升级为登出（DB 抖动不误踢）', async() => {
+      const serverError = new ApiError('获取用户信息失败: db down', { code: '500', httpStatus: 200 })
+      mockGetUserInfo.mockRejectedValue(serverError)
+
+      await expect(UserModule.GetUserInfo()).rejects.toBe(serverError)
     })
 
     it('非网络失败（含认证 401）包装为普通提示，不伪装成网络错误', async() => {

@@ -1,6 +1,6 @@
 import { Message } from 'element-ui'
 import { refreshAccessToken } from '@/api/users'
-import { getRefreshToken, setRefreshToken, getUserId, removeRefreshToken } from '@/utils/cookies'
+import { getRefreshToken, setRefreshToken, getUserId, removeRefreshToken, removeToken } from '@/utils/cookies'
 import service, { redirectToLogin, trySilentRefresh } from '@/utils/request'
 import { resetRefreshState } from '@/utils/token-refresh'
 import { UserModule } from '@/store/modules/user'
@@ -95,7 +95,7 @@ afterEach(() => {
 })
 
 describe('redirectToLogin', () => {
-  it('hash 模式跳转：redirect 携带 hash 内真实路由，清空 access token（保留 refresh cookie）并给出过期提示', () => {
+  it('hash 模式跳转：redirect 携带 hash 内真实路由，清空内存 access token 但保留共享 cookie（refresh 与 access 均不清）并给出过期提示', () => {
     UserModule.SetToken('stale-access')
     window.location.hash = '#/torrents?page=2'
 
@@ -103,6 +103,9 @@ describe('redirectToLogin', () => {
 
     expect(mockMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'warning' }))
     expect(UserModule.token).toBe('')
+    // 共享 cookie 全保留（F6 级联防护）：删共享 access cookie 会经他标签
+    // syncTokenFromCookie 的"cookie 空 + 内存有 token"判据级联误杀正常标签
+    expect(removeToken).not.toHaveBeenCalled()
     expect(mockRemoveRefreshToken).not.toHaveBeenCalled()
     expect(window.location.hash).toBe(
       `#/login?redirect=${encodeURIComponent('/torrents?page=2')}`
@@ -384,5 +387,30 @@ describe('401 拦截器集成（注入 axios adapter）', () => {
     expect(mockRefresh).toHaveBeenCalledTimes(2)
     expect(UserModule.token).toBe('new-access')
     expect(window.location.hash).toBe('')
+  })
+
+  it('网络错误 toast 节流：3 秒窗口内同文案只弹一次（断网+1秒轮询不洪泛），窗口过后恢复提醒', async() => {
+    UserModule.SetToken('valid-access')
+
+    // 无 response 的网络层错误（request 已发出）：统一走"网络连接失败"提示
+    const networkFailure = (cfg: AxiosRequestConfig): Promise<never> =>
+      Promise.reject(Object.assign(new Error('Network Error'), { config: cfg, isAxiosError: true, request: {} }))
+
+    adapter.mockImplementation((cfg: AxiosRequestConfig) => networkFailure(cfg))
+
+    await expect(service({ url: '/torrents/speed', method: 'get' })).rejects.toMatchObject({ code: '0' })
+    await expect(service({ url: '/torrents/speed', method: 'get' })).rejects.toMatchObject({ code: '0' })
+    await expect(service({ url: '/torrents/speed', method: 'get' })).rejects.toMatchObject({ code: '0' })
+
+    // 3 秒窗口内三次失败只弹一次，模拟断网下 1 秒级速度轮询不再堆叠弹窗
+    expect(mockMessage).toHaveBeenCalledTimes(1)
+    expect(mockMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'error', message: '网络连接失败，请检查网络连接' })
+    )
+
+    // 窗口过后恢复提醒（长故障下仍能周期性告知用户）
+    clock += 3_001
+    await expect(service({ url: '/torrents/speed', method: 'get' })).rejects.toMatchObject({ code: '0' })
+    expect(mockMessage).toHaveBeenCalledTimes(2)
   })
 })

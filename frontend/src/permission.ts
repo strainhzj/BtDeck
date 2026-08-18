@@ -39,21 +39,49 @@ const forceChangeRedirect = (next: any): void => {
   NProgress.done()
 }
 
-/** 网络层失败（无 HTTP 响应）判定：ApiError code '0'（buildNetworkError 契约） */
-const isTransientNetworkError = (err: unknown): boolean =>
-  err instanceof ApiError && err.code === '0'
+/**
+ * 瞬时失败判定（buildNetworkError/业务码契约）：
+ * - ApiError code '0'：网络层失败（无 HTTP 响应）
+ * - code 5xx：服务端瞬时故障（如 /info 兜底 500）——认证本身没问题，
+ *   登出会让 DB 抖动误踢在线用户，同样按瞬时处理保留会话
+ */
+const isTransientError = (err: unknown): boolean =>
+  err instanceof ApiError && (err.code === '0' || /^5/.test(err.code))
 
 /**
- * 以"中止导航"替代"登出"处理瞬时网络失败：保留令牌与会话现场，
+ * 以"中止导航"替代"登出"处理瞬时失败：保留令牌与会话现场，
  * 用户再次点击菜单/刷新即重试。next(false) 后 afterEach 不触发，
  * 进度条必须手动收尾（对齐本文件其余非 next() 出口的手动 done 惯例）。
  */
 const abortNavigation = (next: any): void => {
   Message.warning({
-    message: '网络波动，请稍后重试',
+    message: '服务暂时不可用，请稍后重试',
     duration: 3000
   })
   next(false)
+  NProgress.done()
+}
+
+/**
+ * 瞬时失败连续中止的逃生通道：首导航被 next(false) 拦下时页面无渲染，
+ * 且 token 真值下访问 /login 会被重定向回目标页——持久故障（如服务端
+ * 持续 5xx/断网）会让用户永久卡死，唯一逃生是手清 cookie。连续中止达到
+ * 上限后回落登出路径，保证 /login 可达；任何一次导航成功即清零。
+ */
+const TRANSIENT_ABORT_LIMIT = 3
+let consecutiveTransientAborts = 0
+
+/** 登记一次瞬时中止；返回 true 表示已达上限、调用方应回落登出路径 */
+const registerTransientAbort = (): boolean => {
+  consecutiveTransientAborts += 1
+  return consecutiveTransientAborts >= TRANSIENT_ABORT_LIMIT
+}
+
+/** 瞬时中止的兜底出口：会话按过期处理并跳登录页（服务恢复后可重新登录/自动续期恢复） */
+const fallbackToLogout = (next: any, to: Route): void => {
+  consecutiveTransientAborts = 0
+  UserModule.ExpireSession()
+  next(`/login?redirect=${encodeURIComponent(to.path)}`)
   NProgress.done()
 }
 
@@ -68,9 +96,14 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
     if (isTokenExpired(UserModule.token)) {
       const outcome = await trySilentRefresh()
       if (outcome.status === 'transient') {
-        // 网络抖动不杀会话：已有用户信息直接放行（页面请求自行重试续期）；
-        // 首导航（需 GetUserInfo）中止本次导航，避免把瞬时失败升级成登出
+        // 瞬时故障不杀会话：已有用户信息直接放行（页面请求自行重试续期）；
+        // 首导航（需 GetUserInfo）中止本次导航，避免把瞬时失败升级成登出；
+        // 连续多次中止则回落登出，防止持久故障下首导航永久卡死
         if (UserModule.roles.length === 0) {
+          if (registerTransientAbort()) {
+            fallbackToLogout(next, to)
+            return
+          }
           abortNavigation(next)
           return
         }
@@ -116,9 +149,14 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
             next()
           }
         } catch (err) {
-          // 网络抖动（GetUserInfo 网络失败原样上抛的 ApiError code '0'）：
-          // 保留令牌与会话，中止本次导航待重试，不升级为登出
-          if (isTransientNetworkError(err)) {
+          // 瞬时失败（网络层 '0' 或业务/HTTP 5xx，GetUserInfo 原样上抛的
+          // ApiError）：保留令牌与会话，中止本次导航待重试，不升级为登出；
+          // 连续多次中止则回落登出，防止持久故障下首导航永久卡死
+          if (isTransientError(err)) {
+            if (registerTransientAbort()) {
+              fallbackToLogout(next, to)
+              return
+            }
             abortNavigation(next)
             return
           }
@@ -156,6 +194,9 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
 router.afterEach((to: Route) => {
   // Finish progress bar
   NProgress.done()
+
+  // 导航成功即清零瞬时中止计数（连续计数只针对"一直失败到不了任何页面"）
+  consecutiveTransientAborts = 0
 
   // set page title
   document.title = to.meta?.title || 'BtDeck'

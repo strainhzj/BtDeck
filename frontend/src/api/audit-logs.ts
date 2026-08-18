@@ -180,8 +180,18 @@ export function archiveAuditLogs(data: AuditLogArchiveRequest) {
 }
 
 /**
- * 下载导出文件
+ * 下载导出文件（axios blob，携带认证头）
+ *
+ * 历史实现返回 URL 字符串供 window.open 使用，三重损坏：前缀缺 /api/v1、
+ * 新标签不带 Authorization（后端 get_current_user 只认 Bearer——cookie 名
+ * 与前端存储键不匹配）、完全绕过拦截器（无续期/无登出处理）。改走统一
+ * request 客户端：baseURL 自动拼对前缀、请求拦截器注入 Bearer、401 走
+ * 静默续期重放链路。
  */
 export function downloadExportFile(fileName: string) {
-  return `/api/audit-logs/download-export/${fileName}`
+  return request<Blob>({
+    url: `/audit-logs/download-export/${encodeURIComponent(fileName)}`,
+    method: 'get',
+    responseType: 'blob'
+  })
 }

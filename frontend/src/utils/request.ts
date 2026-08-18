@@ -42,6 +42,25 @@ const REDIRECT_DEBOUNCE_MS = 3000
 let redirectDebounceUntil = 0
 
 /**
+ * 网络错误 toast 节流窗口（毫秒）。断网 + 1 秒级速度轮询会让每个失败请求
+ * 都弹独立 Message（拦截器是唯一弹窗点，组件 catch 均静默），洪泛淹没界面；
+ * 与 redirectToLogin 防抖同窗口惯例：窗口到期自然复位，长故障下仍能周期提醒。
+ */
+const NETWORK_TOAST_THROTTLE_MS = 3000
+
+let lastNetworkToast: { message: string, at: number } | null = null
+
+/** 网络错误提示节流：窗口内同文案只弹一次，不同文案不受影响 */
+function notifyNetworkError(message: string): void {
+  const now = Date.now()
+  if (lastNetworkToast && lastNetworkToast.message === message && now - lastNetworkToast.at < NETWORK_TOAST_THROTTLE_MS) {
+    return
+  }
+  lastNetworkToast = { message, at: now }
+  Message({ message, type: 'error', duration: 5 * 1000 })
+}
+
+/**
  * 调试模式开关
  * 通过环境变量 VUE_APP_DEBUG_MODE 控制
  * 默认关闭，设置为 true 时会打印 API 请求调试信息（不包含敏感数据）
@@ -75,9 +94,10 @@ export function redirectToLogin(): void {
   }
   redirectDebounceUntil = now + REDIRECT_DEBOUNCE_MS
   Message({ message: '登录状态已过期，请重新登录', type: 'warning', duration: 3000 })
-  // ExpireSession 保留 refresh cookie：多标签共享 cookie 下，"确证死亡"
-  // 判定存在他标签轮换未落盘的时序残余——清共享 cookie 会把有效令牌一并
-  // 杀死（死 token 残留无害，重登录时 Login 覆盖）
+  // ExpireSession 保留共享 cookie（access + refresh）：多标签共享 cookie 下，
+  // "确证死亡"判定存在他标签轮换未落盘的时序残余——清共享 cookie 会把有效
+  // 令牌一并杀死（access cookie 被删还会经 syncTokenFromCookie 级联误杀
+  // 正常工作的标签）。死 token 残留无害，重登录时 Login 覆盖
   UserModule.ExpireSession()
   window.location.href = buildLoginRedirectTarget(window.location.hash, window.location.pathname)
 }
@@ -216,8 +236,9 @@ service.interceptors.response.use(
       const message = error.request
         ? '网络连接失败，请检查网络连接'
         : error.message || '网络错误'
-      // 网络层错误显示统一提示（业务错误不弹框，交给业务代码）
-      Message({ message, type: 'error', duration: 5 * 1000 })
+      // 网络层错误显示统一提示（业务错误不弹框，交给业务代码）；
+      // 3 秒同文案节流防轮询洪泛
+      notifyNetworkError(message)
       return Promise.reject(buildNetworkError(message, error.request))
     }
 

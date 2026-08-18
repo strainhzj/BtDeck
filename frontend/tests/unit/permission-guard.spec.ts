@@ -214,4 +214,69 @@ describe('守卫主动过期检查（真实路由导航）', () => {
     expect(removeRefreshToken).not.toHaveBeenCalled()
     expect(router.currentRoute.query.redirect).toBeUndefined()
   })
+
+  it('token 未过期 + GetUserInfo 业务 5xx → 中止导航保留会话（DB 抖动不误踢）', async() => {
+    UserModule.SetToken(makeJwt(VALID))
+    mockGetUserInfo.mockRejectedValue(new ApiError('获取用户信息失败: db down', { code: '500', httpStatus: 200 }))
+
+    await pushQuietly('/recycle-bin')
+
+    expect(router.currentRoute.path).toBe('/login')
+    expect(UserModule.token).toBe(makeJwt(VALID))
+    expect(removeRefreshToken).not.toHaveBeenCalled()
+    expect(router.currentRoute.query.redirect).toBeUndefined()
+  })
+
+  it('持久 5xx 连续中止 → 逃生回落登出：/login 可达且带 redirect（不永久卡死）', async() => {
+    UserModule.SetToken(makeJwt(VALID))
+    mockGetUserInfo.mockRejectedValue(new ApiError('获取用户信息失败: db down', { code: '500', httpStatus: 200 }))
+
+    // 连续导航直至逃生出口（连续瞬时中止达上限后回落登出）；5 次上限防死循环
+    for (let i = 0; i < 5; i++) {
+      await pushQuietly('/recycle-bin')
+      if (router.currentRoute.query.redirect === '/recycle-bin') break
+    }
+
+    expect(router.currentRoute.path).toBe('/login')
+    expect(router.currentRoute.query.redirect).toBe('/recycle-bin')
+    // 回落按会话过期处理：内存 token 清空（ExpireSession 保留共享 cookie）
+    expect(UserModule.token).toBe('')
+    expect(removeRefreshToken).not.toHaveBeenCalled()
+  })
+
+  it('瞬时中止计数在导航成功后清零：成功导航后的再次抖动不提前触发回落', async() => {
+    const serverError = new ApiError('获取用户信息失败: db down', { code: '500', httpStatus: 200 })
+    const userInfoOk = {
+      status: 'success',
+      msg: '',
+      code: '200',
+      data: { userId: '7', roles: ['admin'], name: 't', avatar: '', introduction: '', twoFactorFlag: '0' }
+    }
+
+    // 第一段：一次瞬时中止（计数 +1）
+    UserModule.SetToken(makeJwt(VALID))
+    mockGetUserInfo.mockRejectedValue(serverError)
+    await pushQuietly('/recycle-bin')
+    expect(router.currentRoute.path).toBe('/login')
+
+    // 第二段：服务恢复导航成功——afterEach 必须清零计数
+    mockGetUserInfo.mockResolvedValue(userInfoOk)
+    await pushQuietly('/404')
+    expect(router.currentRoute.path).toBe('/404')
+
+    // 第三段：清 roles 复位到首导航形态，再两次抖动。
+    // 若第二段未清零，累计将达 3 次触发回落登出（token 被清）；
+    // 正确行为是重新从 0 计数，两次中止仍保留会话现场
+    // （ResetToken 自身会调 remove* cookie mock，清记录后再断言）
+    UserModule.ResetToken()
+    UserModule.SetToken(makeJwt(VALID))
+    jest.clearAllMocks()
+    mockGetUserInfo.mockRejectedValue(serverError)
+    await pushQuietly('/recycle-bin')
+    await pushQuietly('/orphan-files')
+
+    expect(UserModule.token).toBe(makeJwt(VALID))
+    expect(router.currentRoute.query.redirect).toBeUndefined()
+    expect(removeRefreshToken).not.toHaveBeenCalled()
+  })
 })

@@ -156,18 +156,24 @@ class User extends VuexModule implements IUserState {
   /**
    * 会话过期被动登出（跨标签续期竞态修复）。
    *
-   * 与 ResetToken 的区别：保留 refresh token cookie。刷新失败路径上的
-   * "确证死亡"判定存在跨标签时序残余竞态——本标签读到旧值时，他标签可能
-   * 刚轮换成功但尚未写入新 cookie；此时清掉共享 cookie 会把他标签的有效
-   * 令牌一并杀死，一次竞态升级为全浏览器登出。死 token 残留 cookie 无害
-   * （后端已撤销，无法换发），重登录时 Login 分支覆盖/清除。
+   * 与 ResetToken 的区别：保留共享 cookie（refresh token 与 access token 均不清）。
+   * 刷新失败路径上的"确证死亡"判定存在跨标签时序残余竞态——本标签读到旧值时，
+   * 他标签可能刚轮换成功但尚未写入新 cookie；此时清掉共享 cookie 会把他标签的
+   * 有效令牌一并杀死，一次竞态升级为全浏览器登出：
+   * - access cookie 也必须保留：他标签 focus 时的 syncTokenFromCookie 以
+   *   "cookie 空 + 内存有 token"判登出，删共享 access cookie 会级联误杀
+   *   正常工作的标签（对抗审计 F2 级联路径）
+   * - 死 token 残留 cookie 无害：SPA 内守卫读已清空的内存 token 正常展示
+   *   登录页；整页跳转后内存从 cookie 重建，过期令牌经"续期被拒→登录页"
+   *   收敛，未过期且 refresh 可用则自动换新回工作页（误判标签自愈）
+   * - 主动登出传播不受影响：LogOut/ResetToken 仍全清 cookie
+   * - 重登录时 Login 分支覆盖写入，无需手动清理
    *
    * 使用方：redirectToLogin（401 续期失败）、路由守卫过期分支。
    * 主动登出（LogOut、改密终结会话）仍用 ResetToken 全清。
    */
   @Action({ rawError: true })
   public ExpireSession() {
-    removeToken()
     removeUserId()
     this.SET_TOKEN('')
     this.SET_USER_ID('')
@@ -260,9 +266,11 @@ class User extends VuexModule implements IUserState {
     } catch (error) {
       // 如果API调用失败，抛出错误让用户重新登录
       console.error('getUserInfo API调用失败:', error)
-      // 网络层失败（ApiError code '0'，无 HTTP 响应）原样上抛：路由守卫据此
-      // 区分——网络抖动只中止导航保留会话，认证类失败才升级为登出
-      if (error instanceof ApiError && error.code === '0') {
+      // 瞬时失败原样上抛（守卫据此中止导航保留会话，不升级为登出）：
+      // - 网络层失败（ApiError code '0'，无 HTTP 响应）
+      // - 业务/HTTP 5xx（服务端瞬时故障，如 /info 兜底 500——认证本身没问题，
+      //   登出会让 DB 抖动误踢在线用户）
+      if (error instanceof ApiError && (error.code === '0' || /^5/.test(error.code))) {
         throw error
       }
       throw Error('获取用户信息失败，请重新登录')

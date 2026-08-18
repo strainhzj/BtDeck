@@ -132,6 +132,19 @@ describe('syncTokenFromCookie', () => {
     UserModule.ResetToken()
     expect(syncTokenFromCookie()).toBe('noop')
   })
+
+  it('被登出标签（ExpireSession 后内存已清、共享 cookie 保留）→ 恢复内存令牌而非误判登出', () => {
+    // 对抗审计 F6 级联防护锚点：ExpireSession 保留共享 access cookie 后，
+    // 本标签 focus 时的 cookie→内存回同步应走 synced 分支恢复会话；
+    // 若回退为"登出即删 cookie"，此处会返回 logged-out 并级联踢出
+    UserModule.ResetToken()
+    UserModule.ExpireSession()
+    expect(UserModule.token).toBe('')
+    mockGetToken.mockReturnValue('retained-access')
+
+    expect(syncTokenFromCookie()).toBe('synced')
+    expect(UserModule.token).toBe('retained-access')
+  })
 })
 
 describe('initSessionWatch', () => {
