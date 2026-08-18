@@ -92,6 +92,9 @@ def get_user_info(
                 "avatar": "https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png",
                 "introduction": "系统管理员",
                 "twoFactorFlag": user.two_factor_flag,  # 添加2FA状态标识
+                # 强制改密标志实时下发（安全修复 W9 补全）：此前仅登录响应
+                # 携带，F5/新会话期间后端置位的标志守卫读不到，可被刷新绕过
+                "mustChangePassword": bool(getattr(user, "must_change_password", False)),
             }
         }
 

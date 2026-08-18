@@ -6,9 +6,9 @@
 - login 端点：锁定期间拒绝（429）；密码与 TOTP 共用计数
 - changePassword：绑定本人（body userId 被忽略）、改密后撤销 refresh token、
   清除 must_change_password 标志
+- /users/info：mustChangePassword 实时下发（W9 补全，前端 GetUserInfo 同步用）
 """
 
-from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -27,6 +27,8 @@ from app.database import Base, get_db
 
 URL_LOGIN = "/api/v1/auth/login"
 URL_CHANGE_PW = "/api/v1/user/changePassword"
+# cuser router 双前缀挂载（/user 与 /users），与前端实际调用前缀对齐
+URL_USER_INFO = "/api/v1/users/info"
 
 
 class TestLoginThrottle:
@@ -92,9 +94,7 @@ def login_env():
             s.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(
-        username="admin", user_id="1"
-    )
+    app.dependency_overrides[require_authenticated_user] = lambda: SimpleNamespace(username="admin", user_id="1")
     client = TestClient(app, raise_server_exceptions=False)
     yield client, Session
     db.close()
@@ -204,3 +204,30 @@ class TestChangePasswordSecurity:
         )
         assert r.json()["code"] == "400"
         assert "密码错误" in r.json()["msg"]
+
+
+class TestUserInfoMustChangePasswordDelivery:
+    """/users/info 实时下发 mustChangePassword（W9 补全）。
+
+    前端 GetUserInfo 据此同步 store 标志：此前标志仅随登录响应下发，
+    F5/新会话期间后端置位的标志守卫读不到（可被刷新绕过强制改密）。
+    """
+
+    def test_info_carries_flag_true_when_marked(self, login_env):
+        client, _ = login_env
+        # fixture 预置 must_change_password=True（默认口令场景）
+        r = client.post(URL_USER_INFO, json={"token": "irrelevant-auth-overridden"})
+        assert r.json()["code"] == "200"
+        user = r.json()["data"]["user"]
+        assert user["mustChangePassword"] is True
+
+    def test_info_carries_flag_false_after_change(self, login_env):
+        client, Session = login_env
+        with Session() as db:
+            db.query(User).filter_by(id=1).update({"must_change_password": False})
+            db.commit()
+
+        r = client.post(URL_USER_INFO, json={"token": "irrelevant-auth-overridden"})
+        assert r.json()["code"] == "200"
+        user = r.json()["data"]["user"]
+        assert user["mustChangePassword"] is False
