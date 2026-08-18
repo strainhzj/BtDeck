@@ -13,7 +13,7 @@
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选），搜索区采用孤儿文件页同款 management-panel/filter 结构 |
-| 设置 settings | `settings/index.vue` | 全局设置页 |
+| 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693） |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |

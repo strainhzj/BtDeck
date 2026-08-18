@@ -17,7 +17,7 @@
 | 主题管理器 theme-manager | `theme-manager.ts` | 主题管理器扩展层：`ThemeConfig`（含 Rgb 调色板）、`THEMES: Record<ThemeType, ThemeConfig>`、`ThemeManager` class（L78） |
 | axios 封装 request | `request.ts` | 🔵 axios 封装（详见下方） |
 | 会话维护 session | `session.ts` ✨2026-08-17 | 🔵 双令牌会话主动维护（纯逻辑为主，便于单测）：`getTokenExp`/`isTokenExpired`（JWT exp 解析，畸形不误杀）、`buildLoginRedirectTarget`（hash 模式登录跳转 URL）、`syncTokenFromCookie`（标签页可见时 cookie→内存快照回同步）、`initSessionWatch`（visibilitychange/focus 监听，他标签登出→统一跳登录） |
-| 单飞刷新 token-refresh | `token-refresh.ts` ✨2026-08-16 | 401 静默续期单飞编排（依赖注入纯模块）：并发 401 共享一次 `/auth/refresh`，成功返回新令牌对，失败/无 refresh token 返回 null 交调用方登出 |
+| 单飞刷新 token-refresh | `token-refresh.ts` ✨2026-08-18 三态 | 401 静默续期单飞编排（依赖注入纯模块）：并发 401 共享一次刷新批，三态结果（renewed/rejected/transient，`isDefiniteFailure` 判定后端明确 401 才判死），definite 失败后重读 cookie 追他标签轮换新值有限重试（上限 3 次） |
 | 错误归一化 error-normalize | `error-normalize.ts` | 🔵 错误归一化纯逻辑（无副作用，便于单测）：`SUCCESS_CODES`、`extractFromDetail`、`isLoginRequest`、`buildBusinessError`/`buildNetworkError`/`buildHttpError` |
 | 部署恢复 deployment-recovery | `deployment-recovery.ts` | 部署版本恢复：识别旧 webpack chunk 失败、一次整页切换与循环门禁、恢复 query 清理、历史根作用域 Workbox 注册/cache 清退 |
 | 下载器类型 downloader-type | `downloaderType.ts` | 下载器类型枚举（`DOWNLOADER_TYPE`/`DOWNLOADER_TYPE_NAME`）+ 数字↔字符串↔标签互转 |
@@ -25,16 +25,16 @@
 | 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制） |
 | 校验 validate | `validate.ts` | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
 
-#### request.ts 关键（axios 封装，L1-229）
+#### request.ts 关键（axios 封装，L1-242）
 
 - L17 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
-- L84 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie）
-- L70 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast
-- L108 `trySilentRefresh`（导出）：守卫/会话监听的主动续期入口
-- L115 `handleUnauthorized`：401 统一处理，静默续期并重放一次，失败登出
-- L133 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
-- L168 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误 / HTTP 错误
-- L229 `export default service as unknown as RequestClient`
+- L84 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie，L109 `isDefiniteFailure` = ApiError code '401' 才判死）
+- L70 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast；L81 改用 `UserModule.ExpireSession()`（保留共享 refresh cookie，防跨标签轮换竞态清掉他标签有效令牌）
+- L117 `trySilentRefresh`（导出）：守卫/会话监听的主动续期入口，返回三态 RefreshOutcome
+- L125 `handleUnauthorized`：401 统一处理——renewed 重放一次 / rejected 登出 / transient（网络抖动）不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈
+- L146 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
+- L181 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误 / HTTP 错误
+- L242 `export default service as unknown as RequestClient`
 
 #### error-normalize.ts 关键
 

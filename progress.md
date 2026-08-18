@@ -1,5 +1,45 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-18（第三批） - 跨标签令牌续期竞态修复：三态续期 + ExpireSession + 后端原子轮换
+
+### 排查与定性（两轮排查 + 双子代理独立复核/审查）
+
+- 用户报告：令牌过期后无自动续期，操作中突然请求失败。排查确认单标签 401→续期→重放链路完整（8-17 修复后），真正的根因是**多标签竞态**：
+  - 后端 `/auth/refresh` 使用即轮换（旧记录置 revoked_at + 签发新记录）；多标签共享同一 refresh cookie、单飞仅限单标签 JS 上下文（模块级变量），无跨标签协调；
+  - 任何刷新失败（含竞态败者、网络抖动）都走 `redirectToLogin → ResetToken` 清空**共享** refresh cookie → 一次竞态杀死全浏览器续期能力，此后每个 access 周期（60 分钟）强制登出一次；
+  - 次要根因：改密后端撤销全部 refresh token（cuser.py）但前端不清 cookie → "access 活 refresh 死"窗口。
+- 复核修正两处初始误判：FileManagement el-upload 是 auto-upload=false 死路径（实际上传走封装请求，不绕过拦截器）；"并发必有一败"精确化为"串行时序必败、极端并发可双成功"。
+- 计划独立审查抓出 2 个必改缺陷并采纳：① rejected 路径若清共享 refresh cookie，"败者先读、胜者后写"残余竞态仍可杀全局会话（改为保留）；② 守卫 `next(false)` 后 afterEach 不触发，NProgress 进度条悬挂（必须手动 done）。
+
+### 实施内容（前端 5 文件 + 后端 1 文件）
+
+- `frontend/src/utils/token-refresh.ts`：重写为三态结果 `RefreshOutcome`（renewed/rejected/transient）+ `RefreshDependencies.isDefiniteFailure`（仅后端明确 401 判死）；definite 失败后**重读 cookie** 追他标签轮换新值有限重试（上限 3 次防活锁）；无 refresh token 显式归 rejected（防"不清不跳"僵死）；网络类失败直接 transient 不重试。
+- `frontend/src/utils/request.ts`：`refreshDeps.isDefiniteFailure`（ApiError code '401'）；`trySilentRefresh` 返回三态；`handleUnauthorized` 三分支——renewed 重放 / rejected 登出 / transient 不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈；`redirectToLogin` 改用 ExpireSession。
+- `frontend/src/store/modules/user.ts`：新增 `ExpireSession` Action（被动登出保留 refresh cookie——死 token 残留无害，重登录时 Login 覆盖）；`ResetToken` 保留主动登出全清语义；GetUserInfo 网络错误（ApiError code '0'）原样上抛供守卫分流。
+- `frontend/src/permission.ts`：守卫过期检查三态分流（renewed 放行 / rejected ExpireSession 登出 / transient——roles 已有放行自愈、roles 空 `abortNavigation` 中止导航）；新增 `isTransientNetworkError` + `abortNavigation`（next(false) + Message + 手动 NProgress.done 防悬挂）；GetUserInfo 失败分流——网络错误中止导航保留会话、其余 ExpireSession 登出（原 ResetToken 会清掉 redirectToLogin 刚保留的 refresh cookie，同因改 ExpireSession）。
+- `frontend/src/views/settings/index.vue`：改密成功 → ResetToken（主动登出全清，后端已撤销全部 refresh token）+ push('/login') 重登；删除 forceChange query 清理段（整页跳转后无意义）。
+- `backend/app/api/endpoints/login.py`：`/auth/refresh` 改条件 UPDATE 原子轮换（`revoked_at IS NULL AND expires_at > now` 才置撤销，rowcount=0 即 401；对齐 cuser.logout 先例），消除并发同值刷新"读-改-写"双成功窗口；record 补空值防御；`request.client` 按 ASGI 规范补 None 防护（mypy 新增错误归零）。
+
+### 明确不做（及理由）
+
+- BroadcastChannel/跨标签锁：cookie 最新值重试 + 保留 cookie 已把竞态后果降为"单标签被踢"，无需锁；
+- 服务端 refresh 复用宽限：弱化轮换安全；
+- access token 有效期调整（维持 60 分钟）：修复后过期频率无感，调长使登出/改密后旧令牌暴露窗口线性增长。
+
+### 回归加固（应用户要求补测，+5 前端用例 +1 后端用例）
+
+- `store-user.spec.ts` +4：ExpireSession 契约两用例（清 access/userId/roles/mustChangePassword 但 **removeRefreshToken 不被调用**——与 ResetToken 的本质区别直接锚定；W9 标志清除）+ GetUserInfo 上抛契约两用例（网络 ApiError code '0' **原样上抛同一实例**供守卫分流；认证 401 仍包装普通提示防伪装）。
+- `request-auth.spec.ts` +1：**transient 自愈闭环**——第一次 401 续期网络失败原请求被拒但会话保留，第二个请求 401 续期成功重放携带新 Bearer（锁住"单飞复位、瞬时失败不卡死续期能力"的设计承诺）。
+- `permission-guard.spec.ts`：transient 中止导航用例加 `jest.spyOn(NProgress, 'done')` 断言 ≥1 次——next(false) 后 afterEach 不触发，手动 done 是唯一收尾，缺失即进度条悬挂（审查必改项的回归锚点）。
+- `session.spec.ts`：他标签登出触发的统一跳转用例补断言 removeRefreshToken 未被调用（ExpireSession 语义一致性）。
+- 后端 `test_auth_refresh.py` +1：`test_rotated_old_token_rejected_without_issuing_new_record`——已轮换旧 token 再刷 401 且**不签发新记录不下发 data**（并发败者的确定性投影，双成功防护）。
+
+### 验证
+
+- 前端全量 55 套件 **866** 用例通过（token-refresh 8、request-auth 14、permission-guard 8、settings-change-password 4、store-user 13、session 12）；`npm run lint`（contract:check + eslint + lint-vuex-action）与 `npm run typecheck` 通过。
+- 后端 `pytest tests/api/test_auth_refresh.py`（8 用例：+1 条件更新语义 +1 旧 token 复用投影）+ `test_login_throttle_and_change_password.py`（12）全绿；black/flake8 通过；mypy stash 基线对比 13→13（新增 0）。
+- 测试技巧沉淀：api 函数 mock 边界在拦截器**之后**——后端明确拒绝应以拦截器归一化的 ApiError(401) 拒绝形态提供，resolve 401 信封会走"缺 access_token"契约错误分支；beforeEach 先 ResetToken 再 clearAllMocks（防复位期间 cookie mock 调用污染"未被调用"断言）；mockResolvedValueOnce 队列跨用例残留需显式 mockReset。
+
 ## 2026-08-18 - 同内容异常排查语义修订：状态/Tracker 改为组内显示筛选（v1.0.6.40）
 
 ### 排查背景（生产问题：老男孩查询无结果）

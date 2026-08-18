@@ -4106,6 +4106,47 @@
           "evidence": "test_login_throttle_and_change_password 12 用例（含 /users/info 两态新用例）+ test_w9_force_change_reproduction 4 用例 + test_auth_protection_extended 全绿（三套件合计 97 passed）；black/flake8/mypy 通过"
         }
       ]
+    },
+    {
+      "id": "token-refresh-race-fix-2026-08-18",
+      "name": "跨标签令牌续期竞态修复（三态续期 + ExpireSession 保留 refresh cookie + 守卫网络分流 + 后端原子轮换）",
+      "description": "用户报告令牌过期后无自动续期、操作中突然失败。根因：多标签共享单一 refresh cookie + 后端使用即轮换 + 前端任何刷新失败都清空共享 cookie，一次竞态/网络抖动杀死全浏览器续期能力（每 60 分钟周期性强制登出）；次要：改密撤销全部 refresh token 但前端不清 cookie。修复：①token-refresh.ts 三态结果（renewed/rejected/transient，isDefiniteFailure 仅后端明确 401 判死）+ definite 失败后重读 cookie 追他标签轮换新值有限重试（上限 3）②request.ts handleUnauthorized 三分支（transient 不清 token 不跳转待自愈）③user.ts ExpireSession（被动登出保留 refresh cookie，防'败者先读胜者后写'残余竞态清掉他标签有效令牌）+ GetUserInfo 网络错误原样上抛 ④permission.ts 三态分流 + abortNavigation（next(false)+手动 NProgress.done 防悬挂）+ GetUserInfo 网络错误不杀会话 ⑤settings 改密成功 ResetToken+跳登录（终结'access 活 refresh 死'窗口）⑥后端 /auth/refresh 条件 UPDATE 原子轮换（消除并发双成功）。经双子代理复核（纠正 2 处误判）与计划独立审查（采纳 2 必改：保留 refresh cookie、NProgress 收尾）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "token-refresh-race-fix-2026-08-18.1",
+          "name": "前端三态续期与会话保留",
+          "description": "token-refresh.ts 三态+cookie 最新值有限重试；request.ts isDefiniteFailure/handleUnauthorized 三分支/redirectToLogin 改 ExpireSession；user.ts ExpireSession Action+GetUserInfo 网络错误上抛；permission.ts 三态分流+abortNavigation+GetUserInfo 网络分流；settings 改密终结会话跳登录",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/utils/token-refresh.ts",
+            "frontend/src/utils/request.ts",
+            "frontend/src/store/modules/user.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/views/settings/index.vue",
+            "frontend/tests/unit/token-refresh.spec.ts",
+            "frontend/tests/unit/request-auth.spec.ts",
+            "frontend/tests/unit/permission-guard.spec.ts",
+            "frontend/tests/unit/settings-change-password.spec.ts"
+          ],
+          "evidence": "前端全量 55 套件 866 用例通过；token-refresh 8 用例（三态/单飞/cookie 轮换重试/上限收敛/无 token 归 rejected）、request-auth 14 用例（transient 不登出不清 token/轮换后重放新 Bearer/rejected 保留 refresh cookie/refresh 豁免防递归/transient 自愈闭环——单飞复位后下一请求续期成功重放）、permission-guard 8 用例（transient roles 空→中止含 NProgress.done 收尾锚流/roles 有→放行/GetUserInfo 网络失败不杀会话/登出保留 cookie）、settings-change-password 4 用例（ResetToken+push(/login)/失败不误杀/前置校验）、store-user 13 用例（ExpireSession 契约：清 access/roles/标志但 removeRefreshToken 不被调用；GetUserInfo 网络 ApiError 原样上抛/认证错误包装）、session 12 用例（他标签登出跳转保留 refresh cookie）；npm run lint 与 typecheck 通过"
+        },
+        {
+          "id": "token-refresh-race-fix-2026-08-18.2",
+          "name": "后端 /auth/refresh 原子轮换",
+          "description": "读-改-写改条件 UPDATE（token_hash 匹配且 revoked_at IS NULL 且未过期才置撤销，rowcount=0 即 401），消除并发同值刷新双成功；record 空值防御；request.client ASGI None 防护",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/login.py",
+            "backend/tests/api/test_auth_refresh.py"
+          ],
+          "evidence": "test_auth_refresh 8 用例全绿（+1 条件更新语义：已撤销记录 revoked_at 不被二次覆盖；+1 旧 token 复用投影：已轮换旧 token 再刷 401 且不签发新记录不下发 data，双成功防护）+ test_login_throttle_and_change_password 12 用例回归；black/flake8 通过；mypy stash 基线对比 13→13（新增错误 0）"
+        }
+      ]
     }
   ],
   "tasks": [

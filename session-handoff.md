@@ -1,5 +1,34 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-18 交接：跨标签令牌续期竞态修复（三态续期 + ExpireSession + 后端原子轮换）
+
+### 问题与定性
+
+- 用户报告：令牌过期后无自动续期，操作中突然请求失败。两轮排查 + 双子代理复核确认：单标签 401→续期→重放链路完整（8-17 修复后），根因是**多标签共享 refresh cookie + 后端使用即轮换 + 前端任何刷新失败都清空共享 cookie**——竞态败者/网络抖动一次即杀死全浏览器续期能力，此后每 60 分钟（access 周期）强制登出。次要根因：改密后端撤销全部 refresh token 但前端不清 cookie（"access 活 refresh 死"窗口）。
+- 计划独立审查采纳 2 必改：rejected 路径不得清共享 refresh cookie（"败者先读、胜者后写"残余竞态）；守卫 next(false) 分支必须手动 NProgress.done()（afterEach 不触发，进度条悬挂）。
+
+### 变更
+
+- `frontend/src/utils/token-refresh.ts`：三态 RefreshOutcome（renewed/rejected/transient）+ isDefiniteFailure 依赖 + definite 失败后重读 cookie 追他标签轮换新值有限重试（上限 3）。
+- `frontend/src/utils/request.ts`：handleUnauthorized 三分支（transient 不清 token 不跳转待自愈）；redirectToLogin 改用 ExpireSession。
+- `frontend/src/store/modules/user.ts`：新增 ExpireSession（被动登出保留 refresh cookie）；GetUserInfo 网络错误 ApiError 原样上抛。
+- `frontend/src/permission.ts`：守卫三态分流 + abortNavigation（next(false)+提示+手动 NProgress.done）+ GetUserInfo 网络错误不杀会话。
+- `frontend/src/views/settings/index.vue`：改密成功 ResetToken + push('/login')（forceChange query 清理段删除）。
+- `backend/app/api/endpoints/login.py`：/auth/refresh 条件 UPDATE 原子轮换（rowcount=0 即 401）+ record 空值防御 + request.client ASGI None 防护。
+- 测试 4 个前端 spec 重写/扩展 + 后端 +1 用例；feature_list.json（token-refresh-race-fix-2026-08-18）、progress.md、roadmap（utils-types/entry/store/views/backend-api/根 README 元信息）同步。
+
+### 验证
+
+- 前端全量 55 套件 **866** 用例通过（含回归加固 +5：store-user ExpireSession/GetUserInfo 上抛契约 4、request-auth transient 自愈闭环 1；permission-guard/session 补断言）；npm run lint（含 contract:check/lint-vuex-action）+ typecheck 通过。
+- 后端 test_auth_refresh **8** 用例（+1 旧 token 复用投影：再刷 401 且不签发新记录）+ test_login_throttle_and_change_password 12 用例全绿；black/flake8 通过；mypy stash 基线对比 13→13（新增 0）。
+
+### 后续与边界
+
+- 未执行 Git 提交（用户未要求）。**部署提醒：前后端均有变更，需重新构建前端产物（frontend/dist 当前为 08-17 构建，不含本批修复）并重启后端**；桌面打包（deploy/*.spec）捆绑 frontend/dist，发布前需重新 build。
+- 残余竞态语义（有意保留）：竞态败者误判 rejected 时仅本标签被踢登录页，他标签令牌不受影响（refresh cookie 不清）；死 token 残留 cookie 无害，重登录时 Login 覆盖。
+- 改密后行为变化：成功后强制跳登录页用新密码重登（原为留在设置页）——用户已确认此口径。
+- 测试技巧：api 函数 mock 边界在拦截器之后，后端明确拒绝应以 ApiError(401) 拒绝形态提供（resolve 401 信封会走契约错误分支）；beforeEach 先 ResetToken 再 clearAllMocks；mockResolvedValueOnce 队列需显式 mockReset。
+
 ## 2026-08-18 交接：同内容异常排查语义修订（v1.0.6.40，状态/Tracker 改组内显示筛选）
 
 ### 问题与定性

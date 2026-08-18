@@ -9,7 +9,7 @@
 |--------|------|-----------|
 | 应用入口 main | `main.ts` | 应用入口：初始化主题、注册插件、清退历史 Workbox、双令牌会话监听（`initSessionWatch`）、挂载 #app（`new Vue(...)`） |
 | 路由表 router | `router.ts` | 路由表（default export）+ `router.push` 修补 + 部署后旧 chunk 一次恢复 |
-| 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期/登出（`isTokenExpired`+`trySilentRefresh`）、白名单、NProgress、页面标题（`router.beforeEach` / `afterEach`） |
+| 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期三态分流（`isTokenExpired`+`trySilentRefresh`：renewed 放行 / rejected `ExpireSession` 登出 / transient 中止导航保留会话）、GetUserInfo 网络错误分流、白名单、NProgress、页面标题（`router.beforeEach` / `afterEach`） |
 | 根组件 app | `App.vue` | 根组件（class-component），仅 `<div id="app"><router-view /></div>` |
 | PWA 注册 service-worker | `registerServiceWorker.ts` | 历史 PWA 注册助手；当前 `main.ts` 不导入，启动逻辑会清退旧注册 |
 | TS 声明 shims-vue | `shims-vue.d.ts` | 为 .vue 文件提供 TS 模块声明（`declare module '*.vue'`） |
@@ -49,16 +49,17 @@
 
 文件末尾 L268-293 自定义 `router.push` 捕获 `NavigationDuplicated`；L297-306 的 `router.onError` 在旧 runtime 请求已下线路由 chunk 时触发一次整页版本恢复，并对重复失败显示手动刷新提示。
 
-## permission.ts 关键（L1-113）
+## permission.ts 关键（L1-162）
 
 - L11 `whiteList = ['/login']`（仅登录页白名单）
-- L13-36 强制改密拦截（安全修复 W9 + 死锁修复）：`forceChangeAllowedPaths = ['/settings/index', '/settings']`（放行白名单，含真实改密页子路径）+ `isForceChangeBlocked()` 判定 + `forceChangeRedirect()` 重定向 `/settings/index?forceChange=1` 并弹 ElementUI `Message.warning("请先修改密码…")`（3 秒节流防堆叠——拦截重定向回同一路径时设置页不重新挂载，点其它菜单的反馈只能由守卫给）
-- L27 `router.beforeEach`：
-  - L35-47 会话主动过期检查：`isTokenExpired(UserModule.token)` 为真先 `trySilentRefresh()`，失败 `ResetToken()` 跳登录（不依赖 API 401 被动触发）
-  - L49 若 `UserModule.token` 存在：访问 `/login` 重定向；否则若 `roles.length===0` 调 `UserModule.GetUserInfo()`（L67），**成功后 L71 同样检查强制改密标志拦截**（闭合登录后/F5 后首导航放行缺口），失败 `ResetToken()` 跳登录
-  - L84-91 roles 已就绪分支：`isForceChangeBlocked()` 拦截一切非改密页导航（事故前白名单写父路径 `/settings`，落点内容区空白 + 真实路径被弹回 = 死锁）
-- L94-104 无 token：白名单放行，否则跳登录带 redirect
-- L107 `router.afterEach`：结束 NProgress + 设 `document.title`（默认 'BtDeck'）
+- L14-39 强制改密拦截（安全修复 W9 + 死锁修复）：`forceChangeAllowedPaths = ['/settings/index', '/settings']`（放行白名单，含真实改密页子路径）+ `isForceChangeBlocked()` 判定 + `forceChangeRedirect()` 重定向 `/settings/index?forceChange=1` 并弹 ElementUI `Message.warning("请先修改密码…")`（3 秒节流防堆叠——拦截重定向回同一路径时设置页不重新挂载，点其它菜单的反馈只能由守卫给）
+- L43 `isTransientNetworkError`（ApiError code '0' 网络层失败判定）+ L51 `abortNavigation`：`next(false)` 中止导航 + 网络波动提示 + 手动 `NProgress.done()`（中止导航 afterEach 不触发，进度条须手动收尾），保留令牌与会话现场
+- L60 `router.beforeEach`：
+  - L67-96 会话主动过期检查三态分流：`isTokenExpired(UserModule.token)` 为真先 `trySilentRefresh()`——renewed 继续导航；transient 网络抖动不杀会话（roles 已有放行自愈 / roles 空中止导航）；rejected `ExpireSession()` 跳登录（保留 refresh cookie，防跨标签轮换竞态）
+  - L90 若 `UserModule.token` 存在：访问 `/login` 重定向；否则若 `roles.length===0` 调 `UserModule.GetUserInfo()`（L101），**成功后 L113 同样检查强制改密标志拦截**（闭合登录后/F5 后首导航放行缺口），失败 L120-130 分流——网络错误（ApiError code '0' 原样上抛）`abortNavigation`，其余 `ExpireSession()` 跳登录
+  - L131-142 roles 已就绪分支：`isForceChangeBlocked()` 拦截一切非改密页导航（事故前白名单写父路径 `/settings`，落点内容区空白 + 真实路径被弹回 = 死锁）
+- L144-153 无 token：白名单放行，否则跳登录带 redirect
+- L156 `router.afterEach`：结束 NProgress + 设 `document.title`（默认 'BtDeck'）
 
 > **守卫不在 router.ts**：router.ts 只导出 `router` 实例；守卫逻辑由 `permission.ts` 通过 `router.beforeEach` 注册，由 `main.ts` L37 `import '@/permission'` 触发副作用。
 > **标志双通道下发**：`mustChangePassword` 由登录响应与 `/user/info`（后端 cuser.py）下发，store `GetUserInfo` 同步（字段缺失不覆盖，防滚动部署误清）。

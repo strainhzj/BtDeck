@@ -29,7 +29,7 @@
 | 下载器设置 downloader-setting | `downloader_settings.py` | 下载器设置管理（CRUD + 应用；含已废弃 advanced_settings） |
 | 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询（`DuplicateQueryRequest` L48 / `get_duplicate_torrents` L86）；排除 pending/running 删除任务，支持名称/下载器/状态/分类/标签/活动快照筛选及安全列排序，默认 `added_date DESC` 后再判定重复组 |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
-| 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token） |
+| 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token）+ 刷新（`/refresh` L136：条件 UPDATE 原子轮换，rowcount=0 即 401，消除并发同值刷新双成功窗口） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
 | 孤儿文件 API orphan | `orphan_files.py`（手动操作审计带提交端 IP；/cleanup、/purge 经 job 行持久化，其余直接提取） | `POST /scan` 立即返回 scan_id/task_id，`GET /scans/{id}` 轮询单行状态；`GET /folders/children` 展开后独立分页并仅统计可见文件硬链接；`POST /hardlink-copies/delete` 弹窗删除已定位副本（逐路径 fail-closed，状态类拒绝 200+failed_list）；超量扫描仅返回提醒状态，保留兼容复核接口但不再阻断清理；保留清理/忽视/隔离恢复与持久化任务 |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理 |
