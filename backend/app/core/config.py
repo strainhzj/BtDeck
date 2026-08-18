@@ -21,6 +21,8 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
+import yaml  # type: ignore[import-untyped]  # 环境无 PyYAML 桩（与 database.py 同况）
+
 from pydantic import Field, validator
 
 # 兼容新旧版本pydantic
@@ -54,13 +56,54 @@ def is_docker() -> bool:
     return Path("/.dockerenv").exists()
 
 
+def _default_config_dir() -> Path:
+    """不依赖 Settings 实例解析配置目录（供 _default_secret_key 引导期使用）。
+
+    与 Settings.CONFIG_PATH 的分支语义一致：CONFIG_DIR 环境变量优先，
+    其次 frozen/docker 模式的固定目录，最后仓库根 config/。
+    """
+    config_dir = os.getenv("CONFIG_DIR")
+    if config_dir:
+        return Path(config_dir)
+    if is_frozen():
+        return Path(sys.executable).parent / "config"
+    if is_docker():
+        return Path("/config")
+    return Path(__file__).parents[2] / "config"
+
+
+def _jwt_secret_from_yaml() -> Optional[str]:
+    """从 config.yaml 读取持久化的 JWT 签名密钥（SECRET_KEY 缺省时的回退源）。
+
+    由 init_config_file 首次启动写入（缺失才补），使默认部署重启后签名密钥
+    保持稳定、存量会话不被整体杀死。文件缺失/键缺失/读取异常一律返回 None
+    交回随机值兜底，不在此处创建或修改文件。
+    """
+    try:
+        path = _default_config_dir() / "config.yaml"
+        if not path.exists():
+            return None
+        with open(path, "r", encoding="utf-8") as f:
+            config = yaml.safe_load(f) or {}
+        value = (config.get("security") or {}).get("jwt_secret_key")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    except Exception as e:  # noqa: BLE001 - 引导期兜底路径，任何读取异常都退回随机值
+        logger.warning("读取 config.yaml 的 jwt_secret_key 失败: %s", e)
+    return None
+
+
 def _default_secret_key() -> str:
-    """开发兜底密钥：优先使用环境变量，未配置时生成临时密钥并记录警告。"""
+    """开发兜底密钥：环境变量 → config.yaml 持久化密钥 → 临时随机值。"""
     secret_key = os.getenv("SECRET_KEY")
     if secret_key:
         return secret_key
 
-    logger.warning("SECRET_KEY 未配置，已生成临时开发密钥；生产环境必须通过环境变量显式设置。")
+    persisted = _jwt_secret_from_yaml()
+    if persisted:
+        return persisted
+
+    logger.warning("SECRET_KEY 未配置且 config.yaml 无 jwt_secret_key，已生成临时开发密钥；生产环境必须显式配置。")
     return secrets.token_urlsafe(32)
 
 
@@ -313,9 +356,13 @@ class Settings(BaseSettings):
 
     def _validate_security_config(self):
         """启动期安全校验：生产环境拒绝隐式密钥和通配 CORS。"""
-        # SECRET_KEY 显式传了空串（如 compose 的 ${SECRET_KEY:-}）视为未设置
-        if not self.DEV and not os.getenv("SECRET_KEY"):
-            raise RuntimeError("生产环境必须通过 SECRET_KEY 环境变量显式配置 JWT 密钥")
+        # SECRET_KEY 显式传了空串（如 compose 的 ${SECRET_KEY:-}）视为未设置。
+        # 放宽条件：config.yaml 已持久化 jwt_secret_key（init_config_file 写入）
+        # 视为已显式配置；首启生产（YAML 尚无密钥）仍拒绝启动，护栏不拆
+        if not self.DEV and not os.getenv("SECRET_KEY") and _jwt_secret_from_yaml() is None:
+            raise RuntimeError(
+                "生产环境必须通过 SECRET_KEY 环境变量或 config.yaml 的 security.jwt_secret_key 显式配置 JWT 密钥"
+            )
 
         if not self.DEV and not os.getenv("ALLOWED_HOSTS"):
             raise RuntimeError("生产环境必须通过 ALLOWED_HOSTS 环境变量显式配置 CORS 来源")
@@ -327,13 +374,9 @@ class Settings(BaseSettings):
     def CONFIG_PATH(self):
         if getattr(self, "CONFIG_DIR", None):
             return Path(self.CONFIG_DIR)
-        # frozen 模式（PyInstaller onefile）：__file__ 指向临时解压目录 _MEIPASS，
-        # 数据必须写到可执行文件同级目录才能持久化
-        elif is_frozen():
-            return Path(sys.executable).parent / "config"
-        elif is_docker():
-            return Path("/config")
-        return self.ROOT_PATH / "config"
+        # frozen/docker/仓库根三分支与 _default_config_dir 共用一份逻辑，
+        # 避免引导期（读 YAML 密钥）与运行期路径解析漂移
+        return _default_config_dir()
 
     @property
     def ROOT_PATH(self):

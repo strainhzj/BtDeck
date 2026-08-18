@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from app.core.config import Settings
 
 
@@ -56,6 +58,87 @@ class TestSecretKeyEmptyNormalization:
     def test_real_secret_key_preserved(self):
         s = Settings(SECRET_KEY="my-real-secret-key", _env_file=None)
         assert s.SECRET_KEY == "my-real-secret-key"
+
+
+class TestSecretKeyYamlFallback:
+    """SECRET_KEY 回退链（对抗审计修复）：env → config.yaml 持久化密钥 → 随机值。
+
+    背景：compose 默认 SECRET_KEY 为空、validator 归一化为每进程随机——
+    每次容器重启杀死全部会话。init_config_file 首启写入 jwt_secret_key 后，
+    次启起从 YAML 稳定读取。
+    """
+
+    def test_env_takes_priority_over_yaml(self, monkeypatch):
+        from app.core import config
+
+        monkeypatch.setenv("SECRET_KEY", "from-env")
+        monkeypatch.setattr(config, "_jwt_secret_from_yaml", lambda: "from-yaml")
+        assert config._default_secret_key() == "from-env"
+
+    def test_yaml_fallback_used_when_env_missing(self, monkeypatch):
+        from app.core import config
+
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        monkeypatch.setattr(config, "_jwt_secret_from_yaml", lambda: "from-yaml")
+        assert config._default_secret_key() == "from-yaml"
+
+    def test_random_when_neither_source(self, monkeypatch):
+        from app.core import config
+
+        monkeypatch.delenv("SECRET_KEY", raising=False)
+        monkeypatch.setattr(config, "_jwt_secret_from_yaml", lambda: None)
+        first = config._default_secret_key()
+        second = config._default_secret_key()
+        assert first and second and first != second
+
+    def test_reads_real_yaml_file(self, tmp_path, monkeypatch):
+        from app.core import config
+
+        monkeypatch.setenv("CONFIG_DIR", str(tmp_path))
+        (tmp_path / "config.yaml").write_text("security:\n  jwt_secret_key: abc123\n", encoding="utf-8")
+        assert config._jwt_secret_from_yaml() == "abc123"
+
+    def test_yaml_without_key_returns_none(self, tmp_path, monkeypatch):
+        from app.core import config
+
+        monkeypatch.setenv("CONFIG_DIR", str(tmp_path))
+        (tmp_path / "config.yaml").write_text("security:\n  secret_key: s\n", encoding="utf-8")
+        assert config._jwt_secret_from_yaml() is None
+
+    def test_missing_yaml_file_returns_none(self, tmp_path, monkeypatch):
+        from app.core import config
+
+        monkeypatch.setenv("CONFIG_DIR", str(tmp_path))
+        assert config._jwt_secret_from_yaml() is None
+
+
+class TestProdValidationYamlRelaxation:
+    """生产护栏条件化放宽：仅当 env 与 YAML 均无密钥时才拒绝启动。
+
+    无条件放行会让首启生产（YAML 尚未写入密钥）带着临时随机密钥静默运行，
+    拆掉原有护栏。
+    """
+
+    def test_prod_rejected_when_no_env_and_no_yaml(self):
+        with patch.dict(os.environ, {"ALLOWED_HOSTS": '["http://a"]'}, clear=False) as env:
+            env.pop("SECRET_KEY", None)
+            with patch("app.core.config._jwt_secret_from_yaml", return_value=None):
+                # _validate_security_config 在 Settings 构造期执行（root validator）
+                with pytest.raises(RuntimeError, match="JWT 密钥"):
+                    Settings(DEV=False, SECRET_KEY="placeholder", ALLOWED_HOSTS=["http://a"], _env_file=None)
+
+    def test_prod_passes_with_yaml_key(self):
+        with patch.dict(os.environ, {"ALLOWED_HOSTS": '["http://a"]'}, clear=False) as env:
+            env.pop("SECRET_KEY", None)
+            with patch("app.core.config._jwt_secret_from_yaml", return_value="yaml-key"):
+                s = Settings(DEV=False, SECRET_KEY="placeholder", ALLOWED_HOSTS=["http://a"], _env_file=None)
+                s._validate_security_config()  # 不抛即通过
+
+    def test_prod_passes_with_env_key(self):
+        with patch.dict(os.environ, {"SECRET_KEY": "from-env", "ALLOWED_HOSTS": '["http://a"]'}, clear=False):
+            with patch("app.core.config._jwt_secret_from_yaml", return_value=None):
+                s = Settings(DEV=False, SECRET_KEY="from-env", ALLOWED_HOSTS=["http://a"], _env_file=None)
+                s._validate_security_config()
 
 
 class TestDocsConvergence:

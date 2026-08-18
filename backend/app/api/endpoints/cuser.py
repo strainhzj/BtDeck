@@ -102,7 +102,9 @@ def get_user_info(
         return response
 
     except Exception as e:
-        response = CommonResponse(status="error", msg=f"获取用户信息失败: {str(e)}", code="401")
+        # 服务端异常兜底必须是 5xx：业务 code 401 会被前端当认证失败处理
+        # （静默续期→重放→登出），DB 抖动会误踢在线用户
+        response = CommonResponse(status="error", msg=f"获取用户信息失败: {str(e)}", code="500")
         return response
 
 
@@ -231,27 +233,27 @@ def update_twofa_flag(
     if user_request.twofaFlag == "0" and user.two_factor_flag == "1":
         # 停用2FA：需要同时验证密码和2FA验证码
 
-        # 1. 验证密码
+        # 1. 验证密码（输入错误用 400：业务 401 会触发前端认证失败链路误登出）
         if not user_request.password or len(user_request.password) == 0:
-            response = CommonResponse(status="error", msg="停用2fa验证需要提供当前密码", code="401")
+            response = CommonResponse(status="error", msg="停用2fa验证需要提供当前密码", code="400")
             return response
 
         logger.info(f"[停用2FA] 开始验证密码，userId={user.id}, username={user.username}")
         if not security.verify_password(user_request.password, user.password):
             logger.warning(f"[停用2FA] 密码验证失败，userId={user.id}, username={user.username}")
-            response = CommonResponse(status="error", msg="密码错误", code="401")
+            response = CommonResponse(status="error", msg="密码错误", code="400")
             return response
         logger.info(f"[停用2FA] 密码验证成功，userId={user.id}, username={user.username}")
 
         # 2. 验证2FA验证码
         if not user_request.twoFactorCode or len(user_request.twoFactorCode) == 0:
-            response = CommonResponse(status="error", msg="停用2fa验证需要提供2fa验证码", code="401")
+            response = CommonResponse(status="error", msg="停用2fa验证需要提供2fa验证码", code="400")
             return response
 
         logger.info(f"[停用2FA] 开始验证2FA码，userId={user.id}")
         if not utils.verify_totp(str(user.two_factor_secret), user_request.twoFactorCode):
             logger.warning(f"[停用2FA] 2FA验证码错误，userId={user.id}, username={user.username}")
-            response = CommonResponse(status="error", msg="双因素验证码错误", code="401")
+            response = CommonResponse(status="error", msg="双因素验证码错误", code="400")
             return response
         logger.info(f"[停用2FA] 2FA验证码正确，userId={user.id}, username={user.username}")
 
@@ -272,14 +274,14 @@ def update_twofa_flag(
     if user_request.twofaFlag == "1" and user.two_factor_flag == "0":
         # 启用2FA时必须验证TOTP码
         if not user_request.twoFactorCode or len(user_request.twoFactorCode) == 0:
-            response = CommonResponse(status="error", msg="启用2fa验证需要提供验证码", code="401")
+            response = CommonResponse(status="error", msg="启用2fa验证需要提供验证码", code="400")
             return response
 
         # 添加调试日志（脱敏：不打印 secret 片段与验证码明文）
         logger.info(f"开始验证TOTP: user_id={user.id}, secret存在={bool(user.two_factor_secret)}")
         if not utils.verify_totp(str(user.two_factor_secret), user_request.twoFactorCode):
             logger.warning(f"TOTP验证失败: user_id={user.id}")
-            response = CommonResponse(status="error", msg="验证码错误，请检查认证器应用中的6位数字", code="401")
+            response = CommonResponse(status="error", msg="验证码错误，请检查认证器应用中的6位数字", code="400")
             return response
 
         try:
@@ -307,7 +309,7 @@ def verify_password_for_2fa(
     4. 返回base64编码的二维码图片和secret
 
     安全特性：
-    - 密码验证失败返回401
+    - 密码验证失败返回400（业务输入错误；401 会触发前端认证失败链路误登出）
     - 已启用2FA的用户不允许重复绑定
     - 绑定目标必须是 token 对应用户本人（安全修复 W10：历史实现按 body
       userId 操作任意用户，可在途重置他人 2FA）
@@ -330,7 +332,7 @@ def verify_password_for_2fa(
 
         if not security.verify_password(user_request.password, user.password):
             logger.warning(f"[2FA密码验证] 密码验证失败，username={user.username}")
-            return CommonResponse(status="error", msg="密码错误", code="401")
+            return CommonResponse(status="error", msg="密码错误", code="400")
 
         logger.info(f"[2FA密码验证] 密码验证成功，username={user.username}")
 

@@ -30,6 +30,10 @@ security:
   token_expire_minutes: 60
   algorithm: HS256
   login_status_secret: your-login-secret-here
+  # JWT 签名密钥（SECRET_KEY 环境变量缺省时的回退源）：刻意保持注释缺席——
+  # 首次启动 init_config_file 会自动生成随机值并补入。切勿填写任何示例值：
+  # "缺失才补"语义下，照抄的公开已知密钥会被永久沿用为签名密钥。
+  # jwt_secret_key: <留空自动生成，或 python -c "import secrets; print(secrets.token_hex(32))">
 cors:
   allowed_origins:
   - '*'

@@ -1,6 +1,5 @@
 ﻿from datetime import datetime, timedelta
 
-import yaml
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
 
@@ -9,7 +8,6 @@ from app.auth import models, security, utils
 from app.auth.login_throttle import login_throttle
 from app.auth.request import RefreshRequest, UserLogin
 from app.core.config import settings
-from app.core.config import settings as app_settings
 from app.database import get_db
 
 router = APIRouter()
@@ -82,16 +80,15 @@ def login(
                 db.commit()
                 return CommonResponse(code="401", msg="验证码错误，请重试", status="error", data=[])
 
-        with open(app_settings.YAML_PATH, "r") as f:
-            new_config = yaml.load(f, Loader=yaml.SafeLoader)
-
+        # 读法与 refresh 端点对齐：get_login_secret 带缓存与 fail-safe，
+        # 消除旧版升级配置缺 login_status_secret 时的直取 KeyError → 登录 500
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = utils.create_access_token(
             data={
                 "sub": user.username,
                 "user_id": str(user.id),
                 "is_admin": "1",
-                "verify_secret": new_config["security"]["login_status_secret"],
+                "verify_secret": utils.get_login_secret(),
             },
             expires_delta=access_token_expires,
         )

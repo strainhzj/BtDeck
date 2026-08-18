@@ -24,7 +24,8 @@ def get_login_secret() -> str:
     if (
         _cached_login_secret is None
         or _config_cache_time is None
-        or (datetime.now() - _config_cache_time).seconds > 300
+        # total_seconds：timedelta.seconds 按 86400 取模，缓存龄跨日后条件失真
+        or (datetime.now() - _config_cache_time).total_seconds() > 300
     ):
         try:
             with open(app_settings.YAML_PATH, "r") as f:
