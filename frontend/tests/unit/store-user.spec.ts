@@ -1,14 +1,16 @@
 import { UserModule } from '@/store/modules/user'
-import { login, logout } from '@/api/users'
+import { login, logout, getUserInfo } from '@/api/users'
 import { setRefreshToken, removeRefreshToken, setToken, removeToken, removeUserId, getUserId } from '@/utils/cookies'
+import { ApiError } from '@/types/api'
 
 /**
- * 双令牌体系前端存储回归（verified-bugfix-remediation W6-2）：
+ * 双令牌体系前端存储回归（verified-bugfix-remediation W6-2 + 跨标签竞态修复）：
  * - Login 成功后持久化 refresh_token（cookie）
  * - Login 响应缺 refresh_token 时清除旧值（残留已撤销 token 会让续期永远失败）
- * - ResetToken / LogOut 清空 refresh_token
+ * - ResetToken / LogOut 清空 refresh_token；ExpireSession 被动登出保留（竞态加固）
  * - SetToken action 更新内存 + cookie（401 单飞刷新后重放依赖）
  * - LogOut 容忍空 token（登出按钮在任何状态下可用）
+ * - GetUserInfo 网络层失败原样上抛（守卫网络分流的契约），其余包装为普通提示
  */
 
 jest.mock('@/api/users', () => ({
@@ -33,6 +35,10 @@ jest.mock('@/utils/cookies', () => ({
 
 const mockLogin = login as jest.MockedFunction<typeof login>
 const mockLogout = logout as jest.MockedFunction<typeof logout>
+const mockGetUserInfo = getUserInfo as jest.MockedFunction<typeof getUserInfo>
+
+/** 网络层失败（无 HTTP 响应）经拦截器归一化后的 ApiError 形态 */
+const networkApiError = new ApiError('网络连接失败，请检查网络连接', { code: '0', httpStatus: 0 })
 const mockSetRefreshToken = setRefreshToken as jest.MockedFunction<typeof setRefreshToken>
 const mockRemoveRefreshToken = removeRefreshToken as jest.MockedFunction<typeof removeRefreshToken>
 const mockSetToken = setToken as jest.MockedFunction<typeof setToken>
@@ -92,6 +98,55 @@ describe('UserModule 双令牌存储', () => {
     expect(mockRemoveRefreshToken).toHaveBeenCalled()
     expect(mockRemoveToken).toHaveBeenCalled()
     expect(UserModule.token).toBe('')
+  })
+
+  describe('ExpireSession（会话过期被动登出，跨标签竞态加固）', () => {
+    beforeEach(() => {
+      jest.clearAllMocks()
+      ;(getUserId as jest.Mock).mockReturnValue('')
+      UserModule.SetToken('expired-access')
+      UserModule.SetMustChangePassword(true)
+    })
+
+    it('清 access/userId/roles/mustChangePassword 但保留共享 refresh cookie', () => {
+      UserModule.ExpireSession()
+
+      expect(mockRemoveToken).toHaveBeenCalled()
+      expect(mockRemoveUserId).toHaveBeenCalled()
+      // 与 ResetToken 的本质区别：不清 refresh cookie（防"败者先读、胜者后写"
+      // 残余竞态把他标签刚轮换出的有效令牌一并杀死）
+      expect(mockRemoveRefreshToken).not.toHaveBeenCalled()
+      expect(UserModule.token).toBe('')
+      expect(UserModule.userId).toBe('')
+      expect(UserModule.roles).toEqual([])
+    })
+
+    it('清除强制改密标志（W9 状态不残留到下一次会话）', () => {
+      UserModule.ExpireSession()
+
+      expect(UserModule.mustChangePassword).toBe(false)
+    })
+  })
+
+  describe('GetUserInfo 错误分流（守卫网络分流的上抛契约）', () => {
+    beforeEach(() => {
+      jest.clearAllMocks()
+      ;(getUserId as jest.Mock).mockReturnValue('')
+      UserModule.ResetToken()
+      UserModule.SetToken('valid-access')
+    })
+
+    it('网络层失败（ApiError code 0）原样上抛：守卫据此中止导航保留会话', async() => {
+      mockGetUserInfo.mockRejectedValue(networkApiError)
+
+      await expect(UserModule.GetUserInfo()).rejects.toBe(networkApiError)
+    })
+
+    it('非网络失败（含认证 401）包装为普通提示，不伪装成网络错误', async() => {
+      mockGetUserInfo.mockRejectedValue(new ApiError('token验证失败', { code: '401', httpStatus: 200 }))
+
+      await expect(UserModule.GetUserInfo()).rejects.toThrow('获取用户信息失败，请重新登录')
+    })
   })
 
   describe('LogOut', () => {

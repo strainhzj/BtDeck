@@ -1,4 +1,4 @@
-import { getToken } from '@/utils/cookies'
+import { getToken, removeRefreshToken } from '@/utils/cookies'
 import {
   getTokenExp,
   isTokenExpired,
@@ -150,15 +150,19 @@ describe('initSessionWatch', () => {
     expect(UserModule.token).toBe('new-access')
   })
 
-  it('标签页获得焦点且会话已在别处结束（cookie 已空）→ 统一登出跳转', () => {
+  it('标签页获得焦点且会话已在别处结束（cookie 已空）→ 统一登出跳转（ExpireSession 保留 refresh cookie）', () => {
     UserModule.ResetToken()
     UserModule.SetToken('stale-access')
     mockGetToken.mockReturnValue(undefined as unknown as string)
     window.location.hash = ''
+    // 复位期间的 cookie mock 调用不计入断言
+    jest.clearAllMocks()
 
     window.dispatchEvent(new Event('focus'))
 
     expect(UserModule.token).toBe('')
     expect(window.location.hash).toContain('#/login?redirect=')
+    // 登出跳转走 ExpireSession：不清 refresh cookie（跨标签竞态加固语义一致）
+    expect(removeRefreshToken).not.toHaveBeenCalled()
   })
 })

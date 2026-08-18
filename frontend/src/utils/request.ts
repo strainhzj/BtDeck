@@ -3,8 +3,9 @@ import { Message } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
 import { setRefreshToken, getRefreshToken } from '@/utils/cookies'
 import { refreshAccessToken } from '@/api/users'
-import { refreshTokensOnce, type TokenPair } from '@/utils/token-refresh'
+import { refreshTokensOnce, type TokenPair, type RefreshOutcome } from '@/utils/token-refresh'
 import { buildLoginRedirectTarget } from '@/utils/session'
+import { ApiError } from '@/types/api'
 import {
   SUCCESS_CODES,
   isLoginRequest,
@@ -74,7 +75,10 @@ export function redirectToLogin(): void {
   }
   redirectDebounceUntil = now + REDIRECT_DEBOUNCE_MS
   Message({ message: '登录状态已过期，请重新登录', type: 'warning', duration: 3000 })
-  UserModule.ResetToken()
+  // ExpireSession 保留 refresh cookie：多标签共享 cookie 下，"确证死亡"
+  // 判定存在他标签轮换未落盘的时序残余——清共享 cookie 会把有效令牌一并
+  // 杀死（死 token 残留无害，重登录时 Login 覆盖）
+  UserModule.ExpireSession()
   window.location.href = buildLoginRedirectTarget(window.location.hash, window.location.pathname)
 }
 
@@ -100,31 +104,38 @@ const refreshDeps = {
   saveTokens: (pair: TokenPair) => {
     UserModule.SetToken(pair.accessToken)
     setRefreshToken(pair.refreshToken)
-  }
+  },
+  // 后端明确拒绝（业务码 401 或 HTTP 401）才判死；网络断连/超时/5xx 为瞬时
+  isDefiniteFailure: (err: unknown): boolean => err instanceof ApiError && err.code === '401'
 }
 
 /**
  * 主动续期入口（守卫/会话监听使用，W6 伴随修复）：
- * 成功返回 true（内存+cookie 已更新），失败/无 refresh token 返回 false。
+ * 返回三态结果——renewed（已更新令牌）/ rejected（血统确证死亡）/
+ * transient（网络抖动等瞬时失败，保留会话现场）。
  */
-export async function trySilentRefresh(): Promise<boolean> {
-  const pair = await refreshTokensOnce(refreshDeps)
-  return pair !== null
+export async function trySilentRefresh(): Promise<RefreshOutcome> {
+  return refreshTokensOnce(refreshDeps)
 }
 
 /**
- * 401 统一处理：先尝试静默续期并重放原请求一次，失败才登出。
+ * 401 统一处理：先尝试静默续期并重放原请求一次，失败按三态分流。
  * 登录/refresh 请求豁免（isLoginRequest）；已重放过的请求不再续期（防循环）。
  */
 async function handleUnauthorized(config: AxiosRequestConfig, fallbackError: unknown): Promise<never> {
   const retried = (config as AxiosRequestConfig & { _retried?: boolean })._retried
   if (!retried && !isLoginRequest(config)) {
-    const refreshed = await trySilentRefresh()
-    if (refreshed) {
+    const outcome = await trySilentRefresh()
+    if (outcome.status === 'renewed') {
       (config as AxiosRequestConfig & { _retried?: boolean })._retried = true
       // 重放原请求：请求拦截器会自动携带新 token，响应拦截器继续解包/归一化
       const retryResult = await service.request(config)
       return retryResult as never
+    }
+    if (outcome.status === 'transient') {
+      // 网络抖动/服务端瞬时错误：不清 token、不跳转，原请求以刷新失败的
+      // 网络错误拒绝（toast 已由拦截器网络分支弹出），下个请求/导航自愈
+      return Promise.reject(outcome.error)
     }
   }
   redirectToLogin()

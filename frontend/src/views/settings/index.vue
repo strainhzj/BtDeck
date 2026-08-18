@@ -681,20 +681,17 @@ export default class extends Vue {
       })
 
       this.$message({
-        message: '密码修改成功',
+        message: '密码修改成功，请使用新密码重新登录',
         type: 'success',
         duration: 3000
       })
 
-      // 强制改密标志清除（安全修复 W9）：改密后路由守卫不再拦截
-      UserModule.SetMustChangePassword(false)
-      // 清除 URL 上的 forceChange 标记，避免 F5 重挂载时再次弹出过期警告
-      if (this.$route.query.forceChange !== undefined) {
-        const query = { ...this.$route.query }
-        delete query.forceChange
-        this.$router.replace({ query }).catch(() => undefined)
-      }
-      this.cancelPasswordChange()
+      // 改密会话终结（跨标签续期修复）：后端 change_password 已撤销该用户
+      // 全部 refresh token（W9），本地会话不可再续期——主动登出语义全清
+      // （ResetToken 含强制改密标志清除），跳登录页用新密码重登。
+      // forceChange query 清理随整页跳转自然失效，无需单独处理
+      UserModule.ResetToken()
+      this.$router.push('/login').catch(() => undefined)
     } catch (error) {
       this.$message({
         message: '密码修改失败',

@@ -6,6 +6,7 @@ import { Route } from 'vue-router'
 import { UserModule } from '@/store/modules/user'
 import { isTokenExpired } from '@/utils/session'
 import { trySilentRefresh } from '@/utils/request'
+import { ApiError } from '@/types/api'
 
 NProgress.configure({ showSpinner: false })
 
@@ -38,6 +39,24 @@ const forceChangeRedirect = (next: any): void => {
   NProgress.done()
 }
 
+/** 网络层失败（无 HTTP 响应）判定：ApiError code '0'（buildNetworkError 契约） */
+const isTransientNetworkError = (err: unknown): boolean =>
+  err instanceof ApiError && err.code === '0'
+
+/**
+ * 以"中止导航"替代"登出"处理瞬时网络失败：保留令牌与会话现场，
+ * 用户再次点击菜单/刷新即重试。next(false) 后 afterEach 不触发，
+ * 进度条必须手动收尾（对齐本文件其余非 next() 出口的手动 done 惯例）。
+ */
+const abortNavigation = (next: any): void => {
+  Message.warning({
+    message: '网络波动，请稍后重试',
+    duration: 3000
+  })
+  next(false)
+  NProgress.done()
+}
+
 router.beforeEach(async(to: Route, from: Route, next: any) => {
   // Start progress bar
   NProgress.start()
@@ -45,11 +64,20 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
   // Determine whether the user has logged in
   if (UserModule.token) {
     // 会话主动过期检查（双令牌 W6 伴随修复）：access token 已过期时先静默
-    // 续期，失败立即登出——不再依赖"恰好有 API 请求触发 401"才被动登出
+    // 续期，失败按三态分流——确证死亡才登出；网络抖动保留会话现场
     if (isTokenExpired(UserModule.token)) {
-      const refreshed = await trySilentRefresh()
-      if (!refreshed) {
-        UserModule.ResetToken()
+      const outcome = await trySilentRefresh()
+      if (outcome.status === 'transient') {
+        // 网络抖动不杀会话：已有用户信息直接放行（页面请求自行重试续期）；
+        // 首导航（需 GetUserInfo）中止本次导航，避免把瞬时失败升级成登出
+        if (UserModule.roles.length === 0) {
+          abortNavigation(next)
+          return
+        }
+      } else if (outcome.status === 'rejected') {
+        // ExpireSession 保留 refresh cookie：防跨标签轮换竞态清掉他标签
+        // 刚换得的有效令牌（死 token 残留无害，重登录时覆盖）
+        UserModule.ExpireSession()
         if (to.path === '/login') {
           next()
         } else {
@@ -88,8 +116,15 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
             next()
           }
         } catch (err) {
-          // Token无效或过期，清除状态并重定向到登录页
-          UserModule.ResetToken()
+          // 网络抖动（GetUserInfo 网络失败原样上抛的 ApiError code '0'）：
+          // 保留令牌与会话，中止本次导航待重试，不升级为登出
+          if (isTransientNetworkError(err)) {
+            abortNavigation(next)
+            return
+          }
+          // Token无效或过期：ExpireSession 保留 refresh cookie（401 链路的
+          // redirectToLogin 已按同语义处理，这里不重置为全清防竞态误杀）
+          UserModule.ExpireSession()
           next(`/login?redirect=${encodeURIComponent(to.path)}`)
           NProgress.done()
         }

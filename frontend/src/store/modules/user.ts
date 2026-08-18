@@ -1,5 +1,6 @@
 import { VuexModule, Module, Action, Mutation, getModule } from 'vuex-module-decorators'
 import { login, logout, getUserInfo } from '@/api/users'
+import { ApiError } from '@/types/api'
 import {
   getToken,
   setToken,
@@ -153,6 +154,28 @@ class User extends VuexModule implements IUserState {
   }
 
   /**
+   * 会话过期被动登出（跨标签续期竞态修复）。
+   *
+   * 与 ResetToken 的区别：保留 refresh token cookie。刷新失败路径上的
+   * "确证死亡"判定存在跨标签时序残余竞态——本标签读到旧值时，他标签可能
+   * 刚轮换成功但尚未写入新 cookie；此时清掉共享 cookie 会把他标签的有效
+   * 令牌一并杀死，一次竞态升级为全浏览器登出。死 token 残留 cookie 无害
+   * （后端已撤销，无法换发），重登录时 Login 分支覆盖/清除。
+   *
+   * 使用方：redirectToLogin（401 续期失败）、路由守卫过期分支。
+   * 主动登出（LogOut、改密终结会话）仍用 ResetToken 全清。
+   */
+  @Action({ rawError: true })
+  public ExpireSession() {
+    removeToken()
+    removeUserId()
+    this.SET_TOKEN('')
+    this.SET_USER_ID('')
+    this.SET_ROLES([])
+    this.SET_MUST_CHANGE_PASSWORD(false)
+  }
+
+  /**
    * 更新双因素认证标记状态。
    *
    * SET_TWO_FACTOR_FLAG 是 private Mutation，getModule 实例外部不可直接调用，
@@ -237,6 +260,11 @@ class User extends VuexModule implements IUserState {
     } catch (error) {
       // 如果API调用失败，抛出错误让用户重新登录
       console.error('getUserInfo API调用失败:', error)
+      // 网络层失败（ApiError code '0'，无 HTTP 响应）原样上抛：路由守卫据此
+      // 区分——网络抖动只中止导航保留会话，认证类失败才升级为登出
+      if (error instanceof ApiError && error.code === '0') {
+        throw error
+      }
       throw Error('获取用户信息失败，请重新登录')
     }
   }
