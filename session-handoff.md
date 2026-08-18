@@ -2260,3 +2260,35 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - 新增回归测试 `backend/tests/services/test_transmission_delete_adapter.py`；相关 35 项 pytest 全部通过，目标 flake8/新增测试 black check 通过。
 - 后续若仍超时，应分别测量目标 `get_torrent()` 与 `remove_torrent()` 的耗时；当前 `remove_torrent()` 仍是同步 SDK 调用，尚未在本次范围内改造为统一 runtime/to_thread。
 - 未执行 Git stage/commit/push/deploy；全栈 `init.sh` 仍受当前 Windows/WSL `E_ACCESSDENIED` 环境限制。
+
+## 2026-08-18 交接：W9 强制改密路由死锁（根因定位 → 回归重现 → 完整修复）
+
+### 当前结果
+
+- **根因四层**（两端回归测试实证）：init_db 启动自检置位默认口令标志（database.py:185-192，保留不动）→ 标志仅随登录响应下发、7 天 refresh token 窗口掩盖 → 守卫重定向/白名单写父路径 /settings 而真实改密页在 /settings/index（落点内容区 <!----> 白屏、真实路径与菜单均被弹回 = 死锁）→ 守卫 GetUserInfo 分支首导航放行缺口（双代理审查发现）。
+- **修复 6+1 处**：router.ts /settings 加 redirect:'/settings/index'；permission.ts 守卫目标/白名单改子路由 + GetUserInfo 分支补拦截（抽 isForceChangeBlocked/forceChangeRedirect）+ 拦截弹 Message.warning"请先修改密码：完成修改前仅可访问系统设置页"（3 秒节流——拦截重定向回同一路径时设置页不重新挂载，点其它菜单被弹回原本无任何反馈；设置页 mounted 旧提示移除避免双弹）；cuser.py /user/info 下发 mustChangePassword（双前缀）；users.ts UserInfoData 类型；user.ts GetUserInfo 同步（undefined 不写防滚动部署误清）；settings/index.vue 改密成功清 forceChange query。
+- **发布约束**：router redirect 与守卫白名单必须原子交付（单发前者 → /settings ↔ /settings/index 无限重定向循环，vue-router 3 无环检测已实证）。
+- **生产解困 runbook** 在 PLANS/force-change-deadlock-fix.md 第四节（含 SQL 路径、会话残留必须重登、SQLite 先停后写、bcrypt 哈希生成命令）。
+
+### 验证
+
+- 后端：test_login_throttle_and_change_password（12，含 /users/info 两态新用例）+ test_w9_force_change_reproduction（4）+ test_auth_protection_extended 共 97 passed；black/flake8 通过；mypy 44 errors 为既有基线（stash 对比零新增）。
+- 前端：permission-force-change-deadlock.spec 6/6（拦截落点可达/首导航拦截/父 redirect/直达放行/改密闭环/对照）；user-store-must-change-password.spec 7/7（GetUserInfo 三态）；permission-guard/store-user/api-contracts/request-auth 回归 60 passed；改动文件 eslint 通过；npm run typecheck 通过。
+- 文档：PLANS/force-change-deadlock-fix.md 新建并在 PLANS/README 注册；progress.md/feature_list.json（force-change-deadlock-fix-2026-08-18，2 tasks）已更新；roadmap 同步（entry README 路由表行号实测重测+permission 小节补拦截描述、frontend README 行数、backend api README cuser 行、test-coverage 补登与扩展、根 README 元信息）；./init.sh 通过。
+
+### 回归保护矩阵（本事故全部修改点，2026-08-18 补齐）
+
+- deadlock spec 8 用例：router redirect、守卫目标/白名单、首导航拦截、提示+节流；user-store spec 9 用例：Login/GetUserInfo 全解析分支；settings-change-password spec 4 用例：改密成功双解锁（组件级，含 API btoa 契约）；后端 /users/info 两态 + init_db 置位 4 用例。相关 7 套件 80 用例全绿。
+
+### 测试技术备忘（后续写路由测试会用到）
+
+- jest.mock 工厂必须 `__esModule: true` + default 组件对象，否则 ts-jest interop 把包裹对象当组件 → 渲染空占位。
+- router 是模块级单例且 push 修补吞 NavigationDuplicated：每个重定向用例须从与目标 fullPath 互异的当前路由出发（spec 的 startFrom helper），否则守卫不执行、断言空转。
+- `/torrents/index` 路由挂的真实组件是 TorrentViewSwitcher.vue（非 torrents/index.vue，后者不在该路由上）。
+- mock 懒加载视图时 target 文件须与 router.ts import 路径完全一致，放行导航会真实解析组件。
+
+### 后续与边界
+
+- 未执行 Git 提交（用户未要求）；如提交建议：fix(frontend)+fix(backend) 或合并 fix，router.ts 与 permission.ts 必须同一提交。
+- 遗留：长会话不刷新标签页无法实时感知标志（GetUserInfo 唯一调用点是守卫 roles=[] 分支，彻底消除需挂周期端点）；其他父路由（/downloader、/tasks 等）缺 redirect 的手输空白 UX 问题待统一补。
+- 部署后被困用户自动解锁路径：登录 → 落 /settings/index?forceChange=1 真实改密页 → 改密即清两端标志。

@@ -4578,3 +4578,35 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 1. git filter-repo 历史清洗 + force push
 2. 生产密钥轮换（顺序：先登录升级 bcrypt 再轮换）
 3. 桌面版 verify-package.py 验证
+
+## 2026-08-18 W9 强制改密路由死锁：根因定位、回归重现与完整修复
+
+### 背景
+
+生产事故：部署最新代码后正常使用一段时间，重新登录即被锁死在 /#/settings?forceChange=1，点击任何页面都被弹回且系统设置页无法进入（无法完成改密自救）。
+
+### 根因（四层，已由两端回归测试实证）
+
+1. 触发层：`init_db` 启动自检（database.py）发现 admin 仍用默认口令 "admin"（bcrypt/旧 AES-ECB 双格式命中）→ must_change_password 置 1；
+2. 延迟层：标志仅随登录响应下发，存量会话靠 7 天 refresh token 存活——症状推迟到重新登录才爆发；
+3. 死锁层：守卫重定向目标/白名单写父路径 /settings（父路由只挂 Layout 无 redirect，真实改密页在 /settings/index）→ 落点内容区 <!----> 白屏、真实路径与侧边栏菜单均被弹回，改密表单代码层面不可达；
+4. 首导航缺口（双代理审查发现）：守卫 roles=[] 分支 GetUserInfo 后无条件放行，登录后/F5 后首次导航不受拦截。
+
+### 已实施（修复）
+
+- 前端：router.ts /settings 加 redirect；permission.ts 守卫目标/白名单改子路由 + GetUserInfo 分支补拦截（抽 isForceChangeBlocked/forceChangeRedirect）+ 拦截弹 Message.warning"请先修改密码"（3 秒节流，点其它菜单被弹回时给出反馈；设置页 mounted 旧提示移除避免双弹）；user store GetUserInfo 解析 mustChangePassword（undefined 不写防滚动部署误清）；users.ts 类型；settings/index.vue 改密成功清 forceChange query。
+- 后端：cuser.py get_user_info 下发 mustChangePassword（双前缀生效）。
+- 发布约束：router redirect 与守卫白名单必须原子交付（单独部署前者会无限重定向循环）。
+- 生产解困 runbook（含 SQL 路径、会话残留、SQLite 运维细节）见 PLANS/force-change-deadlock-fix.md 第四节。
+
+### 测试
+
+- 重现（事故时点）：backend test_w9_force_change_reproduction 4 用例 + frontend permission-force-change-deadlock（旧 bug 行为）。
+- 修复后锚定：deadlock spec 8 用例（拦截落点可达+提示断言/首导航拦截+提示断言/父路径 redirect/手动直达放行/改密闭环/提示 3 秒节流/对照）；user-store-must-change-password 扩至 9 用例（Login true/显式 false/缺省 + GetUserInfo wrapped/扁平/显式 false 覆盖/字段缺失保持原值）；settings-change-password 新建 4 用例（改密成功双解锁：清 store 标志+清 URL query 保留其他参数；无 query 不多余跳转；失败不提前解锁；前置校验拦截）；后端新增 /users/info 两态 2 用例。
+- 验证：后端三套件 97 passed + black/flake8/mypy；前端 jest 相关 6+7+60 passed + eslint + typecheck；./init.sh 通过。
+
+### 遗留（人工/后续）
+
+1. 长会话不刷新的标签页无法实时感知标志（GetUserInfo 唯一调用点是守卫 roles=[] 分支）——彻底消除需挂周期端点，另行评估；
+2. 其他父路由（/downloader、/tasks 等）缺 redirect 的手输空白 UX 问题，后续统一补；
+3. Git 提交待用户指示。

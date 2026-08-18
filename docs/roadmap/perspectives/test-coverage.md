@@ -155,7 +155,9 @@
 | `permission-guard.spec.ts` ✨2026-08-17 | `permission.ts` 守卫真实路由导航五分支：过期+续期成功放行、过期+失败登出保 redirect、目标即 /login 无自指循环、未过期不触发续期、GetUserInfo 失败兜底登出 |
 | `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排（并发共享/失败返回 null） |
 | `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储：Login 持久化/缺 refresh 清残留、SetToken、ResetToken、LogOut 容忍空 token |
-| `user-store-must-change-password.spec.ts` ✨2026-08-16 | 强制改密标志的 store 状态流转 |
+| `user-store-must-change-password.spec.ts` ✨2026-08-16（2026-08-18 扩展） | 强制改密标志的 store 状态流转：Login 解析（true/显式 false/缺省）/改密清标志/ResetToken 清标志/GetUserInfo 四态（wrapped true、扁平 true、显式 false 覆盖、字段缺失保持原值防滚动部署误清） |
+| `settings-change-password.spec.ts` ✨2026-08-18 | `views/settings/index.vue` 改密流程（W9 死锁修复组件侧）：成功双解锁（清 store 标志 + 清 URL forceChange query 且保留其他参数）、无 query 不多余跳转、API 失败不提前解锁、两次输入不一致前置校验不发起 API |
+| `permission-force-change-deadlock.spec.ts` ✨2026-08-18 | `permission.ts`+`router.ts` 真实路由死锁回归（生产事故修复锚定）：拦截落点 `/settings/index?forceChange=1` 且改密页渲染可达、拦截弹"请先修改密码"提示（Message.warning）、首导航（GetUserInfo 分支）拦截、手输父路径经 redirect 解析内容非空、手动直达放行、改密成功闭环、提示 3 秒节流（可控假时钟）、flag=false 对照 |
 | `batch-transfer-dialog.spec.ts` | 种子转移对话框契约 |
 | `collapsible-panel.spec.ts` | 通用折叠面板（W8） |
 | `keyword-list-modal.spec.ts` ✨2026-08-16 | Tracker 关键词列表弹窗与快捷操作入口 |

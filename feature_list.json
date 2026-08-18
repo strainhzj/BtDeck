@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-16",
+  "last_updated": "2026-08-18",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -4047,6 +4047,47 @@
             "tests/services/test_orphan_cleanup_hardlink_warning.py"
           ],
           "evidence": "迁移 ab68fe061d5b（inspect 守卫 add_column + batch downgrade，【可回滚】）串接 ff42d3402df5；4 提交入口加 ip_address、execute_job 读 job 会话内取出透传、5 个服务函数签名+4 处租约递归+5 处审计调用点、5 个端点提取 IP；EXPECTED_HEAD/REV_HEAD 三处测试同步；104 tests passed：含 5 端点真实 XFF 提取链路 + client.host 回退、execute_job cleanup/purge 双路径 IP 透传、服务层 ORPHAN_CLEANUP 审计收到 ip"
+        }
+      ]
+    },
+    {
+      "id": "force-change-deadlock-fix-2026-08-18",
+      "name": "W9 强制改密路由死锁修复（守卫落点/白名单 + 父路由 redirect + /user/info 实时下发标志 + 首导航拦截）",
+      "description": "生产事故：默认口令部署被启动自检置 must_change_password=1 后，重新登录被锁死在 /#/settings?forceChange=1 且设置页不可达。修复：①守卫重定向目标与白名单改用真实页面子路由 /settings/index（原父路径落点内容区空白、真实路径被弹回形成死锁）②/settings 父路由补 redirect（与守卫改动原子交付，单发会无限循环）③守卫 GetUserInfo 分支补拦截（登录后/F5 后首次导航不再放行业务页）④后端 /user/info 实时下发 mustChangePassword、前端 GetUserInfo 同步 store（undefined 不写，防滚动部署误清）⑤改密成功后清除 URL forceChange query。init_db 置位逻辑（W9 安全意图）保留不动。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/force-change-deadlock-fix.md",
+      "tasks": [
+        {
+          "id": "force-change-deadlock-fix-2026-08-18.1",
+          "name": "前端死锁解除与守卫加固",
+          "description": "router redirect + 守卫三处联动（目标/白名单/GetUserInfo 分支拦截）+ 拦截弹\"请先修改密码\"提示（3 秒节流）+ store 同步 + 改密清 query",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/router.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/store/modules/user.ts",
+            "frontend/src/api/users.ts",
+            "frontend/src/views/settings/index.vue",
+            "frontend/tests/unit/permission-force-change-deadlock.spec.ts",
+            "frontend/tests/unit/user-store-must-change-password.spec.ts",
+            "frontend/tests/unit/settings-change-password.spec.ts"
+          ],
+          "evidence": "deadlock spec 8 用例（拦截落点可达+提示断言/首导航拦截+提示断言/父 redirect/直达放行/改密闭环/提示节流/对照）+ user-store spec 9 用例（Login true/显式 false/缺省 + GetUserInfo wrapped/扁平/false 覆盖/缺失保持原值）+ settings-change-password spec 4 用例（改密成功双解锁：清 store 标志+清 URL query 保留其他参数；无 query 不跳转；失败不提前解锁；前置校验拦截）全绿；permission-guard/store-user/api-contracts/request-auth 回归通过（相关 7 套件 80 passed）；eslint + typecheck 通过"
+        },
+        {
+          "id": "force-change-deadlock-fix-2026-08-18.2",
+          "name": "后端 /user/info 实时下发标志 + 事故链路回归",
+          "description": "get_user_info 响应加 mustChangePassword；init_db 置位链路回归测试（默认口令双格式/自定义负例/改密幂等）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/cuser.py",
+            "backend/tests/api/test_login_throttle_and_change_password.py",
+            "backend/tests/api/test_w9_force_change_reproduction.py"
+          ],
+          "evidence": "test_login_throttle_and_change_password 12 用例（含 /users/info 两态新用例）+ test_w9_force_change_reproduction 4 用例 + test_auth_protection_extended 全绿（三套件合计 97 passed）；black/flake8/mypy 通过"
         }
       ]
     }

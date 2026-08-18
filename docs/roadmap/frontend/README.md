@@ -45,7 +45,7 @@
 
 ### 4. 路由守卫分离
 
-- 路由表在 `src/router.ts`（318 行，含部署后旧 chunk 一次恢复）
+- 路由表在 `src/router.ts`（308 行，含部署后旧 chunk 一次恢复；`/settings` 父路由 redirect → `/settings/index`，与守卫改动原子交付）
 - 守卫逻辑在独立 `src/permission.ts`（`router.beforeEach`），由 `main.ts` L37 `import '@/permission'` 触发副作用注册
 
 ---

@@ -28,37 +28,40 @@
 - router.ts L7 `Vue.use(Router)`；store/index.ts L8 `Vue.use(Vuex)`
 - L74-78：`new Vue({ router, store, render: (h) => h(App) }).$mount('#app')`
 
-## router.ts 路由表（L27-270）
+## router.ts 路由表（L29-262，文件共 308 行）
 
 | 路径 | 组件 | 行号 |
 |------|------|------|
-| `/login` | `@/views/login/index.vue` | L29 |
-| `/404` | `@/views/404.vue` | L34 |
-| `/` → `/dashboard`（Layout） | `@/views/dashboard/index.vue` | L39 |
-| `/downloader` | `@/views/downloader/index.vue` | L53 |
-| `/torrents`（4 children） | TorrentViewSwitcher / TraditionalView / FileManagement / index(detail) | L68 |
-| `/tasks` | `@/views/tasks/index.vue` | L115 |
-| `/tracker`（4 children） | keywords-board / keywords-search / reannounce-config / test | L130 |
-| `/logs/audit` | `@/views/logs/audit.vue` | L185 |
-| `/recycle-bin` | `@/views/recycle-bin/index.vue` | L205 |
-| `/orphan-files` | `@/views/orphan-files/index.vue` | L220 |
-| `/settings` | `@/views/settings/index.vue` | L235 |
-| `/query-templates` | `@/views/query-templates/index.vue` | L250 |
-| `*` | redirect `/404` | L265 |
+| `/login` | `@/views/login/index.vue` | L31 |
+| `/404` | `@/views/404.vue` | L36 |
+| `/` → `/dashboard`（Layout） | `@/views/dashboard/index.vue` | L41 |
+| `/downloader` | `@/views/downloader/index.vue` | L56 |
+| `/torrents`（4 children，redirect → `/torrents/index`） | TorrentViewSwitcher / TraditionalView / FileManagement / index(detail) | L70 |
+| `/tasks` | `@/views/tasks/index.vue` | L114 |
+| `/tracker`（4 children） | keywords-board / keywords-search / reannounce-config / test | L128 |
+| `/task-logs` | `@/views/task-logs/index.vue` | L173 |
+| `/logs/audit` | `@/views/logs/audit.vue` | L180 |
+| `/recycle-bin` | `@/views/recycle-bin/index.vue` | L199 |
+| `/orphan-files` | `@/views/orphan-files/index.vue` | L213 |
+| `/settings`（redirect → `/settings/index`，L231） | `@/views/settings/index.vue` | L227 |
+| `/query-templates` | `@/views/query-templates/index.vue` | L244 |
+| `*` | redirect `/404` | L258 |
 
-文件末尾 L278-304 自定义 `router.push` 捕获 `NavigationDuplicated`；L307-317 的 `router.onError` 在旧 runtime 请求已下线路由 chunk 时触发一次整页版本恢复，并对重复失败显示手动刷新提示。
+文件末尾 L268-293 自定义 `router.push` 捕获 `NavigationDuplicated`；L297-306 的 `router.onError` 在旧 runtime 请求已下线路由 chunk 时触发一次整页版本恢复，并对重复失败显示手动刷新提示。
 
-## permission.ts 关键（L1-95）
+## permission.ts 关键（L1-113）
 
 - L11 `whiteList = ['/login']`（仅登录页白名单）
-- L13 `router.beforeEach`：
-  - L21-33 会话主动过期检查：`isTokenExpired(UserModule.token)` 为真先 `trySilentRefresh()`，失败 `ResetToken()` 跳登录（不依赖 API 401 被动触发）
-  - L35 若 `UserModule.token` 存在：访问 `/login` 重定向；否则若 `roles.length===0` 调 `UserModule.GetUserInfo()`（L53），失败 `ResetToken()` 跳登录
-  - L48-50 防御性检查：token 空字符串抛错
-- L70-79 无 token：白名单放行，否则跳登录带 redirect
-- L89 `router.afterEach`：结束 NProgress + 设 `document.title`（默认 'BtDeck'）
+- L13-36 强制改密拦截（安全修复 W9 + 死锁修复）：`forceChangeAllowedPaths = ['/settings/index', '/settings']`（放行白名单，含真实改密页子路径）+ `isForceChangeBlocked()` 判定 + `forceChangeRedirect()` 重定向 `/settings/index?forceChange=1` 并弹 ElementUI `Message.warning("请先修改密码…")`（3 秒节流防堆叠——拦截重定向回同一路径时设置页不重新挂载，点其它菜单的反馈只能由守卫给）
+- L27 `router.beforeEach`：
+  - L35-47 会话主动过期检查：`isTokenExpired(UserModule.token)` 为真先 `trySilentRefresh()`，失败 `ResetToken()` 跳登录（不依赖 API 401 被动触发）
+  - L49 若 `UserModule.token` 存在：访问 `/login` 重定向；否则若 `roles.length===0` 调 `UserModule.GetUserInfo()`（L67），**成功后 L71 同样检查强制改密标志拦截**（闭合登录后/F5 后首导航放行缺口），失败 `ResetToken()` 跳登录
+  - L84-91 roles 已就绪分支：`isForceChangeBlocked()` 拦截一切非改密页导航（事故前白名单写父路径 `/settings`，落点内容区空白 + 真实路径被弹回 = 死锁）
+- L94-104 无 token：白名单放行，否则跳登录带 redirect
+- L107 `router.afterEach`：结束 NProgress + 设 `document.title`（默认 'BtDeck'）
 
 > **守卫不在 router.ts**：router.ts 只导出 `router` 实例；守卫逻辑由 `permission.ts` 通过 `router.beforeEach` 注册，由 `main.ts` L37 `import '@/permission'` 触发副作用。
+> **标志双通道下发**：`mustChangePassword` 由登录响应与 `/user/info`（后端 cuser.py）下发，store `GetUserInfo` 同步（字段缺失不覆盖，防滚动部署误清）。
 
 ## 第三层详情
 

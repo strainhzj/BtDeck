@@ -19,7 +19,7 @@
 | 高级搜索 API advanced-search | `advanced_search.py` | 高级搜索 API（13 字段全字段搜索 + 多选排除）；v1.0.6.27 起接入 `sqlite_search_runtime`（正则执行熔断）与 `app.contracts`（操作符契约校验），防 ReDoS 与前后端漂移 |
 | 审计日志 API audit-log | `audit_logs.py` | 审计日志异步 API：查询/导出/归档/统计 |
 | 定时任务 API cron | `cron_tasks.py` | 定时任务（cron）配置与日志 CRUD/启停 |
-| 用户中心 cuser | `cuser.py` | 用户中心：登出/改信息/改密/2FA（挂 `/user` 与 `/users`） |
+| 用户中心 cuser | `cuser.py` | 用户中心：登出/改信息（`/user/info` 实时下发 `mustChangePassword` 强制改密标志，W9 补全）/改密/2FA（挂 `/user` 与 `/users`） |
 | 仪表盘 dashboard | `dashboard.py` | 仪表盘聚合数据，委托 `DashboardService` |
 | 健康检查 health | `health.py` | liveness/readiness 与受保护同步业务健康；数据库查询和同步健康均有界超时 |
 | 下载器核心 downloader | `downloader.py` | 下载器核心 API（连通性测试/添加管理）；路径映射测试会通过缓存下载器验证内部目录，并在 BtDeck 环境验证外部目录，任一失败即 fail-closed |
