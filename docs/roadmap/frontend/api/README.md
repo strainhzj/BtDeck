@@ -12,7 +12,7 @@
 | 定时任务 tasks | `tasks.ts` | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
 | 下载器 downloader | `downloader.ts` | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
 | 回收站 recycle-bin | `recycle-bin.ts` | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |
-| 审计日志 audit-logs | `audit-logs.ts` | 审计日志：查询/统计/操作类型/导出/归档/下载 |
+| 审计日志 audit-logs | `audit-logs.ts` | 审计日志：查询/统计/操作类型/导出/归档/下载（下载走 axios blob 携带认证头，文件名 encodeURIComponent；替代历史 window.open 直开 URL 的前缀/凭证/拦截器三重损坏） |
 | 标签管理 tag | `tag-management.ts` | 标签管理：分类/标签 CRUD/批量删除/分类支持检查 |
 | 孤儿文件 orphan | `orphan-files.ts` | `triggerScan` 提交后台 scan_id/task_id，`getScanStatus` 轮询；`getOrphanFolderChildren` 展开后独立分页；`reviewScanGuardrail` 双确认复核；保留硬链接定位、清理/忽视/隔离恢复 |
 | 种子备份 torrents-backup | `torrents-backup.ts` | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |

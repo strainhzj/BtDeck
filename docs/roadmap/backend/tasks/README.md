@@ -24,7 +24,7 @@
 | 任务 profile task-profile | `task_profiles.py` | 重型任务资源 profile 注册表 `TaskProfile` |
 | 任务验证 validation | `validation_service.py` | 任务验证（脚本语法/Cron 表达式/Python 类三套校验） |
 
-### scheduler/ — APScheduler job 实现（14 个文件）
+### scheduler/ — APScheduler job 实现（16 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -35,6 +35,7 @@
 | 孤儿通知重试 orphan-notify-retry | `orphan_notification_retry_task.py` | 补发未成功的幂等通知（隔离区彻底删除完成通知） |
 | 隔离区清理 orphan-purge | `orphan_quarantine_purge_task.py` | 每日清理超期孤儿隔离区 |
 | 副本预扫描 orphan-hardlink-copy-scan ✨2026-08-15 | `orphan_hardlink_copy_scan_task.py` | 每日 04:00 调 `OrphanHardlinkScanService.run_round`：keyset 游标限量 stat + 限时串行遍历，结果落库供前端只读（性能护栏见 services 分支） |
+| 令牌清理 refresh-token-cleanup ✨2026-08-18 | `refresh_token_cleanup_task.py` | 每日 04:30 调 `auth/token_cleanup.CLEANUP_SQL` 删除过期/已撤销超 30 天保留期的 refresh_tokens 记录（轻量任务不登记 task_profiles，种子经 init_db 增量块对存量库生效） |
 | 孤儿全量扫描 orphan-scan | `orphan_scan_task.py` | 每周日凌晨 2 点提交并等待同一 dispatcher 的 scan_id/task_id 扫描+清理终态；阶段摘要写入 Cron task_logs，超量标志仅作提醒 |
 | 标签同步 tag-sync | `tag_sync.py` | 定期从下载器同步标签到 DB |
 | 种子同步废弃 torrent-sync-old | `torrent_sync.py` | ⚠ **已废弃**：拆分为下方两个任务 |
@@ -70,7 +71,7 @@ app/startup/lifecycle.py:lifespan
 ## 任务分类
 
 - **APScheduler 注册入口**（唯一）：`tasks/cron_executor.py`
-- **APScheduler job 实现**（被调度）：`scheduler/` 下 14 个 .py（含 1 个已废弃 `torrent_sync.py`）+ `scheduler/torrent_sync/` 子包 4 个
+- **APScheduler job 实现**（被调度）：`scheduler/` 下 16 个 .py（含 1 个已废弃 `torrent_sync.py`）+ `scheduler/torrent_sync/` 子包 4 个
 - **后台执行器**（非 APScheduler）：`cleanup_executor.py`、`enhanced_python_executor.py`
 - **REQ-002/003 工具脚本**（一次性）：`batch_class_validator.py`、`class_path_fixer.py`、`class_path_validator.py`、`validation_service.py`
 - **资源治理**：`resource_guard.py`（准入控制器）、`task_profiles.py`（任务 profile）、`sync_db_write.py`（在 services 分支）

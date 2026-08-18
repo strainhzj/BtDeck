@@ -1,5 +1,34 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-18（第四批） - 令牌机制对抗审计修复（10 项：升级500/业务401误踢/跨标签级联/审计下载/清理任务/SECRET_KEY持久化）
+
+### 流程
+
+评估"过期强制退出+提醒/操作实时续期/友好体验"→ 主链路确认成立（三层过期感知/401静默续期重放/三态分流/原子轮换经受双线程实证）→ 两轮对抗审计子代理产出缺口清单 → 修复计划经独立审查子代理对抗审查（裁定"不可按原样执行"：F3 task_profiles 登记是机制误解、F4 护栏须条件化、F7 持久500首载卡死需逃生）→ 按 v2 修订版实施。
+
+### 实施内容（后端 9 文件 + 前端 6 文件）
+
+- 后端：database.py init_config_file 缺失才补 login_status_secret/jwt_secret_key（升级500炸弹+重启杀会话）；config.py _default_secret_key 回退链 env→YAML jwt_secret_key→随机 + _default_config_dir 共享路径解析 + 生产护栏条件化放宽；login.py 改 utils.get_login_secret()（消除直取 KeyError 面）；cuser.py 业务401改码8处（2FA输入错误400、/info兜底500，保留2处真token缺陷401自愈）；auth/token_cleanup.py + refresh_token_cleanup_task.py + 种子（每日04:30保留30天，init_db增量块存量库生效，无Alembic迁移）；auth/utils.py 缓存条件 total_seconds；config.yaml.example jwt_secret_key 仅注释占位。
+- 前端：user.ts ExpireSession 不再删共享 access cookie（级联根修，主动登出传播不破坏）+ GetUserInfo 5xx 原样上抛；permission.ts isTransientError 扩5xx + 连续3次瞬时中止逃生回落登出（防持久故障首载卡死/login不可达）+ afterEach 清零；request.ts 网络错误 toast 3秒同文案节流；audit-logs.ts/audit.vue 下载改 axios blob（修前缀/凭证/拦截器三重损坏）；FileManagement.vue el-upload 401 → trySilentRefresh 续期引导。
+
+### 测试
+
+- 后端新增 test_init_config_file（补齐不轮换+端到端+登录签发-校验往返一致）/ test_cuser_business_codes（7处400+兜底500+保留的2处token缺陷401防回退）/ test_token_cleanup（只删超期）/ test_refresh_token_cleanup_task（种子装配防漂移：条目存在+executor字符串动态可导入+保持轻量）/ test_security_config_defaults 扩9用例（回退链6+护栏3）；全量 3826 passed/7 skipped；black/flake8 过、mypy 零新增（存量61为CommonResponse基线）。
+- 前端 store-user（ExpireSession 断言反转+5xx上抛）/ permission-guard（5xx中止+逃生回落+计数导航成功清零）/ request-auth（toast节流窗口+redirectToLogin不删共享access cookie）/ session（F6级联防护锚点：被登出标签cookie保留时恢复内存而非误判登出）/ api-contracts（下载blob契约）调整与新增；全量 872 passed/55套件；eslint 过。
+- ./init.sh 通过。
+
+### 部署注意
+
+首启过渡（已有 config.yaml 升级后第一次启动 JWT 密钥仍进程随机，再重启一次稳定）；示例文件勿照抄 jwt_secret_key；定时任务种子启动自动补建。详见 PLANS/token-audit-fixes.md。
+
+### 明确本次不修
+
+compose DEV 默认 true；/auth/refresh 无限流；is_admin 硬编码；cookie 非 HttpOnly；审计导出 CWD 相对路径。
+
+### 遗留
+
+Git 提交待用户指示（建议按端拆 fix(backend)/fix(frontend)/docs）。
+
 ## 2026-08-18（第三批） - 跨标签令牌续期竞态修复：三态续期 + ExpireSession + 后端原子轮换
 
 ### 排查与定性（两轮排查 + 双子代理独立复核/审查）

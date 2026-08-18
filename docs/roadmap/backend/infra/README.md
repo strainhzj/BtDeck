@@ -25,7 +25,7 @@
 ### lifecycle.py 管理的流程
 
 **启动阶段**（`lifespan` L262 起，行号实测）：
-- L282-290：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载）
+- L282-290：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载；`init_config_file` 本体在 database.py L350，对已存在配置"缺失才补" secret_key/login_status_secret/jwt_secret_key，不轮换已有密钥）
 - L302-311：`migrate_database()`（任意运行模式迁移失败或未到 head 均终止）
 - L314-322：`init_db()`（初始数据）；L325：`await init_database_connection()`
 - L330-345：`await reconcile_orphan_file_state()`（幂等对账历史隔离候选）

@@ -4192,6 +4192,36 @@
         "backend/tests/services/test_orphan_stats_cache_integration.py",
         "backend/tests/services/test_orphan_query_state.py"
       ]
+    },
+    {
+      "id": "token-audit-fixes",
+      "title": "令牌机制对抗审计修复（升级500/业务401误踢/跨标签级联/审计下载/清理任务/SECRET_KEY持久化等10项）",
+      "status": "completed",
+      "description": "两轮对抗审计+计划独立审查后修复：F1 升级路径补 login_status_secret+login 改 get_login_secret；F2 cuser 业务401改400/500（8处）；F3 refresh_tokens 每日清理任务（保留30天）；F4 SECRET_KEY YAML持久化回退（生产护栏条件化）；F5 缓存条件 total_seconds；F6 ExpireSession 保留共享access cookie（跨标签级联根修）；F7 业务5xx瞬时分流+连续3次中止逃生回落；F8 审计下载改 axios blob（修三重损坏）；F9 网络错误toast 3秒节流；F10 el-upload 401续期引导。",
+      "evidence": {
+        "tests": "后端全量 3826 passed/7 skipped（新增 test_init_config_file/test_cuser_business_codes/test_token_cleanup/test_refresh_token_cleanup_task + test_security_config_defaults 扩9用例）；前端全量 872 passed（store-user/permission-guard/request-auth/session/api-contracts 调整与新增，含 F6 级联防护锚点与逃生计数清零用例）",
+        "lint": "black/flake8 通过；mypy 零新增错误；eslint 通过（request.ts 自动格式修复）",
+        "verification": "./init.sh 通过；PLANS/token-audit-fixes.md 含部署注意（首启过渡/示例密钥/种子自动补建）"
+      },
+      "files": [
+        "backend/app/database.py",
+        "backend/app/core/config.py",
+        "backend/app/api/endpoints/login.py",
+        "backend/app/api/endpoints/cuser.py",
+        "backend/app/auth/utils.py",
+        "backend/app/auth/token_cleanup.py",
+        "backend/app/tasks/scheduler/refresh_token_cleanup_task.py",
+        "backend/app/data/default_scheduled_tasks.py",
+        "backend/config/config.yaml.example",
+        "frontend/src/store/modules/user.ts",
+        "frontend/src/permission.ts",
+        "frontend/src/utils/request.ts",
+        "frontend/src/api/audit-logs.ts",
+        "frontend/src/views/logs/audit.vue",
+        "frontend/src/views/torrents/FileManagement.vue",
+        "backend/tests/tasks/test_refresh_token_cleanup_task.py",
+        "frontend/tests/unit/session.spec.ts"
+      ]
     }
   ]
 }

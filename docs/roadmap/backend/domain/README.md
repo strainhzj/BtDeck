@@ -50,7 +50,7 @@
 |--------|------|-----------|
 | Tracker 响应 VO tracker-info-vo | `responseVO.py` | `TrackerInfoVO`(L5) Tracker 信息响应 VO |
 
-### auth/ — 认证领域（5 个文件）
+### auth/ — 认证领域（6 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -59,6 +59,7 @@
 | 密码/SM4 auth-security | `security.py` | 密码 + SM4：`generate_sm4_key`、`sm4_encrypt/decrypt`、`verify_password`、`get_password_hash` |
 | 用户 ORM auth-model | `models.py` | ORM：`User`(L7)、`LoginLog`(L19)、`Config`(L31) |
 | 登录请求 auth-request | `request.py` | 请求 VO：`UserLogin`(L5) |
+| 令牌清理 auth-token-cleanup ✨2026-08-18 | `token_cleanup.py` | refresh_tokens 过期记录清理：`CLEANUP_SQL`（过期/撤销超保留期 DELETE）+ 同步函数，供每日 04:30 定时任务调用 |
 
 > `auth/dependencies.require_authenticated_user` 被 **31** 个 endpoint 文件依赖，是认证骨架。
 

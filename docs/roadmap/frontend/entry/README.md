@@ -9,7 +9,7 @@
 |--------|------|-----------|
 | 应用入口 main | `main.ts` | 应用入口：初始化主题、注册插件、清退历史 Workbox、双令牌会话监听（`initSessionWatch`）、挂载 #app（`new Vue(...)`） |
 | 路由表 router | `router.ts` | 路由表（default export）+ `router.push` 修补 + 部署后旧 chunk 一次恢复 |
-| 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期三态分流（`isTokenExpired`+`trySilentRefresh`：renewed 放行 / rejected `ExpireSession` 登出 / transient 中止导航保留会话）、GetUserInfo 网络错误分流、白名单、NProgress、页面标题（`router.beforeEach` / `afterEach`） |
+| 路由守卫 permission | `permission.ts` | 全局路由守卫：token 判断、access token 过期主动续期三态分流（`isTokenExpired`+`trySilentRefresh`：renewed 放行 / rejected `ExpireSession` 登出 / transient 中止导航保留会话）、GetUserInfo 瞬时错误分流（`isTransientError`：网络 '0' 与业务 5xx 均中止保留会话；连续 3 次中止逃生回落登出防持久故障卡死，afterEach 清零）、白名单、NProgress、页面标题（`router.beforeEach` / `afterEach`） |
 | 根组件 app | `App.vue` | 根组件（class-component），仅 `<div id="app"><router-view /></div>` |
 | PWA 注册 service-worker | `registerServiceWorker.ts` | 历史 PWA 注册助手；当前 `main.ts` 不导入，启动逻辑会清退旧注册 |
 | TS 声明 shims-vue | `shims-vue.d.ts` | 为 .vue 文件提供 TS 模块声明（`declare module '*.vue'`） |

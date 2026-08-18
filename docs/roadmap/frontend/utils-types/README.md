@@ -25,16 +25,17 @@
 | 剪贴板 clipboard | `clipboard.ts` ✨v1.0.6.36 | 剪贴板复制回退：`copyTextToClipboard` 优先 Clipboard API，HTTP/旧浏览器/权限拒绝时回退隐藏 textarea + execCommand（保证局域网部署可复制） |
 | 校验 validate | `validate.ts` | 极简校验：`isValidUsername`（硬编码 admin/editor）、`isExternal` |
 
-#### request.ts 关键（axios 封装，L1-242）
+#### request.ts 关键（axios 封装，L1-263）
 
 - L17 `const service = axios.create({ baseURL: process.env.VUE_APP_BASE_API, timeout: 20000 })`
-- L84 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie，L109 `isDefiniteFailure` = ApiError code '401' 才判死）
-- L70 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast；L81 改用 `UserModule.ExpireSession()`（保留共享 refresh cookie，防跨标签轮换竞态清掉他标签有效令牌）
-- L117 `trySilentRefresh`（导出）：守卫/会话监听的主动续期入口，返回三态 RefreshOutcome
-- L125 `handleUnauthorized`：401 统一处理——renewed 重放一次 / rejected 登出 / transient（网络抖动）不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈
-- L146 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
-- L181 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误 / HTTP 错误
-- L242 `export default service as unknown as RequestClient`
+- L49 `NETWORK_TOAST_THROTTLE_MS` + L54 `notifyNetworkError`：网络错误 toast 3 秒同文案节流（断网+1 秒轮询不洪泛，窗口到期复位）
+- L108 `refreshDeps`（刷新依赖注入：doRefresh 调 `/auth/refresh`，saveTokens 更新内存+cookie，`isDefiniteFailure` = ApiError code '401' 才判死）
+- L90 `redirectToLogin`（导出）：hash 模式感知跳转 `/#/login?redirect=<hash内路由>`，3 秒防抖窗口自动复位 + 过期提示 toast；改用 `UserModule.ExpireSession()`（保留共享 cookie——refresh 防跨标签轮换竞态、access 防他标签 syncTokenFromCookie 级联误杀）
+- L137 `trySilentRefresh`（导出）：守卫/会话监听的主动续期入口，返回三态 RefreshOutcome
+- L145 `handleUnauthorized`：401 统一处理——renewed 重放一次 / rejected 登出 / transient（网络抖动）不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈
+- L166 请求拦截器：注入 `Authorization: Bearer`（每次现读 `UserModule.token`）
+- L201 响应拦截器：处理 blob / 成功码(200/202/206/207) / 业务错误 / 网络错误（节流 toast）/ HTTP 错误
+- L263 `export default service as unknown as RequestClient`
 
 #### error-normalize.ts 关键
 
@@ -71,7 +72,7 @@
 
 ## 关键观察
 
-- **axios 封装集中**：`utils/request.ts`（229 行）+ `utils/error-normalize.ts`（139 行）是所有 API 调用的底座
+- **axios 封装集中**：`utils/request.ts`（263 行）+ `utils/error-normalize.ts`（139 行）是所有 API 调用的底座
 - **主题双文件**：`theme.ts`（核心类型与切换）+ `theme-manager.ts`（扩展调色板）分工
 - **类型分散**：共享类型在 `types/`，但大量 interface 直接定义在 `api/*.ts` 内（如 `torrents.ts` 54 个 interface）
 - **`types/index.ts` 不全 re-export**：`torrent` 和 `dashboard` 需直接路径 import
