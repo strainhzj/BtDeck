@@ -4704,3 +4704,27 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 1. 长会话不刷新的标签页无法实时感知标志（GetUserInfo 唯一调用点是守卫 roles=[] 分支）——彻底消除需挂周期端点，另行评估；
 2. 其他父路由（/downloader、/tasks 等）缺 redirect 的手输空白 UX 问题，后续统一补；
 3. Git 提交待用户指示。
+
+
+## 2026-08-19 打包脚本全链路审计与修复（子代理验证 + 人工实施）
+
+### 审计（三并行子代理独立验证 + 主线复核）
+
+- 覆盖四套打包体系：build-and-export-images.bat（Docker+远程部署）、build-images.sh（Docker/Linux）、deploy/build-windows.bat+btdeck-windows.spec+btdeck.iss（桌面/Inno）、deploy/build-linux.sh+btdeck.spec（Linux/fpm）。
+- 通过项：全部引用文件存在、bash -n/AST 语法、docker compose config、健康检查链路闭环（health.py:159 /health/ready ↔ Dockerfile ↔ nginx.conf:138 /health ↔ compose 字段级一致）、版本三处一致 v1.0.9、两个镜像 tar 为完整 OCI 归档（digest 全命中）且逐层扫描无 config.yaml/app.db、.dockerignore 对实际敏感文件全覆盖、spec 39 个 app.* hiddenimports 与实码对齐、W12 修复落实。
+- 异常（全修复）：①bat 明文 root SSH 密码/hostkey 已随 c603b0d 推送 origin/dev（github.com/strainhzj/BtDeck）②6/21 桌面构建残留内嵌旧密钥（EXE-00.toc 实证）③重试链到不了官方源 PROFILE_1 ④verify-package.py PATH-only 解析致打包校验必失败（临时 venv 实证）⑤打包 requirements 内嵌受 CVE-2024-47874 影响的 starlette 0.38.x ⑥btdeck.iss 卸载留孤儿服务 ⑦--unraid+--compose 参数误解析 ⑧backend/.env.example 真随机 SECRET_KEY 样值。
+
+### 修复（本会话，未提交）
+
+- build-and-export-images.bat：凭据外部化（.btdeck-deploy-credentials.bat，gitignore；模板 .example）；重试链官方源兜底（B_TRIED_OFFICIAL/B_OFFICIAL_TAIL 双标志，高保真仿真验证 2→3→1/3→1/1→2→3 且兜底恰一次——首版实现仿真捕获 1 失败后回环 bug 已修正）；--unraid 第三参数 -- 前缀守卫。
+- deploy/verify-package.py + analyze-package-size.py：find_archive_viewer()（sys.executable 同目录优先）；复现场景 not found→found 实证。
+- deploy/btdeck.iss：nssm remove 移入 usUninstall。
+- deploy/requirements-{windows,linux}-package.txt：fastapi 0.115.6 / starlette 0.41.3 / bcrypt ~=5.0.0 对齐 backend。
+- backend/.env.example：SECRET_KEY→占位符；删除 .docker_temp_482561487 + deploy/dist + deploy/build（约 720MB，含密钥残留）。
+
+### 遗留（人工）
+
+1. 【紧急】轮换 192.168.5.51 root 密码（凭据已在 GitHub origin/dev 历史暴露）；改用 SSH key 更佳。
+2. git filter-repo 清洗 c603b0d 中的密码/hostkey 后 force push（与既有密钥清洗遗留合并处理）。
+3. 打包链近期未实测：Docker 引擎离线未跑 docker build 全流程；桌面打包建议跑一次 deploy/build-windows.bat 验证 Inno 全链（本次修复已解除校验阻断）。
+4. 版本号三处维护（build-images.sh 动态 / build-linux.sh + btdeck.iss 硬编码）下次发版需手工同步，建议统一动态解析。

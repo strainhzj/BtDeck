@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-19 交接：打包脚本全链路审计与修复
+
+### 背景与结论
+
+用户要求检查"各系统的打包脚本"并验证，随后指定子代理验证、授权动手修复。三并行子代理独立审计四套打包体系（Docker×2 入口、桌面 PyInstaller/Inno、fpm），发现 8 项异常，本会话全部修复（未提交）。通过项：语法/引用/compose/健康链路/tar 完整性/版本一致性/W12 落实/hiddenimports 对齐。
+
+### 修复明细
+
+- `build-and-export-images.bat`：①SSH 密码+hostkey 移入 gitignore 的 `.btdeck-deploy-credentials.bat`（本地已创建含原值，双击部署流程不变；模板 `.btdeck-deploy-credentials.bat.example`）②镜像重试链官方源兜底（原 2→3 即止；现 2→3→1，START=1 时 1→2→3，双标志防回环——首版有回环 bug，经"从真实 bat 抽取 :build_image/:apply_profile 的仿真"捕获后修正）③`--unraid host --compose f` 不再把 --compose 误吞为 REMOTE_DIR。
+- `deploy/verify-package.py` + `deploy/analyze-package-size.py`：新增 `find_archive_viewer()`，优先 `sys.executable` 同目录——修复打包 venv 未激活时 `[FAIL] pyi-archive_viewer not found` 中断（Windows 阻断 Inno 步骤/Linux 阻断 fpm 步骤）；临时 venv 复现 not found→found。
+- `deploy/btdeck.iss`：nssm remove 移到 usUninstall（原 usPostUninstall 时 nssm.exe 已删，Exec 必失败留孤儿服务）。
+- `deploy/requirements-{windows,linux}-package.txt`：fastapi~=0.115.6 + starlette~=0.41.3（修 CVE-2024-47874 内嵌；backend/requirements.txt:18-22 注明 fastapi 0.115.6+ 才放行 starlette 0.41.x）+ bcrypt~=5.0.0。
+- `backend/.env.example`：SECRET_KEY 真随机样值→REPLACE_WITH_RANDOM_SECRET。
+- 删除：`.docker_temp_482561487`（566MB）、`deploy/dist`、`deploy/build`（后两者为 6/21 W12 前构建，TOC 实证内嵌旧 config.yaml 密钥+app.db）。
+
+### 验证
+
+- 高保真仿真三链路 + 参数组合；verify-package 复现场景前后对照；AST×2；bat --help 实跑；git grep 跟踪文件零凭据；前端 npm run build 与 ./init.sh 本会话早前已实跑通过。
+
+### 下一步（需用户决策/人工）
+
+1. 轮换 192.168.5.51 root 密码（GitHub origin/dev 历史已暴露）；2. git filter-repo 清洗后 force push（与既有密钥清洗遗留合并）；3. 开 Docker Desktop 后跑一次 `build-and-export-images.bat --quick`（注意默认 DEPLOY_ENABLED=1 会直连生产）；4. 桌面打包跑一次 `deploy/build-windows.bat` 实测 Inno 全链；5. 版本号硬编码两处建议统一动态解析；6. Git 提交待用户指示（8 文件修改 + 1 新增模板）。
+
 ## 2026-08-18 交接：跨标签令牌续期竞态修复（三态续期 + ExpireSession + 后端原子轮换）
 
 ### 问题与定性

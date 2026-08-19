@@ -26,8 +26,10 @@ set "DEFAULT_DEPLOY_MODE=unraid"
 set "DEFAULT_DEPLOY_HOST=root@192.168.5.51"
 set "DEFAULT_REMOTE_DIR=/mnt/cache/appdata/docker/btdeck"
 set "DEFAULT_REMOTE_COMPOSE_FILE="
-set "DEFAULT_SSH_PASSWORD=***REMOVED***"
-set "DEFAULT_PLINK_HOSTKEY=***REMOVED***"
+rem Credentials are NOT stored in this file anymore: SSH password / host key
+rem are loaded from the untracked .btdeck-deploy-credentials.bat (template:
+rem .btdeck-deploy-credentials.bat.example). Without that file the deploy
+rem step falls back to interactive ssh password prompts.
 set "DEFAULT_NO_CACHE=0"
 set "PAUSE_ON_EXIT=1"
 
@@ -37,6 +39,11 @@ set "FRONTEND_DIR=%SCRIPT_DIR%frontend"
 set "BACKEND_DOCKERFILE=%BACKEND_DIR%\Dockerfile"
 set "FRONTEND_DOCKERFILE=%FRONTEND_DIR%\Dockerfile.prod"
 set "LOCAL_PLINK=%SCRIPT_DIR%tools\putty\plink.exe"
+
+rem Load deploy credentials from the untracked local file (never commit).
+set "DEFAULT_SSH_PASSWORD="
+set "DEFAULT_PLINK_HOSTKEY="
+if exist "%SCRIPT_DIR%.btdeck-deploy-credentials.bat" call "%SCRIPT_DIR%.btdeck-deploy-credentials.bat"
 
 set "BACKEND_IMAGE=btdeck-backend:latest"
 set "FRONTEND_IMAGE=btdeck-frontend:latest"
@@ -116,10 +123,19 @@ if /I "%~1"=="--unraid" (
         shift
         shift
     ) else (
-        set "REMOTE_DIR=%~3"
-        shift
-        shift
-        shift
+        rem Guard: any other --flag (e.g. --compose) means no explicit dir was
+        rem given; use the default dir and do not consume the flag as REMOTE_DIR.
+        set "UNRAID_ARG3=%~3"
+        if "!UNRAID_ARG3:~0,2!"=="--" (
+            set "REMOTE_DIR=/mnt/user/appdata/btdeck"
+            shift
+            shift
+        ) else (
+            set "REMOTE_DIR=%~3"
+            shift
+            shift
+            shift
+        )
     )
     set "DEPLOY_MODE=unraid"
     goto parse_args
@@ -294,7 +310,7 @@ if not "%DEPLOY_HOST%"=="" (
     echo.
     echo [INFO] Uploading image archives and deploying through one SSH session
     if not "%SSH_PASSWORD%"=="" (
-        echo [INFO] Using plink with DEFAULT_SSH_PASSWORD from this script.
+        echo [INFO] Using plink with credentials from .btdeck-deploy-credentials.bat.
     ) else (
         echo [INFO] You should only be prompted for the SSH password once.
     )
@@ -356,7 +372,8 @@ rem   %1 = image tag
 rem   %2 = Dockerfile path
 rem   %3 = context dir
 rem   %4 = friendly name (backend / frontend) -- used for log filename
-rem   Starts at START_PROFILE, walks to PROFILE_COUNT on network errors.
+rem   Starts at START_PROFILE, walks to PROFILE_COUNT on network errors,
+rem   then falls back to profile 1 (official source) once before giving up.
 rem   Retries force --no-cache to avoid corrupted intermediate layers.
 rem   Non-network errors abort immediately (no pointless retries).
 rem ============================================================
@@ -368,6 +385,11 @@ set "B_NAME=%~4"
 set "B_LOG=%TEMP%\btdeck-!B_NAME!.log"
 set /a "B_IDX=START_PROFILE"
 set /a "B_TRIES=0"
+rem Track whether profile 1 (official) already participated, so the fallback
+rem tail runs exactly once even when START_PROFILE is edited to 1. B_OFFICIAL_TAIL
+rem marks that profile 1 is being attempted as the LAST resort (abort after it).
+if "!START_PROFILE!"=="1" (set "B_TRIED_OFFICIAL=1") else (set "B_TRIED_OFFICIAL=0")
+set "B_OFFICIAL_TAIL=0"
 :build_retry
 set /a "B_TRIES+=1"
 call :apply_profile !B_IDX!
@@ -384,9 +406,18 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [WARN] Network error detected in !B_NAME! build, switching to next mirror profile...
+if "!B_OFFICIAL_TAIL!"=="1" goto build_chain_done
 set /a "B_IDX+=1"
 if !B_IDX! LEQ !PROFILE_COUNT! goto build_retry
-echo [ERROR] !B_NAME! image build failed after all mirror profiles.
+if "!B_TRIED_OFFICIAL!"=="0" (
+    set "B_IDX=1"
+    set "B_TRIED_OFFICIAL=1"
+    set "B_OFFICIAL_TAIL=1"
+    echo [WARN] All CN mirror profiles failed, retrying once with official source ^(profile 1^).
+    goto build_retry
+)
+:build_chain_done
+echo [ERROR] !B_NAME! image build failed after all mirror profiles ^(incl. official^).
 echo         See log: !B_LOG!
 if "%PAUSE_ON_EXIT%"=="1" pause
 exit /b 1
@@ -440,6 +471,10 @@ echo.
 echo Mirror options:
 echo   --quick        Skip mirror probe, use default profile (aliyun) directly.
 echo   --keep-proxy   Keep proxy env vars (default: clear them for this session).
+echo.
+echo   Deploy credentials are read from the untracked local file
+echo   .btdeck-deploy-credentials.bat (copy it from .btdeck-deploy-credentials.bat.example).
+echo   Without it the deploy step falls back to interactive ssh password prompts.
 echo.
 echo On network-related build failures, the script auto-switches among mirror
 echo profiles: aliyun -^> huawei -^> official, each retry forces --no-cache.

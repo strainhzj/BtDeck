@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-18",
+  "last_updated": "2026-08-19",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -4145,6 +4145,70 @@
             "backend/tests/api/test_auth_refresh.py"
           ],
           "evidence": "test_auth_refresh 8 用例全绿（+1 条件更新语义：已撤销记录 revoked_at 不被二次覆盖；+1 旧 token 复用投影：已轮换旧 token 再刷 401 且不签发新记录不下发 data，双成功防护）+ test_login_throttle_and_change_password 12 用例回归；black/flake8 通过；mypy stash 基线对比 13→13（新增错误 0）"
+        }
+      ]
+    },
+    {
+      "id": "packaging-audit-fixes-2026-08-19",
+      "name": "打包脚本全链路审计与修复（Docker/桌面/远程部署）",
+      "description": "三子代理独立审计四套打包体系后修复：①bat 镜像重试链补官方源兜底尾（原 2→3 即止，与注释承诺矛盾）②bat 明文 root SSH 密码外部化到 gitignore 的本地凭据文件 ③verify-package.py/analyze-package-size.py 在打包 venv 未激活时经解释器同目录解析 pyi-archive_viewer（原 PATH-only 导致 PyInstaller 成功后校验必失败）④btdeck.iss 卸载时序（nssm remove 移至 usUninstall，修复孤儿服务残留）⑤打包 requirements 对齐 backend（starlette 0.38→0.41.3 修 CVE-2024-47874 内嵌、fastapi 0.115.6、bcrypt 补钉）⑥--unraid+--compose 参数组合守卫 ⑦删除内嵌旧密钥的 6/21 桌面构建残留与 566MB docker save 残留 ⑧backend/.env.example 假真密钥样值改占位符",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "（会话内方案：3 个并行子代理独立验证 + 人工汇总后实施，重试链修复经高保真仿真发现首版回退循环 bug 后二次修正）",
+      "tasks": [
+        {
+          "id": "bat-retry-official-fallback",
+          "name": "镜像源重试链回退官方源 + 凭据外部化 + unraid 参数守卫",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "build-and-export-images.bat",
+            ".gitignore",
+            ".btdeck-deploy-credentials.bat.example"
+          ],
+          "evidence": "高保真仿真（从修改后 bat 原样抽取 :build_image/:apply_profile 强制网络失败）：START=2 走 2→3→1→中止、START=3 走 3→1→中止、START=1 走 1→2→3→中止，官方源兜底恰好一次无循环（首版实现曾 1 失败后回环 2→3，仿真捕获后加 B_OFFICIAL_TAIL 标志修正）；--unraid root@tower --compose x 组合 REMOTE_DIR 正确取默认值且 --compose 参数保留；凭据移入 gitignore 的 .btdeck-deploy-credentials.bat（模板 .example 入库），git grep 确认跟踪文件零密码/hostkey；--help 分支实跑正常"
+        },
+        {
+          "id": "pyi-viewer-resolution",
+          "name": "pyi-archive_viewer 解析回退到解释器同目录",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/verify-package.py",
+            "deploy/analyze-package-size.py"
+          ],
+          "evidence": "临时 venv + 假 viewer 完整复刻 build-windows.bat 调用方式：修复前 [FAIL] pyi-archive_viewer not found（exit 1，实证阻断 Inno Setup/fpm 步骤）；修复后 [PASS] found: <venv>/Scripts/pyi-archive_viewer.exe 并进入执行（后续 FAIL 为 where.exe 假冒工具的预期伪影）；两文件均加 find_archive_viewer()（sys.executable 同目录优先、which 兜底），AST 通过"
+        },
+        {
+          "id": "iss-uninstall-order",
+          "name": "Inno 卸载 nssm remove 时序修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/btdeck.iss"
+          ],
+          "evidence": "nssm remove BtDeck confirm 从 usPostUninstall（nssm.exe 已被删除、Exec 必失败留孤儿服务）移入 usUninstall（stop→taskkill→Sleep→remove），usPostUninstall 块整体删除"
+        },
+        {
+          "id": "package-reqs-security-align",
+          "name": "打包依赖安全对齐 backend",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/requirements-windows-package.txt",
+            "deploy/requirements-linux-package.txt"
+          ],
+          "evidence": "starlette ~=0.38.0→~=0.41.3 + fastapi ~=0.115.0→~=0.115.6（W13/CVE-2024-47874：fastapi 0.115.6+ 才允许 starlette 0.41.x，原组合打出的 exe 内嵌受 CVE 影响 0.38.x）+ bcrypt ~=5.0.0 补钉（passlib extra 不锁版本），双平台同步"
+        },
+        {
+          "id": "artifact-and-sample-cleanup",
+          "name": "含密钥残留清理与样值治理",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/.env.example"
+          ],
+          "evidence": "删除 deploy/dist（6/21 btdeck.exe，EXE-00.toc 929-939 实证内嵌旧 config.yaml 密钥+app.db）、deploy/build（同源 PyInstaller 工作目录）、根 .docker_temp_482561487（566MB docker save 残留），均未跟踪/被忽略，共释放约 720MB；backend/.env.example SECRET_KEY 真随机样值→REPLACE_WITH_RANDOM_SECRET"
         }
       ]
     }

@@ -114,11 +114,8 @@ begin
       避免文件被占用导致 exe 无法删除 }
     Exec('taskkill', '/im btdeck.exe /f /t', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Sleep(2000);
-  end;
-
-  if CurUninstallStep = usPostUninstall then
-  begin
-    { 使用 NSSM 删除服务 }
+    { 必须在 usUninstall 阶段删除服务条目：usPostUninstall 时 nssm.exe
+      已被卸载器删除，那时 remove 必然失败并残留孤儿服务 }
     Exec(ExpandConstant('{app}\nssm.exe'), 'remove BtDeck confirm', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;

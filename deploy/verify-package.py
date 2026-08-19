@@ -60,8 +60,19 @@ def read_archive_entries(viewer: str, exe_path: Path) -> tuple[bool, list[str]]:
     return True, [normalize_archive_entry(line) for line in output.splitlines()]
 
 
+def find_archive_viewer() -> str | None:
+    # The build scripts run this file with the packaging venv's python by
+    # absolute path (no venv activation, Scripts/bin not on PATH), so resolve
+    # the viewer next to the interpreter first, then fall back to PATH.
+    exe_name = "pyi-archive_viewer.exe" if sys.platform == "win32" else "pyi-archive_viewer"
+    local = Path(sys.executable).resolve().parent / exe_name
+    if local.is_file():
+        return str(local)
+    return shutil.which("pyi-archive_viewer")
+
+
 def check_archive(exe_path: Path) -> bool:
-    viewer = shutil.which("pyi-archive_viewer")
+    viewer = find_archive_viewer()
     if not viewer:
         fail_message("pyi-archive_viewer not found. Install PyInstaller and ensure it is in PATH")
         return False

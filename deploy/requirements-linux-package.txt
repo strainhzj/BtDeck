@@ -12,7 +12,7 @@ setuptools~=75.8.0
 click~=8.1.8
 requests~=2.32.3
 pydantic~=2.12.4
-fastapi~=0.115.0
+fastapi~=0.115.6
 pyotp~=2.9.0
 qrcode~=8.1
 pycryptodomex~=3.23.0
@@ -27,12 +27,15 @@ aiosqlite~=0.21.0
 pillow~=11.1.0
 transmission-rpc~=7.0.11
 urllib3~=2.2.2
-starlette~=0.38.0
+# W13/CVE-2024-47874: align with backend/requirements.txt; fastapi 0.115.6+
+# is required so pip can resolve starlette 0.41.x instead of vulnerable 0.38.x
+starlette~=0.41.3
 alembic~=1.13.3
 bencodepy~=0.9.5
 apscheduler~=3.10.0
 python-multipart~=0.0.20
 passlib[bcrypt]~=1.7.4
+bcrypt~=5.0.0  # align with backend/requirements.txt (passlib extra does not pin)
 pydantic-settings~=2.12.0
 croniter~=3.0.4
 httpx~=0.28.0
