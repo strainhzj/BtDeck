@@ -4728,3 +4728,11 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 2. git filter-repo 清洗 c603b0d 中的密码/hostkey 后 force push（与既有密钥清洗遗留合并处理）。
 3. 打包链近期未实测：Docker 引擎离线未跑 docker build 全流程；桌面打包建议跑一次 deploy/build-windows.bat 验证 Inno 全链（本次修复已解除校验阻断）。
 4. 版本号三处维护（build-images.sh 动态 / build-linux.sh + btdeck.iss 硬编码）下次发版需手工同步，建议统一动态解析。
+
+
+### 2026-08-19 补记：git 历史清洗（已执行）
+
+- 范围：①build-and-export-images.bat 中的 root SSH 密码与 plink hostkey（--replace-text，c603b0d 引入）②backend/config/config.yaml 整路径（8 个历史版本中 7 个含真实 secret_key/login_status_secret，自根提交 8fe877d 起存在于 master+dev，c82f685 起已不再跟踪）。
+- 执行：git-filter-repo（--replace-text + --invert-paths --path + --replace-refs delete-no-add）；改写前提交修复 f3db8d6 并创建全量备份 bundle（仓库外 ../BtDeck-pre-history-clean-20260819.bundle，含旧历史，确认无误后可删）；435→434 提交（仅触及 config.yaml 的 e8e7784 变空被剪），根起全部哈希改变。
+- 验证：git log --all -S 密码/hostkey 与 config.yaml 路径全部为空；c603b0d/8fe877d 旧对象不可达（gc 已清）；工作树零改动；force push master+dev 后生效。
+- 后续注意：①所有既有 clone 需重新 clone（或 fetch+reset --hard origin/<branch>）②GitHub 服务端旧提交在 GC 前仍可能按 SHA 访问，必要时联系 GitHub support 加速回收③**历史清洗不等于未泄露——192.168.5.51 root 密码与历史 secret_key 仍需轮换**④备份 bundle 含泄露内容，仅作回滚用，确认后删除。

@@ -19,6 +19,12 @@
 
 - 高保真仿真三链路 + 参数组合；verify-package 复现场景前后对照；AST×2；bat --help 实跑；git grep 跟踪文件零凭据；前端 npm run build 与 ./init.sh 本会话早前已实跑通过。
 
+### 2026-08-19 补记：git 历史清洗（已执行）
+
+- git-filter-repo 双分支（master+dev）改写：移除 bat 密码/hostkey（replace-text）与 backend/config/config.yaml 全路径（7/8 历史版本含真实 secret_key/login_status_secret，自根提交起）；435→434（空提交 e8e7784 剪除），全部哈希改变；改写前备份 bundle 于 ../BtDeck-pre-history-clean-20260819.bundle。
+- 验证：--all 范围内密码/hostkey/config.yaml 零命中，旧对象（c603b0d/8fe877d）已 gc 不可达；force push master+dev。
+- ⚠️ 未解除事项：root 密码与历史 secret_key 仍需轮换（历史清洗≠未泄露）；既有 clone 需重拉；GitHub 服务端旧 SHA 在 GC 前可访问，可联系 support 加速；备份 bundle 含泄露内容，确认后删除。
+
 ### 下一步（需用户决策/人工）
 
 1. 轮换 192.168.5.51 root 密码（GitHub origin/dev 历史已暴露）；2. git filter-repo 清洗后 force push（与既有密钥清洗遗留合并）；3. 开 Docker Desktop 后跑一次 `build-and-export-images.bat --quick`（注意默认 DEPLOY_ENABLED=1 会直连生产）；4. 桌面打包跑一次 `deploy/build-windows.bat` 实测 Inno 全链；5. 版本号硬编码两处建议统一动态解析；6. Git 提交待用户指示（8 文件修改 + 1 新增模板）。
