@@ -192,9 +192,7 @@ class TestAsyncDeleteReservation:
                 "app.services.deletion_task_manager.get_deletion_task_manager",
                 return_value=manager,
             ),
-            patch(
-                "app.services.async_deletion_executor.AsyncDeletionExecutor"
-            ) as executor_class,
+            patch("app.services.async_deletion_executor.AsyncDeletionExecutor") as executor_class,
         ):
             response = client.post(
                 ASYNC_URL,

@@ -45,7 +45,6 @@ from app.database import Base
 from app.tasks.scheduler.torrent_sync.torrent_info_sync_task import TorrentInfoSyncTask
 from app.torrents.models import TorrentInfo
 
-
 # ==================== 公共 fixture ====================
 
 
@@ -299,9 +298,7 @@ class TestDownloaderConcurrencyConfig:
         vo = SimpleNamespace(downloader_id="dl-1", nickname="qb", fail_time=0, downloader_type=0)
         with (
             _fake_app_main(),
-            patch.object(
-                task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])
-            ) as mock_get,
+            patch.object(task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])) as mock_get,
             patch.object(
                 task,
                 "execute_sync_with_concurrency",
@@ -680,10 +677,7 @@ class TestTrSymmetricPaginatedRead:
         inserted = bulk_mock.await_args.args[1]
         assert inserted[0]["status"] == "error"
         assert inserted[0]["error_reason"] == "No space left on device"
-        assert all(
-            "errorString" in call.kwargs["arguments"]
-            for call in client.get_torrents.call_args_list
-        )
+        assert all("errorString" in call.kwargs["arguments"] for call in client.get_torrents.call_args_list)
 
 
 def _tr_downloader():
@@ -712,9 +706,7 @@ class TestFirstRunHydrationLenient:
         from app.api.endpoints import torrents_async
 
         client = MagicMock()
-        client.sync_maindata = MagicMock(
-            return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}}
-        )
+        client.sync_maindata = MagicMock(return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}})
 
         db = _empty_db()
         with (
@@ -740,9 +732,7 @@ class TestFirstRunHydrationLenient:
         from app.api.endpoints import torrents_async
 
         client = MagicMock()
-        client.sync_maindata = MagicMock(
-            return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}}
-        )
+        client.sync_maindata = MagicMock(return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}})
         full_torrent = SimpleNamespace(
             hash="abc",
             name="完整名称",
@@ -765,9 +755,7 @@ class TestFirstRunHydrationLenient:
             patch.dict(torrents_async._QB_SYNC_RID_CACHE, {}, clear=True),
             patch.dict(torrents_async._QB_LAST_FULL_SYNC, {"dl-1": datetime.now().timestamp()}, clear=True),
             patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
-            patch.object(
-                torrents_async, "fetch_qb_torrent_details", new=AsyncMock(return_value=[full_torrent])
-            ),
+            patch.object(torrents_async, "fetch_qb_torrent_details", new=AsyncMock(return_value=[full_torrent])),
         ):
             await torrents_async.qb_add_torrents_info_only_async(db, [_qb_downloader()], client=client)
 

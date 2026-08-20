@@ -844,9 +844,7 @@ class SeedTransferService:
             ):
                 assert source_torrent is not None
                 try:
-                    source_auxiliary_count = max(
-                        1, int(getattr(source_torrent, "auxiliary_seed_count", 1) or 1)
-                    )
+                    source_auxiliary_count = max(1, int(getattr(source_torrent, "auxiliary_seed_count", 1) or 1))
                 except (TypeError, ValueError):
                     source_auxiliary_count = 1
                 target_auxiliary_count = source_auxiliary_count + 1
