@@ -20,7 +20,8 @@
 import type {
   AdvancedSearchRequest,
   ApiResponse,
-  QueryTemplateConditionGroup
+  QueryTemplateConditionGroup,
+  Torrent
 } from '@/api/torrents'
 import {
   AdvancedSearchConditionValue,
@@ -473,6 +474,38 @@ export function getTrackerStatusClass(status: string | boolean | undefined | nul
   if (isTrackerAnnounceSuccess(status)) return 'tracker-status-working'
   if (typeof status === 'string' && TRACKER_FAIL_VALUES.has(status)) return 'tracker-status-error'
   return 'tracker-status-neutral'
+}
+
+// ============ Tracker 异常展示（展示对齐判定） ============
+
+/** 种子是否被判定任务标记为整种 tracker 错误（camelCase 优先，snake 兼容） */
+export function hasTrackerError(torrent: Torrent | null | undefined): boolean {
+  if (!torrent) return false
+  const value = torrent.hasTrackerError !== undefined ? torrent.hasTrackerError : torrent.has_tracker_error
+  return value === true
+}
+
+/**
+ * 状态列是否显示"Tracker异常"标签：
+ * status='error' 已有"错误"徽标不重复打；其余状态（如做种中）叠加红色小标签。
+ */
+export function showTrackerErrorTag(torrent: Torrent | null | undefined): boolean {
+  if (!torrent) return false
+  return hasTrackerError(torrent) && torrent.status !== 'error'
+}
+
+/**
+ * 名称列 tooltip 的错误原因回退链：
+ * errorReason → Tracker 宣告失败消息聚合（lastAnnounceMsg）→ 兜底提示。
+ * 与"Tracker异常"标签同源（hasTrackerError），保证 error 筛选命中的行必有可见错误信息。
+ */
+export function getTorrentErrorReason(torrent: Torrent | null | undefined): string {
+  if (!torrent) return ''
+  const errorReason = torrent.errorReason || torrent.error_reason || ''
+  if (errorReason) return errorReason
+  if (!hasTrackerError(torrent)) return ''
+  const announceMsg = torrent.lastAnnounceMsg || torrent.last_announce_msg || ''
+  return announceMsg ? `Tracker 宣告失败：${announceMsg}` : 'Tracker 宣告失败，详见 Tracker 标签页'
 }
 
 // ============ 下载器同源校验（消除转移/改路径的重复校验） ============

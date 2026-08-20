@@ -329,6 +329,39 @@ describe('torrent list view pagination and sorting', () => {
     expect(cells[auxiliaryIndex].text()).toBe('31')
   })
 
+  it('状态列为 tracker 异常种子叠加 Tracker异常 标签（error 状态与正常种子不打）', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [
+          { ...torrentFixture(), status: 'seeding', hasTrackerError: true, lastAnnounceMsg: 'You cannot seed the same torrent' },
+          { ...torrentFixture(), infoId: 'info-2', hash: 'hash-2', status: 'error', hasTrackerError: true },
+          { ...torrentFixture(), infoId: 'info-3', hash: 'hash-3', status: 'seeding' }
+        ],
+        total: 3,
+        pageSize: 20
+      }
+    })
+
+    wrapper = mountListView()
+    await flushLifecycle()
+
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(3)
+    // seeding + hasTrackerError：徽标 + 红色小标签
+    expect(rows.at(0).find('.status-badge').text()).toBe('做种中')
+    expect(rows.at(0).find('.tracker-error-tag').exists()).toBe(true)
+    expect(rows.at(0).find('.tracker-error-tag').text()).toBe('Tracker异常')
+    expect(rows.at(0).find('.tracker-error-tag').attributes('title')).toContain('You cannot seed')
+    // error 状态已有"错误"徽标，不重复打标
+    expect(rows.at(1).find('.status-badge').text()).toBe('错误')
+    expect(rows.at(1).find('.tracker-error-tag').exists()).toBe(false)
+    // 正常种子无标签
+    expect(rows.at(2).find('.tracker-error-tag').exists()).toBe(false)
+  })
+
   it('同内容模式的筛选、排序、分页大小、翻页和刷新始终复用列表查询', async() => {
     wrapper = mountListView()
     await flushLifecycle()

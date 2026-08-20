@@ -339,7 +339,7 @@
               class="sortable-column"
               :class="{sorted: listQuery.sort_by === 'status'}"
               data-sort-field="status"
-              style="width: 90px;"
+              style="width: 130px;"
               tabindex="0"
               :aria-sort="getSortAriaValue('status')"
               title="按状态排序"
@@ -422,6 +422,7 @@
                 <div
                   class="torrent-status-icon"
                   :class="torrent.status"
+                  :title="showTrackerErrorTag(torrent) ? `${getStatusText(torrent.status)}（Tracker异常）` : ''"
                 >
                   <LucideIcon
                     :name="getStatusIcon(torrent.status)"
@@ -471,6 +472,11 @@
               <span class="status-badge" :class="torrent.status">
                 {{ getStatusText(torrent.status) }}
               </span>
+              <span
+                v-if="showTrackerErrorTag(torrent)"
+                class="tracker-error-tag"
+                :title="getTorrentErrorReason(torrent)"
+              >Tracker异常</span>
             </td>
             <td v-if="getColumnSetting('downloader').visible">{{ torrent.downloaderName || '-' }}</td>
             <td v-if="getColumnSetting('ratio').visible">{{ formatRatio(torrent.ratio) }}</td>
@@ -774,7 +780,9 @@ import {
   buildSpeedSnapshot,
   needsActiveSnapshotRefresh,
   buildAdvancedSearchRequest,
-  buildAdvancedSearchRequestFromTemplateGroups
+  buildAdvancedSearchRequestFromTemplateGroups,
+  getTorrentErrorReason as sharedErrorReason,
+  showTrackerErrorTag as sharedShowTrackerErrorTag
 } from './utils/torrentBatch'
 import type { AdvancedSearchBuilderParams } from '@/components/torrents/advancedSearchState'
 import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
@@ -1316,7 +1324,11 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
   }
 
   private getTorrentErrorReason(torrent: Torrent | null | undefined): string {
-    return torrent?.errorReason || torrent?.error_reason || ''
+    return sharedErrorReason(torrent)
+  }
+
+  private showTrackerErrorTag(torrent: Torrent | null | undefined): boolean {
+    return sharedShowTrackerErrorTag(torrent)
   }
 
   /**

@@ -391,7 +391,7 @@
                   <div
                     class="status-icon-circle"
                     :class="torrent.status"
-                    :title="getStatusText(torrent.status)"
+                    :title="showTrackerErrorTag(torrent) ? `${getStatusText(torrent.status)}（Tracker异常）` : getStatusText(torrent.status)"
                   >
                     <LucideIcon :name="getStatusIcon(torrent.status)" :size="14" />
                   </div>
@@ -428,6 +428,11 @@
                 </td>
                 <td v-if="getColumnSetting('status').visible" class="col-status">
                   <span class="status-badge-trad" :class="torrent.status">{{ getStatusText(torrent.status) }}</span>
+                  <span
+                    v-if="showTrackerErrorTag(torrent)"
+                    class="tracker-error-tag"
+                    :title="getTorrentErrorReason(torrent)"
+                  >Tracker异常</span>
                 </td>
                 <td v-if="getColumnSetting('download').visible" class="col-downspeed">
                   <span
@@ -783,7 +788,9 @@ import {
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
   needsActiveSnapshotRefresh,
-  buildAdvancedSearchRequestFromTemplateGroups
+  buildAdvancedSearchRequestFromTemplateGroups,
+  getTorrentErrorReason as sharedErrorReason,
+  showTrackerErrorTag as sharedShowTrackerErrorTag
 } from './utils/torrentBatch'
 import {
   buildTraditionalStatusFilterItems,
@@ -1488,7 +1495,11 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
   }
 
   private getTorrentErrorReason(torrent: Torrent | null | undefined): string {
-    return torrent?.errorReason || torrent?.error_reason || ''
+    return sharedErrorReason(torrent)
+  }
+
+  private showTrackerErrorTag(torrent: Torrent | null | undefined): boolean {
+    return sharedShowTrackerErrorTag(torrent)
   }
 
   private prepareForListReplacement(): number {
@@ -2392,7 +2403,8 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
 
 .traditional-table {
   // 新增保存路径列后保持名称列可读；窄视口由既有 table-container 内部滚动承接。
-  min-width: 1380px;
+  // 状态列叠加 Tracker异常 标签后加宽 90→145px，min-width 同步 +55。
+  min-width: 1435px;
 
   tbody .torrent-row {
     height: var(--trad-row-height);
@@ -2427,7 +2439,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
 .col-name { /* auto */ }
 .col-size { width: 80px; }
 .col-progress { width: 130px; }
-.col-status { width: 90px; }
+.col-status { width: 145px; }
 .col-downspeed { width: 90px; }
 .col-upspeed { width: 90px; }
 .col-ratio { width: 60px; }

@@ -16,6 +16,9 @@ import {
   getTorrentSpeed,
   isTrackerAnnounceSuccess,
   getTrackerStatusClass,
+  hasTrackerError,
+  showTrackerErrorTag,
+  getTorrentErrorReason,
   assertSameDownloader,
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups,
@@ -422,6 +425,64 @@ describe('P0-D - isTrackerAnnounceSuccess / getTrackerStatusClass', () => {
     // 统一后两者都算成功，避免两视图行为分歧
     expect(isTrackerAnnounceSuccess('success')).toBe(true)
     expect(isTrackerAnnounceSuccess(true)).toBe(true)
+  })
+})
+
+// ============ 展示对齐判定：Tracker 异常标签与错误原因回退链 ============
+
+describe('hasTrackerError / showTrackerErrorTag / getTorrentErrorReason', () => {
+  it('hasTrackerError 兼容 camelCase 与 snake_case，缺省视为无异常', () => {
+    expect(hasTrackerError({ status: 'seeding' } as never)).toBe(false)
+    expect(hasTrackerError({ status: 'seeding', hasTrackerError: true } as never)).toBe(true)
+    expect(hasTrackerError({ status: 'seeding', has_tracker_error: true } as never)).toBe(true)
+    expect(hasTrackerError(null)).toBe(false)
+    expect(hasTrackerError(undefined)).toBe(false)
+  })
+
+  it('showTrackerErrorTag：error 状态已有徽标不重复打，其余状态叠加标签', () => {
+    expect(showTrackerErrorTag({ status: 'seeding', hasTrackerError: true } as never)).toBe(true)
+    expect(showTrackerErrorTag({ status: 'error', hasTrackerError: true } as never)).toBe(false)
+    expect(showTrackerErrorTag({ status: 'seeding', hasTrackerError: false } as never)).toBe(false)
+  })
+
+  it('getTorrentErrorReason 回退链：errorReason → tracker 消息 → 兜底提示', () => {
+    const base = { status: 'seeding' }
+    expect(getTorrentErrorReason({ ...base, errorReason: '403' } as never)).toBe('403')
+    expect(
+      getTorrentErrorReason({
+        ...base,
+        hasTrackerError: true,
+        lastAnnounceMsg: 'You cannot seed the same torrent'
+      } as never)
+    ).toBe('Tracker 宣告失败：You cannot seed the same torrent')
+    expect(getTorrentErrorReason({ ...base, hasTrackerError: true } as never)).toBe(
+      'Tracker 宣告失败，详见 Tracker 标签页'
+    )
+    expect(getTorrentErrorReason({ ...base } as never)).toBe('')
+  })
+
+  it('getTorrentErrorReason 优先读 snake_case 字段（后端 duplicates 端点）', () => {
+    expect(
+      getTorrentErrorReason({ status: 'seeding', error_reason: 'Torrent not exists' } as never)
+    ).toBe('Torrent not exists')
+    expect(
+      getTorrentErrorReason({
+        status: 'seeding',
+        has_tracker_error: true,
+        last_announce_msg: '失败'
+      } as never)
+    ).toBe('Tracker 宣告失败：失败')
+  })
+
+  it('error 状态种子不打标签但 tooltip 错误原因仍可用', () => {
+    const torrent = { status: 'error', hasTrackerError: true, lastAnnounceMsg: 'You cannot seed' } as never
+
+    expect(showTrackerErrorTag(torrent)).toBe(false)
+    expect(getTorrentErrorReason(torrent)).toBe('Tracker 宣告失败：You cannot seed')
+    // errorReason 仍是最高优先级（整种 error 的显示语义不变）
+    expect(
+      getTorrentErrorReason({ status: 'error', hasTrackerError: true, errorReason: '403' } as never)
+    ).toBe('403')
   })
 })
 

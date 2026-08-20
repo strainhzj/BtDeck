@@ -19,6 +19,8 @@ export interface Torrent {
   status: string
   errorReason?: string | null
   error_reason?: string | null // 蛇形命名兼容
+  hasTrackerError?: boolean | null
+  has_tracker_error?: boolean | null // 蛇形命名兼容（tracker 判定任务标记的整种错误）
   torrentFile: string
   torrent_file?: string // 蛇形命名兼容
   auxiliarySeedCount?: number

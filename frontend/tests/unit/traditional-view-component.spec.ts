@@ -741,6 +741,36 @@ describe('TraditionalView component regressions', () => {
     expect(wrapper.find('tbody td.col-auxiliary-seed-count').text()).toBe('31')
   })
 
+  it('状态列为 tracker 异常种子叠加 Tracker异常 标签（error 状态与正常种子不打）', async() => {
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { status: 'seeding', hasTrackerError: true, lastAnnounceMsg: 'You cannot seed the same torrent' }),
+      torrentFixture(2, { status: 'error', hasTrackerError: true }),
+      torrentFixture(3, { status: 'seeding' })
+    ]))
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+
+    const rows = wrapper.findAll('tbody tr').wrappers
+    expect(rows).toHaveLength(3)
+    const taggedRows = rows.filter(row => row.find('.tracker-error-tag').exists())
+    expect(taggedRows).toHaveLength(1)
+    expect(taggedRows[0].find('.tracker-error-tag').text()).toBe('Tracker异常')
+    expect(taggedRows[0].find('.col-status .status-badge-trad').text()).toBe('做种中')
+    expect(taggedRows[0].find('.tracker-error-tag').attributes('title')).toContain('You cannot seed')
+    // error 状态行（已有"错误"徽标）与正常种子行都不打标
+    const errorRow = rows.find(row => row.find('.col-status .status-badge-trad').classes().includes('error'))
+    expect(errorRow).toBeDefined()
+    if (errorRow) {
+      expect(errorRow.find('.tracker-error-tag').exists()).toBe(false)
+    }
+    const normalRow = rows.find(row => row.text().includes('种子-3'))
+    expect(normalRow).toBeDefined()
+    if (normalRow) {
+      expect(normalRow.find('.tracker-error-tag').exists()).toBe(false)
+    }
+  })
+
   it('旧版列偏好缺少 savePath 时仍默认显示新增路径列', async() => {
     localStorage.setItem('traditional_columns_visibility', JSON.stringify({ name: false }))
     mockGetTorrentList.mockResolvedValue(torrentListResponse([

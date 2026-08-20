@@ -379,6 +379,21 @@
   }
 }
 
+/* Tracker 判定异常小标签（状态徽标旁叠加；展示对齐 has_tracker_error 判定） */
+.tracker-error-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--color-error);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+}
+
 /* ========================================
    进度条（紧凑版）
    ======================================== */

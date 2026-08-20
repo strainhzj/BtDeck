@@ -172,4 +172,26 @@ describe('TrackerDetailCard shared view contract', () => {
     expect(wrapper.find('tbody tr').text()).toContain('✗ 未联系')
     expect(wrapper.find('tbody tr').text()).toContain('✗ 发送中')
   })
+
+  it('展示对齐判定：Announce 文本被覆写为工作失败时显示红色失败标识与消息', () => {
+    // 后端在消息命中失败关键词池时覆写 announce 文本（Transmission 200+failure
+    // reason 场景），详情卡无需改动即应显示 ✗ 工作失败，而非 ✓ 工作
+    wrapper = mountCard([
+      {
+        trackerName: '1ptba',
+        trackerUrl: 'https://1ptba.com/announce',
+        lastAnnounceSucceeded: '工作失败',
+        lastAnnounceMsg: 'You cannot seed the same torrent in the same location from more than 1 client.',
+        lastScrapeSucceeded: '工作中',
+        lastScrapeMsg: ''
+      }
+    ])
+
+    const announceCell = wrapper.findAll('tbody tr td').at(1)
+    expect(announceCell.find('.tracker-status-error').exists()).toBe(true)
+    expect(announceCell.text()).toContain('✗ 工作失败')
+    expect(wrapper.findAll('tbody tr td').at(2).text()).toContain('more than 1 client')
+    // scrape 列未命中失败语义，保持原文本
+    expect(wrapper.findAll('tbody tr td').at(3).find('.tracker-status-working').exists()).toBe(true)
+  })
 })
