@@ -19,7 +19,7 @@ from app.api.endpoints.torrent_speed import ActiveKeysSnapshot, ActiveSnapshotSt
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 from tests.api.conftest import make_torrent
 
 URL = "/api/v1/torrents/getList"
@@ -32,7 +32,7 @@ def db_session():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    tables = [BtDownloaders.__table__, TorrentInfo.__table__, TrackerInfo.__table__]
+    tables = [BtDownloaders.__table__, TorrentInfo.__table__, TrackerInfo.__table__, TrackerKeywordConfig.__table__]
     Base.metadata.create_all(bind=engine, tables=tables)
     session = sessionmaker(bind=engine)()
     yield session

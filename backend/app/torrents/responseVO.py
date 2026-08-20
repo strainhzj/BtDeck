@@ -35,6 +35,7 @@ class TorrentInfoVO(BaseModel):
     size: int | None = Field(None, description="种子大小(字节)", examples=["134002221056"])
     status: str | None = Field(None, description="状态", examples=["seeding"])
     error_reason: str | None = Field(None, description="下载器返回的种子错误原因")
+    has_tracker_error: bool | None = Field(None, description="tracker 判定任务标记的整种错误（全部 tracker 宣告失败）")
     torrent_file: str | None = Field(
         None, description="种子文件路径", examples=["/config/torrents/47f130f4ec8cf6685a87d5816fb4a7d4e43bef86.torrent"]
     )

@@ -37,7 +37,7 @@ from app.auth.dependencies import get_current_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
 from app.services import torrent_metadata as torrent_metadata_service
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 from tests.api.conftest import make_torrent
 
 # ==================== Fixtures ====================
@@ -57,7 +57,12 @@ def db_session():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[TorrentInfo.__table__, TrackerInfo.__table__, BtDownloaders.__table__],
+        tables=[
+            TorrentInfo.__table__,
+            TrackerInfo.__table__,
+            BtDownloaders.__table__,
+            TrackerKeywordConfig.__table__,
+        ],
     )
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -65,7 +70,12 @@ def db_session():
     session.close()
     Base.metadata.drop_all(
         bind=engine,
-        tables=[TrackerInfo.__table__, TorrentInfo.__table__, BtDownloaders.__table__],
+        tables=[
+            TrackerInfo.__table__,
+            TorrentInfo.__table__,
+            BtDownloaders.__table__,
+            TrackerKeywordConfig.__table__,
+        ],
     )
 
 

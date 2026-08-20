@@ -21,6 +21,8 @@ from app.torrents.trackerVO import TrackerInfoVO
 from app.models.setting_templates import DownloaderTypeEnum
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.core.reannounce_config_operations import extract_domains_from_trackers
+from app.core.tracker_keyword_map import load_active_keyword_map
+from app.core.tracker_status_policy import FAILED_DISPLAY_TEXT, tracker_display_failed
 from transmission_rpc import Client as trClient
 from app.database import AsyncSessionLocal
 from app.services.audit_service import get_audit_service
@@ -461,6 +463,7 @@ def convert_to_vo(torrent: torrentInfoModel) -> TorrentInfoVO:
         size=torrent.size,
         status=torrent.status,
         error_reason=torrent.error_reason,
+        has_tracker_error=torrent.has_tracker_error,
         torrent_file=torrent.torrent_file,
         auxiliary_seed_count=torrent.auxiliary_seed_count or 1,
         added_date=added_timestamp,
@@ -480,6 +483,7 @@ def convert_to_vo_with_trackers(
     *,
     trackers: Optional[List[TrackerInfo]] = None,
     downloader_type: Optional[str] = None,
+    tracker_keyword_map: Optional[Dict[str, str]] = None,
 ) -> TorrentInfoVO:
     """将数据库模型转换为VO对象，包含tracker信息"""
     prefetched_downloader_type = downloader_type
@@ -558,6 +562,18 @@ def convert_to_vo_with_trackers(
         else:
             announce_status_text = None
 
+        # 展示对齐判定：Transmission 对「HTTP 200 + failure reason」上报成功
+        # 布尔（落库状态码 2=工作中），但消息已被判定任务按失败池判错。按同一
+        # 关键词口径覆写，避免显示"✓工作中"却命中 error 筛选（tracker_keyword_map
+        # 为 None/空时不覆写，保持调用方旧语义）。
+        if tracker_display_failed(
+            announce_status_raw,
+            tracker.last_announce_msg,
+            tracker_keyword_map or {},
+            downloader_type,
+        ):
+            announce_status_text = FAILED_DISPLAY_TEXT
+
         # 映射 scrape 状态
         if scrape_status_raw is not None:
             try:
@@ -571,6 +587,15 @@ def convert_to_vo_with_trackers(
                 scrape_status_text = str(scrape_status_raw)
         else:
             scrape_status_text = None
+
+        # scrape 列同口径独立覆写（只看 scrape 消息与 scrape 状态码）。
+        if tracker_display_failed(
+            scrape_status_raw,
+            tracker.last_scrape_msg,
+            tracker_keyword_map or {},
+            downloader_type,
+        ):
+            scrape_status_text = FAILED_DISPLAY_TEXT
 
         # 构建tracker_info对象数组
         tracker_vo = TrackerInfoVO(
@@ -609,6 +634,7 @@ def convert_to_vo_with_trackers(
         size=torrent.size,
         status=torrent.status,
         error_reason=torrent.error_reason,
+        has_tracker_error=torrent.has_tracker_error,
         progress=torrent.progress,
         torrent_file=torrent.torrent_file,
         auxiliary_seed_count=torrent.auxiliary_seed_count or 1,
@@ -658,6 +684,9 @@ def convert_to_vos_with_trackers(
     torrent_list = list(torrents)
     if not torrent_list:
         return []
+
+    # 每次列表转换只加载一次关键词池，供展示覆写与判定任务同口径。
+    tracker_keyword_map = load_active_keyword_map(db)
 
     requested_batch_size = batch_size if batch_size is not None else _RELATED_PREFETCH_BATCH_SIZE
     effective_batch_size = _safe_related_prefetch_batch_size(db, requested_batch_size)
@@ -715,6 +744,7 @@ def convert_to_vos_with_trackers(
             torrent,
             trackers=tracker_map.get(str(torrent.info_id), []),
             downloader_type=downloader_type_map.get(str(torrent.downloader_id), "qbittorrent"),
+            tracker_keyword_map=tracker_keyword_map,
         )
         for torrent in torrent_list
     ]

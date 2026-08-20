@@ -7,11 +7,14 @@
 import pytest
 
 from app.core.tracker_status_policy import (
+    FAILED_DISPLAY_TEXT,
     build_tracker_evidence,
     collect_tracker_messages,
     decide_tracker_error_state,
     is_tracker_working,
     match_tracker_keyword_type,
+    tracker_display_failed,
+    tracker_message_failed,
 )
 
 
@@ -103,3 +106,73 @@ def test_decide_tracker_error_state_requires_all_failed_or_any_normal(evidence_t
 def test_working_evidence_is_normal_when_combined_with_a_failed_evidence():
     """共享聚合语义必须让 Working 空消息和明确失败证据组合为正常。"""
     assert decide_tracker_error_state(["failed", "working"]) is False
+
+
+# ==================== 展示层覆写（展示对齐判定） ====================
+
+
+@pytest.mark.parametrize(
+    "message",
+    [None, "", "  \t ", 2, ["not-a-message"]],
+)
+def test_tracker_message_failed_ignores_non_string_or_blank_messages(message):
+    """空消息/非字符串不构成证据（与 collect_tracker_messages 同语义）。"""
+    assert tracker_message_failed(message, {"anything": "failed"}) is False
+
+
+def test_tracker_message_failed_requires_exact_failed_keyword():
+    """精确命中失败池才算失败；ignored/success/未配置消息都不覆写。"""
+    keyword_map = {
+        "You cannot seed the same torrent in the same location from more than 1 client.": "failed",
+        "您已在 tracker.hdkyl.in 汇报过了": "ignored",
+        "Success": "success",
+    }
+    exact_failed = "You cannot seed the same torrent in the same location from more than 1 client."
+
+    assert tracker_message_failed(f"  {exact_failed}  ", keyword_map) is True
+    assert tracker_message_failed("您已在 tracker.hdkyl.in 汇报过了", keyword_map) is False
+    assert tracker_message_failed("Success", keyword_map) is False
+    # 未精确命中（部分匹配不算，与种子级 exact 判定一致）
+    assert tracker_message_failed("You cannot seed the torrent", keyword_map) is False
+    # 空池永不覆写
+    assert tracker_message_failed(exact_failed, {}) is False
+
+
+def test_failed_display_text_matches_enums_code3():
+    """覆写文本必须与两套下载器枚举 code=3 的显示文本一致。"""
+    from app.enums.tracker_status import QBittorrentTrackerStatus, TransmissionTrackerStatus
+
+    assert FAILED_DISPLAY_TEXT == QBittorrentTrackerStatus.get_display_text(3)
+    assert FAILED_DISPLAY_TEXT == TransmissionTrackerStatus.get_display_text(3)
+
+
+@pytest.mark.parametrize(
+    ("status_code", "downloader_type", "expected"),
+    [
+        (2, "transmission", True),  # tr 工作中 + 失败消息 → 覆写（核心场景）
+        (2, "qbittorrent", True),  # qb 工作中 + 失败消息 → 覆写
+        (3, "transmission", True),  # 本就是失败，覆写无变化
+        (None, "transmission", True),  # 状态码不可解析按非中性处理（对齐判定任务）
+        ("abc", "qbittorrent", True),
+        (1, "qbittorrent", False),  # qb 未联系：残留消息不采信
+        (1, "transmission", False),  # tr 发送中：同上
+        (0, "transmission", False),  # tr 未联系：同上
+        (0, "qbittorrent", True),  # qb 已禁用不是中性码，消息证据有效
+    ],
+)
+def test_tracker_display_failed_aligns_with_judge_neutral_semantics(status_code, downloader_type, expected):
+    """覆写条件与判定任务的中性码语义一致：qb==1 / tr∈{0,1} 不覆写。"""
+    keyword_map = {"You cannot seed the same torrent in the same location from more than 1 client.": "failed"}
+    msg = "You cannot seed the same torrent in the same location from more than 1 client."
+
+    assert tracker_display_failed(status_code, msg, keyword_map, downloader_type) is expected
+
+
+def test_tracker_display_failed_ignores_non_failed_messages():
+    """ignored/success/空池消息永不触发覆写，状态码不影响结论。"""
+    keyword_map = {"您已在 tracker.hdkyl.in 汇报过了": "ignored", "Success": "success"}
+
+    assert tracker_display_failed(2, "您已在 tracker.hdkyl.in 汇报过了", keyword_map, "transmission") is False
+    assert tracker_display_failed(2, "Success", keyword_map, "qbittorrent") is False
+    assert tracker_display_failed(2, "任意消息", {}, "transmission") is False
+    assert tracker_display_failed(2, None, keyword_map, "transmission") is False

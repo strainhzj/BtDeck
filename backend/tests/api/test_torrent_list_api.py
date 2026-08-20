@@ -34,7 +34,7 @@ from app.api.api import api_router
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 from tests.api.conftest import make_torrent
 
 URL = "/api/v1/torrents/getList"
@@ -58,7 +58,12 @@ def db_session():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[TorrentInfo.__table__, TrackerInfo.__table__, BtDownloaders.__table__],
+        tables=[
+            TorrentInfo.__table__,
+            TrackerInfo.__table__,
+            BtDownloaders.__table__,
+            TrackerKeywordConfig.__table__,
+        ],
     )
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -66,7 +71,12 @@ def db_session():
     session.close()
     Base.metadata.drop_all(
         bind=engine,
-        tables=[TrackerInfo.__table__, TorrentInfo.__table__, BtDownloaders.__table__],
+        tables=[
+            TrackerInfo.__table__,
+            TorrentInfo.__table__,
+            BtDownloaders.__table__,
+            TrackerKeywordConfig.__table__,
+        ],
     )
 
 

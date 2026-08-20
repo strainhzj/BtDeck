@@ -12,7 +12,7 @@ from app.api.models.advanced_search import EnhancedAdvancedSearchRequest
 from app.database import Base
 from app.downloader.models import BtDownloaders
 from app.services.advanced_search import AdvancedSearchService
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 from tests.api.conftest import make_torrent
 
 
@@ -24,7 +24,7 @@ def test_real_advanced_search_prefetches_trackers_and_downloaders_in_batches(
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    tables = [TorrentInfo.__table__, TrackerInfo.__table__, BtDownloaders.__table__]
+    tables = [TorrentInfo.__table__, TrackerInfo.__table__, BtDownloaders.__table__, TrackerKeywordConfig.__table__]
     Base.metadata.create_all(bind=engine, tables=tables)
     session = sessionmaker(bind=engine)()
     now = datetime(2026, 7, 18, 12, 0, 0)
@@ -82,7 +82,9 @@ def test_real_advanced_search_prefetches_trackers_and_downloaders_in_batches(
         assert result["code"] == "200", result["msg"]
         assert result["total"] == 7
         assert len(result["data"]) == 7
-        assert len(select_statements) == 6
+        # 6 = 主查询 + tracker 分批 + 下载器分批；+1 = 展示覆写的关键词池加载
+        # （convert_to_vos_with_trackers 每次列表转换仅加载一次，见 tracker_keyword_map）
+        assert len(select_statements) == 7
         assert {item["trackerInfo"][0]["tracker_url"] for item in result["data"]} == {
             f"https://tracker/advanced-info-{index}" for index in range(7)
         }

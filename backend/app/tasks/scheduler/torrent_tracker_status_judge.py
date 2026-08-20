@@ -26,10 +26,11 @@ import threading
 
 from app.database import SessionLocal
 from app.downloader.models import BtDownloaders
+from app.core.tracker_keyword_map import load_active_keyword_map
 from app.core.tracker_status_policy import build_tracker_evidence, decide_tracker_error_state
 from app.models.setting_templates import DownloaderTypeEnum
 from app.tasks.resource_guard import admission_controller
-from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
+from app.torrents.models import TorrentInfo, TrackerInfo
 
 logger = logging.getLogger(__name__)
 
@@ -265,6 +266,9 @@ class TorrentTrackerStatusJudge:
         """
         加载所有启用的关键词到内存
 
+        委托共享加载器 load_active_keyword_map（种子级判定与展示层覆写共用
+        同一份映射）；方法名与 to_thread 调用点是写库治理测试的锚点，不可改名。
+
         返回格式:
         {
             "keyword1": "failed",
@@ -274,50 +278,13 @@ class TorrentTrackerStatusJudge:
         }
 
         Returns:
-            关键词字典 (keyword -> type)
+            关键词字典 (keyword -> type)；异常时为空字典（本轮跳过判定）
         """
         db = SessionLocal()
         try:
-            # 查询所有启用的关键词（仅失败池、成功池、忽略池）
-            keywords = (
-                db.query(TrackerKeywordConfig)
-                .filter(
-                    TrackerKeywordConfig.enabled.is_(True),
-                    TrackerKeywordConfig.dr == 0,
-                    TrackerKeywordConfig.keyword_type.in_(["failed", "success", "ignored"]),
-                )
-                .all()
-            )
-
-            # 构建快速查找字典 (keyword -> type)
-            # 如果存在重复keyword，保留priority最高的
-            keyword_map: Dict[str, str] = {}
-            for kw in keywords:
-                keyword = str(kw.keyword)
-                if keyword not in keyword_map:
-                    keyword_map[keyword] = str(kw.keyword_type)
-                else:
-                    # 如果重复，保留priority更高的
-                    existing = (
-                        db.query(TrackerKeywordConfig)
-                        .filter(
-                            TrackerKeywordConfig.keyword == kw.keyword,
-                            TrackerKeywordConfig.enabled.is_(True),
-                            TrackerKeywordConfig.dr == 0,
-                        )
-                        .order_by(TrackerKeywordConfig.priority.desc())
-                        .first()
-                    )
-                    if existing:
-                        keyword_map[keyword] = str(existing.keyword_type)
-                        logger.warning(f"发现重复关键词: {keyword}，保留高优先级记录")
-
+            keyword_map = load_active_keyword_map(db)
             logger.info(f"加载关键词: {len(keyword_map)}条")
             return keyword_map
-
-        except Exception as e:
-            logger.error(f"加载关键词失败: {e}", exc_info=True)
-            return {}
         finally:
             db.close()
 

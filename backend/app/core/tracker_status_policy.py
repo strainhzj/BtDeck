@@ -9,6 +9,9 @@ from typing import Any, List, Optional
 
 NORMAL_EVIDENCE_TYPES = frozenset({"success", "ignored", "working"})
 
+# 展示层覆写文本；与两套下载器枚举 code=3 的显示文本（"工作失败"）一致。
+FAILED_DISPLAY_TEXT = "工作失败"
+
 
 def collect_tracker_messages(announce_msg: Any, scrape_msg: Any) -> List[str]:
     """收集 announce/scrape 的非空消息，并去除首尾空白。"""
@@ -70,3 +73,40 @@ def decide_tracker_error_state(evidence_types: Sequence[str]) -> Optional[bool]:
     if evidence_types and all(evidence_type == "failed" for evidence_type in evidence_types):
         return True
     return None
+
+
+def tracker_message_failed(message: Any, keyword_map: Mapping[str, str]) -> bool:
+    """判断单条 announce/scrape 消息是否精确命中失败关键词池。
+
+    与 ``build_tracker_evidence`` 的 exact 分支同语义（strip 后整条查表），
+    供展示层覆写与种子级 ``has_tracker_error`` 判定保持同一口径；空消息/
+    非字符串不构成证据（与 ``collect_tracker_messages`` 一致）。
+    """
+    if not isinstance(message, str) or not message.strip():
+        return False
+    return keyword_map.get(message.strip()) == "failed"
+
+
+def tracker_display_failed(
+    activity_status: Any,
+    activity_msg: Any,
+    keyword_map: Mapping[str, str],
+    downloader_type: Any,
+) -> bool:
+    """判断展示层是否应把该 announce/scrape 状态文本覆写为"工作失败"。
+
+    Transmission 对「HTTP 200 + bencode failure reason」上报成功布尔，同步
+    落库状态码 2（工作中）但消息是失败文本；此函数按判定任务口径修正展示。
+    not-contacted 中性状态码（qBittorrent==1 / Transmission∈{0,1}）下的消息
+    是残留旧值，判定任务（torrent_tracker_status_judge）不采信，展示层同样
+    不覆写；状态码无法解析时按判定任务语义视为非中性（消息证据有效）。
+    """
+    if not tracker_message_failed(activity_msg, keyword_map):
+        return False
+    try:
+        status_code = int(activity_status)
+    except (TypeError, ValueError):
+        return True
+    if downloader_type == "qbittorrent":
+        return status_code != 1
+    return status_code not in (0, 1)

@@ -8,7 +8,7 @@
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
-from sqlalchemy import Column, MetaData, String, Table, and_, func, select
+from sqlalchemy import Column, MetaData, String, Table, and_, func, or_, select
 from typing import Any, Dict, List, Literal, Optional
 import logging
 import uuid
@@ -16,6 +16,8 @@ import uuid
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import get_current_user
 from app.auth.models import User
+from app.core.tracker_keyword_map import load_active_keyword_map
+from app.core.tracker_status_policy import FAILED_DISPLAY_TEXT, tracker_display_failed
 from app.database import get_db
 from app.torrents.models import TorrentInfo, TrackerInfo
 from app.torrents.responseVO import TorrentInfoVO
@@ -57,7 +59,7 @@ class DuplicateQueryRequest(BaseModel):
     status: Optional[str] = Field(
         None,
         max_length=8192,
-        description="种子状态（支持多选，逗号分隔）",
+        description="种子状态（支持多选，逗号分隔；error 满足 status='error' 或 has_tracker_error=True 之一）",
     )
     category_like: Optional[str] = Field(None, description="分类模糊搜索")
     tags_like: Optional[str] = Field(None, description="标签模糊搜索")
@@ -217,15 +219,19 @@ async def get_duplicate_torrents(
         if query.status:
             # 支持多选：逗号分隔的字符串
             statuses = list(dict.fromkeys(status.strip() for status in query.status.split(",") if status.strip()))
-            if len(statuses) == 0:
+            # error 口径与 getList/advanced_search 一致：status='error' 或
+            # has_tracker_error=True 之一即命中，避免同一种子在不同页面筛选结果分歧。
+            status_conditions = []
+            for status_value in statuses:
+                if status_value == "error":
+                    status_conditions.append(
+                        or_(TorrentInfo.status == "error", TorrentInfo.has_tracker_error.is_(True))
+                    )
+                else:
+                    status_conditions.append(TorrentInfo.status == status_value)
+            if status_conditions:
                 # 空列表：不添加过滤条件（避免SQL语法错误）
-                pass
-            elif len(statuses) == 1:
-                # 单个状态：使用精确匹配
-                base_conditions.append(TorrentInfo.status == statuses[0])
-            else:
-                # 多个状态：使用 in_ 查询（或关系）
-                base_conditions.append(TorrentInfo.status.in_(statuses))
+                base_conditions.append(or_(*status_conditions))
 
         if query.category_like:
             base_conditions.append(TorrentInfo.category.like(f"%{query.category_like}%"))
@@ -396,6 +402,8 @@ async def get_duplicate_torrents(
         live_metadata = await fetch_live_torrent_metadata(http_request.app, torrent_records, downloader_types)
 
         # 转换为VO格式并填充tracker信息
+        # 展示覆写与 has_tracker_error 判定共用同一关键词池（每请求加载一次）
+        tracker_keyword_map = load_active_keyword_map(db)
         torrent_list = []
         for torrent in torrent_records:
             # 获取该种子的tracker列表
@@ -425,6 +433,16 @@ async def get_duplicate_torrents(
                     except (ValueError, TypeError):
                         announce_status_text = str(tracker.last_announce_succeeded)
 
+                # 展示对齐判定：与 getList 同口径，消息命中失败池时覆写
+                # "工作失败"（Transmission 200+failure reason 会被记为状态码 2）。
+                if tracker_display_failed(
+                    tracker.last_announce_succeeded,
+                    tracker.last_announce_msg,
+                    tracker_keyword_map,
+                    downloader_type,
+                ):
+                    announce_status_text = FAILED_DISPLAY_TEXT
+
                 # 映射 scrape 状态
                 scrape_status_text = None
                 if tracker.last_scrape_succeeded is not None:
@@ -436,6 +454,15 @@ async def get_duplicate_torrents(
                             scrape_status_text = TransmissionTrackerStatus.get_display_text(scrape_status_int)
                     except (ValueError, TypeError):
                         scrape_status_text = str(tracker.last_scrape_succeeded)
+
+                # scrape 列同口径独立覆写（只看 scrape 消息与 scrape 状态码）。
+                if tracker_display_failed(
+                    tracker.last_scrape_succeeded,
+                    tracker.last_scrape_msg,
+                    tracker_keyword_map,
+                    downloader_type,
+                ):
+                    scrape_status_text = FAILED_DISPLAY_TEXT
 
                 # 构建tracker_info对象
                 tracker_vo = TrackerInfoVO(
