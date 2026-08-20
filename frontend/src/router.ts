@@ -1,5 +1,5 @@
 import Vue from 'vue'
-import Router, { RawLocation, Route } from 'vue-router'
+import Router, { RawLocation, Route, isNavigationFailure, NavigationFailure } from 'vue-router'
 import { Message } from 'element-ui'
 import Layout from '@/layout/index.vue'
 import { recoverFromChunkLoadError } from '@/utils/deployment-recovery'
@@ -265,31 +265,69 @@ const router = new Router({
 // 捕获并忽略冗余导航错误
 // 修复Vue Router 3.x中router.push的Promise返回值问题
 // 参考：https://github.com/vuejs/vue-router/issues/2881
+// vue-router 3.1+ 把"被守卫改道/中止/重复"的导航以 rejected promise 返回
+// （NavigationFailure：redirected/aborted/duplicated/cancelled）。这些是
+// 路由守卫的正常控制流（如强制改密把 /dashboard 改道到 /settings），
+// 不能作为异常抛给调用方——否则登录页等处的 catch 会把 vue-router 内部
+// 英文消息（"Redirected when going from ... via a navigation guard"）
+// 当成错误弹窗显示给用户。isNavigationFailure 统一判定，真实异常仍上抛。
 const originalPush = router.push
 const pushWithCallbacks = originalPush.bind(router) as (
   location: RawLocation,
   onComplete?: (route: Route) => void,
-  onAbort?: (error: Error) => void
+  onAbort?: (error: NavigationFailure) => void
 ) => void
-const pushAsPromise = originalPush.bind(router) as (location: RawLocation) => Promise<Route>
+const pushAsPromise = originalPush.bind(router) as (
+  location: RawLocation
+) => Promise<Route | NavigationFailure>
 
 router.push = ((
   location: RawLocation,
   onComplete?: (route: Route) => void,
-  onAbort?: (error: Error) => void
+  onAbort?: (error: NavigationFailure) => void
 ) => {
   if (onComplete || onAbort) {
     pushWithCallbacks(location, onComplete, onAbort)
     return
   }
 
-  return pushAsPromise(location).catch((err: Error) => {
-    if (err.name === 'NavigationDuplicated') {
+  return pushAsPromise(location).catch((err: NavigationFailure | Error) => {
+    if (isNavigationFailure(err)) {
       return router.currentRoute
     }
     throw err
   })
 }) as Router['push']
+
+// replace 同样处理：forceChangeRedirect 等守卫的 next({replace: true}) 与
+// 业务 replace 跳转同样会以 rejected promise 返回 NavigationFailure。
+const originalReplace = router.replace
+const replaceWithCallbacks = originalReplace.bind(router) as (
+  location: RawLocation,
+  onComplete?: (route: Route) => void,
+  onAbort?: (error: NavigationFailure) => void
+) => void
+const replaceAsPromise = originalReplace.bind(router) as (
+  location: RawLocation
+) => Promise<Route | NavigationFailure>
+
+router.replace = ((
+  location: RawLocation,
+  onComplete?: (route: Route) => void,
+  onAbort?: (error: NavigationFailure) => void
+) => {
+  if (onComplete || onAbort) {
+    replaceWithCallbacks(location, onComplete, onAbort)
+    return
+  }
+
+  return replaceAsPromise(location).catch((err: NavigationFailure | Error) => {
+    if (isNavigationFailure(err)) {
+      return router.currentRoute
+    }
+    throw err
+  })
+}) as Router['replace']
 
 // A tab opened before deployment still runs the old webpack runtime. When that
 // runtime requests a removed lazy chunk, move the whole SPA to the current
