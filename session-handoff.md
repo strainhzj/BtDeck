@@ -1,4 +1,22 @@
 # Session Handoff - BtDeck 全栈项目
+
+## 2026-08-20 交接：Linux 安装包全链路验证（容器模拟）与三项仓库修复
+
+### 结论
+
+Docker（node:18.20.1-slim/Bookworm + python3.11 + fpm）完整跑通 build-linux.sh：PyInstaller 二进制 + fpm deb/rpm 全部产出并验证；deb 在全新容器 dpkg -i 成功、以 btdeck 用户 + systemd 等价环境启动健康（health/SPA 200）。产物已回传仓库 dist/（btdeck-linux、BtDeck-v1.0.9-linux-amd64.deb/.rpm）。
+
+### 本会话修复（未提交）
+
+- deploy/verify-package.py + analyze-package-size.py：find_archive_viewer 改 sys.prefix 优先（Linux venv 软链导致 resolve 跳 /usr/bin）。
+- deploy/btdeck.service + build-linux.sh postinst：ALLOWED_HOSTS 改 JSON 数组格式（pydantic-settings 对 List[str] 强制 JSON 解析，逗号格式安装即崩——A/B 实证）。
+- deploy/build-linux.sh：fpm 加 --force（重复构建不再 fatal）。
+- 本地工作区：build-linux.sh/start.sh/btdeck.service 强制重检出为 LF（陈旧 CRLF 检出隐患，索引本 LF）。
+
+### 注意
+
+二进制 glibc 2.36（Debian12+）；spec 的 transmissionrpc 旧条目告警可删；build-linux.sh 缺 binutils/libpython3.11/fpm 预检；List[str] env 强制 JSON 与 .env.example 逗号指引的深层矛盾待评估。验证容器已清理。
+
 ## 2026-08-19 交接（三）：桌面版 "Redirected ... via a navigation guard" 杂音根因与修复
 
 ### 根因

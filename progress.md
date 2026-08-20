@@ -4779,3 +4779,30 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 
 - 新增回归 spec tests/unit/router-navigation-failure.spec.ts（3 用例：redirected push/replace 静默且落点正确、aborted 静默）；permission-guard/force-change-deadlock/session + 新 spec 共 4 套件 34 用例全绿；tsc --noEmit、npm run lint 通过；前端重建 + PyInstaller 重打包（20:09）+ verify-package 通过。注意：正在运行的旧实例（用户会话）需重启 exe 后生效。
 
+## 2026-08-20 Linux 安装包全链路验证（Docker 容器模拟 Debian 12）与三项修复
+
+### 环境与方法
+
+- node:18.20.1-slim 容器（Bookworm，装 python3.11/venv/binutils/libpython3.11/ruby+fpm），源码快照经 docker cp 传入；镜像源环境变量与 Docker 构建参数对齐（npmmirror/aliyun pypi/apt）。
+- 最终完整跑通 deploy/build-linux.sh：venv → npm ci + 前端构建 → PyInstaller（btdeck.spec）→ verify-package 全 PASS → fpm deb/rpm 构建成功；产物 dist/btdeck（ELF x86-64, 73.6MB）、BtDeck-v1.0.9-linux-amd64.deb/.rpm（各 73MB）。
+
+### 发现与修复（本会话 4 项）
+
+1. 【工作区隐患】deploy/build-linux.sh、start.sh、btdeck.service 工作区为陈旧 CRLF 检出（.gitattributes 已 eol=lf 但 git 不重写既有文件；索引本身 LF，Linux 全新 clone 无恙）——本机拷贝到 Linux 即 "$
+" 报错。已本地强制重检出修复；同集合共 83 文件（其余为 .py，CRLF 无害），未逐一处理。
+2. 【仓库缺陷·已修】verify-package.py/analyze-package-size.py 的 find_archive_viewer 在 Linux 失效：venv bin/python3 是符号链接，Path(sys.executable).resolve() 跳到 /usr/bin。改用 sys.prefix（venv 根，不经软链）优先 + 未 resolve 的同级目录次之 + which 兜底。
+3. 【仓库缺陷·已修·关键】ALLOWED_HOSTS 环境变量格式：btdeck.service 的 Environment= 与 postinst 生成的 btdeck.env 均为逗号分隔，而 pydantic-settings 对 List[str] 在校验器之前强制 JSON 解析 → 安装后启动即 SettingsError 崩溃循环（A/B 实证：逗号格式崩溃 / JSON 格式健康）。两处改为 JSON 数组（与 desktop_main.py 一致）。
+4. 【脚本健壮性·已修】fpm 拒绝覆盖已存在输出 → 重复构建 fatal；两处 fpm 加 --force。
+
+### 验证结果
+
+- deb 全新容器 dpkg -i：exit 0，postinst 建系统用户 btdeck、/opt/btdeck 五个 ReadWritePaths 目录、600 权限 btdeck.env（SECRET_KEY 随机 + JSON ALLOWED_HOSTS）、chown 正确；systemd 缺失时优雅降级提示。
+- 以 btdeck 用户 + env 文件 + DEV=false 启动（Python 干净环境复刻 systemd 传参）：/health/live 200 信封、/ 200 SPA（title BtDeck）。
+- systemd 单元内容/行尾核对：LF 干净、硬化段（NoNewPrivileges/ProtectSystem=strict/ReadWritePaths）完整。
+
+### 遗留与注意
+
+1. 二进制为 Bookworm（glibc 2.36）构建：仅适用 Debian 12+/Ubuntu 22.04+ 级别发行版；老系统需对应环境重构建。
+2. PyInstaller 每次输出 "Hidden import 'transmissionrpc' not found"（spec 列了 transmission_rpc 旧名，未安装即非致命告警）——建议 spec 删除该旧条目。
+3. build-linux.sh 环境前置：binutils/libpython3.11/ruby+fpm 无预检，干净 Debian 需先 apt 安装；建议脚本头部注释说明或加预检。
+4. 深层建议：后端 List[str] 环境变量强制 JSON 的语义与 .env.example/compose 文档的逗号指引相悖，可考虑 NoDecode 注解统一兼容（涉及核心配置，另行评估）。

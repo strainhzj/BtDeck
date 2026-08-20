@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-19",
+  "last_updated": "2026-08-20",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -4231,6 +4231,19 @@
             "tests/unit/router-navigation-failure.spec.ts"
           ],
           "evidence": "根因链：强制改密守卫改道登录后导航 → vue-router rejected promise → login/index.vue:214 统一 catch 弹内部英文消息；修复为 router.ts 实例级 push/replace 补丁 isNavigationFailure 全类型静默（原仅 NavigationDuplicated 且无 replace）；4 套件 34 用例 + typecheck + lint 通过，exe 重打包 verify 通过"
+        },
+        {
+          "id": "linux-package-verification",
+          "name": "Linux 安装包全链路容器验证与三项修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/build-linux.sh",
+            "deploy/btdeck.service",
+            "deploy/verify-package.py",
+            "deploy/analyze-package-size.py"
+          ],
+          "evidence": "node18-slim 容器完整跑通 build-linux.sh（venv/npm/PyInstaller/verify/fpm）；deb 全新容器 dpkg -i exit0（用户/目录/600 env/降级提示全对）+ btdeck 用户 systemd 等价环境启动 health/SPA 200；修复 viewer 解析 sys.prefix（Linux venv 软链）、ALLOWED_HOSTS JSON 化（逗号格式 A/B 实证安装即 SettingsError）、fpm --force；另修本地工作区三文件陈旧 CRLF 检出（索引本 LF）"
         }
       ]
     }
