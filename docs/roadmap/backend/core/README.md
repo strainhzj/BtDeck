@@ -26,7 +26,8 @@
 | 状态映射 status-mapper | `torrent_status_mapper.py` ✨2026-08-16 | 统一 qb/transmission 种子状态映射；qB 映射表补齐新种子初始态（metaDL/forcedMetaDL/allocating→downloading、forcedDL→downloading、forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL，moving 有意不映射），`resolve_transmission_status` L112 判定错误状态，`extract_transmission_error_reason` L147 安全提取 errorString（warning/恢复返回空） |
 | Tracker 判断 tracker-judgment | `tracker_judgment.py` | Tracker 状态判断引擎（关键词池，失败优先策略） |
 | Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成；`resolve_transmission_tracker_status_code()` L120 将布尔统计/联系状态归一为项目 0–4 状态码 |
-| Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L40 以非空消息优先、Working 空消息兜底构造证据，L66 聚合为明确正常/全部失败/未知保留 |
+| Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L40 以非空消息优先、Working 空消息兜底构造证据，L66 聚合为明确正常/全部失败/未知保留；✨2026-08-20 展示对齐判定：`tracker_message_failed()` L78 单消息精确命中失败池、`tracker_display_failed()` L90 按判定任务中性码语义（qb==1/tr∈{0,1} 残留消息不采信）裁决展示覆写，`FAILED_DISPLAY_TEXT` L13 与两套枚举 code=3 文本一致 |
+| Tracker 关键词池加载 tracker-keyword-map | `tracker_keyword_map.py` ✨2026-08-20 | `load_active_keyword_map()` L19 加载 failed/success/ignored 三池为 `{keyword: type}`（first-wins，异常返回空池降级）；种子级判定任务与展示覆写共用同一映射保证口径一致 |
 | Tracker 操作孤儿 tracker-operations | `tracker_operations.py` | ⚠️ **孤儿**：标准化 tracker DB 操作（DatabaseResult 重构版），未启用 |
 
 > 🔵 = 基础设施型（高频引用）；⚠️ = 孤儿/低使用。各文件的引用统计详见下方"孤儿/低使用"与"基础设施型"两节。

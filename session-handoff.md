@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-20 交接：展示对齐判定——Tracker 异常可见化与 Announce 状态覆写
+
+### 结论
+
+`status=error` 筛选（口径 `status='error' OR has_tracker_error=True`）此前会查出 UI 上毫无错误迹象的种子。定性：Transmission 对 PT 站「HTTP 200 + bencode failure reason」上报成功布尔（状态码 2=工作中），判定任务按消息文本判错置 has_tracker_error=1——判定对、展示错信布尔。本次让展示与判定同口径，经两轮独立子代理审查后实施。
+
+### 实施结果（未提交，23 文件）
+
+- 后端：新增 `core/tracker_keyword_map.py` 共享关键词池加载器（判定任务 `_load_keywords` 委托，方法名是治理测试锚点）；`tracker_status_policy.py` 新增 `tracker_message_failed`/`tracker_display_failed`（中性码 qb==1/tr∈{0,1} 残留消息不覆写）；TorrentInfoVO 透传 `has_tracker_error`；getList/duplicates 的 announce/scrape 文本在消息精确命中失败池时覆写"工作失败"；duplicates error 筛选口径补 OR has_tracker_error（与 getList 一致）。
+- 前端：`torrentBatch.ts` 新增 hasTrackerError/showTrackerErrorTag/getTorrentErrorReason 共享 helper（两视图旧重复实现改委托）；两视图状态列叠加红色"Tracker异常"小标签 + tooltip 回退链 + 图标 title；TraditionalView col-status 90→145px、表 min-width 1435px；TrackerOperationDialog 修复 `'True'` 字面量判断恒显异常的既有 bug。
+
+### 验证
+
+- 后端全量 pytest 3884 passed / 7 skipped / 1 failed（失败项经 stash 干净树复现为存量迁移问题，与本次无关）；新增 test_tracker_error_display_alignment 24 用例（含判定任务委托链路、判定↔展示一致性契约矩阵、advanced_search 同源集成）+ policy 扩充；5 个 fixture 补 TrackerKeywordConfig 表；black/flake8 过，mypy 净增 +2（与同构造 60 个既有字段同类的旧模型误报）。
+- 前端 57 suites / 891 passed（含两视图组件级标签渲染与 TrackerOperationDialog 契约 spec）；lint/build/init.sh 通过。
+- feature_list.json（tracker-error-display-alignment-2026-08-20）、progress.md、docs/roadmap（core/api/tasks/frontend-views 四分支 + 根 README 元信息）已同步。
+
+### 遗留与边界
+
+- has_tracker_error 由判定任务约 30 分钟重算，关键词池编辑后覆写即时生效而 flag 滞后——既有语义，不放大矛盾。
+- 展示覆写不落库（同步位点 5 处未动，保留 Transmission 原始归一码）。
+- 未执行 Git 提交；未部署（需重新打包后端镜像/安装包才在线上生效）。
+
 ## 2026-08-20 交接：Linux 安装包全链路验证（容器模拟）与三项仓库修复
 
 ### 结论

@@ -1,5 +1,46 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-20（第二批） - 展示对齐判定：Tracker 异常可见化与 Announce 状态覆写
+
+### 排查与定性（生产副本实测 + 独立审查）
+
+- 用户报告 `getList?status=error&same_content_only=true` 查出"无错误信息"的种子（锦心似玉组）。桌面生产副本 app.db 实测定性：error 筛选口径为 `status='error' OR has_tracker_error=True`，命中的 953/1348 行是 seeding+has_tracker_error=1（tracker 层失败、`has_tracker_error` 不在 VO 返回、前端零引用）→ UI 显示"做种中"无任何错误标识。
+- 深挖发现 Transmission 上报特性：PT 站以 HTTP 200 + bencode failure reason 拒绝时，daemon 记 `lastAnnounceSucceeded=true`（传输层成功）+ result=失败文本；全库 349 行"状态码 2+失败文本"全是策略类拒绝（重复做种/重复汇报/passkey），5793 行状态码 3 全是连接类错误。展示层信了布尔值（✓工作中），判定任务信了消息文本（has_tracker_error=1）——判定是对的，展示错信。
+- 实施前两轮独立审查（后端/前端各一）：抓出 3 个测试阻断项（5 个 fixture 缺 tracker_keyword_config 表 / torrent-error-reason-ui.spec 钉死视图内字面量 / 治理测试按 `__name__=="_load_keywords"` 断言 to_thread）、1 个布局缺陷（传统视图 table-layout:fixed 下 90px 状态列裁掉追加标签）、2 个语义边界（not-contacted 残留消息不覆写、duplicates 端点 error 筛选口径不一致），全部吸收进实施。
+
+### 实施内容（后端 6 文件 + 前端 10 文件）
+
+- 后端：
+  - 新增 `core/tracker_keyword_map.py`：`load_active_keyword_map()` 加载 failed/success/ignored 三池（first-wins、异常返回空池降级）；判定任务 `_load_keywords` 委托复用（**方法名与 to_thread 调用点是治理测试锚点不可改**），种子级判定与展示覆写共用同一映射保证口径一致。
+  - `core/tracker_status_policy.py`：新增 `tracker_message_failed()`（单消息精确命中失败池，守卫非 str/空串）与 `tracker_display_failed()`（覆写裁决：消息命中失败池且非中性码——qb==1/tr∈{0,1} 残留消息不采信，与判定任务语义一致）；`FAILED_DISPLAY_TEXT` 与两套枚举 code=3 文本一致。
+  - `torrents/responseVO.py`：TorrentInfoVO 新增 `has_tracker_error`（alias 输出 hasTrackerError）。
+  - `api/endpoints/torrent_helpers.py`：`convert_to_vo_with_trackers` 可选参 `tracker_keyword_map`（None 不覆写防 N+1），announce/scrape 文本在消息命中失败池时覆写"工作失败"（L569/L592），VO 透传 has_tracker_error；批量版每次列表转换经共享 loader 加载一次关键词池（L689）。
+  - `api/endpoints/duplicate_torrents.py`：同样覆写 + status=error 筛选口径对齐（`OR has_tracker_error`，与 getList/advanced_search 一致——行为变化：duplicates 页筛 error 会多出 tracker 异常种子）。
+- 前端：
+  - `api/torrents.ts`：Torrent 接口补 `hasTrackerError`/`has_tracker_error`（camel+snake 双字段既有风格）。
+  - `utils/torrentBatch.ts`：新增共享 helper `hasTrackerError`（L482）/ `showTrackerErrorTag`（L492，status='error' 不重复打标）/ `getTorrentErrorReason`（L502，errorReason → tracker 消息聚合 → 兜底提示回退链）；两视图逐字节相同的旧 `getTorrentErrorReason` 副本改为薄包装委托。
+  - `index.vue` / `TraditionalView.vue`：状态列状态徽标后叠加红色"Tracker异常"小标签（`:title` 显示错误原因）；名称列状态图标/传统视图状态圆点 title 追加"（Tracker异常）"；布局——index 状态列 th 90→130px，TraditionalView `.col-status` 90→145px + 表 min-width 1380→1435px（fixed 布局防裁剪）；样式 `.tracker-error-tag` 分别入 torrent-theme.scss / traditional-view-theme.scss（`var(--color-error)` 系列）。
+  - `components/TrackerOperationDialog.vue`：修复既有 bug——announce 状态判断原与 `'True'` 字面量比较，中文状态文本下恒显"异常"，改用共享 `isTrackerAnnounceSuccess`。
+  - TrackerDetailCard 零改动即受益（后端覆写"工作失败"→ 前端既有映射自动红 ✗）；`error-reason` prop 同源回退链使 tracker 异常种子详情卡红色告警新增出现（正向行为变化）。
+
+### 测试
+
+- 后端新增 `tests/api/test_tracker_error_display_alignment.py` 24 用例六组（loader 三池过滤/禁用排除；getList 覆写+透传/忽略池保持/成功保持/空池透传解耦/qb+tr 中性码不覆写/scrape 独立/行级互不影响；duplicates error 筛选三态+scrape 覆写；**判定任务 _load_keywords 委托链路+表缺失降级空池**；**判定↔展示一致性契约 8 参数矩阵（展示覆写口径 ⊆ has_tracker_error 判定口径，任何一侧单独改匹配语义即红）**；**advanced_search 同源透传+覆写**）+ `tests/core/test_tracker_status_policy.py` 扩 policy 纯函数用例；5 个既有 fixture 补 `TrackerKeywordConfig.__table__`（test_torrent_list_api / test_duplicate_torrents_api / test_same_content_inspection_api / test_advanced_search_regression / test_advanced_search_batching）；advanced_search_batching 查询计数 6→7（关键词池每请求一次，注释说明）。
+- 后端全量 pytest **3884 passed / 7 skipped / 1 failed**——失败项 `test_db_governance_extended::test_upgrade_skips_when_table_and_indexes_exist` 经 **git stash 干净树复现**，为存量问题（auxiliary_seed_count 迁移重复加列，与本次无关）。black/flake8 改动文件全过；mypy 归一化 diff 精确净增 +2，均为 torrent_helpers 两个 VO 构造调用中约 60 个既有字段完全同类的 Column[bool] 旧模型误报。
+- 前端全量 57 suites / **891 passed**（torrent-batch +5 helper 用例含 error 状态 tooltip 边界、torrent-error-reason-ui 契约改指向共享 helper 并扩 5 断言组、tracker-detail-card +1 覆写显示用例、**两视图组件级 Tracker异常 标签渲染各 +1**、**新增 tracker-operation-dialog-contract 契约 spec 防回归 'True' 字面量**）；npm run lint 无错误；npm run build 通过；./init.sh 通过。
+
+### 明确不做（及理由）
+
+- 不改 5 处同步落库位点（`last_announce_succeeded` 保留 Transmission 原始归一码，数据保真；展示层覆写不落库、关键词池更新即时生效无滞后）。
+- 不用 `judgment_engine.judge_status` 做展示判定（其语义与判定任务相反：子串匹配、ignored=失败——用了会制造"显示失败但 flag=0"的反向新矛盾）。
+- 不统一 `tracker_status_sync.py` 关键词加载（AsyncSession 且含 candidate 池，属关键词看板特性语义）。
+- 无 DB 迁移、无 error_reason 回填。
+
+### 遗留
+
+- 关键词池编辑后 VO 覆写即时生效，而 has_tracker_error 要等判定任务（约 30 分钟）重算——该滞后窗口为既有语义，方向一致不放大矛盾。
+- Git 提交待用户指示。
+
 ## 2026-08-18（第四批） - 令牌机制对抗审计修复（10 项：升级500/业务401误踢/跨标签级联/审计下载/清理任务/SECRET_KEY持久化）
 
 ### 流程
@@ -4811,7 +4852,8 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 
 ### 发现与修复（本会话 4 项）
 
-1. 【工作区隐患】deploy/build-linux.sh、start.sh、btdeck.service 工作区为陈旧 CRLF 检出（.gitattributes 已 eol=lf 但 git 不重写既有文件；索引本身 LF，Linux 全新 clone 无恙）——本机拷贝到 Linux 即 "$" 报错。已本地强制重检出修复；同集合共 83 文件（其余为 .py，CRLF 无害），未逐一处理。
+1. 【工作区隐患】deploy/build-linux.sh、start.sh、btdeck.service 工作区为陈旧 CRLF 检出（.gitattributes 已 eol=lf 但 git 不重写既有文件；索引本身 LF，Linux 全新 clone 无恙）——本机拷贝到 Linux 即 "$
+" 报错。已本地强制重检出修复；同集合共 83 文件（其余为 .py，CRLF 无害），未逐一处理。
 2. 【仓库缺陷·已修】verify-package.py/analyze-package-size.py 的 find_archive_viewer 在 Linux 失效：venv bin/python3 是符号链接，Path(sys.executable).resolve() 跳到 /usr/bin。改用 sys.prefix（venv 根，不经软链）优先 + 未 resolve 的同级目录次之 + which 兜底。
 3. 【仓库缺陷·已修·关键】ALLOWED_HOSTS 环境变量格式：btdeck.service 的 Environment= 与 postinst 生成的 btdeck.env 均为逗号分隔，而 pydantic-settings 对 List[str] 在校验器之前强制 JSON 解析 → 安装后启动即 SettingsError 崩溃循环（A/B 实证：逗号格式崩溃 / JSON 格式健康）。两处改为 JSON 数组（与 desktop_main.py 一致）。
 4. 【脚本健壮性·已修】fpm 拒绝覆盖已存在输出 → 重复构建 fatal；两处 fpm 加 --force。

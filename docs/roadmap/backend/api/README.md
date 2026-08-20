@@ -27,7 +27,7 @@
 | 能力配置 capability-mgmt | `downloader_capabilities_management.py` | 下载器能力配置管理（更新/重置/删除） |
 | 路径维护 path-mgmt | `downloader_path_maintenance.py` | 下载器路径维护 CRUD（默认/活跃路径） |
 | 下载器设置 downloader-setting | `downloader_settings.py` | 下载器设置管理（CRUD + 应用；含已废弃 advanced_settings） |
-| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询（`DuplicateQueryRequest` L48 / `get_duplicate_torrents` L86）；排除 pending/running 删除任务，支持名称/下载器/状态/分类/标签/活动快照筛选及安全列排序，默认 `added_date DESC` 后再判定重复组 |
+| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询（`DuplicateQueryRequest` L48 / `get_duplicate_torrents` L86）；排除 pending/running 删除任务，支持名称/下载器/状态/分类/标签/活动快照筛选及安全列排序，默认 `added_date DESC` 后再判定重复组；✨2026-08-20 展示对齐判定：status=error 筛选口径补 `OR has_tracker_error`（L228，与 getList/advanced_search 一致），tracker 文本在消息命中失败池时覆写"工作失败"（L438/L459，共享 `tracker_keyword_map` 每请求加载一次） |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
 | 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token，`verify_secret` 走 `utils.get_login_secret()` 缓存读法消除直取 KeyError）+ 刷新（`/refresh` L132：条件 UPDATE 原子轮换，rowcount=0 即 401，消除并发同值刷新双成功窗口） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
@@ -40,7 +40,7 @@
 | 种子备份 torrent-backup | `torrent_backup.py` | 种子文件备份：备份/还原/列表/管理；`get_backup_downloader_nicknames` L82 对当前页下载器做单次批量查询，列表直接返回当前 nickname |
 | 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；`get_torrents()` L597 支持 `tracker_domain` L613 和 `single_error_only` L630，并委托列表共享查询；新增 `GET /tracker-domains` 返回定时 Tracker 同步已采集的主机域名；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
 | 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计 |
-| 种子工具 torrent-helper | `torrent_helpers.py` | `get_torrent_infos()` L47 复用普通筛选/排序/分页；`_apply_row_display_filters()` L171 收拢 tracker/tracker_domain/status 三类行级筛选——普通列表原位应用，`same_content_only` L290 延后到分组 join 后仅过滤组内显示行（v1.0.6.40）；`same_content_only` 从不含状态/Tracker 的候选集聚合同名同大小且不同规范化 Hash；`single_error_only` L322 使用全局可见任务的同名同大小唯一性，忽略当前 Tracker/状态筛选且不按 Tracker 服务数量判断；关联数据只装配当前页，列表与计数排除活动删除任务中的种子 |
+| 种子工具 torrent-helper | `torrent_helpers.py` | `get_torrent_infos()` L47 复用普通筛选/排序/分页；`_apply_row_display_filters()` L171 收拢 tracker/tracker_domain/status 三类行级筛选——普通列表原位应用，`same_content_only` L290 延后到分组 join 后仅过滤组内显示行（v1.0.6.40）；`same_content_only` 从不含状态/Tracker 的候选集聚合同名同大小且不同规范化 Hash；`single_error_only` L322 使用全局可见任务的同名同大小唯一性，忽略当前 Tracker/状态筛选且不按 Tracker 服务数量判断；关联数据只装配当前页，列表与计数排除活动删除任务中的种子；✨2026-08-20 展示对齐判定：`convert_to_vo_with_trackers` 接受可选 `tracker_keyword_map`（None 不覆写），announce/scrape 文本在消息命中失败池且非中性码时覆写"工作失败"（L569/L592），VO 透传 `has_tracker_error`（L466/L637），批量版 `convert_to_vos_with_trackers` 每次列表转换经 `load_active_keyword_map` 加载一次关键词池（L689） |
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存） |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |

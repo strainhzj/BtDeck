@@ -26,15 +26,15 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，class L807）；展示可配置的“辅种数量”列，兼容 camel/snake 字段并在缺失时显示1；Tracker 主域名筛选、错误单种提示和快捷入口；`getList()` L1023 追加 `tracker_domain`/`single_error_only` 并沿用当前页 `skip/limit`；Tracker 完整详情弹框 L546 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
+| `index.vue` | 种子管理主入口（列表模式，class L807）；展示可配置的“辅种数量”列，兼容 camel/snake 字段并在缺失时显示1；Tracker 主域名筛选、错误单种提示和快捷入口；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（`showTrackerErrorTag`，error 状态不重复打）、错误原因 tooltip 走共享回退链；`getList()` L1023 追加 `tracker_domain`/`single_error_only` 并沿用当前页 `skip/limit`；Tracker 完整详情弹框 L546 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
 | `components/QuickDeleteDuplicatesDialog.vue` | 重复种子快捷删除；提交后触发父列表刷新，nullable task_id 时仅提示而不轮询 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L839）；展示可配置的“辅种数量”列并保留虚拟表格/分页路径；Tracker 主域名过滤 L274、快捷入口命令分发 L1690；`getList()` L1132 追加列表筛选，Tracker 完整详情弹框 L580 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L839）；展示可配置的“辅种数量”列并保留虚拟表格/分页路径；✨2026-08-20 展示对齐判定：状态列叠加红色“Tracker异常”标签（col-status 加宽 90→145px、表 min-width 1435px），状态图标 title 同步提示；Tracker 主域名过滤 L274、快捷入口命令分发 L1690；`getList()` L1132 追加列表筛选，Tracker 完整详情弹框 L580 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
 | `../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin：紧凑字号/间距、状态色、URL 截断和操作列冻结 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent` / `showingSingleErrors`（L60–62、L86–89），切换视图不丢失查询模式 |
 | `FileManagement.vue` | 种子文件管理（`FileManagement` L310）：筛选区复用 `management-page` 项目样式；`getBackupDownloaderName` L682 优先展示列表批量返回的当前 downloader nickname，不逐行动态请求 |
 | `components/TorrentAddDialog.vue` | 添加种子对话框 |
 | `components/BatchTransferDialog.vue` | 批量转移对话框 |
-| `components/TrackerOperationDialog.vue` | Tracker 操作对话框 |
+| `components/TrackerOperationDialog.vue` | Tracker 操作对话框；✨2026-08-20 修复 announce 状态判断（原 `=== 'True'` 字面量对中文状态文本恒显“异常”，改用共享 `isTrackerAnnounceSuccess`） |
 | `components/TransferDialog.vue` | 转移对话框 |
 | `components/TrackerDetailCard.vue` | 列表/传统视图共用的 Tracker 完整详情弹框：标题、关闭按钮、Tracker/文件/Peers 页签、内容区、错误原因提示、Tracker 名称与 URL、Announce/Scrape 状态、汇报按钮及统一状态语义；通过 `layout` 仅控制两种定位方式 |
 | `components/SetLocationDialog.vue` | 设置保存位置对话框 |
@@ -43,7 +43,7 @@
 | `components/BatchOperationDialog.vue` | 批量操作对话框 |
 | `components/SearchTemplateDialog.vue` | 搜索模板选择对话框 |
 | `mixins/torrentBatch.ts` | 批量操作薄封装层；异步删除处理占用跳过统计、提交即刷新与无任务短路 |
-| `utils/torrentBatch.ts` | 批量操作纯函数集合（可单测） |
+| `utils/torrentBatch.ts` | 批量操作纯函数集合（可单测）；✨2026-08-20 展示对齐判定新增共享 helper：`hasTrackerError` L482、`showTrackerErrorTag` L492（error 状态不打标）、`getTorrentErrorReason` L502（errorReason → tracker 消息 → 兜底回退链，两视图委托调用） |
 | `utils/traditionalTorrentIdentity.ts` | 任务行标识（infoId + downloaderId + hash） |
 | `utils/traditionalStatusFilter.ts` | 传统视图状态筛选 |
 | `utils/traditionalVirtualList.ts` | 传统视图虚拟滚动窗口计算 |

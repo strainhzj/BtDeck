@@ -4343,6 +4343,42 @@
         "frontend/src/views/torrents/index.vue",
         "frontend/src/views/torrents/TraditionalView.vue"
       ]
+    },
+    {
+      "id": "tracker-error-display-alignment-2026-08-20",
+      "title": "展示对齐判定：Tracker 异常可见化与 Announce 状态覆写",
+      "status": "completed",
+      "description": "Transmission 对「HTTP 200 + bencode failure reason」上报 lastAnnounceSucceeded=true，同步落库状态码 2（工作中），判定任务按消息文本匹配失败池置 has_tracker_error=1——这类种子被 status=error 筛选命中却显示「做种中/✓工作中」，无任何错误迹象。本任务让展示层与判定任务同口径：共享关键词池加载器 + policy 覆写裁决 + VO 透传 has_tracker_error + 前端 Tracker异常 标签与错误原因回退链；顺带对齐 duplicates 端点 error 筛选口径，并修复 TrackerOperationDialog 对中文状态文本恒显「异常」的既有 bug。评审：两轮独立子代理审查（3 个测试阻断项 + 1 个布局缺陷 + 2 个语义边界均已吸收）。",
+      "evidence": {
+        "tests": "后端全量 pytest 3884 passed / 7 skipped / 1 failed——失败项 test_db_governance_extended 的迁移用例经 git stash 干净树复现为存量问题（auxiliary_seed_count 迁移重复加列，与本次改动无关）；tests/api/test_tracker_error_display_alignment.py 共 24 用例六组（loader 三池/禁用；getList 覆写+透传/忽略/成功/空池透传解耦/qb+tr 中性码/scrape 独立/行级互不影响；duplicates error 三态+scrape 覆写；判定任务 _load_keywords 委托链路+表缺失降级空池；判定↔展示一致性契约 8 参数矩阵——展示覆写口径 ⊆ has_tracker_error 判定口径；advanced_search 同源透传+覆写）+ policy 单测扩充；5 个既有 fixture 补 TrackerKeywordConfig 表；advanced_search_batching 查询计数 6→7。前端 57 suites / 891 passed（torrent-batch +5 用例含 error 状态 tooltip 边界、torrent-error-reason-ui 契约改指向共享 helper、tracker-detail-card +1 覆写显示用例、两视图组件级 Tracker异常 标签渲染各 +1、新增 tracker-operation-dialog-contract 契约 spec）。",
+        "lint": "black/flake8 改动文件全过；mypy 净增 +2 且与 torrent_helpers 同构造调用中约 60 个既有字段完全同类的 Column[bool] 旧模型误报（归一化 diff 验证）；npm run lint 无错误；npm run build 通过；./init.sh 通过。",
+        "behavior": "行为变化：①seeding+has_tracker_error=1 的种子在列表/传统视图状态列出现红色「Tracker异常」小标签，名称 tooltip 回退显示 Tracker 宣告失败消息；②tracker 详情 Announce/Scrape 文本在消息精确命中失败池时显示「✗工作失败」（与 has_tracker_error 同一关键词映射，展示与筛选自洽）；③duplicates 页 status=error 筛选现与 getList 同口径（OR has_tracker_error）；④TrackerDetailCard 红色错误告警对 tracker 异常种子新增出现（正向）。"
+      },
+      "files": [
+        "backend/app/core/tracker_keyword_map.py",
+        "backend/app/core/tracker_status_policy.py",
+        "backend/app/torrents/responseVO.py",
+        "backend/app/api/endpoints/torrent_helpers.py",
+        "backend/app/api/endpoints/duplicate_torrents.py",
+        "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
+        "backend/tests/api/test_tracker_error_display_alignment.py",
+        "backend/tests/core/test_tracker_status_policy.py",
+        "backend/tests/api/test_torrent_list_api.py",
+        "backend/tests/api/test_duplicate_torrents_api.py",
+        "backend/tests/api/test_same_content_inspection_api.py",
+        "backend/tests/services/test_advanced_search_regression.py",
+        "backend/tests/services/test_advanced_search_batching.py",
+        "frontend/src/api/torrents.ts",
+        "frontend/src/views/torrents/utils/torrentBatch.ts",
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue",
+        "frontend/src/views/torrents/components/TrackerOperationDialog.vue",
+        "frontend/src/styles/torrent-theme.scss",
+        "frontend/src/styles/traditional-view-theme.scss",
+        "frontend/tests/unit/torrent-batch.spec.ts",
+        "frontend/tests/unit/torrent-error-reason-ui.spec.ts",
+        "frontend/tests/unit/tracker-detail-card.spec.ts"
+      ]
     }
   ]
 }
