@@ -65,9 +65,16 @@ def find_archive_viewer() -> str | None:
     # absolute path (no venv activation, Scripts/bin not on PATH), so resolve
     # the viewer next to the interpreter first, then fall back to PATH.
     exe_name = "pyi-archive_viewer.exe" if sys.platform == "win32" else "pyi-archive_viewer"
-    local = Path(sys.executable).resolve().parent / exe_name
+    # sys.prefix 在 venv 内指向 venv 根目录且不经过符号链接；Linux venv 的
+    # bin/python3 是指向系统解释器的软链，resolve(sys.executable) 会跳到
+    # /usr/bin 导致探测失败（2026-08-20 Linux 打包实测发现）。
+    bindir = Path(sys.prefix) / ("Scripts" if sys.platform == "win32" else "bin")
+    local = bindir / exe_name
     if local.is_file():
         return str(local)
+    sibling = Path(sys.executable).parent / exe_name
+    if sibling.is_file():
+        return str(sibling)
     return shutil.which("pyi-archive_viewer")
 
 

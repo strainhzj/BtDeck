@@ -23,7 +23,8 @@ Environment=TZ=Asia/Shanghai
 Environment=DEV=false
 Environment=HOST=0.0.0.0
 Environment=PORT=5001
-Environment=ALLOWED_HOSTS=http://127.0.0.1:5001,http://localhost:5001
+# pydantic-settings 对 List[str] 强制 JSON 解析，须用 JSON 数组格式
+Environment=ALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]
 EnvironmentFile=-/opt/btdeck/config/btdeck.env
 
 [Install]
