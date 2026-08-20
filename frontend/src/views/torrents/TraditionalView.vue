@@ -335,6 +335,9 @@
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
                 </th>
+                <th v-if="getColumnSetting('auxiliarySeedCount').visible" class="col-auxiliary-seed-count">
+                  辅种数量
+                </th>
                 <th v-if="getColumnSetting('progress').visible" class="col-progress">进度</th>
                 <th v-if="getColumnSetting('status').visible" class="col-status" @click="handleSort('status')">
                   状态
@@ -408,6 +411,9 @@
                   </div>
                 </td>
                 <td v-if="getColumnSetting('size').visible" class="col-size">{{ formatFileSize(torrent.size) }}</td>
+                <td v-if="getColumnSetting('auxiliarySeedCount').visible" class="col-auxiliary-seed-count">
+                  {{ torrent.auxiliarySeedCount || 1 }}
+                </td>
                 <td v-if="getColumnSetting('progress').visible" class="col-progress">
                   <div class="progress-cell-compact">
                     <div class="progress-bar-wrapper">
@@ -929,6 +935,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
   private columnSettings = [
     { key: 'name', label: '名称', visible: true },
     { key: 'size', label: '大小', visible: true },
+    { key: 'auxiliarySeedCount', label: '辅种数量', visible: true },
     { key: 'progress', label: '进度', visible: true },
     { key: 'status', label: '状态', visible: true },
     { key: 'download', label: '下载速度', visible: true },

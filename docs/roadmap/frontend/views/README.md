@@ -26,9 +26,9 @@
 
 | 文件 | 一句话职责 |
 |------|-----------|
-| `index.vue` | 种子管理主入口（列表模式，class L801）；Tracker 主域名筛选、错误单种提示和快捷入口；`getList()` L1014 追加 `tracker_domain`/`single_error_only` 并沿用当前页 `skip/limit`；Tracker 完整详情弹框 L542 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
+| `index.vue` | 种子管理主入口（列表模式，class L807）；展示可配置的“辅种数量”列，兼容 camel/snake 字段并在缺失时显示1；Tracker 主域名筛选、错误单种提示和快捷入口；`getList()` L1023 追加 `tracker_domain`/`single_error_only` 并沿用当前页 `skip/limit`；Tracker 完整详情弹框 L546 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
 | `components/QuickDeleteDuplicatesDialog.vue` | 重复种子快捷删除；提交后触发父列表刷新，nullable task_id 时仅提示而不轮询 |
-| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L831）；Tracker 主域名过滤 L274、快捷入口命令分发 L1690；`getList()` L1124 追加列表筛选并保留虚拟表格/分页路径，Tracker 完整详情弹框 L573 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
+| `TraditionalView.vue` | 传统表格视图（extends mixins(TorrentBatchMixin)，L839）；展示可配置的“辅种数量”列并保留虚拟表格/分页路径；Tracker 主域名过滤 L274、快捷入口命令分发 L1690；`getList()` L1132 追加列表筛选，Tracker 完整详情弹框 L580 调用共享 `components/TrackerDetailCard.vue`，由组件统一标题、关闭按钮、页签、内容区、列结构、状态语义、reannounce 事件及 `styles/_tracker-table.scss` 视觉样式 |
 | `../styles/_tracker-table.scss` | `components/TrackerDetailCard.vue` 使用的 Tracker 详情表格视觉 mixin：紧凑字号/间距、状态色、URL 截断和操作列冻结 |
 | `TorrentViewSwitcher.vue` | 视图模式切换器（列表/传统），共享状态含 `showingDuplicates` / `showingSameContent` / `showingSingleErrors`（L60–62、L86–89），切换视图不丢失查询模式 |
 | `FileManagement.vue` | 种子文件管理（`FileManagement` L310）：筛选区复用 `management-page` 项目样式；`getBackupDownloaderName` L682 优先展示列表批量返回的当前 downloader nickname，不逐行动态请求 |

@@ -21,6 +21,8 @@ export interface Torrent {
   error_reason?: string | null // 蛇形命名兼容
   torrentFile: string
   torrent_file?: string // 蛇形命名兼容
+  auxiliarySeedCount?: number
+  auxiliary_seed_count?: number // 蛇形命名兼容
   addedDate: string
   added_date?: string // 蛇形命名兼容
   completedDate: string | null

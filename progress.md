@@ -4779,6 +4779,29 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 
 - 新增回归 spec tests/unit/router-navigation-failure.spec.ts（3 用例：redirected push/replace 静默且落点正确、aborted 静默）；permission-guard/force-change-deadlock/session + 新 spec 共 4 套件 34 用例全绿；tsc --noEmit、npm run lint 通过；前端重建 + PyInstaller 重打包（20:09）+ verify-package 通过。注意：正在运行的旧实例（用户会话）需重启 exe 后生效。
 
+## 2026-08-20 种子信息同步辅种数量
+
+### 用户确认语义
+
+- 辅种匹配键仅为 `name + size`，允许跨下载器、跨同步任务统计；`.torrent` 文件名和下载路径差异不影响同组判断。
+- 外部参考库 `E:\Users\huangzj\Desktop\app.db` 只读取证：该名称共 45 条、有效 31 条，`torrent_file` 有 45 个不同值，但有效行缓存分布为 `auxiliary_seed_count=1` 共 31 条；按 `name + size` 刷新后应全部为 31。
+- 不在种子列表查询时实时分组；由种子信息同步任务全量计算并写入 `torrent_info.auxiliary_seed_count`。没有有效辅种键或没有辅种数据时显示 1。
+
+### 已实施
+
+- Alembic `975dad435c03` 新增 NOT NULL Integer `auxiliary_seed_count`，历史数据默认 1。
+- 同步任务完成后全量校正当前有效行（`dr=0` 且未进入回收站）的辅种数量；列表 API 只读取已持久化字段。
+- 等级 1/2/3 删除、种子转移成功删除源行、回收站还原均维护对应分组的缓存数量；下一次同步任务可修复任何异常中断或历史脏数据。
+- 普通列表与传统列表均新增“辅种数量”列，并兼容后端 snake_case/camelCase 字段。
+
+### 验证
+
+- 后端回归加固后：辅种服务+种子转移 24 passed；删除等级1/2/3+回收站还原 42 passed；同步任务+列表 API 52 passed（定向合计 118 passed）；数据库迁移/回滚/生产库形状 35 passed。
+- 新增边界保护：无效 `name/size` 不生成匹配键；等级3 移动失败不扣减数量；回收站还原将有效分组恢复为新总数；转移场景使用不同 `.torrent` 文件验证只按 `name + size`；同步数量校正失败不覆盖原同步结果；列表响应锁定 `auxiliarySeedCount` camelCase。
+- 前端普通/传统列表辅种数量渲染回归加入后，选定单元测试 102 passed；typecheck、lint、生产 build 通过（仅既有 Sass/资源体积警告）。
+- `git diff --check` 通过；本轮补测后执行 Git 提交与推送，未部署。
+
+
 ## 2026-08-20 Linux 安装包全链路验证（Docker 容器模拟 Debian 12）与三项修复
 
 ### 环境与方法
@@ -4788,8 +4811,7 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 
 ### 发现与修复（本会话 4 项）
 
-1. 【工作区隐患】deploy/build-linux.sh、start.sh、btdeck.service 工作区为陈旧 CRLF 检出（.gitattributes 已 eol=lf 但 git 不重写既有文件；索引本身 LF，Linux 全新 clone 无恙）——本机拷贝到 Linux 即 "$
-" 报错。已本地强制重检出修复；同集合共 83 文件（其余为 .py，CRLF 无害），未逐一处理。
+1. 【工作区隐患】deploy/build-linux.sh、start.sh、btdeck.service 工作区为陈旧 CRLF 检出（.gitattributes 已 eol=lf 但 git 不重写既有文件；索引本身 LF，Linux 全新 clone 无恙）——本机拷贝到 Linux 即 "$" 报错。已本地强制重检出修复；同集合共 83 文件（其余为 .py，CRLF 无害），未逐一处理。
 2. 【仓库缺陷·已修】verify-package.py/analyze-package-size.py 的 find_archive_viewer 在 Linux 失效：venv bin/python3 是符号链接，Path(sys.executable).resolve() 跳到 /usr/bin。改用 sys.prefix（venv 根，不经软链）优先 + 未 resolve 的同级目录次之 + which 兜底。
 3. 【仓库缺陷·已修·关键】ALLOWED_HOSTS 环境变量格式：btdeck.service 的 Environment= 与 postinst 生成的 btdeck.env 均为逗号分隔，而 pydantic-settings 对 List[str] 在校验器之前强制 JSON 解析 → 安装后启动即 SettingsError 崩溃循环（A/B 实证：逗号格式崩溃 / JSON 格式健康）。两处改为 JSON 数组（与 desktop_main.py 一致）。
 4. 【脚本健壮性·已修】fpm 拒绝覆盖已存在输出 → 重复构建 fatal；两处 fpm 加 --force。

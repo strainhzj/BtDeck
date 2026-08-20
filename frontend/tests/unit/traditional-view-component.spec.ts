@@ -267,6 +267,7 @@ function torrentFixture(index: number, overrides: Partial<Torrent> = {}): Torren
     category: '',
     superSeeding: false,
     enabled: true,
+    auxiliarySeedCount: 1,
     ...overrides
   }
 }
@@ -728,6 +729,18 @@ describe('TraditionalView component regressions', () => {
       .toContain('保存路径')
   })
 
+  it('传统视图展示同步任务持久化的辅种数量', async() => {
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { auxiliarySeedCount: 31 })
+    ]))
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+
+    expect(wrapper.find('thead th.col-auxiliary-seed-count').text()).toBe('辅种数量')
+    expect(wrapper.find('tbody td.col-auxiliary-seed-count').text()).toBe('31')
+  })
+
   it('旧版列偏好缺少 savePath 时仍默认显示新增路径列', async() => {
     localStorage.setItem('traditional_columns_visibility', JSON.stringify({ name: false }))
     mockGetTorrentList.mockResolvedValue(torrentListResponse([
@@ -741,7 +754,7 @@ describe('TraditionalView component regressions', () => {
     expect(wrapper.find('thead th.col-name').exists()).toBe(false)
     expect(wrapper.find('thead th.col-save-path').exists()).toBe(true)
     expect(wrapper.find('tbody td.col-save-path').text()).toBe('/downloads/legacy-compatible')
-    expect(vm.visibleTableColumnCount).toBe(13)
+    expect(vm.visibleTableColumnCount).toBe(14)
   })
 
   it('显式隐藏保存路径时同步移除表头、数据列和虚拟占位列计数', async() => {
@@ -756,7 +769,7 @@ describe('TraditionalView component regressions', () => {
 
     expect(wrapper.find('thead th.col-save-path').exists()).toBe(false)
     expect(wrapper.find('tbody td.col-save-path').exists()).toBe(false)
-    expect(vm.visibleTableColumnCount).toBe(13)
+    expect(vm.visibleTableColumnCount).toBe(14)
   })
 
   it('分页组合框完整展示预设并用箭头切换展开与收起', async() => {

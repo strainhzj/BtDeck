@@ -88,6 +88,17 @@ class TorrentInfoSyncTask(BaseSyncTask):
                 max_concurrent=settings.INFO_SYNC_DOWNLOADER_CONCURRENCY,
             )
 
+            # 辅种数量由同步任务统一全量校正，避免列表查询时实时分组计算。
+            # 即使本轮只有部分下载器同步成功，也校正当前数据库快照；下轮任务
+            # 会再次覆盖可能尚未同步到的变化。
+            if result.get("status") in {"success", "partial"}:
+                try:
+                    result["auxiliary_seed_count"] = await self._refresh_auxiliary_seed_counts()
+                except Exception as count_error:
+                    # 数量校正失败不掩盖本轮下载器同步结果，下一轮任务会重试。
+                    logger.error(f"[{self.name}] 辅种数量校正失败: {count_error}", exc_info=True)
+                    result["auxiliary_seed_count"] = {"status": "failed", "error": str(count_error)}
+
             # 更新统计
             if result["status"] == "success":
                 self.success_count += 1
@@ -118,6 +129,15 @@ class TorrentInfoSyncTask(BaseSyncTask):
                 "failed_syncs": 1,
                 "total_downloaders": 0,
             }
+
+    async def _refresh_auxiliary_seed_counts(self) -> Dict[str, int]:
+        """使用独立短事务全量校正辅种数量。"""
+
+        from app.database import AsyncSessionLocal
+        from app.services.auxiliary_seed_count_service import refresh_auxiliary_seed_counts
+
+        async with AsyncSessionLocal() as count_db:
+            return await refresh_auxiliary_seed_counts(count_db)
 
     async def _sync_torrent_info_only(self, downloader_info: Dict[str, Any]) -> Dict[str, Any]:
         """

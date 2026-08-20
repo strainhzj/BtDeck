@@ -462,6 +462,7 @@ def convert_to_vo(torrent: torrentInfoModel) -> TorrentInfoVO:
         status=torrent.status,
         error_reason=torrent.error_reason,
         torrent_file=torrent.torrent_file,
+        auxiliary_seed_count=torrent.auxiliary_seed_count or 1,
         added_date=added_timestamp,
         completed_date=completed_timestamp,
         ratio=torrent.ratio,
@@ -610,6 +611,7 @@ def convert_to_vo_with_trackers(
         error_reason=torrent.error_reason,
         progress=torrent.progress,
         torrent_file=torrent.torrent_file,
+        auxiliary_seed_count=torrent.auxiliary_seed_count or 1,
         added_date=torrent.added_date,  # 保持 datetime 对象，让 Pydantic 自动序列化为 ISO 8601
         completed_date=torrent.completed_date,  # 保持 datetime 对象，让 Pydantic 自动序列化为 ISO 8601
         ratio=torrent.ratio,

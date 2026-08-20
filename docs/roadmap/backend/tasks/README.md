@@ -52,7 +52,7 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 同步基础类 sync-base | `base.py` | `BaseSyncTask`：种子同步公共基础类 |
-| 基础信息同步 info-sync | `torrent_info_sync_task.py` | 高频同步种子基础信息（名称/大小/进度/状态） |
+| 基础信息同步 info-sync | `torrent_info_sync_task.py` | 高频同步种子基础信息（名称/大小/进度/状态）；每轮完成后全局按 `name + size` 刷新辅种数量 |
 | tracker 同步 tracker-sync | `tracker_sync_task.py` | 高频同步 tracker 状态（announce/scrape/错误） |
 
 ---

@@ -4321,6 +4321,28 @@
         "backend/tests/tasks/test_refresh_token_cleanup_task.py",
         "frontend/tests/unit/session.spec.ts"
       ]
+    },
+    {
+      "id": "auxiliary-seed-count-2026-08-20",
+      "title": "种子信息同步辅种数量",
+      "status": "completed",
+      "scope": "fullstack",
+      "description": "新增辅种数量字段，仅按 name + size 跨下载器、跨同步任务全局匹配；种子信息同步任务全量校正有效行数量，等级1/2/3删除、转移和回收站还原按分组增量维护，列表查询不实时分组；无有效辅种键或无辅种数据时显示1。",
+      "evidence": {
+        "tests": "补充回归后：服务/辅种分组+种子转移 24 passed；删除等级1/2/3+回收站还原 42 passed；同步任务+列表 API 52 passed（后端定向合计 118 passed）；数据库迁移/回滚/生产库形状 35 passed；前端选定单元测试 102 passed",
+        "lint": "backend flake8、frontend typecheck/lint 通过；frontend production build 通过（仅仓库既有 Sass/资源体积警告）",
+        "migration": "Alembic 975dad435c03_add_auxiliary_seed_count.py，upgrade/downgrade 仅增删 torrent_info.auxiliary_seed_count"
+      },
+      "files": [
+        "backend/alembic/versions/975dad435c03_add_auxiliary_seed_count.py",
+        "backend/app/services/auxiliary_seed_count_service.py",
+        "backend/app/tasks/scheduler/torrent_sync/torrent_info_sync_task.py",
+        "backend/app/services/torrent_deletion_by_level.py",
+        "backend/app/services/seed_transfer_service.py",
+        "backend/app/services/recycle_bin_service.py",
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue"
+      ]
     }
   ]
 }

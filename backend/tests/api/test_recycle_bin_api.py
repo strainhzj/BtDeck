@@ -19,7 +19,7 @@
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -413,3 +413,61 @@ class TestParamValidation:
         """days=366 → 422（le=365）。"""
         r = client.post(URL_PREVIEW, json={"days": 366})
         assert r.status_code == 422
+
+
+# ==================== 组6：回收站还原后的辅种数量 ====================
+
+
+class TestAuxiliaryCountOnRestore:
+    @staticmethod
+    def _seed_group(db_session, tmp_path):
+        """准备两个有效副本 + 一个回收站副本，三行仅按 name+size 归组。"""
+        rows = [
+            make_torrent(
+                db_session,
+                info_id=f"restore-{index}",
+                downloader_id=f"dl-{index}",
+                hash_=f"restore-hash-{index}",
+                name="restore-group",
+                size=2048,
+                deleted_at=datetime(2026, 8, 1, 12, 0, 0) if index == 2 else None,
+            )
+            for index in range(3)
+        ]
+        for index, row in enumerate(rows):
+            row.torrent_file = f"/config/{index}.torrent"
+            row.auxiliary_seed_count = 2
+        backup_path = tmp_path / "restore.torrent"
+        backup_path.write_bytes(b"torrent")
+        rows[2].backup_file_path = str(backup_path)
+        db_session.add(BtDownloaders(downloader_id="dl-2", nickname="qbt", downloader_type=0, path_mapping="{}"))
+        db_session.commit()
+        return rows
+
+    @pytest.mark.asyncio
+    async def test_restore_sets_all_active_group_rows_to_new_count(self, db_session, tmp_path):
+        rows = self._seed_group(db_session, tmp_path)
+        from app.services.recycle_bin_service import RecycleBinService
+
+        with patch("app.database.SessionLocal", return_value=db_session):
+            service = RecycleBinService()
+            service._restore_torrent_to_downloader = AsyncMock(return_value={"success": True})
+            try:
+                result = await service.restore_torrents([rows[2].info_id], operator="tester")
+            finally:
+                service.close()
+
+        assert result["success_count"] == 1
+        db_session.expire_all()
+        active = (
+            db_session.query(TorrentInfo)
+            .filter(
+                TorrentInfo.name == "restore-group",
+                TorrentInfo.size == 2048,
+                TorrentInfo.dr == 0,
+                TorrentInfo.deleted_at.is_(None),
+            )
+            .all()
+        )
+        assert len(active) == 3
+        assert [row.auxiliary_seed_count for row in active] == [3, 3, 3]

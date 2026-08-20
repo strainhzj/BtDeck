@@ -38,6 +38,7 @@ class TorrentInfoVO(BaseModel):
     torrent_file: str | None = Field(
         None, description="种子文件路径", examples=["/config/torrents/47f130f4ec8cf6685a87d5816fb4a7d4e43bef86.torrent"]
     )
+    auxiliary_seed_count: int = Field(1, description="辅种数量", examples=[1, 4])
     added_date: datetime | None = Field(None, description="添加时间")
     completed_date: datetime | None = Field(None, description="完成时间")
     ratio: float | None = Field(None, description="做种比率", examples=[0.1048])

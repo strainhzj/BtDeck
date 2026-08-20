@@ -14,6 +14,8 @@ export function normalizeTorrent(torrent: any): any {
       progress: 0,
       downloadSpeed: 0,
       uploadSpeed: 0,
+      auxiliarySeedCount: 1,
+      auxiliary_seed_count: 1,
       downloaderName: '-',
       ratio: 0,
       category: '',
@@ -46,6 +48,10 @@ export function normalizeTorrent(torrent: any): any {
     download_speed: torrent.download_speed ?? torrent.downloadSpeed ?? 0,
     uploadSpeed: torrent.uploadSpeed ?? 0,
     upload_speed: torrent.upload_speed ?? torrent.uploadSpeed ?? 0,
+
+    // 辅种数量（同步任务计算，缺失时兼容旧数据显示1）
+    auxiliarySeedCount: torrent.auxiliarySeedCount ?? torrent.auxiliary_seed_count ?? 1,
+    auxiliary_seed_count: torrent.auxiliarySeedCount ?? torrent.auxiliary_seed_count ?? 1,
     
     // 下载器信息
     downloaderName: torrent.downloaderName || torrent.downloader_name || '-',

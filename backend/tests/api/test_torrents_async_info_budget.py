@@ -314,6 +314,11 @@ class TestDownloaderConcurrencyConfig:
                     }
                 ),
             ) as mock_exec,
+            patch.object(
+                task,
+                "_refresh_auxiliary_seed_counts",
+                new=AsyncMock(return_value={"updated_count": 1}),
+            ) as mock_refresh,
         ):
             result = await task.execute()
 
@@ -321,6 +326,72 @@ class TestDownloaderConcurrencyConfig:
         mock_get.assert_awaited_once()
         assert mock_exec.await_args.kwargs["max_concurrent"] == expected
         assert mock_exec.await_args.kwargs["sync_type"] == "TorrentInfo"
+        mock_refresh.assert_awaited_once()
+        assert result["auxiliary_seed_count"] == {"updated_count": 1}
+
+
+class TestAuxiliaryCountRefreshLifecycle:
+    """辅种全量校正只跟随成功/部分成功的同步轮次执行。"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sync_status", "should_refresh"),
+        [("success", True), ("partial", True), ("failed", False)],
+    )
+    async def test_refresh_lifecycle_follows_sync_status(self, sync_status, should_refresh):
+        task = TorrentInfoSyncTask()
+        vo = SimpleNamespace(downloader_id="dl-1", nickname="qb", fail_time=0, downloader_type=0)
+        sync_result = {
+            "status": sync_status,
+            "successful_syncs": 1 if sync_status != "failed" else 0,
+            "failed_syncs": 1 if sync_status == "failed" else 0,
+            "total_downloaders": 1,
+        }
+        with (
+            _fake_app_main(),
+            patch.object(task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])),
+            patch.object(task, "execute_sync_with_concurrency", new=AsyncMock(return_value=sync_result)),
+            patch.object(
+                task,
+                "_refresh_auxiliary_seed_counts",
+                new=AsyncMock(return_value={"updated_count": 31}),
+            ) as mock_refresh,
+        ):
+            result = await task.execute()
+
+        assert result["status"] == sync_status
+        assert mock_refresh.await_count == (1 if should_refresh else 0)
+        if should_refresh:
+            assert result["auxiliary_seed_count"] == {"updated_count": 31}
+        else:
+            assert "auxiliary_seed_count" not in result
+
+    @pytest.mark.asyncio
+    async def test_count_refresh_failure_does_not_hide_sync_result(self):
+        task = TorrentInfoSyncTask()
+        vo = SimpleNamespace(downloader_id="dl-1", nickname="qb", fail_time=0, downloader_type=0)
+        with (
+            _fake_app_main(),
+            patch.object(task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])),
+            patch.object(
+                task,
+                "execute_sync_with_concurrency",
+                new=AsyncMock(
+                    return_value={
+                        "status": "partial",
+                        "successful_syncs": 1,
+                        "failed_syncs": 1,
+                        "total_downloaders": 2,
+                    }
+                ),
+            ),
+            patch.object(task, "_refresh_auxiliary_seed_counts", new=AsyncMock(side_effect=RuntimeError("db locked"))),
+        ):
+            result = await task.execute()
+
+        assert result["status"] == "partial"
+        assert result["auxiliary_seed_count"]["status"] == "failed"
+        assert "db locked" in result["auxiliary_seed_count"]["error"]
 
 
 # ==================== 2. 现有记录分页读取（qb） ====================

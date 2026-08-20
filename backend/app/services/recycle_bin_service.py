@@ -19,6 +19,11 @@ from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.services.auxiliary_seed_count_service import (
+    get_active_auxiliary_seed_count,
+    get_auxiliary_seed_key,
+    set_active_auxiliary_seed_count,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -302,9 +307,16 @@ class RecycleBinService:
                     continue
 
                 # 步骤4: 清除deleted_at字段
+                auxiliary_key = get_auxiliary_seed_key(torrent)
+                active_count = get_active_auxiliary_seed_count(self.db, auxiliary_key)
                 torrent.restore_from_recycle_bin()
                 torrent.update_time = datetime.now()
                 torrent.update_by = operator
+                set_active_auxiliary_seed_count(
+                    self.db,
+                    auxiliary_key,
+                    (active_count + 1) if active_count is not None else 1,
+                )
                 self.db.commit()
 
                 # 记录审计日志

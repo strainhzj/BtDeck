@@ -385,6 +385,80 @@ class TestTargetRowUpsert:
             assert target_row.dr == 0
 
     @pytest.mark.asyncio
+    async def test_transfer_updates_same_name_size_group_across_distinct_torrent_files(self, transfer_env):
+        """目标新增 + 源删除的完整转移链路，按 name+size 保持有效副本数。"""
+        async with transfer_env["session_factory"]() as s:
+            source_row = (await s.execute(select(TorrentInfo).where(TorrentInfo.downloader_id == "dl-1"))).scalar_one()
+            source_row.auxiliary_seed_count = 2
+            peer_row = TorrentInfo(
+                id_="peer-1",
+                downloader_id="dl-3",
+                downloader_name="第三下载器",
+                torrent_id="b" * 40,
+                hash="b" * 40,
+                name=source_row.name,
+                save_path="/downloads/peer",
+                size=source_row.size,
+                status="seeding",
+                progress=100.0,
+                torrent_file="/config/peer.torrent",
+                added_date=None,
+                completed_date=None,
+                ratio=1.0,
+                ratio_limit=None,
+                tags="",
+                category="",
+                super_seeding="0",
+                enabled=1,
+                create_time=None,
+                create_by="admin",
+                update_time=None,
+                update_by="admin",
+                dr=0,
+                auxiliary_seed_count=2,
+            )
+            s.add(peer_row)
+            await s.commit()
+
+        target_client = MagicMock()
+        service, db = _new_service(transfer_env["session_factory"])
+        with self._apply_patches(service):
+            result = await service.transfer_seed(
+                source_downloader_id="dl-1",
+                target_downloader_id="dl-2",
+                info_hash=INFO_HASH,
+                target_path="/downloads/movies",
+                delete_source=True,
+                user_id=1,
+                username="tester",
+                app_state=_make_app_state(target_client),
+            )
+        await service.aclose()
+        await db.close()
+
+        assert result["success"] is True
+        async with transfer_env["session_factory"]() as s:
+            active_rows = (
+                (
+                    await s.execute(
+                        select(TorrentInfo).where(
+                            TorrentInfo.name == "测试种子",
+                            TorrentInfo.size == 1024,
+                            TorrentInfo.dr == 0,
+                            TorrentInfo.deleted_at.is_(None),
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            assert {row.torrent_file for row in active_rows} == {"", "/config/peer.torrent"}
+            assert [row.auxiliary_seed_count for row in active_rows] == [2, 2]
+            source_row = (await s.execute(select(TorrentInfo).where(TorrentInfo.downloader_id == "dl-1"))).scalar_one()
+            assert source_row.dr == 1
+            assert source_row.auxiliary_seed_count == 3
+
+    @pytest.mark.asyncio
     async def test_same_downloader_rejected(self, transfer_env):
         """服务层兜底防御：源=目标直接拒绝（schema 之外的内部调用路径）。"""
         service, db = _new_service(transfer_env["session_factory"])
@@ -440,9 +514,10 @@ class TestTargetRowUpsert:
         race_row = SimpleNamespace(save_path="/old", name="旧名", update_time=None, update_by=None)
         none_result = MagicMock()
         none_result.scalar_one_or_none.return_value = None  # 第一次查：无行 → 走插入
+        count_update_result = MagicMock()
         race_result = MagicMock()
         race_result.scalar_one_or_none.return_value = race_row  # 竞态重查：命中并发插入的行
-        db.execute = AsyncMock(side_effect=[none_result, race_result])
+        db.execute = AsyncMock(side_effect=[none_result, count_update_result, race_result])
 
         service = SeedTransferService(db=db)
         try:

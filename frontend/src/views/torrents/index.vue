@@ -332,6 +332,7 @@
                 :stroke-width="2"
               />
             </th>
+            <th v-if="getColumnSetting('auxiliarySeedCount').visible" style="width: 90px;">辅种数量</th>
             <th v-if="getColumnSetting('progress').visible" style="width: 140px;">进度</th>
             <th
               v-if="getColumnSetting('status').visible"
@@ -449,6 +450,7 @@
               <span class="speed-value upload">{{ formatSpeed(getTorrentSpeed(torrent, 'upload')) }}</span>
             </td>
             <td v-if="getColumnSetting('size').visible">{{ formatFileSize(torrent.size) }}</td>
+            <td v-if="getColumnSetting('auxiliarySeedCount').visible">{{ torrent.auxiliarySeedCount || 1 }}</td>
             <td v-if="getColumnSetting('progress').visible">
               <div class="progress-wrapper">
                 <div class="progress-bar">
@@ -893,6 +895,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
     { key: 'downloadSpeed', label: '下载速度', visible: true },
     { key: 'uploadSpeed', label: '上传速度', visible: true },
     { key: 'size', label: '大小', visible: true },
+    { key: 'auxiliarySeedCount', label: '辅种数量', visible: true },
     { key: 'progress', label: '进度', visible: true },
     { key: 'status', label: '状态', visible: true },
     { key: 'downloader', label: '所属下载器', visible: true },

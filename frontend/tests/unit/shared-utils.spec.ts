@@ -65,7 +65,8 @@ describe('共享格式化与规范化工具', () => {
       status: 'unknown',
       progress: 0,
       downloadSpeed: 0,
-      uploadSpeed: 0
+      uploadSpeed: 0,
+      auxiliarySeedCount: 1
     })
   })
 
@@ -88,6 +89,7 @@ describe('共享格式化与规范化工具', () => {
       hash: 'hash-1',
       infoId: 'info-1',
       info_id: 'info-1',
+      auxiliarySeedCount: 1,
       downloaderId: 'downloader-1',
       downloaderName: '主下载器',
       savePath: '/downloads',

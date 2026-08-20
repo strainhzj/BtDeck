@@ -39,6 +39,8 @@ export interface Torrent {
   savePath: string
   save_path?: string
   size: number
+  auxiliarySeedCount?: number
+  auxiliary_seed_count?: number
   category?: string
   tags?: string
 

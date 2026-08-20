@@ -711,6 +711,25 @@ class TestFieldCasingContract:
         assert item["infoId"] == "i1"
         assert item["downloaderName"] == "Alpha"
 
+    def test_auxiliary_seed_count_is_exposed_as_camel_case(self, client, db_session):
+        torrent = make_torrent(
+            db_session,
+            info_id="aux-1",
+            downloader_id="dl-aux",
+            downloader_name="Aux",
+            hash_="aux-hash",
+            name="冰与火之歌S01-S08",
+            size=183145798849,
+        )
+        torrent.auxiliary_seed_count = 31
+        db_session.commit()
+
+        body = client.get(URL).json()
+        item = next(row for row in body["data"]["list"] if row["infoId"] == "aux-1")
+
+        assert item["auxiliarySeedCount"] == 31
+        assert "auxiliary_seed_count" not in item
+
 
 # ==================== 组7：排序 ====================
 

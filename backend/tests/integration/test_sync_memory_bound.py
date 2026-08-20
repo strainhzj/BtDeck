@@ -508,6 +508,7 @@ async def test_concurrency_matches_config(monkeypatch, concurrency, expected_max
     with (
         _fake_app_main(),
         patch.object(task, "get_valid_downloaders", new=AsyncMock(return_value=vos)),
+        patch.object(task, "_refresh_auxiliary_seed_counts", new=AsyncMock(return_value={"updated_count": 0})),
     ):
         result = await task.execute()
 

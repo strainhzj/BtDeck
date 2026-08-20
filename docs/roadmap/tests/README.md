@@ -10,7 +10,7 @@
 | 全局 fixture conftest | `backend/tests/conftest.py` | pytest 全局 fixture（DB session、测试客户端、种子数据等） |
 | 架构约束测试 arch-constraint | `backend/tests/test_architecture_constraints.py` | 架构约束测试（防退化，自动检测反模式） |
 | panic 验证 panic | `backend/tests/panic_fixes_verification.py` | panic 修复验证脚本 |
-| API 层测试 api | `backend/tests/api/` | API 层测试（49 个 test_*.py，对应 app/api/；同内容列表筛选、组合条件、活动删除/活动快照、稳定行级分页、大页关联预取及旧端点移除回归） |
+| API 层测试 api | `backend/tests/api/` | API 层测试（49 个 test_*.py，对应 app/api/；同内容列表筛选、组合条件、活动删除/活动快照、辅种数量字段/同步任务/等级删除/回收站还原、稳定行级分页、大页关联预取及旧端点移除回归） |
 | 认证测试 auth | `backend/tests/auth/` | 认证测试（对应 app/auth/） |
 | 基础设施测试 core | `backend/tests/core/` | 基础设施测试（对应 app/core/） |
 | 下载器测试 downloader | `backend/tests/downloader/` | 下载器测试（对应 app/downloader/） |
@@ -18,7 +18,7 @@
 | 枚举测试 enums | `backend/tests/enums/` | 枚举测试（对应 app/enums/） |
 | 模型测试 models | `backend/tests/models/` | ORM 模型测试（对应 app/models/） |
 | 仓储测试 repositories | `backend/tests/repositories/` | 仓储测试（对应 app/repositories/） |
-| 服务层测试 services | `backend/tests/services/` | 服务层测试（42 个，含孤儿后台扫描调度器与 tag_adapters） |
+| 服务层测试 services | `backend/tests/services/` | 服务层测试（含 `test_auxiliary_seed_count_service.py` 的全局分组/增量更新回归、`test_seed_transfer_service_fixes.py` 的跨 torrent_file 转移回归、孤儿后台扫描调度器与 tag_adapters） |
 | 跨层争用测试 integration | `backend/tests/integration/` | 4 个真实文件 SQLite 回归；含 120100 条孤儿生命周期争用与状态接口延迟 |
 | 定时任务测试 tasks | `backend/tests/tasks/` | 定时任务测试（对应 app/tasks/） |
 | 工具测试 utils | `backend/tests/utils/` | 工具测试（对应 app/utils/） |
@@ -70,7 +70,7 @@ cd backend && pytest tests/api/               # API 层（48 个 test_*.py）
 - `deployment-recovery.spec.ts`：覆盖部署后 JS/CSS chunk 错误识别、一次恢复、防刷新循环、历史 Workbox 清退和 nginx 缓存契约。
 - `file-management-contract.spec.ts`：覆盖备份列表当前 nickname、单次列表加载与 management-page 筛选区契约。
 - `torrent-error-reason-ui.spec.ts`：覆盖两种种子视图名称 tooltip 与 Tracker 卡片错误原因展示。
-- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖 Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue` 并分别传入 `list`/`traditional` layout，锁定共享组件的完整弹框骨架、列结构、状态语义和 `_tracker-table.scss` 视觉样式；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
+- `torrent-list-view-component.spec.ts` / `traditional-view-component.spec.ts`：覆盖辅种数量列、Tracker 主域名选项加载、多选参数转换、错误单种快捷入口发送 `single_error_only`、同内容快捷入口发送 `same_content_only`，筛选、排序、分页大小、翻页与刷新持续复用列表查询，以及重复查询/高级搜索/模板切换和显式退出清理模式；静态契约锁定列表/传统父模板均调用同一个 `TrackerDetailCard.vue` 并分别传入 `list`/`traditional` layout，锁定共享组件的完整弹框骨架、列结构、状态语义和 `_tracker-table.scss` 视觉样式；`torrent-view-switcher.spec.ts` 守卫跨视图保留错误单种模式。
 - `tracker-detail-card.spec.ts`：运行时验证列表/传统视图共用的 TrackerDetailCard 完整弹框骨架（标题、关闭按钮、页签、内容区）、五列结构、snake/camel 字段兼容、错误提示、中性状态、单条汇报事件和 loading 状态。
 
 ### 组件内嵌测试
@@ -107,6 +107,7 @@ cd frontend && npm run test:unit    # jest
 - **前端测试集中在核心组件**：`components/torrents/` 的搜索/多选组件有完整单测（含性能测试），其他组件测试覆盖较薄
 - **孤儿文件回归**：`test_orphan_hardlink_detection.py` 覆盖 `st_nlink - 1` 与清理删除诊断；2026-08-15 起副本位置改为定时预扫描落库 + 接口只读（模块级断言交互链路不再 import 遍历函数，覆盖待扫描/扫描时间/结果读取失败降级）；新增 `test_orphan_hardlink_copy_scan.py`（571 行 19 用例：限时遍历 deadline/受控时钟中途截止/截断优先级/游标推进回绕/幂等更新/保留期清理/单链接不遍历/stat 预算部分进度/resolved 跳过/新鲜度排序/budget 落行/任务注册契约/护栏默认值/包装器）；`test_orphan_files_api.py` 守卫 1~5000 项请求边界；`orphan-files.spec.ts`（当前定向 83 项）覆盖数量链接、文件夹批量查询、位置弹框、复制路径、过期响应隔离及异常提示，并额外守卫扁平/文件夹模式展开列动态切换、普通文件行展开标记与懒加载事件、子表隐藏表头但保留可见数据/选择事件；任务/查询状态测试继续覆盖重复提交、混合跳过与终态释放
 - **种子备份补偿回归（2026-08-15，回归加固后 12 用例）**：`test_torrent_file_backup_reconcile.py` 守卫 info/full 同步后 `reconcile_missing_backups` 的限量批次、幂等收敛、qB 纯 hash 与 Transmission `name.hash.torrent` 源文件名、逻辑删除墓碑不自动重建、源目录不可用一次性上报、文件复用双路径、复制失败不落库、commit 失败回滚清理、目标筛选与 added_date 倒序、路径映射回退；UUID 类型链（仓储字符串过滤/schema 空串拒绝/store str 归一匹配）；`test_sync_coordinator.py`（29 用例）另守卫 full 触发/tracker 不触发/补偿失败不阻断信息同步；`test_db_migration.py` 新增 `b6e1c4d9a2f7` UUID 类型升级/降级用例（含不可无损转换数据时 downgrade 拒绝回滚）；`torrent-list-view-component.spec.ts` 守卫种子页三个筛选下拉提示语
+- **2026-08-20 辅种数量回归加固**：新增无效 `name/size` 键、31 条同名同大小且 45 个不同 `.torrent` 文件的全量重算快照；等级 1/2/3 删除（等级 3 移动失败回滚）、回收站还原、种子转移源删除均验证有效分组数量；同步任务覆盖 success/partial/failed 与数量校正异常不掩盖同步结果；列表 API 锁定 `auxiliarySeedCount` camelCase 输出。定向后端回归合计 118 passed（服务/转移 24、删除/回收站 42、同步/列表 52）。
 - **架构约束测试**：`test_architecture_constraints.py` 是防退化机制（自动检测反模式）
 - 详细覆盖矩阵（源文件 ↔ 测试文件对应）见 [../perspectives/test-coverage.md](../perspectives/test-coverage.md)
 

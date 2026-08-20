@@ -54,7 +54,8 @@ def _clean_database_path_env():
 #       → d4e5f6a7b8c9(orphan hardlink copy count snapshot)
 #       → a7b8c9d0e1f2 → a8b9c0d1e2f3 → ff42d3402df5(users must_change_password)
 #       → ab68fe061d5b(orphan purge job submit-time ip address)
-EXPECTED_HEAD = "ab68fe061d5b"
+#       → 975dad435c03(torrent auxiliary seed count)
+EXPECTED_HEAD = "975dad435c03"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
@@ -169,6 +170,11 @@ class TestMigrationChainIntegrity:
             torrent_cols = {c[1]: c for c in conn.execute("PRAGMA table_info(torrent_info)").fetchall()}
             assert "error_reason" in torrent_cols, "torrent_info 应包含 error_reason 列"
             assert torrent_cols["error_reason"][3] == 0, "torrent_info.error_reason 应可空"
+            auxiliary_col = torrent_cols.get("auxiliary_seed_count")
+            assert auxiliary_col is not None, "torrent_info 应包含 auxiliary_seed_count 列"
+            assert auxiliary_col[2].lower() == "integer", "辅种数量类型应为 INTEGER"
+            assert auxiliary_col[3] == 1, "辅种数量应 NOT NULL"
+            assert auxiliary_col[4].strip("'") == "1", "辅种数量默认值应为 1"
         finally:
             conn.close()
 

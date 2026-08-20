@@ -17,6 +17,28 @@ Docker（node:18.20.1-slim/Bookworm + python3.11 + fpm）完整跑通 build-linu
 
 二进制 glibc 2.36（Debian12+）；spec 的 transmissionrpc 旧条目告警可删；build-linux.sh 缺 binutils/libpython3.11/fpm 预检；List[str] env 强制 JSON 与 .env.example 逗号指引的深层矛盾待评估。验证容器已清理。
 
+## 2026-08-20 交接：种子信息同步辅种数量
+
+### 用户确认语义
+
+- 匹配键仅是 `name + size`，跨下载器、跨同步任务全局统计；`.torrent` 文件名和下载路径差异不影响同组判断。
+- 不在列表查询时实时计算，由种子信息同步任务全量计算；无有效辅种数据时显示 1。
+- 外部库 `E:\Users\huangzj\Desktop\app.db` 只读实证：该名称 45 条记录中 31 条有效，当前有效缓存全部为 1；`torrent_file` 45 个均不同，故不能参与匹配，按 `name + size` 应刷新为 31。
+
+### 实施结果
+
+- 新增 `torrent_info.auxiliary_seed_count` 与可回滚 Alembic `975dad435c03`。
+- 同步任务对有效种子全量校正；等级 1/2/3 删除、种子转移成功删除源行、回收站还原做分组增量维护，异常状态由下次同步自愈。
+- 后端 VO/API 与普通/传统种子列表均接入“辅种数量”列，前端兼容 camelCase 与 snake_case。
+
+### 验证
+
+- 补充回归后：辅种服务+种子转移 24 passed；删除等级1/2/3+回收站还原 42 passed；同步任务+列表 API 52 passed（后端定向合计 118 passed）；迁移/回滚/生产库形状 35 passed；前端普通/传统列表渲染回归加入后，选定单元测试 102 passed。
+- 新增回归保护覆盖无效键、不同 `.torrent` 文件同 `name + size`、等级3移动失败回滚、回收站还原、同步任务失败分支/校正异常和列表 camelCase 字段。
+- backend flake8、frontend typecheck/lint、生产 build、`git diff --check` 通过；mypy 仍受转移服务既有 SQLAlchemy/异步 Session 类型基线错误影响，未新增辅种相关错误。
+- 本轮将完成 Git 提交并推送；未部署。
+- 未执行 Git 提交、推送或部署；工作区原有的打包脚本、路由及相关文档修改均保留。
+
 ## 2026-08-19 交接（三）：桌面版 "Redirected ... via a navigation guard" 杂音根因与修复
 
 ### 根因

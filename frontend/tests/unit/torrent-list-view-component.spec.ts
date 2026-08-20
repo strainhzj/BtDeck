@@ -218,7 +218,8 @@ function torrentFixture(): Torrent {
     tags: '',
     category: '',
     superSeeding: false,
-    enabled: true
+    enabled: true,
+    auxiliarySeedCount: 1
   }
 }
 
@@ -303,6 +304,29 @@ describe('torrent list view pagination and sorting', () => {
       expect(levelItems.at(1).find('.lucide-icon').classes()).not.toContain('danger')
       expect(levelItems.at(2).find('.lucide-icon').classes()).not.toContain('danger')
     })
+  })
+
+  it('列表视图展示同步任务持久化的辅种数量', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [{ ...torrentFixture(), auxiliarySeedCount: 31 }],
+        total: 1,
+        pageSize: 20
+      }
+    })
+
+    wrapper = mountListView()
+    await flushLifecycle()
+
+    const headers = wrapper.findAll('thead th').wrappers
+    const auxiliaryIndex = headers.findIndex(header => header.text() === '辅种数量')
+    const cells = wrapper.find('tbody tr').findAll('td').wrappers
+
+    expect(auxiliaryIndex).toBeGreaterThan(-1)
+    expect(cells[auxiliaryIndex].text()).toBe('31')
   })
 
   it('同内容模式的筛选、排序、分页大小、翻页和刷新始终复用列表查询', async() => {

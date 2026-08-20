@@ -34,6 +34,12 @@ from app.downloader.models import BtDownloaders
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.services.auxiliary_seed_count_service import (
+    decrement_auxiliary_seed_count_async,
+    get_auxiliary_seed_key,
+    make_auxiliary_seed_key,
+    set_active_auxiliary_seed_count_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -822,10 +828,37 @@ class SeedTransferService:
             )
             existing_row = existing_result.scalar_one_or_none()
             now = datetime.now()
+            target_name = torrent_name or (source_torrent.name if source_torrent else info_hash)
+            target_size = float(source_torrent.size or 0) if source_torrent else 0.0
+            target_torrent_file = (source_torrent.torrent_file or "") if source_torrent else ""
+            source_auxiliary_key = get_auxiliary_seed_key(source_torrent) if source_torrent else None
+            target_auxiliary_key = make_auxiliary_seed_key(target_name, target_size)
+            target_auxiliary_count = 1
+
+            # 目标下载器新增副本后，先把同分组的现有有效行统一加一；
+            # 源行随后删除时再统一减一，最终数量仍等于当前有效副本数。
+            if (
+                existing_row is None
+                and target_auxiliary_key is not None
+                and target_auxiliary_key == source_auxiliary_key
+            ):
+                assert source_torrent is not None
+                try:
+                    source_auxiliary_count = max(
+                        1, int(getattr(source_torrent, "auxiliary_seed_count", 1) or 1)
+                    )
+                except (TypeError, ValueError):
+                    source_auxiliary_count = 1
+                target_auxiliary_count = source_auxiliary_count + 1
+                await set_active_auxiliary_seed_count_async(
+                    self.db,
+                    target_auxiliary_key,
+                    target_auxiliary_count,
+                )
 
             if existing_row is not None:
                 existing_row.save_path = target_path
-                existing_row.name = torrent_name or existing_row.name
+                existing_row.name = target_name or existing_row.name
                 existing_row.update_time = now
                 existing_row.update_by = username
             else:
@@ -837,12 +870,13 @@ class SeedTransferService:
                         downloader_name=target_downloader.nickname,
                         torrent_id=info_hash,
                         hash=info_hash,
-                        name=torrent_name or (source_torrent.name if source_torrent else info_hash),
+                        name=target_name,
                         save_path=target_path,
-                        size=float(source_torrent.size or 0) if source_torrent else 0.0,
+                        size=target_size,
                         status=(source_torrent.status or "downloading") if source_torrent else "downloading",
                         progress=source_progress,
-                        torrent_file=(source_torrent.torrent_file or "") if source_torrent else "",
+                        torrent_file=target_torrent_file,
+                        auxiliary_seed_count=target_auxiliary_count,
                         added_date=now,
                         completed_date=(source_torrent.completed_date if source_torrent else None),
                         ratio=(
@@ -876,7 +910,7 @@ class SeedTransferService:
                 race_row = race_result.scalar_one_or_none()
                 if race_row is not None:
                     race_row.save_path = target_path
-                    race_row.name = torrent_name or race_row.name
+                    race_row.name = target_name or race_row.name
                     race_row.update_time = now
                     race_row.update_by = username
                     await self.db.commit()
@@ -904,9 +938,11 @@ class SeedTransferService:
             source_row = source_result.scalar_one_or_none()
             if source_row is None:
                 return
+            auxiliary_key = get_auxiliary_seed_key(source_row)
             source_row.dr = 1
             source_row.update_time = datetime.now()
             source_row.update_by = "system"
+            await decrement_auxiliary_seed_count_async(self.db, auxiliary_key)
             await self.db.commit()
         except Exception as e:
             await self.db.rollback()

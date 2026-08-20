@@ -28,6 +28,10 @@ from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.auxiliary_seed_count_service import (
+    decrement_auxiliary_seed_count,
+    get_auxiliary_seed_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -297,6 +301,7 @@ class TorrentDeletionByLevelService:
             删除结果
         """
         try:
+            auxiliary_key = get_auxiliary_seed_key(torrent)
             # 获取下载器信息
             downloader = (
                 self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
@@ -334,6 +339,7 @@ class TorrentDeletionByLevelService:
             torrent.dr = 1
             torrent.update_time = datetime.now()
             torrent.update_by = operator
+            decrement_auxiliary_seed_count(self.db, auxiliary_key)
             self.db.commit()
 
             # 记录审计日志
@@ -400,6 +406,7 @@ class TorrentDeletionByLevelService:
             删除结果
         """
         try:
+            auxiliary_key = get_auxiliary_seed_key(torrent)
             # 获取下载器信息
             downloader = (
                 self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
@@ -437,6 +444,7 @@ class TorrentDeletionByLevelService:
             torrent.dr = 1
             torrent.update_time = datetime.now()
             torrent.update_by = operator
+            decrement_auxiliary_seed_count(self.db, auxiliary_key)
             self.db.commit()
 
             # 记录审计日志
@@ -637,6 +645,7 @@ class TorrentDeletionByLevelService:
             删除结果
         """
         try:
+            auxiliary_key = get_auxiliary_seed_key(torrent)
             # 获取下载器信息
             downloader = (
                 self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
@@ -927,6 +936,10 @@ class TorrentDeletionByLevelService:
                     "torrent_type": move_result.get("torrent_type"),
                     "rolled_back": True,
                 }
+
+            # 文件移动成功后才扣减辅种数量，避免后续回滚时影响仍然有效的分组。
+            decrement_auxiliary_seed_count(self.db, auxiliary_key)
+            self.db.commit()
 
             # 记录审计日志
             if audit_service:

@@ -33,7 +33,7 @@
 | 路径维护 path-maintenance | `path_maintenance_service.py` | 下载器路径维护服务（默认/活跃路径） |
 | Tracker 重宣告 reannounce | `reannounce_service.py` | Tracker Reannounce 核心服务（API 与定时任务共用） |
 | 回收站 recycle-bin | `recycle_bin_service.py` | 回收站服务（列表/还原/清理/批量/记录） |
-| 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；验证成功 `_upsert_target_torrent_row` L792 立即落库目标行（与后续同步同一条），delete_source 成功 `_mark_source_row_transferred` L889 源行 dr=1；source==target 服务层防御） |
+| 种子转移 seed-transfer | `seed_transfer_service.py` | 种子转移（备份读种子→加到目标→轮询验证；验证成功 `_upsert_target_torrent_row` L798 立即落库目标行（与后续同步同一条），delete_source 成功 `_mark_source_row_transferred` L923 源行 dr=1 并维护辅种数量；source==target 服务层防御） |
 | 分时段限速 speed-schedule | `speed_schedule_service.py` | 分时段限速服务 |
 | 搜索正则运行时 sqlite-search | `sqlite_search_runtime.py` | 高级搜索有界正则运行时（单次 match 10ms / 总预算 2s 双重熔断防 ReDoS） |
 | 同步写库 sync-db | `sync_db_write.py` | 同步任务 DB 写入治理（变更检测+批量 upsert+串行化） |
@@ -45,6 +45,7 @@
 | 批量添加种子 batch-add | `torrent_batch_add_service.py` | 异步批量添加种子（暂存 .torrent→逐个异步 add→通知）；自 `torrent_crud` 抽取 |
 | 种子 DB CRUD torrent-crud | `torrent_crud_service.py` | 种子 DB CRUD 服务（26 个模块级函数，无类；ratio/ratio_limit 规范化） |
 | 种子按等级删除 torrent-delete-level | `torrent_deletion_by_level.py` | 种子按等级删除（L1 删任务+数据/L2 保数据/L3 移回收站/L4 加标签） |
+| 辅种数量 auxiliary-seed-count | `auxiliary_seed_count_service.py` | 全局按 `name + size` 计算辅种数量；同步任务全量校正，删除/转移/还原按分组增量维护 |
 | 种子删除策略 torrent-delete | `torrent_deletion_service.py` | 种子删除服务（抽象基类 + 各下载器策略） |
 | 种子备份 torrent-backup | `torrent_file_backup_manager.py` | 种子文件备份管理（协调 Repository 与文件操作）；`reconcile_missing_backups` L151 增量补齐缺失备份（限量批次、墓碑感知、幂等） |
 | 种子路径修改 torrent-location | `torrent_location_service.py` | 种子保存路径修改（参数验证→取适配器→调 SDK） |
