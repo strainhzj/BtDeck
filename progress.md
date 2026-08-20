@@ -4736,3 +4736,46 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 执行：git-filter-repo（--replace-text + --invert-paths --path + --replace-refs delete-no-add）；改写前提交修复 f3db8d6 并创建全量备份 bundle（仓库外 ../BtDeck-pre-history-clean-20260819.bundle，含旧历史，确认无误后可删）；435→434 提交（仅触及 config.yaml 的 e8e7784 变空被剪），根起全部哈希改变。
 - 验证：git log --all -S 密码/hostkey 与 config.yaml 路径全部为空；c603b0d/8fe877d 旧对象不可达（gc 已清）；工作树零改动；force push master+dev 后生效。
 - 后续注意：①所有既有 clone 需重新 clone（或 fetch+reset --hard origin/<branch>）②GitHub 服务端旧提交在 GC 前仍可能按 SHA 访问，必要时联系 GitHub support 加速回收③**历史清洗不等于未泄露——192.168.5.51 root 密码与历史 secret_key 仍需轮换**④备份 bundle 含泄露内容，仅作回滚用，确认后删除。
+
+
+## 2026-08-19（二）Windows 桌面发行版打包实测与契约数据缺失修复
+
+### 执行
+
+- 完整跑通 deploy/build-windows.bat：NSSM/npm/python 检查 → .venv-packaging（Python 3.12.4）→ npm ci + build → PyInstaller（btdeck-windows.spec）→ verify-package → analyze。安全对齐实证生效：pip 解析 starlette 0.41.3 + fastapi 0.115.14 + bcrypt 5.0.0。
+- Inno Setup 未安装（PATH 与默认目录均无 ISCC）→ setup.exe 安装包步骤按设计跳过；dist/btdeck.exe（64.9MB）产出。注：本仓库安装包格式为 Inno Setup 的 setup.exe，非 MSI。
+
+### 发现与修复（桌面打包真实缺陷）
+
+- 首次运行 exe 启动即崩：app/contracts/advanced_search.py:9 在 import 时读取 advanced_search_contract.json，而 spec datas 未打包该文件（frozen 下 FileNotFoundError 于 _MEIPASS）。修复：两个 spec datas 增加 contracts JSON + production_complete_schema.sql（后者供 init_schema_from_production 运维工具，非启动必需）。重建后归档内两文件确认存在。
+
+### 验证（重点两项均通过）
+
+- **前后端均在包内**：归档 287 个 frontend_dist 条目 + 契约 JSON；运行时 /health/live 返回 200 信封、/ 返回 BtDeck SPA index.html、chunk-vendors.js(1.06MB)/app.css(263KB) 均 200——前端由 exe 内 _MEIPASS/frontend_dist 经 factory._mount_frontend_static 服务，后端 PYZ 完整（API 实测可用），6 秒就绪。
+- **前端为独立窗口**：desktop_main.py 以 pywebview 创建 1280×820 原生窗口指向本地 5001；Get-Process 实测 MainWindowTitle="BtDeck"、MainWindowHandle=264442（onefile 双进程中 GUI 进程持窗）。BTDECK_DESKTOP_WINDOW 环境变量可强制有窗/无窗模式。
+- 测试后已 taskkill 并清理 dist/ 下首启生成的 config 等目录。
+
+### 遗留
+
+1. setup.exe 安装包：安装 Inno Setup 6 后重跑 bat 第 3 步即可（或给 bat 补默认安装路径探测）。
+2. 体积优化：前端 sourcemap（.map）被整体打包（ts.worker.js.map 未压缩 13MB 等），关闭 productionSourceMap 或打包前剔除可显著缩包。
+3. spec 修改与本文档未提交（待用户指示）。
+
+
+## 2026-08-19（三）桌面版 "Redirected when going from ..." 杂音根因与修复
+
+### 现象与根因链（全链实证）
+
+- 用户报告：登录后出现错误 "Redirected when going from \"/login?redirect=%2Fdashboard\" to \"/dashboard\" via a navigation guard."
+- 该文本是 vue-router 3.1+ 的 NavigationFailure 内部消息：守卫把导航改道时，原 push 以 rejected promise 结算。触发场景 = 强制改密守卫（admin.must_change_password=1，DB 实证）：登录成功 → push('/dashboard') → 守卫改道 /settings/index。
+- 显示链路：login/index.vue:214-220 把 router.push 与登录请求包在同一 try/catch，catch 中 error instanceof Error 为真（NavigationFailure 继承 Error）→ $message.error 原样弹 vue-router 内部英文消息。导航本身正常完成（用户已被送达设置页），纯 UI 杂音。
+- 排除项：后端零 30x（代码级）；前端 bundle 不含该渲染字符串（含 sourcemap 全扫，唯一命中是 monaco 源码注释）；运行实例端口/健康正常、系统代理禁用。
+
+### 修复（frontend/src/router.ts，扩展既有实例级补丁）
+
+- 原有补丁只吞 NavigationDuplicated 且未覆盖 replace；现 push/replace 统一用 isNavigationFailure 判定（redirected/aborted/duplicated/cancelled 全覆盖）resolve 之，真实异常仍上抛。守卫控制流不再泄漏为 UI 错误。
+
+### 验证
+
+- 新增回归 spec tests/unit/router-navigation-failure.spec.ts（3 用例：redirected push/replace 静默且落点正确、aborted 静默）；permission-guard/force-change-deadlock/session + 新 spec 共 4 套件 34 用例全绿；tsc --noEmit、npm run lint 通过；前端重建 + PyInstaller 重打包（20:09）+ verify-package 通过。注意：正在运行的旧实例（用户会话）需重启 exe 后生效。
+

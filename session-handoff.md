@@ -1,4 +1,36 @@
 # Session Handoff - BtDeck 全栈项目
+## 2026-08-19 交接（三）：桌面版 "Redirected ... via a navigation guard" 杂音根因与修复
+
+### 根因
+
+vue-router 3.1+ 将守卫改道以 rejected promise 结算；强制改密守卫（must_change_password=1，DB 实证）把登录后的 /dashboard 改道到 /settings/index，login/index.vue:214-220 的统一 try/catch 把该 NavigationFailure 当登录错误 $message.error 弹出。导航本身正常，纯杂音。后端零 30x、前端无该渲染字符串（全量扫描排除）；低概率假设（端口冲突/代理/外部页面）现场排除。
+
+### 修复与验证
+
+frontend/src/router.ts 扩展既有实例级补丁：push/replace 以 isNavigationFailure 全类型判定（原仅 NavigationDuplicated 且无 replace），导航失败 resolve、真实异常上抛。新增 tests/unit/router-navigation-failure.spec.ts 3 用例（注意：模拟守卫需白名单放行目标路由，否则自指循环路由停原地）；4 套件 34 用例全绿 + typecheck + lint；exe 已重打包（20:09）。**用户正在运行的旧实例需重启 exe 生效**。
+
+### 关联
+
+强制改密流程本身正常（设计行为）：完成"修改密码"即解锁全站；UX 改进建议（落点默认"修改密码"标签/常驻横幅）仍待用户拍板。
+
+## 2026-08-19 交接（二）：Windows 桌面发行版打包实测——契约数据缺失修复 + 前后端入包/独立窗口双验证
+
+### 结论
+
+- 完整跑通 deploy/build-windows.bat（Inno Setup 未装，setup.exe 步骤按设计跳过；产物 dist/btdeck.exe 64.9MB；安装包格式为 Inno setup.exe 非 MSI）。
+- 实测发现并修复桌面打包真实缺陷：app/contracts/advanced_search.py import 期读取 advanced_search_contract.json，spec 未打包 → frozen 启动即崩；两 spec datas 已补（contracts JSON + production_complete_schema.sql），重建归档确认。
+- **前后端均在包内**：归档 287 个 frontend_dist 条目；运行时 /health/live 200、/ 返回 SPA 首页、chunk-vendors.js/app.css 200，6 秒就绪（前端由 _MEIPASS/frontend_dist 服务）。
+- **前端为独立窗口**：pywebview 原生窗口 1280×820；Get-Process 实测 MainWindowTitle="BtDeck"（句柄非零）；BTDECK_DESKTOP_WINDOW=0/false 可切无窗纯服务模式（NSSM 服务场景靠 SESSIONNAME=services 自动判别）。
+- 安全对齐实证：打包 venv 解析 starlette 0.41.3 + fastapi 0.115.14（CVE 修复版）。
+
+### 未提交变更（待用户指示）
+
+deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件）+ 本批文档。
+
+### 遗留
+
+安装 Inno Setup 6 后可产出 setup.exe；前端 sourcemap 入包致体积偏大（ts.worker.js.map 未压缩 13MB），可关 productionSourceMap 或剔除 .map；测试产生的 dist/ 残留已清理。
+
 
 ## 2026-08-19 交接：打包脚本全链路审计与修复
 

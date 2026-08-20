@@ -4151,7 +4151,7 @@
     {
       "id": "packaging-audit-fixes-2026-08-19",
       "name": "打包脚本全链路审计与修复（Docker/桌面/远程部署）",
-      "description": "三子代理独立审计四套打包体系后修复：①bat 镜像重试链补官方源兜底尾（原 2→3 即止，与注释承诺矛盾）②bat 明文 root SSH 密码外部化到 gitignore 的本地凭据文件 ③verify-package.py/analyze-package-size.py 在打包 venv 未激活时经解释器同目录解析 pyi-archive_viewer（原 PATH-only 导致 PyInstaller 成功后校验必失败）④btdeck.iss 卸载时序（nssm remove 移至 usUninstall，修复孤儿服务残留）⑤打包 requirements 对齐 backend（starlette 0.38→0.41.3 修 CVE-2024-47874 内嵌、fastapi 0.115.6、bcrypt 补钉）⑥--unraid+--compose 参数组合守卫 ⑦删除内嵌旧密钥的 6/21 桌面构建残留与 566MB docker save 残留 ⑧backend/.env.example 假真密钥样值改占位符",
+      "description": "三子代理独立审计四套打包体系后修复：①bat 镜像重试链补官方源兜底尾（原 2→3 即止，与注释承诺矛盾）②bat 明文 root SSH 密码外部化到 gitignore 的本地凭据文件 ③verify-package.py/analyze-package-size.py 在打包 venv 未激活时经解释器同目录解析 pyi-archive_viewer（原 PATH-only 导致 PyInstaller 成功后校验必失败）④btdeck.iss 卸载时序（nssm remove 移至 usUninstall，修复孤儿服务残留）⑤打包 requirements 对齐 backend（starlette 0.38→0.41.3 修 CVE-2024-47874 内嵌、fastapi 0.115.6、bcrypt 补钉）⑥--unraid+--compose 参数组合守卫 ⑦删除内嵌旧密钥的 6/21 桌面构建残留与 566MB docker save 残留 ⑧backend/.env.example 假真密钥样值改占位符；⑨桌面打包实测发现 spec 漏打包 app/contracts/advanced_search_contract.json（import 期读取，frozen 启动即崩）已补",
       "status": "done",
       "branch": "dev",
       "plan_file": "（会话内方案：3 个并行子代理独立验证 + 人工汇总后实施，重试链修复经高保真仿真发现首版回退循环 bug 后二次修正）",
@@ -4209,6 +4209,28 @@
             "backend/.env.example"
           ],
           "evidence": "删除 deploy/dist（6/21 btdeck.exe，EXE-00.toc 929-939 实证内嵌旧 config.yaml 密钥+app.db）、deploy/build（同源 PyInstaller 工作目录）、根 .docker_temp_482561487（566MB docker save 残留），均未跟踪/被忽略，共释放约 720MB；backend/.env.example SECRET_KEY 真随机样值→REPLACE_WITH_RANDOM_SECRET"
+        },
+        {
+          "id": "desktop-packaging-contract-data",
+          "name": "桌面打包实测：契约 JSON 缺失修复 + 前后端入包/独立窗口验证",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/btdeck-windows.spec",
+            "deploy/btdeck.spec"
+          ],
+          "evidence": "完整跑通 build-windows.bat（ISCC 缺失 setup.exe 跳过，dist/btdeck.exe 64.9MB）；首启崩溃根因 app/contracts/advanced_search.py:9 import 期读 JSON 而 datas 未打包，两 spec 补 contracts JSON + production_complete_schema.sql；重建后运行时 /health/live 200、/ 返回 SPA 首页、静态资源 200、6s 就绪，MainWindowTitle=BtDeck（pywebview 独立窗口句柄 264442）；venv 解析 starlette 0.41.3+fastapi 0.115.14（CVE 修复版）"
+        },
+        {
+          "id": "router-navigation-failure-noise",
+          "name": "桌面版 vue-router 导航失败杂音修复（Redirected via a navigation guard）",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/router.ts",
+            "tests/unit/router-navigation-failure.spec.ts"
+          ],
+          "evidence": "根因链：强制改密守卫改道登录后导航 → vue-router rejected promise → login/index.vue:214 统一 catch 弹内部英文消息；修复为 router.ts 实例级 push/replace 补丁 isNavigationFailure 全类型静默（原仅 NavigationDuplicated 且无 replace）；4 套件 34 用例 + typecheck + lint 通过，exe 重打包 verify 通过"
         }
       ]
     }
