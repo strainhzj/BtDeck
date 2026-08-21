@@ -5,7 +5,8 @@
  * - th 右缘拖拽手柄调整列宽，mouseup 时一次性写入 localStorage
  * - 双击手柄恢复单列默认宽度
  * - resetColumnWidths 供列设置菜单"重置列宽"调用（全部恢复默认）
- * - 名称列等自适应列不登记宽度、不渲染手柄，自动填满剩余空间
+ * - 所有列（含名称列）均登记宽度与手柄；表格按可见列宽总和定宽，
+ *   qBittorrent 风格严格列宽（视口富余时表格右侧留白，不按比例拉伸）
  *
  * 子类契约（class 字段覆写，mixin created 钩子读取）：
  * - columnWidthStorageKey：localStorage key（btdeck_ 前缀；空串则不持久化）

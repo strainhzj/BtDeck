@@ -279,7 +279,10 @@
       element-loading-spinner="el-icon-loading"
       element-loading-background="rgba(0, 0, 0, 0.2)"
     >
-      <table class="torrent-table" :style="{minWidth: tableMinWidth + 'px'}">
+      <table
+        class="torrent-table"
+        :style="{width: tableMinWidth + 'px', minWidth: tableMinWidth + 'px'}"
+      >
         <thead>
           <tr>
             <th :style="columnWidthStyle('checkbox')">
@@ -293,6 +296,7 @@
               v-if="getColumnSetting('name').visible"
               class="sortable-column"
               :class="{sorted: listQuery.sort_by === 'name'}"
+              :style="columnWidthStyle('name')"
               data-sort-field="name"
               tabindex="0"
               :aria-sort="getSortAriaValue('name')"
@@ -308,6 +312,13 @@
                 :size="13"
                 :stroke-width="2"
               />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('name', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('name')"
+                @click.stop
+              ></span>
             </th>
             <th v-if="getColumnSetting('downloadSpeed').visible" :style="columnWidthStyle('downloadSpeed')">
               下载速度
@@ -926,6 +937,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   protected columnWidthStorageKey = 'btdeck_torrents_column_widths'
   protected defaultColumnWidths: Record<string, number> = {
     checkbox: 50,
+    name: 400,
     downloadSpeed: 100,
     uploadSpeed: 100,
     size: 100,
@@ -940,18 +952,18 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     actions: 140
   }
 
-  /** 表级最小宽度：可见列宽之和 + 名称列自适应下限 200px（列宽拖宽后横向滚动条自适应） */
+  /** 表级宽度：可见列宽之和（严格列宽，qBittorrent 风格；含名称列，视口富余时右侧留白） */
   get tableMinWidth(): number {
     const fixedKeys = ['checkbox', 'actions']
     const optionalKeys = [
-      'downloadSpeed', 'uploadSpeed', 'size', 'auxiliarySeedCount', 'progress',
+      'name', 'downloadSpeed', 'uploadSpeed', 'size', 'auxiliarySeedCount', 'progress',
       'status', 'downloader', 'ratio', 'category', 'savePath', 'addedDate'
     ]
     const visibleKeys = [
       ...fixedKeys,
       ...optionalKeys.filter(key => this.getColumnSetting(key).visible)
     ]
-    return this.sumColumnWidths(visibleKeys) + 200
+    return this.sumColumnWidths(visibleKeys)
   }
 
   // 主题相关

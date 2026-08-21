@@ -312,7 +312,7 @@
           <table
             class="torrent-table traditional-table"
             :aria-rowcount="sortedList.length + 1"
-            :style="{minWidth: tableMinWidth + 'px'}"
+            :style="{width: tableMinWidth + 'px', minWidth: tableMinWidth + 'px'}"
           >
             <thead>
               <tr>
@@ -324,11 +324,23 @@
                   />
                 </th>
                 <th class="col-status-icon" :style="columnWidthStyle('statusIcon')"></th>
-                <th v-if="getColumnSetting('name').visible" class="col-name" @click="handleSort('name')">
+                <th
+                  v-if="getColumnSetting('name').visible"
+                  class="col-name"
+                  :style="columnWidthStyle('name')"
+                  @click="handleSort('name')"
+                >
                   名称
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'name'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
+                  <span
+                    class="column-resizer"
+                    title="拖拽调整列宽，双击恢复默认"
+                    @mousedown.stop.prevent="startColumnResize('name', $event)"
+                    @dblclick.stop.prevent="handleColumnResizeDblclick('name')"
+                    @click.stop
+                  ></span>
                 </th>
                 <th
                   v-if="getColumnSetting('size').visible"
@@ -1001,6 +1013,7 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   protected defaultColumnWidths: Record<string, number> = {
     checkbox: 36,
     statusIcon: 32,
+    name: 200,
     size: 80,
     auxiliarySeedCount: 90,
     progress: 130,
@@ -1015,17 +1028,17 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
     actions: 100
   }
 
-  /** 表级最小宽度：固定列（复选框/状态图标）+ 可见列宽之和 + 名称列下限 200px */
+  /** 表级宽度：固定列（复选框/状态图标）+ 可见列宽之和（严格列宽，含名称列） */
   get tableMinWidth(): number {
     const optionalKeys = [
-      'size', 'auxiliarySeedCount', 'progress', 'status', 'download', 'upload',
+      'name', 'size', 'auxiliarySeedCount', 'progress', 'status', 'download', 'upload',
       'ratio', 'downloader', 'category', 'savePath', 'added'
     ]
     const visibleKeys = [
       ...optionalKeys.filter(key => this.getColumnSetting(key).visible),
       'actions'
     ]
-    return this.sumColumnWidths(['checkbox', 'statusIcon', ...visibleKeys]) + 200
+    return this.sumColumnWidths(['checkbox', 'statusIcon', ...visibleKeys])
   }
 
   // ====== 数据状态 ======
@@ -2589,8 +2602,8 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
 }
 
 .traditional-table {
-  // 兜底值：运行时由 tableMinWidth computed 内联绑定（可见列宽之和 + 名称列 200px），
-  // 列宽拖宽后横向滚动条自适应；此静态值仅在首帧/无脚本回退时生效。
+  // 兜底值：运行时由 tableMinWidth computed 内联绑定 width/minWidth（可见列宽
+  // 之和，严格列宽含名称列），列宽拖宽后横向滚动条自适应；此静态值仅在首帧/无脚本回退时生效。
   min-width: 1435px;
 
   tbody .torrent-row {
@@ -2620,10 +2633,16 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, Column
   }
 }
 
-// 表格列宽
+// 名称单元格文字随列宽省略（td 的 overflow 兜底只裁剪不产生"..."，需在内容块上生效）
+.torrent-name-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+// 表格列宽（兜底；运行时由 columnWidthStyle 内联宽覆盖，qBittorrent 风格严格列宽）
 .col-checkbox { width: 36px; text-align: center !important; }
 .col-status-icon { width: 32px; text-align: center !important; }
-.col-name { /* auto */ }
+.col-name { width: 200px; }
 .col-size { width: 80px; }
 .col-progress { width: 130px; }
 .col-status { width: 145px; }

@@ -1,5 +1,36 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-21（第二批） - 列宽拖拽两缺陷修复：名称列手柄 + 传统模式手柄整体失效
+
+### 排查定性
+
+- 用户反馈：①名称列无拖曳手柄；②传统模式所有列无手柄。
+- **②根因**：手柄全部样式（`.column-resizer` 定位/命中区/光标/hover 反馈条 + `th:not(.action-column){position:relative}` 定位基准）只写在 `torrent-theme.scss`，而该文件仅被 `index.vue` 以 **scoped** 方式引入；TraditionalView 引入的是 `traditional-view-theme.scss`（无任何手柄规则）→ 传统模式手柄 span 在 DOM 中零样式，不可见不可拖。
+- **①性质**：原设计即名称列不登记宽度不渲染手柄（唯一 auto 列吸收全部剩余空间）。是否给手柄涉及布局行为变更，经用户决策选定 **qBittorrent 风格严格列宽**（视口富余时表格右侧留白，不按比例拉伸；备选方案为保持拉伸填充）。
+- **顺带发现的隐藏 bug**：`body.column-resizing`（拖拽期间全局光标/禁文本选择）写在 scoped 引入的文件里，编译成 `body[data-v-x]` 从未匹配过 `<body>`——两个模式下都从未生效。
+
+### 实施
+
+- **手柄样式全局化**：抽 `styles/torrent-column-resize.scss`（手柄全套 + th 定位基准 + body 拖拽态 + 传统浅色表头反馈条改 `var(--color-primary)`），在 `styles/index.scss` 全局引入；`torrent-theme.scss` 移除原规则留指引注释。文件头注释写明"必须全局引入"的防回归原因。
+- **名称列手柄 + 严格列宽**（两视图）：名称 th 加 `columnWidthStyle('name')` 绑定 + 手柄（sortable th 内 stop/prevent 防误触排序）；`defaultColumnWidths` 登记 `name`（列表 400px / 传统 200px，旧 localStorage 无该键自动落回默认）；`tableMinWidth` optionalKeys 计入 name、去掉 `+200`；表格内联 `width+minWidth` 双绑定列宽总和（覆盖 `.torrent-table/.traditional-table` 的 `width:100%`，该类规则仅弹窗等未定宽场景继续用）；mixin 头注释同步。
+- 行为变化：名称列不再随窗口变宽自动填满；所有列严格按设定宽渲染，拖拽全程 1:1；视口比列宽总和宽时表格右侧留白。
+
+### 验证
+
+- 变更文件 eslint 0 错误；全量 npm run lint 通过；`column-resize-mixin.spec` 8 用例与全量 58 suites / **899 passed**；生产 build 通过。
+
+### 三、名称列过长省略号定性 + 跟随列宽修复
+
+- 用户反馈"名称过长显示...，要求前端处理而非后端截断返回"。全链路排查定性：**后端从未截断**（TorrentInfoVO 原样返回、同步写库全量、前端 API 层直传），`...` 是前端 CSS；真正缺陷是 `.torrent-name-text` 硬编码 `max-width: 300px`——名称列可拖宽（默认 400/最大 600px）后文字仍在 300px 处截断，列内留白。
+- 修复：列表模式 `.torrent-name` 加 `overflow: hidden`、`.torrent-name-text` 去 `max-width: 300px` 改 `flex: 1 + min-width: 0`，省略号跟随列边界（悬停 title 仍显全名）；传统模式 `.torrent-name-cell` 原先无任何样式（td 的 overflow 兜底只裁剪不出 `...`），补 `overflow: hidden + text-overflow: ellipsis`。
+- 验证：eslint 0 错误、traditional-view-component.spec 30 passed、生产 build 通过。
+
+### 四、回归保护 + 提交
+
+- 新增 `column-resize-regression.spec.ts` 5 组源码扫描契约：手柄样式唯一来源全局 partial（两份 scoped 主题不得再携带 .column-resizer/body.column-resizing——传统模式失效根因的防回归锚点）+ 传统表头反馈条主题色；名称列两视图登记宽度 + 手柄绑定；tableMinWidth 计入 name 无 +200；表格 width+minWidth 严格定宽双绑定；名称省略跟随列宽（无 300px 硬编码）。
+- 两视图组件 spec 各 +1 运行时用例：表级 `width=minWidth=tableMinWidth`、名称 th 内联宽、手柄 mousedown→body 拖拽态→mousemove 位移更新→mouseup 落盘视图独立存储 key。
+- 验证：全量 **59 suites / 906 passed**（+7 用例）、npm run lint 通过；随后按用户指示执行 Git 提交。
+
 ## 2026-08-21 - 合并 origin/dev（981 处冲突）+ 种子列表双模式可调列宽
 
 ### 一、前置：解决搁置的 git pull 合并冲突（合并提交 afc3c34）
