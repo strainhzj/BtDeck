@@ -1,5 +1,20 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-21（第三批） - 任务日志/孤儿文件统计卡片折叠与持久化
+
+### 实施
+
+- 用户确认在“定时任务-任务日志”和“孤儿文件-孤儿文件”页签中，让统计卡片区域支持收缩/展开，并在刷新后保留偏好。
+- 两处均复用全局 `CollapsiblePanel`，不改变统计数据、筛选、表格和分页逻辑；任务日志使用 `btdeck_task_log_stats_collapsed`，孤儿文件使用 `btdeck_orphan_file_stats_collapsed`，两个页签状态相互独立，默认展开。
+- 新增 `management-pages-ui.spec.ts` 契约断言，锁定两个页签的面板接入、统计区域保留和 localStorage 键隔离。
+
+### 验证
+
+- `management-pages-ui.spec.ts`：14 passed。
+- 任务日志、孤儿文件及契约测试文件 ESLint 通过；前端 `npm run typecheck`、`npm run lint`、`npm run build` 均通过；生产构建保留 58 条既有 Sass/资源体积类 warning，无编译错误。
+- 根目录经 Git Bash 执行 `./init.sh --ci` 通过；检测到工作区原有 80 个未提交变更。
+- 已提交为 `9647556`（`feat(frontend): persist collapsible management stats`）；工作区既有后端未提交改动保持原样。
+
 ## 2026-08-21（第二批） - 列宽拖拽两缺陷修复：名称列手柄 + 传统模式手柄整体失效
 
 ### 排查定性

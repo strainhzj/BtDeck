@@ -278,36 +278,41 @@
           <h2 class="section-title">任务日志</h2>
         </div>
         <!-- 日志统计信息 - 紧凑一行布局 -->
-        <div class="log-stats-compact">
-          <div class="log-stat-item">
-            <div class="log-stat-icon primary"><LucideIcon name="bar-chart-3" :size="16" /></div>
-            <div class="log-stat-content">
-              <div class="log-stat-value">{{ logStatistics.totalLogs }}</div>
-              <div class="log-stat-label">总日志数</div>
+        <CollapsiblePanel
+          title="日志统计"
+          storage-key="btdeck_task_log_stats_collapsed"
+        >
+          <div class="log-stats-compact">
+            <div class="log-stat-item">
+              <div class="log-stat-icon primary"><LucideIcon name="bar-chart-3" :size="16" /></div>
+              <div class="log-stat-content">
+                <div class="log-stat-value">{{ logStatistics.totalLogs }}</div>
+                <div class="log-stat-label">总日志数</div>
+              </div>
+            </div>
+            <div class="log-stat-item">
+              <div class="log-stat-icon success"><LucideIcon name="circle-check-big" :size="16" /></div>
+              <div class="log-stat-content">
+                <div class="log-stat-value">{{ logStatistics.successLogs }}</div>
+                <div class="log-stat-label">成功日志</div>
+              </div>
+            </div>
+            <div class="log-stat-item">
+              <div class="log-stat-icon danger"><LucideIcon name="circle-x" :size="16" /></div>
+              <div class="log-stat-content">
+                <div class="log-stat-value">{{ logStatistics.failedLogs }}</div>
+                <div class="log-stat-label">失败日志</div>
+              </div>
+            </div>
+            <div class="log-stat-item">
+              <div class="log-stat-icon info"><LucideIcon name="calendar-days" :size="16" /></div>
+              <div class="log-stat-content">
+                <div class="log-stat-value">{{ logStatistics.todayLogs }}</div>
+                <div class="log-stat-label">今日日志</div>
+              </div>
             </div>
           </div>
-          <div class="log-stat-item">
-            <div class="log-stat-icon success"><LucideIcon name="circle-check-big" :size="16" /></div>
-            <div class="log-stat-content">
-              <div class="log-stat-value">{{ logStatistics.successLogs }}</div>
-              <div class="log-stat-label">成功日志</div>
-            </div>
-          </div>
-          <div class="log-stat-item">
-            <div class="log-stat-icon danger"><LucideIcon name="circle-x" :size="16" /></div>
-            <div class="log-stat-content">
-              <div class="log-stat-value">{{ logStatistics.failedLogs }}</div>
-              <div class="log-stat-label">失败日志</div>
-            </div>
-          </div>
-          <div class="log-stat-item">
-            <div class="log-stat-icon info"><LucideIcon name="calendar-days" :size="16" /></div>
-            <div class="log-stat-content">
-              <div class="log-stat-value">{{ logStatistics.todayLogs }}</div>
-              <div class="log-stat-label">今日日志</div>
-            </div>
-          </div>
-        </div>
+        </CollapsiblePanel>
 
         <!-- 日志筛选区 -->
         <section class="filter-section filter-section-logs">

@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-21 交接（三）：任务日志/孤儿文件统计卡片折叠与持久化
+
+### 结论
+
+已按用户确认完成两个页签统计卡片的收缩/展开：复用全局 `CollapsiblePanel`，并为任务日志、孤儿文件分别绑定独立的 localStorage 键，默认展开，刷新后恢复用户上次状态。
+
+### 变更
+
+- `frontend/src/views/tasks/index.vue`：日志统计摘要接入 `btdeck_task_log_stats_collapsed`。
+- `frontend/src/views/orphan-files/index.vue`：扫描统计摘要接入 `btdeck_orphan_file_stats_collapsed`。
+- `frontend/tests/unit/management-pages-ui.spec.ts`：增加两个页签的面板、统计内容和键隔离契约。
+- `feature_list.json`、`progress.md`、`docs/roadmap/` 已同步。
+
+### 验证
+
+- `management-pages-ui.spec.ts`：14 passed。
+- 变更 Vue/测试文件 ESLint 通过，前端 `npm run typecheck`、`npm run lint`、`npm run build` 通过；生产构建有 58 条既有 Sass/资源体积类 warning，无编译错误。
+- 根目录经 Git Bash 执行 `./init.sh --ci` 通过；本次修改已提交为 `9647556`（`feat(frontend): persist collapsible management stats`）。
+
+### 工作区注意事项
+
+- 工作区原有大量 backend 未提交修改及临时文件，本次未触碰；这些修改仍保持未提交状态。
+
 ## 2026-08-21 交接（二）：列宽拖拽两缺陷修复——名称列手柄 + 传统模式手柄整体失效
 
 ### 结论

@@ -9,6 +9,10 @@ const orphanFilesSource = readFileSync(
   resolve(__dirname, '../../src/views/orphan-files/index.vue'),
   'utf8'
 )
+const scheduledTasksSource = readFileSync(
+  resolve(__dirname, '../../src/views/tasks/index.vue'),
+  'utf8'
+)
 const recycleBinSource = readFileSync(
   resolve(__dirname, '../../src/views/recycle-bin/index.vue'),
   'utf8'
@@ -76,6 +80,9 @@ describe('孤儿文件管理页信息层级', () => {
   it('使用响应式统计摘要，并将清理动作与文件列表放在一起', () => {
     expect(orphanFilesSource).toContain('class="management-stats-grid"')
     expect(orphanFilesSource).toContain('class="management-stat-card"')
+    expect(orphanFilesSource).toContain('<CollapsiblePanel')
+    expect(orphanFilesSource).toContain('title="扫描统计"')
+    expect(orphanFilesSource).toContain('storage-key="btdeck_orphan_file_stats_collapsed"')
     expect(orphanFilesSource).toContain('已选择 {{ selectedCount }} 项')
     expect(orphanFilesSource).toContain('management-pagination')
 
@@ -89,6 +96,16 @@ describe('孤儿文件管理页信息层级', () => {
     expect(quarantinePanel).toContain('class="management-table"')
   })
 
+})
+
+describe('任务日志统计摘要', () => {
+  it('统计卡片使用可折叠面板并独立持久化折叠状态', () => {
+    expect(scheduledTasksSource).toContain('<CollapsiblePanel')
+    expect(scheduledTasksSource).toContain('title="日志统计"')
+    expect(scheduledTasksSource).toContain('storage-key="btdeck_task_log_stats_collapsed"')
+    expect(scheduledTasksSource).toContain('class="log-stats-compact"')
+    expect(scheduledTasksSource).not.toContain('storage-key="btdeck_orphan_file_stats_collapsed"')
+  })
 })
 
 describe('回收站筛选栏', () => {

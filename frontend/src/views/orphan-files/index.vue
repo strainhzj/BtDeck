@@ -28,55 +28,60 @@
     <el-tabs v-model="activeTab" class="orphan-files-tabs" @tab-click="handleTabSwitch">
       <el-tab-pane label="孤儿文件" name="orphans">
     <!-- 统计摘要 -->
-    <section class="management-stats-grid" aria-label="最近一次孤儿文件扫描摘要">
-      <div class="management-stat-card">
-        <span class="management-stat-card__icon" aria-hidden="true">
-          <i class="el-icon-document" />
-        </span>
-        <div class="management-stat-card__content">
-          <div class="management-stat-card__label">待清理文件数</div>
-          <div class="management-stat-card__value">{{ scanContext.remaining_count }}</div>
-        </div>
-      </div>
-      <div class="management-stat-card">
-        <span class="management-stat-card__icon management-stat-card__icon--success" aria-hidden="true">
-          <i class="el-icon-coin" />
-        </span>
-        <div class="management-stat-card__content">
-          <div class="management-stat-card__label">待清理空间</div>
-          <div class="management-stat-card__value">{{ formatSize(scanContext.remaining_size) }}</div>
-        </div>
-      </div>
-      <div class="management-stat-card">
-        <span class="management-stat-card__icon management-stat-card__icon--info" aria-hidden="true">
-          <i class="el-icon-warning-outline" />
-        </span>
-        <div class="management-stat-card__content">
-          <div class="management-stat-card__label">已忽视文件数</div>
-          <div class="management-stat-card__value">{{ scanContext.ignored_count }}</div>
-        </div>
-      </div>
-      <div class="management-stat-card">
-        <span class="management-stat-card__icon management-stat-card__icon--info" aria-hidden="true">
-          <i class="el-icon-folder-opened" />
-        </span>
-        <div class="management-stat-card__content">
-          <div class="management-stat-card__label">扫描路径数</div>
-          <div class="management-stat-card__value">{{ displayScan ? displayScan.total_paths_scanned : 0 }}</div>
-        </div>
-      </div>
-      <div class="management-stat-card">
-        <span class="management-stat-card__icon management-stat-card__icon--warning" aria-hidden="true">
-          <i class="el-icon-time" />
-        </span>
-        <div class="management-stat-card__content">
-          <div class="management-stat-card__label">最近成功扫描</div>
-          <div class="management-stat-card__value management-stat-card__value--compact">
-            {{ displayScan ? formatTime(displayScan.scan_time) : '尚无成功扫描' }}
+    <CollapsiblePanel
+      title="扫描统计"
+      storage-key="btdeck_orphan_file_stats_collapsed"
+    >
+      <section class="management-stats-grid" aria-label="最近一次孤儿文件扫描摘要">
+        <div class="management-stat-card">
+          <span class="management-stat-card__icon" aria-hidden="true">
+            <i class="el-icon-document" />
+          </span>
+          <div class="management-stat-card__content">
+            <div class="management-stat-card__label">待清理文件数</div>
+            <div class="management-stat-card__value">{{ scanContext.remaining_count }}</div>
           </div>
         </div>
-      </div>
-    </section>
+        <div class="management-stat-card">
+          <span class="management-stat-card__icon management-stat-card__icon--success" aria-hidden="true">
+            <i class="el-icon-coin" />
+          </span>
+          <div class="management-stat-card__content">
+            <div class="management-stat-card__label">待清理空间</div>
+            <div class="management-stat-card__value">{{ formatSize(scanContext.remaining_size) }}</div>
+          </div>
+        </div>
+        <div class="management-stat-card">
+          <span class="management-stat-card__icon management-stat-card__icon--info" aria-hidden="true">
+            <i class="el-icon-warning-outline" />
+          </span>
+          <div class="management-stat-card__content">
+            <div class="management-stat-card__label">已忽视文件数</div>
+            <div class="management-stat-card__value">{{ scanContext.ignored_count }}</div>
+          </div>
+        </div>
+        <div class="management-stat-card">
+          <span class="management-stat-card__icon management-stat-card__icon--info" aria-hidden="true">
+            <i class="el-icon-folder-opened" />
+          </span>
+          <div class="management-stat-card__content">
+            <div class="management-stat-card__label">扫描路径数</div>
+            <div class="management-stat-card__value">{{ displayScan ? displayScan.total_paths_scanned : 0 }}</div>
+          </div>
+        </div>
+        <div class="management-stat-card">
+          <span class="management-stat-card__icon management-stat-card__icon--warning" aria-hidden="true">
+            <i class="el-icon-time" />
+          </span>
+          <div class="management-stat-card__content">
+            <div class="management-stat-card__label">最近成功扫描</div>
+            <div class="management-stat-card__value management-stat-card__value--compact">
+              {{ displayScan ? formatTime(displayScan.scan_time) : '尚无成功扫描' }}
+            </div>
+          </div>
+        </div>
+      </section>
+    </CollapsiblePanel>
 
     <el-alert
       v-if="latestAttempt && latestAttempt.status === 'failed'"

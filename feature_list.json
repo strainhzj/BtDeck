@@ -146,7 +146,7 @@
         {
           "id": "verified-bugfix-2026-08.8",
           "name": "通用折叠面板（W8-1/W8-2/W8-3）",
-          "description": "CollapsiblePanel 组件（storageKey 持久化/a11y）；audit/recycle-bin/query-templates/orphan-files 接入；全局注册",
+          "description": "CollapsiblePanel 组件（storageKey 持久化/a11y）；audit/recycle-bin/query-templates/orphan-files 接入；任务日志与孤儿文件统计摘要接入；全局注册",
           "status": "done",
           "scope": "frontend",
           "files": [
@@ -156,10 +156,11 @@
             "frontend/src/views/recycle-bin/index.vue",
             "frontend/src/views/query-templates/index.vue",
             "frontend/src/views/orphan-files/index.vue",
+            "frontend/src/views/tasks/index.vue",
             "frontend/tests/unit/collapsible-panel.spec.ts",
             "frontend/tests/unit/management-pages-ui.spec.ts"
           ],
-          "evidence": "collapsible-panel 7 用例全绿；management-pages-ui 13 用例全绿"
+          "evidence": "collapsible-panel 7 用例全绿；management-pages-ui 14 用例全绿；任务日志与孤儿文件统计摘要分别使用独立 localStorage 键持久化"
         }
       ]
     },

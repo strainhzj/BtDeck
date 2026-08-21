@@ -10,14 +10,14 @@
 | 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区与 Tracker 完整详情弹框、状态语义；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss） |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（14 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（12 文件；11 class + ⚠ 1 Options API） |
-| 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
+| 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志统计摘要可折叠并按页签独立 localStorage 持久化；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |
 | 审计日志 logs | `logs/audit.vue` | 审计日志查询/筛选/分页 |
 | 回收站 recycle-bin | `recycle-bin/index.vue` | ⚠ Options API：回收站（删除任务恢复/彻底删除/分页筛选），搜索区采用孤儿文件页同款 management-panel/filter 结构 |
 | 设置 settings | `settings/index.vue` | 全局设置页；改密成功后 ResetToken 终结会话并跳登录（后端已撤销全部 refresh token，L693） |
 | 仪表盘 dashboard | `dashboard/index.vue` | 仪表盘聚合统计卡片 |
 | 登录 login | `login/index.vue` | 登录页 |
 | 查询模板 query-templates | `query-templates/index.vue` | 查询模板列表 + 新增/编辑对话框；行操作收敛为带 tooltip/ARIA 的 Lucide 极简图标按钮 |
-| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；文件夹展开时懒加载并独立分页，仅当前可见文件实时统计硬链接；超量批次显示可关闭提醒，不再要求样本复核 |
+| 孤儿文件 orphan-files | `orphan-files/index.vue` | 扫描提交后轮询轻量状态；统计摘要可折叠并按页签独立 localStorage 持久化；文件夹展开时懒加载并独立分页，仅当前可见文件实时统计硬链接；超量批次显示可关闭提醒，不再要求样本复核 |
 | 嵌套路由 nested | `nested/*`（7 文件） | 嵌套路由菜单演示 |
 | 树形演示 tree | `tree/index.vue` | 树形组件演示页 |
 | 404 页面 404 | `404.vue` | 404 页面 |
@@ -90,7 +90,7 @@
 
 | 模块/文件 | 职责 |
 |-----------|------|
-| `tasks/index.vue` | 任务管理主页（`TaskManage` L997）：`handleViewLogs` L1311 记录可见任务筛选，`resetLogQuery` L1896 / `clearLogTaskFilter` L1912 清除 task_id 并立即查询全部日志；导出/过期清理为标准 Element 按钮 |
+| `tasks/index.vue` | 任务管理主页（`TaskManage` L1002）：任务日志统计摘要使用 `btdeck_task_log_stats_collapsed` 持久化折叠状态；`handleViewLogs` L1316 记录可见任务筛选，`resetLogQuery` L1901 / `clearLogTaskFilter` L1917 清除 task_id 并立即查询全部日志；导出/过期清理为标准 Element 按钮 |
 | `logs/audit.vue` | 审计日志查询/筛选/分页（`AuditLogs`）；v1.0.6.36 操作日志布局优化（剪贴板回退复制/导出归档入口对齐） |
 | `recycle-bin/index.vue` | ⚠ Options API（`RecycleBin`，L369）：回收站，L14 搜索区复用 management-panel/filter UI，支持 Enter、清空与重置 |
 | `settings/index.vue` | 全局设置页（`Settings`） |
@@ -98,7 +98,7 @@
 | `query-templates/index.vue` | 查询模板列表主入口（`QueryTemplates` L188）；L111 行操作使用 play/pencil/trash Lucide 图标与紧凑按钮样式 |
 | `query-templates/components/QueryTemplateDialog.vue` | 查询模板新增/编辑对话框 |
 | `login/index.vue` | 登录页（`Login`） |
-| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L892）；仅文件夹模式注册展开列，子表隐藏重复表头；`loadFolderChildren` L1146 仅展开时加载子页，`startScanPolling` L1641 轮询后台扫描，`dismissLargeScanReminder` L1206 关闭超量提醒；保留硬链接定位、清理/忽视/隔离恢复 |
+| `orphan-files/index.vue` | 孤儿文件管理（`OrphanFiles` L948）；统计摘要使用 `btdeck_orphan_file_stats_collapsed` 持久化折叠状态；仅文件夹模式注册展开列，子表隐藏重复表头；`loadFolderChildren` L1209 仅展开时加载子页，`startScanPolling` L1805 轮询后台扫描，`dismissLargeScanReminder` L1269 关闭超量提醒；保留硬链接定位、清理/忽视/隔离恢复 |
 | `404.vue` | 404 页面（`Page404`） |
 | `nested/*`（7 文件） | 嵌套路由菜单演示（menu1/menu2） |
 | `tree/index.vue` | 树形组件演示页（`Tree`） |
