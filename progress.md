@@ -37,7 +37,7 @@
 
 仓库处于未完成的 `git pull`（origin/dev → dev）合并：**181 个文件、981 处冲突标记**（backend/app 514 块、backend/tests 188、frontend 源码+测试、deploy、docs/roadmap、配置文档）。双方各有 30+ 个独有提交，为真正的双开发者分叉。按用户决策逐主题解决：
 
-- **同内容异常排查二选一**：保留远端"表格内嵌筛选版"（`same_content_only` 列表条件 + el-alert + 退出入口），删除本地"弹窗版"6 文件（SameContentInspectionDialog 组件/spec、same_content_inspection 端点/服务/测试/API 文档）并从 api.py 摘除注册。
+- **辅种异常排查二选一**：保留远端"表格内嵌筛选版"（`same_content_only` 列表条件 + el-alert + 退出入口），删除本地"弹窗版"6 文件（SameContentInspectionDialog 组件/spec、same_content_inspection 端点/服务/测试/API 文档）并从 api.py 摘除注册。
 - **采纳远端**：辅种数量列、Tracker主域名筛选、Tracker异常标签（展示对齐）、双令牌 W6/W8/W9、安全修复 W1-W15、孤儿扫描异步队列重构（前端 orphan-files 视图 50 处 + API/后端服务全链一致取远端）、TorrentDetailCard 共享卡片（取代两视图旧内联面板，含 detail-panel-trad 下线）、部署打包加固、router NavigationFailure 修复。
 - **保留本地**：路由 keepAlive meta、Tracker 状态判定回归（已在非冲突区自动合并）、W3/W4 同步观测、高级搜索语义修复、downloader_id String 迁移（b6e1c4d9a2f7）。
 - **合并一致性修复 4 处**：①`975dad435c03` 辅种列迁移加 inspect 幂等守卫（远端遗留——版本回拨重放时 duplicate column，远端 08-20 日志已自认存量问题，本次治本）；②`verify_password` 对前缀正确但截断的 bcrypt 哈希先做 60 字符结构校验（新版 bcrypt Rust 实现直接 panic 而非 ValueError）；③`resolve_external_path` 兼容 POSIX 绝对路径（Windows 宿主 `os.path.isabs('/downloads/...')` 为 False，桌面版 Windows 部署受影响）；④删除 `enhanced_python_executor.py` 死代码（远端安全修复已删并清空 BTD301 白名单，本地残留导致架构测试红）。
@@ -161,7 +161,7 @@ Git 提交待用户指示（建议按端拆 fix(backend)/fix(frontend)/docs）�
 - 后端 `pytest tests/api/test_auth_refresh.py`（8 用例：+1 条件更新语义 +1 旧 token 复用投影）+ `test_login_throttle_and_change_password.py`（12）全绿；black/flake8 通过；mypy stash 基线对比 13→13（新增 0）。
 - 测试技巧沉淀：api 函数 mock 边界在拦截器**之后**——后端明确拒绝应以拦截器归一化的 ApiError(401) 拒绝形态提供，resolve 401 信封会走"缺 access_token"契约错误分支；beforeEach 先 ResetToken 再 clearAllMocks（防复位期间 cookie mock 调用污染"未被调用"断言）；mockResolvedValueOnce 队列跨用例残留需显式 mockReset。
 
-## 2026-08-18 - 同内容异常排查语义修订：状态/Tracker 改为组内显示筛选（v1.0.6.40）
+## 2026-08-18 - 辅种异常排查语义修订：状态/Tracker 改为组内显示筛选（v1.0.6.40）
 
 ### 排查背景（生产问题：老男孩查询无结果）
 
@@ -619,7 +619,7 @@ Git 提交待用户指示（建议按端拆 fix(backend)/fix(frontend)/docs）�
 - 后端涉及文件 Flake8、compileall 通过；新增后台任务/API/startup/task 四个文件 mypy 通过。包含历史 SQLAlchemy 1.x ORM 文件的 mypy 仍报既有 `Column` 类型体系问题（203 条），未作为本功能回归失败处理。
 - `alembic heads` 为单 head `7b2c9d4e6f10`；根 `init.sh` 经 Git Bash 通过，前端子 init 仍有既有 null-byte warning；`roadmap-maintain` 已同步模块、迁移与测试覆盖路线图。
 
-## 2026-08-13 - 同内容异常排查改为当前列表分页
+## 2026-08-13 - 辅种异常排查改为当前列表分页
 
 ### 用户确认口径与交付
 
@@ -643,7 +643,7 @@ Git 提交待用户指示（建议按端拆 fix(backend)/fix(frontend)/docs）�
 
 ### 用户确认口径与交付
 
-- 在种子列表模式和传统模式的“快捷操作”中新增“同内容异常排查”，两种视图复用同一个只读弹窗。
+- 在种子列表模式和传统模式的“快捷操作”中新增“辅种异常排查”，两种视图复用同一个只读弹窗。
 - 无需选择下载器或填写条件：后端主动按“名称完全相同 + 大小完全相同 + 规范化 InfoHash 至少 2 个不同值”发现候选组；同一下载器内的跨站不同 Hash 任务同样可成组。
 - 弹窗支持“完整排查结果”和“仅错误种子”。分页单位是候选组；仅错误模式过滤无错误组，并在组内只返回错误种子，同时保留该组总副本数、不同 Hash 数和错误数作为上下文。
 - 功能只读：不连接下载器、不删除、不重汇报、不修改数据库；回收站、逻辑删除和活动删除任务占用项不进入结果。

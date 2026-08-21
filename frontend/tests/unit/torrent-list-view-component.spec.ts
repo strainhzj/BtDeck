@@ -369,7 +369,7 @@ describe('torrent list view pagination and sorting', () => {
     mockGetTorrentList.mockClear()
     mockGetActiveTorrents.mockClear()
 
-    expect(wrapper.text()).toContain('同内容异常排查')
+    expect(wrapper.text()).toContain('辅种异常排查')
     expect(vm.showingSameContent).toBe(false)
 
     await vm.handleQuickActionCommand('inspect-same-content')

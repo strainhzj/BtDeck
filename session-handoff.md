@@ -42,7 +42,7 @@
 
 ### 合并决策（后续维护需知）
 
-- 同内容异常排查取**远端表格内嵌版**；本地弹窗版 6 文件已删（组件/spec/端点/服务/测试/API 文档），api.py 注册已摘除。
+- 辅种异常排查取**远端表格内嵌版**；本地弹窗版 6 文件已删（组件/spec/端点/服务/测试/API 文档），api.py 注册已摘除。
 - Tracker 详情面板全链取远端共享 `TrackerDetailCard`（带 layout/activeTab/reannounce），本地 index.vue 内联卡片与 TraditionalView detail-panel-trad 悬浮面板已下线。
 - 合并顺手治本 4 处：975dad435c03 迁移 inspect 幂等守卫（远端自认的存量 duplicate column）、verify_password 截断哈希结构校验（bcrypt Rust panic）、resolve_external_path POSIX isabs 兼容（Windows 桌面版受影响）、enhanced_python_executor.py 死代码删除（BTD301）。
 - `.agents/`、`.codex/`、`.code-graph/`、`PLANS/orphan-files-state-consistency-fix/` 等本地未跟踪目录**未入库**（.gitignore 未收录，是否纳入由维护者决定）。
@@ -212,7 +212,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 - 改密后行为变化：成功后强制跳登录页用新密码重登（原为留在设置页）——用户已确认此口径。
 - 测试技巧：api 函数 mock 边界在拦截器之后，后端明确拒绝应以 ApiError(401) 拒绝形态提供（resolve 401 信封会走契约错误分支）；beforeEach 先 ResetToken 再 clearAllMocks；mockResolvedValueOnce 队列需显式 mockReset。
 
-## 2026-08-18 交接：同内容异常排查语义修订（v1.0.6.40，状态/Tracker 改组内显示筛选）
+## 2026-08-18 交接：辅种异常排查语义修订（v1.0.6.40，状态/Tracker 改组内显示筛选）
 
 ### 问题与定性
 
@@ -459,7 +459,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 - 生产 build 仍报告既有 51 条 Sass/Browserslist warning；全任务 mypy 在历史 SQLAlchemy 1.x ORM `Column` 标注上有 203 条既有错误。
 - 已更新 feature_list、progress、session handoff、迁移约束和三层代码路线图；未提交、未推送、未部署，工作区中的其它未跟踪文件未触碰。
 
-## 2026-08-13 交接：同内容异常排查改为当前列表分页
+## 2026-08-13 交接：辅种异常排查改为当前列表分页
 
 ### 当前结果
 
@@ -480,7 +480,7 @@ deploy/btdeck-windows.spec、deploy/btdeck.spec（datas 补运行时数据文件
 
 ### 当前结果
 
-- 列表模式与传统模式的“快捷操作”均可打开“同内容异常排查”；两者复用 `SameContentInspectionDialog.vue`。
+- 列表模式与传统模式的“快捷操作”均可打开“辅种异常排查”；两者复用 `SameContentInspectionDialog.vue`。
 - 后端按名称、大小精确相等且规范化 InfoHash 至少两个不同值分组，不要求跨下载器，因此能覆盖用户提供的“同一下载器内多个站点、不同 Hash”数据形态。
 - 弹窗支持完整结果与仅错误种子；错误联合任务状态/原因/聚合标记、Tracker 持久化状态、原始失败码与启用失败关键词。结果按组分页，完整模式含健康成员，仅错误模式只含错误成员。
 - 接口是纯 DB 只读查询，不调用下载器且没有写操作。Tracker 只返回 host，URL 路径、query、passkey/token 等凭据均不返回或已脱敏。

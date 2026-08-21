@@ -201,7 +201,7 @@
         </el-button>
         <el-dropdown-menu slot="dropdown">
           <el-dropdown-item command="inspect-same-content">
-            <i class="el-icon-search"></i> 同内容异常排查
+            <i class="el-icon-search"></i> 辅种异常排查
           </el-dropdown-item>
           <el-dropdown-item command="inspect-single-errors">
             <i class="el-icon-warning-outline"></i> 错误单种排查
@@ -215,7 +215,7 @@
     <el-alert
       v-if="showingSameContent"
       class="same-content-list-alert"
-      title="同内容异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子"
+      title="辅种异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子"
       type="warning"
       :closable="false"
       show-icon
