@@ -1,7 +1,7 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-20",
+  "last_updated": "2026-08-21",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -4244,6 +4244,49 @@
             "deploy/analyze-package-size.py"
           ],
           "evidence": "node18-slim 容器完整跑通 build-linux.sh（venv/npm/PyInstaller/verify/fpm）；deb 全新容器 dpkg -i exit0（用户/目录/600 env/降级提示全对）+ btdeck 用户 systemd 等价环境启动 health/SPA 200；修复 viewer 解析 sys.prefix（Linux venv 软链）、ALLOWED_HOSTS JSON 化（逗号格式 A/B 实证安装即 SettingsError）、fpm --force；另修本地工作区三文件陈旧 CRLF 检出（索引本 LF）"
+        }
+      ]
+    },
+    {
+      "id": "torrent-column-width-resize-2026-08-21",
+      "name": "种子列表双模式可调列宽（拖拽 + localStorage 持久化）",
+      "description": "列表模式与传统模式的种子表格支持拖拽 th 右缘手柄调整列宽：拖拽结束一次性写入 localStorage（btdeck_torrents_column_widths / btdeck_traditional_column_widths，两视图独立 key，只认登记过的列键，新增列自动落回默认）；双击手柄恢复单列默认；列设置菜单新增“重置列宽”全部恢复。共享 ColumnResizeMixin（vue-class-component 模式，仿 speedPolling）：宽度夹取 [40,600]px，document 监听与 body.column-resizing 拖拽态随 mouseup/销毁成对清理。表格改 table-layout: fixed 使 th 内联宽度成为权威列宽（名称列不设宽自适应填满），td 溢出省略；两视图表级 min-width 改为 computed（可见列宽之和 + 名称列 200px 下限）动态绑定，列宽拖宽后横向滚动条自适应。传统模式虚拟滚动（行高 32px、spacer 行 colspan）不受影响。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "（会话内方案：前置解决 git pull 合并冲突 981 处后实施；共享 mixin + 两视图接入 + 全局样式，见 progress.md 2026-08-21）",
+      "tasks": [
+        {
+          "id": "column-resize-mixin",
+          "name": "共享列宽拖拽 mixin + 单元测试",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/views/torrents/mixins/columnResize.ts",
+            "tests/unit/column-resize-mixin.spec.ts"
+          ],
+          "evidence": "8 用例全过：默认宽度打底/存储覆盖/损坏 JSON 回退、拖拽位移更新与 [40,600] 夹取、拖拽中不落盘 mouseup 写一次、双击恢复单列、resetColumnWidths 全部重置、销毁清理 document 监听与 body 类、sumColumnWidths 汇总。修复过一版：vue-class-component 把类字段箭头函数收进 data 时 this 指向构造期临时实例导致拖拽会话失效，改为方法 + boundColumnResizeMove/End 存储绑定引用（debug 用例实证后修正）"
+        },
+        {
+          "id": "list-view-column-resize",
+          "name": "列表模式 index.vue 接入列宽拖拽",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/views/torrents/index.vue",
+            "src/styles/torrent-theme.scss"
+          ],
+          "evidence": "12 列静态内联宽全部改 columnWidthStyle 绑定 + 右缘手柄（复选框列宽度可调无手柄、名称列自适应、操作列 sticky 兼容）；tableMinWidth computed + 表内联绑定，容器已有 overflow:auto 横向承接；列设置对话框新增“重置列宽”按钮；table-layout: fixed + td 溢出省略入全局主题；.column-resizer 手柄样式（hover 高亮反馈条、sticky 列右缘贴齐）"
+        },
+        {
+          "id": "traditional-view-column-resize",
+          "name": "传统模式 TraditionalView.vue 接入列宽拖拽",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/views/torrents/TraditionalView.vue",
+            "src/styles/torrent-theme.scss"
+          ],
+          "evidence": "14 列（含固定复选框/状态图标）th 加内联宽度绑定（.col-* SCSS 值保留兜底），除名称/复选框/状态图标外 11 列加手柄；静态 min-width 1435px 改 tableMinWidth computed 动态绑定（SCSS 值留作首帧兜底）；列设置对话框新增“重置列宽”；虚拟滚动回归通过（traditional-view-component.spec 55 用例含拖拽接入后全过）"
         }
       ]
     }

@@ -307,6 +307,9 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  /* fixed 布局使 th 内联宽度成为列宽权威来源（列宽拖拽依赖）；
+     名称列不设宽度自动填满剩余空间 */
+  table-layout: fixed;
 
   thead {
     background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
@@ -324,6 +327,10 @@
       letter-spacing: 0.5px;
       white-space: nowrap;
       border-bottom: 1px solid var(--color-border-primary);
+      /* 列宽拖拽手柄的定位基准；sticky 操作列除外（sticky 即定位，不可覆盖） */
+      &:not(.action-column) {
+        position: relative;
+      }
 
       &.sortable-column {
         cursor: pointer;
@@ -392,6 +399,9 @@
       white-space: nowrap;
       border-bottom: 1px solid var(--color-border-primary);
       background: var(--color-bg-primary);
+      /* fixed 布局下超出列宽的内容裁剪，避免溢出串列 */
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* 只有操作列冻结 */
@@ -412,6 +422,49 @@
       background: rgba(var(--theme-primary-rgb), 0.1);
     }
   }
+}
+
+/* ========================================
+   列宽拖拽手柄（列表模式/传统模式共用）
+   ======================================== */
+.torrent-table thead th .column-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px; /* 跨列界覆盖 6px 命中区，便于命中相邻边界 */
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 2;
+
+  /* 命中区透明，hover/active 才显示视觉反馈条 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: 2px;
+    width: 2px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background var(--transition-fast);
+  }
+
+  &:hover::after,
+  &:active::after {
+    background: rgba(255, 255, 255, 0.9);
+  }
+}
+
+/* 操作列手柄贴齐右缘（sticky 列右侧即表格边缘） */
+.torrent-table thead th.action-column .column-resizer {
+  right: 0;
+}
+
+/* 拖拽会话期间：全局 col-resize 光标 + 禁止文本选择（由 ColumnResizeMixin 切换） */
+body.column-resizing {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* ========================================

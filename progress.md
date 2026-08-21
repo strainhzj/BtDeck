@@ -1,5 +1,25 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-21 - 合并 origin/dev（981 处冲突）+ 种子列表双模式可调列宽
+
+### 一、前置：解决搁置的 git pull 合并冲突（合并提交 afc3c34）
+
+仓库处于未完成的 `git pull`（origin/dev → dev）合并：**181 个文件、981 处冲突标记**（backend/app 514 块、backend/tests 188、frontend 源码+测试、deploy、docs/roadmap、配置文档）。双方各有 30+ 个独有提交，为真正的双开发者分叉。按用户决策逐主题解决：
+
+- **同内容异常排查二选一**：保留远端"表格内嵌筛选版"（`same_content_only` 列表条件 + el-alert + 退出入口），删除本地"弹窗版"6 文件（SameContentInspectionDialog 组件/spec、same_content_inspection 端点/服务/测试/API 文档）并从 api.py 摘除注册。
+- **采纳远端**：辅种数量列、Tracker主域名筛选、Tracker异常标签（展示对齐）、双令牌 W6/W8/W9、安全修复 W1-W15、孤儿扫描异步队列重构（前端 orphan-files 视图 50 处 + API/后端服务全链一致取远端）、TorrentDetailCard 共享卡片（取代两视图旧内联面板，含 detail-panel-trad 下线）、部署打包加固、router NavigationFailure 修复。
+- **保留本地**：路由 keepAlive meta、Tracker 状态判定回归（已在非冲突区自动合并）、W3/W4 同步观测、高级搜索语义修复、downloader_id String 迁移（b6e1c4d9a2f7）。
+- **合并一致性修复 4 处**：①`975dad435c03` 辅种列迁移加 inspect 幂等守卫（远端遗留——版本回拨重放时 duplicate column，远端 08-20 日志已自认存量问题，本次治本）；②`verify_password` 对前缀正确但截断的 bcrypt 哈希先做 60 字符结构校验（新版 bcrypt Rust 实现直接 panic 而非 ValueError）；③`resolve_external_path` 兼容 POSIX 绝对路径（Windows 宿主 `os.path.isabs('/downloads/...')` 为 False，桌面版 Windows 部署受影响）；④删除 `enhanced_python_executor.py` 死代码（远端安全修复已删并清空 BTD301 白名单，本地残留导致架构测试红）。
+- 验证：后端全量 pytest **3874 passed / 7 skipped**；前端 tsc、ESLint 0 错误、**891 单测**、契约重新生成、生产 build 通过。修 tasks-sync-freshness.spec 一处行尾脆弱断言（CRLF 检出下多行 toContain 不匹配，读源码后归一化 `\r\n`）。
+
+### 二、新功能：种子列表双模式可调列宽 + localStorage 持久化
+
+- **共享 mixin** `src/views/torrents/mixins/columnResize.ts`（仿 speedPolling 的 vue-class-component 模式）：th 右缘手柄拖拽、宽度夹取 [40,600]px、mouseup 一次性写 localStorage（两视图独立 key `btdeck_torrents_column_widths` / `btdeck_traditional_column_widths`，只认登记列键，新增列自动落回默认）、双击手柄恢复单列、`resetColumnWidths()` 供列设置菜单"重置列宽"、document 监听与 `body.column-resizing` 拖拽态随 mouseup/销毁成对清理。**踩坑记录：类字段箭头函数被 vue-class-component 收进 data 后 this 指向构造期临时实例，拖拽会话失效——改方法 + boundXxx 存储绑定引用**。
+- **列表模式 index.vue**：12 列静态内联宽 → `columnWidthStyle()` 绑定 + 手柄（名称列自适应、复选框列可调无手柄、sticky 操作列兼容）；`tableMinWidth` computed 动态 min-width（容器已有横向滚动）。
+- **传统模式 TraditionalView.vue**：14 列 th 内联宽覆盖 `.col-*` SCSS 兜底值；静态 `min-width:1435px` 改 computed 动态（SCSS 值留首帧兜底）；虚拟滚动（32px 行高/spacer 行）不受影响。
+- **全局样式** torrent-theme.scss：`.torrent-table` 补 `table-layout: fixed`（传统表远端已自带，本次主要影响列表模式）使 th 宽度成为权威列宽；td 溢出省略；`.column-resizer` 手柄（6px 命中区、hover 反馈条、sticky 列贴右缘）。
+- 验证：新增 `column-resize-mixin.spec.ts` 8 用例（初始化/存储覆盖/损坏回退/拖拽夹取/落盘时机/双击重置/全部重置/销毁清理）；全量 58 suites / **899 passed**；tsc、lint（含自动格式修复）、生产 build 通过。
+
 ## 2026-08-20（第二批） - 展示对齐判定：Tracker 异常可见化与 Announce 状态覆写
 
 ### 排查与定性（生产副本实测 + 独立审查）

@@ -1,5 +1,30 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-21 交接：合并 origin/dev 全量冲突解决 + 种子列表双模式可调列宽
+
+### 结论
+
+两件事：①仓库搁置的 `git pull`（origin/dev → dev）合并冲突全部解决并提交（合并提交 **afc3c34**，181 文件 / 981 处冲突标记，后端全量 3874 passed、前端 891 passed 验证）；②新功能"种子列表双模式可调列宽 + localStorage 持久化"实现完成并验证。
+
+### 合并决策（后续维护需知）
+
+- 同内容异常排查取**远端表格内嵌版**；本地弹窗版 6 文件已删（组件/spec/端点/服务/测试/API 文档），api.py 注册已摘除。
+- Tracker 详情面板全链取远端共享 `TrackerDetailCard`（带 layout/activeTab/reannounce），本地 index.vue 内联卡片与 TraditionalView detail-panel-trad 悬浮面板已下线。
+- 合并顺手治本 4 处：975dad435c03 迁移 inspect 幂等守卫（远端自认的存量 duplicate column）、verify_password 截断哈希结构校验（bcrypt Rust panic）、resolve_external_path POSIX isabs 兼容（Windows 桌面版受影响）、enhanced_python_executor.py 死代码删除（BTD301）。
+- `.agents/`、`.codex/`、`.code-graph/`、`PLANS/orphan-files-state-consistency-fix/` 等本地未跟踪目录**未入库**（.gitignore 未收录，是否纳入由维护者决定）。
+
+### 列宽功能（本次新功能，未提交）
+
+- 共享 mixin `src/views/torrents/mixins/columnResize.ts`：拖拽夹取 [40,600]px、mouseup 写一次 localStorage（`btdeck_torrents_column_widths` / `btdeck_traditional_column_widths`）、双击恢复单列、菜单"重置列宽"、监听/拖拽态类成对清理。**注意：vue-class-component 下类字段箭头函数 this 指向构造期临时实例，监听器必须用方法 + 存储绑定引用**（mixin 注释已写明）。
+- 两视图 th 全部改 `columnWidthStyle()` 绑定 + 手柄；表级 min-width 改 computed（可见列宽和 + 名称列 200px）；`.torrent-table` 全局 `table-layout: fixed`（传统表远端已自带，实际改变的是列表模式）+ td 溢出省略；手柄样式在 torrent-theme.scss。
+- 验证：column-resize-mixin.spec 8 用例 + 全量 58 suites / 899 passed、tsc、lint、build 全过。feature_list.json（torrent-column-width-resize-2026-08-21）、progress.md 已同步。
+
+### 遗留与建议
+
+- `table-layout: fixed` 对列表模式是布局行为变化：内容超列宽改省略号截断（此前撑宽横向滚动）。建议浏览器实测两视图窄屏/宽屏视觉（尤其进度条、Tracker异常标签、操作列按钮）。
+- 列宽存储未按登录用户隔离（与项目既有 visibility key 一致的全局 key）。
+- 本次功能改动未提交；工作区另有 `.agents/` 等未跟踪目录保持原样。
+
 ## 2026-08-20 交接：展示对齐判定——Tracker 异常可见化与 Announce 状态覆写
 
 ### 结论

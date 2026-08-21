@@ -279,10 +279,10 @@
       element-loading-spinner="el-icon-loading"
       element-loading-background="rgba(0, 0, 0, 0.2)"
     >
-      <table class="torrent-table">
+      <table class="torrent-table" :style="{minWidth: tableMinWidth + 'px'}">
         <thead>
           <tr>
-            <th style="width: 50px;">
+            <th :style="columnWidthStyle('checkbox')">
               <el-checkbox
                 :indeterminate="isIndeterminate"
                 v-model="selectAll"
@@ -309,14 +309,32 @@
                 :stroke-width="2"
               />
             </th>
-            <th v-if="getColumnSetting('downloadSpeed').visible" style="width: 100px;">下载速度</th>
-            <th v-if="getColumnSetting('uploadSpeed').visible" style="width: 100px;">上传速度</th>
+            <th v-if="getColumnSetting('downloadSpeed').visible" :style="columnWidthStyle('downloadSpeed')">
+              下载速度
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('downloadSpeed', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('downloadSpeed')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('uploadSpeed').visible" :style="columnWidthStyle('uploadSpeed')">
+              上传速度
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('uploadSpeed', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('uploadSpeed')"
+                @click.stop
+              ></span>
+            </th>
             <th
               v-if="getColumnSetting('size').visible"
               class="sortable-column"
               :class="{sorted: listQuery.sort_by === 'size'}"
               data-sort-field="size"
-              style="width: 100px;"
+              :style="columnWidthStyle('size')"
               tabindex="0"
               :aria-sort="getSortAriaValue('size')"
               title="按大小排序"
@@ -331,15 +349,40 @@
                 :size="13"
                 :stroke-width="2"
               />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('size', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('size')"
+                @click.stop
+              ></span>
             </th>
-            <th v-if="getColumnSetting('auxiliarySeedCount').visible" style="width: 90px;">辅种数量</th>
-            <th v-if="getColumnSetting('progress').visible" style="width: 140px;">进度</th>
+            <th v-if="getColumnSetting('auxiliarySeedCount').visible" :style="columnWidthStyle('auxiliarySeedCount')">
+              辅种数量
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('auxiliarySeedCount', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('auxiliarySeedCount')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('progress').visible" :style="columnWidthStyle('progress')">
+              进度
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('progress', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('progress')"
+                @click.stop
+              ></span>
+            </th>
             <th
               v-if="getColumnSetting('status').visible"
               class="sortable-column"
               :class="{sorted: listQuery.sort_by === 'status'}"
               data-sort-field="status"
-              style="width: 130px;"
+              :style="columnWidthStyle('status')"
               tabindex="0"
               :aria-sort="getSortAriaValue('status')"
               title="按状态排序"
@@ -354,14 +397,30 @@
                 :size="13"
                 :stroke-width="2"
               />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('status', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('status')"
+                @click.stop
+              ></span>
             </th>
-            <th v-if="getColumnSetting('downloader').visible" style="width: 110px;">所属下载器</th>
+            <th v-if="getColumnSetting('downloader').visible" :style="columnWidthStyle('downloader')">
+              所属下载器
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('downloader', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('downloader')"
+                @click.stop
+              ></span>
+            </th>
             <th
               v-if="getColumnSetting('ratio').visible"
               class="sortable-column"
               :class="{sorted: listQuery.sort_by === 'ratio'}"
               data-sort-field="ratio"
-              style="width: 70px;"
+              :style="columnWidthStyle('ratio')"
               tabindex="0"
               :aria-sort="getSortAriaValue('ratio')"
               title="按比率排序"
@@ -376,15 +435,40 @@
                 :size="13"
                 :stroke-width="2"
               />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('ratio', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('ratio')"
+                @click.stop
+              ></span>
             </th>
-            <th v-if="getColumnSetting('category').visible" style="width: 180px;">分类/标签</th>
-            <th v-if="getColumnSetting('savePath').visible" style="width: 200px;">保存路径</th>
+            <th v-if="getColumnSetting('category').visible" :style="columnWidthStyle('category')">
+              分类/标签
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('category', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('category')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('savePath').visible" :style="columnWidthStyle('savePath')">
+              保存路径
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('savePath', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('savePath')"
+                @click.stop
+              ></span>
+            </th>
             <th
               v-if="getColumnSetting('addedDate').visible"
               class="sortable-column"
               :class="{sorted: listQuery.sort_by === 'added_date'}"
               data-sort-field="added_date"
-              style="width: 130px;"
+              :style="columnWidthStyle('addedDate')"
               tabindex="0"
               :aria-sort="getSortAriaValue('added_date')"
               title="按添加时间排序"
@@ -399,8 +483,28 @@
                 :size="13"
                 :stroke-width="2"
               />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('addedDate', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('addedDate')"
+                @click.stop
+              ></span>
             </th>
-            <th v-if="getColumnSetting('actions').visible" class="action-column" style="width: 140px;">操作</th>
+            <th
+              v-if="getColumnSetting('actions').visible"
+              class="action-column"
+              :style="columnWidthStyle('actions')"
+            >
+              操作
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('actions', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('actions')"
+                @click.stop
+              ></span>
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -642,6 +746,7 @@
         <div class="modal-footer">
           <div class="modal-footer-left">
             <button class="btn-secondary" @click="resetColumnSettings">重置</button>
+            <button class="btn-secondary" @click="handleResetColumnWidths">重置列宽</button>
           </div>
           <div class="modal-footer-right">
             <button class="btn-secondary" @click="showColumnSettings = false">取消</button>
@@ -740,6 +845,7 @@ import TrackerDetailCard from './components/TrackerDetailCard.vue'
 import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
 import TorrentBatchMixin from './mixins/torrentBatch'
 import SpeedPollingMixin from './mixins/speedPolling'
+import ColumnResizeMixin from './mixins/columnResize'
 import {
   getTorrentList,
   deleteTorrentsWithLevel,
@@ -812,9 +918,41 @@ type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
-export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
+export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin) {
   // 视图模式管理
   private viewModeModule = ViewModeModule
+
+  // ====== 列宽拖拽（ColumnResizeMixin 契约字段） ======
+  protected columnWidthStorageKey = 'btdeck_torrents_column_widths'
+  protected defaultColumnWidths: Record<string, number> = {
+    checkbox: 50,
+    downloadSpeed: 100,
+    uploadSpeed: 100,
+    size: 100,
+    auxiliarySeedCount: 90,
+    progress: 140,
+    status: 130,
+    downloader: 110,
+    ratio: 70,
+    category: 180,
+    savePath: 200,
+    addedDate: 130,
+    actions: 140
+  }
+
+  /** 表级最小宽度：可见列宽之和 + 名称列自适应下限 200px（列宽拖宽后横向滚动条自适应） */
+  get tableMinWidth(): number {
+    const fixedKeys = ['checkbox', 'actions']
+    const optionalKeys = [
+      'downloadSpeed', 'uploadSpeed', 'size', 'auxiliarySeedCount', 'progress',
+      'status', 'downloader', 'ratio', 'category', 'savePath', 'addedDate'
+    ]
+    const visibleKeys = [
+      ...fixedKeys,
+      ...optionalKeys.filter(key => this.getColumnSetting(key).visible)
+    ]
+    return this.sumColumnWidths(visibleKeys) + 200
+  }
 
   // 主题相关
   private currentTheme: ThemeType = 'emerald'
@@ -2048,6 +2186,12 @@ export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
     this.columnSettings.forEach(column => {
       column.visible = true
     })
+  }
+
+  /** 列设置菜单：全部列宽恢复默认（ColumnResizeMixin 提供 resetColumnWidths） */
+  private handleResetColumnWidths() {
+    this.resetColumnWidths()
+    this.$message.success('列宽已重置为默认')
   }
 
   private applyColumnSettings() {
