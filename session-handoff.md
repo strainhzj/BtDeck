@@ -1,5 +1,39 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-21 交接（二）：列宽拖拽两缺陷修复——名称列手柄 + 传统模式手柄整体失效
+
+### 结论
+
+上一批"双模式可调列宽"功能用户实测反馈两问题，均已修复（未提交）：①名称列无拖曳手柄——按用户决策改为 **qBittorrent 风格严格列宽**，名称列登记默认宽（列表 400px/传统 200px）并渲染手柄；②传统模式所有列手柄不出现——根因是手柄样式只存在于 `torrent-theme.scss`，而它仅被 index.vue **scoped** 引入，TraditionalView 的 `traditional-view-theme.scss` 无任何手柄规则（span 零样式不可见）。
+
+### 关键变更（7 文件：1 新增 + 6 修改）
+
+- 新增 `frontend/src/styles/torrent-column-resize.scss`：手柄全套样式 + `th:not(.action-column){position:relative}` 定位基准 + `body.column-resizing` 拖拽态 + 传统浅色表头 hover 反馈条改 `var(--color-primary)`（白色条在浅色表头不可见）；在 `styles/index.scss` **全局引入**。防回归要点已写进文件头注释：两视图样式块均 scoped，手柄样式必须全局引入。
+- `torrent-theme.scss`：移除已抽走的手柄规则（含 `body.column-resizing`——它在 scoped 引入下编译成 `body[data-v-x]` 从未生效过，属顺带修复的隐藏 bug）。
+- 两视图：名称 th 加 `columnWidthStyle('name')` + 手柄；`defaultColumnWidths` 登记 name；`tableMinWidth` 计入 name 去掉 `+200`；表格内联 `width=minWidth=列宽总和` 双绑定（覆盖类里 `width:100%`，该规则仅 DuplicateTorrentsDialog 等未定宽场景继续用）。
+
+### 行为变化（用户已确认）
+
+名称列不再随窗口变宽自动填满；所有列严格按设定宽渲染、拖拽全程 1:1；视口比列宽总和宽时表格右侧留白。旧 localStorage 无 name 键自动落回默认宽。
+
+### 验证
+
+变更文件 ESLint 0 错误、全量 npm run lint 通过、column-resize-mixin.spec 8 用例 + 全量 59 suites/906 passed（含新增回归 7 用例）、生产 build 通过。feature_list.json（torrent-column-width-fixes-2026-08-21，4 tasks）、progress.md 已同步；已按用户指示提交。
+
+### 回归保护（同会话第三批）
+
+- 新增 `tests/unit/column-resize-regression.spec.ts` 5 组静态契约：**手柄样式唯一来源 torrent-column-resize.scss 且必须经 index.scss 全局引入**、两份 scoped 主题不得再携带 `.column-resizer`/`body.column-resizing`（传统模式手柄整体失效根因的防回归锚点）、传统表头反馈条主题色、名称列登记宽度+手柄绑定、tableMinWidth 计入 name 无 +200、严格定宽双绑定、名称省略跟随列宽（无 300px 硬编码）。
+- 两视图组件 spec 各 +1 运行时用例（表级 width=minWidth=tableMinWidth、名称 th 内联宽、手柄拖拽会话→落盘视图独立 key）。全量 59 suites/906 passed。
+
+### 追加（同会话）：名称过长省略号定性 + 跟随列宽
+
+用户反馈"名称过长显示...，要求前端处理而非后端截断"。排查定性：**后端从未截断**（VO 原样返回/同步全量写库/前端 API 直传），`...` 是前端 CSS；真缺陷是列表模式 `.torrent-name-text` 硬编码 `max-width: 300px`——名称列可拖宽后仍在 300px 截断。已改为省略号跟随列边界（flex:1 + min-width:0，悬停 title 全名）；传统模式 `.torrent-name-cell` 补缺失的省略样式（td 兜底只裁剪不出 `...`）。traditional-view-component.spec 30 passed、build 通过。
+
+### 遗留
+
+- 已提交（未推送/未部署）；部署需重新构建前端产物。建议浏览器实测：传统模式手柄 hover 反馈条可见性（主题色 vs 浅色表头）、宽屏留白观感、名称列拖拽与省略号跟随列宽。
+- roadmap 第三层文档涉及两视图行号的未同步（本次改动两视图各 +15 行左右，未新增/删除方法）。
+
 ## 2026-08-21 交接：合并 origin/dev 全量冲突解决 + 种子列表双模式可调列宽
 
 ### 结论

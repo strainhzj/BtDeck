@@ -7,7 +7,7 @@
 
 | 关键词 | 主入口 | 一句话职责 |
 |--------|--------|-----------|
-| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区与 Tracker 完整详情弹框、状态语义 |
+| 种子管理 torrent | `torrents/index.vue` | 种子管理（最大模块 20 文件）：列表/传统两视图支持 Tracker 主机域名多选和错误单种排查；同 Hash/错误单种快捷操作均直接切换当前表格数据源，复用筛选、排序和行级分页并可退出；两视图共用高级搜索工作区与 Tracker 完整详情弹框、状态语义；双模式可调列宽（ColumnResizeMixin 拖拽 + localStorage 持久化，qBittorrent 风格严格列宽，手柄样式全局见 styles/torrent-column-resize.scss） |
 | 下载器 downloader | `downloader/index.vue` | 下载器节点控制室（14 文件）：状态摘要/筛选操作台/节点矩阵/轮询遥测/响应式动效 |
 | Tracker tracker | `tracker/`（4 并列页面） | Tracker 关键词看板/关键词搜索/连通性测试/重宣告配置（12 文件；11 class + ⚠ 1 Options API） |
 | 任务管理 tasks | `tasks/index.vue` | 任务管理主页（CRUD + 调度/Cron/Python 类选择）；outcome/stale 模块 helper 经实例方法暴露给 Vue 模板；任务日志使用项目标准按钮，查看日志后显示任务筛选，清空恢复全部日志 |

@@ -729,6 +729,42 @@ describe('TraditionalView component regressions', () => {
       .toContain('保存路径')
   })
 
+  it('名称列登记列宽并渲染可拖拽手柄，表格按列宽总和严格定宽', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as {
+      tableMinWidth: number
+      defaultColumnWidths: Record<string, number>
+      columnWidths: Record<string, number>
+    }
+
+    // qBittorrent 风格严格列宽：表格 width 与 min-width 同绑列宽总和（视口富余右侧留白）
+    const tableStyle = wrapper.find('table.torrent-table').attributes('style') || ''
+    expect(tableStyle).toContain(`width: ${vm.tableMinWidth}px`)
+    expect(tableStyle).toContain(`min-width: ${vm.tableMinWidth}px`)
+
+    // 名称列不再是自适应列：表头内联宽 + 右缘手柄
+    const nameHeader = wrapper.find('thead th.col-name')
+    expect(nameHeader.attributes('style')).toContain(`width: ${vm.defaultColumnWidths.name}px`)
+    const handle = nameHeader.find('.column-resizer')
+    expect(handle.exists()).toBe(true)
+
+    // 手柄真实进入拖拽会话：body 拖拽态、按位移更新、mouseup 一次性落盘（视图独立存储 key）
+    handle.element.dispatchEvent(new MouseEvent('mousedown', { buttons: 1, clientX: 200, bubbles: true }))
+    await localVue.nextTick()
+    expect(document.body.classList.contains('column-resizing')).toBe(true)
+
+    document.dispatchEvent(new MouseEvent('mousemove', { clientX: 260 }))
+    await localVue.nextTick()
+    expect(vm.columnWidths.name).toBe(vm.defaultColumnWidths.name + 60)
+
+    document.dispatchEvent(new MouseEvent('mouseup', { clientX: 260 }))
+    await localVue.nextTick()
+    expect(document.body.classList.contains('column-resizing')).toBe(false)
+    expect(JSON.parse(localStorage.getItem('btdeck_traditional_column_widths') || '{}'))
+      .toEqual(expect.objectContaining({ name: vm.defaultColumnWidths.name + 60 }))
+  })
+
   it('传统视图展示同步任务持久化的辅种数量', async() => {
     mockGetTorrentList.mockResolvedValue(torrentListResponse([
       torrentFixture(1, { auxiliarySeedCount: 31 })

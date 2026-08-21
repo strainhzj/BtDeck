@@ -4289,6 +4289,63 @@
           "evidence": "14 列（含固定复选框/状态图标）th 加内联宽度绑定（.col-* SCSS 值保留兜底），除名称/复选框/状态图标外 11 列加手柄；静态 min-width 1435px 改 tableMinWidth computed 动态绑定（SCSS 值留作首帧兜底）；列设置对话框新增“重置列宽”；虚拟滚动回归通过（traditional-view-component.spec 55 用例含拖拽接入后全过）"
         }
       ]
+    },
+    {
+      "id": "torrent-column-width-fixes-2026-08-21",
+      "name": "列宽拖拽两处缺陷修复：名称列手柄 + 传统模式手柄整体失效 + 严格列宽改版",
+      "description": "用户反馈两问题：①名称列无拖拽手柄（原设计名称列为唯一 auto 列吸收全部剩余空间，不登记宽度）；②传统模式所有列手柄不出现。根因②：手柄样式只写在 torrent-theme.scss，而该文件仅被 index.vue scoped 引入，TraditionalView 引入的 traditional-view-theme.scss 无任何手柄规则，span 零样式不可见。修复：手柄样式抽为 torrent-column-resize.scss 并在 styles/index.scss 全局引入（scoped 引入对另一视图不可达，body.column-resizing 全局规则同理——原 scoped 编译成 body[data-v-x] 从未生效过，属顺带修复的隐藏 bug）；传统模式浅色表头 hover 反馈条由白色改主题色。名称列按用户决策改 qBittorrent 风格严格列宽：两视图名称列登记默认宽（列表 400px/传统 200px）+ 手柄，tableMinWidth 计入名称列、表格内联绑定 width=minWidth=列宽总和，视口富余时表格右侧留白不再按比例拉伸，名称列不再随窗口变宽自动填满。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "（会话内方案：用户在“拉伸填充 vs 严格列宽留白”两方案中选定严格列宽）",
+      "tasks": [
+        {
+          "id": "traditional-resizer-style-fix",
+          "name": "手柄样式全局化（传统模式失效根因修复）",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/styles/torrent-column-resize.scss",
+            "src/styles/index.scss",
+            "src/styles/torrent-theme.scss"
+          ],
+          "evidence": "新建 torrent-column-resize.scss（手柄定位/命中区/hover 反馈条/右缘贴齐/body.column-resizing 拖拽态），styles/index.scss 全局引入；torrent-theme.scss 移除原 scoped 版本规则留指引注释；传统表头浅色背景反馈条改 var(--color-primary)"
+        },
+        {
+          "id": "name-column-resize-strict-width",
+          "name": "名称列手柄 + 两视图严格列宽改版",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/views/torrents/index.vue",
+            "src/views/torrents/TraditionalView.vue",
+            "src/views/torrents/mixins/columnResize.ts"
+          ],
+          "evidence": "两视图名称 th 加 columnWidthStyle 绑定 + 手柄（sortable th 内 stop/prevent 防误触排序）；defaultColumnWidths 登记 name（列表 400/传统 200，旧 localStorage 无 name 键自动落回默认）；tableMinWidth optionalKeys 计入 name 去掉 +200；表格内联 width+minWidth 双绑定列宽总和（.torrent-table width:100% 被内联覆盖，仅弹窗等未定宽场景继续用）；mixin 头注释同步。全量 58 suites/899 tests、lint、生产 build 通过"
+        },
+        {
+          "id": "name-ellipsis-follow-column-width",
+          "name": "名称过长省略号定性（后端未截断）+ 省略跟随列宽",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/styles/torrent-theme.scss",
+            "src/views/torrents/TraditionalView.vue"
+          ],
+          "evidence": "全链路排查确认后端未截断名称（TorrentInfoVO 原样返回、同步写库全量、前端 API 层直传），“...”为前端 CSS。修复列表模式 .torrent-name-text 硬编码 max-width:300px（列拖宽后仍在 300px 截断留白）→ flex:1 + min-width:0 + .torrent-name overflow:hidden，省略号跟随列边界、悬停 title 显全名；传统模式 .torrent-name-cell 原无样式（td 兜底只裁剪不出省略号）补 overflow:hidden + text-overflow:ellipsis。eslint 0 错误、traditional-view-component.spec 30 passed、生产 build 通过"
+        },
+        {
+          "id": "column-resize-regression-tests",
+          "name": "列宽修复回归保护（静态契约 + 两视图运行时用例）",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "tests/unit/column-resize-regression.spec.ts",
+            "tests/unit/torrent-list-view-component.spec.ts",
+            "tests/unit/traditional-view-component.spec.ts"
+          ],
+          "evidence": "新增 column-resize-regression.spec 5 组源码扫描契约：①手柄样式唯一来源 torrent-column-resize.scss 且 index.scss 全局引入、两份 scoped 主题不得再携带 .column-resizer/body.column-resizing（防止传统模式手柄再次整体失效）+ 传统表头反馈条必须主题色；②名称列两视图登记默认宽（400/200）+ 手柄三件套绑定；③tableMinWidth 计入 name 且无 +200 残留；④两视图表格 width+minWidth 严格定宽双绑定；⑤名称省略跟随列宽（无 max-width:300px、flex 收缩、.torrent-name-cell 省略）。两视图组件 spec 各 +1 运行时用例：表级 width=minWidth=tableMinWidth、名称 th 内联宽、手柄 mousedown→body 拖拽态→mousemove 位移更新→mouseup 落盘视图独立存储 key。全量 59 suites/906 tests、lint 通过"
+        }
+      ]
     }
   ],
   "tasks": [
