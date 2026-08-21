@@ -118,7 +118,7 @@ cd deploy
 build-windows.bat
 ```
 
-生成 `dist/BtDeck-v1.0.9-windows-x64-setup.exe`
+生成 `dist/BtDeck-v1.0.5-windows-x64-setup.exe`
 
 ### Linux
 
@@ -128,7 +128,7 @@ chmod +x build-linux.sh
 ./build-linux.sh
 ```
 
-生成 `dist/BtDeck-v1.0.9-linux-amd64.deb` 和 `.rpm`
+生成 `dist/BtDeck-v1.0.5-linux-amd64.deb` 和 `.rpm`
 
 ### Docker 镜像
 
@@ -142,13 +142,13 @@ chmod +x build-linux.sh
 
 | 版本 | 主题 | 状态 |
 |------|------|------|
-| v1.0.4 | 实时速度监控 + 通知中心 | 已完成 |
-| v1.0.9 | 全栈仓库整合 + 一键部署 | 已完成 |
-| v1.0.5 | 查询模板系统 | 计划中 |
-| v1.0.6 | 孤儿文件管理 | 计划中 |
+| v1.0.4 | 实时速度监控 + 通知中心 | 已发布 |
+| v1.0.5 | 查询模板 + 孤儿文件管理 + 全链路安全加固 | 本次发布 |
 | v1.1.0 | 自动化运维 | 计划中 |
 
-详见 [ROADMAP.md](./ROADMAP.md) 和 [PLANS/](./PLANS/)。
+> 产品发布号以 `backend/app/version.py` 为准。`feature_list.json` 与 `PLANS/` 中的 v1.0.x 为内部里程碑编号，与发布号相互独立（v1.0.5 发布打包了里程碑 v1.0.5 查询模板、v1.0.6 孤儿文件管理、v1.0.9 一键部署及 2026-06~08 全部修复）。
+
+详见 [PLANS/](./PLANS/)。
 
 ## 开发文档
 

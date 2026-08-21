@@ -2,8 +2,8 @@
 
 > **项目**: BtDeck - BitTorrent 客户端统一管理平台
 > **仓库**: 全栈 monorepo（`backend/` + `frontend/` + `deploy/`）
-> **当前开发版本**: v1.0.5（查询模板系统）
-> **更新**: 2026-06-18
+> **当前发布版本**: v1.0.5（查询模板 + 孤儿文件管理 + 安全加固；内部里程碑编号见 feature_list.json）
+> **更新**: 2026-08-21
 
 本文件是全栈代理路由层。端特定技术约束见各端 `AGENTS.md`（**端 AGENTS.md 不再回指本文件**，避免循环跳转）。
 
@@ -89,7 +89,7 @@ git add .          && git commit -m "feat: xxx"   # 跨端/全栈变更
 | 审计日志 | `app/api/endpoints/audit_logs.py` | `views/logs/` |
 | 定时任务 | `app/api/endpoints/cron_tasks.py` | `views/tasks/` |
 | 标签管理 | `app/api/endpoints/tag_management.py` | `api/tag-management.ts` |
-| **查询模板 (v1.0.5)** | `app/api/endpoints/query_templates.py` (待建) | `views/query-templates/` (待建) |
+| **查询模板 (v1.0.5)** | `app/api/endpoints/advanced_search.py`（复用 search_templates） | `views/query-templates/` |
 
 ### 端特定模块（详见各端 AGENTS.md 模块索引）
 

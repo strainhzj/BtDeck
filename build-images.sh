@@ -51,9 +51,10 @@ check_workdir() {
     fi
 }
 
-# 从 feature_list.json 读取最新已发布版本号
-# 策略：在 features[] 中筛选 status=done 且 id 形如 v1.0.5 的语义化版本，取最大者
-# 这样可避免误选 status=pending 的未来版本（如 v1.1.0）
+# 从 feature_list.json 读取版本号
+# 策略：优先取顶层 release_version（产品发布号，与 backend/app/version.py 对齐）；
+# 缺失时回退为在 features[] 中筛选 status=done 且 id 形如 v1.0.5 的语义化版本取最大者
+# （回退分支的 v1.0.x 是内部里程碑编号，可能与发布号不一致）
 resolve_version() {
     if [[ ! -f "${FEATURE_LIST}" ]]; then
         print_warn "未找到 feature_list.json，将仅打 :latest 标签"
@@ -79,6 +80,10 @@ resolve_version() {
 import json, sys
 with open(sys.argv[1], encoding='utf-8') as f:
     data = json.load(f)
+release = data.get('release_version')
+if release:
+    print('v' + str(release).lstrip('v'))
+    sys.exit(0)
 def parse_ver(fid):
     if not fid.startswith('v'):
         return None

@@ -1,9 +1,9 @@
 ; BtDeck Inno Setup 安装脚本
 ; 用于创建 Windows 安装包 (.exe)
-; 版本: v1.0.9
+; 版本: v1.0.5
 
 #define AppName "BtDeck"
-#define AppVersion "1.0.9"
+#define AppVersion "1.0.5"
 #define AppPublisher "BtDeck Team"
 #define AppURL "https://github.com/strainhzj/BtDeck"
 #define AppExeName "btdeck.exe"
