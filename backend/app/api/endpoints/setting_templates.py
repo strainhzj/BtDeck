@@ -110,8 +110,8 @@ def get_setting_template_detail(
 
 @router.post("", summary="创建模板", response_model=CommonResponse, tags=["配置模板"])
 async def create_setting_template(
+    req: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    req: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -163,9 +163,9 @@ async def create_setting_template(
 
 @router.put("/{template_id}", summary="更新模板", response_model=CommonResponse, tags=["配置模板"])
 async def update_setting_template(
+    req: Request,
     template_id: int = Path(..., description="模板ID"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    req: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -263,10 +263,10 @@ def delete_setting_template(
     "/{template_id}/apply/{downloader_id}", summary="应用模板到下载器", response_model=CommonResponse, tags=["配置模板"]
 )
 async def apply_template_to_downloader(
+    req: Request,
     template_id: int = Path(..., description="模板ID"),
     downloader_id: str = Path(..., description="下载器ID"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    req: Request = None,
     db: Session = Depends(get_db),
 ):
     """

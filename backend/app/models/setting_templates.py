@@ -6,7 +6,10 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
+from typing import Optional
+
+from sqlalchemy import Integer, String, Boolean, DateTime, Text, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import enum
 import logging
@@ -132,23 +135,31 @@ class SettingTemplate(Base):
     __tablename__ = "setting_templates"
 
     # 主键
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
 
     # 模板基本信息
-    name = Column(String(100), nullable=False, unique=True, index=True, comment='模板名称，如"qBittorrent标准模板"')
+    name: Mapped[str] = mapped_column(
+        String(100), nullable=False, unique=True, index=True, comment='模板名称，如"qBittorrent标准模板"'
+    )
 
-    description = Column(String(500), nullable=True, comment="模板描述")
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="模板描述")
 
     # 下载器类型（使用Integer存储枚举值）
-    downloader_type = Column(Integer, nullable=False, index=True, comment="下载器类型：0=qBittorrent, 1=Transmission")
+    downloader_type: Mapped[int] = mapped_column(
+        Integer, nullable=False, index=True, comment="下载器类型：0=qBittorrent, 1=Transmission"
+    )
 
     # 模板配置（JSON格式，结构与downloader_settings相同）
-    template_config = Column(Text, nullable=False, comment="模板配置（JSON格式），包含速度、认证、高级设置等")
+    template_config: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="模板配置（JSON格式），包含速度、认证、高级设置等"
+    )
 
     # 模板元数据
-    is_system_default = Column(Boolean, nullable=False, default=False, index=True, comment="是否为系统默认模板")
+    is_system_default: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, index=True, comment="是否为系统默认模板"
+    )
 
-    created_by = Column(
+    created_by: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
@@ -156,12 +167,14 @@ class SettingTemplate(Base):
     )
 
     # 路径映射配置（可选）
-    path_mapping = Column(Text, nullable=True, comment="路径映射配置（JSON格式）")
+    path_mapping: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="路径映射配置（JSON格式）")
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.now, index=True, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, index=True, comment="创建时间"
+    )
 
-    updated_at = Column(
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, index=True, comment="更新时间"
     )
 

@@ -76,6 +76,12 @@ def _coerce_activity_ts(value: Any) -> Optional[float]:
     return None
 
 
+def _parse_qb_epoch(value: Any) -> Optional[datetime]:
+    """qB epoch 字段安全转 datetime：解析失败/越界/None 时返回 None。"""
+    ts = _safe_parse_timestamp(value)
+    return datetime.fromtimestamp(ts) if ts is not None else None
+
+
 def _safe_parse_timestamp(value: Any) -> Optional[int]:
     """
     安全地解析时间戳值，返回有效的 int 时间戳或 None。
@@ -312,7 +318,7 @@ async def update_tracker_with_optimistic_lock_async(
 
             # 创建新的数据字典副本，避免污染传入的参数
             final_update_data = update_data.copy()
-            final_update_data["version"] = old_version + 1
+            final_update_data["version"] = (old_version or 0) + 1
 
             # 执行更新（带版本检查）
             from sqlalchemy import update
@@ -328,7 +334,7 @@ async def update_tracker_with_optimistic_lock_async(
             )
             result = await db.execute(update_stmt)
 
-            if result.rowcount > 0:
+            if getattr(result, "rowcount", 0) > 0:
                 await db.commit()
                 return True  # 更新成功
             elif attempt < max_retries - 1:
@@ -400,7 +406,7 @@ async def restore_deleted_tracker_async(
                 "last_scrape_msg": tracker_data.get("last_scrape_msg", ""),
                 "update_time": current_time,
                 "update_by": "admin",
-                "version": deleted_tracker.version + 1,
+                "version": (deleted_tracker.version or 0) + 1,
             }
 
             from sqlalchemy import update
@@ -416,7 +422,7 @@ async def restore_deleted_tracker_async(
             )
             result = await db.execute(update_stmt)
 
-            if result.rowcount > 0:
+            if getattr(result, "rowcount", 0) > 0:
                 await db.commit()
                 logger.info(f"恢复已删除的 tracker: {tracker_url}")
                 return True
@@ -468,7 +474,7 @@ async def mark_removed_trackers_async_batch(
             .values(dr=1, update_time=current_time, update_by="system")
         )
 
-        removed_count = result.rowcount or 0
+        removed_count = getattr(result, "rowcount", 0) or 0
         if removed_count > 0:
             logger.info(f"Marked {removed_count} removed trackers")
 
@@ -524,7 +530,7 @@ async def mark_removed_trackers_async(
                     "dr": 1,
                     "update_time": current_time,
                     "update_by": "system",
-                    "version": existing_tracker.version + 1,
+                    "version": (existing_tracker.version or 0) + 1,
                 }
 
                 update_stmt = (
@@ -538,7 +544,7 @@ async def mark_removed_trackers_async(
                 )
                 result = await db.execute(update_stmt)
 
-                if result.rowcount > 0:
+                if getattr(result, "rowcount", 0) > 0:
                     removed_count += 1
                     logger.info(f"标记已移除的 tracker: {existing_tracker.tracker_url}")
                 else:
@@ -919,7 +925,7 @@ async def sync_trackers_batch_async(db: AsyncSession, accumulated_rows: list[dic
             )
             .values(dr=1, update_time=current_time, update_by="system")
         )
-        stats["removed"] = result.rowcount or 0
+        stats["removed"] = getattr(result, "rowcount", 0) or 0
 
         await db.commit()
 
@@ -2021,16 +2027,8 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
             "progress": progress_value,
             "torrent_file": "/config/qbittorrent/BT_backup/" + torrent_hash + ".torrent",
             # 使用安全的时间戳解析函数，处理 None、字符串和范围验证
-            "added_date": (
-                datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)))
-                if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None
-                else None
-            ),
-            "completed_date": (
-                datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)))
-                if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None
-                else None
-            ),
+            "added_date": _parse_qb_epoch(_qb_get_attr(torrent_info, "added_on", 0)),
+            "completed_date": _parse_qb_epoch(_qb_get_attr(torrent_info, "completion_on", 0)),
             "tags": _qb_get_attr(torrent_info, "tags", ""),
             "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False),
@@ -3322,16 +3320,8 @@ async def qb_add_torrents_info_only_async(
                 "progress": progress_value,
                 "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
                 "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-                "added_date": (
-                    datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)))
-                    if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None
-                    else None
-                ),
-                "completed_date": (
-                    datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)))
-                    if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None
-                    else None
-                ),
+                "added_date": _parse_qb_epoch(_qb_get_attr(torrent_info, "added_on", 0)),
+                "completed_date": _parse_qb_epoch(_qb_get_attr(torrent_info, "completion_on", 0)),
                 "tags": _qb_get_attr(torrent_info, "tags", ""),
                 "category": _qb_get_attr(torrent_info, "category", ""),
                 "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False),
@@ -3373,16 +3363,8 @@ async def qb_add_torrents_info_only_async(
             "progress": progress_value,
             "torrent_file": f"/config/qbittorrent/BT_backup/{torrent_hash}.torrent",
             "status": TorrentStatusMapper.convert_qbittorrent_status(_qb_get_attr(torrent_info, "state", "")),
-            "added_date": (
-                datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)))
-                if _safe_parse_timestamp(_qb_get_attr(torrent_info, "added_on", 0)) is not None
-                else None
-            ),
-            "completed_date": (
-                datetime.fromtimestamp(_safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)))
-                if _safe_parse_timestamp(_qb_get_attr(torrent_info, "completion_on", 0)) is not None
-                else None
-            ),
+            "added_date": _parse_qb_epoch(_qb_get_attr(torrent_info, "added_on", 0)),
+            "completed_date": _parse_qb_epoch(_qb_get_attr(torrent_info, "completion_on", 0)),
             "tags": _qb_get_attr(torrent_info, "tags", ""),
             "category": _qb_get_attr(torrent_info, "category", ""),
             "super_seeding": _qb_get_attr(torrent_info, "super_seeding", False),
@@ -3804,8 +3786,8 @@ def _validate_tracker_only_params(downloader: BtDownloaders, client: Any) -> tup
 
 
 async def _query_hash_to_info_id(
-    db: AsyncSession, downloader_id: int, log_prefix: str, nickname: str
-) -> Dict[str, int]:
+    db: AsyncSession, downloader_id: str, log_prefix: str, nickname: str
+) -> Dict[str, str]:
     """从数据库查询 hash -> info_id 映射，返回字典。"""
     query_start = datetime.now()
     result = await db.execute(

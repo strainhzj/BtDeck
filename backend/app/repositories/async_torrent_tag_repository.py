@@ -174,7 +174,7 @@ class AsyncTorrentTagRepository:
                 return DatabaseResult.not_found_result("标签不存在")
 
             # 更新字段
-            update_data = {"updated_at": datetime.utcnow()}
+            update_data: Dict[str, Any] = {"updated_at": datetime.utcnow()}
             if tag.tag_name is not None:
                 update_data["tag_name"] = tag.tag_name
             if tag.tag_type is not None:

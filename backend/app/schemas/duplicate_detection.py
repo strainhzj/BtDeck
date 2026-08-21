@@ -41,7 +41,7 @@ class DuplicateDetectionProgress(BaseModel):
     task_id: str = Field(..., description="任务ID")
     status: TaskStatus = Field(..., description="任务状态")
     progress: int = Field(..., ge=0, le=100, description="进度百分比（0-100）")
-    message: Optional[str] = Field(None, description="进度消息")
+    message: Optional[str] = Field(default=None, description="进度消息")
 
     model_config = {"from_attributes": True}
 
@@ -59,7 +59,7 @@ class DuplicateDetectionResult(BaseModel):
     duplicates: Dict[str, List[TorrentInfo]] = Field(
         default_factory=dict, description="重复任务字典，key为hash值，value为任务列表"
     )
-    error: Optional[str] = Field(None, description="错误信息（仅在失败时）")
+    error: Optional[str] = Field(default=None, description="错误信息（仅在失败时）")
 
     model_config = {"from_attributes": True}
 

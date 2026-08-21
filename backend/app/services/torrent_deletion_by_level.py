@@ -17,6 +17,7 @@ Updated: 2025-02-26 - 统一使用适配器模式
 
 import os
 import asyncio
+import functools
 import logging
 from datetime import datetime
 from typing import Dict, List, Any, Optional, Tuple
@@ -42,7 +43,7 @@ class TorrentDeletionByLevelService:
     # 等级4标签名称
     LEVEL4_TAG = "pending_delete"
 
-    def __init__(self, db: Session, request: Request = None):
+    def __init__(self, db: Session, request: Optional[Request] = None):
         """
         初始化删除服务
 
@@ -52,8 +53,8 @@ class TorrentDeletionByLevelService:
         """
         self.db = db
         self.request = request
-        self._adapters = {}  # 适配器缓存
-        self._audit_info = None  # 惰性提取：extract_audit_info_from_request(request)
+        self._adapters: Dict[str, Any] = {}  # 适配器缓存
+        self._audit_info: Optional[Dict[str, Any]] = None  # 惰性提取：extract_audit_info_from_request(request)
 
     def _audit_request_info(self) -> Dict[str, Any]:
         """惰性提取请求审计信息（ip_address/user_agent/request_id/session_id）。
@@ -737,9 +738,9 @@ class TorrentDeletionByLevelService:
                         None,
                         backup_service.backup_torrent_file_from_downloader_save_path,
                         torrent.info_id,
-                        torrent.hash,
-                        torrent.name,
-                        downloader.torrent_save_path,  # 🔥 使用下载器的 torrent_save_path
+                        torrent.hash or "",
+                        torrent.name or "",
+                        downloader.torrent_save_path or "",  # 🔥 使用下载器的 torrent_save_path
                     )
 
                     if backup_result["success"]:
@@ -973,7 +974,7 @@ class TorrentDeletionByLevelService:
                     },
                     new_value={
                         "status": "in_recycle_bin",
-                        "deleted_at": torrent.deleted_at.isoformat(),
+                        "deleted_at": torrent.deleted_at.isoformat() if torrent.deleted_at else None,
                         "torrent_name": move_result.get("new_name"),
                     },
                     operation_result=AuditOperationResult.SUCCESS,
@@ -985,7 +986,7 @@ class TorrentDeletionByLevelService:
             return {
                 "success": True,
                 "operation": "delete_level3",
-                "deleted_at": torrent.deleted_at.isoformat(),
+                "deleted_at": torrent.deleted_at.isoformat() if torrent.deleted_at else None,
                 "original_filename": torrent.original_filename,
                 "torrent_moved": True,
                 "torrent_type": move_result.get("torrent_type"),
@@ -1169,12 +1170,12 @@ class TorrentDeletionByLevelService:
         try:
             # 🔧 修复：使用属性方法判断下载器类型（支持整数0/1和字符串）
             if downloader.is_qbittorrent:
-                return await self._delete_from_qbittorrent(downloader, torrent.hash, delete_data)
+                return await self._delete_from_qbittorrent(downloader, torrent.hash or "", delete_data)
             elif downloader.is_transmission:
                 # 🔥 重要：Transmission需要使用 hash（SHA1哈希值），而不是 torrent_id（数字ID）
                 # 错误示例：ids="1924" -> ❌ torrent ids 1924 is not valid torrent id
                 # 正确示例：ids="17d79018082cb1fe4c51782207e909b6b18b7c41" -> ✅ 成功
-                return await self._delete_from_transmission(downloader, torrent.hash, delete_data)
+                return await self._delete_from_transmission(downloader, torrent.hash or "", delete_data)
             else:
                 return (
                     False,
@@ -1614,7 +1615,7 @@ class TorrentDeletionByLevelService:
                         import shutil
 
                         loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, shutil.move, src_path, dst_path)
+                        await loop.run_in_executor(None, functools.partial(shutil.move, src_path, dst_path))
                         moved_count += 1
                         logger.debug(f"[移动文件] {item} 成功")
                     except Exception as e:
@@ -1669,8 +1670,8 @@ class TorrentDeletionByLevelService:
                 return {"success": True}  # 没有成功移动，不需要回滚
 
             is_directory = move_result.get("is_directory", False)
-            original_path = move_result.get("original_path")
-            new_path = move_result.get("new_path")
+            original_path = move_result.get("original_path") or ""
+            new_path = move_result.get("new_path") or ""
 
             if is_directory:
                 # ========== 多文件：移回所有内容 ==========
@@ -1686,7 +1687,7 @@ class TorrentDeletionByLevelService:
                         import shutil
 
                         loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, shutil.move, src_path, dst_path)
+                        await loop.run_in_executor(None, functools.partial(shutil.move, src_path, dst_path))
                         moved_count += 1
                     except Exception as e:
                         logger.error(f"[回滚移动失败] {item}: {str(e)}")
@@ -1706,7 +1707,7 @@ class TorrentDeletionByLevelService:
                 import shutil
 
                 loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, shutil.move, new_path, original_path)
+                await loop.run_in_executor(None, functools.partial(shutil.move, new_path, original_path))
 
                 logger.info("[回滚单文件成功]")
 

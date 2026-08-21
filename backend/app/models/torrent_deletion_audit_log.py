@@ -12,7 +12,8 @@
 
 from typing import Any, Dict, Optional
 from datetime import datetime
-from sqlalchemy import Column, String, BigInteger, Boolean, Integer, Text, DateTime
+from sqlalchemy import String, BigInteger, Boolean, Integer, Text, DateTime
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import json
 
@@ -69,47 +70,59 @@ class TorrentDeletionAuditLog(Base):
     __tablename__ = "torrent_deletion_audit_log"
 
     # 主键
-    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
 
     # 任务批次ID
-    task_id = Column(String(64), nullable=False, index=True, comment="任务批次ID")
+    task_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="任务批次ID")
 
     # 下载器信息
-    downloader_id = Column(Integer, nullable=False, index=True, comment="下载器ID")
-    downloader_type = Column(Integer, nullable=False, comment="下载器类型：0=qBittorrent, 1=Transmission")
+    downloader_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True, comment="下载器ID")
+    downloader_type: Mapped[int] = mapped_column(
+        Integer, nullable=False, comment="下载器类型：0=qBittorrent, 1=Transmission"
+    )
 
     # 种子信息
-    torrent_hash = Column(String(64), nullable=False, index=True, comment="种子Hash")
-    torrent_name = Column(String(255), nullable=True, comment="种子名称")
-    torrent_size = Column(BigInteger, nullable=True, comment="种子大小（字节）")
+    torrent_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="种子Hash")
+    torrent_name: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="种子名称")
+    torrent_size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="种子大小（字节）")
 
     # 删除配置
-    delete_files = Column(Boolean, nullable=False, default=False, comment="是否删除文件")
-    safety_check_level = Column(String(20), nullable=True, comment="安全检查级别：basic/enhanced/strict")
+    delete_files: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="是否删除文件")
+    safety_check_level: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, comment="安全检查级别：basic/enhanced/strict"
+    )
 
     # 验证结果（JSON字段）
-    validation_result = Column(Text, nullable=True, comment="验证结果JSON（含seed_status、trackers等）")
+    validation_result: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="验证结果JSON（含seed_status、trackers等）"
+    )
 
     # 操作者信息
-    operator_id = Column(
+    operator_id: Mapped[Optional[int]] = mapped_column(
         Integer, nullable=True, index=True, comment="操作者ID：0=系统定时任务, -1=回收站清理, >0=真实用户ID"
     )
-    operator_name = Column(String(100), nullable=True, comment="操作者用户名")
-    operator_ip = Column(String(50), nullable=True, comment="操作者IP地址")
-    operator_user_agent = Column(String(255), nullable=True, comment="操作者浏览器/客户端信息")
+    operator_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="操作者用户名")
+    operator_ip: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="操作者IP地址")
+    operator_user_agent: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="操作者浏览器/客户端信息"
+    )
 
     # 调用来源
-    caller_source = Column(String(100), nullable=False, comment="调用来源：API/SYSTEM_SCHEDULER/RECYCLE_BIN_CLEANER")
-    caller_function = Column(String(255), nullable=True, comment="具体调用的函数")
-    caller_module = Column(String(255), nullable=True, comment="调用模块")
+    caller_source: Mapped[str] = mapped_column(
+        String(100), nullable=False, comment="调用来源：API/SYSTEM_SCHEDULER/RECYCLE_BIN_CLEANER"
+    )
+    caller_function: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="具体调用的函数")
+    caller_module: Mapped[Optional[str]] = mapped_column(String(255), nullable=True, comment="调用模块")
 
     # 删除状态
-    deletion_status = Column(String(20), nullable=False, comment="删除状态：success/failed/partial")
-    error_message = Column(Text, nullable=True, comment="错误信息")
+    deletion_status: Mapped[str] = mapped_column(String(20), nullable=False, comment="删除状态：success/failed/partial")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="错误信息")
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    deleted_at = Column(DateTime, nullable=True, comment="实际删除完成时间（仅成功时设置）")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, comment="实际删除完成时间（仅成功时设置）"
+    )
 
     def __init__(
         self,

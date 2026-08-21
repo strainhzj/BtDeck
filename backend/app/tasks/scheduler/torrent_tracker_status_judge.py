@@ -41,7 +41,7 @@ def _tracker_announce_status(tracker: TrackerInfo, downloader_type: Any) -> Opti
         return None
     try:
         type_name = DownloaderTypeEnum(DownloaderTypeEnum.normalize(downloader_type)).to_name()
-        announce_status = int(tracker.last_announce_succeeded)
+        announce_status = int(tracker.last_announce_succeeded or 0)
     except (TypeError, ValueError):
         return None
 

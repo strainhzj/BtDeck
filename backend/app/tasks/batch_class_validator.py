@@ -6,7 +6,7 @@
 import logging
 import sys
 import os
-from typing import Dict, List, Any
+from typing import Any, Dict, List, Optional
 from datetime import datetime
 
 # 添加项目根目录到Python路径
@@ -43,7 +43,7 @@ class BatchClassValidator:
                 logger.error(f"获取任务列表失败: {result.message}")
                 return []
 
-            all_tasks = result.data.get("list", [])
+            all_tasks = (result.data or {}).get("list", [])
             python_internal_tasks = [task for task in all_tasks if task.get("task_type") == 4]  # Python内部类类型
 
             logger.info(f"找到 {len(python_internal_tasks)} 个Python内部类任务")
@@ -131,7 +131,7 @@ class BatchClassValidator:
         detailed_results = []
 
         # 将验证结果与任务数据关联
-        class_path_to_task = {}
+        class_path_to_task: Dict[str, Optional[Dict[str, Any]]] = {}
         for task in tasks:
             executor = task.get("executor", "").strip()
             if executor and "." in executor:
@@ -139,11 +139,11 @@ class BatchClassValidator:
 
         for validation_result in validation_report["detailed_results"]:
             class_path = validation_result["class_path"]
-            task = class_path_to_task.get(class_path)
+            matched_task = class_path_to_task.get(class_path)
 
             detailed_result = {
-                "task_id": task.get("task_id") if task else None,
-                "task_name": task.get("task_name") if task else None,
+                "task_id": matched_task.get("task_id") if matched_task else None,
+                "task_name": matched_task.get("task_name") if matched_task else None,
                 "task_code": task.get("task_code") if task else None,
                 "class_path": class_path,
                 "is_valid": validation_result["is_valid"],

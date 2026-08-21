@@ -626,13 +626,11 @@ async def update_downloader_settings(
                         "ul_speed_limit": global_ul_speed_limit,
                         "dl_speed_unit": global_dl_speed_unit,
                         "ul_speed_unit": global_ul_speed_unit,
-                        "enable_schedule": body_data.get("enableSchedule")
-                        or body_data.get("enable_schedule", False),
+                        "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
                         "username": body_data.get("username"),
                         "password": encrypted_password,
                         "advanced_settings": advanced_settings_json,
-                        "override_local": body_data.get("overrideLocal")
-                        or body_data.get("override_local", False),
+                        "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
                         "created_at": current_time,
                         "updated_at": current_time,
                     },
@@ -1048,9 +1046,7 @@ def apply_downloader_settings(
         try:
             if bool(settings_result.enable_schedule):
                 # 分时段配置必须使用当前有效规则；无命中时由服务回退到全局速度。
-                success = SpeedScheduleService.apply_to_downloader(
-                    db, downloader_id, settings_result.id
-                )
+                success = SpeedScheduleService.apply_to_downloader(db, downloader_id, settings_result.id)
             else:
                 success = manager.apply_settings(settings_dict)
             if success:

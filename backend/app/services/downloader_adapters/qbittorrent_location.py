@@ -58,7 +58,7 @@ class QBittorrentLocationAdapter(TorrentLocationAdapter):
         Returns:
             操作结果字典
         """
-        result = {"success": False, "moved_count": 0, "failed_count": 0, "error_message": None}
+        result: Dict[str, Any] = {"success": False, "moved_count": 0, "failed_count": 0, "error_message": None}
 
         try:
             # qBittorrent API使用|分隔多个hash

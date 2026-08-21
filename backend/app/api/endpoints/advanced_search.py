@@ -73,7 +73,7 @@ async def advanced_search_torrents(
 
     # 执行高级搜索
     try:
-        result = service.search_torrents(request, user_info.user_id)
+        result = service.search_torrents(request, str(user_info.user_id))
     except RegexSearchTimeout as exc:
         raise HTTPException(
             status_code=422,
@@ -289,7 +289,7 @@ async def batch_delete_torrents(
     logger.info(f"User {user_info.username} batch deleting {len(request.torrent_ids)} torrents")
 
     # 批量删除种子
-    result = service.delete_torrents_batch(request, user_info.user_id)
+    result = await service.delete_torrents_batch(request, str(user_info.user_id))
 
     return CommonResponse(
         status=result.get("status", "failed"),
@@ -401,7 +401,7 @@ async def preview_advanced_search(
     logger.info(f"User {user_info.username} previewing advanced search")
 
     try:
-        result = service.search_torrents(search_request, user_info.user_id)
+        result = service.search_torrents(search_request, str(user_info.user_id))
     except RegexSearchTimeout as exc:
         raise HTTPException(
             status_code=422,

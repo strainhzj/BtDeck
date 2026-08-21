@@ -21,19 +21,19 @@ import sys
 from pathlib import Path
 from typing import List, Optional
 
-import yaml  # type: ignore[import-untyped]  # 环境无 PyYAML 桩（与 database.py 同况）
+import yaml
 
 from pydantic import Field, validator
 
-# 兼容新旧版本pydantic
+# 兼容新旧版本pydantic（mypy 无法理解条件导入的互斥性，逐分支标注 noqa）
 try:
     from pydantic_settings import BaseSettings
 except ImportError:
     try:
-        from pydantic import BaseSettings
+        from pydantic import BaseSettings  # type: ignore[no-redef]  # noqa: F811
     except ImportError:
         # 如果都不存在，创建一个简单的BaseSettings类
-        class BaseSettings:
+        class BaseSettings:  # type: ignore[no-redef]  # noqa: F811
             def __init__(self, **kwargs):
                 for key, value in kwargs.items():
                     setattr(self, key, value)

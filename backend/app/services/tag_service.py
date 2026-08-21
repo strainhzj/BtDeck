@@ -1,7 +1,12 @@
 """
 标签管理服务
 
-提供标签管理的业务逻辑层，支持同步和异步两种调用方式。
+提供标签管理的业务逻辑层，同步/异步双模式。
+
+类型说明：同步方法（tag_management 端点使用）与异步方法（tag_sync 定时任务
+使用）各绑定一种 Repository。构造时按会话类型二选一实例化，另一路引用为
+None，调用侧通过 _sync_repo()/_async_repo() 取用——错配时给出明确错误，
+而不是把协程静默漏 await 或在模型上误调 dict 方法。
 """
 
 from sqlalchemy.orm import Session
@@ -35,32 +40,30 @@ class TagService:
             db: SQLAlchemy会话（同步Session或异步AsyncSession）
         """
         self.db = db
-        self.is_async = isinstance(db, AsyncSession)
 
-        # 根据会话类型创建对应的Repository
-        if self.is_async:
-            self.repository = AsyncTorrentTagRepository(db)
+        # 根据会话类型创建对应的Repository（另一路保持 None）
+        if isinstance(db, AsyncSession):
+            self._async_repository: Optional[AsyncTorrentTagRepository] = AsyncTorrentTagRepository(db)
+            self._sync_repository: Optional[TorrentTagRepository] = None
         else:
-            self.repository = TorrentTagRepository(db)
+            self._async_repository = None
+            self._sync_repository = TorrentTagRepository(db)
 
     # ==================== 私有方法 ====================
 
-    def _execute_sync(self, coro):
-        """
-        在同步上下文中执行异步方法
+    def _sync_repo(self) -> TorrentTagRepository:
+        """取同步 Repository；以 AsyncSession 构造时调用同步方法是编程错误。"""
+        if self._sync_repository is None:
+            raise RuntimeError("TagService 以 AsyncSession 构造，同步方法不可用")
+        return self._sync_repository
 
-        用于同步Service中需要调用异步Repository方法的场景。
-        """
-        import asyncio
+    def _async_repo(self) -> AsyncTorrentTagRepository:
+        """取异步 Repository；以同步 Session 构造时调用异步方法是编程错误。"""
+        if self._async_repository is None:
+            raise RuntimeError("TagService 以同步 Session 构造，异步方法不可用")
+        return self._async_repository
 
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
-
-    def _to_dict(self, tag: TorrentTag) -> Dict[str, Any]:
+    def _to_dict(self, tag: Optional[TorrentTag]) -> Optional[Dict[str, Any]]:
         """将标签模型转换为字典"""
         if tag is None:
             return None
@@ -74,7 +77,7 @@ class TagService:
             "updated_at": tag.updated_at.isoformat() if tag.updated_at else None,
         }
 
-    def _to_relation_dict(self, relation: TorrentTagRelation) -> Dict[str, Any]:
+    def _to_relation_dict(self, relation: Optional[TorrentTagRelation]) -> Optional[Dict[str, Any]]:
         """将标签关联模型转换为字典"""
         if relation is None:
             return None
@@ -103,11 +106,8 @@ class TagService:
         if db_result.success:
             return {
                 "success": True,
-                "data": (
-                    self._to_dict(db_result.data)
-                    if hasattr(db_result.data, "tag_id") or hasattr(db_result.data, "__dict__")
-                    else db_result.data
-                ),
+                # data 为 TorrentTag（或测试注入的假对象）时转 dict；裸 dict 原样返回
+                "data": db_result.data if isinstance(db_result.data, dict) else self._to_dict(db_result.data),
                 "message": db_result.message or success_msg,
                 "affected_rows": db_result.affected_rows,
             }
@@ -141,7 +141,7 @@ class TagService:
                     "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tags = self.repository.find_by_downloader(
+            tags = self._sync_repo().find_by_downloader(
                 downloader_id=downloader_id, include_deleted=False, tag_type=tag_type
             )
 
@@ -174,7 +174,7 @@ class TagService:
                     "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tags = self.repository.find_all_tags(include_deleted=False, tag_type=tag_type)
+            tags = self._sync_repo().find_all_tags(include_deleted=False, tag_type=tag_type)
 
             # 按tag_name去重（保留第一次出现的）
             seen = set()
@@ -213,7 +213,7 @@ class TagService:
                     "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tag_names = self.repository.find_all_tag_names_by_type(tag_type=tag_type, include_deleted=False)
+            tag_names = self._sync_repo().find_all_tag_names_by_type(tag_type=tag_type, include_deleted=False)
 
             return {"success": True, "data": tag_names, "message": "获取标签名称成功", "total_count": len(tag_names)}
         except Exception as e:
@@ -254,7 +254,7 @@ class TagService:
             # 创建标签对象
             tag = TorrentTag(downloader_id=downloader_id, tag_name=tag_name.strip(), tag_type=tag_type, color=color)
 
-            db_result = self.repository.create(tag)
+            db_result = self._sync_repo().create(tag)
 
             return self._to_response(db_result, success_msg="标签创建成功", error_prefix="标签创建失败")
         except Exception as e:
@@ -274,7 +274,7 @@ class TagService:
         """
         try:
             # 查询现有标签
-            existing = self.repository.find_by_id(tag_id)
+            existing = self._sync_repo().find_by_id(tag_id)
             if not existing:
                 return {"success": False, "data": None, "message": "标签不存在"}
 
@@ -292,7 +292,7 @@ class TagService:
                 if hasattr(tag, key):
                     setattr(tag, key, value)
 
-            db_result = self.repository.update(tag)
+            db_result = self._sync_repo().update(tag)
 
             return self._to_response(db_result, success_msg="标签更新成功", error_prefix="标签更新失败")
         except Exception as e:
@@ -310,7 +310,7 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            db_result = self.repository.soft_delete(tag_id)
+            db_result = self._sync_repo().soft_delete(tag_id)
 
             return {
                 "success": db_result.success,
@@ -374,12 +374,12 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            relations = self.repository.find_relations_by_torrent_hash(torrent_hash)
+            relations = self._sync_repo().find_relations_by_torrent_hash(torrent_hash)
 
             # 查询标签详情
             tags = []
             for relation in relations:
-                tag = self.repository.find_by_id(relation.tag_id)
+                tag = self._sync_repo().find_by_id(relation.tag_id)
                 if tag:
                     tags.append(self._to_dict(tag))
 
@@ -405,7 +405,7 @@ class TagService:
             not_found_tags = []
 
             for tag_id in tag_ids:
-                tag = self.repository.find_by_id(tag_id)
+                tag = self._sync_repo().find_by_id(tag_id)
                 if tag:
                     valid_tags.append(tag)  # 存储完整的TorrentTag对象
                 else:
@@ -424,15 +424,15 @@ class TagService:
                 )
                 relations.append(relation)
 
-            result = self.repository.batch_assign_tags(relations)
+            result = self._sync_repo().batch_assign_tags(relations)
 
             return {
                 "success": result.success,
                 "data": result.data if result.success else None,
                 "message": result.message,
-                "total_count": result.data.get("total_count", 0) if result.success else 0,
-                "success_count": result.data.get("success_count", 0) if result.success else 0,
-                "failed_count": result.data.get("failed_count", 0) if result.success else 0,
+                "total_count": (result.data or {}).get("total_count", 0) if result.success else 0,
+                "success_count": (result.data or {}).get("success_count", 0) if result.success else 0,
+                "failed_count": (result.data or {}).get("failed_count", 0) if result.success else 0,
             }
         except Exception as e:
             logger.error(f"分配标签失败: {str(e)}")
@@ -455,7 +455,7 @@ class TagService:
             failed_tags = []
 
             for tag_id in tag_ids:
-                result = self.repository.remove_tag_from_torrent(torrent_hash, tag_id)
+                result = self._sync_repo().remove_tag_from_torrent(torrent_hash, tag_id)
                 if result.success:
                     removed_count += 1
                 else:
@@ -496,7 +496,7 @@ class TagService:
                     continue
 
                 # 获取第一个标签来获取downloader_id
-                first_tag = self.repository.find_by_id(tag_ids[0])
+                first_tag = self._sync_repo().find_by_id(tag_ids[0])
                 if not first_tag:
                     continue
 
@@ -506,7 +506,7 @@ class TagService:
                     )
                     all_relations.append(relation)
 
-            result = self.repository.batch_assign_tags(all_relations)
+            result = self._sync_repo().batch_assign_tags(all_relations)
 
             return {
                 "success": result.success,
@@ -540,7 +540,7 @@ class TagService:
                     "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tags = await self.repository.find_by_downloader(
+            tags = await self._async_repo().find_by_downloader(
                 downloader_id=downloader_id, include_deleted=False, tag_type=tag_type
             )
 
@@ -585,7 +585,7 @@ class TagService:
             # 创建标签对象
             tag = TorrentTag(downloader_id=downloader_id, tag_name=tag_name.strip(), tag_type=tag_type, color=color)
 
-            db_result = await self.repository.create(tag)
+            db_result = await self._async_repo().create(tag)
 
             return self._to_response(db_result, success_msg="标签创建成功", error_prefix="标签创建失败")
         except Exception as e:
@@ -605,7 +605,7 @@ class TagService:
         """
         try:
             # 查询现有标签
-            existing = await self.repository.find_by_id(tag_id)
+            existing = await self._async_repo().find_by_id(tag_id)
             if not existing:
                 return {"success": False, "data": None, "message": "标签不存在"}
 
@@ -623,7 +623,7 @@ class TagService:
                 if hasattr(tag, key):
                     setattr(tag, key, value)
 
-            db_result = await self.repository.update(tag)
+            db_result = await self._async_repo().update(tag)
 
             return self._to_response(db_result, success_msg="标签更新成功", error_prefix="标签更新失败")
         except Exception as e:
@@ -641,7 +641,7 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            db_result = await self.repository.soft_delete(tag_id)
+            db_result = await self._async_repo().soft_delete(tag_id)
 
             return {
                 "success": db_result.success,
@@ -664,12 +664,12 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            relations = await self.repository.find_relations_by_torrent_hash(torrent_hash)
+            relations = await self._async_repo().find_relations_by_torrent_hash(torrent_hash)
 
             # 查询标签详情
             tags = []
             for relation in relations:
-                tag = await self.repository.find_by_id(relation.tag_id)
+                tag = await self._async_repo().find_by_id(relation.tag_id)
                 if tag:
                     tags.append(self._to_dict(tag))
 
@@ -695,7 +695,7 @@ class TagService:
             not_found_tags = []
 
             for tag_id in tag_ids:
-                tag = await self.repository.find_by_id(tag_id)
+                tag = await self._async_repo().find_by_id(tag_id)
                 if tag:
                     valid_tags.append(tag)  # 存储完整的TorrentTag对象
                 else:
@@ -714,15 +714,15 @@ class TagService:
                 )
                 relations.append(relation)
 
-            result = await self.repository.batch_assign_tags(relations)
+            result = await self._async_repo().batch_assign_tags(relations)
 
             return {
                 "success": result.success,
                 "data": result.data if result.success else None,
                 "message": result.message,
-                "total_count": result.data.get("total_count", 0) if result.success else 0,
-                "success_count": result.data.get("success_count", 0) if result.success else 0,
-                "failed_count": result.data.get("failed_count", 0) if result.success else 0,
+                "total_count": (result.data or {}).get("total_count", 0) if result.success else 0,
+                "success_count": (result.data or {}).get("success_count", 0) if result.success else 0,
+                "failed_count": (result.data or {}).get("failed_count", 0) if result.success else 0,
             }
         except Exception as e:
             logger.error(f"异步分配标签失败: {str(e)}")
@@ -745,7 +745,7 @@ class TagService:
             failed_tags = []
 
             for tag_id in tag_ids:
-                result = await self.repository.remove_tag_from_torrent(torrent_hash, tag_id)
+                result = await self._async_repo().remove_tag_from_torrent(torrent_hash, tag_id)
                 if result.success:
                     removed_count += 1
                 else:
@@ -786,7 +786,7 @@ class TagService:
                     continue
 
                 # 获取第一个标签来获取downloader_id
-                first_tag = await self.repository.find_by_id(tag_ids[0])
+                first_tag = await self._async_repo().find_by_id(tag_ids[0])
                 if not first_tag:
                     continue
 
@@ -796,7 +796,7 @@ class TagService:
                     )
                     all_relations.append(relation)
 
-            result = await self.repository.batch_assign_tags(all_relations)
+            result = await self._async_repo().batch_assign_tags(all_relations)
 
             return {
                 "success": result.success,

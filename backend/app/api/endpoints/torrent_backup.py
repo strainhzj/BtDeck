@@ -15,7 +15,7 @@ import shutil
 import urllib3
 import uuid
 import zipfile
-from typing import Dict, Optional, List, Sequence
+from typing import Any, Dict, List, Optional, Sequence
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
@@ -127,7 +127,7 @@ async def create_backup(
     """
     # 验证token（已迁移至 require_authenticated_user 依赖）
 
-    result = {"success": False, "backup": None, "message": ""}
+    result: Dict[str, Any] = {"success": False, "backup": None, "message": ""}
 
     try:
         # 获取下载器配置
@@ -541,8 +541,9 @@ async def deduplicate_backups(
                     duplicates_count += 1
                     # 保留第一个（最新的），删除其余的
                     for backup in backups[1:]:
-                        backup.is_deleted = 1
-                        backup.deleted_at = datetime.now()
+                        # TorrentFileBackup 无 deleted_at 列（历史笔误，赋值不落库且
+                        # mypy 报错）；逻辑删除语义由 is_deleted 承担
+                        backup.is_deleted = True
                         deleted_count += 1
 
             await db.commit()

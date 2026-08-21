@@ -42,8 +42,8 @@ class DownloaderSettingBase(BaseModel):
         default=SpeedUnitEnum.KB_PER_SEC, description="上传速度单位：0=KB/s, 1=MB/s", alias="ulSpeedUnit"
     )
     enable_schedule: bool = Field(default=False, description="是否启用分时段限速", alias="enableSchedule")
-    username: Optional[str] = Field(None, max_length=100, description="下载器用户名")
-    password: Optional[str] = Field(None, max_length=255, description="下载器密码（明文，后端会加密）")
+    username: Optional[str] = Field(default=None, max_length=100, description="下载器用户名")
+    password: Optional[str] = Field(default=None, max_length=255, description="下载器密码（明文，后端会加密）")
     advanced_settings: Optional[Dict[str, Any]] = Field(
         None, description="高级配置（JSON格式）", alias="advancedSettings"
     )
@@ -62,21 +62,21 @@ class DownloaderSettingCreate(DownloaderSettingBase):
 class DownloaderSettingUpdate(BaseModel):
     """更新下载器配置Schema（所有字段可选）"""
 
-    dl_speed_limit: Optional[int] = Field(None, ge=0, description="全局下载速度限制", alias="dlSpeedLimit")
-    ul_speed_limit: Optional[int] = Field(None, ge=0, description="全局上传速度限制", alias="ulSpeedLimit")
+    dl_speed_limit: Optional[int] = Field(default=None, ge=0, description="全局下载速度限制", alias="dlSpeedLimit")
+    ul_speed_limit: Optional[int] = Field(default=None, ge=0, description="全局上传速度限制", alias="ulSpeedLimit")
     dl_speed_unit: Optional[SpeedUnitEnum] = Field(
         None, description="下载速度单位：0=KB/s, 1=MB/s", alias="dlSpeedUnit"
     )
     ul_speed_unit: Optional[SpeedUnitEnum] = Field(
         None, description="上传速度单位：0=KB/s, 1=MB/s", alias="ulSpeedUnit"
     )
-    enable_schedule: Optional[bool] = Field(None, description="是否启用分时段限速", alias="enableSchedule")
-    username: Optional[str] = Field(None, max_length=100, description="下载器用户名")
-    password: Optional[str] = Field(None, max_length=255, description="下载器密码（明文，后端会加密）")
+    enable_schedule: Optional[bool] = Field(default=None, description="是否启用分时段限速", alias="enableSchedule")
+    username: Optional[str] = Field(default=None, max_length=100, description="下载器用户名")
+    password: Optional[str] = Field(default=None, max_length=255, description="下载器密码（明文，后端会加密）")
     advanced_settings: Optional[Dict[str, Any]] = Field(
         None, description="高级配置（JSON格式）", alias="advancedSettings"
     )
-    override_local: Optional[bool] = Field(None, description="是否覆盖下载器本地配置", alias="overrideLocal")
+    override_local: Optional[bool] = Field(default=None, description="是否覆盖下载器本地配置", alias="overrideLocal")
 
     class Config:
         populate_by_name = True
@@ -106,7 +106,7 @@ class SettingTemplateBase(BaseModel):
     """配置模板基础Schema"""
 
     name: str = Field(..., min_length=1, max_length=100, description="模板名称")
-    description: Optional[str] = Field(None, max_length=500, description="模板描述")
+    description: Optional[str] = Field(default=None, max_length=500, description="模板描述")
     downloader_type: DownloaderTypeEnum = Field(..., description="下载器类型", alias="downloaderType")
     template_config: Dict[str, Any] = Field(..., description="模板配置（JSON格式）", alias="templateConfig")
     is_system_default: bool = Field(default=False, description="是否为系统默认模板", alias="isSystemDefault")
@@ -122,11 +122,15 @@ class SettingTemplateCreate(SettingTemplateBase):
 class SettingTemplateUpdate(BaseModel):
     """更新配置模板Schema（所有字段可选）"""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=100, description="模板名称")
-    description: Optional[str] = Field(None, max_length=500, description="模板描述")
-    downloader_type: Optional[DownloaderTypeEnum] = Field(None, description="下载器类型", alias="downloaderType")
-    template_config: Optional[Dict[str, Any]] = Field(None, description="模板配置（JSON格式）", alias="templateConfig")
-    is_system_default: Optional[bool] = Field(None, description="是否为系统默认模板", alias="isSystemDefault")
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100, description="模板名称")
+    description: Optional[str] = Field(default=None, max_length=500, description="模板描述")
+    downloader_type: Optional[DownloaderTypeEnum] = Field(
+        default=None, description="下载器类型", alias="downloaderType"
+    )
+    template_config: Optional[Dict[str, Any]] = Field(
+        default=None, description="模板配置（JSON格式）", alias="templateConfig"
+    )
+    is_system_default: Optional[bool] = Field(default=None, description="是否为系统默认模板", alias="isSystemDefault")
 
     class Config:
         populate_by_name = True
@@ -136,7 +140,7 @@ class SettingTemplateInDB(SettingTemplateBase):
     """数据库中的完整配置模板Schema"""
 
     id: int
-    created_by: Optional[int] = Field(None, description="创建者用户ID", alias="createdBy")
+    created_by: Optional[int] = Field(default=None, description="创建者用户ID", alias="createdBy")
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
 
@@ -222,12 +226,18 @@ class SpeedScheduleRuleCreate(SpeedScheduleRuleBase):
 class SpeedScheduleRuleUpdate(BaseModel):
     """更新分时段速度规则Schema（所有字段可选）"""
 
-    start_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}:\d{2}$", description="开始时间", alias="startTime")
-    end_time: Optional[str] = Field(None, pattern=r"^\d{2}:\d{2}:\d{2}$", description="结束时间", alias="endTime")
-    dl_speed_limit: Optional[int] = Field(None, ge=0, description="下载速度限制（KB/s）", alias="dlSpeedLimit")
-    ul_speed_limit: Optional[int] = Field(None, ge=0, description="上传速度限制（KB/s）", alias="ulSpeedLimit")
-    days_of_week: Optional[str] = Field(None, min_length=1, max_length=7, description="生效星期几", alias="daysOfWeek")
-    enabled: Optional[bool] = Field(None, description="是否启用")
+    start_time: Optional[str] = Field(
+        default=None, pattern=r"^\d{2}:\d{2}:\d{2}$", description="开始时间", alias="startTime"
+    )
+    end_time: Optional[str] = Field(
+        default=None, pattern=r"^\d{2}:\d{2}:\d{2}$", description="结束时间", alias="endTime"
+    )
+    dl_speed_limit: Optional[int] = Field(default=None, ge=0, description="下载速度限制（KB/s）", alias="dlSpeedLimit")
+    ul_speed_limit: Optional[int] = Field(default=None, ge=0, description="上传速度限制（KB/s）", alias="ulSpeedLimit")
+    days_of_week: Optional[str] = Field(
+        default=None, min_length=1, max_length=7, description="生效星期几", alias="daysOfWeek"
+    )
+    enabled: Optional[bool] = Field(default=None, description="是否启用")
 
     class Config:
         populate_by_name = True

@@ -3,7 +3,7 @@ qBittorrent删除适配器
 提供qBittorrent下载器的种子删除功能
 """
 
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Optional, Tuple, cast
 import asyncio
 import logging
 import os
@@ -19,10 +19,10 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
 
     def __init__(
         self,
-        client: Client = None,
-        host: str = None,
-        username: str = None,
-        password: str = None,
+        client: Optional[Client] = None,
+        host: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         port: int = 8080,
         use_ssl: bool = False,
     ):
@@ -63,7 +63,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         # 兼容旧逻辑：如果没有传入client，则创建新的（不推荐）
         if not self._client:
             # 解密密码
-            password = decrypt_password(self.encrypted_password)
+            password = decrypt_password(self.encrypted_password or "")
 
             # 构建基础URL
             protocol = "https" if self.use_ssl else "http"
@@ -134,7 +134,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         Returns:
             删除结果字典
         """
-        result = {"success_hashes": [], "failed_hashes": {}, "warnings": [], "deleted_files": []}
+        result: Dict[str, Any] = {"success_hashes": [], "failed_hashes": {}, "warnings": [], "deleted_files": []}
 
         if not torrent_hashes:
             return result
@@ -288,7 +288,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         self, torrent_info: Dict[str, Any], delete_option: DeleteOption, safety_check_level: SafetyCheckLevel
     ) -> List[str]:
         """执行安全检查"""
-        warnings = []
+        warnings: List[str] = []
 
         if safety_check_level == SafetyCheckLevel.BASIC:
             return warnings
@@ -325,7 +325,7 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
         """测试连接"""
         try:
             # 尝试获取API版本（线程池内执行，避免阻塞事件循环）
-            version = await asyncio.to_thread(lambda: self.client.app.version())
+            version = await asyncio.to_thread(lambda: cast(Any, self.client.app).version())
             logger.info(f"qBittorrent连接测试成功，版本: {version}")
             return True
         except Exception as e:
@@ -338,10 +338,10 @@ class QBittorrentDeleteAdapter(DownloaderDeleteAdapter):
             # 一次线程池调用完成 4 次 app.* 探测（同步网络调用不阻塞事件循环）
             info, version, build_info, web_api_version = await asyncio.to_thread(
                 lambda: (
-                    self.client.app.preferences(),
-                    self.client.app.version(),
-                    self.client.app.build_info(),
-                    self.client.app.web_api_version(),
+                    cast(Any, self.client.app).preferences(),
+                    cast(Any, self.client.app).version(),
+                    cast(Any, self.client.app).build_info(),
+                    cast(Any, self.client.app).web_api_version(),
                 )
             )
             return {

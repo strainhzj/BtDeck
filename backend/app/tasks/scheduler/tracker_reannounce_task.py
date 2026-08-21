@@ -188,7 +188,7 @@ class TrackerReannounceTask(BaseSyncTask):
             matched_config_ids = set()
 
             for tracker in trackers:
-                domain = _extract_domain(tracker.tracker_host or tracker.tracker_url)
+                domain = _extract_domain(tracker.tracker_host or tracker.tracker_url or "")
                 if not domain:
                     continue
                 for config in configs:

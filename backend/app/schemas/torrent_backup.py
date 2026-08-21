@@ -46,7 +46,7 @@ class TorrentFileBackupCreate(BaseModel):
         None, max_length=500, description="关联的任务名称（可选）", examples=["我的下载任务"]
     )
 
-    uploader_id: Optional[int] = Field(None, gt=0, description="上传用户ID（可选）", examples=[1])
+    uploader_id: Optional[int] = Field(default=None, gt=0, description="上传用户ID（可选）", examples=[1])
 
     # 可选：直接从路径备份
     source_file_path: Optional[str] = Field(
@@ -64,12 +64,12 @@ class TorrentFileBackupResponse(BaseModel):
     id: int = Field(..., description="主键ID")
     info_hash: str = Field(..., description="种子的info_hash")
     file_path: str = Field(..., description="种子文件存储路径")
-    file_size: Optional[int] = Field(None, description="文件大小（字节）")
-    task_name: Optional[str] = Field(None, description="关联的任务名称")
-    uploader_id: Optional[int] = Field(None, description="上传用户ID")
-    downloader_id: Optional[str] = Field(None, description="关联的下载器ID")
-    upload_time: Optional[datetime] = Field(None, description="上传时间")
-    last_used_time: Optional[datetime] = Field(None, description="最后使用时间")
+    file_size: Optional[int] = Field(default=None, description="文件大小（字节）")
+    task_name: Optional[str] = Field(default=None, description="关联的任务名称")
+    uploader_id: Optional[int] = Field(default=None, description="上传用户ID")
+    downloader_id: Optional[str] = Field(default=None, description="关联的下载器ID")
+    upload_time: Optional[datetime] = Field(default=None, description="上传时间")
+    last_used_time: Optional[datetime] = Field(default=None, description="最后使用时间")
     use_count: int = Field(..., description="使用次数")
     is_deleted: bool = Field(..., description="逻辑删除标记")
     created_at: datetime = Field(..., description="创建时间")
@@ -143,7 +143,7 @@ class TorrentFileBackupDelete(BaseModel):
 
     info_hash: str = Field(..., min_length=40, max_length=40, description="要删除的种子的info_hash")
 
-    delete_physical_file: bool = Field(False, description="是否同时删除物理文件（默认仅逻辑删除）")
+    delete_physical_file: bool = Field(default=False, description="是否同时删除物理文件（默认仅逻辑删除）")
 
 
 class TorrentFileBackupBatchCreate(BaseModel):

@@ -29,7 +29,7 @@ class DownloaderCapabilitiesVO(BaseModel):
     downloaderTypeName: Optional[str] = Field(
         None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
     )
-    capabilities: Optional[Dict[str, Any]] = Field(None, description="下载器支持的功能列表")
+    capabilities: Optional[Dict[str, Any]] = Field(default=None, description="下载器支持的功能列表")
 
     def __init__(
         self,

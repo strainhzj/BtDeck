@@ -149,7 +149,7 @@ class SM4Encryption:
 
     def is_encrypted(self, text: str) -> bool:
         """检查文本是否已加密"""
-        return text and text.startswith("sm4:")
+        return bool(text) and text.startswith("sm4:")
 
 
 # 全局加密实例

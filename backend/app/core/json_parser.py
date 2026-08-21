@@ -14,7 +14,7 @@ T = TypeVar("T")
 
 
 def safe_json_parse(
-    json_str: Optional[str], default: T = None, *, log_errors: bool = True, error_context: str = ""
+    json_str: Optional[str], default: Optional[T] = None, *, log_errors: bool = True, error_context: str = ""
 ) -> Any:
     """
     安全的JSON解析函数，捕获所有异常并提供默认值
@@ -59,7 +59,7 @@ def safe_json_parse(
 def safe_json_parse_with_validator(
     json_str: Optional[str],
     validator: Callable[[Any], bool],
-    default: T = None,
+    default: Optional[T] = None,
     *,
     log_errors: bool = True,
     error_context: str = "",

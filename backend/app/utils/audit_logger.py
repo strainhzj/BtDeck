@@ -141,7 +141,8 @@ class _AuditLoggerSingleton:
         local_now = datetime.now()
 
         # 获取UTC偏移量（秒）
-        utc_offset_seconds = datetime.now(timezone.utc).astimezone().utcoffset().total_seconds()
+        _offset = datetime.now(timezone.utc).astimezone().utcoffset()
+        utc_offset_seconds = _offset.total_seconds() if _offset else 0
         utc_offset_hours = utc_offset_seconds // 3600
 
         # 格式化时间戳

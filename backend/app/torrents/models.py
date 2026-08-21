@@ -2,7 +2,8 @@ from typing import Any, Optional
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, Column, DATETIME, Float, Index, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DATETIME, Float, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import logging
 
@@ -12,48 +13,54 @@ logger = logging.getLogger(__name__)
 class TorrentInfo(Base):
     __tablename__ = "torrent_info"
 
-    info_id = Column(String, primary_key=True, index=True, comment="主键")
-    downloader_id = Column(String, primary_key=True, index=True, comment="所属下载器主键")
-    downloader_name = Column(String, primary_key=True, index=True, comment="所属下载器名称")
-    torrent_id = Column(String, index=True, comment="下载器中的主键")
-    hash = Column(String, index=True, comment="种子哈希值")
-    name = Column(String, index=True, comment="种子名称")
-    save_path = Column(String, index=True, comment="种子文件保存路径")
-    size = Column(Float, comment="种子大小")
-    status = Column(String, index=True, comment="状态")
-    error_reason = Column(Text, nullable=True, comment="下载器返回的种子错误原因")
-    progress = Column(Float, default=0.0, comment="下载进度(0-100)")
-    torrent_file = Column(String, index=True, comment="种子文件")
-    auxiliary_seed_count = Column(
+    info_id: Mapped[str] = mapped_column(String, primary_key=True, index=True, comment="主键")
+    downloader_id: Mapped[str] = mapped_column(String, primary_key=True, index=True, comment="所属下载器主键")
+    downloader_name: Mapped[str] = mapped_column(String, primary_key=True, index=True, comment="所属下载器名称")
+    torrent_id: Mapped[Optional[str]] = mapped_column(String, index=True, comment="下载器中的主键")
+    hash: Mapped[Optional[str]] = mapped_column(String, index=True, comment="种子哈希值")
+    name: Mapped[Optional[str]] = mapped_column(String, index=True, comment="种子名称")
+    save_path: Mapped[Optional[str]] = mapped_column(String, index=True, comment="种子文件保存路径")
+    size: Mapped[Optional[float]] = mapped_column(Float, comment="种子大小")
+    status: Mapped[Optional[str]] = mapped_column(String, index=True, comment="状态")
+    error_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="下载器返回的种子错误原因")
+    progress: Mapped[Optional[float]] = mapped_column(Float, default=0.0, comment="下载进度(0-100)")
+    torrent_file: Mapped[Optional[str]] = mapped_column(String, index=True, comment="种子文件")
+    auxiliary_seed_count: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
         default=1,
         server_default="1",
         comment="辅种数量",
     )
-    added_date = Column(DATETIME, comment="添加时间")
-    completed_date = Column(DATETIME, comment="完成时间")
-    ratio = Column(Float, index=True, comment="比率（数值列，避免 String 字典序 bug）")
-    ratio_limit = Column(
+    added_date: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="添加时间")
+    completed_date: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="完成时间")
+    ratio: Mapped[Optional[float]] = mapped_column(Float, index=True, comment="比率（数值列，避免 String 字典序 bug）")
+    ratio_limit: Mapped[Optional[float]] = mapped_column(
         Float,
         nullable=True,
         index=True,
         comment="比率限制；NULL 表示没有显式的单种数值限制，不可用于回写下载器",
     )
-    tags = Column(String, index=True, comment="标签")
-    category = Column(String, index=True, comment="分类")
-    super_seeding = Column(String, index=True, comment="超级做种模式")
-    enabled = Column(Boolean, default=True, comment="是否停用")
-    create_time = Column(DATETIME, comment="创建时间")
-    create_by = Column(String, comment="创建人")
-    update_time = Column(DATETIME, comment="更新时间")
-    update_by = Column(String, comment="更新人")
-    dr = Column(Integer, default=0, comment="删除状态，0是未删除，1是逻辑删除")
-    deleted_at = Column(DATETIME, nullable=True, comment="删除时间（等级3回收站）")
-    original_filename = Column(String(255), nullable=True, comment="原始文件名（等级3还原用）")
-    backup_file_path = Column(String(512), nullable=True, comment="种子文件备份路径（用于回收站还原）")
-    original_file_list = Column(Text, nullable=True, comment="原始文件列表（JSON格式，存储相对路径，用于回收站清理）")
-    has_tracker_error = Column(
+    tags: Mapped[Optional[str]] = mapped_column(String, index=True, comment="标签")
+    category: Mapped[Optional[str]] = mapped_column(String, index=True, comment="分类")
+    super_seeding: Mapped[Optional[str]] = mapped_column(String, index=True, comment="超级做种模式")
+    enabled: Mapped[Optional[bool]] = mapped_column(Boolean, default=True, comment="是否停用")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="创建时间")
+    create_by: Mapped[Optional[str]] = mapped_column(String, comment="创建人")
+    update_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="更新时间")
+    update_by: Mapped[Optional[str]] = mapped_column(String, comment="更新人")
+    dr: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="删除状态，0是未删除，1是逻辑删除")
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DATETIME, nullable=True, comment="删除时间（等级3回收站）")
+    original_filename: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="原始文件名（等级3还原用）"
+    )
+    backup_file_path: Mapped[Optional[str]] = mapped_column(
+        String(512), nullable=True, comment="种子文件备份路径（用于回收站还原）"
+    )
+    original_file_list: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="原始文件列表（JSON格式，存储相对路径，用于回收站清理）"
+    )
+    has_tracker_error: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, comment="种子是否处于tracker错误状态（所有tracker都失败）"
     )
 
@@ -250,26 +257,30 @@ class TorrentInfo(Base):
 class TrackerInfo(Base):
     __tablename__ = "tracker_info"
 
-    tracker_id = Column(String, primary_key=True, index=True, comment="主键")
-    torrent_info_id = Column(String, index=True, comment="关联种子主键")
-    tracker_name = Column(String, index=True, comment="tracker名称")
-    tracker_url = Column(String, index=True, comment="tracker地址")
-    last_announce_succeeded = Column(Integer, comment="请求结果")
-    last_announce_msg = Column(String, index=True, comment="tracker最后一次请求信息")
-    last_scrape_succeeded = Column(Integer, comment="汇报结果")
-    last_scrape_msg = Column(String, index=True, comment="tracker最后一次汇报信息")
-    tracker_host = Column(String(256), nullable=True, default=None, comment="tracker主机地址")
-    status = Column(String(20), nullable=True, default="unknown", comment="tracker状态: normal/error/unknown")
-    msg = Column(String(512), nullable=True, default=None, comment="tracker状态消息")
-    seeder_count = Column(Integer, nullable=True, default=None, comment="做种者数量")
-    leecher_count = Column(Integer, nullable=True, default=None, comment="下载者数量")
-    download_count = Column(Integer, nullable=True, default=None, comment="下载完成次数")
-    create_time = Column(DATETIME, comment="创建时间")
-    create_by = Column(String, comment="创建人")
-    update_time = Column(DATETIME, comment="更新时间")
-    update_by = Column(String, comment="更新人")
-    dr = Column(Integer, default=0, comment="删除状态，0是未删除，1是逻辑删除")
-    version = Column(Integer, default=0, comment="乐观锁版本号")
+    tracker_id: Mapped[str] = mapped_column(String, primary_key=True, index=True, comment="主键")
+    torrent_info_id: Mapped[Optional[str]] = mapped_column(String, index=True, comment="关联种子主键")
+    tracker_name: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker名称")
+    tracker_url: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker地址")
+    last_announce_succeeded: Mapped[Optional[int]] = mapped_column(Integer, comment="请求结果")
+    last_announce_msg: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker最后一次请求信息")
+    last_scrape_succeeded: Mapped[Optional[int]] = mapped_column(Integer, comment="汇报结果")
+    last_scrape_msg: Mapped[Optional[str]] = mapped_column(String, index=True, comment="tracker最后一次汇报信息")
+    tracker_host: Mapped[Optional[str]] = mapped_column(
+        String(256), nullable=True, default=None, comment="tracker主机地址"
+    )
+    status: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, default="unknown", comment="tracker状态: normal/error/unknown"
+    )
+    msg: Mapped[Optional[str]] = mapped_column(String(512), nullable=True, default=None, comment="tracker状态消息")
+    seeder_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None, comment="做种者数量")
+    leecher_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None, comment="下载者数量")
+    download_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, default=None, comment="下载完成次数")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="创建时间")
+    create_by: Mapped[Optional[str]] = mapped_column(String, comment="创建人")
+    update_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="更新时间")
+    update_by: Mapped[Optional[str]] = mapped_column(String, comment="更新人")
+    dr: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="删除状态，0是未删除，1是逻辑删除")
+    version: Mapped[Optional[int]] = mapped_column(Integer, default=0, comment="乐观锁版本号")
 
     # 唯一约束：防止同一种子的相同tracker重复（仅限未删除记录）
     __table_args__ = (
@@ -309,19 +320,25 @@ class TrackerKeywordConfig(Base):
 
     __tablename__ = "tracker_keyword_config"
 
-    keyword_id = Column(String(36), primary_key=True, index=True, comment="主键")
-    keyword_type = Column(String(20), nullable=False, index=True, comment="关键词类型: success/failure")
-    keyword = Column(String(200), nullable=False, comment="关键词内容")
-    language = Column(String(10), nullable=True, index=True, comment="语言代码(zh_CN/en_US等)，NULL表示通用")
-    priority = Column(Integer, nullable=False, default=100, comment="优先级1-1000，数值越大优先级越高")
-    enabled = Column(Boolean, nullable=False, default=True, comment="是否启用")
-    category = Column(String(50), nullable=True, comment="分类标识")
-    description = Column(String(500), nullable=True, comment="关键词说明")
-    create_time = Column(DATETIME, nullable=False, comment="创建时间")
-    update_time = Column(DATETIME, nullable=False, comment="更新时间")
-    create_by = Column(String(50), nullable=False, default="admin", comment="创建人")
-    update_by = Column(String(50), nullable=False, default="admin", comment="更新人")
-    dr = Column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
+    keyword_id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True, comment="主键")
+    keyword_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, index=True, comment="关键词类型: success/failure"
+    )
+    keyword: Mapped[str] = mapped_column(String(200), nullable=False, comment="关键词内容")
+    language: Mapped[Optional[str]] = mapped_column(
+        String(10), nullable=True, index=True, comment="语言代码(zh_CN/en_US等)，NULL表示通用"
+    )
+    priority: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=100, comment="优先级1-1000，数值越大优先级越高"
+    )
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="是否启用")
+    category: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, comment="分类标识")
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="关键词说明")
+    create_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="更新时间")
+    create_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="创建人")
+    update_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="更新人")
+    dr: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
 
     __table_args__ = (
         Index("idx_tracker_keyword_type_enabled", "keyword_type", "enabled"),
@@ -390,20 +407,26 @@ class TrackerMessageLog(Base):
 
     __tablename__ = "tracker_message_log"
 
-    log_id = Column(String(36), primary_key=True, index=True, comment="主键")
-    tracker_host = Column(String(500), nullable=False, index=True, comment="tracker主机地址（用于去重）")
-    msg = Column(String(2048), nullable=False, comment="tracker返回的消息（用于去重）")
-    first_seen = Column(DATETIME, nullable=False, comment="首次出现时间")
-    last_seen = Column(DATETIME, nullable=False, comment="最后出现时间")
-    occurrence_count = Column(Integer, nullable=False, default=1, comment="出现次数")
-    sample_torrents = Column(Text, nullable=True, comment="示例种子列表(JSON)")
-    sample_urls = Column(Text, nullable=True, comment="示例tracker URL列表(JSON)")
-    is_processed = Column(Boolean, nullable=False, default=False, comment="是否已处理（已添加到信息池）")
-    keyword_type = Column(String(20), nullable=True, comment="添加到哪个池: success/failure")
-    create_time = Column(DATETIME, nullable=False, comment="创建时间")
-    update_time = Column(DATETIME, nullable=False, comment="更新时间")
-    create_by = Column(String(50), nullable=False, default="system", comment="创建人")
-    update_by = Column(String(50), nullable=False, default="system", comment="更新人")
+    log_id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True, comment="主键")
+    tracker_host: Mapped[str] = mapped_column(
+        String(500), nullable=False, index=True, comment="tracker主机地址（用于去重）"
+    )
+    msg: Mapped[str] = mapped_column(String(2048), nullable=False, comment="tracker返回的消息（用于去重）")
+    first_seen: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="首次出现时间")
+    last_seen: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="最后出现时间")
+    occurrence_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1, comment="出现次数")
+    sample_torrents: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="示例种子列表(JSON)")
+    sample_urls: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="示例tracker URL列表(JSON)")
+    is_processed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="是否已处理（已添加到信息池）"
+    )
+    keyword_type: Mapped[Optional[str]] = mapped_column(
+        String(20), nullable=True, comment="添加到哪个池: success/failure"
+    )
+    create_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="更新时间")
+    create_by: Mapped[str] = mapped_column(String(50), nullable=False, default="system", comment="创建人")
+    update_by: Mapped[str] = mapped_column(String(50), nullable=False, default="system", comment="更新人")
 
     __table_args__ = (
         Index("idx_tracker_msg_unique", "tracker_host", "msg", unique=True),
@@ -472,17 +495,17 @@ class TrackerReannounceConfig(Base):
 
     __tablename__ = "tracker_reannounce_config"
 
-    id_ = Column(String(36), primary_key=True, index=True, comment="主键")
-    domain_pattern = Column(String(256), nullable=False, comment="域名匹配模式（支持%通配符）")
-    domain_display_name = Column(String(100), nullable=False, comment="域名显示名称")
-    interval_minutes = Column(Integer, nullable=False, default=30, comment="汇报间隔（分钟）")
-    enabled = Column(Boolean, nullable=False, default=True, comment="是否启用")
-    last_announce_time = Column(DATETIME, nullable=True, comment="最后一次汇报时间")
-    create_time = Column(DATETIME, nullable=False, comment="创建时间")
-    update_time = Column(DATETIME, nullable=False, comment="更新时间")
-    create_by = Column(String(50), nullable=False, default="admin", comment="创建人")
-    update_by = Column(String(50), nullable=False, default="admin", comment="更新人")
-    dr = Column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
+    id_: Mapped[str] = mapped_column(String(36), primary_key=True, index=True, comment="主键")
+    domain_pattern: Mapped[str] = mapped_column(String(256), nullable=False, comment="域名匹配模式（支持%通配符）")
+    domain_display_name: Mapped[str] = mapped_column(String(100), nullable=False, comment="域名显示名称")
+    interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=30, comment="汇报间隔（分钟）")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="是否启用")
+    last_announce_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, nullable=True, comment="最后一次汇报时间")
+    create_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="创建时间")
+    update_time: Mapped[datetime] = mapped_column(DATETIME, nullable=False, comment="更新时间")
+    create_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="创建人")
+    update_by: Mapped[str] = mapped_column(String(50), nullable=False, default="admin", comment="更新人")
+    dr: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="删除状态，0是未删除，1是逻辑删除")
 
     __table_args__ = (
         Index("idx_reannounce_domain", "domain_pattern"),

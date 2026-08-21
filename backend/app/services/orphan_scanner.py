@@ -909,7 +909,7 @@ class OrphanScanner:
                         details_mode="current",
                     )
                 )
-                if int(result.rowcount or 0) != 1:
+                if int(getattr(result, "rowcount", 0) or 0) != 1:
                     await db.rollback()
                     raise RuntimeError(f"扫描任务 {scan_id} 不处于 queued 状态，无法领取")
                 await db.commit()

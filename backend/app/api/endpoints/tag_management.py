@@ -135,7 +135,7 @@ def validate_downloader_access(db: Session, downloader_id: str, username: str) -
             text("SELECT COUNT(*) as count FROM bt_downloaders WHERE downloader_id = :downloader_id AND dr = 0"),
             {"downloader_id": downloader_id},
         ).fetchone()
-        if result.count == 0:
+        if not result or result[0] == 0:
             return False, "下载器不存在"
         return True, ""
     except Exception as e:
@@ -153,9 +153,9 @@ def validate_downloader_access(db: Session, downloader_id: str, username: str) -
     tags=["标签管理"],
 )
 def get_all_tags(
+    request: Request,
     tag_type: Optional[str] = Query(None, description="筛选标签类型(category/tag)"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -184,7 +184,6 @@ def get_all_tags(
             msg="获取所有标签成功",
             code="200",
             data=result.get("data", []),
-            total_count=result.get("total_count", 0),
         )
 
     except Exception as e:
@@ -199,8 +198,8 @@ def get_all_tags(
     tags=["标签管理"],
 )
 def get_all_categories(
+    request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -230,7 +229,6 @@ def get_all_categories(
             msg="获取分类列表成功",
             code="200",
             data=category_names,
-            total_count=len(category_names),
         )
 
     except Exception as e:
@@ -245,8 +243,8 @@ def get_all_categories(
     tags=["标签管理"],
 )
 def get_all_tag_names(
+    request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -276,7 +274,6 @@ def get_all_tag_names(
             msg="获取标签列表成功",
             code="200",
             data=tag_names,
-            total_count=len(tag_names),
         )
 
     except Exception as e:
@@ -291,6 +288,7 @@ def get_all_tag_names(
     tags=["标签管理"],
 )
 def get_tag_list(
+    request: Request,
     downloader_id: str = Path(..., description="下载器ID"),
     tag_type: Optional[str] = Query(None, description="筛选标签类型(category/tag)"),
     sort_by: Optional[str] = Query("created_at", description="排序字段(created_at/tag_name)"),
@@ -298,7 +296,6 @@ def get_tag_list(
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页记录数"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -377,8 +374,8 @@ def get_tag_list(
 @router.post("/create", summary="创建标签", response_model=CommonResponse, tags=["标签管理"])
 async def create_tag(
     tag_request: TagCreateRequest,
+    request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -443,10 +440,10 @@ async def create_tag(
     tags=["标签管理"],
 )
 async def update_tag(
+    request: Request,
+    tag_request: TagUpdateRequest,
     tag_id: str = Path(..., description="标签ID"),
-    tag_request: TagUpdateRequest = ...,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -513,9 +510,9 @@ async def update_tag(
     tags=["标签管理"],
 )
 async def delete_tag(
+    request: Request,
     tag_id: str = Path(..., description="标签ID"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     delete_request: DeleteTagRequest = Body(None),
     db: Session = Depends(get_db),
 ):
@@ -594,8 +591,8 @@ async def delete_tag(
 )
 async def batch_delete_tags(
     delete_request: BatchDeleteTagsRequest,
+    request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -672,9 +669,9 @@ async def batch_delete_tags(
     tags=["标签管理"],
 )
 def get_torrent_tags(
+    request: Request,
     torrent_hash: str = Path(..., description="种子哈希值"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -716,8 +713,8 @@ def get_torrent_tags(
 )
 async def assign_tags_to_torrent(
     assign_request: AssignTagsRequest,
+    request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -752,7 +749,7 @@ async def assign_tags_to_torrent(
         category_tags = []
         tag_names = []
         for tag_id in assign_request.tag_ids:
-            tag = service.repository.find_by_id(tag_id)
+            tag = service._sync_repo().find_by_id(tag_id)
             if tag:
                 if tag.tag_type == "category":
                     category_tags.append(tag.tag_name)
@@ -791,8 +788,8 @@ async def assign_tags_to_torrent(
 )
 def batch_assign_tags(
     batch_request: BatchAssignTagsRequest,
+    request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -838,8 +835,8 @@ def batch_assign_tags(
 )
 def remove_tags_from_torrent(
     remove_request: RemoveTagsRequest,
+    request: Request,
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -882,9 +879,9 @@ def remove_tags_from_torrent(
     tags=["标签管理"],
 )
 async def check_category_support(
+    request: Request,
     downloader_id: str = Path(..., description="下载器ID"),
     user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """

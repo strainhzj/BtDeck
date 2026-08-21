@@ -53,10 +53,7 @@ class OrphanLeaseHandle:
         self.lost = asyncio.Event()
 
     async def assert_owned(self) -> None:
-        if (
-            self.lost.is_set()
-            or await get_lease_holder(ORPHAN_MAINTENANCE_LEASE, db=self.db) != self.owner
-        ):
+        if self.lost.is_set() or await get_lease_holder(ORPHAN_MAINTENANCE_LEASE, db=self.db) != self.owner:
             self.lost.set()
             raise OrphanLeaseBusyError("孤儿维护租约已丢失，停止文件操作")
 
@@ -175,8 +172,7 @@ async def renew_lease(
     async with _get_db(db) as session:
         result = await session.execute(
             sa_text(
-                "UPDATE orphan_operation_lease SET expires_at = :expires "
-                "WHERE lease_key = :key AND owner = :owner"
+                "UPDATE orphan_operation_lease SET expires_at = :expires " "WHERE lease_key = :key AND owner = :owner"
             ),
             {"expires": expires_at, "key": lease_key, "owner": owner},
         )
@@ -194,25 +190,19 @@ async def release_lease(
         raise ValueError("release_lease 必须提供 owner")
     async with _get_db(db) as session:
         result = await session.execute(
-            sa_text(
-                "DELETE FROM orphan_operation_lease WHERE lease_key = :key AND owner = :owner"
-            ),
+            sa_text("DELETE FROM orphan_operation_lease WHERE lease_key = :key AND owner = :owner"),
             {"key": lease_key, "owner": owner},
         )
         await session.commit()
         return result.rowcount > 0
 
 
-async def get_lease_holder(
-    lease_key: str, db: Optional[AsyncSession] = None
-) -> Optional[str]:
+async def get_lease_holder(lease_key: str, db: Optional[AsyncSession] = None) -> Optional[str]:
     """查询 lease 当前持有者（未过期才有值）。"""
     now = datetime.utcnow()
     async with _get_db(db) as session:
         result = await session.execute(
-            sa_text(
-                "SELECT owner, expires_at FROM orphan_operation_lease WHERE lease_key = :key"
-            ),
+            sa_text("SELECT owner, expires_at FROM orphan_operation_lease WHERE lease_key = :key"),
             {"key": lease_key},
         )
         row = result.fetchone()
@@ -251,12 +241,8 @@ async def orphan_maintenance_scope(
             try:
                 await asyncio.wait_for(stopped.wait(), timeout=interval)
             except asyncio.TimeoutError:
-                if not await renew_lease(
-                    ORPHAN_MAINTENANCE_LEASE, owner, ttl=ttl_seconds
-                ):
-                    logger.error(
-                        "[孤儿lease] 续期失败 operation=%s owner=%s", operation, owner
-                    )
+                if not await renew_lease(ORPHAN_MAINTENANCE_LEASE, owner, ttl=ttl_seconds):
+                    logger.error("[孤儿lease] 续期失败 operation=%s owner=%s", operation, owner)
                     handle.lost.set()
                     stopped.set()
 

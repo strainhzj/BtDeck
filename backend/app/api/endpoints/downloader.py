@@ -50,7 +50,7 @@ def get(
         downloader_list = downloaders.fetchall()
         result_list = []
         if len(downloader_list) < 1:
-            response = CommonResponse(status="success", msg="该下载器已被删除或不存在", code="200", data=None)
+            return CommonResponse(status="success", msg="该下载器已被删除或不存在", code="200", data=None)
         else:
             for row in downloader_list:
                 # DownloaderVO 需要 password 参数，传入 None 表示不返回密码
@@ -58,10 +58,9 @@ def get(
                 args = list(row)
                 args.insert(4, None)  # 插入 password 参数占位符
                 result_list.append(DownloaderVO(*args))
-            response = CommonResponse(status="success", msg="获取成功", code="200", data=result_list)
+            return CommonResponse(status="success", msg="获取成功", code="200", data=result_list)
     except Exception as e:
-        response = CommonResponse(status="error", msg=str(e), code="400", data=None)
-    return response
+        return CommonResponse(status="error", msg=str(e), code="400", data=None)
 
 
 @router.post("/add", summary="增加下载器", response_model=CommonResponse)
@@ -117,21 +116,19 @@ async def add(
         except Exception as cache_error:
             logger.warning(f"缓存同步失败（已写入数据库）: {cache_error}")
 
-        response = CommonResponse(status="success", msg="添加成功", code="200", data=None)
-        return response
+        return CommonResponse(status="success", msg="添加成功", code="200", data=None)
     except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
-        response = CommonResponse(status="error", msg="用户名或密码错误", code="400", data=None)
-        return response
+        return CommonResponse(status="error", msg="用户名或密码错误", code="400", data=None)
 
 
 @router.post("/update/{downloader_id}", summary="更新下载器明细", response_model=CommonResponse)
 async def update(
     downloader_request: UpdateDownloader,
     downloader_id: Annotated[str, Path(description="下载器id")],
+    req: Request,
     _user=Depends(require_authenticated_user),
-    req: Request = None,
     db: Session = Depends(get_db),
 ):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
@@ -149,8 +146,7 @@ async def update(
         ).fetchone()
 
         if not current_downloader:
-            response = CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
-            return response
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         current_username = current_downloader[0]
         current_password_encrypted = current_downloader[1]
@@ -166,24 +162,20 @@ async def update(
         if need_verify_old_password:
             # 必须提供原密码
             if not downloader_request.old_password or downloader_request.old_password.strip() == "":
-                response = CommonResponse(status="error", msg="修改用户名或密码时必须提供原密码", code="400", data=None)
-                return response
+                return CommonResponse(status="error", msg="修改用户名或密码时必须提供原密码", code="400", data=None)
 
             # 验证原密码是否正确
             if current_password_encrypted:
                 try:
                     decrypted_password = decrypt_password(current_password_encrypted)
                     if decrypted_password != downloader_request.old_password:
-                        response = CommonResponse(status="error", msg="原密码错误", code="400", data=None)
-                        return response
+                        return CommonResponse(status="error", msg="原密码错误", code="400", data=None)
                 except Exception as e:
                     logger.error(f"解密密码失败: {str(e)}")
-                    response = CommonResponse(status="error", msg="验证原密码失败", code="500", data=None)
-                    return response
+                    return CommonResponse(status="error", msg="验证原密码失败", code="500", data=None)
             else:
                 # 数据库中没有密码记录（异常情况）
-                response = CommonResponse(status="error", msg="无法验证原密码", code="500", data=None)
-                return response
+                return CommonResponse(status="error", msg="无法验证原密码", code="500", data=None)
         # ========== 原密码验证逻辑结束 ==========
 
         # 构建 SQL UPDATE 语句
@@ -271,12 +263,11 @@ async def update(
         db.execute(text(sql), params)
         db.commit()
 
-        response = CommonResponse(status="success", msg="修改成功", code="200", data=None)
+        return CommonResponse(status="success", msg="修改成功", code="200", data=None)
     except Exception as e:
         db.rollback()
         logging.error(f"Error updating database: {str(e)}")
-        response = CommonResponse(status="error", msg=str(e), code="200", data=None)
-    return response
+        return CommonResponse(status="error", msg=str(e), code="200", data=None)
 
 
 @router.delete("/delete/{downloader_id}", summary="下载器删除接口", response_model=CommonResponse)
@@ -292,12 +283,11 @@ def delete(
             {"dr": 1, "downloader_id": downloader_id},
         )
         db.commit()
-        response = CommonResponse(status="success", msg="删除成功", code="200", data=None)
+        return CommonResponse(status="success", msg="删除成功", code="200", data=None)
     except Exception as e:
         db.rollback()
         logging.error(f"Error deleting database: {str(e)}")
-        response = CommonResponse(status="error", msg=str(e), code="200", data=None)
-    return response
+        return CommonResponse(status="error", msg=str(e), code="200", data=None)
 
 
 def _get_downloader_id_from_cache(obj: Any) -> str | None:
@@ -583,9 +573,9 @@ async def get_status(
         else:
             result = DownloaderStatusVO(
                 connectStatus="unsupported",
-                nickname=downloader.nickname,
+                nickname=downloader.nickname or "",
                 delay=delay if delay else 0,
-                id=downloader.id,  # 修复: DownloaderVO 使用 id 属性，不是 downloader_id
+                id=downloader.id or "",  # 修复: DownloaderVO 使用 id 属性，不是 downloader_id
                 uploadSpeed="0.00",
                 downloadSpeed="0.00",
                 downloadingCount=0,
@@ -1025,7 +1015,7 @@ def query_downloader_list(db, id_list):
     "/getList", summary="获取下载器简单列表(仅ID和名称)", response_model=CommonResponse[List[DownloaderSimpleVO]]
 )
 def get_downloader_simple_list(
-    enabled: Optional[bool] = Query(True, description="是否只返回启用的下载器", examples={"default": True}),
+    enabled: Optional[bool] = Query(True, description="是否只返回启用的下载器", examples=[True]),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
@@ -1081,7 +1071,7 @@ def get_downloader_simple_list(
     "/getList", summary="获取下载器列表(支持多条件查询)", response_model=CommonResponse[List[DownloaderListVO]]
 )
 async def getlist_from_cache(
-    downloader_request: ListDownloader = None, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)
+    downloader_request: ListDownloader, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)
 ):
     """
     获取所有未逻辑删除的下载器列表,并标记连通状态
@@ -1192,7 +1182,7 @@ async def getlist_from_cache(
             downloader.connectStatus = "0"  # 离线
 
     # 5. 按 connectStatus 排序(在线在前,离线在后)
-    downloaders.sort(key=lambda d: d.connectStatus, reverse=True)
+    downloaders.sort(key=lambda d: d.connectStatus or "", reverse=True)
 
     # 6. 返回响应
     return CommonResponse(status="success", msg="获取下载器列表成功", code="200", data=downloaders)

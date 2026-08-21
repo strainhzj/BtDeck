@@ -210,7 +210,7 @@ class TrackerStatusJudge:
 
             # 构建快速查找字典 (keyword -> info)
             # 如果存在重复keyword(历史数据),保留priority最高的
-            keyword_map = {}
+            keyword_map: Dict[str, Dict[str, Any]] = {}
             for kw in keywords:
                 if kw.keyword not in keyword_map:
                     keyword_map[kw.keyword] = {

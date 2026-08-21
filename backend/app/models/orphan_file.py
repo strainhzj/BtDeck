@@ -13,7 +13,6 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from sqlalchemy import (
-    Column,
     String,
     Integer,
     BigInteger,
@@ -24,7 +23,7 @@ from sqlalchemy import (
     Index,
     UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
@@ -51,42 +50,56 @@ class OrphanScanResult(Base):
 
     __tablename__ = "orphan_scan_result"
 
-    scan_id = Column(String(36), primary_key=True, comment="扫描批次ID（UUID）")
-    scan_time = Column(DateTime, nullable=False, index=True, comment="扫描开始时间")
-    scan_type = Column(String(20), nullable=False, comment="扫描类型：manual=手动，scheduled=定时")
-    total_paths_scanned = Column(Integer, default=0, nullable=False, comment="扫描的路径数量")
-    total_files_scanned = Column(Integer, default=0, nullable=False, comment="扫描的文件总数")
-    total_orphans = Column(Integer, default=0, nullable=False, comment="发现的孤儿文件数量")
-    total_orphan_size = Column(BigInteger, default=0, nullable=False, comment="孤儿文件总大小（字节）")
-    status = Column(
+    scan_id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="扫描批次ID（UUID）")
+    scan_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True, comment="扫描开始时间")
+    scan_type: Mapped[str] = mapped_column(String(20), nullable=False, comment="扫描类型：manual=手动，scheduled=定时")
+    total_paths_scanned: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="扫描的路径数量")
+    total_files_scanned: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="扫描的文件总数")
+    total_orphans: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="发现的孤儿文件数量")
+    total_orphan_size: Mapped[int] = mapped_column(
+        BigInteger, default=0, nullable=False, comment="孤儿文件总大小（字节）"
+    )
+    status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="running",
         comment="扫描状态：queued/running/completed/failed",
     )
-    error_message = Column(Text, nullable=True, comment="失败时的错误信息")
-    operator = Column(String(100), nullable=True, comment="触发者（用户名或system）")
-    details_mode = Column(
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="失败时的错误信息")
+    operator: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="触发者（用户名或system）")
+    details_mode: Mapped[str] = mapped_column(
         String(16),
         nullable=False,
         default="snapshot",
         comment="明细读取模式：snapshot=旧批次快照，current=稳定当前明细",
     )
-    new_orphans = Column(Integer, default=0, nullable=False, comment="本次首次/重新发现并新增的明细数")
-    known_orphans = Column(Integer, default=0, nullable=False, comment="本次复用稳定明细的已知孤儿数")
-    resolved_orphans = Column(Integer, default=0, nullable=False, comment="本次转为resolved的候选数")
-    cleanup_review_required = Column(
+    new_orphans: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="本次首次/重新发现并新增的明细数"
+    )
+    known_orphans: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="本次复用稳定明细的已知孤儿数"
+    )
+    resolved_orphans: Mapped[int] = mapped_column(
+        Integer, default=0, nullable=False, comment="本次转为resolved的候选数"
+    )
+    cleanup_review_required: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
         comment="是否因超量而显示人工提醒（兼容历史字段名）",
     )
-    cleanup_reviewed_at = Column(DateTime, nullable=True, comment="兼容旧客户端的超量复核时间")
-    cleanup_reviewed_by = Column(String(100), nullable=True, comment="兼容旧客户端的超量复核人")
-    cleanup_review_note = Column(Text, nullable=True, comment="兼容旧客户端的超量复核说明")
+    cleanup_reviewed_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, comment="兼容旧客户端的超量复核时间"
+    )
+    cleanup_reviewed_by: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, comment="兼容旧客户端的超量复核人"
+    )
+    cleanup_review_note: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="兼容旧客户端的超量复核说明"
+    )
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    updated_at = Column(
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
@@ -155,41 +168,41 @@ class OrphanFile(Base):
 
     __tablename__ = "orphan_file"
 
-    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
-    scan_id = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    scan_id: Mapped[str] = mapped_column(
         String(36),
         ForeignKey("orphan_scan_result.scan_id"),
         nullable=False,
         index=True,
         comment="所属扫描批次ID",
     )
-    file_path = Column(String(500), nullable=False, comment="文件绝对路径（外部路径）")
-    file_size = Column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
-    mtime = Column(DateTime, nullable=True, comment="文件修改时间")
-    downloader_id = Column(String(36), nullable=True, index=True, comment="关联下载器ID")
-    confidence = Column(
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False, comment="文件绝对路径（外部路径）")
+    file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
+    mtime: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="文件修改时间")
+    downloader_id: Mapped[Optional[str]] = mapped_column(String(36), nullable=True, index=True, comment="关联下载器ID")
+    confidence: Mapped[str] = mapped_column(
         String(8),
         nullable=False,
         default="high",
         comment="置信度：high=在线精筛判定，low=离线降级目录粗筛判定",
     )
-    canonical_path = Column(
+    canonical_path: Mapped[Optional[str]] = mapped_column(
         String(600),
         nullable=True,
         index=True,
         comment="规范化路径（normcase+normpath，用于忽略态 SQL 联表过滤）",
     )
-    hardlink_copy_count = Column(
+    hardlink_copy_count: Mapped[Optional[int]] = mapped_column(
         Integer,
         nullable=True,
         comment="硬链接副本数快照（发现文件时 st_nlink-1，每日预扫描/每次成功扫描刷新；NULL=未知）",
     )
 
-    is_deleted = Column(Boolean, default=False, nullable=False, comment="是否已清理")
-    deleted_at = Column(DateTime, nullable=True, comment="清理时间")
-    deleted_by = Column(String(100), nullable=True, comment="清理操作者")
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, comment="是否已清理")
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="清理时间")
+    deleted_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="清理操作者")
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
 
     def __init__(
         self,
@@ -271,67 +284,81 @@ class OrphanCurrentCandidate(Base):
         ),
     )
 
-    canonical_path = Column(String(600), primary_key=True, comment="规范化路径（normcase+normpath）")
-    current_detail_id = Column(
+    canonical_path: Mapped[str] = mapped_column(
+        String(600), primary_key=True, comment="规范化路径（normcase+normpath）"
+    )
+    current_detail_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("orphan_file.id"),
         nullable=True,
         comment="当前稳定孤儿明细ID；后续扫描复用，避免重复历史明细",
     )
-    current_detail = relationship("OrphanFile", foreign_keys=[current_detail_id], lazy="noload")
-    downloader_id = Column(String(36), nullable=False, comment="关联下载器ID")
-    first_seen_at = Column(DateTime, nullable=False, comment="首次发现时间")
-    last_seen_at = Column(DateTime, nullable=False, comment="最后一次确认时间")
-    last_seen_scan_id = Column(String(36), nullable=True, comment="最后一次确认的扫描批次ID")
-    consecutive_scan_count = Column(Integer, default=1, nullable=False, comment="连续确认扫描次数")
-    status = Column(
+    current_detail: Mapped[Optional["OrphanFile"]] = relationship(
+        "OrphanFile", foreign_keys=[current_detail_id], lazy="noload"
+    )
+    downloader_id: Mapped[str] = mapped_column(String(36), nullable=False, comment="关联下载器ID")
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="首次发现时间")
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="最后一次确认时间")
+    last_seen_scan_id: Mapped[Optional[str]] = mapped_column(
+        String(36), nullable=True, comment="最后一次确认的扫描批次ID"
+    )
+    consecutive_scan_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False, comment="连续确认扫描次数")
+    status: Mapped[str] = mapped_column(
         String(20),
         nullable=False,
         default="candidate",
         comment="candidate/resolved/quarantined/purged",
     )
-    file_size = Column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
-    confidence = Column(
+    file_size: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False, comment="文件大小（字节）")
+    confidence: Mapped[str] = mapped_column(
         String(8),
         nullable=False,
         default="high",
         comment="置信度：high=在线精筛判定，low=离线降级目录粗筛判定",
     )
-    mtime_ns = Column(BigInteger, nullable=True, comment="文件修改时间（纳秒）")
-    device_id = Column(String(32), nullable=True, comment="设备ID（st_dev，字符串避免无符号溢出）")
-    inode = Column(String(32), nullable=True, comment="inode（st_ino，字符串避免无符号溢出）")
-    quarantine_path = Column(String(600), nullable=True, comment="隔离区路径")
-    quarantine_root = Column(String(600), nullable=True, comment="隔离区根目录")
-    quarantined_at = Column(DateTime, nullable=True, comment="移入隔离区时间")
-    purge_after = Column(DateTime, nullable=True, index=True, comment="允许物理删除时间")
-    purge_delay_count = Column(
+    mtime_ns: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="文件修改时间（纳秒）")
+    device_id: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True, comment="设备ID（st_dev，字符串避免无符号溢出）"
+    )
+    inode: Mapped[Optional[str]] = mapped_column(
+        String(32), nullable=True, comment="inode（st_ino，字符串避免无符号溢出）"
+    )
+    quarantine_path: Mapped[Optional[str]] = mapped_column(String(600), nullable=True, comment="隔离区路径")
+    quarantine_root: Mapped[Optional[str]] = mapped_column(String(600), nullable=True, comment="隔离区根目录")
+    quarantined_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="移入隔离区时间")
+    purge_after: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, nullable=True, index=True, comment="允许物理删除时间"
+    )
+    purge_delay_count: Mapped[int] = mapped_column(
         Integer,
         default=0,
         nullable=False,
         comment="硬链接副本跳过导致 purge_after 延后的次数（每次进入隔离态重置）",
     )
-    operation_state = Column(
+    operation_state: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
         default="stable",
         comment="stable/quarantine_pending/purge_pending/error",
     )
-    operation_target_path = Column(String(600), nullable=True, comment="文件操作预写目标路径")
-    operation_error = Column(Text, nullable=True, comment="文件操作恢复失败原因")
+    operation_target_path: Mapped[Optional[str]] = mapped_column(
+        String(600), nullable=True, comment="文件操作预写目标路径"
+    )
+    operation_error: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="文件操作恢复失败原因")
 
     # 忽视态：被忽视的孤儿受保护，定时任务不自动删除，但仍可在列表查询。
     # resolved→candidate 重新出现时由 reconcile_candidates 重置（避免粘住）。
-    is_ignored = Column(
+    is_ignored: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
         nullable=False,
         comment="是否被用户忽视（受保护，定时任务不自动删除）",
     )
-    ignored_at = Column(DateTime, nullable=True, comment="忽视时间")
-    ignored_by = Column(String(100), nullable=True, comment="忽视操作者")
+    ignored_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="忽视时间")
+    ignored_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="忽视操作者")
 
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    updated_at = Column(
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         default=datetime.utcnow,
         onupdate=datetime.utcnow,
@@ -436,10 +463,10 @@ class OrphanOperationLease(Base):
 
     __tablename__ = "orphan_operation_lease"
 
-    lease_key = Column(String(60), primary_key=True, comment="租约键")
-    owner = Column(String(100), nullable=False, comment="持有者标识")
-    acquired_at = Column(DateTime, nullable=False, comment="获取时间")
-    expires_at = Column(DateTime, nullable=False, comment="过期时间")
+    lease_key: Mapped[str] = mapped_column(String(60), primary_key=True, comment="租约键")
+    owner: Mapped[str] = mapped_column(String(100), nullable=False, comment="持有者标识")
+    acquired_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="获取时间")
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="过期时间")
 
     def __init__(
         self,

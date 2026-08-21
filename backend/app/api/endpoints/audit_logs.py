@@ -30,41 +30,41 @@ router = APIRouter(tags=["audit-logs"])
 class AuditLogQueryRequest(BaseModel):
     """审计日志查询请求"""
 
-    torrent_info_id: Optional[str] = Field(None, description="种子信息ID")
-    torrent_name: Optional[str] = Field(None, description="种子名称（支持模糊搜索）")
-    operation_type: Optional[str] = Field(None, description="操作类型")
-    operator: Optional[str] = Field(None, description="操作人")
-    downloader_id: Optional[str] = Field(None, description="下载器ID")
-    start_time: Optional[str] = Field(None, description="开始时间(ISO 8601格式)")
-    end_time: Optional[str] = Field(None, description="结束时间(ISO 8601格式)")
-    operation_result: Optional[str] = Field(None, description="操作结果")
-    ip_address: Optional[str] = Field(None, description="IP地址")
-    request_id: Optional[str] = Field(None, description="请求ID")
-    session_id: Optional[str] = Field(None, description="会话ID")
-    page: int = Field(1, ge=1, description="页码")
-    page_size: int = Field(20, ge=1, le=100, description="每页数量")
+    torrent_info_id: Optional[str] = Field(default=None, description="种子信息ID")
+    torrent_name: Optional[str] = Field(default=None, description="种子名称（支持模糊搜索）")
+    operation_type: Optional[str] = Field(default=None, description="操作类型")
+    operator: Optional[str] = Field(default=None, description="操作人")
+    downloader_id: Optional[str] = Field(default=None, description="下载器ID")
+    start_time: Optional[str] = Field(default=None, description="开始时间(ISO 8601格式)")
+    end_time: Optional[str] = Field(default=None, description="结束时间(ISO 8601格式)")
+    operation_result: Optional[str] = Field(default=None, description="操作结果")
+    ip_address: Optional[str] = Field(default=None, description="IP地址")
+    request_id: Optional[str] = Field(default=None, description="请求ID")
+    session_id: Optional[str] = Field(default=None, description="会话ID")
+    page: int = Field(default=1, ge=1, description="页码")
+    page_size: int = Field(default=20, ge=1, le=100, description="每页数量")
 
 
 class ArchiveLogsRequest(BaseModel):
     """归档审计日志请求"""
 
     end_time: str = Field(..., description="归档截止时间(ISO 8601格式)")
-    archive_path: Optional[str] = Field(None, description="归档文件路径（可选，默认自动生成）")
+    archive_path: Optional[str] = Field(default=None, description="归档文件路径（可选，默认自动生成）")
 
 
 class ExportLogsRequest(BaseModel):
     """导出审计日志请求"""
 
-    torrent_info_id: Optional[str] = Field(None, description="种子信息ID")
-    torrent_name: Optional[str] = Field(None, description="种子名称（支持模糊搜索）")
-    operation_type: Optional[str] = Field(None, description="操作类型")
-    operator: Optional[str] = Field(None, description="操作人")
-    downloader_id: Optional[str] = Field(None, description="下载器ID")
-    start_time: Optional[str] = Field(None, description="开始时间(ISO 8601格式)")
-    end_time: Optional[str] = Field(None, description="结束时间(ISO 8601格式)")
-    operation_result: Optional[str] = Field(None, description="操作结果")
+    torrent_info_id: Optional[str] = Field(default=None, description="种子信息ID")
+    torrent_name: Optional[str] = Field(default=None, description="种子名称（支持模糊搜索）")
+    operation_type: Optional[str] = Field(default=None, description="操作类型")
+    operator: Optional[str] = Field(default=None, description="操作人")
+    downloader_id: Optional[str] = Field(default=None, description="下载器ID")
+    start_time: Optional[str] = Field(default=None, description="开始时间(ISO 8601格式)")
+    end_time: Optional[str] = Field(default=None, description="结束时间(ISO 8601格式)")
+    operation_result: Optional[str] = Field(default=None, description="操作结果")
     export_format: str = Field("csv", description="导出格式: csv/excel")
-    max_rows: int = Field(10000, ge=1, le=100000, description="最大导出行数")
+    max_rows: int = Field(default=10000, ge=1, le=100000, description="最大导出行数")
 
 
 # ========== API端点 ==========

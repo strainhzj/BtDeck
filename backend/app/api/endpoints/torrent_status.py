@@ -1,5 +1,5 @@
 import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel, Field
@@ -30,29 +30,29 @@ class PauseTorrentsRequest(BaseModel):
     """暂停种子请求"""
 
     downloader_id: str = Field(..., description="下载器ID")
-    hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
+    hashes: List[str] = Field(..., description="种子hash列表", min_length=1, max_length=100)
 
 
 class ResumeTorrentsRequest(BaseModel):
     """恢复/开始种子请求"""
 
     downloader_id: str = Field(..., description="下载器ID")
-    hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
+    hashes: List[str] = Field(..., description="种子hash列表", min_length=1, max_length=100)
 
 
 class RecheckTorrentsRequest(BaseModel):
     """重新检查种子请求"""
 
     downloader_id: str = Field(..., description="下载器ID")
-    hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
+    hashes: List[str] = Field(..., description="种子hash列表", min_length=1, max_length=100)
 
 
 class ReannounceTorrentsRequest(BaseModel):
     """Tracker汇报请求（选中种子）"""
 
     downloader_id: str = Field(..., description="下载器ID")
-    hashes: List[str] | None = Field(None, description="种子hash列表", min_items=1)
-    info_ids: List[str] | None = Field(None, description="种子info_id列表")
+    hashes: List[str] | None = Field(default=None, description="种子hash列表", min_length=1)
+    info_ids: List[str] | None = Field(default=None, description="种子info_id列表")
 
 
 class ReannounceByDownloaderRequest(BaseModel):
@@ -70,9 +70,9 @@ class ReannounceAllRequest(BaseModel):
 
 @router.post("/pause", description="暂停种子接口", response_model=CommonResponse[Dict[str, Any]])
 async def pause_torrents(
+    request: Request,
+    req_data: PauseTorrentsRequest,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
-    req_data: PauseTorrentsRequest = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -302,9 +302,9 @@ async def pause_torrents(
 
 @router.post("/resume", description="恢复/开始种子接口", response_model=CommonResponse[Dict[str, Any]])
 async def resume_torrents(
+    request: Request,
+    req_data: ResumeTorrentsRequest,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
-    req_data: ResumeTorrentsRequest = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -542,9 +542,9 @@ async def resume_torrents(
 
 @router.post("/recheck", description="重新检查种子接口", response_model=CommonResponse[Dict[str, Any]])
 async def recheck_torrents(
+    request: Request,
+    req_data: RecheckTorrentsRequest,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
-    req_data: RecheckTorrentsRequest = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -789,9 +789,9 @@ async def recheck_torrents(
 
 @router.post("/reannounce", description="Tracker汇报（选中种子）", response_model=CommonResponse[Dict[str, Any]])
 async def reannounce_torrents(
+    request: Request,
+    req_data: ReannounceTorrentsRequest,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
-    req_data: ReannounceTorrentsRequest = None,
     db: Session = Depends(get_db),
 ):
     """对选中的种子执行 Tracker 汇报"""
@@ -824,7 +824,7 @@ async def reannounce_torrents(
             torrent_records = (
                 db.query(torrentInfoModel)
                 .filter(
-                    torrentInfoModel.info_id.in_(info_ids),
+                    torrentInfoModel.info_id.in_(info_ids or []),
                     torrentInfoModel.downloader_id == downloader_id,
                     torrentInfoModel.dr == 0,
                 )
@@ -886,9 +886,9 @@ async def reannounce_torrents(
     "/reannounce-by-downloader", description="Tracker汇报（按下载器）", response_model=CommonResponse[Dict[str, Any]]
 )
 async def reannounce_by_downloader(
+    request: Request,
+    req_data: ReannounceByDownloaderRequest,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
-    req_data: ReannounceByDownloaderRequest = None,
     db: Session = Depends(get_db),
 ):
     """对指定下载器下所有种子执行 Tracker 汇报"""
@@ -958,9 +958,7 @@ async def reannounce_by_downloader(
 
 
 @router.post("/reannounce-all", description="Tracker汇报（全局）", response_model=CommonResponse[Dict[str, Any]])
-async def reannounce_all(
-    _user=Depends(require_authenticated_user), request: Request = None, db: Session = Depends(get_db)
-):
+async def reannounce_all(request: Request, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """对所有下载器下所有种子执行 Tracker 汇报"""
     # 统一Token验证（已迁移至 require_authenticated_user 依赖）
 

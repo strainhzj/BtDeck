@@ -27,15 +27,17 @@ logger = logging.getLogger(__name__)
 class UpdateCapabilitiesRequest(BaseModel):
     """更新能力配置请求模型"""
 
-    supports_speed_scheduling: Optional[bool] = Field(None, description="是否支持分时段限速")
-    supports_transfer_speed: Optional[bool] = Field(None, description="是否支持传输速度控制")
-    supports_connection_limits: Optional[bool] = Field(None, description="是否支持连接限制")
-    supports_queue_settings: Optional[bool] = Field(None, description="是否支持队列设置")
-    supports_download_paths: Optional[bool] = Field(None, description="是否支持路径设置")
-    supports_port_settings: Optional[bool] = Field(None, description="是否支持端口设置")
-    supports_advanced_settings: Optional[bool] = Field(None, description="是否支持高级设置")
-    supports_peer_limits: Optional[bool] = Field(None, description="是否支持Peer限制")
-    set_manual_override: Optional[bool] = Field(True, description="是否设置为手动覆盖（设置为True后不再自动同步）")
+    supports_speed_scheduling: Optional[bool] = Field(default=None, description="是否支持分时段限速")
+    supports_transfer_speed: Optional[bool] = Field(default=None, description="是否支持传输速度控制")
+    supports_connection_limits: Optional[bool] = Field(default=None, description="是否支持连接限制")
+    supports_queue_settings: Optional[bool] = Field(default=None, description="是否支持队列设置")
+    supports_download_paths: Optional[bool] = Field(default=None, description="是否支持路径设置")
+    supports_port_settings: Optional[bool] = Field(default=None, description="是否支持端口设置")
+    supports_advanced_settings: Optional[bool] = Field(default=None, description="是否支持高级设置")
+    supports_peer_limits: Optional[bool] = Field(default=None, description="是否支持Peer限制")
+    set_manual_override: Optional[bool] = Field(
+        default=True, description="是否设置为手动覆盖（设置为True后不再自动同步）"
+    )
 
     class Config:
         populate_by_name = True
@@ -80,7 +82,9 @@ def update_downloader_capabilities(
         db_capabilities = manager.update_capabilities(
             downloader_id=downloader_id,
             capabilities_dict=capabilities_dict,
-            set_manual_override=request_data.set_manual_override,
+            set_manual_override=(
+                request_data.set_manual_override if request_data.set_manual_override is not None else True
+            ),
         )
 
         # 4. 获取更新后的能力字典
@@ -240,7 +244,7 @@ def sync_downloader_capabilities(
             # 同步到数据库
             capabilities_manager = DownloaderCapabilitiesManager(db)
             db_capabilities = capabilities_manager.sync_from_downloader(
-                downloader_id=downloader_id, downloader_capabilities=downloader_capabilities, force=force
+                downloader_id=downloader_id, downloader_capabilities=downloader_capabilities, force=force or False
             )
 
             # 获取同步后的能力字典

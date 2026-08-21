@@ -108,20 +108,20 @@ class TorrentStatsCache:
         """
         if current_hashes is not None:
             # 模式1：只保留指定的 hash（全量同步后清理）
-            to_remove = set(self.cache.keys()) - current_hashes
-            for h in to_remove:
+            missing = set(self.cache.keys()) - current_hashes
+            for h in missing:
                 del self.cache[h]
 
-            if to_remove:
-                logger.debug(f"清理不存在种子: {len(to_remove)} 个")
+            if missing:
+                logger.debug(f"清理不存在种子: {len(missing)} 个")
         else:
             # 模式2：清理过期的种子（增量同步）
-            to_remove = [h for h, entry in self.cache.items() if entry.is_expired(self.cache_ttl)]
-            for h in to_remove:
+            expired = [h for h, entry in self.cache.items() if entry.is_expired(self.cache_ttl)]
+            for h in expired:
                 del self.cache[h]
 
-            if to_remove:
-                logger.debug(f"清理过期种子: {len(to_remove)} 个")
+            if expired:
+                logger.debug(f"清理过期种子: {len(expired)} 个")
 
     def get_stats(self) -> Dict[str, int]:
         """获取统计信息

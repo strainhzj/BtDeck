@@ -390,7 +390,7 @@ class OrphanHardlinkScanService:
                         )
                         .values(hardlink_copy_count=value)
                     )
-                refreshed += int(result.rowcount or 0)
+                refreshed += int(getattr(result, "rowcount", 0) or 0)
         return refreshed
 
     async def _prune_expired(self) -> int:

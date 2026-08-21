@@ -12,7 +12,8 @@
 
 from typing import Optional
 from datetime import datetime
-from sqlalchemy import Column, String, BigInteger, Integer, Boolean, DateTime, ForeignKey
+from sqlalchemy import String, BigInteger, Integer, Boolean, DateTime, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
@@ -42,19 +43,21 @@ class TorrentFileBackup(Base):
     __tablename__ = "torrent_file_backup"
 
     # 主键
-    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
 
     # 种子标识
-    info_hash = Column(String(40), nullable=False, unique=True, index=True, comment="种子的 info_hash（40位十六进制）")
+    info_hash: Mapped[str] = mapped_column(
+        String(40), nullable=False, unique=True, index=True, comment="种子的 info_hash（40位十六进制）"
+    )
 
     # 文件信息
-    file_path = Column(String(500), nullable=False, comment="种子文件存储路径")
-    file_size = Column(BigInteger, nullable=True, comment="文件大小（字节）")
+    file_path: Mapped[str] = mapped_column(String(500), nullable=False, comment="种子文件存储路径")
+    file_size: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="文件大小（字节）")
 
     # 任务关联
-    task_name = Column(String(500), nullable=True, comment="关联的任务名称")
-    uploader_id = Column(Integer, nullable=True, comment="上传用户ID")
-    downloader_id = Column(
+    task_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="关联的任务名称")
+    uploader_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="上传用户ID")
+    downloader_id: Mapped[Optional[str]] = mapped_column(
         String(36),
         ForeignKey("bt_downloaders.downloader_id", ondelete="CASCADE"),
         nullable=True,
@@ -63,18 +66,20 @@ class TorrentFileBackup(Base):
     )
 
     # 时间信息
-    upload_time = Column(DateTime, nullable=True, comment="上传时间")
-    last_used_time = Column(DateTime, nullable=True, comment="最后使用时间")
+    upload_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="上传时间")
+    last_used_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="最后使用时间")
 
     # 统计信息
-    use_count = Column(Integer, default=0, nullable=False, comment="使用次数")
+    use_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="使用次数")
 
     # 逻辑删除
-    is_deleted = Column(Boolean, default=False, nullable=False, index=True, comment="逻辑删除标记")
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True, comment="逻辑删除标记")
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )
 
     def __init__(
         self,

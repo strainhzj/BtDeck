@@ -5,6 +5,7 @@
 用于统一处理下载器设置相关的错误
 """
 
+from typing import Any, Dict, Optional
 import logging
 
 logger = logging.getLogger(__name__)
@@ -16,7 +17,7 @@ class DownloaderSettingsError(Exception):
     所有下载器设置相关异常的基类
     """
 
-    def __init__(self, message: str, downloader_id: str = None, details: dict = None):
+    def __init__(self, message: str, downloader_id: Optional[str] = None, details: Optional[dict] = None):
         """
         初始化异常
 
@@ -56,12 +57,12 @@ class DownloaderConnectionError(DownloaderSettingsError):
     def __init__(
         self,
         message: str = "无法连接到下载器",
-        downloader_id: str = None,
-        host: str = None,
-        port: int = None,
-        original_error: Exception = None,
+        downloader_id: Optional[str] = None,
+        host: Optional[str] = None,
+        port: Optional[int] = None,
+        original_error: Optional[Exception] = None,
     ):
-        details = {}
+        details: Dict[str, Any] = {}
         if host:
             details["host"] = host
         if port:
@@ -81,11 +82,11 @@ class AuthenticationError(DownloaderSettingsError):
     def __init__(
         self,
         message: str = "认证失败，用户名或密码错误",
-        downloader_id: str = None,
-        username: str = None,
-        original_error: Exception = None,
+        downloader_id: Optional[str] = None,
+        username: Optional[str] = None,
+        original_error: Optional[Exception] = None,
     ):
-        details = {}
+        details: Dict[str, Any] = {}
         if username:
             details["username"] = username
         if original_error:
@@ -101,9 +102,13 @@ class ConfigurationError(DownloaderSettingsError):
     """
 
     def __init__(
-        self, message: str, downloader_id: str = None, parameter_name: str = None, parameter_value: any = None
+        self,
+        message: str,
+        downloader_id: Optional[str] = None,
+        parameter_name: Optional[str] = None,
+        parameter_value: Any = None,
     ):
-        details = {}
+        details: Dict[str, Any] = {}
         if parameter_name:
             details["parameter_name"] = parameter_name
         if parameter_value is not None:
@@ -118,8 +123,14 @@ class CapabilityNotSupportedError(DownloaderSettingsError):
     尝试设置下载器不支持的功能时抛出
     """
 
-    def __init__(self, message: str, downloader_id: str = None, capability: str = None, downloader_type: str = None):
-        details = {}
+    def __init__(
+        self,
+        message: str,
+        downloader_id: Optional[str] = None,
+        capability: Optional[str] = None,
+        downloader_type: Optional[str] = None,
+    ):
+        details: Dict[str, Any] = {}
         if capability:
             details["capability"] = capability
         if downloader_type:
@@ -137,12 +148,12 @@ class APIError(DownloaderSettingsError):
     def __init__(
         self,
         message: str = "API调用失败",
-        downloader_id: str = None,
-        api_method: str = None,
-        status_code: int = None,
-        original_error: Exception = None,
+        downloader_id: Optional[str] = None,
+        api_method: Optional[str] = None,
+        status_code: Optional[int] = None,
+        original_error: Optional[Exception] = None,
     ):
-        details = {}
+        details: Dict[str, Any] = {}
         if api_method:
             details["api_method"] = api_method
         if status_code:
@@ -162,11 +173,11 @@ class DownloaderTimeoutError(DownloaderSettingsError):
     def __init__(
         self,
         message: str = "API调用超时",
-        downloader_id: str = None,
-        timeout: int = None,
-        original_error: Exception = None,
+        downloader_id: Optional[str] = None,
+        timeout: Optional[int] = None,
+        original_error: Optional[Exception] = None,
     ):
-        details = {}
+        details: Dict[str, Any] = {}
         if timeout:
             details["timeout"] = f"{timeout}秒"
         if original_error:
@@ -181,8 +192,8 @@ class ValidationError(DownloaderSettingsError):
     设置参数验证失败时抛出
     """
 
-    def __init__(self, message: str, downloader_id: str = None, validation_errors: dict = None):
-        details = {}
+    def __init__(self, message: str, downloader_id: Optional[str] = None, validation_errors: Optional[dict] = None):
+        details: Dict[str, Any] = {}
         if validation_errors:
             details["validation_errors"] = validation_errors
 

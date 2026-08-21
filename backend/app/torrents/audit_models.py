@@ -5,13 +5,14 @@
 审计日志对于安全审计、问题排查、用户行为分析都非常重要。
 """
 
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 from datetime import datetime
 import uuid
 import json
 import logging
 
-from sqlalchemy import Column, String, Text, DATETIME
+from sqlalchemy import String, Text, DATETIME
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.core.json_parser import safe_json_parse_with_validator
 
@@ -35,34 +36,42 @@ class TorrentAuditLog(Base):
     __tablename__ = "torrent_audit_log"
 
     # 主键和基本信息
-    log_id = Column(String(36), primary_key=True, index=True, comment="日志主键")
-    torrent_info_id = Column(String(36), index=True, comment="关联种子主键")
-    operation_type = Column(String(50), index=True, comment="操作类型")
-    operation_detail = Column(Text, comment="操作详情（JSON格式）")
+    log_id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True, comment="日志主键")
+    torrent_info_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, comment="关联种子主键")
+    operation_type: Mapped[Optional[str]] = mapped_column(String(50), index=True, comment="操作类型")
+    operation_detail: Mapped[Optional[str]] = mapped_column(Text, comment="操作详情（JSON格式）")
 
     # 变更记录
-    old_value = Column(Text, comment="修改前的值（JSON）")
-    new_value = Column(Text, comment="修改后的值（JSON）")
+    old_value: Mapped[Optional[str]] = mapped_column(Text, comment="修改前的值（JSON）")
+    new_value: Mapped[Optional[str]] = mapped_column(Text, comment="修改后的值（JSON）")
 
     # 操作信息
-    operator = Column(String(50), index=True, comment="操作人")
-    operation_time = Column(DATETIME, index=True, comment="操作时间")
-    operation_result = Column(String(20), comment="操作结果：success/failed/partial")
-    error_message = Column(Text, comment="错误信息（如果失败）")
+    operator: Mapped[Optional[str]] = mapped_column(String(50), index=True, comment="操作人")
+    operation_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, index=True, comment="操作时间")
+    operation_result: Mapped[Optional[str]] = mapped_column(String(20), comment="操作结果：success/failed/partial")
+    error_message: Mapped[Optional[str]] = mapped_column(Text, comment="错误信息（如果失败）")
 
     # 关联信息
-    downloader_id = Column(String(36), index=True, comment="下载器ID")
-    create_time = Column(DATETIME, comment="日志创建时间")
+    downloader_id: Mapped[Optional[str]] = mapped_column(String(36), index=True, comment="下载器ID")
+    create_time: Mapped[Optional[datetime]] = mapped_column(DATETIME, comment="日志创建时间")
 
     # 冗余字段（用于列表显示和搜索，避免关联查询）
-    torrent_name = Column(String(255), index=True, nullable=True, comment="种子名称（冗余字段，用于列表显示和搜索）")
-    downloader_name = Column(String(100), nullable=True, comment="下载器名称（冗余字段，用于列表显示）")
+    torrent_name: Mapped[Optional[str]] = mapped_column(
+        String(255), index=True, nullable=True, comment="种子名称（冗余字段，用于列表显示和搜索）"
+    )
+    downloader_name: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, comment="下载器名称（冗余字段，用于列表显示）"
+    )
 
     # 调试级别详细信息
-    ip_address = Column(String(50), index=True, comment="操作来源IP地址")
-    user_agent = Column(Text, comment="浏览器/客户端信息")
-    request_id = Column(String(36), index=True, comment="请求唯一标识（用于追踪整个请求链路）")
-    session_id = Column(String(36), index=True, comment="会话ID（用于关联同一会话的多个操作）")
+    ip_address: Mapped[Optional[str]] = mapped_column(String(50), index=True, comment="操作来源IP地址")
+    user_agent: Mapped[Optional[str]] = mapped_column(Text, comment="浏览器/客户端信息")
+    request_id: Mapped[Optional[str]] = mapped_column(
+        String(36), index=True, comment="请求唯一标识（用于追踪整个请求链路）"
+    )
+    session_id: Mapped[Optional[str]] = mapped_column(
+        String(36), index=True, comment="会话ID（用于关联同一会话的多个操作）"
+    )
 
     @property
     def id(self) -> str:

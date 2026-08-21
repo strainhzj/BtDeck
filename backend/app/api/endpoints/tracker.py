@@ -83,13 +83,13 @@ async def add_tracker(
         default="default",
         alias="torrentInfoIds",
         description="torrent_info_id列表",
-        examples={"default": "91a92a76-9640-4c50-bb03-381a4d37158c"},
+        examples=["91a92a76-9640-4c50-bb03-381a4d37158c"],
     ),
     trackers: str = Query(
         default="default",
         alias="trackers",
         description="多个tracker以;分隔",
-        examples={"default": "https://ptskit.kqbhek.com1/announce.php?passkey=6fa2d880b3666a460f7ed063f7b9818b"},
+        examples=["https://ptskit.kqbhek.com1/announce.php?passkey=6fa2d880b3666a460f7ed063f7b9818b"],
     ),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -117,18 +117,18 @@ async def add_tracker(
 
     for torrent_info_id in torrent_info_id_list:
         try:
-            result = await db.execute(select(torrentInfoModel).where(torrentInfoModel.info_id == torrent_info_id))
-            torrent = result.scalar_one_or_none()
+            ti_result = await db.execute(select(torrentInfoModel).where(torrentInfoModel.info_id == torrent_info_id))
+            torrent = ti_result.scalar_one_or_none()
             # P1-1 修复: 删除重复的种子存在性检查
             if not torrent:
                 logging.error(f"种子不存在: torrent_info_id={torrent_info_id}")
                 failed_count += 1
                 continue
             # 修复异步查询: 查询下载器
-            result = await db.execute(
+            dl_result = await db.execute(
                 select(BtDownloaders).where(BtDownloaders.dr == 0, BtDownloaders.downloader_id == torrent.downloader_id)
             )
-            downloaders = result.scalars().all()
+            downloaders = dl_result.scalars().all()
 
             if not downloaders:
                 logging.error(f"下载器不存在: downloader_id={torrent.downloader_id}")
@@ -147,7 +147,9 @@ async def add_tracker(
             if downloader.is_qbittorrent:
                 await qb_add_torrents_tracker(db, downloader_vo, tracker_list, torrent.torrent_id, torrent_info_id)
             if downloader.is_transmission:
-                await tr_add_torrents_tracker(db, downloader_vo, tracker_list, int(torrent.torrent_id), torrent_info_id)
+                await tr_add_torrents_tracker(
+                    db, downloader_vo, tracker_list, int(torrent.torrent_id or 0), torrent_info_id
+                )
 
             success_count += 1
 
@@ -208,13 +210,13 @@ async def replace_tracker(
         default="default",
         alias="torrentInfoIds",
         description="被替换的tracker地址",
-        examples={"default": "https://tracker.pterclub.com/announce?passkey=e0bde7f14f78cea7d704eb157815bbdc"},
+        examples=["https://tracker.pterclub.com/announce?passkey=e0bde7f14f78cea7d704eb157815bbdc"],
     ),
     target_tracker_url: str = Query(
         default="default",
         alias="trackers",
         description="替换成的tracker地址",
-        examples={"default": "https://tracker.pterclub.net/announce?passkey=e0bde7f14f78cea7d704eb157815bbdc"},
+        examples=["https://tracker.pterclub.net/announce?passkey=e0bde7f14f78cea7d704eb157815bbdc"],
     ),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -242,10 +244,10 @@ async def replace_tracker(
     affected_torrents = []
     for tracker_info in tracker_info_list:
         # 修复异步查询: 查询种子信息
-        result = await db.execute(
+        ti_result = await db.execute(
             select(torrentInfoModel).where(torrentInfoModel.info_id == tracker_info.torrent_info_id)
         )
-        torrent = result.scalar_one_or_none()
+        torrent = ti_result.scalar_one_or_none()
         if torrent:
             affected_torrents.append(
                 {
@@ -271,12 +273,12 @@ async def replace_tracker(
     # 查询相应的下载器id
     # 查询相应的下载器id
     # 修复异步查询: 使用select(distinct())替代db.query(distinct())
-    result = await db.execute(
+    dl_id_result = await db.execute(
         select(distinct(torrentInfoModel.downloader_id)).where(
             torrentInfoModel.info_id.in_(torrent_info_id_list), torrentInfoModel.dr == 0
         )
     )
-    downloader_id_list = result.all()
+    downloader_id_list = dl_id_result.all()
     # 获取下载器缓存快照（禁止自建客户端连接；一次获取，循环内复用）
     try:
         downloader_vo_map = await _get_downloader_vo_map(req)
@@ -288,12 +290,12 @@ async def replace_tracker(
     success_count = 0
     failed_count = 0
     # 根据下载器id循环修改
-    for row in downloader_id_list:
-        downloader_id = row[0]
+    for dl_row in downloader_id_list:
+        downloader_id = dl_row[0]
         torrent_id_list = []
         # 修复异步查询: 查询下载器
-        result = await db.execute(select(BtDownloaders).where(BtDownloaders.downloader_id == downloader_id))
-        downloader = result.scalar_one_or_none()
+        dl_result = await db.execute(select(BtDownloaders).where(BtDownloaders.downloader_id == downloader_id))
+        downloader = dl_result.scalar_one_or_none()
 
         if not downloader:
             logging.error(f"下载器不存在: downloader_id={downloader_id}")
@@ -401,13 +403,13 @@ async def modify_tracker(
         default="default",
         alias="torrentInfoIds",
         description="torrent_info_id列表",
-        examples={"default": "91a92a76-9640-4c50-bb03-381a4d37158c"},
+        examples=["91a92a76-9640-4c50-bb03-381a4d37158c"],
     ),
     trackers: str = Query(
         default="default",
         alias="trackers",
         description="多个tracker以;分隔",
-        examples={"default": "https://ptskit.kqbhek.com1/announce.php?passkey=6fa2d880b3666a460f7ed063f7b9818b"},
+        examples=["https://ptskit.kqbhek.com1/announce.php?passkey=6fa2d880b3666a460f7ed063f7b9818b"],
     ),
     db: AsyncSession = Depends(get_async_db),
 ):
@@ -447,18 +449,18 @@ async def modify_tracker(
             old_tracker_urls = [t.tracker_url for t in old_trackers]
 
             # 修复异步查询: 查询种子信息
-            result = await db.execute(select(torrentInfoModel).where(torrentInfoModel.info_id == torrent_info_id))
-            torrent = result.scalar_one_or_none()
+            ti_result = await db.execute(select(torrentInfoModel).where(torrentInfoModel.info_id == torrent_info_id))
+            torrent = ti_result.scalar_one_or_none()
 
             if not torrent:
                 logging.error(f"种子不存在: torrent_info_id={torrent_info_id}")
                 failed_count += 1
                 continue
             # 修复异步查询: 查询下载器
-            result = await db.execute(
+            dl_result = await db.execute(
                 select(BtDownloaders).where(BtDownloaders.dr == 0, BtDownloaders.downloader_id == torrent.downloader_id)
             )
-            downloaders = result.scalars().all()
+            downloaders = dl_result.scalars().all()
 
             if not downloaders:
                 logging.error(f"下载器不存在: downloader_id={torrent.downloader_id}")
@@ -470,7 +472,7 @@ async def modify_tracker(
             if downloaders[0].is_qbittorrent:
                 await qb_change_torrents_tracker(db, downloader_vo, tracker_list, torrent.torrent_id)
             if downloaders[0].is_transmission:
-                await tr_change_torrents_tracker(db, downloader_vo, tracker_list, int(torrent.torrent_id))
+                await tr_change_torrents_tracker(db, downloader_vo, tracker_list, int(torrent.torrent_id or 0))
 
             success_count += 1
 
@@ -652,13 +654,9 @@ async def tr_add_torrents_tracker(db, downloader_vo, todo_tracker_list, torrent_
                 torrent_info_id=info_id_result[0],
                 tracker_name=tracker_status.site_name,
                 tracker_url=tracker_status.fields.get("announce"),
-                last_announce_succeeded=resolve_transmission_tracker_status_code(
-                    tracker_status, "announce"
-                ),
+                last_announce_succeeded=resolve_transmission_tracker_status_code(tracker_status, "announce"),
                 last_announce_msg=tracker_status.last_announce_result,
-                last_scrape_succeeded=resolve_transmission_tracker_status_code(
-                    tracker_status, "scrape"
-                ),
+                last_scrape_succeeded=resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                 last_scrape_msg=tracker_status.last_scrape_result,
                 create_time=current_time,
                 create_by="admin",
@@ -831,13 +829,9 @@ async def tr_change_torrents_tracker(db, downloader_vo, todo_tracker_list, torre
             torrent_info_id=torrent_info_id_value,
             tracker_name=tracker_status.site_name,
             tracker_url=tracker_status.fields.get("announce"),
-            last_announce_succeeded=resolve_transmission_tracker_status_code(
-                tracker_status, "announce"
-            ),
+            last_announce_succeeded=resolve_transmission_tracker_status_code(tracker_status, "announce"),
             last_announce_msg=tracker_status.last_announce_result,
-            last_scrape_succeeded=resolve_transmission_tracker_status_code(
-                tracker_status, "scrape"
-            ),
+            last_scrape_succeeded=resolve_transmission_tracker_status_code(tracker_status, "scrape"),
             last_scrape_msg=tracker_status.last_scrape_result,
             create_time=current_time,
             create_by="admin",

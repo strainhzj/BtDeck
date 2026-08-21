@@ -352,7 +352,7 @@ async def get_hardlink_copy_locations(
 @router.post("/hardlink-copies/delete", response_model=CommonResponse)
 async def delete_hardlink_copies(
     req: HardlinkCopyDeleteRequest,
-    request: Request = None,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
     audit_service: AuditLogService = Depends(get_audit_service),
@@ -462,7 +462,7 @@ async def cleanup_orphans(
 @router.post("/ignore", response_model=CommonResponse)
 async def set_orphan_ignored(
     req: IgnoreRequest,
-    request: Request = None,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
 ):
@@ -539,7 +539,7 @@ async def get_quarantine_list(
 @router.post("/restore", response_model=CommonResponse)
 async def restore_quarantined(
     req: QuarantineActionRequest,
-    request: Request = None,
+    request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user=Depends(require_authenticated_user),
     audit_service: AuditLogService = Depends(get_audit_service),

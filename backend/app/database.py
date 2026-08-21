@@ -73,7 +73,11 @@ AsyncSessionLocal = async_sessionmaker(
     async_engine, class_=AsyncSession, expire_on_commit=False, autocommit=False, autoflush=False
 )
 
-Base = declarative_base()
+from sqlalchemy.orm import DeclarativeBase
+
+
+class Base(DeclarativeBase):
+    """ORM 声明基类（2.0 类式写法；等价于旧 declarative_base()，但对 mypy 合法）"""
 
 
 def get_db():

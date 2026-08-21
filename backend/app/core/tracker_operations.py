@@ -29,8 +29,8 @@ def create_tracker(db: Session, tracker_data: Dict[str, Any]) -> DatabaseResult[
             return DatabaseResult.validation_error_result("Tracker URL is required")
 
         # Generate ID if not provided
-        if "id_" not in tracker_data:
-            tracker_data["id_"] = str(uuid.uuid4())
+        if "tracker_id" not in tracker_data:
+            tracker_data["tracker_id"] = str(uuid.uuid4())
 
         db_tracker = TrackerInfo(**tracker_data)
         db.add(db_tracker)
@@ -55,7 +55,7 @@ def get_tracker(db: Session, tracker_id: str) -> DatabaseResult[TrackerInfo]:
         DatabaseResult containing the TrackerInfo or not found information
     """
     try:
-        tracker = db.query(TrackerInfo).filter(TrackerInfo.id_ == tracker_id).first()
+        tracker = db.query(TrackerInfo).filter(TrackerInfo.tracker_id == tracker_id).first()
         if tracker:
             return DatabaseResult.success_result(data=tracker, message="Tracker retrieved successfully")
         else:
@@ -146,7 +146,7 @@ def update_tracker(db: Session, tracker_id: str, tracker_data: Dict[str, Any]) -
         DatabaseResult containing the updated TrackerInfo or error information
     """
     try:
-        tracker = db.query(TrackerInfo).filter(TrackerInfo.id_ == tracker_id).first()
+        tracker = db.query(TrackerInfo).filter(TrackerInfo.tracker_id == tracker_id).first()
         if not tracker:
             return DatabaseResult.not_found_result(message=f"Tracker with ID {tracker_id} not found")
 
@@ -180,7 +180,7 @@ def update_tracker_status(
         DatabaseResult containing the updated TrackerInfo or error information
     """
     try:
-        tracker = db.query(TrackerInfo).filter(TrackerInfo.id_ == tracker_id).first()
+        tracker = db.query(TrackerInfo).filter(TrackerInfo.tracker_id == tracker_id).first()
         if not tracker:
             return DatabaseResult.not_found_result(message=f"Tracker with ID {tracker_id} not found")
 
@@ -211,7 +211,7 @@ def delete_tracker(db: Session, tracker_id: str) -> DatabaseResult[None]:
         DatabaseResult indicating success or failure
     """
     try:
-        tracker = db.query(TrackerInfo).filter(TrackerInfo.id_ == tracker_id).first()
+        tracker = db.query(TrackerInfo).filter(TrackerInfo.tracker_id == tracker_id).first()
         if not tracker:
             return DatabaseResult.not_found_result(message=f"Tracker with ID {tracker_id} not found")
 
@@ -242,7 +242,7 @@ def hard_delete_tracker(db: Session, tracker_id: str) -> DatabaseResult[None]:
         DatabaseResult indicating success or failure
     """
     try:
-        tracker = db.query(TrackerInfo).filter(TrackerInfo.id_ == tracker_id).first()
+        tracker = db.query(TrackerInfo).filter(TrackerInfo.tracker_id == tracker_id).first()
         if not tracker:
             return DatabaseResult.not_found_result(message=f"Tracker with ID {tracker_id} not found")
 

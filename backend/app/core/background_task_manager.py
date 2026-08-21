@@ -186,9 +186,9 @@ class BackgroundTaskManager:
                     tasks_to_remove.append(task_id)
 
             for task_id in tasks_to_remove:
-                task = self._tasks.pop(task_id, None)
-                if task:
-                    self._downloader_tasks.pop(task.downloader_id, None)
+                if task_id in self._tasks:
+                    removed = self._tasks.pop(task_id)
+                    self._downloader_tasks.pop(removed.downloader_id, None)
 
             if tasks_to_remove:
                 logger.info(f"清理了 {len(tasks_to_remove)} 个旧任务")

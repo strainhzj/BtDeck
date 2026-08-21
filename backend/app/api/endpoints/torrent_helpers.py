@@ -5,7 +5,7 @@ import sqlite3
 import uuid
 import logging
 from datetime import datetime
-from typing import List, Dict, Any, Optional, Sequence, Set, Tuple
+from typing import List, Dict, Any, Optional, Sequence, Set, Tuple, cast
 
 import bencodepy
 from sqlalchemy import Column, MetaData, String, Table, and_, asc, desc, false, func, or_
@@ -460,14 +460,14 @@ def convert_to_vo(torrent: torrentInfoModel) -> TorrentInfoVO:
         hash=torrent.hash,
         name=torrent.name,
         save_path=torrent.save_path,
-        size=torrent.size,
+        size=int(torrent.size) if torrent.size is not None else None,
         status=torrent.status,
         error_reason=torrent.error_reason,
         has_tracker_error=torrent.has_tracker_error,
         torrent_file=torrent.torrent_file,
         auxiliary_seed_count=torrent.auxiliary_seed_count or 1,
-        added_date=added_timestamp,
-        completed_date=completed_timestamp,
+        added_date=cast("datetime", added_timestamp) if added_timestamp is not None else None,
+        completed_date=cast("datetime", completed_timestamp) if completed_timestamp is not None else None,
         ratio=torrent.ratio,
         ratio_limit=torrent.ratio_limit,
         tags=torrent.tags,
@@ -631,7 +631,7 @@ def convert_to_vo_with_trackers(
         hash=torrent.hash,
         name=torrent.name,
         save_path=torrent.save_path,
-        size=torrent.size,
+        size=int(torrent.size) if torrent.size is not None else None,
         status=torrent.status,
         error_reason=torrent.error_reason,
         has_tracker_error=torrent.has_tracker_error,
@@ -1019,12 +1019,12 @@ async def _write_audit_log_async(
 def _safe_write_audit_log(
     operation_type: str,
     operator: str,
-    torrent_info_id: str,
-    operation_detail: Dict[str, Any],
-    torrent_name: Optional[str],
-    torrent_hash: Optional[str],
-    downloader_id: str,
-    operation_result: str,
+    torrent_info_id: str = "",
+    operation_detail: Optional[Dict[str, Any]] = None,
+    torrent_name: Optional[str] = None,
+    torrent_hash: Optional[str] = None,
+    downloader_id: str = "",
+    operation_result: str = "success",
     error_message: Optional[str] = None,
     new_value: Optional[Dict[str, Any]] = None,
     old_value: Optional[Dict[str, Any]] = None,
@@ -1036,6 +1036,7 @@ def _safe_write_audit_log(
     修复CRITICAL #4: asyncio.create_task的异常会被静默忽略
     使用此包装函数确保审计日志异常不会丢失，同时记录到日志文件中
     """
+    operation_detail = operation_detail or {}
     try:
         asyncio.create_task(
             _write_audit_log_async(

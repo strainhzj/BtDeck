@@ -15,7 +15,7 @@ Tracker消息记录任务类
 """
 
 from datetime import datetime, timedelta
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 import logging
 import json
 import uuid
@@ -68,7 +68,7 @@ class TrackerMessageLogger:
             retention_days: 数据保留天数(默认90天)
             max_records: 最大记录数(默认10000条)
         """
-        self.last_execution_time = None
+        self.last_execution_time: Optional[datetime] = None
         self.execution_count = 0
         self.success_count = 0
         self.failure_count = 0
@@ -108,7 +108,7 @@ class TrackerMessageLogger:
         """
         async with AsyncSessionLocal() as db:
             try:
-                tracker_msg_map = {}  # (tracker_host, msg) -> 数据
+                tracker_msg_map: Dict[Any, Dict[str, Any]] = {}  # (tracker_host, msg) -> 数据
                 offset = 0
 
                 while True:
@@ -530,7 +530,7 @@ class TrackerMessageLogger:
         """
         db = SessionLocal()
         try:
-            tracker_msg_map = {}  # (tracker_host, msg) -> 数据
+            tracker_msg_map: Dict[Any, Dict[str, Any]] = {}  # (tracker_host, msg) -> 数据
             offset = 0
 
             while True:

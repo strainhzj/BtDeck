@@ -15,7 +15,7 @@ class PathMappingItem(BaseModel):
     name: str = Field(..., description="映射名称", min_length=1, max_length=100)
     internal: str = Field(..., description="内部路径(下载器内)", min_length=1)
     external: str = Field(..., description="外部路径(主机)", min_length=1)
-    description: Optional[str] = Field(None, description="映射描述", max_length=500)
+    description: Optional[str] = Field(default=None, description="映射描述", max_length=500)
     mapping_type: str = Field("local", description="映射类型: local/docker/nas/wsl/network")
 
     @field_validator("internal", "external")
@@ -41,7 +41,7 @@ class PathMappingConfig(BaseModel):
     """路径映射配置"""
 
     mappings: List[PathMappingItem] = Field(default_factory=list, description="路径映射列表")
-    default_mapping: Optional[str] = Field(None, description="默认映射名称")
+    default_mapping: Optional[str] = Field(default=None, description="默认映射名称")
 
     @field_validator("mappings")
     @classmethod
@@ -91,26 +91,20 @@ class PathMappingCheck(BaseModel):
     name: str = Field(..., description="映射名称")
     valid: bool = Field(..., description="内部与外部目录是否都可用")
     internal: PathDirectoryValidation = Field(..., description="下载器内部目录验证结果")
-    external: PathDirectoryValidation = Field(
-        ..., description="BtDeck 外部目录验证结果"
-    )
+    external: PathDirectoryValidation = Field(..., description="BtDeck 外部目录验证结果")
 
 
 class PathMappingBackendValidation(BaseModel):
     """后端完整验证明细"""
 
-    json_format_valid: bool = Field(True, description="JSON格式是否有效")
-    structure_valid: bool = Field(True, description="结构是否有效")
-    fields_complete: bool = Field(True, description="字段是否完整")
-    no_path_conflicts: bool = Field(True, description="是否不存在路径冲突")
-    downloader_available: bool = Field(False, description="缓存下载器是否可用")
-    internal_paths_valid: bool = Field(False, description="全部下载器内部目录是否可用")
-    external_paths_valid: bool = Field(
-        False, description="全部 BtDeck 外部目录是否可用"
-    )
-    path_checks: List[PathMappingCheck] = Field(
-        default_factory=list, description="逐条映射目录验证结果"
-    )
+    json_format_valid: bool = Field(default=True, description="JSON格式是否有效")
+    structure_valid: bool = Field(default=True, description="结构是否有效")
+    fields_complete: bool = Field(default=True, description="字段是否完整")
+    no_path_conflicts: bool = Field(default=True, description="是否不存在路径冲突")
+    downloader_available: bool = Field(default=False, description="缓存下载器是否可用")
+    internal_paths_valid: bool = Field(default=False, description="全部下载器内部目录是否可用")
+    external_paths_valid: bool = Field(default=False, description="全部 BtDeck 外部目录是否可用")
+    path_checks: List[PathMappingCheck] = Field(default_factory=list, description="逐条映射目录验证结果")
     errors: List[str] = Field(default_factory=list, description="错误列表")
 
 
@@ -119,9 +113,5 @@ class PathMappingTestResponse(BaseModel):
 
     valid: bool = Field(..., description="总体验证结果")
     message: str = Field(..., description="验证结果描述")
-    backend_validation: PathMappingBackendValidation = Field(
-        ..., description="后端验证结果"
-    )
-    frontend_validation: Optional[dict[str, object]] = Field(
-        None, description="前端验证结果(由前端填充)"
-    )
+    backend_validation: PathMappingBackendValidation = Field(..., description="后端验证结果")
+    frontend_validation: Optional[dict[str, object]] = Field(default=None, description="前端验证结果(由前端填充)")

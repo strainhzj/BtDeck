@@ -64,14 +64,14 @@ class NotificationService:
         )
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return getattr(result, "rowcount", 0) > 0
 
     async def mark_as_unread(self, notification_id: int) -> bool:
         """标记单条通知为未读"""
         stmt = update(Notification).where(Notification.id == notification_id).values(is_read=False, read_at=None)
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return getattr(result, "rowcount", 0) > 0
 
     async def mark_all_as_read(self) -> int:
         """标记所有通知为已读"""
@@ -80,14 +80,14 @@ class NotificationService:
         )
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount
+        return getattr(result, "rowcount", 0)
 
     async def delete_notification(self, notification_id: int) -> bool:
         """删除单条通知"""
         stmt = delete(Notification).where(Notification.id == notification_id)
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return getattr(result, "rowcount", 0) > 0
 
     async def create_notification(
         self,

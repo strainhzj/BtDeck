@@ -16,11 +16,11 @@ class TrackerKeywordCreate(BaseModel):
         ..., description="关键词类型: candidate/ignored/success/failed", pattern="^(candidate|ignored|success|failed)$"
     )
     keyword: str = Field(..., min_length=1, max_length=200, description="关键词内容")
-    language: Optional[str] = Field(None, max_length=10, description="语言代码")
-    priority: int = Field(100, ge=1, le=1000, description="优先级(1-1000)")
-    enabled: bool = Field(True, description="是否启用")
-    category: Optional[str] = Field(None, max_length=50, description="分类")
-    description: Optional[str] = Field(None, max_length=200, description="描述")
+    language: Optional[str] = Field(default=None, max_length=10, description="语言代码")
+    priority: int = Field(default=100, ge=1, le=1000, description="优先级(1-1000)")
+    enabled: bool = Field(default=True, description="是否启用")
+    category: Optional[str] = Field(default=None, max_length=50, description="分类")
+    description: Optional[str] = Field(default=None, max_length=200, description="描述")
 
     model_config = {
         "json_schema_extra": {
@@ -41,13 +41,13 @@ class TrackerKeywordCreate(BaseModel):
 class TrackerKeywordUpdate(BaseModel):
     """更新关键词请求模型"""
 
-    keyword_type: Optional[str] = Field(None, pattern="^(candidate|ignored|success|failed)$")
-    keyword: Optional[str] = Field(None, min_length=1, max_length=200)
-    language: Optional[str] = Field(None, max_length=10)
-    priority: Optional[int] = Field(None, ge=1, le=1000)
+    keyword_type: Optional[str] = Field(default=None, pattern="^(candidate|ignored|success|failed)$")
+    keyword: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    language: Optional[str] = Field(default=None, max_length=10)
+    priority: Optional[int] = Field(default=None, ge=1, le=1000)
     enabled: Optional[bool] = None
-    category: Optional[str] = Field(None, max_length=50)
-    description: Optional[str] = Field(None, max_length=200)
+    category: Optional[str] = Field(default=None, max_length=50)
+    description: Optional[str] = Field(default=None, max_length=200)
 
 
 class TrackerKeywordResponse(BaseModel):

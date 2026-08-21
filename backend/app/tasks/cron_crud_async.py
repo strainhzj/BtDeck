@@ -67,7 +67,7 @@ class AsyncCronTaskCRUD:
 
             if not task:
                 logger.warning(f"任务ID {task_id} 不存在")
-                return DatabaseResult.not_found("定时任务不存在")
+                return DatabaseResult.not_found_result("定时任务不存在")
 
             logger.debug(f"异步获取任务成功: {task.task_name} (ID: {task_id})")
             return DatabaseResult.success_result(task.to_dict())
@@ -96,7 +96,7 @@ class AsyncCronTaskCRUD:
 
             if not task:
                 logger.warning(f"更新状态失败：任务ID {task_id} 不存在")
-                return DatabaseResult.not_found("定时任务不存在")
+                return DatabaseResult.not_found_result("定时任务不存在")
 
             task.task_status = status
             task.update_time = datetime.now()

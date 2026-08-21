@@ -70,7 +70,7 @@ async def execute_reannounce(
     Returns:
         {"success_count": N, "failed_count": N, "trigger_type": str, "failed_items": [...]}
     """
-    result = {
+    result: Dict[str, Any] = {
         "success_count": 0,
         "failed_count": 0,
         "trigger_type": trigger_type,

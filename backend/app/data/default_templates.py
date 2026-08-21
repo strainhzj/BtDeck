@@ -231,11 +231,11 @@ def init_default_templates(db_session) -> int:
             # 创建新模板
             template_config = template_data["template_config"]
 
-            # 序列化配置为JSON字符串
+            # 序列化配置为JSON字符串（非 dict 的预序列化字符串原样使用）
             if isinstance(template_config, dict):
                 template_config_json = json.dumps(template_config, ensure_ascii=False)
             else:
-                template_config_json = template_config
+                template_config_json = str(template_config)
 
             template = SettingTemplate(
                 name=template_data["name"],
@@ -287,7 +287,7 @@ def get_template_by_name(name: str) -> dict:
     for template in DEFAULT_TEMPLATES:
         if template["name"] == name:
             return template.copy()
-    return None
+    return None  # type: ignore[return-value]  # 调用方以 None 判缺失，签名保持 dict 系历史约定
 
 
 def get_templates_by_downloader_type(downloader_type: int) -> list:

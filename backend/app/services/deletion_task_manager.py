@@ -121,9 +121,7 @@ class DeletionTaskManager:
     def _normalize_info_ids(torrent_info_ids: List[str]) -> List[str]:
         return list(
             dict.fromkeys(
-                str(info_id).strip()
-                for info_id in torrent_info_ids
-                if info_id is not None and str(info_id).strip()
+                str(info_id).strip() for info_id in torrent_info_ids if info_id is not None and str(info_id).strip()
             )
         )
 
@@ -145,12 +143,8 @@ class DeletionTaskManager:
 
         async with self._lock:
             with self._active_ids_lock:
-                skipped_ids = [
-                    info_id for info_id in normalized_ids if info_id in self._active_torrent_info_ids
-                ]
-                accepted_ids = [
-                    info_id for info_id in normalized_ids if info_id not in self._active_torrent_info_ids
-                ]
+                skipped_ids = [info_id for info_id in normalized_ids if info_id in self._active_torrent_info_ids]
+                accepted_ids = [info_id for info_id in normalized_ids if info_id not in self._active_torrent_info_ids]
                 if not accepted_ids:
                     return DeletionTaskSubmission(
                         task_id=None,

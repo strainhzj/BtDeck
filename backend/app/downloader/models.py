@@ -1,6 +1,7 @@
-from typing import Any
+from typing import Any, Optional
 
-from sqlalchemy import Boolean, Column, Integer, String, Text
+from sqlalchemy import Boolean, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.models.setting_templates import DownloaderTypeEnum
 import logging
@@ -11,25 +12,27 @@ logger = logging.getLogger(__name__)
 class BtDownloaders(Base):
     __tablename__ = "bt_downloaders"
 
-    downloader_id = Column(String, primary_key=True, index=True)
-    nickname = Column(String, index=True)  # 自定义名称
-    host = Column(String, index=True)  # 下载器主机
-    username = Column(String, index=True)  # 登录用户名
-    password = Column(String)  # SM4加密后的密码
-    is_search = Column(Boolean, default=True)  # 是否启用种子搜索
-    status = Column(String, default=True)  # 下载器状态
-    enabled = Column(Boolean, default=True)  # 下载器启用状态
-    downloader_type = Column(
+    downloader_id: Mapped[str] = mapped_column(String, primary_key=True, index=True)
+    nickname: Mapped[Optional[str]] = mapped_column(String, index=True)  # 自定义名称
+    host: Mapped[Optional[str]] = mapped_column(String, index=True)  # 下载器主机
+    username: Mapped[Optional[str]] = mapped_column(String, index=True)  # 登录用户名
+    password: Mapped[Optional[str]] = mapped_column(String)  # SM4加密后的密码
+    is_search: Mapped[Optional[bool]] = mapped_column(Boolean, default=True)  # 是否启用种子搜索
+    status: Mapped[Optional[str]] = mapped_column(String, default=True)  # 下载器状态
+    enabled: Mapped[Optional[bool]] = mapped_column(Boolean, default=True)  # 下载器启用状态
+    downloader_type: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="下载器类型：0=qBittorrent, 1=Transmission"
     )  # 下载器类型
-    port = Column(String, index=True)  # 端口
-    is_ssl = Column(Boolean, default=True)  # 是否https
-    dr = Column(Integer, default=0)  # 删除状态，0是未删除，1是逻辑删除
-    path_mapping = Column(Text, nullable=True, comment="路径映射配置（JSON格式）")  # 路径映射配置
-    path_mapping_rules = Column(
+    port: Mapped[Optional[str]] = mapped_column(String, index=True)  # 端口
+    is_ssl: Mapped[Optional[bool]] = mapped_column(Boolean, default=True)  # 是否https
+    dr: Mapped[Optional[int]] = mapped_column(Integer, default=0)  # 删除状态，0是未删除，1是逻辑删除
+    path_mapping: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="路径映射配置（JSON格式）"
+    )  # 路径映射配置
+    path_mapping_rules: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True, comment="路径映射规则配置（多行文本，格式：源路径{#**#}目标路径）"
     )  # 路径映射规则
-    torrent_save_path = Column(
+    torrent_save_path: Mapped[Optional[str]] = mapped_column(
         String(500), nullable=True, comment="种子保存目录路径（应用运行环境可直接访问的绝对路径）"
     )  # 种子保存目录
 

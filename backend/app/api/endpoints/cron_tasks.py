@@ -26,26 +26,26 @@ class CronTaskCreate(BaseModel):
     )
     executor: str = Field(..., description="执行脚本内容或路径")
     cron_plan: str = Field(..., description="cron表达式，格式：分 时 日 月 周")
-    enabled: bool = Field(True, description="是否启用")
-    description: Optional[str] = Field(None, description="任务描述", max_length=500)
-    timeout_seconds: Optional[int] = Field(3600, description="超时时间(秒)", ge=60, le=86400)
-    max_retry_count: Optional[int] = Field(0, description="最大重试次数", ge=0, le=10)
-    retry_interval: Optional[int] = Field(300, description="重试间隔(秒)", ge=60, le=3600)
+    enabled: bool = Field(default=True, description="是否启用")
+    description: Optional[str] = Field(default=None, description="任务描述", max_length=500)
+    timeout_seconds: Optional[int] = Field(default=3600, description="超时时间(秒)", ge=60, le=86400)
+    max_retry_count: Optional[int] = Field(default=0, description="最大重试次数", ge=0, le=10)
+    retry_interval: Optional[int] = Field(default=300, description="重试间隔(秒)", ge=60, le=3600)
 
 
 class CronTaskUpdate(BaseModel):
     """更新定时任务请求模型"""
 
-    task_name: Optional[str] = Field(None, description="任务名称", max_length=200)
-    task_code: Optional[str] = Field(None, description="任务编码", max_length=50)
-    task_type: Optional[int] = Field(None, description="任务类型")
-    executor: Optional[str] = Field(None, description="执行脚本内容或路径")
-    cron_plan: Optional[str] = Field(None, description="cron表达式")
-    enabled: Optional[bool] = Field(None, description="是否启用")
-    description: Optional[str] = Field(None, description="任务描述", max_length=500)
-    timeout_seconds: Optional[int] = Field(None, description="超时时间(秒)", ge=60, le=86400)
-    max_retry_count: Optional[int] = Field(None, description="最大重试次数", ge=0, le=10)
-    retry_interval: Optional[int] = Field(None, description="重试间隔(秒)", ge=60, le=3600)
+    task_name: Optional[str] = Field(default=None, description="任务名称", max_length=200)
+    task_code: Optional[str] = Field(default=None, description="任务编码", max_length=50)
+    task_type: Optional[int] = Field(default=None, description="任务类型")
+    executor: Optional[str] = Field(default=None, description="执行脚本内容或路径")
+    cron_plan: Optional[str] = Field(default=None, description="cron表达式")
+    enabled: Optional[bool] = Field(default=None, description="是否启用")
+    description: Optional[str] = Field(default=None, description="任务描述", max_length=500)
+    timeout_seconds: Optional[int] = Field(default=None, description="超时时间(秒)", ge=60, le=86400)
+    max_retry_count: Optional[int] = Field(default=None, description="最大重试次数", ge=0, le=10)
+    retry_interval: Optional[int] = Field(default=None, description="重试间隔(秒)", ge=60, le=3600)
 
 
 class CronTaskResponse(BaseModel):
@@ -149,7 +149,7 @@ class CronExecutionTime(BaseModel):
     """Cron执行时间信息"""
 
     nextExecutionTime: str = Field(..., description="下次执行时间")
-    previousExecutionTime: Optional[str] = Field(None, description="上次执行时间")
+    previousExecutionTime: Optional[str] = Field(default=None, description="上次执行时间")
     executionTimes: list[str] = Field(default=[], description="未来5次执行时间")
 
 
@@ -158,8 +158,8 @@ class CronValidationResponse(BaseModel):
 
     valid: bool = Field(..., description="是否有效")
     message: str = Field(..., description="校验结果信息")
-    description: Optional[str] = Field(None, description="表达式描述")
-    executionTimes: Optional[CronExecutionTime] = Field(None, description="执行时间信息")
+    description: Optional[str] = Field(default=None, description="表达式描述")
+    executionTimes: Optional[CronExecutionTime] = Field(default=None, description="执行时间信息")
 
 
 class PythonClassValidationRequest(BaseModel):
@@ -173,7 +173,7 @@ class PythonClassInfo(BaseModel):
 
     className: str = Field(..., description="类名")
     module: str = Field(..., description="模块路径")
-    description: Optional[str] = Field(None, description="类描述")
+    description: Optional[str] = Field(default=None, description="类描述")
     methods: list[str] = Field(default=[], description="可用方法列表")
     parameters: dict = Field(default={}, description="参数信息")
 
@@ -183,7 +183,7 @@ class PythonClassValidationResponse(BaseModel):
 
     valid: bool = Field(..., description="是否有效")
     exists: bool = Field(..., description="类是否存在")
-    classInfo: Optional[PythonClassInfo] = Field(None, description="类信息")
+    classInfo: Optional[PythonClassInfo] = Field(default=None, description="类信息")
     message: str = Field(..., description="验证结果信息")
 
 
@@ -499,10 +499,10 @@ async def create_cron_task(
         if result.success:
             # 如果任务启用，添加到调度器
             if task_data.enabled:
-                await cron_executor.add_task_to_scheduler(result.data)
+                await cron_executor.add_task_to_scheduler(result.data or {})
 
             # 转换为驼峰命名格式
-            camel_case_data = convert_cron_task_to_camel_case(result.data)
+            camel_case_data = convert_cron_task_to_camel_case(result.data or {})
 
             return CommonResponse(
                 status="success", msg="创建定时任务成功", code="200", data=camel_case_data.model_dump()
@@ -534,7 +534,7 @@ async def get_cron_tasks(
 
         if result.success:
             # 转换为驼峰命名格式
-            camel_case_data = convert_cron_task_list_to_camel_case(result.data)
+            camel_case_data = convert_cron_task_list_to_camel_case(result.data or {})
 
             return CommonResponse(
                 status="success", msg="获取定时任务列表成功", code="200", data=camel_case_data.model_dump()
@@ -567,7 +567,7 @@ async def get_task_logs(
 
         if result.success:
             # 转换为驼峰命名格式
-            camel_case_data = convert_task_log_list_to_camel_case(result.data)
+            camel_case_data = convert_task_log_list_to_camel_case(result.data or {})
 
             return CommonResponse(
                 status="success", msg="获取任务日志成功", code="200", data=camel_case_data.model_dump()
@@ -589,11 +589,12 @@ async def get_task_logs_statistics(_user=Depends(require_authenticated_user), db
 
         if result.success:
             # 转换为驼峰命名格式
+            _stats = result.data or {}
             statistics_data = {
-                "totalLogs": result.data.get("total_logs", 0),
-                "successLogs": result.data.get("success_logs", 0),
-                "failedLogs": result.data.get("failed_logs", 0),
-                "todayLogs": result.data.get("today_logs", 0),
+                "totalLogs": _stats.get("total_logs", 0),
+                "successLogs": _stats.get("success_logs", 0),
+                "failedLogs": _stats.get("failed_logs", 0),
+                "todayLogs": _stats.get("today_logs", 0),
             }
 
             return CommonResponse(status="success", msg="获取任务日志统计成功", code="200", data=statistics_data)
@@ -627,7 +628,10 @@ async def delete_task_logs(
 
         if result.success:
             return CommonResponse(
-                status="success", msg=f"删除成功，共 {result.data.get('deleted', 0)} 条", code="200", data=result.data
+                status="success",
+                msg=f"删除成功，共 {(result.data or {}).get('deleted', 0)} 条",
+                code="200",
+                data=result.data,
             )
         else:
             return CommonResponse(status="error", msg=result.message, code="400", data=None)
@@ -664,7 +668,7 @@ async def export_task_logs(
         if not result.success:
             return CommonResponse(status="error", msg=result.message, code="500", data=None)
 
-        logs = result.data.get("list", [])
+        logs = (result.data or {}).get("list", [])
 
         if format.lower() == "json":
             import json
@@ -722,7 +726,7 @@ async def cleanup_task_logs(
         if result.success:
             return CommonResponse(
                 status="success",
-                msg=f"清理完成，共清理 {result.data.get('cleaned', 0)} 条日志",
+                msg=f"清理完成，共清理 {(result.data or {}).get('cleaned', 0)} 条日志",
                 code="200",
                 data=result.data,
             )
@@ -748,7 +752,7 @@ async def get_cron_task(task_id: int, _user=Depends(require_authenticated_user),
 
         if result.success:
             # 转换为驼峰命名格式
-            camel_case_data = convert_cron_task_to_camel_case(result.data)
+            camel_case_data = convert_cron_task_to_camel_case(result.data or {})
 
             return CommonResponse(
                 status="success", msg="获取定时任务成功", code="200", data=camel_case_data.model_dump()
@@ -782,7 +786,7 @@ async def update_cron_task(
             await cron_executor.refresh_task(task_id)
 
             # 转换为驼峰命名格式
-            camel_case_data = convert_cron_task_to_camel_case(result.data)
+            camel_case_data = convert_cron_task_to_camel_case(result.data or {})
 
             return CommonResponse(
                 status="success", msg="更新定时任务成功", code="200", data=camel_case_data.model_dump()
@@ -1130,7 +1134,7 @@ async def preview_cleanup(
 
         # 异步执行预览
         async with AsyncSessionLocal() as async_db:
-            executor = CleanupTaskExecutor(async_db)
+            executor = CleanupTaskExecutor(async_db)  # type: ignore[arg-type]  # TODO: 执行器内部为同步 .query，异步会话下走异常兜底
             preview = await executor.preview_cleanup(task_config)
 
         return CommonResponse(status="success", msg="预览清理成功", code="200", data=preview)
@@ -1159,7 +1163,7 @@ async def execute_cleanup(
 
         # 异步执行清理
         async with AsyncSessionLocal() as async_db:
-            executor = CleanupTaskExecutor(async_db)
+            executor = CleanupTaskExecutor(async_db)  # type: ignore[arg-type]  # TODO: 执行器内部为同步 .query，异步会话下走异常兜底
             result = await executor.execute_cleanup_task(task_config=task_config, operator="manual", audit_service=None)
 
         return CommonResponse(status="success", msg="清理任务执行成功", code="200", data=result)

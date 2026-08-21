@@ -193,7 +193,13 @@ class RecycleBinService:
                 "failed_list": List[Dict]
             }
         """
-        result = {"success_count": 0, "failed_count": 0, "skipped_count": 0, "success_list": [], "failed_list": []}
+        result: Dict[str, Any] = {
+            "success_count": 0,
+            "failed_count": 0,
+            "skipped_count": 0,
+            "success_list": [],
+            "failed_list": [],
+        }
 
         for torrent_id in torrent_ids:
             try:
@@ -429,7 +435,7 @@ class RecycleBinService:
                 )
 
                 # 等待qBittorrent处理种子
-                await self._wait_for_qb_torrent(downloader_vo.downloader_id, client, torrent.hash)
+                await self._wait_for_qb_torrent(downloader_vo.downloader_id, client, torrent.hash or "")
 
                 return {"success": True}
 
@@ -448,7 +454,7 @@ class RecycleBinService:
                 )
 
                 # 等待Transmission处理种子
-                await self._wait_for_tr_torrent(downloader_vo.downloader_id, client, torrent.hash)
+                await self._wait_for_tr_torrent(downloader_vo.downloader_id, client, torrent.hash or "")
 
                 return {"success": True}
 
@@ -627,7 +633,7 @@ class RecycleBinService:
                 "failed_list": List[Dict]
             }
         """
-        result = {"success_count": 0, "failed_count": 0, "success_list": [], "failed_list": []}
+        result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "success_list": [], "failed_list": []}
 
         for torrent_id in torrent_ids:
             try:

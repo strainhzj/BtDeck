@@ -17,7 +17,7 @@
 
 import json
 import logging
-from typing import Any
+from typing import Any, Sequence, cast
 
 from fastapi import FastAPI, HTTPException, Request, status
 from fastapi.exceptions import RequestValidationError
@@ -135,7 +135,7 @@ def _json_safe(value: Any) -> Any:
     return str(value)
 
 
-def _sanitize_validation_errors(errors: list[Any]) -> list[dict[str, Any]]:
+def _sanitize_validation_errors(errors: Sequence[Any]) -> list[dict[str, Any]]:
     """把 RequestValidationError.errors() 安全化为可 JSON 序列化的列表。
 
     FastAPI/Pydantic 在某些校验失败路径下，会把原始异常对象（如 ``ValueError``）
@@ -232,6 +232,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 def register_exception_handlers(app: FastAPI) -> None:
     """注册全局异常处理器。应在 create_app() 中、路由挂载前调用。"""
-    app.add_exception_handler(HTTPException, http_exception_handler)
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)
-    app.add_exception_handler(Exception, unhandled_exception_handler)
+    # Starlette 的 handler 签名按 Exception 声明（具体异常型处理器是惯用窄化写法）
+    app.add_exception_handler(HTTPException, cast(Any, http_exception_handler))
+    app.add_exception_handler(RequestValidationError, cast(Any, validation_exception_handler))
+    app.add_exception_handler(Exception, cast(Any, unhandled_exception_handler))

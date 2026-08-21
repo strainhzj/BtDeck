@@ -15,11 +15,11 @@ import json
 import uuid
 import logging
 import asyncio
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, cast
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import Table, and_, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from fastapi import Request, Depends
 
@@ -150,6 +150,7 @@ class AuditLogService:
                 else:
                     # 最后一次尝试失败，返回None
                     return None
+        return None
 
     async def log_batch_operations(self, operations: List[Dict[str, Any]], operator: str) -> int:
         """批量记录操作日志（性能优化版本）
@@ -232,7 +233,7 @@ class AuditLogService:
                 log_entries.append(log_entry)
 
             # 使用批量插入优化
-            await self.db_session.execute(TorrentAuditLog.__table__.insert(), log_entries)
+            await self.db_session.execute(cast(Table, TorrentAuditLog.__table__).insert(), log_entries)
             await self.db_session.commit()
 
             logger.info(f"批量记录审计日志完成: {len(log_entries)}/{len(operations)}")
@@ -382,9 +383,9 @@ class AuditLogService:
 
             # 统计信息
             total_count = len(logs)
-            operation_type_stats = {}
-            operator_stats = {}
-            result_stats = {}
+            operation_type_stats: Dict[str, int] = {}
+            operator_stats: Dict[str, int] = {}
+            result_stats: Dict[str, int] = {}
 
             for log in logs:
                 # 操作类型统计
@@ -396,8 +397,8 @@ class AuditLogService:
                 operator_stats[operator] = operator_stats.get(operator, 0) + 1
 
                 # 结果统计
-                result = log.operation_result or "unknown"
-                result_stats[result] = result_stats.get(result, 0) + 1
+                op_result = log.operation_result or "unknown"
+                result_stats[op_result] = result_stats.get(op_result, 0) + 1
 
             return {
                 "total_count": total_count,
@@ -451,9 +452,9 @@ class AuditLogService:
                     raw_name = f"audit_logs_{timestamp}"
                 if not raw_name.lower().endswith(".json"):
                     raw_name = f"{raw_name}.json"
-                archive_path = archive_dir / FilenameUtils.sanitize_filename(raw_name)
+                archive_file = archive_dir / FilenameUtils.sanitize_filename(raw_name)
             else:
-                archive_path = archive_dir / f"audit_logs_{timestamp}.json"
+                archive_file = archive_dir / f"audit_logs_{timestamp}.json"
 
             # 导出为JSON
             archive_data = {
@@ -463,7 +464,7 @@ class AuditLogService:
                 "logs": [log.to_dict() for log in logs_to_archive],
             }
 
-            with open(archive_path, "w", encoding="utf-8") as f:
+            with open(archive_file, "w", encoding="utf-8") as f:
                 json.dump(archive_data, f, ensure_ascii=False, indent=2, default=str)
 
             # 从主数据库删除已归档的日志
@@ -478,17 +479,17 @@ class AuditLogService:
                 operator="system",
                 operation_detail={
                     "archived_count": len(logs_to_archive),
-                    "archive_path": str(archive_path),
+                    "archive_path": str(archive_file),
                     "end_time": end_time.isoformat(),
                 },
             )
 
-            logger.info(f"审计日志归档成功: {len(logs_to_archive)} 条日志已归档到 {archive_path}")
+            logger.info(f"审计日志归档成功: {len(logs_to_archive)} 条日志已归档到 {archive_file}")
 
             return {
                 "success": True,
                 "archived_count": len(logs_to_archive),
-                "archive_path": str(archive_path),
+                "archive_path": str(archive_file),
                 "message": f"成功归档 {len(logs_to_archive)} 条日志",
             }
 

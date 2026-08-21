@@ -15,7 +15,7 @@ from app.auth.security import sm4_decrypt
 logger = logging.getLogger(__name__)
 
 # 全局解密密钥管理
-_decryption_key_cache = {}
+_decryption_key_cache: Dict[str, Any] = {}
 _key_cache_lock = Lock()
 _key_rotation_interval = 3600  # 1小时轮换一次密钥缓存
 
@@ -51,10 +51,11 @@ def decrypt_tracker_info(encrypted_tracker_url: str) -> Optional[str]:
             if encrypted_tracker_url.startswith("sm4:"):
                 # 提取加密部分
                 encrypted_part = encrypted_tracker_url[4:]  # 去掉'sm4:'前缀
-                decrypted = sm4_decrypt(encrypted_part)
-                if decrypted:
+                # sm4_decrypt 返回 bytes（与上方 str 型 decrypted 分开命名）
+                decrypted_raw: Any = sm4_decrypt(encrypted_part)
+                if decrypted_raw:
                     logger.debug(f"备用SM4解密成功: {encrypted_tracker_url[:20]}...")
-                    return decrypted.decode("utf-8") if isinstance(decrypted, bytes) else decrypted
+                    return decrypted_raw.decode("utf-8") if isinstance(decrypted_raw, bytes) else decrypted_raw
         except Exception as e:
             logger.debug(f"备用解密方法失败: {e}")
 
@@ -103,7 +104,7 @@ class TrackerDecryptionKeyManager:
         self.key_lock = Lock()
         self.last_rotation = time.time()
 
-    def get_decryption_key(self, key_id: str = None) -> Optional[str]:
+    def get_decryption_key(self, key_id: Optional[str] = None) -> Optional[str]:
         """获取解密密钥"""
         with self.key_lock:
             current_time = time.time()
@@ -173,7 +174,7 @@ def validate_tracker_security(tracker_url: str) -> Dict[str, Any]:
     Returns:
         安全验证结果
     """
-    result = {"is_secure": True, "risk_level": "low", "warnings": [], "recommendations": []}
+    result: Dict[str, Any] = {"is_secure": True, "risk_level": "low", "warnings": [], "recommendations": []}
 
     try:
         if not tracker_url:

@@ -195,11 +195,11 @@ def _fetch_qb_speeds_sync(client: qbClient) -> List[Dict[str, Any]]:
     torrents = client.torrents_info(status_filter="active")
     result = []
     for t in torrents:
-        dl_speed = t.get("dlspeed", 0)
-        ul_speed = t.get("upspeed", 0)
+        dl_speed = float(str(t.get("dlspeed") or 0))
+        ul_speed = float(str(t.get("upspeed") or 0))
         if dl_speed > 0 or ul_speed > 0:
             # qBittorrent的progress字段是0-1的小数，需要转换为百分比
-            progress_raw = t.get("progress", 0)
+            progress_raw = float(str(t.get("progress") or 0))
             progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
             result.append(
                 {
@@ -266,7 +266,7 @@ def _supplement_qb_sync(client: qbClient, hashes: List[str]) -> List[Dict[str, A
     torrents = client.torrents_info(hashes=hash_str)
     result = []
     for t in torrents:
-        progress_raw = t.get("progress", 0)
+        progress_raw = float(str(t.get("progress") or 0))
         progress_percent = round(progress_raw * 100, 2) if progress_raw else 0
         result.append(
             {

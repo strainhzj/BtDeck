@@ -10,12 +10,11 @@ import logging
 import json
 import uuid
 from contextlib import nullcontext
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, Sequence
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, not_, desc, asc, func, exists, literal, case
+from sqlalchemy import ColumnElement, and_, or_, not_, desc, asc, func, exists, literal, case
 from sqlalchemy.exc import OperationalError
-from sqlalchemy.sql import expression
 
 from app.core.json_parser import safe_json_parse
 
@@ -77,20 +76,20 @@ NEGATED_OPERATORS = {
 }
 
 
-def _literal_contains(column, value: Any) -> expression.ClauseElement:
+def _literal_contains(column, value: Any) -> ColumnElement[bool]:
     """Build a literal substring match; ``%`` and ``_`` are user text, not wildcards."""
     return column.contains(value, autoescape=True) if isinstance(value, str) else column == value
 
 
-def _literal_starts_with(column, value: Any) -> expression.ClauseElement:
+def _literal_starts_with(column, value: Any) -> ColumnElement[bool]:
     return column.startswith(value, autoescape=True) if isinstance(value, str) else column == value
 
 
-def _literal_ends_with(column, value: Any) -> expression.ClauseElement:
+def _literal_ends_with(column, value: Any) -> ColumnElement[bool]:
     return column.endswith(value, autoescape=True) if isinstance(value, str) else column == value
 
 
-def _tag_token_filter(column, value: Any) -> expression.ClauseElement:
+def _tag_token_filter(column, value: Any) -> ColumnElement[bool]:
     """Match a complete comma/semicolon-delimited tag, never an arbitrary substring."""
     token = str(value).strip()
     normalized = func.trim(func.replace(func.coalesce(column, ""), ";", ","))
@@ -276,7 +275,9 @@ class SearchQueryBuilder:
         return self
 
     def apply_condition_groups(
-        self, condition_groups: Optional[List], between_group_logics: Optional[List[str]] = None
+        self,
+        condition_groups: Optional[List],
+        between_group_logics: Optional[Sequence[str]] = None,
     ) -> "SearchQueryBuilder":
         """
         应用高级条件组
@@ -435,7 +436,7 @@ class SearchQueryBuilder:
         condition_filter = not_(positive_filter) if explicitly_negated else positive_filter
         return not_(condition_filter) if mode == "exclude" else condition_filter
 
-    def _build_status_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_status_filter(self, operator: str, value: Any) -> ColumnElement[bool]:
         """构建与普通种子列表一致的状态过滤。
 
         对用户而言 ``error`` 同时表示下载器上报的错误状态，以及所有 Tracker
@@ -465,7 +466,7 @@ class SearchQueryBuilder:
 
         return self.OPERATOR_MAPPING[operator](TorrentInfo.status, value)
 
-    def _build_downloader_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_downloader_filter(self, operator: str, value: Any) -> ColumnElement[bool]:
         """Match stable IDs while retaining compatibility with nickname payloads.
 
         New UI requests always carry ``downloader_id`` under the historical
@@ -485,7 +486,7 @@ class SearchQueryBuilder:
         )
         return not_(positive) if operator in {"ne", "not_in"} else positive
 
-    def _build_super_seeding_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_super_seeding_filter(self, operator: str, value: Any) -> ColumnElement[bool]:
         """Query qBittorrent yes/no and Transmission unsupported as three states."""
         values = list(value) if isinstance(value, (list, tuple)) else [value]
         state = case(
@@ -496,7 +497,7 @@ class SearchQueryBuilder:
         positive = state.in_(values)
         return not_(positive) if operator in {"ne", "not_in"} else positive
 
-    def _build_between_filter(self, column, field: str, value: Any) -> expression.ClauseElement:
+    def _build_between_filter(self, column, field: str, value: Any) -> ColumnElement[bool]:
         """between 操作符：value = {min, max}（size 带 minUnit/maxUnit；date 带 start/end）。
 
         前端实测 value 形态：
@@ -562,7 +563,7 @@ class SearchQueryBuilder:
             raise ValueError("between requires at least one numeric boundary")
         return and_(*conditions)
 
-    def _build_regex_filter(self, column, value: Any) -> expression.ClauseElement:
+    def _build_regex_filter(self, column, value: Any) -> ColumnElement[bool]:
         """regex 操作符：value = {pattern, caseSensitive}。
 
         ``bt_regexp`` is installed on every SQLite connection and uses a
@@ -585,7 +586,7 @@ class SearchQueryBuilder:
             func.bt_regexp(pattern, column, int(bool(case_sensitive))) == 1,
         )
 
-    def _build_date_window_filter(self, column, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_date_window_filter(self, column, operator: str, value: Any) -> ColumnElement[bool]:
         """last_days / date_range 操作符（仅用于日期字段）。
 
         前端实测 value 形态（formatParamValue 对 date 字段 JSON.stringify 后）：
@@ -634,7 +635,7 @@ class SearchQueryBuilder:
             raise ValueError("date_range requires at least one boundary")
         return and_(*conditions)
 
-    def _build_tracker_msg_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_tracker_msg_filter(self, operator: str, value: Any) -> ColumnElement[bool]:
         """
         Build tracker_msg filter using tracker_info table.
         Match last_announce_msg OR last_scrape_msg on active trackers (dr == 0).
@@ -646,14 +647,14 @@ class SearchQueryBuilder:
         )
         return not_(matching_tracker) if operator in NEGATED_OPERATORS else matching_tracker
 
-    def _build_tracker_msg_text_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_tracker_msg_text_filter(self, operator: str, value: Any) -> ColumnElement[bool]:
         """Build OR text filter for tracker announce/scrape message fields."""
         announce_filter = self._build_text_filter(TrackerInfo.last_announce_msg, operator, value)
         scrape_filter = self._build_text_filter(TrackerInfo.last_scrape_msg, operator, value)
 
         return or_(announce_filter, scrape_filter)
 
-    def _build_tracker_url_filter(self, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_tracker_url_filter(self, operator: str, value: Any) -> ColumnElement[bool]:
         """
         Build tracker_url filter using tracker_info table.
         Match tracker_url field on active trackers (dr == 0).
@@ -665,7 +666,7 @@ class SearchQueryBuilder:
         )
         return not_(matching_tracker) if operator in NEGATED_OPERATORS else matching_tracker
 
-    def _build_text_filter(self, column, operator: str, value: Any) -> expression.ClauseElement:
+    def _build_text_filter(self, column, operator: str, value: Any) -> ColumnElement[bool]:
         """
         Build text filter for a single column with None safety.
 
@@ -957,8 +958,9 @@ class SearchTemplateModel:
                 .values(usage_count=SearchTemplate.usage_count + 1)
             )
             self.db.commit()
-            # SQLAlchemy update 对不存在的行不抛异常，需检查 rowcount
-            return (result.rowcount or 0) > 0
+            # SQLAlchemy 2.0.15 的 execute() 类型标注未区分 DML（无 CursorResult
+            # 重载），rowcount 用 getattr 访问；update 对不存在的行不抛异常需检查
+            return (getattr(result, "rowcount", 0) or 0) > 0
 
         except Exception as e:
             self.db.rollback()
@@ -1029,13 +1031,24 @@ class AdvancedSearchService:
             if request.condition_groups:
                 logger.info(f"[高级搜索] 应用条件组，数量: {len(request.condition_groups)}")
                 for idx, group in enumerate(request.condition_groups):
-                    group_logic = group.logic if hasattr(group, "logic") else group.get("logic", "AND")
-                    conditions = group.conditions if hasattr(group, "conditions") else group.get("conditions", [])
+                    # schema 层已保证 condition_groups 为 SearchGroup 模型；dict 分支
+                    # 仅作防御，用 isinstance 收窄避免在模型上调用 dict.get
+                    if isinstance(group, dict):
+                        group_logic = group.get("logic", "AND")
+                        conditions = group.get("conditions", [])
+                    else:
+                        group_logic = group.logic
+                        conditions = group.conditions
                     logger.info(f"[高级搜索] 条件组 {idx}: logic={group_logic}, 条件数={len(conditions)}")
                     for cond_idx, cond in enumerate(conditions):
-                        cond_field = cond.field if hasattr(cond, "field") else cond.get("field")
-                        cond_operator = cond.operator if hasattr(cond, "operator") else cond.get("operator")
-                        cond_value = cond.value if hasattr(cond, "value") else cond.get("value")
+                        if isinstance(cond, dict):
+                            cond_field = cond.get("field")
+                            cond_operator = cond.get("operator")
+                            cond_value = cond.get("value")
+                        else:
+                            cond_field = cond.field
+                            cond_operator = cond.operator
+                            cond_value = cond.value
                         logger.info(
                             f"[高级搜索]   条件 {cond_idx}: field={cond_field}, operator={cond_operator}, value={cond_value}"
                         )
@@ -1322,7 +1335,7 @@ class AdvancedSearchService:
             logger.error(f"应用搜索模板失败: {str(e)}")
             return {"status": "failed", "msg": f"应用模板失败: {str(e)}", "code": "500", "data": None}
 
-    def delete_torrents_batch(self, request, user_id: str) -> Dict[str, Any]:
+    async def delete_torrents_batch(self, request, user_id: str) -> Dict[str, Any]:
         """
         批量删除种子（复用torrent_deletion_service）
 
@@ -1364,7 +1377,9 @@ class AdvancedSearchService:
             )
 
             # 执行删除
-            result = self.deletion_service.delete_torrents(delete_request)
+            # delete_torrents 是协程方法：漏 await 会在读取 result.success_count 时
+            # 抛 AttributeError 并被下方 except 吞成失败响应（休眠 bug，mypy 揪出）
+            result = await self.deletion_service.delete_torrents(delete_request)
 
             # 构建响应数据
             response_data = {
@@ -1402,7 +1417,7 @@ class AdvancedSearchService:
         """
         try:
             # 获取字段分布统计
-            stats = {}
+            stats: Dict[str, Any] = {}
 
             # 状态分布
             status_stats = (

@@ -73,7 +73,7 @@ class CronTaskCRUD:
             task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
-                return DatabaseResult.not_found("定时任务不存在")
+                return DatabaseResult.not_found_result("定时任务不存在")
 
             return DatabaseResult.success_result(task.to_dict())
 
@@ -147,7 +147,7 @@ class CronTaskCRUD:
             task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
-                return DatabaseResult.not_found("定时任务不存在")
+                return DatabaseResult.not_found_result("定时任务不存在")
 
             # 检查任务编码是否被其他任务使用
             if "task_code" in task_data:
@@ -213,7 +213,7 @@ class CronTaskCRUD:
             task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
-                return DatabaseResult.not_found("定时任务不存在")
+                return DatabaseResult.not_found_result("定时任务不存在")
 
             task.dr = 1
             task.update_time = datetime.now()
@@ -234,7 +234,7 @@ class CronTaskCRUD:
             task = db.query(CronTask).filter(and_(CronTask.task_id == task_id, CronTask.dr == 0)).first()
 
             if not task:
-                return DatabaseResult.not_found("定时任务不存在")
+                return DatabaseResult.not_found_result("定时任务不存在")
 
             task.task_status = status
             task.update_time = datetime.now()

@@ -704,7 +704,7 @@ class DownloaderPathScanTask:
             logger.warning(f"获取下载器 {downloader.nickname} 默认路径时出错: {str(e)}，将使用统计方法获取默认路径")
             return None
 
-    async def _sync_default_path(self, db: AsyncSession, downloader_id: int, default_path: str):
+    async def _sync_default_path(self, db: AsyncSession, downloader_id: str, default_path: str):
         """
         同步默认路径到 maintenance 表
 
@@ -754,7 +754,7 @@ class DownloaderPathScanTask:
             logger.error(f"同步默认路径失败: {str(e)}")
             raise
 
-    async def _sync_active_path(self, db: AsyncSession, downloader_id: int, path_value: str, torrent_count: int):
+    async def _sync_active_path(self, db: AsyncSession, downloader_id: str, path_value: str, torrent_count: int):
         """
         同步在用路径到 maintenance 表
 
@@ -806,7 +806,7 @@ class DownloaderPathScanTask:
             logger.error(f"同步在用路径失败: {str(e)}")
             raise
 
-    async def _cleanup_obsolete_paths(self, db: AsyncSession, downloader_id: int, current_paths: Set[str]):
+    async def _cleanup_obsolete_paths(self, db: AsyncSession, downloader_id: str, current_paths: Set[str]):
         """
         清理不再使用的路径（标记为禁用）
 

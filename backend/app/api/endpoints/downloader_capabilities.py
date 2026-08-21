@@ -80,7 +80,7 @@ def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
             WHERE downloader_id = :downloader_id AND dr = 0
         """
         result = db.execute(text(sql), {"downloader_id": downloader_id}).fetchone()
-        return result.count > 0 if result else False
+        return (result[0] > 0) if result else False
     except Exception as e:
         logger.error(f"验证下载器存在性失败: {e}")
         return False
@@ -146,7 +146,7 @@ def get_downloader_capabilities(
                 logger.info(f"从数据库获取能力配置: {downloader_id}, 手动覆盖={db_capabilities.manual_override}")
 
                 # 构建能力字典
-                capabilities_dict = db_capabilities.get_capabilities_dict()
+                capabilities_dict = db_capabilities.get_capabilities_dict() if db_capabilities else {}
 
                 capabilities_vo = DownloaderCapabilitiesVO(
                     downloader_id=downloader_id,
@@ -204,7 +204,7 @@ def get_downloader_capabilities(
                     default_for_type=downloader_result.downloader_type,
                 )
 
-                capabilities_dict = db_capabilities.get_capabilities_dict()
+                capabilities_dict = db_capabilities.get_capabilities_dict() if db_capabilities else {}
 
                 capabilities_vo = DownloaderCapabilitiesVO(
                     downloader_id=downloader_id,

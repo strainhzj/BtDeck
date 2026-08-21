@@ -25,9 +25,9 @@ router = APIRouter()
 
 class CreateConfigRequest(BaseModel):
     domain_pattern: str = Field(..., description="域名匹配模式")
-    domain_display_name: str = Field("", description="域名显示名称")
-    interval_minutes: int = Field(30, description="汇报间隔（分钟）")
-    enabled: bool = Field(True, description="是否启用")
+    domain_display_name: str = Field(default="", description="域名显示名称")
+    interval_minutes: int = Field(default=30, description="汇报间隔（分钟）")
+    enabled: bool = Field(default=True, description="是否启用")
 
 
 class UpdateConfigRequest(BaseModel):
@@ -39,10 +39,10 @@ class UpdateConfigRequest(BaseModel):
 
 class BatchUpdateItem(BaseModel):
     config_id: str = Field(..., description="配置ID")
-    domain_pattern: str | None = Field(None, description="域名匹配模式")
-    domain_display_name: str | None = Field(None, description="域名显示名称")
-    interval_minutes: int | None = Field(None, description="汇报间隔（分钟）")
-    enabled: bool | None = Field(None, description="是否启用")
+    domain_pattern: str | None = Field(default=None, description="域名匹配模式")
+    domain_display_name: str | None = Field(default=None, description="域名显示名称")
+    interval_minutes: int | None = Field(default=None, description="汇报间隔（分钟）")
+    enabled: bool | None = Field(default=None, description="是否启用")
 
 
 # ==================== API 接口 ====================
@@ -55,7 +55,7 @@ async def list_configs(_user=Depends(require_authenticated_user), db: Session = 
     if not result.success:
         return CommonResponse(status="error", msg=result.message, code="500")
 
-    configs = [c.to_dict() for c in result.data]
+    configs = [c.to_dict() for c in (result.data or [])]
     return CommonResponse(
         status="success",
         msg="查询成功",
@@ -66,7 +66,9 @@ async def list_configs(_user=Depends(require_authenticated_user), db: Session = 
 
 @router.post("/configs", description="新增站点配置")
 async def create_config(
-    _user=Depends(require_authenticated_user), req_data: CreateConfigRequest = None, db: Session = Depends(get_db)
+    req_data: CreateConfigRequest,
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """新增站点汇报配置"""
     config_data = req_data.dict()
@@ -81,7 +83,7 @@ async def create_config(
         status="success",
         msg="创建成功",
         code="200",
-        data=result.data.to_dict(),
+        data=result.data.to_dict() if result.data is not None else None,
     )
 
 
@@ -118,8 +120,8 @@ async def batch_update_configs(
 @router.put("/configs/{config_id}", description="更新站点配置")
 async def update_config(
     config_id: str,
+    req_data: UpdateConfigRequest,
     _user=Depends(require_authenticated_user),
-    req_data: UpdateConfigRequest = None,
     db: Session = Depends(get_db),
 ):
     """更新站点汇报配置"""
@@ -136,7 +138,7 @@ async def update_config(
         status="success",
         msg="更新成功",
         code="200",
-        data=result.data.to_dict(),
+        data=result.data.to_dict() if result.data is not None else None,
     )
 
 
@@ -188,7 +190,7 @@ async def auto_detect_domains(_user=Depends(require_authenticated_user), db: Ses
 
     # 查询已存在的配置域名
     existing = ops.get_configs(db)
-    existing_patterns = {c.domain_pattern for c in existing.data} if existing.success else set()
+    existing_patterns = {c.domain_pattern for c in (existing.data or [])} if existing.success else set()
 
     # 过滤掉已有配置的域名
     new_domains = [d for d in domains if d not in existing_patterns]
@@ -205,7 +207,7 @@ async def auto_detect_domains(_user=Depends(require_authenticated_user), db: Ses
                 "enabled": True,
             },
         )
-        if result.success:
+        if result.success and result.data is not None:
             created.append(result.data.to_dict())
 
     return CommonResponse(

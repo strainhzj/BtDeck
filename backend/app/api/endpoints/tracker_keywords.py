@@ -557,7 +557,7 @@ def batch_update_status(
 
         count = 0
         for keyword in keywords:
-            keyword.enabled = enabled
+            keyword.enabled = bool(enabled)
             keyword.update_time = datetime.now()
             count += 1
 

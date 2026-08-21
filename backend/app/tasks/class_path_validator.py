@@ -227,7 +227,7 @@ class ClassPathValidator:
                 ),
             )
 
-    def validate_execute_method(self, cls: object) -> Tuple[bool, Optional[ClassPathValidationError]]:
+    def validate_execute_method(self, cls: Any) -> Tuple[bool, Optional[ClassPathValidationError]]:
         """
         验证类是否有execute方法
 
@@ -267,7 +267,7 @@ class ClassPathValidator:
         Returns:
             Dict[str, Any]: 验证结果
         """
-        result = {
+        result: Dict[str, Any] = {
             "class_path": class_path,
             "is_valid": False,
             "errors": [],
@@ -280,7 +280,9 @@ class ClassPathValidator:
             # 1. 验证格式
             format_valid, format_error = self.validate_class_path_format(class_path)
             if not format_valid:
-                result["errors"].append(format_error.to_dict())
+                result["errors"].append(
+                    (format_error or ClassPathValidationError("INTERNAL", "internal", "internal")).to_dict()
+                )
                 return result
 
             # 解析模块路径和类名
@@ -291,13 +293,17 @@ class ClassPathValidator:
             # 2. 验证模块导入
             module_valid, module_error = self.validate_module_import(module_path)
             if not module_valid:
-                result["errors"].append(module_error.to_dict())
+                result["errors"].append(
+                    (module_error or ClassPathValidationError("INTERNAL", "internal", "internal")).to_dict()
+                )
                 return result
 
             # 3. 验证类存在
             class_exists, class_obj, class_error = self.validate_class_exists(module_path, class_name)
             if not class_exists:
-                result["errors"].append(class_error.to_dict())
+                result["errors"].append(
+                    (class_error or ClassPathValidationError("INTERNAL", "internal", "internal")).to_dict()
+                )
                 return result
 
             result["class_object"] = class_obj
@@ -305,7 +311,9 @@ class ClassPathValidator:
             # 4. 验证execute方法
             execute_valid, execute_error = self.validate_execute_method(class_obj)
             if not execute_valid:
-                result["errors"].append(execute_error.to_dict())
+                result["errors"].append(
+                    (execute_error or ClassPathValidationError("INTERNAL", "internal", "internal")).to_dict()
+                )
                 return result
 
             # 全部验证通过
@@ -385,7 +393,7 @@ class ClassPathValidator:
         invalid_count = total_count - valid_count
 
         # 统计错误类型
-        error_stats = {}
+        error_stats: Dict[str, int] = {}
         for result in validation_results:
             for error in result.get("errors", []):
                 error_type = error.get("error_type", "UNKNOWN")

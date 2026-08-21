@@ -478,7 +478,7 @@ class TemplateService:
 
         # 将 DownloaderTypeEnum 转换为整数进行比较
         template_type_int = template.downloader_type
-        downloader_type_int = normalized_downloader_type.value
+        downloader_type_int = normalized_downloader_type  # normalize() 已返回 int
 
         if template_type_int != downloader_type_int:
             raise ValueError(f"模板类型（{template_type_int}）与下载器类型（{downloader_type_int}）不匹配")

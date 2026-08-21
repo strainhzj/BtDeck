@@ -160,8 +160,8 @@ def create_message(
             # 更新existing记录
             existing.occurrence_count += 1
             existing.last_seen = datetime.now()
-            if message_data.get("judgment_result"):
-                existing.judgment_result = message_data.get("judgment_result")
+            # 注：judgment_result 并非 TrackerMessageLog 的列（历史代码引用了
+            # 不存在字段：构造即抛 TypeError、赋值也不落库），故不在此处理
             if message_data.get("keyword_type"):
                 existing.keyword_type = message_data.get("keyword_type")
 
@@ -178,9 +178,8 @@ def create_message(
         # 创建新消息
         new_message = TrackerMessageLog(
             log_id=str(uuid.uuid4()),
-            tracker_host=message_data.get("tracker_host"),
-            msg=message_data.get("msg"),
-            judgment_result=message_data.get("judgment_result", "unknown"),
+            tracker_host=message_data.get("tracker_host") or "",
+            msg=message_data.get("msg") or "",
             keyword_type=message_data.get("keyword_type"),
             sample_torrents=message_data.get("sample_torrents"),
             sample_urls=message_data.get("sample_urls"),
@@ -232,8 +231,6 @@ def update_message(
         # 更新字段
         if "is_processed" in update_data:
             message.is_processed = update_data["is_processed"]
-        if "judgment_result" in update_data:
-            message.judgment_result = update_data["judgment_result"]
         if "keyword_type" in update_data:
             message.keyword_type = update_data["keyword_type"]
 

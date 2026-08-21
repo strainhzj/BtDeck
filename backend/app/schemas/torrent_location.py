@@ -17,7 +17,7 @@ class SetLocationRequest(BaseModel):
     """修改种子保存路径请求"""
 
     downloader_id: str = Field(..., description="下载器ID")
-    hashes: List[str] = Field(..., min_items=1, max_items=100, description="种子hash列表")
+    hashes: List[str] = Field(..., min_length=1, max_length=100, description="种子hash列表")
     target_path: str = Field(..., min_length=1, max_length=500, description="目标路径（绝对路径）")
     move_files: bool = Field(..., description="是否移动已下载的文件")
     operator: Optional[str] = Field("admin", description="操作人")
@@ -40,7 +40,7 @@ class SetLocationResponse(BaseModel):
     success: bool = Field(..., description="是否成功")
     moved_count: int = Field(..., description="成功修改的种子数量")
     failed_count: int = Field(..., description="失败的种子数量")
-    error_message: Optional[str] = Field(None, description="错误信息")
+    error_message: Optional[str] = Field(default=None, description="错误信息")
 
     class Config:
         json_schema_extra = {"example": {"success": True, "moved_count": 2, "failed_count": 0, "error_message": None}}

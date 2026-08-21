@@ -14,10 +14,10 @@ class DownloaderStats(BaseModel):
 class TorrentStats(BaseModel):
     """Torrent statistics."""
 
-    active: int = Field(0, description="Active torrents")
-    downloading: int = Field(0, description="Downloading torrents")
-    seeding: int = Field(0, description="Seeding torrents")
-    paused: int = Field(0, description="Paused torrents")
+    active: int = Field(default=0, description="Active torrents")
+    downloading: int = Field(default=0, description="Downloading torrents")
+    seeding: int = Field(default=0, description="Seeding torrents")
+    paused: int = Field(default=0, description="Paused torrents")
 
 
 class TaskStats(BaseModel):
@@ -34,8 +34,10 @@ class SystemStats(BaseModel):
     uptime: int = Field(..., description="Uptime in seconds")
     uptime_display: str = Field(..., description="Formatted uptime display")
     version: str = Field(..., description="Version")
-    total_download_speed: int = Field(0, description="Total download speed across all online downloaders (bytes/s)")
-    total_upload_speed: int = Field(0, description="Total upload speed across all online downloaders (bytes/s)")
+    total_download_speed: int = Field(
+        default=0, description="Total download speed across all online downloaders (bytes/s)"
+    )
+    total_upload_speed: int = Field(default=0, description="Total upload speed across all online downloaders (bytes/s)")
 
 
 class DownloaderListItem(BaseModel):
@@ -45,10 +47,10 @@ class DownloaderListItem(BaseModel):
     nickname: str
     downloader_type: int  # 0=qBittorrent, 1=Transmission
     status: str  # online/offline
-    downloading: int = Field(0, description="Current downloading count")
-    seeding: int = Field(0, description="Current seeding count")
-    download_speed: int = Field(0, description="Current download speed (bytes/s)")
-    upload_speed: int = Field(0, description="Current upload speed (bytes/s)")
+    downloading: int = Field(default=0, description="Current downloading count")
+    seeding: int = Field(default=0, description="Current seeding count")
+    download_speed: int = Field(default=0, description="Current download speed (bytes/s)")
+    upload_speed: int = Field(default=0, description="Current upload speed (bytes/s)")
 
 
 class ActivityItem(BaseModel):

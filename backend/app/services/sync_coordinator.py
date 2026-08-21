@@ -42,7 +42,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Tuple, cast
 
-from sqlalchemy import case as sa_case
+from sqlalchemy import case as sa_case, literal as sa_literal
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -473,7 +473,7 @@ class SyncCheckpointStore:
         async with self._open() as db:
             result = await db.execute(stmt)
             await db.commit()
-            return bool(result.rowcount and result.rowcount > 0)
+            return bool(getattr(result, "rowcount", 0) and getattr(result, "rowcount", 0) > 0)
 
     async def _apply_finalize(
         self,
@@ -493,8 +493,8 @@ class SyncCheckpointStore:
             .values(
                 cursor_value=cursor,
                 last_attempt_at=now,
-                last_success_at=sa_case((last_success, now), else_=SyncCheckpoint.last_success_at),
-                last_full_sync_at=sa_case((last_full, now), else_=SyncCheckpoint.last_full_sync_at),
+                last_success_at=sa_case((sa_literal(last_success), now), else_=SyncCheckpoint.last_success_at),
+                last_full_sync_at=sa_case((sa_literal(last_full), now), else_=SyncCheckpoint.last_full_sync_at),
                 outcome=outcome,
                 detail_json=sanitize_detail_json(detail),
                 version=SyncCheckpoint.version + 1,
@@ -504,7 +504,7 @@ class SyncCheckpointStore:
         async with self._open() as db:
             result = await db.execute(stmt)
             await db.commit()
-            return bool(result.rowcount and result.rowcount > 0)
+            return bool(getattr(result, "rowcount", 0) and getattr(result, "rowcount", 0) > 0)
 
     async def _get_by_id(self, checkpoint_id: int) -> Optional[Dict[str, Any]]:
         """按主键读取检查点（独立短事务）。"""

@@ -291,6 +291,14 @@ async def _legacy_full_sync_impl(downloader_info: Dict[str, Any]) -> Dict[str, A
                 "nickname": downloader_info.get("nickname", "unknown"),
             }
 
+        # 兜底：try 主体正常走完但未命中任何 return 的路径
+        return {
+            "status": "failed",
+            "message": "同步流程未产生结果（无匹配下载器或类型分支）",
+            "downloader_type": downloader_info.get("downloader_type", "unknown"),
+            "nickname": downloader_info.get("nickname", "unknown"),
+        }
+
 
 async def torrent_sync_async() -> Dict[str, Any]:
     """
@@ -417,7 +425,7 @@ async def torrent_sync_async() -> Dict[str, Any]:
         # 统计结果
         errors = []
         for result in sync_results:
-            if isinstance(result, Exception):
+            if isinstance(result, BaseException):
                 failed_syncs += 1
                 error_result = {
                     "status": "failed",
@@ -645,13 +653,9 @@ def sync_add_tracker(db, downloader_type, mode, torrent_info, torrent_info_id):
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
                     "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
-                    "last_announce_succeeded": resolve_transmission_tracker_status_code(
-                        tracker_status, "announce"
-                    ),
+                    "last_announce_succeeded": resolve_transmission_tracker_status_code(tracker_status, "announce"),
                     "last_announce_msg": tracker_status.last_announce_result,
-                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(
-                        tracker_status, "scrape"
-                    ),
+                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                     "last_scrape_msg": tracker_status.last_scrape_result,
                     "create_time": current_time,
                     "create_by": "admin",
@@ -1302,7 +1306,7 @@ async def sync_single_downloader(
 
         # 创建后台任务
         task = await task_manager.create_task(
-            task_type="sync", downloader_id=downloader.downloader_id, downloader_nickname=downloader.nickname
+            task_type="sync", downloader_id=downloader.downloader_id, downloader_nickname=downloader.nickname or ""
         )
 
         # 定义后台执行函数

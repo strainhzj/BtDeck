@@ -60,14 +60,14 @@ _TR_CALL_TIMEOUT = 30.0
 class TorrentOperationRequest(BaseModel):
     """种子操作请求（统一基类）"""
 
-    hashes: List[str] = Field(..., description="种子hash列表", min_items=1, max_items=100)
+    hashes: List[str] = Field(..., description="种子hash列表", min_length=1, max_length=100)
     operator: Optional[str] = Field(default="admin", description="操作人")
 
 
 @router.post("/list", response_model=CommonResponse)
 def torrent_list(
+    request: Request,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
     name: str = Query(default="default", alias="name", description="种子名称"),
     db: Session = Depends(get_db),
 ):
@@ -136,8 +136,8 @@ def torrent_list(
 
 @router.post("/add", response_model=CommonResponse)
 async def create_torrent(
+    request: Request,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
     downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
     save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
     tags: Optional[str | None] = Form("", description="标签"),
@@ -154,7 +154,7 @@ async def create_torrent(
     db: Session = Depends(get_db),
 ):
     # """创建新的种子信息"""
-    result = CommonResponse(status="success", msg="种子添加成功", data=None, code="200")
+    result: CommonResponse[None] = CommonResponse(status="success", msg="种子添加成功", data=None, code="200")
 
     # ========== 从 app.state.store 获取缓存的下载器（强制规范） ==========
     # 步骤1：获取 app 对象并检查缓存初始化
@@ -483,8 +483,8 @@ async def create_torrent(
 
 @router.post("/add-batch", response_model=CommonResponse)
 async def create_torrents_batch(
+    request: Request,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
     torrent_files: List[UploadFile] = File(..., description="种子文件列表，数量不限"),
     downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
     save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
@@ -595,9 +595,7 @@ def get_torrent(
 
 @router.get("/getList")
 def get_torrents(
-    downloader_id: Optional[str] = Query(
-        None, description="所属下载器主键（支持多选，逗号分隔）", examples={"default": ""}
-    ),
+    downloader_id: Optional[str] = Query(None, description="所属下载器主键（支持多选，逗号分隔）", examples=[""]),
     downloader_name_like: Optional[str] = Query(None, description="所属下载器名模糊查询"),
     name_like: Optional[str] = Query(None, description="种子名称模糊查询"),
     save_path_like: Optional[str] = Query(None, description="种子文件保存路径模糊查询"),

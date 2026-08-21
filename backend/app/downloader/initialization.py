@@ -2,7 +2,7 @@ import asyncio
 import socket
 import logging
 from fastapi import FastAPI
-from typing import List, Any, Callable, Dict
+from typing import Any, Callable, DefaultDict, Dict, List, Literal, Optional, Union
 from collections import defaultdict
 import time
 from datetime import datetime
@@ -27,18 +27,18 @@ logger = logging.getLogger(__name__)
 
 class DownloaderInitialization:
     def __init__(self, check_status_func: Callable[[Any], bool]):
-        self._data = []  # 核心数据（写时复制）
-        self._buffer = []  # 写缓冲区
-        self._cache = None  # 读缓存
-        self._cache_time = 0  # 缓存时间
-        self._cache_ttl = 0.5  # 缓存有效期（秒）
+        self._data: List[Any] = []  # 核心数据（写时复制）
+        self._buffer: List[Any] = []  # 写缓冲区
+        self._cache: Optional[List[Any]] = None  # 读缓存
+        self._cache_time: float = 0  # 缓存时间
+        self._cache_ttl: float = 0.5  # 缓存有效期（秒）
         self._lock = asyncio.Lock()  # 写操作锁
         self._processing = False  # 缓冲区处理状态
 
         # 校验相关属性
         self.check_status = check_status_func  # 同步校验函数
         self.check_status_async = check_status_async  # 异步校验函数
-        self.failure_counts = defaultdict(int)  # 失败计数器 {item: 失败次数}
+        self.failure_counts: DefaultDict[Any, int] = defaultdict(int)  # 失败计数器 {item: 失败次数}
         self.last_check_time = 0  # 上次校验时间
         self.check_interval = 5  # 校验间隔（秒）
         self.failure_threshold = 3  # 失败阈值，达到此值则移除
@@ -426,7 +426,7 @@ async def _check_transmission_auth_with_retry(downloader_info: Dict[str, Any], a
 
     try:
         logger.debug(f"创建 Transmission 客户端连接... (尝试 {attempt}/{max_retries})")
-        client = trClient(host=host, port=port, username=username, password=password)
+        client = trClient(host=host or "", port=int(port or 0), username=username, password=password)
 
         # 尝试获取会话统计（验证认证）
         logger.debug(f"验证 Transmission 认证... (尝试 {attempt}/{max_retries})")
@@ -1050,10 +1050,10 @@ def _calculate_sync_interval(default_interval: int, min_interval: int, max_inter
 
 
 # 简单的内存统计存储（生产环境建议使用Redis或数据库）
-_sync_stats = {"total_additions": 0, "total_failures": 0, "last_update": None}
+_sync_stats: Dict[str, Any] = {"total_additions": 0, "total_failures": 0, "last_update": None}
 
 # 种子同步统计存储
-_torrent_sync_stats = {
+_torrent_sync_stats: Dict[str, Any] = {
     "total_successful": 0,
     "total_failed": 0,
     "last_duration": 0,
@@ -1117,16 +1117,16 @@ async def _update_torrent_sync_statistics_with_duration(successful: int, failed:
     import time
 
     current_time = time.time()
-    if not hasattr(_update_torrent_sync_statistics_with_duration, "last_reset"):
-        _update_torrent_sync_statistics_with_duration.last_reset = current_time
+    if getattr(_update_torrent_sync_statistics_with_duration, "last_reset", None) is None:
+        setattr(_update_torrent_sync_statistics_with_duration, "last_reset", current_time)
 
     # 如果距离上次重置超过24小时，则重置统计
-    if current_time - _update_torrent_sync_statistics_with_duration.last_reset > 86400:  # 24小时 = 86400秒
+    if current_time - getattr(_update_torrent_sync_statistics_with_duration, "last_reset", 0) > 86400:  # 24小时=86400秒
         _torrent_sync_stats["total_successful"] = 0
         _torrent_sync_stats["total_failed"] = 0
         _torrent_sync_stats["avg_duration"] = 0
         _torrent_sync_stats["last_duration"] = 0
-        _update_torrent_sync_statistics_with_duration.last_reset = current_time
+        setattr(_update_torrent_sync_statistics_with_duration, "last_reset", current_time)
 
 
 async def _update_sync_statistics(successful: int, failed: int):
@@ -1142,14 +1142,14 @@ async def _update_sync_statistics(successful: int, failed: int):
     import time
 
     current_time = time.time()
-    if not hasattr(_update_sync_statistics, "last_reset"):
-        _update_sync_statistics.last_reset = current_time
+    if getattr(_update_sync_statistics, "last_reset", None) is None:
+        setattr(_update_sync_statistics, "last_reset", current_time)
 
     # 如果距离上次重置超过24小时，则重置统计
-    if current_time - _update_sync_statistics.last_reset > 86400:  # 24小时 = 86400秒
+    if current_time - getattr(_update_sync_statistics, "last_reset", 0) > 86400:  # 24小时 = 86400秒
         _sync_stats["total_additions"] = 0
         _sync_stats["total_failures"] = 0
-        _update_sync_statistics.last_reset = current_time
+        setattr(_update_sync_statistics, "last_reset", current_time)
 
 
 async def _is_downloader_duplicate(app: FastAPI, host: str, port: Any) -> bool:
@@ -1256,7 +1256,7 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
 
         # 尝试转换为整数
         try:
-            downloader_type_int = int(downloader_type_raw)
+            downloader_type_int = int(downloader_type_raw or 0)
         except (ValueError, TypeError):
             logger.warning(
                 f"❌ 下载器类型值无效: {downloader_type_raw} (类型: {type(downloader_type_raw).__name__})，"
@@ -1319,6 +1319,7 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
 
             try:
                 # 创建客户端连接
+                client: Union[qbClient, trClient]
                 if downloader_type_int == 0:
                     client = qbClient(
                         host=downloader_data["host"],
@@ -1329,7 +1330,7 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
                         REQUESTS_ARGS={"timeout": 30},
                     )
                 elif downloader_type_int == 1:
-                    protocol = "https" if downloader_data.get("is_ssl") == "1" else "http"
+                    protocol: Literal["http", "https"] = "https" if downloader_data.get("is_ssl") == "1" else "http"
                     client = trClient(
                         host=downloader_data["host"],
                         username=downloader_data.get("username"),
@@ -1344,7 +1345,7 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
 
                 # 创建种子统计缓存
                 stats_cache = TorrentStatsCache(
-                    downloader_id=downloader_data.get("downloader_id"),
+                    downloader_id=downloader_data.get("downloader_id") or "",
                     full_sync_interval=3600,  # 每小时全量同步
                     cache_ttl=7200,  # 缓存2小时
                 )

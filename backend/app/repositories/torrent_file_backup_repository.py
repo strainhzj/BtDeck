@@ -298,7 +298,7 @@ class TorrentFileBackupRepository:
             result = await self.db.execute(stmt)
             await self.db.commit()
 
-            return result.rowcount > 0
+            return getattr(result, "rowcount", 0) > 0
 
         except SQLAlchemyError:
             await self.db.rollback()

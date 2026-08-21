@@ -106,8 +106,8 @@ class OrphanFileService:
     @staticmethod
     def _detail_canonical_path(detail: OrphanFile) -> str:
         """返回扫描明细的稳定候选身份。"""
-        canonical_path = cast(Optional[str], detail.canonical_path)
-        return canonical_path or normalize_path(cast(str, detail.file_path))
+        canonical_path = detail.canonical_path
+        return canonical_path or normalize_path((detail.file_path))
 
     @staticmethod
     def _sync_candidate_owner(
@@ -120,12 +120,12 @@ class OrphanFileService:
         元数据。只在候选尚无 last_seen_scan_id，或候选与明细属于同一扫描
         快照时修正，避免旧页面操作覆盖更新扫描已经确认的新归属。
         """
-        current_owner = cast(Optional[str], detail.downloader_id) or ""
-        if cast(str, candidate.downloader_id) == current_owner:
+        current_owner = (detail.downloader_id) or ""
+        if (candidate.downloader_id) == current_owner:
             return False
-        if cast(Optional[str], candidate.last_seen_scan_id) not in (
+        if (candidate.last_seen_scan_id) not in (
             None,
-            cast(str, detail.scan_id),
+            (detail.scan_id),
         ):
             return False
         setattr(candidate, "downloader_id", current_owner)
@@ -370,7 +370,7 @@ class OrphanFileService:
                 )
             result = await self.db.execute(select(OrphanCurrentCandidate).where(*conditions))
             for candidate in result.scalars().all():
-                candidates[cast(str, candidate.canonical_path)] = candidate
+                candidates[(candidate.canonical_path)] = candidate
         return candidates
 
     # ==================== 新鲜度门禁 ====================
@@ -482,7 +482,7 @@ class OrphanFileService:
 
     @staticmethod
     def _candidate_inode(candidate: OrphanCurrentCandidate) -> tuple[int, int]:
-        return int(candidate.device_id), int(candidate.inode)
+        return int(candidate.device_id or 0), int(candidate.inode or 0)
 
     @staticmethod
     def _path_authorized(candidate: OrphanCurrentCandidate, manifest: ManifestSnapshot) -> bool:
@@ -730,7 +730,7 @@ class OrphanFileService:
         )
         detail_ids = {int(detail.id) for detail in details}
         missing_orphan_ids = [orphan_id for orphan_id in normalized_ids if orphan_id not in detail_ids]
-        targets = [(int(detail.id), cast(str, detail.file_path)) for detail in details]
+        targets = [(int(detail.id), (detail.file_path)) for detail in details]
         inspected = await asyncio.to_thread(self._inspect_hardlink_sources, targets)
 
         search_error: Optional[str] = None
@@ -945,7 +945,7 @@ class OrphanFileService:
             gate_error = "孤儿文件不存在或已删除，请刷新页面后重试"
         else:
             detail = details[0]
-            source_path = cast(str, detail.file_path)
+            source_path = detail.file_path
             canonical_path = self._detail_canonical_path(detail)
             candidates = await self._load_candidates([canonical_path])
             candidate = candidates.get(canonical_path)
@@ -1200,12 +1200,12 @@ class OrphanFileService:
 
         current_mode = str(display_scan.details_mode or "snapshot") == "current"
         detail_scope = (
-            OrphanFile.id.in_(self._current_detail_ids_query(cast(str, display_scan.scan_id)))
+            OrphanFile.id.in_(self._current_detail_ids_query((display_scan.scan_id)))
             if current_mode
             else OrphanFile.scan_id == display_scan.scan_id
         )
 
-        scan_id_str = cast(str, display_scan.scan_id)
+        scan_id_str = display_scan.scan_id
         stats_epoch, cached_stats = orphan_stats_cache.get(scan_id_str)
         if cached_stats is not None:
             remaining_count, remaining_size, ignored_count = cached_stats
@@ -1250,7 +1250,7 @@ class OrphanFileService:
 
         # 列表与“全选当前筛选”必须共用完全相同的过滤语义。
         conditions = self._build_orphan_conditions(
-            cast(str, display_scan.scan_id),
+            (display_scan.scan_id),
             current_mode=current_mode,
             downloader_id=downloader_id,
             min_size=min_size,
@@ -1385,12 +1385,12 @@ class OrphanFileService:
 
         current_mode = str(display_scan.details_mode or "snapshot") == "current"
         detail_scope = (
-            OrphanFile.id.in_(self._current_detail_ids_query(cast(str, display_scan.scan_id)))
+            OrphanFile.id.in_(self._current_detail_ids_query((display_scan.scan_id)))
             if current_mode
             else OrphanFile.scan_id == display_scan.scan_id
         )
 
-        scan_id_str = cast(str, display_scan.scan_id)
+        scan_id_str = display_scan.scan_id
         stats_epoch, cached_stats = orphan_stats_cache.get(scan_id_str)
         if cached_stats is not None:
             remaining_count, remaining_size, ignored_count = cached_stats
@@ -1433,7 +1433,7 @@ class OrphanFileService:
             )
 
         conditions = self._build_orphan_conditions(
-            cast(str, display_scan.scan_id),
+            (display_scan.scan_id),
             current_mode=current_mode,
             downloader_id=downloader_id,
             min_size=min_size,
@@ -1600,7 +1600,7 @@ class OrphanFileService:
             return {"total": 0, "page": page, "pageSize": page_size, "list": []}
 
         conditions = self._build_orphan_conditions(
-            cast(str, display_scan.scan_id),
+            (display_scan.scan_id),
             current_mode=str(display_scan.details_mode or "snapshot") == "current",
             downloader_id=downloader_id,
             min_size=min_size,
@@ -1679,7 +1679,7 @@ class OrphanFileService:
         for d in item_dicts:
             dl_id = d.get("downloader_id")
             d["downloader_name"] = nickname_map.get(dl_id) if dl_id else None
-            ignore_info = ignore_map.get(d.get("canonical_path"))
+            ignore_info = ignore_map.get(d.get("canonical_path") or "")
             if ignore_info:
                 d["is_ignored"] = ignore_info["is_ignored"]
                 d["ignored_at"] = ignore_info["ignored_at"]
@@ -1817,7 +1817,7 @@ class OrphanFileService:
                                 deleted_by="system:reconciliation",
                             )
                         )
-                        updated_count += int(update_result.rowcount or 0)
+                        updated_count += int(getattr(update_result, "rowcount", 0) or 0)
                     await self.db.commit()
             except Exception:
                 await self.db.rollback()
@@ -2154,12 +2154,16 @@ class OrphanFileService:
                     )
                     continue
                 owning_root = self._owning_root(candidate, manifest)
+                if not owning_root:
+                    # fail-closed：无法定位所属扫描根（清单漂移），拒绝隔离
+                    failed_list.append(
+                        {"id": item.id, "file_path": item.file_path, "reason": "无法定位扫描根，需重新扫描"}
+                    )
+                    continue
                 quarantine_root = resolve_quarantine_root(owning_root, scan_id=scan_id)
                 # 清理预警（不阻断）：原文件若存在硬链接副本，隔离前记录诊断，
                 # 让用户在后续彻底删除前知情。隔离本身可恢复，故不拒绝。
-                cleanup_note = await self._detect_hardlink_copies(
-                    candidate, cast(str, actual_path), manifest, "cleanup_warn"
-                )
+                cleanup_note = await self._detect_hardlink_copies(candidate, (actual_path), manifest, "cleanup_warn")
                 await self._quarantine_candidate(
                     candidate,
                     actual_path,
@@ -2503,6 +2507,11 @@ class OrphanFileService:
                     continue
                 # 推导扫描根（canonical_path 所在的下载器扫描根）
                 scan_root = self._owning_root(candidate, manifest)
+                if not scan_root:
+                    # fail-closed：无法定位扫描根（清单漂移），跳过该候选
+                    logger.warning(f"[孤儿自动清理] 无法定位扫描根: {candidate.canonical_path}")
+                    failed_count += 1
+                    continue
                 quarantine_root = resolve_quarantine_root(scan_root, scan_id=scan_id)
 
                 # 隔离前复核文件身份
@@ -2520,7 +2529,7 @@ class OrphanFileService:
                 # 清理预警（不阻断）：原文件若存在硬链接副本，隔离前记录诊断。
                 auto_note = await self._detect_hardlink_copies(
                     candidate,
-                    cast(str, candidate.canonical_path),
+                    (candidate.canonical_path),
                     manifest,
                     "cleanup_warn",
                 )
@@ -2660,8 +2669,8 @@ class OrphanFileService:
 
                 # 二次验证：路径仍在预写的精确隔离根内（防路径篡改）。
                 quarantine_root = candidate.quarantine_root
-                if not self._path_in_quarantine_root(qpath, quarantine_root):
-                    logger.warning("[隔离清理] 路径不在隔离区内，跳过: %s", qpath)
+                if not quarantine_root or not self._path_in_quarantine_root(qpath, quarantine_root):
+                    logger.warning("[隔离清理] 隔离根缺失或路径不在隔离区内，跳过: %s", qpath)
                     failed_count += 1
                     continue
 
@@ -2683,7 +2692,7 @@ class OrphanFileService:
                 # 下载器可能已降级）；manifest 为 None 时仅按 nlink 跳过、无法
                 # 列出具体副本路径（reason 标注）。
                 try:
-                    await self._detect_hardlink_copies(candidate, cast(str, qpath), None, mode="purge_expired")
+                    await self._detect_hardlink_copies(candidate, (qpath), None, mode="purge_expired")
                 except HardlinkCopyError as he:
                     # 延后 purge_after，打破「每日重试循环」：跳过后 purge_after 不变，
                     # 次日任务会再次选中→再次跳过。延后 N 天后副本若仍存在继续延后
@@ -2692,7 +2701,7 @@ class OrphanFileService:
                     # 计数用 SQL 表达式原子递增（并入同一次 UPDATE，避免 commit 后
                     # ORM 对象过期/StaleData 陷阱与 read-modify-write 丢计数）。
                     await self._commit_candidate_state(
-                        cast(str, candidate.canonical_path),
+                        (candidate.canonical_path),
                         purge_after=new_purge_after,
                         purge_delay_count=OrphanCurrentCandidate.purge_delay_count + 1,
                     )
@@ -3190,7 +3199,7 @@ class OrphanFileService:
         for candidate in candidates:
             try:
                 # 候选表 downloader_id 非空；ORM 列类型标注缺失，cast 仅辅助静态检查
-                downloader_id = cast(str, candidate.downloader_id)
+                downloader_id = candidate.downloader_id
                 if downloader_id not in manifest_cache:
                     manifest_cache[downloader_id] = await self._build_realtime_manifest(store, {downloader_id})
                 note = await self._purge_single_candidate(
@@ -3345,7 +3354,7 @@ class OrphanFileService:
 
         # 硬链接副本检测：删除前抓取 inode/nlink（删除后 inode 失效无法反查）。
         # 仅在 nlink>1 时触发副本枚举，限定在候选所属 downloader 的 scan_roots。
-        hardlink_note = await self._detect_hardlink_copies(candidate, cast(str, qpath), manifest, mode, store)
+        hardlink_note = await self._detect_hardlink_copies(candidate, (qpath), manifest, mode, store)
 
         # tombstone 预写 + 物理删除（与 purge_expired_quarantine 一致）
         tombstone_path = build_quarantine_path(qpath, quarantine_root)
@@ -3424,7 +3433,7 @@ class OrphanFileService:
           - purge_expired：保守跳过（抛 HardlinkCopyError，reason 标注不可靠）。
         """
         # ORM 列类型标注缺失，cast 仅辅助静态检查（运行期为真实值）。
-        canonical_path = cast(str, candidate.canonical_path)
+        canonical_path = candidate.canonical_path
         try:
             qstat = os.stat(qpath)
         except OSError as exc:
@@ -3530,7 +3539,7 @@ class OrphanFileService:
                     OrphanFile.is_deleted == False,  # noqa: E712
                 )
             )
-            return detail_result.scalars().all()
+            return list(detail_result.scalars().all())
 
         detail_result = await self.db.execute(
             select(OrphanFile).where(
@@ -3592,7 +3601,7 @@ class OrphanFileService:
                         deleted_by=operator,
                     )
                 )
-                if int(detail_update.rowcount or 0) != len(detail_ids):
+                if int(getattr(detail_update, "rowcount", 0) or 0) != len(detail_ids):
                     raise RuntimeError("隔离最终化期间扫描明细发生并发变化")
                 await self.db.commit()
         except Exception:
@@ -3612,7 +3621,7 @@ class OrphanFileService:
                     .where(OrphanCurrentCandidate.canonical_path == canonical_path)
                     .values(**values)
                 )
-                if not result.rowcount:
+                if not getattr(result, "rowcount", 0):
                     raise RuntimeError(f"候选不存在: {canonical_path}")
                 await self.db.commit()
         except Exception:
@@ -3741,6 +3750,8 @@ class OrphanFileService:
                     if original_exists and target_exists:
                         raise OSError("purge 恢复发现原路径和 tombstone 同时存在")
                     if target_exists:
+                        if target is None or root is None:
+                            raise OSError("purge 恢复缺少 tombstone 路径或隔离根")
                         guard_error = self._quarantine_delete_guard_error(candidate)
                         if guard_error:
                             raise OSError(guard_error)
@@ -3803,6 +3814,8 @@ class OrphanFileService:
                             if lease_handle is None:
                                 raise OSError("硬链接恢复缺少维护租约")
                             await lease_handle.assert_owned()
+                            if manifest is None:
+                                raise OSError("恢复缺少 manifest，无法校验源路径归属")
                             if normalize_path(source) in manifest.expected_paths:
                                 os.unlink(target)
                                 await lease_handle.assert_owned()
@@ -3828,7 +3841,11 @@ class OrphanFileService:
                         scan_id=candidate.last_seen_scan_id,
                         operator="system:recovery",
                     )
-                elif normalize_path(source) in manifest.expected_paths and os.path.exists(source):
+                elif (
+                    manifest is not None
+                    and normalize_path(source) in manifest.expected_paths
+                    and os.path.exists(source)
+                ):
                     await self._commit_candidate_state(
                         candidate.canonical_path,
                         status="resolved",
@@ -3838,6 +3855,8 @@ class OrphanFileService:
                     )
                     prune_empty_quarantine_parents(target, root)
                 elif target and root and os.path.exists(source):
+                    if manifest is None:
+                        raise OSError("恢复缺少 manifest，无法校验路径授权")
                     if not self._path_authorized(candidate, manifest):
                         raise OSError("隔离恢复路径不属于授权扫描根")
                     if lease_handle is None:

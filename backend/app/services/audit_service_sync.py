@@ -267,7 +267,7 @@ class AuditLogServiceSync:
             from sqlalchemy import func
 
             operator_query = (
-                query.with_entities(TorrentAuditLog.operator, func.count(TorrentAuditLog.id).label("count"))
+                query.with_entities(TorrentAuditLog.operator, func.count(TorrentAuditLog.id).label("count"))  # type: ignore[arg-type]  # with_entities 与 func.count 组合的类型误报
                 .group_by(TorrentAuditLog.operator)
                 .order_by(desc("count"))
                 .limit(10)
@@ -313,11 +313,12 @@ class AuditLogServiceSync:
             logs = query.all()
 
             # 生成归档文件路径
+            archive_file: Path
             if not archive_path:
                 archive_dir = Path("data/audit_logs_archive")
                 archive_dir.mkdir(parents=True, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                archive_path = archive_dir / f"audit_logs_archive_{timestamp}.json"
+                archive_file = archive_dir / f"audit_logs_archive_{timestamp}.json"
 
             # 导出为JSON
             logs_data = []
@@ -341,7 +342,7 @@ class AuditLogServiceSync:
                 }
                 logs_data.append(log_dict)
 
-            with open(archive_path, "w", encoding="utf-8") as f:
+            with open(archive_file, "w", encoding="utf-8") as f:
                 json.dump(logs_data, f, ensure_ascii=False, indent=2)
 
             # 删除已归档的日志

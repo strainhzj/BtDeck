@@ -15,6 +15,10 @@ freezegun~=1.5.0
 # ---- 代码质量工具（CI 门禁；本地配合 .pre-commit-config.yaml / pyproject.toml / .flake8）----
 # 验证命令：python -m black --check app/ && python -m flake8 app/ && python -m mypy app/ && python scripts/lint_btdeck.py && python -m ruff check app/
 mypy~=1.13.0
+# mypy 类型存根（requests/yaml/croniter 无内置类型）
+types-requests~=2.32
+types-PyYAML~=6.0
+types-croniter~=5.0
 black~=24.10.0
 flake8~=7.1.0
 ruff~=0.8.0

@@ -20,9 +20,10 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, Optional, cast
+from typing import Any, Dict, Optional
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 from app.utils.datetime_utils import serialize_utc_datetime
@@ -90,23 +91,29 @@ class SyncCheckpoint(Base):
     __tablename__ = "sync_checkpoints"
     __table_args__ = (UniqueConstraint("downloader_id", "sync_type", name="uq_sync_checkpoints_downloader_sync_type"),)
 
-    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
-    downloader_id = Column(String(100), nullable=False, index=True, comment="下载器标识")
-    sync_type = Column(String(20), nullable=False, index=True, comment="同步类型：info/tracker/full")
-    cursor_value = Column(Text, nullable=True, comment="透明游标字符串/JSON 文本（W3-1 起真正使用）")
-    cycle_started_at = Column(DateTime, nullable=False, comment="当前周期开始时间")
-    last_full_sync_at = Column(DateTime, nullable=True, comment="最近完整覆盖时间")
-    last_success_at = Column(DateTime, nullable=True, comment="最近成功提交时间")
-    last_attempt_at = Column(DateTime, nullable=False, comment="最近尝试时间")
-    outcome = Column(
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    downloader_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True, comment="下载器标识")
+    sync_type: Mapped[str] = mapped_column(
+        String(20), nullable=False, index=True, comment="同步类型：info/tracker/full"
+    )
+    cursor_value: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="透明游标字符串/JSON 文本（W3-1 起真正使用）"
+    )
+    cycle_started_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="当前周期开始时间")
+    last_full_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="最近完整覆盖时间")
+    last_success_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="最近成功提交时间")
+    last_attempt_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="最近尝试时间")
+    outcome: Mapped[Optional[str]] = mapped_column(
         String(20),
         nullable=True,
         comment="success/partial/skipped/failed/no_action/cancelled（None=尚无完成记录）",
     )
-    detail_json = Column(Text, nullable=True, comment="聚合统计 JSON（白名单 key，不含敏感数据）")
-    version = Column(Integer, nullable=False, default=0, server_default="0", comment="乐观锁版本")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
-    updated_at = Column(
+    detail_json: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="聚合统计 JSON（白名单 key，不含敏感数据）"
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0", comment="乐观锁版本")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(
         DateTime,
         nullable=False,
         default=datetime.utcnow,
@@ -120,7 +127,7 @@ class SyncCheckpoint(Base):
         if not self.detail_json:
             return {}
         try:
-            value = json.loads(cast(str, self.detail_json))
+            value = json.loads((self.detail_json))
         except (json.JSONDecodeError, TypeError):
             return {}
         return value if isinstance(value, dict) else {}

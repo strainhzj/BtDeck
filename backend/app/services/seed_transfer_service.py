@@ -25,7 +25,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
 from app.models.setting_templates import DownloaderTypeEnum
@@ -59,12 +59,12 @@ class SeedTransferService:
     - 记录审计日志
     """
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         """
         初始化种子转移服务
 
         Args:
-            db: 同步数据库会话（用于查询下载器信息等）
+            db: 异步数据库会话（调用方负责生命周期；查询下载器信息、审计落库均使用）
         """
         self.db = db
         # 注意：历史上 self.async_db 在本类的所有方法中都未被读取（审计日志方法内部均
@@ -99,8 +99,8 @@ class SeedTransferService:
 
     async def transfer_seed(
         self,
-        source_downloader_id: int,
-        target_downloader_id: int,
+        source_downloader_id: str,
+        target_downloader_id: str,
         info_hash: str,
         target_path: str,
         delete_source: bool,
@@ -139,7 +139,9 @@ class SeedTransferService:
             }
         """
         start_time = time.time()
-        result = {
+        # 显式 Dict[str, Any]：字面量推断会把 success(bool)/error_message(str) 等
+        # 收窄成联合类型，污染全函数 result.get() 的返回类型
+        result: Dict[str, Any] = {
             "success": False,
             "transfer_id": None,
             "transfer_status": "failed",
@@ -511,9 +513,12 @@ class SeedTransferService:
                         )
 
                         # 构建备份文件路径（复制到备份目录）
-                        from app.core.config import settings
+                        # 注意：settings 无 BASE_DIR 属性，原写法必抛 AttributeError 并被
+                        # 外层 except 吞掉（降级备份记录从未真正落盘）。改用与
+                        # TorrentFileBackupService 一致的目录推导（BACKUP_TORRENT_DIR 优先）。
+                        from app.core.torrent_file_backup import TorrentFileBackupService
 
-                        backup_dir = os.path.join(settings.BASE_DIR, "backup", "torrents")
+                        backup_dir = os.environ.get("BACKUP_TORRENT_DIR", TorrentFileBackupService.DEFAULT_BACKUP_DIR)
                         backup_path = os.path.join(backup_dir, backup_filename)
 
                         # 复制文件到备份目录
@@ -613,7 +618,7 @@ class SeedTransferService:
 
     async def _verify_transfer(
         self,
-        downloader_id: int,
+        downloader_id: str,
         target_client: Any,
         downloader_type: int,
         info_hash: str,
@@ -707,7 +712,7 @@ class SeedTransferService:
 
     async def _check_target_duplicate(
         self,
-        downloader_id: int,
+        downloader_id: str,
         target_client: Any,
         downloader_type: int,
         info_hash: str,
@@ -745,7 +750,7 @@ class SeedTransferService:
             return False
 
     async def _delete_source_torrent(
-        self, downloader_id: int, source_client: Any, downloader_type: int, info_hash: str, delete_files: bool = False
+        self, downloader_id: str, source_client: Any, downloader_type: int, info_hash: str, delete_files: bool = False
     ) -> bool:
         """
         删除源下载器的种子
@@ -918,7 +923,7 @@ class SeedTransferService:
             await self.db.rollback()
             logger.warning(f"转移后落库目标种子行失败（不影响转移结果，等待同步补齐）: {info_hash}: {e}")
 
-    async def _mark_source_row_transferred(self, source_downloader_id: int, info_hash: str) -> None:
+    async def _mark_source_row_transferred(self, source_downloader_id: str, info_hash: str) -> None:
         """源种子已从源下载器删除，按同步删除语义标记源行 dr=1（best-effort）。
 
         只置 dr=1 + update_time，不写 deleted_at（与 _mark_qb_removed_torrents
@@ -950,11 +955,11 @@ class SeedTransferService:
         self,
         user_id: int,
         username: str,
-        source_downloader_id: int,
-        source_downloader_name: str,
-        target_downloader_id: int,
-        target_downloader_name: str,
-        torrent_name: str,
+        source_downloader_id: str,
+        source_downloader_name: Optional[str],
+        target_downloader_id: str,
+        target_downloader_name: Optional[str],
+        torrent_name: Optional[str],
         info_hash: str,
         source_path: str,
         target_path: str,
@@ -989,9 +994,12 @@ class SeedTransferService:
                     operation_time=datetime.now(),
                     user_id=user_id,
                     username=username,
-                    source_downloader_id=source_downloader_id,
+                    # 历史遗留：审计表 *_downloader_id 列声明为 Integer，但业务主键是
+                    # UUID 字符串，靠 SQLite 类型亲和以文本形态存取（存量数据同为文本）。
+                    # 列类型矫正需 Alembic 迁移，另行处理；此处按现状存入。
+                    source_downloader_id=source_downloader_id,  # type: ignore[arg-type]
                     source_downloader_name=source_downloader_name,
-                    target_downloader_id=target_downloader_id,
+                    target_downloader_id=target_downloader_id,  # type: ignore[arg-type]
                     target_downloader_name=target_downloader_name,
                     torrent_name=torrent_name,
                     info_hash=info_hash,

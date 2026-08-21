@@ -20,7 +20,8 @@ Column(JSON) 读取时会二次解析报错。
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import DateTime, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 
@@ -43,16 +44,20 @@ class SearchTemplate(Base):
 
     __tablename__ = "search_templates"
 
-    id = Column(String(36), primary_key=True, comment="模板唯一标识（UUID）")
-    user_id = Column(String(36), nullable=False, index=True, comment="所属用户 ID")
-    name = Column(String(100), nullable=False, comment="模板名称")
-    description = Column(String(500), nullable=True, comment="模板描述")
-    conditions = Column(Text, nullable=False, comment="查询条件（JSON 字符串）")
-    is_default = Column(Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义")
-    is_public = Column(Integer, nullable=False, default=0, index=True, comment="是否公开可见")
-    usage_count = Column(Integer, nullable=False, default=0, comment="使用次数")
-    created_time = Column(DateTime, default=datetime.utcnow, comment="创建时间")
-    updated_time = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间")
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, comment="模板唯一标识（UUID）")
+    user_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="所属用户 ID")
+    name: Mapped[str] = mapped_column(String(100), nullable=False, comment="模板名称")
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="模板描述")
+    conditions: Mapped[str] = mapped_column(Text, nullable=False, comment="查询条件（JSON 字符串）")
+    is_default: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="是否系统预设：1=预设，0=用户自定义"
+    )
+    is_public: Mapped[int] = mapped_column(Integer, nullable=False, default=0, index=True, comment="是否公开可见")
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="使用次数")
+    created_time: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_time: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间"
+    )
 
     def __init__(
         self,

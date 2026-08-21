@@ -21,7 +21,7 @@ from app.utils.log_sanitizer import format_connection_log, should_sanitize
 logger = logging.getLogger(__name__)
 
 
-def _safe_parse_port(port_value: any, downloader_id: str = None) -> int:
+def _safe_parse_port(port_value: Any, downloader_id: Optional[str] = None) -> int:
     """安全解析端口号，防止panic
 
     Args:
@@ -274,7 +274,7 @@ class DownloaderSettingsManager:
         try:
             logger.info(
                 f"测试下载器连接: "
-                f"{format_connection_log(self.downloader.nickname, self.downloader.host, self.downloader.port, should_sanitize())}"
+                f"{format_connection_log(self.downloader.nickname or '', self.downloader.host or '', self.downloader.port or 0, should_sanitize())}"
             )
 
             success = self.settings_wrapper.test_connection()

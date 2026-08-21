@@ -42,7 +42,8 @@ def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
             WHERE downloader_id = :downloader_id AND dr = 0
         """
         result = db.execute(text(sql), {"downloader_id": downloader_id}).fetchone()
-        return result.count > 0 if result else False
+        # Row.count 与 tuple.count 方法撞名，mypy 视角取到方法；按列序取值更稳
+        return (result[0] > 0) if result else False
     except Exception as e:
         logger.error(f"验证下载器存在性失败: {e}")
         return False
@@ -56,14 +57,14 @@ class PathCreateRequest(BaseModel):
 
     path_type: str = Field(..., description="路径类型：default或active")
     path_value: str = Field(..., description="路径值（绝对路径）")
-    is_enabled: bool = Field(True, description="是否启用")
+    is_enabled: bool = Field(default=True, description="是否启用")
 
 
 class PathUpdateRequest(BaseModel):
     """更新路径请求"""
 
-    path_value: Optional[str] = Field(None, description="路径值")
-    is_enabled: Optional[bool] = Field(None, description="是否启用")
+    path_value: Optional[str] = Field(default=None, description="路径值")
+    is_enabled: Optional[bool] = Field(default=None, description="是否启用")
 
 
 # ========== API端点 ==========
@@ -220,6 +221,8 @@ def update_path(
 
         # 5. 获取更新后的路径信息
         path = service.get_path_by_id(path_id)
+        if path is None:
+            return CommonResponse(status="error", msg="路径不存在或更新失败", code="404", data=None)
 
         return CommonResponse(
             status="success",

@@ -106,8 +106,8 @@ async def sync_tracker_status_from_keywords(
     # 注意：legacy 模型属性对 mypy 是 Column[str]，此处 cast 为业务值
     keyword_map: Dict[str, str] = {}
     for kw in keywords:
-        keyword = cast(str, kw.keyword)
-        keyword_type = cast(str, kw.keyword_type)
+        keyword = kw.keyword
+        keyword_type = kw.keyword_type
         if keyword not in keyword_map:
             keyword_map[keyword] = keyword_type
         # 如果重复，保留后读取的（通常priority更高）——注意实际代码保留先读取的

@@ -53,8 +53,8 @@ class QuickDeletePreviewRequest(BaseModel):
 
     downloader_ids: List[str] = Field(..., description="待检测下载器ID集合（≥2）")
     keep_downloader_ids: List[str] = Field(..., description="保留下载器ID集合（≥1，需为 downloader_ids 子集）")
-    page: int = Field(1, ge=1, description="页码(从1开始)")
-    pageSize: int = Field(20, ge=1, le=1000, description="每页记录数")
+    page: int = Field(default=1, ge=1, description="页码(从1开始)")
+    pageSize: int = Field(default=20, ge=1, le=1000, description="每页记录数")
 
 
 class QuickDeleteRequest(BaseModel):
@@ -62,8 +62,8 @@ class QuickDeleteRequest(BaseModel):
 
     downloader_ids: List[str] = Field(..., description="待检测下载器ID集合（≥2）")
     keep_downloader_ids: List[str] = Field(..., description="保留下载器ID集合（≥1，需为 downloader_ids 子集）")
-    delete_level: int = Field(2, ge=2, le=2, description="删除等级（固定2：只删种子不删文件）")
-    notify_on_complete: bool = Field(True, description="删除任务完成后发送系统通知")
+    delete_level: int = Field(default=2, ge=2, le=2, description="删除等级（固定2：只删种子不删文件）")
+    notify_on_complete: bool = Field(default=True, description="删除任务完成后发送系统通知")
 
 
 @router.post("/duplicates/quick-delete-preview", response_model=CommonResponse)

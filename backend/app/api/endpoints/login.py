@@ -23,16 +23,16 @@ def _safe_int(value):
 @router.post("/login", summary="用户登录", tags=["login"], response_model=CommonResponse)
 def login(
     request_user: UserLogin,
-    request: Request = None,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """用户登录接口，支持可选 TOTP 验证。"""
     try:
-        client_ip = request.client.host if request else None
+        client_ip = request.client.host if (request.client and request.client.host) else None
 
         # 登录限流（W9）：阶梯锁定中的键直接拒绝，不写日志防灌库。
         # 密码与 TOTP 失败共用同一计数（见 login_throttle 模块说明）。
-        if login_throttle.check_locked(request_user.username, client_ip):
+        if login_throttle.check_locked(request_user.username, client_ip or ""):
             return CommonResponse(code="429", msg="尝试次数过多，请稍后再试", status="error", data=[])
 
         user = db.query(models.User).filter(models.User.username == request_user.username).first()
@@ -45,15 +45,15 @@ def login(
             success=False,
         )
 
-        if not user or not security.verify_password(request_user.password, user.password):
-            login_throttle.record_failure(request_user.username, client_ip)
+        if not user or not security.verify_password(request_user.password, user.password or ""):
+            login_throttle.record_failure(request_user.username, client_ip or "")
             db.add(login_log)
             db.commit()
             return CommonResponse(code="401", msg="用户名或密码错误", status="error", data=[])
 
         # 旧格式密码自动升级为 bcrypt（W8）：条件更新仅当库中仍是本次
         # 验证时的旧值才覆盖——避免与并发改密交错时把新密码回滚成旧密码
-        if not security.is_bcrypt_hash(user.password):
+        if not security.is_bcrypt_hash(user.password or ""):
             from sqlalchemy import text as _sa_text
 
             db.execute(
@@ -75,7 +75,7 @@ def login(
             if not utils.verify_totp(user.two_factor_secret, request_user.twofa_code):
                 # TOTP 失败与密码失败共用同一限流计数（6 位数字空间小，
                 # 单独不限流等于可爆破）
-                login_throttle.record_failure(request_user.username, client_ip)
+                login_throttle.record_failure(request_user.username, client_ip or "")
                 db.add(login_log)
                 db.commit()
                 return CommonResponse(code="401", msg="验证码错误，请重试", status="error", data=[])
@@ -100,7 +100,7 @@ def login(
                 user_id=user.id,
                 token_hash=utils.hash_refresh_token(refresh_token),
                 expires_at=datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-                ip_address=request.client.host if request else None,
+                ip_address=request.client.host if (request.client and request.client.host) else None,
                 user_agent=request.headers.get("user-agent") if request else None,
             )
         )
@@ -109,7 +109,7 @@ def login(
         db.add(login_log)
         db.commit()
 
-        login_throttle.record_success(request_user.username, client_ip)
+        login_throttle.record_success(request_user.username, client_ip or "")
 
         token_data = {
             "access_token": access_token,
@@ -132,7 +132,7 @@ def login(
 @router.post("/refresh", summary="刷新访问令牌", tags=["login"], response_model=CommonResponse)
 def refresh_token(
     refresh_request: RefreshRequest,
-    request: Request = None,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     """双令牌体系（W6-1）：用 refresh token 换发新 access_token + 新 refresh_token。

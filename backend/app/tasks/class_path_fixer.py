@@ -50,7 +50,7 @@ class ClassPathFixer:
             if not result.success:
                 return {"status": "error", "message": f"获取任务失败: {result.message}"}
 
-            all_tasks = result.data.get("list", [])
+            all_tasks = (result.data or {}).get("list", [])
             analysis_results = []
 
             for task in all_tasks:

@@ -20,6 +20,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
@@ -41,7 +43,7 @@ class TorrentLocationService:
     - 记录审计日志
     """
 
-    def __init__(self, db: Session, async_db: Optional[AsyncSessionLocal] = None):
+    def __init__(self, db: Session, async_db: Optional[AsyncSession] = None):
         """
         初始化种子位置修改服务
 
@@ -83,7 +85,12 @@ class TorrentLocationService:
                 "error_message": Optional[str]
             }
         """
-        result = {"success": False, "moved_count": 0, "failed_count": len(hashes), "error_message": None}
+        result: Dict[str, Any] = {
+            "success": False,
+            "moved_count": 0,
+            "failed_count": len(hashes),
+            "error_message": None,
+        }
 
         downloader = None
         try:
@@ -116,7 +123,7 @@ class TorrentLocationService:
                 user_id=user_id,
                 username=username,
                 downloader_id=downloader_id,
-                downloader_name=downloader.nickname,
+                downloader_name=downloader.nickname or "",
                 torrent_count=len(hashes),
                 target_path=target_path,
                 move_files=move_files,
@@ -134,7 +141,7 @@ class TorrentLocationService:
                 user_id=user_id,
                 username=username,
                 downloader_id=downloader_id,
-                downloader_name=downloader.nickname if downloader else "",
+                downloader_name=(downloader.nickname if downloader else None) or "",
                 torrent_count=len(hashes),
                 target_path=target_path,
                 move_files=move_files,
@@ -265,17 +272,20 @@ class TorrentLocationService:
             error_message: 错误信息
         """
         try:
+            # 审计表无 torrent_count/move_files 列（历史写法传未知字段必抛
+            # TypeError 且被下方 except 吞掉，导致该审计从未落库）：
+            # 数量并入 torrent_name，move_files 语义近似映射到 delete_source。
             audit_log = SeedTransferAuditLog(
                 user_id=user_id,
                 username=username,
                 operation_type="set_location",  # 新增操作类型
-                source_downloader_id=downloader_id,
+                source_downloader_id=downloader_id,  # type: ignore[arg-type]  # 同 seed_transfer：Integer 列存 UUID 文本（SQLite 亲和）
                 source_downloader_name=downloader_name,
-                target_downloader_id=downloader_id,  # 同一下载器
+                target_downloader_id=downloader_id,  # type: ignore[arg-type]  # 同上
                 target_downloader_name=downloader_name,
-                torrent_count=torrent_count,
+                torrent_name=f"批量修改保存路径({torrent_count} 个种子)",
                 target_path=target_path,
-                move_files=move_files,
+                delete_source=move_files,
                 transfer_status="success" if success else "failed",
                 error_message=error_message,
                 created_at=datetime.utcnow(),

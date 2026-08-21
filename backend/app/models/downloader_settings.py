@@ -6,11 +6,16 @@
 """
 
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING, List, Optional
+
+from sqlalchemy import Integer, String, Boolean, DateTime, Text, ForeignKey, Enum as SQLEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 import enum
 import logging
+
+if TYPE_CHECKING:
+    from app.models.speed_schedule_rules import SpeedScheduleRule
 
 logger = logging.getLogger(__name__)
 
@@ -32,10 +37,10 @@ class DownloaderSetting(Base):
     __tablename__ = "downloader_settings"
 
     # 主键
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
 
     # 外键：关联到 bt_downloaders 表
-    downloader_id = Column(
+    downloader_id: Mapped[str] = mapped_column(
         String,
         ForeignKey("bt_downloaders.downloader_id", ondelete="CASCADE"),
         nullable=False,
@@ -44,47 +49,57 @@ class DownloaderSetting(Base):
     )
 
     # 速度限制配置
-    dl_speed_limit = Column(
+    dl_speed_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="全局下载速度限制，数值含义取决于 dl_speed_unit，0表示不限速"
     )
 
-    ul_speed_limit = Column(
+    ul_speed_limit: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, comment="全局上传速度限制，数值含义取决于 ul_speed_unit，0表示不限速"
     )
 
-    dl_speed_unit = Column(
+    dl_speed_unit: Mapped[SpeedUnitEnum] = mapped_column(
         SQLEnum(SpeedUnitEnum), nullable=False, default=SpeedUnitEnum.KB_PER_SEC, comment="下载速度单位：0=KB/s, 1=MB/s"
     )
 
-    ul_speed_unit = Column(
+    ul_speed_unit: Mapped[SpeedUnitEnum] = mapped_column(
         SQLEnum(SpeedUnitEnum), nullable=False, default=SpeedUnitEnum.KB_PER_SEC, comment="上传速度单位：0=KB/s, 1=MB/s"
     )
 
     # 分时段速度配置
-    enable_schedule = Column(Boolean, nullable=False, default=False, comment="是否启用分时段限速")
+    enable_schedule: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="是否启用分时段限速")
 
     # 认证信息（可选，用于覆盖下载器的默认认证）
-    username = Column(String(100), nullable=True, comment="下载器用户名（可选，用于覆盖默认配置）")
+    username: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, comment="下载器用户名（可选，用于覆盖默认配置）"
+    )
 
-    password = Column(String(255), nullable=True, comment="下载器密码（SM4加密，可选，用于覆盖默认配置）")
+    password: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, comment="下载器密码（SM4加密，可选，用于覆盖默认配置）"
+    )
 
     # 高级配置（JSON格式，存储下载器特有选项）
-    advanced_settings = Column(Text, nullable=True, comment="高级配置（JSON格式），存储下载器特有选项")
+    advanced_settings: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="高级配置（JSON格式），存储下载器特有选项"
+    )
 
     # 配置选项
-    override_local = Column(Boolean, nullable=False, default=False, comment="是否覆盖下载器本地配置")
+    override_local: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, comment="是否覆盖下载器本地配置"
+    )
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.now, comment="创建时间")
 
-    updated_at = Column(DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=datetime.now, onupdate=datetime.now, comment="更新时间"
+    )
 
     # 关系定义
     # 关联到下载器（多对一）
     # downloader = relationship("BtDownloaders", back_populates="settings")
 
     # 关联到分时段速度规则（一对多）
-    speed_schedule_rules = relationship(
+    speed_schedule_rules: Mapped[List["SpeedScheduleRule"]] = relationship(
         "SpeedScheduleRule", back_populates="downloader_setting", cascade="all, delete-orphan", lazy="dynamic"
     )
 

@@ -143,7 +143,7 @@ class TorrentFileBackupManagerService:
         if not backup_dir:
             return None
         filename = FilenameUtils.generate_backup_filename(
-            cast(str, torrent.info_id), cast(str, torrent.name or torrent.hash)
+            (torrent.info_id), (torrent.name or torrent.hash or "unknown")
         )
         candidate = FilenameUtils.safe_path_join(backup_dir, filename)
         return candidate if os.path.isfile(candidate) else None
@@ -213,7 +213,7 @@ class TorrentFileBackupManagerService:
                     continue
                 copy_result = await asyncio.to_thread(
                     self.file_backup_service.backup_torrent_file_from_path,
-                    info_id=cast(str, torrent.info_id),
+                    info_id=(torrent.info_id),
                     torrent_name=cast(str, torrent.name or torrent.hash),
                     source_file_path=source_path,
                 )
@@ -241,10 +241,10 @@ class TorrentFileBackupManagerService:
                     info_hash=str(torrent.hash),
                     file_path=backup_path,
                     file_size=file_size,
-                    task_name=cast(Optional[str], torrent.name),
+                    task_name=(torrent.name),
                     uploader_id=None,
                     downloader_id=normalized_id,
-                    upload_time=cast(datetime, torrent.added_date or torrent.create_time or now),
+                    upload_time=(torrent.added_date or torrent.create_time or now),
                     use_count=0,
                     is_deleted=False,
                     created_at=now,
@@ -330,7 +330,13 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {"success": False, "backup": None, "backup_file_path": "", "source_path": "", "error_message": None}
+        result: Dict[str, Any] = {
+            "success": False,
+            "backup": None,
+            "backup_file_path": "",
+            "source_path": "",
+            "error_message": None,
+        }
 
         try:
             # 生成info_id（用于文件名）
@@ -418,7 +424,7 @@ class TorrentFileBackupManagerService:
         Returns:
             操作结果字典
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "backup": None,
             "backup_file_path": "",
@@ -494,7 +500,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {"success": False, "backup": None, "error_message": None}
+        result: Dict[str, Any] = {"success": False, "backup": None, "error_message": None}
 
         try:
             torrent_backup = await self.repository.get_by_info_hash(info_hash)
@@ -532,7 +538,14 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {"success": False, "total": 0, "page": page, "pageSize": page_size, "list": [], "error_message": None}
+        result: Dict[str, Any] = {
+            "success": False,
+            "total": 0,
+            "page": page,
+            "pageSize": page_size,
+            "list": [],
+            "error_message": None,
+        }
 
         try:
             skip = (page - 1) * page_size
@@ -574,7 +587,7 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {"success": False, "deleted_file": False, "error_message": None}
+        result: Dict[str, Any] = {"success": False, "deleted_file": False, "error_message": None}
 
         try:
             # 获取备份记录
@@ -624,7 +637,7 @@ class TorrentFileBackupManagerService:
                 "failed_items": List[Dict]
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "total": len(backup_requests),
             "success_count": 0,
             "failed_count": 0,
@@ -693,7 +706,13 @@ class TorrentFileBackupManagerService:
                 "error_message": Optional[str]
             }
         """
-        result = {"success": False, "is_valid": False, "file_exists": False, "file_size": None, "error_message": None}
+        result: Dict[str, Any] = {
+            "success": False,
+            "is_valid": False,
+            "file_exists": False,
+            "file_size": None,
+            "error_message": None,
+        }
 
         try:
             # 获取备份记录

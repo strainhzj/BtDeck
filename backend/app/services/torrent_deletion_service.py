@@ -50,7 +50,7 @@ class DeleteResult:
     success_count: int  # 成功删除数量
     failed_count: int  # 删除失败数量
     skipped_count: int  # 跳过删除数量
-    total_size_freed: int  # 释放的存储空间（字节）
+    total_size_freed: float  # 释放的存储空间（字节；size 列为 Float 故累加为浮点）
     deleted_torrents: List[Dict[str, Any]]  # 已删除的种子详情
     failed_torrents: List[Dict[str, Any]]  # 删除失败的种子详情
     skipped_torrents: List[Dict[str, Any]]  # 跳过的种子详情
@@ -226,9 +226,9 @@ class TorrentDeletionService:
         self.audit_info = audit_info or {}
         self.operator = operator
         self.safety_checker = SafetyCheckService()
-        self.adapters: Dict[str, DownloaderDeleteAdapter] = {}
+        self.adapters: Dict[int, DownloaderDeleteAdapter] = {}
 
-    def register_adapter(self, downloader_type: str, adapter: DownloaderDeleteAdapter):
+    def register_adapter(self, downloader_type: int, adapter: DownloaderDeleteAdapter):
         """注册下载器适配器"""
         self.adapters[downloader_type] = adapter
         logger.info(f"已注册{downloader_type}下载器删除适配器")
@@ -287,7 +287,7 @@ class TorrentDeletionService:
 
     def _group_by_downloader(self, torrent_infos: List[TorrentInfo]) -> Dict[str, List[TorrentInfo]]:
         """按下载器分组种子"""
-        groups = {}
+        groups: Dict[str, List[TorrentInfo]] = {}
         for torrent in torrent_infos:
             if torrent.downloader_id not in groups:
                 groups[torrent.downloader_id] = []

@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Any
+from typing import Any, Optional
 from app.utils.encryption import decrypt_password
 from app.models.setting_templates import DownloaderTypeEnum
 
@@ -14,33 +14,33 @@ class DownloaderSimpleVO(BaseModel):
 
 
 class DownloaderResponse(BaseModel):
-    status: str | None = Field(None, description="返回接口调用结果", examples=["success"])
-    message: str | None = Field(None, description="返回接口调用信息", examples=["接口调用成功"])
-    data: list | None = Field(None, description="返回数据集", examples=[[]])
+    status: str | None = Field(default=None, description="返回接口调用结果", examples=["success"])
+    message: str | None = Field(default=None, description="返回接口调用信息", examples=["接口调用成功"])
+    data: list | None = Field(default=None, description="返回数据集", examples=[[]])
 
 
 class DownloaderListVO(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    id: str | None = Field(None, description="主键", examples=["1"])
-    nickname: str | None = Field(None, description="自定义名称", examples=["qb"])
-    host: str | None = Field(None, description="下载器主机", examples=["1.1.1.1"])
-    isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", examples=["1"])
-    status: str | None = Field(None, description="下载器状态", examples=["1"])  #
-    enabled: str | None = Field(None, description="下载器启用状态", examples=["1"])  #
+    id: str | None = Field(default=None, description="主键", examples=["1"])
+    nickname: str | None = Field(default=None, description="自定义名称", examples=["qb"])
+    host: str | None = Field(default=None, description="下载器主机", examples=["1.1.1.1"])
+    isSearch: str | None = Field(default=None, alias="isSearch", description="是否启用种子搜索", examples=["1"])
+    status: str | None = Field(default=None, description="下载器状态", examples=["1"])  #
+    enabled: str | None = Field(default=None, description="下载器启用状态", examples=["1"])  #
     downloaderType: int | None = Field(
         None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
     )
-    downloaderId: str | None = Field(None, alias="downloaderId", description="下载器ID")
-    port: str | None = Field(None, description="端口")
+    downloaderId: str | None = Field(default=None, alias="downloaderId", description="下载器ID")
+    port: str | None = Field(default=None, description="端口")
     downloaderTypeName: str | None = Field(
         None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
     )
     connectStatus: str | None = Field(
         None, alias="connectStatus", description="连接状态(1=在线, 0=离线)", examples=["1"]
     )
-    pathMappingRules: str | None = Field(None, alias="pathMappingRules", description="路径映射规则配置")
-    torrentSavePath: str | None = Field(None, alias="torrentSavePath", description="种子保存目录路径")
+    pathMappingRules: str | None = Field(default=None, alias="pathMappingRules", description="路径映射规则配置")
+    torrentSavePath: str | None = Field(default=None, alias="torrentSavePath", description="种子保存目录路径")
 
     def __init__(
         self,
@@ -99,24 +99,24 @@ class DownloaderListVO(BaseModel):
 class DownloaderVO(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    id: str | None = Field(None, description="主键", examples=["1"])
-    nickname: str | None = Field(None, description="自定义名称", examples=["qb"])
-    host: str | None = Field(None, description="下载器主机", examples=["1.1.1.1"])
-    username: str | None = Field(None, description="下载器登录用户名", examples=["admin"])
-    password: str | None = Field(None, description="下载器登录密码", examples=["admin"])
-    isSearch: str | None = Field(None, alias="isSearch", description="是否启用种子搜索", examples=["1"])
-    status: str | None = Field(None, description="下载器状态", examples=["1"])  #
-    enabled: str | None = Field(None, description="下载器启用状态", examples=["1"])  #
+    id: str | None = Field(default=None, description="主键", examples=["1"])
+    nickname: str | None = Field(default=None, description="自定义名称", examples=["qb"])
+    host: str | None = Field(default=None, description="下载器主机", examples=["1.1.1.1"])
+    username: str | None = Field(default=None, description="下载器登录用户名", examples=["admin"])
+    password: str | None = Field(default=None, description="下载器登录密码", examples=["admin"])
+    isSearch: str | None = Field(default=None, alias="isSearch", description="是否启用种子搜索", examples=["1"])
+    status: str | None = Field(default=None, description="下载器状态", examples=["1"])  #
+    enabled: str | None = Field(default=None, description="下载器启用状态", examples=["1"])  #
     downloaderType: int | None = Field(
         None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
     )
-    port: int | None = Field(None, description="端口", examples=["qbittorrent"])
-    isSsl: str | None = Field(None, alias="isSsl", description="是否https", examples=["qbittorrent"])
+    port: int | None = Field(default=None, description="端口", examples=["qbittorrent"])
+    isSsl: str | None = Field(default=None, alias="isSsl", description="是否https", examples=["qbittorrent"])
     downloaderTypeName: str | None = Field(
         None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
     )
-    pathMappingRules: str | None = Field(None, alias="pathMappingRules", description="路径映射规则配置")
-    torrentSavePath: str | None = Field(None, alias="torrentSavePath", description="种子保存目录路径")
+    pathMappingRules: str | None = Field(default=None, alias="pathMappingRules", description="路径映射规则配置")
+    torrentSavePath: str | None = Field(default=None, alias="torrentSavePath", description="种子保存目录路径")
 
     def __init__(
         self,
@@ -168,13 +168,13 @@ class DownloaderVO(BaseModel):
             **kw,
         )
 
-    def get_decrypted_password(self) -> str:
+    def get_decrypted_password(self) -> Optional[str]:
         """获取解密后的密码"""
         return decrypt_password(self.password) if self.password else None
 
     # 兼容性属性访问器 - 支持 snake_case 命名约定
     @property
-    def downloader_type(self) -> str | None:
+    def downloader_type(self) -> int | None:
         """获取下载器类型 (兼容 snake_case 访问)"""
         return self.downloaderType
 
@@ -192,11 +192,17 @@ class DownloaderVO(BaseModel):
 class DownloaderStatusVO(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    connectStatus: str = Field(None, alias="connectStatus", description="连接状态", examples=["1"])
-    nickname: str = Field(None, description="下载器名称", examples=["1"])
-    delay: float | None = Field(None, description="延迟(毫秒)", examples=["3.64"])
-    id: str = Field(None, description="主键", examples=["1"])
-    uploadSpeed: str | None = Field(None, alias="uploadSpeed", description="上传速度(自动单位)", examples=["1.5"])
-    downloadSpeed: str | None = Field(None, alias="downloadSpeed", description="下载速度(自动单位)", examples=["2.3"])
-    downloadingCount: int | None = Field(None, alias="downloadingCount", description="下载中种子数量", examples=[5])
-    seedingCount: int | None = Field(None, alias="seedingCount", description="做种中种子数量", examples=[10])
+    connectStatus: str | None = Field(default=None, alias="connectStatus", description="连接状态", examples=["1"])
+    nickname: str | None = Field(default=None, description="下载器名称", examples=["1"])
+    delay: float | None = Field(default=None, description="延迟(毫秒)", examples=["3.64"])
+    id: str | None = Field(default=None, description="主键", examples=["1"])
+    uploadSpeed: str | None = Field(
+        default=None, alias="uploadSpeed", description="上传速度(自动单位)", examples=["1.5"]
+    )
+    downloadSpeed: str | None = Field(
+        default=None, alias="downloadSpeed", description="下载速度(自动单位)", examples=["2.3"]
+    )
+    downloadingCount: int | None = Field(
+        default=None, alias="downloadingCount", description="下载中种子数量", examples=[5]
+    )
+    seedingCount: int | None = Field(default=None, alias="seedingCount", description="做种中种子数量", examples=[10])

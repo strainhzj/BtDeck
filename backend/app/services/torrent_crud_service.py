@@ -333,9 +333,11 @@ def get_trackers_by_status(db: Session, status: str) -> List[TrackerInfoModel]:
     Returns:
         tracker 记录列表
     """
+    # 注：TrackerInfo 无 tracker_status 列（历史笔误）。按整数语义过滤
+    # last_scrape_succeeded（0/1），保持「按状态查 tracker」的接口意图。
     return (
         db.query(TrackerInfoModel)
-        .filter(and_(TrackerInfoModel.tracker_status == status, TrackerInfoModel.dr == 0))
+        .filter(and_(TrackerInfoModel.last_scrape_succeeded == int(status), TrackerInfoModel.dr == 0))
         .all()
     )
 
@@ -390,7 +392,8 @@ def update_tracker_status(
     Returns:
         更新后的 tracker 记录或 None
     """
-    update_data = {"tracker_status": status}
+    # 同上：无 tracker_status 列，写入实际存在的汇报结果列
+    update_data: Dict[str, Any] = {"last_scrape_succeeded": int(status)}
     if msg is not None:
         update_data["last_scrape_msg"] = msg
 
@@ -500,8 +503,8 @@ def create_torrent_info(
         raw_ratio_limit=ratio_limit,
         is_insert=True,
     )
-    db_torrent = TorrentInfo(
-        id_=info_id,
+    db_torrent = TorrentInfo(  # type: ignore[call-arg]  # dataclass_transform 误判必填，SQLAlchemy 构造允许部分字段
+        info_id=info_id,
         downloader_id=downloader_id,
         downloader_name=downloader_name,
         torrent_id=torrent_id,
@@ -637,8 +640,8 @@ def bulk_create_torrent_infos(db: Session, torrents_data: List[Dict[str, Any]]) 
             raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
             is_insert=True,
         )
-        db_torrent = TorrentInfo(
-            id_=torrent_data["info_id"],
+        db_torrent = TorrentInfo(  # type: ignore[call-arg]  # 同上
+            info_id=torrent_data["info_id"],
             downloader_id=torrent_data["downloader_id"],
             downloader_name=torrent_data["downloader_name"],
             torrent_id=torrent_data["torrent_id"],

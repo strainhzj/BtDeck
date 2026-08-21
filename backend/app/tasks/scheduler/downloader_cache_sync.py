@@ -41,7 +41,7 @@ class CachedDownloaderSyncTask:
             app: FastAPI 应用实例（可选，建议通过 set_app 方法设置）
         """
         self.app = app
-        self.last_execution_time = None
+        self.last_execution_time: Optional[datetime] = None
         self.execution_count = 0
         self.success_count = 0
         self.failure_count = 0

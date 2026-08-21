@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Optional, Dict, Any
+from sqlalchemy import case, func
 from app.database import SessionLocal
 from app.tasks.models import TaskLogs
 
@@ -132,9 +133,9 @@ async def get_task_statistics() -> Dict[str, Any]:
         task_stats = (
             db.query(
                 TaskLogs.task_name,
-                db.func.count(TaskLogs.log_id).label("total"),
-                db.func.sum(db.func.case([(TaskLogs.success.is_(True), 1)], else_=0)).label("success"),
-                db.func.avg(TaskLogs.duration).label("avg_duration"),
+                func.count(TaskLogs.log_id).label("total"),
+                func.sum(case((TaskLogs.success.is_(True), 1), else_=0)).label("success"),
+                func.avg(TaskLogs.duration).label("avg_duration"),
             )
             .group_by(TaskLogs.task_name)
             .all()

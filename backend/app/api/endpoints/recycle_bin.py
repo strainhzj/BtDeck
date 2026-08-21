@@ -145,7 +145,7 @@ async def restore_torrents(
         try:
             result = await service.restore_torrents(
                 torrent_ids=req.torrent_ids,
-                operator=current_user.username,
+                operator=current_user.username or "",
                 audit_service=audit_service,
                 request=request,
             )
@@ -292,7 +292,7 @@ async def manual_cleanup(
         try:
             result = await service.manual_cleanup(
                 torrent_ids=cleanup_request.torrent_ids,
-                operator=current_user.username,
+                operator=current_user.username or "",
                 audit_service=audit_service,
                 request=http_request,
             )

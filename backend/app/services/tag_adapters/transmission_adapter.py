@@ -278,7 +278,7 @@ class TransmissionTagAdapter(TorrentTagAdapter):
 
             # 解析标签信息
             tags = []
-            failed_tags = []
+            failed_tags: List[Dict[str, Any]] = []
 
             for tag_id in tag_ids:
                 tag_info = self._get_tag_info_by_id(tag_id)

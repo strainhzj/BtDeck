@@ -14,8 +14,8 @@ class TwofactorVerifyRequest(BaseModel):
 
     userId: str = Field(description="用户id", examples=["1"])
     twofaFlag: str = Field(description="启用标识，1启用2fa，0停用", examples=["1"])
-    twoFactorCode: str | None = Field(None, description="2fa验证码", examples=["1"])
-    password: str | None = Field(None, description="当前密码（停用2FA时需要验证）", examples=["123456"])
+    twoFactorCode: str | None = Field(default=None, description="2fa验证码", examples=["1"])
+    password: str | None = Field(default=None, description="当前密码（停用2FA时需要验证）", examples=["123456"])
 
 
 class VerifyPasswordFor2FARequest(BaseModel):

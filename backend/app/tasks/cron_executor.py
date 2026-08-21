@@ -324,6 +324,9 @@ class CronTaskExecutor:
                     return
 
                 task = task_result.data
+                if task is None:
+                    logger.error(f"任务 {task_id} 数据为空，跳过执行")
+                    return
                 start_time = datetime.now()
                 run_id = self._new_run_id(task_id)
                 await AsyncCronTaskCRUD.update_task_start_time(db, task_id, start_time)
@@ -431,6 +434,8 @@ class CronTaskExecutor:
                 if not task_result.success:
                     return
                 task = task_result.data
+                if task is None:
+                    return
                 now = datetime.now()
                 log_data = {
                     "task_id": task_id,
@@ -707,7 +712,7 @@ class CronTaskExecutor:
                     # ★ 资源治理：重型任务用 task_scope 包裹 execute()，
                     # admitted=False 时直接返回 skipped，不调 execute。
                     if profile is not None:
-                        async with admission_controller.task_scope(task_code, profile) as admission_result:
+                        async with admission_controller.task_scope(task_code or "", profile) as admission_result:
                             if not admission_result.admitted:
                                 skip_msg = (
                                     f"[ADMISSION_SKIP] Python内部类被资源治理跳过: "
@@ -776,7 +781,7 @@ class CronTaskExecutor:
                 task_result = await AsyncCronTaskCRUD.get_cron_task_by_id(db, task_id)
 
                 if task_result.success:
-                    task = task_result.data
+                    task = task_result.data or {}
                     # 检查任务是否启用
                     if not task.get("enabled"):
                         error_msg = f"任务 '{task.get('task_name', task_id)}' 处于禁用状态，无法启动。请先启用该任务。"
@@ -795,7 +800,8 @@ class CronTaskExecutor:
                     logger.info(f"准备立即启动任务: {task.get('task_name', task_id)} (任务ID: {task_id})")
 
                     # ✅ 修复：保存task引用并添加异常处理，避免异常被忽略
-                    task = asyncio.create_task(self._execute_task(task_id))
+                    # 注意：句柄命名与任务配置字典 task 区分，回调内读取的是配置字典
+                    task_handle = asyncio.create_task(self._execute_task(task_id))
 
                     # 添加回调处理任务异常
                     def handle_task_exception(t: asyncio.Task):
@@ -808,7 +814,7 @@ class CronTaskExecutor:
                         except asyncio.CancelledError:
                             logger.warning(f"任务被取消: {task.get('task_name', task_id)} (任务ID: {task_id})")
 
-                    task.add_done_callback(handle_task_exception)
+                    task_handle.add_done_callback(handle_task_exception)
 
                     return True
                 else:
@@ -878,7 +884,7 @@ class CronTaskExecutor:
                 task_result = await AsyncCronTaskCRUD.get_cron_task_by_id(db, task_id)
 
                 if task_result.success:
-                    task = task_result.data
+                    task = task_result.data or {}
                     return await self.add_task_to_scheduler(task)
 
                 return False

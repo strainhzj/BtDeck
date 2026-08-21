@@ -52,10 +52,10 @@ class TwoFactorSetup(BaseModel):
 class LoginResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
-    accessToken: Optional[str] = Field(None, alias="accessToken")
-    tokenType: Optional[str] = Field(None, alias="tokenType")
-    requires2fa: Optional[bool] = Field(False, alias="requires2fa")
-    userId: Optional[int] = Field(None, alias="userId")
+    accessToken: Optional[str] = Field(default=None, alias="accessToken")
+    tokenType: Optional[str] = Field(default=None, alias="tokenType")
+    requires2fa: Optional[bool] = Field(default=False, alias="requires2fa")
+    userId: Optional[int] = Field(default=None, alias="userId")
 
 
 class ConfigUpdate(BaseModel):

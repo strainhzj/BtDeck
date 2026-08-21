@@ -295,7 +295,7 @@ async def delete_torrent(
 class BulkDeleteRequest(BaseModel):
     """批量删除种子请求"""
 
-    torrent_info_ids: List[str] = Field(..., description="要删除的种子信息ID列表", min_items=1, max_items=1000)
+    torrent_info_ids: List[str] = Field(..., description="要删除的种子信息ID列表", min_length=1, max_length=1000)
     delete_option: str = Field(default="delete_only_torrent", description="删除选项")
     safety_check_level: str = Field(default="enhanced", description="安全检查级别")
     force_delete: bool = Field(default=False, description="是否强制删除（跳过安全确认）")
@@ -305,7 +305,7 @@ class BulkDeleteRequest(BaseModel):
 class DeletionPreviewRequest(BaseModel):
     """删除预览请求"""
 
-    torrent_info_ids: List[str] = Field(..., description="要预览的种子信息ID列表", min_items=1, max_items=1000)
+    torrent_info_ids: List[str] = Field(..., description="要预览的种子信息ID列表", min_length=1, max_length=1000)
     delete_option: str = Field(default="delete_only_torrent", description="删除选项")
     safety_check_level: str = Field(default="enhanced", description="安全检查级别")
 
@@ -315,7 +315,7 @@ class DeletionPreviewResponse(BaseModel):
     """删除预览响应"""
 
     total_torrents: int
-    total_size: int
+    total_size: float  # size 列为 Float（字节计数），累加结果为浮点
     torrents_by_downloader: Dict[str, Any]
     safety_warnings: List[str]
     estimated_execution_time: float
@@ -327,7 +327,7 @@ class DeletionResultResponse(BaseModel):
     success_count: int
     failed_count: int
     skipped_count: int
-    total_size_freed: int
+    total_size_freed: float  # 同上：浮点字节计数
     execution_time: float
     safety_warnings: List[str]
     deleted_torrents: List[Dict[str, Any]]
@@ -499,7 +499,7 @@ async def _organize_preview_data(torrent_info_ids: List[str], db: Session) -> Di
 
     torrents = db.query(TorrentInfo).filter(TorrentInfo.info_id.in_(torrent_info_ids), TorrentInfo.dr == 0).all()
 
-    downloader_groups = {}
+    downloader_groups: Dict[str, Dict[str, Any]] = {}
 
     for torrent in torrents:
         downloader_id = torrent.downloader_id
@@ -547,12 +547,12 @@ async def _log_deletion_operation_async(
                 request_id = audit_info.get("request_id")
                 session_id = audit_info.get("session_id")
 
-            # 确定操作类型
+            # 确定操作类型：按 DeleteOption 实际成员映射（原 LEVEL1-4 不存在，
+            # 构字典即抛 AttributeError，被外层 except 吞掉导致批量删除审计从未落库）
             operation_type_map = {
-                DeleteOption.LEVEL1: AuditOperationType.DELETE_L1,
-                DeleteOption.LEVEL2: AuditOperationType.DELETE_L2,
-                DeleteOption.LEVEL3: AuditOperationType.DELETE_L3,
-                DeleteOption.LEVEL4: AuditOperationType.DELETE_L4,
+                DeleteOption.DELETE_FILES_AND_TORRENT: AuditOperationType.DELETE_L1,
+                DeleteOption.DELETE_ONLY_TORRENT: AuditOperationType.DELETE_L2,
+                DeleteOption.DRY_RUN: AuditOperationType.DELETE_L1,
             }
             operation_type = operation_type_map.get(DeleteOption(request.delete_option), AuditOperationType.DELETE_L1)
 
@@ -624,7 +624,7 @@ async def _log_deletion_operation_async(
 class DeleteWithLevelRequest(BaseModel):
     """按等级删除种子请求"""
 
-    torrent_info_ids: List[str] = Field(..., description="要删除的种子信息ID列表", min_items=1, max_items=100)
+    torrent_info_ids: List[str] = Field(..., description="要删除的种子信息ID列表", min_length=1, max_length=100)
     delete_level: int = Field(..., description="删除等级 (3=回收站, 4=待删除标签)", ge=3, le=4)
     operator: str = Field(default="admin", description="操作人")
 
@@ -640,13 +640,13 @@ class DeleteWithLevelResponse(BaseModel):
 
 @router.delete("/delete-with-level", response_model=CommonResponse)
 async def delete_torrent_with_level(
+    request: Request,
     _user=Depends(require_authenticated_user),
     torrent_info_ids: str = Query(..., description="要删除的种子信息ID列表（逗号分隔）"),
     delete_level: int = Query(
         ..., description="删除等级 (1=完全删除, 2=删除任务保留数据, 3=回收站, 4=待删除标签)", ge=1, le=4
     ),
     operator: str = Query(default="admin", description="操作人（已废弃：以认证用户为准）"),
-    request: Request = None,
     db: Session = Depends(get_db),
 ):
     """
@@ -822,7 +822,9 @@ async def delete_batch_async(
         from app.services.async_deletion_executor import AsyncDeletionExecutor
 
         # operator 防伪造：以认证用户为准，忽略请求参数传入的 operator
-        effective_operator = getattr(user_info, "username", None) or getattr(delete_request, "operator", "admin")
+        effective_operator = (
+            getattr(user_info, "username", None) or getattr(delete_request, "operator", None) or "admin"
+        )
 
         # 获取任务管理器
         task_manager = get_deletion_task_manager()

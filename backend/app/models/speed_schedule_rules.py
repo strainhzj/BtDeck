@@ -6,11 +6,16 @@
 """
 
 from datetime import datetime, time
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, CheckConstraint, func
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING
+
+from sqlalchemy import Integer, String, Boolean, DateTime, ForeignKey, CheckConstraint, func
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 import logging
 import re
+
+if TYPE_CHECKING:
+    from app.models.downloader_settings import DownloaderSetting
 
 logger = logging.getLogger(__name__)
 
@@ -25,10 +30,10 @@ class SpeedScheduleRule(Base):
     __tablename__ = "speed_schedule_rules"
 
     # 主键
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, autoincrement=True)
 
     # 外键：关联到 downloader_settings 表
-    downloader_setting_id = Column(
+    downloader_setting_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey("downloader_settings.id", ondelete="CASCADE"),
         nullable=False,
@@ -37,9 +42,13 @@ class SpeedScheduleRule(Base):
     )
 
     # 时间范围（使用 String 存储，SQLite 不支持 TIME 类型）
-    start_time = Column(String(5), nullable=False, comment='开始时间，格式"HH:MM"，如"08:00"')  # 格式: "HH:MM"
+    start_time: Mapped[str] = mapped_column(
+        String(5), nullable=False, comment='开始时间，格式"HH:MM"，如"08:00"'
+    )  # 格式: "HH:MM"
 
-    end_time = Column(String(5), nullable=False, comment='结束时间，格式"HH:MM"，如"18:00"')  # 格式: "HH:MM"
+    end_time: Mapped[str] = mapped_column(
+        String(5), nullable=False, comment='结束时间，格式"HH:MM"，如"18:00"'
+    )  # 格式: "HH:MM"
 
     # 表约束
     __table_args__ = (
@@ -48,34 +57,46 @@ class SpeedScheduleRule(Base):
     )
 
     # 速度限制
-    dl_speed_limit = Column(Integer, nullable=False, default=0, comment="下载速度限制（KB/s），0表示不限速")
+    dl_speed_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="下载速度限制（KB/s），0表示不限速"
+    )
 
-    ul_speed_limit = Column(Integer, nullable=False, default=0, comment="上传速度限制（KB/s），0表示不限速")
+    ul_speed_limit: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, comment="上传速度限制（KB/s），0表示不限速"
+    )
 
     # 速度单位（0=KB/s, 1=MB/s）
-    dl_speed_unit = Column(Integer, nullable=False, server_default="0", comment="下载速度单位：0=KB/s, 1=MB/s")
+    dl_speed_unit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", comment="下载速度单位：0=KB/s, 1=MB/s"
+    )
 
-    ul_speed_unit = Column(Integer, nullable=False, server_default="0", comment="上传速度单位：0=KB/s, 1=MB/s")
+    ul_speed_unit: Mapped[int] = mapped_column(
+        Integer, nullable=False, server_default="0", comment="上传速度单位：0=KB/s, 1=MB/s"
+    )
 
     # 规则排序（同一下载器内）
-    sort_order = Column(
+    sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, server_default="0", comment="规则排序（同一下载器内），数字越小优先级越高"
     )
 
     # 生效星期几（字符串，如"0123456"表示每天都生效，"12345"表示周一到周五生效）
-    days_of_week = Column(
+    days_of_week: Mapped[str] = mapped_column(
         String(7), nullable=False, default="0123456", comment="生效星期几，0=周日，1=周一，...，6=周六"
     )
 
     # 状态
-    enabled = Column(Boolean, nullable=False, default=True, comment="是否启用")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, comment="是否启用")
 
     # 时间戳
-    created_at = Column(DateTime, nullable=False, server_default=func.now(), comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), comment="创建时间"
+    )
 
     # 关系定义
     # 关联到下载器配置（多对一）
-    downloader_setting = relationship("DownloaderSetting", back_populates="speed_schedule_rules")
+    downloader_setting: Mapped["DownloaderSetting"] = relationship(
+        "DownloaderSetting", back_populates="speed_schedule_rules"
+    )
 
     def __init__(
         self,

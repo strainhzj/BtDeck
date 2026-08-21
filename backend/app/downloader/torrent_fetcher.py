@@ -14,7 +14,7 @@
 """
 
 import logging
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, cast
 from transmission_rpc import Client as TrClient
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,9 @@ class TorrentFetcher:
                 batch_count += 1
 
                 # 关键：使用 hash 而不是 ID（ID 不持久化）
-                torrents = client.get_torrents(ids=batch, arguments=fields)  # 支持字符串 hash 列表
+                torrents = client.get_torrents(
+                    ids=cast(Any, batch), arguments=fields
+                )  # 支持字符串 hash 列表（存根 list 不变型）
 
                 # 转换为统一格式
                 batch_data = [

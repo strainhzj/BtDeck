@@ -1,5 +1,44 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-21（第四批） - 后端 mypy 存量报错清零（1617 → 0）+ 8 个休眠 bug 修复
+
+### 排查定性
+
+- 全量 `mypy app/` 基线 **1617 错误 / 117 文件**（历史记录为 203 条 SQLAlchemy Column 报错，实际远超）。错误构成：模型 `Column[...]` 类型污染 ~750、CommonResponse/pydantic `Field(None)` 位置默认值 ~100、隐式 Optional 参数 77、`result` 混合字面量字典窄化 ~80、rowcount/ClauseElement 等零散。
+
+### 实施分层
+
+1. **根因一：ORM 模型全量迁移 `Mapped[] + mapped_column()`**（ast 脚本 + 人工收尾）：21 个模型文件、451 处 Column 声明、3 个 relationship；nullable 语义按 `Optional[X]` 精确对齐（pk/nullable=False → X，其余 → Optional[X]）。`Base = declarative_base()` 改 2.0 类式 `class Base(DeclarativeBase)`。**DDL 快照（33 表/99 索引）迁移前后逐字节一致**，schema 零漂移。
+2. **根因二：pydantic 位置默认值**：`Field(None, ...)`/`Field(0, ...)` 等 315 处（27 文件）改 `Field(default=..., ...)`——mypy 的 dataclass_transform 不识别位置默认值，会把可选字段误判为构造必填。
+3. **根因三：隐式 Optional 参数**（77 处脚本修复）+ FastAPI `Request` 参数特判：`Optional[Request]` 会破坏 FastAPI 注入（启动即 FastAPIError），改为必填 `Request` 并上移到首个带默认值参数之前。
+4. **根因四：SQLAlchemy 2.0.15 typing 缺口**：`rowcount`（19 处 getattr 规避）、`execute()` 变量跨类型复用（tracker 等文件变量改名消除串扰）、`case()`/`in_()`/传输存根 list 不变型（cast 规避）。
+5. **长尾逐文件清理**：混合字面量 result 字典补 `Dict[str, Any]`、`min_items/max_items` 改 v2 的 `min_length/max_length`、`Query(examples={...})` dict 改列表形态、安装 types-requests/types-PyYAML/types-croniter 存根（requirements-dev 已登记）。
+
+### 顺带修复的休眠 bug（全部被宽泛 except 吞掉或必抛 TypeError，mypy 揪出）
+
+1. `seed_transfer_service` 降级备份目录 `settings.BASE_DIR` 不存在（AttributeError → 备份从未落盘），改用 `BACKUP_TORRENT_DIR` 统一推导。
+2. `advanced_search.delete_torrents_batch` 漏 `await` 协程（读 success_count 必炸），方法改 async + 端点 await。
+3. `file_operations` 的 `run_in_executor(None, os.makedirs, path, exist_ok=True)` 不接受 kwargs（必抛 TypeError），改 `functools.partial`。
+4. `torrent_location_service` 审计构造传 `torrent_count/move_fields` 不存在字段（必抛 TypeError，位置修改审计从未落库），映射到 `torrent_name/delete_source` 现有列。
+5. `tracker_operations` 引用不存在的 `TrackerInfo.id_`（5 处），改 `tracker_id`。
+6. `cron_crud/cron_crud_async` 调用不存在的 `DatabaseResult.not_found`（6 处），改 `not_found_result`。
+7. `torrent_crud_service` 构造 `TorrentInfo(id_=...)` 属性名错误（2 处）；死函数 `get_trackers_by_status` 引用不存在的 `tracker_status` 列，按 `last_scrape_succeeded` 语义修正。
+8. `tracker_messages` 构造/赋值不存在的 `judgment_result` 列（4 处引用移除）；`torrent_deletion` 审计映射引用不存在的 `DeleteOption.LEVEL1-4`（批量删除审计从未落库），按实际枚举成员映射。
+9. 删除不可运行的死文件 `app/websocket_main.py`（import 不存在的 `factory.wsapp` 与 `settings.WS_PORT`，全仓无引用）。
+
+### 其它说明
+
+- `TagService` 双模（同步/异步）重构为 `_sync_repository/_async_repository` 双引用 + 取用器，错配时显式报错；`AsyncTorrentTagRepository` 保留（tag_sync 定时任务在用）。
+- `torrent_status` 5 个批量操作端点 body 改必填（缺 body 由 500 AttributeError 变 422）。
+- SeedTransferAuditLog 的 `*_downloader_id` Integer 列存 UUID 文本（SQLite 类型亲和）以 `type: ignore` 记录，列类型矫正需迁移另行处理。
+
+### 验证
+
+- `mypy app/`：**Success: no issues found in 246 source files**（0 错误）。
+- `black --check` / `flake8 app/`：通过（既有 `\s` 转义 SyntaxWarning 为历史存量，非本次引入）。
+- `pytest tests/` 全量：**3874 passed / 7 skipped**（多次中间检查点均全绿）。
+- DDL 快照终验：与迁移前基线完全一致。
+
 ## 2026-08-21（第三批） - 任务日志/孤儿文件统计卡片折叠与持久化
 
 ### 实施

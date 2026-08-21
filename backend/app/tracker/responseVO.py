@@ -11,7 +11,9 @@ class TrackerInfoVO(BaseModel):
     torrentInfoId: str | None = Field(
         None, alias="torrentInfoId", description="关联种子主键", examples=["cf36ef63-8b37-4e2c-a062-fe9b3e353331"]
     )
-    trackerName: str | None = Field(None, alias="trackerName", description="tracker名称", examples=["springsunday"])
+    trackerName: str | None = Field(
+        default=None, alias="trackerName", description="tracker名称", examples=["springsunday"]
+    )
     trackerUrl: str | None = Field(
         None,
         alias="trackerUrl",
@@ -24,5 +26,9 @@ class TrackerInfoVO(BaseModel):
     lastAnnounceMsg: str | None = Field(
         None, alias="lastAnnounceMsg", description="tracker最后一次请求信息", examples=["Success"]
     )
-    lastScrapeSucceeded: str | None = Field(None, alias="lastScrapeSucceeded", description="汇报结果", examples=["1"])
-    lastScrapeMsg: str | None = Field(None, alias="lastScrapeMsg", description="", examples=["tracker最后一次汇报信息"])
+    lastScrapeSucceeded: str | None = Field(
+        default=None, alias="lastScrapeSucceeded", description="汇报结果", examples=["1"]
+    )
+    lastScrapeMsg: str | None = Field(
+        default=None, alias="lastScrapeMsg", description="", examples=["tracker最后一次汇报信息"]
+    )

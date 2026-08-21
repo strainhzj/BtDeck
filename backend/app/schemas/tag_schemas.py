@@ -16,7 +16,7 @@ class TagCreateRequest(BaseModel):
     downloader_id: str = Field(..., description="下载器ID")
     tag_name: str = Field(..., min_length=1, max_length=255, description="标签名称")
     tag_type: str = Field(..., description="标签类型(category/tag)")
-    color: Optional[str] = Field(None, description="颜色代码(HEX格式，如#FF5733)")
+    color: Optional[str] = Field(default=None, description="颜色代码(HEX格式，如#FF5733)")
 
     @field_validator("tag_type")
     @classmethod
@@ -47,9 +47,9 @@ class TagCreateRequest(BaseModel):
 class TagUpdateRequest(BaseModel):
     """更新标签请求"""
 
-    tag_name: Optional[str] = Field(None, min_length=1, max_length=255, description="标签名称")
-    tag_type: Optional[str] = Field(None, description="标签类型(category/tag)")
-    color: Optional[str] = Field(None, description="颜色代码(HEX格式)")
+    tag_name: Optional[str] = Field(default=None, min_length=1, max_length=255, description="标签名称")
+    tag_type: Optional[str] = Field(default=None, description="标签类型(category/tag)")
+    color: Optional[str] = Field(default=None, description="颜色代码(HEX格式)")
 
     @field_validator("tag_type")
     @classmethod
@@ -133,14 +133,18 @@ class RemoveTagsRequest(BaseModel):
 class DeleteTagRequest(BaseModel):
     """删除标签请求（支持种子转移）"""
 
-    target_category: Optional[str] = Field(None, description="目标分类名称（仅分类删除时使用，空字符串表示未分类）")
+    target_category: Optional[str] = Field(
+        default=None, description="目标分类名称（仅分类删除时使用，空字符串表示未分类）"
+    )
 
 
 class BatchDeleteTagsRequest(BaseModel):
     """批量删除标签请求（支持种子转移）"""
 
     tag_ids: List[str] = Field(..., min_length=1, description="待删除标签ID列表")
-    target_category: Optional[str] = Field(None, description="目标分类名称（仅分类删除时使用，空字符串表示未分类）")
+    target_category: Optional[str] = Field(
+        default=None, description="目标分类名称（仅分类删除时使用，空字符串表示未分类）"
+    )
 
 
 class BatchDeleteTagsResponse(BaseModel):
@@ -148,7 +152,7 @@ class BatchDeleteTagsResponse(BaseModel):
 
     tag_id: str = Field(..., description="标签ID")
     success: bool = Field(..., description="是否删除成功")
-    message: Optional[str] = Field(None, description="失败原因（成功时为空）")
+    message: Optional[str] = Field(default=None, description="失败原因（成功时为空）")
 
 
 class TagResponse(BaseModel):

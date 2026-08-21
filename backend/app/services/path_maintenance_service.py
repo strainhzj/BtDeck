@@ -108,7 +108,7 @@ class PathMaintenanceService:
             logger.error(f"获取路径ID {path_id} 失败: {str(e)}")
             raise
 
-    def get_default_path(self, downloader_id: int) -> Optional[str]:
+    def get_default_path(self, downloader_id: str) -> Optional[str]:
         """
         获取下载器的默认路径
 
@@ -135,7 +135,7 @@ class PathMaintenanceService:
             logger.error(f"获取下载器 {downloader_id} 默认路径失败: {str(e)}")
             return None
 
-    def get_active_paths(self, downloader_id: int) -> List[str]:
+    def get_active_paths(self, downloader_id: str) -> List[str]:
         """
         获取下载器的所有活跃路径
 
@@ -165,7 +165,7 @@ class PathMaintenanceService:
     # ========== 创建操作 ==========
 
     def create_path(
-        self, downloader_id: int, path_type: str, path_value: str, is_enabled: bool = True, torrent_count: int = 0
+        self, downloader_id: str, path_type: str, path_value: str, is_enabled: bool = True, torrent_count: int = 0
     ) -> DownloaderPathMaintenanceModel:
         """
         创建新路径
@@ -431,7 +431,7 @@ class PathMaintenanceService:
 
     # ========== 统计操作 ==========
 
-    def get_path_count(self, downloader_id: int, path_type: Optional[str] = None) -> Dict[str, int]:
+    def get_path_count(self, downloader_id: str, path_type: Optional[str] = None) -> Dict[str, int]:
         """
         获取路径统计信息
 
@@ -470,7 +470,7 @@ class PathMaintenanceService:
             return {"total": 0, "enabled": 0, "default": 0, "active": 0, "count": 0}
 
     def sync_paths_from_torrents(
-        self, downloader_id: int, default_path: str, active_paths: List[str]
+        self, downloader_id: str, default_path: str, active_paths: List[str]
     ) -> Dict[str, Any]:
         """
         从种子任务同步路径信息
@@ -484,7 +484,7 @@ class PathMaintenanceService:
             同步结果统计
         """
         try:
-            result = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
+            result: Dict[str, Any] = {"created": 0, "updated": 0, "skipped": 0, "errors": []}
 
             # 同步默认路径
             existing_default = (

@@ -97,7 +97,7 @@ class CleanupTaskExecutor:
         """
         # 使用类级别锁，防止多个清理任务同时执行
         async with CleanupTaskExecutor._cleanup_lock:
-            result = {"level3_cleaned": 0, "level4_cleaned": 0, "total_size_freed": 0, "errors": []}
+            result: Dict[str, Any] = {"level3_cleaned": 0, "level4_cleaned": 0, "total_size_freed": 0, "errors": []}
 
             try:
                 logger.info(f"开始执行清理任务，操作人: {operator}, 配置: {task_config}")
@@ -155,7 +155,7 @@ class CleanupTaskExecutor:
             }
         """
         try:
-            result = {
+            result: Dict[str, Any] = {
                 "level3_count": 0,
                 "level4_count": 0,
                 "total_count": 0,
@@ -233,7 +233,7 @@ class CleanupTaskExecutor:
                 "errors": List[str]
             }
         """
-        result = {"success_count": 0, "failed_count": 0, "size_freed": 0, "errors": []}
+        result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "size_freed": 0, "errors": []}
 
         # 收集所有要处理的种子
         torrents_to_process = []
@@ -269,7 +269,7 @@ class CleanupTaskExecutor:
                             )
                         except Exception as e:
                             logger.warning(
-                                f"删除标记文件失败（降级）: {self._sanitize_torrent_name(torrent.name)}, {e}"
+                                f"删除标记文件失败（降级）: {self._sanitize_torrent_name(torrent.name or "")}, {e}"
                             )
 
                     # 收集待处理的种子
@@ -367,7 +367,7 @@ class CleanupTaskExecutor:
                 "errors": List[str]
             }
         """
-        result = {"success_count": 0, "failed_count": 0, "size_freed": 0, "errors": []}
+        result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "size_freed": 0, "errors": []}
 
         try:
             # 查询符合条件的种子

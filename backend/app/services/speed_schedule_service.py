@@ -21,7 +21,7 @@ class SpeedScheduleService:
         """将 SQLite/表单中的速度值统一为非负整数。"""
 
         try:
-            return max(0, int(value))
+            return max(0, int(str(value)))
         except (TypeError, ValueError):
             return 0
 

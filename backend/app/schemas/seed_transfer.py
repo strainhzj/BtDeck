@@ -41,7 +41,7 @@ class SeedTransferRequest(BaseModel):
         ..., min_length=1, max_length=500, description="目标保存路径（绝对路径）", examples=["/downloads/movies"]
     )
 
-    delete_source: bool = Field(False, description="是否删除源下载器中的原种子（默认False）")
+    delete_source: bool = Field(default=False, description="是否删除源下载器中的原种子（默认False）")
 
     @field_validator("info_hash")
     @classmethod
@@ -80,17 +80,17 @@ class SeedTransferResponse(BaseModel):
 
     success: bool = Field(..., description="转移是否成功")
     transfer_status: str = Field(..., description="转移状态：success/failed/partial")
-    torrent_name: Optional[str] = Field(None, description="种子任务名称")
+    torrent_name: Optional[str] = Field(default=None, description="种子任务名称")
     source_downloader_id: str = Field(..., description="源下载器ID")
-    source_downloader_name: Optional[str] = Field(None, description="源下载器名称")
+    source_downloader_name: Optional[str] = Field(default=None, description="源下载器名称")
     target_downloader_id: str = Field(..., description="目标下载器ID")
-    target_downloader_name: Optional[str] = Field(None, description="目标下载器名称")
+    target_downloader_name: Optional[str] = Field(default=None, description="目标下载器名称")
     info_hash: str = Field(..., description="种子info_hash")
-    source_path: Optional[str] = Field(None, description="源保存路径")
+    source_path: Optional[str] = Field(default=None, description="源保存路径")
     target_path: str = Field(..., description="目标保存路径")
     delete_source: bool = Field(..., description="是否删除了原种子")
-    transfer_duration: Optional[int] = Field(None, description="转移耗时（毫秒）")
-    error_message: Optional[str] = Field(None, description="错误信息（如果失败）")
+    transfer_duration: Optional[int] = Field(default=None, description="转移耗时（毫秒）")
+    error_message: Optional[str] = Field(default=None, description="错误信息（如果失败）")
 
     class Config:
         json_schema_extra = {
@@ -135,7 +135,7 @@ class SeedTransferBatchRequest(BaseModel):
         ..., min_length=1, max_length=500, description="目标保存路径（绝对路径）", examples=["/downloads/movies"]
     )
 
-    delete_source: bool = Field(False, description="是否删除源下载器中的原种子（默认False）")
+    delete_source: bool = Field(default=False, description="是否删除源下载器中的原种子（默认False）")
 
     @field_validator("info_hashes")
     @classmethod

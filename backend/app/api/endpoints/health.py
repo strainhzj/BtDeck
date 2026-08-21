@@ -12,7 +12,7 @@ import asyncio
 import logging
 from collections import Counter
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple, cast
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse
@@ -263,12 +263,12 @@ def _sync_entry(
 
     last_outcome: Optional[str] = None
     if checkpoint is not None and checkpoint.outcome is not None:
-        last_outcome = cast(str, checkpoint.outcome)
+        last_outcome = checkpoint.outcome
     if task is not None and task.last_outcome is not None:
         task_time = _cron_sort_key(task)
         checkpoint_time = _checkpoint_sort_key(checkpoint) if checkpoint is not None else float("-inf")
         if last_outcome is None or task_time >= checkpoint_time:
-            last_outcome = cast(str, task.last_outcome)
+            last_outcome = task.last_outcome
 
     cron_plan = getattr(task, "cron_plan", "") if task is not None else ""
     freshness = compute_freshness(cron_plan, _freshness_input(last_success_at))

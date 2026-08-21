@@ -5,7 +5,7 @@ Transmission设置封装类
 封装Transmission RPC调用，提供统一的设置接口
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from transmission_rpc import Client
 from transmission_rpc import (
     TransmissionAuthError as TrAuthError,
@@ -72,7 +72,7 @@ class TransmissionSettings:
         """
         # 新方式: 直接使用缓存的客户端
         if client is not None:
-            self._client = client
+            self._client: Optional[Any] = client
             self._from_cache = True
             self.host = None
             self.port = None
@@ -121,6 +121,8 @@ class TransmissionSettings:
         """
         # 新方式: 直接返回缓存的客户端
         if self._from_cache:
+            if self._client is None:  # pragma: no cover - 缓存分支必有客户端
+                raise DownloaderConnectionError(message="缓存客户端缺失", host=self.host, port=self.port)
             return self._client
 
         # 旧方式: 延迟创建客户端(已废弃)
@@ -131,10 +133,14 @@ class TransmissionSettings:
         if self._client is None:
             try:
                 self._client = Client(
-                    host=self.host, port=self.port, username=self.username, password=self.password, timeout=self.timeout
+                    host=self.host or "",
+                    port=self.port or 0,
+                    username=self.username,
+                    password=self.password,
+                    timeout=self.timeout or 30.0,
                 )
                 if should_sanitize():
-                    logger.info(f"Transmission客户端初始化成功(旧方式): {sanitize_ip(self.host)}:{self.port}")
+                    logger.info(f"Transmission客户端初始化成功(旧方式): {sanitize_ip(self.host or '')}:{self.port}")
                 else:
                     logger.info(f"Transmission客户端初始化成功(旧方式): {self.host}:{self.port}")
             except Exception as e:
@@ -243,7 +249,7 @@ class TransmissionSettings:
                 raise ConfigurationError(message="下载目录不能为空", parameter_name="download_path")
 
             # 调用Transmission RPC
-            kwargs = {"download_dir": download_path}
+            kwargs: Dict[str, Any] = {"download_dir": download_path}
 
             if incomplete_path:
                 kwargs["incomplete_dir_enabled"] = True
@@ -398,7 +404,7 @@ class TransmissionSettings:
         """
         try:
             # 转换参数
-            kwargs = {}
+            kwargs: Dict[str, Any] = {}
 
             # 速度限制 (Transmission使用KB/s，支持分别的下载和上传单位)
             if "dl_speed_limit" in settings:
@@ -476,7 +482,7 @@ class TransmissionSettings:
             # 尝试获取会话信息以验证连接
             session = self.client.get_session()
 
-            return {
+            capabilities: Dict[str, Any] = {
                 "transfer_speed": True,
                 "authentication": True,
                 "download_paths": True,  # ✅ Transmission支持
@@ -486,8 +492,9 @@ class TransmissionSettings:
                 "schedule_speed": True,  # ✅ Transmission支持(应用层定时任务实现)
                 "queue_settings": hasattr(session, "download_queue_enabled"),
                 "advanced_settings": True,
-                "version": getattr(session, "version", "unknown"),
+                "version": str(getattr(session, "version", "") or "unknown"),
             }
+            return capabilities
         except Exception as e:
             # 下载器离线时降级为WARNING，避免干扰用户
             logger.warning(f"获取Transmission能力失败（下载器可能离线）: {e}")

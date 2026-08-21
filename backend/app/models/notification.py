@@ -12,7 +12,8 @@
 
 from datetime import datetime
 from typing import Any, Dict, Optional
-from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime
+from sqlalchemy import String, Integer, Boolean, Text, DateTime
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from app.utils.datetime_utils import serialize_utc_datetime
 
@@ -36,16 +37,22 @@ class Notification(Base):
 
     __tablename__ = "notification"
 
-    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
-    type = Column(String(30), nullable=False, index=True, comment="通知类型：version_update / system")
-    title = Column(String(255), nullable=False, comment="通知标题")
-    content = Column(Text, nullable=True, comment="通知内容")
-    priority = Column(String(10), nullable=False, default="info", comment="优先级：info / warning / error")
-    is_read = Column(Boolean, nullable=False, default=False, index=True, comment="是否已读")
-    extra_data = Column(Text, nullable=True, comment="JSON扩展数据")
-    dedupe_key = Column(String(100), nullable=True, comment="去重键（如 orphan_scan:{scan_id}）")
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
-    read_at = Column(DateTime, nullable=True, comment="已读时间")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    type: Mapped[str] = mapped_column(
+        String(30), nullable=False, index=True, comment="通知类型：version_update / system"
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, comment="通知标题")
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="通知内容")
+    priority: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="info", comment="优先级：info / warning / error"
+    )
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True, comment="是否已读")
+    extra_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="JSON扩展数据")
+    dedupe_key: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, comment="去重键（如 orphan_scan:{scan_id}）"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="已读时间")
 
     def __init__(
         self,

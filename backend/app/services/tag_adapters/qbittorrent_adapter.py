@@ -6,7 +6,7 @@ qBittorrent标签适配器
 支持qBittorrent的分类（category）和标签（tag）两种类型。
 """
 
-from typing import List, Dict, Any, Optional
+from typing import Any, Dict, List, Optional, cast
 import logging
 import uuid
 from qbittorrentapi import Client
@@ -52,7 +52,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
         """检查连接状态"""
         try:
             # 尝试获取版本信息
-            version = self.client.app.version()
+            version = cast(Any, self.client.app).version()
             logger.debug(f"qBittorrent连接正常，版本: {version}")
             return True
         except Exception as e:
@@ -88,7 +88,9 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 tags = self.client.torrent_tags.tags  # 修复：属性访问
                 logger.debug(f"获取到{len(tags)}个标签")
 
-                for tag_name in tags:
+                for raw_tag in tags:
+                    # qbittorrentapi 静态类型为 Tag 对象、运行时通常为 str；统一收敛为名称字符串
+                    tag_name = raw_tag if isinstance(raw_tag, str) else str(getattr(raw_tag, "name", raw_tag))
                     tag_id = self._get_or_create_tag_id(tag_name, "tag")
 
                     all_tags.append(
@@ -281,7 +283,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
                 try:
                     # qBittorrent的标签是逗号分隔的字符串
                     tags_str = ",".join(tags)
-                    self.client.torrents.add_tags(hashes=torrent_hash, tags=tags_str)
+                    cast(Any, self.client.torrents).add_tags(hashes=torrent_hash, tags=tags_str)
                     success_count += len(tags)
                     logger.debug(f"为种子{torrent_hash[:8]}...添加标签: {tags_str}")
                 except Exception as e:
@@ -339,7 +341,7 @@ class QBittorrentTagAdapter(TorrentTagAdapter):
             if tags:
                 try:
                     for tag_name in tags:
-                        self.client.torrents.remove_tags(hashes=torrent_hash, tags=tag_name)
+                        cast(Any, self.client.torrents).remove_tags(hashes=torrent_hash, tags=tag_name)
                         removed_count += 1
                         logger.debug(f"从种子{torrent_hash[:8]}...移除标签: {tag_name}")
                 except Exception as e:

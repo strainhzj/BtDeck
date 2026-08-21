@@ -11,6 +11,7 @@
 最后更新: 2026-02-14
 """
 
+from typing import Optional
 import logging
 from datetime import datetime, timedelta
 from app.database import AsyncSessionLocal
@@ -49,7 +50,7 @@ class AuditLogExportTask:
         except Exception as e:
             logger.error(f"审计日志导出任务失败: {str(e)}", exc_info=True)
 
-    async def execute_manual_export(self, db_session, days: int = 7, operation_type: str = None):
+    async def execute_manual_export(self, db_session, days: int = 7, operation_type: Optional[str] = None):
         """
         手动执行审计日志导出
 

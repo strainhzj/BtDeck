@@ -10,9 +10,10 @@
 @time: 2026-02-15
 """
 
-from typing import Optional
+from typing import Optional, cast
 from datetime import datetime
-from sqlalchemy import Column, String, Integer, BigInteger, Boolean, Text, DateTime
+from sqlalchemy import String, Integer, BigInteger, Boolean, Text, DateTime
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 # 操作类型常量
@@ -54,46 +55,48 @@ class SeedTransferAuditLog(Base):
     __tablename__ = "seed_transfer_audit_log"
 
     # 主键
-    id = Column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
 
     # 操作信息
-    operation_type = Column(
+    operation_type: Mapped[str] = mapped_column(
         String(50), nullable=False, default=OPERATOR_TYPE_SEED_TRANSFER, comment="操作类型：seed_transfer"
     )
-    operation_time = Column(DateTime, nullable=False, index=True, comment="操作时间")
+    operation_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True, comment="操作时间")
 
     # 操作者信息
-    user_id = Column(Integer, nullable=True, index=True, comment="操作用户ID")
-    username = Column(String(100), nullable=True, comment="操作用户名")
+    user_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, index=True, comment="操作用户ID")
+    username: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, comment="操作用户名")
 
     # 源下载器信息
-    source_downloader_id = Column(Integer, nullable=True, comment="源下载器ID")
-    source_downloader_name = Column(String(200), nullable=True, comment="源下载器昵称")
+    source_downloader_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="源下载器ID")
+    source_downloader_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, comment="源下载器昵称")
 
     # 目标下载器信息
-    target_downloader_id = Column(Integer, nullable=True, comment="目标下载器ID")
-    target_downloader_name = Column(String(200), nullable=True, comment="目标下载器昵称")
+    target_downloader_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="目标下载器ID")
+    target_downloader_name: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, comment="目标下载器昵称")
 
     # 种子信息
-    torrent_name = Column(String(500), nullable=True, comment="种子名称")
-    info_hash = Column(String(40), nullable=True, index=True, comment="种子的 info_hash")
+    torrent_name: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="种子名称")
+    info_hash: Mapped[Optional[str]] = mapped_column(String(40), nullable=True, index=True, comment="种子的 info_hash")
 
     # 路径信息
-    source_path = Column(String(500), nullable=True, comment="源路径")
-    target_path = Column(String(500), nullable=True, comment="目标路径")
+    source_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="源路径")
+    target_path: Mapped[Optional[str]] = mapped_column(String(500), nullable=True, comment="目标路径")
 
     # 操作配置
-    delete_source = Column(Boolean, nullable=False, default=False, comment="是否删除原种子")
+    delete_source: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, comment="是否删除原种子")
 
     # 转移结果
-    transfer_status = Column(String(20), nullable=False, index=True, comment="转移状态：success/failed")
-    error_message = Column(Text, nullable=True, comment="错误信息（如果失败）")
+    transfer_status: Mapped[str] = mapped_column(
+        String(20), nullable=False, index=True, comment="转移状态：success/failed"
+    )
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="错误信息（如果失败）")
 
     # 性能统计
-    transfer_duration = Column(BigInteger, nullable=True, comment="转移耗时（毫秒）")
+    transfer_duration: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True, comment="转移耗时（毫秒）")
 
     # 时间戳
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
 
     def __init__(
         self,
@@ -138,7 +141,8 @@ class SeedTransferAuditLog(Base):
             created_at: 创建时间
         """
         self.operation_type = operation_type
-        self.operation_time = operation_time
+        # 列为 NOT NULL；None 由调用方保证不出现（cast 仅类型层，不改运行时行为）
+        self.operation_time = cast(datetime, operation_time)
         self.user_id = user_id
         self.username = username
         self.source_downloader_id = source_downloader_id
@@ -150,7 +154,7 @@ class SeedTransferAuditLog(Base):
         self.source_path = source_path
         self.target_path = target_path
         self.delete_source = delete_source
-        self.transfer_status = transfer_status
+        self.transfer_status = cast(str, transfer_status)
         self.error_message = error_message
         self.transfer_duration = transfer_duration
 

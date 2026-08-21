@@ -91,7 +91,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         Returns:
             删除结果字典
         """
-        result = {"success_hashes": [], "failed_hashes": {}, "warnings": [], "deleted_files": []}
+        result: Dict[str, Any] = {"success_hashes": [], "failed_hashes": {}, "warnings": [], "deleted_files": []}
 
         if not torrent_hashes:
             return result
@@ -244,7 +244,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         self, torrent_info: Dict[str, Any], delete_option: DeleteOption, safety_check_level: SafetyCheckLevel
     ) -> List[str]:
         """执行安全检查"""
-        warnings = []
+        warnings: List[str] = []
 
         if safety_check_level == SafetyCheckLevel.BASIC:
             return warnings

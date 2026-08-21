@@ -1,4 +1,6 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey
+from typing import Optional
+from sqlalchemy import Integer, String, DateTime, Boolean, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 from datetime import datetime
 import logging
@@ -11,26 +13,28 @@ class TaskLogs(Base):
 
     __tablename__ = "task_logs"
 
-    log_id = Column(Integer, primary_key=True, autoincrement=True)
-    task_id = Column(Integer, ForeignKey("cron_task.task_id"), nullable=True, comment="关联的定时任务ID")
-    task_name = Column(String(100), nullable=False, comment="任务名称")
-    task_type = Column(Integer, nullable=True, comment="任务类型")
-    start_time = Column(DateTime, nullable=False, comment="开始时间")
-    end_time = Column(DateTime, nullable=True, comment="结束时间")
-    duration = Column(Integer, nullable=True, comment="持续时间(秒)")
-    success = Column(Boolean, nullable=False, comment="执行结果")
-    outcome = Column(
+    log_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    task_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("cron_task.task_id"), nullable=True, comment="关联的定时任务ID"
+    )
+    task_name: Mapped[str] = mapped_column(String(100), nullable=False, comment="任务名称")
+    task_type: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="任务类型")
+    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False, comment="开始时间")
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="结束时间")
+    duration: Mapped[Optional[int]] = mapped_column(Integer, nullable=True, comment="持续时间(秒)")
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, comment="执行结果")
+    outcome: Mapped[Optional[str]] = mapped_column(
         String(20),
         nullable=True,
         comment="业务结果六态：success/partial/skipped/failed/no_action/cancelled（NULL=历史记录无此字段，W3-4）",
     )
-    skip_reason = Column(
+    skip_reason: Mapped[Optional[str]] = mapped_column(
         String(50),
         nullable=True,
         comment="跳过原因机器码：resource_busy/already_running/outside_budget/downloader_offline（W3-4）",
     )
-    log_detail = Column(String(2000), nullable=True, comment="执行日志")
-    dr = Column(Integer, nullable=False, default=0, comment="逻辑删除标识")
+    log_detail: Mapped[Optional[str]] = mapped_column(String(2000), nullable=True, comment="执行日志")
+    dr: Mapped[int] = mapped_column(Integer, nullable=False, default=0, comment="逻辑删除标识")
 
     def _format_datetime(self, dt):
         """

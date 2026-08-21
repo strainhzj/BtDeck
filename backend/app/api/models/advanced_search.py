@@ -281,11 +281,11 @@ class SearchTemplate(BaseModel):
     id: Optional[str] = None
     user_id: str = Field(..., description="用户ID")
     name: str = Field(..., min_length=1, max_length=100, description="模板名称")
-    description: Optional[str] = Field(None, max_length=500, description="模板描述")
+    description: Optional[str] = Field(default=None, max_length=500, description="模板描述")
     conditions: List[Dict[str, Any]] = Field(..., description="搜索条件JSON")
-    is_default: bool = Field(False, description="是否默认模板")
-    is_public: bool = Field(False, description="是否公开模板")
-    usage_count: int = Field(0, description="使用次数")
+    is_default: bool = Field(default=False, description="是否默认模板")
+    is_public: bool = Field(default=False, description="是否公开模板")
+    usage_count: int = Field(default=0, description="使用次数")
     created_time: Optional[datetime] = None
     updated_time: Optional[datetime] = None
 
@@ -310,34 +310,36 @@ class EnhancedAdvancedSearchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     # 基础分页参数
-    page: int = Field(1, ge=1, le=1000, description="页码", examples=[1])
-    limit: int = Field(20, ge=1, le=100000, description="每页数量", examples=[20])
+    page: int = Field(default=1, ge=1, le=1000, description="页码", examples=[1])
+    limit: int = Field(default=20, ge=1, le=100000, description="每页数量", examples=[20])
     sort_by: str = Field("added_time", description="排序字段", examples=["added_time"])
     sort_order: Literal["asc", "desc"] = Field("desc", description="排序方向", examples=["desc"])
 
     # 基础过滤条件
-    downloader_id: Optional[str] = Field(None, description="下载器ID", examples=[""])
-    downloader_name: Optional[str] = Field(None, description="下载器名称", examples=[""])
-    name: Optional[str] = Field(None, description="种子名称", examples=[""])
-    tags: Optional[str] = Field(None, description="标签", examples=[""])
-    category: Optional[str] = Field(None, description="分类", examples=[""])
-    status: Optional[str] = Field(None, description="状态", examples=[""])
+    downloader_id: Optional[str] = Field(default=None, description="下载器ID", examples=[""])
+    downloader_name: Optional[str] = Field(default=None, description="下载器名称", examples=[""])
+    name: Optional[str] = Field(default=None, description="种子名称", examples=[""])
+    tags: Optional[str] = Field(default=None, description="标签", examples=[""])
+    category: Optional[str] = Field(default=None, description="分类", examples=[""])
+    status: Optional[str] = Field(default=None, description="状态", examples=[""])
 
     # 数值范围过滤
-    size_min: Optional[str] = Field(None, description="种子大小最小值", examples=["1GB"])
-    size_max: Optional[str] = Field(None, description="种子大小最大值", examples=["10GB"])
-    ratio_min: Optional[float] = Field(None, ge=0, description="分享比率最小值", examples=[0.5])
-    ratio_max: Optional[float] = Field(None, ge=0, description="分享比率最大值", examples=[2.0])
+    size_min: Optional[str] = Field(default=None, description="种子大小最小值", examples=["1GB"])
+    size_max: Optional[str] = Field(default=None, description="种子大小最大值", examples=["10GB"])
+    ratio_min: Optional[float] = Field(default=None, ge=0, description="分享比率最小值", examples=[0.5])
+    ratio_max: Optional[float] = Field(default=None, ge=0, description="分享比率最大值", examples=[2.0])
 
     # 日期范围过滤
-    added_date_min: Optional[str] = Field(None, description="添加时间最小值", examples=["2025-01-01"])
-    added_date_max: Optional[str] = Field(None, description="添加时间最大值", examples=["2025-12-31"])
-    completed_date_min: Optional[str] = Field(None, description="完成时间最小值", examples=["2025-01-01"])
-    completed_date_max: Optional[str] = Field(None, description="完成时间最大值", examples=["2025-12-31"])
+    added_date_min: Optional[str] = Field(default=None, description="添加时间最小值", examples=["2025-01-01"])
+    added_date_max: Optional[str] = Field(default=None, description="添加时间最大值", examples=["2025-12-31"])
+    completed_date_min: Optional[str] = Field(default=None, description="完成时间最小值", examples=["2025-01-01"])
+    completed_date_max: Optional[str] = Field(default=None, description="完成时间最大值", examples=["2025-12-31"])
 
     # 高级搜索条件组
-    condition_groups: Optional[List[SearchGroup]] = Field(None, description="条件组列表")
-    between_group_logics: Optional[List[Literal["AND", "OR"]]] = Field(None, description="条件组之间的逻辑关系列表")
+    condition_groups: Optional[List[SearchGroup]] = Field(default=None, description="条件组列表")
+    between_group_logics: Optional[List[Literal["AND", "OR"]]] = Field(
+        default=None, description="条件组之间的逻辑关系列表"
+    )
 
     @field_validator("between_group_logics", mode="before")
     @classmethod
@@ -531,9 +533,9 @@ class SearchTemplateCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(..., min_length=1, max_length=100, description="模板名称")
-    description: Optional[str] = Field(None, max_length=500, description="模板描述")
+    description: Optional[str] = Field(default=None, max_length=500, description="模板描述")
     conditions: Dict[str, Any] = Field(..., description="搜索条件")
-    is_public: bool = Field(False, description="是否公开模板")
+    is_public: bool = Field(default=False, description="是否公开模板")
 
     @field_validator("conditions")
     @classmethod
@@ -547,10 +549,10 @@ class SearchTemplateUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str = Field(..., description="模板ID")
-    name: Optional[str] = Field(None, min_length=1, max_length=100, description="模板名称")
-    description: Optional[str] = Field(None, max_length=500, description="模板描述")
-    conditions: Optional[Dict[str, Any]] = Field(None, description="搜索条件")
-    is_public: Optional[bool] = Field(None, description="是否公开模板")
+    name: Optional[str] = Field(default=None, min_length=1, max_length=100, description="模板名称")
+    description: Optional[str] = Field(default=None, max_length=500, description="模板描述")
+    conditions: Optional[Dict[str, Any]] = Field(default=None, description="搜索条件")
+    is_public: Optional[bool] = Field(default=None, description="是否公开模板")
 
     @field_validator("conditions")
     @classmethod
@@ -566,13 +568,13 @@ class SearchTemplateResponse(BaseModel):
     id: str = Field(..., description="模板ID")
     user_id: str = Field(..., description="用户ID")
     name: str = Field(..., description="模板名称")
-    description: Optional[str] = Field(None, description="模板描述")
+    description: Optional[str] = Field(default=None, description="模板描述")
     conditions: Dict[str, Any] = Field(..., description="搜索条件")
     is_default: bool = Field(..., description="是否默认模板")
     is_public: bool = Field(..., description="是否公开模板")
     usage_count: int = Field(..., description="使用次数")
     created_time: datetime = Field(..., description="创建时间")
-    updated_time: Optional[datetime] = Field(None, description="更新时间")
+    updated_time: Optional[datetime] = Field(default=None, description="更新时间")
 
 
 class SearchTemplateDelete(BaseModel):
@@ -595,8 +597,8 @@ class TorrentDeleteRequest(BaseModel):
     """批量删除种子请求"""
 
     torrent_ids: List[str] = Field(..., min_length=1, max_length=100, description="种子ID列表")
-    delete_data: bool = Field(True, description="是否删除数据文件", examples=[True])
-    id_recycle: bool = Field(False, description="是否进入回收箱", examples=[False])
+    delete_data: bool = Field(default=True, description="是否删除数据文件", examples=[True])
+    id_recycle: bool = Field(default=False, description="是否进入回收箱", examples=[False])
 
 
 class SearchStatisticsResponse(BaseModel):

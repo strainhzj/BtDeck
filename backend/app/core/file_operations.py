@@ -23,6 +23,7 @@
 
 import os
 import asyncio
+import functools
 import logging
 import shutil
 import platform
@@ -220,7 +221,7 @@ class FileOperationService:
                         logger.info(f"[UNC访问诊断] 找到 {len(matching_files)} 个包含 'waiting-delete' 的文件:")
                         for mf in matching_files[:5]:  # 只显示前5个
                             logger.info(f"  - {mf}")
-                            logger.info(f"    编码: {mf.encode('utf-8', errors='replace')}")
+                            logger.info(f"    编码: {mf.encode('utf-8', errors='replace')!r}")
 
                             # 检查是否完全匹配
                             if mf == file_name:
@@ -326,7 +327,7 @@ class FileOperationService:
                 "converted_path": str  # 转换后的路径（便于调试）
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "marker_file_path": "",
             "error_message": None,
@@ -428,7 +429,7 @@ class FileOperationService:
                 "deleted_path": str     # 实际删除的路径
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "error_message": None,
             "file_existed": False,
@@ -616,7 +617,7 @@ class FileOperationService:
                 "error_message": Optional[str]
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "exists": False,
             "deleted_at": None,
@@ -713,7 +714,7 @@ class FileOperationService:
                 "rolled_back_paths": [],
             }
 
-        results = {
+        results: Dict[str, Any] = {
             "total": len(directories),
             "success_count": 0,
             "failed_count": 0,
@@ -843,7 +844,7 @@ class FileOperationService:
         if len(valid_directories) != len(directories):
             logger.warning(f"过滤了 {len(directories) - len(valid_directories)} 个无效路径")
 
-        results = {
+        results: Dict[str, Any] = {
             "total": len(valid_directories),
             "success_count": 0,
             "failed_count": 0,
@@ -1000,7 +1001,7 @@ class FileOperationService:
     # ========== 新增：智能种子重命名方法（支持单文件和多文件） ==========
 
     @staticmethod
-    def is_single_file_torrent(torrent_name: str, save_path: str = None) -> bool:
+    def is_single_file_torrent(torrent_name: str, save_path: Optional[str] = None) -> bool:
         """
         检测种子是否为单文件种子（混合策略）
 
@@ -1272,15 +1273,15 @@ class FileOperationService:
             # 根据类型构建新名称
             if is_directory:
                 # 多文件种子（文件夹）：直接添加后缀
-                original_name = os.path.basename(original_path)
-                parent_dir = os.path.dirname(original_path)
+                original_name = os.path.basename(original_path or "")
+                parent_dir = os.path.dirname(original_path or "")
                 new_name = f"{original_name}{suffix}"
                 new_path = os.path.join(parent_dir, new_name)
             else:
                 # 单文件种子：在扩展名前添加后缀
                 # movie.mkv -> movie.pending_delete.mkv
-                original_name = os.path.basename(original_path)
-                parent_dir = os.path.dirname(original_path)
+                original_name = os.path.basename(original_path or "")
+                parent_dir = os.path.dirname(original_path or "")
                 name_without_ext, ext = os.path.splitext(original_name)
                 new_name = f"{name_without_ext}{suffix}{ext}"
                 new_path = os.path.join(parent_dir, new_name)
@@ -1297,7 +1298,7 @@ class FileOperationService:
 
             # 在线程池中执行重命名操作
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, os.rename, original_path, new_path)
+            await loop.run_in_executor(None, functools.partial(os.rename, original_path or "", new_path))
 
             logger.info(f"种子重命名成功 ({torrent_type}): {original_name} -> {new_name}")
 
@@ -1397,7 +1398,7 @@ class FileOperationService:
                 # 确保目标文件夹存在
                 if not os.path.exists(new_path):
                     loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, os.makedirs, new_path, exist_ok=True)
+                    await loop.run_in_executor(None, functools.partial(os.makedirs, new_path, exist_ok=True))
                     logger.info(f"创建目标文件夹: {new_path}")
 
                 # 移动所有文件到目标文件夹

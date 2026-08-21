@@ -18,10 +18,10 @@ class TrackerMessageResponse(BaseModel):
     first_seen: datetime = Field(alias="firstSeen")
     last_seen: datetime = Field(alias="lastSeen")
     occurrence_count: int = Field(alias="occurrenceCount")
-    sample_torrents: Optional[str] = Field(None, alias="sampleTorrents")
-    sample_urls: Optional[str] = Field(None, alias="sampleUrls")
+    sample_torrents: Optional[str] = Field(default=None, alias="sampleTorrents")
+    sample_urls: Optional[str] = Field(default=None, alias="sampleUrls")
     is_processed: bool = Field(alias="isProcessed")
-    keyword_type: Optional[str] = Field(None, alias="keywordType")
+    keyword_type: Optional[str] = Field(default=None, alias="keywordType")
 
     model_config = {"from_attributes": True, "populate_by_name": True}
 
@@ -30,9 +30,9 @@ class AddToPoolRequest(BaseModel):
     """添加到关键词池请求"""
 
     keyword_type: str = Field(..., pattern="^(candidate|ignored|success|failed)$", description="添加到哪个池")
-    language: Optional[str] = Field(None, max_length=10, description="语言代码")
-    priority: int = Field(100, ge=1, le=1000, description="优先级")
-    description: Optional[str] = Field(None, max_length=200, description="描述")
+    language: Optional[str] = Field(default=None, max_length=10, description="语言代码")
+    priority: int = Field(default=100, ge=1, le=1000, description="优先级")
+    description: Optional[str] = Field(default=None, max_length=200, description="描述")
 
 
 class BatchOperationRequest(BaseModel):
@@ -46,9 +46,9 @@ class BatchAddToPoolRequest(BaseModel):
 
     log_ids: list[str] = Field(..., min_length=1, max_length=100, description="消息ID列表", alias="log_ids")
     keyword_type: str = Field(..., pattern="^(candidate|ignored|success|failed)$", description="添加到哪个池")
-    language: Optional[str] = Field(None, max_length=10, description="语言代码")
-    priority: int = Field(100, ge=1, le=1000, description="优先级")
-    description: Optional[str] = Field(None, max_length=200, description="描述")
+    language: Optional[str] = Field(default=None, max_length=10, description="语言代码")
+    priority: int = Field(default=100, ge=1, le=1000, description="优先级")
+    description: Optional[str] = Field(default=None, max_length=200, description="描述")
 
     model_config = {"populate_by_name": True}
 
@@ -66,7 +66,7 @@ class MatchTestRequest(BaseModel):
 
     msg: str = Field(..., min_length=1, description="测试的消息")
     originalStatus: str = Field("未联系", description="原始状态")
-    language: Optional[str] = Field(None, description="语言代码")
+    language: Optional[str] = Field(default=None, description="语言代码")
 
 
 class MatchTestResponse(BaseModel):

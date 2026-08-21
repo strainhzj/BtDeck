@@ -45,8 +45,8 @@ async def _log_transfer_audit(
     db,
     username: str,
     info_hash: str,
-    source_downloader_id: int,
-    target_downloader_id: int,
+    source_downloader_id: str,
+    target_downloader_id: str,
     target_path: str,
     transfer_status: str,
     error_message: Optional[str] = None,
@@ -97,7 +97,7 @@ async def _log_transfer_audit(
 async def transfer_seed(
     transfer_request: SeedTransferRequest,
     background_tasks: BackgroundTasks,
-    request: Request = None,
+    request: Request,
     _user=Depends(require_authenticated_user),
 ):
     """
@@ -217,7 +217,7 @@ async def transfer_seed(
 async def batch_transfer_seeds(
     batch_request: SeedTransferBatchRequest,
     background_tasks: BackgroundTasks,
-    request: Request = None,
+    request: Request,
     _user=Depends(require_authenticated_user),
 ):
     """

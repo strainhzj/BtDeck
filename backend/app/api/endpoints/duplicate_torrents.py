@@ -50,7 +50,7 @@ def _overlay_metadata(target: Dict[str, Any], metadata: Dict[str, Any]) -> None:
 class DuplicateQueryRequest(BaseModel):
     """重复种子查询请求参数"""
 
-    name_like: Optional[str] = Field(None, description="种子名称模糊搜索")
+    name_like: Optional[str] = Field(default=None, description="种子名称模糊搜索")
     downloader_id: Optional[str] = Field(
         None,
         max_length=8192,
@@ -61,12 +61,12 @@ class DuplicateQueryRequest(BaseModel):
         max_length=8192,
         description="种子状态（支持多选，逗号分隔；error 满足 status='error' 或 has_tracker_error=True 之一）",
     )
-    category_like: Optional[str] = Field(None, description="分类模糊搜索")
-    tags_like: Optional[str] = Field(None, description="标签模糊搜索")
-    active_only: bool = Field(False, description="仅显示活动种子")
-    min_size: Optional[int] = Field(None, description="最小文件大小(字节)")
-    page: int = Field(1, ge=1, description="页码(从1开始)")
-    pageSize: int = Field(20, ge=1, le=100000, description="每页记录数")
+    category_like: Optional[str] = Field(default=None, description="分类模糊搜索")
+    tags_like: Optional[str] = Field(default=None, description="标签模糊搜索")
+    active_only: bool = Field(default=False, description="仅显示活动种子")
+    min_size: Optional[int] = Field(default=None, description="最小文件大小(字节)")
+    page: int = Field(default=1, ge=1, description="页码(从1开始)")
+    pageSize: int = Field(default=20, ge=1, le=100000, description="每页记录数")
     sort_by: Literal["name", "size", "status", "ratio", "added_date"] = Field(
         "added_date",
         description="排序字段",

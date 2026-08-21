@@ -5,7 +5,7 @@ qBittorrent设置封装类
 封装qBittorrent Web API调用，提供统一的设置接口
 """
 
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 from qbittorrentapi import Client
 from qbittorrentapi import (
     APIConnectionError as QBAPIConnectionError,
@@ -71,7 +71,7 @@ class QBitTorrentSettings:
         """
         # 新方式: 直接使用缓存的客户端
         if client is not None:
-            self._client = client
+            self._client: Optional[Any] = client
             self._from_cache = True
             self.host = None
             self.port = None
@@ -120,6 +120,8 @@ class QBitTorrentSettings:
         """
         # 新方式: 直接返回缓存的客户端
         if self._from_cache:
+            if self._client is None:  # pragma: no cover - 缓存分支必有客户端
+                raise DownloaderConnectionError(message="缓存客户端缺失", host=self.host, port=self.port)
             return self._client
 
         # 旧方式: 延迟创建客户端(已废弃)
@@ -130,15 +132,15 @@ class QBitTorrentSettings:
         if self._client is None:
             try:
                 self._client = Client(
-                    host=self.host,
-                    port=self.port,
+                    host=self.host or "",
+                    port=self.port or 0,
                     username=self.username,
                     password=self.password,
                     VERIFY_WEBUI_CERTIFICATE=False,  # 跳过WebUI证书验证
                     REQUESTS_ARGS={"timeout": self.timeout},
                 )
                 if should_sanitize():
-                    logger.info(f"qBittorrent客户端初始化成功(旧方式): {sanitize_ip(self.host)}:{self.port}")
+                    logger.info(f"qBittorrent客户端初始化成功(旧方式): {sanitize_ip(self.host or '')}:{self.port}")
                 else:
                     logger.info(f"qBittorrent客户端初始化成功(旧方式): {self.host}:{self.port}")
 
@@ -426,7 +428,7 @@ class QBitTorrentSettings:
             prefs = self.client.app_preferences()
             version = self.client.app_version()
 
-            return {
+            capabilities: Dict[str, Any] = {
                 "transfer_speed": True,
                 "authentication": True,
                 "connection_limits": "connection_limit" in prefs,
@@ -437,6 +439,7 @@ class QBitTorrentSettings:
                 "advanced_settings": True,
                 "version": version,
             }
+            return capabilities
         except Exception as e:
             # 下载器离线时降级为WARNING，避免干扰用户
             logger.warning(f"获取qBittorrent能力失败（下载器可能离线）: {e}")

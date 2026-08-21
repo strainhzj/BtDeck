@@ -20,11 +20,13 @@ logger = logging.getLogger(__name__)
 # 与孤儿扫描结果保留 30 天的既有惯例对齐；可按追溯需求调整
 DEFAULT_RETENTION_DAYS = 30
 
-CLEANUP_SQL = text("""
+CLEANUP_SQL = text(
+    """
     DELETE FROM refresh_tokens
     WHERE expires_at < :expired_before
        OR (revoked_at IS NOT NULL AND revoked_at < :revoked_before)
-    """)
+    """
+)
 
 
 def cleanup_before(retention_days: int = DEFAULT_RETENTION_DAYS) -> dict:

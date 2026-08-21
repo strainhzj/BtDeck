@@ -74,7 +74,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         decrypted = sm4_decrypt(hashed_password).decode("utf-8")
         decoded_password = base64.b64decode(decrypted).decode("utf-8")
         return decoded_password == plain_password
-    except (ValueError, base64.binascii.Error, UnicodeDecodeError) as e:
+    except (ValueError, getattr(base64, "binascii").Error, UnicodeDecodeError) as e:  # noqa: B009
         logger.warning(f"密码验证失败 - 格式错误: {e}")
         return False
     except Exception as e:
