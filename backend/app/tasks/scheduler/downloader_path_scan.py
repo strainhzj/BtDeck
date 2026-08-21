@@ -10,7 +10,7 @@ import json
 import logging
 from datetime import datetime
 from typing import Dict, Any, List, Set, Optional
-from sqlalchemy import select, update, func
+from sqlalchemy import select, update, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
@@ -21,6 +21,7 @@ from app.tasks.resource_guard import admission_controller
 from app.core.path_mapping import PathMappingService
 from app.core.path_mapping import PathMappingConverter
 from app.models.downloader_path_maintenance import DownloaderPathMaintenance
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -775,10 +776,14 @@ class DownloaderPathScanTask:
             existing_record = existing.scalar_one_or_none()
 
             if existing_record:
-                # 更新种子数量和时间戳
+                # 更新种子数量和时间戳；自动禁用（disabled_by='auto'）的路径在种子
+                # 回归后恢复启用，用户手动禁用（disabled_by='user'）永不被扫描推翻
                 existing_record.torrent_count = torrent_count
                 existing_record.last_updated_time = datetime.utcnow()
                 existing_record.updated_at = datetime.utcnow()
+                if existing_record.disabled_by == "auto":
+                    existing_record.is_enabled = True
+                    existing_record.disabled_by = None
                 logger.debug(f"更新下载器 {downloader_id} 的在用路径: {path_value}, " f"种子数量: {torrent_count}")
             else:
                 # 创建新记录
@@ -805,35 +810,52 @@ class DownloaderPathScanTask:
         """
         清理不再使用的路径（标记为禁用）
 
+        宽限期策略（PATH_CLEANUP_GRACE_DAYS，默认 30 天）：仅当路径最后一次有种子
+        距今超过宽限期才禁用，保留历史使用路径；禁用来源标记为 'auto'，种子回归后
+        由 _sync_active_path 自动恢复。用户手动禁用（disabled_by='user'）的记录
+        不在扫描范围内，永不被自动重新启用或重复禁用。
+
         Args:
             db: 数据库会话
             downloader_id: 下载器ID
             current_paths: 当前使用的路径集合
         """
         try:
-            # 查找所有在用路径记录
+            grace_days = settings.PATH_CLEANUP_GRACE_DAYS
+            now = datetime.utcnow()
+
+            # 查找所有在用路径记录（排除用户手动禁用的记录）
             all_active = await db.execute(
                 select(DownloaderPathMaintenance).where(
                     DownloaderPathMaintenance.downloader_id == downloader_id,
                     DownloaderPathMaintenance.path_type == "active",
                     DownloaderPathMaintenance.is_enabled.is_(True),
+                    or_(
+                        DownloaderPathMaintenance.disabled_by.is_(None),
+                        DownloaderPathMaintenance.disabled_by == "auto",
+                    ),
                 )
             )
             all_active_records = all_active.scalars().all()
 
-            # 禁用不再使用的路径
+            # 禁用超过宽限期仍未回归的路径
             disabled_count = 0
             for record in all_active_records:
                 if record.path_value not in current_paths:
+                    # last_updated_time 可空：回退 created_at/updated_at（coalesce 语义）
+                    last_seen = record.last_updated_time or record.created_at or record.updated_at
+                    if last_seen is None or (now - last_seen).days <= grace_days:
+                        continue
                     record.is_enabled = False
-                    record.updated_at = datetime.utcnow()
+                    record.disabled_by = "auto"
+                    record.updated_at = now
                     disabled_count += 1
                     logger.debug(f"禁用下载器 {downloader_id} 的废弃路径: {record.path_value}")
 
             if disabled_count > 0:
                 async with admission_controller.db_write_scope():
                     await db.commit()
-                logger.info(f"下载器 {downloader_id} 禁用了 {disabled_count} 个废弃路径")
+                logger.info(f"下载器 {downloader_id} 禁用了 {disabled_count} 个废弃路径（宽限期 {grace_days} 天）")
 
         except Exception as e:
             await db.rollback()

@@ -13,6 +13,7 @@
 import logging
 import shutil
 import urllib3
+import uuid
 import zipfile
 from typing import Dict, Optional, List, Sequence
 from datetime import datetime
@@ -27,6 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
+from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.path_mapping import PathMappingService
 from app.schemas.torrent_backup import (
@@ -47,7 +49,7 @@ router = APIRouter()
 # ==================== 辅助函数 ====================
 
 
-def get_downloader_from_store(downloader_id: int, app):
+def get_downloader_from_store(downloader_id: str, app):
     """
     从应用状态存储中获取下载器配置
 
@@ -65,7 +67,10 @@ def get_downloader_from_store(downloader_id: int, app):
 
     try:
         cached_downloaders = app.state.store.get_snapshot_sync()
-        downloader = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
+        downloader = next(
+            (d for d in cached_downloaders if str(d.downloader_id) == str(downloader_id)),
+            None,
+        )
         return downloader
     except Exception as e:
         logger.error(f"从 store 获取下载器失败: {e}")
@@ -155,6 +160,14 @@ async def create_backup(
 
             # 判断备份方式
             if backup_request.source_file_path:
+                # 后缀闸门（用户可控路径）：仅接受 .torrent 种子文件；
+                # 内容级校验（bencode+info 字典）由 core 层统一收口
+                if not backup_request.source_file_path.lower().endswith(".torrent"):
+                    return CommonResponse(
+                        status="error",
+                        msg="source_file_path 仅接受 .torrent 种子文件",
+                        code="400",
+                    )
                 # 从路径备份
                 result_data = await manager.backup_torrent_from_path(
                     info_hash=backup_request.info_hash,
@@ -206,7 +219,7 @@ async def create_backup(
 async def list_backups(
     request: Request,
     _user=Depends(require_authenticated_user),
-    downloader_id: Optional[int] = Query(None, description="下载器ID（可选）"),
+    downloader_id: Optional[str] = Query(None, description="下载器ID（可选）"),
     page: int = Query(1, ge=1, description="页码"),
     pageSize: int = Query(20, ge=1, le=100, description="每页大小"),
 ):
@@ -649,7 +662,7 @@ async def export_backups(
 async def import_backups(
     request: Request,
     _user=Depends(require_authenticated_user),
-    downloader_id: int = Query(..., description="目标下载器ID"),
+    downloader_id: str = Query(..., min_length=1, max_length=64, description="目标下载器ID"),
     files: List[UploadFile] = File(..., description="种子文件列表"),
 ):
     """
@@ -690,14 +703,19 @@ async def import_backups(
         async with AsyncSessionLocal() as db:
             manager = TorrentFileBackupManagerService(db=db)
 
-            # 临时保存目录
-            temp_dir = Path("data/temp_imports")
-            temp_dir.mkdir(parents=True, exist_ok=True)
+            # 临时保存目录：每请求独立子目录 + 文件名消毒。
+            # 安全：客户端 filename 可携带 ../..（multipart 库原样保留），
+            # 直接拼接会写出 temp_imports 之外的任意路径；sanitize 剥离
+            # 路径分隔符与控制字符。每请求子目录同时消除并发导入的
+            # 重名覆盖与 rmtree 竞态（历史实现会删掉整个共享目录）。
+            request_dir = Path("data/temp_imports") / uuid.uuid4().hex
+            request_dir.mkdir(parents=True, exist_ok=True)
 
             for file in files:
                 try:
-                    # 保存临时文件
-                    temp_file_path = temp_dir / file.filename
+                    # 保存临时文件（文件名消毒 + 截断，防越界写入与超长路径）
+                    safe_name = FilenameUtils.sanitize_filename(file.filename or "unnamed")[:200]
+                    temp_file_path = request_dir / safe_name
                     with open(temp_file_path, "wb") as buffer:
                         shutil.copyfileobj(file.file, buffer)
 
@@ -764,8 +782,8 @@ async def import_backups(
                     failed_count += 1
                     failed_items.append({"filename": file.filename, "reason": str(e)})
 
-            # 清理临时目录
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            # 清理本请求的临时子目录（不影响并发请求）
+            shutil.rmtree(request_dir, ignore_errors=True)
 
             message = f"导入完成：成功{success_count}个，失败{failed_count}个"
             return CommonResponse(

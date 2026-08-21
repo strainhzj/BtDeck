@@ -7,7 +7,7 @@
 - 已有库增量升级
 - 历史"幽灵版本"库自动救援（KNOWN_GHOST_VERSIONS）
 - 迁移前自动备份（支持回滚）
-- 失败时 DEV 模式告警继续、生产模式终止
+- DEV 模式向调用方返回失败、生产模式抛错；所有应用入口都会 fail-fast
 
 废弃的旧机制（已删除）：
 - subprocess 调用外部 alembic 可执行文件 → 改为编程式 API（frozen 也可用）
@@ -82,7 +82,12 @@ def _build_alembic_config(db_path: str) -> Config:
     return cfg
 
 
-def _rescue_or_warn_version(cfg: Config, db_path: str, current: Optional[str], heads: list) -> None:
+def _rescue_or_warn_version(
+    cfg: Config,
+    db_path: str,
+    current: Optional[str],
+    heads: list,
+) -> Optional[bool]:
     """
     区分幽灵版本（救援）vs 未来/未知版本（告警不降级）。
 
@@ -94,7 +99,7 @@ def _rescue_or_warn_version(cfg: Config, db_path: str, current: Optional[str], h
     - 已是 head：upgrade no-op
     """
     if current is None:
-        return  # 空库
+        return True  # 空库
 
     if current in KNOWN_GHOST_VERSIONS:
         target = KNOWN_GHOST_VERSIONS[current]
@@ -106,7 +111,7 @@ def _rescue_or_warn_version(cfg: Config, db_path: str, current: Optional[str], h
                 f"幽灵版本 {current} 的映射目标 {target} 不在迁移链中（配置错误），"
                 f"拒绝 stamp。请检查 KNOWN_GHOST_VERSIONS 配置。"
             )
-            return
+            return False
         logger.warning(
             f"检测到历史幽灵版本 {current}（production schema 初始化遗留），"
             f"自动 stamp 到对应真实版本 {target}（schema 已匹配，仅应用后续增量迁移）。"
@@ -115,7 +120,7 @@ def _rescue_or_warn_version(cfg: Config, db_path: str, current: Optional[str], h
         # CommandError。这里用 purge=True 先清空 alembic_version 再 stamp，
         # 绕过对旧版本的校验。stamp 到 target（非 head），让 upgrade 应用增量迁移。
         command.stamp(cfg, target, purge=True)
-        return
+        return True
 
     sd = ScriptDirectory.from_config(cfg)
     valid_revs = {r.revision for r in sd.walk_revisions()}
@@ -129,13 +134,15 @@ def _rescue_or_warn_version(cfg: Config, db_path: str, current: Optional[str], h
             f"请参考 docs/operations/rollback-guide.md。"
             f"如确认需强制对齐，手动执行: alembic stamp {heads[0]}"
         )
+        return None
     elif current not in heads:
         logger.info(f"数据库版本 {current} 落后于 head {heads[0]}，将执行 upgrade")
     else:
         logger.info(f"数据库已是最新版本 {current}")
+    return True
 
 
-def migrate_database() -> None:
+def migrate_database() -> bool:
     """
     统一数据库迁移入口。
 
@@ -145,9 +152,9 @@ def migrate_database() -> None:
     3. 版本救援/告警（黑名单逻辑）
     4. alembic upgrade head
 
-    失败处理（DEV 分流，与历史行为一致，保证存量用户无感）：
+    失败处理：
     - 迁移前备份失败：所有环境无条件终止，禁止绕过恢复点
-    - DEV=True：捕获异常，记 warning，不终止（便于开发调试）
+    - DEV=True：捕获异常并返回 False；生命周期入口仍必须停止启动
     - DEV=False：向上抛出（生产终止）
 
     Raises:
@@ -156,6 +163,9 @@ def migrate_database() -> None:
     try:
         db_path = str(settings.DATABASE_PATH)
         cfg = _build_alembic_config(db_path)
+        # 应用启动期间不得让 Alembic fileConfig 覆盖 app.* 的 stdout handler，
+        # 否则迁移首个异常会从 docker logs 中消失，只剩后续 ORM 二次错误。
+        cfg.attributes["configure_logger"] = False
 
         sd = ScriptDirectory.from_config(cfg)
         heads = sd.get_heads()
@@ -179,13 +189,26 @@ def migrate_database() -> None:
                 raise RuntimeError("existing database has no validated pre-migration backup")
 
         # 3. 版本救援/告警
-        _rescue_or_warn_version(cfg, db_path, current, heads)
+        version_action = _rescue_or_warn_version(cfg, db_path, current, heads)
+        if version_action is False:
+            raise RuntimeError(f"数据库版本 {current} 的救援配置无效，拒绝继续启动")
+        if version_action is None:
+            logger.warning(
+                "数据库版本 %s 高于或不属于当前代码迁移链；保留现状以兼容显式代码回滚",
+                current,
+            )
+            return True
 
         # 4. 升级
         logger.info(f"执行数据库迁移（当前版本={current}，目标={head}）")
         command.upgrade(cfg, "head")
 
+        final_version = _read_db_version(db_path)
+        if final_version != head:
+            raise RuntimeError(f"Alembic upgrade 返回后版本仍为 {final_version}，预期 {head}")
+
         logger.info("数据库迁移完成")
+        return True
 
     except MigrationBackupError:
         # A destructive migration must never continue when its recovery point
@@ -194,9 +217,10 @@ def migrate_database() -> None:
         raise
     except Exception as e:
         error_msg = f"数据库迁移失败: {e}"
-        logger.error(error_msg)
+        logger.exception(error_msg)
         if not settings.DEV:
             # 生产环境必须终止（保证数据一致性）
             raise RuntimeError(f"Database migration failed in production: {e}")
-        # 开发模式：告警后继续（保留与历史行为一致的存量用户体验）
-        logger.warning(f"开发模式：迁移失败但继续启动（{e}）")
+        # 开发模式保留异常返回，便于工具调用方诊断；应用生命周期必须据此停止启动。
+        logger.warning(f"开发模式：迁移失败，调用方必须拒绝启动依赖新 schema 的服务（{e}）")
+        return False

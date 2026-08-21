@@ -57,6 +57,88 @@ async def test_create_cleanup_job_persists_ids_and_scan_binding(async_orphan_db)
     assert job.total_count == 2
 
 
+async def test_submit_job_persists_ip_address(async_orphan_db):
+    """提交端 IP 持久化到 job 行（后台执行时透传给审计日志）。"""
+    service = OrphanPurgeJobService(async_orphan_db)
+
+    cleanup_job = await service.submit_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[1],
+        operator="tester",
+        ip_address="192.168.5.60",
+    )
+    purge_job = await service.submit_purge_job(
+        ["/data/a.mkv"],
+        operator="tester",
+        ip_address="10.0.0.9",
+    )
+
+    assert cleanup_job.job is not None
+    assert cleanup_job.job.ip_address == "192.168.5.60"
+    assert purge_job.job is not None
+    assert purge_job.job.ip_address == "10.0.0.9"
+    # 不传 IP（兼容入口/旧调用方）→ NULL 而非报错
+    legacy_job = await service.submit_purge_job(["/data/b.mkv"], operator="tester")
+    assert legacy_job.job is not None
+    assert legacy_job.job.ip_address is None
+
+
+async def test_execute_job_passes_ip_to_cleanup_orphans(async_orphan_db):
+    """execute_job 把 job 行上的提交端 IP 透传给 cleanup_orphans（审计用）。"""
+    job = await OrphanPurgeJobService(async_orphan_db).create_cleanup_job(
+        scan_id="scan-latest",
+        orphan_ids=[1, 2],
+        operator="tester",
+        ip_address="192.168.5.60",
+    )
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock(name="shared_store")))
+    dispatcher = OrphanPurgeJobDispatcher(app, session_factory=_session_factory(async_orphan_db))
+
+    with patch.object(
+        OrphanFileService,
+        "cleanup_orphans",
+        AsyncMock(
+            return_value={
+                "success_count": 2,
+                "failed_count": 0,
+                "failed_list": [],
+                "total_size": 2048,
+            }
+        ),
+    ) as cleanup:
+        await dispatcher.execute_job(job.task_id)
+
+    assert cleanup.await_args.kwargs["ip_address"] == "192.168.5.60"
+
+
+async def test_execute_job_passes_ip_to_purge_quarantine_now(async_orphan_db):
+    """execute_job 把 job 行上的提交端 IP 透传给 purge_quarantine_now（审计用）。"""
+    job = await OrphanPurgeJobService(async_orphan_db).create_job(
+        ["/quarantine/a.bin"],
+        operator="tester",
+        ip_address="10.0.0.9",
+    )
+    app = SimpleNamespace(state=SimpleNamespace(store=MagicMock(name="shared_store")))
+    dispatcher = OrphanPurgeJobDispatcher(app, session_factory=_session_factory(async_orphan_db))
+
+    with patch.object(
+        OrphanFileService,
+        "purge_quarantine_now",
+        AsyncMock(
+            return_value={
+                "purged_count": 1,
+                "failed_count": 0,
+                "failed_list": [],
+                "total_size": 512,
+                "hardlink_notes": [],
+            }
+        ),
+    ) as purge:
+        await dispatcher.execute_job(job.task_id)
+
+    assert purge.await_args.kwargs["ip_address"] == "10.0.0.9"
+
+
 async def test_cleanup_submission_skips_active_items_and_releases_failed_job(async_orphan_db):
     service = OrphanPurgeJobService(async_orphan_db)
 
@@ -221,6 +303,7 @@ async def test_dispatcher_completes_cleanup_job_and_creates_notification(async_o
         audit_service=cleanup.await_args.kwargs["audit_service"],
         store=app.state.store,
         scan_id="scan-latest",
+        ip_address=None,
     )
 
 

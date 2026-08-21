@@ -88,14 +88,25 @@
       show-icon
     />
     <el-alert
-      v-else-if="latestAttempt && latestAttempt.status === 'running'"
+      v-else-if="latestAttempt && (latestAttempt.status === 'queued' || latestAttempt.status === 'running')"
       class="orphan-scan-state-alert"
-      title="孤儿文件扫描进行中"
+      :title="latestAttempt.status === 'queued' ? '孤儿文件扫描等待执行' : '孤儿文件扫描进行中'"
       :description="scanStatusMessage"
       type="info"
       :closable="false"
       show-icon
     />
+    <el-alert
+      v-if="largeScanReminderVisible"
+      class="orphan-scan-state-alert"
+      title="超量扫描提醒"
+      type="warning"
+      :closable="true"
+      show-icon
+      @close="dismissLargeScanReminder"
+    >
+      本次扫描发现的孤儿文件数量较多，请留意下载器路径映射和孤儿判定；此提醒不影响清理。
+    </el-alert>
 
     <!-- 筛选条件 -->
     <section class="management-panel" aria-label="孤儿文件筛选条件">
@@ -162,6 +173,23 @@
             @change="handleFilter"
           />
         </div>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="orphan-located-copies">副本筛选</label>
+          <el-tooltip
+            content="按扫描时统计的硬链接副本数过滤；副本位置详情由弹窗实时复核"
+            placement="top"
+            :open-delay="200"
+          >
+            <el-checkbox
+              id="orphan-located-copies"
+              v-model="listQuery.hardlinkCopies"
+              class="management-filter__control orphan-located-copies-checkbox"
+              @change="handleFilter"
+            >
+              有硬链接副本
+            </el-checkbox>
+          </el-tooltip>
+        </div>
         <div class="management-filter__actions">
           <el-button type="primary" icon="el-icon-search" @click="handleFilter">
             搜索
@@ -174,14 +202,12 @@
     </section>
 
     <!-- 孤儿文件列表 -->
-    <section class="management-panel" aria-labelledby="orphan-file-list-title">
-      <div class="management-panel__header">
-        <div class="management-panel__heading">
-          <h2 id="orphan-file-list-title" class="management-panel__title">文件列表</h2>
-          <p class="management-panel__description">
-            {{ displayScan ? `展示成功扫描 ${formatTime(displayScan.scan_time)} 的剩余结果` : '完成首次成功扫描后将在此显示结果' }}
-          </p>
-        </div>
+    <CollapsiblePanel
+      title="文件列表"
+      :description="displayScan ? `展示成功扫描 ${formatTime(displayScan.scan_time)} 的剩余结果` : '完成首次成功扫描后将在此显示结果'"
+      storage-key="btdeck_orphan_file_list_collapsed"
+    >
+      <template #meta>
         <div class="management-panel__meta">
           <el-tag v-if="selectedCount > 0" type="info" effect="plain">
             已选择 {{ selectedCount }} 项
@@ -244,17 +270,26 @@
               >
                 快捷忽视（按前缀）
               </el-dropdown-item>
+              <el-dropdown-item
+                command="toggleLocatedCopies"
+                :icon="listQuery.hardlinkCopies ? 'el-icon-check' : 'el-icon-copy-document'"
+                :disabled="!displayScan"
+                :title="listQuery.hardlinkCopies ? '取消副本筛选，恢复完整列表' : '仅显示有硬链接副本的文件（扫描时统计）'"
+                divided
+              >
+                {{ listQuery.hardlinkCopies ? '取消有副本筛选' : '筛选有副本文件' }}
+              </el-dropdown-item>
             </el-dropdown-menu>
           </el-dropdown>
         </div>
-      </div>
+      </template>
       <div class="management-table-scroll orphan-table-scroll">
         <el-table
           ref="orphanTable"
           v-loading="listLoading"
           :data="tableData"
           :row-key="getRowKey"
-          :tree-props="{children: 'children'}"
+          :row-class-name="getOrphanRowClassName"
           class="management-table"
           height="100%"
           border
@@ -263,8 +298,73 @@
           empty-text="暂无孤儿文件，点击“立即扫描”开始检测"
           style="width: 100%"
           @selection-change="handleOrphanSelectionChange"
-          @select="handleOrphanSelect"
+          @expand-change="handleFolderExpandChange"
         >
+          <el-table-column v-if="folderView" type="expand" width="48">
+            <template slot-scope="scope">
+              <div v-if="scope.row._is_folder" class="orphan-folder-children">
+                <el-table
+                  v-loading="scope.row.children_loading"
+                  :data="scope.row.children"
+                  :row-key="getRowKey"
+                  :show-header="false"
+                  border
+                  size="mini"
+                  @selection-change="handleFolderChildSelection(scope.row, $event)"
+                >
+                  <el-table-column type="selection" width="48" :selectable="rowSelectable" />
+                  <el-table-column prop="file_path" label="文件路径" min-width="320" show-overflow-tooltip />
+                  <el-table-column label="大小" width="110" align="center">
+                    <template slot-scope="childScope">{{ formatSize(childScope.row.file_size) }}</template>
+                  </el-table-column>
+                  <el-table-column label="副本数量" width="90" align="center">
+                    <template slot-scope="childScope">
+                      <button
+                        v-if="canOpenHardlinkLocations(childScope.row)"
+                        type="button"
+                        class="orphan-hardlink-copy-count orphan-hardlink-copy-count--link"
+                        :title="getHardlinkCopyCountTitle(childScope.row)"
+                        @click.stop="handleHardlinkCopyClick(childScope.row)"
+                      >
+                        {{ formatHardlinkCopyCount(childScope.row.hardlink_copy_count) }}
+                      </button>
+                      <span v-else>{{ formatHardlinkCopyCount(childScope.row.hardlink_copy_count) }}</span>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="状态" width="90" align="center">
+                    <template slot-scope="childScope">
+                      <el-tag v-if="childScope.row.is_deleted" type="info" size="mini">已清理</el-tag>
+                      <el-tag v-else-if="childScope.row.is_ignored" type="warning" size="mini">已忽视</el-tag>
+                      <el-tag v-else type="danger" size="mini">待清理</el-tag>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="90" align="center">
+                    <template slot-scope="childScope">
+                      <el-button
+                        v-if="!childScope.row.is_deleted"
+                        type="text"
+                        size="mini"
+                        @click="handleRowIgnore(childScope.row, !childScope.row.is_ignored)"
+                      >
+                        {{ childScope.row.is_ignored ? '取消忽视' : '忽视' }}
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+                <el-pagination
+                  class="orphan-folder-children__pagination"
+                  background
+                  layout="total, prev, pager, next, sizes"
+                  :current-page="scope.row.child_page"
+                  :page-size="scope.row.child_page_size"
+                  :page-sizes="[20, 50, 100, 200]"
+                  :total="scope.row.child_total"
+                  @current-change="handleFolderChildPageChange(scope.row, $event)"
+                  @size-change="handleFolderChildPageSizeChange(scope.row, $event)"
+                />
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column
             type="selection"
             width="55"
@@ -278,7 +378,7 @@
                 <i class="el-icon-folder" aria-hidden="true"></i>
                 <span class="orphan-folder-cell__path" :title="scope.row.folder_path">{{ scope.row.folder_path }}</span>
                 <el-tag size="mini" type="info" class="orphan-folder-cell__count">
-                  {{ scope.row.children.length }} 个文件
+                  {{ scope.row.child_count }} 个文件
                 </el-tag>
               </span>
               <span v-else>{{ scope.row.file_path }}</span>
@@ -423,7 +523,7 @@
           />
         </div>
       </nav>
-    </section>
+    </CollapsiblePanel>
       </el-tab-pane>
 
       <!-- 隔离区管理 -->
@@ -527,7 +627,7 @@
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 硬链接副本位置对话框（点击副本数量后按需扫描） -->
+    <!-- 硬链接副本位置对话框（读取定时预扫描落库结果，不做实时遍历） -->
     <el-dialog
       :title="hardlinkLocationDialogTitle"
       :visible.sync="hardlinkLocationDialogVisible"
@@ -538,7 +638,7 @@
     >
       <div v-loading="hardlinkLocationLoading" class="hardlink-location-content">
         <el-alert
-          title="仅在系统已配置的下载目录内查找，不扫描整块磁盘。"
+          title="副本位置由每日定时任务在后台整体查找并存储，此处直接显示最近一轮结果。"
           type="info"
           :closable="false"
           show-icon
@@ -548,14 +648,14 @@
           <div class="hardlink-location-summary">
             <span>实时副本 <strong>{{ hardlinkLocationResult.total_copy_count }}</strong></span>
             <span>已定位 <strong>{{ hardlinkLocationResult.total_found_count }}</strong></span>
-            <span>扫描目录 <strong>{{ hardlinkLocationResult.searched_root_count }}</strong></span>
+            <span>待预扫描 <strong>{{ hardlinkLocationResult.pending_scan_count }}</strong></span>
           </div>
 
           <el-alert
             v-if="hardlinkLocationResult.total_unlocated_count > 0"
             class="hardlink-location-alert"
-            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在已配置目录中定位`"
-            description="这些副本可能位于未配置目录、无权限目录或当前不可访问的存储中。"
+            :title="`还有 ${hardlinkLocationResult.total_unlocated_count} 个副本未在最近一轮预扫描中定位`"
+            description="这些副本可能位于无权限或未挂载目录，也可能尚未被预扫描覆盖；副本总数为实时统计。"
             type="warning"
             :closable="false"
             show-icon
@@ -585,7 +685,7 @@
             show-icon
           />
 
-          <div class="hardlink-location-list">
+          <div v-loading="hardlinkLocationRefreshing" class="hardlink-location-list">
             <section
               v-for="item in hardlinkLocationResult.items"
               :key="item.orphan_id"
@@ -597,7 +697,16 @@
                 </span>
                 <span class="hardlink-location-item__metrics">
                   <el-tag size="mini" type="info">副本 {{ formatHardlinkCopyCount(item.copy_count) }}</el-tag>
-                  <el-tag size="mini" type="success">已定位 {{ item.found_count }}</el-tag>
+                  <el-tag v-if="item.pending_scan" size="mini" type="warning">待预扫描</el-tag>
+                  <el-tag v-else size="mini" type="success">已定位 {{ item.found_count }}</el-tag>
+                  <el-tag
+                    v-if="item.scanned_at"
+                    size="mini"
+                    type="info"
+                    :title="item.scanned_at"
+                  >
+                    扫描于 {{ formatTime(item.scanned_at) }}
+                  </el-tag>
                 </span>
               </header>
 
@@ -631,13 +740,28 @@
                   >
                     复制路径
                   </el-button>
+                  <el-button
+                    type="text"
+                    size="mini"
+                    class="hardlink-location-copy__button hardlink-location-copy__button--delete"
+                    :loading="isHardlinkCopyDeleting(item.orphan_id, copyPath)"
+                    @click="handleHardlinkCopyDelete(item.orphan_id, copyPath)"
+                  >
+                    删除
+                  </el-button>
                 </div>
+                <p v-if="item.result_truncated" class="hardlink-location-unlocated">
+                  路径数超过存储上限，仅显示前 {{ item.copies.length }} 条。
+                </p>
               </div>
+              <p v-else-if="item.pending_scan" class="hardlink-location-empty">
+                等待每日定时任务预扫描定位副本路径，可稍后重新打开查看。
+              </p>
               <p v-else-if="item.copy_count && item.copy_count > 0" class="hardlink-location-empty">
-                当前已配置目录内未定位到副本路径。
+                最近一轮预扫描未定位到副本路径。
               </p>
               <p v-else-if="item.copy_count === 0" class="hardlink-location-empty">
-                点击查询时已复核为 0 个副本。
+                该文件当前已无其它硬链接副本。
               </p>
               <p v-if="item.unlocated_count && item.unlocated_count > 0" class="hardlink-location-unlocated">
                 该文件还有 {{ item.unlocated_count }} 个副本位置未定位。
@@ -753,8 +877,11 @@
 import { Component, Vue } from 'vue-property-decorator'
 import {
   getOrphanList,
+  getOrphanFolderChildren,
   getHardlinkCopyLocations,
+  deleteHardlinkCopy,
   triggerScan,
+  getScanStatus,
   cleanupPreview,
   cleanupOrphans,
   setIgnored,
@@ -793,6 +920,8 @@ interface OrphanListQuery {
   path_like: string
   status: OrphanStatusFilter[]
   confidence: OrphanConfidence[]
+  // 仅显示有硬链接副本的文件（扫描时统计快照 > 0；快捷操作可一键切换）
+  hardlinkCopies: boolean
 }
 
 interface OrphanTableRef extends Vue {
@@ -812,7 +941,7 @@ function isFolderRow(row: OrphanTableRow | undefined | null): row is OrphanFolde
 
 @Component({ name: 'OrphanFiles', components: { PageSizeCombobox, AdvancedMultiSelect } })
 export default class OrphanFiles extends Vue {
-  private list: OrphanFileItem[] = []
+  private list: OrphanTableRow[] = []
   private total = 0
   private listLoading = false
   private scanLoading = false
@@ -823,9 +952,14 @@ export default class OrphanFiles extends Vue {
     downloader_id: [],
     path_like: '',
     status: [],
-    confidence: []
+    confidence: [],
+    hardlinkCopies: false
   }
   private refreshRequestSeq = 0
+  private scanPollTimer: number | null = null
+  private scanPollRequestSeq = 0
+  private activeScanId: string | null = null
+  private scanSubmitting = false
   // 页面 Tab：orphans=孤儿文件，quarantine=隔离区
   private activeTab: 'orphans' | 'quarantine' = 'orphans'
 
@@ -849,8 +983,9 @@ export default class OrphanFiles extends Vue {
   private downloaderList: DownloaderSimple[] = []
 
   // 选中状态：保存完整行以支持按主导状态启停批量按钮（仅当前页）
-  // 折叠模式下可能含 OrphanFolderRow，提交前由 selectedFileIds 展开为文件 id
   private selectedRows: OrphanTableRow[] = []
+  private outerSelectedRows: OrphanFileItem[] = []
+  private folderChildSelections: Record<string, OrphanFileItem[]> = {}
 
   // 按文件夹展示开关（localStorage 持久化）：开启后由后端按直接父目录聚合分页，
   // 同目录下 ≥2 个文件折叠为文件夹行，单文件保持原样。仅影响展示，删除仍按文件 id。
@@ -862,6 +997,11 @@ export default class OrphanFiles extends Vue {
   private hardlinkLocationResult: HardlinkCopyLocationsResult | null = null
   private hardlinkLocationDialogTitle = '硬链接副本位置'
   private hardlinkLocationRequestSeq = 0
+  // 当前弹窗涉及的孤儿 ID（删除副本后重查用）；重查只遮罩列表区，不清空旧结果。
+  private hardlinkLocationOrphanIds: number[] = []
+  private hardlinkLocationRefreshing = false
+  // 行级删除中状态（key=`${orphan_id}:${copyPath}`）；Vue2 动态 key 必须 $set/$delete。
+  private hardlinkCopyDeleting: Record<string, boolean> = {}
 
   // 页面列表、统计和清理门禁共用的后端权威快照
   private scanContext: OrphanScanContext = {
@@ -873,6 +1013,7 @@ export default class OrphanFiles extends Vue {
     cleanup_allowed: false,
     cleanup_block_reason: '尚无可清理的成功扫描'
   }
+  private dismissedLargeScanReminderId: string | null = null
 
   // 清理对话框
   private cleanupDialogVisible = false
@@ -907,6 +1048,7 @@ export default class OrphanFiles extends Vue {
 
   beforeDestroy() {
     this.refreshRequestSeq += 1
+    this.stopScanPolling()
   }
 
   // ==================== 隔离区管理 ====================
@@ -1037,41 +1179,141 @@ export default class OrphanFiles extends Vue {
     return isFolderRow(row) ? row.folder_key : 'file:' + row.id
   }
 
-  /** 只有明确大于 0 的副本数量可点击；0 与未知态保持普通文本。 */
+  /** 文件夹聚合行仅承担展开入口，不参与父表选择。 */
+  private getOrphanRowClassName({ row }: { row: OrphanTableRow }): string {
+    return isFolderRow(row) ? 'orphan-folder-row' : ''
+  }
+
+  private buildCurrentFolderParams(folderPath: string, page: number, pageSize: number) {
+    return {
+      folder_path: folderPath,
+      page,
+      page_size: pageSize,
+      downloader_id: this.listQuery.downloader_id.length
+        ? this.listQuery.downloader_id.join(',')
+        : undefined,
+      path_like: this.listQuery.path_like || undefined,
+      status: this.listQuery.status.length ? this.listQuery.status.join(',') : undefined,
+      confidence: this.listQuery.confidence.length
+        ? this.listQuery.confidence.join(',')
+        : undefined,
+      hardlink_copies: this.listQuery.hardlinkCopies ? ('located' as const) : undefined
+    }
+  }
+
+  private async loadFolderChildren(row: OrphanFolderRow): Promise<void> {
+    this.$set(row, 'children_loading', true)
+    try {
+      const response = await getOrphanFolderChildren(
+        this.buildCurrentFolderParams(row.folder_path, row.child_page, row.child_page_size)
+      )
+      if (response.code === '200' && response.data) {
+        this.$set(row, 'children', response.data.list)
+        this.$set(row, 'child_ids', response.data.list.map((item) => item.id))
+        this.$set(row, 'child_total', response.data.total)
+        this.$set(row, 'children_loaded', true)
+      } else {
+        this.$message.error(response.msg || '加载文件夹子项失败')
+      }
+    } catch (error) {
+      this.$message.error('加载文件夹子项失败：' + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.$set(row, 'children_loading', false)
+    }
+  }
+
+  private handleFolderExpandChange(row: OrphanTableRow, expanded: boolean): void {
+    if (expanded && isFolderRow(row) && !row.children_loaded && !row.children_loading) {
+      void this.loadFolderChildren(row)
+    }
+  }
+
+  private clearFolderSelection(row: OrphanFolderRow): void {
+    this.$delete(this.folderChildSelections, row.folder_key)
+    this.syncVisibleSelections()
+  }
+
+  private handleFolderChildSelection(row: OrphanFolderRow, items: OrphanFileItem[]): void {
+    this.$set(this.folderChildSelections, row.folder_key, items)
+    this.syncVisibleSelections()
+  }
+
+  private async handleFolderChildPageChange(row: OrphanFolderRow, page: number): Promise<void> {
+    this.clearFolderSelection(row)
+    this.$set(row, 'child_page', page)
+    await this.loadFolderChildren(row)
+  }
+
+  private async handleFolderChildPageSizeChange(row: OrphanFolderRow, pageSize: number): Promise<void> {
+    this.clearFolderSelection(row)
+    this.$set(row, 'child_page', 1)
+    this.$set(row, 'child_page_size', pageSize)
+    await this.loadFolderChildren(row)
+  }
+
+  private get largeScanReminderVisible(): boolean {
+    const latest = this.latestAttempt
+    return Boolean(
+      latest &&
+      latest.status === 'completed' &&
+      latest.cleanup_review_required &&
+      this.dismissedLargeScanReminderId !== latest.scan_id
+    )
+  }
+
+  private dismissLargeScanReminder(): void {
+    const latest = this.latestAttempt
+    if (latest) this.dismissedLargeScanReminderId = latest.scan_id
+  }
+
+  /** 数值型副本数（含 0）均可点击：列值是扫描快照，弹窗会实时复核，兜住快照之后新增的副本；未知态（null）不可点击。 */
   private canOpenHardlinkLocations(row: OrphanTableRow): boolean {
-    return typeof row.hardlink_copy_count === 'number' && row.hardlink_copy_count > 0
+    return typeof row.hardlink_copy_count === 'number'
   }
 
   private getHardlinkCopyCountTitle(row: OrphanTableRow): string {
     const count = row.hardlink_copy_count
-    if (typeof count !== 'number') return '文件当前不可访问，副本数量未知'
-    if (count === 0) return '没有其它硬链接副本'
-    return isFolderRow(row)
-      ? `点击查看文件夹内 ${count} 个硬链接副本的位置`
-      : `点击查看 ${count} 个硬链接副本的位置`
+    if (typeof count !== 'number') {
+      return isFolderRow(row) ? '展开后仅统计当前可见文件的副本数量快照' : '副本数量尚未生成快照（等待扫描）'
+    }
+    if (count === 0) return '暂无其它硬链接副本（点击可实时复核）'
+    return `点击查看 ${count} 个硬链接副本的位置`
   }
 
-  /** 文件夹行只提交当前明确有副本的子项，避免对 0 副本文件做无意义扫描。 */
+  /** 文件夹行提交所有已生成数值快照的子项（含 0）：列值是扫描快照，弹窗实时复核兜住快照后新增的副本；null 子项跳过。 */
   private getHardlinkLocationTargets(row: OrphanTableRow): OrphanFileItem[] {
     const items = isFolderRow(row) ? row.children : [row]
-    return items.filter(
-      (item) => typeof item.hardlink_copy_count === 'number' && item.hardlink_copy_count > 0
-    )
+    return items.filter((item) => typeof item.hardlink_copy_count === 'number')
   }
 
   private async handleHardlinkCopyClick(row: OrphanTableRow): Promise<void> {
     const targets = this.getHardlinkLocationTargets(row)
     if (targets.length === 0) return
 
-    const orphanIds = [...new Set(targets.map((item) => item.id))]
-    const requestId = this.hardlinkLocationRequestSeq + 1
-    this.hardlinkLocationRequestSeq = requestId
+    this.hardlinkLocationOrphanIds = [...new Set(targets.map((item) => item.id))]
     this.hardlinkLocationDialogTitle = isFolderRow(row)
       ? `硬链接副本位置（${targets.length} 个文件）`
       : '硬链接副本位置'
     this.hardlinkLocationDialogVisible = true
-    this.hardlinkLocationLoading = true
-    this.hardlinkLocationResult = null
+    await this.fetchHardlinkLocations(this.hardlinkLocationOrphanIds)
+  }
+
+  /**
+   * 拉取副本位置（seq 守卫丢弃过期响应）。
+   *
+   * keepResult=true 用于删除后的重查：不清空旧结果、只对列表区做局部遮罩，
+   * 失败时保留删除前数据并明确提示，避免用户刚删完就看到弹窗内容消失。
+   */
+  private async fetchHardlinkLocations(orphanIds: number[], keepResult = false): Promise<void> {
+    if (orphanIds.length === 0) return
+    const requestId = this.hardlinkLocationRequestSeq + 1
+    this.hardlinkLocationRequestSeq = requestId
+    if (keepResult) {
+      this.hardlinkLocationRefreshing = true
+    } else {
+      this.hardlinkLocationLoading = true
+      this.hardlinkLocationResult = null
+    }
 
     try {
       const response = await getHardlinkCopyLocations({ orphan_ids: orphanIds })
@@ -1084,11 +1326,13 @@ export default class OrphanFiles extends Vue {
     } catch (error) {
       if (requestId !== this.hardlinkLocationRequestSeq) return
       this.$message.error(
-        '查询硬链接副本位置失败：' + extractErrorMessage(error, '网络错误')
+        (keepResult ? '刷新副本位置失败，当前展示为删除前结果：' : '查询硬链接副本位置失败：') +
+          extractErrorMessage(error, '网络错误')
       )
     } finally {
       if (requestId === this.hardlinkLocationRequestSeq) {
         this.hardlinkLocationLoading = false
+        this.hardlinkLocationRefreshing = false
       }
     }
   }
@@ -1096,8 +1340,91 @@ export default class OrphanFiles extends Vue {
   private resetHardlinkLocationDialog(): void {
     this.hardlinkLocationRequestSeq += 1
     this.hardlinkLocationLoading = false
+    this.hardlinkLocationRefreshing = false
     this.hardlinkLocationResult = null
     this.hardlinkLocationDialogTitle = '硬链接副本位置'
+    this.hardlinkLocationOrphanIds = []
+    this.hardlinkCopyDeleting = {}
+  }
+
+  private isHardlinkCopyDeleting(orphanId: number, copyPath: string): boolean {
+    return this.hardlinkCopyDeleting[`${orphanId}:${copyPath}`] === true
+  }
+
+  /**
+   * 删除单个硬链接副本目录项（仅移除该路径链接，源文件与数据保留）。
+   *
+   * 成功后就地刷新列表行副本数并重查弹窗；重查前用「seq 快照 + 弹窗可见」
+   * 双重校验，防止删除在途时用户关闭并重开另一弹窗后被迟到的重查覆盖。
+   */
+  private async handleHardlinkCopyDelete(orphanId: number, copyPath: string): Promise<void> {
+    const stateKey = `${orphanId}:${copyPath}`
+    if (this.hardlinkCopyDeleting[stateKey]) return
+    try {
+      await this.$confirm(
+        `确认删除硬链接副本？\n${copyPath}\n此操作不可恢复：仅移除该路径链接，数据仍由源文件保留；位于种子目录内的副本会被拒绝删除。`,
+        '删除副本确认',
+        { type: 'error', confirmButtonText: '确认删除', cancelButtonText: '取消' }
+      )
+    } catch {
+      return
+    }
+
+    const seqSnapshot = this.hardlinkLocationRequestSeq
+    this.$set(this.hardlinkCopyDeleting, stateKey, true)
+    try {
+      const response = await deleteHardlinkCopy({ orphan_id: orphanId, copy_paths: [copyPath] })
+      if (response.code === '200' && response.data) {
+        const data = response.data
+        if (data.rejected) {
+          this.$message.error(data.error || data.failed_list[0]?.reason || '删除被拒绝')
+        } else {
+          if (data.success_count > 0) {
+            this.$message.success(`已删除副本：${copyPath}`)
+            this.syncHardlinkCopyCount(orphanId, data.copy_count)
+            if (
+              this.hardlinkLocationDialogVisible &&
+              seqSnapshot === this.hardlinkLocationRequestSeq
+            ) {
+              await this.fetchHardlinkLocations(this.hardlinkLocationOrphanIds, true)
+            }
+          }
+          if (data.failed_count > 0) {
+            this.$message.error(`删除失败：${data.failed_list[0]?.reason || '未知原因'}`)
+          }
+        }
+      } else {
+        this.$message.error(response.msg || '删除硬链接副本失败')
+      }
+    } catch (error) {
+      this.$message.error('删除硬链接副本失败：' + extractErrorMessage(error, '网络错误'))
+    } finally {
+      this.$delete(this.hardlinkCopyDeleting, stateKey)
+    }
+  }
+
+  /**
+   * 删除成功后就地刷新列表行副本数（含文件夹行 children），避免整页刷新
+   * 重置页码/勾选/展开态；located 筛选开启时该行需从筛选结果中消失，改走全量刷新。
+   */
+  private syncHardlinkCopyCount(orphanId: number, copyCount: number | null): void {
+    if (this.listQuery.hardlinkCopies) {
+      void this.refreshPageData()
+      return
+    }
+    if (copyCount === null) return
+    const updateRow = (item: OrphanFileItem): boolean => {
+      if (item.id !== orphanId) return false
+      item.hardlink_copy_count = copyCount
+      return true
+    }
+    for (const row of this.list) {
+      if (!isFolderRow(row)) {
+        if (updateRow(row)) return
+      } else if (row.children.some(updateRow)) {
+        return
+      }
+    }
   }
 
   private async copyHardlinkPath(path: string): Promise<void> {
@@ -1134,8 +1461,7 @@ export default class OrphanFiles extends Vue {
   private get selectedFileIds(): number[] {
     const ids = new Set<number>()
     for (const row of this.selectedRows) {
-      if (isFolderRow(row)) row.child_ids.forEach((id) => ids.add(id))
-      else ids.add(row.id)
+      if (!isFolderRow(row)) ids.add(row.id)
     }
     return [...ids]
   }
@@ -1149,8 +1475,7 @@ export default class OrphanFiles extends Vue {
   private get selectedFileItems(): OrphanFileItem[] {
     const items: OrphanFileItem[] = []
     for (const row of this.selectedRows) {
-      if (isFolderRow(row)) items.push(...row.children)
-      else items.push(row)
+      if (!isFolderRow(row)) items.push(row)
     }
     return items
   }
@@ -1252,6 +1577,9 @@ export default class OrphanFiles extends Vue {
   private get scanStatusMessage(): string {
     const latest = this.latestAttempt
     if (!latest) return ''
+    if (latest.status === 'queued') {
+      return '扫描任务已进入后台队列；页面仅轮询轻量状态，列表与清理暂不可用。'
+    }
     if (latest.status === 'running') {
       return '扫描正在进行中，完成前列表与统计保持为空，清理功能暂不可用。'
     }
@@ -1288,7 +1616,8 @@ export default class OrphanFiles extends Vue {
       downloader_id: this.listQuery.downloader_id,
       path_like: this.listQuery.path_like,
       status: this.listQuery.status,
-      confidence: this.listQuery.confidence
+      confidence: this.listQuery.confidence,
+      hardlinkCopies: this.listQuery.hardlinkCopies
     })
     this.listLoading = true
     try {
@@ -1306,6 +1635,7 @@ export default class OrphanFiles extends Vue {
         confidence: querySnapshot.confidence.length
           ? querySnapshot.confidence.join(',')
           : undefined,
+        hardlink_copies: querySnapshot.hardlinkCopies ? ('located' as const) : undefined,
         group_by_folder: this.folderView || undefined
       }
       const response = await getOrphanList(params)
@@ -1315,6 +1645,14 @@ export default class OrphanFiles extends Vue {
         this.list = response.data.list
         this.total = response.data.total
         this.scanContext = response.data.scan_context
+        const latest = this.scanContext.latest_attempt
+        if (
+          latest &&
+          (latest.status === 'queued' || latest.status === 'running') &&
+          this.activeScanId !== latest.scan_id
+        ) {
+          this.startScanPolling(latest.scan_id)
+        }
       } else {
         this.$message.error(response.msg || '获取列表失败')
       }
@@ -1340,7 +1678,8 @@ export default class OrphanFiles extends Vue {
       downloader_id: [],
       path_like: '',
       status: [],
-      confidence: []
+      confidence: [],
+      hardlinkCopies: false
     }
     void this.refreshPageData()
   }
@@ -1389,52 +1728,25 @@ export default class OrphanFiles extends Vue {
 
   /** el-table 原生 selection-change：同步当前页选中行（全选/单选均由此驱动）。 */
   private handleOrphanSelectionChange(rows: OrphanTableRow[]): void {
-    this.selectedRows = rows
+    this.outerSelectedRows = rows.filter((row): row is OrphanFileItem => !isFolderRow(row))
+    this.syncVisibleSelections()
   }
 
-  /**
-   * el-table @select：用户点击单行 checkbox。
-   *
-   * element-ui 2.15 树表 checkbox 无内置父子联动（store/index.js rowSelectedChanged 仅 toggle 单行），
-   * 故折叠模式下需手动处理：
-   * - 点文件夹行 → 联动其全部可选子文件（公共 API toggleRowSelection 静默，不触发 @select，无递归）
-   * - 子文件变化 → 反向同步文件夹行勾选态（syncFolderCheckboxState）
-   * 公共 API 会触发 selection-change，selectedRows 由 handleOrphanSelectionChange 同步。
-   */
-  private handleOrphanSelect(selection: OrphanTableRow[], row: OrphanTableRow): void {
-    if (!this.folderView) return
-    const table = this.$refs.orphanTable as OrphanTableRef | undefined
-    if (!table) return
-    if (isFolderRow(row)) {
-      const selected = selection.indexOf(row) > -1
-      row.children
-        .filter((c) => this.rowSelectable(c))
-        .forEach((c) => table.toggleRowSelection(c, selected))
-    }
-    this.syncFolderCheckboxState(table)
-  }
-
-  /**
-   * 反向同步：子文件勾选态变化时，更新文件夹行 checkbox（仅全选/未选两态，无 indeterminate）。
-   * 文件夹行仅当其全部可选子文件都被选中时才勾选。
-   */
-  private syncFolderCheckboxState(table: OrphanTableRef): void {
-    const sel = table.selection
-    for (const row of this.list) {
-      if (!isFolderRow(row)) continue
-      const selectable = row.children.filter((c) => this.rowSelectable(c))
-      if (selectable.length === 0) continue
-      const allSelected = selectable.every((c) => sel.indexOf(c) > -1)
-      const folderSelected = sel.indexOf(row) > -1
-      if (allSelected !== folderSelected) {
-        table.toggleRowSelection(row, allSelected)
-      }
-    }
+  private syncVisibleSelections(): void {
+    const merged: OrphanFileItem[] = [...this.outerSelectedRows]
+    Object.keys(this.folderChildSelections).forEach((folderKey) => {
+      merged.push(...this.folderChildSelections[folderKey])
+    })
+    const unique = new Map<number, OrphanFileItem>()
+    merged.forEach((item) => unique.set(item.id, item))
+    this.selectedRows = [...unique.values()]
   }
 
   /** 通过 el-table ref 清空选择（翻页/筛选/刷新/切换展示模式时调用）。 */
   private clearOrphanSelection(): void {
     this.selectedRows = []
+    this.outerSelectedRows = []
+    this.folderChildSelections = {}
     const table = this.$refs.orphanTable as OrphanTableRef | undefined
     table?.clearSelection()
   }
@@ -1446,10 +1758,10 @@ export default class OrphanFiles extends Vue {
   /**
    * 行是否可勾选。
    * - 文件行：已清理行不可勾选（待清理/已忽视可勾选）
-   * - 文件夹行：有任一可选子文件即可勾选
+   * - 文件夹行：不可勾选，必须展开后选择当前可见子项
    */
   private rowSelectable(row: OrphanTableRow): boolean {
-    if (isFolderRow(row)) return row.children.some((c) => !c.is_deleted)
+    if (isFolderRow(row)) return false
     return !row.is_deleted
   }
 
@@ -1464,27 +1776,71 @@ export default class OrphanFiles extends Vue {
       return // 用户取消
     }
 
+    this.scanSubmitting = true
     this.scanLoading = true
     try {
       const response = await triggerScan()
       if (response.code === '200' && response.data) {
         const data = response.data
-        if (data.status === 'completed') {
-          this.$message.success(`扫描完成: 发现 ${data.total_orphans} 个孤儿文件`)
-        } else if (data.status === 'busy') {
-          this.$message.warning(data.error || '孤儿文件维护任务正在进行')
-        } else {
-          this.$message.warning(`扫描失败: ${data.error}`)
-        }
+        this.activeScanId = data.scan_id
+        this.$message.success(data.accepted ? '扫描任务已提交到后台' : '已有扫描任务，继续跟踪其状态')
+        await this.refreshPageData()
+        this.startScanPolling(data.scan_id)
       } else {
         this.$message.error(response.msg || '扫描失败')
       }
     } catch (error) {
       this.$message.error('扫描失败：' + extractErrorMessage(error, '网络错误'))
     } finally {
-      await this.refreshPageData()
-      this.scanLoading = false
+      this.scanSubmitting = false
+      this.scanLoading = this.activeScanId !== null
     }
+  }
+
+  private startScanPolling(scanId: string): void {
+    this.stopScanPolling()
+    this.activeScanId = scanId
+    this.scanLoading = true
+    const requestSeq = ++this.scanPollRequestSeq
+    const poll = async() => {
+      try {
+        const response = await getScanStatus(scanId)
+        if (requestSeq !== this.scanPollRequestSeq) return
+        if (!response.data) {
+          this.scanPollTimer = window.setTimeout(poll, 3000)
+          return
+        }
+        const record = response.data
+        this.scanContext.latest_attempt = record
+        if (record.status === 'queued' || record.status === 'running') {
+          this.scanPollTimer = window.setTimeout(poll, 2000)
+          return
+        }
+        this.stopScanPolling()
+        if (record.status === 'completed') {
+          this.$message.success(
+            `扫描完成：孤儿 ${record.total_orphans}，新增明细 ${record.new_orphans}，复用 ${record.known_orphans}`
+          )
+        } else {
+          this.$message.warning(`扫描失败：${record.error_message || '未知错误'}`)
+        }
+        await this.refreshPageData()
+      } catch (error) {
+        if (requestSeq !== this.scanPollRequestSeq) return
+        this.scanPollTimer = window.setTimeout(poll, 3000)
+      }
+    }
+    void poll()
+  }
+
+  private stopScanPolling(): void {
+    this.scanPollRequestSeq += 1
+    if (this.scanPollTimer !== null) {
+      window.clearTimeout(this.scanPollTimer)
+      this.scanPollTimer = null
+    }
+    this.activeScanId = null
+    this.scanLoading = this.scanSubmitting
   }
 
   private async handleCleanupPreview() {
@@ -1656,9 +2012,15 @@ export default class OrphanFiles extends Vue {
     return reasons.length > 3 ? `${summary}；另有 ${reasons.length - 3} 类原因` : summary
   }
 
-  // ========== 快捷操作（左匹配：快捷删除 / 快捷忽视） ==========
+  // ========== 快捷操作（左匹配：快捷删除 / 快捷忽视；副本定位筛选切换） ==========
 
-  private handleQuickAction(command: 'cleanup' | 'ignore'): void {
+  private handleQuickAction(command: 'cleanup' | 'ignore' | 'toggleLocatedCopies'): void {
+    if (command === 'toggleLocatedCopies') {
+      // 一键切换"仅看已定位副本"筛选：不走前缀对话框流程，直接回第一页重载
+      this.listQuery.hardlinkCopies = !this.listQuery.hardlinkCopies
+      this.handleFilter()
+      return
+    }
     this.quickActionType = command
     this.quickActionPrefix = ''
     this.quickActionDialogVisible = true
@@ -1692,7 +2054,8 @@ export default class OrphanFiles extends Vue {
     try {
       const resp = await prefixMatchPreview({
         path_prefix: prefix,
-        scan_id: displayScan.scan_id
+        scan_id: displayScan.scan_id,
+        hardlink_copies: this.listQuery.hardlinkCopies ? 'located' : undefined
       })
       if (resp.code === '200' && resp.data) {
         preview = resp.data
@@ -1719,10 +2082,12 @@ export default class OrphanFiles extends Vue {
       return
     }
 
-    // 构造与 cleanup/ignore 共用的选择载荷：select_all + filters（含 status=pending）
+    // 构造与 cleanup/ignore 共用的选择载荷：select_all + filters（含 status=pending；
+    // located 开启时同步限定，避免快捷前缀操作放大清理范围）
     const filters: OrphanSelectionFilters = {
       path_prefix: prefix,
-      status: 'pending'
+      status: 'pending',
+      hardlink_copies: this.listQuery.hardlinkCopies ? 'located' : undefined
     }
     const scanId = displayScan.scan_id
 
@@ -1850,6 +2215,13 @@ export default class OrphanFiles extends Vue {
     font-variant-numeric: tabular-nums;
   }
 
+  /* 副本定位筛选复选框：与筛选区 el-input 默认高度对齐（容器按底边对齐） */
+  .orphan-located-copies-checkbox {
+    display: inline-flex;
+    align-items: center;
+    height: 40px;
+  }
+
   .orphan-hardlink-copy-count--link {
     margin: 0;
     padding: 2px 8px;
@@ -1909,6 +2281,24 @@ export default class OrphanFiles extends Vue {
       align-items: center;
       min-height: 32px;
     }
+  }
+
+  .orphan-folder-children {
+    padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+    background: var(--color-bg-secondary);
+
+    &__pagination {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: var(--spacing-md);
+    }
+  }
+
+  // Element UI 的 expand 列会为文件夹模式中的普通文件也生成箭头；
+  // 普通文件没有懒加载子项，只允许聚合文件夹行展开。
+  ::v-deep .management-table .el-table__body tr:not(.orphan-folder-row) .el-table__expand-icon {
+    visibility: hidden;
+    pointer-events: none;
   }
 }
 
@@ -1990,6 +2380,15 @@ export default class OrphanFiles extends Vue {
 
   &__button {
     flex-shrink: 0;
+  }
+
+  &__button--delete {
+    color: var(--color-danger);
+
+    &:hover,
+    &:focus {
+      color: var(--color-danger);
+    }
   }
 }
 

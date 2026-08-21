@@ -16,17 +16,18 @@
 | 文件名清理 filename | `filename_utils.py` | 文件名清理（非法字符/长度，给种子备份文件名） |
 | 灾备建库 init-schema | `init_schema_from_production.py` | ⚠️ **孤儿/已下线**：从生产 DB schema 反向建库的灾备脚本，main.py 不再调用 |
 | JSON 解析 json-parser | `json_parser.py` | 异常安全 JSON 解析（吞 JSONDecodeError） |
-| DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（空库建表/增量升级/幽灵版本救援）；v1.0.6.27 起集成 ratio 迁移前自动备份 |
+| DB 迁移入口 migration | `migration.py` | 🔵 数据库迁移统一入口 `migrate_database()`（L145，空库/增量/幽灵救援、升级后 head 校验与显式成功状态）；应用启动遇失败一律 fail-fast |
 | 路径映射 path-mapping | `path_mapping.py` | 🔵 下载器内/外路径双向映射（Docker/NAS/权限隔离） |
 | ratio 诊断 ratio-diagnostics | `ratio_data_diagnostics.py` ✨v1.0.6.27 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 消费 |
 | Reannounce 配置 reannounce-config | `reannounce_config_operations.py` | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
 | 解密孤儿 security | `security.py` | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |
 | 种子文件备份 torrent-file-backup | `torrent_file_backup.py` | 种子文件备份服务（从下载器备份目录拷贝到项目备份目录） |
 | ratio 工具孤儿 ratio-tools | `torrent_operations.py` | ⚠️ **孤儿（内容已重写但未接线）**：v1.0.6.27 起内容已重写为 ratio/ratio_limit 工具，但**生产路径未 import**（实际生效的是 `app/services/torrent_ratio_values.py`） |
-| 状态映射 status-mapper | `torrent_status_mapper.py` | 统一 qb/transmission 种子状态映射；`resolve_transmission_status` L103 判定错误状态，`extract_transmission_error_reason` L138 安全提取 errorString（warning/恢复返回空） |
+| 状态映射 status-mapper | `torrent_status_mapper.py` ✨2026-08-16 | 统一 qb/transmission 种子状态映射；qB 映射表补齐新种子初始态（metaDL/forcedMetaDL/allocating→downloading、forcedDL→downloading、forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL，moving 有意不映射），`resolve_transmission_status` L112 判定错误状态，`extract_transmission_error_reason` L147 安全提取 errorString（warning/恢复返回空） |
 | Tracker 判断 tracker-judgment | `tracker_judgment.py` | Tracker 状态判断引擎（关键词池，失败优先策略） |
 | Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成；`resolve_transmission_tracker_status_code()` L120 将布尔统计/联系状态归一为项目 0–4 状态码 |
-| Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L40 以非空消息优先、Working 空消息兜底构造证据，L66 聚合为明确正常/全部失败/未知保留 |
+| Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L40 以非空消息优先、Working 空消息兜底构造证据，L66 聚合为明确正常/全部失败/未知保留；✨2026-08-20 展示对齐判定：`tracker_message_failed()` L78 单消息精确命中失败池、`tracker_display_failed()` L90 按判定任务中性码语义（qb==1/tr∈{0,1} 残留消息不采信）裁决展示覆写，`FAILED_DISPLAY_TEXT` L13 与两套枚举 code=3 文本一致 |
+| Tracker 关键词池加载 tracker-keyword-map | `tracker_keyword_map.py` ✨2026-08-20 | `load_active_keyword_map()` L19 加载 failed/success/ignored 三池为 `{keyword: type}`（first-wins，异常返回空池降级）；种子级判定任务与展示覆写共用同一映射保证口径一致 |
 | Tracker 操作孤儿 tracker-operations | `tracker_operations.py` | ⚠️ **孤儿**：标准化 tracker DB 操作（DatabaseResult 重构版），未启用 |
 
 > 🔵 = 基础设施型（高频引用）；⚠️ = 孤儿/低使用。各文件的引用统计详见下方"孤儿/低使用"与"基础设施型"两节。
@@ -67,7 +68,7 @@
 | `torrent_status_mapper.py` | 6 | 状态映射 |
 | `file_operations.py` | 4 | 回收站文件标记 |
 | `json_parser.py` | 4 | JSON 解析 |
-| `migration.py` | 3 | DB 迁移入口（v1.0.6.27 起在 ratio 迁移前调用 `db_backup` 自动备份） |
+| `migration.py` | 3 | DB 迁移入口：迁移前验证备份、保留未来版本回滚路径、升级后校验 head 并向生命周期返回成功状态 |
 | `ratio_data_diagnostics.py` | 2 | ratio 迁移只读诊断 + 回滚 checksum（v1.0.6.27） |
 | `db_backup.py` | 2 | alembic upgrade 前物理备份 + 历史备份列举（v1.0.6.27 升级） |
 

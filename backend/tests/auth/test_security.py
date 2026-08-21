@@ -97,20 +97,23 @@ class TestGetPasswordHash:
             result = get_password_hash("mypassword")
             assert isinstance(result, str)
 
-    def test_returns_base64_decodable(self):
-        """哈希结果应为可 base64 解码的字符串"""
+    def test_returns_bcrypt_phc_string(self):
+        """哈希结果应为 bcrypt PHC 格式（$2b$ 前缀）"""
         mock_yaml = _make_mock_yaml()
         with patch("app.auth.security.yaml", mock_yaml):
             result = get_password_hash("mypassword")
-            base64.b64decode(result)
+            assert result.startswith("$2b$")
 
-    def test_same_password_same_hash(self):
-        """相同密码应产生相同哈希（确定性加密）"""
+    def test_same_password_verifies_against_both_hashes(self):
+        """bcrypt 随机盐：同密码两次哈希不同，但都能验证通过（单向哈希语义）"""
         mock_yaml = _make_mock_yaml()
         with patch("app.auth.security.yaml", mock_yaml):
             h1 = get_password_hash("mypassword")
             h2 = get_password_hash("mypassword")
-            assert h1 == h2
+            assert h1 != h2
+            assert verify_password("mypassword", h1)
+            assert verify_password("mypassword", h2)
+            assert not verify_password("wrong", h1)
 
     def test_different_passwords_different_hashes(self):
         """不同密码应产生不同哈希"""

@@ -34,10 +34,11 @@ from app.api.api import api_router
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
 from app.downloader.models import BtDownloaders
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 from tests.api.conftest import make_torrent
 
 URL = "/api/v1/torrents/getList"
+TRACKER_DOMAINS_URL = "/api/v1/torrents/tracker-domains"
 
 
 # ==================== Fixtures ====================
@@ -57,7 +58,12 @@ def db_session():
     )
     Base.metadata.create_all(
         bind=engine,
-        tables=[TorrentInfo.__table__, TrackerInfo.__table__, BtDownloaders.__table__],
+        tables=[
+            TorrentInfo.__table__,
+            TrackerInfo.__table__,
+            BtDownloaders.__table__,
+            TrackerKeywordConfig.__table__,
+        ],
     )
     Session = sessionmaker(bind=engine)
     session = Session()
@@ -65,7 +71,12 @@ def db_session():
     session.close()
     Base.metadata.drop_all(
         bind=engine,
-        tables=[TrackerInfo.__table__, TorrentInfo.__table__, BtDownloaders.__table__],
+        tables=[
+            TrackerInfo.__table__,
+            TorrentInfo.__table__,
+            BtDownloaders.__table__,
+            TrackerKeywordConfig.__table__,
+        ],
     )
 
 
@@ -467,6 +478,213 @@ class TestFilters:
         assert body["code"] == "200"
         assert body["data"]["total"] == total_all, "tracker 子查询空结果时不应过滤掉任何种子"
 
+    def test_tracker_domain_filter_matches_hostname_without_port(self, client, db_session):
+        first = make_torrent(
+            db_session,
+            info_id="domain-match",
+            downloader_id="dl-a",
+            downloader_name="A",
+            hash_="h-domain-match",
+            name="domain-match",
+            size=1024,
+        )
+        second = make_torrent(
+            db_session,
+            info_id="domain-other",
+            downloader_id="dl-b",
+            downloader_name="B",
+            hash_="h-domain-other",
+            name="domain-other",
+            size=2048,
+        )
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        db_session.add_all(
+            [
+                TrackerInfo(
+                    tracker_id="trk-domain-match",
+                    torrent_info_id=first.info_id,
+                    tracker_name="match",
+                    tracker_url="https://tracker.example.com:8443/announce?key=1",
+                    tracker_host="tracker.example.com:8443",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+                TrackerInfo(
+                    tracker_id="trk-domain-other",
+                    torrent_info_id=second.info_id,
+                    tracker_name="other",
+                    tracker_url="https://other.example.com/announce",
+                    tracker_host="other.example.com",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+            ]
+        )
+        db_session.commit()
+
+        response = client.get(URL, params={"tracker_domain": "tracker.example.com"})
+        body = response.json()
+
+        assert body["code"] == "200"
+        assert _info_ids(body) == {"domain-match"}
+
+    def test_tracker_domains_endpoint_returns_sorted_synced_domains(self, client, db_session):
+        torrent = make_torrent(
+            db_session,
+            info_id="domain-list",
+            downloader_id="dl-a",
+            hash_="h-domain-list",
+            name="domain-list",
+            size=1024,
+        )
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        db_session.add_all(
+            [
+                TrackerInfo(
+                    tracker_id="trk-domain-z",
+                    torrent_info_id=torrent.info_id,
+                    tracker_url="https://z.example.com/announce",
+                    tracker_host="z.example.com",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+                TrackerInfo(
+                    tracker_id="trk-domain-a",
+                    torrent_info_id=torrent.info_id,
+                    tracker_url="https://a.example.com:9443/announce",
+                    tracker_host="a.example.com:9443",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+            ]
+        )
+        db_session.commit()
+
+        response = client.get(TRACKER_DOMAINS_URL)
+        body = response.json()
+
+        assert body["code"] == "200"
+        assert body["data"] == ["a.example.com", "z.example.com"]
+
+    def test_single_error_filter_requires_global_content_uniqueness(self, client, db_session):
+        make_torrent(
+            db_session,
+            info_id="single-status-error",
+            downloader_id="dl-a",
+            hash_="h-single-status-error",
+            name="single-status-error",
+            size=1024,
+            status="error",
+        )
+        make_torrent(
+            db_session,
+            info_id="single-tracker-error",
+            downloader_id="dl-b",
+            hash_="h-single-tracker-error",
+            name="single-tracker-error",
+            size=2048,
+            status="downloading",
+            has_tracker_error=True,
+        )
+        make_torrent(
+            db_session,
+            info_id="duplicate-error",
+            downloader_id="dl-c",
+            hash_="h-duplicate-error",
+            name="duplicate-content",
+            size=4096,
+            status="error",
+        )
+        make_torrent(
+            db_session,
+            info_id="duplicate-normal",
+            downloader_id="dl-d",
+            hash_="h-duplicate-normal",
+            name="duplicate-content",
+            size=4096,
+            status="seeding",
+        )
+
+        response = client.get(URL, params={"single_error_only": "true"})
+        body = response.json()
+
+        assert response.status_code == 200
+        assert body["code"] == "200"
+        assert _info_ids(body) == {"single-status-error", "single-tracker-error"}
+
+    def test_single_error_filter_uniqueness_ignores_current_tracker_filter(self, client, db_session):
+        first = make_torrent(
+            db_session,
+            info_id="global-duplicate-error",
+            downloader_id="dl-a",
+            hash_="h-global-duplicate-error",
+            name="global-duplicate",
+            size=8192,
+            status="error",
+        )
+        second = make_torrent(
+            db_session,
+            info_id="global-duplicate-normal",
+            downloader_id="dl-b",
+            hash_="h-global-duplicate-normal",
+            name="global-duplicate",
+            size=8192,
+            status="seeding",
+        )
+        now = datetime(2026, 1, 1, 12, 0, 0)
+        db_session.add_all(
+            [
+                TrackerInfo(
+                    tracker_id="trk-global-a",
+                    torrent_info_id=first.info_id,
+                    tracker_url="https://only-a.example.com/announce",
+                    tracker_host="only-a.example.com",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+                TrackerInfo(
+                    tracker_id="trk-global-b",
+                    torrent_info_id=second.info_id,
+                    tracker_url="https://only-b.example.com/announce",
+                    tracker_host="only-b.example.com",
+                    create_time=now,
+                    create_by="tester",
+                    update_time=now,
+                    update_by="tester",
+                    dr=0,
+                ),
+            ]
+        )
+        db_session.commit()
+
+        response = client.get(
+            URL,
+            params={
+                "single_error_only": "true",
+                "tracker_domain": "only-a.example.com",
+            },
+        )
+        body = response.json()
+
+        assert response.status_code == 200
+        assert body["code"] == "200"
+        assert body["data"]["list"] == []
+
 
 # ==================== 组6：字段大小写契约 ====================
 
@@ -502,6 +720,25 @@ class TestFieldCasingContract:
         assert "downloader_name" not in item
         assert item["infoId"] == "i1"
         assert item["downloaderName"] == "Alpha"
+
+    def test_auxiliary_seed_count_is_exposed_as_camel_case(self, client, db_session):
+        torrent = make_torrent(
+            db_session,
+            info_id="aux-1",
+            downloader_id="dl-aux",
+            downloader_name="Aux",
+            hash_="aux-hash",
+            name="冰与火之歌S01-S08",
+            size=183145798849,
+        )
+        torrent.auxiliary_seed_count = 31
+        db_session.commit()
+
+        body = client.get(URL).json()
+        item = next(row for row in body["data"]["list"] if row["infoId"] == "aux-1")
+
+        assert item["auxiliarySeedCount"] == 31
+        assert "auxiliary_seed_count" not in item
 
 
 # ==================== 组7：排序 ====================

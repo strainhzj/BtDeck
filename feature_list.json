@@ -1,23 +1,241 @@
 {
   "schema_version": "1.0",
   "current_dev_version": "v1.0.6",
-  "last_updated": "2026-08-13",
+  "last_updated": "2026-08-20",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
-    "date": "2026-08-11",
-    "scope": "sync-database-blocking-remediation report-gap remediation and regression verification",
-    "report": "backend/docs/operations/database-blocking-and-sync-verification-2026-08.md",
-    "gate_status": {
-      "W0": "runbook-added-production-rehearsal-pending",
-      "W1": "basic-pass",
-      "W2": "fixed-local-regression-production-pending",
-      "W3": "fixed-local-regression",
-      "W4-1": "fixed-local-observability",
-      "W4-2": "code-pass-sync-timeout-deployment-migration-pending"
-    },
-    "evidence": "修复后定向套件 83 passed；coordinator/checkpoint/governance/metadata/legacy 70 passed/5 skipped；memory-bound/file contention 18 passed/1 skipped；health 10 passed；ruff 与 git diff --check 通过。新增 W0 止血 Runbook、WAL PASSIVE busy/checkpoint 观测、info durable cursor；生产 Alembic 迁移、暂停/恢复演练和 30 轮基线归档仍待执行。"
+    "date": "2026-08-16",
+    "scope": "backend lint + 全量 pytest + 前端 lint/build",
+    "report": "PLANS/security-remediation.md",
+    "gate_status": "pending_final_verify",
+    "evidence": "security-remediation-2026-08"
   },
   "features": [
+    {
+      "id": "verified-bugfix-2026-08",
+      "name": "8 项已验证问题修复（轮询/标签同步/添加时间/路径清理/转移/令牌续期/删除日志/折叠面板）",
+      "description": "①active-torrents 只在种子列表页轮询（详情死路由跳过+后台标签暂停）②标签/分类创建/重命名同步下载器（qB 立即、TR 使用时）③新种子添加时间兜底+首轮快照水合+存量回填 ④路径清理宽限期+auto 来源自动恢复（disabled_by 字段）⑤转移返回值检查+目标查重+批量 400+审计并入 torrent_audit_log ⑥双令牌 refresh 体系（refresh_tokens 表+轮换+登出撤销+前端 401 单飞刷新重放）⑦删除审计补 IP/UA/真实操作者 ⑧CollapsiblePanel 通用折叠组件+偏好持久化",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/verified-bugfix-remediation.md",
+      "tasks": [
+        {
+          "id": "verified-bugfix-2026-08.1",
+          "name": "轮询生命周期（W1-1/W1-2/W1-3）",
+          "description": "详情路由不轮询；后台标签页 visibility 暂停/恢复（SpeedPollingMixin）；删除 keepAlive 死配置",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/torrents/mixins/speedPolling.ts",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/router.ts",
+            "frontend/tests/unit/speed-polling.spec.ts"
+          ],
+          "evidence": "speed-polling.spec 6 用例全绿；视图组件 120 用例回归全绿；typecheck/eslint 通过"
+        },
+        {
+          "id": "verified-bugfix-2026-08.2",
+          "name": "标签同步下载器（W2-1/W2-2）",
+          "description": "create_tag/update_tag 调用 _sync_tag_to_downloader；qB 409 幂等；TR no-op；同步失败 best-effort",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/tag_management.py",
+            "backend/tests/api/test_tag_downloader_migration.py"
+          ],
+          "evidence": "test_tag_downloader_migration 35 用例全绿；test_tag_aggregation+架构测试 48 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.3",
+          "name": "路径清理宽限期与自动恢复（W4-1/W4-2/W4-3）",
+          "description": "disabled_by 字段（迁移 a7b8c9d0e1f2）；_sync_active_path 仅恢复 auto；_cleanup_obsolete_paths 宽限期；前端历史路径标签",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/alembic/versions/a7b8c9d0e1f2_add_path_maintenance_disabled_by.py",
+            "backend/app/models/downloader_path_maintenance.py",
+            "backend/app/tasks/scheduler/downloader_path_scan.py",
+            "backend/app/services/path_maintenance_service.py",
+            "backend/app/core/config.py",
+            "backend/tests/tasks/test_path_maintenance_cleanup.py",
+            "frontend/src/views/downloader/components/DownloaderPathManagement.vue"
+          ],
+          "evidence": "path_maintenance_cleanup 11 用例全绿；迁移 25 用例全绿（EXPECTED_HEAD=a8b9c0d1e2f3）；生产库副本实证（2 条禁用记录保守标 user）"
+        },
+        {
+          "id": "verified-bugfix-2026-08.4",
+          "name": "添加时间兜底与回填（W3-1/W3-2/W3-3）",
+          "description": "首轮 rid=0 快照宽松水合；UI 添加 datetime.now() 兜底；启动后台回填任务（INFO_SYNC_STARTUP_BACKFILL_ENABLED）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/app/services/torrent_added_date_backfill.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/core/config.py",
+            "backend/tests/services/test_added_date_backfill.py",
+            "backend/tests/services/test_torrent_metadata.py",
+            "backend/tests/api/test_torrent_crud_add_fallback.py"
+          ],
+          "evidence": "backfill 5 + hydration 2 + fallback 2 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.5",
+          "name": "转移假成功修复与审计（W5-1~W5-4）",
+          "description": "torrents_add 返回值检查（Fails.）；目标查重 duplicate；批量 code=400；审计 TRANSFER 并入 torrent_audit_log；真实用户",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/seed_transfer_service.py",
+            "backend/app/api/endpoints/seed_transfer.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/services/test_seed_transfer_service_fixes.py",
+            "backend/tests/api/test_seed_transfer_batch_fixes.py",
+            "backend/tests/api/test_seed_transfer_api.py",
+            "frontend/src/views/torrents/components/BatchTransferDialog.vue",
+            "frontend/src/views/torrents/components/TransferDialog.vue",
+            "frontend/src/views/logs/audit.vue",
+            "frontend/tests/unit/batch-transfer-dialog.spec.ts"
+          ],
+          "evidence": "transfer 服务 5 + 批量 4 + API 10 用例全绿；BatchTransferDialog Jest 4 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.6",
+          "name": "双令牌 refresh 体系（W6-1/W6-2）",
+          "description": "refresh_tokens 表（迁移 a8b9c0d1e2f3）；登录签发+使用即轮换+/auth/refresh+登出撤销；前端 SetToken/Login 接 refresh/401 单飞刷新重放",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/auth/models.py",
+            "backend/alembic/versions/a8b9c0d1e2f3_add_refresh_tokens.py",
+            "backend/app/auth/utils.py",
+            "backend/app/auth/request.py",
+            "backend/app/api/endpoints/login.py",
+            "backend/app/api/endpoints/cuser.py",
+            "backend/tests/api/test_auth_refresh.py",
+            "frontend/src/utils/cookies.ts",
+            "frontend/src/api/users.ts",
+            "frontend/src/store/modules/user.ts",
+            "frontend/src/utils/token-refresh.ts",
+            "frontend/src/utils/request.ts",
+            "frontend/src/utils/error-normalize.ts",
+            "frontend/tests/unit/token-refresh.spec.ts"
+          ],
+          "evidence": "auth_refresh 6 用例全绿；token-refresh Jest 5 用例全绿；迁移 25 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.7",
+          "name": "删除审计 IP/UA/操作者（W7）",
+          "description": "4 删除端点提取 audit_info；服务层透传；by_level/recycle_bin 补传；operator 防伪造（认证用户优先）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrent_deletion.py",
+            "backend/app/services/torrent_deletion_service.py",
+            "backend/app/services/torrent_deletion_by_level.py",
+            "backend/app/services/recycle_bin_service.py",
+            "backend/app/api/endpoints/recycle_bin.py",
+            "backend/tests/services/test_torrent_deletion_service.py"
+          ],
+          "evidence": "deletion service 44 用例全绿；删除/recycle 相关 83 用例全绿"
+        },
+        {
+          "id": "verified-bugfix-2026-08.8",
+          "name": "通用折叠面板（W8-1/W8-2/W8-3）",
+          "description": "CollapsiblePanel 组件（storageKey 持久化/a11y）；audit/recycle-bin/query-templates/orphan-files 接入；全局注册",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/CollapsiblePanel.vue",
+            "frontend/src/main.ts",
+            "frontend/src/views/logs/audit.vue",
+            "frontend/src/views/recycle-bin/index.vue",
+            "frontend/src/views/query-templates/index.vue",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/collapsible-panel.spec.ts",
+            "frontend/tests/unit/management-pages-ui.spec.ts"
+          ],
+          "evidence": "collapsible-panel 7 用例全绿；management-pages-ui 13 用例全绿"
+        }
+      ]
+    },
+    {
+      "id": "orphan-scan-background-stable-details-and-guardrail",
+      "name": "孤儿扫描后台化、稳定明细复用与 12 万级争用治理",
+      "description": "将孤儿扫描改为持久化后台任务和轻量状态轮询；文件夹子项按展开懒加载、独立分页，硬链接实时统计仅覆盖当前可见文件；生命周期查询、明细复用、更新与 resolved 全部分批并进入 db_write_scope；超过 50000 条的扫描只显示可关闭提醒，不再要求双重核查或阻断清理。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-scan-background-stable-details-and-guardrail.1",
+          "name": "后台扫描、稳定明细与超量提醒",
+          "description": "POST /orphan-files/scan 立即返回 scan_id/task_id，后台串行执行并支持 queued 重启恢复；同一 canonical_path 复用 current_detail_id，仅在首次发现或清理后重新出现时新增明细；历史和新产生的超量成功批次保留可关闭提醒，清理仍遵循通用最新快照与实时安全校验。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/alembic/versions/7b2c9d4e6f10_orphan_scan_background_and_current_detail.py",
+            "backend/alembic/env.py",
+            "backend/app/core/migration.py",
+            "backend/app/models/orphan_file.py",
+            "backend/app/services/orphan_scan_job_service.py",
+            "backend/app/services/orphan_scanner.py",
+            "backend/app/services/orphan_lifecycle_service.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/main.py",
+            "backend/app/desktop_main.py",
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/tasks/scheduler/orphan_scan_task.py",
+            "backend/tests/services/test_orphan_scan_job_service.py",
+            "backend/tests/tasks/test_cron_executor_admission.py",
+            "backend/tests/tasks/test_orphan_scan_task.py",
+            "backend/tests/tasks/test_orphan_scan_task_lifecycle.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue"
+          ],
+          "evidence": "后台任务 API/调度/恢复与双重复核兼容回归通过；定时入口等待同一 dispatcher 的扫描+自动清理终态，阶段摘要经 CronTaskExecutor 透传到同一条 task_logs，queued 不再提前记为 success；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。2026-08-14 后续调整：超量字段仅作为可关闭页面提醒，移除清理放行前的双重核查要求；保留历史复核字段和兼容 API。追加参数化回归锁定清理预览、前缀快捷、手动和定时入口均不因超量提醒拒绝。原始副本与线上库均未写入，未执行任何清理。"
+        },
+        {
+          "id": "orphan-scan-background-stable-details-and-guardrail.2",
+          "name": "文件夹懒加载与可见文件硬链接统计",
+          "description": "文件夹父页只做 SQL 聚合，展开后调用独立分页接口加载子项；父行不 stat，只有扁平当前页、单文件父页和已展开子页执行实时 st_nlink 统计。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_folder_grouping.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts",
+            "frontend/tests/unit/api-contracts.spec.ts"
+          ],
+          "evidence": "后端父行无 children/stat、子项独立分页及可见页硬链接回归通过；前端类型检查、改动文件 ESLint 与 orphan-files/API 契约 Jest 通过。2026-08-14 补齐孤儿文件页面视图契约：扁平模式不注册 expand 列，文件夹模式子表隐藏重复表头，并将普通行箭头隐藏规则移到实际页面作用域；追加模式动态切换、普通文件行 class/展开事件、子表数据与选择事件回归，定向 orphan-files Jest 81 passed，生产 build 通过（仅既有 warning）。"
+        },
+        {
+          "id": "orphan-scan-background-stable-details-and-guardrail.3",
+          "name": "真实 SQLite 12 万级接口响应时间回归",
+          "description": "以真实临时数据库文件启用生产同类 WAL、synchronous=NORMAL、busy_timeout 和 NullPool，在 120100 条生命周期分批写入期间并发轮询轻量状态 API，防止重新退化成长事务或重复明细。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/tests/integration/test_orphan_scan_120k_regression.py",
+            "backend/tests/services/test_orphan_scan_job_service.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_db_governance_extended.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py",
+            "backend/tests/core/test_startup_migration_guard.py"
+          ],
+          "evidence": "test_orphan_scan_120k_regression.py：1 passed（约 42 秒）；2026-08-14 迁移/治理/回滚/startup 专项 66 passed（含真实文件 WAL 大数据、batch 中断恢复、canonical_path 索引回填、升降级、Alembic 假成功版本校验与 fail-fast）；用户 1.02GB 旧库副本完整升级约 4.97 秒。孤儿相关全量套件记录见 progress.md。"
+        }
+      ]
+    },
     {
       "id": "torrent-management-usability-and-error-reason",
       "name": "种子文件、任务日志、高级搜索与错误原因修复",
@@ -2328,28 +2546,44 @@
         {
           "id": "v1.0.6.39",
           "name": "同名同大小种子只读异常排查",
-          "description": "在列表模式与传统模式的快捷操作中增加“同内容异常排查”。后端主动发现名称完全相同、大小完全相同且规范化 InfoHash 至少两个不同值的活动种子组；弹窗支持完整结果和仅错误种子两种按组分页视图。错误联合任务 status/error_reason/has_tracker_error、Tracker 持久化状态、announce/scrape 失败码与启用失败关键词判断；只查询展示，不连接下载器、不执行写操作，Tracker URL/passkey 仅以脱敏 host/消息返回。",
+          "description": "在列表模式与传统模式的快捷操作中增加“同内容异常排查”。后端通过现有 GET /torrents/getList 的 same_content_only 条件主动发现名称完全相同、大小完全相同且规范化 InfoHash 至少两个不同值的种子；普通筛选先参与候选判定，结果按种子行复用现有排序与 skip/limit 分页。前端不打开新窗口或弹窗，直接在当前种子表格加载并提供退出入口；不连接下载器、不执行写操作。",
           "status": "done",
           "scope": "fullstack",
           "files": [
             "backend/app/api/api.py",
-            "backend/app/api/endpoints/same_content_inspection.py",
-            "backend/app/services/same_content_inspection_service.py",
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
             "backend/docs/api/same-content-inspection.md",
             "backend/tests/api/test_same_content_inspection_api.py",
             "frontend/src/api/torrents.ts",
-            "frontend/src/components/torrents/SameContentInspectionDialog.vue",
             "frontend/src/views/torrents/index.vue",
             "frontend/src/views/torrents/TraditionalView.vue",
-            "frontend/tests/unit/same-content-inspection-dialog.spec.ts",
+            "frontend/src/views/torrents/TorrentViewSwitcher.vue",
             "frontend/tests/unit/torrent-list-view-component.spec.ts",
             "frontend/tests/unit/traditional-view-component.spec.ts",
+            "frontend/tests/unit/torrent-view-switcher.spec.ts",
             "docs/roadmap/",
             "feature_list.json",
             "progress.md",
             "session-handoff.md"
           ],
-          "evidence": "新增 API 回归 4 passed，覆盖严格名称/大小/不同 Hash 分组、回收站/逻辑删除排除、完整/仅错误成员、任务/Tracker/失败关键词判错，以及 Tracker URL 路径/query/passkey/token 脱敏；快捷删除+共享 Tracker 策略+新功能相关回归 48 passed。前端弹窗和两视图入口 3 suites/36 tests passed，typecheck、改动文件零告警 ESLint、生产 build 通过；后端新增文件 mypy、Black、Flake8、py_compile 与 git diff --check 通过。完整 npm run lint 仍被任务前已有的高级搜索生成契约漂移和 3 个关键词测试文件 5 条 warning 拦截，本次文件为 0 warning。"
+          "evidence": "后端全量 3376 passed/7 skipped；同内容列表筛选与普通列表定向回归 40 passed，9 个专用 API 用例覆盖严格名称/大小/不同规范化 Hash、空名称/零大小/空 Hash及混合无效成员、组合普通条件先参与候选判定、回收站与活动删除排除、活动快照、复合主键稳定排序分页、低 SQLite 变量上限下 limit=100000、大页仅预取当前页 Tracker，以及旧 POST 端点 404。前端全量 43 suites/719 tests，定向 3 suites/36 tests，覆盖当前表格加载、筛选、排序、页大小、翻页、刷新保持 same_content_only，并在重复查询、高级搜索、模板和显式退出时清理模式；TypeScript、改动文件严格 ESLint、Black、Flake8、py_compile、生产 build、根 init.sh 与 git diff --check 通过。完整 npm run lint 仍仅被 3 个无关关键词测试文件的既有 5 条 warning 拦截；后端 mypy 在 torrent_helpers/torrent_crud 的既有 ORM/Pydantic 类型问题上报告 64 条。"
+        },
+        {
+          "id": "v1.0.6.40",
+          "name": "同内容排查状态与Tracker改为组内显示筛选",
+          "description": "语义修订：same_content_only 模式下 status/tracker_like/tracker_domain 不再参与分组候选判定，改为分组 join 后仅过滤组内显示行；其余筛选（关键字/下载器/路径/大小/时间/标签/分类/活动种子）仍参与候选判定，普通列表模式行为不变。修复生产场景：同名同大小多 Hash 组内仅 1 条错误任务时，同内容+status=error 因组塌返回 0，无法实现“从同内容种子里找出错误”的功能目的（如老男孩 20 副本仅 1 条 error，期望返回 1 条实际返回 0）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/api/test_same_content_inspection_api.py",
+            "backend/docs/api/same-content-inspection.md",
+            "docs/roadmap/",
+            "feature_list.json",
+            "progress.md"
+          ],
+          "evidence": "2026-08-18: 同内容专用套件 11 passed（新增 status 显示级过滤复刻生产老男孩场景、tracker_like/tracker_domain 显示级过滤两组用例），普通列表回归 test_torrent_list_api.py 35 passed；改动文件 flake8/black/py_compile 通过；mypy 58 条与改动前完全一致（零新增，均为既有 ORM/Pydantic 问题）。生产副本库只读实测：同内容+老男孩+status=error 由 0 → 1（命中唯一 error 行 hash cfcb51db），同内容+老男孩仍 20，普通+老男孩+error 仍 1，同内容全局 17748。"
         }
       ]
     },
@@ -3173,6 +3407,977 @@
           ],
           "evidence": "roadmap-maintain 漂移检查覆盖变更源文件引用与测试文件计数；Git Bash 根 init.sh、feature_list JSON 解析、路线图陈旧模式扫描与 git diff --check 均通过。"
         }
+      ]
+    },
+    {
+      "id": "torrent-tracker-domain-and-single-error-inspection",
+      "name": "种子 Tracker 主域名筛选与错误单种排查",
+      "description": "从定时 Tracker 同步已入库的 tracker_url/tracker_host 提取主机域名，支持种子列表按 Tracker 主域名筛选；新增错误且全局同名同大小内容唯一的只读快捷排查，并让列表/传统模式共用同一个 Tracker 完整详情弹框组件。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "torrent-tracker-domain-and-single-error-inspection.1",
+          "name": "后端 Tracker 主域名筛选与错误单种全局唯一查询",
+          "description": "复用已存在的 TrackerInfo 定时同步数据；主域名按 URL hostname（去 scheme、端口和路径）归一，错误单种按全局可见任务的名称+大小唯一性判断，不按 Tracker 服务数量判断。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrent_crud.py",
+            "backend/app/api/endpoints/torrent_helpers.py",
+            "backend/tests/api/test_torrent_list_api.py"
+          ],
+          "evidence": "Tracker 主域名端点与 getList tracker_domain/single_error_only 参数已接入；后端定向 test_torrent_list_api.py 35 passed，覆盖端口归一、域名列表排序、错误状态、全局同内容重复排除及当前 Tracker 筛选不能改变全局唯一性。实际 30475 条 Tracker 记录提取 90 个域名，5 次 SQLAlchemy 查询+解析耗时 231.515–262.118ms，低于 1 秒，因此未增加内存持久化缓存。"
+        },
+        {
+          "id": "torrent-tracker-domain-and-single-error-inspection.2",
+          "name": "两种种子视图筛选、快捷操作与 Tracker 卡片统一",
+          "description": "列表模式和传统模式加载已同步 Tracker 主域名选项，支持多选筛选和错误单种排查；跨视图状态保留新增排查模式；两种视图均通过 TrackerDetailCard 共享完整详情弹框骨架（标题、关闭按钮、页签、内容区）、表格列结构、状态语义和单条汇报事件，仅通过 layout 属性保留定位差异。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/torrents.ts",
+            "frontend/src/styles/_tracker-table.scss",
+            "frontend/src/styles/torrent-theme.scss",
+            "frontend/src/styles/traditional-view-theme.scss",
+            "frontend/src/views/torrents/components/TrackerDetailCard.vue",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/TorrentViewSwitcher.vue",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/traditional-view-component.spec.ts",
+            "frontend/tests/unit/torrent-view-switcher.spec.ts",
+            "frontend/tests/unit/tracker-detail-card.spec.ts"
+          ],
+          "evidence": "两视图父模板均改为调用同一个 TrackerDetailCard，组件集中维护标题、关闭按钮、页签、内容区、错误提示、5 列表格、状态语义和 reannounce 事件；父模板只传入 list/traditional layout 定位属性，旧的两套外层卡片代码和样式已删除；共享 Tracker 表格 Sass 样式与静态组件复用契约回归通过；新增运行时组件测试覆盖完整弹框骨架、snake/camel 字段、错误提示、中性状态、汇报事件和 loading；目标 Jest 4 suites / 44 tests passed，npm run typecheck 通过，目标 ESLint 和生产构建通过。"
+        },
+        {
+          "id": "torrent-tracker-domain-and-single-error-inspection.3",
+          "name": "路线图、功能状态与会话交接",
+          "description": "按源码实测行号同步根功能域、后端/前端关键词速查、torrent_crud 第三层详情、测试覆盖矩阵以及项目记录。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/api/README.md",
+            "docs/roadmap/backend/api/endpoints/torrent_crud.md",
+            "docs/roadmap/frontend/api/README.md",
+            "docs/roadmap/frontend/views/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "docs/roadmap/tests/README.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "已按当前源码重新测量关键行号并同步三层路线图、测试覆盖、功能清单、进度和交接记录；JSON 解析通过。"
+        }
+      ]
+    },
+    {
+      "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders",
+      "name": "种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语",
+      "description": "修复 6 月初同步拆分为 info-only 后种子文件备份停更：info/full 同步按下载器限量增量补齐缺失备份，并把 torrent_file_backup.downloader_id 从错误的 Integer 迁移为与 bt_downloaders 一致的 String(36) UUID；孤儿文件『查找副本』从仅扫已配置映射目录改为整体收集当前运行环境可访问、与目标 inode 同文件系统的挂载根；种子页三个筛选下拉提示语改为『请选择下载器/请选择种子状态/请选择tracker』。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.1",
+          "name": "info/full 同步后备份增量补偿与下载器 ID UUID 类型修复",
+          "description": "同步协调器在 info-only 与 full 路径单下载器完成后调用 reconcile_missing_backups：按 TORRENT_BACKUP_RECONCILE_BATCH_SIZE（默认 200）限量批次处理无备份记录的活跃种子，复用已有备份文件/项目内旧文件或从下载器种子目录（qB 纯 hash 与 Transmission name.hash.torrent 均支持）复制，逻辑删除墓碑不再自动重建；文件复制在写锁外、记录与 TorrentInfo.backup_file_path 同一短事务提交。同时修复备份模型/筛选/导入接口按整数校验下载器 UUID 的缺陷，新增迁移 b6e1c4d9a2f7（Integer→String(36)，幂等类型探测 + batch 临时表恢复，downgrade 遇不可无损转换的 UUID 文本时 raise 拒绝破坏性回滚）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_coordinator.py",
+            "backend/app/services/torrent_file_backup_manager.py",
+            "backend/app/core/config.py",
+            "backend/app/models/torrent_file_backup.py",
+            "backend/app/repositories/torrent_file_backup_repository.py",
+            "backend/app/schemas/torrent_backup.py",
+            "backend/app/api/endpoints/torrent_backup.py",
+            "backend/alembic/versions/b6e1c4d9a2f7_fix_torrent_backup_downloader_id_type.py",
+            "backend/tests/services/test_torrent_file_backup_reconcile.py",
+            "backend/tests/services/test_sync_coordinator.py",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py",
+            "backend/docs/constraints/database-migration.md"
+          ],
+          "evidence": "本地库取证：1042 条备份最新停在 2026-05-29，活跃种子 2.1 万+ 无备份记录，确认 6 月初 info-only 拆分后备份不再执行。新增 test_torrent_file_backup_reconcile.py 3 passed（限量批次 batch_size=1 只建 1 条、两轮后 no_action 收敛、大小写不敏感 hash 与 name.hash 文件名、墓碑 no_action、源目录不可用 skip_reason 一次性上报）；test_sync_coordinator.py 守卫 info 同步后调用补偿且失败不阻断信息同步；test_db_migration.py 新增 b6e1c4d9a2f7 用例：升级保留 UUID/索引/外键，UUID 数据 downgrade 拒绝执行保持 head（修复 SQLite 数值亲和力会把 '550e8400-…' 截断成 550 的破坏性回滚），整数文本 downgrade 无损转换。迁移链单 head 校验通过；tests/services 全量 1061 passed 1 skipped，tests/api+tests/core 1250 passed 5 skipped；black/flake8 通过，mypy 无新增错误类别（新代码仅 1 处与全仓库一致的 ORM 直接赋值）。 回归加固（同日第二批）：test_torrent_file_backup_reconcile.py 扩至 12 用例——backup_file_path/项目内旧文件复用不触发复制、torrent_file 直连与 .torrents 子目录双源解析、复制失败计 missing_source 不落库不回填、commit 失败回滚并清理新复制文件、目标筛选（跨下载器/dr=1/deleted_at/39 位 hash 排除）与 added_date 倒序批次、路径映射异常回退原路径；仓储字符串过滤/计数、schema 空串拒绝、get_downloader_from_store str() 归一匹配（UUID 与整数值快照）；test_sync_coordinator.py 扩至 29 用例——full 同步同样触发补偿、tracker-only 不触发、补偿异常仅记入 errors/details 不阻断信息同步（outcome 仍 success）；TORRENT_BACKUP_RECONCILE_BATCH_SIZE 默认正值守护。"
+        },
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.2",
+          "name": "孤儿副本从整体可访问目录定位（同文件系统剪枝）",
+          "description": "get_hardlink_copy_locations 不再读取下载器映射清单（collect_scan_path_selection），改由 orphan_quarantine.collect_runtime_accessible_roots 整体收集：Linux 读 /proc/self/mountinfo 当前进程挂载命名空间（含 Docker bind mount），其它平台回退源路径最高同设备祖先，Windows 枚举盘符；因硬链接不能跨文件系统，仅保留 st_dev 与目标 inode 相同的根，折叠父子重叠并在 os.walk 中按设备剪枝、跳过符号链接目录，覆盖映射目录之外的可见副本同时不进入无关磁盘。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py"
+          ],
+          "evidence": "test_orphan_hardlink_detection.py 重写定位用例：旧『已配置目录外副本计入 unlocated』场景改为运行环境根内副本可被整体定位（total_found 1→2、unlocated 1→0、searched_root_count 2→3），并继续覆盖多 inode 单轮遍历复用、扫描失败降级与无目标时不触发扫描；端点/前端文案同步改为『当前运行环境可访问目录』。tests/services 全量 1061 passed 1 skipped。"
+        },
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.3",
+          "name": "种子页筛选下拉提示语与备份 ID 类型对齐",
+          "description": "AdvancedMultiSelect 新增 placeholder prop（默认『请选择』保持兼容），列表视图简单搜索三个下拉从左至右改为『请选择下载器/请选择种子状态/请选择tracker』，传统视图 Tracker 主域名下拉改为『请选择tracker』；FileManagement 与 api/torrents.ts 的备份 downloader_id 类型改为 string，与后端 UUID 对齐。仅改提示语，不改变筛选逻辑。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/torrents/AdvancedMultiSelect.vue",
+            "frontend/src/components/torrents/__tests__/AdvancedMultiSelect.spec.ts",
+            "frontend/src/views/torrents/index.vue",
+            "frontend/src/views/torrents/TraditionalView.vue",
+            "frontend/src/views/torrents/FileManagement.vue",
+            "frontend/src/api/torrents.ts",
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/torrent-list-view-component.spec.ts",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "AdvancedMultiSelect.spec.ts 新增 placeholder 定制用例；torrent-list-view-component.spec.ts 新增三个下拉提示语断言（修复 stub 选择器：vue-test-utils v1 驼峰注册名不转 kebab，实际标签为 advancedmultiselect-stub）；orphan-files.spec.ts 同步整体定位文案。前端全量 44 suites / 737 passed（含修复 HEAD 既有失败的 torrent-error-reason-ui.spec.ts 契约漂移：title/description 锚点随 5c297b5 迁入 TrackerDetailCard）；npm run typecheck 通过、变更文件严格 ESLint 0 warning、生产 build 成功；完整 npm run lint 仍被无关 keywords-board.spec.ts 5 条既有 warning 拦截（本次文件 0 warning）。"
+        },
+        {
+          "id": "torrent-backup-reconcile-orphan-whole-fs-and-filter-placeholders.4",
+          "name": "路线图、功能状态与会话交接",
+          "description": "按 roadmap-maintain 用源码实测行号同步：后端 services（sync-coordinator/torrent-backup/orphan-quarantine）、orphan_file_service.md 第三层（调用链 collect_runtime_accessible_roots L311）、infra（21 个 revision、head b6e1c4d9a2f7 及受限回滚语义）、frontend components-layout（AdvancedMultiSelect placeholder）、tests 分支与 test-coverage 矩阵、根 README 元信息。",
+          "status": "done",
+          "scope": "docs",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/frontend/components-layout/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "progress.md",
+            "session-handoff.md",
+            "feature_list.json"
+          ],
+          "evidence": "全部行号由当前源码 grep 实测（reconcile_missing_backups L151、_reconcile_torrent_file_backups L1435、collect_runtime_accessible_roots L311、迁移 upgrade L50/downgrade L66）；无 7b2c9d4e6f10 陈旧 head 引用残留；回读校验通过。"
+        }
+      ]
+    },
+    {
+      "id": "orphan-hardlink-copy-prescan-task",
+      "name": "孤儿副本位置改为定时预扫描落库，前端只读结果",
+      "description": "大文件系统上点击副本数量触发的整体目录遍历耗时不可控。改为每日定时任务 orphan_hardlink_copy_scan 在后台按预算预扫描并落库（按 (device_id, inode_id) 唯一存储结果），hardlink-copies 接口只读库（保留每文件廉价 stat 复核实时 st_nlink-1 总数），未覆盖文件返回 pending_scan 等待下一轮。性能护栏：单轮 stat 限量、遍历 inode 限量、单调时钟预算（os.walk 目录间检查）、单 inode 路径存储上限、结果保留期清理、分批短事务写库与 heavy_sync 互斥。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-hardlink-copy-prescan-task.1",
+          "name": "结果表/游标表迁移与 ORM 模型",
+          "description": "新迁移 c8d9e0f1a2b3（head 由 b6e1c4d9a2f7 推进）：orphan_hardlink_copy_result 按 (device_id, inode_id) 唯一（device_id 用 String(32)——Windows st_dev 为无符号卷序列号，可超出 SQLite 有符号 64 位，与 orphan_current_candidate 同惯例）+ scanned_at 索引；orphan_hardlink_scan_state 单行 keyset 游标。纯增量可回滚（downgrade 删表），重复升级幂等。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/alembic/versions/c8d9e0f1a2b3_add_orphan_hardlink_copy_results.py",
+            "backend/app/models/orphan_hardlink_copy.py",
+            "backend/docs/constraints/database-migration.md",
+            "backend/tests/core/test_db_migration.py",
+            "backend/tests/core/test_db_rollback_scenarios.py",
+            "backend/tests/core/test_orphan_migration_production_shape.py"
+          ],
+          "evidence": "test_db_migration.py 新增 c8d9e0f1a2b3 用例：空库建两表、device_id VARCHAR 断言、sqlite_autoindex 唯一性 + 重复身份 INSERT 被 IntegrityError 拒绝、重复升级幂等、downgrade 干净删表；空库全量表计数 30→32；迁移链单 head c8d9e0f1a2b3；三个迁移测试文件 34 passed。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.2",
+          "name": "定时预扫描任务与限时遍历（性能护栏）",
+          "description": "OrphanHardlinkScanService.run_round：keyset 游标分批加载未 resolved 候选并顺序 stat（ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE 默认 2000，含截止检查）；仅 nlink>1 的身份进入遍历（MAX_TARGETS 默认 200，无结果优先、其余按结果新旧排序）；find_hardlink_paths_bounded 在 os.walk 目录间检查单调时钟截止（BUDGET_SECONDS 默认 300s），超时保留部分结果并标记 budget_exceeded；单 inode 路径上限（默认 100）截断标记 truncated；未遍历的多副本身份不覆盖旧结果（deferred）；平凡 0 副本直写；分批 200 行 db_write_scope flush；结果保留期（默认 30 天）清理；遍历全线程串行。任务注册 default_scheduled_tasks（每日 04:00）并登记 task_profiles _heavy（heavy_sync 互斥）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_hardlink_scan_service.py",
+            "backend/app/services/orphan_quarantine.py",
+            "backend/app/tasks/scheduler/orphan_hardlink_copy_scan_task.py",
+            "backend/app/tasks/task_profiles.py",
+            "backend/app/data/default_scheduled_tasks.py",
+            "backend/app/core/config.py",
+            "backend/tests/services/test_orphan_hardlink_copy_scan.py",
+            "backend/tests/services/conftest.py",
+            "backend/tests/tasks/test_task_profiles.py"
+          ],
+          "evidence": "新增 test_orphan_hardlink_copy_scan.py 10 用例全过：过期 deadline 返回部分结果+budget_exceeded 不抛异常、路径截断不影响同轮其它目标、无界对等（与 find_hardlink_paths 输出一致）、walk 限量外身份 deferred 且旧结果不覆盖、接口立即读到落库结果并过滤源路径、游标推进（stat 限量场景）与全覆盖回绕、同身份重复轮走更新不重复（幂等）、保留期清理、单链接轮不进入遍历（find_hardlink_paths_bounded 未被调用）、stat 预算停止保留进度（受控时钟，规避 Windows monotonic 15.6ms 分辨率）。task_profiles 漂移守卫测试驱动补齐期望集。开发中还发现并修复：同步 helper 内 async flush 未 await 导致游标挂空；Windows 下测试真实收集盘根导致全盘遍历（测试改为 patch 根收集器，生产由 300s 预算兜底）。 回归加固（同日第二批）：文件扩至 571 行 19 用例——受控时钟下中途截止保留已完成根的部分结果、截断目标遇预算截止 note 仍为 truncated、resolved 候选与无候选指针明细跳过、无结果身份优先于新鲜结果获得遍历名额（旧结果 scanned_at 不被覆盖）、budget_exceeded 注入行 scan_note 且权威副本数不丢失、任务注册契约（executor 可导入指向任务类、cron 0 4 * * *、timeout>预算）、heavy_sync 登记断言、五项性能护栏默认值正值守护、execute() 包装器会话与摘要透传。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.3",
+          "name": "hardlink-copies 端点改为纯查库",
+          "description": "get_hardlink_copy_locations 不再 import 任何遍历函数（模块级测试断言防回归）：保留 _inspect_hardlink_sources 廉价 stat 复核实时 st_nlink-1 总数；按 (device_id, inode_id) 分片反查结果表（400/片），副本列表 = 库内路径 - 源路径本身；无结果的多副本文件返回 pending_scan=true/scanned_at=null；结果表读取失败降级为错误提示且实时总数不丢失；响应以 scanned_count/pending_scan_count 取代 searched_root_count。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/services/test_orphan_hardlink_detection.py"
+          ],
+          "evidence": "TestHardlinkCopyLocations 重写为查库契约：模块级断言交互链路无 collect_runtime_accessible_roots/find_hardlink_paths 符号；已扫描身份返回过滤后路径+scanned_at+result_truncated，未覆盖返回 pending_scan（1/1 计数），零副本跳过结果表查询，结果读取失败保留实时总数转未定位并报错；tests/services+tests/api 全量 1930 passed 6 skipped。 回归加固：服务与端点模块级断言均不再引入遍历函数符号（性能契约双层防护）。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.4",
+          "name": "前端弹框展示预扫描结果与提示语",
+          "description": "副本位置弹框改为展示库内结果：说明文案改为“由每日定时任务在后台整体查找并存储”；汇总新增“待预扫描”计数（取代扫描目录）；条目增加扫描时间 tag 与“待预扫描”tag；未覆盖文件显示等待提示；路径截断提示；未定位文案改为“最近一轮预扫描”。API 类型同步新字段（scanned_at/pending_scan/result_truncated/scanned_count/pending_scan_count）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "orphan-files.spec.ts 82 passed：文件夹聚合行+待扫描子文件批量查询与展示、待预扫描计数/等待文案/截断提示断言、竞态隔离与异常释放既有用例保持；npm run typecheck、变更文件严格 ESLint 0 warning、生产 build 通过；前端全量 44 suites/737 passed。 回归加固：新增预扫描路径数超上限截断提示用例（保留已定位路径并显示未定位余量），orphan-files.spec.ts 扩至 83 用例。"
+        },
+        {
+          "id": "orphan-hardlink-copy-prescan-task.5",
+          "name": "路线图、功能状态与会话交接",
+          "description": "按 roadmap-maintain 实测行号同步：services（新增 orphan-hardlink-scan 行、orphan-quarantine 补 bounded 遍历）、orphan_file_service.md 第三层（调用链改为结果表反查）、infra（22 个 revision、head c8d9e0f1a2b3）、tasks/data-models/tests/test-coverage/根元信息。",
+          "status": "done",
+          "scope": "docs",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/README.md",
+            "docs/roadmap/backend/infra/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "docs/roadmap/backend/tasks/README.md",
+            "docs/roadmap/backend/data-models/README.md",
+            "docs/roadmap/tests/README.md",
+            "docs/roadmap/perspectives/test-coverage.md",
+            "progress.md",
+            "session-handoff.md",
+            "feature_list.json"
+          ],
+          "evidence": "行号实测：run_round L56、collect_runtime_accessible_roots L312、find_hardlink_paths_bounded L411、get_hardlink_copy_locations L703、_load_hardlink_copy_results L684；无陈旧 head 引用残留，回读校验通过。"
+        }
+      ]
+    },
+    {
+      "id": "orphan-located-copies-filter-and-scan-scope",
+      "name": "孤儿列表已定位副本快捷筛选 + 预扫描范围收紧",
+      "description": "用户无法得知哪些孤儿文件的副本路径已被预扫描定位。孤儿列表/文件夹聚合/子项展开新增 hardlink_copies=located 筛选（快捷操作一键切换 + 筛选区复选框）：SQL 以候选表最近扫描的 (device_id, inode)（inode 字符串列 CAST 整数，与 orphan_purge_job_service 同口径）EXISTS join orphan_hardlink_copy_result 且 found_count>1（found_count 含源路径自身，>1 即定位到非源副本，与副本位置弹框口径一致；NULL 身份/未扫描不命中，fail-closed）。同时核查并收紧预扫描任务范围：_stat_window 候选过滤从 status != resolved 收紧为 status=candidate 且未忽视——已忽视受保护无需定位副本，quarantined/purged 候选文件已被移动/删除、纳入只产生无效 stat（线上 stat_failed=101 主因）；取消忽视/隔离恢复后经 reconcile 重置回 candidate 自动恢复扫描。无 schema 变更，无需迁移。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.1",
+          "name": "后端：located 筛选条件与端点参数透传",
+          "description": "_build_orphan_conditions 新增 hardlink_copies 参数，值为 located 时追加 EXISTS（select(1).select_from(候选).join(结果表, device_id 相等 AND CAST(inode AS INTEGER)==inode_id).where(canonical_path 关联外层 AND found_count>1).exists()，SQLAlchemy 2.0 自动 correlate）；线程化到 get_orphan_list/get_orphan_list_grouped/get_orphan_folder_children 三处；/list（grouped 与 flat 两分支）与 /folders/children 端点新增同名 Query 参数；resolve_orphan_selection/prefix 预览不参与（选择载荷无该筛选）。无效取值不追加条件，与 status/confidence 宽松口径一致。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/api/endpoints/orphan_files.py"
+          ],
+          "evidence": "EXISTS 语句经 sqlite 方言 compile 实测（CAST 正确、外层 orphan_file 自动关联）。test_orphan_ignore_and_filters.py 新增 4 用例：located 仅命中 found_count=2 样本（found_count=1 仅源路径/无结果行/无身份列均不命中）、bogus 取值不追加条件（total=4）、与 status=ignored 组合正交（已忽视且已定位仍可筛出）、grouped 与 folder_children 与扁平列表口径一致；候选 inode 以字符串 '101' 落库命中整数 inode_id=101（CAST 验证）。test_orphan_files_api.py 两处精确 kwargs 断言补 hardlink_copies=None，新增 /list flat+grouped 与 /folders/children 透传用例。三文件 92 passed。 回归加固（第三批）：新增 4 用例——截断行（truncated=1）与共享同一 inode 的两个孤儿明细（互为硬链接）均命中 located；身份列脏数据（inode='not-a-number'/device 单侧 NULL/inode 单侧 NULL）安全跳过不抛错不误命中（CAST fail-closed）；scanned_at 过期 60 天未清理的行仍可筛出（located 只看 found_count）；located 与 confidence=high AND 叠加只返回交集；API 层新增未知取值 bogus 原样透传用例（宽松契约与 status/confidence 一致）。"
+        },
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.2",
+          "name": "后端：预扫描候选范围收紧",
+          "description": "_stat_window 候选子查询收紧为 status=='candidate' AND is_ignored.is_(False)；keyset 游标基于 OrphanFile.id，被排除候选不影响推进与回绕；被排除身份的既有结果行仍由 30 天保留期正常清理。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_hardlink_scan_service.py"
+          ],
+          "evidence": "test_orphan_hardlink_copy_scan.py 新增 TestScanScopeExclusions：已忽视/quarantined/purged 候选不进入 stat 窗口（stat_inspected=1、stat_failed=0，若纳入会以 stat_failed 形式出现）；取消忽视（is_ignored=False）后下一轮回绕重新纳入并落结果行。20 passed。 回归加固（第三批）：新增 2 用例——stat_limit=1 两轮间 keyset 游标越过被排除候选（若排除失效 ignored 会额外贡献一次成功 stat，stat_inspected 断言可分辨；stat_failed 只来自在范围内的 gone 文件）；被排除候选的既有结果行本轮不被删除/覆盖（scanned_at/found_count 原样保留），仍交由保留期任务清理。"
+        },
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.3",
+          "name": "前端：快捷操作切换 + 筛选区复选框",
+          "description": "快捷操作 dropdown 新增'筛选已定位副本'项（toggleLocatedCopies 命令在 handleQuickAction 先分支处理，切换 listQuery.hardlinkCopies 并 handleFilter() 回第一页，不落入前缀对话框流程；激活时显示勾选图标与取消文案）；筛选区置信度后新增'已定位副本' el-checkbox（tooltip 注明按每日预扫描结果过滤、与实时副本数可能短暂不一致）；loadOrphanPage/buildCurrentFolderParams 序列化 hardlink_copies='located'|undefined；重置清空。OrphanListParams 增加可选字段（children 参数类型经 Omit 派生自动继承）。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue"
+          ],
+          "evidence": "orphan-files.spec.ts 新增 5 用例：快捷操作一键开启提交 hardlink_copies='located' 且 page=1 且不打开前缀对话框、再次点击取消不提交、默认关闭不提交、重置清空开关、文件夹子项展开透传 located。类型定义与 listQuery 整对象 toEqual 断言同步更新。88 passed。 回归加固（第三批）：新增 4 用例——快捷操作切换保留既有 path_like/status 筛选一并提交（不互相覆盖）；refreshPageData 刷新保留 located 快照；文件夹视图开启时 group_by_folder 与 hardlink_copies 同时提交；文件夹子项默认关闭时不提交 hardlink_copies。"
+        },
+        {
+          "id": "orphan-located-copies-filter-and-scan-scope.4",
+          "name": "路线图、功能状态与会话交接",
+          "description": "roadmap 实测行号同步（orphan_file_service.md 第三层全表行号修正 + located 筛选不变式与调用依赖、services README 预扫描范围与 located 筛选描述、根 README 功能域与元信息第三批）、progress.md 与 session-handoff.md 更新。",
+          "status": "done",
+          "scope": "docs",
+          "files": [
+            "docs/roadmap/README.md",
+            "docs/roadmap/backend/services/README.md",
+            "docs/roadmap/backend/services/orphan_file_service.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "全部行号 grep 实测重写（发现并顺带修正 4da8115 时第三层文档已漂移：记录 3161 行，实测当时 3449 行/当前 3480 行）。验证：后端 black/flake8 通过、mypy 与改动前基线一致（149 存量错误，无新增）；前端 lint 无新增问题（keyword spec 5 个警告为 dev 分支存量）。 回归加固（第三批）验证：后端三文件 99 passed（API 40 + 服务层 38 + 扫描 21，black 重排后复跑通过、flake8 干净）；前端 orphan-files.spec.ts 92 passed；生产代码本轮零改动（mypy 基线不变）。"
+        }
+      ]
+    },
+    {
+      "id": "orphan-hardlink-copy-delete",
+      "name": "副本位置弹窗行级删除硬链接副本",
+      "description": "副本位置弹窗此前只能复制路径。新增行级「删除」能力：仅移除指向同一 inode 的其它路径链接（源文件与数据保留）。后端 delete_hardlink_copies 逐路径 fail-closed：维护租约（orphan_maintenance_scope，busy 整体 rejected）→ 候选 status=candidate 且 operation_state=stable 门禁 → 源文件 stat 身份 + 预扫描结果行存在 → 共享 inode 拒绝集（源路径 + 同 (device_id, inode) 全部候选 canonical_path，防删同 inode 其它孤儿）→ 种子目录白名单（collect_torrent_directory_whitelist 全量下载器 DB 目录级，加载失败整体拒绝）→ 请求路径与返回前端的 copies 原始字符串成员判定（防任意路径注入）+ 隔离区/回收站标记（settings 口径）+ 符号链接拒绝 → tombstone 三段式删除（rename→身份复核→remove，复核失败回滚）。成功后 setattr payload 同步结果行（copies_json/found_count/copy_count，保留 truncated/scan_note/scanned_at）并在主事务 commit 后写审计（新枚举 orphan_hardlink_copy_delete 三处登记）。状态类拒绝一律 200+failed_list（{copy_path, reason}），与 set_ignored/restore 响应形态一致。无 schema 变更。同步执行（≤50 路径，与 restore 同级先例）。经 3 个只读子代理独立审查修订：修复审计事务冲突（改 restore 模式）、补租约/在途排除/候选门禁、共享 inode 漏洞、tombstone 删除保护、Vue2 $set/$delete 响应式、弹窗重开竞态（seq 快照+可见双重校验）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "orphan-hardlink-copy-delete.1",
+          "name": "后端：delete_hardlink_copies 服务方法 + 审计枚举",
+          "description": "OrphanFileService 新增 delete_hardlink_copies(orphan_id, copy_paths, operator, audit_service, _lease_acquired, _lease_handle)：入口去重保序；租约模式同 restore；_hardlink_copy_marker_reason/_in_seed_directory/_remove_hardlink_copy 三个 static 辅助；结果行更新走 setattr payload（与预扫描 _write_results 同惯例，规避 ORM Column 静态类型噪音）；审计恒记（SUCCESS/PARTIAL/FAILED）。AuditOperationType 新增 ORPHAN_HARDLINK_COPY_DELETE，枚举成员/get_display_name/get_category 三处登记。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/orphan_file_service.py",
+            "backend/app/torrents/audit_enums.py",
+            "backend/tests/enums/test_audit_enums.py"
+          ],
+          "evidence": "test_orphan_hardlink_detection.py 新增 TestHardlinkCopyDelete 13 用例全过（文件 33 passed）：happy path（真实 os.link 临时硬链接，副本删除后源完好、nlink 2、结果行 copies_json/found_count/copy_count 更新、审计 kwargs 断言）、共享 inode 其它候选源路径拒绝、路径不在 stored copies 拒绝、种子目录拦截（monkeypatch 服务命名空间白名单）、白名单加载失败 fail-closed、隔离区/回收站标记拒绝（标记检查先于文件系统访问）、身份不匹配（副本被替换→拒绝且替换文件保留）、源不可访问全拒、quarantined/purge_pending 状态门禁、无预扫描行拒绝、批量部分失败+去重、租约 busy rejected、空请求空结果。tests/enums 283 passed（成员计数 45→46 同步）。"
+        },
+        {
+          "id": "orphan-hardlink-copy-delete.2",
+          "name": "后端：POST /orphan-files/hardlink-copies/delete 端点",
+          "description": "请求模型 HardlinkCopyDeleteRequest{orphan_id, copy_paths 1..50}（Pydantic 失败=422）；require_authenticated_user + get_audit_service 依赖注入（restore 模式）；rejected 时 msg 取 error；透传服务结果。mypy 零新增（全量 1563=基线 1563，实测 stash 对比）、black/flake8/ruff/lint_btdeck 通过。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/orphan_files.py",
+            "backend/tests/api/test_orphan_files_api.py"
+          ],
+          "evidence": "test_orphan_files_api.py 新增 3 用例（文件 44 passed）：透传（kwargs 精确断言 orphan_id/copy_paths/operator/audit_service 非空，msg 含成功/失败计数）、租约 rejected 载荷（200+rejected=true+msg 含维护操作）、422 参数化（空列表/51 条超限，服务层未被调用）。"
+        },
+        {
+          "id": "orphan-hardlink-copy-delete.3",
+          "name": "前端：弹窗行级删除按钮与就地刷新",
+          "description": "orphan-files.ts 新增 deleteHardlinkCopy + HardlinkCopyDeleteRequest/Result 类型（timeout 120000）。index.vue：抽取 fetchHardlinkLocations(orphanIds, keepResult)（seq/loading/result 职责分离）；副本行新增 danger 文字按钮删除（loading 态经 $set/$delete 的 hardlinkCopyDeleting，key=orphan_id:copyPath）；$confirm type=error 对齐 handleQuarantinePurge 惯例（确认删除/取消，文案说明仅移除路径链接、数据保留、种子目录内会被拒绝）；删除成功后 syncHardlinkCopyCount 就地更新行副本数（含文件夹 children；located 筛选开启时改走 refreshPageData 整页刷新）+ 重查弹窗（keepResult 保留旧数据、hardlinkLocationRefreshing 局部遮罩、seq 快照+弹窗可见双重校验防迟到重查覆盖另一弹窗）；resetHardlinkLocationDialog 同步清空 orphanIds/deleting；copy_count===0 空态文案改通用表述。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/api/orphan-files.ts",
+            "frontend/src/views/orphan-files/index.vue",
+            "frontend/tests/unit/orphan-files.spec.ts"
+          ],
+          "evidence": "orphan-files.spec.ts 新增 7 用例（文件 99 passed，全套件 44 suites/754 tests passed）：删除按钮渲染（数量/文案/data-loading）、确认后按 {orphan_id, copy_paths} 调用+就地刷新（mockGetOrphanList 仅挂载 1 次、行计数 2→1）+重查同 orphan_ids、行级 loading 态进出、逐项失败原因展示且不重查、rejected 载荷提示且不重查、取消确认不调用、located 筛选开启时改走整页刷新（mockGetOrphanList 2 次）。typecheck 通过；三个改动文件 eslint --max-warnings 0 零问题。"
+        }
+      ]
+    },
+    {
+      "id": "torrent-status-unknown-fix",
+      "name": "修复新种子显示 unknown 与传统模式进度条不可见",
+      "description": "qBittorrent 新添加种子初始态（metaDL/forcedMetaDL/allocating/forcedDL/forcedUP/missingFiles/checkingResumeData）在后端 QBITTORRENT_STATUS_MAP 缺失映射原样入库，前端 normalizeTorrentStatus 将未识别状态归一 unknown，导致列表/传统两模式新种子状态列显示 unknown；传统模式 .progress-bar-fill 无默认背景色，unknown 状态下进度条透明不可见（宽度在增长但看不到）。修复：后端映射表补齐 7 个状态（moving 瞬时态有意不映射）；前端 normalizeTorrentStatus 重写为全量状态折叠表（大小写不敏感，兜底历史入库的 pausedDL/checkingDL 等变体）；status-config 补 completed/unknown 文案与图标；传统/列表样式补默认背景与 completed/unknown 徽章。无 schema 变更，存量数据由下一次同步自愈。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "torrent-status-unknown-fix.1",
+          "name": "后端：QBITTORRENT_STATUS_MAP 补齐新种子初始态映射",
+          "scope": "backend",
+          "description": "torrent_status_mapper.py 新增 metaDL/forcedMetaDL/allocating/forcedDL→downloading、forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL；与 torrent_stats_cache 统计桶兼容。",
+          "status": "done",
+          "evidence": "pytest tests/core/test_torrent_status_mapper.py 60 passed（映射表完整性用例同步更新，seeding 来源计数 4→5）；tests/api/test_transmission_error_sync.py 32 passed；mypy/black/flake8 通过",
+          "files": [
+            "backend/app/core/torrent_status_mapper.py"
+          ]
+        },
+        {
+          "id": "torrent-status-unknown-fix.2",
+          "name": "前端：normalizeTorrentStatus 全量状态折叠 + completed/unknown 文案",
+          "scope": "frontend",
+          "description": "formatters.ts 重写为 TORRENT_STATUS_FOLD_MAP 折叠表（qB 全量状态词表，大小写不敏感）；status-config.ts 补 completed=已完成/circle-check-big 与 unknown=未知/help-circle。",
+          "status": "done",
+          "evidence": "shared-utils.spec.ts +14 折叠用例；status-config.spec.ts 契约不变量通过；eslint/tsc 通过",
+          "files": [
+            "frontend/src/utils/formatters.ts",
+            "frontend/src/constants/status-config.ts"
+          ]
+        },
+        {
+          "id": "torrent-status-unknown-fix.3",
+          "name": "样式：传统模式进度条默认背景与 completed/unknown 徽章",
+          "scope": "frontend",
+          "description": "traditional-view-theme.scss .progress-bar-fill 加兜底背景（unknown 状态进度条可见）+ &.completed；状态图标圆点/徽章补 completed/unknown；torrent-theme.scss 列表徽章补 unknown。",
+          "status": "done",
+          "evidence": "traditional-view-component.spec.ts / torrent-list-view-component.spec.ts / torrent-error-reason-ui.spec.ts 全部通过；静态契约无破坏",
+          "files": [
+            "frontend/src/styles/traditional-view-theme.scss",
+            "frontend/src/styles/torrent-theme.scss"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "security-remediation-2026-08",
+      "name": "安全修复（两轮对抗验证驱动）",
+      "description": "修复两轮对抗验证确认的 8 项高危 + 中危发现：serve_frontend 未认证路径穿越、cron task_type=4 认证后 RCE、备份导入任意写入、source_file_path 任意读取、下载器密码明文入库 + encrypt fail-open、git 公开真实密钥 + 密码可逆存储、默认凭据无强制改密 + 登录无限速、发行包内嵌 config 目录；另含审计归档/导出穿越、2FA 端点越权、DEBUG/docs/compose 配置加固、starlette CVE 升级、删错文件兜底与前端两处加固。",
+      "status": "implemented",
+      "branch": "dev",
+      "plan_file": "PLANS/security-remediation.md",
+      "tasks": [
+        {
+          "id": "w1-serve-frontend-traversal",
+          "name": "serve_frontend 路径包含校验",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/factory.py",
+            "tests/api/test_factory_serve_frontend.py"
+          ],
+          "evidence": "7 tests passed"
+        },
+        {
+          "id": "w2-cron-rce",
+          "name": "cron task_type=4 三层拦截 + 删除 exec 引擎",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/tasks/cron_executor.py",
+            "app/api/endpoints/cron_tasks.py",
+            "app/tasks/enhanced_python_executor.py",
+            "scripts/lint_btdeck.py",
+            "tests/tasks/test_cron_executor_security.py",
+            "tests/api/test_cron_security_api.py"
+          ],
+          "evidence": "55 tests passed"
+        },
+        {
+          "id": "w3-backup-import-filename",
+          "name": "备份导入 filename 消毒 + 每请求子目录",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/torrent_backup.py"
+          ],
+          "evidence": "sanitize + uuid dir"
+        },
+        {
+          "id": "w4-source-path-validation",
+          "name": "source_file_path bencode 内容校验 + seed_transfer info_hash 格式",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/core/torrent_file_backup.py",
+            "app/api/endpoints/torrent_backup.py",
+            "app/services/seed_transfer_service.py",
+            "tests/services/test_backup_source_validation.py"
+          ],
+          "evidence": "16 tests passed"
+        },
+        {
+          "id": "w5-audit-path-fix",
+          "name": "审计归档/导出路径限制",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/services/audit_service.py",
+            "app/api/endpoints/audit_logs.py",
+            "src/views/logs/audit.vue",
+            "tests/api/test_audit_path_security.py"
+          ],
+          "evidence": "18 tests passed"
+        },
+        {
+          "id": "w6-downloader-password-encryption",
+          "name": "下载器密码加密 + encrypt fail-closed + 启动钩子",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/downloader.py",
+            "app/utils/encryption.py",
+            "app/core/security.py",
+            "app/downloader/initialization.py",
+            "app/startup/lifecycle.py",
+            "tests/utils/test_downloader_password_encryption.py"
+          ],
+          "evidence": "9 tests passed"
+        },
+        {
+          "id": "w7-key-untrack",
+          "name": "git 停止跟踪密钥 + 轮换手册",
+          "status": "done",
+          "scope": "repo",
+          "files": [
+            "backend/config/config.yaml.example",
+            "backend/.gitignore",
+            "backend/.dockerignore",
+            "docs/security/key-rotation-runbook.md"
+          ],
+          "evidence": "git rm --cached 执行；runbook 含顺序契约"
+        },
+        {
+          "id": "w8-bcrypt-migration",
+          "name": "密码 bcrypt 双读迁移 + changePassword 修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/auth/security.py",
+            "app/auth/models.py",
+            "app/api/endpoints/cuser.py",
+            "app/database.py",
+            "alembic/versions/ff42d3402df5_add_users_must_change_password.py",
+            "tests/auth/test_bcrypt_dual_read.py"
+          ],
+          "evidence": "7 tests passed; alembic head ff42d3402df5 单头"
+        },
+        {
+          "id": "w9-login-throttle-force-change",
+          "name": "登录限流 + 首登强制改密",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/auth/login_throttle.py",
+            "app/api/endpoints/login.py",
+            "src/store/modules/user.ts",
+            "src/permission.ts",
+            "src/views/settings/index.vue",
+            "tests/api/test_login_throttle_and_change_password.py"
+          ],
+          "evidence": "10 tests passed"
+        },
+        {
+          "id": "w10-twofa-ownership",
+          "name": "2FA 端点绑定本人 + 日志脱敏",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/cuser.py",
+            "app/auth/utils.py",
+            "tests/api/test_twofa_ownership.py"
+          ],
+          "evidence": "5 tests passed"
+        },
+        {
+          "id": "w11-config-hardening",
+          "name": "DEBUG/DEV/docs/compose 加固",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/core/config.py",
+            "app/factory.py",
+            "app/desktop_main.py",
+            "docker-compose.yml",
+            ".env.example"
+          ],
+          "evidence": "DEBUG 默认 False；compose 透传 4 变量"
+        },
+        {
+          "id": "w12-packaging-fix",
+          "name": "发行包不再打包 config 目录",
+          "status": "done",
+          "scope": "deploy",
+          "files": [
+            "deploy/btdeck.spec",
+            "deploy/btdeck-windows.spec",
+            "deploy/btdeck.iss"
+          ],
+          "evidence": "datas/iss 移除 config"
+        },
+        {
+          "id": "w13-deps-upgrade",
+          "name": "starlette/fastapi 升级（CVE-2024-47874）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "requirements.txt",
+            "frontend/nginx.conf"
+          ],
+          "evidence": "fastapi 0.115.14 + starlette 0.41.3；tests/api 895 passed"
+        },
+        {
+          "id": "w15-low-cost-fixes",
+          "name": "删错文件兜底 + 前端正则/v-html 加固",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "app/core/file_operations.py",
+            "src/views/tracker/keywords-search.vue",
+            "src/views/tracker/components/MatchTimeline.vue"
+          ],
+          "evidence": "仅精确匹配；escapeRegExp；sanitizeDescription"
+        }
+      ]
+    },
+    {
+      "id": "ops-fixes-2026-08-16",
+      "name": "进度精度/转移落库/审计 IP 三项修复（子代理独立审查修订版）",
+      "description": "①种子进度同步统一 round(2)，存量脏值（99.556946664657%）依赖 0.5 阈值保留舍入值 + has_torrent_info_changes 精确比较在下次同步自愈 ②种子转移成功后立即按 info-only 同步数据形态预插目标下载器 torrent_info 行（(hash,downloader_id) WHERE dr=0 唯一索引保证与后续同步同一条），delete_source 成功时源行按同步删除语义置 dr=1；服务层补 source==target 兜底防御 ③转移与孤儿文件全部手动操作（cleanup/purge/restore/ignore/hardlink-copy-delete）审计补 IP：同步端点经 extract_audit_info_from_request 直接透传；后台任务经 orphan_purge_job 新增 ip_address 列（迁移 ab68fe061d5b）持久化提交端 IP 再透传审计",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "（会话内方案，经 2 个独立审查代理复核修订 7 项后实施）",
+      "tasks": [
+        {
+          "id": "progress-rounding",
+          "name": "种子进度同步统一舍入 2 位小数",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/torrents_async.py",
+            "tests/api/test_progress_rounding.py",
+            "tests/api/test_progress_rounding_sync.py"
+          ],
+          "evidence": "_normalize_progress_value round(2)（8 处同步写路径汇聚点）；14 tests passed：纯函数/变更检测 9 + 同步流集成 5（qB/TR insert 舍入、存量脏值经 0.5 阈值自愈、稳定行不重写）"
+        },
+        {
+          "id": "transfer-target-row-upsert",
+          "name": "转移成功后立即落库目标下载器种子行",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/services/seed_transfer_service.py",
+            "tests/services/test_seed_transfer_service_fixes.py",
+            "tests/services/test_w2_3d_service_migration.py"
+          ],
+          "evidence": "_upsert_target_torrent_row（对齐同步 insert dict + 显式 commit + IntegrityError 竞态转 update + 异常吞掉仅 warning）+ _mark_source_row_transferred（dr=1 同步删除语义）+ source==target 服务层防御；22 tests passed：预插/幂等/源行标记 5 + 竞态转 update、duplicate/验证超时/添加失败不建行、删除失败源行保留 dr=0、mark 空行 no-op 等 6 项补充回归"
+        },
+        {
+          "id": "audit-ip-transfer",
+          "name": "转移审计补 IP/user_agent 与种子名称/来源下载器名称",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/api/endpoints/seed_transfer.py",
+            "tests/api/test_seed_transfer_batch_fixes.py"
+          ],
+          "evidence": "两端点加 request 参数，_log_transfer_audit 传 ip_address/user_agent；operation_detail 增加 torrent_name/downloader_name（来源下载器 nickname），自动提取到审计冗余列（列表页展示+名称搜索），downloader_id 对齐来源口径；6 tests passed：含单转移端点真实 XFF 链路与冗余列断言"
+        },
+        {
+          "id": "audit-ip-orphan",
+          "name": "孤儿文件全部手动操作审计补 IP（含 job 迁移）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "app/models/orphan_purge_job.py",
+            "alembic/versions/ab68fe061d5b_add_orphan_purge_job_ip_address.py",
+            "app/services/orphan_purge_job_service.py",
+            "app/services/orphan_file_service.py",
+            "app/api/endpoints/orphan_files.py",
+            "tests/core/test_db_migration.py",
+            "tests/core/test_db_rollback_scenarios.py",
+            "tests/core/test_orphan_migration_production_shape.py",
+            "tests/services/test_orphan_purge_job_service.py",
+            "tests/api/test_orphan_files_api.py",
+            "tests/services/test_orphan_cleanup_hardlink_warning.py"
+          ],
+          "evidence": "迁移 ab68fe061d5b（inspect 守卫 add_column + batch downgrade，【可回滚】）串接 ff42d3402df5；4 提交入口加 ip_address、execute_job 读 job 会话内取出透传、5 个服务函数签名+4 处租约递归+5 处审计调用点、5 个端点提取 IP；EXPECTED_HEAD/REV_HEAD 三处测试同步；104 tests passed：含 5 端点真实 XFF 提取链路 + client.host 回退、execute_job cleanup/purge 双路径 IP 透传、服务层 ORPHAN_CLEANUP 审计收到 ip"
+        }
+      ]
+    },
+    {
+      "id": "force-change-deadlock-fix-2026-08-18",
+      "name": "W9 强制改密路由死锁修复（守卫落点/白名单 + 父路由 redirect + /user/info 实时下发标志 + 首导航拦截）",
+      "description": "生产事故：默认口令部署被启动自检置 must_change_password=1 后，重新登录被锁死在 /#/settings?forceChange=1 且设置页不可达。修复：①守卫重定向目标与白名单改用真实页面子路由 /settings/index（原父路径落点内容区空白、真实路径被弹回形成死锁）②/settings 父路由补 redirect（与守卫改动原子交付，单发会无限循环）③守卫 GetUserInfo 分支补拦截（登录后/F5 后首次导航不再放行业务页）④后端 /user/info 实时下发 mustChangePassword、前端 GetUserInfo 同步 store（undefined 不写，防滚动部署误清）⑤改密成功后清除 URL forceChange query。init_db 置位逻辑（W9 安全意图）保留不动。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/force-change-deadlock-fix.md",
+      "tasks": [
+        {
+          "id": "force-change-deadlock-fix-2026-08-18.1",
+          "name": "前端死锁解除与守卫加固",
+          "description": "router redirect + 守卫三处联动（目标/白名单/GetUserInfo 分支拦截）+ 拦截弹\"请先修改密码\"提示（3 秒节流）+ store 同步 + 改密清 query",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/router.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/store/modules/user.ts",
+            "frontend/src/api/users.ts",
+            "frontend/src/views/settings/index.vue",
+            "frontend/tests/unit/permission-force-change-deadlock.spec.ts",
+            "frontend/tests/unit/user-store-must-change-password.spec.ts",
+            "frontend/tests/unit/settings-change-password.spec.ts"
+          ],
+          "evidence": "deadlock spec 8 用例（拦截落点可达+提示断言/首导航拦截+提示断言/父 redirect/直达放行/改密闭环/提示节流/对照）+ user-store spec 9 用例（Login true/显式 false/缺省 + GetUserInfo wrapped/扁平/false 覆盖/缺失保持原值）+ settings-change-password spec 4 用例（改密成功双解锁：清 store 标志+清 URL query 保留其他参数；无 query 不跳转；失败不提前解锁；前置校验拦截）全绿；permission-guard/store-user/api-contracts/request-auth 回归通过（相关 7 套件 80 passed）；eslint + typecheck 通过"
+        },
+        {
+          "id": "force-change-deadlock-fix-2026-08-18.2",
+          "name": "后端 /user/info 实时下发标志 + 事故链路回归",
+          "description": "get_user_info 响应加 mustChangePassword；init_db 置位链路回归测试（默认口令双格式/自定义负例/改密幂等）",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/cuser.py",
+            "backend/tests/api/test_login_throttle_and_change_password.py",
+            "backend/tests/api/test_w9_force_change_reproduction.py"
+          ],
+          "evidence": "test_login_throttle_and_change_password 12 用例（含 /users/info 两态新用例）+ test_w9_force_change_reproduction 4 用例 + test_auth_protection_extended 全绿（三套件合计 97 passed）；black/flake8/mypy 通过"
+        }
+      ]
+    },
+    {
+      "id": "token-refresh-race-fix-2026-08-18",
+      "name": "跨标签令牌续期竞态修复（三态续期 + ExpireSession 保留 refresh cookie + 守卫网络分流 + 后端原子轮换）",
+      "description": "用户报告令牌过期后无自动续期、操作中突然失败。根因：多标签共享单一 refresh cookie + 后端使用即轮换 + 前端任何刷新失败都清空共享 cookie，一次竞态/网络抖动杀死全浏览器续期能力（每 60 分钟周期性强制登出）；次要：改密撤销全部 refresh token 但前端不清 cookie。修复：①token-refresh.ts 三态结果（renewed/rejected/transient，isDefiniteFailure 仅后端明确 401 判死）+ definite 失败后重读 cookie 追他标签轮换新值有限重试（上限 3）②request.ts handleUnauthorized 三分支（transient 不清 token 不跳转待自愈）③user.ts ExpireSession（被动登出保留 refresh cookie，防'败者先读胜者后写'残余竞态清掉他标签有效令牌）+ GetUserInfo 网络错误原样上抛 ④permission.ts 三态分流 + abortNavigation（next(false)+手动 NProgress.done 防悬挂）+ GetUserInfo 网络错误不杀会话 ⑤settings 改密成功 ResetToken+跳登录（终结'access 活 refresh 死'窗口）⑥后端 /auth/refresh 条件 UPDATE 原子轮换（消除并发双成功）。经双子代理复核（纠正 2 处误判）与计划独立审查（采纳 2 必改：保留 refresh cookie、NProgress 收尾）。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": null,
+      "tasks": [
+        {
+          "id": "token-refresh-race-fix-2026-08-18.1",
+          "name": "前端三态续期与会话保留",
+          "description": "token-refresh.ts 三态+cookie 最新值有限重试；request.ts isDefiniteFailure/handleUnauthorized 三分支/redirectToLogin 改 ExpireSession；user.ts ExpireSession Action+GetUserInfo 网络错误上抛；permission.ts 三态分流+abortNavigation+GetUserInfo 网络分流；settings 改密终结会话跳登录",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/utils/token-refresh.ts",
+            "frontend/src/utils/request.ts",
+            "frontend/src/store/modules/user.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/views/settings/index.vue",
+            "frontend/tests/unit/token-refresh.spec.ts",
+            "frontend/tests/unit/request-auth.spec.ts",
+            "frontend/tests/unit/permission-guard.spec.ts",
+            "frontend/tests/unit/settings-change-password.spec.ts"
+          ],
+          "evidence": "前端全量 55 套件 866 用例通过；token-refresh 8 用例（三态/单飞/cookie 轮换重试/上限收敛/无 token 归 rejected）、request-auth 14 用例（transient 不登出不清 token/轮换后重放新 Bearer/rejected 保留 refresh cookie/refresh 豁免防递归/transient 自愈闭环——单飞复位后下一请求续期成功重放）、permission-guard 8 用例（transient roles 空→中止含 NProgress.done 收尾锚流/roles 有→放行/GetUserInfo 网络失败不杀会话/登出保留 cookie）、settings-change-password 4 用例（ResetToken+push(/login)/失败不误杀/前置校验）、store-user 13 用例（ExpireSession 契约：清 access/roles/标志但 removeRefreshToken 不被调用；GetUserInfo 网络 ApiError 原样上抛/认证错误包装）、session 12 用例（他标签登出跳转保留 refresh cookie）；npm run lint 与 typecheck 通过"
+        },
+        {
+          "id": "token-refresh-race-fix-2026-08-18.2",
+          "name": "后端 /auth/refresh 原子轮换",
+          "description": "读-改-写改条件 UPDATE（token_hash 匹配且 revoked_at IS NULL 且未过期才置撤销，rowcount=0 即 401），消除并发同值刷新双成功；record 空值防御；request.client ASGI None 防护",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/login.py",
+            "backend/tests/api/test_auth_refresh.py"
+          ],
+          "evidence": "test_auth_refresh 8 用例全绿（+1 条件更新语义：已撤销记录 revoked_at 不被二次覆盖；+1 旧 token 复用投影：已轮换旧 token 再刷 401 且不签发新记录不下发 data，双成功防护）+ test_login_throttle_and_change_password 12 用例回归；black/flake8 通过；mypy stash 基线对比 13→13（新增错误 0）"
+        }
+      ]
+    },
+    {
+      "id": "packaging-audit-fixes-2026-08-19",
+      "name": "打包脚本全链路审计与修复（Docker/桌面/远程部署）",
+      "description": "三子代理独立审计四套打包体系后修复：①bat 镜像重试链补官方源兜底尾（原 2→3 即止，与注释承诺矛盾）②bat 明文 root SSH 密码外部化到 gitignore 的本地凭据文件 ③verify-package.py/analyze-package-size.py 在打包 venv 未激活时经解释器同目录解析 pyi-archive_viewer（原 PATH-only 导致 PyInstaller 成功后校验必失败）④btdeck.iss 卸载时序（nssm remove 移至 usUninstall，修复孤儿服务残留）⑤打包 requirements 对齐 backend（starlette 0.38→0.41.3 修 CVE-2024-47874 内嵌、fastapi 0.115.6、bcrypt 补钉）⑥--unraid+--compose 参数组合守卫 ⑦删除内嵌旧密钥的 6/21 桌面构建残留与 566MB docker save 残留 ⑧backend/.env.example 假真密钥样值改占位符；⑨桌面打包实测发现 spec 漏打包 app/contracts/advanced_search_contract.json（import 期读取，frozen 启动即崩）已补",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "（会话内方案：3 个并行子代理独立验证 + 人工汇总后实施，重试链修复经高保真仿真发现首版回退循环 bug 后二次修正）",
+      "tasks": [
+        {
+          "id": "bat-retry-official-fallback",
+          "name": "镜像源重试链回退官方源 + 凭据外部化 + unraid 参数守卫",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "build-and-export-images.bat",
+            ".gitignore",
+            ".btdeck-deploy-credentials.bat.example"
+          ],
+          "evidence": "高保真仿真（从修改后 bat 原样抽取 :build_image/:apply_profile 强制网络失败）：START=2 走 2→3→1→中止、START=3 走 3→1→中止、START=1 走 1→2→3→中止，官方源兜底恰好一次无循环（首版实现曾 1 失败后回环 2→3，仿真捕获后加 B_OFFICIAL_TAIL 标志修正）；--unraid root@tower --compose x 组合 REMOTE_DIR 正确取默认值且 --compose 参数保留；凭据移入 gitignore 的 .btdeck-deploy-credentials.bat（模板 .example 入库），git grep 确认跟踪文件零密码/hostkey；--help 分支实跑正常"
+        },
+        {
+          "id": "pyi-viewer-resolution",
+          "name": "pyi-archive_viewer 解析回退到解释器同目录",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/verify-package.py",
+            "deploy/analyze-package-size.py"
+          ],
+          "evidence": "临时 venv + 假 viewer 完整复刻 build-windows.bat 调用方式：修复前 [FAIL] pyi-archive_viewer not found（exit 1，实证阻断 Inno Setup/fpm 步骤）；修复后 [PASS] found: <venv>/Scripts/pyi-archive_viewer.exe 并进入执行（后续 FAIL 为 where.exe 假冒工具的预期伪影）；两文件均加 find_archive_viewer()（sys.executable 同目录优先、which 兜底），AST 通过"
+        },
+        {
+          "id": "iss-uninstall-order",
+          "name": "Inno 卸载 nssm remove 时序修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/btdeck.iss"
+          ],
+          "evidence": "nssm remove BtDeck confirm 从 usPostUninstall（nssm.exe 已被删除、Exec 必失败留孤儿服务）移入 usUninstall（stop→taskkill→Sleep→remove），usPostUninstall 块整体删除"
+        },
+        {
+          "id": "package-reqs-security-align",
+          "name": "打包依赖安全对齐 backend",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/requirements-windows-package.txt",
+            "deploy/requirements-linux-package.txt"
+          ],
+          "evidence": "starlette ~=0.38.0→~=0.41.3 + fastapi ~=0.115.0→~=0.115.6（W13/CVE-2024-47874：fastapi 0.115.6+ 才允许 starlette 0.41.x，原组合打出的 exe 内嵌受 CVE 影响 0.38.x）+ bcrypt ~=5.0.0 补钉（passlib extra 不锁版本），双平台同步"
+        },
+        {
+          "id": "artifact-and-sample-cleanup",
+          "name": "含密钥残留清理与样值治理",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/.env.example"
+          ],
+          "evidence": "删除 deploy/dist（6/21 btdeck.exe，EXE-00.toc 929-939 实证内嵌旧 config.yaml 密钥+app.db）、deploy/build（同源 PyInstaller 工作目录）、根 .docker_temp_482561487（566MB docker save 残留），均未跟踪/被忽略，共释放约 720MB；backend/.env.example SECRET_KEY 真随机样值→REPLACE_WITH_RANDOM_SECRET"
+        },
+        {
+          "id": "desktop-packaging-contract-data",
+          "name": "桌面打包实测：契约 JSON 缺失修复 + 前后端入包/独立窗口验证",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/btdeck-windows.spec",
+            "deploy/btdeck.spec"
+          ],
+          "evidence": "完整跑通 build-windows.bat（ISCC 缺失 setup.exe 跳过，dist/btdeck.exe 64.9MB）；首启崩溃根因 app/contracts/advanced_search.py:9 import 期读 JSON 而 datas 未打包，两 spec 补 contracts JSON + production_complete_schema.sql；重建后运行时 /health/live 200、/ 返回 SPA 首页、静态资源 200、6s 就绪，MainWindowTitle=BtDeck（pywebview 独立窗口句柄 264442）；venv 解析 starlette 0.41.3+fastapi 0.115.14（CVE 修复版）"
+        },
+        {
+          "id": "router-navigation-failure-noise",
+          "name": "桌面版 vue-router 导航失败杂音修复（Redirected via a navigation guard）",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "src/router.ts",
+            "tests/unit/router-navigation-failure.spec.ts"
+          ],
+          "evidence": "根因链：强制改密守卫改道登录后导航 → vue-router rejected promise → login/index.vue:214 统一 catch 弹内部英文消息；修复为 router.ts 实例级 push/replace 补丁 isNavigationFailure 全类型静默（原仅 NavigationDuplicated 且无 replace）；4 套件 34 用例 + typecheck + lint 通过，exe 重打包 verify 通过"
+        },
+        {
+          "id": "linux-package-verification",
+          "name": "Linux 安装包全链路容器验证与三项修复",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "deploy/build-linux.sh",
+            "deploy/btdeck.service",
+            "deploy/verify-package.py",
+            "deploy/analyze-package-size.py"
+          ],
+          "evidence": "node18-slim 容器完整跑通 build-linux.sh（venv/npm/PyInstaller/verify/fpm）；deb 全新容器 dpkg -i exit0（用户/目录/600 env/降级提示全对）+ btdeck 用户 systemd 等价环境启动 health/SPA 200；修复 viewer 解析 sys.prefix（Linux venv 软链）、ALLOWED_HOSTS JSON 化（逗号格式 A/B 实证安装即 SettingsError）、fpm --force；另修本地工作区三文件陈旧 CRLF 检出（索引本 LF）"
+        }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "orphan-list-located-perf",
+      "title": "孤儿列表 hardlink_copies=located 慢查询优化（副本数快照列）",
+      "status": "completed",
+      "description": "孤儿文件列表 located 筛选与副本数列从实时 stat + 关联 EXISTS 改为 orphan_file.hardlink_copy_count 快照列：扫描发现文件时同步落库（st_nlink-1），每日预扫描/每次成功扫描刷新；located 筛选改 count>0 单列谓词；列表链路删除 20 次串行 os.stat；全选/前缀透传 located；delete/restore 联动写回。10 万行基准 located 1.1s→88ms。",
+      "evidence": {
+        "benchmark": "10万行 current 模式：located count+list 1107ms→88ms；EXPLAIN 命中 ix_orphan_candidate_current_detail_status 覆盖索引；列表链路零 os.stat",
+        "tests": "后端 3488 passed（含重写 located 套件与新增 scanner/lifecycle/预扫描/delete/restore 用例）；前端 orphan-files.spec.ts 99 passed",
+        "lint": "black/flake8 通过；mypy/vue-tsc 存量错误零净增"
+      },
+      "files": [
+        "backend/alembic/versions/d4e5f6a7b8c9_orphan_hardlink_copy_count_snapshot.py",
+        "backend/app/models/orphan_file.py",
+        "backend/app/services/orphan_scanner.py",
+        "backend/app/services/orphan_lifecycle_service.py",
+        "backend/app/services/orphan_hardlink_scan_service.py",
+        "backend/app/services/orphan_file_service.py",
+        "backend/app/api/endpoints/orphan_files.py",
+        "frontend/src/views/orphan-files/index.vue",
+        "frontend/src/api/orphan-files.ts"
+      ]
+    },
+    {
+      "id": "orphan-list-scan-context-cache",
+      "title": "孤儿列表 scan_context 统计缓存（按需/缓存优化）",
+      "status": "completed",
+      "description": "remaining_count/ignored_count 全量聚合改进程内缓存（display_scan.scan_id 为键，epoch 防回写，上限 4 条）；无过滤时扁平列表 total 复用 remaining_count；失效点覆盖 set_ignored/_finalize_quarantine/_finalize_restore/submit_cleanup_job/finish_job/execute_scan×2/_recover_interrupted_operations。前端零改动。",
+      "evidence": {
+        "benchmark": "45万行 aiosqlite：冷 310ms→热 128ms；翻页 9 次全命中单页 126ms；生产 1.6s→首屏约 0.6-0.8s",
+        "tests": "后端全量 3507 passed（含缓存单测 5 + 集成 7 + 修正 query_state finish_job 路径）",
+        "lint": "black/flake8 通过；mypy 新模块零错误"
+      },
+      "files": [
+        "backend/app/services/orphan_stats_cache.py",
+        "backend/app/services/orphan_file_service.py",
+        "backend/app/services/orphan_purge_job_service.py",
+        "backend/app/services/orphan_scan_job_service.py",
+        "backend/tests/conftest.py",
+        "backend/tests/services/test_orphan_stats_cache.py",
+        "backend/tests/services/test_orphan_stats_cache_integration.py",
+        "backend/tests/services/test_orphan_query_state.py"
+      ]
+    },
+    {
+      "id": "token-audit-fixes",
+      "title": "令牌机制对抗审计修复（升级500/业务401误踢/跨标签级联/审计下载/清理任务/SECRET_KEY持久化等10项）",
+      "status": "completed",
+      "description": "两轮对抗审计+计划独立审查后修复：F1 升级路径补 login_status_secret+login 改 get_login_secret；F2 cuser 业务401改400/500（8处）；F3 refresh_tokens 每日清理任务（保留30天）；F4 SECRET_KEY YAML持久化回退（生产护栏条件化）；F5 缓存条件 total_seconds；F6 ExpireSession 保留共享access cookie（跨标签级联根修）；F7 业务5xx瞬时分流+连续3次中止逃生回落；F8 审计下载改 axios blob（修三重损坏）；F9 网络错误toast 3秒节流；F10 el-upload 401续期引导。",
+      "evidence": {
+        "tests": "后端全量 3826 passed/7 skipped（新增 test_init_config_file/test_cuser_business_codes/test_token_cleanup/test_refresh_token_cleanup_task + test_security_config_defaults 扩9用例）；前端全量 872 passed（store-user/permission-guard/request-auth/session/api-contracts 调整与新增，含 F6 级联防护锚点与逃生计数清零用例）",
+        "lint": "black/flake8 通过；mypy 零新增错误；eslint 通过（request.ts 自动格式修复）",
+        "verification": "./init.sh 通过；PLANS/token-audit-fixes.md 含部署注意（首启过渡/示例密钥/种子自动补建）"
+      },
+      "files": [
+        "backend/app/database.py",
+        "backend/app/core/config.py",
+        "backend/app/api/endpoints/login.py",
+        "backend/app/api/endpoints/cuser.py",
+        "backend/app/auth/utils.py",
+        "backend/app/auth/token_cleanup.py",
+        "backend/app/tasks/scheduler/refresh_token_cleanup_task.py",
+        "backend/app/data/default_scheduled_tasks.py",
+        "backend/config/config.yaml.example",
+        "frontend/src/store/modules/user.ts",
+        "frontend/src/permission.ts",
+        "frontend/src/utils/request.ts",
+        "frontend/src/api/audit-logs.ts",
+        "frontend/src/views/logs/audit.vue",
+        "frontend/src/views/torrents/FileManagement.vue",
+        "backend/tests/tasks/test_refresh_token_cleanup_task.py",
+        "frontend/tests/unit/session.spec.ts"
+      ]
+    },
+    {
+      "id": "auxiliary-seed-count-2026-08-20",
+      "title": "种子信息同步辅种数量",
+      "status": "completed",
+      "scope": "fullstack",
+      "description": "新增辅种数量字段，仅按 name + size 跨下载器、跨同步任务全局匹配；种子信息同步任务全量校正有效行数量，等级1/2/3删除、转移和回收站还原按分组增量维护，列表查询不实时分组；无有效辅种键或无辅种数据时显示1。",
+      "evidence": {
+        "tests": "补充回归后：服务/辅种分组+种子转移 24 passed；删除等级1/2/3+回收站还原 42 passed；同步任务+列表 API 52 passed（后端定向合计 118 passed）；数据库迁移/回滚/生产库形状 35 passed；前端选定单元测试 102 passed",
+        "lint": "backend flake8、frontend typecheck/lint 通过；frontend production build 通过（仅仓库既有 Sass/资源体积警告）",
+        "migration": "Alembic 975dad435c03_add_auxiliary_seed_count.py，upgrade/downgrade 仅增删 torrent_info.auxiliary_seed_count"
+      },
+      "files": [
+        "backend/alembic/versions/975dad435c03_add_auxiliary_seed_count.py",
+        "backend/app/services/auxiliary_seed_count_service.py",
+        "backend/app/tasks/scheduler/torrent_sync/torrent_info_sync_task.py",
+        "backend/app/services/torrent_deletion_by_level.py",
+        "backend/app/services/seed_transfer_service.py",
+        "backend/app/services/recycle_bin_service.py",
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue"
+      ]
+    },
+    {
+      "id": "tracker-error-display-alignment-2026-08-20",
+      "title": "展示对齐判定：Tracker 异常可见化与 Announce 状态覆写",
+      "status": "completed",
+      "description": "Transmission 对「HTTP 200 + bencode failure reason」上报 lastAnnounceSucceeded=true，同步落库状态码 2（工作中），判定任务按消息文本匹配失败池置 has_tracker_error=1——这类种子被 status=error 筛选命中却显示「做种中/✓工作中」，无任何错误迹象。本任务让展示层与判定任务同口径：共享关键词池加载器 + policy 覆写裁决 + VO 透传 has_tracker_error + 前端 Tracker异常 标签与错误原因回退链；顺带对齐 duplicates 端点 error 筛选口径，并修复 TrackerOperationDialog 对中文状态文本恒显「异常」的既有 bug。评审：两轮独立子代理审查（3 个测试阻断项 + 1 个布局缺陷 + 2 个语义边界均已吸收）。",
+      "evidence": {
+        "tests": "后端全量 pytest 3884 passed / 7 skipped / 1 failed——失败项 test_db_governance_extended 的迁移用例经 git stash 干净树复现为存量问题（auxiliary_seed_count 迁移重复加列，与本次改动无关）；tests/api/test_tracker_error_display_alignment.py 共 24 用例六组（loader 三池/禁用；getList 覆写+透传/忽略/成功/空池透传解耦/qb+tr 中性码/scrape 独立/行级互不影响；duplicates error 三态+scrape 覆写；判定任务 _load_keywords 委托链路+表缺失降级空池；判定↔展示一致性契约 8 参数矩阵——展示覆写口径 ⊆ has_tracker_error 判定口径；advanced_search 同源透传+覆写）+ policy 单测扩充；5 个既有 fixture 补 TrackerKeywordConfig 表；advanced_search_batching 查询计数 6→7。前端 57 suites / 891 passed（torrent-batch +5 用例含 error 状态 tooltip 边界、torrent-error-reason-ui 契约改指向共享 helper、tracker-detail-card +1 覆写显示用例、两视图组件级 Tracker异常 标签渲染各 +1、新增 tracker-operation-dialog-contract 契约 spec）。",
+        "lint": "black/flake8 改动文件全过；mypy 净增 +2 且与 torrent_helpers 同构造调用中约 60 个既有字段完全同类的 Column[bool] 旧模型误报（归一化 diff 验证）；npm run lint 无错误；npm run build 通过；./init.sh 通过。",
+        "behavior": "行为变化：①seeding+has_tracker_error=1 的种子在列表/传统视图状态列出现红色「Tracker异常」小标签，名称 tooltip 回退显示 Tracker 宣告失败消息；②tracker 详情 Announce/Scrape 文本在消息精确命中失败池时显示「✗工作失败」（与 has_tracker_error 同一关键词映射，展示与筛选自洽）；③duplicates 页 status=error 筛选现与 getList 同口径（OR has_tracker_error）；④TrackerDetailCard 红色错误告警对 tracker 异常种子新增出现（正向）。"
+      },
+      "files": [
+        "backend/app/core/tracker_keyword_map.py",
+        "backend/app/core/tracker_status_policy.py",
+        "backend/app/torrents/responseVO.py",
+        "backend/app/api/endpoints/torrent_helpers.py",
+        "backend/app/api/endpoints/duplicate_torrents.py",
+        "backend/app/tasks/scheduler/torrent_tracker_status_judge.py",
+        "backend/tests/api/test_tracker_error_display_alignment.py",
+        "backend/tests/core/test_tracker_status_policy.py",
+        "backend/tests/api/test_torrent_list_api.py",
+        "backend/tests/api/test_duplicate_torrents_api.py",
+        "backend/tests/api/test_same_content_inspection_api.py",
+        "backend/tests/services/test_advanced_search_regression.py",
+        "backend/tests/services/test_advanced_search_batching.py",
+        "frontend/src/api/torrents.ts",
+        "frontend/src/views/torrents/utils/torrentBatch.ts",
+        "frontend/src/views/torrents/index.vue",
+        "frontend/src/views/torrents/TraditionalView.vue",
+        "frontend/src/views/torrents/components/TrackerOperationDialog.vue",
+        "frontend/src/styles/torrent-theme.scss",
+        "frontend/src/styles/traditional-view-theme.scss",
+        "frontend/tests/unit/torrent-batch.spec.ts",
+        "frontend/tests/unit/torrent-error-reason-ui.spec.ts",
+        "frontend/tests/unit/tracker-detail-card.spec.ts"
       ]
     }
   ]

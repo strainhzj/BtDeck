@@ -66,10 +66,12 @@ export const STATUS_OPTIONS: StatusOption[] = [
 export const STATUS_TEXT_MAP: Record<string, string> = {
   seeding: '做种中',
   downloading: '下载中',
+  completed: '已完成',
   paused: '已暂停',
   queuedDL: '下载队列',
   error: '错误',
-  checking: '检查中'
+  checking: '检查中',
+  unknown: '未知'
 }
 
 /**
@@ -78,10 +80,12 @@ export const STATUS_TEXT_MAP: Record<string, string> = {
 export const STATUS_ICON_MAP: Record<string, string> = {
   seeding: 'trending-up',
   downloading: 'trending-down',
+  completed: 'circle-check-big',
   paused: 'pause',
   queuedDL: 'clock',
   error: 'alert-triangle',
-  checking: 'refresh-cw'
+  checking: 'refresh-cw',
+  unknown: 'help-circle'
 }
 
 /**

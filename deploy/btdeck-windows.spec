@@ -18,8 +18,14 @@ datas = [
     # 后端 alembic 迁移文件
     (os.path.join(BACKEND_DIR, 'alembic'), 'alembic'),
     (os.path.join(BACKEND_DIR, 'alembic.ini'), '.'),
+    # 运行时数据文件：app.contracts 在 import 时读取契约 JSON（缺失即启动崩溃，
+    # 2026-08-19 桌面打包实测发现）；schema 快照供 init_schema_from_production 运维工具使用
+    (os.path.join(BACKEND_DIR, 'app', 'contracts', 'advanced_search_contract.json'), 'app/contracts'),
+    (os.path.join(BACKEND_DIR, 'config', 'production_complete_schema.sql'), 'config'),
     # 后端配置模板
-    (os.path.join(BACKEND_DIR, 'config'), 'config'),
+    # 安全修复（W12）：不再打包 backend/config 目录——其中含真实 config.yaml
+    # （密钥）与开发库 app.db（历史构建已实证泄露，TOC 可查）。运行时
+    # CONFIG_PATH 为 exe 同级 config/，首启由 init_config_file 自动生成。
 ]
 
 # 如果前端已构建，包含静态文件

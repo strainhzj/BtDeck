@@ -72,6 +72,7 @@ AUDIT_OPERATION_TYPE_PARAMS = [
     ("orphan_ignore", "孤儿文件忽视", "orphan_files"),
     ("orphan_purge", "孤儿文件彻底删除", "orphan_files"),
     ("orphan_restore", "孤儿文件恢复", "orphan_files"),
+    ("orphan_hardlink_copy_delete", "孤儿硬链接副本删除", "orphan_files"),
 ]
 
 INVALID_OPERATION_TYPE_VALUES = [
@@ -112,7 +113,7 @@ class TestAuditOperationTypeMemberCount:
     """验证 AuditOperationType 枚举成员总数正确"""
 
     def test_member_count(self):
-        assert len(AuditOperationType) == 45
+        assert len(AuditOperationType) == 47  # 含 TRANSFER（W5-4）
 
 
 class TestAuditOperationTypeIsValid:
@@ -228,3 +229,16 @@ class TestAuditOperationResultStrEnum:
         member = AuditOperationResult(value)
         assert member == value
         assert isinstance(member, str)
+
+
+class TestTransferAuditMapping:
+    """W5-4：TRANSFER 操作类型的显示名与分类映射（操作日志页面依赖）。"""
+
+    def test_transfer_display_name(self):
+        assert AuditOperationType.get_display_name("transfer") == "种子转移"
+
+    def test_transfer_category(self):
+        assert AuditOperationType.get_category("transfer") == "torrent"
+
+    def test_transfer_is_valid(self):
+        assert AuditOperationType.is_valid("transfer") is True

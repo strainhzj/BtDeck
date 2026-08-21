@@ -36,6 +36,7 @@ class OrphanPurgeJob(Base):
     scan_id = Column(String(36), nullable=True, index=True, comment="主动清理绑定的扫描批次")
     orphan_ids_json = Column(Text, nullable=True, comment="主动清理的孤儿文件 ID JSON 数组")
     operator = Column(String(100), nullable=False, comment="任务提交人")
+    ip_address = Column(String(64), nullable=True, comment="任务提交端 IP（后台执行时写入审计日志）")
     total_count = Column(Integer, nullable=False, default=0, comment="待处理数量")
     purged_count = Column(Integer, nullable=False, default=0, comment="成功删除数量")
     failed_count = Column(Integer, nullable=False, default=0, comment="失败数量")

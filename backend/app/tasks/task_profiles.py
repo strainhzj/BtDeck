@@ -100,6 +100,11 @@ TASK_PROFILES: Dict[str, TaskProfile] = {
         "孤儿文件隔离区到期清理任务（每日，含实时 manifest 与文件系统删除）",
         wait_timeout=60.0,
     ),
+    "orphan_hardlink_copy_scan": _heavy(
+        "orphan_hardlink_copy_scan",
+        "孤儿硬链接副本预扫描任务（每日，整体目录遍历受 stat/目标数/时间预算限制）",
+        wait_timeout=60.0,
+    ),
 }
 
 

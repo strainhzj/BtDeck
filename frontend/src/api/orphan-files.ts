@@ -11,7 +11,7 @@ export interface OrphanFileItem {
   scan_id: string
   file_path: string
   file_size: number
-  /** 同一 inode 的其它硬链接目录项数量；文件不可访问时为 null */
+  /** 同一 inode 的其它硬链接目录项数量（扫描时统计快照，每日预扫描/每次成功扫描刷新；尚未生成快照为 null） */
   hardlink_copy_count: number | null
   mtime: string | null
   downloader_id: string | null
@@ -44,13 +44,19 @@ export interface OrphanFolderRow {
   folder_path: string
   /** 子文件数 */
   child_count: number
-  /** 子文件列表（含完整 OrphanFileItem 字段） */
+  /** 当前已加载的独立分页子文件；父行初始为空 */
   children: OrphanFileItem[]
-  /** 子文件 id 列表，用于展开提交 */
+  /** 当前已加载页的子文件 id；父行初始为空 */
   child_ids: number[]
+  /** 子项是否已按需加载 */
+  children_loaded: boolean
+  children_loading: boolean
+  child_page: number
+  child_page_size: number
+  child_total: number
   /** 子文件大小合计 */
   total_size: number
-  /** 子文件硬链接副本数合计；任一子文件不可访问时为 null */
+  /** 父行固定为 null；子行副本数为扫描时统计快照 */
   hardlink_copy_count: number | null
   /** 子文件最近修改时间 */
   latest_mtime: string | null
@@ -85,21 +91,27 @@ export interface OrphanListResponse {
   scan_context: OrphanScanContext
 }
 
-/** 单个孤儿文件的硬链接副本位置核对结果。 */
+/** 单个孤儿文件的硬链接副本位置查询结果（读取定时预扫描落库数据）。 */
 export interface HardlinkCopyLocationItem {
   orphan_id: number
   file_path: string
   /** 点击时重新读取的实时副本总数；源文件不可访问时为 null。 */
   copy_count: number | null
   found_count: number
-  /** 位于未配置/无权限目录中的剩余数量；源文件不可访问时为 null。 */
+  /** 最近一轮预扫描未定位到的剩余数量；源文件不可访问时为 null。 */
   unlocated_count: number | null
-  /** 已配置扫描目录内定位到的其它硬链接绝对路径。 */
+  /** 定时预扫描落库的其它硬链接绝对路径（已过滤源文件自身）。 */
   copies: string[]
+  /** 结果扫描时间（UTC ISO）；该文件尚未被预扫描覆盖时为 null。 */
+  scanned_at: string | null
+  /** 有副本但尚未被定时预扫描覆盖，等待下一轮。 */
+  pending_scan: boolean
+  /** 单 inode 路径数超上限被截断。 */
+  result_truncated: boolean
   error: string | null
 }
 
-/** 批量副本位置查询结果，文件夹聚合行也只触发一轮扫描。 */
+/** 批量副本位置查询结果；只读预扫描结果，不做目录遍历。 */
 export interface HardlinkCopyLocationsResult {
   requested_count: number
   resolved_count: number
@@ -108,7 +120,10 @@ export interface HardlinkCopyLocationsResult {
   total_found_count: number
   total_unlocated_count: number
   unknown_count: number
-  searched_root_count: number
+  /** 已有预扫描结果的文件数（有副本且已覆盖）。 */
+  scanned_count: number
+  /** 有副本但等待预扫描覆盖的文件数。 */
+  pending_scan_count: number
   search_error: string | null
   items: HardlinkCopyLocationItem[]
 }
@@ -116,7 +131,7 @@ export interface HardlinkCopyLocationsResult {
 /**
  * 数据库中持久化的扫描状态；busy 只属于触发响应，不在此联合中。
  */
-export type OrphanScanRecordStatus = 'running' | 'completed' | 'failed'
+export type OrphanScanRecordStatus = 'queued' | 'running' | 'completed' | 'failed'
 
 /**
  * 置信度：high=在线精筛判定，low=离线降级目录粗筛判定
@@ -139,6 +154,14 @@ export interface OrphanScanRecord {
   status: OrphanScanRecordStatus
   error_message: string | null
   operator: string | null
+  details_mode: 'snapshot' | 'current'
+  new_orphans: number
+  known_orphans: number
+  resolved_orphans: number
+  cleanup_review_required: boolean
+  cleanup_reviewed_at: string | null
+  cleanup_reviewed_by: string | null
+  cleanup_review_note: string | null
   created_at: string | null
 }
 
@@ -156,32 +179,14 @@ export interface OrphanScanContext {
   cleanup_block_reason: string | null
 }
 
-export interface OrphanScanCompletedResult {
+export interface OrphanScanSubmittedResult {
   scan_id: string
-  scan_time: string
-  scan_type: string
-  total_paths_scanned: number
-  total_files_scanned: number
-  total_orphans: number
-  total_orphan_size: number
-  status: 'completed'
+  task_id: string
+  status: 'queued' | 'running'
+  accepted: boolean
 }
 
-export interface OrphanScanFailedResult {
-  scan_id: string
-  status: 'failed'
-  error: string
-}
-
-export interface OrphanScanBusyResult {
-  status: 'busy'
-  error: string
-}
-
-export type OrphanScanTriggerResult =
-  | OrphanScanCompletedResult
-  | OrphanScanFailedResult
-  | OrphanScanBusyResult
+export type OrphanScanTriggerResult = OrphanScanSubmittedResult
 
 /**
  * 清理预览结果。后端仍会在执行时重新校验 scan_id 与安全门禁。
@@ -286,6 +291,8 @@ export interface OrphanListParams {
   // status/confidence 支持逗号分隔多值（后端 OR 并集过滤），故用 string 而非单值联合类型
   status?: string
   confidence?: string
+  /** 副本筛选：located=仅显示有硬链接副本的文件（扫描时统计快照 > 0） */
+  hardlink_copies?: 'located'
   /** 按文件夹（直接父目录）聚合分页：true 时同目录≥2 文件折叠为文件夹行 */
   group_by_folder?: boolean
 }
@@ -296,6 +303,8 @@ export interface OrphanSelectionFilters {
   path_prefix?: string
   status?: string
   confidence?: string
+  /** 副本筛选快照：located=仅选择有硬链接副本的文件（与列表筛选项同口径） */
+  hardlink_copies?: 'located'
 }
 
 export interface OrphanSelectionPayload {
@@ -312,6 +321,23 @@ export interface CleanupRequest extends OrphanSelectionPayload {
 export interface IgnoreRequest extends OrphanSelectionPayload {
   scan_id?: string
   ignored: boolean
+}
+
+export interface OrphanFolderChildrenParams extends Omit<OrphanListParams, 'group_by_folder'> {
+  folder_path: string
+}
+
+export interface OrphanFolderChildrenResponse {
+  total: number
+  page: number
+  pageSize: number
+  list: OrphanFileItem[]
+}
+
+export interface OrphanGuardrailReviewRequest {
+  confirmed_path_mapping: true
+  confirmed_orphan_samples: true
+  note: string
 }
 
 export interface HardlinkCopyLocationsRequest {
@@ -341,6 +367,17 @@ export function getOrphanList(params: OrphanListParams): Promise<ApiResponse<Orp
   }) as unknown as Promise<ApiResponse<OrphanListResponse>>
 }
 
+/** 展开文件夹后独立分页加载子文件；子文件副本数为扫描时统计快照列。 */
+export function getOrphanFolderChildren(
+  params: OrphanFolderChildrenParams
+): Promise<ApiResponse<OrphanFolderChildrenResponse>> {
+  return request({
+    url: '/orphan-files/folders/children',
+    method: 'get',
+    params
+  }) as unknown as Promise<ApiResponse<OrphanFolderChildrenResponse>>
+}
+
 /**
  * 按需定位硬链接副本位置。目录遍历可能命中 NAS，使用与孤儿扫描一致的长超时。
  */
@@ -355,6 +392,52 @@ export function getHardlinkCopyLocations(
   }) as unknown as Promise<ApiResponse<HardlinkCopyLocationsResult>>
 }
 
+/** 删除硬链接副本目录项请求；路径必须与弹窗展示的预扫描结果完全一致。 */
+export interface HardlinkCopyDeleteRequest {
+  orphan_id: number
+  copy_paths: string[]
+}
+
+/** 删除硬链接副本的逐项失败明细（后端逐路径 fail-closed）。 */
+export interface HardlinkCopyDeleteFailedItem {
+  copy_path: string
+  reason: string
+}
+
+/**
+ * 删除硬链接副本目录项结果。
+ *
+ * 仅移除指向同一 inode 的其它路径链接，源文件与数据保留；源路径、共享同一
+ * inode 的其它孤儿、种子目录内副本、隔离区/回收站路径均以 failed_list 拒绝。
+ */
+export interface HardlinkCopyDeleteResult {
+  orphan_id: number
+  /** 源文件路径；明细失效时为 null */
+  file_path: string | null
+  /** 删除后源文件实时副本数（st_nlink - 1）；源不可访问为 null，供就地刷新列表行 */
+  copy_count: number | null
+  success_count: number
+  failed_count: number
+  failed_list: HardlinkCopyDeleteFailedItem[]
+  /** 维护操作互斥时整体拒绝 */
+  rejected?: boolean
+  error?: string
+}
+
+/**
+ * 删除已定位的硬链接副本目录项（tombstone 三段式，逐项 fail-closed）。
+ */
+export function deleteHardlinkCopy(
+  data: HardlinkCopyDeleteRequest
+): Promise<ApiResponse<HardlinkCopyDeleteResult>> {
+  return request({
+    url: '/orphan-files/hardlink-copies/delete',
+    method: 'post',
+    data,
+    timeout: 120000
+  }) as unknown as Promise<ApiResponse<HardlinkCopyDeleteResult>>
+}
+
 /**
  * 手动触发扫描
  */
@@ -363,6 +446,26 @@ export function triggerScan(): Promise<ApiResponse<OrphanScanTriggerResult>> {
     url: '/orphan-files/scan',
     method: 'post'
   }) as unknown as Promise<ApiResponse<OrphanScanTriggerResult>>
+}
+
+/** 轻量轮询后台扫描状态；接口只读取单条扫描记录。 */
+export function getScanStatus(scanId: string): Promise<ApiResponse<OrphanScanRecord>> {
+  return request({
+    url: `/orphan-files/scans/${scanId}`,
+    method: 'get'
+  }) as unknown as Promise<ApiResponse<OrphanScanRecord>>
+}
+
+/** 兼容旧客户端的超量扫描复核记录接口；当前超量提醒不再阻断清理。 */
+export function reviewScanGuardrail(
+  scanId: string,
+  data: OrphanGuardrailReviewRequest
+): Promise<ApiResponse<OrphanScanRecord>> {
+  return request({
+    url: `/orphan-files/scans/${scanId}/guardrail-review`,
+    method: 'post',
+    data
+  }) as unknown as Promise<ApiResponse<OrphanScanRecord>>
 }
 
 /**
@@ -423,6 +526,8 @@ export function setIgnored(data: IgnoreRequest): Promise<ApiResponse<IgnoreResul
 export interface PrefixMatchPreviewRequest {
   path_prefix: string
   scan_id: string
+  /** 副本筛选快照：located=预览范围限定有硬链接副本的文件（与列表筛选同口径） */
+  hardlink_copies?: 'located'
 }
 
 /**

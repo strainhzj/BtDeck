@@ -135,11 +135,11 @@ def test_auth_dependency_usage():
     """统计并验证认证方式使用比例"""
     report = _report()
     stats = report.auth_stats
-    assert stats.depends_get_current_user > 0, "未发现 Depends(get_current_user) 使用"
+    assert stats.depends_auth_dependency > 0, "未发现 Depends(鉴权依赖) 使用"
     assert stats.dependency_ratio >= 0.80, (
         "认证 dependency 使用占比过低: "
         f"{stats.dependency_ratio:.1%} "
-        f"(Depends={stats.depends_get_current_user}, 手动解析={stats.manual_token_parsing})"
+        f"(Depends={stats.depends_auth_dependency}, 手动解析={stats.manual_token_parsing})"
     )
 
 

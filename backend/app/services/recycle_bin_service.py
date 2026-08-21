@@ -19,8 +19,27 @@ from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.services.auxiliary_seed_count_service import (
+    get_active_auxiliary_seed_count,
+    get_auxiliary_seed_key,
+    set_active_auxiliary_seed_count,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_audit_info(request) -> Dict[str, Any]:
+    """从 FastAPI Request 提取审计信息（缺失返回空 dict，不抛错）。"""
+    if request is None:
+        return {}
+    try:
+        from app.services.audit_service import extract_audit_info_from_request
+
+        return extract_audit_info_from_request(request)
+    except Exception as e:  # noqa: BLE001 - 审计信息缺失不影响回收站主流程
+        logger.warning(f"提取请求审计信息失败: {e}")
+        return {}
+
 
 # 单次还原/轮询远程调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
 _RESTORE_CALL_TIMEOUT = 30.0
@@ -288,9 +307,16 @@ class RecycleBinService:
                     continue
 
                 # 步骤4: 清除deleted_at字段
+                auxiliary_key = get_auxiliary_seed_key(torrent)
+                active_count = get_active_auxiliary_seed_count(self.db, auxiliary_key)
                 torrent.restore_from_recycle_bin()
                 torrent.update_time = datetime.now()
                 torrent.update_by = operator
+                set_active_auxiliary_seed_count(
+                    self.db,
+                    auxiliary_key,
+                    (active_count + 1) if active_count is not None else 1,
+                )
                 self.db.commit()
 
                 # 记录审计日志
@@ -317,6 +343,8 @@ class RecycleBinService:
                         new_value={"status": "active"},
                         operation_result=AuditOperationResult.SUCCESS,
                         downloader_id=torrent.downloader_id,
+                        ip_address=_extract_audit_info(request).get("ip_address"),
+                        user_agent=_extract_audit_info(request).get("user_agent"),
                     )
 
                 result["success_count"] += 1
@@ -574,7 +602,9 @@ class RecycleBinService:
             logger.error(f"清理预览失败: {str(e)}", exc_info=True)
             return {"total_count": 0, "total_size": 0, "torrent_list": []}
 
-    async def manual_cleanup(self, torrent_ids: List[str], operator: str, audit_service=None) -> Dict[str, Any]:
+    async def manual_cleanup(
+        self, torrent_ids: List[str], operator: str, audit_service=None, request=None
+    ) -> Dict[str, Any]:
         """
         手动清理回收站种子
 
@@ -808,6 +838,8 @@ class RecycleBinService:
                         new_value={"status": "deleted"},
                         operation_result=AuditOperationResult.SUCCESS,
                         downloader_id=torrent.downloader_id,
+                        ip_address=_extract_audit_info(request).get("ip_address"),
+                        user_agent=_extract_audit_info(request).get("user_agent"),
                     )
 
                 result["success_count"] += 1

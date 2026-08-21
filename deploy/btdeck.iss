@@ -46,8 +46,8 @@ Name: "startup"; Description: "Run at Windows startup"; GroupDescription: "Auto 
 Source: "..\dist\btdeck.exe"; DestDir: "{app}"; Flags: ignoreversion
 ; NSSM 服务管理器（用于注册 Windows 服务，解决 SCM 协议问题）
 Source: "nssm.exe"; DestDir: "{app}"; Flags: ignoreversion
-; 配置文件模板
-Source: "..\backend\config\*"; DestDir: "{app}\config"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: not FileExists('{app}\config\config.yaml')
+; 安全修复（W12）：不再从构建机复制 backend/config/*（含开发库 app.db 与
+; 真实密钥的 config.yaml）。运行时 config 由应用首启 init_config_file 自动生成。
 
 [Icons]
 Name: "{group}\{#AppName}"; Filename: "{app}\{#AppExeName}"
@@ -114,11 +114,8 @@ begin
       避免文件被占用导致 exe 无法删除 }
     Exec('taskkill', '/im btdeck.exe /f /t', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     Sleep(2000);
-  end;
-
-  if CurUninstallStep = usPostUninstall then
-  begin
-    { 使用 NSSM 删除服务 }
+    { 必须在 usUninstall 阶段删除服务条目：usPostUninstall 时 nssm.exe
+      已被卸载器删除，那时 remove 必然失败并残留孤儿服务 }
     Exec(ExpandConstant('{app}\nssm.exe'), 'remove BtDeck confirm', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   end;
 end;

@@ -113,10 +113,11 @@ describe('outcome 标签渲染（轻量组件）', () => {
 })
 
 describe('tasks/index.vue 源码契约（W3-4 接入守卫）', () => {
+  // 行尾归一化：Windows autocrlf 检出为 CRLF 时多行 toContain 断言不受影响
   const tasksSource = readFileSync(
     resolve(__dirname, '../../src/views/tasks/index.vue'),
     'utf8'
-  )
+  ).replace(/\r\n/g, '\n')
   const tasksScript = tasksSource.match(/<script lang="ts">([\s\S]*?)<\/script>/)?.[1] || ''
   const tasksAst = ts.createSourceFile(
     'tasks-index.ts',

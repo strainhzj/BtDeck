@@ -5,12 +5,11 @@ H 组：孤儿文件任务与 API 契约（v1.0.6+ 语义重做）
 覆盖：
 - 只有 completed + scan_id 才能进入生命周期对账和自动清理
 - 自动清理必须接收本次 scan ID
-- cleanup 异常不能报告任务成功
+- 定时入口等待同一持久化后台任务的扫描与清理终态，Cron 日志不提前记 success
 - preview 与 cleanup 使用相同新鲜度规则
 - stale ID 返回明确拒绝原因
 - API 响应继续遵循 CommonResponse 和 list/total/pageSize
 
-本阶段因任务/服务重构尚未实现，全部应失败。
 """
 
 from datetime import datetime, timedelta
@@ -65,61 +64,92 @@ class TestOrphanTaskLifecycle:
                 await task.execute(app=fake_app)
 
     async def test_auto_cleanup_receives_scan_id(self, fake_app):
-        """自动清理必须接收本次 scan ID（不能对旧批次操作）。"""
-        from app.services.orphan_scanner import OrphanScanner
+        """定时入口必须把本次 scan ID 提交给后台调度器。"""
         from app.tasks.scheduler.orphan_scan_task import OrphanScanTask
 
         task = OrphanScanTask()
-        with patch.object(OrphanScanner, "scan", new_callable=AsyncMock) as mock_scan:
-            mock_scan.return_value = {
+        submit_scan = AsyncMock(
+            return_value={
+                "scan_id": "scan_fresh",
+                "task_id": "scan_fresh",
+                "status": "queued",
+                "accepted": True,
+            }
+        )
+        dispatcher = MagicMock()
+        dispatcher.wait_for_completion = AsyncMock(
+            return_value={
                 "scan_id": "scan_fresh",
                 "status": "completed",
-                "total_orphans": 5,
-                "total_orphan_size": 1000,
-                "total_paths_skipped": 1,
-                "warnings": [
-                    {
-                        "code": "path_mapping_not_found",
-                        "downloader_id": "dl_001",
-                        "internal_path": "/downloads/unmapped",
-                        "message": "path mapping missing",
-                    }
-                ],
+                "scan_result": {"scan_id": "scan_fresh", "status": "completed", "total_orphans": 2},
+                "cleanup_result": {"quarantined_count": 1, "failed_count": 0},
             }
+        )
+        with (
+            patch(
+                "app.services.orphan_scan_job_service.OrphanScanJobService.submit_scan",
+                submit_scan,
+            ),
+            patch(
+                "app.services.orphan_scan_job_service.get_orphan_scan_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            result = await task.execute(app=fake_app)
 
-            with patch.object(task, "_auto_cleanup_expired", new_callable=AsyncMock) as spy_cleanup:
-                result = await task.execute(app=fake_app)
-                spy_cleanup.assert_called_once()
-                # 自动清理应接收本次 scan_id
-                call_kwargs = spy_cleanup.call_args.kwargs
-                assert call_kwargs.get("scan_id") == "scan_fresh", "自动清理必须接收本次 scan ID"
-                assert "1 个路径因映射不完整已记录并跳过" in result["message"]
-                assert result["scan_result"]["warnings"][0]["code"] == (
-                    "path_mapping_not_found"
-                )
+        dispatcher.submit.assert_called_once_with("scan_fresh")
+        assert result["scan_result"]["scan_id"] == "scan_fresh"
+        assert result["cleanup_result"]["quarantined_count"] == 1
+        assert result["status"] == "success"
+        dispatcher.wait_for_completion.assert_awaited_once_with("scan_fresh")
 
-    async def test_cleanup_exception_not_reported_success(self, fake_app):
-        """cleanup 异常不能报告任务成功。"""
+    async def test_scheduled_entry_waits_for_dispatcher_terminal_without_inline_scan(self, fake_app):
+        """定时入口等待 dispatcher 终态，但不绕过后台扫描器同步执行。"""
         from app.services.orphan_scanner import OrphanScanner
         from app.tasks.scheduler.orphan_scan_task import OrphanScanTask
 
         task = OrphanScanTask()
-        with patch.object(OrphanScanner, "scan", new_callable=AsyncMock) as mock_scan:
-            mock_scan.return_value = {
-                "scan_id": "scan_ok",
+        dispatcher = MagicMock()
+        dispatcher.wait_for_completion = AsyncMock(
+            return_value={
+                "scan_id": "scan_queued",
                 "status": "completed",
-                "total_orphans": 3,
-                "total_orphan_size": 500,
+                "scan_result": {"scan_id": "scan_queued", "status": "completed"},
+                "cleanup_result": {"quarantined_count": 0, "failed_count": 0},
             }
-
-            with patch.object(
+        )
+        with (
+            patch(
+                "app.services.orphan_scan_job_service.OrphanScanJobService.submit_scan",
+                AsyncMock(
+                    return_value={
+                        "scan_id": "scan_queued",
+                        "task_id": "scan_queued",
+                        "status": "queued",
+                        "accepted": True,
+                    }
+                ),
+            ),
+            patch(
+                "app.services.orphan_scan_job_service.get_orphan_scan_dispatcher",
+                return_value=dispatcher,
+            ),
+            patch.object(OrphanScanner, "scan", new_callable=AsyncMock) as scan,
+            patch.object(
                 task,
                 "_auto_cleanup_expired",
                 new_callable=AsyncMock,
-                side_effect=RuntimeError("cleanup 崩溃"),
-            ):
-                result = await task.execute(app=fake_app)
-                assert result.get("status") != "success", "cleanup 异常不应报告任务成功"
+            ) as cleanup,
+        ):
+            result = await task.execute(app=fake_app)
+
+        assert result["status"] == "success"
+        assert result["scan_result"]["status"] == "completed"
+        assert "扫描与自动清理已完成" in result["message"]
+        dispatcher.submit.assert_called_once_with("scan_queued")
+        dispatcher.wait_for_completion.assert_awaited_once_with("scan_queued")
+        scan.assert_not_awaited()
+        cleanup.assert_not_awaited()
 
     async def test_startup_reconciliation_uses_dedicated_session(self):
         """启动对账应在调度器前通过独立异步 session 调用服务。"""

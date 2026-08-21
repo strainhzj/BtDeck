@@ -11,8 +11,10 @@
 """
 
 import logging
+from typing import Optional
+
 import urllib3
-from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks, Request
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
@@ -22,6 +24,8 @@ from app.schemas.seed_transfer import (
     SeedTransferRequest,
     SeedTransferBatchRequest,
 )
+from app.services.audit_service import AuditLogService, extract_audit_info_from_request
+from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 
 # 注意：禁止在此处顶层 `from app.factory import app`。
 # seed_transfer 由 app.api.api 在路由装配时导入；顶层 factory import 会形成
@@ -37,6 +41,55 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
+async def _log_transfer_audit(
+    db,
+    username: str,
+    info_hash: str,
+    source_downloader_id: int,
+    target_downloader_id: int,
+    target_path: str,
+    transfer_status: str,
+    error_message: Optional[str] = None,
+    ip_address: Optional[str] = None,
+    user_agent: Optional[str] = None,
+    torrent_name: Optional[str] = None,
+    source_downloader_name: Optional[str] = None,
+):
+    """转移操作写入 torrent_audit_log（操作日志页面可见）。
+
+    best-effort：审计失败仅记 warning，不阻断转移响应。
+    torrent_name/downloader_name 放入 operation_detail 后由
+    AuditLogService 自动提取到冗余列（列表页展示 + 种子名称搜索）；
+    下载器口径取来源下载器（downloader_id/downloader_name 同源，
+    目标下载器信息保留在 detail 中）。
+    """
+    try:
+        audit_service = AuditLogService(db)
+        await audit_service.log_operation(
+            operation_type=AuditOperationType.TRANSFER,
+            operator=username,
+            operation_detail={
+                "info_hash": info_hash,
+                "source_downloader_id": source_downloader_id,
+                "target_downloader_id": target_downloader_id,
+                "target_path": target_path,
+                "torrent_name": torrent_name or "",
+                "downloader_name": source_downloader_name or "",
+            },
+            operation_result=(
+                AuditOperationResult.SUCCESS
+                if transfer_status in ("success", "partial")
+                else AuditOperationResult.FAILED
+            ),
+            error_message=error_message,
+            downloader_id=str(source_downloader_id),
+            ip_address=ip_address,
+            user_agent=user_agent,
+        )
+    except Exception as e:  # noqa: BLE001 - 审计失败不影响主流程
+        logger.warning(f"记录转移审计日志失败: {e}")
+
+
 # ==================== API端点 ====================
 
 
@@ -44,6 +97,7 @@ router = APIRouter()
 async def transfer_seed(
     transfer_request: SeedTransferRequest,
     background_tasks: BackgroundTasks,
+    request: Request = None,
     _user=Depends(require_authenticated_user),
 ):
     """
@@ -86,9 +140,10 @@ async def transfer_seed(
         if not hasattr(app.state, "store") or app.state.store is None:
             return CommonResponse(status="error", msg="下载器缓存未初始化", code="500")
 
-        # 使用固定用户信息（admin和管理员）
-        user_id = 1
-        username = "admin"
+        # 使用真实登录用户（修复硬编码 admin；旧 token 可能无 user_id，兜底 1）
+        user_id = getattr(_user, "user_id", None) or 1
+        username = getattr(_user, "username", None) or "admin"
+        audit_info = extract_audit_info_from_request(request) if request else {}
 
         # 执行种子转移
         async with AsyncSessionLocal() as db:
@@ -122,6 +177,22 @@ async def transfer_seed(
                     "error_message": result.get("error_message"),
                 }
 
+                # 转移操作写入 torrent_audit_log（操作日志页面可见；best-effort）
+                await _log_transfer_audit(
+                    db=db,
+                    username=username,
+                    info_hash=transfer_request.info_hash,
+                    source_downloader_id=transfer_request.source_downloader_id,
+                    target_downloader_id=transfer_request.target_downloader_id,
+                    target_path=transfer_request.target_path,
+                    transfer_status=result["transfer_status"],
+                    error_message=result.get("error_message"),
+                    ip_address=audit_info.get("ip_address"),
+                    user_agent=audit_info.get("user_agent"),
+                    torrent_name=result.get("torrent_name"),
+                    source_downloader_name=result.get("source_downloader_name"),
+                )
+
                 if result["success"]:
                     return CommonResponse(status="success", msg="种子转移成功", code="200", data=response_data)
                 else:
@@ -146,6 +217,7 @@ async def transfer_seed(
 async def batch_transfer_seeds(
     batch_request: SeedTransferBatchRequest,
     background_tasks: BackgroundTasks,
+    request: Request = None,
     _user=Depends(require_authenticated_user),
 ):
     """
@@ -192,9 +264,10 @@ async def batch_transfer_seeds(
         if not hasattr(app.state, "store") or app.state.store is None:
             return CommonResponse(status="error", msg="下载器缓存未初始化", code="500")
 
-        # 使用固定用户信息（admin和管理员）
-        user_id = 1
-        username = "admin"
+        # 使用真实登录用户（修复硬编码 admin；旧 token 可能无 user_id，兜底 1）
+        user_id = getattr(_user, "user_id", None) or 1
+        username = getattr(_user, "username", None) or "admin"
+        audit_info = extract_audit_info_from_request(request) if request else {}
 
         results = []
         success_count = 0
@@ -240,6 +313,22 @@ async def batch_transfer_seeds(
                     else:
                         failed_count += 1
 
+                    # 单条转移审计（best-effort）
+                    await _log_transfer_audit(
+                        db=db,
+                        username=username,
+                        info_hash=info_hash,
+                        source_downloader_id=batch_request.source_downloader_id,
+                        target_downloader_id=batch_request.target_downloader_id,
+                        target_path=batch_request.target_path,
+                        transfer_status=result["transfer_status"],
+                        error_message=result.get("error_message"),
+                        ip_address=audit_info.get("ip_address"),
+                        user_agent=audit_info.get("user_agent"),
+                        torrent_name=result.get("torrent_name"),
+                        source_downloader_name=result.get("source_downloader_name"),
+                    )
+
                 # 构建响应数据
                 response_data = {
                     "total_count": len(batch_request.info_hashes),
@@ -248,6 +337,15 @@ async def batch_transfer_seeds(
                     "results": results,
                 }
 
+                # 部分/全部失败时返回 code=400（results 仍在 data），
+                # 前端据此展示失败明细而非"转移完成"
+                if failed_count > 0:
+                    return CommonResponse(
+                        status="error",
+                        msg=f"批量转移完成：成功{success_count}个，失败{failed_count}个",
+                        code="400",
+                        data=response_data,
+                    )
                 return CommonResponse(
                     status="success",
                     msg=f"批量转移完成：成功{success_count}个，失败{failed_count}个",

@@ -5,10 +5,15 @@
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+# 长期离线剔除阈值（秒）：offline_since 距今超过该值即从缓存移除。
+# 取 300s ≈ 状态轮询连续 ~30 次探测失败（10s 热间隔），排除端口瞬时抖动。
+_OFFLINE_EVICT_SECONDS = 300.0
 
 
 class CachedDownloaderSyncTask:
@@ -197,6 +202,29 @@ class CachedDownloaderSyncTask:
                 await self.app.state.store._remove_items(orphaned_downloaders)
                 for orphan in orphaned_downloaders:
                     logger.info(f"Removed orphaned downloader: {orphan.nickname}")
+
+            # 步骤5.5：剔除长期离线的下载器（fail_time 死代码的替代自愈机制）
+            # 状态轮询（downloader_status_polling_task）维护 offline_since（首次离线
+            # 时间戳）；持续离线超过 OFFLINE_EVICT_SECONDS 的成员从缓存移除——
+            # 僵尸下载器会拖垮 active-torrents 的 complete 判定并浪费轮询探测预算。
+            # 被剔除者仍在 DB enabled 集合中，恢复在线后由步骤6 的
+            # _check_and_add_new_downloader（完整端口+认证校验）重新入缓存。
+            # offline_since 缺失（冷启动未探测/旧对象）不剔除，防止误删。
+            stale_offline = [
+                d
+                for d in cached_downloaders
+                if getattr(d, "is_online", None) is False
+                and getattr(d, "offline_since", None)
+                and (time.time() - float(d.offline_since)) > _OFFLINE_EVICT_SECONDS
+            ]
+            if stale_offline:
+                logger.info(f"Removing {len(stale_offline)} long-offline downloaders from cache")
+                await self.app.state.store._remove_items(stale_offline)
+                for dl in stale_offline:
+                    logger.info(
+                        f"Removed long-offline downloader: {dl.nickname} "
+                        f"(offline_since={dl.offline_since:.0f}, threshold={_OFFLINE_EVICT_SECONDS}s)"
+                    )
 
             # 步骤6：添加新下载器
             successful_additions = 0

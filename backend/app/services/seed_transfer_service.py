@@ -16,12 +16,15 @@
 
 import asyncio
 import logging
+import re
 import time
+import uuid
 from typing import Dict, Any, Optional
 from datetime import datetime
 from pathlib import Path
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.database import AsyncSessionLocal
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
@@ -31,6 +34,12 @@ from app.downloader.models import BtDownloaders
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.torrent_status_mapper import TorrentStatusMapper
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.services.auxiliary_seed_count_service import (
+    decrement_auxiliary_seed_count_async,
+    get_auxiliary_seed_key,
+    make_auxiliary_seed_key,
+    set_active_auxiliary_seed_count_async,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +153,20 @@ class SeedTransferService:
             "source_path": None,
             "target_path": target_path,
         }
+
+        # info_hash 服务层格式校验（防穿越读取）：部分请求 schema 只限长度
+        # 不限字符集，而 info_hash 会拼入本地种子文件路径
+        # （save_path / f"{info_hash}.torrent"），含 .. 等字符可读保存目录外文件。
+        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", info_hash or ""):
+            result["error_message"] = "info_hash 格式非法（须为 40/64 位十六进制），拒绝转移"
+            return result
+
+        # 服务层兜底防御：schema 层已拦截同下载器转移，但历史 token/内部调用
+        # 可能绕过 schema；同下载器转移会走"查重 duplicate"或添加失败，且
+        # delete_source 分支存在误标源行的风险，直接拒绝。
+        if source_downloader_id == target_downloader_id:
+            result["error_message"] = "源下载器与目标下载器相同，拒绝转移"
+            return result
 
         # 获取源和目标下载器信息
         source_downloader_result = await self.db.execute(
@@ -327,6 +350,41 @@ class SeedTransferService:
 
             target_client = target_downloader_vo.client
 
+            # 2.5 目标查重：目标下载器已存在相同 hash 时直接返回 duplicate，
+            # 避免 torrents_add 静默失败后 _verify_transfer 按旧种子误判"成功"。
+            try:
+                existing_on_target = await self._check_target_duplicate(
+                    downloader_id=target_downloader_id,
+                    target_client=target_client,
+                    downloader_type=target_downloader.downloader_type,
+                    info_hash=info_hash,
+                )
+            except Exception as e:
+                # 查重失败不阻断转移（竞态由 _verify_transfer 兜底）
+                logger.warning(f"目标查重失败（继续转移）: {e}")
+                existing_on_target = False
+
+            if existing_on_target:
+                result["transfer_status"] = "duplicate"
+                result["error_message"] = f"目标下载器已存在相同种子: {info_hash}"
+                await self._log_transfer_attempt(
+                    user_id=user_id,
+                    username=username,
+                    source_downloader_id=source_downloader_id,
+                    source_downloader_name=result.get("source_downloader_name", ""),
+                    target_downloader_id=target_downloader_id,
+                    target_downloader_name=result.get("target_downloader_name", ""),
+                    torrent_name=result.get("torrent_name") or "",
+                    info_hash=info_hash,
+                    source_path=result.get("source_path") or "",
+                    target_path=target_path,
+                    delete_source=delete_source,
+                    transfer_status="duplicate",
+                    error_message=result["error_message"],
+                    transfer_duration=int((time.time() - start_time) * 1000),
+                )
+                return result
+
             # 3. 添加种子到目标下载器
             logger.info(f"添加种子到目标下载器 {target_downloader_id}，路径: {target_path}")
 
@@ -339,7 +397,7 @@ class SeedTransferService:
                     from io import BytesIO
 
                     # P0-04 修复：torrents_add 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
-                    await call_downloader_api(
+                    add_response = await call_downloader_api(
                         target_downloader_id,
                         DownloadLane.INTERACTIVE,
                         target_client.torrents_add,
@@ -347,6 +405,12 @@ class SeedTransferService:
                         timeout=_TRANSFER_CALL_TIMEOUT,
                         operation="transfer_qb_add_torrent",
                     )
+                    # qB 添加失败返回 "Fails." 字符串而不抛异常：必须检查返回值，
+                    # 否则 _verify_transfer 重试 5×5 秒后才报失败（且重复种子场景会误判成功）
+                    if isinstance(add_response, str) and "Fails" in add_response:
+                        result["error_message"] = f"目标下载器拒绝添加种子: {add_response.strip()}"
+                        await self._update_transfer_log(info_hash, "failed", result["error_message"])
+                        return result
                 except LoginFailed as e:
                     result["error_message"] = f"目标下载器登录失败: {str(e)}"
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
@@ -361,7 +425,7 @@ class SeedTransferService:
                     from io import BytesIO
 
                     # P0-04 修复：add_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
-                    await call_downloader_api(
+                    add_result = await call_downloader_api(
                         target_downloader_id,
                         DownloadLane.INTERACTIVE,
                         target_client.add_torrent,
@@ -370,6 +434,12 @@ class SeedTransferService:
                         timeout=_TRANSFER_CALL_TIMEOUT,
                         operation="transfer_tr_add_torrent",
                     )
+                    # transmission-rpc add_torrent 失败抛异常；成功返回 Torrent 对象。
+                    # 返回 None 视为异常（重复种子时返回已有 Torrent 对象，由验证最终确认）。
+                    if add_result is None:
+                        result["error_message"] = "目标下载器未返回添加结果"
+                        await self._update_transfer_log(info_hash, "failed", result["error_message"])
+                        return result
                 except Exception as e:
                     result["error_message"] = f"添加种子到Transmission失败: {str(e)}"
                     await self._update_transfer_log(info_hash, "failed", result["error_message"])
@@ -394,6 +464,18 @@ class SeedTransferService:
                 return result
 
             logger.info(f"种子 {info_hash} 验证成功")
+
+            # 4.5 立即落库目标下载器的种子行（对齐 info-only 同步的数据形态）：
+            # 不等下一轮同步（10 分钟），列表页转移完成后立即可见；后续同步按
+            # (downloader_id, hash) 命中同一行走 update，不会产生重复行。
+            await self._upsert_target_torrent_row(
+                source_torrent=source_torrent,
+                target_downloader=target_downloader,
+                info_hash=info_hash,
+                target_path=target_path,
+                torrent_name=result.get("torrent_name"),
+                username=username,
+            )
 
             # 5. 更新备份使用记录
             await self.backup_manager.increment_use_count(info_hash)
@@ -514,6 +596,9 @@ class SeedTransferService:
                 await self._update_transfer_log(info_hash, "partial", result["error_message"])
             else:
                 logger.info(f"原种子已删除: {info_hash}")
+                # 源下载器已删种子，同步删除语义标记源行（只置 dr=1，与
+                # _mark_qb_removed_torrents 同构：不进回收站、不进普通列表）。
+                await self._mark_source_row_transferred(source_downloader_id, info_hash)
                 await self._update_transfer_log(
                     info_hash, "success", "原种子已删除", result["torrent_name"], result["transfer_duration"]
                 )
@@ -620,6 +705,45 @@ class SeedTransferService:
         logger.warning(f"验证失败：已重试 {max_retries} 次")
         return False
 
+    async def _check_target_duplicate(
+        self,
+        downloader_id: int,
+        target_client: Any,
+        downloader_type: int,
+        info_hash: str,
+    ) -> bool:
+        """转移前查重：目标下载器是否已存在相同 hash 的种子。
+
+        qB torrents_info 对未知 hash 返回空列表；TR get_torrents 对缺失返回空列表，
+        都不报错。存在即返回 True（transfer 直接以 duplicate 状态返回，不重复添加）。
+        """
+        try:
+            normalized_type = DownloaderTypeEnum.normalize(downloader_type)
+            if normalized_type == DownloaderTypeEnum.QBITTORRENT:
+                torrents = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    target_client.torrents_info,
+                    kwargs={"torrent_hashes": info_hash},
+                    timeout=_TRANSFER_CALL_TIMEOUT,
+                    operation="transfer_qb_duplicate_check",
+                )
+                return bool(torrents)
+            if normalized_type == DownloaderTypeEnum.TRANSMISSION:
+                torrents = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    target_client.get_torrents,
+                    args=(info_hash,),
+                    timeout=_TRANSFER_CALL_TIMEOUT,
+                    operation="transfer_tr_duplicate_check",
+                )
+                return bool(torrents)
+            return False
+        except Exception as e:
+            logger.warning(f"目标查重异常（按不存在处理）: {e}")
+            return False
+
     async def _delete_source_torrent(
         self, downloader_id: int, source_client: Any, downloader_type: int, info_hash: str, delete_files: bool = False
     ) -> bool:
@@ -670,6 +794,157 @@ class SeedTransferService:
             return False
 
         return False
+
+    async def _upsert_target_torrent_row(
+        self,
+        source_torrent: Optional[TorrentInfo],
+        target_downloader: BtDownloaders,
+        info_hash: str,
+        target_path: str,
+        torrent_name: Optional[str],
+        username: str,
+    ) -> None:
+        """转移成功后立即在目标下载器名下落库/更新种子行（不等下一轮同步）。
+
+        - 字段形态对齐 info-only 同步的 insert dict（torrents_async.py），
+          后续同步按 (downloader_id, hash) 命中同一行走 update；
+          downloader_name 用当前昵称，与同步 update 分支一致，保证
+          bulk_update 三列复合主键命中。
+        - size/status/progress/ratio 等从源行复制，与目标下载器真实状态
+          可能短暂不一致，由下一轮同步修正（torrent_file 跨类型转移时
+          指向源路径，同样会被同步覆盖）。
+        - best-effort：任何失败仅记 warning 不影响转移结果（目标下载器
+          已添加成功是既成事实，报错会诱导用户重试产生次生问题）；
+          并发同 hash 转移撞 (hash, downloader_id) WHERE dr=0 唯一索引时
+          转为按主键更新。
+        """
+        try:
+            existing_result = await self.db.execute(
+                select(TorrentInfo).where(
+                    TorrentInfo.downloader_id == str(target_downloader.downloader_id),
+                    TorrentInfo.hash == info_hash,
+                    TorrentInfo.dr == 0,
+                )
+            )
+            existing_row = existing_result.scalar_one_or_none()
+            now = datetime.now()
+            target_name = torrent_name or (source_torrent.name if source_torrent else info_hash)
+            target_size = float(source_torrent.size or 0) if source_torrent else 0.0
+            target_torrent_file = (source_torrent.torrent_file or "") if source_torrent else ""
+            source_auxiliary_key = get_auxiliary_seed_key(source_torrent) if source_torrent else None
+            target_auxiliary_key = make_auxiliary_seed_key(target_name, target_size)
+            target_auxiliary_count = 1
+
+            # 目标下载器新增副本后，先把同分组的现有有效行统一加一；
+            # 源行随后删除时再统一减一，最终数量仍等于当前有效副本数。
+            if (
+                existing_row is None
+                and target_auxiliary_key is not None
+                and target_auxiliary_key == source_auxiliary_key
+            ):
+                assert source_torrent is not None
+                try:
+                    source_auxiliary_count = max(1, int(getattr(source_torrent, "auxiliary_seed_count", 1) or 1))
+                except (TypeError, ValueError):
+                    source_auxiliary_count = 1
+                target_auxiliary_count = source_auxiliary_count + 1
+                await set_active_auxiliary_seed_count_async(
+                    self.db,
+                    target_auxiliary_key,
+                    target_auxiliary_count,
+                )
+
+            if existing_row is not None:
+                existing_row.save_path = target_path
+                existing_row.name = target_name or existing_row.name
+                existing_row.update_time = now
+                existing_row.update_by = username
+            else:
+                source_progress = round(float(source_torrent.progress or 0), 2) if source_torrent else 0.0
+                self.db.add(
+                    TorrentInfo(
+                        id_=str(uuid.uuid4()),
+                        downloader_id=str(target_downloader.downloader_id),
+                        downloader_name=target_downloader.nickname,
+                        torrent_id=info_hash,
+                        hash=info_hash,
+                        name=target_name,
+                        save_path=target_path,
+                        size=target_size,
+                        status=(source_torrent.status or "downloading") if source_torrent else "downloading",
+                        progress=source_progress,
+                        torrent_file=target_torrent_file,
+                        auxiliary_seed_count=target_auxiliary_count,
+                        added_date=now,
+                        completed_date=(source_torrent.completed_date if source_torrent else None),
+                        ratio=(
+                            float(source_torrent.ratio) if source_torrent and source_torrent.ratio is not None else 0.0
+                        ),
+                        ratio_limit=(source_torrent.ratio_limit if source_torrent else None),
+                        tags=(source_torrent.tags or "") if source_torrent else "",
+                        category=(source_torrent.category or "") if source_torrent else "",
+                        super_seeding=(source_torrent.super_seeding or "") if source_torrent else "",
+                        enabled=True,
+                        create_time=now,
+                        create_by=username,
+                        update_time=now,
+                        update_by=username,
+                        dr=0,
+                    )
+                )
+
+            try:
+                await self.db.commit()
+            except IntegrityError:
+                # 并发竞态：另一请求已插入同 (hash, downloader_id) 行——转为更新
+                await self.db.rollback()
+                race_result = await self.db.execute(
+                    select(TorrentInfo).where(
+                        TorrentInfo.downloader_id == str(target_downloader.downloader_id),
+                        TorrentInfo.hash == info_hash,
+                        TorrentInfo.dr == 0,
+                    )
+                )
+                race_row = race_result.scalar_one_or_none()
+                if race_row is not None:
+                    race_row.save_path = target_path
+                    race_row.name = target_name or race_row.name
+                    race_row.update_time = now
+                    race_row.update_by = username
+                    await self.db.commit()
+
+            logger.info(f"转移后已落库目标下载器种子行: {info_hash} -> {target_downloader.nickname}")
+        except Exception as e:
+            await self.db.rollback()
+            logger.warning(f"转移后落库目标种子行失败（不影响转移结果，等待同步补齐）: {info_hash}: {e}")
+
+    async def _mark_source_row_transferred(self, source_downloader_id: int, info_hash: str) -> None:
+        """源种子已从源下载器删除，按同步删除语义标记源行 dr=1（best-effort）。
+
+        只置 dr=1 + update_time，不写 deleted_at（与 _mark_qb_removed_torrents
+        同构：不进回收站也不进普通列表）。失败仅记 warning——源下载器上种子
+        已不存在，下一轮同步的 removed 标记会自愈。
+        """
+        try:
+            source_result = await self.db.execute(
+                select(TorrentInfo).where(
+                    TorrentInfo.downloader_id == str(source_downloader_id),
+                    TorrentInfo.hash == info_hash,
+                    TorrentInfo.dr == 0,
+                )
+            )
+            source_row = source_result.scalar_one_or_none()
+            if source_row is None:
+                return
+            auxiliary_key = get_auxiliary_seed_key(source_row)
+            source_row.dr = 1
+            source_row.update_time = datetime.now()
+            source_row.update_by = "system"
+            await decrement_auxiliary_seed_count_async(self.db, auxiliary_key)
+            await self.db.commit()
+        except Exception as e:
+            await self.db.rollback()
+            logger.warning(f"转移后标记源种子行删除态失败（等待同步自愈）: {info_hash}: {e}")
 
     async def _log_transfer_attempt(
         self,

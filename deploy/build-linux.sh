@@ -145,7 +145,9 @@ PY
     fi
 cat > /opt/btdeck/config/btdeck.env <<EOF
 SECRET_KEY=${SECRET_KEY}
-ALLOWED_HOSTS=http://127.0.0.1:5001,http://localhost:5001
+# pydantic-settings 对 List[str] 环境变量强制 JSON 解析（逗号分隔会 SettingsError 启动崩溃），
+# 必须用 JSON 数组格式（与 desktop_main.py 一致）
+ALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]
 EOF
     chmod 600 /opt/btdeck/config/btdeck.env
 fi
@@ -173,7 +175,7 @@ PREREMOVE
     chmod +x "${PKG_STAGING}/preremove.sh"
 
     # 构建 .deb
-    fpm -s dir \
+    fpm -s dir --force \
         -t deb \
         -n btdeck \
         -v "${VERSION}" \
@@ -190,7 +192,7 @@ PREREMOVE
         opt
 
     # 构建 .rpm
-    fpm -s dir \
+    fpm -s dir --force \
         -t rpm \
         -n btdeck \
         -v "${VERSION}" \

@@ -8,13 +8,18 @@ export interface UserInfoData {
   avatar?: string
   introduction?: string
   twoFactorFlag?: string
+  /** 强制改密标志实时下发（安全修复 W9 补全），旧后端可能缺失 */
+  mustChangePassword?: boolean
   user?: UserInfoData
 }
 
 interface LoginResponseItem {
   access_token: string
+  refresh_token?: string
   token_type: string
   user_id: string | number
+  /** 首次登录/默认口令强制改密标志（安全修复 W9） */
+  must_change_password?: boolean
 }
 
 interface LoginRequest {
@@ -42,6 +47,21 @@ export const login = (data: LoginRequest) =>
     url: '/auth/login',
     method: 'post',
     data
+  })
+
+interface RefreshResponseItem {
+  access_token: string
+  refresh_token: string
+  token_type: string
+  user_id: string | number
+}
+
+/** 双令牌体系（W6-1）：用 refresh token 换发新 access token（使用即轮换） */
+export const refreshAccessToken = (refreshToken: string) =>
+  request<ApiEnvelope<RefreshResponseItem[]>>({
+    url: '/auth/refresh',
+    method: 'post',
+    data: { refresh_token: refreshToken }
   })
 
 export const logout = () =>

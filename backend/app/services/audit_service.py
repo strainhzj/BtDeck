@@ -25,6 +25,7 @@ from fastapi import Request, Depends
 
 from app.torrents.audit_models import TorrentAuditLog
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
+from app.core.filename_utils import FilenameUtils
 from app.database import get_async_db
 
 logger = logging.getLogger(__name__)
@@ -437,11 +438,21 @@ class AuditLogService:
             if not logs_to_archive:
                 return {"success": True, "archived_count": 0, "archive_path": None, "message": "没有需要归档的日志"}
 
-            # 生成归档文件路径
-            if not archive_path:
-                archive_dir = Path("data/audit_logs_archive")
-                archive_dir.mkdir(parents=True, exist_ok=True)
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            # 生成归档文件路径：归档文件固定写入 data/audit_logs_archive。
+            # 安全：用户提供的 archive_path 仅取文件名部分（剥离一切目录成分）
+            # 并强制 .json 后缀——历史实现把原始路径直接 open("w")，等价于
+            # 任意文件覆盖写（JSON 是 YAML 子集，可覆盖 config.yaml）+ 审计销毁。
+            archive_dir = Path("data/audit_logs_archive")
+            archive_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            if archive_path:
+                raw_name = Path(str(archive_path).replace("\\", "/")).name
+                if not raw_name or raw_name in {".", ".."}:
+                    raw_name = f"audit_logs_{timestamp}"
+                if not raw_name.lower().endswith(".json"):
+                    raw_name = f"{raw_name}.json"
+                archive_path = archive_dir / FilenameUtils.sanitize_filename(raw_name)
+            else:
                 archive_path = archive_dir / f"audit_logs_{timestamp}.json"
 
             # 导出为JSON

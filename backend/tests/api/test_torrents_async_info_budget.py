@@ -45,7 +45,6 @@ from app.database import Base
 from app.tasks.scheduler.torrent_sync.torrent_info_sync_task import TorrentInfoSyncTask
 from app.torrents.models import TorrentInfo
 
-
 # ==================== 公共 fixture ====================
 
 
@@ -299,9 +298,7 @@ class TestDownloaderConcurrencyConfig:
         vo = SimpleNamespace(downloader_id="dl-1", nickname="qb", fail_time=0, downloader_type=0)
         with (
             _fake_app_main(),
-            patch.object(
-                task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])
-            ) as mock_get,
+            patch.object(task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])) as mock_get,
             patch.object(
                 task,
                 "execute_sync_with_concurrency",
@@ -314,6 +311,11 @@ class TestDownloaderConcurrencyConfig:
                     }
                 ),
             ) as mock_exec,
+            patch.object(
+                task,
+                "_refresh_auxiliary_seed_counts",
+                new=AsyncMock(return_value={"updated_count": 1}),
+            ) as mock_refresh,
         ):
             result = await task.execute()
 
@@ -321,6 +323,72 @@ class TestDownloaderConcurrencyConfig:
         mock_get.assert_awaited_once()
         assert mock_exec.await_args.kwargs["max_concurrent"] == expected
         assert mock_exec.await_args.kwargs["sync_type"] == "TorrentInfo"
+        mock_refresh.assert_awaited_once()
+        assert result["auxiliary_seed_count"] == {"updated_count": 1}
+
+
+class TestAuxiliaryCountRefreshLifecycle:
+    """辅种全量校正只跟随成功/部分成功的同步轮次执行。"""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("sync_status", "should_refresh"),
+        [("success", True), ("partial", True), ("failed", False)],
+    )
+    async def test_refresh_lifecycle_follows_sync_status(self, sync_status, should_refresh):
+        task = TorrentInfoSyncTask()
+        vo = SimpleNamespace(downloader_id="dl-1", nickname="qb", fail_time=0, downloader_type=0)
+        sync_result = {
+            "status": sync_status,
+            "successful_syncs": 1 if sync_status != "failed" else 0,
+            "failed_syncs": 1 if sync_status == "failed" else 0,
+            "total_downloaders": 1,
+        }
+        with (
+            _fake_app_main(),
+            patch.object(task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])),
+            patch.object(task, "execute_sync_with_concurrency", new=AsyncMock(return_value=sync_result)),
+            patch.object(
+                task,
+                "_refresh_auxiliary_seed_counts",
+                new=AsyncMock(return_value={"updated_count": 31}),
+            ) as mock_refresh,
+        ):
+            result = await task.execute()
+
+        assert result["status"] == sync_status
+        assert mock_refresh.await_count == (1 if should_refresh else 0)
+        if should_refresh:
+            assert result["auxiliary_seed_count"] == {"updated_count": 31}
+        else:
+            assert "auxiliary_seed_count" not in result
+
+    @pytest.mark.asyncio
+    async def test_count_refresh_failure_does_not_hide_sync_result(self):
+        task = TorrentInfoSyncTask()
+        vo = SimpleNamespace(downloader_id="dl-1", nickname="qb", fail_time=0, downloader_type=0)
+        with (
+            _fake_app_main(),
+            patch.object(task, "get_valid_downloaders", new=AsyncMock(return_value=[vo])),
+            patch.object(
+                task,
+                "execute_sync_with_concurrency",
+                new=AsyncMock(
+                    return_value={
+                        "status": "partial",
+                        "successful_syncs": 1,
+                        "failed_syncs": 1,
+                        "total_downloaders": 2,
+                    }
+                ),
+            ),
+            patch.object(task, "_refresh_auxiliary_seed_counts", new=AsyncMock(side_effect=RuntimeError("db locked"))),
+        ):
+            result = await task.execute()
+
+        assert result["status"] == "partial"
+        assert result["auxiliary_seed_count"]["status"] == "failed"
+        assert "db locked" in result["auxiliary_seed_count"]["error"]
 
 
 # ==================== 2. 现有记录分页读取（qb） ====================
@@ -609,10 +677,7 @@ class TestTrSymmetricPaginatedRead:
         inserted = bulk_mock.await_args.args[1]
         assert inserted[0]["status"] == "error"
         assert inserted[0]["error_reason"] == "No space left on device"
-        assert all(
-            "errorString" in call.kwargs["arguments"]
-            for call in client.get_torrents.call_args_list
-        )
+        assert all("errorString" in call.kwargs["arguments"] for call in client.get_torrents.call_args_list)
 
 
 def _tr_downloader():
@@ -624,3 +689,77 @@ def _tr_downloader():
         username="admin",
         password="secret",
     )
+
+
+# ==================== W3-1：首轮快照宽松水合 ====================
+
+
+class TestFirstRunHydrationLenient:
+    """首轮 rid=0 maindata 快照必须经 _hydrate_qb_incremental_torrents 宽松水合。
+
+    回归保护：W3-1 修复"新种子 added_date 为空"——首轮快照此前不水合，
+    added_on 缺失时插入 NULL 且无自愈。本测试锁定首轮分支的调用契约
+    （strict=False），防止后续重构把首轮退回"不水合"或误用严格模式。
+    """
+
+    async def test_first_run_calls_hydration_with_lenient_mode(self):
+        from app.api.endpoints import torrents_async
+
+        client = MagicMock()
+        client.sync_maindata = MagicMock(return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}})
+
+        db = _empty_db()
+        with (
+            patch.object(torrents_async, "QB_USE_INCREMENTAL_SYNC", True),
+            patch.dict(torrents_async._QB_SYNC_RID_CACHE, {}, clear=True),
+            patch.dict(torrents_async._QB_LAST_FULL_SYNC, {"dl-1": datetime.now().timestamp()}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()),
+            patch.object(
+                torrents_async,
+                "_hydrate_qb_incremental_torrents",
+                new=AsyncMock(side_effect=lambda c, tl, dl, op, strict=True: tl),
+            ) as hydrate_mock,
+        ):
+            await torrents_async.qb_add_torrents_info_only_async(db, [_qb_downloader()], client=client)
+
+        hydrate_mock.assert_awaited_once()
+        args = hydrate_mock.await_args
+        assert args.args[3] == "qb_info_first_full_details"  # operation 位置参数
+        assert args.kwargs.get("strict") is False, "首轮快照水合必须为宽松模式（strict=False）"
+
+    async def test_first_run_lenient_hydration_writes_added_date(self):
+        """首轮快照水合后插入行带 added_date（added_on 经水合生效）。"""
+        from app.api.endpoints import torrents_async
+
+        client = MagicMock()
+        client.sync_maindata = MagicMock(return_value={"rid": 1, "torrents": {"abc": {"hash": "abc", "progress": 0.5}}})
+        full_torrent = SimpleNamespace(
+            hash="abc",
+            name="完整名称",
+            save_path="/downloads",
+            total_size=4096,
+            progress=0.75,
+            state="downloading",
+            added_on=ADDED_TS,
+            completion_on=0,
+            ratio=1.5,
+            ratio_limit=2.0,
+            tags="",
+            category="",
+            super_seeding=False,
+        )
+
+        db = _empty_db()
+        with (
+            patch.object(torrents_async, "QB_USE_INCREMENTAL_SYNC", True),
+            patch.dict(torrents_async._QB_SYNC_RID_CACHE, {}, clear=True),
+            patch.dict(torrents_async._QB_LAST_FULL_SYNC, {"dl-1": datetime.now().timestamp()}, clear=True),
+            patch.object(torrents_async, "bulk_upsert_with_retry", new=AsyncMock()) as bulk_mock,
+            patch.object(torrents_async, "fetch_qb_torrent_details", new=AsyncMock(return_value=[full_torrent])),
+        ):
+            await torrents_async.qb_add_torrents_info_only_async(db, [_qb_downloader()], client=client)
+
+        inserted = bulk_mock.await_args.args[1]
+        assert len(inserted) == 1
+        assert inserted[0]["name"] == "完整名称"
+        assert inserted[0]["added_date"] is not None, "首轮水合后 added_date 必须非空"

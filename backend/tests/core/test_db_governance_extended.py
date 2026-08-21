@@ -11,11 +11,9 @@
 - 备份同秒冲突（已修复后的回归）
 """
 
-import os
 import sqlite3
-import shutil
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 from alembic import command
@@ -56,6 +54,7 @@ def _build_ghost_db(db_path: str) -> None:
 
 # ==================== _read_db_version 边界 ====================
 
+
 class TestReadDbVersion:
     """_read_db_version 是救援逻辑的判定基础，必须 4 种边界全覆盖。"""
 
@@ -93,19 +92,19 @@ class TestReadDbVersion:
 
 # ==================== migrate_database 异常路径 ====================
 
+
 class TestMigrateDatabaseExceptionPaths:
     """覆盖 DEV 分流 + command.upgrade 失败。"""
 
-    def test_upgrade_failure_dev_mode_continues(self, tmp_path, monkeypatch):
-        """DEV=True 时 command.upgrade 失败应告警继续，不抛异常。"""
+    def test_upgrade_failure_dev_mode_returns_false(self, tmp_path, monkeypatch):
+        """DEV=True 可保留诊断容错，但调用方必须得到失败结果并停止启动。"""
         db = str(tmp_path / "fail.db")
         monkeypatch.setenv("DATABASE_PATH", db)
         monkeypatch.setattr(settings, "DEV", True)
 
         # mock command.upgrade 抛异常
         with patch("app.core.migration.command.upgrade", side_effect=Exception("模拟迁移失败")):
-            # DEV 模式不抛
-            migrate_database()
+            assert migrate_database() is False
 
     def test_upgrade_failure_production_raises(self, tmp_path, monkeypatch):
         """DEV=False 时 command.upgrade 失败应抛 RuntimeError。"""
@@ -116,6 +115,15 @@ class TestMigrateDatabaseExceptionPaths:
         with patch("app.core.migration.command.upgrade", side_effect=Exception("模拟迁移失败")):
             with pytest.raises(RuntimeError, match="Database migration failed"):
                 migrate_database()
+
+    def test_upgrade_return_without_reaching_head_is_failure(self, tmp_path, monkeypatch):
+        """Alembic 即使无异常返回，版本未到 head 也不能被记录为迁移成功。"""
+        db = str(tmp_path / "upgrade_noop.db")
+        monkeypatch.setenv("DATABASE_PATH", db)
+        monkeypatch.setattr(settings, "DEV", True)
+
+        with patch("app.core.migration.command.upgrade", return_value=None):
+            assert migrate_database() is False
 
     def test_multiple_heads_raises_runtime_error(self, tmp_path, monkeypatch):
         """迁移链多 head（分叉）应显式抛 RuntimeError。"""
@@ -131,6 +139,7 @@ class TestMigrateDatabaseExceptionPaths:
 
 # ==================== _rescue_or_warn_version 防御 ====================
 
+
 class TestRescueVersionDefenses:
     """黑名单 target 防御 + current=None 早返回。"""
 
@@ -144,10 +153,9 @@ class TestRescueVersionDefenses:
         original = dict(KNOWN_GHOST_VERSIONS)
         KNOWN_GHOST_VERSIONS[GHOST_VERSION] = "nonexistent_rev_xyz"
         try:
-            # 不应抛异常（防御性 return），且版本保持幽灵版本
-            migrate_database()
-            assert _read_db_version(db) == GHOST_VERSION, \
-                "target 不在链中时应拒绝 stamp，版本不变"
+            # DEV 诊断路径返回失败，且版本保持幽灵版本。
+            assert migrate_database() is False
+            assert _read_db_version(db) == GHOST_VERSION, "target 不在链中时应拒绝 stamp，版本不变"
         finally:
             KNOWN_GHOST_VERSIONS.clear()
             KNOWN_GHOST_VERSIONS.update(original)
@@ -167,6 +175,7 @@ class TestRescueVersionDefenses:
 
 # ==================== 95ef8bd8b47a downgrade 守卫 ====================
 
+
 class TestSearchTemplatesMigrationDowngrade:
     """验证 downgrade 的 inspect 守卫对称性（回滚安全）。"""
 
@@ -181,9 +190,10 @@ class TestSearchTemplatesMigrationDowngrade:
         # 先 upgrade 到 head（含 search_templates）
         command.upgrade(cfg, "head")
         conn = sqlite3.connect(db)
-        assert conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='search_templates'"
-        ).fetchone() is not None
+        assert (
+            conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='search_templates'").fetchone()
+            is not None
+        )
         conn.close()
 
         # downgrade 一步（撤 search_templates）
@@ -217,6 +227,7 @@ class TestSearchTemplatesMigrationDowngrade:
 
 
 # ==================== 表存在且有索引的 no-op 分支 ====================
+
 
 class TestInspectGuardNoOpBranch:
     """验证表+索引都存在时 upgrade 不重建（inspect 守卫第三场景）。"""
@@ -257,6 +268,7 @@ class TestInspectGuardNoOpBranch:
 
 
 # ==================== 备份同秒冲突回归（已修复） ====================
+
 
 class TestBackupTimestampPrecision:
     """验证备份文件名含毫秒，同秒多次不覆盖。"""

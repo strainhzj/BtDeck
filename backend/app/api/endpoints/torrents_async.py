@@ -762,13 +762,9 @@ def extract_tracker_rows_from_torrent(
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
                     "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
-                    "last_announce_succeeded": resolve_transmission_tracker_status_code(
-                        tracker_status, "announce"
-                    ),
+                    "last_announce_succeeded": resolve_transmission_tracker_status_code(tracker_status, "announce"),
                     "last_announce_msg": tracker_status.last_announce_result,
-                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(
-                        tracker_status, "scrape"
-                    ),
+                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                     "last_scrape_msg": tracker_status.last_scrape_result,
                     "create_time": current_time,
                     "create_by": "admin",
@@ -1009,13 +1005,9 @@ async def sync_add_tracker_async(
                     "tracker_name": tracker_status.site_name,
                     "tracker_url": tracker_url,
                     "tracker_host": tracker_status.fields.get("host") or extract_tracker_host(tracker_url),
-                    "last_announce_succeeded": resolve_transmission_tracker_status_code(
-                        tracker_status, "announce"
-                    ),
+                    "last_announce_succeeded": resolve_transmission_tracker_status_code(tracker_status, "announce"),
                     "last_announce_msg": tracker_status.last_announce_result,
-                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(
-                        tracker_status, "scrape"
-                    ),
+                    "last_scrape_succeeded": resolve_transmission_tracker_status_code(tracker_status, "scrape"),
                     "last_scrape_msg": tracker_status.last_scrape_result,
                     "create_time": current_time,
                     "create_by": "admin",
@@ -2343,6 +2335,13 @@ async def qb_add_torrents_async(db: AsyncSession, downloaders: List[Any], *, cli
 
 
 def _normalize_progress_value(value: Any) -> float:
+    """进度归一化：None/异常→0，[0,100] 夹取，统一舍入到 2 位小数。
+
+    舍入是同步写库的最终口径：下载器原始 progress（0-1 小数 ×100）会带
+    十几位浮点尾差（如 99.556946664657），落库原样存储导致列表页展示脏值；
+    且 0.5 阈值"保留旧值"分支沿用归一化结果，存量脏值会在下次同步被
+    has_torrent_info_changes 的精确比较判为变化并覆盖为舍入值（自愈）。
+    """
     if value is None:
         return 0.0
     try:
@@ -2353,7 +2352,7 @@ def _normalize_progress_value(value: Any) -> float:
         return 0.0
     if value_float > 100.0:
         return 100.0
-    return value_float
+    return round(value_float, 2)
 
 
 def convert_transmission_status(transmission_status: str) -> str:
@@ -2498,9 +2497,16 @@ def _qb_set_attr(obj: Any, key: str, value: Any) -> None:
 
 
 async def _hydrate_qb_incremental_torrents(
-    client: Any, torrent_info_list: List[Any], downloader_id: str, operation: str
+    client: Any, torrent_info_list: List[Any], downloader_id: str, operation: str, strict: bool = True
 ) -> List[Any]:
-    """Replace partial sync/maindata deltas with complete torrent detail rows."""
+    """Replace partial sync/maindata deltas with complete torrent detail rows.
+
+    Args:
+        strict: True（默认）时缺失 hash 抛 RuntimeError（增量语义：防丢变化行）；
+            False 时缺失仅记 warning 并保留 maindata 原行（首轮 rid=0 全量快照
+            水合用：maindata 之后、torrents/info 之前被删除/失败批次的 hash
+            不应让整轮失败降级重拉）。
+    """
     requested_hashes: List[str] = []
     for torrent in torrent_info_list:
         torrent_hash = str(_qb_get_attr(torrent, "hash") or "").strip().lower()
@@ -2522,11 +2528,23 @@ async def _hydrate_qb_incremental_torrents(
     }
     missing_hashes = sorted(set(requested_hashes) - details_by_hash.keys())
     if missing_hashes:
-        preview = ", ".join(missing_hashes[:5])
-        raise RuntimeError(f"qB incremental detail hydration was incomplete ({len(missing_hashes)} missing: {preview})")
+        if strict:
+            preview = ", ".join(missing_hashes[:5])
+            raise RuntimeError(
+                f"qB incremental detail hydration was incomplete ({len(missing_hashes)} missing: {preview})"
+            )
+        logger.warning(
+            f"qB hydration: {len(missing_hashes)} hashes missing from detail fetch, "
+            f"keeping maindata rows (lenient mode)"
+        )
 
     # Preserve sync/maindata order and cardinality while replacing every delta row.
-    return [details_by_hash[torrent_hash] for torrent_hash in requested_hashes]
+    # Lenient mode 保留缺失 hash 的 maindata 原行，避免快照行数收缩。
+    if strict:
+        return [details_by_hash[torrent_hash] for torrent_hash in requested_hashes]
+    return [
+        details_by_hash.get(torrent_hash, torrent_info_list[idx]) for idx, torrent_hash in enumerate(requested_hashes)
+    ]
 
 
 def _parse_qb_tracker_cursor(cursor_value: Optional[str]) -> Optional[str]:
@@ -3121,6 +3139,16 @@ async def qb_add_torrents_info_only_async(
                 )
                 new_rid = int(sync_data.get("rid", 0))
                 torrent_info_list = _qb_dict_to_objects(sync_data.get("torrents", {}))
+                # 首轮快照宽松水合：从 torrents/info 补齐全量字段（含 added_on），
+                # 缺失 hash 不抛错（maindata 之后被删除的种子不应拖垮整轮）
+                if torrent_info_list:
+                    torrent_info_list = await _hydrate_qb_incremental_torrents(
+                        client,
+                        torrent_info_list,
+                        downloader_id,
+                        "qb_info_first_full_details",
+                        strict=False,
+                    )
                 pending_rid = new_rid
                 logger.info(
                     f"[QB_INFO_SYNC] first full sync: downloader_id={downloader_id}, rid={new_rid}, torrents={len(torrent_info_list)}"

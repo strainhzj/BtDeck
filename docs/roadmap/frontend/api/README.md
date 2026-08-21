@@ -7,14 +7,14 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `errorReason`；L887–956 定义同内容排查完整类型与 `getSameContentInspection()`，支持 `all/errors` 两种分页模式，Tracker 明细仅消费脱敏 host |
+| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 辅种数量；`TorrentListParams.tracker_domain` L192 支持 Tracker 主机域名多选，`single_error_only` L196 支持错误单种全局唯一排查，`getTrackerDomains()` L224 读取定时同步已采集的域名；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
 | Tracker tracker | `tracker.ts` | Tracker：关键词 CRUD+批量/消息日志 CRUD+批量/统计/测试匹配/关键词池/汇报配置 CRUD+自动检测域名+批量更新 |
 | 定时任务 tasks | `tasks.ts` | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
 | 下载器 downloader | `downloader.ts` | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
 | 回收站 recycle-bin | `recycle-bin.ts` | 回收站：列表/恢复（含 .torrent 文件恢复）/清理预览/清理 |
-| 审计日志 audit-logs | `audit-logs.ts` | 审计日志：查询/统计/操作类型/导出/归档/下载 |
+| 审计日志 audit-logs | `audit-logs.ts` | 审计日志：查询/统计/操作类型/导出/归档/下载（下载走 axios blob 携带认证头，文件名 encodeURIComponent；替代历史 window.open 直开 URL 的前缀/凭证/拦截器三重损坏） |
 | 标签管理 tag | `tag-management.ts` | 标签管理：分类/标签 CRUD/批量删除/分类支持检查 |
-| 孤儿文件 orphan | `orphan-files.ts` | 扫描/筛选/清理/忽视/隔离恢复；数量行含 `hardlink_copy_count`，`getHardlinkCopyLocations` 批量查询副本路径；清理任务支持占用与混合跳过统计 |
+| 孤儿文件 orphan | `orphan-files.ts` | `triggerScan` 提交后台 scan_id/task_id，`getScanStatus` 轮询；`getOrphanFolderChildren` 展开后独立分页；`reviewScanGuardrail` 双确认复核；保留硬链接定位、清理/忽视/隔离恢复 |
 | 种子备份 torrents-backup | `torrents-backup.ts` | 种子备份：列表/删除/去重/导入 + 导出/下载/上传 URL 构造 |
 | 通知 notification | `notification.ts` | 通知列表/未读数/标记已读未读/全部已读/删除 |
 | 用户 users | `users.ts` | 用户：getUserInfo / changePassword / login / logout |

@@ -203,12 +203,39 @@
           <el-dropdown-item command="inspect-same-content">
             <i class="el-icon-search"></i> 同内容异常排查
           </el-dropdown-item>
+          <el-dropdown-item command="inspect-single-errors">
+            <i class="el-icon-warning-outline"></i> 错误单种排查
+          </el-dropdown-item>
           <el-dropdown-item command="delete-duplicates">
             <i class="el-icon-delete"></i> 快捷删除重复种子
           </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
     </div>
+    <el-alert
+      v-if="showingSameContent"
+      class="same-content-list-alert"
+      title="同内容异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <el-button type="text" size="small" @click="exitSameContentInspection">
+        退出排查并返回普通列表
+      </el-button>
+    </el-alert>
+    <el-alert
+      v-if="showingSingleErrors"
+      class="single-error-list-alert"
+      title="错误单种排查：当前列表仅显示错误且全局同内容唯一的种子"
+      type="error"
+      :closable="false"
+      show-icon
+    >
+      <el-button type="text" size="small" @click="exitSingleErrorInspection">
+        退出排查并返回普通列表
+      </el-button>
+    </el-alert>
     <div class="page-body">
       <!-- 左侧过滤面板 -->
       <aside class="filter-panel" :class="{collapsed: viewModeModule.filterPanelCollapsed}">
@@ -239,6 +266,22 @@
             :active-value="listQuery.downloader_id"
             @select="handleDownloaderFilter"
           />
+
+          <!-- Tracker 主域名过滤 -->
+          <div class="tracker-domain-filter">
+            <div class="filter-group-title">Tracker主域名</div>
+            <AdvancedMultiSelect
+              v-model="listQuery.tracker_domain"
+              placeholder="请选择tracker"
+              :options="trackerDomainOptions"
+              :allow-create="false"
+              :show-mode-toggle="false"
+              :virtual-scroll-threshold="100"
+              :list-height="240"
+              style="width: 100%;"
+              @change="handleFilter"
+            />
+          </div>
 
           <!-- 分类过滤 -->
           <FilterGroup
@@ -291,6 +334,9 @@
                   <span class="sort-arrow" v-if="listQuery.sort_by === 'size'">
                     {{ listQuery.sort_order === 'asc' ? '▲' : '▼' }}
                   </span>
+                </th>
+                <th v-if="getColumnSetting('auxiliarySeedCount').visible" class="col-auxiliary-seed-count">
+                  辅种数量
                 </th>
                 <th v-if="getColumnSetting('progress').visible" class="col-progress">进度</th>
                 <th v-if="getColumnSetting('status').visible" class="col-status" @click="handleSort('status')">
@@ -345,7 +391,7 @@
                   <div
                     class="status-icon-circle"
                     :class="torrent.status"
-                    :title="getStatusText(torrent.status)"
+                    :title="showTrackerErrorTag(torrent) ? `${getStatusText(torrent.status)}（Tracker异常）` : getStatusText(torrent.status)"
                   >
                     <LucideIcon :name="getStatusIcon(torrent.status)" :size="14" />
                   </div>
@@ -365,6 +411,9 @@
                   </div>
                 </td>
                 <td v-if="getColumnSetting('size').visible" class="col-size">{{ formatFileSize(torrent.size) }}</td>
+                <td v-if="getColumnSetting('auxiliarySeedCount').visible" class="col-auxiliary-seed-count">
+                  {{ torrent.auxiliarySeedCount || 1 }}
+                </td>
                 <td v-if="getColumnSetting('progress').visible" class="col-progress">
                   <div class="progress-cell-compact">
                     <div class="progress-bar-wrapper">
@@ -379,6 +428,11 @@
                 </td>
                 <td v-if="getColumnSetting('status').visible" class="col-status">
                   <span class="status-badge-trad" :class="torrent.status">{{ getStatusText(torrent.status) }}</span>
+                  <span
+                    v-if="showTrackerErrorTag(torrent)"
+                    class="tracker-error-tag"
+                    :title="getTorrentErrorReason(torrent)"
+                  >Tracker异常</span>
                 </td>
                 <td v-if="getColumnSetting('download').visible" class="col-downspeed">
                   <span
@@ -527,114 +581,18 @@
             </el-button>
           </div>
         </div>
-        <!-- 分页上方悬浮元数据面板 -->
-        <div class="detail-panel-trad" :class="{open: !!currentRow}">
-          <div class="detail-panel-content">
-            <div class="detail-header-compact">
-              <h3>{{ currentRow && currentRow.name }}</h3>
-              <button class="close-btn" @click="closeDetailPanel">
-                <LucideIcon name="x" :size="16" />
-              </button>
-            </div>
-            <div class="detail-tabs-compact">
-              <button
-                v-for="tab in detailTabs"
-                :key="tab.value"
-                class="tab-btn"
-                :class="{active: activeDetailTab === tab.value}"
-                @click="activeDetailTab = tab.value"
-              >
-                {{ tab.label }}
-              </button>
-            </div>
-            <div class="detail-content">
-              <!-- Tracker 信息 -->
-              <template v-if="activeDetailTab === 'tracker'">
-                <el-alert
-                  v-if="getTorrentErrorReason(currentRow)"
-                  class="torrent-error-alert"
-                  title="种子错误原因"
-                  :description="getTorrentErrorReason(currentRow)"
-                  type="error"
-                  show-icon
-                  :closable="false"
-                />
-                <table class="tracker-table tracker-table-detail">
-                  <thead>
-                    <tr>
-                      <th>Tracker名称</th>
-                      <th style="width: 80px;">Announce</th>
-                      <th>Announce信息</th>
-                      <th style="width: 80px;">Scrape</th>
-                      <th style="width: 60px;" class="tracker-sticky-col">操作</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr
-                      v-for="(tracker, index) in ((currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || [])"
-                      :key="index"
-                    >
-                      <td>
-                        <div>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</div>
-                        <div
-                          class="tracker-url-mini"
-                          :title="tracker.tracker_url || tracker.trackerUrl || '-'"
-                        >{{ tracker.tracker_url || tracker.trackerUrl || '-' }}</div>
-                      </td>
-                      <td>
-                        <span
-                          :class="trackerStatusClass(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)"
-                        >
-                          <template v-if="trackerAnnounceSuccess(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)">
-                            ✓ 工作
-                          </template>
-                          <template v-else>
-                            ✗ {{ tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded || '失败' }}
-                          </template>
-                        </span>
-                      </td>
-                      <td>{{ tracker.last_announce_msg || tracker.lastAnnounceMsg || '-' }}</td>
-                      <td>
-                        <span
-                          :class="trackerStatusClass(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)"
-                        >
-                          <template v-if="trackerAnnounceSuccess(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)">
-                            ✓ 工作
-                          </template>
-                          <template v-else>
-                            ✗ {{ tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded || '失败' }}
-                          </template>
-                        </span>
-                      </td>
-                      <td class="tracker-sticky-col">
-                        <el-button
-                          type="text"
-                          size="mini"
-                          :loading="tracker.reannouncing"
-                          @click="handleTrackerReannounce(tracker, index)"
-                        >汇报</el-button>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </template>
-
-              <!-- 文件列表（占位） -->
-              <template v-else-if="activeDetailTab === 'files'">
-                <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
-                  文件列表功能开发中...
-                </div>
-              </template>
-
-              <!-- Peers（占位） -->
-              <template v-else-if="activeDetailTab === 'peers'">
-                <div style="text-align: center; color: var(--color-text-tertiary); padding: 20px;">
-                  Peers 信息功能开发中...
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
+        <!-- Tracker详情卡片；列表模式与传统模式共用完整弹框骨架 -->
+        <TrackerDetailCard
+          :visible="!!currentRow"
+          layout="traditional"
+          :torrent-name="(currentRow && currentRow.name) || ''"
+          :active-tab.sync="activeDetailTab"
+          :tabs="detailTabs"
+          :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
+          :error-reason="getTorrentErrorReason(currentRow)"
+          @close="closeDetailPanel"
+          @reannounce="handleTrackerReannounce"
+        />
       </div>
     </div>
 
@@ -715,12 +673,6 @@
       @deleted="handleQuickDeleteDeleted"
     />
 
-    <!-- 同名同大小种子只读排查 -->
-    <SameContentInspectionDialog
-      :visible.sync="showSameContentInspectionDialog"
-      @close="showSameContentInspectionDialog = false"
-    />
-
     <!-- P1新增：高级搜索 -->
     <el-dialog
       :visible.sync="showAdvancedSearchDialog"
@@ -786,12 +738,15 @@ import SetLocationDialog from './components/SetLocationDialog.vue'
 import BatchTransferDialog from './components/BatchTransferDialog.vue'
 import TrackerOperationDialog from './components/TrackerOperationDialog.vue'
 import GlobalReplaceTrackerDialog from './components/GlobalReplaceTrackerDialog.vue'
+import TrackerDetailCard from './components/TrackerDetailCard.vue'
 import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
-import SameContentInspectionDialog from '@/components/torrents/SameContentInspectionDialog.vue'
 import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
+import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
+import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
 import FilterGroup from '@/components/torrents/FilterGroup.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import TorrentBatchMixin from './mixins/torrentBatch'
+import SpeedPollingMixin from './mixins/speedPolling'
 // 复用现有 API、工具函数、状态配置
 import {
   getTorrentList,
@@ -805,6 +760,7 @@ import {
   advancedSearch,
   getDuplicateTorrents,
   applySearchTemplate,
+  getTrackerDomains,
   type Torrent,
   type DownloaderSimple,
   type QueryTemplateConditions,
@@ -827,14 +783,14 @@ import {
 // P0/P1下沉纯函数（防回归，避免复制列表模式逻辑）
 import {
   assertSameDownloader,
-  isTrackerAnnounceSuccess,
-  getTrackerStatusClass,
   buildAdvancedSearchRequest,
   getTorrentSpeed as getTorrentSpeedFromSnapshot,
   deriveVisibleTorrentList,
   buildSpeedSnapshot,
   needsActiveSnapshotRefresh,
-  buildAdvancedSearchRequestFromTemplateGroups
+  buildAdvancedSearchRequestFromTemplateGroups,
+  getTorrentErrorReason as sharedErrorReason,
+  showTrackerErrorTag as sharedShowTrackerErrorTag
 } from './utils/torrentBatch'
 import {
   buildTraditionalStatusFilterItems,
@@ -879,14 +835,15 @@ interface TraditionalSpeedTarget extends TorrentIdentityLike {
     BatchTransferDialog,
     TrackerOperationDialog,
     GlobalReplaceTrackerDialog,
+    TrackerDetailCard,
     QuickDeleteDuplicatesDialog,
-    SameContentInspectionDialog,
     FilterGroup,
     PageSizeCombobox,
-    AdvancedSearchWorkspace
+    AdvancedSearchWorkspace,
+    AdvancedMultiSelect
   }
 })
-export default class extends mixins(TorrentBatchMixin) {
+export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin) {
   // ====== 状态管理 ======
   private viewModeModule = ViewModeModule
 
@@ -897,8 +854,7 @@ export default class extends mixins(TorrentBatchMixin) {
   private multipleSelection: any[] = []
 
   // 实时速度轮询
-  private speedTimer: number | null = null
-  private speedPollingActive = false
+  // 实时速度轮询（speedTimer/speedPollingActive 由 SpeedPollingMixin 提供）
   private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
   private torrentSpeedTargetIndex: TorrentSpeedTargetIndex<TraditionalSpeedTarget> = buildTorrentSpeedTargetIndex([])
@@ -946,8 +902,6 @@ export default class extends mixins(TorrentBatchMixin) {
   private advancedSearchSearching = false
   // 快捷删除重复种子
   private showQuickDeleteDuplicatesDialog = false
-  // 同名同大小种子只读排查
-  private showSameContentInspectionDialog = false
 
   // 详情面板
   private currentRow: any = null
@@ -960,6 +914,8 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 重复任务查询使用独立分页，避免翻页后意外回到普通列表
   private showingDuplicates = false
+  private showingSameContent = false
+  private showingSingleErrors = false
   private activeAdvancedSearchRequest: AdvancedSearchRequest | null = null
 
   // 查询参数（复用现有结构）
@@ -969,6 +925,7 @@ export default class extends mixins(TorrentBatchMixin) {
     name_like: '',
     downloader_id: [],
     status: [],
+    tracker_domain: [],
     category_like: '',
     tags_like: '',
     showActiveOnly: false, // P0#1：仅显示活动种子（UI 开关，映射为后端 active_only 过滤，total 口径一致）
@@ -978,12 +935,14 @@ export default class extends mixins(TorrentBatchMixin) {
 
   // 下载器列表
   private downloaderList: DownloaderSimple[] = []
+  private trackerDomainList: string[] = []
 
   // P2-2 列设置（3列固定：checkbox/statusIcon/actions 不在此数组；11列可隐藏）
   private showColumnSettings = false
   private columnSettings = [
     { key: 'name', label: '名称', visible: true },
     { key: 'size', label: '大小', visible: true },
+    { key: 'auxiliarySeedCount', label: '辅种数量', visible: true },
     { key: 'progress', label: '进度', visible: true },
     { key: 'status', label: '状态', visible: true },
     { key: 'download', label: '下载速度', visible: true },
@@ -1103,6 +1062,13 @@ export default class extends mixins(TorrentBatchMixin) {
     ]
   }
 
+  get trackerDomainOptions(): SelectOption[] {
+    return this.trackerDomainList.map(domain => ({
+      value: domain,
+      label: domain
+    }))
+  }
+
   get categoryFilterItems(): StatusFilterItem[] {
     const items = [
       { icon: 'folder', label: '全部', value: '' },
@@ -1132,6 +1098,7 @@ export default class extends mixins(TorrentBatchMixin) {
     this.debouncedSearch = debounce(this.handleFilter, 300)
     this.loadColumnPreferences() // P2-2：加载列显隐偏好
     await this.fetchDownloaderList()
+    await this.fetchTrackerDomains()
     await this.fetchCategoryAndTags()
     await this.getList()
     this.startSpeedPolling()
@@ -1190,6 +1157,12 @@ export default class extends mixins(TorrentBatchMixin) {
       if (showActive) {
         params.active_only = true
       }
+      if (this.showingSameContent) {
+        params.same_content_only = true
+      }
+      if (this.showingSingleErrors) {
+        params.single_error_only = true
+      }
 
       // 处理数组参数
       if (Array.isArray(params.downloader_id) && params.downloader_id.length > 0) {
@@ -1202,6 +1175,12 @@ export default class extends mixins(TorrentBatchMixin) {
         params.status = params.status.join(',')
       } else {
         delete params.status
+      }
+
+      if (Array.isArray(params.tracker_domain) && params.tracker_domain.length > 0) {
+        params.tracker_domain = params.tracker_domain.join(',')
+      } else {
+        delete params.tracker_domain
       }
 
       // 清理空值
@@ -1255,6 +1234,17 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
+  private async fetchTrackerDomains() {
+    try {
+      const response = await getTrackerDomains()
+      if (response.code === '200' && Array.isArray(response.data)) {
+        this.trackerDomainList = response.data
+      }
+    } catch (error) {
+      console.error('获取 Tracker 主域名失败:', error)
+    }
+  }
+
   private async fetchCategoryAndTags() {
     try {
       // 并发获取分类和标签
@@ -1276,25 +1266,7 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   // ====== 实时速度轮询 ======
-  private startSpeedPolling() {
-    if (this.speedPollingActive) return
-    this.speedPollingActive = true
-    const poll = async() => {
-      if (!this.speedPollingActive) return
-      await this.loadActiveSpeed()
-      if (!this.speedPollingActive) return
-      this.speedTimer = window.setTimeout(poll, 1000)
-    }
-    poll()
-  }
-
-  private stopSpeedPolling() {
-    this.speedPollingActive = false
-    if (this.speedTimer) {
-      window.clearTimeout(this.speedTimer)
-      this.speedTimer = null
-    }
-  }
+  // startSpeedPolling / stopSpeedPolling 由 SpeedPollingMixin 提供（含后台标签页暂停/恢复）
 
   /**
    * 加载活跃种子实时速度和进度（对齐列表模式 index.vue:2177-2214）
@@ -1302,7 +1274,7 @@ export default class extends mixins(TorrentBatchMixin) {
    * token 实际存在 Cookie（cookies.ts:10），导致恒为 null → 401 → 速度永远为 0。
    * 改用封装的 getActiveTorrents()，复用统一 axios 拦截器（token 注入、401 跳登录）。
    */
-  private async loadActiveSpeed(): Promise<boolean> {
+  protected async loadActiveSpeed(): Promise<boolean> {
     const requestId = Date.now()
     try {
       const res = await getActiveTorrents()
@@ -1366,9 +1338,6 @@ export default class extends mixins(TorrentBatchMixin) {
     if (r < 2.0) return 'good'
     return 'great'
   }
-
-  // 注：isTrackerSuccess/getTrackerStatusText 已删除，统一委托给
-  // 下沉纯函数 trackerAnnounceSuccess/trackerStatusClass（防回归 P0-D，消除两视图语义分歧）
 
   // ====== 事件处理 ======
   private handleFilter() {
@@ -1526,7 +1495,11 @@ export default class extends mixins(TorrentBatchMixin) {
   }
 
   private getTorrentErrorReason(torrent: Torrent | null | undefined): string {
-    return torrent?.errorReason || torrent?.error_reason || ''
+    return sharedErrorReason(torrent)
+  }
+
+  private showTrackerErrorTag(torrent: Torrent | null | undefined): boolean {
+    return sharedShowTrackerErrorTag(torrent)
   }
 
   private prepareForListReplacement(): number {
@@ -1715,12 +1688,46 @@ export default class extends mixins(TorrentBatchMixin) {
   /**
    * 快捷操作下拉菜单命令分发
    */
-  private handleQuickActionCommand(command: string) {
+  private async handleQuickActionCommand(command: string) {
     if (command === 'inspect-same-content') {
-      this.showSameContentInspectionDialog = true
+      this.showingDuplicates = false
+      this.showingSingleErrors = false
+      this.showingSameContent = true
+      this.activeAdvancedSearchRequest = null
+      this.currentPage = 1
+      this.listQuery.skip = 0
+      this.resetTableViewport()
+      await this.getList()
+      this.$message.success(`排查完成，共找到 ${this.total} 条同内容种子`)
+    } else if (command === 'inspect-single-errors') {
+      this.showingDuplicates = false
+      this.showingSameContent = false
+      this.showingSingleErrors = true
+      this.activeAdvancedSearchRequest = null
+      this.currentPage = 1
+      this.listQuery.skip = 0
+      this.resetTableViewport()
+      await this.getList()
+      this.$message.success(`排查完成，共找到 ${this.total} 条错误单种`)
     } else if (command === 'delete-duplicates') {
       this.showQuickDeleteDuplicatesDialog = true
     }
+  }
+
+  private async exitSameContentInspection() {
+    this.showingSameContent = false
+    this.currentPage = 1
+    this.listQuery.skip = 0
+    this.resetTableViewport()
+    await this.getList()
+  }
+
+  private async exitSingleErrorInspection() {
+    this.showingSingleErrors = false
+    this.currentPage = 1
+    this.listQuery.skip = 0
+    this.resetTableViewport()
+    await this.getList()
   }
 
   /**
@@ -1730,16 +1737,7 @@ export default class extends mixins(TorrentBatchMixin) {
     this.handleManualRefresh()
   }
 
-  // ====== P0#3/#4 Tracker 状态判断（委托下沉的纯函数） + 单条汇报 ======
-  private trackerAnnounceSuccess(status: string | boolean | undefined | null): boolean {
-    return isTrackerAnnounceSuccess(status)
-  }
-
-  private trackerStatusClass(status: string | boolean | undefined | null): string {
-    return getTrackerStatusClass(status)
-  }
-
-  /** P0#4 单条 Tracker 汇报（在详情面板 Tracker tab 内触发） */
+  /** 单条 Tracker 汇报（在详情面板 Tracker tab 内触发） */
   private async handleTrackerReannounce(tracker: any, _index: number) {
     if (!this.currentRow?.hash) {
       this.$message.error('种子信息不完整，无法汇报')
@@ -1914,6 +1912,8 @@ export default class extends mixins(TorrentBatchMixin) {
       }
 
       this.showingDuplicates = false
+      this.showingSameContent = false
+      this.showingSingleErrors = false
       this.currentPage = 1
       this.listQuery.skip = 0
       this.activeAdvancedSearchRequest = request as AdvancedSearchRequest
@@ -1987,6 +1987,8 @@ export default class extends mixins(TorrentBatchMixin) {
     try {
       if (conditions.source === 'simple' && conditions.listQuery) {
         this.showingDuplicates = false
+        this.showingSameContent = false
+        this.showingSingleErrors = false
         const saved = conditions.listQuery
         this.listQuery = {
           skip: 0,
@@ -1994,6 +1996,7 @@ export default class extends mixins(TorrentBatchMixin) {
           name_like: saved.name_like ?? '',
           downloader_id: saved.downloader_id ? [...saved.downloader_id] : [],
           status: saved.status ? [...saved.status] : [],
+          tracker_domain: saved.tracker_domain ? [...saved.tracker_domain] : [],
           category_like: saved.category_like ?? '',
           tags_like: saved.tags_like ?? '',
           showActiveOnly: saved.showActiveOnly ?? false,
@@ -2028,6 +2031,8 @@ export default class extends mixins(TorrentBatchMixin) {
           return false
         }
         this.showingDuplicates = false
+        this.showingSameContent = false
+        this.showingSingleErrors = false
         this.currentPage = 1
         this.listQuery.skip = 0
         this.activeAdvancedSearchRequest = request as AdvancedSearchRequest
@@ -2069,6 +2074,10 @@ export default class extends mixins(TorrentBatchMixin) {
   // ====== P1#10 查找重复任务 ======
   private async handleDuplicateSearchToggle(enabled: boolean) {
     this.showingDuplicates = enabled
+    if (enabled) {
+      this.showingSameContent = false
+      this.showingSingleErrors = false
+    }
     this.activeAdvancedSearchRequest = null
     this.currentPage = 1
     this.listQuery.skip = 0
@@ -2180,6 +2189,14 @@ export default class extends mixins(TorrentBatchMixin) {
   margin-bottom: 10px;
 }
 
+.same-content-list-alert {
+  margin: 0 10px 10px;
+}
+
+.single-error-list-alert {
+  margin: 0 10px 10px;
+}
+
 // 对话框标题：图标 + 文本对齐（el-dialog #title slot）
 .dialog-title-with-icon {
   display: inline-flex;
@@ -2217,6 +2234,20 @@ export default class extends mixins(TorrentBatchMixin) {
 .filter-panel-content {
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
+}
+
+.tracker-domain-filter {
+  padding: 5px 6px 8px;
+  margin-bottom: 2px;
+}
+
+.filter-group-title {
+  padding: 0 6px 5px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  font-weight: var(--font-weight-semibold);
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
 }
 
 .toolbar-left,
@@ -2344,63 +2375,6 @@ export default class extends mixins(TorrentBatchMixin) {
   overflow: hidden;
 }
 
-// 元数据以悬浮窗覆盖表格底部，始终位于分页栏上方且不挤压列表
-.detail-panel-trad {
-  position: absolute;
-  z-index: 20;
-  left: 8px;
-  right: 8px;
-  bottom: calc(var(--trad-pagination-height) + 8px);
-  width: auto;
-  height: 0;
-  max-height: calc(100% - var(--trad-pagination-height) - 24px);
-  min-height: 0;
-  background: var(--trad-detail-panel-bg);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  box-shadow: none;
-  opacity: 0;
-  visibility: hidden;
-  pointer-events: none;
-  transform: translateY(8px);
-  transition:
-    height 0.2s ease,
-    opacity 0.2s ease,
-    transform 0.2s ease,
-    border-color 0.2s ease,
-    visibility 0s linear 0.2s;
-
-  &.open {
-    width: auto;
-    height: 240px;
-    border-color: var(--color-border-primary);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
-    opacity: 1;
-    visibility: visible;
-    pointer-events: auto;
-    transform: translateY(0);
-    transition-delay: 0s;
-  }
-}
-
-.detail-panel-content {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-}
-
-.detail-header-compact,
-.detail-tabs-compact {
-  flex-shrink: 0;
-}
-
-.detail-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
 .table-container {
   // height: 0 配合 flex 固定为剩余可视高度，内容只在容器内部滚动
   flex: 1 1 0;
@@ -2429,7 +2403,8 @@ export default class extends mixins(TorrentBatchMixin) {
 
 .traditional-table {
   // 新增保存路径列后保持名称列可读；窄视口由既有 table-container 内部滚动承接。
-  min-width: 1380px;
+  // 状态列叠加 Tracker异常 标签后加宽 90→145px，min-width 同步 +55。
+  min-width: 1435px;
 
   tbody .torrent-row {
     height: var(--trad-row-height);
@@ -2464,7 +2439,7 @@ export default class extends mixins(TorrentBatchMixin) {
 .col-name { /* auto */ }
 .col-size { width: 80px; }
 .col-progress { width: 130px; }
-.col-status { width: 90px; }
+.col-status { width: 145px; }
 .col-downspeed { width: 90px; }
 .col-upspeed { width: 90px; }
 .col-ratio { width: 60px; }
@@ -2510,70 +2485,6 @@ export default class extends mixins(TorrentBatchMixin) {
     }
   }
 
-}
-
-// Tracker 表格样式
-.tracker-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-
-  th {
-    text-align: left;
-    padding: 5px;
-    background: var(--color-bg-secondary);
-    border-bottom: 1px solid var(--color-border-primary);
-    color: var(--color-text-tertiary);
-    font-weight: var(--font-weight-semibold);
-  }
-
-  td {
-    padding: 5px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-
-  .tracker-status {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-
-    .dot {
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-
-      &.ok {
-        background: var(--color-success);
-      }
-
-      &.fail {
-        background: var(--color-error);
-      }
-    }
-  }
-
-  // P0#3 Tracker 详情表增强样式
-  &.tracker-table-detail {
-    .tracker-url-mini {
-      font-size: 10px;
-      color: var(--color-text-tertiary);
-      max-width: 120px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-
-    // Announce/Scrape 状态色（复用列表模式 class 名）
-    .tracker-status-working { color: var(--color-success); }
-    .tracker-status-error { color: var(--color-error); }
-    .tracker-status-neutral { color: var(--color-text-tertiary); }
-
-    .tracker-sticky-col {
-      position: sticky;
-      right: 0;
-      background: var(--color-bg-primary);
-    }
-  }
 }
 
 // P2-2 列设置对话框

@@ -306,6 +306,15 @@ async def download_export_file(file_name: str, current_user=Depends(get_current_
     """
     from fastapi.responses import FileResponse
 
+    # 白名单校验：仅允许下载本模块导出端点生成的文件名
+    # （audit_logs_+%Y%m%d_%H%M%S+.csv/.xlsx，纯数字+下划线）。
+    # 历史实现直接拼接 file_name，Windows 下 %5C 反斜杠/盘符绝对路径
+    # 可穿越读取任意文件。
+    import re as _re
+
+    if not _re.fullmatch(r"audit_logs_[0-9_]+\.(csv|xlsx)", file_name):
+        raise HTTPException(status_code=404, detail="文件不存在")
+
     try:
         # 构建文件路径
         file_path = Path("data/audit_logs_export") / file_name

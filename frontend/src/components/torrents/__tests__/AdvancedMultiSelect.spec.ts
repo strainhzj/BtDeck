@@ -356,6 +356,13 @@ describe('AdvancedMultiSelect组件', () => {
       expect(wrapper.vm.panelVisible).toBe(false)
     })
 
+    it('未选择时应支持由父组件定制提示语', async() => {
+      await wrapper.setProps({ placeholder: '请选择下载器' })
+
+      expect(wrapper.find('.ams__trigger-label').text()).toBe('请选择下载器')
+      expect(wrapper.vm.triggerLabel).toBe('请选择下载器')
+    })
+
     it('紧凑触发器应展示首个选项与选中数量', async() => {
       wrapper.setProps({ value: [1, 2] })
       await wrapper.vm.$nextTick()

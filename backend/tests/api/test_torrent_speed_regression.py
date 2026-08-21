@@ -17,6 +17,7 @@
 
 import asyncio
 import time
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -359,6 +360,119 @@ class TestSupplementDisappeared:
 # --------------------------------------------------------------------------- #
 
 
+class TestIsFreshlyOffline:
+    """A-1 helper：_is_freshly_offline 的判定分支与新鲜窗口边界。
+
+    is_online/last_update 由 downloader_status_polling_task（10s 热间隔）维护；
+    离线下载器 last_update 仍被持续刷新（端口不通也算更新成功），因此判据是
+    "is_online is False 且 last_update 在窗口内"，与 last_update 是否被刷新无关。
+    """
+
+    def _make(self, **attrs):
+        from types import SimpleNamespace
+
+        # is_online/last_update 缺省不设置，模拟旧 mock 对象/未探测 VO
+        return SimpleNamespace(**attrs)
+
+    def test_missing_is_online_attribute(self):
+        """无 is_online 属性（旧 mock 兼容）→ 放行。"""
+        from app.api.endpoints import torrent_speed
+
+        assert torrent_speed._is_freshly_offline(self._make()) is False
+
+    def test_is_online_none_or_true(self):
+        """is_online 为 None / True → 放行（VO 默认 False 之外的语义不跳过）。"""
+        from app.api.endpoints import torrent_speed
+        import time
+
+        now = time.time()
+        assert torrent_speed._is_freshly_offline(self._make(is_online=None, last_update=now)) is False
+        assert torrent_speed._is_freshly_offline(self._make(is_online=True, last_update=now)) is False
+
+    def test_offline_without_last_update(self):
+        """is_online=False 但 last_update 缺失（冷启动/新加入）→ 放行。"""
+        from app.api.endpoints import torrent_speed
+
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False)) is False
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=None)) is False
+
+    def test_offline_fresh_probe_boundary(self):
+        """离线 + last_update 恰在窗口内/外/边界的判定。"""
+        from app.api.endpoints import torrent_speed
+        import time
+
+        window = torrent_speed._OFFLINE_FRESH_WINDOW
+        now = time.time()
+        # 窗口内（刚探测过）→ 跳过
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=now - window / 2)) is True
+        # 超出窗口（轮询停摆兜底）→ 放行
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=now - window - 1)) is False
+        # 恰好等于窗口：time.time() 推移使差值略增，边界视为窗口内（< 判定）
+        assert torrent_speed._is_freshly_offline(self._make(is_online=False, last_update=now - window + 1)) is True
+
+
+class TestSupplementOfflineFilter:
+    """_supplement_disappeared 的 dl_map 离线过滤（与 _process_downloader_speeds 口径一致）。"""
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_freshly_offline_excluded_from_dl_map(self, mock_call):
+        """新鲜离线下载器不进入补查映射，不对其发起远程调用。"""
+        from app.api.endpoints.torrent_speed import _supplement_disappeared
+        from qbittorrentapi import Client as qbClient
+        import time
+
+        mock_client = MagicMock(spec=qbClient)
+        mock_dl = MagicMock()
+        mock_dl.downloader_id = "dl_off"
+        mock_dl.fail_time = 0
+        mock_dl.client = mock_client
+        mock_dl.downloader_type = 0
+        mock_dl.nickname = "offline_dl"
+        # MagicMock 自动属性需显式设值：新鲜离线
+        mock_dl.is_online = False
+        mock_dl.last_update = time.time()
+
+        disappeared = {"dl_off": [{"hash": "h1"}]}
+        result = await _supplement_disappeared(disappeared, [mock_dl])
+        assert result == []
+        mock_call.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_stale_offline_still_supplemented(self, mock_call):
+        """last_update 过旧（轮询停摆）→ 不视为可信离线，仍参与补查。"""
+        from app.api.endpoints.torrent_speed import (
+            _OFFLINE_FRESH_WINDOW,
+            _supplement_disappeared,
+        )
+        from qbittorrentapi import Client as qbClient
+        import time
+
+        async def fake_call(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            return func(*args, **(kwargs or {}))
+
+        mock_call.side_effect = fake_call
+
+        mock_client = MagicMock(spec=qbClient)
+        mock_client.torrents_info.return_value = [
+            {"hash": "h1", "dlspeed": 0, "upspeed": 0, "progress": 0.8, "state": "stalledUP"}
+        ]
+        mock_dl = MagicMock()
+        mock_dl.downloader_id = "dl_stale"
+        mock_dl.fail_time = 0
+        mock_dl.client = mock_client
+        mock_dl.downloader_type = 0
+        mock_dl.nickname = "stale_dl"
+        mock_dl.is_online = False
+        mock_dl.last_update = time.time() - (_OFFLINE_FRESH_WINDOW + 30)
+
+        disappeared = {"dl_stale": [{"hash": "h1"}]}
+        result = await _supplement_disappeared(disappeared, [mock_dl])
+        assert len(result) == 1
+        mock_call.assert_called_once()
+
+
 class TestExceptionHandling:
     """验证已修复的 APIError 导入问题及其他异常处理"""
 
@@ -567,3 +681,228 @@ class TestGlobalTTLQueue:
         from app.api.endpoints.torrent_speed import _ttl_queue, _TTL_SECONDS
 
         assert _ttl_queue._ttl == _TTL_SECONDS
+
+
+# --------------------------------------------------------------------------- #
+# A-3 补充：reason 机器码全分类 / failed 明细 / msg 截断
+# --------------------------------------------------------------------------- #
+
+
+class TestSpeedResultReasonCodes:
+    """_process_downloader_speeds 的 reason 机器码契约（206 明细与日志的归因口径）。
+
+    reason 是运维 grep 与前端展示的稳定机器码，任一分支漂移都会让
+    206 失败明细失去归因价值，此处全分支锁定。
+    """
+
+    @pytest.mark.asyncio
+    async def test_fail_time_reason(self):
+        from app.api.endpoints import torrent_speed
+
+        dl = SimpleNamespace(fail_time=2)
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is False
+        assert r.reason == "fail_time"
+
+    @pytest.mark.asyncio
+    async def test_no_client_reason(self):
+        from app.api.endpoints import torrent_speed
+
+        dl = SimpleNamespace(fail_time=0, client=None)
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is False
+        assert r.reason == "no_client"
+
+    @pytest.mark.asyncio
+    async def test_unsupported_client_reason(self):
+        from app.api.endpoints import torrent_speed
+
+        dl = SimpleNamespace(fail_time=0, client=object())  # 非 qb/tr 实例
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is False
+        assert r.reason == "unsupported_client"
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_timeout_reason(self, mock_call):
+        import asyncio as _asyncio
+
+        from app.api.endpoints import torrent_speed
+        from qbittorrentapi import Client as qbClient
+
+        async def _raise(*a, **k):
+            raise _asyncio.TimeoutError()
+
+        mock_call.side_effect = _raise
+        dl = SimpleNamespace(fail_time=0, client=MagicMock(spec=qbClient), nickname="dl", downloader_id="dl")
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is False
+        assert r.reason == "timeout"
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_api_error_reason(self, mock_call):
+        from app.api.endpoints import torrent_speed
+        from qbittorrentapi import APIError as QbAPIError
+        from qbittorrentapi import Client as qbClient
+
+        async def _raise(*a, **k):
+            raise QbAPIError("refused")
+
+        mock_call.side_effect = _raise
+        dl = SimpleNamespace(fail_time=0, client=MagicMock(spec=qbClient), nickname="dl", downloader_id="dl")
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is False
+        assert r.reason == "api_error"
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_unknown_reason(self, mock_call):
+        from app.api.endpoints import torrent_speed
+        from qbittorrentapi import Client as qbClient
+
+        async def _raise(*a, **k):
+            raise RuntimeError("unexpected")
+
+        mock_call.side_effect = _raise
+        dl = SimpleNamespace(fail_time=0, client=MagicMock(spec=qbClient), nickname="dl", downloader_id="dl")
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is False
+        assert r.reason == "unknown"
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_success_reason_empty(self, mock_call):
+        from app.api.endpoints import torrent_speed
+        from qbittorrentapi import Client as qbClient
+
+        async def _ok(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            return func(*args, **(kwargs or {}))
+
+        mock_call.side_effect = _ok
+        client = MagicMock(spec=qbClient)
+        client.torrents_info.return_value = []
+        dl = SimpleNamespace(fail_time=0, client=client, nickname="dl", downloader_id="dl")
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is True
+        assert r.reason == ""
+
+    @pytest.mark.asyncio
+    async def test_offline_skip_reason_empty(self):
+        """离线跳过（complete=True）不携带 reason——不进入 failed 明细的口径锚点。"""
+        import time
+
+        from app.api.endpoints import torrent_speed
+
+        dl = SimpleNamespace(fail_time=0, client=None, is_online=False, last_update=time.time())
+        r = await torrent_speed._process_downloader_speeds(dl)
+        assert r.complete is True
+        assert r.reason == ""
+
+
+class TestGatherFailedDetails:
+    """_gather_active_speeds 的 failed 明细收集（字段与口径）。"""
+
+    @pytest.mark.asyncio
+    @patch("app.api.endpoints.torrent_speed.call_downloader_api")
+    async def test_failed_details_collected_with_fields(self, mock_call):
+        import asyncio as _asyncio
+
+        from app.api.endpoints import torrent_speed
+        from qbittorrentapi import Client as qbClient
+
+        async def _by_id(downloader_id, lane, func, args=(), kwargs=None, **opts):
+            if downloader_id == "dl_bad":
+                raise _asyncio.TimeoutError()
+            return func(*args, **(kwargs or {}))
+
+        mock_call.side_effect = _by_id
+
+        ok_client = MagicMock(spec=qbClient)
+        ok_client.torrents_info.return_value = [{"hash": "h1", "dlspeed": 100, "upspeed": 0, "progress": 0.5}]
+        bad_client = MagicMock(spec=qbClient)
+        bad_client.torrents_info.return_value = [{"hash": "h2", "dlspeed": 50, "upspeed": 0}]
+
+        ok_dl = SimpleNamespace(downloader_id="dl_ok", downloader_type=0, nickname="ok", fail_time=0, client=ok_client)
+        bad_dl = SimpleNamespace(
+            downloader_id="dl_bad", downloader_type=0, nickname="bad", fail_time=0, client=bad_client
+        )
+
+        gathered = await torrent_speed._gather_active_speeds([ok_dl, bad_dl])
+
+        assert gathered.complete is False
+        assert gathered.failed == [{"downloader_id": "dl_bad", "nickname": "bad", "reason": "timeout"}]
+        # 成功者种子扁平化并打标签
+        assert len(gathered.torrents) == 1
+        assert gathered.torrents[0]["downloader_id"] == "dl_ok"
+
+    @pytest.mark.asyncio
+    async def test_offline_skipped_not_in_failed(self):
+        """离线跳过者（complete=True）不出现在 failed 明细。"""
+        import time
+
+        from app.api.endpoints import torrent_speed
+
+        offline_dl = SimpleNamespace(
+            downloader_id="dl_off",
+            downloader_type=0,
+            nickname="off",
+            fail_time=0,
+            client=None,
+            is_online=False,
+            last_update=time.time(),
+        )
+        gathered = await torrent_speed._gather_active_speeds([offline_dl])
+        assert gathered.complete is True
+        assert gathered.failed == []
+        assert gathered.torrents == []
+
+
+class TestPartialFailureMsg:
+    """206 msg 文案构造：截断与回退口径。"""
+
+    def test_empty_failed_returns_generic(self):
+        from app.api.endpoints.torrent_speed import _partial_failure_msg
+
+        assert _partial_failure_msg([]) == "部分下载器速度获取失败，活动快照尚未就绪"
+
+    def test_up_to_five_names_joined(self):
+        from app.api.endpoints.torrent_speed import _partial_failure_msg
+
+        failed = [{"nickname": f"dl{i}", "downloader_id": f"id{i}", "reason": "timeout"} for i in range(5)]
+        msg = _partial_failure_msg(failed)
+        assert msg.endswith("（失败: dl0、dl1、dl2、dl3、dl4）")
+
+    def test_more_than_five_truncated(self):
+        from app.api.endpoints.torrent_speed import _partial_failure_msg
+
+        failed = [{"nickname": f"dl{i}", "downloader_id": f"id{i}", "reason": "timeout"} for i in range(7)]
+        msg = _partial_failure_msg(failed)
+        assert msg.endswith("（失败: dl0、dl1、dl2、dl3、dl4 等7个）")
+        assert "dl5" not in msg.split("等7个")[0]
+
+    def test_nickname_fallback_and_unknown(self):
+        """nickname 缺失回退 downloader_id，两者皆无记 unknown。"""
+        from app.api.endpoints.torrent_speed import _partial_failure_msg
+
+        msg = _partial_failure_msg(
+            [
+                {"nickname": None, "downloader_id": "id9", "reason": "api_error"},
+                {"nickname": None, "downloader_id": "", "reason": "api_error"},
+            ]
+        )
+        assert "id9" in msg
+        assert "unknown" in msg
+
+
+class TestFreshlyOfflineClockAnomaly:
+    """_is_freshly_offline 的时钟异常防御。"""
+
+    def test_future_last_update_treated_as_fresh(self):
+        """last_update 在未来（时钟回拨/NTP 跳变）→ 差值为负 < 窗口 → 视为新鲜离线。"""
+        import time
+
+        from app.api.endpoints import torrent_speed
+
+        dl = SimpleNamespace(is_online=False, last_update=time.time() + 3600)
+        assert torrent_speed._is_freshly_offline(dl) is True

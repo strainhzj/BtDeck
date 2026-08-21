@@ -253,7 +253,8 @@ async def cleanup_preview(
 
 @router.post("/cleanup", response_model=CommonResponse)
 async def manual_cleanup(
-    request: CleanupRequest,
+    cleanup_request: CleanupRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
     audit_service: AuditLogService = Depends(get_audit_service),
@@ -290,7 +291,10 @@ async def manual_cleanup(
         service = RecycleBinService()
         try:
             result = await service.manual_cleanup(
-                torrent_ids=request.torrent_ids, operator=current_user.username, audit_service=audit_service
+                torrent_ids=cleanup_request.torrent_ids,
+                operator=current_user.username,
+                audit_service=audit_service,
+                request=http_request,
             )
 
             # 根据结果确定消息

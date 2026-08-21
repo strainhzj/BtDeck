@@ -34,7 +34,7 @@ from app.api.models.advanced_search import (
 from app.database import Base
 from app.downloader.models import BtDownloaders
 from app.services.advanced_search import AdvancedSearchService, SearchQueryBuilder
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
 from tests.api.conftest import make_torrent
 
 # ==================== 共享 fixture ====================
@@ -53,7 +53,7 @@ def db_session():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    tables = [TorrentInfo.__table__, TrackerInfo.__table__, BtDownloaders.__table__]
+    tables = [TorrentInfo.__table__, TrackerInfo.__table__, BtDownloaders.__table__, TrackerKeywordConfig.__table__]
     Base.metadata.create_all(bind=engine, tables=tables)
     session = sessionmaker(bind=engine)()
     try:

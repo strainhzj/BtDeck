@@ -5,11 +5,13 @@ import TorrentsManagement from '@/views/torrents/index.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
+  advancedSearch,
   deleteBatchAsync,
   getActiveTorrents,
   getBatchDeleteStatus,
   getDownloaderList,
   getDuplicateTorrents,
+  getTrackerDomains,
   getTorrentList
 } from '@/api/torrents'
 import type { Torrent } from '@/api/torrents'
@@ -43,6 +45,7 @@ jest.mock('@/api/torrents', () => ({
   advancedSearch: jest.fn(),
   getDuplicateTorrents: jest.fn(),
   getDownloaderList: jest.fn(),
+  getTrackerDomains: jest.fn(),
   reannounceTorrents: jest.fn(),
   getActiveTorrents: jest.fn(),
   applySearchTemplate: jest.fn(),
@@ -50,8 +53,10 @@ jest.mock('@/api/torrents', () => ({
 }))
 
 const localVue = createLocalVue()
+const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
+const mockGetTrackerDomains = getTrackerDomains as jest.MockedFunction<typeof getTrackerDomains>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockDeleteBatchAsync = deleteBatchAsync as jest.MockedFunction<typeof deleteBatchAsync>
@@ -91,6 +96,7 @@ interface ListQueryState {
   sort_by: string
   sort_order: string
   showActiveOnly: boolean
+  tracker_domain: string[]
 }
 
 interface TorrentListViewVm extends Vue {
@@ -99,13 +105,20 @@ interface TorrentListViewVm extends Vue {
   pageSizeInput: string
   pageSizeDropdownExpanded: boolean
   showingDuplicates: boolean
+  showingSameContent: boolean
+  showingSingleErrors: boolean
   listQuery: ListQueryState
-  showSameContentInspectionDialog: boolean
-  handleQuickActionCommand(command: string): void
+  handleQuickActionCommand(command: string): Promise<void>
+  exitSameContentInspection(): Promise<void>
+  exitSingleErrorInspection(): Promise<void>
   handleDuplicateSearchToggle(enabled: boolean): Promise<void>
   handleFilter(): void
   handleSort(field: 'name' | 'size' | 'status' | 'ratio' | 'added_date'): void
   handlePageChange(page: number): void
+  handlePageSizeSelect(suggestion: { value: string }): void
+  handleManualRefresh(): void
+  performAdvancedSearch(searchParams: Record<string, unknown>): Promise<void>
+  applyQueryTemplate(conditions: Record<string, unknown>): Promise<boolean>
   callDeleteWithLevelAPI(torrents: Torrent[], level: number): Promise<void>
 }
 
@@ -162,7 +175,6 @@ function mountListView(): Wrapper<Vue> {
       GlobalReplaceTrackerDialog: true,
       BatchTransferDialog: true,
       SetLocationDialog: true,
-      SameContentInspectionDialog: true,
       'el-button': {
         template: '<button v-on="$listeners"><slot /></button>'
       },
@@ -206,7 +218,8 @@ function torrentFixture(): Torrent {
     tags: '',
     category: '',
     superSeeding: false,
-    enabled: true
+    enabled: true,
+    auxiliarySeedCount: 1
   }
 }
 
@@ -230,6 +243,18 @@ describe('torrent list view pagination and sorting', () => {
       msg: 'ok',
       code: '200',
       data: []
+    })
+    mockGetTrackerDomains.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: []
+    })
+    mockAdvancedSearch.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: { list: [], total: 0, page: 1, pageSize: 20 }
     })
     mockGetDuplicateTorrents.mockResolvedValue({
       status: 'success',
@@ -281,18 +306,225 @@ describe('torrent list view pagination and sorting', () => {
     })
   })
 
-  it('快捷操作可打开同内容异常排查弹窗', async() => {
+  it('列表视图展示同步任务持久化的辅种数量', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [{ ...torrentFixture(), auxiliarySeedCount: 31 }],
+        total: 1,
+        pageSize: 20
+      }
+    })
+
+    wrapper = mountListView()
+    await flushLifecycle()
+
+    const headers = wrapper.findAll('thead th').wrappers
+    const auxiliaryIndex = headers.findIndex(header => header.text() === '辅种数量')
+    const cells = wrapper.find('tbody tr').findAll('td').wrappers
+
+    expect(auxiliaryIndex).toBeGreaterThan(-1)
+    expect(cells[auxiliaryIndex].text()).toBe('31')
+  })
+
+  it('状态列为 tracker 异常种子叠加 Tracker异常 标签（error 状态与正常种子不打）', async() => {
+    mockGetTorrentList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: {
+        list: [
+          { ...torrentFixture(), status: 'seeding', hasTrackerError: true, lastAnnounceMsg: 'You cannot seed the same torrent' },
+          { ...torrentFixture(), infoId: 'info-2', hash: 'hash-2', status: 'error', hasTrackerError: true },
+          { ...torrentFixture(), infoId: 'info-3', hash: 'hash-3', status: 'seeding' }
+        ],
+        total: 3,
+        pageSize: 20
+      }
+    })
+
+    wrapper = mountListView()
+    await flushLifecycle()
+
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(3)
+    // seeding + hasTrackerError：徽标 + 红色小标签
+    expect(rows.at(0).find('.status-badge').text()).toBe('做种中')
+    expect(rows.at(0).find('.tracker-error-tag').exists()).toBe(true)
+    expect(rows.at(0).find('.tracker-error-tag').text()).toBe('Tracker异常')
+    expect(rows.at(0).find('.tracker-error-tag').attributes('title')).toContain('You cannot seed')
+    // error 状态已有"错误"徽标，不重复打标
+    expect(rows.at(1).find('.status-badge').text()).toBe('错误')
+    expect(rows.at(1).find('.tracker-error-tag').exists()).toBe(false)
+    // 正常种子无标签
+    expect(rows.at(2).find('.tracker-error-tag').exists()).toBe(false)
+  })
+
+  it('同内容模式的筛选、排序、分页大小、翻页和刷新始终复用列表查询', async() => {
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm
+    mockGetTorrentList.mockClear()
+    mockGetActiveTorrents.mockClear()
+
+    expect(wrapper.text()).toContain('同内容异常排查')
+    expect(vm.showingSameContent).toBe(false)
+
+    await vm.handleQuickActionCommand('inspect-same-content')
+    await flushLifecycle()
+
+    expect(vm.showingSameContent).toBe(true)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 0, limit: 20, same_content_only: true })
+    )
+    expect(wrapper.text()).toContain('退出排查并返回普通列表')
+
+    vm.listQuery.name_like = 'needle'
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name_like: 'needle', skip: 0, same_content_only: true })
+    )
+
+    vm.handleSort('name')
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'name', sort_order: 'desc', same_content_only: true })
+    )
+
+    vm.handlePageSizeSelect({ value: '50' })
+    await flushLifecycle()
+    expect(vm.currentPage).toBe(1)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 0, limit: 50, same_content_only: true })
+    )
+
+    vm.handlePageChange(2)
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 50, limit: 50, same_content_only: true })
+    )
+
+    mockGetTorrentList.mockClear()
+    vm.handleManualRefresh()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 50, limit: 50, same_content_only: true })
+    )
+    expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
+
+    await vm.exitSameContentInspection()
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ same_content_only: true })
+    )
+  })
+
+  it('简单搜索三个下拉框按下载器、状态、tracker展示提示语', () => {
+    wrapper = mountListView()
+    // vue-test-utils v1 对驼峰注册名不做 kebab 转换，stub 标签为 advancedmultiselect-stub
+    const selects = wrapper.findAll('advancedmultiselect-stub')
+
+    expect(selects).toHaveLength(3)
+    expect(selects.at(0).attributes('placeholder')).toBe('请选择下载器')
+    expect(selects.at(1).attributes('placeholder')).toBe('请选择种子状态')
+    expect(selects.at(2).attributes('placeholder')).toBe('请选择tracker')
+  })
+
+  it('重复任务、高级搜索和查询模板均会退出同内容模式', async() => {
     wrapper = mountListView()
     await flushLifecycle()
     const vm = wrapper.vm as unknown as TorrentListViewVm
 
-    expect(wrapper.text()).toContain('同内容异常排查')
-    expect(vm.showSameContentInspectionDialog).toBe(false)
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockGetTorrentList.mockClear()
+    mockGetDuplicateTorrents.mockClear()
 
-    vm.handleQuickActionCommand('inspect-same-content')
-    await localVue.nextTick()
+    await vm.handleDuplicateSearchToggle(true)
 
-    expect(vm.showSameContentInspectionDialog).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(vm.showingDuplicates).toBe(true)
+    expect(mockGetDuplicateTorrents).toHaveBeenCalledTimes(1)
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
+
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockAdvancedSearch.mockClear()
+    await vm.performAdvancedSearch({
+      complex_search: true,
+      groups_count: 1,
+      groups: JSON.stringify([{
+        logic: 'AND',
+        conditions: [{ field: 'name', operator: 'contains', value: 'needle' }]
+      }]),
+      between_group_logics: JSON.stringify([])
+    })
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockAdvancedSearch).toHaveBeenCalledTimes(1)
+
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockGetTorrentList.mockClear()
+    const applied = await vm.applyQueryTemplate({
+      source: 'simple',
+      version: 1,
+      listQuery: {
+        name_like: 'template',
+        downloader_id: [],
+        status: [],
+        showActiveOnly: false,
+        sort_by: 'added_date',
+        sort_order: 'desc'
+      }
+    })
+    expect(applied).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ same_content_only: true })
+    )
+  })
+
+  it('支持 Tracker 主域名筛选，并可快捷排查错误单种', async() => {
+    mockGetTrackerDomains.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: ['tracker.example.com', 'mirror.example.net']
+    })
+    wrapper = mountListView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TorrentListViewVm & {
+      trackerDomainOptions: Array<{ value: string, label: string }>
+    }
+
+    expect(vm.trackerDomainOptions).toEqual([
+      { value: 'tracker.example.com', label: 'tracker.example.com' },
+      { value: 'mirror.example.net', label: 'mirror.example.net' }
+    ])
+
+    vm.listQuery.tracker_domain = ['tracker.example.com', 'mirror.example.net']
+    mockGetTorrentList.mockClear()
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tracker_domain: 'tracker.example.com,mirror.example.net' })
+    )
+
+    await vm.handleQuickActionCommand('inspect-single-errors')
+    await flushLifecycle()
+    expect(vm.showingSingleErrors).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tracker_domain: 'tracker.example.com,mirror.example.net',
+        single_error_only: true
+      })
+    )
+    expect(wrapper.text()).toContain('错误单种排查')
+
+    await vm.exitSingleErrorInspection()
+    expect(vm.showingSingleErrors).toBe(false)
   })
 
   it('uses the traditional page-size combobox presets and custom limit behavior', async() => {
@@ -542,5 +774,124 @@ describe('torrent list view pagination and sorting', () => {
     expect(vm.listQuery.sort_order).toBe('asc')
     expect(sizeHeader.attributes('aria-sort')).toBe('ascending')
     expect(sizeHeader.find('.sort-icon').findComponent(LucideIcon).props('name')).toBe('arrow-up')
+  })
+})
+
+describe('详情死路由不启动轮询（W1-1）', () => {
+  function mountWithRoute(path: string): Wrapper<Vue> {
+    return shallowMount(TorrentsManagement, {
+      localVue,
+      mocks: {
+        $route: { path, query: {} },
+        $router: { replace: jest.fn() },
+        $message: message,
+        $notify: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
+        $confirm: jest.fn(() => Promise.resolve()),
+        $loading: jest.fn(() => ({ close: jest.fn() }))
+      },
+      stubs: {
+        BatchButton: true,
+        PageSizeCombobox,
+        LucideIcon,
+        BatchOperationDialog: true,
+        AdvancedSearchBuilder: true,
+        TorrentAddDialog: true,
+        TrackerOperationDialog: true,
+        GlobalReplaceTrackerDialog: true,
+        BatchTransferDialog: true,
+        SetLocationDialog: true,
+        QuickDeleteDuplicatesDialog: true,
+        TrackerDetailCard: true,
+        'el-button': { template: '<button v-on="$listeners"><slot /></button>' },
+        'el-checkbox': true,
+        'el-dropdown': { template: '<div><slot /><slot name="dropdown" /></div>' },
+        'el-dropdown-menu': { template: '<div><slot /></div>' },
+        'el-dropdown-item': { template: '<div><slot /></div>' },
+        'el-table': { template: '<div><slot /></div>' },
+        'el-table-column': { template: '<div><slot /></div>' },
+        'el-pagination': true,
+        'el-select': { template: '<div><slot /></div>' },
+        'el-option': true,
+        'el-input': { template: '<input v-on="$listeners" />' },
+        'el-date-picker': true,
+        'el-tag': true,
+        'el-switch': true,
+        'el-tooltip': true,
+        'el-popover': true,
+        'el-dialog': { template: '<div><slot /></div>' },
+        'el-form': { template: '<form><slot /></form>' },
+        'el-form-item': true,
+        'el-tabs': { template: '<div><slot /></div>' },
+        'el-tab-pane': { template: '<div><slot /></div>' },
+        'el-badge': true,
+        'el-empty': true,
+        'el-skeleton': true,
+        'el-skeleton-item': true,
+        'el-alert': true,
+        'el-radio-group': true,
+        'el-radio': true,
+        'el-tree': true,
+        'el-upload': true,
+        'el-progress': true,
+        'el-rate': true,
+        'el-autocomplete': true,
+        'el-cascader': true,
+        'el-checkbox-group': true,
+        'el-color-picker': true,
+        'el-input-number': true,
+        'el-radio-button': true,
+        'el-slider': true,
+        'el-switch-stub': true,
+        'el-time-select': true,
+        'el-transfer': true,
+        'el-divider': true,
+        'el-link': true,
+        'el-card': true,
+        'el-carousel': true,
+        'el-carousel-item': true,
+        'el-collapse': true,
+        'el-collapse-item': true,
+        'el-container': true,
+        'el-aside': true,
+        'el-header': true,
+        'el-main': true,
+        'el-footer': true,
+        'el-row': true,
+        'el-col': true,
+        'el-steps': true,
+        'el-step': true,
+        'el-timeline': true,
+        'el-timeline-item': true,
+        'el-breadcrumb': true,
+        'el-breadcrumb-item': true,
+        'el-page-header': true,
+        'el-descriptions': true,
+        'el-descriptions-item': true,
+        'el-result': true,
+        'el-avatar': true,
+        'el-image': true,
+        'el-backtop': true,
+        'el-infinite-scroll': true,
+        'el-loading': true,
+        'el-drawer': true,
+        'el-menu': true,
+        'el-menu-item': true,
+        'el-submenu': true,
+        'el-button-group': true,
+        'el-option-group': true
+      }
+    })
+  }
+
+  it('/torrents/detail/:hash 下不启动速度轮询', async() => {
+    const wrapper = mountWithRoute('/torrents/detail/abc123')
+    await flushLifecycle()
+    expect((wrapper.vm as any).speedPollingActive).toBe(false)
+  })
+
+  it('/torrents/index 下正常启动速度轮询', async() => {
+    const wrapper = mountWithRoute('/torrents/index')
+    await flushLifecycle()
+    expect((wrapper.vm as any).speedPollingActive).toBe(true)
   })
 })

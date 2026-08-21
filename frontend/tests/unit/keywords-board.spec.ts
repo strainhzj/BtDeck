@@ -14,8 +14,6 @@ import KeywordsBoard from '@/views/tracker/keywords-board.vue'
 import {
   ApiResponse,
   getPoolKeywords,
-  moveKeywordToPool,
-  deleteKeyword,
   GetPoolKeywordsParams,
   PaginatedResponse,
   PoolKeyword,

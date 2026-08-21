@@ -49,6 +49,11 @@ class DownloaderPathMaintenance(Base):
 
     # 状态
     is_enabled = Column(Boolean, default=True, nullable=False, comment="是否启用")
+    disabled_by = Column(
+        String(10),
+        nullable=True,
+        comment="禁用来源：NULL=从未禁用/已重新启用，auto=扫描清理自动禁用，user=用户手动禁用",
+    )
 
     # 统计信息
     torrent_count = Column(Integer, default=0, nullable=False, comment="使用该路径的种子数量")
@@ -93,6 +98,7 @@ class DownloaderPathMaintenance(Base):
         self.is_enabled = is_enabled
         self.torrent_count = torrent_count
         self.last_updated_time = last_updated_time
+        self.disabled_by = None
 
         if created_at is not None:
             self.created_at = created_at
@@ -113,6 +119,7 @@ class DownloaderPathMaintenance(Base):
             "path_type": self.path_type,
             "path_value": self.path_value,
             "is_enabled": self.is_enabled,
+            "disabled_by": self.disabled_by,
             "torrent_count": self.torrent_count,
             "last_updated_time": self.last_updated_time.isoformat() if self.last_updated_time else None,
             "created_at": self.created_at.isoformat() if self.created_at else None,

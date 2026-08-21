@@ -11,7 +11,11 @@
     </div>
 
     <!-- ========== 筛选区域 ========== -->
-    <section class="management-panel" aria-label="回收站筛选条件">
+    <CollapsiblePanel
+      title="筛选条件"
+      description="按名称搜索回收站中的种子"
+      storage-key="btdeck_recycle_bin_filter_collapsed"
+    >
       <div class="management-filter">
         <div class="management-filter__field management-filter__field--wide">
           <label class="management-filter__label" for="recycle-bin-search">种子名称</label>
@@ -35,7 +39,7 @@
           </el-button>
         </div>
       </div>
-    </section>
+    </CollapsiblePanel>
 
     <!-- ========== 批量操作工具栏 ========== -->
     <section class="batch-operations">

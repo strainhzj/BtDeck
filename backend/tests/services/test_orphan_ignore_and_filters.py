@@ -42,6 +42,7 @@ def _detail(
     downloader_id: str | None = "dl_001",
     confidence: str = "high",
     deleted: bool = False,
+    hardlink_copy_count: int | None = None,
 ) -> OrphanFile:
     item = OrphanFile(
         scan_id=scan_id,
@@ -50,12 +51,20 @@ def _detail(
         downloader_id=downloader_id,
         confidence=confidence,
         canonical_path=normalize_path(path),
+        hardlink_copy_count=hardlink_copy_count,
     )
     item.is_deleted = deleted
     return item
 
 
-def _candidate(path: str, *, downloader_id: str = "dl_001", ignored: bool = False) -> OrphanCurrentCandidate:
+def _candidate(
+    path: str,
+    *,
+    downloader_id: str = "dl_001",
+    ignored: bool = False,
+    device_id: str | None = None,
+    inode: str | None = None,
+) -> OrphanCurrentCandidate:
     now = datetime.utcnow()
     cand = OrphanCurrentCandidate(
         canonical_path=normalize_path(path),
@@ -66,6 +75,8 @@ def _candidate(path: str, *, downloader_id: str = "dl_001", ignored: bool = Fals
         operation_state="stable",
         confidence="high",
         is_ignored=ignored,
+        device_id=device_id,
+        inode=inode,
     )
     if ignored:
         cand.ignored_at = now
@@ -864,3 +875,139 @@ async def test_cleanup_preview_includes_low_confidence_with_count(async_orphan_d
     assert result["total_count"] == 2
     # low_confidence_count 准确反映 low 项数量
     assert result["low_confidence_count"] == 1, "应统计 1 个 low confidence 项供前端警告"
+
+
+# ==================== 副本筛选（hardlink_copies=located，快照列语义） ====================
+
+
+async def _seed_copy_count_samples(async_orphan_db):
+    """四类样本：快照>0（命中）、快照=0、快照=NULL（未知）、已删除。"""
+    from app.downloader.models import BtDownloaders
+
+    details = [
+        _detail("scan_1", "/data/located.bin", 100, hardlink_copy_count=2),
+        _detail("scan_1", "/data/no-copies.bin", 200, hardlink_copy_count=0),
+        _detail("scan_1", "/data/pending.bin", 300, hardlink_copy_count=None),
+        _detail("scan_1", "/data/deleted.bin", 400, hardlink_copy_count=3, deleted=True),
+    ]
+    async_orphan_db.add_all([_scan("scan_1"), *details, BtDownloaders(downloader_id="dl_001", nickname="主下载器")])
+    await async_orphan_db.commit()
+
+
+async def test_list_filters_hardlink_copies_located(async_orphan_db):
+    """located 筛选仅保留快照列 hardlink_copy_count > 0 的未删除文件。"""
+    await _seed_copy_count_samples(async_orphan_db)
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20, hardlink_copies="located")
+
+    assert result["total"] == 1
+    assert [item["file_path"] for item in result["list"]] == ["/data/located.bin"]
+
+
+async def test_list_returns_hardlink_copy_count_snapshot(async_orphan_db):
+    """列表行直出明细快照列，不再对文件做实时 stat。"""
+    await _seed_copy_count_samples(async_orphan_db)
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20)
+
+    counts = {item["file_path"]: item["hardlink_copy_count"] for item in result["list"]}
+    assert counts == {
+        "/data/located.bin": 2,
+        "/data/no-copies.bin": 0,
+        "/data/pending.bin": None,
+    }
+
+
+async def test_list_hardlink_copies_filter_ignores_unknown_values(async_orphan_db):
+    """未识别的 hardlink_copies 取值不追加条件（与 status/confidence 宽松口径一致）。"""
+    await _seed_copy_count_samples(async_orphan_db)
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(page=1, page_size=20, hardlink_copies="bogus")
+
+    assert result["total"] == 3
+
+
+async def test_list_hardlink_copies_filter_combines_with_ignored_status(async_orphan_db):
+    """located 与 status=ignored 正交：已忽视但快照有副本的文件仍可被筛出。"""
+    details = [_detail("scan_1", "/data/ignored-located.bin", 100, hardlink_copy_count=1)]
+    candidates = [_candidate("/data/ignored-located.bin", ignored=True)]
+    async_orphan_db.add_all([_scan("scan_1"), *details, *candidates])
+    await async_orphan_db.commit()
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(
+        page=1, page_size=20, status="ignored", hardlink_copies="located"
+    )
+
+    assert result["total"] == 1
+    assert [item["file_path"] for item in result["list"]] == ["/data/ignored-located.bin"]
+
+
+async def test_grouped_and_folder_children_share_located_filter(async_orphan_db):
+    """文件夹聚合与子项展开与扁平列表共用 located 过滤口径。"""
+    await _seed_copy_count_samples(async_orphan_db)
+
+    grouped = await OrphanFileService(async_orphan_db).get_orphan_list_grouped(
+        page=1, page_size=20, hardlink_copies="located"
+    )
+    assert grouped["total"] == 1
+    assert grouped["list"][0]["file_path"] == "/data/located.bin"
+
+    children = await OrphanFileService(async_orphan_db).get_orphan_folder_children(
+        "/data", page=1, page_size=20, hardlink_copies="located"
+    )
+    assert children["total"] == 1
+    assert [item["file_path"] for item in children["list"]] == ["/data/located.bin"]
+
+
+async def test_resolve_orphan_selection_applies_located_filter(async_orphan_db):
+    """全选当前筛选快照透传 located：只选择快照有副本的文件（口径与列表一致）。"""
+    await _seed_copy_count_samples(async_orphan_db)
+    details = (await async_orphan_db.execute(OrphanFile.__table__.select())).fetchall()
+    ids_by_path = {row.file_path: row.id for row in details}
+
+    ids = await OrphanFileService(async_orphan_db).resolve_orphan_selection(
+        orphan_ids=[],
+        select_all=True,
+        excluded_orphan_ids=[],
+        scan_id="scan_1",
+        hardlink_copies="located",
+    )
+
+    assert ids == [ids_by_path["/data/located.bin"]]
+
+
+async def test_prefix_match_preview_applies_located_filter(async_orphan_db):
+    """快捷前缀预览透传 located：统计范围限定有副本的待清理文件。"""
+    details = [
+        _detail("scan_1", "/data/prefix/located.bin", 100, hardlink_copy_count=2),
+        _detail("scan_1", "/data/prefix/plain.bin", 200, hardlink_copy_count=0),
+        _detail("scan_1", "/other/plain.bin", 300, hardlink_copy_count=1),
+    ]
+    async_orphan_db.add_all([_scan("scan_1"), *details])
+    await async_orphan_db.commit()
+
+    scoped = await OrphanFileService(async_orphan_db).prefix_match_preview(
+        "/data/prefix/", "scan_1", hardlink_copies="located"
+    )
+    assert scoped["count"] == 1
+
+    unscoped = await OrphanFileService(async_orphan_db).prefix_match_preview("/data/prefix/", "scan_1")
+    assert unscoped["count"] == 2
+
+
+async def test_list_hardlink_copies_located_combines_with_confidence_filter(async_orphan_db):
+    """located 与置信度筛选 AND 叠加：只返回同时满足两个条件的行。"""
+    details = [
+        _detail("scan_1", "/data/located-high.bin", 100, confidence="high", hardlink_copy_count=1),
+        _detail("scan_1", "/data/located-low.bin", 200, confidence="low", hardlink_copy_count=1),
+        _detail("scan_1", "/data/unlocated-high.bin", 300, confidence="high", hardlink_copy_count=0),
+    ]
+    async_orphan_db.add_all([_scan("scan_1"), *details])
+    await async_orphan_db.commit()
+
+    result = await OrphanFileService(async_orphan_db).get_orphan_list(
+        page=1, page_size=20, hardlink_copies="located", confidence="high"
+    )
+
+    assert result["total"] == 1
+    assert [item["file_path"] for item in result["list"]] == ["/data/located-high.bin"]

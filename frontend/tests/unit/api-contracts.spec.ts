@@ -14,9 +14,12 @@ import {
   getCleanupJobStatus,
   getHardlinkCopyLocations,
   getLatestScan,
+  getOrphanFolderChildren,
   getOrphanList,
   getPurgeJobStatus,
+  getScanStatus,
   purgeQuarantineNow,
+  reviewScanGuardrail,
   setIgnored,
   triggerScan
 } from '@/api/orphan-files'
@@ -205,6 +208,41 @@ describe('API 请求契约', () => {
       )
     })
 
+    it('后台扫描提供轻量状态轮询与兼容复核记录接口', () => {
+      expectRequest(
+        () => getScanStatus('scan-1'),
+        { url: '/orphan-files/scans/scan-1', method: 'get' }
+      )
+
+      mockRequest.mockReset()
+      const data = {
+        confirmed_path_mapping: true as const,
+        confirmed_orphan_samples: true as const,
+        note: '已核查路径映射和二十条样本'
+      }
+      expectRequest(
+        () => reviewScanGuardrail('scan-1', data),
+        {
+          url: '/orphan-files/scans/scan-1/guardrail-review',
+          method: 'post',
+          data
+        }
+      )
+    })
+
+    it('文件夹子项展开后使用独立分页查询', () => {
+      const params = {
+        folder_path: '/data/movies',
+        page: 3,
+        page_size: 20,
+        status: 'pending' as const
+      }
+      expectRequest(
+        () => getOrphanFolderChildren(params),
+        { url: '/orphan-files/folders/children', method: 'get', params }
+      )
+    })
+
     it('预览和执行清理绑定同一 scan_id 与候选 ID', () => {
       const data = { scan_id: 'scan-1', orphan_ids: [1, 2] }
       expectRequest(
@@ -369,9 +407,23 @@ describe('API 请求契约', () => {
       )
     })
 
-    it('导出文件 URL 编码规则不经过 Axios 包装', () => {
-      expect(downloadExportFile('audit.csv')).toBe('/api/audit-logs/download-export/audit.csv')
-      expect(mockRequest).not.toHaveBeenCalled()
+    it('导出文件下载走 Axios blob 契约（认证头/续期链路），文件名 URL 编码', () => {
+      // 历史 window.open 直开 URL 三重损坏：前缀缺 /api/v1、新标签不带
+      // Authorization、绕过拦截器无续期/登出处理——改走统一 request 客户端
+      downloadExportFile('audit_logs_20260818_120000.csv')
+      expect(mockRequest).toHaveBeenCalledWith({
+        url: '/audit-logs/download-export/audit_logs_20260818_120000.csv',
+        method: 'get',
+        responseType: 'blob'
+      })
+
+      mockRequest.mockReset()
+      downloadExportFile('audit logs +特殊.csv')
+      expect(mockRequest).toHaveBeenCalledWith(
+        expect.objectContaining({
+          url: `/audit-logs/download-export/${encodeURIComponent('audit logs +特殊.csv')}`
+        })
+      )
     })
 
     it('聚合标签端点区分分类、标签和详细列表', () => {

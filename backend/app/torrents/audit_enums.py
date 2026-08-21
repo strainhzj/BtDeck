@@ -26,6 +26,7 @@ class AuditOperationType(str, Enum):
     PAUSE = "pause"  # 暂停种子
     RESUME = "resume"  # 恢复/开始种子
     RECHECK = "recheck"  # 重新检查种子
+    TRANSFER = "transfer"  # 种子转移
     DELETE_L4 = "delete_l4"  # 等级4删除（待删除标签）
     DELETE_L3 = "delete_l3"  # 等级3删除（回收站）
     DELETE_L2 = "delete_l2"  # 等级2删除（删除任务保留数据）
@@ -87,6 +88,7 @@ class AuditOperationType(str, Enum):
     ORPHAN_IGNORE = "orphan_ignore"  # 孤儿文件忽视/取消忽视
     ORPHAN_PURGE = "orphan_purge"  # 孤儿文件隔离区彻底删除（手动）
     ORPHAN_RESTORE = "orphan_restore"  # 孤儿文件隔离区恢复（手动）
+    ORPHAN_HARDLINK_COPY_DELETE = "orphan_hardlink_copy_delete"  # 孤儿硬链接副本删除（手动）
 
     @classmethod
     def is_valid(cls, value: str) -> bool:
@@ -120,6 +122,7 @@ class AuditOperationType(str, Enum):
             cls.PAUSE.value: "暂停种子",
             cls.RESUME.value: "开始种子",
             cls.RECHECK.value: "重新检查种子",
+            cls.TRANSFER.value: "种子转移",
             cls.DELETE_L4.value: "等级4删除（待删除标签）",
             cls.DELETE_L3.value: "等级3删除（回收站）",
             cls.DELETE_L2.value: "等级2删除（保留数据）",
@@ -171,6 +174,7 @@ class AuditOperationType(str, Enum):
             cls.ORPHAN_IGNORE.value: "孤儿文件忽视",
             cls.ORPHAN_PURGE.value: "孤儿文件彻底删除",
             cls.ORPHAN_RESTORE.value: "孤儿文件恢复",
+            cls.ORPHAN_HARDLINK_COPY_DELETE.value: "孤儿硬链接副本删除",
         }
         return display_names.get(value, value)
 
@@ -190,6 +194,7 @@ class AuditOperationType(str, Enum):
             cls.PAUSE.value: "torrent",
             cls.RESUME.value: "torrent",
             cls.RECHECK.value: "torrent",
+            cls.TRANSFER.value: "torrent",
             cls.DELETE_L4.value: "torrent",
             cls.DELETE_L3.value: "torrent",
             cls.DELETE_L2.value: "torrent",
@@ -241,6 +246,7 @@ class AuditOperationType(str, Enum):
             cls.ORPHAN_IGNORE.value: "orphan_files",
             cls.ORPHAN_PURGE.value: "orphan_files",
             cls.ORPHAN_RESTORE.value: "orphan_files",
+            cls.ORPHAN_HARDLINK_COPY_DELETE.value: "orphan_files",
         }
         return categories.get(value)
 

@@ -45,7 +45,7 @@ class AsyncCronTaskCRUD:
             return DatabaseResult.success_result(task_list)
 
         except Exception as e:
-            logger.error(f"异步获取启用任务失败: {str(e)}")
+            logger.error(f"异步获取启用任务失败: {str(e)}", exc_info=True)
             return DatabaseResult.failure_result(f"获取启用任务失败: {str(e)}")
 
     @staticmethod
@@ -73,7 +73,7 @@ class AsyncCronTaskCRUD:
             return DatabaseResult.success_result(task.to_dict())
 
         except Exception as e:
-            logger.error(f"异步获取定时任务失败 (ID: {task_id}): {str(e)}")
+            logger.error(f"异步获取定时任务失败 (ID: {task_id}): {str(e)}", exc_info=True)
             return DatabaseResult.failure_result(f"获取定时任务失败: {str(e)}")
 
     @staticmethod
@@ -108,7 +108,7 @@ class AsyncCronTaskCRUD:
 
         except Exception as e:
             await db.rollback()
-            logger.error(f"异步更新任务状态失败 (ID: {task_id}): {str(e)}")
+            logger.error(f"异步更新任务状态失败 (ID: {task_id}): {str(e)}", exc_info=True)
             return DatabaseResult.failure_result(f"更新任务状态失败: {str(e)}")
 
     @staticmethod
@@ -141,7 +141,7 @@ class AsyncCronTaskCRUD:
 
         except Exception as e:
             await db.rollback()
-            logger.error(f"异步更新任务开始时间失败 (ID: {task_id}): {str(e)}")
+            logger.error(f"异步更新任务开始时间失败 (ID: {task_id}): {str(e)}", exc_info=True)
             return DatabaseResult.failure_result(f"更新任务开始时间失败: {str(e)}")
 
     @staticmethod
@@ -174,7 +174,7 @@ class AsyncCronTaskCRUD:
 
         except Exception as e:
             await db.rollback()
-            logger.error(f"异步更新任务执行持续时间失败 (ID: {task_id}): {str(e)}")
+            logger.error(f"异步更新任务执行持续时间失败 (ID: {task_id}): {str(e)}", exc_info=True)
             return DatabaseResult.failure_result(f"更新任务执行持续时间失败: {str(e)}")
 
     @staticmethod
@@ -230,7 +230,7 @@ class AsyncCronTaskCRUD:
 
         except Exception as e:
             await db.rollback()
-            logger.error(f"异步更新任务新鲜度失败 (ID: {task_id}): {str(e)}")
+            logger.error(f"异步更新任务新鲜度失败 (ID: {task_id}): {str(e)}", exc_info=True)
             return DatabaseResult.failure_result(f"更新任务新鲜度失败: {str(e)}")
 
 
@@ -272,5 +272,5 @@ class AsyncTaskLogsCRUD:
 
         except Exception as e:
             await db.rollback()
-            logger.error(f"异步创建任务日志失败: {str(e)}")
+            logger.error(f"异步创建任务日志失败: {str(e)}", exc_info=True)
             return DatabaseResult.failure_result(f"创建任务日志失败: {str(e)}")

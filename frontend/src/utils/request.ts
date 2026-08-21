@@ -1,6 +1,11 @@
 import axios, { AxiosRequestConfig } from 'axios'
 import { Message } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
+import { setRefreshToken, getRefreshToken } from '@/utils/cookies'
+import { refreshAccessToken } from '@/api/users'
+import { refreshTokensOnce, type TokenPair, type RefreshOutcome } from '@/utils/token-refresh'
+import { buildLoginRedirectTarget } from '@/utils/session'
+import { ApiError } from '@/types/api'
 import {
   SUCCESS_CODES,
   isLoginRequest,
@@ -27,8 +32,33 @@ export interface RequestClient {
   <T = ApiEnvelope<unknown>>(config: AxiosRequestConfig): Promise<T>
 }
 
-/** 防止并发401重复弹窗/跳转 */
-let isRedirectingToLogin = false
+/**
+ * 登出跳转防抖窗口（毫秒）。
+ * 时间窗到期自动复位：跳转因故受挫（bfcache 后退恢复等）后，后续 401
+ * 仍能再次触发登出，不会像永久标志那样把会话失效静默吞掉。
+ */
+const REDIRECT_DEBOUNCE_MS = 3000
+
+let redirectDebounceUntil = 0
+
+/**
+ * 网络错误 toast 节流窗口（毫秒）。断网 + 1 秒级速度轮询会让每个失败请求
+ * 都弹独立 Message（拦截器是唯一弹窗点，组件 catch 均静默），洪泛淹没界面；
+ * 与 redirectToLogin 防抖同窗口惯例：窗口到期自然复位，长故障下仍能周期提醒。
+ */
+const NETWORK_TOAST_THROTTLE_MS = 3000
+
+let lastNetworkToast: { message: string, at: number } | null = null
+
+/** 网络错误提示节流：窗口内同文案只弹一次，不同文案不受影响 */
+function notifyNetworkError(message: string): void {
+  const now = Date.now()
+  if (lastNetworkToast && lastNetworkToast.message === message && now - lastNetworkToast.at < NETWORK_TOAST_THROTTLE_MS) {
+    return
+  }
+  lastNetworkToast = { message, at: now }
+  Message({ message, type: 'error', duration: 5 * 1000 })
+}
 
 /**
  * 调试模式开关
@@ -51,14 +81,85 @@ function maskToken(token: string): string {
 }
 
 /**
- * 触发登录跳转（带防抖，避免并发 401 重复跳转）。
+ * 触发登出跳转（带 3 秒防抖窗口，避免并发 401 重复跳转）。
+ *
+ * 路由为 hash 模式：真实路由在 location.hash 内，pathname 恒为部署根，
+ * 跳转目标必须走 hash URL——否则 redirect 参数退化为 '/'，且整页跳转
+ * 依赖服务器对 /login 路径的 SPA 回退（无回退的部署会 404 并卡死防抖）。
  */
-function redirectToLogin(): void {
-  if (!isRedirectingToLogin) {
-    isRedirectingToLogin = true
-    UserModule.ResetToken()
-    window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
+export function redirectToLogin(): void {
+  const now = Date.now()
+  if (now < redirectDebounceUntil) {
+    return
   }
+  redirectDebounceUntil = now + REDIRECT_DEBOUNCE_MS
+  Message({ message: '登录状态已过期，请重新登录', type: 'warning', duration: 3000 })
+  // ExpireSession 保留共享 cookie（access + refresh）：多标签共享 cookie 下，
+  // "确证死亡"判定存在他标签轮换未落盘的时序残余——清共享 cookie 会把有效
+  // 令牌一并杀死（access cookie 被删还会经 syncTokenFromCookie 级联误杀
+  // 正常工作的标签）。死 token 残留无害，重登录时 Login 覆盖
+  UserModule.ExpireSession()
+  window.location.href = buildLoginRedirectTarget(window.location.hash, window.location.pathname)
+}
+
+// ====== 401 静默续期（双令牌体系 W6-1） ======
+
+/** 刷新依赖注入（独立于 axios 层，便于单测 token-refresh 编排） */
+const refreshDeps = {
+  doRefresh: async(refreshToken: string): Promise<TokenPair> => {
+    const res = await refreshAccessToken(refreshToken)
+    const item = res.data && res.data[0]
+    if (!item || !item.access_token) {
+      throw new Error('刷新响应缺少 access_token')
+    }
+    return {
+      accessToken: item.access_token,
+      // 后端使用即轮换：优先用新 refresh token，缺失时沿用旧值
+      refreshToken: item.refresh_token || refreshToken
+    }
+  },
+  // 直接读 cookie 而非 store：getModule 访问器不代理未装饰的普通方法
+  // （UserModule.getRefreshTokenValue 在运行时不存在，会让整个续期链路抛 TypeError）
+  getRefreshToken: () => getRefreshToken() || '',
+  saveTokens: (pair: TokenPair) => {
+    UserModule.SetToken(pair.accessToken)
+    setRefreshToken(pair.refreshToken)
+  },
+  // 后端明确拒绝（业务码 401 或 HTTP 401）才判死；网络断连/超时/5xx 为瞬时
+  isDefiniteFailure: (err: unknown): boolean => err instanceof ApiError && err.code === '401'
+}
+
+/**
+ * 主动续期入口（守卫/会话监听使用，W6 伴随修复）：
+ * 返回三态结果——renewed（已更新令牌）/ rejected（血统确证死亡）/
+ * transient（网络抖动等瞬时失败，保留会话现场）。
+ */
+export async function trySilentRefresh(): Promise<RefreshOutcome> {
+  return refreshTokensOnce(refreshDeps)
+}
+
+/**
+ * 401 统一处理：先尝试静默续期并重放原请求一次，失败按三态分流。
+ * 登录/refresh 请求豁免（isLoginRequest）；已重放过的请求不再续期（防循环）。
+ */
+async function handleUnauthorized(config: AxiosRequestConfig, fallbackError: unknown): Promise<never> {
+  const retried = (config as AxiosRequestConfig & { _retried?: boolean })._retried
+  if (!retried && !isLoginRequest(config)) {
+    const outcome = await trySilentRefresh()
+    if (outcome.status === 'renewed') {
+      (config as AxiosRequestConfig & { _retried?: boolean })._retried = true
+      // 重放原请求：请求拦截器会自动携带新 token，响应拦截器继续解包/归一化
+      const retryResult = await service.request(config)
+      return retryResult as never
+    }
+    if (outcome.status === 'transient') {
+      // 网络抖动/服务端瞬时错误：不清 token、不跳转，原请求以刷新失败的
+      // 网络错误拒绝（toast 已由拦截器网络分支弹出），下个请求/导航自愈
+      return Promise.reject(outcome.error)
+    }
+  }
+  redirectToLogin()
+  return Promise.reject(fallbackError)
 }
 
 // Request interceptors
@@ -122,9 +223,9 @@ service.interceptors.response.use(
     // 业务错误：HTTP 200 但 code 非 2xx 成功
     const apiError = buildBusinessError(res, response.status, response)
 
-    // 认证失败：非登录接口触发跳转
+    // 认证失败：先尝试静默续期+重放，失败才跳登录（登录/refresh 请求豁免）
     if (apiError.code === '401' && !isLoginRequest(response.config)) {
-      redirectToLogin()
+      return handleUnauthorized(response.config, apiError)
     }
 
     return Promise.reject(apiError)
@@ -135,8 +236,9 @@ service.interceptors.response.use(
       const message = error.request
         ? '网络连接失败，请检查网络连接'
         : error.message || '网络错误'
-      // 网络层错误显示统一提示（业务错误不弹框，交给业务代码）
-      Message({ message, type: 'error', duration: 5 * 1000 })
+      // 网络层错误显示统一提示（业务错误不弹框，交给业务代码）；
+      // 3 秒同文案节流防轮询洪泛
+      notifyNetworkError(message)
       return Promise.reject(buildNetworkError(message, error.request))
     }
 
@@ -149,9 +251,9 @@ service.interceptors.response.use(
       error.request
     )
 
-    // 认证失败跳转（登录接口豁免）
+    // 认证失败：先尝试静默续期+重放，失败才跳登录（登录/refresh 请求豁免）
     if (httpStatus === 401 && !isLoginRequest(error.config)) {
-      redirectToLogin()
+      return handleUnauthorized(error.config, apiError)
     }
 
     return Promise.reject(apiError)

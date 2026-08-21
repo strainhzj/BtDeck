@@ -5,7 +5,7 @@
 覆盖：
 - DELETE /api/v1/torrents/delete-with-level 的参数校验（HTTP 级）
 - TorrentDeletionByLevelService._add_tag_to_string 标签去重纯函数（零依赖）
-- TorrentDeletionByLevelService.delete_by_level L4 路径（service 级，核心价值）
+- TorrentDeletionByLevelService.delete_by_level L1/L2/L3/L4 路径（service 级，含辅种数量增量与回滚）
 
 设计决策（经子代理独立审查 + 实证）：
 - 类3 用 **service 级测试**而非 HTTP e2e。原因（3 个 🔴 缺陷）：
@@ -22,7 +22,7 @@
 """
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -192,9 +192,7 @@ class TestAsyncDeleteReservation:
                 "app.services.deletion_task_manager.get_deletion_task_manager",
                 return_value=manager,
             ),
-            patch(
-                "app.services.async_deletion_executor.AsyncDeletionExecutor"
-            ) as executor_class,
+            patch("app.services.async_deletion_executor.AsyncDeletionExecutor") as executor_class,
         ):
             response = client.post(
                 ASYNC_URL,
@@ -446,7 +444,155 @@ class TestDeleteLevel4Service:
         assert result["db_update_error"] is not None
 
 
-# ==================== 组4：delete_batch_by_level 降级编排（service 自身方法） ====================
+# ==================== 组4：辅种数量与等级1/2/3删除 ====================
+
+
+class TestAuxiliaryCountOnDeleteLevels:
+    """等级1/2/3删除后，剩余有效同名同大小种子数量立即减一。"""
+
+    @staticmethod
+    def _make_group(db_session, *, count=3, name="same-content", size=1024):
+        rows = [
+            make_torrent(
+                db_session,
+                info_id=f"aux-{index}",
+                downloader_id="dl-1",
+                hash_=f"aux-hash-{index}",
+                name=name,
+                size=size,
+            )
+            for index in range(count)
+        ]
+        for row in rows:
+            row.torrent_file = f"/config/torrents/{row.info_id}.torrent"
+            row.auxiliary_seed_count = count
+        db_session.commit()
+        return rows
+
+    @staticmethod
+    def _service_with_delete_adapter(db_session):
+        _make_downloader(db_session)
+        adapter = MagicMock()
+        adapter.delete_torrents = AsyncMock(return_value={"failed_hashes": {}})
+        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service._get_adapter = MagicMock(return_value=adapter)
+        return service, adapter
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("level", [1, 2])
+    async def test_level1_and_level2_decrement_active_group(self, db_session, level):
+        rows = self._make_group(db_session)
+        service, adapter = self._service_with_delete_adapter(db_session)
+
+        result = await service.delete_by_level(rows[0].info_id, level, operator="tester")
+
+        assert result["success"] is True
+        db_session.expire_all()
+        deleted = db_session.query(TorrentInfo).filter_by(info_id=rows[0].info_id).one()
+        active = (
+            db_session.query(TorrentInfo)
+            .filter(
+                TorrentInfo.name == "same-content",
+                TorrentInfo.size == 1024,
+                TorrentInfo.dr == 0,
+                TorrentInfo.deleted_at.is_(None),
+            )
+            .all()
+        )
+        assert deleted.dr == 1
+        assert [row.auxiliary_seed_count for row in active] == [2, 2]
+        adapter.delete_torrents.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_level3_decrements_only_after_file_move_succeeds(self, db_session, tmp_path):
+        rows = self._make_group(db_session)
+        downloader = db_session.query(BtDownloaders).filter_by(downloader_id="dl-1").first()
+        if downloader is None:
+            downloader = _make_downloader(db_session)
+        downloader.path_mapping = "{}"
+        backup_path = tmp_path / "seed.torrent"
+        backup_path.write_bytes(b"torrent")
+        rows[0].backup_file_path = str(backup_path)
+        db_session.commit()
+
+        file_service = MagicMock()
+        file_service.create_marker_file = AsyncMock(return_value={"success": True})
+        file_service.delete_marker_file = AsyncMock(return_value={"success": True})
+        adapter = MagicMock()
+        adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service._get_adapter = MagicMock(return_value=adapter)
+        service._delete_from_downloader = AsyncMock(return_value=(True, None))
+        service._move_torrent_files_for_recycle = AsyncMock(return_value={"success": True})
+
+        with patch.object(
+            BtDownloaders, "file_operations_service", new_callable=PropertyMock, return_value=file_service
+        ):
+            result = await service.delete_by_level(rows[0].info_id, 3, operator="tester")
+
+        assert result["success"] is True
+        db_session.expire_all()
+        deleted = db_session.query(TorrentInfo).filter_by(info_id=rows[0].info_id).one()
+        active = (
+            db_session.query(TorrentInfo)
+            .filter(
+                TorrentInfo.name == "same-content",
+                TorrentInfo.size == 1024,
+                TorrentInfo.dr == 0,
+                TorrentInfo.deleted_at.is_(None),
+            )
+            .all()
+        )
+        assert deleted.deleted_at is not None
+        assert deleted.dr == 0
+        assert [row.auxiliary_seed_count for row in active] == [2, 2]
+        service._move_torrent_files_for_recycle.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_level3_move_failure_keeps_group_count_unchanged(self, db_session, tmp_path):
+        rows = self._make_group(db_session)
+        downloader = db_session.query(BtDownloaders).filter_by(downloader_id="dl-1").first()
+        if downloader is None:
+            downloader = _make_downloader(db_session)
+        downloader.path_mapping = "{}"
+        backup_path = tmp_path / "seed.torrent"
+        backup_path.write_bytes(b"torrent")
+        rows[0].backup_file_path = str(backup_path)
+        db_session.commit()
+
+        file_service = MagicMock()
+        file_service.create_marker_file = AsyncMock(return_value={"success": True})
+        file_service.delete_marker_file = AsyncMock(return_value={"success": True})
+        adapter = MagicMock()
+        adapter.get_torrent_files = AsyncMock(return_value=(True, [], None))
+        service = TorrentDeletionByLevelService(db_session, _make_mock_request([_make_fake_vo()]))
+        service._get_adapter = MagicMock(return_value=adapter)
+        service._delete_from_downloader = AsyncMock(return_value=(True, None))
+        service._move_torrent_files_for_recycle = AsyncMock(return_value={"success": False, "error": "move failed"})
+
+        with patch.object(
+            BtDownloaders, "file_operations_service", new_callable=PropertyMock, return_value=file_service
+        ):
+            result = await service.delete_by_level(rows[0].info_id, 3, operator="tester")
+
+        assert result["success"] is False
+        db_session.expire_all()
+        restored = db_session.query(TorrentInfo).filter_by(info_id=rows[0].info_id).one()
+        active = (
+            db_session.query(TorrentInfo)
+            .filter(
+                TorrentInfo.name == "same-content",
+                TorrentInfo.size == 1024,
+                TorrentInfo.dr == 0,
+                TorrentInfo.deleted_at.is_(None),
+            )
+            .all()
+        )
+        assert restored.deleted_at is None
+        assert [row.auxiliary_seed_count for row in active] == [3, 3, 3]
+
+
+# ==================== 组5：delete_batch_by_level 降级编排（service 自身方法） ====================
 
 
 class TestDeleteBatchByLevel:

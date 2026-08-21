@@ -20,11 +20,11 @@
 
 | 入口 | 角色 | 位置 |
 |------|------|------|
-| `app/main.py` | uvicorn server 配置 + 早期迁移（`init_config_file` L78、`migrate_database` L92） | [main.py](../../backend/app/main.py) |
+| `app/main.py` | uvicorn server 配置；仅 `__main__` 直跑路径在 L145 初始化配置、L159 提前迁移 | [main.py](../../backend/app/main.py) |
 | `app/factory.py` | app 工厂（CORS/异常/路由/SPA fallback/lifespan） | [factory.py:84-117](../../backend/app/factory.py) |
-| `btdeck_startup.sh` | Docker 入口，再次配置 uvicorn（`exec uvicorn ...` L62-67） | [btdeck_startup.sh](../../backend/btdeck_startup.sh) |
+| `btdeck_startup.sh` | Docker 入口，校验单 worker 后在 L102 执行 uvicorn | [btdeck_startup.sh](../../backend/btdeck_startup.sh) |
 
-**风险**：三处都修改"如何启动"，配置初始化与迁移的职责在 `main.py`（L78-92）和 `lifespan`（`startup/lifecycle.py:20-24` `init_config_file` / L54-57 `init_db`）之间分布，容易出现双轨或遗漏。`btdeck_startup.sh:77-79` 注释明确"配置初始化、迁移、seed 全部交由 FastAPI lifespan 负责"，但 `main.py:92` 仍调用 `migrate_database()` —— 存在重复执行风险。
+**风险**：Docker 的 `uvicorn app.main:app` 不进入 `main.py.__main__`，配置、迁移、seed 由 `lifespan` L285/L302/L318 负责；直接运行与桌面入口会在启动 server 前提前迁移，随后 lifespan 再做幂等校验。入口语义仍分散，任一路径都必须保持“迁移失败不进入 seed/对账/调度器”的 fail-fast 不变量。
 
 ## R3：双 SPA fallback（部署模式分叉）
 

@@ -36,6 +36,9 @@ class TorrentFileBackupService:
     # 默认备份目录（如果环境变量未设置）
     DEFAULT_BACKUP_DIR = "backup/torrents"
 
+    # 种子内容校验的最大读取量：bencode 种子远小于此，超限视为异常拒绝
+    TORRENT_CONTENT_MAX_BYTES = 2 * 1024 * 1024
+
     # qBittorrent种子文件备份目录（相对路径）
     QB_BACKUP_DIR = "/config/qBittorrent/BT_backup"
 
@@ -342,6 +345,14 @@ class TorrentFileBackupService:
                 result["error_message"] = "源文件不存在"
                 return result
 
+            # 内容校验（防任意文件读取外泄）：源必须是能解析出 info 字典的
+            # 合法 bencode 种子。备份+下载链等价于任意文件读取原语，仅靠
+            # 路径校验无法覆盖全部调用方（此处是所有 from_path 流的唯一收口），
+            # 内容校验使 config.yaml/app.db 等非种子文件不可被复制带走。
+            if not self._is_valid_torrent_content(source_file_path):
+                result["error_message"] = "源文件不是有效的种子文件（bencode 解析失败、缺少 info 字典或超过大小上限）"
+                return result
+
             # 生成备份文件名
             backup_filename = FilenameUtils.generate_backup_filename(info_id, torrent_name)
 
@@ -371,6 +382,26 @@ class TorrentFileBackupService:
             logger.error(error_msg)
             result["error_message"] = error_msg
             return result
+
+    def _is_valid_torrent_content(self, source_file_path: str) -> bool:
+        """校验源文件是可解析且含 info 字典的 bencode 种子。
+
+        读取量封顶防超大文件；bencodepy 对畸形输入（深嵌套/超大整数）
+        抛出的异常一律按不合法处理，不做任何复制。
+        """
+        try:
+            import bencodepy
+
+            with open(source_file_path, "rb") as f:
+                head = f.read(self.TORRENT_CONTENT_MAX_BYTES + 1)
+            if len(head) > self.TORRENT_CONTENT_MAX_BYTES:
+                logger.warning(f"源文件超过种子内容大小上限，拒绝备份: {source_file_path}")
+                return False
+            torrent_data = bencodepy.decode(head)
+            return isinstance(torrent_data, dict) and b"info" in torrent_data
+        except Exception as e:
+            logger.warning(f"源文件 bencode 校验失败: {source_file_path} ({e})")
+            return False
 
     def _download_from_qb_api(self, torrent_hash: str, downloader_config: Dict[str, Any]) -> Optional[str]:
         """

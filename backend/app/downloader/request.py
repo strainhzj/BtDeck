@@ -149,6 +149,9 @@ class DownloaderCheckVO(BaseModel):
     delay: float | None = Field(None, description="网络延迟(毫秒)", examples=[15.5])
     is_online: bool | None = Field(False, description="是否在线（基于端口连通性）", examples=[True])
     last_update: float | None = Field(None, description="最后更新时间戳", examples=[1234567890.123])
+    # is_online 首次翻转为 False 的时间戳（恢复在线清空）。last_update 是"轮询时间戳"
+    # （离线时也被刷新），不能表达"离线持续了多久"；缓存同步任务据此剔除长期离线成员。
+    offline_since: float | None = Field(None, description="持续离线起始时间戳", examples=[1234567890.123])
 
     # 种子统计缓存（支持增量更新）
     stats_cache: Any = Field(None, description="种子统计缓存管理器（TorrentStatsCache 实例）")

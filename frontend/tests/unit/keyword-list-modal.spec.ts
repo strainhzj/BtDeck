@@ -99,7 +99,7 @@ function viewModel(wrapper: Wrapper<Vue>): ModalVm {
 describe('keyword list modal quick action entry', () => {
   beforeEach(() => {
     jest.clearAllMocks()
-    mockGetPoolKeywords.mockImplementation((params: GetPoolKeywordsParams) => Promise.resolve(poolResponse(0)))
+    mockGetPoolKeywords.mockImplementation((_params: GetPoolKeywordsParams) => Promise.resolve(poolResponse(0)))
   })
 
   it('搜索框右侧显示快捷操作按钮', async() => {

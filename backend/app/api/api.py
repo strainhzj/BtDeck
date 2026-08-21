@@ -11,7 +11,6 @@ from app.api.endpoints import (
     recycle_bin,
     duplicate_torrents,
     duplicate_quick_delete,
-    same_content_inspection,
 )
 from app.api.endpoints import dashboard
 
@@ -71,8 +70,6 @@ api_router.include_router(recycle_bin.router, prefix="/recycle", tags=["recycle-
 api_router.include_router(duplicate_torrents.router, prefix="/torrents", tags=["torrents"])
 # 添加快捷删除重复种子路由
 api_router.include_router(duplicate_quick_delete.router, prefix="/torrents", tags=["torrents"])
-# 添加同名同大小种子只读排查路由
-api_router.include_router(same_content_inspection.router, prefix="/torrents", tags=["torrents"])
 # 添加下载器设置管理路由
 api_router.include_router(downloader_settings.router, prefix="/downloaders", tags=["下载器设置"])
 api_router.include_router(setting_templates.router, prefix="/setting-templates", tags=["配置模板"])

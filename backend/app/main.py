@@ -156,7 +156,8 @@ if __name__ == "__main__":
     # 但 frozen/直接运行场景下，先在此迁移可更早暴露错误。
     db_path = str(settings.DATABASE_PATH)
     logger.info(f"Database path: {db_path}")
-    migrate_database()
+    if not migrate_database():
+        raise RuntimeError("数据库迁移未完成，拒绝启动 API 服务")
 
     # 启动API服务（lifespan 内完成 init_db / 后台任务初始化）
     Server.run()

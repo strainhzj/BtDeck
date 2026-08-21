@@ -167,7 +167,9 @@ def resolve_external_path(internal_path: str, config: Optional[BtDownloaders]) -
             return None
 
         mapped = service.internal_to_external(internal_path)
-        if not mapped or not os.path.isabs(mapped):
+        # 下载器多为 Linux 部署，映射目标是 POSIX 绝对路径；Windows 宿主上
+        # os.path.isabs 对 "/downloads/..." 判 False，须兼容两种风格。
+        if not mapped or not (os.path.isabs(mapped) or mapped.startswith("/")):
             return None
         return str(mapped)
     except Exception as exc:

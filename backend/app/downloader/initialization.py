@@ -690,11 +690,10 @@ async def startup_event(app: FastAPI):
     print("=== 开始持久化下载器数据 ===")
     app.state.store = DownloaderInitialization(check_status)
 
-    # 启动定时校验任务
-    # loop = asyncio.get_event_loop()
-    # loop.create_task(periodic_check())
-    # loop.create_task(cached_downloader_sync_task())
-    # loop.create_task(full_database_sync_task())
+    # 历史的定时校验任务（periodic_check/cached_downloader_sync_task/full_database_sync_task）
+    # 已停用：缓存健康治理现由 CachedDownloaderSyncTask（cron 每 5 分钟）基于
+    # offline_since 剔除长期离线成员 + downloader_status_polling_task 维护在线状态实现，
+    # 不再依赖周期性重认证（check_and_remove_invalid/fail_time 路径保留但无调用方）。
 
     # 异步执行初始化任务，不阻塞服务器启动
     print("=== 异步执行初始化任务 ===")
@@ -1523,6 +1522,21 @@ async def downloader_status_polling_task(app: FastAPI):
         await asyncio.sleep(hot_poll_interval)
 
 
+def _set_online_status(downloader: Any, is_online: bool) -> None:
+    """维护 is_online 与 offline_since（首次离线记时间戳，恢复在线清空）。
+
+    last_update 是"轮询时间戳"（离线时也被刷新，端口不通也算更新成功），
+    不能表达离线持续了多久；offline_since 供缓存同步任务
+    （CachedDownloaderSyncTask）剔除长期离线成员——替代 fail_time
+    剔除机制（check_and_remove_invalid 的调用方已停用）。
+    """
+    downloader.is_online = is_online
+    if is_online:
+        downloader.offline_since = None
+    elif not getattr(downloader, "offline_since", None):
+        downloader.offline_since = time.time()
+
+
 async def _update_downloader_status(downloader: Any, update_cold: bool = False) -> bool:
     """更新单个下载器的状态（热冷数据分离 + 延迟测试 + 端口连通性检查）
 
@@ -1592,21 +1606,21 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
                 port_int = int(port)
                 if not (1 <= port_int <= 65535):
                     print(f"[状态更新] {nickname}: 端口号超出有效范围(1-65535): {port}")
-                    downloader.is_online = False
+                    _set_online_status(downloader, False)
                     downloader.upload_speed = 0
                     downloader.download_speed = 0
                     downloader.last_update = time.time()
                     return True
             except (ValueError, TypeError) as e:
                 print(f"[状态更新] {nickname}: 端口号无效: {port} - {e}")
-                downloader.is_online = False
+                _set_online_status(downloader, False)
                 downloader.upload_speed = 0
                 downloader.download_speed = 0
                 downloader.last_update = time.time()
                 return True
 
             is_online = await check_port_connectivity(host, port_int, timeout=3.0, max_retries=1)
-            downloader.is_online = is_online
+            _set_online_status(downloader, is_online)
 
             if not is_online:
                 print(f"[状态更新] {nickname}: 端口{port}不可达，跳过状态更新")
@@ -1617,7 +1631,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
 
         except Exception as e:
             print(f"[状态更新] {nickname}: 端口连通性检查失败 - {e}")
-            downloader.is_online = False
+            _set_online_status(downloader, False)
             downloader.upload_speed = 0
             downloader.download_speed = 0
             downloader.last_update = time.time()
@@ -2002,3 +2016,55 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
 
         traceback.print_exc()
         return {}
+
+
+def encrypt_plaintext_downloader_passwords() -> int:
+    """启动期幂等加密钩子：把 bt_downloaders 中遗留的明文密码加密回写。
+
+    背景：add 端点历史缺陷明文落库（update 却加密），decrypt 对非 sm4:
+    前缀静默透传使明文/密文混存不可见。本钩子在每次启动时把非空且非
+    sm4:/encrypted: 前缀的密码行用当前密钥加密——密钥轮换后用户重录的
+    明文也会在下次启动自动加密（自愈闭环）。
+
+    密钥不可用时跳过并告警，绝不阻塞启动（可用性优先，新写入路径已
+    fail-closed 不会产生新的明文）。
+
+    Returns:
+        本次加密的行数
+    """
+    from app.downloader.models import BtDownloaders
+    from app.utils.encryption import encrypt_password
+
+    encrypted_count = 0
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(BtDownloaders)
+            .filter(BtDownloaders.password.isnot(None))
+            .filter(BtDownloaders.password != "")
+            .all()
+        )
+        for row in rows:
+            password = row.password or ""
+            if password.startswith(("sm4:", "encrypted:")):
+                continue
+            try:
+                row.password = encrypt_password(password)
+                encrypted_count += 1
+            except RuntimeError:
+                # 密钥缺失/长度非法：整体跳过（每行都会同样失败），下次启动重试
+                logger.warning("SM4 密钥不可用，跳过明文下载器密码加密（下次启动重试）")
+                db.rollback()
+                return 0
+        if encrypted_count:
+            db.commit()
+            logger.info(f"启动钩子：已加密 {encrypted_count} 条明文下载器密码")
+    except Exception as e:
+        logger.warning(f"明文下载器密码加密钩子未完成（下次启动重试）: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+    return encrypted_count

@@ -5,6 +5,8 @@
 | 计划 | 范围 | 状态 |
 |------|------|------|
 | [同步任务数据库阻塞与接口超时修复](./sync-database-blocking-remediation.md) | Tracker/种子同步、SQLite 写锁、请求响应性、观测与演进 | 待实施 |
+| [8 项已验证问题修复](./verified-bugfix-remediation.md) | 轮询生命周期、标签同步、添加时间、路径清理、转移假成功、令牌续期、删除日志 IP、折叠面板 | 📝 计划中 |
+| [W9 强制改密路由死锁修复](./force-change-deadlock-fix.md) | 守卫落点/白名单改子路由、父路由 redirect、/user/info 实时下发标志、首导航拦截、生产解困 runbook | ✅ 已完成 |
 
 > **当前版本**: v1.0.3  
 > **目标版本**: v1.1.0  

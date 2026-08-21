@@ -34,6 +34,7 @@ import bencodepy
 import uuid
 from io import BytesIO
 from typing import Any, List
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -485,3 +486,63 @@ async def test_qb_str_wrapped_field_is_safe(real_db_session):
     assert result.code == "200"
     assert result.status == "success"
 
+
+
+# ==================== W3-2：UI 添加路径 added_date 兜底 ====================
+
+
+class TestCreateQbittorrentRecordAddedDateFallback:
+    """create_qbittorrent_torrent_record：added_on 缺失/为 0 时本地时间兜底。"""
+
+    def test_added_on_zero_falls_back_to_now(self):
+        from datetime import datetime
+
+        from app.api.endpoints.torrent_helpers import create_qbittorrent_torrent_record
+
+        downloader = SimpleNamespace(nickname="qb")
+        qb_torrent = SimpleNamespace(
+            hash="abc",
+            name="测试种子",
+            save_path="/downloads",
+            total_size=1024,
+            state="downloading",
+            added_on=0,
+            completion_on=0,
+            ratio=0.0,
+            ratio_limit=None,
+            tags=[],
+            category="",
+            super_seeding=False,
+        )
+
+        record = create_qbittorrent_torrent_record(downloader, "dl-1", qb_torrent, "/tmp/x.torrent")
+
+        assert record.added_date is not None
+        assert abs((datetime.now() - record.added_date).total_seconds()) < 60
+        assert record.create_time is not None
+        assert record.update_time is not None
+
+    def test_added_on_valid_keeps_downloader_timestamp(self):
+        from datetime import datetime
+
+        from app.api.endpoints.torrent_helpers import create_qbittorrent_torrent_record
+
+        downloader = SimpleNamespace(nickname="qb")
+        qb_torrent = SimpleNamespace(
+            hash="abc",
+            name="测试种子",
+            save_path="/downloads",
+            total_size=1024,
+            state="seeding",
+            added_on=1_700_000_000,
+            completion_on=0,
+            ratio=1.0,
+            ratio_limit=None,
+            tags=[],
+            category="",
+            super_seeding=False,
+        )
+
+        record = create_qbittorrent_torrent_record(downloader, "dl-1", qb_torrent, "/tmp/x.torrent")
+
+        assert record.added_date == datetime.fromtimestamp(1_700_000_000)

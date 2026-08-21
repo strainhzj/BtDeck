@@ -19,8 +19,12 @@ export interface Torrent {
   status: string
   errorReason?: string | null
   error_reason?: string | null // 蛇形命名兼容
+  hasTrackerError?: boolean | null
+  has_tracker_error?: boolean | null // 蛇形命名兼容（tracker 判定任务标记的整种错误）
   torrentFile: string
   torrent_file?: string // 蛇形命名兼容
+  auxiliarySeedCount?: number
+  auxiliary_seed_count?: number // 蛇形命名兼容
   addedDate: string
   added_date?: string // 蛇形命名兼容
   completedDate: string | null
@@ -189,8 +193,11 @@ export interface TorrentListParams {
   tags_like?: string
   category_like?: string
   tracker_like?: string
+  tracker_domain?: string | string[]  // Tracker主域名筛选，支持单个或多选
   status?: string | string[]  // 支持单个状态或状态数组
   active_only?: boolean  // 仅显示活动种子（实时速度>0，后端按活动集合缓存过滤）
+  same_content_only?: boolean  // 仅显示同名、同大小且不同 InfoHash 的种子
+  single_error_only?: boolean  // 仅显示错误且全局同内容唯一的种子
   skip?: number
   limit?: number
   sort_by?: string
@@ -213,6 +220,16 @@ export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<
     method: 'get',
     params: params
   }) as unknown as Promise<ApiResponse<TorrentListResponseData>>
+}
+
+/**
+ * 获取已由 Tracker 同步任务采集到的 Tracker 主域名列表
+ */
+export function getTrackerDomains(): Promise<ApiResponse<string[]>> {
+  return request({
+    url: '/torrents/tracker-domains',
+    method: 'get'
+  }) as unknown as Promise<ApiResponse<string[]>>
 }
 
 /**
@@ -882,80 +899,6 @@ export function getDuplicateTorrents(params?: DuplicateQuery): Promise<ApiRespon
   }) as unknown as Promise<ApiResponse<DuplicateResponse>>
 }
 
-// ==================== 同名同大小种子只读排查 ====================
-
-export type SameContentInspectionMode = 'all' | 'errors'
-
-export interface SameContentTrackerIssue {
-  tracker_name: string
-  tracker_host: string
-  issue_types: Array<'tracker_status' | 'announce' | 'scrape'>
-  announce_status: string
-  announce_message: string
-  scrape_status: string
-  scrape_message: string
-  status_message: string
-}
-
-export interface SameContentInspectionItem {
-  info_id: string
-  downloader_id: string
-  downloader_name: string
-  hash: string
-  status: string
-  error_reason: string
-  has_tracker_error: boolean
-  is_error: boolean
-  error_types: Array<'torrent_status' | 'error_reason' | 'tracker_aggregate' | 'tracker_detail'>
-  tracker_hosts: string[]
-  tracker_issues: SameContentTrackerIssue[]
-  updated_at: string | null
-}
-
-export interface SameContentInspectionGroup {
-  group_key: string
-  name: string
-  size: number
-  copy_count: number
-  distinct_hash_count: number
-  downloader_count: number
-  error_count: number
-  tracker_hosts: string[]
-  last_updated_at: string | null
-  items: SameContentInspectionItem[]
-}
-
-export interface SameContentInspectionSummary {
-  candidate_group_count: number
-  candidate_torrent_count: number
-  error_group_count: number
-  error_torrent_count: number
-}
-
-export interface SameContentInspectionResponse {
-  total: number
-  page: number
-  pageSize: number
-  list: SameContentInspectionGroup[]
-  summary: SameContentInspectionSummary
-}
-
-export interface SameContentInspectionRequest {
-  mode: SameContentInspectionMode
-  page?: number
-  pageSize?: number
-}
-
-export function getSameContentInspection(
-  params: SameContentInspectionRequest
-): Promise<ApiResponse<SameContentInspectionResponse>> {
-  return request({
-    url: '/torrents/same-content-inspection',
-    method: 'post',
-    data: params
-  }) as unknown as Promise<ApiResponse<SameContentInspectionResponse>>
-}
-
 // ==================== 快捷删除重复种子接口 ====================
 
 export interface QuickDeletePreviewItem {
@@ -1256,7 +1199,7 @@ export function deleteTorrentBackup(infoHash: string): Promise<ApiResponse<any>>
  * @param files 种子文件列表
  * @returns 导入结果
  */
-export function importTorrentBackup(downloaderId: number, files: File[]): Promise<ApiResponse<any>> {
+export function importTorrentBackup(downloaderId: string, files: File[]): Promise<ApiResponse<any>> {
   if (!files || files.length === 0) {
     return Promise.reject(new Error('No files to upload'))
   }

@@ -5,6 +5,7 @@ import OrphanFiles from '@/views/orphan-files/index.vue'
 import {
   ApiResponse,
   CleanupPreviewResult,
+  HardlinkCopyDeleteResult,
   HardlinkCopyLocationsResult,
   OrphanFileItem,
   OrphanFolderRow,
@@ -18,23 +19,31 @@ import {
   QuarantineListResult,
   cleanupOrphans,
   cleanupPreview,
+  deleteHardlinkCopy,
   getHardlinkCopyLocations,
+  getOrphanFolderChildren,
   getQuarantineList,
   getOrphanList,
+  getScanStatus,
   prefixMatchPreview,
   purgeQuarantineNow,
   setIgnored,
-  triggerScan
+  triggerScan,
+  reviewScanGuardrail
 } from '@/api/orphan-files'
 import { copyTextToClipboard } from '@/utils/clipboard'
 
 jest.mock('@/api/orphan-files', () => ({
   getLatestScan: jest.fn(),
   getOrphanList: jest.fn(),
+  getOrphanFolderChildren: jest.fn(),
   triggerScan: jest.fn(),
+  getScanStatus: jest.fn(),
+  reviewScanGuardrail: jest.fn(),
   cleanupPreview: jest.fn(),
   cleanupOrphans: jest.fn(),
   getHardlinkCopyLocations: jest.fn(),
+  deleteHardlinkCopy: jest.fn(),
   setIgnored: jest.fn(),
   getQuarantineList: jest.fn(),
   purgeQuarantineNow: jest.fn(),
@@ -60,10 +69,14 @@ const localVue = createLocalVue()
 localVue.directive('loading', {})
 
 const mockGetOrphanList = getOrphanList as jest.MockedFunction<typeof getOrphanList>
+const mockGetOrphanFolderChildren = getOrphanFolderChildren as jest.MockedFunction<typeof getOrphanFolderChildren>
 const mockTriggerScan = triggerScan as jest.MockedFunction<typeof triggerScan>
+const mockGetScanStatus = getScanStatus as jest.MockedFunction<typeof getScanStatus>
+const mockReviewScanGuardrail = reviewScanGuardrail as jest.MockedFunction<typeof reviewScanGuardrail>
 const mockCleanupPreview = cleanupPreview as jest.MockedFunction<typeof cleanupPreview>
 const mockCleanupOrphans = cleanupOrphans as jest.MockedFunction<typeof cleanupOrphans>
 const mockGetHardlinkCopyLocations = getHardlinkCopyLocations as jest.MockedFunction<typeof getHardlinkCopyLocations>
+const mockDeleteHardlinkCopy = deleteHardlinkCopy as jest.MockedFunction<typeof deleteHardlinkCopy>
 const mockSetIgnored = setIgnored as jest.MockedFunction<typeof setIgnored>
 const mockGetQuarantineList = getQuarantineList as jest.MockedFunction<typeof getQuarantineList>
 const mockPurgeQuarantineNow = purgeQuarantineNow as jest.MockedFunction<typeof purgeQuarantineNow>
@@ -72,7 +85,11 @@ const mockCopyTextToClipboard = copyTextToClipboard as jest.MockedFunction<typeo
 
 const clearSelection = jest.fn()
 const TableStub = localVue.extend({
-  props: ['data', 'height'],
+  props: {
+    data: { type: Array, default: () => [] },
+    height: { type: [String, Number], default: '' },
+    showHeader: { type: Boolean, default: true }
+  },
   methods: {
     clearSelection
   },
@@ -81,7 +98,7 @@ const TableStub = localVue.extend({
       return Object.keys(this.$listeners).join(',')
     }
   },
-  template: '<div class="orphan-table-stub" :data-height="height" :data-listeners="listenerNames"><slot /></div>'
+  template: '<div class="orphan-table-stub" :data-height="height" :data-show-header="String(showHeader)" :data-row-count="String(data.length)" :data-listeners="listenerNames"><slot /></div>'
 })
 const TableColumnStub = localVue.extend({
   props: {
@@ -113,12 +130,13 @@ const ButtonStub = localVue.extend({
   `
 })
 const AlertStub = localVue.extend({
-  props: ['title', 'description', 'type'],
+  props: ['title', 'description', 'type', 'closable'],
   template: `
     <div class="orphan-alert-stub" :data-type="type">
       <strong>{{ title }}</strong>
       <span>{{ description }}</span>
       <slot />
+      <button v-if="closable" class="orphan-alert-close" @click="$emit('close')">close</button>
     </div>
   `
 })
@@ -128,6 +146,7 @@ const DialogStub = localVue.extend({
 })
 
 interface OrphanFilesVm extends Vue {
+  // 多数历史用例使用扁平列表；文件夹行为由 tableData 单独覆盖。
   list: OrphanFileItem[]
   total: number
   listLoading: boolean
@@ -141,6 +160,7 @@ interface OrphanFilesVm extends Vue {
     path_like: string
     status: string[]
     confidence: string[]
+    hardlinkCopies: boolean
   }
   statusFilterDegraded: boolean
   selectedIds: number[]
@@ -151,8 +171,10 @@ interface OrphanFilesVm extends Vue {
   folderView: boolean
   tableData: OrphanTableRow[]
   setFolderView: (val: boolean) => void
-  handleOrphanSelect: (selection: OrphanTableRow[], row: OrphanTableRow) => void
-  syncFolderCheckboxState: (table: { selection: OrphanTableRow[], toggleRowSelection: (row: OrphanTableRow, selected?: boolean) => void }) => void
+  getOrphanRowClassName: (payload: { row: OrphanTableRow }) => string
+  handleFolderExpandChange: (row: OrphanTableRow, expanded: boolean) => void
+  loadFolderChildren: (row: OrphanFolderRow) => Promise<void>
+  handleFolderChildSelection: (row: OrphanFolderRow, items: OrphanFileItem[]) => void
   getRowKey: (row: OrphanTableRow) => string
   rowSelectable: (row: OrphanTableRow) => boolean
   scanContext: OrphanScanContext
@@ -173,13 +195,18 @@ interface OrphanFilesVm extends Vue {
   quickActionType: 'cleanup' | 'ignore' | null
   quickActionPrefix: string
   quickActionLoading: boolean
+  largeScanReminderVisible: boolean
+  dismissLargeScanReminder: () => void
   hardlinkLocationDialogVisible: boolean
   hardlinkLocationLoading: boolean
   hardlinkLocationResult: HardlinkCopyLocationsResult | null
+  hardlinkLocationOrphanIds: number[]
+  hardlinkCopyDeleting: Record<string, boolean>
   refreshPageData: () => Promise<void>
   loadOrphanPage: (page: number) => Promise<void>
   handleOrphanPageChange: (page: number) => Promise<void>
   handleScan: () => Promise<void>
+  stopScanPolling: () => void
   handleCleanupPreview: () => Promise<void>
   handleCleanupConfirm: () => Promise<void>
   handleFilter: () => void
@@ -188,13 +215,15 @@ interface OrphanFilesVm extends Vue {
   handleOrphanSelectionChange: (rows: OrphanFileItem[]) => void
   handleBatchIgnore: (ignored: boolean) => Promise<void>
   handleRowIgnore: (row: OrphanFileItem, ignored: boolean) => Promise<void>
-  handleQuickAction: (command: 'cleanup' | 'ignore') => void
+  handleQuickAction: (command: 'cleanup' | 'ignore' | 'toggleLocatedCopies') => void
   handleQuickActionCancel: () => void
   handleQuickActionConfirm: () => Promise<void>
   handleTabSwitch: () => Promise<void>
   handleQuarantinePurge: () => Promise<void>
   canOpenHardlinkLocations: (row: OrphanTableRow) => boolean
   handleHardlinkCopyClick: (row: OrphanTableRow) => Promise<void>
+  handleHardlinkCopyDelete: (orphanId: number, copyPath: string) => Promise<void>
+  isHardlinkCopyDeleting: (orphanId: number, copyPath: string) => boolean
   copyHardlinkPath: (path: string) => Promise<void>
   formatHardlinkCopyCount: (count: number | null | undefined) => string
 }
@@ -241,6 +270,14 @@ function scanRecord(
     status: 'completed',
     error_message: null,
     operator: 'tester',
+    details_mode: 'current',
+    new_orphans: 2,
+    known_orphans: 0,
+    resolved_orphans: 0,
+    cleanup_review_required: false,
+    cleanup_reviewed_at: null,
+    cleanup_reviewed_by: null,
+    cleanup_review_note: null,
     created_at: '2026-07-30T10:00:00',
     ...overrides
   }
@@ -310,6 +347,11 @@ function folderRow(
     child_count: children.length,
     children,
     child_ids: childIds,
+    children_loaded: children.length > 0,
+    children_loading: false,
+    child_page: 1,
+    child_page_size: 20,
+    child_total: children.length,
     total_size: totalSize,
     hardlink_copy_count: hardlinkCopyCount,
     latest_mtime: children[0]?.mtime ?? null,
@@ -411,20 +453,34 @@ describe('orphan files atomic page state', () => {
   beforeEach(() => {
     jest.clearAllMocks()
     mockGetOrphanList.mockResolvedValue(listResponse())
+    mockGetOrphanFolderChildren.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 0, page: 1, pageSize: 20, list: [] }
+    })
     mockTriggerScan.mockResolvedValue({
       code: '200',
       msg: 'ok',
       status: 'success',
       data: {
         scan_id: 'scan-completed',
-        scan_time: '2026-07-30T10:00:00',
-        scan_type: 'manual',
-        total_paths_scanned: 3,
-        total_files_scanned: 20,
-        total_orphans: 2,
-        total_orphan_size: 300,
-        status: 'completed'
+        task_id: 'scan-completed',
+        status: 'queued',
+        accepted: true
       }
+    })
+    mockGetScanStatus.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: scanRecord()
+    })
+    mockReviewScanGuardrail.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: scanRecord({ cleanup_review_required: true, cleanup_reviewed_at: '2026-08-13T10:00:00' })
     })
     mockCleanupPreview.mockResolvedValue({
       code: '200',
@@ -597,6 +653,40 @@ describe('orphan files atomic page state', () => {
     expect(wrapper.text()).toContain('待清理空间')
   })
 
+  it('超量扫描只显示可关闭提醒，不阻断清理', async() => {
+    const guarded = scanRecord({
+      scan_id: 'scan-large-reminder',
+      total_orphans: 50001,
+      cleanup_review_required: true,
+      // 历史兼容字段即使已有值，也不能恢复“先复核才能清理”的旧门禁语义。
+      cleanup_reviewed_at: '2026-08-14T00:00:00Z'
+    })
+    mockGetOrphanList.mockResolvedValueOnce(
+      listResponse(
+        scanContext({
+          latest_attempt: guarded,
+          display_scan: guarded,
+          cleanup_allowed: true,
+          cleanup_block_reason: null
+        })
+      )
+    )
+
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    expect(vm.largeScanReminderVisible).toBe(true)
+    expect(vm.cleanupAllowed).toBe(true)
+    expect(wrapper.text()).toContain('超量扫描提醒')
+    expect(wrapper.text()).not.toContain('已完成双重核查')
+
+    await wrapper.find('.orphan-alert-close').trigger('click')
+    await localVue.nextTick()
+    expect(vm.largeScanReminderVisible).toBe(false)
+    expect(vm.cleanupAllowed).toBe(true)
+  })
+
   it('点击顶部刷新会同时替换列表与统计上下文', async() => {
     const wrapper = mountView()
     await flushLifecycle()
@@ -647,7 +737,8 @@ describe('orphan files atomic page state', () => {
       downloader_id: ['dl-filter'],
       path_like: '',
       status: [],
-      confidence: []
+      confidence: [],
+      hardlinkCopies: false
     })
     expect(vm.selectedIds).toEqual([])
     // refreshPageData 现在会清空当前页选择（传统分页标准行为），通过 el-table ref 调 clearSelection
@@ -705,6 +796,12 @@ describe('orphan files atomic page state', () => {
         0
       )
     )
+    mockGetScanStatus.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: running
+    })
 
     const wrapper = mountView()
     await flushLifecycle()
@@ -855,7 +952,7 @@ describe('orphan files atomic page state', () => {
     ])
   })
 
-  it('扫描触发 busy 只反馈占用并通过统一刷新读取持久化状态', async() => {
+  it('扫描触发立即返回 queued 并开始轻量状态轮询', async() => {
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
@@ -864,35 +961,27 @@ describe('orphan files atomic page state', () => {
       msg: 'ok',
       status: 'success',
       data: {
-        status: 'busy',
-        error: '孤儿文件维护任务正在进行'
+        scan_id: 'scan-running',
+        task_id: 'scan-running',
+        status: 'queued',
+        accepted: false
       }
     })
     const persistedRunning = scanRecord({
       scan_id: 'scan-running',
       status: 'running'
     })
-    mockGetOrphanList.mockResolvedValueOnce(
-      listResponse(
-        scanContext({
-          latest_attempt: persistedRunning,
-          display_scan: null,
-          remaining_count: 0,
-          remaining_size: 0,
-          cleanup_allowed: false,
-          cleanup_block_reason: '扫描进行中'
-        }),
-        [],
-        0
-      )
-    )
+    mockGetScanStatus.mockResolvedValueOnce({ code: '200', msg: 'ok', status: 'success', data: persistedRunning })
 
     await vm.handleScan()
+    await Promise.resolve()
 
-    expect(message.warning).toHaveBeenCalledWith('孤儿文件维护任务正在进行')
+    expect(message.success).toHaveBeenCalledWith('已有扫描任务，继续跟踪其状态')
     expect(mockGetOrphanList).toHaveBeenCalledTimes(2)
-    expect(vm.scanContext.latest_attempt?.status).toBe('running')
-    expect(vm.scanContext.latest_attempt?.status).not.toBe('busy')
+    expect(mockGetScanStatus).toHaveBeenCalledWith('scan-running')
+    expect(vm.scanLoading).toBe(true)
+    vm.stopScanPolling()
+    expect(vm.scanLoading).toBe(false)
   })
 
   it('最新刷新失败时保留已有数据并结束 loading', async() => {
@@ -1652,71 +1741,91 @@ describe('orphan files folder view (selection linkage)', () => {
     )
   })
 
-  it('勾选文件夹行 → 联动其全部子文件（调 toggleRowSelection）', async() => {
+  it('文件夹首次展开后才请求独立分页子项', async() => {
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = vm.tableData[0] as OrphanFolderRow
+    const children = [...folder.children]
+    folder.children = []
+    folder.child_ids = []
+    folder.children_loaded = false
+    mockGetOrphanFolderChildren.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 2, page: 1, pageSize: 20, list: children }
+    })
+
+    await vm.loadFolderChildren(folder)
+
+    expect(mockGetOrphanFolderChildren).toHaveBeenCalledWith(expect.objectContaining({
+      folder_path: '/data/m',
+      page: 1,
+      page_size: 20
+    }))
+    expect(folder.children.map((item) => item.id)).toEqual([1, 2])
+    expect(folder.children_loaded).toBe(true)
+  })
+
+  it('展开事件只为未加载文件夹请求子项，普通文件不会触发子项请求', async() => {
+    const child = orphanItem(3, 'scan-completed', { file_path: '/data/movie/c.mp4' })
+    const folder = folderRow('/data/movie', [], {
+      child_count: 1,
+      child_ids: [],
+      children_loaded: false,
+      child_total: 1
+    })
+    const single = orphanItem(4, 'scan-completed', { file_path: '/data/alone.mp4' })
+    mockGetOrphanList.mockResolvedValueOnce(listResponse(scanContext(), [folder, single], 2))
+    mockGetOrphanFolderChildren.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 1, page: 1, pageSize: 20, list: [child] }
+    })
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const rows = vm.tableData
+    const loadedFolder = rows[0] as OrphanFolderRow
+    const visibleFile = rows[1] as OrphanFileItem
+
+    vm.handleFolderExpandChange(visibleFile, true)
+    await flushLifecycle()
+    expect(mockGetOrphanFolderChildren).not.toHaveBeenCalled()
+
+    vm.handleFolderExpandChange(loadedFolder, true)
+    await flushLifecycle()
+    expect(mockGetOrphanFolderChildren).toHaveBeenCalledTimes(1)
+    expect(loadedFolder.children.map((item) => item.id)).toEqual([3])
+  })
+
+  it('选择只包含当前可见且明确勾选的子文件', async() => {
     localStorage.setItem('btdeck_orphan_folder_view', '1')
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
     const folder = vm.tableData[0] as OrphanFolderRow
 
-    const toggleSpy = jest.fn()
-    const fakeSelection: OrphanTableRow[] = [folder]
-    ;(wrapper.vm.$refs as Record<string, unknown>).orphanTable = {
-      selection: fakeSelection,
-      toggleRowSelection: toggleSpy
-    }
-    ;(vm as unknown as { handleOrphanSelect: (s: OrphanTableRow[], r: OrphanTableRow) => void }).handleOrphanSelect(
-      [...fakeSelection],
-      folder
-    )
-
-    expect(toggleSpy).toHaveBeenCalledWith(folder.children[0], true)
-    expect(toggleSpy).toHaveBeenCalledWith(folder.children[1], true)
+    vm.handleFolderChildSelection(folder, [folder.children[0]])
+    expect(vm.selectedFileIds).toEqual([1])
+    expect(vm.selectedFileItems.map((item) => item.id)).toEqual([1])
   })
 
-  it('selectedFileIds/selectedFileItems 从文件夹行正确展开 child_ids', async() => {
+  it('文件夹父行永远不可选择，避免隐式提交未加载子项', async() => {
     localStorage.setItem('btdeck_orphan_folder_view', '1')
     const wrapper = mountView()
     await flushLifecycle()
     const vm = viewModel(wrapper)
     const folder = vm.tableData[0] as OrphanFolderRow
 
-    vm.selectedRows = [folder]
-    expect(vm.selectedFileIds.sort((a, b) => a - b)).toEqual([1, 2])
-    expect(vm.selectedFileItems.map((f) => f.id).sort((a, b) => a - b)).toEqual([1, 2])
+    expect(vm.rowSelectable(folder)).toBe(false)
   })
 
-  it('反向同步：子文件全部选中时文件夹行应被勾选', async() => {
-    localStorage.setItem('btdeck_orphan_folder_view', '1')
-    const wrapper = mountView()
-    await flushLifecycle()
-    const vm = viewModel(wrapper)
-    const folder = vm.tableData[0] as OrphanFolderRow
-
-    const selection: OrphanTableRow[] = [...folder.children]
-    const toggleSpy = jest.fn()
-    const fakeTable = { selection, toggleRowSelection: toggleSpy }
-    vm.syncFolderCheckboxState(fakeTable)
-
-    expect(toggleSpy).toHaveBeenCalledWith(folder, true)
-  })
-
-  it('反向同步：子文件未全选时文件夹行不应被勾选', async() => {
-    localStorage.setItem('btdeck_orphan_folder_view', '1')
-    const wrapper = mountView()
-    await flushLifecycle()
-    const vm = viewModel(wrapper)
-    const folder = vm.tableData[0] as OrphanFolderRow
-
-    const selection: OrphanTableRow[] = [folder.children[0]]
-    const toggleSpy = jest.fn()
-    const fakeTable = { selection, toggleRowSelection: toggleSpy }
-    vm.syncFolderCheckboxState(fakeTable)
-
-    expect(toggleSpy).not.toHaveBeenCalled()
-  })
-
-  it('rowSelectable：文件夹行有可选子文件则可选；已清理文件不可选', async() => {
+  it('rowSelectable：文件夹行和已清理文件不可选', async() => {
     const deletedChildren = [
       orphanItem(1, 'scan-completed', { file_path: '/data/m/a', is_deleted: true }),
       orphanItem(2, 'scan-completed', { file_path: '/data/m/b', is_deleted: true })
@@ -1781,6 +1890,39 @@ describe('orphan files folder view (persistence + regression)', () => {
     expect(vm.tableData).toBe(vm.list)
     expect((vm.tableData as OrphanTableRow[]).every((r) => (r as unknown as { _is_folder?: boolean })._is_folder !== true)).toBe(true)
     expect(vm.getRowKey(vm.list[0])).toBe('file:1')
+  })
+
+  it('只有文件夹模式注册展开列，扁平模式不显示展开入口', async() => {
+    const flatWrapper = mountView()
+    await flushLifecycle()
+
+    expect(flatWrapper.findAll('[data-column-type="expand"]')).toHaveLength(0)
+    flatWrapper.destroy()
+
+    localStorage.setItem('btdeck_orphan_folder_view', '1')
+    const folderWrapper = mountView()
+    await flushLifecycle()
+
+    expect(folderWrapper.findAll('[data-column-type="expand"]')).toHaveLength(1)
+  })
+
+  it('切换展示模式时展开列随 folderView 动态增删', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const expandColumns = () => wrapper.findAll('[data-column-type="expand"]')
+
+    expect(expandColumns()).toHaveLength(0)
+
+    vm.setFolderView(true)
+    await flushLifecycle()
+    expect(expandColumns()).toHaveLength(1)
+    expect(localStorage.getItem('btdeck_orphan_folder_view')).toBe('1')
+
+    vm.setFolderView(false)
+    await flushLifecycle()
+    expect(expandColumns()).toHaveLength(0)
+    expect(localStorage.getItem('btdeck_orphan_folder_view')).toBe('0')
   })
 })
 
@@ -1935,52 +2077,109 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const pathColumn = wrapper.find('.orphan-path-cell')
     expect(pathColumn.exists()).toBe(true)
     expect(pathColumn.text()).toContain('/data/alone.mp4')
+    // 文件夹模式虽然保留主表展开列，但普通文件行不能产生展开内容。
+    expect(wrapper.find('.orphan-folder-children').exists()).toBe(false)
+    expect(wrapper.findAll('.orphan-folder-children .orphan-table-stub')).toHaveLength(0)
   })
 
-  it('副本数量列显示文件数值（无副本为 0）并显示文件夹汇总值', async() => {
+  it('展开行 class 只标记文件夹，普通文件保持可被箭头隐藏的普通行 class', async() => {
+    const children = [orphanItem(1, 'scan-completed', { file_path: '/data/movie/a.mp4' })]
+    const folder = folderRow('/data/movie', children)
+    const single = orphanItem(2, 'scan-completed', { file_path: '/data/alone.mp4' })
+    const wrapper = mountFolderView([folder, single])
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    expect(vm.getOrphanRowClassName({ row: folder })).toBe('orphan-folder-row')
+    expect(vm.getOrphanRowClassName({ row: single })).toBe('')
+  })
+
+  it('文件夹展开子表隐藏重复表头', async() => {
+    const children = [
+      orphanItem(1, 'scan-completed', { file_path: '/data/movie/a.mp4' }),
+      orphanItem(2, 'scan-completed', { file_path: '/data/movie/b.mp4' })
+    ]
+    const wrapper = mountFolderView([folderRow('/data/movie', children)])
+    await flushLifecycle()
+
+    const tables = wrapper.findAll('.orphan-table-stub')
+    expect(tables.length).toBeGreaterThan(1)
+    expect(tables.at(0).attributes('data-show-header')).toBe('true')
+    expect(tables.at(1).attributes('data-show-header')).toBe('false')
+    expect(tables.at(1).attributes('data-row-count')).toBe('2')
+    expect(tables.at(1).attributes('data-listeners')).toContain('selection-change')
+    expect(tables.at(1).find('[data-column-type="selection"]').exists()).toBe(true)
+  })
+
+  it('副本数量列只显示可见文件数值，文件夹父行不汇总未加载子项', async() => {
     const children = [
       orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 }),
       orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 })
     ]
     const zeroCopyFile = orphanItem(3, 'scan-completed', { hardlink_copy_count: 0 })
-    const wrapper = mountFolderView([folderRow('/data/movie', children), zeroCopyFile])
+    const lazyFolder = folderRow('/data/movie', children, {
+      children: [],
+      child_ids: [],
+      children_loaded: false,
+      hardlink_copy_count: null
+    })
+    const wrapper = mountFolderView([lazyFolder, zeroCopyFile])
     await flushLifecycle()
 
     const countColumn = wrapper.find('[data-column-label="副本数量"]')
     expect(countColumn.exists()).toBe(true)
     const values = countColumn.findAll('.orphan-hardlink-copy-count')
-    expect(values).toHaveLength(2)
-    expect(values.at(0).text()).toBe('2')
-    expect(values.at(1).text()).toBe('0')
+    // 渲染 stub 只展开首个父行：真实懒加载目录父行不显示汇总值；
+    // 顶层 zeroCopyFile（快照 0）按新语义渲染为可点击数量。
+    expect(values).toHaveLength(1)
+    expect(values.at(0).text()).toBe('0')
   })
 
   it('仅有副本的数量可点击，文件夹行只查询有副本的子文件并展示位置', async() => {
     const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
-    const solo = orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 })
+    const solo = orphanItem(2, 'scan-completed', { hardlink_copy_count: 1 })
     const configuredCopy = '/library/movies/linked-copy.mkv'
     mockGetHardlinkCopyLocations.mockResolvedValueOnce({
       code: '200',
       msg: 'ok',
       status: 'success',
       data: {
-        requested_count: 1,
-        resolved_count: 1,
+        requested_count: 2,
+        resolved_count: 2,
         missing_orphan_ids: [],
-        total_copy_count: 2,
+        total_copy_count: 3,
         total_found_count: 1,
-        total_unlocated_count: 1,
+        total_unlocated_count: 2,
         unknown_count: 0,
-        searched_root_count: 2,
+        scanned_count: 1,
+        pending_scan_count: 1,
         search_error: null,
-        items: [{
-          orphan_id: linked.id,
-          file_path: linked.file_path,
-          copy_count: 2,
-          found_count: 1,
-          unlocated_count: 1,
-          copies: [configuredCopy],
-          error: null
-        }]
+        items: [
+          {
+            orphan_id: linked.id,
+            file_path: linked.file_path,
+            copy_count: 2,
+            found_count: 1,
+            unlocated_count: 1,
+            copies: [configuredCopy],
+            scanned_at: '2026-08-15T04:00:00Z',
+            pending_scan: false,
+            result_truncated: false,
+            error: null
+          },
+          {
+            orphan_id: solo.id,
+            file_path: solo.file_path,
+            copy_count: 1,
+            found_count: 0,
+            unlocated_count: 1,
+            copies: [],
+            scanned_at: null,
+            pending_scan: true,
+            result_truncated: false,
+            error: null
+          }
+        ]
       }
     })
     const wrapper = mountFolderView([folderRow('/data/movie', [linked, solo]), solo])
@@ -1988,17 +2187,20 @@ describe('orphan files folder view (folder row rendering contract)', () => {
 
     const countColumn = wrapper.find('[data-column-label="副本数量"]')
     const links = countColumn.findAll('button.orphan-hardlink-copy-count--link')
-    expect(links).toHaveLength(1)
-    expect(links.at(0).text()).toBe('2')
+    // 文件夹聚合行（2+1=3）与顶层 solo 行各一个可点击链接
+    expect(links).toHaveLength(2)
+    expect(links.at(0).text()).toBe('3')
 
     await links.at(0).trigger('click')
     await flushLifecycle()
 
-    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledWith({ orphan_ids: [linked.id] })
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledWith({ orphan_ids: [linked.id, solo.id] })
     expect(viewModel(wrapper).hardlinkLocationDialogVisible).toBe(true)
     expect(wrapper.find('.hardlink-location-summary').text()).toContain('已定位 1')
+    expect(wrapper.find('.hardlink-location-summary').text()).toContain('待预扫描 1')
     expect(wrapper.find('.hardlink-location-copy__path').text()).toBe(configuredCopy)
-    expect(wrapper.text()).toContain('还有 1 个副本未在已配置目录中定位')
+    expect(wrapper.text()).toContain('还有 2 个副本未在最近一轮预扫描中定位')
+    expect(wrapper.text()).toContain('等待每日定时任务预扫描定位副本路径，可稍后重新打开查看。')
 
     await wrapper.find('.hardlink-location-copy__button').trigger('click')
     await flushLifecycle()
@@ -2031,7 +2233,8 @@ describe('orphan files folder view (folder row rendering contract)', () => {
       total_found_count: 1,
       total_unlocated_count: 0,
       unknown_count: 0,
-      searched_root_count: 1,
+      scanned_count: 1,
+      pending_scan_count: 0,
       search_error: null,
       items: [{
         orphan_id: second.id,
@@ -2040,6 +2243,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
         found_count: 1,
         unlocated_count: 0,
         copies: ['/library/second-copy.bin'],
+        scanned_at: '2026-08-15T04:00:00Z',
+        pending_scan: false,
+        result_truncated: false,
         error: null
       }]
     }))
@@ -2057,7 +2263,8 @@ describe('orphan files folder view (folder row rendering contract)', () => {
       total_found_count: 1,
       total_unlocated_count: 0,
       unknown_count: 0,
-      searched_root_count: 1,
+      scanned_count: 1,
+      pending_scan_count: 0,
       search_error: null,
       items: [{
         orphan_id: first.id,
@@ -2066,6 +2273,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
         found_count: 1,
         unlocated_count: 0,
         copies: ['/library/first-copy.bin'],
+        scanned_at: '2026-08-15T04:00:00Z',
+        pending_scan: false,
+        result_truncated: false,
         error: null
       }]
     }))
@@ -2080,7 +2290,7 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 })
     const unavailable = orphanItem(2, 'scan-completed', { hardlink_copy_count: 1 })
     const removed = orphanItem(3, 'scan-completed', { hardlink_copy_count: 1 })
-    const searchError = '已配置下载目录扫描失败，未能完整定位副本位置'
+    const searchError = '副本定位结果读取失败，请稍后重试'
     mockGetHardlinkCopyLocations.mockResolvedValueOnce(hardlinkLocationsResponse({
       requested_count: 3,
       resolved_count: 2,
@@ -2089,7 +2299,8 @@ describe('orphan files folder view (folder row rendering contract)', () => {
       total_found_count: 0,
       total_unlocated_count: 1,
       unknown_count: 1,
-      searched_root_count: 2,
+      scanned_count: 0,
+      pending_scan_count: 0,
       search_error: searchError,
       items: [
         {
@@ -2099,6 +2310,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
           found_count: 0,
           unlocated_count: 1,
           copies: [],
+          scanned_at: null,
+          pending_scan: false,
+          result_truncated: false,
           error: searchError
         },
         {
@@ -2108,6 +2322,9 @@ describe('orphan files folder view (folder row rendering contract)', () => {
           found_count: 0,
           unlocated_count: null,
           copies: [],
+          scanned_at: null,
+          pending_scan: false,
+          result_truncated: false,
           error: '源文件不可访问，无法重新核对副本位置'
         }
       ]
@@ -2143,6 +2360,260 @@ describe('orphan files folder view (folder row rendering contract)', () => {
     expect(vm.hardlinkLocationResult).toBeNull()
     expect(message.error).toHaveBeenCalledWith(expect.stringContaining('storage offline'))
   })
+
+  it('预扫描路径数超上限时提示截断并保留已定位路径', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 120 })
+    const truncatedPaths = ['/library/copy-1.mkv', '/library/copy-2.mkv']
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce(hardlinkLocationsResponse({
+      requested_count: 1,
+      resolved_count: 1,
+      missing_orphan_ids: [],
+      total_copy_count: 120,
+      total_found_count: 2,
+      total_unlocated_count: 118,
+      unknown_count: 0,
+      scanned_count: 1,
+      pending_scan_count: 0,
+      search_error: null,
+      items: [{
+        orphan_id: linked.id,
+        file_path: linked.file_path,
+        copy_count: 120,
+        found_count: 2,
+        unlocated_count: 118,
+        copies: truncatedPaths,
+        scanned_at: '2026-08-15T04:00:00Z',
+        pending_scan: false,
+        result_truncated: true,
+        error: null
+      }]
+    }))
+    const wrapper = mountFolderView([linked])
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+
+    await vm.handleHardlinkCopyClick(linked)
+    await flushLifecycle()
+
+    const copyPaths = wrapper.findAll('.hardlink-location-copy__path')
+    expect(copyPaths).toHaveLength(2)
+    expect(wrapper.text()).toContain('路径数超过存储上限，仅显示前 2 条。')
+    expect(wrapper.text()).toContain('该文件还有 118 个副本位置未定位。')
+  })
+
+  // ==================== 硬链接副本删除 ====================
+
+  function deleteResult(overrides: Partial<HardlinkCopyDeleteResult> = {}): HardlinkCopyDeleteResult {
+    return {
+      orphan_id: 1,
+      file_path: '/data/movie/linked.mkv',
+      copy_count: 1,
+      success_count: 1,
+      failed_count: 0,
+      failed_list: [],
+      ...overrides
+    }
+  }
+
+  function locationsResultFor(item: OrphanFileItem, copies: string[]): HardlinkCopyLocationsResult {
+    return {
+      requested_count: 1,
+      resolved_count: 1,
+      missing_orphan_ids: [],
+      total_copy_count: copies.length,
+      total_found_count: copies.length,
+      total_unlocated_count: 0,
+      unknown_count: 0,
+      scanned_count: 1,
+      pending_scan_count: 0,
+      search_error: null,
+      items: [
+        {
+          orphan_id: item.id,
+          file_path: item.file_path,
+          copy_count: copies.length,
+          found_count: copies.length,
+          unlocated_count: 0,
+          copies,
+          scanned_at: '2026-08-16T04:00:00Z',
+          pending_scan: false,
+          result_truncated: false,
+          error: null
+        }
+      ]
+    }
+  }
+
+  async function openLocationsDialog(
+    wrapper: Wrapper<Vue>,
+    item: OrphanFileItem,
+    copies: string[]
+  ): Promise<void> {
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce(
+      hardlinkLocationsResponse(locationsResultFor(item, copies))
+    )
+    await viewModel(wrapper).handleHardlinkCopyClick(item)
+    await flushLifecycle()
+  }
+
+  it('每个副本行渲染删除按钮（danger 文字按钮）', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv', '/library/b.mkv'])
+
+    const deleteButtons = wrapper.findAll('.hardlink-location-copy__button--delete')
+    expect(deleteButtons).toHaveLength(2)
+    expect(deleteButtons.at(0).text()).toBe('删除')
+    expect(deleteButtons.at(0).attributes('data-loading')).toBe('false')
+  })
+
+  it('确认删除后调用 API、就地刷新行副本数并重查弹窗位置', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const copyPath = '/library/a.mkv'
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, [copyPath])
+    const vm = viewModel(wrapper)
+
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({ orphan_id: linked.id, copy_count: 1 })
+    })
+    // 删除成功后的重查响应（副本数降为 1、列表为空）
+    mockGetHardlinkCopyLocations.mockResolvedValueOnce(
+      hardlinkLocationsResponse(locationsResultFor(linked, []))
+    )
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(confirm).toHaveBeenCalled()
+    expect(mockDeleteHardlinkCopy).toHaveBeenCalledWith({
+      orphan_id: linked.id,
+      copy_paths: [copyPath]
+    })
+    expect(message.success).toHaveBeenCalledWith(expect.stringContaining('已删除副本'))
+    // 就地刷新：不触发整页刷新（mockGetOrphanList 只在挂载时调用一次）
+    expect(mockGetOrphanList).toHaveBeenCalledTimes(1)
+    expect(vm.list[0].hardlink_copy_count).toBe(1)
+    // 重查使用弹窗打开时的同一组 orphan_ids
+    expect(mockGetHardlinkCopyLocations).toHaveBeenLastCalledWith({ orphan_ids: [linked.id] })
+    expect(vm.hardlinkLocationResult?.items[0].copies).toEqual([])
+  })
+
+  it('删除中按钮进入 loading 态，结束后恢复', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+    const vm = viewModel(wrapper)
+
+    const pending = deferred<ApiResponse<HardlinkCopyDeleteResult>>()
+    mockDeleteHardlinkCopy.mockReturnValueOnce(pending.promise)
+    // 重查仍返回一个未删除副本，保证按钮行持续存在以观测 loading 恢复
+    mockGetHardlinkCopyLocations.mockResolvedValue(
+      hardlinkLocationsResponse(locationsResultFor(linked, ['/library/remaining.mkv']))
+    )
+
+    const clickPromise = vm.handleHardlinkCopyDelete(linked.id, '/library/a.mkv')
+    await flushLifecycle()
+    // 多次重渲染后需重新查找，避免持有脱离文档的旧节点
+    expect(wrapper.find('.hardlink-location-copy__button--delete').attributes('data-loading')).toBe('true')
+    expect(vm.isHardlinkCopyDeleting(linked.id, '/library/a.mkv')).toBe(true)
+
+    pending.resolve({ code: '200', msg: 'ok', status: 'success', data: deleteResult() })
+    await clickPromise
+    await flushLifecycle()
+    expect(wrapper.find('.hardlink-location-copy__button--delete').attributes('data-loading')).toBe('false')
+    expect(vm.isHardlinkCopyDeleting(linked.id, '/library/a.mkv')).toBe(false)
+  })
+
+  it('逐项失败原因展示且失败时不重查弹窗', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({
+        success_count: 0,
+        failed_count: 1,
+        copy_count: 2,
+        failed_list: [
+          { copy_path: '/library/a.mkv', reason: '副本位于种子目录内（可能正被引用），已拒绝删除' }
+        ]
+      })
+    })
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(message.error).toHaveBeenCalledWith(expect.stringContaining('种子目录'))
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+  })
+
+  it('租约互斥的 rejected 载荷直接提示且不重查', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({
+        success_count: 0,
+        failed_count: 1,
+        copy_count: null,
+        failed_list: [{ copy_path: '/library/a.mkv', reason: '另一个孤儿文件维护操作正在运行' }],
+        rejected: true,
+        error: '另一个孤儿文件维护操作正在运行'
+      })
+    })
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(message.error).toHaveBeenCalledWith('另一个孤儿文件维护操作正在运行')
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+  })
+
+  it('取消确认不发起删除请求', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+
+    confirm.mockRejectedValueOnce(new Error('cancel'))
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    expect(mockDeleteHardlinkCopy).not.toHaveBeenCalled()
+    expect(mockGetHardlinkCopyLocations).toHaveBeenCalledTimes(1)
+  })
+
+  it('located 筛选开启时删除成功改走整页刷新', async() => {
+    const linked = orphanItem(1, 'scan-completed', { hardlink_copy_count: 2 })
+    const wrapper = mountFolderView([linked])
+    await openLocationsDialog(wrapper, linked, ['/library/a.mkv'])
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    mockDeleteHardlinkCopy.mockResolvedValueOnce({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: deleteResult({ orphan_id: linked.id, copy_count: 1 })
+    })
+
+    await wrapper.find('.hardlink-location-copy__button--delete').trigger('click')
+    await flushLifecycle()
+
+    // located 筛选下行需从结果中消失，触发第二次整页查询
+    expect(mockGetOrphanList).toHaveBeenCalledTimes(2)
+  })
 })
 
 describe('orphan files hardlink copy count formatting', () => {
@@ -2162,12 +2633,13 @@ describe('orphan files hardlink copy count formatting', () => {
     expect(vm.formatHardlinkCopyCount(undefined)).toBe('-')
   })
 
-  it('只有大于 0 的实时数量允许打开位置查询', async() => {
+  it('数值型副本数（含 0）可点击打开位置查询，未知态不可点击', async() => {
     const vm = viewModel(mountView())
     await flushLifecycle()
 
+    // 列值是扫描快照；0 也可点击，弹窗实时复核兜住快照后新增的副本
     expect(vm.canOpenHardlinkLocations(orphanItem(1, 'scan-completed', { hardlink_copy_count: 1 }))).toBe(true)
-    expect(vm.canOpenHardlinkLocations(orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 }))).toBe(false)
+    expect(vm.canOpenHardlinkLocations(orphanItem(2, 'scan-completed', { hardlink_copy_count: 0 }))).toBe(true)
     expect(vm.canOpenHardlinkLocations(orphanItem(3, 'scan-completed', { hardlink_copy_count: null }))).toBe(false)
   })
 })
@@ -2311,5 +2783,174 @@ describe('orphan files multi-value filter submission', () => {
     expect(mockGetOrphanList).toHaveBeenLastCalledWith(
       expect.objectContaining({ downloader_id: 'dl-only' })
     )
+  })
+})
+
+// 副本定位筛选（hardlink_copies=located）：快捷操作一键切换 + 筛选区复选框 + 重置
+describe('orphan files hardlink copies located filter', () => {
+  it('快捷操作一键开启：提交 hardlink_copies=located 并回第一页', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.page = 4
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleQuickAction('toggleLocatedCopies')
+    await flushLifecycle()
+
+    expect(vm.listQuery.hardlinkCopies).toBe(true)
+    expect(vm.listQuery.page).toBe(1)
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hardlink_copies: 'located', page: 1 })
+    )
+    // 切换筛选不打开前缀操作对话框
+    expect(vm.quickActionDialogVisible).toBe(false)
+  })
+
+  it('快捷操作再次点击取消筛选：hardlink_copies 不提交', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleQuickAction('toggleLocatedCopies')
+    await flushLifecycle()
+
+    expect(vm.listQuery.hardlinkCopies).toBe(false)
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
+  })
+
+  it('默认关闭时不提交 hardlink_copies', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+    vm.handleFilter()
+    await flushLifecycle()
+
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
+  })
+
+  it('重置筛选清空副本定位开关', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleResetFilter()
+    await flushLifecycle()
+
+    expect(vm.listQuery.hardlinkCopies).toBe(false)
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
+  })
+
+  it('文件夹子项展开请求透传 hardlink_copies=located', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = folderRow('/data', [], { child_count: 1, child_ids: [], children_loaded: false, child_total: 1 })
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanFolderChildren.mockClear()
+    mockGetOrphanFolderChildren.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 1, page: 1, pageSize: 20, list: [orphanItem(11, 'scan-completed', { file_path: '/data/a' })] }
+    })
+
+    await vm.loadFolderChildren(folder)
+    await flushLifecycle()
+
+    expect(mockGetOrphanFolderChildren).toHaveBeenLastCalledWith(
+      expect.objectContaining({ folder_path: '/data', hardlink_copies: 'located' })
+    )
+  })
+
+  it('快捷操作切换保留既有筛选一并提交（不互相覆盖）', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.path_like = '/media'
+    vm.listQuery.status = ['pending']
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleQuickAction('toggleLocatedCopies')
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        path_like: '/media',
+        status: 'pending',
+        hardlink_copies: 'located',
+        page: 1
+      })
+    )
+  })
+
+  it('刷新保留 located 筛选快照（refreshPageData 不丢开关）', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    await vm.refreshPageData()
+    await flushLifecycle()
+
+    expect(mockGetOrphanList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ hardlink_copies: 'located', page: 1 })
+    )
+  })
+
+  it('文件夹视图开启时 located 与 group_by_folder 同时提交', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    // 直接改实例数据绕过 localStorage 持久化，避免影响其它用例
+    vm.folderView = true
+    vm.listQuery.hardlinkCopies = true
+    mockGetOrphanList.mockClear()
+    mockGetOrphanList.mockResolvedValue(listResponse())
+
+    vm.handleFilter()
+    await flushLifecycle()
+
+    const callArgs = mockGetOrphanList.mock.calls[mockGetOrphanList.mock.calls.length - 1][0]
+    expect(callArgs.group_by_folder).toBe(true)
+    expect(callArgs.hardlink_copies).toBe('located')
+    vm.folderView = false
+  })
+
+  it('文件夹子项默认关闭时不提交 hardlink_copies', async() => {
+    const wrapper = mountView()
+    await flushLifecycle()
+    const vm = viewModel(wrapper)
+    const folder = folderRow('/data', [], { child_count: 1, child_ids: [], children_loaded: false, child_total: 1 })
+    mockGetOrphanFolderChildren.mockClear()
+    mockGetOrphanFolderChildren.mockResolvedValue({
+      code: '200',
+      msg: 'ok',
+      status: 'success',
+      data: { total: 0, page: 1, pageSize: 20, list: [] }
+    })
+
+    await vm.loadFolderChildren(folder)
+    await flushLifecycle()
+
+    const callArgs = mockGetOrphanFolderChildren.mock.calls[
+      mockGetOrphanFolderChildren.mock.calls.length - 1
+    ][0]
+    expect(callArgs.hardlink_copies).toBeUndefined()
   })
 })

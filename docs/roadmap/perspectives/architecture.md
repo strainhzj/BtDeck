@@ -8,11 +8,10 @@
 
 ```
 入口（Docker）
-  btdeck_startup.sh:62-67
-    exec uvicorn app.main:app --host 0.0.0.0 --port 5001 --workers 1
+  btdeck_startup.sh:102
+    exec uvicorn app.main:app ...
       │
-      └─ app/main.py:95  Server.run()
-            │
+      └─ app/main.py:26  from app.factory import app
             └─ app/factory.py:116  app = create_app(configure_routes=False)
                   │  app/factory.py:84  create_app()
                   │    ├─ L92  FastAPI(lifespan=lifespan)
@@ -22,28 +21,31 @@
                   │         └─ app/startup/routers_initializer.py:6  init_routers(app)
                   │              └─ app/api/api.py:40  api_router (prefix=/api/v1)
                   │
-      早期迁移（main.py 内）
-        ├─ app/main.py:78  init_config_file()
-        ├─ app/main.py:83  yaml.reload()
-        └─ app/main.py:92  migrate_database()  → app/core/migration.py
+直接运行（非 Docker import 路径）
+  app/main.py:140-163
+    init_config_file() → yaml.reload() → migrate_database()
+      └─ 失败时拒绝进入 Server.run()
 
 FastAPI lifespan（请求进入前）
-  app/startup/lifecycle.py:175  lifespan(app)
-    ├─ L214-223 migrate_database()
-    ├─ L230-232 init_db()
-    ├─ L240     await init_database_connection()
-    ├─ L245     await reconcile_orphan_file_state() # 对账历史隔离候选
-    ├─ L261     await update_cron_task_status()
-    ├─ L267     await cron_executor.start()         # 启动 APScheduler
+  app/startup/lifecycle.py:262  lifespan(app)
+    ├─ L302 migrate_database()（失败时 fail-fast，后续均不执行）
+    ├─ L318 init_db()
+    ├─ L327 await init_database_connection()
+    ├─ L332 await reconcile_orphan_file_state() # 分批对账历史隔离候选
+    ├─ L350 recover_interrupted_orphan_scans()  # running → failed
+    ├─ L364 await update_cron_task_status()
+    ├─ L375 await cron_executor.start()         # 启动 APScheduler
     │             └─ app/tasks/cron_executor.py  AsyncIOScheduler.add_job (L60/L142/L791)
-    ├─ L283-284 asyncio.create_task(startup_event(app))
+    ├─ L391 asyncio.create_task(startup_event(app))
     │             └─ app/downloader/initialization.py:682  startup_event(app)
     │                  ├─ L709  _async_initialization_tasks
     │                  ├─ L729  _load_initial_downloaders
     │                  └─ L795  _perform_initial_full_sync
-    ├─ L286-287 run_dashboard_stats_loop
-    ├─ L290-291 check_version_update_task
-    └─ L294-295 add_version_update_notification_task
+    ├─ L397 持久化孤儿清理任务恢复
+    ├─ L404 queued 孤儿扫描恢复
+    ├─ L408 run_dashboard_stats_loop
+    ├─ L412 check_version_update_task
+    └─ L416 add_version_update_notification_task
 ```
 
 ## 链 2：种子添加流程（HTTP → SDK → DB → 审计）
@@ -105,16 +107,23 @@ APScheduler job（注册）
 
 ```
 触发：定时任务 or HTTP /api/v1/orphan-files/scan
-  ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (128 行, 每周日凌晨 2 点)
-  └─ [HTTP]  app/api/endpoints/orphan_files.py  (146 行)
-       └─ app/services/orphan_scanner.py  OrphanScanner (708 行)
-            ├─ app/services/orphan_manifest.py  (560 行) 筛选有效路径、严格映射并构建实时 manifest
-            ├─ 对比成功映射扫描根与实时种子清单 → 找出孤儿文件
-            │
-            └─ [清理] app/services/orphan_file_service.py  (1346 行)
-                 ├─ app/services/orphan_lease.py  (259 行) 跨进程 lease 互斥
-                 ├─ app/services/orphan_quarantine.py  (250 行) 隔离区管理
-                 └─ app/services/orphan_notification.py  (129 行) 幂等通知
+  ├─ [定时] app/tasks/scheduler/orphan_scan_task.py  OrphanScanTask (242 行, 提交并等待 dispatcher 终态，阶段摘要进入 Cron task_logs)
+  └─ [HTTP]  app/api/endpoints/orphan_files.py  POST /scan (L317，handler L318)
+       └─ app/services/orphan_scan_job_service.py (477 行)
+            ├─ 持久化 queued scan_id/task_id 并立即返回
+            ├─ GET /scans/{scan_id} 只读单行轮询状态
+            └─ OrphanScanDispatcher 串行调度/重启恢复/定时等待终态
+                 └─ app/services/orphan_scanner.py  OrphanScanner (927 行)
+                      ├─ orphan_manifest.py 严格映射 + 实时 manifest
+                      ├─ 文件系统核查 → 稳定 current detail
+                      └─ orphan_lifecycle_service.py (454 行)
+                           └─ 每 200 条短事务查询/更新/resolved + db_write_scope
+
+列表：orphan_file_service.py (3161 行)
+  ├─ 文件夹父行只做 SQL 聚合
+  └─ /folders/children 展开后独立分页，仅当前可见文件 stat 硬链接
+
+清理：预览/手动/前缀/定时公用最新 completed + scan_id 门禁；>50000 条仅显示可关闭提醒，删除前继续实时复核 manifest、路径授权和文件身份
 ```
 
 ## 链 6：高级搜索（HTTP → 契约校验 → 有界正则 → ORM 执行）✨v1.0.6.25~28

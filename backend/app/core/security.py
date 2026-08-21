@@ -84,21 +84,15 @@ def encrypt_tracker_info(tracker_url: str) -> str:
         if tracker_url.startswith(("sm4:", "encrypted:")):
             return tracker_url
 
-        # 使用SM4加密
+        # 使用SM4加密（fail-closed：加密失败抛错，禁止明文落库）
         encryption = get_sm4_encryption()
-        if encryption:
-            encrypted = encryption.encrypt(tracker_url)
-            if encrypted and encrypted != tracker_url:
-                logger.debug(f"SM4加密成功: {tracker_url[:20]}...")
-                return encrypted
-
-        # 如果主要加密失败，返回原始值
-        logger.warning("Tracker加密失败，返回原始值")
-        return tracker_url
+        encrypted = encryption.encrypt(tracker_url)
+        logger.debug(f"SM4加密成功: {tracker_url[:20]}...")
+        return encrypted
 
     except Exception as e:
-        logger.error(f"加密Tracker信息时发生错误: {str(e)}")
-        return tracker_url
+        logger.error(f"加密Tracker信息失败（拒绝明文落库）: {str(e)}")
+        raise
 
 
 class TrackerDecryptionKeyManager:

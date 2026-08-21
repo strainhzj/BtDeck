@@ -7,7 +7,7 @@
 
 | 关键词 | 模式/文件 | 一句话职责 |
 |--------|-----------|-----------|
-| Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001 / WebSocket 5002；SPA fallback = nginx |
+| Docker Compose docker | `docker-compose.yml` + `btdeck_startup.sh` | 服务器部署（推荐）；backend 仅 EXPOSE 5001 不暴露端口，nginx 反代 5001；SPA fallback = nginx |
 | Docker 镜像源参数化 docker-mirror | `backend/Dockerfile` / `frontend/Dockerfile(.prod)`（v1.0.6.28） | build-arg 注入 `APT_MIRROR`/`PIP_INDEX_URL`/`NPM_REGISTRY`，默认空串=官方源（向后兼容） |
 | 一键脚本 start | `deploy/start.sh` / `build-images.sh` / `build-and-export-images.bat` | 宿主机 `docker compose up -d --build`；构建导出镜像 tar；bat 含 3 profile 镜像源重试链 |
 | PyInstaller 单机 pyinstaller | `deploy/btdeck.spec` / `btdeck-windows.spec` | PyInstaller 打包配置（Linux / Windows）；SPA fallback = `factory.py:_mount_frontend_static` |
@@ -66,10 +66,10 @@
 - `frontend/nginx.conf` 关键：
   - L53 `listen 80;`；L60 `root /usr/share/nginx/html;`
   - L71 `service-worker.js` 精确 no-store；L81 只有 `/assets/` 内容哈希资源缓存 1y immutable
-  - L90 `location /api/ { proxy_pass http://btdeck-backend:5001; }`
-  - L118 `location /ws/ { proxy_pass http://btdeck-backend:5002/; }`（WebSocket 走 5002）
-  - L135 `location / { try_files $uri $uri/ /index.html; }`（SPA history fallback + no-store）
-  - L145 `location /health`（容器健康检查端点）
+  - L93 `location = /api/v1/auth/login`（登录接口 body 上限 1M，安全修复 W13）
+  - L104 `location /api/ { proxy_pass http://btdeck-backend:5001; }`
+  - L128 `location / { try_files $uri $uri/ /index.html; }`（SPA history fallback + no-store）
+  - L138 `location /health`（容器健康检查端点）
 
 > 部署会整体替换包含哈希文件的不可变前端镜像。已打开的旧 SPA 可能在客户端路由跳转时请求旧 chunk；`router.onError` 会携带一次性 query 重新加载当前 no-store 入口，60 秒门禁防止服务器真实缺文件时循环刷新。
 
@@ -148,7 +148,7 @@
 ## 关键观察
 
 - **双入口分叉**：Docker 走 `btdeck_startup.sh` + nginx；单机走 PyInstaller + `factory.py:_mount_frontend_static`。两种模式下"如何提供前端静态文件"完全不同。
-- **WebSocket 独立端口**：Docker 模式下 HTTP 走 5001，WebSocket 走 5002（`websocket_main.py` 独立入口）。
+- **WebSocket 已移除**：`websocket_main.py` 与 5002 端口转发已删除（前端用 5 秒轮询，无实时推送服务）。
 - **构建产物已入库**：`deploy/dist/btdeck.exe`、`deploy/build/` 已提交到仓库（可能是误提交，体积较大）。
 
 ## 第三层详情

@@ -305,6 +305,16 @@
     background: rgba(139, 92, 246, 0.12);
     color: #8b5cf6;
   }
+
+  &.completed {
+    background: rgba(16, 185, 129, 0.12);
+    color: var(--color-success);
+  }
+
+  &.unknown {
+    background: rgba(107, 114, 128, 0.12);
+    color: #6b7280;
+  }
 }
 
 /* ========================================
@@ -355,6 +365,33 @@
     color: #7c3aed;
     border: 1px solid rgba(139, 92, 246, 0.15);
   }
+
+  &.completed {
+    background: rgba(16, 185, 129, 0.08);
+    color: var(--color-success);
+    border: 1px solid rgba(16, 185, 129, 0.15);
+  }
+
+  &.unknown {
+    background: rgba(107, 114, 128, 0.08);
+    color: #6b7280;
+    border: 1px solid rgba(107, 114, 128, 0.12);
+  }
+}
+
+/* Tracker 判定异常小标签（状态徽标旁叠加；展示对齐 has_tracker_error 判定） */
+.tracker-error-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-medium);
+  white-space: nowrap;
+  background: rgba(239, 68, 68, 0.08);
+  color: var(--color-error);
+  border: 1px solid rgba(239, 68, 68, 0.15);
 }
 
 /* ========================================
@@ -378,9 +415,12 @@
     height: 100%;
     border-radius: 2px;
     transition: width 0.3s ease;
+    // 兜底背景：未识别状态（unknown/moving 等）进度条也可见，避免宽度增长却不可见
+    background: var(--color-text-tertiary);
 
     &.downloading { background: var(--color-info); }
     &.seeding { background: var(--color-success); }
+    &.completed { background: var(--color-success); }
     &.paused { background: var(--color-text-tertiary); }
     &.error { background: var(--color-error); }
     &.checking { background: var(--color-warning); }

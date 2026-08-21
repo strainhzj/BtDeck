@@ -1,6 +1,6 @@
 # backend/api — HTTP 路由层
 
-> FastAPI 路由聚合层，按业务域组织 38 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
+> FastAPI 路由聚合层，按业务域组织 37 个 endpoint 模块 + 请求/响应模型。所有接口统一返回 `CommonResponse[T]`。
 > 定位方式：`Grep -i <功能词> docs/roadmap/backend/api/README.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -9,17 +9,17 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 路由聚合 api-router | `api.py` | 顶层 `api_router = APIRouter()`，按 prefix 挂载全部子路由（33 次 include_router；L75 挂载同内容只读排查，prefix→模块映射见下方“路由聚合”） |
+| 路由聚合 api-router | `api.py` | 顶层 `api_router = APIRouter()`，按 prefix 挂载全部子路由（32 次 include_router；prefix→模块映射见下方“路由聚合”） |
 | 响应封装 response-vo | `responseVO.py` | 通用响应封装 `CommonResponse[T]`（status / msg / code / data） |
 
-### endpoints/（38 个文件）
+### endpoints/（37 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 高级搜索 API advanced-search | `advanced_search.py` | 高级搜索 API（13 字段全字段搜索 + 多选排除）；v1.0.6.27 起接入 `sqlite_search_runtime`（正则执行熔断）与 `app.contracts`（操作符契约校验），防 ReDoS 与前后端漂移 |
 | 审计日志 API audit-log | `audit_logs.py` | 审计日志异步 API：查询/导出/归档/统计 |
 | 定时任务 API cron | `cron_tasks.py` | 定时任务（cron）配置与日志 CRUD/启停 |
-| 用户中心 cuser | `cuser.py` | 用户中心：登出/改信息/改密/2FA（挂 `/user` 与 `/users`） |
+| 用户中心 cuser | `cuser.py` | 用户中心：登出/改信息（`/user/info` 实时下发 `mustChangePassword` 强制改密标志，W9 补全；异常兜底 code 500 防前端误登出）/改密/2FA（挂 `/user` 与 `/users`；2FA 输入错误一律 400，业务 401 仅保留 token 缺陷两处自愈语义） |
 | 仪表盘 dashboard | `dashboard.py` | 仪表盘聚合数据，委托 `DashboardService` |
 | 健康检查 health | `health.py` | liveness/readiness 与受保护同步业务健康；数据库查询和同步健康均有界超时 |
 | 下载器核心 downloader | `downloader.py` | 下载器核心 API（连通性测试/添加管理）；路径映射测试会通过缓存下载器验证内部目录，并在 BtDeck 环境验证外部目录，任一失败即 fail-closed |
@@ -27,21 +27,20 @@
 | 能力配置 capability-mgmt | `downloader_capabilities_management.py` | 下载器能力配置管理（更新/重置/删除） |
 | 路径维护 path-mgmt | `downloader_path_maintenance.py` | 下载器路径维护 CRUD（默认/活跃路径） |
 | 下载器设置 downloader-setting | `downloader_settings.py` | 下载器设置管理（CRUD + 应用；含已废弃 advanced_settings） |
-| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询（`DuplicateQueryRequest` L48 / `get_duplicate_torrents` L86）；排除 pending/running 删除任务，支持名称/下载器/状态/分类/标签/活动快照筛选及安全列排序，默认 `added_date DESC` 后再判定重复组 |
+| 重复种子 duplicate | `duplicate_torrents.py` | 重复种子查询（`DuplicateQueryRequest` L48 / `get_duplicate_torrents` L86）；排除 pending/running 删除任务，支持名称/下载器/状态/分类/标签/活动快照筛选及安全列排序，默认 `added_date DESC` 后再判定重复组；✨2026-08-20 展示对齐判定：status=error 筛选口径补 `OR has_tracker_error`（L228，与 getList/advanced_search 一致），tracker 文本在消息命中失败池时覆写"工作失败"（L438/L459，共享 `tracker_keyword_map` 每请求加载一次） |
 | 重复种子快捷删除 duplicate-quick | `duplicate_quick_delete.py` | 重复种子预览与异步删除提交；预览隐藏占用项，提交返回接受/跳过数量且全部占用时不重复派发 |
-| 同内容异常排查 same-content inspection | `same_content_inspection.py` ✨2026-08-13 | `SameContentInspectionRequest` L19 / `same_content_inspection()` L28：`POST /torrents/same-content-inspection`，按组分页返回完整或仅错误种子，只读委托 `same_content_inspection_service` |
-| 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token） |
+| 登录 login | `login.py` | 登录（`/login`，校验密码并签发 token，`verify_secret` 走 `utils.get_login_secret()` 缓存读法消除直取 KeyError）+ 刷新（`/refresh` L132：条件 UPDATE 原子轮换，rowcount=0 即 401，消除并发同值刷新双成功窗口） |
 | 通知中心 notification | `notifications.py` | 通知中心：列表/未读计数/标记已读 |
-| 孤儿文件 API orphan | `orphan_files.py` | 扫描/列表/清理/忽视/隔离恢复；列表返回实时 `hardlink_copy_count`，`POST /hardlink-copies` 按 ID 批量定位配置目录内的副本路径；清理提交支持原子占用与混合跳过 |
+| 孤儿文件 API orphan | `orphan_files.py`（手动操作审计带提交端 IP；/cleanup、/purge 经 job 行持久化，其余直接提取） | `POST /scan` 立即返回 scan_id/task_id，`GET /scans/{id}` 轮询单行状态；`GET /folders/children` 展开后独立分页并仅统计可见文件硬链接；`POST /hardlink-copies/delete` 弹窗删除已定位副本（逐路径 fail-closed，状态类拒绝 200+failed_list）；超量扫描仅返回提醒状态，保留兼容复核接口但不再阻断清理；保留清理/忽视/隔离恢复与持久化任务 |
 | 回收站 recycle | `recycle_bin.py` | 回收站：列表/还原/清理预览/手动清理 |
-| 种子转移 seed-transfer | `seed_transfer.py` | 种子转移，对接 `seed_transfer_service` |
+| 种子转移 seed-transfer | `seed_transfer.py` | 种子转移，对接 `seed_transfer_service`；审计写 torrent_audit_log 含 IP/user_agent |
 | 配置模板 template | `setting_templates.py` | 配置模板管理：CRUD + 应用 |
 | 标签管理 tag | `tag_management.py` | 标签管理：标签 CRUD/种子标签分配/批量操作 |
 | 任务日志 task-log | `tasks.py` | 任务日志（`/logs`、`/statistics`） |
 | 种子备份 torrent-backup | `torrent_backup.py` | 种子文件备份：备份/还原/列表/管理；`get_backup_downloader_nicknames` L82 对当前页下载器做单次批量查询，列表直接返回当前 nickname |
-| 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
+| 种子 CRUD torrent-crud | `torrent_crud.py` | 种子 CRUD（列表/添加/查询/上传 .torrent）；`get_torrents()` L597 支持 `tracker_domain` L613 和 `single_error_only` L630，并委托列表共享查询；新增 `GET /tracker-domains` 返回定时 Tracker 同步已采集的主机域名；v1.0.6.33 起异步批量添加已抽取至 `services/torrent_batch_add_service.py` ★ [详情](./endpoints/torrent_crud.md) |
 | 种子删除 torrent-delete | `torrent_deletion.py` | 种子多等级删除；异步批量提交原子占用活动 ID，并返回 requested/accepted/skipped 统计 |
-| 种子工具 torrent-helper | `torrent_helpers.py` | 种子端点共享工具（哈希/序列化/bencode/DB 辅助）；VO 转换透传 `error_reason`，Transmission 新增记录提取错误文本；普通列表与计数排除活动删除任务中的种子 |
+| 种子工具 torrent-helper | `torrent_helpers.py` | `get_torrent_infos()` L47 复用普通筛选/排序/分页；`_apply_row_display_filters()` L171 收拢 tracker/tracker_domain/status 三类行级筛选——普通列表原位应用，`same_content_only` L290 延后到分组 join 后仅过滤组内显示行（v1.0.6.40）；`same_content_only` 从不含状态/Tracker 的候选集聚合同名同大小且不同规范化 Hash；`single_error_only` L322 使用全局可见任务的同名同大小唯一性，忽略当前 Tracker/状态筛选且不按 Tracker 服务数量判断；关联数据只装配当前页，列表与计数排除活动删除任务中的种子；✨2026-08-20 展示对齐判定：`convert_to_vo_with_trackers` 接受可选 `tracker_keyword_map`（None 不覆写），announce/scrape 文本在消息命中失败池且非中性码时覆写"工作失败"（L569/L592），VO 透传 `has_tracker_error`（L466/L637），批量版 `convert_to_vos_with_trackers` 每次列表转换经 `load_active_keyword_map` 加载一次关键词池（L689） |
 | 种子路径 torrent-location | `torrent_location.py` | 修改种子保存路径 |
 | 种子速度 torrent-speed | `torrent_speed.py` | 种子级实时速度查询（走 `app.state.store` 缓存） |
 | 种子状态 torrent-status | `torrent_status.py` | 种子状态控制（暂停/恢复/重检） |
@@ -95,7 +94,7 @@
 | `/tags` | tag_management |
 | `/notifications` | notifications |
 | `/orphan-files` | orphan_files |
-| `/torrents` 附加 | duplicate_torrents、duplicate_quick_delete、same_content_inspection、torrent_backup、seed_transfer |
+| `/torrents` 附加 | duplicate_torrents、duplicate_quick_delete、torrent_backup、seed_transfer |
 
 最终在 `app/startup/routers_initializer.py:16` 注入顶层前缀 `API_V1_STR`（默认 `/api/v1`）。
 

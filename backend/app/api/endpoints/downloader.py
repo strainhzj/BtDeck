@@ -70,12 +70,14 @@ async def add(
 ):
     # JWT验证（已迁移至 require_authenticated_user 依赖）
     # Pydantic 验证器已将字符串 "0"/"1" 转换为布尔值
+    # 密码在 ORM 构造点加密落库（与 update 端点对齐）——历史缺陷：add 明文
+    # 直写、update 才加密，decrypt 对非 sm4: 前缀静默透传掩盖了明文存储
     downloader = models.BtDownloaders(
         downloader_id=str(uuid.uuid4()),
         nickname=downloader_request.nickname,
         host=downloader_request.host,
         username=downloader_request.username,
-        password=downloader_request.password,
+        password=encrypt_password(downloader_request.password) if downloader_request.password else "",
         status=True,
         is_search=downloader_request.is_search,
         enabled=downloader_request.enabled,

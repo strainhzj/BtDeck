@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.models.orphan_purge_job import OrphanPurgeJob
 from app.services.notification_service import NotificationService
+from app.services.orphan_stats_cache import orphan_stats_cache
 from app.tasks.resource_guard import admission_controller
 from app.utils.format_size import format_size
 
@@ -135,6 +136,7 @@ class OrphanPurgeJobService:
         items: List[Any],
         operator: str,
         scan_id: Optional[str] = None,
+        ip_address: Optional[str] = None,
     ) -> OrphanJobSubmission:
         """在始终启用的提交临界区内完成活动项查重与任务创建。"""
         if operation_type == CLEANUP_OPERATION:
@@ -179,6 +181,7 @@ class OrphanPurgeJobService:
                         json.dumps(accepted_items, ensure_ascii=False) if operation_type == CLEANUP_OPERATION else None
                     ),
                     operator=operator,
+                    ip_address=ip_address,
                     total_count=len(accepted_items),
                     purged_count=0,
                     failed_count=0,
@@ -200,7 +203,9 @@ class OrphanPurgeJobService:
             await self.db.rollback()
             raise
 
-    async def submit_purge_job(self, canonical_paths: List[str], operator: str) -> OrphanJobSubmission:
+    async def submit_purge_job(
+        self, canonical_paths: List[str], operator: str, ip_address: Optional[str] = None
+    ) -> OrphanJobSubmission:
         """原子提交隔离区彻底删除任务；活动任务中的路径被跳过。"""
         normalized_paths = list(dict.fromkeys(path for path in canonical_paths if path and path.strip()))
         if not normalized_paths:
@@ -209,32 +214,44 @@ class OrphanPurgeJobService:
             operation_type=PURGE_OPERATION,
             items=normalized_paths,
             operator=operator,
+            ip_address=ip_address,
         )
 
-    async def create_job(self, canonical_paths: List[str], operator: str) -> OrphanPurgeJob:
+    async def create_job(
+        self, canonical_paths: List[str], operator: str, ip_address: Optional[str] = None
+    ) -> OrphanPurgeJob:
         """兼容入口；若全部已占用则明确拒绝。"""
-        submission = await self.submit_purge_job(canonical_paths, operator)
+        submission = await self.submit_purge_job(canonical_paths, operator, ip_address=ip_address)
         if submission.job is None:
             raise ValueError("所选隔离文件均已在彻底删除任务中处理")
         return submission.job
 
-    async def submit_cleanup_job(self, scan_id: str, orphan_ids: List[int], operator: str) -> OrphanJobSubmission:
+    async def submit_cleanup_job(
+        self, scan_id: str, orphan_ids: List[int], operator: str, ip_address: Optional[str] = None
+    ) -> OrphanJobSubmission:
         """原子提交主动清理任务；后台仍执行全部安全复核。"""
         normalized_ids = list(dict.fromkeys(int(orphan_id) for orphan_id in orphan_ids))
         if not scan_id or not scan_id.strip():
             raise ValueError("主动清理任务必须绑定有效的扫描批次")
         if not normalized_ids:
             raise ValueError("至少需要一个有效的孤儿文件 ID")
-        return await self._create_submission(
+        submission = await self._create_submission(
             operation_type=CLEANUP_OPERATION,
             items=normalized_ids,
             operator=operator,
             scan_id=scan_id,
+            ip_address=ip_address,
         )
+        if submission.job is not None:
+            # pending 提交即进入 active 集 → remaining 扣减 → scan_context 统计失效
+            orphan_stats_cache.invalidate()
+        return submission
 
-    async def create_cleanup_job(self, scan_id: str, orphan_ids: List[int], operator: str) -> OrphanPurgeJob:
+    async def create_cleanup_job(
+        self, scan_id: str, orphan_ids: List[int], operator: str, ip_address: Optional[str] = None
+    ) -> OrphanPurgeJob:
         """兼容入口；若全部已占用则明确拒绝。"""
-        submission = await self.submit_cleanup_job(scan_id, orphan_ids, operator)
+        submission = await self.submit_cleanup_job(scan_id, orphan_ids, operator, ip_address=ip_address)
         if submission.job is None:
             raise ValueError("所选孤儿文件均已在主动清理任务中处理")
         return submission.job
@@ -304,6 +321,10 @@ class OrphanPurgeJobService:
                     )
                 )
                 await self.db.commit()
+                if getattr(result, "rowcount", 0):
+                    # 终态后 cleanup 任务 id 离开 active 集：failed/partial 项 remaining 回升
+                    # → scan_context 统计失效（purge 任务不改统计，全清无害）
+                    orphan_stats_cache.invalidate()
                 return bool(getattr(result, "rowcount", 0))
         except Exception:
             await self.db.rollback()
@@ -541,6 +562,9 @@ class OrphanPurgeJobDispatcher:
                 orphan_ids = job.orphan_ids
                 scan_id = str(job.scan_id) if job.scan_id is not None else None
                 operator = str(job.operator)
+                # 提交端 IP：必须在当前读 job 会话内取出（下一段是独立会话，
+                # job 实例已分离不可访问）
+                ip_address = str(job.ip_address) if getattr(job, "ip_address", None) else None
                 total_count = int(job.total_count or 0)
 
             try:
@@ -563,6 +587,7 @@ class OrphanPurgeJobDispatcher:
                             audit_service=AuditLogService(db),
                             store=store,
                             scan_id=scan_id,
+                            ip_address=ip_address,
                         )
                     else:
                         result = await orphan_service.purge_quarantine_now(
@@ -570,6 +595,7 @@ class OrphanPurgeJobDispatcher:
                             operator=operator,
                             store=store,
                             audit_service=AuditLogService(db),
+                            ip_address=ip_address,
                         )
                         await orphan_service.prune_recorded_empty_quarantine_dirs()
 

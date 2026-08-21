@@ -240,19 +240,21 @@ async def recover_interrupted_orphan_scans(session_factory: Any = None) -> int:
     factory = session_factory or AsyncSessionLocal
     recovered = 0
     async with factory() as db:
-        result = await db.execute(
-            update(OrphanScanResult)
-            .where(OrphanScanResult.status == "running")
-            .values(
-                status="failed",
-                error_message="服务重启后自动标记失败（扫描未完成）",
-                updated_at=datetime.utcnow(),
+        async with admission_controller.db_write_scope():
+            result = await db.execute(
+                update(OrphanScanResult)
+                .where(OrphanScanResult.status == "running")
+                .values(
+                    status="failed",
+                    error_message="服务重启后自动标记失败（扫描未完成）",
+                    updated_at=datetime.utcnow(),
+                )
             )
-        )
-        recovered = getattr(result, "rowcount", None) or 0
-        if recovered:
-            async with admission_controller.db_write_scope():
+            recovered = getattr(result, "rowcount", None) or 0
+            if recovered:
                 await db.commit()
+            else:
+                await db.rollback()
     return recovered
 
 
@@ -291,21 +293,21 @@ async def lifespan(app: FastAPI):
 
     # 1. 执行数据库迁移（在所有其他初始化之前）
     # 四轨治理后统一入口：migrate_database()（编程式 alembic，含幽灵版本救援/备份）
-    # DEV 分流：DEV=True 失败告警继续（与历史行为一致，保证存量无感）；
-    #          DEV=False 失败抛 RuntimeError 终止（生产数据一致性）。
+    # 无论 DEV 与否，只要迁移未完成就停止启动。继续加载新 ORM 会把首因掩盖为
+    # ``no such column``，并可能让后台任务在不一致 schema 上运行。
     print("=== 执行数据库迁移 ===")
     from app.core.migration import migrate_database
 
     try:
-        migrate_database()
+        if not migrate_database():
+            raise RuntimeError("数据库迁移未完成，拒绝在不一致 schema 上启动")
         print("[OK] 数据库迁移完成")
     except Exception as e:
         print(f"[ERROR] 数据库迁移失败: {e}")
         import traceback
 
         traceback.print_exc()
-        if not settings.DEV:
-            raise  # 生产环境终止启动
+        raise
 
     # 1.5 初始化数据库初始数据（admin用户、配置、定时任务等）
     # 修复：uvicorn启动时不会执行main.py的if __name__块，所以需要在lifespan中调用
@@ -320,6 +322,19 @@ async def lifespan(app: FastAPI):
         import traceback
 
         traceback.print_exc()
+
+    # 1.7 安全钩子：把历史遗留的明文下载器密码加密回写（幂等，密钥缺失时跳过）
+    print("=== 加密明文下载器密码 ===")
+    try:
+        from app.downloader.initialization import encrypt_plaintext_downloader_passwords
+
+        encrypted_rows = encrypt_plaintext_downloader_passwords()
+        if encrypted_rows:
+            print(f"[OK] 已加密 {encrypted_rows} 条明文下载器密码")
+        else:
+            print("[OK] 无需加密的明文下载器密码")
+    except Exception as e:
+        print(f"[WARN] 明文下载器密码加密钩子失败（不阻塞启动）: {e}")
 
     # 2. 数据库连接初始化
     await init_database_connection()
@@ -396,6 +411,13 @@ async def lifespan(app: FastAPI):
     orphan_purge_recovery_task = asyncio.create_task(orphan_purge_dispatcher.recover_pending_jobs())
     app.state.orphan_purge_recovery_task = orphan_purge_recovery_task
 
+    # 持久化孤儿扫描任务：queued 在启动后继续执行；残留 running 已在上方标 failed。
+    from app.services.orphan_scan_job_service import get_orphan_scan_dispatcher
+
+    orphan_scan_dispatcher = get_orphan_scan_dispatcher(app)
+    orphan_scan_recovery_task = asyncio.create_task(orphan_scan_dispatcher.recover_pending_scans())
+    app.state.orphan_scan_recovery_task = orphan_scan_recovery_task
+
     dashboard_stats_task = asyncio.create_task(run_dashboard_stats_loop(app))
     app.state.dashboard_stats_task = dashboard_stats_task
 
@@ -427,6 +449,16 @@ async def lifespan(app: FastAPI):
         app.state.wal_snapshot_task = wal_snapshot_task
         print("[OK] WAL 只读周期快照任务已启动")
 
+    # 6.7 存量 added_date 回填（W3-3）：仅当开关开启时启动（默认关闭）；
+    # 失败不阻断应用启动。
+    added_date_backfill_task = None
+    if settings.INFO_SYNC_STARTUP_BACKFILL_ENABLED:
+        from app.services.torrent_added_date_backfill import backfill_torrent_added_dates
+
+        added_date_backfill_task = asyncio.create_task(backfill_torrent_added_dates(app))
+        app.state.added_date_backfill_task = added_date_backfill_task
+        print("[OK] 存量 added_date 回填任务已启动")
+
     # yield - FastAPI 在这里启动，下载器任务在后台继续执行
     try:
         yield
@@ -452,6 +484,19 @@ async def lifespan(app: FastAPI):
             await orphan_purge_dispatcher.shutdown()
         except Exception as e:
             print(f"⚠️  关闭隔离区彻底删除调度器时出错: {e}")
+
+        if orphan_scan_recovery_task and not orphan_scan_recovery_task.done():
+            orphan_scan_recovery_task.cancel()
+            try:
+                await orphan_scan_recovery_task
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                print(f"⚠️  取消孤儿扫描恢复任务时出错: {e}")
+        try:
+            await orphan_scan_dispatcher.shutdown()
+        except Exception as e:
+            print(f"⚠️  关闭孤儿扫描调度器时出错: {e}")
 
         if downloader_task and not downloader_task.done():
             print("取消未完成的下载器加载任务...")
@@ -522,6 +567,17 @@ async def lifespan(app: FastAPI):
                 print("✅ WAL 快照任务已取消")
             except Exception as e:
                 print(f"⚠️  取消 WAL 快照任务时出错: {e}")
+
+        # 取消存量 added_date 回填任务（W3-3）：异常不阻断关闭。
+        if added_date_backfill_task and not added_date_backfill_task.done():
+            print("取消 added_date 回填任务...")
+            added_date_backfill_task.cancel()
+            try:
+                await added_date_backfill_task
+            except asyncio.CancelledError:
+                print("✅ added_date 回填任务已取消")
+            except Exception as e:
+                print(f"⚠️  取消 added_date 回填任务时出错: {e}")
 
         # 关闭事件循环 lag 采样器（W4-1 第二部分）：空句柄 stop() no-op，
         # 异常不阻断关闭。

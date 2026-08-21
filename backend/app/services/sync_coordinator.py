@@ -915,6 +915,8 @@ def _vo_to_downloader_info(downloader: Any) -> Dict[str, Any]:
         "password": getattr(downloader, "password", None),
         "downloader_type": getattr(downloader, "downloader_type", None),
         "torrent_save_path": getattr(downloader, "torrent_save_path", None),
+        "path_mapping": getattr(downloader, "path_mapping", None),
+        "path_mapping_rules": getattr(downloader, "path_mapping_rules", None),
         "enabled": "1",
         "status": "1",
     }
@@ -1360,18 +1362,14 @@ async def _sync_one_downloader(
                 try:
                     signature = inspect.signature(info_sync_func)
                     accepts_kwargs = any(
-                        parameter.kind == inspect.Parameter.VAR_KEYWORD
-                        for parameter in signature.parameters.values()
+                        parameter.kind == inspect.Parameter.VAR_KEYWORD for parameter in signature.parameters.values()
                     )
                     if not accepts_kwargs:
-                        info_kwargs = {
-                            key: value
-                            for key, value in info_kwargs.items()
-                            if key in signature.parameters
-                        }
+                        info_kwargs = {key: value for key, value in info_kwargs.items() if key in signature.parameters}
                 except (TypeError, ValueError):
                     pass
                 info_meta = await info_sync_func(db, [downloader], **info_kwargs)
+                await _reconcile_torrent_file_backups(db, downloader, result, nickname)
                 if isinstance(info_meta, dict):
                     if info_cursor is not None and not info_meta.get("cursor"):
                         info_meta["cursor"] = info_cursor
@@ -1426,11 +1424,65 @@ async def _sync_one_downloader(
                     await qb_add_torrents_async(db, [downloader], client=cached_client)
                 else:
                     await tr_add_torrents_async(db, [downloader], client=cached_client)
+                await _reconcile_torrent_file_backups(db, downloader, result, nickname)
         result.scanned += 1  # info/full 路径暂无记录级统计，按下载器计（W3 补齐）
         return "success", None
     except Exception as e:  # noqa: BLE001 - 下载器粒度捕获，汇总为 partial/failed
         result.errors.append(f"同步下载器 {nickname} 失败: {e}")
         return "failed", None
+
+
+async def _reconcile_torrent_file_backups(
+    db: AsyncSession,
+    downloader: Any,
+    result: SyncResult,
+    nickname: str,
+) -> None:
+    """在种子信息落库后限量补齐备份；失败不改变信息同步结果。"""
+    downloader_id = str(getattr(downloader, "downloader_id", ""))
+    try:
+        from app.services.torrent_file_backup_manager import (  # noqa: PLC0415
+            TorrentFileBackupManagerService,
+        )
+
+        manager = TorrentFileBackupManagerService(
+            db=db,
+            path_mapping_service=getattr(downloader, "path_mapping_service", None),
+        )
+        stats = await manager.reconcile_missing_backups(
+            downloader_id=downloader_id,
+            torrent_save_path=getattr(downloader, "torrent_save_path", None),
+            batch_size=max(1, settings.TORRENT_BACKUP_RECONCILE_BATCH_SIZE),
+        )
+        result.details.setdefault("torrent_file_backup", {})[downloader_id] = stats
+        if stats.get("status") == "skipped":
+            logger.warning(
+                "torrent_backup_reconcile skipped downloader=%s nickname=%s reason=%s "
+                "pending=%s attempted=%s missing_source=%s",
+                downloader_id,
+                nickname,
+                stats.get("skip_reason"),
+                stats.get("pending"),
+                stats.get("attempted"),
+                stats.get("missing_source"),
+            )
+        elif stats.get("created"):
+            logger.info(
+                "torrent_backup_reconcile done downloader=%s nickname=%s created=%s " "pending=%s batch_limited=%s",
+                downloader_id,
+                nickname,
+                stats.get("created"),
+                stats.get("pending"),
+                stats.get("batch_limited"),
+            )
+    except Exception as exc:  # noqa: BLE001 - 备份补偿失败不阻断种子信息同步
+        message = f"下载器 {nickname} 种子文件增量备份失败: {exc}"
+        result.errors.append(message)
+        result.details.setdefault("torrent_file_backup", {})[downloader_id] = {
+            "status": "failed",
+            "error": str(exc),
+        }
+        logger.warning("torrent_backup_reconcile failed downloader=%s error=%s", downloader_id, exc)
 
 
 async def _run_tracker_status_phase(req: SyncRequest, result: SyncResult, start_ts: float) -> None:

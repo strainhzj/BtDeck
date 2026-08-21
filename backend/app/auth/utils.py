@@ -1,4 +1,6 @@
-﻿import logging
+﻿import hashlib
+import logging
+import secrets
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -22,7 +24,8 @@ def get_login_secret() -> str:
     if (
         _cached_login_secret is None
         or _config_cache_time is None
-        or (datetime.now() - _config_cache_time).seconds > 300
+        # total_seconds：timedelta.seconds 按 86400 取模，缓存龄跨日后条件失真
+        or (datetime.now() - _config_cache_time).total_seconds() > 300
     ):
         try:
             with open(app_settings.YAML_PATH, "r") as f:
@@ -31,9 +34,21 @@ def get_login_secret() -> str:
                 _config_cache_time = datetime.now()
         except Exception as e:
             logger.warning("从配置文件加载登录密钥失败: %s", e)
-            _cached_login_secret = "[REDACTED-SECRET]"
+            # fail-safe：配置丢失时生成一次性随机值（旧 token 全部失效需重新登录），
+            # 而不是历史硬编码常量（可预测、长期有效）
+            _cached_login_secret = secrets.token_hex(16)
 
     return _cached_login_secret
+
+
+def create_refresh_token() -> str:
+    """生成不透明 refresh token（64 位十六进制随机串，仅存哈希）。"""
+    return secrets.token_hex(32)
+
+
+def hash_refresh_token(token: str) -> str:
+    """计算 refresh token 的 SHA-256 哈希（落库值）。"""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
@@ -130,7 +145,9 @@ def verify_totp(secret: Optional[str], token: Optional[str]) -> bool:
         totp = pyotp.TOTP(str(secret))
         result = bool(totp.verify(str(token)))
         if not result:
-            logger.warning(f"TOTP验证失败: token={token}, secret前4位={str(secret)[:4] if secret else None}")
+            # 脱敏日志（安全修复 W10）：不打印验证码明文与 secret 片段，
+            # 避免日志渠道二次泄露（TOTP 可重放性依赖验证码保密）
+            logger.warning("TOTP验证失败")
         return result
     except Exception as e:
         logger.error(f"TOTP验证异常: {str(e)}")

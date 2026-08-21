@@ -16,7 +16,7 @@ from app.api.responseVO import CommonResponse
 from app.database import get_db, AsyncSessionLocal
 from app.auth.dependencies import require_authenticated_user
 from app.downloader.models import BtDownloaders
-from app.torrents.models import TorrentInfo
+from app.torrents.models import TorrentInfo, TrackerInfo
 from qbittorrentapi.exceptions import APIError
 from transmission_rpc import TransmissionError
 from app.services.audit_service import extract_audit_info_from_request, get_audit_service
@@ -29,6 +29,7 @@ from app.api.endpoints.torrent_helpers import (
     create_transmission_torrent_record,
     get_torrent_infos,
 )
+from app.core.reannounce_config_operations import extract_domains_from_trackers
 from app.api.endpoints.torrent_speed import get_active_keys_snapshot
 from app.api.endpoints.torrent_sync import qb_add_torrents, tr_add_torrents
 from app.services.torrent_crud_service import get_torrent_info
@@ -609,6 +610,10 @@ def get_torrents(
     tags_like: Optional[str] = Query(None, description="标签模糊查询"),
     category_like: Optional[str] = Query(None, description="分类模糊查询"),
     tracker_like: Optional[str] = Query(None, description="tracker地址模糊查询"),
+    tracker_domain: Optional[str] = Query(
+        None,
+        description="Tracker主域名筛选（支持多选，逗号分隔；例如 tracker.example.com）",
+    ),
     status: Optional[str] = Query(
         None,
         description="种子状态筛选(支持多选，逗号分隔；error状态满足status='error'或has_tracker_error=True之一即可)",
@@ -618,6 +623,14 @@ def get_torrents(
     sort_by: Optional[str] = Query(None, description="排序字段"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
     active_only: bool = Query(False, description="仅显示活动种子（实时速度>0，由活动集合缓存驱动）"),
+    same_content_only: bool = Query(
+        False,
+        description="仅显示名称、大小相同且规范化 InfoHash 至少两个不同值的种子",
+    ),
+    single_error_only: bool = Query(
+        False,
+        description="仅显示错误且全局同名同大小内容唯一的种子",
+    ),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
@@ -666,7 +679,10 @@ def get_torrents(
             sort_by=sort_by,
             sort_order=sort_order,
             tracker=tracker_like,
+            tracker_domain=tracker_domain,
             active_keys=active_keys,
+            same_content_only=same_content_only,
+            single_error_only=single_error_only,
         )
 
         # 构建响应数据，包含总数和列表
@@ -685,3 +701,29 @@ def get_torrents(
     except Exception as e:
         response = CommonResponse(status="failed", msg=f"获取列表失败: {str(e)}", data=None, code="500")
         return response
+
+
+@router.get("/tracker-domains")
+def get_tracker_domains(
+    _user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    """返回由定时 Tracker 同步任务采集到的全部 Tracker 主域名。"""
+    try:
+        tracker_rows = db.query(TrackerInfo.tracker_url, TrackerInfo.tracker_host).filter(TrackerInfo.dr == 0).all()
+        tracker_values = [value for row in tracker_rows for value in (row.tracker_url, row.tracker_host) if value]
+        domains = sorted(set(extract_domains_from_trackers(tracker_values)))
+        return CommonResponse(
+            status="success",
+            msg="获取 Tracker 主域名成功",
+            code="200",
+            data=domains,
+        )
+    except Exception as exc:
+        logger.exception("获取 Tracker 主域名失败")
+        return CommonResponse(
+            status="failed",
+            msg=f"获取 Tracker 主域名失败: {exc}",
+            code="500",
+            data=None,
+        )

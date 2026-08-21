@@ -21,7 +21,9 @@ jest.mock('@/views/torrents/index.vue', () => ({
       list: [{ hash: 'list-item' }],
       total: 12,
       downloaderList: [{ id: 'list-downloader' }],
-      showingDuplicates: true
+      showingDuplicates: false,
+      showingSameContent: true,
+      showingSingleErrors: true
     }
   },
   render(h: typeof Vue.prototype.$createElement) {
@@ -40,7 +42,9 @@ jest.mock('@/views/torrents/TraditionalView.vue', () => ({
       list: [],
       total: 0,
       downloaderList: [],
-      showingDuplicates: false
+      showingDuplicates: false,
+      showingSameContent: false,
+      showingSingleErrors: false
     }
   },
   render(h: typeof Vue.prototype.$createElement) {
@@ -59,6 +63,8 @@ interface SharedViewState extends Vue {
   total: number
   downloaderList: Array<Record<string, unknown>>
   showingDuplicates: boolean
+  showingSameContent: boolean
+  showingSingleErrors: boolean
 }
 
 function currentView(wrapper: Wrapper<Vue>): SharedViewState {
@@ -84,12 +90,14 @@ describe('TorrentViewSwitcher 跨视图状态', () => {
     consoleLogSpy.mockRestore()
   })
 
-  it('在列表与传统模式之间完整保留重复任务、查询和分页状态', async() => {
+  it('在列表与传统模式之间完整保留同内容排查、查询和分页状态', async() => {
     wrapper = mount(TorrentViewSwitcher, { localVue })
     await flushViewSwitch()
 
     const listView = currentView(wrapper)
-    expect(listView.showingDuplicates).toBe(true)
+    expect(listView.showingDuplicates).toBe(false)
+    expect(listView.showingSameContent).toBe(true)
+    expect(listView.showingSingleErrors).toBe(true)
     expect(listView.listQuery.name_like).toBe('list-search')
     expect(listView.currentPage).toBe(3)
 
@@ -98,7 +106,9 @@ describe('TorrentViewSwitcher 跨视图状态', () => {
 
     const traditionalView = currentView(wrapper)
     expect(wrapper.find('.traditional-view-stub').exists()).toBe(true)
-    expect(traditionalView.showingDuplicates).toBe(true)
+    expect(traditionalView.showingDuplicates).toBe(false)
+    expect(traditionalView.showingSameContent).toBe(true)
+    expect(traditionalView.showingSingleErrors).toBe(true)
     expect(traditionalView.listQuery).toEqual(expect.objectContaining({
       name_like: 'list-search',
       sort_by: 'added_date',
@@ -114,6 +124,8 @@ describe('TorrentViewSwitcher 跨视图状态', () => {
     traditionalView.pageSize = 100
     traditionalView.total = 23
     traditionalView.showingDuplicates = false
+    traditionalView.showingSameContent = false
+    traditionalView.showingSingleErrors = true
     traditionalView.multipleSelection = [{ hash: 'traditional-selected' }]
 
     ViewModeModule.currentMode = 'list'
@@ -122,6 +134,8 @@ describe('TorrentViewSwitcher 跨视图状态', () => {
     const restoredListView = currentView(wrapper)
     expect(wrapper.find('.list-view-stub').exists()).toBe(true)
     expect(restoredListView.showingDuplicates).toBe(false)
+    expect(restoredListView.showingSameContent).toBe(false)
+    expect(restoredListView.showingSingleErrors).toBe(true)
     expect(restoredListView.listQuery.name_like).toBe('traditional-search')
     expect(restoredListView.currentPage).toBe(5)
     expect(restoredListView.pageSize).toBe(100)

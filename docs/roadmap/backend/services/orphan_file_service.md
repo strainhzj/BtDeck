@@ -9,21 +9,23 @@
 | 项目 | 值 |
 |------|-----|
 | 源路径 | `backend/app/services/orphan_file_service.py` |
-| 行数 | 3277（实测 PowerShell `Get-Content`） |
-| 模块职责 | 孤儿文件管理：扫描上下文/清理与隔离/恢复/彻底删除/中断恢复；列表实时计数并按需定位配置目录内的硬链接副本，查询与操作入口排除 pending/running 占用条目 |
-| 顶层符号 | 2 classes（`HardlinkCopyError` L65、`OrphanFileService` L96）+ 1 模块级工具函数（`_chunk_values` L90） |
+| 行数 | 3809（实测 2026-08-16） |
+| 模块职责 | 孤儿稳定当前明细列表、文件夹懒加载/独立分页、清理与隔离/恢复/彻底删除、硬链接副本位置只读与弹窗删除；只对可见文件实时统计硬链接，查询与操作排除活动占用条目 |
+| 顶层符号 | 2 classes（`HardlinkCopyError` L68、`OrphanFileService` L99）+ 1 模块级工具函数（`_chunk_values` L93） |
 
 ---
 
 ## 二、关键不变式
 
-- **选择身份**：孤儿候选以 `canonical_path` 为稳定身份；`resolve_orphan_selection` 把显式勾选或当前筛选全集解析为稳定明细 ID 快照。
+- **稳定身份**：候选以 `canonical_path` 为身份并通过 `current_detail_id` 指向可复用的当前明细；已知孤儿后续成功扫描不再每批次新增 `orphan_file`。
 - **全选语义（v1.0.6.35）**：`select_all=true` 时以筛选条件重建全量 ID（绑定 scan_id），扣除 `excluded_orphan_ids`。
 - **多值过滤（v1.0.6+）**：`_build_orphan_conditions` 对 `downloader_id`/`confidence`/`status` 全部支持逗号分隔多值。downloader_id/confidence 用 `in_`；status 三态(pending/ignored/deleted)互斥，多值时每个用 `and_()` 打包(is_deleted+忽视子查询)再用 `or_()` 取并集——pending 与 ignored/deleted 组合会退化为“所有未删除文件”(前端给提示)。单值仍走原路径(回归保护)。`min_size` 数值区间不动。list/grouped/resolve/prefix_preview 4 个调用点共用此方法。
-- **安全清理**：`cleanup_orphans` 有新鲜度门禁（最新扫描必须 completed、scan_id 必须最新）+ 删除前实时复核文件身份（size/mtime_ns/inode/符号链接/路径逃逸），不提供 force 绕过。
+- **副本定位筛选（2026-08-15）**：`_build_orphan_conditions(hardlink_copies="located")` 追加 EXISTS——候选表最近扫描的 `(device_id, inode)`（字符串列，join 时 CAST inode 为整数）命中 `orphan_hardlink_copy_result` 且 `found_count > 1`（found_count 含源路径自身，>1 即定位到非源副本，与弹框口径一致；NULL 身份/未扫描不命中，fail-closed）。list/grouped/folder_children 3 个调用点透传；resolve/prefix_preview 不参与。
+- **安全清理**：预览、前缀预览、手动和定时自动清理共用最新 completed/scan_id 门禁；超 50000 条只保留提醒状态，不再要求路径映射+孤儿样本复核；删除前仍实时复核 manifest、路径授权和文件身份，不提供 force。
 - **活动项占用**：查询和用户操作入口通过 `orphan_purge_job_service` 的 JSON 子查询排除 pending/running 清理 ID 或彻底删除路径；后台 worker 读取自身任务快照时不套该过滤。任务进入 completed/partial/failed 后查询自然重新放行未完成项。
-- **硬链接副本计数**：列表明细在线读取 `st_nlink - 1`（无副本为 `0`，文件不可访问为 `None`），文件系统 `stat` 经 `asyncio.to_thread` 移出事件循环；文件夹行在全部子项可读时返回合计，否则为 `None`。
-- **硬链接位置核对**：点击时重新读取源文件 inode/nlink；`get_hardlink_copy_locations` 复用扫描路径选择并让多个 inode 共用一轮目录遍历，仅返回已配置下载目录内路径，同时明确返回未定位数量。
+- **文件夹/硬链接**：文件夹父页仅 SQL 聚合，不读子项也不 `stat`；展开后 `get_orphan_folder_children` 独立分页，仅返回页在线读取 `st_nlink - 1`（无副本 `0`，不可访问 `None`）。
+- **硬链接位置核对**：点击时只读定时预扫描落库结果（2026-08-15 起）：`get_hardlink_copy_locations` 仅对源文件做廉价 stat 复核实时 `st_nlink - 1`，路径来自 `orphan_hardlink_copy_result` 结果表；未覆盖的身份返回 `pending_scan=true` 等待下一轮预扫描。遍历本身移至 `orphan_hardlink_scan_service.run_round` 定时任务。
+- **硬链接副本删除（2026-08-16）**：`delete_hardlink_copies` 仅移除指向同一 inode 的其它路径链接（源文件与数据保留），逐路径 fail-closed：维护租约互斥 → 候选 `status=candidate` 且 `operation_state=stable` 门禁 → 源 stat 身份 + 预扫描结果行存在 → 共享 inode 拒绝集（源路径 + 同身份全部候选 canonical_path）→ 种子目录白名单（`collect_torrent_directory_whitelist` 全量下载器，DB 目录级，加载失败整体拒绝）→ 请求路径与返回前端的 copies 原始字符串一致 + 隔离区/回收站标记/符号链接拒绝 → tombstone 三段式（rename→身份复核→remove，复核失败回滚）。成功后以 setattr payload 同步结果行（copies_json/found_count/copy_count，保留 truncated/scan_note/scanned_at），审计在主事务 commit 后写（restore 模式）。状态类拒绝一律 200 + failed_list。
 - **物理操作安全**：仅用 `os.rmdir` 回收记录隔离根内的空 UUID/scan-id 目录。
 
 ---
@@ -32,61 +34,45 @@
 
 | 行号 | 符号 | 类型 | 说明 |
 |------|------|------|------|
-| L65 | `HardlinkCopyError` | class | 到期删除遇硬链接副本时的安全跳过异常 |
-| L75 | `HardlinkCopyError.__init__` | def | 保存候选、隔离路径、副本与原因 |
-| L90 | `_chunk_values` | def（模块级） | 把 Sequence 切块 |
-| L96 | `OrphanFileService` | class | 孤儿文件管理服务类 |
-| L99 | `OrphanFileService.__init__` | def | `(self, db: AsyncSession)` |
-| L103 | `_detail_canonical_path` | static | 取明细 canonical_path |
-| L109 | `_sync_candidate_owner` | def | 同步候选归属 |
-| L131 | `_build_orphan_conditions` | def | 构造列表/全选筛选并排除活动清理 ID |
-| L217 | `_orphan_order_columns` | static | 构造稳定排序列 |
-| L239 | `resolve_orphan_selection` | async def | **全选/勾选解析为稳定 ID 快照** |
-| L278 | `_load_orphan_details` | async def | 分块加载明细，可选排除活动项 |
-| L311 | `_load_candidates` | async def | 加载候选 |
-| L336 | `_get_latest_scan` | async def | 取最新扫描（可按 status） |
-| L351 | `_evaluate_cleanup_snapshot` | def | 评估清理快照 |
-| L388 | `_check_cleanup_allowed` | async def | 清理门禁检查 |
-| L401 | `_build_realtime_manifest` | async def | 构建实时 manifest |
-| L422 | `_identity_complete` | static | 候选身份完整判定 |
-| L434 | `_candidate_inode` | static | 候选 inode |
-| L438 | `_path_authorized` | static | 路径授权检查 |
-| L467 | `_path_in_quarantine_root` | static | 路径是否在隔离根 |
-| L493 | `_quarantine_path_authorized` | static | 隔离路径授权 |
-| L512 | `_quarantine_delete_guard_error` | static | 隔离删除守卫错误 |
-| L518 | `_ensure_quarantine_identity` | async def | 确保隔离身份 |
-| L563 | `_authorize_low_confidence` | static | 低置信度授权 |
-| L596 | `_owning_root` | static | 归属根 |
-| L611 | `get_latest_scan_result` | async def | 最新扫描结果 |
-| L619 | `_inspect_hardlink_sources` | static | 线程内顺序读取源文件 inode/nlink |
-| L647 | `get_hardlink_copy_locations` | async def | **批量按需定位配置目录内的副本路径与未定位数** |
-| L735 | `get_orphan_list` | async def | **列表大分页 + 实时硬链接副本数 + 扫描上下文** |
-| L868 | `get_orphan_list_grouped` | async def | 文件夹分组分页并汇总副本数，统计口径同样排除活动项 |
-| L1057 | `_build_folder_row` | def | 构造文件夹聚合行 |
-| L1101 | `_enrich_hardlink_copy_counts` | static | 在线补充 `st_nlink - 1`，不可访问为 `None` |
-| L1118 | `_enrich_items` | async def | 批量补充硬链接数、下载器别名与忽视态 |
-| L1171 | `reconcile_stable_candidate_details` | async def | 对账稳定候选明细 |
-| L1257 | `prefix_match_preview` | async def | 路径前缀预览 |
-| L1297 | `cleanup_preview` | async def | 清理预览，排除活动清理 ID |
-| L1343 | `cleanup_orphans` | async def | **后台手动清理任务执行**（读取自身占用项） |
-| L1617 | `set_ignored` | async def | 设置忽视，排除活动清理 ID |
-| L1784 | `auto_cleanup_expired` | async def | 过期自动清理 |
-| L1981 | `purge_expired_quarantine` | async def | 过期隔离清除 |
-| L2174 | `get_quarantine_list` | async def | 隔离区列表，排除活动彻底删除路径 |
-| L2250 | `prune_recorded_empty_quarantine_dirs` | async def | 清理空隔离目录 |
-| L2291 | `restore_quarantined` | async def | 恢复隔离，拒绝活动彻底删除路径 |
-| L2465 | `_finalize_restore` | async def | 恢复收尾 |
-| L2497 | `purge_quarantine_now` | async def | 后台立即彻底删除任务执行 |
-| L2648 | `_purge_single_candidate` | async def | 单个彻底删除 |
-| L2772 | `_detect_hardlink_copies` | async def | 删除/清理前枚举硬链接副本并按模式处理 |
-| L2865 | `_candidate_scan_roots` | static | 按候选 owner 选隔离诊断扫描根 |
-| L2872 | `_mark_purged` | async def | 标记已清除 |
-| L2887 | `_matching_undeleted_details` | async def | 匹配未删明细 |
-| L2908 | `_finalize_quarantine` | async def | 隔离收尾 |
-| L2961 | `_commit_candidate_state` | async def | 提交候选状态 |
-| L2977 | `_quarantine_candidate` | async def | 隔离单个候选 |
-| L3027 | `_recover_interrupted_operations` | async def | 中断操作恢复 |
-| L3237 | `trigger_scan` | async def | 触发扫描 |
+| L68 | `HardlinkCopyError` | class | 到期删除遇硬链接副本时的安全跳过异常 |
+| L78 | `HardlinkCopyError.__init__` | def | 保存候选、隔离路径、副本与原因 |
+| L93 | `_chunk_values` | def（模块级） | 把 Sequence 切块 |
+| L99 | `OrphanFileService` | class | 孤儿文件管理服务类 |
+| L102 | `OrphanFileService.__init__` | def | `(self, db: AsyncSession)` |
+| L106 | `_detail_canonical_path` | static | 取明细 canonical_path |
+| L112 | `_sync_candidate_owner` | def | 同步候选归属 |
+| L134 | `_current_detail_ids_query` | static | 当前候选指向的稳定明细 ID 子查询 |
+| L148 | `_build_orphan_conditions` | def | 构造列表/全选筛选并排除活动清理 ID（含 hardlink_copies=located EXISTS） |
+| L265 | `_orphan_order_columns` | static | 构造稳定排序列 |
+| L287 | `resolve_orphan_selection` | async def | **全选/勾选解析为稳定 ID 快照** |
+| L328 | `_load_orphan_details` | async def | 分块加载明细，可选排除活动项 |
+| L393 | `_get_latest_scan` | async def | 取最新扫描（可按 status） |
+| L412 | `_evaluate_cleanup_snapshot` | def | completed/scan_id 共用清理门禁；超量字段仅作提醒 |
+| L466 | `_build_realtime_manifest` | async def | 构建删除前实时 manifest |
+| L676 | `get_latest_scan_result` | async def | 最新扫描结果 |
+| L712 | `_load_hardlink_copy_results` | async def | 按物理身份分片反查结果表 |
+| L729 | `get_hardlink_copy_locations` | async def | **批量读取预扫描落库的副本位置（不遍历）** |
+| L814 | `_hardlink_copy_marker_reason` | static | 隔离区/回收站标记拒绝原因（settings 口径） |
+| L825 | `_in_seed_directory` | static | 副本是否落在种子目录（normalize_path + commonpath） |
+| L840 | `_remove_hardlink_copy` | static | tombstone 三段式删除单个副本目录项（同线程，复核失败回滚） |
+| L856 | `delete_hardlink_copies` | async def | **弹窗删除已定位副本（租约/状态门禁/共享 inode/种子目录 fail-closed + 审计）** |
+| L1137 | `get_orphan_list` | async def | **稳定当前明细分页 + 扫描上下文** |
+| L1282 | `get_orphan_list_grouped` | async def | 文件夹父页 SQL 聚合，不加载/不 stat 全部子项 |
+| L1518 | `get_orphan_folder_children` | async def | **展开后子项独立分页，仅可见页统计硬链接** |
+| L1591 | `_enrich_hardlink_copy_counts` | static | 在线补充 `st_nlink - 1`，不可访问为 `None` |
+| L1661 | `reconcile_stable_candidate_details` | async def | keyset 分批对账稳定隔离候选明细，每页统一进入 `db_write_scope` |
+| L1819 | `prefix_match_preview` | async def | 路径前缀预览（共用清理门禁） |
+| L1860 | `cleanup_preview` | async def | 清理预览 |
+| L1942 | `cleanup_orphans` | async def | **后台手动清理任务执行** |
+| L2219 | `set_ignored` | async def | 设置忽视 |
+| L2347 | `auto_cleanup_expired` | async def | 过期自动清理（共用最新快照与实时安全校验） |
+| L2544 | `purge_expired_quarantine` | async def | 过期隔离清除 |
+| L2737 | `get_quarantine_list` | async def | 隔离区列表 |
+| L2897 | `restore_quarantined` | async def | 恢复隔离 |
+| L3127 | `purge_quarantine_now` | async def | 后台立即彻底删除 |
+| L3215 | `_purge_single_candidate` | async def | 单个彻底删除 |
+| L3339 | `_detect_hardlink_copies` | async def | 删除前枚举硬链接副本 |
+| L3603 | `_recover_interrupted_operations` | async def | 中断操作恢复 |
 
 ---
 
@@ -112,9 +98,9 @@ async def resolve_orphan_selection(
     """把显式勾选或当前筛选全集解析为稳定的明细 ID 快照。"""
 ```
 
-- **定位**：`orphan_file_service.py:239`
+- **定位**：`orphan_file_service.py:287`
 - **职责**：`select_all=false` 时返回去重后的显式 `orphan_ids`（空则报错）；`select_all=true` 时用 `_build_orphan_conditions` 按筛选条件重建全量 ID（须绑定 scan_id），自动排除活动任务占用项并扣除 `excluded_orphan_ids`。
-- **调用链**：`_build_orphan_conditions`（L131）→ `db.execute(select(OrphanFile.id))` → 排除集过滤。
+- **调用链**：`_build_orphan_conditions`（L148）→ `db.execute(select(OrphanFile.id))` → 排除集过滤。
 
 ### `get_hardlink_copy_locations` — 按需定位硬链接副本路径
 
@@ -123,12 +109,33 @@ async def get_hardlink_copy_locations(
     self,
     orphan_ids: Sequence[int],
 ) -> Dict[str, Any]:
-    """按需定位孤儿文件在已配置扫描目录内的其它硬链接路径。"""
+    """读取定时预扫描任务落库的副本定位结果。"""
 ```
 
-- **定位**：`orphan_file_service.py:647`
-- **职责**：重新读取所选源文件 inode/nlink，批量加载当前未删除明细，并把多个目标 inode 合并为一次配置目录遍历；返回已定位完整路径、未定位数量、失效 ID 与不可访问状态。
-- **调用链**：`_load_orphan_details`（L278）→ `_inspect_hardlink_sources`（L619，经 `asyncio.to_thread`）→ `collect_scan_path_selection` → `find_hardlink_paths`。
+- **定位**：`orphan_file_service.py:729`
+- **职责**：批量加载当前未删除明细，对源文件做廉价 stat 复核实时副本总数；按 `(device_id, inode_id)` 反查结果表并过滤源路径本身，返回定位路径、扫描时间、待扫描标记、未定位数量、失效 ID 与不可访问状态。
+- **调用链**：`_load_orphan_details`（L328）→ `_inspect_hardlink_sources`（L684，经 `asyncio.to_thread`）→ `_load_hardlink_copy_results`（L712）。目录遍历在 `orphan_hardlink_scan_service.run_round`（定时任务 `orphan_hardlink_copy_scan`，每日 04:00）。
+
+### `delete_hardlink_copies` — 弹窗删除已定位硬链接副本
+
+```python
+async def delete_hardlink_copies(
+    self,
+    orphan_id: int,
+    copy_paths: Sequence[str],
+    operator: str,
+    audit_service: Any = None,
+    ip_address: Optional[str] = None,
+    _lease_acquired: bool = False,
+    _lease_handle: Any = None,
+) -> Dict[str, Any]:
+    """删除孤儿文件已定位硬链接副本的目录项（仅移除该路径链接，数据保留）。"""
+```
+
+- **定位**：`orphan_file_service.py:856`
+- **职责**：tombstone 三段式（`_remove_hardlink_copy` L840）删除指向同一 inode 的其它路径；门禁链见「关键不变式·硬链接副本删除」。状态类拒绝以 `failed_list` 返回（HTTP 200），租约 busy 返回 `rejected=true`。
+- **调用链**：`orphan_maintenance_scope`（lease）→ `_load_orphan_details`（exclude_in_flight）→ `_load_candidates`（status/operation_state 门禁）→ `_inspect_hardlink_sources`（源身份）→ `_load_hardlink_copy_results` → 同身份候选反查 + `collect_torrent_directory_whitelist`（to_thread，全量下载器）→ `_remove_hardlink_copy`（to_thread）→ setattr payload 更新结果行 + commit → 审计（restore 模式）。
+- **端点**：`POST /orphan-files/hardlink-copies/delete`（`orphan_files.py:341`，请求 `{orphan_id, copy_paths≤50}`）。
 
 ### `get_orphan_list` — 列表大分页 + 扫描上下文
 
@@ -144,13 +151,19 @@ async def get_orphan_list(
     path_prefix: Optional[str] = None,
     status: Optional[str] = None,
     confidence: Optional[str] = None,
+    hardlink_copies: Optional[str] = None,
 ) -> Dict[str, Any]:
     """分页查询孤儿文件列表与同一批次的页面扫描上下文。"""
 ```
 
-- **定位**：`orphan_file_service.py:735`
-- **职责**：分页查询列表 + `scan_context`；列表实时补充 `hardlink_copy_count`，remaining 与 ignored 统计统一排除 pending/running 清理任务占用 ID。
-- **前置**：`_get_latest_scan`（L336）。
+- **定位**：`orphan_file_service.py:1137`
+- **职责**：按稳定 `current_detail_id` 范围分页查询 + `scan_context`；只为当前返回的文件页补充 `hardlink_copy_count`，remaining/ignored 统计排除活动任务。`hardlink_copies="located"` 仅保留预扫描已定位到副本路径的文件。
+- **前置**：`_get_latest_scan`（L393）、`_current_detail_ids_query`（L134）。
+
+### `get_orphan_folder_children` — 文件夹子项懒加载
+
+- **定位**：`orphan_file_service.py:1518`
+- **职责**：以父目录和当前筛选独立计数/分页；仅返回页进入 `_enrich_items`，因此网络盘 `stat` 与硬链接统计不会扫整个文件夹。
 
 ### `cleanup_orphans` — 手动清理选中孤儿
 
@@ -162,15 +175,16 @@ async def cleanup_orphans(
     audit_service: Any = None,
     store: Any = None,
     scan_id: Optional[str] = None,
+    ip_address: Optional[str] = None,
     _lease_acquired: bool = False,
     _lease_handle: Any = None,
 ) -> Dict[str, Any]:
     """手动清理选中的孤儿文件（安全隔离 + 标记 + 审计日志）。"""
 ```
 
-- **定位**：`orphan_file_service.py:1343`
-- **职责**：清理门禁（新鲜度 + scan_id 最新 + 实时身份复核）后安全隔离 + 标记 + 审计日志；不提供 force 绕过。
-- **前置**：`_check_cleanup_allowed`（L388）、`_build_realtime_manifest`（L401）；worker 读取已由任务占用的 ID 时不启用查询排除。
+- **定位**：`orphan_file_service.py:1942`
+- **职责**：清理门禁（最新 completed + scan_id + 实时 manifest/身份复核）后安全隔离 + 标记 + 审计；超量字段仅作为页面提醒，不提供 force 绕过。
+- **前置**：`_check_cleanup_allowed`（L453）、`_build_realtime_manifest`（L466）；worker 读取已占用 ID 时不启用查询排除。
 
 ---
 
@@ -179,8 +193,9 @@ async def cleanup_orphans(
 ```
 orphan_file_service.py
   ├─→ app.models.orphan_file.{OrphanFile, OrphanCurrentCandidate, OrphanScanResult}
+  ├─→ app.models.orphan_hardlink_copy.{OrphanHardlinkCopyResult} (located 筛选 EXISTS + 副本位置只读 + 删除后结果行同步)
   ├─→ app.services.orphan_quarantine       (隔离区管理 + 多 inode 路径定位)
-  ├─→ app.services.orphan_manifest         (有效路径/下载器映射 manifest + 扫描根选择)
+  ├─→ app.services.orphan_manifest         (有效路径/下载器映射 manifest + 扫描根选择 + 种子目录白名单)
   ├─→ app.services.orphan_lease            (跨进程 lease)
   ├─→ app.services.orphan_purge_job_service (活动任务 ID/路径查询排除)
   └─→ app.services.audit_service           (审计日志)

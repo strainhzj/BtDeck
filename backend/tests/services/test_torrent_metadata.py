@@ -1008,3 +1008,45 @@ async def test_qb_full_sync_retry_detail_failure_falls_back_without_advancing_ri
     ]
     assert rid_cache["dl-1"] == 1
     save_mock.assert_not_called()
+
+
+# ==================== W3-1：首轮快照宽松水合 ====================
+
+
+@pytest.mark.asyncio
+async def test_qb_hydration_lenient_mode_keeps_maindata_rows():
+    """宽松水合（strict=False）：缺失 hash 不抛错，保留 maindata 原行。"""
+    from app.api.endpoints import torrents_async
+
+    client = MagicMock()
+    maindata_rows = [SimpleNamespace(hash="a", progress=0.5), SimpleNamespace(hash="b", progress=0.1)]
+    details = [SimpleNamespace(hash="a", name="A完整", added_on=1_700_000_000)]
+
+    with patch.object(
+        torrents_async, "fetch_qb_torrent_details", new=AsyncMock(return_value=details)
+    ):
+        result = await torrents_async._hydrate_qb_incremental_torrents(
+            client, maindata_rows, "dl-1", "op", strict=False
+        )
+
+    assert len(result) == 2
+    assert result[0].name == "A完整"
+    assert result[1] is maindata_rows[1]  # 缺失 hash 保留 maindata 原行
+
+
+@pytest.mark.asyncio
+async def test_qb_hydration_strict_mode_still_raises():
+    """严格模式（默认）：缺失 hash 仍抛 RuntimeError（增量语义不变）。"""
+    from app.api.endpoints import torrents_async
+
+    client = MagicMock()
+    maindata_rows = [SimpleNamespace(hash="a", progress=0.5)]
+    details = []
+
+    with patch.object(
+        torrents_async, "fetch_qb_torrent_details", new=AsyncMock(return_value=details)
+    ):
+        with pytest.raises(RuntimeError, match="hydration was incomplete"):
+            await torrents_async._hydrate_qb_incremental_torrents(
+                client, maindata_rows, "dl-1", "op"
+            )

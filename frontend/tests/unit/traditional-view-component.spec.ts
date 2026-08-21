@@ -4,6 +4,7 @@ import Vue from 'vue'
 import { createLocalVue, shallowMount, Wrapper } from '@vue/test-utils'
 
 import TraditionalView from '@/views/torrents/TraditionalView.vue'
+import TrackerDetailCard from '@/views/torrents/components/TrackerDetailCard.vue'
 import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
 import LucideIcon from '@/components/common/LucideIcon.vue'
 import {
@@ -11,6 +12,7 @@ import {
   getActiveTorrents,
   getDownloaderList,
   getDuplicateTorrents,
+  getTrackerDomains,
   getTorrentList,
   addTorrent
 } from '@/api/torrents'
@@ -36,6 +38,7 @@ jest.mock('@/api/torrents', () => ({
   recheckTorrents: jest.fn(),
   reannounceTorrents: jest.fn(),
   getDownloaderList: jest.fn(),
+  getTrackerDomains: jest.fn(),
   getActiveTorrents: jest.fn(),
   advancedSearch: jest.fn(),
   getDuplicateTorrents: jest.fn(),
@@ -80,6 +83,7 @@ const localVue = createLocalVue()
 const mockAdvancedSearch = advancedSearch as jest.MockedFunction<typeof advancedSearch>
 const mockGetTorrentList = getTorrentList as jest.MockedFunction<typeof getTorrentList>
 const mockGetDownloaderList = getDownloaderList as jest.MockedFunction<typeof getDownloaderList>
+const mockGetTrackerDomains = getTrackerDomains as jest.MockedFunction<typeof getTrackerDomains>
 const mockGetActiveTorrents = getActiveTorrents as jest.MockedFunction<typeof getActiveTorrents>
 const mockGetDuplicateTorrents = getDuplicateTorrents as jest.MockedFunction<typeof getDuplicateTorrents>
 const mockAddTorrent = addTorrent as jest.MockedFunction<typeof addTorrent>
@@ -110,6 +114,8 @@ interface TraditionalViewVm extends Vue {
   tableScrollTop: number
   tableViewportHeight: number
   showingDuplicates: boolean
+  showingSameContent: boolean
+  showingSingleErrors: boolean
   listQuery: {
     name_like: string
     sort_by: string
@@ -117,10 +123,10 @@ interface TraditionalViewVm extends Vue {
     category_like: string
     tags_like: string
     showActiveOnly: boolean
+    tracker_domain: string[]
   }
   currentRow: TorrentRow | null
   activeDetailTab: string
-  showSameContentInspectionDialog: boolean
   detailTabs: Array<{ label: string, value: string }>
   categoryFilterItems: Array<{ label: string, value: string }>
   tagFilterItems: Array<{ label: string, value: string }>
@@ -130,7 +136,9 @@ interface TraditionalViewVm extends Vue {
   virtualBottomSpacerHeight: number
   visibleTableColumnCount: number
   handleRowClick(row: TorrentRow): void
-  handleQuickActionCommand(command: string): void
+  handleQuickActionCommand(command: string): Promise<void>
+  exitSameContentInspection(): Promise<void>
+  exitSingleErrorInspection(): Promise<void>
   showAddDialog: boolean
   handleAdd(): Promise<void>
   handlePageSizeSelect(suggestion: PageSizeSuggestion): void
@@ -259,6 +267,7 @@ function torrentFixture(index: number, overrides: Partial<Torrent> = {}): Torren
     category: '',
     superSeeding: false,
     enabled: true,
+    auxiliarySeedCount: 1,
     ...overrides
   }
 }
@@ -335,7 +344,6 @@ function mountTraditionalView(): Wrapper<Vue> {
       BatchTransferDialog: true,
       TrackerOperationDialog: true,
       GlobalReplaceTrackerDialog: true,
-      SameContentInspectionDialog: true,
       PageSizeCombobox,
       AdvancedSearchBuilder: true,
       // shallowMount 默认会把 LucideIcon stub 成空占位，无法断言 svg/name。
@@ -353,6 +361,12 @@ describe('TraditionalView component regressions', () => {
     localStorage.clear()
     mockGetTorrentList.mockResolvedValue(successListResponse())
     mockGetDownloaderList.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: []
+    })
+    mockGetTrackerDomains.mockResolvedValue({
       status: 'success',
       msg: 'ok',
       code: '200',
@@ -428,18 +442,158 @@ describe('TraditionalView component regressions', () => {
     expect('handleBatchDelete' in (wrapper.vm as object)).toBe(false)
   })
 
-  it('快捷操作可打开同内容异常排查弹窗', async() => {
+  it('同内容模式的筛选、排序、分页大小、翻页和刷新始终复用列表查询', async() => {
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm
+    mockGetTorrentList.mockClear()
+    mockGetActiveTorrents.mockClear()
+
+    expect(wrapper.text()).toContain('同内容异常排查')
+    expect(vm.showingSameContent).toBe(false)
+
+    await vm.handleQuickActionCommand('inspect-same-content')
+    await flushLifecycle()
+
+    expect(vm.showingSameContent).toBe(true)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 0, limit: 20, same_content_only: true })
+    )
+    expect(wrapper.text()).toContain('退出排查并返回普通列表')
+
+    vm.listQuery.name_like = 'needle'
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ name_like: 'needle', skip: 0, same_content_only: true })
+    )
+
+    vm.handleSort('name')
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ sort_by: 'name', sort_order: 'desc', same_content_only: true })
+    )
+
+    vm.handlePageSizeSelect({ value: '50' })
+    await flushLifecycle()
+    expect(vm.currentPage).toBe(1)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 0, limit: 50, same_content_only: true })
+    )
+
+    vm.handlePageChange(2)
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 50, limit: 50, same_content_only: true })
+    )
+
+    mockGetTorrentList.mockClear()
+    vm.handleManualRefresh()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenCalledTimes(1)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ skip: 50, limit: 50, same_content_only: true })
+    )
+    expect(mockGetActiveTorrents).toHaveBeenCalledTimes(1)
+
+    await vm.exitSameContentInspection()
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ same_content_only: true })
+    )
+  })
+
+  it('重复任务、高级搜索和查询模板均会退出同内容模式', async() => {
     wrapper = mountTraditionalView()
     await flushLifecycle()
     const vm = wrapper.vm as unknown as TraditionalViewVm
 
-    expect(wrapper.text()).toContain('同内容异常排查')
-    expect(vm.showSameContentInspectionDialog).toBe(false)
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockGetTorrentList.mockClear()
+    mockGetDuplicateTorrents.mockClear()
+    await vm.handleDuplicateSearchToggle(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(vm.showingDuplicates).toBe(true)
+    expect(mockGetDuplicateTorrents).toHaveBeenCalledTimes(1)
+    expect(mockGetTorrentList).not.toHaveBeenCalled()
 
-    vm.handleQuickActionCommand('inspect-same-content')
-    await localVue.nextTick()
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockAdvancedSearch.mockClear()
+    await vm.performAdvancedSearch({
+      complex_search: true,
+      groups_count: 1,
+      groups: JSON.stringify([{
+        logic: 'AND',
+        conditions: [{ field: 'name', operator: 'contains', value: 'needle' }]
+      }]),
+      between_group_logics: JSON.stringify([])
+    })
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockAdvancedSearch).toHaveBeenCalledTimes(1)
 
-    expect(vm.showSameContentInspectionDialog).toBe(true)
+    await vm.handleQuickActionCommand('inspect-same-content')
+    mockGetTorrentList.mockClear()
+    const applied = await vm.applyQueryTemplate({
+      source: 'simple',
+      version: 1,
+      listQuery: {
+        name_like: 'template',
+        downloader_id: [],
+        status: [],
+        category_like: '',
+        tags_like: '',
+        showActiveOnly: false,
+        sort_by: 'added_date',
+        sort_order: 'desc'
+      }
+    })
+    expect(applied).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.not.objectContaining({ same_content_only: true })
+    )
+  })
+
+  it('支持 Tracker 主域名筛选，并可快捷排查错误单种', async() => {
+    mockGetTrackerDomains.mockResolvedValue({
+      status: 'success',
+      msg: 'ok',
+      code: '200',
+      data: ['tracker.example.com', 'mirror.example.net']
+    })
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+    const vm = wrapper.vm as unknown as TraditionalViewVm & {
+      trackerDomainOptions: Array<{ value: string, label: string }>
+    }
+
+    expect(vm.trackerDomainOptions).toEqual([
+      { value: 'tracker.example.com', label: 'tracker.example.com' },
+      { value: 'mirror.example.net', label: 'mirror.example.net' }
+    ])
+
+    vm.listQuery.tracker_domain = ['tracker.example.com', 'mirror.example.net']
+    mockGetTorrentList.mockClear()
+    vm.handleFilter()
+    await flushLifecycle()
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({ tracker_domain: 'tracker.example.com,mirror.example.net' })
+    )
+
+    await vm.handleQuickActionCommand('inspect-single-errors')
+    await flushLifecycle()
+    expect(vm.showingSingleErrors).toBe(true)
+    expect(vm.showingSameContent).toBe(false)
+    expect(mockGetTorrentList).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        tracker_domain: 'tracker.example.com,mirror.example.net',
+        single_error_only: true
+      })
+    )
+    expect(wrapper.text()).toContain('错误单种排查')
+
+    await vm.exitSingleErrorInspection()
+    expect(vm.showingSingleErrors).toBe(false)
   })
 
   it('删除下拉四个等级项各自渲染正确的 LucideIcon（name + danger）', async() => {
@@ -483,15 +637,18 @@ describe('TraditionalView component regressions', () => {
     const vm = wrapper.vm as unknown as TraditionalViewVm
     const row = { hash: 'hash-1', name: '测试种子' }
 
-    expect(wrapper.find('.detail-panel-trad').classes()).not.toContain('open')
+    const trackerCard = wrapper.findComponent(TrackerDetailCard)
+    expect(trackerCard.exists()).toBe(true)
+    expect(trackerCard.props('layout')).toBe('traditional')
+    expect(trackerCard.props('visible')).toBe(false)
     vm.handleRowClick(row)
     await localVue.nextTick()
 
     expect(vm.currentRow).toBe(row)
     expect(vm.activeDetailTab).toBe('tracker')
     expect(vm.detailTabs.map(tab => tab.value)).toEqual(['tracker', 'files', 'peers'])
-    expect(wrapper.find('.detail-panel-trad').classes()).toContain('open')
-    expect(wrapper.find('.detail-tabs-compact').text()).not.toContain('常规')
+    expect(trackerCard.props('visible')).toBe(true)
+    expect(trackerCard.props('activeTab')).toBe('tracker')
   })
 
   it('同 hash 不同下载器使用任务身份切换详情且只高亮当前行', async() => {
@@ -572,6 +729,48 @@ describe('TraditionalView component regressions', () => {
       .toContain('保存路径')
   })
 
+  it('传统视图展示同步任务持久化的辅种数量', async() => {
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { auxiliarySeedCount: 31 })
+    ]))
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+
+    expect(wrapper.find('thead th.col-auxiliary-seed-count').text()).toBe('辅种数量')
+    expect(wrapper.find('tbody td.col-auxiliary-seed-count').text()).toBe('31')
+  })
+
+  it('状态列为 tracker 异常种子叠加 Tracker异常 标签（error 状态与正常种子不打）', async() => {
+    mockGetTorrentList.mockResolvedValue(torrentListResponse([
+      torrentFixture(1, { status: 'seeding', hasTrackerError: true, lastAnnounceMsg: 'You cannot seed the same torrent' }),
+      torrentFixture(2, { status: 'error', hasTrackerError: true }),
+      torrentFixture(3, { status: 'seeding' })
+    ]))
+
+    wrapper = mountTraditionalView()
+    await flushLifecycle()
+
+    const rows = wrapper.findAll('tbody tr').wrappers
+    expect(rows).toHaveLength(3)
+    const taggedRows = rows.filter(row => row.find('.tracker-error-tag').exists())
+    expect(taggedRows).toHaveLength(1)
+    expect(taggedRows[0].find('.tracker-error-tag').text()).toBe('Tracker异常')
+    expect(taggedRows[0].find('.col-status .status-badge-trad').text()).toBe('做种中')
+    expect(taggedRows[0].find('.tracker-error-tag').attributes('title')).toContain('You cannot seed')
+    // error 状态行（已有"错误"徽标）与正常种子行都不打标
+    const errorRow = rows.find(row => row.find('.col-status .status-badge-trad').classes().includes('error'))
+    expect(errorRow).toBeDefined()
+    if (errorRow) {
+      expect(errorRow.find('.tracker-error-tag').exists()).toBe(false)
+    }
+    const normalRow = rows.find(row => row.text().includes('种子-3'))
+    expect(normalRow).toBeDefined()
+    if (normalRow) {
+      expect(normalRow.find('.tracker-error-tag').exists()).toBe(false)
+    }
+  })
+
   it('旧版列偏好缺少 savePath 时仍默认显示新增路径列', async() => {
     localStorage.setItem('traditional_columns_visibility', JSON.stringify({ name: false }))
     mockGetTorrentList.mockResolvedValue(torrentListResponse([
@@ -585,7 +784,7 @@ describe('TraditionalView component regressions', () => {
     expect(wrapper.find('thead th.col-name').exists()).toBe(false)
     expect(wrapper.find('thead th.col-save-path').exists()).toBe(true)
     expect(wrapper.find('tbody td.col-save-path').text()).toBe('/downloads/legacy-compatible')
-    expect(vm.visibleTableColumnCount).toBe(13)
+    expect(vm.visibleTableColumnCount).toBe(14)
   })
 
   it('显式隐藏保存路径时同步移除表头、数据列和虚拟占位列计数', async() => {
@@ -600,7 +799,7 @@ describe('TraditionalView component regressions', () => {
 
     expect(wrapper.find('thead th.col-save-path').exists()).toBe(false)
     expect(wrapper.find('tbody td.col-save-path').exists()).toBe(false)
-    expect(vm.visibleTableColumnCount).toBe(13)
+    expect(vm.visibleTableColumnCount).toBe(14)
   })
 
   it('分页组合框完整展示预设并用箭头切换展开与收起', async() => {
@@ -1141,13 +1340,34 @@ describe('TraditionalView layout contracts', () => {
     resolve(__dirname, '../../src/views/torrents/TraditionalView.vue'),
     'utf8'
   )
+  const listSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/index.vue'),
+    'utf8'
+  )
+  const listThemeSource = readFileSync(
+    resolve(__dirname, '../../src/styles/torrent-theme.scss'),
+    'utf8'
+  )
+  const traditionalThemeSource = readFileSync(
+    resolve(__dirname, '../../src/styles/traditional-view-theme.scss'),
+    'utf8'
+  )
+  const trackerDetailCardSource = readFileSync(
+    resolve(__dirname, '../../src/views/torrents/components/TrackerDetailCard.vue'),
+    'utf8'
+  )
+  const sharedTrackerTableSource = readFileSync(
+    resolve(__dirname, '../../src/styles/_tracker-table.scss'),
+    'utf8'
+  )
 
   it('元数据面板绝对定位在固定分页栏上方且不占列表布局', () => {
     expect(source).toMatch(/\.table-area\s*\{[\s\S]*?position:\s*relative;[\s\S]*?overflow:\s*hidden;/)
-    expect(source).toMatch(/\.detail-panel-trad\s*\{[\s\S]*?position:\s*absolute;/)
-    expect(source).toContain('bottom: calc(var(--trad-pagination-height) + 8px);')
-    expect(source).toContain('pointer-events: none;')
-    expect(source).toMatch(/&\.open\s*\{[\s\S]*?pointer-events:\s*auto;/)
+    expect(trackerDetailCardSource).toMatch(/&--traditional\s*\{[\s\S]*?position:\s*absolute;/)
+    expect(trackerDetailCardSource).toContain('bottom: calc(var(--trad-pagination-height) + 8px);')
+    expect(trackerDetailCardSource).toContain('pointer-events: none;')
+    expect(trackerDetailCardSource).toMatch(/&\.is-open\s*\{[\s\S]*?pointer-events:\s*auto;/)
+    expect(source).not.toContain('detail-panel-trad')
   })
 
   it('传统列表锁定视口高度并使用表格虚拟窗口', () => {
@@ -1162,5 +1382,37 @@ describe('TraditionalView layout contracts', () => {
     expect(source).toMatch(/\.filter-panel,[\s\S]*?\.filter-panel-content\s*\{[\s\S]*?min-height:\s*0;/)
     expect(source).toMatch(/\.filter-panel-content\s*\{[\s\S]*?overscroll-behavior:\s*contain;/)
     expect(source).toContain('scrollbar-gutter: stable;')
+  })
+
+  it('两种视图使用同一个 TrackerDetailCard 组件', () => {
+    for (const viewSource of [source, listSource]) {
+      expect(viewSource).toContain('<TrackerDetailCard')
+      expect(viewSource).toContain("import TrackerDetailCard from './components/TrackerDetailCard.vue'")
+      expect(viewSource).toContain('TrackerDetailCard,')
+      expect(viewSource).toContain(':tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"')
+      expect(viewSource).toContain('@reannounce="handleTrackerReannounce"')
+      expect(viewSource).not.toContain('<table class="tracker-table tracker-table-detail">')
+    }
+    expect(listSource).toContain('layout="list"')
+    expect(source).toContain('layout="traditional"')
+    expect(trackerDetailCardSource).toContain('<table class="tracker-table tracker-table-detail">')
+    expect(trackerDetailCardSource).toContain('<th style="width: 80px;">Announce</th>')
+    expect(trackerDetailCardSource).toContain('<th>Announce信息</th>')
+    expect(trackerDetailCardSource).toContain('<th style="width: 80px;">Scrape</th>')
+    expect(trackerDetailCardSource).toContain('trackerAnnounceSuccess(')
+    expect(trackerDetailCardSource).toContain('trackerStatusClass(')
+    expect(listSource).not.toContain('<th>Tracker地址</th>')
+    expect(listSource).not.toContain('<th>Scrape信息</th>')
+  })
+
+  it('共享 TrackerDetailCard 组件引用同一份紧凑视觉样式', () => {
+    expect(sharedTrackerTableSource).toContain('@mixin tracker-table-styles')
+    expect(sharedTrackerTableSource).toContain('font-size: 11px;')
+    expect(sharedTrackerTableSource).toContain('padding: 5px;')
+    expect(trackerDetailCardSource).toContain("@import '@/styles/tracker-table';")
+    expect(trackerDetailCardSource).toContain('@include tracker-table-styles;')
+    expect(listThemeSource).not.toContain("@import './tracker-table';")
+    expect(traditionalThemeSource).not.toContain("@import './tracker-table';")
+    expect(source).not.toContain('@include tracker-table-styles;')
   })
 })

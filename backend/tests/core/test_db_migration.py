@@ -48,8 +48,19 @@ def _clean_database_path_env():
 #       → f5e6d7c8b9a0(task outcome/freshness columns, W3-4)
 #       → de898cb28172(torrent error reason)
 #       → 4c1d8e7a2b90(tracker status judge schedule)
-EXPECTED_HEAD = "4c1d8e7a2b90"
+#       → 7b2c9d4e6f10(orphan background scan + stable current detail)
+#       → b6e1c4d9a2f7(torrent backup downloader UUID type)
+#       → c8d9e0f1a2b3(orphan hardlink copy results)
+#       → d4e5f6a7b8c9(orphan hardlink copy count snapshot)
+#       → a7b8c9d0e1f2 → a8b9c0d1e2f3 → ff42d3402df5(users must_change_password)
+#       → ab68fe061d5b(orphan purge job submit-time ip address)
+#       → 975dad435c03(torrent auxiliary seed count)
+EXPECTED_HEAD = "975dad435c03"
 PREV_HEAD = "e6d8a20c41f3"
+ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
+TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"
+HARDLINK_COPY_RESULTS_PREV = "b6e1c4d9a2f7"
+HARDLINK_COPY_COUNT_SNAPSHOT_PREV = "c8d9e0f1a2b3"
 GHOST_VERSION = "9aea25308aff"  # init_schema_from_production 写入的历史幽灵版本
 
 
@@ -135,7 +146,10 @@ class TestMigrationChainIntegrity:
         # + b075727f7182 加 orphan_current_candidate + orphan_operation_lease = 28
         # + c7d8e9f0a1b2 加 orphan_purge_job = 29
         # + 3a4b5c6d7e8f 加 sync_checkpoints = 30
-        assert count == 30, f"空库 upgrade 应建 30 张业务表（含 orphan_purge_job + sync_checkpoints），实际 {count}"
+        # + a8b9c0d1e2f3 加 refresh_tokens = 33（双令牌 W6-1）
+        assert (
+            count == 33
+        ), f"空库 upgrade 应建 33 张业务表（含 orphan_purge_job + sync_checkpoints + 副本预扫描 + refresh_tokens），实际 {count}"
 
         # f0e1d2c3b4a5:orphan_current_candidate 应含 purge_delay_count 列（NOT NULL + 默认 0）
         conn = sqlite3.connect(db_path)
@@ -156,6 +170,11 @@ class TestMigrationChainIntegrity:
             torrent_cols = {c[1]: c for c in conn.execute("PRAGMA table_info(torrent_info)").fetchall()}
             assert "error_reason" in torrent_cols, "torrent_info 应包含 error_reason 列"
             assert torrent_cols["error_reason"][3] == 0, "torrent_info.error_reason 应可空"
+            auxiliary_col = torrent_cols.get("auxiliary_seed_count")
+            assert auxiliary_col is not None, "torrent_info 应包含 auxiliary_seed_count 列"
+            assert auxiliary_col[2].lower() == "integer", "辅种数量类型应为 INTEGER"
+            assert auxiliary_col[3] == 1, "辅种数量应 NOT NULL"
+            assert auxiliary_col[4].strip("'") == "1", "辅种数量默认值应为 1"
         finally:
             conn.close()
 
@@ -179,6 +198,30 @@ class TestMigrationChainIntegrity:
         finally:
             conn.close()
 
+        # 7b2c9d4e6f10：后台扫描、稳定明细和超量清理复核字段/索引完整。
+        conn = sqlite3.connect(db_path)
+        try:
+            scan_columns = {column[1] for column in conn.execute("PRAGMA table_info(orphan_scan_result)").fetchall()}
+            assert {
+                "details_mode",
+                "new_orphans",
+                "known_orphans",
+                "resolved_orphans",
+                "cleanup_review_required",
+                "cleanup_reviewed_at",
+                "cleanup_reviewed_by",
+                "cleanup_review_note",
+            }.issubset(scan_columns)
+            candidate_columns = {
+                column[1] for column in conn.execute("PRAGMA table_info(orphan_current_candidate)").fetchall()
+            }
+            assert "current_detail_id" in candidate_columns
+            index_names = {row[1] for row in conn.execute("PRAGMA index_list(orphan_current_candidate)").fetchall()}
+            assert "ux_orphan_candidate_current_detail_id" in index_names
+            assert "ix_orphan_candidate_last_scan_status" in index_names
+        finally:
+            conn.close()
+
     def test_upgrade_head_is_idempotent(self, tmp_path):
         """已有 head 库再次 upgrade 应幂等（version 不变、表数不变）。"""
         db_path = tmp_path / "idempotent.db"
@@ -196,6 +239,338 @@ class TestMigrationChainIntegrity:
 
         assert version_before == version_after == EXPECTED_HEAD
         assert count_before == count_after
+
+    def test_orphan_hardlink_copy_results_upgrade_and_downgrade(self, tmp_path):
+        """副本预扫描结果表/游标表可建可回滚，且重复升级幂等。"""
+        db_path = tmp_path / "orphan_hardlink_results.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, HARDLINK_COPY_RESULTS_PREV)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            assert "orphan_hardlink_copy_result" not in tables
+            assert "orphan_hardlink_scan_state" not in tables
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            assert "orphan_hardlink_copy_result" in tables
+            assert "orphan_hardlink_scan_state" in tables
+            columns = {
+                column[1]: column[2]
+                for column in conn.execute("PRAGMA table_info(orphan_hardlink_copy_result)").fetchall()
+            }
+            # device_id 必须是字符串列：Windows st_dev 是无符号卷号，可超有符号 64 位
+            assert columns["device_id"].upper().startswith("VARCHAR")
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(orphan_hardlink_copy_result)").fetchall()}
+            # SQLite 把表内唯一约束物化为 sqlite_autoindex_*，不保留约束名
+            assert any(name.startswith("sqlite_autoindex") for name in indexes)
+            assert "ix_orphan_hardlink_copy_result_scanned_at" in indexes
+            # (device_id, inode_id) 唯一性：插入重复物理身份必须被拒绝
+            conn.execute(
+                "INSERT INTO orphan_hardlink_copy_result (device_id, inode_id, copy_count, "
+                "found_count, copies_json, scanned_at, created_at, updated_at) "
+                "VALUES ('1', 1, 0, 0, '[]', 0, 0, 0)"
+            )
+            try:
+                conn.execute(
+                    "INSERT INTO orphan_hardlink_copy_result (device_id, inode_id, copy_count, "
+                    "found_count, copies_json, scanned_at, created_at, updated_at) "
+                    "VALUES ('1', 1, 0, 0, '[]', 0, 0, 0)"
+                )
+                raise AssertionError("重复物理身份应被唯一约束拒绝")
+            except sqlite3.IntegrityError:
+                pass
+        finally:
+            conn.close()
+
+        # 重复升级幂等
+        command.upgrade(cfg, "head")
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+
+        # downgrade 干净删表（纯增量，无数据迁移）
+        command.downgrade(cfg, HARDLINK_COPY_RESULTS_PREV)
+        conn = sqlite3.connect(db_path)
+        try:
+            tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()}
+            assert "orphan_hardlink_copy_result" not in tables
+            assert "orphan_hardlink_scan_state" not in tables
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+
+    def test_torrent_backup_downloader_uuid_type_upgrade_and_downgrade(self, tmp_path):
+        """备份下载器 ID 改为 VARCHAR(36) 时必须保留 UUID、索引与外键。"""
+        db_path = tmp_path / "torrent_backup_uuid.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, TORRENT_BACKUP_ID_TYPE_PREV)
+        downloader_id = "550e8400-e29b-41d4-a716-446655440000"
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute(
+                "INSERT INTO bt_downloaders (downloader_id, downloader_type) VALUES (?, 0)",
+                (downloader_id,),
+            )
+            conn.execute(
+                """
+                INSERT INTO torrent_file_backup (
+                    info_hash, file_path, downloader_id, use_count, is_deleted,
+                    created_at, updated_at
+                ) VALUES (?, ?, ?, 0, 0, ?, ?)
+                """,
+                ("a" * 40, "backup/a.torrent", downloader_id, "2026-08-14", "2026-08-14"),
+            )
+            conn.commit()
+            old_type = {
+                column[1]: column[2] for column in conn.execute("PRAGMA table_info(torrent_file_backup)").fetchall()
+            }
+            assert old_type["downloader_id"].upper() == "INTEGER"
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        conn = sqlite3.connect(db_path)
+        try:
+            columns = {
+                column[1]: column[2] for column in conn.execute("PRAGMA table_info(torrent_file_backup)").fetchall()
+            }
+            assert columns["downloader_id"].upper() == "VARCHAR(36)"
+            assert conn.execute("SELECT downloader_id FROM torrent_file_backup").fetchone() == (downloader_id,)
+            assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+            indexes = {row[1] for row in conn.execute("PRAGMA index_list(torrent_file_backup)").fetchall()}
+            assert "ix_torrent_file_backup_downloader_id" in indexes
+            assert "ix_torrent_file_backup_info_hash" in indexes
+        finally:
+            conn.close()
+
+        # UUID 文本无法无损转 Integer：downgrade 必须拒绝执行并保持 b6e1 版本，
+        # 而不是经 SQLite 数值亲和力把 '550e8400-…' 截断成 550。先退掉纯增量的
+        # 副本结果迁移，再验证类型迁移自身的破坏性回滚拒绝。
+        command.downgrade(cfg, HARDLINK_COPY_RESULTS_PREV)
+        with pytest.raises(RuntimeError, match="pre-migration"):
+            command.downgrade(cfg, TORRENT_BACKUP_ID_TYPE_PREV)
+        assert _read_version(str(db_path)) == HARDLINK_COPY_RESULTS_PREV
+
+        # 数据可无损转换时（NULL/整数文本），downgrade 允许执行且保留值。
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=ON")
+            conn.execute("INSERT INTO bt_downloaders (downloader_id, downloader_type) VALUES ('5', 0)")
+            conn.execute("UPDATE torrent_file_backup SET downloader_id = '5'")
+            conn.commit()
+        finally:
+            conn.close()
+
+        command.downgrade(cfg, TORRENT_BACKUP_ID_TYPE_PREV)
+        conn = sqlite3.connect(db_path)
+        try:
+            columns = {
+                column[1]: column[2] for column in conn.execute("PRAGMA table_info(torrent_file_backup)").fetchall()
+            }
+            assert columns["downloader_id"].upper() == "INTEGER"
+            assert conn.execute("SELECT downloader_id FROM torrent_file_backup").fetchone() == (5,)
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+        assert _read_version(str(db_path)) == EXPECTED_HEAD
+
+    def test_orphan_background_upgrade_backfills_guardrail_and_current_detail(self, tmp_path):
+        """升级必须锁定历史超量成功扫描，并绑定存量稳定明细。"""
+        db_path = tmp_path / "orphan_background_upgrade.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        timestamp = "2026-08-13 16:55:53.576000"
+        conn = sqlite3.connect(db_path)
+        try:
+            scan_rows = [
+                ("guarded-120100", "completed", 120_100, "2026-08-13 16:55:53.576000"),
+                ("normal-100", "completed", 100, "2026-08-13 16:56:53.576000"),
+                ("failed-120100", "failed", 120_100, "2026-08-13 16:57:53.576000"),
+                ("latest-small", "completed", 1, "2026-08-13 16:58:53.576000"),
+            ]
+            for scan_id, status, total_orphans, scan_timestamp in scan_rows:
+                conn.execute(
+                    """
+                    INSERT INTO orphan_scan_result (
+                        scan_id, scan_time, scan_type, total_paths_scanned,
+                        total_files_scanned, total_orphans, total_orphan_size,
+                        status, error_message, operator, created_at, updated_at
+                    ) VALUES (?, ?, 'manual', 1, ?, ?, ?, ?, NULL, 'migration-test', ?, ?)
+                    """,
+                    (
+                        scan_id,
+                        scan_timestamp,
+                        total_orphans,
+                        total_orphans,
+                        total_orphans * 1024,
+                        status,
+                        scan_timestamp,
+                        scan_timestamp,
+                    ),
+                )
+
+            canonical_path = "C:/data/known-orphan.bin"
+            conn.execute(
+                """
+                INSERT INTO orphan_file (
+                    id, scan_id, file_path, file_size, mtime, downloader_id,
+                    confidence, canonical_path, is_deleted, deleted_at,
+                    deleted_by, created_at
+                ) VALUES (1, 'guarded-120100', ?, 1024, NULL, 'dl-1',
+                          'high', ?, 0, NULL, NULL, ?)
+                """,
+                (canonical_path, canonical_path, timestamp),
+            )
+
+            candidate_values = {
+                "canonical_path": canonical_path,
+                "downloader_id": "dl-1",
+                "first_seen_at": timestamp,
+                "last_seen_at": timestamp,
+                "last_seen_scan_id": "guarded-120100",
+                "consecutive_scan_count": 1,
+                "status": "candidate",
+                "file_size": 1024,
+                "confidence": "high",
+                "mtime_ns": 1,
+                "device_id": "1",
+                "inode": "2",
+                "quarantine_path": None,
+                "quarantine_root": None,
+                "quarantined_at": None,
+                "purge_after": None,
+                "purge_delay_count": 0,
+                "operation_state": "stable",
+                "operation_target_path": None,
+                "operation_error": None,
+                "is_ignored": 0,
+                "ignored_at": None,
+                "ignored_by": None,
+                "created_at": timestamp,
+                "updated_at": timestamp,
+            }
+            available_columns = {
+                row[1] for row in conn.execute("PRAGMA table_info(orphan_current_candidate)").fetchall()
+            }
+            insert_columns = [name for name in candidate_values if name in available_columns]
+            placeholders = ", ".join("?" for _ in insert_columns)
+            conn.execute(
+                f"INSERT INTO orphan_current_candidate "  # noqa: S608
+                f"({', '.join(insert_columns)}) VALUES ({placeholders})",
+                [candidate_values[name] for name in insert_columns],
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+
+        conn = sqlite3.connect(db_path)
+        try:
+            reviews = dict(
+                conn.execute("SELECT scan_id, cleanup_review_required " "FROM orphan_scan_result").fetchall()
+            )
+            assert reviews == {
+                "guarded-120100": 1,
+                "normal-100": 0,
+                "failed-120100": 0,
+                # 活跃候选仍指向未复核超量批次，小扫描不能洗掉门禁。
+                "latest-small": 1,
+            }
+            assert {
+                row[0] for row in conn.execute("SELECT DISTINCT details_mode FROM orphan_scan_result").fetchall()
+            } == {"snapshot"}
+            pointer = conn.execute(
+                "SELECT current_detail_id FROM orphan_current_candidate " "WHERE canonical_path = ?",
+                (canonical_path,),
+            ).fetchone()
+            assert pointer == (1,)
+        finally:
+            conn.close()
+
+    def test_orphan_background_upgrade_recovers_stale_batch_table(self, tmp_path):
+        """SQLite batch 中断留下临时表时，原表仍在即可安全重建并继续升级。"""
+        db_path = tmp_path / "orphan_background_stale_batch.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("CREATE TABLE _alembic_tmp_orphan_scan_result " "AS SELECT * FROM orphan_scan_result WHERE 0")
+            conn.commit()
+        finally:
+            conn.close()
+
+        command.upgrade(cfg, "head")
+
+        conn = sqlite3.connect(db_path)
+        try:
+            assert _read_version(str(db_path)) == EXPECTED_HEAD
+            assert (
+                conn.execute(
+                    "SELECT name FROM sqlite_master " "WHERE type='table' AND name='_alembic_tmp_orphan_scan_result'"
+                ).fetchone()
+                is None
+            )
+            scan_columns = {column[1] for column in conn.execute("PRAGMA table_info(orphan_scan_result)")}
+            assert "details_mode" in scan_columns
+        finally:
+            conn.close()
+
+    def test_orphan_background_upgrade_rejects_orphaned_temp_without_source(self, tmp_path):
+        """仅剩 batch 临时表时数据完整性未知，必须拒绝自动删除或 stamp。"""
+        db_path = tmp_path / "orphan_background_missing_source.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        conn = sqlite3.connect(db_path)
+        try:
+            conn.execute("PRAGMA foreign_keys=OFF")
+            conn.execute("ALTER TABLE orphan_scan_result RENAME TO _alembic_tmp_orphan_scan_result")
+            conn.commit()
+        finally:
+            conn.close()
+
+        with pytest.raises(RuntimeError, match="pre-migration 备份"):
+            command.upgrade(cfg, "head")
+
+        assert _read_version(str(db_path)) == ORPHAN_BACKGROUND_PREV
+
+    def test_orphan_background_upgrade_uses_canonical_path_index(self, tmp_path):
+        """稳定明细回填必须按 canonical_path 查找，避免 SQLite 错选 scan_id 索引。"""
+        db_path = tmp_path / "orphan_background_query_plan.db"
+        cfg = _make_alembic_config(str(db_path))
+        command.upgrade(cfg, ORPHAN_BACKGROUND_PREV)
+
+        migration_path = (
+            BACKEND_ROOT / "alembic" / "versions" / "7b2c9d4e6f10_orphan_scan_background_and_current_detail.py"
+        )
+        source = migration_path.read_text(encoding="utf-8")
+        assert source.count("INDEXED BY ix_orphan_file_canonical_path") == 2
+
+        conn = sqlite3.connect(db_path)
+        try:
+            plan = conn.execute(
+                "EXPLAIN QUERY PLAN "
+                "SELECT detail.id FROM orphan_file AS detail "
+                "INDEXED BY ix_orphan_file_canonical_path "
+                "WHERE detail.canonical_path = ? AND detail.scan_id = ? "
+                "ORDER BY detail.id DESC LIMIT 1",
+                ("C:/data/sample.bin", "scan-id"),
+            ).fetchall()
+            assert any("ix_orphan_file_canonical_path" in str(row) for row in plan)
+        finally:
+            conn.close()
 
 
 # ==================== Tracker 状态判断任务错峰迁移专项 ====================
@@ -372,7 +747,7 @@ class TestDatabasePathRouting:
 
         # 目标库应已建表
         assert target_db.exists()
-        assert _table_count(str(target_db)) == 30
+        assert _table_count(str(target_db)) == 33
 
         # 真实 app.db 的 version 不应被改动
         real_db = str(settings.DATABASE_PATH)

@@ -175,11 +175,24 @@ def init_db():
                 username="admin",
                 password=hashed_password,
                 is_active=True,
+                # 首次登录强制改密（安全修复 W9）：默认口令不得长期留存
+                must_change_password=True,
                 two_factor_secret=twofactor_secret,
             )
             db.add(admin_user)
             logger.info("Default admin user created")
-            print("Default admin user created (username: admin, password: admin)")
+            print("Default admin user created (username: admin, initial password must be changed at first login)")
+        elif not getattr(admin_exists, "must_change_password", False):
+            # 存量部署升级路径：admin 仍在使用默认口令 → 标记强制改密
+            # （幂等：一旦改密或已标记则不再触发）
+            from app.auth.security import verify_password
+
+            try:
+                if verify_password("admin", admin_exists.password):
+                    admin_exists.must_change_password = True
+                    logger.warning("检测到 admin 仍使用默认密码，已标记强制改密")
+            except Exception as e:
+                logger.warning(f"默认口令检测失败（跳过强制改密标记）: {e}")
 
         # 添加默认配置
         cookie_expire_config = db.query(Config).filter(Config.key == "cookie_expire_minutes").first()
@@ -346,6 +359,7 @@ def init_config_file(
 
         login_status_secret = str(func.random_hex(16))
         sm4Key = str(func.random_hex(16))
+        jwt_secret_key = str(func.random_hex(32))
 
         # 检查文件是否已存在
         if os.path.exists(config_path) and not overwrite:
@@ -365,6 +379,20 @@ def init_config_file(
                 if "secret_key" not in new_config["security"]:
                     new_config["security"]["secret_key"] = sm4Key
                     logging.warning("配置文件中缺少secret_key，已添加。")
+
+                # 升级路径修复：旧版本升级上来的 config.yaml 永远不会被补
+                # login_status_secret，登录端点直取该键 KeyError → 登录 500。
+                # 缺失才补、不轮换已有值（轮换会使全部存量 access token 失效）
+                if "login_status_secret" not in new_config["security"]:
+                    new_config["security"]["login_status_secret"] = login_status_secret
+                    logging.warning("配置文件中缺少login_status_secret，已添加。")
+
+                # JWT 签名密钥持久化：SECRET_KEY 环境变量缺省时从 config.yaml
+                # 回退读取，容器重启不再杀死全部会话。同样缺失才补——示例配置
+                # 文件不得携带具体值，否则公开已知密钥会被"缺失才补"语义沿用
+                if "jwt_secret_key" not in new_config["security"]:
+                    new_config["security"]["jwt_secret_key"] = jwt_secret_key
+                    logging.warning("配置文件中缺少jwt_secret_key，已添加。")
 
                 with open(config_path, "w", encoding="utf-8") as f:
                     yaml.dump(new_config, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
@@ -393,6 +421,7 @@ def init_config_file(
                 "token_expire_minutes": 60,
                 "algorithm": "HS256",
                 "login_status_secret": login_status_secret,
+                "jwt_secret_key": jwt_secret_key,
             },
             "cors": {"allowed_origins": ["*"], "allowed_methods": ["*"], "allowed_headers": ["*"]},
             "logging": {"file": "app.log", "max_size_mb": 10, "backup_count": 5},

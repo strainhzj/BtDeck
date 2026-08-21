@@ -65,7 +65,8 @@ describe('共享格式化与规范化工具', () => {
       status: 'unknown',
       progress: 0,
       downloadSpeed: 0,
-      uploadSpeed: 0
+      uploadSpeed: 0,
+      auxiliarySeedCount: 1
     })
   })
 
@@ -88,6 +89,7 @@ describe('共享格式化与规范化工具', () => {
       hash: 'hash-1',
       infoId: 'info-1',
       info_id: 'info-1',
+      auxiliarySeedCount: 1,
       downloaderId: 'downloader-1',
       downloaderName: '主下载器',
       savePath: '/downloads',
@@ -106,7 +108,26 @@ describe('共享格式化与规范化工具', () => {
     [TorrentStatus.QUEUEDDL, undefined, TorrentStatus.QUEUEDDL],
     [null, TorrentStatus.SEEDING, TorrentStatus.SEEDING],
     ['unsupported', undefined, 'unknown'],
-    [undefined, undefined, 'unknown']
+    [undefined, undefined, 'unknown'],
+    // qBittorrent 新添加种子初始态 -> 下载中（此前归一为 unknown 导致新种子显示 unknown）
+    ['metaDL', undefined, TorrentStatus.DOWNLOADING],
+    ['forcedMetaDL', undefined, TorrentStatus.DOWNLOADING],
+    ['allocating', undefined, TorrentStatus.DOWNLOADING],
+    ['forcedDL', undefined, TorrentStatus.DOWNLOADING],
+    ['stalledDL', undefined, TorrentStatus.DOWNLOADING],
+    // 做种/暂停/检查/错误类原始变体折叠
+    ['forcedUP', undefined, TorrentStatus.SEEDING],
+    ['uploading', undefined, TorrentStatus.SEEDING],
+    ['stalledUP', undefined, TorrentStatus.SEEDING],
+    ['queuedUP', undefined, TorrentStatus.SEEDING],
+    ['pausedDL', undefined, TorrentStatus.PAUSED],
+    ['pausedUP', undefined, TorrentStatus.PAUSED],
+    ['checkingDL', undefined, TorrentStatus.CHECKING],
+    ['checkingUP', undefined, TorrentStatus.CHECKING],
+    ['checkingResumeData', undefined, TorrentStatus.CHECKING],
+    ['missingFiles', undefined, TorrentStatus.ERROR],
+    // 大小写不敏感
+    ['MetaDL', undefined, TorrentStatus.DOWNLOADING]
   ])('规范化种子状态 %s / %s', (status, state, expected) => {
     expect(normalizeTorrentStatus(status, state)).toBe(expected)
   })

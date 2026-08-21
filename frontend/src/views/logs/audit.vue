@@ -8,16 +8,14 @@
     </header>
 
     <!-- 筛选区域 -->
-    <section class="management-panel audit-filter-panel" aria-labelledby="audit-filter-title">
-      <div class="management-panel__header">
-        <div class="management-panel__heading">
-          <h2 id="audit-filter-title" class="management-panel__title">筛选日志</h2>
-          <p class="management-panel__description">可组合名称、类型、操作人、结果与时间范围进行查询</p>
-        </div>
-        <div class="management-panel__meta">
-          <el-tag type="info" effect="plain">共 {{ total }} 条</el-tag>
-        </div>
-      </div>
+    <CollapsiblePanel
+      title="筛选日志"
+      description="可组合名称、类型、操作人、结果与时间范围进行查询"
+      storage-key="btdeck_audit_filter_collapsed"
+    >
+      <template #meta>
+        <el-tag type="info" effect="plain">共 {{ total }} 条</el-tag>
+      </template>
       <div class="management-filter audit-filter-grid">
         <div class="management-filter__field">
           <label class="management-filter__label" for="audit-torrent-name">种子名称</label>
@@ -44,6 +42,7 @@
             <el-option label="全部类型" value="" />
             <el-option-group label="种子管理">
               <el-option label="新增种子" value="add" />
+              <el-option label="种子转移" value="transfer" />
               <el-option label="等级4删除（待删除）" value="delete_l4" />
               <el-option label="等级3删除（回收站）" value="delete_l3" />
               <el-option label="等级2删除（保留数据）" value="delete_l2" />
@@ -116,7 +115,7 @@
           <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
         </div>
       </div>
-    </section>
+    </CollapsiblePanel>
 
     <!-- 数据操作栏 -->
     <section class="management-panel audit-action-panel" aria-labelledby="audit-actions-title">
@@ -461,13 +460,13 @@
           </div>
         </el-form-item>
 
-        <el-form-item label="归档文件路径">
+        <el-form-item label="归档文件名">
           <el-input
             v-model="archiveForm.archive_path"
             placeholder="留空则自动生成"
           />
           <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-            默认保存到：data/audit_logs_archive/
+            仅接受文件名（自动追加 .json 后缀），固定保存到：data/audit_logs_archive/
           </div>
         </el-form-item>
       </el-form>
@@ -488,6 +487,7 @@ import {
   queryAuditLogs,
   getAuditLogStatistics,
   exportAuditLogs,
+  downloadExportFile,
   archiveAuditLogs,
   AuditLogArchiveRequest,
   AuditLogItem,
@@ -680,11 +680,18 @@ export default class AuditLogs extends Vue {
       const response = await exportAuditLogs(exportRequest)
       if (response && response.code === '200' && response.data) {
         this.$message.success(`正在导出为 ${command.toUpperCase()}...`)
-        // 下载文件
+        // 下载文件：走统一 axios 客户端（认证头/续期链路），成功后前端触发保存
         const fileName = response.data.file_name
         if (fileName) {
-          const downloadUrl = `/api/audit-logs/download-export/${fileName}`
-          window.open(downloadUrl, '_blank')
+          const blob = await downloadExportFile(fileName)
+          const url = window.URL.createObjectURL(blob as unknown as Blob)
+          const link = document.createElement('a')
+          link.href = url
+          link.download = fileName
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          window.URL.revokeObjectURL(url)
         } else {
           this.$message.error('导出文件名缺失')
         }
@@ -766,6 +773,7 @@ export default class AuditLogs extends Vue {
   getOperationTypeName(type: string): string {
     const typeMap: Record<string, string> = {
       add: '新增种子',
+      transfer: '种子转移',
       delete_l4: '等级4删除',
       delete_l3: '等级3删除',
       delete_l2: '等级2删除',

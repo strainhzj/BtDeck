@@ -1,6 +1,594 @@
 # Progress Log - BtDeck 全栈项目
 
-## 2026-08-13 - 同名同大小种子只读异常排查
+## 2026-08-20（第二批） - 展示对齐判定：Tracker 异常可见化与 Announce 状态覆写
+
+### 排查与定性（生产副本实测 + 独立审查）
+
+- 用户报告 `getList?status=error&same_content_only=true` 查出"无错误信息"的种子（锦心似玉组）。桌面生产副本 app.db 实测定性：error 筛选口径为 `status='error' OR has_tracker_error=True`，命中的 953/1348 行是 seeding+has_tracker_error=1（tracker 层失败、`has_tracker_error` 不在 VO 返回、前端零引用）→ UI 显示"做种中"无任何错误标识。
+- 深挖发现 Transmission 上报特性：PT 站以 HTTP 200 + bencode failure reason 拒绝时，daemon 记 `lastAnnounceSucceeded=true`（传输层成功）+ result=失败文本；全库 349 行"状态码 2+失败文本"全是策略类拒绝（重复做种/重复汇报/passkey），5793 行状态码 3 全是连接类错误。展示层信了布尔值（✓工作中），判定任务信了消息文本（has_tracker_error=1）——判定是对的，展示错信。
+- 实施前两轮独立审查（后端/前端各一）：抓出 3 个测试阻断项（5 个 fixture 缺 tracker_keyword_config 表 / torrent-error-reason-ui.spec 钉死视图内字面量 / 治理测试按 `__name__=="_load_keywords"` 断言 to_thread）、1 个布局缺陷（传统视图 table-layout:fixed 下 90px 状态列裁掉追加标签）、2 个语义边界（not-contacted 残留消息不覆写、duplicates 端点 error 筛选口径不一致），全部吸收进实施。
+
+### 实施内容（后端 6 文件 + 前端 10 文件）
+
+- 后端：
+  - 新增 `core/tracker_keyword_map.py`：`load_active_keyword_map()` 加载 failed/success/ignored 三池（first-wins、异常返回空池降级）；判定任务 `_load_keywords` 委托复用（**方法名与 to_thread 调用点是治理测试锚点不可改**），种子级判定与展示覆写共用同一映射保证口径一致。
+  - `core/tracker_status_policy.py`：新增 `tracker_message_failed()`（单消息精确命中失败池，守卫非 str/空串）与 `tracker_display_failed()`（覆写裁决：消息命中失败池且非中性码——qb==1/tr∈{0,1} 残留消息不采信，与判定任务语义一致）；`FAILED_DISPLAY_TEXT` 与两套枚举 code=3 文本一致。
+  - `torrents/responseVO.py`：TorrentInfoVO 新增 `has_tracker_error`（alias 输出 hasTrackerError）。
+  - `api/endpoints/torrent_helpers.py`：`convert_to_vo_with_trackers` 可选参 `tracker_keyword_map`（None 不覆写防 N+1），announce/scrape 文本在消息命中失败池时覆写"工作失败"（L569/L592），VO 透传 has_tracker_error；批量版每次列表转换经共享 loader 加载一次关键词池（L689）。
+  - `api/endpoints/duplicate_torrents.py`：同样覆写 + status=error 筛选口径对齐（`OR has_tracker_error`，与 getList/advanced_search 一致——行为变化：duplicates 页筛 error 会多出 tracker 异常种子）。
+- 前端：
+  - `api/torrents.ts`：Torrent 接口补 `hasTrackerError`/`has_tracker_error`（camel+snake 双字段既有风格）。
+  - `utils/torrentBatch.ts`：新增共享 helper `hasTrackerError`（L482）/ `showTrackerErrorTag`（L492，status='error' 不重复打标）/ `getTorrentErrorReason`（L502，errorReason → tracker 消息聚合 → 兜底提示回退链）；两视图逐字节相同的旧 `getTorrentErrorReason` 副本改为薄包装委托。
+  - `index.vue` / `TraditionalView.vue`：状态列状态徽标后叠加红色"Tracker异常"小标签（`:title` 显示错误原因）；名称列状态图标/传统视图状态圆点 title 追加"（Tracker异常）"；布局——index 状态列 th 90→130px，TraditionalView `.col-status` 90→145px + 表 min-width 1380→1435px（fixed 布局防裁剪）；样式 `.tracker-error-tag` 分别入 torrent-theme.scss / traditional-view-theme.scss（`var(--color-error)` 系列）。
+  - `components/TrackerOperationDialog.vue`：修复既有 bug——announce 状态判断原与 `'True'` 字面量比较，中文状态文本下恒显"异常"，改用共享 `isTrackerAnnounceSuccess`。
+  - TrackerDetailCard 零改动即受益（后端覆写"工作失败"→ 前端既有映射自动红 ✗）；`error-reason` prop 同源回退链使 tracker 异常种子详情卡红色告警新增出现（正向行为变化）。
+
+### 测试
+
+- 后端新增 `tests/api/test_tracker_error_display_alignment.py` 24 用例六组（loader 三池过滤/禁用排除；getList 覆写+透传/忽略池保持/成功保持/空池透传解耦/qb+tr 中性码不覆写/scrape 独立/行级互不影响；duplicates error 筛选三态+scrape 覆写；**判定任务 _load_keywords 委托链路+表缺失降级空池**；**判定↔展示一致性契约 8 参数矩阵（展示覆写口径 ⊆ has_tracker_error 判定口径，任何一侧单独改匹配语义即红）**；**advanced_search 同源透传+覆写**）+ `tests/core/test_tracker_status_policy.py` 扩 policy 纯函数用例；5 个既有 fixture 补 `TrackerKeywordConfig.__table__`（test_torrent_list_api / test_duplicate_torrents_api / test_same_content_inspection_api / test_advanced_search_regression / test_advanced_search_batching）；advanced_search_batching 查询计数 6→7（关键词池每请求一次，注释说明）。
+- 后端全量 pytest **3884 passed / 7 skipped / 1 failed**——失败项 `test_db_governance_extended::test_upgrade_skips_when_table_and_indexes_exist` 经 **git stash 干净树复现**，为存量问题（auxiliary_seed_count 迁移重复加列，与本次无关）。black/flake8 改动文件全过；mypy 归一化 diff 精确净增 +2，均为 torrent_helpers 两个 VO 构造调用中约 60 个既有字段完全同类的 Column[bool] 旧模型误报。
+- 前端全量 57 suites / **891 passed**（torrent-batch +5 helper 用例含 error 状态 tooltip 边界、torrent-error-reason-ui 契约改指向共享 helper 并扩 5 断言组、tracker-detail-card +1 覆写显示用例、**两视图组件级 Tracker异常 标签渲染各 +1**、**新增 tracker-operation-dialog-contract 契约 spec 防回归 'True' 字面量**）；npm run lint 无错误；npm run build 通过；./init.sh 通过。
+
+### 明确不做（及理由）
+
+- 不改 5 处同步落库位点（`last_announce_succeeded` 保留 Transmission 原始归一码，数据保真；展示层覆写不落库、关键词池更新即时生效无滞后）。
+- 不用 `judgment_engine.judge_status` 做展示判定（其语义与判定任务相反：子串匹配、ignored=失败——用了会制造"显示失败但 flag=0"的反向新矛盾）。
+- 不统一 `tracker_status_sync.py` 关键词加载（AsyncSession 且含 candidate 池，属关键词看板特性语义）。
+- 无 DB 迁移、无 error_reason 回填。
+
+### 遗留
+
+- 关键词池编辑后 VO 覆写即时生效，而 has_tracker_error 要等判定任务（约 30 分钟）重算——该滞后窗口为既有语义，方向一致不放大矛盾。
+- Git 提交待用户指示。
+
+## 2026-08-18（第四批） - 令牌机制对抗审计修复（10 项：升级500/业务401误踢/跨标签级联/审计下载/清理任务/SECRET_KEY持久化）
+
+### 流程
+
+评估"过期强制退出+提醒/操作实时续期/友好体验"→ 主链路确认成立（三层过期感知/401静默续期重放/三态分流/原子轮换经受双线程实证）→ 两轮对抗审计子代理产出缺口清单 → 修复计划经独立审查子代理对抗审查（裁定"不可按原样执行"：F3 task_profiles 登记是机制误解、F4 护栏须条件化、F7 持久500首载卡死需逃生）→ 按 v2 修订版实施。
+
+### 实施内容（后端 9 文件 + 前端 6 文件）
+
+- 后端：database.py init_config_file 缺失才补 login_status_secret/jwt_secret_key（升级500炸弹+重启杀会话）；config.py _default_secret_key 回退链 env→YAML jwt_secret_key→随机 + _default_config_dir 共享路径解析 + 生产护栏条件化放宽；login.py 改 utils.get_login_secret()（消除直取 KeyError 面）；cuser.py 业务401改码8处（2FA输入错误400、/info兜底500，保留2处真token缺陷401自愈）；auth/token_cleanup.py + refresh_token_cleanup_task.py + 种子（每日04:30保留30天，init_db增量块存量库生效，无Alembic迁移）；auth/utils.py 缓存条件 total_seconds；config.yaml.example jwt_secret_key 仅注释占位。
+- 前端：user.ts ExpireSession 不再删共享 access cookie（级联根修，主动登出传播不破坏）+ GetUserInfo 5xx 原样上抛；permission.ts isTransientError 扩5xx + 连续3次瞬时中止逃生回落登出（防持久故障首载卡死/login不可达）+ afterEach 清零；request.ts 网络错误 toast 3秒同文案节流；audit-logs.ts/audit.vue 下载改 axios blob（修前缀/凭证/拦截器三重损坏）；FileManagement.vue el-upload 401 → trySilentRefresh 续期引导。
+
+### 测试
+
+- 后端新增 test_init_config_file（补齐不轮换+端到端+登录签发-校验往返一致）/ test_cuser_business_codes（7处400+兜底500+保留的2处token缺陷401防回退）/ test_token_cleanup（只删超期）/ test_refresh_token_cleanup_task（种子装配防漂移：条目存在+executor字符串动态可导入+保持轻量）/ test_security_config_defaults 扩9用例（回退链6+护栏3）；全量 3826 passed/7 skipped；black/flake8 过、mypy 零新增（存量61为CommonResponse基线）。
+- 前端 store-user（ExpireSession 断言反转+5xx上抛）/ permission-guard（5xx中止+逃生回落+计数导航成功清零）/ request-auth（toast节流窗口+redirectToLogin不删共享access cookie）/ session（F6级联防护锚点：被登出标签cookie保留时恢复内存而非误判登出）/ api-contracts（下载blob契约）调整与新增；全量 872 passed/55套件；eslint 过。
+- ./init.sh 通过。
+
+### 部署注意
+
+首启过渡（已有 config.yaml 升级后第一次启动 JWT 密钥仍进程随机，再重启一次稳定）；示例文件勿照抄 jwt_secret_key；定时任务种子启动自动补建。详见 PLANS/token-audit-fixes.md。
+
+### 明确本次不修
+
+compose DEV 默认 true；/auth/refresh 无限流；is_admin 硬编码；cookie 非 HttpOnly；审计导出 CWD 相对路径。
+
+### 遗留
+
+Git 提交待用户指示（建议按端拆 fix(backend)/fix(frontend)/docs）。
+
+## 2026-08-18（第三批） - 跨标签令牌续期竞态修复：三态续期 + ExpireSession + 后端原子轮换
+
+### 排查与定性（两轮排查 + 双子代理独立复核/审查）
+
+- 用户报告：令牌过期后无自动续期，操作中突然请求失败。排查确认单标签 401→续期→重放链路完整（8-17 修复后），真正的根因是**多标签竞态**：
+  - 后端 `/auth/refresh` 使用即轮换（旧记录置 revoked_at + 签发新记录）；多标签共享同一 refresh cookie、单飞仅限单标签 JS 上下文（模块级变量），无跨标签协调；
+  - 任何刷新失败（含竞态败者、网络抖动）都走 `redirectToLogin → ResetToken` 清空**共享** refresh cookie → 一次竞态杀死全浏览器续期能力，此后每个 access 周期（60 分钟）强制登出一次；
+  - 次要根因：改密后端撤销全部 refresh token（cuser.py）但前端不清 cookie → "access 活 refresh 死"窗口。
+- 复核修正两处初始误判：FileManagement el-upload 是 auto-upload=false 死路径（实际上传走封装请求，不绕过拦截器）；"并发必有一败"精确化为"串行时序必败、极端并发可双成功"。
+- 计划独立审查抓出 2 个必改缺陷并采纳：① rejected 路径若清共享 refresh cookie，"败者先读、胜者后写"残余竞态仍可杀全局会话（改为保留）；② 守卫 `next(false)` 后 afterEach 不触发，NProgress 进度条悬挂（必须手动 done）。
+
+### 实施内容（前端 5 文件 + 后端 1 文件）
+
+- `frontend/src/utils/token-refresh.ts`：重写为三态结果 `RefreshOutcome`（renewed/rejected/transient）+ `RefreshDependencies.isDefiniteFailure`（仅后端明确 401 判死）；definite 失败后**重读 cookie** 追他标签轮换新值有限重试（上限 3 次防活锁）；无 refresh token 显式归 rejected（防"不清不跳"僵死）；网络类失败直接 transient 不重试。
+- `frontend/src/utils/request.ts`：`refreshDeps.isDefiniteFailure`（ApiError code '401'）；`trySilentRefresh` 返回三态；`handleUnauthorized` 三分支——renewed 重放 / rejected 登出 / transient 不清 token 不跳转、原请求以刷新的网络错误拒绝待自愈；`redirectToLogin` 改用 ExpireSession。
+- `frontend/src/store/modules/user.ts`：新增 `ExpireSession` Action（被动登出保留 refresh cookie——死 token 残留无害，重登录时 Login 覆盖）；`ResetToken` 保留主动登出全清语义；GetUserInfo 网络错误（ApiError code '0'）原样上抛供守卫分流。
+- `frontend/src/permission.ts`：守卫过期检查三态分流（renewed 放行 / rejected ExpireSession 登出 / transient——roles 已有放行自愈、roles 空 `abortNavigation` 中止导航）；新增 `isTransientNetworkError` + `abortNavigation`（next(false) + Message + 手动 NProgress.done 防悬挂）；GetUserInfo 失败分流——网络错误中止导航保留会话、其余 ExpireSession 登出（原 ResetToken 会清掉 redirectToLogin 刚保留的 refresh cookie，同因改 ExpireSession）。
+- `frontend/src/views/settings/index.vue`：改密成功 → ResetToken（主动登出全清，后端已撤销全部 refresh token）+ push('/login') 重登；删除 forceChange query 清理段（整页跳转后无意义）。
+- `backend/app/api/endpoints/login.py`：`/auth/refresh` 改条件 UPDATE 原子轮换（`revoked_at IS NULL AND expires_at > now` 才置撤销，rowcount=0 即 401；对齐 cuser.logout 先例），消除并发同值刷新"读-改-写"双成功窗口；record 补空值防御；`request.client` 按 ASGI 规范补 None 防护（mypy 新增错误归零）。
+
+### 明确不做（及理由）
+
+- BroadcastChannel/跨标签锁：cookie 最新值重试 + 保留 cookie 已把竞态后果降为"单标签被踢"，无需锁；
+- 服务端 refresh 复用宽限：弱化轮换安全；
+- access token 有效期调整（维持 60 分钟）：修复后过期频率无感，调长使登出/改密后旧令牌暴露窗口线性增长。
+
+### 回归加固（应用户要求补测，+5 前端用例 +1 后端用例）
+
+- `store-user.spec.ts` +4：ExpireSession 契约两用例（清 access/userId/roles/mustChangePassword 但 **removeRefreshToken 不被调用**——与 ResetToken 的本质区别直接锚定；W9 标志清除）+ GetUserInfo 上抛契约两用例（网络 ApiError code '0' **原样上抛同一实例**供守卫分流；认证 401 仍包装普通提示防伪装）。
+- `request-auth.spec.ts` +1：**transient 自愈闭环**——第一次 401 续期网络失败原请求被拒但会话保留，第二个请求 401 续期成功重放携带新 Bearer（锁住"单飞复位、瞬时失败不卡死续期能力"的设计承诺）。
+- `permission-guard.spec.ts`：transient 中止导航用例加 `jest.spyOn(NProgress, 'done')` 断言 ≥1 次——next(false) 后 afterEach 不触发，手动 done 是唯一收尾，缺失即进度条悬挂（审查必改项的回归锚点）。
+- `session.spec.ts`：他标签登出触发的统一跳转用例补断言 removeRefreshToken 未被调用（ExpireSession 语义一致性）。
+- 后端 `test_auth_refresh.py` +1：`test_rotated_old_token_rejected_without_issuing_new_record`——已轮换旧 token 再刷 401 且**不签发新记录不下发 data**（并发败者的确定性投影，双成功防护）。
+
+### 验证
+
+- 前端全量 55 套件 **866** 用例通过（token-refresh 8、request-auth 14、permission-guard 8、settings-change-password 4、store-user 13、session 12）；`npm run lint`（contract:check + eslint + lint-vuex-action）与 `npm run typecheck` 通过。
+- 后端 `pytest tests/api/test_auth_refresh.py`（8 用例：+1 条件更新语义 +1 旧 token 复用投影）+ `test_login_throttle_and_change_password.py`（12）全绿；black/flake8 通过；mypy stash 基线对比 13→13（新增 0）。
+- 测试技巧沉淀：api 函数 mock 边界在拦截器**之后**——后端明确拒绝应以拦截器归一化的 ApiError(401) 拒绝形态提供，resolve 401 信封会走"缺 access_token"契约错误分支；beforeEach 先 ResetToken 再 clearAllMocks（防复位期间 cookie mock 调用污染"未被调用"断言）；mockResolvedValueOnce 队列跨用例残留需显式 mockReset。
+
+## 2026-08-18 - 同内容异常排查语义修订：状态/Tracker 改为组内显示筛选（v1.0.6.40）
+
+### 排查背景（生产问题：老男孩查询无结果）
+
+- 用户查询 `same_content_only=true&name_like=老男孩&status=error` 返回 `total=0`（200 成功）。用生产副本库（E:\Users\huangzj\Desktop\app.db，schema 已在 head ab68fe061d5b）+ 真实 `get_torrent_infos` 复现确认。
+- 数据事实：老男孩 20 条同名同大小（9033579165）不同 hash，当前仅 1 条 `status='error'`（hash cfcb51db）。旧口径"普通筛选先参与候选判定"使 status=error 过滤后组内只剩 1 hash，`HAVING COUNT(DISTINCT hash)>=2` 不成立 → 整组被丢弃 → 0 条。
+- 语义歧义定性（用户确认）：旧口径回答"错误种里哪些构成同内容组"，功能目的是"同内容组里哪几条出错了"。
+
+### 实施内容（用户选定口径：status + tracker 均为显示筛选）
+
+- `torrent_helpers.py`：tracker/tracker_domain/status 三块筛选收进 `_apply_row_display_filters` 闭包（逻辑逐字保留）；普通列表模式在原位置立即应用（行为不变），`same_content_only` 模式延后到分组 join 之后应用——分组候选集只含关键字/下载器/路径/大小/时间/标签/分类/活动种子。
+- 新增 2 组 API 用例：status 显示级过滤（单 error 行组不塌、seeding、多选 or）复刻生产场景；tracker_like/tracker_domain 显示级过滤。既有 9 用例无需修改（downloader/category 参与判定的锁定在新口径下仍成立）。
+- `docs/api/same-content-inspection.md`：筛选两类口径说明重写。
+- feature_list.json 新增 v1.0.6.40 任务及 evidence。
+
+### 验证
+
+- 同内容专用套件 11 passed；普通列表回归 test_torrent_list_api.py 35 passed；flake8/black/py_compile 通过；mypy 58 条与改动前逐条一致（零新增）。
+- 生产副本库只读实测：同内容+老男孩+error **0 → 1**（命中 cfcb51db 错误行）；同内容+老男孩仍 20；普通+老男孩+error 仍 1；同内容全局 17748。
+
+### 附带发现（未处理，备查）
+
+- 本仓库存在两份 app.db：`backend/config/app.db`（开发库 22277 种，落后 10 迁移缺 error_reason）与 `data/backend/config/app.db`（docker-compose 挂载部署库，**全空**且 schema 落后 20+ 迁移）。当前代码直连开发库会因 `no such column: error_reason` 全量 500，需先 `alembic upgrade head`。
+- `has_tracker_error` 未暴露到 TorrentInfoVO/前端，列表页无法识别"做种中但 tracker 全挂"的种子（本次生产数据中该标志由定时任务动态重算，8/9 快照 2 条 → 8/18 仅 1 条 error）。
+
+## 2026-08-17（第三批） - 问题 A/B 修复：active-torrents 206 根治与 cron 会话收敛（三提交）
+
+### 诊断结论（问题定性，前置三轮调研 + 双子代理独立审查）
+
+- **问题 A**（active-torrents 206「部分下载器速度获取失败，活动快照尚未就绪」）：complete=all() 一票否决。根因①僵尸下载器永久滞留 store 缓存——fail_time 剔除机制是死代码（periodic_check 唯一调用者已注释，fail_time 运行期恒 0），速度接口不读 is_online，每秒轮询对死下载器发起调用必然失败；根因②种子同步窗口（0/15/30/45 分）per-downloader 容量挤占——3s 总预算含 semaphore 排队，超时后底层线程持槽最长 30s。
+- **问题 B**（cron 收尾 freshness 落库 greenlet_spawn 错误）：疑因 `_execute_task` 单个 AsyncSession 跨越任务体执行期（重型任务数分钟）与任务体内部 DB 写并发交错；静态证据不足（expire_on_commit=False），定位为卫生性重构+隔离变量，验收依赖 B-1 堆栈。
+- **问题 C**（401 连续无效 Token）：已由前一批 3739498 前端修复解决（续期 TypeError/自动登出/重登录生效），本批不涉及。
+- 审查关键修正（评审 C-1）：原设想 last_update 距今判离线时长不可行——状态轮询对离线下载器也刷新 last_update（端口不通也算更新成功），必须用新字段 offline_since 表达"首次离线时间"。
+
+### 提交 1（ce5c24c）：A-1+A-3 速度接口
+
+- `_is_freshly_offline`（is_online=False 且 last_update 在 `SPEED_OFFLINE_FRESH_WINDOW`（默认 60s，可配）内才跳过；缺失/过旧保守放行）+ `_process_downloader_speeds` 跳过新鲜离线者（complete=True 空结果，不发起远程调用）+ `_supplement_disappeared` dl_map 同步过滤。
+- `_DownloaderSpeedResult.reason` / `_ActiveSpeedGatherResult.failed`（均带默认值，位置参数构造兼容）；206 msg 附加失败明细（>5 截断）+ 结构化日志；failed 仅收 complete=False 者。
+- `.env.example`：IO_CONCURRENCY 建议 4 + SPEED_API_TIMEOUT/SPEED_OFFLINE_FRESH_WINDOW 说明。
+- +13 用例（跳过三分支/混合归因/边界/补查过滤），70 tests 绿。
+
+### 提交 2（7598184）：A-2 缓存自愈闭环
+
+- `DownloaderCheckVO.offline_since`（首次离线时间戳）；`_set_online_status` 统一维护四个置位点（记录/不覆盖/恢复清空）。
+- `CachedDownloaderSyncTask` 步骤 5.5：offline_since 距今 >300s（≈30 次探测失败）剔除；缺失不删防误删；恢复在线经既有 `_check_and_add_new_downloader` 下轮（cron 每 5 分钟）重新入缓存。startup_event 死注释清理。
+- 行为变化：长期离线者从仪表盘/getStatusAll 消失（非显示离线）。新建 test_downloader_cache_sync.py（+10 用例）。
+
+### 提交 3（d036d0b）：B-1+B-2+B-3 cron 收敛
+
+- B-1：cron_crud_async 7 处 + cron_executor 2 处错误日志补 exc_info=True。
+- B-2：`_execute_task` 三段式（读会话即关 → 任务体无会话 → 收尾短会话三写 duration→log→freshness）；CRUD 签名与 datetime 时间源不变。
+- 顺手修存量缺陷：读取失败早退绕过 status=2 复位（任务页永久「运行中」）——移入外层 finally。
+- B-3：同步 execute 分支经 `asyncio.to_thread`（封死未来同步任务阻塞事件循环路径）；删全仓无引用的 `execute_with_app`。
+- +5 用例（任务体期间活跃会话=0/三写顺序/早退复位/严重异常复位/同步 execute 线程断言）。
+
+### 质量与回归
+
+- 相关批次测试全绿（70 + 10 + 375），black/flake8 全部通过，mypy 每批次与 HEAD 基线对比零新增错误。
+- feature_list.json 未动（缺陷修复非 feature 任务）。
+- 遗留观察项：greenlet 错误若部署后仍复现，依据 B-1 新增堆栈定向排查（候选：apscheduler 线程池跑同步 `_sync_speed_schedule`、aiosqlite 连接跨 greenlet）。
+
+## 2026-08-17（第二批） - 双密钥会话过期登出与重登录生效修复
+
+### 症状与根因（全部源码实证）
+
+- 症状 1「密钥过期后没有自动退出」：`request.ts` redirectToLogin 用 history 风格 URL 但路由是 hash 模式（pathname 恒为 '/'，redirect 参数退化 + 依赖服务器 SPA 回退）；防抖标志 `isRedirectingToLogin` 置位后永不复位，跳转受挫（bfcache 后退/无回退部署 404）后所有 401 被永久静默吞掉；登出纯被动（只等 API 401，无 JWT exp 主动检查）；`LogOut` 空 token 直接 throw 导致 Navbar 登出也失效。
+- 症状 2「重新登录后需刷新才生效」：`FileManagement.vue` uploadHeaders computed 读 cookie（非响应式、Vue2 求值一次永久缓存）且 el-upload 自有 XHR 绕过 axios 拦截器；跨标签页 Vuex token 快照无同步机制（cookie 变化不触发 storage 事件）；Login 缺 refresh_token 时保留已撤销旧 cookie → 续期永远失败。
+
+### 修复（8 文件，全前端）
+
+- 新增 `utils/session.ts`：`getTokenExp`/`isTokenExpired`（JWT exp 纯解析，畸形不误杀）、`buildLoginRedirectTarget`（hash 感知登录 URL）、`syncTokenFromCookie`（cookie→内存快照回同步三分支）、`initSessionWatch`（visibilitychange/focus 监听，他标签登出→统一跳登录；main.ts 接线）。
+- `request.ts`：redirectToLogin 改 `/#/login?redirect=<hash内路由>`（不再依赖服务器回退）+ 3 秒防抖窗口自动复位 + 过期 toast；导出 `redirectToLogin` 与 `trySilentRefresh`；handleUnauthorized 改用后者。
+- `permission.ts`：守卫 token 分支前置 `isTokenExpired` → `trySilentRefresh`，失败 `ResetToken()` + 跳登录（登录页本身放行避免 redirect 自指循环）。
+- `store/modules/user.ts`：LogOut 容忍空 token（跳过后端调用仍完整本地清理 + 补清 mustChangePassword）；Login 缺 refresh_token 时 `removeRefreshToken()`。
+- `FileManagement.vue`：uploadHeaders 改响应式 `UserModule.token` + `Authorization: Bearer`（后端 dependencies.py 已兼容，认证契约收敛）。
+- 测试：新增 `tests/unit/session.spec.ts`（10 用例）；`store-user.spec.ts` 改写缺 refresh 用例 + 新增 LogOut 4 用例。顺手修复 keyword 三份 spec 的 5 个既有 lint warning（lint 门禁 max-warnings=0 此前已红）。
+
+### 质量与回归
+
+- 前端全量 jest：**51 suites / 817 tests 全绿**；`npm run lint` 0 error 0 warning；`npm run build` 成功（dist 已重建为最新，覆盖 8-16 dist 落后最后一次提交 9d2258d 的问题）；根 `./init.sh`（ci 模式）通过。
+- roadmap 同步：frontend/utils-types（+session/token-refresh 条目、request.ts L1-229 实测行号、cookies 双令牌职责、SUCCESS_CODES 补 202）、frontend/entry（main/permission 职责与行号）、frontend/store（user.ts action 清单）、perspectives/test-coverage（前端 spec 清单漂移对齐 33→40 + 登记新增）、根 README 元信息。
+- feature_list.json 未动：属缺陷修复非 feature 任务。
+- 部署提醒：本机存在 6 周前旧镜像，部署前务必用本次重建的 dist 重打镜像。
+
+### 回归加固（同日第三批：+19 用例，并抓出一个生产级 bug）
+
+- **抓出生产 bug**：新增拦截器集成测试首跑即红——`UserModule.getRefreshTokenValue()` 是 user 模块唯一未装饰普通方法，vuex-module-decorators 的 `getModule` 只代理 @Action/@Mutation/getter，运行时该方法不存在 → 8-16 上线的 401 静默续期在生产从未生效（每次 401 在读取 refresh token 处抛 TypeError，续期/重放/登出全链中断，正是"过期不登出"的最直接根因）。修复：request.ts refreshDeps 直接读 cookie（`getRefreshToken() || ''`），删除死方法。
+- 新增 `tests/unit/request-auth.spec.ts`（11 用例）：redirectToLogin hash 跳转与 redirect 参数、3 秒防抖窗口自愈（假时钟）、trySilentRefresh 三态（无 token/成功轮换持久化/失败）、axios adapter 注入的拦截器集成（HTTP 401 error 分支与 HTTP 200 业务码 401 success 分支的续期重放携带新 Bearer、重放仍 401 防循环登出、无 refresh 直接登出、`/auth/refresh` 豁免不递归）。
+- 新增 `tests/unit/permission-guard.spec.ts`（5 用例）：真实 router 导航验证守卫五分支（过期+续期成功放行、过期+失败登出保 redirect、目标即 /login 无自指循环、未过期不触发续期、GetUserInfo 失败兜底）。测试技巧：连续 push 同路由会触发 NavigationDuplicated 被吞导致守卫不跑（假绿），beforeEach 统一回 /login + 各用例目标互异 + `pushQuietly` 吞守卫重定向拒绝。
+- `session.spec.ts` +2 用例（initSessionWatch 可见/聚焦触发同步与登出，共 12）；`file-management-contract.spec.ts` +1 契约（上传头响应式 UserModule.token + Bearer、禁 x-access-token/getToken 回归锚点）。
+- 全量 53 suites / 836 tests 全绿（原 817）；lint 0 warning；build 通过（含两处测试 envelope 的 TS data-null 断言修正）。roadmap test-coverage 同步（43 spec）。
+
+## 2026-08-17 - API 鉴权安全审计 + 附加发现修复 #1/#2
+
+### 审计结论（217 条路由全覆盖，运行时内省 + 源码核对）
+
+- 206/217 路由有鉴权（`require_authenticated_user` 主流 / 旧 `get_current_user` 5 模块）；11 条无鉴权均为合理豁免（login/refresh/health×4/docs(生产已关闭)/SPA fallback）。
+- 无业务接口缺失鉴权；3 个子代理深度评估了 4 项附加发现的价值（详见会话记录）。
+
+### 修复 #1：WebSocket 死代码清理（价值评级：高）
+
+- git 考古确认 `websocket_main.py` 是 2026-03-08 提交 `4cf9898`（删除 WebSocket 功能）漏删的遗留物，引用不存在的 `factory.wsapp`，运行必然 ImportError。
+- 删除：`backend/app/websocket_main.py`；`config.py` 的 `WS_V1_STR`/`WS_PORT` 两个零引用死配置；`frontend/nginx.conf` 的 `/ws/` 转发块与 `/api/` 块内失效的 Upgrade 头（顺带消除 `Connection ""` 与 `Connection "upgrade"` 重复指令冲突）；`deploy/nginx-tls.conf.example` 的 `/ws/` 块与头部注释。
+- roadmap 同步（行号实测）：`docs/roadmap/backend/app-root.md`（文件数 10→9、删 WebSocket 两处条目）；`docs/roadmap/deploy/README.md`（删 WebSocket 3 处，nginx 行号漂移修正 L90→L104 等，补登录接口 L93 条目）。backend/docs 三份历史审计报告按惯例保留原文。
+
+### 修复 #2：鉴权门禁盲区（价值评级：中）
+
+- 盲区实证：`test_architecture_constraints` 比例断言对"完全不带鉴权的新端点"不进分子不进分母；`lint_btdeck.py` 统计正则只认旧 `get_current_user`（主流早已是 `require_authenticated_user`，指标失真）；BTD201 只禁手动解析；逐端点 401 测试是清单非兜底。
+- 新增 `tests/api/test_auth_route_coverage.py`：遍历运行时 `app.routes`，非白名单路由的依赖树必须含鉴权函数；白名单双向校验（公开端点必须存在且不得误挂鉴权）；≥100 条受保护路由下限防"路由注册整体失败静默通过"（历史循环 import bug）。变异验证：注入无鉴权路由即报红。
+- 统计口径修复：`lint_btdeck.py` 正则同时认两种鉴权依赖，`AuthStats.depends_get_current_user` → `depends_auth_dependency`（lint 输出、`test_architecture_constraints.py`、`diagnose.py` 三处同步）。
+
+### 质量与回归
+
+- 全量 pytest：**3733 passed / 7 skipped / 0 failed**；lint_btdeck.py exit 0（认证统计：Depends=193、占比 100%）。
+- flake8 通过；black：改动段落干净（lint_btdeck/diagnose 两脚本存在**既有**格式漂移，HEAD 版本同样不过，非本次引入，未顺手重排）；mypy：config.py 全量运行 0 错误（单文件模式 2 个既有 BaseSettings no-redef）。
+- feature_list.json 未动：本次为安全维护修复，非 feature 任务，进度记于本文件。
+
+### 遗留（已评估未实施，待用户决定）
+
+- 附加发现 #3：19 端点迁移 `require_authenticated_user` 并删除旧依赖（成本在 8 个测试文件适配，约 1 天）。
+- 附加发现 #4：`.env.example` 的 `ACCESS_TOKEN_EXPIRE_MINUTES=600`（10 小时）建议下调（一行配置）。
+
+## 2026-08-16（第二批） - 进度精度/转移落库/审计 IP 三项修复
+
+### 排查结论（四个问题，问题 4 经拓扑核实为正常）
+
+1. **进度 99.556946664657%**：`_normalize_progress_value` 只夹取不舍入，qB/TR 的 0-1 小数 ×100 原样落库；实测库中 3 条脏值。
+2. **转移后无目标记录**：`transfer_seed` 全程不写 `torrent_info`，要等 10 分钟同步任务才出现。
+3. **转移/orphan_cleanup/orphan_hardlink_copy_delete 审计无 IP**：调用点未传 ip_address；cleanup/purge 为后台任务链（无 request 上下文）。
+4. **IP 全是 192.168.5.60**：docker nginx 反代 + XFF 提取链路正常，.60 为访问端电脑（宿主机为 .51）；已向用户说明（另发现 `extract_audit_info_from_request` 信任 XFF 首值可伪造，遗留待用户决定）。
+
+### 实现（方案经 2 个独立审查代理复核，合入 7 项修订）
+
+- **问题 1**：`torrents_async.py::_normalize_progress_value` 末尾 `round(value_float, 2)`（8 处同步写路径汇聚点）。存量脏值自愈：0.5 阈值保留旧值→保留的是舍入值 + `has_torrent_info_changes` 精确比较判变化 + 全量同步 update 无条件写回；无需数据迁移。
+- **问题 2**：`seed_transfer_service.py` 新增 `_upsert_target_torrent_row`（验证成功后按 (downloader_id, hash, dr=0) upsert 目标行；字段对齐 info-only 同步 insert dict，downloader_name=当前昵称保证 bulk_update 主键命中；显式 commit；IntegrityError 竞态转 update；异常吞掉仅 warning）+ `_mark_source_row_transferred`（delete_source 成功时源行 dr=1，与 `_mark_qb_removed_torrents` 同构，不进回收站）+ source==target 服务层兜底防御。
+- **问题 3**：
+  - 转移：两端点加 `request: Request`，`_log_transfer_audit` 传 ip_address/user_agent（torrent_audit_log 已有列）。
+  - 孤儿（用户确认全部补齐）：同步端点 `/hardlink-copies/delete`、`/restore`、`/ignore` 加 request 直接透传；后台任务链 `/cleanup`、`/purge` 经 `orphan_purge_job` 新增 `ip_address` 列（迁移 `ab68fe061d5b`，inspect 守卫 add_column + batch downgrade，串接 ff42d3402df5）持久化，execute_job 读 job 会话内取出传入服务层；5 个服务函数（delete_hardlink_copies/cleanup_orphans/set_ignored/restore_quarantined/purge_quarantine_now）加 ip_address 形参 + 4 处租约递归透传 + 5 处审计调用点传值；4 个提交入口（submit_*/create_*）全加参。
+- **测试**：新增 `test_progress_rounding.py`（9 项）；`test_seed_transfer_service_fixes.py` 增 TestTargetRowUpsert 5 项；batch fixes 增审计 IP 断言；`test_orphan_purge_job_service.py` 增 IP 落库+透传 2 项；修复 5 处受影响断言（execute_job/cleanup/purge/ignore 精确 kwargs + w2_3d mock 队列扩展）；`test_db_migration.py`/`test_db_rollback_scenarios.py`/`test_orphan_migration_production_shape.py` 三处 head 版本常量同步为 ab68fe061d5b；`docs/constraints/database-migration.md` HEAD 标注修正（原标 c8d9e0f1a2b3 已过期 5 个版本）。
+- **质量**：black/flake8 干净；mypy 新增错误种类 0（16 个新报错全为文件既有 13 类存量模式，ORM 属性赋值等）。
+
+### 回归加固（同日第三批：+20 后端测试）
+
+- **同步流进度舍入**（新文件 `test_progress_rounding_sync.py`，5 项）：qB/TR info-only 真实同步函数 + 伪客户端，锁定 insert 行 progress==99.56、存量脏值 99.556946664657 经"0.5 阈值保留旧值"分支写 99.56（自愈同步侧入口）、修正后稳定行不被重写。
+- **转移服务**（`test_seed_transfer_service_fixes.py` +6 项，共 16）：IntegrityError 竞态转 update（rollback→重查→更新→二次 commit）；duplicate/验证超时/添加失败三条早退路径不预插目标行；delete_source 删除失败（partial）源行保持 dr=0 且目标行已存在；`_mark_source_row_transferred` 源行缺失安全 no-op。
+- **审计 IP 真实链路**（+8 项）：单转移端点不 patch extract、TestClient 携带 `X-Forwarded-For` 头验证审计行记录首值 203.0.113.9（与 nginx 生产行为一致）；孤儿 5 端点（hardlink-delete/restore/ignore/cleanup/purge）同样走真实头提取并断言服务/提交 kwargs 收到 IP；无代理头回退 `request.client.host`；`execute_job` purge 路径 IP 透传；服务层 `cleanup_orphans` 的 ORPHAN_CLEANUP 审计直接收到 ip_address。
+- 合计：本次三项修复的回归保护从 21 项增至 41 项。
+
+### 转移操作日志补种子/下载器名称（同日第四批）
+
+- 需求：转移写入 torrent_audit_log 的操作日志缺种子名称与下载器名称（列表页空列、无法按种子名搜索）。
+- 实现：`_log_transfer_audit` 新增 torrent_name/source_downloader_name 参数并放入 operation_detail（AuditLogService 自动提取到 torrent_name/downloader_name 冗余列）；下载器口径统一取来源下载器——downloader_name=源 nickname、downloader_id 同步从目标改为来源（保持 id/name 同源，按下载器筛选才一致）；双向 ID 仍保留在 detail JSON。早退失败路径（源下载器不存在等）名称为空串。
+- 测试：TestBatchTransferAudit 三项审计用例补冗余列断言（torrent_name==种子、downloader_name==源、downloader_id==来源 ID、detail JSON 双向 ID 完整）；定向 51 passed。
+
+### 遗留
+
+- `extract_audit_info_from_request` 取 XFF 首值可被客户端伪造（nginx 追加真实 IP 在末尾），待用户决定是否收紧（取尾值/X-Real-IP/直接 client.host）。
+- 预插行 status/size/ratio/torrent_file 与目标下载器真实状态短暂不一致（torrent_file 跨类型转移指向源路径），下次同步覆盖，属预期。
+
+
+## 2026-08-16 - scan_context 统计缓存（孤儿列表二次优化）
+
+### 需求与根因
+
+- 上一轮优化后接口稳定 1.6s；逐阶段基准（45 万行）定位剩余耗时：remaining_count 136ms + ignored_count 205ms + 过滤 total 135ms（三条全量聚合，占 SQL 57%）+ 列表全排序 ~190ms（30%）+ Docker 环境系数。
+- 关键事实：remaining/ignored **与过滤条件无关**，只随三类数据变化（is_deleted / is_ignored / 清理任务 active 集）；部署恒单进程（WORKERS=1）→ 进程内缓存无一致性问题；前端每次翻页整包覆盖 scanContext → 后端必须每次返回正确值，用缓存满足，前端零改动。
+
+### 实现（经双子代理独立审查修订）
+
+- 新建 `app/services/orphan_stats_cache.py`：模块单例，键=display_scan.scan_id，值=(remaining_count, remaining_size, ignored_count)，上限 4 条 FIFO 淘汰；**epoch 代际防回写**（get→set 之间有 await，invalidate 夹中间时旧计算直接丢弃）。
+- 读路径：`get_orphan_list` / `get_orphan_list_grouped` 缓存优先；**扁平路径无过滤时 total 复用 remaining_count**（显式白名单判定，`status in (None,"")` 等——"pending,deleted" 等组合不满足、grouped 的 total 是组数绝不复用）。
+- 失效点（全清 invalidate()，全部 commit 成功后）：`set_ignored`、`_finalize_quarantine`（is_deleted=True 咽喉，覆盖手动/自动清理与异常路径）、`_finalize_restore`、`submit_cleanup_job`（pending 即扣减）、`finish_job`（终态失败回升，**必需**）、`execute_scan` 两处（扫描开始封死 reconcile 分批失败窗口 + 落库后双保险）、`_recover_interrupted_operations` 防御性（purge 经此入口也会全清，接受）。
+- 测试：根 conftest autouse 清缓存 fixture（防模块单例跨用例污染）；`test_orphan_query_state.py:212` 改为走真实 claim→finish_job（原直接改 ORM 字段绕过）；新增缓存单测（含 epoch 竞态）+ 7 个集成用例（命中不再聚合、total 复用、status 组合不复用、忽视/清理提交/终态失效、grouped 不复用 total）。
+
+### 性能结果（45 万行 aiosqlite 真实服务路径）
+
+- 冷请求（miss）：310ms → 热请求（命中）：**128ms**；翻页 9 次全命中单页 126ms；失效后重算 282ms。
+- 生产估算：无过滤首屏 1.6s → 约 0.6-0.8s，翻页约 0.3s（Docker 系数 1.5x + 请求层）。
+
+### 验证
+
+- 后端全量 pytest：**3507 passed**（较上轮 +19 新用例）；black/flake8 通过；mypy 新模块零错误。
+- `./init.sh` 全栈验证全绿（29 ✓）；前端零改动。
+- 已记录 feature_list.json（evidence：冷 310ms/热 128ms/翻页 126ms）。
+
+## 2026-08-16 - 孤儿文件列表 5 秒慢查询优化（hardlink_copy_count 快照列）
+
+### 需求与根因
+
+- 用户报告 `GET /orphan-files/list?page=1&page_size=20&hardlink_copies=located` 耗时 5s。
+- 实测（10 万行合成库，真实 `_build_orphan_conditions` 构造 SQL）：根因两块——
+  1. SQL 侧：located 过滤编译为关联 EXISTS（候选表 join 结果表、CAST inode），count 与 list 各执行一遍，O(2N) 次两跳索引探测，current 模式 count 单条 836ms、合计 1.1s；
+  2. 文件系统侧：`_enrich_items` 对当前页 20 文件串行 `os.stat` 取实时 st_nlink-1（NAS/挂载盘上 2-5s）。
+- 用户两项决策：副本数必须**扫描发现文件时同步落库**（消除预扫描覆盖时间差导致"有副本显示没副本、删除后副本永远找不到"）；located 筛选改为**「有副本」count>0 语义**。
+
+### 实现
+
+- **模型/迁移**：`orphan_file.hardlink_copy_count`（INTEGER NULL）快照列；新迁移 `d4e5f6a7b8c9` 加列 + 按 current_detail_id 关联预扫描结果分块回填 + 覆盖索引 `ix_orphan_candidate_current_detail_status(current_detail_id, status)`（current 模式 detail_scope 从全表 SCAN 变覆盖索引）。
+- **写入链路**：扫描器 `_walk_scan_root` 从既有 stat_info 取 `st_nlink-1`（零额外 IO，在线/降级共用遍历）；lifecycle 新明细创建落库、已有明细"仅变化字段"刷新（None-guard 防抹掉已知值）；每日预扫描 `_refresh_detail_counts` 把 stat 权威值刷回明细列（恢复每日新鲜度，孤儿全量扫描默认每周才跑）。
+- **读取去 stat**：`_enrich_items` 删除串行 stat 链路，副本数经 `to_dict()` 直出（弹窗 POST /hardlink-copies 仍实时复核）。
+- **筛选重定义**：`_build_orphan_conditions` EXISTS 替换为 `hardlink_copy_count > 0`；顺带修复预存在缺口——`OrphanSelectionFilters`/`resolve_orphan_selection`/`prefix_match_preview`（前后端）透传 located，避免 located 开关下快捷前缀清理放大清理范围。
+- **联动**：`delete_hardlink_copies` 成功后按身份批量写回共享 inode 全部明细；`restore_quarantined` 恢复后补 stat 刷新。
+- **前端**：筛选 label「已定位副本」→「有硬链接副本」；副本数列 0 也可点击（弹窗实时复核）；NULL 文案「尚未生成快照」；api 类型与单测同步。
+
+### 性能结果（10 万行 current 模式复测）
+
+- located 过滤 count+list：**1107ms → 88ms（12.6×）**，且低于无过滤基线（117ms）；覆盖索引命中 `USING COVERING INDEX`。
+- 20 次串行 stat 归零；端到端 5s → 亚秒级。
+
+### 验证
+
+- 后端全量 pytest：3488 passed；迁移链测试 EXPECTED_HEAD/REV_HEAD 同步 d4e5f6a7b8c9；black/flake8 通过；mypy 存量 146 错误零净增。
+- 前端：orphan-files.spec.ts 99 passed（含新语义用例）；全量 jest 套件后台验证中；vue-tsc 存量 3012 错误零净增；eslint 存量 5 warnings 非本次引入。
+- 测试覆盖：located 快照列语义套件重写（count>0/0/NULL/共享 inode/全选/前缀）；scanner 采集、lifecycle None-guard、预扫描刷新、delete 兄弟写回、restore 补 stat 新增用例；迁移回填与覆盖索引。
+
+### 取舍（用户已确认）
+
+- 副本数 = 扫描时 st_nlink-1 快照（每日预扫描/每次成功扫描刷新），非实时；「已定位路径」仅在弹窗展示。
+- 历史 snapshot 批次未回填行显示「未知」（-），由后续扫描覆盖。
+- 声明不做（后续项）：scan_context 每页 4-5 条全量聚合按需计算；grouped GROUP BY 表达式排序优化。
+
+## 2026-08-16 - 修复新种子显示 unknown 与传统模式进度条不可见
+
+### 需求与根因
+
+- 用户报告两个问题：1）传统模式下载数据时进度条不随进度变长；2）列表/传统两模式对新添加种子都显示 "unknown"，应显示"下载中"。
+- 根因（两问题同源）：qBittorrent 新添加种子处于 `metaDL`/`forcedMetaDL`/`allocating` 等初始态，后端 `QBITTORRENT_STATUS_MAP`（`torrent_status_mapper.py`）缺失这些键导致原样入库；前端 `normalizeTorrentStatus`（`formatters.ts`）只识别 7 个规范值，其余一律归一 `'unknown'` → 状态列显示 "unknown"。
+- 传统模式进度条额外踩中样式缺陷：`.progress-bar-fill`（`traditional-view-theme.scss`）无默认背景色、仅按状态类着色，状态为 unknown 时填充条透明 → 宽度在增长但不可见（列表模式 `.progress-fill` 有默认渐变背景故正常）。同一缺陷族还包括 `pausedDL/pausedUP/checkingDL/checkingUP`（后端有意保留的统计变体）与 `completed`（实时轮询完成时写入）此前均无文案/样式。
+
+### 修复内容
+
+- 后端 `torrent_status_mapper.py`：`QBITTORRENT_STATUS_MAP` 补齐 7 个缺失状态——`metaDL/forcedMetaDL/allocating/forcedDL→downloading`、`forcedUP→seeding`、`missingFiles→error`、`checkingResumeData→checkingDL`；`moving`（迁移瞬时态）有意不映射并注释说明。新映射与 `torrent_stats_cache.get_stats` 的统计桶天然兼容（downloading/seeding 桶可正确归类）。
+- 前端 `formatters.ts`：`normalizeTorrentStatus` 由 7 分支 switch 重写为 `TORRENT_STATUS_FOLD_MAP` 折叠表（大小写不敏感），覆盖 qB 全量状态词表（含历史入库的 `pausedDL/pausedUP/checkingDL/checkingUP/stalledDL/forcedUP/uploading` 等变体），兜底已入库历史数据展示；未识别仍归 `'unknown'`。
+- 前端 `status-config.ts`：`STATUS_TEXT_MAP`/`STATUS_ICON_MAP` 补 `completed: '已完成'/'circle-check-big'` 与 `unknown: '未知'/'help-circle'`（`STATUS_OPTIONS` 六态筛选选项不变）。
+- 样式：`traditional-view-theme.scss` `.progress-bar-fill` 加兜底背景 `var(--color-text-tertiary)` + `&.completed`；状态图标圆点与徽章补 `&.completed`/`&.unknown`；`torrent-theme.scss` 列表徽章补 `&.unknown`。
+- 存量数据自愈：下一次种子同步会把 DB 中 `metaDL` 等原值重写为规范状态；同步前前端折叠表兜底展示。
+
+### 验证
+
+- 后端：`tests/core/test_torrent_status_mapper.py` 60 passed（映射表完整性/参数化用例同步更新，seeding 来源计数 4→5）；`tests/api/test_transmission_error_sync.py` 32 passed；mypy/black/flake8 通过。`test_path_mapping_validation.py` 直接用原始 state 字符串不走映射器，不受影响（已核）。
+- 前端：`shared-utils.spec.ts`（+14 折叠用例）/`status-config.spec.ts`/`traditional-view-component.spec.ts`/`torrent-list-view-component.spec.ts`/`torrent-error-reason-ui.spec.ts` 共 **111 passed**；改动文件 eslint 零问题；`tsc --noEmit` 通过。
+- roadmap 同步：`backend/core/README.md` status-mapper 行（L103→L112/L138→L147 漂移修正 + 变更摘要）、`frontend/utils-types/README.md` formatters 行（L571→L589）与 status-config 行。
+- 无 schema 变更，无新迁移；未执行 Git 提交（待用户指令）。
+
+## 2026-08-16 - 副本位置弹窗行级删除硬链接副本
+
+### 需求与实现
+
+- 用户要求：在孤儿文件页面的硬链接副本位置弹窗为每个副本行添加删除按钮，直接在页面删除副本（仅移除该路径链接，源文件与数据保留）。
+- 交互安全决策（用户确认）：位于活跃种子目录内的副本**严格拒绝**删除（fail-closed，与项目清理门禁一致）。
+- 后端 `delete_hardlink_copies`（`orphan_file_service.py:871`）逐路径 fail-closed 门禁链：维护租约 `orphan_maintenance_scope("hardlink_copy_delete")`（busy → `rejected=true` 整体拒绝）→ 明细 `exclude_in_flight` 加载 → 候选 `status=candidate` 且 `operation_state=stable` → 源文件 stat 身份 + 预扫描结果行存在 → **共享 inode 拒绝集**（源路径 + 同 `(device_id, inode)` 全部候选 canonical_path，防在 A 的弹窗删除孤儿 B 本身）→ 种子目录白名单（`collect_torrent_directory_whitelist` 全量下载器 DB 目录级，`asyncio.to_thread`，加载失败整体拒绝）→ 请求路径与返回前端的 copies **原始字符串**成员判定（防任意路径注入）+ 隔离区/回收站标记（settings 口径）+ 符号链接拒绝 → **tombstone 三段式删除**（rename→身份复核→remove，复核失败回滚；`_remove_hardlink_copy` L840）。
+- 成功后 setattr payload 同步结果行（copies_json/found_count/copy_count，保留 truncated/scan_note/scanned_at；写竞态由下一轮预扫描自愈）；审计在主事务 commit 后写（restore 模式，注入 `get_audit_service`）；状态类拒绝一律 HTTP 200 + `failed_list[{copy_path, reason}]`（与 set_ignored/restore 形态一致）。新审计枚举 `orphan_hardlink_copy_delete` 三处登记（成员/display/category）。
+- 端点 `POST /orphan-files/hardlink-copies/delete`（`orphan_files.py:341`，`{orphan_id, copy_paths≤50}`，Pydantic 失败 422）。同步执行（与 restore 同级先例，单请求 ≤50 个 unlink）。
+- 前端：`deleteHardlinkCopy` API；抽取 `fetchHardlinkLocations(orphanIds, keepResult)`；副本行 danger 文字按钮「删除」（`$set/$delete` 维护行级 deleting 态）；`$confirm` type=error 对齐 `handleQuarantinePurge` 惯例；删除成功后就地更新行副本数（located 筛选开启时改走整页刷新）+ 重查弹窗（keepResult 保留旧数据、列表区局部遮罩）；**seq 快照 + 弹窗可见双重校验**防迟到重查覆盖关闭/重开后的新弹窗数据。
+
+### 决策记录（3 个只读子代理独立审查后修订）
+
+- 审计事务冲突：`get_audit_service` 绑定请求主 session 且 `log_operation` 内部 commit，不能在结果行更新 commit 前调用（会把主事务提前提交）→ 统一 restore 模式（commit 后写）。
+- 原计划裸 stat-then-unlink 保护低于项目水准 → tombstone 三段式（与 `_purge_single_candidate` 同级）。
+- 发现共享 inode 漏洞：copies_json 含共享身份的全部孤儿源路径，仅排除当前源不够 → 同身份候选反查拒绝集。
+- Vue2 动态 key 不响应 → `$set/$delete`；弹窗重开竞态 → seq 快照校验；重查失败不得清空弹窗数据 → keepResult。
+- mypy 基线实测 1563（非历史记录的 149），stash 对比零新增；ORM 列赋值改 setattr payload（与 `_write_results` 同惯例）。
+
+### 验证
+
+- 后端：`test_orphan_hardlink_detection.py` 33 passed（新增 TestHardlinkCopyDelete 13 用例：happy/共享 inode/非 stored/种子目录/白名单失败/标记/身份不匹配回滚/源不可访问/状态门禁/无预扫描/批量去重/租约 busy/空请求）；`test_orphan_files_api.py` 44 passed（透传/rejected/422 参数化）；`tests/enums` 283 passed（成员计数 45→46）；`tests/services + tests/api` 全量 **1983 passed, 6 skipped**；`tests/core + tests/tasks + tests/enums` **1075 passed**。
+- 质量：black/flake8/ruff/lint_btdeck 通过；mypy 全量 1563=基线 1563（stash 实测对比零新增）。
+- 前端：`orphan-files.spec.ts` **99 passed**（新增 7 用例）；全量 **44 suites / 754 passed**；typecheck 通过；三个改动文件 `eslint --max-warnings 0` 零问题。
+- roadmap 三层更新（根 README 功能域/元信息 + services README orphan 行 + `orphan_file_service.md` 全量行号实测 3809 行 + api README orphan 行）；顺带修正根 README 端点模块计数漂移（38→37 实测）。feature_list.json 新增 feature `orphan-hardlink-copy-delete`（3 tasks）；`./init.sh`（ci）通过。
+- 无 schema 变更，无新迁移；未执行 Git 提交（待用户指令）。
+
+## 2026-08-15 - 已定位副本快捷筛选 + 预扫描范围收紧
+
+### 需求与实现
+
+- 用户要求：孤儿页面快捷操作里增加"快速筛选出已找到副本路径的数据"（此前用户无法得知哪些文件的副本已被定位）；同时核查找副本任务是否排除已忽视数据。
+- 核查结论：预扫描 `_stat_window` 原过滤 `status != "resolved"`，**未排除已忽视**（忽视是独立布尔列 `is_ignored`，status 保持 `candidate`），且包含 quarantined/purged 候选——其文件已被移动/删除，是部署日志 `stat_failed=101` 的主要来源。经用户确认收紧为 `status == "candidate" AND is_ignored == False`（取消忽视/隔离恢复经 reconcile 重置回 candidate 自动恢复扫描；游标基于 OrphanFile.id 不受影响）。
+- 后端筛选：`_build_orphan_conditions` 新增 `hardlink_copies` 参数，`located` 时追加 EXISTS——候选表最近扫描的 `(device_id, inode)`（inode 字符串列 `CAST(inode AS INTEGER)` join 整数 `inode_id`，与 `orphan_purge_job_service` 同口径）命中结果表且 `found_count > 1`（found_count 含源路径自身，>1 即定位到非源副本，与弹框 copies 剔除源路径口径一致；NULL 身份/未扫描不命中，fail-closed）。线程化到 list/grouped/folder_children 三处；`/list`（grouped+flat 两分支）与 `/folders/children` 新增同名 Query 参数；无效取值忽略（与 status/confidence 宽松口径一致）。
+- 前端：快捷操作 dropdown 新增"筛选已定位副本"（`toggleLocatedCopies` 在 `handleQuickAction` 先分支处理，切换 `listQuery.hardlinkCopies` 并回第一页重载，不落入前缀对话框流程；激活时显示勾选图标/取消文案）；筛选区新增"已定位副本" `el-checkbox`（tooltip 注明按每日预扫描结果过滤）；`loadOrphanPage`/`buildCurrentFolderParams` 序列化 `hardlink_copies='located'|undefined`；重置清空。
+- 无 schema 变更，无需迁移。
+
+### 决策记录
+
+- 独立子代理审查计划后修正三处：前端 spec 对 `listQuery` 的整对象 `toEqual` 精确断言必须同步（否则必挂）；`handleQuickAction` 需先分支处理新命令；`found_count > 1` 在 budget_exceeded 部分遍历的极端情形存在 fail-closed 方向漏报（无误报），经审查确认接受该折中并在 tooltip/注释注明。
+- 扫描范围收紧同时排除 quarantined/purged（用户确认）：省出的 stat 预算留给待清理文件，`stat_failed` 将显著下降。
+
+### 验证
+
+- 后端相关三文件 **92 passed**（`tests/api/test_orphan_files_api.py` 两处精确断言更新 + 3 个透传用例；`test_orphan_ignore_and_filters.py` +4 筛选用例；`test_orphan_hardlink_copy_scan.py` +1 排除用例）。
+- EXISTS 语句经 SQLite 方言 compile 实测；black/flake8 通过；mypy 与改动前基线一致（149 存量错误，零新增）。
+- 前端 `orphan-files.spec.ts` **88 passed**（新增 5 用例）；lint 无新增问题（keyword 相关 spec 5 个警告为 dev 分支存量，与本次无关）。
+- roadmap 实测行号同步；发现并顺带修正第三层 `orphan_file_service.md` 在 4da8115 时已漂移（记录 3161 行，实测 3449 行）。
+
+### 回归加固（第三批，+7 后端 / +4 前端，最终 99 / 92 passed）
+
+- located 筛选（`test_orphan_ignore_and_filters.py` 4→8 用例）：截断行（truncated=1）与共享同一 inode 的两个孤儿明细（互为硬链接）均命中；身份列脏数据（`inode='not-a-number'`/device 或 inode 单侧 NULL）安全跳过不抛错不误命中（CAST fail-closed）；`scanned_at` 过期 60 天未清理的行仍可筛出（located 只看 found_count 不看新鲜度）；located 与 confidence=high AND 叠加只返回交集。
+- API 宽松契约（`test_orphan_files_api.py`）：未知取值 `bogus` 原样透传到服务层（不做 API 层校验，与 status/confidence 一致）。
+- 扫描范围收紧（`test_orphan_hardlink_copy_scan.py` TestScanScopeExclusions +2 用例）：`stat_limit=1` 两轮间 keyset 游标越过被排除候选——若排除失效 ignored 会额外贡献一次成功 stat（`stat_inspected` 断言可分辨），`stat_failed` 只来自在范围内的 gone 文件；被排除候选的既有结果行本轮不被删除/覆盖（scanned_at/found_count 原样），仍交由 30 天保留期任务清理。
+- 前端（`orphan-files.spec.ts` 5→9 用例）：快捷操作切换保留既有 path_like/status 筛选一并提交；refreshPageData 刷新保留 located 快照；文件夹视图开启时 group_by_folder 与 hardlink_copies 同时提交；文件夹子项默认关闭时不提交 hardlink_copies。
+- 生产代码本轮零改动（纯测试）；black 重排后复跑通过、flake8 干净、mypy 基线不变。
+
+## 2026-08-15 - 两批改动回归加固
+
+### 新增回归保护（本轮对话全部修改）
+
+- 备份补偿（`test_torrent_file_backup_reconcile.py` 3→12 用例）：文件复用双路径不触发复制、`torrent_file` 直连与 `.torrents` 子目录双源解析、复制失败不落库不回填、commit 失败回滚并清理新复制文件、目标筛选（跨下载器/dr/deleted_at/短 hash 排除）与 added_date 倒序批次、路径映射异常回退原路径；仓储字符串过滤/计数、schema 空串拒绝、`get_downloader_from_store` 按 str() 归一匹配 UUID 与整数值；批次配置默认值守护。
+- 同步协调器（`test_sync_coordinator.py` 26→29 用例）：full 同步同样触发补偿、tracker-only 不触发、补偿抛异常仅记入 errors/details 不阻断信息同步（outcome 保持 success）。
+- 副本预扫描（`test_orphan_hardlink_copy_scan.py` 10→19 用例）：受控时钟中途截止保留已完成根部分结果、截断 note 优先于预算 note、resolved 候选与无候选指针明细跳过、无结果身份优先获得遍历名额且旧结果不被覆盖、budget_exceeded 写入行 scan_note 而权威副本数不丢、任务注册契约（executor 可导入/调度/timeout>预算）、heavy_sync 登记断言、五项护栏默认值守护、execute() 包装器摘要透传。
+- 查库契约（`test_orphan_hardlink_detection.py`）：服务与端点双层模块级断言不再引入遍历函数。
+- 前端（`orphan-files.spec.ts` 82→83 用例）：预扫描路径截断提示 + 未定位余量展示。
+
+### 验证
+
+- 后端 `tests/services + tests/api + tests/tasks` 全量 **2285 passed, 6 skipped**；black/flake8 通过。
+- 前端全量 **738 passed**；typecheck、目标文件严格 ESLint 0 warning 通过。
+- 文档同步：feature_list.json 两个 feature 的任务 evidence 追加回归加固记录；roadmap 测试计数更新。
+
+## 2026-08-15 - 副本定位改为定时预扫描落库，前端只读结果
+
+### 需求与实现
+
+- 用户要求：整体查找副本在文件系统过大时耗时不可控，不能放在点击请求里；改为新的定时任务后台执行并存库，前端只查结果，并严格控制性能。
+- 新定时任务 `orphan_hardlink_copy_scan`（每日 04:00，`OrphanHardlinkScanService.run_round`）：keyset 游标分批 stat 候选 → 仅 `nlink>1` 的身份进入限时遍历 → 结果按 `(device_id, inode_id)` 唯一落库 → 保留期清理。任务登记 `task_profiles` heavy_sync 互斥。
+- 性能护栏（全部可配）：stat 限量 2000/轮（`ORPHAN_HARDLINK_SCAN_STAT_BATCH_SIZE`）、遍历限量 200 inode/轮（`MAX_TARGETS`）、单调时钟预算 300s 在 `os.walk` 目录间检查（`BUDGET_SECONDS`，超时保留部分结果标记 `budget_exceeded`）、单 inode 路径存储上限 100（`MAX_PATHS_PER_TARGET`，截断标记 `truncated`）、结果保留 30 天清理、写库分批 200 行短事务、遍历单线程串行。
+- 新迁移 `c8d9e0f1a2b3`（head 由 `b6e1c4d9a2f7` 推进，单 head）：`orphan_hardlink_copy_result` + 单行游标表 `orphan_hardlink_scan_state`；`device_id` 用 String(32)——Windows `st_dev` 是无符号卷序列号，实测可超 SQLite 有符号 64 位（`Python int too large to convert`），与 `orphan_current_candidate` 同惯例。
+- `hardlink-copies` 端点改为纯查库：模块级测试断言服务不再 import 任何遍历函数；保留每文件廉价 stat 复核实时 `st_nlink-1` 总数；未覆盖文件返回 `pending_scan=true`；响应以 `scanned_count/pending_scan_count` 取代 `searched_root_count`。
+- 前端弹框：文案改为"由每日定时任务后台整体查找并存储"，新增待预扫描计数/扫描时间/等待提示/截断提示。
+
+### 验证过程中发现并修复的问题
+
+- 同步 helper 内 `await db.flush()` 未 await（协程被丢弃）导致 `current_detail_id` 挂空、stat 窗口恒为空——测试从"永远空窗口"变为真实管线后暴露。
+- Windows 下测试真实调用根收集器会把整个 `C:\` 作为扫描根（os.walk 全盘）——测试改为 patch 根收集器限定 tmp 目录；生产环境由 300s 预算兜底（预算内在后台串行遍历，不与交互争抢）。
+- Windows `time.monotonic()` 分辨率 15.6ms（GetTickCount64），内存库整轮可能落在同一 tick 使 `budget=0` 测试不确定——改用受控时钟序列。
+- 测试与迁移断言适配：SQLite 把表内唯一约束物化为 `sqlite_autoindex_*`（不保留约束名）→ 改断言 autoindex + 重复身份 INSERT 被拒；全量表计数 30→32。
+
+### 验证
+
+- 后端：新增 `test_orphan_hardlink_copy_scan.py`（限时遍历/限量/游标/幂等/清理/预算 10 用例）；`TestHardlinkCopyLocations` 重写为查库契约；迁移 3 文件 34 passed；`tests/services + tests/api` 全量 1930 passed 6 skipped；`tests/tasks` 368 passed（含 task_profiles 漂移守卫驱动更新）；black/flake8 全部通过。
+- 前端：orphan-files.spec.ts 82 passed；全量 44 suites / 737 passed；typecheck、变更文件严格 ESLint 0 warning、生产 build 通过。
+- 已同步 roadmap（services/infra/tasks/data-models/tests/test-coverage/根元信息，行号实测）、feature_list.json、session-handoff.md；未执行 Git 提交，工作区原有未跟踪产物保持不动。
+
+## 2026-08-15 - 种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语
+
+### 根因与实现
+
+- 用户报告"种子文件管理页面 6 月 7 日后无变动"。取证确认非前端缓存：6 月初同步拆分 info-only 后代码不再执行种子文件备份；本地库 1042 条备份最新停在 2026-05-29，活跃种子 2.1 万+ 无备份记录。
+- 同步协调器在 info-only 与 full 路径单下载器完成后调用 `_reconcile_torrent_file_backups`（L1435）：`reconcile_missing_backups`（L151）按 `TORRENT_BACKUP_RECONCILE_BATCH_SIZE`（默认 200）限量增量补齐，支持复用已有备份文件/项目内旧文件、qB 纯 hash 与 Transmission `name.hash.torrent` 源文件名；逻辑删除墓碑视为已处理不自动重建；文件复制在写锁外、DB 记录与 `TorrentInfo.backup_file_path` 同一短事务提交，失败只记错误不阻断信息同步。
+- 连带缺陷修复：下载器主键为 UUID 字符串，但备份模型/筛选/导入接口按整数校验；全部改为 String，新增迁移 `b6e1c4d9a2f7`（Integer→String(36)，幂等类型探测 + batch 临时表恢复）。
+- 孤儿"查找副本"按用户确认口径从"仅扫已配置映射目录"改为"当前运行环境可访问目录整体查找"：`collect_runtime_accessible_roots`（L311）Linux 读 `/proc/self/mountinfo`、其它平台回退源路径同设备祖先、Windows 枚举盘符；硬链接不跨文件系统，按目标 `st_dev` 严格剪枝并在 `os.walk` 中跳过符号链接与异设备目录，不进入系统/缓存目录所在的其他磁盘。
+- 种子页三个筛选下拉提示语从左至右改为"请选择下载器/请选择种子状态/请选择tracker"：`AdvancedMultiSelect` 新增 `placeholder` prop（默认"请选择"保持兼容），仅改提示不改筛选逻辑。
+
+### 验证过程中修复的问题
+
+- 迁移测试抓到 downgrade 数据破坏：SQLite batch 重建经数值亲和力把 `'550e8400-…'` 截断成 `550`；按仓库"受限回滚"惯例改为存在不可无损转整数值时 `raise RuntimeError` 拒绝自动回滚（6132/7b2c9 同款），测试改为断言拒绝执行保持 head + 整数文本可无损降级。
+- 前端新测试的 stub 选择器修正：vue-test-utils v1 对驼峰注册名不做 kebab 转换，实际标签为 `advancedmultiselect-stub`。
+- 修复 HEAD 既有失败的 `torrent-error-reason-ui.spec.ts` 契约漂移：`title="种子错误原因"`/`:description` 锚点随 5c297b5 迁入 TrackerDetailCard，契约改为扫描卡片源码 + 视图 `:error-reason` 透传断言。
+
+### 验证
+
+- 后端：新增 `test_torrent_file_backup_reconcile.py` 3 passed；`tests/services` 全量 1061 passed 1 skipped；`tests/api + tests/core` 1250 passed 5 skipped（迁移链单 head）；black/flake8 通过；mypy 无新增错误类别（新代码 cast 清理后仅 1 处与全仓库一致的 ORM 直接赋值）。
+- 前端：全量 44 suites / 737 passed；`npm run typecheck`、变更文件严格 ESLint 0 warning、生产 build 成功；完整 `npm run lint` 仍被无关 `keywords-board.spec.ts` 5 条既有 warning 拦截（本次文件 0 warning）。
+- 按 roadmap-maintain 实测行号同步 services/orphan_file_service.md/infra/frontend/tests/test-coverage 与根 README 元信息；feature_list.json 新增功能条目；未执行 Git 提交，工作区原有未跟踪产物保持不动。
+
+## 2026-08-14 - Tracker 主域名筛选、错误单种排查与卡片统一
+
+### 需求确认与实现
+
+- 按用户确认，Tracker 筛选使用 `tracker_url` 的主机/域名部分：去除 scheme、端口和路径，复用定时 Tracker 同步已写入的 `TrackerInfo.tracker_url/tracker_host`，未新增数据库字段或迁移。
+- 已测量获取全部域名的真实耗时：30475 条 Tracker 记录提取 90 个域名，SQLAlchemy 查询+解析 5 次为 231.515–262.118ms，低于 1 秒，因此不增加内存持久化缓存。
+- `GET /api/v1/torrents/getList` 新增 `tracker_domain` 和 `single_error_only`：错误单种先判断错误状态，再以全局可见任务的名称+大小是否只有一个任务判定唯一，不按该种子包含多少 Tracker 服务判定。
+- 列表/传统模式均新增 Tracker 主域名多选、错误单种快捷操作和退出提示；两种模式的 Tracker 详情现在都由同一个完整弹框组件渲染，标题、关闭按钮、Tracker/文件/Peers 页签、内容区、五列 Tracker 表格和状态语义一致。
+- 用户反馈上一版仍存在视觉差异后，将 Tracker 详情弹框骨架完整下沉到 `frontend/src/views/torrents/components/TrackerDetailCard.vue`；两个父页面只传入 `list`/`traditional` 定位属性、数据和事件，旧的两套外层卡片代码与页面级样式已移除，表格字号、间距、状态色、URL 截断和操作列冻结样式继续统一引用 `frontend/src/styles/_tracker-table.scss`。
+- 新增/加强 `frontend/tests/unit/tracker-detail-card.spec.ts` 与 `traditional-view-component.spec.ts` 运行时和静态回归，覆盖完整弹框骨架、两种 layout、五列结构、snake/camel 字段兼容、错误提示、中性状态、汇报事件和 loading，防止两种视图再次分叉或恢复旧卡片代码。
+
+### 验证
+
+- 后端 `tests/api/test_torrent_list_api.py`：35 passed。
+- 前端目标组件/视图测试：4 suites / 44 passed；`npm run typecheck`、目标 ESLint、生产构建通过；完整 `npm run lint` 仍被 3 个无关关键词测试文件的 5 条既有 warning 阻断；`git diff --check` 通过（仅报告 Windows 换行转换提示）。
+- 当前未提交、未推送、未部署；工作区原有未跟踪产物保持不动。
+
+## 2026-08-14 - 超量扫描改为可关闭提醒
+
+### 需求与调整
+
+- 用户确认超量扫描只需提醒，不再要求路径映射/孤儿样本双重核查；提醒可在当前页面手动关闭。
+- 前端移除“已完成双重核查”按钮和核查说明输入，超量提示改为 warning 类型并支持关闭；同一页面中同一 scan_id 关闭后不再重复显示，新扫描批次重新显示。
+- 后端 `_evaluate_cleanup_snapshot()` 不再把 `cleanup_review_required` 作为清理门禁；手动预览/清理、前缀快捷删除和定时自动清理仍受 completed、最新 scan_id、实时 manifest、路径授权、文件身份等安全校验保护。
+- 保留历史复核字段与 `/guardrail-review` 兼容接口，但不再依赖其记录放行清理；超量字段继续用于提醒及后续活跃候选的提醒传递。
+
+### 验证
+
+- 新增后端回归：超量 completed 批次在清理预览、前缀快捷、手动和定时四条入口均不因提醒被拒绝；自动清理拒绝测试覆盖通用安全校验。
+- 新增前端回归：超量提醒显示、无双重核查按钮、可关闭且不影响 `cleanupAllowed`；即使历史兼容复核字段已有时间值也不恢复旧门禁。
+- 定向回归补强后后端相关套件为 `333 passed, 1 skipped`，前端 orphan/API 套件为 `118 passed`；本轮尚未提交或部署，工作区原有未跟踪文件保持不动。
+
+## 2026-08-14 - 孤儿文件页面视图模式与嵌套表头修复
+
+### 根因与修复
+
+- 主表无条件注册 Element UI `expand` 列，`folderView` 原先只影响请求参数；因此扁平模式仍会为每行生成左侧展开入口。
+- 文件夹展开区复用的子表未关闭默认表头，展开后会把子表列头再次渲染成第二个绿色表头；普通文件箭头隐藏规则还被错误嵌套在 `.hardlink-location-summary` 下，生成选择器无法命中实际管理表。
+- 现在仅文件夹模式注册展开列，子表显式 `show-header=false`，并将普通行箭头隐藏规则移到 `.orphan-files-page` 的实际作用域；后端聚合、懒加载、分页和选择语义不变。
+
+### 验证
+
+- `orphan-files.spec.ts` 定向回归 `81 passed`；新增扁平/文件夹展开列动态切换、普通文件行展开 class/懒加载事件，以及子表表头、数据行和选择事件回归。
+- 前端 `npm run typecheck`、改动文件 ESLint、生产 build 和 `git diff --check` 通过；build 仅报告仓库既有 51 条 Sass/Element UI/Browserslist warning。
+- 完整 `npm run lint` 仍被 3 个无关关键词测试文件的既有 5 条 warning 阻断；根 `./init.sh --ci` 在当前主机因缺少 `/bin/bash` 无法启动。未修改后端，未触碰工作区既有未跟踪文件。
+
+## 2026-08-14 - 定时孤儿扫描回接 Cron 生命周期与执行日志
+
+### 根因与修复
+
+- `OrphanScanTask.execute()` 原先只创建 `queued` 扫描并立即返回 `status=success`，实际扫描和定时自动清理由进程内 dispatcher 另起任务完成，导致 APScheduler 的 Cron 执行记录与业务终态脱节。
+- `OrphanScanDispatcher` 现在返回扫描、清理及阶段摘要，并提供 `wait_for_completion()`；定时入口等待同一个 dispatcher 任务直到扫描和清理均收口，扫描失败、超时、清理部分失败和超护栏拒绝分别写入明确终态。
+- `CronTaskExecutor` 将内部类返回的业务终态透传为 `success/outcome/skip_reason`，并把 OrphanScanTask 的阶段摘要写入现有 `task_logs` 记录；HTTP/手动扫描仍只提交 queued 并由页面轻量轮询，不改变后台 API 语义。
+- 超过 50000 条的批次继续沿用 `cleanup_review_required` 门禁；路径映射与孤儿样本核查完成前没有调用清理、隔离或物理删除入口。
+
+### 验证
+
+- 定向孤儿/定时任务回归 `39 passed`；完整 `backend/tests/tasks` `331 passed`；目标 Python 文件 `py_compile` 通过。
+- 新增回归覆盖：Cron 等待同一 dispatcher 的扫描+清理结果、超量门禁在 Cron 中收口为 skipped、内部类 failed/partial 终态进入 task_logs、dispatcher 异常不伪造 success。
+
+## 2026-08-14 - 1.02GB 真实孤儿库迁移中断恢复与启动 fail-fast
+
+### 根因与修复
+
+- 对用户复制到 `E:\Users\huangzj\Desktop\app.db` 的 1,020,416,000 字节数据库只读核查：`quick_check=ok`、Alembic 仍为 `4c1d8e7a2b90`，同时残留空的 `_alembic_tmp_orphan_scan_result`。旧迁移逐列 batch 重建大表，中断后下次直接报临时表已存在；移除残留后，`current_detail_id` 回填又被 SQLite 错选 `scan_id` 索引，120 秒仍未完成。
+- `7b2c9d4e6f10` 改为原生 `ADD COLUMN`，SQLite 外键列使用受控 `ALTER TABLE ... REFERENCES`；升级/降级入口识别 batch 残留：原表仍在时删除可重建临时副本，原表缺失时拒绝猜测并要求从已验证迁移前备份恢复。
+- 回填确保 `ix_orphan_file_canonical_path` 存在并用 `INDEXED BY` 固定查询计划；8 个 downgrade 列在单次 batch 中移除，避免再次重复复制大表。
+- 应用内 Alembic 保留现有日志 handler，迁移异常会显示首因；`migrate_database()` 返回显式成功状态并校验最终 head。lifespan、直接运行和桌面入口均在迁移失败时 fail-fast，不再继续 seed、孤儿隔离对账、调度器或下载器任务。
+
+### 真实数据与回归证据
+
+- 仅在工作区副本上完整升级：约 4.97 秒到 `7b2c9d4e6f10`；202669 个候选全部填充 `current_detail_id`，未匹配 0、重复指针组 0；`quick_check=ok`、`foreign_key_check=0`，无 `_alembic_tmp_%` 表。
+- 历史 8 个 `total_orphans>50000` 的 completed 批次均为 `cleanup_review_required=1` 且未复核；没有调用清理、隔离或删除入口。桌面原始副本和线上数据库均未写入。
+- 迁移链/治理/回滚/startup 专项：`66 passed`，包含 Alembic 无异常但未到 head 的假成功回归。改动 Python 文件 compileall、Flake8 与目标 mypy 通过。Black 已完成 5 个文件重排，但 Windows 进程在退出阶段超时；产物由后续编译、lint 与 pytest 验证。
+- 已同步数据库迁移约束、根/后端/测试路线图、feature_list 与 handoff；任务产生的 1GB 级工作区测试副本将在交付前清理，不纳入版本控制。
+
+## 2026-08-13 - 孤儿扫描后台化、稳定明细复用与 12 万级争用治理
+
+### 交付结果
+
+- `POST /orphan-files/scan` 仅创建持久化 `queued` 扫描并立即返回同值的 `scan_id/task_id`；进程内串行调度器领取任务、重启恢复 queued、把残留 running 终结为 failed。页面以 `GET /orphan-files/scans/{scan_id}` 单行只读接口轮询，不再让扫描请求占住 HTTP 连接。
+- `orphan_current_candidate.current_detail_id` 绑定稳定当前明细：成功扫描仍重新核查文件系统并推进 `first/last_seen`、次数与 resolved，但已知且未清理的同一路径只复用/按需更新一条 `orphan_file`，不再每轮重复插入 12 万条；清理后同路径重新出现才创建新明细。
+- 生命周期发现/更新、明细复用、resolved 和可清理候选均按 `ORPHAN_SCAN_COMMIT_BATCH_SIZE`（默认 200）keyset/分块执行；每批查询、变更、flush/commit 在同一 `db_write_scope`，启动时稳定隔离候选对账也改为分页，避免 SQLite 长写锁和 `BUSY_SNAPSHOT`。
+- 文件夹父页仅做 SQL 聚合，初始不加载 children、也不 stat 子项；展开后调用 `/folders/children` 独立分页。实时 `st_nlink - 1` 只覆盖扁平当前页、单文件父页和展开后的当前子页。
+- Alembic head `7b2c9d4e6f10` 增加 queued/current 统计、超量复核字段、稳定明细 FK/索引并回填存量。历史及新产生的 `>50000` 成功扫描进入强制清理门禁；必须同时确认路径映射和孤儿样本并记录说明。未复核门禁会向仍有活跃候选的后续小扫描传递，防止以零路径/部分扫描绕过。
+- 本轮没有调用清理、隔离或彻底删除入口；现有 120100 条继续锁定，等待真实路径映射与样本核查。
+
+### 验证
+
+- 全部孤儿相关后端测试：`369 passed, 1 skipped`（包含安全门禁传递、迁移/生命周期、存量候选即时绑定稳定明细与真实文件型 12 万争用回归）。
+- 12 万回归使用真实临时 SQLite 文件、WAL、`synchronous=NORMAL`、15 秒 busy timeout、NullPool：120100 个已知孤儿以 200 条短事务更新期间并发轮询状态 API；完成后 `orphan_file` 仍为 120100、新扫描明细为 0，接口 P95 `<1s`、最大 `<3s`（运行约 42 秒，阈值 180 秒）。
+- 前端 `typecheck`、改动文件 ESLint、`2 suites / 112 tests` 和生产 build 通过；build 仅有仓库既有 51 条 Sass/Browserslist warning。
+- 后端涉及文件 Flake8、compileall 通过；新增后台任务/API/startup/task 四个文件 mypy 通过。包含历史 SQLAlchemy 1.x ORM 文件的 mypy 仍报既有 `Column` 类型体系问题（203 条），未作为本功能回归失败处理。
+- `alembic heads` 为单 head `7b2c9d4e6f10`；根 `init.sh` 经 Git Bash 通过，前端子 init 仍有既有 null-byte warning；`roadmap-maintain` 已同步模块、迁移与测试覆盖路线图。
+
+## 2026-08-13 - 同内容异常排查改为当前列表分页
+
+### 用户确认口径与交付
+
+- 检查最近提交 `ea5a5f3` 后，将独立 `POST /torrents/same-content-inspection`、646 行共享弹窗及 447 行诊断服务移除。
+- 同内容排查改为现有 `GET /torrents/getList?same_content_only=true`：普通筛选先参与候选组判定，按种子行复用现有排序及 `skip/limit` 分页，只为当前页装配 Tracker 数据。
+- 列表模式和传统模式均不打开新窗口/弹窗；快捷操作直接切换当前表格数据源，筛选、排序、切页、分页大小和刷新保持列表逻辑，并显示“退出排查”入口。
+- `TorrentViewSwitcher` 同步保存 `showingSameContent`，两种视图切换不丢失排查模式；进入重复查询、高级搜索或应用模板时会退出同内容模式。
+- 判定仍为名称完全相同、大小相同且规范化 InfoHash 至少两个不同值，并排除逻辑删除、回收站和活动删除占用项；无 Schema/Alembic 变更。
+
+### 验证
+
+- 后端：`test_same_content_inspection_api.py + test_torrent_list_api.py` 共 `40 passed`；专用用例从 4 个扩为 9 个，新增组合筛选、活动删除、活动快照、复合主键稳定排序分页、低 SQLite 变量上限大页及仅当前页 Tracker 预取保护。
+- 后端改动文件：Black、Flake8、py_compile 通过。
+- 前端：列表视图、传统视图、视图切换共 `3 suites / 36 tests passed`；新增筛选、排序、分页大小、翻页、刷新持续携带 `same_content_only`，以及重复查询、高级搜索、模板切换清理模式的回归保护；TypeScript、改动文件 ESLint、生产 build 通过（仅既有 Sass/Browserslist warning）。
+- 根 `init.sh` 经 Git Bash 通过，前端子脚本报告既有 warning；`git diff --check` 通过。
+- 全量回归：后端 `3376 passed, 7 skipped`；前端 `43 suites / 719 tests passed`。
+- 完整 `npm run lint` 被 3 个无关关键词测试文件的既有 5 条 warning 拦截，无新增 error；后端 mypy 在既有 ORM Column/Pydantic 构造上报告 64 条历史错误。
+- 已按 `roadmap-maintain` 用当前源码实测行号同步 API 说明、根/分支路线图与测试覆盖矩阵。
+
+## 2026-08-13 - 同名同大小种子只读异常排查（已由上方列表分页方案替代）
 
 ### 用户确认口径与交付
 
@@ -4045,3 +4633,240 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 完整 `npm run lint` 仍仅被 3 个无关关键词测试文件的既有 5 条 warning 门禁拦截，本次文件为 0 warning。
 - Git Bash 根 `./init.sh`、`git diff --check`、feature_list JSON 解析与路线图陈旧模式扫描通过；前端 init 仅有既有 null-byte warning。
 - 用户已授权提交；提交范围仅包含本次功能、回归和路线图文件，不执行 push/deploy，任务开始前的未跟踪备份、镜像和工具产物保持不动。
+
+## 2026-08-16 - 8 项问题根因分析与修复计划（验证后）
+
+### 需求
+
+- 用户反馈 8 项问题：① active-torrents 任意界面轮询 ② 标签/分类不同步下载器 ③ 新种子添加时间为空 ④ 路径同步误删历史路径 ⑤ 转移假成功/无日志 ⑥ 令牌不续期 ⑦ 删除日志无 IP ⑧ 缺展开/收缩与用户习惯记录。要求先找出最可能根因（深层推导），再生成修复方案。
+
+### 根因分析（4 个子代理独立验证）
+
+- ① 代码无全局轮询（仅 index.vue/TraditionalView，created 启动/beforeDestroy 停止）；部署镜像与源码一致；`/torrents/detail/:hash` 挂载整个列表视图导致详情页也轮询；keepAlive meta 死配置。
+- ② create_tag 被"架构调整"注释刻意摘除同步（tag_management.py:448-450）；`_sync_tag_to_downloader` 与 adapter create_tag 均死代码；update_tag 同样缺同步。
+- ③ 所有写入路径 added_on 无效即写 NULL（torrents_async.py:3297/3348、torrent_helpers.py:862、torrent_sync.py:824）；首轮 rid=0 maindata 快照不水合；无兜底无回填。子代理修正：info_only 变更检测缓存不含 added_date 列，"有值→None 覆盖"不成立，NULL 只在插入时产生、自愈依赖 delta/12h 全量；生产库 22277 条 0 空值，仅新添加路径命中。
+- ④ 子代理修正：斜杠形态不一致假设被驳（存储与比较均原始形态）；真实根因=无宽限期立即禁用 + `_sync_active_path` 永不重新启用（生产库 id 38：2 条活种子、count 持续更新、is_enabled 恒 0）。
+- ⑤ qB torrents_add 返回 "Fails." 不抛异常且返回值被忽略（qbittorrentapi 源码级确认）；`_verify_transfer` 按 hash 查旧种子即判成功；批量端点固定 code=200；审计写 seed_transfer_audit_log 无读取 API；端点硬编码 admin。
+- ⑥ 后端只签单个 60 分钟 access_token 无 refresh 端点；前端 request.ts 401 直接登出。
+- ⑦ 4 个删除端点从不调用 extract_audit_info_from_request；torrent_deletion_service.py:527 硬编码 ip_address=None；by_level 8 处不传 IP；写对 IP 的 _log_deletion_operation_async 死代码。
+- ⑧ 无通用折叠面板组件；偏好散落硬编码 localStorage 键；子代理修正：viewMode 实际已持久化（btdeck_view_mode），仅注释误导。
+
+### 交付
+
+- 新建 `PLANS/verified-bugfix-remediation.md`：5 个发布门（G1~G5）、8 项问题→根因→交付项映射、5 个实施 Phase（含文件清单与测试）、验收标准、风险与回滚。
+- `PLANS/README.md` 注册专项修复计划。
+- 未实施代码改动；待用户确认优先级后按 Phase 交付（建议先做 Phase 3 的转移修复与 Phase 4 的令牌续期）。
+
+### 2026-08-16 决策记录（计划批准）
+
+- 用户确认：8 项问题**全部一次性实施**；令牌续期采用**双令牌 refresh 体系**（access 60 分钟 + refresh 7 天，refresh_tokens 表持久化、使用即轮换、登出撤销），替代初版计划的"滑动续期"。
+- 3 个子代理独立审查修正（并入最终计划）：W1-1 路由 name 判断不可用（改用 path 判断）；W4-1 需新增 disabled_by 迁移字段防"重新启用推翻用户手动禁用"（存量 is_enabled=0 保守标 user）；W3-1 水合需宽松模式且仅 info_only 预算路径；W3-3 回填改后台任务；W5-3 前端需经 ApiError.rawResponse 取 400 载荷；W6 需独立 refresh 校验函数（verify_access_token 60 分钟年龄检查会拒 7 天 token）与登出撤销改造；W7 operator 防伪造（请求参数默认 admin 可伪造）。
+- 计划文件 `PLANS/verified-bugfix-remediation.md` 已更新为审查修正版并批准；开始按 Phase 1~5 实施。
+
+## 2026-08-16 - 8 项修复实施完成（Phase 1~5）
+
+### 实施（计划 PLANS/verified-bugfix-remediation.md 已批准）
+
+- **Phase 1 轮询**：SpeedPollingMixin（speedPolling.ts）统一两视图轮询 + visibilitychange 后台暂停/恢复；详情死路由跳过轮询；删除 router 13 处 keepAlive 死配置。
+- **Phase 2 标签/路径**：create_tag/update_tag 同步下载器（qB 409 幂等、TR no-op、失败 best-effort）；downloader_path_maintenance 新增 disabled_by（迁移 a7b8c9d0e1f2），_sync_active_path 仅恢复 auto、_cleanup_obsolete_paths 宽限期 30 天（PATH_CLEANUP_GRACE_DAYS），服务层 delete/update 标 user；前端路径管理显示"历史路径/手动禁用"标签。
+- **Phase 3 添加时间/转移**：首轮 rid=0 快照宽松水合（strict=False）；UI 添加 datetime.now() 兜底；启动后台回填（INFO_SYNC_STARTUP_BACKFILL_ENABLED，默认关）；torrents_add 返回值 "Fails." 检查、目标查重 duplicate、批量 code=400、审计 TRANSFER 并入 torrent_audit_log + 真实用户；前端 BatchTransferDialog 经 ApiError.rawResponse 展示失败明细、部分失败不 emit success。
+- **Phase 4 令牌/删除日志**：双令牌体系——refresh_tokens 表（迁移 a8b9c0d1e2f3，SHA-256 哈希、使用即轮换、登出撤销）、/auth/refresh 端点、登录签发 refresh；前端 SetToken action、Login 接 refresh、401 单飞刷新重放（token-refresh.ts 可测编排）、isLoginRequest 豁免 /auth/refresh；4 删除端点提取 audit_info、by_level 8 处 log_operation 补 IP/UA、operator 防伪造（认证用户优先）、recycle_bin manual_cleanup 补 request。
+- **Phase 5 折叠面板**：CollapsiblePanel.vue（storageKey 持久化、null 默认展开、aria-expanded/controls），全局注册，接入 audit/recycle-bin/query-templates/orphan-files 四个面板。
+
+### 验证
+
+- 定向测试：后端 267 用例全绿（111 Phase2/3 + 128 Phase4 + 28 W7 新增/回归）；前端 190 用例全绿（speed-polling 6、batch-transfer 4、token-refresh 5、collapsible-panel 7、management-pages-ui 13、error-normalize 35 等）。
+- 迁移：25 用例全绿（EXPECTED_HEAD=a8b9c0d1e2f3）；生产库副本实证 disabled_by 迁移（2 条禁用记录保守标 user）。
+- 全量回归：后端全量 + 前端全量 + 生产 build 结果见收尾记录。
+- 未执行 git 提交（按仓库会话规范，用户未要求）。
+
+---
+
+## 2026-08-16 安全修复（两轮对抗验证驱动，PLANS/security-remediation.md）
+
+### 背景
+5 域调查代理 + 9 个对抗验证代理完成两轮安全分析（25 项发现终审），3 个审查代理评审修复计划（修订 15+ 项）。随后按批准计划实施 W1-W15。
+
+### 已实施（后端）
+- **W1** serve_frontend resolve+is_relative_to 双校验（覆盖绝对路径注入/`%5c`/未编码穿越）；7 测试
+- **W2** cron task_type=4 三层拦截：执行层 `_run_task_script` 闸门（封 0-3 + type4 白名单 `app.tasks.` 前缀 + isclass 校验）、解析层删除 ImportError→exec 回落与两个 exec 方法、API/加载层白名单 + 系统通知；删除 enhanced_python_executor 死代码 + BTD301 白名单清空；41+14 测试
+- **W3** 备份导入 filename sanitize + 每请求 uuid 子目录（消除并发 rmtree 竞态）
+- **W4** core 层 bencode+info 内容校验（2MB 上限）；端点 .torrent 后缀；seed_transfer info_hash 40/64 hex 闸门；16 测试
+- **W5** 归档仅取 basename+强制 .json+固定目录；download-export fullmatch 白名单；前端文案同步；18 测试
+- **W6** downloader add 加密落库（ORM 构造点）；encrypt fail-closed raise；core/security encrypt_tracker_info 同修；启动幂等钩子加密存量明文；conftest 补测试 SM4 密钥；9 测试
+- **W8** 密码 bcrypt（bcrypt 库，passlib 1.7.4 与新版 bcrypt 不兼容故未用）；verify 双读（$2b$ → bcrypt，否则旧 AES-ECB）；login 条件更新自动升级（防并发竞态）；changePassword 修复（原直调 sm4_decrypt 会 500）→ verify_password + 绑定本人 + 撤销 refresh + 清强制标志；admin seed bcrypt + 存量默认口令检测；alembic 迁移 ff42d3402df5（幂等加列）；7 测试
+- **W9** login_throttle 模块（阶梯 5→15m / 10→1h，密码与 TOTP 共用计数，绝不信任 XFF，429 不带剩余时间）；must_change_password 进 token_data；改密撤销 refresh token；10 测试
+- **W10** 2FA 四个端点（2faVerifyCode/QrCode/update2faFlg/verifyPasswordFor2FA）绑定本人；TOTP 日志脱敏 4 处；5 测试
+- **W11** DEBUG/DB_ECHO 默认 False；DEV 保持 True（frozen 兼容）；desktop_main 移除 DEV=false setdefault（历史必崩入口）；DEV=False 关 docs/openapi；SECRET_KEY 空串归一；compose 透传 DEV/SECRET_KEY/ALLOWED_HOSTS/DEBUG（修复 .env 指引断链）
+- **W12** 两个 spec datas 移除 config 目录；btdeck.iss 移除构建机 config 复制；.dockerignore 排除 config.yaml
+- **W13** fastapi~=0.115.6 + starlette~=0.41.3（实测解析 fastapi 0.115.14 + starlette 0.41.3，CVE-2024-47874 修复）；nginx login location 1M；升级后 tests/api 895 passed
+- **W15** file_operations 删除"取第一个 waiting-delete 文件"兜底（删错文件完整性缺陷）；keywords-search escapeRegExp；MatchTimeline sanitizeDescription 白名单
+- **W7** git rm --cached 两个密钥 yaml；.gitignore 补 app/config.yaml；config.yaml.example 更新密钥警告；清理仓库垃圾（畸形目录/nul）；轮换 runbook（顺序契约 + 自救 + filter-repo 手册）
+
+### 前端
+- user.ts mustChangePassword 状态；permission.ts 守卫拦截（优先于 redirect）；settings 改密成功清标志 + forceChange 提示；audit.vue 归档文案
+
+### 文档
+- PLANS/security-remediation.md（含不修决议）；docs/security/key-rotation-runbook.md；deploy/nginx-tls.conf.example；README 安全加固指引；feature_list.json 新增 feature（14 tasks）
+
+### 遗留（人工）
+1. git filter-repo 历史清洗 + force push
+2. 生产密钥轮换（顺序：先登录升级 bcrypt 再轮换）
+3. 桌面版 verify-package.py 验证
+
+## 2026-08-18 W9 强制改密路由死锁：根因定位、回归重现与完整修复
+
+### 背景
+
+生产事故：部署最新代码后正常使用一段时间，重新登录即被锁死在 /#/settings?forceChange=1，点击任何页面都被弹回且系统设置页无法进入（无法完成改密自救）。
+
+### 根因（四层，已由两端回归测试实证）
+
+1. 触发层：`init_db` 启动自检（database.py）发现 admin 仍用默认口令 "admin"（bcrypt/旧 AES-ECB 双格式命中）→ must_change_password 置 1；
+2. 延迟层：标志仅随登录响应下发，存量会话靠 7 天 refresh token 存活——症状推迟到重新登录才爆发；
+3. 死锁层：守卫重定向目标/白名单写父路径 /settings（父路由只挂 Layout 无 redirect，真实改密页在 /settings/index）→ 落点内容区 <!----> 白屏、真实路径与侧边栏菜单均被弹回，改密表单代码层面不可达；
+4. 首导航缺口（双代理审查发现）：守卫 roles=[] 分支 GetUserInfo 后无条件放行，登录后/F5 后首次导航不受拦截。
+
+### 已实施（修复）
+
+- 前端：router.ts /settings 加 redirect；permission.ts 守卫目标/白名单改子路由 + GetUserInfo 分支补拦截（抽 isForceChangeBlocked/forceChangeRedirect）+ 拦截弹 Message.warning"请先修改密码"（3 秒节流，点其它菜单被弹回时给出反馈；设置页 mounted 旧提示移除避免双弹）；user store GetUserInfo 解析 mustChangePassword（undefined 不写防滚动部署误清）；users.ts 类型；settings/index.vue 改密成功清 forceChange query。
+- 后端：cuser.py get_user_info 下发 mustChangePassword（双前缀生效）。
+- 发布约束：router redirect 与守卫白名单必须原子交付（单独部署前者会无限重定向循环）。
+- 生产解困 runbook（含 SQL 路径、会话残留、SQLite 运维细节）见 PLANS/force-change-deadlock-fix.md 第四节。
+
+### 测试
+
+- 重现（事故时点）：backend test_w9_force_change_reproduction 4 用例 + frontend permission-force-change-deadlock（旧 bug 行为）。
+- 修复后锚定：deadlock spec 8 用例（拦截落点可达+提示断言/首导航拦截+提示断言/父路径 redirect/手动直达放行/改密闭环/提示 3 秒节流/对照）；user-store-must-change-password 扩至 9 用例（Login true/显式 false/缺省 + GetUserInfo wrapped/扁平/显式 false 覆盖/字段缺失保持原值）；settings-change-password 新建 4 用例（改密成功双解锁：清 store 标志+清 URL query 保留其他参数；无 query 不多余跳转；失败不提前解锁；前置校验拦截）；后端新增 /users/info 两态 2 用例。
+- 验证：后端三套件 97 passed + black/flake8/mypy；前端 jest 相关 6+7+60 passed + eslint + typecheck；./init.sh 通过。
+
+### 遗留（人工/后续）
+
+1. 长会话不刷新的标签页无法实时感知标志（GetUserInfo 唯一调用点是守卫 roles=[] 分支）——彻底消除需挂周期端点，另行评估；
+2. 其他父路由（/downloader、/tasks 等）缺 redirect 的手输空白 UX 问题，后续统一补；
+3. Git 提交待用户指示。
+
+
+## 2026-08-19 打包脚本全链路审计与修复（子代理验证 + 人工实施）
+
+### 审计（三并行子代理独立验证 + 主线复核）
+
+- 覆盖四套打包体系：build-and-export-images.bat（Docker+远程部署）、build-images.sh（Docker/Linux）、deploy/build-windows.bat+btdeck-windows.spec+btdeck.iss（桌面/Inno）、deploy/build-linux.sh+btdeck.spec（Linux/fpm）。
+- 通过项：全部引用文件存在、bash -n/AST 语法、docker compose config、健康检查链路闭环（health.py:159 /health/ready ↔ Dockerfile ↔ nginx.conf:138 /health ↔ compose 字段级一致）、版本三处一致 v1.0.9、两个镜像 tar 为完整 OCI 归档（digest 全命中）且逐层扫描无 config.yaml/app.db、.dockerignore 对实际敏感文件全覆盖、spec 39 个 app.* hiddenimports 与实码对齐、W12 修复落实。
+- 异常（全修复）：①bat 明文 root SSH 密码/hostkey 已随 c603b0d 推送 origin/dev（github.com/strainhzj/BtDeck）②6/21 桌面构建残留内嵌旧密钥（EXE-00.toc 实证）③重试链到不了官方源 PROFILE_1 ④verify-package.py PATH-only 解析致打包校验必失败（临时 venv 实证）⑤打包 requirements 内嵌受 CVE-2024-47874 影响的 starlette 0.38.x ⑥btdeck.iss 卸载留孤儿服务 ⑦--unraid+--compose 参数误解析 ⑧backend/.env.example 真随机 SECRET_KEY 样值。
+
+### 修复（本会话，未提交）
+
+- build-and-export-images.bat：凭据外部化（.btdeck-deploy-credentials.bat，gitignore；模板 .example）；重试链官方源兜底（B_TRIED_OFFICIAL/B_OFFICIAL_TAIL 双标志，高保真仿真验证 2→3→1/3→1/1→2→3 且兜底恰一次——首版实现仿真捕获 1 失败后回环 bug 已修正）；--unraid 第三参数 -- 前缀守卫。
+- deploy/verify-package.py + analyze-package-size.py：find_archive_viewer()（sys.executable 同目录优先）；复现场景 not found→found 实证。
+- deploy/btdeck.iss：nssm remove 移入 usUninstall。
+- deploy/requirements-{windows,linux}-package.txt：fastapi 0.115.6 / starlette 0.41.3 / bcrypt ~=5.0.0 对齐 backend。
+- backend/.env.example：SECRET_KEY→占位符；删除 .docker_temp_482561487 + deploy/dist + deploy/build（约 720MB，含密钥残留）。
+
+### 遗留（人工）
+
+1. 【紧急】轮换 192.168.5.51 root 密码（凭据已在 GitHub origin/dev 历史暴露）；改用 SSH key 更佳。
+2. git filter-repo 清洗 c603b0d 中的密码/hostkey 后 force push（与既有密钥清洗遗留合并处理）。
+3. 打包链近期未实测：Docker 引擎离线未跑 docker build 全流程；桌面打包建议跑一次 deploy/build-windows.bat 验证 Inno 全链（本次修复已解除校验阻断）。
+4. 版本号三处维护（build-images.sh 动态 / build-linux.sh + btdeck.iss 硬编码）下次发版需手工同步，建议统一动态解析。
+
+
+### 2026-08-19 补记：git 历史清洗（已执行）
+
+- 范围：①build-and-export-images.bat 中的 root SSH 密码与 plink hostkey（--replace-text，c603b0d 引入）②backend/config/config.yaml 整路径（8 个历史版本中 7 个含真实 secret_key/login_status_secret，自根提交 8fe877d 起存在于 master+dev，c82f685 起已不再跟踪）。
+- 执行：git-filter-repo（--replace-text + --invert-paths --path + --replace-refs delete-no-add）；改写前提交修复 f3db8d6 并创建全量备份 bundle（仓库外 ../BtDeck-pre-history-clean-20260819.bundle，含旧历史，确认无误后可删）；435→434 提交（仅触及 config.yaml 的 e8e7784 变空被剪），根起全部哈希改变。
+- 验证：git log --all -S 密码/hostkey 与 config.yaml 路径全部为空；c603b0d/8fe877d 旧对象不可达（gc 已清）；工作树零改动；force push master+dev 后生效。
+- 后续注意：①所有既有 clone 需重新 clone（或 fetch+reset --hard origin/<branch>）②GitHub 服务端旧提交在 GC 前仍可能按 SHA 访问，必要时联系 GitHub support 加速回收③**历史清洗不等于未泄露——192.168.5.51 root 密码与历史 secret_key 仍需轮换**④备份 bundle 含泄露内容，仅作回滚用，确认后删除。
+
+
+## 2026-08-19（二）Windows 桌面发行版打包实测与契约数据缺失修复
+
+### 执行
+
+- 完整跑通 deploy/build-windows.bat：NSSM/npm/python 检查 → .venv-packaging（Python 3.12.4）→ npm ci + build → PyInstaller（btdeck-windows.spec）→ verify-package → analyze。安全对齐实证生效：pip 解析 starlette 0.41.3 + fastapi 0.115.14 + bcrypt 5.0.0。
+- Inno Setup 未安装（PATH 与默认目录均无 ISCC）→ setup.exe 安装包步骤按设计跳过；dist/btdeck.exe（64.9MB）产出。注：本仓库安装包格式为 Inno Setup 的 setup.exe，非 MSI。
+
+### 发现与修复（桌面打包真实缺陷）
+
+- 首次运行 exe 启动即崩：app/contracts/advanced_search.py:9 在 import 时读取 advanced_search_contract.json，而 spec datas 未打包该文件（frozen 下 FileNotFoundError 于 _MEIPASS）。修复：两个 spec datas 增加 contracts JSON + production_complete_schema.sql（后者供 init_schema_from_production 运维工具，非启动必需）。重建后归档内两文件确认存在。
+
+### 验证（重点两项均通过）
+
+- **前后端均在包内**：归档 287 个 frontend_dist 条目 + 契约 JSON；运行时 /health/live 返回 200 信封、/ 返回 BtDeck SPA index.html、chunk-vendors.js(1.06MB)/app.css(263KB) 均 200——前端由 exe 内 _MEIPASS/frontend_dist 经 factory._mount_frontend_static 服务，后端 PYZ 完整（API 实测可用），6 秒就绪。
+- **前端为独立窗口**：desktop_main.py 以 pywebview 创建 1280×820 原生窗口指向本地 5001；Get-Process 实测 MainWindowTitle="BtDeck"、MainWindowHandle=264442（onefile 双进程中 GUI 进程持窗）。BTDECK_DESKTOP_WINDOW 环境变量可强制有窗/无窗模式。
+- 测试后已 taskkill 并清理 dist/ 下首启生成的 config 等目录。
+
+### 遗留
+
+1. setup.exe 安装包：安装 Inno Setup 6 后重跑 bat 第 3 步即可（或给 bat 补默认安装路径探测）。
+2. 体积优化：前端 sourcemap（.map）被整体打包（ts.worker.js.map 未压缩 13MB 等），关闭 productionSourceMap 或打包前剔除可显著缩包。
+3. spec 修改与本文档未提交（待用户指示）。
+
+
+## 2026-08-19（三）桌面版 "Redirected when going from ..." 杂音根因与修复
+
+### 现象与根因链（全链实证）
+
+- 用户报告：登录后出现错误 "Redirected when going from \"/login?redirect=%2Fdashboard\" to \"/dashboard\" via a navigation guard."
+- 该文本是 vue-router 3.1+ 的 NavigationFailure 内部消息：守卫把导航改道时，原 push 以 rejected promise 结算。触发场景 = 强制改密守卫（admin.must_change_password=1，DB 实证）：登录成功 → push('/dashboard') → 守卫改道 /settings/index。
+- 显示链路：login/index.vue:214-220 把 router.push 与登录请求包在同一 try/catch，catch 中 error instanceof Error 为真（NavigationFailure 继承 Error）→ $message.error 原样弹 vue-router 内部英文消息。导航本身正常完成（用户已被送达设置页），纯 UI 杂音。
+- 排除项：后端零 30x（代码级）；前端 bundle 不含该渲染字符串（含 sourcemap 全扫，唯一命中是 monaco 源码注释）；运行实例端口/健康正常、系统代理禁用。
+
+### 修复（frontend/src/router.ts，扩展既有实例级补丁）
+
+- 原有补丁只吞 NavigationDuplicated 且未覆盖 replace；现 push/replace 统一用 isNavigationFailure 判定（redirected/aborted/duplicated/cancelled 全覆盖）resolve 之，真实异常仍上抛。守卫控制流不再泄漏为 UI 错误。
+
+### 验证
+
+- 新增回归 spec tests/unit/router-navigation-failure.spec.ts（3 用例：redirected push/replace 静默且落点正确、aborted 静默）；permission-guard/force-change-deadlock/session + 新 spec 共 4 套件 34 用例全绿；tsc --noEmit、npm run lint 通过；前端重建 + PyInstaller 重打包（20:09）+ verify-package 通过。注意：正在运行的旧实例（用户会话）需重启 exe 后生效。
+
+## 2026-08-20 种子信息同步辅种数量
+
+### 用户确认语义
+
+- 辅种匹配键仅为 `name + size`，允许跨下载器、跨同步任务统计；`.torrent` 文件名和下载路径差异不影响同组判断。
+- 外部参考库 `E:\Users\huangzj\Desktop\app.db` 只读取证：该名称共 45 条、有效 31 条，`torrent_file` 有 45 个不同值，但有效行缓存分布为 `auxiliary_seed_count=1` 共 31 条；按 `name + size` 刷新后应全部为 31。
+- 不在种子列表查询时实时分组；由种子信息同步任务全量计算并写入 `torrent_info.auxiliary_seed_count`。没有有效辅种键或没有辅种数据时显示 1。
+
+### 已实施
+
+- Alembic `975dad435c03` 新增 NOT NULL Integer `auxiliary_seed_count`，历史数据默认 1。
+- 同步任务完成后全量校正当前有效行（`dr=0` 且未进入回收站）的辅种数量；列表 API 只读取已持久化字段。
+- 等级 1/2/3 删除、种子转移成功删除源行、回收站还原均维护对应分组的缓存数量；下一次同步任务可修复任何异常中断或历史脏数据。
+- 普通列表与传统列表均新增“辅种数量”列，并兼容后端 snake_case/camelCase 字段。
+
+### 验证
+
+- 后端回归加固后：辅种服务+种子转移 24 passed；删除等级1/2/3+回收站还原 42 passed；同步任务+列表 API 52 passed（定向合计 118 passed）；数据库迁移/回滚/生产库形状 35 passed。
+- 新增边界保护：无效 `name/size` 不生成匹配键；等级3 移动失败不扣减数量；回收站还原将有效分组恢复为新总数；转移场景使用不同 `.torrent` 文件验证只按 `name + size`；同步数量校正失败不覆盖原同步结果；列表响应锁定 `auxiliarySeedCount` camelCase。
+- 前端普通/传统列表辅种数量渲染回归加入后，选定单元测试 102 passed；typecheck、lint、生产 build 通过（仅既有 Sass/资源体积警告）。
+- `git diff --check` 通过；本轮补测后执行 Git 提交与推送，未部署。
+
+
+## 2026-08-20 Linux 安装包全链路验证（Docker 容器模拟 Debian 12）与三项修复
+
+### 环境与方法
+
+- node:18.20.1-slim 容器（Bookworm，装 python3.11/venv/binutils/libpython3.11/ruby+fpm），源码快照经 docker cp 传入；镜像源环境变量与 Docker 构建参数对齐（npmmirror/aliyun pypi/apt）。
+- 最终完整跑通 deploy/build-linux.sh：venv → npm ci + 前端构建 → PyInstaller（btdeck.spec）→ verify-package 全 PASS → fpm deb/rpm 构建成功；产物 dist/btdeck（ELF x86-64, 73.6MB）、BtDeck-v1.0.9-linux-amd64.deb/.rpm（各 73MB）。
+
+### 发现与修复（本会话 4 项）
+
+1. 【工作区隐患】deploy/build-linux.sh、start.sh、btdeck.service 工作区为陈旧 CRLF 检出（.gitattributes 已 eol=lf 但 git 不重写既有文件；索引本身 LF，Linux 全新 clone 无恙）——本机拷贝到 Linux 即 "$
+" 报错。已本地强制重检出修复；同集合共 83 文件（其余为 .py，CRLF 无害），未逐一处理。
+2. 【仓库缺陷·已修】verify-package.py/analyze-package-size.py 的 find_archive_viewer 在 Linux 失效：venv bin/python3 是符号链接，Path(sys.executable).resolve() 跳到 /usr/bin。改用 sys.prefix（venv 根，不经软链）优先 + 未 resolve 的同级目录次之 + which 兜底。
+3. 【仓库缺陷·已修·关键】ALLOWED_HOSTS 环境变量格式：btdeck.service 的 Environment= 与 postinst 生成的 btdeck.env 均为逗号分隔，而 pydantic-settings 对 List[str] 在校验器之前强制 JSON 解析 → 安装后启动即 SettingsError 崩溃循环（A/B 实证：逗号格式崩溃 / JSON 格式健康）。两处改为 JSON 数组（与 desktop_main.py 一致）。
+4. 【脚本健壮性·已修】fpm 拒绝覆盖已存在输出 → 重复构建 fatal；两处 fpm 加 --force。
+
+### 验证结果
+
+- deb 全新容器 dpkg -i：exit 0，postinst 建系统用户 btdeck、/opt/btdeck 五个 ReadWritePaths 目录、600 权限 btdeck.env（SECRET_KEY 随机 + JSON ALLOWED_HOSTS）、chown 正确；systemd 缺失时优雅降级提示。
+- 以 btdeck 用户 + env 文件 + DEV=false 启动（Python 干净环境复刻 systemd 传参）：/health/live 200 信封、/ 200 SPA（title BtDeck）。
+- systemd 单元内容/行尾核对：LF 干净、硬化段（NoNewPrivileges/ProtectSystem=strict/ReadWritePaths）完整。
+
+### 遗留与注意
+
+1. 二进制为 Bookworm（glibc 2.36）构建：仅适用 Debian 12+/Ubuntu 22.04+ 级别发行版；老系统需对应环境重构建。
+2. PyInstaller 每次输出 "Hidden import 'transmissionrpc' not found"（spec 列了 transmission_rpc 旧名，未安装即非致命告警）——建议 spec 删除该旧条目。
+3. build-linux.sh 环境前置：binutils/libpython3.11/ruby+fpm 无预检，干净 Debian 需先 apt 安装；建议脚本头部注释说明或加预检。
+4. 深层建议：后端 List[str] 环境变量强制 JSON 的语义与 .env.example/compose 文档的逗号指引相悖，可考虑 NoDecode 注解统一兼容（涉及核心配置，另行评估）。

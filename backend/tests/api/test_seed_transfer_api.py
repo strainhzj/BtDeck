@@ -189,7 +189,7 @@ class TestDownloaderNotFound:
         engine, _ = async_engine_factory
         logs = await _count_audit(engine, status="failed")
         assert logs[0].info_hash == "b" * 40
-        assert logs[0].username == "admin", "endpoint 硬编码 username=admin"
+        assert logs[0].username == "tester", "转移审计使用真实登录用户（修复硬编码 admin）"
         assert logs[0].target_path == "/downloads/movies"
 
 

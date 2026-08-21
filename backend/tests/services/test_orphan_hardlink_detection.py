@@ -10,6 +10,7 @@ I 组：隔离区删除的硬链接副本检测与处理。
 4. 平台兜底：inode 不可靠时立即删除照删（缺诊断），到期删除保守跳过。
 """
 
+import json
 import os
 from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -17,13 +18,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.models.orphan_file import OrphanCurrentCandidate, OrphanFile, OrphanScanResult
+from app.models.orphan_hardlink_copy import OrphanHardlinkCopyResult
 from app.services.orphan_file_service import OrphanFileService
-from app.services.orphan_manifest import ManifestSnapshot, ScanPathSelection, normalize_path
+from app.services.orphan_manifest import ManifestSnapshot, normalize_path
 from app.services.orphan_quarantine import (
     find_hardlink_copies,
     find_hardlink_paths,
     get_hardlink_copy_count,
 )
+from app.utils.datetime_utils import serialize_utc_datetime
 
 pytestmark = pytest.mark.asyncio
 
@@ -194,21 +197,20 @@ class TestHardlinkCopyCount:
         os.link(target, tmp_path / "copy-2.mkv")
         assert get_hardlink_copy_count(str(target)) == 2
 
-    async def test_list_and_folder_rows_include_copy_count(self, async_orphan_db, tmp_path):
-        """扁平行返回实时数量，文件夹行汇总子文件；不可访问文件不误报为 0。"""
-        data_dir = tmp_path / "data"
-        library_dir = tmp_path / "library"
-        missing_dir = tmp_path / "missing"
-        data_dir.mkdir()
-        library_dir.mkdir()
+    async def test_list_and_folder_rows_include_copy_count(self, async_orphan_db, monkeypatch):
+        """扁平行/子文件行直出明细快照列；列表链路不再触发文件系统 stat。"""
+        linked = "D:/data/linked.mkv"
+        solo = "D:/data/solo.mkv"
+        missing = "D:/missing/gone.mkv"
 
-        linked = data_dir / "linked.mkv"
-        linked.write_bytes(b"linked")
-        os.link(linked, library_dir / "linked-copy.mkv")
+        # 性能契约：列表链路不得触碰文件系统（副本数来自扫描时落库的快照列）
+        def _no_stat(*args, **kwargs):  # pragma: no cover - 触发即失败
+            raise AssertionError("列表链路不应执行实时 stat")
 
-        solo = data_dir / "solo.mkv"
-        solo.write_bytes(b"solo")
-        missing = missing_dir / "gone.mkv"
+        monkeypatch.setattr(
+            "app.services.orphan_file_service.get_hardlink_copy_count",
+            _no_stat,
+        )
 
         scan = OrphanScanResult(
             scan_id="scan_hardlink_count",
@@ -225,24 +227,27 @@ class TestHardlinkCopyCount:
             [
                 OrphanFile(
                     scan_id=scan.scan_id,
-                    file_path=str(linked),
+                    file_path=linked,
                     file_size=6,
                     downloader_id="dl_001",
-                    canonical_path=normalize_path(str(linked)),
+                    canonical_path=normalize_path(linked),
+                    hardlink_copy_count=1,
                 ),
                 OrphanFile(
                     scan_id=scan.scan_id,
-                    file_path=str(solo),
+                    file_path=solo,
                     file_size=4,
                     downloader_id="dl_001",
-                    canonical_path=normalize_path(str(solo)),
+                    canonical_path=normalize_path(solo),
+                    hardlink_copy_count=0,
                 ),
                 OrphanFile(
                     scan_id=scan.scan_id,
-                    file_path=str(missing),
+                    file_path=missing,
                     file_size=7,
                     downloader_id="dl_001",
-                    canonical_path=normalize_path(str(missing)),
+                    canonical_path=normalize_path(missing),
+                    hardlink_copy_count=None,
                 ),
             ]
         )
@@ -251,36 +256,51 @@ class TestHardlinkCopyCount:
         service = OrphanFileService(async_orphan_db)
         flat_result = await service.get_orphan_list(page=1, page_size=20)
         by_path = {item["file_path"]: item for item in flat_result["list"]}
-        assert by_path[str(linked)]["hardlink_copy_count"] == 1
-        assert by_path[str(solo)]["hardlink_copy_count"] == 0
-        assert by_path[str(missing)]["hardlink_copy_count"] is None
+        assert by_path[linked]["hardlink_copy_count"] == 1
+        assert by_path[solo]["hardlink_copy_count"] == 0
+        assert by_path[missing]["hardlink_copy_count"] is None
 
         grouped_result = await service.get_orphan_list_grouped(page=1, page_size=20)
         folder = next(item for item in grouped_result["list"] if item.get("_is_folder"))
-        assert folder["hardlink_copy_count"] == 1
-        child_counts = {item["file_path"]: item["hardlink_copy_count"] for item in folder["children"]}
-        assert child_counts == {str(linked): 1, str(solo): 0}
+        assert folder["hardlink_copy_count"] is None
+        assert folder["children"] == []
+
+        children_result = await service.get_orphan_folder_children(
+            folder["folder_path"],
+            page=1,
+            page_size=20,
+        )
+        child_counts = {item["file_path"]: item["hardlink_copy_count"] for item in children_result["list"]}
+        assert child_counts == {linked: 1, solo: 0}
 
 
 class TestHardlinkCopyLocations:
-    """点击副本数量时按需定位已配置扫描目录内的其它硬链接路径。"""
+    """点击副本数量时只读定时预扫描落库结果；接口层不做任何目录遍历。"""
 
-    async def test_returns_found_and_unlocated_copy_counts(self, async_orphan_db, tmp_path):
-        """扫描全部已配置根，返回完整路径，并区分范围外及不可访问副本。"""
+    def test_service_module_no_longer_imports_traversal(self):
+        """性能契约：交互链路（服务与端点）不得引入整体遍历函数（遍历只在定时任务内）。"""
+        import app.api.endpoints.orphan_files as orphan_endpoint_module
+        import app.services.orphan_file_service as orphan_file_service_module
+
+        assert not hasattr(orphan_file_service_module, "collect_runtime_accessible_roots")
+        assert not hasattr(orphan_file_service_module, "find_hardlink_paths")
+        assert not hasattr(orphan_endpoint_module, "collect_runtime_accessible_roots")
+        assert not hasattr(orphan_endpoint_module, "find_hardlink_paths")
+
+    async def test_reads_stored_results_with_live_count_and_pending_scan(self, async_orphan_db, tmp_path):
+        """已预扫描的身份返回过滤自身后的路径与扫描时间；未覆盖的标记待预扫描。"""
         source_root = tmp_path / "downloads"
         other_root = tmp_path / "library"
-        outside_root = tmp_path / "outside"
         source_root.mkdir()
         other_root.mkdir()
-        outside_root.mkdir()
 
         linked = source_root / "linked.mkv"
         linked.write_bytes(b"linked")
-        configured_copy = other_root / "linked-copy.mkv"
-        os.link(linked, configured_copy)
-        outside_copy = outside_root / "linked-outside.mkv"
-        os.link(linked, outside_copy)
-
+        stored_copy = other_root / "linked-copy.mkv"
+        os.link(linked, stored_copy)
+        pending = source_root / "pending.mkv"
+        pending.write_bytes(b"pending")
+        os.link(pending, other_root / "pending-copy.mkv")
         solo = source_root / "solo.mkv"
         solo.write_bytes(b"solo")
         missing = source_root / "gone.mkv"
@@ -299,6 +319,13 @@ class TestHardlinkCopyLocations:
             downloader_id="dl_001",
             canonical_path=normalize_path(str(linked)),
         )
+        pending_detail = OrphanFile(
+            scan_id=scan.scan_id,
+            file_path=str(pending),
+            file_size=7,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(pending)),
+        )
         solo_detail = OrphanFile(
             scan_id=scan.scan_id,
             file_path=str(solo),
@@ -313,127 +340,70 @@ class TestHardlinkCopyLocations:
             downloader_id="dl_001",
             canonical_path=normalize_path(str(missing)),
         )
-        async_orphan_db.add_all([linked_detail, solo_detail, missing_detail])
+        linked_stat = os.stat(linked)
+        scanned_at = datetime.utcnow()
+        async_orphan_db.add_all(
+            [
+                linked_detail,
+                pending_detail,
+                solo_detail,
+                missing_detail,
+                # 预扫描落库结果：存储层保留源路径本身，展示端按请求文件过滤
+                OrphanHardlinkCopyResult(
+                    device_id=str(int(linked_stat.st_dev)),
+                    inode_id=int(linked_stat.st_ino),
+                    copy_count=1,
+                    found_count=2,
+                    copies_json=json.dumps([os.path.realpath(str(linked)), os.path.realpath(str(stored_copy))]),
+                    scanned_at=scanned_at,
+                ),
+            ]
+        )
         await async_orphan_db.commit()
 
-        selection = ScanPathSelection(
-            scan_roots=(
-                (normalize_path(str(source_root)), frozenset({"dl_001"})),
-                (normalize_path(str(other_root)), frozenset({"dl_002"})),
-            )
-        )
         service = OrphanFileService(async_orphan_db)
-        with patch(
-            "app.services.orphan_file_service.collect_scan_path_selection",
-            return_value=selection,
-        ):
-            result = await service.get_hardlink_copy_locations(
-                [linked_detail.id, solo_detail.id, missing_detail.id, 999999]
-            )
+        result = await service.get_hardlink_copy_locations(
+            [linked_detail.id, pending_detail.id, solo_detail.id, missing_detail.id, 999999]
+        )
 
-        assert result["requested_count"] == 4
-        assert result["resolved_count"] == 3
+        assert result["requested_count"] == 5
+        assert result["resolved_count"] == 4
         assert result["missing_orphan_ids"] == [999999]
         assert result["total_copy_count"] == 2
         assert result["total_found_count"] == 1
         assert result["total_unlocated_count"] == 1
         assert result["unknown_count"] == 1
-        assert result["searched_root_count"] == 2
+        assert result["scanned_count"] == 1
+        assert result["pending_scan_count"] == 1
         assert result["search_error"] is None
 
         by_id = {item["orphan_id"]: item for item in result["items"]}
         linked_item = by_id[linked_detail.id]
-        assert linked_item["copy_count"] == 2
+        assert linked_item["copy_count"] == 1
         assert linked_item["found_count"] == 1
-        assert linked_item["unlocated_count"] == 1
-        assert linked_item["copies"] == [os.path.realpath(configured_copy)]
+        assert linked_item["unlocated_count"] == 0
+        assert linked_item["copies"] == [os.path.realpath(str(stored_copy))]
+        assert linked_item["pending_scan"] is False
+        assert linked_item["result_truncated"] is False
+        assert linked_item["scanned_at"] == serialize_utc_datetime(scanned_at)
         assert linked_item["error"] is None
+
+        pending_item = by_id[pending_detail.id]
+        assert pending_item["copy_count"] == 1
+        assert pending_item["copies"] == []
+        assert pending_item["pending_scan"] is True
+        assert pending_item["scanned_at"] is None
+        assert pending_item["unlocated_count"] == 1
 
         assert by_id[solo_detail.id]["copy_count"] == 0
         assert by_id[solo_detail.id]["copies"] == []
+        assert by_id[solo_detail.id]["pending_scan"] is False
         assert by_id[missing_detail.id]["copy_count"] is None
         assert by_id[missing_detail.id]["unlocated_count"] is None
         assert by_id[missing_detail.id]["error"] == "源文件不可访问，无法重新核对副本位置"
 
-    async def test_multiple_positive_sources_share_one_bulk_scan(self, async_orphan_db, tmp_path):
-        """文件夹批量查询去重 ID，并把多个 inode 合并为一次配置目录遍历。"""
-        source_root = tmp_path / "downloads"
-        copy_root = tmp_path / "library"
-        source_root.mkdir()
-        copy_root.mkdir()
-
-        first = source_root / "first.mkv"
-        first.write_bytes(b"first")
-        first_copy = copy_root / "first-copy.mkv"
-        os.link(first, first_copy)
-
-        second = source_root / "second.mkv"
-        second.write_bytes(b"second")
-        second_copy = copy_root / "second-copy.mkv"
-        os.link(second, second_copy)
-
-        scan = OrphanScanResult(
-            scan_id="scan_hardlink_bulk_locations",
-            scan_time=datetime.utcnow(),
-            scan_type="manual",
-            status="completed",
-        )
-        first_detail = OrphanFile(
-            scan_id=scan.scan_id,
-            file_path=str(first),
-            file_size=5,
-            downloader_id="dl_001",
-            canonical_path=normalize_path(str(first)),
-        )
-        second_detail = OrphanFile(
-            scan_id=scan.scan_id,
-            file_path=str(second),
-            file_size=6,
-            downloader_id="dl_001",
-            canonical_path=normalize_path(str(second)),
-        )
-        async_orphan_db.add_all([scan, first_detail, second_detail])
-        await async_orphan_db.commit()
-
-        selection = ScanPathSelection(
-            scan_roots=(
-                (normalize_path(str(source_root)), frozenset({"dl_001"})),
-                (normalize_path(str(copy_root)), frozenset({"dl_002"})),
-            )
-        )
-        service = OrphanFileService(async_orphan_db)
-        with (
-            patch(
-                "app.services.orphan_file_service.collect_scan_path_selection",
-                return_value=selection,
-            ),
-            patch(
-                "app.services.orphan_file_service.find_hardlink_paths",
-                wraps=find_hardlink_paths,
-            ) as bulk_lookup,
-        ):
-            result = await service.get_hardlink_copy_locations([first_detail.id, first_detail.id, second_detail.id])
-
-        bulk_lookup.assert_called_once()
-        target_inodes, scan_roots = bulk_lookup.call_args.args
-        expected_inodes = {
-            (int(os.stat(first).st_dev), int(os.stat(first).st_ino)),
-            (int(os.stat(second).st_dev), int(os.stat(second).st_ino)),
-        }
-        assert target_inodes == expected_inodes
-        assert set(scan_roots) == {root for root, _owners in selection.scan_roots}
-
-        assert result["requested_count"] == 2
-        assert result["resolved_count"] == 2
-        assert result["total_copy_count"] == 2
-        assert result["total_found_count"] == 2
-        assert result["total_unlocated_count"] == 0
-        by_id = {item["orphan_id"]: item for item in result["items"]}
-        assert by_id[first_detail.id]["copies"] == [os.path.realpath(first_copy)]
-        assert by_id[second_detail.id]["copies"] == [os.path.realpath(second_copy)]
-
-    async def test_scan_failure_keeps_live_count_as_unlocated(self, async_orphan_db, tmp_path):
-        """配置目录扫描失败时不伪造路径，实时副本总数全部转为未定位并返回错误。"""
+    async def test_result_read_failure_keeps_live_count_as_unlocated(self, async_orphan_db, tmp_path):
+        """结果表读取失败时不伪造路径，实时副本总数全部转为未定位并返回错误。"""
         source_root = tmp_path / "downloads"
         source_root.mkdir()
         source = source_root / "linked.mkv"
@@ -456,24 +426,16 @@ class TestHardlinkCopyLocations:
         async_orphan_db.add_all([scan, detail])
         await async_orphan_db.commit()
 
-        selection = ScanPathSelection(scan_roots=((normalize_path(str(source_root)), frozenset({"dl_001"})),))
         service = OrphanFileService(async_orphan_db)
-        with (
-            patch(
-                "app.services.orphan_file_service.collect_scan_path_selection",
-                return_value=selection,
-            ),
-            patch(
-                "app.services.orphan_file_service.find_hardlink_paths",
-                side_effect=OSError("storage offline"),
-            ) as bulk_lookup,
+        with patch.object(
+            OrphanFileService,
+            "_load_hardlink_copy_results",
+            side_effect=RuntimeError("db offline"),
         ):
             result = await service.get_hardlink_copy_locations([detail.id])
 
-        bulk_lookup.assert_called_once()
-        expected_error = "已配置下载目录扫描失败，未能完整定位副本位置"
+        expected_error = "副本定位结果读取失败，请稍后重试"
         assert result["search_error"] == expected_error
-        assert result["searched_root_count"] == 1
         assert result["total_copy_count"] == 1
         assert result["total_found_count"] == 0
         assert result["total_unlocated_count"] == 1
@@ -481,8 +443,8 @@ class TestHardlinkCopyLocations:
         assert result["items"][0]["unlocated_count"] == 1
         assert result["items"][0]["error"] == expected_error
 
-    async def test_zero_copy_does_not_scan_configured_roots(self, async_orphan_db, tmp_path):
-        """列表变更为零副本时直接返回，不做无意义的目录遍历。"""
+    async def test_zero_copy_skips_result_lookup(self, async_orphan_db, tmp_path):
+        """列表变更为零副本时不查结果表，直接返回实时 0。"""
         source = tmp_path / "solo.mkv"
         source.write_bytes(b"solo")
         scan = OrphanScanResult(
@@ -502,12 +464,13 @@ class TestHardlinkCopyLocations:
         await async_orphan_db.commit()
 
         service = OrphanFileService(async_orphan_db)
-        with patch("app.services.orphan_file_service.collect_scan_path_selection") as collect_roots:
+        with patch.object(OrphanFileService, "_load_hardlink_copy_results") as load_results:
             result = await service.get_hardlink_copy_locations([detail.id])
 
-        collect_roots.assert_not_called()
+        load_results.assert_not_called()
         assert result["total_copy_count"] == 0
         assert result["total_found_count"] == 0
+        assert result["pending_scan_count"] == 0
         assert result["items"][0]["copies"] == []
 
 
@@ -819,3 +782,465 @@ class TestPurgeExpiredDelayRetry:
         assert result.get("purged_count", 0) == 1, "无副本应正常删除"
         await async_orphan_db.refresh(candidate)
         assert candidate.purge_delay_count == 0, f"无副本删除 count 应保持 0: {candidate.purge_delay_count}"
+
+
+# ==================== 硬链接副本删除（弹窗交互） ====================
+
+
+class _DeleteFixture:
+    """delete_hardlink_copies 测试数据快照。"""
+
+    scan_seq = 0
+
+    def __init__(self, detail, source, copies, stored):
+        self.detail = detail
+        self.source = source
+        self.copies = copies
+        self.stored = stored
+
+
+async def _make_delete_fixture(
+    async_orphan_db,
+    tmp_path,
+    *,
+    copy_names=("copy-a.mkv",),
+    candidate_status="candidate",
+    operation_state="stable",
+    with_prescan=True,
+):
+    """构造候选态孤儿 + 真实硬链接副本 + 预扫描结果行。
+
+    copies_json 按存储层语义包含源路径本身（展示端按请求文件过滤）。
+    """
+    source_dir = tmp_path / "downloads"
+    copy_dir = tmp_path / "library"
+    source_dir.mkdir(parents=True, exist_ok=True)
+    copy_dir.mkdir(parents=True, exist_ok=True)
+
+    source = source_dir / "source.mkv"
+    source.write_bytes(b"payload")
+    copies = []
+    for name in copy_names:
+        copy_path = copy_dir / name
+        os.link(source, copy_path)
+        copies.append(copy_path)
+
+    _DeleteFixture.scan_seq += 1
+    scan = OrphanScanResult(
+        scan_id=f"scan_hardlink_delete_{_DeleteFixture.scan_seq}",
+        scan_time=datetime.utcnow(),
+        scan_type="manual",
+        status="completed",
+    )
+    source_stat = os.stat(source)
+    detail = OrphanFile(
+        scan_id=scan.scan_id,
+        file_path=str(source),
+        file_size=7,
+        downloader_id="dl_001",
+        canonical_path=normalize_path(str(source)),
+    )
+    candidate = OrphanCurrentCandidate(
+        canonical_path=normalize_path(str(source)),
+        downloader_id="dl_001",
+        first_seen_at=datetime.utcnow() - timedelta(days=1),
+        last_seen_at=datetime.utcnow(),
+        status=candidate_status,
+        operation_state=operation_state,
+        file_size=7,
+        mtime_ns=source_stat.st_mtime_ns,
+        device_id=str(source_stat.st_dev),
+        inode=str(source_stat.st_ino),
+    )
+    async_orphan_db.add_all([scan, detail, candidate])
+
+    stored = None
+    if with_prescan:
+        stored = OrphanHardlinkCopyResult(
+            device_id=str(source_stat.st_dev),
+            inode_id=int(source_stat.st_ino),
+            copy_count=len(copies),
+            found_count=len(copies) + 1,
+            copies_json=json.dumps([os.path.realpath(str(source))] + [os.path.realpath(str(c)) for c in copies]),
+            truncated=0,
+            scan_note=None,
+            scanned_at=datetime.utcnow(),
+        )
+        async_orphan_db.add(stored)
+    await async_orphan_db.commit()
+    return _DeleteFixture(detail, source, copies, stored)
+
+
+def _empty_whitelist(monkeypatch, dirs=None):
+    """隔离真实 DB：种子目录白名单替换为受控集合。"""
+    from app.services.orphan_manifest import DirectoryWhitelist
+
+    controlled = DirectoryWhitelist(dirs=set(dirs or []))
+    monkeypatch.setattr(
+        "app.services.orphan_file_service.collect_torrent_directory_whitelist",
+        lambda session_factory, downloader_ids=None: controlled,
+    )
+    return controlled
+
+
+class TestHardlinkCopyDelete:
+    """弹窗删除副本：逐路径 fail-closed，tombstone 三段式，共享 inode/种子目录拒绝。"""
+
+    async def test_delete_refreshes_sibling_details_sharing_inode(self, async_orphan_db, tmp_path, monkeypatch):
+        """删除副本后共享同一 inode 的全部孤儿明细快照列同步刷新（防兄弟行残留偏大）。"""
+        from sqlalchemy import select
+
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, copy_names=("a.mkv", "b.mkv"))
+        _empty_whitelist(monkeypatch)
+
+        source_stat = os.stat(fixture.source)
+        sibling = tmp_path / "downloads" / "sibling.mkv"
+        os.link(fixture.source, sibling)
+        sibling_detail = OrphanFile(
+            scan_id=fixture.detail.scan_id,
+            file_path=str(sibling),
+            file_size=7,
+            downloader_id="dl_001",
+            canonical_path=normalize_path(str(sibling)),
+            hardlink_copy_count=3,
+        )
+        sibling_candidate = OrphanCurrentCandidate(
+            canonical_path=normalize_path(str(sibling)),
+            downloader_id="dl_001",
+            first_seen_at=datetime.utcnow() - timedelta(days=1),
+            last_seen_at=datetime.utcnow(),
+            status="candidate",
+            operation_state="stable",
+            file_size=7,
+            device_id=str(source_stat.st_dev),
+            inode=str(source_stat.st_ino),
+        )
+        fixture.detail.hardlink_copy_count = 3
+        async_orphan_db.add_all([sibling_detail, sibling_candidate])
+        await async_orphan_db.flush()
+        sibling_candidate.current_detail_id = sibling_detail.id
+        source_candidate = (
+            await async_orphan_db.execute(
+                select(OrphanCurrentCandidate).where(
+                    OrphanCurrentCandidate.canonical_path == normalize_path(str(fixture.source))
+                )
+            )
+        ).scalar_one()
+        source_candidate.current_detail_id = fixture.detail.id
+        await async_orphan_db.commit()
+
+        copy_a = os.path.realpath(str(fixture.copies[0]))
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_a],
+            operator="tester",
+            audit_service=AsyncMock(),
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+        assert result["success_count"] == 1
+
+        # 删除前 4 个链接（源 + a + b + sibling），删 a 后剩 3 个 → 副本数 2；
+        # 两个明细（含共享 inode 的兄弟）都被刷成同一个权威值。
+        await async_orphan_db.refresh(fixture.detail)
+        await async_orphan_db.refresh(sibling_detail)
+        assert fixture.detail.hardlink_copy_count == 2
+        assert sibling_detail.hardlink_copy_count == 2
+
+    async def test_deletes_copy_updates_result_row_and_audits(self, async_orphan_db, tmp_path, monkeypatch):
+        """happy path：副本目录项被删、源文件与数据完好、结果行/审计同步更新。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, copy_names=("a.mkv", "b.mkv"))
+        _empty_whitelist(monkeypatch)
+        copy_a = os.path.realpath(str(fixture.copies[0]))
+        source_real = os.path.realpath(str(fixture.source))
+        audit_service = AsyncMock()
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_a],
+            operator="tester",
+            audit_service=audit_service,
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 1
+        assert result["failed_count"] == 0
+        assert result["copy_count"] == 1  # 2 副本删 1 个
+        assert not os.path.exists(copy_a)
+        assert os.path.exists(source_real)
+        with open(source_real, "rb") as f:
+            assert f.read() == b"payload"
+        assert os.stat(source_real).st_nlink == 2  # 源 + 剩余副本
+
+        stored = fixture.stored
+        await async_orphan_db.refresh(stored)
+        assert json.loads(stored.copies_json) == [source_real, os.path.realpath(str(fixture.copies[1]))]
+        assert stored.found_count == 2
+        assert stored.copy_count == 1
+
+        audit_service.log_operation.assert_awaited_once()
+        kwargs = audit_service.log_operation.await_args.kwargs
+        assert kwargs["operation_type"] == "orphan_hardlink_copy_delete"
+        assert kwargs["operation_detail"]["deleted_paths"] == [copy_a]
+
+    async def test_rejects_shared_inode_candidate_paths(self, async_orphan_db, tmp_path, monkeypatch):
+        """共享同一 inode 的其它孤儿源路径不可作为副本删除（防删孤儿 B 本身）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+        # 孤儿 B：同身份候选，canonical_path 指向弹窗中的"副本"路径
+        source_stat = os.stat(fixture.source)
+        async_orphan_db.add(
+            OrphanCurrentCandidate(
+                canonical_path=normalize_path(copy_real),
+                downloader_id="dl_002",
+                first_seen_at=datetime.utcnow(),
+                last_seen_at=datetime.utcnow(),
+                status="candidate",
+                operation_state="stable",
+                file_size=7,
+                mtime_ns=source_stat.st_mtime_ns,
+                device_id=str(source_stat.st_dev),
+                inode=str(source_stat.st_ino),
+            )
+        )
+        await async_orphan_db.commit()
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "孤儿文件" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real), "同 inode 孤儿源路径必须原样保留"
+
+    async def test_rejects_paths_not_in_stored_results(self, async_orphan_db, tmp_path, monkeypatch):
+        """请求路径必须与返回前端的 copies 原始字符串一致（防任意路径注入）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        unrelated = tmp_path / "unrelated.mkv"
+        unrelated.write_bytes(b"unrelated")
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [str(unrelated)],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "不一致" in result["failed_list"][0]["reason"]
+        assert os.path.exists(unrelated)
+        assert os.path.exists(str(fixture.copies[0])), "无关路径被拒不得影响真实副本"
+
+    async def test_rejects_seed_directory_copies(self, async_orphan_db, tmp_path, monkeypatch):
+        """副本位于种子目录（save 根或种子子目录）内时拒绝删除。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+        _empty_whitelist(monkeypatch, dirs=[normalize_path(str(tmp_path / "library"))])
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "种子目录" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real)
+
+    async def test_seed_whitelist_failure_fails_closed(self, async_orphan_db, tmp_path, monkeypatch):
+        """种子目录白名单加载失败时整体拒绝（fail-closed）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+
+        def _boom(session_factory, downloader_ids=None):
+            raise RuntimeError("db down")
+
+        monkeypatch.setattr("app.services.orphan_file_service.collect_torrent_directory_whitelist", _boom)
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "白名单加载失败" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real)
+
+    async def test_rejects_quarantine_and_recycle_markers(self, async_orphan_db, tmp_path, monkeypatch):
+        """隔离区/回收站标记路径拒绝（纵深防御，标记检查先于文件系统访问）。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        fake_quarantine = str(tmp_path / ".btdeck_quarantine" / "x" / "a.mkv")
+        fake_recycle = str(tmp_path / "downloads" / "movie.pending_delete" / "a.mkv")
+        stored = fixture.stored
+        stored.copies_json = json.dumps([os.path.realpath(str(fixture.source)), fake_quarantine, fake_recycle])
+        await async_orphan_db.commit()
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [fake_quarantine, fake_recycle],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        reasons = [item["reason"] for item in result["failed_list"]]
+        assert any("隔离区" in reason for reason in reasons)
+        assert any("回收站" in reason for reason in reasons)
+
+    async def test_identity_mismatch_keeps_file(self, async_orphan_db, tmp_path, monkeypatch):
+        """副本被替换为普通文件时身份校验失败，替换文件必须原样保留。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        copy_path = fixture.copies[0]
+        copy_real = os.path.realpath(str(copy_path))
+        os.remove(copy_path)
+        copy_path.write_bytes(b"replaced")  # 同路径新文件（不同 inode）
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "身份" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_path)
+        with open(copy_path, "rb") as f:
+            assert f.read() == b"replaced"
+
+    async def test_inaccessible_source_fails_all(self, async_orphan_db, tmp_path, monkeypatch):
+        """源文件不可访问时无法校验身份，全部拒绝。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        _empty_whitelist(monkeypatch)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+        os.remove(fixture.source)
+        os.remove(fixture.copies[0])
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_real],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "源文件不可访问" in result["failed_list"][0]["reason"]
+
+    async def test_candidate_state_gate(self, async_orphan_db, tmp_path, monkeypatch):
+        """quarantined / purge_pending 候选一律拒绝（与清理流水线互斥）。"""
+        quarantined = await _make_delete_fixture(async_orphan_db, tmp_path / "q", candidate_status="quarantined")
+        pending = await _make_delete_fixture(async_orphan_db, tmp_path / "p", operation_state="purge_pending")
+        _empty_whitelist(monkeypatch)
+
+        service = OrphanFileService(async_orphan_db)
+        result_q = await service.delete_hardlink_copies(
+            quarantined.detail.id,
+            [str(quarantined.copies[0])],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+        result_p = await service.delete_hardlink_copies(
+            pending.detail.id,
+            [str(pending.copies[0])],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert "状态不允许" in result_q["failed_list"][0]["reason"]
+        assert "状态不允许" in result_p["failed_list"][0]["reason"]
+        assert os.path.exists(str(quarantined.copies[0]))
+        assert os.path.exists(str(pending.copies[0]))
+
+    async def test_missing_prescan_row_rejected(self, async_orphan_db, tmp_path, monkeypatch):
+        """无预扫描结果行（pending_scan）时不可删除。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, with_prescan=False)
+        _empty_whitelist(monkeypatch)
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [str(fixture.copies[0])],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 0
+        assert "预扫描" in result["failed_list"][0]["reason"]
+
+    async def test_partial_batch_and_dedup(self, async_orphan_db, tmp_path, monkeypatch):
+        """批量部分失败互不影响；重复路径去重后只删一次。"""
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path, copy_names=("a.mkv", "b.mkv"))
+        _empty_whitelist(monkeypatch)
+        copy_a = os.path.realpath(str(fixture.copies[0]))
+        not_stored = str(tmp_path / "library" / "not-stored.mkv")
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id,
+            [copy_a, not_stored, copy_a],
+            operator="tester",
+            _lease_acquired=True,
+            _lease_handle=_lease(),
+        )
+
+        assert result["success_count"] == 1
+        assert result["failed_count"] == 1
+        assert not os.path.exists(copy_a)
+        assert os.path.exists(os.path.realpath(str(fixture.copies[1])))
+
+    async def test_lease_busy_returns_rejected(self, async_orphan_db, tmp_path, monkeypatch):
+        """维护租约被占时整体拒绝并标记 rejected。"""
+        from contextlib import asynccontextmanager
+
+        from app.services.orphan_lease import OrphanLeaseBusyError
+
+        @asynccontextmanager
+        async def _busy_scope(operation, ttl=None, db=None):
+            raise OrphanLeaseBusyError("另一个孤儿文件维护操作正在运行")
+            yield  # pragma: no cover
+
+        monkeypatch.setattr("app.services.orphan_lease.orphan_maintenance_scope", _busy_scope)
+        fixture = await _make_delete_fixture(async_orphan_db, tmp_path)
+        copy_real = os.path.realpath(str(fixture.copies[0]))
+
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            fixture.detail.id, [copy_real], operator="tester"
+        )
+
+        assert result["rejected"] is True
+        assert result["success_count"] == 0
+        assert "维护操作" in result["failed_list"][0]["reason"]
+        assert os.path.exists(copy_real)
+
+    async def test_empty_request_returns_empty(self, async_orphan_db):
+        """空路径列表直接返回空结果，不触碰文件系统。"""
+        result = await OrphanFileService(async_orphan_db).delete_hardlink_copies(
+            1, [], operator="tester", _lease_acquired=True, _lease_handle=_lease()
+        )
+        assert result == {
+            "orphan_id": 1,
+            "file_path": None,
+            "copy_count": None,
+            "success_count": 0,
+            "failed_count": 0,
+            "failed_list": [],
+        }

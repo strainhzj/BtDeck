@@ -24,6 +24,13 @@ class TorrentInfo(Base):
     error_reason = Column(Text, nullable=True, comment="下载器返回的种子错误原因")
     progress = Column(Float, default=0.0, comment="下载进度(0-100)")
     torrent_file = Column(String, index=True, comment="种子文件")
+    auxiliary_seed_count = Column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+        comment="辅种数量",
+    )
     added_date = Column(DATETIME, comment="添加时间")
     completed_date = Column(DATETIME, comment="完成时间")
     ratio = Column(Float, index=True, comment="比率（数值列，避免 String 字典序 bug）")
@@ -100,6 +107,7 @@ class TorrentInfo(Base):
         backup_file_path=None,
         original_file_list=None,
         error_reason=None,
+        auxiliary_seed_count=1,
         **kw: Any,
     ):
         super().__init__(**kw)
@@ -115,6 +123,7 @@ class TorrentInfo(Base):
         self.error_reason = error_reason
         self.progress = progress
         self.torrent_file = torrent_file
+        self.auxiliary_seed_count = auxiliary_seed_count
         self.added_date = added_date
         self.completed_date = completed_date
         self.ratio = ratio
@@ -148,6 +157,7 @@ class TorrentInfo(Base):
             "error_reason": self.error_reason,
             "progress": self.progress,
             "torrent_file": self.torrent_file,
+            "auxiliary_seed_count": self.auxiliary_seed_count or 1,
             "added_date": self.added_date,
             "completed_date": self.completed_date,
             "ratio": self.ratio,

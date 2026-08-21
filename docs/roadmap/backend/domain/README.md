@@ -9,7 +9,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28） |
+| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28；`_set_online_status` 维护 is_online/offline_since 供缓存剔除与速度接口跳过，L1525） |
 | Transmission 设置 tr-settings | `transmission_settings.py` | `TransmissionSettings`：Transmission 客户端会话设置读写 |
 | qB 设置 qb-settings | `qbittorrent_settings.py` | `QBitTorrentSettings`：qBittorrent 应用偏好设置读写 |
 | 种子拉取 torrent-fetcher | `torrent_fetcher.py` | `TorrentFetcher`：从下载器拉取种子列表的封装 |
@@ -34,10 +34,10 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L12，`error_reason` Text L24)、`TrackerInfo`(L240)、`TrackerKeywordConfig`(L294)、`TrackerMessageLog`(L374)、`TrackerReannounceConfig`(L457) |
+| 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L12，`error_reason` Text L24，`auxiliary_seed_count` Integer L27)、`TrackerInfo`(L250)、`TrackerKeywordConfig`(L304)、`TrackerMessageLog`(L384)、`TrackerReannounceConfig`(L467) |
 | 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 39 成员) + `AuditOperationResult`(L239) |
 | 审计 ORM audit-model | `audit_models.py` | ORM：`TorrentAuditLog`(L21) 种子审计日志表 |
-| 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14)，`error_reason` L37 自动输出为 `errorReason` |
+| 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14)，`error_reason` L37 与 `auxiliary_seed_count` L41 自动输出为 camelCase |
 | Tracker VO tracker-vo | `trackerVO.py` | `TrackerInfoVO`(L5) |
 | 请求 VO torrent-request | `request.py` | 请求 VO：`Tracker`(L6) / `ModifyTrackerRequest`(L12) |
 | 空占位 qb | `qbittorrent.py` | ⚠ **空文件**（0 字节，占位） |
@@ -50,7 +50,7 @@
 |--------|------|-----------|
 | Tracker 响应 VO tracker-info-vo | `responseVO.py` | `TrackerInfoVO`(L5) Tracker 信息响应 VO |
 
-### auth/ — 认证领域（5 个文件）
+### auth/ — 认证领域（6 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
@@ -59,6 +59,7 @@
 | 密码/SM4 auth-security | `security.py` | 密码 + SM4：`generate_sm4_key`、`sm4_encrypt/decrypt`、`verify_password`、`get_password_hash` |
 | 用户 ORM auth-model | `models.py` | ORM：`User`(L7)、`LoginLog`(L19)、`Config`(L31) |
 | 登录请求 auth-request | `request.py` | 请求 VO：`UserLogin`(L5) |
+| 令牌清理 auth-token-cleanup ✨2026-08-18 | `token_cleanup.py` | refresh_tokens 过期记录清理：`CLEANUP_SQL`（过期/撤销超保留期 DELETE）+ 同步函数，供每日 04:30 定时任务调用 |
 
 > `auth/dependencies.require_authenticated_user` 被 **31** 个 endpoint 文件依赖，是认证骨架。
 

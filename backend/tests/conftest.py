@@ -37,6 +37,16 @@ os.environ["CONFIG_DIR"] = str(_TEST_RUNTIME_ROOT)
 os.environ["DATABASE_PATH"] = str(_TEST_DATABASE_PATH)
 os.environ.setdefault("SECRET_KEY", "btdeck-pytest-isolated-secret")
 
+# 测试隔离的 SM4 密钥：在测试运行时目录生成固定密钥的 config.yaml，
+# 使真实 get_sm4_encryption() 单例在测试进程内可用（encrypt 已 fail-closed，
+# 无密钥会正确抛错——下载器加密相关测试需要确定性密钥而非报错）。
+_TEST_CONFIG_PATH = _TEST_RUNTIME_ROOT / "config.yaml"
+if not _TEST_CONFIG_PATH.exists():
+    _TEST_CONFIG_PATH.write_text(
+        "app:\n  name: BtDeck-test\nsecurity:\n  secret_key: pytestsm4testkey\n  login_status_secret: pytestloginsecret\n",
+        encoding="utf-8",
+    )
+
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -101,6 +111,21 @@ def sm4_instance():
     instance.sm4_key = "0123456789abcdef"
     instance._initialize_crypt()
     return instance
+
+
+@pytest.fixture(autouse=True)
+def _clear_orphan_stats_cache():
+    """每个用例前清空模块级孤儿统计缓存，防止跨用例污染。
+
+    orphan_stats_cache 是模块级单例，而多个孤儿测试用例复用同一批
+    scan_id（scan_completed/scan_1 等）且数据不同；不清理会让用例吃到
+    上个用例的缓存统计。
+    """
+    from app.services.orphan_stats_cache import orphan_stats_cache
+
+    orphan_stats_cache.invalidate()
+    yield
+    orphan_stats_cache.invalidate()
 
 
 @pytest.fixture

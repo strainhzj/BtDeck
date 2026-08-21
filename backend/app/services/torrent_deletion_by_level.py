@@ -28,6 +28,10 @@ from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.auxiliary_seed_count_service import (
+    decrement_auxiliary_seed_count,
+    get_auxiliary_seed_key,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +53,24 @@ class TorrentDeletionByLevelService:
         self.db = db
         self.request = request
         self._adapters = {}  # 适配器缓存
+        self._audit_info = None  # 惰性提取：extract_audit_info_from_request(request)
+
+    def _audit_request_info(self) -> Dict[str, Any]:
+        """惰性提取请求审计信息（ip_address/user_agent/request_id/session_id）。
+
+        端点持有 Request 但服务层不接收：此处直接从 request 提取，
+        修复删除审计日志缺 IP（verified-bugfix-remediation W7）。
+        """
+        if self._audit_info is None:
+            self._audit_info = {}
+            if self.request is not None:
+                try:
+                    from app.services.audit_service import extract_audit_info_from_request
+
+                    self._audit_info = extract_audit_info_from_request(self.request)
+                except Exception as e:  # noqa: BLE001 - 审计信息缺失不影响删除主流程
+                    logger.warning(f"提取请求审计信息失败: {e}")
+        return self._audit_info
 
     def _get_adapter(self, downloader: BtDownloaders):
         """
@@ -279,6 +301,7 @@ class TorrentDeletionByLevelService:
             删除结果
         """
         try:
+            auxiliary_key = get_auxiliary_seed_key(torrent)
             # 获取下载器信息
             downloader = (
                 self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
@@ -316,6 +339,7 @@ class TorrentDeletionByLevelService:
             torrent.dr = 1
             torrent.update_time = datetime.now()
             torrent.update_by = operator
+            decrement_auxiliary_seed_count(self.db, auxiliary_key)
             self.db.commit()
 
             # 记录审计日志
@@ -335,6 +359,8 @@ class TorrentDeletionByLevelService:
                     new_value={"status": "deleted", "dr": 1},
                     operation_result=AuditOperationResult.SUCCESS,
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             return {"success": True, "operation": "delete_level1", "message": "已删除种子和数据文件"}
@@ -357,6 +383,8 @@ class TorrentDeletionByLevelService:
                     operation_result=AuditOperationResult.FAILED,
                     error_message=str(e),
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             return {"success": False, "error": str(e), "operation": "delete_level1"}
@@ -378,6 +406,7 @@ class TorrentDeletionByLevelService:
             删除结果
         """
         try:
+            auxiliary_key = get_auxiliary_seed_key(torrent)
             # 获取下载器信息
             downloader = (
                 self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
@@ -415,6 +444,7 @@ class TorrentDeletionByLevelService:
             torrent.dr = 1
             torrent.update_time = datetime.now()
             torrent.update_by = operator
+            decrement_auxiliary_seed_count(self.db, auxiliary_key)
             self.db.commit()
 
             # 记录审计日志
@@ -434,6 +464,8 @@ class TorrentDeletionByLevelService:
                     new_value={"status": "deleted", "dr": 1},
                     operation_result=AuditOperationResult.SUCCESS,
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             return {"success": True, "operation": "delete_level2", "message": "已删除种子任务，保留数据文件"}
@@ -456,6 +488,8 @@ class TorrentDeletionByLevelService:
                     operation_result=AuditOperationResult.FAILED,
                     error_message=str(e),
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             return {"success": False, "error": str(e), "operation": "delete_level2"}
@@ -548,6 +582,8 @@ class TorrentDeletionByLevelService:
                     new_value={"tags": torrent.tags},
                     operation_result=AuditOperationResult.SUCCESS,
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             # 构建返回消息
@@ -582,6 +618,8 @@ class TorrentDeletionByLevelService:
                     operation_result=AuditOperationResult.FAILED,
                     error_message=str(e),
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             return {"success": False, "error": str(e), "operation": "delete_level4"}
@@ -607,6 +645,7 @@ class TorrentDeletionByLevelService:
             删除结果
         """
         try:
+            auxiliary_key = get_auxiliary_seed_key(torrent)
             # 获取下载器信息
             downloader = (
                 self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
@@ -898,6 +937,10 @@ class TorrentDeletionByLevelService:
                     "rolled_back": True,
                 }
 
+            # 文件移动成功后才扣减辅种数量，避免后续回滚时影响仍然有效的分组。
+            decrement_auxiliary_seed_count(self.db, auxiliary_key)
+            self.db.commit()
+
             # 记录审计日志
             if audit_service:
                 await audit_service.log_operation(
@@ -935,6 +978,8 @@ class TorrentDeletionByLevelService:
                     },
                     operation_result=AuditOperationResult.SUCCESS,
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             return {
@@ -968,6 +1013,8 @@ class TorrentDeletionByLevelService:
                     operation_result=AuditOperationResult.FAILED,
                     error_message=str(e),
                     downloader_id=torrent.downloader_id,
+                    ip_address=self._audit_request_info().get("ip_address"),
+                    user_agent=self._audit_request_info().get("user_agent"),
                 )
 
             return {"success": False, "error": str(e), "operation": "delete_level3"}

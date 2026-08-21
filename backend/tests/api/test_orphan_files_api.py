@@ -22,6 +22,7 @@
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
+import time
 
 import jwt
 import pytest
@@ -266,6 +267,101 @@ class TestOrphanFilesCleanupWiring:
         assert response.json()["code"] == "200"
         mocked.assert_awaited_once_with([1], scan_id="scan-latest")
 
+    def test_manual_scan_immediately_returns_persistent_background_task(self):
+        """POST /scan 只持久化并派发任务，不得在请求协程内执行扫描。"""
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+        from app.services.orphan_scanner import OrphanScanner
+
+        submission = {
+            "scan_id": "scan-background-1",
+            "task_id": "scan-background-1",
+            "status": "queued",
+            "accepted": True,
+        }
+        submit_scan = AsyncMock(return_value=submission)
+        dispatcher = MagicMock()
+        started = time.perf_counter()
+        with (
+            patch.object(OrphanScanJobService, "submit_scan", submit_scan),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_scan_dispatcher",
+                return_value=dispatcher,
+            ),
+            patch.object(OrphanScanner, "scan", AsyncMock()) as scanner_scan,
+        ):
+            response = self.client.post("/api/v1/orphan-files/scan")
+        elapsed = time.perf_counter() - started
+
+        assert response.status_code == 200
+        assert response.json()["data"] == submission
+        assert elapsed < 1.0
+        submit_scan.assert_awaited_once_with(scan_type="manual", operator="tester")
+        dispatcher.submit.assert_called_once_with("scan-background-1")
+        scanner_scan.assert_not_awaited()
+
+    def test_scan_status_uses_lightweight_single_record_service(self):
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+
+        record = {
+            "scan_id": "scan-background-1",
+            "task_id": "scan-background-1",
+            "status": "running",
+        }
+        get_scan = AsyncMock(return_value=record)
+        with patch.object(OrphanScanJobService, "get_scan", get_scan):
+            response = self.client.get("/api/v1/orphan-files/scans/scan-background-1")
+
+        assert response.status_code == 200
+        assert response.json()["data"] == record
+        get_scan.assert_awaited_once_with("scan-background-1")
+
+    def test_guardrail_review_requires_both_safety_confirmations(self):
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+
+        review = AsyncMock()
+        with patch.object(OrphanScanJobService, "review_guardrail", review):
+            response = self.client.post(
+                "/api/v1/orphan-files/scans/scan-large/guardrail-review",
+                json={
+                    "confirmed_path_mapping": True,
+                    "confirmed_orphan_samples": False,
+                    "note": "已核查路径映射和十条样本",
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == "400"
+        review.assert_not_awaited()
+
+    def test_guardrail_review_records_operator_and_note_after_double_check(self):
+        from app.services.orphan_scan_job_service import OrphanScanJobService
+
+        payload = {
+            "scan_id": "scan-large",
+            "task_id": "scan-large",
+            "status": "completed",
+            "cleanup_reviewed_by": "tester",
+        }
+        review = AsyncMock(return_value=payload)
+        note = "已核查全部路径映射并抽样二十条孤儿文件"
+        with patch.object(OrphanScanJobService, "review_guardrail", review):
+            response = self.client.post(
+                "/api/v1/orphan-files/scans/scan-large/guardrail-review",
+                json={
+                    "confirmed_path_mapping": True,
+                    "confirmed_orphan_samples": True,
+                    "note": note,
+                },
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"] == payload
+        review.assert_awaited_once_with(
+            scan_id="scan-large",
+            operator="tester",
+            note=note,
+        )
+
     def test_cleanup_preview_resolves_select_all_filter_snapshot(self):
         """全选请求应先按筛选与排除项解析 ID，再进入既有安全预览。"""
         from app.services.orphan_file_service import OrphanFileService
@@ -303,6 +399,7 @@ class TestOrphanFilesCleanupWiring:
             path_prefix=None,
             status="pending",
             confidence="high",
+            hardlink_copies=None,
         )
         preview.assert_awaited_once_with([11, 13], scan_id="scan-latest")
 
@@ -339,6 +436,83 @@ class TestOrphanFilesCleanupWiring:
             path_prefix=None,
             status=None,
             confidence=None,
+            hardlink_copies=None,
+        )
+
+    def test_list_passes_hardlink_copies_filter_to_flat_and_grouped_queries(self):
+        """hardlink_copies=located 应同时透传到扁平与文件夹聚合两条查询路径。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {"total": 0, "page": 1, "pageSize": 20, "list": [], "scan_context": {}}
+        expected_kwargs = dict(
+            page=1,
+            page_size=20,
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix=None,
+            status=None,
+            confidence=None,
+            hardlink_copies="located",
+        )
+        flat = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_list", flat):
+            response = self.client.get("/api/v1/orphan-files/list?hardlink_copies=located")
+        assert response.status_code == 200
+        flat.assert_awaited_once_with(**expected_kwargs)
+
+        grouped = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_list_grouped", grouped):
+            response = self.client.get("/api/v1/orphan-files/list?hardlink_copies=located&group_by_folder=true")
+        assert response.status_code == 200
+        grouped.assert_awaited_once_with(**expected_kwargs)
+
+    def test_list_passes_unknown_hardlink_copies_value_through(self):
+        """hardlink_copies 未知取值不做 API 层校验，原样透传由服务层忽略（宽松契约与 status/confidence 一致）。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {"total": 0, "page": 1, "pageSize": 20, "list": [], "scan_context": {}}
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_list", mocked):
+            response = self.client.get("/api/v1/orphan-files/list?hardlink_copies=bogus")
+
+        assert response.status_code == 200
+        mocked.assert_awaited_once_with(
+            page=1,
+            page_size=20,
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix=None,
+            status=None,
+            confidence=None,
+            hardlink_copies="bogus",
+        )
+
+    def test_folder_children_passes_hardlink_copies_filter(self):
+        """文件夹子项端点应透传副本定位筛选，保持展开视图与主列表口径一致。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {"total": 0, "page": 1, "pageSize": 20, "list": []}
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "get_orphan_folder_children", mocked):
+            response = self.client.get(
+                "/api/v1/orphan-files/folders/children" "?folder_path=%2Fdata&hardlink_copies=located"
+            )
+
+        assert response.status_code == 200
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with(
+            "/data",
+            page=1,
+            page_size=20,
+            downloader_id=None,
+            min_size=None,
+            path_like=None,
+            path_prefix=None,
+            status=None,
+            confidence=None,
+            hardlink_copies="located",
         )
 
     def test_hardlink_copy_locations_passes_ids_and_preserves_result(self):
@@ -388,6 +562,83 @@ class TestOrphanFilesCleanupWiring:
         assert response.status_code == 422
         mocked.assert_not_awaited()
 
+    def test_hardlink_copy_delete_passes_request_and_preserves_result(self):
+        """删除副本端点透传 orphan_id/路径与操作者，逐项失败原样返回。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "orphan_id": 7,
+            "file_path": "/data/source.bin",
+            "copy_count": 1,
+            "success_count": 1,
+            "failed_count": 1,
+            "failed_list": [{"copy_path": "/lib/dup.bin", "reason": "副本位于种子目录内（可能正被引用），已拒绝删除"}],
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": ["/lib/copy-a.bin", "/lib/dup.bin"]},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["code"] == "200"
+        assert body["data"] == payload
+        assert "成功 1" in body["msg"] and "失败 1" in body["msg"]
+        mocked.assert_awaited_once()
+        kwargs = mocked.await_args.kwargs
+        assert kwargs["orphan_id"] == 7
+        assert kwargs["copy_paths"] == ["/lib/copy-a.bin", "/lib/dup.bin"]
+        assert kwargs["operator"] == "tester"
+        assert kwargs["audit_service"] is not None
+
+    def test_hardlink_copy_delete_reports_lease_rejection(self):
+        """维护租约互斥时仍返回 200 + rejected 载荷（与 ignore/restore 形态一致）。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "orphan_id": 7,
+            "file_path": None,
+            "copy_count": None,
+            "success_count": 0,
+            "failed_count": 1,
+            "failed_list": [{"copy_path": "/lib/copy-a.bin", "reason": "另一个孤儿文件维护操作正在运行"}],
+            "rejected": True,
+            "error": "另一个孤儿文件维护操作正在运行",
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": ["/lib/copy-a.bin"]},
+            )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["code"] == "200"
+        assert body["data"] == payload
+        assert "维护操作" in body["msg"]
+
+    @pytest.mark.parametrize(
+        "copy_paths",
+        ([], [f"/lib/copy-{i}.bin" for i in range(51)]),
+        ids=("empty", "over-limit"),
+    )
+    def test_hardlink_copy_delete_rejects_invalid_batch(self, copy_paths):
+        """空路径列表与超过 50 条的批次由请求模型拒绝（422），不进入服务层。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock()
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": copy_paths},
+            )
+
+        assert response.status_code == 422
+        mocked.assert_not_awaited()
+
     def test_ignore_passes_scan_identity_and_preserves_failure_reasons(self):
         """忽视端点必须把服务层逐项失败原因原样返回，供前端和日志诊断。"""
         from app.services.orphan_file_service import OrphanFileService
@@ -422,6 +673,8 @@ class TestOrphanFilesCleanupWiring:
             ignored=True,
             operator="tester",
             scan_id="scan-latest",
+            # testclient 直连：extract_audit_info_from_request 取 request.client.host
+            ip_address="testclient",
         )
 
     def test_list_accepts_page_size_upper_bound_1000(self):
@@ -446,6 +699,7 @@ class TestOrphanFilesCleanupWiring:
             path_prefix=None,
             status=None,
             confidence=None,
+            hardlink_copies=None,
         )
 
     def test_list_rejects_page_size_over_upper_bound(self):
@@ -502,7 +756,10 @@ class TestOrphanFilesCleanupWiring:
             scan_id="scan-latest",
             orphan_ids=[1],
             operator="tester",
+            ip_address=submit_job.await_args.kwargs["ip_address"],
         )
+        # 审计 IP 透传：testclient 无代理头时应为 None 而非缺失
+        assert "ip_address" in submit_job.await_args.kwargs
         dispatcher.submit.assert_called_once_with("cleanup-task-1")
 
     def test_cleanup_all_active_returns_success_without_dispatch(self):
@@ -584,7 +841,9 @@ class TestOrphanFilesCleanupWiring:
         submit_job.assert_awaited_once_with(
             canonical_paths=["/data/orphan.bin"],
             operator="tester",
+            ip_address=submit_job.await_args.kwargs["ip_address"],
         )
+        assert "ip_address" in submit_job.await_args.kwargs
         dispatcher.submit.assert_called_once_with("purge-task-1")
 
     def test_get_purge_job_status_returns_persisted_state(self):
@@ -688,7 +947,31 @@ class TestOrphanFilesPrefixMatch:
         assert response.status_code == 200
         assert response.json()["code"] == "200"
         assert response.json()["data"] == payload
-        mocked.assert_awaited_once_with("/data/", "scan-latest")
+        mocked.assert_awaited_once_with("/data/", "scan-latest", hardlink_copies=None)
+
+    def test_prefix_match_preview_passes_located_filter(self):
+        """located 开启时前缀预览应透传 hardlink_copies=located 到服务层。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        payload = {
+            "count": 2,
+            "total_size": 900,
+            "low_confidence_count": 0,
+            "sample_paths": ["/data/a.bin"],
+        }
+        mocked = AsyncMock(return_value=payload)
+        with patch.object(OrphanFileService, "prefix_match_preview", mocked):
+            response = self.client.post(
+                "/api/v1/orphan-files/prefix-match-preview",
+                json={
+                    "path_prefix": "/data/",
+                    "scan_id": "scan-latest",
+                    "hardlink_copies": "located",
+                },
+            )
+        assert response.status_code == 200
+        assert response.json()["data"] == payload
+        mocked.assert_awaited_once_with("/data/", "scan-latest", hardlink_copies="located")
 
     def test_prefix_match_preview_rejects_empty_prefix(self):
         """path_prefix 为空字符串应被 Pydantic min_length=1 拒绝（422）。"""
@@ -746,6 +1029,7 @@ class TestOrphanFilesPrefixMatch:
             path_prefix="/data/leak/",
             status="pending",
             confidence=None,
+            hardlink_copies=None,
         )
 
     def test_ignore_select_all_passes_path_prefix_filter(self):
@@ -781,8 +1065,183 @@ class TestOrphanFilesPrefixMatch:
             path_prefix="/data/leak/",
             status="pending",
             confidence=None,
+            hardlink_copies=None,
         )
 
 
 # 延迟导入，避免模块加载时触发 settings 初始化
 from app.auth.dependencies import require_authenticated_user  # noqa: E402
+
+# ==================== 手动操作审计 IP 透传（真实 XFF 提取链路） ====================
+
+
+class TestOrphanAuditIpWiring:
+    """五个手动操作端点从请求头提取提交端 IP 并传入服务层/任务链。
+
+    不 patch extract_audit_info_from_request：TestClient 携带
+    X-Forwarded-For 头（nginx 反代生产行为），断言首值流到被 mock 的
+    服务方法/任务提交 kwargs，锁定端点→extract→服务层的完整接线。
+    """
+
+    TEST_IP = "203.0.113.9"
+    XFF_HEADERS = {"X-Forwarded-For": f"{TEST_IP}, 172.25.0.2"}
+
+    @pytest.fixture(autouse=True)
+    def setup(self):
+        self.app = _create_test_app()
+        self.app.state.store = MagicMock(name="shared_downloader_store")
+        self.app.dependency_overrides[require_authenticated_user] = lambda: (SimpleNamespace(username="tester"))
+        self.mock_db = MagicMock(name="async_db")
+
+        async def override_db():
+            yield self.mock_db
+
+        self.app.dependency_overrides[get_async_db] = override_db
+        self.client = TestClient(self.app, raise_server_exceptions=False)
+        yield
+        self.app.dependency_overrides.clear()
+
+    def test_hardlink_copy_delete_receives_ip_from_xff(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(
+            return_value={
+                "orphan_id": 7,
+                "file_path": "/data/source.bin",
+                "copy_count": 0,
+                "success_count": 1,
+                "failed_count": 0,
+                "failed_list": [],
+            }
+        )
+        with patch.object(OrphanFileService, "delete_hardlink_copies", mocked):
+            resp = self.client.post(
+                "/api/v1/orphan-files/hardlink-copies/delete",
+                json={"orphan_id": 7, "copy_paths": ["/lib/copy-a.bin"]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == self.TEST_IP
+
+    def test_restore_receives_ip_from_xff(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(return_value={"restored_count": 1, "failed_count": 0, "failed_list": []})
+        with patch.object(OrphanFileService, "restore_quarantined", mocked):
+            resp = self.client.post(
+                "/api/v1/orphan-files/restore",
+                json={"canonical_paths": ["/quarantine/a.bin"]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == self.TEST_IP
+
+    def test_ignore_receives_ip_from_xff(self):
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(return_value={"success_count": 1, "failed_count": 0, "failed_list": []})
+        with (
+            patch.object(OrphanFileService, "set_ignored", mocked),
+            patch.object(
+                OrphanFileService,
+                "_load_orphan_details",
+                AsyncMock(return_value=[]),
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/ignore",
+                json={"orphan_ids": [7], "ignored": True},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == self.TEST_IP
+
+    def test_cleanup_submit_receives_ip_from_xff(self):
+        from app.services.orphan_purge_job_service import OrphanJobSubmission, OrphanPurgeJobService
+
+        job = MagicMock()
+        job.task_id = "cleanup-ip-1"
+        job.to_dict.return_value = {"task_id": "cleanup-ip-1", "status": "pending", "total_count": 1}
+        submit_job = AsyncMock(
+            return_value=OrphanJobSubmission(
+                operation_type="cleanup",
+                scan_id="scan-latest",
+                job=job,
+                accepted_items=[7],
+                skipped_items=[],
+            )
+        )
+        dispatcher = MagicMock()
+        with (
+            patch.object(OrphanPurgeJobService, "submit_cleanup_job", submit_job),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/cleanup",
+                json={"scan_id": "scan-latest", "orphan_ids": [7]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert submit_job.await_args.kwargs["ip_address"] == self.TEST_IP
+        dispatcher.submit.assert_called_once_with("cleanup-ip-1")
+
+    def test_purge_submit_receives_ip_from_xff(self):
+        from app.services.orphan_purge_job_service import OrphanJobSubmission, OrphanPurgeJobService
+
+        job = MagicMock()
+        job.task_id = "purge-ip-1"
+        job.to_dict.return_value = {"task_id": "purge-ip-1", "status": "pending", "total_count": 1}
+        submit_job = AsyncMock(
+            return_value=OrphanJobSubmission(
+                operation_type="purge",
+                scan_id=None,
+                job=job,
+                accepted_items=["/quarantine/a.bin"],
+                skipped_items=[],
+            )
+        )
+        dispatcher = MagicMock()
+        with (
+            patch.object(OrphanPurgeJobService, "submit_purge_job", submit_job),
+            patch(
+                "app.api.endpoints.orphan_files.get_orphan_purge_dispatcher",
+                return_value=dispatcher,
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/purge",
+                json={"canonical_paths": ["/quarantine/a.bin"]},
+                headers=self.XFF_HEADERS,
+            )
+
+        assert resp.status_code == 200
+        assert submit_job.await_args.kwargs["ip_address"] == self.TEST_IP
+        dispatcher.submit.assert_called_once_with("purge-ip-1")
+
+    def test_no_xff_falls_back_to_client_host(self):
+        """无代理头（直连）：extract 回退 request.client.host（testclient）。"""
+        from app.services.orphan_file_service import OrphanFileService
+
+        mocked = AsyncMock(return_value={"success_count": 1, "failed_count": 0, "failed_list": []})
+        with (
+            patch.object(OrphanFileService, "set_ignored", mocked),
+            patch.object(
+                OrphanFileService,
+                "_load_orphan_details",
+                AsyncMock(return_value=[]),
+            ),
+        ):
+            resp = self.client.post(
+                "/api/v1/orphan-files/ignore",
+                json={"orphan_ids": [7], "ignored": True},
+            )
+
+        assert resp.status_code == 200
+        assert mocked.await_args.kwargs["ip_address"] == "testclient"
