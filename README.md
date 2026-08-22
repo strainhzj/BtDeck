@@ -161,7 +161,7 @@ chmod +x build-linux.sh
 - **安装与部署** - 新增 Windows / Linux 桌面安装包，支持独立窗口运行；修复部分环境安装后无法启动的问题；Docker 部署支持自定义镜像源
 - **Bug 修复** - qBittorrent 下载/做种状态显示颠倒、做种数据统计错误、Transmission Tracker 信息同步丢失、回收站网络路径文件清理失败、新种子状态显示 unknown 等
 
-> 完整更新日志以 [`backend/app/version.py`](./backend/app/version.py) 为准，另见 [GitHub Release v1.0.5](https://github.com/StrainThomas/BtDeck/releases/tag/v1.0.5)。本次升级涉及数据库结构变更，首次启动时会自动完成迁移。
+> 完整更新日志以 [`backend/app/version.py`](./backend/app/version.py) 为准，另见 [GitHub Release v1.0.5](https://github.com/strainhzj/BtDeck/releases/tag/v1.0.5)。本次升级涉及数据库结构变更，首次启动时会自动完成迁移。
 
 详见 [PLANS/](./PLANS/)。
 
