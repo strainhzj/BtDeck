@@ -1,6 +1,6 @@
 # backend/app-root — 包根入口文件
 
-> `backend/app/` 包根 9 个文件（非子包），承担应用工厂、DB 引擎、异常处理、版本、多种入口。
+> `backend/app/` 包根 8 个文件（非子包，不计 `__init__.py`），承担应用工厂、DB 引擎、异常处理、版本、多种入口。
 > 定位方式：`Grep -i <功能词> docs/roadmap/backend/app-root.md`，命中行即含文件 + 职责，无需 Read 全文。
 
 ## 关键词速查
@@ -9,7 +9,7 @@
 |--------|------|-----------|
 | 配置兼容 config-compat | `config.py` | 兼容层：旧代码 `from app.config import settings` 转发到 `app.core.config` |
 | DB 引擎 database | `database.py` | 数据库引擎与会话工厂（`get_db` / `get_async_db` / `init_db` / `init_config_file` / `merge_configs` / `_apply_sqlite_pragmas`） |
-| 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview）；`initialize_app_data()`(L31) 初始化配置并在迁移失败时拒绝启动后台 API |
+| 桌面端 desktop | `desktop_main.py` | 桌面端入口（pywebview）；`initialize_app_data()`(L36) 初始化配置并在迁移失败时拒绝启动后台 API |
 | 异常处理 exception | `exception_handlers.py` | 全局异常处理器：把 `HTTPException` / `RequestValidationError` / 未捕获异常统一归一化为 `CommonResponse` |
 | 应用工厂 factory | `factory.py` | FastAPI 应用工厂（`create_app` + 路由/静态/CORS/lifespan 配置） |
 | 启动入口 main | `main.py` | 后端启动入口：Docker import `app` 后由 lifespan 初始化；直接运行路径（L140-163）执行配置/迁移，迁移失败时不进入 `Server.run()` |

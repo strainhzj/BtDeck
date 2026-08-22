@@ -7,15 +7,15 @@
 
 | 关键词 | 子分支/文件 | 一句话职责 |
 |--------|------------|-----------|
-| 包根入口 app-root | [app-root.md](./app-root.md) | `backend/app/` 包根 10 文件（应用工厂、DB 引擎、异常处理、版本、入口） |
-| HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 44 文件（endpoints 38 + models 1 + schemas 3 + api.py + responseVO.py，不计 `__init__.py`） |
-| 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 56 文件（services 44 + downloader_adapters 6 + tag_adapters 6） |
-| 基础设施 core | [core/README.md](./core/README.md) | 基础设施 21 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） |
+| 包根入口 app-root | [app-root.md](./app-root.md) | `backend/app/` 包根 8 文件（应用工厂、DB 引擎、异常处理、版本、入口） |
+| HTTP 路由 api | [api/README.md](./api/README.md) | HTTP 路由层 43 文件（endpoints 37 + models 1 + schemas 3 + api.py + responseVO.py，不计 `__init__.py`） |
+| 业务服务 services | [services/README.md](./services/README.md) | 业务服务层 57 文件（services 47 + downloader_adapters 5 + tag_adapters 5，不计 `__init__.py`） |
+| 基础设施 core | [core/README.md](./core/README.md) | 基础设施 23 文件（⚠ 含 4 个 0 引用孤儿；`torrent_operations.py` 已重写为 ratio 工具但仍 0 引用） |
 | 前后端契约 contracts | [contracts/README.md](./contracts/README.md) | 前后端共享机器可读契约 3 文件（advanced_search JSON + 加载器）✨v1.0.6.27 |
-| 数据层 data-models | [data-models/README.md](./data-models/README.md) | 数据层 35 文件（ORM 16 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2） |
-| 定时任务 tasks | [tasks/README.md](./tasks/README.md) | 定时任务 32 文件（tasks 14 + scheduler 14 + scheduler/torrent_sync 4） |
-| 领域 domain | [domain/README.md](./domain/README.md) | 领域目录 25 文件（downloader 9 + torrents 9 + tracker 1 + auth 5 + user 1） |
-| 横切基础设施 infra | [infra/README.md](./infra/README.md) | 横切基础设施（含 Alembic 22 个 revision；当前 head `c8d9e0f1a2b3`） |
+| 数据层 data-models | [data-models/README.md](./data-models/README.md) | 数据层 37 文件（ORM 18 + response 2 + repositories 3 + schemas 8 + data 4 + enums 2） |
+| 定时任务 tasks | [tasks/README.md](./tasks/README.md) | 定时任务 33 文件（tasks 14 + scheduler 16 + scheduler/torrent_sync 3，不计 `__init__.py`） |
+| 领域 domain | [domain/README.md](./domain/README.md) | 领域目录 27 文件（downloader 9 + torrents 9 + tracker 1 + auth 7 + user 1） |
+| 横切基础设施 infra | [infra/README.md](./infra/README.md) | 横切基础设施（含 Alembic 28 个 revision；当前 head `975dad435c03`） |
 
 ---
 
@@ -47,10 +47,10 @@
 
 | 模块 | 被引用文件数 | 角色 |
 |------|------------|------|
-| `app.database` | **86** | DB 引擎与会话工厂（同步 + 异步） |
-| `app.services.*` | 50 | 业务服务层 |
-| `app.auth.dependencies`（`require_authenticated_user`） | 31 | FastAPI 认证依赖 |
-| `app.core.config` | 28 | 全局配置 `Settings` |
+| `app.database` | **98** | DB 引擎与会话工厂（同步 + 异步） |
+| `app.services.*` | 73 | 业务服务层 |
+| `app.auth.dependencies`（`require_authenticated_user`） | 29 | FastAPI 认证依赖 |
+| `app.core.config` | 40 | 全局配置 `Settings` |
 | `app.api.responseVO.CommonResponse` | — | 统一响应信封 |
 | `app.core.database_result` | 11 | `DatabaseResult` 泛型封装 |
 | `app.core.path_mapping` | 10 | 下载器路径双向映射 |

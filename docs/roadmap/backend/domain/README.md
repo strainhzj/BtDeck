@@ -9,7 +9,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28；`_set_online_status` 维护 is_online/offline_since 供缓存剔除与速度接口跳过，L1525） |
+| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28；`_set_online_status` 维护 is_online/offline_since 供缓存剔除与速度接口跳过，L1526） |
 | Transmission 设置 tr-settings | `transmission_settings.py` | `TransmissionSettings`：Transmission 客户端会话设置读写 |
 | qB 设置 qb-settings | `qbittorrent_settings.py` | `QBitTorrentSettings`：qBittorrent 应用偏好设置读写 |
 | 种子拉取 torrent-fetcher | `torrent_fetcher.py` | `TorrentFetcher`：从下载器拉取种子列表的封装 |
@@ -19,25 +19,25 @@
 | 下载器 VO downloader-vo | `responseVO.py` | 下载器响应 VO（`DownloaderSimpleVO`/`DownloaderResponse`/`DownloaderVO` 等） |
 | 下载器请求 downloader-request | `request.py` | 请求 VO（`RequestDownloader`/`UpdateDownloader`/`DownloaderCheckVO` 等） |
 
-### initialization.py 核心（最大文件，1999 行）
+### initialization.py 核心（最大文件，2071 行）
 
 - **核心类 `DownloaderInitialization`**（L28）：缓冲式增删 + 快照
 - **连通性检查**：`check_port_connectivity`(L251)、`check_downloader_connectivity_with_retry`(L305)、qB/Transmission 认证重试 `_check_*_auth_with_retry`(L381/L417)
-- **启动流程**：`startup_event(app)`(L682) → `_async_initialization_tasks`(L709) → `_load_initial_downloaders`(L729) → `_perform_initial_full_sync`(L795)
-- **同步任务**：`full_database_sync_task`(L915)、自适应间隔 `_calculate_sync_interval`(L1022)
-- **后台轮询**：`periodic_check`(L1391)、`downloader_status_polling_task`(L1414)
-- **状态更新**：`update_torrent_stats_smart`(L1686)、`_get_qbittorrent_status`(L1898)、`_get_transmission_status`(L1950)
+- **启动流程**：`startup_event(app)`(L682) → `_async_initialization_tasks`(L708) → `_load_initial_downloaders`(L733) → `_perform_initial_full_sync`(L799)
+- **同步任务**：`full_database_sync_task`(L919)、自适应间隔 `_calculate_sync_interval`(L1026)
+- **后台轮询**：`periodic_check`(L1396)、`downloader_status_polling_task`(L1419)
+- **状态更新**：`update_torrent_stats_smart`(L1706)、`_get_qbittorrent_status`(L1918)、`_get_transmission_status`(L1970)
 
-被 `app/startup/lifecycle.py:91` 通过 `asyncio.create_task(startup_event(app))` 启动。
+被 `app/startup/lifecycle.py:404` 通过 `asyncio.create_task(startup_event(app))` 启动。
 
 ### torrents/ — 种子领域（9 个文件，含 `__init__.py`）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L12，`error_reason` Text L24，`auxiliary_seed_count` Integer L27)、`TrackerInfo`(L250)、`TrackerKeywordConfig`(L304)、`TrackerMessageLog`(L384)、`TrackerReannounceConfig`(L467) |
-| 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 39 成员) + `AuditOperationResult`(L239) |
-| 审计 ORM audit-model | `audit_models.py` | ORM：`TorrentAuditLog`(L21) 种子审计日志表 |
-| 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14)，`error_reason` L37 与 `auxiliary_seed_count` L41 自动输出为 camelCase |
+| 种子 ORM torrent-model | `models.py` | ORM：`TorrentInfo`(L13，`error_reason` Text L25，`auxiliary_seed_count` Integer L28)、`TrackerInfo`(L257)、`TrackerKeywordConfig`(L315)、`TrackerMessageLog`(L401)、`TrackerReannounceConfig`(L490) |
+| 审计枚举 audit-enum | `audit_enums.py` | 审计枚举：`AuditOperationType`(L11, 47 成员) + `AuditOperationResult`(L254) |
+| 审计 ORM audit-model | `audit_models.py` | ORM：`TorrentAuditLog`(L22) 种子审计日志表 |
+| 种子 VO torrent-vo | `responseVO.py` | `alias_camel`(L8) 驼峰别名 + `TorrentInfoVO`(L14)，`error_reason` L39 与 `auxiliary_seed_count` L46 自动输出为 camelCase |
 | Tracker VO tracker-vo | `trackerVO.py` | `TrackerInfoVO`(L5) |
 | 请求 VO torrent-request | `request.py` | 请求 VO：`Tracker`(L6) / `ModifyTrackerRequest`(L12) |
 | 空占位 qb | `qbittorrent.py` | ⚠ **空文件**（0 字节，占位） |
@@ -50,14 +50,15 @@
 |--------|------|-----------|
 | Tracker 响应 VO tracker-info-vo | `responseVO.py` | `TrackerInfoVO`(L5) Tracker 信息响应 VO |
 
-### auth/ — 认证领域（6 个文件）
+### auth/ — 认证领域（7 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | 认证依赖 auth-dependency | `dependencies.py` | 🔵 FastAPI 认证依赖：`AuthenticatedUserInfo`(L23) + `require_authenticated_user`(L83) + `get_current_user`(L102) |
-| JWT/TOTP auth-utils | `utils.py` | JWT + TOTP：`create_access_token`(L39)、`verify_access_token`(L51)、`generate_totp_secret`(L119)、`verify_totp`(L124) |
+| JWT/TOTP auth-utils | `utils.py` | JWT + TOTP：`create_access_token`(L54)、`verify_access_token`(L66)、`generate_totp_secret`(L134)、`verify_totp`(L139) |
 | 密码/SM4 auth-security | `security.py` | 密码 + SM4：`generate_sm4_key`、`sm4_encrypt/decrypt`、`verify_password`、`get_password_hash` |
-| 用户 ORM auth-model | `models.py` | ORM：`User`(L7)、`LoginLog`(L19)、`Config`(L31) |
+| 用户 ORM auth-model | `models.py` | ORM：`User`(L11)、`LoginLog`(L45)、`Config`(L57) |
+| 登录限流 auth-login-throttle | `login_throttle.py` | 登录失败限流（进程内单例 `LoginThrottle`，WORKERS=1 前提）：按 username+client.host 键计数，5 次失败锁 15 分钟、累计 10 次锁 1 小时（封顶），密码与 TOTP 验证码错误共用计数 |
 | 登录请求 auth-request | `request.py` | 请求 VO：`UserLogin`(L5) |
 | 令牌清理 auth-token-cleanup ✨2026-08-18 | `token_cleanup.py` | refresh_tokens 过期记录清理：`CLEANUP_SQL`（过期/撤销超保留期 DELETE）+ 同步函数，供每日 04:30 定时任务调用 |
 
@@ -73,11 +74,11 @@
 
 ## 关键观察
 
-- **下载器领域是最大复杂度核心**：`downloader/initialization.py`（1999 行）+ `qbittorrent_settings.py` + `transmission_settings.py` 构成下载器管理全链路
+- **下载器领域是最大复杂度核心**：`downloader/initialization.py`（2071 行）+ `qbittorrent_settings.py` + `transmission_settings.py` 构成下载器管理全链路
 - **种子领域 ORM 集中**：`TorrentInfo` / `TrackerInfo` / `TrackerMessageLog` 等核心业务表都在 `torrents/models.py`
 - **空文件占位**：`torrents/qbittorrent.py`、`torrents/transmission.py` 为 0 字节空文件
 - **`downloader/` 无 `__init__.py`**（实测确认），与其他领域目录不一致
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`downloader/initialization.py` 1999 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`downloader/initialization.py` 2071 行）

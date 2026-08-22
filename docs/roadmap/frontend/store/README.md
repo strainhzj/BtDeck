@@ -25,7 +25,7 @@
 ## 各 module 主要 @Action
 
 ### user.ts（L33 `@Module`）
-`Login`（L111，缺 refresh_token 时清残留 cookie）、`ResetToken`（L146）、`SetToken`（L69，续期后内存+cookie 同步）、`SetTwoFactorFlag`、`SetMustChangePassword`、`GetUserInfo`、`LogOut`（L239，容忍空 token）
+`Login`（L110，缺 refresh_token 时清残留 cookie）、`ResetToken`（L145）、`SetToken`（L69，续期后内存+cookie 同步）、`SetTwoFactorFlag`、`SetMustChangePassword`、`GetUserInfo`、`LogOut`（L281，容忍空 token）
 
 ### notification.ts（L23 `@Module`）
 `ToggleDrawer`、`FetchUnreadCount`、`FetchNotifications`、`RefreshNotifications`、`MarkAsRead`、`MarkAllAsRead`、`MarkAsUnread`、`DeleteNotification`
@@ -36,7 +36,7 @@
 ### viewMode.ts（L15 `@Module`）
 `setViewMode`、`toggleFilterPanel`、`setFilterPanelCollapsed`
 
-### downloaderSettings.ts（⚠ 传统 Module，L42）
+### downloaderSettings.ts（⚠ 传统 Module，L43）
 actions（无装饰器，L119+）：`fetchSettings`、`updateSettings`、`fetchCapabilities`、`testSettings`、`fetchTemplates`、`fetchTemplateDetail`、`createTemplate`、`updateTemplate`、`deleteTemplate`、`applyTemplate`
 getters（L344+）：`getSettingsById`、`getCapabilitiesById`、`getTemplatesByType`、`getSystemTemplates`、`getUserTemplates`、`isLoading`、`getError`
 

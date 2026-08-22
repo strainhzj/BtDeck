@@ -7,7 +7,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 辅种数量；`TorrentListParams.tracker_domain` L192 支持 Tracker 主机域名多选，`single_error_only` L196 支持错误单种全局唯一排查，`getTrackerDomains()` L224 读取定时同步已采集的域名；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
+| 种子管理核心 torrent | `torrents.ts` | 🔵 种子管理核心：列表/添加/批量/异步删除/重复检测/文件备份等；`Torrent` 暴露 `auxiliarySeedCount` 辅种数量；`TorrentListParams.tracker_domain` L196 支持 Tracker 主机域名多选，`single_error_only` L200 支持错误单种全局唯一排查，`getTrackerDomains()` L228 读取定时同步已采集的域名；均复用 `getTorrentList()` 的筛选、排序与分页契约 |
 | Tracker tracker | `tracker.ts` | Tracker：关键词 CRUD+批量/消息日志 CRUD+批量/统计/测试匹配/关键词池/汇报配置 CRUD+自动检测域名+批量更新 |
 | 定时任务 tasks | `tasks.ts` | 定时任务：CRUD/执行/日志/统计/清理 + 脚本/cron/Python 类校验 |
 | 下载器 downloader | `downloader.ts` | 下载器 CRUD、状态/连接测试、设置/模板、路径映射；路径验证请求/响应使用完整类型并承载逐条内外目录检查结果 |
@@ -30,4 +30,4 @@
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrents.ts` 1258 行核心 API）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`torrents.ts` 1335 行核心 API）

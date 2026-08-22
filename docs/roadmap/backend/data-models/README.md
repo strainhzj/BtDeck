@@ -5,7 +5,7 @@
 
 ## 关键词速查
 
-### models/ — ORM 模型（17 个根 .py + response/ 子目录 2 个 = 19 个）
+### models/ — ORM 模型（18 个根 .py + response/ 子目录 2 个 = 20 个）
 
 | 关键词 | 文件 | 表名 / 一句话职责 |
 |--------|------|-------------------|
@@ -24,6 +24,7 @@
 | 配置模板 model template | `setting_templates.py` | `setting_templates` + `DownloaderTypeEnum` |
 | 模板 VO template-vo | `setting_templates_vo.py` | 配置模板响应 VO |
 | 限速规则 model speed-schedule | `speed_schedule_rules.py` | `speed_schedule_rules`：分时段限速规则 |
+| 同步检查点 model sync-checkpoint | `sync_checkpoint.py` | `sync_checkpoints`：按 `(downloader_id, sync_type)` 持久化同步进度检查点（`detail_json` 仅存清洗后聚合统计、version 乐观锁、outcome 六态），中断/重启后可从最后 durable checkpoint 续跑 |
 | 删除审计 model deletion-audit | `torrent_deletion_audit_log.py` | `torrent_deletion_audit_log`：种子删除审计日志 |
 | 备份记录 model torrent-backup | `torrent_file_backup.py` | `torrent_file_backup`：种子文件本地存储记录 |
 | 标签模型 model torrent-tag | `torrent_tags.py` | `torrent_tags` + `torrent_tag_relations` |
@@ -60,13 +61,13 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 默认任务种子 default-tasks | `default_scheduled_tasks.py` | 11 个系统默认定时任务种子；Tracker 状态同步为 `10,40 * * * *`，独立状态判断为 `20,50 * * * *`（见下方清单） |
+| 默认任务种子 default-tasks | `default_scheduled_tasks.py` | 13 个系统默认定时任务种子；Tracker 状态同步为 `10,40 * * * *`，独立状态判断为 `20,50 * * * *`（见下方清单） |
 | 默认搜索模板 default-search | `default_search_templates.py` | 4 个预设搜索查询模板（v1.0.5）幂等初始化 |
 | 默认配置模板 default-templates | `default_templates.py` | 5 个下载器配置模板（qb 标准/高性能、trans 标准/高性能、夜间不限速） |
 | 默认关键词 default-keywords | `default_tracker_keywords.py` | Tracker 关键词池默认数据（成功/失败/忽略池） |
 
-`default_scheduled_tasks.py` 提供的 11 个 task_code（行号实测）：
-`cached_downloader_sync`(L41)、`TRACKER_MESSAGE_LOGGER`(L58)、`downloader_path_scan`(L75)、`Tag_Data_Sync`(L92)、`TORRENT_TRACKER_STATUS_JUDGE`(L109)、`torrent_info_sync_ac608e4d`(L126)、`tracker_sync_598b784c`(L143)、`tracker_reannounce`(L160)、`orphan_scan_cleanup`(L177)、`orphan_quarantine_purge`(L194)、`orphan_notification_retry`(L211)
+`default_scheduled_tasks.py` 提供的 13 个 task_code（行号实测）：
+`cached_downloader_sync`(L41)、`TRACKER_MESSAGE_LOGGER`(L58)、`downloader_path_scan`(L75)、`Tag_Data_Sync`(L92)、`TORRENT_TRACKER_STATUS_JUDGE`(L109)、`torrent_info_sync_ac608e4d`(L126)、`tracker_sync_598b784c`(L143)、`tracker_reannounce`(L160)、`orphan_scan_cleanup`(L177)、`orphan_quarantine_purge`(L194)、`orphan_notification_retry`(L211)、`orphan_hardlink_copy_scan`(L228)、`refresh_token_cleanup`(L248)
 
 ### enums/
 

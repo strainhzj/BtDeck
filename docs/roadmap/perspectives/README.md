@@ -7,7 +7,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 架构调用链 architecture | [architecture.md](./architecture.md) | 5 条关键业务流程的调用链索引（入口 → 数据层） |
+| 架构调用链 architecture | [architecture.md](./architecture.md) | 6 条关键业务流程的调用链索引（入口 → 数据层） |
 | 约定 conventions | [conventions.md](./conventions.md) | 代码约定索引（链接到 backend/frontend docs/constraints/，不复制条款） |
 | 风险技术债 risks | [risks.md](./risks.md) | 孤儿文件、入口分散、双 SPA fallback、文档/代码漂移等 |
 | 测试覆盖 test-coverage | [test-coverage.md](./test-coverage.md) | 源文件 ↔ 测试文件覆盖矩阵 |

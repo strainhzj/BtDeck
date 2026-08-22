@@ -18,7 +18,8 @@
 | 启动脚本 start.bat | `deploy/start.bat` / `deploy/start.sh` | 启动脚本 |
 | 打包依赖 requirements | `deploy/requirements-linux-package.txt` / `requirements-windows-package.txt` | Linux / Windows 打包专用依赖 |
 | 打包辅助 analyze-package | `deploy/analyze-package-size.py` / `verify-package.py` | 打包体积分析 / 产物校验 |
-| 构建产物 artifact | `deploy/dist/btdeck.exe` / `deploy/build/btdeck/` | Windows 可执行 / PyInstaller 中间产物 |
+| TLS 参考配置 nginx-tls | `deploy/nginx-tls.conf.example` | HTTPS 反代参考配置（安全修复 W14）：HTTP 301 → HTTPS、HSTS、证书挂载说明，保留 `/api/` 内网代理 |
+| 构建产物 artifact | 仓库根 `dist/`（`btdeck.exe`、`btdeck-linux`、`BtDeck-v1.0.9-*.deb/.rpm`、`config`） / `build/btdeck-windows/` | Windows/Linux 可执行与安装包 / PyInstaller 中间产物（均已 .gitignore，不入库） |
 
 ## 部署模式总览
 
@@ -50,13 +51,14 @@
 
 ### backend 启动
 
-- `backend/Dockerfile` L95 `CMD ["/app/btdeck_startup.sh"]`
-- `backend/btdeck_startup.sh` 真正执行（L62-67）：
+- `backend/Dockerfile` L114 `CMD ["/app/btdeck_startup.sh"]`
+- `backend/btdeck_startup.sh` 真正执行（L102）：
   ```
   exec uvicorn app.main:app --host 0.0.0.0 --port 5001 --workers $WORKERS --loop asyncio --log-level info
   ```
-- `APP_MODULE="app.main:app"`（L9）；`PORT=5001`（L10）；`WORKERS` 默认 1（L12）
-- 脚本只做环境准备（日志目录、PYTHONPATH）；配置初始化、数据库迁移、seed 全部交由 FastAPI lifespan 负责
+- `APP_MODULE="app.main:app"`（L15）；`PORT=5001`（L16）；`WORKERS` 默认 1（L18）
+- 启动前 fail-fast（L71-82）：SQLite 后端 + `WORKERS != 1` 直接拒绝启动（多 worker 共享 SQLite 文件库会损坏数据），日志提示改回单 worker
+- 脚本只做环境准备（日志目录、PYTHONPATH、SQLite worker 校验）；配置初始化、数据库迁移、seed 全部交由 FastAPI lifespan 负责
 
 ### frontend 构建 + nginx
 
@@ -67,8 +69,8 @@
   - L53 `listen 80;`；L60 `root /usr/share/nginx/html;`
   - L71 `service-worker.js` 精确 no-store；L81 只有 `/assets/` 内容哈希资源缓存 1y immutable
   - L93 `location = /api/v1/auth/login`（登录接口 body 上限 1M，安全修复 W13）
-  - L104 `location /api/ { proxy_pass http://btdeck-backend:5001; }`
-  - L128 `location / { try_files $uri $uri/ /index.html; }`（SPA history fallback + no-store）
+  - L105 `location /api/ { proxy_pass http://btdeck-backend:5001; }`
+  - L129 `location / { try_files $uri $uri/ /index.html; }`（SPA history fallback + no-store）
   - L138 `location /health`（容器健康检查端点）
 
 > 部署会整体替换包含哈希文件的不可变前端镜像。已打开的旧 SPA 可能在客户端路由跳转时请求旧 chunk；`router.onError` 会携带一次性 query 重新加载当前 no-store 入口，60 秒门禁防止服务器真实缺文件时循环刷新。
@@ -112,12 +114,15 @@
 | `deploy/build-windows.bat` | Windows 一键构建（PyInstaller + Inno Setup） |
 | `deploy/build-linux.sh` | Linux 一键构建（PyInstaller + fpm） |
 
-### 产物
+### 产物（仓库根 `dist/` 与 `build/`，均已 .gitignore 不入库）
 
 | 文件/目录 | 用途 |
 |-----------|------|
-| `deploy/dist/btdeck.exe` | Windows 可执行 |
-| `deploy/build/btdeck/` | PyInstaller 中间产物（Analysis/EXE/PYZ/PKG .toc 等） |
+| `dist/btdeck.exe` | Windows 可执行 |
+| `dist/btdeck-linux` | Linux 可执行 |
+| `dist/BtDeck-v1.0.9-linux-amd64.deb` / `.rpm` | fpm 打包的 Linux deb/rpm 安装包 |
+| `dist/config` | 打包配套配置 |
+| `build/btdeck-windows/` | PyInstaller 中间产物（Analysis/EXE/PYZ/PKG .toc 等） |
 
 ### Windows 服务支持
 
@@ -149,7 +154,7 @@
 
 - **双入口分叉**：Docker 走 `btdeck_startup.sh` + nginx；单机走 PyInstaller + `factory.py:_mount_frontend_static`。两种模式下"如何提供前端静态文件"完全不同。
 - **WebSocket 已移除**：`websocket_main.py` 与 5002 端口转发已删除（前端用 5 秒轮询，无实时推送服务）。
-- **构建产物已入库**：`deploy/dist/btdeck.exe`、`deploy/build/` 已提交到仓库（可能是误提交，体积较大）。
+- **构建产物不入库（已整改）**：历史曾误提交 `deploy/dist/btdeck.exe`、`deploy/build/`、根目录镜像 tar；现产物仅落在本机仓库根 `dist/` 与 `build/`，`dist/`、`build/`、`btdeck-*.tar` 均已加入 `.gitignore`（`git ls-files` 实测 0 条跟踪记录）。
 
 ## 第三层详情
 

@@ -21,12 +21,13 @@
 | ratio 诊断 ratio-diagnostics | `ratio_data_diagnostics.py` ✨v1.0.6.27 | 🔵 ratio 列迁移只读诊断：统计 `torrent_info.ratio`/`ratio_limit` 的 null/zero/positive/invalid 分布、列举 pre-migration 备份、生成回滚所需 checksum；被 `scripts/ratio_migration_report.py` 消费 |
 | Reannounce 配置 reannounce-config | `reannounce_config_operations.py` | `tracker_reannounce_config` 表 CRUD + 域名匹配 |
 | 解密孤儿 security | `security.py` | ⚠️ **孤儿**：Tracker 信息安全解密（密钥管理+安全日志），无任何引用 |
+| 启动约束 startup-guard | `startup_guard.py` | 🔵 SQLite 单 Worker 启动约束（fail-fast）：`detect_backend`/`validate_worker_count`/`validate_scheduler_scope` 纯函数校验 WORKERS=1 与调度器进程范围，被 main.py、lifecycle.py、health.py、orphan_purge_job_service.py 引用 |
 | 种子文件备份 torrent-file-backup | `torrent_file_backup.py` | 种子文件备份服务（从下载器备份目录拷贝到项目备份目录） |
 | ratio 工具孤儿 ratio-tools | `torrent_operations.py` | ⚠️ **孤儿（内容已重写但未接线）**：v1.0.6.27 起内容已重写为 ratio/ratio_limit 工具，但**生产路径未 import**（实际生效的是 `app/services/torrent_ratio_values.py`） |
 | 状态映射 status-mapper | `torrent_status_mapper.py` ✨2026-08-16 | 统一 qb/transmission 种子状态映射；qB 映射表补齐新种子初始态（metaDL/forcedMetaDL/allocating→downloading、forcedDL→downloading、forcedUP→seeding、missingFiles→error、checkingResumeData→checkingDL，moving 有意不映射），`resolve_transmission_status` L112 判定错误状态，`extract_transmission_error_reason` L147 安全提取 errorString（warning/恢复返回空） |
 | Tracker 判断 tracker-judgment | `tracker_judgment.py` | Tracker 状态判断引擎（关键词池，失败优先策略） |
 | Tracker 映射 tracker-mapper | `tracker_mapper.py` | qb/transmission tracker 状态统一映射 + 关键词池判断集成；`resolve_transmission_tracker_status_code()` L120 将布尔统计/联系状态归一为项目 0–4 状态码 |
-| Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L40 以非空消息优先、Working 空消息兜底构造证据，L66 聚合为明确正常/全部失败/未知保留；✨2026-08-20 展示对齐判定：`tracker_message_failed()` L78 单消息精确命中失败池、`tracker_display_failed()` L90 按判定任务中性码语义（qb==1/tr∈{0,1} 残留消息不采信）裁决展示覆写，`FAILED_DISPLAY_TEXT` L13 与两套枚举 code=3 文本一致 |
+| Tracker 联合判定 tracker-status-policy | `tracker_status_policy.py` ✨2026-08-12 | Tracker 行级同步与种子级判断共享纯函数：L43 以非空消息优先、Working 空消息兜底构造证据，L69 聚合为明确正常/全部失败/未知保留；✨2026-08-20 展示对齐判定：`tracker_message_failed()` L78 单消息精确命中失败池、`tracker_display_failed()` L90 按判定任务中性码语义（qb==1/tr∈{0,1} 残留消息不采信）裁决展示覆写，`FAILED_DISPLAY_TEXT` L13 与两套枚举 code=3 文本一致 |
 | Tracker 关键词池加载 tracker-keyword-map | `tracker_keyword_map.py` ✨2026-08-20 | `load_active_keyword_map()` L19 加载 failed/success/ignored 三池为 `{keyword: type}`（first-wins，异常返回空池降级）；种子级判定任务与展示覆写共用同一映射保证口径一致 |
 | Tracker 操作孤儿 tracker-operations | `tracker_operations.py` | ⚠️ **孤儿**：标准化 tracker DB 操作（DatabaseResult 重构版），未启用 |
 
@@ -40,7 +41,7 @@
 
 | 文件 | 行数 | 问题 |
 |------|------|------|
-| `core/security.py` | 263 | Tracker 解密模块（`TrackerDecryptionKeyManager` 等）完全未接入，与 `app.auth.security`、`app.utils.encryption` 功能重叠 |
+| `core/security.py` | 258 | Tracker 解密模块（`TrackerDecryptionKeyManager` 等）完全未接入，与 `app.auth.security`、`app.utils.encryption` 功能重叠 |
 | `core/downloader.py` | 29 | 自身 `from app.downloader import models` 指向不存在的包，已失效 |
 | `core/torrent_operations.py` | 250 | v1.0.6.27 重写为 ratio 工具但**仍未接线**（生产用 `app/services/torrent_ratio_values.py`）；存在"两份 ratio 规范化逻辑"风险，建议合并或删除 |
 | `core/tracker_operations.py` | 292 | DatabaseResult 重构产物，被 `services/orphan_*`、`services/reannounce_service` 等取代 |
@@ -52,7 +53,7 @@
 |------|--------|
 | `core/db_backup.py` | `core/migration.py` + `core/ratio_data_diagnostics.py`（v1.0.6.27 起从 1 引用升为 2） |
 | `core/ratio_data_diagnostics.py` | `scripts/ratio_migration_report.py` + `tests/core/test_ratio_data_diagnostics.py` |
-| `core/background_task_manager.py` | 仅 `api/endpoints/torrent_sync.py:24` |
+| `core/background_task_manager.py` | 仅 `api/endpoints/torrent_sync.py:23` |
 
 > 详见 [../../perspectives/risks.md](../../perspectives/risks.md) "孤儿文件" 章节。
 
@@ -62,7 +63,7 @@
 
 | 文件 | 引用数 | 角色 |
 |------|--------|------|
-| `config.py` | 28 | 全局配置入口（`settings` / `is_frozen` / `ROOT_PATH`） |
+| `config.py` | 40 | 全局配置入口（`settings` / `is_frozen` / `ROOT_PATH`） |
 | `database_result.py` | 11 | `DatabaseResult[T]` 通用查询封装 |
 | `path_mapping.py` | 10 | `PathMappingService` / `PathMappingConverter` / `UnifiedPathMappingService`（L39/L446/L716） |
 | `torrent_status_mapper.py` | 6 | 状态映射 |
@@ -74,4 +75,4 @@
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`path_mapping.py` 898 行 / `file_operations.py` 1474 行 / `config.py` 236 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`path_mapping.py` 932 行 / `file_operations.py` 1474 行 / `config.py` 423 行）

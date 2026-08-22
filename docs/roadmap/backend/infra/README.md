@@ -5,12 +5,14 @@
 
 ## 关键词速查
 
-### utils/（3 个文件）
+### utils/（5 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 审计日志 audit-logger | `audit_logger.py` | 🔵 审计日志系统：`_AuditLoggerSingleton`(L32)、`_AuditFormatter`(L282)、`_CompressingRotator`(L304 旧日志压缩)、`get_audit_logger`(L383)、`export_audit_logs_from_db_to_file`(L393) |
-| SM4 加密 encryption | `encryption.py` | 🔵 SM4 加密：`SM4Encryption`(L14) + 模块封装 `get_sm4_encryption`(L147)、`encrypt_password`(L155)、`decrypt_password`(L169)、`encrypt_tracker_url`(L183)、`decrypt_tracker_url`(L197) |
+| 审计日志 audit-logger | `audit_logger.py` | 🔵 审计日志系统：`_AuditLoggerSingleton`(L32)、`_AuditFormatter`(L283)、`_CompressingRotator`(L305 旧日志压缩)、`get_audit_logger`(L384)、`export_audit_logs_from_db_to_file`(L394) |
+| UTC 时间序列化 datetime-utils | `datetime_utils.py` | `serialize_utc_datetime`(L8)：将 DB 中 naive UTC DateTime 序列化为带显式 UTC 的 ISO-8601，供 API 响应模型共用 |
+| SM4 加密 encryption | `encryption.py` | 🔵 SM4 加密：`SM4Encryption`(L14) + 模块封装 `get_sm4_encryption`(L159)、`encrypt_password`(L167)、`decrypt_password`(L181)、`encrypt_tracker_url`(L195)、`decrypt_tracker_url`(L209) |
+| 字节大小格式化 format-size | `format_size.py` | `format_size`(L11)：字节大小格式化（1024 进制自动选单位、保留 2 位小数），供通知文案等人类可读展示共用 |
 | 日志脱敏 log-sanitizer | `log_sanitizer.py` | 日志脱敏：`sanitize_ip`(L18)、`sanitize_username`(L40)、`sanitize_log_message`(L55)、`format_connection_log`(L76)、`should_sanitize`(L100) |
 
 > 加密集中点：`utils/encryption.py`（SM4 主实现）被 `auth/security.py`、`migrations/database_migrator.py`、`downloader/qbittorrent_settings.py` 等复用。
@@ -25,15 +27,15 @@
 ### lifecycle.py 管理的流程
 
 **启动阶段**（`lifespan` L262 起，行号实测）：
-- L282-290：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载；`init_config_file` 本体在 database.py L350，对已存在配置"缺失才补" secret_key/login_status_secret/jwt_secret_key，不轮换已有密钥）
+- L282-290：`init_config_file()` + `yaml.reload()`（首次启动写配置并重载；`init_config_file` 本体在 database.py L354，对已存在配置"缺失才补" secret_key/login_status_secret/jwt_secret_key，不轮换已有密钥）
 - L302-311：`migrate_database()`（任意运行模式迁移失败或未到 head 均终止）
-- L314-322：`init_db()`（初始数据）；L325：`await init_database_connection()`
+- L314-322：`init_db()`（初始数据）；L340：`await init_database_connection()`
 - L330-345：`await reconcile_orphan_file_state()`（幂等对账历史隔离候选）
 - L350-364：`recover_interrupted_orphan_scans()` 将残留 running 批次标记 failed
-- L370：`await update_cron_task_status()`；L381：`await cron_executor.start()`
+- L377：`await update_cron_task_status()`；L388：`await cron_executor.start()`
 - L396-419：创建下载器、持久化孤儿清理和 queued 扫描恢复任务
 
-**关闭阶段**（`yield` 之后 L457 起）：取消恢复任务，关闭孤儿扫描/清理调度器、Cron、下载器 API runtime 与观测任务。
+**关闭阶段**（`yield` 之后 L464 起）：取消恢复任务，关闭孤儿扫描/清理调度器、Cron、下载器 API runtime 与观测任务。
 
 ### migrations/ — 应用层数据迁移（3 个文件）
 
@@ -41,7 +43,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 迁移总入口 migrator | `database_migrator.py` | 🔵 迁移总入口：`DatabaseMigrator`(L19) + `run_database_migrations()`(L756) |
+| 迁移总入口 migrator | `database_migrator.py` | 🔵 迁移总入口：`DatabaseMigrator`(L19) + `run_database_migrations()`(L768) |
 | 进度字段迁移 progress-migration | `add_torrent_progress_migration.py` | `TorrentProgressMigration`(L13) + `run_torrent_progress_migration(db_path)`(L293)：为种子新增进度字段 |
 | 关键词分组迁移 keyword-pool-migration | `keyword_pools_migration.py` | `KeywordPoolsMigration`(L13) + `run_keyword_pools_migration(db_path)`(L192)：关键词分组表迁移 |
 
@@ -50,20 +52,20 @@
 - 入口：`__init__`(L22)、`run_migrations`(L27)
 - 迁移登记表：`_create_migration_table`(L87)、`_is_migration_completed`(L100)、`_mark_migration_completed`(L112)
 - 三大类别：`_migrate_field_types`(L140)、`_migrate_delete_logic`(L181)、`_migrate_encrypted_fields`(L259)
-- 表结构升级：`_migrate_bt_downloaders_table`(L319)、`_migrate_torrent_info_table`(L371)、`_migrate_tracker_info_table`(L440, 带 sm4_key 解密)
-- 密码/URL 加密迁移：`_encrypt_passwords`(L516)、`_encrypt_tracker_urls`(L547)、`_get_sm4_key`(L576)
-- `generate_migration_sql`(L599)
+- 表结构升级：`_migrate_bt_downloaders_table`(L319)、`_migrate_torrent_info_table`(L371)、`_migrate_tracker_info_table`(L452, 带 sm4_key 解密)
+- 密码/URL 加密迁移：`_encrypt_passwords`(L528)、`_encrypt_tracker_urls`(L559)、`_get_sm4_key`(L588)
+- `generate_migration_sql`(L611)
 
 ### alembic/ — Schema 版本迁移
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
-| Alembic revisions versions | `versions/` | **23 个** revision 文件；当前 head 为 `975dad435c03`（见下表） |
+| Alembic revisions versions | `versions/` | **28 个** revision 文件；当前 head 为 `975dad435c03`（见下表） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（23 个迁移文件）
+### alembic/versions/（28 个迁移文件）
 
 | 关键词 | 文件名 | 内容（从命名推断） |
 |--------|--------|-------------------|
@@ -89,6 +91,11 @@
 | 孤儿后台扫描 orphan-background-scan | `7b2c9d4e6f10_orphan_scan_background_and_current_detail.py` ✨2026-08-13 | `upgrade`(L58)/`downgrade`(L224)：新增后台扫描/提醒兼容字段与 `current_detail_id`；原生加列、恢复残留 `_alembic_tmp_*`，强制 canonical_path 索引回填；历史 >50000 批次保留提醒状态，不再作为清理锁定依据 |
 | 副本预扫描结果表 orphan-hardlink-results | `c8d9e0f1a2b3_add_orphan_hardlink_copy_results.py` ✨2026-08-15 | 纯增量两表：`orphan_hardlink_copy_result`（唯一身份 + scanned_at 索引）与单行游标表；downgrade 直接删表，可回滚 |
 | 备份下载器 ID 类型 torrent-backup-id-type | `b6e1c4d9a2f7_fix_torrent_backup_downloader_id_type.py` ✨2026-08-15 | `upgrade`(L50)/`downgrade`(L66)：`torrent_file_backup.downloader_id` Integer→String(36)（与 `bt_downloaders` UUID 主键对齐）；幂等类型探测 + batch 临时表恢复；downgrade 遇不可无损转整数的 UUID 文本时 raise 拒绝破坏性回滚 |
+| 副本数快照 orphan-hardlink-copy-count | `d4e5f6a7b8c9_orphan_hardlink_copy_count_snapshot.py` | 【可回滚】`orphan_file` 新增 `hardlink_copy_count` 快照列（`st_nlink - 1`，列表副本数列与 `hardlink_copies=located` 筛选数据源），按 id 分块从预扫描结果回填稳定明细，并附 `ix_orphan_candidate_current_detail_status` 覆盖索引 |
+| 路径禁用来源 path-disabled-by | `a7b8c9d0e1f2_add_path_maintenance_disabled_by.py` | 【可回滚】`downloader_path_maintenance` 新增 `disabled_by` 列区分禁用来源（NULL 未禁用/auto 扫描自动禁用/user 手动禁用），存量禁用记录保守标 'user'，防扫描推翻用户意图 |
+| 刷新令牌表 refresh-tokens | `a8b9c0d1e2f3_add_refresh_tokens.py` | 【可回滚】新增 `refresh_tokens` 表（双令牌体系）：refresh token 仅存 SHA-256 哈希、使用即轮换（旧记录置 revoked_at）、登出撤销该用户全部记录 |
+| 强制改密 must-change-password | `ff42d3402df5_add_users_must_change_password.py` | 【可回滚】`users` 加 `must_change_password` 标志列（server_default '0'），downgrade 直接删列 |
+| 清理任务 IP purge-job-ip | `ab68fe061d5b_add_orphan_purge_job_ip_address.py` | 【可回滚】`orphan_purge_job` 新增 `ip_address`（nullable String(64)）：后台异步清理无 HTTP 上下文，任务提交时持久化提交端 IP、执行时透传审计；历史任务行保持 NULL |
 | 辅种数量 auxiliary-seed-count | `975dad435c03_add_auxiliary_seed_count.py` ✨2026-08-20 | 为 `torrent_info` 增加 NOT NULL Integer `auxiliary_seed_count`，历史行默认 1；upgrade/downgrade 仅增删该列，可回滚 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
@@ -103,4 +110,4 @@
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`utils/audit_logger.py` 544 行、`migrations/database_migrator.py` 764 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`utils/audit_logger.py` 545 行、`migrations/database_migrator.py` 776 行）

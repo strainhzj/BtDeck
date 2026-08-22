@@ -9,7 +9,7 @@
 | 项目 | 值 |
 |------|-----|
 | 源路径 | `backend/app/api/endpoints/torrent_crud.py` |
-| 行数 | 738（实测 PowerShell `Get-Content`） |
+| 行数 | 727（实测 2026-08-22） |
 | 模块职责 | 种子 CRUD 端点：列表同步、单个/批量添加、按主键查询、通用条件查询 |
 | 路由前缀 | 由 `torrents.py` 聚合后挂到 `/torrents`（最终 `/api/v1/torrents/*`） |
 | 顶层符号 | 1 class（`TorrentOperationRequest`）+ 6 路由函数 |
@@ -22,13 +22,13 @@
 
 ### INV-1：下载器连接必须走 `app.state.store` 缓存（强制规范）
 
-源码证据：`create_torrent` L143-181、`create_torrents_batch` L470-499
+源码证据：`create_torrent` L159-194、`create_torrents_batch` L508-521
 
 ```python
-# L143-145: 从 app.state.store 获取缓存的下载器（强制规范）
+# L161-163: 从 app.state.store 获取缓存的下载器（强制规范）
 app = request.app
 if not hasattr(app.state, "store"): ...
-# L155: 使用异步版本 get_snapshot() 避免线程问题
+# L171: 使用异步版本 get_snapshot() 避免线程问题
 cached_downloaders = await app.state.store.get_snapshot()
 ```
 
@@ -36,23 +36,23 @@ cached_downloaders = await app.state.store.get_snapshot()
 
 ### INV-2：下载器类型判断用 `downloader_type` 字段（0=qBittorrent, 1=Transmission）
 
-源码证据：L221 `if downloader.downloader_type == 1:  # Transmission`、L302 `if downloader.downloader_type == 0:  # qBittorrent`
+源码证据：L241 `if downloader.downloader_type == 1:  # Transmission`、L331 `if downloader.downloader_type == 0:  # qBittorrent`
 
 ### INV-3：临时文件写入必须 `flush + fsync + close` 后返回路径
 
-源码证据：`write_temp_file` L187-203（内嵌函数）
+源码证据：`write_temp_file` L207-223（内嵌函数）
 
 ```python
-tmp_file.flush()       # L192 确保数据写入磁盘
-os.fsync(tmp_file.fileno())  # L193 强制同步
-tmp_file.close()       # L194
+tmp_file.flush()       # L212 确保数据写入磁盘
+os.fsync(tmp_file.fileno())  # L213 强制同步
+tmp_file.close()       # L214
 ```
 
-文件 I/O 通过 `asyncio.to_thread` 放入线程池执行（L205），避免阻塞事件循环。
+文件 I/O 通过 `asyncio.to_thread` 放入线程池执行（L225），避免阻塞事件循环。
 
 ### INV-4：添加种子后轮询验证（最多 30 秒）
 
-源码证据：L247-257（Transmission）、L330-341（qBittorrent）
+源码证据：L274-286（Transmission）、L365-386（qBittorrent）
 
 ```python
 max_retries = 30
@@ -63,7 +63,7 @@ while tr_torrent is None and retry_count < max_retries:
 
 ### INV-5：DB 查询必须返回完整实体（不能只 select info_id）
 
-源码证据：L260-269、L346-355、L564-574、L621-631（4 处重复注释）
+源码证据：L289-298、L391-400（2 处重复注释；批添加路由原有 2 处已随批处理逻辑外移而移出本文件）
 
 ```python
 # ⚠️ 必须查询完整实体而非仅 info_id 列：审计日志构造时会访问 .name/.hash/.size，
@@ -73,25 +73,25 @@ while tr_torrent is None and retry_count < max_retries:
 
 ### INV-6：异常兜底必须覆盖整个分支（含 ORM 写入）
 
-源码证据：L285-299（Transmission 兜底）、L370-392（qBittorrent 兜底）
+源码证据：L310-328（Transmission 兜底）、L411-437（qBittorrent 兜底）
 
-> `prod-hotfix-2026-07-19` 修复：早期 try 块只覆盖 `torrents_add/torrents_info` 轮询，把 `create_qbittorrent_torrent_record + db.commit()` 留在 try 之外，导致 `TypeError("Object of type ValueError is not JSON serializable")` 冒泡到全局 500。本修复把整个分支纳入 try，与 batch add 端点结构对齐。
+> `prod-hotfix-2026-07-19` 修复：早期 try 块只覆盖 `torrents_add/torrents_info` 轮询，把 `create_qbittorrent_torrent_record + db.commit()` 留在 try 之外，导致 `TypeError("Object of type ValueError is not JSON serializable")` 冒泡到全局 500。本修复把整个分支纳入 try（批添加流程现已重构至 `torrent_batch_add_service.py`）。
 
 ### INV-7：审计日志异步写入，失败不影响主业务
 
-源码证据：`write_audit_log_async` L395-426
+源码证据：`write_audit_log_async` L440-467
 
 ```python
-asyncio.create_task(write_audit_log_async())  # L426 后台执行
-# 审计日志失败不影响主业务（L420-422 catch all）
+asyncio.create_task(write_audit_log_async())  # L471 后台执行
+# 审计日志失败不影响主业务（L465-467 catch all）
 ```
 
-> ⚠ 注释警告：异步任务异常会被静默忽略（L425）。
+> ⚠ 注释警告：异步任务异常会被静默忽略（L470）。
 
 ### INV-8：所有路由统一认证 + 统一响应
 
 - 认证：`_user=Depends(require_authenticated_user)`（6 个路由均有）
-- 响应：`response_model=CommonResponse`（除 `get_torrents` 外）
+- 响应：`response_model=CommonResponse`（除 `get_torrents` 与 `get_tracker_domains` 外）
 
 ---
 
@@ -99,22 +99,22 @@ asyncio.create_task(write_audit_log_async())  # L426 后台执行
 
 | 行号 | 符号 | 类型 | 说明 |
 |------|------|------|------|
-| L36 | `logger` | 模块常量 | `logging.getLogger(__name__)` |
-| L37 | `router` | 模块常量 | `APIRouter()` |
-| L38 | `urllib3.disable_warnings(...)` | 模块副作用 | 关闭 InsecureRequestWarning |
-| L59 | `TorrentOperationRequest` | class（BaseModel） | 种子操作请求统一基类 |
-| L67 | `torrent_list` | def（路由） | `POST /list` 同步下载器种子到 DB |
-| L137 | `create_torrent` | async def（路由） | `POST /add` 单个添加 |
-| L206 | `write_temp_file` | def（嵌套） | 安全写入临时文件（内嵌于 create_torrent） |
-| L250 | `read_file_data` | def（嵌套） | 读文件到 bytes（Transmission 分支） |
-| L336 | `read_file_data_qb` | def（嵌套） | 读文件到 bytes（qBittorrent 分支） |
-| L439 | `write_audit_log_async` | async def（嵌套） | 异步审计日志写入 |
-| L484 | `create_torrents_batch` | async def（路由） | `POST /add-batch` 提交异步批量添加 |
-| L581 | `get_torrent` | def（路由） | `GET /torrents/{info_id}/{downloader_id}/{downloader_name}` 按主键查 |
+| L46 | `logger` | 模块常量 | `logging.getLogger(__name__)` |
+| L47 | `router` | 模块常量 | `APIRouter()` |
+| L48 | `urllib3.disable_warnings(...)` | 模块副作用 | 关闭 InsecureRequestWarning |
+| L60 | `TorrentOperationRequest` | class（BaseModel） | 种子操作请求统一基类 |
+| L68 | `torrent_list` | def（路由） | `POST /list` 同步下载器种子到 DB |
+| L138 | `create_torrent` | async def（路由） | `POST /add` 单个添加 |
+| L207 | `write_temp_file` | def（嵌套） | 安全写入临时文件（内嵌于 create_torrent） |
+| L251 | `read_file_data` | def（嵌套） | 读文件到 bytes（Transmission 分支） |
+| L337 | `read_file_data_qb` | def（嵌套） | 读文件到 bytes（qBittorrent 分支） |
+| L440 | `write_audit_log_async` | async def（嵌套） | 异步审计日志写入（内嵌于 create_torrent） |
+| L485 | `create_torrents_batch` | async def（路由） | `POST /add-batch` 提交异步批量添加 |
+| L582 | `get_torrent` | def（路由） | `GET /torrents/{info_id}/{downloader_id}/{downloader_name}` 按主键查 |
 | L597 | `get_torrents` | def（路由） | `GET /getList` 通用条件查询（含 Tracker 主域名和错误单种全局唯一筛选） |
-| L707 | `get_tracker_domains` | def（路由） | `GET /tracker-domains` 返回定时 Tracker 同步采集的主机域名列表 |
+| L705 | `get_tracker_domains` | def（路由） | `GET /tracker-domains` 返回定时 Tracker 同步采集的主机域名列表 |
 
-> 嵌套函数（write_temp_file / read_file_data / write_audit_log）不计入"顶层符号"，但按提示词要求收录在索引中以便定位。
+> 嵌套函数（write_temp_file / read_file_data / read_file_data_qb / write_audit_log_async）全部定义于 `create_torrent` 内，不计入"顶层符号"，收录在索引中以便定位。批量添加的逐文件处理主体位于 `app/services/torrent_batch_add_service.py`（`process_torrent_batch_job`）。
 
 ---
 
@@ -127,48 +127,50 @@ asyncio.create_task(write_audit_log_async())  # L426 后台执行
 ```python
 @router.post("/list", response_model=CommonResponse)
 def torrent_list(
+    request: Request,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
     name: str = Query(default="default", alias="name", description="种子名称"),
     db: Session = Depends(get_db),
-) -> CommonResponse:
+):
 ```
 
-- **定位**：`torrent_crud.py:52`
+- **定位**：`torrent_crud.py:68`
 - **职责**：查询所有启用的下载器（`dr=0, enabled=True, status="1"`），按类型调用 `qb_add_torrents` / `tr_add_torrents` 同步种子到 DB，返回成功/失败计数。
-- **不变式**：异常分两层捕获（`SQLAlchemyError` L113 + 通用 `Exception` L116），均返回 `CommonResponse(code="500")` 而非抛出。
+- **不变式**：异常分两层捕获（`SQLAlchemyError` L129 + 通用 `Exception` L132），均返回 `CommonResponse(code="500")` 而非抛出。
 
 #### `create_torrent` — 单个添加种子
 
 ```python
 @router.post("/add", response_model=CommonResponse)
 async def create_torrent(
+    request: Request,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
     downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
     save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
     tags: Optional[str | None] = Form("", description="标签"),
     category: Optional[str | None] = Form("", description="分类"),
-    paused: Optional[bool] = Form(False, description="是否暂停"),
-    skip_hash_check: Optional[bool | None] = Form(False, description="是否跳过校验"),
-    is_sequential_download: Optional[bool | None] = Form(False, description="是否按顺序下载"),
-    is_first_last_piece_priority: Optional[bool | None] = Form(False, description="是否先下载首尾文件块"),
-    upload_limit: Optional[str | int | None] = Form(False, description="上传速度 bytes/second"),
-    download_limit: Optional[str | int | None] = Form(False, description="下载速度 bytes/second"),
+    paused: Optional[bool] = Form(False, description="是否暂停,0代表false，1代表true"),
+    skip_hash_check: Optional[bool | None] = Form(False, description="是否跳过校验,0代表false，1代表true"),
+    is_sequential_download: Optional[bool | None] = Form(False, description="是否按顺序下载,0代表false，1代表true"),
+    is_first_last_piece_priority: Optional[bool | None] = Form(
+        False, description="是否先下载首尾文件块,0代表false，1代表true"
+    ),
+    upload_limit: Optional[str | int | None] = Form(False, description="上传速度，单位bytes/second"),
+    download_limit: Optional[str | int | None] = Form(False, description="下载速度，单位bytes/second"),
     torrent_file: Optional[UploadFile] = File(description="种子文件"),
     db: Session = Depends(get_db),
-) -> CommonResponse:
+):
 ```
 
-- **定位**：`torrent_crud.py:122`
-- **职责**：从缓存获取下载器 → 写临时文件 → 计算 info_hash → 按下载器类型调用 SDK 添加 → 轮询验证 → 写 DB → 异步审计日志。
+- **定位**：`torrent_crud.py:138`
+- **职责**：从缓存获取下载器 → 写临时文件 → 计算 info_hash → 按下载器类型经 `call_downloader_api` 添加 → 轮询验证 → 写 DB → 异步审计日志。
 - **关键调用链**：
-  - L155 `app.state.store.get_snapshot()` → 缓存下载器
-  - L209 `calculate_info_hash(tmp_file_path)` → [torrent_helpers](./torrent_helpers.md 待建)
-  - L221/L302 分支：Transmission（`tr_client.add_torrent` L239）/ qBittorrent（`qb_client.torrents_add` L315）
-  - L251/L334 轮询：`get_transmission_torrent_info` / `qb_client.torrents_info`
-  - L273/L359 落库：`create_transmission_torrent_record` / `create_qbittorrent_torrent_record`
-  - L426 审计：`asyncio.create_task(write_audit_log_async())`
+  - L171 `app.state.store.get_snapshot()` → 缓存下载器
+  - L229 `calculate_info_hash(tmp_file_path)` → [torrent_helpers](./torrent_helpers.md 待建)
+  - L241/L331 分支：Transmission（`call_downloader_api(tr_client.add_torrent)` L260）/ qBittorrent（`call_downloader_api(qb_client.torrents_add)` L345）
+  - L280/L372 轮询：`get_transmission_torrent_info` / `call_downloader_api(qb_client.torrents_info)`
+  - L302/L404 落库：`create_transmission_torrent_record` / `create_qbittorrent_torrent_record`
+  - L471 审计：`asyncio.create_task(write_audit_log_async())`
 - **不变式**：INV-1/2/3/4/5/6/7/8 全部适用。
 
 #### `create_torrents_batch` — 批量添加种子
@@ -176,27 +178,27 @@ async def create_torrent(
 ```python
 @router.post("/add-batch", response_model=CommonResponse)
 async def create_torrents_batch(
+    request: Request,
     _user=Depends(require_authenticated_user),
-    request: Request = None,
-    torrent_files: List[UploadFile] = File(..., description="种子文件列表（最多10个）"),
+    torrent_files: List[UploadFile] = File(..., description="种子文件列表，数量不限"),
     downloader_id: Optional[str] = Form(..., description="所属下载器主键"),
     save_path: Optional[str | None] = Form(..., description="种子文件保存路径"),
     tags: Optional[str | None] = Form("", description="标签"),
     category: Optional[str | None] = Form("", description="分类"),
     paused: Optional[bool] = Form(False, description="是否暂停"),
     skip_hash_check: Optional[bool | None] = Form(False, description="是否跳过校验"),
-    is_sequential_download: Optional[bool | None] = Form(False, description="是否按顺序下载"),
-    is_first_last_piece_priority: Optional[bool | None] = Form(False, description="是否先下载首尾文件块"),
-    upload_limit: Optional[str | int | None] = Form(False, description="上传速度 bytes/second"),
-    download_limit: Optional[str | int | None] = Form(False, description="下载速度 bytes/second"),
+    is_sequential_download: Optional[bool | None] = Form(False, description="是否顺序下载"),
+    is_first_last_piece_priority: Optional[bool | None] = Form(False, description="是否优先首尾文件块"),
+    upload_limit: Optional[str | int | None] = Form(False, description="上传速度，单位 bytes/second"),
+    download_limit: Optional[str | int | None] = Form(False, description="下载速度，单位 bytes/second"),
     db: Session = Depends(get_db),
-) -> CommonResponse:
+):
 ```
 
-- **定位**：`torrent_crud.py:440`
-- **职责**：批量处理最多 10 个种子文件，逐个走与 `create_torrent` 相同的流程，返回 `total/success_count/failed_count/results`。
-- **响应码**：全成功 `200`、全失败 `500`、部分成功 `207`（Multi-Status，L711）。
-- **与单添加的差异**：每个文件独立 try/except（L510/L678），单文件失败不影响其他文件；审计日志在成功分支内异步写入（L676）。
+- **定位**：`torrent_crud.py:485`
+- **职责**：校验下载器缓存（L508-521）后，将上传文件逐个 `stage_torrent_file` 暂存（失败时 `cleanup_staged_files` 回收），构建 `TorrentBatchAddOptions`（operator 从 `_user` 推导，L542-558），随后 `asyncio.create_task(process_torrent_batch_job(...))` 交后台处理（L562-567）并 `register_torrent_batch_task` 注册任务，立即返回 `202 accepted` + `task_id`（L573-578），完成结果经通知中心告知用户。
+- **逐文件逻辑**：原内联的"每文件独立 try/except、200/500/207 汇总"处理已全部移至 `app/services/torrent_batch_add_service.py` 的 `process_torrent_batch_job`。
+- **响应码**：无文件 `400`、下载器不在缓存 `404`、下载器失效 `503`、暂存/任务创建失败 `500`、提交成功 `202`。
 
 #### `get_torrent` — 按复合主键查询
 
@@ -208,10 +210,10 @@ def get_torrent(
     downloader_name: str,
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
-) -> CommonResponse:
+):
 ```
 
-- **定位**：`torrent_crud.py:722`
+- **定位**：`torrent_crud.py:582`
 - **职责**：委托 `get_torrent_info(db, info_id, downloader_id)`（services 层）查询，未找到抛 `HTTPException(404)`。
 - **注意**：`downloader_name` 是路径参数但**未在函数体内使用**（仅用于前端 URL 语义）。
 
@@ -220,7 +222,7 @@ def get_torrent(
 ```python
 @router.get("/getList")
 def get_torrents(
-    downloader_id: Optional[str] = Query(None, description="所属下载器主键（支持多选，逗号分隔）"),
+    downloader_id: Optional[str] = Query(None, description="所属下载器主键（支持多选，逗号分隔）", examples=[""]),
     downloader_name_like: Optional[str] = Query(None, description="所属下载器名模糊查询"),
     name_like: Optional[str] = Query(None, description="种子名称模糊查询"),
     save_path_like: Optional[str] = Query(None, description="种子文件保存路径模糊查询"),
@@ -233,15 +235,27 @@ def get_torrents(
     tags_like: Optional[str] = Query(None, description="标签模糊查询"),
     category_like: Optional[str] = Query(None, description="分类模糊查询"),
     tracker_like: Optional[str] = Query(None, description="tracker地址模糊查询"),
-    tracker_domain: Optional[str] = Query(None, description="Tracker主域名筛选（支持多选，逗号分隔）"),
-    status: Optional[str] = Query(None, description="种子状态筛选(支持多选，逗号分隔)"),
+    tracker_domain: Optional[str] = Query(
+        None,
+        description="Tracker主域名筛选（支持多选，逗号分隔；例如 tracker.example.com）",
+    ),
+    status: Optional[str] = Query(
+        None,
+        description="种子状态筛选(支持多选，逗号分隔；error状态满足status='error'或has_tracker_error=True之一即可)",
+    ),
     skip: int = Query(0, ge=0, description="跳过记录数"),
     limit: int = Query(100, ge=1, le=100000, description="限制记录数"),
     sort_by: Optional[str] = Query(None, description="排序字段"),
     sort_order: Optional[str] = Query("desc", pattern="^(asc|desc)$", description="排序方向"),
-    active_only: bool = Query(False, description="仅显示活动种子"),
-    same_content_only: bool = Query(False, description="仅显示同名同大小且不同 InfoHash 的种子"),
-    single_error_only: bool = Query(False, description="仅显示错误且全局同名同大小内容唯一的种子"),
+    active_only: bool = Query(False, description="仅显示活动种子（实时速度>0，由活动集合缓存驱动）"),
+    same_content_only: bool = Query(
+        False,
+        description="仅显示名称、大小相同且规范化 InfoHash 至少两个不同值的种子",
+    ),
+    single_error_only: bool = Query(
+        False,
+        description="仅显示错误且全局同名同大小内容唯一的种子",
+    ),
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
@@ -249,10 +263,10 @@ def get_torrents(
 
 - **定位**：`torrent_crud.py:597`
 - **职责**：支持普通筛选、Tracker 主域名、活动快照、同内容/错误单种条件、排序与分页的通用查询，委托 `get_torrent_infos(...)`（torrent_helpers）。
-- **活动种子特殊处理**（L633–654）：`active_only=True` 时读取 `get_active_keys_snapshot()`，若快照未就绪返回 `206`（partial）。
-- **Tracker 主域名筛选**（L613、L682）：`tracker_domain` 接受逗号分隔多选，使用已同步的 TrackerInfo URL hostname/host 关系筛选；域名列表由 `/tracker-domains` 提供。
-- **同内容筛选**（L626–629、L684）：`same_content_only=True` 委托共享查询按“名称 + 大小 + 至少两个不同规范化 Hash”过滤，并继续按种子行 `skip/limit` 分页。
-- **错误单种筛选**（L630–633、L685）：`single_error_only=True` 只保留错误任务，并用不受当前 Tracker/状态筛选影响的全局名称+大小分组确认任务唯一；同一任务的多个 Tracker 服务不增加任务计数。
+- **活动种子特殊处理**（L641–657）：`active_only=True` 时读取 `get_active_keys_snapshot()`，若快照未就绪返回 `206`（partial）。
+- **Tracker 主域名筛选**（L611–614、L680）：`tracker_domain` 接受逗号分隔多选，使用已同步的 TrackerInfo URL hostname/host 关系筛选；域名列表由 `/tracker-domains` 提供。
+- **同内容筛选**（L624–627、L682）：`same_content_only=True` 委托共享查询按“名称 + 大小 + 至少两个不同规范化 Hash”过滤，并继续按种子行 `skip/limit` 分页。
+- **错误单种筛选**（L628–631、L683）：`single_error_only=True` 只保留错误任务，并用不受当前 Tracker/状态筛选影响的全局名称+大小分组确认任务唯一；同一任务的多个 Tracker 服务不增加任务计数。
 - **响应字段**：`total/list/pageSize`（分页固定字段，见 [API 响应格式约束](../../../../backend/docs/constraints/api-response-format.md)）。
 
 #### `get_tracker_domains` — 已同步 Tracker 主域名
@@ -265,7 +279,7 @@ def get_tracker_domains(
 ):
 ```
 
-- **定位**：`torrent_crud.py:707`
+- **定位**：`torrent_crud.py:705`
 - **职责**：读取 `TrackerInfo` 中仍有效的 `tracker_url/tracker_host`，复用 `extract_domains_from_trackers()` 提取 URL hostname，去重排序后返回 `CommonResponse.data`。
 - **性能决策**：实际数据库中 30475 条 Tracker 记录提取 90 个域名，5 次查询+解析耗时 231.515–262.118ms，低于 1 秒，因此当前不做进程内持久化缓存。
 
@@ -293,13 +307,15 @@ torrent_crud.py
   ├─→ app.api.endpoints.torrent_speed.get_active_keys_snapshot  (活动种子快照)
   ├─→ app.api.endpoints.torrent_sync.{qb_add_torrents, tr_add_torrents}  (同步)
   │
+  ├─→ app.services.downloader_api_runtime.{call_downloader_api, DownloadLane}  (下载器 API 线程池通道)
   ├─→ app.services.torrent_crud_service.get_torrent_info  (按主键查)
+  ├─→ app.services.torrent_batch_add_service.{stage_torrent_file, process_torrent_batch_job}  (批添加暂存与后台处理)
   └─→ app.services.audit_service.{extract_audit_info_from_request, get_audit_service}  (审计)
 ```
 
 ## 反模式与技术债
 
-- **代码重复**：`create_torrent`（L122-436）与 `create_torrents_batch`（L440-718）的 Transmission/qBittorrent 分支逻辑高度重复（write_temp_file / read_file_data / 轮询 / 落库），相似度 >70%，违反 [代码复用约束](../../../../backend/docs/constraints/code-reuse.md)，建议抽取共享辅助函数。
-- **嵌套函数重复定义**：`write_temp_file` / `read_file_data` 在两处路由内各定义一次（L187/L514、L231/L543）。
+- **代码重复**：`create_torrent`（L138-481）内部 Transmission/qBittorrent 两分支的文件读取（`read_file_data` L251 / `read_file_data_qb` L337）、添加、轮询、落库逻辑高度相似，违反 [代码复用约束](../../../../backend/docs/constraints/code-reuse.md)，建议抽取共享辅助函数；批添加路由重构后逐文件处理已收敛至 `torrent_batch_add_service.py`。
+- **嵌套函数定义**：`write_temp_file`（L207）/ `read_file_data`（L251）/ `read_file_data_qb`（L337）仅在 `create_torrent` 内定义一次；批添加路由已无嵌套定义（改为 `stage_torrent_file` 暂存 + 后台任务）。
 - **`get_torrent` 的 `downloader_name` 参数未使用**：仅作 URL 语义，未在函数体内引用。
-- **审计日志 operator 硬编码 "admin"**：L402、L655 注释"当前API没有认证，使用默认操作人"——实际已有 `require_authenticated_user`，应从 `_user` 取真实用户。
+- **审计日志 operator 硬编码 "admin"**：单添加仍在 L447 硬编码 `operator="admin"`（注释"当前API没有认证，使用默认操作人"）——实际已有 `require_authenticated_user`，应从 `_user` 取真实用户；批添加已改为从 `_user` 推导（`operator=str(operator or "admin")`，L542-558）。

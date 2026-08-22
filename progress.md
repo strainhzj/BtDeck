@@ -4989,3 +4989,27 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 2. PyInstaller 每次输出 "Hidden import 'transmissionrpc' not found"（spec 列了 transmission_rpc 旧名，未安装即非致命告警）——建议 spec 删除该旧条目。
 3. build-linux.sh 环境前置：binutils/libpython3.11/ruby+fpm 无预检，干净 Debian 需先 apt 安装；建议脚本头部注释说明或加预检。
 4. 深层建议：后端 List[str] 环境变量强制 JSON 的语义与 .env.example/compose 文档的逗号指引相悖，可考虑 NoDecode 注解统一兼容（涉及核心配置，另行评估）。
+
+
+## 2026-08-22 docs/roadmap 全量对账刷新（B 档：计数 + 漏列 + 行号实测 + 行为描述重写）
+
+### 背景与方法
+
+- 触发：roadmap 最后同步于 e6c5036（2026-08-21），其后 04c8ec6（mypy 清零 / ORM Mapped 迁移）改动 143 个后端文件（+1914/−1592），行号大面积漂移且元信息未补记。
+- 方法：三路只读核查（后端 10 文件 / 前端 8+deploy+tests / 第三层+perspectives）产出漂移清单 → 用户确认 B 档全量刷新 → 根 README 由主会话修复，其余 24 文件由 5 个并行修复代理按"行号实测"原则逐项重测后写入 → 全局回归校验。
+- 全程未改动任何源码；git status 确认变更范围恰为 docs/roadmap/ 下 26 个文件。
+
+### 修复内容（基准 HEAD 348c700）
+
+1. **根 README**：修 4 处计数错误与内部矛盾（endpoints 38→37、api 模块 13→12、store 5→4+1 拆分、tests 145/44→180/59）、alembic 20→28、head 更新；元信息补记 2026-08-22 增量行（含 04c8ec6 批次）。
+2. **失效条目清理 7 条**：enhanced_python_executor.py（已删）、QuickDeleteDuplicatesDialog.vue 错路径、deploy/dist 与 deploy/build 错路径、_enrich_hardlink_copy_counts（改名 _enrich_items）、test_same_content_inspection_api.py（已删）、torrent_crud.py:814（行不存在）、R9 构建产物风险（已整改）。
+3. **补录漏列 29 项**：后端 10 .py（startup_guard / orphan_folder_grouping / orphan_stats_cache / torrent_added_date_backfill / sync_checkpoint / cron_freshness / login_throttle / datetime_utils / format_size 等）+ 5 个 alembic revision + 前端 9 项（CollapsiblePanel.vue、columnResize/speedPolling mixins、downloader connection/path-mapping-rules、3 内嵌 spec、nginx-tls.conf.example）+ tests 子目录 architecture/integration。
+4. **第三层重写**：torrent_crud.md（727 行基准；索引 22 处行号、签名按源码重抄 request 首位/无返回注解、批种添加改写为 202 后台任务 + torrent_batch_add_service、SDK 直调改 call_downloader_api）；orphan_file_service.md（3902 行基准；35 处行号、_enrich_items 快照列语义、补 21 个缺失方法、resolve_orphan_selection 补 hardlink_copies 参数）。
+5. **perspectives 4 文件**：architecture.md "5 条"→6 条 + ~40 锚点；conventions/risks/test-coverage 全部计数与锚点实测重校（测试总数 147→180、Jest 44→59、revision 9→28 等）。
+6. **实测修正两处估算**：AuditOperationType 成员 39→47（AST 实测）；torrents __tests__ 行数两处矛盾统一为 2637。
+
+### 验证
+
+- 残留旧值 grep（15 类 token）清零；剩余命中均为刻意保留的"已整改/历史状态"描述与 call_downloader_api 新写法。
+- 抽查 10 项关键值与源码一致：orphan 3902 / delete_hardlink_copies L856 / torrent_crud 727 / create_torrents_batch L485 / cron_executor 1054 / initialization 2071 / yield L464 / torrents.ts 1335 / router.ts 349 / permission.ts 203 / formatters 606 / alembic 28+head 975dad435c03。
+- 未提交 Git（待用户指令）；F2 代理曾因账户限流失败一次，重试后完成。

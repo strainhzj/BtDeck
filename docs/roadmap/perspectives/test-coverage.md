@@ -2,29 +2,29 @@
 
 > 源文件 ↔ 测试文件覆盖矩阵（按子目录组织）。仅统计文件级对应，不评估覆盖率百分比。
 
-## 后端测试分布（共 147 个 test_*.py）
+## 后端测试分布（共 180 个 test_*.py）
 
 | 测试目录 | test 文件数 | 对应源码分支 | 覆盖评估 |
 |---------|------------|-------------|---------|
-| `tests/api/` | 49 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
-| `tests/services/` | 42 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
-| `tests/tasks/` | 13 | `app/tasks/` | 🟡 部分覆盖（13 对 32） |
-| `tests/core/` | 19 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
-| `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 16） |
-| `tests/utils/` | 4 | `app/utils/` | ✅ 覆盖良好 |
-| `tests/auth/` | 3 | `app/auth/` | ✅ 覆盖良好（3 对 5） |
+| `tests/api/` | 63 | `app/api/` | ✅ 覆盖良好；异步删除、孤儿任务、重复查询及同内容只读排查均有 API 回归 |
+| `tests/services/` | 50 | `app/services/` | 🟡 中等；含删除/孤儿持久化占用、孤儿后台扫描调度与稳定明细回归（不含下方 tag_adapters 子目录） |
+| `tests/tasks/` | 18 | `app/tasks/` | 🟡 部分覆盖（18 对 34） |
+| `tests/core/` | 21 | `app/core/` | 🟡 中等；新增大库迁移恢复与 lifecycle fail-fast 回归 |
+| `tests/models/` | 6 | `app/models/` | 🟡 部分覆盖（6 对 21） |
+| `tests/utils/` | 5 | `app/utils/` | ✅ 覆盖良好（5 对 5） |
+| `tests/auth/` | 5 | `app/auth/` | ✅ 覆盖良好（5 对 7） |
 | `tests/enums/` | 2 | `app/enums/` | ✅ 全覆盖（2 对 2） |
 | `tests/downloader/` | 1 | `app/downloader/` | ⚠ 薄弱（1 对 9） |
-| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 35，仅 `test_active_only_filter.py`） |
-| `tests/architecture/` | 1 | 全局架构 | 架构约束防退化 |
+| `tests/endpoints/` | 1 | `app/api/endpoints/` | ⚠ 薄弱（1 对 37，仅 `test_active_only_filter.py`） |
+| `tests/architecture/` | 1 | 全局架构 | 架构约束防退化（异步端点下载器调用 AST 扫描） |
 | `tests/integration/` | 4 | 跨层链路 | SQLite 同步争用、120100 条孤儿生命周期与 API 响应性 |
-| `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 3） |
+| `tests/repositories/` | 1 | `app/repositories/` | ⚠ 薄弱（1 对 4） |
 | `tests/services/tag_adapters/` | 1 | `app/services/tag_adapters/` | ⚠ 薄弱（1 对 6，仅 `test_tag_adapter_factory.py`） |
 | `tests/` 顶层 | 1 | 全局 | `test_architecture_constraints.py`（架构约束防退化） |
 
-> 合计：当前实测 **147** 个 test_*.py。
+> 合计：当前实测 **180** 个 test_*.py。
 
-> 注：`tests/api/`（49 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
+> 注：`tests/api/`（63 文件）覆盖 `app/api/` 顶层、schemas 与部分端点集成行为；`tests/endpoints/` 另有 1 文件。
 
 ### v1.0.6.25~32 新增后端测试
 
@@ -52,8 +52,8 @@
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
 | `tests/services/test_deletion_task_manager.py` | 143 | 种子删除 ID 并发原子占用、终态释放、大集合 JSON 查询排除 |
-| `tests/services/test_orphan_purge_job_service.py` | 387 | 孤儿清理/彻底删除持久化占用、混合跳过与并发提交 |
-| `tests/services/test_orphan_query_state.py` | 339 | 活动任务隐藏，失败终态后重新可见 |
+| `tests/services/test_orphan_purge_job_service.py` | 470 | 孤儿清理/彻底删除持久化占用、混合跳过与并发提交 |
+| `tests/services/test_orphan_query_state.py` | 349 | 活动任务隐藏，失败终态后重新可见 |
 | `tests/api/test_duplicate_quick_delete_api.py` | 322 | 快捷删除重复提交与混合接受 |
 
 ### 2026-08-12 种子文件、错误原因与搜索交互回归
@@ -74,27 +74,26 @@
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
 | `tests/core/test_tracker_status_policy.py` | 105 | `app/core/tracker_status_policy.py`：Working 空消息正常证据、非空消息优先、announce/scrape 双消息、精确/部分关键词匹配、未知保留及错误状态聚合 |
-| `tests/api/test_same_content_inspection_api.py` | 503 | `torrent_crud.py` + `torrent_helpers.py`：同名同大小不同规范化 Hash、非法候选及混合成员边界、组合列表条件先分组、活动删除/活动快照排除、复合主键稳定行级分页、低 SQLite 变量上限大页、仅当前页 Tracker 预取与旧 POST 端点移除 |
 
 ### 2026-08-14 Tracker 筛选与错误单种排查回归
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
-| `tests/api/test_torrent_list_api.py` | 829 | `torrent_crud.py` + `torrent_helpers.py`：Tracker 主机域名去端口筛选、同步域名列表排序、错误状态与全局同名同大小唯一性；Tracker 多服务不改变任务唯一性 |
+| `tests/api/test_torrent_list_api.py` | 858 | `torrent_crud.py` + `torrent_helpers.py`：Tracker 主机域名去端口筛选、同步域名列表排序、错误状态与全局同名同大小唯一性；Tracker 多服务不改变任务唯一性 |
 
 ### 2026-08-15 备份补偿与副本整体定位回归
 
 | 测试文件 | 行数 | 覆盖源文件 |
 |------------|------|-----------|
-| `tests/services/test_orphan_hardlink_copy_scan.py` | 571 | `orphan_hardlink_scan_service.py` + `orphan_quarantine.py::find_hardlink_paths_bounded`：过期 deadline 部分结果+budget_exceeded、单目标路径截断不影响其它目标、无界对等、walk 限量 deferral、游标推进/回绕、幂等更新、保留期清理、单链接轮不遍历、stat 预算停止保进度、受控时钟中途截止/截断优先级、resolved/无指针跳过、新鲜度排序、budget 落行、任务注册/heavy_sync/护栏默认值契约与 execute 包装器 |
+| `tests/services/test_orphan_hardlink_copy_scan.py` | 742 | `orphan_hardlink_scan_service.py` + `orphan_quarantine.py::find_hardlink_paths_bounded`：过期 deadline 部分结果+budget_exceeded、单目标路径截断不影响其它目标、无界对等、walk 限量 deferral、游标推进/回绕、幂等更新、保留期清理、单链接轮不遍历、stat 预算停止保进度、受控时钟中途截止/截断优先级、resolved/无指针跳过、新鲜度排序、budget 落行、任务注册/heavy_sync/护栏默认值契约与 execute 包装器 |
 | `tests/services/test_torrent_file_backup_reconcile.py` | 162 | `torrent_file_backup_manager.py`：`reconcile_missing_backups` 限量批次、幂等收敛、qB/Transmission 常见源文件名、逻辑删除墓碑不再自动重建与源目录不可用一次性上报 |
 
 ### 关键源文件测试覆盖抽样
 
 | 源文件 | 测试文件 | 状态 |
 |--------|---------|------|
-| `app/api/endpoints/torrent_crud.py` / `torrent_helpers.py` | `test_torrent_list_api.py` + `test_same_content_inspection_api.py`（829 + 503 行） | ✅ 普通列表及 `same_content_only` 组合筛选、Tracker 主机域名筛选与域名列表、`single_error_only` 全局唯一错误单种、无效成员排除、活动删除/活动快照、复合主键稳定行级分页、大页绑定安全、当前页关联预取、软删除/回收站排除与 camelCase 响应 |
-| `app/api/endpoints/duplicate_torrents.py` | `tests/api/test_duplicate_torrents_api.py`（1439 行，40 用例） | ✅ 默认添加时间倒序、安全列排序、非法排序拒绝、完整重复组筛选、活动快照/空快照、分页与元数据回填 |
+| `app/api/endpoints/torrent_crud.py` / `torrent_helpers.py` | `test_torrent_list_api.py`（858 行） | ✅ 普通列表及 `same_content_only` 组合筛选、Tracker 主机域名筛选与域名列表、`single_error_only` 全局唯一错误单种、无效成员排除、活动删除/活动快照、复合主键稳定行级分页、大页绑定安全、当前页关联预取、软删除/回收站排除与 camelCase 响应 |
+| `app/api/endpoints/duplicate_torrents.py` | `tests/api/test_duplicate_torrents_api.py`（1479 行，40 用例） | ✅ 默认添加时间倒序、安全列排序、非法排序拒绝、完整重复组筛选、活动快照/空快照、分页与元数据回填 |
 | `app/api/endpoints/torrent_backup.py` | `tests/api/test_torrent_backup_review.py`（188 行） | ✅ 当前 nickname 批量查询、空列表跳过查询与序列化 |
 | `app/api/endpoints/torrents_async.py` / `torrent_sync.py` / `torrent_helpers.py` | `test_transmission_error_sync.py` + `test_torrents_async_info_budget.py` + `test_torrent_list_api.py` | ✅ Transmission 错误原因全链路、恢复清空、Tracker 状态归一与 camelCase 响应 |
 | `app/core/torrent_status_mapper.py` | `tests/core/test_torrent_status_mapper.py` + `tests/api/test_transmission_error_sync.py` | ✅ 状态判定与安全错误文本提取 |
@@ -117,7 +116,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（43 个 spec）
+### `frontend/tests/unit/`（48 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -138,7 +137,7 @@
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
 | `shared-utils.spec.ts` | 共享工具 |
 | `store-modules.spec.ts` | Vuex modules |
-| `torrent-batch.spec.ts`（995 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
+| `torrent-batch.spec.ts`（1056 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
 | `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
 | `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
@@ -166,23 +165,26 @@
 | `speed-polling.spec.ts` | 种子速度轮询契约 |
 | `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 
-### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2612 行）
+### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2637 行）
 
 | 测试文件 | 行数 | 覆盖组件 |
 |---------|------|---------|
 | `AdvancedMultiSelect.performance.spec.ts` | 466 | `AdvancedMultiSelect.vue`（性能测试） |
-| `AdvancedMultiSelect.spec.ts` | 571 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
-| `AdvancedSearchBuilder.spec.ts` | 684 | `AdvancedSearchBuilder.vue`（按钮/组间层级、字段操作符过滤、下载器稳定 ID、超级做种三态与空值选项） |
+| `AdvancedMultiSelect.spec.ts` | 578 | `AdvancedMultiSelect.vue`（含 v1.0.6.29 紧凑触发器、v1.0.6.30/31 清空按钮与点击响应回归） |
+| `AdvancedSearchBuilder.spec.ts` | 686 | `AdvancedSearchBuilder.vue`（按钮/组间层级、字段操作符过滤、下载器稳定 ID、超级做种三态与空值选项） |
 | `AdvancedSearchWorkspace.spec.ts` | 389 | `AdvancedSearchWorkspace.vue`（高级配置列表/回填/创建/覆盖更新/删除与权限、单次重置和异步竞态隔离） |
-| `ConditionValueInput.spec.ts` | 243 | `ConditionValueInput.vue`（状态/下载器不可创建多选、空值无需输入、超级做种三态） |
-| `FilterGroup.spec.ts` | 89 | `FilterGroup.vue` |
-| `QuickDeleteDuplicatesDialog.spec.ts` | 170 | `QuickDeleteDuplicatesDialog.vue` |
+| `ConditionValueInput.spec.ts` | 245 | `ConditionValueInput.vue`（状态/下载器不可创建多选、空值无需输入、超级做种三态） |
+| `FilterGroup.spec.ts` | 97 | `FilterGroup.vue` |
+| `QuickDeleteDuplicatesDialog.spec.ts` | 176 | `QuickDeleteDuplicatesDialog.vue` |
 
-### 组件内嵌测试 `frontend/src/components/common/__tests__/`（1 个 spec，v1.0.6.28）
+### 其他组件内嵌测试
 
-| 测试文件 | 行数 | 覆盖组件 |
+| 测试文件 | 行数 | 覆盖组件/模块 |
 |---------|------|---------|
-| `LucideIcon.spec.ts` | 185 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
+| `components/common/__tests__/LucideIcon.spec.ts` | 185 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
+| `components/BatchButton/__tests__/BatchButton.spec.ts` | 90 | `BatchButton.vue` |
+| `constants/__tests__/status-config.spec.ts` | 102 | `constants/status-config.ts` |
+| `views/torrents/utils/__tests__/traditionalStatusFilter.spec.ts` | 86 | `views/torrents/utils/traditionalStatusFilter.ts` |
 
 ---
 
@@ -190,10 +192,10 @@
 
 | 优先级 | 目标 | 原因 |
 |--------|------|------|
-| P1 | `app/api/endpoints/` 35 个端点（仅 1 个测试） | 端点是业务入口，集成测试严重不足 |
+| P1 | `app/api/endpoints/` 37 个端点（仅 1 个测试） | 端点是业务入口，集成测试严重不足 |
 | P1 | `app/core/file_operations.py`（1474 行，回收站核心） | 0 直接测试 |
-| P1 | `app/core/path_mapping.py`（898 行，10 处引用） | 0 直接测试 |
-| P2 | `app/downloader/`（9 文件，仅 1 测试） | 含 1999 行 initialization.py |
+| P1 | `app/core/path_mapping.py`（932 行，10 处引用） | 0 直接测试 |
+| P2 | `app/downloader/`（9 文件，仅 1 测试） | 含 2071 行 initialization.py |
 | P2 | `app/services/tag_adapters/`（6 文件，仅 1 测试） | — |
 | P2 | `app/repositories/`（3 文件，仅 1 测试） | — |
 

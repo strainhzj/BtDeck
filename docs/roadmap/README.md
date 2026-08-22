@@ -18,17 +18,17 @@ BtDeck/
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
 │   ├── tasks/           定时任务 + scheduler + 后台任务
 │   ├── domain/          领域目录（downloader / torrents / tracker / auth / user）
-│   └── infra/           utils + startup + migrations + alembic（20 个 revision，最新孤儿后台扫描与稳定明细迁移）
+│   └── infra/           utils + startup + migrations + alembic（28 个 revision，最新 add_auxiliary_seed_count 辅种数量）
 ├── frontend/         ← Vue 2.6 + TypeScript 前端
 │   ├── entry/           应用入口（main.ts / router.ts / permission.ts / App.vue）
 │   ├── api/             axios API 封装（12 个领域模块）
 │   ├── views/           页面视图（13 个 view 模块，Options API + class-component 并存）
-│   ├── store/           Vuex（index.ts 空壳 + 5 个 getModule 自注册 module）
+│   ├── store/           Vuex（index.ts 空壳 + 4 个 getModule 自注册 + downloaderSettings 传统 namespaced）
 │   ├── components-layout/  通用组件（LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
-├── tests/            ← 测试（backend pytest 145 个 test_*.py + frontend Jest 44 个 spec）
-└── perspectives/     ← 跨切专题（调用链 / 约定 / 风险 / 测试覆盖）
+├── tests/            ← 测试（backend/tests pytest 180 个 test_*.py + frontend/tests Jest 59 个 spec）
+└── perspectives/     ← 跨切专题（docs/roadmap/perspectives：调用链 / 约定 / 风险 / 测试覆盖）
 ```
 
 ## 功能域速查（第一层直达）
@@ -63,7 +63,7 @@ BtDeck/
 |------|-----------|------|
 | **backend** | FastAPI 后端总览与跨分支依赖骨架 | [backend/README.md](./backend/README.md) |
 | ↳ app-root | `backend/app/` 包根 8 文件：应用工厂、DB 引擎、异常处理、配置入口、版本、桌面/WebSocket main | [backend/app-root.md](./backend/app-root.md) |
-| ↳ api | HTTP 路由层（38 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
+| ↳ api | HTTP 路由层（37 个 endpoints + schemas + models + responseVO） | [backend/api/README.md](./backend/api/README.md) |
 | ↳ services | 业务服务层 + downloader_adapters + tag_adapters | [backend/services/README.md](./backend/services/README.md) |
 | ↳ core | 基础设施（config/path_mapping/file_ops/tracker_*），⚠ 含 4 个 0 引用孤儿文件 | [backend/core/README.md](./backend/core/README.md) |
 | ↳ contracts ✨v1.0.6.27 | 前后端共享机器可读契约（advanced_search JSON + Python 加载器，单一真相源） | [backend/contracts/README.md](./backend/contracts/README.md) |
@@ -73,13 +73,13 @@ BtDeck/
 | ↳ infra | utils（audit_logger/encryption/log_sanitizer）+ startup + migrations + alembic | [backend/infra/README.md](./backend/infra/README.md) |
 | **frontend** | Vue 2 + TypeScript 前端总览与分支索引 | [frontend/README.md](./frontend/README.md) |
 | ↳ entry | 应用入口：Vue 实例化 / 路由 / 路由守卫 / 根组件 | [frontend/entry/README.md](./frontend/entry/README.md) |
-| ↳ api | axios 封装的 13 个领域 API 模块 | [frontend/api/README.md](./frontend/api/README.md) |
+| ↳ api | axios 封装的 12 个领域 API 模块 | [frontend/api/README.md](./frontend/api/README.md) |
 | ↳ views | 13 个页面视图模块（⚠ class-component 与 Options API 并存） | [frontend/views/README.md](./frontend/views/README.md) |
 | ↳ store | Vuex store（空壳 index + 5 个自注册 module） | [frontend/store/README.md](./frontend/store/README.md) |
 | ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
-| **tests** | 后端 pytest（145 个 test_*.py，按子目录组织）+ 前端 Jest（44 个 spec） | [tests/README.md](./tests/README.md) |
+| **tests** | 后端 pytest（180 个 test_*.py，按子目录组织）+ 前端 Jest（59 个 spec） | [tests/README.md](./tests/README.md) |
 | **perspectives** | 跨切专题索引（架构调用链 / 约定 / 风险 / 测试覆盖） | [perspectives/README.md](./perspectives/README.md) |
 
 ---
@@ -120,6 +120,7 @@ BtDeck/
 | 2026-08-20 增量 | 新增 `auxiliary_seed_count` 数据链路、种子信息同步全量校正、删除/转移/还原增量维护，以及两种种子列表视图字段；同步 Alembic head `975dad435c03` 与相关测试入口 |
 | 2026-08-20 增量（第二批） | 展示对齐判定：新增 `core/tracker_keyword_map.py` 共享关键词池加载器（判定任务 `_load_keywords` 委托复用）；`tracker_status_policy.py` 新增 `tracker_message_failed`/`tracker_display_failed`（与判定任务中性码语义一致）；`torrent_helpers.py`/`duplicate_torrents.py` announce/scrape 展示文本按失败池覆写 + VO 透传 `has_tracker_error` + duplicates error 筛选口径对齐（OR has_tracker_error）；前端 `torrentBatch.ts` 新增 hasTrackerError/showTrackerErrorTag/getTorrentErrorReason 共享 helper，两视图状态列叠加红色 Tracker异常 标签 |
 | 2026-08-21 增量 | 任务日志与孤儿文件页统计摘要接入全局 `CollapsiblePanel`，分别以 `btdeck_task_log_stats_collapsed` / `btdeck_orphan_file_stats_collapsed` 持久化折叠状态；前端管理页契约测试扩展为 14 项 |
+| 2026-08-22 增量 | roadmap 全量对账刷新（基准 HEAD 348c700）：补记 04c8ec6 mypy 清零/ORM Mapped 迁移批次（143 个后端文件行号整体漂移）；汇总计数实测重校（endpoints 37、alembic 28 个 revision/head `975dad435c03`、后端测试 180、前端 spec 59、api 模块 12、store 4+1 拆分）；清理 7 条失效条目、补录 29 个漏列文件（含 5 个新 revision）；第三层两文档行为描述重写（批种添加 202 后台化、孤儿副本数快照列、`call_downloader_api` 统一下载器调用） |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |

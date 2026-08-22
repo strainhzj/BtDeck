@@ -2576,3 +2576,29 @@ sync-resource-governance 任务已全部完成（含 code review 修复）。剩
 - 未执行 Git 提交（用户未要求）；如提交建议：fix(frontend)+fix(backend) 或合并 fix，router.ts 与 permission.ts 必须同一提交。
 - 遗留：长会话不刷新标签页无法实时感知标志（GetUserInfo 唯一调用点是守卫 roles=[] 分支，彻底消除需挂周期端点）；其他父路由（/downloader、/tasks 等）缺 redirect 的手输空白 UX 问题待统一补。
 - 部署后被困用户自动解锁路径：登录 → 落 /settings/index?forceChange=1 真实改密页 → 改密即清两端标志。
+
+
+## 2026-08-22 交接：docs/roadmap 全量对账刷新（B 档）
+
+### 结论
+
+roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移的均已按"行号实测"原则重校（基准 HEAD 348c700），变更范围恰为 docs/roadmap/ 下 26 个文件，未触碰任何源码。根 README 元信息已补记 2026-08-22 增量（含此前遗漏的 04c8ec6 mypy/ORM Mapped 批次）。
+
+### 漂移三大根因（已全部消解）
+
+1. 04c8ec6（mypy 清零/ORM Mapped 迁移，143 个后端文件）在 e6c5036 最后同步之后落地——行号 +1~+26 漂移。
+2. 更早落地但从未同步的行为变更——批种添加 202 后台化（torrent_batch_add_service）、孤儿副本数快照列（_enrich_items）、SDK 直调改 call_downloader_api。
+3. 汇总计数长期失更 + 文档内部自相矛盾（endpoints 37/38、api 模块 12/13、tests/README 49/48 等）。
+
+### 关键实测基准（后续会话可直接引用）
+
+- endpoints 37；frontend api 模块 12；store 4 个 getModule + downloaderSettings 传统 namespaced
+- alembic 28 个 revision，head `975dad435c03`（链尾 …→ ff42d3402df5 → ab68fe061d5b → 975dad435c03）
+- 后端 test_*.py 180 个；前端 spec 59 个（tests/unit 48 + 内嵌 11）；torrents __tests__ 7 spec 共 2637 行
+- AuditOperationType 47 个成员（AST 实测，非早前估算的 41）
+- 第三层基准：torrent_crud.py 727 行、orphan_file_service.py 3902 行
+
+### 未竟事项
+
+- Git 未提交（等用户指令；提交建议 `docs: roadmap 全量对账刷新——计数重校 + 29 项补录 + 第三层行为描述重写`）。
+- 后续源码变更仍需按 roadmap-maintain 技能增量同步；本次刷新后任何大重构（如再遇全库迁移类提交）建议再次全量对账。
