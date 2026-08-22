@@ -5013,3 +5013,26 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 残留旧值 grep（15 类 token）清零；剩余命中均为刻意保留的"已整改/历史状态"描述与 call_downloader_api 新写法。
 - 抽查 10 项关键值与源码一致：orphan 3902 / delete_hardlink_copies L856 / torrent_crud 727 / create_torrents_batch L485 / cron_executor 1054 / initialization 2071 / yield L464 / torrents.ts 1335 / router.ts 349 / permission.ts 203 / formatters 606 / alembic 28+head 975dad435c03。
 - 未提交 Git（待用户指令）；F2 代理曾因账户限流失败一次，重试后完成。
+
+## 2026-08-22 Docker 后端镜像 Python 3.11 启动语法修复
+
+### 根因
+
+- Docker 使用 Python 3.11；backend/app/tasks/cleanup_executor.py:272 的双引号 f-string 表达式内又使用双引号空字符串，Python 3.11 解析为 SyntaxError: f-string: unmatched '('，导致 Uvicorn 在导入 app.main 前退出。
+- 本机 Python 3.12.4 可解析该写法，因此本地普通编译未能复现；问题只在目标 Docker 运行时暴露。
+
+### 修复
+
+- 将表达式内的空字符串改为单引号，保持日志内容和清理逻辑不变。
+
+### 验证
+
+- backend/app/tasks/cleanup_executor.py 编译通过；backend/app 全量 compileall 通过；git diff --check 通过。
+- test_orphan_scan_task.py：18 passed；test_cron_executor.py、test_cron_executor_admission.py、test_cron_executor_security.py：38 passed。
+- 使用仓库配置的阿里云镜像源构建 btdeck-backend:latest 成功，镜像 digest 为 sha256:c0074bf5c36b78506f7a79fceee5d49f731646cb0f67625d2943659a4b134560。
+- 在构建出的 Python 3.11.15 镜像中执行 import app.main 与目标文件 py_compile 均退出 0；临时容器实际启动后状态 running、健康状态 healthy，/health/ready 返回 200。
+- docker compose config --quiet 通过；根 bash ./init.sh --ci 仍因当前 Windows WSL E_ACCESSDENIED 无法执行。
+
+### 交付状态
+
+- 未执行 Git stage/commit/push；镜像已构建在本机 Docker 引擎中，待用户按现有部署流程导出/加载并重启目标环境。

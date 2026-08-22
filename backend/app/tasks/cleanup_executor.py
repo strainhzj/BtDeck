@@ -269,7 +269,7 @@ class CleanupTaskExecutor:
                             )
                         except Exception as e:
                             logger.warning(
-                                f"删除标记文件失败（降级）: {self._sanitize_torrent_name(torrent.name or "")}, {e}"
+                                f"删除标记文件失败（降级）: {self._sanitize_torrent_name(torrent.name or '')}, {e}"
                             )
 
                     # 收集待处理的种子

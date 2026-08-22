@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.5",
   "release_note": "产品发布号与内部里程碑编号相互独立：发布 v1.0.5（见 backend/app/version.py）打包里程碑 v1.0.5（查询模板）、v1.0.6（孤儿文件管理）、v1.0.9（一键部署）及 2026-06~08 全部修复与安全加固。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-08-21",
+  "last_updated": "2026-08-22",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -1906,7 +1906,7 @@
             "backend/app/tasks/task_profiles.py",
             "backend/app/tasks/cleanup_executor.py"
           ],
-          "evidence": "OrphanScanTask.execute() 扫描+自动清理超期；task_code=orphan_scan_cleanup cron=0 2 * * 0（每周日2点）登记到 default_scheduled_tasks + task_profiles（heavy_sync=True, wait_timeout=60.0）；CleanupTaskExecutor 补全 _query_level3_torrents/_query_level4_torrents 两未定义方法（task_type=5 触发路径原会 AttributeError）。"
+          "evidence": "OrphanScanTask.execute() 扫描+自动清理超期；task_code=orphan_scan_cleanup cron=0 2 * * 0（每周日2点）登记到 default_scheduled_tasks + task_profiles（heavy_sync=True, wait_timeout=60.0）；CleanupTaskExecutor 补全 _query_level3_torrents/_query_level4_torrents 两未定义方法（task_type=5 触发路径原会 AttributeError）。2026-08-22 修复 Python 3.11 Docker 启动兼容性：cleanup_executor.py 第 272 行 f-string 内层空字符串改用单引号，避免 uvicorn 导入阶段 SyntaxError；Docker Python 3.11 导入检查通过。"
         },
         {
           "id": "v1.0.6.5",

@@ -2602,3 +2602,23 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - Git 未提交（等用户指令；提交建议 `docs: roadmap 全量对账刷新——计数重校 + 29 项补录 + 第三层行为描述重写`）。
 - 后续源码变更仍需按 roadmap-maintain 技能增量同步；本次刷新后任何大重构（如再遇全库迁移类提交）建议再次全量对账。
+
+## 2026-08-22 交接：Docker 后端 Python 3.11 f-string 启动修复
+
+### 当前结果
+
+- 修复 backend/app/tasks/cleanup_executor.py:272 的 Python 3.11 不兼容 f-string 引号嵌套；仅将表达式内双引号空字符串改为单引号，清理逻辑不变。
+- 已使用修复后的源码构建 btdeck-backend:latest，镜像 digest：sha256:c0074bf5c36b78506f7a79fceee5d49f731646cb0f67625d2943659a4b134560。
+- Python 3.11.15 镜像 import app.main、目标文件编译均通过；真实容器启动后 healthy，GET /health/ready 返回 200。
+
+### 验证
+
+- test_orphan_scan_task.py：18 passed。
+- 调度器回归（test_cron_executor.py、test_cron_executor_admission.py、test_cron_executor_security.py）：38 passed。
+- backend/app 全量 compileall、git diff --check、docker compose config --quiet 通过。
+- 根 bash ./init.sh --ci 受当前 Windows WSL E_ACCESSDENIED 阻断。
+
+### 后续
+
+- 未提交 Git；部署时使用当前 btdeck-backend:latest 导出/加载并重启后端即可。
+- docs/roadmap/ 未改：本次未改变模块职责、文件路径或路线图行号。
