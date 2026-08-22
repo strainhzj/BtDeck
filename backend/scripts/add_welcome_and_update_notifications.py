@@ -143,7 +143,7 @@ async def add_notifications():
             extra_data={
                 "version": "1.0.4",
                 "previous_version": "1.0.3",
-                "release_url": "https://github.com/StrainThomas/BtDeck/releases/tag/v1.0.4"
+                "release_url": "https://github.com/strainhzj/BtDeck/releases/tag/v1.0.4"
             },
             created_at=datetime.utcnow()
         )

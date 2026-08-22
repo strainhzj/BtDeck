@@ -23,7 +23,7 @@ VERSION_HISTORY: Dict[str, Dict[str, Any]] = {
     "1.0.5": {
         "previous_version": "1.0.4",
         "release_date": "2026-08-21",
-        "release_url": "https://github.com/StrainThomas/BtDeck/releases/tag/v1.0.5",
+        "release_url": "https://github.com/strainhzj/BtDeck/releases/tag/v1.0.5",
         "summary": "孤儿文件管理、查询模板、安全加固与大量问题修复",
         "content": """
 ## BtDeck v1.0.5 版本更新
@@ -101,7 +101,7 @@ VERSION_HISTORY: Dict[str, Dict[str, Any]] = {
     "1.0.4": {
         "previous_version": "1.0.3",
         "release_date": "2026-06-05",
-        "release_url": "https://github.com/StrainThomas/BtDeck/releases/tag/v1.0.4",
+        "release_url": "https://github.com/strainhzj/BtDeck/releases/tag/v1.0.4",
         "summary": "通知中心、实时速度监控、活动种子筛选",
         "content": """
 ## BtDeck v1.0.4 版本更新
@@ -181,7 +181,7 @@ VERSION_HISTORY: Dict[str, Dict[str, Any]] = {
     "1.0.3": {
         "previous_version": "1.0.2",
         "release_date": "2026-04-21",
-        "release_url": "https://github.com/StrainThomas/BtDeck/releases/tag/v1.0.3",
+        "release_url": "https://github.com/strainhzj/BtDeck/releases/tag/v1.0.3",
         "summary": "基础功能稳定版",
         "content": "基础功能稳定版本发布。",
     },
