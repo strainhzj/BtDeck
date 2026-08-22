@@ -4,6 +4,7 @@
 
 为下载器能力查询接口提供统一的响应格式，包含下载器类型名称转换
 """
+
 from typing import Any, Optional, Dict
 from pydantic import BaseModel, Field, ConfigDict
 from app.models.setting_templates import DownloaderTypeEnum
@@ -15,20 +16,27 @@ class DownloaderCapabilitiesVO(BaseModel):
     model_config = ConfigDict(
         populate_by_name=True,  # 允许使用别名或字段名
         alias_generator=lambda field_name: field_name,  # 不自动生成别名
-        by_alias=False  # 默认使用字段名而非别名
+        # by_alias 不是 ConfigDict 的合法键（Pydantic v2 中它是序列化方法参数），
+        # 已移除。默认序列化本就用字段名而非别名，行为不变。
     )
 
-    downloader_id: Optional[str] = Field(None, alias="downloaderId", description="下载器ID", example="d2f6192e-b197-4632-b4eb-bb7604446c07")
-    downloader_type: Optional[int] = Field(None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", example=0)
-    downloaderTypeName: Optional[str] = Field(None, alias="downloaderTypeName", description="下载器类型名称", example="qbittorrent")
-    capabilities: Optional[Dict[str, Any]] = Field(None, description="下载器支持的功能列表")
+    downloader_id: Optional[str] = Field(
+        None, alias="downloaderId", description="下载器ID", examples=["d2f6192e-b197-4632-b4eb-bb7604446c07"]
+    )
+    downloader_type: Optional[int] = Field(
+        None, alias="downloaderType", description="下载器类型(0=qBittorrent, 1=Transmission)", examples=[0]
+    )
+    downloaderTypeName: Optional[str] = Field(
+        None, alias="downloaderTypeName", description="下载器类型名称", examples=["qbittorrent"]
+    )
+    capabilities: Optional[Dict[str, Any]] = Field(default=None, description="下载器支持的功能列表")
 
     def __init__(
         self,
         downloader_id: Optional[str] = None,
         downloader_type: Optional[int] = None,
         capabilities: Optional[Dict[str, Any]] = None,
-        **kw: Any
+        **kw: Any,
     ):
         """
         初始化DownloaderCapabilitiesVO
@@ -54,7 +62,7 @@ class DownloaderCapabilitiesVO(BaseModel):
             downloaderType=downloader_type,
             downloaderTypeName=downloader_type_name,
             capabilities=converted_capabilities,
-            **kw
+            **kw,
         )
 
     @staticmethod
@@ -78,7 +86,7 @@ class DownloaderCapabilitiesVO(BaseModel):
             "download_paths": "downloadPaths",
             "port_settings": "portSettings",
             "advanced_settings": "advancedSettings",
-            "peer_limits": "peerLimits"
+            "peer_limits": "peerLimits",
         }
 
         converted = {}

@@ -362,6 +362,10 @@ export default class extends Vue {
 
     // 初始化2FA状态
     this.isEnabled2FA = this.twoFactorFlag === '1'
+
+    // 强制改密引导提示（安全修复 W9）由路由守卫统一弹出（permission.ts
+    // 的 forceChangeRedirect）：拦截重定向回本页不会重新挂载，mounted
+    // 提示无法覆盖"点击其它菜单被弹回"的场景，且会与守卫提示双弹
   }
 
   beforeDestroy() {
@@ -606,8 +610,8 @@ export default class extends Vue {
             message: '双因素认证已停用'
           })
 
-          // 更新UserModule中的状态
-          (UserModule as any).twoFactorFlag = '0'
+          // 更新UserModule中的状态（通过 Action，不绕过 mutation）
+          UserModule.SetTwoFactorFlag('0')
         })
       } else {
         throw new Error(response.msg || '验证失败')
@@ -677,12 +681,17 @@ export default class extends Vue {
       })
 
       this.$message({
-        message: '密码修改成功',
+        message: '密码修改成功，请使用新密码重新登录',
         type: 'success',
         duration: 3000
       })
 
-      this.cancelPasswordChange()
+      // 改密会话终结（跨标签续期修复）：后端 change_password 已撤销该用户
+      // 全部 refresh token（W9），本地会话不可再续期——主动登出语义全清
+      // （ResetToken 含强制改密标志清除），跳登录页用新密码重登。
+      // forceChange query 清理随整页跳转自然失效，无需单独处理
+      UserModule.ResetToken()
+      this.$router.push('/login').catch(() => undefined)
     } catch (error) {
       this.$message({
         message: '密码修改失败',

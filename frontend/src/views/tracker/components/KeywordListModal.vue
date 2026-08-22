@@ -26,9 +26,16 @@
             clearable
             @input="handleSearch"
           >
-            <i slot="prefix" class="el-icon-search" />
+            <i slot="prefix" class="search-prefix-icon"><LucideIcon name="search" :size="14" /></i>
           </el-input>
         </div>
+
+        <!-- 快捷操作（按前缀左匹配），位于搜索框右侧 -->
+        <el-tooltip content="快捷操作（按前缀左匹配）" placement="top">
+          <i class="quick-action-btn" @click="openQuickAction">
+            <LucideIcon name="wand-sparkles" :size="16" />
+          </i>
+        </el-tooltip>
 
         <el-select
           v-model="searchForm.timeRange"
@@ -36,10 +43,18 @@
           clearable
           @change="handleSearch"
         >
-          <el-option label="📊 全部" value="" />
-          <el-option label="📅 今天" value="today" />
-          <el-option label="📆 本周" value="week" />
-          <el-option label="🗓️ 本月" value="month" />
+          <el-option label="全部" value="">
+            <LucideIcon name="list-filter" :size="13" /> 全部
+          </el-option>
+          <el-option label="今天" value="today">
+            <LucideIcon name="calendar-days" :size="13" /> 今天
+          </el-option>
+          <el-option label="本周" value="week">
+            <LucideIcon name="calendar-range" :size="13" /> 本周
+          </el-option>
+          <el-option label="本月" value="month">
+            <LucideIcon name="calendar-range" :size="13" /> 本月
+          </el-option>
         </el-select>
 
         <el-select
@@ -47,32 +62,38 @@
           placeholder="排序方式"
           @change="handleSearch"
         >
-          <el-option label="🕐 添加时间 ↓" value="time_desc" />
-          <el-option label="🕐 添加时间 ↑" value="time_asc" />
-          <el-option label="🔤 关键词 A-Z" value="name_asc" />
+          <el-option label="添加时间 ↓" value="time_desc">
+            <LucideIcon name="clock" :size="13" /> 添加时间 ↓
+          </el-option>
+          <el-option label="添加时间 ↑" value="time_asc">
+            <LucideIcon name="clock" :size="13" /> 添加时间 ↑
+          </el-option>
+          <el-option label="关键词 A-Z" value="name_asc">
+            <LucideIcon name="arrow-down-a-z" :size="13" /> 关键词 A-Z
+          </el-option>
         </el-select>
       </div>
 
       <!-- 批量操作栏 -->
       <div v-show="selectedKeywords.length > 0" class="batch-actions">
         <span class="batch-info">
-          ✅ 已选 <strong>{{ selectedKeywords.length }}</strong> 项
+          <LucideIcon name="circle-check-big" :size="14" style="margin-right: 4px" /> 已选 <strong>{{ selectedKeywords.length }}</strong> 项
         </span>
         <el-button
           type="danger"
-          icon="el-icon-delete"
           size="small"
           @click="handleBatchDelete"
         >
+          <LucideIcon name="trash-2" :size="14" style="margin-right: 6px" />
           批量删除
         </el-button>
         <el-dropdown @command="handleBatchMove">
           <el-button
             type="primary"
-            icon="el-icon-s-tools"
             size="small"
           >
-            批量移动到 <i class="el-icon-arrow-down el-icon--right" />
+            <LucideIcon name="list-filter" :size="14" style="margin-right: 6px" />
+            批量移动到 <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
           </el-button>
           <el-dropdown-menu slot="dropdown">
             <el-dropdown-item
@@ -103,14 +124,14 @@
               {{ item.keyword }}
             </div>
             <div class="keyword-time">
-              🕐 {{ item.create_time || '未知时间' }}
+              <LucideIcon name="clock" :size="12" style="margin-right: 2px" /> {{ item.create_time || '未知时间' }}
             </div>
           </div>
 
           <div class="keyword-actions">
             <el-dropdown @command="(command) => handleMove(item, command)">
               <el-button size="small" type="text">
-                📋 移动到 <i class="el-icon-arrow-down" />
+                <LucideIcon name="list-filter" :size="13" style="margin-right: 4px" />移动到 <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
               </el-button>
               <el-dropdown-menu slot="dropdown">
                 <el-dropdown-item
@@ -152,6 +173,14 @@
       </div>
     </div>
 
+    <!-- 快捷操作（左匹配）对话框：可复用组件，与关键词看板共用 -->
+    <keyword-quick-action-dialog
+      :visible.sync="quickActionVisible"
+      :source-pool="quickActionSourcePool"
+      :source-pool-label="quickActionSourcePoolLabel"
+      @success="handleQuickActionSuccess"
+    />
+
     <template #footer>
       <span class="dialog-footer">
         <el-button @click="handleClose">关 闭</el-button>
@@ -164,6 +193,7 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { moveKeywordToPool, deleteKeyword, batchMoveKeywords, batchDeleteKeywords, getPoolKeywords } from '@/api/tracker'
 import type { PoolType } from '@/api/tracker'
+import KeywordQuickActionDialog from './KeywordQuickActionDialog.vue'
 
 interface KeywordItem {
   keyword_id: string
@@ -186,7 +216,10 @@ interface Pagination {
 }
 
 @Component({
-  name: 'KeywordListModal'
+  name: 'KeywordListModal',
+  components: {
+    KeywordQuickActionDialog
+  }
 })
 export default class KeywordListModal extends Vue {
   @Prop({ required: true }) visible!: boolean
@@ -207,16 +240,20 @@ export default class KeywordListModal extends Vue {
   }
   keywordList: KeywordItem[] = []
 
+  // 快捷操作（左匹配）状态：实际逻辑在 KeywordQuickActionDialog 组件内
+  quickActionVisible = false
+  quickActionSourcePool: PoolType | '' = ''
+
   // 全选相关
   allSelected = false
   isIndeterminate = false
 
   // 池子配置
   poolConfig = {
-    candidate: { label: '📋 候选池', value: 'candidate' },
-    ignored: { label: '⏭️ 忽略池', value: 'ignored' },
-    success: { label: '✅ 成功池', value: 'success' },
-    failed: { label: '❌ 失败池', value: 'failed' }
+    candidate: { label: '候选池', value: 'candidate' },
+    ignored: { label: '忽略池', value: 'ignored' },
+    success: { label: '成功池', value: 'success' },
+    failed: { label: '失败池', value: 'failed' }
   }
 
   @Watch('visible')
@@ -234,6 +271,10 @@ export default class KeywordListModal extends Vue {
 
   get dialogTitle(): string {
     return `${this.poolConfig[this.poolType]?.label || '池子'}详情`
+  }
+
+  get quickActionSourcePoolLabel(): string {
+    return this.poolConfig[this.quickActionSourcePool]?.label || '池子'
   }
 
   get availablePools() {
@@ -400,6 +441,19 @@ export default class KeywordListModal extends Vue {
     }
   }
 
+  // ==================== 快捷操作（左匹配） ====================
+
+  openQuickAction() {
+    this.quickActionSourcePool = this.poolType as PoolType
+    this.quickActionVisible = true
+  }
+
+  handleQuickActionSuccess() {
+    // 快捷操作执行成功后：通知父组件（看板）刷新池计数，并刷新本弹窗列表
+    this.$emit('refresh')
+    this.loadData()
+  }
+
   handleClose() {
     this.dialogVisible = false
     this.searchForm = {
@@ -462,6 +516,26 @@ export default class KeywordListModal extends Vue {
   .search-input-wrapper {
     flex: 1;
     min-width: 200px;
+  }
+
+  // 快捷操作按钮（搜索框右侧）
+  .quick-action-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all 0.2s;
+
+    &:hover {
+      color: var(--color-info);
+      background: var(--color-info-light);
+      transform: scale(1.05);
+    }
   }
 
   .el-select {

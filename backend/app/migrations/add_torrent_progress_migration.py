@@ -6,8 +6,6 @@
 import sqlite3
 import logging
 from pathlib import Path
-from typing import Optional, Dict, Any
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +21,10 @@ class TorrentProgressMigration:
 
         # Status到Progress的映射规则
         self.status_progress_map = {
-            "seeding": 100.00,      # 已完成并做种
-            "stalledUP": 100.00,    # 已完成但无上传速度
-            "paused": 0.00,         # 已暂停，假设未完成
-            "pausedDL": 0.00,       # 下载中暂停
+            "seeding": 100.00,  # 已完成并做种
+            "stalledUP": 100.00,  # 已完成但无上传速度
+            "paused": 0.00,  # 已暂停，假设未完成
+            "pausedDL": 0.00,  # 下载中暂停
         }
 
     def migrate(self) -> bool:
@@ -82,10 +80,10 @@ class TorrentProgressMigration:
             logger.info(f"✅ 种子进度字段迁移成功！影响记录数: {affected_rows}")
             logger.info("=" * 60)
             logger.info("迁移摘要:")
-            logger.info(f"  - seeding     → progress = 100.00 (已完成做种)")
-            logger.info(f"  - stalledUP   → progress = 100.00 (已完成停滞)")
-            logger.info(f"  - paused      → progress = 0.00 (已暂停)")
-            logger.info(f"  - pausedDL    → progress = 0.00 (下载暂停)")
+            logger.info("  - seeding     → progress = 100.00 (已完成做种)")
+            logger.info("  - stalledUP   → progress = 100.00 (已完成停滞)")
+            logger.info("  - paused      → progress = 0.00 (已暂停)")
+            logger.info("  - pausedDL    → progress = 0.00 (下载暂停)")
             logger.info(f"  - backup表    → {self.backup_table_name} (可安全删除)")
             logger.info("=" * 60)
 
@@ -106,10 +104,13 @@ class TorrentProgressMigration:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT name FROM sqlite_master
                     WHERE type='table' AND name=?
-                """, (self.table_name,))
+                """,
+                    (self.table_name,),
+                )
                 return cursor.fetchone() is not None
         except Exception as e:
             logger.error(f"检查表存在性失败: {e}")
@@ -142,11 +143,14 @@ class TorrentProgressMigration:
             """)
 
             # 复制索引
-            cursor.execute(f"""
+            cursor.execute(
+                """
                 SELECT sql FROM sqlite_master
                 WHERE type='index' AND tbl_name=?
                 AND sql IS NOT NULL
-            """, (self.table_name,))
+            """,
+                (self.table_name,),
+            )
 
             indexes = cursor.fetchall()
             for index in indexes:
@@ -182,11 +186,14 @@ class TorrentProgressMigration:
 
             # 遍历status映射规则，批量更新
             for status, progress in self.status_progress_map.items():
-                cursor.execute(f"""
+                cursor.execute(
+                    f"""
                     UPDATE {self.table_name}
                     SET {self.column_name} = ?
                     WHERE status = ?
-                """, (progress, status))
+                """,
+                    (progress, status),
+                )
 
                 affected = cursor.rowcount
                 total_affected += affected

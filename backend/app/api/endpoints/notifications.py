@@ -28,17 +28,12 @@ async def get_notifications(
     type: Optional[str] = Query(None, description="通知类型过滤"),
     is_read: Optional[bool] = Query(None, description="是否已读过滤"),
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """分页获取通知列表"""
     try:
         service = NotificationService(db)
-        result = await service.get_notifications(
-            page=page,
-            page_size=pageSize,
-            type=type,
-            is_read=is_read
-        )
+        result = await service.get_notifications(page=page, page_size=pageSize, type=type, is_read=is_read)
         return CommonResponse(status="success", msg="查询成功", code="200", data=result)
     except Exception as e:
         logger.error(f"获取通知列表失败: {e}")
@@ -46,10 +41,7 @@ async def get_notifications(
 
 
 @router.get("/unread-count", response_model=CommonResponse, summary="获取未读通知数量")
-async def get_unread_count(
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
-):
+async def get_unread_count(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
     """获取未读通知数量"""
     try:
         service = NotificationService(db)
@@ -61,10 +53,7 @@ async def get_unread_count(
 
 
 @router.put("/read-all", response_model=CommonResponse, summary="全部标记为已读")
-async def mark_all_as_read(
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
-):
+async def mark_all_as_read(current_user=Depends(get_current_user), db: AsyncSession = Depends(get_async_db)):
     """标记所有通知为已读"""
     try:
         service = NotificationService(db)
@@ -79,7 +68,7 @@ async def mark_all_as_read(
 async def mark_as_read(
     notification_id: int = Query(..., description="通知ID"),
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """标记单条通知为已读"""
     try:
@@ -97,7 +86,7 @@ async def mark_as_read(
 async def mark_as_unread(
     notification_id: int = Query(..., description="通知ID"),
     current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    db: AsyncSession = Depends(get_async_db),
 ):
     """标记单条通知为未读"""
     try:
@@ -113,9 +102,7 @@ async def mark_as_unread(
 
 @router.delete("/{notification_id}", response_model=CommonResponse, summary="删除通知")
 async def delete_notification(
-    notification_id: int,
-    current_user=Depends(get_current_user),
-    db: AsyncSession = Depends(get_async_db)
+    notification_id: int, current_user=Depends(get_current_user), db: AsyncSession = Depends(get_async_db)
 ):
     """删除单条通知"""
     try:

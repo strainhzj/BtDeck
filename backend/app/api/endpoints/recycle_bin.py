@@ -28,21 +28,25 @@ router = APIRouter(tags=["回收站管理"])
 
 class RestoreRequest(BaseModel):
     """还原请求模型"""
+
     torrent_ids: List[str] = Field(..., description="种子ID列表")
 
 
 class CleanupPreviewRequest(BaseModel):
     """清理预览请求模型"""
+
     days: int = Field(default=30, ge=1, le=365, description="天数（清理N天前的数据）")
 
 
 class CleanupRequest(BaseModel):
     """手动清理请求模型"""
+
     torrent_ids: List[str] = Field(..., description="种子ID列表")
 
 
 class ManualRestoreRequest(BaseModel):
     """手动补充还原请求模型"""
+
     torrent_ids: List[str] = Field(..., description="种子ID列表")
 
 
@@ -55,7 +59,7 @@ async def get_recycle_bin_list(
     page_size: int = Query(default=20, ge=1, le=100, description="每页数量"),
     search: Optional[str] = Query(default=None, description="搜索关键词"),
     db: AsyncSession = Depends(get_async_db),
-    current_user = Depends(get_current_user)
+    current_user=Depends(get_current_user),
 ):
     """
     查询回收站列表
@@ -84,28 +88,18 @@ async def get_recycle_bin_list(
         }
     """
     try:
-        service = RecycleBinService(db)
-        result = service.get_recycle_bin_list(
-            page=page,
-            page_size=page_size,
-            search=search
-        )
+        service = RecycleBinService()
+        try:
+            result = service.get_recycle_bin_list(page=page, page_size=page_size, search=search)
 
-        return CommonResponse(
-            status="success",
-            msg="查询成功",
-            code="200",
-            data=result
-        )
+            return CommonResponse(status="success", msg="查询成功", code="200", data=result)
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"查询回收站列表失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/restore", response_model=CommonResponse)
@@ -114,7 +108,7 @@ async def restore_torrents(
     request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-    audit_service: AuditLogService = Depends(get_audit_service)
+    audit_service: AuditLogService = Depends(get_audit_service),
 ):
     """
     批量还原种子
@@ -147,38 +141,31 @@ async def restore_torrents(
         }
     """
     try:
-        service = RecycleBinService(db)
+        service = RecycleBinService()
+        try:
+            result = await service.restore_torrents(
+                torrent_ids=req.torrent_ids,
+                operator=current_user.username or "",
+                audit_service=audit_service,
+                request=request,
+            )
 
-        result = await service.restore_torrents(
-            torrent_ids=req.torrent_ids,
-            operator=current_user.username,
-            audit_service=audit_service,
-            request=request
-        )
+            # 根据结果确定消息
+            if result["failed_count"] == 0:
+                msg = f"还原成功：共{result['success_count']}个种子"
+            elif result["success_count"] == 0:
+                msg = f"还原失败：共{result['failed_count']}个种子"
+            else:
+                msg = f"还原部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
 
-        # 根据结果确定消息
-        if result["failed_count"] == 0:
-            msg = f"还原成功：共{result['success_count']}个种子"
-        elif result["success_count"] == 0:
-            msg = f"还原失败：共{result['failed_count']}个种子"
-        else:
-            msg = f"还原部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
-
-        return CommonResponse(
-            status="success",
-            msg=msg,
-            code="200",
-            data=result
-        )
+            return CommonResponse(status="success", msg=msg, code="200", data=result)
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"还原种子失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"还原失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"还原失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/restore-manual", response_model=CommonResponse)
@@ -187,7 +174,7 @@ async def restore_torrents_with_file(
     torrent_file: UploadFile = File(..., description="种子文件"),
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-    audit_service: AuditLogService = Depends(get_audit_service)
+    audit_service: AuditLogService = Depends(get_audit_service),
 ):
     """
     手动补充还原（单个种子，带文件上传）
@@ -210,28 +197,16 @@ async def restore_torrents_with_file(
         # 2. 调用restore_torrents逻辑
         # 3. 更新backup_file_path字段
 
-        return CommonResponse(
-            status="error",
-            msg="功能开发中，请稍后再试",
-            code="501",
-            data=None
-        )
+        return CommonResponse(status="error", msg="功能开发中，请稍后再试", code="501", data=None)
 
     except Exception as e:
         logger.error(f"手动还原失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"手动还原失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"手动还原失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/cleanup-preview", response_model=CommonResponse)
 async def cleanup_preview(
-    request: CleanupPreviewRequest,
-    db: AsyncSession = Depends(get_async_db),
-    current_user = Depends(get_current_user)
+    request: CleanupPreviewRequest, db: AsyncSession = Depends(get_async_db), current_user=Depends(get_current_user)
 ):
     """
     清理预览
@@ -257,32 +232,32 @@ async def cleanup_preview(
         }
     """
     try:
-        service = RecycleBinService(db)
-        result = service.cleanup_preview(days=request.days)
+        service = RecycleBinService()
+        try:
+            result = service.cleanup_preview(days=request.days)
 
-        return CommonResponse(
-            status="success",
-            msg=f"预览成功：共{result['total_count']}个种子，总大小{result['total_size']}字节",
-            code="200",
-            data=result
-        )
+            return CommonResponse(
+                status="success",
+                msg=f"预览成功：共{result['total_count']}个种子，总大小{result['total_size']}字节",
+                code="200",
+                data=result,
+            )
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"清理预览失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"预览失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"预览失败: {str(e)}", code="500", data=None)
 
 
 @router.post("/cleanup", response_model=CommonResponse)
 async def manual_cleanup(
-    request: CleanupRequest,
+    cleanup_request: CleanupRequest,
+    http_request: Request,
     db: AsyncSession = Depends(get_async_db),
     current_user: User = Depends(get_current_user),
-    audit_service: AuditLogService = Depends(get_audit_service)
+    audit_service: AuditLogService = Depends(get_audit_service),
 ):
     """
     手动清理回收站种子
@@ -313,34 +288,28 @@ async def manual_cleanup(
         }
     """
     try:
-        service = RecycleBinService(db)
+        service = RecycleBinService()
+        try:
+            result = await service.manual_cleanup(
+                torrent_ids=cleanup_request.torrent_ids,
+                operator=current_user.username or "",
+                audit_service=audit_service,
+                request=http_request,
+            )
 
-        result = await service.manual_cleanup(
-            torrent_ids=request.torrent_ids,
-            operator=current_user.username,
-            audit_service=audit_service
-        )
+            # 根据结果确定消息
+            if result["failed_count"] == 0:
+                msg = f"清理成功：共{result['success_count']}个种子"
+            elif result["success_count"] == 0:
+                msg = f"清理失败：共{result['failed_count']}个种子"
+            else:
+                msg = f"清理部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
 
-        # 根据结果确定消息
-        if result["failed_count"] == 0:
-            msg = f"清理成功：共{result['success_count']}个种子"
-        elif result["success_count"] == 0:
-            msg = f"清理失败：共{result['failed_count']}个种子"
-        else:
-            msg = f"清理部分成功：成功{result['success_count']}个，失败{result['failed_count']}个"
-
-        return CommonResponse(
-            status="success",
-            msg=msg,
-            code="200",
-            data=result
-        )
+            return CommonResponse(status="success", msg=msg, code="200", data=result)
+        finally:
+            # 归还服务自建的同步会话，避免 NullPool 下连接泄漏（database is locked 风险）
+            service.close()
 
     except Exception as e:
         logger.error(f"清理回收站失败: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"清理失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"清理失败: {str(e)}", code="500", data=None)

@@ -13,7 +13,10 @@
         <div class="step-number">{{ index + 1 }}</div>
         <div class="step-content">
           <div class="step-title">{{ step.title }}</div>
-          <div class="step-desc" v-html="step.description"></div>
+          <!-- 安全修复（W15）：description 不再直接 v-html——历史实现无转义，
+               安全仅依赖调用方传入纯数字/常量（数据巧合安全）。改为转义后
+               仅还原白名单 <mark> 高亮标记，杜绝未来注入存储型 XSS 汇点。 -->
+          <div class="step-desc" v-html="sanitizeDescription(step.description)"></div>
         </div>
       </div>
     </div>
@@ -37,6 +40,27 @@ interface TimelineStep {
 export default class MatchTimeline extends Vue {
   @Prop({ type: Array, required: true })
   readonly steps!: TimelineStep[]
+
+  /**
+   * 描述文本消毒：整体 HTML 转义后仅还原白名单 <mark> 高亮标记。
+   * 其余任何标签（<script>/<img onerror> 等）都会被转义为纯文本。
+   */
+  private sanitizeDescription(description: string): string {
+    const escaped = description
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    // 还原 mark 标记：转义后 <mark> 已变成 &lt;mark&gt;，用占位符交换避免二次转义
+    const MARK_OPEN = '\u0001'
+    const MARK_CLOSE = '\u0002'
+    return escaped
+      .replace(/&lt;mark&gt;/g, MARK_OPEN)
+      .replace(/&lt;\/mark&gt;/g, MARK_CLOSE)
+      .replace(/&amp;lt;mark&amp;gt;/g, MARK_OPEN)
+      .replace(/&amp;lt;\/mark&amp;gt;/g, MARK_CLOSE)
+      .replace(new RegExp(MARK_OPEN, 'g'), '<mark>')
+      .replace(new RegExp(MARK_CLOSE, 'g'), '</mark>')
+  }
 }
 </script>
 

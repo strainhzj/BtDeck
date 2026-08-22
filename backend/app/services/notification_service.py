@@ -5,10 +5,9 @@
 提供通知的 CRUD 操作和版本更新检查逻辑。
 """
 
-import json
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 from packaging import version
 
 from sqlalchemy import select, func, update, delete
@@ -26,11 +25,7 @@ class NotificationService:
         self.db = db
 
     async def get_notifications(
-        self,
-        page: int = 1,
-        page_size: int = 20,
-        type: Optional[str] = None,
-        is_read: Optional[bool] = None
+        self, page: int = 1, page_size: int = 20, type: Optional[str] = None, is_read: Optional[bool] = None
     ) -> Dict[str, Any]:
         """分页获取通知列表"""
         query = select(Notification).order_by(Notification.created_at.desc())
@@ -52,16 +47,11 @@ class NotificationService:
         result = await self.db.execute(query)
         notifications = result.scalars().all()
 
-        return {
-            "total": total,
-            "page": page,
-            "pageSize": page_size,
-            "list": [n.to_dict() for n in notifications]
-        }
+        return {"total": total, "page": page, "pageSize": page_size, "list": [n.to_dict() for n in notifications]}
 
     async def get_unread_count(self) -> int:
         """获取未读通知数量"""
-        query = select(func.count(Notification.id)).where(Notification.is_read == False)
+        query = select(func.count(Notification.id)).where(Notification.is_read.is_(False))
         result = await self.db.execute(query)
         return result.scalar() or 0
 
@@ -74,59 +64,91 @@ class NotificationService:
         )
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return getattr(result, "rowcount", 0) > 0
 
     async def mark_as_unread(self, notification_id: int) -> bool:
         """标记单条通知为未读"""
-        stmt = (
-            update(Notification)
-            .where(Notification.id == notification_id)
-            .values(is_read=False, read_at=None)
-        )
+        stmt = update(Notification).where(Notification.id == notification_id).values(is_read=False, read_at=None)
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return getattr(result, "rowcount", 0) > 0
 
     async def mark_all_as_read(self) -> int:
         """标记所有通知为已读"""
         stmt = (
-            update(Notification)
-            .where(Notification.is_read == False)
-            .values(is_read=True, read_at=datetime.utcnow())
+            update(Notification).where(Notification.is_read.is_(False)).values(is_read=True, read_at=datetime.utcnow())
         )
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount
+        return getattr(result, "rowcount", 0)
 
     async def delete_notification(self, notification_id: int) -> bool:
         """删除单条通知"""
         stmt = delete(Notification).where(Notification.id == notification_id)
         result = await self.db.execute(stmt)
         await self.db.commit()
-        return result.rowcount > 0
+        return getattr(result, "rowcount", 0) > 0
 
     async def create_notification(
         self,
         type: str,
         title: str,
         content: Optional[str] = None,
-        priority: str = 'info',
-        extra_data: Optional[Dict[str, Any]] = None
+        priority: str = "info",
+        extra_data: Optional[Dict[str, Any]] = None,
+        dedupe_key: Optional[str] = None,
     ) -> Notification:
-        """创建通知"""
+        """创建通知（支持 dedupe_key 幂等去重）。
+
+        去重双层保护：
+        1. 查询层：dedupe_key 非空时先查是否已存在（捕获无 DB 唯一索引的场景）
+        2. DB 层：部分唯一索引 uq_notification_dedupe_key 兜底（触发 IntegrityError）
+
+        Args:
+            dedupe_key: 去重键（可空）。非空时双层去重保证幂等。
+
+        Returns:
+            新建或已存在的通知
+        """
+        # 查询层去重：dedupe_key 非空时先查已存在记录
+        if dedupe_key:
+            existing = await self.db.execute(select(Notification).where(Notification.dedupe_key == dedupe_key))
+            found = existing.scalar_one_or_none()
+            if found:
+                return found
+
         notification = Notification(
             type=type,
             title=title,
             content=content,
             priority=priority,
-            extra_data=extra_data
+            extra_data=extra_data,
+            dedupe_key=dedupe_key,
         )
         self.db.add(notification)
-        await self.db.commit()
-        await self.db.refresh(notification)
-        return notification
+        try:
+            await self.db.commit()
+            await self.db.refresh(notification)
+            return notification
+        except Exception as e:
+            await self.db.rollback()
+            # DB 层去重：dedupe_key 冲突 → 幂等返回已存在记录
+            if dedupe_key and self._is_unique_violation(e):
+                existing = await self.db.execute(select(Notification).where(Notification.dedupe_key == dedupe_key))
+                found = existing.scalar_one_or_none()
+                if found:
+                    return found
+            raise
 
-    async def check_version_update(self, current_version: str, github_repo: str = "StrainThomas/BtDeck") -> Optional[Notification]:
+    @staticmethod
+    def _is_unique_violation(exc: Exception) -> bool:
+        """判断异常是否为唯一约束冲突（跨 SQLite/PostgreSQL）。"""
+        exc_str = str(exc).lower()
+        return "unique" in exc_str or "integrity" in exc_str
+
+    async def check_version_update(
+        self, current_version: str, github_repo: str = "StrainThomas/BtDeck"
+    ) -> Optional[Notification]:
         """
         检查 GitHub Release 是否有新版本，如有则创建通知。
 
@@ -143,7 +165,7 @@ class NotificationService:
             async with httpx.AsyncClient(timeout=10) as client:
                 resp = await client.get(
                     f"https://api.github.com/repos/{github_repo}/releases/latest",
-                    headers={"Accept": "application/vnd.github+json"}
+                    headers={"Accept": "application/vnd.github+json"},
                 )
 
                 if resp.status_code == 403:
@@ -173,8 +195,7 @@ class NotificationService:
                 # 检查是否已存在相同版本的通知（通过 title 去重）
                 existing = await self.db.execute(
                     select(Notification).where(
-                        Notification.type == "version_update",
-                        Notification.title == f"BtDeck v{latest_tag} 版本更新"
+                        Notification.type == "version_update", Notification.title == f"BtDeck v{latest_tag} 版本更新"
                     )
                 )
                 if existing.scalar_one_or_none():
@@ -194,8 +215,8 @@ class NotificationService:
                         "version": latest_tag,
                         "current_version": current_version,
                         "release_url": release_url,
-                        "published_at": release.get("published_at", "")
-                    }
+                        "published_at": release.get("published_at", ""),
+                    },
                 )
                 logger.info(f"已创建版本更新通知: v{latest_tag}")
                 return notification

@@ -1,4 +1,3 @@
-/* eslint-disable camel_case */
 import request from '@/utils/request'
 
 /**

@@ -1,8 +1,13 @@
 <template>
   <div class="condition-value-input">
+    <span
+      v-if="inputType === 'none'"
+      class="condition-value-input__empty"
+    >无需填写</span>
+
     <!-- 文本输入 -->
     <el-input
-      v-if="inputType === 'text'"
+      v-else-if="inputType === 'text'"
       v-model="inputValue"
       :placeholder="placeholder"
       size="small"
@@ -82,6 +87,38 @@
         style="width: 180px;"
         @input="handleInput"
         @change="handleChange"
+      />
+    </div>
+
+    <!-- 数值范围输入（ratio/ratio_limit 的 between） -->
+    <div
+      v-else-if="inputType === 'numberRange'"
+      class="number-range-input"
+    >
+      <span class="size-label">最小:</span>
+      <el-input-number
+        :value="inputValue && inputValue.min !== undefined ? inputValue.min : null"
+        :min="0"
+        :precision="2"
+        :controls="true"
+        :step="0.1"
+        placeholder="最小值"
+        size="small"
+        class="size-number-input"
+        @change="handleNumberRangeMinChange"
+      />
+      <span class="range-separator">至</span>
+      <span class="size-label">最大:</span>
+      <el-input-number
+        :value="inputValue && inputValue.max !== undefined ? inputValue.max : null"
+        :min="0"
+        :precision="2"
+        :controls="true"
+        :step="0.1"
+        placeholder="最大值"
+        size="small"
+        class="size-number-input"
+        @change="handleNumberRangeMaxChange"
       />
     </div>
 
@@ -201,11 +238,19 @@
       style="width: 100%;"
     >
       <el-option
-        v-for="option in fieldOptions"
+        v-for="option in currentFieldOptions"
         :key="option.value"
         :label="option.label"
         :value="option.value"
-      />
+      >
+        <LucideIcon
+          v-if="option.icon"
+          :name="option.icon"
+          :size="13"
+          style="margin-right: 6px; vertical-align: middle; color: var(--color-text-tertiary, #9ca3af);"
+        />
+        <span>{{ option.label }}</span>
+      </el-option>
     </el-select>
 
     <!-- 多选输入器 -->
@@ -214,13 +259,12 @@
       class="multi-select-input"
     >
       <AdvancedMultiSelect
+        v-model="inputValue"
         :options="fieldOptions"
-        :value="inputValue"
-        :allow-create="true"
+        :allow-create="!['status', 'downloader_name'].includes(field)"
         :virtual-scroll-threshold="100"
         :list-height="200"
         :show-advanced="true"
-        @input="handleInput"
         @change="handleChange"
       />
     </div>
@@ -281,44 +325,37 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import AdvancedMultiSelect from './AdvancedMultiSelect.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
+import {
+  AdvancedSearchConditionValue,
+  AdvancedSearchValidationError,
+  NumberRangeValue,
+  SizeRangeValue,
+  SizeValue
+} from './advancedSearchState'
 
 // 字段选项接口
 interface FieldOption {
   label: string
   value: string
-}
-
-// 正则表达式值接口
-interface RegexValue {
-  pattern: string
-  caseSensitive: boolean
-}
-
-// 日期范围值接口
-interface DateRangeValue {
-  start: string
-  end: string
-}
-
-// 最近N天值接口
-interface LastDaysValue {
-  days: number
+  icon?: string
 }
 
 @Component({
   name: 'ConditionValueInput',
   components: {
-    AdvancedMultiSelect
+    AdvancedMultiSelect,
+    LucideIcon
   }
 })
 export default class ConditionValueInput extends Vue {
   // Props
   @Prop({ required: true }) field!: string
   @Prop({ required: true }) operator!: string
-  @Prop({ default: null }) value!: any
+  @Prop({ default: null }) value!: AdvancedSearchConditionValue
 
   // Data
-  inputValue: any = null
+  inputValue: AdvancedSearchConditionValue = null
   multiInputText = ''
   multiSelectMode: 'tags' | 'input' = 'tags'
 
@@ -326,17 +363,18 @@ export default class ConditionValueInput extends Vue {
   readonly fieldTypeMap = {
     name: 'text',
     size: 'number',
-    status: 'select',
-    downloader_name: 'select',
+    status: 'multiSelect',
+    downloader_name: 'multiSelect',
     save_path: 'text',
     added_date: 'date',
     completed_date: 'date',
     ratio: 'number',
     ratio_limit: 'number',
     tags: 'multiSelect',
-    category: 'select',
-    super_seeding: 'boolean',
-    tracker_url: 'text'
+    category: 'multiSelect',
+    super_seeding: 'select',
+    tracker_url: 'text',
+    tracker_msg: 'text'
   }
 
   // 字段选项（将通过API或prop传入）
@@ -350,15 +388,19 @@ export default class ConditionValueInput extends Vue {
     { label: '错误', value: 'error' }
   ]
 
-  // 布尔选项
-  readonly booleanOptions: FieldOption[] = [
-    { label: '是', value: 'true' },
-    { label: '否', value: 'false' }
+  readonly superSeedingOptions: FieldOption[] = [
+    { label: '是', value: '1' },
+    { label: '否', value: '0' },
+    { label: '不支持', value: 'unsupported' }
   ]
 
   // Computed
   get inputType(): string {
     const fieldType = this.fieldTypeMap[this.field as keyof typeof this.fieldTypeMap] || 'text'
+
+    if (this.operator === 'is_null' || this.operator === 'is_not_null') {
+      return 'none'
+    }
 
     // 根据操作符调整输入类型
     switch (this.operator) {
@@ -369,9 +411,17 @@ export default class ConditionValueInput extends Vue {
       case 'regex':
         return 'regex'
       case 'between':
-        // 种子大小范围查询
+        // 种子大小范围查询（带单位）
         if (this.field === 'size') {
           return 'sizeRange'
+        }
+        // 日期字段 between 复用 dateRange 模板（与 date_range 操作符同 UI）
+        if (fieldType === 'date') {
+          return 'dateRange'
+        }
+        // 数值字段（ratio/ratio_limit 等）between 走 numberRange 模板
+        if (fieldType === 'number') {
+          return 'numberRange'
         }
         return fieldType
       default:
@@ -452,7 +502,7 @@ export default class ConditionValueInput extends Vue {
       case 'status':
         return this.statusOptions
       case 'super_seeding':
-        return this.booleanOptions
+        return this.superSeedingOptions
       default:
         return []
     }
@@ -460,265 +510,17 @@ export default class ConditionValueInput extends Vue {
 
   // Watchers
   @Watch('value', { immediate: true, deep: true })
-  onValueChange(newVal: any) {
-    this.inputValue = this.normalizeValue(newVal)
-
-    // 额外安全检查：确保种子大小字段总是有正确的数据结构
-    if (this.field === 'size' && !this.isValidSizeValue()) {
-      // 如果数据结构不正确，立即初始化为默认值
-      if (this.operator === 'between') {
-        this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-      } else {
-        this.inputValue = { value: null, unit: 'GB' }
-      }
-    }
-  }
-
-  @Watch('field')
-  onFieldChange(newField: string, oldField: string) {
-    // 字段变化时重置多选模式
-    if (this.inputType === 'multiSelect') {
-      this.multiSelectMode = 'tags'
-    }
-
-    // 当切换到种子大小字段时，立即初始化正确的数据结构
-    if (newField === 'size' && oldField !== 'size') {
-      if (this.operator === 'between') {
-        this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-      } else {
-        this.inputValue = { value: null, unit: 'GB' }
-      }
-    }
-  }
-
-  @Watch('operator')
-  onOperatorChange(newOp: string, oldOp: string) {
-    // 当操作符在"介于"和其他操作符之间切换时，如果是种子大小字段，需要调整数据结构
-    if (this.field === 'size') {
-      if (newOp === 'between' && oldOp !== 'between') {
-        // 切换到"介于"，需要范围数据结构
-        const currentValue = this.inputValue?.value || null
-        const currentUnit = this.inputValue?.unit || 'GB'
-        this.inputValue = {
-          min: currentValue,
-          max: null,
-          minUnit: currentUnit,
-          maxUnit: currentUnit
-        }
-      } else if (newOp !== 'between' && oldOp === 'between') {
-        // 从"介于"切换到其他操作符，需要单个值数据结构
-        const minValue = this.inputValue?.min || null
-        const minUnit = this.inputValue?.minUnit || 'GB'
-        this.inputValue = {
-          value: minValue,
-          unit: minUnit
-        }
-      }
-    }
-  }
-
-  @Watch('inputType')
-  onInputTypeChange(newType: string) {
-    // 当输入类型改变时，如果需要特殊的数据结构，初始化为默认值
-    if (newType === 'sizeWithUnit' || newType === 'sizeRange') {
-      if (!this.isValidSizeValue()) {
-        if (newType === 'sizeRange') {
-          this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-        } else {
-          this.inputValue = { value: null, unit: 'GB' }
-        }
-      }
+  onValueChange(newValue: AdvancedSearchConditionValue) {
+    if (Array.isArray(newValue)) {
+      this.inputValue = [...newValue]
+    } else if (typeof newValue === 'object' && newValue !== null) {
+      this.inputValue = { ...newValue } as AdvancedSearchConditionValue
+    } else {
+      this.inputValue = newValue
     }
   }
 
   // Methods
-  mounted() {
-    this.initializeValue()
-  }
-
-  private initializeValue() {
-    this.inputValue = this.normalizeValue(this.value)
-  }
-
-  // 检查是否是有效的种子大小值
-  private isValidSizeValue(): boolean {
-    if (!this.inputValue || typeof this.inputValue !== 'object') {
-      return false
-    }
-
-    if (this.inputType === 'sizeWithUnit') {
-      return 'value' in this.inputValue && 'unit' in this.inputValue
-    }
-
-    if (this.inputType === 'sizeRange') {
-      return 'min' in this.inputValue && 'max' in this.inputValue
-    }
-
-    return false
-  }
-
-  // 标准化输入值
-  private normalizeValue(value: any): any {
-    // 先检查字段类型，对于种子大小字段特殊处理
-    if (this.field === 'size') {
-      // null 或 undefined 值
-      if (value === null || value === undefined) {
-        // 优先根据操作符判断数据结构
-        if (this.operator === 'between') {
-          return { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-        } else if (this.operator === '') {
-          // 操作符还未设置时，默认使用单个值结构
-          // 这可以避免初始化时的竞态条件
-          return { value: null, unit: 'GB' }
-        } else {
-          return { value: null, unit: 'GB' }
-        }
-      }
-
-      // 数字值：转换为种子大小对象结构
-      if (typeof value === 'number') {
-        if (this.operator === 'between') {
-          return { min: value, max: null, minUnit: 'GB', maxUnit: 'GB' }
-        } else {
-          return { value: value, unit: 'GB' }
-        }
-      }
-
-      // 已是正确对象结构
-      if (typeof value === 'object') {
-        if (this.operator === 'between') {
-          if (value.min !== undefined) {
-            return {
-              min: value.min,
-              max: value.max,
-              minUnit: value.minUnit || 'GB',
-              maxUnit: value.maxUnit || 'GB'
-            }
-          }
-          return { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-        } else {
-          if (value.value !== undefined) {
-            return {
-              value: value.value,
-              unit: value.unit || 'GB'
-            }
-          }
-          return { value: null, unit: 'GB' }
-        }
-      }
-
-      // 其他情况返回默认值
-      return this.getDefaultValue()
-    }
-
-    // 非种子大小字段的常规处理
-    if (value === null || value === undefined) {
-      return this.getDefaultValue()
-    }
-
-    switch (this.inputType) {
-      case 'number':
-        return Number(value) || 0
-
-      case 'boolean':
-        return Boolean(value)
-
-      case 'multiSelect':
-        if (Array.isArray(value)) {
-          return value
-        } else if (typeof value === 'string' && value) {
-          return value.split(',').map(item => item.trim()).filter(item => item)
-        }
-        return []
-
-      case 'lastDays':
-        if (typeof value === 'number') {
-          return { days: value }
-        } else if (typeof value === 'object' && value?.days) {
-          return { days: Number(value.days) }
-        }
-        return { days: 7 }
-
-      case 'dateRange':
-        if (typeof value === 'object' && value?.start && value?.end) {
-          return { start: value.start, end: value.end }
-        } else if (typeof value === 'string') {
-          try {
-            const parsed = JSON.parse(value)
-            if (parsed.start && parsed.end) {
-              return parsed
-            }
-          } catch (e) {
-            // 解析失败，使用默认值
-          }
-        }
-        return { start: '', end: '' }
-
-      case 'regex':
-        if (typeof value === 'object' && value?.pattern) {
-          return { pattern: value.pattern, caseSensitive: Boolean(value.caseSensitive) }
-        } else if (typeof value === 'string') {
-          return { pattern: value, caseSensitive: false }
-        }
-        return { pattern: '', caseSensitive: false }
-
-      case 'sizeRange':
-        if (typeof value === 'object' && value?.min !== undefined) {
-          return {
-            min: value.min,
-            max: value.max,
-            minUnit: value.minUnit || 'GB',
-            maxUnit: value.maxUnit || 'GB'
-          }
-        }
-        return { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-
-      case 'sizeWithUnit':
-        if (typeof value === 'object' && value?.value !== undefined) {
-          return {
-            value: value.value,
-            unit: value.unit || 'GB'
-          }
-        }
-        return { value: null, unit: 'GB' }
-
-      default:
-        return value
-    }
-  }
-
-  // 获取默认值
-  private getDefaultValue(): any {
-    switch (this.inputType) {
-      case 'number':
-        return 0
-
-      case 'boolean':
-        return null
-
-      case 'multiSelect':
-        return []
-
-      case 'lastDays':
-        return { days: 7 }
-
-      case 'dateRange':
-        return { start: '', end: '' }
-
-      case 'regex':
-        return { pattern: '', caseSensitive: false }
-
-      case 'sizeRange':
-        return { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-
-      case 'sizeWithUnit':
-        return { value: null, unit: 'GB' }
-
-      default:
-        return null
-    }
-  }
-
   // 处理输入事件
   handleInput() {
     this.emitChange()
@@ -746,8 +548,12 @@ export default class ConditionValueInput extends Vue {
   // 添加多选输入值
   addMultiInputValue() {
     const text = this.multiInputText.trim()
-    if (text && !this.inputValue.includes(text)) {
-      this.inputValue.push(text)
+    if (
+      text &&
+      Array.isArray(this.inputValue) &&
+      !this.inputValue.includes(text)
+    ) {
+      this.inputValue = [...this.inputValue, text]
       this.multiInputText = ''
       this.emitChange()
     }
@@ -755,51 +561,100 @@ export default class ConditionValueInput extends Vue {
 
   // 删除多选输入值
   removeMultiInputValue(index: number) {
-    this.inputValue.splice(index, 1)
+    if (!Array.isArray(this.inputValue)) return
+    this.inputValue = this.inputValue.filter(
+      (_item, itemIndex) => itemIndex !== index
+    )
     this.emitChange()
   }
 
-  // 种子大小范围处理方法
-  handleMinValueChange(value: number) {
-    if (!this.inputValue || typeof this.inputValue !== 'object') {
-      this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
+  private requireSizeRange(): SizeRangeValue {
+    const value = this.inputValue
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      !('minUnit' in value) ||
+      !('maxUnit' in value)
+    ) {
+      throw new AdvancedSearchValidationError(
+        '父组件未提供种子大小范围状态'
+      )
     }
-    this.inputValue.min = value
+    return value as SizeRangeValue
+  }
+
+  private requireNumberRange(): NumberRangeValue {
+    const value = this.inputValue
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      !('min' in value) ||
+      !('max' in value)
+    ) {
+      throw new AdvancedSearchValidationError('父组件未提供数值范围状态')
+    }
+    return value as NumberRangeValue
+  }
+
+  private requireSizeValue(): SizeValue {
+    const value = this.inputValue
+    if (
+      typeof value !== 'object' ||
+      value === null ||
+      Array.isArray(value) ||
+      !('value' in value) ||
+      !('unit' in value)
+    ) {
+      throw new AdvancedSearchValidationError('父组件未提供种子大小状态')
+    }
+    return value as SizeValue
+  }
+
+  // 种子大小范围处理方法
+  handleMinValueChange(value: number | null) {
+    this.inputValue = { ...this.requireSizeRange(), min: value }
     this.emitChange()
   }
 
   handleMinUnitChange(unit: string) {
-    if (!this.inputValue || typeof this.inputValue !== 'object') {
-      this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-    }
-    this.inputValue.minUnit = unit
+    this.inputValue = { ...this.requireSizeRange(), minUnit: unit }
     this.emitChange()
   }
 
-  handleMaxValueChange(value: number) {
-    if (!this.inputValue || typeof this.inputValue !== 'object') {
-      this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-    }
-    this.inputValue.max = value
+  handleMaxValueChange(value: number | null) {
+    this.inputValue = { ...this.requireSizeRange(), max: value }
     this.emitChange()
   }
 
   handleMaxUnitChange(unit: string) {
-    if (!this.inputValue || typeof this.inputValue !== 'object') {
-      this.inputValue = { min: null, max: null, minUnit: 'GB', maxUnit: 'GB' }
-    }
-    this.inputValue.maxUnit = unit
+    this.inputValue = { ...this.requireSizeRange(), maxUnit: unit }
+    this.emitChange()
+  }
+
+  // 数值范围（ratio/ratio_limit 的 between）：value 结构 {min, max}，无单位
+  handleNumberRangeMinChange(value: number | null) {
+    this.inputValue = { ...this.requireNumberRange(), min: value }
+    this.emitChange()
+  }
+
+  handleNumberRangeMaxChange(value: number | null) {
+    this.inputValue = { ...this.requireNumberRange(), max: value }
     this.emitChange()
   }
 
   // 格式化大小提示
-  formatSizeHint(value: number | null, unit: string): string {
+  formatSizeHint(
+    value: number | null | undefined,
+    unit: string | undefined
+  ): string {
     if (value === null || value === undefined || value === 0) {
       return ''
     }
 
     // 转换为字节并格式化显示
-    const bytes = value * this.getUnitMultiplier(unit)
+    const bytes = value * this.getUnitMultiplier(unit || 'B')
     return this.formatBytes(bytes)
   }
 
@@ -832,19 +687,13 @@ export default class ConditionValueInput extends Vue {
   }
 
   // 种子大小单个值处理方法
-  handleSizeValueChange(value: number) {
-    if (!this.inputValue || typeof this.inputValue !== 'object') {
-      this.inputValue = { value: null, unit: 'GB' }
-    }
-    this.inputValue.value = value
+  handleSizeValueChange(value: number | null) {
+    this.inputValue = { ...this.requireSizeValue(), value }
     this.emitChange()
   }
 
   handleSizeUnitChange(unit: string) {
-    if (!this.inputValue || typeof this.inputValue !== 'object') {
-      this.inputValue = { value: null, unit: 'GB' }
-    }
-    this.inputValue.unit = unit
+    this.inputValue = { ...this.requireSizeValue(), unit }
     this.emitChange()
   }
 }
@@ -853,6 +702,14 @@ export default class ConditionValueInput extends Vue {
 <style lang="scss" scoped>
 .condition-value-input {
   width: 100%;
+
+  &__empty {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    color: #909399;
+    font-size: 13px;
+  }
 
   .last-days-input {
     display: flex;

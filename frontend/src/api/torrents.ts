@@ -17,15 +17,21 @@ export interface Torrent {
   save_path?: string // 蛇形命名兼容
   size: number
   status: string
+  errorReason?: string | null
+  error_reason?: string | null // 蛇形命名兼容
+  hasTrackerError?: boolean | null
+  has_tracker_error?: boolean | null // 蛇形命名兼容（tracker 判定任务标记的整种错误）
   torrentFile: string
   torrent_file?: string // 蛇形命名兼容
+  auxiliarySeedCount?: number
+  auxiliary_seed_count?: number // 蛇形命名兼容
   addedDate: string
   added_date?: string // 蛇形命名兼容
   completedDate: string | null
   completed_date?: string | null // 蛇形命名兼容
-  ratio: string
-  ratioLimit: string
-  ratio_limit?: string // 蛇形命名兼容
+  ratio: number | null
+  ratioLimit: number | null
+  ratio_limit?: number | null // 蛇形命名兼容
   tags: string
   category: string
   superSeeding: string | boolean
@@ -149,9 +155,11 @@ export interface TorrentAddBatchResultItem {
  */
 export interface TorrentAddBatchResponseData {
   total: number
-  success_count: number
-  failed_count: number
-  results: TorrentAddBatchResultItem[]
+  task_id?: string
+  status?: 'queued' | 'completed' | 'partial' | 'failed'
+  success_count?: number
+  failed_count?: number
+  results?: TorrentAddBatchResultItem[]
 }
 
 export interface TorrentDeleteRequest {
@@ -185,29 +193,43 @@ export interface TorrentListParams {
   tags_like?: string
   category_like?: string
   tracker_like?: string
+  tracker_domain?: string | string[]  // Tracker主域名筛选，支持单个或多选
   status?: string | string[]  // 支持单个状态或状态数组
+  active_only?: boolean  // 仅显示活动种子（实时速度>0，后端按活动集合缓存过滤）
+  same_content_only?: boolean  // 仅显示同名、同大小且不同 InfoHash 的种子
+  single_error_only?: boolean  // 仅显示错误且全局同内容唯一的种子
   skip?: number
   limit?: number
   sort_by?: string
   sort_order?: string
 }
 
-export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<Torrent[]>> {
+export type ActiveSnapshotStatus = 'not_ready' | 'expired' | 'partial' | 'ready_empty' | 'ready'
+
+export interface TorrentListResponseData {
+  list: Torrent[]
+  total: number
+  pageSize: number
+  activeSnapshotReady?: boolean
+  activeSnapshotStatus?: ActiveSnapshotStatus
+}
+
+export function getTorrentList(params?: TorrentListParams): Promise<ApiResponse<TorrentListResponseData>> {
   return request({
     url: '/torrents/getList',
     method: 'get',
     params: params
-  }) as unknown as Promise<ApiResponse<Torrent[]>>
+  }) as unknown as Promise<ApiResponse<TorrentListResponseData>>
 }
 
 /**
- * 获取种子详情
+ * 获取已由 Tracker 同步任务采集到的 Tracker 主域名列表
  */
-export function getTorrentDetail(hash: string): Promise<ApiResponse<Torrent>> {
+export function getTrackerDomains(): Promise<ApiResponse<string[]>> {
   return request({
-    url: `/torrents/detail/${hash}`,
+    url: '/torrents/tracker-domains',
     method: 'get'
-  }) as unknown as Promise<ApiResponse<Torrent>>
+  }) as unknown as Promise<ApiResponse<string[]>>
 }
 
 /**
@@ -357,8 +379,12 @@ export interface BatchDeleteAsyncRequest {
 }
 
 export interface BatchDeleteAsyncResponse {
-  task_id: string
+  task_id: string | null
   total_count: number
+  requested_count: number
+  accepted_count: number
+  skipped_count: number
+  skipped_info_ids: string[]
   delete_level: number
 }
 
@@ -378,6 +404,10 @@ export interface BatchDeleteStatusResponse {
   task_id: string
   status: 'pending' | 'running' | 'completed' | 'failed' | 'partial'
   total_count: number
+  requested_count: number
+  accepted_count: number
+  skipped_count: number
+  skipped_info_ids: string[]
   success_count: number
   failed_count: number
   error_message?: string
@@ -445,12 +475,12 @@ export interface RecheckTorrentsRequest {
   hashes: string[]
 }
 
-export function recheckTorrents(params: RecheckTorrentsRequest) {
+export function recheckTorrents(params: RecheckTorrentsRequest): Promise<ApiResponse<any>> {
   return request({
     url: '/torrents/recheck',
     method: 'post',
     data: params
-  })
+  }) as unknown as Promise<ApiResponse<any>>
 }
 
 
@@ -582,31 +612,13 @@ export interface AdvancedSearchRequest {
     conditions: Array<{
       field: string
       operator: string
-      value: any
+      value: unknown
+      mode?: 'include' | 'exclude'
     }>
   }>
+  between_group_logics?: Array<'AND' | 'OR'>
 
-  // 多选排除字段
-  status_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
-  category_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
-  tags_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
-  downloader_multi?: {
-    mode: 'include' | 'exclude'
-    value: string | string[]
-    separator?: string
-  }
+  // 多选排除字段已废弃：前端 multiSelect 字段统一走 condition_groups + contains_any/contains_all
 }
 
 /**
@@ -615,9 +627,8 @@ export interface AdvancedSearchRequest {
 export interface AdvancedSearchResponse {
   total: number
   page: number
-  limit: number
-  total_pages: number
-  data: Torrent[]
+  pageSize: number
+  list: Torrent[]
 }
 
 /**
@@ -642,7 +653,7 @@ export function advancedSearch(searchParams: AdvancedSearchRequest): Promise<Api
 export interface CreateSearchTemplateRequest {
   name: string
   description?: string
-  conditions: any // 搜索条件JSON
+  conditions: QueryTemplateConditions
   is_public?: boolean
 }
 
@@ -653,7 +664,7 @@ export interface UpdateSearchTemplateRequest {
   id: string
   name?: string
   description?: string
-  conditions?: any
+  conditions?: QueryTemplateConditions
   is_public?: boolean
 }
 
@@ -665,7 +676,7 @@ export interface SearchTemplate {
   user_id: string
   name: string
   description: string | null
-  conditions: any
+  conditions: QueryTemplateConditions
   is_default: boolean
   is_public: boolean
   usage_count: number
@@ -737,11 +748,96 @@ export function deleteSearchTemplate(templateId: string): Promise<ApiResponse<an
  * @param templateId 模板ID
  * @returns 搜索结果
  */
-export function applySearchTemplate(templateId: string): Promise<ApiResponse<AdvancedSearchResponse>> {
+export interface AppliedSearchTemplate {
+  id: string
+  name: string
+  description: string | null
+  conditions: QueryTemplateConditions
+}
+
+export function applySearchTemplate(templateId: string): Promise<ApiResponse<AppliedSearchTemplate>> {
   return request({
     url: `/advanced-search/search-templates/${templateId}/apply`,
     method: 'post'
-  }) as unknown as Promise<ApiResponse<AdvancedSearchResponse>>
+  }) as unknown as Promise<ApiResponse<AppliedSearchTemplate>>
+}
+
+// ==================== v1.0.5 查询模板便捷方法 ====================
+
+/**
+ * 查询模板 conditions 结构（前端形态约定）
+ * - source=simple：与 torrents/index.vue 的 listQuery 1:1 对齐
+ * - source=advanced：AdvancedSearchBuilder 的 condition_groups 结构
+ */
+export interface QueryTemplateConditions {
+  source: 'simple' | 'advanced'
+  version: number
+  listQuery?: {
+    name_like?: string
+    category_like?: string
+    tags_like?: string
+    downloader_id?: string[]
+    status?: string[]
+    showActiveOnly?: boolean
+    sort_by?: string
+    sort_order?: 'asc' | 'desc'
+  }
+  condition_groups?: QueryTemplateConditionGroup[]
+  sort_by?: string
+  sort_order?: 'asc' | 'desc'
+}
+
+export interface QueryTemplateCondition {
+  id?: string
+  field: string
+  operator: string
+  value: unknown
+  mode?: 'include' | 'exclude'
+  index?: number
+}
+
+export interface QueryTemplateConditionGroup {
+  id?: string
+  name?: string
+  logic?: string
+  betweenGroupLogic?: 'and' | 'or'
+  conditions: QueryTemplateCondition[]
+}
+
+/**
+ * 保存简单查询为模板（便捷封装）
+ * @description 把 torrents 列表的 listQuery 状态封装为 source=simple 的 conditions，调用 createSearchTemplate
+ * @param name 模板名称
+ * @param listQuery 种子列表查询状态（index.vue 的 listQuery 对象）
+ * @param options.description 模板描述
+ * @param options.isPublic 是否公开
+ * @returns 创建结果
+ */
+export function saveSimpleQueryAsTemplate(
+  name: string,
+  listQuery: QueryTemplateConditions['listQuery'],
+  options?: { description?: string, isPublic?: boolean }
+): Promise<ApiResponse<SearchTemplate>> {
+  const conditions: QueryTemplateConditions = {
+    source: 'simple',
+    version: 1,
+    listQuery: {
+      name_like: listQuery?.name_like ?? '',
+      category_like: listQuery?.category_like ?? '',
+      tags_like: listQuery?.tags_like ?? '',
+      downloader_id: listQuery?.downloader_id ? [...listQuery.downloader_id] : [],
+      status: listQuery?.status ? [...listQuery.status] : [],
+      showActiveOnly: listQuery?.showActiveOnly ?? false,
+      sort_by: listQuery?.sort_by ?? 'added_date',
+      sort_order: listQuery?.sort_order ?? 'desc'
+    }
+  }
+  return createSearchTemplate({
+    name,
+    description: options?.description,
+    conditions,
+    is_public: options?.isPublic ?? false
+  })
 }
 
 /**
@@ -776,9 +872,14 @@ export interface DuplicateQuery {
   name_like?: string
   downloader_id?: string
   status?: string
+  category_like?: string
+  tags_like?: string
+  active_only?: boolean
   min_size?: number
   page?: number
   pageSize?: number
+  sort_by?: 'name' | 'size' | 'status' | 'ratio' | 'added_date'
+  sort_order?: 'asc' | 'desc'
 }
 
 export interface DuplicateResponse {
@@ -786,6 +887,8 @@ export interface DuplicateResponse {
   page: number
   pageSize: number
   list: Torrent[]
+  activeSnapshotReady?: boolean
+  activeSnapshotStatus?: string
 }
 
 export function getDuplicateTorrents(params?: DuplicateQuery): Promise<ApiResponse<DuplicateResponse>> {
@@ -794,6 +897,79 @@ export function getDuplicateTorrents(params?: DuplicateQuery): Promise<ApiRespon
     method: 'post',
     data: params || {}
   }) as unknown as Promise<ApiResponse<DuplicateResponse>>
+}
+
+// ==================== 快捷删除重复种子接口 ====================
+
+export interface QuickDeletePreviewItem {
+  info_id: string
+  downloader_id: string
+  downloader_name: string
+  name: string
+  size: number | null
+  status: string
+  hash: string
+}
+
+export interface QuickDeletePreviewGroup {
+  hash: string
+  name: string
+  size: number | null
+  kept: QuickDeletePreviewItem[]
+  to_delete: QuickDeletePreviewItem[]
+  skipped: boolean
+}
+
+export interface QuickDeletePreviewResponse {
+  total: number
+  page: number
+  pageSize: number
+  total_groups: number
+  total_delete: number
+  skipped_groups: number
+  list: QuickDeletePreviewGroup[]
+}
+
+export interface QuickDeletePreviewRequest {
+  downloader_ids: string[]
+  keep_downloader_ids: string[]
+  page?: number
+  pageSize?: number
+}
+
+export function getQuickDeleteDuplicatePreview(
+  params: QuickDeletePreviewRequest
+): Promise<ApiResponse<QuickDeletePreviewResponse>> {
+  return request({
+    url: '/torrents/duplicates/quick-delete-preview',
+    method: 'post',
+    data: params
+  }) as unknown as Promise<ApiResponse<QuickDeletePreviewResponse>>
+}
+
+export interface QuickDeleteRequest {
+  downloader_ids: string[]
+  keep_downloader_ids: string[]
+  delete_level?: number
+  notify_on_complete?: boolean
+}
+
+export interface QuickDeleteResponse {
+  task_id: string | null
+  total_count: number
+  requested_count: number
+  accepted_count: number
+  skipped_count: number
+  skipped_info_ids: string[]
+  delete_level: number
+}
+
+export function quickDeleteDuplicates(params: QuickDeleteRequest): Promise<ApiResponse<QuickDeleteResponse>> {
+  return request({
+    url: '/torrents/duplicates/quick-delete',
+    method: 'post',
+    data: params
+  }) as unknown as Promise<ApiResponse<QuickDeleteResponse>>
 }
 
 
@@ -927,7 +1103,8 @@ export interface TorrentBackup {
   info_hash: string
   task_name: string
   torrent_name: string
-  downloader_id: number
+  downloader_id: number | string
+  downloader_nickname?: string | null
   file_path: string
   created_at: string
   updated_at: string
@@ -940,7 +1117,7 @@ export interface TorrentBackup {
 export interface TorrentBackupListParams {
   page: number
   pageSize: number
-  downloader_id?: number
+  downloader_id?: number | string
 }
 
 /**
@@ -1022,7 +1199,7 @@ export function deleteTorrentBackup(infoHash: string): Promise<ApiResponse<any>>
  * @param files 种子文件列表
  * @returns 导入结果
  */
-export function importTorrentBackup(downloaderId: number, files: File[]): Promise<ApiResponse<any>> {
+export function importTorrentBackup(downloaderId: string, files: File[]): Promise<ApiResponse<any>> {
   if (!files || files.length === 0) {
     return Promise.reject(new Error('No files to upload'))
   }
@@ -1137,6 +1314,8 @@ export function reannounceAll(): Promise<ApiResponse<ReannounceResponse>> {
  */
 export interface ActiveTorrentSpeed {
   hash: string
+  downloaderId?: string
+  downloader_id?: string
   downloadSpeed: number  // bytes/s
   uploadSpeed: number    // bytes/s
   progress: number       // 下载进度（百分比，0-100）

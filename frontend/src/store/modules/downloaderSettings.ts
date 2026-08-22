@@ -5,8 +5,7 @@ import { Module } from 'vuex'
 import {
   DownloaderSettings,
   DownloaderCapabilities,
-  SettingTemplate,
-  SpeedScheduleRule
+  SettingTemplate
 } from '@/views/downloader/types'
 import {
   getDownloaderSettings,
@@ -204,7 +203,7 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
     },
 
     // 测试下载器设置连接
-    async testSettings({ commit }, downloaderId: string) {
+    async testSettings({ commit: _commit }, downloaderId: string) {
       try {
         const response = await testDownloaderSettings(downloaderId)
         return response
@@ -235,7 +234,7 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
     },
 
     // 获取模板详情
-    async fetchTemplateDetail({ commit }, templateId: string) {
+    async fetchTemplateDetail({ commit: _commit }, templateId: string) {
       try {
         const response = await getTemplateDetail(templateId)
         if (response.code === '200') {
@@ -312,15 +311,16 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
     },
 
     // 应用模板到下载器
+    // 注：overrideLocal 参数已废弃（后端 override=True 硬编码，不读 body），
+    // 保留在 payload 类型中以向后兼容潜在调用方，但不再传递给 API。
     async applyTemplate({ commit }, payload: { templateId: string, downloaderId: string, overrideLocal?: boolean }) {
       commit('SET_LOADING', true)
 
       try {
-        const response = await applyTemplate(payload.templateId, {
-          template_id: payload.templateId,
-          downloader_id: payload.downloaderId,
-          override_local: payload.overrideLocal ?? true
-        })
+        const response = await applyTemplate(
+          payload.templateId,
+          payload.downloaderId
+        )
         if (response.code === '200') {
           // 同时更新设置
           commit('SET_SETTINGS', {
@@ -354,10 +354,11 @@ const downloaderSettingsModule: Module<DownloaderSettingsState, any> = {
 
     // 根据类型过滤模板
     getTemplatesByType: (state) => (downloaderType: 'qbittorrent' | 'transmission') => {
+      const downloaderTypeValue = downloaderType === 'qbittorrent' ? 0 : 1
       return state.templates.filter(template => {
         return (
-          template.downloader_type === downloaderType ||
-          template.downloader_type === 'both'
+          template.downloader_type === downloaderTypeValue ||
+          template.downloader_type === 2
         )
       })
     },

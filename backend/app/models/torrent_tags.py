@@ -10,10 +10,10 @@
 @File    : torrent_tags.py
 """
 
-from typing import Any, Optional, Dict
+from typing import Any, Dict, Optional
 from datetime import datetime
-from sqlalchemy import Column, String, DateTime, Integer, ForeignKey, UniqueConstraint
-from sqlalchemy.orm import relationship
+from sqlalchemy import String, DateTime, Integer, ForeignKey, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import uuid
 
@@ -35,31 +35,34 @@ class TorrentTag(Base):
         updated_at: 更新时间
         dr: 软删除标记（0=未删除，1=已删除）
     """
+
     __tablename__ = "torrent_tags"
 
     # 主键：使用String(36)存储UUID
-    tag_id = Column(String(36), primary_key=True, index=True, comment="标签唯一标识符")
+    tag_id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True, comment="标签唯一标识符")
 
     # 外键：关联下载器（使用String类型，与BtDownloaders.downloader_id一致）
-    downloader_id = Column(String(36), nullable=False, index=True, comment="所属下载器ID")
+    downloader_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="所属下载器ID")
 
     # 标签名称
-    tag_name = Column(String(255), nullable=False, comment="标签名称")
+    tag_name: Mapped[str] = mapped_column(String(255), nullable=False, comment="标签名称")
 
     # 标签类型：'category'表示qBittorrent分类，'tag'表示通用标签
-    tag_type = Column(String(50), nullable=False, index=True, comment="标签类型：category/tag")
+    tag_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True, comment="标签类型：category/tag")
 
     # 标签颜色：HEX颜色码，如'#FF5733'
-    color = Column(String(7), nullable=True, comment="标签颜色（HEX格式）")
+    color: Mapped[Optional[str]] = mapped_column(String(7), nullable=True, comment="标签颜色（HEX格式）")
 
     # 审计字段：创建时间
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
 
     # 审计字段：更新时间
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False, comment="更新时间"
+    )
 
     # 软删除标记：0=未删除，1=已删除
-    dr = Column(Integer, default=0, nullable=False, comment="软删除标记")
+    dr: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="软删除标记")
 
     def __init__(
         self,
@@ -69,7 +72,7 @@ class TorrentTag(Base):
         tag_type: Optional[str] = None,
         color: Optional[str] = None,
         dr: int = 0,
-        **kw: Any
+        **kw: Any,
     ):
         """
         初始化TorrentTag实例
@@ -137,36 +140,31 @@ class TorrentTagRelation(Base):
         assigned_at: 分配时间
         dr: 软删除标记
     """
+
     __tablename__ = "torrent_tag_relations"
 
     # 主键：使用String(36)存储UUID
-    relation_id = Column(String(36), primary_key=True, index=True, comment="关联记录唯一标识符")
+    relation_id: Mapped[str] = mapped_column(String(36), primary_key=True, index=True, comment="关联记录唯一标识符")
 
     # 下载器ID：用于快速查询某下载器的所有关联
-    downloader_id = Column(String(36), nullable=False, index=True, comment="下载器ID")
+    downloader_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True, comment="下载器ID")
 
     # 种子hash值：用于快速查询某种子的所有标签
-    torrent_hash = Column(String(64), nullable=False, index=True, comment="种子hash值")
+    torrent_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True, comment="种子hash值")
 
     # 外键：关联标签表
-    tag_id = Column(
-        String(36),
-        ForeignKey("torrent_tags.tag_id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-        comment="标签ID"
+    tag_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("torrent_tags.tag_id", ondelete="CASCADE"), nullable=False, index=True, comment="标签ID"
     )
 
     # 分配时间
-    assigned_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment="分配时间")
+    assigned_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="分配时间")
 
     # 软删除标记：0=未删除，1=已删除
-    dr = Column(Integer, default=0, nullable=False, comment="软删除标记")
+    dr: Mapped[int] = mapped_column(Integer, default=0, nullable=False, comment="软删除标记")
 
     # UNIQUE约束：防止重复关联（同一种子不能有相同的标签）
-    __table_args__ = (
-        UniqueConstraint("torrent_hash", "tag_id", name="uk_torrent_tag"),
-    )
+    __table_args__ = (UniqueConstraint("torrent_hash", "tag_id", name="uk_torrent_tag"),)
 
     def __init__(
         self,
@@ -175,7 +173,7 @@ class TorrentTagRelation(Base):
         torrent_hash: Optional[str] = None,
         tag_id: Optional[str] = None,
         dr: int = 0,
-        **kw: Any
+        **kw: Any,
     ):
         """
         初始化TorrentTagRelation实例

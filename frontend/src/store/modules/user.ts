@@ -1,6 +1,16 @@
 import { VuexModule, Module, Action, Mutation, getModule } from 'vuex-module-decorators'
 import { login, logout, getUserInfo } from '@/api/users'
-import { getToken, setToken, removeToken, getUserId, setUserId, removeUserId } from '@/utils/cookies'
+import { ApiError } from '@/types/api'
+import {
+  getToken,
+  setToken,
+  removeToken,
+  setRefreshToken,
+  removeRefreshToken,
+  getUserId,
+  setUserId,
+  removeUserId
+} from '@/utils/cookies'
 import store from '@/store'
 
 export interface IUserState {
@@ -11,6 +21,7 @@ export interface IUserState {
   introduction: string
   roles: string[]
   twoFactorFlag: string
+  mustChangePassword: boolean
 }
 
 interface ILoginPayload {
@@ -28,11 +39,41 @@ class User extends VuexModule implements IUserState {
   public introduction = ''
   public roles: string[] = []
   public twoFactorFlag = '0'
+  public mustChangePassword = false
 
   @Mutation
   private SET_TOKEN(token: string) {
     this.token = token
   }
+
+  @Mutation
+  private SET_MUST_CHANGE_PASSWORD(flag: boolean) {
+    this.mustChangePassword = flag
+  }
+
+  /**
+   * 设置/清除强制改密标志（安全修复 W9）。
+   * 登录响应携带 must_change_password；改密成功后由设置页清除。
+   */
+  @Action({ rawError: true })
+  public SetMustChangePassword(flag: boolean) {
+    this.SET_MUST_CHANGE_PASSWORD(flag)
+  }
+
+  /**
+   * 静默续期后更新令牌（双令牌体系 W6-1）。
+   * 请求拦截器在发请求时读 UserModule.token，401 刷新成功后必须
+   * 更新内存 + cookie，重放请求才能携带新 token。
+   */
+  @Action({ rawError: true })
+  public SetToken(token: string) {
+    setToken(token)
+    this.SET_TOKEN(token)
+  }
+
+  // 注：refresh token 的读取不走 store——getModule 只代理 @Action/@Mutation/
+  // getter，未装饰的普通方法在访问器上不存在（曾导致 401 续期链路抛
+  // TypeError 全链中断）。request.ts 的 refreshDeps 直接读 cookie。
 
   @Mutation
   private SET_USER_ID(userId: string) {
@@ -67,21 +108,34 @@ class User extends VuexModule implements IUserState {
 
   @Action({ rawError: true })
   public async Login(userInfo: ILoginPayload) {
-    let { username, password, twofa_code } = userInfo
+    let { username } = userInfo
+    const { password, twofa_code } = userInfo
     username = username.trim()
     const response = await login({ username, password, twofa_code })
     // response 是 CommonResponse 格式: {code, msg, status, data}
-    // data 是一个数组，包含 [{access_token, token_type, user_id}]
+    // data 是一个数组，包含 [{access_token, refresh_token, token_type, user_id}]
     const access_token = response.data && response.data[0] && response.data[0].access_token
+    const refresh_token = response.data && response.data[0] && response.data[0].refresh_token
     const user_id = response.data && response.data[0] && response.data[0].user_id
+    const must_change_password = response.data && response.data[0] && response.data[0].must_change_password
 
     if (access_token) {
       setToken(access_token)
       this.SET_TOKEN(access_token)
+      // 双令牌体系（W6-1）：持久化 refresh token 供 401 静默续期。
+      // 响应缺失时必须清除旧值：旧 token 已被后端轮换/撤销，残留会让
+      // 此后每次静默续期都失败，表现为反复被踢回登录页
+      if (refresh_token) {
+        setRefreshToken(refresh_token)
+      } else {
+        removeRefreshToken()
+      }
       // 保存 user_id，确保转换为字符串类型
       if (user_id !== undefined && user_id !== null) {
         this.SET_USER_ID(String(user_id))
       }
+      // 强制改密标志（安全修复 W9）：路由守卫据此拦截非改密页面
+      this.SET_MUST_CHANGE_PASSWORD(Boolean(must_change_password))
     } else {
       throw Error('登录失败：未获取到访问令牌')
     }
@@ -90,9 +144,55 @@ class User extends VuexModule implements IUserState {
   @Action({ rawError: true })
   public ResetToken() {
     removeToken()
+    removeRefreshToken()
+    removeUserId()
     this.SET_TOKEN('')
     this.SET_USER_ID('')
     this.SET_ROLES([])
+    // 登出/失效时清除强制改密标志，避免切换账号残留上一账号的强制状态
+    this.SET_MUST_CHANGE_PASSWORD(false)
+  }
+
+  /**
+   * 会话过期被动登出（跨标签续期竞态修复）。
+   *
+   * 与 ResetToken 的区别：保留共享 cookie（refresh token 与 access token 均不清）。
+   * 刷新失败路径上的"确证死亡"判定存在跨标签时序残余竞态——本标签读到旧值时，
+   * 他标签可能刚轮换成功但尚未写入新 cookie；此时清掉共享 cookie 会把他标签的
+   * 有效令牌一并杀死，一次竞态升级为全浏览器登出：
+   * - access cookie 也必须保留：他标签 focus 时的 syncTokenFromCookie 以
+   *   "cookie 空 + 内存有 token"判登出，删共享 access cookie 会级联误杀
+   *   正常工作的标签（对抗审计 F2 级联路径）
+   * - 死 token 残留 cookie 无害：SPA 内守卫读已清空的内存 token 正常展示
+   *   登录页；整页跳转后内存从 cookie 重建，过期令牌经"续期被拒→登录页"
+   *   收敛，未过期且 refresh 可用则自动换新回工作页（误判标签自愈）
+   * - 主动登出传播不受影响：LogOut/ResetToken 仍全清 cookie
+   * - 重登录时 Login 分支覆盖写入，无需手动清理
+   *
+   * 使用方：redirectToLogin（401 续期失败）、路由守卫过期分支。
+   * 主动登出（LogOut、改密终结会话）仍用 ResetToken 全清。
+   */
+  @Action({ rawError: true })
+  public ExpireSession() {
+    removeUserId()
+    this.SET_TOKEN('')
+    this.SET_USER_ID('')
+    this.SET_ROLES([])
+    this.SET_MUST_CHANGE_PASSWORD(false)
+  }
+
+  /**
+   * 更新双因素认证标记状态。
+   *
+   * SET_TWO_FACTOR_FLAG 是 private Mutation，getModule 实例外部不可直接调用，
+   * 组件必须通过此 Action 修改，避免绕过 Vuex 单向数据流（如原
+   * settings/index.vue:610 的 (UserModule as any).twoFactorFlag = '0' 直改）。
+   *
+   * 审计依据：backend/docs/style-and-contract-audit.md 第4节"组件直接改写模块状态"。
+   */
+  @Action({ rawError: true })
+  public SetTwoFactorFlag(flag: string) {
+    this.SET_TWO_FACTOR_FLAG(flag)
   }
 
   @Action({ rawError: true })
@@ -120,7 +220,7 @@ class User extends VuexModule implements IUserState {
       const data = response.data
 
       // 检查API返回的数据结构
-      let roles, name, avatar, introduction, userId, twoFactorFlag
+      let roles, name, avatar, introduction, userId, twoFactorFlag, mustChangePassword
       if (data.user) {
         // 如果API返回 {user: {roles, name, avatar, introduction}} 格式
         const userData = data.user
@@ -130,6 +230,7 @@ class User extends VuexModule implements IUserState {
         avatar = userData.avatar || 'https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png'
         introduction = userData.introduction || ''
         twoFactorFlag = userData.twoFactorFlag || '0'
+        mustChangePassword = userData.mustChangePassword
       } else {
         // 如果API直接返回用户信息
         userId = data.userId || ''
@@ -138,6 +239,7 @@ class User extends VuexModule implements IUserState {
         avatar = data.avatar || 'https://www.baidu.com/img/PCtm_d9c8750bed0b3c7d089fa7d55720d6cf.png'
         introduction = data.introduction || ''
         twoFactorFlag = data.twoFactorFlag || '0'
+        mustChangePassword = data.mustChangePassword
       }
 
       // roles must be a non-empty array
@@ -150,6 +252,12 @@ class User extends VuexModule implements IUserState {
       this.SET_AVATAR(avatar)
       this.SET_INTRODUCTION(introduction)
       this.SET_TWO_FACTOR_FLAG(twoFactorFlag)
+      // 强制改密标志实时同步（安全修复 W9 补全）：仅当后端明确下发时才写，
+      // 滚动部署（新前端 + 旧后端无该字段）时不误清登录时置位的标志。
+      // 不可用 || 兜底——false 会被吞掉
+      if (mustChangePassword !== undefined) {
+        this.SET_MUST_CHANGE_PASSWORD(Boolean(mustChangePassword))
+      }
       // 如果userId存在且不为空，保存到状态和localStorage
       if (userId) {
         this.SET_USER_ID(userId)
@@ -158,21 +266,41 @@ class User extends VuexModule implements IUserState {
     } catch (error) {
       // 如果API调用失败，抛出错误让用户重新登录
       console.error('getUserInfo API调用失败:', error)
+      // 瞬时失败原样上抛（守卫据此中止导航保留会话，不升级为登出）：
+      // - 网络层失败（ApiError code '0'，无 HTTP 响应）
+      // - 业务/HTTP 5xx（服务端瞬时故障，如 /info 兜底 500——认证本身没问题，
+      //   登出会让 DB 抖动误踢在线用户）
+      if (error instanceof ApiError && (error.code === '0' || /^5/.test(error.code))) {
+        throw error
+      }
       throw Error('获取用户信息失败，请重新登录')
     }
   }
 
   @Action({ rawError: true })
   public async LogOut() {
-    if (this.token === '') {
-      throw Error('LogOut: token is undefined!')
+    // token 已被清空（如过期登出已执行 ResetToken）时仍要完成本地清理：
+    // 直接跳过后端撤销调用，保证登出入口（Navbar）在任何状态下都可用，
+    // 不因 throw 中断后续的页面跳转
+    if (this.token !== '') {
+      // 通知后端登出（POST /users/logout，require_authenticated_user 保护）。
+      // 即使后端调用失败（如 token 已过期返回 401），仍本地清除 token，
+      // 保证登出 UX 不被服务端错误阻塞。后端当前无 token 黑名单，登出后旧
+      // token 在过期前仍有效是已知安全隐患（见 PLANS/v1.0.5-audit P1-A.3）。
+      try {
+        await logout()
+      } catch (e) {
+        console.warn('后端登出调用失败，仅本地清除 token:', e)
+      }
     }
-    // 未做logout，先注释
-    // await logout()
     removeToken()
+    removeRefreshToken()
+    removeUserId()
     this.SET_TOKEN('')
     this.SET_USER_ID('')
     this.SET_ROLES([])
+    // 与 ResetToken 对齐：清除强制改密标志，避免残留上一账号的强制状态
+    this.SET_MUST_CHANGE_PASSWORD(false)
   }
 }
 

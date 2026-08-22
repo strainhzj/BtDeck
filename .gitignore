@@ -39,6 +39,9 @@ __pycache__/
 *.py[cod]
 venv/
 .venv/
+.venv-win/
+.venv-packaging/
+.venv-packaging-linux/
 env/
 .pytest_cache/
 .coverage
@@ -54,4 +57,30 @@ node_modules/
 # ================================
 data/
 
+# 例外：backend/app/data/ 是代码目录（预设数据初始化模块），非运行时数据
+!backend/app/data/
+!backend/app/data/*
+
 # 子项目保留各自的 .gitignore 处理细节规则
+
+# ================================
+# 本地工具链与构建残留（勿提交）
+# ================================
+.zcode/
+.spec-workflow/
+.pnpm-store/
+.docker_temp_*
+btdeck-*.tar
+nul
+tools/putty/
+
+# ================================
+# 导入残留目录（历史命令注入痕迹，W7 清理后防再犯）
+# ================================
+import io;*/
+.claude/
+
+# ================================
+# 部署凭据（build-and-export-images.bat 从此未跟踪文件读取，严禁入库）
+# ================================
+.btdeck-deploy-credentials.bat

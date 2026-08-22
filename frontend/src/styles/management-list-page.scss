@@ -1,0 +1,394 @@
+/*
+ * 管理类列表页的共享布局。
+ *
+ * 查询模板、孤儿文件等页面都遵循：页头 -> 筛选面板 -> 数据面板。
+ * 颜色、间距、圆角和阴影全部复用全局主题变量，避免页面间视觉漂移。
+ */
+
+.management-page {
+  max-width: 1600px;
+  margin: 0 auto;
+  color: var(--color-text-primary);
+}
+
+.management-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
+}
+
+.management-page__heading {
+  min-width: 0;
+}
+
+.management-page__title {
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 28px;
+  font-weight: var(--font-weight-bold);
+  line-height: 1.3;
+}
+
+.management-page__subtitle {
+  margin: var(--spacing-xs) 0 0;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.6;
+}
+
+.management-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+
+  .el-button + .el-button {
+    margin-left: 0;
+  }
+}
+
+.management-panel {
+  margin-bottom: var(--spacing-lg);
+  overflow: hidden;
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+
+.management-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--spacing-md);
+  padding: var(--spacing-lg);
+}
+
+.management-filter__field {
+  flex: 0 1 240px;
+  min-width: 200px;
+
+  &--wide {
+    flex-basis: 320px;
+    max-width: 440px;
+  }
+}
+
+.management-filter__label {
+  display: block;
+  margin-bottom: var(--spacing-sm);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1;
+}
+
+.management-filter__control {
+  width: 100%;
+}
+
+// 状态筛选组合退化提示图标（label 内联，hover 显示 tooltip，不占额外布局空间）：
+// pending 与 ignored/deleted 同选时 OR 会退化为“所有未删除文件”。
+.management-filter__warn-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  color: var(--color-warning, #d97706);
+  font-size: var(--font-size-sm, 12px);
+  line-height: 1;
+  cursor: help;
+  vertical-align: middle;
+}
+
+.management-filter__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+  margin-left: auto;
+
+  .el-button + .el-button {
+    margin-left: 0;
+  }
+}
+
+.management-panel__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  min-height: 72px;
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.management-panel__heading {
+  min-width: 0;
+}
+
+.management-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.4;
+
+  &::before {
+    width: 4px;
+    height: 18px;
+    content: '';
+    background: linear-gradient(180deg, var(--color-primary), var(--color-primary-light));
+    border-radius: var(--radius-sm);
+  }
+}
+
+.management-panel__description {
+  margin: var(--spacing-xs) 0 0 12px;
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.management-panel__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+
+  .el-button + .el-button {
+    margin-left: 0;
+  }
+}
+
+.management-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.management-table {
+  min-width: 920px;
+
+  &::before {
+    height: 0;
+  }
+
+  /* 表头整体连贯渐变：渐变设在 tr 上（而非每个 th 单独），th 设透明透出底层，
+     避免"每列各自渐变"的拼接感，与种子列表列表模式（thead 整体渐变）视觉一致。
+     双层 + !important 用于压过 Element 默认 .el-table th.el-table__cell{background-color:#fff}。 */
+  .el-table__header-wrapper tr,
+  .el-table__fixed-header-wrapper tr {
+    background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light)) !important;
+  }
+
+  .el-table__header-wrapper th,
+  .el-table__fixed-header-wrapper th {
+    padding: 10px 12px;
+    color: #fff;
+    font-weight: var(--font-weight-semibold);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: transparent !important;
+    border-color: rgba(255, 255, 255, 0.18) !important;
+  }
+
+  /* 列表滚动时表头吸顶，与种子列表列表模式表现一致 */
+  .el-table__header-wrapper {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+
+  .el-table__header-wrapper th .cell,
+  .el-table__fixed-header-wrapper th .cell {
+    color: #fff;
+  }
+
+  .el-table__body tr > td {
+    transition: background-color var(--transition-fast);
+  }
+
+  .el-table__body tr:hover > td {
+    background: var(--color-bg-hover) !important;
+  }
+
+  .el-table__empty-block {
+    min-height: 180px;
+  }
+
+  .el-button + .el-button {
+    margin-left: var(--spacing-xs);
+  }
+}
+
+.management-pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--spacing-md) var(--spacing-lg);
+  overflow-x: auto;
+  background: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border-primary);
+
+  .el-pagination {
+    flex-shrink: 0;
+  }
+}
+
+.management-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-lg);
+}
+
+.management-stat-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 112px;
+  padding: var(--spacing-lg);
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--color-bg-primary), var(--color-bg-secondary));
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  transition: border-color var(--transition-base), box-shadow var(--transition-base);
+
+  &:hover {
+    border-color: var(--color-border-focus);
+    box-shadow: var(--shadow-md);
+  }
+}
+
+.management-stat-card__icon {
+  display: inline-flex;
+  flex: 0 0 44px;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-right: var(--spacing-md);
+  color: #fff;
+  font-size: 22px;
+  background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+
+  &--success {
+    background: linear-gradient(135deg, var(--color-success), var(--color-success-dark));
+  }
+
+  &--warning {
+    background: linear-gradient(135deg, var(--color-warning), var(--color-warning-dark));
+  }
+
+  &--info {
+    background: linear-gradient(135deg, var(--color-info), var(--color-info-dark));
+  }
+}
+
+.management-stat-card__content {
+  min-width: 0;
+}
+
+.management-stat-card__label {
+  margin-bottom: var(--spacing-xs);
+  color: var(--color-text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.management-stat-card__value {
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-size: var(--font-size-2xl);
+  font-weight: var(--font-weight-bold);
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  &--compact {
+    font-size: var(--font-size-sm);
+    font-weight: var(--font-weight-semibold);
+    line-height: 1.5;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 1200px) {
+  .management-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .app-container.management-page {
+    padding: var(--spacing-md);
+  }
+
+  .management-page__header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .management-page__title {
+    font-size: var(--font-size-2xl);
+  }
+
+  .management-page__actions,
+  .management-panel__meta {
+    justify-content: flex-start;
+  }
+
+  .management-filter {
+    align-items: stretch;
+    padding: var(--spacing-md);
+  }
+
+  .management-filter__field,
+  .management-filter__field--wide {
+    flex: 1 1 100%;
+    width: 100%;
+    max-width: none;
+  }
+
+  .management-filter__actions {
+    width: 100%;
+    margin-left: 0;
+  }
+
+  .management-panel__header {
+    flex-direction: column;
+    align-items: flex-start;
+    padding: var(--spacing-md);
+  }
+
+  .management-panel__description {
+    margin-left: 0;
+  }
+
+  .management-pagination {
+    justify-content: flex-start;
+    padding: var(--spacing-md);
+  }
+}
+
+@media (max-width: 560px) {
+  .management-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .management-page__actions .el-button {
+    flex: 1 1 auto;
+    margin-left: 0;
+  }
+}

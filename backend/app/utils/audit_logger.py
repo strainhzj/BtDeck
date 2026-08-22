@@ -18,13 +18,15 @@
 
 import logging
 import os
-import re
 import gzip
 import shutil
 from logging.handlers import TimedRotatingFileHandler
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Optional, Dict, Any
 from threading import Lock
+
+# 模块级 logger，供模块级函数（如审计日志导出）使用
+logger = logging.getLogger(__name__)
 
 
 class _AuditLoggerSingleton:
@@ -34,7 +36,7 @@ class _AuditLoggerSingleton:
     使用单例模式确保全局只有一个实例，避免重复创建和资源浪费。
     """
 
-    _instance: Optional['_AuditLoggerSingleton'] = None
+    _instance: Optional["_AuditLoggerSingleton"] = None
     _lock: Lock = Lock()
 
     def __new__(cls, *args, **kwargs):
@@ -45,12 +47,7 @@ class _AuditLoggerSingleton:
                     cls._instance = super().__new__(cls)
         return cls._instance
 
-    def __init__(
-        self,
-        log_dir: str = "logs/audit",
-        enable_compression: bool = True,
-        compression_days: int = 7
-    ):
+    def __init__(self, log_dir: str = "logs/audit", enable_compression: bool = True, compression_days: int = 7):
         """
         初始化审计日志记录器
 
@@ -60,7 +57,7 @@ class _AuditLoggerSingleton:
             compression_days: 超过多少天的日志进行gzip压缩
         """
         # 确保只初始化一次
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
 
         self.log_dir = log_dir
@@ -77,17 +74,8 @@ class _AuditLoggerSingleton:
         # 防止重复添加handler
         if not self.logger.handlers:
             # 配置文件处理器（按天滚动）
-            log_file = os.path.join(
-                self.log_dir,
-                f"deletion_{datetime.now():%Y-%m-%d}.log"
-            )
-            handler = TimedRotatingFileHandler(
-                log_file,
-                when='midnight',
-                interval=1,
-                backupCount=30,
-                encoding='utf-8'
-            )
+            log_file = os.path.join(self.log_dir, f"deletion_{datetime.now():%Y-%m-%d}.log")
+            handler = TimedRotatingFileHandler(log_file, when="midnight", interval=1, backupCount=30, encoding="utf-8")
 
             # 设置结构化格式
             formatter = _AuditFormatter()
@@ -97,9 +85,7 @@ class _AuditLoggerSingleton:
 
             # 添加文件滚动后的压缩回调
             if self.enable_compression:
-                handler.rotator = _CompressingRotator(
-                    compression_days=self.compression_days
-                )
+                handler.rotator = _CompressingRotator(compression_days=self.compression_days)
 
         self._initialized = True
 
@@ -127,13 +113,13 @@ class _AuditLoggerSingleton:
 
         # 顺序很重要，先处理转义字符
         replacements = [
-            ('\\', '/'),   # 先交换反斜杠
-            ('/', '\\'),   # 再交换正斜杠
-            ('|', '!'),
+            ("\\", "/"),  # 先交换反斜杠
+            ("/", "\\"),  # 再交换正斜杠
+            ("|", "!"),
             ('"', "'"),
-            ('\n', '\\n'),
-            ('\r', '\\r'),
-            ('\t', '\\t'),
+            ("\n", "\\n"),
+            ("\r", "\\r"),
+            ("\t", "\\t"),
         ]
 
         result = text
@@ -155,7 +141,8 @@ class _AuditLoggerSingleton:
         local_now = datetime.now()
 
         # 获取UTC偏移量（秒）
-        utc_offset_seconds = datetime.now(timezone.utc).astimezone().utcoffset().total_seconds()
+        _offset = datetime.now(timezone.utc).astimezone().utcoffset()
+        utc_offset_seconds = _offset.total_seconds() if _offset else 0
         utc_offset_hours = utc_offset_seconds // 3600
 
         # 格式化时间戳
@@ -178,7 +165,7 @@ class _AuditLoggerSingleton:
         validation_result: Dict[str, Any],
         deletion_status: str,
         error_message: Optional[str] = None,
-        duration: Optional[float] = None
+        duration: Optional[float] = None,
     ):
         """
         记录删除操作审计日志
@@ -215,21 +202,13 @@ class _AuditLoggerSingleton:
 
         # 3. 下载器信息
         downloader_id = downloader_info.get("id", "?")
-        downloader_nickname = self._sanitize_special_chars(
-            str(downloader_info.get("nickname", ""))
-        )
-        downloader_type = self._sanitize_special_chars(
-            str(downloader_info.get("type", ""))
-        )
-        log_parts.append(
-            f"downloader: {downloader_nickname} (id:{downloader_id}, type:{downloader_type})"
-        )
+        downloader_nickname = self._sanitize_special_chars(str(downloader_info.get("nickname", "")))
+        downloader_type = self._sanitize_special_chars(str(downloader_info.get("type", "")))
+        log_parts.append(f"downloader: {downloader_nickname} (id:{downloader_id}, type:{downloader_type})")
 
         # 4. 种子信息
         torrent_hash = torrent_info.get("hash", "")[:40]  # 限制长度
-        torrent_name = self._sanitize_special_chars(
-            str(torrent_info.get("name", ""))
-        )
+        torrent_name = self._sanitize_special_chars(str(torrent_info.get("name", "")))
         torrent_size = torrent_info.get("size", 0)
 
         # 格式化文件大小
@@ -240,29 +219,19 @@ class _AuditLoggerSingleton:
         else:
             size_str = f"{torrent_size}B"
 
-        log_parts.append(
-            f"torrent: {torrent_hash} (name:{torrent_name}, size:{size_str})"
-        )
+        log_parts.append(f"torrent: {torrent_hash} (name:{torrent_name}, size:{size_str})")
 
         # 5. 操作者信息
         operator_id = operator_info.get("id")
-        operator_name = self._sanitize_special_chars(
-            str(operator_info.get("name", ""))
-        )
+        operator_name = self._sanitize_special_chars(str(operator_info.get("name", "")))
         operator_ip = operator_info.get("ip")
-        operator_ua = self._sanitize_special_chars(
-            str(operator_info.get("user_agent", ""))
-        )
+        operator_ua = self._sanitize_special_chars(str(operator_info.get("user_agent", "")))
 
         if operator_id is not None:
-            log_parts.append(
-                f"operator: {operator_name} (id:{operator_id}, ip:{operator_ip}, ua:{operator_ua[:50]})"
-            )
+            log_parts.append(f"operator: {operator_name} (id:{operator_id}, ip:{operator_ip}, ua:{operator_ua[:50]})")
         else:
             # 系统操作者（定时任务、回收站清理）
-            log_parts.append(
-                f"operator: {operator_name} (system)"
-            )
+            log_parts.append(f"operator: {operator_name} (system)")
 
         # 6. 调用来源
         caller_sanitized = self._sanitize_special_chars(caller_source)
@@ -396,9 +365,9 @@ class _CompressingRotator:
         """
         try:
             # 读取原文件
-            with open(file_path, 'rb') as f_in:
-                with open(f"{file_path}.gz", 'wb') as f_out:
-                    with gzip.GzipFile(fileobj=f_out, mode='wb') as gzip_file:
+            with open(file_path, "rb") as f_in:
+                with open(f"{file_path}.gz", "wb") as f_out:
+                    with gzip.GzipFile(fileobj=f_out, mode="wb") as gzip_file:
                         shutil.copyfileobj(f_in, gzip_file)
 
             # 删除原文件
@@ -427,32 +396,32 @@ async def export_audit_logs_from_db_to_file(
     operation_type: Optional[str] = None,
     start_time: Optional[datetime] = None,
     end_time: Optional[datetime] = None,
-    limit: int = 1000
+    limit: int = 1000,
 ) -> int:
     """
     从数据库导出审计日志到统一格式的日志文件
-    
+
     将数据库中的审计日志按照现有文件日志格式导出，
     用于长期保存和合规审计。
-    
+
     Args:
         db_session: 数据库会话（异步）
         operation_type: 操作类型筛选（可选）
         start_time: 开始时间（可选）
         end_time: 结束时间（可选）
         limit: 导出数量限制（默认1000条）
-    
+
     Returns:
         导出的日志条数
     """
-    from sqlalchemy import select
+    from sqlalchemy import select, desc
     from app.torrents.audit_models import TorrentAuditLog
     from app.torrents.audit_enums import AuditOperationType
-    
+
     try:
         # 构建查询
         query = select(TorrentAuditLog)
-        
+
         # 筛选条件
         conditions = []
         if operation_type:
@@ -461,28 +430,29 @@ async def export_audit_logs_from_db_to_file(
             conditions.append(TorrentAuditLog.operation_time >= start_time)
         if end_time:
             conditions.append(TorrentAuditLog.operation_time <= end_time)
-        
+
         if conditions:
             from sqlalchemy import and_
+
             query = query.where(and_(*conditions))
-        
+
         # 限制数量并排序
         query = query.order_by(desc(TorrentAuditLog.operation_time)).limit(limit)
-        
+
         # 执行查询
         result = await db_session.execute(query)
         logs = (await result.scalars()).all()
-        
+
         if not logs:
             logger.info("没有需要导出的审计日志")
             return 0
-        
+
         # 获取审计日志记录器单例
         audit_logger = get_audit_logger()
-        
+
         # 导出数量
         exported_count = 0
-        
+
         # 遍历每条日志，转换为文件格式
         for log in logs:
             try:
@@ -491,42 +461,37 @@ async def export_audit_logs_from_db_to_file(
                     AuditOperationType.DELETE_L1,
                     AuditOperationType.DELETE_L2,
                     AuditOperationType.DELETE_L3,
-                    AuditOperationType.DELETE_L4
+                    AuditOperationType.DELETE_L4,
                 ]:
                     # 删除操作：转换为删除日志格式
                     downloader_info = {
                         "id": log.downloader_id or "?",
                         "nickname": log.downloader_id or "",  # 简化
-                        "type": "unknown"
+                        "type": "unknown",
                     }
-                    torrent_info = {
-                        "hash": log.torrent_info_id or "",
-                        "name": "",  # 从operation_detail解析
-                        "size": 0
-                    }
+                    torrent_info = {"hash": log.torrent_info_id or "", "name": "", "size": 0}  # 从operation_detail解析
                     operator_info = {
                         "id": 0,  # 系统操作
                         "name": log.operator or "system",
                         "ip": log.ip_address or "",
-                        "user_agent": log.user_agent or ""
+                        "user_agent": log.user_agent or "",
                     }
-                    validation_result = {
-                        "status": "unknown"
-                    }
+                    validation_result = {"status": "unknown"}
                     deletion_status = log.operation_result or "unknown"
-                    
+
                     # 尝试从operation_detail解析更多信息
                     if log.operation_detail:
                         try:
                             import json
+
                             detail = json.loads(log.operation_detail)
                             if isinstance(detail, dict):
                                 torrent_info["name"] = detail.get("torrent_name", "")
                                 torrent_info["size"] = detail.get("torrent_size", 0)
                                 validation_result.update(detail.get("validation_result", {}))
-                        except:
+                        except Exception:
                             pass
-                    
+
                     # 记录为文件日志
                     audit_logger.log_deletion(
                         downloader_info=downloader_info,
@@ -536,14 +501,14 @@ async def export_audit_logs_from_db_to_file(
                         validation_result=validation_result,
                         deletion_status=deletion_status,
                         error_message=log.error_message,
-                        duration=None
+                        duration=None,
                     )
                 else:
                     # 其他操作：记录为通用操作日志
                     log_parts = []
                     log_parts.append(audit_logger._format_timestamp())
                     log_parts.append(f"OPERATION | {log.operation_type or 'UNKNOWN'}")
-                    
+
                     if log.torrent_info_id:
                         log_parts.append(f"torrent: {log.torrent_info_id}")
                     if log.operator:
@@ -552,10 +517,10 @@ async def export_audit_logs_from_db_to_file(
                         log_parts.append(f"ip: {log.ip_address}")
                     if log.operation_result:
                         log_parts.append(f"result: {log.operation_result}")
-                    
+
                     # 构建日志消息
                     log_message = " | ".join(log_parts)
-                    
+
                     # 确定日志级别
                     if log.operation_result == "success":
                         log_level = logging.INFO
@@ -563,18 +528,18 @@ async def export_audit_logs_from_db_to_file(
                         log_level = logging.WARNING
                     else:
                         log_level = logging.ERROR
-                    
+
                     audit_logger.logger.log(log_level, log_message)
-                
+
                 exported_count += 1
-            
+
             except Exception as e:
                 logger.warning(f"导出审计日志失败 (ID: {log.log_id}): {str(e)}")
                 continue
-        
+
         logger.info(f"成功导出 {exported_count}/{len(logs)} 条审计日志到文件")
         return exported_count
-    
+
     except Exception as e:
         logger.error(f"导出审计日志到文件失败: {str(e)}")
         return 0

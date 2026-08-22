@@ -487,9 +487,7 @@ export default {
     },
 
     handleSubmit() {
-      // ✅ 修复：在异步操作前保存this引用
       const form = this.$refs.configForm
-      const that = this
 
       form.validate(valid => {
         if (valid) {
@@ -506,33 +504,33 @@ export default {
             // 更新
             updateReannounceConfig(this.formData.config_id, data).then(response => {
               if (response.code === '200') {
-                that.$message.success('配置更新成功')
-                that.dialogVisible = false
-                that.getList()
+                this.$message.success('配置更新成功')
+                this.dialogVisible = false
+                this.getList()
               } else {
-                that.$message.error(response.msg || '配置更新失败')
+                this.$message.error(response.msg || '配置更新失败')
               }
-              that.submitLoading = false
+              this.submitLoading = false
             }).catch(error => {
               console.error('配置更新失败:', error)
-              that.$message.error('配置更新失败')
-              that.submitLoading = false
+              this.$message.error('配置更新失败')
+              this.submitLoading = false
             })
           } else {
             // 新增
             createReannounceConfig(data).then(response => {
               if (response.code === '200') {
-                that.$message.success('配置创建成功')
-                that.dialogVisible = false
-                that.getList()
+                this.$message.success('配置创建成功')
+                this.dialogVisible = false
+                this.getList()
               } else {
-                that.$message.error(response.msg || '配置创建失败')
+                this.$message.error(response.msg || '配置创建失败')
               }
-              that.submitLoading = false
+              this.submitLoading = false
             }).catch(error => {
               console.error('配置创建失败:', error)
-              that.$message.error('配置创建失败')
-              that.submitLoading = false
+              this.$message.error('配置创建失败')
+              this.submitLoading = false
             })
           }
         }
@@ -579,7 +577,7 @@ export default {
           console.error('配置删除失败:', error)
           this.$message.error('配置删除失败')
         })
-      }).catch(() => {})
+      }).catch(() => { /* noop - 用户取消确认 */ })
     },
 
     handleAutoDetect() {
@@ -604,11 +602,10 @@ export default {
 
     // 进入批量编辑模式
     enterBatchMode() {
-      const that = this
       // 保存原始数据快照 - 使用 $set 确保响应式
       this.originalData = {}
       this.list.forEach(row => {
-        that.$set(that.originalData, row.config_id, {
+        this.$set(this.originalData, row.config_id, {
           domain_display_name: row.domain_display_name,
           domain_pattern: row.domain_pattern,
           interval_minutes: row.interval_minutes,
@@ -618,7 +615,7 @@ export default {
       // 初始化编辑数据 - 使用 $set 确保响应式
       this.editedRows = {}
       this.list.forEach(row => {
-        that.$set(that.editedRows, row.config_id, {
+        this.$set(this.editedRows, row.config_id, {
           domain_display_name: row.domain_display_name,
           domain_pattern: row.domain_pattern,
           interval_minutes: row.interval_minutes,
@@ -638,7 +635,7 @@ export default {
         this.batchMode = false
         this.editedRows = {}
         this.originalData = {}
-      }).catch(() => {})
+      }).catch(() => { /* noop - 用户取消确认 */ })
     },
 
     // 处理字段变化
@@ -662,7 +659,7 @@ export default {
             this.$set(this.editedRows, row.config_id, { ...this.originalData[row.config_id] })
           }
         })
-      }).catch(() => {})
+      }).catch(() => { /* noop - 用户取消确认 */ })
     },
 
     // 保存批量更改

@@ -1,0 +1,365 @@
+# -*- coding: utf-8 -*-
+"""
+Tracker 关键词状态同步服务（W1-2 只写变化行）
+
+背景（P0-02）：端点层 update_tracker_status_from_keywords 每轮扫描全表
+TrackerInfo 并按关键词池判定后无差别写回，即使判定结果无变化也制造大量
+UPDATE、WAL 增长与写锁时间。本服务将判定与写回整体从端点层搬迁至此，
+并改为"只写变化行"：
+
+1. Tracker 原始状态与关键词共同判定：非空 announce/scrape 消息优先走关键词；
+   消息均为空且原始状态明确为 Working 时判 normal；全部 failed 才判 error；
+   未知消息不覆盖已有状态。
+2. 变化检测：判定出的 (status, status_msg) 与库中现有 (status, msg) 做
+   strip 归一化对比（复用 sync_db_write._normalize_str 语义），一致计入
+   unchanged，不一致进入变化集。
+3. 零变化零 DML：变化集为空时不进 db_write_scope、不执行 UPDATE、不 commit。
+4. 变化集走 W1-1 统一分批写入 bulk_upsert_with_retry（每批独立真实 commit，
+   锁冲突只重试当前批），禁止逐行 commit、禁止全表无条件 UPDATE。
+5. 配置开关 SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED=False 时回退旧逻辑：
+   跳过变化检测，所有匹配 tracker 全部进变化集写回（判定规则不变）。
+
+接入对象：app/api/endpoints/torrent_sync.py（兼容包装，供 torrent_sync_async
+与定时任务 tracker_sync_task 调用，两个调用方零改动）。
+"""
+
+import logging
+import time
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, cast
+from urllib.parse import urlparse
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.config import settings
+from app.core.tracker_status_policy import build_tracker_evidence, decide_tracker_error_state
+from app.services.sync_db_write import _normalize_str, bulk_upsert_with_retry
+from app.services.sync_observability import EVENT_TRACKER_STATUS, log_event
+from app.torrents.models import TrackerInfo, TrackerKeywordConfig
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TrackerStatusStats:
+    """Tracker 关键词状态同步统计（W1-2）。
+
+    - scanned: 参与判定的 tracker 行数（无 host / 非 Working 空消息不计入）。
+    - changed: 实际写入（判定结果有变化）的行数。
+    - unchanged: 判定结果与库中现有状态一致、未写入的行数。
+    - batches: 真实 commit 批次数（零变化时为 0）。
+    - duration_ms: 整个同步耗时（毫秒，含关键词加载/判定/写回）。
+    - total_hosts: 参与判定的 tracker_host 数（兼容包装 total_hosts 字段）。
+    - reason: 提前返回原因（"no_keywords" / "no_trackers" / None），
+      供兼容包装还原原返回消息语义。
+    """
+
+    scanned: int = 0
+    changed: int = 0
+    unchanged: int = 0
+    batches: int = 0
+    duration_ms: float = 0.0
+    total_hosts: int = 0
+    reason: Optional[str] = None
+
+
+async def sync_tracker_status_from_keywords(
+    db: AsyncSession,
+    *,
+    batch_size: Optional[int] = None,
+    label: str = "tracker_status",
+) -> TrackerStatusStats:
+    """根据关键词看板增量更新 tracker 状态（只写变化行）。
+
+    判定规则：
+    - 精确匹配优先（msg in keyword_map，其次 msg.strip() in keyword_map）；
+    - 否则部分匹配（keyword.lower() in msg.lower()，取第一个命中）；
+    - announce/scrape 两类非空消息全部参与关键词判定，消息优先于原始状态；
+    - 两类消息均为空且 announce 原始状态为 Working(2) 时判 normal；
+    - Working 空消息只更新当前 tracker 行；非空消息继续按 host 聚合并应用：
+      全部 failed → status='error'/msg='失败'；
+      有 success 或 ignored → 'normal'/'正常'；
+      其他未知组合 → 保留已有状态，不写回 unknown。
+
+    关键词为空 / 无 tracker / 判定结果零变化时，不写库不 commit
+    （changed=0 且 batches=0）。
+
+    Args:
+        db: 异步数据库会话（由调用方传入，便于未来统一协调器复用）。
+        batch_size: 真实提交批大小；None 时取 settings.SYNC_DB_COMMIT_BATCH_SIZE。
+        label: 写入日志标签（溯源用）。
+
+    Returns:
+        TrackerStatusStats 统计对象。
+    """
+    start_ts = time.perf_counter()
+
+    # Step 1: 加载所有启用的关键词到内存
+    result = await db.execute(
+        select(TrackerKeywordConfig).filter(TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0)
+    )
+    keywords = result.scalars().all()
+
+    # 构建关键词字典 {keyword: keyword_type}
+    # 注意：legacy 模型属性对 mypy 是 Column[str]，此处 cast 为业务值
+    keyword_map: Dict[str, str] = {}
+    for kw in keywords:
+        keyword = kw.keyword
+        keyword_type = kw.keyword_type
+        if keyword not in keyword_map:
+            keyword_map[keyword] = keyword_type
+        # 如果重复，保留后读取的（通常priority更高）——注意实际代码保留先读取的
+
+    logger.debug(f"加载关键词: {len(keyword_map)}条")
+
+    if not keyword_map:
+        # 无关键词：提前返回，不入库不 commit（保持原返回语义）
+        stats = TrackerStatusStats(reason="no_keywords")
+        stats.duration_ms = (time.perf_counter() - start_ts) * 1000.0
+        logger.info(
+            "tracker_status no_change: tracker_status_scanned=0 tracker_status_changed=0 "
+            "change_ratio=0.0 classification_ms=%.1f write_ms=0.0 commit_batches=0 reason=no_keywords",
+            stats.duration_ms,
+        )
+        _emit_tracker_status_done(stats)
+        return stats
+
+    # Step 2: 查询所有tracker信息（原始状态 + 消息联合判定；status/msg 用于变化检测）
+    result = await db.execute(
+        select(
+            TrackerInfo.tracker_id,
+            TrackerInfo.tracker_url,
+            TrackerInfo.last_announce_msg,
+            TrackerInfo.last_scrape_msg,
+            TrackerInfo.last_announce_succeeded,
+            TrackerInfo.tracker_host,
+            TrackerInfo.status,
+            TrackerInfo.msg,
+        ).filter(TrackerInfo.dr == 0)
+    )
+    trackers = result.all()
+
+    if not trackers:
+        # 无 tracker：提前返回，不入库不 commit（保持原返回语义）
+        stats = TrackerStatusStats(reason="no_trackers")
+        stats.duration_ms = (time.perf_counter() - start_ts) * 1000.0
+        logger.info(
+            "tracker_status no_change: tracker_status_scanned=0 tracker_status_changed=0 "
+            "change_ratio=0.0 classification_ms=%.1f write_ms=0.0 commit_batches=0 reason=no_trackers",
+            stats.duration_ms,
+        )
+        _emit_tracker_status_done(stats)
+        return stats
+
+    logger.debug(f"发现tracker记录: {len(trackers)}条")
+
+    # Step 3: 按 tracker_host 分组，提取两类消息及原始 Working 状态证据。
+    # 每项 evidence_types 可能来自一条或两条消息；仅在两条消息均为空时才
+    # 使用 Working，确保非空失败消息不会被原始 Working 状态掩盖。
+    tracker_host_evidence: Dict[str, List[Dict[str, Any]]] = {}
+    working_tracker_ids: List[str] = []
+    participating_hosts: set[str] = set()
+    # 库中现有状态 {tracker_id: (status, msg)}，用于变化检测
+    existing_state: Dict[str, Tuple[Optional[str], Optional[str]]] = {}
+
+    for tracker in trackers:
+        tracker_id = tracker.tracker_id
+        tracker_url = tracker.tracker_url
+        announce_msg = tracker.last_announce_msg
+        scrape_msg = tracker.last_scrape_msg
+        announce_status = tracker.last_announce_succeeded
+        tracker_host = tracker.tracker_host
+
+        # 如果tracker_host为空，尝试从URL提取
+        if not tracker_host and tracker_url:
+            try:
+                parsed = urlparse(tracker_url)
+                if parsed and parsed.hostname:
+                    tracker_host = parsed.hostname
+                    logger.debug(f"从URL提取tracker_host: {tracker_host}")
+            except Exception as e:
+                logger.debug(f"解析tracker URL失败: {tracker_url}, 错误: {e}")
+
+        if not tracker_host:
+            logger.debug(f"跳过无tracker_host的记录: tracker_id={tracker_id}")
+            continue
+
+        evidence_types = build_tracker_evidence(
+            announce_status,
+            announce_msg,
+            scrape_msg,
+            keyword_map,
+        )
+        if not evidence_types:
+            # 空消息只有在下载器明确报告 Working 时才形成正常证据；其它原始状态
+            # 没有足够信息覆盖旧值，继续跳过。
+            continue
+
+        if evidence_types == ["working"]:
+            # Working 空消息是该 Tracker 行自身的明确正常证据。不要把它并入
+            # host 消息汇总，否则同 host 的一条 Working 会批量掩盖其它种子
+            # 各自的失败消息。
+            existing_state[tracker_id] = (tracker.status, tracker.msg)
+            participating_hosts.add(tracker_host)
+            working_tracker_ids.append(tracker_id)
+        else:
+            tracker_host_evidence.setdefault(tracker_host, []).append(
+                {
+                    "tracker_id": tracker_id,
+                    "evidence_types": evidence_types,
+                    "existing_state": (tracker.status, tracker.msg),
+                }
+            )
+            participating_hosts.add(tracker_host)
+
+    logger.debug(f"按tracker_host分组后: {len(participating_hosts)}个host")
+
+    # Step 4: 判断每个tracker_host的状态
+    tracker_status_map: Dict[str, Tuple[str, str]] = {
+        tracker_id: ("normal", "正常") for tracker_id in working_tracker_ids
+    }
+    unresolved_count = 0
+
+    for tracker_host, evidence_list in tracker_host_evidence.items():
+        evidence_types = [
+            evidence_type for item in evidence_list for evidence_type in cast(List[str], item["evidence_types"])
+        ]
+
+        decision = decide_tracker_error_state(evidence_types)
+        if decision is True:
+            # 全部失败 → error
+            status = "error"
+            status_msg = "失败"
+        elif decision is False:
+            # 有成功、忽略或明确 Working 空消息 → normal
+            status = "normal"
+            status_msg = "正常"
+        else:
+            # 未知/候选消息没有可靠结论：逐行保留各自原值，禁止把历史
+            # normal/error 覆盖成 unknown。即使同 host 还有明确失败证据，未知行
+            # 也不能被 host 聚合结果连带覆盖。
+            for item in evidence_list:
+                item_evidence = cast(List[str], item["evidence_types"])
+                if decide_tracker_error_state(item_evidence) is None:
+                    existing_state[item["tracker_id"]] = cast(
+                        Tuple[Optional[str], Optional[str]], item["existing_state"]
+                    )
+                    unresolved_count += 1
+            evidence_list = [
+                item
+                for item in evidence_list
+                if decide_tracker_error_state(cast(List[str], item["evidence_types"])) is not None
+            ]
+            if not evidence_list:
+                logger.debug(f"Tracker Host: {tracker_host} | 保留原值 | 证据类型: {evidence_types}")
+                continue
+
+            evidence_types = [
+                evidence_type for item in evidence_list for evidence_type in cast(List[str], item["evidence_types"])
+            ]
+            decision = decide_tracker_error_state(evidence_types)
+            if decision is True:
+                status, status_msg = "error", "失败"
+            else:
+                status, status_msg = "normal", "正常"
+
+        # 将状态应用到该host下的所有tracker
+        for item in evidence_list:
+            existing_state[item["tracker_id"]] = cast(Tuple[Optional[str], Optional[str]], item["existing_state"])
+            tracker_status_map[item["tracker_id"]] = (status, status_msg)
+
+        logger.debug(f"Tracker Host: {tracker_host} | 状态: {status} | 证据类型: {evidence_types}")
+
+    classification_ms = (time.perf_counter() - start_ts) * 1000.0
+
+    # Step 5: 变化检测 —— 判定结果与库中现有 (status, msg) 对比，只收集变化行。
+    # 增量开关关闭时回退旧逻辑：跳过对比，所有匹配 tracker 全部判定为变化
+    # （只改变写回策略，不改变判定规则）。
+    incremental = bool(settings.SYNC_TRACKER_STATUS_INCREMENTAL_ENABLED)
+    now = datetime.now()
+    changes: List[Dict[str, Any]] = []
+    # 未知 host 按“保留原值”处理，同样属于已扫描但无需写入。
+    unchanged = unresolved_count
+
+    for tracker_id, (status, status_msg) in tracker_status_map.items():
+        if incremental:
+            old_status, old_msg = existing_state.get(tracker_id, (None, None))
+            # strip 归一化对比（None/""/尾空格均视为等价），参照 sync_db_write._normalize_str 语义
+            same_status = _normalize_str(old_status) == _normalize_str(status)
+            same_msg = _normalize_str(old_msg) == _normalize_str(status_msg)
+            if same_status and same_msg:
+                unchanged += 1
+                continue
+        changes.append({"tracker_id": tracker_id, "status": status, "msg": status_msg, "update_time": now})
+
+    scanned = len(working_tracker_ids) + sum(len(evidence_list) for evidence_list in tracker_host_evidence.values())
+    if not changes:
+        # 零变化零 DML：不进 db_write_scope、不执行 UPDATE、不 commit
+        stats = TrackerStatusStats(scanned=scanned, unchanged=unchanged, total_hosts=len(participating_hosts))
+        stats.duration_ms = (time.perf_counter() - start_ts) * 1000.0
+        logger.info(
+            "tracker_status no_change: tracker_status_scanned=%d tracker_status_changed=0 "
+            "change_ratio=0.0 classification_ms=%.1f write_ms=0.0 commit_batches=0",
+            scanned,
+            classification_ms,
+        )
+        _emit_tracker_status_done(stats)
+        return stats
+
+    # Step 6: 变化集走统一分批写入（W1-1：每批独立真实 commit，锁冲突只重试当前批）
+    write_start = time.perf_counter()
+    write_stats = await bulk_upsert_with_retry(
+        db,
+        [],
+        changes,
+        model=TrackerInfo,
+        label=label,
+        batch_size=batch_size,
+    )
+    write_ms = (time.perf_counter() - write_start) * 1000.0
+
+    stats = TrackerStatusStats(
+        scanned=scanned,
+        changed=write_stats.changed,
+        unchanged=unchanged,
+        batches=write_stats.batches,
+        total_hosts=len(participating_hosts),
+    )
+    stats.duration_ms = (time.perf_counter() - start_ts) * 1000.0
+
+    ratio = stats.changed / scanned if scanned else 0.0
+    logger.info(
+        "tracker_status done: tracker_status_scanned=%d tracker_status_changed=%d change_ratio=%.3f "
+        "classification_ms=%.1f write_ms=%.1f commit_batches=%d unchanged=%d",
+        stats.scanned,
+        stats.changed,
+        ratio,
+        classification_ms,
+        write_ms,
+        stats.batches,
+        stats.unchanged,
+    )
+    _emit_tracker_status_done(stats)
+    return stats
+
+
+def _emit_tracker_status_done(stats: TrackerStatusStats) -> None:
+    """发射 tracker 状态同步完成事件（W4-1 第二部分）。
+
+    事件选择说明：使用独立事件 EVENT_TRACKER_STATUS 而非 EVENT_CHECKPOINT——
+    EVENT_CHECKPOINT 语义是检查点游标推进（position/state/cursor），而本服务是
+    数据写回统计（scanned/changed/unchanged/batches），字段集不同，混入会污染
+    游标语义还原。事件名/白名单见 sync_observability.EVENT_FIELDS。
+    """
+    log_event(
+        EVENT_TRACKER_STATUS,
+        outcome="no_change" if stats.changed == 0 else "done",
+        skip_reason=stats.reason,
+        scanned=stats.scanned,
+        changed=stats.changed,
+        unchanged=stats.unchanged,
+        batches=stats.batches,
+        duration_ms=round(stats.duration_ms, 1),
+    )

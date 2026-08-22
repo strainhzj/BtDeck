@@ -11,7 +11,6 @@ import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Dict, Optional, Any
-from collections import defaultdict
 import logging
 
 logger = logging.getLogger(__name__)
@@ -19,23 +18,18 @@ logger = logging.getLogger(__name__)
 
 class TaskStatus(str, Enum):
     """任务状态枚举"""
-    PENDING = "pending"       # 待执行
-    RUNNING = "running"       # 执行中
-    SUCCESS = "success"       # 成功
-    FAILED = "failed"         # 失败
-    CANCELLED = "cancelled"   # 已取消
+
+    PENDING = "pending"  # 待执行
+    RUNNING = "running"  # 执行中
+    SUCCESS = "success"  # 成功
+    FAILED = "failed"  # 失败
+    CANCELLED = "cancelled"  # 已取消
 
 
 class BackgroundTask:
     """后台任务对象"""
 
-    def __init__(
-        self,
-        task_id: str,
-        task_type: str,
-        downloader_id: str,
-        downloader_nickname: str
-    ):
+    def __init__(self, task_id: str, task_type: str, downloader_id: str, downloader_nickname: str):
         self.task_id = task_id
         self.task_type = task_type
         self.downloader_id = downloader_id
@@ -62,14 +56,16 @@ class BackgroundTask:
             "progress": self.progress,
             "result": self.result,
             "error": self.error,
-            "execution_time": round(self.finished_at - self.started_at, 2) if self.finished_at and self.started_at else None
+            "execution_time": (
+                round(self.finished_at - self.started_at, 2) if self.finished_at and self.started_at else None
+            ),
         }
 
 
 class BackgroundTaskManager:
     """后台任务管理器（单例模式）"""
 
-    _instance: Optional['BackgroundTaskManager'] = None
+    _instance: Optional["BackgroundTaskManager"] = None
     _lock = asyncio.Lock()
 
     def __new__(cls):
@@ -78,7 +74,7 @@ class BackgroundTaskManager:
         return cls._instance
 
     def __init__(self):
-        if hasattr(self, '_initialized'):
+        if hasattr(self, "_initialized"):
             return
 
         self._tasks: Dict[str, BackgroundTask] = {}
@@ -93,19 +89,11 @@ class BackgroundTaskManager:
         """生成任务ID"""
         return f"{task_type}_{uuid.uuid4().hex[:12]}"
 
-    async def create_task(
-        self,
-        task_type: str,
-        downloader_id: str,
-        downloader_nickname: str
-    ) -> BackgroundTask:
+    async def create_task(self, task_type: str, downloader_id: str, downloader_nickname: str) -> BackgroundTask:
         """创建新任务"""
         task_id = self.generate_task_id(task_type)
         task = BackgroundTask(
-            task_id=task_id,
-            task_type=task_type,
-            downloader_id=downloader_id,
-            downloader_nickname=downloader_nickname
+            task_id=task_id, task_type=task_type, downloader_id=downloader_id, downloader_nickname=downloader_nickname
         )
 
         async with self._lock:
@@ -132,7 +120,7 @@ class BackgroundTaskManager:
         status: TaskStatus,
         result: Optional[Dict[str, Any]] = None,
         error: Optional[str] = None,
-        progress: Optional[int] = None
+        progress: Optional[int] = None,
     ) -> bool:
         """更新任务状态"""
         task = self._tasks.get(task_id)
@@ -161,11 +149,7 @@ class BackgroundTaskManager:
 
         return True
 
-    async def execute_task(
-        self,
-        task_id: str,
-        coro
-    ) -> Dict[str, Any]:
+    async def execute_task(self, task_id: str, coro) -> Dict[str, Any]:
         """执行任务（带并发控制）"""
         task = self._tasks.get(task_id)
         if not task:
@@ -180,21 +164,13 @@ class BackgroundTaskManager:
                 result = await coro
 
                 # 更新为成功
-                await self.update_task_status(
-                    task_id,
-                    TaskStatus.SUCCESS,
-                    result=result
-                )
+                await self.update_task_status(task_id, TaskStatus.SUCCESS, result=result)
 
                 return result
 
             except Exception as e:
                 # 更新为失败
-                await self.update_task_status(
-                    task_id,
-                    TaskStatus.FAILED,
-                    error=str(e)
-                )
+                await self.update_task_status(task_id, TaskStatus.FAILED, error=str(e))
                 logger.error(f"任务执行失败: {task_id} - {str(e)}", exc_info=True)
                 raise
 
@@ -210,19 +186,16 @@ class BackgroundTaskManager:
                     tasks_to_remove.append(task_id)
 
             for task_id in tasks_to_remove:
-                task = self._tasks.pop(task_id, None)
-                if task:
-                    self._downloader_tasks.pop(task.downloader_id, None)
+                if task_id in self._tasks:
+                    removed = self._tasks.pop(task_id)
+                    self._downloader_tasks.pop(removed.downloader_id, None)
 
             if tasks_to_remove:
                 logger.info(f"清理了 {len(tasks_to_remove)} 个旧任务")
 
     def get_all_tasks(self) -> Dict[str, Dict[str, Any]]:
         """获取所有任务（用于调试）"""
-        return {
-            task_id: task.to_dict()
-            for task_id, task in self._tasks.items()
-        }
+        return {task_id: task.to_dict() for task_id, task in self._tasks.items()}
 
 
 # 全局任务管理器实例

@@ -2,21 +2,24 @@
   <div class="tracker-keywords-board">
     <!-- 页面头部 -->
     <div class="page-header">
-      <h1>🏷️ Tracker关键词管理</h1>
+      <h1>
+        <LucideIcon name="tags" :size="22" />
+        Tracker关键词管理
+      </h1>
       <div class="header-actions">
         <el-button
           type="info"
-          icon="el-icon-search"
           @click="handleSearch"
         >
+          <LucideIcon name="search" :size="14" style="margin-right: 6px" />
           搜索
         </el-button>
         <el-button
           type="primary"
-          icon="el-icon-refresh"
           :loading="refreshing"
           @click="handleRefresh"
         >
+          <LucideIcon v-if="!refreshing" name="refresh-cw" :size="14" style="margin-right: 6px" />
           刷新
         </el-button>
       </div>
@@ -35,18 +38,35 @@
         @drop="handleDrop(pool, $event)"
       >
         <div class="pool-header">
-          <span class="pool-title">{{ pool.icon }} {{ pool.label }}</span>
+          <span class="pool-title">
+            <LucideIcon :name="pool.icon" :size="18" />
+            {{ pool.label }}
+          </span>
           <div class="pool-header-right">
-            <!-- 池子操作按钮 (仅忽略池、成功池、失败池显示) -->
+            <!-- 快捷操作按钮（所有池子显示，含候选池） -->
+            <div class="pool-actions">
+              <el-tooltip content="快捷操作（按前缀左匹配）" placement="bottom">
+                <i class="pool-action-btn" @click="handleQuickAction(pool.type)">
+                  <LucideIcon name="wand-sparkles" :size="18" />
+                </i>
+              </el-tooltip>
+            </div>
+            <!-- 池子操作按钮 (仅忽略池、成功池、失败池显示；候选池由系统自动生成) -->
             <div v-if="pool.type !== 'candidate'" class="pool-actions">
               <el-tooltip content="添加关键词" placement="bottom">
-                <i class="el-icon-plus pool-action-btn" @click="handleAddKeyword(pool.type)" />
+                <i class="pool-action-btn" @click="handleAddKeyword(pool.type)">
+                  <LucideIcon name="plus" :size="18" />
+                </i>
               </el-tooltip>
               <el-tooltip content="导入关键词" placement="bottom">
-                <i class="el-icon-upload2 pool-action-btn" @click="handleImportKeywords(pool.type)" />
+                <i class="pool-action-btn" @click="handleImportKeywords(pool.type)">
+                  <LucideIcon name="upload" :size="18" />
+                </i>
               </el-tooltip>
               <el-tooltip content="导出关键词" placement="bottom">
-                <i class="el-icon-download pool-action-btn" @click="handleExportKeywords(pool.type)" />
+                <i class="pool-action-btn" @click="handleExportKeywords(pool.type)">
+                  <LucideIcon name="download" :size="18" />
+                </i>
               </el-tooltip>
             </div>
             <span class="pool-count">{{ pool.count }}</span>
@@ -102,6 +122,15 @@
       :pool-label="currentPoolLabel"
       @success="handleImportSuccess"
     />
+
+    <!-- 快捷操作（左匹配）对话框：可复用组件，看板与详情弹窗共用 -->
+    <keyword-quick-action-dialog
+      :visible.sync="quickActionVisible"
+      :source-pool="quickActionSourcePool"
+      :source-pool-label="quickActionSourcePoolLabel"
+      :source-pool-count="quickActionSourcePoolCount"
+      @success="handleQuickActionSuccess"
+    />
   </div>
 </template>
 
@@ -111,8 +140,8 @@ import KeywordTagCard from './components/KeywordTagCard.vue'
 import KeywordListModal from './components/KeywordListModal.vue'
 import AddKeywordDialog from './components/AddKeywordDialog.vue'
 import ImportKeywordsDialog from './components/ImportKeywordsDialog.vue'
-import { getPoolKeywords, deleteKeyword, moveKeywordToPool, createKeyword, PoolType } from '@/api/tracker'
-import { extractErrorMessage } from '@/utils/tracker'
+import KeywordQuickActionDialog from './components/KeywordQuickActionDialog.vue'
+import { getPoolKeywords, deleteKeyword, moveKeywordToPool, PoolType } from '@/api/tracker'
 
 interface PoolKeyword {
   keyword_id: string
@@ -136,7 +165,8 @@ interface Pool {
     KeywordTagCard,
     KeywordListModal,
     AddKeywordDialog,
-    ImportKeywordsDialog
+    ImportKeywordsDialog,
+    KeywordQuickActionDialog
   }
 })
 export default class TrackerKeywordsBoard extends Vue {
@@ -149,11 +179,16 @@ export default class TrackerKeywordsBoard extends Vue {
   draggedKeyword: PoolKeyword | null = null
   draggedPoolType = ''
 
+  // 快捷操作（左匹配）：下拉触发，实际逻辑在 KeywordQuickActionDialog 组件内
+  quickActionVisible = false
+  quickActionSourcePool: PoolType | '' = ''
+  quickActionSourcePoolCount = 0
+
   pools: Pool[] = [
     {
       type: 'candidate',
       label: '候选池',
-      icon: '📋',
+      icon: 'clipboard-list',
       count: 0,
       keywords: [],
       dragOver: false
@@ -161,7 +196,7 @@ export default class TrackerKeywordsBoard extends Vue {
     {
       type: 'ignored',
       label: '忽略池',
-      icon: '⏭️',
+      icon: 'forward',
       count: 0,
       keywords: [],
       dragOver: false
@@ -169,7 +204,7 @@ export default class TrackerKeywordsBoard extends Vue {
     {
       type: 'success',
       label: '成功池',
-      icon: '✅',
+      icon: 'circle-check-big',
       count: 0,
       keywords: [],
       dragOver: false
@@ -177,7 +212,7 @@ export default class TrackerKeywordsBoard extends Vue {
     {
       type: 'failed',
       label: '失败池',
-      icon: '❌',
+      icon: 'circle-x',
       count: 0,
       keywords: [],
       dragOver: false
@@ -259,6 +294,11 @@ export default class TrackerKeywordsBoard extends Vue {
 
   get currentPoolLabel(): string {
     return this.getPoolLabel(this.currentPoolType)
+  }
+
+  // 快捷操作：源池标签（供 KeywordQuickActionDialog 展示）
+  get quickActionSourcePoolLabel(): string {
+    return this.getPoolLabel(this.quickActionSourcePool)
   }
 
   // 拖拽相关方法
@@ -513,6 +553,34 @@ export default class TrackerKeywordsBoard extends Vue {
       'failed': 'failed'
     }
     return typeMap[poolType] ?? null
+  }
+
+  // ==================== 快捷操作（左匹配） ====================
+
+  /**
+   * 打开快捷操作对话框（所有池子可用，含候选池）。
+   * 实际的前缀输入/预览/执行逻辑在 KeywordQuickActionDialog 组件内。
+   */
+  handleQuickAction(sourcePool: string) {
+    const pool = this.pools.find(p => p.type === sourcePool)
+    this.quickActionSourcePool = sourcePool as PoolType
+    this.quickActionSourcePoolCount = pool?.count || 0
+    this.quickActionVisible = true
+  }
+
+  /**
+   * 快捷操作执行成功后的精准刷新。
+   * @param payload 移动模式含 targetPool（需同时刷新目标池），删除模式 targetPool 为 null。
+   */
+  async handleQuickActionSuccess(payload: { sourcePool: PoolType, targetPool: PoolType | null }) {
+    if (payload.targetPool) {
+      await Promise.all([
+        this.loadPoolData(payload.sourcePool),
+        this.loadPoolData(payload.targetPool)
+      ])
+    } else {
+      await this.loadPoolData(payload.sourcePool)
+    }
   }
 }
 </script>

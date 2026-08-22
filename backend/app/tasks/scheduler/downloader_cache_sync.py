@@ -5,10 +5,15 @@
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
+
+# 长期离线剔除阈值（秒）：offline_since 距今超过该值即从缓存移除。
+# 取 300s ≈ 状态轮询连续 ~30 次探测失败（10s 热间隔），排除端口瞬时抖动。
+_OFFLINE_EVICT_SECONDS = 300.0
 
 
 class CachedDownloaderSyncTask:
@@ -25,9 +30,9 @@ class CachedDownloaderSyncTask:
     category = "downloader"
 
     # 任务配置
-    default_interval = 60   # 默认1分钟
-    max_interval = 1800     # 最大30分钟
-    min_interval = 60       # 最小1分钟
+    default_interval = 60  # 默认1分钟
+    max_interval = 1800  # 最大30分钟
+    min_interval = 60  # 最小1分钟
 
     def __init__(self, app: Optional[Any] = None):
         """初始化任务
@@ -36,7 +41,7 @@ class CachedDownloaderSyncTask:
             app: FastAPI 应用实例（可选，建议通过 set_app 方法设置）
         """
         self.app = app
-        self.last_execution_time = None
+        self.last_execution_time: Optional[datetime] = None
         self.execution_count = 0
         self.success_count = 0
         self.failure_count = 0
@@ -62,12 +67,14 @@ class CachedDownloaderSyncTask:
         """
         try:
             # ✅ 修复：从 kwargs 中获取 app 实例（如果未在初始化时设置）
-            if self.app is None and 'app' in kwargs:
-                self.app = kwargs['app']
+            if self.app is None and "app" in kwargs:
+                self.app = kwargs["app"]
 
             # ✅ 验证 app 实例是否可用
             if self.app is None:
-                raise ValueError("FastAPI app instance not set. Pass 'app' parameter to execute() or set it via set_app()")
+                raise ValueError(
+                    "FastAPI app instance not set. Pass 'app' parameter to execute() or set it via set_app()"
+                )
 
             self.last_execution_time = datetime.now()
             self.execution_count += 1
@@ -78,7 +85,7 @@ class CachedDownloaderSyncTask:
                 "execution_time": self.last_execution_time,
                 "execution_count": self.execution_count,
                 "status": "running",
-                "message": "Downloader cache sync task started"
+                "message": "Downloader cache sync task started",
             }
 
             # 这里直接调用修改后的缓存同步逻辑
@@ -89,12 +96,14 @@ class CachedDownloaderSyncTask:
             # 更新成功计数
             self.success_count += 1
 
-            result.update({
-                "status": "success",
-                "message": "Downloader cache sync task completed successfully",
-                "success_count": self.success_count,
-                "failure_count": self.failure_count
-            })
+            result.update(
+                {
+                    "status": "success",
+                    "message": "Downloader cache sync task completed successfully",
+                    "success_count": self.success_count,
+                    "failure_count": self.failure_count,
+                }
+            )
 
             return result
 
@@ -107,7 +116,7 @@ class CachedDownloaderSyncTask:
                 "status": "failed",
                 "message": f"Downloader cache sync task failed: {str(e)}",
                 "success_count": self.success_count,
-                "failure_count": self.failure_count
+                "failure_count": self.failure_count,
             }
             return error_result
 
@@ -152,32 +161,32 @@ class CachedDownloaderSyncTask:
 
             # 步骤4：对比找出新下载器和孤立下载器（优先使用稳定主键 downloader_id）
             cached_id_set = {
-                str(d.downloader_id) for d in cached_downloaders
-                if hasattr(d, 'downloader_id') and d.downloader_id is not None
+                str(d.downloader_id)
+                for d in cached_downloaders
+                if hasattr(d, "downloader_id") and d.downloader_id is not None
             }
-            db_id_set = {
-                str(d['downloader_id']) for d in db_downloaders
-                if d.get('downloader_id') is not None
-            }
+            db_id_set = {str(d["downloader_id"]) for d in db_downloaders if d.get("downloader_id") is not None}
 
             # 兼容：仅当 ID 不可用时才退回昵称对比
             cached_nickname_set = {d.nickname for d in cached_downloaders}
-            db_nickname_set = {d['nickname'] for d in db_downloaders}
+            db_nickname_set = {d["nickname"] for d in db_downloaders}
 
             # 找出在数据库中但不在缓存中的下载器（需要添加）
             if cached_id_set and db_id_set:
                 new_downloaders = [
-                    d for d in db_downloaders
-                    if d.get('downloader_id') is not None and str(d['downloader_id']) not in cached_id_set
+                    d
+                    for d in db_downloaders
+                    if d.get("downloader_id") is not None and str(d["downloader_id"]) not in cached_id_set
                 ]
             else:
-                new_downloaders = [d for d in db_downloaders if d['nickname'] not in cached_nickname_set]
+                new_downloaders = [d for d in db_downloaders if d["nickname"] not in cached_nickname_set]
 
             # 找出在缓存中但不在数据库中的下载器（需要移除）
             if cached_id_set and db_id_set:
                 orphaned_downloaders = [
-                    d for d in cached_downloaders
-                    if hasattr(d, 'downloader_id')
+                    d
+                    for d in cached_downloaders
+                    if hasattr(d, "downloader_id")
                     and d.downloader_id is not None
                     and str(d.downloader_id) not in db_id_set
                 ]
@@ -193,6 +202,29 @@ class CachedDownloaderSyncTask:
                 await self.app.state.store._remove_items(orphaned_downloaders)
                 for orphan in orphaned_downloaders:
                     logger.info(f"Removed orphaned downloader: {orphan.nickname}")
+
+            # 步骤5.5：剔除长期离线的下载器（fail_time 死代码的替代自愈机制）
+            # 状态轮询（downloader_status_polling_task）维护 offline_since（首次离线
+            # 时间戳）；持续离线超过 OFFLINE_EVICT_SECONDS 的成员从缓存移除——
+            # 僵尸下载器会拖垮 active-torrents 的 complete 判定并浪费轮询探测预算。
+            # 被剔除者仍在 DB enabled 集合中，恢复在线后由步骤6 的
+            # _check_and_add_new_downloader（完整端口+认证校验）重新入缓存。
+            # offline_since 缺失（冷启动未探测/旧对象）不剔除，防止误删。
+            stale_offline = [
+                d
+                for d in cached_downloaders
+                if getattr(d, "is_online", None) is False
+                and getattr(d, "offline_since", None)
+                and (time.time() - float(d.offline_since)) > _OFFLINE_EVICT_SECONDS
+            ]
+            if stale_offline:
+                logger.info(f"Removing {len(stale_offline)} long-offline downloaders from cache")
+                await self.app.state.store._remove_items(stale_offline)
+                for dl in stale_offline:
+                    logger.info(
+                        f"Removed long-offline downloader: {dl.nickname} "
+                        f"(offline_since={dl.offline_since:.0f}, threshold={_OFFLINE_EVICT_SECONDS}s)"
+                    )
 
             # 步骤6：添加新下载器
             successful_additions = 0
@@ -229,14 +261,10 @@ class CachedDownloaderSyncTask:
                 processing_status_at_start = self.app.state.store._processing
 
                 logger.info(
-                    f"⏳ 等待缓冲区处理: {buffer_size_at_start} 个项目, "
-                    f"处理状态: {processing_status_at_start}"
+                    f"⏳ 等待缓冲区处理: {buffer_size_at_start} 个项目, " f"处理状态: {processing_status_at_start}"
                 )
 
-                while (
-                    (self.app.state.store._buffer or self.app.state.store._processing)
-                    and wait_count < max_wait
-                ):
+                while (self.app.state.store._buffer or self.app.state.store._processing) and wait_count < max_wait:
                     await asyncio.sleep(0.5)
                     wait_count += 1
 
@@ -261,8 +289,7 @@ class CachedDownloaderSyncTask:
                     )
                 else:
                     logger.info(
-                        f"✅ 缓冲区处理完成: {buffer_size_at_start} 个项目, "
-                        f"等待时间: {wait_count * 0.5} 秒"
+                        f"✅ 缓冲区处理完成: {buffer_size_at_start} 个项目, " f"等待时间: {wait_count * 0.5} 秒"
                     )
 
             # 步骤8：输出最终缓存状态
@@ -270,10 +297,7 @@ class CachedDownloaderSyncTask:
             logger.info(f"📊 最终缓存状态: {len(final_cache)} 个下载器")
 
             # 统计有效下载器数量
-            valid_downloaders = [
-                d for d in final_cache
-                if hasattr(d, 'fail_time') and d.fail_time == 0
-            ]
+            valid_downloaders = [d for d in final_cache if hasattr(d, "fail_time") and d.fail_time == 0]
 
             logger.info(f"Found {len(valid_downloaders)} valid downloaders (fail_time=0)")
 
@@ -282,7 +306,7 @@ class CachedDownloaderSyncTask:
             failed_count = 0
 
             for downloader in final_cache:
-                if hasattr(downloader, 'fail_time'):
+                if hasattr(downloader, "fail_time"):
                     if downloader.fail_time == 0:
                         verified_count += 1
                     else:
@@ -317,7 +341,7 @@ class CachedDownloaderSyncTask:
             "success_count": self.success_count,
             "failure_count": self.failure_count,
             "last_execution_time": self.last_execution_time,
-            "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0
+            "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0,
         }
 
     def get_schedule_config(self) -> Dict[str, Any]:
@@ -326,9 +350,9 @@ class CachedDownloaderSyncTask:
             "cron_expression": "* * * * *",  # 每1分钟执行一次
             "timezone": "Asia/Shanghai",
             "max_instances": 1,  # 防止重叠执行
-            "coalesce": True,   # 合并错过的执行
+            "coalesce": True,  # 合并错过的执行
             "misfire_grace_time": 300,  # 错过执行的宽限时间（秒）
             "default_interval": self.default_interval,
             "max_interval": self.max_interval,
-            "min_interval": self.min_interval
+            "min_interval": self.min_interval,
         }

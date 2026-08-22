@@ -2,22 +2,23 @@ import asyncio
 import socket
 import logging
 from fastapi import FastAPI
-from typing import List, Any, Callable, Dict
+from typing import Any, Callable, DefaultDict, Dict, List, Literal, Optional, Union
 from collections import defaultdict
 import time
 from datetime import datetime
 
-logger = logging.getLogger(__name__)
-
-from sqlalchemy import text
 from app.database import SessionLocal
 from app.downloader.request import DownloaderCheckVO
 from app.downloader.torrent_stats_cache import TorrentStatsCache
-from app.downloader.responseVO import DownloaderVO
 from qbittorrentapi import Client as qbClient, APIConnectionError, LoginFailed
-from transmission_rpc import Client as trClient, TransmissionAuthError, TransmissionTimeoutError, \
-    TransmissionConnectError
+from transmission_rpc import (
+    Client as trClient,
+    TransmissionAuthError,
+    TransmissionTimeoutError,
+    TransmissionConnectError,
+)
 
+logger = logging.getLogger(__name__)
 
 # ❌ 删除全局 app 变量，避免与真正的 FastAPI 实例混淆
 # 原代码: app = FastAPI()  # 这会导致缓存初始化在错误的实例上
@@ -26,18 +27,18 @@ from transmission_rpc import Client as trClient, TransmissionAuthError, Transmis
 
 class DownloaderInitialization:
     def __init__(self, check_status_func: Callable[[Any], bool]):
-        self._data = []  # 核心数据（写时复制）
-        self._buffer = []  # 写缓冲区
-        self._cache = None  # 读缓存
-        self._cache_time = 0  # 缓存时间
-        self._cache_ttl = 0.5  # 缓存有效期（秒）
+        self._data: List[Any] = []  # 核心数据（写时复制）
+        self._buffer: List[Any] = []  # 写缓冲区
+        self._cache: Optional[List[Any]] = None  # 读缓存
+        self._cache_time: float = 0  # 缓存时间
+        self._cache_ttl: float = 0.5  # 缓存有效期（秒）
         self._lock = asyncio.Lock()  # 写操作锁
         self._processing = False  # 缓冲区处理状态
 
         # 校验相关属性
         self.check_status = check_status_func  # 同步校验函数
         self.check_status_async = check_status_async  # 异步校验函数
-        self.failure_counts = defaultdict(int)  # 失败计数器 {item: 失败次数}
+        self.failure_counts: DefaultDict[Any, int] = defaultdict(int)  # 失败计数器 {item: 失败次数}
         self.last_check_time = 0  # 上次校验时间
         self.check_interval = 5  # 校验间隔（秒）
         self.failure_threshold = 3  # 失败阈值，达到此值则移除
@@ -51,7 +52,7 @@ class DownloaderInitialization:
         """
         if immediate:
             # 初始化失败计数（锁外）
-            if not hasattr(item, 'fail_time'):
+            if not hasattr(item, "fail_time"):
                 item.fail_time = 0
             else:
                 item.fail_time = 0
@@ -280,7 +281,7 @@ async def check_port_connectivity(host: str, port: int, timeout: float = 3.0, ma
             logger.debug(f"❌ DNS解析失败: {clean_host} (尝试 {attempt}/{max_retries}): {e}")
             # DNS 失败不继续重试
             break
-        except socket.timeout as e:
+        except socket.timeout:
             logger.debug(f"⏱️  连接超时: {clean_host}:{port} (尝试 {attempt}/{max_retries})")
         except Exception as e:
             logger.debug(f"❌ 连接异常: {clean_host}:{port} (尝试 {attempt}/{max_retries}): {e}")
@@ -302,10 +303,7 @@ async def check_port_connectivity(host: str, port: int, timeout: float = 3.0, ma
 
 
 async def check_downloader_connectivity_with_retry(
-        downloader_info: Dict[str, Any],
-        timeout: float = 3.0,
-        max_port_retries: int = 3,
-        max_auth_retries: int = 3
+    downloader_info: Dict[str, Any], timeout: float = 3.0, max_port_retries: int = 3, max_auth_retries: int = 3
 ) -> bool:
     """
     分层检查下载器连通性，包含重试机制
@@ -329,10 +327,10 @@ async def check_downloader_connectivity_with_retry(
     Returns:
         bool: 下载器是否可用
     """
-    nickname = downloader_info.get('nickname', 'Unknown')
-    host = downloader_info.get('host')
-    port = downloader_info.get('port')
-    downloader_type = downloader_info.get('downloader_type')
+    nickname = downloader_info.get("nickname", "Unknown")
+    host = downloader_info.get("host")
+    port = downloader_info.get("port")
+    downloader_type = downloader_info.get("downloader_type")
 
     print(f"\n{'=' * 60}")
     print(f"开始检查下载器: {nickname} ({host}:{port})")
@@ -341,7 +339,7 @@ async def check_downloader_connectivity_with_retry(
     # ✅ 添加全局超时保护（30秒）
     async def _check_with_timeout():
         # 第一步：端口连通性检查
-        logger.debug(f"[第一步] 检查端口连通性...")
+        logger.debug("[第一步] 检查端口连通性...")
         port_accessible = await check_port_connectivity(host, port, timeout, max_port_retries)
 
         if not port_accessible:
@@ -349,13 +347,13 @@ async def check_downloader_connectivity_with_retry(
             return False
 
         # 第二步：认证检查
-        print(f"[第二步] 检查认证...")
+        print("[第二步] 检查认证...")
 
         for auth_attempt in range(1, max_auth_retries + 1):
             try:
-                if downloader_type == 'qBittorrent':
+                if downloader_type == "qBittorrent":
                     return await _check_qbittorrent_auth_with_retry(downloader_info, auth_attempt, max_auth_retries)
-                elif downloader_type == 'Transmission':
+                elif downloader_type == "Transmission":
                     return await _check_transmission_auth_with_retry(downloader_info, auth_attempt, max_auth_retries)
                 else:
                     print(f"❌ 不支持的下载器类型: {downloader_type}")
@@ -364,7 +362,7 @@ async def check_downloader_connectivity_with_retry(
             except Exception as e:
                 print(f"❌ 认证检查异常 (尝试 {auth_attempt}/{max_auth_retries}): {e}")
                 if auth_attempt < max_auth_retries:
-                    print(f"等待 1 秒后重试...")
+                    print("等待 1 秒后重试...")
                     await asyncio.sleep(1)
                 else:
                     print(f"❌ 认证检查失败，已重试 {max_auth_retries} 次")
@@ -384,19 +382,15 @@ async def _check_qbittorrent_auth_with_retry(downloader_info: Dict[str, Any], at
     """qBittorrent 认证检查（带重试）"""
     from qbittorrentapi import Client as qbClient
 
-    nickname = downloader_info.get('nickname', 'Unknown')
-    host = downloader_info.get('host')
-    port = downloader_info.get('port')
-    username = downloader_info.get('username')
-    password = downloader_info.get('password')
+    nickname = downloader_info.get("nickname", "Unknown")
+    host = downloader_info.get("host")
+    port = downloader_info.get("port")
+    username = downloader_info.get("username")
+    password = downloader_info.get("password")
 
     try:
         logger.debug(f"创建 qBittorrent 客户端连接... (尝试 {attempt}/{max_retries})")
-        client = qbClient(
-            host=f"http://{host}:{port}",
-            username=username,
-            password=password
-        )
+        client = qbClient(host=f"http://{host}:{port}", username=username, password=password)
 
         # 尝试获取应用版本（验证认证）
         logger.debug(f"验证 qBittorrent 认证... (尝试 {attempt}/{max_retries})")
@@ -424,20 +418,15 @@ async def _check_transmission_auth_with_retry(downloader_info: Dict[str, Any], a
     """Transmission 认证检查（带重试）"""
     from transmission_rpc import Client as trClient
 
-    nickname = downloader_info.get('nickname', 'Unknown')
-    host = downloader_info.get('host')
-    port = downloader_info.get('port')
-    username = downloader_info.get('username')
-    password = downloader_info.get('password')
+    nickname = downloader_info.get("nickname", "Unknown")
+    host = downloader_info.get("host")
+    port = downloader_info.get("port")
+    username = downloader_info.get("username")
+    password = downloader_info.get("password")
 
     try:
         logger.debug(f"创建 Transmission 客户端连接... (尝试 {attempt}/{max_retries})")
-        client = trClient(
-            host=host,
-            port=port,
-            username=username,
-            password=password
-        )
+        client = trClient(host=host or "", port=int(port or 0), username=username, password=password)
 
         # 尝试获取会话统计（验证认证）
         logger.debug(f"验证 Transmission 认证... (尝试 {attempt}/{max_retries})")
@@ -470,24 +459,24 @@ async def check_status_async_new(item: Any) -> bool:
     """
     try:
         # 获取基础连接信息
-        nickname = getattr(item, 'nickname', 'Unknown')
-        host = getattr(item, 'host', None)
-        port = getattr(item, 'port', None)
-        downloader_type = getattr(item, 'downloader_type', None)
-        username = getattr(item, 'username', None)
-        password = getattr(item, 'password', None)
+        nickname = getattr(item, "nickname", "Unknown")
+        host = getattr(item, "host", None)
+        port = getattr(item, "port", None)
+        downloader_type = getattr(item, "downloader_type", None)
+        username = getattr(item, "username", None)
+        password = getattr(item, "password", None)
 
         if not all([host, port, downloader_type]):
             print(f"⚠️  下载器 {nickname} 缺少必要信息，跳过检查")
             return False
 
         downloader_info = {
-            'nickname': nickname,
-            'host': host,
-            'port': port,
-            'downloader_type': downloader_type,
-            'username': username,
-            'password': password
+            "nickname": nickname,
+            "host": host,
+            "port": port,
+            "downloader_type": downloader_type,
+            "username": username,
+            "password": password,
         }
 
         return await check_downloader_connectivity_with_retry(downloader_info)
@@ -495,6 +484,7 @@ async def check_status_async_new(item: Any) -> bool:
     except Exception as e:
         print(f"❌ 连通性检查异常 {getattr(item, 'nickname', 'Unknown')}: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -508,7 +498,7 @@ async def check_status_async(item: Any) -> bool:
     """
     try:
         # 获取基础连接信息
-        nickname = getattr(item, 'nickname', 'Unknown')
+        nickname = getattr(item, "nickname", "Unknown")
 
         if isinstance(item.client, qbClient):
             # qBittorrent 客户端校验
@@ -534,7 +524,7 @@ def check_status(item: Any) -> bool:
     """
     try:
         # 获取基础连接信息
-        nickname = getattr(item, 'nickname', 'Unknown')
+        nickname = getattr(item, "nickname", "Unknown")
 
         if isinstance(item.client, qbClient):
             # qBittorrent 客户端校验
@@ -564,12 +554,12 @@ async def _check_qbittorrent_connectivity_async(client: qbClient, nickname: str)
 
         # 第二层：测试账号密码登录（通过获取认证信息）
         print(f"Testing authentication for qBittorrent: {nickname}")
-        auth_info = await asyncio.to_thread(client.auth_log_in)
+        await asyncio.to_thread(client.auth_log_in)
         print(f"Authentication successful for {nickname}")
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for qBittorrent: {nickname}")
-        torrents = await asyncio.to_thread(client.torrents_info, limit=1)  # 只获取1个torrent进行测试
+        await asyncio.to_thread(client.torrents_info, limit=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True
@@ -598,12 +588,12 @@ def _check_qbittorrent_connectivity(client: qbClient, nickname: str) -> bool:
 
         # 第二层：测试账号密码登录（通过获取认证信息）
         print(f"Testing authentication for qBittorrent: {nickname}")
-        auth_info = client.auth_log_in()
+        client.auth_log_in()
         print(f"Authentication successful for {nickname}")
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for qBittorrent: {nickname}")
-        torrents = client.torrents_info(limit=1)  # 只获取1个torrent进行测试
+        client.torrents_info(limit=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True
@@ -635,7 +625,7 @@ async def _check_transmission_connectivity_async(client: trClient, nickname: str
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for Transmission: {nickname}")
-        torrents = await asyncio.to_thread(client.get_torrent, torrent_id=1)  # 只获取1个torrent进行测试
+        await asyncio.to_thread(client.get_torrent, torrent_id=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True
@@ -670,7 +660,7 @@ def _check_transmission_connectivity(client: trClient, nickname: str) -> bool:
 
         # 第三层：测试基本功能（获取torrent列表）
         print(f"Testing basic functionality for Transmission: {nickname}")
-        torrents = client.get_torrents(ids=1)  # 只获取1个torrent进行测试
+        client.get_torrents(ids=1)  # 只获取1个torrent进行测试
         print(f"Basic functionality test passed for {nickname}")
 
         return True
@@ -700,11 +690,10 @@ async def startup_event(app: FastAPI):
     print("=== 开始持久化下载器数据 ===")
     app.state.store = DownloaderInitialization(check_status)
 
-    # 启动定时校验任务
-    # loop = asyncio.get_event_loop()
-    # loop.create_task(periodic_check())
-    # loop.create_task(cached_downloader_sync_task())
-    # loop.create_task(full_database_sync_task())
+    # 历史的定时校验任务（periodic_check/cached_downloader_sync_task/full_database_sync_task）
+    # 已停用：缓存健康治理现由 CachedDownloaderSyncTask（cron 每 5 分钟）基于
+    # offline_since 剔除长期离线成员 + downloader_status_polling_task 维护在线状态实现，
+    # 不再依赖周期性重认证（check_and_remove_invalid/fail_time 路径保留但无调用方）。
 
     # 异步执行初始化任务，不阻塞服务器启动
     print("=== 异步执行初始化任务 ===")
@@ -728,6 +717,11 @@ async def _async_initialization_tasks(app: FastAPI):
 
         # 初始加载所有启用的下载器（已包含完整同步逻辑）
         await _load_initial_downloaders(app)
+
+        # 下载器缓存就绪后立即应用一次当前分时段/全局限速，避免必须等待下一分钟轮询。
+        from app.tasks.cron_executor import cron_executor
+
+        await asyncio.to_thread(cron_executor._sync_speed_schedule)
 
         print("=== 异步初始化任务完成 ===")
 
@@ -769,27 +763,27 @@ def _refresh_cached_downloader_fields(cached_downloaders, db_downloaders, logger
     if not cached_downloaders or not db_downloaders:
         return 0
 
-    db_by_id = {d.get('downloader_id'): d for d in db_downloaders if d.get('downloader_id')}
-    db_by_nickname = {d.get('nickname'): d for d in db_downloaders if d.get('nickname')}
+    db_by_id = {d.get("downloader_id"): d for d in db_downloaders if d.get("downloader_id")}
+    db_by_nickname = {d.get("nickname"): d for d in db_downloaders if d.get("nickname")}
     updated = 0
 
     for cached in cached_downloaders:
         db_row = None
-        cached_id = getattr(cached, 'downloader_id', None)
+        cached_id = getattr(cached, "downloader_id", None)
 
         if cached_id and cached_id in db_by_id:
             db_row = db_by_id.get(cached_id)
         else:
-            cached_nick = getattr(cached, 'nickname', None)
+            cached_nick = getattr(cached, "nickname", None)
             if cached_nick in db_by_nickname:
                 db_row = db_by_nickname.get(cached_nick)
 
         if not db_row:
             continue
 
-        db_save_path = db_row.get('torrent_save_path')
+        db_save_path = db_row.get("torrent_save_path")
         if db_save_path and db_save_path.strip():
-            if getattr(cached, 'torrent_save_path', None) != db_save_path:
+            if getattr(cached, "torrent_save_path", None) != db_save_path:
                 try:
                     cached.torrent_save_path = db_save_path
                     updated += 1
@@ -818,6 +812,7 @@ async def _perform_initial_full_sync(app: FastAPI, skip_cache_comparison: bool =
 
             # 获取数据库中所有启用的下载器
             from sqlalchemy import text
+
             db = SessionLocal()
 
             try:
@@ -849,10 +844,10 @@ async def _perform_initial_full_sync(app: FastAPI, skip_cache_comparison: bool =
                     cached_downloaders = await app.state.store.get_snapshot()
                     _refresh_cached_downloader_fields(cached_downloaders, db_downloaders, logger)
                     cached_nickname_set = {d.nickname for d in cached_downloaders}
-                    db_nickname_set = {d['nickname'] for d in db_downloaders}
+                    db_nickname_set = {d["nickname"] for d in db_downloaders}
 
                     # 找出在数据库中但不在缓存中的下载器
-                    new_downloaders = [d for d in db_downloaders if d['nickname'] not in cached_nickname_set]
+                    new_downloaders = [d for d in db_downloaders if d["nickname"] not in cached_nickname_set]
 
                     # 找出在缓存中但不在数据库中的下载器（可能是已删除的）
                     orphaned_downloaders = [d for d in cached_downloaders if d.nickname not in db_nickname_set]
@@ -884,10 +879,12 @@ async def _perform_initial_full_sync(app: FastAPI, skip_cache_comparison: bool =
                 # 记录同步结果
                 if skip_cache_comparison:
                     logger.add_log(
-                        f"Initial loading summary: {successful_additions} processed, {failed_additions} failed")
+                        f"Initial loading summary: {successful_additions} processed, {failed_additions} failed"
+                    )
                 else:
                     logger.add_log(
-                        f"Initial sync summary: {successful_additions} added, {failed_additions} failed, {len(orphaned_downloaders)} removed")
+                        f"Initial sync summary: {successful_additions} added, {failed_additions} failed, {len(orphaned_downloaders)} removed"
+                    )
 
                 # ✅ 修复：等待所有缓冲区数据处理完成
                 max_wait = 10  # 最多等待10秒
@@ -919,8 +916,14 @@ async def _perform_initial_full_sync(app: FastAPI, skip_cache_comparison: bool =
         print(f"Error during initial full sync: {e}")
 
 
-async def full_database_sync_task():
-    """定时全量获取数据库下载器列表，与缓存对比并进行连通性校验"""
+async def full_database_sync_task(app: FastAPI):
+    """定时全量获取数据库下载器列表，与缓存对比并进行连通性校验
+
+    Args:
+        app: FastAPI 应用实例（访问 app.state.store 缓存）
+
+    Note: 当前调用点（startup_event 内）已注释，函数保留待后续启用。
+    """
     from sqlalchemy import text
     from app.tasks.logger import TaskLogger
 
@@ -967,10 +970,10 @@ async def full_database_sync_task():
                     logger.add_log("Cache snapshot acquired successfully")
 
                     cached_nickname_set = {d.nickname for d in cached_downloaders}
-                    db_nickname_set = {d['nickname'] for d in db_downloaders}
+                    db_nickname_set = {d["nickname"] for d in db_downloaders}
 
                     # 找出在数据库中但不在缓存中的下载器
-                    new_downloaders = [d for d in db_downloaders if d['nickname'] not in cached_nickname_set]
+                    new_downloaders = [d for d in db_downloaders if d["nickname"] not in cached_nickname_set]
 
                     # 找出在缓存中但不在数据库中的下载器（可能是已删除的）
                     orphaned_downloaders = [d for d in cached_downloaders if d.nickname not in db_nickname_set]
@@ -1024,14 +1027,13 @@ def _calculate_sync_interval(default_interval: int, min_interval: int, max_inter
     """根据历史记录计算动态同步间隔（同步函数，避免异步循环问题）"""
     try:
         # 简单的基于内存统计的间隔调整
-        global _sync_stats
-
-        total = _sync_stats['total_additions'] + _sync_stats['total_failures']
+        # _sync_stats 是模块级 dict，纯读取（__getitem__）无需 global 声明
+        total = _sync_stats["total_additions"] + _sync_stats["total_failures"]
 
         if total == 0:
             return default_interval
 
-        success_rate = (_sync_stats['total_additions'] / total) * 100
+        success_rate = (_sync_stats["total_additions"] / total) * 100
 
         if success_rate >= 90:  # 成功率很高，可以延长间隔
             return min(max_interval, int(default_interval * 1.5))
@@ -1048,34 +1050,29 @@ def _calculate_sync_interval(default_interval: int, min_interval: int, max_inter
 
 
 # 简单的内存统计存储（生产环境建议使用Redis或数据库）
-_sync_stats = {
-    'total_additions': 0,
-    'total_failures': 0,
-    'last_update': None
-}
+_sync_stats: Dict[str, Any] = {"total_additions": 0, "total_failures": 0, "last_update": None}
 
 # 种子同步统计存储
-_torrent_sync_stats = {
-    'total_successful': 0,
-    'total_failed': 0,
-    'last_duration': 0,
-    'avg_duration': 0,
-    'last_update': None
+_torrent_sync_stats: Dict[str, Any] = {
+    "total_successful": 0,
+    "total_failed": 0,
+    "last_duration": 0,
+    "avg_duration": 0,
+    "last_update": None,
 }
 
 
 def _calculate_torrent_sync_interval(default_interval: int, min_interval: int, max_interval: int) -> int:
     """根据历史执行时间和成功率计算动态同步间隔"""
     try:
-        global _torrent_sync_stats
-
-        total = _torrent_sync_stats['total_successful'] + _torrent_sync_stats['total_failed']
+        # _torrent_sync_stats 是模块级 dict，纯读取无需 global 声明
+        total = _torrent_sync_stats["total_successful"] + _torrent_sync_stats["total_failed"]
 
         if total == 0:
             return default_interval
 
-        success_rate = (_torrent_sync_stats['total_successful'] / total) * 100
-        avg_duration = _torrent_sync_stats['avg_duration']
+        success_rate = (_torrent_sync_stats["total_successful"] / total) * 100
+        avg_duration = _torrent_sync_stats["avg_duration"]
 
         # 根据成功率和平均执行时间动态调整间隔
         if success_rate >= 90 and avg_duration < 300:  # 成功率高且执行时间短
@@ -1098,58 +1095,61 @@ async def _update_torrent_sync_statistics(successful: int, failed: int):
 
 
 async def _update_torrent_sync_statistics_with_duration(successful: int, failed: int, duration: int):
-    """更新种子同步统计信息，包含实际执行时间"""
-    global _torrent_sync_stats
+    """更新种子同步统计信息，包含实际执行时间
 
-    _torrent_sync_stats['total_successful'] += successful
-    _torrent_sync_stats['total_failed'] += failed
-    _torrent_sync_stats['last_duration'] = duration
-    _torrent_sync_stats['last_update'] = datetime.now()
+    Note: 修改模块级 dict 的键值（dict.__setitem__）无需 global 声明；
+    global 仅在重新绑定名字（`_torrent_sync_stats = {...}`）时需要。
+    """
+    _torrent_sync_stats["total_successful"] += successful
+    _torrent_sync_stats["total_failed"] += failed
+    _torrent_sync_stats["last_duration"] = duration
+    _torrent_sync_stats["last_update"] = datetime.now()
 
     # 使用实际执行时间计算移动平均
     if duration > 0:  # 只有当提供了实际执行时间时才更新平均值
-        if _torrent_sync_stats['avg_duration'] == 0:
-            _torrent_sync_stats['avg_duration'] = duration
+        if _torrent_sync_stats["avg_duration"] == 0:
+            _torrent_sync_stats["avg_duration"] = duration
         else:
             # 使用指数移动平均，权重0.3给新的执行时间
-            _torrent_sync_stats['avg_duration'] = int(
-                (_torrent_sync_stats['avg_duration'] * 0.7) + (duration * 0.3)
-            )
+            _torrent_sync_stats["avg_duration"] = int((_torrent_sync_stats["avg_duration"] * 0.7) + (duration * 0.3))
 
     # 定期清理统计信息（每天重置一次）
     import time
+
     current_time = time.time()
-    if not hasattr(_update_torrent_sync_statistics_with_duration, 'last_reset'):
-        _update_torrent_sync_statistics_with_duration.last_reset = current_time
+    if getattr(_update_torrent_sync_statistics_with_duration, "last_reset", None) is None:
+        setattr(_update_torrent_sync_statistics_with_duration, "last_reset", current_time)
 
     # 如果距离上次重置超过24小时，则重置统计
-    if current_time - _update_torrent_sync_statistics_with_duration.last_reset > 86400:  # 24小时 = 86400秒
-        _torrent_sync_stats['total_successful'] = 0
-        _torrent_sync_stats['total_failed'] = 0
-        _torrent_sync_stats['avg_duration'] = 0
-        _torrent_sync_stats['last_duration'] = 0
-        _update_torrent_sync_statistics_with_duration.last_reset = current_time
+    if current_time - getattr(_update_torrent_sync_statistics_with_duration, "last_reset", 0) > 86400:  # 24小时=86400秒
+        _torrent_sync_stats["total_successful"] = 0
+        _torrent_sync_stats["total_failed"] = 0
+        _torrent_sync_stats["avg_duration"] = 0
+        _torrent_sync_stats["last_duration"] = 0
+        setattr(_update_torrent_sync_statistics_with_duration, "last_reset", current_time)
 
 
 async def _update_sync_statistics(successful: int, failed: int):
-    """更新同步统计信息"""
-    global _sync_stats
+    """更新同步统计信息
 
-    _sync_stats['total_additions'] += successful
-    _sync_stats['total_failures'] += failed
-    _sync_stats['last_update'] = datetime.now()
+    Note: 修改模块级 dict 的键值无需 global 声明。
+    """
+    _sync_stats["total_additions"] += successful
+    _sync_stats["total_failures"] += failed
+    _sync_stats["last_update"] = datetime.now()
 
     # 定期清理统计信息（每天重置一次）
     import time
+
     current_time = time.time()
-    if not hasattr(_update_sync_statistics, 'last_reset'):
-        _update_sync_statistics.last_reset = current_time
+    if getattr(_update_sync_statistics, "last_reset", None) is None:
+        setattr(_update_sync_statistics, "last_reset", current_time)
 
     # 如果距离上次重置超过24小时，则重置统计
-    if current_time - _update_sync_statistics.last_reset > 86400:  # 24小时 = 86400秒
-        _sync_stats['total_additions'] = 0
-        _sync_stats['total_failures'] = 0
-        _update_sync_statistics.last_reset = current_time
+    if current_time - getattr(_update_sync_statistics, "last_reset", 0) > 86400:  # 24小时 = 86400秒
+        _sync_stats["total_additions"] = 0
+        _sync_stats["total_failures"] = 0
+        setattr(_update_sync_statistics, "last_reset", current_time)
 
 
 async def _is_downloader_duplicate(app: FastAPI, host: str, port: Any) -> bool:
@@ -1170,7 +1170,7 @@ async def _is_downloader_duplicate(app: FastAPI, host: str, port: Any) -> bool:
 
         # 遍历检查是否有相同的 host:port 组合
         for downloader in current_downloaders:
-            if hasattr(downloader, 'host') and hasattr(downloader, 'port'):
+            if hasattr(downloader, "host") and hasattr(downloader, "port"):
                 # 将 port 转换为字符串进行比较，避免类型不一致问题
                 existing_host = str(downloader.host) if downloader.host is not None else ""
                 existing_port = str(downloader.port) if downloader.port is not None else ""
@@ -1204,28 +1204,28 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
     from app.utils.encryption import decrypt_password
 
     try:
-        nickname = downloader_data.get('nickname', 'Unknown')
+        nickname = downloader_data.get("nickname", "Unknown")
         logger.debug(f"\n{'=' * 60}")
         logger.debug(f"开始处理下载器: {nickname}")
         logger.debug(f"{'=' * 60}")
 
         # ✅ 清理 host 字段（移除协议前缀和路径）
-        original_host = downloader_data.get('host', '')
+        original_host = downloader_data.get("host", "")
         clean_host = _clean_host_url(original_host)
-        downloader_data['host'] = clean_host  # 更新为清理后的值
+        downloader_data["host"] = clean_host  # 更新为清理后的值
 
         # 如果 host 被清理过，记录日志
         if clean_host != original_host:
             logger.info(f"🧹 清理 host 字段: {original_host} → {clean_host}")
 
         # 检查 host:port 组合是否已存在
-        if await _is_downloader_duplicate(app, clean_host, downloader_data['port']):
+        if await _is_downloader_duplicate(app, clean_host, downloader_data["port"]):
             logger.warning(f"⚠️  下载器 host:port {clean_host}:{downloader_data['port']} 已存在，跳过添加")
             return False
 
         # 类型转换：确保端口是整数并验证范围
         try:
-            port_int = int(downloader_data['port'])
+            port_int = int(downloader_data["port"])
             # ✅ 验证端口号范围（1-65535）
             if not (1 <= port_int <= 65535):
                 logger.warning(f"❌ 端口号超出有效范围 (1-65535): {port_int}，跳过添加下载器 {nickname}")
@@ -1237,10 +1237,7 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
         # 第一步：端口连通性检查（3秒超时 × 3次重试）
         logger.debug(f"[第一步] 检查端口连通性: {clean_host}:{port_int}")
         port_accessible = await check_port_connectivity(
-            host=clean_host,  # ✅ 使用清理后的 host
-            port=port_int,
-            timeout=3.0,
-            max_retries=3
+            host=clean_host, port=port_int, timeout=3.0, max_retries=3  # ✅ 使用清理后的 host
         )
 
         if not port_accessible:
@@ -1248,18 +1245,18 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
             return False
 
         # 第二步：认证检查
-        logger.debug(f"[第二步] 开始认证检查...")
+        logger.debug("[第二步] 开始认证检查...")
 
         # 解密密码
-        decrypted_password = decrypt_password(downloader_data['password']) if downloader_data.get('password') else None
+        decrypted_password = decrypt_password(downloader_data["password"]) if downloader_data.get("password") else None
 
         # 准备下载器类型信息
         # ✅ 修复：兼容整数和字符串类型（数据库查询可能返回字符串 "0"/"1"）
-        downloader_type_raw = downloader_data.get('downloader_type')
+        downloader_type_raw = downloader_data.get("downloader_type")
 
         # 尝试转换为整数
         try:
-            downloader_type_int = int(downloader_type_raw)
+            downloader_type_int = int(downloader_type_raw or 0)
         except (ValueError, TypeError):
             logger.warning(
                 f"❌ 下载器类型值无效: {downloader_type_raw} (类型: {type(downloader_type_raw).__name__})，"
@@ -1269,24 +1266,21 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
 
         # 验证类型值是否在有效范围内
         if downloader_type_int == 0:
-            downloader_type_str = 'qBittorrent'
+            downloader_type_str = "qBittorrent"
         elif downloader_type_int == 1:
-            downloader_type_str = 'Transmission'
+            downloader_type_str = "Transmission"
         else:
-            logger.warning(
-                f"❌ 不支持的下载器类型: {downloader_type_int}，"
-                f"跳过添加下载器 {nickname}"
-            )
+            logger.warning(f"❌ 不支持的下载器类型: {downloader_type_int}，" f"跳过添加下载器 {nickname}")
             return False
 
         # 构建下载器信息字典（用于认证检查）
         downloader_info = {
-            'nickname': nickname,
-            'host': downloader_data['host'],
-            'port': port_int,
-            'downloader_type': downloader_type_str,
-            'username': downloader_data.get('username'),
-            'password': decrypted_password
+            "nickname": nickname,
+            "host": downloader_data["host"],
+            "port": port_int,
+            "downloader_type": downloader_type_str,
+            "username": downloader_data.get("username"),
+            "password": decrypted_password,
         }
 
         # 执行认证检查（最多3次重试）
@@ -1295,27 +1289,27 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
             try:
                 logger.debug(f"尝试认证检查 ({auth_attempt}/3)...")
 
-                if downloader_type_str == 'qBittorrent':
+                if downloader_type_str == "qBittorrent":
                     auth_success = await _check_qbittorrent_auth_with_retry(downloader_info, auth_attempt, 3)
-                elif downloader_type_str == 'Transmission':
+                elif downloader_type_str == "Transmission":
                     auth_success = await _check_transmission_auth_with_retry(downloader_info, auth_attempt, 3)
 
                 if auth_success:
                     break
                 else:
                     if auth_attempt < 3:
-                        print(f"等待 1 秒后重试...")
+                        print("等待 1 秒后重试...")
                         await asyncio.sleep(1)
                     else:
-                        print(f"❌ 认证检查失败，已重试 3 次")
+                        print("❌ 认证检查失败，已重试 3 次")
 
             except Exception as e:
                 print(f"❌ 认证检查异常 (尝试 {auth_attempt}/3): {e}")
                 if auth_attempt < 3:
-                    print(f"等待 1 秒后重试...")
+                    print("等待 1 秒后重试...")
                     await asyncio.sleep(1)
                 else:
-                    print(f"❌ 认证检查失败，已重试 3 次")
+                    print("❌ 认证检查失败，已重试 3 次")
                     break
 
         # 根据检查结果决定是否添加到缓存
@@ -1325,24 +1319,25 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
 
             try:
                 # 创建客户端连接
+                client: Union[qbClient, trClient]
                 if downloader_type_int == 0:
                     client = qbClient(
-                        host=downloader_data['host'],
+                        host=downloader_data["host"],
                         port=port_int,
-                        username=downloader_data.get('username'),
+                        username=downloader_data.get("username"),
                         password=decrypted_password,
                         VERIFY_WEBUI_CERTIFICATE=False,
-                        REQUESTS_ARGS={'timeout': 30}
+                        REQUESTS_ARGS={"timeout": 30},
                     )
                 elif downloader_type_int == 1:
-                    protocol = "https" if downloader_data.get('is_ssl') == "1" else "http"
+                    protocol: Literal["http", "https"] = "https" if downloader_data.get("is_ssl") == "1" else "http"
                     client = trClient(
-                        host=downloader_data['host'],
-                        username=downloader_data.get('username'),
+                        host=downloader_data["host"],
+                        username=downloader_data.get("username"),
                         password=decrypted_password,
                         port=port_int,
                         protocol=protocol,
-                        timeout=30.0
+                        timeout=30.0,
                     )
                 else:
                     logger.warning(f"❌ 不支持的下载器类型: {downloader_type_int}，跳过添加下载器 {nickname}")
@@ -1350,9 +1345,9 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
 
                 # 创建种子统计缓存
                 stats_cache = TorrentStatsCache(
-                    downloader_id=downloader_data.get('downloader_id'),
+                    downloader_id=downloader_data.get("downloader_id") or "",
                     full_sync_interval=3600,  # 每小时全量同步
-                    cache_ttl=7200  # 缓存2小时
+                    cache_ttl=7200,  # 缓存2小时
                 )
 
                 # 创建校验对象
@@ -1360,14 +1355,14 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
                     nickname=nickname,
                     client=client,
                     fail_time=0,
-                    downloader_id=downloader_data.get('downloader_id'),
-                    host=downloader_data['host'],
+                    downloader_id=downloader_data.get("downloader_id"),
+                    host=downloader_data["host"],
                     port=port_int,
-                    username=downloader_data.get('username'),
+                    username=downloader_data.get("username"),
                     password=decrypted_password,
                     downloader_type=downloader_type_int,
-                    torrent_save_path=downloader_data.get('torrent_save_path'),
-                    stats_cache=stats_cache  # 添加缓存
+                    torrent_save_path=downloader_data.get("torrent_save_path"),
+                    stats_cache=stats_cache,  # 添加缓存
                 )
 
                 # 添加到缓存
@@ -1383,6 +1378,7 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
             except Exception as e:
                 logger.error(f"❌ 添加下载器 {nickname} 到缓存时出错: {e}")
                 import traceback
+
                 traceback.print_exc()
                 return False
         else:
@@ -1392,12 +1388,19 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
     except Exception as e:
         logger.error(f"❌ 检查新下载器 {downloader_data.get('nickname', 'Unknown')} 时出错: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
 
-async def periodic_check():
-    """定时校验任务"""
+async def periodic_check(app: FastAPI):
+    """定时校验任务
+
+    Args:
+        app: FastAPI 应用实例（访问 app.state.store 缓存）
+
+    Note: 当前调用点（startup_event 内）已注释，函数保留待后续启用。
+    """
     while True:
         await asyncio.sleep(10)  # 使用异步睡眠
         await app.state.store.check_and_remove_invalid()
@@ -1411,6 +1414,7 @@ async def periodic_check():
 # ============================================================
 # 下载器状态轮询任务（新增）
 # ============================================================
+
 
 async def downloader_status_polling_task(app: FastAPI):
     """
@@ -1434,7 +1438,7 @@ async def downloader_status_polling_task(app: FastAPI):
     while True:
         try:
             # ✅ P0-1修复: 添加防御性检查，确保缓存已初始化
-            if not hasattr(app, 'state') or not hasattr(app.state, 'store') or app.state.store is None:
+            if not hasattr(app, "state") or not hasattr(app.state, "store") or app.state.store is None:
                 print(f"[状态轮询] ⚠️ 缓存服务未初始化，等待 {hot_poll_interval} 秒后重试")
                 await asyncio.sleep(hot_poll_interval)
                 continue
@@ -1452,17 +1456,19 @@ async def downloader_status_polling_task(app: FastAPI):
             cold_update_counter += 1
 
             logger.debug(
-                f"[状态轮询] 开始更新 {len(cached_downloaders)} 个下载器 (热数据: 是, 冷数据: {'是' if update_cold else '否'})")
+                f"[状态轮询] 开始更新 {len(cached_downloaders)} 个下载器 (热数据: 是, 冷数据: {'是' if update_cold else '否'})"
+            )
 
             # ✅ P1-1修复: 并发更新所有下载器状态（增加并发限制）
             update_tasks = []
             for downloader in cached_downloaders:
                 # 只更新已通过验证的下载器（fail_time = 0）
-                if hasattr(downloader, 'fail_time') and downloader.fail_time == 0:
+                if hasattr(downloader, "fail_time") and downloader.fail_time == 0:
                     update_tasks.append(_update_downloader_status(downloader, update_cold=update_cold))
 
             # 并发执行所有更新任务并记录总耗时
-            import time
+            import time  # noqa: F811 与上方 line 1424 冗余，保留以降低本独立代码块对顶部 import 的耦合
+
             start_time = time.time()
 
             if update_tasks:
@@ -1498,20 +1504,38 @@ async def downloader_status_polling_task(app: FastAPI):
                 # 统计耗时
                 elapsed = time.time() - start_time
                 logger.debug(
-                    f"[状态轮询] 状态更新完成 (耗时: {elapsed:.2f}秒, 成功: {success_count}, 失败: {error_count})")
+                    f"[状态轮询] 状态更新完成 (耗时: {elapsed:.2f}秒, 成功: {success_count}, 失败: {error_count})"
+                )
 
                 # 警告：如果单次轮询超过热数据间隔，说明冷数据拖慢了整体进度
                 if update_cold and elapsed > hot_poll_interval:
                     logger.debug(
-                        f"[状态轮询] ⚠️ 警告：冷数据更新耗时({elapsed:.2f}秒)超过了热数据间隔({hot_poll_interval}秒)")
+                        f"[状态轮询] ⚠️ 警告：冷数据更新耗时({elapsed:.2f}秒)超过了热数据间隔({hot_poll_interval}秒)"
+                    )
 
         except Exception as e:
             print(f"[状态轮询] 任务执行异常: {e}")
             import traceback
+
             traceback.print_exc()
 
         # 等待下次轮询（固定10秒）
         await asyncio.sleep(hot_poll_interval)
+
+
+def _set_online_status(downloader: Any, is_online: bool) -> None:
+    """维护 is_online 与 offline_since（首次离线记时间戳，恢复在线清空）。
+
+    last_update 是"轮询时间戳"（离线时也被刷新，端口不通也算更新成功），
+    不能表达离线持续了多久；offline_since 供缓存同步任务
+    （CachedDownloaderSyncTask）剔除长期离线成员——替代 fail_time
+    剔除机制（check_and_remove_invalid 的调用方已停用）。
+    """
+    downloader.is_online = is_online
+    if is_online:
+        downloader.offline_since = None
+    elif not getattr(downloader, "offline_since", None):
+        downloader.offline_since = time.time()
 
 
 async def _update_downloader_status(downloader: Any, update_cold: bool = False) -> bool:
@@ -1528,10 +1552,10 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
     import ping3
 
     try:
-        downloader_type = getattr(downloader, 'downloader_type', None)
-        nickname = getattr(downloader, 'nickname', 'Unknown')
-        host = getattr(downloader, 'host', None)
-        port = getattr(downloader, 'port', None)
+        downloader_type = getattr(downloader, "downloader_type", None)
+        nickname = getattr(downloader, "nickname", "Unknown")
+        host = getattr(downloader, "host", None)
+        port = getattr(downloader, "port", None)
 
         if not host or not port:
             print(f"[状态更新] {nickname}: 缺少host或port信息")
@@ -1568,7 +1592,8 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
                 except (ValueError, TypeError, OverflowError) as e:
                     # 处理各种转换异常
                     print(
-                        f"[状态更新] {nickname}: ⚠️ 延迟值转换失败: {e}, 原始值: {delay_result}, 类型: {type(delay_result)}")
+                        f"[状态更新] {nickname}: ⚠️ 延迟值转换失败: {e}, 原始值: {delay_result}, 类型: {type(delay_result)}"
+                    )
                     delay = None
             downloader.delay = delay
         except Exception as e:
@@ -1582,21 +1607,21 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
                 port_int = int(port)
                 if not (1 <= port_int <= 65535):
                     print(f"[状态更新] {nickname}: 端口号超出有效范围(1-65535): {port}")
-                    downloader.is_online = False
+                    _set_online_status(downloader, False)
                     downloader.upload_speed = 0
                     downloader.download_speed = 0
                     downloader.last_update = time.time()
                     return True
             except (ValueError, TypeError) as e:
                 print(f"[状态更新] {nickname}: 端口号无效: {port} - {e}")
-                downloader.is_online = False
+                _set_online_status(downloader, False)
                 downloader.upload_speed = 0
                 downloader.download_speed = 0
                 downloader.last_update = time.time()
                 return True
 
             is_online = await check_port_connectivity(host, port_int, timeout=3.0, max_retries=1)
-            downloader.is_online = is_online
+            _set_online_status(downloader, is_online)
 
             if not is_online:
                 print(f"[状态更新] {nickname}: 端口{port}不可达，跳过状态更新")
@@ -1607,7 +1632,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
 
         except Exception as e:
             print(f"[状态更新] {nickname}: 端口连通性检查失败 - {e}")
-            downloader.is_online = False
+            _set_online_status(downloader, False)
             downloader.upload_speed = 0
             downloader.download_speed = 0
             downloader.last_update = time.time()
@@ -1627,13 +1652,13 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
         # ========== 4. 更新下载器对象的状态字段 ==========
         # 确保status_data包含有效数据
         if status_data and isinstance(status_data, dict) and len(status_data) > 0:
-            downloader.upload_speed = status_data.get('upload_speed', 0) or 0
-            downloader.download_speed = status_data.get('download_speed', 0) or 0
+            downloader.upload_speed = status_data.get("upload_speed", 0) or 0
+            downloader.download_speed = status_data.get("download_speed", 0) or 0
 
             # 仅在更新冷数据时才更新种子统计
             if update_cold:
-                downloader.downloading_count = status_data.get('downloading_count', 0) or 0
-                downloader.seeding_count = status_data.get('seeding_count', 0) or 0
+                downloader.downloading_count = status_data.get("downloading_count", 0) or 0
+                downloader.seeding_count = status_data.get("seeding_count", 0) or 0
 
             downloader.last_update = time.time()
 
@@ -1642,19 +1667,23 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
             # 根据是否更新冷数据，输出不同的日志
             delay_str = f"{delay:.1f}ms" if delay else "N/A"
             if update_cold:
-                logger.debug(f"[状态更新] {nickname} (含冷数据): "
-                             f"延迟={delay_str}, "
-                             f"上传={status_data.get('upload_speed')} KB/s, "
-                             f"下载={status_data.get('download_speed')} KB/s, "
-                             f"下载中={status_data.get('downloading_count')}, "
-                             f"做种中={status_data.get('seeding_count')}, "
-                             f"耗时={elapsed:.2f}秒")
+                logger.debug(
+                    f"[状态更新] {nickname} (含冷数据): "
+                    f"延迟={delay_str}, "
+                    f"上传={status_data.get('upload_speed')} KB/s, "
+                    f"下载={status_data.get('download_speed')} KB/s, "
+                    f"下载中={status_data.get('downloading_count')}, "
+                    f"做种中={status_data.get('seeding_count')}, "
+                    f"耗时={elapsed:.2f}秒"
+                )
             else:
-                logger.debug(f"[状态更新] {nickname} (仅热数据): "
-                             f"延迟={delay_str}, "
-                             f"上传={status_data.get('upload_speed')} KB/s, "
-                             f"下载={status_data.get('download_speed')} KB/s, "
-                             f"耗时={elapsed:.2f}秒")
+                logger.debug(
+                    f"[状态更新] {nickname} (仅热数据): "
+                    f"延迟={delay_str}, "
+                    f"上传={status_data.get('upload_speed')} KB/s, "
+                    f"下载={status_data.get('download_speed')} KB/s, "
+                    f"耗时={elapsed:.2f}秒"
+                )
 
             return True
         else:
@@ -1664,6 +1693,7 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
     except Exception as e:
         print(f"[状态更新] 更新下载器 {getattr(downloader, 'nickname', 'Unknown')} 状态失败: {e}")
         import traceback
+
         traceback.print_exc()
         return False
 
@@ -1672,10 +1702,8 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
 # 智能种子统计更新（分片 + 增量/全量）
 # ============================================================
 
-async def update_torrent_stats_smart(
-        downloader: Any,
-        force_full_sync: bool = False
-) -> dict:
+
+async def update_torrent_stats_smart(downloader: Any, force_full_sync: bool = False) -> dict:
     """智能种子统计更新（支持分片和增量更新）
 
     核心特性：
@@ -1709,29 +1737,26 @@ async def update_torrent_stats_smart(
     nickname = downloader.nickname
 
     # 获取缓存管理器（如果不存在则创建）
-    if not hasattr(downloader, 'stats_cache') or downloader.stats_cache is None:
+    if not hasattr(downloader, "stats_cache") or downloader.stats_cache is None:
         from app.downloader.torrent_stats_cache import TorrentStatsCache
+
         downloader.stats_cache = TorrentStatsCache(
-            downloader_id=downloader.downloader_id or "unknown",
-            full_sync_interval=3600,
-            cache_ttl=7200
+            downloader_id=downloader.downloader_id or "unknown", full_sync_interval=3600, cache_ttl=7200
         )
 
     cache = downloader.stats_cache
 
     import time
     import logging
+
     logger = logging.getLogger(__name__)
 
     start_time = time.time()
 
     # ========== 判断是否需要全量统计 ==========
-    should_full_sync = (
-            force_full_sync or
-            cache.should_full_sync()
-    )
+    should_full_sync = force_full_sync or cache.should_full_sync()
 
-    sync_mode = 'full' if should_full_sync else 'incremental'
+    sync_mode = "full" if should_full_sync else "incremental"
 
     # 确定日志前缀（区分下载器类型）
     log_prefix = "[qb-统计]" if downloader_type == 0 else "[tr-统计]"
@@ -1747,7 +1772,7 @@ async def update_torrent_stats_smart(
                     TorrentFetcher.get_transmission_torrents_batch,
                     client,
                     torrent_hashes=None,  # 全量
-                    batch_size=200  # 每批200个
+                    batch_size=200,  # 每批200个
                 )
 
                 # 更新缓存
@@ -1770,8 +1795,7 @@ async def update_torrent_stats_smart(
                 try:
                     # Transmission 特性：获取最近活动的种子
                     active_torrents, removed_ids = await asyncio.to_thread(
-                        TorrentFetcher.get_transmission_recently_active,
-                        client
+                        TorrentFetcher.get_transmission_recently_active, client
                     )
 
                     if active_torrents:
@@ -1789,14 +1813,9 @@ async def update_torrent_stats_smart(
 
                 except Exception as e:
                     # 保留WARNING日志
-                    logger.warning(
-                        f"{log_prefix} {nickname}：增量统计失败，降级为全量：{e}"
-                    )
+                    logger.warning(f"{log_prefix} {nickname}：增量统计失败，降级为全量：{e}")
                     # 降级为全量统计
-                    return await update_torrent_stats_smart(
-                        downloader,
-                        force_full_sync=True
-                    )
+                    return await update_torrent_stats_smart(downloader, force_full_sync=True)
 
         # ========== qBittorrent 统计逻辑 ==========
         elif downloader_type == 0:  # qBittorrent
@@ -1815,7 +1834,7 @@ async def update_torrent_stats_smart(
                         client,
                         status_filter=None,  # 不过滤状态，获取所有种子
                         offset=offset,
-                        limit=batch_size
+                        limit=batch_size,
                     )
 
                     if not batch:
@@ -1848,8 +1867,8 @@ async def update_torrent_stats_smart(
                 active = await asyncio.to_thread(
                     TorrentFetcher.get_qbittorrent_torrents_batch,
                     client,
-                    status_filter='active',  # 只获取活动的
-                    limit=500  # 扩大限制
+                    status_filter="active",  # 只获取活动的
+                    limit=500,  # 扩大限制
                 )
 
                 if active:
@@ -1869,17 +1888,18 @@ async def update_torrent_stats_smart(
         elapsed_total = time.time() - start_time
 
         return {
-            'downloading_count': stats['downloading'],
-            'seeding_count': stats['seeding'],
-            'sync_mode': sync_mode,
-            'elapsed': elapsed_total,
-            'from_cache': False
+            "downloading_count": stats["downloading"],
+            "seeding_count": stats["seeding"],
+            "sync_mode": sync_mode,
+            "elapsed": elapsed_total,
+            "from_cache": False,
         }
 
     except Exception as e:
         # 异常情况
         logger.error(f"{log_prefix} {nickname}：统计失败: {e}")
         import traceback
+
         traceback.print_exc()
 
         # 降级：返回缓存数据
@@ -1887,11 +1907,11 @@ async def update_torrent_stats_smart(
         elapsed_total = time.time() - start_time
 
         return {
-            'downloading_count': stats['downloading'],
-            'seeding_count': stats['seeding'],
-            'sync_mode': 'cache',
-            'elapsed': elapsed_total,
-            'from_cache': True
+            "downloading_count": stats["downloading"],
+            "seeding_count": stats["seeding"],
+            "sync_mode": "cache",
+            "elapsed": elapsed_total,
+            "from_cache": True,
         }
 
 
@@ -1912,8 +1932,8 @@ async def _get_qbittorrent_status(downloader: Any, update_cold: bool = False) ->
         transfer_info = await asyncio.to_thread(client.transfer_info)
 
         result = {
-            'upload_speed': transfer_info.get('up_info_speed', 0) / 1024,  # 转换为 KB/s
-            'download_speed': transfer_info.get('dl_info_speed', 0) / 1024  # 转换为 KB/s
+            "upload_speed": transfer_info.get("up_info_speed", 0) / 1024,  # 转换为 KB/s
+            "download_speed": transfer_info.get("dl_info_speed", 0) / 1024,  # 转换为 KB/s
         }
 
         # 仅在需要时获取冷数据（使用智能更新）
@@ -1921,8 +1941,8 @@ async def _get_qbittorrent_status(downloader: Any, update_cold: bool = False) ->
             # 使用智能统计更新（分片 + 增量/全量）
             stats_result = await update_torrent_stats_smart(downloader, force_full_sync=False)
 
-            result['downloading_count'] = stats_result.get('downloading_count', 0)
-            result['seeding_count'] = stats_result.get('seeding_count', 0)
+            result["downloading_count"] = stats_result.get("downloading_count", 0)
+            result["seeding_count"] = stats_result.get("seeding_count", 0)
 
             # 添加调试信息
             logger.debug(
@@ -1934,14 +1954,15 @@ async def _get_qbittorrent_status(downloader: Any, update_cold: bool = False) ->
             )
         else:
             # 不更新冷数据时，返回默认值0（或者可以返回上次的值）
-            result['downloading_count'] = 0
-            result['seeding_count'] = 0
+            result["downloading_count"] = 0
+            result["seeding_count"] = 0
 
         return result
 
     except Exception as e:
         print(f"[qBittorrent状态] 获取失败: {e}")
         import traceback
+
         traceback.print_exc()
         return {}
 
@@ -1963,8 +1984,8 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
         session_stats = await asyncio.to_thread(client.session_stats)
 
         result = {
-            'upload_speed': session_stats.upload_speed / 1024,  # 转换为 KB/s
-            'download_speed': session_stats.download_speed / 1024  # 转换为 KB/s
+            "upload_speed": session_stats.upload_speed / 1024,  # 转换为 KB/s
+            "download_speed": session_stats.download_speed / 1024,  # 转换为 KB/s
         }
 
         # 仅在需要时获取冷数据（使用智能更新）
@@ -1972,8 +1993,8 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
             # 使用智能统计更新（分片 + 增量/全量）
             stats_result = await update_torrent_stats_smart(downloader, force_full_sync=False)
 
-            result['downloading_count'] = stats_result.get('downloading_count', 0)
-            result['seeding_count'] = stats_result.get('seeding_count', 0)
+            result["downloading_count"] = stats_result.get("downloading_count", 0)
+            result["seeding_count"] = stats_result.get("seeding_count", 0)
 
             # 添加调试信息
             logger.debug(
@@ -1985,13 +2006,66 @@ async def _get_transmission_status(downloader: Any, update_cold: bool = False) -
             )
         else:
             # 不更新冷数据时，返回默认值0（或者可以返回上次的值）
-            result['downloading_count'] = 0
-            result['seeding_count'] = 0
+            result["downloading_count"] = 0
+            result["seeding_count"] = 0
 
         return result
 
     except Exception as e:
         print(f"[Transmission状态] 获取失败: {e}")
         import traceback
+
         traceback.print_exc()
         return {}
+
+
+def encrypt_plaintext_downloader_passwords() -> int:
+    """启动期幂等加密钩子：把 bt_downloaders 中遗留的明文密码加密回写。
+
+    背景：add 端点历史缺陷明文落库（update 却加密），decrypt 对非 sm4:
+    前缀静默透传使明文/密文混存不可见。本钩子在每次启动时把非空且非
+    sm4:/encrypted: 前缀的密码行用当前密钥加密——密钥轮换后用户重录的
+    明文也会在下次启动自动加密（自愈闭环）。
+
+    密钥不可用时跳过并告警，绝不阻塞启动（可用性优先，新写入路径已
+    fail-closed 不会产生新的明文）。
+
+    Returns:
+        本次加密的行数
+    """
+    from app.downloader.models import BtDownloaders
+    from app.utils.encryption import encrypt_password
+
+    encrypted_count = 0
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(BtDownloaders)
+            .filter(BtDownloaders.password.isnot(None))
+            .filter(BtDownloaders.password != "")
+            .all()
+        )
+        for row in rows:
+            password = row.password or ""
+            if password.startswith(("sm4:", "encrypted:")):
+                continue
+            try:
+                row.password = encrypt_password(password)
+                encrypted_count += 1
+            except RuntimeError:
+                # 密钥缺失/长度非法：整体跳过（每行都会同样失败），下次启动重试
+                logger.warning("SM4 密钥不可用，跳过明文下载器密码加密（下次启动重试）")
+                db.rollback()
+                return 0
+        if encrypted_count:
+            db.commit()
+            logger.info(f"启动钩子：已加密 {encrypted_count} 条明文下载器密码")
+    except Exception as e:
+        logger.warning(f"明文下载器密码加密钩子未完成（下次启动重试）: {e}")
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+    return encrypted_count

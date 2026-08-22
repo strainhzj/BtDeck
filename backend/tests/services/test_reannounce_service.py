@@ -10,11 +10,30 @@ ReannounceService 的单元测试
 - SDK 调用异常处理
 - 下载器类型不支持
 - 大批量种子分批验证
+- 【回归】Transmission torrent_id 必须转 int（修复 "is not valid torrent id" 报错）
 """
+
+import re
 
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch, call
 from datetime import datetime
+
+
+@pytest.fixture(autouse=True)
+def _patch_call_downloader_api(monkeypatch):
+    """本文件测试直接执行 func，不经过真实 runtime 单例（与 test_torrent_speed_regression
+    同款约定，见其 456 行注释）：同一 pytest 进程中先跑的 API 测试用 TestClient 触发
+    lifespan，会把全局单例 downloader_api_runtime 的 executor shutdown（不可逆），
+    导致本文件调用真实 call_downloader_api 报 cannot schedule new futures after shutdown。
+    直接执行 func 保持异常语义（client 抛什么异常就透传什么），与迁移前行为一致。
+    """
+    from app.services import reannounce_service as _rs
+
+    async def _direct_call(downloader_id, lane, func, args=(), kwargs=None, *, timeout=None, operation=""):
+        return func(*args, **(kwargs or {}))
+
+    monkeypatch.setattr(_rs, "call_downloader_api", _direct_call)
 
 
 # ==================== 辅助工具 ====================
@@ -80,6 +99,51 @@ def make_torrents_batch(count, start_index=0, downloader_id="dl-001"):
 
 # ==================== Fixtures ====================
 
+# 40 位十六进制（v1 BTIH），用于校验 str 类型 id 是否为合法 hash
+_HEX40_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+
+
+class _TypeCheckingTransmissionClient:
+    """模拟真实 transmission_rpc.Client 的 id 校验行为（回归测试专用）。
+
+    transmission_rpc 的 _parse_torrent_id 规则：
+    - int 且 >= 0 → 通过（数字 ID）
+    - str 且正好 40 位 hex → 通过（sha1 hash）
+    - 其他 → 抛 ValueError "is not valid torrent id, should be a hex str for sha1 hash"
+
+    本库 torrent_info.torrent_id 列存为 text 形式的数字（如 '103'），
+    服务层必须用 _to_transmission_id 转成 int 才能通过该校验。
+    若有人改回直接传字符串 id，此 fake client 会抛出与生产环境一致的 ValueError，
+    使回归测试在 client 层即失败（而非靠 isinstance 间接断言），收敛性最强。
+    """
+
+    def __init__(self):
+        self.calls = []  # 记录每次 reannounce_torrent 调用传入的 ids
+
+    @staticmethod
+    def _parse(tid):
+        # bool 是 int 子类，但不是合法 torrent id，先排除
+        if isinstance(tid, bool):
+            raise ValueError(f"{tid} is not valid torrent id")
+        if isinstance(tid, int):
+            if tid < 0:
+                raise ValueError(f"{tid} is not valid torrent id")
+            return tid
+        if isinstance(tid, str):
+            if _HEX40_RE.match(tid):
+                return tid
+            raise ValueError(
+                f"{tid} is not valid torrent id, should be a hex str for sha1 hash"
+            )
+        raise ValueError(f"{tid} is not valid torrent id")
+
+    def reannounce_torrent(self, ids):
+        # 逐个校验（与 transmission_rpc 的批量解析一致）
+        for tid in ids:
+            self._parse(tid)  # 抛出即代表回归：传入了字符串数字 id
+        self.calls.append(list(ids))
+
+
 @pytest.fixture
 def mock_db():
     """Mock 数据库 Session"""
@@ -109,6 +173,18 @@ def tr_downloader():
     """Transmission 下载器"""
     dl = make_downloader(downloader_id="dl-tr", downloader_type=1, nickname="Transmission")
     dl.client.reannounce_torrent = MagicMock()
+    return dl
+
+
+@pytest.fixture
+def strict_tr_downloader():
+    """Transmission 下载器，client 会真实校验 id 类型（复现 transmission_rpc._parse_torrent_id）。
+
+    与 tr_downloader（MagicMock，不校验）的区别：若服务层漏转 int 而传入字符串数字 id，
+    此 client 会抛 ValueError "is not valid torrent id"，使回归在 client 层失败。
+    """
+    dl = make_downloader(downloader_id="dl-tr", downloader_type=1, nickname="Transmission")
+    dl.client = _TypeCheckingTransmissionClient()
     return dl
 
 
@@ -164,8 +240,10 @@ class TestExecuteReannounceBasic:
         call_args = tr_downloader.client.reannounce_torrent.call_args
         ids = call_args[0][0] if call_args[0] else call_args.kwargs.get("ids", [])
         assert len(ids) == 10
-        # 确保 id 是字符串形式的数字
-        assert ids[0] == "0"
+        # transmission_rpc 要求 int 或 40 位 hex；本库 torrent_id 存为 text 形式的数字，
+        # 服务层已转 int，故此处断言为整数 0
+        assert ids[0] == 0
+        assert isinstance(ids[0], int)
 
     @pytest.mark.asyncio
     async def test_empty_torrent_list(self, mock_db, mock_app, qb_downloader):
@@ -561,3 +639,75 @@ class TestEdgeCases:
         assert result["success_count"] == 10000
         # 10000 / 500 = 20 批次
         assert qb_downloader.client.torrents_reannounce.call_count == 20
+
+
+# ==================== 回归测试：Transmission torrent_id 必须转 int ====================
+
+class TestTransmissionIdTypeRegression:
+    """【回归】问题1：Transmission 分支必须把 torrent_id(text) 转成 int。
+
+    根因：torrent_info.torrent_id 列存为 text 形式的数字（如 '103'），而 transmission_rpc 的
+    _parse_torrent_id 只接受 int(>=0) 或 40 位 hex。直接传字符串数字会抛
+    "torrent ids 103 is not valid torrent id, should be a hex str for sha1 hash"。
+
+    本测试用 _TypeCheckingTransmissionClient（真实复现该校验）替代 MagicMock，
+    让"漏转 int"的回归在 client 层即抛错，而非靠 isinstance 间接断言。
+    """
+
+    @pytest.mark.asyncio
+    async def test_transmission_ids_are_int_not_str(self, mock_app, strict_tr_downloader):
+        """少量种子：所有传给 client 的 id 必须是 int，不能是字符串数字。
+
+        收敛点：若服务层把 _to_transmission_id 改回直接取 r.torrent_id（字符串 '0'..'9'），
+        _TypeCheckingTransmissionClient 会抛 ValueError "is not valid torrent id"，测试报红。
+        """
+        mock_app.state.store.get_snapshot_sync.return_value = [strict_tr_downloader]
+        torrents = make_torrents_batch(10, downloader_id="dl-tr")  # torrent_id="0".."9"
+
+        from app.services.reannounce_service import execute_reannounce
+
+        result = await execute_reannounce(
+            app=mock_app,
+            downloader_id="dl-tr",
+            torrent_records=torrents,
+            trigger_type="manual",
+        )
+
+        # fake client 未抛异常 ⇒ 所有 id 都是合法 int
+        assert result["success_count"] == 10
+        assert result["failed_count"] == 0
+        assert len(strict_tr_downloader.client.calls) == 1
+        # 收敛锚点：每个 id 必须是 int（不是字符串数字）
+        ids = strict_tr_downloader.client.calls[0]
+        assert len(ids) == 10
+        for tid in ids:
+            assert isinstance(tid, int), "id 必须是 int（torrent_id 列存 text，需转换）"
+            assert tid >= 0, "id 必须非负"
+
+    @pytest.mark.asyncio
+    async def test_transmission_batching_all_ids_valid(self, mock_app, strict_tr_downloader):
+        """大批量分批：补强 test_transmission_batching_with_ids（原测试只查数量不查类型）。
+
+        收敛点：750 个种子分 2 批，每批每个 id 都必须通过 fake client 的类型校验。
+        若任一 id 是字符串数字，client 抛 ValueError，测试报红。
+        """
+        mock_app.state.store.get_snapshot_sync.return_value = [strict_tr_downloader]
+        torrents = make_torrents_batch(750, downloader_id="dl-tr")
+
+        from app.services.reannounce_service import execute_reannounce
+
+        result = await execute_reannounce(
+            app=mock_app,
+            downloader_id="dl-tr",
+            torrent_records=torrents,
+            trigger_type="scheduled",
+        )
+
+        assert result["success_count"] == 750
+        # 2 批，且 750 个 id 全部通过校验（fake client 未抛异常即证明）
+        assert len(strict_tr_downloader.client.calls) == 2
+        total = sum(len(c) for c in strict_tr_downloader.client.calls)
+        assert total == 750
+        for batch_ids in strict_tr_downloader.client.calls:
+            assert all(isinstance(tid, int) for tid in batch_ids), \
+                "每批所有 id 必须是 int（批量场景同样需转换）"

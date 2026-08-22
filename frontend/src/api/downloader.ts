@@ -1,4 +1,15 @@
 import request from '@/utils/request'
+import type { ApiEnvelope } from '@/utils/request'
+import type {
+  ApplyTemplateRequest,
+  DownloaderCapabilities,
+  DownloaderSettings,
+  PathMappingConfig,
+  PathMappingTestResponse,
+  SettingTemplate,
+  TemplateDetailResponse,
+  TemplateListResponse
+} from '@/views/downloader/types'
 
 export const getList = (data?: any) =>
   request({
@@ -72,7 +83,7 @@ export const syncDownloader = (downloaderId: string) =>
  * 获取下载器设置
  */
 export const getDownloaderSettings = (downloaderId: string) =>
-  request({
+  request<ApiEnvelope<DownloaderSettings>>({
     url: `/downloaders/${downloaderId}/settings`,
     method: 'get'
   })
@@ -81,7 +92,7 @@ export const getDownloaderSettings = (downloaderId: string) =>
  * 更新下载器设置
  */
 export const updateDownloaderSettings = (downloaderId: string, data: any) =>
-  request({
+  request<ApiEnvelope<DownloaderSettings>>({
     url: `/downloaders/${downloaderId}/settings`,
     method: 'put',
     data
@@ -110,7 +121,7 @@ export const testDownloaderSettings = (downloaderId: string, data?: {
   downloader_type: number
   is_ssl?: string
 }) =>
-  request({
+  request<ApiEnvelope<unknown>>({
     url: `/downloaders/${downloaderId}/settings/test`,
     method: 'post',
     data
@@ -122,7 +133,7 @@ export const testDownloaderSettings = (downloaderId: string, data?: {
  * @description 将保存的配置(速度限制、高级设置等)应用到下载器客户端
  */
 export const applyDownloaderSettings = (downloaderId: string) =>
-  request({
+  request<ApiEnvelope<DownloaderSettings>>({
     url: `/downloaders/${downloaderId}/settings/apply`,
     method: 'post'
   })
@@ -131,7 +142,7 @@ export const applyDownloaderSettings = (downloaderId: string) =>
  * 获取下载器能力信息
  */
 export const getDownloaderCapabilities = (downloaderId: string) =>
-  request({
+  request<ApiEnvelope<DownloaderCapabilities>>({
     url: `/downloaders/${downloaderId}/capabilities`,
     method: 'get'
   })
@@ -144,7 +155,7 @@ export const getDownloaderCapabilities = (downloaderId: string) =>
  * 获取模板列表
  */
 export const getTemplateList = (params?: any) =>
-  request({
+  request<TemplateListResponse>({
     url: '/setting-templates',
     method: 'get',
     params
@@ -154,7 +165,7 @@ export const getTemplateList = (params?: any) =>
  * 获取模板详情
  */
 export const getTemplateDetail = (templateId: string) =>
-  request({
+  request<TemplateDetailResponse>({
     url: `/setting-templates/${templateId}`,
     method: 'get'
   })
@@ -163,7 +174,7 @@ export const getTemplateDetail = (templateId: string) =>
  * 创建模板
  */
 export const createTemplate = (data: any) =>
-  request({
+  request<ApiEnvelope<SettingTemplate>>({
     url: '/setting-templates',
     method: 'post',
     data
@@ -173,7 +184,7 @@ export const createTemplate = (data: any) =>
  * 更新模板
  */
 export const updateTemplate = (templateId: string, data: any) =>
-  request({
+  request<ApiEnvelope<SettingTemplate>>({
     url: `/setting-templates/${templateId}`,
     method: 'put',
     data
@@ -183,19 +194,29 @@ export const updateTemplate = (templateId: string, data: any) =>
  * 删除模板
  */
 export const deleteTemplate = (templateId: string) =>
-  request({
+  request<ApiEnvelope<unknown>>({
     url: `/setting-templates/${templateId}`,
     method: 'delete'
   })
 
 /**
  * 应用模板到下载器
+ *
+ * 对齐后端 POST /setting-templates/{template_id}/apply/{downloader_id}：
+ * - template_id、downloader_id 进 URL path 参数
+ * - body 只传 apply_path_mapping（是否同时应用路径映射）
+ *
+ * 审计依据：backend/docs/style-and-contract-audit.md 第5节 apply 双重不匹配。
  */
-export const applyTemplate = (templateId: string, data: ApplyTemplateRequest) =>
-  request({
-    url: `/setting-templates/${templateId}/apply`,
+export const applyTemplate = (
+  templateId: string,
+  downloaderId: string,
+  options?: ApplyTemplateRequest
+) =>
+  request<ApiEnvelope<DownloaderSettings>>({
+    url: `/setting-templates/${templateId}/apply/${downloaderId}`,
     method: 'post',
-    data
+    data: options ?? {}
   })
 
 // ============================================================
@@ -214,8 +235,8 @@ export const getPathMappings = (downloaderId: string) =>
 /**
  * 测试路径映射配置
  */
-export const testPathMapping = (downloaderId: string, pathMapping: any) =>
-  request({
+export const testPathMapping = (downloaderId: string, pathMapping: PathMappingConfig) =>
+  request<ApiEnvelope<PathMappingTestResponse>>({
     url: `/downloader/${downloaderId}/path-mapping/test`,
     method: 'post',
     data: { path_mapping: pathMapping }

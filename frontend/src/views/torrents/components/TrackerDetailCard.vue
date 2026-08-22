@@ -1,395 +1,379 @@
 <template>
-  <div class="tracker-detail-card">
+  <section
+    class="tracker-detail-card"
+    :class="[
+      `tracker-detail-card--${layout}`,
+      {'is-open': visible}
+    ]"
+  >
     <div class="tracker-detail-header">
-      <div class="header-left">
-        <i class="el-icon-location"></i>
-        <span>Tracker详情</span>
+      <h3 class="tracker-title">
+        <LucideIcon name="bar-chart-3" :size="14" />
+        Tracker详情 - {{ torrentName }}
+      </h3>
+      <button class="tracker-close" @click="handleClose">
+        <LucideIcon name="x" :size="16" />
+      </button>
+    </div>
+
+    <div class="tracker-detail-tabs">
+      <button
+        v-for="tab in tabs"
+        :key="tab.value"
+        class="tracker-tab-btn"
+        :class="{active: activeTab === tab.value}"
+        @click="handleTabChange(tab.value)"
+      >
+        {{ tab.label }}
+      </button>
+    </div>
+
+    <div class="tracker-detail-content">
+      <template v-if="activeTab === 'tracker'">
+        <el-alert
+          v-if="errorReason"
+          class="torrent-error-alert"
+          title="种子错误原因"
+          :description="errorReason"
+          type="error"
+          show-icon
+          :closable="false"
+        />
+        <div class="tracker-table-wrapper">
+          <table class="tracker-table tracker-table-detail">
+            <thead>
+              <tr>
+                <th>Tracker名称</th>
+                <th style="width: 80px;">Announce</th>
+                <th>Announce信息</th>
+                <th style="width: 80px;">Scrape</th>
+                <th style="width: 60px;" class="tracker-sticky-col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="(tracker, index) in trackerInfo"
+                :key="index"
+              >
+                <td>
+                  <div>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</div>
+                  <div
+                    class="tracker-url-mini"
+                    :title="tracker.tracker_url || tracker.trackerUrl || '-'"
+                  >{{ tracker.tracker_url || tracker.trackerUrl || '-' }}</div>
+                </td>
+                <td>
+                  <span :class="trackerStatusClass(getAnnounceStatus(tracker))">
+                    <template v-if="trackerAnnounceSuccess(getAnnounceStatus(tracker))">
+                      ✓ 工作
+                    </template>
+                    <template v-else>
+                      ✗ {{ getAnnounceStatus(tracker) || '失败' }}
+                    </template>
+                  </span>
+                </td>
+                <td>{{ tracker.last_announce_msg || tracker.lastAnnounceMsg || '-' }}</td>
+                <td>
+                  <span :class="trackerStatusClass(getScrapeStatus(tracker))">
+                    <template v-if="trackerAnnounceSuccess(getScrapeStatus(tracker))">
+                      ✓ 工作
+                    </template>
+                    <template v-else>
+                      ✗ {{ getScrapeStatus(tracker) || '失败' }}
+                    </template>
+                  </span>
+                </td>
+                <td class="tracker-sticky-col">
+                  <el-button
+                    type="text"
+                    size="mini"
+                    :loading="tracker.reannouncing"
+                    @click="handleTrackerReannounce(tracker, index)"
+                  >汇报</el-button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </template>
+
+      <div v-else-if="activeTab === 'files'" class="tracker-placeholder">
+        文件列表功能开发中...
+      </div>
+
+      <div v-else-if="activeTab === 'peers'" class="tracker-placeholder">
+        Peers 信息功能开发中...
       </div>
     </div>
-    <div class="tracker-detail-content">
-      <!-- Tracker列表表格 -->
-      <el-table
-        v-loading="loading"
-        :data="trackerTableData"
-        border
-        fit
-        stripe
-        style="width: 100%"
-        :show-header="true"
-        :empty-text="'暂无Tracker数据'"
-      >
-        <el-table-column
-          label="Tracker名称"
-          min-width="120"
-          show-overflow-tooltip
-        >
-          <template slot-scope="{row}">
-            <span>{{ row.trackerName || '未知' }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          label="Tracker地址"
-          min-width="200"
-          show-overflow-tooltip
-        >
-          <template slot-scope="{row}">
-            <span :title="row.trackerUrl">{{ row.trackerUrl || '-' }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          label="Announce状态"
-          width="100"
-          align="center"
-        >
-          <template slot-scope="{row}">
-            <el-tag
-              :type="getTrackerTagType(row.lastAnnounceSucceeded)"
-              size="mini"
-            >
-              {{ getTrackerStatusText(row.lastAnnounceSucceeded) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          label="Announce信息"
-          min-width="150"
-          show-overflow-tooltip
-        >
-          <template slot-scope="{row}">
-            <span :title="row.lastAnnounceMsg">{{ row.lastAnnounceMsg || '-' }}</span>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          label="Tracker状态"
-          width="100"
-          align="center"
-        >
-          <template slot-scope="{row}">
-            <el-tag
-              :type="getTrackerStatusTagType(row.trackerStatus)"
-              size="mini"
-            >
-              {{ getTrackerStatusDisplayText(row.trackerStatus) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          label="Scrape状态"
-          width="100"
-          align="center"
-        >
-          <template slot-scope="{row}">
-            <el-tag
-              :type="getTrackerTagType(row.lastScrapeSucceeded)"
-              size="mini"
-            >
-              {{ getTrackerStatusText(row.lastScrapeSucceeded) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-
-        <el-table-column
-          label="Scrape信息"
-          min-width="150"
-          show-overflow-tooltip
-        >
-          <template slot-scope="{row}">
-            <span :title="row.lastScrapeMsg">{{ row.lastScrapeMsg || '-' }}</span>
-          </template>
-        </el-table-column>
-      </el-table>
-    </div>
-
-    <!-- 浮动关闭按钮 -->
-    <div class="floating-close-button" @click="handleClose" title="关闭">
-      <i class="el-icon-close"></i>
-    </div>
-  </div>
+  </section>
 </template>
 
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
-import { TrackerInfo } from '@/api/torrents'
+import LucideIcon from '@/components/common/LucideIcon.vue'
+import type { TrackerInfo } from '@/api/torrents'
+import {
+  isTrackerAnnounceSuccess,
+  getTrackerStatusClass
+} from '../utils/torrentBatch'
+
+export interface TrackerDetailRow extends TrackerInfo {
+  reannouncing?: boolean
+}
+
+export type TrackerDetailTabValue = 'tracker' | 'files' | 'peers'
+
+export interface TrackerDetailTab {
+  label: string
+  value: TrackerDetailTabValue
+}
+
+export type TrackerDetailLayout = 'list' | 'traditional'
+
+export const DEFAULT_TRACKER_DETAIL_TABS: TrackerDetailTab[] = [
+  { label: 'Tracker', value: 'tracker' },
+  { label: '文件', value: 'files' },
+  { label: 'Peers', value: 'peers' }
+]
 
 @Component({
-  name: 'TrackerDetailCard'
+  name: 'TrackerDetailCard',
+  components: {
+    LucideIcon
+  }
 })
 export default class TrackerDetailCard extends Vue {
-  @Prop({ type: Array, default: () => [] }) trackerInfo!: TrackerInfo[]
-  @Prop({ type: Boolean, default: false }) loading!: boolean
+  @Prop({ type: Boolean, default: false }) visible!: boolean
+  @Prop({ type: String, default: '' }) torrentName!: string
+  @Prop({ type: String, default: 'list' }) layout!: TrackerDetailLayout
+  @Prop({ type: String, default: 'tracker' }) activeTab!: TrackerDetailTabValue
+  @Prop({ type: Array, default: () => DEFAULT_TRACKER_DETAIL_TABS }) tabs!: TrackerDetailTab[]
+  @Prop({ type: Array, default: () => [] }) trackerInfo!: TrackerDetailRow[]
+  @Prop({ type: String, default: '' }) errorReason!: string
 
-  // 计算属性：转换数据格式为表格所需格式
-  get trackerTableData() {
-    if (!this.trackerInfo) {
-      return []
-    }
-
-    // 如果已经是数组，直接使用
-    if (Array.isArray(this.trackerInfo)) {
-      return this.trackerInfo.map(tracker => this.normalizeTrackerData(tracker))
-    }
-
-    // 如果是对象，转换为数组
-    if (typeof this.trackerInfo === 'object') {
-      return [this.trackerInfo].map(tracker => this.normalizeTrackerData(tracker))
-    }
-
-    return []
+  private getAnnounceStatus(tracker: TrackerDetailRow): string | undefined {
+    return tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded
   }
 
-  // 标准化tracker数据字段
-  private normalizeTrackerData(tracker: any) {
-    return {
-      trackerName: tracker.trackerName || tracker.tracker_name || '未知',
-      trackerUrl: tracker.trackerUrl || tracker.tracker_url || '',
-      // 原有announce/scrape状态（保持不变，不被tracker状态覆盖）
-      lastAnnounceSucceeded: tracker.lastAnnounceSucceeded || tracker.last_announce_succeeded || '',
-      lastAnnounceMsg: tracker.lastAnnounceMsg || tracker.last_announce_msg || '',
-      lastScrapeSucceeded: tracker.lastScrapeSucceeded || tracker.last_scrape_succeeded || '',
-      lastScrapeMsg: tracker.lastScrapeMsg || tracker.last_scrape_msg || '',
-      // 新增：tracker状态（根据关键词看板判断，独立于announce/scrape状态）
-      trackerStatus: tracker.trackerStatus || tracker.tracker_status || 'unknown',
-      // 新增字段
-      trackerHost: tracker.trackerHost || tracker.tracker_host || '',
-      seederCount: tracker.seederCount ?? tracker.seeder_count ?? null,
-      leecherCount: tracker.leecherCount ?? tracker.leecher_count ?? null,
-      downloadCount: tracker.downloadCount ?? tracker.download_count ?? null
-    }
+  private getScrapeStatus(tracker: TrackerDetailRow): string | undefined {
+    return tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded
   }
 
-  /**
-   * 根据tracker状态返回Element UI的tag类型
-   *
-   * 状态分类（基于 tracker_status.py 枚举的中文值）：
-   * - 成功状态：工作中 → success（绿色✓）
-   * - 失败状态：工作失败、已禁用、超时、已清除 → danger（红色✗）
-   * - 中性状态：未联系、发送中 → info（灰色，无特殊标记）
-   *
-   * @param status tracker状态中文文本
-   * @returns Element UI的tag类型
-   */
-  getTrackerTagType(status: string | number): string {
-    // 空值处理
-    if (status === null || status === undefined || status === '') {
-      return 'info'
-    }
-
-    // 转换为字符串
-    const statusStr = String(status)
-
-    // 成功状态：工作中
-    if (statusStr === '工作中') {
-      return 'success'
-    }
-
-    // 失败状态：工作失败、已禁用、超时、已清除
-    if (['工作失败', '已禁用', '超时', '已清除'].includes(statusStr)) {
-      return 'danger'
-    }
-
-    // 中性状态：未联系、发送中 → 无特殊标记
-    return 'info'
+  private trackerAnnounceSuccess(status: string | boolean | undefined | null): boolean {
+    return isTrackerAnnounceSuccess(status)
   }
 
-  /**
-   * 根据tracker状态返回可读文本
-   * 后端已返回中文枚举，直接显示即可
-   *
-   * @param status tracker状态中文文本
-   * @returns 可读文本
-   */
-  getTrackerStatusText(status: string | number): string {
-    // 空值处理
-    if (status === null || status === undefined || status === '') {
-      return '未知'
-    }
-
-    // 直接返回后端传来的中文状态
-    return String(status)
+  private trackerStatusClass(status: string | boolean | undefined | null): string {
+    return getTrackerStatusClass(status)
   }
 
-  /**
-   * 根据tracker状态（关键词看板判断）返回Element UI的tag类型
-   * 状态值: normal/error/unknown
-   */
-  getTrackerStatusTagType(status: string): string {
-    if (!status || status === 'unknown') {
-      return 'info'
-    }
-
-    // 记录意外的状态值（开发环境）
-    if (process.env.NODE_ENV === 'development') {
-      if (!['normal', 'error', 'unknown'].includes(status)) {
-        console.warn(`意外的tracker状态值: ${status}`)
-      }
-    }
-
-    switch (status) {
-      case 'normal':
-        return 'success'
-      case 'error':
-        return 'danger'
-      default:
-        return 'info'
-    }
+  private handleTabChange(tab: TrackerDetailTabValue) {
+    this.$emit('update:activeTab', tab)
   }
 
-  /**
-   * 根据tracker状态（关键词看板判断）返回可读文本
-   * 状态值: normal/error/unknown
-   */
-  getTrackerStatusDisplayText(status: string): string {
-    if (!status) {
-      return '未知'
-    }
-
-    switch (status) {
-      case 'normal':
-        return '正常'
-      case 'error':
-        return '失败'
-      case 'unknown':
-      default:
-        return '未知'
-    }
-  }
-
-  // 关闭卡片
-  handleClose() {
+  private handleClose() {
     this.$emit('close')
+  }
+
+  private handleTrackerReannounce(tracker: TrackerDetailRow, index: number) {
+    this.$emit('reannounce', tracker, index)
   }
 }
 </script>
 
-<style scoped>
+<style lang="scss" scoped>
+@import '@/styles/tracker-table';
+
 .tracker-detail-card {
-  background: #fff;
-  border: 1px solid #e4e7ed;
-  border-radius: 6px;
-  margin: 10px 0;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  position: relative;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--color-bg-primary);
+  border: 1px solid transparent;
+  border-left: 4px solid transparent;
+  border-radius: var(--radius-lg);
+  box-shadow: none;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  visibility: hidden;
+  transition:
+    height 0.2s ease,
+    margin 0.2s ease,
+    opacity 0.2s ease,
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    visibility 0s linear 0.2s;
+
+  &.is-open {
+    border-color: var(--color-border-primary);
+    border-left-color: var(--color-primary);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0);
+    visibility: visible;
+    transition-delay: 0s;
+  }
+
+  &--list {
+    position: relative;
+    height: 0;
+    margin-top: 0;
+    flex-shrink: 0;
+  }
+
+  &--list.is-open {
+    height: 240px;
+    margin-top: 12px;
+  }
+
+  &--traditional {
+    position: absolute;
+    z-index: 20;
+    left: 8px;
+    right: 8px;
+    bottom: calc(var(--trad-pagination-height) + 8px);
+    height: 0;
+    max-height: calc(100% - var(--trad-pagination-height) - 24px);
+  }
+
+  &--traditional.is-open {
+    height: 240px;
+  }
 }
 
 .tracker-detail-header {
   display: flex;
   align-items: center;
-  padding: 12px 16px;
-  border-bottom: 1px solid #ebeef5;
-  background: linear-gradient(135deg, #f5f7fa 0%, #e4e7ed 100%);
-  color: #303133;
-  font-weight: 600;
-  border-radius: 6px 6px 0 0;
+  justify-content: space-between;
+  flex-shrink: 0;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--color-bg-primary);
+  border-bottom: 1px solid var(--color-border-primary);
 }
 
-.tracker-detail-header i {
-  margin-right: 8px;
-  font-size: 16px;
-  color: #409eff;
+.tracker-title {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: var(--color-text-primary);
+  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  .lucide-icon {
+    flex-shrink: 0;
+    margin-right: 6px;
+    color: var(--color-primary);
+  }
+}
+
+.tracker-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 2px 4px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    color: var(--color-text-primary);
+    background: var(--color-bg-tertiary);
+  }
+}
+
+.tracker-detail-tabs {
+  display: flex;
+  gap: 1px;
+  flex-shrink: 0;
+  margin: 0 12px 10px;
+  border-bottom: 1px solid var(--color-border-primary);
+}
+
+.tracker-tab-btn {
+  padding: 5px 10px;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+
+  &:hover {
+    color: var(--color-text-secondary);
+  }
+
+  &.active {
+    color: var(--color-primary);
+    border-bottom-color: var(--color-primary);
+  }
 }
 
 .tracker-detail-content {
-  padding: 16px;
-  max-height: 284px; /* 最大高度300px - header(16px) - padding */
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.torrent-error-alert {
+  flex-shrink: 0;
+  margin-bottom: 10px;
+}
+
+.tracker-table-wrapper {
+  flex: 1;
+  min-height: 0;
+  overflow-x: auto;
   overflow-y: auto;
 }
 
-/* 浮动关闭按钮 */
-.floating-close-button {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 24px;
-  height: 24px;
-  background: #f56c6c;
-  color: #fff;
-  border-radius: 50%;
+.tracker-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  z-index: 10;
-  transition: all 0.3s ease;
-  box-shadow: 0 2px 4px rgba(245, 108, 108, 0.3);
-}
-
-.floating-close-button:hover {
-  background: #f78989;
-  transform: scale(1.1);
-  box-shadow: 0 4px 8px rgba(245, 108, 108, 0.4);
-}
-
-.floating-close-button i {
-  font-size: 12px;
-  margin: 0;
-}
-
-/* Element UI表格样式适配 */
-.tracker-detail-content .el-table {
-  border-radius: 4px;
-  overflow: hidden;
-}
-
-.tracker-detail-content .el-table th {
-  background: #fafafa;
-  color: #606266;
-  font-weight: 600;
-  border-bottom: 1px solid #ebeef5;
-}
-
-.tracker-detail-content .el-table td {
-  border-bottom: 1px solid #ebeef5;
-}
-
-.tracker-detail-content .el-table--border::after,
-.tracker-detail-content .el-table--group::after,
-.tracker-detail-content .el-table::before {
-  background-color: #ebeef5;
-}
-
-/* 状态标签样式 */
-.tracker-detail-content .el-tag--mini {
+  flex: 1;
+  min-height: 0;
+  padding: 20px;
+  color: var(--color-text-tertiary);
   font-size: 11px;
-  padding: 1px 6px;
-  height: 18px;
-  line-height: 16px;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .tracker-detail-content .el-table {
-    font-size: 12px;
-  }
+.tracker-table {
+  @include tracker-table-styles;
 
-  .floating-close-button {
-    width: 28px;
-    height: 28px;
-    top: 8px;
-    right: 8px;
-  }
-
-  .floating-close-button i {
-    font-size: 14px;
+  tbody tr:hover {
+    background: var(--color-bg-hover);
   }
 }
 
-/* 空数据状态样式 */
-.tracker-detail-content .el-table__empty-block {
-  min-height: 120px;
-}
-
-.tracker-detail-content .el-table__empty-text {
-  color: #909399;
-  font-size: 14px;
-}
-
-/* Loading状态优化 */
-.tracker-detail-content .el-loading-mask {
-  border-radius: 4px;
+@media screen and (max-width: 768px) {
+  .tracker-detail-card--list.is-open {
+    position: fixed;
+    z-index: var(--z-index-fixed);
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 180px;
+    margin: 0;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
 }
 </style>

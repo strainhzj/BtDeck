@@ -6,11 +6,21 @@ FROM node:18.20.1-slim
 LABEL maintainer="BTDeck Team"
 LABEL description="BTDeck 前端应用"
 
+# 镜像源参数化（默认空串 = 走官方源，与改造前行为一致）
+# 由 build-and-export-images.bat 通过 --build-arg 注入，构建失败可切换备用源重试
+ARG APT_MIRROR=
+ARG NPM_REGISTRY=
+# 通过 ENV 让所有 npm 命令自动读取 registry（空串时走官方 npmjs.org）
+ENV NPM_CONFIG_REGISTRY=${NPM_REGISTRY}
+
 # 设置工作目录
 WORKDIR /app
 
-# 安装构建依赖（使用阿里云镜像源加速）
-RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debian.sources && \
+# 安装构建依赖
+# 同时替换 deb.debian.org 和 security.debian.org（Bookworm deb822 格式）；APT_MIRROR 为空则跳过
+RUN if [ -n "$APT_MIRROR" ]; then \
+        sed -i "s|deb.debian.org|${APT_MIRROR}|g; s|security.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources; \
+    fi && \
     apt-get update && apt-get install -y --no-install-recommends \
     git \
     python3 \
@@ -24,6 +34,7 @@ ENV PYTHON=/usr/bin/python3
 COPY package*.json ./
 
 # 安装依赖
+# npm registry 由上面的 ENV 自动生效（NPM_REGISTRY 为空时走官方 npmjs.org）
 RUN npm ci --legacy-peer-deps && npm cache clean --force
 
 # 复制项目文件

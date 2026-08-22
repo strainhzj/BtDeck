@@ -4,10 +4,11 @@
 
 提供下载器能力配置的数据库模型，支持持久化存储和查询
 """
-from typing import Any, Optional, Dict
+
+from typing import Any, Dict, Optional
 from datetime import datetime
-from sqlalchemy import Boolean, Column, Integer, String, DateTime, Text, func
-from sqlalchemy.orm import relationship
+from sqlalchemy import Boolean, Integer, String, DateTime, Text, func
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 import json
 
@@ -26,72 +27,60 @@ class DownloaderCapabilities(Base):
     __tablename__ = "downloader_capabilities"
 
     # ========== 主键和外键 ==========
-    id = Column(Integer, primary_key=True, index=True, comment='主键ID')
-    downloader_id = Column(String, nullable=False, unique=True, index=True, comment='下载器ID，关联bt_downloaders表')
-    downloader_setting_id = Column(Integer, nullable=True, index=True, comment='下载器配置ID（可选），关联downloader_settings表')
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True, comment="主键ID")
+    downloader_id: Mapped[str] = mapped_column(
+        String, nullable=False, unique=True, index=True, comment="下载器ID，关联bt_downloaders表"
+    )
+    downloader_setting_id: Mapped[Optional[int]] = mapped_column(
+        Integer, nullable=True, index=True, comment="下载器配置ID（可选），关联downloader_settings表"
+    )
 
     # ========== 核心能力开关 ==========
-    supports_speed_scheduling = Column(
-        Boolean, nullable=False, server_default='0',
-        comment='是否支持分时段限速（应用层实现）'
+    supports_speed_scheduling: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", comment="是否支持分时段限速（应用层实现）"
     )
-    supports_transfer_speed = Column(
-        Boolean, nullable=False, server_default='1',
-        comment='是否支持传输速度控制'
+    supports_transfer_speed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", comment="是否支持传输速度控制"
     )
-    supports_connection_limits = Column(
-        Boolean, nullable=False, server_default='1',
-        comment='是否支持连接限制'
+    supports_connection_limits: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", comment="是否支持连接限制"
     )
-    supports_queue_settings = Column(
-        Boolean, nullable=False, server_default='1',
-        comment='是否支持队列设置'
+    supports_queue_settings: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", comment="是否支持队列设置"
     )
-    supports_download_paths = Column(
-        Boolean, nullable=False, server_default='0',
-        comment='是否支持路径设置（Transmission支持）'
+    supports_download_paths: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", comment="是否支持路径设置（Transmission支持）"
     )
-    supports_port_settings = Column(
-        Boolean, nullable=False, server_default='1',
-        comment='是否支持端口设置'
+    supports_port_settings: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", comment="是否支持端口设置"
     )
-    supports_advanced_settings = Column(
-        Boolean, nullable=False, server_default='1',
-        comment='是否支持高级设置'
+    supports_advanced_settings: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="1", comment="是否支持高级设置"
     )
-    supports_peer_limits = Column(
-        Boolean, nullable=False, server_default='0',
-        comment='是否支持Peer限制'
+    supports_peer_limits: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", comment="是否支持Peer限制"
     )
 
     # ========== 扩展能力配置（JSON格式） ==========
-    extended_capabilities = Column(
-        Text, nullable=True,
-        comment='扩展能力配置（JSON格式），用于存储未来新增的能力开关'
+    extended_capabilities: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, comment="扩展能力配置（JSON格式），用于存储未来新增的能力开关"
     )
 
     # ========== 同步状态 ==========
-    synced_from_downloader = Column(
-        Boolean, nullable=False, server_default='0',
-        comment='是否已从下载器同步过能力'
+    synced_from_downloader: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", comment="是否已从下载器同步过能力"
     )
-    last_sync_at = Column(
-        DateTime, nullable=True,
-        comment='最后一次同步时间'
-    )
-    manual_override = Column(
-        Boolean, nullable=False, server_default='0',
-        comment='是否为用户手动覆盖（手动覆盖后不再自动同步）'
+    last_sync_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="最后一次同步时间")
+    manual_override: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default="0", comment="是否为用户手动覆盖（手动覆盖后不再自动同步）"
     )
 
     # ========== 审计字段 ==========
-    created_at = Column(
-        DateTime, nullable=False, server_default=func.now(),
-        comment='创建时间'
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), comment="创建时间"
     )
-    updated_at = Column(
-        DateTime, nullable=False, server_default=func.now(), onupdate=func.now(),
-        comment='更新时间'
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now(), comment="更新时间"
     )
 
     def __init__(
@@ -109,7 +98,7 @@ class DownloaderCapabilities(Base):
         extended_capabilities: Optional[str] = None,
         synced_from_downloader: bool = False,
         manual_override: bool = False,
-        **kw: Any
+        **kw: Any,
     ):
         """初始化下载器能力配置
 
@@ -203,14 +192,13 @@ class DownloaderCapabilities(Base):
                 capabilities.update(extended)
             except json.JSONDecodeError as e:
                 import logging
+
                 logging.warning(f"解析扩展能力配置失败: {e}")
 
         return capabilities
 
     def update_from_downloader_capabilities(
-        self,
-        downloader_capabilities: Dict[str, bool],
-        force: bool = False
+        self, downloader_capabilities: Dict[str, bool], force: bool = False
     ) -> None:
         """从下载器能力更新配置
 
@@ -225,6 +213,7 @@ class DownloaderCapabilities(Base):
         # 检查是否为手动覆盖
         if self.manual_override and not force:
             import logging
+
             logging.info(f"下载器 {self.downloader_id} 的能力配置为手动覆盖，跳过自动同步")
             return
 

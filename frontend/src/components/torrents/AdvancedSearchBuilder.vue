@@ -2,235 +2,242 @@
   <div class="advanced-search-builder">
     <!-- 搜索条件组列表 -->
     <div class="condition-groups">
-      <div
-        v-for="(group, groupIndex) in conditionGroups"
-        :key="group.id"
-        class="condition-group"
-      >
-        <!-- 组头部 -->
-        <div class="group-header">
-          <div class="group-title">
-            <el-input
-              v-if="group.editing"
-              v-model="group.name"
-              size="mini"
-              style="width: 120px; margin-right: 8px;"
-              @blur="finishEditingGroup(group)"
-              @keyup.enter.native="finishEditingGroup(group)"
-              placeholder="组名称"
-            />
-            <span
-              v-else
-              @dblclick="startEditingGroup(group)"
-              class="group-name"
-              :title="group.name || `条件组 ${groupIndex + 1}`"
-            >
-              {{ group.name || `条件组 ${groupIndex + 1}` }}
-            </span>
-            <el-tag
-              :type="getLogicTagType(group.logic)"
-              size="mini"
-              style="margin-left: 8px;"
-            >
-              {{ group.logic?.toUpperCase() || 'AND' }}
-            </el-tag>
+      <template v-for="(group, groupIndex) in conditionGroups">
+        <div
+          :key="group.id"
+          class="condition-group"
+        >
+          <!-- 组头部 -->
+          <div class="group-header">
+            <div class="group-title">
+              <el-input
+                v-if="group.editing"
+                v-model="group.name"
+                size="mini"
+                style="width: 120px; margin-right: 8px;"
+                @blur="finishEditingGroup(group)"
+                @keyup.enter.native="finishEditingGroup(group)"
+                placeholder="组名称"
+              />
+              <span
+                v-else
+                @dblclick="startEditingGroup(group)"
+                class="group-name"
+                :title="group.name || `条件组 ${groupIndex + 1}`"
+              >
+                {{ group.name || `条件组 ${groupIndex + 1}` }}
+              </span>
+              <el-tag
+                :type="getLogicTagType(group.logic)"
+                size="mini"
+                style="margin-left: 8px;"
+              >
+                {{ (group.logic || 'and').toUpperCase() }}
+              </el-tag>
+            </div>
+            <div class="group-actions">
+              <el-button
+                size="mini"
+                icon="el-icon-edit"
+                @click="startEditingGroup(group)"
+                title="重命名条件组"
+              />
+              <el-dropdown v-if="conditionGroups.length > 1" trigger="click" @command="handleGroupCommand">
+                <el-button size="mini" type="danger">
+                  更多<i class="el-icon-arrow-down el-icon--right"></i>
+                </el-button>
+                <el-dropdown-menu slot="dropdown">
+                  <el-dropdown-item :command="{action: 'delete', index: groupIndex}">
+                    <i class="el-icon-delete"></i> 删除组
+                  </el-dropdown-item>
+                  <el-dropdown-item :command="{action: 'duplicate', index: groupIndex}">
+                    <i class="el-icon-copy-document"></i> 复制组
+                  </el-dropdown-item>
+                  <el-dropdown-item :command="{action: 'clear', index: groupIndex}">
+                    <i class="el-icon-refresh-left"></i> 清空条件
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </el-dropdown>
+            </div>
           </div>
-          <div class="group-actions">
-            <el-button
+
+          <!-- 组内逻辑设置 -->
+          <div class="group-logic-settings">
+            <el-select
+              v-model="group.logic"
               size="mini"
-              icon="el-icon-edit"
-              @click="startEditingGroup(group)"
-              title="重命名条件组"
-            />
+              @change="onGroupLogicChange(group)"
+              style="width: 100px;"
+            >
+              <el-option label="AND (并且)" value="and" />
+              <el-option label="OR (或者)" value="or" />
+            </el-select>
+            <span class="logic-desc">{{ getGroupLogicDescription(group.logic) }}</span>
+          </div>
+
+          <!-- 条件列表 -->
+          <div class="conditions">
+            <div
+              v-for="(condition, conditionIndex) in group.conditions"
+              :key="condition.id"
+              class="condition-item"
+            >
+              <!-- 条件间逻辑连接符 -->
+              <div
+                v-if="conditionIndex > 0"
+                class="condition-logic"
+              >
+                <el-tag
+                  :type="getLogicTagType(group.logic)"
+                  size="mini"
+                  class="logic-tag"
+                >
+                  {{ (group.logic || 'and').toUpperCase() }}
+                </el-tag>
+              </div>
+
+              <!-- 条件内容 -->
+              <div class="condition-content">
+                <!-- 字段选择器 -->
+                <div class="condition-field">
+                  <el-select
+                    v-model="condition.field"
+                    placeholder="选择字段"
+                    size="small"
+                    @change="onFieldChange(condition)"
+                    style="width: 140px;"
+                  >
+                    <el-option-group label="高级信息">
+                      <el-option
+                        v-for="field in advancedFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="基本信息">
+                      <el-option
+                        v-for="field in basicFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="状态信息">
+                      <el-option
+                        v-for="field in statusFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="时间信息">
+                      <el-option
+                        v-for="field in timeFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                    <el-option-group label="比率信息">
+                      <el-option
+                        v-for="field in ratioFields"
+                        :key="field.key"
+                        :label="field.label"
+                        :value="field.key"
+                      />
+                    </el-option-group>
+                  </el-select>
+                </div>
+
+                <!-- 操作符选择器 -->
+                <div class="condition-operator">
+                  <el-select
+                    v-model="condition.operator"
+                    placeholder="选择操作"
+                    size="small"
+                    @change="onOperatorChange(condition)"
+                    style="width: 120px;"
+                    :disabled="!condition.field"
+                  >
+                    <el-option-group
+                      v-for="operatorGroup in getOperatorGroups(condition.field)"
+                      :key="operatorGroup.type"
+                      :label="operatorGroup.label"
+                    >
+                      <el-option
+                        v-for="op in operatorGroup.operators"
+                        :key="op.value"
+                        :label="op.label"
+                        :value="op.value"
+                      />
+                    </el-option-group>
+                  </el-select>
+                </div>
+
+                <!-- 条件值输入 -->
+                <div class="condition-value">
+                  <ConditionValueInput
+                    :field="condition.field"
+                    :operator="condition.operator"
+                    :value="condition.value"
+                    :fieldOptions="getFieldOptions(condition.field)"
+                    @input="val => onConditionValueChange(condition, val)"
+                    @change="val => onConditionValueChange(condition, val)"
+                    style="flex: 1;"
+                  />
+                </div>
+
+                <!-- 排除/包含切换 -->
+                <div class="condition-mode">
+                  <el-radio-group
+                    v-model="condition.mode"
+                    size="small"
+                    @change="onConditionModeChange(condition)"
+                    :disabled="!conditionSupportsExclude(condition)"
+                  >
+                    <el-radio-button label="include">包含</el-radio-button>
+                    <el-radio-button
+                      label="exclude"
+                      :disabled="!conditionSupportsExclude(condition)"
+                    >
+                      排除
+                    </el-radio-button>
+                  </el-radio-group>
+                </div>
+
+                <!-- 删除条件按钮 -->
+                <div class="condition-actions">
+                  <el-button
+                    size="mini"
+                    type="danger"
+                    icon="el-icon-delete"
+                    circle
+                    @click="removeCondition(group, conditionIndex)"
+                    :disabled="group.conditions.length <= 1"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 组内添加条件放在条件列表底部，避免与全局“添加条件组”误触。 -->
+          <div class="add-condition">
             <el-button
-              size="mini"
+              type="primary"
+              size="small"
               icon="el-icon-plus"
               @click="addCondition(group)"
             >
               添加条件
             </el-button>
-            <el-dropdown v-if="conditionGroups.length > 1" trigger="click" @command="handleGroupCommand">
-              <el-button size="mini" type="danger">
-                更多<i class="el-icon-arrow-down el-icon--right"></i>
-              </el-button>
-              <el-dropdown-menu slot="dropdown">
-                <el-dropdown-item :command="{action: 'delete', index: groupIndex}">
-                  <i class="el-icon-delete"></i> 删除组
-                </el-dropdown-item>
-                <el-dropdown-item :command="{action: 'duplicate', index: groupIndex}">
-                  <i class="el-icon-copy-document"></i> 复制组
-                </el-dropdown-item>
-                <el-dropdown-item :command="{action: 'clear', index: groupIndex}">
-                  <i class="el-icon-refresh-left"></i> 清空条件
-                </el-dropdown-item>
-              </el-dropdown-menu>
-            </el-dropdown>
           </div>
         </div>
 
-        <!-- 组内逻辑设置 -->
-        <div class="group-logic-settings">
-          <el-select
-            v-model="group.logic"
-            size="mini"
-            @change="onGroupLogicChange(group)"
-            style="width: 100px;"
-          >
-            <el-option label="AND (并且)" value="and" />
-            <el-option label="OR (或者)" value="or" />
-          </el-select>
-          <span class="logic-desc">{{ getGroupLogicDescription(group.logic) }}</span>
-        </div>
-
-        <!-- 条件列表 -->
-        <div class="conditions">
-          <div
-            v-for="(condition, conditionIndex) in group.conditions"
-            :key="condition.id"
-            class="condition-item"
-          >
-            <!-- 条件间逻辑连接符 -->
-            <div
-              v-if="conditionIndex > 0"
-              class="condition-logic"
-            >
-              <el-tag
-                :type="getLogicTagType(group.logic)"
-                size="mini"
-                class="logic-tag"
-              >
-                {{ group.logic?.toUpperCase() }}
-              </el-tag>
-            </div>
-
-            <!-- 条件内容 -->
-            <div class="condition-content">
-              <!-- 字段选择器 -->
-              <div class="condition-field">
-                <el-select
-                  v-model="condition.field"
-                  placeholder="选择字段"
-                  size="small"
-                  @change="onFieldChange(condition)"
-                  style="width: 140px;"
-                >
-                  <el-option-group label="高级信息">
-                    <el-option
-                      v-for="field in advancedFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="基本信息">
-                    <el-option
-                      v-for="field in basicFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="状态信息">
-                    <el-option
-                      v-for="field in statusFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="时间信息">
-                    <el-option
-                      v-for="field in timeFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                  <el-option-group label="比率信息">
-                    <el-option
-                      v-for="field in ratioFields"
-                      :key="field.key"
-                      :label="field.label"
-                      :value="field.key"
-                    />
-                  </el-option-group>
-                </el-select>
-              </div>
-
-              <!-- 操作符选择器 -->
-              <div class="condition-operator">
-                <el-select
-                  v-model="condition.operator"
-                  placeholder="选择操作"
-                  size="small"
-                  @change="onOperatorChange(condition)"
-                  style="width: 120px;"
-                  :disabled="!condition.field"
-                >
-                  <el-option-group
-                    v-for="operatorGroup in getOperatorGroups(condition.field)"
-                    :key="operatorGroup.type"
-                    :label="operatorGroup.label"
-                  >
-                    <el-option
-                      v-for="op in operatorGroup.operators"
-                      :key="op.value"
-                      :label="op.label"
-                      :value="op.value"
-                    />
-                  </el-option-group>
-                </el-select>
-              </div>
-
-              <!-- 条件值输入 -->
-              <div class="condition-value">
-                <ConditionValueInput
-                  :field="condition.field"
-                  :operator="condition.operator"
-                  :value="condition.value"
-                  :fieldOptions="getFieldOptions(condition.field)"
-                  @input="val => onConditionValueChange(condition, val)"
-                  @change="val => onConditionValueChange(condition, val)"
-                  style="flex: 1;"
-                />
-              </div>
-
-              <!-- 排除/包含切换 -->
-              <div class="condition-mode">
-                <el-radio-group
-                  v-model="condition.mode"
-                  size="small"
-                  @change="onConditionModeChange(condition)"
-                  :disabled="!fieldSupportsExclude(condition.field)"
-                >
-                  <el-radio-button label="include">包含</el-radio-button>
-                  <el-radio-button
-                    label="exclude"
-                    :disabled="!fieldSupportsExclude(condition.field)"
-                  >
-                    排除
-                  </el-radio-button>
-                </el-radio-group>
-              </div>
-
-              <!-- 删除条件按钮 -->
-              <div class="condition-actions">
-                <el-button
-                  size="mini"
-                  type="danger"
-                  icon="el-icon-delete"
-                  circle
-                  @click="removeCondition(group, conditionIndex)"
-                  :disabled="group.conditions.length <= 1"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 组间逻辑选择 -->
+        <!-- 组间逻辑是条件组之间的独立控件，不属于任一条件组。 -->
         <div
           v-if="groupIndex < conditionGroups.length - 1"
+          :key="`${group.id}-between-logic`"
           class="group-between-logic"
         >
           <div class="logic-connector">
@@ -246,13 +253,13 @@
             <span class="logic-description">{{ getBetweenGroupLogicDescription(group.betweenGroupLogic) }}</span>
           </div>
         </div>
-      </div>
+      </template>
     </div>
 
     <!-- 添加条件组按钮 -->
     <div class="add-group">
       <el-button
-        type="primary"
+        size="small"
         icon="el-icon-plus"
         @click="addConditionGroup"
       >
@@ -264,6 +271,7 @@
     <div class="search-actions">
       <el-button
         type="success"
+        size="small"
         icon="el-icon-search"
         @click="onSearch"
         :loading="searching"
@@ -271,18 +279,21 @@
         执行搜索
       </el-button>
       <el-button
+        size="small"
         icon="el-icon-document"
         @click="saveSearchTemplate"
       >
         保存为模板
       </el-button>
       <el-button
+        size="small"
         icon="el-icon-refresh-left"
         @click="resetConditions"
       >
         重置条件
       </el-button>
       <el-button
+        size="small"
         icon="el-icon-view"
         @click="previewSearchQuery"
       >
@@ -340,52 +351,65 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue, Prop, Watch, Emit } from 'vue-property-decorator'
+import { Component, Vue, Prop } from 'vue-property-decorator'
 import ConditionValueInput from './ConditionValueInput.vue'
 import { STATUS_OPTIONS } from '@/constants/status-config'
+import { getAllCategories, getAllTags } from '@/api/tag-management'
+import { getDownloaderList, DownloaderSimple } from '@/api/torrents'
+import { extractErrorMessage } from '@/utils/formatters'
+import { ApiResponse } from '@/types/api'
+import {
+  ADVANCED_SEARCH_FIELDS,
+  ADVANCED_SEARCH_OPERATOR_GROUPS,
+  AdvancedSearchFieldKind,
+  AdvancedSearchOperatorConfig
+} from '@/contracts/advancedSearch.generated'
+import {
+  AdvancedSearchConditionValue,
+  AdvancedSearchConditionState,
+  AdvancedSearchBuilderParams,
+  AdvancedSearchGroupState,
+  AdvancedSearchValidationError,
+  buildAdvancedSearchParams,
+  normalizeLoadedConditionValue,
+  normalizeLoadedOperator,
+  operatorSupportsExclude,
+  transitionConditionValue
+} from './advancedSearchState'
 
 // 字段定义接口
 interface SearchField {
   key: string
   label: string
-  type: 'text' | 'number' | 'date' | 'select' | 'multiSelect' | 'boolean'
-  options?: Array<{ label: string, value: string }>
+  type: AdvancedSearchFieldKind
+  options?: Array<{ label: string, value: string, icon?: string }>
   supportsExclude?: boolean
-}
-
-// 操作符定义接口
-interface SearchOperator {
-  value: string           // 前端使用的标识符
-  label: string           // UI显示文本
-  backendValue?: string   // 后端API格式（可选，默认与value相同）
-  fallback?: string       // 降级操作符（当后端不支持时使用的前端value）
-  supportedTypes?: string[] // 支持的字段类型（可选，兼容旧代码）
+  /**
+   * multiSelect 字段的匹配模式，决定 UI 暴露哪些操作符：
+   * - 'exact'     单值精确列（status/category/downloader_name）→ in/not_in
+   * - 'substring' 逗号分隔字符串列（tags）→ contains_any/not_contains_any
+   * 仅对 multiSelect 类型生效；其它类型忽略。
+   */
+  matchMode?: 'exact' | 'substring'
 }
 
 // 搜索条件接口
-interface SearchCondition {
-  id: string
-  field: string
-  operator: string
-  value: any
-  mode: 'include' | 'exclude'
-}
+type SearchCondition = AdvancedSearchConditionState
 
 // 条件组接口
-interface ConditionGroup {
-  id: string
-  name?: string
-  logic: 'and' | 'or'
-  betweenGroupLogic?: 'and' | 'or'
-  editing?: boolean
-  conditions: SearchCondition[]
-}
+type ConditionGroup = AdvancedSearchGroupState
 
 // 搜索模板表单接口
 interface TemplateForm {
   name: string
   description: string
   isDefault: boolean
+}
+
+interface OperatorDisplayGroup {
+  type: string
+  label: string
+  operators: readonly AdvancedSearchOperatorConfig[]
 }
 
 @Component({
@@ -408,6 +432,13 @@ export default class AdvancedSearchBuilder extends Vue {
     isDefault: false
   }
 
+  // 动态字段选项（由 loadFieldOptions 异步填充）
+  // 注：TS readonly 仅约束编译期；这三个数组在运行时可整体替换引用以触发响应式更新。
+  private categoryOptions: Array<{ label: string, value: string }> = []
+  private tagOptions: Array<{ label: string, value: string }> = []
+  private downloaderOptions: Array<{ label: string, value: string }> = []
+  private fieldOptionsLoading = false
+
   // 基本信息字段
   readonly basicFields: SearchField[] = [
     { key: 'name', label: '种子名称', type: 'text', supportsExclude: true },
@@ -420,28 +451,31 @@ export default class AdvancedSearchBuilder extends Vue {
     {
       key: 'status',
       label: '状态',
-      type: 'select',
+      type: 'multiSelect',
       supportsExclude: true,
+      matchMode: 'exact',
       options: STATUS_OPTIONS
     },
     {
       key: 'downloader_name',
       label: '下载器',
-      type: 'select',
+      type: 'multiSelect',
       supportsExclude: true,
+      matchMode: 'exact', // 单值精确列：用 in/not_in
       options: [] // 将通过API动态获取
     },
     {
       key: 'category',
       label: '分类',
-      type: 'select',
+      type: 'multiSelect',
       supportsExclude: true,
+      matchMode: 'exact', // 单值精确列：用 in/not_in
       options: [] // 将通过API动态获取
     },
     {
       key: 'super_seeding',
       label: '超级做种',
-      type: 'boolean',
+      type: 'select',
       supportsExclude: true
     }
   ]
@@ -454,7 +488,7 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 高级信息字段
   readonly advancedFields: SearchField[] = [
-    { key: 'tags', label: '标签', type: 'multiSelect', supportsExclude: true },
+    { key: 'tags', label: '标签', type: 'multiSelect', supportsExclude: true, matchMode: 'substring' }, // 逗号串列：用 contains_any/not_contains_any
     { key: 'tracker_url', label: 'Tracker URL', type: 'text', supportsExclude: true },
     { key: 'tracker_msg', label: 'Tracker 信息', type: 'text', supportsExclude: true }
   ]
@@ -465,84 +499,8 @@ export default class AdvancedSearchBuilder extends Vue {
     { key: 'ratio_limit', label: '比率限制', type: 'number', supportsExclude: true }
   ]
 
-  // 操作符定义（统一配置：包含前端标识、后端格式、降级策略）
-  readonly operatorGroups = {
-    text: [
-      { value: 'contains', label: '包含', backendValue: 'contains' },
-      { value: 'not_contains', label: '不包含', backendValue: 'not_contains' },
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'starts_with', label: '开头是', backendValue: 'starts_with' },
-      { value: 'ends_with', label: '结尾是', backendValue: 'ends_with' },
-      { value: 'regex', label: '正则匹配', backendValue: 'regex', fallback: 'contains' }
-    ],
-    number: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'greater_than', label: '大于', backendValue: 'gt' },
-      { value: 'less_than', label: '小于', backendValue: 'lt' },
-      { value: 'greater_equal', label: '大于等于', backendValue: 'gte', fallback: 'greater_than' },
-      { value: 'less_equal', label: '小于等于', backendValue: 'lte', fallback: 'less_than' },
-      { value: 'between', label: '介于', backendValue: 'between', fallback: 'greater_than' }
-    ],
-    date: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'greater_than', label: '晚于', backendValue: 'gt' },
-      { value: 'less_than', label: '早于', backendValue: 'lt' },
-      { value: 'greater_equal', label: '不早于', backendValue: 'gte', fallback: 'greater_than' },
-      { value: 'less_equal', label: '不晚于', backendValue: 'lte', fallback: 'less_than' },
-      { value: 'last_days', label: '最近N天', backendValue: 'last_days' },
-      { value: 'date_range', label: '日期范围', backendValue: 'date_range' }
-    ],
-    select: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' },
-      { value: 'in', label: '在列表中', backendValue: 'in' },
-      { value: 'not_in', label: '不在列表中', backendValue: 'not_in' }
-    ],
-    multiSelect: [
-      { value: 'contains_any', label: '包含任意', backendValue: 'contains_any', fallback: 'contains' },
-      { value: 'contains_all', label: '包含全部', backendValue: 'contains_all', fallback: 'contains' },
-      { value: 'not_contains_any', label: '不包含任意', backendValue: 'not_contains_any', fallback: 'not_contains' },
-      { value: 'not_contains_all', label: '不包含全部', backendValue: 'not_contains_all', fallback: 'not_contains' }
-    ],
-    boolean: [
-      { value: 'equals', label: '等于', backendValue: 'eq' },
-      { value: 'not_equals', label: '不等于', backendValue: 'ne' }
-    ]
-  }
-
-  // 自动生成的前后端操作符映射（从operatorGroups自动生成）
-  get operatorMapping(): Record<string, string> {
-    const mapping: Record<string, string> = {}
-
-    Object.values(this.operatorGroups).flat().forEach(op => {
-      const backendValue = op.backendValue || op.value
-      mapping[op.value] = backendValue
-    })
-
-    return mapping
-  }
-
-  // 自动生成的反向映射（从operatorGroups自动生成）
-  get reverseOperatorMapping(): Record<string, string> {
-    const mapping: Record<string, string> = {}
-
-    Object.values(this.operatorGroups).flat().forEach(op => {
-      const backendValue = op.backendValue || op.value
-      mapping[backendValue] = op.value
-    })
-
-    return mapping
-  }
-
-  // 操作符降级策略配置
-  private getOperatorFallback(frontendOp: string): string | null {
-    const allOperators = Object.values(this.operatorGroups).flat()
-    const operator = allOperators.find(op => op.value === frontendOp)
-    return operator?.fallback || null
-  }
+  // 运行时配置由后端机器契约生成，禁止在组件内维护语义副本。
+  readonly operatorGroups = ADVANCED_SEARCH_OPERATOR_GROUPS
 
   // Computed
   get formattedQuery(): string {
@@ -551,9 +509,90 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // Methods
   created() {
-    // 开发环境验证操作符配置
-    this.validateOperatorConfig()
     this.initializeConditions()
+    // 首次挂载拉取一次动态字段选项；后续每次打开对话框由父组件调用 refreshFieldOptions() 刷新
+    this.loadFieldOptions()
+  }
+
+  /**
+   * 重新拉取动态字段选项（分类/标签/下载器）。
+   * 供父组件在每次打开高级搜索对话框时通过 $refs 调用，确保下拉反映最新数据。
+   */
+  refreshFieldOptions() {
+    this.loadFieldOptions()
+  }
+
+  /**
+   * 并发拉取分类/标签/下载器三个字段的候选选项。
+   * - 使用 Promise.allSettled：单个失败不影响其它两个填充（部分失败仅 console.error 静默降级）。
+   * - 仅当三个请求全部失败时才弹出 $message.error，避免一连三条红条打扰用户。
+   * - 异步回调写 data 前判 _isDestroyed，规避组件销毁后的响应式警告。
+   */
+  private async loadFieldOptions() {
+    if (this._isDestroyed) return
+    this.fieldOptionsLoading = true
+    // 每次刷新都从空开始：避免"上次成功 + 本次失败"时残留旧数据误导用户
+    this.categoryOptions = []
+    this.tagOptions = []
+    this.downloaderOptions = []
+
+    const results = await Promise.allSettled([
+      getAllCategories(),
+      getAllTags(),
+      getDownloaderList()
+    ])
+
+    if (this._isDestroyed) return
+
+    const [categoryRes, tagRes, downloaderRes] = results
+    let failedCount = 0
+
+    // 分类
+    if (categoryRes.status === 'fulfilled') {
+      const body = categoryRes.value as ApiResponse<string[]>
+      if (body.code === '200' && Array.isArray(body.data)) {
+        this.categoryOptions = body.data.map(name => ({ label: name, value: name }))
+      } else {
+        failedCount += 1
+      }
+    } else {
+      failedCount += 1
+      console.error('获取分类失败:', categoryRes.reason)
+    }
+
+    // 标签
+    if (tagRes.status === 'fulfilled') {
+      const body = tagRes.value as ApiResponse<string[]>
+      if (body.code === '200' && Array.isArray(body.data)) {
+        this.tagOptions = body.data.map(name => ({ label: name, value: name }))
+      } else {
+        failedCount += 1
+      }
+    } else {
+      failedCount += 1
+      console.error('获取标签失败:', tagRes.reason)
+    }
+
+    // 下载器显示 nickname，但请求值使用稳定 downloader_id，昵称变更不影响已选条件。
+    if (downloaderRes.status === 'fulfilled') {
+      const body = downloaderRes.value as ApiResponse<DownloaderSimple[]>
+      if (body.code === '200' && Array.isArray(body.data)) {
+        this.downloaderOptions = body.data.map(d => ({ label: d.nickname, value: d.downloader_id }))
+      } else {
+        failedCount += 1
+      }
+    } else {
+      failedCount += 1
+      console.error('获取下载器失败:', downloaderRes.reason)
+    }
+
+    // 全部失败才告警；部分失败保持已成功项的填充，静默降级
+    if (failedCount === 3) {
+      const firstReason = results.find(r => r.status === 'rejected') as PromiseRejectedResult | undefined
+      this.$message.error(extractErrorMessage(firstReason?.reason) || '加载搜索字段选项失败')
+    }
+
+    this.fieldOptionsLoading = false
   }
 
   private initializeConditions() {
@@ -684,39 +723,40 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 字段变更处理
   onFieldChange(condition: SearchCondition) {
-    // 清空操作符和值
     condition.operator = ''
-    condition.value = null
+    const field = this.getFieldInfo(condition.field)
+    condition.value = transitionConditionValue(
+      condition.field,
+      field?.type,
+      condition.operator
+    )
+    condition.mode = 'include'
   }
 
   // 操作符变更处理
   onOperatorChange(condition: SearchCondition) {
-    // 特殊处理：种子大小字段不应该被简单重置为null
-    // 因为种子大小需要特定的对象结构 { value: number, unit: string } 或 { min: number, max: number, minUnit: string, maxUnit: string }
-    if (condition.field === 'size') {
-      // 不做任何处理，让ConditionValueInput组件自己处理值结构
-      return
-    }
-
-    // 根据操作符设置默认值（非种子大小字段）
-    if (this.needsValueReset(condition.operator)) {
-      condition.value = null
+    const field = this.getFieldInfo(condition.field)
+    condition.value = transitionConditionValue(
+      condition.field,
+      field?.type,
+      condition.operator
+    )
+    if (!operatorSupportsExclude(condition.operator)) {
+      condition.mode = 'include'
     }
   }
 
   // 条件值变更处理
-  onConditionValueChange(condition: SearchCondition, value: any) {
+  onConditionValueChange(
+    condition: SearchCondition,
+    value: AdvancedSearchConditionValue
+  ) {
     condition.value = value
   }
 
   // 条件模式变更处理
-  onConditionModeChange(condition: SearchCondition) {
+  onConditionModeChange(_condition: SearchCondition) {
     // 模式变更时的特殊处理
-  }
-
-  // 组逻辑变更处理
-  onGroupLogicChange(group: ConditionGroup) {
-    // 逻辑变更时的处理
   }
 
   // 获取字段信息
@@ -744,9 +784,19 @@ export default class AdvancedSearchBuilder extends Vue {
     switch (fieldKey) {
       case 'super_seeding':
         return [
-          { label: '是', value: 'true' },
-          { label: '否', value: 'false' }
+          { label: '是', value: '1' },
+          { label: '否', value: '0' },
+          { label: '不支持', value: 'unsupported' }
         ]
+
+      case 'category':
+        return this.categoryOptions
+
+      case 'tags':
+        return this.tagOptions
+
+      case 'downloader_name':
+        return this.downloaderOptions
 
       default:
         return []
@@ -754,32 +804,35 @@ export default class AdvancedSearchBuilder extends Vue {
   }
 
   // 获取操作符组
-  getOperatorGroups(fieldKey: string) {
+  getOperatorGroups(fieldKey: string): OperatorDisplayGroup[] {
     const field = this.getFieldInfo(fieldKey)
     if (!field) return []
 
-    const groups = []
+    const groups: OperatorDisplayGroup[] = []
     const fieldType = field.type
 
     // 基本操作符
     if (this.operatorGroups[fieldType]) {
+      const allowedOperators = ADVANCED_SEARCH_FIELDS[fieldKey]?.operators || []
+      let operators = this.operatorGroups[fieldType].filter(operator =>
+        allowedOperators.includes(operator.backendValue)
+      )
+      // multiSelect 字段按 matchMode 过滤：
+      // - exact（status/category/downloader_name 单值列）只暴露 in/not_in
+      // - substring（tags 逗号串列）只暴露 contains_any/not_contains_any
+      // 避免对单值列暴露 contains_*（语义错：LIKE 对精确列多余），
+      // 也避免对逗号串列暴露 in（语义错：整串相等而非子串）。
+      if (fieldType === 'multiSelect') {
+        const exactOps = ['in', 'not_in']
+        const nullOps = ['is_null', 'is_not_null']
+        operators = field.matchMode === 'exact'
+          ? operators.filter(op => exactOps.includes(op.value) || nullOps.includes(op.value))
+          : operators.filter(op => !exactOps.includes(op.value))
+      }
       groups.push({
         type: 'basic',
         label: '基本操作',
-        operators: this.operatorGroups[fieldType as keyof typeof this.operatorGroups]
-      })
-    }
-
-    // 排除操作符（如果支持）
-    if (field.supportsExclude && fieldType === 'text') {
-      groups.push({
-        type: 'exclude',
-        label: '排除操作',
-        operators: [
-          { value: 'not_equals', label: '不等于' },
-          { value: 'not_contains', label: '不包含' },
-          { value: 'not_in', label: '不在列表中' }
-        ]
+        operators
       })
     }
 
@@ -792,10 +845,11 @@ export default class AdvancedSearchBuilder extends Vue {
     return field?.supportsExclude || false
   }
 
-  // 是否需要重置值
-  private needsValueReset(operator: string): boolean {
-    const resetOperators = ['equals', 'not_equals', 'in', 'not_in']
-    return resetOperators.includes(operator)
+  conditionSupportsExclude(condition: SearchCondition): boolean {
+    return (
+      this.fieldSupportsExclude(condition.field) &&
+      operatorSupportsExclude(condition.operator)
+    )
   }
 
   // 获取逻辑标签类型
@@ -916,224 +970,41 @@ export default class AdvancedSearchBuilder extends Vue {
 
   // 搜索事件
   onSearch() {
-    const searchParams = this.buildSearchParams()
-    this.$emit('search', searchParams)
-  }
-
-  // 构建搜索参数
-  private buildSearchParams(): any {
-    const params: any = {
-      // 添加复杂查询标识
-      complex_search: true,
-      groups_count: this.conditionGroups.length
-    }
-
-    // 构建组数据结构
-    const groupsData = this.conditionGroups.map((group, groupIndex) => {
-      const conditions = group.conditions
-        .filter(condition => condition.field && condition.operator && condition.value !== null)
-        .map((condition, conditionIndex) => ({
-          field: condition.field,
-          operator: this.convertOperatorForBackend(condition.operator),  // 转换为后端格式
-          value: this.formatParamValue(condition),
-          mode: condition.mode,
-          index: conditionIndex
-        }))
-
-      return {
-        id: group.id,
-        name: group.name || `条件组${groupIndex + 1}`,
-        logic: group.logic,
-        conditions: conditions,
-        conditions_count: conditions.length
+    try {
+      const searchParams = this.buildSearchParams()
+      this.$emit('search', searchParams)
+    } catch (error) {
+      if (error instanceof AdvancedSearchValidationError) {
+        this.$message.warning(error.message)
+        return
       }
-    }).filter(group => group.conditions_count > 0)
-
-    // 添加组间逻辑关系
-    const betweenGroupLogics = []
-    for (let i = 0; i < this.conditionGroups.length - 1; i++) {
-      betweenGroupLogics.push(this.conditionGroups[i].betweenGroupLogic || 'and')
-    }
-
-    params.groups = JSON.stringify(groupsData)
-    params.between_group_logics = JSON.stringify(betweenGroupLogics)
-
-    // 为了兼容性，也生成扁平化的参数
-    this.conditionGroups.forEach((group, groupIndex) => {
-      const groupPrefix = groupIndex > 0 ? `group_${groupIndex}_` : ''
-
-      group.conditions.forEach((condition, conditionIndex) => {
-        if (!condition.field || !condition.operator || condition.value === null) {
-          return
-        }
-
-        const paramKey = `${groupPrefix}${condition.field}`
-        const paramValue = this.formatParamValue(condition)
-
-        if (condition.mode === 'exclude') {
-          params[`${paramKey}_exclude`] = paramValue
-        } else {
-          params[paramKey] = paramValue
-        }
-
-        // 添加操作符信息（转换为后端格式）
-        params[`${paramKey}_op`] = this.convertOperatorForBackend(condition.operator)
-      })
-
-      // 添加组逻辑
-      if (groupIndex > 0) {
-        params[`group_${groupIndex}_logic`] = group.logic
-      }
-    })
-
-    return params
-  }
-
-  // 转换前端操作符为后端格式（支持智能降级）
-  private convertOperatorForBackend(frontendOperator: string): string {
-    // 查找映射
-    const backendOperator = this.operatorMapping[frontendOperator]
-
-    if (backendOperator) {
-      return backendOperator
-    }
-
-    // 未找到映射，尝试降级策略
-    const fallbackOp = this.getOperatorFallback(frontendOperator)
-
-    if (fallbackOp) {
-      const fallbackBackendOp = this.operatorMapping[fallbackOp]
-      if (fallbackBackendOp) {
-        console.warn(
-          `[AdvancedSearchBuilder] 操作符 "${frontendOperator}" 后端不支持，` +
-          `自动降级为 "${fallbackOp}" (${fallbackBackendOp})`
-        )
-        return fallbackBackendOp
-      }
-    }
-
-    // 降级失败，返回原值并记录错误
-    console.error(
-      `[AdvancedSearchBuilder] 操作符 "${frontendOperator}" 无法转换且无降级策略，` +
-      `这可能导致API调用失败！请检查后端API文档。`
-    )
-    return frontendOperator
-  }
-
-  // 转换后端操作符为前端格式（用于编辑已保存的搜索条件）
-  private convertOperatorForFrontend(backendOperator: string): string {
-    const frontendOperator = this.reverseOperatorMapping[backendOperator]
-    if (!frontendOperator) {
-      console.warn(`[AdvancedSearchBuilder] 未找到反向操作符映射: ${backendOperator}，使用原值`)
-      return backendOperator
-    }
-    return frontendOperator
-  }
-
-  // 验证操作符配置的完整性（开发环境调用）
-  private validateOperatorConfig(): void {
-    if (process.env.NODE_ENV !== 'production') {
-      const allOperators = Object.values(this.operatorGroups).flat()
-      const backendValues = new Set<string>()
-      const duplicates: string[] = []
-
-      // 检查重复的后端值
-      allOperators.forEach(op => {
-        const backendValue = op.backendValue || op.value
-        if (backendValues.has(backendValue)) {
-          duplicates.push(backendValue)
-        }
-        backendValues.add(backendValue)
-      })
-
-      if (duplicates.length > 0) {
-        console.warn(
-          `[AdvancedSearchBuilder] 发现重复的后端操作符值: ${duplicates.join(', ')}` +
-          `这可能导致反向映射失败！`
-        )
-      }
-
-      // 检查降级循环依赖
-      allOperators.forEach(op => {
-        if (op.fallback) {
-          const fallbackOp = allOperators.find(o => o.value === op.fallback)
-          if (!fallbackOp) {
-            console.error(
-              `[AdvancedSearchBuilder] 操作符 "${op.value}" 的降级目标 "${op.fallback}" 不存在！`
-            )
-          } else if (fallbackOp.fallback === op.value) {
-            console.warn(
-              `[AdvancedSearchBuilder] 发现循环降级依赖: "${op.value}" <-> "${fallbackOp.value}"`
-            )
-          }
-        }
-      })
-
-      console.log(
-        `[AdvancedSearchBuilder] 操作符配置验证完成\n` +
-        `- 前端操作符数量: ${allOperators.length}\n` +
-        `- 后端操作符数量: ${backendValues.size}\n` +
-        `- 支持降级的操作符: ${allOperators.filter(op => op.fallback).length}`
-      )
+      throw error
     }
   }
 
-  // 获取所有支持的后端操作符列表（用于与后端API文档对照）
-  private getSupportedBackendOperators(): string[] {
-    return Object.values(this.operatorMapping)
+  // 构建搜索参数。任何无效条件都会整体失败，禁止静默丢弃或降级。
+  buildSearchParams(): AdvancedSearchBuilderParams {
+    return buildAdvancedSearchParams(this.conditionGroups)
   }
 
-  // 格式化参数值
-  private formatParamValue(condition: SearchCondition): any {
-    const field = this.getFieldInfo(condition.field)
-
-    // 特殊处理种子大小范围的 "介于" 操作符
-    if (condition.field === 'size' && condition.operator === 'between') {
-      const value = condition.value
-      if (value && typeof value === 'object' && value.min !== undefined && value.max !== undefined) {
-        // 返回对象格式，后端需要处理 min 和 max
-        return {
-          min: value.min !== null ? `${value.min} ${value.minUnit || 'GB'}` : null,
-          max: value.max !== null ? `${value.max} ${value.maxUnit || 'GB'}` : null
-        }
-      }
-      return condition.value
-    }
-
-    // 特殊处理种子大小其他操作符（带单位）
-    if (condition.field === 'size' && condition.operator !== 'between') {
-      const value = condition.value
-      if (value && typeof value === 'object' && value.value !== undefined) {
-        // 转换为 "数字 单位" 格式，如 "1.5 GB"
-        return value.value !== null ? `${value.value} ${value.unit || 'GB'}` : null
-      }
-      return condition.value
-    }
-
-    switch (field?.type) {
-      case 'date':
-        if (condition.value && typeof condition.value === 'object') {
-          return JSON.stringify(condition.value)
-        }
-        return condition.value
-
-      case 'number':
-        return Number(condition.value)
-
-      case 'multiSelect':
-        return Array.isArray(condition.value) ? condition.value.join(',') : condition.value
-
-      case 'boolean':
-        return condition.value ? '1' : '0'
-
-      default:
-        return condition.value
-    }
+  /** 返回经过完整校验的条件快照，供已保存搜索更新复用。 */
+  getTemplateGroupsSnapshot(): AdvancedSearchGroupState[] {
+    this.buildSearchParams()
+    return JSON.parse(JSON.stringify(this.conditionGroups)) as AdvancedSearchGroupState[]
   }
 
   // 预览查询
   previewSearchQuery() {
-    this.previewVisible = true
+    try {
+      this.buildSearchParams()
+      this.previewVisible = true
+    } catch (error) {
+      if (error instanceof AdvancedSearchValidationError) {
+        this.$message.warning(error.message)
+        return
+      }
+      throw error
+    }
   }
 
   // 复制查询到剪贴板
@@ -1153,6 +1024,82 @@ export default class AdvancedSearchBuilder extends Vue {
     this.$emit('reset')
   }
 
+  // v1.0.5 应用模板：回填 conditionGroups（供父组件调用）
+  applyTemplateGroups(
+    groups: ConditionGroup[],
+    _options?: { sort_by?: string, sort_order?: string }
+  ) {
+    if (!Array.isArray(groups) || groups.length === 0) {
+      this.conditionGroups = []
+      this.initializeConditions()
+      return
+    }
+    // 深拷贝避免污染模板源数据
+    this.conditionGroups = JSON.parse(JSON.stringify(groups)) as ConditionGroup[]
+    // 归一化历史模板：旧 multiSelect 操作符在单值精确列上转为 in/not_in，
+    // value 统一为数组形态（兼容旧逗号串/单值存储）。
+    this.normalizeLoadedConditions()
+  }
+
+  /**
+   * 归一化从模板加载的 conditions，兼容历史数据：
+   * 1. value：multiSelect 字段若为逗号串/单值，拆成数组。
+   * 2. operator：旧 contains_any/all/not_contains_any/not_contains_all
+   *    若作用在单值精确列（category/downloader_name，matchMode='exact'），
+   *    需转为 in/not_in（后端 IN 才对单值列正确）；substring 列（tags）保留。
+   */
+  private normalizeLoadedConditions() {
+    for (let groupIndex = 0; groupIndex < this.conditionGroups.length; groupIndex++) {
+      const group = this.conditionGroups[groupIndex]
+      group.id = group.id || this.generateId()
+      group.logic = String(group.logic).toLowerCase() === 'or' ? 'or' : 'and'
+      group.betweenGroupLogic =
+        String(group.betweenGroupLogic).toLowerCase() === 'or' ? 'or' : 'and'
+      group.editing = false
+      if (!Array.isArray(group.conditions) || group.conditions.length === 0) {
+        throw new AdvancedSearchValidationError(
+          `模板条件组${groupIndex + 1}没有有效条件`
+        )
+      }
+      for (const condition of group.conditions) {
+        const field = this.getFieldInfo(condition.field)
+        if (!field) {
+          throw new AdvancedSearchValidationError(
+            `模板包含未知字段：${condition.field}`
+          )
+        }
+        condition.id = condition.id || this.generateId()
+        condition.mode = condition.mode === 'exclude' ? 'exclude' : 'include'
+        if (!Object.prototype.hasOwnProperty.call(
+          ADVANCED_SEARCH_OPERATOR_GROUPS,
+          field.type
+        )) {
+          throw new AdvancedSearchValidationError(
+            `模板字段类型无效：${field.type}`
+          )
+        }
+        condition.operator = normalizeLoadedOperator(
+          condition.field,
+          condition.operator
+        )
+        condition.value = normalizeLoadedConditionValue(
+          condition.field,
+          field.type,
+          condition.operator,
+          condition.value
+        )
+        if (
+          condition.mode === 'exclude' &&
+          !operatorSupportsExclude(condition.operator)
+        ) {
+          throw new AdvancedSearchValidationError(
+            `模板操作符“${condition.operator}”不支持排除模式`
+          )
+        }
+      }
+    }
+  }
+
   // 保存搜索模板
   saveSearchTemplate() {
     this.templateForm = {
@@ -1169,6 +1116,15 @@ export default class AdvancedSearchBuilder extends Vue {
       this.$message.warning('请输入模板名称')
       return
     }
+    try {
+      this.buildSearchParams()
+    } catch (error) {
+      if (error instanceof AdvancedSearchValidationError) {
+        this.$message.warning(error.message)
+        return
+      }
+      throw error
+    }
 
     const template = {
       id: this.generateId(),
@@ -1181,20 +1137,30 @@ export default class AdvancedSearchBuilder extends Vue {
 
     this.$emit('save-template', template)
     this.saveTemplateVisible = false
-    this.$message.success('模板保存成功')
   }
 }
 </script>
 
 <style lang="scss" scoped>
 .advanced-search-builder {
+  font-size: 13px;
+
+  ::v-deep {
+    .el-input__inner,
+    .el-radio-button__inner,
+    .el-button,
+    .el-tag {
+      font-size: 12px;
+    }
+  }
+
   .condition-groups {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
   }
 
   .condition-group {
-    margin-bottom: 16px;
-    padding: 16px;
+    margin-bottom: 12px;
+    padding: 12px;
     border: 1px solid #e4e7ed;
     border-radius: 8px;
     background-color: #fafafa;
@@ -1204,12 +1170,13 @@ export default class AdvancedSearchBuilder extends Vue {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 12px;
-      padding-bottom: 8px;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
       border-bottom: 1px solid #ebeef5;
 
       .group-title {
         font-weight: 600;
+        font-size: 13px;
         color: #303133;
         display: flex;
         align-items: center;
@@ -1235,8 +1202,8 @@ export default class AdvancedSearchBuilder extends Vue {
     .group-logic-settings {
       display: flex;
       align-items: center;
-      margin-bottom: 12px;
-      padding: 8px 12px;
+      margin-bottom: 10px;
+      padding: 6px 10px;
       background-color: #f0f9ff;
       border: 1px solid #bfdbfe;
       border-radius: 6px;
@@ -1252,9 +1219,9 @@ export default class AdvancedSearchBuilder extends Vue {
       .condition-item {
         display: flex;
         align-items: flex-start;
-        gap: 12px;
-        margin-bottom: 12px;
-        padding: 12px;
+        gap: 8px;
+        margin-bottom: 8px;
+        padding: 8px;
         background-color: #fff;
         border: 1px solid #ebeef5;
         border-radius: 6px;
@@ -1282,7 +1249,7 @@ export default class AdvancedSearchBuilder extends Vue {
           display: flex;
           align-items: center;
           width: 100%;
-          gap: 12px;
+          gap: 8px;
         }
 
         .condition-field,
@@ -1305,47 +1272,53 @@ export default class AdvancedSearchBuilder extends Vue {
       }
     }
 
-    .group-between-logic {
+    .add-condition {
       display: flex;
       justify-content: center;
-      margin: 16px 0;
+      margin-top: 4px;
+    }
+  }
 
-      .logic-connector {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        padding: 12px 16px;
-        background-color: #fef3c7;
-        border: 1px solid #fcd34d;
-        border-radius: 8px;
-        box-shadow: 0 2px 4px rgba(251, 191, 36, 0.1);
+  .group-between-logic {
+    display: flex;
+    justify-content: center;
+    margin: 4px 0 16px;
 
-        .logic-description {
-          margin-top: 4px;
-          font-size: 11px;
-          color: #92400e;
-          white-space: nowrap;
-        }
+    .logic-connector {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px 16px;
+      background-color: #fef3c7;
+      border: 1px solid #fcd34d;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(251, 191, 36, 0.1);
+
+      .logic-description {
+        margin-top: 4px;
+        font-size: 11px;
+        color: #92400e;
+        white-space: nowrap;
       }
     }
   }
 
   .add-group {
-    margin-bottom: 16px;
+    margin-bottom: 12px;
     text-align: center;
 
     .el-button {
-      padding: 12px 24px;
-      border-radius: 8px;
+      padding: 9px 18px;
+      border-radius: 6px;
       font-weight: 500;
     }
   }
 
   .search-actions {
     display: flex;
-    gap: 12px;
+    gap: 8px;
     justify-content: flex-end;
-    padding-top: 16px;
+    padding-top: 12px;
     border-top: 1px solid #e4e7ed;
 
     .el-button {

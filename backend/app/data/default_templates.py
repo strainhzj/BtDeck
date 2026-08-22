@@ -5,6 +5,7 @@
 提供5个系统默认模板，涵盖qBittorrent和Transmission两种下载器类型，
 包括标准配置、高性能配置和分时段配置示例。
 """
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -15,81 +16,73 @@ logger = logging.getLogger(__name__)
 # qBittorrent标准配置：适合家庭用户，适中的速度限制
 QB_STANDARD_CONFIG = {
     "dl_speed_limit": 1024,  # 1MB/s下载速度
-    "ul_speed_limit": 512,   # 512KB/s上传速度
-    "speed_unit": 0,         # KB/s单位
+    "ul_speed_limit": 512,  # 512KB/s上传速度
+    "speed_unit": 0,  # KB/s单位
     "enable_schedule": False,
     "override_local": True,
     "advanced_settings": {
         # 连接设置
-        "max_connec": 500,          # 最大全局连接数
-        "max_numconn": 100,         # 每任务最大连接数
-        "max_uploads": 20,          # 最大上传 slots
-
+        "max_connec": 500,  # 最大全局连接数
+        "max_numconn": 100,  # 每任务最大连接数
+        "max_uploads": 20,  # 最大上传 slots
         # 队列设置
         "queueing_enabled": True,
         "max_active_downloads": 3,
         "max_active_torrents": 5,
         "max_active_uploads": 3,
-
         # 资源限制
-        "dl_limit": 1024,           # 下载限制(KB/s)
-        "up_limit": 512,            # 上传限制(KB/s)
-
+        "dl_limit": 1024,  # 下载限制(KB/s)
+        "up_limit": 512,  # 上传限制(KB/s)
         # 其他设置
-        "alt_dl_limit": 1024,       # 备用下载限制
-        "alt_up_limit": 512,        # 备用上传限制
-        "scheduler": False,         # 不使用分时段
-    }
+        "alt_dl_limit": 1024,  # 备用下载限制
+        "alt_up_limit": 512,  # 备用上传限制
+        "scheduler": False,  # 不使用分时段
+    },
 }
 
 # qBittorrent高性能配置：高带宽、高连接数，不限速
 QB_HIGH_PERFORMANCE_CONFIG = {
-    "dl_speed_limit": 0,       # 不限速
-    "ul_speed_limit": 0,       # 不限速
-    "speed_unit": 1,           # MB/s单位
+    "dl_speed_limit": 0,  # 不限速
+    "ul_speed_limit": 0,  # 不限速
+    "speed_unit": 1,  # MB/s单位
     "enable_schedule": False,
     "override_local": True,
     "advanced_settings": {
         # 连接设置 - 更激进的参数
-        "max_connec": 1000,         # 最大全局连接数
-        "max_numconn": 500,         # 每任务最大连接数
-        "max_uploads": 100,         # 最大上传 slots
-
+        "max_connec": 1000,  # 最大全局连接数
+        "max_numconn": 500,  # 每任务最大连接数
+        "max_uploads": 100,  # 最大上传 slots
         # 队列设置 - 更多并发任务
         "queueing_enabled": True,
         "max_active_downloads": 10,
         "max_active_torrents": 20,
         "max_active_uploads": 10,
-
         # 资源限制 - 不限速
-        "dl_limit": 0,              # 不限速
-        "up_limit": 0,              # 不限速
-
+        "dl_limit": 0,  # 不限速
+        "up_limit": 0,  # 不限速
         # 其他设置
         "alt_dl_limit": 0,
         "alt_up_limit": 0,
         "scheduler": False,
-    }
+    },
 }
 
 # Transmission标准配置：适合家庭用户
 TR_STANDARD_CONFIG = {
     "dl_speed_limit": 1024,  # 1MB/s下载速度
-    "ul_speed_limit": 512,   # 512KB/s上传速度
-    "speed_unit": 0,         # KB/s单位
+    "ul_speed_limit": 512,  # 512KB/s上传速度
+    "speed_unit": 0,  # KB/s单位
     "enable_schedule": False,
     "override_local": True,
     "advanced_settings": {
         # 速度设置
-        "speed-limit-down": 1024,       # 下载限制(KB/s)
-        "speed-limit-up": 512,          # 上传限制(KB/s)
+        "speed-limit-down": 1024,  # 下载限制(KB/s)
+        "speed-limit-up": 512,  # 上传限制(KB/s)
         "speed-limit-down-enabled": True,
         "speed-limit-up-enabled": True,
-
         # 连接设置
-        "peer-limit-global": 500,       # 全局连接数限制
+        "peer-limit-global": 500,  # 全局连接数限制
         "peer-limit-per-torrent": 100,  # 每任务连接数限制
-
         # 队列设置
         "queue-stalled-enabled": True,
         "queue-stalled-minutes": 30,
@@ -97,17 +90,16 @@ TR_STANDARD_CONFIG = {
         "download-queue-size": 3,
         "seed-queue-enabled": True,
         "seed-queue-size": 3,
-
         # 其他设置
-        "alt-speed-enabled": False,     # 不使用备用速度
-    }
+        "alt-speed-enabled": False,  # 不使用备用速度
+    },
 }
 
 # Transmission高性能配置：高带宽、高连接数
 TR_HIGH_PERFORMANCE_CONFIG = {
-    "dl_speed_limit": 0,       # 不限速
-    "ul_speed_limit": 0,       # 不限速
-    "speed_unit": 1,           # MB/s单位
+    "dl_speed_limit": 0,  # 不限速
+    "ul_speed_limit": 0,  # 不限速
+    "speed_unit": 1,  # MB/s单位
     "enable_schedule": False,
     "override_local": True,
     "advanced_settings": {
@@ -116,11 +108,9 @@ TR_HIGH_PERFORMANCE_CONFIG = {
         "speed-limit-up": 0,
         "speed-limit-down-enabled": False,
         "speed-limit-up-enabled": False,
-
         # 连接设置 - 更激进的参数
-        "peer-limit-global": 1000,      # 全局连接数限制
+        "peer-limit-global": 1000,  # 全局连接数限制
         "peer-limit-per-torrent": 500,  # 每任务连接数限制
-
         # 队列设置 - 更多并发任务
         "queue-stalled-enabled": True,
         "queue-stalled-minutes": 30,
@@ -128,17 +118,16 @@ TR_HIGH_PERFORMANCE_CONFIG = {
         "download-queue-size": 10,
         "seed-queue-enabled": True,
         "seed-queue-size": 10,
-
         # 其他设置
         "alt-speed-enabled": False,
-    }
+    },
 }
 
 # 夜间不限速模板：包含分时段速度规则
 NIGHT_UNLIMITED_CONFIG = {
-    "dl_speed_limit": 0,      # 默认不限速（会被分时段规则覆盖）
-    "ul_speed_limit": 0,      # 默认不限速
-    "speed_unit": 0,          # KB/s单位
+    "dl_speed_limit": 0,  # 默认不限速（会被分时段规则覆盖）
+    "ul_speed_limit": 0,  # 默认不限速
+    "speed_unit": 0,  # KB/s单位
     "enable_schedule": True,  # 启用分时段
     "override_local": True,
     "advanced_settings": {
@@ -153,12 +142,12 @@ NIGHT_UNLIMITED_CONFIG = {
         {
             "start_time": "08:00:00",
             "end_time": "23:59:59",
-            "dl_speed_limit": 512,    # 工作日白天限速512KB/s
-            "ul_speed_limit": 256,    # 工作日白天限速256KB/s
+            "dl_speed_limit": 512,  # 工作日白天限速512KB/s
+            "ul_speed_limit": 256,  # 工作日白天限速256KB/s
             "days_of_week": "12345",  # 1=周一，5=周五
-            "enabled": True
+            "enabled": True,
         }
-    ]
+    ],
 }
 
 
@@ -210,6 +199,7 @@ DEFAULT_TEMPLATES = [
 
 # ========== 初始化函数 ==========
 
+
 def init_default_templates(db_session) -> int:
     """
     初始化系统默认模板到数据库
@@ -232,9 +222,7 @@ def init_default_templates(db_session) -> int:
 
         for template_data in DEFAULT_TEMPLATES:
             # 检查模板是否已存在
-            existing = db_session.query(SettingTemplate).filter_by(
-                name=template_data["name"]
-            ).first()
+            existing = db_session.query(SettingTemplate).filter_by(name=template_data["name"]).first()
 
             if existing:
                 logger.info(f"系统默认模板已存在，跳过: {template_data['name']}")
@@ -243,11 +231,11 @@ def init_default_templates(db_session) -> int:
             # 创建新模板
             template_config = template_data["template_config"]
 
-            # 序列化配置为JSON字符串
+            # 序列化配置为JSON字符串（非 dict 的预序列化字符串原样使用）
             if isinstance(template_config, dict):
                 template_config_json = json.dumps(template_config, ensure_ascii=False)
             else:
-                template_config_json = template_config
+                template_config_json = str(template_config)
 
             template = SettingTemplate(
                 name=template_data["name"],
@@ -257,7 +245,7 @@ def init_default_templates(db_session) -> int:
                 is_system_default=template_data["is_system_default"],
                 created_by=template_data["created_by"],
                 created_at=datetime.now(),
-                updated_at=datetime.now()
+                updated_at=datetime.now(),
             )
 
             db_session.add(template)
@@ -299,7 +287,7 @@ def get_template_by_name(name: str) -> dict:
     for template in DEFAULT_TEMPLATES:
         if template["name"] == name:
             return template.copy()
-    return None
+    return None  # type: ignore[return-value]  # 调用方以 None 判缺失，签名保持 dict 系历史约定
 
 
 def get_templates_by_downloader_type(downloader_type: int) -> list:
@@ -312,14 +300,11 @@ def get_templates_by_downloader_type(downloader_type: int) -> list:
     Returns:
         list: 匹配的模板配置数据列表
     """
-    return [
-        template.copy()
-        for template in DEFAULT_TEMPLATES
-        if template["downloader_type"] == downloader_type
-    ]
+    return [template.copy() for template in DEFAULT_TEMPLATES if template["downloader_type"] == downloader_type]
 
 
 # ========== 模板验证函数 ==========
+
 
 def validate_template_config(config: dict, downloader_type: int) -> tuple[bool, str]:
     """

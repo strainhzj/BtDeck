@@ -5,7 +5,7 @@ Tracker消息记录CRUD API接口
 注意: TrackerMessageLog使用物理删除，不使用dr字段
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 import uuid
 from datetime import datetime
@@ -16,14 +16,12 @@ from app.api.responseVO import CommonResponse
 from app.api.schemas.tracker_messages import (
     TrackerMessageResponse,
     AddToPoolRequest,
-    BatchOperationRequest,
     BatchAddToPoolRequest,
-    BatchDeleteMessagesRequest
+    BatchDeleteMessagesRequest,
 )
 from app.torrents.models import TrackerMessageLog, TrackerKeywordConfig
 from app.api.schemas.tracker_keywords import TrackerKeywordResponse
-from app.auth import utils
-from typing import Optional
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -31,12 +29,12 @@ router = APIRouter()
 
 @router.get("", summary="查询消息记录列表")
 def get_messages(
-    request: Request,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
     tracker_host: str = Query(None, description="筛选: tracker地址"),
     is_processed: bool = Query(None, description="筛选: 是否已处理"),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
     查询消息记录列表(分页)
@@ -45,13 +43,7 @@ def get_messages(
     - tracker_host: tracker地址(模糊匹配)
     - is_processed: 是否已处理
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 构建查询 - TrackerMessageLog不使用dr字段
@@ -64,9 +56,9 @@ def get_messages(
 
         # 分页
         total = query.count()
-        messages = query.order_by(
-            TrackerMessageLog.first_seen.desc()
-        ).offset((page - 1) * page_size).limit(page_size).all()
+        messages = (
+            query.order_by(TrackerMessageLog.first_seen.desc()).offset((page - 1) * page_size).limit(page_size).all()
+        )
 
         items = [TrackerMessageResponse.model_validate(m).model_dump() for m in messages]
 
@@ -74,12 +66,7 @@ def get_messages(
             status="success",
             msg="查询成功",
             code="200",
-            data={
-                "total": total,
-                "page": page,
-                "pageSize": page_size,
-                "list": items
-            }
+            data={"total": total, "page": page, "pageSize": page_size, "list": items},
         )
 
     except Exception as e:
@@ -87,39 +74,57 @@ def get_messages(
         raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
 
 
-@router.get("/{log_id}", summary="获取单条消息")
-def get_message(
-    log_id: str,
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """获取指定ID的消息"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+@router.get("/statistics", summary="获取消息统计信息", response_model=CommonResponse)
+def get_statistics(db: Session = Depends(get_db), _user=Depends(require_authenticated_user)):
+    """
+    获取消息记录的统计信息。
 
+    路由顺序注意：此静态路径必须注册在 ``/{log_id}`` 动态路由之前，
+    否则 ``statistics`` 会被当作 ``log_id`` 解析（审计第5节补充风险）。
+    """
     try:
-        message = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.log_id == log_id
-        ).first()
+        # 统计总数
+        total = db.query(TrackerMessageLog).count()
 
-        if not message:
-            return CommonResponse(
-                status="error",
-                msg="消息不存在",
-                code="404",
-                data=None
-            )
+        # 统计未处理数
+        unprocessed = db.query(TrackerMessageLog).filter(TrackerMessageLog.is_processed.is_(False)).count()
+
+        # 统计成功关键词数
+        success = db.query(TrackerMessageLog).filter(TrackerMessageLog.keyword_type == "success").count()
+
+        # 统计失败关键词数
+        failure = db.query(TrackerMessageLog).filter(TrackerMessageLog.keyword_type == "failure").count()
 
         return CommonResponse(
             status="success",
             msg="查询成功",
             code="200",
-            data=TrackerMessageResponse.model_validate(message).model_dump()
+            data={"total": total, "unprocessed": unprocessed, "success": success, "failure": failure},
+        )
+
+    except Exception as e:
+        logger.error(f"获取统计信息失败: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
+
+
+@router.get("/{log_id}", summary="获取单条消息")
+def get_message(
+    log_id: str, user_info: AuthenticatedUserInfo = Depends(require_authenticated_user), db: Session = Depends(get_db)
+):
+    """获取指定ID的消息"""
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
+
+    try:
+        message = db.query(TrackerMessageLog).filter(TrackerMessageLog.log_id == log_id).first()
+
+        if not message:
+            return CommonResponse(status="error", msg="消息不存在", code="404", data=None)
+
+        return CommonResponse(
+            status="success",
+            msg="查询成功",
+            code="200",
+            data=TrackerMessageResponse.model_validate(message).model_dump(),
         )
 
     except Exception as e:
@@ -130,35 +135,33 @@ def get_message(
 @router.post("", summary="创建消息记录")
 def create_message(
     message_data: dict,
-    request: Request,
-    db: Session = Depends(get_db)
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """
     创建新的消息记录
 
     注意: 此接口主要用于测试和手动添加，实际使用中消息由定时任务自动记录
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 检查是否已存在相同的消息（按tracker_host和msg组合）
-        existing = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.tracker_host == message_data.get("tracker_host"),
-            TrackerMessageLog.msg == message_data.get("msg")
-        ).first()
+        existing = (
+            db.query(TrackerMessageLog)
+            .filter(
+                TrackerMessageLog.tracker_host == message_data.get("tracker_host"),
+                TrackerMessageLog.msg == message_data.get("msg"),
+            )
+            .first()
+        )
 
         if existing:
             # 更新existing记录
             existing.occurrence_count += 1
             existing.last_seen = datetime.now()
-            if message_data.get("judgment_result"):
-                existing.judgment_result = message_data.get("judgment_result")
+            # 注：judgment_result 并非 TrackerMessageLog 的列（历史代码引用了
+            # 不存在字段：构造即抛 TypeError、赋值也不落库），故不在此处理
             if message_data.get("keyword_type"):
                 existing.keyword_type = message_data.get("keyword_type")
 
@@ -169,15 +172,14 @@ def create_message(
                 status="success",
                 msg="消息记录已更新",
                 code="200",
-                data=TrackerMessageResponse.model_validate(existing).model_dump()
+                data=TrackerMessageResponse.model_validate(existing).model_dump(),
             )
 
         # 创建新消息
         new_message = TrackerMessageLog(
             log_id=str(uuid.uuid4()),
-            tracker_host=message_data.get("tracker_host"),
-            msg=message_data.get("msg"),
-            judgment_result=message_data.get("judgment_result", "unknown"),
+            tracker_host=message_data.get("tracker_host") or "",
+            msg=message_data.get("msg") or "",
             keyword_type=message_data.get("keyword_type"),
             sample_torrents=message_data.get("sample_torrents"),
             sample_urls=message_data.get("sample_urls"),
@@ -187,8 +189,8 @@ def create_message(
             occurrence_count=1,
             create_time=datetime.now(),
             update_time=datetime.now(),
-            create_by=utils.get_username_from_token(token) or "admin",
-            update_by=utils.get_username_from_token(token) or "admin"
+            create_by=user_info.username or "admin",
+            update_by=user_info.username or "admin",
         )
 
         db.add(new_message)
@@ -201,7 +203,7 @@ def create_message(
             status="success",
             msg="创建成功",
             code="200",
-            data=TrackerMessageResponse.model_validate(new_message).model_dump()
+            data=TrackerMessageResponse.model_validate(new_message).model_dump(),
         )
 
     except Exception as e:
@@ -214,41 +216,26 @@ def create_message(
 def update_message(
     log_id: str,
     update_data: dict,
-    request: Request,
-    db: Session = Depends(get_db)
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """更新消息记录的状态和字段"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
-        message = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.log_id == log_id
-        ).first()
+        message = db.query(TrackerMessageLog).filter(TrackerMessageLog.log_id == log_id).first()
 
         if not message:
-            return CommonResponse(
-                status="error",
-                msg="消息不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="消息不存在", code="404", data=None)
 
         # 更新字段
         if "is_processed" in update_data:
             message.is_processed = update_data["is_processed"]
-        if "judgment_result" in update_data:
-            message.judgment_result = update_data["judgment_result"]
         if "keyword_type" in update_data:
             message.keyword_type = update_data["keyword_type"]
 
         message.update_time = datetime.now()
-        message.update_by = utils.get_username_from_token(token) or "admin"
+        message.update_by = user_info.username or "admin"
 
         db.commit()
         db.refresh(message)
@@ -259,7 +246,7 @@ def update_message(
             status="success",
             msg="更新成功",
             code="200",
-            data=TrackerMessageResponse.model_validate(message).model_dump()
+            data=TrackerMessageResponse.model_validate(message).model_dump(),
         )
 
     except Exception as e:
@@ -268,102 +255,35 @@ def update_message(
         raise HTTPException(status_code=500, detail=f"更新失败: {str(e)}")
 
 
-def get_statistics(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """获取消息记录的统计信息"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
-    try:
-        # 统计总数
-        total = db.query(TrackerMessageLog).count()
-
-        # 统计未处理数
-        unprocessed = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.is_processed == False
-        ).count()
-
-        # 统计成功关键词数
-        success = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.keyword_type == "success"
-        ).count()
-
-        # 统计失败关键词数
-        failure = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.keyword_type == "failure"
-        ).count()
-
-        return CommonResponse(
-            status="success",
-            msg="查询成功",
-            code="200",
-            data={
-                "total": total,
-                "unprocessed": unprocessed,
-                "success": success,
-                "failure": failure
-            }
-        )
-
-    except Exception as e:
-        logger.error(f"获取统计信息失败: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"查询失败: {str(e)}")
-
-
 @router.post("/{log_id}/add-to-pool", summary="添加消息到关键词池")
 def add_message_to_pool(
     log_id: str,
     pool_request: AddToPoolRequest,
-    request: Request,
-    db: Session = Depends(get_db)
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """
     将消息添加到关键词池
 
     自动创建关键词配置,并标记消息为已处理
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询消息 - 不使用dr字段过滤
-        message = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.log_id == log_id
-        ).first()
+        message = db.query(TrackerMessageLog).filter(TrackerMessageLog.log_id == log_id).first()
 
         if not message:
-            return CommonResponse(
-                status="error",
-                msg="消息不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="消息不存在", code="404", data=None)
 
         # 检查关键词是否已存在 (keyword全局唯一,不区分dr状态)
-        existing = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.keyword == message.msg
-        ).first()
+        existing = db.query(TrackerKeywordConfig).filter(TrackerKeywordConfig.keyword == message.msg).first()
 
         if existing:
             if existing.dr == 0:
                 # 活跃记录，不允许添加
                 return CommonResponse(
-                    status="error",
-                    msg=f"该关键词已存在于{existing.keyword_type}池中",
-                    code="400",
-                    data=None
+                    status="error", msg=f"该关键词已存在于{existing.keyword_type}池中", code="400", data=None
                 )
             else:
                 # 已删除记录，恢复它
@@ -377,7 +297,7 @@ def add_message_to_pool(
                 existing.description = pool_request.description
                 existing.dr = 0  # 恢复
                 existing.update_time = datetime.now()
-                existing.update_by = utils.get_username_from_token(token) or "admin"
+                existing.update_by = user_info.username or "admin"
 
                 # 标记消息为已处理
                 message.is_processed = True
@@ -392,7 +312,7 @@ def add_message_to_pool(
                     status="success",
                     msg=f"关键词已恢复到{pool_request.keyword_type}池",
                     code="200",
-                    data=TrackerKeywordResponse.model_validate(existing).model_dump()
+                    data=TrackerKeywordResponse.model_validate(existing).model_dump(),
                 )
 
         # 创建新关键词
@@ -406,9 +326,9 @@ def add_message_to_pool(
             description=pool_request.description,
             create_time=datetime.now(),
             update_time=datetime.now(),
-            create_by=utils.get_username_from_token(token) or "admin",
-            update_by=utils.get_username_from_token(token) or "admin",
-            dr=0
+            create_by=user_info.username or "admin",
+            update_by=user_info.username or "admin",
+            dr=0,
         )
 
         # 标记消息为已处理
@@ -425,7 +345,7 @@ def add_message_to_pool(
             status="success",
             msg="添加成功",
             code="200",
-            data=TrackerKeywordResponse.model_validate(new_keyword).model_dump()
+            data=TrackerKeywordResponse.model_validate(new_keyword).model_dump(),
         )
 
     except Exception as e:
@@ -436,31 +356,16 @@ def add_message_to_pool(
 
 @router.delete("/{log_id}", summary="删除消息")
 def delete_message(
-    log_id: str,
-    request: Request,
-    db: Session = Depends(get_db)
+    log_id: str, user_info: AuthenticatedUserInfo = Depends(require_authenticated_user), db: Session = Depends(get_db)
 ):
     """删除指定ID的消息(物理删除)"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
-        message = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.log_id == log_id
-        ).first()
+        message = db.query(TrackerMessageLog).filter(TrackerMessageLog.log_id == log_id).first()
 
         if not message:
-            return CommonResponse(
-                status="error",
-                msg="消息不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="消息不存在", code="404", data=None)
 
         # 物理删除
         db.delete(message)
@@ -468,12 +373,7 @@ def delete_message(
 
         logger.info(f"删除消息成功: {log_id}")
 
-        return CommonResponse(
-            status="success",
-            msg="删除成功",
-            code="200",
-            data=None
-        )
+        return CommonResponse(status="success", msg="删除成功", code="200", data=None)
 
     except Exception as e:
         db.rollback()
@@ -484,29 +384,21 @@ def delete_message(
 @router.post("/batch/add-to-pool", summary="批量添加消息到关键词池")
 def batch_add_to_pool(
     batch_req: BatchAddToPoolRequest,
-    request: Request,
-    db: Session = Depends(get_db)
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """批量添加消息到关键词池（接受合并的请求体）"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询消息
-        messages = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.log_id.in_(batch_req.log_ids)
-        ).all()
+        messages = db.query(TrackerMessageLog).filter(TrackerMessageLog.log_id.in_(batch_req.log_ids)).all()
 
         # 一次性查询所有可能存在的关键词（包括已删除的），避免N+1查询
         message_list = [m.msg for m in messages]
-        all_existing_keywords = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.keyword.in_(message_list)
-        ).all()
+        all_existing_keywords = (
+            db.query(TrackerKeywordConfig).filter(TrackerKeywordConfig.keyword.in_(message_list)).all()
+        )
 
         # 分别构建活跃和已删除的keyword集合
         active_keywords = {}
@@ -521,18 +413,16 @@ def batch_add_to_pool(
         restored = 0
         skipped = 0
         skipped_details = []
-        username = utils.get_username_from_token(token) or "admin"
+        username = user_info.username or "admin"
 
         for message in messages:
             # 检查关键词是否已存在
             if message.msg in active_keywords:
                 # 活跃记录，跳过
                 skipped += 1
-                skipped_details.append({
-                    "msg": message.msg,
-                    "keyword_type": active_keywords[message.msg].keyword_type,
-                    "reason": "已存在"
-                })
+                skipped_details.append(
+                    {"msg": message.msg, "keyword_type": active_keywords[message.msg].keyword_type, "reason": "已存在"}
+                )
                 continue
             elif message.msg in deleted_keywords:
                 # 已删除记录，恢复它
@@ -569,7 +459,7 @@ def batch_add_to_pool(
                 update_time=datetime.now(),
                 create_by=username,
                 update_by=username,
-                dr=0
+                dr=0,
             )
 
             # 标记消息为已处理
@@ -591,8 +481,8 @@ def batch_add_to_pool(
                 "addedCount": count,
                 "restoredCount": restored,
                 "skippedCount": skipped,
-                "skippedDetails": skipped_details
-            }
+                "skippedDetails": skipped_details,
+            },
         )
 
     except Exception as e:
@@ -604,23 +494,15 @@ def batch_add_to_pool(
 @router.post("/batch/delete", summary="批量删除消息")
 def batch_delete_messages(
     batch_req: BatchDeleteMessagesRequest,
-    request: Request,
-    db: Session = Depends(get_db)
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """批量删除消息(物理删除，使用log_ids字段)"""
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    try:
-        utils.verify_access_token(token)
-    except Exception as e:
-        logger.info(f"Token验证失败: {str(e)}")
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
+    # JWT验证（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 查询并物理删除 - 不使用dr字段
-        messages = db.query(TrackerMessageLog).filter(
-            TrackerMessageLog.log_id.in_(batch_req.log_ids)
-        ).all()
+        messages = db.query(TrackerMessageLog).filter(TrackerMessageLog.log_id.in_(batch_req.log_ids)).all()
 
         count = 0
         for message in messages:
@@ -631,12 +513,7 @@ def batch_delete_messages(
 
         logger.info(f"批量删除消息成功: {count}个")
 
-        return CommonResponse(
-            status="success",
-            msg=f"成功删除{count}条消息",
-            code="200",
-            data={"deletedCount": count}
-        )
+        return CommonResponse(status="success", msg=f"成功删除{count}条消息", code="200", data={"deletedCount": count})
 
     except Exception as e:
         db.rollback()

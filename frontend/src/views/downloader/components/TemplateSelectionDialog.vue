@@ -1,15 +1,31 @@
 <template>
   <el-dialog
-    title="从模板选择配置"
     :visible.sync="visible"
     :before-close="handleClose"
     :close-on-click-modal="false"
-    width="70%"
+    :show-close="false"
+    width="min(1040px, 92vw)"
     custom-class="template-selection-dialog"
   >
-    <div v-loading="loading" class="dialog-body">
+    <template #title>
+      <div class="template-dialog-header">
+        <span class="template-dialog-header__mark"><LucideIcon name="layout-template" :size="19" /></span>
+        <div>
+          <span class="template-dialog-header__eyebrow">CONFIGURATION LIBRARY</span>
+          <h3>从模板选择配置</h3>
+        </div>
+        <button type="button" aria-label="关闭模板库" @click="handleClose">
+          <LucideIcon name="x" :size="16" />
+        </button>
+      </div>
+    </template>
+    <div class="dialog-body">
+      <div v-if="loading" class="template-loading">
+        <LucideIcon class="is-spinning" name="refresh-cw" :size="20" />
+        <span>正在同步模板索引</span>
+      </div>
       <!-- 模板卡片网格 -->
-      <div class="template-grid">
+      <div v-else-if="templateList.length > 0" class="template-grid">
         <div
           v-for="template in templateList"
           :key="template.id"
@@ -27,17 +43,12 @@
           <!-- 卡片头部 -->
           <div class="card-header">
             <div class="card-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"></path>
-              </svg>
+              <LucideIcon name="zap" :size="20" />
             </div>
             <div class="card-title-section">
               <div class="card-title">{{ template.name }}</div>
               <div class="card-type">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <path d="M12 6v6l4 2"></path>
-                </svg>
+                <LucideIcon name="clock" :size="11" />
                 {{ getDownloaderTypeLabel(template.downloader_type) }}
               </div>
             </div>
@@ -51,7 +62,10 @@
       </div>
 
       <!-- 空状态 -->
-      <el-empty v-if="!loading && templateList.length === 0" description="暂无可用模板" />
+      <div v-else class="template-empty">
+        <LucideIcon name="inbox" :size="38" :stroke-width="1.4" />
+        <span>暂无可用模板</span>
+      </div>
     </div>
 
     <div slot="footer" class="dialog-footer">
@@ -60,24 +74,15 @@
       </div>
       <div class="footer-actions">
         <el-button @click="handleClose">
-          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
+          <LucideIcon class="button-icon" name="x" :size="14" />
           取消
         </el-button>
         <el-button type="warning" :disabled="!selectedTemplate" @click="handleApplyDirect">
-          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
+          <LucideIcon class="button-icon" name="download" :size="14" />
           直接应用
         </el-button>
         <el-button type="primary" :disabled="!selectedTemplate" @click="handleApplyWithPreview">
-          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
+          <LucideIcon class="button-icon" name="check" :size="14" />
           确定
         </el-button>
       </div>
@@ -85,18 +90,22 @@
 
     <!-- 确认对话框 -->
     <el-dialog
-      title="确认直接应用模板？"
       :visible.sync="confirmDialogVisible"
       width="400px"
+      :show-close="false"
       append-to-body
     >
+      <template #title>
+        <div class="template-confirm-header">
+          <span>确认直接应用模板</span>
+          <button type="button" aria-label="关闭确认框" @click="confirmDialogVisible = false">
+            <LucideIcon name="x" :size="15" />
+          </button>
+        </div>
+      </template>
       <div class="confirm-content">
         <div class="confirm-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-            <line x1="12" y1="9" x2="12" y2="13"></line>
-            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-          </svg>
+          <LucideIcon name="alert-triangle" :size="30" :stroke-width="1.5" />
         </div>
         <div class="confirm-message">
           即将应用模板 <strong>{{ selectedTemplate?.name }}</strong
@@ -116,6 +125,11 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { SettingTemplate } from '../types'
 import { getTemplateList, applyTemplate } from '@/api/downloader'
+
+interface ApiErrorLike {
+  response?: { data?: { msg?: string } }
+  message?: string
+}
 
 @Component({
   name: 'TemplateSelectionDialog'
@@ -197,11 +211,10 @@ export default class TemplateSelectionDialog extends Vue {
         return
       }
 
-      const response = await applyTemplate(this.selectedTemplate.id, {
-        template_id: this.selectedTemplate.id,
-        downloader_id: downloaderId.trim(),
-        override_local: true
-      })
+      const response = await applyTemplate(
+        this.selectedTemplate.id,
+        downloaderId.trim()
+      )
 
       if (response.code === '200') {
         this.$message.success('模板应用成功')
@@ -209,9 +222,10 @@ export default class TemplateSelectionDialog extends Vue {
         this.confirmDialogVisible = false
         this.handleClose()
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('应用模板失败:', error)
-      const errorMsg = error?.response?.data?.msg || error?.message || '应用模板失败'
+      const apiError = error as ApiErrorLike
+      const errorMsg = apiError.response?.data?.msg || apiError.message || '应用模板失败'
       this.$message.error(errorMsg)
     }
   }
@@ -496,5 +510,235 @@ export default class TemplateSelectionDialog extends Vue {
 
 .dialog-body::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-tertiary);
+}
+
+::v-deep .template-selection-dialog {
+  overflow: hidden;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.18);
+  border-radius: 15px;
+  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.2);
+
+  .el-dialog__header {
+    padding: 0;
+  }
+
+  .el-dialog__footer {
+    padding: 10px 13px;
+  }
+}
+
+.template-dialog-header {
+  display: flex;
+  min-height: 64px;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 13px;
+  background:
+    radial-gradient(circle at 78% 20%, rgba(var(--color-primary-rgb), 0.13), transparent 30%),
+    var(--color-bg-primary);
+
+  &__mark {
+    display: inline-flex;
+    width: 38px;
+    height: 38px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid rgba(var(--color-primary-rgb), 0.22);
+    border-radius: 10px;
+    color: var(--color-primary);
+    background: rgba(var(--color-primary-rgb), 0.07);
+  }
+
+  &__eyebrow {
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    letter-spacing: 0.18em;
+  }
+
+  h3 {
+    margin: 2px 0 0;
+    color: var(--color-text-primary);
+    font-size: 16px;
+    letter-spacing: -0.02em;
+  }
+
+  button,
+  .template-confirm-header button {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: 8px;
+    color: var(--color-text-secondary);
+    background: rgba(255, 255, 255, 0.62);
+    cursor: pointer;
+  }
+}
+
+.dialog-body {
+  min-height: 220px;
+  max-height: 56vh;
+  padding: 12px;
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.026) 1px, transparent 1px),
+    var(--color-bg-secondary);
+  background-size: 24px 24px;
+}
+
+.template-grid {
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.template-card {
+  gap: 8px;
+  min-height: 128px;
+  padding: 12px;
+  border-width: 1px;
+  border-radius: 11px;
+
+  &:hover {
+    box-shadow: 7px 7px 0 rgba(var(--color-primary-rgb), 0.08);
+    transform: translateY(-1px);
+  }
+}
+
+.system-badge {
+  top: 8px;
+  left: 8px;
+  padding: 3px 7px;
+  font-size: 8px;
+}
+
+.card-radio {
+  top: 10px;
+  right: 10px;
+  width: 16px;
+  height: 16px;
+
+  &::after {
+    width: 8px;
+    height: 8px;
+  }
+}
+
+.card-header {
+  gap: 9px;
+}
+
+.card-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.card-title {
+  margin-bottom: 3px;
+  font-size: 12px;
+}
+
+.card-type {
+  padding: 3px 6px;
+  font-family: var(--font-mono);
+  font-size: 8px;
+}
+
+.card-description,
+.footer-info {
+  font-size: 9px;
+}
+
+.dialog-footer,
+.footer-actions {
+  gap: 6px;
+}
+
+.footer-actions ::v-deep .el-button {
+  height: 31px;
+  margin-left: 0;
+  padding: 0 10px;
+  font-size: 9px;
+}
+
+.footer-actions ::v-deep .el-button span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.button-icon {
+  margin-right: 0;
+}
+
+.template-loading,
+.template-empty {
+  display: flex;
+  min-height: 196px;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 9px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.template-confirm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 14px;
+
+  button {
+    display: inline-flex;
+    width: 28px;
+    height: 28px;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: 8px;
+    color: var(--color-text-secondary);
+    background: transparent;
+    cursor: pointer;
+  }
+}
+
+.is-spinning {
+  animation: template-spin 0.8s linear infinite;
+}
+
+@keyframes template-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 620px) {
+  .dialog-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .footer-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .footer-actions .el-button:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .template-card {
+    transition-duration: 0.01ms;
+  }
+
+  .is-spinning {
+    animation: none;
+  }
 }
 </style>

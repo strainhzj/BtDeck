@@ -13,32 +13,31 @@
 import logging
 import shutil
 import urllib3
+import uuid
 import zipfile
-from typing import Optional, List
+from typing import Any, Dict, List, Optional, Sequence
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
-from fastapi import APIRouter, HTTPException, Request, Query, BackgroundTasks, UploadFile, File
+from fastapi import APIRouter, HTTPException, Request, Query, Depends, BackgroundTasks, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
 import io
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
 from app.api.responseVO import CommonResponse
-from app.auth.utils import verify_access_token
+from app.auth.dependencies import require_authenticated_user
+from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.core.path_mapping import PathMappingService
 from app.schemas.torrent_backup import (
     TorrentFileBackupCreate,
-    TorrentFileBackupResponse,
-    TorrentFileBackupListResponse,
-    TorrentFileBackupDelete,
     TorrentFileBackupBatchCreate,
-    TorrentFileBackupBatchResponse
 )
 from app.models.torrent_file_backup import TorrentFileBackup
 from app.models.setting_templates import DownloaderTypeEnum
+from app.downloader.models import BtDownloaders
 
 # 禁用 urllib3 警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -49,7 +48,8 @@ router = APIRouter()
 
 # ==================== 辅助函数 ====================
 
-def get_downloader_from_store(downloader_id: int, app):
+
+def get_downloader_from_store(downloader_id: str, app):
     """
     从应用状态存储中获取下载器配置
 
@@ -61,15 +61,15 @@ def get_downloader_from_store(downloader_id: int, app):
         DownloaderVO: 下载器值对象，如果未找到则返回 None
     """
     # 从 store 获取下载器
-    if not hasattr(app.state, 'store'):
+    if not hasattr(app.state, "store"):
         logger.error("app.state 未初始化 store")
         return None
 
     try:
         cached_downloaders = app.state.store.get_snapshot_sync()
         downloader = next(
-            (d for d in cached_downloaders if d.downloader_id == downloader_id),
-            None
+            (d for d in cached_downloaders if str(d.downloader_id) == str(downloader_id)),
+            None,
         )
         return downloader
     except Exception as e:
@@ -77,37 +77,40 @@ def get_downloader_from_store(downloader_id: int, app):
         return None
 
 
-def verify_token(request: Request) -> None:
-    """
-    验证访问令牌
-
-    Args:
-        request: FastAPI请求对象
-
-    Raises:
-        HTTPException: 认证失败
-    """
-    try:
-        token = request.headers.get("x-access-token")
-        if not verify_access_token(token):
-            raise HTTPException(status_code=401, detail="Invalid access token")
-    except Exception as e:
-        logger.error(f"Token验证失败: {e}")
-        raise HTTPException(status_code=401, detail="Authentication failed")
-
-
-def backup_to_dict(backup: TorrentFileBackup) -> dict:
+def backup_to_dict(backup: TorrentFileBackup, downloader_nickname: Optional[str] = None) -> dict:
     """将TorrentFileBackup对象转换为字典"""
-    return backup.to_dict()
+    data = backup.to_dict()
+    data["downloader_nickname"] = downloader_nickname
+    return data
+
+
+async def get_backup_downloader_nicknames(
+    db: AsyncSession,
+    backups: Sequence[TorrentFileBackup],
+) -> Dict[str, str]:
+    """一次查询返回备份列表所引用下载器的当前昵称。"""
+    downloader_ids = {str(backup.downloader_id) for backup in backups if backup.downloader_id is not None}
+    if not downloader_ids:
+        return {}
+
+    result = await db.execute(
+        select(BtDownloaders.downloader_id, BtDownloaders.nickname).where(
+            BtDownloaders.downloader_id.in_(downloader_ids),
+            BtDownloaders.dr == 0,
+        )
+    )
+    return {str(row.downloader_id): row.nickname for row in result.all() if row.nickname}
 
 
 # ==================== API端点 ====================
+
 
 @router.post("/backup", response_model=CommonResponse)
 async def create_backup(
     request: Request,
     backup_request: TorrentFileBackupCreate,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
 ):
     """
     手动触发种子文件备份
@@ -122,38 +125,29 @@ async def create_backup(
     Returns:
         CommonResponse: 操作结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
-    result = {
-        "success": False,
-        "backup": None,
-        "message": ""
-    }
+    result: Dict[str, Any] = {"success": False, "backup": None, "message": ""}
 
     try:
         # 获取下载器配置
         downloader = get_downloader_from_store(backup_request.downloader_id, app=request.app)
-        if not downloader or (hasattr(downloader, 'fail_time') and downloader.fail_time > 0):
-            return CommonResponse(
-                status="error",
-                msg="下载器不可用",
-                code="400"
-            )
+        if not downloader or (hasattr(downloader, "fail_time") and downloader.fail_time > 0):
+            return CommonResponse(status="error", msg="下载器不可用", code="400")
 
         # 准备下载器配置
         # 防御性：统一使用getattr()进行属性访问
         downloader_config = {
-            "host": getattr(downloader, 'host', ''),
-            "port": getattr(downloader, 'port', 0),
-            "username": getattr(downloader, 'username', ''),
-            "password": getattr(downloader, 'password', ''),
-            "torrent_save_path": getattr(downloader, 'torrent_save_path', '')
+            "host": getattr(downloader, "host", ""),
+            "port": getattr(downloader, "port", 0),
+            "username": getattr(downloader, "username", ""),
+            "password": getattr(downloader, "password", ""),
+            "torrent_save_path": getattr(downloader, "torrent_save_path", ""),
         }
 
         # 准备路径映射服务（防御性：统一使用getattr）
         path_mapping_service = None
-        path_mapping_rules = getattr(downloader, 'path_mapping_rules', None)
+        path_mapping_rules = getattr(downloader, "path_mapping_rules", None)
         if path_mapping_rules:
             try:
                 path_mapping_service = PathMappingService(path_mapping_rules)
@@ -162,13 +156,18 @@ async def create_backup(
 
         # 初始化管理服务
         async with AsyncSessionLocal() as db:
-            manager = TorrentFileBackupManagerService(
-                db=db,
-                path_mapping_service=path_mapping_service
-            )
+            manager = TorrentFileBackupManagerService(db=db, path_mapping_service=path_mapping_service)
 
             # 判断备份方式
             if backup_request.source_file_path:
+                # 后缀闸门（用户可控路径）：仅接受 .torrent 种子文件；
+                # 内容级校验（bencode+info 字典）由 core 层统一收口
+                if not backup_request.source_file_path.lower().endswith(".torrent"):
+                    return CommonResponse(
+                        status="error",
+                        msg="source_file_path 仅接受 .torrent 种子文件",
+                        code="400",
+                    )
                 # 从路径备份
                 result_data = await manager.backup_torrent_from_path(
                     info_hash=backup_request.info_hash,
@@ -176,7 +175,7 @@ async def create_backup(
                     source_file_path=backup_request.source_file_path,
                     downloader_id=backup_request.downloader_id,
                     task_name=backup_request.task_name,
-                    uploader_id=backup_request.uploader_id
+                    uploader_id=backup_request.uploader_id,
                 )
             else:
                 # 从下载器备份
@@ -185,10 +184,10 @@ async def create_backup(
                     torrent_name=backup_request.torrent_name,
                     downloader_type=downloader.downloader_type,  # 0或1
                     downloader_id=backup_request.downloader_id,
-                    save_path=getattr(downloader, 'torrent_save_path', None),
+                    save_path=getattr(downloader, "torrent_save_path", None),
                     downloader_config=downloader_config,
                     task_name=backup_request.task_name,
-                    uploader_id=backup_request.uploader_id
+                    uploader_id=backup_request.uploader_id,
                 )
 
             if result_data["success"]:
@@ -202,34 +201,27 @@ async def create_backup(
                     code="200",
                     data={
                         "backup": backup_to_dict(result_data["backup"]),
-                        "backup_file_path": result_data["backup_file_path"]
-                    }
+                        "backup_file_path": result_data["backup_file_path"],
+                    },
                 )
             else:
                 result["message"] = result_data.get("error_message", "备份失败")
-                return CommonResponse(
-                    status="error",
-                    msg=result["message"],
-                    code="400"
-                )
+                return CommonResponse(status="error", msg=result["message"], code="400")
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"创建备份异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"备份失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"备份失败: {str(e)}", code="500")
 
 
 @router.get("/backup", response_model=CommonResponse)
 async def list_backups(
     request: Request,
-    downloader_id: Optional[int] = Query(None, description="下载器ID（可选）"),
+    _user=Depends(require_authenticated_user),
+    downloader_id: Optional[str] = Query(None, description="下载器ID（可选）"),
     page: int = Query(1, ge=1, description="页码"),
-    pageSize: int = Query(20, ge=1, le=100, description="每页大小")
+    pageSize: int = Query(20, ge=1, le=100, description="每页大小"),
 ):
     """
     获取种子文件备份列表
@@ -245,24 +237,24 @@ async def list_backups(
     Returns:
         CommonResponse: 备份列表（分页格式）
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         async with AsyncSessionLocal() as db:
             manager = TorrentFileBackupManagerService(db=db)
 
-            result_data = await manager.list_backups(
-                downloader_id=downloader_id,
-                page=page,
-                page_size=pageSize
-            )
+            result_data = await manager.list_backups(downloader_id=downloader_id, page=page, page_size=pageSize)
 
             if result_data["success"]:
-                # 转换为响应模型
+                # 批量关联当前下载器昵称，避免逐行查询或前端逐行动态加载。
+                backups = result_data["list"]
+                nickname_map = await get_backup_downloader_nicknames(db, backups)
                 backup_list = [
-                    backup_to_dict(backup)
-                    for backup in result_data["list"]
+                    backup_to_dict(
+                        backup,
+                        nickname_map.get(str(backup.downloader_id)),
+                    )
+                    for backup in backups
                 ]
 
                 return CommonResponse(
@@ -273,31 +265,24 @@ async def list_backups(
                         "total": result_data["total"],
                         "page": result_data["page"],
                         "pageSize": result_data["pageSize"],
-                        "list": backup_list
-                    }
+                        "list": backup_list,
+                    },
                 )
             else:
-                return CommonResponse(
-                    status="error",
-                    msg=result_data.get("error_message", "查询失败"),
-                    code="400"
-                )
+                return CommonResponse(status="error", msg=result_data.get("error_message", "查询失败"), code="400")
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"列出备份异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500")
 
 
 @router.get("/backup/{info_hash}", response_model=CommonResponse)
 async def get_backup(
     request: Request,
-    info_hash: str
+    info_hash: str,
+    _user=Depends(require_authenticated_user),
 ):
     """
     查询单个种子文件备份
@@ -311,16 +296,11 @@ async def get_backup(
     Returns:
         CommonResponse: 备份详细信息
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:
-        return CommonResponse(
-            status="error",
-            msg="info_hash格式错误（必须为40位字符）",
-            code="400"
-        )
+        return CommonResponse(status="error", msg="info_hash格式错误（必须为40位字符）", code="400")
 
     try:
         async with AsyncSessionLocal() as db:
@@ -330,34 +310,24 @@ async def get_backup(
 
             if result_data["success"]:
                 return CommonResponse(
-                    status="success",
-                    msg="查询成功",
-                    code="200",
-                    data={"backup": backup_to_dict(result_data["backup"])}
+                    status="success", msg="查询成功", code="200", data={"backup": backup_to_dict(result_data["backup"])}
                 )
             else:
-                return CommonResponse(
-                    status="error",
-                    msg=result_data.get("error_message", "查询失败"),
-                    code="404"
-                )
+                return CommonResponse(status="error", msg=result_data.get("error_message", "查询失败"), code="404")
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"获取备份信息异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"查询失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"查询失败: {str(e)}", code="500")
 
 
 @router.delete("/backup/{info_hash}", response_model=CommonResponse)
 async def delete_backup(
     request: Request,
     info_hash: str,
-    deletePhysicalFile: bool = Query(False, description="是否删除物理文件")
+    _user=Depends(require_authenticated_user),
+    deletePhysicalFile: bool = Query(False, description="是否删除物理文件"),
 ):
     """
     删除种子文件备份
@@ -372,59 +342,40 @@ async def delete_backup(
     Returns:
         CommonResponse: 操作结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:
-        return CommonResponse(
-            status="error",
-            msg="info_hash格式错误（必须为40位字符）",
-            code="400"
-        )
+        return CommonResponse(status="error", msg="info_hash格式错误（必须为40位字符）", code="400")
 
     try:
         async with AsyncSessionLocal() as db:
             manager = TorrentFileBackupManagerService(db=db)
 
-            result_data = await manager.delete_backup(
-                info_hash=info_hash,
-                delete_physical_file=deletePhysicalFile
-            )
+            result_data = await manager.delete_backup(info_hash=info_hash, delete_physical_file=deletePhysicalFile)
 
             if result_data["success"]:
                 message = "删除成功"
                 if result_data["deleted_file"]:
                     message += "（已删除物理文件）"
 
-                return CommonResponse(
-                    status="success",
-                    msg=message,
-                    code="200"
-                )
+                return CommonResponse(status="success", msg=message, code="200")
             else:
-                return CommonResponse(
-                    status="error",
-                    msg=result_data.get("error_message", "删除失败"),
-                    code="400"
-                )
+                return CommonResponse(status="error", msg=result_data.get("error_message", "删除失败"), code="400")
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"删除备份异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"删除失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"删除失败: {str(e)}", code="500")
 
 
 @router.post("/backup/batch", response_model=CommonResponse)
 async def batch_create_backups(
     request: Request,
     batch_request: TorrentFileBackupBatchCreate,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    _user=Depends(require_authenticated_user),
 ):
     """
     批量备份种子文件
@@ -439,21 +390,22 @@ async def batch_create_backups(
     Returns:
         CommonResponse: 批量操作结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 准备备份数据
         backup_requests = []
         for req in batch_request.backup_requests:
-            backup_requests.append({
-                "info_hash": req.info_hash,
-                "torrent_name": req.torrent_name,
-                "downloader_id": req.downloader_id,
-                "source_file_path": req.source_file_path,
-                "task_name": req.task_name,
-                "uploader_id": req.uploader_id
-            })
+            backup_requests.append(
+                {
+                    "info_hash": req.info_hash,
+                    "torrent_name": req.torrent_name,
+                    "downloader_id": req.downloader_id,
+                    "source_file_path": req.source_file_path,
+                    "task_name": req.task_name,
+                    "uploader_id": req.uploader_id,
+                }
+            )
 
         async with AsyncSessionLocal() as db:
             manager = TorrentFileBackupManagerService(db=db)
@@ -461,10 +413,7 @@ async def batch_create_backups(
             result_data = await manager.batch_backup(backup_requests)
 
             # 准备响应数据
-            success_items = [
-                backup_to_dict(backup)
-                for backup in result_data["success_items"]
-            ]
+            success_items = [backup_to_dict(backup) for backup in result_data["success_items"]]
 
             return CommonResponse(
                 status="success",
@@ -475,25 +424,22 @@ async def batch_create_backups(
                     "success_count": result_data["success_count"],
                     "failed_count": result_data["failed_count"],
                     "success_items": success_items,
-                    "failed_items": result_data["failed_items"]
-                }
+                    "failed_items": result_data["failed_items"],
+                },
             )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"批量备份异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"批量备份失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"批量备份失败: {str(e)}", code="500")
 
 
 @router.get("/backup/{info_hash}/validate", response_model=CommonResponse)
 async def validate_backup(
     request: Request,
-    info_hash: str
+    info_hash: str,
+    _user=Depends(require_authenticated_user),
 ):
     """
     验证种子文件备份完整性
@@ -507,16 +453,11 @@ async def validate_backup(
     Returns:
         CommonResponse: 验证结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:
-        return CommonResponse(
-            status="error",
-            msg="info_hash格式错误（必须为40位字符）",
-            code="400"
-        )
+        return CommonResponse(status="error", msg="info_hash格式错误（必须为40位字符）", code="400")
 
     try:
         async with AsyncSessionLocal() as db:
@@ -536,29 +477,24 @@ async def validate_backup(
                     data={
                         "is_valid": result_data["is_valid"],
                         "file_exists": result_data["file_exists"],
-                        "file_size": result_data["file_size"]
-                    }
+                        "file_size": result_data["file_size"],
+                    },
                 )
             else:
-                return CommonResponse(
-                    status="error",
-                    msg=result_data.get("error_message", "验证失败"),
-                    code="400"
-                )
+                return CommonResponse(status="error", msg=result_data.get("error_message", "验证失败"), code="400")
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"验证备份文件异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"验证失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"验证失败: {str(e)}", code="500")
 
 
 @router.post("/backup/deduplicate", response_model=CommonResponse)
-async def deduplicate_backups(request: Request):
+async def deduplicate_backups(
+    request: Request,
+    _user=Depends(require_authenticated_user),
+):
     """
     去重种子文件备份
 
@@ -571,25 +507,27 @@ async def deduplicate_backups(request: Request):
     Returns:
         CommonResponse: 去重结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         async with AsyncSessionLocal() as db:
             # 查找重复的备份记录（按info_hash分组）
-            from sqlalchemy import select, and_
+            from sqlalchemy import select
             from app.models.torrent_file_backup import TorrentFileBackup
 
             # 查询所有未删除的备份
-            stmt = select(TorrentFileBackup).where(
-                TorrentFileBackup.is_deleted == 0
-            ).order_by(TorrentFileBackup.created_at.desc())
+            stmt = (
+                select(TorrentFileBackup)
+                .where(TorrentFileBackup.is_deleted == 0)
+                .order_by(TorrentFileBackup.created_at.desc())
+            )
 
             result = await db.execute(stmt)
             all_backups = result.scalars().all()
 
             # 按info_hash分组
             from collections import defaultdict
+
             backup_groups = defaultdict(list)
             for backup in all_backups:
                 backup_groups[backup.info_hash].append(backup)
@@ -603,8 +541,9 @@ async def deduplicate_backups(request: Request):
                     duplicates_count += 1
                     # 保留第一个（最新的），删除其余的
                     for backup in backups[1:]:
-                        backup.is_deleted = 1
-                        backup.deleted_at = datetime.now()
+                        # TorrentFileBackup 无 deleted_at 列（历史笔误，赋值不落库且
+                        # mypy 报错）；逻辑删除语义由 is_deleted 承担
+                        backup.is_deleted = True
                         deleted_count += 1
 
             await db.commit()
@@ -614,27 +553,21 @@ async def deduplicate_backups(request: Request):
                 status="success",
                 msg=message,
                 code="200",
-                data={
-                    "duplicates_count": duplicates_count,
-                    "deleted_count": deleted_count
-                }
+                data={"duplicates_count": duplicates_count, "deleted_count": deleted_count},
             )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"去重异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"去重失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"去重失败: {str(e)}", code="500")
 
 
 @router.get("/backup/export")
 async def export_backups(
     request: Request,
-    info_hashes: str = Query(..., description="要导出的info_hash列表，逗号分隔")
+    _user=Depends(require_authenticated_user),
+    info_hashes: str = Query(..., description="要导出的info_hash列表，逗号分隔"),
 ):
     """
     批量导出种子文件
@@ -648,28 +581,22 @@ async def export_backups(
     Returns:
         StreamingResponse: ZIP文件流
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     try:
         # 解析info_hash列表
-        hash_list = [h.strip() for h in info_hashes.split(',') if h.strip()]
+        hash_list = [h.strip() for h in info_hashes.split(",") if h.strip()]
 
         if not hash_list:
             raise HTTPException(status_code=400, detail="未指定要导出的种子文件")
 
         async with AsyncSessionLocal() as db:
-            manager = TorrentFileBackupManagerService(db=db)
-
             # 查询备份记录
             from sqlalchemy import select, and_
             from app.models.torrent_file_backup import TorrentFileBackup
 
             stmt = select(TorrentFileBackup).where(
-                and_(
-                    TorrentFileBackup.info_hash.in_(hash_list),
-                    TorrentFileBackup.is_deleted == 0
-                )
+                and_(TorrentFileBackup.info_hash.in_(hash_list), TorrentFileBackup.is_deleted == 0)
             )
             result = await db.execute(stmt)
             backups = result.scalars().all()
@@ -681,7 +608,7 @@ async def export_backups(
             zip_buffer = io.BytesIO()
             failed_items = []
 
-            with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
                 for backup in backups:
                     try:
                         # 获取种子文件路径
@@ -689,16 +616,13 @@ async def export_backups(
 
                         if not file_path.exists():
                             logger.warning(f"种子文件不存在: {file_path}")
-                            failed_items.append({
-                                "info_hash": backup.info_hash,
-                                "reason": "文件不存在"
-                            })
+                            failed_items.append({"info_hash": backup.info_hash, "reason": "文件不存在"})
                             continue
 
                         # 确定文件名：优先使用任务名称，否则使用info_hash
                         if backup.task_name:
                             # 使用任务名称，替换特殊字符
-                            safe_name = backup.task_name.replace('/', '_').replace('\\', '_')
+                            safe_name = backup.task_name.replace("/", "_").replace("\\", "_")
                             filename = f"{safe_name}.torrent"
                         else:
                             filename = f"{backup.info_hash}.torrent"
@@ -708,10 +632,7 @@ async def export_backups(
 
                     except Exception as e:
                         logger.error(f"添加文件到ZIP失败: {backup.info_hash}, {e}")
-                        failed_items.append({
-                            "info_hash": backup.info_hash,
-                            "reason": str(e)
-                        })
+                        failed_items.append({"info_hash": backup.info_hash, "reason": str(e)})
 
             # 准备ZIP文件
             zip_buffer.seek(0)
@@ -723,14 +644,12 @@ async def export_backups(
 
             # 返回ZIP文件（添加Content-Disposition响应头，确保浏览器下载）
             # 使用 RFC 5987 标准编码文件名，支持中文等非ASCII字符
-            encoded_zip_filename = quote(zip_filename.encode('utf-8'))
+            encoded_zip_filename = quote(zip_filename.encode("utf-8"))
 
             return StreamingResponse(
                 io.BytesIO(zip_bytes),
                 media_type="application/zip",
-                headers={
-                    "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_zip_filename}"
-                }
+                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_zip_filename}"},
             )
 
     except HTTPException:
@@ -743,8 +662,9 @@ async def export_backups(
 @router.post("/backup/import")
 async def import_backups(
     request: Request,
-    downloader_id: int = Query(..., description="目标下载器ID"),
-    files: List[UploadFile] = File(..., description="种子文件列表")
+    _user=Depends(require_authenticated_user),
+    downloader_id: str = Query(..., min_length=1, max_length=64, description="目标下载器ID"),
+    files: List[UploadFile] = File(..., description="种子文件列表"),
 ):
     """
     批量导入种子文件
@@ -760,17 +680,12 @@ async def import_backups(
     Returns:
         CommonResponse: 导入结果
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 获取下载器配置
     downloader = get_downloader_from_store(downloader_id, app=request.app)
-    if not downloader or (hasattr(downloader, 'fail_time') and downloader.fail_time > 0):
-        return CommonResponse(
-            status="error",
-            msg="下载器不可用",
-            code="400"
-        )
+    if not downloader or (hasattr(downloader, "fail_time") and downloader.fail_time > 0):
+        return CommonResponse(status="error", msg="下载器不可用", code="400")
 
     # 准备下载器配置
     downloader_config = {
@@ -778,7 +693,7 @@ async def import_backups(
         "port": downloader.port,
         "username": downloader.username,
         "password": downloader.password,
-        "torrent_save_path": downloader.torrent_save_path
+        "torrent_save_path": downloader.torrent_save_path,
     }
 
     success_count = 0
@@ -789,14 +704,19 @@ async def import_backups(
         async with AsyncSessionLocal() as db:
             manager = TorrentFileBackupManagerService(db=db)
 
-            # 临时保存目录
-            temp_dir = Path("data/temp_imports")
-            temp_dir.mkdir(parents=True, exist_ok=True)
+            # 临时保存目录：每请求独立子目录 + 文件名消毒。
+            # 安全：客户端 filename 可携带 ../..（multipart 库原样保留），
+            # 直接拼接会写出 temp_imports 之外的任意路径；sanitize 剥离
+            # 路径分隔符与控制字符。每请求子目录同时消除并发导入的
+            # 重名覆盖与 rmtree 竞态（历史实现会删掉整个共享目录）。
+            request_dir = Path("data/temp_imports") / uuid.uuid4().hex
+            request_dir.mkdir(parents=True, exist_ok=True)
 
             for file in files:
                 try:
-                    # 保存临时文件
-                    temp_file_path = temp_dir / file.filename
+                    # 保存临时文件（文件名消毒 + 截断，防越界写入与超长路径）
+                    safe_name = FilenameUtils.sanitize_filename(file.filename or "unnamed")[:200]
+                    temp_file_path = request_dir / safe_name
                     with open(temp_file_path, "wb") as buffer:
                         shutil.copyfileobj(file.file, buffer)
 
@@ -806,33 +726,35 @@ async def import_backups(
 
                     # 提取info_hash和torrent_name
                     import bencodepy
+
                     torrent_data = bencodepy.decode(torrent_content)
-                    info_hash = torrent_data[b'info'].get(b'infohash', b'').hex()
+                    info_hash = torrent_data[b"info"].get(b"infohash", b"").hex()
 
                     if not info_hash:
                         # 计算info_hash
                         import hashlib
-                        info_bytes = bencodepy.encode(torrent_data[b'info'])
+
+                        info_bytes = bencodepy.encode(torrent_data[b"info"])
                         info_hash = hashlib.sha1(info_bytes).hexdigest()
 
                     # 获取种子名称
-                    torrent_name = torrent_data[b'info'].get(b'name', b'').decode('utf-8', errors='ignore')
+                    torrent_name = torrent_data[b"info"].get(b"name", b"").decode("utf-8", errors="ignore")
 
                     # 添加到下载器（使用SDK）
                     normalized_type = DownloaderTypeEnum.normalize(downloader.downloader_type)
                     if normalized_type == DownloaderTypeEnum.QBITTORRENT:  # qBittorrent
                         from app.services.downloader_adapters.qbittorrent_adapter import QBittorrentAdapter
+
                         adapter = QBittorrentAdapter(downloader_config)
                         adapter.add_torrent_file(
-                            torrent_file=torrent_content,
-                            save_path=getattr(downloader, 'torrent_save_path', None)
+                            torrent_file=torrent_content, save_path=getattr(downloader, "torrent_save_path", None)
                         )
                     elif normalized_type == DownloaderTypeEnum.TRANSMISSION:  # Transmission
                         from app.services.downloader_adapters.transmission_adapter import TransmissionAdapter
+
                         adapter = TransmissionAdapter(downloader_config)
                         adapter.add_torrent_file(
-                            torrent_file=torrent_content,
-                            save_path=getattr(downloader, 'torrent_save_path', None)
+                            torrent_file=torrent_content, save_path=getattr(downloader, "torrent_save_path", None)
                         )
 
                     # 备份种子文件
@@ -842,17 +764,16 @@ async def import_backups(
                         source_file_path=str(temp_file_path),
                         downloader_id=downloader_id,
                         task_name=torrent_name,
-                        uploader_id=None
+                        uploader_id=None,
                     )
 
                     if result_data["success"]:
                         success_count += 1
                     else:
                         failed_count += 1
-                        failed_items.append({
-                            "filename": file.filename,
-                            "reason": result_data.get("error_message", "未知错误")
-                        })
+                        failed_items.append(
+                            {"filename": file.filename, "reason": result_data.get("error_message", "未知错误")}
+                        )
 
                     # 清理临时文件
                     temp_file_path.unlink(missing_ok=True)
@@ -860,13 +781,10 @@ async def import_backups(
                 except Exception as e:
                     logger.error(f"导入文件失败: {file.filename}, {e}")
                     failed_count += 1
-                    failed_items.append({
-                        "filename": file.filename,
-                        "reason": str(e)
-                    })
+                    failed_items.append({"filename": file.filename, "reason": str(e)})
 
-            # 清理临时目录
-            shutil.rmtree(temp_dir, ignore_errors=True)
+            # 清理本请求的临时子目录（不影响并发请求）
+            shutil.rmtree(request_dir, ignore_errors=True)
 
             message = f"导入完成：成功{success_count}个，失败{failed_count}个"
             return CommonResponse(
@@ -877,25 +795,22 @@ async def import_backups(
                     "total": len(files),
                     "success_count": success_count,
                     "failed_count": failed_count,
-                    "failed_items": failed_items
-                }
+                    "failed_items": failed_items,
+                },
             )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"批量导入异常: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"导入失败: {str(e)}",
-            code="500"
-        )
+        return CommonResponse(status="error", msg=f"导入失败: {str(e)}", code="500")
 
 
 @router.get("/backup/download/{info_hash}")
 async def download_backup(
     request: Request,
-    info_hash: str
+    info_hash: str,
+    _user=Depends(require_authenticated_user),
 ):
     """
     下载单个种子文件
@@ -909,8 +824,7 @@ async def download_backup(
     Returns:
         FileResponse: 种子文件
     """
-    # 验证token
-    verify_token(request)
+    # 验证token（已迁移至 require_authenticated_user 依赖）
 
     # 验证info_hash格式
     if len(info_hash) != 40:
@@ -922,9 +836,7 @@ async def download_backup(
             from app.models.torrent_file_backup import TorrentFileBackup
 
             # 查询备份记录
-            stmt = select(TorrentFileBackup).where(
-                TorrentFileBackup.info_hash == info_hash
-            )
+            stmt = select(TorrentFileBackup).where(TorrentFileBackup.info_hash == info_hash)
             result = await db.execute(stmt)
             backup = result.scalar_one_or_none()
 
@@ -939,22 +851,20 @@ async def download_backup(
 
             # 确定下载文件名
             if backup.task_name:
-                safe_name = backup.task_name.replace('/', '_').replace('\\', '_')
+                safe_name = backup.task_name.replace("/", "_").replace("\\", "_")
                 filename = f"{safe_name}.torrent"
             else:
                 filename = f"{info_hash}.torrent"
 
             # 返回文件（添加Content-Disposition响应头，确保浏览器下载而非预览）
             # 使用 RFC 5987 标准编码文件名，支持中文等非ASCII字符
-            encoded_filename = quote(filename.encode('utf-8'))
+            encoded_filename = quote(filename.encode("utf-8"))
 
             return FileResponse(
                 path=str(file_path),
                 filename=filename,
                 media_type="application/x-bittorrent",
-                headers={
-                    "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
-                }
+                headers={"Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"},
             )
 
     except HTTPException:

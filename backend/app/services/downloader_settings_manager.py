@@ -6,6 +6,7 @@
 
 通过创建对应的 Settings 包装类，提供统一的设置管理接口。
 """
+
 from typing import Dict, Optional, Tuple, Any
 import logging
 
@@ -13,7 +14,6 @@ from app.downloader.models import BtDownloaders
 from app.downloader.exceptions import (
     DownloaderSettingsError,
     ConfigurationError,
-    ValidationError,
 )
 from app.models.setting_templates import DownloaderTypeEnum
 from app.utils.log_sanitizer import format_connection_log, should_sanitize
@@ -21,7 +21,7 @@ from app.utils.log_sanitizer import format_connection_log, should_sanitize
 logger = logging.getLogger(__name__)
 
 
-def _safe_parse_port(port_value: any, downloader_id: str = None) -> int:
+def _safe_parse_port(port_value: Any, downloader_id: Optional[str] = None) -> int:
     """安全解析端口号，防止panic
 
     Args:
@@ -35,26 +35,18 @@ def _safe_parse_port(port_value: any, downloader_id: str = None) -> int:
         ConfigurationError: 端口号无效时抛出
     """
     if port_value is None:
-        raise ConfigurationError(
-            message="端口号不能为空",
-            parameter_name="port",
-            parameter_value=None
-        )
+        raise ConfigurationError(message="端口号不能为空", parameter_name="port", parameter_value=None)
     try:
         port_int = int(port_value)
         if not (1 <= port_int <= 65535):
             raise ConfigurationError(
-                message=f"端口号超出有效范围(1-65535): {port_int}",
-                parameter_name="port",
-                parameter_value=port_int
+                message=f"端口号超出有效范围(1-65535): {port_int}", parameter_name="port", parameter_value=port_int
             )
         logger.debug(f"端口号解析成功: {port_int} (downloader: {downloader_id})")
         return port_int
     except (ValueError, TypeError):
         raise ConfigurationError(
-            message=f"端口号格式无效: {port_value}",
-            parameter_name="port",
-            parameter_value=port_value
+            message=f"端口号格式无效: {port_value}", parameter_name="port", parameter_value=port_value
         )
 
 
@@ -116,34 +108,25 @@ class DownloaderSettingsManager:
         from app.main import app as downloader_app
 
         # 检查缓存是否可用
-        if not hasattr(downloader_app.state, 'store') or downloader_app.state.store is None:
+        if not hasattr(downloader_app.state, "store") or downloader_app.state.store is None:
             raise ConfigurationError(
-                message="下载器缓存未初始化,请稍后重试",
-                parameter_name="store",
-                parameter_value=None
+                message="下载器缓存未初始化,请稍后重试", parameter_name="store", parameter_value=None
             )
 
         # 从缓存获取下载器列表
         cached_downloaders = downloader_app.state.store.get_snapshot_sync()
 
         if not cached_downloaders:
-            raise ConfigurationError(
-                message="下载器缓存为空,请稍后重试",
-                parameter_name="store",
-                parameter_value=None
-            )
+            raise ConfigurationError(message="下载器缓存为空,请稍后重试", parameter_name="store", parameter_value=None)
 
         # 根据 downloader_id 查找对应的缓存下载器
-        downloader_vo = next(
-            (d for d in cached_downloaders if d.downloader_id == self.downloader.downloader_id),
-            None
-        )
+        downloader_vo = next((d for d in cached_downloaders if d.downloader_id == self.downloader.downloader_id), None)
 
         if not downloader_vo:
             raise ConfigurationError(
                 message=f"下载器 {self.downloader.nickname} 未在缓存中找到",
                 parameter_name="downloader_id",
-                parameter_value=self.downloader.downloader_id
+                parameter_value=self.downloader.downloader_id,
             )
 
         # 验证缓存连接的 fail_time 状态
@@ -151,7 +134,7 @@ class DownloaderSettingsManager:
             raise ConfigurationError(
                 message=f"下载器 {self.downloader.nickname} 不可用 (fail_time={downloader_vo.fail_time})",
                 parameter_name="fail_time",
-                parameter_value=downloader_vo.fail_time
+                parameter_value=downloader_vo.fail_time,
             )
 
         # 🔧 方案1修复：使用规范化后的类型进行判断
@@ -159,11 +142,13 @@ class DownloaderSettingsManager:
 
         if normalized_type == 0:  # qBittorrent
             from app.downloader.qbittorrent_settings import QBitTorrentSettings
+
             # ✅ 使用缓存中的客户端(推荐方式)
             return QBitTorrentSettings(client=downloader_vo.client)
 
         elif normalized_type == 1:  # Transmission
             from app.downloader.transmission_settings import TransmissionSettings
+
             # ✅ 使用缓存中的客户端(推荐方式)
             return TransmissionSettings(client=downloader_vo.client)
 
@@ -172,7 +157,7 @@ class DownloaderSettingsManager:
             raise ConfigurationError(
                 message=f"不支持的下载器类型(规范化后): {normalized_type}",
                 parameter_name="downloader_type",
-                parameter_value=normalized_type
+                parameter_value=normalized_type,
             )
 
     def apply_settings(self, settings: Dict) -> bool:
@@ -189,10 +174,7 @@ class DownloaderSettingsManager:
             DownloaderSettingsError: 应用失败
         """
         try:
-            logger.info(
-                f"应用配置到下载器: {self.downloader.nickname} "
-                f"({self.downloader.downloader_id})"
-            )
+            logger.info(f"应用配置到下载器: {self.downloader.nickname} " f"({self.downloader.downloader_id})")
 
             # 调用设置包装类的方法
             success = self.settings_wrapper.set_all_settings(settings)
@@ -208,10 +190,7 @@ class DownloaderSettingsManager:
             raise
         except Exception as e:
             logger.error(f"应用配置失败: {e}")
-            raise DownloaderSettingsError(
-                message=f"应用配置失败: {e}",
-                downloader_id=self.downloader.downloader_id
-            )
+            raise DownloaderSettingsError(message=f"应用配置失败: {e}", downloader_id=self.downloader.downloader_id)
 
     def get_supported_capabilities(self) -> Dict[str, bool]:
         """
@@ -222,10 +201,7 @@ class DownloaderSettingsManager:
         """
         try:
             capabilities = self.settings_wrapper.get_capabilities()
-            logger.info(
-                f"获取下载器能力成功: {self.downloader.nickname}, "
-                f"支持功能: {list(capabilities.keys())}"
-            )
+            logger.info(f"获取下载器能力成功: {self.downloader.nickname}, " f"支持功能: {list(capabilities.keys())}")
             return capabilities
 
         except Exception as e:
@@ -270,16 +246,12 @@ class DownloaderSettingsManager:
             # 如果不支持分时段速度，检查相关配置
             if not capabilities.get("schedule_speed", False):
                 if settings.get("enable_schedule", False):
-                    validation_errors["enable_schedule"] = (
-                        f"{self.downloader.downloader_type} 不支持分时段速度限制"
-                    )
+                    validation_errors["enable_schedule"] = f"{self.downloader.downloader_type} 不支持分时段速度限制"
 
             # 如果不支持下载路径，检查相关配置
             if not capabilities.get("download_paths", False):
                 if settings.get("download_dir"):
-                    validation_errors["download_dir"] = (
-                        f"{self.downloader.downloader_type} 不支持下载路径设置"
-                    )
+                    validation_errors["download_dir"] = f"{self.downloader.downloader_type} 不支持下载路径设置"
 
         except Exception as e:
             return False, f"验证过程出错: {e}"
@@ -302,7 +274,7 @@ class DownloaderSettingsManager:
         try:
             logger.info(
                 f"测试下载器连接: "
-                f"{format_connection_log(self.downloader.nickname, self.downloader.host, self.downloader.port, should_sanitize())}"
+                f"{format_connection_log(self.downloader.nickname or '', self.downloader.host or '', self.downloader.port or 0, should_sanitize())}"
             )
 
             success = self.settings_wrapper.test_connection()
@@ -318,11 +290,7 @@ class DownloaderSettingsManager:
             logger.error(f"下载器连接测试异常: {e}")
             return False
 
-    def create_from_template(
-        self,
-        template: Dict,
-        downloader: BtDownloaders
-    ) -> bool:
+    def create_from_template(self, template: Dict, downloader: BtDownloaders) -> bool:
         """
         从模板创建配置
 
@@ -335,18 +303,13 @@ class DownloaderSettingsManager:
 
         ⚠️ 注意: 此方法为T4（模板系统）预留接口
         """
-        logger.info(
-            f"从模板创建配置: {downloader.nickname}, "
-            f"模板: {template.get('name', 'unknown')}"
-        )
+        logger.info(f"从模板创建配置: {downloader.nickname}, " f"模板: {template.get('name', 'unknown')}")
 
         # 验证模板与下载器兼容性
         if "downloader_type" in template:
             template_type = template["downloader_type"]
             if template_type != downloader.downloader_type:
-                logger.warning(
-                    f"模板类型({template_type})与下载器类型({downloader.downloader_type})不匹配"
-                )
+                logger.warning(f"模板类型({template_type})与下载器类型({downloader.downloader_type})不匹配")
                 return False
 
         # 验证配置
@@ -403,4 +366,4 @@ class DownloaderSettingsManager:
             return None
 
 
-__all__ = ['DownloaderSettingsManager']
+__all__ = ["DownloaderSettingsManager"]

@@ -1,7 +1,12 @@
 """
 标签管理服务
 
-提供标签管理的业务逻辑层，支持同步和异步两种调用方式。
+提供标签管理的业务逻辑层，同步/异步双模式。
+
+类型说明：同步方法（tag_management 端点使用）与异步方法（tag_sync 定时任务
+使用）各绑定一种 Repository。构造时按会话类型二选一实例化，另一路引用为
+None，调用侧通过 _sync_repo()/_async_repo() 取用——错配时给出明确错误，
+而不是把协程静默漏 await 或在模型上误调 dict 方法。
 """
 
 from sqlalchemy.orm import Session
@@ -25,7 +30,7 @@ class TagService:
     支持同步Session和异步AsyncSession两种初始化方式。
     """
 
-    VALID_TAG_TYPES = {'category', 'tag'}
+    VALID_TAG_TYPES = {"category", "tag"}
 
     def __init__(self, db: Union[Session, AsyncSession]):
         """
@@ -35,31 +40,30 @@ class TagService:
             db: SQLAlchemy会话（同步Session或异步AsyncSession）
         """
         self.db = db
-        self.is_async = isinstance(db, AsyncSession)
 
-        # 根据会话类型创建对应的Repository
-        if self.is_async:
-            self.repository = AsyncTorrentTagRepository(db)
+        # 根据会话类型创建对应的Repository（另一路保持 None）
+        if isinstance(db, AsyncSession):
+            self._async_repository: Optional[AsyncTorrentTagRepository] = AsyncTorrentTagRepository(db)
+            self._sync_repository: Optional[TorrentTagRepository] = None
         else:
-            self.repository = TorrentTagRepository(db)
+            self._async_repository = None
+            self._sync_repository = TorrentTagRepository(db)
 
     # ==================== 私有方法 ====================
 
-    def _execute_sync(self, coro):
-        """
-        在同步上下文中执行异步方法
+    def _sync_repo(self) -> TorrentTagRepository:
+        """取同步 Repository；以 AsyncSession 构造时调用同步方法是编程错误。"""
+        if self._sync_repository is None:
+            raise RuntimeError("TagService 以 AsyncSession 构造，同步方法不可用")
+        return self._sync_repository
 
-        用于同步Service中需要调用异步Repository方法的场景。
-        """
-        import asyncio
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-        return loop.run_until_complete(coro)
+    def _async_repo(self) -> AsyncTorrentTagRepository:
+        """取异步 Repository；以同步 Session 构造时调用异步方法是编程错误。"""
+        if self._async_repository is None:
+            raise RuntimeError("TagService 以同步 Session 构造，异步方法不可用")
+        return self._async_repository
 
-    def _to_dict(self, tag: TorrentTag) -> Dict[str, Any]:
+    def _to_dict(self, tag: Optional[TorrentTag]) -> Optional[Dict[str, Any]]:
         """将标签模型转换为字典"""
         if tag is None:
             return None
@@ -70,10 +74,10 @@ class TagService:
             "tag_type": tag.tag_type,
             "color": tag.color,
             "created_at": tag.created_at.isoformat() if tag.created_at else None,
-            "updated_at": tag.updated_at.isoformat() if tag.updated_at else None
+            "updated_at": tag.updated_at.isoformat() if tag.updated_at else None,
         }
 
-    def _to_relation_dict(self, relation: TorrentTagRelation) -> Dict[str, Any]:
+    def _to_relation_dict(self, relation: Optional[TorrentTagRelation]) -> Optional[Dict[str, Any]]:
         """将标签关联模型转换为字典"""
         if relation is None:
             return None
@@ -82,14 +86,11 @@ class TagService:
             "downloader_id": relation.downloader_id,
             "torrent_hash": relation.torrent_hash,
             "tag_id": relation.tag_id,
-            "assigned_at": relation.assigned_at.isoformat() if relation.assigned_at else None
+            "assigned_at": relation.assigned_at.isoformat() if relation.assigned_at else None,
         }
 
     def _to_response(
-        self,
-        db_result: DatabaseResult,
-        success_msg: str = "操作成功",
-        error_prefix: str = "操作失败"
+        self, db_result: DatabaseResult, success_msg: str = "操作成功", error_prefix: str = "操作失败"
     ) -> Dict[str, Any]:
         """
         将DatabaseResult转换为统一的响应格式
@@ -105,25 +106,22 @@ class TagService:
         if db_result.success:
             return {
                 "success": True,
-                "data": self._to_dict(db_result.data) if hasattr(db_result.data, 'tag_id') or hasattr(db_result.data, '__dict__') else db_result.data,
+                # data 为 TorrentTag（或测试注入的假对象）时转 dict；裸 dict 原样返回
+                "data": db_result.data if isinstance(db_result.data, dict) else self._to_dict(db_result.data),
                 "message": db_result.message or success_msg,
-                "affected_rows": db_result.affected_rows
+                "affected_rows": db_result.affected_rows,
             }
         else:
             return {
                 "success": False,
                 "data": None,
                 "message": db_result.message or f"{error_prefix}: {db_result.error_code}",
-                "error_code": db_result.error_code
+                "error_code": db_result.error_code,
             }
 
     # ==================== 标签管理方法（同步版本）====================
 
-    def get_tag_list(
-        self,
-        downloader_id: str,
-        tag_type: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def get_tag_list(self, downloader_id: str, tag_type: Optional[str] = None) -> Dict[str, Any]:
         """
         获取标签列表（同步）
 
@@ -140,34 +138,24 @@ class TagService:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tags = self.repository.find_by_downloader(
-                downloader_id=downloader_id,
-                include_deleted=False,
-                tag_type=tag_type
+            tags = self._sync_repo().find_by_downloader(
+                downloader_id=downloader_id, include_deleted=False, tag_type=tag_type
             )
 
             return {
                 "success": True,
                 "data": [self._to_dict(tag) for tag in tags],
                 "message": "获取标签列表成功",
-                "total_count": len(tags)
+                "total_count": len(tags),
             }
         except Exception as e:
             logger.error(f"获取标签列表失败: {str(e)}")
-            return {
-                "success": False,
-                "data": [],
-                "message": f"获取标签列表失败: {str(e)}",
-                "total_count": 0
-            }
+            return {"success": False, "data": [], "message": f"获取标签列表失败: {str(e)}", "total_count": 0}
 
-    def get_all_tags(
-        self,
-        tag_type: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def get_all_tags(self, tag_type: Optional[str] = None) -> Dict[str, Any]:
         """
         获取所有标签（跨下载器聚合）
 
@@ -183,13 +171,10 @@ class TagService:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tags = self.repository.find_all_tags(
-                include_deleted=False,
-                tag_type=tag_type
-            )
+            tags = self._sync_repo().find_all_tags(include_deleted=False, tag_type=tag_type)
 
             # 按tag_name去重（保留第一次出现的）
             seen = set()
@@ -203,21 +188,13 @@ class TagService:
                 "success": True,
                 "data": [self._to_dict(tag) for tag in unique_tags],
                 "message": "获取所有标签成功",
-                "total_count": len(unique_tags)
+                "total_count": len(unique_tags),
             }
         except Exception as e:
             logger.error(f"获取所有标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": [],
-                "message": f"获取所有标签失败: {str(e)}",
-                "total_count": 0
-            }
+            return {"success": False, "data": [], "message": f"获取所有标签失败: {str(e)}", "total_count": 0}
 
-    def get_all_tag_names(
-        self,
-        tag_type: str
-    ) -> Dict[str, Any]:
+    def get_all_tag_names(self, tag_type: str) -> Dict[str, Any]:
         """
         获取所有指定类型的标签名称（去重）
 
@@ -233,51 +210,18 @@ class TagService:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tag_names = self.repository.find_all_tag_names_by_type(
-                tag_type=tag_type,
-                include_deleted=False
-            )
+            tag_names = self._sync_repo().find_all_tag_names_by_type(tag_type=tag_type, include_deleted=False)
 
-            return {
-                "success": True,
-                "data": tag_names,
-                "message": "获取标签名称成功",
-                "total_count": len(tag_names)
-            }
+            return {"success": True, "data": tag_names, "message": "获取标签名称成功", "total_count": len(tag_names)}
         except Exception as e:
             logger.error(f"获取标签名称失败: {str(e)}")
-            return {
-                "success": False,
-                "data": [],
-                "message": f"获取标签名称失败: {str(e)}",
-                "total_count": 0
-            }
-
-            tag_list = [self._to_dict(tag) for tag in tags]
-
-            return {
-                "success": True,
-                "data": tag_list,
-                "message": "获取标签列表成功",
-                "total_count": len(tag_list)
-            }
-        except Exception as e:
-            logger.error(f"获取标签列表失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"获取标签列表失败: {str(e)}"
-            }
+            return {"success": False, "data": [], "message": f"获取标签名称失败: {str(e)}", "total_count": 0}
 
     def create_tag(
-        self,
-        downloader_id: str,
-        tag_name: str,
-        tag_type: str,
-        color: Optional[str] = None
+        self, downloader_id: str, tag_name: str, tag_type: str, color: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         创建标签（同步）
@@ -294,53 +238,30 @@ class TagService:
         try:
             # 验证输入
             if not tag_name or not tag_name.strip():
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": "标签名称不能为空"
-                }
+                return {"success": False, "data": None, "message": "标签名称不能为空"}
 
             if tag_type not in self.VALID_TAG_TYPES:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
             # 验证颜色格式（如果提供）
-            if color and not color.startswith('#'):
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": "颜色代码必须以#开头，如#FF5733"
-                }
+            if color and not color.startswith("#"):
+                return {"success": False, "data": None, "message": "颜色代码必须以#开头，如#FF5733"}
 
             # 创建标签对象
-            tag = TorrentTag(
-                downloader_id=downloader_id,
-                tag_name=tag_name.strip(),
-                tag_type=tag_type,
-                color=color
-            )
+            tag = TorrentTag(downloader_id=downloader_id, tag_name=tag_name.strip(), tag_type=tag_type, color=color)
 
-            db_result = self.repository.create(tag)
+            db_result = self._sync_repo().create(tag)
 
-            return self._to_response(
-                db_result,
-                success_msg="标签创建成功",
-                error_prefix="标签创建失败"
-            )
+            return self._to_response(db_result, success_msg="标签创建成功", error_prefix="标签创建失败")
         except Exception as e:
             logger.error(f"创建标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"创建标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"创建标签失败: {str(e)}"}
 
-    def update_tag(
-        self, tag_id: str, **kwargs
-    ) -> Dict[str, Any]:
+    def update_tag(self, tag_id: str, **kwargs) -> Dict[str, Any]:
         """
         更新标签（同步）
 
@@ -353,20 +274,16 @@ class TagService:
         """
         try:
             # 查询现有标签
-            existing = self.repository.find_by_id(tag_id)
+            existing = self._sync_repo().find_by_id(tag_id)
             if not existing:
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": "标签不存在"
-                }
+                return {"success": False, "data": None, "message": "标签不存在"}
 
             # 验证tag_type（如果提供）
-            if 'tag_type' in kwargs and kwargs['tag_type'] not in self.VALID_TAG_TYPES:
+            if "tag_type" in kwargs and kwargs["tag_type"] not in self.VALID_TAG_TYPES:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {kwargs['tag_type']}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {kwargs['tag_type']}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
             # 更新字段
@@ -375,20 +292,12 @@ class TagService:
                 if hasattr(tag, key):
                     setattr(tag, key, value)
 
-            db_result = self.repository.update(tag)
+            db_result = self._sync_repo().update(tag)
 
-            return self._to_response(
-                db_result,
-                success_msg="标签更新成功",
-                error_prefix="标签更新失败"
-            )
+            return self._to_response(db_result, success_msg="标签更新成功", error_prefix="标签更新失败")
         except Exception as e:
             logger.error(f"更新标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"更新标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"更新标签失败: {str(e)}"}
 
     def delete_tag(self, tag_id: str) -> Dict[str, Any]:
         """
@@ -401,21 +310,58 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            db_result = self.repository.soft_delete(tag_id)
+            db_result = self._sync_repo().soft_delete(tag_id)
 
             return {
                 "success": db_result.success,
                 "data": db_result.data if db_result.success else None,
                 "message": db_result.message,
-                "error_code": db_result.error_code if not db_result.success else None
+                "error_code": db_result.error_code if not db_result.success else None,
             }
         except Exception as e:
             logger.error(f"删除标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"删除标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"删除标签失败: {str(e)}"}
+
+    def batch_delete_tags(self, tag_ids: List[str]) -> Dict[str, Any]:
+        """
+        批量删除标签（同步，仅数据库软删除）
+
+        对每个标签独立执行软删除，单个失败不影响其余标签。
+        下载器同步由调用方（API层）按需处理。
+
+        Args:
+            tag_ids: 标签ID列表
+
+        Returns:
+            统一格式的响应字典，data 中包含每个标签的删除结果
+        """
+        results: List[Dict[str, Any]] = []
+        success_count = 0
+
+        for tag_id in tag_ids:
+            single = self.delete_tag(tag_id)
+            ok = single.get("success", False)
+            if ok:
+                success_count += 1
+            results.append(
+                {
+                    "tag_id": tag_id,
+                    "success": ok,
+                    "message": None if ok else single.get("message", "删除失败"),
+                    "data": single.get("data"),
+                }
+            )
+
+        return {
+            "success": success_count == len(tag_ids),
+            "data": {
+                "results": results,
+                "total": len(tag_ids),
+                "success_count": success_count,
+                "failed_count": len(tag_ids) - success_count,
+            },
+            "message": f"批量删除完成：成功 {success_count}/{len(tag_ids)}",
+        }
 
     def get_torrent_tags(self, torrent_hash: str) -> Dict[str, Any]:
         """
@@ -428,32 +374,21 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            relations = self.repository.find_relations_by_torrent_hash(torrent_hash)
+            relations = self._sync_repo().find_relations_by_torrent_hash(torrent_hash)
 
             # 查询标签详情
             tags = []
             for relation in relations:
-                tag = self.repository.find_by_id(relation.tag_id)
+                tag = self._sync_repo().find_by_id(relation.tag_id)
                 if tag:
                     tags.append(self._to_dict(tag))
 
-            return {
-                "success": True,
-                "data": tags,
-                "message": "获取种子标签成功",
-                "total_count": len(tags)
-            }
+            return {"success": True, "data": tags, "message": "获取种子标签成功", "total_count": len(tags)}
         except Exception as e:
             logger.error(f"获取种子标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"获取种子标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"获取种子标签失败: {str(e)}"}
 
-    def assign_tags_to_torrent(
-        self, torrent_hash: str, tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    def assign_tags_to_torrent(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         为种子分配标签（同步）
 
@@ -470,18 +405,14 @@ class TagService:
             not_found_tags = []
 
             for tag_id in tag_ids:
-                tag = self.repository.find_by_id(tag_id)
+                tag = self._sync_repo().find_by_id(tag_id)
                 if tag:
                     valid_tags.append(tag)  # 存储完整的TorrentTag对象
                 else:
                     not_found_tags.append(tag_id)
 
             if not_found_tags:
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": f"以下标签不存在: {', '.join(not_found_tags)}"
-                }
+                return {"success": False, "data": None, "message": f"以下标签不存在: {', '.join(not_found_tags)}"}
 
             # 创建关联
             relations = []
@@ -489,31 +420,25 @@ class TagService:
                 relation = TorrentTagRelation(
                     torrent_hash=torrent_hash,
                     tag_id=tag.tag_id,  # 使用tag对象的tag_id属性
-                    downloader_id=valid_tags[0].downloader_id if valid_tags else ""
+                    downloader_id=valid_tags[0].downloader_id if valid_tags else "",
                 )
                 relations.append(relation)
 
-            result = self.repository.batch_assign_tags(relations)
+            result = self._sync_repo().batch_assign_tags(relations)
 
             return {
                 "success": result.success,
                 "data": result.data if result.success else None,
                 "message": result.message,
-                "total_count": result.data.get("total_count", 0) if result.success else 0,
-                "success_count": result.data.get("success_count", 0) if result.success else 0,
-                "failed_count": result.data.get("failed_count", 0) if result.success else 0
+                "total_count": (result.data or {}).get("total_count", 0) if result.success else 0,
+                "success_count": (result.data or {}).get("success_count", 0) if result.success else 0,
+                "failed_count": (result.data or {}).get("failed_count", 0) if result.success else 0,
             }
         except Exception as e:
             logger.error(f"分配标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"分配标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"分配标签失败: {str(e)}"}
 
-    def remove_tags_from_torrent(
-        self, torrent_hash: str, tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    def remove_tags_from_torrent(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         移除种子的标签（同步）
 
@@ -530,36 +455,23 @@ class TagService:
             failed_tags = []
 
             for tag_id in tag_ids:
-                result = self.repository.remove_tag_from_torrent(torrent_hash, tag_id)
+                result = self._sync_repo().remove_tag_from_torrent(torrent_hash, tag_id)
                 if result.success:
                     removed_count += 1
                 else:
                     failed_count += 1
-                    failed_tags.append({
-                        "tag_id": tag_id,
-                        "error": result.message
-                    })
+                    failed_tags.append({"tag_id": tag_id, "error": result.message})
 
             return {
                 "success": failed_count == 0,
-                "data": {
-                    "removed_count": removed_count,
-                    "failed_count": failed_count,
-                    "failed_tags": failed_tags
-                },
-                "message": f"移除标签完成: 成功{removed_count}，失败{failed_count}"
+                "data": {"removed_count": removed_count, "failed_count": failed_count, "failed_tags": failed_tags},
+                "message": f"移除标签完成: 成功{removed_count}，失败{failed_count}",
             }
         except Exception as e:
             logger.error(f"移除标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"移除标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"移除标签失败: {str(e)}"}
 
-    def batch_assign_tags(
-        self, assignments: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    def batch_assign_tags(self, assignments: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         批量分配标签（同步）
 
@@ -584,41 +496,31 @@ class TagService:
                     continue
 
                 # 获取第一个标签来获取downloader_id
-                first_tag = self.repository.find_by_id(tag_ids[0])
+                first_tag = self._sync_repo().find_by_id(tag_ids[0])
                 if not first_tag:
                     continue
 
                 for tag_id in tag_ids:
                     relation = TorrentTagRelation(
-                        torrent_hash=torrent_hash,
-                        tag_id=tag_id,
-                        downloader_id=first_tag.downloader_id
+                        torrent_hash=torrent_hash, tag_id=tag_id, downloader_id=first_tag.downloader_id
                     )
                     all_relations.append(relation)
 
-            result = self.repository.batch_assign_tags(all_relations)
+            result = self._sync_repo().batch_assign_tags(all_relations)
 
             return {
                 "success": result.success,
                 "data": result.data if result.success else None,
                 "message": result.message,
-                "total_assignments": len(assignments)
+                "total_assignments": len(assignments),
             }
         except Exception as e:
             logger.error(f"批量分配标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"批量分配失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"批量分配失败: {str(e)}"}
 
     # ==================== 标签管理方法（异步版本）====================
 
-    async def get_tag_list_async(
-        self,
-        downloader_id: str,
-        tag_type: Optional[str] = None
-    ) -> Dict[str, Any]:
+    async def get_tag_list_async(self, downloader_id: str, tag_type: Optional[str] = None) -> Dict[str, Any]:
         """
         获取标签列表（异步）
 
@@ -635,37 +537,22 @@ class TagService:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
-            tags = await self.repository.find_by_downloader(
-                downloader_id=downloader_id,
-                include_deleted=False,
-                tag_type=tag_type
+            tags = await self._async_repo().find_by_downloader(
+                downloader_id=downloader_id, include_deleted=False, tag_type=tag_type
             )
 
             tag_list = [self._to_dict(tag) for tag in tags]
 
-            return {
-                "success": True,
-                "data": tag_list,
-                "message": "获取标签列表成功",
-                "total_count": len(tag_list)
-            }
+            return {"success": True, "data": tag_list, "message": "获取标签列表成功", "total_count": len(tag_list)}
         except Exception as e:
             logger.error(f"异步获取标签列表失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"获取标签列表失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"获取标签列表失败: {str(e)}"}
 
     async def create_tag_async(
-        self,
-        downloader_id: str,
-        tag_name: str,
-        tag_type: str,
-        color: Optional[str] = None
+        self, downloader_id: str, tag_name: str, tag_type: str, color: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         创建标签（异步）
@@ -682,53 +569,30 @@ class TagService:
         try:
             # 验证输入
             if not tag_name or not tag_name.strip():
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": "标签名称不能为空"
-                }
+                return {"success": False, "data": None, "message": "标签名称不能为空"}
 
             if tag_type not in self.VALID_TAG_TYPES:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {tag_type}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
             # 验证颜色格式（如果提供）
-            if color and not color.startswith('#'):
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": "颜色代码必须以#开头，如#FF5733"
-                }
+            if color and not color.startswith("#"):
+                return {"success": False, "data": None, "message": "颜色代码必须以#开头，如#FF5733"}
 
             # 创建标签对象
-            tag = TorrentTag(
-                downloader_id=downloader_id,
-                tag_name=tag_name.strip(),
-                tag_type=tag_type,
-                color=color
-            )
+            tag = TorrentTag(downloader_id=downloader_id, tag_name=tag_name.strip(), tag_type=tag_type, color=color)
 
-            db_result = await self.repository.create(tag)
+            db_result = await self._async_repo().create(tag)
 
-            return self._to_response(
-                db_result,
-                success_msg="标签创建成功",
-                error_prefix="标签创建失败"
-            )
+            return self._to_response(db_result, success_msg="标签创建成功", error_prefix="标签创建失败")
         except Exception as e:
             logger.error(f"异步创建标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"创建标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"创建标签失败: {str(e)}"}
 
-    async def update_tag_async(
-        self, tag_id: str, **kwargs
-    ) -> Dict[str, Any]:
+    async def update_tag_async(self, tag_id: str, **kwargs) -> Dict[str, Any]:
         """
         更新标签（异步）
 
@@ -741,20 +605,16 @@ class TagService:
         """
         try:
             # 查询现有标签
-            existing = await self.repository.find_by_id(tag_id)
+            existing = await self._async_repo().find_by_id(tag_id)
             if not existing:
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": "标签不存在"
-                }
+                return {"success": False, "data": None, "message": "标签不存在"}
 
             # 验证tag_type（如果提供）
-            if 'tag_type' in kwargs and kwargs['tag_type'] not in self.VALID_TAG_TYPES:
+            if "tag_type" in kwargs and kwargs["tag_type"] not in self.VALID_TAG_TYPES:
                 return {
                     "success": False,
                     "data": None,
-                    "message": f"无效的标签类型: {kwargs['tag_type']}，仅支持 {self.VALID_TAG_TYPES}"
+                    "message": f"无效的标签类型: {kwargs['tag_type']}，仅支持 {self.VALID_TAG_TYPES}",
                 }
 
             # 更新字段
@@ -763,20 +623,12 @@ class TagService:
                 if hasattr(tag, key):
                     setattr(tag, key, value)
 
-            db_result = await self.repository.update(tag)
+            db_result = await self._async_repo().update(tag)
 
-            return self._to_response(
-                db_result,
-                success_msg="标签更新成功",
-                error_prefix="标签更新失败"
-            )
+            return self._to_response(db_result, success_msg="标签更新成功", error_prefix="标签更新失败")
         except Exception as e:
             logger.error(f"异步更新标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"更新标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"更新标签失败: {str(e)}"}
 
     async def delete_tag_async(self, tag_id: str) -> Dict[str, Any]:
         """
@@ -789,25 +641,19 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            db_result = await self.repository.soft_delete(tag_id)
+            db_result = await self._async_repo().soft_delete(tag_id)
 
             return {
                 "success": db_result.success,
                 "data": db_result.data if db_result.success else None,
                 "message": db_result.message,
-                "error_code": db_result.error_code if not db_result.success else None
+                "error_code": db_result.error_code if not db_result.success else None,
             }
         except Exception as e:
             logger.error(f"异步删除标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"删除标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"删除标签失败: {str(e)}"}
 
-    async def get_torrent_tags_async(
-        self, torrent_hash: str
-    ) -> Dict[str, Any]:
+    async def get_torrent_tags_async(self, torrent_hash: str) -> Dict[str, Any]:
         """
         获取种子的所有标签（异步）
 
@@ -818,32 +664,21 @@ class TagService:
             统一格式的响应字典
         """
         try:
-            relations = await self.repository.find_relations_by_torrent_hash(torrent_hash)
+            relations = await self._async_repo().find_relations_by_torrent_hash(torrent_hash)
 
             # 查询标签详情
             tags = []
             for relation in relations:
-                tag = await self.repository.find_by_id(relation.tag_id)
+                tag = await self._async_repo().find_by_id(relation.tag_id)
                 if tag:
                     tags.append(self._to_dict(tag))
 
-            return {
-                "success": True,
-                "data": tags,
-                "message": "获取种子标签成功",
-                "total_count": len(tags)
-            }
+            return {"success": True, "data": tags, "message": "获取种子标签成功", "total_count": len(tags)}
         except Exception as e:
             logger.error(f"异步获取种子标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"获取种子标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"获取种子标签失败: {str(e)}"}
 
-    async def assign_tags_to_torrent_async(
-        self, torrent_hash: str, tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    async def assign_tags_to_torrent_async(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         为种子分配标签（异步）
 
@@ -860,18 +695,14 @@ class TagService:
             not_found_tags = []
 
             for tag_id in tag_ids:
-                tag = await self.repository.find_by_id(tag_id)
+                tag = await self._async_repo().find_by_id(tag_id)
                 if tag:
                     valid_tags.append(tag)  # 存储完整的TorrentTag对象
                 else:
                     not_found_tags.append(tag_id)
 
             if not_found_tags:
-                return {
-                    "success": False,
-                    "data": None,
-                    "message": f"以下标签不存在: {', '.join(not_found_tags)}"
-                }
+                return {"success": False, "data": None, "message": f"以下标签不存在: {', '.join(not_found_tags)}"}
 
             # 创建关联
             relations = []
@@ -879,31 +710,25 @@ class TagService:
                 relation = TorrentTagRelation(
                     torrent_hash=torrent_hash,
                     tag_id=tag.tag_id,  # 使用tag对象的tag_id属性
-                    downloader_id=valid_tags[0].downloader_id if valid_tags else ""
+                    downloader_id=valid_tags[0].downloader_id if valid_tags else "",
                 )
                 relations.append(relation)
 
-            result = await self.repository.batch_assign_tags(relations)
+            result = await self._async_repo().batch_assign_tags(relations)
 
             return {
                 "success": result.success,
                 "data": result.data if result.success else None,
                 "message": result.message,
-                "total_count": result.data.get("total_count", 0) if result.success else 0,
-                "success_count": result.data.get("success_count", 0) if result.success else 0,
-                "failed_count": result.data.get("failed_count", 0) if result.success else 0
+                "total_count": (result.data or {}).get("total_count", 0) if result.success else 0,
+                "success_count": (result.data or {}).get("success_count", 0) if result.success else 0,
+                "failed_count": (result.data or {}).get("failed_count", 0) if result.success else 0,
             }
         except Exception as e:
             logger.error(f"异步分配标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"分配标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"分配标签失败: {str(e)}"}
 
-    async def remove_tags_from_torrent_async(
-        self, torrent_hash: str, tag_ids: List[str]
-    ) -> Dict[str, Any]:
+    async def remove_tags_from_torrent_async(self, torrent_hash: str, tag_ids: List[str]) -> Dict[str, Any]:
         """
         移除种子的标签（异步）
 
@@ -920,36 +745,23 @@ class TagService:
             failed_tags = []
 
             for tag_id in tag_ids:
-                result = await self.repository.remove_tag_from_torrent(torrent_hash, tag_id)
+                result = await self._async_repo().remove_tag_from_torrent(torrent_hash, tag_id)
                 if result.success:
                     removed_count += 1
                 else:
                     failed_count += 1
-                    failed_tags.append({
-                        "tag_id": tag_id,
-                        "error": result.message
-                    })
+                    failed_tags.append({"tag_id": tag_id, "error": result.message})
 
             return {
                 "success": failed_count == 0,
-                "data": {
-                    "removed_count": removed_count,
-                    "failed_count": failed_count,
-                    "failed_tags": failed_tags
-                },
-                "message": f"移除标签完成: 成功{removed_count}，失败{failed_count}"
+                "data": {"removed_count": removed_count, "failed_count": failed_count, "failed_tags": failed_tags},
+                "message": f"移除标签完成: 成功{removed_count}，失败{failed_count}",
             }
         except Exception as e:
             logger.error(f"异步移除标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"移除标签失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"移除标签失败: {str(e)}"}
 
-    async def batch_assign_tags_async(
-        self, assignments: List[Dict[str, Any]]
-    ) -> Dict[str, Any]:
+    async def batch_assign_tags_async(self, assignments: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         批量分配标签（异步）
 
@@ -974,30 +786,24 @@ class TagService:
                     continue
 
                 # 获取第一个标签来获取downloader_id
-                first_tag = await self.repository.find_by_id(tag_ids[0])
+                first_tag = await self._async_repo().find_by_id(tag_ids[0])
                 if not first_tag:
                     continue
 
                 for tag_id in tag_ids:
                     relation = TorrentTagRelation(
-                        torrent_hash=torrent_hash,
-                        tag_id=tag_id,
-                        downloader_id=first_tag.downloader_id
+                        torrent_hash=torrent_hash, tag_id=tag_id, downloader_id=first_tag.downloader_id
                     )
                     all_relations.append(relation)
 
-            result = await self.repository.batch_assign_tags(all_relations)
+            result = await self._async_repo().batch_assign_tags(all_relations)
 
             return {
                 "success": result.success,
                 "data": result.data if result.success else None,
                 "message": result.message,
-                "total_assignments": len(assignments)
+                "total_assignments": len(assignments),
             }
         except Exception as e:
             logger.error(f"异步批量分配标签失败: {str(e)}")
-            return {
-                "success": False,
-                "data": None,
-                "message": f"批量分配失败: {str(e)}"
-            }
+            return {"success": False, "data": None, "message": f"批量分配失败: {str(e)}"}

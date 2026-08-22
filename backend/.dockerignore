@@ -28,17 +28,39 @@ ENV/
 *.swo
 *~
 
-# 测试和覆盖率
+# 测试和覆盖率（含 pytest 运行时残留目录，部分可能权限损坏无法读取，
+# 一律排除以防 Docker 加载上下文时遍历失败导致整个构建中断）
 .pytest_cache/
+.pytest*
+.pytest-final-*/
+.pytest-p1-close-*/
+.pytest-runtime/
 .coverage
 htmlcov/
 .tox/
 
-# 数据库文件
-config/*.db
-config/*.db-journal
+# 类型/代码检查缓存（体积大，严禁进镜像）
+.mypy_cache/
+.ruff_cache/
+
+# 数据库及一切派生文件
+# - *.db / *.db-* 覆盖根目录下的常规 SQLite 文件与 WAL/SHM 临时文件
+# - config/*.db* 覆盖 config 子目录下的数据库（*.db 不递归匹配子目录，需显式声明）
+# - config/*pre-migration-* 覆盖无 .db 后缀的迁移前自动备份（migrate_database 生成）
 *.db
 *.db-journal
+*.db-wal
+*.db-shm
+config/*.db*
+config/*pre-migration*
+# 安全修复（W12/W7）：config.yaml 含 secret_key/login_status_secret 真实密钥，
+# 禁止进入镜像层（不挂载卷直接 docker run 时镜像内嵌密钥会被使用）
+config/config.yaml
+config/config.yaml.*
+app/config.yaml
+
+# 运行时缓存/状态文件（compose 已挂载卷覆盖）
+config/qb_rid_cache.json
 
 # 日志文件
 logs/

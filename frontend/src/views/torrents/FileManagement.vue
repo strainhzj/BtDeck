@@ -1,76 +1,71 @@
 <template>
-  <div class="app-container file-management-page">
-    <!-- 页面标题 -->
-    <div style="margin-bottom: 20px;">
-      <h2 style="font-size: 20px; color: #303133; font-weight: 600; margin: 0;">
-        📁 种子文件管理
+  <div class="app-container management-page file-management-page">
+    <!-- 页面标题（BEM 范式，对齐 orphan-files） -->
+    <div class="management-page__header">
+      <h2 class="management-page__title">
+        <LucideIcon name="folder" :size="20" />种子文件管理
       </h2>
-      <p style="font-size: 14px; color: #909399; margin-top: 8px; margin-bottom: 0;">
-        管理种子文件备份，支持去重、导出、导入操作
-      </p>
+      <p class="management-page__subtitle">管理种子文件备份，支持去重、导出、导入操作</p>
     </div>
 
-    <!-- ========== 筛选区域 ========== -->
-    <div class="filter-container">
-      <el-input
-        v-model="listQuery.search"
-        placeholder="搜索任务名称或Info Hash..."
-        style="width: 250px;"
-        class="filter-item"
-        clearable
-        @keyup.enter.native="handleFilter"
-      >
-        <i slot="prefix" class="el-input__icon el-icon-search"></i>
-      </el-input>
+    <!-- ========== 筛选区域（BEM 范式，复用 management-list-page.scss 全局样式） ========== -->
+    <section class="management-panel" aria-label="种子文件筛选条件">
+      <div class="management-filter">
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="file-search">任务名称 / Info Hash</label>
+          <el-input
+            id="file-search"
+            v-model="listQuery.search"
+            class="management-filter__control"
+            placeholder="搜索任务名称或Info Hash..."
+            prefix-icon="el-icon-search"
+            clearable
+            @keyup.enter.native="handleFilter"
+            @clear="handleFilter"
+          />
+        </div>
 
-      <el-select
-        v-model="listQuery.downloader_id"
-        placeholder="筛选下载器"
-        clearable
-        style="width: 200px;"
-        class="filter-item"
-      >
-        <el-option
-          v-for="downloader in downloaderList"
-          :key="downloader.downloader_id"
-          :label="downloader.downloader_name"
-          :value="downloader.downloader_id"
-        />
-      </el-select>
+        <div class="management-filter__field">
+          <label class="management-filter__label" for="file-downloader">下载器</label>
+          <el-select
+            id="file-downloader"
+            v-model="listQuery.downloader_id"
+            class="management-filter__control"
+            placeholder="全部下载器"
+            clearable
+            @change="handleFilter"
+          >
+            <el-option
+              v-for="downloader in downloaderList"
+              :key="downloader.downloader_id"
+              :label="downloader.nickname"
+              :value="downloader.downloader_id"
+            />
+          </el-select>
+        </div>
 
-      <el-date-picker
-        v-model="dateRange"
-        type="daterange"
-        range-separator="至"
-        start-placeholder="开始日期"
-        end-placeholder="结束日期"
-        class="filter-item"
-        style="width: 280px;"
-        value-format="yyyy-MM-dd"
-        clearable
-        @change="handleDateChange"
-      />
+        <div class="management-filter__field management-filter__field--wide">
+          <label class="management-filter__label" for="file-date">创建时间</label>
+          <el-date-picker
+            id="file-date"
+            v-model="dateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            class="management-filter__control"
+            value-format="yyyy-MM-dd"
+            clearable
+            @change="handleDateChange"
+          />
+        </div>
 
-      <el-button
-        v-waves
-        class="filter-item"
-        type="primary"
-        icon="el-icon-search"
-        size="small"
-        @click="handleFilter"
-      >
-        搜索
-      </el-button>
-      <el-button
-        class="filter-item"
-        type="default"
-        icon="el-icon-refresh-left"
-        size="small"
-        @click="resetFilter"
-      >
-        重置
-      </el-button>
-    </div>
+        <div class="management-filter__actions">
+          <el-button type="primary" icon="el-icon-search" @click="handleFilter">搜索</el-button>
+          <el-button icon="el-icon-refresh-left" @click="resetFilter">重置</el-button>
+        </div>
+      </div>
+    </section>
 
     <!-- ========== 批量操作工具栏 ========== -->
     <section class="batch-operations">
@@ -128,7 +123,7 @@
 
       <el-table-column label="下载器" width="150" show-overflow-tooltip>
         <template slot-scope="{row}">
-          <span>{{ getDownloaderName(row.downloader_id) }}</span>
+          <span>{{ getBackupDownloaderName(row) }}</span>
         </template>
       </el-table-column>
 
@@ -200,7 +195,7 @@
           <span style="font-family: monospace;">{{ currentDetail.info_hash }}</span>
         </el-descriptions-item>
         <el-descriptions-item label="下载器">
-          {{ getDownloaderName(currentDetail.downloader_id) }}
+          {{ getBackupDownloaderName(currentDetail) }}
         </el-descriptions-item>
         <el-descriptions-item label="文件路径">
           {{ currentDetail.file_path || '-' }}
@@ -238,7 +233,7 @@
             <el-option
               v-for="downloader in downloaderList"
               :key="downloader.downloader_id"
-              :label="downloader.downloader_name"
+              :label="downloader.nickname"
               :value="downloader.downloader_id"
             />
           </el-select>
@@ -283,23 +278,26 @@
 import { Component, Vue } from 'vue-property-decorator'
 import Pagination from '@/components/Pagination/index.vue'
 import BatchButton from '@/components/BatchButton/index.vue'
+import LucideIcon from '@/components/common/LucideIcon.vue'
 import waves from '@/directive/waves'
-import { getToken } from '@/utils/cookies'
+import { UserModule } from '@/store/modules/user'
 import {
   getTorrentBackupList,
   deduplicateTorrentBackup,
   deleteTorrentBackup,
   importTorrentBackup,
   TorrentBackup,
-  getDownloaderList
+  TorrentBackupListParams,
+  getDownloaderList,
+  DownloaderSimple
 } from '@/api/torrents'
-import service from '@/utils/request'
+import service, { trySilentRefresh, redirectToLogin } from '@/utils/request'
 
 interface ListQuery {
   page: number
   pageSize: number
   search: string
-  downloader_id: number | null
+  downloader_id: string | null
   startTime: string
   endTime: string
 }
@@ -307,7 +305,7 @@ interface ListQuery {
 @Component({
   name: 'FileManagement',
   directives: { waves },
-  components: { Pagination, BatchButton }
+  components: { Pagination, BatchButton, LucideIcon }
 })
 export default class FileManagement extends Vue {
   // 列表数据
@@ -329,7 +327,7 @@ export default class FileManagement extends Vue {
   dateRange: string[] = []
 
   // 下载器列表
-  downloaderList: any[] = []
+  downloaderList: DownloaderSimple[] = []
 
   // 选中的项目
   selectedItems: TorrentBackup[] = []
@@ -341,7 +339,7 @@ export default class FileManagement extends Vue {
   // 导入对话框
   importDialogVisible = false
   importForm = {
-    downloader_id: null as number | null
+    downloader_id: null as string | null
   }
   fileList: any[] = []
   importLoading = false
@@ -352,8 +350,14 @@ export default class FileManagement extends Vue {
   }
 
   get uploadHeaders() {
+    // 依赖响应式 UserModule.token：静默续期/重新登录后新令牌立即进入后续
+    // 上传请求。原实现读 cookie（无响应式依赖，Vue2 computed 求值一次后
+    // 永久缓存旧值），且 el-upload 自有 XHR 绕过 axios 拦截器，只有组件
+    // 重挂载（手动刷新页面）才能拿到新令牌。
+    // 认证契约收敛：与 request.ts 一致只发送 Authorization: Bearer
+    // （后端 dependencies.py 兼容读取）。
     return {
-      'x-access-token': getToken()
+      Authorization: `Bearer ${UserModule.token}`
     }
   }
 
@@ -367,7 +371,7 @@ export default class FileManagement extends Vue {
     try {
       const res = await getDownloaderList()
       if (res.code === '200') {
-        this.downloaderList = res.data.list || []
+        this.downloaderList = Array.isArray(res.data) ? res.data : []
       }
     } catch (error) {
       console.error('获取下载器列表失败:', error)
@@ -378,7 +382,7 @@ export default class FileManagement extends Vue {
   async fetchList() {
     this.listLoading = true
     try {
-      const params: any = {
+      const params: TorrentBackupListParams = {
         page: this.listQuery.page,
         pageSize: this.listQuery.pageSize
       }
@@ -544,7 +548,11 @@ export default class FileManagement extends Vue {
         this.$message.error('请选择有效文件')
         return
       }
-      const res = await importTorrentBackup(this.importForm.downloader_id!, files)
+      if (this.importForm.downloader_id === undefined) {
+        this.$message.error('请选择下载器')
+        return
+      }
+      const res = await importTorrentBackup(this.importForm.downloader_id, files)
 
       if (res.code === '200') {
         this.$message.success(res.msg)
@@ -573,13 +581,29 @@ export default class FileManagement extends Vue {
   }
 
   // 上传成功（未使用，使用手动上传）
-  handleUploadSuccess(response: any, file: any, fileList: any[]) {
+  handleUploadSuccess(response: any, _file: any, _fileList: any[]) {
     console.log('Upload success:', response)
   }
 
-  // 上传失败
-  handleUploadError(error: any) {
+  // 上传失败。el-upload 自有 XHR 绕过 axios 拦截器，401 不会进入静默续期
+  // 链路：这里单独识别（element-ui ajax 的 error 对象带 status），续期成功
+  // 后提示重传（headers computed 响应式，重传自动带新令牌），确证死亡才登出
+  async handleUploadError(error: any) {
     console.error('Upload error:', error)
+    if (error && error.status === 401) {
+      const outcome = await trySilentRefresh()
+      if (outcome.status === 'renewed') {
+        this.$message.warning('登录已续期，请重新上传')
+        return
+      }
+      if (outcome.status === 'rejected') {
+        redirectToLogin()
+        return
+      }
+      // transient：网络/服务端瞬时故障，保留现场交由全局网络提示
+      this.$message.error('上传失败，请稍后重试')
+      return
+    }
     this.$message.error('上传失败')
   }
 
@@ -668,9 +692,17 @@ export default class FileManagement extends Vue {
   }
 
   // 获取下载器名称
-  getDownloaderName(downloaderId: number) {
-    const downloader = this.downloaderList.find(d => d.downloader_id === downloaderId)
-    return downloader ? downloader.downloader_name : `下载器${downloaderId}`
+  getDownloaderName(downloaderId: number | string | undefined) {
+    if (downloaderId === undefined || downloaderId === null) return '-'
+    const downloader = this.downloaderList.find(
+      item => String(item.downloader_id) === String(downloaderId)
+    )
+    return downloader?.nickname || '-'
+  }
+
+  // 列表接口已批量返回当前昵称；本地下载器列表仅作为兼容旧响应的回退。
+  getBackupDownloaderName(backup: Partial<TorrentBackup>) {
+    return backup.downloader_nickname || this.getDownloaderName(backup.downloader_id)
   }
 
   // 格式化时间
@@ -692,27 +724,6 @@ export default class FileManagement extends Vue {
 <style lang="scss" scoped>
 .file-management-page {
   padding: 20px;
-}
-
-.filter-container {
-  padding-bottom: 10px;
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-
-  .filter-item {
-    margin-bottom: 10px;
-  }
-
-  // 搜索和重置按钮之间的间距更小
-  .filter-item.el-button {
-    margin-right: 0;
-  }
-
-  // 紧凑排列搜索和重置按钮
-  .filter-item.el-button + .filter-item.el-button {
-    margin-left: 5px;
-  }
 }
 
 .batch-operations {
@@ -755,54 +766,6 @@ export default class FileManagement extends Vue {
     th.el-table__cell {
       border-right: none;
     }
-  }
-}
-
-// 修复日期范围选择器分隔符"至"被遮挡的问题，并确保清除图标显示
-::v-deep .el-date-editor--daterange {
-  .el-range-separator {
-    padding: 0 8px;
-    min-width: 24px;
-    line-height: 32px;
-  }
-
-  .el-range-input {
-    flex: 1;
-    min-width: 0;
-  }
-
-  // 为清除图标预留空间，避免被挤压
-  .el-range-input:last-child {
-    padding-right: 30px;
-  }
-
-  // 确保清除图标正确显示
-  .el-range__close-icon {
-    display: inline-block !important;
-    position: absolute !important;
-    right: 5px !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-    color: #C0C4CC !important;
-    font-size: 14px !important;
-    cursor: pointer !important;
-    z-index: 10 !important;
-    width: auto !important;
-    height: auto !important;
-    float: none !important;
-    font-style: normal !important;  // 确保图标为正体
-
-    &:hover {
-      color: #909399 !important;
-    }
-  }
-
-  // 确保清除图标的伪元素显示（使用圆形关闭图标）
-  .el-range__close-icon::before {
-    content: "\e79d" !important;
-    font-family: element-icons !important;
-    font-size: 16px !important;
-    font-style: normal !important;  // 确保伪元素也为正体
   }
 }
 </style>

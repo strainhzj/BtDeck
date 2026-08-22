@@ -12,7 +12,7 @@
 import logging
 import sys
 import os
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 from datetime import datetime
 
 # 添加项目根目录到Python路径
@@ -20,13 +20,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(
 
 from app.database import get_db
 from app.tasks.cron_crud import CronTaskCRUD
-from app.tasks.class_path_validator import validate_single_class_path, ClassPathValidationError, class_path_validator
+from app.tasks.class_path_validator import validate_single_class_path, class_path_validator
 
 # 配置日志
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 
@@ -51,19 +48,16 @@ class ClassPathFixer:
         try:
             result = CronTaskCRUD.get_cron_tasks(db, skip=0, limit=1000, task_type=4)
             if not result.success:
-                return {
-                    "status": "error",
-                    "message": f"获取任务失败: {result.message}"
-                }
+                return {"status": "error", "message": f"获取任务失败: {result.message}"}
 
-            all_tasks = result.data.get('list', [])
+            all_tasks = (result.data or {}).get("list", [])
             analysis_results = []
 
             for task in all_tasks:
-                task_id = task.get('task_id')
-                task_name = task.get('task_name')
-                task_code = task.get('task_code')
-                executor = task.get('executor', '').strip()
+                task_id = task.get("task_id")
+                task_name = task.get("task_name")
+                task_code = task.get("task_code")
+                executor = task.get("executor", "").strip()
 
                 analysis = {
                     "task_id": task_id,
@@ -74,11 +68,15 @@ class ClassPathFixer:
                     "validation_result": None,
                     "fix_suggestions": [],
                     "auto_fix_possible": False,
-                    "recommended_fix": None
+                    "recommended_fix": None,
                 }
 
                 # 检查是否是类路径格式
-                if executor and '.' in executor and not executor.strip().startswith(('import', 'def', 'print', 'await', 'time', 'async', '#')):
+                if (
+                    executor
+                    and "." in executor
+                    and not executor.strip().startswith(("import", "def", "print", "await", "time", "async", "#"))
+                ):
                     analysis["is_class_path"] = True
 
                     # 验证类路径
@@ -105,7 +103,11 @@ class ClassPathFixer:
             # 统计结果
             total_tasks = len(analysis_results)
             class_path_tasks = sum(1 for a in analysis_results if a["is_class_path"])
-            valid_class_paths = sum(1 for a in analysis_results if a["is_class_path"] and a["validation_result"] and a["validation_result"]["is_valid"])
+            valid_class_paths = sum(
+                1
+                for a in analysis_results
+                if a["is_class_path"] and a["validation_result"] and a["validation_result"]["is_valid"]
+            )
             invalid_class_paths = class_path_tasks - valid_class_paths
             auto_fixable = sum(1 for a in analysis_results if a.get("auto_fix_possible", False))
 
@@ -118,9 +120,11 @@ class ClassPathFixer:
                     "valid_class_paths": valid_class_paths,
                     "invalid_class_paths": invalid_class_paths,
                     "auto_fixable": auto_fixable,
-                    "fix_rate": f"{(auto_fixable / invalid_class_paths * 100):.1f}%" if invalid_class_paths > 0 else "0%"
+                    "fix_rate": (
+                        f"{(auto_fixable / invalid_class_paths * 100):.1f}%" if invalid_class_paths > 0 else "0%"
+                    ),
                 },
-                "detailed_analysis": analysis_results
+                "detailed_analysis": analysis_results,
             }
 
         finally:
@@ -140,9 +144,7 @@ class ClassPathFixer:
             return False
 
         # 只能修复某些类型的简单错误
-        auto_fixable_errors = {
-            "INVALID_FORMAT"  # 格式错误通常需要人工干预
-        }
+        auto_fixable_errors = {"INVALID_FORMAT"}  # 格式错误通常需要人工干预
 
         # 检查是否有可以自动修复的错误
         for error in validation_result["errors"]:
@@ -220,7 +222,7 @@ class ClassPathFixer:
                     "recommended_fix": recommended_fix,
                     "fix_applied": False,
                     "fix_success": False,
-                    "error_message": None
+                    "error_message": None,
                 }
 
                 if recommended_fix and recommended_fix != original_executor:
@@ -240,7 +242,7 @@ class ClassPathFixer:
                 "timestamp": datetime.now().isoformat(),
                 "fixes_attempted": len(fix_results),
                 "fixes_successful": sum(1 for f in fix_results if f.get("fix_success", False)),
-                "detailed_results": fix_results
+                "detailed_results": fix_results,
             }
 
         finally:
@@ -270,11 +272,13 @@ class ClassPathFixer:
         guide_lines.append(f"- 可自动修复: {summary['auto_fixable']}")
         guide_lines.append("")
 
-        if summary['invalid_class_paths'] > 0:
+        if summary["invalid_class_paths"] > 0:
             guide_lines.append("## 需要手动修复的任务")
 
             for analysis in analysis_result["detailed_analysis"]:
-                if analysis["is_class_path"] and (not analysis["validation_result"] or not analysis["validation_result"]["is_valid"]):
+                if analysis["is_class_path"] and (
+                    not analysis["validation_result"] or not analysis["validation_result"]["is_valid"]
+                ):
                     task_id = analysis["task_id"]
                     task_name = analysis["task_name"]
                     original_executor = analysis["original_executor"]
@@ -297,12 +301,14 @@ class ClassPathFixer:
 
                     # 生成SQL修复语句模板
                     guide_lines.append("\n**SQL修复模板**:")
-                    guide_lines.append(f"```sql")
-                    guide_lines.append(f"-- 备份当前任务")
+                    guide_lines.append("```sql")
+                    guide_lines.append("-- 备份当前任务")
                     guide_lines.append(f"SELECT * FROM cron_task WHERE task_id = {task_id};")
-                    guide_lines.append(f"-- 修复类路径（请将 NEW_CLASS_PATH 替换为正确值）")
-                    guide_lines.append(f"UPDATE cron_task SET executor = 'NEW_CLASS_PATH', update_time = datetime('now') WHERE task_id = {task_id};")
-                    guide_lines.append(f"```")
+                    guide_lines.append("-- 修复类路径（请将 NEW_CLASS_PATH 替换为正确值）")
+                    guide_lines.append(
+                        f"UPDATE cron_task SET executor = 'NEW_CLASS_PATH', update_time = datetime('now') WHERE task_id = {task_id};"
+                    )
+                    guide_lines.append("```")
 
         guide_lines.append("\n## 修复步骤")
         guide_lines.append("1. 查看上述需要修复的任务列表")
@@ -335,7 +341,7 @@ class ClassPathFixer:
         guide_content = self.generate_manual_fix_guide(analysis_result)
         guide_file = os.path.join(output_dir, f"class_path_fix_guide_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md")
 
-        with open(guide_file, 'w', encoding='utf-8') as f:
+        with open(guide_file, "w", encoding="utf-8") as f:
             f.write(guide_content)
 
         logger.info(f"修复指南已保存到: {guide_file}")
@@ -361,7 +367,7 @@ def main():
 
     # 显示分析结果
     summary = analysis["summary"]
-    print(f"\n分析结果摘要:")
+    print("\n分析结果摘要:")
     print(f"  总Python任务数: {summary['total_python_tasks']}")
     print(f"  类路径任务数: {summary['class_path_tasks']}")
     print(f"  有效类路径: {summary['valid_class_paths']}")
@@ -370,23 +376,23 @@ def main():
     print(f"  修复率预估: {summary['fix_rate']}")
 
     # 2. 生成修复方案
-    if summary['invalid_class_paths'] > 0:
-        print(f"\n2. 生成修复方案...")
+    if summary["invalid_class_paths"] > 0:
+        print("\n2. 生成修复方案...")
 
         # 生成手动修复指南
         guide_file = fixer.save_fix_guide(analysis)
         print(f"   修复指南已生成: {guide_file}")
 
         # 试运行自动修复（如果可能）
-        if summary['auto_fixable'] > 0:
-            print(f"\n3. 试运行自动修复...")
+        if summary["auto_fixable"] > 0:
+            print("\n3. 试运行自动修复...")
             auto_fix_result = fixer.apply_auto_fixes(analysis, dry_run=True)
 
             if auto_fix_result["status"] == "completed":
                 print(f"   尝试修复数: {auto_fix_result['fixes_attempted']}")
                 print(f"   预计成功数: {auto_fix_result['fixes_successful']}")
     else:
-        print(f"\n✅ 所有类路径都已验证通过，无需修复！")
+        print("\n✅ 所有类路径都已验证通过，无需修复！")
 
     print("\n" + "=" * 60)
     print("修复工具运行完成")

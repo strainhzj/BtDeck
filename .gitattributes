@@ -1,0 +1,33 @@
+# Git 行尾规范
+# 防止 Windows 开发机 autocrlf 把 shell 脚本转成 CRLF，
+# 进而导致容器内 shebang 失效（exec: no such file or directory）。
+
+# Shell 脚本强制 LF（Docker/Linux 部署关键）
+*.sh           text eol=lf
+*.bash         text eol=lf
+
+# Dockerfile / compose 强制 LF
+Dockerfile*    text eol=lf
+docker-compose*.yml  text eol=lf
+*.dockerfile   text eol=lf
+
+# Linux 打包入口脚本
+deploy/start.sh text eol=lf
+deploy/btdeck.service text eol=lf
+
+# Python 默认 LF
+*.py           text eol=lf
+
+# Windows 专用脚本保持 CRLF
+*.bat          text eol=crlf
+*.cmd          text eol=crlf
+*.ps1          text eol=crlf
+
+# 二进制文件
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.exe  binary
+*.dll  binary
+*.so   binary
+*.db   binary

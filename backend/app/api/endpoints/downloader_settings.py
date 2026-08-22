@@ -11,46 +11,35 @@
 4. 数据库中的advanced_settings数据保留，但不再使用
 5. 未来版本可能会完全移除此功能
 """
+
 import logging
 import json
-from typing import Optional
+from typing import Any, Optional, cast
 from datetime import datetime, time as dt_time
 
 from fastapi import APIRouter, Depends, Request, Path
 from sqlalchemy import text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 from app.database import get_db
 from app.services.downloader_settings_manager import DownloaderSettingsManager
-from app.downloader.models import BtDownloaders
+from app.services.speed_schedule_service import SpeedScheduleService
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.utils.encryption import encrypt_password, decrypt_password
+from app.models.enums import SpeedUnitEnum
 from app.models.setting_templates import DownloaderTypeEnum
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+# 测试连接单次调用超时（秒，P0-04：网络探测经 call_downloader_api 的 INTERACTIVE lane 执行）
+_TEST_CONNECT_TIMEOUT = 10.0
+
 
 # ========== 辅助函数 ==========
-
-def get_current_user_id(token: str) -> Optional[int]:
-    """
-    从JWT token中获取用户ID
-
-    Args:
-        token: JWT访问令牌
-
-    Returns:
-        Optional[int]: 用户ID，失败返回None
-    """
-    try:
-        decoded = utils.verify_access_token(token)
-        user_id = decoded.get("user_id")
-        return int(user_id) if user_id else None
-    except Exception as e:
-        logger.error(f"获取用户ID失败: {e}")
-        return None
 
 
 def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
@@ -69,8 +58,8 @@ def verify_downloader_exists(db: Session, downloader_id: str) -> bool:
             SELECT COUNT(*) as count FROM bt_downloaders
             WHERE downloader_id = :downloader_id AND dr = 0
         """
-        result = db.execute(text(sql), {"downloader_id": downloader_id}).fetchone()
-        return result.count > 0 if result else False
+        count = db.execute(text(sql), {"downloader_id": downloader_id}).scalar_one()
+        return int(count) > 0
     except Exception as e:
         logger.error(f"验证下载器存在性失败: {e}")
         return False
@@ -124,6 +113,7 @@ def coerce_sqlite_time(value) -> str:
                 continue
     raise ValueError("时间格式错误，应为 HH:mm 或 HH:mm:ss")
 
+
 def normalize_weekdays(weekdays) -> str:
     """
     标准化星期列表为数据库存储字符串（0-6，周一=0）。
@@ -172,16 +162,12 @@ def parse_days_of_week(days_of_week: str) -> list:
 
 # ========== API端点 ==========
 
-@router.get(
-    "/{downloader_id}/settings",
-    summary="获取下载器配置",
-    response_model=CommonResponse,
-    tags=["下载器设置"]
-)
+
+@router.get("/{downloader_id}/settings", summary="获取下载器配置", response_model=CommonResponse, tags=["下载器设置"])
 def get_downloader_settings(
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     获取指定下载器的配置信息
@@ -189,33 +175,9 @@ def get_downloader_settings(
     返回下载器的速度限制、认证信息、高级配置等
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
         # 2. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
-            return CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 3. 查询下载器配置
         sql = """
@@ -248,8 +210,8 @@ def get_downloader_settings(
                     "override_local": False,
                     "created_at": None,
                     "updated_at": None,
-                    "schedule_rules": []  # 添加空数组
-                }
+                    "schedule_rules": [],  # 添加空数组
+                },
             )
 
         # 4. 查询分时段限速规则
@@ -262,34 +224,33 @@ def get_downloader_settings(
             WHERE downloader_setting_id = :setting_id
             ORDER BY sort_order ASC, created_at ASC
         """
-        schedule_rules_result = db.execute(
-            text(schedule_rules_sql),
-            {"setting_id": result.id}
-        ).fetchall()
+        schedule_rules_result = db.execute(text(schedule_rules_sql), {"setting_id": result.id}).fetchall()
 
         # 转换规则数据为前端期望的格式
         schedule_rules_list = []
         for rule in schedule_rules_result:
             days_list = parse_days_of_week(rule.days_of_week)
 
-            schedule_rules_list.append({
-                "id": rule.id,
-                "sort_order": rule.sort_order,
-                "start_time": rule.start_time,
-                "end_time": rule.end_time,
-                "weekdays": days_list,
-                "download": {
-                    "enabled": rule.dl_speed_limit > 0,
-                    "speed_limit": rule.dl_speed_limit,
-                    "speed_unit": rule.dl_speed_unit
-                },
-                "upload": {
-                    "enabled": rule.ul_speed_limit > 0,
-                    "speed_limit": rule.ul_speed_limit,
-                    "speed_unit": rule.ul_speed_unit
-                },
-                "enabled": rule.enabled
-            })
+            schedule_rules_list.append(
+                {
+                    "id": rule.id,
+                    "sort_order": rule.sort_order,
+                    "start_time": rule.start_time,
+                    "end_time": rule.end_time,
+                    "weekdays": days_list,
+                    "download": {
+                        "enabled": rule.dl_speed_limit > 0,
+                        "speed_limit": rule.dl_speed_limit,
+                        "speed_unit": rule.dl_speed_unit,
+                    },
+                    "upload": {
+                        "enabled": rule.ul_speed_limit > 0,
+                        "speed_limit": rule.ul_speed_limit,
+                        "speed_unit": rule.ul_speed_unit,
+                    },
+                    "enabled": rule.enabled,
+                }
+            )
 
         # 5. 解析高级配置JSON
         advanced_settings = None
@@ -318,30 +279,21 @@ def get_downloader_settings(
                 "override_local": bool(result.override_local),
                 "created_at": result.created_at if result.created_at else None,
                 "updated_at": result.updated_at if result.updated_at else None,
-                "schedule_rules": schedule_rules_list  # 添加规则列表
-            }
+                "schedule_rules": schedule_rules_list,  # 添加规则列表
+            },
         )
 
     except Exception as e:
         logger.error(f"获取下载器配置失败: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"服务器内部错误: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"服务器内部错误: {str(e)}", code="500", data=None)
 
 
-@router.put(
-    "/{downloader_id}/settings",
-    summary="更新下载器配置",
-    response_model=CommonResponse,
-    tags=["下载器设置"]
-)
+@router.put("/{downloader_id}/settings", summary="更新下载器配置", response_model=CommonResponse, tags=["下载器设置"])
 async def update_downloader_settings(
+    req: Request,
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     更新指定下载器的配置信息
@@ -350,98 +302,59 @@ async def update_downloader_settings(
     如果配置不存在则创建，如果存在则更新
     """
     try:
-        response_data = {"schedule_rules": []}
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
+        response_data: dict[str, Any] = {"schedule_rules": []}
         # 2. 验证下载器是否存在
         if not verify_downloader_exists(db, downloader_id):
-            return CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 3. 获取请求体数据
         try:
             body_data = await req.json()
         except Exception as e:
             logger.error(f"解析请求体失败: {e}")
-            return CommonResponse(
-                status="error",
-                msg=f"请求体格式错误: {str(e)}",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg=f"请求体格式错误: {str(e)}", code="422", data=None)
 
         # 4. 参数验证（同时支持驼峰命名和蛇形命名，优先使用驼峰命名）
-        dl_speed_limit = body_data.get("dlSpeedLimit") or body_data.get("download_speed_limit", 0)
-        ul_speed_limit = body_data.get("ulSpeedLimit") or body_data.get("upload_speed_limit", 0)
+        global_dl_speed_limit = body_data.get("dlSpeedLimit")
+        if global_dl_speed_limit is None:
+            global_dl_speed_limit = body_data.get("download_speed_limit", 0)
+        global_ul_speed_limit = body_data.get("ulSpeedLimit")
+        if global_ul_speed_limit is None:
+            global_ul_speed_limit = body_data.get("upload_speed_limit", 0)
 
         # 速度单位参数处理（支持新旧两种格式）
         # 新格式：dlSpeedUnit/ulSpeedUnit（分别指定）
         # 旧格式：speedUnit（统一指定，向后兼容）
-        dl_speed_unit = body_data.get("dlSpeedUnit") or body_data.get("dl_speed_unit")
-        ul_speed_unit = body_data.get("ulSpeedUnit") or body_data.get("ul_speed_unit")
-        speed_unit_legacy = body_data.get("speedUnit") or body_data.get("speed_unit")
+        global_dl_speed_unit = body_data.get("dlSpeedUnit")
+        if global_dl_speed_unit is None:
+            global_dl_speed_unit = body_data.get("dl_speed_unit")
+        global_ul_speed_unit = body_data.get("ulSpeedUnit")
+        if global_ul_speed_unit is None:
+            global_ul_speed_unit = body_data.get("ul_speed_unit")
+        speed_unit_legacy = body_data.get("speedUnit")
+        if speed_unit_legacy is None:
+            speed_unit_legacy = body_data.get("speed_unit")
 
         # 如果使用旧格式，则两个速度单位相同
-        if dl_speed_unit is None and speed_unit_legacy is not None:
-            dl_speed_unit = speed_unit_legacy
-            ul_speed_unit = speed_unit_legacy
-        elif dl_speed_unit is None:
-            dl_speed_unit = 0  # 默认 KB/s
-        if ul_speed_unit is None:
-            ul_speed_unit = 0  # 默认 KB/s
+        if global_dl_speed_unit is None and speed_unit_legacy is not None:
+            global_dl_speed_unit = speed_unit_legacy
+            global_ul_speed_unit = speed_unit_legacy
+        elif global_dl_speed_unit is None:
+            global_dl_speed_unit = 0  # 默认 KB/s
+        if global_ul_speed_unit is None:
+            global_ul_speed_unit = 0  # 默认 KB/s
 
-        if not isinstance(dl_speed_limit, int) or dl_speed_limit < 0:
-            return CommonResponse(
-                status="error",
-                msg="下载速度限制必须是非负整数",
-                code="422",
-                data=None
-            )
+        if not isinstance(global_dl_speed_limit, int) or global_dl_speed_limit < 0:
+            return CommonResponse(status="error", msg="下载速度限制必须是非负整数", code="422", data=None)
 
-        if not isinstance(ul_speed_limit, int) or ul_speed_limit < 0:
-            return CommonResponse(
-                status="error",
-                msg="上传速度限制必须是非负整数",
-                code="422",
-                data=None
-            )
+        if not isinstance(global_ul_speed_limit, int) or global_ul_speed_limit < 0:
+            return CommonResponse(status="error", msg="上传速度限制必须是非负整数", code="422", data=None)
 
-        if not isinstance(dl_speed_unit, int) or dl_speed_unit not in [0, 1]:
-            return CommonResponse(
-                status="error",
-                msg="下载速度单位必须是0(KB/s)或1(MB/s)",
-                code="422",
-                data=None
-            )
+        if not isinstance(global_dl_speed_unit, int) or global_dl_speed_unit not in [0, 1]:
+            return CommonResponse(status="error", msg="下载速度单位必须是0(KB/s)或1(MB/s)", code="422", data=None)
 
-        if not isinstance(ul_speed_unit, int) or ul_speed_unit not in [0, 1]:
-            return CommonResponse(
-                status="error",
-                msg="上传速度单位必须是0(KB/s)或1(MB/s)",
-                code="422",
-                data=None
-            )
+        if not isinstance(global_ul_speed_unit, int) or global_ul_speed_unit not in [0, 1]:
+            return CommonResponse(status="error", msg="上传速度单位必须是0(KB/s)或1(MB/s)", code="422", data=None)
 
         # 5. 提取并验证 schedule_rules 参数
         schedule_rules = body_data.get("schedule_rules")
@@ -450,39 +363,23 @@ async def update_downloader_settings(
         if schedule_rules is not None:
             # 验证 schedule_rules 必须是列表
             if not isinstance(schedule_rules, list):
-                return CommonResponse(
-                    status="error",
-                    msg="schedule_rules 必须是数组",
-                    code="422",
-                    data=None
-                )
+                return CommonResponse(status="error", msg="schedule_rules 必须是数组", code="422", data=None)
 
             parsed_schedule_rules = []
 
             # 验证每条规则的数据格式
             for idx, rule in enumerate(schedule_rules):
                 if not isinstance(rule, dict):
-                    return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 必须是对象",
-                        code="422",
-                        data=None
-                    )
+                    return CommonResponse(status="error", msg=f"规则 {idx + 1} 必须是对象", code="422", data=None)
 
                 if "start_time" not in rule or "end_time" not in rule:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 缺少必填字段: start_time/end_time",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 缺少必填字段: start_time/end_time", code="422", data=None
                     )
 
                 if "weekdays" not in rule:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 缺少必填字段: weekdays",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 缺少必填字段: weekdays", code="422", data=None
                     )
 
                 # 验证时间格式并规范化为 HH:MM 字符串
@@ -491,38 +388,26 @@ async def update_downloader_settings(
                     rule["end_time"] = normalize_hhmm_time(rule["end_time"])
                 except ValueError:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 的时间格式错误，应为 HH:mm",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 的时间格式错误，应为 HH:mm", code="422", data=None
                     )
 
                 # 验证时间范围
                 if rule["start_time"] >= rule["end_time"]:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 的开始时间必须早于结束时间",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 的开始时间必须早于结束时间", code="422", data=None
                     )
 
                 # 验证星期数组
                 if not isinstance(rule["weekdays"], list) or len(rule["weekdays"]) == 0:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 的星期选择不能为空",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 的星期选择不能为空", code="422", data=None
                     )
 
                 try:
                     days_of_week_str = normalize_weekdays(rule["weekdays"])
                 except ValueError as e:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 的星期格式错误: {str(e)}",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 的星期格式错误: {str(e)}", code="422", data=None
                     )
 
                 # 兼容新旧格式的速度配置
@@ -530,60 +415,49 @@ async def update_downloader_settings(
                 upload_config = rule.get("upload") if isinstance(rule.get("upload"), dict) else None
 
                 if download_config is None and upload_config is None and "speed_limit" not in rule:
-                    return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 缺少速度配置",
-                        code="422",
-                        data=None
-                    )
+                    return CommonResponse(status="error", msg=f"规则 {idx + 1} 缺少速度配置", code="422", data=None)
 
                 dl_enabled = bool(download_config.get("enabled", True)) if download_config else True
                 ul_enabled = bool(upload_config.get("enabled", True)) if upload_config else True
 
                 if download_config:
-                    dl_speed_limit = download_config.get("speed_limit", 0) if dl_enabled else 0
-                    dl_speed_unit = download_config.get("speed_unit", 0)
+                    rule_dl_speed_limit = download_config.get("speed_limit", 0) if dl_enabled else 0
+                    rule_dl_speed_unit = download_config.get("speed_unit", 0)
                 else:
-                    dl_speed_limit = rule.get("speed_limit", 0)
-                    dl_speed_unit = rule.get("speed_unit", 0)
+                    rule_dl_speed_limit = rule.get("speed_limit", 0)
+                    rule_dl_speed_unit = rule.get("speed_unit", 0)
 
                 if upload_config:
-                    ul_speed_limit = upload_config.get("speed_limit", 0) if ul_enabled else 0
-                    ul_speed_unit = upload_config.get("speed_unit", 0)
+                    rule_ul_speed_limit = upload_config.get("speed_limit", 0) if ul_enabled else 0
+                    rule_ul_speed_unit = upload_config.get("speed_unit", 0)
                 else:
-                    ul_speed_limit = rule.get("ul_speed_limit", dl_speed_limit)
-                    ul_speed_unit = rule.get("ul_speed_unit", dl_speed_unit)
+                    rule_ul_speed_limit = rule.get("ul_speed_limit", rule_dl_speed_limit)
+                    rule_ul_speed_unit = rule.get("ul_speed_unit", rule_dl_speed_unit)
 
-                if not isinstance(dl_speed_limit, int) or dl_speed_limit < 0:
+                if not isinstance(rule_dl_speed_limit, int) or rule_dl_speed_limit < 0:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 的下载速度限制必须是非负整数",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 的下载速度限制必须是非负整数", code="422", data=None
                     )
 
-                if not isinstance(ul_speed_limit, int) or ul_speed_limit < 0:
+                if not isinstance(rule_ul_speed_limit, int) or rule_ul_speed_limit < 0:
                     return CommonResponse(
-                        status="error",
-                        msg=f"规则 {idx + 1} 的上传速度限制必须是非负整数",
-                        code="422",
-                        data=None
+                        status="error", msg=f"规则 {idx + 1} 的上传速度限制必须是非负整数", code="422", data=None
                     )
 
-                if not isinstance(dl_speed_unit, int) or dl_speed_unit not in [0, 1]:
+                if not isinstance(rule_dl_speed_unit, int) or rule_dl_speed_unit not in [0, 1]:
                     return CommonResponse(
                         status="error",
                         msg=f"规则 {idx + 1} 的下载速度单位必须是 0(KB/s) 或 1(MB/s)",
                         code="422",
-                        data=None
+                        data=None,
                     )
 
-                if not isinstance(ul_speed_unit, int) or ul_speed_unit not in [0, 1]:
+                if not isinstance(rule_ul_speed_unit, int) or rule_ul_speed_unit not in [0, 1]:
                     return CommonResponse(
                         status="error",
                         msg=f"规则 {idx + 1} 的上传速度单位必须是 0(KB/s) 或 1(MB/s)",
                         code="422",
-                        data=None
+                        data=None,
                     )
 
                 rule_id = rule.get("id")
@@ -598,18 +472,20 @@ async def update_downloader_settings(
                 except (TypeError, ValueError):
                     sort_order = idx
 
-                parsed_schedule_rules.append({
-                    "id": rule_id,
-                    "sort_order": sort_order,
-                    "start_time": rule["start_time"],
-                    "end_time": rule["end_time"],
-                    "dl_speed_limit": dl_speed_limit if dl_enabled else 0,
-                    "dl_speed_unit": dl_speed_unit,
-                    "ul_speed_limit": ul_speed_limit if ul_enabled else 0,
-                    "ul_speed_unit": ul_speed_unit,
-                    "days_of_week": days_of_week_str,
-                    "enabled": rule.get("enabled", True)
-                })
+                parsed_schedule_rules.append(
+                    {
+                        "id": rule_id,
+                        "sort_order": sort_order,
+                        "start_time": rule["start_time"],
+                        "end_time": rule["end_time"],
+                        "dl_speed_limit": rule_dl_speed_limit if dl_enabled else 0,
+                        "dl_speed_unit": rule_dl_speed_unit,
+                        "ul_speed_limit": rule_ul_speed_limit if ul_enabled else 0,
+                        "ul_speed_unit": rule_ul_speed_unit,
+                        "days_of_week": days_of_week_str,
+                        "enabled": rule.get("enabled", True),
+                    }
+                )
 
         # 6. 密码加密
         password = body_data.get("password")
@@ -625,16 +501,19 @@ async def update_downloader_settings(
         if not advanced_settings:
             # qBittorrent 高级配置字段
             qbt_advanced_fields = [
-                'dht_enabled', 'lsd_enabled', 'utp_enabled',
-                'max_connections', 'max_connections_per_torrent',
-                'max_uploads', 'max_uploads_per_torrent',
-                'max_download_slots', 'max_upload_slots'
+                "dht_enabled",
+                "lsd_enabled",
+                "utp_enabled",
+                "max_connections",
+                "max_connections_per_torrent",
+                "max_uploads",
+                "max_uploads_per_torrent",
+                "max_download_slots",
+                "max_upload_slots",
             ]
 
             # Transmission 高级配置字段
-            tr_advanced_fields = [
-                'download_queue_size', 'seed_queue_size'
-            ]
+            tr_advanced_fields = ["download_queue_size", "seed_queue_size"]
 
             # 收集存在的高级配置字段
             collected_advanced = {}
@@ -665,10 +544,7 @@ async def update_downloader_settings(
                     validator = advanced_validators.get(field)
                     if validator and not validator(value):
                         return CommonResponse(
-                            status="error",
-                            msg=f"字段 {field} 的值无效: {value}",
-                            code="422",
-                            data=None
+                            status="error", msg=f"字段 {field} 的值无效: {value}", code="422", data=None
                         )
 
                 advanced_settings = collected_advanced
@@ -681,12 +557,7 @@ async def update_downloader_settings(
                 logger.info(f"高级配置已序列化: {advanced_settings_json}")
             except Exception as e:
                 logger.error(f"序列化高级配置失败: {e}")
-                return CommonResponse(
-                    status="error",
-                    msg=f"高级配置格式错误: {str(e)}",
-                    code="422",
-                    data=None
-                )
+                return CommonResponse(status="error", msg=f"高级配置格式错误: {str(e)}", code="422", data=None)
 
         # 7. 检查配置是否已存在
         check_sql = """
@@ -714,19 +585,22 @@ async def update_downloader_settings(
                     updated_at = :updated_at
                 WHERE downloader_id = :downloader_id
             """
-            db.execute(text(update_sql), {
-                "downloader_id": downloader_id,
-                "dl_speed_limit": dl_speed_limit,
-                "ul_speed_limit": ul_speed_limit,
-                "dl_speed_unit": dl_speed_unit,
-                "ul_speed_unit": ul_speed_unit,
-                "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
-                "username": body_data.get("username"),
-                "password": encrypted_password,
-                "advanced_settings": advanced_settings_json,
-                "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
-                "updated_at": current_time
-            })
+            db.execute(
+                text(update_sql),
+                {
+                    "downloader_id": downloader_id,
+                    "dl_speed_limit": global_dl_speed_limit,
+                    "ul_speed_limit": global_ul_speed_limit,
+                    "dl_speed_unit": global_dl_speed_unit,
+                    "ul_speed_unit": global_ul_speed_unit,
+                    "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
+                    "username": body_data.get("username"),
+                    "password": encrypted_password,
+                    "advanced_settings": advanced_settings_json,
+                    "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
+                    "updated_at": current_time,
+                },
+            )
 
             # 删除旧的分时段规则由后续 parsed_schedule_rules 处理，避免先删后更导致更新失败
 
@@ -742,30 +616,36 @@ async def update_downloader_settings(
                  :enable_schedule, :username, :password, :advanced_settings, :override_local,
                  :created_at, :updated_at)
             """
-            result = db.execute(text(insert_sql), {
-                "downloader_id": downloader_id,
-                "dl_speed_limit": dl_speed_limit,
-                "ul_speed_limit": ul_speed_limit,
-                "dl_speed_unit": dl_speed_unit,
-                "ul_speed_unit": ul_speed_unit,
-                "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
-                "username": body_data.get("username"),
-                "password": encrypted_password,
-                "advanced_settings": advanced_settings_json,
-                "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
-                "created_at": current_time,
-                "updated_at": current_time
-            })
+            insert_result = cast(
+                CursorResult[Any],
+                db.execute(
+                    text(insert_sql),
+                    {
+                        "downloader_id": downloader_id,
+                        "dl_speed_limit": global_dl_speed_limit,
+                        "ul_speed_limit": global_ul_speed_limit,
+                        "dl_speed_unit": global_dl_speed_unit,
+                        "ul_speed_unit": global_ul_speed_unit,
+                        "enable_schedule": body_data.get("enableSchedule") or body_data.get("enable_schedule", False),
+                        "username": body_data.get("username"),
+                        "password": encrypted_password,
+                        "advanced_settings": advanced_settings_json,
+                        "override_local": body_data.get("overrideLocal") or body_data.get("override_local", False),
+                        "created_at": current_time,
+                        "updated_at": current_time,
+                    },
+                ),
+            )
 
             # 获取新创建记录的 ID
-            setting_id = result.lastrowid
+            setting_id = insert_result.lastrowid
 
         # 保存分时段规则
         if parsed_schedule_rules is not None:
             if len(parsed_schedule_rules) == 0:
                 db.execute(
                     text("DELETE FROM speed_schedule_rules WHERE downloader_setting_id = :setting_id"),
-                    {"setting_id": setting_id}
+                    {"setting_id": setting_id},
                 )
             else:
                 incoming_ids = [rule["id"] for rule in parsed_schedule_rules if rule["id"] is not None]
@@ -781,12 +661,12 @@ async def update_downloader_settings(
                               AND id NOT IN ({placeholders})
                             """
                         ),
-                        params
+                        params,
                     )
                 else:
                     db.execute(
                         text("DELETE FROM speed_schedule_rules WHERE downloader_setting_id = :setting_id"),
-                        {"setting_id": setting_id}
+                        {"setting_id": setting_id},
                     )
 
                 insert_rules = []
@@ -795,15 +675,17 @@ async def update_downloader_settings(
                     end_db_value = coerce_sqlite_time(rule["end_time"])
                     logger.info(
                         "[schedule_rule_bind] start=%s(%s), end=%s(%s)",
-                        start_db_value, type(start_db_value).__name__,
-                        end_db_value, type(end_db_value).__name__
+                        start_db_value,
+                        type(start_db_value).__name__,
+                        end_db_value,
+                        type(end_db_value).__name__,
                     )
                     logger.info(
                         "[schedule_rule_sync] rule %s/%s id=%s sort_order=%s",
                         idx + 1,
                         len(parsed_schedule_rules),
                         rule.get("id"),
-                        rule.get("sort_order")
+                        rule.get("sort_order"),
                     )
 
                     if rule["id"] is not None:
@@ -820,45 +702,53 @@ async def update_downloader_settings(
                                 enabled = :enabled
                             WHERE id = :id AND downloader_setting_id = :downloader_setting_id
                         """
-                        result = db.execute(text(update_rule_sql), {
-                            "id": rule["id"],
-                            "downloader_setting_id": setting_id,
-                            "sort_order": rule["sort_order"],
-                            "start_time": start_db_value,
-                            "end_time": end_db_value,
-                            "dl_speed_limit": rule["dl_speed_limit"],
-                            "dl_speed_unit": rule["dl_speed_unit"],
-                            "ul_speed_limit": rule["ul_speed_limit"],
-                            "ul_speed_unit": rule["ul_speed_unit"],
-                            "days_of_week": rule["days_of_week"],
-                            "enabled": rule["enabled"]
-                        })
-                        if result.rowcount == 0:
+                        update_result = cast(
+                            CursorResult[Any],
+                            db.execute(
+                                text(update_rule_sql),
+                                {
+                                    "id": rule["id"],
+                                    "downloader_setting_id": setting_id,
+                                    "sort_order": rule["sort_order"],
+                                    "start_time": start_db_value,
+                                    "end_time": end_db_value,
+                                    "dl_speed_limit": rule["dl_speed_limit"],
+                                    "dl_speed_unit": rule["dl_speed_unit"],
+                                    "ul_speed_limit": rule["ul_speed_limit"],
+                                    "ul_speed_unit": rule["ul_speed_unit"],
+                                    "days_of_week": rule["days_of_week"],
+                                    "enabled": rule["enabled"],
+                                },
+                            ),
+                        )
+                        if update_result.rowcount == 0:
                             logger.warning(
                                 "[schedule_rule_sync] update affected 0 rows, id=%s setting_id=%s",
                                 rule["id"],
-                                setting_id
+                                setting_id,
                             )
                             db.rollback()
                             return CommonResponse(
                                 status="error",
                                 msg=f"分时段规则更新失败, 规则ID不存在或已被删除: {rule['id']}",
                                 code="422",
-                                data=None
+                                data=None,
                             )
                     else:
-                        insert_rules.append({
-                            "downloader_setting_id": setting_id,
-                            "sort_order": rule["sort_order"],
-                            "start_time": start_db_value,
-                            "end_time": end_db_value,
-                            "dl_speed_limit": rule["dl_speed_limit"],
-                            "dl_speed_unit": rule["dl_speed_unit"],
-                            "ul_speed_limit": rule["ul_speed_limit"],
-                            "ul_speed_unit": rule["ul_speed_unit"],
-                            "days_of_week": rule["days_of_week"],
-                            "enabled": rule["enabled"]
-                        })
+                        insert_rules.append(
+                            {
+                                "downloader_setting_id": setting_id,
+                                "sort_order": rule["sort_order"],
+                                "start_time": start_db_value,
+                                "end_time": end_db_value,
+                                "dl_speed_limit": rule["dl_speed_limit"],
+                                "dl_speed_unit": rule["dl_speed_unit"],
+                                "ul_speed_limit": rule["ul_speed_limit"],
+                                "ul_speed_unit": rule["ul_speed_unit"],
+                                "days_of_week": rule["days_of_week"],
+                                "enabled": rule["enabled"],
+                            }
+                        )
 
                 if insert_rules:
                     insert_rule_sql = """
@@ -874,10 +764,7 @@ async def update_downloader_settings(
                          :days_of_week, :enabled)
                     """
                     db.execute(text(insert_rule_sql), insert_rules)
-                    logger.info(
-                        "[schedule_rule_sync] insert batch success, count=%s",
-                        len(insert_rules)
-                    )
+                    logger.info("[schedule_rule_sync] insert batch success, count=%s", len(insert_rules))
 
         # 提交事务
         db.commit()
@@ -893,33 +780,32 @@ async def update_downloader_settings(
                 WHERE downloader_setting_id = :setting_id
                 ORDER BY sort_order ASC, created_at ASC
             """
-            schedule_rules_result = db.execute(
-                text(schedule_rules_sql),
-                {"setting_id": setting_id}
-            ).fetchall()
+            schedule_rules_result = db.execute(text(schedule_rules_sql), {"setting_id": setting_id}).fetchall()
 
             schedule_rules_list = []
             for rule in schedule_rules_result:
                 days_list = parse_days_of_week(rule.days_of_week)
 
-                schedule_rules_list.append({
-                    "id": rule.id,
-                    "sort_order": rule.sort_order,
-                    "start_time": rule.start_time,
-                    "end_time": rule.end_time,
-                    "weekdays": days_list,
-                    "download": {
-                        "enabled": rule.dl_speed_limit > 0,
-                        "speed_limit": rule.dl_speed_limit,
-                        "speed_unit": rule.dl_speed_unit
-                    },
-                    "upload": {
-                        "enabled": rule.ul_speed_limit > 0,
-                        "speed_limit": rule.ul_speed_limit,
-                        "speed_unit": rule.ul_speed_unit
-                    },
-                    "enabled": rule.enabled
-                })
+                schedule_rules_list.append(
+                    {
+                        "id": rule.id,
+                        "sort_order": rule.sort_order,
+                        "start_time": rule.start_time,
+                        "end_time": rule.end_time,
+                        "weekdays": days_list,
+                        "download": {
+                            "enabled": rule.dl_speed_limit > 0,
+                            "speed_limit": rule.dl_speed_limit,
+                            "speed_unit": rule.dl_speed_unit,
+                        },
+                        "upload": {
+                            "enabled": rule.ul_speed_limit > 0,
+                            "speed_limit": rule.ul_speed_limit,
+                            "speed_unit": rule.ul_speed_unit,
+                        },
+                        "enabled": rule.enabled,
+                    }
+                )
         except Exception as e:
             logger.error(f"查询分时段限速规则失败: {e}")
 
@@ -929,42 +815,28 @@ async def update_downloader_settings(
             f"更新下载器配置成功: {downloader_id} (包含 {len(parsed_schedule_rules) if parsed_schedule_rules is not None else 0} 条分时段规则)"
         )
 
-        return CommonResponse(
-            status="success",
-            msg="保存成功",
-            code="200",
-            data=response_data
-        )
+        return CommonResponse(status="success", msg="保存成功", code="200", data=response_data)
 
     except ValueError as e:
         db.rollback()
-        return CommonResponse(
-            status="error",
-            msg=str(e),
-            code="422",
-            data=None
-        )
+        return CommonResponse(status="error", msg=str(e), code="422", data=None)
     except Exception as e:
         db.rollback()
         logger.error(f"更新下载器配置失败: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"服务器内部错误: {str(e)}",
-            code="500",
-            data=response_data
-        )
+        return CommonResponse(status="error", msg=f"服务器内部错误: {str(e)}", code="500", data=response_data)
 
 
 @router.put(
     "/{downloader_id}/settings/rules/reorder",
     summary="更新分时段限速规则排序",
     response_model=CommonResponse,
-    tags=["下载器设置"]
+    tags=["下载器设置"],
 )
 async def reorder_speed_schedule_rules(
+    req: Request,
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     更新分时段限速规则排序
@@ -975,42 +847,14 @@ async def reorder_speed_schedule_rules(
     }
     """
     try:
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
         body_data = await req.json()
         rule_ids = body_data.get("rule_ids", [])
 
         if not isinstance(rule_ids, list):
-            return CommonResponse(
-                status="error",
-                msg="rule_ids 必须是数组",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="rule_ids 必须是数组", code="422", data=None)
 
         if len(rule_ids) == 0:
-            return CommonResponse(
-                status="success",
-                msg="排序更新成功",
-                code="200",
-                data=None
-            )
+            return CommonResponse(status="success", msg="排序更新成功", code="200", data=None)
 
         # 获取下载器配置ID
         setting_sql = """
@@ -1019,12 +863,7 @@ async def reorder_speed_schedule_rules(
         setting = db.execute(text(setting_sql), {"downloader_id": downloader_id}).fetchone()
 
         if not setting:
-            return CommonResponse(
-                status="error",
-                msg="下载器配置不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器配置不存在", code="404", data=None)
 
         for idx, rule_id in enumerate(rule_ids):
             try:
@@ -1037,41 +876,24 @@ async def reorder_speed_schedule_rules(
                 SET sort_order = :sort_order
                 WHERE id = :rule_id AND downloader_setting_id = :setting_id
             """
-            db.execute(text(update_sql), {
-                "sort_order": idx,
-                "rule_id": rule_id_int,
-                "setting_id": setting.id
-            })
+            db.execute(text(update_sql), {"sort_order": idx, "rule_id": rule_id_int, "setting_id": setting.id})
 
         db.commit()
-        return CommonResponse(
-            status="success",
-            msg="排序更新成功",
-            code="200",
-            data=None
-        )
+        return CommonResponse(status="success", msg="排序更新成功", code="200", data=None)
 
     except Exception as e:
         db.rollback()
         logger.error(f"更新规则排序失败: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"服务器内部错误: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"服务器内部错误: {str(e)}", code="500", data=None)
 
 
 @router.post(
-    "/{downloader_id}/settings/apply",
-    summary="应用配置到下载器",
-    response_model=CommonResponse,
-    tags=["下载器设置"]
+    "/{downloader_id}/settings/apply", summary="应用配置到下载器", response_model=CommonResponse, tags=["下载器设置"]
 )
 def apply_downloader_settings(
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     将保存的配置应用到下载器
@@ -1079,25 +901,6 @@ def apply_downloader_settings(
     调用下载器SDK的实际API，将配置推送到下载器
     """
     try:
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
-
         # 2. 查询下载器信息
         downloader_sql = """
             SELECT downloader_id, nickname, host, port, username, password, downloader_type
@@ -1107,16 +910,11 @@ def apply_downloader_settings(
         downloader_result = db.execute(text(downloader_sql), {"downloader_id": downloader_id}).fetchone()
 
         if not downloader_result:
-            return CommonResponse(
-                status="error",
-                msg="下载器不存在",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
         # 3. 查询下载器配置
         settings_sql = """
-            SELECT dl_speed_limit, ul_speed_limit, dl_speed_unit, ul_speed_unit, enable_schedule,
+            SELECT id, dl_speed_limit, ul_speed_limit, dl_speed_unit, ul_speed_unit, enable_schedule,
                    username, password, advanced_settings, override_local
             FROM downloader_settings
             WHERE downloader_id = :downloader_id
@@ -1124,12 +922,7 @@ def apply_downloader_settings(
         settings_result = db.execute(text(settings_sql), {"downloader_id": downloader_id}).fetchone()
 
         if not settings_result:
-            return CommonResponse(
-                status="error",
-                msg="下载器配置不存在，请先配置",
-                code="404",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器配置不存在，请先配置", code="404", data=None)
 
         # 4. 构建下载器对象（用于初始化DownloaderSettingsManager）
         from app.downloader.models import BtDownloaders
@@ -1168,21 +961,16 @@ def apply_downloader_settings(
                         status="error",
                         msg=f"不支持的下载器类型: '{db_downloader_type}' (类型: 字符串)",
                         code="500",
-                        data=None
+                        data=None,
                     )
 
-            logger.info(
-                f"下载器类型转换: '{db_downloader_type}' (str) -> {normalized_type} (int)"
-            )
+            logger.info(f"下载器类型转换: '{db_downloader_type}' (str) -> {normalized_type} (int)")
             db_downloader_type = normalized_type
         else:
             # 如果是整数，验证有效性
             if db_downloader_type not in [0, 1]:
                 return CommonResponse(
-                    status="error",
-                    msg=f"无效的下载器类型: {db_downloader_type} (期望: 0或1)",
-                    code="500",
-                    data=None
+                    status="error", msg=f"无效的下载器类型: {db_downloader_type} (期望: 0或1)", code="500", data=None
                 )
             logger.debug(f"下载器类型已是整数: {db_downloader_type}")
 
@@ -1193,7 +981,7 @@ def apply_downloader_settings(
             port=downloader_result.port,
             username=downloader_result.username,
             password=downloader_result.password,  # 从下载器表获取密码
-            downloader_type=db_downloader_type  # ✅ 使用转换后的整数类型
+            downloader_type=db_downloader_type,  # ✅ 使用转换后的整数类型
         )
 
         # 5. 初始化设置管理器
@@ -1201,18 +989,12 @@ def apply_downloader_settings(
             manager = DownloaderSettingsManager(downloader)
         except Exception as e:
             logger.error(f"初始化下载器管理器失败: {e}")
-            return CommonResponse(
-                status="error",
-                msg=f"初始化下载器管理器失败: {str(e)}",
-                code="500",
-                data=None
-            )
+            return CommonResponse(status="error", msg=f"初始化下载器管理器失败: {str(e)}", code="500", data=None)
 
         # 6. 构建配置字典
-        # 转换speed_unit：整数0->"KB/s", 1->"MB/s"
-        speed_unit_map = {0: "KB/s", 1: "MB/s"}
-        dl_speed_unit_str = speed_unit_map.get(settings_result.dl_speed_unit, "KB/s")
-        ul_speed_unit_str = speed_unit_map.get(settings_result.ul_speed_unit, "KB/s")
+        # 原始 SQL 对 SQLEnum(IntEnum) 可能返回 "0"/"1"，统一归一化后再应用。
+        dl_speed_unit_str = SpeedUnitEnum.from_value(settings_result.dl_speed_unit).to_string()
+        ul_speed_unit_str = SpeedUnitEnum.from_value(settings_result.ul_speed_unit).to_string()
 
         settings_dict = {
             "dl_speed_limit": settings_result.dl_speed_limit,
@@ -1258,54 +1040,36 @@ def apply_downloader_settings(
         logger.info(
             "应用配置: downloader_type=%s settings_keys=%s",
             downloader_result.downloader_type,
-            list(settings_dict.keys())
+            list(settings_dict.keys()),
         )
         # 7. 应用配置到下载器
         try:
-            success = manager.apply_settings(settings_dict)
-            if success:
-                return CommonResponse(
-                    status="success",
-                    msg="配置应用成功",
-                    code="200",
-                    data=None
-                )
+            if bool(settings_result.enable_schedule):
+                # 分时段配置必须使用当前有效规则；无命中时由服务回退到全局速度。
+                success = SpeedScheduleService.apply_to_downloader(db, downloader_id, settings_result.id)
             else:
-                return CommonResponse(
-                    status="error",
-                    msg="配置应用失败",
-                    code="500",
-                    data=None
-                )
+                success = manager.apply_settings(settings_dict)
+            if success:
+                return CommonResponse(status="success", msg="配置应用成功", code="200", data=None)
+            else:
+                return CommonResponse(status="error", msg="配置应用失败", code="500", data=None)
         except Exception as e:
             logger.error(f"应用配置失败: {e}")
-            return CommonResponse(
-                status="error",
-                msg=f"应用配置失败: {str(e)}",
-                code="500",
-                data=None
-            )
+            return CommonResponse(status="error", msg=f"应用配置失败: {str(e)}", code="500", data=None)
 
     except Exception as e:
         logger.error(f"应用配置失败: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"服务器内部错误: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"服务器内部错误: {str(e)}", code="500", data=None)
 
 
 @router.post(
-    "/{downloader_id}/settings/test",
-    summary="测试配置有效性",
-    response_model=CommonResponse,
-    tags=["下载器设置"]
+    "/{downloader_id}/settings/test", summary="测试配置有效性", response_model=CommonResponse, tags=["下载器设置"]
 )
 async def test_downloader_settings(
+    req: Request,
     downloader_id: str = Path(..., description="下载器ID"),
-    req: Request = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _user=Depends(require_authenticated_user),
 ):
     """
     测试下载器配置的有效性
@@ -1315,52 +1079,18 @@ async def test_downloader_settings(
     try:
         # ✅ P0-4修复: 验证Request对象
         if req is None:
-            return CommonResponse(
-                status="error",
-                msg="请求对象不能为空",
-                code="422",
-                data=None
-            )
-
-        # 1. JWT认证
-        token = req.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未认证",
-                code="401",
-                data=None
-            )
-
-        user_info = utils.verify_access_token(token)
-        if not user_info:
-            return CommonResponse(
-                status="error",
-                msg="token验证失败",
-                code="401",
-                data=None
-            )
+            return CommonResponse(status="error", msg="请求对象不能为空", code="422", data=None)
 
         # 2. 获取请求体数据（页面表单数据）
         try:
             body_data = await req.json()
         except Exception as e:
             logger.error(f"解析请求体失败: {e}")
-            return CommonResponse(
-                status="error",
-                msg=f"请求体格式错误: {str(e)}",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg=f"请求体格式错误: {str(e)}", code="422", data=None)
 
         # ✅ P0-4修复: 验证body_data类型和内容
         if not body_data or not isinstance(body_data, dict):
-            return CommonResponse(
-                status="error",
-                msg="请求体不能为空且必须为对象类型",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="请求体不能为空且必须为对象类型", code="422", data=None)
 
         # 3. 从请求体获取连接参数
         test_host = body_data.get("host")
@@ -1373,95 +1103,47 @@ async def test_downloader_settings(
         # 4. ✅ P0-4修复: 增强参数验证
         # 主机地址验证
         if not test_host or not isinstance(test_host, str):
-            return CommonResponse(
-                status="error",
-                msg="主机地址不能为空且必须为字符串",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="主机地址不能为空且必须为字符串", code="422", data=None)
 
         # 清理主机地址（移除多余空格）
         test_host = test_host.strip()
         if not test_host:
-            return CommonResponse(
-                status="error",
-                msg="主机地址不能为空",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="主机地址不能为空", code="422", data=None)
 
         # 端口验证（增强类型检查和范围验证）
         try:
             test_port = int(test_port)
             if test_port < 1 or test_port > 65535:
-                return CommonResponse(
-                    status="error",
-                    msg="端口号必须在1-65535之间",
-                    code="422",
-                    data=None
-                )
+                return CommonResponse(status="error", msg="端口号必须在1-65535之间", code="422", data=None)
         except (ValueError, TypeError):
-            return CommonResponse(
-                status="error",
-                msg="端口必须是有效的数字",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="端口必须是有效的数字", code="422", data=None)
 
         # 用户名验证
         if test_username is None:
-            return CommonResponse(
-                status="error",
-                msg="用户名不能为空",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="用户名不能为空", code="422", data=None)
 
         if not isinstance(test_username, str):
-            return CommonResponse(
-                status="error",
-                msg="用户名必须是字符串",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="用户名必须是字符串", code="422", data=None)
 
         # 下载器类型验证
         if test_downloader_type is None:
-            return CommonResponse(
-                status="error",
-                msg="下载器类型不能为空",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器类型不能为空", code="422", data=None)
 
         try:
             test_downloader_type = int(test_downloader_type)
             if test_downloader_type not in [0, 1]:  # 0=qBittorrent, 1=Transmission
                 return CommonResponse(
-                    status="error",
-                    msg="下载器类型必须是0(qBittorrent)或1(Transmission)",
-                    code="422",
-                    data=None
+                    status="error", msg="下载器类型必须是0(qBittorrent)或1(Transmission)", code="422", data=None
                 )
         except (ValueError, TypeError):
-            return CommonResponse(
-                status="error",
-                msg="下载器类型必须是有效的数字",
-                code="422",
-                data=None
-            )
+            return CommonResponse(status="error", msg="下载器类型必须是有效的数字", code="422", data=None)
 
         # SSL标志验证
         if test_is_ssl is not None:
             try:
                 test_is_ssl = int(test_is_ssl)
                 if test_is_ssl not in [0, 1]:
-                    return CommonResponse(
-                        status="error",
-                        msg="SSL标志必须是0或1",
-                        code="422",
-                        data=None
-                    )
+                    return CommonResponse(status="error", msg="SSL标志必须是0或1", code="422", data=None)
             except (ValueError, TypeError):
                 test_is_ssl = 0  # 默认不使用SSL
 
@@ -1474,18 +1156,10 @@ async def test_downloader_settings(
                 FROM bt_downloaders
                 WHERE downloader_id = :downloader_id AND dr = 0
             """
-            downloader_result = db.execute(
-                text(downloader_sql),
-                {"downloader_id": downloader_id}
-            ).fetchone()
+            downloader_result = db.execute(text(downloader_sql), {"downloader_id": downloader_id}).fetchone()
 
             if not downloader_result:
-                return CommonResponse(
-                    status="error",
-                    msg="下载器不存在",
-                    code="404",
-                    data=None
-                )
+                return CommonResponse(status="error", msg="下载器不存在", code="404", data=None)
 
             # 解密数据库中的密码
             encrypted_password = downloader_result.password
@@ -1495,23 +1169,19 @@ async def test_downloader_settings(
                     logger.debug("使用数据库密码（已解密）进行测试")
                 except Exception as e:
                     logger.error(f"密码解密失败: {e}")
-                    return CommonResponse(
-                        status="error",
-                        msg=f"密码解密失败: {str(e)}",
-                        code="500",
-                        data=None
-                    )
+                    return CommonResponse(status="error", msg=f"密码解密失败: {str(e)}", code="500", data=None)
             else:
-                return CommonResponse(
-                    status="error",
-                    msg="未提供密码且数据库中无密码",
-                    code="422",
-                    data=None
-                )
+                return CommonResponse(status="error", msg="未提供密码且数据库中无密码", code="422", data=None)
 
         # 6. ✅ 绕过缓存，直接创建客户端进行测试
+        # ⚠️ P0-04（W2-3）合法例外说明：本端点是"测试连接"场景，使用用户在页面提交的
+        # 新配置（尚未保存到数据库，app.state.store 中也没有对应客户端），因此允许在
+        # 函数内自建客户端并仅做一次探测（不 login/logout、不入 store、不留连接）；
+        # 但网络调用本身仍必须经 call_downloader_api（INTERACTIVE lane + 超时），
+        # 禁止在事件循环内裸同步调用。其余端点一律禁止自建客户端。
         try:
             import time
+
             start_time = time.time()
 
             # 根据下载器类型创建对应的客户端
@@ -1524,17 +1194,23 @@ async def test_downloader_settings(
                     protocol = "https" if int(test_is_ssl) == 1 else "http"
                     url = f"{protocol}://{test_host}:{int(test_port)}"
 
-                    # 创建客户端并测试连接
-                    client = QBClient(
+                    # 创建客户端并测试连接（测试连接场景：合法自建，见上方例外说明）
+                    qb_client = QBClient(
                         host=url,
                         username=test_username,
                         password=final_password,
                         VERIFY_WEBUI_CERTIFICATE=False,  # 测试时跳过SSL验证
-                        REQUESTS_ARGS={'timeout': 10}  # 10秒超时
+                        REQUESTS_ARGS={"timeout": 10},  # 10秒超时
                     )
 
-                    # 尝试登录并获取版本信息
-                    version = client.app_version()
+                    # 尝试登录并获取版本信息（P0-04：经 call_downloader_api 执行）
+                    version = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        qb_client.app_version,
+                        timeout=_TEST_CONNECT_TIMEOUT,
+                        operation="qb_test_app_version",
+                    )
                     if not version:
                         return CommonResponse(
                             status="success",
@@ -1543,8 +1219,8 @@ async def test_downloader_settings(
                             data={
                                 "success": False,
                                 "message": "无法获取qBittorrent版本信息，请检查连接参数",
-                                "delay": None
-                            }
+                                "delay": None,
+                            },
                         )
 
                     delay = int((time.time() - start_time) * 1000)
@@ -1554,11 +1230,7 @@ async def test_downloader_settings(
                         status="success",
                         msg="测试成功",
                         code="200",
-                        data={
-                            "success": True,
-                            "message": "连接成功",
-                            "delay": delay
-                        }
+                        data={"success": True, "message": "连接成功", "delay": delay},
                     )
 
                 except LoginFailed as e:
@@ -1567,11 +1239,7 @@ async def test_downloader_settings(
                         status="success",
                         msg="测试完成",
                         code="200",
-                        data={
-                            "success": False,
-                            "message": f"认证失败，请检查用户名和密码: {str(e)}",
-                            "delay": None
-                        }
+                        data={"success": False, "message": f"认证失败，请检查用户名和密码: {str(e)}", "delay": None},
                     )
                 except Exception as e:
                     logger.error(f"qBittorrent连接失败: {e}")
@@ -1579,11 +1247,7 @@ async def test_downloader_settings(
                         status="success",
                         msg="测试完成",
                         code="200",
-                        data={
-                            "success": False,
-                            "message": f"连接失败: {str(e)}",
-                            "delay": None
-                        }
+                        data={"success": False, "message": f"连接失败: {str(e)}", "delay": None},
                     )
 
             elif DownloaderTypeEnum.normalize(test_downloader_type) == DownloaderTypeEnum.TRANSMISSION:  # Transmission
@@ -1593,16 +1257,22 @@ async def test_downloader_settings(
                 try:
                     # 创建客户端并测试连接
                     # ✅ 修正：Transmission 使用 host 和 port 参数，而不是 url
-                    client = TrClient(
+                    tr_client = TrClient(
                         host=test_host,
                         port=int(test_port),
                         username=test_username,
                         password=final_password,
-                        timeout=10  # 10秒超时
+                        timeout=10,  # 10秒超时
                     )
 
-                    # 尝试获取会话信息
-                    session = client.get_session()
+                    # 尝试获取会话信息（P0-04：经 call_downloader_api 执行）
+                    session = await call_downloader_api(
+                        downloader_id,
+                        DownloadLane.INTERACTIVE,
+                        tr_client.get_session,
+                        timeout=_TEST_CONNECT_TIMEOUT,
+                        operation="tr_test_get_session",
+                    )
                     if not session:
                         return CommonResponse(
                             status="success",
@@ -1611,8 +1281,8 @@ async def test_downloader_settings(
                             data={
                                 "success": False,
                                 "message": "无法获取Transmission会话信息，请检查连接参数",
-                                "delay": None
-                            }
+                                "delay": None,
+                            },
                         )
 
                     delay = int((time.time() - start_time) * 1000)
@@ -1623,11 +1293,7 @@ async def test_downloader_settings(
                         status="success",
                         msg="测试成功",
                         code="200",
-                        data={
-                            "success": True,
-                            "message": "连接成功",
-                            "delay": delay
-                        }
+                        data={"success": True, "message": "连接成功", "delay": delay},
                     )
 
                 except TransmissionError as e:
@@ -1636,11 +1302,7 @@ async def test_downloader_settings(
                         status="success",
                         msg="测试完成",
                         code="200",
-                        data={
-                            "success": False,
-                            "message": f"连接失败: {str(e)}",
-                            "delay": None
-                        }
+                        data={"success": False, "message": f"连接失败: {str(e)}", "delay": None},
                     )
                 except Exception as e:
                     logger.error(f"Transmission连接异常: {e}")
@@ -1648,11 +1310,7 @@ async def test_downloader_settings(
                         status="success",
                         msg="测试完成",
                         code="200",
-                        data={
-                            "success": False,
-                            "message": f"连接失败: {str(e)}",
-                            "delay": None
-                        }
+                        data={"success": False, "message": f"连接失败: {str(e)}", "delay": None},
                     )
 
         except Exception as e:
@@ -1661,18 +1319,9 @@ async def test_downloader_settings(
                 status="success",
                 msg="测试完成",
                 code="200",
-                data={
-                    "success": False,
-                    "message": f"测试失败: {str(e)}",
-                    "delay": None
-                }
+                data={"success": False, "message": f"测试失败: {str(e)}", "delay": None},
             )
 
     except Exception as e:
         logger.error(f"测试配置失败: {e}")
-        return CommonResponse(
-            status="error",
-            msg=f"服务器内部错误: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"服务器内部错误: {str(e)}", code="500", data=None)

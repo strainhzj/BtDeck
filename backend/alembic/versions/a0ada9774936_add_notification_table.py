@@ -1,5 +1,7 @@
 """add_notification_table
 
+【可回滚】纯增量加表，downgrade 仅 drop 该表，安全。
+
 Revision ID: a0ada9774936
 Revises: d0e58437af70
 Create Date: 2026-04-24 14:30:15.910949

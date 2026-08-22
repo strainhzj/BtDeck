@@ -8,7 +8,4 @@
 from .torrent_info_sync_task import TorrentInfoSyncTask
 from .tracker_sync_task import TrackerSyncTask
 
-__all__ = [
-    'TorrentInfoSyncTask',
-    'TrackerSyncTask'
-]
+__all__ = ["TorrentInfoSyncTask", "TrackerSyncTask"]

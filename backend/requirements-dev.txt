@@ -1,0 +1,33 @@
+# BTDeck 后端开发/测试依赖
+# 不进入生产镜像。本地开发与 CI 安装：
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# 拆分原则与 deploy/requirements-{linux,windows}-package.txt 保持一致：
+# 运行时依赖（requirements.txt）必须保持精简，测试/lint/调试工具不得泄漏到生产镜像。
+
+# ---- 测试框架 ----
+pytest~=8.3.0
+pytest-asyncio~=0.24.0
+pytest-cov~=5.0.0
+pytest-mock~=3.14.0
+freezegun~=1.5.0
+
+# ---- 代码质量工具（CI 门禁；本地配合 .pre-commit-config.yaml / pyproject.toml / .flake8）----
+# 验证命令：python -m black --check app/ && python -m flake8 app/ && python -m mypy app/ && python scripts/lint_btdeck.py && python -m ruff check app/
+mypy~=1.13.0
+# mypy 类型存根（requests/yaml/croniter 无内置类型）
+types-requests~=2.32
+types-PyYAML~=6.0
+types-croniter~=5.0
+black~=24.10.0
+flake8~=7.1.0
+ruff~=0.8.0
+
+# ---- 调试工具（app/ 代码未引用，仅在 IDE 远程调试场景安装）----
+debugpy~=1.8.11
+
+# ---- 诊断脚本依赖（scripts/diagnose.py 使用 passlib；bcrypt 为运行时依赖，见 requirements.txt）----
+passlib[bcrypt]~=1.7.4
+
+# ---- Cython 编译工具（仅 setup.py 的 PyInstaller 原生打包路径需要，Docker 容器不调用）----
+cython~=3.0.12

@@ -14,6 +14,8 @@ export function normalizeTorrent(torrent: any): any {
       progress: 0,
       downloadSpeed: 0,
       uploadSpeed: 0,
+      auxiliarySeedCount: 1,
+      auxiliary_seed_count: 1,
       downloaderName: '-',
       ratio: 0,
       category: '',
@@ -24,6 +26,10 @@ export function normalizeTorrent(torrent: any): any {
   }
 
   return {
+    // 先保留未知扩展字段，再由下方规范字段覆盖，避免原始 null/旧字段值
+    // 反向覆盖规范化结果。
+    ...torrent,
+
     // 确保必需字段存在（保持原始hash不变）
     hash: torrent.hash || '',
     infoId: torrent.infoId || torrent.info_id || torrent.hash || '',
@@ -42,6 +48,10 @@ export function normalizeTorrent(torrent: any): any {
     download_speed: torrent.download_speed ?? torrent.downloadSpeed ?? 0,
     uploadSpeed: torrent.uploadSpeed ?? 0,
     upload_speed: torrent.upload_speed ?? torrent.uploadSpeed ?? 0,
+
+    // 辅种数量（同步任务计算，缺失时兼容旧数据显示1）
+    auxiliarySeedCount: torrent.auxiliarySeedCount ?? torrent.auxiliary_seed_count ?? 1,
+    auxiliary_seed_count: torrent.auxiliarySeedCount ?? torrent.auxiliary_seed_count ?? 1,
     
     // 下载器信息
     downloaderName: torrent.downloaderName || torrent.downloader_name || '-',
@@ -54,11 +64,45 @@ export function normalizeTorrent(torrent: any): any {
     savePath: torrent.savePath || torrent.save_path || '',
     save_path: torrent.savePath || torrent.save_path || '',
     addedDate: torrent.addedDate || torrent.added_date || null,
-    added_date: torrent.addedDate || torrent.added_date || null,
-    
-    // 保留原始其他字段
-    ...torrent
+    added_date: torrent.addedDate || torrent.added_date || null
   }
+}
+
+/**
+ * 状态折叠表：小写化的原始状态 -> 前端统一状态。
+ * 覆盖 qBittorrent 全部种子状态（含后端有意保留的 pausedDL/pausedUP/checkingDL/checkingUP
+ * 等统计变体与历史入库的原值），未识别状态仍归一为 'unknown'。
+ */
+const TORRENT_STATUS_FOLD_MAP: Record<string, TorrentStatus> = {
+  // 下载中：downloading / 元数据获取 / 空间分配 / 强制下载 / 下载停滞
+  downloading: TorrentStatus.DOWNLOADING,
+  metadl: TorrentStatus.DOWNLOADING,
+  forcedmetadl: TorrentStatus.DOWNLOADING,
+  allocating: TorrentStatus.DOWNLOADING,
+  forceddl: TorrentStatus.DOWNLOADING,
+  stalleddl: TorrentStatus.DOWNLOADING,
+  // 做种中：seeding / 做种停滞 / 做种队列 / 强制做种 / 正在上传
+  seeding: TorrentStatus.SEEDING,
+  stalledup: TorrentStatus.SEEDING,
+  queuedup: TorrentStatus.SEEDING,
+  forcedup: TorrentStatus.SEEDING,
+  uploading: TorrentStatus.SEEDING,
+  // 已完成
+  completed: TorrentStatus.COMPLETED,
+  // 已暂停：paused / 下载暂停 / 上传暂停
+  paused: TorrentStatus.PAUSED,
+  pauseddl: TorrentStatus.PAUSED,
+  pausedup: TorrentStatus.PAUSED,
+  // 下载队列
+  queueddl: TorrentStatus.QUEUEDDL,
+  // 检查中：checking / 下载检查 / 上传检查 / 恢复数据检查
+  checking: TorrentStatus.CHECKING,
+  checkingdl: TorrentStatus.CHECKING,
+  checkingup: TorrentStatus.CHECKING,
+  checkingresumedata: TorrentStatus.CHECKING,
+  // 错误：error / 数据文件缺失
+  error: TorrentStatus.ERROR,
+  missingfiles: TorrentStatus.ERROR
 }
 
 export function normalizeTorrentStatus(
@@ -70,24 +114,7 @@ export function normalizeTorrentStatus(
     return 'unknown'
   }
 
-  const normalized = raw.toLowerCase()
-
-  switch (normalized) {
-    case TorrentStatus.DOWNLOADING:
-      return TorrentStatus.DOWNLOADING
-    case TorrentStatus.COMPLETED:
-      return TorrentStatus.COMPLETED
-    case TorrentStatus.PAUSED:
-      return TorrentStatus.PAUSED
-    case TorrentStatus.SEEDING:
-      return TorrentStatus.SEEDING
-    case TorrentStatus.CHECKING:
-      return TorrentStatus.CHECKING
-    case TorrentStatus.ERROR:
-      return TorrentStatus.ERROR
-    default:
-      return 'unknown'
-  }
+  return TORRENT_STATUS_FOLD_MAP[raw.toLowerCase()] || 'unknown'
 }
 
 /**
@@ -361,17 +388,19 @@ export function formatDate(
     }
     // 处理字符串时间戳
     else if (typeof timestamp === 'string') {
-      const parsedTimestamp = parseInt(timestamp, 10)
-      if (isNaN(parsedTimestamp)) {
-        // 不是数字,尝试直接解析
-        date = new Date(timestamp)
-      } else {
-        // 是数字字符串
+      const normalizedTimestamp = timestamp.trim()
+      const isNumericTimestamp = /^[+-]?\d+(?:\.\d+)?$/.test(normalizedTimestamp)
+
+      if (isNumericTimestamp) {
+        const parsedTimestamp = Number(normalizedTimestamp)
         if (parsedTimestamp < 10000000000) {
           date = new Date(parsedTimestamp * 1000)
         } else {
           date = new Date(parsedTimestamp)
         }
+      } else {
+        // ISO 8601 等日期字符串必须整体解析，不能用 parseInt 截成开头的年份
+        date = new Date(normalizedTimestamp)
       }
     } else {
       return '-'

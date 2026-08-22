@@ -3,10 +3,8 @@
     <!-- 页面头部 -->
     <div class="page-header">
       <div class="header-left">
-        <el-button
-          icon="el-icon-arrow-left"
-          @click="handleBack"
-        >
+        <el-button @click="handleBack">
+          <LucideIcon name="arrow-left" :size="14" style="margin-right: 6px" />
           返回看板
         </el-button>
         <h1 class="search-title">搜索关键词</h1>
@@ -21,7 +19,7 @@
     <!-- 搜索框 -->
     <div class="search-box-wrapper">
       <div class="search-box">
-        <span class="search-icon">🔍</span>
+        <span class="search-icon"><LucideIcon name="search" :size="18" /></span>
         <input
           v-model="searchForm.keyword"
           type="text"
@@ -45,10 +43,18 @@
         size="small"
         @change="handleSearch"
       >
-        <el-option label="📋 候选池" value="candidate" />
-        <el-option label="⏭️ 忽略池" value="ignored" />
-        <el-option label="✅ 成功池" value="success" />
-        <el-option label="❌ 失败池" value="failed" />
+        <el-option label="候选池" value="candidate">
+          <LucideIcon name="clipboard-list" :size="13" /> 候选池
+        </el-option>
+        <el-option label="忽略池" value="ignored">
+          <LucideIcon name="forward" :size="13" /> 忽略池
+        </el-option>
+        <el-option label="成功池" value="success">
+          <LucideIcon name="circle-check-big" :size="13" /> 成功池
+        </el-option>
+        <el-option label="失败池" value="failed">
+          <LucideIcon name="circle-x" :size="13" /> 失败池
+        </el-option>
       </el-select>
 
       <el-select
@@ -58,10 +64,18 @@
         size="small"
         @change="handleSearch"
       >
-        <el-option label="📊 全部" value="" />
-        <el-option label="📅 今天" value="today" />
-        <el-option label="📆 本周" value="week" />
-        <el-option label="🗓️ 本月" value="month" />
+        <el-option label="全部" value="">
+          <LucideIcon name="list-filter" :size="13" /> 全部
+        </el-option>
+        <el-option label="今天" value="today">
+          <LucideIcon name="calendar-days" :size="13" /> 今天
+        </el-option>
+        <el-option label="本周" value="week">
+          <LucideIcon name="calendar-range" :size="13" /> 本周
+        </el-option>
+        <el-option label="本月" value="month">
+          <LucideIcon name="calendar-range" :size="13" /> 本月
+        </el-option>
       </el-select>
 
       <el-select
@@ -70,9 +84,15 @@
         size="small"
         @change="handleSearch"
       >
-        <el-option label="🕐 添加时间 ↓" value="time_desc" />
-        <el-option label="🕐 添加时间 ↑" value="time_asc" />
-        <el-option label="🔤 关键词 A-Z" value="name_asc" />
+        <el-option label="添加时间 ↓" value="time_desc">
+          <LucideIcon name="clock" :size="13" /> 添加时间 ↓
+        </el-option>
+        <el-option label="添加时间 ↑" value="time_asc">
+          <LucideIcon name="clock" :size="13" /> 添加时间 ↑
+        </el-option>
+        <el-option label="关键词 A-Z" value="name_asc">
+          <LucideIcon name="arrow-down-a-z" :size="13" /> 关键词 A-Z
+        </el-option>
       </el-select>
     </div>
 
@@ -108,7 +128,7 @@
                 <button class="action-btn" @click="handleViewDetail(item)">查看详情</button>
                 <el-dropdown @command="(command) => handleMove(item, command)">
                   <button class="action-btn">
-                    移动到池子 <i class="el-icon-arrow-down" />
+                    移动到池子 <LucideIcon name="chevron-down" :size="12" style="margin-left: 2px" />
                   </button>
                   <el-dropdown-menu slot="dropdown">
                     <el-dropdown-item
@@ -129,7 +149,7 @@
 
       <!-- 空状态 -->
       <div v-if="!loading && searchResults.length === 0" class="empty-state">
-        <div class="empty-icon">🔍</div>
+        <div class="empty-icon"><LucideIcon name="search" :size="48" /></div>
         <p class="empty-text">暂无搜索结果，请尝试调整搜索条件或关键词</p>
       </div>
     </div>
@@ -186,10 +206,10 @@ export default class KeywordsSearchPage extends Vue {
 
   // 池子配置
   poolConfig = {
-    candidate: { label: '📋 候选池', value: 'candidate' as PoolType },
-    ignored: { label: '⏭️ 忽略池', value: 'ignored' as PoolType },
-    success: { label: '✅ 成功池', value: 'success' as PoolType },
-    failed: { label: '❌ 失败池', value: 'failed' as PoolType }
+    candidate: { label: '候选池', value: 'candidate' as PoolType },
+    ignored: { label: '忽略池', value: 'ignored' as PoolType },
+    success: { label: '成功池', value: 'success' as PoolType },
+    failed: { label: '失败池', value: 'failed' as PoolType }
   }
 
   mounted() {
@@ -392,12 +412,21 @@ export default class KeywordsSearchPage extends Vue {
       return escapedKeyword
     }
 
-    // 转义搜索词
-    const escapedSearchTerm = this.escapeHtml(this.searchForm.keyword)
+    // 转义搜索词 + 正则元字符转义（安全修复 W15）：
+    // escapeHtml 只处理 HTML 字符，输入 "(" 等正则元字符会让 new RegExp
+    // 抛 SyntaxError 导致组件渲染崩溃（自伤型 DoS）
+    const escapedSearchTerm = this.escapeRegExp(this.escapeHtml(this.searchForm.keyword))
 
     // 使用正则表达式进行不区分大小写的替换
     const regex = new RegExp(`(${escapedSearchTerm})`, 'gi')
     return escapedKeyword.replace(regex, '<mark>$1</mark>')
+  }
+
+  /**
+   * 正则元字符转义，防止 RegExp 构造崩溃
+   */
+  private escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   }
 
   /**
@@ -470,7 +499,8 @@ export default class KeywordsSearchPage extends Vue {
 }
 
 .search-icon {
-  font-size: 20px;
+  display: flex;
+  align-items: center;
   color: var(--color-text-secondary);
 }
 
@@ -631,7 +661,9 @@ export default class KeywordsSearchPage extends Vue {
 }
 
 .empty-icon {
-  font-size: 64px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
   margin-bottom: var(--spacing-md);
 }
 

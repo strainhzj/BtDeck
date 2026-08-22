@@ -4,12 +4,12 @@
 
 提供配置模板的业务逻辑封装，包括CRUD操作、验证、应用和冲突检测等功能。
 """
+
 import json
 import logging
 from datetime import datetime, time
-from typing import Optional, List, Dict, Tuple
+from typing import Optional, List, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.models.setting_templates import SettingTemplate, DownloaderTypeEnum
 from app.models.downloader_settings import DownloaderSetting
@@ -128,7 +128,7 @@ class TemplateService:
             is_system_default=False,
             created_by=user_id,
             created_at=datetime.now(),
-            updated_at=datetime.now()
+            updated_at=datetime.now(),
         )
 
         self.db.add(template)
@@ -177,10 +177,11 @@ class TemplateService:
             if not name or len(name) > 100:
                 raise ValueError("模板名称长度不能超过100")
             # 检查名称是否重复
-            existing = self.db.query(SettingTemplate).filter(
-                SettingTemplate.name == name,
-                SettingTemplate.id != template_id
-            ).first()
+            existing = (
+                self.db.query(SettingTemplate)
+                .filter(SettingTemplate.name == name, SettingTemplate.id != template_id)
+                .first()
+            )
             if existing:
                 raise ValueError(f"模板名称 '{name}' 已存在")
             update_fields["name"] = name
@@ -207,8 +208,7 @@ class TemplateService:
 
             # 验证模板配置
             is_valid, error_msg = self.validate_template(
-                template_config,
-                data.get("downloader_type", template.downloader_type)
+                template_config, data.get("downloader_type", template.downloader_type)
             )
             if not is_valid:
                 raise ValueError(f"模板配置验证失败: {error_msg}")
@@ -294,11 +294,7 @@ class TemplateService:
 
         return template.to_dict()
 
-    def list_templates(
-        self,
-        user_id: Optional[int] = None,
-        filters: Optional[dict] = None
-    ) -> List[dict]:
+    def list_templates(self, user_id: Optional[int] = None, filters: Optional[dict] = None) -> List[dict]:
         """
         列出模板
 
@@ -316,14 +312,10 @@ class TemplateService:
         # 应用过滤条件
         if filters:
             if "downloader_type" in filters:
-                query = query.filter(
-                    SettingTemplate.downloader_type == filters["downloader_type"]
-                )
+                query = query.filter(SettingTemplate.downloader_type == filters["downloader_type"])
 
             if "is_system_default" in filters:
-                query = query.filter(
-                    SettingTemplate.is_system_default == filters["is_system_default"]
-                )
+                query = query.filter(SettingTemplate.is_system_default == filters["is_system_default"])
 
         # 如果指定了user_id，且不包含系统默认模板，则只返回用户的模板
         if user_id and filters and not filters.get("is_system_default", False):
@@ -335,11 +327,7 @@ class TemplateService:
 
     # ========== 模板验证 ==========
 
-    def validate_template(
-        self,
-        template_data: dict,
-        downloader_type: int
-    ) -> Tuple[bool, str]:
+    def validate_template(self, template_data: dict, downloader_type: int) -> Tuple[bool, str]:
         """
         验证模板配置的有效性
 
@@ -427,7 +415,8 @@ class TemplateService:
 
         # 检查是否只包含0-6的数字
         import re
-        pattern = re.compile(r'^[0-6]{1,7}$')
+
+        pattern = re.compile(r"^[0-6]{1,7}$")
         if not pattern.match(days_str):
             return False
 
@@ -445,7 +434,7 @@ class TemplateService:
         downloader_id: str,
         user_id: Optional[int] = None,
         override: bool = True,
-        apply_path_mapping: Optional[bool] = None
+        apply_path_mapping: Optional[bool] = None,
     ) -> dict:
         """
         应用模板到下载器
@@ -475,10 +464,11 @@ class TemplateService:
             raise ValueError("模板不存在")
 
         # 查询下载器
-        downloader = self.db.query(BtDownloaders).filter(
-            BtDownloaders.downloader_id == downloader_id,
-            BtDownloaders.dr == 0
-        ).first()
+        downloader = (
+            self.db.query(BtDownloaders)
+            .filter(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0)
+            .first()
+        )
 
         if not downloader:
             raise ValueError("下载器不存在")
@@ -488,12 +478,10 @@ class TemplateService:
 
         # 将 DownloaderTypeEnum 转换为整数进行比较
         template_type_int = template.downloader_type
-        downloader_type_int = normalized_downloader_type.value
+        downloader_type_int = normalized_downloader_type  # normalize() 已返回 int
 
         if template_type_int != downloader_type_int:
-            raise ValueError(
-                f"模板类型（{template_type_int}）与下载器类型（{downloader_type_int}）不匹配"
-            )
+            raise ValueError(f"模板类型（{template_type_int}）与下载器类型（{downloader_type_int}）不匹配")
 
         # 解析模板配置
         try:
@@ -505,9 +493,7 @@ class TemplateService:
         current_time = datetime.now()
 
         # 检查是否已有配置
-        existing_setting = self.db.query(DownloaderSetting).filter_by(
-            downloader_id=downloader_id
-        ).first()
+        existing_setting = self.db.query(DownloaderSetting).filter_by(downloader_id=downloader_id).first()
 
         # 如果不覆盖且已有配置，返回提示
         if not override and existing_setting:
@@ -515,7 +501,7 @@ class TemplateService:
                 "success": False,
                 "message": "下载器已有配置，请确认是否覆盖",
                 "downloader_id": downloader_id,
-                "existing_config": True
+                "existing_config": True,
             }
 
         # 构建下载器设置数据
@@ -527,10 +513,11 @@ class TemplateService:
             "override_local": template_config.get("override_local", False),
             "username": template_config.get("username"),
             "password": template_config.get("password"),
-            "advanced_settings": json.dumps(
-                template_config.get("advanced_settings", {}),
-                ensure_ascii=False
-            ) if template_config.get("advanced_settings") else None,
+            "advanced_settings": (
+                json.dumps(template_config.get("advanced_settings", {}), ensure_ascii=False)
+                if template_config.get("advanced_settings")
+                else None
+            ),
         }
 
         if existing_setting:
@@ -541,18 +528,13 @@ class TemplateService:
             existing_setting.updated_at = current_time
 
             # 删除旧的分时段规则
-            self.db.query(SpeedScheduleRule).filter_by(
-                downloader_setting_id=existing_setting.id
-            ).delete()
+            self.db.query(SpeedScheduleRule).filter_by(downloader_setting_id=existing_setting.id).delete()
 
             logger.info(f"更新下载器配置: downloader_id={downloader_id}")
         else:
             # 创建新配置
             existing_setting = DownloaderSetting(
-                downloader_id=downloader_id,
-                created_at=current_time,
-                updated_at=current_time,
-                **setting_data
+                downloader_id=downloader_id, created_at=current_time, updated_at=current_time, **setting_data
             )
             self.db.add(existing_setting)
             self.db.flush()  # 获取ID
@@ -561,10 +543,7 @@ class TemplateService:
 
         # 处理分时段规则（如果存在）
         if "schedule_rules" in template_config and template_config["schedule_rules"]:
-            self._create_schedule_rules(
-                existing_setting.id,
-                template_config["schedule_rules"]
-            )
+            self._create_schedule_rules(existing_setting.id, template_config["schedule_rules"])
 
         # 处理路径映射配置（如果存在）
         if template.path_mapping:
@@ -584,7 +563,7 @@ class TemplateService:
                     "message": "模板包含路径映射配置,请确认是否覆盖下载器的现有路径映射",
                     "has_path_mapping": True,
                     "needs_path_mapping_confirmation": True,
-                    "downloader_id": downloader_id
+                    "downloader_id": downloader_id,
                 }
 
         self.db.commit()
@@ -599,7 +578,7 @@ class TemplateService:
                 port=downloader.port,
                 username=downloader.username,
                 password=downloader.password,
-                downloader_type=downloader.downloader_type
+                downloader_type=downloader.downloader_type,
             )
 
             manager = DownloaderSettingsManager(downloader_obj)
@@ -614,24 +593,16 @@ class TemplateService:
             success = manager.apply_settings(template_config_for_apply)
 
             if success:
-                return {
-                    "success": True,
-                    "message": f"模板应用成功: {template.name}",
-                    "downloader_id": downloader_id
-                }
+                return {"success": True, "message": f"模板应用成功: {template.name}", "downloader_id": downloader_id}
             else:
-                return {
-                    "success": False,
-                    "message": "配置已保存到数据库，但应用失败",
-                    "downloader_id": downloader_id
-                }
+                return {"success": False, "message": "配置已保存到数据库，但应用失败", "downloader_id": downloader_id}
 
         except Exception as e:
             logger.error(f"应用模板配置到下载器失败: {e}")
             return {
                 "success": False,
                 "message": f"配置已保存到数据库，但应用失败: {str(e)}",
-                "downloader_id": downloader_id
+                "downloader_id": downloader_id,
             }
 
     def _create_schedule_rules(self, downloader_setting_id: int, rules_data: list):
@@ -658,7 +629,7 @@ class TemplateService:
                 dl_speed_limit=rule_data.get("dl_speed_limit", 0),
                 ul_speed_limit=rule_data.get("ul_speed_limit", 0),
                 days_of_week=rule_data.get("days_of_week", "0123456"),
-                enabled=rule_data.get("enabled", True)
+                enabled=rule_data.get("enabled", True),
             )
 
             self.db.add(rule)
@@ -666,11 +637,7 @@ class TemplateService:
 
     # ========== 冲突检测 ==========
 
-    def check_template_conflict(
-        self,
-        template_id: int,
-        downloader_id: str
-    ) -> Tuple[bool, str]:
+    def check_template_conflict(self, template_id: int, downloader_id: str) -> Tuple[bool, str]:
         """
         检测模板应用是否会冲突
 
@@ -682,9 +649,7 @@ class TemplateService:
             Tuple[bool, str]: (是否有冲突, 冲突消息)
         """
         # 检查下载器是否已有配置
-        existing_setting = self.db.query(DownloaderSetting).filter_by(
-            downloader_id=downloader_id
-        ).first()
+        existing_setting = self.db.query(DownloaderSetting).filter_by(downloader_id=downloader_id).first()
 
         if existing_setting:
             return True, "下载器已有配置，应用模板将覆盖现有设置"
@@ -694,11 +659,7 @@ class TemplateService:
     # ========== 批量操作 ==========
 
     def batch_apply_template(
-        self,
-        template_id: int,
-        downloader_ids: List[str],
-        user_id: Optional[int] = None,
-        override: bool = True
+        self, template_id: int, downloader_ids: List[str], user_id: Optional[int] = None, override: bool = True
     ) -> List[dict]:
         """
         批量应用模板到多个下载器
@@ -717,22 +678,13 @@ class TemplateService:
         for downloader_id in downloader_ids:
             try:
                 result = self.apply_template(
-                    template_id=template_id,
-                    downloader_id=downloader_id,
-                    user_id=user_id,
-                    override=override
+                    template_id=template_id, downloader_id=downloader_id, user_id=user_id, override=override
                 )
-                results.append({
-                    "downloader_id": downloader_id,
-                    "success": result["success"],
-                    "message": result["message"]
-                })
+                results.append(
+                    {"downloader_id": downloader_id, "success": result["success"], "message": result["message"]}
+                )
             except Exception as e:
                 logger.error(f"批量应用模板失败: downloader_id={downloader_id}, error={e}")
-                results.append({
-                    "downloader_id": downloader_id,
-                    "success": False,
-                    "message": f"应用失败: {str(e)}"
-                })
+                results.append({"downloader_id": downloader_id, "success": False, "message": f"应用失败: {str(e)}"})
 
         return results

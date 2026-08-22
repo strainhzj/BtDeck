@@ -5,17 +5,16 @@
 这是审计日志系统的独立调用入口，所有模块都通过这个服务记录审计日志。
 使用同步数据库会话，与项目的数据库架构一致。
 """
-import os
+
 import json
-import shutil
 import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from pathlib import Path
 
-from sqlalchemy import and_, or_, desc
+from sqlalchemy import and_, desc
 from sqlalchemy.orm import Session
-from fastapi import Request, Depends
+from fastapi import Depends
 
 from app.core.json_parser import safe_json_parse
 from app.torrents.audit_models import TorrentAuditLog
@@ -55,7 +54,7 @@ class AuditLogServiceSync:
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
         request_id: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
     ) -> Optional[TorrentAuditLog]:
         """记录单个操作日志（调试级别详细程度）
 
@@ -88,14 +87,16 @@ class AuditLogServiceSync:
             extracted_downloader_name = None
 
             if operation_detail and isinstance(operation_detail, dict):
-                extracted_torrent_name = operation_detail.get('torrent_name')
-                extracted_downloader_name = operation_detail.get('downloader_name')
+                extracted_torrent_name = operation_detail.get("torrent_name")
+                extracted_downloader_name = operation_detail.get("downloader_name")
 
             # 创建审计日志对象
             audit_log = TorrentAuditLog(
                 torrent_info_id=torrent_info_id,
                 operation_type=operation_type,
-                operation_detail=json.dumps(operation_detail, ensure_ascii=False, default=str) if operation_detail else None,
+                operation_detail=(
+                    json.dumps(operation_detail, ensure_ascii=False, default=str) if operation_detail else None
+                ),
                 old_value=json.dumps(old_value, ensure_ascii=False, default=str) if old_value else None,
                 new_value=json.dumps(new_value, ensure_ascii=False, default=str) if new_value else None,
                 operator=operator,
@@ -108,7 +109,7 @@ class AuditLogServiceSync:
                 ip_address=ip_address,
                 user_agent=user_agent,
                 request_id=request_id,
-                session_id=session_id
+                session_id=session_id,
             )
 
             # 写入数据库
@@ -137,7 +138,7 @@ class AuditLogServiceSync:
         request_id: Optional[str] = None,
         session_id: Optional[str] = None,
         page: int = 1,
-        page_size: int = 20
+        page_size: int = 20,
     ) -> Dict[str, Any]:
         """查询审计日志（分页）
 
@@ -215,30 +216,18 @@ class AuditLogServiceSync:
                     "ip_address": log.ip_address,
                     "user_agent": log.user_agent,
                     "request_id": log.request_id,
-                    "session_id": log.session_id
+                    "session_id": log.session_id,
                 }
                 logs_list.append(log_dict)
 
-            return {
-                "list": logs_list,
-                "total": total,
-                "page": page,
-                "pageSize": page_size
-            }
+            return {"list": logs_list, "total": total, "page": page, "pageSize": page_size}
 
         except Exception as e:
             logger.error(f"查询审计日志失败: {str(e)}")
-            return {
-                "list": [],
-                "total": 0,
-                "page": page,
-                "pageSize": page_size
-            }
+            return {"list": [], "total": 0, "page": page, "pageSize": page_size}
 
     def get_statistics(
-        self,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None
+        self, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """获取审计日志统计信息
 
@@ -276,12 +265,14 @@ class AuditLogServiceSync:
             # 按操作人统计（Top 10）
             operator_stats = {}
             from sqlalchemy import func
-            operator_query = query.with_entities(
-                TorrentAuditLog.operator,
-                func.count(TorrentAuditLog.id).label('count')
-            ).group_by(TorrentAuditLog.operator).order_by(
-                desc('count')
-            ).limit(10).all()
+
+            operator_query = (
+                query.with_entities(TorrentAuditLog.operator, func.count(TorrentAuditLog.id).label("count"))  # type: ignore[arg-type]  # with_entities 与 func.count 组合的类型误报
+                .group_by(TorrentAuditLog.operator)
+                .order_by(desc("count"))
+                .limit(10)
+                .all()
+            )
 
             for operator, count in operator_query:
                 operator_stats[operator] = count
@@ -289,23 +280,15 @@ class AuditLogServiceSync:
             return {
                 "total": total,
                 "operation_type_stats": operation_type_stats,
-                "operation_result_stats": {
-                    "success": success_count,
-                    "failed": failed_count,
-                    "partial": partial_count
-                },
-                "top_operators": operator_stats
+                "operation_result_stats": {"success": success_count, "failed": failed_count, "partial": partial_count},
+                "top_operators": operator_stats,
             }
 
         except Exception as e:
             logger.error(f"获取审计日志统计失败: {str(e)}")
             return {}
 
-    def archive_logs(
-        self,
-        end_time: datetime,
-        archive_path: Optional[str] = None
-    ) -> Dict[str, Any]:
+    def archive_logs(self, end_time: datetime, archive_path: Optional[str] = None) -> Dict[str, Any]:
         """归档审计日志
 
         将指定时间之前的审计日志导出到归档文件，并从主数据库中删除。
@@ -319,29 +302,23 @@ class AuditLogServiceSync:
         """
         try:
             # 查询需要归档的日志
-            query = self.db_session.query(TorrentAuditLog).filter(
-                TorrentAuditLog.operation_time < end_time
-            )
+            query = self.db_session.query(TorrentAuditLog).filter(TorrentAuditLog.operation_time < end_time)
 
             # 获取总数
             total = query.count()
             if total == 0:
-                return {
-                    "success": False,
-                    "message": "没有需要归档的日志",
-                    "archived_count": 0,
-                    "file_path": None
-                }
+                return {"success": False, "message": "没有需要归档的日志", "archived_count": 0, "file_path": None}
 
             # 获取所有日志
             logs = query.all()
 
             # 生成归档文件路径
+            archive_file: Path
             if not archive_path:
                 archive_dir = Path("data/audit_logs_archive")
                 archive_dir.mkdir(parents=True, exist_ok=True)
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                archive_path = archive_dir / f"audit_logs_archive_{timestamp}.json"
+                archive_file = archive_dir / f"audit_logs_archive_{timestamp}.json"
 
             # 导出为JSON
             logs_data = []
@@ -361,11 +338,11 @@ class AuditLogServiceSync:
                     "ip_address": log.ip_address,
                     "user_agent": log.user_agent,
                     "request_id": log.request_id,
-                    "session_id": log.session_id
+                    "session_id": log.session_id,
                 }
                 logs_data.append(log_dict)
 
-            with open(archive_path, 'w', encoding='utf-8') as f:
+            with open(archive_file, "w", encoding="utf-8") as f:
                 json.dump(logs_data, f, ensure_ascii=False, indent=2)
 
             # 删除已归档的日志
@@ -378,24 +355,15 @@ class AuditLogServiceSync:
                 "success": True,
                 "message": f"成功归档 {total} 条日志",
                 "archived_count": total,
-                "file_path": str(archive_path)
+                "file_path": str(archive_path),
             }
 
         except Exception as e:
             logger.error(f"归档审计日志失败: {str(e)}")
             self.db_session.rollback()
-            return {
-                "success": False,
-                "message": f"归档失败: {str(e)}",
-                "archived_count": 0,
-                "file_path": None
-            }
+            return {"success": False, "message": f"归档失败: {str(e)}", "archived_count": 0, "file_path": None}
 
-    def export_logs_to_csv(
-        self,
-        logs: List[Dict[str, Any]],
-        output_path: str
-    ) -> bool:
+    def export_logs_to_csv(self, logs: List[Dict[str, Any]], output_path: str) -> bool:
         """导出日志到CSV文件
 
         Args:
@@ -410,29 +378,37 @@ class AuditLogServiceSync:
 
             # 定义字段
             fieldnames = [
-                'id', 'torrent_info_id', 'operation_type', 'operator',
-                'operation_time', 'operation_result', 'error_message',
-                'downloader_id', 'ip_address', 'request_id', 'session_id'
+                "id",
+                "torrent_info_id",
+                "operation_type",
+                "operator",
+                "operation_time",
+                "operation_result",
+                "error_message",
+                "downloader_id",
+                "ip_address",
+                "request_id",
+                "session_id",
             ]
 
             # 写入CSV
-            with open(output_path, 'w', encoding='utf-8-sig', newline='') as f:
+            with open(output_path, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
                 writer.writeheader()
 
                 for log in logs:
                     row = {
-                        'id': log.get('id'),
-                        'torrent_info_id': log.get('torrent_info_id'),
-                        'operation_type': log.get('operation_type'),
-                        'operator': log.get('operator'),
-                        'operation_time': log.get('operation_time'),
-                        'operation_result': log.get('operation_result'),
-                        'error_message': log.get('error_message'),
-                        'downloader_id': log.get('downloader_id'),
-                        'ip_address': log.get('ip_address'),
-                        'request_id': log.get('request_id'),
-                        'session_id': log.get('session_id')
+                        "id": log.get("id"),
+                        "torrent_info_id": log.get("torrent_info_id"),
+                        "operation_type": log.get("operation_type"),
+                        "operator": log.get("operator"),
+                        "operation_time": log.get("operation_time"),
+                        "operation_result": log.get("operation_result"),
+                        "error_message": log.get("error_message"),
+                        "downloader_id": log.get("downloader_id"),
+                        "ip_address": log.get("ip_address"),
+                        "request_id": log.get("request_id"),
+                        "session_id": log.get("session_id"),
                     }
                     writer.writerow(row)
 
@@ -443,11 +419,7 @@ class AuditLogServiceSync:
             logger.error(f"导出审计日志到CSV失败: {str(e)}")
             return False
 
-    def export_logs_to_excel(
-        self,
-        logs: List[Dict[str, Any]],
-        output_path: str
-    ) -> bool:
+    def export_logs_to_excel(self, logs: List[Dict[str, Any]], output_path: str) -> bool:
         """导出日志到Excel文件
 
         Args:
@@ -464,17 +436,17 @@ class AuditLogServiceSync:
             data = []
             for log in logs:
                 row = {
-                    'ID': log.get('id'),
-                    '种子ID': log.get('torrent_info_id'),
-                    '操作类型': log.get('operation_type'),
-                    '操作人': log.get('operator'),
-                    '操作时间': log.get('operation_time'),
-                    '操作结果': log.get('operation_result'),
-                    '错误信息': log.get('error_message'),
-                    '下载器ID': log.get('downloader_id'),
-                    'IP地址': log.get('ip_address'),
-                    '请求ID': log.get('request_id'),
-                    '会话ID': log.get('session_id')
+                    "ID": log.get("id"),
+                    "种子ID": log.get("torrent_info_id"),
+                    "操作类型": log.get("operation_type"),
+                    "操作人": log.get("operator"),
+                    "操作时间": log.get("operation_time"),
+                    "操作结果": log.get("operation_result"),
+                    "错误信息": log.get("error_message"),
+                    "下载器ID": log.get("downloader_id"),
+                    "IP地址": log.get("ip_address"),
+                    "请求ID": log.get("request_id"),
+                    "会话ID": log.get("session_id"),
                 }
                 data.append(row)
 
@@ -482,7 +454,7 @@ class AuditLogServiceSync:
             df = pd.DataFrame(data)
 
             # 写入Excel
-            df.to_excel(output_path, index=False, engine='openpyxl')
+            df.to_excel(output_path, index=False, engine="openpyxl")
 
             logger.info(f"导出审计日志到Excel成功: {output_path}")
             return True

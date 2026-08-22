@@ -60,11 +60,7 @@
           </el-col>
           <el-col :span="12">
             <div class="old-password-hint">
-              <svg class="hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="16" x2="12" y2="12"></line>
-                <line x1="12" y1="8" x2="12.01" y2="8"></line>
-              </svg>
+              <LucideIcon class="hint-icon" name="info" :size="14" />
               <span>修改用户名或密码时需要验证原密码</span>
             </div>
           </el-col>
@@ -84,11 +80,7 @@
         />
       </div>
       <p class="form-hint">
-        <svg class="hint-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="12" y1="16" x2="12" y2="12"></line>
-          <line x1="12" y1="8" x2="12.01" y2="8"></line>
-        </svg>
+        <LucideIcon class="hint-icon" name="info" :size="14" />
         启用后，将覆盖下载器本地配置。建议谨慎使用，确保了解各配置项的作用。
       </p>
     </div>
@@ -100,28 +92,18 @@
         <el-col :span="12">
           <el-button
             type="info"
-            :loading="testing"
+            :disabled="testing"
             @click="handleTestConnection"
             style="width: 100%;"
           >
-            <svg v-if="!testing" class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
-            </svg>
+            <LucideIcon class="button-icon" :name="testing ? 'refresh-cw' : 'activity'" :size="15" :class="{'is-spinning': testing}" />
             {{ testing ? '测试中...' : '测试连接' }}
           </el-button>
         </el-col>
         <el-col :span="12">
           <!-- 测试结果显示 -->
           <div v-if="testResult" :class="['test-result', testResult.success ? 'success' : 'error']">
-            <svg v-if="testResult.success" class="result-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-              <polyline points="22 4 12 14.01 9 11.01"></polyline>
-            </svg>
-            <svg v-else class="result-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="15" y1="9" x2="9" y2="15"></line>
-              <line x1="9" y1="9" x2="15" y2="15"></line>
-            </svg>
+            <LucideIcon class="result-icon" :name="testResult.success ? 'circle-check-big' : 'circle-x'" :size="16" />
             <span>{{ testResult.message }}</span>
           </div>
         </el-col>

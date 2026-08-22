@@ -23,12 +23,12 @@
 
 import os
 import asyncio
+import functools
 import logging
 import shutil
 import platform
 from typing import Optional, Dict, Any, List, Tuple
 from datetime import datetime
-from pathlib import Path
 
 from app.core.path_mapping import PathMappingService
 
@@ -165,16 +165,16 @@ class FileOperationService:
         """
         # 🔍 深度诊断：检查文件名编码
         try:
-            path_encoded = path.encode('utf-8', errors='strict').decode('utf-8')
+            path_encoded = path.encode("utf-8", errors="strict").decode("utf-8")
             if path != path_encoded:
-                logger.warning(f"[文件名编码问题] 检测到编码不一致，可能存在隐藏字符")
+                logger.warning("[文件名编码问题] 检测到编码不一致，可能存在隐藏字符")
                 logger.warning(f"  原始路径长度: {len(path)}, 编码后长度: {len(path_encoded)}")
         except Exception as e:
             logger.warning(f"[文件名编码检查失败] {e}")
 
         # 尝试1：原始路径
         if os.path.exists(path):
-            logger.debug(f"[文件存在验证] 原始路径有效")
+            logger.debug("[文件存在验证] 原始路径有效")
             return True, path
 
         # 尝试2：系统原生UNC格式
@@ -199,8 +199,7 @@ class FileOperationService:
 
         # 🔍 深度诊断：尝试列出目录内容，验证UNC访问权限
         if platform.system() == "Windows":
-            import ctypes
-            import ctypes.wintypes
+            pass
 
             try:
                 # 提取目录路径
@@ -222,7 +221,7 @@ class FileOperationService:
                         logger.info(f"[UNC访问诊断] 找到 {len(matching_files)} 个包含 'waiting-delete' 的文件:")
                         for mf in matching_files[:5]:  # 只显示前5个
                             logger.info(f"  - {mf}")
-                            logger.info(f"    编码: {mf.encode('utf-8', errors='replace')}")
+                            logger.info(f"    编码: {mf.encode('utf-8', errors='replace')!r}")
 
                             # 检查是否完全匹配
                             if mf == file_name:
@@ -230,13 +229,12 @@ class FileOperationService:
                                 logger.info(f"[UNC访问诊断] 找到完全匹配的文件: {exact_match_path}")
                                 return True, exact_match_path
 
-                        # 尝试使用第一个匹配的文件
-                        if matching_files:
-                            fallback_path = os.path.join(dir_path, matching_files[0])
-                            logger.warning(f"[UNC访问诊断] 未找到完全匹配，使用第一个匹配文件: {fallback_path}")
-                            return True, fallback_path
+                        # 安全修复（W15）：不再"取第一个匹配文件"作为删除目标——
+                        # 目录中其他含 waiting-delete 的文件可能是别的种子的删除
+                        # 标记，取第一个会删错文件（完整性缺陷）。只接受精确匹配。
+                        logger.warning(f"[UNC访问诊断] 未找到与目标 '{file_name}' 完全匹配的文件，放弃降级")
                     else:
-                        logger.warning(f"[UNC访问诊断] 目录中未找到包含 'waiting-delete' 的文件")
+                        logger.warning("[UNC访问诊断] 目录中未找到包含 'waiting-delete' 的文件")
                         logger.info(f"[UNC访问诊断] 目录中的前10个文件: {files_in_dir[:10]}")
 
                 except PermissionError as pe:
@@ -246,6 +244,7 @@ class FileOperationService:
                     # 尝试使用Windows API检查当前用户
                     try:
                         import win32api
+
                         current_user = win32api.GetUserName()
                         logger.error(f"[UNC访问诊断] 当前Python进程用户: {current_user}")
                     except Exception:
@@ -307,7 +306,7 @@ class FileOperationService:
         directory_path: str,
         torrent_name: Optional[str] = None,
         torrent_uuid: Optional[str] = None,
-        downloader_id: Optional[str] = None
+        downloader_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         创建标记文件
@@ -328,12 +327,12 @@ class FileOperationService:
                 "converted_path": str  # 转换后的路径（便于调试）
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "marker_file_path": "",
             "error_message": None,
             "fallback": False,
-            "converted_path": ""
+            "converted_path": "",
         }
 
         # P0-3: 路径验证
@@ -369,15 +368,14 @@ class FileOperationService:
                 content_lines.append(f"Downloader ID: {downloader_id}")
 
             # 写入标记文件
-            with open(marker_path, 'w', encoding='utf-8') as f:
-                f.write('\n'.join(content_lines) + '\n')
+            with open(marker_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(content_lines) + "\n")
 
             result["success"] = True
 
             # P1-2: 日志脱敏处理
             logger.info(
-                f"创建标记文件成功: {marker_path} "
-                f"(torrent={torrent_name}, uuid={self._mask_uuid(torrent_uuid)})"
+                f"创建标记文件成功: {marker_path} " f"(torrent={torrent_name}, uuid={self._mask_uuid(torrent_uuid)})"
             )
 
         except PermissionError as e:
@@ -385,28 +383,21 @@ class FileOperationService:
             result["error_message"] = error_msg
             result["fallback"] = True
 
-            logger.warning(
-                f"创建标记文件失败（权限不足）: {directory_path} - {error_msg}"
-            )
+            logger.warning(f"创建标记文件失败（权限不足）: {directory_path} - {error_msg}")
 
         except OSError as e:
             error_msg = f"OS错误: {str(e)}"
             result["error_message"] = error_msg
             result["fallback"] = True
 
-            logger.error(
-                f"创建标记文件失败: {directory_path} - {error_msg}"
-            )
+            logger.error(f"创建标记文件失败: {directory_path} - {error_msg}")
 
         except Exception as e:
             error_msg = f"未知错误: {str(e)}"
             result["error_message"] = error_msg
             result["fallback"] = True
 
-            logger.error(
-                f"创建标记文件失败（未知错误）: {directory_path} - {error_msg}",
-                exc_info=True
-            )
+            logger.error(f"创建标记文件失败（未知错误）: {directory_path} - {error_msg}", exc_info=True)
 
         return result
 
@@ -415,7 +406,7 @@ class FileOperationService:
         directory_path: str,
         torrent_name: Optional[str] = None,
         torrent_original_filename: Optional[str] = None,
-        delete_pending_delete_folder: bool = False
+        delete_pending_delete_folder: bool = False,
     ) -> Dict[str, Any]:
         """
         删除标记文件（.waiting-delete）或 .pending_delete 文件夹
@@ -438,12 +429,12 @@ class FileOperationService:
                 "deleted_path": str     # 实际删除的路径
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "error_message": None,
             "file_existed": False,
             "deleted_type": "",
-            "deleted_path": ""
+            "deleted_path": "",
         }
 
         # 构建日志上下文
@@ -491,39 +482,30 @@ class FileOperationService:
                     # 文件不存在，视为成功（降级处理）
                     result["success"] = True
                     result["file_existed"] = False
-                    logger.info(
-                        f"{log_context}pending_delete文件/文件夹不存在（降级）: {pending_delete_path}"
-                    )
+                    logger.info(f"{log_context}pending_delete文件/文件夹不存在（降级）: {pending_delete_path}")
                     return result
 
                 # 如果使用了修复后的路径，更新删除路径
                 if actual_path != pending_delete_path:
                     result["deleted_path"] = actual_path
-                    logger.info(
-                        f"{log_context}[路径修复] 使用修复后的路径: {actual_path}"
-                    )
+                    logger.info(f"{log_context}[路径修复] 使用修复后的路径: {actual_path}")
 
                 result["file_existed"] = True
 
                 # 删除文件或文件夹（使用修复后的路径）
                 if os.path.isfile(actual_path):
                     os.remove(actual_path)
-                    logger.info(
-                        f"{log_context}删除pending_delete文件成功: {actual_path}"
-                    )
+                    logger.info(f"{log_context}删除pending_delete文件成功: {actual_path}")
                 elif os.path.isdir(actual_path):
                     import shutil
+
                     shutil.rmtree(actual_path)
-                    logger.info(
-                        f"{log_context}删除pending_delete文件夹成功: {actual_path}"
-                    )
+                    logger.info(f"{log_context}删除pending_delete文件夹成功: {actual_path}")
                 else:
                     # 既不是文件也不是文件夹，视为不存在（降级处理）
                     result["success"] = True
                     result["file_existed"] = False
-                    logger.warning(
-                        f"{log_context}pending_delete路径既非文件也非文件夹（降级）: {actual_path}"
-                    )
+                    logger.warning(f"{log_context}pending_delete路径既非文件也非文件夹（降级）: {actual_path}")
                     return result
 
                 result["success"] = True
@@ -558,56 +540,40 @@ class FileOperationService:
                     # 标记文件不存在，视为成功（降级处理）
                     result["success"] = True
                     result["file_existed"] = False
-                    logger.info(
-                        f"{log_context}标记文件不存在（降级）: {marker_file_path}"
-                    )
+                    logger.info(f"{log_context}标记文件不存在（降级）: {marker_file_path}")
                     return result
 
                 # 如果使用了修复后的路径，更新删除路径
                 if actual_path != marker_file_path:
                     result["deleted_path"] = actual_path
-                    logger.info(
-                        f"{log_context}[路径修复] 使用修复后的路径: {actual_path}"
-                    )
+                    logger.info(f"{log_context}[路径修复] 使用修复后的路径: {actual_path}")
 
                 result["file_existed"] = True
 
                 # 删除标记文件（使用修复后的路径）
                 os.remove(actual_path)
-                logger.info(
-                    f"{log_context}删除标记文件成功: {actual_path}"
-                )
+                logger.info(f"{log_context}删除标记文件成功: {actual_path}")
 
                 result["success"] = True
 
         except PermissionError as e:
             error_msg = f"权限不足: {str(e)}"
             result["error_message"] = error_msg
-            logger.warning(
-                f"{log_context}删除标记文件失败（权限不足）: {directory_path} - {error_msg}"
-            )
+            logger.warning(f"{log_context}删除标记文件失败（权限不足）: {directory_path} - {error_msg}")
 
         except OSError as e:
             error_msg = f"OS错误: {str(e)}"
             result["error_message"] = error_msg
-            logger.error(
-                f"{log_context}删除标记文件失败: {directory_path} - {error_msg}"
-            )
+            logger.error(f"{log_context}删除标记文件失败: {directory_path} - {error_msg}")
 
         except Exception as e:
             error_msg = f"未知错误: {str(e)}"
             result["error_message"] = error_msg
-            logger.error(
-                f"{log_context}删除标记文件失败（未知错误）: {directory_path}",
-                exc_info=True
-            )
+            logger.error(f"{log_context}删除标记文件失败（未知错误）: {directory_path}", exc_info=True)
 
         return result
 
-    async def check_marker_file(
-        self,
-        directory_path: str
-    ) -> bool:
+    async def check_marker_file(self, directory_path: str) -> bool:
         """
         检查标记文件是否存在
 
@@ -629,16 +595,10 @@ class FileOperationService:
             return exists
 
         except Exception as e:
-            logger.error(
-                f"检查标记文件失败: {directory_path} - {str(e)}",
-                exc_info=True
-            )
+            logger.error(f"检查标记文件失败: {directory_path} - {str(e)}", exc_info=True)
             return False
 
-    async def read_marker_file(
-        self,
-        directory_path: str
-    ) -> Dict[str, Any]:
+    async def read_marker_file(self, directory_path: str) -> Dict[str, Any]:
         """
         读取标记文件内容
 
@@ -657,14 +617,14 @@ class FileOperationService:
                 "error_message": Optional[str]
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "exists": False,
             "deleted_at": None,
             "torrent_name": None,
             "torrent_uuid": None,
             "downloader_id": None,
-            "error_message": None
+            "error_message": None,
         }
 
         try:
@@ -681,11 +641,11 @@ class FileOperationService:
             result["exists"] = True
 
             # 读取文件内容
-            with open(marker_path, 'r', encoding='utf-8') as f:
+            with open(marker_path, "r", encoding="utf-8") as f:
                 content = f.read()
 
             # P0-2: 安全解析内容，防止IndexError
-            for line in content.strip().split('\n'):
+            for line in content.strip().split("\n"):
                 try:
                     if line.startswith("Deleted at:"):
                         parts = line.split(":", 1)
@@ -709,17 +669,11 @@ class FileOperationService:
         except Exception as e:
             error_msg = f"读取标记文件失败: {str(e)}"
             result["error_message"] = error_msg
-            logger.error(
-                f"读取标记文件失败: {directory_path} - {error_msg}",
-                exc_info=True
-            )
+            logger.error(f"读取标记文件失败: {directory_path} - {error_msg}", exc_info=True)
 
         return result
 
-    async def batch_create_markers(
-        self,
-        directories: Optional[List[Dict[str, str]]] = None
-    ) -> Dict[str, Any]:
+    async def batch_create_markers(self, directories: Optional[List[Dict[str, str]]] = None) -> Dict[str, Any]:
         """
         批量创建标记文件（支持自动回滚）
 
@@ -757,17 +711,17 @@ class FileOperationService:
                 "fallback_count": 0,
                 "rollback_count": 0,
                 "results": [],
-                "rolled_back_paths": []
+                "rolled_back_paths": [],
             }
 
-        results = {
+        results: Dict[str, Any] = {
             "total": len(directories),
             "success_count": 0,
             "failed_count": 0,
             "fallback_count": 0,
             "rollback_count": 0,
             "results": [],
-            "rolled_back_paths": []
+            "rolled_back_paths": [],
         }
 
         # 记录已成功创建的文件路径（用于回滚）
@@ -780,20 +734,22 @@ class FileOperationService:
                     logger.error(f"无效的目录信息（缺少path键或不是字典）: {dir_info}")
                     results["failed_count"] += 1
                     # 添加失败结果
-                    results["results"].append({
-                        "success": False,
-                        "marker_file_path": "",
-                        "error_message": "无效的目录信息（缺少path键）",
-                        "fallback": False,
-                        "converted_path": ""
-                    })
+                    results["results"].append(
+                        {
+                            "success": False,
+                            "marker_file_path": "",
+                            "error_message": "无效的目录信息（缺少path键）",
+                            "fallback": False,
+                            "converted_path": "",
+                        }
+                    )
                     continue
 
                 result = await self.create_marker_file(
                     directory_path=dir_info["path"],
                     torrent_name=dir_info.get("name"),
                     torrent_uuid=dir_info.get("uuid"),
-                    downloader_id=dir_info.get("downloader_id")
+                    downloader_id=dir_info.get("downloader_id"),
                 )
 
                 results["results"].append(result)
@@ -807,9 +763,7 @@ class FileOperationService:
                     results["fallback_count"] += 1 if result["fallback"] else 0
 
                     # 创建失败，执行回滚
-                    logger.warning(
-                        f"批量创建标记文件失败，开始回滚已创建的 {len(created_files)} 个文件"
-                    )
+                    logger.warning(f"批量创建标记文件失败，开始回滚已创建的 {len(created_files)} 个文件")
 
                     for marker_path in created_files:
                         try:
@@ -841,10 +795,7 @@ class FileOperationService:
             )
 
         except Exception as e:
-            logger.error(
-                f"批量创建标记文件异常: {str(e)}",
-                exc_info=True
-            )
+            logger.error(f"批量创建标记文件异常: {str(e)}", exc_info=True)
 
             # 尝试回滚已创建的文件
             if created_files:
@@ -860,10 +811,7 @@ class FileOperationService:
 
         return results
 
-    async def batch_delete_markers(
-        self,
-        directories: Optional[List[str]] = None
-    ) -> Dict[str, Any]:
+    async def batch_delete_markers(self, directories: Optional[List[str]] = None) -> Dict[str, Any]:
         """
         批量删除标记文件
 
@@ -883,13 +831,7 @@ class FileOperationService:
         # P0-4: 输入验证
         if not directories or not isinstance(directories, list):
             logger.warning("batch_delete_markers: directories参数为空或无效")
-            return {
-                "total": 0,
-                "success_count": 0,
-                "failed_count": 0,
-                "existed_count": 0,
-                "results": []
-            }
+            return {"total": 0, "success_count": 0, "failed_count": 0, "existed_count": 0, "results": []}
 
         # 验证并过滤有效路径
         valid_directories = []
@@ -902,12 +844,12 @@ class FileOperationService:
         if len(valid_directories) != len(directories):
             logger.warning(f"过滤了 {len(directories) - len(valid_directories)} 个无效路径")
 
-        results = {
+        results: Dict[str, Any] = {
             "total": len(valid_directories),
             "success_count": 0,
             "failed_count": 0,
             "existed_count": 0,
-            "results": []
+            "results": [],
         }
 
         for directory in valid_directories:
@@ -933,10 +875,7 @@ class FileOperationService:
         return results
 
     async def rename_folder_for_recycle(
-        self,
-        directory_path: str,
-        torrent_name: str,
-        suffix: str = ".pending_delete"
+        self, directory_path: str, torrent_name: str, suffix: str = ".pending_delete"
     ) -> Dict[str, Any]:
         """
         重命名文件夹以标记为回收站状态
@@ -963,10 +902,7 @@ class FileOperationService:
         try:
             # 输入验证
             if not directory_path or not torrent_name:
-                return {
-                    "success": False,
-                    "error": "directory_path或torrent_name为空"
-                }
+                return {"success": False, "error": "directory_path或torrent_name为空"}
 
             # 转换路径格式
             directory_path = self._convert_path(directory_path)
@@ -975,11 +911,7 @@ class FileOperationService:
             # 检查目录是否存在
             if not os.path.exists(directory_path):
                 logger.warning(f"重命名文件夹失败: 目录不存在 - {directory_path}")
-                return {
-                    "success": False,
-                    "error": "目录不存在",
-                    "directory_path": directory_path
-                }
+                return {"success": False, "error": "目录不存在", "directory_path": directory_path}
 
             # 提取文件夹名称和父目录
             folder_name = os.path.basename(directory_path)
@@ -992,20 +924,11 @@ class FileOperationService:
             # 检查目标路径是否已存在
             if os.path.exists(new_path):
                 logger.warning(f"重命名文件夹失败: 目标路径已存在 - {new_path}")
-                return {
-                    "success": False,
-                    "error": "目标文件夹已存在",
-                    "new_path": new_path
-                }
+                return {"success": False, "error": "目标文件夹已存在", "new_path": new_path}
 
             # 在线程池中执行重命名操作
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None,
-                os.rename,
-                directory_path,
-                new_path
-            )
+            await loop.run_in_executor(None, os.rename, directory_path, new_path)
 
             logger.info(f"文件夹重命名成功: {folder_name} -> {new_folder_name}")
 
@@ -1014,22 +937,14 @@ class FileOperationService:
                 "original_path": directory_path,
                 "new_path": new_path,
                 "folder_name": folder_name,
-                "new_folder_name": new_folder_name
+                "new_folder_name": new_folder_name,
             }
 
         except Exception as e:
             logger.error(f"重命名文件夹失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "directory_path": directory_path
-            }
+            return {"success": False, "error": str(e), "directory_path": directory_path}
 
-    async def restore_folder_from_recycle(
-        self,
-        current_path: str,
-        original_name: str
-    ) -> Dict[str, Any]:
+    async def restore_folder_from_recycle(self, current_path: str, original_name: str) -> Dict[str, Any]:
         """
         从回收站还原文件夹名称
 
@@ -1051,10 +966,7 @@ class FileOperationService:
         try:
             # 输入验证
             if not current_path or not original_name:
-                return {
-                    "success": False,
-                    "error": "current_path或original_name为空"
-                }
+                return {"success": False, "error": "current_path或original_name为空"}
 
             # 转换路径格式
             current_path = self._convert_path(current_path)
@@ -1063,11 +975,7 @@ class FileOperationService:
             # 检查目录是否存在
             if not os.path.exists(current_path):
                 logger.warning(f"还原文件夹失败: 目录不存在 - {current_path}")
-                return {
-                    "success": False,
-                    "error": "目录不存在",
-                    "current_path": current_path
-                }
+                return {"success": False, "error": "目录不存在", "current_path": current_path}
 
             # 提取父目录
             parent_dir = os.path.dirname(current_path)
@@ -1076,41 +984,24 @@ class FileOperationService:
             # 检查目标路径是否已存在
             if os.path.exists(new_path):
                 logger.warning(f"还原文件夹失败: 目标路径已存在 - {new_path}")
-                return {
-                    "success": False,
-                    "error": "目标文件夹已存在，无法还原",
-                    "new_path": new_path
-                }
+                return {"success": False, "error": "目标文件夹已存在，无法还原", "new_path": new_path}
 
             # 在线程池中执行重命名操作
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None,
-                os.rename,
-                current_path,
-                new_path
-            )
+            await loop.run_in_executor(None, os.rename, current_path, new_path)
 
             logger.info(f"文件夹还原成功: {os.path.basename(current_path)} -> {original_name}")
 
-            return {
-                "success": True,
-                "original_path": current_path,
-                "new_path": new_path
-            }
+            return {"success": True, "original_path": current_path, "new_path": new_path}
 
         except Exception as e:
             logger.error(f"还原文件夹失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "current_path": current_path
-            }
+            return {"success": False, "error": str(e), "current_path": current_path}
 
     # ========== 新增：智能种子重命名方法（支持单文件和多文件） ==========
 
     @staticmethod
-    def is_single_file_torrent(torrent_name: str, save_path: str = None) -> bool:
+    def is_single_file_torrent(torrent_name: str, save_path: Optional[str] = None) -> bool:
         """
         检测种子是否为单文件种子（混合策略）
 
@@ -1136,58 +1027,85 @@ class FileOperationService:
                 if os.path.exists(full_path):
                     # 文件存在，直接判断是文件还是文件夹
                     is_file = os.path.isfile(full_path)
-                    logger.debug(
-                        f"[单文件检测: 文件系统] {torrent_name} -> "
-                        f"{'单文件' if is_file else '多文件'}"
-                    )
+                    logger.debug(f"[单文件检测: 文件系统] {torrent_name} -> " f"{'单文件' if is_file else '多文件'}")
                     return is_file
                 else:
-                    logger.debug(
-                        f"[单文件检测: 文件系统] 路径不存在: {full_path}，"
-                        f"回退到扩展名判断"
-                    )
+                    logger.debug(f"[单文件检测: 文件系统] 路径不存在: {full_path}，" f"回退到扩展名判断")
             except Exception as e:
-                logger.debug(
-                    f"[单文件检测: 文件系统] 检测失败: {e}，"
-                    f"回退到扩展名判断"
-                )
+                logger.debug(f"[单文件检测: 文件系统] 检测失败: {e}，" f"回退到扩展名判断")
 
         # ========== 优先级2：扩展名判断（回退方案） ==========
         # 覆盖常见文件类型
         all_extensions = [
             # 视频文件
-            '.mkv', '.mp4', '.avi', '.wmv', '.mov', '.flv', '.ts', '.m2ts',
-            '.rmvb', '.rm', '.mpg', '.mpeg', '.3gp', '.webm', '.ogv',
+            ".mkv",
+            ".mp4",
+            ".avi",
+            ".wmv",
+            ".mov",
+            ".flv",
+            ".ts",
+            ".m2ts",
+            ".rmvb",
+            ".rm",
+            ".mpg",
+            ".mpeg",
+            ".3gp",
+            ".webm",
+            ".ogv",
             # 电子书文件
-            '.epub', '.mobi', '.azw3', '.pdf', '.cbr', '.cbz',
+            ".epub",
+            ".mobi",
+            ".azw3",
+            ".pdf",
+            ".cbr",
+            ".cbz",
             # 压缩文件
-            '.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz',
+            ".zip",
+            ".rar",
+            ".7z",
+            ".tar",
+            ".gz",
+            ".bz2",
+            ".xz",
             # 音频文件
-            '.mp3', '.flac', '.wav', '.aac', '.ogg', '.wma',
+            ".mp3",
+            ".flac",
+            ".wav",
+            ".aac",
+            ".ogg",
+            ".wma",
             # 图片文件
-            '.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp',
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".gif",
+            ".bmp",
+            ".webp",
             # 文档文件
-            '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+            ".doc",
+            ".docx",
+            ".xls",
+            ".xlsx",
+            ".ppt",
+            ".pptx",
             # 其他常见文件
-            '.txt', '.iso', '.dmg', '.exe', '.apk'
+            ".txt",
+            ".iso",
+            ".dmg",
+            ".exe",
+            ".apk",
         ]
 
         # 检查种子名称是否以已知扩展名结尾
         torrent_name_lower = torrent_name.lower()
         is_single = any(torrent_name_lower.endswith(ext) for ext in all_extensions)
 
-        logger.debug(
-            f"[单文件检测: 扩展名] {torrent_name} -> "
-            f"{'单文件' if is_single else '多文件（未知扩展名）'}"
-        )
+        logger.debug(f"[单文件检测: 扩展名] {torrent_name} -> " f"{'单文件' if is_single else '多文件（未知扩展名）'}")
 
         return is_single
 
-    async def get_torrent_actual_path(
-        self,
-        save_path: str,
-        torrent_name: str
-    ) -> Dict[str, Any]:
+    async def get_torrent_actual_path(self, save_path: str, torrent_name: str) -> Dict[str, Any]:
         """
         获取种子的实际路径（自动检测单文件或多文件，支持fallback）
 
@@ -1241,7 +1159,7 @@ class FileOperationService:
                         "actual_path": actual_path,
                         "is_directory": is_directory,
                         "exists": exists,
-                        "torrent_type": torrent_type
+                        "torrent_type": torrent_type,
                     }
             else:
                 # 多文件种子：save_path下的文件夹
@@ -1264,62 +1182,45 @@ class FileOperationService:
                         "actual_path": actual_path,
                         "is_directory": is_directory,
                         "exists": exists,
-                        "torrent_type": torrent_type
+                        "torrent_type": torrent_type,
                     }
 
                 # ========== Fallback逻辑：多文件路径不存在，尝试单文件 ==========
                 # 可能种子名称不包含扩展名，但实际上是单文件
-                logger.warning(
-                    f"[路径检测] 多文件路径不存在，尝试fallback到单文件检测: {actual_path}"
-                )
+                logger.warning(f"[路径检测] 多文件路径不存在，尝试fallback到单文件检测: {actual_path}")
 
                 # 尝试常见的视频扩展名
-                video_extensions = ['.mkv', '.mp4', '.avi', '.wmv', '.mov', '.flv', '.ts', '.m2ts']
+                video_extensions = [".mkv", ".mp4", ".avi", ".wmv", ".mov", ".flv", ".ts", ".m2ts"]
 
                 for ext in video_extensions:
                     fallback_path = os.path.join(save_path, f"{torrent_name}{ext}")
                     if os.path.exists(fallback_path):
-                        logger.info(
-                            f"[路径检测] Fallback成功：找到单文件 "
-                            f"{torrent_name}{ext}"
-                        )
+                        logger.info(f"[路径检测] Fallback成功：找到单文件 " f"{torrent_name}{ext}")
                         return {
                             "success": True,
                             "actual_path": fallback_path,
                             "is_directory": False,
                             "exists": True,
-                            "torrent_type": "single_file_fallback"
+                            "torrent_type": "single_file_fallback",
                         }
 
             # 所有尝试都失败
-            logger.error(
-                f"[路径检测] 所有路径尝试失败，最后尝试的路径: {actual_path}, "
-                f"类型: {torrent_type}"
-            )
+            logger.error(f"[路径检测] 所有路径尝试失败，最后尝试的路径: {actual_path}, " f"类型: {torrent_type}")
 
             return {
                 "success": True,
                 "actual_path": actual_path,
                 "is_directory": is_directory,
                 "exists": False,
-                "torrent_type": torrent_type
+                "torrent_type": torrent_type,
             }
 
         except Exception as e:
             logger.error(f"获取种子实际路径失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "actual_path": None,
-                "is_directory": False,
-                "exists": False
-            }
+            return {"success": False, "error": str(e), "actual_path": None, "is_directory": False, "exists": False}
 
     async def rename_torrent_for_recycle(
-        self,
-        save_path: str,
-        torrent_name: str,
-        suffix: str = ".pending_delete"
+        self, save_path: str, torrent_name: str, suffix: str = ".pending_delete"
     ) -> Dict[str, Any]:
         """
         智能重命名种子（支持单文件和多文件）
@@ -1347,19 +1248,13 @@ class FileOperationService:
         try:
             # 输入验证
             if not save_path or not torrent_name:
-                return {
-                    "success": False,
-                    "error": "save_path或torrent_name为空"
-                }
+                return {"success": False, "error": "save_path或torrent_name为空"}
 
             # 获取种子实际路径
             path_info = await self.get_torrent_actual_path(save_path, torrent_name)
 
             if not path_info.get("success"):
-                return {
-                    "success": False,
-                    "error": f"获取种子路径失败: {path_info.get('error')}"
-                }
+                return {"success": False, "error": f"获取种子路径失败: {path_info.get('error')}"}
 
             original_path = path_info.get("actual_path")
             is_directory = path_info.get("is_directory")
@@ -1372,21 +1267,21 @@ class FileOperationService:
                     "success": False,
                     "error": f"{'文件' if not is_directory else '文件夹'}不存在",
                     "original_path": original_path,
-                    "torrent_type": torrent_type
+                    "torrent_type": torrent_type,
                 }
 
             # 根据类型构建新名称
             if is_directory:
                 # 多文件种子（文件夹）：直接添加后缀
-                original_name = os.path.basename(original_path)
-                parent_dir = os.path.dirname(original_path)
+                original_name = os.path.basename(original_path or "")
+                parent_dir = os.path.dirname(original_path or "")
                 new_name = f"{original_name}{suffix}"
                 new_path = os.path.join(parent_dir, new_name)
             else:
                 # 单文件种子：在扩展名前添加后缀
                 # movie.mkv -> movie.pending_delete.mkv
-                original_name = os.path.basename(original_path)
-                parent_dir = os.path.dirname(original_path)
+                original_name = os.path.basename(original_path or "")
+                parent_dir = os.path.dirname(original_path or "")
                 name_without_ext, ext = os.path.splitext(original_name)
                 new_name = f"{name_without_ext}{suffix}{ext}"
                 new_path = os.path.join(parent_dir, new_name)
@@ -1398,21 +1293,14 @@ class FileOperationService:
                     "success": False,
                     "error": "目标已存在，无法重命名",
                     "new_path": new_path,
-                    "torrent_type": torrent_type
+                    "torrent_type": torrent_type,
                 }
 
             # 在线程池中执行重命名操作
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None,
-                os.rename,
-                original_path,
-                new_path
-            )
+            await loop.run_in_executor(None, functools.partial(os.rename, original_path or "", new_path))
 
-            logger.info(
-                f"种子重命名成功 ({torrent_type}): {original_name} -> {new_name}"
-            )
+            logger.info(f"种子重命名成功 ({torrent_type}): {original_name} -> {new_name}")
 
             return {
                 "success": True,
@@ -1421,23 +1309,15 @@ class FileOperationService:
                 "is_directory": is_directory,
                 "original_name": original_name,
                 "new_name": new_name,
-                "torrent_type": torrent_type
+                "torrent_type": torrent_type,
             }
 
         except Exception as e:
             logger.error(f"重命名种子失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e),
-                "save_path": save_path,
-                "torrent_name": torrent_name
-            }
+            return {"success": False, "error": str(e), "save_path": save_path, "torrent_name": torrent_name}
 
     async def restore_torrent_from_recycle(
-        self,
-        current_path: str,
-        original_name: str,
-        is_directory: Optional[bool] = None
+        self, current_path: str, original_name: str, is_directory: Optional[bool] = None
     ) -> Dict[str, Any]:
         """
         智能还原种子（支持单文件和多文件）
@@ -1466,10 +1346,7 @@ class FileOperationService:
         try:
             # 输入验证
             if not current_path or not original_name:
-                return {
-                    "success": False,
-                    "error": "current_path或original_name为空"
-                }
+                return {"success": False, "error": "current_path或original_name为空"}
 
             # 转换路径格式
             current_path = self._convert_path(current_path)
@@ -1478,11 +1355,7 @@ class FileOperationService:
             # 检查当前路径是否存在
             if not os.path.exists(current_path):
                 logger.warning(f"还原种子失败: 路径不存在 - {current_path}")
-                return {
-                    "success": False,
-                    "error": "路径不存在",
-                    "current_path": current_path
-                }
+                return {"success": False, "error": "路径不存在", "current_path": current_path}
 
             # 获取父目录和目标路径
             parent_dir = os.path.dirname(current_path)
@@ -1517,7 +1390,7 @@ class FileOperationService:
                     "is_directory": False,
                     "current_name": current_name,
                     "restored_name": original_name,
-                    "torrent_type": "single_file"
+                    "torrent_type": "single_file",
                 }
 
             # 处理多文件种子（文件夹）
@@ -1525,7 +1398,7 @@ class FileOperationService:
                 # 确保目标文件夹存在
                 if not os.path.exists(new_path):
                     loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, os.makedirs, new_path, exist_ok=True)
+                    await loop.run_in_executor(None, functools.partial(os.makedirs, new_path, exist_ok=True))
                     logger.info(f"创建目标文件夹: {new_path}")
 
                 # 移动所有文件到目标文件夹
@@ -1561,11 +1434,7 @@ class FileOperationService:
 
                 except Exception as e:
                     logger.error(f"遍历源文件夹失败: {current_path}, 错误: {e}")
-                    return {
-                        "success": False,
-                        "error": f"遍历源文件夹失败: {str(e)}",
-                        "current_path": current_path
-                    }
+                    return {"success": False, "error": f"遍历源文件夹失败: {str(e)}", "current_path": current_path}
 
                 # 检查源文件夹是否为空
                 try:
@@ -1576,8 +1445,7 @@ class FileOperationService:
                         logger.info(f"删除空的源文件夹: {current_path}")
                     else:
                         logger.warning(
-                            f"源文件夹不为空，保留: {current_path}, "
-                            f"剩余文件数: {len(remaining_entries)}"
+                            f"源文件夹不为空，保留: {current_path}, " f"剩余文件数: {len(remaining_entries)}"
                         )
                 except Exception as e:
                     logger.warning(f"检查源文件夹失败: {current_path}, 错误: {e}")
@@ -1594,7 +1462,7 @@ class FileOperationService:
                     "is_directory": True,
                     "current_name": current_name,
                     "restored_name": original_name,
-                    "torrent_type": "multi_file"
+                    "torrent_type": "multi_file",
                 }
 
         except Exception as e:
@@ -1602,5 +1470,5 @@ class FileOperationService:
             return {
                 "success": False,
                 "error": str(e),
-                "current_path": current_path if 'current_path' in locals() else None
+                "current_path": current_path if "current_path" in locals() else None,
             }

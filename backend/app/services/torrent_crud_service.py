@@ -8,6 +8,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.torrents.models import TorrentInfo, TrackerInfo as TrackerInfoModel
+from app.services.torrent_ratio_values import MISSING_RATIO_VALUE, apply_normalized_ratio_fields
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +17,15 @@ logger = logging.getLogger(__name__)
 # Torrent CRUD
 # ===========================================================================
 
+
 def get_tracker_by_tracker_url(db, torrent_info_id, tracker_url):
-    return db.query(TrackerInfoModel).filter(
-        TrackerInfoModel.torrent_info_id == torrent_info_id).filter(
-        TrackerInfoModel.tracker_url == tracker_url).filter(
-        TrackerInfoModel.dr == 0).first()
+    return (
+        db.query(TrackerInfoModel)
+        .filter(TrackerInfoModel.torrent_info_id == torrent_info_id)
+        .filter(TrackerInfoModel.tracker_url == tracker_url)
+        .filter(TrackerInfoModel.dr == 0)
+        .first()
+    )
 
 
 def create_torrent(db: Session, torrent_data: Dict[str, Any]) -> TorrentInfo:
@@ -34,11 +39,18 @@ def create_torrent(db: Session, torrent_data: Dict[str, Any]) -> TorrentInfo:
     Returns:
         新创建的种子信息对象
     """
+    normalized_data = dict(torrent_data)
     # 如果没有提供ID，则生成一个UUID
-    if "id_" not in torrent_data:
-        torrent_data["id_"] = str(uuid.uuid4())
+    if "id_" not in normalized_data:
+        normalized_data["id_"] = str(uuid.uuid4())
+    apply_normalized_ratio_fields(
+        normalized_data,
+        raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+        raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+        is_insert=True,
+    )
 
-    db_torrent = TorrentInfo(**torrent_data)
+    db_torrent = TorrentInfo(**normalized_data)
     db.add(db_torrent)
     db.commit()
     db.refresh(db_torrent)
@@ -59,11 +71,7 @@ def get_torrent(db: Session, torrent_id: str) -> Optional[TorrentInfo]:
     return db.query(TorrentInfo).filter(TorrentInfo.info_id == torrent_id).first()
 
 
-def get_torrent_by_hash(
-        db: Session,
-        hash_value: str,
-        downloader_id: Optional[str] = None
-) -> Optional[TorrentInfo]:
+def get_torrent_by_hash(db: Session, hash_value: str, downloader_id: Optional[str] = None) -> Optional[TorrentInfo]:
     """
     通过哈希值获取种子信息
 
@@ -75,10 +83,7 @@ def get_torrent_by_hash(
     Returns:
         种子信息对象或None
     """
-    query = db.query(TorrentInfo).filter(
-        TorrentInfo.hash == hash_value,
-        TorrentInfo.dr == 0  # 只查询未删除的记录
-    )
+    query = db.query(TorrentInfo).filter(TorrentInfo.hash == hash_value, TorrentInfo.dr == 0)  # 只查询未删除的记录
 
     # 如果提供了 downloader_id，则限定查询范围
     if downloader_id is not None:
@@ -88,12 +93,12 @@ def get_torrent_by_hash(
 
 
 def get_torrents(
-        db: Session,
-        skip: int = 0,
-        limit: int = 100,
-        status: Optional[str] = None,
-        tags: Optional[str] = None,
-        category: Optional[str] = None
+    db: Session,
+    skip: int = 0,
+    limit: int = 100,
+    status: Optional[str] = None,
+    tags: Optional[str] = None,
+    category: Optional[str] = None,
 ) -> List[TorrentInfo]:
     """
     获取种子列表，支持分页和过滤
@@ -134,9 +139,7 @@ def search_torrents_by_name(db: Session, name_query: str, skip: int = 0, limit: 
     Returns:
         种子信息对象列表
     """
-    return db.query(TorrentInfo).filter(
-        TorrentInfo.name.like(f"%{name_query}%")
-    ).offset(skip).limit(limit).all()
+    return db.query(TorrentInfo).filter(TorrentInfo.name.like(f"%{name_query}%")).offset(skip).limit(limit).all()
 
 
 def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -> Optional[TorrentInfo]:
@@ -157,8 +160,15 @@ def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -
         return None
 
     try:
+        normalized_data = dict(torrent_data)
+        apply_normalized_ratio_fields(
+            normalized_data,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=False,
+        )
         # 更新对象属性
-        for key, value in torrent_data.items():
+        for key, value in normalized_data.items():
             if hasattr(db_torrent, key):
                 setattr(db_torrent, key, value)
 
@@ -190,11 +200,7 @@ def delete_torrent(db: Session, torrent_id: str) -> bool:
     return True
 
 
-def get_torrents_count(
-        db: Session,
-        status: Optional[str] = None,
-        category: Optional[str] = None
-) -> int:
+def get_torrents_count(db: Session, status: Optional[str] = None, category: Optional[str] = None) -> int:
     """
     获取种子总数
 
@@ -229,14 +235,13 @@ def get_torrents_by_save_path(db: Session, path: str, skip: int = 0, limit: int 
     Returns:
         种子信息对象列表
     """
-    return db.query(TorrentInfo).filter(
-        TorrentInfo.save_path.like(f"%{path}%")
-    ).offset(skip).limit(limit).all()
+    return db.query(TorrentInfo).filter(TorrentInfo.save_path.like(f"%{path}%")).offset(skip).limit(limit).all()
 
 
 # ===========================================================================
 # Tracker CRUD
 # ===========================================================================
+
 
 # 创建操作
 def create_tracker(db: Session, tracker_data: Dict[str, Any]) -> TrackerInfoModel:
@@ -277,12 +282,11 @@ def get_tracker(db: Session, tracker_id: str) -> Optional[TrackerInfoModel]:
     Returns:
         tracker 记录或 None
     """
-    return db.query(TrackerInfoModel).filter(
-        and_(
-            TrackerInfoModel.tracker_id == tracker_id,
-            TrackerInfoModel.dr == 0
-        )
-    ).first()
+    return (
+        db.query(TrackerInfoModel)
+        .filter(and_(TrackerInfoModel.tracker_id == tracker_id, TrackerInfoModel.dr == 0))
+        .first()
+    )
 
 
 def get_trackers_by_torrent(db: Session, torrent_info_id: str) -> List[TrackerInfoModel]:
@@ -296,12 +300,11 @@ def get_trackers_by_torrent(db: Session, torrent_info_id: str) -> List[TrackerIn
     Returns:
         tracker 记录列表
     """
-    return db.query(TrackerInfoModel).filter(
-        and_(
-            TrackerInfoModel.torrent_info_id == torrent_info_id,
-            TrackerInfoModel.dr == 0
-        )
-    ).all()
+    return (
+        db.query(TrackerInfoModel)
+        .filter(and_(TrackerInfoModel.torrent_info_id == torrent_info_id, TrackerInfoModel.dr == 0))
+        .all()
+    )
 
 
 def get_trackers(db: Session, skip: int = 0, limit: int = 100) -> List[TrackerInfoModel]:
@@ -330,12 +333,13 @@ def get_trackers_by_status(db: Session, status: str) -> List[TrackerInfoModel]:
     Returns:
         tracker 记录列表
     """
-    return db.query(TrackerInfoModel).filter(
-        and_(
-            TrackerInfoModel.tracker_status == status,
-            TrackerInfoModel.dr == 0
-        )
-    ).all()
+    # 注：TrackerInfo 无 tracker_status 列（历史笔误）。按整数语义过滤
+    # last_scrape_succeeded（0/1），保持「按状态查 tracker」的接口意图。
+    return (
+        db.query(TrackerInfoModel)
+        .filter(and_(TrackerInfoModel.last_scrape_succeeded == int(status), TrackerInfoModel.dr == 0))
+        .all()
+    )
 
 
 # 更新操作
@@ -373,8 +377,9 @@ def update_tracker(db: Session, tracker_id: str, tracker_data: Dict[str, Any]) -
         raise e
 
 
-def update_tracker_status(db: Session, tracker_id: str, status: str, msg: Optional[str] = None) -> Optional[
-    TrackerInfoModel]:
+def update_tracker_status(
+    db: Session, tracker_id: str, status: str, msg: Optional[str] = None
+) -> Optional[TrackerInfoModel]:
     """
     更新 tracker 状态
 
@@ -387,7 +392,8 @@ def update_tracker_status(db: Session, tracker_id: str, status: str, msg: Option
     Returns:
         更新后的 tracker 记录或 None
     """
-    update_data = {"tracker_status": status}
+    # 同上：无 tracker_status 列，写入实际存在的汇报结果列
+    update_data: Dict[str, Any] = {"last_scrape_succeeded": int(status)}
     if msg is not None:
         update_data["last_scrape_msg"] = msg
 
@@ -426,7 +432,12 @@ def hard_delete_tracker(db: Session, tracker_id: str) -> bool:
     Returns:
         是否成功删除
     """
-    db_tracker = db.query(TrackerInfoModel).filter(TrackerInfoModel.tracker_id == tracker_id).filter(TrackerInfoModel.dr == 1).first()
+    db_tracker = (
+        db.query(TrackerInfoModel)
+        .filter(TrackerInfoModel.tracker_id == tracker_id)
+        .filter(TrackerInfoModel.dr == 1)
+        .first()
+    )
     if not db_tracker:
         return False
 
@@ -461,31 +472,39 @@ def delete_trackers_by_torrent(db: Session, torrent_info_id: str) -> int:
 # TorrentInfo CRUD (composite-key based)
 # ===========================================================================
 
+
 def create_torrent_info(
-        db: Session,
-        info_id: str,
-        downloader_id: str,
-        downloader_name: str,
-        torrent_id: str,
-        hash: str,
-        name: str,
-        save_path: str,
-        size: float,
-        status: str,
-        torrent_file: str,
-        added_date: int,
-        completed_date: Optional[int] = None,
-        ratio: str = "0.0",
-        ratio_limit: str = "",
-        tags: str = "",
-        category: str = "",
-        super_seeding: str = "0",
-        enabled: int = 1,
-        dr: int = 0
+    db: Session,
+    info_id: str,
+    downloader_id: str,
+    downloader_name: str,
+    torrent_id: str,
+    hash: str,
+    name: str,
+    save_path: str,
+    size: float,
+    status: str,
+    torrent_file: str,
+    added_date: int,
+    completed_date: Optional[int] = None,
+    ratio: float = 0.0,
+    ratio_limit: Optional[float] = None,
+    tags: str = "",
+    category: str = "",
+    super_seeding: str = "0",
+    enabled: int = 1,
+    dr: int = 0,
 ) -> TorrentInfo:
     """创建新的种子信息记录"""
-    db_torrent = TorrentInfo(
-        id_=info_id,
+    ratio_fields: Dict[str, Any] = {}
+    apply_normalized_ratio_fields(
+        ratio_fields,
+        raw_ratio=ratio,
+        raw_ratio_limit=ratio_limit,
+        is_insert=True,
+    )
+    db_torrent = TorrentInfo(  # type: ignore[call-arg]  # dataclass_transform 误判必填，SQLAlchemy 构造允许部分字段
+        info_id=info_id,
         downloader_id=downloader_id,
         downloader_name=downloader_name,
         torrent_id=torrent_id,
@@ -497,13 +516,13 @@ def create_torrent_info(
         torrent_file=torrent_file,
         added_date=added_date,
         completed_date=completed_date,
-        ratio=ratio,
-        ratio_limit=ratio_limit,
+        ratio=ratio_fields["ratio"],
+        ratio_limit=ratio_fields["ratio_limit"],
         tags=tags,
         category=category,
         super_seeding=super_seeding,
         enabled=enabled,
-        dr=dr
+        dr=dr,
     )
     db.add(db_torrent)
     db.commit()
@@ -512,23 +531,20 @@ def create_torrent_info(
 
 
 def get_torrent_info(
-        db: Session,
-        info_id: str,
-        downloader_id: str,
+    db: Session,
+    info_id: str,
+    downloader_id: str,
 ) -> Optional[TorrentInfo]:
     """根据复合主键获取种子信息"""
-    return db.query(TorrentInfo).filter(
-        TorrentInfo.info_id == info_id,
-        TorrentInfo.downloader_id == downloader_id,
-        TorrentInfo.dr == 0
-    ).first()
+    return (
+        db.query(TorrentInfo)
+        .filter(TorrentInfo.info_id == info_id, TorrentInfo.downloader_id == downloader_id, TorrentInfo.dr == 0)
+        .first()
+    )
 
 
 def update_torrent_info(
-        db: Session,
-        info_id: str,
-        downloader_id: str,
-        update_data: Dict[str, Any]
+    db: Session, info_id: str, downloader_id: str, update_data: Dict[str, Any]
 ) -> Optional[TorrentInfo]:
     """更新种子信息"""
     db_torrent = get_torrent_info(db, info_id, downloader_id)
@@ -537,12 +553,32 @@ def update_torrent_info(
 
     # 过滤掉不允许更新的字段
     allowed_fields = {
-        "torrent_id", "hash", "name", "save_path", "size", "status",
-        "torrent_file", "added_date", "completed_date", "ratio", "ratio_limit",
-        "tags", "category", "super_seeding", "enabled", "dr"
+        "torrent_id",
+        "hash",
+        "name",
+        "save_path",
+        "size",
+        "status",
+        "torrent_file",
+        "added_date",
+        "completed_date",
+        "ratio",
+        "ratio_limit",
+        "tags",
+        "category",
+        "super_seeding",
+        "enabled",
+        "dr",
     }
 
-    for field, value in update_data.items():
+    normalized_data = dict(update_data)
+    apply_normalized_ratio_fields(
+        normalized_data,
+        raw_ratio=update_data.get("ratio", MISSING_RATIO_VALUE),
+        raw_ratio_limit=update_data.get("ratio_limit", MISSING_RATIO_VALUE),
+        is_insert=False,
+    )
+    for field, value in normalized_data.items():
         if field in allowed_fields and hasattr(db_torrent, field):
             setattr(db_torrent, field, value)
 
@@ -551,11 +587,7 @@ def update_torrent_info(
     return db_torrent
 
 
-def delete_torrent_info(
-        db: Session,
-        info_id: str,
-        downloader_id: str
-) -> bool:
+def delete_torrent_info(db: Session, info_id: str, downloader_id: str) -> bool:
     """软删除种子信息"""
     db_torrent = get_torrent_info(db, info_id, downloader_id)
     if not db_torrent:
@@ -566,9 +598,10 @@ def delete_torrent_info(
     db_torrent.update_time = datetime.now()
     db_torrent.update_by = "admin"
     # 删除tracker表数据
-    db.execute(text(
-        "update tracker_info set update_time=datetime('now'),dr=1 where torrent_info_id =:info_id;")
-        , {"info_id": info_id})
+    db.execute(
+        text("update tracker_info set update_time=datetime('now'),dr=1 where torrent_info_id =:info_id;"),
+        {"info_id": info_id},
+    )
     db.commit()
     return True
 
@@ -577,22 +610,38 @@ def delete_torrent_info(
 # 批量操作 & 统计
 # ===========================================================================
 
+
 # 批量操作
-def bulk_create_torrent_infos(
-        db: Session,
-        torrents_data: List[Dict[str, Any]]
-) -> List[TorrentInfo]:
+def bulk_create_torrent_infos(db: Session, torrents_data: List[Dict[str, Any]]) -> List[TorrentInfo]:
     """批量创建种子信息"""
     db_torrents = []
     for torrent_data in torrents_data:
         # 确保必要字段存在
-        required_fields = ["info_id", "downloader_id", "downloader_name", "torrent_id", "hash", "name", "save_path",
-                           "size", "status", "torrent_file", "added_date"]
+        required_fields = [
+            "info_id",
+            "downloader_id",
+            "downloader_name",
+            "torrent_id",
+            "hash",
+            "name",
+            "save_path",
+            "size",
+            "status",
+            "torrent_file",
+            "added_date",
+        ]
         if not all(field in torrent_data for field in required_fields):
             continue
 
-        db_torrent = TorrentInfo(
-            id_=torrent_data["info_id"],
+        ratio_fields: Dict[str, Any] = {}
+        apply_normalized_ratio_fields(
+            ratio_fields,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=True,
+        )
+        db_torrent = TorrentInfo(  # type: ignore[call-arg]  # 同上
+            info_id=torrent_data["info_id"],
             downloader_id=torrent_data["downloader_id"],
             downloader_name=torrent_data["downloader_name"],
             torrent_id=torrent_data["torrent_id"],
@@ -604,13 +653,13 @@ def bulk_create_torrent_infos(
             torrent_file=torrent_data["torrent_file"],
             added_date=torrent_data["added_date"],
             completed_date=torrent_data.get("completed_date"),
-            ratio=torrent_data.get("ratio", "0.0"),
-            ratio_limit=torrent_data.get("ratio_limit", ""),
+            ratio=ratio_fields["ratio"],
+            ratio_limit=ratio_fields["ratio_limit"],
             tags=torrent_data.get("tags", ""),
             category=torrent_data.get("category", ""),
             super_seeding=torrent_data.get("super_seeding", "0"),
             enabled=torrent_data.get("enabled", 1),
-            dr=torrent_data.get("dr", 0)
+            dr=torrent_data.get("dr", 0),
         )
         db_torrents.append(db_torrent)
 
@@ -623,10 +672,7 @@ def bulk_create_torrent_infos(
 
 # 统计方法
 def count_torrent_infos(
-        db: Session,
-        downloader_id: Optional[str] = None,
-        status: Optional[str] = None,
-        category: Optional[str] = None
+    db: Session, downloader_id: Optional[str] = None, status: Optional[str] = None, category: Optional[str] = None
 ) -> int:
     """统计符合条件的种子数量"""
     query = db.query(TorrentInfo).filter(TorrentInfo.dr == 0)

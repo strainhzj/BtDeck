@@ -6,7 +6,4 @@
 from .qbittorrent import QBittorrentDeleteAdapter
 from .transmission import TransmissionDeleteAdapter
 
-__all__ = [
-    "QBittorrentDeleteAdapter",
-    "TransmissionDeleteAdapter"
-]
+__all__ = ["QBittorrentDeleteAdapter", "TransmissionDeleteAdapter"]

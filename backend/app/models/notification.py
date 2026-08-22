@@ -12,8 +12,10 @@
 
 from datetime import datetime
 from typing import Any, Dict, Optional
-from sqlalchemy import Column, String, Integer, Boolean, Text, DateTime
+from sqlalchemy import String, Integer, Boolean, Text, DateTime
+from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
+from app.utils.datetime_utils import serialize_utc_datetime
 
 
 class Notification(Base):
@@ -28,30 +30,40 @@ class Notification(Base):
         priority: 优先级（info / warning / error）
         is_read: 是否已读
         extra_data: JSON扩展数据（如版本号、下载链接等）
+        dedupe_key: 去重键（可空，唯一。如 orphan_scan:{scan_id}，数据库部分唯一索引兜底幂等）
         created_at: 创建时间
         read_at: 已读时间（可选）
     """
-    __tablename__ = 'notification'
 
-    id = Column(Integer, primary_key=True, autoincrement=True, comment='主键')
-    type = Column(String(30), nullable=False, index=True, comment='通知类型：version_update / system')
-    title = Column(String(255), nullable=False, comment='通知标题')
-    content = Column(Text, nullable=True, comment='通知内容')
-    priority = Column(String(10), nullable=False, default='info', comment='优先级：info / warning / error')
-    is_read = Column(Boolean, nullable=False, default=False, index=True, comment='是否已读')
-    extra_data = Column(Text, nullable=True, comment='JSON扩展数据')
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, comment='创建时间')
-    read_at = Column(DateTime, nullable=True, comment='已读时间')
+    __tablename__ = "notification"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True, comment="主键")
+    type: Mapped[str] = mapped_column(
+        String(30), nullable=False, index=True, comment="通知类型：version_update / system"
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False, comment="通知标题")
+    content: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="通知内容")
+    priority: Mapped[str] = mapped_column(
+        String(10), nullable=False, default="info", comment="优先级：info / warning / error"
+    )
+    is_read: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True, comment="是否已读")
+    extra_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True, comment="JSON扩展数据")
+    dedupe_key: Mapped[Optional[str]] = mapped_column(
+        String(100), nullable=True, comment="去重键（如 orphan_scan:{scan_id}）"
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False, comment="创建时间")
+    read_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="已读时间")
 
     def __init__(
         self,
         type: Optional[str] = None,
         title: Optional[str] = None,
         content: Optional[str] = None,
-        priority: str = 'info',
+        priority: str = "info",
         is_read: bool = False,
         extra_data: Optional[Dict[str, Any]] = None,
-        **kw: Any
+        dedupe_key: Optional[str] = None,
+        **kw: Any,
     ):
         super().__init__(**kw)
         if type is not None:
@@ -64,26 +76,31 @@ class Notification(Base):
         self.is_read = is_read
         if extra_data is not None:
             import json
+
             self.extra_data = json.dumps(extra_data, ensure_ascii=False)
+        if dedupe_key is not None:
+            self.dedupe_key = dedupe_key
 
     def to_dict(self) -> Dict[str, Any]:
         """将模型转换为字典"""
         import json
+
         result = {
-            'id': self.id,
-            'type': self.type,
-            'title': self.title,
-            'content': self.content,
-            'priority': self.priority,
-            'is_read': self.is_read,
-            'created_at': self.created_at.isoformat() if self.created_at else None,
-            'read_at': self.read_at.isoformat() if self.read_at else None,
+            "id": self.id,
+            "type": self.type,
+            "title": self.title,
+            "content": self.content,
+            "priority": self.priority,
+            "is_read": self.is_read,
+            "created_at": serialize_utc_datetime(self.created_at),
+            "read_at": serialize_utc_datetime(self.read_at),
+            "dedupe_key": self.dedupe_key,
         }
         if self.extra_data:
             try:
-                result['extra_data'] = json.loads(self.extra_data)
+                result["extra_data"] = json.loads(self.extra_data)
             except (json.JSONDecodeError, TypeError):
-                result['extra_data'] = None
+                result["extra_data"] = None
         else:
-            result['extra_data'] = None
+            result["extra_data"] = None
         return result

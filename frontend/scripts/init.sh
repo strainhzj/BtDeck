@@ -2,6 +2,11 @@
 
 # BTDeck 前端初始化脚本
 # 用途: 验证环境、安装依赖、运行测试
+#
+# 用法:
+#   ./init.sh          默认模式：安装依赖 + 环境验证
+#   ./init.sh --ci     轻量模式：仅环境验证（不安装依赖、不 lint），被根 init.sh 调用
+#   ./init.sh --check  等同于默认 + 额外跑 lint（兼容旧参数）
 
 set -e
 
@@ -14,11 +19,23 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+# 参数解析
+MODE="default"
+for arg in "$@"; do
+  case "$arg" in
+    --ci)   MODE="ci" ;;
+    --check) MODE="check" ;;
+  esac
+done
+echo "模式: $MODE"
+echo ""
+
 # 1. 检查 Node.js 环境
 echo -e "${YELLOW}1. 检查 Node.js 环境...${NC}"
 if command -v node &> /dev/null; then
     NODE_VERSION=$(node --version)
-    NODE_MAJOR=$(echo $NODE_VERSION | cut -d. -f1 | sed 's/v//')
+    NODE_MAJOR=${NODE_VERSION#v}
+    NODE_MAJOR=${NODE_MAJOR%%.*}
 
     if [ "$NODE_MAJOR" -ge 18 ]; then
         echo -e "${GREEN}✓ Node.js 版本: $NODE_VERSION (符合要求 >=18)${NC}"
@@ -49,18 +66,22 @@ else
     exit 1
 fi
 
-# 4. 安装依赖
-echo -e "${YELLOW}4. 安装 npm 依赖...${NC}"
-if [ ! -d "node_modules" ]; then
-    echo "运行 npm install..."
-    npm install -q
-    echo -e "${GREEN}✓ 依赖安装完成${NC}"
+# 4. 安装依赖（--ci 模式跳过）
+if [ "$MODE" = "ci" ]; then
+    echo -e "${YELLOW}4. 跳过依赖安装（--ci 模式）...${NC}"
 else
-    echo -e "${GREEN}✓ node_modules 已存在${NC}"
+    echo -e "${YELLOW}4. 安装 npm 依赖...${NC}"
+    if [ ! -d "node_modules" ]; then
+        echo "运行 npm install..."
+        npm install -q
+        echo -e "${GREEN}✓ 依赖安装完成${NC}"
+    else
+        echo -e "${GREEN}✓ node_modules 已存在${NC}"
 
-    # 检查是否需要更新
-    echo "检查依赖更新..."
-    npm outdated || true
+        # 检查是否需要更新
+        echo "检查依赖更新..."
+        npm outdated || true
+    fi
 fi
 
 # 5. 检查 TypeScript
@@ -93,13 +114,13 @@ else
     TOOLS_AVAILABLE=false
 fi
 
-# 7. 运行代码检查（可选，传入 --check 参数时执行）
-echo -e "${YELLOW}7. 运行代码检查（可选）...${NC}"
-if [[ "${1:-}" == "--check" ]]; then
+# 7. 运行代码检查（--check 模式执行）
+echo -e "${YELLOW}7. 运行代码检查...${NC}"
+if [ "$MODE" = "check" ]; then
     echo "运行 ESLint..."
-    npm run lint || echo -e "${YELLOW}⚠ ESLint 检查发现问题，运行 npm run lint -- --fix 自动修复${NC}"
+    npm run lint
 else
-    echo "跳过代码检查（传入 --check 参数执行检查）"
+    echo "跳过代码检查（--check 模式执行检查）"
 fi
 
 # 8. 检查构建配置
@@ -132,11 +153,19 @@ fi
 
 # 11. 显示当前前端任务
 echo -e "${YELLOW}11. 显示当前前端任务...${NC}"
-if [ -f "../feature_list.json" ]; then
+# 定位项目根目录的 feature_list.json（基于脚本自身位置，不依赖 cwd）
+SCRIPT_SOURCE=${BASH_SOURCE[0]:-$0}
+SCRIPT_SOURCE_DIR=${SCRIPT_SOURCE%/*}
+if [ "$SCRIPT_SOURCE_DIR" = "$SCRIPT_SOURCE" ]; then
+    SCRIPT_SOURCE_DIR="."
+fi
+SCRIPT_DIR="$(cd "$SCRIPT_SOURCE_DIR" && pwd)"
+ROOT_FEATURE_LIST="$SCRIPT_DIR/../../feature_list.json"
+if [ -f "$ROOT_FEATURE_LIST" ]; then
     if command -v jq &> /dev/null; then
         echo ""
         echo "当前进行中的前端任务:"
-        jq -r '.features[].tasks[]? | select(.status == "in-progress") | select(.file | startswith("src/")) | "  - \(.name) (\(.id))"' ../feature_list.json 2>/dev/null || echo "  无进行中的前端任务"
+        jq -r '.features[].tasks[]? | select(.status == "in-progress") | select(.file | startswith("src/") or startswith("frontend/src/")) | "  - \(.name) (\(.id))"' "$ROOT_FEATURE_LIST" 2>/dev/null || echo "  无进行中的前端任务"
         echo ""
     else
         echo -e "${YELLOW}⚠ jq 未安装，跳过任务显示${NC}"

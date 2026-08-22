@@ -6,7 +6,7 @@ SM4加密工具模块
 import logging
 from typing import Optional
 from app.core.config import settings
-from gmssl import sm4, func
+from gmssl import sm4
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +17,10 @@ class SM4Encryption:
     def __init__(self):
         self.sm4_key = self._get_sm4_key()
         self.crypt = None
+        # 无条件先置 None：密钥缺失时 _initialize_crypt 不会执行，
+        # encrypt() 依赖这两个属性做 fail-closed 判定（缺属性会变 AttributeError）
+        self.encrypt_crypt = None
+        self.decrypt_crypt = None
         if self.sm4_key:
             self._initialize_crypt()
 
@@ -30,10 +34,10 @@ class SM4Encryption:
                 logger.error(f"配置文件不存在: {config_path}")
                 return None
 
-            with open(config_path, 'r', encoding='utf-8') as f:
+            with open(config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
-            sm4_key = config.get('security', {}).get('secret_key')
+            sm4_key = config.get("security", {}).get("secret_key")
             if not sm4_key:
                 logger.error("配置文件中未找到 SM4 密钥")
                 return None
@@ -51,7 +55,7 @@ class SM4Encryption:
             self.decrypt_crypt = sm4.CryptSM4()
             # SM4密钥需要是bytes格式
             if isinstance(self.sm4_key, str):
-                key_bytes = self.sm4_key.encode('utf-8')
+                key_bytes = self.sm4_key.encode("utf-8")
             else:
                 key_bytes = self.sm4_key
             self.encrypt_crypt.set_key(key_bytes, sm4.SM4_ENCRYPT)
@@ -64,25 +68,27 @@ class SM4Encryption:
 
     def encrypt(self, plaintext: str) -> str:
         """
-        加密文本
+        加密文本（fail-closed：加密失败必须抛错，禁止静默明文落库）
 
         Args:
             plaintext: 待加密的文本
 
         Returns:
             str: 加密后的文本，格式为 "sm4:hex_string"
+
+        Raises:
+            RuntimeError: SM4 加密器未初始化（密钥缺失/长度非法）或加密过程异常
         """
         if not plaintext:
             return plaintext
 
         if not self.encrypt_crypt:
-            logger.error("SM4加密器未初始化")
-            return plaintext
+            logger.error("SM4加密器未初始化，拒绝以明文落库（fail-closed）")
+            raise RuntimeError("SM4加密器未初始化，拒绝以明文落库")
 
         try:
-            # 检查是否已经加密
-            if plaintext.startswith(('sm4:', 'encrypted:')):
-                #logger.warning("文本已经加密，跳过加密")
+            # 检查是否已经加密（幂等）
+            if plaintext.startswith(("sm4:", "encrypted:")):
                 return plaintext
 
             # 执行加密
@@ -94,12 +100,18 @@ class SM4Encryption:
             return result
 
         except Exception as e:
-            logger.error(f"加密失败: {e}")
-            return plaintext
+            logger.error(f"加密失败，拒绝以明文落库（fail-closed）: {e}")
+            raise
 
     def decrypt(self, ciphertext: str) -> str:
         """
         解密文本
+
+        兼容通道（load-bearing）：非 "sm4:" 前缀的输入原样返回——历史上
+        add 端点曾明文落库，存量明文密码依赖此通道读取；启动钩子
+        （initialization.encrypt_plaintext_downloader_passwords）会把明文行
+        懒加密回写。本通道仅为过渡兼容，不得移除，否则存量明文下载器全部失联。
+        （encrypt 侧已 fail-closed，新数据不可能再以明文落库。）
 
         Args:
             ciphertext: 待解密的文本，格式为 "sm4:hex_string"
@@ -116,7 +128,7 @@ class SM4Encryption:
 
         try:
             # 检查是否是SM4加密格式
-            if not ciphertext.startswith('sm4:'):
+            if not ciphertext.startswith("sm4:"):
                 logger.warning("文本不是SM4加密格式，跳过解密")
                 return ciphertext
 
@@ -126,7 +138,7 @@ class SM4Encryption:
 
             # 执行解密
             decrypted_bytes = self.decrypt_crypt.crypt_ecb(encrypted_bytes)
-            result = decrypted_bytes.decode('utf-8')
+            result = decrypted_bytes.decode("utf-8")
 
             logger.debug(f"解密成功，长度: {len(ciphertext)} -> {len(result)}")
             return result
@@ -137,7 +149,7 @@ class SM4Encryption:
 
     def is_encrypted(self, text: str) -> bool:
         """检查文本是否已加密"""
-        return text and text.startswith('sm4:')
+        return bool(text) and text.startswith("sm4:")
 
 
 # 全局加密实例

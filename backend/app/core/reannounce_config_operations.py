@@ -5,9 +5,8 @@ Tracker Reannounce 站点配置数据库操作
 提供 tracker_reannounce_config 表的 CRUD 操作和域名匹配工具函数。
 """
 
-import uuid
 import re
-from typing import List, Optional, Dict, Any
+from typing import List, Dict, Any
 from urllib.parse import urlparse
 from datetime import datetime
 
@@ -15,12 +14,15 @@ from sqlalchemy.orm import Session
 
 from app.torrents.models import TrackerReannounceConfig
 from app.core.database_result import DatabaseResult
+from app.database import SessionLocal
 
 import logging
+
 logger = logging.getLogger(__name__)
 
 
 # ==================== CRUD 操作 ====================
+
 
 def create_config(db: Session, config_data: Dict[str, Any]) -> DatabaseResult:
     """创建站点配置"""
@@ -51,10 +53,14 @@ def create_config(db: Session, config_data: Dict[str, Any]) -> DatabaseResult:
 def get_config(db: Session, config_id: str) -> DatabaseResult:
     """按ID查询配置"""
     try:
-        config = db.query(TrackerReannounceConfig).filter(
-            TrackerReannounceConfig.id_ == config_id,
-            TrackerReannounceConfig.dr == 0,
-        ).first()
+        config = (
+            db.query(TrackerReannounceConfig)
+            .filter(
+                TrackerReannounceConfig.id_ == config_id,
+                TrackerReannounceConfig.dr == 0,
+            )
+            .first()
+        )
         if config:
             return DatabaseResult.success_result(data=config, message="查询成功")
         return DatabaseResult.not_found_result(message=f"配置不存在 [id={config_id}]")
@@ -65,9 +71,13 @@ def get_config(db: Session, config_id: str) -> DatabaseResult:
 def get_configs(db: Session) -> DatabaseResult:
     """查询所有配置"""
     try:
-        configs = db.query(TrackerReannounceConfig).filter(
-            TrackerReannounceConfig.dr == 0,
-        ).all()
+        configs = (
+            db.query(TrackerReannounceConfig)
+            .filter(
+                TrackerReannounceConfig.dr == 0,
+            )
+            .all()
+        )
         return DatabaseResult.success_result(data=configs, message="查询成功", total_count=len(configs))
     except Exception as e:
         return DatabaseResult.database_error_result(message=f"查询失败: {str(e)}")
@@ -76,10 +86,14 @@ def get_configs(db: Session) -> DatabaseResult:
 def get_enabled_configs(db: Session) -> DatabaseResult:
     """查询所有启用的配置"""
     try:
-        configs = db.query(TrackerReannounceConfig).filter(
-            TrackerReannounceConfig.enabled == True,
-            TrackerReannounceConfig.dr == 0,
-        ).all()
+        configs = (
+            db.query(TrackerReannounceConfig)
+            .filter(
+                TrackerReannounceConfig.enabled.is_(True),
+                TrackerReannounceConfig.dr == 0,
+            )
+            .all()
+        )
         return DatabaseResult.success_result(data=configs, message="查询成功", total_count=len(configs))
     except Exception as e:
         return DatabaseResult.database_error_result(message=f"查询失败: {str(e)}")
@@ -88,10 +102,14 @@ def get_enabled_configs(db: Session) -> DatabaseResult:
 def update_config(db: Session, config_id: str, update_data: Dict[str, Any]) -> DatabaseResult:
     """更新配置"""
     try:
-        config = db.query(TrackerReannounceConfig).filter(
-            TrackerReannounceConfig.id_ == config_id,
-            TrackerReannounceConfig.dr == 0,
-        ).first()
+        config = (
+            db.query(TrackerReannounceConfig)
+            .filter(
+                TrackerReannounceConfig.id_ == config_id,
+                TrackerReannounceConfig.dr == 0,
+            )
+            .first()
+        )
         if not config:
             return DatabaseResult.not_found_result(message=f"配置不存在 [id={config_id}]")
 
@@ -113,34 +131,58 @@ def update_config(db: Session, config_id: str, update_data: Dict[str, Any]) -> D
 
 
 def update_last_announce_time(db: Session, config_id: str) -> None:
-    """更新配置的最后汇报时间（单条，向后兼容）"""
-    batch_update_last_announce_time(db, [config_id])
+    """更新配置的最后汇报时间（单条，向后兼容）。
+
+    注意：db 参数保留仅为向后兼容签名，实际由 batch_update_last_announce_time
+    内部自开短 session 写库（不再复用本 session，避免长事务持锁）。
+    """
+    batch_update_last_announce_time([config_id])
 
 
-def batch_update_last_announce_time(db: Session, config_ids: list) -> None:
-    """批量更新配置的最后汇报时间，单次commit减少SQLite锁竞争"""
+def batch_update_last_announce_time(config_ids: list) -> None:
+    """批量更新配置的最后汇报时间，自开短 session 减少 SQLite 写锁占用。
+
+    设计要点（配合 database is locked 修复）：
+    - 不复用调用方贯穿网络 IO 的长 session，避免在他人持锁期间排队等待。
+    - 内部开一个独立的短 session，提交后立即关闭，把写锁持有时间压到最短。
+    - 单次 commit；失败时 rollback 并告警，不抛出（避免阻断 reannounce 主流程）。
+    """
     if not config_ids:
         return
+    db = SessionLocal()
+    if not config_ids:
+        return
+    db = SessionLocal()
     try:
         now = datetime.now()
-        configs = db.query(TrackerReannounceConfig).filter(
-            TrackerReannounceConfig.id_.in_(config_ids),
-        ).all()
+        configs = (
+            db.query(TrackerReannounceConfig)
+            .filter(
+                TrackerReannounceConfig.id_.in_(config_ids),
+            )
+            .all()
+        )
         for config in configs:
             config.last_announce_time = now
         db.commit()
     except Exception as e:
         logger.warning(f"批量更新最后汇报时间失败: {e}")
         db.rollback()
+    finally:
+        db.close()
 
 
 def delete_config(db: Session, config_id: str) -> DatabaseResult:
     """软删除配置"""
     try:
-        config = db.query(TrackerReannounceConfig).filter(
-            TrackerReannounceConfig.id_ == config_id,
-            TrackerReannounceConfig.dr == 0,
-        ).first()
+        config = (
+            db.query(TrackerReannounceConfig)
+            .filter(
+                TrackerReannounceConfig.id_ == config_id,
+                TrackerReannounceConfig.dr == 0,
+            )
+            .first()
+        )
         if not config:
             return DatabaseResult.not_found_result(message=f"配置不存在 [id={config_id}]")
 
@@ -172,7 +214,9 @@ def batch_update_configs(db: Session, items: List[Dict[str, Any]]) -> DatabaseRe
     for item in items:
         config_id = item.get("config_id")
         logger.info(f"处理项目 config_id={config_id}, 完整数据={item}")
-        logger.info(f"item 类型: {type(item)}, item.items() 结果: {list(item.items()) if hasattr(item, 'items') else 'N/A'}")
+        logger.info(
+            f"item 类型: {type(item)}, item.items() 结果: {list(item.items()) if hasattr(item, 'items') else 'N/A'}"
+        )
 
         if not config_id:
             results.append({"config_id": None, "success": False, "message": "config_id 不能为空"})
@@ -182,7 +226,9 @@ def batch_update_configs(db: Session, items: List[Dict[str, Any]]) -> DatabaseRe
         # 提取需要更新的字段（排除 config_id）
         update_data = {}
         for k, v in item.items():
-            logger.info(f"  检查字段: k={k}, v={v}, v类型={type(v)}, k!='config_id'={k != 'config_id'}, v is not None={v is not None}")
+            logger.info(
+                f"  检查字段: k={k}, v={v}, v类型={type(v)}, k!='config_id'={k != 'config_id'}, v is not None={v is not None}"
+            )
             if k != "config_id" and v is not None:
                 update_data[k] = v
 
@@ -194,10 +240,14 @@ def batch_update_configs(db: Session, items: List[Dict[str, Any]]) -> DatabaseRe
             continue
 
         try:
-            config = db.query(TrackerReannounceConfig).filter(
-                TrackerReannounceConfig.id_ == config_id,
-                TrackerReannounceConfig.dr == 0,
-            ).first()
+            config = (
+                db.query(TrackerReannounceConfig)
+                .filter(
+                    TrackerReannounceConfig.id_ == config_id,
+                    TrackerReannounceConfig.dr == 0,
+                )
+                .first()
+            )
 
             if not config:
                 results.append({"config_id": config_id, "success": False, "message": "配置不存在"})
@@ -226,17 +276,14 @@ def batch_update_configs(db: Session, items: List[Dict[str, Any]]) -> DatabaseRe
             failed_count += 1
 
     return DatabaseResult.success_result(
-        data={
-            "success_count": success_count,
-            "failed_count": failed_count,
-            "results": results
-        },
+        data={"success_count": success_count, "failed_count": failed_count, "results": results},
         message=f"批量更新完成，成功{success_count}条，失败{failed_count}条",
-        total_count=len(items)
+        total_count=len(items),
     )
 
 
 # ==================== 工具函数 ====================
+
 
 def match_domain(domain: str, config) -> bool:
     """
@@ -294,7 +341,7 @@ def extract_domains_from_trackers(tracker_urls: List[str]) -> List[str]:
             parsed = urlparse(url if "://" in url else f"http://{url}")
             host = parsed.hostname
             # 过滤无效 hostname：需包含点号或为IP地址格式
-            if host and ("." in host or re.match(r'^\d{1,3}(\.\d{1,3}){3}$', host)):
+            if host and ("." in host or re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host)):
                 domains.add(host)
         except Exception:
             continue

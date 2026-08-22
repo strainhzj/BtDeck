@@ -2,8 +2,6 @@
 # Usage: docker compose up -d
 # Docs: https://github.com/strainhzj/BtDeck
 
-version: '3.8'
-
 services:
   # ==================== 后端服务 ====================
   # FastAPI + Python 3.11
@@ -12,13 +10,27 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    image: strainthomas/btdeck-backend:latest
+    image: btdeck-backend:latest
     container_name: btdeck-backend
     environment:
       - PYTHONUNBUFFERED=1
       - TZ=${TZ:-Asia/Shanghai}
-      - DATABASE_URL=sqlite:///data/app.db
+      # SQLite 单 Worker 约束（W2-4 / P0-06）：不要设置 WORKERS>1——
+      # 未设置时 btdeck_startup.sh 默认 WORKERS=1。
+      # 不能通过启动多个 SQLite Worker 缓解接口卡顿：resource_guard/信号量均为
+      # 进程内对象，多 Worker 会使锁与资源准入失效，且各 Worker 都会各自启动
+      # scheduler，导致定时任务重复执行。
+      # 数据库路径由 CONFIG_DIR=/app/config（Dockerfile 设置）决定，落在持久化卷 config/
+      # 不再设无效的 DATABASE_URL（应用不消费此变量）
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # ===== 安全加固透传（W11）：修复 .env.example 指引与 compose 断链 =====
+      # DEV 默认 true 保持向后兼容（现有部署升级不崩）；生产加固三件套：
+      #   DEV=false + SECRET_KEY=<强随机> + ALLOWED_HOSTS=http(s)://你的域名:8080
+      # 三者缺一即拒绝启动（_validate_security_config 强制校验）。
+      - DEV=${DEV:-true}
+      - SECRET_KEY=${SECRET_KEY:-}
+      - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
+      - DEBUG=${DEBUG:-false}
     volumes:
       - ./data/backend/data:/app/data
       - ./data/backend/logs:/app/logs
@@ -36,11 +48,11 @@ services:
           memory: 256M
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:5001/docs"]
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health/ready"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 5m
 
   # ==================== 前端服务 ====================
   # Nginx + Vue.js 静态文件
@@ -49,7 +61,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
-    image: strainthomas/btdeck-frontend:latest
+    image: btdeck-frontend:latest
     container_name: btdeck-frontend
     environment:
       - TZ=${TZ:-Asia/Shanghai}

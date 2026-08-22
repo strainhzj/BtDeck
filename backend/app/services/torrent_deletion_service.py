@@ -4,13 +4,13 @@
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional, Union, Tuple
+from typing import List, Dict, Any, Optional, Tuple
 from enum import Enum
 from dataclasses import dataclass
+from datetime import datetime
 from sqlalchemy.orm import Session
 from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
-from app.core.security import decrypt_tracker_info
 import logging
 
 logger = logging.getLogger(__name__)
@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 class DeleteOption(Enum):
     """删除选项枚举"""
+
     DELETE_ONLY_TORRENT = "delete_only_torrent"  # 仅删除种子任务
     DELETE_FILES_AND_TORRENT = "delete_files_and_torrent"  # 删除文件和种子任务
     DRY_RUN = "dry_run"  # 预演模式，不实际删除
@@ -25,6 +26,7 @@ class DeleteOption(Enum):
 
 class SafetyCheckLevel(Enum):
     """安全检查级别"""
+
     BASIC = "basic"  # 基础安全检查
     ENHANCED = "enhanced"  # 增强安全检查
     STRICT = "strict"  # 严格安全检查
@@ -33,6 +35,7 @@ class SafetyCheckLevel(Enum):
 @dataclass
 class DeleteRequest:
     """删除请求数据结构"""
+
     torrent_info_ids: List[str]  # 要删除的种子信息ID列表
     delete_option: DeleteOption  # 删除选项
     safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED
@@ -43,10 +46,11 @@ class DeleteRequest:
 @dataclass
 class DeleteResult:
     """删除结果数据结构"""
+
     success_count: int  # 成功删除数量
     failed_count: int  # 删除失败数量
     skipped_count: int  # 跳过删除数量
-    total_size_freed: int  # 释放的存储空间（字节）
+    total_size_freed: float  # 释放的存储空间（字节；size 列为 Float 故累加为浮点）
     deleted_torrents: List[Dict[str, Any]]  # 已删除的种子详情
     failed_torrents: List[Dict[str, Any]]  # 删除失败的种子详情
     skipped_torrents: List[Dict[str, Any]]  # 跳过的种子详情
@@ -62,7 +66,7 @@ class DownloaderDeleteAdapter(ABC):
         self,
         torrent_hashes: List[str],
         delete_option: DeleteOption,
-        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED
+        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED,
     ) -> Dict[str, Any]:
         """
         删除种子
@@ -75,7 +79,6 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             删除结果字典
         """
-        pass
 
     @abstractmethod
     async def validate_torrents_exist(self, torrent_hashes: List[str]) -> Dict[str, bool]:
@@ -88,7 +91,6 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             种子存在性映射 {hash: exists}
         """
-        pass
 
     @abstractmethod
     async def get_torrent_info(self, torrent_hash: str) -> Optional[Dict[str, Any]]:
@@ -101,19 +103,13 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             种子信息字典，如果不存在返回None
         """
-        pass
 
     @abstractmethod
     def get_downloader_type(self) -> str:
         """获取下载器类型"""
-        pass
 
     @abstractmethod
-    async def add_tag_to_torrent(
-        self,
-        torrent_hash: str,
-        tag: str
-    ) -> Tuple[bool, Optional[str]]:
+    async def add_tag_to_torrent(self, torrent_hash: str, tag: str) -> Tuple[bool, Optional[str]]:
         """
         为种子添加标签（等级4删除使用）
 
@@ -124,14 +120,10 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             (成功标志, 错误信息)
         """
-        pass
 
     @abstractmethod
     async def create_marker_file(
-        self,
-        torrent_hash: str,
-        torrent_name: str,
-        download_path: str
+        self, torrent_hash: str, torrent_name: str, download_path: str
     ) -> Tuple[bool, Optional[str]]:
         """
         创建标记文件（等级3删除使用）
@@ -144,13 +136,9 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             (成功标志, 错误信息)
         """
-        pass
 
     @abstractmethod
-    async def get_torrent_files(
-        self,
-        torrent_hash: str
-    ) -> Tuple[bool, Optional[List[str]], Optional[str]]:
+    async def get_torrent_files(self, torrent_hash: str) -> Tuple[bool, Optional[List[str]], Optional[str]]:
         """
         获取种子文件列表（用于验证和记录）
 
@@ -160,18 +148,13 @@ class DownloaderDeleteAdapter(ABC):
         Returns:
             (成功标志, 文件列表, 错误信息)
         """
-        pass
 
 
 class SafetyCheckService:
     """安全检查服务"""
 
     @staticmethod
-    async def check_torrent_safety(
-        torrent_info: TorrentInfo,
-        check_level: SafetyCheckLevel,
-        db: Session
-    ) -> List[str]:
+    async def check_torrent_safety(torrent_info: TorrentInfo, check_level: SafetyCheckLevel, db: Session) -> List[str]:
         """
         检查种子删除的安全性
 
@@ -213,7 +196,8 @@ class SafetyCheckService:
                 warnings.append("种子包含'keep'标签，建议保留")
 
             # 检查最近完成的任务（7天内）
-            from datetime import datetime, timedelta
+            from datetime import datetime
+
             if torrent_info.completed_date:
                 if (datetime.now() - torrent_info.completed_date).days < 7:
                     warnings.append("种子在7天内完成，可能仍需要验证")
@@ -224,12 +208,7 @@ class SafetyCheckService:
 class TorrentDeletionService:
     """种子删除服务主类"""
 
-    def __init__(
-        self,
-        db: Session,
-        audit_service=None,
-        async_db_session=None
-    ):
+    def __init__(self, db: Session, audit_service=None, async_db_session=None, audit_info=None, operator="admin"):
         """
         初始化种子删除服务
 
@@ -237,14 +216,19 @@ class TorrentDeletionService:
             db: 同步数据库会话
             audit_service: 可选的审计日志服务（异步版本）
             async_db_session: 异步数据库会话（用于审计日志）
+            audit_info: 请求审计信息（extract_audit_info_from_request 产物：
+                ip_address/user_agent/request_id/session_id）
+            operator: 真实操作者（由端点从认证用户传入，修复硬编码 admin）
         """
         self.db = db
         self.audit_service = audit_service
         self.async_db_session = async_db_session
+        self.audit_info = audit_info or {}
+        self.operator = operator
         self.safety_checker = SafetyCheckService()
-        self.adapters: Dict[str, DownloaderDeleteAdapter] = {}
+        self.adapters: Dict[int, DownloaderDeleteAdapter] = {}
 
-    def register_adapter(self, downloader_type: str, adapter: DownloaderDeleteAdapter):
+    def register_adapter(self, downloader_type: int, adapter: DownloaderDeleteAdapter):
         """注册下载器适配器"""
         self.adapters[downloader_type] = adapter
         logger.info(f"已注册{downloader_type}下载器删除适配器")
@@ -260,6 +244,7 @@ class TorrentDeletionService:
             删除结果
         """
         import time
+
         start_time = time.time()
 
         result = DeleteResult(
@@ -271,7 +256,7 @@ class TorrentDeletionService:
             failed_torrents=[],
             skipped_torrents=[],
             safety_warnings=[],
-            execution_time=0
+            execution_time=0,
         )
 
         if not request.torrent_info_ids:
@@ -280,19 +265,18 @@ class TorrentDeletionService:
             return result
 
         # 查询种子信息
-        torrent_infos = self.db.query(TorrentInfo).filter(
-            TorrentInfo.info_id.in_(request.torrent_info_ids),
-            TorrentInfo.dr == 0  # 未删除的种子
-        ).all()
+        torrent_infos = (
+            self.db.query(TorrentInfo)
+            .filter(TorrentInfo.info_id.in_(request.torrent_info_ids), TorrentInfo.dr == 0)  # 未删除的种子
+            .all()
+        )
 
         # 按下载器分组
         downloader_groups = self._group_by_downloader(torrent_infos)
 
         # 处理每个下载器的种子
         for downloader_id, torrents in downloader_groups.items():
-            await self._process_downloader_torrents(
-                downloader_id, torrents, request, result
-            )
+            await self._process_downloader_torrents(downloader_id, torrents, request, result)
 
         result.execution_time = time.time() - start_time
 
@@ -303,7 +287,7 @@ class TorrentDeletionService:
 
     def _group_by_downloader(self, torrent_infos: List[TorrentInfo]) -> Dict[str, List[TorrentInfo]]:
         """按下载器分组种子"""
-        groups = {}
+        groups: Dict[str, List[TorrentInfo]] = {}
         for torrent in torrent_infos:
             if torrent.downloader_id not in groups:
                 groups[torrent.downloader_id] = []
@@ -311,29 +295,24 @@ class TorrentDeletionService:
         return groups
 
     async def _process_downloader_torrents(
-        self,
-        downloader_id: str,
-        torrents: List[TorrentInfo],
-        request: DeleteRequest,
-        result: DeleteResult
+        self, downloader_id: str, torrents: List[TorrentInfo], request: DeleteRequest, result: DeleteResult
     ):
         """处理单个下载器的种子删除"""
         try:
             # 获取下载器信息
-            downloader = self.db.query(BtDownloaders).filter(
-                BtDownloaders.downloader_id == downloader_id,
-                BtDownloaders.dr == 0
-            ).first()
+            downloader = (
+                self.db.query(BtDownloaders)
+                .filter(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0)
+                .first()
+            )
 
             if not downloader:
                 # 跳过无效下载器的种子
                 for torrent in torrents:
                     result.skipped_count += 1
-                    result.skipped_torrents.append({
-                        "info_id": torrent.info_id,
-                        "name": torrent.name,
-                        "reason": f"下载器{downloader_id}不存在"
-                    })
+                    result.skipped_torrents.append(
+                        {"info_id": torrent.info_id, "name": torrent.name, "reason": f"下载器{downloader_id}不存在"}
+                    )
                 return
 
             # 获取对应的适配器
@@ -342,38 +321,37 @@ class TorrentDeletionService:
                 # 跳过不支持的下载器类型
                 for torrent in torrents:
                     result.skipped_count += 1
-                    result.skipped_torrents.append({
-                        "info_id": torrent.info_id,
-                        "name": torrent.name,
-                        "reason": f"不支持的下载器类型{downloader.downloader_type}"
-                    })
+                    result.skipped_torrents.append(
+                        {
+                            "info_id": torrent.info_id,
+                            "name": torrent.name,
+                            "reason": f"不支持的下载器类型{downloader.downloader_type}",
+                        }
+                    )
                 return
 
             # 执行安全检查
             for torrent in torrents:
-                warnings = await self.safety_checker.check_torrent_safety(
-                    torrent, request.safety_check_level, self.db
-                )
+                warnings = await self.safety_checker.check_torrent_safety(torrent, request.safety_check_level, self.db)
 
                 if warnings and not request.force_delete:
                     # 跳过有安全警告的种子
                     result.skipped_count += 1
-                    result.skipped_torrents.append({
-                        "info_id": torrent.info_id,
-                        "name": torrent.name,
-                        "reason": "安全检查未通过",
-                        "warnings": warnings
-                    })
+                    result.skipped_torrents.append(
+                        {
+                            "info_id": torrent.info_id,
+                            "name": torrent.name,
+                            "reason": "安全检查未通过",
+                            "warnings": warnings,
+                        }
+                    )
                     result.safety_warnings.extend(warnings)
                     continue
 
                 result.safety_warnings.extend(warnings)
 
             # 获取可以安全删除的种子
-            safe_torrents = [
-                t for t in torrents
-                if t.info_id not in [s["info_id"] for s in result.skipped_torrents]
-            ]
+            safe_torrents = [t for t in torrents if t.info_id not in [s["info_id"] for s in result.skipped_torrents]]
 
             if not safe_torrents:
                 return
@@ -385,11 +363,9 @@ class TorrentDeletionService:
             logger.error(f"处理下载器{downloader_id}的种子删除时发生错误: {str(e)}")
             for torrent in torrents:
                 result.failed_count += 1
-                result.failed_torrents.append({
-                    "info_id": torrent.info_id,
-                    "name": torrent.name,
-                    "reason": f"处理错误: {str(e)}"
-                })
+                result.failed_torrents.append(
+                    {"info_id": torrent.info_id, "name": torrent.name, "reason": f"处理错误: {str(e)}"}
+                )
 
     async def _execute_deletion(
         self,
@@ -397,7 +373,7 @@ class TorrentDeletionService:
         downloader: BtDownloaders,
         torrents: List[TorrentInfo],
         request: DeleteRequest,
-        result: DeleteResult
+        result: DeleteResult,
     ):
         """执行实际的删除操作"""
         try:
@@ -405,13 +381,15 @@ class TorrentDeletionService:
                 # 预演模式，只模拟不实际删除
                 for torrent in torrents:
                     result.success_count += 1
-                    result.deleted_torrents.append({
-                        "info_id": torrent.info_id,
-                        "name": torrent.name,
-                        "size": torrent.size,
-                        "downloader_name": downloader.nickname,
-                        "mode": "dry_run"
-                    })
+                    result.deleted_torrents.append(
+                        {
+                            "info_id": torrent.info_id,
+                            "name": torrent.name,
+                            "size": torrent.size,
+                            "downloader_name": downloader.nickname,
+                            "mode": "dry_run",
+                        }
+                    )
                     if torrent.size:
                         result.total_size_freed += torrent.size
                 return
@@ -426,18 +404,19 @@ class TorrentDeletionService:
             if not valid_hashes:
                 # 没有种子在下载器中存在 - 执行逻辑删除
                 logger.warning(
-                    f"下载器 [{downloader.nickname}] 中不存在以下种子，将执行逻辑删除: "
-                    f"{[t.name for t in torrents]}"
+                    f"下载器 [{downloader.nickname}] 中不存在以下种子，将执行逻辑删除: " f"{[t.name for t in torrents]}"
                 )
                 for torrent in torrents:
                     result.success_count += 1
-                    result.deleted_torrents.append({
-                        "info_id": torrent.info_id,
-                        "name": torrent.name,
-                        "size": torrent.size,
-                        "downloader_name": downloader.nickname,
-                        "mode": f"{request.delete_option.value}_logical_only"
-                    })
+                    result.deleted_torrents.append(
+                        {
+                            "info_id": torrent.info_id,
+                            "name": torrent.name,
+                            "size": torrent.size,
+                            "downloader_name": downloader.nickname,
+                            "mode": f"{request.delete_option.value}_logical_only",
+                        }
+                    )
                     if torrent.size:
                         result.total_size_freed += torrent.size
 
@@ -455,13 +434,15 @@ class TorrentDeletionService:
             for torrent in torrents:
                 if torrent.hash in delete_result.get("success_hashes", []):
                     result.success_count += 1
-                    result.deleted_torrents.append({
-                        "info_id": torrent.info_id,
-                        "name": torrent.name,
-                        "size": torrent.size,
-                        "downloader_name": downloader.nickname,
-                        "mode": request.delete_option.value
-                    })
+                    result.deleted_torrents.append(
+                        {
+                            "info_id": torrent.info_id,
+                            "name": torrent.name,
+                            "size": torrent.size,
+                            "downloader_name": downloader.nickname,
+                            "mode": request.delete_option.value,
+                        }
+                    )
                     if torrent.size:
                         result.total_size_freed += torrent.size
 
@@ -470,27 +451,23 @@ class TorrentDeletionService:
                     self.db.commit()
                 else:
                     result.failed_count += 1
-                    result.failed_torrents.append({
-                        "info_id": torrent.info_id,
-                        "name": torrent.name,
-                        "reason": delete_result.get("errors", {}).get(torrent.hash, "删除失败")
-                    })
+                    result.failed_torrents.append(
+                        {
+                            "info_id": torrent.info_id,
+                            "name": torrent.name,
+                            "reason": delete_result.get("errors", {}).get(torrent.hash, "删除失败"),
+                        }
+                    )
 
         except Exception as e:
             logger.error(f"执行种子删除时发生错误: {str(e)}")
             for torrent in torrents:
                 result.failed_count += 1
-                result.failed_torrents.append({
-                    "info_id": torrent.info_id,
-                    "name": torrent.name,
-                    "reason": f"删除错误: {str(e)}"
-                })
+                result.failed_torrents.append(
+                    {"info_id": torrent.info_id, "name": torrent.name, "reason": f"删除错误: {str(e)}"}
+                )
 
-    async def _log_deletion_operation(
-        self,
-        request: DeleteRequest,
-        result: DeleteResult
-    ):
+    async def _log_deletion_operation(self, request: DeleteRequest, result: DeleteResult):
         """记录删除操作日志到数据库"""
         # 如果没有审计服务，使用旧方式（仅打印日志）
         if not self.audit_service:
@@ -507,9 +484,9 @@ class TorrentDeletionService:
                         "skipped_count": result.skipped_count,
                         "total_size_freed": result.total_size_freed,
                         "execution_time": result.execution_time,
-                        "warning_count": len(result.safety_warnings)
+                        "warning_count": len(result.safety_warnings),
                     },
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
                 }
 
                 logger.info(f"种子删除操作完成: {log_entry}")
@@ -520,18 +497,16 @@ class TorrentDeletionService:
         # 使用审计日志服务记录到数据库
         try:
             from app.services.audit_service import AuditOperationType, AuditOperationResult
-            from app.database import AsyncSessionLocal
 
             # 确定操作类型映射
             delete_option_to_operation_type = {
                 "delete_only_torrent": AuditOperationType.DELETE_L2,  # 🔧 修复：等级2删除应记录为DELETE_L2
                 "delete_files_and_torrent": AuditOperationType.DELETE_L1,
-                "dry_run": AuditOperationType.DELETE_L4
+                "dry_run": AuditOperationType.DELETE_L4,
             }
 
             operation_type = delete_option_to_operation_type.get(
-                request.delete_option.value,
-                AuditOperationType.DELETE_L4
+                request.delete_option.value, AuditOperationType.DELETE_L4
             )
 
             # 记录批量删除操作（为每个成功/失败的种子记录一条日志）
@@ -539,69 +514,86 @@ class TorrentDeletionService:
 
             # 成功删除的种子
             for deleted in result.deleted_torrents:
-                operations_to_log.append({
-                    "operation_type": operation_type,
-                    "torrent_info_id": deleted.get("info_id"),
-                    "operation_detail": {
-                        "torrent_name": deleted.get("name"),
-                        "torrent_size": deleted.get("size"),
-                        "downloader_name": deleted.get("downloader_name"),
-                        "delete_mode": request.delete_option.value,
-                        "safety_check_level": request.safety_check_level.value,
-                        "reason": request.reason
-                    },
-                    "operator": "admin",  # TODO: 从请求上下文获取真实操作者
-                    "operation_result": AuditOperationResult.SUCCESS,
-                    "downloader_id": deleted.get("downloader_id"),  # TODO: 从deleted中获取downloader_id
-                    "ip_address": None,  # TODO: 从请求上下文获取
-                    "user_agent": None
-                })
+                operations_to_log.append(
+                    {
+                        "operation_type": operation_type,
+                        "torrent_info_id": deleted.get("info_id"),
+                        "operation_detail": {
+                            "torrent_name": deleted.get("name"),
+                            "torrent_size": deleted.get("size"),
+                            "downloader_name": deleted.get("downloader_name"),
+                            "delete_mode": request.delete_option.value,
+                            "safety_check_level": request.safety_check_level.value,
+                            "reason": request.reason,
+                        },
+                        "operator": self.operator,
+                        "operation_result": AuditOperationResult.SUCCESS,
+                        "downloader_id": deleted.get("downloader_id"),
+                        "ip_address": self.audit_info.get("ip_address"),
+                        "user_agent": self.audit_info.get("user_agent"),
+                        "request_id": self.audit_info.get("request_id"),
+                        "session_id": self.audit_info.get("session_id"),
+                    }
+                )
 
             # 失败删除的种子
             for failed_item in result.failed_torrents:
-                operations_to_log.append({
-                    "operation_type": operation_type,
-                    "torrent_info_id": failed_item.get("info_id"),
-                    "operation_detail": {
-                        "torrent_name": failed_item.get("name"),
-                        "error_reason": failed_item.get("reason"),
-                        "delete_mode": request.delete_option.value,
-                        "safety_check_level": request.safety_check_level.value
-                    },
-                    "operator": "admin",
-                    "operation_result": AuditOperationResult.FAILED,
-                    "error_message": failed_item.get("reason"),
-                    "downloader_id": None
-                })
+                operations_to_log.append(
+                    {
+                        "operation_type": operation_type,
+                        "torrent_info_id": failed_item.get("info_id"),
+                        "operation_detail": {
+                            "torrent_name": failed_item.get("name"),
+                            "error_reason": failed_item.get("reason"),
+                            "delete_mode": request.delete_option.value,
+                            "safety_check_level": request.safety_check_level.value,
+                        },
+                        "operator": self.operator,
+                        "operation_result": AuditOperationResult.FAILED,
+                        "error_message": failed_item.get("reason"),
+                        "downloader_id": None,
+                        "ip_address": self.audit_info.get("ip_address"),
+                        "user_agent": self.audit_info.get("user_agent"),
+                        "request_id": self.audit_info.get("request_id"),
+                        "session_id": self.audit_info.get("session_id"),
+                    }
+                )
 
             # 跳过的种子
             for skipped_item in result.skipped_torrents:
                 skip_reason = skipped_item.get("reason", "unknown")
-                operations_to_log.append({
-                    "operation_type": operation_type,
-                    "torrent_info_id": skipped_item.get("info_id"),
-                    "operation_detail": {
-                        "torrent_name": skipped_item.get("name"),
-                        "skip_reason": skip_reason,
-                        "warnings": skipped_item.get("warnings", [])
-                    },
-                    "operator": "admin",
-                    "operation_result": AuditOperationResult.FAILED,
-                    "error_message": f"跳过删除: {skip_reason}"
-                })
+                operations_to_log.append(
+                    {
+                        "operation_type": operation_type,
+                        "torrent_info_id": skipped_item.get("info_id"),
+                        "operation_detail": {
+                            "torrent_name": skipped_item.get("name"),
+                            "skip_reason": skip_reason,
+                            "warnings": skipped_item.get("warnings", []),
+                        },
+                        "operator": self.operator,
+                        "operation_result": AuditOperationResult.FAILED,
+                        "error_message": f"跳过删除: {skip_reason}",
+                        "ip_address": self.audit_info.get("ip_address"),
+                        "user_agent": self.audit_info.get("user_agent"),
+                        "request_id": self.audit_info.get("request_id"),
+                        "session_id": self.audit_info.get("session_id"),
+                    }
+                )
 
             # 使用异步数据库会话批量记录
             if self.async_db_session and operations_to_log:
                 logged_count = await self.audit_service.log_batch_operations(
-                    operations=operations_to_log,
-                    operator="admin"  # TODO: 从请求上下文获取
+                    operations=operations_to_log, operator=self.operator
                 )
                 logger.info(f"成功记录{logged_count}条删除审计日志到数据库")
 
         except Exception as e:
             logger.error(f"使用审计日志服务记录失败: {str(e)}")
             # 降级为简单日志记录
-            logger.info(f"种子删除操作完成: 成功{result.success_count}, 失败{result.failed_count}, 跳过{result.skipped_count}")
+            logger.info(
+                f"种子删除操作完成: 成功{result.success_count}, 失败{result.failed_count}, 跳过{result.skipped_count}"
+            )
 
 
 # 适配器工厂
@@ -642,7 +634,3 @@ class DownloaderAdapterFactory:
 
         # 强制使用传入的client对象（从缓存获取）
         return adapter_class(client=client)
-
-
-# 延迟导入避免循环依赖
-from datetime import datetime

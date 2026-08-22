@@ -11,14 +11,13 @@ AdvancedSearch 模块的单元测试
 """
 
 import pytest
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 from datetime import datetime
 
 from app.api.models.advanced_search import (
     validate_size_string,
     validate_date_string,
     EnhancedAdvancedSearchRequest,
-    MultiSelectCondition,
     SearchGroup,
     SearchCondition,
 )
@@ -28,23 +27,23 @@ from app.services.advanced_search import (
     AdvancedSearchService,
 )
 
-
 # ==================== validate_size_string 测试 ====================
+
 
 class TestValidateSizeString:
     """validate_size_string 纯函数测试"""
 
     def test_gb(self):
         """1GB → 1 * 1024^3 字节"""
-        assert validate_size_string("1GB") == 1024 ** 3
+        assert validate_size_string("1GB") == 1024**3
 
     def test_mb(self):
         """500MB → 500 * 1024^2 字节"""
-        assert validate_size_string("500MB") == 500 * 1024 ** 2
+        assert validate_size_string("500MB") == 500 * 1024**2
 
     def test_tb(self):
         """1.5TB → 1.5 * 1024^4 字节"""
-        assert validate_size_string("1.5TB") == int(1.5 * 1024 ** 4)
+        assert validate_size_string("1.5TB") == int(1.5 * 1024**4)
 
     def test_kb(self):
         """1024KB → 1024 * 1024 字节"""
@@ -62,7 +61,7 @@ class TestValidateSizeString:
     def test_decimal_value(self):
         """小数值 + GB"""
         result = validate_size_string("2.5GB")
-        assert result == int(2.5 * 1024 ** 3)
+        assert result == int(2.5 * 1024**3)
 
     def test_case_insensitive(self):
         """大小写不敏感：1gb == 1GB"""
@@ -71,7 +70,7 @@ class TestValidateSizeString:
     def test_with_spaces(self):
         """数字和单位之间有空格"""
         result = validate_size_string("10 GB")
-        assert result == 10 * 1024 ** 3
+        assert result == 10 * 1024**3
 
     def test_invalid_string(self):
         """无效字符串 → 返回 None"""
@@ -103,6 +102,7 @@ class TestValidateSizeString:
 
 
 # ==================== validate_date_string 测试 ====================
+
 
 class TestValidateDateString:
     """validate_date_string 纯函数测试"""
@@ -146,6 +146,7 @@ class TestValidateDateString:
 
 
 # ==================== SearchQueryBuilder 测试 ====================
+
 
 class TestSearchQueryBuilder:
     """SearchQueryBuilder 查询构建器测试"""
@@ -214,10 +215,7 @@ class TestSearchQueryBuilder:
     def test_apply_basic_filters_with_date_range(self, builder, mock_db):
         """日期范围过滤 → filter 被调用"""
         _, mock_query = mock_db
-        request = EnhancedAdvancedSearchRequest(
-            added_date_min="2025-01-01",
-            added_date_max="2025-12-31"
-        )
+        request = EnhancedAdvancedSearchRequest(added_date_min="2025-01-01", added_date_max="2025-12-31")
 
         builder.apply_basic_filters(request)
         mock_query.filter.assert_called()
@@ -267,6 +265,7 @@ class TestSearchQueryBuilder:
 
 # ==================== apply_condition_groups 测试 ====================
 
+
 class TestApplyConditionGroups:
     """apply_condition_groups 条件组逻辑测试"""
 
@@ -297,85 +296,23 @@ class TestApplyConditionGroups:
         """单个 AND 条件组 → filter 被调用"""
         builder, mock_query = builder_with_mock
         groups = [
-            SearchGroup(logic="AND", conditions=[
-                SearchCondition(field="name", operator="contains", value="测试")
-            ])
+            SearchGroup(logic="AND", conditions=[SearchCondition(field="name", operator="contains", value="测试")])
         ]
 
         builder.apply_condition_groups(groups)
         # 应该追加了 filter
         assert mock_query.filter.call_count > 1
 
-    def test_invalid_logic_skipped(self, builder_with_mock):
-        """无效 logic 的条件组 → 跳过"""
-        builder, mock_query = builder_with_mock
-        init_count = mock_query.filter.call_count
+    def test_invalid_group_is_rejected(self, builder_with_mock):
+        """无效条件组必须明确失败，不能静默扩大结果集。"""
+        builder, _ = builder_with_mock
 
-        builder.apply_condition_groups([{"logic": "", "conditions": []}])
-        assert mock_query.filter.call_count == init_count
-
-
-# ==================== apply_multi_select_conditions 测试 ====================
-
-class TestApplyMultiSelectConditions:
-    """apply_multi_select_conditions 多选条件测试"""
-
-    @pytest.fixture
-    def builder_with_mock(self):
-        mock_db = MagicMock()
-        mock_query = MagicMock()
-        mock_query.filter.return_value = mock_query
-        mock_query.order_by.return_value = mock_query
-        mock_query.offset.return_value = mock_query
-        mock_query.limit.return_value = mock_query
-        db = mock_db
-        db.query.return_value = mock_query
-        return SearchQueryBuilder(db), mock_query
-
-    def test_include_mode(self, builder_with_mock):
-        """include 模式 → 使用 IN 过滤"""
-        builder, mock_query = builder_with_mock
-        cond = MultiSelectCondition(
-            field="status", operator="in", value=["downloading", "seeding"],
-            mode="include"
-        )
-
-        builder.apply_multi_select_conditions(cond, None, None, None)
-        assert mock_query.filter.call_count > 1
-
-    def test_exclude_mode(self, builder_with_mock):
-        """exclude 模式 → 使用 NOT IN 过滤"""
-        builder, mock_query = builder_with_mock
-        cond = MultiSelectCondition(
-            field="status", operator="in", value=["error"],
-            mode="exclude"
-        )
-
-        builder.apply_multi_select_conditions(cond, None, None, None)
-        assert mock_query.filter.call_count > 1
-
-    def test_all_none_conditions(self, builder_with_mock):
-        """所有条件为 None → 不追加 filter"""
-        builder, mock_query = builder_with_mock
-        init_count = mock_query.filter.call_count
-
-        builder.apply_multi_select_conditions(None, None, None, None)
-        assert mock_query.filter.call_count == init_count
-
-    def test_empty_value_skipped(self, builder_with_mock):
-        """value 为空列表 → 跳过"""
-        builder, mock_query = builder_with_mock
-        init_count = mock_query.filter.call_count
-        cond = MultiSelectCondition(
-            field="status", operator="in", value=[],
-            mode="include"
-        )
-
-        builder.apply_multi_select_conditions(cond, None, None, None)
-        assert mock_query.filter.call_count == init_count
+        with pytest.raises(ValueError):
+            builder.apply_condition_groups([{"logic": "", "conditions": []}])
 
 
 # ==================== AdvancedSearchService 模板管理测试 ====================
+
 
 class TestAdvancedSearchServiceTemplates:
     """AdvancedSearchService 模板 CRUD 和权限测试"""
@@ -385,8 +322,10 @@ class TestAdvancedSearchServiceTemplates:
         """创建 AdvancedSearchService，内部组件全部 mock"""
         mock_db = MagicMock()
 
-        with patch.object(SearchQueryBuilder, "__init__", lambda self, db: None), \
-             patch.object(SearchTemplateModel, "__init__", lambda self, db: None):
+        with (
+            patch.object(SearchQueryBuilder, "__init__", lambda self, db: None),
+            patch.object(SearchTemplateModel, "__init__", lambda self, db: None),
+        ):
             with patch("app.services.advanced_search.TorrentDeletionService"):
                 svc = AdvancedSearchService(db=mock_db)
 
@@ -396,9 +335,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_get_templates_success(self, service):
         """获取模板列表成功"""
-        service.template_model.get_by_user.return_value = [
-            {"id": "tpl-1", "name": "测试模板"}
-        ]
+        service.template_model.get_by_user.return_value = [{"id": "tpl-1", "name": "测试模板"}]
 
         result = service.get_search_templates("user-001")
         assert result["status"] == "success"
@@ -422,9 +359,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_delete_template_no_permission(self, service):
         """删除他人模板 → 403"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "other-user"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "other-user"}
 
         result = service.delete_search_template("tpl-1", "user-001")
         assert result["status"] == "failed"
@@ -432,9 +367,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_delete_template_success(self, service):
         """删除自己的模板 → 成功"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "user-001"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "user-001"}
         service.template_model.delete.return_value = True
 
         result = service.delete_search_template("tpl-1", "user-001")
@@ -451,11 +384,7 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_apply_template_no_permission(self, service):
         """应用他人私有模板 → 403"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1",
-            "user_id": "other-user",
-            "is_public": False
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "other-user", "is_public": False}
 
         result = service.apply_search_template("tpl-1", "user-001")
         assert result["status"] == "failed"
@@ -469,7 +398,7 @@ class TestAdvancedSearchServiceTemplates:
             "is_public": True,
             "name": "公开模板",
             "description": "描述",
-            "conditions": {}
+            "conditions": {"source": "simple", "listQuery": {}},
         }
 
         result = service.apply_search_template("tpl-1", "user-001")
@@ -478,24 +407,97 @@ class TestAdvancedSearchServiceTemplates:
 
     def test_update_template_success(self, service):
         """更新自己的模板 → 成功"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "user-001"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "user-001"}
         service.template_model.update.return_value = True
 
         result = service.update_search_template(
-            "tpl-1", {"name": "新名称", "conditions": {}}, "user-001"
+            "tpl-1",
+            {
+                "name": "新名称",
+                "conditions": {"source": "simple", "listQuery": {}},
+            },
+            "user-001",
         )
         assert result["status"] == "success"
 
     def test_update_template_no_permission(self, service):
         """更新他人模板 → 403"""
-        service.template_model.get_by_id.return_value = {
-            "id": "tpl-1", "user_id": "other-user"
-        }
+        service.template_model.get_by_id.return_value = {"id": "tpl-1", "user_id": "other-user"}
 
-        result = service.update_search_template(
-            "tpl-1", {"name": "新名称"}, "user-001"
-        )
+        result = service.update_search_template("tpl-1", {"name": "新名称"}, "user-001")
         assert result["status"] == "failed"
         assert result["code"] == "403"
+
+
+# ==================== 多值操作符（contains_any/all 等）测试 ====================
+# 本轮新增（v1.0.5.14）：覆盖后端为多选字段扩展的 contains_any/all/not_contains_any/all
+# 操作符、_normalize_multi_value 归一化函数、以及白名单接受新操作符。
+
+
+class TestNormalizeMultiValue:
+    """_normalize_multi_value 纯函数测试"""
+
+    def test_list_input(self):
+        """list 输入 → 元素转 str，过滤空值"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(["movie", "4k", ""]) == ["movie", "4k"]
+
+    def test_tuple_input(self):
+        """tuple 输入 → 同 list"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(("a", "b")) == ["a", "b"]
+
+    def test_string_input_splits_comma(self):
+        """逗号串 → 拆分（兼容历史 value 形态）"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value("linux,iso, ubuntu ") == ["linux", "iso", "ubuntu"]
+
+    def test_single_value_wrapped(self):
+        """单值（非 str/list）→ 包装成单元素列表"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(42) == ["42"]
+
+    def test_none_returns_empty(self):
+        """None → 空列表（lambda 生成 or_() 空参数，安全）"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value(None) == []
+
+    def test_empty_string_returns_empty(self):
+        """空字符串 → 空列表"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value("") == []
+
+    def test_list_with_non_string_elements(self):
+        """list 含非字符串元素 → 转 str"""
+        from app.services.advanced_search import _normalize_multi_value
+
+        assert _normalize_multi_value([1, 2, "x"]) == ["1", "2", "x"]
+
+
+class TestOperatorWhitelistAcceptsMultiValue:
+    """SearchCondition.validate_operator 白名单接受新多值操作符"""
+
+    @pytest.mark.parametrize("operator", ["contains_any", "contains_all", "not_contains_any", "not_contains_all"])
+    def test_accepts_new_multi_value_operators(self, operator):
+        """新操作符应被白名单接受（不抛 ValidationError）"""
+        cond = SearchCondition(field="tags", operator=operator, value=["a"])
+        assert cond.operator == operator
+
+    def test_rejects_unknown_operator(self):
+        """非法操作符仍被拒绝"""
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            SearchCondition(field="tags", operator="unknown_op", value=["a"])
+
+    def test_existing_operators_still_accepted(self):
+        """既有操作符不受影响"""
+        for op in ["eq", "ne", "contains", "in", "not_in"]:
+            cond = SearchCondition(field="name", operator=op, value="x")
+            assert cond.operator == op

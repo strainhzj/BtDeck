@@ -13,7 +13,7 @@
     <!-- 自定义头部 -->
     <template slot="title">
       <div class="drawer-header">
-        <span class="drawer-title">通知中心</span>
+        <span class="drawer-title"><LucideIcon name="bell" :size="16" />通知中心</span>
         <div class="drawer-header-actions">
           <el-button
             v-if="unreadCount > 0"
@@ -23,6 +23,9 @@
           >
             全部已读
           </el-button>
+          <button type="button" class="drawer-close" aria-label="关闭通知中心" @click="handleClose">
+            <LucideIcon name="x" :size="15" />
+          </button>
         </div>
       </div>
     </template>
@@ -44,7 +47,7 @@
     <!-- 通知列表 -->
     <div class="drawer-body">
       <div v-if="loading" class="drawer-loading">
-        <i class="el-icon-loading" />
+        <LucideIcon class="is-spinning" name="refresh-cw" :size="20" />
       </div>
 
       <template v-else-if="notifications.length > 0">
@@ -63,7 +66,7 @@
 
       <!-- 空状态 -->
       <div v-else class="drawer-empty">
-        <i class="el-icon-bell" />
+        <LucideIcon name="bell" :size="34" :stroke-width="1.35" />
         <p>暂无通知</p>
       </div>
     </div>
@@ -72,20 +75,36 @@
   <!-- 通知详情弹窗 -->
   <el-dialog
     :visible.sync="detailVisible"
-    :title="detailTitle"
     width="500px"
+    :show-close="false"
     append-to-body
     custom-class="notification-detail-dialog"
     @close="handleDetailClose"
   >
+    <template #title>
+      <div class="detail-dialog-header">
+        <span>{{ detailTitle }}</span>
+        <button type="button" aria-label="关闭通知详情" @click="detailVisible = false">
+          <LucideIcon name="x" :size="15" />
+        </button>
+      </div>
+    </template>
     <div class="detail-meta">
       <el-tag size="mini" :type="detailTypeTag">{{ detailTypeLabel }}</el-tag>
       <span class="detail-time">{{ detailTime }}</span>
     </div>
     <div class="detail-content" v-html="detailHtml" />
+    <div v-if="detailFailureList.length > 0" class="detail-failures">
+      <h4>失败明细</h4>
+      <ul>
+        <li v-for="(item, index) in detailFailureList" :key="failureItemKey(item, index)">
+          <span class="detail-failure-target">{{ failureItemTarget(item) }}</span>：{{ item.reason }}
+        </li>
+      </ul>
+    </div>
     <div v-if="detailReleaseUrl" class="detail-footer">
-      <a :href="detailReleaseUrl" target="_blank" rel="noopener noreferrer" class="detail-link">
-        <i class="el-icon-link" /> 在 GitHub 上查看完整 Release
+      <a :href="detailReleaseUrl" target="_blank" class="detail-link">
+        <LucideIcon name="external-link" :size="13" /> 在 GitHub 上查看完整 Release
       </a>
     </div>
   </el-dialog>
@@ -95,7 +114,7 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { NotificationModule } from '@/store/modules/notification'
-import { NotificationItem } from '@/api/notification'
+import { NotificationFailureItem, NotificationExtraData, NotificationItem } from '@/api/notification'
 import NotificationItemComp from './NotificationItem.vue'
 
 @Component({
@@ -106,6 +125,7 @@ import NotificationItemComp from './NotificationItem.vue'
 })
 export default class extends Vue {
   private activeTab = 'all'
+  private pollingTimer: ReturnType<typeof setInterval> | null = null
 
   // 详情弹窗状态
   private detailVisible = false
@@ -113,7 +133,7 @@ export default class extends Vue {
   private detailContent = ''
   private detailType = ''
   private detailCreatedAt = ''
-  private detailExtraData: { release_url?: string } | null = null
+  private detailExtraData: NotificationExtraData | null = null
 
   private tabs = [
     { label: '全部', value: 'all' },
@@ -281,9 +301,19 @@ export default class extends Vue {
   }
 
   private get detailReleaseUrl(): string {
-    const url = this.detailExtraData?.release_url || ''
-    if (url && /^https?:\/\//i.test(url)) return url
-    return ''
+    return this.detailExtraData?.release_url || ''
+  }
+
+  private get detailFailureList(): NotificationFailureItem[] {
+    return this.detailExtraData?.failed_list || []
+  }
+
+  private failureItemTarget(item: NotificationFailureItem): string {
+    return item.file_name || item.file_path || item.canonical_path || item.quarantine_path || (item.id ? `记录 ${item.id}` : '未知项')
+  }
+
+  private failureItemKey(item: NotificationFailureItem, index: number): string {
+    return `${this.failureItemTarget(item)}-${index}`
   }
 
   private handleView(notification: NotificationItem) {
@@ -309,12 +339,28 @@ export default class extends Vue {
     this.detailExtraData = null
   }
 
+  private startPolling() {
+    // 60秒轮询未读数
+    this.pollingTimer = setInterval(() => {
+      NotificationModule.FetchUnreadCount()
+    }, 60000)
+  }
+
+  private stopPolling() {
+    if (this.pollingTimer) {
+      clearInterval(this.pollingTimer)
+      this.pollingTimer = null
+    }
+  }
+
   mounted() {
-    NotificationModule.StartUnreadPolling()
+    // 首次加载未读数
+    NotificationModule.FetchUnreadCount()
+    this.startPolling()
   }
 
   beforeDestroy() {
-    NotificationModule.StopUnreadPolling()
+    this.stopPolling()
   }
 }
 </script>
@@ -330,9 +376,31 @@ export default class extends Vue {
 }
 
 .drawer-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-size: 16px;
   font-weight: 600;
   color: var(--color-text-primary, #1F2937);
+}
+
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.drawer-close {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--color-border-primary, #E5E7EB);
+  border-radius: 8px;
+  color: var(--color-text-secondary, #6B7280);
+  background: transparent;
+  cursor: pointer;
 }
 
 /* 筛选标签 */
@@ -391,7 +459,7 @@ export default class extends Vue {
   display: flex;
   justify-content: center;
   padding: var(--spacing-xl, 32px);
-  i { font-size: 24px; color: var(--color-text-tertiary, #9CA3AF); }
+  color: var(--color-text-tertiary, #9CA3AF);
 }
 
 .drawer-empty {
@@ -399,8 +467,16 @@ export default class extends Vue {
   flex-direction: column;
   align-items: center;
   padding: var(--spacing-xxl, 48px) 0;
-  i { font-size: 48px; color: var(--color-text-quaternary, #D1D5DB); }
+  color: var(--color-text-quaternary, #D1D5DB);
   p { margin-top: var(--spacing-md, 12px); color: var(--color-text-tertiary, #9CA3AF); font-size: 14px; }
+}
+
+.is-spinning {
+  animation: notification-spin 0.8s linear infinite;
+}
+
+@keyframes notification-spin {
+  to { transform: rotate(360deg); }
 }
 
 .load-more {
@@ -412,6 +488,34 @@ export default class extends Vue {
 <style lang="scss">
 /* 通知详情弹窗样式 */
 .notification-detail-dialog {
+  .el-dialog__header {
+    padding: 14px 18px;
+    border-bottom: 1px solid #E5E7EB;
+  }
+
+  .detail-dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #111827;
+    font-size: 15px;
+    font-weight: 600;
+
+    button {
+      display: inline-flex;
+      width: 28px;
+      height: 28px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid #E5E7EB;
+      border-radius: 8px;
+      color: #6B7280;
+      background: transparent;
+      cursor: pointer;
+    }
+  }
+
   .el-dialog__body {
     padding-top: 12px;
   }
@@ -425,18 +529,18 @@ export default class extends Vue {
 
   .detail-time {
     font-size: 12px;
-    color: var(--color-text-tertiary, #9CA3AF);
+    color: #9CA3AF;
   }
 
   .detail-content {
     font-size: 14px;
     line-height: 1.6;
-    color: var(--color-text-secondary, #374151);
+    color: #374151;
     word-break: break-word;
 
-    h2 { font-size: 16px; margin: 12px 0 6px; font-weight: 600; color: var(--color-text-primary, #111827); }
-    h3 { font-size: 15px; margin: 10px 0 4px; font-weight: 600; color: var(--color-text-primary, #1F2937); }
-    h4 { font-size: 14px; margin: 8px 0 4px; font-weight: 600; color: var(--color-text-secondary, #374151); }
+    h2 { font-size: 16px; margin: 12px 0 6px; font-weight: 600; color: #111827; }
+    h3 { font-size: 15px; margin: 10px 0 4px; font-weight: 600; color: #1F2937; }
+    h4 { font-size: 14px; margin: 8px 0 4px; font-weight: 600; color: #374151; }
 
     p { margin: 4px 0; }
 
@@ -451,27 +555,59 @@ export default class extends Vue {
       line-height: 1.5;
     }
 
-    strong { color: var(--color-text-primary, #111827); }
+    strong { color: #111827; }
 
     code {
-      background: var(--color-bg-secondary, #F3F4F6);
+      background: #F3F4F6;
       padding: 1px 4px;
       border-radius: 3px;
       font-size: 13px;
-      color: var(--color-danger, #DC2626);
+      color: #DC2626;
     }
 
     hr {
       border: none;
-      border-top: 1px solid var(--color-border-primary, #E5E7EB);
+      border-top: 1px solid #E5E7EB;
       margin: 8px 0;
+    }
+  }
+
+  .detail-failures {
+    margin-top: 16px;
+    padding: 12px;
+    border: 1px solid #FDE68A;
+    border-radius: 8px;
+    background: #FFFBEB;
+    color: #78350F;
+    font-size: 13px;
+    line-height: 1.5;
+
+    h4 {
+      margin: 0 0 6px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    ul {
+      margin: 0;
+      padding-left: 18px;
+    }
+
+    li {
+      margin: 3px 0;
+      word-break: break-word;
+    }
+
+    .detail-failure-target {
+      color: #92400E;
+      font-weight: 600;
     }
   }
 
   .detail-footer {
     margin-top: 20px;
     padding-top: 16px;
-    border-top: 1px solid var(--color-border-primary, #E5E7EB);
+    border-top: 1px solid #E5E7EB;
   }
 
   .detail-link {
@@ -479,7 +615,7 @@ export default class extends Vue {
     align-items: center;
     gap: 4px;
     font-size: 13px;
-    color: var(--color-success, #059669);
+    color: #059669;
     text-decoration: none;
 
     &:hover { text-decoration: underline; }

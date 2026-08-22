@@ -3,7 +3,7 @@
     <div class="theme-switcher">
       <div class="theme-indicator" :style="{backgroundColor: currentThemeColor}"></div>
       <span class="theme-name">{{ currentThemeName }}</span>
-      <i class="el-icon-arrow-down el-icon--right"></i>
+      <LucideIcon name="chevron-down" :size="14" :stroke-width="1.8" class="theme-chevron" />
     </div>
     <el-dropdown-menu slot="dropdown">
       <el-dropdown-item
@@ -21,7 +21,13 @@
             <span class="theme-label">{{ theme.name }}</span>
             <span class="theme-desc">{{ theme.description }}</span>
           </div>
-          <i v-if="theme.value === currentTheme" class="el-icon-check"></i>
+          <LucideIcon
+            v-if="theme.value === currentTheme"
+            name="check"
+            :size="17"
+            :stroke-width="2"
+            class="theme-check"
+          />
         </div>
       </el-dropdown-item>
     </el-dropdown-menu>
@@ -108,6 +114,10 @@ export default class ThemeSwitcher extends Vue {
   margin-right: var(--spacing-xs);
 }
 
+.theme-chevron {
+  color: var(--color-text-tertiary);
+}
+
 // 下拉菜单样式
 ::v-deep .el-dropdown-menu__item {
   padding: 0;
@@ -155,8 +165,7 @@ export default class ThemeSwitcher extends Vue {
   color: var(--color-text-secondary);
 }
 
-.el-icon-check {
+.theme-check {
   color: var(--color-primary);
-  font-size: var(--font-size-lg);
 }
 </style>

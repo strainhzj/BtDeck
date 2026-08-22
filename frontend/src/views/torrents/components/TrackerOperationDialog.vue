@@ -70,8 +70,8 @@
               <el-table-column prop="tracker_url" label="URL" show-overflow-tooltip min-width="300" />
               <el-table-column label="状态" width="80" align="center">
                 <template slot-scope="scope">
-                  <el-tag :type="scope.row.last_announce_succeeded === 'True' ? 'success' : 'danger'" size="mini">
-                    {{ scope.row.last_announce_succeeded === 'True' ? '正常' : '异常' }}
+                  <el-tag :type="trackerAnnounceSuccess(scope.row.last_announce_succeeded) ? 'success' : 'danger'" size="mini">
+                    {{ trackerAnnounceSuccess(scope.row.last_announce_succeeded) ? '正常' : '异常' }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -111,6 +111,7 @@
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { addTracker, modifyTracker } from '@/api/torrents'
 import { Torrent, TrackerInfo } from '@/api/torrents'
+import { isTrackerAnnounceSuccess } from '../utils/torrentBatch'
 
 /**
  * Tracker操作对话框组件
@@ -143,6 +144,11 @@ export default class TrackerOperationDialog extends Vue {
 
   // URL格式校验正则
   private readonly TRACKER_URL_PATTERN = /^(https?|udp):\/\/[^\s\/$.?#].[^\s]*$/
+
+  // last_announce_succeeded 是后端映射的中文状态文本，按共享语义判断成功
+  private trackerAnnounceSuccess(status: string | boolean | undefined | null): boolean {
+    return isTrackerAnnounceSuccess(status)
+  }
 
   /**
    * 表单验证规则 - 添加Tracker

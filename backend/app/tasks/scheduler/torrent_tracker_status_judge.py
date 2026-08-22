@@ -18,15 +18,87 @@ Author: btpmanager
 Version: 1.0.0
 """
 
+import asyncio
 from datetime import datetime
-from typing import Dict, Any, List, Set
+from typing import Any, Dict, List, Optional, cast
 import logging
 import threading
 
 from app.database import SessionLocal
-from app.torrents.models import TorrentInfo, TrackerInfo, TrackerKeywordConfig
+from app.downloader.models import BtDownloaders
+from app.core.tracker_keyword_map import load_active_keyword_map
+from app.core.tracker_status_policy import build_tracker_evidence, decide_tracker_error_state
+from app.models.setting_templates import DownloaderTypeEnum
+from app.tasks.resource_guard import admission_controller
+from app.torrents.models import TorrentInfo, TrackerInfo
 
 logger = logging.getLogger(__name__)
+
+
+def _tracker_announce_status(tracker: TrackerInfo, downloader_type: Any) -> Optional[tuple[str, int]]:
+    """将下载器类型和 announce 状态归一化；无法识别时返回 ``None``。"""
+    if downloader_type is None:
+        return None
+    try:
+        type_name = DownloaderTypeEnum(DownloaderTypeEnum.normalize(downloader_type)).to_name()
+        announce_status = int(tracker.last_announce_succeeded or 0)
+    except (TypeError, ValueError):
+        return None
+
+    return type_name, announce_status
+
+
+def _tracker_is_not_contacted(tracker: TrackerInfo, downloader_type: Any) -> bool:
+    """判断 Tracker 是否处于未联系/发送中的中性状态。"""
+    status = _tracker_announce_status(tracker, downloader_type)
+    if status is None:
+        return False
+
+    type_name, announce_status = status
+
+    if type_name == "qbittorrent":
+        return announce_status == 1
+    return announce_status in {0, 1}
+
+
+def _tracker_is_working(tracker: TrackerInfo, downloader_type: Any) -> bool:
+    """判断 Tracker 是否处于下载器定义的 Working 状态。"""
+    status = _tracker_announce_status(tracker, downloader_type)
+    return status is not None and status[1] == 2
+
+
+def evaluate_tracker_error_state(
+    trackers: List[TrackerInfo], keyword_map: Dict[str, str], downloader_type: Any
+) -> Optional[bool]:
+    """根据 Tracker 原始状态与关键词返回种子的错误标记。
+
+    ``True`` 表示所有 Tracker 都明确失败，``False`` 表示至少存在正常或未联系的
+    Tracker，``None`` 表示仍有未知状态，应保留数据库原值。
+    """
+    has_neutral_tracker = False
+    evidence_types: List[str] = []
+
+    for tracker in trackers:
+        if _tracker_is_not_contacted(tracker, downloader_type):
+            has_neutral_tracker = True
+            continue
+
+        # Tracker 状态与关键词仍然共同参与判断：有消息时继续按关键词池分类；
+        # 仅当下载器明确报告 Working 且两类消息均为空时，才把它视为正常。
+        # 否则会把 qBittorrent/Transmission 常见的 ``Working + None`` 留在
+        # unknown 分支，导致数据库中的历史错误标记无法被清除。
+        tracker_evidence = build_tracker_evidence(
+            tracker.last_announce_succeeded if _tracker_is_working(tracker, downloader_type) else None,
+            tracker.last_announce_msg,
+            tracker.last_scrape_msg,
+            keyword_map,
+            match_mode="exact",
+        )
+        evidence_types.extend(tracker_evidence or ["unknown"])
+
+    if has_neutral_tracker:
+        return False
+    return decide_tracker_error_state(evidence_types)
 
 
 class TorrentTrackerStatusJudge:
@@ -55,7 +127,7 @@ class TorrentTrackerStatusJudge:
     category = "tracker"
 
     # 任务配置
-    default_interval = 300  # 默认5分钟（300秒）
+    default_interval = 1800  # 默认30分钟（1800秒）
 
     # 性能优化常量
     BATCH_SIZE = 1000  # 批量处理种子数量
@@ -97,66 +169,79 @@ class TorrentTrackerStatusJudge:
                 "execution_time": self.last_execution_time,
                 "execution_count": self.execution_count,
                 "status": "running",
-                "message": "Torrent tracker status judgment started"
+                "message": "Torrent tracker status judgment started",
             }
 
             logger.info(f"[{self.name}] 开始执行，第{self.execution_count}次")
 
             # Step 1: 加载所有启用的关键词到内存
-            keyword_map = self._load_keywords()
+            # to_thread：_load_keywords 是同步 SessionLocal 读，移出事件循环避免冻结
+            keyword_map = await asyncio.to_thread(self._load_keywords)
             result["total_keywords_loaded"] = len(keyword_map)
 
             if not keyword_map:
                 logger.warning(f"[{self.name}] 未加载到任何关键词，跳过执行")
                 with self._stats_lock:
                     self.success_count += 1
-                result.update({
-                    "status": "success",
-                    "message": "未加载到任何关键词",
-                    "total_torrents_processed": 0,
-                    "total_torrents_updated": 0,
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count
-                })
+                result.update(
+                    {
+                        "status": "success",
+                        "message": "未加载到任何关键词",
+                        "total_torrents_processed": 0,
+                        "total_torrents_updated": 0,
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                    }
+                )
                 return result
 
             # Step 2: 获取所有未删除的种子
-            torrents = self._get_all_torrents()
+            # to_thread：_get_all_torrents 是同步 SessionLocal 读，移出事件循环避免冻结
+            torrents = await asyncio.to_thread(self._get_all_torrents)
             result["total_torrents_found"] = len(torrents)
 
             if not torrents:
                 logger.warning(f"[{self.name}] 未发现任何种子")
                 with self._stats_lock:
                     self.success_count += 1
-                result.update({
-                    "status": "success",
-                    "message": "未发现任何种子",
-                    "total_torrents_processed": 0,
-                    "total_torrents_updated": 0,
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count
-                })
+                result.update(
+                    {
+                        "status": "success",
+                        "message": "未发现任何种子",
+                        "total_torrents_processed": 0,
+                        "total_torrents_updated": 0,
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                    }
+                )
                 return result
 
-            # Step 3: 批量判断种子状态
-            self._judge_torrents_batch(torrents, keyword_map)
+            # Step 3: 分批判断种子状态
+            # 按 BATCH_SIZE 切分，每批独立 commit（毫秒级），db_write_scope 串行化写者。
+            # 单批失败即终止（前面已提交批次保留——has_tracker_error 幂等可重算，下次执行覆盖）。
+            for i in range(0, len(torrents), self.BATCH_SIZE):
+                batch = torrents[i : i + self.BATCH_SIZE]
+                async with admission_controller.db_write_scope():
+                    await asyncio.to_thread(self._judge_one_batch, batch, keyword_map)
 
             # 更新统计信息
             with self._stats_lock:
                 self.success_count += 1
 
-            result.update({
-                "status": "success",
-                "message": f"判断完成: 处理{self.total_torrents_processed}个种子，更新{self.total_torrents_updated}个 (全部失败{self.total_all_failed}，至少正常{self.total_at_least_one_normal})",
-                "total_torrents_processed": self.total_torrents_processed,
-                "total_torrents_updated": self.total_torrents_updated,
-                "total_no_change": self.total_no_change,
-                "total_all_failed": self.total_all_failed,
-                "total_at_least_one_normal": self.total_at_least_one_normal,
-                "total_no_tracker": self.total_no_tracker,
-                "success_count": self.success_count,
-                "failure_count": self.failure_count
-            })
+            result.update(
+                {
+                    "status": "success",
+                    "message": f"判断完成: 处理{self.total_torrents_processed}个种子，更新{self.total_torrents_updated}个 (全部失败{self.total_all_failed}，至少正常{self.total_at_least_one_normal})",
+                    "total_torrents_processed": self.total_torrents_processed,
+                    "total_torrents_updated": self.total_torrents_updated,
+                    "total_no_change": self.total_no_change,
+                    "total_all_failed": self.total_all_failed,
+                    "total_at_least_one_normal": self.total_at_least_one_normal,
+                    "total_no_tracker": self.total_no_tracker,
+                    "success_count": self.success_count,
+                    "failure_count": self.failure_count,
+                }
+            )
 
             logger.info(f"[{self.name}] 执行完成: {result['message']}")
 
@@ -172,7 +257,7 @@ class TorrentTrackerStatusJudge:
                 "status": "failed",
                 "message": f"任务执行失败: {str(e)}",
                 "success_count": self.success_count,
-                "failure_count": self.failure_count
+                "failure_count": self.failure_count,
             }
             logger.error(f"[{self.name}] 执行失败: {e}", exc_info=True)
             return error_result
@@ -180,6 +265,9 @@ class TorrentTrackerStatusJudge:
     def _load_keywords(self) -> Dict[str, str]:
         """
         加载所有启用的关键词到内存
+
+        委托共享加载器 load_active_keyword_map（种子级判定与展示层覆写共用
+        同一份映射）；方法名与 to_thread 调用点是写库治理测试的锚点，不可改名。
 
         返回格式:
         {
@@ -190,44 +278,17 @@ class TorrentTrackerStatusJudge:
         }
 
         Returns:
-            关键词字典 (keyword -> type)
+            关键词字典 (keyword -> type)；异常时为空字典（本轮跳过判定）
         """
         db = SessionLocal()
         try:
-            # 查询所有启用的关键词（仅失败池、成功池、忽略池）
-            keywords = db.query(TrackerKeywordConfig).filter(
-                TrackerKeywordConfig.enabled == True,
-                TrackerKeywordConfig.dr == 0,
-                TrackerKeywordConfig.keyword_type.in_(['failed', 'success', 'ignored'])
-            ).all()
-
-            # 构建快速查找字典 (keyword -> type)
-            # 如果存在重复keyword，保留priority最高的
-            keyword_map = {}
-            for kw in keywords:
-                if kw.keyword not in keyword_map:
-                    keyword_map[kw.keyword] = kw.keyword_type
-                else:
-                    # 如果重复，保留priority更高的
-                    existing = db.query(TrackerKeywordConfig).filter(
-                        TrackerKeywordConfig.keyword == kw.keyword,
-                        TrackerKeywordConfig.enabled == True,
-                        TrackerKeywordConfig.dr == 0
-                    ).order_by(TrackerKeywordConfig.priority.desc()).first()
-                    if existing:
-                        keyword_map[kw.keyword] = existing.keyword_type
-                        logger.warning(f"发现重复关键词: {kw.keyword}，保留高优先级记录")
-
+            keyword_map = load_active_keyword_map(db)
             logger.info(f"加载关键词: {len(keyword_map)}条")
             return keyword_map
-
-        except Exception as e:
-            logger.error(f"加载关键词失败: {e}", exc_info=True)
-            return {}
         finally:
             db.close()
 
-    def _get_all_torrents(self) -> List[TorrentInfo]:
+    def _get_all_torrents(self) -> List[str]:
         """
         获取所有未删除的种子
 
@@ -237,9 +298,7 @@ class TorrentTrackerStatusJudge:
         db = SessionLocal()
         try:
             # 只查询ID，避免返回会话绑定的对象
-            torrent_ids = db.query(TorrentInfo.info_id).filter(
-                TorrentInfo.dr == 0
-            ).all()
+            torrent_ids = db.query(TorrentInfo.info_id).filter(TorrentInfo.dr == 0).all()
 
             # 提取ID列表
             ids = [tid[0] for tid in torrent_ids]
@@ -253,9 +312,12 @@ class TorrentTrackerStatusJudge:
         finally:
             db.close()
 
-    def _judge_torrents_batch(self, torrent_ids: List[str], keyword_map: Dict[str, str]) -> None:
+    def _judge_one_batch(self, torrent_ids: List[str], keyword_map: Dict[str, str]) -> None:
         """
-        批量判断种子状态
+        判断单个批次的种子状态（同步方法，由 execute 经 to_thread 调用）。
+
+        N+1 优化：批次内改用两次 IN 查询取本批种子+tracker，内存按 torrent_info_id
+        分组后遍历判断，消除逐种子 db.query。
 
         判断规则:
         - 检查每个种子的所有dr=0的tracker
@@ -266,28 +328,57 @@ class TorrentTrackerStatusJudge:
         - 没有任何tracker → 保持原状态不变
 
         Args:
-            torrent_ids: 种子ID列表
+            torrent_ids: 本批种子ID列表
             keyword_map: 关键词字典
+
+        Raises:
+            Exception: 单批 commit 失败时抛出（execute 侧终止，已提交批次保留）
         """
         if not torrent_ids:
             return
 
         db = SessionLocal()
         try:
+            # 一次 IN 查询取本批种子（消除 N+1）
+            torrents = db.query(TorrentInfo).filter(TorrentInfo.info_id.in_(torrent_ids)).all()
+            # 按 info_id 索引，便于与 tracker 分组对齐
+            torrent_map: Dict[str, TorrentInfo] = {str(t.info_id): t for t in torrents}
+
+            # 一次 IN 查询取本批种子的 tracker（消除 N+1）
+            batch_trackers = (
+                db.query(TrackerInfo)
+                .filter(
+                    TrackerInfo.torrent_info_id.in_(torrent_ids),
+                    TrackerInfo.dr == 0,
+                )
+                .all()
+            )
+            # 按 torrent_info_id 分组 tracker
+            trackers_by_torrent: Dict[str, List[TrackerInfo]] = {}
+            for tracker in batch_trackers:
+                trackers_by_torrent.setdefault(str(tracker.torrent_info_id), []).append(tracker)
+
+            downloader_ids = {str(t.downloader_id) for t in torrents if t.downloader_id is not None}
+            downloader_type_rows = (
+                db.query(BtDownloaders.downloader_id, BtDownloaders.downloader_type)
+                .filter(BtDownloaders.downloader_id.in_(downloader_ids), BtDownloaders.dr == 0)
+                .all()
+                if downloader_ids
+                else []
+            )
+            downloader_type_map = {str(row[0]): row[1] for row in downloader_type_rows}
+
             for torrent_id in torrent_ids:
                 try:
-                    # 在当前会话中重新查询种子对象（确保对象在会话中）
-                    torrent = db.query(TorrentInfo).filter(
-                        TorrentInfo.info_id == torrent_id
-                    ).first()
-
+                    torrent = torrent_map.get(torrent_id)
                     if not torrent:
                         continue
-                    # 获取该种子的所有未删除的tracker
-                    trackers = db.query(TrackerInfo).filter(
-                        TrackerInfo.torrent_info_id == torrent.info_id,
-                        TrackerInfo.dr == 0
-                    ).all()
+
+                    # 旧式 SQLAlchemy declarative 模型在 mypy 中会把实例字段误判为
+                    # ``Column``；运行时这里始终是 ORM 实例属性。
+                    torrent_row = cast(Any, torrent)
+
+                    trackers = trackers_by_torrent.get(str(torrent.info_id), [])
 
                     # 判断是否有tracker
                     if not trackers:
@@ -295,68 +386,32 @@ class TorrentTrackerStatusJudge:
                             self.total_no_tracker += 1
                         continue
 
-                    # 判断每个tracker的状态
-                    # 逻辑修正：只有明确匹配失败池才算失败，否则按以下规则处理：
-                    # 1. 匹配成功池/忽略池 → tracker正常
-                    # 2. 匹配失败池 → tracker错误
-                    # 3. 未匹配任何池 → 不确定状态，不影响整体判断
-                    has_normal_tracker = False
-                    has_failed_tracker = False
-                    has_unknown_tracker = False
-
-                    for tracker in trackers:
-                        # 获取tracker的消息
-                        announce_msg = tracker.last_announce_msg or ""
-                        scrape_msg = tracker.last_scrape_msg or ""
-                        messages = [msg for msg in [announce_msg, scrape_msg] if msg]
-
-                        # 检查消息是否匹配关键词池
-                        tracker_matched = False
-
-                        for msg in messages:
-                            # 精确匹配关键词
-                            if msg in keyword_map:
-                                keyword_type = keyword_map[msg]
-                                if keyword_type == 'failed':
-                                    has_failed_tracker = True
-                                    tracker_matched = True
-                                    break
-                                elif keyword_type in ['success', 'ignored']:
-                                    has_normal_tracker = True
-                                    tracker_matched = True
-                                    break
-
-                        # 如果tracker的消息不匹配任何关键词，标记为未知状态
-                        if not tracker_matched and messages:
-                            has_unknown_tracker = True
-
                     # 更新has_tracker_error字段
-                    old_value = torrent.has_tracker_error
+                    old_value = torrent_row.has_tracker_error
+                    decision = evaluate_tracker_error_state(
+                        trackers,
+                        keyword_map,
+                        downloader_type_map.get(str(torrent.downloader_id)),
+                    )
 
-                    # 判断规则：
-                    # 1. 只要有正常的tracker → has_tracker_error=False
-                    # 2. 所有tracker都失败（无正常、无未知） → has_tracker_error=True
-                    # 3. 有未确定状态 → 保持原值
-                    if has_normal_tracker:
-                        torrent.has_tracker_error = False
+                    if decision is False:
+                        torrent_row.has_tracker_error = False
                         with self._stats_lock:
                             self.total_at_least_one_normal += 1
-                    elif has_failed_tracker and not has_normal_tracker and not has_unknown_tracker:
-                        # 只有失败的tracker，没有正常的，也没有未确定的
-                        torrent.has_tracker_error = True
+                    elif decision is True:
+                        torrent_row.has_tracker_error = True
                         with self._stats_lock:
                             self.total_all_failed += 1
                     else:
-                        # 有未确定状态或混合状态，保持原值
                         with self._stats_lock:
                             self.total_no_change += 1
 
                     # 统计更新数量
-                    if torrent.has_tracker_error != old_value:
+                    if torrent_row.has_tracker_error != old_value:
                         with self._stats_lock:
                             self.total_torrents_updated += 1
 
-                    torrent.update_time = datetime.now()
+                    torrent_row.update_time = datetime.now()
                     with self._stats_lock:
                         self.total_torrents_processed += 1
 
@@ -364,7 +419,7 @@ class TorrentTrackerStatusJudge:
                     logger.error(f"判断种子失败: {e}")
                     continue
 
-            # 一次性提交所有更改
+            # 提交本批更改（单批 commit，毫秒级）
             try:
                 db.commit()
                 logger.info(f"批量判断完成: 处理{len(torrent_ids)}个种子")
@@ -401,20 +456,24 @@ class TorrentTrackerStatusJudge:
                 "total_no_tracker": self.total_no_tracker,
                 "last_execution_time": self.last_execution_time,
                 "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0,
-                "update_rate": (self.total_torrents_updated / self.total_torrents_processed * 100) if self.total_torrents_processed > 0 else 0
+                "update_rate": (
+                    (self.total_torrents_updated / self.total_torrents_processed * 100)
+                    if self.total_torrents_processed > 0
+                    else 0
+                ),
             }
 
     def get_schedule_config(self) -> Dict[str, Any]:
         """获取调度配置建议"""
         return {
-            "cron_expression": "0 */5 * * *",  # 每5分钟执行一次
+            "cron_expression": "20,50 * * * *",  # Tracker 同步后 10 分钟执行
             "timezone": "Asia/Shanghai",
-            "max_instances": 1,     # 防止重叠执行
-            "coalesce": True,       # 合并错过的执行
+            "max_instances": 1,  # 防止重叠执行
+            "coalesce": True,  # 合并错过的执行
             "misfire_grace_time": 300,  # 错过执行的宽限时间（5分钟）
             "default_interval": self.default_interval,
             "batch_size": self.BATCH_SIZE,
-            "estimated_duration": "1-3 minutes"
+            "estimated_duration": "1-3 minutes",
         }
 
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -424,15 +483,31 @@ class TorrentTrackerStatusJudge:
                 return {
                     "average_torrents_per_execution": 0,
                     "average_updates_per_execution": 0,
-                    "total_processing_time": "N/A"
+                    "total_processing_time": "N/A",
                 }
 
             return {
                 "average_torrents_per_execution": self.total_torrents_processed / self.execution_count,
                 "average_updates_per_execution": self.total_torrents_updated / self.execution_count,
-                "update_rate": (self.total_torrents_updated / self.total_torrents_processed * 100) if self.total_torrents_processed > 0 else 0,
-                "all_failed_rate": (self.total_all_failed / self.total_torrents_processed * 100) if self.total_torrents_processed > 0 else 0,
-                "at_least_one_normal_rate": (self.total_at_least_one_normal / self.total_torrents_processed * 100) if self.total_torrents_processed > 0 else 0,
-                "no_tracker_rate": (self.total_no_tracker / self.total_torrents_processed * 100) if self.total_torrents_processed > 0 else 0,
-                "task_reliability": (self.success_count / self.execution_count * 100)
+                "update_rate": (
+                    (self.total_torrents_updated / self.total_torrents_processed * 100)
+                    if self.total_torrents_processed > 0
+                    else 0
+                ),
+                "all_failed_rate": (
+                    (self.total_all_failed / self.total_torrents_processed * 100)
+                    if self.total_torrents_processed > 0
+                    else 0
+                ),
+                "at_least_one_normal_rate": (
+                    (self.total_at_least_one_normal / self.total_torrents_processed * 100)
+                    if self.total_torrents_processed > 0
+                    else 0
+                ),
+                "no_tracker_rate": (
+                    (self.total_no_tracker / self.total_torrents_processed * 100)
+                    if self.total_torrents_processed > 0
+                    else 0
+                ),
+                "task_reliability": (self.success_count / self.execution_count * 100),
             }

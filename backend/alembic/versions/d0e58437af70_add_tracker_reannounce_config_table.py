@@ -1,5 +1,7 @@
 """add tracker_reannounce_config table
 
+【可回滚】纯增量加表，downgrade 仅 drop 该表，安全。
+
 Revision ID: d0e58437af70
 Revises: e2a02abcf912
 Create Date: 2026-04-10 12:02:30.610609

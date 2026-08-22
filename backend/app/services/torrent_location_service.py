@@ -20,6 +20,8 @@ from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.database import AsyncSessionLocal
 from app.downloader.models import BtDownloaders
 from app.models.seed_transfer_audit_log import SeedTransferAuditLog
@@ -41,7 +43,7 @@ class TorrentLocationService:
     - 记录审计日志
     """
 
-    def __init__(self, db: Session, async_db: Optional[AsyncSessionLocal] = None):
+    def __init__(self, db: Session, async_db: Optional[AsyncSession] = None):
         """
         初始化种子位置修改服务
 
@@ -60,7 +62,7 @@ class TorrentLocationService:
         move_files: bool,
         user_id: int,
         username: str,
-        app_state: Any = None
+        app_state: Any = None,
     ) -> Dict[str, Any]:
         """
         修改种子保存路径
@@ -83,19 +85,17 @@ class TorrentLocationService:
                 "error_message": Optional[str]
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success": False,
             "moved_count": 0,
             "failed_count": len(hashes),
-            "error_message": None
+            "error_message": None,
         }
 
         downloader = None
         try:
             # 1. 参数验证
-            validation_error = self._validate_request(
-                downloader_id, hashes, target_path
-            )
+            validation_error = self._validate_request(downloader_id, hashes, target_path)
             if validation_error:
                 result["error_message"] = validation_error
                 return result
@@ -123,13 +123,13 @@ class TorrentLocationService:
                 user_id=user_id,
                 username=username,
                 downloader_id=downloader_id,
-                downloader_name=downloader.nickname,
+                downloader_name=downloader.nickname or "",
                 torrent_count=len(hashes),
                 target_path=target_path,
                 move_files=move_files,
                 success=result["success"],
                 moved_count=result["moved_count"],
-                error_message=result["error_message"]
+                error_message=result["error_message"],
             )
 
         except Exception as e:
@@ -141,23 +141,18 @@ class TorrentLocationService:
                 user_id=user_id,
                 username=username,
                 downloader_id=downloader_id,
-                downloader_name=downloader.nickname if downloader else "",
+                downloader_name=(downloader.nickname if downloader else None) or "",
                 torrent_count=len(hashes),
                 target_path=target_path,
                 move_files=move_files,
                 success=False,
                 moved_count=0,
-                error_message=str(e)
+                error_message=str(e),
             )
 
         return result
 
-    def _validate_request(
-        self,
-        downloader_id: str,
-        hashes: list,
-        target_path: str
-    ) -> Optional[str]:
+    def _validate_request(self, downloader_id: str, hashes: list, target_path: str) -> Optional[str]:
         """
         验证请求参数
 
@@ -183,7 +178,7 @@ class TorrentLocationService:
 
         # 验证路径格式（简单检查）
         is_windows_abs = re.match(r"^[A-Za-z]:[\\/]", target_path) is not None
-        if not (target_path.startswith(('/', '\\', '.', '~')) or is_windows_abs):
+        if not (target_path.startswith(("/", "\\", ".", "~")) or is_windows_abs):
             return "目标路径必须是绝对路径"
 
         return None
@@ -200,21 +195,14 @@ class TorrentLocationService:
         """
         try:
             result = self.db.execute(
-                select(BtDownloaders).where(
-                    BtDownloaders.downloader_id == downloader_id,
-                    BtDownloaders.dr == 0
-                )
+                select(BtDownloaders).where(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0)
             )
             return result.scalar_one_or_none()
         except Exception as e:
             logger.error(f"查询下载器失败: {e}")
             return None
 
-    def _get_adapter(
-        self,
-        downloader: BtDownloaders,
-        app_state: Any = None
-    ):
+    def _get_adapter(self, downloader: BtDownloaders, app_state: Any = None):
         """
         获取下载器适配器
 
@@ -227,15 +215,12 @@ class TorrentLocationService:
         """
         try:
             # 从缓存获取下载器客户端
-            if not app_state or not hasattr(app_state, 'store'):
+            if not app_state or not hasattr(app_state, "store"):
                 logger.error("app_state或app.state.store未初始化")
                 return None
 
             cached_downloaders = app_state.store.get_snapshot_sync()
-            downloader_vo = next(
-                (d for d in cached_downloaders if d.downloader_id == downloader.downloader_id),
-                None
-            )
+            downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
             if not downloader_vo or downloader_vo.fail_time > 0:
                 logger.error(f"下载器不可用: {downloader.nickname}")
@@ -269,7 +254,7 @@ class TorrentLocationService:
         move_files: bool,
         success: bool,
         moved_count: int,
-        error_message: Optional[str] = None
+        error_message: Optional[str] = None,
     ):
         """
         记录审计日志
@@ -287,20 +272,23 @@ class TorrentLocationService:
             error_message: 错误信息
         """
         try:
+            # 审计表无 torrent_count/move_files 列（历史写法传未知字段必抛
+            # TypeError 且被下方 except 吞掉，导致该审计从未落库）：
+            # 数量并入 torrent_name，move_files 语义近似映射到 delete_source。
             audit_log = SeedTransferAuditLog(
                 user_id=user_id,
                 username=username,
-                operation_type='set_location',  # 新增操作类型
-                source_downloader_id=downloader_id,
+                operation_type="set_location",  # 新增操作类型
+                source_downloader_id=downloader_id,  # type: ignore[arg-type]  # 同 seed_transfer：Integer 列存 UUID 文本（SQLite 亲和）
                 source_downloader_name=downloader_name,
-                target_downloader_id=downloader_id,  # 同一下载器
+                target_downloader_id=downloader_id,  # type: ignore[arg-type]  # 同上
                 target_downloader_name=downloader_name,
-                torrent_count=torrent_count,
+                torrent_name=f"批量修改保存路径({torrent_count} 个种子)",
                 target_path=target_path,
-                move_files=move_files,
-                transfer_status='success' if success else 'failed',
+                delete_source=move_files,
+                transfer_status="success" if success else "failed",
                 error_message=error_message,
-                created_at=datetime.utcnow()
+                created_at=datetime.utcnow(),
             )
 
             if self.async_db is not None:

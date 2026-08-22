@@ -4,16 +4,15 @@
 
 提供下载器能力配置的CRUD操作和同步逻辑
 """
-from typing import Dict, Optional, Tuple, Any
+
+from typing import Dict, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy import text
 
 from app.models.downloader_capabilities import DownloaderCapabilities
 from app.models.setting_templates import DownloaderTypeEnum
 from app.downloader.models import BtDownloaders
 from app.downloader.exceptions import (
-    DownloaderSettingsError,
     ConfigurationError,
 )
 import logging
@@ -42,10 +41,7 @@ class DownloaderCapabilitiesManager:
         self.db = db
 
     def get_capabilities(
-        self,
-        downloader_id: str,
-        create_if_not_exists: bool = True,
-        default_for_type: Optional[int] = None
+        self, downloader_id: str, create_if_not_exists: bool = True, default_for_type: Optional[int] = None
     ) -> Optional[DownloaderCapabilities]:
         """
         获取下载器能力配置
@@ -62,9 +58,9 @@ class DownloaderCapabilitiesManager:
             ConfigurationError: 下载器不存在或创建失败
         """
         # 1. 从数据库查询现有配置
-        capabilities = self.db.query(DownloaderCapabilities).filter(
-            DownloaderCapabilities.downloader_id == downloader_id
-        ).first()
+        capabilities = (
+            self.db.query(DownloaderCapabilities).filter(DownloaderCapabilities.downloader_id == downloader_id).first()
+        )
 
         if capabilities:
             logger.debug(f"获取下载器能力配置成功: {downloader_id}")
@@ -78,16 +74,17 @@ class DownloaderCapabilitiesManager:
         # 3. 创建默认配置
         if default_for_type is None:
             # 从数据库查询下载器类型
-            downloader = self.db.query(BtDownloaders).filter(
-                BtDownloaders.downloader_id == downloader_id,
-                BtDownloaders.dr == 0
-            ).first()
+            downloader = (
+                self.db.query(BtDownloaders)
+                .filter(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0)
+                .first()
+            )
 
             if not downloader:
                 raise ConfigurationError(
                     message=f"下载器不存在: {downloader_id}",
                     parameter_name="downloader_id",
-                    parameter_value=downloader_id
+                    parameter_value=downloader_id,
                 )
 
             default_for_type = downloader.downloader_type
@@ -95,11 +92,7 @@ class DownloaderCapabilitiesManager:
         logger.info(f"创建默认下载器能力配置: {downloader_id}, 类型: {default_for_type}")
         return self.create_default_capabilities(downloader_id, default_for_type)
 
-    def create_default_capabilities(
-        self,
-        downloader_id: str,
-        downloader_type: int
-    ) -> DownloaderCapabilities:
+    def create_default_capabilities(self, downloader_id: str, downloader_type: int) -> DownloaderCapabilities:
         """
         创建默认下载器能力配置
 
@@ -129,7 +122,7 @@ class DownloaderCapabilitiesManager:
                     supports_advanced_settings=True,
                     supports_peer_limits=True,
                     synced_from_downloader=False,
-                    manual_override=False
+                    manual_override=False,
                 )
             elif normalized_type == DownloaderTypeEnum.TRANSMISSION:
                 capabilities = DownloaderCapabilities(
@@ -143,13 +136,13 @@ class DownloaderCapabilitiesManager:
                     supports_advanced_settings=True,
                     supports_peer_limits=True,
                     synced_from_downloader=False,
-                    manual_override=False
+                    manual_override=False,
                 )
             else:
                 raise ConfigurationError(
                     message=f"不支持的下载器类型: {downloader_type}",
                     parameter_name="downloader_type",
-                    parameter_value=downloader_type
+                    parameter_value=downloader_type,
                 )
 
             self.db.add(capabilities)
@@ -163,16 +156,11 @@ class DownloaderCapabilitiesManager:
             self.db.rollback()
             logger.error(f"创建默认能力配置失败: {downloader_id}, 错误: {e}")
             raise ConfigurationError(
-                message=f"创建默认能力配置失败: {str(e)}",
-                parameter_name="downloader_id",
-                parameter_value=downloader_id
+                message=f"创建默认能力配置失败: {str(e)}", parameter_name="downloader_id", parameter_value=downloader_id
             )
 
     def sync_from_downloader(
-        self,
-        downloader_id: str,
-        downloader_capabilities: Dict[str, bool],
-        force: bool = False
+        self, downloader_id: str, downloader_capabilities: Dict[str, bool], force: bool = False
     ) -> DownloaderCapabilities:
         """
         从下载器同步能力配置
@@ -190,16 +178,13 @@ class DownloaderCapabilitiesManager:
         """
         try:
             # 获取现有配置
-            capabilities = self.get_capabilities(
-                downloader_id=downloader_id,
-                create_if_not_exists=True
-            )
+            capabilities = self.get_capabilities(downloader_id=downloader_id, create_if_not_exists=True)
 
             if not capabilities:
                 raise ConfigurationError(
                     message=f"能力配置不存在且创建失败: {downloader_id}",
                     parameter_name="downloader_id",
-                    parameter_value=downloader_id
+                    parameter_value=downloader_id,
                 )
 
             # 检查是否为手动覆盖
@@ -209,8 +194,7 @@ class DownloaderCapabilitiesManager:
 
             # 更新能力配置
             capabilities.update_from_downloader_capabilities(
-                downloader_capabilities=downloader_capabilities,
-                force=force
+                downloader_capabilities=downloader_capabilities, force=force
             )
 
             self.db.commit()
@@ -223,16 +207,11 @@ class DownloaderCapabilitiesManager:
             self.db.rollback()
             logger.error(f"从下载器同步能力配置失败: {downloader_id}, 错误: {e}")
             raise ConfigurationError(
-                message=f"同步能力配置失败: {str(e)}",
-                parameter_name="downloader_id",
-                parameter_value=downloader_id
+                message=f"同步能力配置失败: {str(e)}", parameter_name="downloader_id", parameter_value=downloader_id
             )
 
     def update_capabilities(
-        self,
-        downloader_id: str,
-        capabilities_dict: Dict[str, bool],
-        set_manual_override: bool = True
+        self, downloader_id: str, capabilities_dict: Dict[str, bool], set_manual_override: bool = True
     ) -> DownloaderCapabilities:
         """
         更新下载器能力配置（用户手动修改）
@@ -250,16 +229,13 @@ class DownloaderCapabilitiesManager:
         """
         try:
             # 获取现有配置
-            capabilities = self.get_capabilities(
-                downloader_id=downloader_id,
-                create_if_not_exists=True
-            )
+            capabilities = self.get_capabilities(downloader_id=downloader_id, create_if_not_exists=True)
 
             if not capabilities:
                 raise ConfigurationError(
                     message=f"能力配置不存在且创建失败: {downloader_id}",
                     parameter_name="downloader_id",
-                    parameter_value=downloader_id
+                    parameter_value=downloader_id,
                 )
 
             # 字段名映射：驼峰命名 → 模型字段
@@ -304,9 +280,7 @@ class DownloaderCapabilitiesManager:
             self.db.rollback()
             logger.error(f"更新下载器能力配置失败: {downloader_id}, 错误: {e}")
             raise ConfigurationError(
-                message=f"更新能力配置失败: {str(e)}",
-                parameter_name="downloader_id",
-                parameter_value=downloader_id
+                message=f"更新能力配置失败: {str(e)}", parameter_name="downloader_id", parameter_value=downloader_id
             )
 
     def delete_capabilities(self, downloader_id: str) -> bool:
@@ -320,9 +294,11 @@ class DownloaderCapabilitiesManager:
             bool: 删除成功返回True，配置不存在返回False
         """
         try:
-            capabilities = self.db.query(DownloaderCapabilities).filter(
-                DownloaderCapabilities.downloader_id == downloader_id
-            ).first()
+            capabilities = (
+                self.db.query(DownloaderCapabilities)
+                .filter(DownloaderCapabilities.downloader_id == downloader_id)
+                .first()
+            )
 
             if not capabilities:
                 logger.info(f"下载器能力配置不存在: {downloader_id}")
@@ -339,11 +315,7 @@ class DownloaderCapabilitiesManager:
             logger.error(f"删除下载器能力配置失败: {downloader_id}, 错误: {e}")
             return False
 
-    def reset_to_default(
-        self,
-        downloader_id: str,
-        downloader_type: Optional[int] = None
-    ) -> DownloaderCapabilities:
+    def reset_to_default(self, downloader_id: str, downloader_type: Optional[int] = None) -> DownloaderCapabilities:
         """
         重置为默认能力配置（清除手动覆盖标记）
 
@@ -363,16 +335,17 @@ class DownloaderCapabilitiesManager:
 
             # 创建新的默认配置
             if downloader_type is None:
-                downloader = self.db.query(BtDownloaders).filter(
-                    BtDownloaders.downloader_id == downloader_id,
-                    BtDownloaders.dr == 0
-                ).first()
+                downloader = (
+                    self.db.query(BtDownloaders)
+                    .filter(BtDownloaders.downloader_id == downloader_id, BtDownloaders.dr == 0)
+                    .first()
+                )
 
                 if not downloader:
                     raise ConfigurationError(
                         message=f"下载器不存在: {downloader_id}",
                         parameter_name="downloader_id",
-                        parameter_value=downloader_id
+                        parameter_value=downloader_id,
                     )
 
                 downloader_type = downloader.downloader_type
@@ -382,7 +355,5 @@ class DownloaderCapabilitiesManager:
         except Exception as e:
             logger.error(f"重置下载器能力配置失败: {downloader_id}, 错误: {e}")
             raise ConfigurationError(
-                message=f"重置能力配置失败: {str(e)}",
-                parameter_name="downloader_id",
-                parameter_value=downloader_id
+                message=f"重置能力配置失败: {str(e)}", parameter_name="downloader_id", parameter_value=downloader_id
             )

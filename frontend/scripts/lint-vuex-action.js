@@ -11,21 +11,19 @@ const path = require('path')
 
 const STORE_DIR = path.join(__dirname, '..', 'src', 'store')
 
-const results = []
-
-function scanDir(dir) {
+function scanDir(dir, results) {
   const entries = fs.readdirSync(dir, { withFileTypes: true })
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name)
     if (entry.isDirectory()) {
-      scanDir(fullPath)
+      scanDir(fullPath, results)
     } else if (entry.isFile() && /\.(ts|vue)$/.test(entry.name)) {
-      checkFile(fullPath)
+      checkFile(fullPath, results)
     }
   }
 }
 
-function checkFile(filePath) {
+function checkFile(filePath, results) {
   const content = fs.readFileSync(filePath, 'utf-8')
   const lines = content.split('\n')
   const relativePath = path.relative(path.join(__dirname, '..'), filePath).replace(/\\/g, '/')
@@ -62,20 +60,33 @@ function checkFile(filePath) {
   }
 }
 
-scanDir(STORE_DIR)
-
-if (results.length > 0) {
-  console.error('❌ 错误：以下 @Action 缺少 { rawError: true } 配置\n')
-  for (const r of results) {
-    console.error(`  ${r.file}:${r.line}  ${r.code}`)
-  }
-  console.error('')
-  console.error('原因：@Action 默认会包装错误，导致原始错误信息丢失，')
-  console.error('产生误导性的 ERR_ACTION_ACCESS_UNDEFINED 错误。')
-  console.error('')
-  console.error('修复：将 @Action 改为 @Action({ rawError: true })')
-  process.exit(1)
+function findViolations(storeDir = STORE_DIR) {
+  const results = []
+  scanDir(storeDir, results)
+  return results
 }
 
-console.log('✅ 所有 @Action 装饰器均已正确配置 rawError: true')
-process.exit(0)
+function main() {
+  const results = findViolations()
+  if (results.length > 0) {
+    console.error('❌ 错误：以下 @Action 缺少 { rawError: true } 配置\n')
+    for (const r of results) {
+      console.error(`  ${r.file}:${r.line}  ${r.code}`)
+    }
+    console.error('')
+    console.error('原因：@Action 默认会包装错误，导致原始错误信息丢失，')
+    console.error('产生误导性的 ERR_ACTION_ACCESS_UNDEFINED 错误。')
+    console.error('')
+    console.error('修复：将 @Action 改为 @Action({ rawError: true })')
+    return 1
+  }
+
+  console.log('✅ 所有 @Action 装饰器均已正确配置 rawError: true')
+  return 0
+}
+
+if (require.main === module) {
+  process.exit(main())
+}
+
+module.exports = { findViolations }

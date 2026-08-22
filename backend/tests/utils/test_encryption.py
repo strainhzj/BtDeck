@@ -14,6 +14,7 @@ SM4Encryption 加密工具单元测试
 - encrypt_tracker_url / decrypt_tracker_url（tracker URL 加解密）
 """
 
+import pytest
 from unittest.mock import patch
 
 
@@ -93,13 +94,14 @@ class TestSM4Encryption:
         decrypted = sm4_instance.decrypt(encrypted)
         assert decrypted == plaintext
 
-    def test_uninitialized_crypt_returns_plaintext(self):
-        """未初始化的加密器加密应返回原文"""
+    def test_uninitialized_crypt_raises_fail_closed(self):
+        """未初始化的加密器必须抛错（fail-closed），禁止静默明文落库"""
         from app.utils.encryption import SM4Encryption
         instance = SM4Encryption.__new__(SM4Encryption)
         instance.encrypt_crypt = None
         instance.decrypt_crypt = None
-        assert instance.encrypt("test") == "test"
+        with pytest.raises(RuntimeError, match="未初始化"):
+            instance.encrypt("test")
 
     def test_different_plaintexts_produce_different_ciphertexts(self, sm4_instance):
         """不同明文应产生不同密文"""
@@ -273,11 +275,11 @@ class TestSM4EncryptionEdgeCases:
         result = instance.decrypt("sm4:someciphertext")
         assert result == "sm4:someciphertext"
 
-    def test_encrypt_异常时返回原文(self, sm4_instance):
-        """encrypt 内部异常时应返回原文"""
-        with patch.object(sm4_instance.encrypt_crypt, 'crypt_ecb', side_effect=Exception("boom")):
-            result = sm4_instance.encrypt("trigger_error")
-            assert result == "trigger_error"
+    def test_encrypt_异常时抛错(self, sm4_instance):
+        """encrypt 内部异常时必须抛错（fail-closed），禁止静默明文落库"""
+        with patch.object(sm4_instance.encrypt_crypt, "crypt_ecb", side_effect=Exception("boom")):
+            with pytest.raises(Exception):
+                sm4_instance.encrypt("trigger_error")
 
     def test_decrypt_异常时返回原文(self, sm4_instance):
         """decrypt 内部异常时应返回原文"""
