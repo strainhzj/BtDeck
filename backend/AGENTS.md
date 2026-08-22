@@ -1,77 +1,55 @@
-# AGENTS.md - BTDeck 后端项目
+# AGENTS.md - BtDeck 后端（端规则指针）
 
-> **项目**: BTDeck 后端服务
 > **技术栈**: Python 3.11+ | FastAPI 0.115.0 | SQLAlchemy 2.0.15 | SQLite
-> **更新**: 2026-05-27
+> **更新**: 2026-06-18
+
+本文件是后端规则指针。**全栈工作流、Git 规范、功能状态、进度日志统一在根目录**（`../AGENTS.md`、`../feature_list.json`、`../progress.md`），本文件不再重复，亦不回指根目录工作流。
 
 ---
 
-## 项目定位
+## 后端工作流入口
 
-BTDeck 后端提供统一的 BitTorrent 客户端管理 API，支持 qBittorrent、Transmission 多下载器接入。
-
----
-
-## 启动工作流
-
-开始任何工作前，按顺序执行：
+后端开发时，按顺序：
 
 ```text
-1. 阅读 AGENTS.md（本文件）
-2. 阅读 CLAUDE.md（后端技术约束）
-3. 阅读 docs/constraints/（详细规范）
-4. 阅读 feature_list.json（功能状态）
-5. 阅读 PROGRESS.md（会话上下文）
-6. 运行 ./scripts/init.sh（验证环境）
+1. 先读 ../AGENTS.md（全栈工作流与跨端规则）
+2. 读本文件（后端模块索引 + 约束入口）
+3. 读 CLAUDE.md（后端技术约束）
+4. 读 docs/constraints/（后端详细规范）
+5. 读 ../feature_list.json（全栈功能状态，后端任务 file 前缀 app/）
+6. 读 ../progress.md（全栈进度日志）
+7. 运行 ../init.sh 或 ./scripts/init.sh（环境验证）
 ```
 
----
-
-## 工作规则
-
-### 1. API 响应格式统一（强制）
-
-所有 API 必须使用统一响应格式，分页字段名严格固定为 `list`/`total`/`pageSize`。
-
-详见 `docs/constraints/api-response-format.md`
-
-### 2. 数据库迁移管理（强制）
-
-所有 Schema 变更必须通过 Alembic 管理，应用启动时自动执行迁移。
-
-详见 `docs/constraints/database-migration.md`
-
-### 3. 下载器连接管理（强制）
-
-必须使用 `app.state.store` 缓存中的客户端连接，严禁重复创建。
-
-详见 `docs/constraints/downloader-connection.md`
-
-### 4. 代码复用优先
-
-优先复用现有代码和类，仅在必要时创建新的。检查相似度 >50% 可扩展现有代码。
-
-详见 `docs/constraints/code-reuse.md`
-
-### 5. 跨环境数据库一致性（强制）
-
-确保所有环境数据库结构一致，每次启动前检查版本。
-
-详见 `docs/constraints/database-consistency.md`
-
-### 6. 验证优先
-
-完成定义：
-- [ ] 实现完成
-- [ ] 代码检查通过（mypy + black + flake8）
-- [ ] 相关测试通过
-- [ ] API 文档更新（如有新端点）
-- [ ] PROGRESS.md 更新
-- [ ] feature_list.json 更新
+> 注：全栈启动工作流的权威定义在 `../AGENTS.md`，本处仅给出后端视角的入口指引。
 
 ---
 
-## 功能模块索引
+## 后端工作规则（强制）
+
+### 1. API 响应格式统一
+
+分页字段名严格固定为 `list`/`total`/`pageSize`。详见 `docs/constraints/api-response-format.md`
+
+### 2. 数据库迁移管理
+
+所有 Schema 变更通过 Alembic 管理，应用启动时自动执行迁移。详见 `docs/constraints/database-migration.md`
+
+### 3. 下载器连接管理
+
+必须使用 `app.state.store` 缓存中的客户端连接，严禁重复创建。详见 `docs/constraints/downloader-connection.md`
+
+### 4. 跨环境数据库一致性
+
+确保所有环境数据库结构一致，每次启动前检查版本。详见 `docs/constraints/database-consistency.md`
+
+### 5. 代码复用优先
+
+优先复用现有代码和类，相似度 >50% 可扩展现有代码。详见 `docs/constraints/code-reuse.md`
+
+---
+
+## 后端功能模块索引
 
 | 模块 | 模型 | 服务 | 路由端点 |
 |------|------|------|----------|
@@ -97,84 +75,75 @@ BTDeck 后端提供统一的 BitTorrent 客户端管理 API，支持 qBittorrent
 | 速度调度 | `speed_schedule_rules.py` | `speed_schedule_service.py` | - |
 | 定时任务 | - | - | `cron_tasks.py` |
 | 高级搜索 | - | - | `advanced_search.py` |
+| **查询模板 (v1.0.5)** | `query_template.py` (待建) | `query_template_service.py` (待建) | `query_templates.py` (待建) |
+
+> 跨端模块（前后端协同）的总览见 `../AGENTS.md` 功能模块索引。
 
 ---
 
-## 项目结构
+## 后端项目结构
 
 ```text
-BtDeck/
+backend/
 ├── app/
 │   ├── api/endpoints/   # API路由（30+端点文件）
-│   ├── models/          # 数据库模型（10+模型）
+│   ├── api/api.py       # 集中式路由注册（include_router）
+│   ├── models/          # 数据库模型
+│   ├── auth/models.py   # User 模型（注意：不在 models/ 目录）
 │   ├── schemas/         # Pydantic模型
 │   ├── services/        # 业务逻辑（25+服务）
+│   ├── data/            # 初始数据（default_xxx.py，由 init_db 调用）
 │   ├── downloader/      # 下载器适配器
-│   │   └── adapters/    # qBittorrent/Transmission适配
 │   ├── startup/         # 启动生命周期
-│   ├── utils/           # 工具函数
+│   ├── database.py      # init_db() 统一初始化入口
 │   └── main.py          # 应用入口
 ├── alembic/             # 数据库迁移
 ├── config/              # 配置（app.db SQLite）
 ├── tests/               # 测试套件
-├── scripts/             # 工具脚本
-├── pytest.ini           # 测试配置
-└── requirements.txt     # Python依赖
+├── scripts/init.sh      # 端环境验证（支持 --ci）
+└── requirements.txt
 ```
 
 ---
 
-## 验证命令
+## 后端验证命令
 
 ```bash
-# 环境验证
+# 端环境验证（默认：安装依赖 + 验证）
 ./scripts/init.sh
 
-# 代码质量（全量）
+# 端环境验证（轻量，不安装依赖，被根 init.sh 调用）
+./scripts/init.sh --ci
+
+# 代码质量
 mypy app/ && black --check app/ && flake8 app/
 
-# 运行测试
+# 测试
 pytest
 
-# 启动服务
+# 启动（启动时自动 migrate_database + init_db）
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 5001
+
+# 数据库迁移（四轨治理后统一流程，详见 docs/constraints/database-migration.md）
+# 改模型后用临时库生成迁移，避免污染开发库 alembic_version
+DATABASE_PATH=/tmp/autogen.db alembic upgrade head
+DATABASE_PATH=/tmp/autogen.db alembic revision --autogenerate -m "描述"
+alembic upgrade head
+alembic heads  # 确认单 head
 ```
 
 ---
 
-## 必需文件
+## 后端约束文档（`docs/constraints/`）
 
-| 文件 | 用途 | 更新频率 |
-|------|------|----------|
-| `AGENTS.md` | 后端工作流（本文件） | 稳定 |
-| `CLAUDE.md` | 后端技术约束 | 稳定 |
-| `feature_list.json` | 功能状态追踪 | 每次会话 |
-| `PROGRESS.md` | 会话进度日志 | 每次会话 |
-| `session-handoff.md` | 会话交接模板 | 每次会话结束 |
-| `scripts/init.sh` | 环境验证脚本 | 稳定 |
-
-### 约束文档（`docs/constraints/`）
-
-| 文件 | 约束内容 | 适用场景 |
-|------|----------|----------|
-| `api-response-format.md` | API 统一响应格式、分页字段名强制规范 | 编写/修改任何 API 接口时 |
-| `code-reuse.md` | 代码复用优先原则、扩展判断标准 | 创建新函数/类前 |
-| `database-migration.md` | Alembic 迁移管理、Schema 变更流程 | 修改数据库模型时 |
-| `database-consistency.md` | 跨环境数据库一致性保障、版本检查 | 部署/切换环境时 |
-| `downloader-connection.md` | 下载器客户端缓存使用规范、禁止新建连接 | 涉及下载器操作的接口 |
+| 文件 | 适用场景 |
+|------|----------|
+| `api-response-format.md` | 编写/修改任何 API 接口时 |
+| `code-reuse.md` | 创建新函数/类前 |
+| `database-migration.md` | 修改数据库模型时 |
+| `database-consistency.md` | 部署/切换环境时 |
+| `downloader-connection.md` | 涉及下载器操作的接口 |
 
 ---
 
-## 会话结束清单
-
-```text
-1. 更新 PROGRESS.md（记录完成的工作和决策）
-2. 更新 feature_list.json（更新功能状态）
-3. 填写 session-handoff.md（交接信息）
-4. 验证仓库状态（./scripts/init.sh 通过）
-5. Git 提交（仅在用户要求时，在 BtDeck/ 目录内执行）
-```
-
----
-
-**最后更新**: 2026-05-27
+**最后更新**: 2026-06-18

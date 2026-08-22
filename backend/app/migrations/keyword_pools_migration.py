@@ -6,7 +6,6 @@ Tracker关键词池迁移模块
 import sqlite3
 import logging
 from pathlib import Path
-from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -90,14 +89,14 @@ class KeywordPoolsMigration:
 
                 # 查找keyword_type列
                 for col in columns:
-                    if col[1] == 'keyword_type':
+                    if col[1] == "keyword_type":
                         # 检查是否有CHECK约束包含'failure'
-                        sql = f"SELECT sql FROM sqlite_master WHERE type='table' AND name='tracker_keyword_config'"
+                        sql = "SELECT sql FROM sqlite_master WHERE type='table' AND name='tracker_keyword_config'"
                         cursor.execute(sql)
                         table_sql = cursor.fetchone()[0] if cursor.fetchone() else ""
 
                         # 如果包含'failure'但不包含'candidate'，则需要迁移
-                        return 'failure' in table_sql and 'candidate' not in table_sql
+                        return "failure" in table_sql and "candidate" not in table_sql
 
                 return False
 

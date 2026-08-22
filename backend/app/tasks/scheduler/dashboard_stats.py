@@ -1,7 +1,6 @@
-import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -51,8 +50,8 @@ class DashboardStatsJob:
                 try:
                     # ✅ 修复：从缓存读取统计值，不再重新计算和修改
                     # 这些值由状态更新任务（initialization.py）维护，使用精确的状态匹配
-                    downloading = getattr(downloader, 'downloading_count', 0) or 0
-                    seeding = getattr(downloader, 'seeding_count', 0) or 0
+                    downloading = getattr(downloader, "downloading_count", 0) or 0
+                    seeding = getattr(downloader, "seeding_count", 0) or 0
                     paused = 0  # 暂不支持从缓存读取paused统计
 
                     total_downloading += downloading

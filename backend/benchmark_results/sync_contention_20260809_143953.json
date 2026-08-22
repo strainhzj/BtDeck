@@ -1,0 +1,783 @@
+{
+  "meta": {
+    "timestamp": "2026-08-09T14:39:53.818154",
+    "python": "3.12.4",
+    "sqlite_version": "3.45.3",
+    "platform": "win32",
+    "size": "small",
+    "torrents": 2000,
+    "trackers": 3000,
+    "probe_iterations": 10,
+    "fault": "none",
+    "downloader_delay_ms": 0,
+    "assert_slo": false
+  },
+  "seed": {
+    "gen_s": 0.113,
+    "rss_before_mb": null,
+    "rss_after_mb": null,
+    "wal_bytes": 0
+  },
+  "scenarios": [
+    {
+      "name": "0",
+      "wall_time_s": 0.516,
+      "bg": {
+        "label": "0_baseline",
+        "batches": 0,
+        "committed": 0,
+        "retries": 0,
+        "final_failures": 0,
+        "partial": false
+      },
+      "probes": {
+        "read_count": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            4.73,
+            3.23,
+            4.15,
+            4.22,
+            4.26,
+            5.17,
+            6.11,
+            5.23,
+            5.07,
+            4.75
+          ],
+          "p50": 4.73,
+          "p95": 5.23,
+          "p99": 5.23,
+          "mean": 4.69,
+          "max": 6.11
+        },
+        "read_page": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            4.9,
+            4.0,
+            4.04,
+            4.27,
+            5.04,
+            5.77,
+            6.11,
+            5.83,
+            6.07,
+            5.5
+          ],
+          "p50": 5.04,
+          "p95": 6.07,
+          "p99": 6.07,
+          "mean": 5.15,
+          "max": 6.11
+        },
+        "write_insert": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            6.77,
+            4.14,
+            3.72,
+            4.18,
+            4.88,
+            3.94,
+            5.92,
+            5.2,
+            5.53,
+            4.8
+          ],
+          "p50": 4.8,
+          "p95": 5.92,
+          "p99": 5.92,
+          "mean": 4.91,
+          "max": 6.77
+        },
+        "write_mark": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            12.88,
+            13.75,
+            15.29,
+            12.93,
+            18.77,
+            18.41,
+            21.38,
+            22.11,
+            16.9,
+            22.39
+          ],
+          "p50": 16.9,
+          "p95": 22.11,
+          "p99": 22.11,
+          "mean": 17.48,
+          "max": 22.39
+        },
+        "task_status": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            14.11,
+            18.4,
+            18.91,
+            13.31,
+            15.68,
+            17.19,
+            18.13,
+            19.45,
+            22.67,
+            16.09
+          ],
+          "p50": 17.19,
+          "p95": 19.45,
+          "p99": 19.45,
+          "mean": 17.39,
+          "max": 22.67
+        }
+      },
+      "downloaders": {
+        "calls": 0,
+        "timeouts": 0,
+        "ms_max": 0.0,
+        "ms_mean": 0.0
+      },
+      "wal": {
+        "before_bytes": 0,
+        "after_bytes": 317272,
+        "growth_bytes": 317272
+      },
+      "loop_lag_ms": {
+        "samples": 1151,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 1.81,
+        "mean": 0.05,
+        "max": 8.03
+      },
+      "rss_mb": {
+        "before": null,
+        "after": null,
+        "growth": null
+      },
+      "busy_count": 0,
+      "fault": {
+        "applied": false
+      }
+    },
+    {
+      "name": "A",
+      "wall_time_s": 0.641,
+      "bg": {
+        "label": "A_info_upsert",
+        "scanned": 2800,
+        "committed": 2800,
+        "batches": 14,
+        "retries": 0,
+        "partial": false,
+        "final_failures": 0,
+        "commit_ms": [
+          19.7,
+          28.6,
+          16.9,
+          29.7,
+          27.9,
+          19.8,
+          19.8,
+          14.6,
+          24.7,
+          20.0,
+          16.0,
+          20.2,
+          18.7,
+          20.1
+        ],
+        "lock_wait_ms": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "commit_ms_stats": {
+          "p50": 19.8,
+          "p95": 28.6,
+          "p99": 28.6,
+          "mean": 21.19,
+          "max": 29.7
+        },
+        "lock_wait_ms_stats": {
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "mean": 0.0,
+          "max": 0.0
+        },
+        "max_retry_per_batch": 0
+      },
+      "probes": {
+        "read_count": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            34.75,
+            13.33,
+            10.23,
+            14.41,
+            3.32,
+            2.59,
+            2.91,
+            3.8,
+            3.17,
+            3.89
+          ],
+          "p50": 3.8,
+          "p95": 14.41,
+          "p99": 14.41,
+          "mean": 9.24,
+          "max": 34.75
+        },
+        "read_page": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            20.57,
+            29.65,
+            18.45,
+            4.1,
+            3.53,
+            3.73,
+            6.01,
+            4.3,
+            3.17,
+            4.87
+          ],
+          "p50": 4.3,
+          "p95": 20.57,
+          "p99": 20.57,
+          "mean": 9.84,
+          "max": 29.65
+        },
+        "write_insert": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            24.43,
+            16.08,
+            35.11,
+            3.21,
+            3.57,
+            3.36,
+            6.78,
+            4.59,
+            2.63,
+            4.05
+          ],
+          "p50": 4.05,
+          "p95": 24.43,
+          "p99": 24.43,
+          "mean": 10.38,
+          "max": 35.11
+        },
+        "write_mark": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            20.53,
+            21.84,
+            12.39,
+            13.77,
+            9.77,
+            12.35,
+            15.93,
+            16.7,
+            12.25,
+            14.9
+          ],
+          "p50": 13.77,
+          "p95": 20.53,
+          "p99": 20.53,
+          "mean": 15.04,
+          "max": 21.84
+        },
+        "task_status": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            26.93,
+            21.62,
+            21.59,
+            14.01,
+            15.62,
+            15.31,
+            15.45,
+            16.13,
+            15.13,
+            19.17
+          ],
+          "p50": 15.62,
+          "p95": 21.62,
+          "p99": 21.62,
+          "mean": 18.1,
+          "max": 26.93
+        }
+      },
+      "downloaders": {
+        "calls": 0,
+        "timeouts": 0,
+        "ms_max": 0.0,
+        "ms_mean": 0.0
+      },
+      "wal": {
+        "before_bytes": 0,
+        "after_bytes": 1165992,
+        "growth_bytes": 1165992
+      },
+      "loop_lag_ms": {
+        "samples": 1352,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.89,
+        "mean": 0.03,
+        "max": 5.41
+      },
+      "rss_mb": {
+        "before": null,
+        "after": null,
+        "growth": null
+      },
+      "busy_count": 0,
+      "fault": {
+        "applied": false
+      }
+    },
+    {
+      "name": "B",
+      "wall_time_s": 0.766,
+      "bg": {
+        "label": "B_tracker_status",
+        "pass1": {
+          "scanned": 3000,
+          "changed": 3000,
+          "unchanged": 0,
+          "batches": 15,
+          "retries": 0,
+          "commit_ms": [
+            8.2,
+            24.9,
+            25.7,
+            30.1,
+            17.0,
+            18.9,
+            24.4,
+            18.1,
+            17.5,
+            31.2,
+            23.0,
+            39.9,
+            52.5,
+            20.9,
+            18.0
+          ],
+          "lock_wait_ms": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "commit_ms_stats": {
+            "p50": 20.9,
+            "p95": 39.9,
+            "p99": 39.9,
+            "mean": 24.69,
+            "max": 52.5
+          },
+          "lock_wait_ms_stats": {
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "mean": 0.0,
+            "max": 0.0
+          },
+          "max_retry_per_batch": 0
+        },
+        "pass2": {
+          "scanned": 3000,
+          "changed": 0,
+          "unchanged": 3000,
+          "batches": 0,
+          "retries": 0,
+          "commit_ms": [],
+          "lock_wait_ms": [],
+          "commit_ms_stats": {
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "mean": 0.0,
+            "max": 0.0
+          },
+          "lock_wait_ms_stats": {
+            "p50": 0.0,
+            "p95": 0.0,
+            "p99": 0.0,
+            "mean": 0.0,
+            "max": 0.0
+          },
+          "max_retry_per_batch": 0
+        },
+        "batches": 15,
+        "committed": 3000,
+        "retries": 0,
+        "final_failures": 0,
+        "partial": false
+      },
+      "probes": {
+        "read_count": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            12.32,
+            11.39,
+            13.62,
+            12.91,
+            14.25,
+            5.34,
+            4.41,
+            5.17,
+            4.86,
+            5.06
+          ],
+          "p50": 5.34,
+          "p95": 13.62,
+          "p99": 13.62,
+          "mean": 8.93,
+          "max": 14.25
+        },
+        "read_page": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            7.68,
+            17.83,
+            5.53,
+            5.39,
+            6.07,
+            6.12,
+            6.7,
+            6.02,
+            6.12,
+            5.61
+          ],
+          "p50": 6.07,
+          "p95": 7.68,
+          "p99": 7.68,
+          "mean": 7.31,
+          "max": 17.83
+        },
+        "write_insert": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            53.52,
+            25.74,
+            25.05,
+            37.22,
+            17.83,
+            5.64,
+            5.29,
+            5.13,
+            5.48,
+            4.69
+          ],
+          "p50": 5.64,
+          "p95": 37.22,
+          "p99": 37.22,
+          "mean": 18.56,
+          "max": 53.52
+        },
+        "write_mark": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            18.72,
+            12.58,
+            17.77,
+            38.39,
+            19.06,
+            20.23,
+            16.96,
+            15.2,
+            16.88,
+            14.39
+          ],
+          "p50": 16.96,
+          "p95": 20.23,
+          "p99": 20.23,
+          "mean": 19.02,
+          "max": 38.39
+        },
+        "task_status": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            22.46,
+            20.42,
+            28.49,
+            18.94,
+            26.73,
+            17.23,
+            20.85,
+            19.1,
+            19.27,
+            14.14
+          ],
+          "p50": 19.27,
+          "p95": 26.73,
+          "p99": 26.73,
+          "mean": 20.76,
+          "max": 28.49
+        }
+      },
+      "downloaders": {
+        "calls": 0,
+        "timeouts": 0,
+        "ms_max": 0.0,
+        "ms_mean": 0.0
+      },
+      "wal": {
+        "before_bytes": 0,
+        "after_bytes": 4272472,
+        "growth_bytes": 4272472
+      },
+      "loop_lag_ms": {
+        "samples": 1357,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.51,
+        "mean": 0.06,
+        "max": 36.24
+      },
+      "rss_mb": {
+        "before": null,
+        "after": null,
+        "growth": null
+      },
+      "busy_count": 0,
+      "fault": {
+        "applied": false
+      }
+    },
+    {
+      "name": "C",
+      "wall_time_s": 0.609,
+      "bg": {
+        "label": "C_qb_removed_mark",
+        "committed": 600,
+        "batches": 3,
+        "retries": 0,
+        "final_failures": 0,
+        "partial": false,
+        "commit_ms": [
+          8.44,
+          20.53,
+          20.91
+        ],
+        "lock_wait_ms": [],
+        "commit_ms_stats": {
+          "p50": 8.44,
+          "p95": 20.53,
+          "p99": 20.53,
+          "mean": 16.63,
+          "max": 20.91
+        },
+        "lock_wait_ms_stats": {
+          "p50": 0.0,
+          "p95": 0.0,
+          "p99": 0.0,
+          "mean": 0.0,
+          "max": 0.0
+        }
+      },
+      "probes": {
+        "read_count": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            11.47,
+            3.62,
+            4.33,
+            3.45,
+            4.84,
+            3.9,
+            6.96,
+            6.87,
+            7.1,
+            7.72
+          ],
+          "p50": 4.84,
+          "p95": 7.72,
+          "p99": 7.72,
+          "mean": 6.03,
+          "max": 11.47
+        },
+        "read_page": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            24.61,
+            3.92,
+            3.89,
+            3.75,
+            6.34,
+            8.52,
+            8.43,
+            8.38,
+            9.45,
+            8.53
+          ],
+          "p50": 8.38,
+          "p95": 9.45,
+          "p99": 9.45,
+          "mean": 8.58,
+          "max": 24.61
+        },
+        "write_insert": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            32.91,
+            2.98,
+            3.44,
+            4.51,
+            4.47,
+            6.9,
+            7.6,
+            6.85,
+            7.6,
+            8.08
+          ],
+          "p50": 6.85,
+          "p95": 8.08,
+          "p99": 8.08,
+          "mean": 8.53,
+          "max": 32.91
+        },
+        "write_mark": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            16.83,
+            18.46,
+            16.62,
+            14.86,
+            20.59,
+            17.11,
+            17.42,
+            21.54,
+            18.8,
+            20.49
+          ],
+          "p50": 17.42,
+          "p95": 20.59,
+          "p99": 20.59,
+          "mean": 18.27,
+          "max": 21.54
+        },
+        "task_status": {
+          "count": 10,
+          "timeouts": 0,
+          "failures": 0,
+          "samples_ms": [
+            16.85,
+            12.0,
+            13.24,
+            16.12,
+            14.28,
+            19.51,
+            19.46,
+            16.51,
+            18.42,
+            19.85
+          ],
+          "p50": 16.51,
+          "p95": 19.51,
+          "p99": 19.51,
+          "mean": 16.62,
+          "max": 19.85
+        }
+      },
+      "downloaders": {
+        "calls": 0,
+        "timeouts": 0,
+        "ms_max": 0.0,
+        "ms_mean": 0.0
+      },
+      "wal": {
+        "before_bytes": 0,
+        "after_bytes": 350232,
+        "growth_bytes": 350232
+      },
+      "loop_lag_ms": {
+        "samples": 1175,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 1.63,
+        "mean": 0.04,
+        "max": 6.48
+      },
+      "rss_mb": {
+        "before": null,
+        "after": null,
+        "growth": null
+      },
+      "busy_count": 0,
+      "fault": {
+        "applied": false
+      }
+    }
+  ],
+  "fault": {
+    "applied": false
+  },
+  "slo": null
+}

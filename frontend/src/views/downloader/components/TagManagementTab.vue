@@ -2,11 +2,7 @@
   <div class="tag-management-tab">
     <!-- 新增模式提示 -->
     <div v-if="!downloader" class="empty-state">
-      <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
+      <LucideIcon class="empty-icon" name="lock-keyhole" :size="42" :stroke-width="1.4" />
       <h3>请先保存基本信息</h3>
       <p>标签/分类管理需要下载器创建后才能使用</p>
     </div>
@@ -19,20 +15,24 @@
           <el-input
             v-model="searchKeyword"
             placeholder="搜索标签名称"
-            prefix-icon="el-icon-search"
-            clearable
             style="width: 280px;"
             @input="handleSearchInput"
-            @clear="handleSearchClear"
-          />
+          >
+            <template slot="prefix"><LucideIcon name="search" :size="14" /></template>
+            <template slot="suffix">
+              <button v-if="searchKeyword" class="input-clear" type="button" aria-label="清空搜索" @click="handleSearchClear">
+                <LucideIcon name="x" :size="13" />
+              </button>
+            </template>
+          </el-input>
         </div>
         <div class="toolbar-right">
           <el-button
             type="primary"
-            icon="el-icon-plus"
             :disabled="downloader === null"
             @click="handleCreate"
           >
+            <LucideIcon name="plus" :size="14" />
             新增标签
           </el-button>
         </div>
@@ -46,10 +46,7 @@
           :class="['type-tab', {active: activeType === type.value}]"
           @click="handleTypeChange(type.value)"
         >
-          <svg class="type-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path v-if="type.value === 'category'" d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            <path v-else d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h2l5.41 13.59a2 2 0 0 1 2.83 0L21.59 13.41z"></path>
-          </svg>
+          <LucideIcon class="type-icon" :name="type.value === 'category' ? 'folder-open' : 'tag'" :size="14" />
           <span>{{ type.label }}</span>
           <span class="count">({{ getTypeCount(type.value) }})</span>
         </div>
@@ -68,9 +65,9 @@
         </el-select>
         <el-button
           size="mini"
-          :icon="sortOrder === 'asc' ? 'el-icon-bottom' : 'el-icon-top'"
           @click="toggleSortOrder"
         >
+          <LucideIcon :name="sortOrder === 'asc' ? 'arrow-down' : 'arrow-up'" :size="13" />
           {{ sortOrder === 'asc' ? '升序' : '降序' }}
         </el-button>
       </div>
@@ -83,10 +80,7 @@
       >
         <!-- 空状态 -->
         <div v-if="filteredTags.length === 0 && !loading" class="empty-tags">
-          <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h2l5.41 13.59a2 2 0 0 1 2.83 0L21.59 13.41z"></path>
-            <line x1="12" y1="2" x2="12" y2="22"></line>
-          </svg>
+          <LucideIcon class="empty-icon" :name="searchKeyword ? 'search-x' : 'tags'" :size="42" :stroke-width="1.4" />
           <p>{{ searchKeyword ? '未找到匹配的标签' : '暂无标签数据' }}</p>
         </div>
 
@@ -100,36 +94,20 @@
           >
             <div class="tag-header">
               <div class="tag-type-badge">
-                <svg v-if="tag.tag_type === 'category'" class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-                </svg>
-                <svg v-else class="badge-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h2l5.41 13.59a2 2 0 0 1 2.83 0L21.59 13.41z"></path>
-                  <line x1="12" y1="2" x2="12" y2="22"></line>
-                </svg>
+                <LucideIcon class="badge-icon" :name="tag.tag_type === 'category' ? 'folder-open' : 'tag'" :size="13" />
                 <span>{{ tag.tag_type === 'category' ? '分类' : '标签' }}</span>
               </div>
               <el-dropdown trigger="click" @command="(cmd) => handleTagAction(cmd, tag)">
                 <span class="tag-menu-trigger">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="1"></circle>
-                    <circle cx="12" cy="5" r="1"></circle>
-                    <circle cx="12" cy="19" r="1"></circle>
-                  </svg>
+                  <LucideIcon name="ellipsis-vertical" :size="15" />
                 </span>
                 <el-dropdown-menu slot="dropdown">
                   <el-dropdown-item command="edit">
-                    <svg class="menu-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-1 5L13.5 5.5a2.121 2.121 0 0 1 3-3z"></path>
-                    </svg>
+                    <LucideIcon class="menu-icon" name="pencil" :size="13" />
                     编辑
                   </el-dropdown-item>
                   <el-dropdown-item command="delete" divided>
-                    <svg class="menu-icon danger" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                      <polyline points="3 6 5 6 21 6"></polyline>
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v2"></path>
-                    </svg>
+                    <LucideIcon class="menu-icon danger" name="trash-2" :size="13" />
                     删除
                   </el-dropdown-item>
                 </el-dropdown-menu>
@@ -189,7 +167,8 @@
       </el-form>
       <div slot="footer" class="dialog-footer">
         <el-button @click="showDialog = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">
+        <el-button type="primary" :disabled="submitting" @click="handleSubmit">
+          <LucideIcon :name="submitting ? 'refresh-cw' : 'save'" :size="14" :class="{'is-spinning': submitting}" />
           {{ editingTag ? '保存' : '创建' }}
         </el-button>
       </div>
@@ -202,18 +181,14 @@
       width="400px"
     >
       <div class="batch-delete-content">
-        <svg class="warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3.71l10.59 10.59a2 2 0 0 0 2.83 0l1.41-1.41a2 2 0 0 0-2.83 0L10.29 3.86z"></path>
-          <line x1="12" y1="9" x2="12" y2="17"></line>
-          <line x1="4.93" y1="14.07" x2="7.76" y2="16.9"></line>
-          <line x1="16.24" y1="7.1" x2="19.07" y2="9.93"></line>
-        </svg>
+        <LucideIcon class="warning-icon" name="alert-triangle" :size="40" :stroke-width="1.5" />
         <p>确定要删除选中的 <strong>{{ selectedTags.length }}</strong> 个标签吗？</p>
         <p class="warning-text">此操作不可撤销，删除后将无法恢复</p>
       </div>
       <div slot="footer" class="dialog-footer">
         <el-button @click="showBatchDeleteDialog = false">取消</el-button>
-        <el-button type="danger" :loading="batchDeleting" @click="handleConfirmBatchDelete">
+        <el-button type="danger" :disabled="batchDeleting" @click="handleConfirmBatchDelete">
+          <LucideIcon :name="batchDeleting ? 'refresh-cw' : 'trash-2'" :size="14" :class="{'is-spinning': batchDeleting}" />
           确定删除
         </el-button>
       </div>
@@ -229,12 +204,7 @@
       append-to-body
     >
       <div class="category-select-content">
-        <svg class="warning-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M10.29 3.86L1.82 18a2 2 0 0 1 2.83 0l12.59 12.59a2 2 0 0 1 2.83 0L17.59 5.41a2 2 0 0 0 0-3.42 0z"></path>
-          <line x1="12" y1="9" x2="12" y2="17"></line>
-          <line x1="4.93" y1="14.07" x2="7.76" y2="16.9"></line>
-          <line x1="16.24" y1="7.1" x2="19.07" y2="9.93"></line>
-        </svg>
+        <LucideIcon class="warning-icon" name="alert-triangle" :size="40" :stroke-width="1.5" />
         <p class="dialog-title">
           分类"<strong>{{ deletingTag ? deletingTag.tag_name : '' }}</strong>"下还有种子，
         </p>
@@ -263,7 +233,8 @@
       </div>
       <div slot="footer" class="dialog-footer">
         <el-button @click="handleCancelDeleteCategory">取消</el-button>
-        <el-button type="primary" :loading="transferring" @click="handleConfirmDeleteCategory">
+        <el-button type="primary" :disabled="transferring" @click="handleConfirmDeleteCategory">
+          <LucideIcon :name="transferring ? 'refresh-cw' : 'folder-sync'" :size="14" :class="{'is-spinning': transferring}" />
           确定转移并删除
         </el-button>
       </div>
@@ -274,25 +245,28 @@
 <script lang="ts">
 import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { ElForm } from 'element-ui/types/form'
+import { Downloader } from '../types'
 import {
   getTagList,
   createTag,
   updateTag,
   deleteTag,
   batchDeleteTags,
-  checkCategorySupport,
   TorrentTag,
-  TagType,
   CreateTagRequest,
   UpdateTagRequest
 } from '@/api/tag-management'
 import { Message, MessageBox } from 'element-ui'
 
+interface FormDataHost extends Vue {
+  formData?: Record<string, unknown>
+}
+
 @Component({
   name: 'TagManagementTab'
 })
 export default class TagManagementTab extends Vue {
-  @Prop({ default: null }) downloader!: any
+  @Prop({ default: null }) downloader!: Downloader | null
 
   // ==================== 数据状态 ====================
 
@@ -440,7 +414,7 @@ export default class TagManagementTab extends Vue {
    * 搜索输入处理（防抖）
    */
   private searchTimer: number | null = null
-  private handleSearchInput(value: string) {
+  private handleSearchInput(_value: string) {
     if (this.searchTimer) {
       clearTimeout(this.searchTimer)
     }
@@ -619,7 +593,10 @@ export default class TagManagementTab extends Vue {
           tag_name: this.tagForm.tag_name,
           color: this.tagForm.color
         }
-        await updateTag(this.tagForm.tag_id!, updateData)
+        if (this.tagForm.tag_id === undefined) {
+          throw new Error('Missing tag_id for tag update')
+        }
+        await updateTag(this.tagForm.tag_id, updateData)
         Message.success('更新成功')
       } else {
         // 创建模式
@@ -677,8 +654,9 @@ export default class TagManagementTab extends Vue {
   /**
    * 获取父组件方法
    */
-  get formData(): any {
-    return this.$parent.$parent?.formData || {}
+  get formData(): Record<string, unknown> {
+    const host = this.$parent.$parent as FormDataHost | undefined
+    return host?.formData || {}
   }
 }
 </script>
@@ -687,7 +665,12 @@ export default class TagManagementTab extends Vue {
 @import '@/styles/theme-variables.scss';
 
 .tag-management-tab {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  text-align: left;
 }
 
 // ==================== 空状态 ====================
@@ -1043,6 +1026,200 @@ export default class TagManagementTab extends Vue {
     &:hover {
       background: var(--color-bg-secondary);
     }
+  }
+}
+
+// Compact catalog treatment for dense tag operations.
+.empty-state {
+  min-height: 220px;
+  padding: 38px 24px;
+
+  .empty-icon {
+    width: 42px;
+    height: 42px;
+    margin-bottom: 10px;
+  }
+
+  h3 {
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+
+  p {
+    font-size: 10px;
+  }
+}
+
+.toolbar {
+  margin-bottom: 8px;
+  padding: 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 10px;
+  background:
+    linear-gradient(110deg, rgba(var(--color-primary-rgb), 0.06), transparent 42%),
+    rgba(255, 255, 255, 0.66);
+}
+
+.toolbar ::v-deep .el-input__inner {
+  height: 32px;
+  font-size: 10px;
+}
+
+.toolbar ::v-deep .el-input__prefix,
+.toolbar ::v-deep .el-input__suffix {
+  display: inline-flex;
+  align-items: center;
+}
+
+.toolbar ::v-deep .el-button {
+  height: 32px;
+  padding: 0 11px;
+  font-size: 9px;
+}
+
+.toolbar ::v-deep .el-button span,
+.sort-bar ::v-deep .el-button span,
+.dialog-footer ::v-deep .el-button span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.input-clear {
+  display: inline-flex;
+  padding: 3px;
+  border: 0;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  cursor: pointer;
+}
+
+.type-tabs {
+  gap: 5px;
+  margin-bottom: 8px;
+}
+
+.type-tab {
+  min-height: 32px;
+  padding: 0 11px;
+  border-radius: 8px;
+  font-size: 10px;
+
+  .count {
+    font-family: var(--font-mono);
+    font-size: 8px;
+  }
+}
+
+.sort-bar {
+  min-height: 38px;
+  margin-bottom: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.56);
+
+  .sort-label {
+    font-size: 9px;
+  }
+}
+
+.sort-bar ::v-deep .el-button {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 9px;
+}
+
+.tag-list {
+  min-height: 208px;
+
+  .empty-tags {
+    min-height: 208px;
+    padding: 36px 20px;
+
+    .empty-icon {
+      width: 42px;
+      height: 42px;
+      margin-bottom: 9px;
+    }
+
+    p {
+      font-size: 10px;
+    }
+  }
+
+  .tag-grid {
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 7px;
+  }
+}
+
+.tag-card {
+  gap: 6px;
+  min-height: 96px;
+  padding: 9px 10px;
+  border-left-width: 3px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.64);
+
+  &:hover {
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.07);
+    transform: translateY(-1px);
+  }
+
+  .tag-type-badge {
+    gap: 4px;
+    padding: 3px 6px;
+    font-size: 8px;
+
+    span {
+      font-size: 8px;
+    }
+  }
+
+  .tag-body .tag-name {
+    font-size: 12px;
+  }
+
+  .tag-footer .tag-time {
+    font-family: var(--font-mono);
+    font-size: 8px;
+  }
+}
+
+.warning-icon {
+  display: inline-flex;
+}
+
+.is-spinning {
+  animation: tag-control-spin 0.8s linear infinite;
+}
+
+@keyframes tag-control-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 640px) {
+  .toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .toolbar-left,
+  .toolbar-left .el-input,
+  .toolbar-right .el-button {
+    width: 100% !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tag-card {
+    transition-duration: 0.01ms;
+  }
+
+  .is-spinning {
+    animation: none;
   }
 }
 </style>

@@ -234,7 +234,7 @@ export default class MonacoEditor extends Vue {
     })
 
     // 监听选择变化
-    this.editor.onDidChangeCursorSelection((e: any) => {
+    this.editor.onDidChangeCursorSelection((_e: any) => {
       const selection = this.editor.getSelection()
       const selectedText = this.editor.getModel().getValueInRange(selection)
       this.$emit('selection-change', {
@@ -254,7 +254,7 @@ export default class MonacoEditor extends Vue {
 
     // 监听错误标记变化
     if (this.monaco.editor) {
-      this.monaco.editor.onDidChangeMarkers((uris) => {
+      this.monaco.editor.onDidChangeMarkers((_uris) => {
         this.updateErrorMarkers()
       })
     }
@@ -461,7 +461,7 @@ export default class MonacoEditor extends Vue {
   }
 
   @Watch('language')
-  onLanguageChange(newLanguage: string) {
+  onLanguageChange(_newLanguage: string) {
     if (this.editor && this.isInitialized) {
       const monacoLanguage = this.getMonacoLanguage()
       this.monaco.editor.setModelLanguage(this.editor.getModel(), monacoLanguage)

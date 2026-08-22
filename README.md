@@ -11,6 +11,9 @@
 
 - **多下载器统一管理** - 支持 qBittorrent 和 Transmission
 - **实时状态监控** - WebSocket 实时推送下载速度和状态
+- **高级搜索与查询模板** - 常用搜索条件保存为模板一键套用，系统内置常用模板
+- **孤儿文件管理** - 自动识别不属于任何下载器的磁盘占用文件，置信度标记 + 忽视名单 + 隔离区，误删可恢复
+- **Tracker 异常识别** - 种子列表「Tracker异常」标签，一眼识别汇报出错的种子并可查看错误原因
 - **安全认证体系** - JWT + TOTP 二次验证
 - **通知中心** - 版本更新通知、系统消息
 - **数据加密** - SM4 国密算法敏感数据加密
@@ -36,6 +39,12 @@ docker compose up -d --build
 
 访问 http://localhost:8080
 
+> **首次登录**：默认账号 `admin` / `admin`，系统会强制要求修改密码。
+> **安全加固**（公网/跨网络部署必做）：复制 `.env.example` 为 `.env`，按注释设置
+> `DEV=false` + `SECRET_KEY` + `ALLOWED_HOSTS` 三件套（缺一容器拒绝启动），
+> 并启用 TLS——参考 `deploy/nginx-tls.conf.example`（默认纯 HTTP 部署下
+> 登录口令与 token 明文传输，可被网络嗅探）。
+
 ### 开发环境
 
 ```bash
@@ -56,6 +65,16 @@ npm run serve
 | API | http://localhost:5001 |
 | API 文档 | http://localhost:5001/docs |
 | WebSocket | ws://localhost:5002 |
+
+## 代码路线图
+
+本项目在 `docs/roadmap/` 下维护一份**渐进式披露的多文件代码路线图**，用于快速定位模块职责、调用关系与架构约定（不修改源码，纯只读索引）。
+
+- **入口**：[docs/roadmap/README.md](./docs/roadmap/README.md) ⇄ [CLAUDE.md](./CLAUDE.md) / [AGENTS.md](./AGENTS.md)
+- **三层结构**：① 模块路由（根 README）→ ② 分支文件清单（各分支 README）→ ③ 源文件方法签名详情（单文件 .md）
+- **跨切专题**（调用链 / 约定 / 风险 / 测试覆盖）：[docs/roadmap/perspectives/](./docs/roadmap/perspectives/)
+- **覆盖范围**：backend（api/services/core/models/tasks 等 8 分支）+ frontend（entry/api/views/store 等 6 分支）+ deploy + tests
+- **第三层样例**：[torrent_crud.py 路线图](./docs/roadmap/backend/api/endpoints/torrent_crud.md)（其余源文件待后续按"模式 B"增量补齐）
 
 ## 项目结构
 
@@ -88,7 +107,9 @@ BtDeck/
 │   └── btdeck.service       # systemd 服务
 ├── docker-compose.yml        # 全栈 Docker 部署
 ├── CLAUDE.md                 # 开发指导
-└── ROADMAP.md                # 开发路线图
+├── AGENTS.md                 # 全栈工作流路由
+└── docs/
+    └── roadmap/              # 代码路线图（三层渐进式披露）
 ```
 
 ## 安装包构建
@@ -100,7 +121,7 @@ cd deploy
 build-windows.bat
 ```
 
-生成 `dist/BtDeck-v1.0.9-windows-x64-setup.exe`
+生成 `dist/BtDeck-v1.0.5-windows-x64-setup.exe`
 
 ### Linux
 
@@ -110,25 +131,39 @@ chmod +x build-linux.sh
 ./build-linux.sh
 ```
 
-生成 `dist/BtDeck-v1.0.9-linux-amd64.deb` 和 `.rpm`
+生成 `dist/BtDeck-v1.0.5-linux-amd64.deb` 和 `.rpm`
 
 ### Docker 镜像
 
 ```bash
-./build-and-push.sh
+./build-images.sh
 ```
+
+仅构建本地镜像（`btdeck-backend:latest` / `btdeck-frontend:latest`，版本号从 `feature_list.json` 自动读取），不推送至镜像仓库。完成后执行 `docker compose up -d` 启动。
 
 ## 版本历史
 
-| 版本 | 主题 | 状态 |
-|------|------|------|
-| v1.0.4 | 实时速度监控 + 通知中心 | 已完成 |
-| v1.0.9 | 全栈仓库整合 + 一键部署 | 已完成 |
-| v1.0.5 | 查询模板系统 | 计划中 |
-| v1.0.6 | 孤儿文件管理 | 计划中 |
-| v1.1.0 | 自动化运维 | 计划中 |
+| 版本 | 主题 | 发布日期 | 状态 |
+|------|------|----------|------|
+| v1.0.4 | 实时速度监控 + 通知中心 + 活动种子筛选 | 2026-06-05 | 已发布 |
+| v1.0.5 | 孤儿文件管理 + 查询模板 + 安全加固 + 大量问题修复 | 2026-08-21 | 已发布 |
+| v1.1.0 | 自动化运维 | - | 计划中 |
 
-详见 [ROADMAP.md](./ROADMAP.md) 和 [PLANS/](./PLANS/)。
+> 产品发布号以 `backend/app/version.py` 为准。`feature_list.json` 与 `PLANS/` 中的 v1.0.x 为内部里程碑编号，与发布号相互独立（v1.0.5 发布打包了里程碑 v1.0.5 查询模板、v1.0.6 孤儿文件管理、v1.0.9 一键部署及 2026-06~08 全部修复）。
+
+### v1.0.5 更新亮点（2026-08-21）
+
+- **孤儿文件管理** - 自动找出占用磁盘空间但不属于任何下载器的文件；支持按名称、大小、状态搜索；置信度标记与忽视名单辅助判断是否可删；重复副本一键定位删除；可疑文件自动延后处理，删除前进入隔离区可查看，误删可恢复
+- **查询模板** - 简单搜索和高级搜索的常用条件均可保存为模板一键套用；系统内置常用模板，模板管理页支持筛选、编辑、删除
+- **种子列表增强** - 新增「Tracker异常」标签并可查看具体错误原因；表格列宽自由拖动（传统/分组模式均支持）且自动记住；支持同时按多个下载器、多个状态组合筛选
+- **安全加固** - 修复多项账号与登录安全漏洞；多标签页同时使用时登录状态保持一致；修改密码后其他设备自动退出
+- **性能与稳定性** - 优化多下载器同时同步时的数据写入；下载器长时间离线后自动清理缓存；大量种子场景下列表加载更流畅；建立完善的自动化测试体系
+- **安装与部署** - 新增 Windows / Linux 桌面安装包，支持独立窗口运行；修复部分环境安装后无法启动的问题；Docker 部署支持自定义镜像源
+- **Bug 修复** - qBittorrent 下载/做种状态显示颠倒、做种数据统计错误、Transmission Tracker 信息同步丢失、回收站网络路径文件清理失败、新种子状态显示 unknown 等
+
+> 完整更新日志以 [`backend/app/version.py`](./backend/app/version.py) 为准，另见 [GitHub Release v1.0.5](https://github.com/StrainThomas/BtDeck/releases/tag/v1.0.5)。本次升级涉及数据库结构变更，首次启动时会自动完成迁移。
+
+详见 [PLANS/](./PLANS/)。
 
 ## 开发文档
 

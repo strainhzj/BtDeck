@@ -3,7 +3,7 @@
     <!-- Logo 区域 -->
     <div class="sidebar-header">
       <div class="sidebar-logo">
-        <svg-icon name="dashboard" class="logo-icon" />
+        <LucideIcon name="orbit" :size="28" :stroke-width="1.65" class="logo-icon" />
         <span v-show="!isCollapse" class="sidebar-logo-text">
           BtDeck
         </span>
@@ -36,10 +36,15 @@
     <!-- 底部折叠按钮 -->
     <div class="sidebar-footer">
       <el-button
-        :icon="isCollapse ? 'el-icon-s-unfold' : 'el-icon-s-fold'"
         class="collapse-button"
+        :aria-label="isCollapse ? '展开侧边栏' : '收起侧边栏'"
         @click="toggleSidebar"
       >
+        <LucideIcon
+          :name="isCollapse ? 'panel-left-open' : 'panel-left-close'"
+          :size="17"
+          :stroke-width="1.8"
+        />
         <span v-show="!isCollapse">收起侧边栏</span>
       </el-button>
     </div>
@@ -148,9 +153,7 @@ export default class extends Vue {
 }
 
 .logo-icon {
-  width: 32px;
-  height: 32px;
-  font-size: 32px;
+  color: var(--color-primary, #059669);
 }
 
 .sidebar-logo-text {
@@ -212,10 +215,6 @@ export default class extends Vue {
     color: var(--color-primary, #059669);
   }
 
-  i {
-    font-size: 18px;
-    transition: transform var(--transition-base, 200ms);
-  }
 }
 </style>
 

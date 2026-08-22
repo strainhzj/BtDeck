@@ -338,9 +338,16 @@ export default class TransferDialog extends Vue {
       }
     } catch (error: any) {
       console.error('种子转移异常:', error)
-      const errorMsg = error.response?.data?.msg || error.message || '种子转移失败，请稍后重试'
+      // 后端失败响应（code=400，HTTP 200）被拦截器转为 rejected Promise：
+      // 优先取 data 里的 error_message 明细，再回退 msg
+      const detailMsg =
+        error.rawResponse?.data?.data?.error_message ||
+        error.rawResponse?.data?.data?.msg ||
+        error.response?.data?.msg ||
+        error.message ||
+        '种子转移失败，请稍后重试'
       this.$message.error({
-        message: `种子转移失败: ${errorMsg}`,
+        message: `种子转移失败: ${detailMsg}`,
         duration: 5000
       })
     } finally {

@@ -12,9 +12,11 @@
           :index="resolvePath(theOnlyOneChild.path)"
           :class="{'submenu-title-noDropdown': isFirstLevel, 'menu-item-with-indicator': isFirstLevel}"
         >
-          <svg-icon
+          <LucideIcon
             v-if="theOnlyOneChild.meta.icon"
-            :name="theOnlyOneChild.meta.icon"
+            :name="String(theOnlyOneChild.meta.icon)"
+            :size="18"
+            :stroke-width="1.8"
             class="menu-icon"
           />
           <span
@@ -30,15 +32,23 @@
       popper-append-to-body
     >
       <template slot="title">
-        <svg-icon
+        <LucideIcon
           v-if="item.meta && item.meta.icon"
-          :name="item.meta.icon"
+          :name="String(item.meta.icon)"
+          :size="18"
+          :stroke-width="1.8"
           class="menu-icon"
         />
         <span
           v-if="item.meta && item.meta.title"
           slot="title"
         >{{ item.meta.title }}</span>
+        <LucideIcon
+          name="chevron-down"
+          :size="14"
+          :stroke-width="1.8"
+          class="submenu-chevron"
+        />
       </template>
       <template v-if="item.children">
         <sidebar-item
@@ -130,11 +140,25 @@ export default class extends Vue {
 /* 菜单项图标 */
 .menu-icon {
   margin-right: 16px;
-  font-size: 20px;
   color: var(--color-text-secondary, #6B7280);
   transition: color var(--transition-base, 200ms);
   vertical-align: middle;
   transform: translateY(0px);
+}
+
+.submenu-chevron {
+  margin-left: auto;
+  color: var(--color-text-tertiary, #9CA3AF);
+  transition: transform var(--transition-base, 200ms), color var(--transition-base, 200ms);
+}
+
+.el-submenu.is-opened > .el-submenu__title .submenu-chevron {
+  color: var(--color-primary, #059669);
+  transform: rotate(180deg);
+}
+
+.el-submenu > .el-submenu__title > .el-submenu__icon-arrow {
+  display: none;
 }
 
 .el-menu-item.is-active .menu-icon {
@@ -225,13 +249,7 @@ export default class extends Vue {
 </style>
 
 <style lang="scss" scoped>
-.svg-icon {
-  margin-right: 16px;
-}
-
-.simple-mode {
-  .svg-icon {
-    margin-left: 20px;
-  }
+.simple-mode .menu-icon {
+  margin-left: 20px;
 }
 </style>

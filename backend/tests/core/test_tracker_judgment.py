@@ -301,7 +301,7 @@ class TestGetCacheStats:
 class TestLoadKeywords:
     """数据库加载关键词测试"""
 
-    @patch("app.database.SessionLocal")
+    @patch("app.core.tracker_judgment.SessionLocal")
     def test_成功加载关键词(self, mock_session_local):
         """从数据库成功加载关键词后缓存正确填充"""
         # 构造 mock 数据库返回
@@ -333,7 +333,7 @@ class TestLoadKeywords:
         assert engine.last_cache_update is not None
         mock_db.close.assert_called_once()
 
-    @patch("app.database.SessionLocal")
+    @patch("app.core.tracker_judgment.SessionLocal")
     def test_数据库异常返回False(self, mock_session_local):
         """数据库查询异常时返回 False"""
         mock_db = MagicMock()
@@ -344,7 +344,7 @@ class TestLoadKeywords:
         result = engine.load_keywords()
         assert result is False
 
-    @patch("app.database.SessionLocal")
+    @patch("app.core.tracker_judgment.SessionLocal")
     def test_空数据库结果(self, mock_session_local):
         """数据库无记录时缓存为空但加载成功"""
         mock_db = MagicMock()

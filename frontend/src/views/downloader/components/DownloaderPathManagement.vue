@@ -3,9 +3,7 @@
     <!-- 头部说明和操作区 -->
     <div class="tab-header">
       <div class="header-info">
-        <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-        </svg>
+        <span class="header-icon"><LucideIcon name="folder-cog" :size="18" /></span>
         <div class="header-text">
           <h3 class="header-title">下载器路径管理</h3>
           <p class="header-desc">管理下载器的默认路径和在用路径，用于种子转移时选择目标路径</p>
@@ -15,14 +13,10 @@
         <el-button
           type="success"
           size="medium"
-          :loading="refreshing"
+          :disabled="refreshing"
           @click="handleRefresh"
         >
-          <svg v-if="!refreshing" class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
+          <LucideIcon class="button-icon" name="refresh-cw" :size="14" :class="{'is-spinning': refreshing}" />
           刷新路径
         </el-button>
         <el-button
@@ -30,10 +24,7 @@
           size="medium"
           @click="handleAddPath"
         >
-          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
+          <LucideIcon class="button-icon" name="plus" :size="14" />
           添加路径
         </el-button>
       </div>
@@ -94,9 +85,7 @@
         <el-table-column label="路径值" min-width="300">
           <template #default="{row}">
             <div class="path-value-cell">
-              <svg class="path-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-              </svg>
+              <LucideIcon class="path-icon" name="folder-open" :size="14" />
               <span class="path-text" :title="row.path_value">{{ row.path_value }}</span>
             </div>
           </template>
@@ -114,15 +103,23 @@
         </el-table-column>
 
         <!-- 状态 -->
-        <el-table-column label="状态" width="80" align="center">
+        <el-table-column label="状态" width="96" align="center">
           <template #default="{row}">
-            <el-switch
-              v-model="row.is_enabled"
-              @change="handleToggleEnabled(row)"
-              :disabled="updating"
-              active-color="#059669"
-              inactive-color="#d1d5db"
-            />
+            <div class="status-cell">
+              <el-switch
+                v-model="row.is_enabled"
+                @change="handleToggleEnabled(row)"
+                :disabled="updating"
+                active-color="#059669"
+                inactive-color="#d1d5db"
+              />
+              <!-- 历史路径（自动禁用，种子回归后自动恢复）/ 手动禁用（需用户重新启用） -->
+              <span
+                v-if="!row.is_enabled"
+                class="disabled-source-tag"
+                :class="row.disabled_by === 'user' ? 'disabled-source-tag--user' : 'disabled-source-tag--auto'"
+              >{{ row.disabled_by === 'user' ? '手动禁用' : '历史路径' }}</span>
+            </div>
           </template>
         </el-table-column>
 
@@ -142,6 +139,7 @@
               @click="handleEditPath(row)"
               :disabled="updating"
             >
+              <LucideIcon name="pencil" :size="13" />
               编辑
             </el-button>
             <el-button
@@ -151,6 +149,7 @@
               @click="handleDeletePath(row)"
               :disabled="updating"
             >
+              <LucideIcon name="trash-2" :size="13" />
               删除
             </el-button>
           </template>
@@ -159,9 +158,7 @@
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-state">
-            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
+            <LucideIcon class="empty-icon" name="folder-search" :size="40" :stroke-width="1.35" />
             <p class="empty-text">暂无路径数据</p>
             <p class="empty-hint">点击"添加路径"按钮创建新路径</p>
           </div>
@@ -194,11 +191,7 @@
             <el-option label="在用路径" value="active" />
           </el-select>
           <div class="form-item-help">
-            <svg class="help-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
+            <LucideIcon class="help-icon" name="info" :size="13" />
             <span>默认路径：下载器的默认保存路径；在用路径：种子任务使用的路径</span>
           </div>
         </el-form-item>
@@ -210,11 +203,7 @@
             clearable
           />
           <div class="form-item-help">
-            <svg class="help-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
+            <LucideIcon class="help-icon" name="info" :size="13" />
             <span>请输入下载器可访问的绝对路径</span>
           </div>
         </el-form-item>
@@ -226,11 +215,7 @@
             inactive-color="#d1d5db"
           />
           <div class="form-item-help">
-            <svg class="help-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="12" cy="12" r="10"></circle>
-              <line x1="12" y1="16" x2="12" y2="12"></line>
-              <line x1="12" y1="8" x2="12.01" y2="8"></line>
-            </svg>
+            <LucideIcon class="help-icon" name="info" :size="13" />
             <span>禁用后，该路径将不会在种子转移时显示</span>
           </div>
         </el-form-item>
@@ -238,7 +223,8 @@
 
       <div slot="footer" class="dialog-footer">
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" @click="handleSubmit">
+        <el-button type="primary" :disabled="submitting" @click="handleSubmit">
+          <LucideIcon :name="submitting ? 'refresh-cw' : 'save'" :size="14" :class="{'is-spinning': submitting}" />
           {{ dialogMode === 'add' ? '添加' : '保存' }}
         </el-button>
       </div>
@@ -263,6 +249,7 @@ interface PathItem {
   path_type: string
   path_value: string
   is_enabled: boolean
+  disabled_by: string | null
   torrent_count: number
   last_updated_time: string | null
   created_at: string | null
@@ -636,7 +623,12 @@ export default class DownloaderPathManagement extends Vue {
 @import '@/styles/theme-variables.scss';
 
 .downloader-path-management {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   padding: 0;
+  text-align: left;
 }
 
 .tab-header {
@@ -815,5 +807,192 @@ export default class DownloaderPathManagement extends Vue {
   display: flex;
   justify-content: flex-end;
   gap: var(--spacing-sm);
+}
+
+.tab-header {
+  margin-bottom: 8px;
+  padding: 10px 12px;
+  border-color: var(--color-border-secondary);
+  border-radius: 11px;
+  background:
+    linear-gradient(110deg, rgba(var(--color-primary-rgb), 0.075), transparent 42%),
+    rgba(255, 255, 255, 0.66);
+}
+
+.header-info {
+  min-width: 0;
+  gap: 9px;
+}
+
+.header-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.2);
+  border-radius: 9px;
+  background: rgba(var(--color-primary-rgb), 0.07);
+}
+
+.header-title {
+  margin-bottom: 2px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
+.header-desc {
+  overflow: hidden;
+  max-width: 680px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-actions {
+  gap: 6px;
+}
+
+.header-actions ::v-deep .el-button {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 9px;
+}
+
+.header-actions ::v-deep .el-button span,
+::v-deep .el-table .el-button span,
+.dialog-footer ::v-deep .el-button span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.button-icon {
+  margin-right: 0;
+}
+
+.filter-section {
+  margin-bottom: 8px;
+  padding: 6px 9px;
+  border-color: var(--color-border-secondary);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.filter-section ::v-deep .el-form-item {
+  margin: 0 10px 0 0;
+}
+
+.filter-section ::v-deep .el-form-item__label {
+  font-size: 9px;
+}
+
+.path-table-wrapper {
+  overflow: hidden;
+  margin-bottom: 0;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 11px;
+}
+
+::v-deep .path-table-header {
+  background: var(--color-bg-tertiary);
+
+  th {
+    height: 31px;
+    color: var(--color-text-secondary);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
+
+::v-deep .el-table td {
+  height: 40px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+
+::v-deep .el-table .cell,
+.path-value-cell .path-text,
+.time-text {
+  font-size: 10px;
+}
+
+::v-deep .el-table .el-button {
+  margin-left: 5px;
+  font-size: 9px;
+}
+
+.empty-state {
+  padding: 38px 0;
+}
+
+.empty-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 9px;
+}
+
+.empty-text {
+  font-size: 11px;
+}
+
+.empty-hint,
+.form-item-help {
+  font-size: 9px;
+}
+
+.is-spinning {
+  animation: managed-path-spin 0.8s linear infinite;
+}
+
+.status-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.disabled-source-tag {
+  font-size: 11px;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 8px;
+  white-space: nowrap;
+}
+
+.disabled-source-tag--auto {
+  color: var(--color-warning, #b45309);
+  background: rgba(180, 83, 9, 0.12);
+}
+
+.disabled-source-tag--user {
+  color: var(--color-danger, #b91c1c);
+  background: rgba(185, 28, 28, 0.1);
+}
+
+@keyframes managed-path-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 780px) {
+  .tab-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+
+    .el-button {
+      flex: 1;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning {
+    animation: none;
+  }
 }
 </style>

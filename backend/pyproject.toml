@@ -1,0 +1,47 @@
+# BtDeck 后端 Python 工程配置
+# 统一管理 black / mypy 的配置（flake8 不支持 pyproject.toml，用 .flake8）
+
+[tool.black]
+# 代码格式化配置
+line-length = 120
+target-version = ['py311']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+    \.eggs
+  | \.git
+  | \.venv
+  | __pycache__
+  | build
+  | dist
+  | app/migrations          # 旧迁移系统（已弃用），不格式化
+)/
+'''
+
+[tool.mypy]
+# 类型检查配置
+# 策略：渐进式严格化。当前历史代码类型标注不全，先宽松起步，
+# 新增代码应逐步补全类型标注，最终收紧 strict。
+python_version = "3.11"
+ignore_missing_imports = true    # 第三方库无 type stub 时忽略
+follow_imports = "silent"
+warn_redundant_casts = true
+warn_unused_ignores = true
+warn_return_any = false          # 历史代码返回 Any 较多，暂不强制
+no_implicit_optional = true
+check_untyped_defs = false       # 历史函数无标注，暂不检查函数体
+disallow_untyped_defs = false    # 同上
+
+# 排除历史技术债密集的模块（后续逐步清理后移除）
+exclude = [
+    "app/migrations/",           # 旧迁移系统（已弃用）
+]
+
+# 对特定模块放宽规则（历史代码，逐步收紧）
+[[tool.mypy.overrides]]
+module = "app.migrations.*"
+ignore_errors = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+ignore_errors = true             # 测试代码暂不强制类型标注

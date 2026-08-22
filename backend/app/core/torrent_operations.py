@@ -8,8 +8,9 @@ the standardized DatabaseResult return format.
 import uuid
 from typing import List, Optional, Dict, Any
 from sqlalchemy.orm import Session
-from app.torrents.models import TorrentInfo, TrackerInfo
+from app.torrents.models import TorrentInfo
 from app.core.database_result import DatabaseResult, DatabaseError
+from app.services.torrent_ratio_values import MISSING_RATIO_VALUE, apply_normalized_ratio_fields
 
 
 def create_torrent(db: Session, torrent_data: Dict[str, Any]) -> DatabaseResult[TorrentInfo]:
@@ -25,36 +26,36 @@ def create_torrent(db: Session, torrent_data: Dict[str, Any]) -> DatabaseResult[
     """
     try:
         # Validate required fields
-        if not torrent_data.get('hash'):
+        if not torrent_data.get("hash"):
             return DatabaseResult.validation_error_result("Torrent hash is required")
 
         # Check for duplicate hash
-        existing = db.query(TorrentInfo).filter(TorrentInfo.hash == torrent_data['hash']).first()
+        existing = db.query(TorrentInfo).filter(TorrentInfo.hash == torrent_data["hash"]).first()
         if existing:
             return DatabaseResult.failure_result(
-                message="Torrent with this hash already exists",
-                error_code=DatabaseError.DUPLICATE_KEY
+                message="Torrent with this hash already exists", error_code=DatabaseError.DUPLICATE_KEY
             )
 
+        normalized_data = dict(torrent_data)
         # Generate ID if not provided
-        if "id_" not in torrent_data:
-            torrent_data["id_"] = str(uuid.uuid4())
+        if "id_" not in normalized_data:
+            normalized_data["id_"] = str(uuid.uuid4())
+        apply_normalized_ratio_fields(
+            normalized_data,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=True,
+        )
 
-        db_torrent = TorrentInfo(**torrent_data)
+        db_torrent = TorrentInfo(**normalized_data)
         db.add(db_torrent)
         db.commit()
         db.refresh(db_torrent)
 
-        return DatabaseResult.success_result(
-            data=db_torrent,
-            message="Torrent created successfully",
-            affected_rows=1
-        )
+        return DatabaseResult.success_result(data=db_torrent, message="Torrent created successfully", affected_rows=1)
     except Exception as e:
         db.rollback()
-        return DatabaseResult.database_error_result(
-            message=f"Failed to create torrent: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to create torrent: {str(e)}")
 
 
 def get_torrent(db: Session, torrent_id: str) -> DatabaseResult[TorrentInfo]:
@@ -71,18 +72,11 @@ def get_torrent(db: Session, torrent_id: str) -> DatabaseResult[TorrentInfo]:
     try:
         torrent = db.query(TorrentInfo).filter(TorrentInfo.info_id == torrent_id).first()
         if torrent:
-            return DatabaseResult.success_result(
-                data=torrent,
-                message="Torrent retrieved successfully"
-            )
+            return DatabaseResult.success_result(data=torrent, message="Torrent retrieved successfully")
         else:
-            return DatabaseResult.not_found_result(
-                message=f"Torrent with ID {torrent_id} not found"
-            )
+            return DatabaseResult.not_found_result(message=f"Torrent with ID {torrent_id} not found")
     except Exception as e:
-        return DatabaseResult.database_error_result(
-            message=f"Failed to retrieve torrent: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to retrieve torrent: {str(e)}")
 
 
 def get_torrent_by_hash(db: Session, hash_value: str) -> DatabaseResult[TorrentInfo]:
@@ -99,21 +93,16 @@ def get_torrent_by_hash(db: Session, hash_value: str) -> DatabaseResult[TorrentI
     try:
         torrent = db.query(TorrentInfo).filter(TorrentInfo.hash == hash_value).first()
         if torrent:
-            return DatabaseResult.success_result(
-                data=torrent,
-                message="Torrent retrieved successfully by hash"
-            )
+            return DatabaseResult.success_result(data=torrent, message="Torrent retrieved successfully by hash")
         else:
-            return DatabaseResult.not_found_result(
-                message=f"Torrent with hash {hash_value} not found"
-            )
+            return DatabaseResult.not_found_result(message=f"Torrent with hash {hash_value} not found")
     except Exception as e:
-        return DatabaseResult.database_error_result(
-            message=f"Failed to retrieve torrent by hash: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to retrieve torrent by hash: {str(e)}")
 
 
-def search_torrents_by_name(db: Session, name_query: str, skip: int = 0, limit: int = 100) -> DatabaseResult[List[TorrentInfo]]:
+def search_torrents_by_name(
+    db: Session, name_query: str, skip: int = 0, limit: int = 100
+) -> DatabaseResult[List[TorrentInfo]]:
     """
     Search torrents by name with standardized return format
 
@@ -133,14 +122,10 @@ def search_torrents_by_name(db: Session, name_query: str, skip: int = 0, limit: 
         torrents = query.offset(skip).limit(limit).all()
 
         return DatabaseResult.success_result(
-            data=torrents,
-            message=f"Found {len(torrents)} torrents matching '{name_query}'",
-            total_count=total_count
+            data=torrents, message=f"Found {len(torrents)} torrents matching '{name_query}'", total_count=total_count
         )
     except Exception as e:
-        return DatabaseResult.database_error_result(
-            message=f"Failed to search torrents: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to search torrents: {str(e)}")
 
 
 def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -> DatabaseResult[TorrentInfo]:
@@ -158,28 +143,27 @@ def update_torrent(db: Session, torrent_id: str, torrent_data: Dict[str, Any]) -
     try:
         torrent = db.query(TorrentInfo).filter(TorrentInfo.info_id == torrent_id).first()
         if not torrent:
-            return DatabaseResult.not_found_result(
-                message=f"Torrent with ID {torrent_id} not found"
-            )
+            return DatabaseResult.not_found_result(message=f"Torrent with ID {torrent_id} not found")
 
+        normalized_data = dict(torrent_data)
+        apply_normalized_ratio_fields(
+            normalized_data,
+            raw_ratio=torrent_data.get("ratio", MISSING_RATIO_VALUE),
+            raw_ratio_limit=torrent_data.get("ratio_limit", MISSING_RATIO_VALUE),
+            is_insert=False,
+        )
         # Update fields
-        for key, value in torrent_data.items():
+        for key, value in normalized_data.items():
             if hasattr(torrent, key):
                 setattr(torrent, key, value)
 
         db.commit()
         db.refresh(torrent)
 
-        return DatabaseResult.success_result(
-            data=torrent,
-            message="Torrent updated successfully",
-            affected_rows=1
-        )
+        return DatabaseResult.success_result(data=torrent, message="Torrent updated successfully", affected_rows=1)
     except Exception as e:
         db.rollback()
-        return DatabaseResult.database_error_result(
-            message=f"Failed to update torrent: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to update torrent: {str(e)}")
 
 
 def delete_torrent(db: Session, torrent_id: str) -> DatabaseResult[None]:
@@ -196,25 +180,20 @@ def delete_torrent(db: Session, torrent_id: str) -> DatabaseResult[None]:
     try:
         torrent = db.query(TorrentInfo).filter(TorrentInfo.info_id == torrent_id).first()
         if not torrent:
-            return DatabaseResult.not_found_result(
-                message=f"Torrent with ID {torrent_id} not found"
-            )
+            return DatabaseResult.not_found_result(message=f"Torrent with ID {torrent_id} not found")
 
         db.delete(torrent)
         db.commit()
 
-        return DatabaseResult.success_result(
-            message="Torrent deleted successfully",
-            affected_rows=1
-        )
+        return DatabaseResult.success_result(message="Torrent deleted successfully", affected_rows=1)
     except Exception as e:
         db.rollback()
-        return DatabaseResult.database_error_result(
-            message=f"Failed to delete torrent: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to delete torrent: {str(e)}")
 
 
-def get_torrents_by_save_path(db: Session, path: str, skip: int = 0, limit: int = 100) -> DatabaseResult[List[TorrentInfo]]:
+def get_torrents_by_save_path(
+    db: Session, path: str, skip: int = 0, limit: int = 100
+) -> DatabaseResult[List[TorrentInfo]]:
     """
     Get torrents by save path with standardized return format
 
@@ -234,17 +213,15 @@ def get_torrents_by_save_path(db: Session, path: str, skip: int = 0, limit: int 
         torrents = query.offset(skip).limit(limit).all()
 
         return DatabaseResult.success_result(
-            data=torrents,
-            message=f"Found {len(torrents)} torrents in path '{path}'",
-            total_count=total_count
+            data=torrents, message=f"Found {len(torrents)} torrents in path '{path}'", total_count=total_count
         )
     except Exception as e:
-        return DatabaseResult.database_error_result(
-            message=f"Failed to retrieve torrents by path: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to retrieve torrents by path: {str(e)}")
 
 
-def get_torrents_count(db: Session, status: Optional[str] = None, category: Optional[str] = None) -> DatabaseResult[int]:
+def get_torrents_count(
+    db: Session, status: Optional[str] = None, category: Optional[str] = None
+) -> DatabaseResult[int]:
     """
     Get torrent count with optional filtering with standardized return format
 
@@ -267,11 +244,7 @@ def get_torrents_count(db: Session, status: Optional[str] = None, category: Opti
         count = query.count()
 
         return DatabaseResult.success_result(
-            data=count,
-            message=f"Found {count} torrents matching criteria",
-            total_count=count
+            data=count, message=f"Found {count} torrents matching criteria", total_count=count
         )
     except Exception as e:
-        return DatabaseResult.database_error_result(
-            message=f"Failed to count torrents: {str(e)}"
-        )
+        return DatabaseResult.database_error_result(message=f"Failed to count torrents: {str(e)}")

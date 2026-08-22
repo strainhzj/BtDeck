@@ -372,3 +372,73 @@ class TestIntervalValidation:
 
         result = validate_interval(interval)
         assert result == expected_valid
+
+
+# ==================== 回归测试：batch_update 自开短 session ====================
+
+class TestBatchUpdateSessionLifecycle:
+    """【回归】问题2-b：batch_update_last_announce_time 必须自开短 session。
+
+    根因：原实现接收外部 db 参数，复用调用方贯穿网络 IO 的长 session，
+    导致 SQLite 写锁被长时间占用，触发 "database is locked"。
+    修复后改为内部 SessionLocal() 自开短 session，用完即 close。
+    """
+
+    def test_batch_update_signature_has_no_db_param(self):
+        """收敛锚点：函数签名不含 db 参数。
+
+        若有人改回 def batch_update_last_announce_time(db, config_ids)，
+        此测试立即报红。
+        """
+        import inspect
+        from app.core import reannounce_config_operations as ops
+
+        sig = inspect.signature(ops.batch_update_last_announce_time)
+        assert "db" not in sig.parameters, (
+            "batch_update_last_announce_time 不应接收外部 db 参数："
+            "复用贯穿网络IO的长 session 是 database is locked 的根因"
+        )
+
+    def test_batch_update_opens_own_session(self):
+        """必须自己调 SessionLocal() 开短 session，并 commit + close。"""
+        from app.core import reannounce_config_operations as ops
+
+        fake_session = MagicMock()
+        # query().filter().all() 链式调用返回空列表（无匹配 config，但流程要跑完）
+        fake_session.query.return_value.filter.return_value.all.return_value = []
+
+        with patch(
+            "app.core.reannounce_config_operations.SessionLocal",
+            return_value=fake_session,
+        ) as mock_factory:
+            ops.batch_update_last_announce_time(["cfg-1"])
+
+        # 收敛锚点：自开 session + commit + close
+        assert mock_factory.called, "必须自开 SessionLocal()（不复用外部长 session）"
+        assert fake_session.commit.called, "必须 commit（短 session 提交写操作）"
+        assert fake_session.close.called, "必须 close（短 session 用完即关，释放写锁）"
+
+    def test_batch_update_empty_list_does_not_open_session(self):
+        """空 config_ids 应早返回，不创建连接（避免无谓的连接开销）。"""
+        from app.core import reannounce_config_operations as ops
+
+        with patch(
+            "app.core.reannounce_config_operations.SessionLocal"
+        ) as mock_factory:
+            ops.batch_update_last_announce_time([])
+
+        assert not mock_factory.called, "空列表不应创建 session（早返回优化）"
+
+    def test_update_last_announce_time_delegates_to_batch(self):
+        """单条版 update_last_announce_time 应委托给 batch_update（向后兼容包装）。
+
+        收敛锚点：确保单条版也走"自开短 session"路径，而非自己接收外部 db 写库。
+        """
+        from app.core import reannounce_config_operations as ops
+
+        with patch.object(
+            ops, "batch_update_last_announce_time"
+        ) as mock_batch:
+            ops.update_last_announce_time(MagicMock(), "cfg-1")
+
+        mock_batch.assert_called_once_with(["cfg-1"])

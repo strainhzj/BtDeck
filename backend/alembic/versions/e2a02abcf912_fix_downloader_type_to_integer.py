@@ -1,7 +1,11 @@
 """fix_downloader_type_to_integer
 
+【不可回滚】基线迁移，upgrade 创建全部 21 张业务表。
+downgrade 会 drop 全部 21 张表（灾难性破坏），禁止 downgrade 到此版本之前。
+回滚请参考 docs/operations/rollback-guide.md。
+
 Revision ID: e2a02abcf912
-Revises: 
+Revises:
 Create Date: 2026-03-07 18:59:32.611061
 
 """

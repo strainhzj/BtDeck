@@ -1,10 +1,10 @@
 import logging
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.responseVO import CommonResponse
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user, AuthenticatedUserInfo
 from app.database import get_db
 from app.schemas.torrent_location import SetLocationRequest
 
@@ -14,11 +14,12 @@ router = APIRouter()
 
 # ==================== 修改种子保存路径 ====================
 
+
 @router.post("/set-location", response_model=CommonResponse)
 async def set_torrent_location(
-        request: Request,
-        location_request: SetLocationRequest,
-        db: Session = Depends(get_db)
+    location_request: SetLocationRequest,
+    user_info: AuthenticatedUserInfo = Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
 ):
     """
     修改种子保存路径
@@ -26,48 +27,18 @@ async def set_torrent_location(
     修改一个或多个种子在同一下载器内的保存路径。
     支持选择是否移动已下载的文件。
 
-    Args:
-        request: FastAPI请求对象
-        location_request: 位置修改请求参数
-        db: 数据库会话
-
-    Returns:
-        CommonResponse: 操作结果
-        {
-            "code": "200",
-            "msg": "成功提交2个种子路径修改请求",
-            "data": {
-                "success": true,
-                "moved_count": 2,
-                "failed_count": 0,
-                "error_message": null
-            },
-            "status": "success"
-        }
+    认证：由 require_authenticated_user 统一处理（无 token / token 无效 → HTTP 401）。
+    user_id 业务校验保留：旧 token 可能不含 user_id，此时仍拒绝。
     """
+    # 业务校验：token 有效但 payload 缺 user_id（旧 token）时拒绝
+    if not user_info.user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"status": "error", "msg": "无效的访问令牌", "code": "401", "data": None},
+        )
+
     try:
-        # 从请求头获取用户信息
-        token = request.headers.get("x-access-token")
-        if not token:
-            return CommonResponse(
-                status="error",
-                msg="未提供访问令牌",
-                code="401",
-                data=None
-            )
-
-        # 验证token并获取用户信息
-        decoded = utils.verify_access_token(token)
-        user_id = decoded.get("user_id")
-        username = decoded.get("username", "unknown")
-
-        if not user_id:
-            return CommonResponse(
-                status="error",
-                msg="无效的访问令牌",
-                code="401",
-                data=None
-            )
+        username = user_info.username
 
         # 导入服务层（避免循环导入）
         from app.services.torrent_location_service import TorrentLocationService
@@ -82,9 +53,9 @@ async def set_torrent_location(
             hashes=location_request.hashes,
             target_path=location_request.target_path,
             move_files=location_request.move_files,
-            user_id=int(user_id),
+            user_id=user_info.user_id,
             username=username,
-            app_state=app.state
+            app_state=app.state,
         )
 
         # 构建响应消息
@@ -101,8 +72,8 @@ async def set_torrent_location(
                     "success": True,
                     "moved_count": result["moved_count"],
                     "failed_count": result["failed_count"],
-                    "error_message": result["error_message"]
-                }
+                    "error_message": result["error_message"],
+                },
             )
         else:
             return CommonResponse(
@@ -113,15 +84,10 @@ async def set_torrent_location(
                     "success": False,
                     "moved_count": 0,
                     "failed_count": len(location_request.hashes),
-                    "error_message": result["error_message"]
-                }
+                    "error_message": result["error_message"],
+                },
             )
 
     except Exception as e:
         logger.error(f"修改种子路径API异常: {str(e)}", exc_info=True)
-        return CommonResponse(
-            status="error",
-            msg=f"服务器错误: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"服务器错误: {str(e)}", code="500", data=None)

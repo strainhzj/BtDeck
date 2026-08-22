@@ -4,7 +4,7 @@ Tracker测试工具API接口
 提供关键词匹配测试功能
 """
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 import logging
 
@@ -13,18 +13,14 @@ from app.api.responseVO import CommonResponse
 from app.api.schemas.tracker_messages import MatchTestRequest, MatchTestResponse
 from app.torrents.models import TrackerKeywordConfig
 from app.core.tracker_judgment import TrackerJudgmentEngine
-from app.auth import utils
+from app.auth.dependencies import require_authenticated_user
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
 @router.post("/match", summary="测试关键词匹配")
-def test_match(
-    test_req: MatchTestRequest,
-    request: Request,
-    db: Session = Depends(get_db)
-):
+def test_match(test_req: MatchTestRequest, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
     """
     测试关键词匹配
 
@@ -33,21 +29,11 @@ def test_match(
     - 匹配到的关键词列表
     - 匹配类型(success/failure/none)
     """
-    # JWT验证
-    token = request.headers.get("x-access-token")
-    if not token:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-    user_info = utils.verify_access_token(token)
-    if not user_info:
-        return CommonResponse(status="error", msg="token验证失败", code="401", data=None)
-
     try:
         # 使用判断引擎
         judgment_engine = TrackerJudgmentEngine()
         final_status = judgment_engine.judge_status(
-            original_status=test_req.originalStatus,
-            msg=test_req.msg,
-            language=test_req.language
+            original_status=test_req.originalStatus, msg=test_req.msg, language=test_req.language
         )
 
         # 查询匹配到的关键词
@@ -55,10 +41,11 @@ def test_match(
         match_type = "none"
 
         # 查询所有启用的关键词
-        keywords = db.query(TrackerKeywordConfig).filter(
-            TrackerKeywordConfig.enabled == True,
-            TrackerKeywordConfig.dr == 0
-        ).all()
+        keywords = (
+            db.query(TrackerKeywordConfig)
+            .filter(TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0)
+            .all()
+        )
 
         test_msg_lower = test_req.msg.lower()
 
@@ -80,15 +67,10 @@ def test_match(
                 originalStatus=test_req.originalStatus,
                 finalStatus=final_status,
                 matchedKeywords=matched_keywords,
-                matchType=match_type
-            ).model_dump()
+                matchType=match_type,
+            ).model_dump(),
         )
 
     except Exception as e:
         logger.error(f"测试关键词匹配失败: {str(e)}")
-        return CommonResponse(
-            status="error",
-            msg=f"测试失败: {str(e)}",
-            code="500",
-            data=None
-        )
+        return CommonResponse(status="error", msg=f"测试失败: {str(e)}", code="500", data=None)

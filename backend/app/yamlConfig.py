@@ -1,6 +1,6 @@
 import yaml as pyyaml  # ✨ 使用别名避免命名冲突
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from app.core.config import settings
 
 
@@ -19,7 +19,7 @@ class Yaml:
                 print(f"警告：配置文件 '{self._config_path}' 不存在")
                 return False
 
-            with open(self._config_path, 'r', encoding='utf-8') as f:
+            with open(self._config_path, "r", encoding="utf-8") as f:
                 self._config_data = pyyaml.safe_load(f)
             return True
         except Exception as e:
@@ -52,7 +52,7 @@ class Yaml:
         if not self._config_data:
             self.load()
 
-        keys = key_path.split('.')
+        keys = key_path.split(".")
         value = self._config_data
 
         for key in keys:

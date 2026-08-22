@@ -9,6 +9,7 @@ qBittorrent种子位置修改适配器
 @time: 2026-03-04
 """
 
+import asyncio
 import logging
 from typing import List, Dict, Any
 from qbittorrentapi import Client
@@ -45,12 +46,7 @@ class QBittorrentLocationAdapter(TorrentLocationAdapter):
         """获取下载器客户端实例"""
         return self.client
 
-    async def set_location(
-        self,
-        hashes: List[str],
-        target_path: str,
-        move_files: bool
-    ) -> Dict[str, Any]:
+    async def set_location(self, hashes: List[str], target_path: str, move_files: bool) -> Dict[str, Any]:
         """
         修改qBittorrent种子保存路径
 
@@ -62,12 +58,7 @@ class QBittorrentLocationAdapter(TorrentLocationAdapter):
         Returns:
             操作结果字典
         """
-        result = {
-            "success": False,
-            "moved_count": 0,
-            "failed_count": 0,
-            "error_message": None
-        }
+        result: Dict[str, Any] = {"success": False, "moved_count": 0, "failed_count": 0, "error_message": None}
 
         try:
             # qBittorrent API使用|分隔多个hash
@@ -79,16 +70,14 @@ class QBittorrentLocationAdapter(TorrentLocationAdapter):
             )
 
             if move_files:
-                # torrents_set_location 会移动文件
-                self.client.torrents_set_location(
-                    location=target_path,
-                    torrent_hashes=hashes_str
+                # torrents_set_location 会移动文件（同步网络调用放入线程池，避免阻塞事件循环）
+                await asyncio.to_thread(
+                    self.client.torrents_set_location, location=target_path, torrent_hashes=hashes_str
                 )
             else:
                 # 仅修改保存路径，不移动文件
-                self.client.torrents_set_save_path(
-                    save_path=target_path,
-                    torrent_hashes=hashes_str
+                await asyncio.to_thread(
+                    self.client.torrents_set_save_path, save_path=target_path, torrent_hashes=hashes_str
                 )
                 logger.info(f"已修改保存路径（未移动文件）: {hashes_str}")
 

@@ -9,11 +9,7 @@ from typing import List, Dict, Any, Optional, Tuple
 import asyncio
 import logging
 import os
-from app.services.torrent_deletion_service import (
-    DownloaderDeleteAdapter,
-    DeleteOption,
-    SafetyCheckLevel
-)
+from app.services.torrent_deletion_service import DownloaderDeleteAdapter, DeleteOption, SafetyCheckLevel
 
 logger = logging.getLogger(__name__)
 
@@ -56,7 +52,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         self,
         torrent_hashes: List[str],
         delete_option: DeleteOption,
-        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED
+        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED,
     ) -> Dict[str, Any]:
         """
         删除Transmission中的种子（公开接口）
@@ -73,15 +69,13 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
             删除结果字典
         """
         # 委托给私有实现方法
-        return await self._delete_torrents_impl(
-            torrent_hashes, delete_option, safety_check_level
-        )
+        return await self._delete_torrents_impl(torrent_hashes, delete_option, safety_check_level)
 
     async def _delete_torrents_impl(
         self,
         torrent_hashes: List[str],
         delete_option: DeleteOption,
-        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED
+        safety_check_level: SafetyCheckLevel = SafetyCheckLevel.ENHANCED,
     ) -> Dict[str, Any]:
         """
         内部实现：删除Transmission种子（私有方法）
@@ -97,24 +91,17 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         Returns:
             删除结果字典
         """
-        result = {
-            "success_hashes": [],
-            "failed_hashes": {},
-            "warnings": [],
-            "deleted_files": []
-        }
+        result: Dict[str, Any] = {"success_hashes": [], "failed_hashes": {}, "warnings": [], "deleted_files": []}
 
         if not torrent_hashes:
             return result
 
         try:
-            # 验证种子存在
-            existing_torrents = await self.validate_torrents_exist(torrent_hashes)
-            valid_hashes = [h for h, exists in existing_torrents.items() if exists]
-
-            if not valid_hashes:
-                result["warnings"].append("没有找到可删除的有效种子")
-                return result
+            # 删除请求已经携带由本地 TorrentInfo 解析出的稳定 SHA1 hash。
+            # Transmission RPC 的 torrent-remove 支持直接使用 hash 作为 ids，
+            # 无需为每个删除请求先拉取全部任务列表；该全量查询在种子较多时
+            # 会产生额外的远程等待，并且不是删除正确性的必要条件。
+            valid_hashes = list(dict.fromkeys(torrent_hashes))
 
             # 获取种子信息用于安全检查
             for hash_value in valid_hashes:
@@ -140,10 +127,8 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
                     try:
                         # 使用transmission_rpc的remove_torrent方法
                         # 注意：参数名是 ids，不是 torrent_id
-                        self.client.remove_torrent(
-                            ids=torrent_hash,
-                            delete_data=delete_data
-                        )
+                        # 同步网络调用放入线程池，避免阻塞事件循环（P0-04/W2-3）
+                        await asyncio.to_thread(self.client.remove_torrent, ids=torrent_hash, delete_data=delete_data)
                         result["success_hashes"].append(torrent_hash)
                         if delete_data:
                             result["deleted_files"].append(torrent_hash)
@@ -184,9 +169,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
 
         try:
             # 使用transmission_rpc.Client的get_torrents方法
-            all_torrents = await asyncio.to_thread(
-                self.client.get_torrents
-            )
+            all_torrents = await asyncio.to_thread(self.client.get_torrents)
 
             # 构建已存在种子的hash集合
             existing_hashes = {t.hash_string for t in all_torrents}
@@ -215,10 +198,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         """
         try:
             # 使用transmission_rpc.Client的get_torrent方法
-            torrent = await asyncio.to_thread(
-                self.client.get_torrent,
-                torrent_hash
-            )
+            torrent = await asyncio.to_thread(self.client.get_torrent, torrent_hash)
 
             if not torrent:
                 return None
@@ -231,7 +211,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
                 "download pending": "downloading",
                 "downloading": "downloading",
                 "seed pending": "seeding",
-                "seeding": "seeding"
+                "seeding": "seeding",
             }
 
             status_value = (torrent.status or "").lower() if hasattr(torrent, "status") else ""
@@ -248,7 +228,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
                 "completion_date": torrent.done_date,
                 "addition_date": torrent.added_date,
                 "category": " ".join(torrent.labels) if torrent.labels else "",
-                "tags": ",".join(torrent.labels) if torrent.labels else ""
+                "tags": ",".join(torrent.labels) if torrent.labels else "",
             }
 
         except Exception as e:
@@ -261,13 +241,10 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         return "transmission"
 
     async def _perform_safety_check(
-        self,
-        torrent_info: Dict[str, Any],
-        delete_option: DeleteOption,
-        safety_check_level: SafetyCheckLevel
+        self, torrent_info: Dict[str, Any], delete_option: DeleteOption, safety_check_level: SafetyCheckLevel
     ) -> List[str]:
         """执行安全检查"""
-        warnings = []
+        warnings: List[str] = []
 
         if safety_check_level == SafetyCheckLevel.BASIC:
             return warnings
@@ -309,9 +286,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         """
         try:
             # 使用transmission_rpc.Client的session_stats方法测试连接
-            await asyncio.to_thread(
-                self.client.session_stats
-            )
+            await asyncio.to_thread(self.client.session_stats)
             logger.info("Transmission连接测试成功")
             return True
         except Exception as e:
@@ -328,9 +303,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         """
         try:
             # 使用transmission_rpc.Client的get_session方法
-            session = await asyncio.to_thread(
-                self.client.get_session
-            )
+            session = await asyncio.to_thread(self.client.get_session)
 
             return {
                 "version": session.version,
@@ -338,7 +311,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
                 "download_path": session.download_dir,
                 "incomplete_path": session.incomplete_dir,
                 "max_connections": session.peer_limit_per_torrent,
-                "max_upload_slots": session.upload_slots_per_torrent
+                "max_upload_slots": session.upload_slots_per_torrent,
             }
         except Exception as e:
             logger.error(f"获取下载器信息失败: {str(e)}")
@@ -357,9 +330,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         """
         try:
             # 使用transmission_rpc.Client的get_torrents方法
-            torrents = await asyncio.to_thread(
-                self.client.get_torrents
-            )
+            torrents = await asyncio.to_thread(self.client.get_torrents)
 
             # 转换为统一格式
             result = []
@@ -373,11 +344,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
                     logger.warning(f"Transmission返回无效hash值: '{raw_hash}'，已跳过")
                     continue
 
-                result.append({
-                    'hash': normalized_hash,
-                    'name': torrent.name,
-                    'size': torrent.total_size
-                })
+                result.append({"hash": normalized_hash, "name": torrent.name, "size": torrent.total_size})
 
             logger.info(f"成功从Transmission获取{len(result)}个种子")
             return result
@@ -413,13 +380,9 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         if not hash_value:
             return False
         # 验证长度为40位且只包含十六进制字符
-        return len(hash_value) == 40 and all(c in '0123456789abcdef' for c in hash_value)
+        return len(hash_value) == 40 and all(c in "0123456789abcdef" for c in hash_value)
 
-    async def add_tag_to_torrent(
-        self,
-        torrent_hash: str,
-        tag: str
-    ) -> Tuple[bool, Optional[str]]:
+    async def add_tag_to_torrent(self, torrent_hash: str, tag: str) -> Tuple[bool, Optional[str]]:
         """
         为种子添加标签（等级4删除使用）
 
@@ -432,10 +395,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         """
         try:
             # 获取种子信息（包含现有标签）
-            torrent = await asyncio.to_thread(
-                self.client.get_torrent,
-                torrent_hash
-            )
+            torrent = await asyncio.to_thread(self.client.get_torrent, torrent_hash)
 
             if not torrent:
                 return False, f"种子 {torrent_hash} 不存在"
@@ -452,11 +412,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
                 return True, ""
 
             # 设置更新后的标签列表
-            await asyncio.to_thread(
-                self.client.change_torrent,
-                ids=[torrent_hash],
-                labels=existing_labels
-            )
+            await asyncio.to_thread(self.client.change_torrent, ids=[torrent_hash], labels=existing_labels)
 
             logger.info(f"Transmission种子 {torrent_hash} 已添加label: {tag}, 完整标签列表: {existing_labels}")
             return True, ""
@@ -467,10 +423,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
             return False, error_msg
 
     async def create_marker_file(
-        self,
-        torrent_hash: str,
-        torrent_name: str,
-        download_path: str
+        self, torrent_hash: str, torrent_name: str, download_path: str
     ) -> Tuple[bool, Optional[str]]:
         """
         创建标记文件（等级3删除使用）
@@ -500,7 +453,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
             marker_file_path = os.path.join(base_dir, f".deleteme_{torrent_hash}")
 
             # 创建标记文件
-            with open(marker_file_path, 'w', encoding='utf-8') as f:
+            with open(marker_file_path, "w", encoding="utf-8") as f:
                 f.write(f"Torrent: {torrent_name}\n")
                 f.write(f"Hash: {torrent_hash}\n")
                 f.write(f"Download Path: {download_path}\n")
@@ -514,10 +467,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
             logger.error(error_msg)
             return False, error_msg
 
-    async def get_torrent_files(
-        self,
-        torrent_hash: str
-    ) -> Tuple[bool, Optional[List[str]], Optional[str]]:
+    async def get_torrent_files(self, torrent_hash: str) -> Tuple[bool, Optional[List[str]], Optional[str]]:
         """
         获取种子文件列表（用于验证和记录）
 
@@ -529,21 +479,14 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
         """
         try:
             # 获取种子信息
-            torrent = await asyncio.to_thread(
-                self.client.get_torrent,
-                torrent_hash
-            )
+            torrent = await asyncio.to_thread(self.client.get_torrent, torrent_hash)
 
             if not torrent:
                 return False, None, f"种子 {torrent_hash} 不存在"
 
             # transmission_rpc 返回的文件列表
             # 注意：需要获取种子的文件信息
-            torrent_with_files = await asyncio.to_thread(
-                self.client.get_torrent,
-                torrent_hash,
-                arguments=['files']
-            )
+            torrent_with_files = await asyncio.to_thread(self.client.get_torrent, torrent_hash, arguments=["files"])
 
             files = getattr(torrent_with_files, "files", None)
             if not torrent_with_files or not files:
@@ -552,10 +495,7 @@ class TransmissionDeleteAdapter(DownloaderDeleteAdapter):
             # 提取相对路径列表
             file_list = [f.name for f in files]
 
-            logger.info(
-                f"Transmission种子 {torrent_hash} 文件列表获取成功，"
-                f"共 {len(file_list)} 个文件"
-            )
+            logger.info(f"Transmission种子 {torrent_hash} 文件列表获取成功，" f"共 {len(file_list)} 个文件")
             return True, file_list, ""
 
         except Exception as e:

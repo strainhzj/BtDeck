@@ -36,7 +36,7 @@ class TorrentSyncTask:
     # 任务配置
     default_interval = 3600  # 默认1小时
     max_concurrent_syncs = 3  # 最大并发同步数
-    no_timeout = True        # 不设置超时限制
+    no_timeout = True  # 不设置超时限制
 
     def __init__(self):
         """初始化任务"""
@@ -67,7 +67,7 @@ class TorrentSyncTask:
                 "execution_time": self.last_execution_time,
                 "execution_count": self.execution_count,
                 "status": "running",
-                "message": "Torrent sync task started"
+                "message": "Torrent sync task started",
             }
 
             # 执行种子同步（调用修改后的无参数方法）
@@ -77,18 +77,20 @@ class TorrentSyncTask:
             # 🔧 修复：处理 "no_action" 状态（无下载器可同步）
             if sync_status == "no_action":
                 # 无操作：既不算成功也不算失败，记录为跳过
-                result.update({
-                    "status": "skipped",
-                    "message": sync_result.get("message", "No downloaders available for sync"),
-                    "successful_syncs": 0,
-                    "failed_syncs": 0,
-                    "total_downloaders": sync_result.get("total_downloaders", 0),
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count,
-                    "total_synced": self.total_synced,
-                    "total_failed": self.total_failed,
-                    "note": "任务跳过：没有可用的下载器进行同步"
-                })
+                result.update(
+                    {
+                        "status": "skipped",
+                        "message": sync_result.get("message", "No downloaders available for sync"),
+                        "successful_syncs": 0,
+                        "failed_syncs": 0,
+                        "total_downloaders": sync_result.get("total_downloaders", 0),
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                        "total_synced": self.total_synced,
+                        "total_failed": self.total_failed,
+                        "note": "任务跳过：没有可用的下载器进行同步",
+                    }
+                )
                 return result
 
             # 更新统计信息
@@ -99,28 +101,32 @@ class TorrentSyncTask:
                 self.total_synced += successful_syncs
                 self.total_failed += failed_syncs
 
-                result.update({
-                    "status": "success" if sync_status == "success" else "partial",
-                    "message": sync_result.get("message", "Torrent sync completed"),
-                    "successful_syncs": successful_syncs,
-                    "failed_syncs": failed_syncs,
-                    "total_downloaders": sync_result.get("total_downloaders", 0),
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count,
-                    "total_synced": self.total_synced,
-                    "total_failed": self.total_failed
-                })
+                result.update(
+                    {
+                        "status": "success" if sync_status == "success" else "partial",
+                        "message": sync_result.get("message", "Torrent sync completed"),
+                        "successful_syncs": successful_syncs,
+                        "failed_syncs": failed_syncs,
+                        "total_downloaders": sync_result.get("total_downloaders", 0),
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                        "total_synced": self.total_synced,
+                        "total_failed": self.total_failed,
+                    }
+                )
 
             else:  # status == "failed" 或其他未知状态
                 self.failure_count += 1
-                result.update({
-                    "status": "failed",
-                    "message": sync_result.get("message", "Torrent sync failed"),
-                    "success_count": self.success_count,
-                    "failure_count": self.failure_count,
-                    "total_synced": self.total_synced,
-                    "total_failed": self.total_failed
-                })
+                result.update(
+                    {
+                        "status": "failed",
+                        "message": sync_result.get("message", "Torrent sync failed"),
+                        "success_count": self.success_count,
+                        "failure_count": self.failure_count,
+                        "total_synced": self.total_synced,
+                        "total_failed": self.total_failed,
+                    }
+                )
 
             return result
 
@@ -135,7 +141,7 @@ class TorrentSyncTask:
                 "success_count": self.success_count,
                 "failure_count": self.failure_count,
                 "total_synced": self.total_synced,
-                "total_failed": self.total_failed
+                "total_failed": self.total_failed,
             }
             return error_result
 
@@ -154,7 +160,11 @@ class TorrentSyncTask:
             "total_failed": self.total_failed,
             "last_execution_time": self.last_execution_time,
             "success_rate": (self.success_count / self.execution_count * 100) if self.execution_count > 0 else 0,
-            "sync_success_rate": (self.total_synced / (self.total_synced + self.total_failed) * 100) if (self.total_synced + self.total_failed) > 0 else 0
+            "sync_success_rate": (
+                (self.total_synced / (self.total_synced + self.total_failed) * 100)
+                if (self.total_synced + self.total_failed) > 0
+                else 0
+            ),
         }
 
     def get_schedule_config(self) -> Dict[str, Any]:
@@ -162,13 +172,13 @@ class TorrentSyncTask:
         return {
             "cron_expression": "0 * * * *",  # 每小时执行一次
             "timezone": "Asia/Shanghai",
-            "max_instances": 1,     # 防止重叠执行
-            "coalesce": True,       # 合并错过的执行
+            "max_instances": 1,  # 防止重叠执行
+            "coalesce": True,  # 合并错过的执行
             "misfire_grace_time": 900,  # 错过执行的宽限时间（15分钟）
             "default_interval": self.default_interval,
             "max_concurrent_syncs": self.max_concurrent_syncs,
             "no_timeout": self.no_timeout,
-            "estimated_duration": "Variable (no timeout limit)"
+            "estimated_duration": "Variable (no timeout limit)",
         }
 
     def get_performance_metrics(self) -> Dict[str, Any]:
@@ -177,12 +187,16 @@ class TorrentSyncTask:
             return {
                 "average_syncs_per_execution": 0,
                 "average_failures_per_execution": 0,
-                "total_processing_time": "N/A"
+                "total_processing_time": "N/A",
             }
 
         return {
             "average_syncs_per_execution": self.total_synced / self.execution_count,
             "average_failures_per_execution": self.total_failed / self.execution_count,
-            "sync_efficiency": (self.total_synced / (self.total_synced + self.total_failed) * 100) if (self.total_synced + self.total_failed) > 0 else 0,
-            "task_reliability": (self.success_count / self.execution_count * 100)
+            "sync_efficiency": (
+                (self.total_synced / (self.total_synced + self.total_failed) * 100)
+                if (self.total_synced + self.total_failed) > 0
+                else 0
+            ),
+            "task_reliability": (self.success_count / self.execution_count * 100),
         }

@@ -4,15 +4,15 @@
 提供同步数据库操作接口，用于同步Service层调用。
 """
 
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_, or_
+from sqlalchemy.orm import Session
+from sqlalchemy import and_
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import uuid
 import logging
 
 from app.models.torrent_tags import TorrentTag, TorrentTagRelation
-from app.core.database_result import DatabaseResult, DatabaseError
+from app.core.database_result import DatabaseResult
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,7 @@ class TorrentTagRepository:
     封装所有标签相关的数据库同步操作，包括标签CRUD和种子-标签关联管理。
     """
 
-    VALID_TAG_TYPES = {'category', 'tag'}
+    VALID_TAG_TYPES = {"category", "tag"}
 
     def __init__(self, db: Session):
         """
@@ -48,21 +48,13 @@ class TorrentTagRepository:
             标签对象，未找到返回None
         """
         try:
-            return self.db.query(TorrentTag).filter(
-                and_(
-                    TorrentTag.tag_id == tag_id,
-                    TorrentTag.dr == 0
-                )
-            ).first()
+            return self.db.query(TorrentTag).filter(and_(TorrentTag.tag_id == tag_id, TorrentTag.dr == 0)).first()
         except Exception as e:
             logger.error(f"查找标签失败: {str(e)}")
             return None
 
     def find_by_downloader(
-        self,
-        downloader_id: str,
-        include_deleted: bool = False,
-        tag_type: Optional[str] = None
+        self, downloader_id: str, include_deleted: bool = False, tag_type: Optional[str] = None
     ) -> List[TorrentTag]:
         """
         根据下载器ID查找所有标签
@@ -77,11 +69,11 @@ class TorrentTagRepository:
         """
         try:
             # 🐛 调试日志：记录查询条件
-            logger.info(f"🔍 [调试-Repository] 查询标签 - downloader_id: {downloader_id}, include_deleted: {include_deleted}, tag_type: {tag_type}")
-
-            query = self.db.query(TorrentTag).filter(
-                TorrentTag.downloader_id == downloader_id
+            logger.info(
+                f"🔍 [调试-Repository] 查询标签 - downloader_id: {downloader_id}, include_deleted: {include_deleted}, tag_type: {tag_type}"
             )
+
+            query = self.db.query(TorrentTag).filter(TorrentTag.downloader_id == downloader_id)
 
             # 过滤已删除
             if not include_deleted:
@@ -101,11 +93,7 @@ class TorrentTagRepository:
             logger.error(f"查询下载器标签失败: {str(e)}")
             return []
 
-    def find_all_tags(
-        self,
-        include_deleted: bool = False,
-        tag_type: Optional[str] = None
-    ) -> List[TorrentTag]:
+    def find_all_tags(self, include_deleted: bool = False, tag_type: Optional[str] = None) -> List[TorrentTag]:
         """
         查询所有标签（跨下载器聚合）
 
@@ -132,11 +120,7 @@ class TorrentTagRepository:
             logger.error(f"查询所有标签失败: {str(e)}")
             return []
 
-    def find_all_tag_names_by_type(
-        self,
-        tag_type: str,
-        include_deleted: bool = False
-    ) -> List[str]:
+    def find_all_tag_names_by_type(self, tag_type: str, include_deleted: bool = False) -> List[str]:
         """
         查询所有指定类型的标签名称（去重）
 
@@ -163,9 +147,7 @@ class TorrentTagRepository:
             logger.error(f"查询标签名称失败: {str(e)}")
             return []
 
-    def find_relations_by_torrent_hash(
-        self, torrent_hash: str
-    ) -> List[TorrentTagRelation]:
+    def find_relations_by_torrent_hash(self, torrent_hash: str) -> List[TorrentTagRelation]:
         """
         查找种子的所有标签关联
 
@@ -176,12 +158,11 @@ class TorrentTagRepository:
             标签关联列表
         """
         try:
-            return self.db.query(TorrentTagRelation).filter(
-                and_(
-                    TorrentTagRelation.torrent_hash == torrent_hash,
-                    TorrentTagRelation.dr == 0
-                )
-            ).all()
+            return (
+                self.db.query(TorrentTagRelation)
+                .filter(and_(TorrentTagRelation.torrent_hash == torrent_hash, TorrentTagRelation.dr == 0))
+                .all()
+            )
         except Exception as e:
             logger.error(f"查询种子标签关联失败: {str(e)}")
             return []
@@ -216,11 +197,7 @@ class TorrentTagRepository:
             self.db.commit()
             self.db.refresh(tag)
 
-            return DatabaseResult.success_result(
-                data=tag,
-                message="标签创建成功",
-                affected_rows=1
-            )
+            return DatabaseResult.success_result(data=tag, message="标签创建成功", affected_rows=1)
         except Exception as e:
             self.db.rollback()
             logger.error(f"创建标签失败: {str(e)}")
@@ -243,12 +220,9 @@ class TorrentTagRepository:
                     f"无效的标签类型: {tag.tag_type}，仅支持 {self.VALID_TAG_TYPES}"
                 )
 
-            existing = self.db.query(TorrentTag).filter(
-                and_(
-                    TorrentTag.tag_id == tag.tag_id,
-                    TorrentTag.dr == 0
-                )
-            ).first()
+            existing = (
+                self.db.query(TorrentTag).filter(and_(TorrentTag.tag_id == tag.tag_id, TorrentTag.dr == 0)).first()
+            )
 
             if not existing:
                 return DatabaseResult.not_found_result("标签不存在")
@@ -266,11 +240,7 @@ class TorrentTagRepository:
             self.db.commit()
             self.db.refresh(existing)
 
-            return DatabaseResult.success_result(
-                data=existing,
-                message="标签更新成功",
-                affected_rows=1
-            )
+            return DatabaseResult.success_result(data=existing, message="标签更新成功", affected_rows=1)
         except Exception as e:
             self.db.rollback()
             logger.error(f"更新标签失败: {str(e)}")
@@ -287,12 +257,7 @@ class TorrentTagRepository:
             删除结果（包含被删除标签的详细信息，用于同步到下载器）
         """
         try:
-            tag = self.db.query(TorrentTag).filter(
-                and_(
-                    TorrentTag.tag_id == tag_id,
-                    TorrentTag.dr == 0
-                )
-            ).first()
+            tag = self.db.query(TorrentTag).filter(and_(TorrentTag.tag_id == tag_id, TorrentTag.dr == 0)).first()
 
             if not tag:
                 return DatabaseResult.not_found_result("标签不存在")
@@ -303,23 +268,19 @@ class TorrentTagRepository:
                 "downloader_id": tag.downloader_id,
                 "tag_name": tag.tag_name,
                 "tag_type": tag.tag_type,
-                "color": tag.color
+                "color": tag.color,
             }
 
             tag.dr = 1
             tag.updated_at = datetime.utcnow()
 
             # 同时软删除关联
-            self.db.query(TorrentTagRelation).filter(
-                TorrentTagRelation.tag_id == tag_id
-            ).update({"dr": 1})
+            self.db.query(TorrentTagRelation).filter(TorrentTagRelation.tag_id == tag_id).update({"dr": 1})
 
             self.db.commit()
 
             return DatabaseResult.success_result(
-                data=tag_info,  # ⚠️ 修复：返回标签详情而不是True
-                message="标签删除成功",
-                affected_rows=1
+                data=tag_info, message="标签删除成功", affected_rows=1  # ⚠️ 修复：返回标签详情而不是True
             )
         except Exception as e:
             self.db.rollback()
@@ -328,9 +289,7 @@ class TorrentTagRepository:
 
     # ==================== 标签-种子关联方法 ====================
 
-    def assign_tag_to_torrent(
-        self, relation: TorrentTagRelation
-    ) -> DatabaseResult[bool]:
+    def assign_tag_to_torrent(self, relation: TorrentTagRelation) -> DatabaseResult[bool]:
         """
         为种子分配标签
 
@@ -350,24 +309,16 @@ class TorrentTagRepository:
             self.db.add(relation)
             self.db.commit()
 
-            return DatabaseResult.success_result(
-                data=True,
-                message="标签分配成功",
-                affected_rows=1
-            )
+            return DatabaseResult.success_result(data=True, message="标签分配成功", affected_rows=1)
         except Exception as e:
             self.db.rollback()
             logger.error(f"分配标签失败: {str(e)}")
             # 可能是UNIQUE约束冲突
             if "UNIQUE" in str(e) or "unique" in str(e).lower():
-                return DatabaseResult.validation_error_result(
-                    "该标签已分配到此种子"
-                )
+                return DatabaseResult.validation_error_result("该标签已分配到此种子")
             return DatabaseResult.database_error_result(f"分配标签失败: {str(e)}")
 
-    def remove_tag_from_torrent(
-        self, torrent_hash: str, tag_id: str
-    ) -> DatabaseResult[bool]:
+    def remove_tag_from_torrent(self, torrent_hash: str, tag_id: str) -> DatabaseResult[bool]:
         """
         移除种子的标签
 
@@ -379,13 +330,17 @@ class TorrentTagRepository:
             移除结果
         """
         try:
-            relation = self.db.query(TorrentTagRelation).filter(
-                and_(
-                    TorrentTagRelation.torrent_hash == torrent_hash,
-                    TorrentTagRelation.tag_id == tag_id,
-                    TorrentTagRelation.dr == 0
+            relation = (
+                self.db.query(TorrentTagRelation)
+                .filter(
+                    and_(
+                        TorrentTagRelation.torrent_hash == torrent_hash,
+                        TorrentTagRelation.tag_id == tag_id,
+                        TorrentTagRelation.dr == 0,
+                    )
                 )
-            ).first()
+                .first()
+            )
 
             if not relation:
                 return DatabaseResult.not_found_result("标签关联不存在")
@@ -393,19 +348,13 @@ class TorrentTagRepository:
             relation.dr = 1
             self.db.commit()
 
-            return DatabaseResult.success_result(
-                data=True,
-                message="标签移除成功",
-                affected_rows=1
-            )
+            return DatabaseResult.success_result(data=True, message="标签移除成功", affected_rows=1)
         except Exception as e:
             self.db.rollback()
             logger.error(f"移除标签失败: {str(e)}")
             return DatabaseResult.database_error_result(f"移除标签失败: {str(e)}")
 
-    def batch_assign_tags(
-        self, relations: List[TorrentTagRelation]
-    ) -> DatabaseResult[Dict[str, Any]]:
+    def batch_assign_tags(self, relations: List[TorrentTagRelation]) -> DatabaseResult[Dict[str, Any]]:
         """
         批量分配标签
 
@@ -433,23 +382,20 @@ class TorrentTagRepository:
                 success_count += 1
             except Exception as e:
                 failed_count += 1
-                failed_items.append({
-                    "index": idx,
-                    "torrent_hash": relation.torrent_hash,
-                    "tag_id": relation.tag_id,
-                    "error": str(e)
-                })
+                failed_items.append(
+                    {"index": idx, "torrent_hash": relation.torrent_hash, "tag_id": relation.tag_id, "error": str(e)}
+                )
                 self.db.rollback()
 
         result_data = {
             "total_count": len(relations),
             "success_count": success_count,
             "failed_count": failed_count,
-            "failed_items": failed_items
+            "failed_items": failed_items,
         }
 
         return DatabaseResult.success_result(
             data=result_data,
             message=f"批量分配完成: 成功{success_count}，失败{failed_count}",
-            affected_rows=success_count
+            affected_rows=success_count,
         )

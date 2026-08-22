@@ -3,28 +3,19 @@
     <!-- 头部说明和操作区 -->
     <div class="tab-header">
       <div class="header-info">
-        <svg class="header-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-        </svg>
+        <span class="header-icon"><LucideIcon name="route" :size="18" /></span>
         <div class="header-text">
           <h3 class="header-title">路径映射配置</h3>
           <p class="header-desc">配置下载器内部路径到主机实际路径的映射关系，适用于 Docker、NAS 等场景</p>
         </div>
       </div>
       <div class="header-actions">
-        <el-button type="success" size="medium" :loading="refreshing" @click="handleRefresh">
-          <svg v-if="!refreshing" class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="23 4 23 10 17 10"></polyline>
-            <polyline points="1 20 1 14 7 14"></polyline>
-            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-          </svg>
+        <el-button type="success" size="medium" :disabled="refreshing" @click="handleRefresh">
+          <LucideIcon class="button-icon" name="refresh-cw" :size="14" :class="{'is-spinning': refreshing}" />
           刷新配置
         </el-button>
         <el-button type="primary" size="medium" @click="handleAddMapping">
-          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19"></line>
-            <line x1="5" y1="12" x2="19" y2="12"></line>
-          </svg>
+          <LucideIcon class="button-icon" name="plus" :size="14" />
           添加映射
         </el-button>
       </div>
@@ -48,10 +39,7 @@
                 @blur="validateMappingName($index)"
               >
                 <template slot="prefix">
-                  <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-                    <circle cx="12" cy="7" r="4"></circle>
-                  </svg>
+                  <LucideIcon class="input-icon" name="tag" :size="13" />
                 </template>
               </el-input>
               <!-- 自动发现标记 -->
@@ -60,11 +48,7 @@
                 content="系统自动发现的路径，请补充外部路径配置"
                 placement="top"
               >
-                <svg class="auto-discovered-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="12" y1="16" x2="12" y2="12"></line>
-                  <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                </svg>
+                <LucideIcon class="auto-discovered-icon" name="info" :size="14" />
               </el-tooltip>
             </div>
           </template>
@@ -100,11 +84,7 @@
               @blur="validateInternalPath($index)"
             >
               <template slot="prefix">
-                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <circle cx="12" cy="12" r="10"></circle>
-                  <line x1="2" y1="12" x2="22" y2="12"></line>
-                  <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
-                </svg>
+                <LucideIcon class="input-icon" name="container" :size="13" />
               </template>
             </el-input>
           </template>
@@ -121,11 +101,7 @@
               @blur="validateExternalPath($index)"
             >
               <template slot="prefix">
-                <svg class="input-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect>
-                  <line x1="8" y1="21" x2="16" y2="21"></line>
-                  <line x1="12" y1="17" x2="12" y2="21"></line>
-                </svg>
+                <LucideIcon class="input-icon" name="monitor" :size="13" />
               </template>
             </el-input>
           </template>
@@ -148,9 +124,9 @@
             <el-button
               type="danger"
               size="mini"
-              icon="el-icon-delete"
               @click="handleDeleteMapping($index)"
             >
+              <LucideIcon name="trash-2" :size="13" />
               删除
             </el-button>
           </template>
@@ -159,9 +135,7 @@
         <!-- 空状态 -->
         <template #empty>
           <div class="empty-state">
-            <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            </svg>
+            <LucideIcon class="empty-icon" name="route" :size="40" :stroke-width="1.35" />
             <p class="empty-text">暂无路径映射配置</p>
             <p class="empty-hint">点击上方"添加映射"按钮创建配置</p>
           </div>
@@ -176,27 +150,19 @@
         <el-button
           type="success"
           size="small"
-          :loading="testing"
-          :disabled="mappings.length === 0"
+          :disabled="mappings.length === 0 || testing"
           @click="handleTestConfig"
         >
-          <svg class="button-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-          </svg>
+          <LucideIcon class="button-icon" name="test-tube-2" :size="14" :class="{'is-spinning': testing}" />
           测试配置
         </el-button>
       </div>
       <div v-if="testResult" :class="['test-result', testResult.valid ? 'success' : 'error']">
-        <svg v-if="testResult.valid" class="result-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-          <polyline points="22 4 12 14.01 9 11.01"></polyline>
-        </svg>
-        <svg v-else class="result-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10"></circle>
-          <line x1="15" y1="9" x2="9" y2="15"></line>
-          <line x1="9" y1="9" x2="15" y2="15"></line>
-        </svg>
+        <LucideIcon
+          class="result-icon"
+          :name="testResult.valid ? 'circle-check-big' : 'circle-x'"
+          :size="16"
+        />
         <span class="result-message">{{ testResult.message }}</span>
         <div v-if="!testResult.valid && testResult.backend_validation?.errors?.length" class="error-details">
           <strong>错误详情：</strong>
@@ -223,6 +189,17 @@ import {
   PathMappingTestResponse
 } from '../types'
 import { testPathMapping } from '@/api/downloader'
+import { generateExternalPathFromRules } from '../path-mapping-rules'
+
+interface VueLifecycleFlags {
+  _isDestroyed?: boolean
+  _isBeingDestroyed?: boolean
+}
+
+interface ApiErrorLike {
+  response?: { data?: { msg?: string } }
+  message?: string
+}
 
 @Component({
   name: 'PathMappingTab'
@@ -230,6 +207,9 @@ import { testPathMapping } from '@/api/downloader'
 export default class PathMappingTab extends Vue {
   @Prop({ default: null }) downloader!: Downloader | null
   @Prop({ default: () => ({}) as DownloaderSettings }) settings!: DownloaderSettings
+  // 规则以详情表单为准，允许弹窗在异步详情回填后实时更新。
+  // 未传入时回退到旧的 downloader 字段，兼容独立使用该组件的调用方。
+  @Prop({ default: undefined }) pathMappingRules!: string | undefined
 
   // 路径映射列表
   private mappings: PathMappingItem[] = []
@@ -275,21 +255,19 @@ export default class PathMappingTab extends Vue {
     }
   ]
 
+  private get isComponentDestroyed(): boolean {
+    const flags = this as unknown as VueLifecycleFlags
+    return Boolean(flags._isDestroyed || flags._isBeingDestroyed)
+  }
+
   // 初始化
   mounted() {
-    console.log('🔍 [PathMappingTab] mounted triggered')
-    console.log('🔍 [PathMappingTab] current downloader:', this.downloader)
-    console.log('🔍 [PathMappingTab] current settings:', this.settings)
-    console.log('🔍 [PathMappingTab] settings.path_mapping:', this.settings?.path_mapping)
     this.loadPathMappings()
   }
 
   // 监听下载器变化
   @Watch('downloader')
-  onDownloaderChange(newDownloader: any, oldDownloader: any) {
-    console.log('🔍 [PathMappingTab] downloader changed')
-    console.log('🔍 [PathMappingTab] old downloader:', oldDownloader)
-    console.log('🔍 [PathMappingTab] new downloader:', newDownloader)
+  onDownloaderChange() {
     // 清空旧数据，避免显示上一个下载器的路径映射
     this.mappings = []
     this.testResult = null
@@ -299,48 +277,27 @@ export default class PathMappingTab extends Vue {
 
   // 监听路径映射配置变化（处理异步数据加载）
   @Watch('settings', { deep: true })
-  onSettingsChange(newSettings: any, oldSettings: any) {
-    console.log('🔍 [PathMappingTab] settings changed (deep watch)')
-    console.log('🔍 [PathMappingTab] newSettings.path_mapping:', newSettings?.path_mapping)
-    console.log('🔍 [PathMappingTab] oldSettings.path_mapping:', oldSettings?.path_mapping)
-
+  onSettingsChange(newSettings: DownloaderSettings) {
     const newMapping = newSettings?.path_mapping
-    const oldMapping = oldSettings?.path_mapping
-
-    console.log('🔍 [PathMappingTab] newMapping:', newMapping)
-    console.log('🔍 [PathMappingTab] oldMapping:', oldMapping)
-    console.log('🔍 [PathMappingTab] newMapping !== oldMapping:', newMapping !== oldMapping)
 
     // 检查是否有映射数据（通过内容判断，而不是引用）
     if (newMapping && newMapping.mappings && Array.isArray(newMapping.mappings)) {
-      console.log('🔍 [PathMappingTab] 检测到映射数据，长度:', newMapping.mappings.length)
       // 如果当前没有数据，或者数据长度不同，则重新加载
       if (this.mappings.length === 0 || this.mappings.length !== newMapping.mappings.length) {
-        console.log('🔍 [PathMappingTab] 触发 loadPathMappings()')
         this.loadPathMappings()
-      } else {
-        console.log('🔍 [PathMappingTab] 数据长度相同，跳过加载')
       }
     } else if (newMapping && !newMapping.mappings) {
       // path_mapping 存在但 mappings 为空或未定义
-      console.log('🔍 [PathMappingTab] path_mapping 存在但 mappings 为空')
       this.mappings = []
     }
   }
 
   // 加载路径映射配置
   private async loadPathMappings() {
-    console.log('🔍 [PathMappingTab] loadPathMappings() called')
-    console.log('🔍 [PathMappingTab] this.settings.path_mapping:', this.settings?.path_mapping)
-    console.log('🔍 [PathMappingTab] this.settings.path_mapping?.mappings:', this.settings?.path_mapping?.mappings)
-
     if (this.settings.path_mapping?.mappings) {
       this.mappings = [...this.settings.path_mapping.mappings]
-      console.log('🔍 [PathMappingTab] 数据已加载，mappings.length:', this.mappings.length)
-      console.log('🔍 [PathMappingTab] mappings 内容:', this.mappings)
     } else {
       this.mappings = []
-      console.log('🔍 [PathMappingTab] 没有映射数据，mappings 设置为空数组')
     }
   }
 
@@ -374,8 +331,8 @@ export default class PathMappingTab extends Vue {
       const { getPathMappings } = await import('@/api/downloader')
       const response = await getPathMappings(this.downloader.id)
 
-      // ✅ 检查组件是否已销毁
-      if ((this as any)._isDestroyed || (this as any)._isBeingDestroyed) {
+      // 检查组件是否已销毁
+      if (this.isComponentDestroyed) {
         return
       }
 
@@ -397,23 +354,24 @@ export default class PathMappingTab extends Vue {
       } else {
         this.$message.error(response.msg || '刷新失败')
       }
-    } catch (error: any) {
-      // ✅ 再次检查组件状态
-      if ((this as any)._isDestroyed || (this as any)._isBeingDestroyed) {
+    } catch (error: unknown) {
+      // 再次检查组件状态
+      if (this.isComponentDestroyed) {
         return
       }
       console.error('刷新路径映射配置失败:', error)
-      this.$message.error(error?.response?.data?.msg || error?.message || '刷新失败')
+      const apiError = error as ApiErrorLike
+      this.$message.error(apiError.response?.data?.msg || apiError.message || '刷新失败')
     } finally {
-      // ✅ 安全地更新状态
-      if (!(this as any)._isDestroyed && !(this as any)._isBeingDestroyed) {
+      // 安全地更新状态
+      if (!this.isComponentDestroyed) {
         this.refreshing = false
       }
     }
   }
 
   // 获取路径输入框占位符
-  private getPathPlaceholder(mappingType: MappingType, pathType: 'internal' | 'external'): string {
+  private getPathPlaceholder(mappingType: MappingType, _pathType: 'internal' | 'external'): string {
     const option = this.mappingTypeOptions.find(opt => opt.value === mappingType)
     return option?.placeholder || '输入路径'
   }
@@ -551,7 +509,7 @@ export default class PathMappingTab extends Vue {
 
   // 测试配置
   private async handleTestConfig() {
-    // ✅ 在第一个await前保存快照
+    // 在第一个 await 前保存快照
     const downloader = this.downloader
     const mappings = [...this.mappings]
 
@@ -589,8 +547,8 @@ export default class PathMappingTab extends Vue {
 
       const response = await testPathMapping(downloader.id, formData)
 
-      // ✅ 检查组件是否已销毁
-      if ((this as any)._isDestroyed || (this as any)._isBeingDestroyed) {
+      // 检查组件是否已销毁
+      if (this.isComponentDestroyed) {
         return
       }
 
@@ -604,16 +562,17 @@ export default class PathMappingTab extends Vue {
       } else {
         this.$message.error(response.msg || '测试失败')
       }
-    } catch (error: any) {
-      // ✅ 再次检查组件状态
-      if ((this as any)._isDestroyed || (this as any)._isBeingDestroyed) {
+    } catch (error: unknown) {
+      // 再次检查组件状态
+      if (this.isComponentDestroyed) {
         return
       }
       console.error('测试路径映射失败:', error)
-      this.$message.error(error?.response?.data?.msg || error?.message || '测试失败')
+      const apiError = error as ApiErrorLike
+      this.$message.error(apiError.response?.data?.msg || apiError.message || '测试失败')
     } finally {
-      // ✅ 安全地更新状态
-      if (!(this as any)._isDestroyed && !(this as any)._isBeingDestroyed) {
+      // 安全地更新状态
+      if (!this.isComponentDestroyed) {
         this.testing = false
       }
     }
@@ -621,46 +580,10 @@ export default class PathMappingTab extends Vue {
 
   // 根据路径映射规则自动生成外部路径
   private generateExternalFromRules(internalPath: string): string | null {
-    // 如果 downloader 对象不存在，无法生成
-    if (!this.downloader || !this.downloader.path_mapping_rules) {
-      return null
-    }
-
-    const rulesText = this.downloader.path_mapping_rules.trim()
-    if (!rulesText) {
-      return null
-    }
-
-    // 解析规则（格式：/Downloads/ipan/{#**#}//192.168.5.51/pt1/）
-    const rules = rulesText.split('\n').filter(line => line.trim())
-
-    // 按规则长度降序排序（最长的规则优先匹配）
-    rules.sort((a, b) => b.length - a.length)
-
-    for (const rule of rules) {
-      const separator = '{#**#}'
-      if (!rule.includes(separator)) {
-        continue
-      }
-
-      const [source, target] = rule.split(separator)
-      if (!source || !target) {
-        continue
-      }
-
-      const normalizedSource = source.trim()
-      const normalizedTarget = target.trim()
-
-      // 前缀匹配
-      if (internalPath.startsWith(normalizedSource)) {
-        // 替换前缀
-        const relativePath = internalPath.substring(normalizedSource.length)
-        return normalizedTarget + relativePath
-      }
-    }
-
-    // 没有找到匹配规则
-    return null
+    const rulesText = this.pathMappingRules !== undefined
+      ? this.pathMappingRules
+      : this.downloader?.path_mapping_rules
+    return generateExternalPathFromRules(internalPath, rulesText)
   }
 
   // 获取表单数据（供父组件调用）
@@ -736,7 +659,12 @@ export default class PathMappingTab extends Vue {
 @import '@/styles/theme-variables.scss';
 
 .path-mapping-tab {
-  padding: var(--spacing-lg);
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  text-align: left;
 }
 
 .tab-header {
@@ -984,6 +912,169 @@ export default class PathMappingTab extends Vue {
     li {
       margin: 4px 0;
     }
+  }
+}
+
+.tab-header {
+  margin-bottom: 9px;
+  padding: 10px 12px;
+  border-color: var(--color-border-secondary);
+  border-radius: 11px;
+  background:
+    linear-gradient(110deg, rgba(var(--color-primary-rgb), 0.075), transparent 42%),
+    rgba(255, 255, 255, 0.66);
+}
+
+.header-info {
+  min-width: 0;
+  gap: 9px;
+}
+
+.header-icon {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.2);
+  border-radius: 9px;
+  background: rgba(var(--color-primary-rgb), 0.07);
+}
+
+.header-title {
+  margin-bottom: 2px;
+  font-size: 12px;
+  letter-spacing: 0.03em;
+}
+
+.header-desc {
+  overflow: hidden;
+  max-width: 680px;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header-actions {
+  gap: 6px;
+}
+
+.header-actions ::v-deep .el-button,
+.test-header ::v-deep .el-button {
+  height: 30px;
+  padding: 0 10px;
+  font-size: 9px;
+}
+
+.header-actions ::v-deep .el-button span,
+.test-header ::v-deep .el-button span,
+::v-deep .el-table .el-button span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.button-icon {
+  margin-right: 0;
+}
+
+.mapping-table-wrapper {
+  overflow: hidden;
+  margin-bottom: 9px;
+  border: 1px solid var(--color-border-secondary);
+  border-radius: 11px;
+}
+
+::v-deep .mapping-table-header {
+  background: var(--color-bg-tertiary);
+
+  th {
+    height: 31px;
+    color: var(--color-text-secondary);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+}
+
+::v-deep .el-table td {
+  height: 42px;
+  padding-top: 4px !important;
+  padding-bottom: 4px !important;
+}
+
+::v-deep .el-table .cell {
+  font-size: 10px;
+}
+
+.test-section {
+  padding: 9px 11px;
+  border-color: var(--color-border-secondary);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.test-header {
+  min-height: 30px;
+  margin: 0;
+}
+
+.test-title {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.test-result {
+  margin-top: 7px;
+  padding: 8px 9px;
+  font-size: 9px;
+}
+
+.empty-state {
+  padding: 38px 0;
+}
+
+.empty-icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 9px;
+}
+
+.empty-text {
+  font-size: 11px;
+}
+
+.empty-hint {
+  font-size: 9px;
+}
+
+.is-spinning {
+  animation: path-control-spin 0.8s linear infinite;
+}
+
+@keyframes path-control-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (max-width: 780px) {
+  .tab-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+
+    .el-button {
+      flex: 1;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-spinning {
+    animation: none;
   }
 }
 </style>

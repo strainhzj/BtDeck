@@ -1,0 +1,54 @@
+/* 两种种子视图共用的 Tracker 详情表格视觉契约。 */
+@mixin tracker-table-styles {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+
+  th {
+    text-align: left;
+    padding: 5px;
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border-primary);
+    color: var(--color-text-tertiary);
+    font-weight: var(--font-weight-semibold);
+  }
+
+  td {
+    padding: 5px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .tracker-status-working { color: var(--color-success); }
+  .tracker-status-error { color: var(--color-error); }
+  .tracker-status-neutral { color: var(--color-text-tertiary); }
+
+  &.tracker-table-detail {
+    .tracker-url-mini {
+      font-size: 10px;
+      color: var(--color-text-tertiary);
+      max-width: 120px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .tracker-status-working { color: var(--color-success); }
+    .tracker-status-error { color: var(--color-error); }
+    .tracker-status-neutral { color: var(--color-text-tertiary); }
+
+    .tracker-sticky-col {
+      position: sticky;
+      right: 0;
+      background: var(--color-bg-primary);
+      z-index: 2;
+    }
+
+    th.tracker-sticky-col {
+      background: var(--color-bg-secondary);
+    }
+
+    tbody tr:hover .tracker-sticky-col {
+      background: var(--color-bg-hover);
+    }
+  }
+}

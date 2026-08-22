@@ -113,8 +113,7 @@ import { Component, Vue, Prop, Watch } from 'vue-property-decorator'
 import { ElForm } from 'element-ui/types/form'
 import {
   Downloader,
-  DownloaderFormData,
-  OnlineStatus
+  DownloaderFormData
 } from '../types'
 import { downloaderTypeToString } from '@/utils/downloaderType'
 

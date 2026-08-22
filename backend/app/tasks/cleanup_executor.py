@@ -13,22 +13,17 @@
 import asyncio
 import logging
 from datetime import datetime, timedelta
-from typing import Dict, List, Any, Optional
+from typing import Dict, Any, List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
 
-from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
+from app.torrents.models import TorrentInfo
 
-from app.services.torrent_deletion_service import (
-    TorrentDeletionService,
-    DeleteRequest,
-    DeleteOption,
-    SafetyCheckLevel
-)
+from app.services.torrent_deletion_service import TorrentDeletionService, DeleteRequest, DeleteOption, SafetyCheckLevel
+
 logger = logging.getLogger(__name__)
 
 
@@ -76,10 +71,7 @@ class CleanupTaskExecutor:
         return name
 
     async def execute_cleanup_task(
-        self,
-        task_config: Dict[str, Any],
-        operator: str,
-        audit_service=None
+        self, task_config: Dict[str, Any], operator: str, audit_service=None
     ) -> Dict[str, Any]:
         """
         执行清理任务的主方法
@@ -105,12 +97,7 @@ class CleanupTaskExecutor:
         """
         # 使用类级别锁，防止多个清理任务同时执行
         async with CleanupTaskExecutor._cleanup_lock:
-            result = {
-                "level3_cleaned": 0,
-                "level4_cleaned": 0,
-                "total_size_freed": 0,
-                "errors": []
-            }
+            result: Dict[str, Any] = {"level3_cleaned": 0, "level4_cleaned": 0, "total_size_freed": 0, "errors": []}
 
             try:
                 logger.info(f"开始执行清理任务，操作人: {operator}, 配置: {task_config}")
@@ -121,7 +108,7 @@ class CleanupTaskExecutor:
                     level3_result = await self.cleanup_level3(
                         days_threshold=task_config.get("days_threshold", 30),
                         operator=operator,
-                        audit_service=audit_service
+                        audit_service=audit_service,
                     )
                     result["level3_cleaned"] = level3_result.get("success_count", 0)
                     result["total_size_freed"] += level3_result.get("size_freed", 0)
@@ -130,10 +117,7 @@ class CleanupTaskExecutor:
                 # 清理等级4（待删除标签）
                 if task_config.get("cleanup_level_4", False):
                     logger.info("开始清理等级4数据（待删除标签）")
-                    level4_result = await self.cleanup_level4(
-                        operator=operator,
-                        audit_service=audit_service
-                    )
+                    level4_result = await self.cleanup_level4(operator=operator, audit_service=audit_service)
                     result["level4_cleaned"] = level4_result.get("success_count", 0)
                     result["total_size_freed"] += level4_result.get("size_freed", 0)
                     result["errors"].extend(level4_result.get("errors", []))
@@ -171,20 +155,18 @@ class CleanupTaskExecutor:
             }
         """
         try:
-            result = {
+            result: Dict[str, Any] = {
                 "level3_count": 0,
                 "level4_count": 0,
                 "total_count": 0,
                 "total_size_gb": 0.0,
                 "level3_items": [],
-                "level4_items": []
+                "level4_items": [],
             }
 
             # 查询等级3种子
             if task_config.get("cleanup_level_3", False):
-                level3_torrents = self._query_level3_torrents(
-                    days_threshold=task_config.get("days_threshold", 30)
-                )
+                level3_torrents = self._query_level3_torrents(days_threshold=task_config.get("days_threshold", 30))
                 result["level3_count"] = len(level3_torrents)
                 result["level3_items"] = [
                     {
@@ -192,7 +174,7 @@ class CleanupTaskExecutor:
                         "name": t.name,
                         "size": t.size,
                         "deleted_at": t.deleted_at.isoformat() if t.deleted_at else None,
-                        "save_path": t.save_path
+                        "save_path": t.save_path,
                     }
                     for t in level3_torrents
                 ]
@@ -202,21 +184,14 @@ class CleanupTaskExecutor:
                 level4_torrents = self._query_level4_torrents()
                 result["level4_count"] = len(level4_torrents)
                 result["level4_items"] = [
-                    {
-                        "info_id": t.info_id,
-                        "name": t.name,
-                        "size": t.size,
-                        "tags": t.tags,
-                        "save_path": t.save_path
-                    }
+                    {"info_id": t.info_id, "name": t.name, "size": t.size, "tags": t.tags, "save_path": t.save_path}
                     for t in level4_torrents
                 ]
 
             # 计算总数和总大小
             result["total_count"] = result["level3_count"] + result["level4_count"]
-            total_size = (
-                sum(item.get("size", 0) for item in result["level3_items"]) +
-                sum(item.get("size", 0) for item in result["level4_items"])
+            total_size = sum(item.get("size", 0) for item in result["level3_items"]) + sum(
+                item.get("size", 0) for item in result["level4_items"]
             )
             result["total_size_gb"] = round(total_size / (1024**3), 2)
 
@@ -231,15 +206,10 @@ class CleanupTaskExecutor:
                 "total_count": 0,
                 "total_size_gb": 0.0,
                 "level3_items": [],
-                "level4_items": []
+                "level4_items": [],
             }
 
-    async def cleanup_level3(
-        self,
-        days_threshold: int,
-        operator: str,
-        audit_service=None
-    ) -> Dict[str, Any]:
+    async def cleanup_level3(self, days_threshold: int, operator: str, audit_service=None) -> Dict[str, Any]:
         """
         清理等级3（回收站）数据
 
@@ -263,12 +233,7 @@ class CleanupTaskExecutor:
                 "errors": List[str]
             }
         """
-        result = {
-            "success_count": 0,
-            "failed_count": 0,
-            "size_freed": 0,
-            "errors": []
-        }
+        result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "size_freed": 0, "errors": []}
 
         # 收集所有要处理的种子
         torrents_to_process = []
@@ -287,10 +252,11 @@ class CleanupTaskExecutor:
             for torrent in torrents:
                 try:
                     # 获取下载器信息
-                    downloader = self.db.query(BtDownloaders).filter(
-                        BtDownloaders.downloader_id == torrent.downloader_id,
-                        BtDownloaders.dr == 0
-                    ).first()
+                    downloader = (
+                        self.db.query(BtDownloaders)
+                        .filter(BtDownloaders.downloader_id == torrent.downloader_id, BtDownloaders.dr == 0)
+                        .first()
+                    )
 
                     # 删除 .waiting-delete 标记文件（降级处理）
                     if downloader and torrent.save_path:
@@ -299,11 +265,12 @@ class CleanupTaskExecutor:
                                 path_mapping_service=self._get_path_mapping_service(downloader)
                             )
                             await file_op_service.delete_marker_file(
-                                directory_path=torrent.save_path,
-                                torrent_name=torrent.name
+                                directory_path=torrent.save_path, torrent_name=torrent.name
                             )
                         except Exception as e:
-                            logger.warning(f"删除标记文件失败（降级）: {self._sanitize_torrent_name(torrent.name)}, {e}")
+                            logger.warning(
+                                f"删除标记文件失败（降级）: {self._sanitize_torrent_name(torrent.name or "")}, {e}"
+                            )
 
                     # 收集待处理的种子
                     torrents_to_process.append(torrent)
@@ -358,12 +325,12 @@ class CleanupTaskExecutor:
                                 "torrent_name": torrent.name,
                                 "downloader_id": torrent.downloader_id,
                                 "deleted_at": torrent.deleted_at.isoformat() if torrent.deleted_at else None,
-                                "days_threshold": days_threshold
+                                "days_threshold": days_threshold,
                             },
                             old_value={"status": "in_recycle_bin"},
                             new_value={"status": "deleted"},
                             operation_result=AuditOperationResult.SUCCESS,
-                            downloader_id=torrent.downloader_id
+                            downloader_id=torrent.downloader_id,
                         )
                     except Exception as e:
                         logger.warning(f"记录审计日志失败: {torrent.info_id}, {e}")
@@ -378,11 +345,7 @@ class CleanupTaskExecutor:
 
         return result
 
-    async def cleanup_level4(
-        self,
-        operator: str,
-        audit_service=None
-    ) -> Dict[str, Any]:
+    async def cleanup_level4(self, operator: str, audit_service=None) -> Dict[str, Any]:
         """
         清理等级4（待删除标签）数据
 
@@ -404,12 +367,7 @@ class CleanupTaskExecutor:
                 "errors": List[str]
             }
         """
-        result = {
-            "success_count": 0,
-            "failed_count": 0,
-            "size_freed": 0,
-            "errors": []
-        }
+        result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "size_freed": 0, "errors": []}
 
         try:
             # 查询符合条件的种子
@@ -423,10 +381,7 @@ class CleanupTaskExecutor:
 
             # 使用 TorrentDeletionService 统一删除入口
             # 创建删除服务实例
-            deletion_service = TorrentDeletionService(
-                db=self.db,
-                audit_service=audit_service
-            )
+            deletion_service = TorrentDeletionService(db=self.db, audit_service=audit_service)
 
             # 创建删除请求
             delete_request = DeleteRequest(
@@ -434,7 +389,7 @@ class CleanupTaskExecutor:
                 delete_option=DeleteOption.DELETE_FILES_AND_TORRENT,
                 safety_check_level=SafetyCheckLevel.BASIC,  # 清理任务使用基础检查
                 force_delete=True,  # 强制删除，跳过安全确认
-                reason=f"等级4清理任务: 待删除标签自动清理"
+                reason="等级4清理任务: 待删除标签自动清理",
             )
 
             # 执行删除
@@ -454,7 +409,9 @@ class CleanupTaskExecutor:
             if delete_result.safety_warnings:
                 logger.warning(f"等级4清理安全警告: {delete_result.safety_warnings}")
 
-            logger.info(f"等级4种子清理完成: 成功{result['success_count']}, 失败{result['failed_count']}, 释放空间{result['size_freed']}字节")
+            logger.info(
+                f"等级4种子清理完成: 成功{result['success_count']}, 失败{result['failed_count']}, 释放空间{result['size_freed']}字节"
+            )
 
         except Exception as e:
             error_msg = f"清理等级4数据失败: {str(e)}"
@@ -462,7 +419,6 @@ class CleanupTaskExecutor:
             logger.error(error_msg, exc_info=True)
 
         return result
-
 
     def _get_path_mapping_service(self, downloader: BtDownloaders) -> Optional[PathMappingService]:
         """
@@ -480,3 +436,43 @@ class CleanupTaskExecutor:
             except Exception as e:
                 logger.warning(f"加载路径映射服务失败: {e}")
         return None
+
+    def _query_level3_torrents(self, days_threshold: int = 30) -> List[TorrentInfo]:
+        """查询回收站中超期的等级3种子。
+
+        等级3种子特征：deleted_at IS NOT NULL AND dr=0（在回收站中但未彻底删除）。
+        超期判定：deleted_at < (now - days_threshold)。
+
+        Args:
+            days_threshold: 超期天数阈值
+
+        Returns:
+            符合条件的种子列表
+        """
+        threshold = datetime.utcnow() - timedelta(days=days_threshold)
+        return (
+            self.db.query(TorrentInfo)
+            .filter(
+                TorrentInfo.deleted_at.isnot(None),
+                TorrentInfo.deleted_at < threshold,
+                TorrentInfo.dr == 0,
+            )
+            .all()
+        )
+
+    def _query_level4_torrents(self) -> List[TorrentInfo]:
+        """查询带 pending_delete 标签的等级4种子。
+
+        等级4种子特征：tags 包含 pending_delete 标签且 dr=0（未删除）。
+
+        Returns:
+            符合条件的种子列表
+        """
+        return (
+            self.db.query(TorrentInfo)
+            .filter(
+                TorrentInfo.tags.like("%pending_delete%"),
+                TorrentInfo.dr == 0,
+            )
+            .all()
+        )

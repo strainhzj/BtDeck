@@ -447,6 +447,40 @@ export function searchAllPools(params?: SearchAllPoolsParams): Promise<ApiRespon
   }) as unknown as Promise<ApiResponse<PaginatedResponse<SearchResultItem>>>
 }
 
+/**
+ * 左匹配（前缀）预览参数
+ * 按关键词文本前缀严格左匹配指定池子内的关键词（非 contains），排除已软删除。
+ */
+export interface KeywordPrefixMatchPreviewParams {
+  pool_type: PoolType
+  prefix: string
+}
+
+/**
+ * 左匹配（前缀）预览结果
+ * - count: 命中总数
+ * - sample_keywords: 前 10 条关键词文本（供二次确认核对）
+ * - keyword_ids: 全部命中 id（前端复用 batch-delete / batch-move 执行）
+ */
+export interface KeywordPrefixMatchPreviewResult {
+  count: number
+  sample_keywords: string[]
+  keyword_ids: string[]
+}
+
+/**
+ * 左匹配（前缀）预览：按前缀左匹配池内关键词
+ */
+export function keywordPrefixMatchPreview(
+  data: KeywordPrefixMatchPreviewParams
+): Promise<ApiResponse<KeywordPrefixMatchPreviewResult>> {
+  return request({
+    url: '/tracker-keywords/pool/prefix-match-preview',
+    method: 'post',
+    data
+  }) as unknown as Promise<ApiResponse<KeywordPrefixMatchPreviewResult>>
+}
+
 // ==================== Tracker汇报配置API ====================
 
 /**

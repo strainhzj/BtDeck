@@ -13,9 +13,9 @@ from .fallback_handler import FallbackHandler
 from .tag_adapter_factory import TagAdapterFactory
 
 __all__ = [
-    'TorrentTagAdapter',
-    'QBittorrentTagAdapter',
-    'TransmissionTagAdapter',
-    'FallbackHandler',
-    'TagAdapterFactory',
+    "TorrentTagAdapter",
+    "QBittorrentTagAdapter",
+    "TransmissionTagAdapter",
+    "FallbackHandler",
+    "TagAdapterFactory",
 ]

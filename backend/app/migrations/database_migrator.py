@@ -5,12 +5,9 @@
 
 import sqlite3
 import logging
-from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import Dict, Optional
 from app.core.config import settings
-from app.database import SessionLocal, Base
-from sqlalchemy import text
-from gmssl import sm4, func
+from gmssl import sm4
 
 # 导入关键词池迁移模块
 from app.migrations.keyword_pools_migration import run_keyword_pools_migration
@@ -76,7 +73,6 @@ class DatabaseMigrator:
                 if success:
                     self._mark_migration_completed("add_torrent_progress_column_v1")
 
-
             if success:
                 logger.info("数据库迁移完成")
             else:
@@ -106,10 +102,7 @@ class DatabaseMigrator:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    "SELECT success FROM schema_migrations WHERE migration_name = ?",
-                    (migration_name,)
-                )
+                cursor.execute("SELECT success FROM schema_migrations WHERE migration_name = ?", (migration_name,))
                 result = cursor.fetchone()
                 return result is not None and result[0] == 1
         except Exception as e:
@@ -123,7 +116,7 @@ class DatabaseMigrator:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_migrations (migration_name, success) VALUES (?, ?)",
-                    (migration_name, True)
+                    (migration_name, True),
                 )
                 conn.commit()
                 logger.info(f"标记迁移完成: {migration_name}")
@@ -137,7 +130,7 @@ class DatabaseMigrator:
                 cursor = conn.cursor()
                 cursor.execute(
                     "INSERT OR REPLACE INTO schema_migrations (migration_name, success) VALUES (?, ?)",
-                    (migration_name, False)
+                    (migration_name, False),
                 )
                 conn.commit()
                 logger.info(f"标记迁移失败: {migration_name}")
@@ -300,15 +293,11 @@ class DatabaseMigrator:
 
     def _needs_bt_downloaders_migration(self, columns: Dict[str, str]) -> bool:
         """检查 bt_downloaders 表是否需要迁移"""
-        return (
-            columns.get('is_search') == 'TEXT' or
-            columns.get('enabled') == 'TEXT' or
-            columns.get('is_ssl') == 'TEXT'
-        )
+        return columns.get("is_search") == "TEXT" or columns.get("enabled") == "TEXT" or columns.get("is_ssl") == "TEXT"
 
     def _needs_torrent_info_migration(self, columns: Dict[str, str]) -> bool:
         """检查 torrent_info 表是否需要迁移"""
-        return columns.get('enabled') == 'INTEGER'
+        return columns.get("enabled") == "INTEGER"
 
     def _needs_tracker_info_migration(self, columns: Dict[str, str]) -> bool:
         """检查 tracker_info 表是否需要迁移"""
@@ -396,8 +385,20 @@ class DatabaseMigrator:
                 torrent_file TEXT,
                 added_date DATETIME,
                 completed_date DATETIME,
-                ratio TEXT,
-                ratio_limit TEXT,
+                ratio REAL CHECK (
+                    ratio IS NULL OR (
+                        typeof(ratio) IN ('integer', 'real')
+                        AND ratio >= 0
+                        AND ratio <= 1.7976931348623157e308
+                    )
+                ),
+                ratio_limit REAL CHECK (
+                    ratio_limit IS NULL OR (
+                        typeof(ratio_limit) IN ('integer', 'real')
+                        AND ratio_limit >= 0
+                        AND ratio_limit <= 1.7976931348623157e308
+                    )
+                ),
                 tags TEXT,
                 category TEXT,
                 super_seeding TEXT,
@@ -479,23 +480,43 @@ class DatabaseMigrator:
         updated_count = 0
         for row in rows:
             tracker_url = row[3]  # tracker_url 是第4个字段
-            if tracker_url and not tracker_url.startswith(('encrypted:', 'sm4:')):
+            if tracker_url and not tracker_url.startswith(("encrypted:", "sm4:")):
                 # 加密 tracker_url
                 encrypted_url = sm4_crypt.crypt_ecb(tracker_url.encode()).hex()
                 encrypted_url = f"sm4:{encrypted_url}"
                 updated_count += 1
 
                 # 插入加密后的数据
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO tracker_info_temp
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, (row[0], row[1], row[2], encrypted_url, row[4], row[5], row[6], row[7], row[8], row[9], row[10], row[11], row[12]))
+                """,
+                    (
+                        row[0],
+                        row[1],
+                        row[2],
+                        encrypted_url,
+                        row[4],
+                        row[5],
+                        row[6],
+                        row[7],
+                        row[8],
+                        row[9],
+                        row[10],
+                        row[11],
+                        row[12],
+                    ),
+                )
             else:
                 # 如果已经加密或为空，直接插入
-                cursor.execute("""
+                cursor.execute(
+                    """
                     INSERT INTO tracker_info_temp
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, row)
+                """,
+                    row,
+                )
 
         if updated_count > 0:
             logger.info(f"加密了 {updated_count} 个tracker_url字段")
@@ -527,8 +548,7 @@ class DatabaseMigrator:
 
             # 更新数据库
             cursor.execute(
-                "UPDATE bt_downloaders SET password = ? WHERE downloader_id = ?",
-                (encrypted_password, downloader_id)
+                "UPDATE bt_downloaders SET password = ? WHERE downloader_id = ?", (encrypted_password, downloader_id)
             )
             updated_count += 1
 
@@ -558,10 +578,7 @@ class DatabaseMigrator:
             encrypted_url = encrypt_tracker_url(tracker_url)
 
             # 更新数据库
-            cursor.execute(
-                "UPDATE tracker_info SET tracker_url = ? WHERE tracker_id = ?",
-                (encrypted_url, tracker_id)
-            )
+            cursor.execute("UPDATE tracker_info SET tracker_url = ? WHERE tracker_id = ?", (encrypted_url, tracker_id))
             updated_count += 1
 
         if updated_count > 0:
@@ -577,10 +594,10 @@ class DatabaseMigrator:
                 logger.error(f"配置文件不存在: {self.config_path}")
                 return None
 
-            with open(self.config_path, 'r', encoding='utf-8') as f:
+            with open(self.config_path, "r", encoding="utf-8") as f:
                 config = yaml.safe_load(f)
 
-            sm4_key = config.get('security', {}).get('secret_key')
+            sm4_key = config.get("security", {}).get("secret_key")
             if not sm4_key:
                 logger.error("配置文件中未找到 SM4 密钥")
                 return None

@@ -11,6 +11,7 @@
 
 import logging
 from typing import Dict, Any
+from app.core.config import settings
 from app.tasks.scheduler.torrent_sync.base import BaseSyncTask
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,6 @@ class TorrentInfoSyncTask(BaseSyncTask):
             同步结果字典
         """
         from app.main import app as downloader_app
-        from app.api.endpoints.torrent_sync import torrent_sync_db_async
 
         self.last_execution_time = self.execution_count
         self.execution_count += 1
@@ -73,19 +73,31 @@ class TorrentInfoSyncTask(BaseSyncTask):
                     "message": "没有有效的下载器可同步",
                     "successful_syncs": 0,
                     "failed_syncs": 0,
-                    "total_downloaders": 0
+                    "total_downloaders": 0,
                 }
 
             logger.info(f"找到 {len(valid_downloaders)} 个有效下载器")
 
-            # 并发执行种子信息同步
+            # 并发执行种子信息同步（W3-3：并发数配置化，SQLite 默认 1 串行处理
+            # 下载器；上限不超过明确压测值）
             logger.debug("开始并发执行种子信息同步...")
             result = await self.execute_sync_with_concurrency(
                 downloaders=valid_downloaders,
                 sync_func=self._sync_torrent_info_only,
                 sync_type="TorrentInfo",
-                max_concurrent=3
+                max_concurrent=settings.INFO_SYNC_DOWNLOADER_CONCURRENCY,
             )
+
+            # 辅种数量由同步任务统一全量校正，避免列表查询时实时分组计算。
+            # 即使本轮只有部分下载器同步成功，也校正当前数据库快照；下轮任务
+            # 会再次覆盖可能尚未同步到的变化。
+            if result.get("status") in {"success", "partial"}:
+                try:
+                    result["auxiliary_seed_count"] = await self._refresh_auxiliary_seed_counts()
+                except Exception as count_error:
+                    # 数量校正失败不掩盖本轮下载器同步结果，下一轮任务会重试。
+                    logger.error(f"[{self.name}] 辅种数量校正失败: {count_error}", exc_info=True)
+                    result["auxiliary_seed_count"] = {"status": "failed", "error": str(count_error)}
 
             # 更新统计
             if result["status"] == "success":
@@ -115,74 +127,46 @@ class TorrentInfoSyncTask(BaseSyncTask):
                 "message": error_msg,
                 "successful_syncs": 0,
                 "failed_syncs": 1,
-                "total_downloaders": 0
+                "total_downloaders": 0,
             }
+
+    async def _refresh_auxiliary_seed_counts(self) -> Dict[str, int]:
+        """使用独立短事务全量校正辅种数量。"""
+
+        from app.database import AsyncSessionLocal
+        from app.services.auxiliary_seed_count_service import refresh_auxiliary_seed_counts
+
+        async with AsyncSessionLocal() as count_db:
+            return await refresh_auxiliary_seed_counts(count_db)
 
     async def _sync_torrent_info_only(self, downloader_info: Dict[str, Any]) -> Dict[str, Any]:
         """
-        只同步种子信息，不同步 tracker
+        只同步种子信息，不同步 tracker（W2-1：执行核心委托 SyncCoordinator）
+
+        自 W2-1 起，下载器读取/转换/写入统一由
+        app/services/sync_coordinator.py::run_sync 编排（sync_type="info",
+        trigger="cron"，同一资源准入/写治理/观测通道），本方法仅保留
+        任务文件负责的下载器列表与并发语义（并发数取
+        settings.INFO_SYNC_DOWNLOADER_CONCURRENCY，SQLite 默认 1）。
 
         Args:
             downloader_info: 下载器信息字典
 
         Returns:
-            同步结果字典
+            同步结果字典（status/message/nickname，与旧实现结构一致）
         """
-        from app.database import AsyncSessionLocal
-        from app.downloader.models import BtDownloaders
-        from app.api.endpoints.torrents_async import qb_add_torrents_info_only_async, tr_add_torrents_info_only_async
+        from app.services.sync_coordinator import (
+            SyncRequest,
+            map_sync_result_to_task_dict,
+            run_sync,
+        )
 
-        async with AsyncSessionLocal() as db:
-            try:
-                # 创建下载器对象
-                downloader = BtDownloaders()
-                for key, value in downloader_info.items():
-                    if hasattr(downloader, key):
-                        setattr(downloader, key, value)
-
-                # 判断下载器类型
-                original_type = downloader.downloader_type
-                downloader_type_str = None
-
-                if original_type == 'qbittorrent' or original_type == 0 or original_type == '0':
-                    downloader_type_str = 'qbittorrent'
-                elif original_type == 'transmission' or original_type == 1 or original_type == '1':
-                    downloader_type_str = 'transmission'
-
-                if not downloader_type_str:
-                    error_msg = f"不支持的下载器类型: {original_type}"
-                    logger.error(error_msg)
-                    return {
-                        "status": "failed",
-                        "message": error_msg,
-                        "nickname": downloader.nickname
-                    }
-
-                # 调用种子信息同步函数（不含 tracker）
-                if downloader_type_str == 'qbittorrent':
-                    await qb_add_torrents_info_only_async(db, [downloader])
-                    logger.info(f"[TorrentInfoSync] qBittorrent {downloader.nickname} 种子信息同步成功")
-                    return {
-                        "status": "success",
-                        "message": f"qBittorrent下载器 {downloader.nickname} 种子信息同步成功",
-                        "downloader_type": "qbittorrent",
-                        "nickname": downloader.nickname
-                    }
-                else:  # transmission
-                    await tr_add_torrents_info_only_async(db, [downloader])
-                    logger.info(f"[TorrentInfoSync] Transmission {downloader.nickname} 种子信息同步成功")
-                    return {
-                        "status": "success",
-                        "message": f"Transmission下载器 {downloader.nickname} 种子信息同步成功",
-                        "downloader_type": "transmission",
-                        "nickname": downloader.nickname
-                    }
-
-            except Exception as e:
-                error_msg = f"同步种子信息失败: {str(e)}"
-                logger.error(error_msg)
-                return {
-                    "status": "failed",
-                    "message": error_msg,
-                    "nickname": downloader_info.get('nickname', 'Unknown')
-                }
+        downloader_id = downloader_info.get("downloader_id")
+        result = await run_sync(
+            SyncRequest(
+                sync_type="info",
+                downloader_ids=[str(downloader_id)] if downloader_id else None,
+                trigger="cron",
+            )
+        )
+        return map_sync_result_to_task_dict(result, downloader_info)

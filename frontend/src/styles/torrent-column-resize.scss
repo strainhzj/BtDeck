@@ -1,0 +1,60 @@
+/* ========================================
+   列宽拖拽手柄（列表模式/传统模式共用，全局引入）
+   ========================================
+   - 必须保持全局引入（styles/index.scss）：两个视图的样式块均为 scoped，
+     若放在视图内 scoped 引入，另一视图拿不到这些规则（v1.0.6.41 前的传统
+     模式手柄因此整体失效）
+   - body.column-resizing 同理：scoped 编译成 body[data-v-x] 永不匹配
+   */
+.torrent-table thead th:not(.action-column) {
+  /* 列宽拖拽手柄的定位基准；sticky 操作列除外（sticky 即定位，不可覆盖） */
+  position: relative;
+}
+
+.torrent-table thead th .column-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px; /* 跨列界覆盖 6px 命中区，便于命中相邻边界 */
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  z-index: 2;
+
+  /* 命中区透明，hover/active 才显示视觉反馈条 */
+  &::after {
+    content: '';
+    position: absolute;
+    top: 20%;
+    bottom: 20%;
+    left: 2px;
+    width: 2px;
+    border-radius: 1px;
+    background: transparent;
+    transition: background var(--transition-fast);
+  }
+
+  &:hover::after,
+  &:active::after {
+    background: rgba(255, 255, 255, 0.9);
+  }
+}
+
+/* 传统模式表头为浅色背景（--trad-table-header-bg），白色反馈条不可见，改用主题色 */
+.traditional-table thead th .column-resizer {
+  &:hover::after,
+  &:active::after {
+    background: var(--color-primary);
+  }
+}
+
+/* 操作列手柄贴齐右缘（sticky 列右侧即表格边缘） */
+.torrent-table thead th.action-column .column-resizer {
+  right: 0;
+}
+
+/* 拖拽会话期间：全局 col-resize 光标 + 禁止文本选择（由 ColumnResizeMixin 切换） */
+body.column-resizing {
+  cursor: col-resize;
+  user-select: none;
+}

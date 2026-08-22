@@ -21,7 +21,7 @@ import logging
 import threading
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Union
+from typing import Dict, List, Optional, Union
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -68,12 +68,7 @@ class TrackerJudgmentEngine:
             cache_ttl: 缓存有效期（秒），默认3600秒（1小时）
             auto_load: 是否在初始化时自动加载关键词，默认True
         """
-        self.keyword_cache: Dict[str, List[str]] = {
-            'candidate': [],
-            'ignored': [],
-            'success': [],
-            'failed': []
-        }
+        self.keyword_cache: Dict[str, List[str]] = {"candidate": [], "ignored": [], "success": [], "failed": []}
         self.keyword_cache_by_language: Dict[str, Dict[str, List[str]]] = {}
         self.last_cache_update: Optional[datetime] = None
         self.cache_ttl: int = cache_ttl
@@ -102,26 +97,22 @@ class TrackerJudgmentEngine:
             db = SessionLocal()
             try:
                 # 查询所有启用的关键词
-                keywords = db.query(TrackerKeywordConfig).filter(
-                    TrackerKeywordConfig.enabled == True,
-                    TrackerKeywordConfig.dr == 0
-                ).all()
+                keywords = (
+                    db.query(TrackerKeywordConfig)
+                    .filter(TrackerKeywordConfig.enabled.is_(True), TrackerKeywordConfig.dr == 0)
+                    .all()
+                )
 
                 # 使用锁保护缓存更新
                 with self._lock:
                     # 清空缓存 - 支持所有类型
-                    self.keyword_cache = {
-                        'candidate': [],
-                        'ignored': [],
-                        'success': [],
-                        'failed': []
-                    }
+                    self.keyword_cache = {"candidate": [], "ignored": [], "success": [], "failed": []}
                     self.keyword_cache_by_language = {}
 
                     # 按类型和语言分组
                     for keyword in keywords:
                         key = keyword.keyword_type  # 'candidate', 'ignored', 'success', 'failed'
-                        lang = keyword.language or 'universal'
+                        lang = keyword.language or "universal"
 
                         # 确保类型在缓存中存在
                         if key not in self.keyword_cache:
@@ -135,10 +126,10 @@ class TrackerJudgmentEngine:
                         if lang not in self.keyword_cache_by_language:
                             # 初始化时支持所有可能的类型
                             self.keyword_cache_by_language[lang] = {
-                                'candidate': [],
-                                'ignored': [],
-                                'success': [],
-                                'failed': []
+                                "candidate": [],
+                                "ignored": [],
+                                "success": [],
+                                "failed": [],
                             }
 
                         # 确保类型在语言缓存中存在
@@ -151,10 +142,10 @@ class TrackerJudgmentEngine:
                     self.last_cache_update = datetime.now()
 
                 # 统计信息 - 支持所有类型
-                success_count = len(self.keyword_cache.get('success', []))
-                failed_count = len(self.keyword_cache.get('failed', []))
-                candidate_count = len(self.keyword_cache.get('candidate', []))
-                ignored_count = len(self.keyword_cache.get('ignored', []))
+                success_count = len(self.keyword_cache.get("success", []))
+                failed_count = len(self.keyword_cache.get("failed", []))
+                candidate_count = len(self.keyword_cache.get("candidate", []))
+                ignored_count = len(self.keyword_cache.get("ignored", []))
                 language_count = len(self.keyword_cache_by_language)
                 total_count = success_count + failed_count + candidate_count + ignored_count
                 elapsed_ms = (time.time() - start_time) * 1000
@@ -262,6 +253,7 @@ class TrackerJudgmentEngine:
 
             # 添加随机抖动，避免多个实例同时刷新
             import random
+
             jitter = random.uniform(0, self._cache_jitter)
 
             return elapsed > (self.cache_ttl + jitter)
@@ -281,12 +273,7 @@ class TrackerJudgmentEngine:
                 if self.last_cache_update is None:
                     self.load_keywords()
 
-    def judge_status(
-        self,
-        original_status: str,
-        msg: str,
-        language: Optional[str] = None
-    ) -> str:
+    def judge_status(self, original_status: str, msg: str, language: Optional[str] = None) -> str:
         """
         综合判断tracker状态（失败优先策略）
 
@@ -340,18 +327,14 @@ class TrackerJudgmentEngine:
             # 选择关键词池（优先使用指定语言）
             if language and language in self.keyword_cache_by_language:
                 # 合并失败池和忽略池的关键词
-                failed_keywords = (
-                    self.keyword_cache_by_language[language].get('failed', []) +
-                    self.keyword_cache_by_language[language].get('ignored', [])
-                )
-                success_keywords = self.keyword_cache_by_language[language].get('success', [])
+                failed_keywords = self.keyword_cache_by_language[language].get(
+                    "failed", []
+                ) + self.keyword_cache_by_language[language].get("ignored", [])
+                success_keywords = self.keyword_cache_by_language[language].get("success", [])
             else:
                 # 合并失败池和忽略池的关键词
-                failed_keywords = (
-                    self.keyword_cache.get('failed', []) +
-                    self.keyword_cache.get('ignored', [])
-                )
-                success_keywords = self.keyword_cache.get('success', [])
+                failed_keywords = self.keyword_cache.get("failed", []) + self.keyword_cache.get("ignored", [])
+                success_keywords = self.keyword_cache.get("success", [])
 
         # Step 1: 失败优先判断
         if self._match_any_keyword(failed_keywords, msg):
@@ -375,10 +358,7 @@ class TrackerJudgmentEngine:
 
         # Step 3: 无匹配，返回原始状态
         elapsed_ms = (time.time() - start_time) * 1000
-        logger.debug(
-            f"无关键词匹配，保持原状态: {original_status} | msg: '{msg[:100]}' | "
-            f"耗时: {elapsed_ms:.2f}ms"
-        )
+        logger.debug(f"无关键词匹配，保持原状态: {original_status} | msg: '{msg[:100]}' | " f"耗时: {elapsed_ms:.2f}ms")
         return original_status
 
     def refresh_cache(self) -> bool:
@@ -420,14 +400,14 @@ class TrackerJudgmentEngine:
         """
         with self._lock:
             return {
-                'candidate_count': len(self.keyword_cache.get('candidate', [])),
-                'ignored_count': len(self.keyword_cache.get('ignored', [])),
-                'success_count': len(self.keyword_cache.get('success', [])),
-                'failed_count': len(self.keyword_cache.get('failed', [])),
-                'language_count': len(self.keyword_cache_by_language),
-                'last_cache_update': self.last_cache_update.isoformat() if self.last_cache_update else None,
-                'cache_ttl_seconds': self.cache_ttl,
-                'is_cache_expired': self._should_refresh_cache()
+                "candidate_count": len(self.keyword_cache.get("candidate", [])),
+                "ignored_count": len(self.keyword_cache.get("ignored", [])),
+                "success_count": len(self.keyword_cache.get("success", [])),
+                "failed_count": len(self.keyword_cache.get("failed", [])),
+                "language_count": len(self.keyword_cache_by_language),
+                "last_cache_update": self.last_cache_update.isoformat() if self.last_cache_update else None,
+                "cache_ttl_seconds": self.cache_ttl,
+                "is_cache_expired": self._should_refresh_cache(),
             }
 
 

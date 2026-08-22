@@ -437,7 +437,7 @@ chore: 构建/工具链更新
 #### 🔒 安全修复
 
 **修复认证漏洞和类型安全问题**
-- **统一认证验证**：所有端点使用 `verify_token_dependency` 依赖注入
+- **统一认证验证**：所有端点使用 `require_authenticated_user` 依赖注入（v1.0.5-audit 起取代 `verify_token_dependency`）
 - **修复认证绕过**：`torrent_list`、`create_torrent`、`create_torrents_batch` 端点添加token验证
 - **修复异常处理**：从捕获模块对象改为捕获具体异常类 `APIError`
 - **数据库查询修复**：返回完整模型实例，支持 `@property` 属性访问

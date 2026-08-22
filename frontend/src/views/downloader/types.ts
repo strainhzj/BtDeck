@@ -145,6 +145,8 @@ export interface DownloaderSettings {
   ulSpeedLimit?: number      // 上传速度限制 (数值含义取决于 ulSpeedUnit)
   dlSpeedUnit?: 0 | 1       // 下载速度单位: 0: KB/s, 1: MB/s
   ulSpeedUnit?: 0 | 1       // 上传速度单位: 0: KB/s, 1: MB/s
+  enableSchedule?: boolean   // 是否启用分时段限速
+  enable_schedule?: boolean  // 后端响应字段，兼容蛇形命名
 
   // 兼容旧字段名(保留用于向后兼容)
   download_speed_limit?: number  // @deprecated 使用 dlSpeedLimit
@@ -276,11 +278,17 @@ export interface TemplateDetailResponse {
 
 /**
  * 应用模板请求
+ *
+ * 对齐后端 POST /setting-templates/{template_id}/apply/{downloader_id}：
+ * - template_id、downloader_id 进 URL path 参数，不在 body
+ * - 后端 override=True 硬编码，不读 override_local（已废弃）
+ * - body 只传 apply_path_mapping（是否同时应用路径映射）
+ *
+ * 审计依据：backend/docs/style-and-contract-audit.md 第5节 apply 双重不匹配。
  */
 export interface ApplyTemplateRequest {
-  template_id: string
-  downloader_id: string
-  override_local?: boolean
+  /** 是否同时应用路径映射（后端 apply_path_mapping 字段） */
+  apply_path_mapping?: boolean | null
 }
 
 // ============================================================
@@ -321,6 +329,19 @@ export interface PathMappingConfig {
   default_mapping?: string         // 默认映射名称（可选，自动使用第一个）
 }
 
+export interface PathDirectoryValidation {
+  path: string
+  valid: boolean
+  message: string
+}
+
+export interface PathMappingCheck {
+  name: string
+  valid: boolean
+  internal: PathDirectoryValidation
+  external: PathDirectoryValidation
+}
+
 /**
  * 路径映射测试响应
  */
@@ -332,6 +353,10 @@ export interface PathMappingTestResponse {
     structure_valid: boolean
     fields_complete: boolean
     no_path_conflicts: boolean
+    downloader_available: boolean
+    internal_paths_valid: boolean
+    external_paths_valid: boolean
+    path_checks: PathMappingCheck[]
     errors: string[]
   }
   frontend_validation?: null

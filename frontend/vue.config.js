@@ -6,6 +6,9 @@ const name = 'BtDeck'
 module.exports = {
   // Docker部署使用根路径，如需子路径部署请修改此处
   publicPath: process.env.NODE_ENV === 'production' ? '/' : '/',
+  // 静态资源统一输出到 dist/assets/ 目录（JS/CSS/字体/图片）
+  // 与后端 factory.py 的 mount("/assets", frontend_dist/assets) 对齐
+  assetsDir: 'assets',
   lintOnSave: false,
   pwa: {
     name: name
@@ -50,7 +53,12 @@ module.exports = {
     config.resolve.alias.set('path', require.resolve('path-browserify'))
 
     if (config.plugins.has('fork-ts-checker')) {
-      config.plugins.delete('fork-ts-checker')
+      config.plugin('fork-ts-checker').tap(args => {
+        // 保留生产构建中的 TypeScript 门禁。历史 Vue SFC 尚有独立类型债务，当前先由
+        // tsc 严格覆盖全部 .ts/.tsx；SFC 通过 Jest 的 vue-jest 与 webpack 编译验证。
+        args[0].typescript.extensions.vue.enabled = false
+        return args
+      })
     }
 
     // provide the app's title in html-webpack-plugin's options list so that
@@ -74,13 +82,13 @@ module.exports = {
         pathRewrite: {
           '^/api': '/api'
         },
-        onProxyReq: (proxyReq, req, res) => {
+        onProxyReq: (proxyReq, req, _res) => {
           console.log('[Proxy]', req.method, req.url, '→ http://127.0.0.1:5001')
         },
-        onError: (err, req, res) => {
+        onError: (err, _req, _res) => {
           console.error('[Proxy Error]', err.message)
         },
-        onProxyReqWs: (proxyReq, req, socket, options, head) => {
+        onProxyReqWs: (proxyReq, req, _socket, _options, _head) => {
           console.log('[Proxy WS]', req.url, '→ http://127.0.0.1:5001')
         }
       }

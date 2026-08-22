@@ -40,12 +40,12 @@ class FilenameUtils:
             return "unnamed"
 
         # 替换非法字符为下划线
-        sanitized = re.sub(FilenameUtils.INVALID_CHARS_PATTERN, '_', filename)
+        sanitized = re.sub(FilenameUtils.INVALID_CHARS_PATTERN, "_", filename)
 
         # 移除多余的空格和点
-        sanitized = re.sub(r'\s+', '_', sanitized)
-        sanitized = re.sub(r'\.+', '.', sanitized)
-        sanitized = sanitized.strip(' ._')
+        sanitized = re.sub(r"\s+", "_", sanitized)
+        sanitized = re.sub(r"\.+", ".", sanitized)
+        sanitized = sanitized.strip(" ._")
 
         # 确保不为空
         if not sanitized:
@@ -84,10 +84,7 @@ class FilenameUtils:
             return base_filename
 
         # 如果超长，使用 {info_id}.torrent 格式
-        logger.info(
-            f"种子名称过长（{len(base_filename)} > {max_length}），"
-            f"使用info_id作为文件名: {name[:50]}..."
-        )
+        logger.info(f"种子名称过长（{len(base_filename)} > {max_length}），" f"使用info_id作为文件名: {name[:50]}...")
         return f"{info_id}.torrent"
 
     @staticmethod

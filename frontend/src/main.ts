@@ -23,6 +23,7 @@ import SvgIcon from 'vue-svgicon'
 
 import '@/styles/element-variables.scss'
 import '@/styles/index.scss'
+import '@/styles/management-list-page.scss'
 
 import { initTheme } from '@/utils/theme'
 
@@ -35,8 +36,19 @@ import router from '@/router'
 import '@/icons/components/index'
 import '@/permission'
 import waves from '@/directive/waves' // waves directive
+import LucideIcon from '@/components/common/LucideIcon.vue'
+import {
+  clearChunkRecoveryQuery,
+  retireLegacyServiceWorkers
+} from '@/utils/deployment-recovery'
+import { initSessionWatch } from '@/utils/session'
 
 Vue.use(ElementUI)
+
+// 全局注册 Lucide 图标组件，统一替换界面中的 emoji / el-icon-* / 自绘 SVG。
+Vue.component('LucideIcon', LucideIcon)
+// 全局注册通用可折叠面板（W8：各页面展开/收缩 + 用户习惯持久化）
+Vue.component('CollapsiblePanel', () => import('@/components/CollapsiblePanel.vue'))
 Vue.use(SvgIcon, {
   tagName: 'svg-icon',
   defaultWidth: '1em',
@@ -47,6 +59,17 @@ Vue.use(SvgIcon, {
 Vue.directive('waves', waves)
 
 Vue.config.productionTip = false
+
+// Current builds do not register the generated PWA worker. Remove workers and
+// precaches left by older releases so they cannot pin an obsolete app shell.
+void retireLegacyServiceWorkers()
+
+// 双令牌会话监听（W6 伴随修复）：标签页重新可见时从 cookie 同步最新令牌，
+// 检测到会话已在别处结束时统一走登出跳转
+initSessionWatch()
+
+// Keep the reload-loop marker until the initial lazy route loaded successfully.
+router.onReady(() => clearChunkRecoveryQuery())
 
 new Vue({
   router,

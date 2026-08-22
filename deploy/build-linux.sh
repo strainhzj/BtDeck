@@ -15,8 +15,13 @@ FRONTEND_DIR="${PROJECT_DIR}/frontend"
 BACKEND_DIR="${PROJECT_DIR}/backend"
 DEPLOY_DIR="${PROJECT_DIR}/deploy"
 DIST_DIR="${PROJECT_DIR}/dist"
+PACKAGE_REQUIREMENTS="${DEPLOY_DIR}/requirements-linux-package.txt"
+PACKAGE_VENV="${PROJECT_DIR}/.venv-packaging-linux"
+PACKAGE_PYTHON="${PACKAGE_VENV}/bin/python"
+PACKAGE_PYINSTALLER="${PACKAGE_VENV}/bin/pyinstaller"
+PACKAGE_PYTHON_VERSION="${BTDECK_PACKAGE_PYTHON_VERSION:-3.11}"
 
-VERSION="1.0.9"
+VERSION="1.0.5"
 ARCH="amd64"
 
 GREEN='\033[0;32m'
@@ -37,8 +42,37 @@ check_tool() {
     fi
 }
 
-check_tool pyinstaller "pip install pyinstaller"
 check_tool npm "https://nodejs.org/"
+check_tool node "https://nodejs.org/"
+
+if [ ! -f "$PACKAGE_REQUIREMENTS" ]; then
+    echo -e "${RED}[ERROR] Packaging requirements not found: ${PACKAGE_REQUIREMENTS}${NC}"
+    exit 1
+fi
+
+if [ ! -x "$PACKAGE_PYTHON" ]; then
+    echo "[SETUP] Creating packaging venv: ${PACKAGE_VENV}"
+    if command -v uv &>/dev/null; then
+        UV_LINK_MODE="${UV_LINK_MODE:-copy}" uv venv --seed --python "$PACKAGE_PYTHON_VERSION" "$PACKAGE_VENV"
+    elif command -v python3 &>/dev/null; then
+        python3 -m venv "$PACKAGE_VENV" || {
+            echo -e "${RED}[ERROR] Failed to create venv with python3.${NC}"
+            echo "        Install python3-venv/python3-pip, or install uv and retry."
+            exit 1
+        }
+    else
+        echo -e "${RED}[ERROR] python3 not found. Install Python 3.11+ or uv.${NC}"
+        exit 1
+    fi
+fi
+
+echo "[SETUP] Installing packaging dependencies..."
+"$PACKAGE_PYTHON" -m pip install --upgrade pip setuptools wheel
+"$PACKAGE_PYTHON" -m pip install --prefer-binary -r "$PACKAGE_REQUIREMENTS"
+
+echo -e "${GREEN}[OK] packaging python: ${PACKAGE_PYTHON}${NC}"
+"$PACKAGE_PYTHON" --version
+echo -e "${GREEN}[OK] packaging pyinstaller: ${PACKAGE_PYINSTALLER}${NC}"
 
 # 检查 fpm（可选）
 if command -v fpm &>/dev/null; then
@@ -59,8 +93,15 @@ echo -e "${GREEN}[OK] Frontend built${NC}"
 # Step 2: PyInstaller 打包
 echo "[2/3] Building backend with PyInstaller..."
 cd "$PROJECT_DIR"
-pyinstaller --clean --noconfirm "${DEPLOY_DIR}/btdeck.spec"
+"$PACKAGE_PYINSTALLER" --clean --noconfirm "${DEPLOY_DIR}/btdeck.spec"
 echo -e "${GREEN}[OK] Backend packaged${NC}"
+
+echo "[VERIFY] Checking package contents..."
+"$PACKAGE_PYTHON" "${DEPLOY_DIR}/verify-package.py" --project-root "$PROJECT_DIR" --exe "${DIST_DIR}/btdeck"
+echo -e "${GREEN}[OK] Package verification passed${NC}"
+
+echo "[ANALYZE] Package size summary..."
+"$PACKAGE_PYTHON" "${DEPLOY_DIR}/analyze-package-size.py" --exe "${DIST_DIR}/btdeck" --top 15 || true
 
 # Step 3: fpm 制作安装包
 if [ "$BUILD_PACKAGE" = "1" ]; then
@@ -89,12 +130,39 @@ if [ "$BUILD_PACKAGE" = "1" ]; then
 if ! id -u btdeck &>/dev/null; then
     useradd --system --no-create-home --shell /bin/false btdeck
 fi
+# 预创建 systemd ReadWritePaths 声明的目录
+# (ProtectSystem=strict 下应用需这些目录可写，否则首次启动写入失败)
+mkdir -p /opt/btdeck/config /opt/btdeck/data /opt/btdeck/logs /opt/btdeck/backup /opt/btdeck/torrents
+if [ ! -f /opt/btdeck/config/btdeck.env ]; then
+    if command -v openssl >/dev/null 2>&1; then
+        SECRET_KEY="$(openssl rand -hex 32)"
+    else
+        SECRET_KEY="$(python3 - <<'PY'
+import secrets
+print(secrets.token_urlsafe(32))
+PY
+)"
+    fi
+cat > /opt/btdeck/config/btdeck.env <<EOF
+SECRET_KEY=${SECRET_KEY}
+# pydantic-settings 对 List[str] 环境变量强制 JSON 解析（逗号分隔会 SettingsError 启动崩溃），
+# 必须用 JSON 数组格式（与 desktop_main.py 一致）
+ALLOWED_HOSTS=["http://127.0.0.1:5001","http://localhost:5001"]
+EOF
+    chmod 600 /opt/btdeck/config/btdeck.env
+fi
 # 设置权限
 chown -R btdeck:btdeck /opt/btdeck
 # 启用并启动服务
-systemctl daemon-reload
-systemctl enable btdeck
-systemctl start btdeck
+if command -v systemctl >/dev/null 2>&1 && systemctl is-system-running >/dev/null 2>&1; then
+    systemctl daemon-reload
+    systemctl enable btdeck
+    systemctl start btdeck
+    echo "BtDeck service started. Visit: http://localhost:5001"
+else
+    echo "BtDeck installed, but systemd is not active. Start manually with: systemctl start btdeck"
+    echo "After start, visit: http://localhost:5001"
+fi
 POSTINSTALL
     chmod +x "${PKG_STAGING}/postinstall.sh"
 
@@ -107,7 +175,7 @@ PREREMOVE
     chmod +x "${PKG_STAGING}/preremove.sh"
 
     # 构建 .deb
-    fpm -s dir \
+    fpm -s dir --force \
         -t deb \
         -n btdeck \
         -v "${VERSION}" \
@@ -119,12 +187,12 @@ PREREMOVE
         --before-remove "${PKG_STAGING}/preremove.sh" \
         -C "${PKG_STAGING}" \
         --prefix / \
+        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.deb" \
         etc \
-        opt \
-        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.deb"
+        opt
 
     # 构建 .rpm
-    fpm -s dir \
+    fpm -s dir --force \
         -t rpm \
         -n btdeck \
         -v "${VERSION}" \
@@ -136,9 +204,9 @@ PREREMOVE
         --before-remove "${PKG_STAGING}/preremove.sh" \
         -C "${PKG_STAGING}" \
         --prefix / \
+        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.rpm" \
         etc \
-        opt \
-        -p "${DIST_DIR}/BtDeck-v${VERSION}-linux-${ARCH}.rpm"
+        opt
 
     # 清理临时目录
     rm -rf "${PKG_STAGING}"

@@ -1,74 +1,151 @@
 <template>
-  <div class="downloader-container">
-    <!-- 页面头部 -->
-    <div class="page-header">
-      <h1>下载器管理</h1>
-      <div class="header-actions">
-        <!-- 搜索框 -->
+  <main
+    class="downloader-control-room"
+    aria-label="下载器管理"
+    @pointermove="handlePointerMove"
+    @pointerleave="resetPointerGlow"
+  >
+    <div class="control-room-atmosphere" aria-hidden="true">
+      <div class="control-grid" />
+      <div class="control-glow control-glow--primary" />
+      <div class="control-glow control-glow--secondary" />
+      <div class="control-orbit control-orbit--one" />
+      <div class="control-orbit control-orbit--two" />
+    </div>
+
+    <section class="command-deck" aria-label="下载器筛选与操作">
+      <div class="command-deck__signal">
+        <span class="signal-beacon" aria-hidden="true" />
+        <div>
+          <strong>状态链路已建立</strong>
+          <span>每 5 秒同步一次节点遥测</span>
+        </div>
+      </div>
+
+      <div class="command-deck__actions">
         <el-input
           v-model="searchKeyword"
-          placeholder="搜索下载器别名"
-          prefix-icon="el-icon-search"
-          clearable
-          :style="{width: '280px'}"
+          class="control-search"
+          placeholder="按别名筛选节点"
+          aria-label="按下载器别名筛选"
           @input="handleSearchInput"
-          @clear="handleSearchClear"
-        />
-        <!-- 搜索结果提示 -->
-        <span v-if="isSearching" class="search-result-tip">
-          找到 {{ filteredDownloaderList.length }} 个下载器
+        >
+          <template slot="prefix">
+            <LucideIcon name="search" :size="16" :stroke-width="1.8" />
+          </template>
+          <template v-if="searchKeyword" slot="suffix">
+            <button
+              type="button"
+              class="control-search__clear"
+              aria-label="清空搜索"
+              @mousedown.prevent
+              @click="handleSearchClear"
+            >
+              <LucideIcon name="x" :size="14" :stroke-width="2" />
+            </button>
+          </template>
+        </el-input>
+
+        <span v-if="isSearching" class="search-result-tip" aria-live="polite">
+          {{ filteredDownloaderList.length }} / {{ downloaderList.length }} 节点
         </span>
+
         <el-button
-          :icon="listLoading ? 'el-icon-loading' : 'el-icon-refresh'"
-          :loading="listLoading"
+          class="control-action control-action--secondary"
+          :disabled="listLoading"
           @click="handleRefresh"
         >
-          刷新
+          <LucideIcon
+            name="refresh-cw"
+            :size="16"
+            :stroke-width="1.8"
+            :class="{'is-spinning': listLoading}"
+          />
+          <span>刷新</span>
         </el-button>
-        <el-button type="primary" icon="el-icon-plus" @click="handleAdd">
-          新增下载器
+        <el-button class="control-action control-action--primary" type="primary" @click="handleAdd">
+          <LucideIcon name="plus" :size="17" :stroke-width="2" />
+          <span>接入节点</span>
         </el-button>
       </div>
-    </div>
+    </section>
 
-    <!-- 无搜索结果提示 -->
-    <div v-if="isSearching && filteredDownloaderList.length === 0 && !listLoading" class="empty-search-result">
-      <div class="empty-icon">🔍</div>
-      <div class="empty-text">无搜索结果</div>
-      <div class="empty-tip">请尝试其他关键词</div>
-    </div>
-
-    <!-- 下载器卡片网格 -->
-    <div v-show="!isSearching || filteredDownloaderList.length > 0" v-loading="listLoading" class="downloader-grid">
-      <!-- 下载器卡片 -->
-      <downloader-card
-        v-for="item in filteredDownloaderList"
-        :key="safeGetId(item.info)"
-        :info="item.info"
-        :status="item.status"
-        :is-testing="testingIds.includes(safeGetId(item.info))"
-        :is-syncing="syncingIds.includes(safeGetId(item.info))"
-        @settings="handleSettings"
-        @test="handleTest"
-        @sync="handleSync"
-        @delete="handleDelete"
-        @toggle-enable="handleToggleEnable"
-      />
-
-      <!-- 添加下载器卡片 -->
-      <div class="downloader-card-add" @click="handleAdd">
-        <div class="add-icon">➕</div>
-        <div class="add-text">添加新下载器</div>
+    <section class="nodes-section" aria-labelledby="downloader-node-heading">
+      <div class="nodes-section__header">
+        <div>
+          <div class="section-index">01 / NODE MATRIX</div>
+          <h2 id="downloader-node-heading">下载器节点</h2>
+        </div>
+        <div class="nodes-section__legend" aria-label="状态图例">
+          <span><i class="legend-dot legend-dot--online" />在线 {{ onlineDownloaderCount }}</span>
+          <span><i class="legend-dot legend-dot--offline" />离线 {{ offlineDownloaderCount }}</span>
+          <span><i class="legend-dot legend-dot--pending" />待响应 {{ pendingDownloaderCount }}</span>
+        </div>
       </div>
-    </div>
 
-    <!-- 新增/编辑/设置弹框 -->
+      <div v-if="listLoading && downloaderList.length === 0" class="node-skeleton-grid" aria-label="正在加载下载器">
+        <div v-for="index in 3" :key="index" class="node-skeleton" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      </div>
+
+      <div
+        v-else-if="isSearching && filteredDownloaderList.length === 0"
+        class="empty-search-result"
+        role="status"
+      >
+        <div class="empty-search-result__icon">
+          <LucideIcon name="search-x" :size="30" :stroke-width="1.5" />
+        </div>
+        <div>
+          <strong>没有匹配的节点</strong>
+          <span>更换关键词，或清空筛选查看全部下载器。</span>
+        </div>
+        <button type="button" @click="handleSearchClear">
+          清空筛选
+          <LucideIcon name="x" :size="14" :stroke-width="2" />
+        </button>
+      </div>
+
+      <transition-group v-else name="node-list" tag="div" class="downloader-grid">
+        <downloader-card
+          v-for="(item, index) in filteredDownloaderList"
+          :key="safeGetId(item.info)"
+          :index="index"
+          :info="item.info"
+          :status="item.status"
+          :is-testing="testingIds.includes(safeGetId(item.info))"
+          :is-syncing="syncingIds.includes(safeGetId(item.info))"
+          @settings="handleSettings"
+          @test="handleTest"
+          @sync="handleSync"
+          @delete="handleDelete"
+          @toggle-enable="handleToggleEnable"
+        />
+
+        <button key="add-downloader" type="button" class="downloader-card-add" @click="handleAdd">
+          <span class="downloader-card-add__index">NEXT / NODE</span>
+          <span class="downloader-card-add__icon">
+            <LucideIcon name="plus" :size="24" :stroke-width="1.7" />
+          </span>
+          <span class="downloader-card-add__title">接入新的下载器</span>
+          <span class="downloader-card-add__copy">配置连接、认证、路径与速率策略</span>
+          <span class="downloader-card-add__action">
+            开始配置
+            <LucideIcon name="chevron-right" :size="15" :stroke-width="2" />
+          </span>
+        </button>
+      </transition-group>
+    </section>
+
     <downloader-settings-dialog
       :visible.sync="dialogVisible"
       :downloader="currentDownloader"
       @submit="handleSubmit"
     />
-  </div>
+  </main>
 </template>
 
 <script lang="ts">
@@ -79,9 +156,7 @@ import DownloaderCard from './components/DownloaderCard.vue'
 import DownloaderSettingsDialog from './components/DownloaderSettingsDialog.vue'
 import {
   getList,
-  getStatus,
   getStatusAll,
-  addDownloader,
   upDownloader,
   deleteDownloader,
   testConnection,
@@ -90,10 +165,18 @@ import {
 import {
   Downloader,
   DownloaderStatus,
-  DownloaderFormData,
-  DownloaderCardData,
-  OnlineStatus
+  DownloaderCardData
 } from './types'
+
+interface DownloaderApiStatus {
+  id?: string
+  delay?: number
+  uploadSpeed?: string
+  downloadSpeed?: string
+  downloadingCount?: number
+  seedingCount?: number
+  connectStatus?: string
+}
 
 @Component({
   name: 'DownloaderManager',
@@ -131,6 +214,9 @@ export default class DownloaderManager extends Vue {
   private continueGetStatus = true
   private statusPollingTimer: number | null = null
   private pollInterval = 5000 // 固定5秒轮询间隔
+  private pointerFrame: number | null = null
+  private pointerClientX = 0
+  private pointerClientY = 0
 
   // 计算属性：过滤后的下载器列表
   get filteredDownloaderList(): DownloaderCardData[] {
@@ -143,6 +229,18 @@ export default class DownloaderManager extends Vue {
     )
   }
 
+  get onlineDownloaderCount(): number {
+    return this.downloaderList.filter(item => item.status.online === true).length
+  }
+
+  get offlineDownloaderCount(): number {
+    return this.downloaderList.filter(item => item.status.online === false).length
+  }
+
+  get pendingDownloaderCount(): number {
+    return this.downloaderList.filter(item => item.status.online === undefined).length
+  }
+
   created() {
     this.getList()
     // 监听路由变化（移除 immediate: true，避免竞态条件）
@@ -151,10 +249,18 @@ export default class DownloaderManager extends Vue {
     })
   }
 
-  destroyed() {
+  beforeDestroy() {
     // 组件销毁时清理轮询定时器
     this.continueGetStatus = false
     this.clearPollingTimer()
+    if (this.searchDebounceTimer !== null) {
+      clearTimeout(this.searchDebounceTimer)
+      this.searchDebounceTimer = null
+    }
+    if (this.pointerFrame !== null) {
+      cancelAnimationFrame(this.pointerFrame)
+      this.pointerFrame = null
+    }
   }
 
   // ==================== 数据获取 ====================
@@ -285,7 +391,7 @@ export default class DownloaderManager extends Vue {
   }
 
   // 字段名映射：后端驼峰 → 前端蛇形
-  private mapApiStatusToFrontend(apiStatus: any): DownloaderStatus {
+  private mapApiStatusToFrontend(apiStatus: DownloaderApiStatus): DownloaderStatus {
     return {
       online: true,
       delay: apiStatus.delay,
@@ -333,21 +439,12 @@ export default class DownloaderManager extends Vue {
    * @param info 下载器信息对象
    * @returns 下载器ID字符串，如果获取失败返回空字符串
    */
-  private safeGetId(info: any): string {
+  private safeGetId(info: Downloader | null | undefined): string {
     if (!info) {
       return ''
     }
     const id = info.id || info.downloaderId
     return id ? String(id) : ''
-  }
-
-  /**
-   * 安全获取下载器info对象（避免undefined访问错误）
-   * @param item 下载器卡片数据
-   * @returns 下载器info对象，如果不存在返回空对象
-   */
-  private safeGetInfo(item: any): any {
-    return item?.info || {}
   }
 
   // 检查当前是否在下载器页面
@@ -528,6 +625,27 @@ export default class DownloaderManager extends Vue {
     }
   }
 
+  private handlePointerMove(event: PointerEvent) {
+    this.pointerClientX = event.clientX
+    this.pointerClientY = event.clientY
+
+    if (this.pointerFrame !== null) return
+
+    this.pointerFrame = requestAnimationFrame(() => {
+      this.pointerFrame = null
+      const root = this.$el as HTMLElement
+      const bounds = root.getBoundingClientRect()
+      root.style.setProperty('--pointer-x', `${this.pointerClientX - bounds.left}px`)
+      root.style.setProperty('--pointer-y', `${this.pointerClientY - bounds.top}px`)
+    })
+  }
+
+  private resetPointerGlow() {
+    const root = this.$el as HTMLElement
+    root.style.setProperty('--pointer-x', '68%')
+    root.style.setProperty('--pointer-y', '12%')
+  }
+
   // ==================== 操作处理 ====================
 
   // 刷新列表
@@ -633,7 +751,7 @@ export default class DownloaderManager extends Vue {
         throw new Error('响应数据格式异常')
       }
 
-      const { data, msg, code } = response
+      const { code } = response
 
       if (code === '200') {
         Message.success('执行成功')
@@ -725,104 +843,610 @@ export default class DownloaderManager extends Vue {
 <style lang="scss" scoped>
 @import '@/styles/theme-variables.scss';
 
-.downloader-container {
-  max-width: 1600px;
+.downloader-control-room {
+  --pointer-x: 68%;
+  --pointer-y: 12%;
+  --page-downloader-panel: rgba(255, 255, 255, 0.78);
+  --page-downloader-line: rgba(var(--color-primary-rgb), 0.14);
+  position: relative;
+  isolation: isolate;
+  min-height: calc(100vh - var(--navbar-height, 64px) - 48px);
+  max-width: 1760px;
   margin: 0 auto;
+  padding: clamp(22px, 2.6vw, 42px);
+  overflow: hidden;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.12);
+  border-radius: clamp(18px, 2vw, 30px);
+  color: var(--color-text-primary);
+  background:
+    radial-gradient(circle at var(--pointer-x) var(--pointer-y), rgba(var(--color-primary-rgb), 0.13), transparent 24%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(var(--color-primary-rgb), 0.035) 52%, rgba(255, 255, 255, 0.86));
+  box-shadow: 0 24px 90px rgba(15, 23, 42, 0.08);
 }
 
-// 页面头部
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--spacing-xl);
+.control-room-atmosphere,
+.control-grid,
+.control-glow,
+.control-orbit {
+  position: absolute;
+  pointer-events: none;
+}
 
-  h1 {
-    font-size: 28px;
-    font-weight: var(--font-weight-bold);
-    color: var(--color-text-primary);
-    margin: 0;
+.control-room-atmosphere {
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+}
+
+.control-grid {
+  inset: 0;
+  opacity: 0.48;
+  background-image:
+    linear-gradient(var(--page-downloader-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--page-downloader-line) 1px, transparent 1px);
+  background-size: 42px 42px;
+  mask-image: linear-gradient(to bottom, black, transparent 82%);
+}
+
+.control-glow {
+  width: 360px;
+  height: 360px;
+  border-radius: 50%;
+  filter: blur(4px);
+
+  &--primary {
+    top: -210px;
+    right: 8%;
+    background: radial-gradient(circle, rgba(var(--color-primary-rgb), 0.2), transparent 68%);
   }
 
-  .header-actions {
-    display: flex;
-    gap: var(--spacing-sm);
-    align-items: center;
+  &--secondary {
+    bottom: -250px;
+    left: 7%;
+    background: radial-gradient(circle, rgba(59, 130, 246, 0.13), transparent 68%);
+  }
+}
 
-    .search-result-tip {
-      font-size: var(--font-size-sm);
-      color: var(--color-text-secondary);
-      margin-left: var(--spacing-sm);
-      white-space: nowrap;
+.control-orbit {
+  border: 1px solid rgba(var(--color-primary-rgb), 0.14);
+  border-radius: 50%;
+
+  &::before {
+    content: '';
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--color-primary);
+    box-shadow: 0 0 18px rgba(var(--color-primary-rgb), 0.7);
+  }
+
+  &--one {
+    top: -185px;
+    right: -75px;
+    width: 390px;
+    height: 390px;
+    animation: control-orbit 24s linear infinite;
+
+    &::before {
+      top: 47px;
+      left: 58px;
+    }
+  }
+
+  &--two {
+    top: -112px;
+    right: 18px;
+    width: 240px;
+    height: 240px;
+    animation: control-orbit 18s linear reverse infinite;
+
+    &::before {
+      right: 21px;
+      bottom: 57px;
     }
   }
 }
 
-// 空搜索结果
-.empty-search-result {
+.section-index {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.command-deck {
+  position: relative;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: var(--spacing-xxl) 0;
-  min-height: 400px;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 30px;
+  padding: 10px 12px 10px 16px;
+  border: 1px solid rgba(var(--color-primary-rgb), 0.16);
+  border-radius: 16px;
+  background: var(--page-downloader-panel);
+  box-shadow: 0 10px 35px rgba(15, 23, 42, 0.05);
+  backdrop-filter: blur(18px);
 
-  .empty-icon {
-    font-size: 64px;
-    margin-bottom: var(--spacing-lg);
-    opacity: 0.5;
+  &__signal,
+  &__actions {
+    display: flex;
+    align-items: center;
   }
 
-  .empty-text {
-    font-size: var(--font-size-lg);
-    font-weight: var(--font-weight-semibold);
-    color: var(--color-text-secondary);
-    margin-bottom: var(--spacing-xs);
+  &__signal {
+    min-width: 210px;
+    gap: 11px;
+
+    > div {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    strong {
+      font-size: 12px;
+      font-weight: 650;
+    }
+
+    span:not(.signal-beacon) {
+      color: var(--color-text-tertiary);
+      font-size: 10px;
+    }
   }
 
-  .empty-tip {
-    font-size: var(--font-size-sm);
+  &__actions {
+    min-width: 0;
+    gap: 8px;
+  }
+}
+
+.signal-beacon {
+  position: relative;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--color-bg-primary);
+  border-radius: 50%;
+  background: var(--color-success);
+  box-shadow: 0 0 0 4px var(--color-success-light);
+}
+
+.control-search {
+  width: min(300px, 26vw);
+
+  ::v-deep .el-input__inner {
+    height: 36px;
+    padding-left: 38px;
+    padding-right: 34px;
+    border-color: transparent;
+    border-radius: 10px;
+    background: var(--color-bg-secondary);
+    font-size: 12px;
+
+    &:focus {
+      border-color: var(--color-primary);
+      box-shadow: 0 0 0 3px rgba(var(--color-primary-rgb), 0.1);
+    }
+  }
+
+  ::v-deep .el-input__prefix,
+  ::v-deep .el-input__suffix {
+    display: flex;
+    align-items: center;
     color: var(--color-text-tertiary);
   }
-}
 
-// 下载器卡片网格 - 正方形布局
-.downloader-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
-  gap: var(--spacing-lg);
-}
+  &__clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
 
-// 添加下载器卡片
-.downloader-card-add {
-  aspect-ratio: 1 / 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  border: 2px dashed var(--color-border-primary);
-  background: linear-gradient(135deg, var(--color-bg-secondary), var(--color-bg-tertiary));
-  border-radius: var(--radius-xl);
-  cursor: pointer;
-  transition: all var(--transition-base);
-
-  &:hover {
-    border-color: var(--color-primary);
-    background: var(--color-bg-secondary);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-md);
+    &:hover,
+    &:focus-visible {
+      background: var(--color-bg-active);
+      color: var(--color-text-primary);
+      outline: none;
+    }
   }
 }
 
-.add-icon {
-  font-size: 48px;
-  margin-bottom: var(--spacing-sm);
+.search-result-tip {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.control-action {
+  ::v-deep span {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  &--secondary,
+  &--primary {
+    height: 36px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  &--secondary {
+    border-color: var(--color-border-primary);
+    background: var(--color-bg-primary);
+    color: var(--color-text-secondary);
+  }
+
+  &--primary {
+    border-color: var(--color-primary);
+    background: var(--color-primary);
+    box-shadow: 0 9px 22px rgba(var(--color-primary-rgb), 0.22);
+  }
+}
+
+.is-spinning {
+  animation: spin 0.8s linear infinite;
+}
+
+.nodes-section {
+  position: relative;
+}
+
+.nodes-section__header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 14px;
+  padding: 0 3px;
+
+  h2 {
+    margin: 5px 0 0;
+    font-size: clamp(20px, 2vw, 28px);
+    letter-spacing: -0.035em;
+  }
+}
+
+.section-index {
   color: var(--color-primary);
 }
 
-.add-text {
-  font-size: var(--font-size-sm);
-  font-weight: var(--font-weight-semibold);
-  color: var(--color-text-secondary);
+.nodes-section__legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 14px;
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+}
+
+.legend-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-text-quaternary);
+
+  &--online {
+    background: var(--color-success);
+  }
+
+  &--offline {
+    background: var(--color-error);
+  }
+
+  &--pending {
+    background: var(--color-warning);
+  }
+}
+
+.downloader-grid,
+.node-skeleton-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.node-skeleton {
+  min-height: 236px;
+  padding: 24px;
+  border: 1px solid var(--color-border-primary);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.7);
+  overflow: hidden;
+
+  span {
+    display: block;
+    height: 14px;
+    margin-bottom: 18px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--color-bg-tertiary), rgba(255, 255, 255, 0.9), var(--color-bg-tertiary));
+    background-size: 220% 100%;
+    animation: skeleton-shift 1.5s ease infinite;
+
+    &:nth-child(1) {
+      width: 42%;
+      height: 22px;
+    }
+
+    &:nth-child(2) {
+      width: 88%;
+    }
+
+    &:nth-child(3) {
+      width: 68%;
+    }
+  }
+}
+
+.empty-search-result {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 15px;
+  align-items: center;
+  min-height: 150px;
+  padding: 24px;
+  border: 1px dashed rgba(var(--color-primary-rgb), 0.26);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.62);
+
+  &__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 54px;
+    height: 54px;
+    border-radius: 15px;
+    background: var(--color-bg-secondary);
+    color: var(--color-primary);
+  }
+
+  > div:nth-child(2) {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    strong {
+      font-size: 15px;
+    }
+
+    span {
+      color: var(--color-text-tertiary);
+      font-size: 12px;
+    }
+  }
+
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 11px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--color-bg-tertiary);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+  }
+}
+
+.downloader-card-add {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto auto auto;
+  column-gap: 16px;
+  align-items: center;
+  min-height: 236px;
+  padding: 24px;
+  overflow: hidden;
+  border: 1px dashed rgba(var(--color-primary-rgb), 0.34);
+  border-radius: 18px;
+  background: rgba(var(--color-primary-rgb), 0.025);
+  color: var(--color-text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 420ms cubic-bezier(0.22, 1, 0.36, 1), border-color 250ms ease, background 250ms ease;
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: -52px;
+    bottom: -72px;
+    width: 190px;
+    height: 190px;
+    border: 1px solid rgba(var(--color-primary-rgb), 0.14);
+    border-radius: 50%;
+    box-shadow: 0 0 0 28px rgba(var(--color-primary-rgb), 0.035), 0 0 0 58px rgba(var(--color-primary-rgb), 0.02);
+  }
+
+  &:hover,
+  &:focus-visible {
+    border-color: var(--color-primary);
+    background: rgba(var(--color-primary-rgb), 0.06);
+    transform: translateY(-3px);
+    outline: none;
+  }
+
+  &__index {
+    grid-column: 1 / -1;
+    align-self: start;
+    color: var(--color-primary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+  }
+
+  &__icon {
+    grid-row: 2 / 4;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border: 1px solid rgba(var(--color-primary-rgb), 0.24);
+    border-radius: 15px;
+    background: var(--color-bg-primary);
+    color: var(--color-primary);
+    box-shadow: 0 12px 30px rgba(var(--color-primary-rgb), 0.12);
+  }
+
+  &__title {
+    align-self: end;
+    font-size: 18px;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+  }
+
+  &__copy {
+    align-self: start;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+  }
+
+  &__action {
+    z-index: 1;
+    grid-column: 3;
+    grid-row: 2 / 4;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-primary);
+    font-size: 11px;
+    font-weight: 650;
+  }
+}
+
+.node-list-enter-active,
+.node-list-leave-active {
+  transition: opacity 320ms ease, transform 420ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.node-list-enter,
+.node-list-leave-to {
+  opacity: 0;
+  transform: translateY(18px) scale(0.985);
+}
+
+@keyframes control-orbit {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes skeleton-shift {
+  to { background-position: -120% 0; }
+}
+
+@media (max-width: 1180px) {
+  .command-deck {
+    align-items: stretch;
+    flex-direction: column;
+
+    &__actions {
+      width: 100%;
+    }
+  }
+
+  .control-search {
+    flex: 1;
+    width: auto;
+  }
+}
+
+@media (max-width: 900px) {
+  .downloader-grid,
+  .node-skeleton-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 680px) {
+  .downloader-control-room {
+    min-height: calc(100vh - var(--navbar-height, 64px) - 24px);
+    margin: -12px;
+    padding: 22px 14px;
+    border-radius: 0;
+  }
+
+  .command-deck__actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .control-search {
+    grid-column: 1 / -1;
+  }
+
+  .search-result-tip {
+    display: none;
+  }
+
+  .control-action {
+    width: 100%;
+  }
+
+  .nodes-section__header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .nodes-section__legend {
+    justify-content: flex-start;
+  }
+
+  .empty-search-result {
+    grid-template-columns: auto 1fr;
+
+    button {
+      grid-column: 1 / -1;
+      justify-self: start;
+    }
+  }
+
+  .downloader-card-add {
+    grid-template-columns: auto 1fr;
+
+    &__action {
+      grid-column: 2;
+      grid-row: 4;
+      margin-top: 14px;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .control-orbit,
+  .control-kicker__pulse,
+  .is-spinning,
+  .node-skeleton span {
+    animation: none !important;
+  }
+
+  .downloader-card-add,
+  .node-list-enter-active,
+  .node-list-leave-active {
+    transition-duration: 0.01ms !important;
+  }
 }
 </style>

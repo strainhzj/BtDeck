@@ -10,11 +10,12 @@
 创建时间: 2026-02-14
 最后更新: 2026-02-14
 """
+
+from typing import Optional
 import logging
 from datetime import datetime, timedelta
 from app.database import AsyncSessionLocal
 from app.utils.audit_logger import export_audit_logs_from_db_to_file
-from app.tasks.cron_models import CronTask
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,7 @@ class AuditLogExportTask:
 
             # 执行导出
             exported_count = await export_audit_logs_from_db_to_file(
-                db_session=db_session,
-                start_time=start_time,
-                end_time=end_time,
-                limit=10000  # 最多导出1万条
+                db_session=db_session, start_time=start_time, end_time=end_time, limit=10000  # 最多导出1万条
             )
 
             logger.info(f"审计日志导出完成: 共导出{exported_count}条记录")
@@ -52,12 +50,7 @@ class AuditLogExportTask:
         except Exception as e:
             logger.error(f"审计日志导出任务失败: {str(e)}", exc_info=True)
 
-    async def execute_manual_export(
-        self,
-        db_session,
-        days: int = 7,
-        operation_type: str = None
-    ):
+    async def execute_manual_export(self, db_session, days: int = 7, operation_type: Optional[str] = None):
         """
         手动执行审计日志导出
 
@@ -79,7 +72,7 @@ class AuditLogExportTask:
                 operation_type=operation_type,
                 start_time=start_time,
                 end_time=end_time,
-                limit=50000  # 手动导出允许更多条数
+                limit=50000,  # 手动导出允许更多条数
             )
 
             logger.info(f"手动审计日志导出完成: 共导出{exported_count}条记录")

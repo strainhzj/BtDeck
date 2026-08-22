@@ -23,11 +23,11 @@ class QBittorrentTrackerStatus(Enum):
         4: 超时 (Timeout)
     """
 
-    DISABLED = 0       # 已禁用
+    DISABLED = 0  # 已禁用
     NOT_CONTACTED = 1  # 未联系
-    WORKING = 2        # 工作中
-    FAILED = 3         # 工作失败
-    TIMEOUT = 4        # 超时
+    WORKING = 2  # 工作中
+    FAILED = 3  # 工作失败
+    TIMEOUT = 4  # 超时
 
     @classmethod
     def get_display_text(cls, status: int) -> str:
@@ -45,13 +45,7 @@ class QBittorrentTrackerStatus(Enum):
             >>> QBittorrentTrackerStatus.get_display_text(2)
             '工作中'
         """
-        status_map = {
-            0: "已禁用",
-            1: "未联系",
-            2: "工作中",
-            3: "工作失败",
-            4: "超时"
-        }
+        status_map = {0: "已禁用", 1: "未联系", 2: "工作中", 3: "工作失败", 4: "超时"}
         return status_map.get(status, "未知")
 
 
@@ -68,11 +62,11 @@ class TransmissionTrackerStatus(Enum):
     """
 
     NOT_CONTACTED = 0  # 未联系
-    SENDING = 1        # 发送中
-    WORKING = 2        # 工作中
-    FAILED = 3         # 工作失败
-    TIMEOUT = 4        # 超时
-    CLEARED = 5        # 已清除
+    SENDING = 1  # 发送中
+    WORKING = 2  # 工作中
+    FAILED = 3  # 工作失败
+    TIMEOUT = 4  # 超时
+    CLEARED = 5  # 已清除
 
     @classmethod
     def get_display_text(cls, status: int) -> str:
@@ -90,14 +84,7 @@ class TransmissionTrackerStatus(Enum):
             >>> TransmissionTrackerStatus.get_display_text(2)
             '工作中'
         """
-        status_map = {
-            0: "未联系",
-            1: "发送中",
-            2: "工作中",
-            3: "工作失败",
-            4: "超时",
-            5: "已清除"
-        }
+        status_map = {0: "未联系", 1: "发送中", 2: "工作中", 3: "工作失败", 4: "超时", 5: "已清除"}
         return status_map.get(status, "未知")
 
 

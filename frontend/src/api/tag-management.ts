@@ -65,6 +65,39 @@ export interface TagListParams {
 // ==================== API 接口 ====================
 
 /**
+ * 获取所有分类名称（跨下载器聚合）
+ */
+export function getAllCategories() {
+  return request({
+    url: '/tags/categories',
+    method: 'get'
+  })
+}
+
+/**
+ * 获取所有标签名称（跨下载器聚合）
+ */
+export function getAllTags() {
+  return request({
+    url: '/tags/tags',
+    method: 'get'
+  })
+}
+
+/**
+ * 获取所有标签（跨下载器聚合）
+ */
+export function getAllTagsDetailed(tagType?: 'category' | 'tag') {
+  return request({
+    url: '/tags/all',
+    method: 'get',
+    params: {
+      tag_type: tagType
+    }
+  })
+}
+
+/**
  * 获取标签列表
  * @param params 查询参数
  */

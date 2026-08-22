@@ -37,8 +37,9 @@ export default class MonacoEditor extends Vue {
 
   @Watch('language')
   onLanguageChange(newLanguage: string) {
-    if (this.editor) {
-      monaco.editor.setModelLanguage(this.editor.getModel()!, newLanguage)
+    const model = this.editor?.getModel()
+    if (model) {
+      monaco.editor.setModelLanguage(model, newLanguage)
     }
   }
 
@@ -69,7 +70,8 @@ export default class MonacoEditor extends Vue {
 
     // Emit change event
     this.editor.onDidChangeModelContent(() => {
-      const value = this.editor!.getValue()
+      if (!this.editor) return
+      const value = this.editor.getValue()
       this.$emit('input', value)
       this.$emit('change', value)
     })

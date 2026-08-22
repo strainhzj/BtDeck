@@ -1,25 +1,47 @@
 from fastapi import APIRouter
-from app.api.endpoints import login,downloader,cuser,torrents,tracker,tasks,cron_tasks,advanced_search
-from app.api.endpoints import tracker_keywords, tracker_messages, tracker_test, tracker_keywords_pools, tracker_keywords_pools
-from app.api.endpoints import audit_logs, recycle_bin, duplicate_torrents
+from app.api.endpoints import login, downloader, cuser, torrents, tracker, tasks, cron_tasks, advanced_search
+from app.api.endpoints import (
+    tracker_keywords,
+    tracker_messages,
+    tracker_test,
+    tracker_keywords_pools,
+)
+from app.api.endpoints import (
+    audit_logs,
+    recycle_bin,
+    duplicate_torrents,
+    duplicate_quick_delete,
+)
 from app.api.endpoints import dashboard
+
 # 导入下载器设置相关API
 from app.api.endpoints import downloader_settings, setting_templates, downloader_capabilities
 from app.api.endpoints import downloader_capabilities_management
+
 # 导入标签管理API
 from app.api.endpoints import tag_management
+
 # 导入种子文件备份API
 from app.api.endpoints import torrent_backup
+
 # 导入下载器路径维护API
 from app.api.endpoints import downloader_path_maintenance
+
 # 导入种子转移API
 from app.api.endpoints import seed_transfer
+
 # 导入tracker汇报配置API
 from app.api.endpoints import tracker_reannounce
+
 # 导入种子状态API
 from app.api.endpoints import torrent_status
+
 # 导入通知中心API
 from app.api.endpoints import notifications
+
+# 导入孤儿文件管理API
+from app.api.endpoints import orphan_files
+from app.api.endpoints import health
 
 api_router = APIRouter()
 api_router.include_router(login.router, prefix="/auth")
@@ -46,6 +68,8 @@ api_router.include_router(audit_logs.router, prefix="/audit-logs", tags=["audit-
 api_router.include_router(recycle_bin.router, prefix="/recycle", tags=["recycle-bin"])
 # 添加重复检测路由
 api_router.include_router(duplicate_torrents.router, prefix="/torrents", tags=["torrents"])
+# 添加快捷删除重复种子路由
+api_router.include_router(duplicate_quick_delete.router, prefix="/torrents", tags=["torrents"])
 # 添加下载器设置管理路由
 api_router.include_router(downloader_settings.router, prefix="/downloaders", tags=["下载器设置"])
 api_router.include_router(setting_templates.router, prefix="/setting-templates", tags=["配置模板"])
@@ -66,3 +90,9 @@ api_router.include_router(tracker_reannounce.router, prefix="/tracker-reannounce
 api_router.include_router(torrent_status.router, prefix="/torrent-status", tags=["torrent-status"])
 # 添加通知中心路由
 api_router.include_router(notifications.router, prefix="/notifications", tags=["通知中心"])
+# 添加孤儿文件管理路由
+api_router.include_router(orphan_files.router, prefix="/orphan-files", tags=["孤儿文件管理"])
+# API 前缀下保留 liveness/readiness 别名；Docker 使用的规范路径仍是根路径 /health/*。
+api_router.include_router(health.router, tags=["health"])
+# 受认证同步健康视图（基础 liveness/readiness 在根路径注册，供 Docker 使用）
+api_router.include_router(health.sync_router, prefix="/health", tags=["health"])

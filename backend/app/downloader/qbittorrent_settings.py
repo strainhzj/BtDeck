@@ -4,14 +4,13 @@ qBittorrent设置封装类
 
 封装qBittorrent Web API调用，提供统一的设置接口
 """
-from typing import Dict, Optional, Tuple, Union, Any
+
+from typing import Any, Dict, Optional
 from qbittorrentapi import Client
 from qbittorrentapi import (
     APIConnectionError as QBAPIConnectionError,
     LoginFailed as QBLoginFailed,
     HTTP401Error,
-    HTTP403Error,
-    HTTP500Error,
 )
 import logging
 
@@ -19,7 +18,6 @@ from app.downloader.exceptions import (
     DownloaderConnectionError,
     AuthenticationError,
     APIError,
-    DownloaderTimeoutError,
     ConfigurationError,
 )
 from app.utils.log_sanitizer import sanitize_ip, should_sanitize
@@ -40,7 +38,7 @@ class QBitTorrentSettings:
         port: Optional[int] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
-        timeout: int = 10
+        timeout: int = 10,
     ):
         """
         初始化qBittorrent设置封装类
@@ -73,7 +71,7 @@ class QBitTorrentSettings:
         """
         # 新方式: 直接使用缓存的客户端
         if client is not None:
-            self._client = client
+            self._client: Optional[Any] = client
             self._from_cache = True
             self.host = None
             self.port = None
@@ -95,9 +93,7 @@ class QBitTorrentSettings:
             # 验证必需参数
             if port is None:
                 raise ConfigurationError(
-                    message="旧方式初始化必须提供 port 参数",
-                    parameter_name="port",
-                    parameter_value=None
+                    message="旧方式初始化必须提供 port 参数", parameter_name="port", parameter_value=None
                 )
 
             self._client = None
@@ -112,9 +108,7 @@ class QBitTorrentSettings:
 
         # 参数不完整
         raise ConfigurationError(
-            message="初始化参数不完整: 必须提供 client 或 host+port",
-            parameter_name="client",
-            parameter_value=None
+            message="初始化参数不完整: 必须提供 client 或 host+port", parameter_name="client", parameter_value=None
         )
 
     @property
@@ -126,51 +120,39 @@ class QBitTorrentSettings:
         """
         # 新方式: 直接返回缓存的客户端
         if self._from_cache:
+            if self._client is None:  # pragma: no cover - 缓存分支必有客户端
+                raise DownloaderConnectionError(message="缓存客户端缺失", host=self.host, port=self.port)
             return self._client
 
         # 旧方式: 延迟创建客户端(已废弃)
         if self._init_failed:
             raise DownloaderConnectionError(
-                message="客户端初始化失败,无法重试。请检查配置后重新创建对象。",
-                host=self.host,
-                port=self.port
+                message="客户端初始化失败,无法重试。请检查配置后重新创建对象。", host=self.host, port=self.port
             )
         if self._client is None:
             try:
                 self._client = Client(
-                    host=self.host,
-                    port=self.port,
+                    host=self.host or "",
+                    port=self.port or 0,
                     username=self.username,
                     password=self.password,
                     VERIFY_WEBUI_CERTIFICATE=False,  # 跳过WebUI证书验证
-                    REQUESTS_ARGS={'timeout': self.timeout}
+                    REQUESTS_ARGS={"timeout": self.timeout},
                 )
                 if should_sanitize():
-                    logger.info(f"qBittorrent客户端初始化成功(旧方式): {sanitize_ip(self.host)}:{self.port}")
+                    logger.info(f"qBittorrent客户端初始化成功(旧方式): {sanitize_ip(self.host or '')}:{self.port}")
                 else:
                     logger.info(f"qBittorrent客户端初始化成功(旧方式): {self.host}:{self.port}")
-
-
-
 
             except Exception as e:
                 self._init_failed = True  # 标记初始化失败
                 logger.error(f"qBittorrent客户端初始化失败: {e}")
                 raise DownloaderConnectionError(
-                    message=f"初始化qBittorrent客户端失败: {e}",
-                    host=self.host,
-                    port=self.port,
-                    original_error=e
+                    message=f"初始化qBittorrent客户端失败: {e}", host=self.host, port=self.port, original_error=e
                 )
         return self._client
 
-    def set_transfer_speed(
-        self,
-        dl_limit: int,
-        ul_limit: int,
-        dl_unit: str = "KB/s",
-        ul_unit: str = "KB/s"
-    ) -> bool:
+    def set_transfer_speed(self, dl_limit: int, ul_limit: int, dl_unit: str = "KB/s", ul_unit: str = "KB/s") -> bool:
         """
         设置传输速度限制（支持分别的下载和上传单位）
 
@@ -191,27 +173,19 @@ class QBitTorrentSettings:
             # 验证参数
             if dl_limit < 0:
                 raise ConfigurationError(
-                    message="下载速度限制不能为负数",
-                    parameter_name="dl_limit",
-                    parameter_value=dl_limit
+                    message="下载速度限制不能为负数", parameter_name="dl_limit", parameter_value=dl_limit
                 )
             if ul_limit < 0:
                 raise ConfigurationError(
-                    message="上传速度限制不能为负数",
-                    parameter_name="ul_limit",
-                    parameter_value=ul_limit
+                    message="上传速度限制不能为负数", parameter_name="ul_limit", parameter_value=ul_limit
                 )
             if dl_unit not in ["KB/s", "MB/s"]:
                 raise ConfigurationError(
-                    message=f"不支持的下载速度单位: {dl_unit}",
-                    parameter_name="dl_unit",
-                    parameter_value=dl_unit
+                    message=f"不支持的下载速度单位: {dl_unit}", parameter_name="dl_unit", parameter_value=dl_unit
                 )
             if ul_unit not in ["KB/s", "MB/s"]:
                 raise ConfigurationError(
-                    message=f"不支持的上传速度单位: {ul_unit}",
-                    parameter_name="ul_unit",
-                    parameter_value=ul_unit
+                    message=f"不支持的上传速度单位: {ul_unit}", parameter_name="ul_unit", parameter_value=ul_unit
                 )
 
             # 转换单位为Bytes/s (qBittorrent使用Bytes/s)
@@ -225,33 +199,19 @@ class QBitTorrentSettings:
             }
             self.client.app_set_preferences(prefs=prefs)
 
-            logger.info(
-                f"qBittorrent速度设置成功: "
-                f"dl={dl_limit} {dl_unit}, ul={ul_limit} {ul_unit}"
-            )
+            logger.info(f"qBittorrent速度设置成功: " f"dl={dl_limit} {dl_unit}, ul={ul_limit} {ul_unit}")
             return True
 
         except ConfigurationError:
             raise
         except (QBLoginFailed, HTTP401Error) as e:
-            raise AuthenticationError(
-                message="qBittorrent认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="qBittorrent认证失败", username=self.username, original_error=e)
         except QBAPIConnectionError as e:
             raise DownloaderConnectionError(
-                message="qBittorrent连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="qBittorrent连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
-            raise APIError(
-                message=f"qBittorrent速度设置失败: {e}",
-                api_method="app_set_preferences",
-                original_error=e
-            )
+            raise APIError(message=f"qBittorrent速度设置失败: {e}", api_method="app_set_preferences", original_error=e)
 
     def set_authentication(self, username: str, password: str) -> bool:
         """
@@ -267,17 +227,10 @@ class QBitTorrentSettings:
         Returns:
             bool: 暂不支持，返回False
         """
-        logger.warning(
-            "qBittorrent Web API不支持通过API修改认证信息。"
-            "请在WebUI或配置文件中手动修改。"
-        )
+        logger.warning("qBittorrent Web API不支持通过API修改认证信息。" "请在WebUI或配置文件中手动修改。")
         return False
 
-    def set_connection_limits(
-        self,
-        global_limit: int,
-        per_torrent_limit: int
-    ) -> bool:
+    def set_connection_limits(self, global_limit: int, per_torrent_limit: int) -> bool:
         """
         设置连接数限制
 
@@ -300,15 +253,13 @@ class QBitTorrentSettings:
             # 验证参数
             if global_limit < 0:
                 raise ConfigurationError(
-                    message="全局连接数不能为负数",
-                    parameter_name="global_limit",
-                    parameter_value=global_limit
+                    message="全局连接数不能为负数", parameter_name="global_limit", parameter_value=global_limit
                 )
             if per_torrent_limit < 0:
                 raise ConfigurationError(
                     message="每任务连接数不能为负数",
                     parameter_name="per_torrent_limit",
-                    parameter_value=per_torrent_limit
+                    parameter_value=per_torrent_limit,
                 )
 
             # 调用qBittorrent API
@@ -318,40 +269,24 @@ class QBitTorrentSettings:
             }
             self.client.app_set_preferences(prefs=prefs)
 
-            logger.info(
-                f"qBittorrent连接数设置成功: "
-                f"global={global_limit}, per_torrent={per_torrent_limit}"
-            )
+            logger.info(f"qBittorrent连接数设置成功: " f"global={global_limit}, per_torrent={per_torrent_limit}")
             return True
 
         except ConfigurationError:
             raise
         except (QBLoginFailed, HTTP401Error) as e:
-            raise AuthenticationError(
-                message="qBittorrent认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="qBittorrent认证失败", username=self.username, original_error=e)
         except QBAPIConnectionError as e:
             raise DownloaderConnectionError(
-                message="qBittorrent连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="qBittorrent连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
             raise APIError(
-                message=f"qBittorrent连接数设置失败: {e}",
-                api_method="app_set_preferences",
-                original_error=e
+                message=f"qBittorrent连接数设置失败: {e}", api_method="app_set_preferences", original_error=e
             )
 
     def set_queue_settings(
-        self,
-        max_active_downloads: int,
-        max_active_uploads: int,
-        dl_queue_size: int,
-        ul_queue_size: int
+        self, max_active_downloads: int, max_active_uploads: int, dl_queue_size: int, ul_queue_size: int
     ) -> bool:
         """
         设置队列管理
@@ -379,13 +314,13 @@ class QBitTorrentSettings:
                 raise ConfigurationError(
                     message="同时下载数不能为负数",
                     parameter_name="max_active_downloads",
-                    parameter_value=max_active_downloads
+                    parameter_value=max_active_downloads,
                 )
             if max_active_uploads < 0:
                 raise ConfigurationError(
                     message="同时上传数不能为负数",
                     parameter_name="max_active_uploads",
-                    parameter_value=max_active_uploads
+                    parameter_value=max_active_uploads,
                 )
 
             # 调用qBittorrent API
@@ -400,33 +335,19 @@ class QBitTorrentSettings:
             }
             self.client.app_set_preferences(prefs=prefs)
 
-            logger.info(
-                f"qBittorrent队列设置成功: "
-                f"downloads={max_active_downloads}, uploads={max_active_uploads}"
-            )
+            logger.info(f"qBittorrent队列设置成功: " f"downloads={max_active_downloads}, uploads={max_active_uploads}")
             return True
 
         except ConfigurationError:
             raise
         except (QBLoginFailed, HTTP401Error) as e:
-            raise AuthenticationError(
-                message="qBittorrent认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="qBittorrent认证失败", username=self.username, original_error=e)
         except QBAPIConnectionError as e:
             raise DownloaderConnectionError(
-                message="qBittorrent连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="qBittorrent连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
-            raise APIError(
-                message=f"qBittorrent队列设置失败: {e}",
-                api_method="app_set_preferences",
-                original_error=e
-            )
+            raise APIError(message=f"qBittorrent队列设置失败: {e}", api_method="app_set_preferences", original_error=e)
 
     def set_all_settings(self, settings: Dict) -> bool:
         """
@@ -487,24 +408,13 @@ class QBitTorrentSettings:
             return True
 
         except (QBLoginFailed, HTTP401Error) as e:
-            raise AuthenticationError(
-                message="qBittorrent认证失败",
-                username=self.username,
-                original_error=e
-            )
+            raise AuthenticationError(message="qBittorrent认证失败", username=self.username, original_error=e)
         except QBAPIConnectionError as e:
             raise DownloaderConnectionError(
-                message="qBittorrent连接失败",
-                host=self.host,
-                port=self.port,
-                original_error=e
+                message="qBittorrent连接失败", host=self.host, port=self.port, original_error=e
             )
         except Exception as e:
-            raise APIError(
-                message=f"qBittorrent批量设置失败: {e}",
-                api_method="app_set_preferences",
-                original_error=e
-            )
+            raise APIError(message=f"qBittorrent批量设置失败: {e}", api_method="app_set_preferences", original_error=e)
 
     def get_capabilities(self) -> Dict[str, bool]:
         """
@@ -518,7 +428,7 @@ class QBitTorrentSettings:
             prefs = self.client.app_preferences()
             version = self.client.app_version()
 
-            return {
+            capabilities: Dict[str, Any] = {
                 "transfer_speed": True,
                 "authentication": True,
                 "connection_limits": "connection_limit" in prefs,
@@ -527,8 +437,9 @@ class QBitTorrentSettings:
                 "download_paths": False,  # qBittorrent不支持路径设置
                 "port_settings": True,
                 "advanced_settings": True,
-                "version": version
+                "version": version,
             }
+            return capabilities
         except Exception as e:
             # 下载器离线时降级为WARNING，避免干扰用户
             logger.warning(f"获取qBittorrent能力失败（下载器可能离线）: {e}")
@@ -554,8 +465,8 @@ class QBitTorrentSettings:
             logger.info(f"qBittorrent认证成功: {self.username}")
 
             # 3. 测试基本功能
-            torrents = self.client.torrents_info(limit=1)
-            logger.info(f"qBittorrent基本功能正常")
+            self.client.torrents_info(limit=1)
+            logger.info("qBittorrent基本功能正常")
 
             return True
 
@@ -588,11 +499,7 @@ class QBitTorrentSettings:
         elif unit == "KB/s":
             return value * 1024
         else:
-            raise ConfigurationError(
-                message=f"不支持的速度单位: {unit}",
-                parameter_name="unit",
-                parameter_value=unit
-            )
+            raise ConfigurationError(message=f"不支持的速度单位: {unit}", parameter_name="unit", parameter_value=unit)
 
 
-__all__ = ['QBitTorrentSettings']
+__all__ = ["QBitTorrentSettings"]

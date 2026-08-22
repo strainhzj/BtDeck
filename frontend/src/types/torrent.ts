@@ -10,6 +10,7 @@
 export enum TorrentStatus {
   SEEDING = 'seeding',           // 做种中（包含stalledUP, seeding, queuedUP）
   DOWNLOADING = 'downloading',   // 下载中（包含downloading, stalledDL）
+  COMPLETED = 'completed',       // 已完成（后端统一状态）
   PAUSED = 'paused',             // 已暂停（包含pausedDL, pausedUP, paused）
   QUEUEDDL = 'queuedDL',         // 下载队列
   ERROR = 'error',               // 错误
@@ -38,6 +39,8 @@ export interface Torrent {
   savePath: string
   save_path?: string
   size: number
+  auxiliarySeedCount?: number
+  auxiliary_seed_count?: number
   category?: string
   tags?: string
 
@@ -47,9 +50,9 @@ export interface Torrent {
 
   // 进度信息(可能为null)
   progress?: number | null
-  ratio: string
-  ratioLimit: string
-  ratio_limit?: string
+  ratio: number | null
+  ratioLimit: number | null
+  ratio_limit?: number | null
 
   // 时间信息
   addedDate: number | string
@@ -226,12 +229,6 @@ export interface AdvancedSearchParams {
 
   // 高级搜索条件组
   condition_groups?: ConditionGroup[]
-
-  // 多选排除字段
-  status_multi?: MultiSelectField
-  category_multi?: MultiSelectField
-  tags_multi?: MultiSelectField
-  downloader_multi?: MultiSelectField
 }
 
 /**
@@ -249,15 +246,6 @@ export interface Condition {
   field: string
   operator: string
   value: any
-}
-
-/**
- * 多选字段
- */
-export interface MultiSelectField {
-  mode: 'include' | 'exclude'
-  value: string | string[]
-  separator?: string
 }
 
 /**

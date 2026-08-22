@@ -10,7 +10,9 @@
 5. 下载器路径扫描任务
 6. Tracker汇报轮询任务
 """
+
 import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +20,17 @@ logger = logging.getLogger(__name__)
 # ========== 定时任务配置常量 ==========
 
 # 任务类型枚举
-TASK_TYPE_PYTHON = 4      # Python脚本任务
-TASK_TYPE_SHELL = 0       # Shell脚本任务
-TASK_TYPE_HTTP = 1        # HTTP请求任务
-TASK_TYPE_SQL = 2         # SQL执行任务
-TASK_TYPE_PLUGIN = 3      # 插件任务
+TASK_TYPE_PYTHON = 4  # Python脚本任务
+TASK_TYPE_SHELL = 0  # Shell脚本任务
+TASK_TYPE_HTTP = 1  # HTTP请求任务
+TASK_TYPE_SQL = 2  # SQL执行任务
+TASK_TYPE_PLUGIN = 3  # 插件任务
 
 # 任务状态枚举
-TASK_STATUS_READY = 1     # 就绪
-TASK_STATUS_RUNNING = 2   # 运行中
-TASK_STATUS_PAUSED = 0    # 已暂停
-TASK_STATUS_DISABLED = -1 # 已禁用
+TASK_STATUS_READY = 1  # 就绪
+TASK_STATUS_RUNNING = 2  # 运行中
+TASK_STATUS_PAUSED = 0  # 已暂停
+TASK_STATUS_DISABLED = -1  # 已禁用
 
 
 # ========== 系统默认定时任务定义 ==========
@@ -111,8 +113,8 @@ DEFAULT_SCHEDULED_TASKS = [
         "enabled": True,
         "last_execute_time": None,
         "last_execute_duration": None,
-        "cron_plan": "0 */5 * * *",  # 每5分钟执行
-        "description": "定期检查所有种子的tracker状态，根据关键词池（失败池、成功池、忽略池）智能判断tracker是否失败，自动更新has_tracker_error字段（间隔: 5分钟，批量处理20,000+种子）",
+        "cron_plan": "20,50 * * * *",  # 每30分钟执行（Tracker 状态同步后10分钟）
+        "description": "定期检查所有种子的tracker状态，根据状态码与关键词池（失败池、成功池、忽略池）共同判断tracker是否失败，自动更新has_tracker_error字段（每30分钟，在Tracker状态同步任务后10分钟执行，批量处理20,000+种子）",
         "timeout_seconds": 300,
         "max_retry_count": 0,
         "retry_interval": 300,
@@ -170,10 +172,99 @@ DEFAULT_SCHEDULED_TASKS = [
         "create_by": "migration_system",
         "update_by": "admin",
     },
+    {
+        "task_name": "孤儿文件扫描清理任务",
+        "task_code": "orphan_scan_cleanup",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_scan_task.OrphanScanTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "0 2 * * 0",  # 每周日凌晨2点执行
+        "description": "每周扫描孤儿文件（不在任何种子文件清单中的磁盘文件），自动清理超过 30 天的孤儿文件。",
+        "timeout_seconds": 7200,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
+    {
+        "task_name": "孤儿文件隔离区到期清理任务",
+        "task_code": "orphan_quarantine_purge",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_quarantine_purge_task.OrphanQuarantinePurgeTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "0 3 * * *",
+        "description": "每日清理超过隔离保留期且仍未被任何种子引用的文件。",
+        "timeout_seconds": 7200,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
+    {
+        "task_name": "孤儿扫描通知补偿任务",
+        "task_code": "orphan_notification_retry",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_notification_retry_task.OrphanNotificationRetryTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "10 * * * *",
+        "description": "每小时补发已完成但通知创建失败的孤儿扫描结果通知。",
+        "timeout_seconds": 300,
+        "max_retry_count": 1,
+        "retry_interval": 60,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
+    {
+        "task_name": "孤儿硬链接副本预扫描任务",
+        "task_code": "orphan_hardlink_copy_scan",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.orphan_hardlink_copy_scan_task.OrphanHardlinkCopyScanTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "0 4 * * *",
+        "description": (
+            "每日后台预扫描孤儿文件的硬链接副本位置并落库（单轮限量与时间预算，"
+            "详见 ORPHAN_HARDLINK_SCAN_* 配置）；前端副本位置弹框只读扫描结果。"
+        ),
+        "timeout_seconds": 7200,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
+    {
+        "task_name": "refresh token 过期记录清理任务",
+        "task_code": "refresh_token_cleanup",
+        "task_status": TASK_STATUS_READY,
+        "task_type": TASK_TYPE_PYTHON,
+        "executor": "app.tasks.scheduler.refresh_token_cleanup_task.RefreshTokenCleanupTask",
+        "enabled": True,
+        "last_execute_time": None,
+        "last_execute_duration": None,
+        "cron_plan": "30 4 * * *",
+        "description": "每日清理 refresh_tokens 表中已过期或已撤销超过 30 天保留期的记录，活跃令牌不受影响。",
+        "timeout_seconds": 600,
+        "max_retry_count": 0,
+        "retry_interval": 300,
+        "create_by": "migration_system",
+        "update_by": "admin",
+    },
 ]
 
 
 # ========== 初始化函数 ==========
+
 
 def init_default_scheduled_tasks(db_session) -> int:
     """
@@ -196,9 +287,7 @@ def init_default_scheduled_tasks(db_session) -> int:
 
         for task_data in DEFAULT_SCHEDULED_TASKS:
             # 检查任务是否已存在（通过 task_code 唯一性）
-            existing = db_session.query(CronTask).filter_by(
-                task_code=task_data["task_code"]
-            ).first()
+            existing = db_session.query(CronTask).filter_by(task_code=task_data["task_code"]).first()
 
             if existing:
                 logger.info(f"系统默认任务已存在，跳过: {task_data['task_name']} ({task_data['task_code']})")
@@ -252,7 +341,7 @@ def get_default_scheduled_tasks() -> list:
     return DEFAULT_SCHEDULED_TASKS.copy()
 
 
-def get_task_by_code(task_code: str) -> dict:
+def get_task_by_code(task_code: str) -> Optional[dict]:
     """
     根据任务代码获取系统默认定时任务配置
 

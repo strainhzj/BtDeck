@@ -10,43 +10,86 @@ import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Any, Optional
-from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import and_
 from io import BytesIO
 
-from app.torrents.models import TorrentInfo, TrackerInfo as trackerInfoModel
+from app.torrents.models import TorrentInfo
 from app.downloader.models import BtDownloaders
 from app.core.file_operations import FileOperationService
 from app.core.path_mapping import PathMappingService
 from app.torrents.audit_enums import AuditOperationType, AuditOperationResult
-from qbittorrentapi import Client as qbClient
-from transmission_rpc import Client as trClient, TransmissionError
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.services.auxiliary_seed_count_service import (
+    get_active_auxiliary_seed_count,
+    get_auxiliary_seed_key,
+    set_active_auxiliary_seed_count,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_audit_info(request) -> Dict[str, Any]:
+    """从 FastAPI Request 提取审计信息（缺失返回空 dict，不抛错）。"""
+    if request is None:
+        return {}
+    try:
+        from app.services.audit_service import extract_audit_info_from_request
+
+        return extract_audit_info_from_request(request)
+    except Exception as e:  # noqa: BLE001 - 审计信息缺失不影响回收站主流程
+        logger.warning(f"提取请求审计信息失败: {e}")
+        return {}
+
+
+# 单次还原/轮询远程调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
+_RESTORE_CALL_TIMEOUT = 30.0
 
 
 class RecycleBinService:
     """回收站服务"""
 
-    def __init__(self, db_async: AsyncSession):
+    def __init__(self):
         """
-        初始化回收站服务
+        初始化回收站服务。
 
         内部创建同步 Session，保持所有方法使用同步模式。
+        该自建会话由本实例持有并负责关闭——调用方必须在 try/finally 中调用 close()，
+        否则会因 NullPool 配置导致 SQLite 同步连接泄漏（可能引发 database is locked）。
 
-        Args:
-            db_async: 异步数据库会话（用于获取同步会话）
+        历史兼容性：原签名 `__init__(self, db_async: AsyncSession)` 接收一个异步会话但完全忽略；
+        该必填死参数强迫调用方传入一个无人 close 的 session，反而成为新的泄漏源，故删除。
+        所有 4 个端点的调用方传入的 AsyncSession（来自 Depends(get_async_db)）从未被使用。
         """
         from app.database import SessionLocal
-        self.db = SessionLocal()  # 创建同步会话
 
-    def get_recycle_bin_list(
-        self,
-        page: int = 1,
-        page_size: int = 20,
-        search: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self.db = SessionLocal()  # 创建同步会话
+        self._owns_db = True  # 标记由本实例所有，close() 时负责关闭
+        # 跟踪 close() 是否已调用，保证幂等。
+        # 注意：该标志仅保证"串行"重复调用幂等。RecycleBinService 是同步类，
+        # 每个 HTTP 请求 new 一个实例（不跨请求共享），故无需加锁。
+        self._closed = False
+
+    def close(self) -> None:
+        """
+        关闭内部同步会话。
+
+        多次调用安全（串行幂等）。调用方应在 try/finally 中调用：
+
+            service = RecycleBinService()
+            try:
+                ...
+            finally:
+                service.close()
+        """
+        if not self._owns_db or self._closed:
+            return
+        self._closed = True
+        try:
+            self.db.close()
+        except Exception as e:
+            logger.warning(f"关闭 RecycleBinService 同步会话失败: {e}", exc_info=True)
+
+    def get_recycle_bin_list(self, page: int = 1, page_size: int = 20, search: Optional[str] = None) -> Dict[str, Any]:
         """
         查询回收站列表
 
@@ -68,8 +111,7 @@ class RecycleBinService:
             # 构建查询条件：deleted_at不为NULL且dr=0（仅显示可还原的种子）
             query = self.db.query(TorrentInfo).filter(
                 and_(
-                    TorrentInfo.deleted_at.isnot(None),  # 在回收站中
-                    TorrentInfo.dr == 0  # 只显示可还原的种子（dr=0）
+                    TorrentInfo.deleted_at.isnot(None), TorrentInfo.dr == 0  # 在回收站中  # 只显示可还原的种子（dr=0）
                 )
             )
 
@@ -93,26 +135,16 @@ class RecycleBinService:
             for torrent in torrents:
                 torrent_dict = torrent.to_dict()
                 # 添加删除时间格式化
-                torrent_dict['deleted_at_formatted'] = torrent.get_deleted_at_formatted()
+                torrent_dict["deleted_at_formatted"] = torrent.get_deleted_at_formatted()
                 # 添加是否可还原标记
-                torrent_dict['can_restore'] = self._check_can_restore(torrent)
+                torrent_dict["can_restore"] = self._check_can_restore(torrent)
                 torrent_list.append(torrent_dict)
 
-            return {
-                "total": total,
-                "page": page,
-                "pageSize": page_size,
-                "list": torrent_list
-            }
+            return {"total": total, "page": page, "pageSize": page_size, "list": torrent_list}
 
         except Exception as e:
             logger.error(f"查询回收站列表失败: {str(e)}", exc_info=True)
-            return {
-                "total": 0,
-                "page": page,
-                "pageSize": page_size,
-                "list": []
-            }
+            return {"total": 0, "page": page, "pageSize": page_size, "list": []}
 
     def _check_can_restore(self, torrent: TorrentInfo) -> bool:
         """
@@ -132,11 +164,7 @@ class RecycleBinService:
         return False
 
     async def restore_torrents(
-        self,
-        torrent_ids: List[str],
-        operator: str,
-        audit_service=None,
-        request=None
+        self, torrent_ids: List[str], operator: str, audit_service=None, request=None
     ) -> Dict[str, Any]:
         """
         批量还原种子
@@ -165,27 +193,22 @@ class RecycleBinService:
                 "failed_list": List[Dict]
             }
         """
-        result = {
+        result: Dict[str, Any] = {
             "success_count": 0,
             "failed_count": 0,
             "skipped_count": 0,
             "success_list": [],
-            "failed_list": []
+            "failed_list": [],
         }
 
         for torrent_id in torrent_ids:
             try:
                 # 查询种子信息（包含 dr=0 和 dr=1）
-                torrent = self.db.query(TorrentInfo).filter(
-                    TorrentInfo.info_id == torrent_id
-                ).first()
+                torrent = self.db.query(TorrentInfo).filter(TorrentInfo.info_id == torrent_id).first()
 
                 if not torrent:
                     result["failed_count"] += 1
-                    result["failed_list"].append({
-                        "torrent_id": torrent_id,
-                        "reason": "种子不存在"
-                    })
+                    result["failed_list"].append({"torrent_id": torrent_id, "reason": "种子不存在"})
                     continue
 
                 # 检查是否在回收站
@@ -197,40 +220,33 @@ class RecycleBinService:
                 # 检查是否有备份文件
                 if not torrent.backup_file_path or not os.path.exists(torrent.backup_file_path):
                     result["failed_count"] += 1
-                    result["failed_list"].append({
-                        "torrent_id": torrent_id,
-                        "torrent_name": torrent.name,
-                        "reason": "种子文件备份不存在，请手动提供种子文件"
-                    })
+                    result["failed_list"].append(
+                        {
+                            "torrent_id": torrent_id,
+                            "torrent_name": torrent.name,
+                            "reason": "种子文件备份不存在，请手动提供种子文件",
+                        }
+                    )
                     logger.error(f"种子文件备份不存在: {torrent.backup_file_path}")
                     continue
 
                 # 获取下载器信息
-                downloader = self.db.query(BtDownloaders).filter(
-                    BtDownloaders.downloader_id == torrent.downloader_id
-                ).first()
+                downloader = (
+                    self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
+                )
 
                 if not downloader:
                     result["failed_count"] += 1
-                    result["failed_list"].append({
-                        "torrent_id": torrent_id,
-                        "torrent_name": torrent.name,
-                        "reason": "下载器不存在"
-                    })
+                    result["failed_list"].append(
+                        {"torrent_id": torrent_id, "torrent_name": torrent.name, "reason": "下载器不存在"}
+                    )
                     continue
 
                 # 步骤1: 智能还原种子名称（移除.pending_delete后缀）
-                file_op_service = FileOperationService(
-                    path_mapping_service=self._get_path_mapping_service(downloader)
-                )
+                file_op_service = FileOperationService(path_mapping_service=self._get_path_mapping_service(downloader))
 
                 # 用于回滚的信息
-                restore_info = {
-                    "renamed": False,
-                    "original_path": None,
-                    "restored_path": None,
-                    "is_directory": None
-                }
+                restore_info = {"renamed": False, "original_path": None, "restored_path": None, "is_directory": None}
 
                 if torrent.original_filename:
                     # 检测种子类型（单文件或多文件）
@@ -251,7 +267,7 @@ class RecycleBinService:
                     restore_result = await file_op_service.restore_torrent_from_recycle(
                         current_path=current_path,
                         original_name=torrent.original_filename,
-                        is_directory=not is_single_file  # 单文件=False, 多文件=True
+                        is_directory=not is_single_file,  # 单文件=False, 多文件=True
                     )
 
                     if restore_result.get("success"):
@@ -273,9 +289,7 @@ class RecycleBinService:
 
                 # 步骤2: 读取种子文件并重新添加到下载器
                 restore_result = await self._restore_torrent_to_downloader(
-                    torrent=torrent,
-                    downloader=downloader,
-                    app=request.app if request else None
+                    torrent=torrent, downloader=downloader, app=request.app if request else None
                 )
 
                 if not restore_result["success"]:
@@ -290,20 +304,25 @@ class RecycleBinService:
                     # 构建详细错误信息
                     error_detail = restore_result.get("error", "重新添加到下载器失败")
                     if restore_info["renamed"]:
-                        error_detail += f"（已回滚文件名修改）"
+                        error_detail += "（已回滚文件名修改）"
 
                     result["failed_count"] += 1
-                    result["failed_list"].append({
-                        "torrent_id": torrent_id,
-                        "torrent_name": torrent.name,
-                        "reason": error_detail
-                    })
+                    result["failed_list"].append(
+                        {"torrent_id": torrent_id, "torrent_name": torrent.name, "reason": error_detail}
+                    )
                     continue
 
                 # 步骤4: 清除deleted_at字段
+                auxiliary_key = get_auxiliary_seed_key(torrent)
+                active_count = get_active_auxiliary_seed_count(self.db, auxiliary_key)
                 torrent.restore_from_recycle_bin()
                 torrent.update_time = datetime.now()
                 torrent.update_by = operator
+                set_active_auxiliary_seed_count(
+                    self.db,
+                    auxiliary_key,
+                    (active_count + 1) if active_count is not None else 1,
+                )
                 self.db.commit()
 
                 # 记录审计日志
@@ -312,7 +331,7 @@ class RecycleBinService:
                         "torrent_name": torrent.name,
                         "downloader_id": torrent.downloader_id,
                         "downloader_name": torrent.downloader_name,
-                        "file_restored": restore_info["renamed"]
+                        "file_restored": restore_info["renamed"],
                     }
 
                     # 如果文件还原成功，记录到审计日志
@@ -329,31 +348,24 @@ class RecycleBinService:
                         old_value={"status": "in_recycle_bin"},
                         new_value={"status": "active"},
                         operation_result=AuditOperationResult.SUCCESS,
-                        downloader_id=torrent.downloader_id
+                        downloader_id=torrent.downloader_id,
+                        ip_address=_extract_audit_info(request).get("ip_address"),
+                        user_agent=_extract_audit_info(request).get("user_agent"),
                     )
 
                 result["success_count"] += 1
-                result["success_list"].append({
-                    "torrent_id": torrent_id,
-                    "torrent_name": torrent.name
-                })
+                result["success_list"].append({"torrent_id": torrent_id, "torrent_name": torrent.name})
                 logger.info(f"种子还原成功: {torrent.name}")
 
             except Exception as e:
                 result["failed_count"] += 1
-                result["failed_list"].append({
-                    "torrent_id": torrent_id,
-                    "reason": f"还原异常: {str(e)}"
-                })
+                result["failed_list"].append({"torrent_id": torrent_id, "reason": f"还原异常: {str(e)}"})
                 logger.error(f"还原种子异常: {torrent_id}, 错误: {e}", exc_info=True)
 
         return result
 
     async def _restore_torrent_to_downloader(
-        self,
-        torrent: TorrentInfo,
-        downloader: BtDownloaders,
-        app=None
+        self, torrent: TorrentInfo, downloader: BtDownloaders, app=None
     ) -> Dict[str, Any]:
         """
         重新添加种子到下载器
@@ -369,36 +381,24 @@ class RecycleBinService:
         try:
             # 步骤1：检查 app 对象和缓存初始化（CLAUDE.md 第16条规范）
             if not app:
-                return {
-                    "success": False,
-                    "error": "app对象未提供，无法获取缓存的客户端连接"
-                }
+                return {"success": False, "error": "app对象未提供，无法获取缓存的客户端连接"}
 
-            if not hasattr(app.state, 'store'):
-                return {
-                    "success": False,
-                    "error": "下载器缓存未初始化（app.state.store不存在）"
-                }
+            if not hasattr(app.state, "store"):
+                return {"success": False, "error": "下载器缓存未初始化（app.state.store不存在）"}
 
             # 步骤2：从缓存获取下载器
             cached_downloaders = app.state.store.get_snapshot_sync()
-            downloader_vo = next(
-                (d for d in cached_downloaders if d.downloader_id == downloader.downloader_id),
-                None
-            )
+            downloader_vo = next((d for d in cached_downloaders if d.downloader_id == downloader.downloader_id), None)
 
             # 步骤3：验证下载器是否在缓存中
             if not downloader_vo:
-                return {
-                    "success": False,
-                    "error": f"下载器不在缓存中 [downloader_id={downloader.downloader_id}]"
-                }
+                return {"success": False, "error": f"下载器不在缓存中 [downloader_id={downloader.downloader_id}]"}
 
             # 步骤4：验证下载器是否有效（fail_time=0 表示有效）
-            if hasattr(downloader_vo, 'fail_time') and downloader_vo.fail_time > 0:
+            if hasattr(downloader_vo, "fail_time") and downloader_vo.fail_time > 0:
                 return {
                     "success": False,
-                    "error": f"下载器已失效 [downloader_id={downloader.downloader_id}, nickname={downloader_vo.nickname}]"
+                    "error": f"下载器已失效 [downloader_id={downloader.downloader_id}, nickname={downloader_vo.nickname}]",
                 }
 
             # 步骤5：获取缓存的客户端连接
@@ -406,10 +406,7 @@ class RecycleBinService:
 
             # 步骤6：验证客户端是否存在
             if not client:
-                return {
-                    "success": False,
-                    "error": f"下载器客户端连接不存在 [downloader_id={downloader.downloader_id}]"
-                }
+                return {"success": False, "error": f"下载器客户端连接不存在 [downloader_id={downloader.downloader_id}]"}
 
             # 步骤7：读取种子文件内容
             def read_torrent_file():
@@ -422,56 +419,68 @@ class RecycleBinService:
             # 步骤8：使用缓存的客户端执行操作
             if downloader.is_qbittorrent:
                 # 使用缓存的qBittorrent客户端
-                client.torrents_add(
-                    torrent_files=file_bytes,
-                    save_path=torrent.save_path,
-                    is_stopped=True,  # 还原后默认暂停，让用户手动开始
-                    skip_checking=True  # 跳过哈希校验
+                # P0-04 修复：torrents_add 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                await call_downloader_api(
+                    downloader_vo.downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.torrents_add,
+                    kwargs={
+                        "torrent_files": file_bytes,
+                        "save_path": torrent.save_path,
+                        "is_stopped": True,  # 还原后默认暂停，让用户手动开始
+                        "skip_checking": True,  # 跳过哈希校验
+                    },
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_qb_add_torrent",
                 )
 
                 # 等待qBittorrent处理种子
-                await self._wait_for_qb_torrent(client, torrent.hash)
+                await self._wait_for_qb_torrent(downloader_vo.downloader_id, client, torrent.hash or "")
 
                 return {"success": True}
 
             elif downloader.is_transmission:
                 # 使用缓存的Transmission客户端
                 # 注意：Transmission的add_torrent()不支持skip_checking参数
-                client.add_torrent(
-                    file_bytes,
-                    paused=True,  # 还原后默认暂停
-                    download_dir=torrent.save_path
+                # P0-04 修复：add_torrent 经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                await call_downloader_api(
+                    downloader_vo.downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    client.add_torrent,
+                    args=(file_bytes,),
+                    kwargs={"paused": True, "download_dir": torrent.save_path},  # 还原后默认暂停
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_tr_add_torrent",
                 )
 
                 # 等待Transmission处理种子
-                await self._wait_for_tr_torrent(client, torrent.hash)
+                await self._wait_for_tr_torrent(downloader_vo.downloader_id, client, torrent.hash or "")
 
                 return {"success": True}
 
             else:
-                return {
-                    "success": False,
-                    "error": f"不支持的下载器类型: {downloader.downloader_type}"
-                }
+                return {"success": False, "error": f"不支持的下载器类型: {downloader.downloader_type}"}
 
         except Exception as e:
             logger.error(f"重新添加种子到下载器失败: {str(e)}", exc_info=True)
-            return {
-                "success": False,
-                "error": str(e)
-            }
+            return {"success": False, "error": str(e)}
 
     async def _wait_for_qb_torrent(
-        self,
-        qb_client: qbClient,
-        torrent_hash: str,
-        max_retries: int = 30
+        self, downloader_id: str, qb_client: Any, torrent_hash: str, max_retries: int = 30
     ) -> bool:
-        """等待qBittorrent处理种子"""
+        """等待qBittorrent处理种子（轮询单次调用经 INTERACTIVE lane 执行）"""
         for _ in range(max_retries):
             await asyncio.sleep(1)
             try:
-                torrents = qb_client.torrents_info(torrent_hashes=torrent_hash)
+                # P0-04 修复：轮询内的 torrents_info 经 INTERACTIVE lane 线程池执行
+                torrents = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    qb_client.torrents_info,
+                    kwargs={"torrent_hashes": torrent_hash},
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_qb_wait_torrent",
+                )
                 if torrents and len(torrents) > 0:
                     return True
             except Exception:
@@ -479,26 +488,28 @@ class RecycleBinService:
         return False
 
     async def _wait_for_tr_torrent(
-        self,
-        tr_client: trClient,
-        torrent_hash: str,
-        max_retries: int = 30
+        self, downloader_id: str, tr_client: Any, torrent_hash: str, max_retries: int = 30
     ) -> bool:
-        """等待Transmission处理种子"""
+        """等待Transmission处理种子（轮询单次调用经 INTERACTIVE lane 执行）"""
         for _ in range(max_retries):
             await asyncio.sleep(1)
             try:
-                torrent = tr_client.get_torrent(torrent_hash)
+                # P0-04 修复：轮询内的 get_torrent 经 INTERACTIVE lane 线程池执行
+                torrent = await call_downloader_api(
+                    downloader_id,
+                    DownloadLane.INTERACTIVE,
+                    tr_client.get_torrent,
+                    args=(torrent_hash,),
+                    timeout=_RESTORE_CALL_TIMEOUT,
+                    operation="restore_tr_wait_torrent",
+                )
                 if torrent:
                     return True
             except Exception:
                 continue
         return False
 
-    async def _rollback_file_rename(
-        self,
-        restore_info: Dict[str, Any]
-    ) -> bool:
+    async def _rollback_file_rename(self, restore_info: Dict[str, Any]) -> bool:
         """
         回滚文件名修改
 
@@ -529,12 +540,7 @@ class RecycleBinService:
 
             # 在线程池中执行重命名操作
             loop = asyncio.get_event_loop()
-            await loop.run_in_executor(
-                None,
-                os.rename,
-                restored_path,
-                original_path
-            )
+            await loop.run_in_executor(None, os.rename, restored_path, original_path)
 
             logger.info(f"文件名回滚成功: {restored_path} -> {original_path}")
             return True
@@ -552,10 +558,7 @@ class RecycleBinService:
                 logger.warning(f"加载路径映射服务失败: {e}")
         return None
 
-    def cleanup_preview(
-        self,
-        days: int = 30
-    ) -> Dict[str, Any]:
+    def cleanup_preview(self, days: int = 30) -> Dict[str, Any]:
         """
         清理预览
 
@@ -577,12 +580,11 @@ class RecycleBinService:
             cutoff_time = datetime.now() - timedelta(days=days)
 
             # 查询符合条件的种子（仅 dr=0 可还原的种子）
-            torrents = self.db.query(TorrentInfo).filter(
-                and_(
-                    TorrentInfo.deleted_at < cutoff_time,
-                    TorrentInfo.dr == 0  # 只预览可还原的种子（dr=0）
-                )
-            ).all()
+            torrents = (
+                self.db.query(TorrentInfo)
+                .filter(and_(TorrentInfo.deleted_at < cutoff_time, TorrentInfo.dr == 0))  # 只预览可还原的种子（dr=0）
+                .all()
+            )
 
             # 计算总大小
             total_size = sum(t.size or 0 for t in torrents)
@@ -590,33 +592,24 @@ class RecycleBinService:
             # 构建预览列表
             torrent_list = []
             for torrent in torrents:
-                torrent_list.append({
-                    "info_id": torrent.info_id,
-                    "name": torrent.name,
-                    "size": torrent.size,
-                    "deleted_at": torrent.deleted_at.isoformat() if torrent.deleted_at else None,
-                    "save_path": torrent.save_path
-                })
+                torrent_list.append(
+                    {
+                        "info_id": torrent.info_id,
+                        "name": torrent.name,
+                        "size": torrent.size,
+                        "deleted_at": torrent.deleted_at.isoformat() if torrent.deleted_at else None,
+                        "save_path": torrent.save_path,
+                    }
+                )
 
-            return {
-                "total_count": len(torrents),
-                "total_size": total_size,
-                "torrent_list": torrent_list
-            }
+            return {"total_count": len(torrents), "total_size": total_size, "torrent_list": torrent_list}
 
         except Exception as e:
             logger.error(f"清理预览失败: {str(e)}", exc_info=True)
-            return {
-                "total_count": 0,
-                "total_size": 0,
-                "torrent_list": []
-            }
+            return {"total_count": 0, "total_size": 0, "torrent_list": []}
 
     async def manual_cleanup(
-        self,
-        torrent_ids: List[str],
-        operator: str,
-        audit_service=None
+        self, torrent_ids: List[str], operator: str, audit_service=None, request=None
     ) -> Dict[str, Any]:
         """
         手动清理回收站种子
@@ -640,32 +633,22 @@ class RecycleBinService:
                 "failed_list": List[Dict]
             }
         """
-        result = {
-            "success_count": 0,
-            "failed_count": 0,
-            "success_list": [],
-            "failed_list": []
-        }
+        result: Dict[str, Any] = {"success_count": 0, "failed_count": 0, "success_list": [], "failed_list": []}
 
         for torrent_id in torrent_ids:
             try:
                 # 查询种子信息（包含 dr=0 和 dr=1）
-                torrent = self.db.query(TorrentInfo).filter(
-                    TorrentInfo.info_id == torrent_id
-                ).first()
+                torrent = self.db.query(TorrentInfo).filter(TorrentInfo.info_id == torrent_id).first()
 
                 if not torrent:
                     result["failed_count"] += 1
-                    result["failed_list"].append({
-                        "torrent_id": torrent_id,
-                        "reason": "种子不存在"
-                    })
+                    result["failed_list"].append({"torrent_id": torrent_id, "reason": "种子不存在"})
                     continue
 
                 # 获取下载器信息
-                downloader = self.db.query(BtDownloaders).filter(
-                    BtDownloaders.downloader_id == torrent.downloader_id
-                ).first()
+                downloader = (
+                    self.db.query(BtDownloaders).filter(BtDownloaders.downloader_id == torrent.downloader_id).first()
+                )
 
                 # 步骤1: 精确删除种子文件 + 清理空文件夹
                 if downloader and torrent.save_path:
@@ -676,6 +659,7 @@ class RecycleBinService:
 
                         # ========== 1.1 读取原始文件列表 ==========
                         import json
+
                         original_file_list = None
                         if torrent.original_file_list:
                             try:
@@ -698,8 +682,10 @@ class RecycleBinService:
                                 # 🔥 修复1：移除种子名称前缀（针对多文件种子）
                                 # qBittorrent 返回格式: "[种子名]/vol01.cbz"
                                 # 实际需要格式: "vol01.cbz"
-                                if torrent.original_filename and file_rel_path.startswith(f"{torrent.original_filename}/"):
-                                    file_rel_path = file_rel_path[len(f"{torrent.original_filename}/"):]
+                                if torrent.original_filename and file_rel_path.startswith(
+                                    f"{torrent.original_filename}/"
+                                ):
+                                    file_rel_path = file_rel_path[len(f"{torrent.original_filename}/") :]
                                     logger.debug(f"[路径前缀移除] 原路径包含种子名，已移除前缀: {file_rel_path}")
 
                                 # 🔥 修复2：区分单文件和多文件种子的路径构建
@@ -710,17 +696,14 @@ class RecycleBinService:
                                 # 检查是否是单文件种子的 .pending_delete 文件
                                 # 特征：包含 .pending_delete 但后面有扩展名（不是以 / 结尾）
                                 is_single_file_with_pending = (
-                                    '.pending_delete' in file_rel_path and
-                                    not file_rel_path.endswith('/') and
-                                    '.' in os.path.basename(file_rel_path).split('.pending_delete')[-1]
+                                    ".pending_delete" in file_rel_path
+                                    and not file_rel_path.endswith("/")
+                                    and "." in os.path.basename(file_rel_path).split(".pending_delete")[-1]
                                 )
 
                                 if is_single_file_with_pending:
                                     # 单文件种子: /save_path/relpath（已经是完整路径，如 xxx.pending_delete.epub）
-                                    file_full_path = os.path.join(
-                                        external_save_path,
-                                        file_rel_path
-                                    )
+                                    file_full_path = os.path.join(external_save_path, file_rel_path)
                                     logger.debug(f"[单文件清理] 路径: {file_full_path}")
                                 else:
                                     # 多文件种子: /save_path/name.pending_delete/relpath
@@ -728,20 +711,19 @@ class RecycleBinService:
                                         file_full_path = os.path.join(
                                             external_save_path,
                                             f"{torrent.original_filename}.pending_delete",
-                                            file_rel_path
+                                            file_rel_path,
                                         )
                                         logger.debug(f"[多文件清理] 路径: {file_full_path}")
                                     else:
                                         # 回退方案：直接使用相对路径
-                                        file_full_path = os.path.join(
-                                            external_save_path,
-                                            file_rel_path
-                                        )
+                                        file_full_path = os.path.join(external_save_path, file_rel_path)
                                         logger.debug(f"[回退清理] 路径: {file_full_path}")
 
                                 try:
                                     # 🔥 使用智能路径检查，支持UNC路径格式降级
-                                    file_exists, actual_path = FileOperationService._check_file_exists_with_fallback(file_full_path)
+                                    file_exists, actual_path = FileOperationService._check_file_exists_with_fallback(
+                                        file_full_path
+                                    )
 
                                     if file_exists:
                                         os.remove(actual_path)
@@ -753,10 +735,7 @@ class RecycleBinService:
                                     failed_files.append(f"{file_rel_path}: {str(e)}")
                                     logger.warning(f"删除文件失败: {file_rel_path}, {e}")
 
-                            logger.info(
-                                f"精确删除完成: 成功 {len(deleted_files)} 个, "
-                                f"失败 {len(failed_files)} 个"
-                            )
+                            logger.info(f"精确删除完成: 成功 {len(deleted_files)} 个, " f"失败 {len(failed_files)} 个")
 
                             # 🔥 如果所有文件都删除失败，记录警告
                             if len(deleted_files) == 0 and len(original_file_list) > 0:
@@ -771,7 +750,9 @@ class RecycleBinService:
                             # 递归检查文件夹是否为空（使用智能路径检查）
                             def is_folder_empty(folder_path):
                                 """递归检查文件夹是否为空（没有文件）"""
-                                folder_exists, actual_folder_path = FileOperationService._check_file_exists_with_fallback(folder_path)
+                                folder_exists, actual_folder_path = (
+                                    FileOperationService._check_file_exists_with_fallback(folder_path)
+                                )
 
                                 if not folder_exists:
                                     return True
@@ -784,15 +765,17 @@ class RecycleBinService:
 
                             # 检查并删除 .pending_delete 文件夹（如果为空）
                             pending_delete_folder = os.path.join(
-                                external_save_path,
-                                f"{torrent.original_filename}.pending_delete"
+                                external_save_path, f"{torrent.original_filename}.pending_delete"
                             )
 
                             if is_folder_empty(pending_delete_folder):
                                 try:
                                     import shutil
+
                                     # 使用智能路径检查获取实际路径
-                                    folder_exists, actual_folder_path = FileOperationService._check_file_exists_with_fallback(pending_delete_folder)
+                                    folder_exists, actual_folder_path = (
+                                        FileOperationService._check_file_exists_with_fallback(pending_delete_folder)
+                                    )
 
                                     if folder_exists:
                                         shutil.rmtree(actual_folder_path)
@@ -804,13 +787,12 @@ class RecycleBinService:
 
                             # 检查并删除原文件夹（如果为空）
                             # 注意：这里只删除该种子任务创建的原文件夹，不影响其他种子任务
-                            original_folder = os.path.join(
-                                external_save_path,
-                                torrent.original_filename
-                            )
+                            original_folder = os.path.join(external_save_path, torrent.original_filename)
 
                             # 使用智能路径检查
-                            folder_exists, actual_folder_path = FileOperationService._check_file_exists_with_fallback(original_folder)
+                            folder_exists, actual_folder_path = FileOperationService._check_file_exists_with_fallback(
+                                original_folder
+                            )
 
                             if folder_exists and is_folder_empty(actual_folder_path):
                                 try:
@@ -829,7 +811,9 @@ class RecycleBinService:
                             logger.info(f"[清理单文件] 检查并删除: {pending_delete_file_path}")
 
                             # 使用智能路径检查
-                            file_exists, actual_path = FileOperationService._check_file_exists_with_fallback(pending_delete_file_path)
+                            file_exists, actual_path = FileOperationService._check_file_exists_with_fallback(
+                                pending_delete_file_path
+                            )
 
                             if file_exists:
                                 try:
@@ -855,29 +839,22 @@ class RecycleBinService:
                         operation_type=AuditOperationType.CLEANUP_L3,
                         operator=operator,
                         torrent_info_id=torrent.info_id,
-                        operation_detail={
-                            "torrent_name": torrent.name,
-                            "downloader_id": torrent.downloader_id
-                        },
+                        operation_detail={"torrent_name": torrent.name, "downloader_id": torrent.downloader_id},
                         old_value={"status": "in_recycle_bin"},
                         new_value={"status": "deleted"},
                         operation_result=AuditOperationResult.SUCCESS,
-                        downloader_id=torrent.downloader_id
+                        downloader_id=torrent.downloader_id,
+                        ip_address=_extract_audit_info(request).get("ip_address"),
+                        user_agent=_extract_audit_info(request).get("user_agent"),
                     )
 
                 result["success_count"] += 1
-                result["success_list"].append({
-                    "torrent_id": torrent_id,
-                    "torrent_name": torrent.name
-                })
+                result["success_list"].append({"torrent_id": torrent_id, "torrent_name": torrent.name})
                 logger.info(f"回收站种子清理成功: {torrent.name}")
 
             except Exception as e:
                 result["failed_count"] += 1
-                result["failed_list"].append({
-                    "torrent_id": torrent_id,
-                    "reason": f"清理异常: {str(e)}"
-                })
+                result["failed_list"].append({"torrent_id": torrent_id, "reason": f"清理异常: {str(e)}"})
                 logger.error(f"清理种子异常: {torrent_id}, 错误: {e}", exc_info=True)
 
         return result

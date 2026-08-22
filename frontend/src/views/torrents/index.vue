@@ -11,39 +11,42 @@
           @input="debouncedSearch"
           @keyup.enter.native="handleFilter"
         />
-        <el-select
+        <AdvancedMultiSelect
           v-model="listQuery.downloader_id"
-          placeholder="全部下载器"
-          clearable
-          multiple
-          collapse-tags
+          placeholder="请选择下载器"
+          :options="downloaderOptions"
+          :allow-create="false"
+          :show-mode-toggle="false"
+          :virtual-scroll-threshold="100"
+          :list-height="240"
           style="width: 200px;"
           class="search-select"
-          filterable
-        >
-          <el-option
-            v-for="downloader in downloaderList"
-            :key="downloader.downloader_id"
-            :label="downloader.nickname"
-            :value="downloader.downloader_id"
-          />
-        </el-select>
-        <el-select
+          @change="handleFilter"
+        />
+        <AdvancedMultiSelect
           v-model="listQuery.status"
-          placeholder="全部状态"
-          clearable
-          multiple
-          collapse-tags
+          placeholder="请选择种子状态"
+          :options="statusOptions"
+          :allow-create="false"
+          :show-mode-toggle="false"
+          :virtual-scroll-threshold="100"
+          :list-height="240"
           style="width: 180px;"
           class="search-select"
-        >
-        <el-option
-          v-for="option in statusOptions"
-          :key="option.value"
-          :label="option.label"
-          :value="option.value"
+          @change="handleFilter"
         />
-        </el-select>
+        <AdvancedMultiSelect
+          v-model="listQuery.tracker_domain"
+          placeholder="请选择tracker"
+          :options="trackerDomainOptions"
+          :allow-create="false"
+          :show-mode-toggle="false"
+          :virtual-scroll-threshold="100"
+          :list-height="240"
+          style="width: 220px;"
+          class="search-select"
+          @change="handleFilter"
+        />
         <el-checkbox
           v-model="listQuery.showActiveOnly"
           class="active-only-checkbox"
@@ -54,12 +57,22 @@
         <el-button class="search-btn" @click="handleFilter">
           搜索
         </el-button>
-        <el-button class="advanced-search-btn" @click="showAdvancedSearchDialog = true">
+        <el-button class="advanced-search-btn" @click="openAdvancedSearch">
           高级搜索
         </el-button>
-        <el-button class="duplicate-detection-btn" @click="handleShowDuplicateTorrents" >
-          🔍 查找重复任务
-        </el-button>
+        <label
+          class="duplicate-search-switch"
+          :class="{'is-active': showingDuplicates}"
+        >
+          <el-switch
+            v-model="showingDuplicates"
+            active-color="var(--color-success, #10b981)"
+            inactive-color="var(--color-border-secondary, #c0c4cc)"
+            aria-label="查找重复任务"
+            @change="handleDuplicateSearchToggle"
+          />
+          <span>查找重复任务</span>
+        </label>
         <el-button class="clear-btn" @click="handleClearFilter">
           清空
         </el-button>
@@ -69,12 +82,37 @@
       </div>
     </section>
 
+    <el-alert
+      v-if="showingSameContent"
+      class="same-content-list-alert"
+      title="辅种异常排查：当前列表仅显示名称、大小相同但 InfoHash 不同的种子"
+      type="warning"
+      :closable="false"
+      show-icon
+    >
+      <el-button type="text" @click="exitSameContentInspection">
+        退出排查并返回普通列表
+      </el-button>
+    </el-alert>
+    <el-alert
+      v-if="showingSingleErrors"
+      class="single-error-list-alert"
+      title="错误单种排查：当前列表仅显示错误且全局同内容唯一的种子"
+      type="error"
+      :closable="false"
+      show-icon
+    >
+      <el-button type="text" @click="exitSingleErrorInspection">
+        退出排查并返回普通列表
+      </el-button>
+    </el-alert>
+
     <!-- 批量操作工具栏 -->
     <section class="batch-operations">
       <!-- 批量开始 -->
       <batch-button
         type="success"
-        icon="el-icon-video-play"
+        lucide-icon="play"
         tooltip="开始"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchStart"
@@ -83,7 +121,7 @@
       <!-- 批量暂停 -->
       <batch-button
         type="warning"
-        icon="el-icon-video-pause"
+        lucide-icon="pause"
         tooltip="暂停"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchPause"
@@ -99,22 +137,22 @@
       >
         <batch-button
           type="danger"
-          icon="el-icon-delete"
+          lucide-icon="trash"
           tooltip="删除"
           :disabled="multipleSelection.length === 0"
         />
-        <el-dropdown-menu slot="dropdown">
+        <el-dropdown-menu slot="dropdown" class="delete-level-menu">
           <el-dropdown-item command="4">
-            <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
+            <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
           </el-dropdown-item>
           <el-dropdown-item command="3">
-            <i class="el-icon-folder-delete"></i> 等级3: 移至回收站
+            <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
           </el-dropdown-item>
           <el-dropdown-item command="2">
-            <i class="el-icon-delete"></i> 等级2: 删除任务(保留数据)
+            <LucideIcon class="menu-icon" name="trash" :size="14" />等级2: 删除任务(保留数据)
           </el-dropdown-item>
           <el-dropdown-item command="1" divided>
-            <i class="el-icon-warning"></i> 等级1: 完全删除
+            <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />等级1: 完全删除
           </el-dropdown-item>
         </el-dropdown-menu>
       </el-dropdown>
@@ -122,7 +160,7 @@
       <!-- 批量重检 -->
       <batch-button
         type="info"
-        icon="el-icon-refresh"
+        lucide-icon="refresh-cw"
         tooltip="重检"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchRecheck"
@@ -131,7 +169,7 @@
       <!-- Tracker操作 -->
       <batch-button
         type="default"
-        icon="el-icon-link"
+        lucide-icon="link"
         tooltip="Tracker操作"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchTracker"
@@ -140,7 +178,7 @@
       <!-- Tracker汇报 -->
       <batch-button
         type="info"
-        icon="el-icon-share"
+        lucide-icon="forward"
         tooltip="Tracker汇报"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchReannounce"
@@ -149,7 +187,7 @@
       <!-- 全局替换 -->
       <batch-button
         type="default"
-        icon="el-icon-setting"
+        lucide-icon="settings"
         tooltip="全局替换"
         @click="showGlobalReplaceDialog = true"
       />
@@ -157,7 +195,7 @@
       <!-- 批量转移 -->
       <batch-button
         type="info"
-        icon="el-icon-sort"
+        lucide-icon="route"
         tooltip="转移"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchTransfer"
@@ -166,18 +204,38 @@
       <!-- 批量修改路径 -->
       <batch-button
         type="primary"
-        icon="el-icon-folder-opened"
+        lucide-icon="folder-open"
         tooltip="修改路径"
         :disabled="multipleSelection.length === 0"
         @click="handleBatchSetLocation"
       />
+
+      <!-- 快捷操作（下拉） -->
+      <el-dropdown trigger="click" @command="handleQuickActionCommand">
+        <batch-button
+          type="default"
+          lucide-icon="zap"
+          tooltip="快捷操作"
+        />
+        <el-dropdown-menu slot="dropdown">
+          <el-dropdown-item command="inspect-same-content">
+            <i class="el-icon-search"></i> 辅种异常排查
+          </el-dropdown-item>
+          <el-dropdown-item command="inspect-single-errors">
+            <i class="el-icon-warning-outline"></i> 错误单种排查
+          </el-dropdown-item>
+          <el-dropdown-item command="delete-duplicates" divided>
+            <i class="el-icon-delete"></i> 快捷删除重复种子
+          </el-dropdown-item>
+        </el-dropdown-menu>
+      </el-dropdown>
 
       <div style="flex: 1;"></div>
 
       <!-- 添加种子 -->
       <batch-button
         type="primary"
-        icon="el-icon-plus"
+        lucide-icon="plus"
         tooltip="添加种子"
         @click="showAddDialog = true"
       />
@@ -185,10 +243,32 @@
       <!-- 列设置 -->
       <batch-button
         type="default"
-        icon="el-icon-setting"
+        lucide-icon="settings"
         tooltip="列设置"
         @click="showColumnSettings = true"
       />
+
+      <!-- 视图切换 -->
+      <div class="view-switcher">
+        <el-button
+          type="text"
+          size="small"
+          :class="{active: viewModeModule.currentMode === 'list'}"
+          @click="switchViewMode('list')"
+          title="列表模式"
+        >
+          <i class="el-icon-s-grid"></i>
+        </el-button>
+        <el-button
+          type="text"
+          size="small"
+          :class="{active: viewModeModule.currentMode === 'traditional'}"
+          @click="switchViewMode('traditional')"
+          title="传统模式"
+        >
+          <i class="el-icon-menu"></i>
+        </el-button>
+      </div>
     </section>
 
     <!-- 种子列表表格 -->
@@ -199,35 +279,250 @@
       element-loading-spinner="el-icon-loading"
       element-loading-background="rgba(0, 0, 0, 0.2)"
     >
-      <table class="torrent-table">
+      <table
+        class="torrent-table"
+        :style="{width: tableMinWidth + 'px', minWidth: tableMinWidth + 'px'}"
+      >
         <thead>
           <tr>
-            <th style="width: 50px;">
+            <th :style="columnWidthStyle('checkbox')">
               <el-checkbox
                 :indeterminate="isIndeterminate"
                 v-model="selectAll"
                 @change="handleSelectAll"
               />
             </th>
-            <th v-if="getColumnSetting('name').visible">种子名称</th>
-            <th v-if="getColumnSetting('downloadSpeed').visible" style="width: 100px;">下载速度</th>
-            <th v-if="getColumnSetting('uploadSpeed').visible" style="width: 100px;">上传速度</th>
-            <th v-if="getColumnSetting('size').visible" style="width: 100px;">大小</th>
-            <th v-if="getColumnSetting('progress').visible" style="width: 140px;">进度</th>
-            <th v-if="getColumnSetting('status').visible" style="width: 90px;">状态</th>
-            <th v-if="getColumnSetting('downloader').visible" style="width: 110px;">所属下载器</th>
-            <th v-if="getColumnSetting('ratio').visible" style="width: 70px;">比率</th>
-            <th v-if="getColumnSetting('category').visible" style="width: 180px;">分类/标签</th>
-            <th v-if="getColumnSetting('savePath').visible" style="width: 200px;">保存路径</th>
-            <th v-if="getColumnSetting('addedDate').visible" style="width: 130px;">添加时间</th>
-            <th v-if="getColumnSetting('actions').visible" class="action-column" style="width: 140px;">操作</th>
+            <th
+              v-if="getColumnSetting('name').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'name'}"
+              :style="columnWidthStyle('name')"
+              data-sort-field="name"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('name')"
+              title="按种子名称排序"
+              @click="handleSort('name')"
+              @keydown.enter.prevent="handleSort('name')"
+              @keydown.space.prevent="handleSort('name')"
+            >
+              种子名称
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('name')"
+                :size="13"
+                :stroke-width="2"
+              />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('name', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('name')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('downloadSpeed').visible" :style="columnWidthStyle('downloadSpeed')">
+              下载速度
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('downloadSpeed', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('downloadSpeed')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('uploadSpeed').visible" :style="columnWidthStyle('uploadSpeed')">
+              上传速度
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('uploadSpeed', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('uploadSpeed')"
+                @click.stop
+              ></span>
+            </th>
+            <th
+              v-if="getColumnSetting('size').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'size'}"
+              data-sort-field="size"
+              :style="columnWidthStyle('size')"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('size')"
+              title="按大小排序"
+              @click="handleSort('size')"
+              @keydown.enter.prevent="handleSort('size')"
+              @keydown.space.prevent="handleSort('size')"
+            >
+              大小
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('size')"
+                :size="13"
+                :stroke-width="2"
+              />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('size', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('size')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('auxiliarySeedCount').visible" :style="columnWidthStyle('auxiliarySeedCount')">
+              辅种数量
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('auxiliarySeedCount', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('auxiliarySeedCount')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('progress').visible" :style="columnWidthStyle('progress')">
+              进度
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('progress', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('progress')"
+                @click.stop
+              ></span>
+            </th>
+            <th
+              v-if="getColumnSetting('status').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'status'}"
+              data-sort-field="status"
+              :style="columnWidthStyle('status')"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('status')"
+              title="按状态排序"
+              @click="handleSort('status')"
+              @keydown.enter.prevent="handleSort('status')"
+              @keydown.space.prevent="handleSort('status')"
+            >
+              状态
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('status')"
+                :size="13"
+                :stroke-width="2"
+              />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('status', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('status')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('downloader').visible" :style="columnWidthStyle('downloader')">
+              所属下载器
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('downloader', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('downloader')"
+                @click.stop
+              ></span>
+            </th>
+            <th
+              v-if="getColumnSetting('ratio').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'ratio'}"
+              data-sort-field="ratio"
+              :style="columnWidthStyle('ratio')"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('ratio')"
+              title="按比率排序"
+              @click="handleSort('ratio')"
+              @keydown.enter.prevent="handleSort('ratio')"
+              @keydown.space.prevent="handleSort('ratio')"
+            >
+              比率
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('ratio')"
+                :size="13"
+                :stroke-width="2"
+              />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('ratio', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('ratio')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('category').visible" :style="columnWidthStyle('category')">
+              分类/标签
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('category', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('category')"
+                @click.stop
+              ></span>
+            </th>
+            <th v-if="getColumnSetting('savePath').visible" :style="columnWidthStyle('savePath')">
+              保存路径
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('savePath', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('savePath')"
+                @click.stop
+              ></span>
+            </th>
+            <th
+              v-if="getColumnSetting('addedDate').visible"
+              class="sortable-column"
+              :class="{sorted: listQuery.sort_by === 'added_date'}"
+              data-sort-field="added_date"
+              :style="columnWidthStyle('addedDate')"
+              tabindex="0"
+              :aria-sort="getSortAriaValue('added_date')"
+              title="按添加时间排序"
+              @click="handleSort('added_date')"
+              @keydown.enter.prevent="handleSort('added_date')"
+              @keydown.space.prevent="handleSort('added_date')"
+            >
+              添加时间
+              <LucideIcon
+                class="sort-icon"
+                :name="getSortIconName('added_date')"
+                :size="13"
+                :stroke-width="2"
+              />
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('addedDate', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('addedDate')"
+                @click.stop
+              ></span>
+            </th>
+            <th
+              v-if="getColumnSetting('actions').visible"
+              class="action-column"
+              :style="columnWidthStyle('actions')"
+            >
+              操作
+              <span
+                class="column-resizer"
+                title="拖拽调整列宽，双击恢复默认"
+                @mousedown.stop.prevent="startColumnResize('actions', $event)"
+                @dblclick.stop.prevent="handleColumnResizeDblclick('actions')"
+                @click.stop
+              ></span>
+            </th>
           </tr>
         </thead>
         <tbody>
           <tr
             v-for="(torrent, index) in sortedList"
             :key="`${torrent.hash}-${torrent.downloaderId || torrent.downloader_id}-${index}`"
-            :class="{selected: currentRow?.hash === torrent.hash}"
+            :class="{selected: currentRow && currentRow.hash === torrent.hash}"
             @click="handleRowClick(torrent)"
           >
             <td>
@@ -242,12 +537,26 @@
                 <div
                   class="torrent-status-icon"
                   :class="torrent.status"
+                  :title="showTrackerErrorTag(torrent) ? `${getStatusText(torrent.status)}（Tracker异常）` : ''"
                 >
-                  {{ getStatusIcon(torrent.status) }}
+                  <LucideIcon
+                    :name="getStatusIcon(torrent.status)"
+                    :size="10"
+                    :stroke-width="2.5"
+                  />
                 </div>
-                <div class="torrent-name-text" :title="torrent.name">
-                  {{ torrent.name }}
-                </div>
+                <el-tooltip
+                  :disabled="!getTorrentErrorReason(torrent)"
+                  :content="getTorrentErrorReason(torrent)"
+                  placement="top"
+                >
+                  <div
+                    class="torrent-name-text"
+                    :title="getTorrentErrorReason(torrent) ? '' : torrent.name"
+                  >
+                    {{ torrent.name }}
+                  </div>
+                </el-tooltip>
               </div>
             </td>
             <td v-if="getColumnSetting('downloadSpeed').visible">
@@ -257,6 +566,7 @@
               <span class="speed-value upload">{{ formatSpeed(getTorrentSpeed(torrent, 'upload')) }}</span>
             </td>
             <td v-if="getColumnSetting('size').visible">{{ formatFileSize(torrent.size) }}</td>
+            <td v-if="getColumnSetting('auxiliarySeedCount').visible">{{ torrent.auxiliarySeedCount || 1 }}</td>
             <td v-if="getColumnSetting('progress').visible">
               <div class="progress-wrapper">
                 <div class="progress-bar">
@@ -277,6 +587,11 @@
               <span class="status-badge" :class="torrent.status">
                 {{ getStatusText(torrent.status) }}
               </span>
+              <span
+                v-if="showTrackerErrorTag(torrent)"
+                class="tracker-error-tag"
+                :title="getTorrentErrorReason(torrent)"
+              >Tracker异常</span>
             </td>
             <td v-if="getColumnSetting('downloader').visible">{{ torrent.downloaderName || '-' }}</td>
             <td v-if="getColumnSetting('ratio').visible">{{ formatRatio(torrent.ratio) }}</td>
@@ -298,20 +613,24 @@
                   :class="torrent.status === 'paused' ? 'play' : 'pause'"
                   @click.stop="handleTogglePause(torrent)"
                 >
-                  {{ torrent.status === 'paused' ? '▶️' : '⏸️' }}
+                  <LucideIcon
+                    :name="torrent.status === 'paused' ? 'play' : 'pause'"
+                    :size="14"
+                  />
                 </button>
                 <button
                   class="action-btn refresh"
                   @click.stop="handleRecheck(torrent)"
+                  title="重新检查"
                 >
-                  🔄
+                  <LucideIcon name="refresh-cw" :size="14" />
                 </button>
                 <button
                   class="action-btn location"
                   @click.stop="handleSetLocation(torrent)"
                   title="修改保存路径"
                 >
-                  📁
+                  <LucideIcon name="folder-open" :size="14" />
                 </button>
                 <el-dropdown
                   @command="(cmd) => handleDeleteCommand(cmd, torrent)"
@@ -321,20 +640,20 @@
                   @click.native.stop
                 >
                   <button class="action-btn delete">
-                    🗑️
+                    <LucideIcon name="trash" :size="14" />
                   </button>
-                  <el-dropdown-menu slot="dropdown">
+                  <el-dropdown-menu slot="dropdown" class="delete-level-menu">
                     <el-dropdown-item command="4">
-                      <i class="el-icon-tag"></i> 等级4: 标记为待删除(推荐)
+                      <LucideIcon class="menu-icon" name="tag" :size="14" />等级4: 标记为待删除(推荐)
                     </el-dropdown-item>
                     <el-dropdown-item command="3">
-                      <i class="el-icon-folder-delete"></i> 等级3: 移至回收站
+                      <LucideIcon class="menu-icon" name="trash-2" :size="14" />等级3: 移至回收站
                     </el-dropdown-item>
                     <el-dropdown-item command="2">
-                      <i class="el-icon-delete"></i> 等级2: 删除任务(保留数据)
+                      <LucideIcon class="menu-icon" name="trash" :size="14" />等级2: 删除任务(保留数据)
                     </el-dropdown-item>
                     <el-dropdown-item command="1" divided>
-                      <i class="el-icon-warning"></i> 等级1: 完全删除
+                      <LucideIcon class="menu-icon danger" name="alert-triangle" :size="14" />等级1: 完全删除
                     </el-dropdown-item>
                   </el-dropdown-menu>
                 </el-dropdown>
@@ -345,105 +664,45 @@
       </table>
     </section>
 
-    <!-- Tracker详情卡片 -->
-    <section
-      class="tracker-detail-card"
-      :class="{active: showTrackerDetail && currentRow}"
-    >
-      <div class="tracker-header">
-        <h3 class="tracker-title">
-          📊 Tracker详情 - {{ currentRow?.name }}
-        </h3>
-        <button class="tracker-close" @click="handleCloseTrackerDetail">
-          ✕
-        </button>
-      </div>
-      <div class="tracker-table-wrapper">
-        <table class="tracker-table">
-          <thead>
-            <tr>
-              <th>Tracker名称</th>
-              <th>Tracker地址</th>
-              <th style="width: 100px;">Announce状态</th>
-              <th>Announce信息</th>
-              <th style="width: 100px;">Scrape状态</th>
-              <th>Scrape信息</th>
-              <th style="width: 80px;" class="tracker-sticky-col">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="(tracker, index) in (currentRow?.tracker_info || currentRow?.trackerInfo || [])"
-              :key="index"
-            >
-              <td>{{ tracker.tracker_name || tracker.trackerName || '未知' }}</td>
-              <td :title="tracker.tracker_url || tracker.trackerUrl">{{ tracker.tracker_url || tracker.trackerUrl || '-' }}</td>
-              <td>
-                <span
-                  :class="getTrackerStatusClass(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)"
-                >
-                  <template v-if="isTrackerSuccess(tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded)">
-                    ✓ 工作
-                  </template>
-                  <template v-else>
-                    ✗ {{ tracker.last_announce_succeeded || tracker.lastAnnounceSucceeded || '失败' }}
-                  </template>
-                </span>
-              </td>
-              <td>{{ tracker.last_announce_msg || tracker.lastAnnounceMsg || '-' }}</td>
-              <td>
-                <span
-                  :class="getTrackerStatusClass(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)"
-                >
-                  <template v-if="isTrackerSuccess(tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded)">
-                    ✓ 工作
-                  </template>
-                  <template v-else>
-                    ✗ {{ tracker.last_scrape_succeeded || tracker.lastScrapeSucceeded || '失败' }}
-                  </template>
-                </span>
-              </td>
-              <td>{{ tracker.last_scrape_msg || tracker.lastScrapeMsg || '-' }}</td>
-              <td class="tracker-sticky-col">
-                <el-button
-                  type="text"
-                  size="small"
-                  :loading="tracker.reannouncing"
-                  @click="handleTrackerReannounce(tracker, index)"
-                >
-                  汇报
-                </el-button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+    <!-- Tracker详情卡片；弹框骨架与传统模式共用 TrackerDetailCard -->
+    <TrackerDetailCard
+      :visible="showTrackerDetail && !!currentRow"
+      layout="list"
+      :torrent-name="(currentRow && currentRow.name) || ''"
+      :active-tab.sync="activeDetailTab"
+      :tabs="detailTabs"
+      :tracker-info="(currentRow && (currentRow.tracker_info || currentRow.trackerInfo)) || []"
+      :error-reason="getTorrentErrorReason(currentRow)"
+      @close="handleCloseTrackerDetail"
+      @reannounce="handleTrackerReannounce"
+    />
 
     <!-- 分页 -->
     <nav class="torrent-pagination">
-      <span class="pagination-info">共 {{ total }} 条，第 {{ currentPage }}/{{ totalPages }} 页</span>
+      <div class="pagination-info">
+        <PageSizeCombobox
+          ref="pageSizeCombobox"
+          :append-to-body="true"
+          v-model="pageSizeInput"
+          :page-size="pageSize"
+          :options="pageSizeOptions"
+          :expanded="pageSizeDropdownExpanded"
+          controls-id="list-page-size-options"
+          @focus="handlePageSizeFocus"
+          @blur="handlePageSizeBlur"
+          @toggle="togglePageSizeDropdown"
+          @apply="applyPageSizeSelection"
+          @select="handlePageSizeSelect"
+        />
+        <span class="pagination-summary">共 <strong>{{ total }}</strong> 条，第 <strong>{{ currentPage }}</strong>/<strong>{{ totalPages }}</strong> 页</span>
+      </div>
       <div class="pagination-controls">
-        <!-- 每页条数选择器 -->
-        <el-select
-          v-model="pageSize"
-          class="page-size-select"
-          @change="handlePageSizeChange"
-        >
-          <el-option
-            v-for="size in pageSizeOptions"
-            :key="size"
-            :label="`${size} 条/页`"
-            :value="size"
-          />
-        </el-select>
-
         <button
           class="pagination-btn"
           :disabled="currentPage <= 1"
           @click="handlePageChange(currentPage - 1)"
         >
-          ◀
+          <LucideIcon name="chevron-left" :size="14" />
         </button>
         <button
           v-for="page in visiblePages"
@@ -459,7 +718,7 @@
           :disabled="currentPage >= totalPages"
           @click="handlePageChange(currentPage + 1)"
         >
-          ▶
+          <LucideIcon name="chevron-right" :size="14" />
         </button>
       </div>
     </nav>
@@ -472,8 +731,13 @@
     >
       <div class="modal-dialog" style="max-width: 700px;">
         <div class="modal-header">
-          <h3 class="modal-title">⚙️ 列设置</h3>
-          <button class="modal-close" @click="showColumnSettings = false">✕</button>
+          <h3 class="modal-title">
+            <LucideIcon name="settings" :size="18" style="margin-right: 6px; vertical-align: middle;" />
+            列设置
+          </h3>
+          <button class="modal-close" @click="showColumnSettings = false">
+            <LucideIcon name="x" :size="16" />
+          </button>
         </div>
         <div class="modal-body">
           <div class="columns-grid">
@@ -493,6 +757,7 @@
         <div class="modal-footer">
           <div class="modal-footer-left">
             <button class="btn-secondary" @click="resetColumnSettings">重置</button>
+            <button class="btn-secondary" @click="handleResetColumnWidths">重置列宽</button>
           </div>
           <div class="modal-footer-right">
             <button class="btn-secondary" @click="showColumnSettings = false">取消</button>
@@ -546,37 +811,54 @@
 
     <!-- 高级搜索对话框 -->
     <el-dialog
-      title="🔍 高级搜索"
       :visible.sync="showAdvancedSearchDialog"
       width="80%"
       :close-on-click-modal="false"
       :close-on-press-escape="false"
       class="advanced-search-dialog"
     >
-      <AdvancedSearchBuilder
+      <template slot="title">
+        <span class="advanced-search-dialog__title">
+          <LucideIcon name="sliders-horizontal" :size="16" />
+          <span>高级搜索</span>
+        </span>
+      </template>
+      <AdvancedSearchWorkspace
         ref="advancedSearchBuilder"
         :searching="advancedSearchSearching"
+        :sort-by="listQuery.sort_by"
+        :sort-order="listQuery.sort_order"
         @search="handleAdvancedSearchFromBuilder"
         @reset="handleResetAdvancedSearch"
-        @save-template="handleSaveSearchTemplate"
+        @template-loaded="handleAdvancedTemplateLoaded"
       />
     </el-dialog>
 
-    <!-- 重复检测对话框（不再需要弹窗，结果直接显示在主列表中） -->
-    <!-- <DuplicateTorrentsDialog
-      :visible.sync="showDuplicateTorrentsDialog"
-      @close="handleDuplicateTorrentsDialogClose"
-      @refresh="handleRefreshDuplicateTorrents"
-    /> -->
+    <!-- 快捷删除重复种子对话框 -->
+    <QuickDeleteDuplicatesDialog
+      :visible.sync="showQuickDeleteDuplicatesDialog"
+      @close="showQuickDeleteDuplicatesDialog = false"
+      @deleted="handleQuickDeleteDeleted"
+    />
+
   </div>
 </template>
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component } from 'vue-property-decorator'
+import { mixins } from 'vue-class-component'
 import BatchButton from '@/components/BatchButton/index.vue'
+import PageSizeCombobox from '@/components/torrents/PageSizeCombobox.vue'
+import AdvancedMultiSelect from '@/components/torrents/AdvancedMultiSelect.vue'
+import type { SelectOption } from '@/components/torrents/AdvancedMultiSelect.vue'
+import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
+import QuickDeleteDuplicatesDialog from '@/components/torrents/QuickDeleteDuplicatesDialog.vue'
+import TrackerDetailCard from './components/TrackerDetailCard.vue'
+import { ViewModeModule, ViewModeType } from '@/store/modules/viewMode'
+import TorrentBatchMixin from './mixins/torrentBatch'
+import SpeedPollingMixin from './mixins/speedPolling'
+import ColumnResizeMixin from './mixins/columnResize'
 import {
   getTorrentList,
-  addTorrent,
-  deleteTorrents,
   deleteTorrentsWithLevel,
   deleteBatchAsync,
   getBatchDeleteStatus,
@@ -586,9 +868,13 @@ import {
   advancedSearch,
   getDuplicateTorrents,
   getDownloaderList,
+  getTrackerDomains,
   DownloaderSimple,
   reannounceTorrents,
-  getActiveTorrents
+  getActiveTorrents,
+  applySearchTemplate,
+  type Torrent,
+  type QueryTemplateConditions
 } from '@/api/torrents'
 import { TorrentStatus } from '@/types/torrent'
 import { STATUS_OPTIONS, getStatusIcon, getStatusText } from '@/constants/status-config'
@@ -601,27 +887,85 @@ import {
   formatSpeed,
   formatDate,
   formatRatio,
-  truncateText,
   extractErrorMessage,
   normalizePaginatedResponse,
   debounce
 } from '@/utils/formatters'
+import {
+  getTorrentSpeed as getTorrentSpeedFromSnapshot,
+  deriveVisibleTorrentList,
+  buildSpeedSnapshot,
+  needsActiveSnapshotRefresh,
+  buildAdvancedSearchRequest,
+  buildAdvancedSearchRequestFromTemplateGroups,
+  getTorrentErrorReason as sharedErrorReason,
+  showTrackerErrorTag as sharedShowTrackerErrorTag
+} from './utils/torrentBatch'
+import type { AdvancedSearchBuilderParams } from '@/components/torrents/advancedSearchState'
+import { normalizeTraditionalPageSize } from './utils/traditionalPagination'
+
+interface PageSizeSuggestion {
+  value: string
+}
+
+type TorrentSortField = 'name' | 'size' | 'status' | 'ratio' | 'added_date'
+type TorrentSortIconName = 'arrow-up-down' | 'arrow-up' | 'arrow-down'
 
 @Component({
   name: 'TorrentsManagement',
   components: {
     BatchButton,
+    PageSizeCombobox,
+    AdvancedMultiSelect,
+    AdvancedSearchWorkspace,
+    TrackerDetailCard,
     BatchOperationDialog: () => import('./components/BatchOperationDialog.vue'),
-    AdvancedSearchBuilder: () => import('@/components/torrents/AdvancedSearchBuilder.vue'),
     TorrentAddDialog: () => import('./components/TorrentAddDialog.vue'),
     TrackerOperationDialog: () => import('./components/TrackerOperationDialog.vue'),
     GlobalReplaceTrackerDialog: () => import('./components/GlobalReplaceTrackerDialog.vue'),
     BatchTransferDialog: () => import('./components/BatchTransferDialog.vue'),
     SetLocationDialog: () => import('./components/SetLocationDialog.vue'),
+    QuickDeleteDuplicatesDialog
     // DuplicateTorrentsDialog: () => import('@/components/torrents/DuplicateTorrentsDialog.vue') // 不再需要弹窗
   }
 })
-export default class extends Vue {
+export default class extends mixins(TorrentBatchMixin, SpeedPollingMixin, ColumnResizeMixin) {
+  // 视图模式管理
+  private viewModeModule = ViewModeModule
+
+  // ====== 列宽拖拽（ColumnResizeMixin 契约字段） ======
+  protected columnWidthStorageKey = 'btdeck_torrents_column_widths'
+  protected defaultColumnWidths: Record<string, number> = {
+    checkbox: 50,
+    name: 400,
+    downloadSpeed: 100,
+    uploadSpeed: 100,
+    size: 100,
+    auxiliarySeedCount: 90,
+    progress: 140,
+    status: 130,
+    downloader: 110,
+    ratio: 70,
+    category: 180,
+    savePath: 200,
+    addedDate: 130,
+    actions: 140
+  }
+
+  /** 表级宽度：可见列宽之和（严格列宽，qBittorrent 风格；含名称列，视口富余时右侧留白） */
+  get tableMinWidth(): number {
+    const fixedKeys = ['checkbox', 'actions']
+    const optionalKeys = [
+      'name', 'downloadSpeed', 'uploadSpeed', 'size', 'auxiliarySeedCount', 'progress',
+      'status', 'downloader', 'ratio', 'category', 'savePath', 'addedDate'
+    ]
+    const visibleKeys = [
+      ...fixedKeys,
+      ...optionalKeys.filter(key => this.getColumnSetting(key).visible)
+    ]
+    return this.sumColumnWidths(visibleKeys)
+  }
+
   // 主题相关
   private currentTheme: ThemeType = 'emerald'
   private allThemes = ThemeManager.getAllThemes()
@@ -632,15 +976,18 @@ export default class extends Vue {
   private listLoading = true
   private multipleSelection: any[] = []
 
-  // 实时速度轮询
-  private speedTimer: number | null = null
-  private _isDestroyed = false
+  // 实时速度轮询（speedTimer/speedPollingActive 由 SpeedPollingMixin 提供）
+  private speedSnapshotReady = false
   private activeSpeedMap: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
+  private activeListRetryPending = false
+  private activeListRetryInFlight = false
 
   // 分页相关
   private currentPage = 1
   private pageSize = 20
-  private pageSizeOptions = [10, 20, 50, 100, 200]
+  private pageSizeInput = '20'
+  private pageSizeOptions = [20, 50, 100, 500, 1000]
+  private pageSizeDropdownExpanded = false
 
   // 复选框相关
   private selectAll = false
@@ -655,7 +1002,14 @@ export default class extends Vue {
   private showAdvancedSearchDialog = false
   private showBatchTransferDialog = false
   private showSetLocationDialog = false
+  private showQuickDeleteDuplicatesDialog = false
   private advancedSearchSearching = false
+  private showingDuplicates = false
+  private showingSameContent = false
+  private showingSingleErrors = false
+
+  // Tracker 主域名筛选选项（由定时 Tracker 同步结果生成）
+  private trackerDomainList: string[] = []
 
   // 修改路径相关
   private selectedTorrentsForLocation: any[] = []
@@ -663,33 +1017,8 @@ export default class extends Vue {
   // 重复检测相关（不再需要弹窗）
   // private showDuplicateTorrentsDialog = false
 
-  // 批量操作
-  // 辅助方法：按下载器ID分组种子
-  private groupTorrentsByDownloader(torrents: Torrent[]) {
-    const groups: Record<string, Torrent[]> = {}
-    torrents.forEach(torrent => {
-      // P1-1修复：添加空值检查，防止torrent对象为null/undefined
-      if (!torrent) {
-        console.warn('跳过空种子对象')
-        return
-      }
-
-      // P1-1修复：使用可选链操作符防止属性访问异常
-      const downloaderId = torrent?.downloader_id || torrent?.downloaderId
-
-      // P1-1修复：如果无法获取下载器ID，跳过该种子
-      if (!downloaderId) {
-        console.warn('种子缺少下载器ID，跳过:', torrent)
-        return
-      }
-
-      if (!groups[downloaderId]) {
-        groups[downloaderId] = []
-      }
-      groups[downloaderId].push(torrent)
-    })
-    return groups
-  }
+  // 辅助方法 groupTorrentsByDownloader 已由 TorrentBatchMixin 提供，
+  // 此处删除视图内的重复实现，消除回归风险（防 Bug#1/#4）。
 
   private batchOperation = ''
   private selectedTorrentsForTracker: any[] = []
@@ -698,6 +1027,12 @@ export default class extends Vue {
   // Tracker详情
   private showTrackerDetail = false
   private currentRow: any = null
+  private activeDetailTab = 'tracker'
+  private detailTabs = [
+    { label: 'Tracker', value: 'tracker' },
+    { label: '文件', value: 'files' },
+    { label: 'Peers', value: 'peers' }
+  ]
 
   // 搜索相关
   private listQuery = {
@@ -706,7 +1041,8 @@ export default class extends Vue {
     name_like: '',
     downloader_id: [] as string[],  // 支持多选
     status: [] as string[],         // 支持多选
-    showActiveOnly: false,          // 仅显示活动种子（有速度的种子）
+    tracker_domain: [] as string[], // Tracker主域名多选
+    showActiveOnly: false,          // 仅显示活动种子（UI 开关，映射为后端 active_only 过滤）
     sort_by: 'added_date',
     sort_order: 'desc'
   }
@@ -717,6 +1053,7 @@ export default class extends Vue {
     { key: 'downloadSpeed', label: '下载速度', visible: true },
     { key: 'uploadSpeed', label: '上传速度', visible: true },
     { key: 'size', label: '大小', visible: true },
+    { key: 'auxiliarySeedCount', label: '辅种数量', visible: true },
     { key: 'progress', label: '进度', visible: true },
     { key: 'status', label: '状态', visible: true },
     { key: 'downloader', label: '所属下载器', visible: true },
@@ -737,6 +1074,21 @@ export default class extends Vue {
    */
   get statusOptions() {
     return STATUS_OPTIONS
+  }
+  /**
+   * 下载器选项列表（映射为 AdvancedMultiSelect 所需的 {value,label} 结构）
+   */
+  get downloaderOptions() {
+    return this.downloaderList.map(downloader => ({
+      value: downloader.downloader_id,
+      label: downloader.nickname
+    }))
+  }
+  get trackerDomainOptions(): SelectOption[] {
+    return this.trackerDomainList.map(domain => ({
+      value: domain,
+      label: domain
+    }))
   }
   /**
    * 计算总页数（修复边界情况：total=0时返回0）
@@ -769,9 +1121,46 @@ export default class extends Vue {
     this.currentTheme = ThemeManager.getCurrentTheme()
 
     await this.getDownloaderList()
+    await this.getTrackerDomainList()
     await this.getList()
     this.loadUserPreferences()
-    this.startSpeedPolling()
+    // 详情死路由（/torrents/detail/:hash）直接挂载本组件：不启动轮询，只展示列表数据
+    const routePath = this.$route && this.$route.path ? this.$route.path : ''
+    if (!routePath.startsWith('/torrents/detail')) {
+      this.startSpeedPolling()
+    }
+
+    // v1.0.5：处理从查询模板管理页跳转来的应用请求
+    await this.handleApplyTemplateFromRoute()
+  }
+
+  /**
+   * v1.0.5 处理路由 query 中的 apply_template_id，应用对应查询模板
+   */
+  private async handleApplyTemplateFromRoute() {
+    const templateId = this.$route.query.apply_template_id as string | undefined
+    if (!templateId) return
+
+    let applied = false
+    try {
+      const response = await applySearchTemplate(templateId)
+      if (response.code === '200' && response.data) {
+        // apply 端点返回 {id, name, description, conditions}
+        const conditions = response.data.conditions
+        if (conditions) {
+          applied = await this.applyQueryTemplate(conditions)
+        }
+      } else {
+        this.$message.error(response.msg || '应用模板失败')
+      }
+    } catch (error) {
+      this.$message.error('应用模板失败：' + (error as Error).message)
+    }
+
+    // 清除 query 参数，避免刷新重复应用
+    if (applied) {
+      this.$router.replace({ query: {} })
+    }
   }
 
   beforeDestroy() {
@@ -789,16 +1178,29 @@ export default class extends Vue {
   }
 
   // 获取种子列表
-  private async getList() {
+  private async getList(activeSnapshotRetry = false) {
+    if (this.showingDuplicates) {
+      await this.fetchDuplicateTorrents(false, activeSnapshotRetry)
+      return
+    }
+
     this.listLoading = true
     try {
       const params = { ...this.listQuery }
 
-      // 检查是否需要前端过滤"活动"种子
-      const showActiveOnly = params.showActiveOnly === true
-
-      // 移除 showActiveOnly 属性，不发送给后端
+      // "仅显示活动种子"下沉为后端 active_only 过滤（解决前端过滤导致 total 失真）。
+      // showActiveOnly 仅作 UI 开关状态，映射成 active_only 传给后端。
+      const showActive = params.showActiveOnly === true
       delete params.showActiveOnly
+      if (showActive) {
+        params.active_only = true
+      }
+      if (this.showingSameContent) {
+        params.same_content_only = true
+      }
+      if (this.showingSingleErrors) {
+        params.single_error_only = true
+      }
 
       // 处理数组参数：转换为逗号分隔的字符串
       if (params.downloader_id && Array.isArray(params.downloader_id)) {
@@ -806,6 +1208,13 @@ export default class extends Vue {
       }
       if (params.status && Array.isArray(params.status)) {
         params.status = params.status.join(',')
+      }
+      if (Array.isArray(params.tracker_domain)) {
+        if (params.tracker_domain.length > 0) {
+          params.tracker_domain = params.tracker_domain.join(',')
+        } else {
+          delete params.tracker_domain
+        }
       }
 
       // 移除空值
@@ -818,25 +1227,30 @@ export default class extends Vue {
 
       const response = await getTorrentList(params)
 
+      if (needsActiveSnapshotRefresh(response, showActive)) {
+        // 206 表示后端尚无权威活动快照。保留现有 list/total，先刷新速度；完整快照
+        // 到达后由 loadActiveSpeed 触发一次受控重试，避免冷启动瞬间把列表清空。
+        this.activeListRetryPending = true
+        if (!activeSnapshotRetry) {
+          await this.loadActiveSpeed()
+        }
+        return
+      }
+      this.activeListRetryPending = false
+
       // 使用统一的响应处理工具
       const { list, total } = normalizePaginatedResponse<any>(response)
 
       // 规范化种子数据并提供默认值
-      let normalizedList = list.map(normalizeTorrent).map(item => ({
+      const normalizedList = list.map(normalizeTorrent).map(item => ({
         ...item,
         checked: false
       }))
 
-      // 前端过滤"仅显示活动种子"：筛选出有速度的种子
-      if (showActiveOnly) {
-        normalizedList = normalizedList.filter(item => {
-          const speed = this.activeSpeedMap[item.hash]
-          return speed && (speed.downloadSpeed > 0 || speed.uploadSpeed > 0)
-        })
-      }
-
+      // "仅显示活动种子"过滤已下沉到后端（active_only），此处直接使用后端返回的 list 与 total，
+      // 二者口径天然一致。sortedList 仅做"活动优先"排序，不再做客户端过滤。
       this.list = normalizedList
-      this.total = showActiveOnly ? normalizedList.length : total
+      this.total = total
     } catch (error) {
       const errorMessage = extractErrorMessage(error)
       console.error('获取种子列表失败:', error)
@@ -858,11 +1272,43 @@ export default class extends Vue {
     }
   }
 
+  private async getTrackerDomainList() {
+    try {
+      const response = await getTrackerDomains()
+      if (response.code === '200' && Array.isArray(response.data)) {
+        this.trackerDomainList = response.data
+      }
+    } catch (error) {
+      console.error('获取 Tracker 主域名失败:', error)
+    }
+  }
+
   // 搜索
   private handleFilter() {
     this.listQuery.skip = 0
     this.currentPage = 1
     this.getList()
+  }
+
+  // 列头排序与传统模式保持一致：首次选择字段默认降序，再次点击切换升/降序。
+  private handleSort(field: TorrentSortField) {
+    if (this.listQuery.sort_by === field) {
+      this.listQuery.sort_order = this.listQuery.sort_order === 'asc' ? 'desc' : 'asc'
+    } else {
+      this.listQuery.sort_by = field
+      this.listQuery.sort_order = 'desc'
+    }
+    this.getList()
+  }
+
+  private getSortAriaValue(field: TorrentSortField): 'ascending' | 'descending' | 'none' {
+    if (this.listQuery.sort_by !== field) return 'none'
+    return this.listQuery.sort_order === 'asc' ? 'ascending' : 'descending'
+  }
+
+  private getSortIconName(field: TorrentSortField): TorrentSortIconName {
+    if (this.listQuery.sort_by !== field) return 'arrow-up-down'
+    return this.listQuery.sort_order === 'asc' ? 'arrow-up' : 'arrow-down'
   }
 
   // 防抖搜索（300ms延迟）
@@ -877,16 +1323,71 @@ export default class extends Vue {
       name_like: '',
       downloader_id: [],  // 清空为空数组
       status: [],         // 清空为空数组
+      tracker_domain: [], // Tracker主域名一并重置
+      showActiveOnly: false,  // 活动种子开关一并重置（原重建 listQuery 漏掉此字段）
       sort_by: 'added_date',
       sort_order: 'desc'
     }
     this.getList()
   }
 
+  // 切换视图模式
+  private switchViewMode(mode: ViewModeType) {
+    this.viewModeModule.setViewMode(mode)
+  }
+
   // 手动刷新（静态数据 + 速度数据同时刷新）
   private handleManualRefresh() {
     this.getList()
     this.loadActiveSpeed()
+  }
+
+  // ==================== 快捷操作 ====================
+
+  /**
+   * 快捷操作下拉菜单命令分发
+   */
+  private async handleQuickActionCommand(command: string) {
+    if (command === 'inspect-same-content') {
+      this.showingDuplicates = false
+      this.showingSingleErrors = false
+      this.showingSameContent = true
+      this.currentPage = 1
+      this.listQuery.skip = 0
+      await this.getList()
+      this.$message.success(`排查完成，共找到 ${this.total} 条同内容种子`)
+    } else if (command === 'inspect-single-errors') {
+      this.showingDuplicates = false
+      this.showingSameContent = false
+      this.showingSingleErrors = true
+      this.currentPage = 1
+      this.listQuery.skip = 0
+      await this.getList()
+      this.$message.success(`排查完成，共找到 ${this.total} 条错误单种`)
+    } else if (command === 'delete-duplicates') {
+      this.showQuickDeleteDuplicatesDialog = true
+    }
+  }
+
+  private async exitSameContentInspection() {
+    this.showingSameContent = false
+    this.currentPage = 1
+    this.listQuery.skip = 0
+    await this.getList()
+  }
+
+  private async exitSingleErrorInspection() {
+    this.showingSingleErrors = false
+    this.currentPage = 1
+    this.listQuery.skip = 0
+    await this.getList()
+  }
+
+  /**
+   * 快捷删除重复种子完成后刷新列表
+   */
+  private handleQuickDeleteDeleted() {
+    this.handleManualRefresh()
   }
 
   // 分页切换
@@ -896,20 +1397,45 @@ export default class extends Vue {
     this.getList()
   }
 
-  // 每页条数变更
-  private handlePageSizeChange(newSize: number) {
-    this.pageSize = newSize
-    // 🔥 修复：同步更新 listQuery.limit，确保 API 请求使用正确的分页大小
-    this.listQuery.limit = newSize
-    // 重新计算当前页码，确保不会超出总页数
-    const newTotalPages = Math.ceil(this.total / this.pageSize)
-    if (this.currentPage > newTotalPages && newTotalPages > 0) {
-      this.currentPage = newTotalPages
-    }
-    // 重置到第一页或重新计算 skip
-    this.listQuery.skip = (this.currentPage - 1) * this.pageSize
+  private handlePageSizeSelect(suggestion: PageSizeSuggestion) {
+    this.pageSizeDropdownExpanded = false
+    this.applyPageSizeSelection(suggestion.value)
+  }
+
+  private handlePageSizeFocus() {
+    this.pageSizeDropdownExpanded = true
+  }
+
+  private handlePageSizeBlur() {
+    this.pageSizeDropdownExpanded = false
+    this.applyPageSizeSelection(this.pageSizeInput)
+  }
+
+  private togglePageSizeDropdown() {
+    this.pageSizeDropdownExpanded = !this.pageSizeDropdownExpanded
+    if (!this.pageSizeDropdownExpanded) return
+    this.$nextTick(() => {
+      const combobox = this.$refs.pageSizeCombobox as PageSizeCombobox | undefined
+      combobox?.focusInput()
+    })
+  }
+
+  private applyPageSizeSelection(value: string | number) {
+    const normalizedPageSize = normalizeTraditionalPageSize(value, this.pageSize)
+    this.pageSizeInput = String(normalizedPageSize)
+    this.pageSizeDropdownExpanded = false
+    if (normalizedPageSize === this.pageSize) return
+
+    this.pageSize = normalizedPageSize
+    this.handlePageSizeChange()
+  }
+
+  // 每页条数变更：与传统模式一致，应用后回到第一页。
+  private handlePageSizeChange() {
+    this.currentPage = 1
+    this.listQuery.limit = this.pageSize
+    this.listQuery.skip = 0
     this.getList()
-    this.$message.success(`每页显示 ${newSize} 条数据`)
   }
 
   // 全选/取消全选
@@ -937,6 +1463,7 @@ export default class extends Vue {
       this.handleCloseTrackerDetail()
     } else {
       this.currentRow = row
+      this.activeDetailTab = 'tracker'
       this.showTrackerDetail = true
     }
   }
@@ -946,42 +1473,18 @@ export default class extends Vue {
     this.currentRow = null
   }
 
-  /**
-   * 判断tracker状态是否为成功状态
-   * 基于 tracker_status.py 枚举的中文值
-   * 成功状态：工作中
-   */
-  private isTrackerSuccess(status: string | undefined): boolean {
-    if (!status) return false
-    return status === '工作中'
+  private getTorrentErrorReason(torrent: Torrent | null | undefined): string {
+    return sharedErrorReason(torrent)
   }
 
-  /**
-   * 获取tracker状态的样式类名
-   * 成功状态：working (绿色✓)
-   * 失败状态：error (红色✗)
-   * 中性状态：neutral (灰色)
-   */
-  private getTrackerStatusClass(status: string | undefined): string {
-    if (!status) return 'tracker-status-neutral'
-
-    if (this.isTrackerSuccess(status)) {
-      return 'tracker-status-working'
-    }
-
-    // 失败状态
-    if (['工作失败', '已禁用', '超时', '已清除'].includes(status)) {
-      return 'tracker-status-error'
-    }
-
-    // 中性状态
-    return 'tracker-status-neutral'
+  private showTrackerErrorTag(torrent: Torrent | null | undefined): boolean {
+    return sharedShowTrackerErrorTag(torrent)
   }
 
   /**
    * 处理单个Tracker的汇报操作
    */
-  private async handleTrackerReannounce(tracker: any, index: number) {
+  private async handleTrackerReannounce(tracker: any, _index: number) {
     if (!this.currentRow?.hash) {
       this.$message.error('种子信息不完整，无法汇报')
       return  // ✅ 修复：添加hash检查
@@ -1014,114 +1517,10 @@ export default class extends Vue {
     }
   }
 
-  // 批量操作
-  private async handleBatchStart() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-      
-      // 并行调用所有下载器的恢复操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return resumeTorrents({ downloader_id: downloaderId, hashes })
-      })
-      
-      // P2-1修复：使用Promise.allSettled替代Promise.all，提供更精细的错误反馈
-      const results = await Promise.allSettled(promises)
+  // 批量操作：handleBatchStart / handleBatchPause / handleBatchRecheck
+  // 已由 TorrentBatchMixin 提供（统一文案，防回归 Bug#2）。
+  // 模板 @click 直接绑定 mixin 方法。
 
-      // 统计成功和失败的数量
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
-
-      // 汇总结果
-      const total = this.multipleSelection.length
-      const downloaderCount = Object.keys(groups).length
-
-      if (failed > 0) {
-        this.$message.warning(`批量开始部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
-      } else {
-        this.$message.success(`批量开始成功(${total}个种子, ${downloaderCount}个下载器)`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量开始失败:', error)
-      this.$message.error('批量开始失败，请查看控制台')
-    }
-  }
-
-  private async handleBatchPause() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-      
-      // 并行调用所有下载器的暂停操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return pauseTorrents({ downloader_id: downloaderId, hashes })
-      })
-      
-      // P2-1修复：使用Promise.allSettled替代Promise.all，提供更精细的错误反馈
-      const results = await Promise.allSettled(promises)
-
-      // 统计成功和失败的数量
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
-
-      // 汇总结果
-      const total = this.multipleSelection.length
-      const downloaderCount = Object.keys(groups).length
-
-      if (failed > 0) {
-        this.$message.warning(`批量暂停部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
-      } else {
-        this.$message.success(`批量暂停成功(${total}个种子, ${downloaderCount}个下载器)`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量暂停失败:', error)
-      this.$message.error('批量暂停失败，请查看控制台')
-    }
-  }
-
-  private async handleBatchRecheck() {
-    if (this.multipleSelection.length === 0) return
-    try {
-      // 按下载器ID分组
-      const groups = this.groupTorrentsByDownloader(this.multipleSelection)
-      
-      // 并行调用所有下载器的重检操作
-      const promises = Object.entries(groups).map(([downloaderId, torrents]) => {
-        const hashes = torrents.map(t => t.hash)
-        return recheckTorrents({ downloader_id: downloaderId, hashes })
-      })
-      
-      // P2-1修复：使用Promise.allSettled替代Promise.all，提供更精细的错误反馈
-      const results = await Promise.allSettled(promises)
-
-      // 统计成功和失败的数量
-      const succeeded = results.filter(r => r.status === 'fulfilled').length
-      const failed = results.filter(r => r.status === 'rejected').length
-
-      // 汇总结果
-      const total = this.multipleSelection.length
-      const downloaderCount = Object.keys(groups).length
-
-      if (failed > 0) {
-        this.$message.warning(`批量重检部分完成：成功${succeeded}个下载器，失败${failed}个下载器（共${total}个种子）`)
-      } else {
-        this.$message.success(`批量重检成功(${total}个种子, ${downloaderCount}个下载器)`)
-      }
-
-      this.getList()
-    } catch (error) {
-      console.error('批量重检失败:', error)
-      this.$message.error('批量重检失败，请查看控制台')
-    }
-  }
 
   private async handleBatchReannounce() {
     if (this.multipleSelection.length === 0) return
@@ -1454,9 +1853,17 @@ export default class extends Vue {
 
       const taskId = response.data?.task_id
       if (!taskId) {
-        throw new Error('未返回任务ID')
+        this.$message.info(response.msg || '所选种子均已在删除任务中处理')
+        await this.getList()
+        return
+      }
+      const skippedCount = response.data?.skipped_count || 0
+      if (skippedCount > 0) {
+        this.$message.warning(`已跳过 ${skippedCount} 个正在处理的种子`)
       }
 
+      // 提交成功即刷新；后端列表会排除 pending/running 任务里的种子。
+      await this.getList()
       // 轮询查询任务状态（每5秒一次）
       await this.pollDeleteTaskStatus(taskId, level)
     } else {
@@ -1535,8 +1942,8 @@ export default class extends Vue {
    * @param taskData 任务数据
    * @param level 删除等级
    */
-  private handleDeleteTaskResult(taskData: any, level: number) {
-    const { status, total_count, success_count, failed_count, failed_items } = taskData
+  private handleDeleteTaskResult(taskData: any, _level: number) {
+    const { status, success_count, failed_count, failed_items } = taskData
 
     if (status === 'completed') {
       // 全部成功
@@ -1757,61 +2164,9 @@ export default class extends Vue {
     }
   }
 
-  /**
-   * 内部删除逻辑（DRY原则 - 统一处理单个和批量删除）
-   * 使用Promise.all并行请求提升性能
-   * @param torrents 要删除的种子列表
-   * @param deleteData 是否删除数据文件 (0: 仅删除种子, 1: 同时删除数据文件)
-   * @returns 成功和失败计数 + 错误信息列表 + 成功删除的种子列表
-   */
-  private async deleteTorrentsInternal(
-    torrents: any[],
-    deleteData: number
-  ): Promise<{ successCount: number, failCount: number, errors: string[], deletedTorrents: any[] }> {
-    let successCount = 0
-    let failCount = 0
-    const errors: string[] = []  // 统一收集所有错误消息
-    const deletedTorrents: any[] = []  // 记录成功删除的种子
-
-    // 使用Promise.all并行执行删除操作，提升性能
-    const deletePromises = torrents.map(async(torrent) => {
-      try {
-        const infoId = getTorrentId(torrent)
-        const downloaderId = getDownloaderId(torrent)
-
-        await deleteTorrents({
-          info_id: infoId,
-          downloader_id: downloaderId,
-          delete_data: deleteData,
-          id_recycle: 1
-        })
-        return { success: true, torrent }
-      } catch (error: any) {
-        // 提取并保留详细的错误消息
-        const errorMsg = error?.response?.data?.msg ??
-                         error?.message ??
-                         '删除失败'
-        return { success: false, error: errorMsg }
-      }
-    })
-
-    const results = await Promise.all(deletePromises)
-    results.forEach((result) => {
-      if (result.success) {
-        successCount++
-        if (result.torrent) {
-          deletedTorrents.push(result.torrent)  // 记录成功删除的种子
-        }
-      } else {
-        failCount++
-        if (result.error) {
-          errors.push(result.error)  // 收集所有错误
-        }
-      }
-    })
-
-    return { successCount, failCount, errors, deletedTorrents }
-  }
+  // deleteTorrentsInternal 已由 TorrentBatchMixin 提供（防回归 Bug#1/#4）。
+  // performBatchDelete / performDelete / callDeleteLegacyAPI 仍调用 this.deleteTorrentsInternal，
+  // 由 mixin 注入真实 deleteTorrents，行为不变。
 
   private async handleAdd() {
     this.showAddDialog = false
@@ -1845,6 +2200,12 @@ export default class extends Vue {
     })
   }
 
+  /** 列设置菜单：全部列宽恢复默认（ColumnResizeMixin 提供 resetColumnWidths） */
+  private handleResetColumnWidths() {
+    this.resetColumnWidths()
+    this.$message.success('列宽已重置为默认')
+  }
+
   private applyColumnSettings() {
     this.showColumnSettings = false
     this.saveUserPreferences()
@@ -1853,17 +2214,34 @@ export default class extends Vue {
   }
 
   // 高级搜索
-  private handleAdvancedSearchFromBuilder(searchParams: any) {
+  private openAdvancedSearch() {
+    this.showAdvancedSearchDialog = true
+    // 对话框首次打开时组件才挂载；nextTick 后再调用，确保 $refs 就绪。
+    // 每次打开都刷新分类/标签/下载器选项，保证下拉反映最新数据。
+    this.$nextTick(() => {
+      const builder = this.$refs.advancedSearchBuilder as { refreshFieldOptions?: () => void } | undefined
+      builder?.refreshFieldOptions?.()
+    })
+  }
+
+  private handleAdvancedSearchFromBuilder(searchParams: AdvancedSearchBuilderParams) {
     this.performAdvancedSearch(searchParams)
     this.showAdvancedSearchDialog = false
   }
 
   private handleResetAdvancedSearch() {
-    const builder = this.$refs.advancedSearchBuilder as any
-    if (builder && builder.resetConditions) {
-      builder.resetConditions()
-    }
+    // AdvancedSearchBuilder 在发出 reset 前已经完成内部重置；这里只处理反馈，
+    // 避免再次调用 resetConditions 形成 reset 事件递归。
     this.$message.success('搜索条件已重置')
+  }
+
+  private handleAdvancedTemplateLoaded(conditions: QueryTemplateConditions) {
+    if (conditions.sort_by) {
+      this.listQuery.sort_by = conditions.sort_by
+    }
+    if (conditions.sort_order) {
+      this.listQuery.sort_order = conditions.sort_order
+    }
   }
 
   private confirmAdvancedSearch() {
@@ -1873,78 +2251,26 @@ export default class extends Vue {
     }
   }
 
-  private async performAdvancedSearch(searchParams: any) {
+  private async performAdvancedSearch(searchParams: AdvancedSearchBuilderParams) {
+    const { request, error } = buildAdvancedSearchRequest(
+      searchParams,
+      this.listQuery.sort_by || 'added_date',
+      this.listQuery.limit || this.pageSize
+    )
+    if (!request || error) {
+      this.$message.error(error || '搜索条件格式错误')
+      return
+    }
+
+    this.showingDuplicates = false
+    this.showingSameContent = false
+    this.showingSingleErrors = false
     this.advancedSearchSearching = true
     try {
-      let conditionGroups: any[] = []
-      let betweenGroupLogics: string[] = []
-
-      if (searchParams.groups) {
-        try {
-          const groupsData = JSON.parse(searchParams.groups)
-          conditionGroups = groupsData.map((group: any) => ({
-            logic: group.logic?.toUpperCase() || 'AND',
-            conditions: group.conditions.map((cond: any) => ({
-              field: cond.field,
-              operator: cond.operator,
-              value: cond.value
-            }))
-          }))
-        } catch (e) {
-          console.error('解析groups参数失败:', e)
-          this.$message.error('搜索条件格式错误')
-          return
-        }
-      }
-
-      // 解析组间逻辑关系
-      if (searchParams.between_group_logics) {
-        try {
-          const parsed = JSON.parse(searchParams.between_group_logics)
-          // P2-2修复：添加类型验证，确保解析结果是数组且元素为字符串
-          if (Array.isArray(parsed)) {
-            betweenGroupLogics = parsed
-              .filter((item: any) => typeof item === 'string')  // 过滤非字符串元素
-              .map((logic: string) => logic.toUpperCase())      // 转换为大写
-            console.log('解析的组间逻辑关系:', betweenGroupLogics)
-          } else {
-            console.warn('between_group_logics不是数组类型，使用默认值')
-            betweenGroupLogics = []
-          }
-        } catch (e) {
-          console.error('解析between_group_logics参数失败:', e)
-          // 如果解析失败，默认使用 AND
-          betweenGroupLogics = []
-        }
-      }
-
-      const request: any = {
-        page: 1,
-        limit: this.listQuery.limit || this.pageSize,  // 🔥 修复：使用 pageSize 作为后备值
-        sort_by: searchParams.sort_by || this.listQuery.sort_by || 'added_date',
-        sort_order: (searchParams.sort_order || this.listQuery.sort_order || 'desc') as 'asc' | 'desc'
-      }
-
-      if (conditionGroups.length === 0) {
-        if (searchParams.name) request.name = searchParams.name
-        if (searchParams.downloader_id) request.downloader_id = searchParams.downloader_id
-        if (searchParams.status) request.status = searchParams.status
-        if (searchParams.tags) request.tags = searchParams.tags
-        if (searchParams.category) request.category = searchParams.category
-      }
-
-      if (conditionGroups.length > 0) {
-        request.condition_groups = conditionGroups
-        // 添加组间逻辑关系（如果有多个条件组）
-        if (betweenGroupLogics.length > 0) {
-          request.between_group_logics = betweenGroupLogics
-        }
-      }
-
       const response = await advancedSearch(request)
 
       if (response.code === '200' && response.data) {
-        this.list = response.data.data || []
+        this.list = response.data.list || []
         this.total = response.data.total || 0
         this.listQuery.skip = 0
         this.currentPage = 1
@@ -1960,8 +2286,85 @@ export default class extends Vue {
     }
   }
 
-  private handleSaveSearchTemplate(template: any) {
-    // 保存搜索模板
+  /**
+   * v1.0.5 应用查询模板（按 conditions.source 分支）
+   * - source=simple：回填 listQuery 并 getList()
+   * - source=advanced：回填 AdvancedSearchBuilder 的 conditionGroups 并执行高级搜索
+   */
+  private async applyQueryTemplate(conditions: QueryTemplateConditions): Promise<boolean> {
+    if (!conditions || !conditions.source) {
+      this.$message.error('模板条件格式无效')
+      return false
+    }
+
+    try {
+      if (conditions.source === 'simple' && conditions.listQuery) {
+        this.showingDuplicates = false
+        this.showingSameContent = false
+        this.showingSingleErrors = false
+        // 简单查询：回填 listQuery（保留 skip/limit），回到第 1 页
+        const saved = conditions.listQuery
+        this.listQuery = {
+          skip: 0,
+          limit: this.listQuery.limit,
+          name_like: saved.name_like ?? '',
+          downloader_id: saved.downloader_id ? [...saved.downloader_id] : [],
+          status: saved.status ? [...saved.status] : [],
+          tracker_domain: saved.tracker_domain ? [...saved.tracker_domain] : [],
+          showActiveOnly: saved.showActiveOnly ?? false,
+          sort_by: saved.sort_by ?? 'added_date',
+          sort_order: saved.sort_order ?? 'desc'
+        }
+        // 重置分页到第 1 页
+        this.currentPage = 1
+        await this.getList()
+        this.$message.success('已应用查询模板')
+        return true
+      } else if (conditions.source === 'advanced' && conditions.condition_groups) {
+        this.showingDuplicates = false
+        this.showingSameContent = false
+        this.showingSingleErrors = false
+        const sortBy = conditions.sort_by || this.listQuery.sort_by || 'added_date'
+        const sortOrder = conditions.sort_order || this.listQuery.sort_order || 'desc'
+        this.listQuery.sort_by = sortBy
+        this.listQuery.sort_order = sortOrder
+        // 高级搜索：回填 AdvancedSearchBuilder 的 conditionGroups
+        const builderRef = this.$refs.advancedSearchBuilder as any
+        if (builderRef && typeof builderRef.applyTemplateGroups === 'function') {
+          builderRef.applyTemplateGroups(conditions.condition_groups, {
+            sort_by: sortBy,
+            sort_order: sortOrder
+          })
+        }
+        const { request, error } = buildAdvancedSearchRequestFromTemplateGroups(
+          conditions.condition_groups,
+          sortBy,
+          sortOrder,
+          this.listQuery.limit || this.pageSize
+        )
+        if (error || !request) {
+          this.$message.error(error || '搜索条件格式错误')
+          return false
+        }
+        const response = await advancedSearch(request)
+        if (response.code === '200' && response.data) {
+          this.list = (response.data.list || []).map(normalizeTorrent).map(item => ({ ...item, checked: false }))
+          this.total = response.data.total || 0
+          this.listQuery.skip = 0
+          this.currentPage = 1
+          this.resetBatchSelection()
+          this.$message.success('已应用高级搜索模板')
+          return true
+        }
+        this.$message.error(response.msg || '搜索失败')
+        return false
+      } else {
+        this.$message.warning('不支持的模板类型')
+      }
+    } catch (error) {
+      this.$message.error('应用模板失败：' + (error as Error).message)
+    }
+    return false
   }
 
   // 用户偏好
@@ -2012,86 +2415,66 @@ export default class extends Vue {
 
   /** 排序后的列表（活跃种子优先，始终生效） */
   private get sortedList(): any[] {
-    if (!this.list || this.list.length === 0) return []
-    return [...this.list].sort((a, b) => {
-      const aSpeed = this.getTorrentSpeed(a, 'download') || this.getTorrentSpeed(a, 'upload') || 0
-      const bSpeed = this.getTorrentSpeed(b, 'download') || this.getTorrentSpeed(b, 'upload') || 0
-      const aActive = aSpeed > 0 ? 1 : 0
-      const bActive = bSpeed > 0 ? 1 : 0
-      if (aActive !== bActive) return bActive - aActive
-      if (aActive === 1) return bSpeed - aSpeed
-      return 0
-    })
+    // 第4参数固定 false：活动种子过滤已下沉到后端 active_only，此处仅保留"活跃优先排序"，
+    // 关闭客户端二次过滤，避免与后端过滤叠加。
+    return deriveVisibleTorrentList(
+      this.list,
+      this.activeSpeedMap,
+      this.speedSnapshotReady,
+      false
+    )
   }
 
   /** 获取种子的实时显示速度（优先使用轮询数据，降级使用静态数据） */
   private getTorrentSpeed(torrent: any, type: 'download' | 'upload'): number | null {
-    const active = this.activeSpeedMap[torrent.hash]
-    if (active) {
-      return type === 'download' ? active.downloadSpeed : active.uploadSpeed
-    }
-    return type === 'download' ? (torrent.downloadSpeed ?? null) : (torrent.uploadSpeed ?? null)
+    return getTorrentSpeedFromSnapshot(torrent, type, this.activeSpeedMap, this.speedSnapshotReady)
   }
 
   /** 加载活跃种子实时速度和进度 */
-  private async loadActiveSpeed() {
+  protected async loadActiveSpeed(): Promise<boolean> {
     const requestId = Date.now()
 
     try {
       const res = await getActiveTorrents()
-      if (res.code === '200' && res.data) {
-        const map: Record<string, { downloadSpeed: number, uploadSpeed: number, progress: number }> = {}
-        const torrents = res.data as ActiveTorrentSpeed[]
-        torrents.forEach((t: ActiveTorrentSpeed) => {
-          // 防御性检查：确保hash字段存在
-          if (!t.hash) {
-            console.warn('[速度轮询] 跳过无效种子数据:', t)
-            return
-          }
-          // 更新速度映射（用于排序和高亮）
-          map[t.hash] = {
-            downloadSpeed: t.downloadSpeed ?? 0,
-            uploadSpeed: t.uploadSpeed ?? 0,
-            progress: t.progress ?? 0
-          }
-
-          // 直接更新列表中对应种子的实时数据
-          const torrentInList = this.list.find(item => item.hash === t.hash)
+      const snapshot = buildSpeedSnapshot(res)
+      if (snapshot.ready && snapshot.activeSpeedMap) {
+        // 直接更新列表中命中种子的实时数据（副作用，留在视图层）
+        snapshot.updates.forEach(u => {
+          const torrentInList = this.list.find(item => item.hash === u.hash)
           if (torrentInList) {
-            torrentInList.downloadSpeed = t.downloadSpeed ?? 0
-            torrentInList.uploadSpeed = t.uploadSpeed ?? 0
-            torrentInList.progress = t.progress ?? 0
+            torrentInList.downloadSpeed = u.downloadSpeed
+            torrentInList.uploadSpeed = u.uploadSpeed
+            torrentInList.progress = u.progress
           }
         })
-        this.activeSpeedMap = map
-        console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${Object.keys(map).length} 个活跃种子`)
+        this.activeSpeedMap = snapshot.activeSpeedMap
+        this.speedSnapshotReady = true
+        console.debug(`[速度轮询] 请求 ${requestId} 完成，更新 ${snapshot.count} 个活跃种子`)
+
+        if (
+          this.activeListRetryPending &&
+          this.listQuery.showActiveOnly &&
+          !this.activeListRetryInFlight
+        ) {
+          this.activeListRetryInFlight = true
+          try {
+            await this.getList(true)
+          } finally {
+            this.activeListRetryInFlight = false
+          }
+        }
+        return true
       }
+      return false
     } catch (e) {
       // 静默失败，不影响主流程
       console.debug(`[速度轮询] 请求 ${requestId} 失败:`, e)
+      return false
     }
   }
 
-  /** 启动速度轮询（请求完成后等待1秒再发下一次） */
-  private startSpeedPolling() {
-    this._isDestroyed = false
-    const poll = async() => {
-      await this.loadActiveSpeed()
-      // 组件已销毁时不再调度下一次
-      if (this._isDestroyed) return
-      this.speedTimer = window.setTimeout(poll, 1000)
-    }
-    poll()
-  }
-
-  /** 停止速度轮询 */
-  private stopSpeedPolling() {
-    this._isDestroyed = true
-    if (this.speedTimer) {
-      clearTimeout(this.speedTimer)
-      this.speedTimer = null
-    }
-  }
+  // ====== 实时速度轮询 ======
+  // startSpeedPolling / stopSpeedPolling 由 SpeedPollingMixin 提供（含后台标签页暂停/恢复）
 
   private formatDate(timestamp: number | string | null | undefined): string {
     return formatDate(timestamp)
@@ -2109,17 +2492,31 @@ export default class extends Vue {
     return getStatusText(String(status))
   }
 
-  private handleBatchConfirm(operation: string, selectedItems: any[]) {
+  private handleBatchConfirm(_operation: string, _selectedItems: any[]) {
     this.showBatchDialog = false
     // 批量操作确认处理
   }
 
   // ==================== 重复种子相关方法 ====================
 
-  /**
-   * 查找重复任务（直接显示在主列表中）
-   */
-  private async handleShowDuplicateTorrents() {
+  /** 切换重复任务数据源；开启后所有筛选、排序、分页和刷新都继续走重复查询。 */
+  private async handleDuplicateSearchToggle(enabled: boolean) {
+    this.showingDuplicates = enabled
+    if (enabled) {
+      this.showingSameContent = false
+      this.showingSingleErrors = false
+    }
+    this.currentPage = 1
+    this.listQuery.skip = 0
+    if (!enabled) {
+      await this.getList()
+      return
+    }
+
+    await this.fetchDuplicateTorrents(true)
+  }
+
+  private async fetchDuplicateTorrents(showResultMessage = false, activeSnapshotRetry = false) {
     this.listLoading = true
     try {
       // 处理数组参数：转换为逗号分隔的字符串
@@ -2135,10 +2532,22 @@ export default class extends Vue {
         downloader_id: downloaderIdParam,
         status: statusParam,
         page: this.currentPage,
-        pageSize: this.pageSize
+        pageSize: this.pageSize,
+        sort_by: this.listQuery.sort_by as TorrentSortField,
+        sort_order: this.listQuery.sort_order as 'asc' | 'desc',
+        active_only: this.listQuery.showActiveOnly || undefined
       }
 
       const response = await getDuplicateTorrents(params)
+
+      if (needsActiveSnapshotRefresh(response, this.listQuery.showActiveOnly)) {
+        this.activeListRetryPending = true
+        if (!activeSnapshotRetry) {
+          await this.loadActiveSpeed()
+        }
+        return
+      }
+      this.activeListRetryPending = false
 
       const { list, total } = normalizePaginatedResponse<any>(response)
 
@@ -2148,11 +2557,11 @@ export default class extends Vue {
       }))
 
       this.total = total
-      this.listQuery.skip = 0
-      this.currentPage = 1
 
-      this.$message.success(`查找完成，共找到 ${total} 条记录`)
-    } catch (error: any) {
+      if (showResultMessage) {
+        this.$message.success(`查找完成，共找到 ${total} 条重复种子`)
+      }
+    } catch (error) {
       const errorMessage = extractErrorMessage(error) || '查找失败'
       console.error('查找重复任务失败:', error)
       this.$message.error(errorMessage || '查找失败，请稍后重试')
@@ -2182,6 +2591,90 @@ export default class extends Vue {
 
 <style lang="scss" scoped>
 @import '@/styles/torrent-theme.scss';
+
+.torrent-error-alert {
+  width: auto;
+  margin: 12px 16px 0;
+}
+
+.same-content-list-alert {
+  margin: 0 16px 12px;
+}
+
+.single-error-list-alert {
+  margin: 0 16px 12px;
+}
+
+.advanced-search-dialog__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--color-text-primary);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+// ========================================
+// 搜索框样式：与相邻 AdvancedMultiSelect 折叠态 trigger 对齐
+// （height:32px / padding:0 10px / font-size:12px / token border + radius / primary focus）
+// ========================================
+.simple-search {
+  ::v-deep .search-input {
+    .el-input__inner {
+      height: 32px;
+      line-height: 32px;
+      padding: 0 10px;
+      font-size: 12px;
+      border: 1px solid var(--color-border-primary, #dcdfe6);
+      border-radius: var(--radius-sm, 4px);
+      background: var(--color-bg-primary, #fff);
+      color: var(--color-text-primary, #1f2937);
+      transition: border-color var(--transition-fast, 150ms),
+                  box-shadow var(--transition-fast, 150ms);
+
+      &:focus {
+        border-color: var(--color-primary, #059669);
+        box-shadow: 0 0 0 2px var(--color-primary-lightest, #d1fae5);
+      }
+
+      &::placeholder {
+        color: var(--color-text-tertiary, #9ca3af);
+      }
+    }
+  }
+}
+
+// ========================================
+// 视图切换器样式
+// ========================================
+.view-switcher {
+  display: flex;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 1px;
+  margin-left: 8px;
+
+  .el-button--text {
+    padding: 5px 8px;
+    border-radius: var(--radius-xs);
+    transition: all var(--transition-fast);
+
+    &.active {
+      background: var(--color-primary);
+      color: white;
+    }
+
+    &:hover {
+      background: var(--color-bg-hover);
+    }
+
+    &.active:hover {
+      background: var(--color-primary-hover);
+    }
+  }
+}
 
 // ========================================
 // 多选下拉框样式优化
@@ -2292,6 +2785,9 @@ export default class extends Vue {
   cursor: pointer;
   font-size: 18px;
   color: white;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   transition: all 0.2s ease;
 
   &:hover {
@@ -2380,24 +2876,31 @@ export default class extends Vue {
 }
 
 // ========================================
-// 重复检测按钮样式（白色按钮）
+// 重复任务查询开关：开启态使用全局成功色，和查询数据源状态保持一致。
 // ========================================
-.duplicate-detection-btn {
-  background: white !important;
-  color: var(--color-text-primary) !important;
-  border: 1px solid var(--color-border-primary) !important;
-  transition: all var(--transition-base) ease;
+.duplicate-search-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm, 8px);
+  min-height: 32px;
+  padding: 0 10px;
+  color: var(--color-text-secondary);
+  font-size: 12px;
+  font-weight: var(--font-weight-medium, 500);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-border-primary);
+  border-radius: var(--radius-sm, 4px);
+  cursor: pointer;
+  transition: all var(--transition-fast, 150ms);
 
-  &:hover:not(:disabled) {
-    background: var(--color-bg-secondary) !important;
-    border-color: var(--color-border-secondary);
-    transform: translateY(-1px);
-    box-shadow: var(--shadow-sm);
+  &:hover {
+    border-color: var(--color-success);
   }
 
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
+  &.is-active {
+    color: var(--color-success-dark);
+    background: var(--color-success-light);
+    border-color: var(--color-success);
   }
 }
 

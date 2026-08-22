@@ -12,15 +12,18 @@ Tracker Reannounce 核心服务
 import logging
 import asyncio
 from typing import List, Dict, Any, Optional
-from datetime import datetime
 
 from sqlalchemy.orm import Session
 from app.models.setting_templates import DownloaderTypeEnum
+from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 
 logger = logging.getLogger(__name__)
 
 # 每批最大种子数
 BATCH_SIZE = 500
+
+# 单次 reannounce 远程调用超时（秒，P0-04：经 call_downloader_api 的 INTERACTIVE lane 执行）
+_REANNOUNCE_CALL_TIMEOUT = 30.0
 
 # 并发锁字典(按下载器ID隔离)
 _reannounce_locks: Dict[str, asyncio.Lock] = {}
@@ -29,27 +32,45 @@ _reannounce_locks: Dict[str, asyncio.Lock] = {}
 _locks_lock = asyncio.Lock()
 
 
+def _to_transmission_id(torrent_id) -> Optional[int]:
+    """把 torrent_info.torrent_id（text 形式的数字）转为 int。
+
+    transmission_rpc 的 _parse_torrent_id 规则：int(>=0) 或 str(40 位 hex) 才合法。
+    本库 torrent_id 列存为 text（如 '103'），需转成 int 才能通过校验。
+    非数字脏数据返回 None（跳过该条，不阻断整批）。
+    """
+    if torrent_id is None:
+        return None
+    try:
+        tid = int(torrent_id)
+    except (TypeError, ValueError):
+        logger.warning(f"Transmission torrent_id 无法转为整数，已跳过: {torrent_id!r}")
+        return None
+    return tid if tid >= 0 else None
+
+
 async def execute_reannounce(
     app,
-    db: Session,
     downloader_id: str,
     torrent_records: List,
     trigger_type: str = "manual",
+    db: Optional[Session] = None,
 ) -> Dict[str, Any]:
     """
     执行 tracker 汇报
 
     Args:
         app: FastAPI app 实例（用于获取下载器缓存）
-        db: 数据库 session
         downloader_id: 下载器ID
         torrent_records: 种子记录列表（ORM 对象，需有 hash/torrent_id/downloader_id 属性）
         trigger_type: 触发类型 "manual" | "scheduled"
+        db: 数据库 session（已废弃保留向后兼容，本函数内部不使用 db；
+            调用方应在网络 IO 之外自行管理 session 生命周期）
 
     Returns:
         {"success_count": N, "failed_count": N, "trigger_type": str, "failed_items": [...]}
     """
-    result = {
+    result: Dict[str, Any] = {
         "success_count": 0,
         "failed_count": 0,
         "trigger_type": trigger_type,
@@ -93,14 +114,36 @@ async def execute_reannounce(
                     # qBittorrent: 使用 hash
                     hashes = [r.hash for r in batch if r.hash]
                     if hashes:
-                        client.torrents_reannounce(torrent_hashes=hashes)
+                        # P0-04 修复：经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                        await call_downloader_api(
+                            downloader_id,
+                            DownloadLane.INTERACTIVE,
+                            client.torrents_reannounce,
+                            kwargs={"torrent_hashes": hashes},
+                            timeout=_REANNOUNCE_CALL_TIMEOUT,
+                            operation="qb_reannounce",
+                        )
                     result["success_count"] += len(hashes)
 
                 elif downloader_type == DownloaderTypeEnum.TRANSMISSION:
-                    # Transmission: 使用 torrent_id
-                    ids = [r.torrent_id for r in batch if r.torrent_id is not None]
+                    # Transmission: 使用 torrent_id（transmission_rpc 要求 int 或 40 位 hex；
+                    # torrent_info.torrent_id 在库里存为 text 形式的数字，必须转 int，
+                    # 否则 transmission_rpc 会抛 "is not valid torrent id, should be a hex str for sha1 hash"）
+                    ids = []
+                    for r in batch:
+                        tid = _to_transmission_id(r.torrent_id)
+                        if tid is not None:
+                            ids.append(tid)
                     if ids:
-                        client.reannounce_torrent(ids)
+                        # P0-04 修复：经 INTERACTIVE lane 线程池执行，不阻塞事件循环
+                        await call_downloader_api(
+                            downloader_id,
+                            DownloadLane.INTERACTIVE,
+                            client.reannounce_torrent,
+                            args=(ids,),
+                            timeout=_REANNOUNCE_CALL_TIMEOUT,
+                            operation="tr_reannounce",
+                        )
                     result["success_count"] += len(ids)
 
                 else:
@@ -110,11 +153,13 @@ async def execute_reannounce(
                 error_detail = f"{type(e).__name__}: {str(e)}"
                 logger.error(f"Tracker汇报失败 [downloader={downloader_id}, batch={i//BATCH_SIZE+1}]: {error_detail}")
                 result["failed_count"] += len(batch)
-                result["failed_items"].append({
-                    "batch": i // BATCH_SIZE + 1,
-                    "error": error_detail,
-                    "count": len(batch),
-                })
+                result["failed_items"].append(
+                    {
+                        "batch": i // BATCH_SIZE + 1,
+                        "error": error_detail,
+                        "count": len(batch),
+                    }
+                )
 
         logger.info(
             f"Tracker汇报完成 [trigger={trigger_type}, downloader={downloader_id}]: "
@@ -149,10 +194,14 @@ async def execute_reannounce_all_downloaders(
             continue
 
         # 查询该下载器下所有未删除的种子
-        torrent_records = db.query(torrentInfoModel).filter(
-            torrentInfoModel.downloader_id == dl_vo.downloader_id,
-            torrentInfoModel.dr == 0,
-        ).all()
+        torrent_records = (
+            db.query(torrentInfoModel)
+            .filter(
+                torrentInfoModel.downloader_id == dl_vo.downloader_id,
+                torrentInfoModel.dr == 0,
+            )
+            .all()
+        )
 
         if not torrent_records:
             continue
@@ -164,11 +213,13 @@ async def execute_reannounce_all_downloaders(
             torrent_records=torrent_records,
             trigger_type=trigger_type,
         )
-        results.append({
-            "downloader_id": dl_vo.downloader_id,
-            "downloader_name": dl_vo.nickname,
-            **dl_result,
-        })
+        results.append(
+            {
+                "downloader_id": dl_vo.downloader_id,
+                "downloader_name": dl_vo.nickname,
+                **dl_result,
+            }
+        )
         total_success += dl_result["success_count"]
         total_failed += dl_result["failed_count"]
 
@@ -182,7 +233,7 @@ async def execute_reannounce_all_downloaders(
 
 def _get_downloader_from_cache(app, downloader_id: str):
     """从缓存获取下载器，返回 (downloader_vo, error_msg)"""
-    if not hasattr(app.state, 'store'):
+    if not hasattr(app.state, "store"):
         return None, "下载器缓存未初始化"
 
     cached_downloaders = app.state.store.get_snapshot_sync()
@@ -203,6 +254,6 @@ def _get_downloader_from_cache(app, downloader_id: str):
 
 def _get_all_downloaders(app) -> list:
     """获取所有下载器列表"""
-    if not hasattr(app.state, 'store'):
+    if not hasattr(app.state, "store"):
         return []
     return app.state.store.get_snapshot_sync()

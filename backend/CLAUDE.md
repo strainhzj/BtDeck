@@ -17,9 +17,35 @@
 
 ### 2. 数据库迁移管理（强制）
 
-所有Schema变更必须通过Alembic管理，应用启动时自动执行迁移。
+所有 Schema 变更必须通过 Alembic 管理，应用启动时自动执行迁移。
+**四轨治理后（v1.0.5-db-governance），Alembic 是唯一的 schema 来源**，已删除 create_all / schema 快照 / 原生 SQL 建表。
+
+**当前迁移链**（2026-08-14）：
+```
+e2a02abcf912 (base, 21表) → d0e58437af70 (+tracker_reannounce_config)
+  → a0ada9774936 (+notification) → 95ef8bd8b47a (+search_templates)
+  → ... → de898cb28172 (+torrent error_reason)
+  → 4c1d8e7a2b90 (Tracker 状态判断任务错峰)
+  → 7b2c9d4e6f10 (孤儿后台扫描、稳定明细与超量复核, head)
+```
+- 30 张业务表（+ alembic_version），单 head，无分叉
+- 历史幽灵版本 `9aea25308aff` 由 `KNOWN_GHOST_VERSIONS` 自动救援
+- 迁移前自动备份（`config/app.db.pre-migration-*`，保留 3 份）
+
+**表/字段变更操作**：
+```bash
+# 1. 改 ORM 模型（app/models/*.py）
+# 2. 生成迁移
+DATABASE_PATH=<临时库> alembic revision --autogenerate -m "描述"
+# 3. 补 docstring 可回滚性标注（【可回滚】/【受限回滚】/【不可回滚】）
+# 4. 审查迁移文件（upgrade + downgrade 对称）
+# 5. 测试
+alembic upgrade head && alembic downgrade -1 && alembic upgrade head
+# 6. 提交（模型 + 迁移文件一起）
+```
 
 → [详细规范](./docs/constraints/database-migration.md)
+→ [回滚操作指南](./docs/operations/rollback-guide.md)
 
 ### 3. 下载器客户端连接管理（强制）
 
@@ -73,15 +99,19 @@ BtDeck/
 ## 开发命令
 
 ```bash
-# 启动服务
+# 启动服务（启动时自动 migrate_database + init_db）
 python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 5001
 
-# 数据库迁移
-alembic revision --autogenerate -m "描述"
-alembic upgrade head
+# 数据库迁移（四轨治理后统一流程）
+DATABASE_PATH=<临时库路径> alembic revision --autogenerate -m "描述"  # 生成迁移
+alembic upgrade head          # 应用迁移
+alembic current               # 查看当前版本
+alembic heads                 # 确认单 head（应只有 1 个）
+alembic history               # 查看迁移链
 
 # 代码检查
 mypy app/ && black app/ && flake8 app/
+python scripts/lint_btdeck.py  # 含迁移可回滚性标注检查（BTD401）
 ```
 
 ## 服务端口

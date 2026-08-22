@@ -9,8 +9,9 @@ Transmission种子位置修改适配器
 @time: 2026-03-04
 """
 
+import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import Any, Dict, List, cast
 from transmission_rpc import Client
 
 from app.services.downloader_adapters.location_base import TorrentLocationAdapter
@@ -45,12 +46,7 @@ class TransmissionLocationAdapter(TorrentLocationAdapter):
         """获取下载器客户端实例"""
         return self.client
 
-    async def set_location(
-        self,
-        hashes: List[str],
-        target_path: str,
-        move_files: bool
-    ) -> Dict[str, Any]:
+    async def set_location(self, hashes: List[str], target_path: str, move_files: bool) -> Dict[str, Any]:
         """
         修改Transmission种子保存路径
 
@@ -62,12 +58,7 @@ class TransmissionLocationAdapter(TorrentLocationAdapter):
         Returns:
             操作结果字典
         """
-        result = {
-            "success": False,
-            "moved_count": 0,
-            "failed_count": 0,
-            "error_message": None
-        }
+        result: Dict[str, Any] = {"success": False, "moved_count": 0, "failed_count": 0, "error_message": None}
 
         try:
             logger.info(
@@ -76,12 +67,11 @@ class TransmissionLocationAdapter(TorrentLocationAdapter):
             )
 
             # Transmission的move参数：True=移动文件，False=仅修改路径
-            # 调用API（支持批量操作）
-            self.client.move_torrent_data(
-                ids=hashes,  # 支持列表
-                location=target_path,
-                move=move_files
-            )
+            # 调用API（支持批量操作；同步网络调用放入线程池，避免阻塞事件循环）
+            # 注意：transmission_rpc 的 move_torrent_data 是同步方法，须经 to_thread 执行
+            await asyncio.to_thread(
+                self.client.move_torrent_data, ids=cast(Any, hashes), location=target_path, move=move_files
+            )  # 支持列表
 
             result["success"] = True
             result["moved_count"] = len(hashes)

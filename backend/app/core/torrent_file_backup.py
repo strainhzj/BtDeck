@@ -22,9 +22,7 @@
 import os
 import shutil
 import logging
-import tempfile
 from typing import Optional, Dict, Any
-from pathlib import Path
 
 from app.core.filename_utils import FilenameUtils
 from app.core.path_mapping import PathMappingService
@@ -38,17 +36,16 @@ class TorrentFileBackupService:
     # 默认备份目录（如果环境变量未设置）
     DEFAULT_BACKUP_DIR = "backup/torrents"
 
+    # 种子内容校验的最大读取量：bencode 种子远小于此，超限视为异常拒绝
+    TORRENT_CONTENT_MAX_BYTES = 2 * 1024 * 1024
+
     # qBittorrent种子文件备份目录（相对路径）
     QB_BACKUP_DIR = "/config/qBittorrent/BT_backup"
 
     # Transmission种子文件存储目录（相对于下载目录）
     TR_BACKUP_DIR = ".torrents"
 
-    def __init__(
-        self,
-        backup_dir: Optional[str] = None,
-        path_mapping_service: Optional[PathMappingService] = None
-    ):
+    def __init__(self, backup_dir: Optional[str] = None, path_mapping_service: Optional[PathMappingService] = None):
         """
         初始化备份服务
 
@@ -56,20 +53,13 @@ class TorrentFileBackupService:
             backup_dir: 备份目录路径（优先级高于环境变量）
             path_mapping_service: 路径映射服务（可选）
         """
-        self.backup_dir = backup_dir or os.environ.get(
-            'BACKUP_TORRENT_DIR',
-            self.DEFAULT_BACKUP_DIR
-        )
+        self.backup_dir = backup_dir or os.environ.get("BACKUP_TORRENT_DIR", self.DEFAULT_BACKUP_DIR)
         self.path_mapping_service = path_mapping_service
 
         # 确保备份目录存在
         FilenameUtils.ensure_directory_exists(self.backup_dir)
 
-    def _get_qbittorrent_backup_path(
-        self,
-        torrent_hash: str,
-        downloader_config: Dict[str, Any]
-    ) -> Optional[str]:
+    def _get_qbittorrent_backup_path(self, torrent_hash: str, downloader_config: Dict[str, Any]) -> Optional[str]:
         """
         获取qBittorrent种子文件的备份路径
 
@@ -102,10 +92,7 @@ class TorrentFileBackupService:
             return None
 
     def _get_transmission_backup_path(
-        self,
-        torrent_hash: str,
-        save_path: str,
-        downloader_config: Dict[str, Any]
+        self, torrent_hash: str, save_path: str, downloader_config: Dict[str, Any]
     ) -> Optional[str]:
         """
         获取Transmission种子文件的备份路径
@@ -125,8 +112,8 @@ class TorrentFileBackupService:
         """
         try:
             # 修复P1-1: 优先方案使用Torrent对象提供的torrent_file路径（最准确）
-            torrent_file_path = downloader_config.get('torrent_file_path', '未提供')
-            if torrent_file_path and torrent_file_path != '未提供':
+            torrent_file_path = downloader_config.get("torrent_file_path", "未提供")
+            if torrent_file_path and torrent_file_path != "未提供":
                 logger.debug(f"Transmission torrent_file原始路径: {torrent_file_path}")
 
                 # 如果有路径映射服务，尝试转换路径
@@ -164,17 +151,11 @@ class TorrentFileBackupService:
                 return backup_path
 
             # 备用方案2：下载目录上级的.torrents目录
-            backup_path_alt = os.path.join(
-                os.path.dirname(save_path),
-                ".torrents",
-                backup_filename
-            )
+            backup_path_alt = os.path.join(os.path.dirname(save_path), ".torrents", backup_filename)
             logger.debug(f"备用路径2（上级目录/.torrents）: {backup_path_alt}")
 
             if self.path_mapping_service:
-                backup_path_alt = self.path_mapping_service.internal_to_external(
-                    backup_path_alt
-                )
+                backup_path_alt = self.path_mapping_service.internal_to_external(backup_path_alt)
 
             if os.path.exists(backup_path_alt):
                 logger.info(f"✓ 找到种子文件（备用路径2）: {backup_path_alt}")
@@ -201,7 +182,7 @@ class TorrentFileBackupService:
         torrent_name: str,
         downloader_type: str,
         save_path: Optional[str] = None,
-        downloader_config: Optional[Dict[str, Any]] = None
+        downloader_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         备份种子文件到项目备份目录
@@ -237,25 +218,20 @@ class TorrentFileBackupService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "backup_file_path": "",
-            "source_path": "",
-            "error_message": None
-        }
+        result = {"success": False, "backup_file_path": "", "source_path": "", "error_message": None}
 
         source_path = None
 
         try:
             # 1. 获取源文件路径（优先使用用户配置的种子保存目录）
-            torrent_save_path = downloader_config.get('torrent_save_path') if downloader_config else None
-            
+            torrent_save_path = downloader_config.get("torrent_save_path") if downloader_config else None
+
             if torrent_save_path and torrent_save_path.strip():
                 # 直接使用用户配置的种子保存目录
                 source_path = torrent_save_path
                 # 构建完整的种子文件路径
                 source_path = os.path.join(source_path, f"{torrent_hash}.torrent")
-                
+
                 if os.path.exists(source_path):
                     result["source_path"] = source_path
                     logger.debug(f"使用用户配置的种子保存目录: {source_path}")
@@ -265,16 +241,11 @@ class TorrentFileBackupService:
                     return result
             else:
                 # 回退到原有的默认路径逻辑
-                if downloader_type == 'qbittorrent':
-                    source_path = self._get_qbittorrent_backup_path(
-                        torrent_hash,
-                        downloader_config or {}
-                    )
-                elif downloader_type == 'transmission':
+                if downloader_type == "qbittorrent":
+                    source_path = self._get_qbittorrent_backup_path(torrent_hash, downloader_config or {})
+                elif downloader_type == "transmission":
                     source_path = self._get_transmission_backup_path(
-                        torrent_hash,
-                        save_path or "",
-                        downloader_config or {}
+                        torrent_hash, save_path or "", downloader_config or {}
                     )
                 else:
                     result["error_message"] = f"不支持的下载器类型: {downloader_type}"
@@ -282,7 +253,7 @@ class TorrentFileBackupService:
 
             # 2. 降级策略：如果找不到文件，根据下载器类型处理
             if not source_path:
-                if downloader_type == 'qbittorrent':
+                if downloader_type == "qbittorrent":
                     # qBittorrent不支持API下载种子文件，直接返回错误
                     result["error_message"] = (
                         f"qBittorrent种子文件路径未找到，且不支持API下载。\n"
@@ -293,14 +264,14 @@ class TorrentFileBackupService:
                     )
                     return result
 
-                elif downloader_type == 'transmission':
+                elif downloader_type == "transmission":
                     # Transmission不支持API下载种子文件，直接返回错误
                     result["error_message"] = (
-                        f"Transmission种子文件路径未找到，且RPC协议不支持API下载。\n"
-                        f"请确保：\n"
-                        f"1. Transmission服务器上的种子文件目录可访问\n"
-                        f"2. 路径映射配置正确（容器路径 → 主机路径）\n"
-                        f"3. 种子文件确实存在于预期位置"
+                        "Transmission种子文件路径未找到，且RPC协议不支持API下载。\n"
+                        "请确保：\n"
+                        "1. Transmission服务器上的种子文件目录可访问\n"
+                        "2. 路径映射配置正确（容器路径 → 主机路径）\n"
+                        "3. 种子文件确实存在于预期位置"
                     )
                     return result
 
@@ -311,16 +282,10 @@ class TorrentFileBackupService:
                 result["source_path"] = source_path
 
             # 3. 生成备份文件名
-            backup_filename = FilenameUtils.generate_backup_filename(
-                info_id,
-                torrent_name
-            )
+            backup_filename = FilenameUtils.generate_backup_filename(info_id, torrent_name)
 
             # 4. 构建备份文件路径
-            backup_path = FilenameUtils.safe_path_join(
-                self.backup_dir,
-                backup_filename
-            )
+            backup_path = FilenameUtils.safe_path_join(self.backup_dir, backup_filename)
 
             # 检查路径长度
             if FilenameUtils.is_path_too_long(backup_path):
@@ -346,9 +311,7 @@ class TorrentFileBackupService:
 
             # 6. 复制文件
             shutil.copy2(source_path, backup_path)
-            logger.debug(
-                f"种子文件备份成功: {source_path} -> {backup_path}"
-            )
+            logger.debug(f"种子文件备份成功: {source_path} -> {backup_path}")
 
             result["success"] = True
             result["backup_file_path"] = backup_path
@@ -360,12 +323,7 @@ class TorrentFileBackupService:
             result["error_message"] = error_msg
             return result
 
-    def backup_torrent_file_from_path(
-        self,
-        info_id: str,
-        torrent_name: str,
-        source_file_path: str
-    ) -> Dict[str, Any]:
+    def backup_torrent_file_from_path(self, info_id: str, torrent_name: str, source_file_path: str) -> Dict[str, Any]:
         """
         从指定路径备份种子文件
 
@@ -379,12 +337,7 @@ class TorrentFileBackupService:
         Returns:
             操作结果字典
         """
-        result = {
-            "success": False,
-            "backup_file_path": "",
-            "source_path": source_file_path,
-            "error_message": None
-        }
+        result = {"success": False, "backup_file_path": "", "source_path": source_file_path, "error_message": None}
 
         try:
             # 检查源文件是否存在
@@ -392,17 +345,19 @@ class TorrentFileBackupService:
                 result["error_message"] = "源文件不存在"
                 return result
 
+            # 内容校验（防任意文件读取外泄）：源必须是能解析出 info 字典的
+            # 合法 bencode 种子。备份+下载链等价于任意文件读取原语，仅靠
+            # 路径校验无法覆盖全部调用方（此处是所有 from_path 流的唯一收口），
+            # 内容校验使 config.yaml/app.db 等非种子文件不可被复制带走。
+            if not self._is_valid_torrent_content(source_file_path):
+                result["error_message"] = "源文件不是有效的种子文件（bencode 解析失败、缺少 info 字典或超过大小上限）"
+                return result
+
             # 生成备份文件名
-            backup_filename = FilenameUtils.generate_backup_filename(
-                info_id,
-                torrent_name
-            )
+            backup_filename = FilenameUtils.generate_backup_filename(info_id, torrent_name)
 
             # 构建备份文件路径
-            backup_path = FilenameUtils.safe_path_join(
-                self.backup_dir,
-                backup_filename
-            )
+            backup_path = FilenameUtils.safe_path_join(self.backup_dir, backup_filename)
 
             # 检查路径长度
             if FilenameUtils.is_path_too_long(backup_path):
@@ -416,9 +371,7 @@ class TorrentFileBackupService:
 
             # 复制文件
             shutil.copy2(source_file_path, backup_path)
-            logger.debug(
-                f"种子文件备份成功: {source_file_path} -> {backup_path}"
-            )
+            logger.debug(f"种子文件备份成功: {source_file_path} -> {backup_path}")
 
             result["success"] = True
             result["backup_file_path"] = backup_path
@@ -430,11 +383,27 @@ class TorrentFileBackupService:
             result["error_message"] = error_msg
             return result
 
-    def _download_from_qb_api(
-        self,
-        torrent_hash: str,
-        downloader_config: Dict[str, Any]
-    ) -> Optional[str]:
+    def _is_valid_torrent_content(self, source_file_path: str) -> bool:
+        """校验源文件是可解析且含 info 字典的 bencode 种子。
+
+        读取量封顶防超大文件；bencodepy 对畸形输入（深嵌套/超大整数）
+        抛出的异常一律按不合法处理，不做任何复制。
+        """
+        try:
+            import bencodepy
+
+            with open(source_file_path, "rb") as f:
+                head = f.read(self.TORRENT_CONTENT_MAX_BYTES + 1)
+            if len(head) > self.TORRENT_CONTENT_MAX_BYTES:
+                logger.warning(f"源文件超过种子内容大小上限，拒绝备份: {source_file_path}")
+                return False
+            torrent_data = bencodepy.decode(head)
+            return isinstance(torrent_data, dict) and b"info" in torrent_data
+        except Exception as e:
+            logger.warning(f"源文件 bencode 校验失败: {source_file_path} ({e})")
+            return False
+
+    def _download_from_qb_api(self, torrent_hash: str, downloader_config: Dict[str, Any]) -> Optional[str]:
         """
         [已废弃] 从qBittorrent API下载种子文件到临时文件
 
@@ -458,11 +427,7 @@ class TorrentFileBackupService:
         return None
 
     def backup_torrent_file_from_downloader_save_path(
-        self,
-        info_id: str,
-        torrent_hash: str,
-        torrent_name: str,
-        downloader_save_path: str
+        self, info_id: str, torrent_hash: str, torrent_name: str, downloader_save_path: str
     ) -> Dict[str, Any]:
         """
         从下载器配置的种子保存目录备份种子文件
@@ -484,12 +449,7 @@ class TorrentFileBackupService:
                 "error_message": Optional[str]
             }
         """
-        result = {
-            "success": False,
-            "backup_file_path": "",
-            "source_path": "",
-            "error_message": None
-        }
+        result = {"success": False, "backup_file_path": "", "source_path": "", "error_message": None}
 
         try:
             # 验证 downloader_save_path 不为空
@@ -514,16 +474,10 @@ class TorrentFileBackupService:
                 return result
 
             # 生成备份文件名
-            backup_filename = FilenameUtils.generate_backup_filename(
-                info_id,
-                torrent_name
-            )
+            backup_filename = FilenameUtils.generate_backup_filename(info_id, torrent_name)
 
             # 构建备份文件路径
-            backup_path = FilenameUtils.safe_path_join(
-                self.backup_dir,
-                backup_filename
-            )
+            backup_path = FilenameUtils.safe_path_join(self.backup_dir, backup_filename)
 
             # 检查路径长度
             if FilenameUtils.is_path_too_long(backup_path):
@@ -547,9 +501,7 @@ class TorrentFileBackupService:
 
             # 复制文件
             shutil.copy2(source_path, backup_path)
-            logger.debug(
-                f"种子文件备份成功（从下载器保存目录）: {source_path} -> {backup_path}"
-            )
+            logger.debug(f"种子文件备份成功（从下载器保存目录）: {source_path} -> {backup_path}")
 
             result["success"] = True
             result["backup_file_path"] = backup_path

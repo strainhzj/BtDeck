@@ -29,8 +29,8 @@ class TagSyncTask:
 
     # 任务配置
     default_interval = 3600  # 默认1小时（3600秒）
-    max_interval = 7200     # 最大2小时
-    min_interval = 1800      # 最小30分钟
+    max_interval = 7200  # 最大2小时
+    min_interval = 1800  # 最小30分钟
 
     def __init__(self):
         """初始化任务"""
@@ -65,10 +65,7 @@ class TagSyncTask:
             # 使用标准 logging 模块记录任务执行日志
             logger.info("Starting tag sync task execution")
             # 记录参数
-            params_str = (
-                f"downloader_id={downloader_id}, "
-                f"delete_missing={delete_missing}, force={force}"
-            )
+            params_str = f"downloader_id={downloader_id}, " f"delete_missing={delete_missing}, force={force}"
             logger.debug(f"Parameters: {params_str}")
 
             # 导入服务
@@ -85,33 +82,22 @@ class TagSyncTask:
                     logger.info(f"Syncing tags for downloader: {downloader_id}")
                     # 从缓存获取downloader对象
                     from app.main import app
-                    if not hasattr(app.state, 'store'):
-                        result = {
-                            "success": False,
-                            "message": "下载器缓存未初始化"
-                        }
+
+                    if not hasattr(app.state, "store"):
+                        result = {"success": False, "message": "下载器缓存未初始化"}
                     else:
                         cached_downloaders = await app.state.store.get_snapshot()
-                        downloader_obj = next(
-                            (d for d in cached_downloaders if d.downloader_id == downloader_id),
-                            None
-                        )
+                        downloader_obj = next((d for d in cached_downloaders if d.downloader_id == downloader_id), None)
                         if not downloader_obj:
-                            result = {
-                                "success": False,
-                                "message": f"下载器不存在: {downloader_id}"
-                            }
+                            result = {"success": False, "message": f"下载器不存在: {downloader_id}"}
                         else:
                             result = await sync_service.sync_downloader_tags(
-                                downloader_obj,  # 传递downloader对象，而不是字符串
-                                delete_missing=delete_missing
+                                downloader_obj, delete_missing=delete_missing  # 传递downloader对象，而不是字符串
                             )
                 else:
                     # 同步所有下载器
                     logger.info("Syncing tags for all downloaders")
-                    result = await sync_service.sync_all_downloaders(
-                        delete_missing=delete_missing
-                    )
+                    result = await sync_service.sync_all_downloaders(delete_missing=delete_missing)
 
                 # 记录同步结果
                 logger.info(f"Sync result: {result.get('message')}")
@@ -155,16 +141,12 @@ class TagSyncTask:
                 "message": error_msg,
                 "success_count": self.success_count,
                 "failure_count": self.failure_count,
-                "error": str(e)
+                "error": str(e),
             }
 
             return error_result
 
-    async def execute_single_downloader(
-        self,
-        downloader_id: str,
-        delete_missing: bool = True
-    ) -> Dict[str, Any]:
+    async def execute_single_downloader(self, downloader_id: str, delete_missing: bool = True) -> Dict[str, Any]:
         """
         同步单个下载器的标签
 
@@ -175,15 +157,9 @@ class TagSyncTask:
         Returns:
             同步结果
         """
-        return await self.execute(
-            downloader_id=downloader_id,
-            delete_missing=delete_missing
-        )
+        return await self.execute(downloader_id=downloader_id, delete_missing=delete_missing)
 
-    async def execute_all_downloaders(
-        self,
-        delete_missing: bool = True
-    ) -> Dict[str, Any]:
+    async def execute_all_downloaders(self, delete_missing: bool = True) -> Dict[str, Any]:
         """
         同步所有下载器的标签
 
@@ -193,10 +169,7 @@ class TagSyncTask:
         Returns:
             同步结果
         """
-        return await self.execute(
-            downloader_id=None,
-            delete_missing=delete_missing
-        )
+        return await self.execute(downloader_id=None, delete_missing=delete_missing)
 
     def get_task_info(self) -> Dict[str, Any]:
         """
@@ -217,7 +190,7 @@ class TagSyncTask:
             "last_execution": self.last_execution_time.isoformat() if self.last_execution_time else None,
             "execution_count": self.execution_count,
             "success_count": self.success_count,
-            "failure_count": self.failure_count
+            "failure_count": self.failure_count,
         }
 
     def reset_stats(self):
@@ -229,6 +202,7 @@ class TagSyncTask:
 
 
 # ==================== 快捷函数 ====================
+
 
 async def sync_tags_for_downloader(downloader_id: str, delete_missing: bool = True) -> Dict[str, Any]:
     """

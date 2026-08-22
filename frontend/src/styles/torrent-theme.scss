@@ -185,42 +185,6 @@
     }
   }
 
-  /* Tracker详情卡片 - 改为 Flexbox 子元素 */
-  .tracker-detail-card {
-    /* 移除 fixed 定位，改为普通流式布局 */
-    position: relative;
-    width: 100%;
-    height: 160px; /* 200px → 160px，紧凑布局 */
-    background: var(--color-bg-primary);
-    border-radius: var(--radius-lg);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
-    overflow: hidden;
-    border-left: 4px solid var(--color-primary);
-    flex-shrink: 0; /* 固定高度，不参与 flex 缩放 */
-    margin-top: 12px; /* 16px → 12px，紧凑布局 */
-    display: none;
-    flex-direction: column;
-
-    /* 侧边栏展开/折叠时，宽度平滑过渡 */
-    transition: all var(--transition-layout, 300ms) ease;
-
-    &.active {
-      display: flex;
-      animation: slideIn 0.3s ease;
-    }
-  }
-
-  @keyframes slideIn {
-    from {
-      opacity: 0;
-      transform: translateY(-10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
   /* 分页控件 - 改为 Flexbox 子元素 */
   .torrent-pagination {
     position: relative; /* 移除 fixed 定位 */
@@ -230,6 +194,7 @@
     box-shadow: var(--shadow-lg);
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 10px;
     flex-shrink: 0; /* 固定高度，不参与 flex 缩放 */
     margin-top: 12px; /* 16px → 12px，紧凑布局 */
@@ -342,6 +307,10 @@
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+  /* fixed 布局使 th 内联宽度成为列宽权威来源（列宽拖拽依赖）；
+     种子列表两视图按列宽总和给 table 定宽（qBittorrent 风格严格列宽），
+     此处 width:100% 仅供弹窗等未定宽场景兜底，被内联 width 覆盖 */
+  table-layout: fixed;
 
   thead {
     background: linear-gradient(135deg, var(--color-primary), var(--color-primary-light));
@@ -359,6 +328,41 @@
       letter-spacing: 0.5px;
       white-space: nowrap;
       border-bottom: 1px solid var(--color-border-primary);
+      /* 手柄定位基准（th:not(.action-column) 的 position: relative）见
+         torrent-column-resize.scss，全局引入 */
+
+      &.sortable-column {
+        cursor: pointer;
+        user-select: none;
+        transition:
+          background-color var(--transition-fast),
+          box-shadow var(--transition-fast);
+
+        &:hover {
+          background: rgba(255, 255, 255, 0.12);
+        }
+
+        &:focus-visible {
+          outline: 2px solid rgba(255, 255, 255, 0.9);
+          outline-offset: -3px;
+        }
+
+        &.sorted {
+          box-shadow: inset 0 -2px 0 rgba(255, 255, 255, 0.9);
+        }
+      }
+
+      .sort-icon {
+        margin-left: 4px;
+        opacity: 0.68;
+        transition: opacity var(--transition-fast);
+      }
+
+      &.sortable-column:hover .sort-icon,
+      &.sortable-column:focus-visible .sort-icon,
+      &.sortable-column.sorted .sort-icon {
+        opacity: 1;
+      }
     }
 
     /* 只有操作列冻结 */
@@ -394,6 +398,9 @@
       white-space: nowrap;
       border-bottom: 1px solid var(--color-border-primary);
       background: var(--color-bg-primary);
+      /* fixed 布局下超出列宽的内容裁剪，避免溢出串列 */
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* 只有操作列冻结 */
@@ -415,6 +422,11 @@
     }
   }
 }
+
+/* ========================================
+   列宽拖拽手柄样式已抽至 torrent-column-resize.scss 并在
+   styles/index.scss 全局引入（scoped 引入会导致传统模式拿不到规则）
+   ======================================== */
 
 /* ========================================
    复选框样式
@@ -454,6 +466,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  /* 名称列严格列宽：flex 行整体收在单元格内，省略跟随列宽（悬停 title 看全名） */
+  overflow: hidden;
 
   .torrent-status-icon {
     width: 16px;
@@ -474,8 +488,20 @@
       background: var(--color-success);
     }
 
+    &.seeding {
+      background: var(--color-success);
+    }
+
     &.paused {
       background: var(--color-warning);
+    }
+
+    &.checking {
+      background: var(--color-warning);
+    }
+
+    &.queuedDL {
+      background: var(--color-primary);
     }
 
     &.error {
@@ -486,7 +512,9 @@
   .torrent-name-text {
     font-weight: var(--font-weight-medium);
     color: var(--color-text-primary);
-    max-width: 300px;
+    /* 填满图标以外的列宽并允许收缩，省略号出现在列边界而非固定 300px */
+    flex: 1;
+    min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -550,6 +578,25 @@
     background: rgba(var(--theme-error-rgb), 0.1);
     color: var(--color-error);
   }
+
+  &.unknown {
+    background: rgba(107, 114, 128, 0.08);
+    color: #6b7280;
+  }
+}
+
+/* Tracker 判定异常小标签（状态徽标旁叠加；展示对齐 has_tracker_error 判定） */
+.tracker-error-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  font-size: 10px;
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  background: rgba(var(--theme-error-rgb), 0.1);
+  color: var(--color-error);
 }
 
 /* ========================================
@@ -649,6 +696,9 @@
       cursor: pointer;
       font-size: 16px;
       color: var(--color-text-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
       transition: transform var(--transition-base) ease, box-shadow var(--transition-base) ease, opacity var(--transition-base) ease;
 
       &:hover {
@@ -730,6 +780,9 @@
    ======================================== */
 .torrent-pagination {
   .pagination-info {
+    display: flex;
+    align-items: center;
+    gap: 6px;
     font-size: 13px;
     color: var(--color-text-secondary);
   }
@@ -738,31 +791,6 @@
     display: flex;
     gap: 6px;
     align-items: center;
-
-    .page-size-select {
-      width: 110px;
-
-      ::v-deep .el-input__inner {
-        height: 32px;
-        font-size: 13px;
-        border-radius: var(--radius-sm);
-        border-color: var(--color-border-primary);
-        background: var(--color-bg-secondary);
-        color: var(--color-text-primary);
-      }
-
-      ::v-deep .el-input__inner:hover {
-        border-color: var(--color-primary);
-      }
-
-      ::v-deep .el-input__inner:focus {
-        border-color: var(--color-primary);
-      }
-
-      ::v-deep .el-input__icon {
-        line-height: 32px;
-      }
-    }
 
     .pagination-btn {
       width: 32px;
@@ -1366,28 +1394,18 @@
       padding: 6px 12px; /* 移动端更紧凑 */
       flex-shrink: 0;
       margin-top: 8px; /* 16px → 8px，更紧凑 */
+      flex-wrap: wrap;
+      justify-content: center;
 
       .pagination-controls {
         justify-content: center;
       }
 
-      .pagination-info {
-        display: none; /* 移动端隐藏分页信息 */
+      .pagination-summary {
+        display: none; /* 移动端隐藏统计文案，保留每页数量组件 */
       }
     }
 
-    // Tracker 卡片 - 移动端全宽显示
-    .tracker-detail-card {
-      position: fixed; /* 移动端改为固定定位 */
-      bottom: 0;
-      left: 0;
-      right: 0;
-      width: 100%;
-      height: 140px; /* 移动端更紧凑，180px → 140px */
-      margin: 0;
-      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-      z-index: var(--z-index-fixed);
-    }
   }
 }
 

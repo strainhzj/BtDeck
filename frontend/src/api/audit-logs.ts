@@ -1,10 +1,12 @@
 import request from '@/utils/request'
+import type { ApiEnvelope } from '@/utils/request'
 
 /**
  * 审计日志查询请求
  */
 export interface AuditLogQueryRequest {
   torrent_info_id?: string
+  torrent_name?: string
   operation_type?: string
   operator?: string
   downloader_id?: string
@@ -48,6 +50,8 @@ export interface AuditLogItem {
   user_agent: string | null
   request_id: string | null
   session_id: string | null
+  torrent_name?: string | null
+  downloader_name?: string | null
 }
 
 /**
@@ -82,6 +86,7 @@ export interface OperationTypeItem {
  */
 export interface AuditLogExportRequest {
   torrent_info_id?: string
+  torrent_name?: string
   operation_type?: string
   operator?: string
   downloader_id?: string
@@ -124,7 +129,7 @@ export interface AuditLogArchiveResponse {
  * 查询审计日志
  */
 export function queryAuditLogs(params: AuditLogQueryRequest) {
-  return request<AuditLogQueryResponse>({
+  return request<ApiEnvelope<AuditLogQueryResponse>>({
     url: '/audit-logs/query',
     method: 'post',
     data: params
@@ -135,7 +140,7 @@ export function queryAuditLogs(params: AuditLogQueryRequest) {
  * 获取审计日志统计
  */
 export function getAuditLogStatistics(params?: { start_time?: string, end_time?: string }) {
-  return request<AuditLogStatisticsResponse>({
+  return request<ApiEnvelope<AuditLogStatisticsResponse>>({
     url: '/audit-logs/statistics',
     method: 'get',
     params
@@ -146,7 +151,7 @@ export function getAuditLogStatistics(params?: { start_time?: string, end_time?:
  * 获取操作类型列表
  */
 export function getOperationTypes() {
-  return request<OperationTypesResponse>({
+  return request<ApiEnvelope<OperationTypesResponse>>({
     url: '/audit-logs/operation-types',
     method: 'get'
   })
@@ -156,7 +161,7 @@ export function getOperationTypes() {
  * 导出审计日志
  */
 export function exportAuditLogs(data: AuditLogExportRequest) {
-  return request<AuditLogExportResponse>({
+  return request<ApiEnvelope<AuditLogExportResponse>>({
     url: '/audit-logs/export',
     method: 'post',
     data
@@ -167,7 +172,7 @@ export function exportAuditLogs(data: AuditLogExportRequest) {
  * 归档审计日志
  */
 export function archiveAuditLogs(data: AuditLogArchiveRequest) {
-  return request<AuditLogArchiveResponse>({
+  return request<ApiEnvelope<AuditLogArchiveResponse>>({
     url: '/audit-logs/archive',
     method: 'post',
     data
@@ -175,8 +180,18 @@ export function archiveAuditLogs(data: AuditLogArchiveRequest) {
 }
 
 /**
- * 下载导出文件
+ * 下载导出文件（axios blob，携带认证头）
+ *
+ * 历史实现返回 URL 字符串供 window.open 使用，三重损坏：前缀缺 /api/v1、
+ * 新标签不带 Authorization（后端 get_current_user 只认 Bearer——cookie 名
+ * 与前端存储键不匹配）、完全绕过拦截器（无续期/无登出处理）。改走统一
+ * request 客户端：baseURL 自动拼对前缀、请求拦截器注入 Bearer、401 走
+ * 静默续期重放链路。
  */
 export function downloadExportFile(fileName: string) {
-  return `/api/audit-logs/download-export/${fileName}`
+  return request<Blob>({
+    url: `/audit-logs/download-export/${encodeURIComponent(fileName)}`,
+    method: 'get',
+    responseType: 'blob'
+  })
 }
