@@ -25,6 +25,13 @@ android {
 
         manifestPlaceholders["networkSecurityConfig"] =
             if (lanCleartext) "@xml/network_security_config_lan" else "@xml/network_security_config"
+
+        // 构建标识：向导页副标题展示，避免误装/误判当前 APK 的明文能力
+        buildConfigField("boolean", "LAN_CLEARTEXT_BUILD", lanCleartext.toString())
+    }
+
+    buildFeatures {
+        buildConfig = true
     }
 
     buildTypes {

@@ -52,7 +52,16 @@ gradle wrapper --gradle-version 8.9   # 首次生成 wrapper（wrapper 二进制
 产出 app-debug.apk（约 6.0 MB，debug 签名）；两个 NSC 构建变体经
 `aapt2 dump xmltree` 实证——默认变体 manifest 指向
 `network_security_config`（严格），`-Pbtdeck.lanCleartext=true` 变体指向
-`network_security_config_lan`。
+`network_security_config_lan`。向导页副标题会标明当前构建能力
+（BuildConfig.LAN_CLEARTEXT_BUILD）。
+
+测试用 APK 已按变体命名输出到 `android/dist/`（不入库）：
+
+- `btdeck-companion-0.1.0-mvp-strict-debug.apk`——默认严格版：局域网 http
+  会被系统拦截（`ERR_CLEARTEXT_NOT_PERMITTED`，属预期防线）
+- `btdeck-companion-0.1.0-mvp-lan-cleartext-debug.apk`——LAN 明文版：
+  供局域网 http 服务器测试；应用层 LanHostPolicy 仍强制"私有主机 + 显式
+  风险确认"，公网明文依旧拒绝
 
 ## 结构
 
