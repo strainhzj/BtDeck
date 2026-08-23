@@ -72,6 +72,13 @@ class WebViewActivity : AppCompatActivity() {
         webView.settings.apply {
             javaScriptEnabled = true          // SPA 前端必需
             domStorageEnabled = true          // localStorage 会话状态
+            // 桌面管理页兜底（原生移动 UI 是 Phase 4 交付）：按页面设计视口
+            // 布局 + 首屏按屏宽缩放 + 捏合缩放，保证宽表格基本可用
+            useWideViewPort = true
+            loadWithOverviewMode = true
+            setSupportZoom(true)
+            builtInZoomControls = true
+            displayZoomControls = false
             allowFileAccess = false           // 禁本地文件面
             allowContentAccess = false
             cacheMode = WebSettings.LOAD_DEFAULT
