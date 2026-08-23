@@ -9,7 +9,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28；`_set_online_status` 维护 is_online/offline_since 供缓存剔除与速度接口跳过，L1526） |
+| 初始化总控 downloader-init | `initialization.py` | 🔵 下载器初始化与状态轮询总控（连通性检查/全量增量同步/定时任务/qB+Transmission 状态采集；核心类 `DownloaderInitialization` L28；`_set_online_status` 维护 is_online/offline_since 供缓存剔除与速度接口跳过，L1526；延迟探测统一走 `utils/connectivity` 的 TCP/可选 ICMP probe，2026-08-23 起） |
 | Transmission 设置 tr-settings | `transmission_settings.py` | `TransmissionSettings`：Transmission 客户端会话设置读写 |
 | qB 设置 qb-settings | `qbittorrent_settings.py` | `QBitTorrentSettings`：qBittorrent 应用偏好设置读写 |
 | 种子拉取 torrent-fetcher | `torrent_fetcher.py` | `TorrentFetcher`：从下载器拉取种子列表的封装 |
@@ -19,7 +19,7 @@
 | 下载器 VO downloader-vo | `responseVO.py` | 下载器响应 VO（`DownloaderSimpleVO`/`DownloaderResponse`/`DownloaderVO` 等） |
 | 下载器请求 downloader-request | `request.py` | 请求 VO（`RequestDownloader`/`UpdateDownloader`/`DownloaderCheckVO` 等） |
 
-### initialization.py 核心（最大文件，2071 行）
+### initialization.py 核心（最大文件，2050 行）
 
 - **核心类 `DownloaderInitialization`**（L28）：缓冲式增删 + 快照
 - **连通性检查**：`check_port_connectivity`(L251)、`check_downloader_connectivity_with_retry`(L305)、qB/Transmission 认证重试 `_check_*_auth_with_retry`(L381/L417)
@@ -74,11 +74,11 @@
 
 ## 关键观察
 
-- **下载器领域是最大复杂度核心**：`downloader/initialization.py`（2071 行）+ `qbittorrent_settings.py` + `transmission_settings.py` 构成下载器管理全链路
+- **下载器领域是最大复杂度核心**：`downloader/initialization.py`（2050 行）+ `qbittorrent_settings.py` + `transmission_settings.py` 构成下载器管理全链路
 - **种子领域 ORM 集中**：`TorrentInfo` / `TrackerInfo` / `TrackerMessageLog` 等核心业务表都在 `torrents/models.py`
 - **空文件占位**：`torrents/qbittorrent.py`、`torrents/transmission.py` 为 0 字节空文件
 - **`downloader/` 无 `__init__.py`**（实测确认），与其他领域目录不一致
 
 ## 第三层详情
 
-- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`downloader/initialization.py` 2071 行）
+- 本分支第三层待后续会话按模式 B 补齐（建议优先级：`downloader/initialization.py` 2050 行）

@@ -1,5 +1,87 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-23 交接（九）：android/ 首次编译验证通过（BUILD SUCCESSFUL）
+
+### 结论
+
+用户指令"开始首次编译验证"。本机无 Android 环境，搭便携工具链（IntelliJ JBR21 + Gradle 8.9 腾讯镜像 + cmdline-tools 安装 platform 35/build-tools 35.0.0，全在 C:\software\android-build-env\ 可整体删除）后完成首次编译：**编译 + 11 个 JVM 单测 + APK 打包全部通过**，双 NSC 明文变体经 aapt2 实证按设计切换。Phase 2 MVP 从"未编译脚手架"升级为"本机可复现构建"。
+
+### 首次编译发现并修复（3 项）
+
+1. AGP 8.5.2 → **8.7.3**（8.5 不支持 compileSdk 35；Gradle 8.9 为其最低要求）。
+2. ServerListActivity：ListView `apply{}` 内未限定 `adapter` 被 Kotlin 解析到 ListView.getAdapter()（平台属性遮蔽）——改显式局部变量。
+3. `onItemClickListener = { }` 属性赋值不做 SAM 推断——改 `AdapterView.OnItemClickListener{}` 构造器。
+
+### 产物与验证
+
+- `:app:testDebugUnitTest` 11 用例 0 失败；`:app:assembleDebug` BUILD SUCCESSFUL。
+- app-debug.apk ~6.0MB，apksigner verify 通过；badging：com.btdeck.companion 0.1.0-mvp / targetSdk 35 / 权限仅 INTERNET+ACCESS_NETWORK_STATE。
+- NSC：默认变体 manifest→@0x7f110000（严格版）；`-Pbtdeck.lanCleartext=true`→@0x7f110001（LAN 明文版）。
+- android/README.md 构建节已改为已验证流程+工具链表；feature_list task .3 evidence、progress.md 第三批已同步。
+
+### 下一步
+
+1. 真机/模拟器人工冒烟（本机有 BlueStacks 未驱动）；仪表化测试与设备矩阵 Phase 5。
+2. android-wheels 建远端推送仍等用户"整体打包完成"指令。
+3. Git 提交待用户指示。
+
+## 2026-08-23 交接（八）：Phase 1 收口 + Phase 2 伴侣模式 MVP 脚手架
+
+### 结论
+
+用户指令"继续下一步，整体打包完成后再推送 android-wheels"。本批完成：Monaco 审计（Phase 1 第 6 项，**Phase 1 七项全部收口**）；Phase 2 伴侣模式 MVP 的 android/ 工程完整脚手架 + health version 字段（按登记原则标 in-progress，未编译验证不标 done）。android-wheels 远端创建/推送/Actions 全部顺延至整体打包完成。
+
+### 变更（BtDeck 主仓，未提交）
+
+- **Monaco 审计**：docs/android/monaco-audit.md（实测数据：首屏 app 75KB+vendors 1.06MB，Monaco 隔离于异步 chunk 2.94MB+按需 worker，零首屏成本）；删除死组件 frontend/src/components/MonacoEditor.vue（静态 import 版，零消费方零测试引用）；webpack plugin 与组件层均判定不改。
+- **health version**：health.py 的 /health/live、/health/ready（含 503 分支）data 增加 version（常量无 I/O）；test_health.py 10 用例锁定；tests/api 全量 1004 passed。
+- **android/ 工程全新**（Kotlin+AGP 8.5.2+minSdk 24/target 35）：向导/服务器 profile 管理/HealthClient（live→ready+版本+TLS 可辨识）/同源 WebView（超时重试、外链交系统浏览器、切换 profile 清 cookie+storage 隔离令牌、版本副标题）/自签证书指纹信任流程（记录作用域，绝不无条件 proceed）/明文 HTTP 双层防线（NSC 默认全禁+应用层 LanHostPolicy 私有字面量+显式同意；LAN 明文需 -Pbtdeck.lanCleartext=true 构建变体）/LanHostPolicyTest JVM 单测。
+- roadmap：api README health 行、根 README android 分支、元信息；feature_list.json（task .2 补 Monaco evidence、task .3 → in-progress）；progress.md 第二批已记。
+
+### 验证
+
+后端 mypy 247 文件零错、black/flake8、tests/api 1004 passed；前端 typecheck + tasks 相关 30 用例通过；根 ./init.sh 通过。
+
+### 诚实边界
+
+本机无 Android SDK/JDK17——android/ 未做 Gradle 编译验证（代码按正确性审查交付）；OkHttp 健康检查不消费 WebView 信任指纹（自签 https 显"证书错误"）为已知 MVP 边界，两项均已写入 android/README.md 与 feature_list evidence。
+
+### 下一步
+
+1. 【用户】具备 JDK17+Android SDK 的环境（或 CI）跑 android/ 首次 `gradlew :app:testDebugUnitTest` + `assembleDebug`。
+2. 整体打包完成后：android-wheels 建 GitHub 远端并推送（Phase 0 闸门验证）。
+3. Phase 3 服务端壳工程待 Phase 0 闸门；桌面伴侣模式可复用本批 profile/健康检查设计。
+4. Git 提交待用户指示。
+
+## 2026-08-23 交接（七）：安卓适配改造启动——Phase 0A/0B 脚手架 + Phase 1 主体落地
+
+### 结论
+
+按 PLANS/dual-mode-client.md 启动安卓适配：Phase 1 平台无关改造的第 1/3/4/5/7 项完成并全量验证，第 2 项完成文档契约与测试（LAN 重绑留 Phase 3）；Phase 0A 决策文档与 Phase 0B android-wheels 独立仓库脚手架就绪（本地 git 仓库，未推送）。Phase 0 闸门未验证（无 CI 实跑），按计划不得启动 Phase 3；Phase 2 伴侣模式可独立先行。
+
+### 变更（BtDeck 主仓，未提交）
+
+- **统一 TCP probe**：新增 `backend/app/utils/connectivity.py`；`downloader.py` get_delay_async/get_delay 与 `initialization.py` _update_downloader_status 三处 ping3 直调替换为"loopback 短路→桌面可选 ICMP（失败/PermissionError 全捕获回退）→TCP connect 计时"；安卓环境自动禁 ICMP。顺带修复延迟异常分支 `delay` 未绑定的 UnboundLocalError 潜伏 bug（原代码整个状态更新会 return False）。
+- **依赖瘦身**：两审计服务 Excel 导出改 openpyxl 直写；pandas/numpy/sympy/common 从三份 requirements 移除（零 import 核实）；两份 PyInstaller spec excludes 加 'pandas'/'numpy'。
+- **文档**：docs/android/ 四份——target-matrix.md（Phase 0A 目标矩阵+FGS 决策）、toolchain-matrix.md、config-and-paths.md（注入契约+HOST≠ALLOWED_HOSTS）、host-capability-matrix.md。
+- **测试**：新增 5 个文件 54 例——test_connectivity.py(23)、test_delay_probe_callchains.py(8)、test_audit_excel_export.py(7)、test_writable_roots.py(6)、test_packaging_contract.py(10)。
+- feature_list.json（dual-mode-client → in-progress，task .1/.2 带 evidence）、progress.md 已同步。
+
+### android-wheels 独立仓库（本地 C:\software\claude_code_full_stack\android-wheels，commit ee65481）
+
+构建 workflow（四 ABI cargo-ndk+maturin abi3 cp312+sdist sha256 固定）、check-wheel-tag.py（tag+ELF 校验）、make-simple-index.py（PEP 503+sha256）、import-matrix.yml（模拟器 API 34/35，full-graph 阶段 2 显式 fail 待接入真实资源）、最小 Chaquopy17 testapp、docs/gate.md 闸门模板、versions.env（hash/tag TBD 首次 CI 回填）。
+
+### 验证
+
+后端 mypy 247 文件零错误、black/flake8 通过、pytest 全量 **3927 passed + 7 skipped**；根 `./init.sh`（ci）通过（此前 WSL E_ACCESSDENIED 已不复现）。
+
+### 下一步（按优先级）
+
+1. 【用户】创建 android-wheels GitHub 远端并推送 → 首次 Actions 运行 → 回填 versions.env sha256/platform tag → import-matrix。
+2. Monaco chunk/首屏收益实测（Phase 1 第 6 项，唯一未完成项）。
+3. Phase 2 伴侣模式 MVP（独立可先行）。
+4. Git 提交待用户指示（主仓 + android-wheels 两处）。
+
 ## 2026-08-23 交接（六）：双模式客户端计划评审修订与 v1.0.6 清单登记
 
 ### 结论

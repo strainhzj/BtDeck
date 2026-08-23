@@ -26,6 +26,7 @@ BtDeck/
 │   ├── store/           Vuex（index.ts 空壳 + 4 个 getModule 自注册 + downloaderSettings 传统 namespaced）
 │   ├── components-layout/  通用组件（LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
+├── android/          ← 伴侣模式 App（dual-mode-client Phase 2 MVP：向导/服务器 profile/健康检查/同源 WebView）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
 ├── tests/            ← 测试（backend/tests pytest 180 个 test_*.py + frontend/tests Jest 59 个 spec）
 └── perspectives/     ← 跨切专题（docs/roadmap/perspectives：调用链 / 约定 / 风险 / 测试覆盖）
@@ -70,7 +71,8 @@ BtDeck/
 | ↳ data-models | ORM 模型 + repositories + schemas + enums + 默认数据种子 | [backend/data-models/README.md](./backend/data-models/README.md) |
 | ↳ tasks | 定时任务（cron）+ scheduler + 后台任务管理 | [backend/tasks/README.md](./backend/tasks/README.md) |
 | ↳ domain | 领域目录：downloader / torrents / tracker / auth / user | [backend/domain/README.md](./backend/domain/README.md) |
-| ↳ infra | utils（audit_logger/encryption/log_sanitizer）+ startup + migrations + alembic | [backend/infra/README.md](./backend/infra/README.md) |
+| ↳ infra | utils（audit_logger/encryption/log_sanitizer/connectivity）+ startup + migrations + alembic | [backend/infra/README.md](./backend/infra/README.md) |
+| **android** ✨2026-08-23 | 伴侣模式 App（Kotlin；不含 Python，服务端壳是 Phase 3） | [../android/README.md](../../android/README.md) |
 | **frontend** | Vue 2 + TypeScript 前端总览与分支索引 | [frontend/README.md](./frontend/README.md) |
 | ↳ entry | 应用入口：Vue 实例化 / 路由 / 路由守卫 / 根组件 | [frontend/entry/README.md](./frontend/entry/README.md) |
 | ↳ api | axios 封装的 12 个领域 API 模块 | [frontend/api/README.md](./frontend/api/README.md) |
@@ -116,7 +118,7 @@ BtDeck/
 
 | 项目 | 值 |
 |------|-----|
-| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索、错误原因及 Tracker 判断修复）/ 2026-08-13（孤儿扫描 12 万级后台化）/ 2026-08-14（大库迁移中断恢复、启动 fail-fast、孤儿文件页面视图模式与嵌套表头修复、Tracker 主域名筛选与错误单种排查及卡片样式统一）/ 2026-08-15（种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语；同日副本定位改为定时预扫描落库；第三批：located 副本筛选 + 预扫描范围收紧）/ 2026-08-16（副本位置弹窗行级删除副本）/ 2026-08-16（第二批：进度精度舍入、转移后立即落库目标行、手动操作审计补 IP）/ 2026-08-17（双密钥会话过期登出与重登录生效修复） / 2026-08-18（W9 强制改密路由死锁修复）/ 2026-08-18（第二批：同内容排查状态/Tracker 改组内显示筛选）/ 2026-08-18（第三批：跨标签令牌续期竞态修复——三态续期/ExpireSession 保留 refresh cookie/守卫网络错误分流/后端原子轮换）/ 2026-08-18（第四批：令牌机制对抗审计修复——升级密钥补齐/业务 401 改码/refresh_tokens 清理任务/SECRET_KEY YAML 持久化/跨标签级联根修/5xx 瞬时逃生/审计下载 blob/网络 toast 节流/el-upload 401 引导）/ 2026-08-20（第二批：展示对齐判定——Tracker 异常可见化与 Announce 状态覆写）|
+| 生成日期 | 2026-07-25（首次）/ 2026-07-30（增量更新：v1.0.6.25~32）/ 2026-08-04（增量更新：v1.0.6.33~36）/ 2026-08-06（增量更新：v1.0.6.37）/ 2026-08-09（异步操作占用）/ 2026-08-11（同步阻塞修复、孤儿硬链接与 UI/重复查询修复）/ 2026-08-12（种子文件、任务日志、高级搜索、错误原因及 Tracker 判断修复）/ 2026-08-13（孤儿扫描 12 万级后台化）/ 2026-08-14（大库迁移中断恢复、启动 fail-fast、孤儿文件页面视图模式与嵌套表头修复、Tracker 主域名筛选与错误单种排查及卡片样式统一）/ 2026-08-15（种子文件备份补偿、孤儿副本整体定位与筛选下拉提示语；同日副本定位改为定时预扫描落库；第三批：located 副本筛选 + 预扫描范围收紧）/ 2026-08-16（副本位置弹窗行级删除副本）/ 2026-08-16（第二批：进度精度舍入、转移后立即落库目标行、手动操作审计补 IP）/ 2026-08-17（双密钥会话过期登出与重登录生效修复） / 2026-08-18（W9 强制改密路由死锁修复）/ 2026-08-18（第二批：同内容排查状态/Tracker 改组内显示筛选）/ 2026-08-18（第三批：跨标签令牌续期竞态修复——三态续期/ExpireSession 保留 refresh cookie/守卫网络错误分流/后端原子轮换）/ 2026-08-18（第四批：令牌机制对抗审计修复——升级密钥补齐/业务 401 改码/refresh_tokens 清理任务/SECRET_KEY YAML 持久化/跨标签级联根修/5xx 瞬时逃生/审计下载 blob/网络 toast 节流/el-upload 401 引导）/ 2026-08-20（第二批：展示对齐判定——Tracker 异常可见化与 Announce 状态覆写）/ 2026-08-23（安卓适配 Phase 1：统一 TCP probe 与依赖瘦身）/ 2026-08-23（第二批：Phase 2 伴侣模式 MVP 脚手架 + health version 字段）|
 | 2026-08-20 增量 | 新增 `auxiliary_seed_count` 数据链路、种子信息同步全量校正、删除/转移/还原增量维护，以及两种种子列表视图字段；同步 Alembic head `975dad435c03` 与相关测试入口 |
 | 2026-08-20 增量（第二批） | 展示对齐判定：新增 `core/tracker_keyword_map.py` 共享关键词池加载器（判定任务 `_load_keywords` 委托复用）；`tracker_status_policy.py` 新增 `tracker_message_failed`/`tracker_display_failed`（与判定任务中性码语义一致）；`torrent_helpers.py`/`duplicate_torrents.py` announce/scrape 展示文本按失败池覆写 + VO 透传 `has_tracker_error` + duplicates error 筛选口径对齐（OR has_tracker_error）；前端 `torrentBatch.ts` 新增 hasTrackerError/showTrackerErrorTag/getTorrentErrorReason 共享 helper，两视图状态列叠加红色 Tracker异常 标签 |
 | 2026-08-21 增量 | 任务日志与孤儿文件页统计摘要接入全局 `CollapsiblePanel`，分别以 `btdeck_task_log_stats_collapsed` / `btdeck_orphan_file_stats_collapsed` 持久化折叠状态；前端管理页契约测试扩展为 14 项 |

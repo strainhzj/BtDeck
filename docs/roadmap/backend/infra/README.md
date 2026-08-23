@@ -5,10 +5,11 @@
 
 ## 关键词速查
 
-### utils/（5 个文件）
+### utils/（6 个文件）
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
+| 连通性探测 connectivity | `connectivity.py` | 统一下载器探测（dual-mode-client Phase 1.1）：loopback 短路→桌面可选 ICMP（失败/PermissionError 回退）→TCP connect 计时；安卓自动禁 ICMP。`probe_delay_sync`(L160)/`probe_delay`(L189)，被 downloader.py 与 initialization.py 复用 |
 | 审计日志 audit-logger | `audit_logger.py` | 🔵 审计日志系统：`_AuditLoggerSingleton`(L32)、`_AuditFormatter`(L283)、`_CompressingRotator`(L305 旧日志压缩)、`get_audit_logger`(L384)、`export_audit_logs_from_db_to_file`(L394) |
 | UTC 时间序列化 datetime-utils | `datetime_utils.py` | `serialize_utc_datetime`(L8)：将 DB 中 naive UTC DateTime 序列化为带显式 UTC 的 ISO-8601，供 API 响应模型共用 |
 | SM4 加密 encryption | `encryption.py` | 🔵 SM4 加密：`SM4Encryption`(L14) + 模块封装 `get_sm4_encryption`(L159)、`encrypt_password`(L167)、`decrypt_password`(L181)、`encrypt_tracker_url`(L195)、`decrypt_tracker_url`(L209) |
