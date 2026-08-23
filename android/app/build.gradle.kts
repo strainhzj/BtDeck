@@ -19,7 +19,9 @@ android {
         minSdk = 24
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0-mvp"
+        // LAN 明文构建用独立 versionName，系统"设置-应用"与安装器里可见，
+        // 避免与严格版混淆（曾发生：误装严格版复测报 ERR_CLEARTEXT_NOT_PERMITTED）
+        versionName = if (lanCleartext) "0.1.0-mvp+lan" else "0.1.0-mvp"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
