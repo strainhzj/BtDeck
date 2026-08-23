@@ -1,5 +1,31 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-22 交接（五）：v1.0.5 发布前修正 GitHub 仓库地址
+
+### 结论
+
+已从已合并的 `origin/master` 建立 `codex/release-v1.0.5-repo-url` 发布修复分支。运行时更新检查和所有版本 Release 链接已统一使用正式仓库 `strainhzj/BtDeck`。
+
+### 变更
+
+- `backend/app/services/notification_service.py`：默认 GitHub 仓库改为 `strainhzj/BtDeck`。
+- `backend/app/tasks/cron_executor.py`：定时版本检查的显式仓库改为 `strainhzj/BtDeck`。
+- `backend/app/version.py`：v1.0.3/v1.0.4/v1.0.5 历史 Release URL 改为正式地址。
+- `backend/scripts/add_welcome_and_update_notifications.py`、`README.md`：同步正式 Release 地址。
+- `docs/roadmap/`：已核对，只有同一行内的配置值变化，无模块、方法或行号漂移，无需改动。
+
+### 验证
+
+- 后端定向任务测试：42 passed。
+- 目标 Python 文件编译、`git diff --check` 和旧地址全仓搜索均通过。
+
+### 后续
+
+1. 将该修复分支合并到 `master`。
+2. 在合并后的提交上创建并推送 `v1.0.5` tag，再创建 GitHub Release。
+3. 确认 Docker 镜像 digest 与该发布提交对应。
+4. 已部署 v1.0.4 的旧程序无法被 v1.0.5 反向修复；只有升级到包含本修复的版本后，更新检查才会访问正确仓库。
+
 ## 2026-08-21 交接（四）：按 v1.0.5 更新日志同步根 README.md
 
 ### 结论
