@@ -35,7 +35,7 @@ FastAPI lifespan（请求进入前）
     ├─ L363 recover_interrupted_orphan_scans()  # running → failed
     ├─ L377 await update_cron_task_status()
     ├─ L388 await cron_executor.start()         # 启动 APScheduler
-    │             └─ app/tasks/cron_executor.py  AsyncIOScheduler.add_job (L120/L257/L1020)
+    │             └─ app/tasks/cron_executor.py  AsyncIOScheduler.add_job (L122/L259/L1162)
     ├─ L404 asyncio.create_task(startup_event(app))
     │             └─ app/downloader/initialization.py:682  startup_event(app)
     │                  ├─ L708  _async_initialization_tasks
@@ -93,7 +93,7 @@ HTTP DELETE /api/v1/torrents/...
 
 ```
 APScheduler job（注册）
-  app/tasks/cron_executor.py:120/257/1020  add_job(...)
+  app/tasks/cron_executor.py:122/259/1162  add_job(...)
     └─ app/tasks/scheduler/tracker_reannounce_task.py  TrackerReannounceTask (269 行)
          │  继承 scheduler/torrent_sync/base.py:BaseSyncTask
          │

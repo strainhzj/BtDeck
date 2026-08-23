@@ -15,12 +15,12 @@
 | 清理执行器 cleanup | `cleanup_executor.py` | 后台执行器 `CleanupTaskExecutor`：自动清理执行器（回收站(L3)+待删除标签(L4)） |
 | 定时任务同步 CRUD cron-crud | `cron_crud.py` | `CronTaskCRUD`/`TaskLogsCRUD`：定时任务同步 CRUD（`DatabaseResult`） |
 | 定时任务异步 CRUD cron-crud-async | `cron_crud_async.py` | 定时任务异步 CRUD |
-| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L120/257/1020）；`_execute_task` 三段式会话（读会话→无会话任务体→收尾短会话三写，L295；greenlet 交错治理）；同步 execute 经 to_thread（L745/752） |
+| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L122/259/1162）；`_execute_task` 三段式会话（读会话→无会话任务体→收尾短会话三写，L297；greenlet 交错治理）；Python 内部类执行生命周期/超时观测（L606/L721），同步 execute 经 to_thread（L710/L878） |
 | 任务结果新鲜度 cron-freshness | `cron_freshness.py` | 定时任务数据新鲜度轻量计算：`compute_freshness`（freshnessSeconds/stale，stale 阈值按 2 个调度周期近似、APScheduler CronTrigger 估算最短间隔，失败回退 `CRON_STALE_THRESHOLD_SECONDS` 默认 7200s） |
 | 定时任务表 cron-model | `cron_models.py` | ORM `CronTask`：定时任务表 |
 | 任务日志 logger | `logger.py` | 任务执行日志写入与统计 |
 | 任务日志表 task-log-model | `models.py` | ORM `TaskLogs`：任务日志表 |
-| 资源准入 resource-guard | `resource_guard.py` | 同步任务资源准入控制器 `TaskAdmissionController`（背压，防 DB/下载器/线程池抢占） |
+| 资源准入 resource-guard | `resource_guard.py` | 同步任务资源准入控制器 `TaskAdmissionController`（背压，防 DB/下载器/线程池抢占）；维护 heavy_sync holder 的 task/run/phase/进程快照并发射准入/超时/释放观测（L116/L143/L316/L369） |
 | 任务 profile task-profile | `task_profiles.py` | 重型任务资源 profile 注册表 `TaskProfile` |
 | 任务验证 validation | `validation_service.py` | 任务验证（脚本语法/Cron 表达式/Python 类三套校验） |
 

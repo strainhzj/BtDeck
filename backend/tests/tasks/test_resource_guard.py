@@ -21,6 +21,7 @@ import asyncio
 import pytest
 
 from app.tasks.resource_guard import (
+    AdmissionOwner,
     SKIP_DUPLICATE,
     SKIP_WAIT_TIMEOUT,
     AdmissionResult,
@@ -151,6 +152,39 @@ class TestWaitTimeout:
         assert b.wait_seconds < 0.5
 
         admission_controller.release("task_a")
+
+    async def test_wait_timeout_identifies_holder_context(self):
+        """等待超时时带出占用者 task/run/phase/年龄，定位 heavy_sync 真正 holder。"""
+        holder_profile = _profile("tracker_holder", wait_timeout=5.0)
+        waiter_profile = _profile("info_waiter", wait_timeout=0.05)
+        holder = await admission_controller.acquire(
+            "tracker_holder",
+            holder_profile,
+            owner=AdmissionOwner(
+                task_id=7,
+                task_name="Tracker同步",
+                cron_run_id="cron-7-test",
+                sync_run_id="sync-test",
+            ),
+        )
+        assert holder.admitted is True
+        admission_controller.update_holder_phase("tracker_holder", "tracker_status", sync_run_id="sync-test")
+
+        result = await admission_controller.acquire("info_waiter", waiter_profile)
+
+        assert result.admitted is False
+        assert result.skip_reason == SKIP_WAIT_TIMEOUT
+        assert result.blocked_by_task_code == "tracker_holder"
+        assert result.blocked_by_task_id == 7
+        assert result.blocked_by_cron_run_id == "cron-7-test"
+        assert result.blocked_by_sync_run_id == "sync-test"
+        assert result.blocked_by_phase == "tracker_status"
+        assert result.blocked_by_age_seconds is not None
+        assert result.blocked_by_age_seconds >= 0
+        assert result.blocked_by_pid is not None
+        assert result.blocked_by_worker_instance_id
+
+        admission_controller.release("tracker_holder")
 
     async def test_different_task_code_admits_after_release(self):
         """不同 task_code 互斥：A release 后 B 才 admitted（跨任务竞争治理核心）。

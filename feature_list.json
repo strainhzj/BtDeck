@@ -1693,9 +1693,14 @@
           "files": [
             "backend/app/tasks/resource_guard.py",
             "backend/app/tasks/task_profiles.py",
-            "backend/app/tasks/cron_executor.py"
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/services/sync_observability.py",
+            "backend/app/services/sync_coordinator.py",
+            "backend/app/core/config.py",
+            "backend/tests/tasks/test_resource_guard.py",
+            "backend/tests/tasks/test_cron_executor_admission.py"
           ],
-          "evidence": "阶段 0 与阶段 1 合并实施：TaskAdmissionController 在 acquire/release 输出结构化日志（task_code/admitted/skip_reason/wait_seconds/running_count/queued_count/queue_limit），覆盖准入成功与跳过两类决策；test_admitted_log_contains_required_fields + test_skipped_log_at_warning_level 验证日志字段。"
+          "evidence": "阶段 0 与阶段 1 合并实施：TaskAdmissionController 在 acquire/release 输出结构化日志（task_code/admitted/skip_reason/wait_seconds/running_count/queued_count/queue_limit），覆盖准入成功与跳过两类决策；test_admitted_log_contains_required_fields + test_skipped_log_at_warning_level 验证日志字段。本次观测增强补充 heavy_sync holder 的 task/run/phase/年龄/进程身份、资源超时阻塞者诊断；Cron Python 内部类 start/heartbeat/timeout_warning/end 生命周期事件；SyncCoordinator 活动运行 phase/elapsed/last-progress 与 sync_phase 事件；新增 holder 与生命周期回归用例，相关观测套件 92 passed。"
         },
         {
           "id": "sync-resource-governance.1",

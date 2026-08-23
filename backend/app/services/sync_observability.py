@@ -37,6 +37,7 @@ import os
 import sqlite3
 import threading
 import time
+import uuid
 from collections import deque
 from contextvars import ContextVar
 from typing import Any, Callable, Deque, Dict, Optional
@@ -46,6 +47,11 @@ from app.core.config import settings
 from app.utils.log_sanitizer import IP_PATTERN, sanitize_ip
 
 logger = logging.getLogger(__name__)
+
+# 进程级身份：用于区分真实仍在运行的任务与进程重启后遗留的状态/日志。
+# 只生成一次，不写数据库；所有结构化观测事件自动携带这两个字段。
+WORKER_PID = os.getpid()
+WORKER_INSTANCE_ID = f"{WORKER_PID}-{uuid.uuid4().hex[:12]}"
 
 # ==================== 稳定事件名 ====================
 
@@ -65,6 +71,12 @@ EVENT_TRACKER_STATUS = "sync_tracker_status_done"
 EVENT_LOOP_LAG = "event_loop_lag"
 # WAL 只读快照
 EVENT_WAL_SNAPSHOT = "wal_snapshot"
+# Python 内部类任务生命周期（start/heartbeat/timeout_warning/end）
+EVENT_TASK_LIFECYCLE = "task_lifecycle"
+# heavy_sync 等资源生命周期（wait/admitted/timeout/release）
+EVENT_RESOURCE_LIFECYCLE = "resource_lifecycle"
+# 同步阶段切换（用于还原卡在哪个阶段）
+EVENT_SYNC_PHASE = "sync_phase"
 
 # ==================== 字段白名单 ====================
 
@@ -77,12 +89,27 @@ COMMON_FIELDS = frozenset(
         "trigger",
         "downloader_id",
         "downloader_count",
+        "task_code",
+        "task_name",
+        "cron_run_id",
+        "sync_run_id",
+        "resource",
         "phase",
         "phase_ms",
         "outcome",
         "skip_reason",
         "admission_wait_ms",
         "threshold_ms",  # 告警阈值类事件通用（looped 阈值对比基准）
+        "state",
+        "pid",
+        "worker_instance_id",
+        "elapsed_ms",
+        "timeout_seconds",
+        "timeout_exceeded",
+        "execution_mode",
+        "error_type",
+        "last_progress_ms",
+        "resource_held_ms",
     }
 )
 
@@ -100,6 +127,35 @@ EVENT_FIELDS: Dict[str, frozenset] = {
     EVENT_TRACKER_STATUS: frozenset({"scanned", "changed", "unchanged", "batches", "duration_ms"}),
     EVENT_LOOP_LAG: frozenset({"lag_ms", "p95_ms", "p99_ms", "max_ms", "window_size"}),
     EVENT_WAL_SNAPSHOT: frozenset({"wal_bytes", "wal_growth_bytes", "busy_count", "checkpoint_busy"}),
+    EVENT_TASK_LIFECYCLE: frozenset(),
+    EVENT_RESOURCE_LIFECYCLE: frozenset(
+        {
+            "resource_state",
+            "wait_ms",
+            "queue_count",
+            "running_count",
+            "queue_limit",
+            "blocked_by_task_code",
+            "blocked_by_task_id",
+            "blocked_by_cron_run_id",
+            "blocked_by_sync_run_id",
+            "blocked_by_phase",
+            "blocked_by_age_ms",
+            "blocked_by_started_at",
+            "blocked_by_pid",
+            "blocked_by_worker_instance_id",
+            "holder_task_code",
+            "holder_task_id",
+            "holder_cron_run_id",
+            "holder_sync_run_id",
+            "holder_phase",
+            "holder_age_ms",
+            "holder_started_at",
+            "holder_pid",
+            "holder_worker_instance_id",
+        }
+    ),
+    EVENT_SYNC_PHASE: frozenset({"previous_phase", "previous_phase_ms"}),
 }
 
 
@@ -232,6 +288,9 @@ def log_event(event_name: str, level: int = logging.INFO, **fields: Any) -> None
     当前上下文持有 run_id（set_run_id 后）时自动附加 run_id 字段；
     调用方显式传入 run_id 时以显式值优先。
     """
+    fields = dict(fields)
+    fields.setdefault("pid", WORKER_PID)
+    fields.setdefault("worker_instance_id", WORKER_INSTANCE_ID)
     context_run_id = _run_id_var.get()
     if context_run_id is not None and "run_id" not in fields:
         fields = dict(fields, run_id=context_run_id)

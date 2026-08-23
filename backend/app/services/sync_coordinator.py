@@ -59,12 +59,13 @@ from app.models.sync_checkpoint import (
 from app.services.sync_observability import (
     EVENT_ADMISSION,
     EVENT_CHECKPOINT,
+    EVENT_SYNC_PHASE,
     EVENT_SYNC_RUN_START,
     clear_run_id,
     log_event,
     set_run_id,
 )
-from app.tasks.resource_guard import SKIP_DUPLICATE, SKIP_WAIT_TIMEOUT, admission_controller
+from app.tasks.resource_guard import AdmissionOwner, SKIP_DUPLICATE, SKIP_WAIT_TIMEOUT, admission_controller
 from app.tasks.task_profiles import TaskProfile, get_profile
 from app.utils.datetime_utils import serialize_utc_datetime
 
@@ -166,12 +167,21 @@ _active_runs: Dict[str, Dict[str, Any]] = {}
 
 def _register_active_run(run_id: str, req: SyncRequest) -> None:
     """登记同步运行，供受保护同步健康接口读取。"""
+    now = datetime.now()
+    now_monotonic = time.perf_counter()
     _active_runs[run_id] = {
         "run_id": run_id,
         "sync_type": req.sync_type,
+        "task_code": _sync_task_code(req.sync_type),
+        "trigger": req.trigger,
         "phase": "admission",
-        "started_at": datetime.now(),
+        "started_at": now,
+        "phase_started_at": now,
+        "last_progress_at": now,
         "downloader_count": len(req.downloader_ids) if req.downloader_ids is not None else None,
+        "_started_monotonic": now_monotonic,
+        "_phase_started_monotonic": now_monotonic,
+        "_last_progress_monotonic": now_monotonic,
     }
 
 
@@ -185,10 +195,38 @@ def _update_active_run(
     active = _active_runs.get(run_id)
     if active is None:
         return
+    now_monotonic = time.perf_counter()
+    now = datetime.now()
+    previous_phase = active.get("phase")
+    active.setdefault("_started_monotonic", now_monotonic)
+    active.setdefault("_phase_started_monotonic", now_monotonic)
     if phase is not None:
+        if phase != previous_phase and previous_phase is not None:
+            previous_phase_ms = (now_monotonic - float(active["_phase_started_monotonic"])) * 1000.0
+            log_event(
+                EVENT_SYNC_PHASE,
+                run_id=run_id,
+                sync_run_id=run_id,
+                task_code=active.get("task_code"),
+                trigger=active.get("trigger"),
+                state="enter",
+                previous_phase=previous_phase,
+                previous_phase_ms=round(previous_phase_ms, 1),
+                phase=phase,
+                phase_ms=0.0,
+                elapsed_ms=round((now_monotonic - float(active["_started_monotonic"])) * 1000.0, 1),
+            )
         active["phase"] = phase
+        if phase != previous_phase:
+            active["phase_started_at"] = now
+            active["_phase_started_monotonic"] = now_monotonic
     if downloader_count is not None:
         active["downloader_count"] = downloader_count
+    active["last_progress_at"] = now
+    active["_last_progress_monotonic"] = now_monotonic
+    task_code = active.get("task_code")
+    if task_code:
+        admission_controller.update_holder_phase(task_code, active.get("phase", "unknown"), sync_run_id=run_id)
 
 
 def _unregister_active_run(run_id: str) -> None:
@@ -198,7 +236,26 @@ def _unregister_active_run(run_id: str) -> None:
 
 def get_active_sync_runs() -> List[Dict[str, Any]]:
     """返回活动同步运行的脱敏快照，供健康接口只读。"""
-    return [dict(value) for value in _active_runs.values()]
+    now_monotonic = time.perf_counter()
+    snapshots: List[Dict[str, Any]] = []
+    for value in _active_runs.values():
+        snapshot = {key: item for key, item in value.items() if not key.startswith("_")}
+        started_monotonic = value.get("_started_monotonic")
+        phase_started_monotonic = value.get("_phase_started_monotonic")
+        last_progress_monotonic = value.get("_last_progress_monotonic")
+        if started_monotonic is not None:
+            snapshot["elapsed_ms"] = round((now_monotonic - float(started_monotonic)) * 1000.0, 1)
+        if phase_started_monotonic is not None:
+            snapshot["phase_elapsed_ms"] = round((now_monotonic - float(phase_started_monotonic)) * 1000.0, 1)
+        if last_progress_monotonic is not None:
+            snapshot["last_progress_age_ms"] = round((now_monotonic - float(last_progress_monotonic)) * 1000.0, 1)
+        snapshots.append(snapshot)
+    return snapshots
+
+
+def mark_sync_progress(run_id: str, *, phase: Optional[str] = None) -> None:
+    """刷新活动同步运行的最近进度，并同步更新 heavy_sync holder 阶段。"""
+    _update_active_run(run_id, phase=phase)
 
 
 # sync_type -> 资源准入 task_code（与 cron_executor / task_profiles 对齐，
@@ -604,7 +661,12 @@ class _AdmissionDecision:
     reentrant: bool = False
 
 
-async def _acquire_token(task_code: str, trigger: str) -> _AdmissionDecision:
+async def _acquire_token(
+    task_code: str,
+    trigger: str,
+    *,
+    sync_run_id: Optional[str] = None,
+) -> _AdmissionDecision:
     """请求资源准入（防重入）。
 
     cron_executor 已用 admission_controller.task_scope 包裹任务 execute()
@@ -617,6 +679,7 @@ async def _acquire_token(task_code: str, trigger: str) -> _AdmissionDecision:
     说明另一实例正在运行，应返回 already_running 而不是放行。
     """
     if trigger == "cron" and task_code in admission_controller.running:
+        admission_controller.update_holder_phase(task_code, "admission", sync_run_id=sync_run_id)
         logger.debug("sync_coordinator admission reentrant task_code=%s", task_code)
         return _AdmissionDecision(admitted=True, reentrant=True)
 
@@ -632,7 +695,11 @@ async def _acquire_token(task_code: str, trigger: str) -> _AdmissionDecision:
             wait_timeout=30.0,
             description=f"SyncCoordinator {task_code}",
         )
-    result = await admission_controller.acquire(task_code, profile)
+    result = await admission_controller.acquire(
+        task_code,
+        profile,
+        owner=AdmissionOwner(sync_run_id=sync_run_id),
+    )
     return _AdmissionDecision(
         admitted=result.admitted,
         wait_seconds=result.wait_seconds,
@@ -696,6 +763,8 @@ async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: floa
     _start_fields: Dict[str, Any] = {
         "sync_type": req.sync_type,
         "trigger": req.trigger,
+        "task_code": task_code,
+        "sync_run_id": run_id,
         "phase": "admission",
     }
     if req.downloader_ids is not None:
@@ -703,10 +772,13 @@ async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: floa
     log_event(EVENT_SYNC_RUN_START, **_start_fields)
 
     # ① 资源准入（重型同步全局互斥 + 同类去重）
-    decision = await _acquire_token(task_code, req.trigger)
+    decision = await _acquire_token(task_code, req.trigger, sync_run_id=run_id)
     result.details["admission_wait_ms"] = round(decision.wait_seconds * 1000.0, 1)
     log_event(
         EVENT_ADMISSION,
+        task_code=task_code,
+        sync_run_id=run_id,
+        resource="heavy_sync",
         outcome="admitted" if decision.admitted else "rejected",
         skip_reason=decision.skip_reason,
         admission_wait_ms=result.details["admission_wait_ms"],
@@ -1260,6 +1332,7 @@ async def _execute_sync_phase(
             info.get("nickname", "unknown"),
             status,
         )
+        mark_sync_progress(result.run_id or "", phase="sync")
 
     result.details["successful_syncs"] = ok
     result.details["failed_syncs"] = fail
@@ -1337,6 +1410,7 @@ async def _sync_one_downloader(
                 async def _on_info_progress(cursor_value: str) -> None:
                     nonlocal info_cursor
                     info_cursor = cursor_value
+                    mark_sync_progress(result.run_id or "", phase="sync")
                     applied = await push_sync_progress(
                         downloader_id,
                         "info",
@@ -1501,6 +1575,7 @@ async def _run_tracker_status_phase(req: SyncRequest, result: SyncResult, start_
     try:
         tracker_result = await update_tracker_status_from_keywords()
         result.details["tracker_status_update"] = tracker_result
+        mark_sync_progress(result.run_id or "", phase="tracker_status")
     except Exception as e:  # noqa: BLE001 - 状态更新失败不改变主 outcome
         result.errors.append(f"Tracker 状态更新失败: {e}")
 

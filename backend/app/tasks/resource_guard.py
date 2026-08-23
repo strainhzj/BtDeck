@@ -20,9 +20,16 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import AsyncIterator, DefaultDict, Optional, Set
+from datetime import datetime, timezone
+from typing import Any, AsyncIterator, DefaultDict, Dict, Optional, Set
 
 from app.core.config import settings
+from app.services.sync_observability import (
+    EVENT_RESOURCE_LIFECYCLE,
+    WORKER_INSTANCE_ID,
+    WORKER_PID,
+    log_event,
+)
 from app.tasks.task_profiles import TaskProfile
 
 logger = logging.getLogger(__name__)
@@ -52,6 +59,43 @@ class AdmissionResult:
     running_count: int = 0
     queued_count: int = 0
     task_code: str = ""
+    blocked_by_task_code: Optional[str] = None
+    blocked_by_task_id: Optional[int] = None
+    blocked_by_cron_run_id: Optional[str] = None
+    blocked_by_sync_run_id: Optional[str] = None
+    blocked_by_phase: Optional[str] = None
+    blocked_by_age_seconds: Optional[float] = None
+    blocked_by_started_at: Optional[str] = None
+    blocked_by_pid: Optional[int] = None
+    blocked_by_worker_instance_id: Optional[str] = None
+
+
+@dataclass
+class AdmissionOwner:
+    """资源占用者的关联信息。
+
+    所有字段均为可选，保持手动调用 admission_controller.acquire() 的旧接口
+    兼容；Cron 入口会补充 task_id/task_name/cron_run_id，SyncCoordinator 再
+    补充 sync_run_id 和当前 phase。
+    """
+
+    task_id: Optional[int] = None
+    task_name: Optional[str] = None
+    cron_run_id: Optional[str] = None
+    sync_run_id: Optional[str] = None
+    phase: str = "admission"
+
+
+@dataclass
+class _ResourceHolder:
+    """进程内资源占用快照（不落库）。"""
+
+    task_code: str
+    owner: AdmissionOwner
+    acquired_monotonic: float
+    started_at: str
+    phase: str = "admission"
+    last_progress_monotonic: float = 0.0
 
 
 @dataclass
@@ -65,6 +109,7 @@ class _ResourceState:
     db_writer: asyncio.Semaphore = field(default_factory=lambda: asyncio.Semaphore(0))
     running: Set[str] = field(default_factory=set)
     queued: DefaultDict[str, int] = field(default_factory=lambda: DefaultDict(int))
+    holders: Dict[str, _ResourceHolder] = field(default_factory=dict)
     registry_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
@@ -95,7 +140,13 @@ class TaskAdmissionController:
         """指定 task_code 当前排队等待的实例数（测试断言用）。"""
         return self._state.queued.get(task_code, 0)
 
-    async def acquire(self, task_code: str, profile: TaskProfile) -> AdmissionResult:
+    async def acquire(
+        self,
+        task_code: str,
+        profile: TaskProfile,
+        *,
+        owner: Optional[AdmissionOwner] = None,
+    ) -> AdmissionResult:
         """请求准入一个重型任务。
 
         决策顺序：
@@ -111,11 +162,13 @@ class TaskAdmissionController:
             AdmissionResult：调用方据 admitted 决定是否执行任务体。
         """
         started = time.monotonic()
+        owner = owner or AdmissionOwner()
         state = self._state
 
         # === 同类去重检查（不阻塞，立即决策） ===
         async with state.registry_lock:
             if task_code in state.running:
+                holder = _find_blocking_holder(state, task_code)
                 result = AdmissionResult(
                     admitted=False,
                     skip_reason=SKIP_DUPLICATE,
@@ -123,10 +176,22 @@ class TaskAdmissionController:
                     running_count=1,
                     queued_count=state.queued[task_code],
                     task_code=task_code,
+                    **_holder_result_fields(holder),
+                )
+                _log_resource_event(
+                    state="skipped",
+                    task_code=task_code,
+                    owner=owner,
+                    profile=profile,
+                    running_count=result.running_count,
+                    queued_count=result.queued_count,
+                    result=result,
+                    level=logging.WARNING,
                 )
                 _log_admission(result, profile)
                 return result
             if state.queued[task_code] >= profile.queue_limit:
+                holder = _find_blocking_holder(state, task_code)
                 result = AdmissionResult(
                     admitted=False,
                     skip_reason=SKIP_DUPLICATE,
@@ -134,11 +199,32 @@ class TaskAdmissionController:
                     running_count=0,
                     queued_count=state.queued[task_code],
                     task_code=task_code,
+                    **_holder_result_fields(holder),
+                )
+                _log_resource_event(
+                    state="skipped",
+                    task_code=task_code,
+                    owner=owner,
+                    profile=profile,
+                    running_count=result.running_count,
+                    queued_count=result.queued_count,
+                    result=result,
+                    level=logging.WARNING,
                 )
                 _log_admission(result, profile)
                 return result
             # 占据一个排队名额
             state.queued[task_code] += 1
+
+        _log_resource_event(
+            state="wait",
+            task_code=task_code,
+            owner=owner,
+            profile=profile,
+            running_count=len(state.running),
+            queued_count=state.queued[task_code],
+            wait_ms=0.0,
+        )
 
         # === 等待全局 heavy_sync 令牌 ===
         try:
@@ -150,13 +236,28 @@ class TaskAdmissionController:
             # 超时：归还排队名额，跳过本轮
             async with state.registry_lock:
                 state.queued[task_code] = max(0, state.queued[task_code] - 1)
+                holder = _find_blocking_holder(state, task_code)
+                running_count = len(state.running)
+                queued_count = state.queued[task_code]
             result = AdmissionResult(
                 admitted=False,
                 skip_reason=SKIP_WAIT_TIMEOUT,
                 wait_seconds=time.monotonic() - started,
-                running_count=len(state.running),
-                queued_count=state.queued[task_code],
+                running_count=running_count,
+                queued_count=queued_count,
                 task_code=task_code,
+                **_holder_result_fields(holder),
+            )
+            _log_resource_event(
+                state="timeout",
+                task_code=task_code,
+                owner=owner,
+                profile=profile,
+                running_count=result.running_count,
+                queued_count=result.queued_count,
+                wait_ms=result.wait_seconds * 1000.0,
+                result=result,
+                level=logging.WARNING,
             )
             _log_admission(result, profile)
             return result
@@ -164,12 +265,32 @@ class TaskAdmissionController:
             # 未知异常：归还排队名额并向上抛（避免泄漏 semaphore 名额由调用方负责）
             async with state.registry_lock:
                 state.queued[task_code] = max(0, state.queued[task_code] - 1)
+            _log_resource_event(
+                state="error",
+                task_code=task_code,
+                owner=owner,
+                profile=profile,
+                running_count=len(state.running),
+                queued_count=state.queued[task_code],
+                wait_ms=(time.monotonic() - started) * 1000.0,
+                level=logging.ERROR,
+            )
             raise
 
         # === 获得令牌：转入 running，归还排队名额 ===
         async with state.registry_lock:
             state.queued[task_code] = max(0, state.queued[task_code] - 1)
             state.running.add(task_code)
+            acquired_at = datetime.now(timezone.utc).isoformat()
+            acquired_monotonic = time.monotonic()
+            state.holders[task_code] = _ResourceHolder(
+                task_code=task_code,
+                owner=owner,
+                acquired_monotonic=acquired_monotonic,
+                started_at=acquired_at,
+                phase=owner.phase or "admission",
+                last_progress_monotonic=acquired_monotonic,
+            )
             running_count = len(state.running)
 
         result = AdmissionResult(
@@ -179,6 +300,15 @@ class TaskAdmissionController:
             running_count=running_count,
             queued_count=state.queued[task_code],
             task_code=task_code,
+        )
+        _log_resource_event(
+            state="admitted",
+            task_code=task_code,
+            owner=owner,
+            profile=profile,
+            running_count=result.running_count,
+            queued_count=result.queued_count,
+            wait_ms=result.wait_seconds * 1000.0,
         )
         _log_admission(result, profile)
         return result
@@ -196,13 +326,29 @@ class TaskAdmissionController:
         # 同步操作：登记表读写已在 acquire 的 registry_lock 外，release 只做集合移除与信号量释放，
         # 不引入新的并发竞争（running 是 set，discard 幂等；Semaphore.release 是原子操作）。
         # 关键约束：本方法体内不得出现 await（见 docstring）。
+        holder = state.holders.pop(task_code, None)
         if task_code in state.running:
             state.running.discard(task_code)
             state.heavy_sync.release()
+            held_ms = None
+            if holder is not None:
+                held_ms = max(0.0, time.monotonic() - holder.acquired_monotonic) * 1000.0
             logger.debug(
-                "task_admission_release task_code=%s running_after=%d",
+                "task_admission_release task_code=%s running_after=%d held_ms=%s phase=%s",
                 task_code,
                 len(state.running),
+                round(held_ms, 1) if held_ms is not None else None,
+                holder.phase if holder is not None else None,
+            )
+            _log_resource_event(
+                state="release",
+                task_code=task_code,
+                owner=holder.owner if holder is not None else AdmissionOwner(),
+                profile=None,
+                running_count=len(state.running),
+                queued_count=state.queued.get(task_code, 0),
+                holder=holder,
+                resource_held_ms=held_ms,
             )
         else:
             # 未在 running：可能是 acquire 失败后误调，忽略但不归还令牌（防溢出）
@@ -210,9 +356,46 @@ class TaskAdmissionController:
                 "task_admission_release no-op (task_code=%s not in running)",
                 task_code,
             )
+            _log_resource_event(
+                state="release_noop",
+                task_code=task_code,
+                owner=holder.owner if holder is not None else AdmissionOwner(),
+                profile=None,
+                running_count=len(state.running),
+                queued_count=state.queued.get(task_code, 0),
+                level=logging.WARNING,
+            )
+
+    def update_holder_phase(
+        self,
+        task_code: str,
+        phase: str,
+        *,
+        sync_run_id: Optional[str] = None,
+    ) -> None:
+        """更新占用者阶段/最近进度（仅进程内，供心跳读取）。"""
+        holder = self._state.holders.get(task_code)
+        if holder is None:
+            return
+        now = time.monotonic()
+        holder.phase = phase
+        holder.last_progress_monotonic = now
+        if sync_run_id:
+            holder.owner.sync_run_id = sync_run_id
+
+    def get_holder_snapshot(self, task_code: str) -> Optional[Dict[str, Any]]:
+        """返回指定 task_code 的占用快照，供任务心跳只读。"""
+        holder = self._state.holders.get(task_code)
+        return _holder_snapshot(holder)
 
     @asynccontextmanager
-    async def task_scope(self, task_code: str, profile: TaskProfile) -> AsyncIterator[AdmissionResult]:
+    async def task_scope(
+        self,
+        task_code: str,
+        profile: TaskProfile,
+        *,
+        owner: Optional[AdmissionOwner] = None,
+    ) -> AsyncIterator[AdmissionResult]:
         """任务作用域：acquire → yield AdmissionResult → release。
 
         用法：
@@ -230,7 +413,7 @@ class TaskAdmissionController:
                     return skipped
                 ...任务体...
         """
-        result = await self.acquire(task_code, profile)
+        result = await self.acquire(task_code, profile, owner=owner)
         try:
             yield result
         finally:
@@ -262,13 +445,167 @@ def _build_initial_state() -> _ResourceState:
     )
 
 
+def _holder_snapshot(holder: Optional[_ResourceHolder]) -> Optional[Dict[str, Any]]:
+    """把进程内 holder 转换为不含可变对象的观测快照。"""
+    if holder is None:
+        return None
+    age_seconds = max(0.0, time.monotonic() - holder.acquired_monotonic)
+    last_progress_age_seconds = max(0.0, time.monotonic() - holder.last_progress_monotonic)
+    return {
+        "task_code": holder.task_code,
+        "task_id": holder.owner.task_id,
+        "task_name": holder.owner.task_name,
+        "cron_run_id": holder.owner.cron_run_id,
+        "sync_run_id": holder.owner.sync_run_id,
+        "phase": holder.phase,
+        "age_seconds": age_seconds,
+        "last_progress_age_seconds": last_progress_age_seconds,
+        "started_at": holder.started_at,
+        "pid": WORKER_PID,
+        "worker_instance_id": WORKER_INSTANCE_ID,
+    }
+
+
+def _find_blocking_holder(state: _ResourceState, task_code: str) -> Optional[Dict[str, Any]]:
+    """找到当前请求被阻塞的第一个占用者。
+
+    heavy_sync 默认并发为 1；并发参数未来提高时，返回稳定排序后的第一个
+    holder，日志仍可通过 running_count 和 worker 身份判断是否存在多个占用者。
+    """
+    holder = _holder_snapshot(state.holders.get(task_code))
+    if holder is not None:
+        return holder
+    for running_code in sorted(state.running):
+        holder = _holder_snapshot(state.holders.get(running_code))
+        if holder is not None:
+            return holder
+    # 兼容极端情况下 running 集合已有登记但 holder 尚未建立/已被重置的状态。
+    if state.running:
+        return {
+            "task_code": sorted(state.running)[0],
+            "task_id": None,
+            "task_name": None,
+            "cron_run_id": None,
+            "sync_run_id": None,
+            "phase": "unknown",
+            "age_seconds": None,
+            "last_progress_age_seconds": None,
+            "started_at": None,
+            "pid": WORKER_PID,
+            "worker_instance_id": WORKER_INSTANCE_ID,
+        }
+    return None
+
+
+def _holder_result_fields(holder: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    """holder snapshot -> AdmissionResult 的 blocked_by 字段。"""
+    if holder is None:
+        return {}
+    return {
+        "blocked_by_task_code": holder.get("task_code"),
+        "blocked_by_task_id": holder.get("task_id"),
+        "blocked_by_cron_run_id": holder.get("cron_run_id"),
+        "blocked_by_sync_run_id": holder.get("sync_run_id"),
+        "blocked_by_phase": holder.get("phase"),
+        "blocked_by_age_seconds": holder.get("age_seconds"),
+        "blocked_by_started_at": holder.get("started_at"),
+        "blocked_by_pid": holder.get("pid"),
+        "blocked_by_worker_instance_id": holder.get("worker_instance_id"),
+    }
+
+
+def _age_ms(value: Any) -> Optional[float]:
+    """把秒数安全转换为毫秒，避免观测字段类型污染主流程。"""
+    if value is None:
+        return None
+    try:
+        return float(value) * 1000.0
+    except (TypeError, ValueError):
+        return None
+
+
+def _log_resource_event(
+    *,
+    state: str,
+    task_code: str,
+    owner: AdmissionOwner,
+    profile: Optional[TaskProfile],
+    running_count: int,
+    queued_count: int,
+    wait_ms: Optional[float] = None,
+    result: Optional[AdmissionResult] = None,
+    holder: Optional[_ResourceHolder] = None,
+    resource_held_ms: Optional[float] = None,
+    level: int = logging.INFO,
+) -> None:
+    """发射资源生命周期结构化事件；观测故障不得影响资源治理主流程。"""
+    fields: Dict[str, Any] = {
+        "task_code": task_code,
+        "resource": "heavy_sync",
+        "state": state,
+        "running_count": running_count,
+        "queue_count": queued_count,
+    }
+    if profile is not None:
+        fields["queue_limit"] = profile.queue_limit
+    if wait_ms is not None:
+        fields["wait_ms"] = round(wait_ms, 1)
+    if resource_held_ms is not None:
+        fields["resource_held_ms"] = round(resource_held_ms, 1)
+    if owner.task_id is not None:
+        fields["task_id"] = owner.task_id
+    if owner.task_name:
+        fields["task_name"] = owner.task_name
+    if owner.cron_run_id:
+        fields["cron_run_id"] = owner.cron_run_id
+    if owner.sync_run_id:
+        fields["sync_run_id"] = owner.sync_run_id
+    if owner.phase:
+        fields["phase"] = owner.phase
+
+    if result is not None:
+        for key, value in {
+            "blocked_by_task_code": result.blocked_by_task_code,
+            "blocked_by_task_id": result.blocked_by_task_id,
+            "blocked_by_cron_run_id": result.blocked_by_cron_run_id,
+            "blocked_by_sync_run_id": result.blocked_by_sync_run_id,
+            "blocked_by_phase": result.blocked_by_phase,
+            "blocked_by_age_ms": _age_ms(result.blocked_by_age_seconds),
+            "blocked_by_started_at": result.blocked_by_started_at,
+            "blocked_by_pid": result.blocked_by_pid,
+            "blocked_by_worker_instance_id": result.blocked_by_worker_instance_id,
+        }.items():
+            if value is not None:
+                fields[key] = round(float(value), 1) if key == "blocked_by_age_ms" else value
+
+    holder_snapshot = _holder_snapshot(holder)
+    if holder_snapshot is not None:
+        for key, value in {
+            "holder_task_code": holder_snapshot.get("task_code"),
+            "holder_task_id": holder_snapshot.get("task_id"),
+            "holder_cron_run_id": holder_snapshot.get("cron_run_id"),
+            "holder_sync_run_id": holder_snapshot.get("sync_run_id"),
+            "holder_phase": holder_snapshot.get("phase"),
+            "holder_age_ms": _age_ms(holder_snapshot.get("age_seconds")),
+            "holder_started_at": holder_snapshot.get("started_at"),
+            "holder_pid": holder_snapshot.get("pid"),
+            "holder_worker_instance_id": holder_snapshot.get("worker_instance_id"),
+        }.items():
+            if value is not None:
+                fields[key] = round(float(value), 1) if key == "holder_age_ms" else value
+    try:
+        log_event(EVENT_RESOURCE_LIFECYCLE, level=level, **fields)
+    except Exception:  # noqa: BLE001 - 观测器不能破坏资源释放/准入
+        logger.debug("task_admission structured observation failed", exc_info=True)
+
+
 def _build_log_extra(result: AdmissionResult, profile: TaskProfile) -> dict:
     """从 AdmissionResult + TaskProfile 组装结构化日志的 extra dict。
 
     抽成纯函数便于单测：直接断言 dict 的 key/value，不依赖 logging 路由/级别，
     能抓到 extra 组装 bug（如字段误删、拼错、类型错误），是阶段 0 基线观测的契约锚点。
     """
-    return {
+    extra = {
         "task_code": result.task_code,
         "admitted": result.admitted,
         "skip_reason": result.skip_reason,
@@ -277,6 +614,22 @@ def _build_log_extra(result: AdmissionResult, profile: TaskProfile) -> dict:
         "queued_count": result.queued_count,
         "queue_limit": profile.queue_limit,
     }
+    # 保持既有 extra 契约兼容：只有实际存在阻塞者时才追加诊断字段，
+    # 旧的 admitted/duplicate 单测和下游日志解析不受空字段影响。
+    for key, value in {
+        "blocked_by_task_code": result.blocked_by_task_code,
+        "blocked_by_task_id": result.blocked_by_task_id,
+        "blocked_by_cron_run_id": result.blocked_by_cron_run_id,
+        "blocked_by_sync_run_id": result.blocked_by_sync_run_id,
+        "blocked_by_phase": result.blocked_by_phase,
+        "blocked_by_age_seconds": result.blocked_by_age_seconds,
+        "blocked_by_started_at": result.blocked_by_started_at,
+        "blocked_by_pid": result.blocked_by_pid,
+        "blocked_by_worker_instance_id": result.blocked_by_worker_instance_id,
+    }.items():
+        if value is not None:
+            extra[key] = value
+    return extra
 
 
 def _log_admission(result: AdmissionResult, profile: TaskProfile) -> None:
@@ -297,12 +650,16 @@ def _log_admission(result: AdmissionResult, profile: TaskProfile) -> None:
         )
     else:
         logger.warning(
-            "task_admission skipped task_code=%s reason=%s wait=%.3fs running=%d queued=%d",
+            "task_admission skipped task_code=%s reason=%s wait=%.3fs running=%d queued=%d "
+            "blocked_by=%s holder_phase=%s holder_age=%.3fs",
             result.task_code,
             result.skip_reason,
             result.wait_seconds,
             result.running_count,
             result.queued_count,
+            result.blocked_by_task_code or "-",
+            result.blocked_by_phase or "-",
+            result.blocked_by_age_seconds or 0.0,
             extra=extra,
         )
 

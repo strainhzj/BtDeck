@@ -13,13 +13,16 @@ cron_executor.py::_run_python_internal_class 是 sync-resource-governance 阶段
 的资源治理挂载点。若有人改回旧签名或去掉 admission 包裹，此测试立即报红。
 """
 
+import asyncio
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.core.config import settings
 from app.models import OUTCOME_SKIPPED
+from app.services.sync_observability import EVENT_TASK_LIFECYCLE
 from app.tasks.cron_executor import CronTaskExecutor
 
 
@@ -259,6 +262,41 @@ class TestInternalClassResultPropagation:
         assert result["success"] is True
         assert "扫描已提交" in result["log_detail"]
         assert "扫描终态 status=completed" in result["log_detail"]
+
+    async def test_task_lifecycle_emits_heartbeat_and_timeout_warning(self, monkeypatch):
+        """长执行内部类发射 start/heartbeat/timeout_warning/end，且不取消执行。"""
+
+        async def slow_execute(**kwargs):
+            await asyncio.sleep(0.08)
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=slow_execute)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_observe", "ObserveTask", execute_mock)
+
+        executor = _make_executor_with_app()
+        task = {
+            "task_id": 9,
+            "task_name": "观测测试任务",
+            "task_code": "observe_light_task",
+            "task_type": 4,
+            "timeout_seconds": 0.02,
+            "executor": "app.tasks.fake_module_observe.ObserveTask",
+        }
+
+        with (
+            patch.object(settings, "SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS", 0.01),
+            patch("app.tasks.cron_executor.log_event") as mock_log,
+        ):
+            result = await executor._run_python_internal_class(task)
+
+        assert result["success"] is True
+        execute_mock.assert_awaited_once()
+        lifecycle_calls = [call for call in mock_log.call_args_list if call.args[0] == EVENT_TASK_LIFECYCLE]
+        states = [call.kwargs.get("state") for call in lifecycle_calls]
+        assert states[0] == "start"
+        assert "timeout_warning" in states
+        assert "end" in states
+        assert all(call.kwargs.get("task_code") == "observe_light_task" for call in lifecycle_calls)
 
 
 class TestSyncExecuteOffloaded:

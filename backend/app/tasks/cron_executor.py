@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import logging
 import re
+import time
 import uuid
 from datetime import datetime
 from typing import Dict, Any, Optional
@@ -15,6 +16,7 @@ from app.tasks.cron_crud_async import AsyncCronTaskCRUD, AsyncTaskLogsCRUD
 from app.tasks.cleanup_executor import CleanupTaskExecutor
 from app.database import get_db, AsyncSessionLocal, SessionLocal
 from app.services.speed_schedule_service import SpeedScheduleService
+from app.services.sync_observability import EVENT_TASK_LIFECYCLE, log_event
 from app.models import (
     OUTCOME_SUCCESS,
     OUTCOME_PARTIAL,
@@ -329,6 +331,9 @@ class CronTaskExecutor:
                     return
                 start_time = datetime.now()
                 run_id = self._new_run_id(task_id)
+                # 仅在当前执行上下文传递，不写回 cron_task；用于把资源占用者
+                # 与 Cron 日志/同步 run_id 关联起来。
+                task["cron_run_id"] = run_id
                 await AsyncCronTaskCRUD.update_task_start_time(db, task_id, start_time)
 
             # —— 第二段：任务体（无会话上下文执行）——
@@ -598,6 +603,121 @@ class CronTaskExecutor:
         except Exception as e:
             return {"success": False, "log_detail": f"Python脚本执行异常: {str(e)}"}
 
+    async def _execute_internal_method_observed(
+        self,
+        execute_method: Any,
+        task: Dict[str, Any],
+        task_code: Optional[str],
+        execution_state: Dict[str, Any],
+    ) -> Any:
+        """执行内部类方法并发射生命周期/心跳观测，不改变超时与取消语义。"""
+        from app.tasks.resource_guard import admission_controller
+
+        started = time.monotonic()
+        execution_mode = "async" if asyncio.iscoroutinefunction(execute_method) else "thread"
+        timeout_seconds: Optional[float] = None
+        raw_timeout = task.get("timeout_seconds")
+        if raw_timeout is not None:
+            try:
+                timeout_seconds = max(float(raw_timeout), 0.0)
+            except (TypeError, ValueError):
+                timeout_seconds = None
+
+        task_id = task.get("task_id")
+        task_name = task.get("task_name")
+        cron_run_id = task.get("cron_run_id")
+        observer_task: Optional[asyncio.Task] = None
+
+        def holder_context() -> Dict[str, Any]:
+            snapshot = None
+            if task_code:
+                snapshot = admission_controller.get_holder_snapshot(task_code)
+            context: Dict[str, Any] = {
+                "phase": execution_state.get("phase", "execute"),
+                "sync_run_id": None,
+            }
+            if snapshot is not None:
+                context["phase"] = snapshot.get("phase") or context["phase"]
+                context["sync_run_id"] = snapshot.get("sync_run_id")
+            return context
+
+        def emit_lifecycle(state: str, *, level: int = logging.INFO, error_type: Optional[str] = None) -> None:
+            elapsed_ms = (time.monotonic() - started) * 1000.0
+            holder = holder_context()
+            last_progress_ms = max(
+                0.0,
+                (time.monotonic() - float(execution_state.get("last_progress_monotonic", started))) * 1000.0,
+            )
+            fields: Dict[str, Any] = {
+                "state": state,
+                "phase": holder["phase"],
+                "elapsed_ms": round(elapsed_ms, 1),
+                "last_progress_ms": round(last_progress_ms, 1),
+                "execution_mode": execution_mode,
+                "timeout_exceeded": bool(timeout_seconds is not None and elapsed_ms >= timeout_seconds * 1000.0),
+            }
+            if task_id is not None:
+                fields["task_id"] = task_id
+            if task_code:
+                fields["task_code"] = task_code
+            if task_name:
+                fields["task_name"] = task_name
+            if cron_run_id:
+                fields["cron_run_id"] = cron_run_id
+            if holder.get("sync_run_id"):
+                fields["sync_run_id"] = holder["sync_run_id"]
+            if timeout_seconds is not None:
+                fields["timeout_seconds"] = timeout_seconds
+            if error_type:
+                fields["error_type"] = error_type
+            try:
+                log_event(EVENT_TASK_LIFECYCLE, level=level, **fields)
+            except Exception:  # noqa: BLE001 - 观测器故障不能改变任务执行
+                logger.debug("task lifecycle structured observation failed", exc_info=True)
+
+        async def heartbeat_loop() -> None:
+            try:
+                interval = float(settings.SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS)
+            except (TypeError, ValueError):
+                interval = 30.0
+            if interval <= 0:
+                return
+            interval = max(interval, 0.05)
+            timeout_warned = False
+            while True:
+                sleep_seconds = interval
+                if timeout_seconds is not None and not timeout_warned:
+                    remaining = timeout_seconds - (time.monotonic() - started)
+                    if remaining > 0:
+                        sleep_seconds = min(sleep_seconds, max(0.05, remaining))
+                    else:
+                        sleep_seconds = 0.05
+                await asyncio.sleep(sleep_seconds)
+                elapsed_seconds = time.monotonic() - started
+                timeout_exceeded = timeout_seconds is not None and elapsed_seconds >= timeout_seconds
+                if timeout_exceeded and not timeout_warned:
+                    timeout_warned = True
+                    emit_lifecycle("timeout_warning", level=logging.WARNING)
+                else:
+                    emit_lifecycle("heartbeat")
+
+        emit_lifecycle("start")
+        try:
+            observer_task = asyncio.create_task(heartbeat_loop())
+            if execution_mode == "async":
+                result = await execute_method(app=self.app)
+            else:
+                result = await asyncio.to_thread(execute_method, app=self.app)
+            emit_lifecycle("end")
+            return result
+        except BaseException as exc:
+            emit_lifecycle("exception", level=logging.WARNING, error_type=type(exc).__name__)
+            raise
+        finally:
+            if observer_task is not None:
+                observer_task.cancel()
+                await asyncio.gather(observer_task, return_exceptions=True)
+
     async def _run_python_internal_class(self, task: Dict[str, Any]) -> Dict[str, Any]:
         """运行Python内部类或代码
 
@@ -617,9 +737,14 @@ class CronTaskExecutor:
 
         profile = get_profile(task_code)
         execution_events = []
+        execution_state: Dict[str, Any] = {
+            "phase": "execute",
+            "last_progress_monotonic": time.monotonic(),
+        }
 
         def record_execution_event(message: str) -> None:
             execution_events.append(str(message))
+            execution_state["last_progress_monotonic"] = time.monotonic()
 
         def normalize_internal_result(result: Any) -> Dict[str, Any]:
             """把内部类的业务终态透传给 Cron 日志/新鲜度字段。"""
@@ -712,7 +837,16 @@ class CronTaskExecutor:
                     # ★ 资源治理：重型任务用 task_scope 包裹 execute()，
                     # admitted=False 时直接返回 skipped，不调 execute。
                     if profile is not None:
-                        async with admission_controller.task_scope(task_code or "", profile) as admission_result:
+                        from app.tasks.resource_guard import AdmissionOwner
+
+                        owner = AdmissionOwner(
+                            task_id=task.get("task_id"),
+                            task_name=task.get("task_name"),
+                            cron_run_id=task.get("cron_run_id"),
+                        )
+                        async with admission_controller.task_scope(
+                            task_code or "", profile, owner=owner
+                        ) as admission_result:
                             if not admission_result.admitted:
                                 skip_msg = (
                                     f"[ADMISSION_SKIP] Python内部类被资源治理跳过: "
@@ -720,7 +854,12 @@ class CronTaskExecutor:
                                     f"reason={admission_result.skip_reason}, "
                                     f"wait={admission_result.wait_seconds:.3f}s, "
                                     f"running={admission_result.running_count}, "
-                                    f"queued={admission_result.queued_count}"
+                                    f"queued={admission_result.queued_count}, "
+                                    f"blocked_by={admission_result.blocked_by_task_code or '-'}, "
+                                    f"holder_phase={admission_result.blocked_by_phase or '-'}, "
+                                    f"holder_age={admission_result.blocked_by_age_seconds or 0.0:.3f}s, "
+                                    f"holder_cron_run_id={admission_result.blocked_by_cron_run_id or '-'}, "
+                                    f"holder_sync_run_id={admission_result.blocked_by_sync_run_id or '-'}"
                                 )
                                 logger.info(skip_msg)
                                 # skipped=True 区分资源治理跳过 vs 真执行失败：
@@ -736,20 +875,23 @@ class CronTaskExecutor:
                                     "log_detail": skip_msg,
                                 }
 
-                            # ✅ 修复：检查方法是否为协函数，避免await同步方法导致RuntimeError
-                            # 同步 execute 经 to_thread 执行：直接在事件循环线程上跑会阻塞
-                            # 整个 API（含 active-torrents 轮询），制造全局假超时。
-                            if asyncio.iscoroutinefunction(execute_method):
-                                result = await execute_method(app=self.app)
-                            else:
-                                result = await asyncio.to_thread(execute_method, app=self.app)
+                            # 同步 execute 经 to_thread 执行；观测包装不改变原有
+                            # async/thread 调度语义，也不添加取消或 wait_for。
+                            result = await self._execute_internal_method_observed(
+                                execute_method,
+                                task,
+                                task_code,
+                                execution_state,
+                            )
                             return normalize_internal_result(result)
                     else:
                         # 轻量任务：不进入资源背压，走原路径
-                        if asyncio.iscoroutinefunction(execute_method):
-                            result = await execute_method(app=self.app)
-                        else:
-                            result = await asyncio.to_thread(execute_method, app=self.app)
+                        result = await self._execute_internal_method_observed(
+                            execute_method,
+                            task,
+                            task_code,
+                            execution_state,
+                        )
                         return normalize_internal_result(result)
                 else:
                     return {"success": False, "log_detail": f"类 {class_name} 没有execute方法"}

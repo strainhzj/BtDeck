@@ -303,6 +303,9 @@ class Settings(BaseSettings):
     # snapshot_wal_stats 读取 -wal 文件字节数并发射 EVENT_WAL_SNAPSHOT；
     # <=0 时不启动周期快照任务（观测关闭不影响同步治理）
     SYNC_WAL_SNAPSHOT_INTERVAL_SECONDS: float = 60.0
+    # Python 内部类执行观测心跳间隔（秒）；<=0 时只保留 start/end，不发心跳。
+    # 心跳只写结构化日志，不写数据库，也不改变任务取消/超时语义。
+    SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS: float = 30.0
 
     # 健康检查配置（W4-2）：readiness 只执行有界只读探针，不执行写探针。
     # SELECT 1 超时即返回 db_query_timeout，避免 SQLite busy_timeout 把健康检查

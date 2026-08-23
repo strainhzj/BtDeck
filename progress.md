@@ -5169,3 +5169,28 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 1. 仪表化测试与真机验收（Phase 5 统一）；安装到真机/模拟器的人工冒烟（BlueStacks 本机存在，未驱动）。
 2. android-wheels 推送仍等用户"整体打包完成"指令。
 3. Git 提交待用户指示（android/ 含 local.properties 已被 .gitignore 排除，build 产物同）。
+
+## 2026-08-23（第四批）：同步资源占用观测增强
+
+### 结论
+
+针对 `torrent_info_sync_ac608e4d` 多次 `[ADMISSION_SKIP] reason=wait_timeout`，完成一期只读观测增强。保持 `SYNC_HEAVY_CONCURRENCY`、等待超时、调度周期、任务取消语义和数据库写入行为不变；未修改用户提供的 `E:\Users\huangzj\Desktop\app.db`。
+
+### 变更
+
+- `resource_guard.py`：维护 heavy_sync holder 的 task/run/phase/年龄/PID/worker_instance_id；等待超时时输出 blocked_by 诊断，准入/超时/释放发射结构化资源生命周期事件。
+- `cron_executor.py`：为 Python 内部类增加 start/heartbeat/timeout_warning/end 观测；`timeout_seconds` 仅用于告警，不调用 `wait_for`、不取消执行；Cron run_id 仅在当前执行上下文关联。
+- `sync_coordinator.py`：活动同步快照补充 phase/elapsed/last-progress，发射阶段切换事件并刷新资源 holder 阶段；同步进度不落库。
+- `sync_observability.py` / `config.py`：增加 task/resource/sync_phase 事件、进程身份和 `SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS=30` 配置。
+- 测试：新增 holder 诊断与生命周期心跳用例。
+
+### 验证
+
+- 观测/同步核心套件：92 passed。
+- Cron executor + health 回归：28 passed。
+- mypy（5 个后端源文件）：无错误；flake8：通过；Black `--diff`：7 个受影响 Python 文件无需改写。
+- 未执行 Git stage/commit；工作区既有 `.release-build-v1.0.5/` 等未跟踪内容保持不动。
+
+### 后续
+
+部署后重点检索 `event=resource_lifecycle`、`event=task_lifecycle`、`event=sync_phase`，确认 `blocked_by_task_code` 是否为 `tracker_sync_598b784c`，并结合 `holder_phase`/`holder_age_ms` 判断实际卡点。

@@ -1,5 +1,29 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-23 交接（十）：同步资源占用观测增强
+
+### 结论
+
+用户要求开始实施此前制定的观测方案。已完成一期只读观测增强：下一次 `ADMISSION_SKIP` 可定位 heavy_sync 的占用 task/run/phase/年龄/进程实例；长时间 Python 内部类任务会输出生命周期心跳和超时告警。未改变资源参数、调度行为、取消语义或数据库写入，也未修改 `E:\Users\huangzj\Desktop\app.db`。
+
+### 变更
+
+- `backend/app/tasks/resource_guard.py`：holder 快照、blocked_by 诊断、resource_lifecycle 事件、release 持有时长。
+- `backend/app/tasks/cron_executor.py`：Cron run_id 关联、task_lifecycle start/heartbeat/timeout_warning/end；超时只告警。
+- `backend/app/services/sync_coordinator.py`：活动同步 phase/elapsed/last-progress、sync_phase 事件和 holder 阶段刷新。
+- `backend/app/services/sync_observability.py`、`backend/app/core/config.py`：结构化事件白名单、worker PID/实例标识、心跳间隔配置。
+- `backend/tests/tasks/test_resource_guard.py`、`backend/tests/tasks/test_cron_executor_admission.py`：holder/生命周期回归。
+- `docs/roadmap/`、`feature_list.json`、`progress.md`：同步路线图与证据。
+
+### 验证
+
+- 观测/同步核心套件 92 passed；Cron executor + health 回归 28 passed。
+- mypy 目标文件无错误；flake8 通过；Black `--diff` 确认受影响 Python 文件无需格式化。
+
+### 下一步
+
+部署后检索 `event=resource_lifecycle`、`event=task_lifecycle`、`event=sync_phase`。重点确认 `blocked_by_task_code`、`blocked_by_sync_run_id`、`holder_phase` 和 `holder_age_ms`，再决定是否实施实际超时/恢复修复。Git 提交等待用户指示。
+
 ## 2026-08-23 交接（九）：android/ 首次编译验证通过（BUILD SUCCESSFUL）
 
 ### 结论
