@@ -1,5 +1,48 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-23 交接（十）：Phase 2 真机验证通过 + Phase 4 M1 第一片（移动 UI 壳）
+
+### 结论
+
+伴侣模式真机验证通过（lan-cleartext APK，WebView 正常进入服务器前端，含视口/缩放兜底）。Phase 3 被 Phase 0 闸门阻塞，Phase 4 先行：M1 第一片交付移动布局壳（底部 Tab）+ 模式切换 + 移动登录/仪表盘/种子卡片列表/通知中心，全部复用现有 API 与 user store。
+
+### 变更（未提交）
+
+- frontend：src/utils/ui-mode.ts（偏好+视口+登录分流）、src/layout/mobile/index.vue（Tab 壳+桌面版出口）、src/views/mobile/{login,dashboard,torrents,notifications}.vue、router.ts /m/* 懒加载组、permission.ts 守卫模式分流+4 处登录跳转模式化（强制改密/瞬时失败语义未动）。
+- 测试：tests/unit/ui-mode.spec.ts（11）+ mobile-shell.spec.ts（5）；守卫回归 31、前端全量 704 全绿；tsc/lint/build 通过；m-* chunk 实证。
+- 惯例：class 组件用 vue-property-decorator 导入（Jest 下 vue-class-component 直用 Vue 为 undefined）。
+
+### 生效与下一步
+
+- 手机上生效需把新 frontend/dist 部署到服务器（或 npm run serve 开发机验证）；auto 模式窄视口自动进移动版，移动版头部可切桌面版。
+- M1 余项：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口；M2 未动。
+- android-wheels 推送仍等用户指令；Git 提交待用户指示。
+
+## 2026-08-23 交接（十一）：孤儿 Schema 漂移重启自愈
+
+### 结论
+
+已针对新快照中的 `no such column: orphan_current_candidate.current_detail_id` 实施代码修复。根因是运行库的 `alembic_version` 可能已经是 `975dad435c03`，但物理表缺少历史迁移应创建的列；启动迁移因此 no-op，随后启动对账才报错。新增 `c1d2e3f4a5b6` 修复迁移后，所有用户重启后端都会在对账和调度器启动前自动补齐 Schema。
+
+### 变更
+
+- 新增 `backend/alembic/versions/c1d2e3f4a5b6_repair_orphan_current_detail_id.py`：幂等补列、按最近扫描/路径回填 `current_detail_id`、补齐必要索引；健康库 no-op；修复失败保持 fail-fast。
+- 新增 `backend/tests/core/test_orphan_schema_repair_migration.py`：缺列漂移库与健康库回归。
+- 更新迁移 head 断言、数据库迁移约束与 `docs/roadmap/` 记录；`feature_list.json` 登记证据。
+
+### 验证
+
+- 修复迁移回归：2 passed。
+- 迁移链/回滚/生产形状回归：37 passed；启动迁移守卫、孤儿任务生命周期和查询状态回归：17 passed。
+- flake8、mypy（新增迁移/测试）、Black `--diff`、`scripts/lint_btdeck.py`、JSON 解析和 `git diff --check` 通过。
+- `alembic heads`：仅 `c1d2e3f4a5b6`。
+- 用户提供的 `E:\Users\huangzj\Desktop\app.db` 仍只读分析，未写入。
+- 根 `bash ./init.sh` 受当前 Windows/WSL `E_ACCESSDENIED` 环境阻断，非本次测试代码失败。
+
+### 后续
+
+代码与定向验证已完成；等待用户决定是否提交/推送。
+
 ## 2026-08-23 交接（十）：同步资源占用观测增强
 
 ### 结论

@@ -2,6 +2,7 @@ import Vue from 'vue'
 import Router, { RawLocation, Route, isNavigationFailure, NavigationFailure } from 'vue-router'
 import { Message } from 'element-ui'
 import Layout from '@/layout/index.vue'
+import MobileLayout from '@/layout/mobile/index.vue'
 import { recoverFromChunkLoadError } from '@/utils/deployment-recovery'
 
 Vue.use(Router)
@@ -36,6 +37,36 @@ const router = new Router({
       path: '/404',
       component: () => import(/* webpackChunkName: "404" */ '@/views/404.vue'),
       meta: { hidden: true }
+    },
+    {
+      // 移动版登录（Phase 4 M1）：守卫按 ui-mode 分流，登录链路复用 user store
+      path: '/m/login',
+      component: () => import(/* webpackChunkName: "m-login" */ '@/views/mobile/login.vue'),
+      meta: { hidden: true }
+    },
+    {
+      // 移动版布局（Phase 4 M1）：底部 Tab 壳；桌面侧栏不展示（hidden）
+      path: '/m',
+      component: MobileLayout,
+      redirect: '/m/dashboard',
+      meta: { hidden: true },
+      children: [
+        {
+          path: 'dashboard',
+          component: () => import(/* webpackChunkName: "m-dashboard" */ '@/views/mobile/dashboard.vue'),
+          meta: { hidden: true, title: '仪表盘' }
+        },
+        {
+          path: 'torrents',
+          component: () => import(/* webpackChunkName: "m-torrents" */ '@/views/mobile/torrents.vue'),
+          meta: { hidden: true, title: '种子' }
+        },
+        {
+          path: 'notifications',
+          component: () => import(/* webpackChunkName: "m-notifications" */ '@/views/mobile/notifications.vue'),
+          meta: { hidden: true, title: '通知' }
+        }
+      ]
     },
     {
       path: '/',

@@ -7,10 +7,34 @@ import { UserModule } from '@/store/modules/user'
 import { isTokenExpired } from '@/utils/session'
 import { trySilentRefresh } from '@/utils/request'
 import { ApiError } from '@/types/api'
+import { currentUiMode, loginPathForMode, toMobilePath } from '@/utils/ui-mode'
 
 NProgress.configure({ showSpinner: false })
 
-const whiteList = ['/login']
+/** 登录页路径集合（桌面/移动双入口，Phase 4 M1） */
+const loginPaths = ['/login', '/m/login']
+
+/**
+ * UI 模式重定向（Phase 4 M1）：认证检查之前按用户偏好/视口分流。
+ * - 移动模式访问桌面顶层页（/、/dashboard、/torrents*）→ 对应移动页；
+ * - 桌面模式访问 /m/* → 对应桌面页（通知无独立桌面页，落仪表盘）；
+ * - 移动模式的 /m/login 与桌面模式的 /login 均放行，交由下方认证逻辑处理。
+ * 不以 UA 作为唯一依据（与安卓壳的模式判定原则一致）。
+ */
+const uiModeRedirectPath = (to: Route): string | null => {
+  if (currentUiMode() === 'mobile') {
+    if (to.path === '/' || to.path === '/dashboard' || to.path === '/torrents' || to.path.startsWith('/torrents/')) {
+      return toMobilePath(to.path)
+    }
+    return null
+  }
+  if (to.path.startsWith('/m/')) {
+    if (to.path === '/m/login') return null
+    if (to.path.startsWith('/m/torrents')) return '/torrents'
+    return '/dashboard'
+  }
+  return null
+}
 
 // 强制改密放行白名单（安全修复 W9）：mustChangePassword 时只允许访问
 // 改密页。真实页面挂在子路由 /settings/index（父路由 redirect 前置解析
@@ -81,13 +105,21 @@ const registerTransientAbort = (): boolean => {
 const fallbackToLogout = (next: any, to: Route): void => {
   consecutiveTransientAborts = 0
   UserModule.ExpireSession()
-  next(`/login?redirect=${encodeURIComponent(to.path)}`)
+  next(loginPathForMode(to.path))
   NProgress.done()
 }
 
 router.beforeEach(async(to: Route, from: Route, next: any) => {
   // Start progress bar
   NProgress.start()
+
+  // UI 模式分流（Phase 4 M1）：认证前的布局选择，重定向不改变 redirect 语义
+  const modeRedirect = uiModeRedirectPath(to)
+  if (modeRedirect) {
+    next({ path: modeRedirect, replace: true })
+    NProgress.done()
+    return
+  }
 
   // Determine whether the user has logged in
   if (UserModule.token) {
@@ -111,16 +143,16 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
         // ExpireSession 保留 refresh cookie：防跨标签轮换竞态清掉他标签
         // 刚换得的有效令牌（死 token 残留无害，重登录时覆盖）
         UserModule.ExpireSession()
-        if (to.path === '/login') {
+        if (loginPaths.indexOf(to.path) !== -1) {
           next()
         } else {
-          next(`/login?redirect=${encodeURIComponent(to.fullPath)}`)
+          next(loginPathForMode(to.fullPath))
         }
         NProgress.done()
         return
       }
     }
-    if (to.path === '/login') {
+    if (loginPaths.indexOf(to.path) !== -1) {
       // 已登录用户访问登录页时，读取redirect参数并重定向
       const redirect = to.query.redirect as string
       const targetPath = redirect ? decodeURIComponent(redirect) : '/'
@@ -163,7 +195,7 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
           // Token无效或过期：ExpireSession 保留 refresh cookie（401 链路的
           // redirectToLogin 已按同语义处理，这里不重置为全清防竞态误杀）
           UserModule.ExpireSession()
-          next(`/login?redirect=${encodeURIComponent(to.path)}`)
+          next(loginPathForMode(to.path))
           NProgress.done()
         }
       } else {
@@ -180,12 +212,12 @@ router.beforeEach(async(to: Route, from: Route, next: any) => {
     }
   } else {
     // Has no token
-    if (whiteList.indexOf(to.path) !== -1) {
+    if (loginPaths.indexOf(to.path) !== -1) {
       // In the free login whitelist, go directly
       next()
     } else {
       // Other pages that do not have permission to access are redirected to the login page.
-      next(`/login?redirect=${encodeURIComponent(to.path)}`)
+      next(loginPathForMode(to.path))
       NProgress.done()
     }
   }

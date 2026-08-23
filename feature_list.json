@@ -180,6 +180,7 @@
           "scope": "fullstack",
           "files": [
             "backend/alembic/versions/7b2c9d4e6f10_orphan_scan_background_and_current_detail.py",
+            "backend/alembic/versions/c1d2e3f4a5b6_repair_orphan_current_detail_id.py",
             "backend/alembic/env.py",
             "backend/app/core/migration.py",
             "backend/app/models/orphan_file.py",
@@ -194,13 +195,14 @@
             "backend/app/tasks/cron_executor.py",
             "backend/app/tasks/scheduler/orphan_scan_task.py",
             "backend/tests/services/test_orphan_scan_job_service.py",
+            "backend/tests/core/test_orphan_schema_repair_migration.py",
             "backend/tests/tasks/test_cron_executor_admission.py",
             "backend/tests/tasks/test_orphan_scan_task.py",
             "backend/tests/tasks/test_orphan_scan_task_lifecycle.py",
             "frontend/src/api/orphan-files.ts",
             "frontend/src/views/orphan-files/index.vue"
           ],
-          "evidence": "后台任务 API/调度/恢复与双重复核兼容回归通过；定时入口等待同一 dispatcher 的扫描+自动清理终态，阶段摘要经 CronTaskExecutor 透传到同一条 task_logs，queued 不再提前记为 success；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。2026-08-14 后续调整：超量字段仅作为可关闭页面提醒，移除清理放行前的双重核查要求；保留历史复核字段和兼容 API。追加参数化回归锁定清理预览、前缀快捷、手动和定时入口均不因超量提醒拒绝。原始副本与线上库均未写入，未执行任何清理。"
+          "evidence": "后台任务 API/调度/恢复与双重复核兼容回归通过；定时入口等待同一 dispatcher 的扫描+自动清理终态，阶段摘要经 CronTaskExecutor 透传到同一条 task_logs，queued 不再提前记为 success；迁移将历史 completed 且 total_orphans>50000 的批次标记 cleanup_review_required，并回填 current_detail_id。2026-08-14 以用户提供的 1.02GB 旧 head 真实副本复现 Alembic batch 残留临时表与回填索引退化：修复后完整升级约 4.97 秒，202669 个候选全部绑定稳定明细，quick_check/foreign_key_check 通过且无临时表；迁移失败在任意应用入口均阻断 seed、对账与调度器。真实文件型 SQLite WAL+NullPool 另以 120100 条已知孤儿、每批 200 条并发轮询状态接口：生命周期完成且 orphan_file 保持 120100 条、新批次新增明细为 0，状态接口 P95<1s、max<3s。2026-08-14 后续调整：超量字段仅作为可关闭页面提醒，移除清理放行前的双重核查要求；保留历史复核字段和兼容 API。追加参数化回归锁定清理预览、前缀快捷、手动和定时入口均不因超量提醒拒绝。2026-08-23 新增 c1d2e3f4a5b6 修复迁移：针对 alembic_version 已为 975dad435c03 但 orphan_current_candidate.current_detail_id 缺失的存量库，后端重启自动补列、按扫描批次/路径回填稳定明细并补齐索引；健康库幂等 no-op；test_orphan_schema_repair_migration 2 passed。原始副本与线上库均未写入，未执行任何清理。"
         },
         {
           "id": "orphan-scan-background-stable-details-and-guardrail.2",
@@ -2649,7 +2651,7 @@
             "frontend/src/utils/cookies.ts",
             "frontend/tests/"
           ],
-          "evidence": "2026-08-23 MVP 脚手架完成（未编译验证——本机无 Android SDK/JDK17，按登记原则不标 done）：① backend health.py：/health/live 与 /health/ready（含 503 分支）的 data 增加 version 字段（读取 app.version.CURRENT_VERSION 常量，无 I/O），test_health.py 10 用例锁定（liveness 全等断言更新+双端点 version 断言），tests/api 全量 1004 passed；② android/ 工程完整落地（Kotlin+AGP 8.5.2+minSdk 24+target 35，package com.btdeck.companion）：首启向导（伴侣/本机服务端二选一，后者明示 Phase 3 未交付，可重跑）；服务器 profile（显示名/http-https URL/健康状态/最后连接时间/服务端版本，SharedPreferences JSON 持久化，allowBackup=false）；HealthClient（/health/live→/health/ready 链式探测+版本+TLS 错误可辨识）；WebViewActivity（远程同源直连服务器前端、站内导航继续/外链交系统浏览器、20s 超时+失败重试覆盖层、副标题版本提示、切换 profile 清 CookieManager+WebStorage 实现 token 隔离——前端令牌在 cookie（cookies.ts），清除即隔离）；自签证书流程（SslError→SHA-256 指纹弹窗说明→用户确认后记录到该 profile 作用域，绝不无条件 proceed，证书更换需重确认）；明文 HTTP 双层防线（NSC 默认 cleartext 全禁仅 loopback 放行；应用层 LanHostPolicy 强制 http 仅限私有字面量127/8+RFC1918+169.254/16+fc00::/7+fe80::/10+*.local 且需 profile 显式风险确认，公网明文一律拒绝；LAN 明文需 -Pbtdeck.lanCleartext=true 构建变体，README 记录平台约束）；JVM 单测 LanHostPolicyTest（URL 解析规范化/私有判定边界/策略四分支，含 172.32 公网段与 127.0.0.1.example.com 误判防护）；③ frontend/src/utils/cookies.ts 核查确认：token 按 cookie/origin 隔离，伴侣 WebView 同源无需前端改动（隔离由 APK 清 cookie 达成）。未完成：Gradle 编译/单测/仪表化测试与真机验收（需 JDK17+Android SDK 环境，Phase 5 统一）；OkHttp 健康检查不消费 WebView 信任指纹（自签 https 显示证书错误，已记录为已知边界）。 追加（2026-08-23 第三批·首次编译验证通过）：本机搭便携构建环境（IntelliJ JBR21 + Gradle 8.9（腾讯镜像）+ cmdline-tools 安装 platforms;android-35 与 build-tools;35.0.0，位于 C:\\software\u0007ndroid-build-env\\，可整体删除）后：① AGP 8.5.2→8.7.3（8.5 不支持 compileSdk 35）；② 修复两处真实编译错误——ServerListActivity 的 ListView apply 块内未限定 adapter 解析到 ListView.getAdapter()（改显式局部变量 + this 限定），及属性赋值 lambda 需 AdapterView.OnItemClickListener SAM 构造器；③ :app:testDebugUnitTest 11 用例全绿（0 failures/0 errors）；④ :app:assembleDebug BUILD SUCCESSFUL，app-debug.apk 6,268,259 字节（~6.0MB，debug 签名，apksigner verify 通过）；badging：com.btdeck.companion 0.1.0-mvp / compileSdk 35 / targetSdk 35 / 仅 INTERNET+ACCESS_NETWORK_STATE 权限；⑤ 双 NSC 变体 aapt2 dump xmltree 实证：默认变体 manifest 指向 @0x7f110000（network_security_config 严格版），-Pbtdeck.lanCleartext=true 变体指向 @0x7f110001（network_security_config_lan）——明文开关按设计切换。仍未完成：仪表化测试与真机验收（Phase 5）。"
+          "evidence": "2026-08-23 MVP 脚手架完成（未编译验证——本机无 Android SDK/JDK17，按登记原则不标 done）：① backend health.py：/health/live 与 /health/ready（含 503 分支）的 data 增加 version 字段（读取 app.version.CURRENT_VERSION 常量，无 I/O），test_health.py 10 用例锁定（liveness 全等断言更新+双端点 version 断言），tests/api 全量 1004 passed；② android/ 工程完整落地（Kotlin+AGP 8.5.2+minSdk 24+target 35，package com.btdeck.companion）：首启向导（伴侣/本机服务端二选一，后者明示 Phase 3 未交付，可重跑）；服务器 profile（显示名/http-https URL/健康状态/最后连接时间/服务端版本，SharedPreferences JSON 持久化，allowBackup=false）；HealthClient（/health/live→/health/ready 链式探测+版本+TLS 错误可辨识）；WebViewActivity（远程同源直连服务器前端、站内导航继续/外链交系统浏览器、20s 超时+失败重试覆盖层、副标题版本提示、切换 profile 清 CookieManager+WebStorage 实现 token 隔离——前端令牌在 cookie（cookies.ts），清除即隔离）；自签证书流程（SslError→SHA-256 指纹弹窗说明→用户确认后记录到该 profile 作用域，绝不无条件 proceed，证书更换需重确认）；明文 HTTP 双层防线（NSC 默认 cleartext 全禁仅 loopback 放行；应用层 LanHostPolicy 强制 http 仅限私有字面量127/8+RFC1918+169.254/16+fc00::/7+fe80::/10+*.local 且需 profile 显式风险确认，公网明文一律拒绝；LAN 明文需 -Pbtdeck.lanCleartext=true 构建变体，README 记录平台约束）；JVM 单测 LanHostPolicyTest（URL 解析规范化/私有判定边界/策略四分支，含 172.32 公网段与 127.0.0.1.example.com 误判防护）；③ frontend/src/utils/cookies.ts 核查确认：token 按 cookie/origin 隔离，伴侣 WebView 同源无需前端改动（隔离由 APK 清 cookie 达成）。未完成：Gradle 编译/单测/仪表化测试与真机验收（需 JDK17+Android SDK 环境，Phase 5 统一）；OkHttp 健康检查不消费 WebView 信任指纹（自签 https 显示证书错误，已记录为已知边界）。 追加（2026-08-23 第三批·首次编译验证通过）：本机搭便携构建环境（IntelliJ JBR21 + Gradle 8.9（腾讯镜像）+ cmdline-tools 安装 platforms;android-35 与 build-tools;35.0.0，位于 C:\\software\u0007ndroid-build-env\\，可整体删除）后：① AGP 8.5.2→8.7.3（8.5 不支持 compileSdk 35）；② 修复两处真实编译错误——ServerListActivity 的 ListView apply 块内未限定 adapter 解析到 ListView.getAdapter()（改显式局部变量 + this 限定），及属性赋值 lambda 需 AdapterView.OnItemClickListener SAM 构造器；③ :app:testDebugUnitTest 11 用例全绿（0 failures/0 errors）；④ :app:assembleDebug BUILD SUCCESSFUL，app-debug.apk 6,268,259 字节（~6.0MB，debug 签名，apksigner verify 通过）；badging：com.btdeck.companion 0.1.0-mvp / compileSdk 35 / targetSdk 35 / 仅 INTERNET+ACCESS_NETWORK_STATE 权限；⑤ 双 NSC 变体 aapt2 dump xmltree 实证：默认变体 manifest 指向 @0x7f110000（network_security_config 严格版），-Pbtdeck.lanCleartext=true 变体指向 @0x7f110001（network_security_config_lan）——明文开关按设计切换。仍未完成：仪表化测试与真机验收（Phase 5）。 追加（2026-08-23 第四批·真机验证通过）：用户以 lan-cleartext 变体 APK 真机实测——WebView 成功加载局域网 http 服务器自带前端并可正常进入使用（ERR_CLEARTEXT_NOT_PERMITTED为此前误装严格版所致，LAN 版独立 versionName 0.1.0-mvp+lan 后消除歧义）；补充 WebView 视口适配与捏合缩放（useWideViewPort/loadWithOverviewMode/builtInZoomControls，c450889）。仍待设备复核：离线/认证失败/版本不兼容状态展示、多 profile 切换凭据隔离实测、自签证书弹窗流程。"
         },
         {
           "id": "v1.0.6-dual-mode-client.4",
@@ -2671,7 +2673,7 @@
           "id": "v1.0.6-dual-mode-client.5",
           "name": "Phase 4：移动 M1/M2 壳层与能力降级",
           "description": "按好用标准实现底部 Tab、登录、仪表盘、卡片式种子列表、种子详情/常用操作和通知中心；M2 覆盖高级搜索、查询模板、回收站、日志和下载器高级设置，逐项按 capability matrix 降级或回退桌面视图；保持 Vue 2 Options/class 风格、API 响应信封、api/store 和组件/契约测试约束。",
-          "status": "pending",
+          "status": "in-progress",
           "scope": "frontend",
           "files": [
             "frontend/src/layout/",
@@ -2680,7 +2682,8 @@
             "frontend/src/views/torrents/",
             "frontend/src/router.ts",
             "frontend/tests/"
-          ]
+          ],
+          "evidence": "2026-08-23 第五批·M1 第一片：移动布局壳 + 底部 Tab + 模式切换 + 移动登录/仪表盘/种子卡片/通知。① utils/ui-mode.ts：偏好持久化(auto/mobile/desktop)+视口判定(768px)+模式合成+登录分流，不以 UA 为唯一依据、移动版头部保留切桌面出口（不自锁）；② layout/mobile/index.vue 底部 Tab 壳（仪表盘/种子/通知）；③ views/mobile/{login,dashboard,torrents,notifications}.vue——复用 user store Login、/dashboard API、torrents getList（skip/limit 分页+状态筛选+暂停/恢复/删除入回收站）、/notifications API（点击已读）；④ 路由 /m/* 组（路由级懒加载，构建产物 m-*.js chunk 实证）+ permission.ts 模式感知：守卫首部 UI 模式分流（移动模式访问桌面顶层页→/m 对应页；桌面模式访问 /m/*→桌面页），全部登录跳转点（4 处）改 loginPathForMode，白名单含 /m/login；强制改密/瞬时失败等既有守卫语义未动。验证：新增 16 用例全绿（ui-mode 11 + MobileLayout 5），守卫回归 31 用例全绿，前端全量 704 passed，tsc/lint 通过，生产 build 成功。M1 未完：种子详情页/更多操作、离线下拉刷新、移动通知未读角标、桌面入口手动切换移动版；M2 未动。"
         },
         {
           "id": "v1.0.6-dual-mode-client.6",

@@ -5194,3 +5194,44 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 ### 后续
 
 部署后重点检索 `event=resource_lifecycle`、`event=task_lifecycle`、`event=sync_phase`，确认 `blocked_by_task_code` 是否为 `tracker_sync_598b784c`，并结合 `holder_phase`/`holder_age_ms` 判断实际卡点。
+
+## 2026-08-23（第五批）：孤儿 current_detail_id Schema 漂移重启自愈
+
+### 结论
+
+新快照暴露启动对账查询失败：`orphan_current_candidate.current_detail_id` 在运行库中不存在，但 ORM 对账逻辑已按该字段查询。此前迁移 `975dad435c03` 已可能写入 `alembic_version`，因此单纯 `upgrade head` 会判断“已是最新”并跳过修复。新增 `c1d2e3f4a5b6` Alembic 修复迁移，后端重启时自动处理该版本号/物理 Schema 不一致场景。
+
+### 变更
+
+- `backend/alembic/versions/c1d2e3f4a5b6_repair_orphan_current_detail_id.py`：从 `975dad435c03` 进入新 head；缺列时补 `current_detail_id`，按 `last_seen_scan_id` 优先、canonical path 最新明细兜底回填，并补齐稳定明细唯一索引和扫描状态索引；健康库幂等跳过。
+- `backend/tests/core/test_orphan_schema_repair_migration.py`：覆盖“版本号已到旧 head 但缺列”与“健康 Schema”两种重启迁移场景。
+- 同步更新迁移 head 测试断言、数据库迁移约束、roadmap、`feature_list.json` 与本交接记录。
+
+### 安全边界
+
+迁移前仍由统一 `migrate_database()` 生成备份；修复失败会在孤儿对账、seed 和调度器启动前 fail-fast。未修改 `E:\Users\huangzj\Desktop\app.db`，未执行任何用户数据清理。`downgrade` 保留该列，避免回滚再次制造已知 Schema 漂移。
+
+### 当前验证
+
+- `python -m pytest tests/core/test_orphan_schema_repair_migration.py -q`：2 passed。
+- `python -m pytest tests/core/test_orphan_schema_repair_migration.py tests/core/test_db_migration.py tests/core/test_db_rollback_scenarios.py tests/core/test_orphan_migration_production_shape.py -q`：37 passed。
+- `python -m pytest tests/core/test_startup_migration_guard.py tests/tasks/test_orphan_scan_task_lifecycle.py tests/services/test_orphan_query_state.py -q`：17 passed。
+- flake8、mypy（新增迁移/测试）、Black `--diff`、`scripts/lint_btdeck.py`、JSON 解析和 `git diff --check` 通过。
+- `python -m alembic heads`：仅 `c1d2e3f4a5b6 (head)`。
+
+仓库根 `bash ./init.sh` 在当前 Windows 环境因 WSL `E_ACCESSDENIED` 无法启动，未归因于本次代码变更；其余定向验证已完成。
+
+### 后续
+
+部署包含该 revision 的后端；所有用户重启后会走统一 Alembic 启动迁移。Git stage/commit/push 等待用户明确指示。
+
+## 2026-08-23（第五批）：Phase 4 M1 第一片——移动 UI 壳与四个核心页
+
+用户真机验证伴侣模式通过后继续。Phase 3 被 Phase 0 闸门阻塞（android-wheels 推送等用户指令），Phase 4 不受阻故先行。
+
+- utils/ui-mode.ts（偏好+视口+登录分流）、layout/mobile（底部 Tab 壳+桌面版出口）、views/mobile 四页（login/dashboard/torrents 卡片列表含暂停/恢复/删除/notifications 点击已读）、路由 /m/* 懒加载组、permission.ts 守卫首部模式分流+4 处登录跳转模式化。
+- 项目惯例修正：class 组件导入须用 vue-property-decorator（vue-class-component 直用在 Jest 下 Vue 绑定 undefined）。
+- 验证：ui-mode 11 + MobileLayout 5 新用例、守卫回归 31、前端全量 704 全绿；tsc/lint/build 通过；m-* 懒加载 chunk 实证。
+- 生效提醒：移动版部署到手机需把新 frontend/dist 发布到服务器（重打包/重部署）；本地可 npm run serve 手机访问开发机验证。
+- Git 提交待用户指示。
+
