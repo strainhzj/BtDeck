@@ -5235,3 +5235,26 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 - 生效提醒：移动版部署到手机需把新 frontend/dist 发布到服务器（重打包/重部署）；本地可 npm run serve 手机访问开发机验证。
 - Git 提交待用户指示。
 
+## 2026-08-23（第六批）：tracker_sync 异常边界观测增强
+
+### 结论
+
+针对 `tracker_sync` 中“异常被转成 `errors` 后继续执行、服务日志却缺少 traceback”的排查目标，完成只读观测增强。未改变 tracker 同步的结果映射、批失败处理、游标推进、重试、取消和数据库写入语义，也未修改 `E:\Users\huangzj\Desktop\app.db`。
+
+### 变更
+
+- `sync_observability.py`：新增 `event=sync_error` 及 `stage/operation/error_type/suppressed/continue_after_error` 白名单字段。
+- `sync_coordinator.py`：下载器开始/完成、tracker 子结果、tracker 状态阶段开始/跳过/完成均补充观测；下载器粒度异常、同步阶段异常、Tracker 状态阶段异常输出 traceback 并发射 `sync_error`；结果含错误时以 warning 输出 `error_count` 和前 5 条错误。
+- `torrents_async.py`：qB/TR tracker-only 的输入校验、单种子远程获取、worker gather、批提交、行提取、检查点读写、qB SDK 标记失败均记录异常类型和是否继续执行；有错误的 tracker-only 汇总提升为 warning。
+- `tracker_sync_task.py`：记录有效下载器摘要、Coordinator 结果和最终错误摘要。
+- `feature_list.json`、`docs/roadmap/`、`session-handoff.md`：登记本次观测边界与实测行号。
+
+### 验证
+
+- `python -m pytest tests/services/test_sync_observability.py tests/services/test_sync_coordinator.py tests/api/test_torrents_async_tracker_budget.py -q`：82 passed。
+- flake8：通过；mypy（4 个后端源文件）：无错误；`git diff --check`：通过。
+- Black 对受影响大文件的全量 `--check` 报告既有格式差异且长时间未结束，未执行全文件重排，避免引入无关大范围 diff；本次新增代码未触发 flake8/mypy 问题。
+
+### 部署后观察
+
+按 `run_id` 检索 `event=sync_error`，重点看 `stage`：`tracker_enrich_single_torrent`、`tracker_batch_commit`、`tracker_row_extract`、`tracker_checkpoint_push`、`tracker_status`；再与 `tracker_sync_task coordinator_result`、`sync_coordinator downloader_done` 对照，确认异常是否被抑制、是否继续处理以及最终是否变成 partial/failed。

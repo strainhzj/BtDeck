@@ -15,7 +15,7 @@
 | 仪表盘 dashboard | `dashboard_service.py` | `DashboardService`：仪表盘聚合数据（系统总速度=在线下载器速度求和；孤儿类操作活动文案展示清理文件/计数） |
 | 删除任务删除管理 deletion-task | `deletion_task_manager.py` | 内存任务管理器（异步批量删除生命周期 + 活动种子 ID 原子占用/同步查询快照；终态释放） |
 | 下载器 RPC downloader-rpc | `downloader_api_runtime.py` | 下载器 RPC 调用隔离层（三 lane 线程池隔离 qB/Transmission） |
-| 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L256），并发射阶段切换事件；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1509 限量补齐种子文件备份 |
+| 同步协调器 sync-coordinator | `sync_coordinator.py` | 统一 info/tracker/full 准入、缓存客户端、预算、检查点和结果语义；活动运行快照维护 phase/elapsed/last-progress（`mark_sync_progress` L300），并发射阶段切换事件；下载器/Tracker 状态异常发射 `sync_error` 并保留 traceback、阶段和继续语义；info/full 单下载器完成后 `_reconcile_torrent_file_backups` L1683 限量补齐种子文件备份 |
 | 下载器能力 downloader-capability | `downloader_capabilities_manager.py` | 下载器能力配置 CRUD 与同步 |
 | 下载器设置 downloader-setting | `downloader_settings_manager.py` | 下载器设置统一管理器 |
 | 通知 notification | `notification_service.py` | 通知服务（CRUD + 版本更新检查） |

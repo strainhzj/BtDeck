@@ -53,7 +53,7 @@
 |--------|------|-----------|
 | 同步基础类 sync-base | `base.py` | `BaseSyncTask`：种子同步公共基础类 |
 | 基础信息同步 info-sync | `torrent_info_sync_task.py` | 高频同步种子基础信息（名称/大小/进度/状态）；每轮完成后全局按 `name + size` 刷新辅种数量 |
-| tracker 同步 tracker-sync | `tracker_sync_task.py` | 高频同步 tracker 状态（announce/scrape/错误） |
+| tracker 同步 tracker-sync | `tracker_sync_task.py` | 高频同步 tracker 状态（announce/scrape/错误）；任务入口记录有效下载器、Coordinator 结果、错误计数与前 5 条异常摘要，异常边界由下游 `sync_error` 事件追踪 |
 
 ---
 

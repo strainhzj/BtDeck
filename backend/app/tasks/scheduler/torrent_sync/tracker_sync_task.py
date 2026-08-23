@@ -82,7 +82,19 @@ class TrackerSyncTask(BaseSyncTask):
                     "total_downloaders": 0,
                 }
 
-            logger.info(f"找到 {len(valid_downloaders)} 个有效下载器")
+            downloader_summary = [
+                {
+                    "downloader_id": str(getattr(downloader, "downloader_id", "")),
+                    "nickname": getattr(downloader, "nickname", "unknown"),
+                    "type": getattr(downloader, "downloader_type", "unknown"),
+                }
+                for downloader in valid_downloaders
+            ]
+            logger.info(
+                "tracker_sync_task valid_downloaders count=%d downloaders=%s",
+                len(valid_downloaders),
+                downloader_summary,
+            )
 
             # 串行执行 Tracker 同步（Coordinator 内逐下载器处理，避免 SQLite
             # 数据库并发写入冲突；max_concurrent=1 语义保持不变）
@@ -98,6 +110,18 @@ class TrackerSyncTask(BaseSyncTask):
             )
 
             result = self._map_coordinator_result(coordinator_result, len(valid_downloaders))
+            result_errors = list(getattr(coordinator_result, "errors", []) or [])
+            logger.info(
+                "tracker_sync_task coordinator_result run_id=%s outcome=%s phase=%s "
+                "successful_syncs=%s failed_syncs=%s error_count=%d errors=%s",
+                getattr(coordinator_result, "run_id", None),
+                getattr(coordinator_result, "outcome", None),
+                getattr(coordinator_result, "phase", None),
+                result.get("successful_syncs", 0),
+                result.get("failed_syncs", 0),
+                len(result_errors),
+                result_errors[:5],
+            )
 
             # 更新统计
             if result["status"] == "success":
@@ -109,11 +133,16 @@ class TrackerSyncTask(BaseSyncTask):
             self.total_failed += result.get("failed_syncs", 0)
 
             # 记录任务结果
-            logger.info(
-                f"[{self.name}] 任务完成: "
-                f"成功 {result.get('successful_syncs', 0)}, "
-                f"失败 {result.get('failed_syncs', 0)}, "
-                f"总计 {result.get('total_downloaders', 0)} 个下载器"
+            completion_logger = logger.warning if result_errors else logger.info
+            completion_logger(
+                "[%s] 任务完成: 成功 %s, 失败 %s, 总计 %s 个下载器, "
+                "error_count=%d, errors=%s",
+                self.name,
+                result.get("successful_syncs", 0),
+                result.get("failed_syncs", 0),
+                result.get("total_downloaders", 0),
+                len(result_errors),
+                result_errors[:5],
             )
 
             return result

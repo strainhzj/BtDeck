@@ -77,6 +77,8 @@ EVENT_TASK_LIFECYCLE = "task_lifecycle"
 EVENT_RESOURCE_LIFECYCLE = "resource_lifecycle"
 # 同步阶段切换（用于还原卡在哪个阶段）
 EVENT_SYNC_PHASE = "sync_phase"
+# 同步异常边界（记录异常类型、阶段以及是否被转换为结果后继续执行）
+EVENT_SYNC_ERROR = "sync_error"
 
 # ==================== 字段白名单 ====================
 
@@ -156,6 +158,7 @@ EVENT_FIELDS: Dict[str, frozenset] = {
         }
     ),
     EVENT_SYNC_PHASE: frozenset({"previous_phase", "previous_phase_ms"}),
+    EVENT_SYNC_ERROR: frozenset({"stage", "operation", "suppressed", "continue_after_error"}),
 }
 
 

@@ -499,6 +499,35 @@ class TestTrackerStatusPhaseOrdering:
         assert status_sync.await_count == 0
         assert result.details["successful_syncs"] == 0
 
+    async def test_tracker_status_exception_is_logged_and_keeps_error_in_result(self):
+        """状态阶段异常仍保持原 outcome，但必须有 traceback 与 sync_error 事件。"""
+        app = make_fake_app([make_vo(client=MagicMock())])
+
+        async def raw_tracker_sync(*args, **kwargs):
+            return {"status": "success", "message": "ok", "torrent_count": 1, "tracker_count": 1}
+
+        async def failed_tracker_status_sync():
+            raise RuntimeError("tracker status boom")
+
+        with (
+            patch("app.api.endpoints.torrents_async.qb_sync_trackers_only_async", new=raw_tracker_sync),
+            patch(
+                "app.api.endpoints.torrent_sync.update_tracker_status_from_keywords",
+                new=failed_tracker_status_sync,
+            ),
+            patch("app.services.sync_coordinator.logger.error") as mock_error,
+            patch("app.services.sync_coordinator.log_event") as mock_event,
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="tracker", downloader_ids=["dl_001"], trigger="cron"),
+                app=app,
+            )
+
+        assert result.outcome == "success"
+        assert any("Tracker 状态更新失败" in error for error in result.errors)
+        assert any("tracker_status" in str(call.args) for call in mock_error.call_args_list)
+        assert any(call.args and call.args[0] == "sync_error" for call in mock_event.call_args_list)
+
 
 # =============================================================================
 # 5. 下载器离线 → failed + errors 可读

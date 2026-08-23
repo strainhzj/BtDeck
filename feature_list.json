@@ -1801,6 +1801,24 @@
             "backend/tests/test_architecture_constraints.py"
           ],
           "evidence": "问题1：per-downloader 限流从 asyncio.Semaphore（async with sem 在 wait_for 超时后立即释放）改为 threading.Semaphore（由 executor 内 wrapper 线程自身 acquire/release，确保同步线程实际结束前不释放容量）+ 超时后 future done callback 归档统计；新增 test_timeout_does_not_break_real_concurrency_cap（mutation 反向验证：修复前 buggy asyncio.Semaphore 实现并发达 5 突破 limit=2）。问题2：torrent_speed.py 删除独立 _speed_executor，_call_with_timeout 接入 DownloadLane.INTERACTIVE + timeout=_DOWNLOADER_TIMEOUT，复用 per-downloader 限流避免前端 1s 轮询成为旁路压力源；新增 test_uses_interactive_lane_and_timeout + test_speed_endpoint_does_not_bypass_per_downloader_limit。问题3：新增 _CallStatsAggregator 按 (lane,method,downloader_id) 窗口聚合（成功路径不逐条 info，失败路径 runtime 层降级 debug 避免与业务侧 error 双重放大，shutdown 强制 flush）；落地 settings.SYNC_DISK_FLUSH_INTERVAL_SECONDS（不动 SYNC_DB_COMMIT_BATCH_SIZE 的 DB 写治理）；新增 4 个聚合器测试（spy logger.extra 断言，避免全量 pytest root logger 级别污染）。问题4：lifecycle finally 接入 downloader_api_runtime.shutdown()（关闭三 lane executor + flush 残留统计），删除已废弃的 _speed_executor.shutdown 引用；新增 test_lifespan_shutdowns_downloader_api_runtime + test_lifespan_no_longer_references_speed_executor（AST 扫描，mutation 验证）。验证：全量 1937 passed 0 failed（基线 1926→1937 净增 11 测试）；black/flake8 通过；./init.sh 通过。问题5：父 feature planned→done，last_updated→2026-07-05，evidence 用真实测试数字替换'16 failed'旧叙述。"
+        },
+        {
+          "id": "sync-resource-governance.5",
+          "name": "tracker_sync 异常边界观测增强",
+          "description": "为 TrackerSyncTask、SyncCoordinator 和 qBittorrent/Transmission tracker-only 路径补充下载器阶段、异常类型、traceback、错误计数及是否继续执行的观测，重点揭示原先仅追加 errors 后继续的异常；不改变同步结果、重试、游标或取消语义。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_observability.py",
+            "backend/app/services/sync_coordinator.py",
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/tasks/scheduler/torrent_sync/tracker_sync_task.py",
+            "backend/tests/services/test_sync_observability.py",
+            "backend/tests/services/test_sync_coordinator.py",
+            "progress.md",
+            "session-handoff.md"
+          ],
+          "evidence": "新增 event=sync_error 结构化事件，字段包含 stage/operation/error_type/suppressed/continue_after_error；Coordinator 对下载器边界、tracker 状态阶段和最终结果补充 traceback/错误计数，qB/TR tracker-only 对单种子获取、worker gather、批提交、行提取、检查点读取/推进和 SDK 标记失败补充异常观测；有错误的成功/partial 汇总改为 warning 并显示前 5 条错误。定向回归 82 passed（test_sync_observability.py、test_sync_coordinator.py、test_torrents_async_tracker_budget.py），flake8/mypy 通过；未改变业务控制流。"
         }
       ]
     },

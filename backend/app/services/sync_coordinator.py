@@ -59,6 +59,7 @@ from app.models.sync_checkpoint import (
 from app.services.sync_observability import (
     EVENT_ADMISSION,
     EVENT_CHECKPOINT,
+    EVENT_SYNC_ERROR,
     EVENT_SYNC_PHASE,
     EVENT_SYNC_RUN_START,
     clear_run_id,
@@ -70,6 +71,49 @@ from app.tasks.task_profiles import TaskProfile, get_profile
 from app.utils.datetime_utils import serialize_utc_datetime
 
 logger = logging.getLogger(__name__)
+
+
+def _log_sync_exception(
+    error: BaseException,
+    *,
+    stage: str,
+    operation: str,
+    suppressed: bool,
+    continue_after_error: bool,
+    sync_type: Optional[str] = None,
+    downloader_id: Optional[str] = None,
+) -> None:
+    """记录同步异常的完整 traceback，并发射可检索的异常边界事件。
+
+    部分同步函数会把下载器级异常转换为 ``SyncResult.errors`` 后继续处理
+    其他下载器。这个行为本身是有意的，但此前只有结果列表保留了异常，服务
+    日志中缺少 traceback，导致难以区分“被处理的业务失败”和“静默吞异常”。
+    ``suppressed``/``continue_after_error`` 只描述现有控制流，不改变控制流。
+    """
+    logger.error(
+        "sync_coordinator exception stage=%s operation=%s sync_type=%s downloader_id=%s "
+        "error_type=%s error=%s",
+        stage,
+        operation,
+        sync_type,
+        downloader_id,
+        type(error).__name__,
+        error,
+        exc_info=True,
+    )
+    event_fields: Dict[str, Any] = {
+        "phase": stage,
+        "stage": stage,
+        "operation": operation,
+        "error_type": type(error).__name__,
+        "suppressed": suppressed,
+        "continue_after_error": continue_after_error,
+    }
+    if sync_type:
+        event_fields["sync_type"] = sync_type
+    if downloader_id:
+        event_fields["downloader_id"] = downloader_id
+    log_event(EVENT_SYNC_ERROR, **event_fields)
 
 
 # =============================================================================
@@ -856,6 +900,14 @@ async def _run_sync_core(req: SyncRequest, app: Any, run_id: str, start_ts: floa
             try:
                 cycle_complete_map = await _execute_sync_phase(req, result, infos, checkpoints, start_ts, runtime_app)
             except Exception as e:  # noqa: BLE001 - 意外异常仍要落最终检查点后上抛
+                _log_sync_exception(
+                    e,
+                    stage="sync_phase",
+                    operation=f"{req.sync_type}_sync_phase",
+                    sync_type=req.sync_type,
+                    suppressed=False,
+                    continue_after_error=False,
+                )
                 if result.outcome not in ("cancelled", "partial", "failed"):
                     result.outcome = "failed"
                 result.errors.append(f"同步阶段异常: {e}")
@@ -1286,7 +1338,41 @@ async def _execute_sync_phase(
         if _check_cancelled(req, result, start_ts):
             break
         downloader_id = str(info.get("downloader_id") or "")
-        status, meta = await _sync_one_downloader(req, result, info, app, checkpoints.get(downloader_id))
+        downloader_start_ts = time.monotonic()
+        error_count_before = len(result.errors)
+        logger.info(
+            "sync_coordinator downloader_start run_id=%s sync_type=%s index=%d/%d "
+            "downloader_id=%s nickname=%s downloader_type=%s",
+            result.run_id,
+            req.sync_type,
+            index + 1,
+            len(infos),
+            downloader_id,
+            info.get("nickname", "unknown"),
+            info.get("downloader_type", "unknown"),
+        )
+        try:
+            status, meta = await _sync_one_downloader(req, result, info, app, checkpoints.get(downloader_id))
+        except asyncio.CancelledError:
+            logger.warning(
+                "sync_coordinator downloader_cancelled run_id=%s sync_type=%s downloader_id=%s",
+                result.run_id,
+                req.sync_type,
+                downloader_id,
+                exc_info=True,
+            )
+            raise
+        except Exception as exc:  # noqa: BLE001 - 记录后保持原有上抛语义
+            _log_sync_exception(
+                exc,
+                stage="downloader_dispatch",
+                operation=f"{req.sync_type}_sync",
+                sync_type=req.sync_type,
+                downloader_id=downloader_id,
+                suppressed=False,
+                continue_after_error=False,
+            )
+            raise
         if status == "success":
             ok += 1
             if meta and meta.get("cycle_complete"):
@@ -1323,14 +1409,21 @@ async def _execute_sync_phase(
             )
         else:
             fail += 1
-        logger.debug(
-            "sync_coordinator downloader_done run_id=%s sync_type=%s index=%d/%d " "downloader=%s status=%s",
+        logger.info(
+            "sync_coordinator downloader_done run_id=%s sync_type=%s index=%d/%d "
+            "downloader_id=%s downloader=%s status=%s duration_ms=%.1f new_error_count=%d "
+            "cycle_complete=%s cursor_present=%s",
             result.run_id,
             req.sync_type,
             index + 1,
             len(infos),
+            downloader_id,
             info.get("nickname", "unknown"),
             status,
+            (time.monotonic() - downloader_start_ts) * 1000,
+            max(0, len(result.errors) - error_count_before),
+            bool(meta and meta.get("cycle_complete")),
+            bool(meta and meta.get("cursor")),
         )
         mark_sync_progress(result.run_id or "", phase="sync")
 
@@ -1383,7 +1476,27 @@ async def _sync_one_downloader(
     nickname = info.get("nickname", "unknown")
     downloader_type = _normalize_downloader_type(info.get("downloader_type"))
     if downloader_type is None:
-        result.errors.append(f"下载器 {nickname} 不支持的下载器类型: {info.get('downloader_type')}")
+        raw_type = info.get("downloader_type")
+        message = f"下载器 {nickname} 不支持的下载器类型: {raw_type}"
+        logger.error(
+            "sync_coordinator downloader_rejected downloader_id=%s nickname=%s "
+            "reason=unsupported_type raw_type=%s",
+            downloader_id,
+            nickname,
+            raw_type,
+        )
+        log_event(
+            EVENT_SYNC_ERROR,
+            phase="downloader_validation",
+            stage="downloader_validation",
+            operation="normalize_downloader_type",
+            downloader_id=downloader_id,
+            sync_type=req.sync_type,
+            error_type="UnsupportedDownloaderType",
+            suppressed=True,
+            continue_after_error=True,
+        )
+        result.errors.append(message)
         return "failed", None
 
     from app.database import AsyncSessionLocal  # noqa: PLC0415 - 延迟导入
@@ -1399,6 +1512,23 @@ async def _sync_one_downloader(
     downloader = _build_bt_downloader(info)
     cached_client = await _get_cached_client(app, downloader_id)
     if cached_client is None:
+        logger.error(
+            "sync_coordinator downloader_rejected downloader_id=%s nickname=%s "
+            "reason=cached_client_missing",
+            downloader_id,
+            nickname,
+        )
+        log_event(
+            EVENT_SYNC_ERROR,
+            phase="client_lookup",
+            stage="client_lookup",
+            operation="get_cached_client",
+            downloader_id=downloader_id,
+            sync_type=req.sync_type,
+            error_type="CachedClientMissing",
+            suppressed=True,
+            continue_after_error=True,
+        )
         result.errors.append(f"无法获取下载器 {nickname} 的缓存客户端连接")
         return "failed", None
 
@@ -1470,6 +1600,31 @@ async def _sync_one_downloader(
                     )
                 else:
                     sub_result = await tr_sync_trackers_only_async(db, downloader, cached_client)
+                if isinstance(sub_result, dict):
+                    logger.info(
+                        "sync_coordinator tracker_downloader_result run_id=%s downloader_id=%s nickname=%s "
+                        "downloader_type=%s status=%s partial=%s torrent_count=%s tracker_count=%s "
+                        "error_count=%s cycle_complete=%s",
+                        result.run_id,
+                        downloader_id,
+                        nickname,
+                        downloader_type,
+                        sub_result.get("status"),
+                        sub_result.get("partial"),
+                        sub_result.get("torrent_count", 0),
+                        sub_result.get("tracker_count", 0),
+                        sub_result.get("error_count", 0),
+                        sub_result.get("cycle_complete"),
+                    )
+                else:
+                    logger.error(
+                        "sync_coordinator tracker_downloader_invalid_result run_id=%s downloader_id=%s "
+                        "nickname=%s result_type=%s",
+                        result.run_id,
+                        downloader_id,
+                        nickname,
+                        type(sub_result).__name__,
+                    )
                 if sub_result.get("status") == "success":
                     # 记录级统计（tracker 路径底层函数返回 tracker_count/torrent_count）
                     result.scanned += int(sub_result.get("torrent_count", 0) or 0)
@@ -1501,7 +1656,26 @@ async def _sync_one_downloader(
                 await _reconcile_torrent_file_backups(db, downloader, result, nickname)
         result.scanned += 1  # info/full 路径暂无记录级统计，按下载器计（W3 补齐）
         return "success", None
+    except asyncio.CancelledError:
+        logger.warning(
+            "sync_coordinator downloader_cancelled run_id=%s sync_type=%s downloader_id=%s nickname=%s",
+            result.run_id,
+            req.sync_type,
+            downloader_id,
+            nickname,
+            exc_info=True,
+        )
+        raise
     except Exception as e:  # noqa: BLE001 - 下载器粒度捕获，汇总为 partial/failed
+        _log_sync_exception(
+            e,
+            stage="downloader_sync",
+            operation=f"{req.sync_type}_sync",
+            sync_type=req.sync_type,
+            downloader_id=downloader_id,
+            suppressed=True,
+            continue_after_error=True,
+        )
         result.errors.append(f"同步下载器 {nickname} 失败: {e}")
         return "failed", None
 
@@ -1566,9 +1740,24 @@ async def _run_tracker_status_phase(req: SyncRequest, result: SyncResult, start_
     结果写入 result.details["tracker_status_update"] 供任务页结构兼容。
     """
     result.phase = "tracker_status"
+    successful_syncs = result.details.get("successful_syncs", 0)
+    logger.info(
+        "sync_coordinator tracker_status_start run_id=%s downloader_count=%s successful_syncs=%s",
+        result.run_id,
+        result.details.get("downloader_count", 0),
+        successful_syncs,
+    )
     if _check_cancelled(req, result, start_ts):
+        logger.info(
+            "sync_coordinator tracker_status_skip run_id=%s reason=cancelled",
+            result.run_id,
+        )
         return
-    if result.details.get("successful_syncs", 0) <= 0:
+    if successful_syncs <= 0:
+        logger.info(
+            "sync_coordinator tracker_status_skip run_id=%s reason=no_successful_sync",
+            result.run_id,
+        )
         return
     from app.api.endpoints.torrent_sync import update_tracker_status_from_keywords  # noqa: PLC0415
 
@@ -1576,7 +1765,20 @@ async def _run_tracker_status_phase(req: SyncRequest, result: SyncResult, start_
         tracker_result = await update_tracker_status_from_keywords()
         result.details["tracker_status_update"] = tracker_result
         mark_sync_progress(result.run_id or "", phase="tracker_status")
+        logger.info(
+            "sync_coordinator tracker_status_done run_id=%s result_type=%s",
+            result.run_id,
+            type(tracker_result).__name__,
+        )
     except Exception as e:  # noqa: BLE001 - 状态更新失败不改变主 outcome
+        _log_sync_exception(
+            e,
+            stage="tracker_status",
+            operation="update_tracker_status_from_keywords",
+            sync_type=req.sync_type,
+            suppressed=True,
+            continue_after_error=True,
+        )
         result.errors.append(f"Tracker 状态更新失败: {e}")
 
 
@@ -1647,12 +1849,13 @@ def _log_result(
         "outcome": result.outcome,
         "skip_reason": result.skip_reason,
         "duration_ms": round(result.duration_ms, 1),
+        "error_count": len(result.errors),
     }
-    if result.outcome in ("success", "partial", "no_action"):
+    if result.outcome in ("success", "partial", "no_action") and not result.errors:
         logger.info(
             "sync_coordinator run_id=%s trigger=%s sync_type=%s downloader_count=%d "
             "admission_wait_ms=%s phase=%s outcome=%s skip_reason=%s duration_ms=%.1f "
-            "scanned=%d changed=%d committed=%d",
+            "scanned=%d changed=%d committed=%d error_count=%d",
             result.run_id,
             req.trigger,
             req.sync_type,
@@ -1665,13 +1868,14 @@ def _log_result(
             result.scanned,
             result.changed,
             result.committed,
+            len(result.errors),
             extra=extra,
         )
     else:
         logger.warning(
             "sync_coordinator run_id=%s trigger=%s sync_type=%s downloader_count=%d "
             "admission_wait_ms=%s phase=%s outcome=%s skip_reason=%s duration_ms=%.1f "
-            "scanned=%d changed=%d committed=%d errors=%s",
+            "scanned=%d changed=%d committed=%d error_count=%d errors=%s",
             result.run_id,
             req.trigger,
             req.sync_type,
@@ -1684,6 +1888,7 @@ def _log_result(
             result.scanned,
             result.changed,
             result.committed,
+            len(result.errors),
             result.errors[:5],
             extra=extra,
         )

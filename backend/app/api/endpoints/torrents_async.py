@@ -42,6 +42,7 @@ from app.core.filename_utils import FilenameUtils
 from app.services.torrent_file_backup_manager import TorrentFileBackupManagerService
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
 from app.services.sync_db_write import WriteStats, bulk_upsert_with_retry, has_torrent_info_changes
+from app.services.sync_observability import EVENT_SYNC_ERROR, log_event
 from app.services.torrent_metadata import fetch_qb_torrent_details
 from app.services.torrent_ratio_values import (
     MISSING_RATIO_VALUE,
@@ -56,6 +57,49 @@ logger = logging.getLogger(__name__)
 
 # 乐观锁最大重试次数
 MAX_OPTIMISTIC_LOCK_RETRIES = 3
+
+
+def _log_tracker_sync_exception(
+    error: BaseException,
+    *,
+    log_prefix: str,
+    stage: str,
+    operation: str,
+    downloader_id: Optional[str] = None,
+    context: Optional[str] = None,
+    suppressed: bool = True,
+    continue_after_error: bool = True,
+) -> None:
+    """记录 tracker-only 路径中被转换/继续处理的异常。
+
+    tracker-only 代码需要对单个种子、单批提交和检查点推进做容错，原有
+    返回值语义保留；此处补齐 traceback 与统一事件，便于确认异常是否真的
+    被吞掉以及后续是否继续执行。
+    """
+    logger.error(
+        "[%s] tracker_sync_exception stage=%s operation=%s downloader_id=%s context=%s "
+        "error_type=%s error=%s",
+        log_prefix,
+        stage,
+        operation,
+        downloader_id,
+        context,
+        type(error).__name__,
+        error,
+        exc_info=True,
+    )
+    event_fields: Dict[str, Any] = {
+        "sync_type": "tracker",
+        "phase": stage,
+        "stage": stage,
+        "operation": operation,
+        "error_type": type(error).__name__,
+        "suppressed": suppressed,
+        "continue_after_error": continue_after_error,
+    }
+    if downloader_id:
+        event_fields["downloader_id"] = downloader_id
+    log_event(EVENT_SYNC_ERROR, **event_fields)
 
 
 def _coerce_activity_ts(value: Any) -> Optional[float]:
@@ -2478,7 +2522,7 @@ def _qb_get_attr(obj: Any, key: str, default: Any = None) -> Any:
     return default
 
 
-def _qb_set_attr(obj: Any, key: str, value: Any) -> None:
+def _qb_set_attr(obj: Any, key: str, value: Any, downloader_id: Optional[str] = None) -> None:
     """在 qB 返回对象/字典上记录内部同步标记。
 
     qBittorrent API 返回值在不同版本中可能是普通对象或字典。标记仅用于
@@ -2490,8 +2534,17 @@ def _qb_set_attr(obj: Any, key: str, value: Any) -> None:
         return
     try:
         setattr(obj, key, value)
-    except Exception:  # noqa: BLE001 - SDK 对象可能禁止动态属性
-        logger.debug("无法在 qB 种子对象上记录同步标记: key=%s", key)
+    except Exception as attr_error:  # noqa: BLE001 - SDK 对象可能禁止动态属性
+        _log_tracker_sync_exception(
+            attr_error,
+            log_prefix="QB_TRACKER_ENRICH",
+            stage="tracker_enrich_marker",
+            operation="set_tracker_enriched_marker",
+            downloader_id=downloader_id,
+            context=f"object_type={type(obj).__name__},key={key}",
+            suppressed=True,
+            continue_after_error=True,
+        )
 
 
 async def _hydrate_qb_incremental_torrents(
@@ -2703,7 +2756,16 @@ async def _enrich_qb_torrents_with_trackers(
             )
             return torrent_hash, trackers
         except Exception as e:
-            logger.error(f"[QB_TRACKER_ENRICH] Failed to fetch trackers for {torrent_hash[:16]}...: {e}")
+            _log_tracker_sync_exception(
+                e,
+                log_prefix="QB_TRACKER_ENRICH",
+                stage="tracker_enrich_single_torrent",
+                operation="qb_fetch_trackers",
+                downloader_id=downloader_id,
+                context=f"hash_prefix={torrent_hash[:16]}",
+                suppressed=True,
+                continue_after_error=True,
+            )
             return None
 
     # W3-1 有界 worker 队列：队列容量 = worker_count，生产者入队、worker 消费，
@@ -2774,14 +2836,24 @@ async def _enrich_qb_torrents_with_trackers(
                     # 记录失败标记；后续写入阶段只消费连续成功的前缀，避免游标越过失败 hash。
                     failed_torrent = info_by_hash.get(current_hash)
                     if failed_torrent is not None:
-                        _qb_set_attr(failed_torrent, "_btdeck_tracker_enriched", False)
+                        _qb_set_attr(
+                            failed_torrent,
+                            "_btdeck_tracker_enriched",
+                            False,
+                            downloader_id=downloader_id,
+                        )
                     state["failed_count"] += 1
                     continue
                 fetched_hash, trackers = result
                 torrent_info = info_by_hash.get(fetched_hash)
                 if torrent_info:
                     torrent_info.trackers = trackers
-                    _qb_set_attr(torrent_info, "_btdeck_tracker_enriched", True)
+                    _qb_set_attr(
+                        torrent_info,
+                        "_btdeck_tracker_enriched",
+                        True,
+                        downloader_id=downloader_id,
+                    )
                     state["success_count"] += 1
                 else:
                     logger.warning(f"[QB_TRACKER_ENRICH] Torrent info not found for hash {fetched_hash[:16]}...")
@@ -2792,7 +2864,26 @@ async def _enrich_qb_torrents_with_trackers(
     # 只创建固定数量的任务：1 个生产者 + worker_count 个 worker（W3-1 禁止全量 create_task）
     producer_task = asyncio.create_task(_producer())
     worker_tasks = [asyncio.create_task(_tracker_worker()) for _ in range(worker_count)]
-    await asyncio.gather(producer_task, *worker_tasks)
+    try:
+        await asyncio.gather(producer_task, *worker_tasks)
+    except asyncio.CancelledError:
+        logger.warning(
+            "[QB_TRACKER_ENRICH] worker 阶段被取消: downloader_id=%s",
+            downloader_id,
+            exc_info=True,
+        )
+        raise
+    except Exception as e:
+        _log_tracker_sync_exception(
+            e,
+            log_prefix="QB_TRACKER_ENRICH",
+            stage="tracker_enrich_workers",
+            operation="asyncio.gather",
+            downloader_id=downloader_id,
+            suppressed=False,
+            continue_after_error=False,
+        )
+        raise
 
     success_count = state["success_count"]
     failed_count = state["failed_count"]
@@ -3905,9 +3996,26 @@ async def qb_sync_trackers_only_async(
     try:
         downloader_id, nickname = _validate_tracker_only_params(downloader, client)
     except ValueError as e:
+        _log_tracker_sync_exception(
+            e,
+            log_prefix=LOG_PREFIX,
+            stage="tracker_input_validation",
+            operation="validate_tracker_only_params",
+            suppressed=True,
+            continue_after_error=False,
+        )
         return {"status": "failed", "message": str(e), "tracker_count": 0, "torrent_count": 0}
 
     task_start = datetime.now()
+    logger.info(
+        "[%s] start downloader_id=%s nickname=%s cursor_explicit=%s deadline=%s record_budget=%s",
+        LOG_PREFIX,
+        downloader_id,
+        nickname,
+        cursor is not None,
+        deadline,
+        record_budget,
+    )
 
     # W3-1 第二部分：续跑游标优先取显式参数；缺省时从运行期检查点上下文读取
     cursor_before = cursor
@@ -3919,7 +4027,16 @@ async def qb_sync_trackers_only_async(
             if run_ctx is not None:
                 cursor_before = run_ctx.get("cursor")
         except Exception as e:  # noqa: BLE001 - 检查点读取失败按从头处理
-            logger.warning(f"[{LOG_PREFIX}] 读取续跑检查点失败: {e}")
+            _log_tracker_sync_exception(
+                e,
+                log_prefix=LOG_PREFIX,
+                stage="tracker_checkpoint_read",
+                operation="get_run_checkpoint",
+                downloader_id=downloader_id,
+                suppressed=True,
+                continue_after_error=True,
+            )
+            logger.warning(f"[{LOG_PREFIX}] 读取续跑检查点失败，按无游标从头处理")
 
     # === 第1步：从数据库查询 hash -> info_id 映射 ===
     hash_to_info_id = await _query_hash_to_info_id(db, downloader_id, LOG_PREFIX, nickname)
@@ -4051,7 +4168,15 @@ async def qb_sync_trackers_only_async(
             return True
         except Exception as batch_err:
             error_count += 1
-            logger.error(f"[{LOG_PREFIX}] sync_trackers_batch_async 失败: {batch_err}")
+            _log_tracker_sync_exception(
+                batch_err,
+                log_prefix=LOG_PREFIX,
+                stage="tracker_batch_commit",
+                operation="sync_trackers_batch_async",
+                downloader_id=downloader_id,
+                suppressed=True,
+                continue_after_error=False,
+            )
             await _ensure_session_active(db)
             return False
         finally:
@@ -4077,7 +4202,16 @@ async def qb_sync_trackers_only_async(
                 detail={"committed": tracker_total_rows, "batches": batch_committed_count},
             )
         except Exception as push_err:  # noqa: BLE001 - 检查点推进失败不阻断写入
-            logger.warning(f"[{LOG_PREFIX}] 推进 tracker 检查点失败: {push_err}")
+            _log_tracker_sync_exception(
+                push_err,
+                log_prefix=LOG_PREFIX,
+                stage="tracker_checkpoint_push",
+                operation="push_sync_progress",
+                downloader_id=downloader_id,
+                suppressed=True,
+                continue_after_error=True,
+            )
+            logger.warning(f"[{LOG_PREFIX}] 推进 tracker 检查点失败，继续保留已提交批次")
 
     error_count = enrichment_error_count
     for torrent_info in durable_torrents:
@@ -4098,7 +4232,16 @@ async def qb_sync_trackers_only_async(
             # 提取失败也必须停止当前有序前缀；继续消费后续 hash 会让
             # durable cursor 越过这个未落盘的 hash，重启后永久遗漏。
             error_count += 1
-            logger.error(f"[{LOG_PREFIX}] extract_tracker_rows 失败: hash={torrent_hash}, error={e}")
+            _log_tracker_sync_exception(
+                e,
+                log_prefix=LOG_PREFIX,
+                stage="tracker_row_extract",
+                operation="extract_tracker_rows_from_torrent",
+                downloader_id=downloader_id,
+                context=f"hash_prefix={str(torrent_hash)[:16]}",
+                suppressed=True,
+                continue_after_error=False,
+            )
             await _ensure_session_active(db)
             break
 
@@ -4142,7 +4285,8 @@ async def qb_sync_trackers_only_async(
             processed_count = 0
 
     total_duration = (datetime.now() - task_start).total_seconds()
-    logger.info(
+    summary_logger = logger.warning if error_count else logger.info
+    summary_logger(
         f"[{LOG_PREFIX}] {nickname} 完成: "
         f"{tracker_count}/{total_torrents} 个种子, "
         f"{tracker_total_rows} 条 tracker 记录, "
@@ -4183,9 +4327,23 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     try:
         downloader_id, nickname = _validate_tracker_only_params(downloader, client)
     except ValueError as e:
+        _log_tracker_sync_exception(
+            e,
+            log_prefix=LOG_PREFIX,
+            stage="tracker_input_validation",
+            operation="validate_tracker_only_params",
+            suppressed=True,
+            continue_after_error=False,
+        )
         return {"status": "failed", "message": str(e), "tracker_count": 0, "torrent_count": 0}
 
     task_start = datetime.now()
+    logger.info(
+        "[%s] start downloader_id=%s nickname=%s",
+        LOG_PREFIX,
+        downloader_id,
+        nickname,
+    )
 
     # === 第1步：从数据库查询 hash -> info_id 映射 ===
     hash_to_info_id = await _query_hash_to_info_id(db, downloader_id, LOG_PREFIX, nickname)
@@ -4241,7 +4399,15 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
                 batch_stats_total[k] += stats.get(k, 0)
         except Exception as batch_err:
             error_count += 1
-            logger.error(f"[{LOG_PREFIX}] sync_trackers_batch_async 失败: {batch_err}")
+            _log_tracker_sync_exception(
+                batch_err,
+                log_prefix=LOG_PREFIX,
+                stage="tracker_batch_commit",
+                operation="sync_trackers_batch_async",
+                downloader_id=downloader_id,
+                suppressed=True,
+                continue_after_error=True,
+            )
             await _ensure_session_active(db)
         accumulated_rows = []
         accumulated_info_ids = set()
@@ -4268,7 +4434,16 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
             tracker_total_rows += len(rows)
         except Exception as e:
             error_count += 1
-            logger.error(f"[{LOG_PREFIX}] extract_tracker_rows 失败: hash={torrent_hash}, error={e}")
+            _log_tracker_sync_exception(
+                e,
+                log_prefix=LOG_PREFIX,
+                stage="tracker_row_extract",
+                operation="extract_tracker_rows_from_torrent",
+                downloader_id=downloader_id,
+                context=f"hash_prefix={str(torrent_hash)[:16]}",
+                suppressed=True,
+                continue_after_error=True,
+            )
             await _ensure_session_active(db)
             continue
 
@@ -4280,7 +4455,8 @@ async def tr_sync_trackers_only_async(db: AsyncSession, downloader: BtDownloader
     total_duration = (datetime.now() - task_start).total_seconds()
     if skipped_new > 0:
         logger.debug(f"[{LOG_PREFIX}] 跳过 {skipped_new} 个数据库中不存在的种子")
-    logger.info(
+    summary_logger = logger.warning if error_count else logger.info
+    summary_logger(
         f"[{LOG_PREFIX}] {nickname} 完成: "
         f"{tracker_count}/{tracker_count + skipped_new} 个种子, "
         f"{tracker_total_rows} 条 tracker 记录, "

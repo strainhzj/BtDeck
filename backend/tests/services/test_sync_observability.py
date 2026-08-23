@@ -94,6 +94,37 @@ class TestLogEvent:
         assert "rss_mb" not in msg, "非白名单字段不应输出"
         assert "secret_extra" not in msg, "非白名单字段不应输出"
 
+    def test_sync_error_event_exposes_suppression_context(self):
+        """同步异常事件保留阶段/继续语义，但不把未白名单原始字段写入结构化日志。"""
+        msg = self._log_msg(
+            obs.EVENT_SYNC_ERROR,
+            run_id="run_tracker",
+            sync_type="tracker",
+            downloader_id="dl1",
+            phase="tracker_batch_commit",
+            stage="tracker_batch_commit",
+            operation="sync_trackers_batch_async",
+            error_type="OperationalError",
+            suppressed=True,
+            continue_after_error=False,
+            error_message="database is locked",
+        )
+        for token in (
+            "event=sync_error",
+            "run_id=run_tracker",
+            "sync_type=tracker",
+            "downloader_id=dl1",
+            "phase=tracker_batch_commit",
+            "stage=tracker_batch_commit",
+            "operation=sync_trackers_batch_async",
+            "error_type=OperationalError",
+            "suppressed=True",
+            "continue_after_error=False",
+        ):
+            assert token in msg, f"缺少字段 {token}: {msg}"
+        assert "error_message" not in msg
+        assert "database is locked" not in msg
+
     def test_unknown_event_only_common_fields(self):
         """未知事件名只输出公共字段（不崩溃）。"""
         msg = self._log_msg("no_such_event", run_id="r1", downloader_id="dl1", mystery=1)
