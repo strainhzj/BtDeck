@@ -102,7 +102,7 @@ hiddenimports = [
     'qrcode',
     'qrcode.image',
     'qrcode.image.pil',
-    # 审计日志 Excel 导出用 pandas.to_excel(engine='openpyxl')，openpyxl 为延迟导入
+    # 审计日志 Excel 导出用 openpyxl 直写（延迟导入），PyInstaller 静态分析检测不到
     'openpyxl',
     # === app 包及其子包（确保 PyInstaller 收集所有子模块）===
     'app',
@@ -162,7 +162,10 @@ a = Analysis(
         'scipy',
         # 注意：以下模块不能排除——
         # PIL (Pillow): qrcode 生成二维码图片时依赖它
-        # pandas / numpy: 审计日志 Excel 导出依赖 pandas + openpyxl
+        # pandas/numpy 已随 dual-mode-client Phase 1.3 移除（Excel 导出改
+        # openpyxl 直写，全仓零 import 已核实），显式排除防止传递依赖回流
+        'pandas',
+        'numpy',
         'PyQt5',
         'PyQt6',
         'pytest',

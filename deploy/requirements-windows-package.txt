@@ -7,7 +7,6 @@ pyinstaller~=6.20.0
 pywebview~=5.4.0
 
 werkzeug~=3.1.3
-common~=0.1.2
 uvicorn~=0.35.0
 sqlalchemy~=2.0.15
 setuptools~=75.8.0
@@ -44,8 +43,6 @@ httpx~=0.28.0
 packaging~=24.0
 email-validator~=2.2.0
 
-# Audit log Excel export runtime dependencies.
-# Python 3.13 needs pandas 2.3+ wheels; keep this packaging constraint wider
-# than backend/requirements.txt to avoid slow source builds in Windows packaging.
-pandas>=2.3,<2.4
+# Audit log Excel export runtime dependency (openpyxl direct write; pandas removed
+# in dual-mode-client Phase 1.3 dependency slimming, zero imports verified).
 openpyxl~=3.1.0
