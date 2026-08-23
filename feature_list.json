@@ -3,7 +3,7 @@
   "current_dev_version": "v1.0.6",
   "release_version": "1.0.5",
   "release_note": "产品发布号与内部里程碑编号相互独立：发布 v1.0.5（见 backend/app/version.py）打包里程碑 v1.0.5（查询模板）、v1.0.6（孤儿文件管理）、v1.0.9（一键部署）及 2026-06~08 全部修复与安全加固。本文件中的 v1.0.x id 仅作里程碑追踪，不代表对外发布号。",
-  "last_updated": "2026-08-22",
+  "last_updated": "2026-08-23",
   "merge_note": "由 backend/feature_list.json 与 frontend/feature_list.json 合并而来（2026-06-18）。task 的 scope 由 file 字段前缀隐含：app/=backend, src/=frontend, 无单一文件或跨端=fullstack。",
   "verification": {
     "date": "2026-08-16",
@@ -2587,6 +2587,120 @@
             "progress.md"
           ],
           "evidence": "2026-08-18: 同内容专用套件 11 passed（新增 status 显示级过滤复刻生产老男孩场景、tracker_like/tracker_domain 显示级过滤两组用例），普通列表回归 test_torrent_list_api.py 35 passed；改动文件 flake8/black/py_compile 通过；mypy 58 条与改动前完全一致（零新增，均为既有 ORM/Pydantic 问题）。生产副本库只读实测：同内容+老男孩+status=error 由 0 → 1（命中唯一 error 行 hash cfcb51db），同内容+老男孩仍 20，普通+老男孩+error 仍 1，同内容全局 17748。"
+        }
+      ]
+    },
+    {
+      "id": "v1.0.6-dual-mode-client",
+      "name": "双模式客户端与安卓改造",
+      "description": "v1.0.6 当前开发范围下的双模式客户端与安卓改造；与已完成的 v1.0.6 孤儿文件管理功能独立登记，不改变对外发布号。安卓服务端仅定位为轻量/临时服务端，伴侣模式优先交付。详细方案见 PLANS/dual-mode-client.md。",
+      "status": "pending",
+      "branch": "dev",
+      "plan_file": "PLANS/dual-mode-client.md",
+      "tasks": [
+        {
+          "id": "v1.0.6-dual-mode-client.1",
+          "name": "Phase 0：依赖、wheel 与 Play/FGS 风险闸门",
+          "description": "完成 Android/Chaquopy/Gradle/Python/ABI/target API/FGS/Data Safety 预审；在独立 btdeck/android-wheels 仓库用 GitHub Actions + cargo-ndk 构建固定版本 pydantic-core cp312 四 ABI wheels 与 PEP 503 索引；从最小 FastAPI 导入测试推进到 BtDeck 完整 import graph、数据库迁移、静态资源、16 KB page-size 与升级安装验证。未通过时先交付伴侣模式并重估本地服务端。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "PLANS/dual-mode-client.md",
+            "btdeck/android-wheels/（独立仓库）"
+          ]
+        },
+        {
+          "id": "v1.0.6-dual-mode-client.2",
+          "name": "Phase 1：后端平台适配、依赖瘦身与能力矩阵",
+          "description": "统一下载器 TCP probe（安卓不依赖 ICMP raw socket 或 ping 子进程）；显式注入 CONFIG_DIR/TORRENTS_DIR，区分 HOST bind 与 ALLOWED_HOSTS CORS；删除经 import graph、部署 spec 和回归确认的 sympy/common，openpyxl 直写替代 pandas/numpy；建立桌面 Python 3.11 + Android Python 3.12 工具链矩阵；补齐 Alembic/frontend dist/契约资源的打包契约；按真实 chunk 收益处理 Monaco；为脚本执行、宿主路径、SAF、通知、定时任务建立 Android capability matrix。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/api/endpoints/downloader.py",
+            "backend/app/downloader/initialization.py",
+            "backend/app/core/config.py",
+            "backend/app/core/migration.py",
+            "backend/app/factory.py",
+            "backend/app/services/audit_service.py",
+            "backend/requirements.txt",
+            "backend/pyproject.toml",
+            "backend/tests/",
+            "deploy/",
+            "frontend/vue.config.js",
+            "frontend/tests/"
+          ]
+        },
+        {
+          "id": "v1.0.6-dual-mode-client.3",
+          "name": "Phase 2：伴侣模式首启向导与 WebView MVP",
+          "description": "实现运行本机服务/连接已有服务器二选一向导、服务器 profile、URL 校验、/health/live 与 /health/ready 测试、离线/认证失败/版本不兼容状态、远程同源 WebView、按服务器隔离 cookie/storage；明文 HTTP 仅按用户选定私有 LAN 主机放行，自签证书不得无条件信任。该任务可独立于本地 Python 服务端先交付。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "android/",
+            "backend/app/api/endpoints/health.py",
+            "frontend/src/utils/cookies.ts",
+            "frontend/tests/"
+          ]
+        },
+        {
+          "id": "v1.0.6-dual-mode-client.4",
+          "name": "Phase 3：安卓本地服务端、存储与 FGS 生命周期",
+          "description": "以 Chaquopy 17 + Python 3.12 打包后端、Alembic、契约和 frontend dist；程序化启动单 worker Uvicorn，完成目录准备、迁移 fail-fast 与健康握手；服务端模式仅经用户操作启动，Foreground Service 提供通知、状态、停止/重启和进程恢复；specialUse manifest/Play 申报、Android 12+ 启动限制、Android 13+ 通知权限、Doze/OEM、电池、SAF、Keystore、backup rules、loopback 默认与 LAN 重绑全部纳入设备验收。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "android/",
+            "backend/app/main.py",
+            "backend/app/startup/lifecycle.py",
+            "backend/app/core/config.py",
+            "backend/app/core/migration.py",
+            "backend/app/factory.py",
+            "backend/tests/"
+          ]
+        },
+        {
+          "id": "v1.0.6-dual-mode-client.5",
+          "name": "Phase 4：移动 M1/M2 壳层与能力降级",
+          "description": "按好用标准实现底部 Tab、登录、仪表盘、卡片式种子列表、种子详情/常用操作和通知中心；M2 覆盖高级搜索、查询模板、回收站、日志和下载器高级设置，逐项按 capability matrix 降级或回退桌面视图；保持 Vue 2 Options/class 风格、API 响应信封、api/store 和组件/契约测试约束。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/layout/",
+            "frontend/src/layout/components/NotificationDrawer/",
+            "frontend/src/views/dashboard/",
+            "frontend/src/views/torrents/",
+            "frontend/src/router.ts",
+            "frontend/tests/"
+          ]
+        },
+        {
+          "id": "v1.0.6-dual-mode-client.6",
+          "name": "桌面双模式对齐",
+          "description": "保持现有 PyInstaller exe 的服务端模式默认行为；启动器补同一套模式选择，桌面伴侣模式打开浏览器/内嵌窗口连接远程服务器，复用 profile、健康检查、版本提示和退出恢复语义。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/desktop_main.py",
+            "deploy/",
+            "frontend/src/",
+            "frontend/tests/"
+          ]
+        },
+        {
+          "id": "v1.0.6-dual-mode-client.7",
+          "name": "Play、侧载与跨模式发布验收",
+          "description": "按提审时官方 target API 要求完成 Play App Signing、隐私政策、Data Safety、FGS 用途申报和明文流量说明；GitHub Release 提供通用/ABI APK 说明；用 bundletool 记录真实包体和 native 清单；覆盖 API 24、Android 14/15/16、四 ABI、冷启动、迁移升级、进程杀死、Doze、通知/存储权限、HTTP/HTTPS/坏证书、LAN 开关、版本不匹配和两种模式的首启/退出/恢复。完成既有 DoD、Gradle lint/test、wheel import matrix 与 release artifact 校验后才标记 done。",
+          "status": "pending",
+          "scope": "fullstack",
+          "files": [
+            "android/",
+            ".github/workflows/",
+            "docs/",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ]
         }
       ]
     },

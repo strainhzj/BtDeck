@@ -1,5 +1,29 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-23 交接（六）：双模式客户端计划评审修订与 v1.0.6 清单登记
+
+### 结论
+
+安卓服务端继续定位为轻量/临时服务端，伴侣模式可独立先行。计划已按依赖 wheel、Play/FGS、安全、存储、Doze、打包资源、能力降级和真实设备验收重新收敛；当前只有计划入册，未开始 Android 实现。
+
+### 变更
+
+- `PLANS/dual-mode-client.md`：评审修订版，补全风险闸门、平台无关改造、伴侣 WebView MVP、Chaquopy/FGS 壳、移动 UI、桌面对齐及发布 DoD。
+- `feature_list.json`：新增 `v1.0.6-dual-mode-client`（7 个 pending tasks），保留原 `v1.0.6` 孤儿文件功能的 `done` 状态和 `PLANS/v1.0.6.md` 链接。
+- `progress.md`：记录本次计划入册与验证结果。
+
+### 下一步
+
+1. 先完成 Phase 0A 的 Play/FGS/target API/备份安全预审。
+2. 在独立 `btdeck/android-wheels` 仓库完成 pydantic-core 四 ABI 构建，并从最小工程推进到 BtDeck 完整导入图。
+3. wheel 门禁通过前可独立实现伴侣模式；服务端模式不得跳过门禁进入 APK 工程。
+
+### 验证与工作区
+
+- `feature_list.json` JSON 解析通过；`git diff --check` 通过。
+- 根 `./init.sh --ci` 仍受本机 Windows/WSL `E_ACCESSDENIED` 影响，未作为本次计划变更的有效门禁。
+- 未执行 Git stage/commit；已有 `.release-build-v1.0.5/` 未跟踪目录保持不动。
+
 ## 2026-08-22 交接（五）：v1.0.5 发布前修正 GitHub 仓库地址
 
 ### 结论

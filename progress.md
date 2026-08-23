@@ -1,5 +1,25 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-23 - 双模式客户端计划评审修订与 v1.0.6 清单登记
+
+### 结论
+
+- 安卓服务端保留为技术可行但轻量/临时定位，伴侣模式作为可独立先行的 MVP；桌面/NAS/服务器仍是长期运行主力。
+- Phase 0 新增 Play/FGS/备份/安全预审和完整 BtDeck import graph 门禁；Phase 1 修正为 TCP 探测、可写路径、打包资源、依赖/工具链矩阵和 Android capability matrix。
+- 伴侣 MVP 明确采用远程同源 WebView；内置前端 + runtime baseURL、CORS 和跨服务器凭据隔离不提前混入首版。
+
+### 变更
+
+- 重写 `PLANS/dual-mode-client.md`：补充 `TORRENTS_DIR`、Alembic/frontend dist 打包、HOST/CORS 分离、FGS 类型边界、明文 LAN、自签证书、Keystore/backup、SAF、设备矩阵和真实包体验收。
+- `feature_list.json` 新增 `v1.0.6-dual-mode-client` 独立条目，包含 7 个 pending 阶段；原已完成的 `v1.0.6` 孤儿文件任务保持不变。
+- 未修改后端、前端或 Android 源码；未创建 wheels 仓库；不代表 Phase 0 已通过。
+
+### 验证与遗留
+
+- `feature_list.json` 通过 PowerShell JSON 解析；新条目为 7 个 pending tasks；`git diff --check` 通过。
+- 根 `./init.sh --ci` 的既有 Windows/WSL `E_ACCESSDENIED` 环境问题仍未作为本次计划变更的有效门禁。
+- 工作区已有未跟踪 `.release-build-v1.0.5/`；本次业务内容新增/修改为 `PLANS/dual-mode-client.md` 与 `feature_list.json`，`progress.md`/`session-handoff.md` 仅同步记录，均未提交 Git。
+
 ## 2026-08-22（六） - v1.0.5 发布前修正 GitHub 仓库地址
 
 ### 实施
