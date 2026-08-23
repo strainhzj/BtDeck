@@ -1,5 +1,22 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-22（六） - v1.0.5 发布前修正 GitHub 仓库地址
+
+### 实施
+
+- 基于已合并的 `origin/master` 创建发布修复分支 `codex/release-v1.0.5-repo-url`，避免把本地 `dev` 尚未推送的提交混入发布基线。
+- 将运行时版本检查、定时任务显式调用、`VERSION_HISTORY` 中 v1.0.3/v1.0.4/v1.0.5 的 Release 链接、欢迎通知脚本和根 README 统一改为正式仓库 `strainhzj/BtDeck`。
+- 说明：已部署的 v1.0.4 若已将错误仓库地址固化在程序中，无法由 v1.0.5 反向修改；本修复自 v1.0.5 合并并发布后对新部署生效。
+
+### 验证
+
+- `python -m pytest tests/tasks/test_cron_policy_notify.py tests/tasks/test_cron_executor.py tests/tasks/test_cron_executor_admission.py tests/tasks/test_cron_executor_security.py`：42 passed。
+- 目标 Python 文件 `compileall` 通过；`git diff --check` 通过；仓库内不再残留错误仓库地址。
+
+### 发布前置
+
+- 该分支仍需合并到 `master`，再以合并后的提交创建并推送 `v1.0.5` tag，最后创建 GitHub Release；Docker 镜像需指向同一发布提交。
+
 ## 2026-08-21（第五批） - 按 v1.0.5 更新日志同步根 README.md
 
 ### 实施

@@ -1038,7 +1038,7 @@ class CronTaskExecutor:
             async with AsyncSessionLocal() as db:
                 service = NotificationService(db)
                 new_version = await service.check_version_update(
-                    current_version=CURRENT_VERSION, github_repo="StrainThomas/BtDeck"
+                    current_version=CURRENT_VERSION, github_repo="strainhzj/BtDeck"
                 )
 
                 if new_version:

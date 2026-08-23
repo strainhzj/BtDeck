@@ -147,7 +147,7 @@ class NotificationService:
         return "unique" in exc_str or "integrity" in exc_str
 
     async def check_version_update(
-        self, current_version: str, github_repo: str = "StrainThomas/BtDeck"
+        self, current_version: str, github_repo: str = "strainhzj/BtDeck"
     ) -> Optional[Notification]:
         """
         检查 GitHub Release 是否有新版本，如有则创建通知。
