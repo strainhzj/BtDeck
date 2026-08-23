@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BtDeck</string>
+    <string name="wizard_title">欢迎使用 BtDeck</string>
+    <string name="wizard_subtitle">选择使用模式（稍后可重新选择）</string>
+    <string name="wizard_companion_title">连接已有服务器</string>
+    <string name="wizard_companion_desc">通过 WebView 直连 BtDeck 服务端自带的前端（推荐）</string>
+    <string name="wizard_local_title">运行本机服务</string>
+    <string name="wizard_local_desc">在手机上运行轻量服务端（后续版本提供）</string>
+    <string name="server_list_title">服务器</string>
+    <string name="add_server">添加服务器</string>
+    <string name="rerun_wizard">重新选择模式</string>
+    <string name="test_connection">测试连接</string>
+    <string name="forget_server">忘记服务器</string>
+    <string name="retry">重试</string>
+    <string name="back">返回</string>
+    <string name="load_timeout">加载超时</string>
+    <string name="add_server_name">显示名称</string>
+    <string name="add_server_url">服务器地址（http/https）</string>
+    <string name="cleartext_consent">我了解风险：该私有局域网地址使用明文 HTTP，凭据可能被同网络窃听</string>
+</resources>

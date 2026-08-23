@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- LAN 明文构建变体（-Pbtdeck.lanCleartext=true）：
+     cleartext 基线放行是平台约束下的无奈——Android NSC 不支持运行时按主机开闭，
+     也不支持 CIDR。真正的"仅用户选择的私有 LAN 主机"防线在应用层 LanHostPolicy
+     （添加服务器与每次加载前强制校验：非私有主机一律拒绝明文）。 -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>
