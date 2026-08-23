@@ -7,7 +7,6 @@
 # Pydantic: 2.9.2 → 2.12.4 (+4版本)
 # Starlette: 0.27.0 → 0.38.6 (+11版本)
 werkzeug~=3.1.3
-common~=0.1.2
 uvicorn~=0.35.0
 sqlalchemy~=2.0.15
 setuptools~=75.8.0
@@ -36,7 +35,6 @@ pillow~=11.1.0
 transmission-rpc~=7.0.11
 urllib3~=2.2.2
 starlette~=0.41.3
-sympy~=1.12
 alembic~=1.13.3
 bencodepy~=0.9.5
 apscheduler~=3.10.0
@@ -45,6 +43,6 @@ pydantic-settings~=2.12.0
 croniter~=3.0.4
 httpx~=0.28.0
 packaging~=24.0
-# 审计日志 Excel 导出依赖（audit_service.to_excel）
-pandas~=2.2.0
+# 审计日志 Excel 导出（openpyxl 直写；pandas/numpy 已随 dual-mode-client
+# Phase 1.3 依赖瘦身移除，全仓零 import 已核实）
 openpyxl~=3.1.0

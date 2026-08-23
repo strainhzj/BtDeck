@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 
 from app.api.endpoints import health
 from app.auth.dependencies import require_authenticated_user
+from app import version
 from app.factory import create_app
 from app.models import OUTCOME_PARTIAL, OUTCOME_SUCCESS, SyncCheckpoint
 from app.services import sync_coordinator
@@ -57,12 +58,12 @@ def test_liveness_does_not_touch_database(monkeypatch):
     response = client.get("/health/live")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "status": "success",
-        "msg": "服务存活",
-        "code": "200",
-        "data": {"status": "alive"},
-    }
+    body = response.json()
+    assert body["status"] == "success"
+    assert body["msg"] == "服务存活"
+    # version 供伴侣模式（dual-mode-client Phase 2）版本提示，进程内常量无 I/O
+    assert body["data"] == {"status": "alive", "version": health.CURRENT_VERSION}
+    assert body["data"]["version"] == version.CURRENT_VERSION
     probe.assert_not_awaited()
 
 
@@ -81,6 +82,7 @@ def test_readiness_normal_and_offline_downloader_does_not_fail(monkeypatch):
     assert response.status_code == 200
     assert body["code"] == "200"
     assert body["data"]["status"] == "ready"
+    assert body["data"]["version"] == version.CURRENT_VERSION
     assert body["data"]["checks"]["database"]["status"] == "ok"
 
 

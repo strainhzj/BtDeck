@@ -3,7 +3,6 @@ import logging
 import uuid
 from typing import Annotated, Any, Dict, List, Optional
 
-import ping3
 import urllib3
 from fastapi import APIRouter, Depends, Request, Path, Query
 from pydantic import BaseModel
@@ -18,6 +17,7 @@ from app.downloader.responseVO import DownloaderListVO, DownloaderVO, Downloader
 from app.models.setting_templates import DownloaderTypeEnum
 from app.services.path_mapping_validation import validate_path_mapping_directories
 from app.services.downloader_api_runtime import DownloadLane, call_downloader_api
+from app.utils import connectivity
 from app.utils.encryption import encrypt_password, decrypt_password
 from requests.exceptions import ConnectionError
 from sqlalchemy import text
@@ -940,14 +940,15 @@ def safe_delay_value(delay) -> float | None:
 
 
 async def get_delay_async(downloader):
-    """异步版本的延迟检测"""
+    """异步版本的延迟检测
+
+    统一走 utils.connectivity 探测：loopback 短路 → ICMP（桌面可选）→
+    TCP connect 计时；安卓环境自动禁用 ICMP（dual-mode-client Phase 1.1）。
+    返回值语义保持历史约定：float 毫秒 / None 或 False 表示失败。
+    """
     try:
-        if "127.0.0.1" in downloader.host:
-            delay = 1
-        else:
-            # 使用线程池执行ping操作，避免阻塞
-            delay = await asyncio.to_thread(ping3.ping, downloader.host, 3, "ms", "0.0.0.0", seq=2)
-    except Exception as e:
+        delay = await connectivity.probe_delay(downloader.host, downloader.port, timeout_s=3.0)
+    except Exception as e:  # noqa: BLE001 - 探测意外异常按未连接处理
         print(f"连接下载器时出错: {e}")
         delay = False
     return delay
@@ -956,16 +957,8 @@ async def get_delay_async(downloader):
 def get_delay(downloader):
     """同步版本的延迟检测（保持兼容性）"""
     try:
-        if "127.0.0.1" in downloader.host:
-            delay = 1
-        else:
-            # 使用线程池执行ping操作，避免阻塞
-            import concurrent.futures
-
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                future = executor.submit(ping3.ping, downloader.host, 3000, "ms", "0.0.0.0", seq=2)
-                delay = future.result(timeout=4)  # 4秒超时
-    except Exception as e:
+        delay = connectivity.probe_delay_sync(downloader.host, downloader.port, timeout_s=3.0)
+    except Exception as e:  # noqa: BLE001 - 探测意外异常按未连接处理
         print(f"连接下载器时出错: {e}")
         delay = False
     return delay

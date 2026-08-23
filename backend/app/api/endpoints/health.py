@@ -32,6 +32,7 @@ from app.models import (
     SyncCheckpoint,
 )
 from app.services.sync_coordinator import get_active_sync_runs
+from app.version import CURRENT_VERSION
 from app.services.sync_observability import LOOP_LAG_WARN_P99_MS
 from app.tasks.cron_freshness import compute_freshness
 from app.tasks.cron_models import CronTask
@@ -152,8 +153,14 @@ def _record_readiness_failures(reason_codes: Iterable[str]) -> None:
 
 @router.get("/health/live", summary="进程存活检查")
 async def health_live() -> CommonResponse[Dict[str, str]]:
-    """只证明事件循环能处理请求；不访问数据库、下载器或其它外部依赖。"""
-    return CommonResponse(status="success", msg="服务存活", code="200", data={"status": "alive"})
+    """只证明事件循环能处理请求；不访问数据库、下载器或其它外部依赖。
+
+    version 供伴侣模式（dual-mode-client Phase 2）做服务端版本提示，
+    读取的是进程内常量，不引入任何 I/O。
+    """
+    return CommonResponse(
+        status="success", msg="服务存活", code="200", data={"status": "alive", "version": CURRENT_VERSION}
+    )
 
 
 @router.get("/health/ready", summary="应用就绪检查")
@@ -173,7 +180,12 @@ async def health_ready(request: Request):
                 "error",
                 "应用未就绪",
                 "503",
-                {"status": "not_ready", "reasonCodes": reason_codes, "checks": checks},
+                {
+                    "status": "not_ready",
+                    "version": CURRENT_VERSION,
+                    "reasonCodes": reason_codes,
+                    "checks": checks,
+                },
             ),
         )
 
@@ -181,7 +193,7 @@ async def health_ready(request: Request):
         status="success",
         msg="应用已就绪",
         code="200",
-        data={"status": "ready", "checks": checks},
+        data={"status": "ready", "version": CURRENT_VERSION, "checks": checks},
     )
 
 

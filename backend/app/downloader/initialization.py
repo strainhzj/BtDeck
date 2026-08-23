@@ -1549,7 +1549,8 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
         bool: 更新是否成功
     """
     import time
-    import ping3
+
+    from app.utils import connectivity
 
     try:
         downloader_type = getattr(downloader, "downloader_type", None)
@@ -1564,40 +1565,18 @@ async def _update_downloader_status(downloader: Any, update_cold: bool = False) 
         start_time = time.time()
 
         # ========== 1. 测试网络延迟（每次都测试） ==========
+        # 统一探测入口（dual-mode-client Phase 1.1）：loopback 短路 → ICMP（桌面
+        # 可选，失败/无权限自动回退）→ TCP connect 计时；安卓环境不依赖 raw
+        # socket 或系统 ping 命令。probe 返回 float 毫秒或 None。
         try:
-            if "127.0.0.1" in host or "localhost" in host:
-                delay = 1.0  # 本地固定为1ms
-            else:
-                # 异步执行ping操作，超时3秒
-                delay_result = await asyncio.to_thread(ping3.ping, host, 3, "ms", "0.0.0.0", seq=2)
-
-                # ✅ P1-2修复: 更安全地转换延迟值，处理所有可能的异常情况（避免panic）
-                try:
-                    if delay_result is None or delay_result is False:
-                        delay = None
-                    elif isinstance(delay_result, (int, float)):
-                        # 验证延迟值在合理范围内
-                        delay = float(delay_result)
-                        # 检查延迟值是否合理（0-30秒）
-                        if delay < 0 or delay > 30000:
-                            print(f"[状态更新] {nickname}: ⚠️ 延迟值超出合理范围: {delay}ms")
-                            delay = None
-                    else:
-                        # 尝试转换其他类型（如字符串）
-                        delay = float(delay_result)
-                        # 再次验证范围
-                        if delay < 0 or delay > 30000:
-                            print(f"[状态更新] {nickname}: ⚠️ 延迟值超出合理范围: {delay}ms")
-                            delay = None
-                except (ValueError, TypeError, OverflowError) as e:
-                    # 处理各种转换异常
-                    print(
-                        f"[状态更新] {nickname}: ⚠️ 延迟值转换失败: {e}, 原始值: {delay_result}, 类型: {type(delay_result)}"
-                    )
-                    delay = None
+            delay = await connectivity.probe_delay(host, port, timeout_s=3.0)
+            if delay is not None and not (0 <= delay <= connectivity.MAX_REASONABLE_DELAY_MS):
+                print(f"[状态更新] {nickname}: ⚠️ 延迟值超出合理范围: {delay}ms")
+                delay = None
             downloader.delay = delay
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - 延迟探测失败不影响后续端口检查
             print(f"[状态更新] {nickname}: 延迟测试失败 - {e}")
+            delay = None
             downloader.delay = None
 
         # ========== 2. 检查端口连通性（判断是否在线） ==========

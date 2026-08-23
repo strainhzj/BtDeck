@@ -420,7 +420,7 @@ class AuditLogServiceSync:
             return False
 
     def export_logs_to_excel(self, logs: List[Dict[str, Any]], output_path: str) -> bool:
-        """导出日志到Excel文件
+        """导出日志到Excel文件（openpyxl 直写，dual-mode-client Phase 1.3 依赖瘦身）
 
         Args:
             logs: 日志列表
@@ -430,40 +430,55 @@ class AuditLogServiceSync:
             是否成功
         """
         try:
-            import pandas as pd
+            from openpyxl import Workbook
 
-            # 准备数据
-            data = []
+            # 与历史 pandas 版本一致的列头与列序
+            headers = [
+                "ID",
+                "种子ID",
+                "操作类型",
+                "操作人",
+                "操作时间",
+                "操作结果",
+                "错误信息",
+                "下载器ID",
+                "IP地址",
+                "请求ID",
+                "会话ID",
+            ]
+            keys = [
+                "id",
+                "torrent_info_id",
+                "operation_type",
+                "operator",
+                "operation_time",
+                "operation_result",
+                "error_message",
+                "downloader_id",
+                "ip_address",
+                "request_id",
+                "session_id",
+            ]
+
+            workbook = Workbook()
+            sheet = workbook.active
+            sheet.title = "审计日志"
+            sheet.append(headers)
             for log in logs:
-                row = {
-                    "ID": log.get("id"),
-                    "种子ID": log.get("torrent_info_id"),
-                    "操作类型": log.get("operation_type"),
-                    "操作人": log.get("operator"),
-                    "操作时间": log.get("operation_time"),
-                    "操作结果": log.get("operation_result"),
-                    "错误信息": log.get("error_message"),
-                    "下载器ID": log.get("downloader_id"),
-                    "IP地址": log.get("ip_address"),
-                    "请求ID": log.get("request_id"),
-                    "会话ID": log.get("session_id"),
-                }
-                data.append(row)
+                if not isinstance(log, dict):
+                    continue
+                sheet.append([log.get(key, "") for key in keys])
 
-            # 创建DataFrame
-            df = pd.DataFrame(data)
+            workbook.save(output_path)
 
-            # 写入Excel
-            df.to_excel(output_path, index=False, engine="openpyxl")
-
-            logger.info(f"导出审计日志到Excel成功: {output_path}")
+            logger.info(f"导出审计日志Excel成功: {output_path}")
             return True
 
         except ImportError:
-            logger.error("导出Excel失败: 未安装pandas或openpyxl")
+            logger.error("导出Excel失败: 未安装openpyxl")
             return False
         except Exception as e:
-            logger.error(f"导出审计日志到Excel失败: {str(e)}")
+            logger.error(f"导出审计日志Excel失败: {str(e)}")
             return False
 
 
