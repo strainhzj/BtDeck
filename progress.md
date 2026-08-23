@@ -1,5 +1,19 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-23 - 前端静态展示 Demo feature 登记
+
+### 计划登记
+
+- 新建 `PLANS/frontend-static-showcase-demo.md`，将上一轮“前端打包为可展示 Demo、后端相关交互改为静态数据”的评估拆为 7 个可验收任务：范围与契约、Demo 入口/认证旁路、集中式静态请求层、本地状态仓库、核心页面、扩展页面/特殊路径、独立打包与回归验收。
+- 在 `feature_list.json` 新增 `frontend-static-showcase-demo-2026-08-23`，父 feature 与 7 个子任务均登记为 `pending`，不代表已经实现或完成构建。
+- 方案边界：后端源码、数据库和真实下载器不改；生产模式继续使用真实认证/API；Demo 模式只使用脱敏 fixtures 和本地状态模拟。
+
+### 验证与遗留
+
+- `feature_list.json` 已通过 PowerShell JSON 解析；计划文件与 feature 的 `plan_file` 路径一致。
+- 本次未增加或修改业务源码，未执行 Git stage/commit/push。
+- 根 `./init.sh --ci` 仍受当前 Windows/WSL `E_ACCESSDENIED` 环境问题影响；Demo 构建、前端源码实现和浏览器验收留待后续任务。
+
 ## 2026-08-23 - 双模式客户端计划评审修订与 v1.0.6 清单登记
 
 ### 结论

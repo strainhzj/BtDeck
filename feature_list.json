@@ -4492,6 +4492,127 @@
           "evidence": "新增 column-resize-regression.spec 5 组源码扫描契约：①手柄样式唯一来源 torrent-column-resize.scss 且 index.scss 全局引入、两份 scoped 主题不得再携带 .column-resizer/body.column-resizing（防止传统模式手柄再次整体失效）+ 传统表头反馈条必须主题色；②名称列两视图登记默认宽（400/200）+ 手柄三件套绑定；③tableMinWidth 计入 name 且无 +200 残留；④两视图表格 width+minWidth 严格定宽双绑定；⑤名称省略跟随列宽（无 max-width:300px、flex 收缩、.torrent-name-cell 省略）。两视图组件 spec 各 +1 运行时用例：表级 width=minWidth=tableMinWidth、名称 th 内联宽、手柄 mousedown→body 拖拽态→mousemove 位移更新→mouseup 落盘视图独立存储 key。全量 59 suites/906 tests、lint 通过"
         }
       ]
+    },
+    {
+      "id": "frontend-static-showcase-demo-2026-08-23",
+      "name": "前端静态展示 Demo（Demo Mode）",
+      "description": "将现有 Vue 2 + TypeScript 前端整理为不依赖真实后端的可展示版本：通过构建开关进入 Demo 模式，在请求层集中返回脱敏静态数据并维护本地演示状态，保留核心页面、筛选、分页、弹窗和常用操作的交互反馈；真实生产模式继续使用现有认证与后端 API。交付 dist 压缩包和/或独立 Nginx 静态服务，明确下载器、文件系统、定时任务、认证和 Tracker 等不可由静态数据真实表达的能力边界。详细方案见 PLANS/frontend-static-showcase-demo.md。",
+      "status": "pending",
+      "branch": "dev",
+      "plan_file": "PLANS/frontend-static-showcase-demo.md",
+      "tasks": [
+        {
+          "id": "frontend-static-showcase-demo-2026-08-23.1",
+          "name": "冻结 Demo 范围、数据契约和演示脚本",
+          "description": "建立路由矩阵和核心演示脚本，区分核心展示、扩展展示、只读降级和明确禁用；整理仪表盘、下载器、种子、Tracker、通知、任务、日志、回收站、孤儿文件、查询模板的脱敏 fixture 字段；复核 12 个 API 模块的响应形状，统一 list/total/pageSize 分页、Demo 标识、重置规则和真实能力边界。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "PLANS/frontend-static-showcase-demo.md",
+            "frontend/src/demo/types.ts",
+            "frontend/src/demo/fixtures/",
+            "frontend/README.md"
+          ]
+        },
+        {
+          "id": "frontend-static-showcase-demo-2026-08-23.2",
+          "name": "Demo 构建入口与认证旁路",
+          "description": "增加默认关闭的 VUE_APP_DEMO_MODE 和 Demo 环境配置；初始化固定演示用户、角色与非敏感占位 Token，绕过真实 login/info/refresh 请求；确保清空 Cookie/localStorage 后访问业务路由不发生登录死循环；增加 Demo Mode 视觉标识和重置/退出演示行为，关闭开关时真实认证守卫完全保持原语义。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/.env.demo",
+            "frontend/vue.config.js",
+            "frontend/src/main.ts",
+            "frontend/src/permission.ts",
+            "frontend/src/store/modules/user.ts",
+            "frontend/src/layout/",
+            "frontend/tests/unit/"
+          ]
+        },
+        {
+          "id": "frontend-static-showcase-demo-2026-08-23.3",
+          "name": "集中式静态请求层与本地状态仓库",
+          "description": "在 request.ts 请求层按 Demo 开关分流到 typed demoRequest；按 method + URL pattern 覆盖核心 API，返回统一响应信封，支持分页、空数据、部分成功、业务错误和 Blob；使用脱敏 fixtures + in-memory store 模拟暂停/恢复、删除、已读/未读、模板 CRUD、任务状态等有限状态机；Demo 模式禁止真实网络兜底，未实现接口返回可读降级响应并提示。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/utils/request.ts",
+            "frontend/src/demo/demo-request.ts",
+            "frontend/src/demo/demo-store.ts",
+            "frontend/src/demo/fixtures/",
+            "frontend/src/demo/types.ts",
+            "frontend/tests/unit/demo-request.spec.ts",
+            "frontend/tests/unit/demo-store.spec.ts"
+          ]
+        },
+        {
+          "id": "frontend-static-showcase-demo-2026-08-23.4",
+          "name": "核心展示页面与主要本地交互",
+          "description": "优先交付仪表盘、下载器、种子列表/传统视图/详情、查询模板和通知中心：静态展示节点与统计，保留筛选、分页、排序、视图切换、详情弹窗、模板应用和通知已读；暂停/恢复/重新检查/删除等操作更新本地 store，模拟 loading、成功提示和列表刷新，不等待真实任务接口。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/dashboard/",
+            "frontend/src/views/downloader/",
+            "frontend/src/views/torrents/",
+            "frontend/src/components/torrents/",
+            "frontend/src/views/query-templates/",
+            "frontend/src/layout/components/NotificationDrawer/",
+            "frontend/tests/unit/"
+          ]
+        },
+        {
+          "id": "frontend-static-showcase-demo-2026-08-23.5",
+          "name": "扩展页面、轮询、文件和 Blob 特殊路径降级",
+          "description": "覆盖 Tracker、任务/日志、回收站、孤儿文件、设置和种子文件管理等非核心路由，避免遗留请求造成 401/404/网络洪泛；轮询使用有限可控的本地状态机并保证销毁清理；文件上传、物理删除、真实 Tracker 测试、脚本执行和密码/二因素操作改为本地结果、预览或明确的 Demo 不执行提示；审计/任务/备份导出返回本地 Blob。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/views/tracker/",
+            "frontend/src/views/tasks/",
+            "frontend/src/views/logs/",
+            "frontend/src/views/recycle-bin/",
+            "frontend/src/views/orphan-files/",
+            "frontend/src/views/settings/",
+            "frontend/src/components/tasks/",
+            "frontend/src/views/torrents/FileManagement.vue",
+            "frontend/src/api/",
+            "frontend/tests/unit/"
+          ]
+        },
+        {
+          "id": "frontend-static-showcase-demo-2026-08-23.6",
+          "name": "独立静态构建、服务和交付包",
+          "description": "增加明确的 Demo 构建命令，固定 Node 18.20.1 与锁文件安装依赖；构建产物只包含前端 dist；提供 zip/dist 和独立 Nginx 容器交付，独立 Nginx 不依赖 btdeck-backend upstream；保留 SPA fallback、静态资源缓存和健康检查，并记录包体、chunk、启动命令和不能使用 file:// 直接打开的限制。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/package.json",
+            "frontend/.env.demo",
+            "frontend/Dockerfile.demo",
+            "frontend/nginx.demo.conf",
+            "frontend/README.md",
+            "deploy/"
+          ]
+        },
+        {
+          "id": "frontend-static-showcase-demo-2026-08-23.7",
+          "name": "Demo 隔离、回归和人工验收",
+          "description": "增加 Demo 开关、认证旁路、请求分流、分页、状态突变、错误、Blob 和无外部网络依赖测试；回归 typecheck、contract check、ESLint、Jest 和 production build；在无后端环境验证首次进入、刷新、前进/后退、退出、重置数据、窄屏和重复点击；将构建、测试、包体、人工路径和已知限制写入证据后才允许 feature/task 标记完成。",
+          "status": "pending",
+          "scope": "frontend",
+          "files": [
+            "frontend/tests/unit/demo-*.spec.ts",
+            "frontend/tests/unit/",
+            "frontend/scripts/",
+            "frontend/README.md",
+            "feature_list.json",
+            "progress.md",
+            "session-handoff.md"
+          ]
+        }
+      ]
     }
   ],
   "tasks": [

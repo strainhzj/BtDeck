@@ -1,5 +1,25 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-23 交接：前端静态展示 Demo 任务登记
+
+### 当前结果
+
+- 已新建 `PLANS/frontend-static-showcase-demo.md`，明确静态 Demo 的产品边界、推荐架构、7 个实施任务、验收标准和交付限制。
+- 已在 `feature_list.json` 新增 `frontend-static-showcase-demo-2026-08-23`，父 feature 与 7 个任务均为 `pending`。
+- 本次只完成计划/feature 登记，未实现 Demo 模式、静态请求层、fixture、前端打包配置或任何业务源码修改。
+
+### 后续实施顺序
+
+1. 先执行 Task 1–3：冻结路由/数据契约，增加 Demo 构建开关、认证旁路和集中式静态请求层。
+2. 再执行 Task 4 交付仪表盘、下载器、种子、查询模板和通知中心核心展示路径。
+3. Task 5 覆盖扩展页面与上传/下载/Blob/轮询特殊路径，Task 6–7 完成独立静态交付和回归验收。
+
+### 验证与注意
+
+- 已做 JSON 解析与 feature/plan 路径一致性核对。
+- 不要把静态模拟操作写成真实下载器、文件系统或认证能力；完成后需回填构建、测试、包体和人工演示证据，才可将任务改为 `done`。
+- 未执行 Git stage/commit/push；工作区已有的其他修改和未跟踪文件须继续保留。
+
 ## 2026-08-23 交接（十）：Phase 2 真机验证通过 + Phase 4 M1 第一片（移动 UI 壳）
 
 ### 结论
