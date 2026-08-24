@@ -1,5 +1,45 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-24 交接（三）：移动头部主题色 + 下载器 Tab 第一梯队（新移动页）
+
+### 结论
+
+用户两需求已实施（未提交）：①布局壳头部与抽屉头部背景改 `var(--color-primary)`（桌面 #059669 同源），前景白系（汉堡条/桌面版链接/关闭钮）；②底部 Tab 三项→四项：仪表盘/**下载器**/种子/通知——新增移动下载器监控页 `/m/downloader`（新文件 views/mobile/downloader.vue，卡片：名称/类型/host:port/在线离线徽标 + 每卡测试连接复用桌面 API + 空态 + 脚注指路抽屉「下载器管理」桌面页做管理操作）。
+
+### 变更（frontend 5 文件：1 新增 + 4 修改）
+
+views/mobile/downloader.vue（新）、router.ts（/m/downloader）、layout/mobile/index.vue（四 Tab + 头部主题色）、mobile-shell.spec.ts（更新）、mobile-downloader.spec.ts（新，6 用例）。
+
+### 验证
+
+Jest 39 passed；tsc / 5 文件 ESLint / 生产 build 通过；m-downloader chunk 产出实证；浏览器 hash 直达 /m/downloader 空态渲染正常。spec 两坑已记录 progress.md：行首 `(x as jest.Mock)` ASI 吞分号（改 jest.mocked）、shallowMount 下 el-button kebab stub 不转发 click（改直调方法）。本会话 IAB 点击交互不稳定，Tab 切换浏览器实测未触发（Jest 已覆盖，非产品缺陷）。
+
+### 待办
+
+1. 本批 5 文件 + progress.md/feature_list.json/session-handoff.md 未提交（累计两批：交接二 2 文件 + 交接三 5 文件与记录，待用户指示一并或分开提交）。
+2. M1 余项实现假设仍待确认：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口。
+
+## 2026-08-24 交接（二）：移动布局壳主题色对齐 + 汉堡抽屉完整功能菜单
+
+### 结论
+
+用户查看移动版后提出：主题色与桌面端相同 + 完整功能菜单展示形式。已实施（未提交）：①Tab/抽屉激活色统一 `var(--color-primary)`（桌面端 #059669 同源变量，弃 Element 蓝色，Jest 静态契约禁 #409eff 回归）；②用户在"4+1 更多面板"与"顶部汉堡抽屉"间选定**汉堡抽屉**——header 左侧汉堡 → el-drawer 左滑 78%，"移动版"组 3 项（replace）+ "全部功能（桌面版页面）"组 9 项（push、不写 ui_mode 偏好，返回键/刷新回移动版）+ 完整桌面版出口（写偏好）。
+
+### 变更（frontend 2 文件）
+
+- `src/layout/mobile/index.vue`（汉堡+抽屉+主题色；顺带修复 goMenuItem 从 $router 解构方法丢 this 的 bug）
+- `tests/unit/mobile-shell.spec.ts`（5→11 用例，el-drawer 用透传插槽 stub）
+
+### 验证
+
+Jest 33 passed（shell 11 + ui-mode 11 + permission-guard 11）；tsc/ESLint/build 通过；390×844 浏览器实测抽屉 12 项菜单、"下载器管理"跳桌面页正常、返回键回 /m/dashboard。注意：本会话 IAB 的 Playwright click/CUA 坐标点击不稳定，交互验证用 dom_cua 节点点击——非产品缺陷。
+
+### 待办
+
+1. 本批 2 文件 + progress.md/feature_list.json/session-handoff.md 未提交（待用户指示）。
+2. M1 余项实现假设仍待用户确认：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口。
+3. 用户真机/浏览器视觉复核主题色（绿）与抽屉交互。
+
 ## 2026-08-24 交接：移动端桌面测试体系就绪 + android/ data 包漏提交修复
 
 ### 结论
@@ -2864,3 +2904,23 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 未提交 Git；部署时使用当前 btdeck-backend:latest 导出/加载并重启后端即可。
 - docs/roadmap/ 未改：本次未改变模块职责、文件路径或路线图行号。
+
+## 2026-08-24（三）交接：独立 VitePress Wiki 初始化
+
+### 当前结果
+
+- 新仓库目录：`C:\software\full_stack\btdeck-wiki`。
+- 已初始化 `main` 分支，尚未提交；BtDeck 主仓库原有未提交修改未触碰。
+- Wiki 使用 VitePress 1.6.4，Node 基线为 22+，构建产物为 `btdeck-wiki/docs/.vitepress/dist/`。
+- 主题复现已确认的 VitePress 风格：深色顶栏、左侧目录、宽内容区、右侧页内目录、翡翠绿强调色和本地搜索。
+
+### 验证
+
+- `npm ls vitepress --depth=0`：vitepress@1.6.4。
+- `npm run docs:build`：通过。
+- 首页、快速开始、架构、API、部署、维护、路线图和版本记录的静态产物均存在。
+
+### 下一步
+
+- 新对话进入 `btdeck-wiki` 目录继续做视觉细节和真实文档迁移。
+- 先确认部署目标与 `/wiki/` 子路径，再确定主仓库文档同步白名单。

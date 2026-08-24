@@ -5312,3 +5312,52 @@ uiautomator dump 在本 AVD 上 ListView 行 bounds 从 y=0 起（与 action bar
 ### 补记（根因修正）
 
 data 包"漏提交"的真正根因是根 `.gitignore:58` 的 `data/` 规则（Docker 数据目录防误入库）把 `android/app/src/main/java/com/btdeck/companion/data/` Kotlin 源码包也静默忽略——当时 `git add` 根本加不进去。已加 `!android/.../data/` 例外（.gitignore 注释记录此事），重建三文件现在对 git 可见，下次提交即入库。
+
+## 2026-08-24（二）移动布局壳主题色对齐 + 汉堡抽屉完整功能菜单
+
+### 需求与决策（用户确认）
+
+- 移动版主题色与桌面端相同：Tab 激活色原为 Element 默认蓝 #409eff，桌面端主色为 #059669（theme-variables.scss --color-primary 全套变量）。改法：Tab/抽屉激活色统一 `var(--color-primary)`（与桌面同源，无硬编码）；其余中性灰文本与深色头部 #27303f 本就与桌面侧栏一致，Element 组件色已全局绿。
+- 完整功能菜单展示形式：11 个功能塞不进底部 Tab（>5 不可用），用户在"4+1 更多面板"与"顶部汉堡抽屉"中选定**顶部汉堡抽屉**。
+
+### 实施（frontend 2 文件）
+
+- `src/layout/mobile/index.vue`：header 左侧汉堡按钮（aria-label，36px 三横线）→ el-drawer（direction ltr / 78% / append-to-body）；抽屉分"移动版"组（仪表盘/种子/通知，当前项标记）与"全部功能（桌面版页面）"组（下载器管理/种子列表桌面/Tracker管理/定时任务/日志管理/回收站/孤儿文件/查询模板/系统设置，父路径均有 redirect）+ 底部"完整桌面版"（与头部出口同款写偏好）。导航语义：移动项 replace 保持单栈；桌面项 **push 保留返回栈且不写 ui_mode 偏好**（返回键/刷新回移动版）。抽屉内容挂 body，样式走第二个非 scoped 块。顺带修掉一个真实 bug：`goMenuItem` 初版从 $router 解构方法会丢 this（真实 VueRouter 会崩），改显式调用。
+- `tests/unit/mobile-shell.spec.ts`：5→11 用例（汉堡开抽屉+菜单 12 项、移动项 replace、当前项只关不导航、桌面项 push 且不写偏好、抽屉底部完整桌面版同头部、**主题色静态契约**：`.mobile-tab.is-active` 必须 var(--color-primary) 且全文件禁 #409eff 回归、`.mobile-menu-item.is-active` 同主题变量）；$router mock 补 push；el-drawer 用透传插槽 stub 规避 Element DOM 副作用。
+
+### 验证
+
+- Jest：mobile-shell 11 + ui-mode 11 + permission-guard 回归 11 = 33 passed；tsc、改动文件 ESLint、生产 build 通过。
+- 浏览器实测（390×844）：汉堡打开抽屉渲染完整（分组/当前标记/箭头/完整桌面版按钮，dialog 语义）；点"下载器管理"跳 `/#/downloader` 桌面页正常渲染（面包屑/侧栏折叠态）；浏览器返回键回 `/#/m/dashboard` 移动版（push 返回栈设计生效）。注：本会话 IAB 的 Playwright click/CUA 坐标点击不稳定，抽屉交互经 dom_cua 节点点击验证——非产品问题。
+- 未执行 Git 提交（待用户指示）。
+
+## 2026-08-24（三）：独立 VitePress Wiki 初始化
+
+- 在 `btdeck-wiki/` 创建独立 Git 仓库，采用 VitePress 1.6.4 + Node 22+。
+- 完成深色顶栏、左侧目录、宽内容区、右侧页内目录和本地搜索主题；建立首页、指南、架构、API、部署、维护、路线图和版本页面。
+- 增加 Wiki 专用 `AGENTS.md`、`feature_list.json`、`progress.md`、`session-handoff.md` 与 GitLab CI 构建任务。
+- `npm run docs:build` 通过；未执行 Git stage/commit/push。
+
+## 2026-08-24（三）移动头部主题色 + 下载器提入底部 Tab 第一梯队（新移动页）
+
+### 需求（用户确认）
+
+1. 头部改为主题色：布局壳头部与抽屉头部背景 #27303f → var(--color-primary)（与桌面端 #059669 同源）；汉堡条/桌面版链接/关闭钮前景改白色系（rgba(255,255,255,.9)/#fff）保证绿底对比度。
+2. 初始菜单（权重等级高）：底部 Tab 从三项改四项——仪表盘/下载器/种子/通知；"下载器"提入第一梯队。
+
+### 实施（frontend 5 文件：1 新增 + 4 修改）
+
+- 新增 `src/views/mobile/downloader.vue`：移动下载器监控页（MVP 只读）——卡片（名称/类型/host:port/在线离线徽标，徽标色走 var(--color-primary) 系）+ 每卡"测试连接"（复用桌面 /downloader/testConnection，成功提示并刷新列表同步 connectStatus，失败弹错不刷新）+ 刷新按钮 + 空态；脚注指路抽屉「下载器管理」桌面页做编辑/设置/路径映射。复用 getList({page:1,pageSize:100})。
+- `src/router.ts`：/m/downloader 注册（m-downloader 懒加载 chunk，build 产出实证）。
+- `src/layout/mobile/index.vue`：tabs/mobileMenuItems 四项（插下载器）；头部+抽屉头部主题色。
+- `tests/unit/mobile-shell.spec.ts`：四 Tab 断言、菜单 13 项、桌面组起始索引 at(4)、主题色契约扩展（头部/抽屉头部/Tab 激活三处 var(--color-primary)，源码禁 #409eff 与 #27303f）。
+- 新增 `tests/unit/mobile-downloader.spec.ts` 6 用例（列表渲染含在线/离线徽标、空态、接口异常、测试连接成功刷新+失败不刷新、主题色变量）。
+
+### 过程问题（记录防再踩）
+
+- spec 两处坑：①行首 `(xxx as jest.Mock)` 连续语句 ASI 吞分号 → 第二行变首行返回值调用（undefined(...)），改 jest.mocked() 形式；②shallowMount 下 el-button 为 kebab 形态 stub 且不转发 click 事件（findAllComponents({name:'ElButton'}) 匹配不到），按钮交互改为直调组件方法（行为链等价）。
+- 本会话 IAB 浏览器交互（Playwright click/CUA 坐标）持续不稳定，Tab 切换浏览器实测未触发（Jest 已覆盖），hash 直达 /m/downloader 验证页面空态渲染正常。
+
+### 验证
+
+Jest 39 passed（shell 11 + downloader 6 + ui-mode 11 + permission-guard 11）；tsc、5 文件 ESLint、生产 build 通过；m-downloader chunk 实证产出。未执行 Git 提交（待用户指示）。

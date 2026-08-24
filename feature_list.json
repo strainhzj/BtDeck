@@ -2701,7 +2701,7 @@
             "frontend/src/router.ts",
             "frontend/tests/"
           ],
-          "evidence": "2026-08-23 第五批·M1 第一片：移动布局壳 + 底部 Tab + 模式切换 + 移动登录/仪表盘/种子卡片/通知。① utils/ui-mode.ts：偏好持久化(auto/mobile/desktop)+视口判定(768px)+模式合成+登录分流，不以 UA 为唯一依据、移动版头部保留切桌面出口（不自锁）；② layout/mobile/index.vue 底部 Tab 壳（仪表盘/种子/通知）；③ views/mobile/{login,dashboard,torrents,notifications}.vue——复用 user store Login、/dashboard API、torrents getList（skip/limit 分页+状态筛选+暂停/恢复/删除入回收站）、/notifications API（点击已读）；④ 路由 /m/* 组（路由级懒加载，构建产物 m-*.js chunk 实证）+ permission.ts 模式感知：守卫首部 UI 模式分流（移动模式访问桌面顶层页→/m 对应页；桌面模式访问 /m/*→桌面页），全部登录跳转点（4 处）改 loginPathForMode，白名单含 /m/login；强制改密/瞬时失败等既有守卫语义未动。验证：新增 16 用例全绿（ui-mode 11 + MobileLayout 5），守卫回归 31 用例全绿，前端全量 704 passed，tsc/lint 通过，生产 build 成功。M1 未完：种子详情页/更多操作、离线下拉刷新、移动通知未读角标、桌面入口手动切换移动版；M2 未动。 追加（2026-08-24）：桌面验证链路就绪——Chrome 390x844 设备模拟实测 /m/login 自动分流、移动登录（复用 user store）、/m/dashboard 统计卡片渲染、/m/torrents 筛选+空态+底部 Tab active 态均正常；新库 admin 默认口令强制改密守卫会带去桌面设置页（预期），测试前需完成改密并刷新页面（详见 docs/android/desktop-testing.md 第三节注意）。"
+          "evidence": "2026-08-23 第五批·M1 第一片：移动布局壳 + 底部 Tab + 模式切换 + 移动登录/仪表盘/种子卡片/通知。① utils/ui-mode.ts：偏好持久化(auto/mobile/desktop)+视口判定(768px)+模式合成+登录分流，不以 UA 为唯一依据、移动版头部保留切桌面出口（不自锁）；② layout/mobile/index.vue 底部 Tab 壳（仪表盘/种子/通知）；③ views/mobile/{login,dashboard,torrents,notifications}.vue——复用 user store Login、/dashboard API、torrents getList（skip/limit 分页+状态筛选+暂停/恢复/删除入回收站）、/notifications API（点击已读）；④ 路由 /m/* 组（路由级懒加载，构建产物 m-*.js chunk 实证）+ permission.ts 模式感知：守卫首部 UI 模式分流（移动模式访问桌面顶层页→/m 对应页；桌面模式访问 /m/*→桌面页），全部登录跳转点（4 处）改 loginPathForMode，白名单含 /m/login；强制改密/瞬时失败等既有守卫语义未动。验证：新增 16 用例全绿（ui-mode 11 + MobileLayout 5），守卫回归 31 用例全绿，前端全量 704 passed，tsc/lint 通过，生产 build 成功。M1 未完：种子详情页/更多操作、离线下拉刷新、移动通知未读角标、桌面入口手动切换移动版；M2 未动。 追加（2026-08-24）：桌面验证链路就绪——Chrome 390x844 设备模拟实测 /m/login 自动分流、移动登录（复用 user store）、/m/dashboard 统计卡片渲染、/m/torrents 筛选+空态+底部 Tab active 态均正常；新库 admin 默认口令强制改密守卫会带去桌面设置页（预期），测试前需完成改密并刷新页面（详见 docs/android/desktop-testing.md 第三节注意）。 追加（2026-08-24 二）：移动布局壳主题色对齐桌面端（Tab/抽屉激活色 var(--color-primary)，禁 #409eff 回归有静态契约）+ 汉堡抽屉完整功能菜单（用户在 4+1 更多面板/顶部汉堡抽屉两方案中选定后者）：移动组 3 项 replace、桌面组 9 项 push 不写偏好（返回/刷新回移动版）、完整桌面版出口写偏好；mobile-shell.spec 5→11 用例，33 相关 Jest 全绿，build/浏览器实测通过（含桌面跳转与返回栈）。 追加（2026-08-24 三）：头部/抽屉头部背景改 var(--color-primary)（用户确认主题色头部，白系前景保证对比）；底部 Tab 三项→四项（仪表盘/下载器/种子/通知，下载器提入第一梯队）；新增移动下载器监控页 /m/downloader（卡片+在线徽标+测试连接复用桌面 API，管理操作指路抽屉桌面页）+ m-downloader chunk + mobile-downloader.spec 6 用例；主题色静态契约扩展（禁 #409eff/#27303f）。39 相关 Jest 全绿，tsc/lint/build 通过。"
         },
         {
           "id": "v1.0.6-dual-mode-client.6",
@@ -4745,6 +4745,26 @@
         "frontend/tests/unit/torrent-batch.spec.ts",
         "frontend/tests/unit/torrent-error-reason-ui.spec.ts",
         "frontend/tests/unit/tracker-detail-card.spec.ts"
+      ]
+    },
+    {
+      "id": "btdeck-wiki-init-2026-08-24",
+      "title": "独立 VitePress Wiki 初始化",
+      "status": "completed",
+      "scope": "wiki",
+      "description": "创建 btdeck-wiki 独立仓库，完成 VitePress 主题、导航、初始知识页、构建任务和会话交接文件。",
+      "evidence": {
+        "build": "btdeck-wiki npm run docs:build 通过，VitePress 1.6.4",
+        "routes": "首页、快速开始、架构、API、部署、维护、路线图和版本记录静态产物均存在",
+        "handoff": "btdeck-wiki/AGENTS.md 与 btdeck-wiki/session-handoff.md 已建立"
+      },
+      "files": [
+        "btdeck-wiki/package.json",
+        "btdeck-wiki/package-lock.json",
+        "btdeck-wiki/docs/.vitepress/config.mjs",
+        "btdeck-wiki/docs/.vitepress/theme/custom.css",
+        "btdeck-wiki/docs/index.md",
+        "btdeck-wiki/.gitlab-ci.yml"
       ]
     }
   ]
