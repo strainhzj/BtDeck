@@ -1,16 +1,35 @@
 /**
- * 移动下载器监控页契约（Phase 4 M1，2026-08-24 提入底部 Tab 第一梯队）：
- * 复用桌面 /downloader/getList + testConnection；只读监控（在线徽标 + 测试连接），
- * 管理操作由抽屉「下载器管理」桌面页承载（页面脚注指路）。
+ * 移动下载器页契约（Phase 4 M2 升级为完整管理）：
+ * 复用桌面 /downloader 全套 API——监控（在线徽标/测试/同步）+ 新增/编辑
+ * （DownloaderDialog 复用，submit 由本页显式调 add/up 落库）+ 删除 + 设置跳转。
+ * 注：shallowMount 下 el-button 为 kebab stub 不转发 click——交互直调组件方法。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
+import fs from 'fs'
+import path from 'path'
 import MobileDownloader from '@/views/mobile/downloader.vue'
-import { getList, testConnection } from '@/api/downloader'
+import {
+  getList,
+  testConnection,
+  syncDownloader,
+  addDownloader,
+  upDownloader,
+  deleteDownloader
+} from '@/api/downloader'
 
 jest.mock('@/api/downloader', () => ({
   getList: jest.fn(),
-  testConnection: jest.fn()
+  testConnection: jest.fn(),
+  syncDownloader: jest.fn(),
+  addDownloader: jest.fn(),
+  upDownloader: jest.fn(),
+  deleteDownloader: jest.fn()
+}))
+
+jest.mock('@/views/downloader/components/DownloaderDialog.vue', () => ({
+  name: 'DownloaderDialog',
+  render: (h: (t: string) => unknown) => h('div')
 }))
 
 const mockedList = [
@@ -37,17 +56,13 @@ const mockedList = [
 const mountPage = (): Wrapper<Vue> =>
   shallowMount(MobileDownloader, {
     mocks: {
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
+      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
+      $confirm: jest.fn().mockResolvedValue('confirm'),
+      $router: { push: jest.fn().mockResolvedValue(undefined), replace: jest.fn().mockResolvedValue(undefined) }
     }
   })
 
-/** shallowMount 下 el-button 是 kebab 形态 stub 且不转发 click——直接调组件方法（行为链等价） */
-function clickFirstTestButton(wrapper: Wrapper<Vue>): void {
-  const vm = wrapper.vm as any
-  vm.testOne(vm.list[0])
-}
-
-/** 排空 mounted 异步链（load 的 await + 渲染 tick），与 orphan-files.spec 同模式 */
+/** 排空 mounted 异步链（load 的 await + 渲染 tick） */
 async function flushLifecycle(): Promise<void> {
   for (let i = 0; i < 15; i += 1) {
     await Promise.resolve()
@@ -55,78 +70,126 @@ async function flushLifecycle(): Promise<void> {
   await Promise.resolve()
 }
 
-describe('views/mobile/MobileDownloader', () => {
+describe('views/mobile/MobileDownloader（M2 管理版）', () => {
   beforeEach(() => {
     jest.mocked(getList).mockReset()
+    jest.mocked(getList).mockResolvedValue({ code: '200', data: mockedList } as never)
     jest.mocked(testConnection).mockReset()
+    jest.mocked(syncDownloader).mockReset()
+    jest.mocked(addDownloader).mockReset()
+    jest.mocked(upDownloader).mockReset()
+    jest.mocked(deleteDownloader).mockReset()
   })
 
-  it('挂载即拉取列表并渲染卡片（名称/类型/主机端口/在线离线徽标）', async() => {
-    (getList as jest.Mock).mockResolvedValue({ code: '200', data: mockedList })
-    const wrapper = mountPage()
-    await flushLifecycle()
-
-    expect(getList).toHaveBeenCalledWith({ page: 1, pageSize: 100 })
-    const cards = wrapper.findAll('.m-dl-card')
-    expect(cards.length).toBe(2)
-    expect(cards.at(0).find('.m-dl-name').text()).toBe('主力QB')
-    expect(cards.at(0).find('.m-dl-host').text()).toBe('192.168.5.51:8080')
-    const badges = wrapper.findAll('.m-dl-badge')
-    expect(badges.at(0).classes()).toContain('is-online')
-    expect(badges.at(0).text()).toBe('在线')
-    expect(badges.at(1).classes()).toContain('is-offline')
-    expect(badges.at(1).text()).toBe('离线')
+  afterEach(() => {
+    jest.clearAllMocks()
   })
 
-  it('列表为空显示空态提示', async() => {
-    (getList as jest.Mock).mockResolvedValue({ code: '200', data: [] })
+  it('列表渲染：卡片含名称/在线离线徽标/host，工具条显示计数', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
-expect(wrapper.find('.m-hint').text()).toBe('暂无下载器')
+    expect(wrapper.text()).toContain('主力QB')
+    expect(wrapper.text()).toContain('在线')
+    expect(wrapper.text()).toContain('离线')
+    expect(wrapper.text()).toContain('192.168.5.51:8080')
+    expect(wrapper.text()).toContain('共 2 个下载器')
   })
 
-  it('接口异常不崩溃并提示错误', async() => {
-    (getList as jest.Mock).mockRejectedValue(new Error('boom'))
+  it('空列表显示空态', async() => {
+    jest.mocked(getList).mockResolvedValue({ code: '200', data: [] } as never)
     const wrapper = mountPage()
     await flushLifecycle()
-expect((wrapper.vm.$message as any).error).toHaveBeenCalled()
+    expect(wrapper.text()).toContain('暂无下载器')
   })
 
-  it('测试连接成功：提示并刷新列表同步状态', async() => {
-    (getList as jest.Mock).mockResolvedValue({ code: '200', data: mockedList })
+  it('接口异常：错误提示不崩页', async() => {
+    jest.mocked(getList).mockRejectedValue(new Error('db down'))
     const wrapper = mountPage()
     await flushLifecycle()
+    expect(wrapper.vm.$message.error).toHaveBeenCalled()
+  })
 
-    ;(testConnection as jest.Mock).mockResolvedValue({ code: '200', msg: 'ok' })
-    clickFirstTestButton(wrapper)
+  it('测试连接成功后刷新列表，失败不刷新', async() => {
+    const wrapper = mountPage()
     await flushLifecycle()
-
+    const vm = wrapper.vm as any
+    // 后端约定：连接失败时信封 code 仍为 200，业务成败看 data.success（与桌面端一致）
+    jest.mocked(testConnection).mockResolvedValue({
+      code: '200',
+      data: { success: true, delay: 5, message: '连接成功' }
+    } as never)
+    await vm.testOne(vm.list[0])
     expect(testConnection).toHaveBeenCalledWith('d1')
-    expect((wrapper.vm.$message as any).success).toHaveBeenCalledWith('主力QB：连接成功')
-    // 成功后重拉列表（getList 共被调 2 次：初始 + 测试后刷新）
     expect(getList).toHaveBeenCalledTimes(2)
+    jest.mocked(testConnection).mockResolvedValue({
+      code: '200',
+      data: { success: false, delay: null, message: '连接失败' }
+    } as never)
+    const before = jest.mocked(getList).mock.calls.length
+    await vm.testOne(vm.list[0])
+    expect(jest.mocked(getList).mock.calls.length).toBe(before)
+    expect(wrapper.vm.$message.error).toHaveBeenCalled()
   })
 
-  it('测试连接失败：弹出失败消息不刷新列表', async() => {
-    (getList as jest.Mock).mockResolvedValue({ code: '200', data: mockedList })
+  it('同步：调 syncDownloader 并刷新', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
-const initialCalls = (getList as jest.Mock).mock.calls.length
-
-    ;(testConnection as jest.Mock).mockResolvedValue({ code: '500', msg: '超时' })
-    clickFirstTestButton(wrapper)
-    await flushLifecycle()
-
-    expect((wrapper.vm.$message as any).error).toHaveBeenCalledWith('主力QB：超时')
-    expect((getList as jest.Mock).mock.calls.length).toBe(initialCalls)
+    const vm = wrapper.vm as any
+    jest.mocked(syncDownloader).mockResolvedValue({ code: '200' } as never)
+    await vm.syncOne(vm.list[0])
+    expect(syncDownloader).toHaveBeenCalledWith('d1')
+    expect(wrapper.vm.$message.success).toHaveBeenCalled()
   })
 
-  it('在线徽标与脚注使用主题色变量（与桌面端同源）', () => {
-    const source = require('fs').readFileSync(
-      require('path').resolve(__dirname, '../../src/views/mobile/downloader.vue'),
+  it('设置：跳转移动设置页（携带 id）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.openSettings(vm.list[0])
+    expect(vm.$router.push).toHaveBeenCalledWith('/m/downloader/settings/d1')
+  })
+
+  it('新增：submit 显式调 addDownloader 并刷新', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.openCreate()
+    expect(vm.editingItem).toBeNull()
+    jest.mocked(addDownloader).mockResolvedValue({ code: '200' } as never)
+    await vm.onDialogSubmit({ nickname: '新下载器', host: '1.2.3.4' })
+    expect(addDownloader).toHaveBeenCalledWith({ nickname: '新下载器', host: '1.2.3.4' })
+    expect(vm.editDialogVisible).toBe(false)
+  })
+
+  it('编辑：submit 显式调 upDownloader（以原 id 落库）', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    vm.openEdit(vm.list[1])
+    expect(vm.editingItem).not.toBeNull()
+    jest.mocked(upDownloader).mockResolvedValue({ code: '200' } as never)
+    await vm.onDialogSubmit({ nickname: '改名' })
+    expect(upDownloader).toHaveBeenCalledWith(expect.objectContaining({ id: 'd2', nickname: '改名' }))
+  })
+
+  it('删除：确认后调 deleteDownloader 并刷新', async() => {
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    jest.mocked(deleteDownloader).mockResolvedValue({ code: '200' } as never)
+    await vm.removeOne(vm.list[0])
+    await flushLifecycle()
+    expect(deleteDownloader).toHaveBeenCalledWith('d1')
+    expect(wrapper.vm.$message.success).toHaveBeenCalled()
+  })
+
+  it('在线徽标与页面沿用主题色变量（与桌面端同源）', () => {
+    const source = fs.readFileSync(
+      path.resolve(__dirname, '../../src/views/mobile/downloader.vue'),
       'utf-8'
     )
     expect(source).toContain('.m-dl-badge.is-online')
     expect(source).toContain('var(--color-primary)')
+    expect(source).not.toContain('#409eff')
   })
 })

@@ -1,6 +1,10 @@
 <template>
   <div class="m-downloader">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
+    <div class="m-toolbar">
+      <span class="m-toolbar-title">共 {{ list.length }} 个下载器</span>
+      <el-button size="small" type="primary" plain icon="el-icon-plus" @click="openCreate">新增下载器</el-button>
+    </div>
     <div v-if="loading && !list.length" class="m-hint">加载中…</div>
     <template v-else-if="list.length">
       <div v-for="d in list" :key="d.id" class="m-dl-card">
@@ -20,24 +24,49 @@
             :loading="testingId === d.id"
             @click="testOne(d)"
           >
-            测试连接
+            测试
           </el-button>
+          <el-button
+            size="mini"
+            :loading="syncingId === d.id"
+            @click="syncOne(d)"
+          >
+            同步
+          </el-button>
+          <el-button size="mini" @click="openSettings(d)">设置</el-button>
+          <el-button size="mini" @click="openEdit(d)">编辑</el-button>
+          <el-button size="mini" type="danger" plain :disabled="busyId === d.id" @click="removeOne(d)">删除</el-button>
         </div>
       </div>
 
-      <div class="m-dl-footnote">下载器的编辑、设置与路径映射请通过功能菜单 →「下载器管理」（桌面版页面）操作</div>
+      <div class="m-dl-footnote">路径映射在设置 → 路径维护中配置；能力矩阵等高级信息见桌面版</div>
     </template>
     <div v-else class="m-hint">暂无下载器</div>
-    <el-button class="m-refresh" size="small" :loading="loading" @click="load">刷新</el-button>
+
+    <!-- 新增/编辑：复用桌面 DownloaderDialog（submit 后由本页显式落库） -->
+    <downloader-dialog
+      :visible.sync="editDialogVisible"
+      :downloader="editingItem"
+      @submit="onDialogSubmit"
+    />
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
-import { getList, testConnection } from '@/api/downloader'
+import {
+  getList,
+  testConnection,
+  syncDownloader,
+  addDownloader,
+  upDownloader,
+  deleteDownloader
+} from '@/api/downloader'
 import { extractErrorMessage } from '@/utils/formatters'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
+import DownloaderDialog from '@/views/downloader/components/DownloaderDialog.vue'
+import { Downloader } from '@/views/downloader/types'
 
 /** 单个下载器的移动卡片形状（getList 返回字段的子集，camelCase 与后端 VO 一致） */
 interface MobileDownloaderItem {
@@ -52,18 +81,26 @@ interface MobileDownloaderItem {
 }
 
 /**
- * 移动下载器监控页（Phase 4 M1，2026-08-24 提入底部 Tab 第一梯队）：
- * 复用桌面 /downloader/getList 与 /downloader/testConnection，仅做只读监控
- * （在线徽标 + 连接测试）；管理操作仍由抽屉「下载器管理」桌面页承载。
+ * 移动下载器页（Phase 4 M2 升级为完整管理）：
+ * 复用桌面 /downloader 全套 API——监控（在线徽标/测试/同步）+ 新增/编辑
+ * （DownloaderDialog 复用，submit 由本页显式调 add/up 落库）+ 删除；
+ * 高级设置（速度/调度/路径/标签）经 /m/downloader/settings/:id 承载。
  */
 @Component({
   name: 'MobileDownloader',
-  components: { 'm-pull-indicator': MobilePullIndicator }
+  components: {
+    'm-pull-indicator': MobilePullIndicator,
+    'downloader-dialog': DownloaderDialog
+  }
 })
 export default class MobileDownloader extends Mixins(PullToRefresh) {
   private loading = false
   private list: MobileDownloaderItem[] = []
   private testingId = ''
+  private syncingId = ''
+  private busyId = ''
+  private editDialogVisible = false
+  private editingItem: Downloader | null = null
 
   mounted(): void {
     this.load()
@@ -92,18 +129,97 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
     this.testingId = item.id
     try {
       const res = await testConnection(item.id)
-      if (res.code === '200') {
+      // 后端约定：信封 code=200 仅代表请求执行成功，连接成败看 data.success（与桌面端 handleTest 同口径）
+      const result = (res.data ?? {}) as { success?: boolean, message?: string }
+      if (res.code === '200' && result.success) {
         this.$message.success(`${item.nickname || item.id}：连接成功`)
         // 立即刷新列表以同步 connectStatus 缓存
         await this.load()
       } else {
-        this.$message.error(`${item.nickname || item.id}：${res.msg || '连接失败'}`)
+        this.$message.error(`${item.nickname || item.id}：${result.message || res.msg || '连接失败'}`)
       }
     } catch (e) {
       this.$message.error(extractErrorMessage(e))
     } finally {
       this.testingId = ''
     }
+  }
+
+  private async syncOne(item: MobileDownloaderItem): Promise<void> {
+    if (!item.id) return
+    this.syncingId = item.id
+    try {
+      const res = await syncDownloader(item.id)
+      if (res.code === '200') {
+        this.$message.success(`${item.nickname || item.id}：同步完成`)
+        await this.load()
+      } else {
+        this.$message.error(res.msg || '同步失败')
+      }
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    } finally {
+      this.syncingId = ''
+    }
+  }
+
+  private openSettings(item: MobileDownloaderItem): void {
+    this.$router
+      .push(`/m/downloader/settings/${encodeURIComponent(item.id)}`)
+      .catch(() => undefined)
+  }
+
+  private openCreate(): void {
+    this.editingItem = null
+    this.editDialogVisible = true
+  }
+
+  private openEdit(item: MobileDownloaderItem): void {
+    this.editingItem = item as unknown as Downloader
+    this.editDialogVisible = true
+  }
+
+  /** 桌面对话框 submit 仅抛表单数据不落库，此处显式按模式调新增/更新 */
+  private async onDialogSubmit(formData: object): Promise<void> {
+    try {
+      const res = this.editingItem
+        ? await upDownloader({ ...(formData as { id?: string }), id: this.editingItem.id ?? this.editingItem.downloaderId })
+        : await addDownloader(formData)
+      if (res.code === '200') {
+        this.$message.success(this.editingItem ? '下载器已更新' : '下载器已添加')
+        this.editDialogVisible = false
+        await this.load()
+      } else {
+        this.$message.error(res.msg || '保存失败')
+      }
+    } catch (e) {
+      this.$message.error(extractErrorMessage(e))
+    }
+  }
+
+  private removeOne(item: MobileDownloaderItem): void {
+    this.$confirm(
+      `删除下载器「${item.nickname || item.id}」？仅移除配置记录，不影响远端下载器与其数据。`,
+      '删除确认',
+      { type: 'warning' }
+    )
+      .then(async() => {
+        this.busyId = item.id
+        try {
+          const res = await deleteDownloader(item.id)
+          if (res.code === '200') {
+            this.$message.success('下载器已删除')
+            await this.load()
+          } else {
+            this.$message.error(res.msg || '删除失败')
+          }
+        } catch (e) {
+          this.$message.error(extractErrorMessage(e))
+        } finally {
+          this.busyId = ''
+        }
+      })
+      .catch(() => undefined)
   }
 
   private isOnline(item: MobileDownloaderItem): boolean {
@@ -119,8 +235,16 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
 </script>
 
 <style scoped>
-.m-downloader {
-  padding-bottom: 8px;
+.m-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.m-toolbar-title {
+  font-size: 13px;
+  color: #606266;
 }
 
 .m-dl-card {
@@ -181,7 +305,14 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
 .m-dl-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6px;
   margin-top: 8px;
+}
+
+.m-dl-actions .el-button {
+  margin-left: 0;
+  padding: 5px 10px;
 }
 
 .m-dl-footnote {
@@ -191,14 +322,18 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
   padding: 4px 0;
 }
 
-.m-refresh {
-  display: flex;
-  margin: 12px auto 0;
-}
-
 .m-hint {
   text-align: center;
   color: #909399;
   padding: 24px 0;
+}
+</style>
+
+<!-- 新增/编辑对话框挂 body（append-to-body 缺省），窄视口下压宽度提升可用性 -->
+<style>
+@media (max-width: 768px) {
+  .downloader-dialog {
+    width: 94% !important;
+  }
 }
 </style>

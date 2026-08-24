@@ -73,6 +73,36 @@ const router = new Router({
           meta: { hidden: true, title: '种子详情' }
         },
         {
+          // 高级搜索（Phase 4 M2）：简单筛选 + 复用桌面 AdvancedSearchBuilder
+          path: 'search',
+          component: () => import(/* webpackChunkName: "m-search" */ '@/views/mobile/search.vue'),
+          meta: { hidden: true, title: '高级搜索' }
+        },
+        {
+          // 查询模板（Phase 4 M2）：应用交由 /m/search 执行
+          path: 'query-templates',
+          component: () => import(/* webpackChunkName: "m-query-templates" */ '@/views/mobile/query-templates.vue'),
+          meta: { hidden: true, title: '查询模板' }
+        },
+        {
+          // 回收站（Phase 4 M2）：单条恢复/彻底删除
+          path: 'recycle-bin',
+          component: () => import(/* webpackChunkName: "m-recycle-bin" */ '@/views/mobile/recycle-bin.vue'),
+          meta: { hidden: true, title: '回收站' }
+        },
+        {
+          // 审计日志（Phase 4 M2）：卡片流 + 筛选
+          path: 'logs',
+          component: () => import(/* webpackChunkName: "m-logs" */ '@/views/mobile/logs.vue'),
+          meta: { hidden: true, title: '日志' }
+        },
+        {
+          // 下载器设置（Phase 4 M2）：整页复用桌面设置对话框
+          path: 'downloader/settings/:id',
+          component: () => import(/* webpackChunkName: "m-downloader-settings" */ '@/views/mobile/downloader-settings.vue'),
+          meta: { hidden: true, title: '下载器设置' }
+        },
+        {
           path: 'notifications',
           component: () => import(/* webpackChunkName: "m-notifications" */ '@/views/mobile/notifications.vue'),
           meta: { hidden: true, title: '通知' }

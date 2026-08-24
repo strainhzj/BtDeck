@@ -143,19 +143,22 @@ export default class MobileLayout extends Vue {
     NotificationModule.FetchUnreadCount().catch(() => undefined)
   }
 
-  /** 移动版已有页面（抽屉内导航，同底部 Tab 四项）。 */
-  private mobileMenuItems: MobileTab[] = this.tabs
+  /** 移动版已有页面（抽屉内导航）：底部 Tab 四项 + M2 管理页四项。 */
+  private mobileMenuItems: MobileTab[] = [
+    ...this.tabs,
+    { label: '高级搜索', path: '/m/search' },
+    { label: '查询模板', path: '/m/query-templates' },
+    { label: '回收站', path: '/m/recycle-bin' },
+    { label: '日志', path: '/m/logs' }
+  ]
 
-  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）。 */
+  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；M2 后日志/回收站/查询模板已移动化。 */
   private desktopMenuItems: MobileTab[] = [
     { label: '下载器管理', path: '/downloader' },
     { label: '种子列表（桌面）', path: '/torrents' },
     { label: 'Tracker管理', path: '/tracker' },
     { label: '定时任务', path: '/tasks' },
-    { label: '日志管理', path: '/logs' },
-    { label: '回收站', path: '/recycle-bin' },
     { label: '孤儿文件', path: '/orphan-files' },
-    { label: '查询模板', path: '/query-templates' },
     { label: '系统设置', path: '/settings' }
   ]
 

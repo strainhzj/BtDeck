@@ -5393,4 +5393,40 @@ M1 余项四项全部完成并验证（未提交）：①种子详情页（路�
 
 - 本批 14 文件 + 三份记录未提交（待用户指示）。
 - 后端单种子端点空 data 缺陷待修复（单独批次）。
+
+## 2026-08-24（五）：M2 五页面收口（上下文恢复 + 4 失败套件修复）
+
+### 背景
+
+上会话（sess_ff0b12a9）完成 M2 全部源码（五页面+路由+抽屉+守卫+specs）后中断，未写交接记录，遗留 4 个失败 Jest 套件。本会话通过 ReadSessionContext 恢复 handoff capsule 并与工作区实测对齐后收口。
+
+### M2 交付内容（上会话源码，本会话验证确认）
+
+- `/m/search`（search.vue）：简单查询（名称/下载器/状态/Tracker 域同桌面快捷筛选→getList）+ 高级搜索（复用桌面 AdvancedSearchBuilder→advancedSearch）；模板应用经 m2-template-cache（take 取走即清）自动回填执行；builder 保存模板→createSearchTemplate。
+- `/m/query-templates`（query-templates.vue + m2-template-cache.ts）：客户端名称/来源过滤；系统模板（is_default）只可应用不可删除；「应用」写缓存跳 /m/search；新建/编辑保留桌面。
+- `/m/recycle-bin`（recycle-bin.vue）：卡片+名称搜索+下拉刷新；单条恢复/彻底删除（用户拍板不做批量）。
+- `/m/logs`（logs.vue）：卡片流+操作类型/结果/名称三筛选+分页；统计/导出保留桌面。
+- `/m/downloader/settings/:id`（downloader-settings.vue）：整页复用桌面 DownloaderSettingsDialog，关闭即返回；downloader.vue 升级管理版（新增/编辑/删除/同步/测试/设置入口；发现桌面缺陷 DownloaderDialog submit 只关框不落库、addDownloader 零调用点，移动端显式调用，待反馈桌面端）。
+- 路由 5 条 m-* 懒加载 + 抽屉重组（移动组 8/桌面组 6）+ toMobilePath 三映射 + permission.ts 分流扩展。
+
+### 本会话修复（4 套件 6 处，含 1 个真实产品 bug）
+
+1. **search.vue 导入源错误**：buildAdvancedSearchRequest/FromTemplateGroups 实际定义在 views/torrents/utils/torrentBatch（670/713 行），原从 advancedSearchState 导入（只导出 buildAdvancedSearchParams）→ 模块加载即 TypeError，mobile-search 套件 worker 崩溃。
+2. **search.vue 模板直调模块级函数（M1 已知坑复发）**：模板 `formatTorrentSize(t.size)` 报 "_vm.formatTorrentSize is not a function"（render error 被 Vue 吞掉导致 DOM 不更新、数据层正常——排查靠临时调试 spec 打印 render 错误）→ formatSize 实例方法包装（同 torrent-detail 约定）。
+3. **downloader.vue testOne 真实产品 bug**：后端 /downloader/test 连接失败返回信封 code=200+data.success=false（桌面 handleTest 查 data.success），原实现只查 code 会把连接失败当成功提示并刷新 → 改 `code==='200' && result.success` 双条件，失败提示 data.message 不刷新。
+4. mobile-search.spec 补 torrent-detail-cache 的 jest.mock（setCachedTorrent 原是真实函数非 spy）+ 删未用导入。
+5. mobile-query-templates.spec：el-button-stub 断言不可行（Jest 无全局 element-ui，unknown 元素不产生 stub）→ 改卡片文本断言删除入口有无。
+6. mobile-downloader-settings.spec：shallowMount 把自定义 mock dialog 替换为 `<downloader-settings-dialog-stub>`（mock template 不渲染）→ class 查找改 stub 标签名。另 m2-template-cache.ts member-delimiter lint --fix。
+
+### 验证
+
+- M2 相关 8 套件 67 例全绿；前端全量 70 套件 989 例全绿；tsc 零错误；M2 相关 19 文件 ESLint 通过；生产 build 通过，11 个 m-* chunk 实证（M2 新增 5 个）。
+- 浏览器（后端 5001/前端 8080 均存活）：390×844 视口自动分流 /m/login、登录页四元素渲染、Vue data 绑定 evaluate 实证同步、登录 API curl 200、未登录直达 /m/search、/m/recycle-bin、/m/logs 守卫正确重定向带 redirect 回跳——全部实测通过。
+- **IAB 交互通道本会话故障**：Playwright click 超时/CUA 坐标点击/dom_cua 节点点击/Enter keypress/截图全部无效（fill/快照/evaluate 正常），较前两会话同类故障更重；页面内交互级验证（登录提交/搜索执行/模板应用）未完成，留待 Chrome 设备模拟或真机复核（docs/android/desktop-testing.md SOP）。
+
+### 待办
+
+- M2 批次 22 文件未提交（11 修改含三份记录 + 11 新增），待用户指示（M1 各批已入库：349bd01/a8c1ac8/2746177）。
+- 桌面 DownloaderDialog submit 不落库缺陷待反馈/修复。
+- M2 页面浏览器交互级人工复核（Chrome 设备模拟或真机）。
 - M2（高级搜索/查询模板/回收站/日志/下载器高级设置移动化）未动。

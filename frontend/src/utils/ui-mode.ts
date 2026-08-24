@@ -44,6 +44,10 @@ export function currentUiMode(): ResolvedUiMode {
 export function toMobilePath(path: string): string {
   if (path.startsWith('/torrents')) return '/m/torrents'
   if (path.startsWith('/dashboard')) return '/m/dashboard'
+  // M2 已移动化的管理页（与守卫重定向清单保持同步）
+  if (path.startsWith('/recycle-bin')) return '/m/recycle-bin'
+  if (path.startsWith('/logs')) return '/m/logs'
+  if (path.startsWith('/query-templates')) return '/m/query-templates'
   return '/m/dashboard'
 }
 

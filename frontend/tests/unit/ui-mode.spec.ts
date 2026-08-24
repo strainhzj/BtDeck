@@ -60,6 +60,13 @@ describe('utils/ui-mode', () => {
       expect(uiMode.toMobilePath('/torrents/traditional')).toBe('/m/torrents')
     })
 
+    it('M2 已移动化管理页映射到对应移动页', () => {
+      expect(uiMode.toMobilePath('/recycle-bin')).toBe('/m/recycle-bin')
+      expect(uiMode.toMobilePath('/recycle-bin/index')).toBe('/m/recycle-bin')
+      expect(uiMode.toMobilePath('/logs/audit')).toBe('/m/logs')
+      expect(uiMode.toMobilePath('/query-templates')).toBe('/m/query-templates')
+    })
+
     it('无对应关系的路径兜底移动仪表盘（不落到空白页）', () => {
       expect(uiMode.toMobilePath('/downloader')).toBe('/m/dashboard')
       expect(uiMode.toMobilePath('/settings/index')).toBe('/m/dashboard')

@@ -1,5 +1,33 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-24 交接（五）：M2 五页面收口（高级搜索/查询模板/回收站/日志/下载器高级设置）
+
+### 结论
+
+M2 全部完成并验证（未提交）：①/m/search 双模式——简单查询（桌面快捷筛选同字段集→getList）+ 高级搜索（复用桌面 AdvancedSearchBuilder→advancedSearch），模板应用经 m2-template-cache（take 取走即清）自动回填执行，builder 保存模板→createSearchTemplate；②/m/query-templates——客户端名称/来源过滤、系统模板（is_default）只可应用不可删除、应用跳 /m/search，新建/编辑保留桌面；③/m/recycle-bin——卡片+搜索+下拉刷新、单条恢复/彻底删除（用户拍板不做批量）；④/m/logs——卡片流+三筛选+分页，统计/导出保留桌面；⑤/m/downloader/settings/:id——整页复用桌面 DownloaderSettingsDialog，downloader.vue 升级管理版（新增/编辑/删除/同步/测试/设置）。路由 5 条 + 抽屉重组（移动组 8/桌面组 6）+ toMobilePath 三映射 + permission.ts 分流扩展。
+
+### 本会话工作（上会话源码中断后收口）
+
+上会话（sess_ff0b12a9）源码完成后中断未写记录，遗留 4 失败套件。本会话恢复上下文后修复 6 处：search.vue 导入源（advancedSearchState→views/torrents/utils/torrentBatch，两构建函数实际定义处）；search.vue 模板直调模块级 formatTorrentSize（M1 已知坑复发，render error 被吞致 DOM 不更新数据正常）→formatSize 实例包装；**downloader.vue testOne 真实产品 bug**——后端 /downloader/test 失败返回 code=200+data.success=false（桌面 handleTest 查 data.success），原只查 code 把失败当成功→改双条件；spec 三处（补 torrent-detail-cache mock、el-button-stub 断言改文本断言（Jest 无全局 element-ui unknown 元素无 stub）、shallowMount 下 class 查找改 stub 标签名）；m2-template-cache lint --fix。
+
+### 关键发现（后续批次注意）
+
+- **IAB 交互通道本会话故障**：Playwright click 超时/CUA 坐标/dom_cua 节点/Enter/截图全部无效（fill/快照/evaluate 正常）。登录提交等页面内交互未浏览器验证，已实测的：390 视口分流、登录页渲染、Vue data 绑定（evaluate）、登录 API curl 200、未登录直达 M2 三路由守卫重定向带 redirect 回跳。交互级复核用 Chrome 设备模拟或真机（docs/android/desktop-testing.md）。
+- **后端 /downloader/test 契约**：信封 code=200 仅代表请求执行成功，连接成败在 data.success（{success,delay,message}）——移动端/桌面端判断都必须查 data.success。
+- **桌面缺陷**：DownloaderDialog 的 submit 事件只关框不落库（addDownloader 零调用点），移动端已显式调用 add/up；桌面端待反馈修复。
+- Jest 无全局 element-ui：模板中 el-* 渲染为 unknown 元素（不产生 stub、slot 文本保留），断言按文本而非 el-*-stub。
+
+### 验证
+
+M2 相关 8 套件 67 例 + 前端全量 70 套件 989 例全绿；tsc 零错误；M2 相关 19 文件 ESLint 通过；生产 build 通过，11 个 m-* chunk 实证（M2 新增 m-search/m-query-templates/m-recycle-bin/m-logs/m-downloader-settings）。后端 5001/前端 8080 dev server 保持运行（上会话后台任务）。
+
+### 待办
+
+1. M2 批次 22 文件未提交（11 修改含三份记录 + 11 新增），待用户指示（M1 各批已入库：349bd01/a8c1ac8/2746177）。
+2. M2 页面浏览器交互级人工复核（Chrome 设备模拟/真机）。
+3. 桌面 DownloaderDialog submit 不落库缺陷反馈/修复。
+4. 后端单种子端点空 data 缺陷待修复（M1 遗留）。
+
 ## 2026-08-24 交接（四）：Phase 4 M1 余项四项收口（种子详情/下拉刷新/未读角标/侧栏入口）
 
 ### 结论
