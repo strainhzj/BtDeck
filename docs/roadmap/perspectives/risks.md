@@ -60,7 +60,7 @@
 | 迁移类型 | 位置 | 职责 |
 |---------|------|------|
 | 应用层数据/字段迁移 | [app/migrations/database_migrator.py](../../backend/app/migrations/database_migrator.py)（776 行） | 运行时执行，含 SM4 加密字段升级 |
-| Schema 版本迁移 | [backend/alembic/](../../backend/alembic/)（**28 个** revision；v1.0.6.25/27 新增 `6132b66d14a7_ratio_columns_to_float`、`8f4c2d1a9b7e_ratio_value_constraints`） | 版本管理 |
+| Schema 版本迁移 | [backend/alembic/](../../backend/alembic/)（**29 个** revision；当前 head `c1d2e3f4a5b6`；v1.0.6.25/27 新增 `6132b66d14a7_ratio_columns_to_float`、`8f4c2d1a9b7e_ratio_value_constraints`） | 版本管理 |
 
 **风险**：两套迁移并存，边界不清（何时用哪个）。v1.0.6.25~27 的 ratio 列治本迁移（String→Float + CHECK 约束）走的是 alembic schema 通道，配套的数据清洗/诊断在 `app/core/ratio_data_diagnostics.py` + `scripts/ratio_migration_report.py`，三层（schema 迁移 / 运行时数据清洗 / 诊断报告）边界需注意。完整论述见 [../../backend/docs/architecture-deep-dive.md](../../backend/docs/architecture-deep-dive.md) "二、数据库迁移双轨"与 [../../backend/docs/operations/rollback-guide.md](../../backend/docs/operations/rollback-guide.md)。
 

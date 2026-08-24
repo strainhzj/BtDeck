@@ -18,7 +18,7 @@ BtDeck/
 │   ├── data-models/     ORM 模型 + repositories + schemas + 枚举 + 默认数据
 │   ├── tasks/           定时任务 + scheduler + 后台任务
 │   ├── domain/          领域目录（downloader / torrents / tracker / auth / user）
-│   └── infra/           utils + startup + migrations + alembic（28 个 revision，最新 add_auxiliary_seed_count 辅种数量）
+│   └── infra/           utils + startup + migrations + alembic（29 个 revision，最新 orphan Schema 漂移修复）
 ├── frontend/         ← Vue 2.6 + TypeScript 前端
 │   ├── entry/           应用入口（main.ts / router.ts / permission.ts / App.vue）
 │   ├── api/             axios API 封装（12 个领域模块）
@@ -124,6 +124,7 @@ BtDeck/
 | 2026-08-21 增量 | 任务日志与孤儿文件页统计摘要接入全局 `CollapsiblePanel`，分别以 `btdeck_task_log_stats_collapsed` / `btdeck_orphan_file_stats_collapsed` 持久化折叠状态；前端管理页契约测试扩展为 14 项 |
 | 2026-08-22 增量 | roadmap 全量对账刷新（基准 HEAD 348c700）：补记 04c8ec6 mypy 清零/ORM Mapped 迁移批次（143 个后端文件行号整体漂移）；汇总计数实测重校（endpoints 37、alembic 28 个 revision/head `975dad435c03`、后端测试 180、前端 spec 59、api 模块 12、store 4+1 拆分）；清理 7 条失效条目、补录 29 个漏列文件（含 5 个新 revision）；第三层两文档行为描述重写（批种添加 202 后台化、孤儿副本数快照列、`call_downloader_api` 统一下载器调用） |
 | 2026-08-23 增量（同步资源观测） | `resource_guard` 记录 heavy_sync holder 的 task/run/phase/进程信息并补充 wait_timeout 诊断；`cron_executor` 增加 Python 内部类生命周期心跳/超时告警；`sync_coordinator` 暴露阶段耗时与最近进度；新增 92 项针对性回归覆盖中的资源 holder 与生命周期观测用例 |
+| 2026-08-23 增量（孤儿 Schema 漂移自愈） | 新增 Alembic 修复迁移 `c1d2e3f4a5b6`：针对版本号已到 `975dad435c03` 但 `orphan_current_candidate.current_detail_id` 缺失的存量库，后端重启自动补列/回填/索引；健康库幂等 no-op；新增迁移回归测试 |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |

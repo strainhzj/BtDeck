@@ -55,7 +55,8 @@ def _clean_database_path_env():
 #       → a7b8c9d0e1f2 → a8b9c0d1e2f3 → ff42d3402df5(users must_change_password)
 #       → ab68fe061d5b(orphan purge job submit-time ip address)
 #       → 975dad435c03(torrent auxiliary seed count)
-EXPECTED_HEAD = "975dad435c03"
+#       → c1d2e3f4a5b6(repair head-marked orphan schema drift)
+EXPECTED_HEAD = "c1d2e3f4a5b6"
 PREV_HEAD = "e6d8a20c41f3"
 ORPHAN_BACKGROUND_PREV = "4c1d8e7a2b90"
 TORRENT_BACKUP_ID_TYPE_PREV = "7b2c9d4e6f10"

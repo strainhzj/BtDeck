@@ -62,11 +62,11 @@
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
 | Alembic 环境 env | `env.py` | Alembic 迁移环境：`run_migrations_offline`(L101) + `run_migrations_online`(L125)；应用内调用保留现有日志 handler，独立 CLI 仍加载 Alembic 日志；处理 PyInstaller `_MEIPASS` + 集中 import ORM |
-| Alembic revisions versions | `versions/` | **28 个** revision 文件；当前 head 为 `975dad435c03`（见下表） |
+| Alembic revisions versions | `versions/` | **29 个** revision 文件；当前 head 为 `c1d2e3f4a5b6`（见下表） |
 
 `env.py` 顶部集中 import 所有 ORM 模型（`User`/`LoginLog`/`Config`/`BtDownloaders`/`TorrentInfo`…）以确保 autogenerate 检测全部表。
 
-### alembic/versions/（28 个迁移文件）
+### alembic/versions/（29 个迁移文件）
 
 | 关键词 | 文件名 | 内容（从命名推断） |
 |--------|--------|-------------------|
@@ -98,6 +98,7 @@
 | 强制改密 must-change-password | `ff42d3402df5_add_users_must_change_password.py` | 【可回滚】`users` 加 `must_change_password` 标志列（server_default '0'），downgrade 直接删列 |
 | 清理任务 IP purge-job-ip | `ab68fe061d5b_add_orphan_purge_job_ip_address.py` | 【可回滚】`orphan_purge_job` 新增 `ip_address`（nullable String(64)）：后台异步清理无 HTTP 上下文，任务提交时持久化提交端 IP、执行时透传审计；历史任务行保持 NULL |
 | 辅种数量 auxiliary-seed-count | `975dad435c03_add_auxiliary_seed_count.py` ✨2026-08-20 | 为 `torrent_info` 增加 NOT NULL Integer `auxiliary_seed_count`，历史行默认 1；upgrade/downgrade 仅增删该列，可回滚 |
+| 孤儿 Schema 漂移修复 orphan-schema-repair | `c1d2e3f4a5b6_repair_orphan_current_detail_id.py` ✨2026-08-23 | 针对版本号已到 `975dad435c03` 但 `orphan_current_candidate.current_detail_id` 实际缺失的存量库，重启时幂等补列、回填稳定明细指针与必要索引；健康库 no-op，受限回滚 |
 
 > v1.0.6.27 ratio 迁移加固的相关文档：[../../docs/constraints/database-migration.md](../../../backend/docs/constraints/database-migration.md)（含 ratio 列迁移约束条款）、[../../docs/operations/rollback-guide.md](../../../backend/docs/operations/rollback-guide.md)（Level-1/2 回滚步骤）。诊断/报告工具：[app/core/ratio_data_diagnostics.py](../../../backend/app/core/ratio_data_diagnostics.py) + [scripts/ratio_migration_report.py](../../../backend/scripts/ratio_migration_report.py)。
 
