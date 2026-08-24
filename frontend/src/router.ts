@@ -121,6 +121,12 @@ const router = new Router({
           meta: { hidden: true, title: '定时任务' }
         },
         {
+          // 孤儿文件（Phase 4 M4）：双 Tab（孤儿文件/隔离区）+ 清理/忽视/恢复/清除
+          path: 'orphan-files',
+          component: () => import(/* webpackChunkName: "m-orphan-files" */ '@/views/mobile/orphan-files.vue'),
+          meta: { hidden: true, title: '孤儿文件' }
+        },
+        {
           path: 'notifications',
           component: () => import(/* webpackChunkName: "m-notifications" */ '@/views/mobile/notifications.vue'),
           meta: { hidden: true, title: '通知' }

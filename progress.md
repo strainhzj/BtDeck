@@ -5528,3 +5528,30 @@ M3 完成并验证（未提交）。M3 无计划预定义清单——AskUserQues
 - 本批 13 个前端文件 + 三份记录未提交，待用户指示。
 - M3 点击级交互复核留待交互通道恢复的会话或真机（Chrome 设备模拟 docs/android/desktop-testing.md SOP）。
 - 后续候选（待用户定）：M4 孤儿文件移动化、系统设置移动化（价值低建议永留桌面）、移动独有优化（PWA/手势）、桌面双模式对齐（task .6，属后端/打包域）。
+
+## 2026-08-24（九）：移动端 M4（孤儿文件双 Tab 移动化）
+
+### 结论
+
+M4 完成并验证（未提交）。AskUserQuestion 获用户确认范围：**孤儿文件移动化 + 隔离区立即清除也做**（单条+强确认）。至此移动抽屉桌面组仅余 3 个有意保留的桌面页（种子列表桌面/Tracker 汇报测试/系统设置），功能页移动化收官。
+
+### 交付（前端 7 文件：2 新增 + 5 修改）
+
+- `/m/orphan-files`（orphan-files.vue）：双 Tab（孤儿文件/隔离区）与桌面同构。
+  - **孤儿文件 Tab**：扫描上下文卡（最近扫描时间/待清理数+大小/已忽视数/清理门禁 cleanup_block_reason）；触发扫描（$confirm → triggerScan → 2s/3s 轮询 getScanStatus，完成/失败提示+刷新，beforeDestroy 清理）；筛选状态/置信度/路径；卡片（路径 3 行截断/状态三态/置信度标签/大小/副本徽标/下载器/mtime）；清理走桌面同款两段式（门禁拦截 → cleanupPreview → rejected/空结果分支提示 → $confirm 含条数/大小/低置信度警告 → cleanupOrphans 同载荷 → task_id 提示）；忽视/取消忽视（setIgnored 单条含 scan_id，rejected/全失败/部分成功分支提示）。
+  - **隔离区 Tab**：卡片（原路径/大小/置信度/隔离时间/预计清除时间/延迟次数）；单条恢复（restoreQuarantined，rejected 报原因）；单条立即清除（用户拍板纳入：$confirm type=error 含「不可恢复」强文案 → purgeQuarantineNow → already_running/task_id 分支提示）。
+  - 留桌面（脚注）：文件夹聚合视图、副本位置弹框、前缀快捷操作、批量操作、守卫复核。
+- 路由 m-orphan-files 懒加载 + 抽屉（移动组 11：+孤儿文件；桌面组 3：移除孤儿文件）+ /orphan-files 全前缀拦截（M2 模式）+ toMobilePath 映射。
+
+### 验证
+
+- Jest 全量 74 套件 1025 例全绿（+mobile-orphan-files 10 例：渲染/筛选透传/两段式清理与分支/门禁拦截/忽视分支/扫描轮询 fake timers/隔离区恢复清除与分支/双 Tab 分页；mobile-shell 抽屉 11+3 契约、ui-mode M4 映射同步）。
+- tsc 零错误；8 文件 ESLint 通过；build 通过，m-orphan-files chunk 实证（m-* 共 15 个）。
+- 浏览器 390×844（IAB DOM 快照）：页面渲染实证——双 Tab/扫描上下文卡空态分支（开发库无扫描记录：「最近扫描：暂无/待清理 0 个/清理暂不可用：无任何扫描记录」门禁文案）/筛选/空态/脚注；守卫 /#/orphan-files/index → /m/orphan-files 分流实证。
+- **本回合 IAB 点击通道仍全断**（playwright click 与 dom_cua 节点点击均不达 Vue 处理器，连续第二回合）；Tab 切换/清理/恢复/清除链路由 Jest 直调方法覆盖。开发库无孤儿扫描数据，带数据卡片渲染与扫描链路留待真机或含数据环境复核。
+
+### 待办
+
+- 本批 7 前端文件 + 三份记录未提交，待用户指示。
+- 点击级交互与带数据渲染复核留交互通道恢复会话或真机（可选：dev 环境跑一次孤儿扫描生成数据后复测）。
+- 功能页移动化收官；后续候选：移动独有优化（PWA/手势）、桌面双模式对齐（task .6）。

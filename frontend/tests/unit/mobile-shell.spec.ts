@@ -89,7 +89,7 @@ describe('layout/mobile/MobileLayout', () => {
 
   // ============ 汉堡抽屉（2026-08-24） ============
 
-  it('汉堡按钮打开抽屉，抽屉含移动组 10 项 + 桌面组 4 项完整菜单（M3 重组）', async() => {
+  it('汉堡按钮打开抽屉，抽屉含移动组 11 项 + 桌面组 3 项完整菜单（M4 重组）', async() => {
     const wrapper = mountLayout('/m/dashboard')
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     wrapper.find('.mobile-header-menu').trigger('click')
@@ -99,15 +99,15 @@ describe('layout/mobile/MobileLayout', () => {
     const items = wrapper.findAll('.mobile-menu-item')
     expect(items.length).toBe(14)
     const mobileLabels = (wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)
-    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '查询模板', '回收站', '日志', 'Tracker关键词', '定时任务'])
+    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '查询模板', '回收站', '日志', 'Tracker关键词', '定时任务', '孤儿文件'])
     const desktopLabels = (wrapper.vm as any).desktopMenuItems.map((t: { label: string }) => t.label)
     expect(desktopLabels).toEqual(
-      expect.arrayContaining(['种子列表（桌面）', 'Tracker 汇报/测试（桌面）', '孤儿文件', '系统设置'])
+      expect.arrayContaining(['种子列表（桌面）', 'Tracker 汇报/测试（桌面）', '系统设置'])
     )
-    // M3 已移动化/已覆盖的页面不再留在桌面组
+    // M4 已移动化/有意保留的页面不在桌面组
+    expect(desktopLabels).not.toContain('孤儿文件')
     expect(desktopLabels).not.toContain('下载器管理')
     expect(desktopLabels).not.toContain('定时任务')
-    expect(desktopLabels).not.toContain('Tracker管理')
   })
 
   it('抽屉点移动项：关闭抽屉并 replace 移动路径', async() => {
@@ -133,8 +133,8 @@ describe('layout/mobile/MobileLayout', () => {
   it('抽屉点桌面功能项：关闭抽屉、push 桌面路径且不写 ui_mode 偏好', async() => {
     const wrapper = mountLayout('/m/dashboard')
     const items = wrapper.findAll('.mobile-menu-item')
-    // 移动组 10 项之后为桌面组，首项"种子列表（桌面）"
-    items.at(10).trigger('click')
+    // 移动组 11 项之后为桌面组，首项"种子列表（桌面）"
+    items.at(11).trigger('click')
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/torrents')

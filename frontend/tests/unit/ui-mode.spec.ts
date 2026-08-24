@@ -72,6 +72,11 @@ describe('utils/ui-mode', () => {
       expect(uiMode.toMobilePath('/tasks/index')).toBe('/m/tasks')
     })
 
+    it('M4 孤儿文件整页映射到移动孤儿文件页', () => {
+      expect(uiMode.toMobilePath('/orphan-files')).toBe('/m/orphan-files')
+      expect(uiMode.toMobilePath('/orphan-files/index')).toBe('/m/orphan-files')
+    })
+
     it('M3 Tracker 仅看板/搜索两子页映射；汇报配置与测试工具保留桌面直达', () => {
       expect(uiMode.toMobilePath('/tracker')).toBe('/m/tracker/keywords-board')
       expect(uiMode.toMobilePath('/tracker/keywords-board')).toBe('/m/tracker/keywords-board')
