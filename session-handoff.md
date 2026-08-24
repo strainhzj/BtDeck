@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-24 交接：移动端桌面测试体系就绪 + android/ data 包漏提交修复
+
+### 结论
+
+用户要求"继续安卓移动端开发 + 提供桌面端测试方案"。本批：①发现并修复 `a2f4e72` 漏提交的 `android/app/src/main/java/com/btdeck/companion/data/` 三文件（ServerProfile/ServerProfileStore/HealthClient——干净检出无法编译的 P0 缺陷），依据调用方与 README 契约重建后 BUILD SUCCESSFUL + 11 JVM 单测通过；**真正根因是根 `.gitignore:58` 的 `data/` 规则静默忽略了该源码包（当时 git add 加不进去），已补 `!android/.../data/` 例外，文件现对 git 可见**；②重建便携工具链 `C:\software\android-build-env\`（SDK+emulator+system-image+Gradle 8.9，JDK 用系统 jdk-17）；③三层桌面测试体系全部实证：Chrome 390×844 设备模拟（/m 自动分流+登录+仪表盘+种子页）、AVD btdeck-test（Pixel 6/API 35）装 lan-cleartext APK → 添加服务器 http://10.0.2.2:5001（明文确认复选框按策略出现）→ 测试连接"就绪/v1.0.5" → WebView 加载移动版登录页。
+
+### 关键文档
+
+- **`docs/android/desktop-testing.md`**：三层测试体系 SOP + 一次性重建步骤 + 8 条已知坑（uiautomator 坐标偏差、Git Bash `//sdcard`、adb input text 无中文、login 明文 vs changePassword base64、devServer allowedHosts 等）。
+- `android/README.md` 末节：data 包重建记录。
+
+### 测试环境状态（下次会话可直接用）
+
+- 本地开发库 admin 密码已改为 `Btdeck@2026dev`（原默认 admin 会触发强制改密守卫；改密后需刷新页面重建 store）。
+- 后端起法：`C:/Users/thoma/miniconda3/envs/btpManager/python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5001`（conda 默认指向 anaconda3，环境实际在 miniconda3）；前端 `npm run serve`（node_modules 已装）。
+- AVD：`btdeck-test`；APK 产物在 `android/dist/`（不入库）。
+
+### 未完成 / 下一步
+
+1. **M1 余项**（Phase 4）：种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏手动切移动版入口——实现假设待用户确认。
+2. 双变体 APK 需重打时：`gradle.bat --no-daemon :app:assembleDebug -Pbtdeck.lanCleartext=true`（JAVA_HOME 指 jdk-17）。
+3. Git 提交待用户指示（本批变更：.gitignore（data 例外）、android/ data 三文件 + README、docs/android/desktop-testing.md、feature_list.json、progress.md、session-handoff.md；frontend/package-lock.json 为 npm install 附带变更）。
+
 ## 2026-08-23 交接：前端静态展示 Demo 任务登记
 
 ### 当前结果

@@ -5272,3 +5272,43 @@ v1.0.5.13 修复了三字段下拉无选项后，用户进一步要求：标签�
 ### 部署后观察
 
 按 `run_id` 检索 `event=sync_error`，重点看 `stage`：`tracker_enrich_single_torrent`、`tracker_batch_commit`、`tracker_row_extract`、`tracker_checkpoint_push`、`tracker_status`；再与 `tracker_sync_task coordinator_result`、`sync_coordinator downloader_done` 对照，确认异常是否被抑制、是否继续处理以及最终是否变成 partial/failed。
+
+## 2026-08-24 安卓移动端桌面测试体系搭建 + android/ data 包漏提交修复
+
+### 背景
+
+用户要求继续安卓移动端开发并提供桌面端测试移动端的方案。盘点发现：`C:\software\android-build-env\`（上次便携工具链）与 BlueStacks 均已删除；`android/` 干净检出于 dev HEAD 无法编译——**a2f4e72 提交漏掉 `data/` 包三个文件**（ServerProfile/ServerProfileStore/HealthClient，提交信息与 README 均描述了它们但文件未入库），工作区副本也已丢失。
+
+### 修复与重建
+
+- **data 包重建**：依据调用方（ServerListActivity/WebViewActivity 的 import、构造参数、字段读写）与 android/README.md 契约重建三文件：ServerProfile（data class + HealthState 枚举 + org.json 序列化，UUID id）、ServerProfileStore（SharedPreferences 单键 JSON 数组，loadAll/find/upsert/delete）、HealthClient（OkHttp 挂起函数，live→ready 链式探测，SSL/网络错误分类，Report(state,version,detail)）。
+- **工具链重建** `C:\software\android-build-env\`：cmdline-tools（dl.google.com）+ platform-tools + platforms;android-35 + build-tools;35.0.0 + emulator + system-images;android-35;google_apis;x86_64 + Gradle 8.9（腾讯镜像）；JDK 用系统 `C:\Program Files\Java\jdk-17`（17.0.15）。`local.properties` 的 sdk.dir 必须正斜杠写法 `C\:/...`（单反斜杠被 properties 转义吞掉）。
+- **构建验证**：`:app:assembleDebug` + `:app:testDebugUnitTest` BUILD SUCCESSFUL（11 单测）；双变体 APK（strict / lan-cleartext `0.1.0-mvp+lan`）产出至 `android/dist/`（不入库）+ WebView 验证截图 evidence。
+
+### AVD 全链路实测（Pixel 6 / API 35，AVD btdeck-test）
+
+- 安装 lan-cleartext 版 → 向导页副标题正确显示"（LAN 明文构建）"。
+- 添加服务器 `http://10.0.2.2:5001`（AVD 宿主机回环别名）：URL 输入后**明文风险确认复选框按 LanHostPolicy 自动出现**（http+10.x 私有主机），勾选后保存成功。
+- 菜单"测试连接"：**就绪 / v1.0.5**——HealthClient→OkHttp→10.0.2.2:5001→live→ready→data.version 解析全链路正确；store.upsert 持久化（root 读 shared_prefs 实证 JSON 完整）。
+- WebView（am start --es profile_id 直达）：加载出 **BtDeck 移动版登录页**（窄视口 auto 分流在 WebView 内生效），副标题"v1.0.5 · 服务就绪"。截图存 android/dist/evidence-webview-mobile-login-2026-08-24.png。
+
+### 前端移动 UI 桌面链路实测（L1）
+
+- 本地起后端（miniconda btpManager 环境 uvicorn 5001）+ 前端 dev server（8080，均 0.0.0.0 监听）。
+- Chrome 390×844 设备模拟：`/` 自动分流 `/#/m/login` → 移动登录（admin）→ 强制改密守卫带去桌面设置页（新库默认口令预期行为；API 完成改密 `Btdeck@2026dev` 后需**刷新页面**让 store 重建）→ `/m/dashboard` 统计卡片、`/m/torrents` 筛选+空态、底部 Tab active 态全部正常。
+- 测试环境凭据：admin / Btdeck@2026dev（本地开发库）。
+
+### 已知坑（写入 docs/android/desktop-testing.md）
+
+uiautomator dump 在本 AVD 上 ListView 行 bounds 从 y=0 起（与 action bar 重叠、按 dump 坐标点击列表项无效，底部按钮正常）——列表项用真机或 `adb root` + am start --es profile_id 直达；Git Bash 把 `/sdcard` 转成本地路径需写 `//sdcard`；adb input text 不支持中文；login 端点 password 明文直传而 changePassword 端点 base64（行为不一致，测试脚本注意）；`vue.config.js` devServer.allowedHosts 只含域名，其它设备用 IP 访问 dev server 时需补。
+
+### 交付物
+
+- `docs/android/desktop-testing.md`（新）：三层测试体系（L1 浏览器模拟 / L2 AVD / L3 真机）+ 本机环境清单 + 一次性重建步骤 + 8 条已知坑。
+- `android/README.md`：data 包重建记录节。
+- feature_list.json task .3/.5 evidence 追加；progress.md / session-handoff.md 本批记录。
+- 未执行 Git 提交（待用户指示）。M1 余项（种子详情页/更多操作、下拉刷新、通知未读角标、桌面侧栏切换入口）待下一批实现。
+
+### 补记（根因修正）
+
+data 包"漏提交"的真正根因是根 `.gitignore:58` 的 `data/` 规则（Docker 数据目录防误入库）把 `android/app/src/main/java/com/btdeck/companion/data/` Kotlin 源码包也静默忽略——当时 `git add` 根本加不进去。已加 `!android/.../data/` 例外（.gitignore 注释记录此事），重建三文件现在对 git 可见，下次提交即入库。
