@@ -55,11 +55,10 @@ node_modules/
 # ================================
 # Docker 数据
 # ================================
-data/
-
-# 例外：backend/app/data/ 是代码目录（预设数据初始化模块），非运行时数据
-!backend/app/data/
-!backend/app/data/*
+# 2026-08-24：删除 data/ 忽略规则（用户确认不再需要）。
+# 该规则曾静默忽略 android/app/src/main/java/com/btdeck/companion/data/
+# Kotlin 源码包，导致 a2f4e72 漏提交三文件、干净检出无法编译。
+# 部署挂载目录请依赖 deploy 配置自身的路径约定，不要重新引入此规则。
 
 # 子项目保留各自的 .gitignore 处理细节规则
 

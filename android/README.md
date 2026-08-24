@@ -91,3 +91,15 @@ app/src/test/java/com/btdeck/companion/LanHostPolicyTest.kt   # 策略行为锁�
   `ERR_CLEARTEXT_NOT_PERMITTED`，属预期防线）。
 - 已编译验证 + JVM 单测通过；**仪表化测试与真机验收**（Android 13 通知、Doze、
   四 ABI、真机 WebView 行为）在 Phase 5 统一执行。
+
+## data 包重建记录（2026-08-24）
+
+`a2f4e72` 首次提交时 `data/` 包三个文件（ServerProfile/ServerProfileStore/HealthClient）
+漏入库，工作区副本后丢失，导致干净检出无法编译。本日依据调用方
+（ServerListActivity/WebViewActivity）与 README 契约重建：
+
+- 接口形状与提交信息描述一致（构造参数、字段可变性、`Report(state, version, detail)`）；
+- 重建后 `:app:assembleDebug` + `:app:testDebugUnitTest` 全部通过，并在 AVD
+  （Pixel 6 / API 35）实测：添加服务器（明文确认复选框按策略出现）→ 测试连接
+  显示 `就绪 / v1.0.5 · 服务就绪` → WebView 加载出 BtDeck 移动版登录页；
+- 桌面测试环境与 SOP 见 `../docs/android/desktop-testing.md`。
