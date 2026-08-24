@@ -117,6 +117,14 @@ import {
 } from '../types'
 import { downloaderTypeToString } from '@/utils/downloaderType'
 
+/**
+ * 下载器新增/编辑基础信息对话框（轻量表单）。
+ *
+ * ⚠️ 契约：本组件 emit 的 submit 事件只携带表单数据、不做任何落库——
+ * 消费方必须自行调用 addDownloader/upDownloader（参考 views/mobile/downloader.vue
+ * 的 onDialogSubmit）。桌面主页面已改用自带落库的 DownloaderSettingsDialog，
+ * 当前唯一消费方是移动下载器页。
+ */
 @Component({
   name: 'DownloaderDialog'
 })
@@ -232,7 +240,7 @@ export default class DownloaderDialog extends Vue {
     this.resetForm()
   }
 
-  // 提交表单
+  // 提交表单（仅校验并上抛数据，落库由消费方负责——见组件头契约说明）
   private async handleSubmit() {
     try {
       await this.formRef.validate()

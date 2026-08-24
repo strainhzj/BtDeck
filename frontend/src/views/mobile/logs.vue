@@ -13,7 +13,8 @@
       </el-select>
       <el-select v-model="resultFilter" size="small" placeholder="全部结果" clearable @change="reload">
         <el-option label="成功" value="success" />
-        <el-option label="失败" value="failure" />
+        <el-option label="失败" value="failed" />
+        <el-option label="部分成功" value="partial" />
       </el-select>
     </div>
     <div class="m-toolbar m-toolbar--second">
@@ -34,8 +35,8 @@
     <div v-for="log in list" :key="log.log_id" class="m-log-card" @click="toggleExpand(log)">
       <div class="m-log-head">
         <el-tag size="mini" :type="logTagType(log)">{{ typeLabel(log.operation_type) }}</el-tag>
-        <span class="m-log-result" :class="isSuccess(log) ? 'is-ok' : 'is-fail'">
-          {{ isSuccess(log) ? '成功' : '失败' }}
+        <span class="m-log-result" :class="resultClass(log)">
+          {{ resultText(log) }}
         </span>
         <span class="m-log-time">{{ formatTime(log.operation_time || log.create_time) }}</span>
       </div>
@@ -154,6 +155,19 @@ export default class MobileLogs extends Mixins(PullToRefresh) {
     return log.operation_result === 'success'
   }
 
+  /** 后端 operation_result 合法值为 success/failed/partial（audit_service 契约，与桌面端 resultMap 同口径） */
+  private resultText(log: AuditLogItem): string {
+    if (log.operation_result === 'success') return '成功'
+    if (log.operation_result === 'partial') return '部分成功'
+    return '失败'
+  }
+
+  private resultClass(log: AuditLogItem): string {
+    if (log.operation_result === 'success') return 'is-ok'
+    if (log.operation_result === 'partial') return 'is-partial'
+    return 'is-fail'
+  }
+
   private typeLabel(value: string): string {
     const found = this.operationTypes.find((opt) => opt.value === value)
     return found ? found.display_name : value
@@ -214,6 +228,10 @@ export default class MobileLogs extends Mixins(PullToRefresh) {
 
 .m-log-result.is-ok {
   color: var(--color-primary);
+}
+
+.m-log-result.is-partial {
+  color: #e6a23c;
 }
 
 .m-log-result.is-fail {

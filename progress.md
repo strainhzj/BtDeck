@@ -5430,3 +5430,36 @@ M1 余项四项全部完成并验证（未提交）：①种子详情页（路�
 - 桌面 DownloaderDialog submit 不落库缺陷待反馈/修复。
 - M2 页面浏览器交互级人工复核（Chrome 设备模拟或真机）。
 - M2（高级搜索/查询模板/回收站/日志/下载器高级设置移动化）未动。
+
+## 2026-08-24（六）：M2 交互级复核（五页全通过）+ logs 筛选值 bug 修复 + DownloaderDialog 契约文档化
+
+### 结论
+
+本会话 IAB 交互通道恢复（上会话故障为会话级环境问题），390×844 下 M2 五页交互级复核全部实测通过；复核抓到并修复一个真实 bug（logs 结果筛选值）；DownloaderDialog「submit 不落库」定性修正并文档化。
+
+### M2 交互复核结果（全部通过）
+
+- /m/logs：卡片列表（类型/结果/时间/详情/操作人）+ 结果筛选（失败）+ 分页（加载更多 20/451）+ 脚注。
+- /m/search：简单查询「老男孩」→结果卡片（名称/状态/下载器/8.4GB/进度）→卡片点击进详情（URL 带 downloaderId/hash）；高级模式桌面 AdvancedSearchBuilder 完整渲染（条件组/分组字段下拉/操作符/包含排除/保存模板/预览），构建「种子名称 包含 老男孩」执行→20 条结果；操作符未选时构建器自身弹「未知搜索操作符」校验提示（行为正确）。
+- /m/query-templates：模板卡列表（名称/类型/使用次数/时间/应用+删除）→点应用→跳 /m/search→「已应用模板「测试模板」」提示+自动执行出结果（m2-template-cache 跨页链路实证）。
+- /m/recycle-bin：卡片（名称/已删除/大小/下载器/路径/删除时间/恢复+彻底删除）+「彻底删除」确认框正确弹出含警告文案（实际删除未执行，保护数据）。
+- /m/downloader：4 卡管理版（全部在线徽标+测试/同步/设置/编辑/删除）+新增按钮；/m/downloader/settings/:id 直达渲染桌面 DownloaderSettingsDialog（标题「下载器设置 • qb」/四页签/基本设置全套表单：名称/端口/主机/类型/HTTPS/认证/配置选项/测试连接/功能开关）。
+
+### 复核发现并修复（真实 bug）
+
+- **mobile logs.vue 筛选值错误**：结果筛选「失败」误传 `failure`，后端 audit_service 契约为 `success/failed/partial`（服务注释与桌面 audit.vue resultMap 双证），导致失败筛选恒空（复核时实证：选失败→空列表）。修复：value 改 `failed` 并补 `partial`（部分成功）选项对齐桌面三值。
+- **展示三态折叠**：原 isSuccess 两态把 partial 显示为红色「失败」→ resultText/resultClass 三态（成功绿/部分成功橙 #e6a23c/失败红），error_message 展示条件保留 isSuccess。
+- mobile-logs.spec：mock 数据与断言同步改 failed；+1 用例锁三态展示与筛选选项值契约（禁 value="failure" 回归），6 例全绿。
+
+### DownloaderDialog 定性修正（非桌面功能缺陷）
+
+桌面 index.vue 实际绑定的是 DownloaderSettingsDialog（自带 add/up 落库，1151/1189 行），handleSubmit 只关框刷新的注释是对的——**桌面端无功能缺陷**。DownloaderDialog 的问题定性为契约陷阱：emit submit 不做任何落库、除移动端外零消费方，复用方必须显式调 addDownloader/upDownloader（移动端已正确如此）。修复：组件头与 handleSubmit 补契约注释指明责任边界与参考实现。
+
+### 验证
+
+前端全量 70 套件 990 例全绿；tsc/ESLint（3 个改动文件）通过；生产 build 通过，11 个 m-* chunk（m-logs/m-search/m-downloader/m-query-templates/m-recycle-bin 哈希更新实证）。浏览器复核操作备注：IAB click 会话内间歇失灵（playwright click 与 CUA 坐标交替失败、MessageBox 遮罩期点击全部无效），Element 下拉选项对 actionability 判定 hidden——用 dom_cua 节点点击、键盘导航（ArrowDown+Enter 选操作符）、evaluate 只读坐标兜底完成全部链路；均为环境非产品问题。
+
+### 待办
+
+- 本批 4 文件未提交（logs.vue + mobile-logs.spec.ts + DownloaderDialog.vue + 三份记录），待用户指示。
+- IAB 点击间歇失灵为跨会话环境问题（三个会话不同表现），交互复核如再受阻优先键盘导航/坐标兜底路径。

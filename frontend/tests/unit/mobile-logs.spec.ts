@@ -42,7 +42,7 @@ const mockedLogs = [
     new_value: null,
     operator: 'system',
     operation_time: '2026-08-22T11:00:00',
-    operation_result: 'failure',
+    operation_result: 'failed',
     error_message: '连接超时',
     downloader_id: null,
     create_time: '2026-08-22T11:00:00',
@@ -99,6 +99,38 @@ describe('views/mobile/MobileLogs', () => {
     expect(wrapper.text()).toContain('127.0.0.1')
   })
 
+  it('结果三态展示：success/failed/partial 与后端契约值一致（audit_service: success/failed/partial）', async() => {
+    jest.mocked(queryAuditLogs).mockResolvedValue({
+      code: '200',
+      data: {
+        total: 3,
+        page: 1,
+        pageSize: 20,
+        list: [
+          { ...mockedLogs[0], log_id: 'R1', operation_result: 'success' },
+          { ...mockedLogs[0], log_id: 'R2', operation_result: 'failed' },
+          { ...mockedLogs[0], log_id: 'R3', operation_result: 'partial' }
+        ]
+      }
+    } as never)
+    const wrapper = mountPage()
+    await flushLifecycle()
+    const vm = wrapper.vm as any
+    const cards = wrapper.findAll('.m-log-card')
+    expect(cards.length).toBe(3)
+    // partial 不得被折叠成「失败」展示（桌面端 resultMap 同口径）
+    expect(vm.resultText({ operation_result: 'success' })).toBe('成功')
+    expect(vm.resultText({ operation_result: 'failed' })).toBe('失败')
+    expect(vm.resultText({ operation_result: 'partial' })).toBe('部分成功')
+    expect(vm.resultClass({ operation_result: 'partial' })).toBe('is-partial')
+    // 筛选选项值与后端契约一致（曾经误用 failure 导致过滤恒空）
+    const source = require('fs').readFileSync(require('path').resolve(__dirname, '../../src/views/mobile/logs.vue'), 'utf-8')
+    expect(source).toContain('value="success"')
+    expect(source).toContain('value="failed"')
+    expect(source).toContain('value="partial"')
+    expect(source).not.toContain('value="failure"')
+  })
+
   it('空结果显示空态', async() => {
     jest.mocked(queryAuditLogs).mockResolvedValue({
       code: '200',
@@ -114,12 +146,12 @@ describe('views/mobile/MobileLogs', () => {
     await flushLifecycle()
     const vm = wrapper.vm as any
     vm.typeFilter = 'delete'
-    vm.resultFilter = 'failure'
+    vm.resultFilter = 'failed'
     vm.nameFilter = '示例'
     await vm.reload()
     expect(queryAuditLogs).toHaveBeenLastCalledWith(expect.objectContaining({
       operation_type: 'delete',
-      operation_result: 'failure',
+      operation_result: 'failed',
       torrent_name: '示例'
     }))
   })

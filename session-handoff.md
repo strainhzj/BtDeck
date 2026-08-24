@@ -1,6 +1,41 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-24 交接（六）：M2 交互级复核全通过 + logs 筛选值 bug 修复 + DownloaderDialog 定性修正
+
+### 结论
+
+用户要求完成 M2 真机/设备模拟交互复核与 DownloaderDialog 缺陷反馈修复。本会话 IAB 交互通道恢复（上会话故障为会话级环境问题），390×844 五页交互级复核**全部实测通过**；复核抓到并修复一个真实 bug；DownloaderDialog 定性修正为契约陷阱并文档化（M2 主体已随 a4cc75c 提交，本批为增量修复未提交）。
+
+### 交互复核结果（全部通过）
+
+- /m/logs：卡片+结果筛选+分页（20/451）；修复后「失败」筛选返回全部失败卡片（修复前恒空，实证）。
+- /m/search：简单查询→结果卡片→点卡片进详情（URL 实证）；高级模式桌面构建器完整渲染，构建「种子名称 包含 老男孩」执行→20 条结果；操作符未选时构建器弹校验提示（行为正确）。
+- /m/query-templates：应用模板→跳 /m/search→「已应用模板」提示+自动执行出结果（m2-template-cache 跨页链路实证）。
+- /m/recycle-bin：卡片列表+彻底删除确认框正确弹出（实际删除未执行，保护数据）。
+- /m/downloader：4 卡管理版（在线徽标+五操作）；/m/downloader/settings/:id 直达渲染桌面 DownloaderSettingsDialog（四页签+基本设置全套表单）。
+
+### 修复与定性
+
+1. **logs.vue 真实 bug**：结果筛选「失败」误传 `failure`，后端 audit_service 契约为 `success/failed/partial`（服务注释+桌面 resultMap 双证）→ 改 `failed` 并补 `partial` 选项；展示层由两态改三态（partial 原被折叠成红色「失败」，现「部分成功」橙色）；spec 同步 +1 用例锁三态与筛选值契约（禁 failure 回归）。
+2. **DownloaderDialog 定性修正**：桌面端**无功能缺陷**——index.vue 实际绑定自带落库的 DownloaderSettingsDialog（handleSubmit 只关框的注释是对的）；DownloaderDialog 是契约陷阱（emit submit 不落库、除移动端外零消费方）→ 组件头与 handleSubmit 补契约注释（消费方须显式调 add/up，参考移动端实现）。
+
+### 环境备注（后续会话注意）
+
+- IAB click 会话内也会**间歇**失灵（本会话前半段正常，后半段 playwright click/CUA 坐标/MessageBox 遮罩期点击交替失败）：兜底路径按优先级 dom_cua 节点点击 → 键盘导航（ArrowDown+Enter 选 Element 下拉项，操作符选择实证稳定）→ evaluate 只读坐标 + cua.click。Element 分组下拉选项对 Playwright actionability 判定 hidden，属环境非产品问题。
+- 获取下载器 id 走 API（getList + Bearer token）比从页面抓快。
+
+### 验证
+
+前端全量 70 套件 990 例全绿；tsc/ESLint（3 改动文件）通过；生产 build 通过，11 个 m-* chunk（m-logs/m-search 等哈希更新实证）。
+
+### 待办
+
+1. 本批 4 文件未提交（mobile/logs.vue、mobile-logs.spec.ts、DownloaderDialog.vue + 三份记录），待用户指示。
+2. 后端单种子端点空 data 缺陷待修复（M1 遗留，唯一存量待办）。
+
 ## 2026-08-24 交接（五）：M2 五页面收口（高级搜索/查询模板/回收站/日志/下载器高级设置）
+
+> 补记：本交接待办 2（交互级复核）与待办 3（DownloaderDialog 缺陷）已由交接（六）完成；M2 主体已提交 a4cc75c。
 
 ### 结论
 
