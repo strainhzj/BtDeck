@@ -16,7 +16,7 @@
         </div>
         <div class="m-dl-meta">
           <span>{{ d.downloaderTypeName || downloaderTypeLabel(d.downloaderType) }}</span>
-          <span class="m-dl-host">{{ d.host }}{{ d.port ? ':' + d.port : '' }}</span>
+          <span class="m-dl-host">{{ hostDisplay(d) }}</span>
         </div>
         <div class="m-dl-actions">
           <el-button
@@ -224,6 +224,14 @@ export default class MobileDownloader extends Mixins(PullToRefresh) {
 
   private isOnline(item: MobileDownloaderItem): boolean {
     return item.connectStatus === '1'
+  }
+
+  /** host 本身可能已含端口（如 "1.2.3.4:8080"），含冒号时不再重复拼 port */
+  private hostDisplay(item: MobileDownloaderItem): string {
+    const host = item.host || ''
+    const port = item.port ? String(item.port) : ''
+    if (!port || host.includes(':')) return host
+    return `${host}:${port}`
   }
 
   private downloaderTypeLabel(type?: number | null): string {
