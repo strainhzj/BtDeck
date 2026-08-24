@@ -1,5 +1,6 @@
 <template>
   <div class="m-downloader">
+    <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div v-if="loading && !list.length" class="m-hint">加载中…</div>
     <template v-else-if="list.length">
       <div v-for="d in list" :key="d.id" class="m-dl-card">
@@ -32,9 +33,11 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component, Mixins } from 'vue-property-decorator'
 import { getList, testConnection } from '@/api/downloader'
 import { extractErrorMessage } from '@/utils/formatters'
+import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
+import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 
 /** 单个下载器的移动卡片形状（getList 返回字段的子集，camelCase 与后端 VO 一致） */
 interface MobileDownloaderItem {
@@ -53,14 +56,21 @@ interface MobileDownloaderItem {
  * 复用桌面 /downloader/getList 与 /downloader/testConnection，仅做只读监控
  * （在线徽标 + 连接测试）；管理操作仍由抽屉「下载器管理」桌面页承载。
  */
-@Component({ name: 'MobileDownloader' })
-export default class MobileDownloader extends Vue {
+@Component({
+  name: 'MobileDownloader',
+  components: { 'm-pull-indicator': MobilePullIndicator }
+})
+export default class MobileDownloader extends Mixins(PullToRefresh) {
   private loading = false
   private list: MobileDownloaderItem[] = []
   private testingId = ''
 
   mounted(): void {
     this.load()
+  }
+
+  protected async onPullRefresh(): Promise<void> {
+    await this.load()
   }
 
   private async load(): Promise<void> {

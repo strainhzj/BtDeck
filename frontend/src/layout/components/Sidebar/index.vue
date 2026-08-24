@@ -33,8 +33,20 @@
       </el-menu>
     </el-scrollbar>
 
-    <!-- 底部折叠按钮 -->
+    <!-- 底部操作区：移动版入口 + 折叠按钮 -->
     <div class="sidebar-footer">
+      <el-button
+        class="collapse-button"
+        aria-label="切换到移动版"
+        @click="switchToMobile"
+      >
+        <LucideIcon
+          name="smartphone"
+          :size="17"
+          :stroke-width="1.8"
+        />
+        <span v-show="!isCollapse">移动版</span>
+      </el-button>
       <el-button
         class="collapse-button"
         :aria-label="isCollapse ? '展开侧边栏' : '收起侧边栏'"
@@ -54,6 +66,7 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { AppModule } from '@/store/modules/app'
+import { setStoredUiMode } from '@/utils/ui-mode'
 import SidebarItem from './SidebarItem.vue'
 
 @Component({
@@ -86,6 +99,16 @@ export default class extends Vue {
 
   private toggleSidebar() {
     AppModule.ToggleSideBar(false)
+  }
+
+  /**
+   * 手动切换移动版（Phase 4 M1 余项）：写 mobile 偏好后进入移动版。
+   * 显式偏好优先于视口（ui-mode 三原则），宽屏桌面也可预览移动版；
+   * 守卫按解析后的模式放行 /m/*，SPA 内直接换壳无需刷新页面。
+   */
+  private switchToMobile() {
+    setStoredUiMode('mobile')
+    this.$router.push('/m/dashboard').catch(() => undefined)
   }
 }
 </script>
@@ -188,11 +211,16 @@ export default class extends Vue {
   }
 }
 
-/* 底部折叠按钮区域 */
+/* 底部操作按钮区域（移动版入口 + 折叠按钮） */
 .sidebar-footer {
   padding: var(--spacing-md, 16px);
   border-top: 1px solid var(--color-border-secondary, #F3F4F6);
   flex-shrink: 0;
+
+  .collapse-button + .collapse-button {
+    margin-top: var(--spacing-sm, 8px);
+    margin-left: 0; /* 覆盖 Element 相邻按钮默认左间距 */
+  }
 }
 
 .collapse-button {

@@ -67,6 +67,12 @@ const router = new Router({
           meta: { hidden: true, title: '种子' }
         },
         {
+          // 种子详情（Phase 4 M1 余项）：列表快照缓存 + getList 回查 + 活动速度轮询
+          path: 'torrents/detail/:downloaderId/:hash',
+          component: () => import(/* webpackChunkName: "m-torrent-detail" */ '@/views/mobile/torrent-detail.vue'),
+          meta: { hidden: true, title: '种子详情' }
+        },
+        {
           path: 'notifications',
           component: () => import(/* webpackChunkName: "m-notifications" */ '@/views/mobile/notifications.vue'),
           meta: { hidden: true, title: '通知' }

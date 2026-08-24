@@ -5361,3 +5361,36 @@ data 包"漏提交"的真正根因是根 `.gitignore:58` 的 `data/` 规则（Do
 ### 验证
 
 Jest 39 passed（shell 11 + downloader 6 + ui-mode 11 + permission-guard 11）；tsc、5 文件 ESLint、生产 build 通过；m-downloader chunk 实证产出。未执行 Git 提交（待用户指示）。
+
+## 2026-08-24（四）：Phase 4 M1 余项四项收口（种子详情/下拉刷新/未读角标/侧栏入口）
+
+### 结论
+
+M1 余项四项全部完成并验证（未提交）：①种子详情页（路由 /m/torrents/detail/:downloaderId/:hash，快照缓存+getList 回查+getActiveTorrents 5s 轮询）；②手写 touch 下拉刷新 mixin 四页接入；③移动布局壳通知未读角标（60s 轮询+已读联动）；④桌面侧栏「移动版」入口（写 mobile 偏好，显式偏好优先视口）。
+
+### 变更（frontend 14 文件：5 新增 + 9 修改）
+
+- 新增：views/mobile/torrent-detail.vue（详情页）、views/mobile/mixins/pull-to-refresh.ts（class 式 mixin）、views/mobile/components/PullIndicator.vue（指示条）、views/mobile/torrent-status.ts（状态映射共享）、views/mobile/torrent-detail-cache.ts（快照缓存）。
+- 修改：router.ts（详情子路由）、views/mobile/ 四页（mixin+指示条接入；torrents 卡片点击进详情+@click.stop 保护操作行；notifications 已读后 dispatch FetchUnreadCount）、layout/mobile/index.vue（角标+60s 轮询）、layout/components/Sidebar/index.vue（footer 移动版按钮）、components/common/LucideIcon.vue（注册 smartphone）。
+- 测试：新增 pull-to-refresh.spec 6 例、mobile-torrent-detail.spec 6 例、sidebar-mobile-entry.spec 3 例；mobile-shell.spec 扩 4 例（角标三态、fake timers 轮询与销毁停止、mock '@/store/modules/notification'）。
+
+### 关键决策与发现
+
+- **后端单种子端点不可用**：GET /torrents/{info_id}/{downloader_id}/{downloader_name} 直接 return ORM 实体配 response_model=CommonResponse，FastAPI TestClient 实测响应 {"status":null,"msg":null,"code":null,"data":null}（无 from_attributes，实体字段全部丢失），且前端零消费方。详情页改用 getList（downloader_id+name_like，hash 匹配）回查，遵守本批不动后端原则；该端点缺陷已记录待后续修复。
+- **mixins 导入坑**：vue-property-decorator 以大写 `Mixins` re-export（`export { Component, Vue, mixins as Mixins }`），小写 mixins 导入不存在。
+- **模板函数坑**：.vue 模板只能访问实例成员，模块级 formatTorrentSize/formatRankio 须包装成实例方法/计算属性。
+- 下拉刷新滚动容器直接 `closest('.mobile-content')`（自家布局壳类名），比通用 overflow 检测稳（jsdom 可测）。
+
+### 验证
+
+- Jest：相关 7 套件 58 例全绿（pull-to-refresh 6 + torrent-detail 6 + sidebar 3 + shell 15 + downloader 6 + ui-mode 11 + permission-guard 11）；前端全量 65 套件 954 例全绿。
+- tsc --noEmit 通过；改动文件 ESLint 零输出；npm run build 通过（m-torrent-detail.6376c386.js + f5abc595.css chunk 实证）。
+- 浏览器 390×844 实测（IAB setViewportSize + Playwright locator click 本会话稳定）：自动分流移动登录 → 仪表盘角标 3（API unread=3）→ 列表 20 卡（20/22018）→ 卡片点击进详情全字段 + Tracker 展开「正常」→ 返回列表 → 通知点击已读角标 3→2 实时联动 → 1440 宽视口桌面侧栏点「移动版」→ 移动布局 + 角标 2（偏好优先视口）。截图存 .release-build-v1.0.5/m-torrent-detail-evidence.png。
+- 下拉刷新 touch 手势：IAB 无 touch 注入通道，浏览器级手势未验证（已知边界，逻辑单测覆盖 + 指示器挂载/空闲零高度浏览器确认）；真机/Chrome 设备模拟 touch 复核留给后续。
+- 本机测试栈（与 desktop-testing.md 的 thoma 路径不同）：后端 C:/software/anaconda3/envs/btpManager/python.exe -m uvicorn（5001），本地开发库 data/backend/config/app.db，admin 已按 SOP 改密 Btdeck@2026dev（默认 admin 触发强制改密标记）。
+
+### 待办
+
+- 本批 14 文件 + 三份记录未提交（待用户指示）。
+- 后端单种子端点空 data 缺陷待修复（单独批次）。
+- M2（高级搜索/查询模板/回收站/日志/下载器高级设置移动化）未动。

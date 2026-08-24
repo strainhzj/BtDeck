@@ -1,5 +1,6 @@
 <template>
   <div class="m-notifications">
+    <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div v-if="!loading && list.length === 0" class="m-hint">暂无通知</div>
     <div
       v-for="n in list"
@@ -20,18 +21,28 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component, Mixins } from 'vue-property-decorator'
 import { getNotificationList, markAsRead, NotificationItem } from '@/api/notification'
 import { extractErrorMessage } from '@/utils/formatters'
+import { NotificationModule } from '@/store/modules/notification'
+import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
+import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 
-/** 移动通知中心（Phase 4 M1）：复用 /notifications API，点击标记已读 */
-@Component({ name: 'MobileNotifications' })
-export default class MobileNotifications extends Vue {
+/** 移动通知中心（Phase 4 M1）：复用 /notifications API，点击标记已读；已读后同步布局壳未读角标 */
+@Component({
+  name: 'MobileNotifications',
+  components: { 'm-pull-indicator': MobilePullIndicator }
+})
+export default class MobileNotifications extends Mixins(PullToRefresh) {
   private list: NotificationItem[] = []
   private loading = false
 
   mounted(): void {
     this.load()
+  }
+
+  protected async onPullRefresh(): Promise<void> {
+    await this.load()
   }
 
   private async load(): Promise<void> {
@@ -54,6 +65,8 @@ export default class MobileNotifications extends Vue {
       const res = await markAsRead(n.id)
       if (res.code === '200') {
         n.is_read = true
+        // 本页直调 API 绕过 store，须手动同步布局壳角标的未读数
+        await NotificationModule.FetchUnreadCount()
       }
     } catch (e) {
       this.$message.error(extractErrorMessage(e))

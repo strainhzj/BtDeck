@@ -25,7 +25,12 @@
         :class="{'is-active': isActive(tab)}"
         @click="go(tab)"
       >
-        <span class="mobile-tab-label">{{ tab.label }}</span>
+        <span class="mobile-tab-label">
+          {{ tab.label }}<span
+            v-if="tab.path === '/m/notifications' && unreadCount > 0"
+            class="mobile-tab-badge"
+          >{{ unreadCount > 99 ? '99+' : unreadCount }}</span>
+        </span>
       </button>
     </nav>
 
@@ -84,11 +89,14 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { setStoredUiMode } from '@/utils/ui-mode'
+import { NotificationModule } from '@/store/modules/notification'
 
 interface MobileTab {
   label: string
   path: string
 }
+
+const UNREAD_POLL_INTERVAL_MS = 60000
 
 /**
  * 移动布局壳（dual-mode-client Phase 4 M1）：
@@ -98,10 +106,15 @@ interface MobileTab {
  * 主题色统一走全局 var(--color-primary)（与桌面端 #059669 同源）；
  * 完整功能 11 项塞不进底部 Tab（>5 不可用），低频管理页经抽屉跳
  * 桌面版路由承载（桌面管理页有窄屏断点基础），返回键/刷新回移动版。
+ *
+ * 通知未读角标（M1 余项）：复用桌面同款 Vuex NotificationModule.unreadCount
+ * （/notifications/unread-count 现有接口），挂载即拉一次 + 60s 轮询（移动端
+ * 省电节奏；桌面 Navbar 无轮询先例，此处为移动新增行为）。
  */
 @Component({ name: 'MobileLayout' })
 export default class MobileLayout extends Vue {
   private drawerVisible = false
+  private unreadTimer = 0
 
   private tabs: MobileTab[] = [
     { label: '仪表盘', path: '/m/dashboard' },
@@ -109,6 +122,26 @@ export default class MobileLayout extends Vue {
     { label: '种子', path: '/m/torrents' },
     { label: '通知', path: '/m/notifications' }
   ]
+
+  private get unreadCount(): number {
+    return NotificationModule.unreadCount
+  }
+
+  mounted(): void {
+    this.fetchUnreadCount()
+    this.unreadTimer = window.setInterval(this.fetchUnreadCount, UNREAD_POLL_INTERVAL_MS)
+  }
+
+  beforeDestroy(): void {
+    if (this.unreadTimer) {
+      window.clearInterval(this.unreadTimer)
+      this.unreadTimer = 0
+    }
+  }
+
+  private fetchUnreadCount(): void {
+    NotificationModule.FetchUnreadCount().catch(() => undefined)
+  }
 
   /** 移动版已有页面（抽屉内导航，同底部 Tab 四项）。 */
   private mobileMenuItems: MobileTab[] = this.tabs
@@ -237,6 +270,7 @@ export default class MobileLayout extends Vue {
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
 }
 
 .mobile-tab.is-active {
@@ -247,6 +281,23 @@ export default class MobileLayout extends Vue {
 
 .mobile-tab-label {
   line-height: 1.2;
+}
+
+/* 通知未读角标：红底白字（语义色与桌面 Navbar el-badge 一致），绝对定位于 Tab 文案右上 */
+.mobile-tab-badge {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 5px;
+  min-width: 16px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  background: #f56c6c;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  text-align: center;
+  vertical-align: middle;
 }
 </style>
 

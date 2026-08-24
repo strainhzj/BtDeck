@@ -1,5 +1,6 @@
 <template>
   <div class="m-torrents">
+    <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div class="m-toolbar">
       <el-select v-model="statusFilter" size="small" placeholder="全部状态" clearable @change="reload">
         <el-option v-for="opt in statusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -13,6 +14,8 @@
       v-for="t in list"
       :key="`${t.downloaderId}-${t.hash}`"
       class="m-torrent-card"
+      role="button"
+      @click="openDetail(t)"
     >
       <div class="m-torrent-name" :title="t.name">{{ t.name }}</div>
       <div class="m-torrent-meta">
@@ -29,7 +32,7 @@
       <div class="m-torrent-progress-text">
         {{ progressOf(t).toFixed(1) }}%<template v-if="t.errorReason"> · {{ t.errorReason }}</template>
       </div>
-      <div class="m-torrent-actions">
+      <div class="m-torrent-actions" @click.stop>
         <el-button size="mini" :disabled="actionBusy(t)" @click="pause(t)">暂停</el-button>
         <el-button size="mini" :disabled="actionBusy(t)" @click="resume(t)">恢复</el-button>
         <el-button size="mini" type="danger" plain :disabled="actionBusy(t)" @click="remove(t)">删除</el-button>
@@ -49,7 +52,7 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component, Mixins } from 'vue-property-decorator'
 import {
   getTorrentList,
   pauseTorrents,
@@ -58,32 +61,42 @@ import {
   Torrent
 } from '@/api/torrents'
 import { extractErrorMessage } from '@/utils/formatters'
-
-interface StatusOption {
-  label: string
-  value: string
-}
+import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
+import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
+import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
+import {
+  TORRENT_STATUS_OPTIONS,
+  torrentStatusLabel,
+  torrentStatusTagType,
+  formatTorrentSize,
+  StatusOption
+} from '@/views/mobile/torrent-status'
 
 const PAGE_SIZE = 20
 
-/** 移动种子卡片列表（Phase 4 M1）：复用 getList API 与常用操作（暂停/恢复/删除入回收站） */
-@Component({ name: 'MobileTorrents' })
-export default class MobileTorrents extends Vue {
+/**
+ * 移动种子卡片列表（Phase 4 M1）：复用 getList API 与常用操作（暂停/恢复/删除入回收站）；
+ * 卡片点击进入详情页（快照缓存传递整行数据）；顶部下拉刷新。
+ */
+@Component({
+  name: 'MobileTorrents',
+  components: { 'm-pull-indicator': MobilePullIndicator }
+})
+export default class MobileTorrents extends Mixins(PullToRefresh) {
   private list: Torrent[] = []
   private total = 0
   private loading = false
   private statusFilter = ''
   private busyKey = ''
 
-  private statusOptions: StatusOption[] = [
-    { label: '下载中', value: 'downloading' },
-    { label: '做种中', value: 'seeding' },
-    { label: '已暂停', value: 'paused' },
-    { label: '错误', value: 'error' }
-  ]
+  private statusOptions: StatusOption[] = TORRENT_STATUS_OPTIONS
 
   mounted(): void {
     this.reload()
+  }
+
+  protected async onPullRefresh(): Promise<void> {
+    await this.reload()
   }
 
   private async reload(): Promise<void> {
@@ -115,6 +128,14 @@ export default class MobileTorrents extends Vue {
     } finally {
       this.loading = false
     }
+  }
+
+  /** 卡片点击：快照缓存整行（详情页含 trackerInfo 的数据源），带复合键进详情 */
+  private openDetail(t: Torrent): void {
+    setCachedTorrent(t)
+    this.$router
+      .push(`/m/torrents/detail/${encodeURIComponent(t.downloaderId)}/${encodeURIComponent(t.hash)}`)
+      .catch(() => undefined)
   }
 
   private actionBusy(t: Torrent): boolean {
@@ -168,35 +189,15 @@ export default class MobileTorrents extends Vue {
   }
 
   private statusLabel(status: string): string {
-    const found = this.statusOptions.find((opt) => opt.value === status)
-    return found ? found.label : status
+    return torrentStatusLabel(status)
   }
 
   private statusTagType(status: string): string {
-    switch (status) {
-      case 'downloading':
-        return 'primary'
-      case 'seeding':
-        return 'success'
-      case 'paused':
-        return 'info'
-      case 'error':
-        return 'danger'
-      default:
-        return 'warning'
-    }
+    return torrentStatusTagType(status)
   }
 
   private formatSize(bytes: number): string {
-    if (!bytes || bytes <= 0) return '-'
-    const units = ['B', 'KB', 'MB', 'GB', 'TB']
-    let value = bytes
-    let unit = 0
-    while (value >= 1024 && unit < units.length - 1) {
-      value /= 1024
-      unit += 1
-    }
-    return `${value.toFixed(value >= 100 || unit === 0 ? 0 : 1)} ${units[unit]}`
+    return formatTorrentSize(bytes)
   }
 }
 </script>
@@ -217,6 +218,7 @@ export default class MobileTorrents extends Vue {
   border-radius: 8px;
   padding: 10px 12px;
   margin-bottom: 8px;
+  cursor: pointer;
 }
 
 .m-torrent-name {

@@ -4,6 +4,8 @@
  *   出口必须写偏好并离开移动布局（不自锁原则）；
  * - 汉堡抽屉：完整功能菜单（移动组 4 + 桌面组 9），移动项 replace、桌面项
  *   push 且不写 ui_mode 偏好（返回/刷新仍回移动版）；
+ * - 通知未读角标：复用 Vuex NotificationModule.unreadCount，挂载即拉一次
+ *   + 60s 轮询（fake timers），>99 显示 99+；
  * - 主题色与桌面端同源：头部背景与 Tab 激活色必须用 var(--color-primary)
  *   （静态契约，防回归到深灰 #27303f 头部 / Element 默认蓝 #409eff）。
  */
@@ -12,6 +14,18 @@ import { shallowMount, Wrapper } from '@vue/test-utils'
 import fs from 'fs'
 import path from 'path'
 import MobileLayout from '@/layout/mobile/index.vue'
+import { NotificationModule } from '@/store/modules/notification'
+
+jest.mock('@/store/modules/notification', () => ({
+  NotificationModule: {
+    unreadCount: 0,
+    FetchUnreadCount: jest.fn().mockResolvedValue(undefined)
+  }
+}))
+
+const setMockUnread = (count: number): void => {
+  (NotificationModule as unknown as { unreadCount: number }).unreadCount = count
+}
 
 const readLayoutSource = (): string =>
   fs.readFileSync(path.resolve(__dirname, '../../src/layout/mobile/index.vue'), 'utf-8')
@@ -33,6 +47,8 @@ describe('layout/mobile/MobileLayout', () => {
   afterEach(() => {
     localStorage.clear()
     jest.clearAllMocks()
+    jest.useRealTimers()
+    setMockUnread(0)
   })
 
   it('渲染四个底部 Tab（仪表盘/下载器/种子/通知）', () => {
@@ -152,5 +168,43 @@ describe('layout/mobile/MobileLayout', () => {
     expect(source).not.toContain('#27303f')
     // 抽屉菜单激活态同样走主题变量
     expect(source).toContain('.mobile-menu-item.is-active')
+  })
+
+  // ============ 通知未读角标（M1 余项，2026-08-24 第四批） ============
+
+  it('未读数 > 0：通知 Tab 显示数字角标（其余 Tab 无角标）', () => {
+    setMockUnread(5)
+    const wrapper = mountLayout('/m/dashboard')
+    const tabs = wrapper.findAll('.mobile-tab')
+    expect(tabs.at(3).find('.mobile-tab-badge').exists()).toBe(true)
+    expect(tabs.at(3).find('.mobile-tab-badge').text()).toBe('5')
+    expect(tabs.at(0).find('.mobile-tab-badge').exists()).toBe(false)
+    expect(tabs.at(1).find('.mobile-tab-badge').exists()).toBe(false)
+    expect(tabs.at(2).find('.mobile-tab-badge').exists()).toBe(false)
+  })
+
+  it('未读数超过 99：角标显示 99+', () => {
+    setMockUnread(120)
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-tab-badge').text()).toBe('99+')
+  })
+
+  it('未读数为 0：不渲染角标', () => {
+    setMockUnread(0)
+    const wrapper = mountLayout('/m/dashboard')
+    expect(wrapper.find('.mobile-tab-badge').exists()).toBe(false)
+  })
+
+  it('挂载即拉取未读数，60s 轮询，销毁停止', () => {
+    jest.useFakeTimers()
+    const wrapper = mountLayout('/m/dashboard')
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(1)
+    jest.advanceTimersByTime(60000)
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(2)
+    jest.advanceTimersByTime(60000)
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(3)
+    wrapper.destroy()
+    jest.advanceTimersByTime(180000)
+    expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(3)
   })
 })

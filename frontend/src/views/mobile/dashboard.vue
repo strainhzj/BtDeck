@@ -1,5 +1,6 @@
 <template>
   <div class="m-dashboard">
+    <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div v-if="loading" class="m-hint">加载中…</div>
     <template v-else-if="data">
       <div class="m-card-grid">
@@ -47,14 +48,19 @@
 </template>
 
 <script lang="ts">
-import { Component, Vue } from 'vue-property-decorator'
+import { Component, Mixins } from 'vue-property-decorator'
 import { getDashboardData } from '@/api/dashboard'
 import { DashboardData } from '@/types/dashboard'
 import { extractErrorMessage } from '@/utils/formatters'
+import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
+import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 
-/** 移动仪表盘（Phase 4 M1）：复用桌面 /dashboard API 的卡片化展示 */
-@Component({ name: 'MobileDashboard' })
-export default class MobileDashboard extends Vue {
+/** 移动仪表盘（Phase 4 M1）：复用桌面 /dashboard API 的卡片化展示 + 下拉刷新 */
+@Component({
+  name: 'MobileDashboard',
+  components: { 'm-pull-indicator': MobilePullIndicator }
+})
+export default class MobileDashboard extends Mixins(PullToRefresh) {
   private loading = false
   private data: DashboardData | null = null
 
@@ -64,6 +70,10 @@ export default class MobileDashboard extends Vue {
 
   mounted(): void {
     this.load()
+  }
+
+  protected async onPullRefresh(): Promise<void> {
+    await this.load()
   }
 
   private async load(): Promise<void> {

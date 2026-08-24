@@ -26,7 +26,7 @@ C:\software\android-build-env\
 ├── gradle-8.9\                   # AGP 8.7.3 最低要求
 AVD: btdeck-test（Pixel 6 / API 35 / google_apis x86_64）
 JDK: C:\Program Files\Java\jdk-17（PATH 中 java 17.0.15）
-后端: conda btpManager → C:\Users\thoma\miniconda3\envs\btpManager\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5001
+后端: conda btpManager → C:\Users\thoma\miniconda3\envs\btpManager\python.exe -m uvicorn app.main:app --host 0.0.0.0 --port 5001（thoma 机器路径；huangzj 本机为 C:/software/anaconda3/envs/btpManager/python.exe，本地开发库 data/backend/config/app.db，admin 口令按 SOP 已改为 Btdeck@2026dev——默认 admin 会触发强制改密守卫，2026-08-24 记）
 前端: frontend\npm run serve（host 0.0.0.0:8080，/api 代理到 5001）
 ```
 

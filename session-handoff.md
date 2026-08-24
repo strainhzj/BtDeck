@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-24 交接（四）：Phase 4 M1 余项四项收口（种子详情/下拉刷新/未读角标/侧栏入口）
+
+### 结论
+
+M1 余项四项全部完成（未提交）：①种子详情页 `/m/torrents/detail/:downloaderId/:hash`——列表卡片点击写入快照缓存（take 取走即清）立即渲染，getList（downloader_id+name_like 回查按 hash 匹配）刷新基础字段，getActiveTorrents 5s 轮询覆盖速度/进度/做种连接；展示状态/进度/速度/大小/分享率/Tracker 数（hasTrackerError 警示）+ Tracker 折叠明细（复用 torrentBatch 状态判定）；操作保留暂停/恢复/删除，删除成功 replace 回列表。②下拉刷新：class 式 mixin `views/mobile/mixins/pull-to-refresh.ts`（页面 `extends Mixins(PullToRefresh)`，注意 vue-property-decorator 导出为大写 Mixins）——.mobile-content 到顶+下拉（阻尼 0.5/阈值 60px）触发覆写的 onPullRefresh；PullIndicator 指示条四页挂载。③通知未读角标：布局壳复用 NotificationModule.unreadCount + 60s 轮询，通知 Tab 红底白字角标（>99 显 99+），通知页 read() 后 dispatch FetchUnreadCount 联动。④桌面侧栏 footer「移动版」按钮（smartphone 图标新注册）：写 mobile 偏好 + push /m/dashboard，显式偏好优先视口（宽屏可预览，浏览器 1440 实证）。
+
+### 关键发现（后续批次注意）
+
+- **后端单种子端点缺陷**：`GET /torrents/{info_id}/{downloader_id}/{downloader_name}` 直接 return ORM 实体配 CommonResponse，实测响应全 null（`{"status":null,"msg":null,"code":null,"data":null}`），不可用；详情页改走 getList 回查。该端点待单独修复。
+- .vue 模板不可直调模块级函数（formatTorrentSize/formatRatio 须包装成实例成员）；shallowMount 不接受 cast 成 Vue 实例的组件构造器。
+- 本机测试栈与 desktop-testing.md 记录的 thoma 路径不同：后端 `C:/software/anaconda3/envs/btpManager/python.exe`（5001），本地开发库 `data/backend/config/app.db`，admin 密码已按 SOP 改为 `Btdeck@2026dev`（原默认 admin 触发强制改密）。前端 dev server 8080 照旧。
+
+### 验证
+
+Jest 相关 7 套件 58 例 + 全量 65 套件 954 例全绿（新增 pull-to-refresh 6 / mobile-torrent-detail 6 / sidebar-mobile-entry 3 / mobile-shell 扩 4）；tsc、ESLint、生产 build 通过（m-torrent-detail chunk 实证）。浏览器 390×844 实测四项全通过：角标 3 与 API 一致、卡片→详情全字段→Tracker 展开「正常」→返回列表、通知点击已读角标 3→2 实时联动、宽视口桌面侧栏切移动版（偏好优先）。下拉刷新 touch 手势 IAB 无法注入（已知边界，单测覆盖 + 指示器挂载确认，真机复核留后续）。截图 .release-build-v1.0.5/m-torrent-detail-evidence.png。
+
+### 待办
+
+1. 本批 14 个 frontend 文件 + feature_list.json/progress.md/session-handoff.md 未提交（待用户指示）。
+2. 后端单种子端点空 data 缺陷待修复批次。
+3. M2（高级搜索/查询模板/回收站/日志/下载器高级设置移动化）未动。
+4. 后端 5001 与前端 8080 dev server 本会话保持运行中（后台任务），无需可直接结束进程。
+
 ## 2026-08-24 交接（三）：移动头部主题色 + 下载器 Tab 第一梯队（新移动页）
 
 ### 结论
@@ -82,6 +105,31 @@ Jest 33 passed（shell 11 + ui-mode 11 + permission-guard 11）；tsc/ESLint/bui
 - 已做 JSON 解析与 feature/plan 路径一致性核对。
 - 不要把静态模拟操作写成真实下载器、文件系统或认证能力；完成后需回填构建、测试、包体和人工演示证据，才可将任务改为 `done`。
 - 未执行 Git stage/commit/push；工作区已有的其他修改和未跟踪文件须继续保留。
+
+## 2026-08-23 交接（十二）：tracker_sync 异常边界观测增强
+
+### 结论
+
+已完成 `tracker_sync` 异常静默排查所需的观测代码。原有容错控制流保留：下载器级异常仍汇总后继续其他下载器，批提交/检查点/单种子 tracker 失败仍按既有 partial 或继续语义处理；新增日志会明确显示 traceback、异常类型、阶段和是否继续执行。
+
+### 变更
+
+- `backend/app/services/sync_observability.py`：新增 `EVENT_SYNC_ERROR = "sync_error"` 及字段白名单。
+- `backend/app/services/sync_coordinator.py`：增加下载器 start/done、Tracker 子结果、状态阶段日志；所有关键异常边界补 `exc_info=True` 和 `event=sync_error`；结果含 errors 时强制 warning 并显示数量/摘要。
+- `backend/app/api/endpoints/torrents_async.py`：qB/TR tracker-only 的单种子远程请求、worker gather、批提交、行提取、检查点、输入校验及 qB 对象标记失败补统一异常观测。
+- `backend/app/tasks/scheduler/torrent_sync/tracker_sync_task.py`：增加有效下载器、Coordinator 结果和错误摘要日志。
+- `feature_list.json`：登记 `sync-resource-governance.5`；`progress.md`、`docs/roadmap/` 同步记录。
+
+### 验证
+
+- 定向回归：82 passed（sync observability、sync coordinator、tracker budget）。
+- flake8 通过；mypy 目标源文件通过；`git diff --check` 通过。
+- Black 全量检查对既有大文件报告格式差异且运行异常缓慢，本次未执行全文件重排，避免无关格式噪声。
+- 未修改 `E:\Users\huangzj\Desktop\app.db`；未执行 Git stage/commit/push。
+
+### 部署后查询
+
+检索 `event=sync_error`，按 `run_id` 关联 `tracker_sync_task coordinator_result` 与 `sync_coordinator downloader_done`。重点阶段：`tracker_enrich_single_torrent`、`tracker_batch_commit`、`tracker_row_extract`、`tracker_checkpoint_push`、`tracker_status`；字段 `suppressed` 和 `continue_after_error` 用于判断异常是否被转换后继续。
 
 ## 2026-08-23 交接（十）：Phase 2 真机验证通过 + Phase 4 M1 第一片（移动 UI 壳）
 
