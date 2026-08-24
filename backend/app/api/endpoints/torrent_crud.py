@@ -7,7 +7,7 @@ from typing import List, Optional
 
 import urllib3
 from fastapi import APIRouter, Depends, Request, Query, UploadFile, File
-from fastapi import Form, HTTPException
+from fastapi import Form
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -28,6 +28,7 @@ from app.api.endpoints.torrent_helpers import (
     create_qbittorrent_torrent_record,
     create_transmission_torrent_record,
     get_torrent_infos,
+    convert_to_vo,
 )
 from app.core.reannounce_config_operations import extract_domains_from_trackers
 from app.api.endpoints.torrent_speed import get_active_keys_snapshot
@@ -586,11 +587,21 @@ def get_torrent(
     _user=Depends(require_authenticated_user),
     db: Session = Depends(get_db),
 ):
-    """根据复合主键获取种子信息"""
+    """根据复合主键获取种子信息
+
+    ORM 实体不能直接作为响应返回：response_model=CommonResponse 下 Pydantic 无法
+    从 ORM 属性构造信封，实测响应为全 null（status/msg/code/data 均 null）。
+    必须经 convert_to_vo（与 getList 同源转换）包装为信封。
+    """
     torrent = get_torrent_info(db, info_id, downloader_id)
     if not torrent:
-        raise HTTPException(status_code=404, detail="Torrent not found")
-    return torrent
+        return CommonResponse(status="error", msg="Torrent not found", code="404", data=None)
+    return CommonResponse(
+        status="success",
+        msg="获取成功",
+        code="200",
+        data=convert_to_vo(torrent),
+    )
 
 
 @router.get("/getList")

@@ -1,6 +1,29 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-24 交接（七）：后端单种子端点空 data 缺陷修复（M1 遗留清零）
+
+### 结论
+
+`GET /api/v1/torrents/torrents/{info_id}/{downloader_id}/{downloader_name}`（torrent_crud.py get_torrent）修复完成并活实例验证——M1 批次实测「响应全 null」的遗留缺陷清零。根因：ORM 实体直接 return 配 response_model=CommonResponse，Pydantic v2 无法从 ORM 属性构造信封，status/msg/code/data 全 null。修复：复用 torrent_helpers.convert_to_vo（与 getList 同源转换，camelCase 输出）显式包装；未找到由 raise HTTPException(404) 改项目惯例信封 code="404"+HTTP 200；移除死 import。
+
+### 关键发现
+
+- **端点真实路径含双 torrents 段**：端点声明 "/torrents/{...}" 且挂载于 prefix="/torrents"（torrents.py 聚合路由）→ /api/v1/torrents/torrents/{...}。保持不变（历史契约，前端零消费方）；写测试时直接访问会 404，须用双段路径。
+- TorrentInfoVO 输出 camelCase（alias_generator=alias_camel）——与 getList 列表项同构，断言/消费按 camelCase。
+- 移动端详情页现走 getList 回查（M1 绕开方案）继续可用；切换单种子直查为可选优化，非必须。
+
+### 验证
+
+新增 3 用例回归（命中完整 VO/信封 404/软删除过滤，TestClient+真实 SQLite）3 passed；相关回归 88 passed（torrent_crud 系列+auth_protection）；flake8/black/mypy 通过；5001 已重启加载修复代码，curl 实证命中返回完整 VO（name/hash/size/status 真实值）、未找到信封 404。
+
+### 待办
+
+1. 本批 3 文件未提交（torrent_crud.py、test_torrent_single_get_endpoint.py + 三份记录），待用户指示。
+2. 5001 dev server 已用修复后代码重启运行中。
+
 ## 2026-08-24 交接（六）：M2 交互级复核全通过 + logs 筛选值 bug 修复 + DownloaderDialog 定性修正
+
+> 补记：本交接待办 2（后端单种子端点）已由交接（七）完成。
 
 ### 结论
 

@@ -5463,3 +5463,27 @@ M1 余项四项全部完成并验证（未提交）：①种子详情页（路�
 
 - 本批 4 文件未提交（logs.vue + mobile-logs.spec.ts + DownloaderDialog.vue + 三份记录），待用户指示。
 - IAB 点击间歇失灵为跨会话环境问题（三个会话不同表现），交互复核如再受阻优先键盘导航/坐标兜底路径。
+
+## 2026-08-24（七）：修复后端单种子端点空 data 缺陷（M1 遗留最后一项）
+
+### 结论
+
+`GET /api/v1/torrents/torrents/{info_id}/{downloader_id}/{downloader_name}`（torrent_crud.py get_torrent，M1 批次实测响应全 null 的遗留缺陷）已修复并活实例验证。M1 遗留待办清零。
+
+### 根因与修复
+
+- 根因：端点直接 `return torrent`（SQLAlchemy ORM 实体）配 `response_model=CommonResponse`，Pydantic v2 无法从 ORM 属性构造信封（CommonResponse 无 from_attributes），四字段全序列化为 null。
+- 修复：复用 torrent_helpers.convert_to_vo（与 getList 同源 ORM→TorrentInfoVO 转换，camelCase 输出）显式包装 `CommonResponse(status="success", code="200", data=vo)`；未找到由 raise HTTPException(404) 改为项目惯例信封 `code="404"` + HTTP 200（与 downloader_settings 等端点一致）；移除失去使用点的 HTTPException import。
+- 端点路径说明：端点声明 "/torrents/{...}" 且挂载于 prefix="/torrents"，实际完整路径含双 torrents 段（历史怪癖，保持不变避免破坏契约；前端零消费方）。
+
+### 验证
+
+- 新增 tests/api/test_torrent_single_get_endpoint.py 3 用例：命中返回完整 VO（camelCase 字段断言，核心回归锚点=修复前 data 恒 null）、未找到信封 404、dr=1 软删除行不返回；TestClient + 真实 SQLite ORM。3 passed。
+- 相关回归 88 passed（torrent_crud query/add_fallback/review/status_migration + auth_protection）。
+- flake8 / black / mypy（torrent_crud.py + 新测试）通过。
+- 活实例验证：重启 5001（uvicorn，开发库）后 curl 实测——命中返回 status=success/code=200/data 完整（name「Mushoku.Tensei...S03」/hash/1.45GB/seeding 全真实值）；未找到返回信封 code=404。
+
+### 待办
+
+- 本批 3 文件未提交（torrent_crud.py + 新测试 + 三份记录），待用户指示。
+- 移动端详情页目前仍走 getList 回查（M1 绕开方案，可用）；端点修复后如需切换到单种子直查为可选优化（数据一致，非必须）。
