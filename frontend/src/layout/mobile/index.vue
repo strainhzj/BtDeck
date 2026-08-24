@@ -1,6 +1,11 @@
 <template>
   <div class="mobile-layout">
     <header class="mobile-header">
+      <button type="button" class="mobile-header-menu" aria-label="打开功能菜单" @click="drawerVisible = true">
+        <span class="mobile-header-menu-bar" />
+        <span class="mobile-header-menu-bar" />
+        <span class="mobile-header-menu-bar" />
+      </button>
       <span class="mobile-header-title">BtDeck</span>
       <el-button type="text" size="mini" class="mobile-header-desktop" @click="switchToDesktop">
         桌面版
@@ -23,6 +28,56 @@
         <span class="mobile-tab-label">{{ tab.label }}</span>
       </button>
     </nav>
+
+    <el-drawer
+      direction="ltr"
+      size="78%"
+      :visible.sync="drawerVisible"
+      :with-header="false"
+      custom-class="mobile-menu-drawer"
+      :modal-append-to-body="true"
+      append-to-body
+    >
+      <div class="mobile-menu">
+        <div class="mobile-menu-header">
+          <span class="mobile-menu-title">功能菜单</span>
+          <button type="button" class="mobile-menu-close" aria-label="关闭菜单" @click="drawerVisible = false">
+            ✕
+          </button>
+        </div>
+
+        <div class="mobile-menu-group-title">移动版</div>
+        <button
+          v-for="item in mobileMenuItems"
+          :key="item.path"
+          type="button"
+          class="mobile-menu-item"
+          :class="{'is-active': isActive(item)}"
+          @click="goMenuItem(item)"
+        >
+          <span>{{ item.label }}</span>
+          <span v-if="isActive(item)" class="mobile-menu-item-current">当前</span>
+        </button>
+
+        <div class="mobile-menu-group-title">全部功能（桌面版页面）</div>
+        <button
+          v-for="item in desktopMenuItems"
+          :key="item.path"
+          type="button"
+          class="mobile-menu-item"
+          @click="goMenuItem(item)"
+        >
+          <span>{{ item.label }}</span>
+          <span class="mobile-menu-item-arrow">›</span>
+        </button>
+
+        <div class="mobile-menu-footer">
+          <el-button size="small" class="mobile-menu-desktop-btn" @click="switchToDesktop">
+            完整桌面版
+          </el-button>
+        </div>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -37,15 +92,38 @@ interface MobileTab {
 
 /**
  * 移动布局壳（dual-mode-client Phase 4 M1）：
- * 顶部标题 + 切桌面出口、内容区 router-view、底部 Tab 导航。
+ * 顶部标题 + 汉堡功能菜单 + 切桌面出口、内容区 router-view、底部 Tab 导航。
  * 原则：不自锁——任何时刻都能切回桌面版（偏好持久化）。
+ *
+ * 主题色统一走全局 var(--color-primary)（与桌面端 #059669 同源）；
+ * 完整功能 11 项塞不进底部 Tab（>5 不可用），低频管理页经抽屉跳
+ * 桌面版路由承载（桌面管理页有窄屏断点基础），返回键/刷新回移动版。
  */
 @Component({ name: 'MobileLayout' })
 export default class MobileLayout extends Vue {
+  private drawerVisible = false
+
   private tabs: MobileTab[] = [
     { label: '仪表盘', path: '/m/dashboard' },
+    { label: '下载器', path: '/m/downloader' },
     { label: '种子', path: '/m/torrents' },
     { label: '通知', path: '/m/notifications' }
+  ]
+
+  /** 移动版已有页面（抽屉内导航，同底部 Tab 四项）。 */
+  private mobileMenuItems: MobileTab[] = this.tabs
+
+  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）。 */
+  private desktopMenuItems: MobileTab[] = [
+    { label: '下载器管理', path: '/downloader' },
+    { label: '种子列表（桌面）', path: '/torrents' },
+    { label: 'Tracker管理', path: '/tracker' },
+    { label: '定时任务', path: '/tasks' },
+    { label: '日志管理', path: '/logs' },
+    { label: '回收站', path: '/recycle-bin' },
+    { label: '孤儿文件', path: '/orphan-files' },
+    { label: '查询模板', path: '/query-templates' },
+    { label: '系统设置', path: '/settings' }
   ]
 
   private isActive(tab: MobileTab): boolean {
@@ -58,7 +136,20 @@ export default class MobileLayout extends Vue {
     }
   }
 
+  /** 抽屉菜单点击：一律关闭抽屉；移动项 replace 保持单栈，桌面项 push 保留返回。 */
+  private goMenuItem(item: MobileTab): void {
+    this.drawerVisible = false
+    if (this.isActive(item) && item.path.startsWith('/m/')) return
+    // 不从 $router 解构方法（丢 this），显式调用
+    if (item.path.startsWith('/m/')) {
+      this.$router.replace(item.path).catch(() => undefined)
+    } else {
+      this.$router.push(item.path).catch(() => undefined)
+    }
+  }
+
   private switchToDesktop(): void {
+    this.drawerVisible = false
     setStoredUiMode('desktop')
     this.$router.replace('/dashboard').catch(() => undefined)
   }
@@ -80,9 +171,10 @@ export default class MobileLayout extends Vue {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
+  padding: 0 12px;
   height: 48px;
-  background: #27303f;
+  /* 头部主题色（2026-08-24 用户确认）：与桌面端主色同源变量 */
+  background: var(--color-primary);
   color: #fff;
 }
 
@@ -91,8 +183,29 @@ export default class MobileLayout extends Vue {
   font-weight: 600;
 }
 
+.mobile-header-menu {
+  display: inline-flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  width: 36px;
+  height: 36px;
+  padding: 8px 7px;
+  border: none;
+  background: transparent;
+}
+
+.mobile-header-menu-bar {
+  display: block;
+  height: 2px;
+  width: 100%;
+  /* 主题色头部上的白色系前景（#059669 上对比度充足） */
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 1px;
+}
+
 .mobile-header-desktop {
-  color: #cfd8e3;
+  color: #fff;
   padding: 4px 0;
 }
 
@@ -127,11 +240,99 @@ export default class MobileLayout extends Vue {
 }
 
 .mobile-tab.is-active {
-  color: #409eff;
+  /* 与桌面端主题同源（theme-variables.scss --color-primary #059669） */
+  color: var(--color-primary);
   font-weight: 600;
 }
 
 .mobile-tab-label {
   line-height: 1.2;
+}
+</style>
+
+<!-- 抽屉内容挂在 body 下（append-to-body），scoped 选择器够不到，走全局块 -->
+<style>
+.mobile-menu-drawer {
+  background: #fff;
+}
+
+.mobile-menu {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
+  overflow-y: auto;
+}
+
+.mobile-menu-header {
+  position: sticky;
+  top: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px;
+  height: 48px;
+  /* 与页面头部同源主题色 */
+  background: var(--color-primary);
+  color: #fff;
+  z-index: 1;
+}
+
+.mobile-menu-title {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mobile-menu-close {
+  border: none;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 16px;
+  padding: 6px 8px;
+}
+
+.mobile-menu-group-title {
+  padding: 14px 16px 6px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.mobile-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 12px 16px;
+  border: none;
+  background: transparent;
+  color: #303133;
+  font-size: 15px;
+  text-align: left;
+}
+
+.mobile-menu-item.is-active {
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.mobile-menu-item-current {
+  font-size: 12px;
+  color: var(--color-primary);
+}
+
+.mobile-menu-item-arrow {
+  color: #c0c4cc;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.mobile-menu-footer {
+  margin-top: auto;
+  padding: 16px;
+  border-top: 1px solid #e4e7ed;
+}
+
+.mobile-menu-desktop-btn {
+  width: 100%;
 }
 </style>

@@ -57,6 +57,11 @@ const router = new Router({
           meta: { hidden: true, title: '仪表盘' }
         },
         {
+          path: 'downloader',
+          component: () => import(/* webpackChunkName: "m-downloader" */ '@/views/mobile/downloader.vue'),
+          meta: { hidden: true, title: '下载器' }
+        },
+        {
           path: 'torrents',
           component: () => import(/* webpackChunkName: "m-torrents" */ '@/views/mobile/torrents.vue'),
           meta: { hidden: true, title: '种子' }

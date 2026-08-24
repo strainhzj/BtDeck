@@ -1,34 +1,48 @@
 /**
- * 移动布局壳行为契约（dual-mode-client Phase 4 M1）：
- * 三个 Tab 渲染与高亮、Tab 切换导航、"桌面版"出口必须写偏好并离开移动布局
- * （不自锁原则：任何时刻都能切回桌面版）。
+ * 移动布局壳行为契约（dual-mode-client Phase 4 M1 + 2026-08-24 增强）：
+ * - 四个 Tab（仪表盘/下载器/种子/通知）渲染与高亮、Tab 切换导航、"桌面版"
+ *   出口必须写偏好并离开移动布局（不自锁原则）；
+ * - 汉堡抽屉：完整功能菜单（移动组 4 + 桌面组 9），移动项 replace、桌面项
+ *   push 且不写 ui_mode 偏好（返回/刷新仍回移动版）；
+ * - 主题色与桌面端同源：头部背景与 Tab 激活色必须用 var(--color-primary)
+ *   （静态契约，防回归到深灰 #27303f 头部 / Element 默认蓝 #409eff）。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
+import fs from 'fs'
+import path from 'path'
 import MobileLayout from '@/layout/mobile/index.vue'
+
+const readLayoutSource = (): string =>
+  fs.readFileSync(path.resolve(__dirname, '../../src/layout/mobile/index.vue'), 'utf-8')
 
 describe('layout/mobile/MobileLayout', () => {
   const mountLayout = (currentPath: string): Wrapper<Vue> =>
     shallowMount(MobileLayout, {
       mocks: {
         $route: { path: currentPath },
-        $router: { replace: jest.fn().mockResolvedValue(undefined) }
+        $router: { replace: jest.fn().mockResolvedValue(undefined), push: jest.fn().mockResolvedValue(undefined) }
       },
-      stubs: { 'router-view': true }
+      stubs: {
+        'router-view': true,
+        // 透传默认插槽，让抽屉菜单内容可断言（避免 Element drawer 的 DOM 副作用）
+        'el-drawer': { template: '<div class="drawer-stub"><slot /></div>' }
+      }
     })
 
   afterEach(() => {
     localStorage.clear()
+    jest.clearAllMocks()
   })
 
-  it('渲染三个底部 Tab（仪表盘/种子/通知）', () => {
+  it('渲染四个底部 Tab（仪表盘/下载器/种子/通知）', () => {
     const wrapper = mountLayout('/m/dashboard')
     const labels = wrapper.findAll('.mobile-tab-label').wrappers.map((w) => w.text())
-    expect(labels).toEqual(['仪表盘', '种子', '通知'])
+    expect(labels).toEqual(['仪表盘', '下载器', '种子', '通知'])
   })
 
   it('当前路由对应 Tab 高亮', () => {
-    const wrapper = mountLayout('/m/torrents')
+    const wrapper = mountLayout('/m/downloader')
     const tabs = wrapper.findAll('.mobile-tab')
     expect(tabs.at(1).classes()).toContain('is-active')
     expect(tabs.at(0).classes()).not.toContain('is-active')
@@ -36,9 +50,9 @@ describe('layout/mobile/MobileLayout', () => {
 
   it('点击非当前 Tab 导航到目标路径', async() => {
     const wrapper = mountLayout('/m/dashboard')
-    wrapper.findAll('.mobile-tab').at(2).trigger('click')
+    wrapper.findAll('.mobile-tab').at(1).trigger('click')
     await wrapper.vm.$nextTick()
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/notifications')
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
   })
 
   it('点击当前 Tab 不重复导航', async() => {
@@ -55,5 +69,88 @@ describe('layout/mobile/MobileLayout', () => {
     await wrapper.vm.$nextTick()
     expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
     expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/dashboard')
+  })
+
+  // ============ 汉堡抽屉（2026-08-24） ============
+
+  it('汉堡按钮打开抽屉，抽屉含移动组 4 项 + 桌面组 9 项完整菜单', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+    wrapper.find('.mobile-header-menu').trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(true)
+
+    const items = wrapper.findAll('.mobile-menu-item')
+    expect(items.length).toBe(13)
+    const desktopLabels = (wrapper.vm as any).desktopMenuItems.map((t: { label: string }) => t.label)
+    expect(desktopLabels).toEqual(
+      expect.arrayContaining(['下载器管理', 'Tracker管理', '定时任务', '日志管理', '回收站', '孤儿文件', '查询模板', '系统设置'])
+    )
+  })
+
+  it('抽屉点移动项：关闭抽屉并 replace 移动路径', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    const items = wrapper.findAll('.mobile-menu-item')
+    // 第 2 项为移动组"下载器"
+    items.at(1).trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+  })
+
+  it('抽屉点当前移动项：仅关闭抽屉不导航', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    wrapper.findAll('.mobile-menu-item').at(0).trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+  })
+
+  it('抽屉点桌面功能项：关闭抽屉、push 桌面路径且不写 ui_mode 偏好', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    const items = wrapper.findAll('.mobile-menu-item')
+    // 第 5 项起为桌面组，首项"下载器管理"
+    items.at(4).trigger('click')
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/downloader')
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+    expect(localStorage.getItem('btdeck_ui_mode')).toBeNull()
+  })
+
+  it('抽屉底部"完整桌面版"与头部出口行为一致（写偏好）', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    const footerBtn = wrapper.find('.mobile-menu-desktop-btn')
+    footerBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+    expect(localStorage.getItem('btdeck_ui_mode')).toBe('desktop')
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/dashboard')
+  })
+
+  // ============ 主题色契约（与桌面端同源） ============
+
+  it('头部背景与 Tab 激活色均使用 var(--color-primary)，无旧深灰/默认蓝回归', () => {
+    const source = readLayoutSource()
+    const activeRule = source.slice(
+      source.indexOf('.mobile-tab.is-active'),
+      source.indexOf('.mobile-tab-label')
+    )
+    expect(activeRule).toContain('var(--color-primary)')
+    const headerRule = source.slice(
+      source.indexOf('.mobile-header {'),
+      source.indexOf('.mobile-header-title')
+    )
+    expect(headerRule).toContain('var(--color-primary)')
+    const drawerHeaderRule = source.slice(
+      source.indexOf('.mobile-menu-header'),
+      source.indexOf('.mobile-menu-title')
+    )
+    expect(drawerHeaderRule).toContain('var(--color-primary)')
+    expect(source).not.toContain('#409eff')
+    expect(source).not.toContain('#27303f')
+    // 抽屉菜单激活态同样走主题变量
+    expect(source).toContain('.mobile-menu-item.is-active')
   })
 })
