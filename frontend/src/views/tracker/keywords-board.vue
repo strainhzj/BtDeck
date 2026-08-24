@@ -142,6 +142,8 @@ import AddKeywordDialog from './components/AddKeywordDialog.vue'
 import ImportKeywordsDialog from './components/ImportKeywordsDialog.vue'
 import KeywordQuickActionDialog from './components/KeywordQuickActionDialog.vue'
 import { getPoolKeywords, deleteKeyword, moveKeywordToPool, PoolType } from '@/api/tracker'
+// 错误路径消息提取（M3 复核发现：原文件使用但未导入，池加载/移动/删除失败时抛 ReferenceError）
+import { extractErrorMessage } from '@/utils/tracker'
 
 interface PoolKeyword {
   keyword_id: string

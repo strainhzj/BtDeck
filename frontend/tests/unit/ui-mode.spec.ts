@@ -67,6 +67,20 @@ describe('utils/ui-mode', () => {
       expect(uiMode.toMobilePath('/query-templates')).toBe('/m/query-templates')
     })
 
+    it('M3 定时任务整页映射到移动任务页', () => {
+      expect(uiMode.toMobilePath('/tasks')).toBe('/m/tasks')
+      expect(uiMode.toMobilePath('/tasks/index')).toBe('/m/tasks')
+    })
+
+    it('M3 Tracker 仅看板/搜索两子页映射；汇报配置与测试工具保留桌面直达', () => {
+      expect(uiMode.toMobilePath('/tracker')).toBe('/m/tracker/keywords-board')
+      expect(uiMode.toMobilePath('/tracker/keywords-board')).toBe('/m/tracker/keywords-board')
+      expect(uiMode.toMobilePath('/tracker/keywords-search')).toBe('/m/tracker/keywords-board')
+      // 未移动化的 Tracker 子页不走移动分流（抽屉桌面组直达）
+      expect(uiMode.toMobilePath('/tracker/reannounce-config')).toBe('/m/dashboard')
+      expect(uiMode.toMobilePath('/tracker/test')).toBe('/m/dashboard')
+    })
+
     it('无对应关系的路径兜底移动仪表盘（不落到空白页）', () => {
       expect(uiMode.toMobilePath('/downloader')).toBe('/m/dashboard')
       expect(uiMode.toMobilePath('/settings/index')).toBe('/m/dashboard')

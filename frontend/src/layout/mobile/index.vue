@@ -149,15 +149,15 @@ export default class MobileLayout extends Vue {
     { label: '高级搜索', path: '/m/search' },
     { label: '查询模板', path: '/m/query-templates' },
     { label: '回收站', path: '/m/recycle-bin' },
-    { label: '日志', path: '/m/logs' }
+    { label: '日志', path: '/m/logs' },
+    { label: 'Tracker关键词', path: '/m/tracker/keywords-board' },
+    { label: '定时任务', path: '/m/tasks' }
   ]
 
-  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；M2 后日志/回收站/查询模板已移动化。 */
+  /** 桌面版承载的功能页（父路径均有 redirect 到真实子页）；M3 后定时任务/Tracker看板/搜索已移动化，下载器管理由 /m/downloader 全覆盖。 */
   private desktopMenuItems: MobileTab[] = [
-    { label: '下载器管理', path: '/downloader' },
     { label: '种子列表（桌面）', path: '/torrents' },
-    { label: 'Tracker管理', path: '/tracker' },
-    { label: '定时任务', path: '/tasks' },
+    { label: 'Tracker 汇报/测试（桌面）', path: '/tracker/reannounce-config' },
     { label: '孤儿文件', path: '/orphan-files' },
     { label: '系统设置', path: '/settings' }
   ]

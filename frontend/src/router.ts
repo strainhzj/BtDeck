@@ -103,6 +103,24 @@ const router = new Router({
           meta: { hidden: true, title: '下载器设置' }
         },
         {
+          // Tracker 关键词看板（Phase 4 M3）：四池卡片 + 下拉移池/删除/添加
+          path: 'tracker/keywords-board',
+          component: () => import(/* webpackChunkName: "m-tracker-keywords" */ '@/views/mobile/tracker-keywords.vue'),
+          meta: { hidden: true, title: 'Tracker关键词' }
+        },
+        {
+          // Tracker 关键词全局搜索（Phase 4 M3）：全池检索 + 移动/删除
+          path: 'tracker/keywords-search',
+          component: () => import(/* webpackChunkName: "m-tracker-keywords-search" */ '@/views/mobile/tracker-keywords-search.vue'),
+          meta: { hidden: true, title: '关键词搜索' }
+        },
+        {
+          // 定时任务（Phase 4 M3）：任务卡片 + 执行/启停/中断/删除
+          path: 'tasks',
+          component: () => import(/* webpackChunkName: "m-tasks" */ '@/views/mobile/tasks.vue'),
+          meta: { hidden: true, title: '定时任务' }
+        },
+        {
           path: 'notifications',
           component: () => import(/* webpackChunkName: "m-notifications" */ '@/views/mobile/notifications.vue'),
           meta: { hidden: true, title: '通知' }

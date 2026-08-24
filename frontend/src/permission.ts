@@ -23,12 +23,14 @@ const loginPaths = ['/login', '/m/login']
  */
 const uiModeRedirectPath = (to: Route): string | null => {
   if (currentUiMode() === 'mobile') {
-    // 已移动化的桌面顶层页统一分流（M2 后含回收站/日志/查询模板）
+    // 已移动化的桌面顶层页统一分流（M2 后含回收站/日志/查询模板；M3 含定时任务整页与 Tracker 看板/搜索两子页）
     if (
       to.path === '/' || to.path === '/dashboard' || to.path === '/torrents' || to.path.startsWith('/torrents/') ||
       to.path === '/recycle-bin' || to.path.startsWith('/recycle-bin/') ||
       to.path === '/logs' || to.path.startsWith('/logs/') ||
-      to.path === '/query-templates' || to.path.startsWith('/query-templates/')
+      to.path === '/query-templates' || to.path.startsWith('/query-templates/') ||
+      to.path === '/tasks' || to.path.startsWith('/tasks/') ||
+      to.path === '/tracker' || to.path === '/tracker/keywords-board' || to.path === '/tracker/keywords-search'
     ) {
       return toMobilePath(to.path)
     }

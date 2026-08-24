@@ -89,7 +89,7 @@ describe('layout/mobile/MobileLayout', () => {
 
   // ============ 汉堡抽屉（2026-08-24） ============
 
-  it('汉堡按钮打开抽屉，抽屉含移动组 8 项 + 桌面组 6 项完整菜单（M2 重组）', async() => {
+  it('汉堡按钮打开抽屉，抽屉含移动组 10 项 + 桌面组 4 项完整菜单（M3 重组）', async() => {
     const wrapper = mountLayout('/m/dashboard')
     expect((wrapper.vm as any).drawerVisible).toBe(false)
     wrapper.find('.mobile-header-menu').trigger('click')
@@ -99,15 +99,15 @@ describe('layout/mobile/MobileLayout', () => {
     const items = wrapper.findAll('.mobile-menu-item')
     expect(items.length).toBe(14)
     const mobileLabels = (wrapper.vm as any).mobileMenuItems.map((t: { label: string }) => t.label)
-    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '查询模板', '回收站', '日志'])
+    expect(mobileLabels).toEqual(['仪表盘', '下载器', '种子', '通知', '高级搜索', '查询模板', '回收站', '日志', 'Tracker关键词', '定时任务'])
     const desktopLabels = (wrapper.vm as any).desktopMenuItems.map((t: { label: string }) => t.label)
     expect(desktopLabels).toEqual(
-      expect.arrayContaining(['下载器管理', 'Tracker管理', '定时任务', '孤儿文件', '系统设置'])
+      expect.arrayContaining(['种子列表（桌面）', 'Tracker 汇报/测试（桌面）', '孤儿文件', '系统设置'])
     )
-    // M2 已移动化的页面不再留在桌面组
-    expect(desktopLabels).not.toContain('日志管理')
-    expect(desktopLabels).not.toContain('回收站')
-    expect(desktopLabels).not.toContain('查询模板')
+    // M3 已移动化/已覆盖的页面不再留在桌面组
+    expect(desktopLabels).not.toContain('下载器管理')
+    expect(desktopLabels).not.toContain('定时任务')
+    expect(desktopLabels).not.toContain('Tracker管理')
   })
 
   it('抽屉点移动项：关闭抽屉并 replace 移动路径', async() => {
@@ -133,11 +133,11 @@ describe('layout/mobile/MobileLayout', () => {
   it('抽屉点桌面功能项：关闭抽屉、push 桌面路径且不写 ui_mode 偏好', async() => {
     const wrapper = mountLayout('/m/dashboard')
     const items = wrapper.findAll('.mobile-menu-item')
-    // 移动组 8 项之后为桌面组，首项"下载器管理"
-    items.at(8).trigger('click')
+    // 移动组 10 项之后为桌面组，首项"种子列表（桌面）"
+    items.at(10).trigger('click')
     await wrapper.vm.$nextTick()
     expect((wrapper.vm as any).drawerVisible).toBe(false)
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/downloader')
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/torrents')
     expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
     expect(localStorage.getItem('btdeck_ui_mode')).toBeNull()
   })

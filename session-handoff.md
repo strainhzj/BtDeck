@@ -1,5 +1,36 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-24 交接（八）：移动端 M3（Tracker 关键词看板/搜索 + 定时任务 + 抽屉重组）
+
+### 结论
+
+M3 完成并验证（未提交）。M3 无计划预定义清单，AskUserQuestion 未获回复，按自治指令以推荐范围执行（全部来自用户候选方向）：**Tracker 核心移动化（关键词看板 + 关键词搜索）+ 定时任务移动化 + 抽屉遗留清理**。若用户对范围有异议，本批未提交可调整。
+
+### 交付（前端 13 文件：6 新增 + 7 修改）
+
+- `/m/tracker/keywords-board`：四池 Tab（getPoolStatistics 计数）+ 卡片流 + 分页；桌面拖拽移池→移动端卡片下拉「移动到X池」（moveKeywordToPool 同 API）+ 删除；添加复用桌面 AddKeywordDialog（92% media query）；候选池禁用添加。
+- `/m/tracker/keywords-search`：searchAllPools 全池检索（keyword/pool_types/time_range/sort_by 与桌面同字段集）+ 移动/删除 + ?keyword= 初始词。
+- `/m/tasks`：任务卡片（状态/六态 outcome/数据陈旧/类型/cron/描述/上次执行）；操作：立即执行（禁用拦截）/启停（PUT 部分更新 enabled，后端 CronTaskUpdate 全可选 + exclude_none 已核实）/中断（仅运行中）/删除；编辑/新建/日志脚注指路桌面。
+- 路由 3 条 + 抽屉（移动组 10 / 桌面组 4：移除下载器管理与定时任务，Tracker管理→「Tracker 汇报/测试（桌面）」直达 /tracker/reannounce-config）。
+- 分流：/tasks 全前缀拦截（M2 模式）；/tracker **精确拦截**三路径（看板/搜索），汇报配置/测试工具保留移动模式桌面直达。
+
+### 关键发现（后续批次注意）
+
+- **桌面缺陷已修**：keywords-board.vue `extractErrorMessage` 使用未导入（4 处错误路径 ReferenceError）→ 补导入。
+- **M3 模板三坑**（Jest 会直接套件失败但报错不指向真因）：①模板事件箭头函数不可带 TS 类型标注；②模板不可用 `??`（buble 只到 ES2015，兜底收实例方法）；③模板不可用 `!` 非空断言（v-if 守卫+双调用）。
+- **本会话 IAB 交互通道全断**（click/dom_cua/CUA 坐标/Tab 键/截图全失败，fill/goto/snapshot/evaluate 正常）——比前两会话更重；点击类交互全部由 Jest 直调方法覆盖兜底，点击级复核留交互恢复会话或真机。
+- 浏览器验证 query 参数链路注意：同路径仅 query 变更**不重挂载组件**（mounted 不重跑），验证 ?keyword= 须先离开再进入。
+
+### 验证
+
+Jest 全量 73 套件 1014 例全绿（+3 套件：mobile-tracker-keywords 7 / -search 6 / mobile-tasks 9）；tsc 零错误；ESLint 通过；build 14 个 m-* chunk（+3）。浏览器 390×844 DOM 快照实证：看板四池真实计数 112/1/1/81+候选池 20 卡+分页+禁用添加；搜索 195 条全池+?keyword=dupe 过滤 e2e（仅 6 命中无分页）；任务 13 卡六态（成功/已跳过）+数据陈旧双语义文案+中断按运行态隐藏；守卫 /tasks/index→/m/tasks、/tracker/reannounce-config 桌面直达。
+
+### 待办
+
+1. 本批 13 前端文件 + 三份记录未提交，待用户指示。
+2. M3 点击级交互复核（池切换/下拉移动/任务操作/抽屉）留交互通道恢复会话或真机。
+3. 后续候选待用户定：M4 孤儿文件移动化 / 移动独有优化（PWA/手势）/ 桌面双模式对齐（task .6，后端/打包域）；系统设置建议永留桌面。
+
 ## 2026-08-24 交接（七）：后端单种子端点空 data 缺陷修复（M1 遗留清零）
 
 ### 结论

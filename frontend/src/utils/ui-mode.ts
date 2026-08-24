@@ -48,6 +48,16 @@ export function toMobilePath(path: string): string {
   if (path.startsWith('/recycle-bin')) return '/m/recycle-bin'
   if (path.startsWith('/logs')) return '/m/logs'
   if (path.startsWith('/query-templates')) return '/m/query-templates'
+  // M3：定时任务整页移动化（含日志页签，编辑/新建走桌面完整版）；
+  // Tracker 仅看板/搜索两子页移动化，汇报配置与测试工具保留桌面直达（守卫精确拦截）
+  if (path.startsWith('/tasks')) return '/m/tasks'
+  if (
+    path === '/tracker' ||
+    path === '/tracker/keywords-board' ||
+    path === '/tracker/keywords-search'
+  ) {
+    return '/m/tracker/keywords-board'
+  }
   return '/m/dashboard'
 }
 

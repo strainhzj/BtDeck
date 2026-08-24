@@ -5487,3 +5487,44 @@ M1 余项四项全部完成并验证（未提交）：①种子详情页（路�
 
 - 本批 3 文件未提交（torrent_crud.py + 新测试 + 三份记录），待用户指示。
 - 移动端详情页目前仍走 getList 回查（M1 绕开方案，可用）；端点修复后如需切换到单种子直查为可选优化（数据一致，非必须）。
+
+## 2026-08-24（八）：移动端 M3（Tracker 关键词看板/搜索 + 定时任务 + 抽屉重组）
+
+### 结论
+
+M3 完成并验证（未提交）。M3 无计划预定义清单——AskUserQuestion 未获回复，按自治指令以推荐范围执行：**Tracker 核心移动化（关键词看板+关键词搜索）+ 定时任务移动化 + 抽屉遗留清理**，全部来自用户列出的候选方向。
+
+### 交付内容（前端 13 文件：6 新增 + 7 修改）
+
+- `/m/tracker/keywords-board`（tracker-keywords.vue）：四池 Tab（候选/忽略/成功/失败，计数走 getPoolStatistics）+ 卡片流（getPoolKeywords 20/页 + 加载更多）；桌面拖拽移池在移动端改为卡片下拉「移动到X池」（moveKeywordToPool 同 API）+ 下拉删除（$confirm）；添加关键词复用桌面 AddKeywordDialog（92% 宽 media query 收缩），候选池禁用添加；搜索入口跳 /m/tracker/keywords-search；下拉刷新。
+- `/m/tracker/keywords-search`（tracker-keywords-search.vue）：searchAllPools 全池检索，筛选与桌面同字段集（keyword/pool_types 逗号拼接/time_range/sort_by）；卡片（关键词+池徽标+时间）+ 移动下拉（原地移动禁用）/删除；支持 ?keyword= 初始词；加载更多。
+- `/m/tasks`（tasks.vue）：任务卡片流（状态/类型/cron/描述/启用标记/上次执行格式化）；最近结果六态（getTaskOutcomeMeta 同源）+ 数据陈旧（isTaskDataStale/getStaleTooltipText 同源，均实例方法包装——模板不可直调模块级函数）；操作集：立即执行（禁用任务拦截 warning）/启停（PUT /cronTasks/{id} 部分更新 enabled，CronTaskUpdate 全字段可选 + exclude_none 已核实）/中断（仅运行中显示）/删除（$confirm）；新建/编辑/完整日志脚注指路桌面。
+- 路由 3 条 m-* 懒加载 + 抽屉重组：移动组 8→10（+Tracker关键词/+定时任务），桌面组 6→4（移除下载器管理——/m/downloader 已全覆盖；移除定时任务——已移动化；Tracker管理 → 「Tracker 汇报/测试（桌面）」直达 /tracker/reannounce-config）。
+- 分流策略：/tasks 全前缀拦截（M2 模式，编辑含 Monaco 不适合移动）；/tracker 精确拦截（仅 /tracker、/tracker/keywords-board、/tracker/keywords-search 三路径），汇报配置/测试工具保留移动模式桌面直达。
+
+### 本批发现并修复（桌面缺陷）
+
+- **keywords-board.vue extractErrorMessage 使用未导入**（4 处错误路径：池加载失败/移动失败/删除失败），触发即 ReferenceError——与 keywords-search.vue 同目录同函数（@/utils/tracker，签名 (error, defaultMessage) 匹配），补一行导入修复；eslint/tsc/keyword 相关 33 例通过。
+
+### 本批新增踩坑记录（M3 三连，均模板层）
+
+1. 模板内事件箭头函数不可带 TS 类型标注（`@command="(cmd: string) => ..."` → vue-jest 模板编译失败，报错不指向真因）→ 去 `(cmd)`。
+2. 模板不可用 `??`（空值合并，buble/vue-template-es2015-compiler 只到 ES2015）→ 计数兜底收进实例方法 poolCount。
+3. 模板不可用 `!` 非空断言 → v-if 守卫 + 函数双调用（桌面 tasks 页同款写法）。
+
+### 验证
+
+- Jest 全量 73 套件 1014 例全绿（+3 套件 +24 例：tracker-keywords 7 / tracker-keywords-search 6 / tasks 9；mobile-shell/ui-mode 契约同步更新）。
+- tsc --noEmit 零错误；13 文件 ESLint 通过（含消掉 2 个 no-non-null-assertion warning）；生产 build 通过，14 个 m-* chunk（新增 m-tracker-keywords / m-tracker-keywords-search / m-tasks）。
+- 浏览器 390×844（IAB DOM 快照证据；**本会话 click/keyboard/screenshot 通道全断**——playwright click 超时、dom_cua/CUA 坐标点击不达 Vue 处理器、Tab 不移焦点、截图 guest 失败，与交接（五）最重故障模式一致，fill/goto/snapshot/evaluate 正常）：
+  - 看板：四池真实计数 112/1/1/81、候选池 20 卡、加载更多 20/112、候选池添加按钮禁用、脚注。
+  - 搜索：全池 195 条卡片+池徽标+操作；?keyword=dupe 全新挂载 → 仅 6 条 dupe 命中、无分页按钮（检索过滤链路 e2e；注意 query 变更不重挂载组件，验证须先离开再进入）。
+  - 任务：13 张真实任务卡、六态实证（成功/已跳过）、数据陈旧双语义（从未成功数据 + 最后更新过久）含解释文案、中断按钮按运行态正确隐藏。
+  - 守卫：/#/tasks/index → /m/tasks 分流；/#/tracker/keywords-board 停留移动页；/#/tracker/reannounce-config 移动模式桌面布局直达（不拦截实证）。
+  - 点击类交互（池切换/下拉移动/抽屉菜单/任务操作）浏览器未达，全部有 Jest 直调方法覆盖（switchPool/handleCommand/handleMove/toggleEnabled/confirmDelete 等）。
+
+### 待办
+
+- 本批 13 个前端文件 + 三份记录未提交，待用户指示。
+- M3 点击级交互复核留待交互通道恢复的会话或真机（Chrome 设备模拟 docs/android/desktop-testing.md SOP）。
+- 后续候选（待用户定）：M4 孤儿文件移动化、系统设置移动化（价值低建议永留桌面）、移动独有优化（PWA/手势）、桌面双模式对齐（task .6，属后端/打包域）。
