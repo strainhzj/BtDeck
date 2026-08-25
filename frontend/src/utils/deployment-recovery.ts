@@ -11,6 +11,10 @@ export const CHUNK_RECOVERY_WINDOW_MS = 60_000
 
 const LEGACY_WORKBOX_CACHE_PREFIX = 'vue-typescript-admin-template-'
 
+// 本版 SW 注册脚本标记（registerServiceWorker.ts 以 ?src=btdeck 注册）：
+// retire 只清理无标记的模板时代注册，不能把刚注册的新 worker 注销掉。
+export const PWA_SW_SCRIPT_MARKER = 'src=btdeck'
+
 export type ChunkRecoveryOutcome = 'ignored' | 'reloading' | 'suppressed'
 
 export interface ChunkRecoveryEnvironment {
@@ -27,6 +31,8 @@ export interface ChunkRecoveryHistoryEnvironment {
 
 export interface RetirableServiceWorkerRegistration {
   readonly scope: string
+  /** 注册当前 worker 的脚本地址；无任何 worker 实例时为空串（按遗留处理）。 */
+  readonly scriptUrl: string
   unregister: () => Promise<boolean>
 }
 
@@ -91,8 +97,20 @@ function browserLegacyServiceWorkerEnvironment(): LegacyServiceWorkerEnvironment
     appScope,
     deleteCache: (name: string) => window.caches.delete(name),
     getCacheNames: () => window.caches.keys(),
-    getRegistrations: () => navigator.serviceWorker.getRegistrations()
+    getRegistrations: () =>
+      navigator.serviceWorker.getRegistrations().then(registrations =>
+        registrations.map(registration => ({
+          scope: registration.scope,
+          scriptUrl: registrationScriptUrl(registration),
+          unregister: () => registration.unregister()
+        }))
+      )
   }
+}
+
+function registrationScriptUrl(registration: ServiceWorkerRegistration): string {
+  const worker = registration.active ?? registration.waiting ?? registration.installing
+  return worker ? worker.scriptURL : ''
 }
 
 export function isChunkLoadError(error: unknown): boolean {
@@ -157,9 +175,9 @@ export function clearChunkRecoveryQuery(
 }
 
 /**
- * PWA registration is not enabled by main.ts, but older BtDeck builds may have
- * left a controlling Workbox worker and its precache behind. Retire only this
- * app's root-scoped registration and BtDeck-prefixed caches.
+ * v1.0.6 起 main.ts 重新注册 PWA worker（脚本带 src=btdeck 标记）。此处只退休
+ * 模板时代的遗留产物：无标记的根 scope 注册（会继续钉住旧应用壳）与模板前缀
+ * Workbox 缓存；带标记的新注册和 btdeck 前缀缓存不属于清理范围。
  */
 export async function retireLegacyServiceWorkers(
   environment: LegacyServiceWorkerEnvironment | null = browserLegacyServiceWorkerEnvironment()
@@ -171,7 +189,9 @@ export async function retireLegacyServiceWorkers(
   try {
     const registrations = await environment.getRegistrations()
     const appRegistrations = registrations.filter(
-      registration => registration.scope === environment.appScope
+      registration =>
+        registration.scope === environment.appScope &&
+        !registration.scriptUrl.includes(PWA_SW_SCRIPT_MARKER)
     )
     const registrationResults = await Promise.all(
       appRegistrations.map(registration => registration.unregister())

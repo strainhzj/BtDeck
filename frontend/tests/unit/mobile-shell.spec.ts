@@ -213,4 +213,93 @@ describe('layout/mobile/MobileLayout', () => {
     jest.advanceTimersByTime(180000)
     expect(jest.mocked(NotificationModule.FetchUnreadCount)).toHaveBeenCalledTimes(3)
   })
+
+  // ============ 手势（v1.0.6 移动独有优化：滑动切 Tab / 抽屉手势） ============
+
+  const swipe = (wrapper: Wrapper<Vue>, startX: number, endX: number, startY = 400, endY = 402): void => {
+    const content = wrapper.find('.mobile-content')
+    content.trigger('touchstart', { touches: [{ clientX: startX, clientY: startY }] })
+    content.trigger('touchmove', {
+      touches: [{ clientX: (startX + endX) / 2, clientY: (startY + endY) / 2 }]
+    })
+    content.trigger('touchend', { changedTouches: [{ clientX: endX, clientY: endY }] })
+  }
+
+  it('内容区左滑：切换到右侧相邻 Tab 并带 next 切向动画', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    swipe(wrapper, 300, 200)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/downloader')
+    expect(wrapper.find('.mobile-content').classes()).toContain('swipe-anim-next')
+  })
+
+  it('内容区右滑：切换到左侧相邻 Tab 并带 prev 切向动画', async() => {
+    const wrapper = mountLayout('/m/notifications')
+    swipe(wrapper, 200, 300)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith('/m/torrents')
+    expect(wrapper.find('.mobile-content').classes()).toContain('swipe-anim-prev')
+  })
+
+  it('第一个 Tab 右滑（非左边缘）/ 最后一个 Tab 左滑：不导航', () => {
+    const first = mountLayout('/m/dashboard')
+    swipe(first, 200, 320)
+    expect(first.vm.$router.replace).not.toHaveBeenCalled()
+    const last = mountLayout('/m/notifications')
+    swipe(last, 300, 180)
+    expect(last.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('垂直滑动不切换 Tab（轴锁定让位下拉刷新）', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    const content = wrapper.find('.mobile-content')
+    content.trigger('touchstart', { touches: [{ clientX: 300, clientY: 400 }] })
+    content.trigger('touchmove', { touches: [{ clientX: 302, clientY: 470 }] })
+    content.trigger('touchend', { changedTouches: [{ clientX: 301, clientY: 560 }] })
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('水平位移未达阈值（60px）不切换', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    swipe(wrapper, 300, 260)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('子页面（种子详情）左滑不切 Tab：仅主页精确匹配生效', () => {
+    const wrapper = mountLayout('/m/torrents/detail/d1/abc')
+    swipe(wrapper, 300, 200)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('左边缘右滑：打开抽屉且不导航（边缘手势优先于切 Tab）', async() => {
+    const wrapper = mountLayout('/m/downloader')
+    swipe(wrapper, 10, 100, 400, 402)
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(true)
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
+  })
+
+  it('抽屉内左滑关闭抽屉', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    ;(wrapper.vm as any).drawerVisible = true
+    await wrapper.vm.$nextTick()
+    const menu = wrapper.find('.mobile-menu')
+    menu.trigger('touchstart', { touches: [{ clientX: 250, clientY: 300 }] })
+    menu.trigger('touchmove', { touches: [{ clientX: 180, clientY: 302 }] })
+    menu.trigger('touchend', { changedTouches: [{ clientX: 130, clientY: 305 }] })
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(false)
+  })
+
+  it('抽屉内垂直滑动不关闭抽屉（菜单可上下滚动）', async() => {
+    const wrapper = mountLayout('/m/dashboard')
+    ;(wrapper.vm as any).drawerVisible = true
+    await wrapper.vm.$nextTick()
+    const menu = wrapper.find('.mobile-menu')
+    menu.trigger('touchstart', { touches: [{ clientX: 250, clientY: 300 }] })
+    menu.trigger('touchmove', { touches: [{ clientX: 252, clientY: 380 }] })
+    menu.trigger('touchend', { changedTouches: [{ clientX: 250, clientY: 480 }] })
+    await wrapper.vm.$nextTick()
+    expect((wrapper.vm as any).drawerVisible).toBe(true)
+  })
 })

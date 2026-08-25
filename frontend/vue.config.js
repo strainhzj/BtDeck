@@ -11,7 +11,24 @@ module.exports = {
   assetsDir: 'assets',
   lintOnSave: false,
   pwa: {
-    name: name
+    name: name,
+    // 品牌主题色与前端主题同源（theme-variables.scss --color-primary #059669）
+    themeColor: '#059669',
+    msTileColor: '#059669',
+    // iOS 添加到主屏幕后独立全屏运行（配合移动版 UI）；
+    // v5 插件为扁平选项（v4 的 appleMobileWebAppOptions 对象不生效）
+    appleMobileWebAppCapable: 'yes',
+    appleMobileWebAppStatusBarStyle: 'default',
+    appleMobileWebAppTitle: name,
+    workboxOptions: {
+      // 缓存前缀品牌化：默认值是包名 vue-typescript-admin-template，
+      // 恰为 deployment-recovery 的遗留清理前缀，必须区分开
+      cacheId: 'btdeck',
+      // 首装立即接管已打开页面；版本更新保持 waiting，由页面内
+      // RefreshPrompt 提示用户 SKIP_WAITING + 刷新（防止旧壳钉死）
+      clientsClaim: true,
+      skipWaiting: false
+    }
   },
   pluginOptions: {
     'style-resources-loader': {

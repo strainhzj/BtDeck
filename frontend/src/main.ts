@@ -60,9 +60,12 @@ Vue.directive('waves', waves)
 
 Vue.config.productionTip = false
 
-// Current builds do not register the generated PWA worker. Remove workers and
-// precaches left by older releases so they cannot pin an obsolete app shell.
-void retireLegacyServiceWorkers()
+// PWA（v1.0.6 移动独有优化）：先退休模板时代的遗留 SW（裸 service-worker.js
+// 无标记注册 + 模板前缀缓存），再注册本版 SW（脚本带 src=btdeck 标记，
+// 二者互不干扰）；skipWaiting=false，新版本经 RefreshPrompt 用户确认后激活。
+void retireLegacyServiceWorkers().finally(() => {
+  import('@/registerServiceWorker').catch(() => undefined)
+})
 
 // 双令牌会话监听（W6 伴随修复）：标签页重新可见时从 cookie 同步最新令牌，
 // 检测到会话已在别处结束时统一走登出跳转

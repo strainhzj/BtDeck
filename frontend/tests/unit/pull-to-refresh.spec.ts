@@ -18,8 +18,8 @@ const Host = Vue.extend({
   methods: { onPullRefresh }
 })
 
-const touchAt = (y: number): TouchEvent =>
-  ({ touches: [{ clientY: y }], preventDefault: jest.fn(), cancelable: true }) as unknown as TouchEvent
+const touchAt = (y: number, x = 300): TouchEvent =>
+  ({ touches: [{ clientX: x, clientY: y }], preventDefault: jest.fn(), cancelable: true }) as unknown as TouchEvent
 
 const flushPromises = (): Promise<void> => new Promise((resolve) => { setTimeout(resolve, 0) })
 
@@ -96,5 +96,25 @@ describe('views/mobile/mixins/pull-to-refresh', () => {
 
   it('阈值常量导出为 60（与产品约定一致）', () => {
     expect(PULL_REFRESH_THRESHOLD).toBe(60)
+  })
+
+  // ============ 横向手势互斥（v1.0.6 手势：布局壳 Tab 滑动切换） ============
+
+  it('横向主导手势（伴随下滑分量）：中止下拉不触发刷新（让位 Tab 切换）', async() => {
+    scroller.scrollTop = 0
+    vm().onTouchStart(touchAt(500))
+    // 水平 -150px、垂直 +40px：横向主导
+    vm().onTouchMove(touchAt(540, 150))
+    expect(vm().pullDistance).toBe(0)
+    vm().onTouchEnd()
+    expect(onPullRefresh).not.toHaveBeenCalled()
+  })
+
+  it('纵向主导手势（伴随水平分量）：仍正常进入拉动', () => {
+    scroller.scrollTop = 0
+    vm().onTouchStart(touchAt(500))
+    // 垂直 +150px、水平 -20px：纵向主导
+    vm().onTouchMove(touchAt(650, 280))
+    expect(vm().pullDistance).toBe(Math.min(150 * 0.5, 100))
   })
 })

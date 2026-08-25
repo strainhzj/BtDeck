@@ -18,14 +18,17 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 <template>
   <div id="app">
     <router-view />
+    <RefreshPrompt />
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
+import RefreshPrompt from '@/components/common/RefreshPrompt.vue'
 
 @Component({
-  name: 'App'
+  name: 'App',
+  components: { RefreshPrompt }
 })
 export default class extends Vue {}
 </script>

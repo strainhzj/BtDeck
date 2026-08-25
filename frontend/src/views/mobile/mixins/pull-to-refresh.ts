@@ -15,11 +15,14 @@ export const PULL_REFRESH_THRESHOLD = 60
 const PULL_REFRESH_DAMPING = 0.5
 const PULL_REFRESH_MAX_DISTANCE = 100
 const INDICATOR_REFRESHING_HEIGHT = 36
+/** 横向主导判定阈值：超过后中止本次下拉（与布局壳 Tab 滑动手势互斥） */
+const PULL_REFRESH_AXIS_LOCK = 12
 
 @Component
 export class PullToRefresh extends Vue {
   public pullDistance = 0
   public pullRefreshing = false
+  private pullStartX: number | null = null
   private pullStartY: number | null = null
 
   public get pullReady(): boolean {
@@ -52,12 +55,23 @@ export class PullToRefresh extends Vue {
     if (this.pullRefreshing) return
     const touch = e.touches[0]
     this.pullStartY = touch ? touch.clientY : null
+    this.pullStartX = touch ? touch.clientX : null
   }
 
   private onTouchMove(e: TouchEvent): void {
     if (this.pullStartY === null || this.pullRefreshing) return
     const touch = e.touches[0]
     if (!touch) return
+    // 横向主导手势（布局壳 Tab 滑动切换）：中止下拉，指示条归零
+    if (
+      this.pullStartX !== null &&
+      Math.abs(touch.clientX - this.pullStartX) > Math.abs(touch.clientY - this.pullStartY) &&
+      Math.abs(touch.clientX - this.pullStartX) > PULL_REFRESH_AXIS_LOCK
+    ) {
+      this.pullDistance = 0
+      this.pullStartY = null
+      return
+    }
     const delta = touch.clientY - this.pullStartY
     if (delta <= 0) {
       this.pullDistance = 0
@@ -75,6 +89,7 @@ export class PullToRefresh extends Vue {
     const distance = this.pullDistance
     this.pullDistance = 0
     this.pullStartY = null
+    this.pullStartX = null
     if (distance >= PULL_REFRESH_THRESHOLD) {
       void this.triggerPullRefresh()
     }

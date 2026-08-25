@@ -12,7 +12,13 @@
       </el-button>
     </header>
 
-    <main class="mobile-content">
+    <main
+      class="mobile-content"
+      :class="swipeAnimClass"
+      @touchstart.passive="onContentTouchStart"
+      @touchmove.passive="onContentTouchMove"
+      @touchend.passive="onContentTouchEnd"
+    >
       <router-view />
     </main>
 
@@ -39,11 +45,17 @@
       size="78%"
       :visible.sync="drawerVisible"
       :with-header="false"
+      :close-on-click-modal="true"
       custom-class="mobile-menu-drawer"
       :modal-append-to-body="true"
       append-to-body
     >
-      <div class="mobile-menu">
+      <div
+        class="mobile-menu"
+        @touchstart.passive="onDrawerTouchStart"
+        @touchmove.passive="onDrawerTouchMove"
+        @touchend.passive="onDrawerTouchEnd"
+      >
         <div class="mobile-menu-header">
           <span class="mobile-menu-title">功能菜单</span>
           <button type="button" class="mobile-menu-close" aria-label="关闭菜单" @click="drawerVisible = false">
@@ -98,6 +110,15 @@ interface MobileTab {
 
 const UNREAD_POLL_INTERVAL_MS = 60000
 
+/** 手势阈值（v1.0.6 移动独有优化）：轴锁定 / Tab 切换位移 / 左边缘宽度 / 最大时长 */
+const SWIPE_AXIS_LOCK_PX = 12
+const SWIPE_TAB_THRESHOLD_PX = 60
+const SWIPE_EDGE_WIDTH_PX = 24
+const SWIPE_MAX_DURATION_MS = 800
+const SWIPE_ANIM_DURATION_MS = 220
+
+type SwipeAxis = 'none' | 'horizontal' | 'vertical'
+
 /**
  * 移动布局壳（dual-mode-client Phase 4 M1）：
  * 顶部标题 + 汉堡功能菜单 + 切桌面出口、内容区 router-view、底部 Tab 导航。
@@ -110,11 +131,33 @@ const UNREAD_POLL_INTERVAL_MS = 60000
  * 通知未读角标（M1 余项）：复用桌面同款 Vuex NotificationModule.unreadCount
  * （/notifications/unread-count 现有接口），挂载即拉一次 + 60s 轮询（移动端
  * 省电节奏；桌面 Navbar 无轮询先例，此处为移动新增行为）。
+ *
+ * 手势（v1.0.6 移动独有优化）：内容区水平滑动在四个底部 Tab 主页间切换
+ * （带切向过渡动画）；左边缘右滑打开汉堡抽屉；抽屉内左滑或点遮罩关闭。
+ * 轴锁定判定与页面级下拉刷新 mixin 互斥（横向手势不触发刷新），子页面
+ * （详情/管理页）横向滑动不切 Tab，避免误触。
  */
 @Component({ name: 'MobileLayout' })
 export default class MobileLayout extends Vue {
   private drawerVisible = false
   private unreadTimer = 0
+
+  // ============ 手势状态（内容区滑动切 Tab / 左边缘右滑开抽屉） ============
+
+  private swipeStartX = 0
+  private swipeStartY = 0
+  private swipeStartTime = 0
+  private swipeAxis: SwipeAxis = 'none'
+  private swipeFromLeftEdge = false
+  /** 切向过渡动画类（swipe-anim-next/prev），超时后清空 */
+  private swipeAnim: '' | 'next' | 'prev' = ''
+  private swipeAnimTimer = 0
+
+  // ============ 抽屉内左滑关闭 ============
+
+  private drawerTouchStartX = 0
+  private drawerTouchStartY = 0
+  private drawerTouchHorizontal = false
 
   private tabs: MobileTab[] = [
     { label: '仪表盘', path: '/m/dashboard' },
@@ -136,6 +179,10 @@ export default class MobileLayout extends Vue {
     if (this.unreadTimer) {
       window.clearInterval(this.unreadTimer)
       this.unreadTimer = 0
+    }
+    if (this.swipeAnimTimer) {
+      window.clearTimeout(this.swipeAnimTimer)
+      this.swipeAnimTimer = 0
     }
   }
 
@@ -188,6 +235,102 @@ export default class MobileLayout extends Vue {
     this.drawerVisible = false
     setStoredUiMode('desktop')
     this.$router.replace('/dashboard').catch(() => undefined)
+  }
+
+  // ============ 手势（v1.0.6 移动独有优化） ============
+
+  private get swipeAnimClass(): string {
+    return this.swipeAnim ? `swipe-anim-${this.swipeAnim}` : ''
+  }
+
+  private onContentTouchStart(e: TouchEvent): void {
+    const touch = e.touches[0]
+    if (!touch) return
+    this.swipeStartX = touch.clientX
+    this.swipeStartY = touch.clientY
+    this.swipeStartTime = Date.now()
+    this.swipeAxis = 'none'
+    this.swipeFromLeftEdge = touch.clientX <= SWIPE_EDGE_WIDTH_PX
+  }
+
+  private onContentTouchMove(e: TouchEvent): void {
+    if (this.swipeAxis !== 'none') return
+    const touch = e.touches[0]
+    if (!touch) return
+    const dx = Math.abs(touch.clientX - this.swipeStartX)
+    const dy = Math.abs(touch.clientY - this.swipeStartY)
+    if (dx > SWIPE_AXIS_LOCK_PX || dy > SWIPE_AXIS_LOCK_PX) {
+      this.swipeAxis = dx > dy ? 'horizontal' : 'vertical'
+    }
+  }
+
+  private onContentTouchEnd(e: TouchEvent): void {
+    const axis = this.swipeAxis
+    const fromEdge = this.swipeFromLeftEdge
+    const duration = Date.now() - this.swipeStartTime
+    this.swipeAxis = 'none'
+    this.swipeFromLeftEdge = false
+    if (axis !== 'horizontal' || duration > SWIPE_MAX_DURATION_MS) return
+
+    const touch = e.changedTouches[0]
+    if (!touch) return
+    const dx = touch.clientX - this.swipeStartX
+    if (Math.abs(dx) < SWIPE_TAB_THRESHOLD_PX) return
+
+    // 左边缘右滑优先开抽屉（与"切上一个 Tab"手势区分），且仅底部 Tab 主页
+    // 精确匹配生效（startsWith 会命中 /m/torrents/detail 等子页面，须排除，
+    // 避免详情页横向滑动误切 Tab）
+    if (dx > 0 && fromEdge) {
+      this.drawerVisible = true
+      return
+    }
+    const index = this.tabs.findIndex(tab => this.$route.path === tab.path)
+    if (index < 0) return
+    if (dx < 0 && index < this.tabs.length - 1) {
+      this.goWithSwipeAnim(this.tabs[index + 1], 'next')
+    } else if (dx > 0 && index > 0) {
+      this.goWithSwipeAnim(this.tabs[index - 1], 'prev')
+    }
+  }
+
+  private goWithSwipeAnim(tab: MobileTab, direction: 'next' | 'prev'): void {
+    this.go(tab)
+    this.swipeAnim = direction
+    if (this.swipeAnimTimer) window.clearTimeout(this.swipeAnimTimer)
+    this.swipeAnimTimer = window.setTimeout(() => {
+      this.swipeAnim = ''
+      this.swipeAnimTimer = 0
+    }, SWIPE_ANIM_DURATION_MS)
+  }
+
+  private onDrawerTouchStart(e: TouchEvent): void {
+    const touch = e.touches[0]
+    if (!touch) return
+    this.drawerTouchStartX = touch.clientX
+    this.drawerTouchStartY = touch.clientY
+    this.drawerTouchHorizontal = false
+  }
+
+  private onDrawerTouchMove(e: TouchEvent): void {
+    if (this.drawerTouchHorizontal) return
+    const touch = e.touches[0]
+    if (!touch) return
+    const dx = Math.abs(touch.clientX - this.drawerTouchStartX)
+    const dy = Math.abs(touch.clientY - this.drawerTouchStartY)
+    if (dx > SWIPE_AXIS_LOCK_PX || dy > SWIPE_AXIS_LOCK_PX) {
+      this.drawerTouchHorizontal = dx > dy
+    }
+  }
+
+  private onDrawerTouchEnd(e: TouchEvent): void {
+    if (!this.drawerTouchHorizontal) return
+    const touch = e.changedTouches[0]
+    if (!touch) return
+    const dx = touch.clientX - this.drawerTouchStartX
+    // 抽屉自左滑出（ltr），左滑（dx 为负）合拢方向一致
+    if (dx <= -SWIPE_TAB_THRESHOLD_PX) {
+      this.drawerVisible = false
+    }
   }
 }
 </script>
@@ -249,6 +392,37 @@ export default class MobileLayout extends Vue {
   flex: 1;
   padding: 12px 12px 72px;
   overflow-y: auto;
+}
+
+/* 滑动切 Tab 的切向过渡（v1.0.6 手势）：新页从滑动方向进入 */
+.mobile-content.swipe-anim-next {
+  animation: mobile-swipe-in-next 0.22s ease both;
+}
+
+.mobile-content.swipe-anim-prev {
+  animation: mobile-swipe-in-prev 0.22s ease both;
+}
+
+@keyframes mobile-swipe-in-next {
+  from {
+    opacity: 0.4;
+    transform: translateX(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes mobile-swipe-in-prev {
+  from {
+    opacity: 0.4;
+    transform: translateX(-18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .mobile-tabbar {
