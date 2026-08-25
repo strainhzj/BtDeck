@@ -94,6 +94,27 @@ class TestLogEvent:
         assert "rss_mb" not in msg, "非白名单字段不应输出"
         assert "secret_extra" not in msg, "非白名单字段不应输出"
 
+    def test_task_lifecycle_progress_stalled_whitelisted(self):
+        """【2026-08-25 回归】EVENT_TASK_LIFECYCLE 专属字段 progress_stalled 在
+        白名单内落盘——白名单外字段被 format_event_line 静默丢弃，漏登记会让
+        停滞告警只提级日志级别而丢失机器可读标记。"""
+        msg = self._log_msg(
+            obs.EVENT_TASK_LIFECYCLE,
+            state="heartbeat",
+            task_id=7,
+            task_code="tracker_sync_598b784c",
+            elapsed_ms=31502273.1,
+            last_progress_ms=31507202.7,
+            execution_mode="async",
+            timeout_exceeded=True,
+            timeout_seconds=3600.0,
+            progress_stalled=True,
+        )
+        assert "event=task_lifecycle" in msg
+        assert "state=heartbeat" in msg
+        assert "progress_stalled=True" in msg, "停滞标记必须在白名单内，否则被静默丢弃"
+        assert "timeout_exceeded=True" in msg
+
     def test_sync_error_event_exposes_suppression_context(self):
         """同步异常事件保留阶段/继续语义，但不把未白名单原始字段写入结构化日志。"""
         msg = self._log_msg(

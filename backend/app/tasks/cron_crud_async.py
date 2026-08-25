@@ -222,6 +222,14 @@ class AsyncCronTaskCRUD:
                 task.last_success_at = last_attempt_at
 
             await db.commit()
+            # 根因（2026-08-25 定位）：CronTask.update_time 带 onupdate=func.now()，
+            # 本方法不显式设置该列，flush 生成的 UPDATE 携带 SQL 表达式后
+            # postfetch 机制将 update_time 标记为 expired（独立于会话工厂的
+            # expire_on_commit=False）。commit 后 to_dict() 同步访问该列触发
+            # refresh SELECT → aiosqlite await_only → MissingGreenlet（日志
+            # "异步更新任务新鲜度失败"，任务页新鲜度停更）。显式 refresh
+            # （异步上下文内）消除 expired 标记后再序列化。
+            await db.refresh(task)
             logger.debug(
                 f"异步更新任务新鲜度成功: {task.task_name} (ID: {task_id}, outcome: {last_outcome}, "
                 f"advance_success: {advance_success})"

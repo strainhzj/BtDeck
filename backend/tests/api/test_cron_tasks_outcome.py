@@ -17,6 +17,7 @@ require_authenticated_user 与 get_db 均 override。
 
 from datetime import datetime, timedelta
 from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI
@@ -28,7 +29,7 @@ from sqlalchemy.pool import StaticPool
 from app.api.api import api_router
 from app.auth.dependencies import require_authenticated_user
 from app.database import Base, get_db
-from app.models import OUTCOME_SKIPPED, OUTCOME_SUCCESS
+from app.models import OUTCOME_CANCELLED, OUTCOME_SKIPPED, OUTCOME_SUCCESS
 from app.tasks.cron_models import CronTask
 from app.tasks.models import TaskLogs
 
@@ -281,3 +282,72 @@ class TestTaskLogsOutcome:
         assert stats["totalLogs"] == 3
         assert stats["successLogs"] == 2, "skipped 的 success=True 计入成功（口径兼容，不因 outcome 改变）"
         assert stats["failedLogs"] == 1
+
+    def test_logs_statistics_cancelled_counts_as_success_caliber(self, db_session, client_factory):
+        """【2026-08-25 回归】用户中断（outcome=cancelled + success=True，与 skipped
+        同口径）计入成功卡片而非失败——若有人把 interrupt 落库改为 success=False，
+        此断言会随统计卡片口径一起报红。"""
+        _make_log(db_session, outcome=OUTCOME_CANCELLED, skip_reason=None)
+        _make_log(db_session, outcome="failed", skip_reason=None, success=False)
+
+        c = client_factory()
+        body = c.get(URL_STATS).json()
+        assert body["code"] == "200"
+        stats = body["data"]
+        assert stats["totalLogs"] == 2
+        assert stats["successLogs"] == 1, "cancelled 的 success=True 计入成功（用户主动行为不误判故障）"
+        assert stats["failedLogs"] == 1
+
+
+class TestInterruptEndpointAudit:
+    """【2026-08-25】interrupt 端点审计接线（scheduled_task_interrupt）。"""
+
+    URL_INTERRUPT = "/api/v1/cronTasks/{task_id}/interrupt"
+
+    @staticmethod
+    def _fake_async_session_ctx():
+        """隔离真实 AsyncSessionLocal：_audit_task_interrupt 的审计写会话。"""
+        fake_ctx = MagicMock()
+        fake_ctx.__aenter__ = AsyncMock(return_value=MagicMock())
+        fake_ctx.__aexit__ = AsyncMock(return_value=False)
+        return fake_ctx
+
+    def test_interrupt_success_writes_audit(self, db_session, client_factory, monkeypatch):
+        """中断成功：写 scheduled_task_interrupt 审计（operator/task_id/task_name）。"""
+        task = _make_task(db_session, task_code="interrupt_audit_1", task_name="中断审计任务")
+        interrupt_mock = AsyncMock(return_value=True)
+        monkeypatch.setattr("app.api.endpoints.cron_tasks.cron_executor.interrupt_task", interrupt_mock)
+        audit_service = MagicMock()
+        audit_service.log_operation = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr("app.api.endpoints.cron_tasks.get_audit_service", AsyncMock(return_value=audit_service))
+        monkeypatch.setattr("app.api.endpoints.cron_tasks.AsyncSessionLocal", lambda: self._fake_async_session_ctx())
+
+        c = client_factory()
+        r = c.post(self.URL_INTERRUPT.format(task_id=task.task_id))
+
+        assert r.status_code == 200
+        assert r.json()["code"] == "200"
+        interrupt_mock.assert_awaited_once_with(task.task_id)
+        audit_service.log_operation.assert_awaited_once()
+        kwargs = audit_service.log_operation.await_args.kwargs
+        assert kwargs["operation_type"] == "scheduled_task_interrupt"
+        assert kwargs["operator"] == "tester"
+        assert kwargs["operation_detail"] == {"task_id": task.task_id, "task_name": "中断审计任务"}
+        assert kwargs["operation_result"] == "success"
+
+    def test_interrupt_failure_still_writes_audit_with_failed_result(self, db_session, client_factory, monkeypatch):
+        """中断失败（执行器返回 False）：审计仍落库，operation_result=failed。"""
+        task = _make_task(db_session, task_code="interrupt_audit_2")
+        interrupt_mock = AsyncMock(return_value=False)
+        monkeypatch.setattr("app.api.endpoints.cron_tasks.cron_executor.interrupt_task", interrupt_mock)
+        audit_service = MagicMock()
+        audit_service.log_operation = AsyncMock(return_value=MagicMock())
+        monkeypatch.setattr("app.api.endpoints.cron_tasks.get_audit_service", AsyncMock(return_value=audit_service))
+        monkeypatch.setattr("app.api.endpoints.cron_tasks.AsyncSessionLocal", lambda: self._fake_async_session_ctx())
+
+        c = client_factory()
+        r = c.post(self.URL_INTERRUPT.format(task_id=task.task_id))
+
+        assert r.json()["code"] == "400"
+        kwargs = audit_service.log_operation.await_args.kwargs
+        assert kwargs["operation_result"] == "failed"

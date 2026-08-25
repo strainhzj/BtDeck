@@ -129,7 +129,9 @@ EVENT_FIELDS: Dict[str, frozenset] = {
     EVENT_TRACKER_STATUS: frozenset({"scanned", "changed", "unchanged", "batches", "duration_ms"}),
     EVENT_LOOP_LAG: frozenset({"lag_ms", "p95_ms", "p99_ms", "max_ms", "window_size"}),
     EVENT_WAL_SNAPSHOT: frozenset({"wal_bytes", "wal_growth_bytes", "busy_count", "checkpoint_busy"}),
-    EVENT_TASK_LIFECYCLE: frozenset(),
+    # 2026-08-25：任务心跳进度停滞标记（SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS
+    # 阈值触发，白名单外字段会被 format_event_line 静默丢弃故必须登记）
+    EVENT_TASK_LIFECYCLE: frozenset({"progress_stalled"}),
     EVENT_RESOURCE_LIFECYCLE: frozenset(
         {
             "resource_state",

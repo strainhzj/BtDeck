@@ -65,6 +65,7 @@ class AuditOperationType(str, Enum):
     SCHEDULED_TASK_ENABLE = "scheduled_task_enable"  # 启用定时任务
     SCHEDULED_TASK_DISABLE = "scheduled_task_disable"  # 禁用定时任务
     SCHEDULED_TASK_EXECUTE = "scheduled_task_execute"  # 手动执行定时任务
+    SCHEDULED_TASK_INTERRUPT = "scheduled_task_interrupt"  # 中断运行中的定时任务（2026-08-25）
 
     # ========== 关键词规则操作 ==========
     KEYWORD_RULE_ADD = "keyword_rule_add"  # 添加关键词规则
@@ -155,6 +156,7 @@ class AuditOperationType(str, Enum):
             cls.SCHEDULED_TASK_ENABLE.value: "启用定时任务",
             cls.SCHEDULED_TASK_DISABLE.value: "禁用定时任务",
             cls.SCHEDULED_TASK_EXECUTE.value: "手动执行定时任务",
+            cls.SCHEDULED_TASK_INTERRUPT.value: "中断运行中的定时任务",
             # 关键词规则操作
             cls.KEYWORD_RULE_ADD.value: "添加关键词规则",
             cls.KEYWORD_RULE_DELETE.value: "删除关键词规则",
@@ -227,6 +229,7 @@ class AuditOperationType(str, Enum):
             cls.SCHEDULED_TASK_ENABLE.value: "scheduled_task",
             cls.SCHEDULED_TASK_DISABLE.value: "scheduled_task",
             cls.SCHEDULED_TASK_EXECUTE.value: "scheduled_task",
+            cls.SCHEDULED_TASK_INTERRUPT.value: "scheduled_task",
             # 关键词规则操作
             cls.KEYWORD_RULE_ADD.value: "keyword_rule",
             cls.KEYWORD_RULE_DELETE.value: "keyword_rule",

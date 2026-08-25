@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query, Body
+import logging
+
+from fastapi import APIRouter, Depends, Query, Body, Request
 from fastapi.responses import Response
 from typing import Optional, List
 from pydantic import BaseModel, Field
@@ -8,11 +10,15 @@ from app.api.responseVO import CommonResponse
 from app.auth.dependencies import require_authenticated_user
 from app.core.config import settings
 from app.core.database_result import DatabaseError
-from app.database import get_db
+from app.database import get_db, AsyncSessionLocal
+from app.services.audit_service import AuditOperationType, extract_audit_info_from_request, get_audit_service
 from app.tasks.cron_crud import CronTaskCRUD, TaskLogsCRUD
 from app.tasks.cron_executor import cron_executor, is_internal_class_executor_allowed
+from app.tasks.cron_models import CronTask
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
 
 
 class CronTaskCreate(BaseModel):
@@ -879,20 +885,65 @@ async def resume_task(task_id: int, _user=Depends(require_authenticated_user), d
 
 
 @router.post("/{task_id}/interrupt", response_model=CommonResponse)
-async def interrupt_task(task_id: int, _user=Depends(require_authenticated_user), db: Session = Depends(get_db)):
-    """中断任务"""
+async def interrupt_task(
+    task_id: int,
+    request: Request,
+    current_user=Depends(require_authenticated_user),
+    db: Session = Depends(get_db),
+):
+    """中断任务（移除调度 + 取消运行中的执行实例，2026-08-25 起可真正停止）"""
     # 认证已迁移至 require_authenticated_user 依赖
 
     try:
         success = await cron_executor.interrupt_task(task_id)
 
         if success:
+            await _audit_task_interrupt(request, current_user.username, task_id, "success", db)
             return CommonResponse(status="success", msg="任务中断成功", code="200", data=None)
         else:
+            await _audit_task_interrupt(request, current_user.username, task_id, "failed", db)
             return CommonResponse(status="error", msg="任务中断失败", code="400", data=None)
 
     except Exception as e:
+        await _audit_task_interrupt(request, current_user.username, task_id, "failed", db, error_message=str(e))
         return CommonResponse(status="error", msg=f"中断任务失败: {str(e)}", code="500", data=None)
+
+
+async def _audit_task_interrupt(
+    request: Request, operator: str, task_id: int, result: str, db: Session, error_message: Optional[str] = None
+) -> None:
+    """中断运行中的定时任务属手动操作，写审计日志（失败不影响主业务）。
+
+    cron 手动端点历史均未接线审计；本批仅补 interrupt（其余端点属历史欠账，
+    范围外）。task_name 经端点同步会话读取，读不到时仍落审计（detail 记 ID）。
+    """
+    task_name: Optional[str] = None
+    try:
+        row = db.query(CronTask).filter(CronTask.task_id == task_id, CronTask.dr == 0).first()
+        if row is not None:
+            task_name = row.task_name
+    except Exception as audit_error:
+        logger.error(f"读取任务名失败（中断审计降级为仅记录ID） (ID: {task_id}): {audit_error}")
+
+    try:
+        async with AsyncSessionLocal() as async_db:
+            audit_service = await get_audit_service(async_db)
+            audit_info = extract_audit_info_from_request(request)
+            await audit_service.log_operation(
+                operation_type=AuditOperationType.SCHEDULED_TASK_INTERRUPT,
+                operator=operator,
+                operation_detail={"task_id": task_id, "task_name": task_name or ""},
+                new_value={"interrupt_result": result},
+                operation_result=result,
+                error_message=error_message,
+                ip_address=audit_info.get("ip_address") or None,
+                user_agent=audit_info.get("user_agent") or None,
+                request_id=audit_info.get("request_id") or None,
+                session_id=audit_info.get("session_id") or None,
+            )
+    except Exception as audit_error:
+        # 审计日志失败不影响主业务
+        logger.error(f"记录中断任务审计日志失败 (ID: {task_id}): {audit_error}")
 
 
 # ========== 新增的验证和配置接口 ==========

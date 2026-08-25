@@ -897,3 +897,143 @@ class TestObservabilityRunIdStageOrder:
         assert result.outcome == "skipped"
         assert result.run_id and result.run_id.startswith("sync-")
         assert obs.current_run_id() is None, "准入拒绝路径结束后也必须清空 run_id"
+
+
+class TestTrackerDownloaderHardTimeout:
+    """【2026-08-25】下载器级硬熔断：tracker 同步单下载器超时被 wait_for 强制取消。
+
+    回归锚点：enrich 内部预算（budget_seconds/max_per_run）是协作式检查点，
+    worker 挂死在某个 await 上时永不执行（生产 cron-7-20260825111000 挂 8.75h
+    的形态）。熔断在下载器边界强制取消且放行其余下载器——若有人移除 wait_for
+    包裹或超时未中断，本测试即超时失败。
+    """
+
+    @staticmethod
+    async def _hang_forever(*args, **kwargs):
+        await asyncio.sleep(30)
+
+    async def test_qb_downloader_hard_timeout_interrupts_and_fails(self):
+        """qb tracker 同步超过硬超时：被强制中断，outcome=failed 且 errors 可读。"""
+        app = make_fake_app([make_vo(downloader_id="dl_stuck", client=MagicMock())])
+
+        with (
+            patch.object(settings, "TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS", 0.05),
+            patch(
+                "app.api.endpoints.torrents_async.qb_sync_trackers_only_async",
+                new=AsyncMock(side_effect=self._hang_forever),
+            ),
+        ):
+            result = await asyncio.wait_for(
+                run_sync(
+                    SyncRequest(sync_type="tracker", downloader_ids=["dl_stuck"], trigger="cron"),
+                    app=app,
+                ),
+                timeout=5.0,
+            )
+
+        assert result.outcome == "failed", f"单下载器熔断应为 failed: {result.message}"
+        assert any("主动中断" in err for err in result.errors), f"errors 应含熔断说明: {result.errors}"
+        assert any("超过 0s" in err for err in result.errors), "熔断文案应含实际阈值秒数"
+
+    async def test_tr_downloader_hard_timeout_symmetric(self):
+        """tr tracker 同步同样受下载器级硬熔断保护（对称防御）。"""
+        app = make_fake_app([make_vo(downloader_id="dl_tr_stuck", client=MagicMock(), downloader_type=1)])
+
+        with (
+            patch.object(settings, "TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS", 0.05),
+            patch(
+                "app.api.endpoints.torrents_async.tr_sync_trackers_only_async",
+                new=AsyncMock(side_effect=self._hang_forever),
+            ),
+        ):
+            result = await asyncio.wait_for(
+                run_sync(
+                    SyncRequest(sync_type="tracker", downloader_ids=["dl_tr_stuck"], trigger="cron"),
+                    app=app,
+                ),
+                timeout=5.0,
+            )
+
+        assert result.outcome == "failed"
+        assert any("主动中断" in err for err in result.errors)
+
+    async def test_hard_timeout_does_not_block_other_downloaders(self):
+        """一个下载器熔断后其余下载器正常完成：汇总 partial（1 成功 1 失败）。"""
+        app = make_fake_app(
+            [
+                make_vo(downloader_id="dl_stuck", client=MagicMock()),
+                make_vo(downloader_id="dl_ok", client=MagicMock()),
+            ]
+        )
+
+        async def _sync_by_downloader(db, downloader, *args, **kwargs):
+            downloader_id = str(getattr(downloader, "downloader_id", "") or "")
+            if downloader_id == "dl_stuck":
+                await asyncio.sleep(30)
+            return {
+                "status": "success",
+                "tracker_count": 3,
+                "torrent_count": 5,
+                "cycle_complete": True,
+            }
+
+        with (
+            patch.object(settings, "TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS", 0.05),
+            patch(
+                "app.api.endpoints.torrents_async.qb_sync_trackers_only_async",
+                new=AsyncMock(side_effect=_sync_by_downloader),
+            ),
+        ):
+            result = await asyncio.wait_for(
+                run_sync(
+                    SyncRequest(sync_type="tracker", downloader_ids=["dl_stuck", "dl_ok"], trigger="cron"),
+                    app=app,
+                ),
+                timeout=5.0,
+            )
+
+        assert result.outcome == "partial", f"一熔断一成功应汇总 partial: {result.message}"
+        assert "1 成功，1 失败" in result.message
+        stuck_errors = [err for err in result.errors if "dl_stuck" in err or "test-dl" in err]
+        assert any("主动中断" in err for err in result.errors)
+        assert stuck_errors, "熔断错误应可追溯到具体下载器"
+
+    async def test_hard_timeout_disabled_by_zero_keeps_hang_semantics(self):
+        """配置 0 关闭熔断：wait_for 收到 timeout=None，不再强制中断（开关语义）。"""
+        from app.services import sync_coordinator as coordinator_module
+
+        app = make_fake_app([make_vo(downloader_id="dl_zero", client=MagicMock())])
+        captured_wait_for_timeouts = []
+
+        original_wait_for = asyncio.wait_for
+
+        async def _spy_wait_for(aw, timeout=None):
+            captured_wait_for_timeouts.append(timeout)
+            # 立即完成，不真正等待（本用例只验证开关语义传参）
+            return await aw
+
+        quick_result = {
+            "status": "success",
+            "tracker_count": 0,
+            "torrent_count": 0,
+            "cycle_complete": True,
+        }
+
+        with (
+            patch.object(settings, "TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS", 0),
+            patch(
+                "app.api.endpoints.torrents_async.qb_sync_trackers_only_async",
+                new=AsyncMock(return_value=quick_result),
+            ),
+            patch.object(asyncio, "wait_for", new=_spy_wait_for),
+            patch.object(coordinator_module.asyncio, "wait_for", new=_spy_wait_for),
+        ):
+            result = await run_sync(
+                SyncRequest(sync_type="tracker", downloader_ids=["dl_zero"], trigger="cron"),
+                app=app,
+            )
+
+        assert result.outcome == "success"
+        assert None in captured_wait_for_timeouts, "配置 0 时 wait_for 应收到 timeout=None（关闭熔断）"
+        # 恢复安全性：patch 退出自动还原，无需手动恢复
+        _ = original_wait_for  # 防止 lint 报未使用

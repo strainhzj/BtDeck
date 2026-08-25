@@ -91,8 +91,7 @@ def _log_sync_exception(
     ``suppressed``/``continue_after_error`` 只描述现有控制流，不改变控制流。
     """
     logger.error(
-        "sync_coordinator exception stage=%s operation=%s sync_type=%s downloader_id=%s "
-        "error_type=%s error=%s",
+        "sync_coordinator exception stage=%s operation=%s sync_type=%s downloader_id=%s " "error_type=%s error=%s",
         stage,
         operation,
         sync_type,
@@ -1479,8 +1478,7 @@ async def _sync_one_downloader(
         raw_type = info.get("downloader_type")
         message = f"下载器 {nickname} 不支持的下载器类型: {raw_type}"
         logger.error(
-            "sync_coordinator downloader_rejected downloader_id=%s nickname=%s "
-            "reason=unsupported_type raw_type=%s",
+            "sync_coordinator downloader_rejected downloader_id=%s nickname=%s " "reason=unsupported_type raw_type=%s",
             downloader_id,
             nickname,
             raw_type,
@@ -1513,8 +1511,7 @@ async def _sync_one_downloader(
     cached_client = await _get_cached_client(app, downloader_id)
     if cached_client is None:
         logger.error(
-            "sync_coordinator downloader_rejected downloader_id=%s nickname=%s "
-            "reason=cached_client_missing",
+            "sync_coordinator downloader_rejected downloader_id=%s nickname=%s " "reason=cached_client_missing",
             downloader_id,
             nickname,
         )
@@ -1588,18 +1585,51 @@ async def _sync_one_downloader(
                         return "success", info_meta
             elif req.sync_type == "tracker":
                 # tracker-only 需要缓存客户端（约束16：客户端只从 store 获取）
-                if downloader_type == "qbittorrent":
-                    # W3-1 第二部分：Coordinator 预算（deadline/record_budget）透传给
-                    # qB tracker 单轮预算；续跑 cursor 由同步实现从运行期检查点自行读取
-                    sub_result = await qb_sync_trackers_only_async(
-                        db,
-                        downloader,
-                        cached_client,
-                        deadline=req.deadline,
-                        record_budget=req.record_budget,
+                # 下载器级硬熔断（2026-08-25 用户决策）：enrich 内部预算
+                # （budget_seconds/max_per_run）是协作式检查点——worker 挂死在
+                # 某个 await 上时检查点永不执行（生产 cron-7-20260825111000 挂
+                # 8.75h 的形态）。此处在离故障点最近的下载器边界用 wait_for
+                # 强制取消，不依赖内层自律，也不等 cron 层超时兜底；超时下载器
+                # 记 failed 并放行其余下载器（db 为本下载器私有会话，取消时由
+                # async with 丢弃未提交事务，检查点残留由轮末统一回收）。
+                downloader_timeout = float(settings.TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS)
+                hard_timeout = downloader_timeout if downloader_timeout > 0 else None
+                try:
+                    if downloader_type == "qbittorrent":
+                        # W3-1 第二部分：Coordinator 预算（deadline/record_budget）透传给
+                        # qB tracker 单轮预算；续跑 cursor 由同步实现从运行期检查点自行读取
+                        sub_result = await asyncio.wait_for(
+                            qb_sync_trackers_only_async(
+                                db,
+                                downloader,
+                                cached_client,
+                                deadline=req.deadline,
+                                record_budget=req.record_budget,
+                            ),
+                            timeout=hard_timeout,
+                        )
+                    else:
+                        sub_result = await asyncio.wait_for(
+                            tr_sync_trackers_only_async(db, downloader, cached_client),
+                            timeout=hard_timeout,
+                        )
+                except asyncio.TimeoutError:
+                    log_event(
+                        EVENT_SYNC_ERROR,
+                        phase="sync",
+                        stage="downloader_hard_timeout",
+                        operation=f"{req.sync_type}_sync",
+                        error_type="DownloaderHardTimeout",
+                        downloader_id=downloader_id,
+                        sync_type=req.sync_type,
+                        suppressed=False,
+                        continue_after_error=True,
                     )
-                else:
-                    sub_result = await tr_sync_trackers_only_async(db, downloader, cached_client)
+                    result.errors.append(
+                        f"下载器 {nickname} tracker 同步超过 {downloader_timeout:.0f}s，"
+                        f"已主动中断（下载器级熔断，不影响其余下载器）"
+                    )
+                    return "failed", None
                 if isinstance(sub_result, dict):
                     logger.info(
                         "sync_coordinator tracker_downloader_result run_id=%s downloader_id=%s nickname=%s "

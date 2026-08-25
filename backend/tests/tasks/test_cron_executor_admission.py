@@ -14,7 +14,9 @@ cron_executor.py::_run_python_internal_class 是 sync-resource-governance 阶段
 """
 
 import asyncio
+import logging
 import sys
+import time
 import types
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -23,7 +25,7 @@ import pytest
 from app.core.config import settings
 from app.models import OUTCOME_SKIPPED
 from app.services.sync_observability import EVENT_TASK_LIFECYCLE
-from app.tasks.cron_executor import CronTaskExecutor
+from app.tasks.cron_executor import CronTaskExecutor, TaskExecutionTimeoutError
 
 
 def _make_executor_with_app() -> CronTaskExecutor:
@@ -264,7 +266,7 @@ class TestInternalClassResultPropagation:
         assert "扫描终态 status=completed" in result["log_detail"]
 
     async def test_task_lifecycle_emits_heartbeat_and_timeout_warning(self, monkeypatch):
-        """长执行内部类发射 start/heartbeat/timeout_warning/end，且不取消执行。"""
+        """开关关闭时长执行内部类只发射 start/heartbeat/timeout_warning/end，不取消执行。"""
 
         async def slow_execute(**kwargs):
             await asyncio.sleep(0.08)
@@ -284,6 +286,7 @@ class TestInternalClassResultPropagation:
         }
 
         with (
+            patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", False),
             patch.object(settings, "SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS", 0.01),
             patch("app.tasks.cron_executor.log_event") as mock_log,
         ):
@@ -297,6 +300,286 @@ class TestInternalClassResultPropagation:
         assert "timeout_warning" in states
         assert "end" in states
         assert all(call.kwargs.get("task_code") == "observe_light_task" for call in lifecycle_calls)
+
+
+class TestTimeoutEnforcement:
+    """cron 层超时强制终止（2026-08-25）：超 timeout_seconds 的执行被 wait_for 终止。
+
+    回归锚点：生产案例 cron-7-20260825111000（Tracker 状态同步）挂 8.75h，
+    旧实现 timeout_seconds 仅观测打标不终止。若有人移除 wait_for 或穿透
+    分支，这些测试立即报红。
+    """
+
+    def _timeout_task(self, timeout_seconds, module_name: str) -> dict:
+        return {
+            "task_id": 91,
+            "task_name": "超时强杀测试任务",
+            "task_code": f"timeout_light_{module_name}",
+            "task_type": 4,
+            "timeout_seconds": timeout_seconds,
+            "executor": f"app.tasks.fake_module_{module_name}.Task",
+        }
+
+    async def test_async_task_killed_after_timeout_and_error_penetrates(self, monkeypatch):
+        """async 执行超 timeout_seconds：wait_for 终止 + TaskExecutionTimeoutError
+        穿透 _run_python_internal_class 的通用 except Exception 兜底（否则会被
+        吞成普通失败 dict，下游无法识别超时语义）。"""
+
+        async def slow_execute(**kwargs):
+            await asyncio.sleep(0.5)
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=slow_execute)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_timeout_kill", "Task", execute_mock)
+
+        executor = _make_executor_with_app()
+        task = self._timeout_task(0.02, "timeout_kill")
+
+        with (
+            patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", True),
+            patch.object(settings, "SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS", 0.01),
+            patch("app.tasks.cron_executor.log_event") as mock_log,
+        ):
+            with pytest.raises(TaskExecutionTimeoutError):
+                await executor._run_python_internal_class(task)
+
+        states = [call.kwargs.get("state") for call in mock_log.call_args_list if call.args[0] == EVENT_TASK_LIFECYCLE]
+        assert "timeout_killed" in states
+
+    async def test_zero_or_negative_timeout_not_enforced(self, monkeypatch):
+        """timeout_seconds<=0 归一为 None：不强制终止（wait_for(timeout=0) 立即取消不合理）。"""
+
+        async def quick_execute(**kwargs):
+            await asyncio.sleep(0.05)
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=quick_execute)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_timeout_zero", "Task", execute_mock)
+
+        executor = _make_executor_with_app()
+        # 开关显式开启，但 timeout<=0 应归一不强制
+        with patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", True):
+            for raw_timeout in (0, -1):
+                execute_mock.reset_mock()
+                task = self._timeout_task(raw_timeout, "timeout_zero")
+                result = await executor._run_python_internal_class(task)
+                assert result["success"] is True, f"timeout={raw_timeout} 不应触发强制终止"
+                execute_mock.assert_awaited_once()
+
+    async def test_task_body_timeout_before_deadline_not_misread(self, monkeypatch):
+        """任务体在预算内自身抛 TimeoutError：走通用异常路径，不转译为强制超时。"""
+
+        async def fail_fast(**kwargs):
+            raise asyncio.TimeoutError("remote call timeout")
+
+        execute_mock = AsyncMock(side_effect=fail_fast)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_timeout_body", "Task", execute_mock)
+
+        executor = _make_executor_with_app()
+        task = self._timeout_task(30, "timeout_body")
+
+        result = await executor._run_python_internal_class(task)
+        # 被通用兜底捕获为普通失败（elapsed < timeout，非强制超时）
+        assert result["success"] is False
+        assert "Python内部类执行异常" in result["log_detail"]
+
+    async def test_thread_mode_timeout_abandons_wait(self, monkeypatch):
+        """thread 模式超时：协程层面放弃等待并抛 TaskExecutionTimeoutError
+        （底层线程继续跑完是既有设计，不在此断言线程终止）。"""
+
+        def slow_sync_execute(**kwargs):
+            time.sleep(0.3)
+            return {"status": "ok"}
+
+        class _SyncTask:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def execute(self, **kwargs):
+                return slow_sync_execute(**kwargs)
+
+        fake_module = types.ModuleType("app.tasks.fake_module_timeout_thread")
+        fake_module.Task = _SyncTask
+        monkeypatch.setitem(sys.modules, "app.tasks.fake_module_timeout_thread", fake_module)
+
+        executor = _make_executor_with_app()
+        task = self._timeout_task(0.02, "timeout_thread")
+
+        with patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", True):
+            with pytest.raises(TaskExecutionTimeoutError):
+                await executor._run_python_internal_class(task)
+
+    async def test_heavy_task_timeout_releases_heavy_sync(self, monkeypatch):
+        """【回归锚点：生产事故】重型任务（task_scope 持锁）超时被杀后 heavy_sync
+        令牌必须释放——生产案例 cron-7-20260825111000 令牌被占 8.75h，连锁
+        堵死 4 个重型任务。task_scope 的 finally（release 为纯同步代码）在
+        取消传播中完整执行。"""
+        from app.tasks.resource_guard import admission_controller
+        from app.tasks.task_profiles import get_profile
+
+        task_code = "torrent_info_sync_ac608e4d"  # 真实注册表中的重型 code
+
+        async def slow_execute(**kwargs):
+            await asyncio.sleep(0.5)
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=slow_execute)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_timeout_heavy", "Task", execute_mock)
+
+        executor = _make_executor_with_app()
+        task = {
+            "task_id": 92,
+            "task_name": "重型超时任务",
+            "task_code": task_code,
+            "task_type": 4,
+            "timeout_seconds": 0.02,
+            "executor": "app.tasks.fake_module_timeout_heavy.Task",
+        }
+
+        with (
+            patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", True),
+            patch.object(settings, "SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS", 0.01),
+        ):
+            with pytest.raises(TaskExecutionTimeoutError):
+                await executor._run_python_internal_class(task)
+
+        # 令牌已释放：running 无残留，下一个同类任务可立即 admitted
+        assert task_code not in admission_controller.running
+        holder = await admission_controller.acquire(task_code, get_profile(task_code))
+        assert holder.admitted is True, "超时强杀后 heavy_sync 令牌应可立即重新获取"
+        admission_controller.release(task_code)
+
+    async def test_enforce_enabled_regular_exception_path_unchanged(self, monkeypatch):
+        """强杀开启不影响普通异常路径：RuntimeError 仍走通用兜底为普通失败。"""
+
+        async def fail_execute(**kwargs):
+            raise RuntimeError("boom")
+
+        execute_mock = AsyncMock(side_effect=fail_execute)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_timeout_regexc", "Task", execute_mock)
+
+        executor = _make_executor_with_app()
+        task = self._timeout_task(30, "timeout_regexc")
+
+        with patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", True):
+            result = await executor._run_python_internal_class(task)
+
+        assert result["success"] is False
+        assert "Python内部类执行异常" in result["log_detail"]
+        assert "boom" in result["log_detail"]
+
+    async def test_missing_timeout_config_not_enforced(self, monkeypatch):
+        """未配置 timeout_seconds（None）不强制终止，与开关关闭时旧语义一致。"""
+
+        async def slow_execute(**kwargs):
+            await asyncio.sleep(0.06)
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=slow_execute)
+        _inject_fake_task_class(monkeypatch, "app.tasks.fake_module_timeout_unset", "Task", execute_mock)
+
+        executor = _make_executor_with_app()
+        task = self._timeout_task(None, "timeout_unset")
+        task.pop("timeout_seconds")  # 完全未配置（键不存在）
+
+        with patch.object(settings, "CRON_TASK_TIMEOUT_ENFORCE", True):
+            result = await executor._run_python_internal_class(task)
+
+        assert result["success"] is True
+        execute_mock.assert_awaited_once()
+
+
+class TestProgressStallObservation:
+    """心跳进度停滞告警 + faulthandler 全线程栈自动转储（2026-08-25）。
+
+    回归锚点：生产案例 8.75h 期间仅剩静默心跳，无任何现场证据；修复后停滞
+    超阈值的心跳自动提级 WARNING 并转储线程栈（每次运行至多一次）。
+    """
+
+    TASK_STALL = {"task_id": 31, "task_name": "停滞观测任务", "task_code": "stall_light_task"}
+
+    async def _run_observed(self, monkeypatch, execute_mock, execution_state, *, threshold):
+        executor = _make_executor_with_app()
+        with (
+            patch.object(settings, "SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS", threshold),
+            patch.object(settings, "SYNC_TASK_OBSERVABILITY_INTERVAL_SECONDS", 0.01),
+            patch("app.tasks.cron_executor.log_event") as mock_log,
+            patch("app.tasks.cron_executor.faulthandler.dump_traceback") as mock_dump,
+        ):
+            result = await executor._execute_internal_method_observed(
+                execute_mock, self.TASK_STALL, "stall_light_task", execution_state
+            )
+        heartbeats = [
+            call
+            for call in mock_log.call_args_list
+            if call.args[0] == EVENT_TASK_LIFECYCLE and call.kwargs.get("state") == "heartbeat"
+        ]
+        stalled = [call for call in heartbeats if call.kwargs.get("progress_stalled") is True]
+        return result, heartbeats, stalled, mock_dump
+
+    async def test_stalled_heartbeat_warns_and_dumps_once(self, monkeypatch):
+        """进度停滞超阈值：心跳提级 WARNING + progress_stalled=True，线程栈
+        转储整次运行至多一次（节流防日志风暴）。"""
+
+        async def slow_execute(**kwargs):
+            await asyncio.sleep(0.12)
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=slow_execute)
+        # last_progress_monotonic 指向 999s 前：任意时刻 last_progress_ms 均超 0.05s 阈值
+        execution_state = {"last_progress_monotonic": time.monotonic() - 999.0}
+
+        result, heartbeats, stalled, mock_dump = await self._run_observed(
+            monkeypatch, execute_mock, execution_state, threshold=0.05
+        )
+
+        assert result == {"status": "ok"}
+        assert heartbeats, "应发射心跳事件"
+        assert stalled, "停滞心跳应携带 progress_stalled=True"
+        assert all(call.kwargs.get("level") == logging.WARNING for call in stalled)
+        assert mock_dump.call_count == 1, "线程栈转储应节流为整次运行至多一次"
+        # progress_stalled 仅应出现在心跳事件上
+        assert all(call.kwargs.get("state") == "heartbeat" for call in stalled)
+
+    async def test_progress_updates_suppress_stall_warning(self, monkeypatch):
+        """执行期间进度持续推进（模拟 execution_logger 注入）：不触发停滞告警。"""
+        execution_state = {"last_progress_monotonic": time.monotonic()}
+
+        async def executing_with_progress(**kwargs):
+            # 模拟任务体周期性上报进度（record_execution_event 的效果）
+            await asyncio.sleep(0.06)
+            execution_state["last_progress_monotonic"] = time.monotonic()
+            await asyncio.sleep(0.06)
+            execution_state["last_progress_monotonic"] = time.monotonic()
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=executing_with_progress)
+        # 阈值 0.5s >> 进度推进间隔 0.06s：任意心跳时刻 last_progress_ms < 0.5s
+        result, heartbeats, stalled, mock_dump = await self._run_observed(
+            monkeypatch, execute_mock, execution_state, threshold=0.5
+        )
+
+        assert result == {"status": "ok"}
+        assert heartbeats, "应发射心跳事件"
+        assert not stalled, "进度持续推进时不应触发停滞告警"
+        mock_dump.assert_not_called()
+
+    async def test_stall_warning_disabled_by_zero_threshold(self, monkeypatch):
+        """阈值 0 关闭：即使停滞也不告警不转储。"""
+        execution_state = {"last_progress_monotonic": time.monotonic() - 999.0}
+
+        async def slow_execute(**kwargs):
+            await asyncio.sleep(0.08)
+            return {"status": "ok"}
+
+        execute_mock = AsyncMock(side_effect=slow_execute)
+        result, heartbeats, stalled, mock_dump = await self._run_observed(
+            monkeypatch, execute_mock, execution_state, threshold=0
+        )
+
+        assert result == {"status": "ok"}
+        assert not stalled, "阈值 0 应完全关闭停滞告警"
+        mock_dump.assert_not_called()
 
 
 class TestSyncExecuteOffloaded:

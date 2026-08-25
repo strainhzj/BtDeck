@@ -390,7 +390,11 @@ async def _check_qbittorrent_auth_with_retry(downloader_info: Dict[str, Any], at
 
     try:
         logger.debug(f"创建 qBittorrent 客户端连接... (尝试 {attempt}/{max_retries})")
-        client = qbClient(host=f"http://{host}:{port}", username=username, password=password)
+        # REQUESTS_ARGS timeout 与缓存客户端构造对齐：外层 wait_for 只放弃等待，
+        # 缺 requests 超时会让 to_thread 线程挂在无超时 socket 上永久泄漏
+        client = qbClient(
+            host=f"http://{host}:{port}", username=username, password=password, REQUESTS_ARGS={"timeout": 30}
+        )
 
         # 尝试获取应用版本（验证认证）
         logger.debug(f"验证 qBittorrent 认证... (尝试 {attempt}/{max_retries})")
@@ -426,7 +430,8 @@ async def _check_transmission_auth_with_retry(downloader_info: Dict[str, Any], a
 
     try:
         logger.debug(f"创建 Transmission 客户端连接... (尝试 {attempt}/{max_retries})")
-        client = trClient(host=host or "", port=int(port or 0), username=username, password=password)
+        # timeout 与缓存客户端构造对齐，防 to_thread 线程挂在无超时 socket 上
+        client = trClient(host=host or "", port=int(port or 0), username=username, password=password, timeout=30.0)
 
         # 尝试获取会话统计（验证认证）
         logger.debug(f"验证 Transmission 认证... (尝试 {attempt}/{max_retries})")
