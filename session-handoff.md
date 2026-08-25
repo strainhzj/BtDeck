@@ -1,5 +1,28 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-25 交接（十一）：移动端模拟器验证（PWA + 手势）
+
+### 结论
+
+对 838fc97（前端 PWA+手势）完成双层模拟器验证（SOP：docs/android/desktop-testing.md）：**全部通过，1 项平台约束**。后端 5001（btpManager env，服务生产 dist）；AVD btdeck-test（Pixel 6/API 35）Chrome 访问 10.0.2.2:5001。
+
+### 验证结果
+
+- **PWA（L1 IAB 390×844）**：视口分流 /#/m/login ✓；meta（#059669/capable yes/manifest link/apple-touch-icon）✓；**SW 真实注册实证** controller.scriptURL=service-worker.js?src=btdeck（带标记+激活接管，与 retire 共存）✓；后端服务 PWA 文件（manifest 200 品牌 SW 200 正确 MIME maskable 200）✓。
+- **手势（L2 AVD adb input swipe 真触摸 + CDP 断言）**：左滑链式切 Tab（dashboard→downloader→torrents）✓、右滑回退+首 Tab 边界不动 ✓、垂直滑动/顶部下拉不切 Tab ✓、汉堡开抽屉 ✓、抽屉左滑关 ✓、点遮罩关 ✓；**左边缘右滑开抽屉=平台约束**——Android Chrome 保留为返回导航（实测 back 出 Chrome），页面收不到；CDP 协议级触摸注入下逻辑正确（drawerVisible=true）。真机 Chrome 该入口不可达，PWA standalone/内嵌 WebView 不受影响。
+- 最终截图：种子页卡片流正常、"种子"Tab 激活、布局无异常。
+
+### 关键发现（后续会话参考）
+
+- IAB click 通道本回合故障（fill/snapshot/evaluate 正常，login POST 未达后端）；AVD 的 adb input text 不可用（Gboard WERR_CALL_NOT_IMPLEMENTED）→ **AVD 验证走 Chrome CDP**（adb forward chrome_devtools_remote + Runtime.evaluate native setter 填表单+click），全链路可用，推荐后续复用此组合。
+- back 手势退出 Chrome 会关闭 CDP 目标页、剩余 tab 网络栈可能卡 chrome-error → am force-stop com.android.chrome 重启恢复。
+- Element UI 遮罩关闭忽略 CDP 合成 click（isTrusted 校验），需真实触摸 tap（adb）。
+
+### 待办
+
+1. 本节仅记录文件（progress.md+本文件），无代码改动；与批次记录一起待用户指示提交。
+2. 桌面 GUI 窗口链路实测（task .6 收尾）仍留桌面会话。
+
 ## 2026-08-25 交接（十）：移动独有优化（PWA+手势）+ 桌面双模式对齐 task .6 首批
 
 ### 结论

@@ -5595,3 +5595,43 @@ M4 完成并验证（未提交）。AskUserQuestion 获用户确认范围：**�
 - 本批前端 13 文件 + 后端 8 文件 + 三份记录未提交，待用户指示。
 - 桌面 GUI 窗口链路实测（向导→管理→远程窗口切换、exe 打包 PyInstaller 实跑）留桌面会话；PWA 安装/更新流与手势真机实测留交互会话（逻辑层 Jest 已覆盖）。
 - task .6 已置 in-progress；窗口链路实测后可收尾置 done。
+
+## 2026-08-25（二）：移动端模拟器验证（PWA + 手势）
+
+### 结论
+
+按 docs/android/desktop-testing.md SOP 双层验证本次修改（838fc97 前端 PWA+手势）：**全部通过，1 项平台约束记录**。后端 5001（btpManager env）+ 生产 dist 验证；模拟器为 AVD btdeck-test（Pixel 6/API 35），Chrome 访问 http://10.0.2.2:5001。
+
+### L1 浏览器设备模拟（IAB 390×844）——PWA 链路
+
+- 视口分流：390×844 自动进 `/#/m/login?redirect=/m/dashboard` ✓
+- 页面 meta：theme-color #059669、apple-mobile-web-app-capable yes、apple-mobile-web-app-title BtDeck、manifest link /manifest.json、apple-touch-icon ✓
+- **SW 真实注册实证**：`navigator.serviceWorker.controller.scriptURL === "http://localhost:5001/service-worker.js?src=btdeck"`——带标记注册+已激活接管页面（clientsClaim 生效），与 retireLegacyServiceWorkers 清理共存无冲突 ✓
+- 后端服务 PWA 文件：manifest.json 200 application/json（品牌内容）、service-worker.js?src=btdeck 200 text/javascript（MIME 合法）、maskable 图标 200 ✓（factory SPA fallback 服务 dist 根级文件的路径实证）
+- IAB click 通道本回合故障（登录按钮 click/dom_cua 均不达，fill/snapshot/evaluate 正常；后端日志确认 login POST 未发出）——与前两会话同症，非产品问题；登录后流程转 L2
+
+### L2 AVD 模拟器——手势（adb input swipe 真触摸 + CDP 状态断言）
+
+登录链路：adb input text 在该 AVD 不可用（WERR_CALL_NOT_IMPLEMENTED，Gboard IME 限制）→ 改走 **Chrome CDP**（adb forward → chrome_devtools_remote → Runtime.evaluate native setter 填表单 + click），登录成功进 /#/m/dashboard；状态断言脚本读 location.hash + Tab 激活态 + 抽屉可见性。
+
+| 手势 | 结果 |
+|------|------|
+| 内容区左滑 | dashboard→downloader→torrents 链式两步连续切换 ✓（Tab 激活态同步） |
+| 内容区右滑 | 切回前一 Tab；第一个 Tab 再右滑不动（边界）✓ |
+| 垂直滑动（含顶部下拉） | 不切 Tab（轴锁定让位下拉刷新）✓ |
+| 汉堡开抽屉 | CDP click ✓（drawerVisible） |
+| 抽屉内左滑 | 关闭 ✓ |
+| 点遮罩关抽屉 | 真实触摸 tap ✓（CDP 合成 click 被 Element isTrusted 校验忽略，符合预期） |
+| **左边缘右滑开抽屉** | **平台约束**：Android Chrome 保留左边缘右滑为返回导航（实测被 back 出 Chrome），页面收不到该手势；CDP Input.dispatchTouchEvent 协议级注入下 drawerVisible=true——**页面逻辑正确**，真机 Chrome 上该入口不可达属浏览器行为，PWA standalone/其他内嵌 WebView 环境不受影响 |
+
+最终截图视觉确认：种子页卡片流渲染正常、"种子"Tab 绿色激活、布局无错位遮挡。
+
+### 过程记录（后续会话参考）
+
+- AVD Chrome 首启有欢迎页+通知弹窗，uiautomator dump 取 bounds 后 tap 跳过；"No internet connection" 横幅在页面实际加载成功时仍残留（展示性提示）
+- 模拟器 back 手势退出 Chrome 后 CDP 目标页会被关闭、剩余 tab 可能网络栈卡 chrome-error——`am force-stop com.android.chrome` 重启恢复
+- 验证后模拟器已关、临时脚本清理；后端 5001 保留运行（dev 实例惯例）
+
+### 待办
+
+- 无新增代码改动；本节为验证记录（无文件需提交——progress.md/handoff 更新待用户指示提交）
