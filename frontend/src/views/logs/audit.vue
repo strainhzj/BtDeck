@@ -60,6 +60,7 @@
               <el-option label="删除定时任务" value="scheduled_task_delete" />
               <el-option label="修改定时任务" value="scheduled_task_update" />
               <el-option label="执行定时任务" value="scheduled_task_execute" />
+              <el-option label="中断定时任务" value="scheduled_task_interrupt" />
             </el-option-group>
             <el-option-group label="关键词规则">
               <el-option label="添加关键词规则" value="keyword_rule_add" />
@@ -787,6 +788,7 @@ export default class AuditLogs extends Vue {
       scheduled_task_delete: '删除定时任务',
       scheduled_task_update: '修改定时任务',
       scheduled_task_execute: '执行定时任务',
+      scheduled_task_interrupt: '中断定时任务',
       keyword_rule_add: '添加关键词规则',
       keyword_rule_delete: '删除关键词规则',
       keyword_rule_update: '修改关键词规则'
