@@ -612,3 +612,39 @@ class TestCoordinatorBudgetPassthrough:
         fresh = await checkpoint_env.store.get_or_create("dl_001", "tracker")
         assert fresh["cursor"] is None
         assert fresh["last_full_sync_at"] is not None
+
+
+class TestSentinelLossSelfHealing:
+    """【2026-08-25 生产 cron-7-20260825223237 回归】producer 哨兵丢失自愈。
+
+    根因（双子代理验证定位）：producer 收尾放哨兵时队列恰被未消费 hash 占满
+    （worker 各挂在 30s 慢调用上不消费），首个哨兵 put 0.5s 超时即 break 丢弃
+    全部哨兵，worker 处理完后在 queue.get()（无超时）永久挂起——enrich 永不
+    返回、任务挂死 8.75h（叠加下载器级熔断前无强制取消）。修复双保险：
+    producer 哨兵 put 带总限重试 + worker get 超时轮询（producer done 且队列空
+    即退出）。若有人改回 break 丢弃哨兵或去掉轮询，本测试即挂起超时失败。
+    """
+
+    async def test_slow_fetch_sentinel_timeout_does_not_hang(self):
+        """确定性时序复现：fetch 0.8s > 哨兵 put 0.5s 窗口 → 首个哨兵 put
+        必超时（队列被 hash3/4 占满、两 worker 挂在 0.8s fetch 上）→ 修复后
+        enrich 仍正常收尾并打 Completed（修复前 worker 永久挂死）。"""
+        infos = _make_torrent_infos(4)
+
+        async def slow_fetch(downloader_id, lane, func, args=(), kwargs=None, timeout=None, operation=""):
+            await asyncio.sleep(0.8)  # > 0.5s：保证哨兵首个 put 在队列满时超时
+            raise asyncio.TimeoutError("simulated slow qb webui")
+
+        with (
+            patch.object(torrents_async, "call_downloader_api", new=slow_fetch),
+            patch.object(torrents_async, "_WORKER_GET_POLL_SECONDS", 0.2),
+            patch.object(torrents_async.logger, "info") as mock_info,
+        ):
+            # 修复前：worker 挂在 queue.get()，15s wait_for 超时即测试失败
+            await asyncio.wait_for(
+                torrents_async._enrich_qb_torrents_with_trackers(MagicMock(), infos, "dl_sentinel_loss"),
+                timeout=15.0,
+            )
+
+        completed = _completion_log(mock_info)
+        assert "4 failed" in completed, f"4 个 hash 应全部计为失败: {completed}"

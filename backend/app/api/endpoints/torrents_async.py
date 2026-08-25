@@ -77,8 +77,7 @@ def _log_tracker_sync_exception(
     被吞掉以及后续是否继续执行。
     """
     logger.error(
-        "[%s] tracker_sync_exception stage=%s operation=%s downloader_id=%s context=%s "
-        "error_type=%s error=%s",
+        "[%s] tracker_sync_exception stage=%s operation=%s downloader_id=%s context=%s " "error_type=%s error=%s",
         log_prefix,
         stage,
         operation,
@@ -2500,6 +2499,11 @@ _TR_FULL_SYNC_DONE: Dict[str, bool] = {}
 _QB_LAST_FULL_SYNC: Dict[str, float] = {}
 _TR_LAST_FULL_SYNC: Dict[str, float] = {}
 
+# enrich worker queue.get() 轮询间隔（秒，2026-08-25 哨兵丢失自愈兜底）：
+# producer 哨兵在队列满时丢失（或 30s 总限放弃）后，worker 靠此间隔发现
+# "producer 已结束且队列空"而退出，不再永久挂起；测试可 monkeypatch 调小。
+_WORKER_GET_POLL_SECONDS = 5.0
+
 
 def _qb_dict_to_objects(torrents_dict: Dict[str, Dict[str, Any]]) -> List[Any]:
     """将 qbittorrent sync/maindata 的 torrents 字典转换为对象列表"""
@@ -2805,19 +2809,41 @@ async def _enrich_qb_torrents_with_trackers(
                 except asyncio.TimeoutError:
                     continue
         finally:
-            # 每个 worker 一个终止哨兵；同样带超时防止预算到期后无人消费
+            # 每个 worker 一个终止哨兵；带超时防预算到期后无人消费导致 producer
+            # 永久阻塞。put 超时不再整体 break 丢弃剩余哨兵（2026-08-25 生产
+            # cron-7-20260825223237 案件根因：收尾时队列被未消费 hash 占满，
+            # 首个哨兵 0.5s 超时即 break，0 个哨兵入队，worker 处理完后永久挂
+            # 在 queue.get()）；改为带总时限的重试尽力放完（队列随 worker 消费
+            # 腾空即可放入）。预算到期时 worker 已全部退出不再消费，立即放弃
+            # （否则白等总限）；超限放弃时由 worker 的 get 轮询兜底退出。
+            sentinel_deadline = time.monotonic() + 30.0
             for _ in range(worker_count):
-                try:
-                    await asyncio.wait_for(queue.put(None), timeout=0.5)
-                except asyncio.TimeoutError:
-                    break
+                while True:
+                    if state["budget_reason"] is not None:
+                        return
+                    try:
+                        await asyncio.wait_for(queue.put(None), timeout=0.5)
+                        break
+                    except asyncio.TimeoutError:
+                        if time.monotonic() >= sentinel_deadline:
+                            return
+                        continue
 
     async def _tracker_worker() -> None:
         """消费队列并拉取单个种子 tracker；每次拉取前检查单轮预算。"""
         while True:
             if state["budget_reason"] is not None:
                 return
-            torrent_hash = await queue.get()
+            try:
+                torrent_hash = await asyncio.wait_for(queue.get(), timeout=_WORKER_GET_POLL_SECONDS)
+            except asyncio.TimeoutError:
+                # 哨兵丢失自愈（2026-08-25 案件兜底）：producer 已结束且队列空，
+                # 说明不会再有新任务或哨兵——直接退出，不再永久等待。
+                # producer 仍在生产且队列暂时空（worker 消费快于 producer 入队）
+                # 属正常瞬时状态，继续轮询。
+                if producer_task.done() and queue.empty():
+                    return
+                continue
             try:
                 if torrent_hash is None:
                     return

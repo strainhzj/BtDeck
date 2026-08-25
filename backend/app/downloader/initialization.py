@@ -248,6 +248,21 @@ def _clean_host_url(host: str) -> str:
     return host.strip()
 
 
+def _qb_host_with_scheme(host: str, is_ssl: Any) -> str:
+    """qb 客户端 host 补全 scheme 前缀（配合 FORCE_SCHEME_FROM_HOST=True 跳过探测）。
+
+    背景（2026-08-25 生产案件根因）：_clean_host_url 剥掉 scheme 后，qbittorrentapi
+    的 detect_scheme 会在每次上下文重建/重试轮做 HTTP→HTTPS 双方案探测；qb WebUI
+    异常时每段 30s×urllib3 重试，单次 API 调用被放大到 ~6 分钟。显式 scheme +
+    FORCE_SCHEME_FROM_HOST=True 彻底消除探测路径；is_ssl 兼容 bool 与 "1"/"0"
+    字符串两种 DB 形态（与 tr 构造的判定口径一致）。
+    """
+    if "://" in host:
+        return host
+    https = (isinstance(is_ssl, bool) and is_ssl) or str(is_ssl) == "1"
+    return f"{'https' if https else 'http'}://{host}"
+
+
 async def check_port_connectivity(host: str, port: int, timeout: float = 3.0, max_retries: int = 3) -> bool:
     """
     检查端口连通性（使用 socket.connect）
@@ -391,9 +406,17 @@ async def _check_qbittorrent_auth_with_retry(downloader_info: Dict[str, Any], at
     try:
         logger.debug(f"创建 qBittorrent 客户端连接... (尝试 {attempt}/{max_retries})")
         # REQUESTS_ARGS timeout 与缓存客户端构造对齐：外层 wait_for 只放弃等待，
-        # 缺 requests 超时会让 to_thread 线程挂在无超时 socket 上永久泄漏
+        # 缺 requests 超时会让 to_thread 线程挂在无超时 socket 上永久泄漏。
+        # FORCE_SCHEME_FROM_HOST + 显式 scheme 跳过 detect_scheme 探测（与缓存
+        # 客户端一致，见 _qb_host_with_scheme 注释）；HTTPADAPTER_ARGS 关闭
+        # urllib3 层重试，避免双层重试放大。
         client = qbClient(
-            host=f"http://{host}:{port}", username=username, password=password, REQUESTS_ARGS={"timeout": 30}
+            host=f"http://{host}:{port}",
+            username=username,
+            password=password,
+            REQUESTS_ARGS={"timeout": 30},
+            FORCE_SCHEME_FROM_HOST=True,
+            HTTPADAPTER_ARGS={"max_retries": 0},
         )
 
         # 尝试获取应用版本（验证认证）
@@ -1327,12 +1350,18 @@ async def _check_and_add_new_downloader(app: FastAPI, downloader_data: Dict[str,
                 client: Union[qbClient, trClient]
                 if downloader_type_int == 0:
                     client = qbClient(
-                        host=downloader_data["host"],
+                        host=_qb_host_with_scheme(downloader_data["host"], downloader_data.get("is_ssl")),
                         port=port_int,
                         username=downloader_data.get("username"),
                         password=decrypted_password,
                         VERIFY_WEBUI_CERTIFICATE=False,
                         REQUESTS_ARGS={"timeout": 30},
+                        # 2026-08-25：跳过 detect_scheme 探测（异常 WebUI 下双方案
+                        # 探测×重试把单次调用放大到 ~6 分钟）；关闭 urllib3 层重试
+                        # （外层 call_downloader_api/任务预算已有自己的超时治理，
+                        # 双层重试是纯放大器）
+                        FORCE_SCHEME_FROM_HOST=True,
+                        HTTPADAPTER_ARGS={"max_retries": 0},
                     )
                 elif downloader_type_int == 1:
                     protocol: Literal["http", "https"] = "https" if downloader_data.get("is_ssl") == "1" else "http"

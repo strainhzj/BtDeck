@@ -53,3 +53,39 @@ class TestAuthCheckClientTimeout:
         assert ok is True
         kwargs = client_cls.call_args.kwargs
         assert kwargs.get("timeout") == 30.0, "认证检查一次性 trClient 必须带 timeout=30.0"
+
+
+class TestQbClientSchemeAndRetryHardening:
+    """【2026-08-25 第二批】消除 detect_scheme 探测放大 + 关闭 urllib3 双层重试。
+
+    验证结论（生产 2025.2.0 实测）：无 scheme host 触发 qbittorrentapi 的
+    HTTP→HTTPS 双方案探测，异常 WebUI 下每段 30s×重试把单次调用放大到 ~6 分钟
+    （生产挂死案件的库层放大器）。FORCE_SCHEME_FROM_HOST=True + 显式 scheme
+    跳过探测；HTTPADAPTER_ARGS max_retries=0 关闭 urllib3 层重试（外层已有
+    超时治理）。改回无参构造即报红。
+    """
+
+    async def test_qb_auth_client_skips_scheme_detection_and_retry(self):
+        """认证检查客户端：FORCE_SCHEME_FROM_HOST=True + max_retries=0。"""
+        fake_client = MagicMock()
+        fake_client.app_version.return_value = "v5.0.0"
+
+        with patch("qbittorrentapi.Client", return_value=fake_client) as client_cls:
+            await _check_qbittorrent_auth_with_retry(_DOWNLOADER_INFO, attempt=1, max_retries=3)
+
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs.get("FORCE_SCHEME_FROM_HOST") is True, "必须跳过 detect_scheme 探测（6 分钟放大器根因）"
+        assert kwargs.get("HTTPADAPTER_ARGS") == {"max_retries": 0}, "必须关闭 urllib3 层重试"
+
+    def test_qb_host_with_scheme_normalization(self):
+        """host scheme 补全：无前缀按 is_ssl 补 http(s)，有前缀保持。"""
+        from app.downloader.initialization import _qb_host_with_scheme
+
+        # 无 scheme + 各 is_ssl 形态（bool 与 DB 字符串 "1"/"0" 兼容，与 tr 口径一致）
+        assert _qb_host_with_scheme("192.168.5.51", False) == "http://192.168.5.51"
+        assert _qb_host_with_scheme("192.168.5.51", True) == "https://192.168.5.51"
+        assert _qb_host_with_scheme("192.168.5.51", "1") == "https://192.168.5.51"
+        assert _qb_host_with_scheme("192.168.5.51", "0") == "http://192.168.5.51"
+        assert _qb_host_with_scheme("192.168.5.51", None) == "http://192.168.5.51"
+        # 已带 scheme 保持不变
+        assert _qb_host_with_scheme("https://qb.example.com", False) == "https://qb.example.com"

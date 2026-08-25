@@ -27,7 +27,9 @@ bcrypt~=5.0.0
 python-dotenv~=0.21.0
 PyYAML~=6.0.1
 gmssl~=3.2.2
-qbittorrent-api~=2025.5.0
+# 2026-08-25：锁到生产实装版本（原声明 ~=2025.5.0 从未实装；2025.2.0 已生产验证，
+# 升级需重新验证 FORCE_SCHEME_FROM_HOST/HTTPADAPTER_ARGS 行为）
+qbittorrent-api~=2025.2.0
 ping3~=4.0.8
 pyjwt~=2.8.0
 aiosqlite~=0.21.0
