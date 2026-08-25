@@ -1,10 +1,15 @@
 # -*- coding: utf-8 -*-
 """desktop_companion.launcher 控制器测试（无 pywebview 依赖路径）。
 
-GUI/webview 部分不在此覆盖（与安卓 MVP 同口径：逻辑层单测，窗口链路留
-桌面实测）；锁住：服务端模式直达（历史行为不变）、向导选择的持久化语义、
-管理页桥接 API 的增删测试与状态回写。
+GUI/webview 窗口视觉部分不在此覆盖（与安卓 MVP 同口径：逻辑层单测，窗口
+链路留桌面实测）；锁住：服务端模式直达（历史行为不变）、向导选择的持久化
+语义、管理页桥接 API 的增删测试与状态回写、窗口切换的「先建后销」顺序
+（pywebview winforms 销毁最后一窗即 Application.Exit，先销毁必崩——
+2026-08-25 桌面实测发现的竞态，回归锚点）。
 """
+
+import sys
+import types
 
 from app.desktop_companion.launcher import (
     MODE_COMPANION,
@@ -14,11 +19,7 @@ from app.desktop_companion.launcher import (
     load_stored_mode,
     save_stored_mode,
 )
-from app.desktop_companion.profiles import (
-    HEALTH_READY,
-    ServerProfile,
-    ServerProfileStore,
-)
+from app.desktop_companion.profiles import HEALTH_READY, ServerProfileStore
 
 
 class _StubHealth:
@@ -68,6 +69,75 @@ class TestLauncherModeFlow:
         assert load_stored_mode(tmp_path / "desktop_mode.json") == MODE_SERVER
 
 
+class _FakeWindow:
+    def __init__(self, journal, tag):
+        self._journal = journal
+        self._tag = tag
+
+    def destroy(self):
+        self._journal.append(f"destroy:{self._tag}")
+
+    def hide(self):
+        self._journal.append(f"hide:{self._tag}")
+
+    def show(self):
+        self._journal.append(f"show:{self._tag}")
+
+
+class _WebviewStub:
+    """记录 create_window/destroy 调用顺序的最小 webview 替身。"""
+
+    def __init__(self):
+        self.journal = []
+        self.windows = []
+
+    def create_window(self, title, *args, **kwargs):
+        window = _FakeWindow(self.journal, f"win{len(self.windows)}({title})")
+        self.journal.append(f"create:{title}")
+        self.windows.append(window)
+        return window
+
+    def start(self):
+        self.journal.append("start")
+
+
+def _install_webview_stub(monkeypatch):
+    stub = _WebviewStub()
+    monkeypatch.setitem(
+        sys.modules, "webview", types.SimpleNamespace(create_window=stub.create_window, start=stub.start)
+    )
+    return stub
+
+
+class TestWindowTransitionOrder:
+    """窗口切换必须先建新窗、后销毁旧窗（winforms 最后一窗销毁即退出循环）。"""
+
+    def test_wizard_to_manager_creates_before_destroy(self, tmp_path, monkeypatch):
+        stub = _install_webview_stub(monkeypatch)
+        launcher = _launcher(tmp_path)
+        launcher._wizard_window = stub.create_window("BtDeck 启动")
+
+        launcher.on_wizard_chosen(MODE_COMPANION, remember=False)
+
+        # 管理页先建，向导后销毁
+        assert stub.journal.index("create:BtDeck · 伴侣模式") < stub.journal.index("destroy:win0(BtDeck 启动)")
+        assert launcher._manager_window is not None
+        assert launcher._wizard_window is None
+        assert launcher.mode == MODE_COMPANION
+
+    def test_rerun_wizard_creates_before_destroy(self, tmp_path, monkeypatch):
+        stub = _install_webview_stub(monkeypatch)
+        launcher = _launcher(tmp_path)
+        launcher._manager_window = stub.create_window("BtDeck · 伴侣模式")
+
+        launcher.rerun_wizard()
+
+        assert stub.journal.index("create:BtDeck 启动") < stub.journal.index("destroy:win0(BtDeck · 伴侣模式)")
+        assert launcher._wizard_window is not None
+        assert launcher._manager_window is None
+        assert load_stored_mode(tmp_path / "desktop_mode.json") is None
+
+
 class TestManagerApi:
     def _api(self, tmp_path, stub_health=None):
         launcher = _launcher(tmp_path, stub_health)
@@ -94,9 +164,11 @@ class TestManagerApi:
 
     def test_test_server_updates_profile_state(self, tmp_path):
         stub = _StubHealth(
-            {"http://192.168.5.51:5001": type(
-                "R", (), {"state": HEALTH_READY, "version": "1.0.5", "detail": "服务就绪"}
-            )()}
+            {
+                "http://192.168.5.51:5001": type(
+                    "R", (), {"state": HEALTH_READY, "version": "1.0.5", "detail": "服务就绪"}
+                )()
+            }
         )
         api, store = self._api(tmp_path, stub)
         api.add_server("NAS", "http://192.168.5.51:5001", True)

@@ -83,9 +83,7 @@ class TestHealthClientReadyPath:
     def test_live_http_error(self, monkeypatch):
         _install(
             monkeypatch,
-            urllib.error.HTTPError(
-                "http://x/health/live", 500, "Internal Error", None, io.BytesIO(b"{}")
-            ),
+            urllib.error.HTTPError("http://x/health/live", 500, "Internal Error", None, io.BytesIO(b"{}")),
             None,
         )
         report = HealthClient().check("http://10.0.0.5:5001")
@@ -112,9 +110,7 @@ class TestHealthClientNotReadyPath:
             monkeypatch,
             _FakeResponse(200, _envelope({"status": "alive", "version": "1.0.5"})),
             urllib.error.HTTPError(
-                "http://x/health/ready", 503, "Service Unavailable", None, io.BytesIO(
-                    b'{"data": {"version": "1.0.4"}}'
-                )
+                "http://x/health/ready", 503, "Service Unavailable", None, io.BytesIO(b'{"data": {"version": "1.0.4"}}')
             ),
         )
         report = HealthClient().check("http://10.0.0.5:5001")

@@ -227,10 +227,13 @@ class DesktopLauncher:
         self._mode = chosen
         wizard = self._wizard_window
         self._wizard_window = None
-        if wizard is not None:
-            wizard.destroy()
+        # 先建新窗、后销毁旧窗：pywebview(winforms) 销毁最后一个窗口时会直接
+        # Application.Exit() 结束 GUI 循环，且运行期建窗依赖既有窗口的 Invoke
+        # 通道——先 destroy 会让新窗建在正在退出的循环上（实测必崩）。
         if chosen == MODE_COMPANION:
             self._show_manager()
+        if wizard is not None:
+            wizard.destroy()
 
     def open_remote_window(self, server_id: str) -> bool:
         profile = next((item for item in self.store.load_all() if item.id == server_id), None)
@@ -266,9 +269,10 @@ class DesktopLauncher:
         manager = self._manager_window
         self._manager_window = None
         self._manager_api = None
+        # 同 on_wizard_chosen：先建向导窗、再销毁管理页，窗口计数不清零。
+        self._show_wizard()
         if manager is not None:
             manager.destroy()
-        self._show_wizard()
 
     def exit_companion(self) -> None:
         manager = self._manager_window
