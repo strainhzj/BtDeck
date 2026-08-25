@@ -4748,6 +4748,19 @@
             "docker-compose.yml"
           ],
           "evidence": "tests/services/test_sync_coordinator.py TestTrackerDownloaderHardTimeout 4 例：qb 熔断被强制中断且 errors 含阈值秒数、tr 对称、一熔断一成功汇总 partial（'1 成功，1 失败'）且错误可追溯到具体下载器、配置 0 时 wait_for 收到 timeout=None（开关语义）。coordinator 全套 34 passed。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.9",
+          "name": "真凶根修：enrich 哨兵丢失自愈 + 消除 detect_scheme 探测放大",
+          "description": "faulthandler 线程栈转储首次实战抓获双真凶（双子代理验证裁决：'SSL 握手无限挂'被实验证伪——timeout=30 经 socket.settimeout 完整覆盖握手；真凶一是无 scheme host 触发 qbittorrentapi HTTP→HTTPS 双方案探测×urllib3 Retry×_request_manager 2 轮×30s/段≈单调用 6 分钟串联放大，二是 producer 哨兵 put 0.5s 超时 break 丢弃全部哨兵致 worker 永久挂 queue.get()——90% 置信定位 torrents_async.py worker get 点，时序重放与生产 4 个 hash 前缀逐条吻合）。修复：① enrich producer 哨兵带 30s 总限重试尽力放完（预算到期立即放弃）+ worker queue.get() 超时轮询（producer done 且队列空即退出，_WORKER_GET_POLL_SECONDS=5s）双保险，覆盖全部 4 个调用点；② qb 客户端构造 FORCE_SCHEME_FROM_HOST=True + host 按 is_ssl 补 scheme（_qb_host_with_scheme，消除探测）；③ HTTPADAPTER_ARGS max_retries=0 关闭 urllib3 层重试（外层已有超时治理，双层重试纯放大）；④ requirements.txt qbittorrent-api 声明对齐生产实装 2025.2.0。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/api/endpoints/torrents_async.py",
+            "backend/app/downloader/initialization.py",
+            "backend/requirements.txt"
+          ],
+          "evidence": "TestSentinelLossSelfHealing 确定性回归（fetch 0.8s>0.5s 哨兵窗口制造队列满，回退 producer 修复单独验证 worker 轮询层独立兜底有效）；TestQbClientSchemeAndRetryHardening（认证构造 FORCE_SCHEME_FROM_HOST/max_retries 断言 + _qb_host_with_scheme 6 形态单测）；既有 test_budget_expiry_returns_quickly 修复引入的 30s 白等退化后修正（producer 重试循环检测 budget_reason 立即放弃）。相关套件 610 passed。"
         }
       ]
     }

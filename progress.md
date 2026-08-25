@@ -47,6 +47,12 @@
 
 用户指出不应依赖 cron 层超时兜底、请求 tracker 时就应主动中断：enrich 内部预算是**协作式检查点**（worker 挂死时永不执行，8.75h 案件形态），必须补强制取消层。在 sync_coordinator tracker 分支对 qb/tr 同步包 `asyncio.wait_for` 硬超时（`TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS` 默认 1800s=半小时，0 关闭）：超时强制取消该下载器（私有 db 会话由 async with 丢弃未提交事务）、记 failed + `DownloaderHardTimeout` 事件 + "已主动中断（不影响其余下载器）"错误文案、放行其余下载器。防御分层完整：per_call 30s → enrich 预算 120s（协作式）→ **下载器级 1800s 硬熔断（强制取消）** → cron 3600s 兜底。测试 TestTrackerDownloaderHardTimeout 4 例（qb 中断/tr 对称/一熔断一成功汇总 partial/配置 0 关闭语义）。
 
+### 追加：真凶根修（task .9，22:38 日志 + 双子代理验证裁决后实施）
+
+22:32 轮（新版本已部署）复现挂起形态，**faulthandler 线程栈转储首次实战立功**；双子代理独立验证裁决：'SSL 握手无限挂'被实验证伪（timeout=30 经 socket.settimeout 完整覆盖 TLS 握手，生产 HTTPS read timeout 警告即证据），真凶为双因——①库层放大器：_clean_host_url 剥 scheme 后 qbittorrentapi 每次 context 重建做 HTTP→HTTPS 双方案探测（先 HTTP 后 HTTPS）× urllib3 Retry(connect=1) × _request_manager 2 轮 × 30s/段 ≈ 单调用 6 分钟（转储时线程在流水线第 252 秒）；②项目层挂死直接原因：producer 哨兵 put 0.5s 超时 break 丢弃全部哨兵（时序重放与生产 4 个 hash 前缀逐条吻合，90% 置信定位 worker queue.get() 永久挂点；且为独立于下载器故障的纯代码缺陷，健康下载器慢消费同样可复现）。
+
+修复四项：enrich 哨兵双保险（producer 30s 总限重试 + worker get 5s 轮询自愈，覆盖全部 4 个调用点）；qb 构造 FORCE_SCHEME_FROM_HOST=True + host 按 is_ssl 补 scheme（消除探测放大）；HTTPADAPTER_ARGS max_retries=0（关双层重试）；requirements qbittorrent-api 对齐实装 2025.2.0。实施中发现并修正自身引入的退化：预算到期场景 producer 白等 30s（重试循环检测 budget_reason 立即放弃，既有 test_budget_expiry_returns_quickly 锚定）。+5 测试例（哨兵确定性回归 + 构造/scheme 断言），相关套件 610 passed。已知残留：熔断救任务不救线程令牌（P2 待立项下载器健康熔断）。
+
 ### 生产取证裁决（2026-08-25 22:12 回报）
 
 用户回报 Enriching/错误日志，根因裁决完成：
