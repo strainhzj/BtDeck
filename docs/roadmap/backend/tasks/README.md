@@ -15,7 +15,7 @@
 | 清理执行器 cleanup | `cleanup_executor.py` | 后台执行器 `CleanupTaskExecutor`：自动清理执行器（回收站(L3)+待删除标签(L4)） |
 | 定时任务同步 CRUD cron-crud | `cron_crud.py` | `CronTaskCRUD`/`TaskLogsCRUD`：定时任务同步 CRUD（`DatabaseResult`） |
 | 定时任务异步 CRUD cron-crud-async | `cron_crud_async.py` | 定时任务异步 CRUD |
-| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L122/259/1162）；`_execute_task` 三段式会话（读会话→无会话任务体→收尾短会话三写，L297；greenlet 交错治理）；Python 内部类执行生命周期/超时观测（L606/L721），同步 execute 经 to_thread（L710/L878） |
+| 调度核心 cron-executor | `cron_executor.py` | 🔵 APScheduler 调度核心 `CronTaskExecutor`：`AsyncIOScheduler` + `add_job`（L136/273/1160）；`_execute_task` 三段式会话（读会话→无会话任务体→收尾短会话三写，L327；greenlet 交错治理；2026-08-25 起自登记协程句柄 + interrupt 真取消 + CancelledError 分支落库 cancelled）；Python 内部类执行生命周期观测 + 超时强制终止（L669/L852，开关 CRON_TASK_TIMEOUT_ENFORCE，`TaskExecutionTimeoutError` L80 穿透兜底 except，任务体 TimeoutError 经 `_TaskBodyTimeoutError` 包装区分；心跳停滞告警 + faulthandler 线程栈转储）；`interrupt_task` L1137（cancel 运行句柄并等收尾） |
 | 任务结果新鲜度 cron-freshness | `cron_freshness.py` | 定时任务数据新鲜度轻量计算：`compute_freshness`（freshnessSeconds/stale，stale 阈值按 2 个调度周期近似、APScheduler CronTrigger 估算最短间隔，失败回退 `CRON_STALE_THRESHOLD_SECONDS` 默认 7200s） |
 | 定时任务表 cron-model | `cron_models.py` | ORM `CronTask`：定时任务表 |
 | 任务日志 logger | `logger.py` | 任务执行日志写入与统计 |

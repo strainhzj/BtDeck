@@ -4647,6 +4647,109 @@
           ]
         }
       ]
+    },
+    {
+      "id": "cron-task-stop-governance-2026-08-25",
+      "name": "定时任务停止治理（超时强制终止 + interrupt 真取消 + MissingGreenlet 根修）",
+      "description": "生产 Tracker 状态同步任务一轮执行挂 8.75h 无法停止（cron-7-20260825111000）：超时仅观测打标、interrupt 对运行协程无效、heavy_sync 令牌被占连锁堵死 4 个重型任务。本批：cron 层超时强制终止（开关 CRON_TASK_TIMEOUT_ENFORCE，默认开启）、interrupt 保存协程句柄真正 cancel（outcome=cancelled 落库）、update_task_freshness 的 MissingGreenlet 根修（onupdate=func.now() postfetch 过期 → db.refresh）、心跳进度停滞告警 + faulthandler 全线程栈自动转储、认证检查一次性客户端补 requests 超时、interrupt 端点补审计。预算 0 值语义与 speed_schedule 无超时链路为条件项，待生产取证后定。",
+      "status": "done",
+      "branch": "dev",
+      "tasks": [
+        {
+          "id": "cron-task-stop-governance-2026-08-25.1",
+          "name": "cron 层超时强制终止（task_type=4）",
+          "description": "_execute_internal_method_observed 用 wait_for 包裹执行体（timeout<=0 归一不强制）；任务体自身 TimeoutError 经入口 guard 包装（_TaskBodyTimeoutError）与强制超时区分（Windows 时钟粒度下 elapsed 判定不可靠）；TaskExecutionTimeoutError 经 _run_python_internal_class 穿透分支直达 _execute_task 落库 outcome=failed + log_detail 标注超时。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/core/config.py"
+          ],
+          "evidence": "tests/tasks/test_cron_executor_admission.py TestTimeoutEnforcement 4 例（强杀穿透/0 值归一/任务体 TimeoutError 不误判/thread 模式放弃等待）；test_cron_executor.py test_timeout_kill_maps_to_failed_with_detail。461 相关套件 passed。 回归保护批次（+7）：重型任务超时后 heavy_sync 令牌立即可重获（生产 8.75h 占锁事故锚点）、强杀开启时普通异常路径不变、timeout 未配置不强制、thread 模式显式开关、停滞心跳 WARNING+progress_stalled+faulthandler 节流转储（TestProgressStallObservation 3 例：停滞告警/进度推进抑制/阈值 0 关闭）。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.2",
+          "name": "interrupt 真正取消运行实例",
+          "description": "_execute_task 自登记协程句柄（覆盖调度触发与手动启动两入口）；interrupt_task cancel 运行句柄并等收尾三写完成再返回（消除立即重启并发写窗口）；CancelledError 分支区分用户中断（outcome=cancelled + success=True 落库，对齐 skipped 口径）与调度器关闭（re-raise）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/cron_executor.py"
+          ],
+          "evidence": "test_cron_executor.py TestInterruptRunningInstance 3 例（中断落库与清理/非 interrupt 取消传播/无运行句柄仍成功）。 回归保护批次（+3）：真实链路集成（不 mock _run_task_script，经 observed 的 wait_for 挂起执行被 interrupt 取消，CancelledError 穿透 wait_for 与两层 except Exception 兜底后按 cancelled 落库）；读会话失败早退路径句柄/中断标记 pop/discard 清理；现有中断用例补 freshness（last_outcome=cancelled、advance_success=False）断言。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.3",
+          "name": "MissingGreenlet 根修（update_task_freshness）",
+          "description": "根因 CronTask.update_time onupdate=func.now() postfetch 过期（独立于 expire_on_commit=False），commit 后 to_dict() 同步访问触发 refresh SELECT。修复：commit 后 await db.refresh(task) 再序列化，根因注释落码。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/cron_crud_async.py"
+          ],
+          "evidence": "tests/tasks/test_cron_crud_async_freshness.py 2 例真实 aiosqlite 会话；回归有效性验证：移除 refresh 两例即失败（MissingGreenlet 复现），恢复即通过。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.4",
+          "name": "观测完善：进度停滞告警 + 线程栈自动转储 + skipped 文案",
+          "description": "SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS（默认 300s，0 关闭）：心跳 last_progress_ms 超阈值提级 WARNING + progress_stalled=True（入 EVENT_TASK_LIFECYCLE 白名单），首次触发 faulthandler.dump_traceback() 自动留挂死现场（每次运行至多一次）；skipped 任务完成日志改打'已跳过+原因'。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/tasks/cron_executor.py",
+            "backend/app/services/sync_observability.py",
+            "backend/app/core/config.py"
+          ],
+          "evidence": "test_sync_observability.py 全量 passed（白名单契约）；黑名单外字段静默丢弃行为由 format_event_line 既有用例锚定。 回归保护批次（+1）：test_sync_observability 锚定 progress_stalled 在 EVENT_TASK_LIFECYCLE 白名单内落盘（白名单外字段被静默丢弃，漏登记会丢失机器可读标记）。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.5",
+          "name": "认证检查一次性客户端补超时",
+          "description": "initialization.py 认证检查用 qbClient/trClient 构造补 REQUESTS_ARGS timeout=30 / timeout=30.0（与缓存客户端对齐）；外层 wait_for 只放弃等待不回收线程，缺 requests 超时是线程泄漏根因。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/downloader/initialization.py"
+          ],
+          "evidence": "mypy/black/flake8 通过；参数与 1330/1340 缓存客户端构造模式一致。 回归保护批次（+2，tests/downloader/test_auth_client_timeout.py）：qb 认证构造断言 REQUESTS_ARGS={\"timeout\": 30}、tr 断言 timeout=30.0，改回无超时构造即报红。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.6",
+          "name": "interrupt 审计接线 + 前端操作类型映射",
+          "description": "新增 AuditOperationType.SCHEDULED_TASK_INTERRUPT（枚举/display_name/category 三处）；/cronTasks/{id}/interrupt 端点补审计（复用 get_audit_service + extract_audit_info_from_request 模式，失败不影响主业务）；前端 audit.vue 筛选下拉与 typeMap 补'中断定时任务'。",
+          "status": "done",
+          "scope": "fullstack",
+          "files": [
+            "backend/app/torrents/audit_enums.py",
+            "backend/app/api/endpoints/cron_tasks.py",
+            "frontend/src/views/logs/audit.vue"
+          ],
+          "evidence": "eslint 通过；test_cron_tasks_outcome.py 10 例 passed（端点行为回归）。 回归保护批次（+3）：interrupt 端点审计接线（成功/失败均落审计，operation_type/operator/task_name/operation_result 断言，隔离 AsyncSessionLocal）；statistics cancelled 口径（success=True+cancelled 计入成功卡片，防误改 success=False 连带统计回归）。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.7",
+          "name": "（条件项，待生产取证）预算 0 值语义 + speed_schedule 无超时链路",
+          "description": "两项审查发现的问题按计划挂起：QB_TRACKER_RUN_BUDGET_SECONDS 0=不限时为文档化行为，仅当生产取证确认 budget_seconds=0 时才实施收紧（参数与 settings 双层，含 INFO_SYNC 侧同语义）；_sync_speed_schedule 每分钟同步 HTTP 无超时为同型挂起点，取证后单独立项。生产取证命令包已交付用户（QB_TRACKER_ENRICH Enriching 行 / event=downloader_call 计时 / faulthandler 线程栈）。",
+          "status": "done",
+          "scope": "backend",
+          "files": [],
+          "evidence": "2026-08-25 22:08 生产取证裁决：Enriching 行 budget_seconds=120.0（默认值在位，路径 A 排除）；event=downloader_call queue_wait_ms=0.0（无令牌泄漏）+ urllib3 ReadTimeoutError（192.168.5.51:28180 read timeout=30）——路径 B 实锤：该 qb WebUI 对单种子 trackers API 收到请求但不返回响应。本轮治理全部正常（4 hash × 30s ÷ 2 worker = 60s enrich，任务 ~120s 结束）。预算 0 值收紧不实施；残留行动项移交外部：修复/重启 qb dabb1e6f（其游标 cursor=None 全失败永不推进，每轮烧 120s 预算重试 4 个 hash，qb 恢复后自愈）；speed_schedule 无超时链路无新证据，维持待立项。"
+        },
+        {
+          "id": "cron-task-stop-governance-2026-08-25.8",
+          "name": "下载器级硬熔断（tracker 同步主动中断）",
+          "description": "用户决策（2026-08-25）：不应只依赖 cron 层超时兜底，请求 tracker 的层面就要主动中断。enrich 内部预算（budget_seconds/max_per_run）是协作式检查点——worker 挂死在某个 await 上时检查点永不执行（8.75h 案件形态）。在离故障点最近的下载器边界（sync_coordinator tracker 分支）对 qb/tr 同步包 asyncio.wait_for 硬超时（TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS，默认 1800s=半小时，0 关闭）：超时强制取消该下载器同步（私有 db 会话由 async with 丢弃未提交事务，检查点残留轮末回收）、记 failed + DownloaderHardTimeout 事件、放行其余下载器。防御分层就此完整：per_call 30s → enrich 预算 120s（协作式）→ 下载器级 1800s 硬熔断（强制取消）→ cron 3600s 兜底。",
+          "status": "done",
+          "scope": "backend",
+          "files": [
+            "backend/app/services/sync_coordinator.py",
+            "backend/app/core/config.py",
+            "backend/.env.example",
+            "docker-compose.yml"
+          ],
+          "evidence": "tests/services/test_sync_coordinator.py TestTrackerDownloaderHardTimeout 4 例：qb 熔断被强制中断且 errors 含阈值秒数、tr 对称、一熔断一成功汇总 partial（'1 成功，1 失败'）且错误可追溯到具体下载器、配置 0 时 wait_for 收到 timeout=None（开关语义）。coordinator 全套 34 passed。"
+        }
+      ]
     }
   ],
   "tasks": [

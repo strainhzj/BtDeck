@@ -1,5 +1,24 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-25（第二批）：定时任务停止治理——超时强杀 + interrupt 真取消 + MissingGreenlet 根修
+
+### 结果
+
+生产 Tracker 状态同步任务一轮执行挂 8.75h 无法停止（cron-7-20260825111000）的完整诊断与修复：cron 层超时强制终止（开关 `CRON_TASK_TIMEOUT_ENFORCE` 默认开）、interrupt 保存协程句柄真正 cancel（outcome=cancelled 落库）、MissingGreenlet 根修（onupdate postfetch → db.refresh）、心跳停滞告警 + faulthandler 线程栈自动转储、认证客户端补 requests 超时、interrupt 审计接线（含前端 audit.vue 映射）。相关套件 461 passed、mypy/black/flake8/eslint/init.sh 全过。feature_list.json `cron-task-stop-governance-2026-08-25` 已登记（task .7 挂起待生产取证）。**未提交待用户指示。**
+
+### 下一步（新会话优先）
+
+1. **生产取证（用户执行）**：`docker logs btdeck-backend 2>&1 | grep "QB_TRACKER_ENRICH" | grep -E "Enriching|Completed|游标"`——`budget_seconds=0` → 实施 task .7 预算收紧；`=120` → 路径 B（挂死），线程级回收单独立项。辅证：`grep "event=downloader_call" | grep "dabb1e6f"`（queue_wait_ms 高=令牌泄漏）。
+2. 条件项：speed_schedule 无超时同步 HTTP 链路（同型挂起点）取证后立项。
+3. 部署提醒：docker-compose 已加 CRON_TASK_TIMEOUT_ENFORCE / SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS 透传；发布说明需含已知限制（thread 孤儿线程/task_type 5-6/脚本子进程/事件循环共盲）。
+
+### 关键实现细节（后续会话避坑）
+
+- `_run_python_internal_class` 的 `except Exception` 兜底会吞穿透异常——TaskExecutionTimeoutError 有专门穿透分支，改码时不可删除
+- 任务体自身 TimeoutError 经入口 guard 包装为 `_TaskBodyTimeoutError`（Windows 时钟粒度 ~15.6ms 下 wait_for 可早于 timeout 触发，elapsed 判定不可靠，来源标记是唯一可靠区分）
+- interrupt 等收尾完成再返回（gather），用户中断 cancelled 的 success=True 对齐 skipped 统计口径
+- 测试锚点：TestTimeoutEnforcement / TestInterruptRunningInstance / test_cron_crud_async_freshness（移除 db.refresh 即失败，回归有效性已验证）
+
 ## 2026-08-25：主 Logo 品牌资源接入
 
 ### 结果

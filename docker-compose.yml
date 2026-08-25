@@ -31,6 +31,13 @@ services:
       - SECRET_KEY=${SECRET_KEY:-}
       - ALLOWED_HOSTS=${ALLOWED_HOSTS:-}
       - DEBUG=${DEBUG:-false}
+      # ===== cron 任务治理透传（2026-08-25）：容器内无 .env，须在此透传才可调 =====
+      # 超时强制终止开关（true=超过任务 timeout_seconds 即终止；线上误杀长任务时置 false 回滚）
+      - CRON_TASK_TIMEOUT_ENFORCE=${CRON_TASK_TIMEOUT_ENFORCE:-true}
+      # 心跳进度停滞告警阈值秒（0 关闭；首次触发转储全线程栈定位挂死）
+      - SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS=${SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS:-300}
+      # tracker 同步单下载器硬熔断秒（0 关闭；超时主动中断该下载器，放行其余）
+      - TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS=${TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS:-1800}
     volumes:
       - ./data/backend/data:/app/data
       - ./data/backend/logs:/app/logs

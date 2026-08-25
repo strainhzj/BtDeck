@@ -1,5 +1,68 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-25（第二批） - 定时任务停止治理：超时强杀 + interrupt 真取消 + MissingGreenlet 根修
+
+### 背景（生产事故诊断）
+
+用户复现"Tracker 状态同步任务没有正常停止"。日志定位：`cron-7-20260825111000`（task_id=7，cron_run_id 自带时间戳）11:10:00 触发，两个 tr 下载器 6~22s 正常完成 checkpoint 后，qb 下载器 `dabb1e6f` 的 `tracker_enrich_single_torrent` 阶段连续 `qb_fetch_trackers` TimeoutError，11:11:40 后绝对静默；至 20:01 仍每 30s 心跳（elapsed≈8.75h，timeout_exceeded=True 却无终止），持有 heavy_sync（容量 1）连锁堵死 Tracker 汇报轮询/消息记录/路径扫描/种子信息同步 4 个任务（ADMISSION_SKIP）。`正在运行中，跳过本次执行` 0 条（后续触发全被准入层拦截，未到重入检查）；pause/interrupt 成功路径无日志且对运行协程无效（running_tasks 标志仅在下次执行前检查）。
+
+### 实施内容（6 项，双子代理独立审查修订后执行）
+
+1. **cron 层超时强制终止**（`cron_executor.py`）：`_execute_internal_method_observed` 以 `wait_for` 包裹执行体；`timeout_seconds<=0` 归一 None（wait_for(0) 立即取消不合理）；任务体自身 TimeoutError 在执行入口 guard 包装为 `_TaskBodyTimeoutError`——因 Windows ~15.6ms 时钟粒度下 wait_for 可能早于 timeout 触发，elapsed 判定不可靠（实测 15ms<20ms 复现），来源标记法是唯一可靠区分；`TaskExecutionTimeoutError` 经 `_run_python_internal_class` 穿透分支（907 行 except Exception 会吞掉任何穿透异常——审查发现的死代码陷阱）直达 `_execute_task` 落库 outcome=failed。开关 `CRON_TASK_TIMEOUT_ENFORCE` 默认 True。
+2. **interrupt 真取消**：`_execute_task` 自登记 `asyncio.current_task()` 句柄（覆盖 APScheduler 调度与 start_task_immediately 两入口）；`interrupt_task` cancel 后 `gather` 等收尾三写完成（消除立即重启并发写 task 行窗口）；`except asyncio.CancelledError` 分支区分用户中断（outcome=cancelled + success=True，对齐 skipped 口径与统计卡片）与调度器关闭（re-raise；CancelledError 是 BaseException，except Exception 捕不到——项目既有教训）。
+3. **MissingGreenlet 根修**（`cron_crud_async.py`）：审查查明真因是 `CronTask.update_time` 的 `onupdate=func.now()` postfetch 过期（独立于 expire_on_commit=False），非偶发 greenlet 交错。修复：commit 后 `await db.refresh(task)`。**回归有效性已验证：移除 refresh 两测试即失败（MissingGreenlet 在测试环境复现），恢复即通过。**
+4. **观测完善**：`SYNC_TASK_PROGRESS_STALL_WARNING_SECONDS`（默认 300s）心跳停滞提级 WARNING + `progress_stalled=True`（入 EVENT_TASK_LIFECYCLE 白名单，白名单外字段被静默丢弃）；首次触发 `faulthandler.dump_traceback()` 自动留全线程栈现场（每次运行至多一次）——下次卡死不再依赖人工 py-spy；skipped 任务完成日志改打"已跳过+原因"。
+5. **认证检查一次性客户端补超时**（`initialization.py` 393/429）：qb `REQUESTS_ARGS={"timeout": 30}`、tr `timeout=30.0`，与缓存客户端对齐；外层 wait_for 只放弃等待不回收线程，缺 requests 超时是线程泄漏根因。
+6. **interrupt 审计**：`SCHEDULED_TASK_INTERRUPT` 枚举三处 + 端点接线（显式传 ip/user_agent/request_id/session_id，mypy variance 不接受 **dict 展开）+ 前端 audit.vue 筛选与 typeMap 映射。
+
+### 已知限制（发布说明需含）
+
+- 强杀范围限 task_type=4；脚本(0-3)/清理(5)/审计导出(6)超时不终止（interrupt 取消仍可用）
+- thread 模式超时仅放弃等待：孤儿线程继续跑完并持有 downloader_api_runtime per-downloader 令牌，但不再占 heavy_sync
+- wait_for 与心跳均依赖事件循环：循环被同步调用阻塞时两者共盲（后备 `faulthandler.dump_traceback_later` 独立线程未实施，列为可选）
+- 存量任务 timeout 核查：默认任务 300~7200s 与历史正常运行时长一致（判定 300s 生产每轮正常完成、孤儿类 7200s 有内部预算控制），唯一超时正是不该跑 8.75h 的本案例——无需调整
+
+### 条件项（挂起，待生产取证）
+
+- 预算 0 值语义：`QB_TRACKER_RUN_BUDGET_SECONDS=0=不限时` 是文档化行为且被 2 个测试锚定；若生产取证 `Enriching` 行 budget_seconds=0 则按"参数与 settings 双层收紧 + INFO_SYNC 侧同批"实施，路径 B（挂死）则不做（强杀已兜底）
+- `_sync_speed_schedule`（每分钟、全链路同步 HTTP 无超时）为审查发现的同型挂起点，取证后单独立项
+- **取证命令包已交用户**：grep QB_TRACKER_ENRICH Enriching/Completed 行、event=downloader_call 计时（queue_wait_ms 高=令牌泄漏 vs remote_call_ms 高=远程慢）、挂死时 `docker exec ... faulthandler.dump_traceback`
+
+### 回归保护批次（同日第三批，+15 用例）
+
+按风险保护价值补齐未被初始测试锚定的改动面：
+
+1. **停滞观测全链路**（TestProgressStallObservation 3 例）：停滞心跳提级 WARNING + progress_stalled=True、faulthandler 线程栈转储整次运行至多一次（节流防日志风暴）、进度持续推进时抑制告警、阈值 0 完全关闭——直接调 `_execute_internal_method_observed` 并 mock `faulthandler.dump_traceback`
+2. **重型任务超时锁释放**（生产 8.75h 占锁事故的直接锚点）：真实注册表重型 task_code 超时被杀后 `admission_controller.running` 无残留、令牌可立即重新 acquire
+3. **真实链路 interrupt 集成**：不 mock `_run_task_script`，注入真实 fake 任务类经 `_run_python_internal_class` → observed 的 `wait_for` 挂起，interrupt 的 cancel 必须穿透 wait_for（外层 cancel 传播 CancelledError 而非转译 TimeoutError）与两层 `except Exception` 兜底，最终按 cancelled 落库——强杀与中断两个新机制共存性的唯一集成验证
+4. **早退路径清理**：读会话失败早退时句柄/中断标记 pop/discard 无残留（防 KeyError）
+5. **认证客户端超时构造**（新文件 tests/downloader/test_auth_client_timeout.py 2 例）：qb `REQUESTS_ARGS={"timeout": 30}` / tr `timeout=30.0` 构造断言
+6. **interrupt 审计接线 + 统计口径**（API 层 3 例）：成功/失败均落审计（operation_type/operator/task_name/operation_result，隔离 AsyncSessionLocal 防写开发库）；statistics 中 cancelled（success=True）计入成功卡片——若有人把 interrupt 落库改回 success=False，统计契约随之报红
+7. **progress_stalled 白名单落盘**（observability 1 例）：EVENT_TASK_LIFECYCLE 专属字段在白名单内输出（白名单外被 format_event_line 静默丢弃，漏登记只提级日志而丢机器可读标记）
+8. 现有中断用例补 freshness 断言（last_outcome=cancelled、advance_success=False）；强杀开启时普通异常路径不变、timeout 未配置不强制等负向护栏
+
+结果：相关套件 475 passed（原 461 + 15 新增 - 1 重构合并）；改动文件 black/flake8 全过。注：`black --check tests/` 全目录有 62 个历史文件本就未格式化，属既有状态未触碰。
+
+### 追加：下载器级硬熔断（用户决策，task .8）
+
+用户指出不应依赖 cron 层超时兜底、请求 tracker 时就应主动中断：enrich 内部预算是**协作式检查点**（worker 挂死时永不执行，8.75h 案件形态），必须补强制取消层。在 sync_coordinator tracker 分支对 qb/tr 同步包 `asyncio.wait_for` 硬超时（`TRACKER_SYNC_DOWNLOADER_TIMEOUT_SECONDS` 默认 1800s=半小时，0 关闭）：超时强制取消该下载器（私有 db 会话由 async with 丢弃未提交事务）、记 failed + `DownloaderHardTimeout` 事件 + "已主动中断（不影响其余下载器）"错误文案、放行其余下载器。防御分层完整：per_call 30s → enrich 预算 120s（协作式）→ **下载器级 1800s 硬熔断（强制取消）** → cron 3600s 兜底。测试 TestTrackerDownloaderHardTimeout 4 例（qb 中断/tr 对称/一熔断一成功汇总 partial/配置 0 关闭语义）。
+
+### 生产取证裁决（2026-08-25 22:12 回报）
+
+用户回报 Enriching/错误日志，根因裁决完成：
+
+- **路径 A（预算禁用）排除**：`budget_seconds: 120.0` 默认值在位
+- **路径 B 实锤**：`queue_wait_ms=0.0`（无令牌泄漏）+ urllib3 `ReadTimeoutError(192.168.5.51:28180, read timeout=30)`——qb 下载器 dabb1e6f 的 WebUI 对单种子 trackers API 收到请求但 30 秒不返回响应体（requests 超时正常生效）
+- **本轮治理全部正常**：4 hash × 30s ÷ 2 worker = 60s enrich（22:09:20→22:10:20 两条超时事件完全吻合），任务 ~120s 结束（心跳 elapsed_ms=120002 印证）；对比 8.75h 旧案是不同容器实例（1-84c6ad0855d6 vs 1-ffc65da65b80，中间重启过），旧案同诱因叠加更深挂点、已被超时强杀兜底
+- **task .7 关闭不实施**；行动项移交外部：修复/重启 qb 192.168.5.51:28180（curl 直连其 trackers API 验证；其游标 cursor=None 全失败永不推进，每轮烧 120s 预算重试 4 个 hash，qb 恢复后自愈——另一 qb b58ee7b2 的 791 个种子全部 durable 健康，问题专属该实例）
+
+### 验证
+
+- pytest 相关套件 461 passed（tests/tasks 全目录 + cron_tasks_outcome + tracker_budget + sync_observability）；新增 TestTimeoutEnforcement 4 例、TestInterruptRunningInstance 3 例、freshness 真实会话 2 例（回归保护批次后合计 475）
+- mypy 零错、black（24.10.0）已格式化、flake8 通过；前端 eslint（audit.vue）通过
+- 配置三件套：config.py 默认值 + .env.example 注释 + docker-compose.yml environment 透传（容器内无 .env，不透传则只能用代码默认值）
+- 根 ./init.sh（ci）通过；Git 未提交（待用户指示）
+
 ## 2026-08-25 - 主 Logo 品牌资源接入
 
 ### 实施结果
