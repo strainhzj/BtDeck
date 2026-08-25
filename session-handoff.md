@@ -1,5 +1,33 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-25 交接（十）：移动独有优化（PWA+手势）+ 桌面双模式对齐 task .6 首批
+
+### 结论
+
+用户确认继续 M4 后两大候选（三项范围决策经 AskUserQuestion 确认：桌面伴侣=内嵌 webview、手势=Tab 滑动+抽屉关闭、PWA=完整启用含更新提示）。前端 PWA 完整启用+移动手势完成并全验证；后端 desktop_companion（task .6）逻辑层+GUI 全部落地，**窗口链路实测留待桌面会话**。全部未提交。
+
+### 交付
+
+- **前端 PWA**：SW 以 `?src=btdeck` 标记注册（registerServiceWorker.ts 重写+updated 事件）；retireLegacyServiceWorkers 标记感知改造（只清无标记注册+模板前缀缓存，与 main.ts 注册顺序共存）；vue.config pwa 补全（#059669/capable yes/**v5 扁平选项**/cacheId btdeck/skipWaiting false+clientsClaim true）；manifest 品牌化+9 图标重生成（scripts/generate-pwa-icons.py）+favicon.svg 统一品牌绿；RefreshPrompt.vue 常驻 App.vue（新版本提示→SKIP_WAITING→controllerchange 去抖重载）。
+- **前端手势**：内容区水平滑动切底部 Tab 四主页（**仅精确路径匹配**，/m/torrents/detail 子页排除——startsWith 会误命中）；左边缘 24px 右滑开抽屉（优先于切 Tab）；抽屉左滑/遮罩点击关闭；下拉刷新 mixin 横向主导中止（轴互斥）。
+- **后端 desktop_companion**（新包，对齐安卓 com.btdeck.companion）：hosts（URL 规范化+私有字面量判定 fail-closed）/lan_policy（明文准入四态）/profiles（键名对齐+原子写+脏数据容错）/health（live→ready 链式+TLS 分类，纯 urllib）/launcher（desktop_mode.json+BTDECK_MODE env>记录>向导；DesktopLauncher 单次 start() 事件驱动向导/管理/远程窗口；webview 惰性导入）。desktop_main 集成（server 模式历史行为不变；无桌面环境落回服务端+告警）。deploy/ 零改动（静态导入自动分析）。
+
+### 验证
+
+前端 Jest 76 套件 1048 例全绿 + tsc/ESLint/build + dist 实证（manifest/SW/meta/图标）；后端新增 44 例全过 + mypy/black/flake8；后端全量 3979 passed（1 失败为孤儿 120k 性能阈值满载抖动，单独重跑通过，与本批无涉）。
+
+### 关键发现（后续会话注意）
+
+- **PWA 前史**：插件一直在构建链但 main.ts 从未注册 SW（模板时代旧壳钉死事故后主动禁用+retire 清理）；重启必须带标记共存，否则每次启动被自己清掉。
+- vue-cli-plugin-pwa v5：public/manifest.json 是 manifest 源；cacheId 默认包名（=遗留清理前缀）；appleMobileWebAppCapable 扁平选项（v4 对象式不生效）。
+- pywebview 私有会话凭据不落盘（重启重登）+不做证书指纹信任=与安卓 MVP 同口径已知边界。
+
+### 待办
+
+1. 本批 21 文件（前端 13+后端 8）+三份记录未提交，待用户指示。
+2. 桌面 GUI 窗口链路实测（向导→管理→远程窗口、PyInstaller exe 实跑）留桌面会话；task .6 实测后收尾置 done。
+3. PWA 安装/更新流与手势真机/设备模拟实测留交互会话。
+
 ## 2026-08-24 交接（九）：移动端 M4（孤儿文件双 Tab 移动化，功能页移动化收官）
 
 ### 结论
