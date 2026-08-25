@@ -1,5 +1,39 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-25 交接（十二）：桌面 GUI 窗口链路实测收官（task .6 置 done）
+
+### 结论
+
+task .6 桌面双模式对齐完成窗口链路全矩阵实测（向导/管理页/远程窗口/BTDECK_MODE 优先级/服务端行为不变/PyInstaller exe 实跑），**全部通过**，feature_list.json task .6 已置 done。实测抓到并修复一个 GUI 真实缺陷（向导选模式竞态崩溃，打包 exe 同样中招）。本批 3 个代码文件改动 + 三份记录，**未提交待用户指示**。
+
+### 修复：向导选模式即崩（launcher.py）
+
+- 症状：向导页点击模式卡后进程被 pythonnet `InternalPythonnetException（Task'1[VoidTaskResult]→NullReferenceException）` 杀死。
+- 根因：on_wizard_chosen/rerun_wizard「先 destroy 旧窗再 create 新窗」——pywebview(winforms) 销毁最后一窗即 `Application.Exit()` 结束 GUI 循环，且运行期 create_window 依赖既有窗口的 Invoke 通道（实例已空则无通道）。
+- 修复：两处均改「先建新窗、后销毁旧窗」；+2 webview-stub 单测锁 create-before-destroy 顺序（tests/desktop_companion 46 例全过）。
+
+### 实测矩阵（全部通过）
+
+1. 无记录首启：向导弹窗、服务端卡「默认」标签、记住默认勾选；选伴侣+记住 → 记录落盘+管理页存活。
+2. 管理页：四组校验文案（空名/地址无效/公网 http 拒/私有未确认拒）；添加 127.0.0.1:5001+确认 → 落盘键名值全对；测试连接 → 就绪+v1.0.5（落盘 READY/serverVersion）；死端口 → 不可达；删除（confirm）同步。
+3. 打开远程：窗口连 5001 加载 SPA 登录页+PWA SW 注册、管理页隐藏、lastConnectedAt 落盘；关远程 → 管理页恢复+列表刷新。
+4. 重跑向导：记录清除/向导重现/档案保留；选服务端+记住 → 迁移→uvicorn 5099→主窗口自家 SPA→关窗优雅退出 exit 0。
+5. BTDECK_MODE 双向优先（记录被 env 压制，全程无向导）；退出按钮优雅退出；无记录关窗落服务端不写记录。
+6. exe：build-windows.bat 全过（43.8MB/verify PASS/Inno 跳过=ISCC 未装）；exe 实跑同构全链路含优雅退出（launcher 修复已在包内）。
+
+### 关键发现（后续会话参考）
+
+- **测试基建**：WebView2 可经 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=N` 开 CDP（Node 原生 WebSocket 可驱动）；**用户 Chrome 占 127.0.0.1:9222 勿碰**，WebView2 端口回环栈不固定（双栈探测+按 Browser=Edg/ 过滤）；Git Bash `&` 后台进程会被工具调用结束杀死（GUI 进程须 exec 顶替 shell + 后台任务保活）；MSYS $$ ≠ Windows PID。
+- **既有边界（未改码，已登记 feature evidence）**：wait_for_server_ready 不校验应答方身份——端口被占且他人应答时桌面主窗口会连到他人服务；建议绑失败 fail-fast 或探测带实例标识。
+- btpManager env 无 pytest/mypy（质量门用 anaconda base python 跑）；本会话已向 btpManager 装 pywebview~=5.4.0（desktop_main 必需，与打包 requirements 同锚）。
+- 测试产物：.tmp-desktop-gui-test/（脚本/日志/截图，未跟踪可删）；dist/btdeck.exe 46.4MB（15:32 构建）+ .venv-packaging 为本批构建产物。
+
+### 待办
+
+1. 本批 3 代码文件（launcher.py 修复 + test_launcher.py 回归 + test_health.py black 规范化）+三份记录未提交，待用户指示。
+2. task .6 已 done；dual-mode-client 余项：.1/.2/.3 收尾（wheel 闸门/真机矩阵）、.4（安卓服务端壳）、.5（M 系列收尾判断）、.7（发布验收）。
+3. 5001 dev server 保持运行（PID 7144，未受测试影响）。
+
 ## 2026-08-25 交接（十一）：移动端模拟器验证（PWA + 手势）
 
 ### 结论

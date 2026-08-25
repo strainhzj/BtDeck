@@ -5635,3 +5635,44 @@ M4 完成并验证（未提交）。AskUserQuestion 获用户确认范围：**�
 ### 待办
 
 - 无新增代码改动；本节为验证记录（无文件需提交——progress.md/handoff 更新待用户指示提交）
+
+## 2026-08-25（三）：桌面 GUI 窗口链路实测（task .6 收尾）
+
+### 结论
+
+task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done。实测抓到并修复一个 GUI 真实缺陷（向导选模式即进程崩溃），补 2 个回归单测；PyInstaller exe 打包+实跑全链路通过。本批改动：backend/app/desktop_companion/launcher.py（窗口切换顺序修复）、backend/tests/desktop_companion/test_launcher.py（+2 顺序回归；顺带 black 24.10/line-length=120 规范化 + 清理一个原有未用导入）、test_health.py（black 规范化，纯格式）。
+
+### 发现并修复：向导选模式竞态崩溃（打包 exe 同样中招）
+
+- 症状：向导页点击任一模式卡后进程即死（pythonnet `InternalPythonnetException: Failed to create Python type for System.Threading.Tasks.Task'1[[VoidTaskResult]] → NullReferenceException`）。
+- 根因：`on_wizard_chosen`/`rerun_wizard` 原顺序「先 destroy 旧窗、再 create 新窗」。pywebview(winforms) 销毁最后一个窗口时在 on_close 里直接 `WinForms.Application.Exit()` 结束 GUI 循环；且运行期 create_window 走「既有窗口实例的 Invoke 通道」（instances 已空则无通道）——新窗建在正在退出的循环上，进程随 interprete 关停竞态崩在 .NET 线程。
+- 修复：两处切换均改为「先建新窗、后销毁旧窗」（保持窗口计数不清零）；pywebview 5.4 winforms 源码 on_close/create_window 实读确认语义。回归：webview stub（sys.modules 注入）断言 create-before-destroy 顺序两用例。
+
+### 实测矩阵（btpManager env + pywebview 5.4 + WebView2）
+
+驱动方式：`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<N>` 开 WebView2 调试端口，Node 原生 WebSocket 做 CDP 客户端（Runtime.evaluate 驱动页面内嵌 HTML 的真实 onclick 路径），Win32 PostMessage WM_CLOSE 驱动原生窗口，配置全部走 CONFIG_DIR 临时目录隔离。
+
+1. **首启向导**（无 desktop_mode.json）：向导弹窗；服务端卡带「默认」标签（默认高亮语义）；「记住选择」默认勾选；js_api 桥就绪。选伴侣+记住 → desktop_mode.json 写 mode=companion → 管理页窗口存活渲染（修复后不再崩）。
+2. **管理页全链路**：四组校验文案全对（空名/地址无效仅 http/https/公网 http 一律拒/私有未确认拒）；私有 http+确认 → 添加成功，companion_servers.json 键名与值全对（cleartextAllowed=true）；测试连接 → 就绪 + v1.0.5 版本徽标，落盘 READY/serverVersion=1.0.5/lastHealthCheckedAt>0；死端口 → 不可达徽标；删除（window.confirm）→ 列表与落盘同步清空。
+3. **打开远程**：新原生窗口「BtDeck - <名称>」连 http://127.0.0.1:5001（dev server 充当远程，loopback 属私有主机），加载远程 SPA 登录页（截图存证）且其 PWA service-worker（?src=btdeck）正常注册；管理页同时隐藏；lastConnectedAt 落盘。**关闭远程 → 管理页恢复显示 + 列表自动刷新**（连接时间从「从未」更新）。
+4. **重跑向导**：管理页「重新选择模式」→ desktop_mode.json 删除、向导重现、服务器档案保留；选服务端+记住 → 记录 server → 全新库自动迁移 → uvicorn 5099 → 主窗口加载自家 SPA → 关主窗 → 服务优雅停机（WAL 清理）exit 0。
+5. **BTDECK_MODE 优先级**：记录 companion + env server → 全程无向导直达服务端；记录 server + env companion → 全程无向导直达管理页；管理页「退出」按钮 → 全窗销毁进程优雅退出；无记录 + 向导直接关窗 → 落服务端模式且不写记录（主窗口连的是自家 5099 实例，URL 实证）。
+6. **PyInstaller exe**：deploy/build-windows.bat 全过（npm ci+build、PyInstaller 43.8MB/1982 条目、verify-package PASS、Inno 跳过=本机未装 ISCC 与前批一致）；exe（含 launcher 修复）实跑与 dev 同构全链路：向导 → 伴侣 → 管理页 → 测试连接就绪 v1.0.5 → 打开/关闭远程 → 重跑向导 → 服务端模式自起 5098 → 关窗优雅退出 exit 0；desktop_main 入口 + webview/WebView2 DLL + pythonnet 随包实证。
+
+### 已知边界与改进登记（未改码）
+
+- **wait_for_server_ready 不校验应答方身份**：目标端口被其他进程占用且应答时，桌面主窗口会连到他人服务（实测残留兜底实例在 5001 被 dev server 占用时开窗连到 dev server）。历史行为（该函数早于双模式存在），建议后续：uvicorn 绑定失败 fail-fast，或就绪探测带本进程实例标识。
+
+### 测试环境备忘（后续会话）
+
+- 用户自己的 Chrome 长期占用 127.0.0.1:9222 调试端口（自动化勿碰，CDP 客户端须按 Browser=Edg/ 过滤并探测双栈——WebView2 调试端口回环栈不固定，127.0.0.1/[::1] 都出现过）。
+- Git Bash 后台 `&` 子进程会随工具调用结束被杀——GUI 进程须用 exec 顶替 shell 由后台任务保活；MSYS `$$` 是 MSYS PID 非 Windows PID（winctl 按标题/PID 枚举要用 Windows 侧）。
+- btpManager env 无 pytest/mypy（本会话用 anaconda base python 跑质量门）；已向 btpManager 安装 pywebview~=5.4.0（与 deploy/requirements-windows-package.txt 同锚，desktop_main 顶层 import webview 必需）。
+- 测试脚本/日志/截图保留于 .tmp-desktop-gui-test/（未跟踪，可整体删除）；dist/btdeck.exe（46.4MB，2026-08-25 15:32 构建）与 .venv-packaging 为本批构建产物。
+
+### 验证
+
+- pytest：tests/desktop_companion 46 例（44+2 新增）+ tests/architecture/test_packaging_contract 10 例共 56 passed。
+- mypy（desktop_companion+tests 10 文件零错）/black（~=24.10、line-length=120）/flake8 全过。
+- 根 ./init.sh（ci）通过；5001 dev server 全程未受影响（测试实例全部用独立 CONFIG_DIR+PORT）。
+- Git 未提交（待用户指示）；本批代码改动 3 文件 + 三份记录。
