@@ -24,7 +24,7 @@ BtDeck/
 │   ├── api/             axios API 封装（12 个领域模块）
 │   ├── views/           页面视图（13 个 view 模块，Options API + class-component 并存）
 │   ├── store/           Vuex（index.ts 空壳 + 4 个 getModule 自注册 + downloaderSettings 传统 namespaced）
-│   ├── components-layout/  通用组件（LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
+│   ├── components-layout/  通用组件（AppLogo / LucideIcon / PageSizeCombobox / AdvancedSearchWorkspace）+ 布局骨架
 │   └── utils-types/     工具 / 类型 / 常量 / 指令（v1.0.6.36 新增 clipboard 剪贴板回退）
 ├── android/          ← 伴侣模式 App（dual-mode-client Phase 2 MVP：向导/服务器 profile/健康检查/同源 WebView）
 ├── deploy/           ← 多部署模式（Docker / PyInstaller / Inno Setup / fpm；v1.0.6.28 Dockerfile 镜像源参数化）
@@ -78,7 +78,7 @@ BtDeck/
 | ↳ api | axios 封装的 12 个领域 API 模块 | [frontend/api/README.md](./frontend/api/README.md) |
 | ↳ views | 13 个页面视图模块（⚠ class-component 与 Options API 并存） | [frontend/views/README.md](./frontend/views/README.md) |
 | ↳ store | Vuex store（空壳 index + 5 个自注册 module） | [frontend/store/README.md](./frontend/store/README.md) |
-| ↳ components-layout | 通用组件（Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
+| ↳ components-layout | 通用组件（AppLogo/Pagination/Breadcrumb/ThemeSwitcher/LucideIcon/PageSizeCombobox…）+ layout 骨架 | [frontend/components-layout/README.md](./frontend/components-layout/README.md) |
 | ↳ utils-types | utils / types / constants / directive | [frontend/utils-types/README.md](./frontend/utils-types/README.md) |
 | **deploy** | 多部署模式分叉：Docker Compose / PyInstaller 单机包 / Inno Setup / fpm | [deploy/README.md](./deploy/README.md) |
 | **tests** | 后端 pytest（180 个 test_*.py，按子目录组织）+ 前端 Jest（59 个 spec） | [tests/README.md](./tests/README.md) |
@@ -128,6 +128,7 @@ BtDeck/
 | 2026-08-23 增量（孤儿 Schema 漂移自愈） | 新增 Alembic 修复迁移 `c1d2e3f4a5b6`：针对版本号已到 `975dad435c03` 但 `orphan_current_candidate.current_detail_id` 缺失的存量库，后端重启自动补列/回填/索引；健康库幂等 no-op；新增迁移回归测试 |
 | 来源 | 首次新建（`docs/roadmap/` 此前不存在）；后续按源码变更增量同步 |
 | 分析范围 | backend/app/* + frontend/src/* + deploy + tests（全栈） |
+| 2026-08-25 增量 | 前端主 Logo 接入：新增 `components/common/AppLogo.vue`，桌面/移动布局与登录页统一使用 full/mark 品牌资源，PWA/favicons 由 `generate-pwa-icons.py` 按 mark 生成 |
 | 行号依据 | 全部由当前源码 grep / Read 实测，禁止沿用历史文档行号 |
 | 覆盖深度 | 第一层（全部）+ 第二层（全部 15 个分支，含 v1.0.6.27 新增 contracts）+ 第三层（2 个：torrent_crud.py、orphan_file_service.py） |
 | 模板版本 | 后端 Python 四节；前端 Vue/TS 四节（适配 Options API + class-component 并存） |

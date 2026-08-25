@@ -17,9 +17,8 @@
       <!-- Logo和标题 -->
       <div class="login-header">
         <div class="logo-container">
-          <svg-icon name="dashboard" class="logo-icon" />
+          <AppLogo variant="full" class="login-logo" />
         </div>
-        <h1 class="login-title">BtDeck</h1>
         <p class="login-subtitle">统一管理您的下载器</p>
       </div>
 
@@ -125,11 +124,13 @@ import { Dictionary } from 'vue-router/types/router'
 import { Form as ElForm, Input } from 'element-ui'
 import { UserModule } from '@/store/modules/user'
 import { isValidUsername } from '@/utils/validate'
+import AppLogo from '@/components/common/AppLogo.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
 
 @Component({
   name: 'Login',
   components: {
+    AppLogo,
     ThemeSwitcher
   }
 })
@@ -358,25 +359,14 @@ export default class extends Vue {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 64px;
-  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-light) 100%);
-  border-radius: var(--radius-lg);
+  width: 240px;
+  height: 194px;
   margin-bottom: var(--spacing-md);
-  box-shadow: var(--shadow-lg);
 }
 
-.logo-icon {
-  width: 36px;
-  height: 36px;
-  color: white;
-}
-
-.login-title {
-  font-size: var(--font-size-3xl);
-  font-weight: var(--font-weight-bold);
-  color: var(--color-text-primary);
-  margin-bottom: var(--spacing-sm);
+.login-logo {
+  width: 240px;
+  height: 194px;
 }
 
 .login-subtitle {
@@ -513,13 +503,13 @@ export default class extends Vue {
   }
 
   .logo-container {
-    width: 56px;
-    height: 56px;
+    width: 220px;
+    height: 177px;
   }
 
-  .logo-icon {
-    width: 32px;
-    height: 32px;
+  .login-logo {
+    width: 220px;
+    height: 177px;
   }
 
   .action-buttons {

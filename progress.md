@@ -1,5 +1,23 @@
 # Progress Log - BtDeck 全栈项目
 
+## 2026-08-25 - 主 Logo 品牌资源接入
+
+### 实施结果
+
+- 新增 `frontend/public/img/brand/btdeck-logo.png`（完整 Logo）与 `btdeck-mark.png`（环形图标版），均为透明背景并裁剪了外部留白。
+- 新增 `frontend/src/components/common/AppLogo.vue`，统一按 `full`/`mark` 变体加载 public 品牌资源。
+- 桌面侧边栏、顶部栏、桌面登录页，以及移动顶部栏/登录页均已接入；登录页使用完整 Logo，导航与小尺寸入口使用 mark。
+- 重写 `frontend/scripts/generate-pwa-icons.py`，从 mark 生成 favicon、Apple Touch Icon、Android、maskable 和 Windows 图标；`public/index.html` 增加 SVG/PNG favicon 与 Apple Touch Icon 引用。
+- `pwa-manifest.spec.ts` 增加品牌资源契约，路线图已同步通用组件与布局职责。
+
+### 验证
+
+- `npm run typecheck`：通过。
+- `npm run test:unit -- pwa-manifest.spec.ts`：6/6 通过。
+- Vue lint、Vuex action lint、`npm run build`：通过（构建有既有 Sass/Browserslist 警告）。
+- 完整 `npm run lint`：被既有 `advanced-search-contract` 生成契约过期检查拦截，未自动重生成无关契约。
+- `bash ./init.sh --ci`：当前 Windows WSL 环境访问被拒绝，未进入全栈验证。
+
 ## 2026-08-23 - 前端静态展示 Demo feature 登记
 
 ### 计划登记

@@ -14,6 +14,39 @@
   },
   "features": [
     {
+      "id": "brand-logo-2026-08",
+      "name": "BtDeck 主 Logo 品牌资源接入",
+      "description": "将用户提供的 Logo 接入桌面/移动前端、浏览器 favicon 与 PWA 图标体系。",
+      "status": "done",
+      "branch": "dev",
+      "plan_file": "PLANS/v1.0.6.md",
+      "tasks": [
+        {
+          "id": "brand-logo-2026-08.1",
+          "name": "完整 Logo、mark 与 PWA 图标统一",
+          "description": "新增 AppLogo 组件；登录页使用完整 Logo，导航/移动端使用 mark；重新生成 favicon、Apple Touch Icon、Android 与 maskable 图标。",
+          "status": "done",
+          "scope": "frontend",
+          "files": [
+            "frontend/src/components/common/AppLogo.vue",
+            "frontend/src/layout/components/Sidebar/index.vue",
+            "frontend/src/layout/components/Navbar/index.vue",
+            "frontend/src/layout/mobile/index.vue",
+            "frontend/src/views/login/index.vue",
+            "frontend/src/views/mobile/login.vue",
+            "frontend/public/img/brand/btdeck-logo.png",
+            "frontend/public/img/brand/btdeck-mark.png",
+            "frontend/scripts/generate-pwa-icons.py",
+            "frontend/public/index.html",
+            "frontend/public/manifest.json",
+            "frontend/tests/unit/pwa-manifest.spec.ts"
+          ],
+          "evidence": "tsc --noEmit 通过；pwa-manifest.spec.ts 6/6 通过；Vue lint、Vuex lint、npm run build 通过；完整 npm run lint 仍被既有 advanced-search-contract 过期检查拦截。"
+        }
+      ],
+      "evidence": "2026-08-25：品牌资源已生成并接入，PWA 图标视觉检查通过；构建产物生成成功。"
+    },
+    {
       "id": "verified-bugfix-2026-08",
       "name": "8 项已验证问题修复（轮询/标签同步/添加时间/路径清理/转移/令牌续期/删除日志/折叠面板）",
       "description": "①active-torrents 只在种子列表页轮询（详情死路由跳过+后台标签暂停）②标签/分类创建/重命名同步下载器（qB 立即、TR 使用时）③新种子添加时间兜底+首轮快照水合+存量回填 ④路径清理宽限期+auto 来源自动恢复（disabled_by 字段）⑤转移返回值检查+目标查重+批量 400+审计并入 torrent_audit_log ⑥双令牌 refresh 体系（refresh_tokens 表+轮换+登出撤销+前端 401 单飞刷新重放）⑦删除审计补 IP/UA/真实操作者 ⑧CollapsiblePanel 通用折叠组件+偏好持久化",

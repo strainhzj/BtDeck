@@ -1,5 +1,21 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-25：主 Logo 品牌资源接入
+
+### 结果
+
+- 已将用户提供的 Logo 清理为透明背景的完整 Logo 与环形 mark，资源位于 `frontend/public/img/brand/`。
+- 新增 `AppLogo.vue`，桌面侧边栏/顶部栏、桌面登录页、移动顶部栏/登录页统一接入；登录页使用 full，导航和小尺寸入口使用 mark。
+- 已重写 PWA 图标生成脚本并生成 favicon、Apple Touch Icon、Android/maskable、Windows 图标；`public/index.html` 已补齐 favicon 与 Apple Touch Icon 引用。
+- 已更新 `feature_list.json`、`progress.md` 与 `docs/roadmap/`。
+
+### 验证与边界
+
+- typecheck、PWA 品牌测试（6/6）、Vue lint、Vuex lint、生产 build 均通过。
+- 完整 `npm run lint` 被既有 advanced-search-contract 过期检查拦截；未重生成无关契约。
+- `bash ./init.sh --ci` 受当前 Windows WSL 访问拒绝影响；未执行全栈 init。
+- 工作区原有 backend desktop_companion 改动及临时目录未触碰；本次新增/修改仅涉及品牌资源、前端入口、前端测试、路线图和会话记录。
+
 ## 2026-08-25 交接（十二）：桌面 GUI 窗口链路实测收官（task .6 置 done）
 
 ### 结论

@@ -2,11 +2,11 @@
   <div class="sidebar-container">
     <!-- Logo 区域 -->
     <div class="sidebar-header">
-      <div class="sidebar-logo">
-        <LucideIcon name="orbit" :size="28" :stroke-width="1.65" class="logo-icon" />
-        <span v-show="!isCollapse" class="sidebar-logo-text">
-          BtDeck
-        </span>
+      <div class="sidebar-logo" :class="{'is-collapsed': isCollapse}">
+        <AppLogo
+          :variant="isCollapse ? 'mark' : 'full'"
+          class="sidebar-logo-image"
+        />
       </div>
     </div>
 
@@ -67,11 +67,13 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { AppModule } from '@/store/modules/app'
 import { setStoredUiMode } from '@/utils/ui-mode'
+import AppLogo from '@/components/common/AppLogo.vue'
 import SidebarItem from './SidebarItem.vue'
 
 @Component({
   name: 'SideBar',
   components: {
+    AppLogo,
     SidebarItem
   }
 })
@@ -172,18 +174,19 @@ export default class extends Vue {
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
+  justify-content: center;
+  width: 100%;
+  height: 100%;
 }
 
-.logo-icon {
-  color: var(--color-primary, #059669);
+.sidebar-logo-image {
+  width: 68px;
+  height: 54px;
 }
 
-.sidebar-logo-text {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--color-text-primary, #1F2937);
-  white-space: nowrap;
+.sidebar-logo.is-collapsed .sidebar-logo-image {
+  width: 32px;
+  height: 32px;
 }
 
 /* 菜单样式 */

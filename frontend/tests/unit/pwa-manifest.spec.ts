@@ -32,6 +32,17 @@ const readManifest = (): PwaManifest =>
   JSON.parse(readFileSync(resolve(__dirname, '../../public/manifest.json'), 'utf8'))
 
 describe('pwa brand contract', () => {
+  it('品牌资源：完整 Logo/mark 和浏览器图标引用统一', () => {
+    const publicDir = resolve(__dirname, '../../public')
+    const indexHtml = readFileSync(resolve(publicDir, 'index.html'), 'utf8')
+
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-logo.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'favicon.ico'))).toBe(true)
+    expect(indexHtml).toContain('img/icons/favicon.svg')
+    expect(indexHtml).toContain('img/icons/favicon-32x32.png')
+    expect(indexHtml).toContain('img/icons/apple-touch-icon-180x180.png')
+  })
   it('manifest 品牌化：BtDeck 名称与 #059669 主题色、standalone 展示', () => {
     const manifest = readManifest()
     expect(manifest.name).toBe('BtDeck')

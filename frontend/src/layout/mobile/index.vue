@@ -6,7 +6,10 @@
         <span class="mobile-header-menu-bar" />
         <span class="mobile-header-menu-bar" />
       </button>
-      <span class="mobile-header-title">BtDeck</span>
+      <div class="mobile-header-brand">
+        <AppLogo variant="mark" alt="" class="mobile-header-logo" />
+        <span class="mobile-header-title">BtDeck</span>
+      </div>
       <el-button type="text" size="mini" class="mobile-header-desktop" @click="switchToDesktop">
         桌面版
       </el-button>
@@ -102,6 +105,7 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { setStoredUiMode } from '@/utils/ui-mode'
 import { NotificationModule } from '@/store/modules/notification'
+import AppLogo from '@/components/common/AppLogo.vue'
 
 interface MobileTab {
   label: string
@@ -137,7 +141,12 @@ type SwipeAxis = 'none' | 'horizontal' | 'vertical'
  * 轴锁定判定与页面级下拉刷新 mixin 互斥（横向手势不触发刷新），子页面
  * （详情/管理页）横向滑动不切 Tab，避免误触。
  */
-@Component({ name: 'MobileLayout' })
+@Component({
+  name: 'MobileLayout',
+  components: {
+    AppLogo
+  }
+})
 export default class MobileLayout extends Vue {
   private drawerVisible = false
   private unreadTimer = 0
@@ -360,6 +369,18 @@ export default class MobileLayout extends Vue {
 .mobile-header-title {
   font-size: 16px;
   font-weight: 600;
+}
+
+.mobile-header-brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mobile-header-logo {
+  width: 26px;
+  height: 26px;
 }
 
 .mobile-header-menu {

@@ -4,8 +4,7 @@
     <div class="navbar-left">
       <!-- Logo（可选） -->
       <div class="navbar-logo">
-        <LucideIcon name="orbit" :size="28" :stroke-width="1.65" class="logo-icon" />
-        <span class="logo-text">BtDeck</span>
+        <AppLogo variant="full" class="navbar-logo-image" />
       </div>
 
       <!-- 面包屑导航 -->
@@ -75,12 +74,14 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { NotificationModule } from '@/store/modules/notification'
+import AppLogo from '@/components/common/AppLogo.vue'
 import Breadcrumb from '@/components/Breadcrumb/index.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
 
 @Component({
   name: 'Navbar',
   components: {
+    AppLogo,
     Breadcrumb,
     ThemeSwitcher
   }
@@ -170,18 +171,14 @@ export default class extends Vue {
 .navbar-logo {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm, 8px);
-  font-size: 18px;
-  font-weight: 600;
-  color: var(--color-text-primary, #1F2937);
+  flex: 0 0 68px;
+  width: 68px;
+  height: 52px;
 }
 
-.logo-icon {
-  color: var(--color-primary, #059669);
-}
-
-.logo-text {
-  white-space: nowrap;
+.navbar-logo-image {
+  width: 68px;
+  height: 52px;
 }
 
 /* 面包屑导航 */
@@ -299,10 +296,6 @@ export default class extends Vue {
   .navbar-left {
     margin-left: 0 !important;
     padding-left: var(--spacing-md, 16px);
-  }
-
-  .logo-text {
-    display: none;
   }
 
   .theme-switcher-wrapper {

@@ -7,10 +7,11 @@
 
 ### components/ — 通用组件
 
-#### components/common/（1 个 .vue + 1 测试）✨v1.0.6.28
+#### components/common/（2 个 .vue + 1 测试）✨v1.0.6.28
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
+| 品牌 Logo app-logo | `AppLogo.vue` | Vue 2 Logo 统一封装：`full` 变体用于完整品牌图，`mark` 变体用于小尺寸图标；按 `BASE_URL` 解析 public 品牌资源 |
 | Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标 |
 | Lucide 单测 lucide-icon-test | `__tests__/LucideIcon.spec.ts` | LucideIcon 单测，覆盖共享注册表、尺寸/线宽透传、未知图标降级及下载器/导航新增图标真实 SVG 渲染 |
 
@@ -70,8 +71,8 @@
 |--------|------|-----------|
 | barrel 导出 layout-index | `index.ts` | barrel 导出 AppMain/Navbar/Sidebar |
 | 主内容区 app-main | `AppMain.vue` | 主内容区 `<router-view>` 容器 |
-| 顶栏 navbar | `Navbar/index.vue` | 顶栏（折叠按钮/面包屑/反馈/通知/用户菜单），应用图标统一使用 Lucide |
-| 侧边栏 sidebar | `Sidebar/index.vue` | 侧边栏容器（基于路由生成菜单），折叠控制使用 Lucide |
+| 顶栏 navbar | `Navbar/index.vue` | 顶栏（折叠按钮/面包屑/反馈/通知/用户菜单），主品牌图使用 `AppLogo` 完整变体，交互图标使用 Lucide |
+| 侧边栏 sidebar | `Sidebar/index.vue` | 侧边栏容器（基于路由生成菜单），展开态使用完整 Logo、折叠态使用 `mark` 图标，菜单/折叠控制使用 Lucide |
 | 菜单项 sidebar-item | `Sidebar/SidebarItem.vue` | 单个菜单项（递归子菜单）；路由 meta icon 与子菜单箭头由 LucideIcon 渲染 |
 | 菜单项链接 sidebar-item-link | `Sidebar/SidebarItemLink.vue` | 菜单项链接包装（外链/内链分流） |
 | 通知抽屉 notification-drawer | `NotificationDrawer/index.vue` | 通知抽屉容器；标题、筛选、加载、空状态与关闭动作统一使用 Lucide |

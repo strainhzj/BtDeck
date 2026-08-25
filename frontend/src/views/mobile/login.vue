@@ -1,6 +1,8 @@
 <template>
   <div class="m-login">
-    <div class="m-login-title">BtDeck</div>
+    <div class="m-login-title">
+      <AppLogo variant="full" class="m-login-logo" />
+    </div>
     <div class="m-login-card">
       <el-input v-model="username" placeholder="用户名" autocomplete="username" class="m-login-input" />
       <el-input
@@ -23,9 +25,15 @@ import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { extractErrorMessage } from '@/utils/formatters'
 import { setStoredUiMode } from '@/utils/ui-mode'
+import AppLogo from '@/components/common/AppLogo.vue'
 
 /** 移动登录页（Phase 4 M1）：复用 user store Login action 与既有 token/守卫链路 */
-@Component({ name: 'MobileLogin' })
+@Component({
+  name: 'MobileLogin',
+  components: {
+    AppLogo
+  }
+})
 export default class MobileLogin extends Vue {
   private username = ''
   private password = ''
@@ -71,10 +79,17 @@ export default class MobileLogin extends Vue {
 }
 
 .m-login-title {
-  color: #fff;
-  font-size: 26px;
-  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
   margin-bottom: 24px;
+}
+
+.m-login-logo {
+  width: 220px;
+  height: 177px;
+  max-width: 100%;
 }
 
 .m-login-card {

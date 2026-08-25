@@ -1,87 +1,124 @@
 # -*- coding: utf-8 -*-
-"""生成 BtDeck PWA 品牌图标（v1.0.6 移动独有优化）。
+"""Generate BtDeck favicon and PWA icons from the project brand mark."""
 
-品牌参数与前端主题同源：--color-primary #059669（theme-variables.scss），
-白色 "BT" 字样（与 public/img/icons/favicon.svg 构图一致）。
+from __future__ import annotations
 
-产物（写入 public/img/icons/）：
-- android-chrome-192x192.png / android-chrome-512x512.png（manifest 常规图标）
-- android-chrome-maskable-512x512.png（maskable：全出血背景，内容收进 80% 安全区）
-- apple-touch-icon-152x152.png / apple-touch-icon-180x180.png（iOS 主屏，全出血）
-- favicon-16x16.png / favicon-32x32.png
-- msapplication-icon-144x144.png / mstile-150x150.png
+from pathlib import Path
 
-用法：python scripts/generate-pwa-icons.py（在 frontend/ 目录下执行）
-"""
-import os
-
-from PIL import Image, ImageDraw, ImageFont
-
-BRAND_COLOR = (5, 150, 105)  # #059669
-TEXT_COLOR = (255, 255, 255)
-FONT_CANDIDATES = [
-    r"C:\Windows\Fonts\arialbd.ttf",
-    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-    "/System/Library/Fonts/Helvetica.ttc",
-]
-
-ICONS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "public", "img", "icons")
+from PIL import Image, ImageDraw
 
 
-def load_font(size: int) -> ImageFont.FreeTypeFont:
-    for candidate in FONT_CANDIDATES:
-        if os.path.exists(candidate):
-            return ImageFont.truetype(candidate, size)
-    return ImageFont.load_default()
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PUBLIC_DIR = PROJECT_ROOT / "public"
+BRAND_DIR = PUBLIC_DIR / "img" / "brand"
+ICONS_DIR = PUBLIC_DIR / "img" / "icons"
+MARK_PATH = BRAND_DIR / "btdeck-mark.png"
+
+# The navy deck color keeps the green orbit visible at small sizes and matches
+# the dark surface used by the supplied logo.
+ICON_BACKGROUND = (24, 38, 52, 255)
+RESAMPLING = getattr(Image, "Resampling", Image).LANCZOS
 
 
-def draw_icon(size: int, maskable: bool, corner_ratio: float = 0.18) -> Image.Image:
-    """画一枚图标：圆角实底 + 居中 BT 字样。
+def load_mark() -> Image.Image:
+    if not MARK_PATH.exists():
+        raise FileNotFoundError(
+            f"Brand mark not found: {MARK_PATH}. "
+            "Add frontend/public/img/brand/btdeck-mark.png first."
+        )
+    return Image.open(MARK_PATH).convert("RGBA")
 
-    maskable 需全出血背景（系统裁切任意形状），文字缩至 56% 落在安全区内；
-    常规图标圆角 18%，文字 60%。
-    """
-    image = Image.new("RGBA", (size, size), BRAND_COLOR + (255,))
-    draw = ImageDraw.Draw(image)
+
+def rounded_mask(size: int, radius_ratio: float = 0.18) -> Image.Image:
+    mask = Image.new("L", (size, size), 0)
+    draw = ImageDraw.Draw(mask)
+    radius = int(size * radius_ratio)
+    draw.rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, fill=255)
+    return mask
+
+
+def render_icon(
+    mark: Image.Image,
+    size: int,
+    *,
+    maskable: bool,
+    mark_scale: float,
+) -> Image.Image:
+    canvas = Image.new("RGBA", (size, size), ICON_BACKGROUND)
+    max_dimension = max(1, int(size * mark_scale))
+    scale = min(max_dimension / mark.width, max_dimension / mark.height)
+    mark_size = (
+        max(1, int(mark.width * scale)),
+        max(1, int(mark.height * scale)),
+    )
+    resized_mark = mark.resize(mark_size, RESAMPLING)
+    position = (
+        (size - resized_mark.width) // 2,
+        (size - resized_mark.height) // 2,
+    )
+    canvas.alpha_composite(resized_mark, position)
 
     if not maskable:
-        # 圆角遮罩：先画到临时图层再贴回，得到透明圆角
-        mask = Image.new("L", (size, size), 0)
-        mask_draw = ImageDraw.Draw(mask)
-        radius = int(size * corner_ratio)
-        mask_draw.rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=255)
         rounded = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-        rounded.paste(image, (0, 0), mask)
-        image = rounded
-        draw = ImageDraw.Draw(image)
+        rounded.paste(canvas, (0, 0), rounded_mask(size))
+        canvas = rounded
+    return canvas
 
-    text_ratio = 0.56 if maskable else 0.60
-    font = load_font(int(size * text_ratio))
-    text = "BT"
-    left, top, right, bottom = draw.textbbox((0, 0), text, font=font)
-    text_width, text_height = right - left, bottom - top
-    position = ((size - text_width) / 2 - left, (size - text_height) / 2 - top)
-    draw.text(position, text, font=font, fill=TEXT_COLOR + (255,))
-    return image
+
+def write_icon(
+    mark: Image.Image,
+    filename: str,
+    size: int,
+    *,
+    maskable: bool,
+    mark_scale: float,
+) -> None:
+    path = ICONS_DIR / filename
+    render_icon(
+        mark,
+        size,
+        maskable=maskable,
+        mark_scale=mark_scale,
+    ).save(path, format="PNG", optimize=True)
+    print(f"wrote {path} ({size}x{size})")
 
 
 def main() -> None:
+    ICONS_DIR.mkdir(parents=True, exist_ok=True)
+    mark = load_mark()
+
     targets = [
-        ("android-chrome-192x192.png", 192, False),
-        ("android-chrome-512x512.png", 512, False),
-        ("android-chrome-maskable-512x512.png", 512, True),
-        ("apple-touch-icon-152x152.png", 152, True),
-        ("apple-touch-icon-180x180.png", 180, True),
-        ("favicon-16x16.png", 16, False),
-        ("favicon-32x32.png", 32, False),
-        ("msapplication-icon-144x144.png", 144, True),
-        ("mstile-150x150.png", 150, True),
+        ("android-chrome-192x192.png", 192, False, 0.62),
+        ("android-chrome-512x512.png", 512, False, 0.62),
+        ("android-chrome-maskable-512x512.png", 512, True, 0.56),
+        ("apple-touch-icon.png", 180, True, 0.56),
+        ("apple-touch-icon-60x60.png", 60, True, 0.56),
+        ("apple-touch-icon-76x76.png", 76, True, 0.56),
+        ("apple-touch-icon-120x120.png", 120, True, 0.56),
+        ("apple-touch-icon-152x152.png", 152, True, 0.56),
+        ("apple-touch-icon-180x180.png", 180, True, 0.56),
+        ("favicon-16x16.png", 16, False, 0.70),
+        ("favicon-32x32.png", 32, False, 0.70),
+        ("msapplication-icon-144x144.png", 144, True, 0.56),
+        ("mstile-150x150.png", 150, True, 0.56),
     ]
-    os.makedirs(ICONS_DIR, exist_ok=True)
-    for filename, size, maskable in targets:
-        path = os.path.join(ICONS_DIR, filename)
-        draw_icon(size, maskable).save(path)
-        print(f"wrote {path} ({size}x{size}{', maskable' if maskable else ''})")
+
+    for filename, size, maskable, mark_scale in targets:
+        write_icon(
+            mark,
+            filename,
+            size,
+            maskable=maskable,
+            mark_scale=mark_scale,
+        )
+
+    favicon = render_icon(mark, 48, maskable=False, mark_scale=0.70)
+    favicon.save(
+        PUBLIC_DIR / "favicon.ico",
+        format="ICO",
+        sizes=[(16, 16), (32, 32), (48, 48)],
+    )
+    print(f"wrote {PUBLIC_DIR / 'favicon.ico'} (16/32/48)")
 
 
 if __name__ == "__main__":
