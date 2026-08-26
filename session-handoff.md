@@ -3291,3 +3291,18 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 三个相关测试文件共 56 passed；flake8、mypy、py_compile、测试文件格式检查、`git diff --check` 通过，根 `./init.sh --ci` 已通过。
 - Git 未提交；用户已有 `.tmp-desktop-gui-test/` 未跟踪目录保持不动。
+
+## 2026-08-26 交接：BtDeck 效果图 Logo 与 App 微型图标
+
+### 已完成
+
+- 完整横版品牌资源已改为 D 形甲板 mark + `BtDeck` 字标（`Bt` 绿、`Deck` 深色），移除实验编号、中文标题和说明文字；同步品牌/反白 SVG 与 PNG。
+- 移动头部改用 22px 反白 `micro`；PWA、Apple、Android、Windows tile、favicon SVG/PNG/ICO 全部采用反白微型光学版重新生成。
+- 生成脚本现可同时产出横版 PNG 与 App 图标；契约测试锁定完整字标、微型生成源和移动头部 variant。
+- roadmap、feature_list 与 progress 已同步；已按用户后续指令提交本批改动（`feat(frontend): align logo display and app icons`）。
+
+### 验证
+
+- 浏览器桌面登录页与 390×844 移动登录页视觉复核通过；3 套相关 Jest 共 37 例通过。
+- typecheck、改动文件 ESLint、图标脚本 py_compile、生产 build、git diff --check、根 init.sh --ci 通过。
+- 全量 lint 仅失败于既有 advanced-search-contract 过期检查；并行任务的 Playwright E2E 工作区变动未纳入本批，其它未跟踪目录未触碰。

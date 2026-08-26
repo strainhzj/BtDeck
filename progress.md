@@ -5835,3 +5835,20 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 全套 38/38 通过（19 用例 × 双引擎，1.5 分钟）：登录 3、交互 4、静态路由 12。
 - `npm run typecheck` 通过；`npx eslint tests/e2e playwright.config.ts` 0 error 0 warning。
 - 未执行 Git stage/commit/push；既有未提交的 Logo/M3 批次文件保持原样未动。
+
+## 2026-08-26：BtDeck 效果图 Logo 收口与 App 微型图标
+
+### 当前结果
+
+- 将横版 SVG/PNG 从“03 EXPERIMENTAL / 甲板连接 / 说明文字”收敛为效果图中的 D 形 mark + `BtDeck` 字标，`Bt` 使用品牌绿、`Deck` 使用深色，反白版统一纯白。
+- 桌面侧边栏与桌面/移动登录页继续复用完整 `AppLogo`；移动布局头部由标准 `mark` 改为 22px 反白 `micro` 光学版。
+- `generate-pwa-icons.py` 新增横版 PNG 生成，并将 Android Chrome、maskable、Apple Touch、Windows tile、PNG favicon 与 ICO 的生成源全部统一为反白微型 mark；SVG favicon/Safari pinned tab 同步加粗微缩笔画。
+- 桌面登录页与 390×844 移动登录页已通过应用内浏览器视觉复核，Logo 比例、留白和清晰度正常；PNG 与 192/32px 图标另做原图检查。
+- 路线图按 `roadmap-maintain` 同步根增量、AppLogo/登录职责及测试覆盖条目；`feature_list.json` task `brand-logo-2026-08.2` 已更新范围与证据。
+
+### 验证
+
+- `AppLogo.spec.ts`、`pwa-manifest.spec.ts`、`mobile-shell.spec.ts`：3 suites / 37 tests 全绿。
+- `npm run typecheck`、改动文件 ESLint、`python -m py_compile scripts/generate-pwa-icons.py`、`npm run build`、`git diff --check`、根 `./init.sh --ci` 通过；生产构建仅保留既有 Sass/包体积/顺序警告。
+- 完整 `npm run lint` 仍被既有 `advanced-search-contract` 过期检查拦截，与本批 Logo 改动无关，未擅自重生成契约。
+- 已按用户后续指令提交本批改动（`feat(frontend): align logo display and app icons`），未执行 push/deploy；并行任务的 Playwright E2E 工作区变动未纳入本批，`.release-build-v1.0.5/` 与 `data/` 保持原样。

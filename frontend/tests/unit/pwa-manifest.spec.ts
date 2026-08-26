@@ -1,7 +1,7 @@
 /**
  * PWA 品牌契约（v1.0.6 移动独有优化）：
  * - manifest 品牌化：BtDeck 名称、#059669 主题色（与 --color-primary 同源）、
- *   standalone、192/512/maskable 图标齐全且文件真实存在；
+ *   standalone、192/512/maskable 图标齐全且全部由微型反白 mark 生成；
  * - vue.config pwa 配置：themeColor/msTileColor 品牌色、workbox 缓存前缀
  *   品牌化（btdeck，与模板遗留清理前缀区分）、skipWaiting=false +
  *   clientsClaim=true（更新经用户确认激活）；
@@ -44,11 +44,24 @@ describe('pwa brand contract', () => {
     expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-inverse.png'))).toBe(true)
     expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-micro.png'))).toBe(true)
     expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-micro-inverse.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-micro.svg'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-micro-inverse.svg'))).toBe(true)
     expect(existsSync(resolve(publicDir, 'favicon.ico'))).toBe(true)
     expect(indexHtml).toContain('img/icons/favicon.svg')
     expect(indexHtml).toContain('img/icons/favicon-32x32.png')
     expect(indexHtml).toContain('img/icons/apple-touch-icon-180x180.png')
     expect(readFileSync(resolve(publicDir, 'img/icons/favicon.svg'), 'utf8')).not.toContain('<image')
+
+    const fullLogoSvg = readFileSync(resolve(publicDir, 'img/brand/btdeck-logo.svg'), 'utf8')
+    expect(fullLogoSvg).toContain('<title id="title">BtDeck</title>')
+    expect(fullLogoSvg).toContain('>Bt</tspan><tspan fill="#1F2937">Deck</tspan>')
+    expect(fullLogoSvg).not.toContain('EXPERIMENTAL')
+    expect(fullLogoSvg).not.toContain('甲板连接')
+
+    const iconGenerator = readFileSync(resolve(__dirname, '../../scripts/generate-pwa-icons.py'), 'utf8')
+    expect(iconGenerator).toContain('app_mark = load_mark(MICRO_INVERSE_MARK_PATH)')
+    expect(iconGenerator).toContain('write_icon(\n            app_mark,')
+    expect(iconGenerator).not.toContain('size <= 32')
   })
   it('manifest 品牌化：BtDeck 名称与 #059669 主题色、standalone 展示', () => {
     const manifest = readManifest()

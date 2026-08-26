@@ -13,6 +13,7 @@
 import { shallowMount, Wrapper } from '@vue/test-utils'
 import fs from 'fs'
 import path from 'path'
+import AppLogo from '@/components/common/AppLogo.vue'
 import MobileLayout from '@/layout/mobile/index.vue'
 import { NotificationModule } from '@/store/modules/notification'
 
@@ -152,6 +153,13 @@ describe('layout/mobile/MobileLayout', () => {
   })
 
   // ============ 主题色契约（与桌面端同源） ============
+
+  it('头部品牌锚点使用反白微型 Logo', () => {
+    const wrapper = mountLayout('/m/dashboard')
+    const logo = wrapper.findComponent(AppLogo)
+    expect(logo.props('variant')).toBe('micro')
+    expect(logo.props('tone')).toBe('inverse')
+  })
 
   it('头部背景与 Tab 激活色均使用 var(--color-primary)，无旧深灰/默认蓝回归', () => {
     const source = readLayoutSource()

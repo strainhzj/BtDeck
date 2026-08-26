@@ -7,7 +7,7 @@
         <span class="mobile-header-menu-bar" />
       </button>
       <div class="mobile-header-brand">
-        <AppLogo variant="mark" tone="inverse" alt="" class="mobile-header-logo" />
+        <AppLogo variant="micro" tone="inverse" alt="" class="mobile-header-logo" />
         <span class="mobile-header-title">BtDeck</span>
       </div>
       <el-button type="text" size="mini" class="mobile-header-desktop" @click="switchToDesktop">
@@ -379,8 +379,8 @@ export default class MobileLayout extends Vue {
 }
 
 .mobile-header-logo {
-  width: 26px;
-  height: 26px;
+  width: 22px;
+  height: 22px;
 }
 
 .mobile-header-menu {

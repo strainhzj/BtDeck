@@ -45,8 +45,8 @@
         },
         {
           "id": "brand-logo-2026-08.2",
-          "name": "甲板连接 Logo 视觉重绘与光学尺寸",
-          "description": "以绿色 D 形轨道、三条深色甲板线和连接节点替换黑色板面；AppLogo 增加 micro/inverse 版本，桌面侧边栏承载唯一品牌锚点，PWA 图标统一绿色底反白 mark。",
+          "name": "BtDeck 效果图字标与 App 微型图标",
+          "description": "完整横版收敛为绿色 D 形轨道、三条深色甲板线及 Bt 绿/Deck 深色字标；移动头部与 PWA/Apple/Android/favicons 全部采用绿色底反白 micro 光学版。",
           "status": "done",
           "scope": "frontend",
           "files": [
@@ -86,12 +86,13 @@
             "frontend/public/img/icons/msapplication-icon-144x144.png",
             "frontend/public/img/icons/mstile-150x150.png",
             "frontend/scripts/generate-pwa-icons.py",
-            "frontend/tests/unit/pwa-manifest.spec.ts"
+            "frontend/tests/unit/pwa-manifest.spec.ts",
+            "frontend/tests/unit/mobile-shell.spec.ts"
           ],
-          "evidence": "2026-08-26：typecheck 通过；AppLogo.spec.ts 与 pwa-manifest.spec.ts 共 12 例通过；改动文件 Vue lint 通过；npm run build 通过；根 ./init.sh 通过（仅保留既有 jq/虚拟环境/npm 警告）。"
+          "evidence": "2026-08-26：桌面/移动登录页浏览器视觉检查通过；AppLogo.spec.ts、pwa-manifest.spec.ts 与 mobile-shell.spec.ts 共 37 例通过；typecheck、改动文件 ESLint、PNG 生成脚本编译、npm run build、git diff --check 与根 ./init.sh --ci 通过。完整 npm run lint 仅被既有 advanced-search-contract 过期检查拦截。"
         }
       ],
-      "evidence": "2026-08-25：品牌资源已生成并接入，PWA 图标视觉检查通过；2026-08-26 完成甲板连接 Logo 重绘与光学尺寸扩展。"
+      "evidence": "2026-08-25：品牌资源已生成并接入；2026-08-26 按效果图完成 BtDeck 字标收口，移动头部及全部可安装图标统一微型反白版并完成浏览器视觉复核。"
     },
     {
       "id": "verified-bugfix-2026-08",

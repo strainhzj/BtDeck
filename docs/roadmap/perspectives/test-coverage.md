@@ -140,6 +140,8 @@
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
+| `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
+| `pwa-manifest.spec.ts` ✨2026-08-26 | 完整 `BtDeck` 字标、微型 mark 资源、favicon/PWA manifest 与图标生成源契约 |
 | `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
 | `orphan-files.spec.ts` | 孤儿后台扫描轮询、超量复核、文件夹展开懒加载/子页选择、可见文件硬链接、清理/隔离工作流，以及扁平/文件夹模式展开列切换、普通行展开保护、子表表头/数据/选择事件契约 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
@@ -189,6 +191,7 @@
 
 | 测试文件 | 行数 | 覆盖组件/模块 |
 |---------|------|---------|
+| `components/common/__tests__/AppLogo.spec.ts` | 16 | `AppLogo.vue` 的 full/mark/micro 与 brand/inverse 资源选择 |
 | `components/common/__tests__/LucideIcon.spec.ts` | 185 | `LucideIcon.vue`（含 v1.0.6.31 新增排序图标） |
 | `components/BatchButton/__tests__/BatchButton.spec.ts` | 90 | `BatchButton.vue` |
 | `constants/__tests__/status-config.spec.ts` | 102 | `constants/status-config.ts` |

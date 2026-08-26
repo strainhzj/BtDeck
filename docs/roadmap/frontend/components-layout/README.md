@@ -11,7 +11,7 @@
 
 | 关键词 | 文件 | 一句话职责 |
 |--------|------|-----------|
-| 品牌 Logo app-logo | `AppLogo.vue` | Vue 2 Logo 统一封装：`full`/`mark`/`micro` 光学尺寸与 `brand`/`inverse` 色调；按 `BASE_URL` 解析 public 品牌资源 |
+| 品牌 Logo app-logo | `AppLogo.vue` | Vue 2 Logo 统一封装：`full` 为 D 形 mark + `BtDeck` 字标，另有 `mark`/`micro` 光学尺寸与 `brand`/`inverse` 色调；移动头部使用反白微型版，按 `BASE_URL` 解析 public 品牌资源 |
 | 品牌 Logo 单测 app-logo-test | `__tests__/AppLogo.spec.ts` | 覆盖完整、标准、微缩及反白资源选择契约 |
 | Lucide 图标 lucide | `LucideIcon.vue` | 轻量 Vue 2 包装器（`LucideIcon extends Vue`）统一渲染 Lucide 图标；静态具名 import 保 tree-shake，stroke 跟随 `currentColor`，`size`/`strokeWidth` prop 透传；v1.0.6 控制室重绘后承载侧栏/顶栏/通知/主题/工作区图标 |
 | Lucide 单测 lucide-icon-test | `__tests__/LucideIcon.spec.ts` | LucideIcon 单测，覆盖共享注册表、尺寸/线宽透传、未知图标降级及下载器/导航新增图标真实 SVG 渲染 |

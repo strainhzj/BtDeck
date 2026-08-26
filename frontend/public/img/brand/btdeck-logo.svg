@@ -1,14 +1,21 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 128" role="img" aria-labelledby="title desc">
-  <title id="title">BtDeck 甲板连接</title>
-  <desc id="desc">用层叠横线强化统一管理平台语义</desc>
-  <g transform="translate(16 32)">
-    <path d="M10 14h18a18 18 0 0 1 0 36H10" fill="none" stroke="#059669" stroke-width="6.5" stroke-linecap="round" />
-    <path d="M12 24h22M12 32h27M12 40h22" fill="none" stroke="#243244" stroke-width="5" stroke-linecap="round" />
-    <circle cx="46" cy="32" r="5.5" fill="#059669" />
-  </g>
-  <g font-family="Fira Sans, Inter, Arial, sans-serif">
-    <text x="112" y="43" fill="#059669" font-size="13" font-weight="700" letter-spacing="3">03 EXPERIMENTAL</text>
-    <text x="112" y="80" fill="#243244" font-size="32" font-weight="700">甲板连接</text>
-    <text x="112" y="106" fill="#7B8794" font-size="15" font-weight="400">用层叠横线强化统一管理平台语义</text>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 350 96" role="img" aria-labelledby="title desc">
+  <title id="title">BtDeck</title>
+  <desc id="desc">绿色 D 形轨道、三条深色甲板线和 BtDeck 字标</desc>
+  <path
+    d="M14 20h29a28 28 0 0 1 0 56H14"
+    fill="none"
+    stroke="#059669"
+    stroke-width="10"
+    stroke-linecap="round"
+  />
+  <path d="M16 34h35M16 48h43M16 62h35" fill="none" stroke="#243244" stroke-width="8" stroke-linecap="round" />
+  <circle cx="71" cy="48" r="8.5" fill="#059669" />
+  <text
+    x="104"
+    y="70"
+    font-family="Fira Sans, Segoe UI, Arial, sans-serif"
+    font-size="68"
+    font-weight="700"
+    letter-spacing="-1.5"
+  ><tspan fill="#059669">Bt</tspan><tspan fill="#1F2937">Deck</tspan></text>
 </svg>
