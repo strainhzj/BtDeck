@@ -11,12 +11,16 @@
 <script lang="ts">
 import { Component, Prop, Vue } from 'vue-property-decorator'
 
-type LogoVariant = 'full' | 'mark'
+type LogoVariant = 'full' | 'mark' | 'micro'
+type LogoTone = 'brand' | 'inverse'
 
 @Component({ name: 'AppLogo' })
 export default class AppLogo extends Vue {
   @Prop({ type: String, default: 'mark' })
   readonly variant!: LogoVariant
+
+  @Prop({ type: String, default: 'brand' })
+  readonly tone!: LogoTone
 
   @Prop({ type: String, default: 'BtDeck' })
   readonly alt!: string
@@ -24,7 +28,14 @@ export default class AppLogo extends Vue {
   get imageSrc(): string {
     const baseUrl = process.env.BASE_URL || '/'
     const prefix = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`
-    const filename = this.variant === 'full' ? 'btdeck-logo.png' : 'btdeck-mark.png'
+    const baseNameByVariant: Record<LogoVariant, string> = {
+      full: 'btdeck-logo',
+      mark: 'btdeck-mark',
+      micro: 'btdeck-mark-micro'
+    }
+    const baseName = baseNameByVariant[this.variant]
+    const toneSuffix = this.tone === 'inverse' ? '-inverse' : ''
+    const filename = `${baseName}${toneSuffix}.png`
     return `${prefix}img/brand/${filename}`
   }
 }

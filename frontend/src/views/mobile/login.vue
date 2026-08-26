@@ -74,7 +74,7 @@ export default class MobileLogin extends Vue {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  background: #27303f;
+  background: var(--color-bg-secondary, #F9FAFB);
   padding: 24px;
 }
 
@@ -87,8 +87,8 @@ export default class MobileLogin extends Vue {
 }
 
 .m-login-logo {
-  width: 220px;
-  height: 177px;
+  width: 280px;
+  height: 69px;
   max-width: 100%;
 }
 
@@ -110,7 +110,7 @@ export default class MobileLogin extends Vue {
 }
 
 .m-login-desktop {
-  color: #cfd8e3;
+  color: var(--color-text-secondary, #6B7280);
   margin-top: 16px;
 }
 </style>

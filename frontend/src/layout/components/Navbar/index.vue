@@ -2,11 +2,6 @@
   <div class="navbar">
     <!-- 左侧区域 - 动态贴在侧边栏右侧 -->
     <div class="navbar-left">
-      <!-- Logo（可选） -->
-      <div class="navbar-logo">
-        <AppLogo variant="full" class="navbar-logo-image" />
-      </div>
-
       <!-- 面包屑导航 -->
       <breadcrumb class="breadcrumb-container" />
     </div>
@@ -74,14 +69,12 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { UserModule } from '@/store/modules/user'
 import { NotificationModule } from '@/store/modules/notification'
-import AppLogo from '@/components/common/AppLogo.vue'
 import Breadcrumb from '@/components/Breadcrumb/index.vue'
 import ThemeSwitcher from '@/components/ThemeSwitcher/index.vue'
 
 @Component({
   name: 'Navbar',
   components: {
-    AppLogo,
     Breadcrumb,
     ThemeSwitcher
   }
@@ -165,20 +158,6 @@ export default class extends Vue {
     margin-left: 0;
     padding-left: var(--spacing-md, 16px);
   }
-}
-
-/* Logo 区域 */
-.navbar-logo {
-  display: flex;
-  align-items: center;
-  flex: 0 0 68px;
-  width: 68px;
-  height: 52px;
-}
-
-.navbar-logo-image {
-  width: 68px;
-  height: 52px;
 }
 
 /* 面包屑导航 */

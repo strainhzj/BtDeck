@@ -13,20 +13,22 @@ PUBLIC_DIR = PROJECT_ROOT / "public"
 BRAND_DIR = PUBLIC_DIR / "img" / "brand"
 ICONS_DIR = PUBLIC_DIR / "img" / "icons"
 MARK_PATH = BRAND_DIR / "btdeck-mark.png"
+INVERSE_MARK_PATH = BRAND_DIR / "btdeck-mark-inverse.png"
+MICRO_INVERSE_MARK_PATH = BRAND_DIR / "btdeck-mark-micro-inverse.png"
 
-# The navy deck color keeps the green orbit visible at small sizes and matches
-# the dark surface used by the supplied logo.
-ICON_BACKGROUND = (24, 38, 52, 255)
+# PWA surfaces use the product emerald and a white mark so the icon remains
+# legible without the old black board treatment.
+ICON_BACKGROUND = (5, 150, 105, 255)
 RESAMPLING = getattr(Image, "Resampling", Image).LANCZOS
 
 
-def load_mark() -> Image.Image:
-    if not MARK_PATH.exists():
+def load_mark(path: Path = MARK_PATH) -> Image.Image:
+    if not path.exists():
         raise FileNotFoundError(
-            f"Brand mark not found: {MARK_PATH}. "
-            "Add frontend/public/img/brand/btdeck-mark.png first."
+            f"Brand mark not found: {path}. "
+            "Add the matching SVG/PNG mark under frontend/public/img/brand first."
         )
-    return Image.open(MARK_PATH).convert("RGBA")
+    return Image.open(path).convert("RGBA")
 
 
 def rounded_mask(size: int, radius_ratio: float = 0.18) -> Image.Image:
@@ -85,7 +87,8 @@ def write_icon(
 
 def main() -> None:
     ICONS_DIR.mkdir(parents=True, exist_ok=True)
-    mark = load_mark()
+    mark = load_mark(INVERSE_MARK_PATH)
+    micro_mark = load_mark(MICRO_INVERSE_MARK_PATH)
 
     targets = [
         ("android-chrome-192x192.png", 192, False, 0.62),
@@ -105,14 +108,14 @@ def main() -> None:
 
     for filename, size, maskable, mark_scale in targets:
         write_icon(
-            mark,
+            micro_mark if size <= 32 else mark,
             filename,
             size,
             maskable=maskable,
             mark_scale=mark_scale,
         )
 
-    favicon = render_icon(mark, 48, maskable=False, mark_scale=0.70)
+    favicon = render_icon(micro_mark, 48, maskable=False, mark_scale=0.70)
     favicon.save(
         PUBLIC_DIR / "favicon.ico",
         format="ICO",

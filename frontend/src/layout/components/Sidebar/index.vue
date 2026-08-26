@@ -180,8 +180,8 @@ export default class extends Vue {
 }
 
 .sidebar-logo-image {
-  width: 68px;
-  height: 54px;
+  width: 184px;
+  height: 46px;
 }
 
 .sidebar-logo.is-collapsed .sidebar-logo-image {

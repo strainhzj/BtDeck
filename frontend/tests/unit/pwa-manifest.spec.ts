@@ -37,11 +37,18 @@ describe('pwa brand contract', () => {
     const indexHtml = readFileSync(resolve(publicDir, 'index.html'), 'utf8')
 
     expect(existsSync(resolve(publicDir, 'img/brand/btdeck-logo.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-logo.svg'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-logo-inverse.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-logo-inverse.svg'))).toBe(true)
     expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-inverse.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-micro.png'))).toBe(true)
+    expect(existsSync(resolve(publicDir, 'img/brand/btdeck-mark-micro-inverse.png'))).toBe(true)
     expect(existsSync(resolve(publicDir, 'favicon.ico'))).toBe(true)
     expect(indexHtml).toContain('img/icons/favicon.svg')
     expect(indexHtml).toContain('img/icons/favicon-32x32.png')
     expect(indexHtml).toContain('img/icons/apple-touch-icon-180x180.png')
+    expect(readFileSync(resolve(publicDir, 'img/icons/favicon.svg'), 'utf8')).not.toContain('<image')
   })
   it('manifest 品牌化：BtDeck 名称与 #059669 主题色、standalone 展示', () => {
     const manifest = readManifest()

@@ -1,5 +1,23 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-26：甲板连接 Logo 视觉重绘
+
+### 本批结果
+
+- 完成用户确认的“甲板连接”方案：绿色 D 形轨道、三条深色甲板线、绿色连接节点，移除原黑色板面视觉；新增完整横向锁定组合、标准/反白/微缩 mark 的 SVG 与 PNG 母版资源。
+- `AppLogo` 增加 `micro` 光学尺寸与 `inverse` 色调；桌面侧边栏成为唯一品牌锚点，顶栏移除重复 Logo；桌面/移动登录页和移动头部按横向 Logo 比例重设尺寸与底色。
+- favicon、Safari pinned tab、PWA/Apple/Android 图标统一为绿色底反白 mark，`generate-pwa-icons.py` 支持反白/微缩资源。
+
+### 变更文件
+
+`frontend/src/components/common/AppLogo.vue`、`frontend/src/components/common/__tests__/AppLogo.spec.ts`、桌面/移动布局与登录页、`frontend/public/img/brand/` 六组 SVG/PNG、`frontend/public/img/icons/favicon.svg`、`safari-pinned-tab.svg`、`frontend/scripts/generate-pwa-icons.py`、`frontend/tests/unit/pwa-manifest.spec.ts`、三层 roadmap 与 `feature_list.json`。
+
+### 验证与待办
+
+- 资源已生成并完成 PNG 视觉检查；`npm run typecheck` 通过；AppLogo.spec.ts 与 pwa-manifest.spec.ts 共 12 例通过；改动文件 Vue lint 通过；`npm run build` 通过；根 `./init.sh` 通过（仅保留既有 jq/虚拟环境/npm 警告）。
+- 全量 `npm run lint` 仍被既有 `advanced-search-contract` 过期检查拦截，与本批 Logo 改动无关。
+- 未执行 Git stage/commit/push/deploy；保留用户已有的 `.tmp-desktop-gui-test/` 未跟踪目录。
+
 ## 2026-08-26：伴侣模式凭据记忆与会话恢复（v1.0.6-dual-mode-client.8）
 
 ### 本批结果

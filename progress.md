@@ -5805,3 +5805,17 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - `tests/api/test_torrents_async_tracker_budget.py`、`tests/services/test_sync_coordinator.py`、`tests/downloader/test_auth_client_timeout.py`：56 passed。
 - flake8、mypy（`torrents_async.py`）、py_compile、测试文件 Ruff 格式检查及 `git diff --check` 通过；根 `./init.sh --ci` 已通过。
 - 未执行 Git stage/commit/push/deploy；保留用户已有的 `.tmp-desktop-gui-test/` 未跟踪目录。
+
+## 2026-08-26：甲板连接 Logo 视觉重绘
+
+### 当前结果
+
+- 按用户确认的方案，将黑色板面替换为绿色 D 形轨道、三条深色甲板线与连接节点；新增标准、反白、微缩及完整横向锁定组合 SVG/PNG。
+- `AppLogo` 支持 `full`/`mark`/`micro` 与 `brand`/`inverse`，桌面侧边栏保留唯一品牌锚点，移除顶栏重复 Logo；桌面/移动登录与移动头部尺寸、底色同步调整。
+- favicon、Safari pinned tab 与 PWA/Apple/Android 图标统一为绿色底反白 mark，生成脚本改用反白与微缩资源。
+
+### 验证
+
+- 资源生成与 PNG 视觉检查完成；`npm run typecheck` 通过；AppLogo.spec.ts 与 pwa-manifest.spec.ts 共 12 例通过；改动文件 Vue lint 通过；`npm run build` 通过；根 `./init.sh` 通过（仅保留既有 jq/虚拟环境/npm 警告）。
+- 全量 `npm run lint` 仍被既有 `advanced-search-contract` 过期检查拦截，与本批 Logo 改动无关。
+- 未执行 Git stage/commit/push/deploy；保留用户已有的 `.tmp-desktop-gui-test/` 未跟踪目录。

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-labelledby="title desc">
+  <title id="title">BtDeck 甲板连接标志</title>
+  <desc id="desc">绿色 D 形轨道、三条甲板横线与连接节点</desc>
+  <path
+    d="M10 14h18a18 18 0 0 1 0 36H10"
+    fill="none"
+    stroke="#059669"
+    stroke-width="6.5"
+    stroke-linecap="round"
+  />
+  <path d="M12 24h22M12 32h27M12 40h22" fill="none" stroke="#243244" stroke-width="5" stroke-linecap="round" />
+  <circle cx="46" cy="32" r="5.5" fill="#059669" />
+</svg>

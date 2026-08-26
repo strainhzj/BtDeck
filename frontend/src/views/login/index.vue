@@ -359,14 +359,14 @@ export default class extends Vue {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 240px;
-  height: 194px;
+  width: 320px;
+  height: 79px;
   margin-bottom: var(--spacing-md);
 }
 
 .login-logo {
-  width: 240px;
-  height: 194px;
+  width: 320px;
+  height: 79px;
 }
 
 .login-subtitle {
@@ -503,13 +503,13 @@ export default class extends Vue {
   }
 
   .logo-container {
-    width: 220px;
-    height: 177px;
+    width: 280px;
+    height: 69px;
   }
 
   .login-logo {
-    width: 220px;
-    height: 177px;
+    width: 280px;
+    height: 69px;
   }
 
   .action-buttons {

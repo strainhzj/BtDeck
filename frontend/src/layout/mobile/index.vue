@@ -7,7 +7,7 @@
         <span class="mobile-header-menu-bar" />
       </button>
       <div class="mobile-header-brand">
-        <AppLogo variant="mark" alt="" class="mobile-header-logo" />
+        <AppLogo variant="mark" tone="inverse" alt="" class="mobile-header-logo" />
         <span class="mobile-header-title">BtDeck</span>
       </div>
       <el-button type="text" size="mini" class="mobile-header-desktop" @click="switchToDesktop">
