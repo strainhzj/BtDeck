@@ -2,13 +2,71 @@
   <div class="m-torrents">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
     <div class="m-toolbar">
-      <el-select v-model="statusFilter" size="small" placeholder="全部状态" clearable @change="reload">
-        <el-option v-for="opt in statusOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-      </el-select>
+      <el-button
+        class="m-toolbar-filter"
+        size="small"
+        :type="filtersExpanded ? 'primary' : 'default'"
+        :plain="filtersExpanded"
+        icon="el-icon-search"
+        @click="filtersExpanded = !filtersExpanded"
+      >
+        筛选<template v-if="activeFilterCount">（{{ activeFilterCount }}）</template>
+      </el-button>
       <el-button size="small" icon="el-icon-refresh" :loading="loading" @click="reload">刷新</el-button>
     </div>
 
-    <div v-if="!loading && list.length === 0" class="m-hint">暂无种子</div>
+    <!-- 简单搜索（自移动高级搜索页迁入）：与桌面 torrents 快捷筛选同字段集（name/下载器/状态/tracker 域） -->
+    <div v-if="filtersExpanded" class="m-torrents-filters">
+      <el-input
+        v-model="filters.name"
+        size="small"
+        placeholder="种子名称关键词"
+        clearable
+        prefix-icon="el-icon-search"
+        @keyup.enter.native="runFilters"
+      />
+      <el-select
+        v-model="filters.downloaders"
+        size="small"
+        multiple
+        filterable
+        collapse-tags
+        placeholder="全部下载器"
+        clearable
+      >
+        <el-option v-for="d in downloaderOptions" :key="d.value" :label="d.label" :value="d.value" />
+      </el-select>
+      <el-select
+        v-model="filters.statuses"
+        size="small"
+        multiple
+        collapse-tags
+        placeholder="全部状态"
+        clearable
+      >
+        <el-option v-for="opt in TORRENT_STATUS_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
+      </el-select>
+      <el-select
+        v-model="filters.trackerDomains"
+        size="small"
+        multiple
+        filterable
+        allow-create
+        default-first-option
+        collapse-tags
+        placeholder="Tracker 域名"
+        clearable
+      >
+        <el-option v-for="domain in trackerDomainOptions" :key="domain" :label="domain" :value="domain" />
+      </el-select>
+      <div class="m-torrents-filter-actions">
+        <el-button size="small" :loading="loading" @click="resetFilters">重置</el-button>
+        <el-button type="primary" size="small" :loading="loading" @click="runFilters">搜索</el-button>
+      </div>
+    </div>
+
+    <div v-if="appliedTip" class="m-torrents-applied">{{ appliedTip }}</div>
+    <div v-if="!loading && list.length === 0" class="m-hint">{{ hasFilters ? '没有匹配的种子' : '暂无种子' }}</div>
 
     <div
       v-for="t in list"
@@ -55,28 +113,40 @@
 import { Component, Mixins } from 'vue-property-decorator'
 import {
   getTorrentList,
+  getTrackerDomains,
   pauseTorrents,
   resumeTorrents,
   deleteTorrents,
   Torrent
 } from '@/api/torrents'
+import { getList as getDownloaderList } from '@/api/downloader'
 import { extractErrorMessage } from '@/utils/formatters'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
 import {
+  takeAppliedTemplateConditions,
+  setAppliedTemplateConditions
+} from '@/views/mobile/m2-template-cache'
+import {
   TORRENT_STATUS_OPTIONS,
   torrentStatusLabel,
   torrentStatusTagType,
-  formatTorrentSize,
-  StatusOption
+  formatTorrentSize
 } from '@/views/mobile/torrent-status'
 
 const PAGE_SIZE = 20
 
+interface SelectOption {
+  label: string
+  value: string
+}
+
 /**
  * 移动种子卡片列表（Phase 4 M1）：复用 getList API 与常用操作（暂停/恢复/删除入回收站）；
  * 卡片点击进入详情页（快照缓存传递整行数据）；顶部下拉刷新。
+ * 简单搜索自移动高级搜索页迁入（与桌面 torrents 快捷筛选同字段集）；查询模板页
+ * 「应用」简单模板经 m2-template-cache 进入本页自动回填筛选并执行（高级模板转回 /m/search）。
  */
 @Component({
   name: 'MobileTorrents',
@@ -86,16 +156,109 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
   private list: Torrent[] = []
   private total = 0
   private loading = false
-  private statusFilter = ''
   private busyKey = ''
+  private filtersExpanded = false
+  private appliedTip = ''
+  private filters = {
+    name: '',
+    downloaders: [] as string[],
+    statuses: [] as string[],
+    trackerDomains: [] as string[]
+  }
+  private downloaderOptions: SelectOption[] = []
+  private trackerDomainOptions: string[] = []
 
-  private statusOptions: StatusOption[] = TORRENT_STATUS_OPTIONS
+  private TORRENT_STATUS_OPTIONS = TORRENT_STATUS_OPTIONS
 
   mounted(): void {
-    this.reload()
+    this.loadFilterOptions()
+    this.applyPendingTemplate()
   }
 
   protected async onPullRefresh(): Promise<void> {
+    await this.reload()
+  }
+
+  private get hasFilters(): boolean {
+    return Boolean(
+      this.filters.name ||
+        this.filters.downloaders.length ||
+        this.filters.statuses.length ||
+        this.filters.trackerDomains.length
+    )
+  }
+
+  private get activeFilterCount(): number {
+    let count = 0
+    if (this.filters.name) count += 1
+    count += this.filters.downloaders.length ? 1 : 0
+    count += this.filters.statuses.length ? 1 : 0
+    count += this.filters.trackerDomains.length ? 1 : 0
+    return count
+  }
+
+  private async loadFilterOptions(): Promise<void> {
+    try {
+      const [dlRes, domainRes] = await Promise.all([
+        getDownloaderList({ page: 1, pageSize: 100 }),
+        getTrackerDomains()
+      ])
+      if (dlRes.code === '200' && Array.isArray(dlRes.data)) {
+        this.downloaderOptions = dlRes.data.map(
+          (d: { id: string, nickname?: string | null }) => ({
+            label: String(d.nickname || d.id),
+            value: d.id
+          })
+        )
+      }
+      if (domainRes.code === '200' && Array.isArray(domainRes.data)) {
+        this.trackerDomainOptions = domainRes.data
+      }
+    } catch {
+      // 选项加载失败不阻塞手输条件
+    }
+  }
+
+  // ============ 简单搜索（迁入） ============
+
+  private async runFilters(): Promise<void> {
+    await this.reload()
+  }
+
+  private async resetFilters(): Promise<void> {
+    this.filters = {
+      name: '',
+      downloaders: [],
+      statuses: [],
+      trackerDomains: []
+    }
+    await this.reload()
+  }
+
+  // ============ 模板应用（查询模板页跳转进入） ============
+
+  private async applyPendingTemplate(): Promise<void> {
+    const pending = takeAppliedTemplateConditions()
+    if (!pending) {
+      await this.reload()
+      return
+    }
+    const { conditions, templateName } = pending
+    if (conditions.source !== 'simple') {
+      // 高级模板交回缓存并转高级搜索页执行
+      setAppliedTemplateConditions(conditions, templateName)
+      this.$router.push('/m/search').catch(() => undefined)
+      return
+    }
+    const lq = conditions.listQuery ?? {}
+    this.filters = {
+      name: lq.name_like ?? '',
+      downloaders: Array.isArray(lq.downloader_id) ? [...lq.downloader_id] : [],
+      statuses: Array.isArray(lq.status) ? [...lq.status] : [],
+      trackerDomains: []
+    }
+    this.filtersExpanded = true
+    this.appliedTip = `已应用模板「${templateName}」`
     await this.reload()
   }
 
@@ -117,7 +280,10 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
         limit: PAGE_SIZE,
         sort_by: 'added_date',
         sort_order: 'desc',
-        ...(this.statusFilter ? { status: this.statusFilter } : {})
+        ...(this.filters.name ? { name_like: this.filters.name } : {}),
+        ...(this.filters.downloaders.length ? { downloader_id: this.filters.downloaders } : {}),
+        ...(this.filters.statuses.length ? { status: this.filters.statuses } : {}),
+        ...(this.filters.trackerDomains.length ? { tracker_domain: this.filters.trackerDomains } : {})
       })
       if (res.code === '200' && res.data) {
         this.list = this.list.concat(res.data.list ?? [])
@@ -209,8 +375,35 @@ export default class MobileTorrents extends Mixins(PullToRefresh) {
   margin-bottom: 10px;
 }
 
-.m-toolbar .el-select {
+.m-toolbar-filter {
   flex: 1;
+}
+
+.m-torrents-filters {
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.m-torrents-filter-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.m-torrents-filter-actions .el-button {
+  flex: 1;
+  margin-left: 0;
+}
+
+.m-torrents-applied {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--color-primary);
+  text-align: center;
 }
 
 .m-torrent-card {

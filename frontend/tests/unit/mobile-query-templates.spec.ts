@@ -1,6 +1,7 @@
 /**
  * 移动查询模板契约（Phase 4 M2）：客户端名称/类型过滤；「应用」经 m2 缓存
- * 跳 /m/search 执行；系统模板（is_default）只可应用不可删除（与桌面判定一致）。
+ * 按来源分流——简单模板跳 /m/torrents（种子页筛选）、高级模板跳 /m/search；
+ * 系统模板（is_default）只可应用不可删除（与桌面判定一致）。
  */
 
 import { shallowMount, Wrapper } from '@vue/test-utils'
@@ -101,12 +102,15 @@ describe('views/mobile/MobileQueryTemplates', () => {
     expect(vm.filteredList[0].id).toBe('tpl-sys')
   })
 
-  it('应用：写入 m2 缓存并跳 /m/search', async() => {
+  it('应用：写入 m2 缓存并按来源分流（简单→种子页，高级→高级搜索页）', async() => {
     const wrapper = mountPage()
     await flushLifecycle()
     const vm = wrapper.vm as any
     vm.apply(vm.list[0])
     expect(setAppliedTemplateConditions).toHaveBeenCalledWith(baseTemplate.conditions, '常用查询')
+    expect(vm.$router.push).toHaveBeenCalledWith('/m/torrents')
+    vm.apply(vm.list[1])
+    expect(setAppliedTemplateConditions).toHaveBeenCalledWith(systemTemplate.conditions, '系统模板')
     expect(vm.$router.push).toHaveBeenCalledWith('/m/search')
   })
 

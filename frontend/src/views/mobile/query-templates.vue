@@ -53,7 +53,7 @@
     </div>
 
     <div class="m-tpl-footnote">
-      模板的新建与编辑请在桌面版「查询模板」页操作（条件构建器为桌面布局）
+      高级模板的新建与编辑可在「高级搜索」页已保存搜索中操作；简单模板请回种子页筛选后在桌面版保存
     </div>
   </div>
 </template>
@@ -72,9 +72,9 @@ import { setAppliedTemplateConditions } from '@/views/mobile/m2-template-cache'
 
 /**
  * 移动查询模板（Phase 4 M2）：复用 /advanced-search/search-templates API；
- * 与桌面页一致做客户端名称/类型过滤。「应用」把 conditions 交给移动高级
- * 搜索页执行（简单模板回填筛选表单，高级模板回填条件构建器）；系统模板
- * （is_default）只可应用不可删除，与桌面判定一致。新建/编辑保留桌面版。
+ * 与桌面页一致做客户端名称/类型过滤。「应用」把 conditions 交给执行页
+ * （简单模板→种子页筛选回填，高级模板→高级搜索页回填构建器）；
+ * 系统模板（is_default）只可应用不可删除，与桌面判定一致。
  */
 @Component({
   name: 'MobileQueryTemplates',
@@ -128,7 +128,9 @@ export default class MobileQueryTemplates extends Mixins(PullToRefresh) {
     }
     this.applyingId = tpl.id
     setAppliedTemplateConditions(tpl.conditions, tpl.name)
-    this.$router.push('/m/search').catch(() => undefined)
+    // 简单模板回种子页筛选执行（简单搜索已迁入 /m/torrents），高级模板进高级搜索页
+    const target = (tpl.conditions.source ?? 'simple') === 'advanced' ? '/m/search' : '/m/torrents'
+    this.$router.push(target).catch(() => undefined)
   }
 
   private remove(tpl: SearchTemplate): void {

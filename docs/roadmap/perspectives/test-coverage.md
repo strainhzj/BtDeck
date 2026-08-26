@@ -124,7 +124,7 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（69 个 spec）
+### `frontend/tests/unit/`（70 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
@@ -148,12 +148,13 @@
 | `mobile-logs.spec.ts` ✨2026-08-24 | 移动审计日志：结果筛选值契约（success/failed/partial）与三态展示 |
 | `mobile-notifications.spec.ts` ✨2026-08-26 | 移动通知中心：摘要纯文本三行截断、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲 |
 | `mobile-orphan-files.spec.ts` ✨2026-08-24 | 移动孤儿文件双 Tab：扫描轮询/清理两段式/忽视/隔离区恢复与立即清除 |
-| `mobile-query-templates.spec.ts` ✨2026-08-24 | 移动查询模板：应用回填执行、系统模板只可应用不可删除 |
+| `mobile-query-templates.spec.ts` ✨2026-08-24 | 移动查询模板：应用按来源分流（简单→/m/torrents，高级→/m/search）、系统模板只可应用不可删除 |
 | `mobile-recycle-bin.spec.ts` ✨2026-08-24 | 移动回收站：卡片列表/名称搜索/单条恢复与彻底删除 |
-| `mobile-search.spec.ts` ✨2026-08-24 | 移动搜索双模式：简单查询字段集与高级构建器复用、模板缓存回填 |
+| `mobile-search.spec.ts` ✨2026-08-26 | 移动高级搜索：复用桌面 AdvancedSearchWorkspace（已保存搜索同源）、简单搜索迁出负例锁死、高级模板回填执行/简单模板转种子页、下拉刷新重放 |
 | `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
 | `mobile-tasks.spec.ts` ✨2026-08-24 | 移动定时任务：卡片六态 outcome、启停/立即执行/中断/删除 |
 | `mobile-torrent-detail.spec.ts` ✨2026-08-24 | 移动种子详情：列表快照缓存立即渲染、速度轮询、删除后返回刷新 |
+| `mobile-torrents.spec.ts` ✨2026-08-26 | 移动种子页简单搜索（自搜索页迁入）：筛选面板四字段透传、重置/下拉刷新带条件重载、简单模板回填执行/高级模板转搜索页、空态区分 |
 | `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
 | `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
 | `notification-drawer-detail.spec.ts` ✨2026-08-26 | 桌面通知详情：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |

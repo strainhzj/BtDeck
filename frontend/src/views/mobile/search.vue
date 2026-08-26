@@ -2,82 +2,14 @@
   <div class="m-search">
     <m-pull-indicator :distance="pullDistance" :ready="pullReady" :refreshing="pullRefreshing" />
 
-    <div class="m-search-mode">
-      <button
-        type="button"
-        class="m-search-mode-btn"
-        :class="{'is-active': mode === 'simple'}"
-        @click="switchMode('simple')"
-      >
-        简单查询
-      </button>
-      <button
-        type="button"
-        class="m-search-mode-btn"
-        :class="{'is-active': mode === 'advanced'}"
-        @click="switchMode('advanced')"
-      >
-        高级搜索
-      </button>
-    </div>
-
-    <!-- 简单查询：与桌面 torrents 快捷筛选同字段集（name/下载器/状态/tracker 域） -->
-    <div v-if="mode === 'simple'" class="m-search-form">
-      <el-input
-        v-model="simpleForm.name"
-        size="small"
-        placeholder="种子名称关键词"
-        clearable
-        prefix-icon="el-icon-search"
-        @keyup.enter.native="runSimpleSearch"
-      />
-      <el-select
-        v-model="simpleForm.downloaders"
-        size="small"
-        multiple
-        filterable
-        collapse-tags
-        placeholder="全部下载器"
-        clearable
-      >
-        <el-option v-for="d in downloaderOptions" :key="d.value" :label="d.label" :value="d.value" />
-      </el-select>
-      <el-select
-        v-model="simpleForm.statuses"
-        size="small"
-        multiple
-        collapse-tags
-        placeholder="全部状态"
-        clearable
-      >
-        <el-option v-for="opt in TORRENT_STATUS_OPTIONS" :key="opt.value" :label="opt.label" :value="opt.value" />
-      </el-select>
-      <el-select
-        v-model="simpleForm.trackerDomains"
-        size="small"
-        multiple
-        filterable
-        allow-create
-        default-first-option
-        collapse-tags
-        placeholder="Tracker 域名"
-        clearable
-      >
-        <el-option v-for="domain in trackerDomainOptions" :key="domain" :label="domain" :value="domain" />
-      </el-select>
-      <el-button class="m-search-run" type="primary" size="small" :loading="searching" @click="runSimpleSearch">
-        搜索
-      </el-button>
-    </div>
-
-    <!-- 高级搜索：直接复用桌面 AdvancedSearchBuilder（条件组/字段/操作符与桌面完全一致） -->
-    <div v-else class="m-search-builder">
-      <advanced-search-builder
-        ref="builder"
+    <!-- 高级搜索：直接复用桌面 AdvancedSearchWorkspace（左侧已保存搜索与 Web 端同源数据，
+         选择/新建/保存更改/删除与桌面一致；构建器条件组/字段/操作符零缺省） -->
+    <div class="m-search-builder">
+      <advanced-search-workspace
+        ref="workspace"
         :searching="searching"
         @search="onBuilderSearch"
         @reset="onBuilderReset"
-        @save-template="onSaveTemplate"
       />
     </div>
 
@@ -111,157 +43,86 @@
 </template>
 
 <script lang="ts">
-import { Component, Mixins } from 'vue-property-decorator'
+import { Component, Mixins, Vue } from 'vue-property-decorator'
 import {
-  getTorrentList,
   advancedSearch,
-  createSearchTemplate,
-  getTrackerDomains,
   Torrent,
   AdvancedSearchRequest,
   AdvancedSearchBuilderParams,
-  QueryTemplateConditionGroup,
-  QueryTemplateConditions,
-  CreateSearchTemplateRequest
+  QueryTemplateConditionGroup
 } from '@/api/torrents'
-import { getList as getDownloaderList } from '@/api/downloader'
 import { extractErrorMessage } from '@/utils/formatters'
 import {
   buildAdvancedSearchRequest,
   buildAdvancedSearchRequestFromTemplateGroups
 } from '@/views/torrents/utils/torrentBatch'
-import AdvancedSearchBuilder from '@/components/torrents/AdvancedSearchBuilder.vue'
+import AdvancedSearchWorkspace from '@/components/torrents/AdvancedSearchWorkspace.vue'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 import { setCachedTorrent } from '@/views/mobile/torrent-detail-cache'
-import { takeAppliedTemplateConditions } from '@/views/mobile/m2-template-cache'
 import {
-  TORRENT_STATUS_OPTIONS,
+  takeAppliedTemplateConditions,
+  setAppliedTemplateConditions
+} from '@/views/mobile/m2-template-cache'
+import {
   torrentStatusLabel,
   torrentStatusTagType,
   formatTorrentSize
 } from '@/views/mobile/torrent-status'
 
-interface SelectOption {
-  label: string
-  value: string
-}
-
-/** 桌面构建器 save-template 事件载荷（AdvancedSearchBuilder confirmSaveTemplate） */
-interface BuilderTemplatePayload {
-  id: string
-  name: string
-  description: string
-  isDefault: boolean
-  conditions: QueryTemplateConditionGroup[]
-  createdTime: string
+/** 桌面工作区公开入口（AdvancedSearchWorkspace 同签名透传） */
+interface SearchWorkspaceRef extends Vue {
+  onSearch(): void
+  refreshFieldOptions(): void
+  applyTemplateGroups(
+    groups: QueryTemplateConditionGroup[],
+    options?: { sort_by?: string, sort_order?: string }
+  ): void
 }
 
 const RESULT_LIMIT = 20
 
 /**
  * 移动高级搜索（Phase 4 M2）：
- * - 简单查询：与桌面 torrents 快捷筛选同字段集（名称/下载器/状态/Tracker 域）→ getList；
- * - 高级搜索：直接复用桌面 AdvancedSearchBuilder 组件（条件组/字段/操作符零缺省）
- *   → buildAdvancedSearchRequest → advancedSearch POST；
- * - 查询模板页「应用」经 m2-template-cache 进入本页自动回填并执行
- *   （简单模板填表单，高级模板走 builder.applyTemplateGroups + FromTemplateGroups 构建）；
- * - builder 的 save-template 事件接 createSearchTemplate（source=advanced）。
+ * - 直接复用桌面 AdvancedSearchWorkspace——已保存搜索列表与 Web 端同源
+ *   （getSearchTemplates({is_public:true}) 过滤 source=advanced），选择/新建/
+ *   保存更改/删除全量对齐桌面；简单搜索已迁至移动种子页（/m/torrents）；
+ * - search 事件 → buildAdvancedSearchRequest → advancedSearch POST；
+ * - 查询模板页「应用」高级模板经 m2-template-cache 进入本页自动回填并执行
+ *   （builder.applyTemplateGroups + FromTemplateGroups 构建；简单模板转回种子页）。
  */
 @Component({
   name: 'MobileSearch',
   components: {
     'm-pull-indicator': MobilePullIndicator,
-    'advanced-search-builder': AdvancedSearchBuilder
+    'advanced-search-workspace': AdvancedSearchWorkspace
   }
 })
 export default class MobileSearch extends Mixins(PullToRefresh) {
-  private mode: 'simple' | 'advanced' = 'simple'
-  private simpleForm = {
-    name: '',
-    downloaders: [] as string[],
-    statuses: [] as string[],
-    trackerDomains: [] as string[]
-  }
-  private downloaderOptions: SelectOption[] = []
-  private trackerDomainOptions: string[] = []
   private results: Torrent[] = []
   private total = 0
   private searching = false
   private searched = false
   private appliedTip = ''
 
-  private TORRENT_STATUS_OPTIONS = TORRENT_STATUS_OPTIONS
+  private get workspace(): SearchWorkspaceRef | undefined {
+    return this.$refs.workspace as SearchWorkspaceRef | undefined
+  }
 
   mounted(): void {
-    this.loadFilterOptions()
     this.applyPendingTemplate()
   }
 
   protected async onPullRefresh(): Promise<void> {
-    if (this.mode === 'simple' && this.searched) {
-      await this.runSimpleSearch()
-    } else if (this.mode === 'advanced' && this.searched) {
-      await this.rerunAdvanced()
+    if (this.searched) {
+      this.rerunAdvanced()
     } else {
-      await this.loadFilterOptions()
+      // 未搜索过：刷新工作区字段候选与已保存搜索列表
+      this.workspace?.refreshFieldOptions()
     }
   }
 
-  private async loadFilterOptions(): Promise<void> {
-    try {
-      const [dlRes, domainRes] = await Promise.all([
-        getDownloaderList({ page: 1, pageSize: 100 }),
-        getTrackerDomains()
-      ])
-      if (dlRes.code === '200' && Array.isArray(dlRes.data)) {
-        this.downloaderOptions = dlRes.data.map(
-          (d: { id: string, nickname?: string | null }) => ({
-            label: String(d.nickname || d.id),
-            value: d.id
-          })
-        )
-      }
-      if (domainRes.code === '200' && Array.isArray(domainRes.data)) {
-        this.trackerDomainOptions = domainRes.data
-      }
-    } catch {
-      // 选项加载失败不阻塞手输条件
-    }
-  }
-
-  private switchMode(mode: 'simple' | 'advanced'): void {
-    this.mode = mode
-  }
-
-  // ============ 简单查询 ============
-
-  private async runSimpleSearch(): Promise<void> {
-    this.searching = true
-    try {
-      const res = await getTorrentList({
-        ...(this.simpleForm.name ? { name_like: this.simpleForm.name } : {}),
-        ...(this.simpleForm.downloaders.length ? { downloader_id: this.simpleForm.downloaders } : {}),
-        ...(this.simpleForm.statuses.length ? { status: this.simpleForm.statuses } : {}),
-        ...(this.simpleForm.trackerDomains.length ? { tracker_domain: this.simpleForm.trackerDomains } : {}),
-        skip: 0,
-        limit: RESULT_LIMIT,
-        sort_by: 'added_date',
-        sort_order: 'desc'
-      })
-      if (res.code === '200' && res.data) {
-        this.results = res.data.list ?? []
-        this.total = res.data.total ?? 0
-        this.searched = true
-      }
-    } catch (e) {
-      this.$message.error(extractErrorMessage(e))
-    } finally {
-      this.searching = false
-    }
-  }
-
-  // ============ 高级搜索（复用桌面构建器） ============
+  // ============ 高级搜索（复用桌面工作区） ============
 
   private async onBuilderSearch(params: AdvancedSearchBuilderParams): Promise<void> {
     const { request, error } = buildAdvancedSearchRequest(params, 'added_date', RESULT_LIMIT)
@@ -272,17 +133,9 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
     await this.executeAdvanced(request)
   }
 
-  /** 高级模式重复执行（下拉刷新/模板执行后的统一出口） */
-  private async rerunAdvanced(): Promise<void> {
-    const builder = this.$refs.builder as AdvancedSearchBuilder | undefined
-    if (builder && typeof (builder as unknown as { buildSearchParams?: () => AdvancedSearchBuilderParams }).buildSearchParams === 'function') {
-      try {
-        const params = (builder as unknown as { buildSearchParams: () => AdvancedSearchBuilderParams }).buildSearchParams()
-        await this.onBuilderSearch(params)
-      } catch {
-        // 构建器校验失败已自行提示
-      }
-    }
+  /** 高级模式重复执行（下拉刷新统一出口）：工作区校验并转发构建器 search 事件 */
+  private rerunAdvanced(): void {
+    this.workspace?.onSearch()
   }
 
   private async executeAdvanced(request: AdvancedSearchRequest): Promise<void> {
@@ -310,66 +163,29 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
     this.searched = false
   }
 
-  /** 构建器「保存为模板」：转换为 v1.0.5 createSearchTemplate（source=advanced） */
-  private async onSaveTemplate(payload: BuilderTemplatePayload): Promise<void> {
-    try {
-      const conditions: QueryTemplateConditions = {
-        source: 'advanced',
-        version: 1,
-        condition_groups: payload.conditions
-      }
-      const data: CreateSearchTemplateRequest = {
-        name: payload.name,
-        ...(payload.description ? { description: payload.description } : {}),
-        conditions,
-        is_public: false
-      }
-      const res = await createSearchTemplate(data)
-      if (res.code === '200') {
-        this.$message.success(`模板「${payload.name}」已保存`)
-      } else {
-        this.$message.error(res.msg || '模板保存失败')
-      }
-    } catch (e) {
-      this.$message.error(extractErrorMessage(e))
-    }
-  }
-
   // ============ 模板应用（查询模板页跳转进入） ============
 
   private async applyPendingTemplate(): Promise<void> {
     const pending = takeAppliedTemplateConditions()
     if (!pending) return
     const { conditions, templateName } = pending
-    this.appliedTip = `已应用模板「${templateName}」`
-    if (conditions.source === 'advanced') {
-      this.mode = 'advanced'
-      await this.$nextTick()
-      const groups = conditions.condition_groups ?? []
-      const sortBy = conditions.sort_by || 'added_date'
-      const sortOrder = conditions.sort_order || 'desc'
-      const builder = this.$refs.builder as unknown as {
-        applyTemplateGroups?: (g: QueryTemplateConditionGroup[], s: { sort_by: string, sort_order: string }) => void
-      } | undefined
-      if (builder && typeof builder.applyTemplateGroups === 'function') {
-        builder.applyTemplateGroups(groups, { sort_by: sortBy, sort_order: sortOrder })
-      }
-      const { request, error } = buildAdvancedSearchRequestFromTemplateGroups(groups, sortBy, sortOrder, RESULT_LIMIT)
-      if (!request || error) {
-        this.$message.error(error || '模板条件格式错误')
-        return
-      }
-      await this.executeAdvanced(request)
-    } else {
-      const lq = conditions.listQuery ?? {}
-      this.simpleForm = {
-        name: lq.name_like ?? '',
-        downloaders: Array.isArray(lq.downloader_id) ? [...lq.downloader_id] : [],
-        statuses: Array.isArray(lq.status) ? [...lq.status] : [],
-        trackerDomains: []
-      }
-      await this.runSimpleSearch()
+    if (conditions.source !== 'advanced') {
+      // 简单模板交回缓存并转种子页执行（简单搜索已迁入 /m/torrents）
+      setAppliedTemplateConditions(conditions, templateName)
+      this.$router.push('/m/torrents').catch(() => undefined)
+      return
     }
+    this.appliedTip = `已应用模板「${templateName}」`
+    const groups = conditions.condition_groups ?? []
+    const sortBy = conditions.sort_by || 'added_date'
+    const sortOrder = conditions.sort_order || 'desc'
+    this.workspace?.applyTemplateGroups(groups, { sort_by: sortBy, sort_order: sortOrder })
+    const { request, error } = buildAdvancedSearchRequestFromTemplateGroups(groups, sortBy, sortOrder, RESULT_LIMIT)
+    if (!request || error) {
+      this.$message.error(error || '模板条件格式错误')
+      return
+    }
+    await this.executeAdvanced(request)
   }
 
   private openDetail(t: Torrent): void {
@@ -402,55 +218,12 @@ export default class MobileSearch extends Mixins(PullToRefresh) {
 </script>
 
 <style scoped>
-.m-search-mode {
-  display: flex;
-  background: #fff;
-  border-radius: 8px;
-  padding: 4px;
-  margin-bottom: 10px;
-}
-
-.m-search-mode-btn {
-  flex: 1;
-  border: none;
-  background: transparent;
-  padding: 8px 0;
-  border-radius: 6px;
-  font-size: 14px;
-  color: #606266;
-}
-
-.m-search-mode-btn.is-active {
-  background: var(--color-primary);
-  color: #fff;
-  font-weight: 600;
-}
-
-.m-search-form {
-  background: #fff;
-  border-radius: 8px;
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-
-.m-search-run {
-  align-self: stretch;
-}
-
-/* 构建器为桌面组件：容器横向可滚，内部表单控件全宽 */
+/* 工作区为桌面组件（窄屏自动上下堆叠）：卡片容器承接移动页白底圆角风格 */
 .m-search-builder {
   background: #fff;
   border-radius: 8px;
-  padding: 10px 10px 4px;
+  padding: 8px;
   margin-bottom: 10px;
-  overflow-x: auto;
-}
-
-.m-search-builder > div {
-  max-width: 100%;
 }
 
 .m-search-applied {
