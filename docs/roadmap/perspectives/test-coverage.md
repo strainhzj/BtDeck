@@ -124,12 +124,14 @@
 
 ## 前端测试分布
 
-### `frontend/tests/unit/`（48 个 spec）
+### `frontend/tests/unit/`（69 个 spec）
 
 | 测试文件 | 覆盖范围 |
 |---------|---------|
 | `api-contracts.spec.ts` | API 契约一致性 |
 | `clipboard.spec.ts` ✨v1.0.6.36 | `utils/clipboard.ts`（剪贴板复制回退：Clipboard API / execCommand 降级） |
+| `column-resize-mixin.spec.ts` | 表格列宽调整 mixin 契约 |
+| `column-resize-regression.spec.ts` | 列宽调整回归 |
 | `downloader-settings.spec.ts` | 下载器设置 store |
 | `downloader-control-room-ui.spec.ts` ✨v1.0.6.30 | 下载器控制室 UI（节点矩阵/筛选操作台/遥测卡片交互） |
 | `downloader-regressions.spec.ts` ✨v1.0.6.33 | 下载器设置工作流回归 |
@@ -140,40 +142,61 @@
 | `filter-group-accessibility.spec.ts` | FilterGroup 可访问性 |
 | `lint-vuex-action.spec.ts` | Vuex action 规范 |
 | `management-pages-ui.spec.ts` | 管理页面 UI；回收站搜索区与查询模板 Lucide 极简行操作契约 |
+| `mobile-dashboard.spec.ts` ✨2026-08-26 | 移动仪表盘：字段映射契约（torrents/downloaders/system，旧键负例锁死）、bytes/s 速度换算、下载器卡片与穿透 /m/downloader、已暂停统计展示 |
+| `mobile-downloader.spec.ts` ✨2026-08-24 | 移动下载器监控页：卡片/在线徽标/测试连接 data.success 契约 |
+| `mobile-downloader-settings.spec.ts` ✨2026-08-24 | 移动下载器设置页：整页复用桌面 DownloaderSettingsDialog 的挂载与返回 |
+| `mobile-logs.spec.ts` ✨2026-08-24 | 移动审计日志：结果筛选值契约（success/failed/partial）与三态展示 |
+| `mobile-notifications.spec.ts` ✨2026-08-26 | 移动通知中心：摘要纯文本三行截断、点击详情同源渲染（共享 notification-markdown）、查看即已读+角标联动、失败明细/Release 链接、源码契约禁裸文本直渲 |
+| `mobile-orphan-files.spec.ts` ✨2026-08-24 | 移动孤儿文件双 Tab：扫描轮询/清理两段式/忽视/隔离区恢复与立即清除 |
+| `mobile-query-templates.spec.ts` ✨2026-08-24 | 移动查询模板：应用回填执行、系统模板只可应用不可删除 |
+| `mobile-recycle-bin.spec.ts` ✨2026-08-24 | 移动回收站：卡片列表/名称搜索/单条恢复与彻底删除 |
+| `mobile-search.spec.ts` ✨2026-08-24 | 移动搜索双模式：简单查询字段集与高级构建器复用、模板缓存回填 |
 | `mobile-shell.spec.ts` ✨2026-08-26 | 移动布局壳导航、抽屉、通知角标、滑动手势、主题色及反白微型 Logo 契约 |
+| `mobile-tasks.spec.ts` ✨2026-08-24 | 移动定时任务：卡片六态 outcome、启停/立即执行/中断/删除 |
+| `mobile-torrent-detail.spec.ts` ✨2026-08-24 | 移动种子详情：列表快照缓存立即渲染、速度轮询、删除后返回刷新 |
+| `mobile-tracker-keywords.spec.ts` ✨2026-08-24 | 移动关键词看板：四池 Tab 计数、卡片移池/删除、候选池禁添加 |
+| `mobile-tracker-keywords-search.spec.ts` ✨2026-08-24 | 移动关键词全池搜索：同字段集检索与 ?keyword= 初始词 |
+| `notification-drawer-detail.spec.ts` ✨2026-08-26 | 桌面通知详情：detailHtml 必须委托 utils/notification-markdown（源码契约禁内联转换回流）、handleView 未读自动已读、失败明细/Release 链接、未读数轮询启停 |
+| `notification-markdown.spec.ts` ✨2026-08-26 | `utils/notification-markdown.ts`：Markdown-lite 分块渲染（标题/列表/粗体/行内代码/分隔线/CRLF/转义防注入）与失败明细目标回退链，桌面/移动同源行为锁 |
 | `pwa-manifest.spec.ts` ✨2026-08-26 | 完整 `BtDeck` 字标、微型 mark 资源、favicon/PWA manifest 与图标生成源契约 |
 | `operator-contract.spec.ts`（338 行）✨v1.0.6.26 | 高级搜索生成契约守卫；覆盖标签旧模板、三态、五个可空字段/非空字段矩阵及跨字段 `mode=exclude` 不预翻转操作符 |
 | `orphan-files.spec.ts` | 孤儿后台扫描轮询、超量复核、文件夹展开懒加载/子页选择、可见文件硬链接、清理/隔离工作流，以及扁平/文件夹模式展开列切换、普通行展开保护、子表表头/数据/选择事件契约 |
 | `page-size-combobox.spec.ts` ✨v1.0.6.30 | 共享 `PageSizeCombobox`：默认预设、受控输入、公共事件、ARIA 展开态与 `focusInput()` |
+| `permission-force-change-deadlock.spec.ts` ✨2026-08-18 | `permission.ts`+`router.ts` 真实路由死锁回归（生产事故修复锚定） |
+| `permission-guard.spec.ts` ✨2026-08-17 | `permission.ts` 守卫真实路由导航五分支 |
+| `pull-to-refresh.spec.ts` ✨2026-08-24 | 下拉刷新 mixin：阻尼/阈值/滚动容器判定与横向主导中止（与 Tab 滑动互斥） |
+| `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
+| `refresh-prompt.spec.ts` ✨2026-08-25 | `RefreshPrompt.vue` PWA 更新提示：SW updated 事件、确认刷新 postMessage SKIP_WAITING |
+| `request-auth.spec.ts` ✨2026-08-17 | `utils/request.ts` 401 全链路 |
+| `router-navigation-failure.spec.ts` | 路由导航失败（重复导航/重定向中止）处理契约 |
+| `session.spec.ts` ✨2026-08-17 | `utils/session.ts`：JWT exp 过期判定、hash 登录跳转 URL 构造、cookie→内存快照回同步 |
 | `shared-utils.spec.ts` | 共享工具 |
+| `sidebar-mobile-entry.spec.ts` ✨2026-08-24 | 桌面侧栏「移动版」入口：写显式偏好并跳 /m/dashboard |
 | `store-modules.spec.ts` | Vuex modules |
+| `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储 |
+| `speed-polling.spec.ts` | 种子速度轮询契约 |
+| `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
+| `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
+| `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排 |
 | `torrent-batch.spec.ts`（1056 行） | `views/torrents/utils/torrentBatch.ts`（含“未联系”中性样式、模板到请求排除模式/正操作符端到端守卫及三组独立连接器） |
 | `torrent-error-reason-ui.spec.ts` ✨2026-08-12 | `torrents/index.vue` + `TraditionalView.vue`：名称 tooltip 与 Tracker 卡片错误原因 |
-| `quick-delete-duplicates-dialog.spec.ts` | 重复种子快捷删除 nullable task_id、跳过提示与父列表刷新 |
-| `tasks-sync-freshness.spec.ts` | 定时任务 outcome/stale helper 的模板实例可访问性与同步新鲜度展示契约 |
-| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；Tracker 主域名选项与多选参数转换；错误单种列表模式在筛选/退出时发送 `single_error_only`；同内容列表模式在筛选、排序、分页大小、切页、刷新期间保持列表数据源，并在重复查询/高级搜索/模板/显式退出时清理 |
-| `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留 Tracker 查询、错误单种/同内容排查、重复查询、查询条件、分页和选择状态 |
+| `torrent-list-view-component.spec.ts` ✨v1.0.6.30 | 列表视图异步删除与分页/排序；Tracker 主域名选项与多选参数转换；错误单种/同内容列表模式数据源守卫 |
+| `torrent-view-switcher.spec.ts` | 列表/传统模式往返时保留查询/分页/选择状态 |
+| `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归 |
+| `tracker-operation-dialog-contract.spec.ts` | Tracker 操作对话框契约 |
 | `traditional-torrent-identity.spec.ts` | `views/torrents/utils/traditionalTorrentIdentity.ts` |
-| `traditional-view-component.spec.ts` | 传统视图组件；Tracker 主域名过滤、错误单种快捷入口与退出；重复查询保持分类/标签/活动筛选；同内容排查复用当前表格筛选、排序、分页大小、翻页、刷新并守卫其它查询模式切换；静态契约锁定列表/传统父模板共用 `TrackerDetailCard.vue`、`list`/`traditional` layout 与完整弹框定位，以及共享组件的 Tracker 卡片结构、状态语义和 `_tracker-table.scss` 视觉样式 |
-| `tracker-detail-card.spec.ts` | 共用 TrackerDetailCard 运行时回归：完整弹框骨架（标题、关闭按钮、页签、内容区）、五列结构、snake/camel 字段、错误提示、中性状态、汇报事件和 loading |
+| `traditional-view-component.spec.ts` | 传统视图组件；Tracker 主域名过滤与快捷入口；静态契约锁定共用 TrackerDetailCard 与视觉样式 |
 | `traditional-view-pagination.spec.ts` | `views/torrents/utils/traditionalPagination.ts` |
 | `traditional-view-status-filter.spec.ts` | `views/torrents/utils/traditionalStatusFilter.ts` |
 | `traditional-view-virtual-list.spec.ts` | `views/torrents/utils/traditionalVirtualList.ts` |
-| `session.spec.ts` ✨2026-08-17 | `utils/session.ts`：JWT exp 过期判定（畸形不误杀）、hash 登录跳转 URL 构造、cookie→内存快照回同步三分支、initSessionWatch 可见/聚焦触发同步与登出 |
-| `request-auth.spec.ts` ✨2026-08-17 | `utils/request.ts` 401 全链路：redirectToLogin hash 跳转与 3 秒防抖自愈、trySilentRefresh 三态、axios adapter 注入的拦截器集成（续期重放携带新 Bearer/重放仍 401 防循环登出/无 refresh 直接登出/`/auth/refresh` 豁免/HTTP 200 业务码 401 同链路） |
-| `permission-guard.spec.ts` ✨2026-08-17 | `permission.ts` 守卫真实路由导航五分支：过期+续期成功放行、过期+失败登出保 redirect、目标即 /login 无自指循环、未过期不触发续期、GetUserInfo 失败兜底登出 |
-| `token-refresh.spec.ts` ✨2026-08-16 | `utils/token-refresh.ts`：401 单飞刷新编排（并发共享/失败返回 null） |
-| `store-user.spec.ts` ✨2026-08-16 | `store/modules/user.ts` 双令牌存储：Login 持久化/缺 refresh 清残留、SetToken、ResetToken、LogOut 容忍空 token |
-| `user-store-must-change-password.spec.ts` ✨2026-08-16（2026-08-18 扩展） | 强制改密标志的 store 状态流转：Login 解析（true/显式 false/缺省）/改密清标志/ResetToken 清标志/GetUserInfo 四态（wrapped true、扁平 true、显式 false 覆盖、字段缺失保持原值防滚动部署误清） |
-| `settings-change-password.spec.ts` ✨2026-08-18 | `views/settings/index.vue` 改密流程（W9 死锁修复组件侧）：成功双解锁（清 store 标志 + 清 URL forceChange query 且保留其他参数）、无 query 不多余跳转、API 失败不提前解锁、两次输入不一致前置校验不发起 API |
-| `permission-force-change-deadlock.spec.ts` ✨2026-08-18 | `permission.ts`+`router.ts` 真实路由死锁回归（生产事故修复锚定）：拦截落点 `/settings/index?forceChange=1` 且改密页渲染可达、拦截弹"请先修改密码"提示（Message.warning）、首导航（GetUserInfo 分支）拦截、手输父路径经 redirect 解析内容非空、手动直达放行、改密成功闭环、提示 3 秒节流（可控假时钟）、flag=false 对照 |
+| `ui-mode.spec.ts` ✨2026-08-23 | `utils/ui-mode.ts`：偏好持久化(auto/mobile/desktop)+视口判定(768px)+模式合成+登录分流 |
+| `user-store-must-change-password.spec.ts` ✨2026-08-16（2026-08-18 扩展） | 强制改密标志的 store 状态流转 |
+| `settings-change-password.spec.ts` ✨2026-08-18 | `views/settings/index.vue` 改密流程（W9 死锁修复组件侧） |
 | `batch-transfer-dialog.spec.ts` | 种子转移对话框契约 |
 | `collapsible-panel.spec.ts` | 通用折叠面板（W8） |
 | `keyword-list-modal.spec.ts` ✨2026-08-16 | Tracker 关键词列表弹窗与快捷操作入口 |
 | `keyword-quick-action-dialog.spec.ts` ✨2026-08-16 | 关键词快捷删除/移动：preview→确认→执行→emit success |
 | `keywords-board.spec.ts` ✨2026-08-16 | 关键词看板：快捷操作打开对话框与成功后精准刷新 |
-| `speed-polling.spec.ts` | 种子速度轮询契约 |
-| `tasks-lucide-migration.spec.ts` | 定时任务页 Lucide 图标迁移守卫 |
 
 ### 组件内嵌测试 `frontend/src/components/torrents/__tests__/`（7 个 spec，2637 行）
 

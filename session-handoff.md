@@ -1,5 +1,27 @@
 # Session Handoff - BtDeck 全栈项目
 
+## 2026-08-26：移动通知内容渲染与 Web 端一致
+
+### 本批结果
+
+- 用户要求移动通知页对内容的文本渲染与 Web 端一致。将桌面 `NotificationDrawer/index.vue` 详情弹窗的 Markdown-lite 渲染（标题/分隔线/列表/段落/粗体/行内代码，输入先转义）与失败明细目标回退链抽至共享 `frontend/src/utils/notification-markdown.ts`，桌面改委托调用（行为零变化），两端单一渲染源。
+- `views/mobile/notifications.vue`：列表摘要改三行截断（对齐桌面列表）；新增详情弹层（92% 宽 el-dialog）——标题/类型标签/时间、`v-html` 同源渲染、失败明细、Release 外链；点击卡片打开详情并保留"查看即已读+角标联动"。
+
+### 变更文件
+
+`frontend/src/utils/notification-markdown.ts`（新）、`frontend/src/views/mobile/notifications.vue`、`frontend/src/layout/components/NotificationDrawer/index.vue`、`frontend/tests/unit/notification-markdown.spec.ts`（新，13 例）、`docs/roadmap/frontend/components-layout/README.md`、`feature_list.json`（`.5` evidence 追加）、`progress.md`。
+
+### 验证与待办
+
+- 新增 13 例单测全过；`mobile-shell` + `api-contracts` 61 例回归全绿；`tsc --noEmit` 零错误；改动 4 文件 ESLint（`--max-warnings 0`）通过；`npm run build` 与根 `./init.sh` 通过。
+- 未执行 Git 提交（工作区遗留 `advancedSearch.generated.ts` 行尾差异与本批无关，前批已记录）；浏览器 390×844 交互级复核可选（逻辑层已由单测锁定）。
+
+### 回归测试加固（同日追加）
+
+- 三层保护：`notification-markdown.spec` 13→22 例（CRLF/`&` 转义/列表打断/内联覆盖/未配对字面量/连续 hr）；新增 `mobile-notifications.spec` 12 例（组件行为 + 源码契约禁裸文本直渲与私有实现回流）；新增 `notification-drawer-detail.spec` 7 例（Web 委托共享 util 契约 + 未读数轮询启停）。
+- 变异验证三组全部精确拦截（移动裸文本回退/截断丢失/Web 绕过共享 util），还原后三套件 39 例全绿。
+- 全量 81 套件 1108 例全绿；tsc/ESLint 通过；test-coverage 矩阵修复历史漂移（unit 表 48→69 行补齐）。仍未执行 Git 提交。
+
 ## 2026-08-26：甲板连接 Logo 视觉重绘
 
 ### 本批结果

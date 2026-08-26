@@ -77,7 +77,7 @@
 | 侧边栏 sidebar | `Sidebar/index.vue` | 侧边栏容器（基于路由生成菜单），展开态使用完整 Logo、折叠态使用 `mark` 图标，菜单/折叠控制使用 Lucide |
 | 菜单项 sidebar-item | `Sidebar/SidebarItem.vue` | 单个菜单项（递归子菜单）；路由 meta icon 与子菜单箭头由 LucideIcon 渲染 |
 | 菜单项链接 sidebar-item-link | `Sidebar/SidebarItemLink.vue` | 菜单项链接包装（外链/内链分流） |
-| 通知抽屉 notification-drawer | `NotificationDrawer/index.vue` | 通知抽屉容器；标题、筛选、加载、空状态与关闭动作统一使用 Lucide |
+| 通知抽屉 notification-drawer | `NotificationDrawer/index.vue` | 通知抽屉容器 + 详情弹窗；内容 Markdown-lite 渲染抽至 `utils/notification-markdown.ts`（与移动通知详情 `views/mobile/notifications.vue` 共用，两端一致）；标题、筛选、加载、空状态与关闭动作统一使用 Lucide |
 | 通知项 notification-item | `NotificationDrawer/NotificationItem.vue` | 单条通知项，详情入口使用 Lucide |
 
 > 注意：`components/index.ts` 只 re-export `AppMain/Navbar/Sidebar`，**未导出 NotificationDrawer**（需直接路径 import）。

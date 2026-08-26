@@ -5876,3 +5876,28 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - `mobile-dashboard.spec.ts` 5→10 用例，新增五类保护：① 旧错误契约负例——响应只含 `torrent_stats`/`downloader_stats`/`system_stats` 旧键时卡片必须显示 0、页脚不得出现旧键携带值（对原始 bug 的直接锁死）；② 信封契约——code=500 与 code=200+data:null 均停留空态、不渲染 0 假数据、不误报 `$message.error`；③ 刷新链路——`.m-refresh` 按钮 click 与下拉刷新 `onPullRefresh` 均重新拉取并渲染新值（1.50 MB/s）；④ `formatSpeedDisplay` 方法契约（`--`/`0 B/s`/`1.00 KB/s`/`280.00 KB/s`/`1.50 MB/s`）；⑤ computed 兜底（data 空时 `downloaderList=[]`、统计归零、`version`/`uptime_display='-'`）。
 - 变异验证实证保护有效：临时把 `torrentStats` 改回读 `torrent_stats` → 3 用例红；把 `downloaderList` 改回 `downloaders` 统计对象 → 列表用例红；还原后 10/10 全绿。
 - 验证：单套件 10/10、lint 通过、tsc 零错误；未执行 Git 提交。
+
+## 2026-08-26：移动通知内容渲染与 Web 端一致
+
+### 当前结果
+
+- 用户要求：移动端通知页对通知内容的文本渲染需与 Web 端一致。此前移动页 `{{ n.content }}` 原样输出（Markdown 记号裸露、无详情视图），而桌面是"列表纯文本摘要（三行截断）+ 点击详情弹窗按 Markdown-lite 渲染（含失败明细与 Release 链接）"。
+- 渲染逻辑抽共享：`NotificationDrawer/index.vue` `detailHtml` getter 的转换逻辑（#/##/### 标题、`---` 分隔线、`- ` 列表、段落分块，输入先 HTML 转义，结构化输出上替换 `**粗体**`/`` `行内代码` ``）与失败明细目标回退链，逐行搬移至新文件 `utils/notification-markdown.ts`（`renderNotificationContent`/`notificationFailureTarget`）；桌面详情弹窗改为委托调用，行为零变化，两端从此单一渲染源（代码复用约束，杜绝复制粘贴漂移）。
+- `views/mobile/notifications.vue` 升级：列表摘要改纯文本三行截断（`-webkit-line-clamp:3`，对齐桌面 `NotificationItem`）；新增详情弹层（el-dialog `append-to-body` 92% 宽，`m-notification-detail-dialog`）——标题+关闭头、类型标签+时间 meta、`v-html` 同源渲染、失败明细（`extra_data.failed_list`）、Release 外链（`extra_data.release_url`）；点击卡片打开详情并保留"查看即已读 + 角标联动"语义（与桌面 `handleView` 一致）；v-html 产物无 scoped 标记，弹层样式非 scoped 且按类名收口，排版参数对齐桌面 `.notification-detail-dialog`。
+- roadmap：`docs/roadmap/frontend/components-layout/README.md` 通知抽屉行补共享 util 与移动端共用事实（roadmap 未覆盖 views/mobile，无其他漂移）。
+
+### 验证
+
+- 新增 `tests/unit/notification-markdown.spec.ts` 13 例全过（分块结构、转义防注入、内联替换、列表闭合、失败目标回退链）。
+- 相关回归 `mobile-shell.spec.ts` + `api-contracts.spec.ts` 61 例全绿；`tsc --noEmit` 零错误；改动 4 文件 ESLint（`--max-warnings 0`）通过；`npm run build` 生产构建通过。
+- feature_list.json `v1.0.6-dual-mode-client.5` evidence 已追加本批记录；未执行 Git 提交（遵循仅用户要求时提交）。
+
+### 回归测试加固（2026-08-26 通知渲染批次追加）
+
+- 按用户要求为"移动通知内容渲染与 Web 端一致"修改补三层回归保护：
+  - **util 层**：`notification-markdown.spec.ts` 13→22 例——CRLF 行尾、`&` 转义（防实体注入）、纯空白行、标题/空行打断列表不复用同一 ul、内联替换覆盖列表项与标题节点、未配对 `**`/`` ` `` 字面量、连续 hr。
+  - **移动组件层**：新增 `mobile-notifications.spec.ts` 12 例——列表契约、摘要纯文本（渲染只发生在详情）、点击未读（markAsRead + FetchUnreadCount 角标联动 + 就地置已读）、已读不重复标记、详情同源渲染（h3/li/strong/code/hr 无记号残留）、失败明细回退链、Release 外链、类型标签、markAsRead 失败路径、信封契约、双刷新链路、源码契约（共享渲染函数必须引用、禁 v-html 直塞原始 content、禁私有实现回流、三行截断存在、弹层类名收口、模板禁 ?./??）。
+  - **Web 委托层**：新增 `notification-drawer-detail.spec.ts` 7 例——handleView 未读自动已读、已读不重复、失败明细/外链、关闭清空、源码契约（委托调用必须存在 + 抽取前内联转换三重禁入）、未读数 60s 轮询启停（fake timers）。
+- **变异验证**三组全部精确拦截：移动回退裸文本→同源渲染用例红；删三行截断→源码契约红；Web 绕过共享 util→渲染用例+源码契约双红；还原后三套件 39 例全绿。
+- 全量复验：**81 套件 1108 例全绿**；tsc 零错误；三 spec ESLint `--max-warnings 0` 通过（过程修正：多行类型分隔符须分号、去 `!` 非空断言）。
+- test-coverage 矩阵修复历史漂移：unit 表 48→69 行补齐（mobile-* 14 个等历史缺失 + 本批 2 个新增），行数与目录实测对齐；未执行 Git 提交。
