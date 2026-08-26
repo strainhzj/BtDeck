@@ -5819,3 +5819,19 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - 资源生成与 PNG 视觉检查完成；`npm run typecheck` 通过；AppLogo.spec.ts 与 pwa-manifest.spec.ts 共 12 例通过；改动文件 Vue lint 通过；`npm run build` 通过；根 `./init.sh` 通过（仅保留既有 jq/虚拟环境/npm 警告）。
 - 全量 `npm run lint` 仍被既有 `advanced-search-contract` 过期检查拦截，与本批 Logo 改动无关。
 - 未执行 Git stage/commit/push/deploy；保留用户已有的 `.tmp-desktop-gui-test/` 未跟踪目录。
+
+## 2026-08-26：手机端 Playwright E2E 测试工具搭建与全路由冒烟
+
+### 当前结果
+
+- 安装 Playwright 浏览器二进制：`chromium-1208`（含 headless shell）与 `webkit-2248`；`@playwright/test@1.58.2` 依赖此前已声明，唯浏览器缺失。
+- 新增 `frontend/playwright.config.ts`：双引擎项目（`mobile-webkit` iPhone 12 设备默认 WebKit 模拟 iOS Safari；`mobile-chromium` 同 390×844 视口走 Chromium 快速回归），workers=1 串行、失败自动留 trace/截图。
+- 新增 `frontend/tests/e2e/mobile/`：`helpers/auth.ts`（UI 真实登录链路 helper，凭据可经 `E2E_USERNAME`/`E2E_PASSWORD` 覆盖）、`login.spec.ts`（渲染/错误凭据/正确凭据 3 例）、`mobile-routes.spec.ts`（Phase 4 M1-M4 全部 12 条静态 /m/ 路由表驱动冒烟，断言根组件挂载 + 布局壳 + 无 pageerror）、`mobile-interactions.spec.ts`（底部 Tab 切换、抽屉菜单、种子卡片→详情、下载器→设置两条动态参数路由，空数据环境条件跳过）。
+- `package.json` 新增 `test:mobile` script；`.gitignore` 增加 `test-results/`、`playwright-report/`；Jest roots 不含 `tests/e2e`（listTests 验证 0 误抓），tsc/tsconfig include 覆盖 e2e 目录类型检查。
+- 测试基线环境：后端 5001（anaconda btpManager）+ 前端 8080 dev server（/api 代理 5001）。
+
+### 验证
+
+- 全套 38/38 通过（19 用例 × 双引擎，1.5 分钟）：登录 3、交互 4、静态路由 12。
+- `npm run typecheck` 通过；`npx eslint tests/e2e playwright.config.ts` 0 error 0 warning。
+- 未执行 Git stage/commit/push；既有未提交的 Logo/M3 批次文件保持原样未动。
