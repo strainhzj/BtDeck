@@ -115,6 +115,7 @@
 import { Component, Vue } from 'vue-property-decorator'
 import { NotificationModule } from '@/store/modules/notification'
 import { NotificationFailureItem, NotificationExtraData, NotificationItem } from '@/api/notification'
+import { notificationFailureTarget, renderNotificationContent } from '@/utils/notification-markdown'
 import NotificationItemComp from './NotificationItem.vue'
 
 @Component({
@@ -240,64 +241,8 @@ export default class extends Vue {
   }
 
   private get detailHtml(): string {
-    if (!this.detailContent) return ''
-    // 按 Markdown 规则分块处理：先拆成行，逐行转换，再合并
-    const lines = this.detailContent.split('\n')
-    const html: string[] = []
-    let inList = false
-
-    for (const raw of lines) {
-      const line = raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      const trimmed = line.trim()
-
-      // 空行
-      if (trimmed === '') {
-        if (inList) { html.push('</ul>'); inList = false }
-        continue
-      }
-
-      // 标题
-      if (trimmed.startsWith('### ')) {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push(`<h4>${trimmed.slice(4)}</h4>`)
-        continue
-      }
-      if (trimmed.startsWith('## ')) {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push(`<h3>${trimmed.slice(3)}</h3>`)
-        continue
-      }
-      if (trimmed.startsWith('# ')) {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push(`<h2>${trimmed.slice(2)}</h2>`)
-        continue
-      }
-
-      // 分隔线
-      if (trimmed === '---') {
-        if (inList) { html.push('</ul>'); inList = false }
-        html.push('<hr />')
-        continue
-      }
-
-      // 列表项
-      if (trimmed.startsWith('- ')) {
-        if (!inList) { html.push('<ul>'); inList = true }
-        html.push(`<li>${trimmed.slice(2)}</li>`)
-        continue
-      }
-
-      // 普通段落
-      if (inList) { html.push('</ul>'); inList = false }
-      html.push(`<p>${trimmed}</p>`)
-    }
-    if (inList) html.push('</ul>')
-
-    // 内联格式：粗体、行内代码（在结构化输出上做替换）
-    return html
-      .join('\n')
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/`(.*?)`/g, '<code>$1</code>')
+    // 渲染逻辑抽至 utils/notification-markdown，与移动端通知详情共用
+    return renderNotificationContent(this.detailContent)
   }
 
   private get detailReleaseUrl(): string {
@@ -309,7 +254,7 @@ export default class extends Vue {
   }
 
   private failureItemTarget(item: NotificationFailureItem): string {
-    return item.file_name || item.file_path || item.canonical_path || item.quarantine_path || (item.id ? `记录 ${item.id}` : '未知项')
+    return notificationFailureTarget(item)
   }
 
   private failureItemKey(item: NotificationFailureItem, index: number): string {

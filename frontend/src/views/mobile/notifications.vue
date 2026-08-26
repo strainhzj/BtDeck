@@ -7,7 +7,7 @@
       :key="n.id"
       class="m-notice"
       :class="{'is-unread': !n.is_read}"
-      @click="read(n)"
+      @click="openDetail(n)"
     >
       <div class="m-notice-title">
         <el-tag v-if="!n.is_read" size="mini" type="danger">未读</el-tag>
@@ -17,18 +17,60 @@
       <div class="m-notice-time">{{ formatTime(n.created_at) }}</div>
     </div>
     <el-button class="m-refresh" size="small" :loading="loading" @click="load">刷新</el-button>
+
+    <!--
+      通知详情：与桌面 NotificationDrawer 详情弹窗同源（utils/notification-markdown
+      renderNotificationContent），标题/列表/粗体/行内代码/分隔线渲染两端一致；
+      另含失败明细与 Release 链接。
+    -->
+    <el-dialog
+      :visible.sync="detailVisible"
+      width="92%"
+      top="8vh"
+      :show-close="false"
+      append-to-body
+      custom-class="m-notification-detail-dialog"
+    >
+      <template #title>
+        <div class="m-detail-header">
+          <span class="m-detail-header-text">{{ detailTitle }}</span>
+          <button type="button" aria-label="关闭通知详情" @click="detailVisible = false">
+            <LucideIcon name="x" :size="15" />
+          </button>
+        </div>
+      </template>
+      <div class="m-detail-meta">
+        <el-tag size="mini" :type="detailTypeTag">{{ detailTypeLabel }}</el-tag>
+        <span class="m-detail-time">{{ detailTime }}</span>
+      </div>
+      <div class="m-detail-content" v-html="detailHtml" />
+      <div v-if="failureList.length > 0" class="m-detail-failures">
+        <h4>失败明细</h4>
+        <ul>
+          <li v-for="(item, index) in failureList" :key="failureKey(item, index)">
+            <span class="m-detail-failure-target">{{ failureTarget(item) }}</span>：{{ item.reason }}
+          </li>
+        </ul>
+      </div>
+      <div v-if="releaseUrl" class="m-detail-footer">
+        <a :href="releaseUrl" target="_blank" class="m-detail-link">
+          <LucideIcon name="external-link" :size="13" /> 在 GitHub 上查看完整 Release
+        </a>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
 <script lang="ts">
 import { Component, Mixins } from 'vue-property-decorator'
-import { getNotificationList, markAsRead, NotificationItem } from '@/api/notification'
+import { getNotificationList, markAsRead, NotificationFailureItem, NotificationItem } from '@/api/notification'
 import { extractErrorMessage } from '@/utils/formatters'
+import { notificationFailureTarget, renderNotificationContent } from '@/utils/notification-markdown'
 import { NotificationModule } from '@/store/modules/notification'
 import { PullToRefresh } from '@/views/mobile/mixins/pull-to-refresh'
 import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 
-/** 移动通知中心（Phase 4 M1）：复用 /notifications API，点击标记已读；已读后同步布局壳未读角标 */
+/** 移动通知中心（Phase 4 M1）：复用 /notifications API；点击打开详情并按桌面同源规则渲染内容，同时标记已读 */
 @Component({
   name: 'MobileNotifications',
   components: { 'm-pull-indicator': MobilePullIndicator }
@@ -36,6 +78,8 @@ import MobilePullIndicator from '@/views/mobile/components/PullIndicator.vue'
 export default class MobileNotifications extends Mixins(PullToRefresh) {
   private list: NotificationItem[] = []
   private loading = false
+  private detailVisible = false
+  private detail: NotificationItem | null = null
 
   mounted(): void {
     this.load()
@@ -59,6 +103,13 @@ export default class MobileNotifications extends Mixins(PullToRefresh) {
     }
   }
 
+  private openDetail(n: NotificationItem): void {
+    this.detail = n
+    this.detailVisible = true
+    // 与桌面详情弹窗一致：查看未读通知即标记已读
+    this.read(n)
+  }
+
   private async read(n: NotificationItem): Promise<void> {
     if (n.is_read) return
     try {
@@ -76,6 +127,48 @@ export default class MobileNotifications extends Mixins(PullToRefresh) {
   private formatTime(value: string): string {
     if (!value) return ''
     return value.replace('T', ' ').slice(0, 16)
+  }
+
+  // --- 详情弹层（渲染逻辑与桌面 NotificationDrawer 共用 utils/notification-markdown） ---
+
+  private get detailTitle(): string {
+    return this.detail ? this.detail.title : ''
+  }
+
+  private get detailTime(): string {
+    return this.detail ? this.formatTime(this.detail.created_at) : ''
+  }
+
+  private get detailTypeLabel(): string {
+    return this.detail && this.detail.type === 'version_update' ? '版本更新' : '系统通知'
+  }
+
+  private get detailTypeTag(): string {
+    return this.detail && this.detail.type === 'version_update' ? 'success' : 'info'
+  }
+
+  private get detailHtml(): string {
+    return renderNotificationContent(this.detail && this.detail.content ? this.detail.content : '')
+  }
+
+  private get failureList(): NotificationFailureItem[] {
+    return this.detail && this.detail.extra_data && this.detail.extra_data.failed_list
+      ? this.detail.extra_data.failed_list
+      : []
+  }
+
+  private get releaseUrl(): string {
+    return this.detail && this.detail.extra_data && this.detail.extra_data.release_url
+      ? this.detail.extra_data.release_url
+      : ''
+  }
+
+  private failureTarget(item: NotificationFailureItem): string {
+    return notificationFailureTarget(item)
+  }
+
+  private failureKey(item: NotificationFailureItem, index: number): string {
+    return `${notificationFailureTarget(item)}-${index}`
   }
 }
 </script>
@@ -104,11 +197,16 @@ export default class MobileNotifications extends Mixins(PullToRefresh) {
   color: #303133;
 }
 
+/* 与桌面通知列表一致：摘要纯文本 + 三行截断，完整渲染进详情 */
 .m-notice-content {
   margin-top: 4px;
   font-size: 13px;
   color: #606266;
-  line-height: 1.4;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 .m-notice-time {
@@ -126,5 +224,157 @@ export default class MobileNotifications extends Mixins(PullToRefresh) {
   text-align: center;
   color: #909399;
   padding: 24px 0;
+}
+</style>
+
+<!-- 详情弹层挂 body（append-to-body），v-html 产物无 scoped 标记，样式须非 scoped 且按弹层类名收口 -->
+<style>
+.m-notification-detail-dialog .el-dialog__header {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.m-notification-detail-dialog .m-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.m-notification-detail-dialog .m-detail-header button {
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  color: #6b7280;
+  background: transparent;
+  cursor: pointer;
+}
+
+.m-notification-detail-dialog .m-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.m-notification-detail-dialog .m-detail-time {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.m-notification-detail-dialog .m-detail-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  word-break: break-word;
+}
+
+.m-notification-detail-dialog .m-detail-content h2 {
+  font-size: 16px;
+  margin: 12px 0 6px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.m-notification-detail-dialog .m-detail-content h3 {
+  font-size: 15px;
+  margin: 10px 0 4px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.m-notification-detail-dialog .m-detail-content h4 {
+  font-size: 14px;
+  margin: 8px 0 4px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.m-notification-detail-dialog .m-detail-content p {
+  margin: 4px 0;
+}
+
+.m-notification-detail-dialog .m-detail-content ul {
+  padding-left: 18px;
+  margin: 4px 0;
+  list-style-type: disc;
+}
+
+.m-notification-detail-dialog .m-detail-content li {
+  margin: 2px 0;
+  line-height: 1.5;
+}
+
+.m-notification-detail-dialog .m-detail-content strong {
+  color: #111827;
+}
+
+.m-notification-detail-dialog .m-detail-content code {
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 13px;
+  color: #dc2626;
+}
+
+.m-notification-detail-dialog .m-detail-content hr {
+  border: none;
+  border-top: 1px solid #e5e7eb;
+  margin: 8px 0;
+}
+
+.m-notification-detail-dialog .m-detail-failures {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.m-notification-detail-dialog .m-detail-failures h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.m-notification-detail-dialog .m-detail-failures ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.m-notification-detail-dialog .m-detail-failures li {
+  margin: 3px 0;
+  word-break: break-word;
+}
+
+.m-notification-detail-dialog .m-detail-failure-target {
+  color: #92400e;
+  font-weight: 600;
+}
+
+.m-notification-detail-dialog .m-detail-footer {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.m-notification-detail-dialog .m-detail-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: #059669;
+  text-decoration: none;
 }
 </style>
