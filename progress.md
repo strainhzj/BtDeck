@@ -5901,3 +5901,55 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - **变异验证**三组全部精确拦截：移动回退裸文本→同源渲染用例红；删三行截断→源码契约红；Web 绕过共享 util→渲染用例+源码契约双红；还原后三套件 39 例全绿。
 - 全量复验：**81 套件 1108 例全绿**；tsc 零错误；三 spec ESLint `--max-warnings 0` 通过（过程修正：多行类型分隔符须分号、去 `!` 非空断言）。
 - test-coverage 矩阵修复历史漂移：unit 表 48→69 行补齐（mobile-* 14 个等历史缺失 + 本批 2 个新增），行数与目录实测对齐；未执行 Git 提交。
+
+## 2026-08-26：移动简单搜索迁入种子页与高级搜索模板同源显示
+
+### 当前结果
+
+- 用户报告两项：①希望把移动端高级搜索里的简单搜索迁移到种子页面；②移动端高级搜索没有显示 Web 端保存的高级搜索模板。
+- **简单搜索迁移**：`views/mobile/search.vue` 删除「简单查询/高级搜索」双模式（变纯高级搜索页）；`views/mobile/torrents.vue` 新增可折叠筛选面板——名称关键词、下载器多选、状态多选、Tracker 域多选（allow-create），与桌面 torrents 快捷筛选同字段集，四字段透传 `name_like/downloader_id/status/tracker_domain` 到 getList；原单一状态下拉被状态多选取代；空态区分「暂无种子/没有匹配的种子」；下拉刷新带当前筛选重载。修复过程中发现并纠正自身引入的缺陷：mounted 去掉默认 reload 后无模板时列表不加载，已改为 applyPendingTemplate 无 pending 时兜底 reload。
+- **模板同源显示**：search.vue 由直接嵌 `AdvancedSearchBuilder` 升级为复用桌面 `AdvancedSearchWorkspace`——左侧「已保存搜索」列表与 Web 端同源（`getSearchTemplates({is_public:true})` 过滤 source=advanced），选择回填、新建、保存更改、删除全量对齐桌面；组件自带 ≤900px 媒体查询在 390px 视口自动上下堆叠；页面删除自身重复的 save-template/createSearchTemplate 接线（工作区内部完成）；下拉刷新改为未搜索时 `refreshFieldOptions`（刷新字段候选+模板列表）、已搜索经 `workspace.onSearch` 重放。
+- **模板应用分流**：`query-templates.vue`「应用」按 `conditions.source` 分流——简单模板跳 `/m/torrents`（回填筛选+执行），高级模板跳 `/m/search`（回填工作区+FromTemplateGroups 构建+执行）；两执行页 mounted 遇来源不符的模板交回 m2 缓存并互转对端页，防缓存被错误消费。查询模板页脚注同步（高级模板可在移动高级搜索页新建/编辑）。
+- roadmap：test-coverage.md unit 表 69→70 并更新 mobile-search/mobile-query-templates 描述、新增 mobile-torrents 行（roadmap 不覆盖 views/mobile 本体，无其他漂移）。
+
+### 验证
+
+- `mobile-search.spec.ts` 重写 8 用例（工作区 search 事件→POST、空态、详情跳转、advanced 模板回填执行、simple 模板转种子页、下拉刷新两态、源码契约禁简单搜索回流）；新增 `mobile-torrents.spec.ts` 10 用例（初始加载、选项加载、面板展开、四字段透传、重置、双向模板分流、空态区分、下拉刷新带条件、加载更多 skip 递增、源码契约）；`mobile-query-templates.spec.ts` 应用断言改双分流。三套件 24 用例全绿。
+- 前端全量 **82 套件 1119 passed**；`tsc --noEmit` 零错误；改动文件 ESLint `--max-warnings 0` 通过；`npm run lint`（含 advanced-search 契约检查）通过；`npm run build` 生产构建通过；根 `./init.sh` 通过。
+- Chrome 390×844 浏览器实测（dev server + 本机 5001 后端）：种子页筛选面板展开与关键词「Grand.Blue」过滤 20/22 全命中；/m/search 侧栏显示系统「大文件」模板及临时创建的个人高级模板；查询模板页应用高级模板自动跳 /m/search、构建器回填「种子名称/包含/Grand.Blue」并执行出 22 条结果；应用简单模板跳 /m/torrents 并显示「已应用模板」提示（临时模板已删除清理）。
+- 浏览器会话备注：IAB 标签页长时间使用后出现点击派发失灵（fill/快照正常但 el-button 点击无效），换新标签页后全部恢复正常——判断为宿主环境状态问题而非代码缺陷（同页面同按钮新标签页可点）。
+- feature_list.json `v1.0.6-dual-mode-client.5` evidence 已追加本批记录；未执行 Git 提交（遵循仅用户要求时提交）。
+
+## 2026-08-26：移动种子页多选筛选不生效根因修复（数组参数序列化契约断裂）
+
+### 根因分析（按用户要求做多假设深挖验证）
+
+- 现象：种子页筛选面板中名称关键词生效，但下载器/状态/Tracker 域三个多选筛选全部"不生效"（结果不变）。
+- 假设排序与验证过程：
+  - H1 选择后未点搜索按钮（交互落差）——被降级：即使点了搜索，参数也到不了后端（见 H3）；名称有回车即搜路径与现象吻合是巧合，非根因。
+  - H2 el-select 弹层被遮挡/选不上——排除：用户报告口径是"没生效"而非"选不上"；本会话 IAB 浏览器弹层 hidden 判定为环境输入派发噪音（同环境按钮/卡片多次点击失灵，换标签页恢复），无代码层证据。
+  - H3 **数组参数序列化契约断裂（根因，实锤）**：后端 `/torrents/getList` 的 `downloader_id/status/tracker_domain` 均为 `Optional[str]`（逗号分隔字符串契约，torrent_crud.py:609-629）；前端 request.ts 无自定义 paramsSerializer，axios 默认把数组序列化为 `key[]=v` 形式——参数名带方括号与后端完全不匹配，被 FastAPI 静默忽略。桌面端 index.vue 在调用前有专门的 `join(',')` 归一化（index.vue:1205-1218）所以一直正常；旧移动 search.vue 简单查询与迁移后的 torrents.vue 都直接传数组——**该 bug 自 Phase 4 M2 旧简单查询页即存在，迁移时原样继承**。上一批浏览器实测只验证了名称关键词（纯字符串路径），恰好绕过数组路径——实测盲区。单测同样 mock 了 api 模块只断言参数对象形态，覆盖不到序列化层。
+  - H4 状态枚举值错配（项目有大小写先例）——排除：TORRENT_STATUS_OPTIONS 值与后端一致，且错配症状应为"结果变空"而非"结果不变"。
+  - H5 v-model 响应式断裂——排除：标准 data 声明，选择值正常进入 filters（curl 实验也证明问题在序列化层而非取值层）。
+- **curl 决定性实证**（本机 5001 后端，22396 基线）：`status=paused` → total=60（过滤生效）；`status[]=paused` → total=22396（被忽略，精确复现用户现象）；`downloader_id=<uuid>` → 886 vs 方括号 → 22396；`tracker_domain=1ptba.com` → 171 vs 方括号 → 22396。
+
+### 修复
+
+- 契约收敛在 API 层：`api/torrents.ts` 新增 `normalizeTorrentListArrayParams`——`getTorrentList` 内把 `downloader_id/status/tracker_domain` 数组归一化为 `join(',')` 字符串、空数组剔除该键，与 `TorrentListParams` 类型 `string | string[]` 的既有声明承诺对齐；桌面 index.vue 已有 join 成为无害冗余（未动，最小变更）。一次修复覆盖当前与未来所有调用方（移动种子页/详情回查/传统视图等）。
+- 回归：`api-contracts.spec.ts` 新增 2 用例（多选数组 join 逗号契约 + 空数组剔除/字符串原样透传），锁死序列化层防回流。
+- 前端全量 82 套件 **1121 passed**（+2）；tsc 零错误；ESLint 与 `npm run lint`（含契约检查）、`npm run build` 通过。
+
+### 遗留与备注
+
+- feature_list.json `v1.0.6-dual-mode-client.5` evidence 已追加本批记录；未执行 Git 提交。
+- 备忘：el-select 下拉在 ZCode IAB 环境存在输入派发不稳定（弹层 double-toggle 假象），移动端 UI 交互验证建议优先真机/Chrome 设备模拟手动复核。
+
+### 回归测试加固（2026-08-26 移动筛选批次追加）
+
+- 按用户要求为本次对话全部修改（简单搜索迁移 + workspace 模板同源 + m2 分流 + 数组序列化根因修复）补足三层回归，四套件 55→76 用例：
+  - **mobile-torrents.spec 10→18**：新增 8 例——筛选选项加载失败静默（不弹错不阻塞列表）、getList 网络异常（$message.error + 空态 + loading 复位）、getList 信封非 200（不渲染假数据不误报）、筛选生效后加载更多（二次请求仍带条件 + skip 按过滤后列表递增）、工具栏筛选计数徽标（四类计数与重置清零）、advanced 模板转发不触发本页 getList、simple 模板 trackerDomains 恒空（防串味）、严格索引访问修正。
+  - **mobile-search.spec 8→13**：新增 5 例——advancedSearch 信封非 200（提示后端 msg、searched/searching 状态不受污染）、网络异常（提示 + searching 复位）、工作区 reset 清空结果态、advanced 模板无效条件组（空 conditions 触发 buildAdvancedSearchRequestFromTemplateGroups 校验链，提示「模板条件组1没有条件」且不发起 POST）、rerunAdvanced 无 workspace ref 静默防御。
+  - **api-contracts.spec +3**：数组归一化不修改调用方传入对象（浅拷贝契约，保护桌面 listQuery 拷贝与移动 filters 不感知形态变化）、无参调用 params undefined 不抛错、（此前已有 join 逗号契约与空数组剔除）。
+- **变异验证四组全部精确拦截**：①删 normalize 直传数组 → 2 红（join 契约 + 空数组剔除）；②归一化去浅拷贝直接 mutate → 1 红（不可变用例）；③torrents.vue 移除 tracker_domain 透传 → 2 红（四字段透传 + 源码契约）；④advanced 转发分支误触发 reload → 1 红（不误刷用例）；⑤search.vue simple 模板不转发 → 1 红；⑥query-templates 分流回退统一跳搜索页 → 1 红。还原后全绿。
+- 过程事故与处置：变异脚本 str.replace 全局替换误伤 torrents.ts 另外三处 `params: params`（enabled 参数/search-templates/backup list），导致套件编译失败；按 url 上下文精确还原并经 git diff 核对差异恰好只剩预期归一化函数后重做变异（改用唯一锚点断言 count==1），后续变异脚本均带唯一性断言。
+- 全量复验：**82 套件 1135 例全绿**（较上批 +14）；tsc 零错误；三 spec ESLint `--max-warnings 0` 通过；`npm run lint`、`npm run build` 通过；未执行 Git 提交。
