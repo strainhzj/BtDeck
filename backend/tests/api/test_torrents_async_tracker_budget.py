@@ -22,6 +22,8 @@ qB Tracker 有界队列与单轮预算测试（W3-1 第一部分 + 第二部分�
 10. 稳定排序：hash 乱序输入 → 处理顺序为字典序（续跑游标依赖）。
 11. Coordinator 预算透传：SyncRequest.deadline/record_budget 传给 qB tracker
     单轮预算；缺省（手动/定时共用）回落 settings 默认。
+12. producer 哨兵在队列满时重试，且所有哨兵丢失时 worker 仍能轮询自愈退出。
+13. enrich 被取消后 producer/worker 不遗留后台任务。
 
 设计依据：
 - asyncio_mode=auto（pytest.ini），异步测试直接 async def。
@@ -648,3 +650,116 @@ class TestSentinelLossSelfHealing:
 
         completed = _completion_log(mock_info)
         assert "4 failed" in completed, f"4 个 hash 应全部计为失败: {completed}"
+
+    async def test_worker_polling_self_heals_when_all_sentinels_are_lost(self, fake_client, monkeypatch):
+        """独立验证 worker 轮询兜底：模拟 producer 的所有哨兵 put 都失败。
+
+        本用例不依赖 producer 的重试修复，直接让哨兵永远无法入队，并用隔离的
+        单调时钟让 producer 快速放弃 30 秒总限；worker 处理完正常任务后只能依靠
+        ``producer_task.done() + queue.empty()`` 退出。若删除 queue.get 超时轮询，
+        本用例会在外层 wait_for 超时。
+        """
+        monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 1)
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 100)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 0.0)
+        monkeypatch.setattr(torrents_async, "_WORKER_GET_POLL_SECONDS", 0.01)
+
+        original_queue = torrents_async.asyncio.Queue
+        queues = []
+
+        class DropAllSentinelQueue(original_queue):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.sentinel_attempts = 0
+                queues.append(self)
+
+            async def put(self, item):
+                if item is None:
+                    self.sentinel_attempts += 1
+                    raise asyncio.TimeoutError("simulated lost sentinel")
+                return await super().put(item)
+
+        # 仅替换被测模块的 time 对象，避免改动 asyncio 事件循环使用的全局时钟。
+        clock_values = iter((0.0, 0.0, 31.0))
+
+        def fake_monotonic():
+            return next(clock_values, 31.0)
+
+        monkeypatch.setattr(torrents_async, "time", SimpleNamespace(monotonic=fake_monotonic))
+        monkeypatch.setattr(torrents_async.asyncio, "Queue", DropAllSentinelQueue)
+
+        infos = _make_torrent_infos(3)
+        await asyncio.wait_for(
+            torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_lost_all_sentinels"),
+            timeout=2.0,
+        )
+
+        assert len(queues) == 1
+        assert queues[0].sentinel_attempts == 1
+        assert fake_client.torrents_trackers.call_count == 3
+        assert all(t.trackers == [] for t in infos)
+
+    async def test_producer_retries_sentinel_until_each_worker_receives_one(self, fake_client, monkeypatch):
+        """独立验证 producer 重试层：前两次哨兵入队超时后仍为两个 worker 补齐哨兵。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 2)
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 100)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 0.0)
+        monkeypatch.setattr(torrents_async, "_WORKER_GET_POLL_SECONDS", 0.01)
+
+        original_queue = torrents_async.asyncio.Queue
+        queues = []
+
+        class FlakySentinelQueue(original_queue):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+                self.sentinel_attempts = 0
+                self.accepted_sentinels = 0
+                queues.append(self)
+
+            async def put(self, item):
+                if item is None:
+                    self.sentinel_attempts += 1
+                    if self.sentinel_attempts <= 2:
+                        raise asyncio.TimeoutError("simulated full queue")
+                    self.accepted_sentinels += 1
+                return await super().put(item)
+
+        monkeypatch.setattr(torrents_async.asyncio, "Queue", FlakySentinelQueue)
+
+        infos = _make_torrent_infos(4)
+        await asyncio.wait_for(
+            torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_retry_sentinels"),
+            timeout=2.0,
+        )
+
+        assert len(queues) == 1
+        assert queues[0].sentinel_attempts == 4
+        assert queues[0].accepted_sentinels == 2
+        assert fake_client.torrents_trackers.call_count == 4
+
+    async def test_cancelled_enrichment_cleans_up_producer_and_workers(self, fake_client, monkeypatch):
+        """取消 enrich 后，固定控制任务全部结束，不遗留悬挂 worker/producer。"""
+        monkeypatch.setattr(settings, "QB_TRACKER_WORKER_COUNT", 2)
+        monkeypatch.setattr(settings, "QB_TRACKER_MAX_TORRENTS_PER_RUN", 100)
+        monkeypatch.setattr(settings, "QB_TRACKER_RUN_BUDGET_SECONDS", 0.0)
+
+        started = asyncio.Event()
+        baseline_tasks = set(asyncio.all_tasks())
+
+        async def hanging_call(*args, **kwargs):
+            started.set()
+            await asyncio.Event().wait()
+
+        infos = _make_torrent_infos(10)
+        with patch.object(torrents_async, "call_downloader_api", new=hanging_call):
+            enrich_task = asyncio.create_task(
+                torrents_async._enrich_qb_torrents_with_trackers(fake_client, infos, "dl_cancelled")
+            )
+            await asyncio.wait_for(started.wait(), timeout=1.0)
+            enrich_task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await asyncio.wait_for(enrich_task, timeout=1.0)
+
+        await asyncio.sleep(0)
+        leaked_tasks = [task for task in asyncio.all_tasks() if task not in baseline_tasks and not task.done()]
+        assert not leaked_tasks, f"取消后不应遗留后台任务: {leaked_tasks}"

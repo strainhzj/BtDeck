@@ -4758,9 +4758,11 @@
           "files": [
             "backend/app/api/endpoints/torrents_async.py",
             "backend/app/downloader/initialization.py",
-            "backend/requirements.txt"
+            "backend/requirements.txt",
+            "backend/tests/api/test_torrents_async_tracker_budget.py",
+            "backend/tests/downloader/test_auth_client_timeout.py"
           ],
-          "evidence": "TestSentinelLossSelfHealing 确定性回归（fetch 0.8s>0.5s 哨兵窗口制造队列满，回退 producer 修复单独验证 worker 轮询层独立兜底有效）；TestQbClientSchemeAndRetryHardening（认证构造 FORCE_SCHEME_FROM_HOST/max_retries 断言 + _qb_host_with_scheme 6 形态单测）；既有 test_budget_expiry_returns_quickly 修复引入的 30s 白等退化后修正（producer 重试循环检测 budget_reason 立即放弃）。相关套件 610 passed。"
+          "evidence": "新增回归保护：TestSentinelLossSelfHealing 4 例覆盖慢拉取时序、producer 哨兵重试、全部哨兵丢失时 worker 轮询自愈，以及 enrich 取消后的 producer/worker 清理；TestQbClientSchemeAndRetryHardening 5 例覆盖认证参数、_qb_host_with_scheme scheme 保留/补全，以及缓存 qB 客户端实际构造路径的 FORCE_SCHEME_FROM_HOST、max_retries=0、timeout=30 接线。取消回归暴露并修复 producer 在外层取消时仍进入 30 秒哨兵收尾的问题，enrich 统一回收子任务。定向回归 56 passed；flake8、mypy、py_compile、git diff --check 通过。"
         }
       ]
     }

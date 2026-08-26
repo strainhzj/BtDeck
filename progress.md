@@ -5763,3 +5763,18 @@ task .6「桌面双模式对齐」窗口链路全矩阵实测通过并置 done�
 - mypy（desktop_companion+tests 10 文件零错）/black（~=24.10、line-length=120）/flake8 全过。
 - 根 ./init.sh（ci）通过；5001 dev server 全程未受影响（测试实例全部用独立 CONFIG_DIR+PORT）。
 - Git 未提交（待用户指示）；本批代码改动 3 文件 + 三份记录。
+
+## 2026-08-26：Tracker 状态同步健壮性回归加固
+
+### 当前结果
+
+- 复查最近 5 次提交，重点覆盖 `b266a4f` 的 qB enrich 哨兵/客户端 scheme 与重试治理，以及 `2c1d990` 的下载器级 Tracker 硬超时治理。
+- 新增回归用例：哨兵 producer 在队列满时重试、全部哨兵丢失时 worker 轮询自愈、enrich 取消后的 producer/worker 清理；补充缓存 qB 客户端真实构造路径的 scheme、`FORCE_SCHEME_FROM_HOST`、`max_retries=0` 与请求超时断言。
+- 取消回归发现 producer 在外层取消时仍会进入 30 秒哨兵收尾，已修复为跳过取消收尾并统一回收 producer/worker 子任务；相关业务语义保持不变。
+- `feature_list.json` 已将两个回归测试文件纳入 task `.9` 的 files/evidence；路线图仅同步测试覆盖矩阵，模块职责未变。
+
+### 验证
+
+- `tests/api/test_torrents_async_tracker_budget.py`、`tests/services/test_sync_coordinator.py`、`tests/downloader/test_auth_client_timeout.py`：56 passed。
+- flake8、mypy（`torrents_async.py`）、py_compile、测试文件 Ruff 格式检查及 `git diff --check` 通过；根 `./init.sh --ci` 已通过。
+- 未执行 Git stage/commit/push/deploy；保留用户已有的 `.tmp-desktop-gui-test/` 未跟踪目录。

@@ -3230,3 +3230,16 @@ roadmap 与代码的漂移已全量修复：26 个文件中 23 个存在漂移�
 
 - 新对话进入 `btdeck-wiki` 目录继续做视觉细节和真实文档迁移。
 - 先确认部署目标与 `/wiki/` 子路径，再确定主仓库文档同步白名单。
+
+## 2026-08-26 交接：Tracker 状态同步回归加固
+
+### 已完成
+
+- 针对最近 5 次提交复查 Tracker 同步健壮性，新增 `tests/api/test_torrents_async_tracker_budget.py` 的哨兵重试、全哨兵丢失自愈、取消清理回归；新增 `tests/downloader/test_auth_client_timeout.py` 的缓存 qB 客户端构造接线回归。
+- 取消回归暴露 producer 会在外层取消后继续执行 30 秒哨兵收尾，已在 `torrents_async.py` 跳过取消收尾并统一取消/等待子任务，避免后台任务泄漏。
+- `feature_list.json` task `.9` 已登记新增测试文件和验证证据；roadmap 仅同步测试覆盖矩阵，模块职责未变。
+
+### 验证与后续
+
+- 三个相关测试文件共 56 passed；flake8、mypy、py_compile、测试文件格式检查、`git diff --check` 通过，根 `./init.sh --ci` 已通过。
+- Git 未提交；用户已有 `.tmp-desktop-gui-test/` 未跟踪目录保持不动。

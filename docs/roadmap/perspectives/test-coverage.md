@@ -63,7 +63,7 @@
 | `tests/api/test_transmission_error_sync.py` | 394 | Transmission 错误状态/原因提取、FULL/INFO-ONLY 持久化、原因变化检测、恢复清空、旧 RPC 兼容及 legacy/async Tracker 0–4 状态写入 |
 | `tests/api/test_tracker_migration.py` | 730 | qB/Transmission Tracker 手动新增、修改、删除路径；Transmission announce/scrape 独立状态码持久化 |
 | `tests/services/test_tracker_status_sync.py` | 972 | Tracker 行级 Working + `None`/空白消息历史 error 恢复；announce/scrape 状态边界、非空关键词优先、未知逐行保留、双消息、幂等、host 跨种子隔离及 zimiao 359 行快照形态 |
-| `tests/services/test_sync_coordinator.py` | 870 | 统一同步协调、准入/取消/检查点/观测；活动运行 phase/last-progress 与阶段事件；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序；info/full 同步后调用备份增量补偿（full 同样触发、tracker 不触发、补偿失败不阻断信息同步） |
+| `tests/services/test_sync_coordinator.py` | 1039 | 统一同步协调、准入/取消/检查点/观测；活动运行 phase/last-progress 与阶段事件；Tracker 原始同步成功后才调用行级状态同步，失败时跳过并锁定调用顺序；Tracker 下载器级硬超时、部分成功与关闭开关；info/full 同步后调用备份增量补偿（full 同样触发、tracker 不触发、补偿失败不阻断信息同步） |
 | `tests/tasks/test_torrent_tracker_status_judge.py` | 546 | qB/Transmission 未联系/发送中为中性；Working + `None`/空白消息明确正常；zimiao 双 Tracker 顺序/类型/空消息矩阵；非空关键词优先、软删除隔离、真实 SQLite 批量更新、独立 Cron 错峰与重任务互斥 |
 | `tests/api/test_torrent_backup_review.py` | 188 | 备份列表当前下载器 nickname 单查询批量解析及序列化 |
 | `tests/api/test_torrents_async_info_budget.py` | 626 | INFO-ONLY 请求 `errorString` 并批量写入 `error_reason` |
@@ -87,6 +87,14 @@
 |------------|------|-----------|
 | `tests/services/test_orphan_hardlink_copy_scan.py` | 742 | `orphan_hardlink_scan_service.py` + `orphan_quarantine.py::find_hardlink_paths_bounded`：过期 deadline 部分结果+budget_exceeded、单目标路径截断不影响其它目标、无界对等、walk 限量 deferral、游标推进/回绕、幂等更新、保留期清理、单链接轮不遍历、stat 预算停止保进度、受控时钟中途截止/截断优先级、resolved/无指针跳过、新鲜度排序、budget 落行、任务注册/heavy_sync/护栏默认值契约与 execute 包装器 |
 | `tests/services/test_torrent_file_backup_reconcile.py` | 162 | `torrent_file_backup_manager.py`：`reconcile_missing_backups` 限量批次、幂等收敛、qB/Transmission 常见源文件名、逻辑删除墓碑不再自动重建与源目录不可用一次性上报 |
+
+### 2026-08-26 Tracker 状态同步健壮性回归加固
+
+| 测试文件 | 行数 | 覆盖源文件 |
+|------------|------|-----------|
+| `tests/api/test_torrents_async_tracker_budget.py` | 765 | `app/api/endpoints/torrents_async.py`：有界队列预算、producer 哨兵重试、全部哨兵丢失时 worker 轮询自愈、取消后的 producer/worker 子任务清理及稳定顺序 |
+| `tests/services/test_sync_coordinator.py` | 1039 | `app/services/sync_coordinator.py`：Tracker 原始同步、行级状态同步顺序、下载器级硬超时/部分成功/关闭开关及取消语义 |
+| `tests/downloader/test_auth_client_timeout.py` | 143 | `app/downloader/initialization.py`：qB/Transmission 客户端请求超时、scheme 归一、关闭 SDK 探测与 urllib3 重试，以及缓存客户端实际构造参数 |
 
 ### 关键源文件测试覆盖抽样
 

@@ -2808,26 +2808,30 @@ async def _enrich_qb_torrents_with_trackers(
                     index += 1
                 except asyncio.TimeoutError:
                     continue
-        finally:
-            # 每个 worker 一个终止哨兵；带超时防预算到期后无人消费导致 producer
-            # 永久阻塞。put 超时不再整体 break 丢弃剩余哨兵（2026-08-25 生产
-            # cron-7-20260825223237 案件根因：收尾时队列被未消费 hash 占满，
-            # 首个哨兵 0.5s 超时即 break，0 个哨兵入队，worker 处理完后永久挂
-            # 在 queue.get()）；改为带总时限的重试尽力放完（队列随 worker 消费
-            # 腾空即可放入）。预算到期时 worker 已全部退出不再消费，立即放弃
-            # （否则白等总限）；超限放弃时由 worker 的 get 轮询兜底退出。
-            sentinel_deadline = time.monotonic() + 30.0
-            for _ in range(worker_count):
-                while True:
-                    if state["budget_reason"] is not None:
+        except asyncio.CancelledError:
+            # 外层取消时不要进入哨兵收尾：worker 会由 gather 的取消清理，
+            # 否则 producer 可能在 30 秒哨兵总限内继续占用任务。
+            raise
+
+        # 每个 worker 一个终止哨兵；带超时防预算到期后无人消费导致 producer
+        # 永久阻塞。put 超时不再整体 break 丢弃剩余哨兵（2026-08-25 生产
+        # cron-7-20260825223237 案件根因：收尾时队列被未消费 hash 占满，
+        # 首个哨兵 0.5s 超时即 break，0 个哨兵入队，worker 处理完后永久挂
+        # 在 queue.get()）；改为带总时限的重试尽力放完（队列随 worker 消费
+        # 腾空即可放入）。预算到期时 worker 已全部退出不再消费，立即放弃
+        # （否则白等总限）；超限放弃时由 worker 的 get 轮询兜底退出。
+        sentinel_deadline = time.monotonic() + 30.0
+        for _ in range(worker_count):
+            while True:
+                if state["budget_reason"] is not None:
+                    return
+                try:
+                    await asyncio.wait_for(queue.put(None), timeout=0.5)
+                    break
+                except asyncio.TimeoutError:
+                    if time.monotonic() >= sentinel_deadline:
                         return
-                    try:
-                        await asyncio.wait_for(queue.put(None), timeout=0.5)
-                        break
-                    except asyncio.TimeoutError:
-                        if time.monotonic() >= sentinel_deadline:
-                            return
-                        continue
+                    continue
 
     async def _tracker_worker() -> None:
         """消费队列并拉取单个种子 tracker；每次拉取前检查单轮预算。"""
@@ -2890,9 +2894,14 @@ async def _enrich_qb_torrents_with_trackers(
     # 只创建固定数量的任务：1 个生产者 + worker_count 个 worker（W3-1 禁止全量 create_task）
     producer_task = asyncio.create_task(_producer())
     worker_tasks = [asyncio.create_task(_tracker_worker()) for _ in range(worker_count)]
+    enrich_tasks = [producer_task, *worker_tasks]
     try:
-        await asyncio.gather(producer_task, *worker_tasks)
+        await asyncio.gather(*enrich_tasks)
     except asyncio.CancelledError:
+        for task in enrich_tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*enrich_tasks, return_exceptions=True)
         logger.warning(
             "[QB_TRACKER_ENRICH] worker 阶段被取消: downloader_id=%s",
             downloader_id,
@@ -2900,6 +2909,10 @@ async def _enrich_qb_torrents_with_trackers(
         )
         raise
     except Exception as e:
+        for task in enrich_tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*enrich_tasks, return_exceptions=True)
         _log_tracker_sync_exception(
             e,
             log_prefix="QB_TRACKER_ENRICH",

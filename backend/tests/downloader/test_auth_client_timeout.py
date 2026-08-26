@@ -9,9 +9,11 @@ qb REQUESTS_ARGS={"timeout": 30} / tr timeout=30.0。
 若有人改回无超时构造，本测试立即报红。
 """
 
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.downloader.initialization import (
+    _check_and_add_new_downloader,
     _check_qbittorrent_auth_with_retry,
     _check_transmission_auth_with_retry,
 )
@@ -89,3 +91,53 @@ class TestQbClientSchemeAndRetryHardening:
         assert _qb_host_with_scheme("192.168.5.51", None) == "http://192.168.5.51"
         # 已带 scheme 保持不变
         assert _qb_host_with_scheme("https://qb.example.com", False) == "https://qb.example.com"
+        assert _qb_host_with_scheme("http://qb.example.com", True) == "http://qb.example.com"
+
+    async def test_cached_qb_client_uses_normalized_scheme_and_retry_policy(self):
+        """缓存客户端真实构造路径也必须跳过探测并关闭 urllib3 重试。"""
+        app = SimpleNamespace(state=SimpleNamespace(store=SimpleNamespace(add=AsyncMock())))
+        downloader_data = {
+            "downloader_id": "dl-qb",
+            "nickname": "缓存构造测试",
+            "host": "https://qb.example.com/base-path",
+            "port": "8080",
+            "username": "admin",
+            "password": "encrypted",
+            "downloader_type": "0",
+            "is_ssl": "1",
+            "torrent_save_path": "/downloads",
+        }
+
+        with (
+            patch(
+                "app.downloader.initialization._is_downloader_duplicate",
+                new=AsyncMock(return_value=False),
+            ),
+            patch(
+                "app.downloader.initialization.check_port_connectivity",
+                new=AsyncMock(return_value=True),
+            ),
+            patch(
+                "app.downloader.initialization._check_qbittorrent_auth_with_retry",
+                new=AsyncMock(return_value=True),
+            ),
+            patch("app.utils.encryption.decrypt_password", return_value="decrypted"),
+            patch("app.downloader.initialization.qbClient") as client_cls,
+        ):
+            client_instance = MagicMock()
+            client_cls.return_value = client_instance
+            ok = await _check_and_add_new_downloader(app, downloader_data, immediate=True)
+
+        assert ok is True
+        client_cls.assert_called_once()
+        kwargs = client_cls.call_args.kwargs
+        assert kwargs["host"] == "https://qb.example.com"
+        assert kwargs["port"] == 8080
+        assert kwargs["FORCE_SCHEME_FROM_HOST"] is True
+        assert kwargs["HTTPADAPTER_ARGS"] == {"max_retries": 0}
+        assert kwargs["REQUESTS_ARGS"] == {"timeout": 30}
+
+        app.state.store.add.assert_awaited_once()
+        cached_vo = app.state.store.add.await_args.args[0]
+        assert cached_vo.host == "qb.example.com"
+        assert cached_vo.client is client_instance
